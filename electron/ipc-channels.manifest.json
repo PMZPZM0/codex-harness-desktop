@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 569,
+  "count": 580,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5661,6 +5661,116 @@
       "invokeArgs": "",
       "cast": null,
       "note": "恢复默认：删 shortcuts.json（截图/语音不动）"
+    },
+    {
+      "name": "dataaccessState",
+      "channel": "dataaccess:state",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "读某会话的授权（默认全关）"
+    },
+    {
+      "name": "dataaccessGrant",
+      "channel": "dataaccess:grant",
+      "paramsImpl": "input: { threadId: string; module: string; level: string; on: boolean }",
+      "paramsDecl": "input: { threadId: string; module: string; level: string; on: boolean }",
+      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "设一个三元组（会话+模块+读/写）；只在内存，退出即失效"
+    },
+    {
+      "name": "dataaccessRevokeAll",
+      "channel": "dataaccess:revoke-all",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "撤销某会话的全部授权"
+    },
+    {
+      "name": "dataaccessFavoritesList",
+      "channel": "dataaccess:favorites-list",
+      "paramsImpl": "input: { threadId: string; query?: string; limit?: number }",
+      "paramsDecl": "input: { threadId: string; query?: string; limit?: number }",
+      "returns": "Promise<{ total: number; matched: number; items: { id: string; title: string; kind: string; content: string; tags: string[]; createdAt: string }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：读收藏夹（需 favorites/read）"
+    },
+    {
+      "name": "dataaccessFavoritesAppend",
+      "channel": "dataaccess:favorites-append",
+      "paramsImpl": "input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }",
+      "paramsDecl": "input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }",
+      "returns": "Promise<{ ok: boolean; id: string; title: string; total: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有）"
+    },
+    {
+      "name": "dataaccessJournalRead",
+      "channel": "dataaccess:journal-read",
+      "paramsImpl": "input: { threadId: string; date?: string }",
+      "paramsDecl": "input: { threadId: string; date?: string }",
+      "returns": "Promise<{ date: string; content: string; truncated: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：读某天日记全文（需 journal/read）"
+    },
+    {
+      "name": "dataaccessJournalSearch",
+      "channel": "dataaccess:journal-search",
+      "paramsImpl": "input: { threadId: string; query: string }",
+      "paramsDecl": "input: { threadId: string; query: string }",
+      "returns": "Promise<{ hits: { date: string; lines: string[] }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：全文检索日记（需 journal/read）"
+    },
+    {
+      "name": "dataaccessJournalAppend",
+      "channel": "dataaccess:journal-append",
+      "paramsImpl": "input: { threadId: string; date?: string; title?: string; body: string }",
+      "paramsDecl": "input: { threadId: string; date?: string; title?: string; body: string }",
+      "returns": "Promise<{ ok: boolean; date: string; days: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史）"
+    },
+    {
+      "name": "dataaccessVaultFind",
+      "channel": "dataaccess:vault-find",
+      "paramsImpl": "input: { threadId: string; query?: string }",
+      "paramsDecl": "input: { threadId: string; query?: string }",
+      "returns": "Promise<{ total: number; items: { id: string; title: string; username: string; url: string; hasSecret: boolean }[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文）"
+    },
+    {
+      "name": "dataaccessVaultCopy",
+      "channel": "dataaccess:vault-copy",
+      "paramsImpl": "input: { threadId: string; id: string }",
+      "paramsDecl": "input: { threadId: string; id: string }",
+      "returns": "Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文）"
+    },
+    {
+      "name": "dataaccessVaultSave",
+      "channel": "dataaccess:vault-save",
+      "paramsImpl": "input: { threadId: string; item: Record<string, unknown> }",
+      "paramsDecl": "input: { threadId: string; item: Record<string, unknown> }",
+      "returns": "Promise<{ ok: boolean; total: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "模型工具：写入密码本（需 vault/write + 渲染层一次性确认）"
     }
   ]
 }

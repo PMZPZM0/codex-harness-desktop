@@ -14,6 +14,7 @@ import { Readable } from "node:stream";
 import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
+import { clearGrants } from "./data-access-ipc";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
 import { healEngineInstall } from "../engine-install-heal";
@@ -797,6 +798,7 @@ export async function bootApp() {
           // ⛔ 引擎侧发起的删除（不经渲染层 thread/delete 请求）同样要清磁盘残留 + 记墓碑，
           //   否则侧栏的 rollout 兜底扫描在下次启动把它捞回来（见 purgeDeletedThread 注释）。
           if (event.method === "thread/deleted") void purgeDeletedThread(goneId).catch(() => undefined);
+          if (goneId) clearGrants(goneId); // 10-29：会话删了 ⇒ 三模块授权作废（另一入口在 codex-ipc 的 purgeTarget）
           /* 10-05 角色记忆：会话被删 ⇒ 它的角色归属索引也清掉（否则索引无限增长，
              且那个 threadId 永远查不到归属、也永远占着一条记录）。记忆内容本身**留着** —
              角色还在（专家/子智能体定义没删），下次派出会继续用它自己的记忆。 */

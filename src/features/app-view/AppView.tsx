@@ -8,7 +8,8 @@ import { createPortal } from "react-dom";
 import { useSyncExternalStore, useMemo } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
-import { ShortcutsDialog } from "../shortcuts/ShortcutsDialog";
+import { ShortcutsDialog } from "../shortcuts";
+import { VaultWriteConfirm } from "../data-access";
 import {
   AlertTriangle,
   Archive,
@@ -728,6 +729,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         />
       )}
       {shortcutsOpen && <ShortcutsDialog open onClose={() => setShortcutsOpen(false)} />}
+      <VaultWriteConfirm />
       {marketPreview && <MarketPreviewModal state={marketPreview} onClose={() => setMarketPreview(null)} />}
       {skillInstall && <SkillInstallModal state={skillInstall} onClose={() => setSkillInstall(null)} onUse={() => { const skill = { name: skillInstall.skill.name, description: skillInstall.skill.description }; setSelectedSkills((current) => current.some((entry) => entry.name === skill.name) ? current : [...current, skill]); setSkillInstall(null); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); }} />}
       {skillRemove && <SkillRemoveModal state={skillRemove} onClose={() => setSkillRemove(null)} />}

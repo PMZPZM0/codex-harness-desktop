@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（105 个能力域 / 569 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（106 个能力域 / 580 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -324,6 +324,10 @@ MCP 服务器管理（配置/状态）
 ### journal（6 通道）
 **开发日记**（竖条 → 开发日记）：按天一个 Markdown 文件（userData/dev-journal/YYYY-MM-DD.md）—— list 列日期与摘要 / read 看当天全文 / save 整篇覆盖 / append 追加一条「## HH:mm 标题 + 正文」/ remove 删当天 / search 全文检索。⛔ 与会话归档、项目工作日志是三件不同的事
 通道：journal:append, journal:list, journal:read, journal:remove, journal:save, journal:search
+
+### dataaccess（11 通道）
+收藏夹 / 开发日记 / 密码本**对模型开放**的授权闸（10-29）：按「会话 + 模块 + 读/写」三元组授权，默认全关、只存在内存（应用退出即失效）。开启后收藏与日记只允许 read + append（⛔ 不能删/改历史）；密码本只允许存在性查询与「复制到剪贴板」（明文永不出主进程），写入必须先经用户在界面一次性确认。⛔ 没有删除类通道 —— 删除只能由用户本人在界面操作
+通道：dataaccess:state, dataaccess:grant, dataaccess:revoke-all, dataaccess:favorites-list, dataaccess:favorites-append, dataaccess:journal-read, dataaccess:journal-search, dataaccess:journal-append, dataaccess:vault-find, dataaccess:vault-copy, dataaccess:vault-save
 
 ### shortcuts（3 通道）
 键盘快捷键统一读口（10-28）：应用内快捷键存 userData/shortcuts.json，弹窗与「设置 → 控制台 → 键盘快捷键」读写同一份；截图/语音的全局键仍存各自设置文件（它们的 setter 要先注册成功 globalShortcut 再落盘），本域只读来聚合展示。⛔ 模型侧不调用它——改键是用户界面动作，不是工具能力

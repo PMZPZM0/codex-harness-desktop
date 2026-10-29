@@ -9,7 +9,7 @@ import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFu
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
-import { useShortcuts } from "../../shortcuts/use-shortcuts";
+import { useShortcuts } from "../../shortcuts";
 import { bindingMatches } from "../../../lib/shortcut-catalog.mjs";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
 import {

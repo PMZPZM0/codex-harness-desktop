@@ -1,0 +1,118 @@
+/**
+ * 55-data-access（10-29）：收藏夹 / 开发日记 / 密码本 的**模型授权面板** + 密码写入一次性确认框。
+ *
+ * ⛔ 只用语义变量（--bg/--panel/--panel-2/--line/--line-soft/--text/--muted/--faint/--accent/--red），
+ *    不写死颜色 ⇒ 浅色 / 深色 / 控件皮肤套装都跟得上。
+ * ⛔ 原生 button 一律 `appearance:none`（暗色下浏览器按"浅色 UA"画，会变成浅灰底，见 08/13/18 惯例）。
+ */
+
+/* ── 授权面板（复用 rail 面板的居中弹窗壳，这里只管内部排布）────────────── */
+/* 内容量固定（3 行 + 底栏），收紧一点才装得进 rail 弹窗的 520 高度 */
+.da-body { display: flex; flex-direction: column; gap: 8px; }
+.da-lead {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+.da-row {
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  padding: 7px 11px;
+  background: var(--panel-2);
+}
+.da-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+}
+.da-row-head svg { color: var(--muted); }
+.da-state { margin-left: auto; font-size: 11px; color: var(--faint); }
+.da-state.is-on { color: var(--accent); }
+.da-switches { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
+.da-switch {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+.da-switch > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.da-switch b { font-size: 11.5px; font-weight: 600; color: var(--text); }
+.da-switch em { font-style: normal; font-size: 11px; line-height: 1.4; color: var(--muted); }
+.da-error { margin: 0; font-size: 12px; color: var(--red); }
+/* ⛔ 粘在滚动区底部：内容再多也不会被弹窗底边裁掉（实测过 footer 溢出 47px 不可见） */
+.da-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding: 6px 0 2px;
+  background: var(--panel);
+}
+.da-count { font-size: 11.5px; color: var(--faint); }
+.da-revoke {
+  appearance: none;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.da-revoke:hover { background: var(--bg); }
+.da-revoke:disabled { opacity: 0.45; cursor: default; }
+
+/* ── 密码本写入确认（10-29 用户：「任何写入需一次性确认弹窗」）────────────────
+   层级取确认框那一档（950）：它必须盖住其它弹窗与面板，不能被别的东西压下面。 */
+.vault-confirm-backdrop { z-index: 950; }
+.vault-confirm {
+  width: min(460px, 92vw);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 24px 64px rgba(0, 0, 0, 0.28);
+}
+.vault-confirm header { display: flex; align-items: center; justify-content: space-between; }
+.vault-confirm-title { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--text); }
+.vault-confirm-title svg { color: var(--accent); }
+.vault-confirm-lead { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--text); }
+.vault-confirm-lead strong { color: var(--accent); }
+.vault-confirm-fields { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.vault-confirm-fields > div { display: flex; gap: 8px; font-size: 12px; }
+.vault-confirm-fields dt { flex: 0 0 46px; color: var(--muted); }
+.vault-confirm-fields dd { margin: 0; flex: 1 1 auto; min-width: 0; word-break: break-all; color: var(--text); }
+.vault-confirm-url { color: var(--muted); }
+.vault-confirm-dots { font-family: var(--mono); letter-spacing: 1px; }
+.vault-confirm-hint {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.vault-confirm footer { display: flex; justify-content: flex-end; gap: 8px; }
+.vault-confirm-cancel,
+.vault-confirm-allow {
+  appearance: none;
+  height: 30px;
+  padding: 0 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.vault-confirm-cancel { border: 1px solid var(--line); background: var(--panel-2); color: var(--text); }
+.vault-confirm-cancel:hover { background: var(--bg); }
+.vault-confirm-allow { border: 1px solid var(--accent); background: var(--accent); color: #fff; }
+.vault-confirm-allow:hover { filter: brightness(1.06); }

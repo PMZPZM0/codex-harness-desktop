@@ -30,6 +30,7 @@ import { rendererActiveByWindow } from "./renderer-fuse";
 import { deletedThreadIds, purgeDeletedThread } from "./thread-deletion";
 import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
+import { clearGrants } from "./data-access-ipc";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
@@ -206,6 +207,8 @@ export const codexFeature = defineFeature<null>({
         if (purgeTarget) {
           const dropped = await delegateRegistry.forget([purgeTarget]).catch(() => 0);
           if (dropped) broadcastHarnessEvent({ type: "delegates-changed", threadId: purgeTarget } as any);
+          /* 10-29：会话没了，它对收藏夹/日记/密码本的授权也一并作废（另一入口同样在 boot 的 thread/deleted） */
+          clearGrants(purgeTarget);
           dropStoredReports(purgeTarget); // 文件变更报告的落盘同样跟着会话走（另一个入口在 boot 的 thread/deleted）
           dropStoredCompactions(purgeTarget); // 压缩侦测记录同样跟着会话走（另一个入口在 boot 的 thread/deleted）
         }

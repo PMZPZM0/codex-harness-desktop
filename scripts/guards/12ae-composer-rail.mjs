@@ -35,7 +35,8 @@ const railCss = read("src/styles/54-composer-rail.css");
 const composerForm = src("src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx");
 
 /* ① 挂载与形态 */
-ok(/<ComposerRail app=\{app\} \/>/.test(composerForm), "竖条挂在输入框表单里（每个会话同一个组件 ⇒ 跨会话一致）");
+/* 10-29：多了可选 threadId（数据授权面板要绑当前会话）⇒ 断言放宽到"app 必传、其余可选" */
+ok(/<ComposerRail app=\{app\}[^/]*\/>/.test(composerForm), "竖条挂在输入框表单里（每个会话同一个组件 ⇒ 跨会话一致）");
 ok(/composer-rail-toggle/.test(rail) && /aria-expanded=\{open\}/.test(rail), "折叠是一根可点的粗条，且带 aria-expanded 两态反馈");
 ok(/localStorage\.getItem\("composer-rail-open"\)/.test(rail) && /localStorage\.setItem\("composer-rail-open"/.test(rail),
   "展开/折叠状态持久化（用户：「所有会话点击展示都一样」）");

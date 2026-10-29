@@ -18,6 +18,7 @@ import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextI
 import { basename } from "../../../../lib/basename";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import { BOSS_GROUP_TOOLS, DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, IDENTITY_UPDATE_TOOL, PERSONA_APPLY_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
+import { DATA_ACCESS_TOOLS } from "../../../data-access";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
@@ -649,6 +650,11 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          ⛔ 只给带队会话用：成员会话不挂（成员不许拉人、不许审人）。
          ⛔ 派活是异步的（宿主 turn/start 立刻返回），结果以 [群事件] 回投 —— 描述里已写死，别改成"等结果"。 */
       ...(BOSS_GROUP_TOOLS as unknown as any[]),
+      /* 10-29：收藏夹 / 开发日记 / 密码本 —— 用户指定的权限模型（会话级授权、默认关、
+         只读 + 只追加、密码本明文不进上下文）。⛔ 注册**不带开关条件**：dynamicTools 只在
+         thread/start 与 resume 定死，带条件就会出现「刚打开开关，模型还是没有工具」；
+         真正的拦截在执行端（主进程 dataaccess:*，被拒文案自带「去哪开授权」）。 */
+      ...(DATA_ACCESS_TOOLS as unknown as any[]),
     ];
   }, [bag.memoryEnabled, bag.memoryBackend]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;

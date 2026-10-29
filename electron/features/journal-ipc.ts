@@ -51,6 +51,48 @@ async function listDays(base: string): Promise<JournalDay[]> {
   return days;
 }
 
+/* ── 可复用入口（10-29）：模型侧工具（data-access）与 IPC 共用**同一套**写入逻辑。
+   ⛔ 不要在工具那边重写一遍「追加一段 markdown」——两份实现迟早漂移（缩进/换行/日期兜底）。
+   ⛔ 这里**只提供读与追加**：删除 / 整篇覆盖永远不给模型开放。 */
+export async function readJournalDay(base: string, date: string): Promise<{ date: string; content: string }> {
+  const day = DATE_RE.test(String(date ?? "")) ? String(date) : today();
+  const content = await fs.readFile(fileOf(base, day), "utf8").catch(() => "");
+  return { date: day, content };
+}
+
+/** 追加一条：`## HH:mm 标题` + 正文。⛔ 只追加到末尾，不改历史内容。 */
+export async function appendJournalEntry(
+  base: string,
+  input: { date?: unknown; title?: unknown; body?: unknown },
+): Promise<{ date: string; days: JournalDay[] }> {
+  const day = DATE_RE.test(String(input.date ?? "")) ? String(input.date) : today();
+  await ensureDir(base);
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const head = String(input.title ?? "").trim().slice(0, 120);
+  const text = String(input.body ?? "").trim();
+  if (!text) throw new Error("正文不能为空");
+  const chunk = `## ${hhmm}${head ? ` ${head}` : ""}\n\n${text}\n\n`;
+  let existing = await fs.readFile(fileOf(base, day), "utf8").catch(() => "");
+  if (!existing.trim()) existing = `# 开发日记 · ${day}\n\n`;
+  await fs.writeFile(fileOf(base, day), `${existing.replace(/\s*$/, "\n\n")}${chunk}`, "utf8");
+  return { date: day, days: await listDays(base) };
+}
+
+/** 全文检索：命中日期 + 命中行（模型侧只给这几行，不塞全文）。 */
+export async function searchJournal(base: string, query: unknown): Promise<{ hits: { date: string; lines: string[] }[] }> {
+  const needle = String(query ?? "").trim().toLowerCase();
+  if (!needle) return { hits: [] };
+  const days = await listDays(base);
+  const hits: { date: string; lines: string[] }[] = [];
+  for (const day of days) {
+    const text = await fs.readFile(fileOf(base, day.date), "utf8").catch(() => "");
+    const lines = text.split("\n").filter((line) => line.toLowerCase().includes(needle)).slice(0, 3);
+    if (lines.length) hits.push({ date: day.date, lines: lines.map((line) => line.trim().slice(0, 160)) });
+  }
+  return { hits };
+}
+
 export const journalFeature = defineFeature<null>({
   id: "journal",
   inject: ["ipc", "host"],
@@ -67,8 +109,7 @@ export const journalFeature = defineFeature<null>({
     ipcHost.handle("journal:read", async (_event, date: string): Promise<{ date: string; content: string }> => {
       const day = String(date ?? "");
       if (!DATE_RE.test(day)) throw new Error("日期格式必须是 YYYY-MM-DD");
-      const content = await fs.readFile(fileOf(base(), day), "utf8").catch(() => "");
-      return { date: day, content };
+      return readJournalDay(base(), day);
     });
 
     /** 整篇覆盖（编辑器保存）。 */
@@ -84,17 +125,8 @@ export const journalFeature = defineFeature<null>({
 
     /** 追加一条：`## HH:mm 标题` + 正文；同日多次记录按时间顺序落在同一个文件里。 */
     ipcHost.handle("journal:append", async (_event, date: string, title: unknown, body: unknown): Promise<{ days: JournalDay[]; date: string }> => {
-      const day = DATE_RE.test(String(date ?? "")) ? String(date) : today();
-      await ensureDir(base());
-      const now = new Date();
-      const hhmm = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      const head = String(title ?? "").trim().slice(0, 120);
-      const text = String(body ?? "").trim();
-      const chunk = `## ${hhmm}${head ? ` ${head}` : ""}\n\n${text}\n\n`;
-      let existing = await fs.readFile(fileOf(base(), day), "utf8").catch(() => "");
-      if (!existing.trim()) existing = `# 开发日记 · ${day}\n\n`;
-      await fs.writeFile(fileOf(base(), day), `${existing.replace(/\s*$/, "\n\n")}${chunk}`, "utf8");
-      return { days: await listDays(base()), date: day };
+      const appended = await appendJournalEntry(base(), { date, title, body });
+      return { days: appended.days, date: appended.date };
     });
 
     ipcHost.handle("journal:remove", async (_event, date: string): Promise<{ days: JournalDay[] }> => {
@@ -106,16 +138,7 @@ export const journalFeature = defineFeature<null>({
 
     /** 全文检索：命中文件名 + 命中的行（渲染层直接展示，不用再拉全文）。 */
     ipcHost.handle("journal:search", async (_event, query: unknown): Promise<{ hits: { date: string; lines: string[] }[] }> => {
-      const needle = String(query ?? "").trim().toLowerCase();
-      if (!needle) return { hits: [] };
-      const days = await listDays(base());
-      const hits: { date: string; lines: string[] }[] = [];
-      for (const day of days) {
-        const text = await fs.readFile(fileOf(base(), day.date), "utf8").catch(() => "");
-        const lines = text.split("\n").filter((line) => line.toLowerCase().includes(needle)).slice(0, 3);
-        if (lines.length) hits.push({ date: day.date, lines: lines.map((line) => line.trim().slice(0, 160)) });
-      }
-      return { hits };
+      return searchJournal(base(), query);
     });
 
     ctx.effect(() => {

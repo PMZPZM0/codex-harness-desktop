@@ -904,6 +904,28 @@ contextBridge.exposeInMainWorld("codex", {
   shortcutsSave: (input: { bindings?: Record<string, string[]> } = {}) => __ipc("shortcuts:save", 0, [input]),
   /* 恢复默认：删 shortcuts.json（截图/语音不动） */
   shortcutsReset: () => __ipc("shortcuts:reset", 0, []),
+  /* 读某会话的授权（默认全关） */
+  dataaccessState: (threadId: string) => __ipc("dataaccess:state", 1, [threadId]),
+  /* 设一个三元组（会话+模块+读/写）；只在内存，退出即失效 */
+  dataaccessGrant: (input: { threadId: string; module: string; level: string; on: boolean }) => __ipc("dataaccess:grant", 1, [input]),
+  /* 撤销某会话的全部授权 */
+  dataaccessRevokeAll: (threadId: string) => __ipc("dataaccess:revoke-all", 1, [threadId]),
+  /* 模型工具：读收藏夹（需 favorites/read） */
+  dataaccessFavoritesList: (input: { threadId: string; query?: string; limit?: number }) => __ipc("dataaccess:favorites-list", 1, [input]),
+  /* 模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有） */
+  dataaccessFavoritesAppend: (input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }) => __ipc("dataaccess:favorites-append", 1, [input]),
+  /* 模型工具：读某天日记全文（需 journal/read） */
+  dataaccessJournalRead: (input: { threadId: string; date?: string }) => __ipc("dataaccess:journal-read", 1, [input]),
+  /* 模型工具：全文检索日记（需 journal/read） */
+  dataaccessJournalSearch: (input: { threadId: string; query: string }) => __ipc("dataaccess:journal-search", 1, [input]),
+  /* 模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史） */
+  dataaccessJournalAppend: (input: { threadId: string; date?: string; title?: string; body: string }) => __ipc("dataaccess:journal-append", 1, [input]),
+  /* 模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文） */
+  dataaccessVaultFind: (input: { threadId: string; query?: string }) => __ipc("dataaccess:vault-find", 1, [input]),
+  /* 模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文） */
+  dataaccessVaultCopy: (input: { threadId: string; id: string }) => __ipc("dataaccess:vault-copy", 1, [input]),
+  /* 模型工具：写入密码本（需 vault/write + 渲染层一次性确认） */
+  dataaccessVaultSave: (input: { threadId: string; item: Record<string, unknown> }) => __ipc("dataaccess:vault-save", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
