@@ -856,73 +856,79 @@
   z-index: 10100; /* 与顶栏搜索面板同档：必须在 .topbar(z30) 之上 */
 }
 .dispatch-pop {
-  width: 300px;
-  max-width: min(324px, calc(100vw - 48px));
+  width: 352px;
+  max-width: min(384px, calc(100vw - 48px));
   max-height: none;
   padding: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid var(--line-soft);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.38);
 }
-.dispatch-head { display: flex; flex-direction: column; gap: 3px; padding: 11px 12px 9px; border-bottom: 1px solid var(--line-soft); }
-.dispatch-head strong { font-size: 13px; font-weight: 600; }
-.dispatch-head small { font-size: 11px; color: var(--muted); line-height: 1.45; }
+.dispatch-head { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px 12px; border-bottom: 1px solid var(--line-soft); }
+.dispatch-head-ico {
+  flex: none; width: 24px; height: 24px; border-radius: 8px;
+  display: grid; place-items: center;
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.dispatch-head-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.dispatch-head strong { font-size: 13.5px; font-weight: 650; }
+.dispatch-head small { font-size: 11.5px; color: var(--faint); line-height: 1.6; }
 
+/* 专家团卡：整行可点（左半区）+ 共享 ToggleSwitch（右）。⛔ 不再手写胶囊开关。 */
 .dispatch-master {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 9px;
-  margin: 9px 10px 4px;
-  padding: 9px 10px;
+  gap: 10px;
+  margin: 12px 16px 8px;
+  padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 9px;
+  border-radius: 12px;
   background: var(--bg);
-  cursor: pointer;
-  text-align: left;
-  width: auto;
   color: inherit;
 }
-.dispatch-master.on { border-color: var(--accent); background: var(--accent-soft); }
+.dispatch-master.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--line-soft)); background: var(--accent-soft); }
+.dispatch-master-main {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; gap: 10px;
+  background: none; border: 0; padding: 0; margin: 0;
+  color: inherit; text-align: left; cursor: pointer;
+}
+.dispatch-master-main:disabled { cursor: not-allowed; opacity: 0.6; }
+/* ⛔⛔ 弹层通用样式 `.composer-menu-pop button { width:100%; display:flex; padding:5px 8px }`
+   （10-settings-providers，给菜单项用的）把这里**所有按钮**都撑满整行：
+   共享 ToggleSwitch 被拉成 292px、行内主按钮被挤成 16px ⇒ 文字竖排（实测截图）。
+   特异性 0,1,1 压过单类 ⇒ 下面统统按 `.dispatch-pop` 作用域提到 0,2,x 覆盖。 */
+.dispatch-pop .dispatch-master-main { width: auto; min-height: 0; padding: 0; gap: 10px; }
+.dispatch-pop .dispatch-master-main:hover { background: transparent; }
+.dispatch-pop .dispatch-master-switch { flex: none; width: 31px; min-height: 0; padding: 0; gap: 0; display: inline-flex; align-items: center; }
+.dispatch-pop .dispatch-master-switch:hover { background: transparent; }
 .dispatch-master-text { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .dispatch-master-text strong { font-size: 12.5px; font-weight: 600; }
-.dispatch-master-text small { font-size: 11px; color: var(--muted); line-height: 1.4; }
-.dispatch-toggle {
-  flex: none;
-  width: 32px;
-  height: 18px;
-  border-radius: 20px;
-  background: var(--line);
-  position: relative;
-  transition: background 0.15s ease;
-}
-.dispatch-toggle i {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
-  transition: left 0.15s ease;
-}
-.dispatch-master.on .dispatch-toggle { background: var(--accent); }
-.dispatch-master.on .dispatch-toggle i { left: 16px; }
+.dispatch-master-text small { font-size: 11.5px; color: var(--muted); line-height: 1.5; }
 
 /* 10-29：面板只剩「专家团」一个开关。专家 / 子智能体是常开能力，只做一行**只读说明**
    （含当前数量）—— 不是按钮、不挂 hover、不发光标，避免"看起来能点却没反应"。 */
 .dispatch-always {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 2px 10px 8px;
-  padding: 0 2px;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 16px 10px;
   font-size: 11px;
   color: var(--muted);
 }
+.dispatch-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--panel-2);
+}
 .dispatch-always b { font-weight: 600; color: var(--text); }
-.dispatch-always span + span::before { content: "·"; margin-right: 6px; color: var(--faint); }
 .dispatch-master.on .dispatch-row-icon { background: var(--accent); color: #fff; }
 .dispatch-always small { margin-left: auto; font-size: 10.5px; color: var(--faint); }
 .dispatch-master-text strong em {
@@ -935,7 +941,6 @@
   padding: 1px 6px;
   margin-left: 6px;
 }
-.dispatch-master:disabled { opacity: 0.55; cursor: not-allowed; }
 
 .dispatch-rows { display: flex; flex-direction: column; gap: 5px; padding: 6px 10px 10px; }
 .dispatch-rows.is-off { opacity: 0.55; }
@@ -973,11 +978,14 @@
 .dispatch-row-text small { font-size: 11px; color: var(--muted); line-height: 1.4; }
 .dispatch-row-check { flex: none; display: inline-flex; color: var(--accent); }
 
-.dispatch-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line-soft); }
-.dispatch-scope { font-size: 10.5px; color: var(--faint); }
-.dispatch-actions { display: flex; gap: 6px; }
-.dispatch-actions button { font-size: 11.5px; padding: 5px 12px; border-radius: 7px; border: 1px solid var(--line); background: 0 0; color: inherit; cursor: pointer; }
-.dispatch-actions button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+.dispatch-foot { display: flex; align-items: center; gap: 10px; padding: 10px 16px 12px; border-top: 1px solid var(--line-soft); }
+.dispatch-scope { flex: 1; font-size: 11px; color: var(--faint); }
+.dispatch-scope.is-warn { color: var(--orange); }
+.dispatch-actions { display: flex; gap: 8px; flex: none; }
+.dispatch-pop .dispatch-actions button { width: auto; min-height: 0; display: inline-flex; justify-content: center; font-size: 12px; padding: 5px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+.dispatch-actions button:hover:not(:disabled) { border-color: var(--line-strong); }
+.dispatch-actions button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.dispatch-actions button.primary:hover:not(:disabled) { filter: brightness(1.05); }
 .dispatch-actions button:disabled { opacity: 0.45; cursor: not-allowed; }
 
 .thread-row.is-delegated-row { box-shadow: inset 2px 0 0 var(--accent); }

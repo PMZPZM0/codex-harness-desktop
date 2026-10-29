@@ -18,6 +18,9 @@ import { Users, Lock, ChevronDown } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPopover } from "../app-view/hooks/useAnchoredPopover";
+/* ⛔ 胶囊开关一律走共享 ToggleSwitch（守卫【234】⑧）—— 本面板原先手写了一个
+   `.dispatch-toggle`（轨道 + 圆点），与别处长不一样，已换掉。 */
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 /** 三类许可（与 `src/lib/thread-runtime.mjs` 的 DispatchConfig 同形：无总开关）。 */
 export type DispatchDraft = { expert: boolean; team: boolean; subagent: boolean };
@@ -118,43 +121,54 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
           style={topbar ? posStyle : undefined}
         >
           <div className="dispatch-head">
-            <strong>调度</strong>
-            <small>把合适的独立子任务交给专门的角色去做，产出回传本会话（每次派活开一个独立会话，上下文互不串）</small>
+            <span className="dispatch-head-ico"><Users size={15} /></span>
+            <div className="dispatch-head-text">
+              <strong>调度</strong>
+              <small>把独立子任务交给专门的角色，产出回传本会话；每次派活开一个独立会话，上下文互不串。</small>
+            </div>
           </div>
           {/* 10-29 用户令「这里就可以只剩一个专家团就行」：专家 / 子智能体是**常开能力**，
               面板不再给它们开关（三个开关键里两个永远开着 = 纯噪音，还会让人以为默认是关的）。
               ⛔ 关掉它们的能力仍在执行端（dispatchKindAllowed 看 dispatch.expert/subagent），
                  面板确认时一律写 true —— 界面上没有"关掉专家"这条路，就不该留下一个假的关闭态。 */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={draft.team}
-            className={`dispatch-master ${draft.team ? "on" : ""}`}
-            disabled={teamCount === 0}
-            title={teamCount === 0 ? "当前没有已启用的专家团（先到 设置 → 专家/专家团 里新建）" : undefined}
-            onClick={() => setDraft({ ...draft, team: !draft.team })}
-          >
-            <span className="dispatch-row-icon"><Users size={14} /></span>
-            <span className="dispatch-master-text">
-              <strong>专家团{teamCount ? <em>{teamCount}</em> : null}</strong>
-              <small>{teamCount === 0
-                ? "当前没有已启用的专家团"
-                : (draft.team
-                  ? "已开启：主理人按 SOP 调度多名成员协作"
-                  : "默认关闭 · 开启后主理人按 SOP 调度多名成员协作")}</small>
-            </span>
-            <span className="dispatch-toggle" aria-hidden><i /></span>
-          </button>
+          <div className={`dispatch-master ${draft.team ? "on" : ""}`}>
+            <button
+              type="button"
+              className="dispatch-master-main"
+              disabled={teamCount === 0}
+              title={teamCount === 0 ? "当前没有已启用的专家团（先到 设置 → 专家/专家团 里新建）" : undefined}
+              aria-pressed={draft.team}
+              onClick={() => setDraft({ ...draft, team: !draft.team })}
+            >
+              <span className="dispatch-row-icon"><Users size={14} /></span>
+              <span className="dispatch-master-text">
+                <strong>专家团{teamCount ? <em>{teamCount}</em> : null}</strong>
+                <small>{teamCount === 0
+                  ? "当前没有已启用的专家团"
+                  : (draft.team
+                    ? "已开启 · 主理人按 SOP 调度多名成员协作"
+                    : "开启后主理人按 SOP 调度多名成员协作")}</small>
+              </span>
+            </button>
+            <ToggleSwitch
+              className="dispatch-master-switch"
+              checked={draft.team}
+              disabled={teamCount === 0}
+              label="专家团联动调度"
+              title={draft.team ? "已开启：主理人可调度多名成员协作" : "默认关闭：开启后主理人才会按 SOP 调度成员"}
+              onChange={() => setDraft({ ...draft, team: !draft.team })}
+            />
+          </div>
           {/* 常开能力只做**说明**，不是开关（点它没反应会让人以为坏了） */}
           <div className="dispatch-always">
-            <span>专家 <b>{expertCount}</b></span>
-            <span>子智能体 <b>{subCount}</b></span>
+            <span className="dispatch-chip">专家 <b>{expertCount}</b></span>
+            <span className="dispatch-chip">子智能体 <b>{subCount}</b></span>
             <small>默认可用，无需开启</small>
           </div>
           <div className="dispatch-foot">
-            <small className="dispatch-scope">
+            <small className={`dispatch-scope ${anyAvailable ? "" : "is-warn"}`}>
               {!anyAvailable
-                ? "⚠️ 当前没有可调度的对象：先去设置里启用专家 / 子智能体 / 专家团"
+                ? "当前没有可调度的对象：先去设置里启用专家 / 子智能体 / 专家团"
                 : "仅「专家团」需要开启"}
             </small>
             <div className="dispatch-actions">
