@@ -1275,6 +1275,8 @@ interface Window {
     dataaccessVaultCopy(input: { threadId: string; id: string }): Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>;
     /* 模型工具：写入密码本（需 vault/write + 渲染层一次性确认） */
     dataaccessVaultSave(input: { threadId: string; item: Record<string, unknown> }): Promise<{ ok: boolean; total: number }>;
+    /* 清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清 */
+    browserClearData(kind?: string): Promise<{ ok: boolean; partition: string; cleared: string }>;
 /* ═══ gen:end ═══ */
 
 

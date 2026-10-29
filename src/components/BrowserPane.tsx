@@ -255,6 +255,31 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
           {menuOpen && <>
             <div className="menu-backdrop" onClick={() => setMenuOpen(false)} />
             <div className="browser-pane-menu" role="menu">
+              <button role="menuitem" onClick={async () => {
+                setMenuOpen(false);
+                try {
+                  await window.codex.browserClearData?.("cookies");
+                  setStealthHint("已清除内置浏览器的登录态（Cookie / 本地存储）；刷新页面后重新登录即可");
+                } catch (error: any) { setStealthHint(error?.message ?? "清除失败"); }
+              }}>
+                <X size={13} /><span>清除登录态（Cookie）</span>
+              </button>
+              <button role="menuitem" onClick={async () => {
+                setMenuOpen(false);
+                try {
+                  await window.codex.browserClearData?.("all");
+                  /* 记录一起收干净：只留一个空白标签回到起始页。
+                     ⛔ 收藏夹不清（用户主动存的不是"记录"）。 */
+                  const fresh = `tab-${++seqRef.current}`;
+                  setTabs([{ id: fresh, url: "", title: "浏览器", loading: false }]);
+                  setActiveId(fresh);
+                  setLoadError(null);
+                  setStealthHint("已清空浏览记录与缓存，标签已重置");
+                } catch (error: any) { setStealthHint(error?.message ?? "清空失败"); }
+              }}>
+                <RefreshCw size={13} /><span>清空浏览记录</span>
+              </button>
+
               <button role="menuitem" disabled={!active.url} onClick={() => { setMenuOpen(false); if (active.url) void window.codex.browserPopout(active.url).catch((error: any) => setStealthHint(error?.message ?? "放大查看失败")); }}>
                 <Maximize2 size={13} /><span>放大查看（新窗口）</span>
               </button>
@@ -299,7 +324,15 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
                 </div>
               </div>
             )}
-            <WebviewTag ref={wvRef} src={active.url} className="browser-pane-webview" allowpopups="true" />
+            <WebviewTag
+              ref={wvRef}
+              src={active.url}
+              className="browser-pane-webview"
+              allowpopups="true"
+              /* 10-29 用户：「加一个 cookie 登录态保存功能」—— 用**持久分区**，登录态落盘、重启仍在；
+                 ⛔ 别去掉 partition（默认 session 与主应用共用 cookie 域，清数据会误伤账号登录态）。 */
+              partition="persist:harness-browser"
+            />
           </>
         ) : (
           /* 10-25 用户：「设计的浏览器界面主题呢」——起始页做成主题画布：
