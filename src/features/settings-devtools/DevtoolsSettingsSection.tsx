@@ -19,7 +19,7 @@
  */
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Film, Music2, Puzzle, Smartphone, SquareTerminal, Wrench, X } from "lucide-react";
+import { AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Film, Music2, PackageOpen, Puzzle, Smartphone, SquareTerminal, Wrench, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -31,11 +31,12 @@ import { OpenfilmCard } from "../openfilm";
 import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
 import { CliAgentsPanel } from "../cli-agents";
+import { SkillPacksPanel } from "../skill-packs";
 
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "runtime" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "cli-agents" | "openfilm" | "domains" | "plugins";
+type DevtoolsCardKey = "runtime" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "cli-agents" | "openfilm" | "domains" | "plugins";
 
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
@@ -51,6 +52,17 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       .catch(() => setCliReady(null));
   }, [openCard]);
   const cliStat = cliReady == null ? "读取中…" : cliReady ? `已启用 ${cliReady} 个 · 可 @ 调用` : "未接入 · 点开添加";
+
+  /* 精选技能包（10-30）：同样真读一次 —— 卡片上写错状态比不写更糟；关掉面板时再刷新。 */
+  const [skillPackStat, setSkillPackStat] = useState<string>("读取中…");
+  useEffect(() => {
+    window.codex.listSkillPacks()
+      .then((rows) => {
+        const installed = rows.filter((row) => row.installed).length;
+        setSkillPackStat(installed ? `已装 ${installed} / ${rows.length} 个包` : `未安装 · ${rows.length} 个可选`);
+      })
+      .catch(() => setSkillPackStat("读取中…"));
+  }, [openCard]);
 
   /* 安装/卸载失败的「完整报错」弹窗（10-11，用户令「报错和失败做成弹窗，注意弹窗顺序」）：
      多行报错原文在这里完整展示（pre-wrap 可滚动），单行 toast 只承载摘要。
@@ -80,6 +92,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const moekoeInstalling = runtimeInstalling === "moekoe";
   const cards: { key: DevtoolsCardKey; icon: any; title: string; desc: string; stat: string }[] = [
     { key: "runtime", icon: <Wrench size={15} />, title: "运行时与工具链", desc: "内置运行时、桌面与浏览器自动化、开发工具链、媒体与文档", stat: runtimeTotal ? `已就绪 ${runtimeReady} / ${runtimeTotal} 项` : "正在读取状态…" },
+    { key: "skill-packs", icon: <PackageOpen size={15} />, title: "精选技能包", desc: "第三方技能：工程流程 / 图表设计 / 循证生活指南，装到本地技能目录", stat: skillPackStat },
     { key: "moekoe", icon: <Music2 size={15} />, title: "MoeKoe 音乐", desc: "外部酷狗客户端：Codex 通过 6521 API 搜歌/播放", stat: moekoeInstalling ? "安装中…" : moekoeRuntime?.installed ? "已安装 · 可从 Codex 调用" : "未安装 · 点开安装" },
     { key: "capability", icon: <CircleCheck size={15} />, title: "当前能力链路", desc: "同一件事有多个后端时，现在实际走的是哪条", stat: capabilityRows.length ? `${capabilityRows.length} 项能力` : "正在读取状态…" },
     { key: "phone", icon: <Smartphone size={15} />, title: "手机控制", desc: "让 Codex 直接操作手机：看屏幕、点按、打字、读日志", stat: "Android（adb）· iPhone 需 mac" },
@@ -152,6 +165,11 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           {/* 手机控制（09-27）：上游 phone-harness 是 Python CLI 不是 MCP 服务，
               所以不做连接器模板，做成工具卡：装机 + 关遥测 + 注册技能 + 权限引导。 */}
           <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
+        </SettingsDialog>
+      )}
+      {openCard === "skill-packs" && activeCard && (
+        <SettingsDialog title={activeCard.title} icon={<PackageOpen size={15} />} hint="技能包 · 国内镜像下载 · 装完自动重启引擎" size="md" onClose={() => setOpenCard(null)}>
+          <SkillPacksPanel setNotice={setNotice} />
         </SettingsDialog>
       )}
       {openCard === "moekoe" && activeCard && (

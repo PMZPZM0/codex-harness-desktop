@@ -84,6 +84,7 @@ const DOMAIN_DESCRIPTIONS = {
   "channels": "IM 通道总开关与状态",
   "memory": "记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi）",
   "skills": "技能经验包（导入/启停/市场安装/本地列表）",
+  "skill-packs": "**精选技能包**（10-30，开发工具页按需安装）：list 三个第三方技能包的状态 / install 下载仓库 `skills/` 子树、每个 SKILL.md 过安全审查后落 `<codex-home>/skills`、装完重启引擎 / uninstall 只删自己 marker 记下的目录。⛔ 不是模型工具（模型侧看到的技能仍由引擎技能表提供），给设置页 UI 用",
   "autoUpdate": "自动化能力与引擎的**后台自动更新**：桌面自动化 nuphus / Mac 电脑操作 open-computer-use / Codex 引擎各一个独立开关（缺省即开，存 app-settings.json）；浏览器自动化 Ego Lite 单独一个开关（默认关，开启后后台跑官方 ego-browser upgrade）。⛔ 手动更新与后台更新走**同一批函数**，不存在两套判据",
   "commands": "斜杠命令（自定义 / 命令的定义与管理）",
   "skill-discipline": "技能纪律（写技能时必须遵守的硬规则查询）",
