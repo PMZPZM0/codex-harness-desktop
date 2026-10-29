@@ -5837,10 +5837,10 @@
       "channel": "sessionspace:gc",
       "paramsImpl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
       "paramsDecl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
-      "returns": "Promise<{ recordsRemoved: number; dirsRemoved: number; scanned: number }>",
+      "returns": "Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>",
       "invokeArgs": "options",
       "cast": null,
-      "note": "收口孤儿：记录在目录不在 / 目录在记录不在（后者超过 maxAgeDays 才删）"
+      "note": "收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删）"
     }
   ]
 }

@@ -942,7 +942,7 @@ contextBridge.exposeInMainWorld("codex", {
   sessionspaceSetState: (threadId: string, state: string) => __ipc("sessionspace:set-state", 2, [threadId, state]),
   /* 删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径 */
   sessionspaceRemove: (threadId: string) => __ipc("sessionspace:remove", 1, [threadId]),
-  /* 收口孤儿：记录在目录不在 / 目录在记录不在（后者超过 maxAgeDays 才删） */
+  /* 收口孤儿：记录在目录不在 / orphan 重试 / 目录在记录不在（后者超 maxAgeDays 才删） */
   sessionspaceGc: (options?: { maxAgeDays?: number; dryRun?: boolean }) => __ipc("sessionspace:gc", 0, [options]),
   /* ═══ gen:end ═══ */
 
