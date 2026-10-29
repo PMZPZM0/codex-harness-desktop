@@ -11,7 +11,7 @@ import { Fold } from "../shared/Fold";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { formatDuration } from "../../lib/format-duration";
 import { basename } from "../../lib/basename";
-import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget } from "../../lib/command-display.mjs";
+import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget, displayCommand } from "../../lib/command-display.mjs";
 
 function commandCodeLanguage(command: string): { language: string; label: string } {
   if (/\b(?:powershell|pwsh)(?:\.exe)?\b/i.test(command)) return { language: "powershell", label: "PowerShell" };
@@ -56,10 +56,16 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
   /* ⛔ 10-29：技能**不在这里**了 —— 命中技能的调用由 features/skill-usage 的技能卡渲染
      （用户原话：「为啥使用技能是运行命令呢…不要展示运行命令」）。命令卡只管真命令，
      表头动词永远按命令意图走；两边各管一种形态，不再互相让位。 */
-  const intent = commandIntentOf(command);
+  /* ⛔ 引擎的 `command` 常带 shell 启动器外壳（`pwsh.exe,-Command,…`），个别形态剥壳后会
+     残留 `-Command,` 粘连，导致动作/用途识别错位 ⇒ 三者统一优先用 `parsed_cmd` 的**内层脚本**；
+     展开体的原文仍用 `command`（复现用）。 */
+  const parsed = (item as any).parsed_cmd;
+  const innerCommand = Array.isArray(parsed) ? String(parsed[0]?.cmd ?? "") : "";
+  const commandText = innerCommand || command;
+  const intent = commandIntentOf(commandText);
   const intentVerb = INTENT_VERB[intent] ?? "运行";
-  const target = command ? commandTarget(command) : "";
-  const purpose = command ? commandPurpose(command) : "";
+  const target = commandText ? commandTarget(commandText) : "";
+  const purpose = commandText ? commandPurpose(commandText) : "";
   /* 表头映射串 = 用途 · 目标（有哪个用哪个）：
      「已查看 结构 · …/.codex-harness」「已定位 pin-shrink-follow」「已运行 npm run build」
      ★ 10-22：**不再进折叠态表头**（用户：「折叠态后面不再显示地址与耗时」）——它连同耗时一起
@@ -72,12 +78,16 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
         原来的 verb，绝不显示拼出来的假动作。
      ⛔ 状态仍由右侧图标表达（✓/!/○）：有 action 时不再在标题前加「已/正在」，
         与 WorkBuddy 同形；失败时保留「失败」后缀（红色卡片 + 图标之外再给一处明确文字）。 */
-  const action = command ? commandAction(command) : "";
-  /* ⛔ 只有一处**让位**：动作短语是"这句命令在干什么"，但等待批准时用户要知道的是
-     "在等我点"，不是"这条命令在干什么"。（技能态已整体搬去技能卡，不再参与这里的取舍。） */
-  const headline = action && !(waitingForApproval && running)
-    ? (failed ? `${action}失败` : action)
+  const action = commandText ? commandAction(commandText) : "";
+  /* 10-29 用户令：「已运行为啥后面不显示运行了啥命令，把命令映射成中文展示它是干嘛的」。
+     表头优先级：动作短语（规则/通用子命令）→ 用途（脚本里的中文字面量）→ 「动词 + 剥壳命令原文」。
+     ⛔ 都认不出时**一定**给命令原文（截断），不允许只剩一个「已运行」。
+     ⛔ 等待批准时目标换成"在等我点"（同原让位逻辑）。 */
+  const headlineText = action || purpose;
+  const headline = headlineText && !(waitingForApproval && running)
+    ? (failed ? `${headlineText}失败` : headlineText)
     : "";
+  const commandSnippet = headline || !commandText ? "" : displayCommand(commandText, 46);
   const verb = waitingForApproval && running ? "等待批准"
     : running ? `正在${intentVerb}` : failed ? `${intentVerb}失败` : `已${intentVerb}`;
   const status: ActionStatus = running ? (waitingForApproval ? "pending" : "running") : failed ? "error" : "done";
@@ -101,6 +111,7 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive }: {
       <button type="button" className="cmd-head" onClick={toggle} aria-expanded={open} title={command || undefined}>
         <span className="cmd-icon"><TerminalSquare size={14} /></span>
         <span className="cmd-verb">{headline || verb}</span>
+        {commandSnippet ? <span className="cmd-snippet" title={command}>{commandSnippet}</span> : null}
         {targetName ? <span className="cmd-target" title={target}>{targetName}</span> : null}
         <span className="cmd-status"><CardStatusIcon status={status} /></span>
         {/* 明确的展开标识：文案 + 箭头一起变（只有一个小箭头不够明确 —— 用户 10-22 点名） */}

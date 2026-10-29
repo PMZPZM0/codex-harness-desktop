@@ -306,6 +306,54 @@ const ACTION_RULES = [
   [/\bssh\b/i, () => "远程执行"],
 ];
 
+/** 通用 CLI 的子命令 → 中文短语（10-29 用户：「把运行命令映射成这种中文展示，改条命令是干嘛的」）。
+ *  ⛔ 只看**前几个 token**（argv 段），不扫整段脚本：脚本里 status 作为变量名/路径很常见，
+ *     扫全量会误判语义。认不出返回空串，调用方继续走「命令原文」兜底。 */
+const CLI_SUBCOMMANDS = [
+  [/^(?:status|health|doctor|ping)$/i, (b) => (b ? `看 ${b} 状态` : "看状态")],
+  [/^(?:config|settings|profile|conf)$/i, (b) => (b ? `看 ${b} 配置` : "看配置")],
+  [/^(?:login|signin|sign-in)$/i, (b) => (b ? `${b} 登录` : "登录")],
+  [/^(?:logout|signout|sign-out)$/i, (b) => (b ? `${b} 退出登录` : "退出登录")],
+  [/^(?:auth|authorize|token)$/i, (b) => (b ? `${b} 鉴权` : "鉴权")],
+  [/^(?:list|ls|dir)$/i, (b) => (b ? `列 ${b} 清单` : "列清单")],
+  [/^(?:version|-v|--version)$/i, (b) => (b ? `看 ${b} 版本` : "看版本")],
+  [/^(?:help|-h|--help)$/i, (b) => (b ? `看 ${b} 帮助` : "看帮助")],
+  [/^(?:install|add)$/i, (b) => (b ? `装 ${b}` : "安装")],
+  [/^(?:uninstall|remove)$/i, (b) => (b ? `卸 ${b}` : "卸载")],
+  [/^(?:update|upgrade)$/i, (b) => (b ? `更新 ${b}` : "更新")],
+  [/^(?:test|spec)$/i, (b) => (b ? `跑 ${b} 测试` : "跑测试")],
+  [/^(?:build|compile)$/i, (b) => (b ? `构建 ${b}` : "构建")],
+  [/^(?:dev|serve|start)$/i, (b) => (b ? `起 ${b} 服务` : "起服务")],
+  [/^(?:deploy|publish)$/i, (b) => (b ? `发布 ${b}` : "发布")],
+];
+
+function genericCliAction(body) {
+  const tokens = String(body).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return "";
+  let bin = "";
+  let start = 0;
+  for (let i = 0; i < tokens.length && i < 4; i++) {
+    const t = tokens[i].replace(/^["']|["']$/g, "");
+    if (!t || t.startsWith("-")) continue;
+    if (/[\\/]/.test(t) && !/\.(?:exe|cmd|bat)$/i.test(t)) continue;
+    bin = (t.split(/[\\/]/).pop() || "").replace(/\.(?:exe|cmd|bat)$/i, "").replace(/^feishu-?cli$/i, "飞书CLI");
+    start = i + 1;
+    break;
+  }
+  if (!bin) return "";
+  for (let i = start; i < tokens.length && i < start + 4; i++) {
+    const token = tokens[i].replace(/^["']|["']$/g, "");
+    if (!token || /[\\/]/.test(token)) break;
+    for (const [re, make] of CLI_SUBCOMMANDS) {
+      if (re.test(token)) {
+        const phrase = String(make(bin) ?? "").trim();
+        if (phrase) return phrase;
+      }
+    }
+  }
+  return "";
+}
+
 /** 单段命令求动作（内部用，不做复合拆分） */
 function actionOfOne(text) {
   const body = stripShellLauncher(text);
@@ -317,7 +365,9 @@ function actionOfOne(text) {
       if (value) return value;
     }
   }
-  return "";
+  /* 规则表没命中（任意第三方 CLI，如 feishu auth status）⇒ 按 argv 子命令给一句中文。
+     ⛔ 认不出仍然返回空串：调用方显示「已运行 + 剥壳命令原文」，绝不编一个假动作。 */
+  return genericCliAction(body);
 }
 
 /**

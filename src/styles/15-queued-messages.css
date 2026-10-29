@@ -385,6 +385,16 @@
   font-weight: 500;
 }
 /* 折叠行的短目标（10-22 用户：「读取/编辑这类精确到文件，不要再地址」）——只放文件名 */
+/* 动作/用途都认不出时的兜底：直接展示剥壳后的命令原文（截断），不让表头只剩「已运行」 */
+.cmd-card .cmd-snippet {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--faint);
+  font-size: 11.5px;
+}
 .cmd-card .cmd-target {
   flex: none;
   min-width: 0;
