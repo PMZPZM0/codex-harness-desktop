@@ -64,7 +64,27 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
     window.addEventListener("keydown", onKey);
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
-  const countOf = (kind: DispatchTargetEntry["kind"]) => targets.filter((target) => target.kind === kind).length;
+  /* 10-29 用户令：「专家数量要实时同步后台有的专家数量」。
+     ⛔ 不能只靠父级缓存：`dispatchInfo` 只在 expertTeams/subAgents 变化时才刷一次，
+        在设置里新建/停用专家后，面板上的数字会一直停在旧值。
+     ⇒ 打开时向主进程拉一次真实目录，打开期间每 3 秒同步（目录是读两个本地文件，代价很小）；
+        关闭即停。拉失败就沿用旧值，不把面板清空。 */
+  const [liveTargets, setLiveTargets] = useState<DispatchTargetEntry[] | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    const pull = async () => {
+      try {
+        const cat: any = await window.codex.listDispatchCatalog();
+        if (alive && Array.isArray(cat?.targets)) setLiveTargets(cat.targets as DispatchTargetEntry[]);
+      } catch { /* 保持旧值 */ }
+    };
+    void pull();
+    const timer = window.setInterval(() => { void pull(); }, 3000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [open]);
+  const list = liveTargets ?? targets;
+  const countOf = (kind: DispatchTargetEntry["kind"]) => list.filter((target) => target.kind === kind).length;
   const expertCount = countOf("expert");
   const subCount = countOf("subagent");
   const teamCount = countOf("team");
