@@ -708,6 +708,8 @@ export interface Bag {
   setSettingsPage: React.Dispatch<React.SetStateAction<import("../../app-view/types.ts").SettingsPage>>;
   shortcutsOpen: boolean;
   setShortcutsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 当前生效的快捷键绑定（10-29 补：顶层声明必须同时进 Bag，否则类型真相源分叉） */
+  shortcutBindings: Record<string, string[]>;
   helpKey: import("../../../components/HelpDialog.tsx").HelpTopic | null;
   setHelpKey: React.Dispatch<React.SetStateAction<import("../../../components/HelpDialog.tsx").HelpTopic | null>>;
   archiveToast: { name: string; token: number; } | null;
@@ -1211,9 +1213,6 @@ export interface Bag {
   setDispatchInfo: React.Dispatch<React.SetStateAction<{ description: string; targets: DispatchTargetEntry[]; }>>;
   delegateRecords: Record<string, DelegateRecordEntry>;
   setDelegateRecords: React.Dispatch<React.SetStateAction<Record<string, DelegateRecordEntry>>>;
-  dispatchOwnerId: string | null;
-  setDispatchOwnerId: React.Dispatch<React.SetStateAction<string | null>>;
-  refreshDispatchOwner: () => Promise<void>;
   threadRole: { restricted: boolean; label?: string | undefined; };
   setThreadRole: React.Dispatch<React.SetStateAction<{ restricted: boolean; label?: string | undefined; }>>;
   refreshThreadRole: (threadId?: string | undefined) => Promise<void>;
@@ -1232,7 +1231,6 @@ export interface Bag {
   setDispatchTick: React.Dispatch<React.SetStateAction<number>>;
   activeDispatch: import("../../../lib/thread-runtime.mjs").DispatchConfig;
   dispatchKey: string;
-  dispatchHolderName: string | null;
   taskRunning: boolean;
   lastTurnOfThread: import("../../../lib/turn.ts").Turn | undefined;
   turnFinalizing: boolean;
@@ -1250,7 +1248,7 @@ export interface Bag {
   setRunPhrase: React.Dispatch<React.SetStateAction<string>>;
   runActivityRef: React.RefObject<string>;
   finalizePhraseRef: React.RefObject<boolean>;
-  applyDispatch: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean; }, opts?: { takeOver?: boolean | undefined; } | undefined) => Promise<void>;
+  applyDispatch: (next: { expert: boolean; team: boolean; subagent: boolean; }) => Promise<void>;
   admitThreadRuntime: (id: string, runtime: unknown, opts?: { conflict?: boolean | undefined; fromRemote?: boolean | undefined; } | undefined) => void;
   syncThreadRuntimeWithMain: (id: string) => Promise<void>;
   loadBaseInstructions: () => Promise<string>;
@@ -1374,7 +1372,6 @@ export interface Bag {
   unarchiveThread: (id: string) => Promise<void>;
   deleteThreadCore: (id: string) => Promise<void>;
   deleteThread: (id: string) => Promise<void>;
-  releaseDispatchHolder: () => Promise<void>;
   deleteThreadsByCwd: (cwd: string) => Promise<void>;
   buildDynamicTools: () => Promise<any[]>;
   createEmptyThread: () => Promise<import("../../app-view/types.ts").Thread | null>;

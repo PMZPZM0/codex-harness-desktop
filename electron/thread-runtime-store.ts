@@ -1,7 +1,16 @@
 import fs from "node:fs/promises";
 
-/** 调度配置（与渲染层 `emptyDispatch()` 同形）：当前会话允许 Codex 调度哪些对象干活 */
-export type DispatchConfig = { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
+/** 调度许可（与渲染层 `emptyDispatch()` 同形）：本会话允许 Codex 调度哪些类别的对象。
+ *
+ *  ⛔ 10-29 用户令：「子智能体调用和专家调度改为默认可直接调用，仅专家团需要显式开启」+
+ *     「不再做数量或使用上的限制，每个会话都可以调度它们」⇒
+ *       · 删掉了 `enabled`（调度总开关）—— 它同时充当「全局独占锁」（同一时间只允许一个会话调度），
+ *         与新语义直接冲突（每个会话都该能派）。锁、接管（takeover）、孤儿锁自愈一并删除。
+ *       · `expert` / `subagent` 默认 **true**；`team` 默认 **false**（唯一需要显式开启的一类）。
+ *  ⛔ 老记录迁移：旧结构有 `enabled`，且旧默认 `team: true`。规则 = `team && enabled` ——
+ *     旧日「开过调度」= 当时显式开过，保留专家团；旧日没开过 ⇒ 专家团仍是关的（不能凭空开团）。
+ *     专家 / 子智能体沿用旧值（旧默认也是 true）。 */
+export type DispatchConfig = { expert: boolean; team: boolean; subagent: boolean };
 
 /** 会话运行时配置记录（与渲染层 `src/lib/thread-runtime.mjs` 同形，多一个 updatedAt） */
 export type ThreadRuntimeRecord = {
@@ -19,24 +28,27 @@ export type ThreadRuntimeRecord = {
 const FIELDS = ["model", "effort", "sandbox", "approval"] as const;
 export type ThreadRuntimeField = (typeof FIELDS)[number];
 
-const emptyDispatchConfig = (): DispatchConfig => ({ enabled: false, expert: true, team: true, subagent: true });
+/** 出厂默认：专家 / 子智能体可用，专家团关闭（需显式开启）。 */
+const emptyDispatchConfig = (): DispatchConfig => ({ expert: true, team: false, subagent: true });
 
-/** 归一化调度配置（坏值/缺字段一律回落默认：总开关关、三类勾选开） */
+/** 归一化调度许可（坏值/缺字段一律回落默认；兼容旧结构里的 `enabled`）。
+ *  @param legacyEnabled 旧结构的「调度总开关」—— 只有它为 true 时旧记录里的 team 才算显式开启 */
 export function normalizeDispatchConfig(input: unknown): DispatchConfig {
   const src = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
   const bool = (v: unknown, fallback: boolean) => (typeof v === "boolean" ? v : fallback);
+  const legacy = typeof src.enabled === "boolean" ? src.enabled : null;
   return {
-    enabled: src.enabled === true,
     expert: bool(src.expert, true),
-    team: bool(src.team, true),
+    // 旧记录：team 旧默认 true，但那只是"没关过"，不等于用户开过调度 ⇒ 必须叠加 enabled
+    team: legacy === null ? bool(src.team, false) : src.team === true && legacy,
     subagent: bool(src.subagent, true),
   };
 }
 
-/** 调度配置签名（与渲染层 `dispatchSignature()` 同算法，多窗口回声判定要用同一套） */
+/** 调度许可签名（与渲染层 `dispatchSignature()` 同算法，多窗口回声判定要用同一套） */
 export function dispatchSignatureOf(input: unknown): string {
   const d = normalizeDispatchConfig(input);
-  return [d.enabled, d.expert, d.team, d.subagent].map((v) => (v ? "1" : "0")).join("");
+  return [d.expert, d.team, d.subagent].map((v) => (v ? "1" : "0")).join("");
 }
 
 const emptyRecord = (): ThreadRuntimeRecord => ({ model: "", effort: "", sandbox: "", approval: "", dispatch: emptyDispatchConfig(), rev: 0, updatedAt: 0 });
@@ -120,103 +132,40 @@ export class ThreadRuntimeStore {
   /**
    * 打补丁（字段级合并）。
    * @param baseRev 渲染层读到的 rev；传了就做冲突检测（不等即 conflict=true），不传则不检测。
-   * @param opts.takeover 独占冲突时是否原子接管（见下）。
+   * @param opts.takeover 保留入参形态但**已无意义**（10-29 删除了全局调度独占锁）——
+   *        老渲染层仍可能带 `takeover: true`，这里忽略即可，不做任何「把上家关掉」的写入。
    *
-   * ⛔ 调度独占（09-16 用户要求「同一时间只能一个会话开，其他灰掉，避免同时调用」）：
-   * 开关是**会话级**的，但「谁有权调度」是**全局唯一**的。持有者不单独存字段，
-   * 而是从记录里**派生**（第一个 dispatch.enabled 的线程）—— 但「记录会被清掉」这件事必须真的发生：
-   * 09-17 修（用户实测「都关掉了，怎么还提示被锁住了」）：归档 → `releaseDispatch`、删除 → `remove`，
-   * 调用点在 main.ts 对 `thread/archived` / `thread/deleted` 的事件清理 + 渲染层自愈。
-   * ⛔ 旧版只有这句设想、**没有任何调用点**（本类连 remove 都没有）⇒ 会话被归档/删除后记录仍在，
-   * 孤儿记录永久占着全局唯一的调度权，而它在侧栏已找不到、用户无法关闭 —— 永久死锁。
-   * 冲突时默认**不改动任何东西**（changed:false + blockedBy），由 UI 决定是否接管；
-   * takeover=true 才在同一笔写入里把原持有者的开关关掉（原子，两个窗口同时操作也不会
-   * 出现「两个都开着」的中间态）。
+   * ⛔ 10-29 用户令「每个会话都可以调度它们，不再做数量或使用上的限制」⇒ 原来那套
+   *    「全局唯一调度权 / 接管 / 孤儿锁自愈」整体删除（锁是 09-16 的需求，与"默认可用 +
+   *    无数量限制"直接冲突）。现在写调度许可就是纯粹的本会话配置写入，不碰任何别的线程。
    */
   async patch(
     threadId: string,
     patch: unknown,
     baseRev?: number,
-    opts?: { takeover?: boolean },
-  ): Promise<{ runtime: ThreadRuntimeRecord; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string }> {
+    _opts?: { takeover?: boolean },
+  ): Promise<{ runtime: ThreadRuntimeRecord; conflict: boolean; changed: boolean }> {
     await this.load();
     const current = this.map[threadId] ?? emptyRecord();
     const conflict = typeof baseRev === "number" && Number.isFinite(baseRev) && baseRev !== current.rev;
     const fields = sanitizeFields(patch);
     const dispatch = pickDispatch(patch);
-    // ── 独占检查：本笔要把 enabled 置真、而锁在别人手里 ──
-    let tookOverFrom: string | undefined;
-    if (dispatch?.enabled === true) {
-      const owner = this.dispatchOwnerFromMap(threadId);
-      if (owner) {
-        if (!opts?.takeover) return { runtime: current, conflict, changed: false, blockedBy: owner };
-        tookOverFrom = owner;
-        const held = this.map[owner];
-        if (held) {
-          this.map[owner] = { ...held, dispatch: { ...held.dispatch, enabled: false }, rev: held.rev + 1, updatedAt: Date.now() };
-        }
-      }
-    }
     const changed = FIELDS.some((key) => fields[key] !== undefined && fields[key] !== current[key])
       || (dispatch !== null && dispatchSignatureOf(dispatch) !== dispatchSignatureOf(current.dispatch));
-    if (!changed) {
-      // 接管动作本身没有改变本线程配置（本来就是开的）时，也要把锁从上家摘下来
-      if (tookOverFrom) { this.scheduleSave(); return { runtime: current, conflict, changed: false, tookOverFrom }; }
-      return { runtime: current, conflict, changed: false };
-    }
+    if (!changed) return { runtime: current, conflict, changed: false };
     const next: ThreadRuntimeRecord = { ...current, ...fields, ...(dispatch ? { dispatch } : {}), rev: current.rev + 1, updatedAt: Date.now() };
     this.map[threadId] = next;
     this.scheduleSave();
-    return { runtime: next, conflict, changed: true, ...(tookOverFrom ? { tookOverFrom } : {}) };
+    return { runtime: next, conflict, changed: true };
   }
 
-  /**
-   * 释放该会话的调度独占锁：**只**把 `dispatch.enabled` 置假，其它字段（模型 / 思考档位 / 权限 /
-   * 专家·专家团·子智能体开关）原样保留 —— 归档的会话被恢复后配置不丢。
-   *
-   * ⛔ 为什么必须显式释放（09-17 用户实测：「都关掉了，怎么还提示被锁住了」）：
-   *   持有者是**从记录派生**的（第一个 `dispatch.enabled` 的线程），而**归档 / 删除会话时
-   *   没有任何地方清这条记录** —— `patch()` 里那句注释「删除/归档线程、记录被清掉时锁会自动
-   *   释放」当年只是设想，实现里既没有 `remove` 也没有任何调用点。
-   *   ⇒ 孤儿记录永久占着全局唯一的调度权，而那个会话在侧栏上已经找不到，
-   *     用户**没有任何入口**能关掉它。实测证据：用户 `thread-runtime.json` 里有 1 条 enabled，
-   *     其 threadId 在引擎 `state_5.sqlite` 的 threads 表里已不存在。
-   */
-  async releaseDispatch(threadId: string): Promise<boolean> {
-    await this.load();
-    const current = this.map[threadId];
-    if (!current || current.dispatch?.enabled !== true) return false;
-    this.map[threadId] = {
-      ...current,
-      dispatch: { ...current.dispatch, enabled: false },
-      rev: current.rev + 1,
-      updatedAt: Date.now(),
-    };
-    this.scheduleSave();
-    return true;
-  }
-
-  /** 彻底删除该会话的运行时记录（会话被**删除**时用；归档请用 `releaseDispatch` 保留配置）。 */
+  /** 彻底删除该会话的运行时记录（会话被**删除**时用；归档保留记录，恢复后配置不丢）。 */
   async remove(threadId: string): Promise<boolean> {
     await this.load();
     if (!this.map[threadId]) return false;
     delete this.map[threadId];
     this.scheduleSave();
     return true;
-  }
-
-  /** 当前调度持有者（全局唯一）。exclude 用来看「除了我以外还有谁开着」。 */
-  async dispatchOwner(excludeThreadId?: string): Promise<string | null> {
-    await this.load();
-    return this.dispatchOwnerFromMap(excludeThreadId);
-  }
-
-  private dispatchOwnerFromMap(excludeThreadId?: string): string | null {
-    for (const [id, record] of Object.entries(this.map)) {
-      if (excludeThreadId && id === excludeThreadId) continue;
-      if (record?.dispatch?.enabled) return id;
-    }
-    return null;
   }
 
   /** 迁移：渲染层 localStorage 里已有值、而主进程这份还是空的时候灌进来；已有记录一律不覆盖 */

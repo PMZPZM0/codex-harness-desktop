@@ -101,9 +101,12 @@ ok(/export function placePopover/.test(popoverSrc) && /export function AnchorPop
 const railSrc = read("src/features/composer-rail/ComposerRail.tsx");
 /* 10-28：竖条的面板改成**居中弹窗**（modal-backdrop），不再需要 AnchorPopover 定位；
    判据的实质没变 —— "本文件不许自己算位置"。 */
+/* 10-29 三态后：本文件允许 getBoundingClientRect，但**只用于三态判定**
+   （avail = composerLeft - sidebarRight，决定两排 / 一列 / 抬到输入框上方），
+   ⛔ 不许拿它给**面板**算坐标 —— 面板仍走居中弹窗壳（portal + modal-backdrop）。 */
 ok(/createPortal/.test(railSrc) && /modal-backdrop/.test(railSrc)
-  && !/placePanel/.test(railSrc) && !/getBoundingClientRect/.test(railSrc),
-  "输入框竖条走居中弹窗壳（portal + modal-backdrop），本文件仍不自己算位置");
+  && !/placePanel/.test(railSrc) && !/style\.(left|top|right|bottom)\s*=/.test(railSrc),
+  "输入框竖条的面板走居中弹窗壳（portal + modal-backdrop）；坐标不由本文件算");
 const menuSrc2 = read("src/features/function-menu/FunctionMenu.tsx");
 ok(/AnchorPopover/.test(menuSrc2) && !/const above = rect\.top/.test(menuSrc2),
   "侧栏「更多」浮层已改用原语（不再手写上下翻转）");

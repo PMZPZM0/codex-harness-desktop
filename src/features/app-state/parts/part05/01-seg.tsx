@@ -666,9 +666,6 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         // 会话，界面也要跟着变——否则本窗口会用旧值把对方的改动覆盖回去（丢更新）。
         const tid = String((event as any).threadId ?? "");
         if (tid) bag.admitThreadRuntime(tid, (event as any).runtime, { fromRemote: true });
-        // 调度独占锁可能刚被别的窗口/别的会话挪走 → 本窗口的「谁占用」提示要跟着变，
-        // 否则会显示过期占用者（用户看到「被 A 占用」而 A 其实已经关了）。
-        if ((event as any).runtime?.dispatch) void bag.refreshDispatchOwner();
       }
       if (event.type === "team-run") {
         // 专家团成员委托的运行状态（主进程广播给所有窗口）：头像轨的亮灭流转、成员工作弹窗的

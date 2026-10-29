@@ -2,9 +2,9 @@
 // ⛔ 改 src/lib/*.mjs 的导出或字段时**必须同步改这里**：allowJs=false 时 TS 只认这份手写声明，
 //    .mjs 里写了而这里没写 = 类型报错「has no exported member」（09-15 踩过）。
 
-/** 调度开关（09-15）：当前会话允许 Codex 调度哪些对象干活 */
+/** 调度许可（10-29 起）：本会话允许 Codex 调度哪些类别的对象。
+ *  专家 / 子智能体默认 true；专家团默认 false（需显式开启）。⛔ 总开关 `enabled` 已删除。 */
 export interface DispatchConfig {
-  enabled: boolean;
   expert: boolean;
   team: boolean;
   subagent: boolean;

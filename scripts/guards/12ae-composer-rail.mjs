@@ -44,10 +44,13 @@ ok(/className="composer-rail-grip"/.test(rail) && /\.composer-rail\s*\{[^}]*righ
   && /\.composer-rail-toggle\s*\{[^}]*transform:\s*translateX\(50%\)/s.test(railCss)
   && /\.composer-rail\s*\{[^}]*top:\s*-?\d+px[^}]*bottom:\s*-?\d+px/s.test(railCss),
   "宽屏：竖条骑在输入框左边框线上（right:100% + translateX(50%)），上下各探出 ⇒ 比输入框高一些（10-28 用户：「可以比输入框高一些，现在太小了」）");
-/* 10-28：小屏（≤1100）收进输入框内部横排 —— 竖列放不下 5×28 高，实测会被裁。 */
-ok(/@media \(max-width: 1100px\)/.test(railCss) && /flex-flow:\s*row nowrap/.test(railCss)
-  && /padding-top:\s*40px/.test(railCss),
-  "小屏（≤1100px）自适应：快捷条收进输入框内部横排一行，正文 padding-top 让位；其余宽度仍在输入框外侧");
+/* 10-29 三态定稿（用户原话：「三种状态，两排，一排长条，跟输入最下面对齐，最小屏就在输入框上面展示」）：
+   ① 两排（默认，基础规则）② 一列到底且贴输入框底边 ③ 最小屏整列抬到输入框**上方**。
+   ⛔ 10-28 那版「塞进输入框内部 + padding-top 让位」已被用户否掉（实测被裁），不许回头。 */
+ok(/\.composer-rail\.is-single \.composer-rail-icons\s*\{[^}]*flex-flow:\s*column nowrap/s.test(railCss)
+  && /\.composer-rail\.is-top \.composer-rail-icons\s*\{[^}]*bottom:\s*100%/s.test(railCss)
+  && !/@media \(max-width: 1100px\)/.test(railCss),
+  "小屏三态：一列到底贴底对齐 / 最小屏挪到输入框上方（⛔ 不再塞进输入框内部）");
 
 /* ② 扩展目录（用户：「留好IPC接口，方便后续拓展和用户拓展」） */
 ok(/window\.codex\.extensionsCatalog/.test(rail), "竖条面板清单来自 IPC `extensions:catalog`（不是写死四个）");

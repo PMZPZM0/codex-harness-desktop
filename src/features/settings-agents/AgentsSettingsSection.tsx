@@ -44,7 +44,7 @@ export function AgentsSettingsSection(props: AgentsSettingsSectionProps) {
                         <span title="Codex 调用工具"><Bot size={11} />agent_invoke</span>
                       </div>
                       <div className="subagent-card-actions"><button className="secondary-setting" onClick={() => openEditSubAgent(agent)}><PenLine size={12} />编辑</button><button className="icon-button" title="删除" onClick={() => void deleteSubAgent(agent.id)}><Trash2 size={13} /></button></div>
-                    </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；模型 / 沙箱 / 审批默认跟随当前会话，也可以在会话顶栏「调度」面板勾选「子智能体」后派活。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
+                    </article>)}{!subAgents.length && <div className="subagent-empty"><Bot size={28} /><strong>还没有子智能体</strong><p>点击「新建子智能体」即可创建；模型 / 沙箱 / 审批默认跟随当前会话，子智能体默认可用 —— 建好之后 Codex 直接就能派活。</p><button className="primary-setting" onClick={openNewSubAgent}><Plus size={14} />创建第一个子智能体</button></div>}</div>
 
                     {subAgentEditorOpen && subAgentDraft && <SubAgentEditorModal draft={subAgentDraft} onChange={setSubAgentDraft} onClose={() => { setSubAgentEditorOpen(false); setSubAgentDraft(null); }} onSave={(draft) => void saveSubAgent(draft)} />}
                   </section>

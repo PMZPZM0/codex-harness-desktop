@@ -7,7 +7,6 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../../lib/thread-runtime.mjs";
-import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -36,20 +35,6 @@ bag.dispatchInfo = dispatchInfo as typeof bag.dispatchInfo; bag.setDispatchInfo 
   /** 被调度产生的临时会话（threadId → 记录）：侧栏标记 + 注册侧过滤（L2）都读它 */
   const [delegateRecords, setDelegateRecords] = useState<Record<string, DelegateRecordEntry>>({});
 bag.delegateRecords = delegateRecords as typeof bag.delegateRecords; bag.setDelegateRecords = setDelegateRecords as typeof bag.setDelegateRecords;
-
-
-  // 调度独占锁的当前持有者（全局唯一，权威值在主进程）。非持有会话的开关要灰掉并显示占用者。
-  const [dispatchOwnerId, setDispatchOwnerId] = useState<string | null>(null);
-bag.dispatchOwnerId = dispatchOwnerId as typeof bag.dispatchOwnerId; bag.setDispatchOwnerId = setDispatchOwnerId as typeof bag.setDispatchOwnerId;
-
-
-  const refreshDispatchOwner = useCallback(async () => {
-    try {
-      const res: any = await window.codex.dispatchOwner();
-      bag.setDispatchOwnerId(res?.threadId ? String(res.threadId) : null);
-    } catch { /* 拿不到就按「没有持有者」渲染，写入时主进程仍会拦 */ }
-  }, []);
-bag.refreshDispatchOwner = refreshDispatchOwner as typeof bag.refreshDispatchOwner;
 
 
   // 受保护会话（专家 / 专家团 / 被调度的临时会话）：调度按钮直接禁用 ——
@@ -134,16 +119,10 @@ bag.refreshDelegateRecords = refreshDelegateRecords as typeof bag.refreshDelegat
 
 
 
-  /* 可调度对象会随专家/子智能体的启用状态变化 → 工具说明书跟着刷新；
-     调度记录启动拉一次，之后由 harness 广播的 delegates-changed 增量刷新。
-     ⛔⛔ 2026-10-04 补：**开关变了必须重取描述** —— 用户点「确认」后应当立刻
-     按新的勾选生成提示词（他只勾子智能体 ⇒ 描述只含子智能体）。
-     不刷新就会出现"确认了却还是旧描述"，正是用户说的"点了确认之后就只自动发送
-     子智能体调度提示词"没生效的表现。
-     ⚠️ 用 activeDispatch 的三态拼成字符串当依赖（对象每次渲染都是新引用，
-     直接放对象当依赖 ⇒ effect 每帧都跑）。 */
+  /** 调度许可的三项拼成字符串当依赖（对象每次渲染都是新引用，直接放对象当依赖 ⇒ effect 每帧都跑）。
+   *  10-29：总开关删除后只剩三类许可。 */
   const dispatchKey = bag.activeDispatch
-    ? `${bag.activeDispatch.enabled ? 1 : 0}|${bag.activeDispatch.expert ? 1 : 0}|${bag.activeDispatch.team ? 1 : 0}|${bag.activeDispatch.subagent ? 1 : 0}`
+    ? `${bag.activeDispatch.expert ? 1 : 0}|${bag.activeDispatch.team ? 1 : 0}|${bag.activeDispatch.subagent ? 1 : 0}`
     : "";
   useEffect(() => {
     void bag.refreshDispatchInfo();
@@ -181,20 +160,12 @@ bag.delegateRailTimersRef = delegateRailTimersRef as typeof bag.delegateRailTime
 bag.dispatchTick = dispatchTick as typeof bag.dispatchTick; bag.setDispatchTick = setDispatchTick as typeof bag.setDispatchTick;
 
 
+  /** 调度许可的当前值（会话级；随 dispatchTick 重算）。
+   *  ⛔ 10-29 起专家 / 子智能体默认可用、专家团默认关闭 —— 默认值来自 emptyDispatch()。 */
   const activeDispatch = useMemo(
     () => (bag.thread?.id ? loadThreadRuntime(bag.thread.id).dispatch : emptyDispatch()),
     [bag.thread?.id, bag.dispatchTick],
   );
 bag.activeDispatch = activeDispatch as typeof bag.activeDispatch;
-
-
-  /** 调度独占锁被**别的会话**持有时显示它的名字（本会话是持有者则 null）。 */
-  const dispatchHolderName = useMemo(() => {
-    if (!bag.dispatchOwnerId || bag.dispatchOwnerId === bag.thread?.id) return null;
-    const found = bag.threads.find((entry) => entry.id === bag.dispatchOwnerId);
-    const label = found ? cleanThreadDisplayTitle(found.name, { preview: found.preview }) : "";
-    return label?.trim() || "另一个会话";
-  }, [bag.dispatchOwnerId, bag.thread?.id, bag.threads]);
-bag.dispatchHolderName = dispatchHolderName as typeof bag.dispatchHolderName;
-  return { runtimeStateRef, adoptedRevRef, dispatchInfo, setDispatchInfo, delegateRecords, setDelegateRecords, dispatchOwnerId, setDispatchOwnerId, refreshDispatchOwner, threadRole, setThreadRole, refreshThreadRole, delegateRecordsRef, dispatchInfoRef, refreshDispatchInfo, refreshDelegateRecords, dispatchBusy, setDispatchBusy, delegateLiveRuns, setDelegateLiveRuns, delegatedPopupId, setDelegatedPopupId, delegateRailTimersRef, dispatchTick, setDispatchTick, activeDispatch, dispatchHolderName, dispatchKey };
+  return { runtimeStateRef, adoptedRevRef, dispatchInfo, setDispatchInfo, delegateRecords, setDelegateRecords, threadRole, setThreadRole, refreshThreadRole, delegateRecordsRef, dispatchInfoRef, refreshDispatchInfo, refreshDelegateRecords, dispatchBusy, setDispatchBusy, delegateLiveRuns, setDelegateLiveRuns, delegatedPopupId, setDelegatedPopupId, delegateRailTimersRef, dispatchTick, setDispatchTick, activeDispatch, dispatchKey };
 }

@@ -14,7 +14,7 @@
  *    —— 正是本项目记录过的"开关点了没生效"类假象。对照：MCP 孪生实现 dispatch-rpc.ts 本来就是对的。
  * ⛔ `agents:invoke` 走 `runDelegatedTask`（`./delegation`），被委派会话的记忆注入在那里补（守卫【125】）。
  */
-import { dispatchNoticeText, dispatchOffNoticeText, dispatchToolDescription, dispatchEnabledNotice, dispatchSelectionChangeNotice } from "../dispatch";
+import { dispatchToolDescription, dispatchSelectionChangeNotice, dispatchAllowOf } from "../dispatch";
 import { broadcastHarnessEvent } from "./window-bus";
 import { buildDispatchCatalog, restrictedThreadRole } from "./dispatch-core";
 import { dispatchGatewayCatalogText, dispatchRpcCall } from "./dispatch-rpc";
@@ -24,7 +24,7 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
 const AGENTS_CHANNELS = [
-  "agents:thread-role", "agents:catalog", "agents:tool-description", "agents:notice", "agents:enabled-notice", "agents:off-notice",
+  "agents:thread-role", "agents:catalog", "agents:tool-description", "agents:notice",
   "agents:delegated", "agents:delegated-of", "agents:invoke", "agents:archive", "agents:dispatch-call",
 ];
 
@@ -40,51 +40,35 @@ export const agentsFeature = defineFeature<null>({
     ipcHost.handle("agents:tool-description", async (_event, threadId: string) => {
       /*⛔⛔ 2026-10-04 用户报「我勾了子智能体，提示词还让我派专家」——
          原来**无参**调用，只能把三类全列上⇒ 模型自己挑、挑错。
-         ✅ 现在按该会话**实际勾选**的类别生成：用户开了哪类才列哪类，
-            未勾选的明确写"本会话未开启，不要派"（不是隐藏，是明确否定 ——
+         ✅ 现在按该会话**实际许可**的类别生成（10-29 起专家/子智能体默认可用、专家团默认关闭），
+            未开启的类别明确写「本会话未开启，不要派」（不是隐藏，是明确否定 ——
             隐藏会让模型以为不存在而报错，明确否定才不会乱试）。
-         取不到 threadId 或开关全 false 时退化为"全列"（保持旧行为，不让描述变空）。*/
+         取不到 threadId 或线程运行时未就绪时退回出厂默认（专家+子智能体可用、专家团关闭）。*/
       const id = String(threadId ?? "");
       /* ⛔ threadRuntimeStore 是惰性赋值（`export let ...!`），应用启动早期可能还没 set
          ⇒ 直接 .get() 会抛 "Cannot read properties of undefined" ⇒ 连带把整个
-         tool-description 拖垮。这里按"取不到开关 = 未开启"降级（返回 allow=null 全列，
-         不让描述通道挂）。 */
+         tool-description 拖垮。这里捕获后按出厂默认降级（dispatchAllowOf(null)）。 */
       let cfg: any = null;
       if (id) {
         try { cfg = (await threadRuntimeStore.get(id))?.dispatch ?? null; }
         catch { cfg = null; }
       }
-      const allow = cfg
-        ? { expert: cfg.expert === true, team: cfg.team === true, subagent: cfg.subagent === true }
-        : null;
+      const allow = dispatchAllowOf(cfg);
       const targets = await buildDispatchCatalog();
-      const anyOn = allow ? allow.expert || allow.team || allow.subagent : true;
-      return { description: dispatchToolDescription(anyOn ? targets : [], allow) };
+      return { description: dispatchToolDescription(targets, allow) };
     });
-    /* ⛔⛔ 2026-10-04 用户拍板的逐类通知映射（覆盖勾 1/2/3 个 + 取消某项其余仍开）：
-       渲染层把「确认前的勾选 before」「确认后的勾选 next」传上来，主进程算**差集**
-       生成一条通知（一条消息按类分段 —— 不遗漏、不重复发送）。
-       · 总开关 关→开：用 dispatchEnabledNotice（按 next 勾选逐段列）
-       · 总开关 开→关：用 dispatchOffNoticeText
-       · 总开关不变、勾选变化：用 dispatchSelectionChangeNotice（差集驱动）
-       before/next 缺省（旧调用方）时退化为旧行为：全开通知 / 关闭通知。 */
+    /* ⛔ 10-29：三个通知入口（开启 / 关闭 / 逐类变化）收敛成**一个**——总开关删除后只剩
+       「逐类许可变化」一种事件。映射规则不变（10-04 用户拍板）：渲染层传 before/next，
+       主进程算**差集**生成一条按类分段的通知（不遗漏、不重复发送），并给新开启的类附名单。 */
     ipcHost.handle("agents:notice", async (_event, before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => {
       const targets = await buildDispatchCatalog();
-      if (before || next) {
-        const b = { expert: before?.expert === true, team: before?.team === true, subagent: before?.subagent === true };
-        const n = { expert: next?.expert === true, team: next?.team === true, subagent: next?.subagent === true };
-        const kinds = ["expert", "team", "subagent"] as const;
-        const turnedOn = kinds.filter((k) => n[k] && !b[k]);
-        const turnedOff = kinds.filter((k) => !n[k] && b[k]);
-        return { text: dispatchSelectionChangeNotice([...turnedOn], [...turnedOff], n) };
-      }
-      return { text: dispatchEnabledNotice(targets, null) };
+      const b = { expert: before?.expert === true, team: before?.team === true, subagent: before?.subagent === true };
+      const n = { expert: next?.expert === true, team: next?.team === true, subagent: next?.subagent === true };
+      const kinds = ["expert", "team", "subagent"] as const;
+      const turnedOn = kinds.filter((k) => n[k] && !b[k]);
+      const turnedOff = kinds.filter((k) => !n[k] && b[k]);
+      return { text: dispatchSelectionChangeNotice([...turnedOn], [...turnedOff], n, targets) };
     });
-    ipcHost.handle("agents:enabled-notice", async (_event, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => {
-      const allow = next ? { expert: next.expert === true, team: next.team === true, subagent: next.subagent === true } : null;
-      return { text: dispatchEnabledNotice(await buildDispatchCatalog(), allow) };
-    });
-    ipcHost.handle("agents:off-notice", async () => ({ text: dispatchOffNoticeText() }));
     ipcHost.handle("agents:delegated", async () => ({ records: await delegateRegistry.listAll() }));
     ipcHost.handle("agents:delegated-of", async (_event, originThreadId: string) => ({
       records: await delegateRegistry.listByOrigin(String(originThreadId ?? "")),

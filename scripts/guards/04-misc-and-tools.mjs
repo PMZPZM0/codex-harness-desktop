@@ -821,17 +821,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
         && /subAgentConfig\.inheritApproval/.test(delegateSrc) && /subAgentConfig\.inheritModel/.test(delegateSrc)
         ? ok : fail)("★ 派活真正消费子智能体的推理强度/模型/沙箱/审批（表单不再只写不读）");
     }
-    /* 勾选必须**在执行端硬拦** kind。只删工具不加闸 ⇒ 模型仍能凭 agent_invoke 的参数拼出
-       被取消的类别（用户报的正是「取消勾选还是能调」）。⛔ 断言分两层：纯函数**取值** + **接线**
-       —— 写了没接 = 恒绿死函数（本仓反复踩过的坑）。 */
+    /* 类别闸在执行端硬拦 kind（10-29：专家/子智能体默认可用，只有专家团需显式开启）。 */
     (typeof dp.dispatchKindAllowed === "function"
-      && dp.dispatchKindAllowed("expert", { enabled: true, expert: false, team: true, subagent: true }).ok === false
-      && dp.dispatchKindAllowed("team", { enabled: true, expert: false, team: true, subagent: true }).ok === true
-      && dp.dispatchKindAllowed("member", { enabled: true, expert: false, team: true, subagent: true }).ok === true
-      && dp.dispatchKindAllowed("member", { enabled: true, expert: true, team: false, subagent: true }).ok === false
-      && dp.dispatchKindAllowed("expert", { enabled: false, expert: true, team: true, subagent: true }).ok === false
-      ? ok("★ 勾选硬闸：取消勾选的类别在执行端被拒（member 随 team；总开关关 ⇒ 全拒）")
-      : fail("dispatchKindAllowed 判据不对 —— 取消勾选的类别仍会被放行（勾选沦为装饰）"));
+      && dp.dispatchKindAllowed("expert", { expert: false, team: true, subagent: true }).ok === false
+      && ["team", "member"].every((k) => dp.dispatchKindAllowed(k, { expert: false, team: true, subagent: true }).ok === true)
+      && ["expert", "subagent"].every((k) => dp.dispatchKindAllowed(k, null).ok === true)
+      && dp.dispatchKindAllowed("member", { expert: true, team: false, subagent: true }).ok === false
+      && dp.dispatchKindAllowed("team", null).ok === false
+      ? ok("★ 类别闸：专家/子智能体默认放行、专家团默认拒绝（member 随 team）")
+      : fail("dispatchKindAllowed 判据不对 —— 默认许可不是「专家/子智能体可用、专家团关闭」"));
     /dispatchKindAllowed\(input\.kind, originDispatch\)/.test(readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8"))
       ? ok("★ 勾选硬闸接线到 runDelegatedTask（agent_invoke 与 agents:invoke 两条入口共用一处闸）")
       : fail("dispatchKindAllowed 写了却没接进 runDelegatedTask —— 恒绿死函数");
@@ -907,12 +905,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     !/resumeThreadLight\(\{ threadId: id, dynamicTools/.test(appSrc9)
       ? ok("★ 已移除无效的 resume 重放（dynamicTools 只在 thread/start 生效，引擎硬约束）")
       : fail("applyDispatch 又出现了 resume 重放 —— 那条路是假绿（引擎不认）");
-    typeof dp.dispatchOffNoticeText === "function" && /调度已关闭/.test(dp.dispatchOffNoticeText())
-      ? ok("关闭开关也有告知文案（权限收回要立刻让对方知道）")
-      : fail("缺关闭告知文案");
-    /agents:off-notice/.test(mainSrc9) && /dispatchOffNotice\(/.test(appSrc9)
-      ? ok("关闭告知的 IPC 链路在（main handler + 渲染层调用）")
-      : fail("关闭告知链路缺失");
+    /* 10-29：三个通知入口收敛成一个（总开关删除后只剩「逐类许可变化」）。 */
+    (typeof dp.dispatchSelectionChangeNotice === "function"
+      && /新开启/.test(dp.dispatchSelectionChangeNotice(["team"], [], { expert: true, team: true, subagent: true }))
+      && /已在本会话停用/.test(dp.dispatchSelectionChangeNotice([], ["team"], { expert: true, team: false, subagent: true }))
+      && /agents:notice/.test(mainSrc9) && /window\.codex\.dispatchNotice\(/.test(appSrc9)
+      && !/agents:(enabled|off)-notice/.test(mainSrc9) && !!dp.dispatchAllowOf
+      ? ok("★ 告知收敛为一条：新增/停用两段都在，且旧的两条通道已删除")
+      : fail("告知链路不对 —— 要么语义不全，要么旧通道又长回来了"));
     // 运行状态行的词库（09-16 扩充）：规模、按活动分、不得照搬竞品原文
     const phraseBlock = /const RUN_PHRASES = \[([\s\S]*?)\];/.exec(appSrc9)?.[1] ?? "";
     const phraseCount = (phraseBlock.match(/^\s*"/gm) || []).length;

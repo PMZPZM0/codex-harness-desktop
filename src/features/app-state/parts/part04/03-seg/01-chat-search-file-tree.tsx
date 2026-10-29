@@ -168,6 +168,9 @@ bag.knownFilesRef = knownFilesRef as typeof bag.knownFilesRef;
      ⛔ 动作表是唯一的地方：加一个快捷键 = 目录（src/lib/shortcut-catalog.mjs）加一条 + 这里加一个动作。
      ⛔ 别把键位判断写回这里（那会和配置表形成第二份真相，改键立刻失效）。 */
   const { bindings: shortcutBindings } = useShortcuts();
+  /* ⛔ 顶层声明 = Bag 成员（`check-bag-types` 的推断口径）：这个值要跨 part 可读，
+     必须同时挂到 bag（只声明不上报 ⇒ Bag 里没有它、类型真相源分叉）。 */
+bag.shortcutBindings = shortcutBindings as typeof bag.shortcutBindings;
   useEffect(() => {
     if (bag.showLogin) return;
     const mac = isMacPlatform();

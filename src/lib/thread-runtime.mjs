@@ -34,29 +34,34 @@ export function runtimeKey(threadId) {
   return `${RUNTIME_PREFIX}${String(threadId ?? "")}`;
 }
 
-/** 调度配置（09-15 加入运行时）：当前会话允许 Codex 调度哪些对象干活。
- *  与模型/档位/权限同源同存放处 —— 会话级、各自独立、多窗口同步走同一条链路。 */
+/** 调度许可（09-15 加入运行时）：本会话允许 Codex 调度哪些类别的对象。
+ *  与模型/档位/权限同源同存放处 —— 会话级、各自独立、多窗口同步走同一条链路。
+ *  ⛔ 10-29 用户令：专家与子智能体**默认可用**（不需要开关），只有专家团默认关闭、需显式开启；
+ *     同时删除了 `enabled`（调度总开关 = 全局独占锁），因为「每个会话都可以调度」与之冲突。
+ *     ⛔ 与 `electron/dispatch.ts` 的 DISPATCH_DEFAULTS 逐字同形（两仓互不 import，各留一份）。 */
 export function emptyDispatch() {
-  return { enabled: false, expert: true, team: true, subagent: true };
+  return { expert: true, team: false, subagent: true };
 }
 
 const bool = (v, fallback) => (typeof v === "boolean" ? v : fallback);
 
-/** 归一化调度配置（坏值/缺字段一律回落默认：总开关关，三类勾选开） */
+/** 归一化调度许可（坏值/缺字段一律回落默认；兼容旧结构里的 `enabled`）。
+ *  旧记录迁移规则 = `team && enabled`：旧日「开过调度」才算显式开过专家团，
+ *  旧记录里 team 的 `true` 只是当年的默认值（44 条存量记录全是 `0111`，不叠加就会凭空开团）。 */
 export function normalizeDispatch(raw) {
   const src = raw && typeof raw === "object" ? raw : {};
+  const legacy = typeof src.enabled === "boolean" ? src.enabled : null;
   return {
-    enabled: src.enabled === true,
     expert: bool(src.expert, true),
-    team: bool(src.team, true),
+    team: legacy === null ? bool(src.team, false) : src.team === true && legacy,
     subagent: bool(src.subagent, true),
   };
 }
 
-/** 调度配置签名：用于变更判定与多窗口回声比对 */
+/** 调度许可签名：用于变更判定与多窗口回声比对 */
 export function dispatchSignature(raw) {
   const d = normalizeDispatch(raw);
-  return [d.enabled, d.expert, d.team, d.subagent].map((v) => (v ? "1" : "0")).join("");
+  return [d.expert, d.team, d.subagent].map((v) => (v ? "1" : "0")).join("");
 }
 
 /** 空运行时（字段恒在，避免各处 `?? ""`） */

@@ -7,7 +7,8 @@
  *   `const args = e.invokeArgs ? `[${e.invokeArgs}]` : "[]"`）。`paramsImpl` 只用来数
  *   「最少几个参数」做调用校验 ⇒ 声明了参数却漏写 invokeArgs，参数就在 preload 层被静默丢掉：
  *     · dispatchToolDescription(threadId) ⇒ 主进程收到 ""（描述永远"全列三类"）
- *     · dispatchNotice(before,next) / dispatchEnabledNotice(next) ⇒ 主进程收到 undefined ⇒「（无）」
+ *     · dispatchNotice(before,next) ⇒ 主进程收到 undefined ⇒ 通知退化成「（无）」
+ *       （10-29 起这是唯一的调度通知通道：开启 / 关闭 / 逐类变化都走它）
  *   tsc 过、生成段逐字节一致过、主进程纯函数守卫也全绿 —— 因为那些测的都是函数，不是这条链。
  *   静态判据（守卫【2】）只能证明"生成物文本里带了参数"；本脚本证明"运行时真的传出去了"。
  *
@@ -86,7 +87,7 @@ if (!exposed) {
   console.log("\n【preload-args】" + (checks - fails) + "/" + checks + " 通过");
   process.exit(1);
 }
-ok(typeof exposed.dispatchEnabledNotice === "function", "window.codex 上有调度通知方法（preload 产物可用）");
+ok(typeof exposed.dispatchNotice === "function", "window.codex 上有调度通知方法（preload 产物可用）");
 
 /** 调一次 API，回读它真正发给 ipcRenderer 的 channel 与实参 */
 async function probe(method, args, expectChannel, expectArgs) {
@@ -100,17 +101,17 @@ async function probe(method, args, expectChannel, expectArgs) {
 }
 
 await probe("dispatchToolDescription", ["tid-abc"], "agents:tool-description", ["tid-abc"]);
-await probe("dispatchEnabledNotice", [{ expert: false, team: false, subagent: true }], "agents:enabled-notice", [{ expert: false, team: false, subagent: true }]);
 await probe("dispatchNotice",
-  [{ expert: true, team: false, subagent: false }, { expert: true, team: false, subagent: true }],
+  [{ expert: true, team: false, subagent: true }, { expert: true, team: true, subagent: true }],
   "agents:notice",
-  [{ expert: true, team: false, subagent: false }, { expert: true, team: false, subagent: true }]);
+  [{ expert: true, team: false, subagent: true }, { expert: true, team: true, subagent: true }]);
 
-/* 反向：无参通道不许被塞进 undefined 占位（__ipc 的 trim 语义） */
+/* 反向：无参通道不许被塞进 undefined 占位（__ipc 的 trim 语义）。
+   10-29：`agents:off-notice` 已随总开关删除 ⇒ 换成同样无参的 `agents:catalog`。 */
 calls.length = 0;
-await exposed.dispatchOffNotice();
-const off = calls.filter((c) => c.channel === "agents:off-notice").pop();
-ok(Boolean(off) && off.args.length === 0, "dispatchOffNotice → agents:off-notice 不带多余实参");
+await exposed.listDispatchCatalog();
+const off = calls.filter((c) => c.channel === "agents:catalog").pop();
+ok(Boolean(off) && off.args.length === 0, "listDispatchCatalog → agents:catalog 不带多余实参");
 
 console.log("\n【preload-args】" + (checks - fails) + "/" + checks + " 通过" + (fails ? ` —— ${fails} 条红` : ""));
 process.exit(fails ? 1 : 0);

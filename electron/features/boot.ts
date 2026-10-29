@@ -858,10 +858,11 @@ export async function bootApp() {
           if (event.method === "thread/deleted") dropStoredReports(goneId);
           // 压缩侦测记录同理（否则 userData/compaction-records 越攒越多）
           if (event.method === "thread/deleted") dropStoredCompactions(goneId);
+          /* 10-29：归档**不动**运行时记录（没有调度锁要释放了）—— 归档是"收起"，
+             恢复后模型 / 档位 / 权限 / 调度许可原样还在；只有删除才清记录。 */
           void (async () => {
-            const changed = event.method === "thread/deleted"
-              ? await threadRuntimeStore.remove(goneId)
-              : await threadRuntimeStore.releaseDispatch(goneId);
+            if (event.method !== "thread/deleted") return;
+            const changed = await threadRuntimeStore.remove(goneId);
             if (changed) {
               const runtime = await threadRuntimeStore.get(goneId);
               broadcastHarnessEvent({ type: "thread-runtime", threadId: goneId, runtime, at: Date.now() });

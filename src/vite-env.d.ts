@@ -436,12 +436,9 @@ interface Window {
     listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;
     /* 10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name="list" 取清单）；10-09 起图像四件套已搬去 image-lab 域自己的通道，本网关只剩其余 25 个能力 */
     callDispatchTool(input: { name: string; args?: Record<string, unknown>; callerThreadId: string }): Promise<{ ok: boolean; output: string; error?: string }>;
-    /* 总开关开启时的完整告知：按勾选类别逐段列（勾 1 类 1 段、3 类 3 段），未开启的明确否定 */
-    dispatchEnabledNotice(next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
     invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
-    /* 10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知 */
+    /* 10-29 收敛：总开关删除后只剩「逐类许可变化」一种事件 —— 传 before/next 三类许可，主进程按差集生成**一条**按类分段的通知（新开启的类附对象名单）；未开启的类显式否定 */
     dispatchNotice(before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
-    dispatchOffNotice(): Promise<{ text: string }>;
     threadRole(threadId: string): Promise<{ restricted: boolean; label?: string }>;
     dispatchToolDescription(threadId: string): Promise<{ description: string }>;
     /* 取消尚未确认的开启流程（不落盘） */
@@ -1123,11 +1120,10 @@ interface Window {
     terminalResize(id: string, cols: number, rows: number): Promise<void>;
     restartTerminal(id: string, cwd?: string): Promise<void>;
     themeApply(theme: string): Promise<{ ok: boolean }>;
-    dispatchOwner(): Promise<{ threadId: string | null }>;
     getThreadRuntime(threadId: string): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number } | null>;
     listThreadRuntimes(): Promise<Record<string, { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>>;
+    /* 10-29 起不再有 takeover / 独占锁：写的就是本会话的模型/档位/权限/调度许可 */
     patchThreadRuntime(input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }): Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string; restrictedBy?: string }>;
-    releaseDispatch(threadId: string): Promise<{ released: boolean }>;
     seedThreadRuntime(input: { threadId: string; runtime: unknown }): Promise<{ model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }>;
     /* 会话备份：导出 = 打包引擎 rollout 原档 + 元信息为 .json；threadIds 缺省/空数组 = 全部 */
     exportThreadsBackup(threadIds?: string[]): Promise<{ path: string; count: number } | null>;

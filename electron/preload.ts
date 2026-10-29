@@ -87,12 +87,9 @@ contextBridge.exposeInMainWorld("codex", {
   listDelegatesOf: (originThreadId: string) => __ipc("agents:delegated-of", 1, [originThreadId]),
   /* 10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name="list" 取清单）；10-09 起图像四件套已搬去 image-lab 域自己的通道，本网关只剩其余 25 个能力 */
   callDispatchTool: (input: unknown) => __ipc("agents:dispatch-call", 1, [input]),
-  /* 总开关开启时的完整告知：按勾选类别逐段列（勾 1 类 1 段、3 类 3 段），未开启的明确否定 */
-  dispatchEnabledNotice: (next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:enabled-notice", 0, [next]),
   invokeAgent: (input: unknown) => __ipc("agents:invoke", 1, [input]),
-  /* 10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知 */
+  /* 10-29 收敛：总开关删除后只剩「逐类许可变化」一种事件 —— 传 before/next 三类许可，主进程按差集生成**一条**按类分段的通知（新开启的类附对象名单）；未开启的类显式否定 */
   dispatchNotice: (before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }) => __ipc("agents:notice", 0, [before, next]),
-  dispatchOffNotice: () => __ipc("agents:off-notice", 0, []),
   threadRole: (threadId: string) => __ipc("agents:thread-role", 1, [threadId]),
   dispatchToolDescription: (threadId: string) => __ipc("agents:tool-description", 1, [threadId]),
   /* 取消尚未确认的开启流程（不落盘） */
@@ -774,11 +771,10 @@ contextBridge.exposeInMainWorld("codex", {
   terminalResize: (id: string, cols: number, rows: number) => __ipc("terminal:resize", 3, [id, cols, rows]),
   restartTerminal: (id: string, cwd?: string) => __ipc("terminal:restart", 1, [id, cwd]),
   themeApply: (theme: string) => __ipc("theme:apply", 1, [theme]),
-  dispatchOwner: () => __ipc("thread-runtime:dispatch-owner", 0, []),
   getThreadRuntime: (threadId: string) => __ipc("thread-runtime:get", 1, [threadId]),
   listThreadRuntimes: () => __ipc("thread-runtime:list", 0, []),
+  /* 10-29 起不再有 takeover / 独占锁：写的就是本会话的模型/档位/权限/调度许可 */
   patchThreadRuntime: (input: { threadId: string; patch: unknown; baseRev?: number; takeover?: boolean }) => __ipc("thread-runtime:patch", 1, [input]),
-  releaseDispatch: (threadId: string) => __ipc("thread-runtime:release-dispatch", 1, [threadId]),
   seedThreadRuntime: (input: { threadId: string; runtime: unknown }) => __ipc("thread-runtime:seed", 1, [input]),
   /* 会话备份：导出 = 打包引擎 rollout 原档 + 元信息为 .json；threadIds 缺省/空数组 = 全部 */
   exportThreadsBackup: (threadIds?: string[]) => __ipc("threads:export", 0, [threadIds ? { threadIds } : undefined]),

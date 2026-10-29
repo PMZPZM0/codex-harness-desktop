@@ -14,7 +14,6 @@ import { BOSS_ROLE_PROMPT, bossDirFor, getBossThreads, setBossDirChosen } from "
 import { BOSS_SEED_VERSION, markSeeded } from "../../../../lib/prompt-seeds.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../lib/session-scope.mjs";
-import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../lib/user-refs";
 import { basename } from "../../../../lib/basename";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import { BOSS_GROUP_TOOLS, DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOARD_TOOL, IDENTITY_UPDATE_TOOL, PERSONA_APPLY_TOOL, MEMBER_LABELS, NOTICE_MAX, NOTICE_TTL_MS, QUICK_SITES } from "../../../app-view/constants";
@@ -23,19 +22,20 @@ import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntr
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
 
-/** 调度工具 `agent_invoke` 的**兜底描述**（本会话没开调度、或描述还没算出来时用）。
+/** 调度工具 `agent_invoke` 的**兜底描述**（描述还没算出来时用）。
  *  ⛔ 与 `electron/features/dispatch-core.ts` 里那条 MCP 孪生描述**逐字同源**
- *     （守卫【dpcat】比对这句「以会话里那条《调度已开启 / 调度范围已更新》的告知为准」）。
+ *     （守卫【dpcat】比对这句「以会话里那条《调度范围已更新》的告知为准」）。
  *     electron/ 与 src/ 互不 import ⇒ 只能各留一份字面量，靠守卫防漂移。
- *  ⛔ 描述里**不写会话级目录**：dynamicTools 在 thread/start 时就定死了，用户中途打开调度
- *     不会重建工具面（真机实证：会话 15:35:32 建立、15:35:54 才注入「调度已开启」）⇒
+ *  ⛔ 描述里**不写会话级目录**：dynamicTools 在 thread/start 时就定死了，用户中途开启专家团
+ *     不会重建工具面（真机实证：会话 15:35:32 建立、15:35:54 才注入告知）⇒
  *     把目录写死进描述，就会出现"告诉模型去派一个本会话没开的类"的假信息。
- *     会话级目录的唯一投递口 = 那条告知（按勾选逐类列 + 显式否定未开的类）。 */
+ *     会话级目录的唯一投递口 = 那条告知（按类逐段列 + 显式否定未开的类）。 */
 const DISPATCH_TOOL_DESC_FALLBACK =
   "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出。"
-  + "⛔ 可用范围**按会话**：只允许派本会话「调度」面板里**已勾选**的类别；"
-  + "未勾选的类别**即使参数能拼出名字，调用也会被拒绝**（别反复试，白烧回合）。"
-  + "本会话当前实际开启了哪几类、各有哪些对象，以会话里那条「调度已开启 / 调度范围已更新」的告知为准。";
+  + "⛔ 可用范围**按会话**：**专家与子智能体默认可用**（不需要用户开启）；"
+  + "**专家团默认关闭**，需用户在顶栏「调度」面板显式开启后才能派。"
+  + "未开启的类别**即使参数能拼出名字，调用也会被拒绝**（别反复试，白烧回合）。"
+  + "本会话当前实际可派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。";
 
 /** 图像四件套：各自独立的 dynamicTool（10-09）。
  *  ⛔ 它们**不走** `harness_tools` 网关，也不共用一个执行通道 —— 每个工具调自己的 IPC：
@@ -350,46 +350,8 @@ bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
   }
 bag.deleteThread = deleteThread as typeof bag.deleteThread;
 
-  /** ⛔ 一键释放调度（用户 09-17 要求：「在调度里面加一个主动释放功能，一键释放后删除旧的调度会话」）:
-   *  把全局唯一的调度权从旧持有者手里**收回**，并**删除那条旧调度会话**（级联走 deleteThreadCore）。
-   *
-   *  为什么需要这个显式入口：持有者是从 thread-runtime 记录**派生**的（第一个 dispatch.enabled 的
-   *  线程），而会话被归档/删除时历史上没有任何地方清这条记录 ⇒ 孤儿记录永久占着全局唯一的调度权，
-   *  且那条会话往往在侧栏上已经找不到（用户原话：「都关掉了，怎么还提示被锁住了」）。
-   *  自动自愈只覆盖「持有者已不在会话列表」的情形；持有者仍在侧栏、用户就是想把它清掉时靠这里。
-   *
-   *  顺序刻意是「**先释放、后删除**」：万一删除失败（比如引擎那边正在跑），用户至少已经拿回了调度权。
-   *  这条路径也会连带清掉 thread-runtime 记录（主进程 thread/deleted 事件 → remove），不再留孤儿。 */
-  async function releaseDispatchHolder() {
-    const holderId = bag.dispatchOwnerId;
-    if (!holderId) return;
-    const holder = bag.threads.find((entry) => entry.id === holderId);
-    const name = holder ? (cleanThreadDisplayTitle(holder.name, { preview: holder.preview })?.trim() || "另一个会话") : "";
-    const who = holder ? `「${name}」` : "那条已不在列表里的旧会话";
-    const note = holder ? "" : "（它已不在会话列表里，这里只会清掉残留的调度占用）";
-    if (!await bag.openAppConfirm(
-      "释放并删除调度会话",
-      `将收回调度权限，并永久删除占用者${who}及其全部消息与工具记录 —— 此操作无法撤销。${note}`,
-      "释放并删除",
-    )) return;
-    bag.setDispatchBusy(true);
-    try {
-      await window.codex.releaseDispatch(holderId);   // ① 先夺回调度权（即使②失败也已解锁）
-      if (holder) await bag.deleteThreadCore(holderId);   // ② 再把旧会话连同衍生态一起删掉
-      else {
-        bag.threadCacheRef.current.delete(holderId);
-        bag.setThreads((current) => current.filter((entry) => entry.id !== holderId));
-      }
-      bag.showToast("调度已释放", holder ? `「${name}」已删除，现在可以在本会话开启调度` : "残留的调度占用已清掉");
-    } catch (error: any) {
-      bag.setNotice(`释放调度失败：${error.message ?? error}`);
-    } finally {
-      bag.setDispatchBusy(false);
-      await bag.refreshDispatchOwner().catch(() => undefined);
-      void bag.refreshThreads();
-    }
-  }
-bag.releaseDispatchHolder = releaseDispatchHolder as typeof bag.releaseDispatchHolder;
+  /* ⛔ 10-29：`releaseDispatchHolder`（一键释放调度会话）已删除 —— 它服务的「全局唯一调度权」
+     随用户令「每个会话都可以调度它们」一起下线；没有锁就不需要释放，也就不需要为解锁而删会话。 */
 
   async function deleteThreadsByCwd(cwd: string) {
     /* ⛔ 必须按**有效 cwd**（侧栏项目视图的归组口径）取目标 —— 09-25 加「被调度会话跟随主对话
@@ -531,13 +493,13 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       {
         type: "function",
         name: "agent_invoke",
-        description: bag.activeDispatch?.enabled && bag.dispatchInfoRef.current.description
-          ? bag.dispatchInfoRef.current.description
-          : DISPATCH_TOOL_DESC_FALLBACK,
+        // 10-29：不再看「总开关是否开启」（已删除）—— 描述按本会话许可生成，
+        // 取不到就退回兜底文案（兜底文案与 MCP 孪生同源，见文件顶部注释）。
+        description: bag.dispatchInfoRef.current.description || DISPATCH_TOOL_DESC_FALLBACK,
         inputSchema: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团, member=专家团某成员, subagent=子智能体。⛔ 只能传本会话已开启的类别" },
+            kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团, member=专家团某成员, subagent=子智能体。⛔ 专家/子智能体默认可派；专家团需用户在「调度」面板显式开启" },
             name: { type: "string", description: "对象名称（专家名 / 团名 / 某成员名 / 子智能体名）" },
             query: { type: "string", description: "交给它的任务描述（必须自包含：它看不到你和用户的对话）" },
           },
@@ -748,5 +710,5 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
     return active;
   }
 bag.createEmptyThread = createEmptyThread as typeof bag.createEmptyThread;
-  return { openThread, cascadeTeamCluster, archiveThread, renameThread, clearCurrentConversation, unarchiveThread, deleteThreadCore, deleteThread, releaseDispatchHolder, deleteThreadsByCwd, buildDynamicTools, createEmptyThread };
+  return { openThread, cascadeTeamCluster, archiveThread, renameThread, clearCurrentConversation, unarchiveThread, deleteThreadCore, deleteThread, deleteThreadsByCwd, buildDynamicTools, createEmptyThread };
 }

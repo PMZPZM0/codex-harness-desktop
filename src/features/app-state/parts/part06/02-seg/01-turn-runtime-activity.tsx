@@ -161,100 +161,49 @@ bag.finalizePhraseRef = finalizePhraseRef as typeof bag.finalizePhraseRef;
 
 
 
-  // ⛔ 这两个 hook 必须放在 refreshDispatchOwner / refreshThreadRole 的 useCallback **之后**
+  // ⛔ 这两类 refresh 必须放在 refreshThreadRole 的 useCallback **之后**
   //    （放在事件订阅那段会撞 TDZ：block-scoped variable used before its declaration）。
-  useEffect(() => { void bag.refreshDispatchOwner(); }, [bag.refreshDispatchOwner, bag.thread?.id]);
-
-
-  // ⛔ 调度锁「孤儿持有者」自愈（09-17 用户实测「都关掉了，怎么还提示被锁住了」）：
-  //   锁的持有者是从 thread-runtime 记录**派生**的，而会话被归档/删除时历史上没有清记录
-  //   ⇒ 持有者可能已经不在会话列表里，那种情况下用户**没有任何入口**能关掉它（侧栏找不到它）。
-  //   这里发现持有者不在 threads 里就请主进程释放 —— 与主进程的 thread/archived|deleted 事件清理
-  //   构成两道防线（事件清理覆盖所有路径，这里是历史坏数据的自愈）。
-  useEffect(() => {
-    if (!bag.dispatchOwnerId || bag.threads.length === 0) return;
-    if (bag.threads.some((entry) => entry.id === bag.dispatchOwnerId)) return;
-    void window.codex.releaseDispatch(bag.dispatchOwnerId).then(() => bag.refreshDispatchOwner()).catch(() => undefined);
-  }, [bag.dispatchOwnerId, bag.threads, bag.refreshDispatchOwner]);
-
+  // 10-29：调度独占锁（持有者 / 孤儿锁自愈 / 一键释放）已随「每个会话都能调度」下线。
 
   useEffect(() => { void bag.refreshThreadRole(bag.thread?.id); }, [bag.refreshThreadRole, bag.thread?.id]);
 
 
 
-  /** 应用调度开关：落盘 → 重算界面 → 从「关」变「开」时自动往对话框发一条告知消息。
-   *  刻意用普通函数而不是 useCallback —— 它要调 send()，闭包必须是最新一次渲染的。 */
-  async function applyDispatch(next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }, opts?: { takeOver?: boolean }) {
+  /** 应用调度许可：落盘 → 重算界面 → 把**差集**告诉 Codex（一条通知）。
+   *  刻意用普通函数而不是 useCallback —— 它要读最新的 threadRef。
+   *
+   *  ⛔ 10-29：总开关 / 独占锁 / 接管全部删除（「每个会话都可以调度」）⇒ 只剩一条路径：
+   *    before → next 的三类差集不为空就发一条「调度范围已更新」（含新开启类的对象名单）。
+   *  ⚠️ before 必须取**确认前**的值（本函数开头取），拿 next 当 before ⇒ 差集恒空 ⇒ 永远不发（假绿）。 */
+  async function applyDispatch(next: { expert: boolean; team: boolean; subagent: boolean }) {
     const id = bag.threadRef.current?.id;
-    if (!id) { bag.showToast("先打开一个会话", "调度开关是会话级的，每个会话各自独立"); return; }
+    if (!id) { bag.showToast("先打开一个会话", "调度许可是会话级的，每个会话各自独立"); return; }
     const before = loadThreadRuntime(id).dispatch;
     bag.setDispatchBusy(true);
     try {
-      // 独占锁（09-16 用户要求「同一时间只能一个会话开」）：冲突时主进程**不改动任何东西**并回传
-      // blockedBy；用户明确接管（takeover）才在同一笔写入里把原持有者关掉 —— 原子，不会有中间态。
-      const result: any = await saveThreadRuntime(id, { dispatch: normalizeDispatch(next) }, { takeover: opts?.takeOver === true });
+      const result: any = await saveThreadRuntime(id, { dispatch: normalizeDispatch(next) });
       if (result?.restrictedBy) {
-        // 主进程身份闸拒绝（专家 / 专家团 / 被调度会话不许开调度）：把本地乐观写入纠正回去，
+        // 主进程身份闸拒绝（专家 / 专家团 / 被调度会话不许改许可）：把本地乐观写入纠正回去，
         // 否则界面会显示成「已开启」而实际没生效（本地镜像先写、权威值后到）。
         writeThreadRuntimeMirror(id, { ...loadThreadRuntimeRaw(id), dispatch: emptyDispatch() });
         bag.setDispatchTick((tick) => tick + 1);
         bag.showToast(`本会话是${result.restrictedBy}会话，不开放调度`, "专家 / 专家团在团内自有协作通道；这些会话对外派人会让「谁在干活」失控");
         return;
       }
-      if (result?.blockedBy) {
-        bag.setDispatchOwnerId(String(result.blockedBy));
-        bag.showToast("同一时间只能一个会话调度", "权限在另一个会话手里；确认面板里的「接管并开启」可以把它移到本会话");
-        return;
-      }
       bag.setDispatchTick((tick) => tick + 1);
-      if (result?.tookOverFrom) {
-        bag.setDispatchOwnerId(id);
-        bag.showToast("调度权限已移到本会话", "同一时间只允许一个会话调度，原会话的开关已自动关闭");
-      } else if (next.enabled) {
-        bag.setDispatchOwnerId(id);
-      } else {
-        void bag.refreshDispatchOwner();
-      }
-      /* ⛔⛔ 2026-10-04 用户拍板的发送时机（映射规则见 dispatch.ts 的 dispatchSelectionChangeNotice）：
-         · 总开关 关→开：发「调度已开启」—— 按 next 勾选**逐段**列（勾 1 类 1 段、3 类 3 段），
-           未勾选的类别明确否定；
-         · 总开关 开→关：发「调度已关闭」；
-         · 总开关保持开、勾选变化：发「调度范围已更新」—— 由 before→next 的**差集**驱动，
-           每个新增类一段独立文案、每个取消类一段停用文案、末尾写明「当前仍可调度：…」。
-           ⚠️ 覆盖用户点名的全部场景：勾 1 个 / 2 个 / 3 个、取消其中一个其余仍开。
-           ⚠️ 一次确认只发**一条**消息（按类分段），不是每类发一条 —— 「不重复发送」。
-         ⚠️ before 必须取**确认前**的勾选（本函数开头第 136 行已取 before，传下去），
-            取 next 当 before 用 ⇒ 差集恒空 ⇒ 永远不发，是假绿。 */
-      if (next.enabled && !before.enabled) {
-        try {
-          const notice: any = await window.codex.dispatchEnabledNotice({ expert: next.expert, team: next.team, subagent: next.subagent });
-          const text = String(notice?.text ?? "");
-          /* ⛔⛔ 会话作用域闸（10-04 用户报「新会话冒出调度已关闭」）：IPC 往返期间用户可能已切走会话，
-             bag.thread 已变 ⇒ pending+send 会把 A 会话的通知发进 B。通知是给引擎的会话级告知，
-             目标会话不在前台就该丢弃（开关本身已按 id 落库，不受影响）。 */
-          /* ⛔ 10-26 用户令：不再单独发一轮（会凭空多一条"我说的"气泡）⇒ 记进队列，随**下一条消息**注入。 */
-          if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
-        } catch { /* 告知失败不影响开关本身已生效 */ }
-      } else if (!next.enabled && before.enabled) {
-        // 关闭也要告知：让 Codex 立刻知道权限被收回，别白费回合去试
-        try {
-          const off: any = await window.codex.dispatchOffNotice();
-          const text = String(off?.text ?? "");
-          if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
-        } catch { /* 同上 */ }
-      } else if (next.enabled && before.enabled) {
-        const changed = before.expert !== next.expert || before.team !== next.team || before.subagent !== next.subagent;
-        if (changed) {
-          try {
-            const chg: any = await window.codex.dispatchNotice(
-              { expert: before.expert, team: before.team, subagent: before.subagent },
-              { expert: next.expert, team: next.team, subagent: next.subagent },
-            );
-            const text = String(chg?.text ?? "");
-            if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
-          } catch { /* 同上 */ }
-        }
-      }
+      const changed = before.expert !== next.expert || before.team !== next.team || before.subagent !== next.subagent;
+      if (!changed) return;
+      try {
+        const chg: any = await window.codex.dispatchNotice(
+          { expert: before.expert, team: before.team, subagent: before.subagent },
+          { expert: next.expert, team: next.team, subagent: next.subagent },
+        );
+        const text = String(chg?.text ?? "");
+        /* ⛔⛔ 会话作用域闸（10-04 用户报「新会话冒出调度已关闭」）：IPC 往返期间用户可能已切走会话，
+           bag.thread 已变 ⇒ 会把 A 会话的通知发进 B。目标会话不在前台就丢弃（许可本身已按 id 落库）。
+           ⛔ 10-26 用户令：不单独发一轮（会凭空多一条"我说的"气泡）⇒ 入队，随**下一条消息**注入。 */
+        if (text && bag.threadRef.current?.id === id) queueInlineNotice(id, text);
+      } catch { /* 告知失败不影响许可本身已生效 */ }
     } finally {
       bag.setDispatchBusy(false);
     }
