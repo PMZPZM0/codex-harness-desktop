@@ -440,7 +440,12 @@
      上一版就是这么把手柄从"线上的小粗条"变成"上方一条横杠"的。 */
 .composer-rail.is-top .composer-rail-icons {
   position: absolute;        /* 脱离左侧列，不再占据手柄旁边的位置 */
-  right: 0;                  /* 右缘对齐输入框左缘（rail 右缘 = composer 左缘） */
+  /* ⛔⛔ 必须**向右**展开（left 对齐输入框左缘），不是 right:0。
+     right:0 会让 193px 的横排从输入框左缘**向左**长 —— 整条落进侧栏下面，
+     实测最小尺寸下"压根展示不出来"（用户 10-29 原话）。
+     14px = 手柄宽度：rail 左缘在 composer 左缘外 14px，补回来正好对齐。 */
+  left: 14px;
+  right: auto;
   bottom: 100%;              /* 抬到输入框上方 */
   flex-flow: row nowrap;     /* 一排横放 */
   max-height: none;
