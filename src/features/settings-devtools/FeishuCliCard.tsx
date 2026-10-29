@@ -12,6 +12,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Check, Copy, Download, ExternalLink, LogIn, LogOut } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
+import { feishuPollOutcome } from "../../lib/feishu-card.mjs";
 
 type Status = {
   installed: boolean;
@@ -34,17 +35,19 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
   const releaseRef = useRef<number>(0);
+  /* refresh 在间隔里跑，拿不到闭包里的最新 busy ⇒ 用 ref 镜像判断「当前这条链接属于哪个流程」。 */
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
 
   const refresh = useCallback(async () => {
     try {
       const next = (await window.codex.feishuCliStatus()) as Status;
       setStatus(next);
-      /* ⛔ 配置/登录一完成，授权链接就被消费掉了 ⇒ 收起链接、放掉「等待中」。
-         只在 link 挂着时轮询，所以这里不放 busy 的话：用户中途放弃浏览器，
-         按钮会永远停在「等待浏览器…」且 disabled —— 再也点不回来。 */
-      if (next.configured || next.loggedIn) setLink("");
-      if (next.loggedIn) setBusy("");
-      else if (next.configured) setBusy((prev) => (prev === "setup" ? "" : prev));
+      /* ⛔ 链接/等待态的归约走纯函数（真值表在守卫 139f）：见 configured 就收链接那次事故，
+         就是把「登录等待中配置本来就已完成」这条规则漏在组件闭包里。 */
+      const outcome = feishuPollOutcome({ flow: busyRef.current, configured: next.configured, loggedIn: next.loggedIn });
+      if (!outcome.keepLink) setLink("");
+      if (outcome.clearBusy) setBusy("");
       return next;
     } catch (err: any) {
       setError(String(err?.message ?? err));

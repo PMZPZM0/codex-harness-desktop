@@ -1594,6 +1594,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (feishuSrc.includes("runHintOf") && feishuSrc.includes("还没登录") && feishuSrc.includes("10 * 60_000") ? ok : fail)(
       "【139f】流程收口：工具失败回「下一步点哪里」的中文指引 + 配置进程最长挂 10 分钟（⛔ 只回英文原文 ⇒ 模型会反复重试；无限挂着 ⇒ 吃配置锁的僵尸进程）"
     );
+    (cardSrc.includes("feishuPollOutcome") ? ok : fail)(
+      "【139f】卡片轮询的链接/等待态归约走纯函数 feishuPollOutcome（真值表见本组末尾；⛔ 写在组件闭包里的判定没有判据，改坏了只能等用户截图）"
+    );
     (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
       "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
     );
@@ -1602,6 +1605,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     );
     (cardSrc.includes("feishuCliSetupStart") && cardSrc.includes("feishuCliLoginStart") && cardSrc.includes("feishuCliStatus") ? ok : fail)(
       "【139f】开发工具卡片：安装 / 配置应用 / 登录 / 状态四步齐全"
+    );
+    // 真值表：轮询归约（纯模块，node 直接 import）。⛔ 登录那一行是 10-29 事故的回归判据。
+    const feishuCard = await import(pathToFileURL(join(ROOT, "src", "lib", "feishu-card.mjs")).href);
+    const poll = (input) => JSON.stringify(feishuCard.feishuPollOutcome(input));
+    const pollCases = [
+      poll({ flow: "login", configured: true, loggedIn: false }) === JSON.stringify({ keepLink: true, clearBusy: false }),
+      poll({ flow: "login", configured: true, loggedIn: true }) === JSON.stringify({ keepLink: false, clearBusy: true }),
+      poll({ flow: "setup", configured: true, loggedIn: false }) === JSON.stringify({ keepLink: false, clearBusy: true }),
+      poll({ flow: "setup", configured: false, loggedIn: false }) === JSON.stringify({ keepLink: false, clearBusy: false }),
+      poll({ flow: "", configured: true, loggedIn: false }) === JSON.stringify({ keepLink: false, clearBusy: false }),
+    ];
+    (pollCases.every(Boolean) ? ok : fail)(
+      "【139f】轮询归约真值表：登录等待中（配置已完成）必须留链接继续轮询；登录成功才收；配置完成只收 setup 的链接"
     );
   }
 
