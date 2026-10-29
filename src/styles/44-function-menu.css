@@ -372,6 +372,8 @@
   font-size: 11.5px;
 }
 .fm-settings-more { color: var(--faint); }
+/* 自定义入口（10-30）：与内置 chip 区分一下 —— 虚线边、略淡，表示「你自己加的」。 */
+.fm-settings-custom { border: 1px dashed var(--line); background: transparent; color: var(--faint); }
 .fm-settings-more em { font-style: normal; font-variant-numeric: tabular-nums; }
 .fm-settings-actions {
   display: flex;

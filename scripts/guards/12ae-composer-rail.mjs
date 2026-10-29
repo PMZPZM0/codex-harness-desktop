@@ -194,5 +194,11 @@ ok(/action\.type === "text"\) continue/.test(extMain) && /JSON\.stringify\(next/
 }ok(/FUNCTION_MENU_IDS[\s\S]*?"favorites"/.test(menuModelSrc) && /favorites:\s*\{[^}]*label:\s*"收藏夹"/.test(menuSrc2) && /id === "favorites"[^}]*setSettingsPage\("favorites"\)/.test(shellSrc2),
   "功能入口默认还有「收藏夹」直达（默认两项：开发工具 / 收藏夹）");
 
+ok(/extensionsCatalog/.test(src("src/features/function-menu/FunctionMenuSettings.tsx"))
+  && /useCustomMenuRevision/.test(src("src/features/function-menu/FunctionMenuSettings.tsx"))
+  && /fm-settings-custom/.test(src("src/features/function-menu/FunctionMenuSettings.tsx"))
+  && /\.fm-settings-custom/.test(read("src/styles/44-function-menu.css")),
+  "设置侧「拓展功能」摘要与菜单联动：内置两项 + 自定义入口都显示（⛔ 菜单里加了、设置里看不到 = 两套真相）");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
