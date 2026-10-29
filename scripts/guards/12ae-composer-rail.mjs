@@ -160,5 +160,39 @@ ok(existsSync(join(ROOT, "src/lib/rail-ipc-types.d.ts")) && /declare global/.tes
 ok(/SETTINGS_PAGES/.test(extMain) && /SETTINGS_PAGES\.has\(target\)/.test(extMain),
   "扩展项的 settings 动作按白名单校验目标页（页名写错不会跳到空白页）");
 
+/* 10-29：功能入口「开发工具直达」+「自定义添加设置页」＋ 飞书 CLI 可卸载 / 安装反馈 */
+const menuModelSrc = src("src/features/function-menu/menu-model.mjs");
+const menuSrc2 = src("src/features/function-menu/FunctionMenu.tsx");
+const menuStoreSrc = src("src/features/function-menu/store.ts");
+const shellSrc2 = src("src/features/app-view/AppView/01-sidebar-shell.tsx");
+ok(/FUNCTION_MENU_IDS\s*=\s*\[[^\]]*"devtools"/.test(menuModelSrc)
+  && /devtools:\s*\{[^}]*label:\s*"开发工具"/.test(menuSrc2)
+  && /id === "devtools"[^}]*setSettingsPage\("devtools"\)/.test(shellSrc2),
+  "功能入口有「开发工具」直达（id 模型 + 菜单元数据 + 动作映射三处齐）");
+ok(/function setFunctionMenuSettingsTargets/.test(menuStoreSrc) && /function setFunctionMenuSettingsOpener/.test(menuStoreSrc)
+  && /function openSettingsFromFunctionMenu/.test(menuStoreSrc) && /settingsNav\.flatMap/.test(shellSrc2)
+  && !/settingsNav/.test(menuSrc2),
+  "自定义入口的可选项与跳转由侧栏壳注册；唯一来源是 settingsNav（功能菜单不反向依赖 AppView）");
+ok(/extensionsMenuSet/.test(menuSrc2) && /extMenu\.filter/.test(menuSrc2) && /fm-custom-chips/.test(menuSrc2)
+  && /添加设置页/.test(menuSrc2),
+  "编辑菜单能添加 / 移除自定义设置页入口（落盘走 extensions:menu-set，不写死在前端）");
+ok(/action\.type === "text"\) continue/.test(extMain) && /JSON\.stringify\(next/.test(extMain) && /slice\(0, 40\)/.test(extMain),
+  "保存路径只收 url / settings（text 拒绝）且 40 条上限；写盘保留 rail 原样");
+{
+  const cat = src("src/features/app-view/helpers/catalogs.ts");
+  const navBlock = (cat.match(/export const settingsNav[\s\S]*?\];/) || [""])[0];
+  const navPages = [...navBlock.matchAll(/\["([a-z][\w-]*)",\s*"/g)].map((m) => m[1]);
+  const pageTypes = (src("src/features/app-view/types.ts").match(/export type SettingsPage = ([^;]+);/) || ["", ""])[1];
+  const pageKeys = [...pageTypes.matchAll(/"([a-z][\w-]*)"/g)].map((m) => m[1]);
+  const wlBlock = (extMain.match(/const SETTINGS_PAGES = new Set\(\[([\s\S]*?)\]\)/) || ["", ""])[1];
+  const whitelist = [...wlBlock.matchAll(/"([a-z][\w-]*)"/g)].map((m) => m[1]);
+  const navMissing = navPages.filter((page) => !whitelist.includes(page));
+  const unknown = whitelist.filter((page) => !pageKeys.includes(page));
+  ok(navPages.length > 20 && pageKeys.length > 20 && navMissing.length === 0 && unknown.length === 0,
+    "可添加的设置页覆盖设置导航，且白名单里都是真实存在的页面（导航缺项：" + (navMissing.join("/") || "无")
+    + "；不存在的页：" + (unknown.join("/") || "无") + "）");
+}ok(/FUNCTION_MENU_IDS[\s\S]*?"favorites"/.test(menuModelSrc) && /favorites:\s*\{[^}]*label:\s*"收藏夹"/.test(menuSrc2) && /id === "favorites"[^}]*setSettingsPage\("favorites"\)/.test(shellSrc2),
+  "功能入口默认还有「收藏夹」直达（默认两项：开发工具 / 收藏夹）");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

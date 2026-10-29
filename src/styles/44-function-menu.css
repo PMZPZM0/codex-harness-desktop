@@ -381,6 +381,28 @@
 }
 .fm-settings-actions small { color: var(--faint); font-size: 11.5px; line-height: 1.5; }
 
+/* ── 自定义入口（10-29 用户：「设置界面里面的每个选项都可以加到这里来」）── */
+.fm-custom { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.fm-custom > header { display: flex; flex-direction: column; gap: 2px; }
+.fm-custom h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.fm-custom h3 small { color: var(--faint); font-size: 10.5px; font-weight: 500; }
+.fm-custom > header p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
+.fm-custom-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.fm-custom-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: var(--bg); border-bottom: 1px solid var(--line-soft); }
+.fm-custom-row:last-child { border-bottom: 0; }
+.fm-custom-name { color: var(--text); font-size: 12px; }
+.fm-custom-row em { margin-left: auto; color: var(--faint); font-size: 10.5px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.fm-custom-row > button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; }
+.fm-custom-row > button:hover { color: var(--danger, #c0392b); border-color: var(--danger, #c0392b); }
+.fm-custom-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; }
+.fm-custom-picker { display: flex; flex-direction: column; gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2, transparent); max-height: 210px; overflow: auto; }
+.fm-custom-group { display: flex; flex-direction: column; gap: 4px; }
+.fm-custom-group-title { color: var(--faint); font-size: 10.5px; }
+.fm-custom-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.fm-custom-chips button { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; }
+.fm-custom-chips button:hover:not(:disabled) { border-color: var(--link); color: var(--link); }
+.fm-custom-chips button.added { color: var(--faint); background: var(--panel-2, transparent); cursor: default; }
+
 @keyframes function-menu-pop {
   from { opacity: 0; transform: translateY(-3px); }
   to { opacity: 1; transform: translateY(0); }

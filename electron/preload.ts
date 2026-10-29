@@ -909,6 +909,8 @@ contextBridge.exposeInMainWorld("codex", {
   workLogsScan: () => __ipc("work-logs:scan", 0, []),
   /* 输入框竖条 + 功能入口菜单的可扩展目录（内置 + userData/extensions.json） */
   extensionsCatalog: () => __ipc("extensions:catalog", 0, []),
+  /* 10-29 保存功能入口的自定义设置页条目（整表覆盖 menu 字段，rail 保留；url/settings 白名单，40 条上限） */
+  extensionsMenuSet: (input: unknown) => __ipc("extensions:menu-set", 1, [input]),
   /* 聚合读取：应用内键（shortcuts.json）+ 截图/语音键（各自真存储） */
   shortcutsRead: () => __ipc("shortcuts:read", 0, []),
   /* 只写应用内键；截图/语音由各自通道写（先注册成功再落盘） */

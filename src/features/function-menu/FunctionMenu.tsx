@@ -17,9 +17,13 @@ import { Puzzle,
   LayoutGrid,
   MoreHorizontal,
   Pencil,
+  Plus,
   Rocket,
   Sparkles,
+  Star,
+  Trash2,
   Users,
+  Wrench,
   X,
   Zap,
 } from "lucide-react";
@@ -30,6 +34,7 @@ import {
   type FunctionMenuLocation,
 } from "./menu-model.mjs";
 import {
+  bumpCustomMenuRevision,
   closeFunctionMenuEditor,
   dismissFunctionMenuTour,
   getFunctionMenuTour,
@@ -39,10 +44,13 @@ import {
   resetFunctionMenuLayoutToDefault,
   runFunctionMenuAction,
   setFunctionMenuLocation,
+  openSettingsFromFunctionMenu,
   subscribeFunctionMenuTour,
   toggleFunctionMenuItemOverflow,
+  useCustomMenuRevision,
   useFunctionMenuConfig,
   useFunctionMenuEditorOpen,
+  useFunctionMenuSettingsTargets,
 } from "./store";
 
 type IconProps = { size?: number; className?: string };
@@ -53,6 +61,8 @@ export const FUNCTION_MENU_META: Record<FunctionMenuItemId, MenuMeta> = {
   frontend: { label: "前端开发", title: "前端 UI · 组件库：查看教程与入口", Icon: LayoutGrid, tone: "ic-blue" },
   extensions: { label: "拓展", title: "技能 · 插件 · MCP：查看教程与入口", Icon: Zap, tone: "ic-pink" },
   team: { label: "团队", title: "子智能体 · 专家 · 专家团：查看教程与入口", Icon: Users, tone: "ic-violet" },
+  devtools: { label: "开发工具", title: "开发工具：运行时安装 · 飞书 CLI · 手机控制 · 声明式插件", Icon: Wrench, tone: "ic-green" },
+  favorites: { label: "收藏夹", title: "收藏夹：收藏的消息、文件与片段", Icon: Star, tone: "ic-amber" },
   identity: { label: "个性化&记忆", title: "人格市场 · 记忆中心 · 知识库：查看教程与入口", Icon: Heart, tone: "ic-amber" },
   login: { label: "登录管理", title: "登录管理：GPT 订阅 · 中转站账户 · 云账号", Icon: KeyRound, tone: "ic-green" },
   newbie: { label: "新手教程", title: "新手教程：分步教你用起来", Icon: Rocket, tone: "ic-cyan" },
@@ -92,9 +102,11 @@ function MenuItemButton({ id, onDone, dragging, dropBefore, onDragStart, onDragE
 export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   const config = useFunctionMenuConfig();
   const [moreOpen, setMoreOpen] = useState(false);
-  /* 10-27 用户：「功能入口菜单也留好IPC接口」—— 用户扩展项来自 extensions:catalog（只收 url 动作）。 */
+  /* 10-27 用户：「功能入口菜单也留好IPC接口」—— 用户扩展项来自 extensions:catalog。
+     10-29：扩展项支持 settings 动作（自定义添加设置页），保存后靠 revision 重拉目录。 */
+  const customRevision = useCustomMenuRevision();
   const [extMenu, setExtMenu] = useState<MenuEntrySpec[]>([]);
-  useEffect(() => { void window.codex.extensionsCatalog?.().then((catalog) => setExtMenu(catalog?.menu ?? [])).catch(() => undefined); }, []);
+  useEffect(() => { void window.codex.extensionsCatalog?.().then((catalog) => setExtMenu(catalog?.menu ?? [])).catch(() => undefined); }, [customRevision]);
   const moreRef = useRef<HTMLButtonElement | null>(null);
   const [dragId, setDragId] = useState<FunctionMenuItemId | null>(null);
   const [dropBefore, setDropBefore] = useState<FunctionMenuItemId | null>(null);
@@ -139,7 +151,10 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
             type="button"
             className="sidebar-tab sidebar-cap-row"
             title={entry.label}
-            onClick={() => { if (entry.action.type === "url") void window.codex.openExternal(entry.action.target); }}
+            onClick={() => {
+              if (entry.action.type === "url") void window.codex.openExternal(entry.action.target);
+              else if (entry.action.type === "settings") openSettingsFromFunctionMenu(entry.action.target);
+            }}
           >
             <Puzzle size={15} className="ic-cyan" /><span>{entry.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
           </button>
@@ -244,6 +259,32 @@ function FunctionMenuEditor() {
   const visible = visibleFunctionMenuItems(config);
   const overflow = overflowFunctionMenuItems(config);
 
+  /* ── 自定义入口（10-29 用户：「设置界面里面的每个选项都可以加到这里来」）──
+     数据落在 userData/extensions.json（主进程唯一真相源），保存后 bump revision 重拉目录。 */
+  const customRevision = useCustomMenuRevision();
+  const targets = useFunctionMenuSettingsTargets();
+  const [extMenu, setExtMenu] = useState<MenuEntrySpec[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  useEffect(() => { void window.codex.extensionsCatalog?.().then((catalog) => setExtMenu(catalog?.menu ?? [])).catch(() => undefined); }, [customRevision]);
+  const rawEntry = (entry: MenuEntrySpec) => ({ id: String(entry.id).replace(/^ext_/, ""), label: entry.label, icon: entry.icon, order: entry.order, action: entry.action });
+  const saveMenu = async (next: MenuEntrySpec[]) => {
+    try {
+      await window.codex.extensionsMenuSet({ entries: next.map(rawEntry) });
+      bumpCustomMenuRevision();
+    } catch { /* 写盘失败：保留旧目录，下次打开还能再试 */ }
+  };
+  const removeCustom = (entry: MenuEntrySpec) => void saveMenu(extMenu.filter((item) => item.id !== entry.id));
+  const addTarget = (page: string, label: string) => {
+    const id = "set_" + page;
+    if (extMenu.some((item) => item.id === "ext_" + id)) return;
+    void saveMenu([...extMenu, { id, label, order: 90, action: { type: "settings", target: page } }]);
+  };
+  const targetLabel = (page: string) => targets.find((item) => item.page === page)?.label ?? page;
+  const groups = targets.reduce<Record<string, { page: string; label: string }[]>>((acc, item) => {
+    (acc[item.group] ||= []).push({ page: item.page, label: item.label });
+    return acc;
+  }, {});
+
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
@@ -331,6 +372,47 @@ function FunctionMenuEditor() {
           {col("visible", visible, "菜单里", "显示在主导航上的入口")}
           {col("overflow", overflow, "更多", "收进「更多」二级菜单的入口")}
         </div>
+
+        <section className="fm-custom" aria-label="自定义入口">
+          <header>
+            <h3>自定义入口<small>{extMenu.length}</small></h3>
+            <p>从设置页挑一项加到「功能入口」（固定排在菜单末尾；内置入口的排序与「更多」分组不受影响）。</p>
+          </header>
+          {extMenu.length > 0 && (
+            <div className="fm-custom-list">
+              {extMenu.map((entry) => (
+                <div className="fm-custom-row" key={entry.id}>
+                  <Puzzle size={13} className="ic-cyan" />
+                  <span className="fm-custom-name">{entry.label}</span>
+                  <em>{entry.action.type === "settings" ? targetLabel(entry.action.target) : entry.action.type === "url" ? entry.action.target : "说明"}</em>
+                  <button type="button" title="移除这个入口" aria-label={"移除" + entry.label} onClick={() => removeCustom(entry)}><Trash2 size={13} /></button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button type="button" className="secondary-setting fm-custom-add" onClick={() => setPickerOpen((open) => !open)}>
+            <Plus size={13} />{pickerOpen ? "收起设置页清单" : "添加设置页"}
+          </button>
+          {pickerOpen && (
+            <div className="fm-custom-picker">
+              {Object.entries(groups).map(([group, items]) => (
+                <div className="fm-custom-group" key={group}>
+                  <span className="fm-custom-group-title">{group}</span>
+                  <div className="fm-custom-chips">
+                    {items.map((item) => {
+                      const added = extMenu.some((entry) => entry.id === "ext_set_" + item.page);
+                      return (
+                        <button key={item.page} type="button" className={added ? "added" : ""} disabled={added} onClick={() => addTarget(item.page, item.label)}>
+                          {item.label}{added ? " ✓" : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
 
         <footer className="fm-editor-foot">
           <button type="button" className="secondary-setting" onClick={resetFunctionMenuLayoutToDefault}>恢复默认</button>

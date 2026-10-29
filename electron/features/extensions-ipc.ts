@@ -28,7 +28,7 @@ export type { ExtAction, MenuEntrySpec, RailPanelSpec };
 export type ExternalAction = ExtAction;
 
 /* 10-27 审查：扩展项只能跳**真实存在的**设置页 —— 白名单与渲染层侧栏同一份（settingsNav）。 */
-const SETTINGS_PAGES = new Set(["general","appearance","personalization","pet","voice","screenshot","model","relay","openai","cloud","agents","agentteam","expert-center","teams","boss-groups","automation","schedule","hooks","ssh","skills","plugins","ui-skin","mcp","commands","soul-market","memory","knowledge-base","favorites","app-lock","devtools","storage","usage","backup","archive"]);
+const SETTINGS_PAGES = new Set(["user","general","devtools","extensibility","appearance","personalization","model","relay","cloud","openai","browser","computer","memory","agents","teams","expert-center","plugins","mcp","ssh","skills","commands","hooks","usage","channel","schedule","rpa","archive","backup","storage","automation","agentteam","voice","screenshot","favorites","pet","component-library","soul-market","knowledge-base","boss-groups","app-lock"]);
 
 const BUILTIN_RAIL: RailPanelSpec[] = [
   { id: "favorites", label: "收藏夹", icon: "bookmark", kind: "builtin", order: 10 },
@@ -75,8 +75,9 @@ async function readUserExtensions(base: string): Promise<{ rail: RailPanelSpec[]
     const label = String(entry?.label ?? "").trim().slice(0, 40);
     const action = normalizeAction(entry?.action);
     if (!id || !label || !action) continue;
-    /* 菜单项只开放 url 动作：设置页跳转由竖条面板负责，避免两个入口对同一动作有不同行为 */
-    if (action.type !== "url") continue;
+    /* 菜单项开放 url / settings（10-29 用户：「设置界面里面的每个选项都可以加到这里来」）；
+       text 是面板内说明块，菜单里没有承载位置，继续拒绝。 */
+    if (action.type === "text") continue;
     menu.push({ id: `ext_${id}`, label, icon: String(entry?.icon ?? "").trim().slice(0, 30) || undefined, action, order: Number(entry?.order) || 90 });
   }
   return { rail, menu };
@@ -99,6 +100,31 @@ export const extensionsFeature = defineFeature<null>({
       return { rail, menu, file: fileOf(base()) };
     });
 
-    ctx.effect(() => { ipcHost.removeHandler("extensions:catalog"); });
+    /** 保存菜单自定义项（10-29）：整表覆盖 menu 字段，rail 原样保留。
+     *  ⛔ 仍然是封闭动作集（url / settings 白名单），写入前逐条归一化 —— 一个 JSON 就能跑命令等于后门。
+     *  ⛔ id 由渲染层给（建议 set_<设置页>），这里只做字符收敛与去重；超过 40 条截断。 */
+    ipcHost.handle("extensions:menu-set", async (_event, input: any) => {
+      const entries = Array.isArray(input?.entries) ? input.entries.slice(0, 40) : [];
+      const menu: MenuEntrySpec[] = [];
+      const seen = new Set<string>();
+      for (const raw of entries) {
+        const id = String(raw?.id ?? "").trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40);
+        const label = String(raw?.label ?? "").trim().slice(0, 40);
+        const action = normalizeAction(raw?.action);
+        if (!id || !label || !action || action.type === "text" || seen.has(id)) continue;
+        seen.add(id);
+        menu.push({ id, label, icon: String(raw?.icon ?? "").trim().slice(0, 30) || undefined, action, order: Number(raw?.order) || 90 });
+      }
+      const dir = base();
+      const file = fileOf(dir);
+      let current: any = {};
+      try { current = JSON.parse(await fs.readFile(file, "utf8")) ?? {}; } catch { current = {}; }
+      const next = { ...(current && typeof current === "object" ? current : {}), menu };
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8");
+      return { ok: true, menu };
+    });
+
+    ctx.effect(() => { ipcHost.removeHandler("extensions:catalog"); ipcHost.removeHandler("extensions:menu-set"); });
   },
 });
