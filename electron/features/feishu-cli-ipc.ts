@@ -122,7 +122,8 @@ async function statusOf(): Promise<CliResult> {
     base.loggedIn = userIdentity
       ? Boolean(userIdentity.available) || userStatus === "ready"
       : data?.ok === true && Boolean(data?.user);
-    base.user = String(userIdentity?.name ?? userIdentity?.email ?? data?.user?.name ?? data?.user?.email ?? "");
+    /* ⛔ 1.0.98 的字段是 `userName`（实测），不是 `name` —— 只认 name 会让卡片显示「已登录」却没有名字。 */
+    base.user = String(userIdentity?.name ?? userIdentity?.userName ?? userIdentity?.email ?? data?.user?.name ?? data?.user?.email ?? "");
     if (userStatus === "missing" || userStatus === "expired") base.loggedIn = false;
     if (!base.configured) {
       base.error = String(data?.error?.hint ?? data?.error?.message ?? "还没配置飞书应用");
