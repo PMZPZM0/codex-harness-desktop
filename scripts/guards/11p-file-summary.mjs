@@ -232,7 +232,9 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "右栏「文件」页 = 工作区文件树 + 预览（tab 显示「文件」，标题/提示同源）");
   ok(/单击在\*\*右侧栏\*\*预览，双击才开居中编辑器/.test(reviewPanel) && reviewPanel.includes("onDoubleClick"),
     "树里单击在右栏预览、双击才开居中编辑器");
-  ok(/window\.codex\.readFile\(path\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
+  /* 10-30：读的是**回落之后的** target（卡片给的可能是死链，按会话台账回落）⇒ 断言跟着实现走，
+     仍然钉「预览必须走 fs:read 通道」这一语义。 */
+  ok(/window\.codex\.readFile\((?:path|target)\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
     && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
   /* ⛔ 10-29 用户令推翻了这里原来的口径（「不用授权弹窗，不管哪里的文件都要能预览和编辑」）：

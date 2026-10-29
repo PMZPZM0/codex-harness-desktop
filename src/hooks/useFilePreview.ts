@@ -1,5 +1,8 @@
 import { useRef, useState } from "react";
 import { ipcErrorMessageOf } from "../lib/ipc-error.mjs";
+/* 卡片路径打不开时的回落（会话台账里同名真实文件），见 lib/path-fallback.mjs 头部说明 */
+import { resolveExistingFile } from "../lib/path-fallback.mjs";
+import { lookupKnownFile } from "../lib/ui-channels";
 
 export type FilePreview = { path: string; content: string; language: string; kind: "text" | "image" | "binary" | "pdf" };
 
@@ -87,7 +90,14 @@ export function useFilePreview({ workspace, onNotice }: Options) {
   }
 
   async function openFile(rawPath: string) {
-    const path = resolveOpenPath(rawPath);
+    /* ★ 10-30 用户两次同一现象：卡片给的路径可能**根本不存在**（按会话目录拼出来的死链），
+       真文件在会话里出现过但位于别的仓 ⇒ 打不开就按会话台账回落一次同名真实文件。
+       ⛔ 只在 fileExists 明确说"不存在"时回落；回落不了就照旧报「文件不存在」。 */
+    const path = await resolveExistingFile(resolveOpenPath(rawPath), {
+      workspace,
+      lookup: (target) => lookupKnownFile(target),
+      notify: onNotice,
+    });
     activeReqRef.current = path;
     setFileTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
     const cached = cacheRef.current.get(path);

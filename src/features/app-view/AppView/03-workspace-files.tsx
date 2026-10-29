@@ -11,11 +11,16 @@ import { Spinner } from "../../../components/CardShell";
 import { Markdown, FilePreviewCode } from "../../markdown";
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, decodeText } from "../../../hooks/useFilePreview";
 import { toFileUrl } from "../../../lib/file-url.mjs";
+/* 卡片路径打不开时的回落（会话台账里同名真实文件），与居中编辑器同一个实现 */
+import { resolveExistingFile } from "../../../lib/path-fallback.mjs";
+import { lookupKnownFile } from "../../../lib/ui-channels";
 /* 错误文案统一去噪（10-30）：主进程抛的「文件不存在或不可读」不该被 [ERR_…] 三层包壳埋掉。 */
 import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
 
 type PreviewState = {
   status: "idle" | "loading" | "ok" | "error";
+  /** 回落之后真正打开的路径（卡片给的可能是死链；与 path 不同就说明用的是会话台账里的同名文件） */
+  resolvedPath?: string;
   kind: "text" | "image" | "pdf" | "binary";
   content: string;
   language: string;
@@ -55,23 +60,27 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
     /* ★ 10-29 用户令：预览不再有授权环节（主进程 fs:read / harness-image 已放开可信根）
        ⇒ 右栏与居中编辑器现在都是直读；这里只保留「读失败就说清原因」。
        ⛔ 右栏是**第二套**实现（与居中编辑器各写一份）—— 改口径时两边都要看，别只改一处。 */
-    if (IMAGE_EXTENSIONS.has(ext)) { setState({ status: "ok", kind: "image", content: "", language: ext }); return; }
-    if (ext === "pdf") { setState({ status: "ok", kind: "pdf", content: "", language: "pdf" }); return; }
-    if (BINARY_EXTENSIONS.has(ext)) { setState({ status: "ok", kind: "binary", content: "", language: ext }); return; }
     setState({ status: "loading", kind: "text", content: "", language: ext || "text" });
     void (async () => {
       try {
-        const result = await window.codex.readFile(path);
+        /* ★ 10-30：卡片给的可能是死链（按会话目录拼出来的），不存在就按会话台账回落一次同名真实文件。 */
+        const target = await resolveExistingFile(path, { lookup: (value) => lookupKnownFile(value) });
+        if (cancelled) return;
+        const realExt = fileExtOf(target);
+        if (IMAGE_EXTENSIONS.has(realExt)) { setState({ status: "ok", kind: "image", content: "", language: realExt, resolvedPath: target }); return; }
+        if (realExt === "pdf") { setState({ status: "ok", kind: "pdf", content: "", language: "pdf", resolvedPath: target }); return; }
+        if (BINARY_EXTENSIONS.has(realExt)) { setState({ status: "ok", kind: "binary", content: "", language: realExt, resolvedPath: target }); return; }
+        const result = await window.codex.readFile(target);
         const binary = atob(result.dataBase64 ?? "");
         const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
         if (cancelled) return;
         if (looksBinary(bytes)) {
-          setState({ status: "ok", kind: "binary", content: "", language: ext });
+          setState({ status: "ok", kind: "binary", content: "", language: realExt });
           return;
         }
         const raw = decodeText(bytes);
         const content = raw.slice(0, PREVIEW_MAX_CHARS);
-        setState({ status: "ok", kind: "text", content, language: ext || "text", truncated: raw.length > PREVIEW_MAX_CHARS });
+        setState({ status: "ok", kind: "text", content, language: realExt || "text", truncated: raw.length > PREVIEW_MAX_CHARS, resolvedPath: target });
       } catch (error: any) {
         if (cancelled) return;
         const message = ipcErrorMessageOf(error, "文件打不开");
@@ -109,7 +118,11 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
           </button>
         </div>
       </div>
-      {path && <div className="workspace-file-preview-path" title={path}>{path}</div>}
+      {path && (
+        <div className="workspace-file-preview-path" title={state.resolvedPath || path}>
+          {state.resolvedPath || path}
+        </div>
+      )}
       <div className="workspace-file-preview-body">
         {state.status === "idle" ? (
           <div className="workspace-file-preview-empty">

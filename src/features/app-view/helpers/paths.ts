@@ -69,10 +69,19 @@ function collectKnownPaths(source: unknown, map: Map<string, string>, depth = 0)
   if (typeof source === "object") { for (const value of Object.values(source as Record<string, unknown>)) collectKnownPaths(value, map, depth + 1); return; }
   if (typeof source !== "string") return;
   for (const match of source.matchAll(/([A-Za-z]:[\\/][^\s<>:"|?*]+\.[A-Za-z0-9]{1,5})/g)) {
-    const abs = match[1];
+    const abs = decodeMaybeEncodedPath(match[1]);
     const base = abs.split(/[\\/]/).pop()?.toLowerCase() ?? "";
     if (base) map.set(base, abs);
   }
+}
+
+/** 会话文本里出现的路径常是 **URL 编码**形态（`D:/Codex%20Harness%20Desktop/src/lib/x.mjs`，
+ *  来自 `file://` / `harness-image://` 链接）。直接当本地路径用会**永远"不存在"**
+ *  ——10-30 用户实测：卡片点开报「文件不存在」，而真文件就在宿主仓里。
+ *  ⇒ 入库前解一次百分号编码；解不开（畸形序列）就按原文存，宁可留候选也别丢。 */
+function decodeMaybeEncodedPath(value: string): string {
+  if (!/%[0-9A-Fa-f]{2}/.test(value)) return value;
+  try { return decodeURIComponent(value); } catch { return value; }
 }
 
 export /** 粘贴文本的大窗口预览 + 编辑（09-18 用户：「点击这个txt chip，要支持打开大窗口预览，
