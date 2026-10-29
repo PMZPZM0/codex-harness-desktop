@@ -9,8 +9,8 @@ android {
     defaultConfig {
         minSdk 26
         targetSdk 34
-        versionCode 6
-        versionName "0.1.5"
+        versionCode 7
+        versionName "0.1.6"
     }
 
     // 两个包各自写死服务器地址：装完只要输 6 位连接码（扫码照旧可用）

@@ -1665,8 +1665,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (androidSrc.includes("startConnect(code == null") && androidSrc.includes('"/api/pair"') && androidSrc.includes("pollApproval") && !androidSrc.includes("openChat(") ? ok : fail)(
       "【139e】配对在 App 内一次完成：手输码保留 + 直接 POST /api/pair 并轮询批准（⛔ 不再打开网页配对页）"
     );
-    (relaySrc.includes("mobile-remote-v0.1.5") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.5）"
+    (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl") ? ok : fail)(
+      "【139e】冷启动自动登录要重试（中转未就绪不许让人白输码）+ Cookie 去重 + 进页前等一拍"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.6") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.6）"
     );
   }
 }
