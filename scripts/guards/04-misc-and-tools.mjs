@@ -1605,6 +1605,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (androidSrc.includes("baseOf(normalize(raw))") && androidSrc.includes("baseOf(stored)") && androidSrc.includes('indexOf("/r/")') ? ok : fail)(
       "【139e】APK 存扫码链接时必须保留 /t/<id> 前缀（只存 origin 会 404）"
     );
+    (relaySrc.includes("let submitting = false") && relaySrc.includes("if (submitting) return") && !relaySrc.includes('location.href = API_BASE') ? ok : fail)(
+      "【139e】配对防重复：自动提交与手点只发一次；审批后用 location.replace（⛔ href 会让返回键回到配对页）"
+    );
+    (gwSrc.includes("lastPong") && gwSrc.includes("REQ_TIMEOUT_MS = 20_000") ? ok : fail)(
+      "【139e】网关有心跳与更短超时：隧道半死时手机不会干等 35s（返回前先判死并踢连接）"
+    );
+    ((function(){ const a=relaySrc.indexOf("const API_BASE = (function(){"); const k=relaySrc.indexOf('const KEY_DEVICE = "chm-pair-device" + API_BASE'); return a>=0 && k>a; })() ? ok : fail)(
+      "【139e】配对页 API_BASE 必须在 KEY_DEVICE 之前声明（TDZ：先使用后声明 = 整段脚本挂掉、按钮点了没反应）"
+    );
     (tunnelPage.includes('THREAD_KEY = "chm-thread" + PATH_PREFIX') && relaySrc.includes('KEY_SECRET = "chm-pair-secret" + API_BASE') ? ok : fail)(
       "【139e】localStorage 键按中转前缀隔离：同一部手机连两台电脑时，线程/偏好/设备秘密不互相覆盖"
     );

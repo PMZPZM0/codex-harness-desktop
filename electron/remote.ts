@@ -1007,9 +1007,9 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 <input id="code" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
 <button onclick="submit()">配对并请求连接</button><p id="state"></p></div>
 <script>
-const KEY_DEVICE = "chm-pair-device" + API_BASE;
-/* 中转前缀（10-29）：经 /t/<设备ID> 访问时接口与跳转都要带前缀，否则一律 404 */
+/* 中转前缀（10-29）：经 /t/<设备ID> 访问时接口与跳转都要带前缀，否则一律 404。⛔ 必须声明在 KEY_DEVICE / KEY_SECRET 之前（TDZ：先使用后声明 = 整段脚本挂掉） */
 const API_BASE = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
+const KEY_DEVICE = "chm-pair-device" + API_BASE;
 const KEY_SECRET = "chm-pair-secret" + API_BASE;
 let deviceId = localStorage.getItem(KEY_DEVICE);
 if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem(KEY_DEVICE, deviceId); }
@@ -1017,19 +1017,25 @@ let deviceSecret = localStorage.getItem(KEY_SECRET) || "";
 const ua = navigator.userAgent;
 const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
 const el = document.getElementById("state");
+let submitting = false;
 async function submit(){
+  /* ⛔ 防重复配对：#code= 自动提交 + 用户手点会发两次，电脑端就出现两张「等待批准」 */
+  if (submitting) return;
   const code = document.getElementById("code").value.trim();
   if (code.length !== 6) { el.className = "err"; el.textContent = "请输入 6 位数字"; return; }
+  submitting = true;
+  const button = document.querySelector("button");
+  if (button) button.disabled = true;
   el.className = ""; el.textContent = "正在校验…";
   try {
     const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName, deviceSecret }) });
     const j = await r.json();
-    if (!j.ok) { el.className = "err"; el.textContent = j.error || "配对失败"; return; }
+    if (!j.ok) { submitting = false; if (button) button.disabled = false; el.className = "err"; el.textContent = j.error || "配对失败"; return; }
     if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); }
-    if (j.approved) { el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.href = API_BASE + "/r/mobile", 600); return; }
+    if (j.approved) { el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
     el.className = "wait"; el.textContent = "配对码正确，等待电脑端批准…";
     poll(j.rid);
-  } catch(e) { el.className = "err"; el.textContent = "网络错误：" + e.message; }
+  } catch(e) { submitting = false; if (typeof button !== "undefined" && button) button.disabled = false; el.className = "err"; el.textContent = "网络错误：" + e.message; }
 }
 async function poll(rid){
   const t0 = Date.now();
@@ -1038,7 +1044,7 @@ async function poll(rid){
     try {
       const r = await fetch(API_BASE + "/api/pair-status?rid=" + rid);
       const j = await r.json();
-      if (j.status === "approved") { if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); } el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.href = API_BASE + "/r/mobile", 600); return; }
+      if (j.status === "approved") { if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); } el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
       if (j.status === "denied") { el.className = "err"; el.textContent = "电脑端拒绝了这次连接"; return; }
       if (j.status === "expired") { el.className = "err"; el.textContent = "等待超时，请重新配对"; return; }
     } catch { /* 隧道偶尔超时，继续轮询 */ }
@@ -1053,7 +1059,7 @@ async function autoLogin(){
   try {
     const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ deviceId, deviceName, deviceSecret }) });
     const j = await r.json();
-    if (j.ok && j.approved) { el.className = "ok"; el.textContent = "已登录，正在进入…"; location.href = API_BASE + "/r/mobile"; return; }
+    if (j.ok && j.approved) { el.className = "ok"; el.textContent = "已登录，正在进入…"; location.replace(API_BASE + "/r/mobile"); return; }
   } catch { /* 网络不通就留在表单 */ }
   el.className = ""; el.textContent = "";
 }
