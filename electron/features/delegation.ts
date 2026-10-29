@@ -14,6 +14,7 @@ import { safeProviderId } from "../provider-id";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
+import { buildCliRolePrompt, readUsableCliAgents } from "../cli-agents";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
@@ -78,6 +79,15 @@ export async function runDelegatedTask(input: {
     rolePrompt = sub.systemPrompt ?? "";
     subAgentConfig = sub;
     roleRef = { kind: "subagent", id: target.key, label: target.name };
+  } else if (target.kind === "cli") {
+    /* CLI 智能体（10-29）：它的"角色提示"由 CLI 定义生成 —— 用 shell 跑那个命令，跑不了如实说。
+       ⛔ 刻意**不给 roleRef**：CLI 是外部程序不是角色，给它一份"角色自传"只会让两套记忆混在一起
+       （它自己的状态在它自己的配置目录里）。tokens 也不额外给 —— 它靠内置 shell 干活。 */
+    const clis = await readUsableCliAgents();
+    const cli = clis.find((entry) => entry.id === target.key);
+    if (!cli) return { ok: false, output: "", error: `CLI 智能体「${input.name}」不存在或已停用` };
+    rolePrompt = buildCliRolePrompt(cli);
+    displayName = cli.name;
   } else {
     const teams = await readUsableExpertTeams();
     const team = teams.find((entry) => entry.teamId === target.teamId);

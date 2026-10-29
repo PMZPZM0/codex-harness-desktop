@@ -268,6 +268,9 @@
   --cyan: #0891b2;
   --mono: "Cascadia Code", Consolas, ui-monospace, monospace;
   --red: #d94f43;
+  /* 10-29：别名令牌 —— 飞书 CLI 卡片与 12-settings-skills 用的是 --danger（【160】报它从未定义，
+     暗色主题下会恒落亮色 fallback）。按语义它就该等于 --red，这里只补别名，不改任何现有取值。 */
+  --danger: var(--red);
   --ok: #3fb36b;
   --link: #2f6bdd;
   --add: #1a7f37;
@@ -331,6 +334,7 @@
   --purple: #a78bfa;
   --cyan: #22d3ee;
   --red: #ec7a70;
+  --danger: var(--red);
   --ok: #58c085;
   --link: #7cabf8;
   --add: #6cc281;

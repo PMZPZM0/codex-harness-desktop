@@ -96,10 +96,13 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
   }, 0);
   const subCount = countOf("subagent");
   const teamCount = countOf("team");
+  /* CLI 智能体（10-29 晚）：与专家 / 子智能体同待遇（默认可派、没有开关），只报个数让人知道有它。
+     ⛔ 0 个时**不显示**这一枚 chip —— 一个「CLI 0」只会让人以为哪里坏了。 */
+  const cliCount = countOf("cli");
   /* 面板只有一个开关（专家团）⇒ 脏判定只看它。确认时 expert/subagent 一律写 true：
      界面上没有"关掉专家"这条路，数据里就不该留一个假的关闭态（老记录里若有 false，这里顺手纠正）。 */
   const dirty = draft.team !== (dispatch.team === true);
-  const anyAvailable = expertCount + subCount + teamCount > 0;
+  const anyAvailable = expertCount + subCount + teamCount + cliCount > 0;
   /*⛔⛔ 2026-10-04 用户报「点调度弹窗展示不出来」——
      根因：`.topbar` 在 d19c510 被加了 `overflow: hidden`（修「图标压到原生窗口钮底下」），
      而本弹层是 `.topbar` 的 `position: absolute` 后代 ⇒ **被整棵子树裁掉**，
@@ -199,13 +202,18 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
           <div className="dispatch-always">
             <span className="dispatch-chip" title="专家库里的每一位（主理人与成员）都是独立专家，都能单独使用">专家 <b>{expertCount}</b></span>
             <span className="dispatch-chip">子智能体 <b>{subCount}</b></span>
+            {cliCount > 0 && (
+              <span className="dispatch-chip" title="在「设置 → 开发工具 → CLI 智能体」里接入的本机命令行工具">
+                CLI <b>{cliCount}</b>
+              </span>
+            )}
             <small>每位专家都能单独用</small>
           </div>
           {/* ⛔ 底部只在「一个可调度对象都没有」时才出声；正常态那句「仅专家团需要开启」
               与卡片副标题重复，属于赘述（用户点名），删掉。 */}
           <div className={`dispatch-foot${anyAvailable ? " no-scope" : ""}`}>
             {!anyAvailable && (
-              <small className="dispatch-scope is-warn">当前没有可调度的对象：去设置里启用专家 / 子智能体 / 专家团</small>
+              <small className="dispatch-scope is-warn">当前没有可调度的对象：去设置里启用专家 / 子智能体 / 专家团，或接入一个 CLI</small>
             )}
             <div className="dispatch-actions">
               <button type="button" onClick={() => setOpen(false)}>取消</button>

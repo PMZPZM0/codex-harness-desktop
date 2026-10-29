@@ -1,6 +1,6 @@
 /** dispatch-mention.mjs 的类型声明（TS7016：.mjs 需配 .d.mts） */
 
-export type MentionKind = "expert" | "subagent" | "team";
+export type MentionKind = "expert" | "subagent" | "team" | "cli";
 
 export type MentionTarget = {
   kind: MentionKind | "member" | string;
@@ -11,6 +11,9 @@ export type MentionTarget = {
 };
 
 export const MENTION_GROUPS: Array<{ kind: MentionKind; label: string; hint: string }>;
+/** kind → 显示标签（芯片 / 候选行共用；⛔ 别在 JSX 里再写一遍三元） */
+export const MENTION_KIND_LABEL: Record<string, string>;
+export function mentionKindLabel(kind: unknown): string;
 export const MENTION_PER_GROUP: number;
 export const MENTION_MAX: number;
 

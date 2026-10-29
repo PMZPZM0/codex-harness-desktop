@@ -69,7 +69,9 @@ bag.setDispatchMentions = setDispatchMentions as typeof bag.setDispatchMentions;
       if (next.length === current.length) bag.showToast("已经点过名了", `「${target.name}」已在本条消息里`);
       return next;
     });
-    bag.setPrompt((current) => current.replace(/@[^\s]*$/, ""));
+    /* ⛔ 清到行尾（不是到空白）：对象名带空格（"Claude Code"），
+       用 `/@[^\s]*$/` 只会清掉 "@Code"、把 "Claude " 留在输入框里。 */
+    bag.setPrompt((current) => current.replace(/@[^\n]*$/, ""));
     bag.setContextQuery("");
     bag.setContextOpen(false);
     requestAnimationFrame(() => bag.composerInputRef.current?.focus());
@@ -140,14 +142,30 @@ bag.addSkillReference = addSkillReference as typeof bag.addSkillReference;
     //   标记滞留、下一次程序化改 prompt 被误跳过」）。
     bag.draftJustRestoredRef.current = false;
     saveDraft(bag.thread?.id ?? null, value);
-    /* ★ 10-29 用户令：「把 @ 引用上下文改成 * 引用上下文」——引用历史消息改用 `*` 触发，
-       `@` 让给"点名专家 / 子智能体 / 专家团"（见 features/dispatch-mention 的候选面板）。
-       判据三条（缺一条就会误触）：
-         ① `*` 必须在一个词的**起点**（行首或前一个字符是空白）——避免 `a*b`、`2*3` 这种算式；
-         ② `*` 后面到行尾**没有空白**（与旧 `@` 一致：敲了空格就关闭）；
-         ③ `*` 后面紧跟的这个字符必须是**字母/数字/汉字**（或还没输入）——`*.ts`、`**粗体**`
-            这类代码与 markdown 写法不弹面板，否则每写一个通配符都跳出一堆历史消息。 */
+    /* ★ 两个触发符共用同一个弹层，按**最后出现的那个符号**决定这次是谁（互不抢）：
+         `@` = 点名调度对象（专家 / 子智能体 / CLI 智能体 / 专家团）
+         `*` = 引用本次对话里的历史消息
+       ⛔⛔ 10-29 晚补齐 `@` 的触发入口：上一版把 `@` 整体换成了 `*`（用户令「把 @ 引用上下文改成 *」），
+         结果 `@ 点名` 只剩下面板渲染 + 芯片 + 发送注入，**没有任何地方把 contextOpen 打开的**
+         —— 文档与交付说明都写着"输入 @ 即弹候选"，实际敲了没反应（典型的「声称能力」）。
+       判据刻意不同：
+         · `*` 后面不许有空白 —— `a*b` / `2*3` / `**粗体**` 这类不能误触；
+         · `@` 允许空格 —— 对象名本身带空格（"Claude Code"、"Codex CLI"），
+           敲到一半就关面板的话，用户永远选不到带空格的那一个。 */
     const star = value.lastIndexOf("*");
+    const at = value.lastIndexOf("@");
+    if (at >= 0 && at > star) {
+      const afterAt = value.slice(at + 1);
+      const atStart = at === 0 || /\s/.test(value[at - 1] ?? "");
+      // 40 字上限 = 防止把整段粘贴文本当查询词（对象名不会这么长）
+      if (atStart && !/\n/.test(afterAt) && afterAt.length <= 40) {
+        bag.setContextQuery(afterAt);
+        bag.setContextOpen(true);
+        return;
+      }
+      bag.setContextOpen(false);
+      return;
+    }
     const afterStar = star >= 0 ? value.slice(star + 1) : "";
     const tokenStart = star === 0 || /\s/.test(value[star - 1] ?? "");
     const looksLikeQuery = /^\s*$/.test(afterStar) || /^[\p{L}\p{N}]/u.test(afterStar);

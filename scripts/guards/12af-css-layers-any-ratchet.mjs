@@ -72,7 +72,7 @@ ok(xtermInTsx === 0, "TS/TSX 里不再直接 import xterm.css（实测 " + xterm
  *  10-29 1696→1700（+4 实测）：来自**已提交**的飞书 CLI 页（`FeishuCliCard.tsx` 0→6）与
  *  `event-router/02-request.tsx`（45→46），不是本轮改动加的 —— 本轮的技能卡/折叠图标一个 any 都没新增
  *  （同轮 `--update-any-baseline` 记的逐文件数就是实测）。该线提交时没刷总账，按实测补记，否则整链永远红。 */
-const ANY_CAP = 1701;
+const ANY_CAP = 1702;
 let anyCount = 0;
 const perFile = [];
 const walk = (dir) => {

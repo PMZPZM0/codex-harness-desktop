@@ -60,7 +60,9 @@ try {
      ⛔ 但结构契约仍要验（分节 / kind / 勾选过滤）⇒ 下面用**探针条目**把 0 条的情形补齐。 */
   ok(nSub === 0 || targets.filter((t) => t.kind === "subagent").every((t) => Boolean(t.name)),
     "子智能体条目都有名字（0 条也合法：出厂无内置，用户自己建的才有）");
-  const probeTargets = nSub > 0 ? targets : [...targets, { kind: "subagent", name: "结构探针", description: "guard 结构断言用的探针条目" }];
+  const probeTargets = (nSub > 0 ? targets : [...targets, { kind: "subagent", name: "结构探针", description: "guard 结构断言用的探针条目" }])
+    // 10-29 晚：CLI 智能体也进目录 —— 探针里没有它，下面「cli 分节」的断言就永远是空转
+    .concat([{ kind: "cli", key: "probe-cli", name: "CLI 探针", profession: "编码 CLI", description: "guard 结构断言用的 CLI 探针" }]);
 
   // ③ 每条都必须有名字（UI 直接显示 target.name）
   const noName = targets.filter((t) => !t.name);
@@ -92,8 +94,9 @@ try {
      并且必须写明"别让用户去开开关"（否则模型会让用户去点一个不存在的开关）。 */
   {
     const teamOff = dispatchToolDescription(probeTargets, { expert: true, team: false, subagent: true });
-    ok(/专家、子智能体可直接派（不需要任何开关）/.test(teamOff),
-      "团关时首句写明「专家、子智能体可直接派、不需要任何开关」");
+    ok(/专家、子智能体、CLI 智能体可直接派（不需要任何开关）/.test(teamOff),
+      "团关时首句写明「专家、子智能体、CLI 智能体可直接派、不需要任何开关」");
+    ok(teamOff.includes('kind="cli"'), "团关时 CLI 智能体**仍列出**（它与专家 / 子智能体同待遇，不受专家团开关影响）");
     ok(teamOff.includes('kind="expert"') && teamOff.includes('kind="subagent"'),
       "团关时专家与子智能体**仍列出**（它们不该被开关误伤）");
     ok(/【专家团】本会话\*\*未开启\*\*/.test(teamOff), "只有专家团被显式否定（不是隐藏 —— 隐藏会让模型反复试错）");
