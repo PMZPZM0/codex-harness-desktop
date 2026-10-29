@@ -204,7 +204,7 @@ export async function setSessionWorkspaceState(
 export async function removeSessionWorkspace(
   userData: string,
   threadIdRaw: unknown,
-): Promise<{ ok: boolean; removed: boolean; reason?: string }> {
+): Promise<{ ok: boolean; removed: boolean; reason?: string; projectRoot?: string }> {
   const threadId = safeThreadId(threadIdRaw);
   if (!threadId) return { ok: false, removed: false, reason: "threadId 非法" };
 
@@ -233,7 +233,10 @@ export async function removeSessionWorkspace(
 
   delete registry.records[threadId];
   await writeRegistry(userData, registry);
-  return { ok: true, removed: true };
+  /* 把 projectRoot 一并交回：调用方还要用它清**该会话的私有记忆目录**
+     （fabric 的 private__<threadId>/）—— 那里是会话级记忆，删除后永不复活。
+     ⛔ 不在这函数里清记忆：记忆归 memory-fabric 管，跨域直接写它的目录 = 两个 owner。 */
+  return { ok: true, removed: true, projectRoot: record.projectRoot };
 }
 
 /**

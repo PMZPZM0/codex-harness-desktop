@@ -562,6 +562,47 @@ export async function archiveSessionMemory(
 }
 
 /**
+ * **永久删除会话**时清掉它的私有记忆目录（`private__<threadId>/`）。
+ *
+ * ⛔⛔ 与 `archiveSessionMemory` 的分工（别混用）：
+ *   · 归档会话 ⇒ `archiveSessionMemory(…, true)`：只打 `archivedAt`，**目录保留**，
+ *     取消归档后记忆要能接着用；
+ *   · 删除会话 ⇒ 本函数：目录整个删掉。
+ *
+ * 为什么删是安全的（三条，缺一条就不能删）：
+ *   ① private 层的 ownerId 就是**会话 id**（见 buildHandles 的 privateOwner = sessionId），
+ *      会话被永久删除后引擎不会再发这个 id ⇒ 该命名空间**永不复活**，留着只是磁盘垃圾；
+ *   ② 角色经验不在这一层 —— 那是 `role-memory` 按角色存的（专家下次派出读它），
+ *      fabric 的 private 是「这条会话自己看到的东西」，随会话走；
+ *   ③ project / team 层一个字都不动 —— 那才是跨会话共享的项目经验。
+ *
+ * ⛔ 安全闸：只删 `<workspace>/.codex-harness/memory/fabric/private__<sessionId>`，
+ *    且拼接路径必须仍在 fabric 根内、目录名必须带 `private__` 前缀（同 boss-home 口径）。
+ * @returns 是否真的删掉了一个目录
+ */
+export async function clearSessionPrivateMemory(
+  workspace: string | undefined,
+  sessionId: string,
+): Promise<boolean> {
+  const ns = namespaceOf("private", sessionId);
+  if (!ns) return false;
+  const root = fabricRoot(workspace);
+  const dir = namespaceDir(workspace, ns);
+  if (!root || !dir) return false;
+  const resolved = path.resolve(dir);
+  const rootResolved = path.resolve(root);
+  const rel = path.relative(rootResolved, resolved);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel) || !rel.startsWith("private__")) return false;
+  try {
+    await fs.rm(resolved, { recursive: true, force: true });
+    return true;
+  } catch {
+    /* 删不掉（被占用）不抛：会话本身已经删了，目录残留交给下次启动的 sweep 归档即可。 */
+    return false;
+  }
+}
+
+/**
  * 生命周期清扫（⛔ 必须接到启动路径上才有意义 —— `prune()` 从未被调用是既有教训）：
  * ① 会话记忆过保留期 → 归档（不删）
  * ② 单命名空间超量 → 裁剪

@@ -33,6 +33,7 @@ import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
 import { ensureSessionWorkspace, removeSessionWorkspace } from "./session-workspace";
+import { clearSessionPrivateMemory } from "../memory-fabric";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
@@ -216,7 +217,12 @@ export const codexFeature = defineFeature<null>({
           /* 10-29 用户令：会话专属工作区（<project>/.codex-harness/sessions/<id>）跟着会话一起走。
              ⛔ 必须 await 前面的 purge 之后再删目录：rollout 还占着文件时删目录会失败并留下孤儿。
              ⛔ 失败不抛（删除已经成功了，工作区残留交给下次启动的 gc 收）；另一入口在 boot 的 thread/deleted。 */
-          await removeSessionWorkspace(app.getPath("userData"), purgeTarget).catch(() => undefined);
+          const wsOut = await removeSessionWorkspace(app.getPath("userData"), purgeTarget).catch(() => undefined);
+          /* 同一条纪律（两处入口都要清）：会话的私有记忆目录 private__<id>/ 也一起删。
+             ⛔ 只在删除路径做；归档路径必须保留（取消归档要能接着读）。
+             ⛔ 用工作区记录里的 projectRoot 定位 —— threadCwd 在重启后可能已空。 */
+          const memoryWs = wsOut?.projectRoot || "";
+          if (memoryWs) void clearSessionPrivateMemory(memoryWs, purgeTarget).catch(() => undefined);
         }
       }
       /* 10-29 用户令：新建会话后，在**项目地址下**给它建专属工作区。

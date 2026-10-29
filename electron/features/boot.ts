@@ -16,6 +16,7 @@ import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
 import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
+import { clearSessionPrivateMemory } from "../memory-fabric";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
 import { healEngineInstall } from "../engine-install-heal";
@@ -814,8 +815,23 @@ export async function bootApp() {
              删除 ⇒ 目录 + 记录一起清；归档 ⇒ **只打标记，目录保留**（取消归档要能接着用）。
              ⛔ 这是第二条入口（引擎侧发起的删除/归档），codex-ipc 的 purgeTarget 是第一条 —— 两处都要有。 */
           if (goneId) {
-            if (event.method === "thread/deleted") void removeSessionWorkspace(app.getPath("userData"), goneId).catch(() => undefined);
-            else void setSessionWorkspaceState(app.getPath("userData"), goneId, "archived").catch(() => undefined);
+            if (event.method === "thread/deleted") {
+              /* 删除：工作区目录 + **该会话的私有记忆目录**（private__<id>/）一起清。
+                 ⛔ 用工作区记录里的 projectRoot 定位记忆，不用 threadCwd 缓存 ——
+                    重启后再删旧会话时缓存可能是空的，那就定位不到、只剩垃圾。
+                 ⛔ 顺序：先删工作区拿到 projectRoot，再删记忆（记忆归 memory-fabric，别在这里拼路径）。 */
+              void removeSessionWorkspace(app.getPath("userData"), goneId)
+                .then(async (out) => {
+                  const memoryWs = out.projectRoot || threadCwd.get(goneId) || "";
+                  if (!memoryWs) return;
+                  const dropped = await clearSessionPrivateMemory(memoryWs, goneId).catch(() => false);
+                  if (dropped) console.log(`[sessionspace] 已清会话私有记忆：${goneId.slice(0, 8)}`);
+                })
+                .catch(() => undefined);
+            } else {
+              /* 归档：只打标记，目录与记忆**都保留**（取消归档要能接着用）。 */
+              void setSessionWorkspaceState(app.getPath("userData"), goneId, "archived").catch(() => undefined);
+            }
           }
           /* 10-05 角色记忆：会话被删 ⇒ 它的角色归属索引也清掉（否则索引无限增长，
              且那个 threadId 永远查不到归属、也永远占着一条记录）。记忆内容本身**留着** —
