@@ -159,3 +159,10 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .skill-pack-stage { font-size: 11px; color: var(--accent, var(--green)); }
 .skill-pack-result { font-size: 11px; color: var(--muted); }
 .skill-pack-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--danger, #c0392b); }
+/* 10-30：结果行按性质着色（真成功绿 / 中性灰黄 / 失败红）+ 头部「打开技能目录」按钮 */
+.skill-pack-result.ok { color: var(--green); }
+.skill-pack-result.warn { color: var(--muted); }
+.skill-pack-result.error { color: var(--danger, #c0392b); }
+.skill-pack-head-row { display: flex; align-items: flex-start; gap: 10px; }
+.skill-pack-head-row .settings-card-hint { flex: 1; min-width: 0; margin: 0; }
+.skill-pack-head-row .secondary-setting { flex: none; display: inline-flex; align-items: center; gap: 5px; }
