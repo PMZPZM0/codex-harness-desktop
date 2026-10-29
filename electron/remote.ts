@@ -131,6 +131,8 @@ const PAIR_CODE_TTL = 5 * 60_000;
 const PAIR_CODE_MAX_TRIES = 10;
 /** 审批请求 2 分钟没人理就作废（手机端轮询到 expired） */
 const PAIR_REQUEST_TTL = 2 * 60_000;
+/** 已配对设备的保留期：超过 30 天没连过就自动清理（手机换机 / 卸载后留下的僵尸条目） */
+const DEVICE_TTL_MS = 30 * 24 * 60 * 60_000;
 
 /** 内置中转站的默认根地址（手机远控「装完即用」的线上网关）。
  *  ⛔ 换域名只改这一处 + 各仓的 APK 内置地址；运行时可用 HARNESS_RELAY_URL / relay-url.txt 覆盖。 */
@@ -179,6 +181,8 @@ export class RemoteControlService {
     this.approvedFile = this.storageFile ? path.join(path.dirname(this.storageFile), "remote-devices.json") : "";
     this.loadDeviceThreads();
     this.loadApproved();
+    /* 启动即清一次过期设备（30 天未连接）—— 已配对列表不再无限增长 */
+    this.pruneApproved();
   }
 
   private loadApproved() {
@@ -186,7 +190,8 @@ export class RemoteControlService {
     try {
       const data = JSON.parse(fs.readFileSync(this.approvedFile, "utf8"));
       for (const [key, value] of Object.entries<any>(data ?? {})) {
-        if (value && typeof value.name === "string") this.approved.set(key, { name: value.name, approvedAt: Number(value.approvedAt ?? 0), lastSeen: Number(value.lastSeen ?? 0) });
+        /* ⛔ 必须带回 secretHash：丢掉它 = 重启后「设备秘密快路」失效，手机会被迫重新输码（审查发现） */
+        if (value && typeof value.name === "string") this.approved.set(key, { name: value.name, approvedAt: Number(value.approvedAt ?? 0), lastSeen: Number(value.lastSeen ?? 0), secretHash: typeof value.secretHash === "string" ? value.secretHash : undefined });
       }
     } catch { /* 首次运行无文件 */ }
   }
@@ -838,6 +843,24 @@ export class RemoteControlService {
     try { device.socket.write(Buffer.concat([header, payload])); } catch { /* closed */ }
   }
 
+  /** 清理长期未连接的已配对设备（用户实测：「已配对设备不会自动删失效的」）。
+   *  判据 = max(lastSeen, approvedAt) 早于 30 天；清理后写盘并记一条日志。 */
+  private pruneApproved() {
+    const now = Date.now();
+    let removed = 0;
+    for (const [id, info] of this.approved) {
+      const last = Math.max(Number(info.lastSeen ?? 0), Number(info.approvedAt ?? 0));
+      if (last > 0 && now - last > DEVICE_TTL_MS) { this.approved.delete(id); removed += 1; }
+    }
+    if (removed) { this.saveApproved(); console.log(`[remote] 已清理 ${removed} 台超过 30 天未连接的已配对设备`); }
+  }
+
+  /** 已配对设备列表（读之前顺手清理过期条目） */
+  approvedDevices() {
+    this.pruneApproved();
+    return [...this.approved.entries()].map(([deviceId, info]) => ({ deviceId, name: info.name, approvedAt: info.approvedAt, lastSeen: info.lastSeen }));
+  }
+
   listDevices() {
     return [...this.devices.values()].map((d) => ({ id: d.id, name: d.name, code: d.code, connectedAt: d.connectedAt, lastSeen: d.lastSeen }));
   }
@@ -926,10 +949,6 @@ export class RemoteControlService {
   }
 
   /** 已批准设备列表（界面可撤销） */
-  approvedDevices() {
-    return [...this.approved.entries()].map(([deviceId, info]) => ({ deviceId, name: info.name, approvedAt: info.approvedAt, lastSeen: info.lastSeen }));
-  }
-
   private readBody(request: http.IncomingMessage): Promise<string> {
     return new Promise((resolve) => {
       let body = "";
