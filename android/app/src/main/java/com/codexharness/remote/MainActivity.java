@@ -17,7 +17,6 @@ import android.webkit.WebSettings;
 import android.webkit.ValueCallback;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.EditText;
 import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -46,7 +45,6 @@ public class MainActivity extends AppCompatActivity {
 
     private WebView web;
     private View setup;
-    private EditText code;
     private TextView hint;
     private String baseUrl;
 
@@ -58,7 +56,6 @@ public class MainActivity extends AppCompatActivity {
                 //    放后面的话「扫到 6 位码」这条永远走不到（会去加载 https://123456）。
                 String digitsOfScan = raw.replaceAll("[^0-9]", "");
                 if (!raw.toLowerCase(java.util.Locale.ROOT).startsWith("http") && digitsOfScan.length() == 6) {
-                    code.setText(digitsOfScan);
                     openChat(digitsOfScan);
                     return;
                 }
@@ -71,7 +68,8 @@ public class MainActivity extends AppCompatActivity {
                 }
                 baseUrl = scanned;
                 prefs().edit().putString(KEY_BASE, baseUrl).apply();
-                openChat(code.getText().toString());
+                /* 只扫一次码就进：连接码在网页配对页里输（⛔ App 首屏不再重复要一遍） */
+                openChat("");
             });
 
     @Override
@@ -81,16 +79,14 @@ public class MainActivity extends AppCompatActivity {
 
         web = findViewById(R.id.web);
         setup = findViewById(R.id.setup);
-        code = findViewById(R.id.code);
         hint = findViewById(R.id.hint);
-        findViewById(R.id.connect).setOnClickListener(v -> openChat(code.getText().toString()));
         findViewById(R.id.scan).setOnClickListener(v -> startScan());
 
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.2");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.3");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -243,11 +239,12 @@ public class MainActivity extends AppCompatActivity {
         return new String(out, java.nio.charset.StandardCharsets.UTF_8);
     }
 
-    /** 连接码走 URL 片段（#code=…）：不会进服务器日志，配对页读到就自动提交。 */
+    /** 进对话页。rawCode 为空 = 只打开页面（连接码在网页配对页里输，App 不再重复问一遍）；
+     *  带 6 位码 = 从旧二维码扫到纯数字时走 URL 片段自动提交（不会进服务器日志）。 */
     private void openChat(String rawCode) {
         String digits = rawCode == null ? "" : rawCode.replaceAll("[^0-9]", "");
-        if (digits.length() != 6) {
-            showSetup("请输入电脑上显示的 6 位连接码");
+        if (!digits.isEmpty() && digits.length() != 6) {
+            showSetup("二维码里的连接码不是 6 位数字");
             return;
         }
         hint.setText("");
@@ -255,7 +252,7 @@ public class MainActivity extends AppCompatActivity {
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
         // ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要（且避免刷新时把码丢掉）
-        web.loadUrl(baseUrl + "/r/mobile#code=" + digits);
+        web.loadUrl(baseUrl + "/r/mobile" + (digits.isEmpty() ? "" : "#code=" + digits));
     }
 
     private void startScan() {
