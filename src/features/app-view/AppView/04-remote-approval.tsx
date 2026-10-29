@@ -273,6 +273,13 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                 <div className="remote-col">
                   <div className="remote-col-title"><Smartphone size={15} /><strong>手机扫码连接</strong></div>
                   <p className="remote-col-desc">用手机<b>相机</b>扫一扫（若扫码识别成文本，请选「打开链接」）。{remoteUrl?.startsWith("https") ? "手机无需与电脑同一 Wi-Fi。" : "手机需与电脑同一 Wi-Fi。"}</p>
+                  {/* 把「本窗口的连接码 + 地址」显示在二维码上方：两台电脑/两个应用各有各的码，
+                      用户在两个窗口之间看码时很容易抄错（实测 144877 就是不存在的旧码） */}
+                  <div className="remote-pair-code-line">
+                    <span>连接码</span>
+                    <strong className="remote-pair-code-value" data-pair-code-value>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</strong>
+                    <small>{(() => { try { return remoteUrl ? "本窗口：" + new URL(remoteUrl).host : ""; } catch { return ""; } })()}</small>
+                  </div>
                   <div className="remote-conn-card">
                     <div className="remote-conn-left"><div className="remote-conn-title"><strong>等待手机连接</strong><span className="remote-ready"><span className="remote-ready-dot" />已就绪</span></div><small>用手机扫码，或在手机上打开链接。</small></div>
                     <button className="remote-stop-btn" title="停止服务" onClick={async () => { await window.codex.remoteStop(); setMobileRemoteOpen(false); }}><Link2 size={13} />停止</button>
