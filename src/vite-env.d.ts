@@ -168,6 +168,8 @@ type DispatchTargetEntry = {
   description: string;
   teamId?: string;
   memberId?: string;
+  /** 专家团目标的成员数（不含主理人）：面板「专家总数」用它 +1（主理人）求和。 */
+  memberCount?: number;
 };
 
 /** 被调度产生的临时会话登记记录（侧栏标记 / 归档都读它） */

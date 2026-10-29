@@ -31,6 +31,8 @@ export type DispatchTarget = {
   description: string;
   teamId?: string;
   memberId?: string;
+  /** 专家团目标的成员数（不含主理人）：只用于面板上的「专家总数」口径，不参与调度。 */
+  memberCount?: number;
 };
 
 /* ─────────────── L1：被委派会话的持久指令 ─────────────── */

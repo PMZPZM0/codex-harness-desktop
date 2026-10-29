@@ -644,6 +644,7 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams
         profession: `${team.members.length} 位成员`,
         description: team.description?.zh ?? "",
         teamId: team.teamId,
+        memberCount: team.members.length,
       });
     }
   }
