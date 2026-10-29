@@ -297,11 +297,31 @@ function saveSession() {
   } catch { /* 忽略 */ }
 }
 
+/* 电脑端每启动一次都会换 accessToken ⇒ 旧页面会突然 401「unauthorized」。
+   ⛔ 不能只弹「加载失败」：自动重载一次，让页面走配对页的自动登录把凭据换新
+      （同一个页面里再点重试是没用的，cookie 已经失效）。 */
+let reauthing = false;
+function maybeReauth(message) {
+  if (!/unauthorized/i.test(String(message || ""))) return false;
+  if (reauthing) return true;
+  reauthing = true;
+  try {
+    if (sessionStorage.getItem("chm-reauth") === "1") return true;
+    sessionStorage.setItem("chm-reauth", "1");
+  } catch (error) { /* 隐私模式：忽略，仍重载一次 */ }
+  push("system", "连接已失效（电脑端重启过），正在重新连接…");
+  window.setTimeout(() => location.reload(), 600);
+  return true;
+}
 async function rpc(payload) {
   const reqId = String(++rpcSeq);
   const res = await fetch(apiUrl("/api/rpc"), { method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify({ ...payload, reqId }) });
   const data = await res.json();
-  if (data.error) throw new Error(data.error);
+  if (data.error) {
+    maybeReauth(data.error);
+    throw new Error(data.error);
+  }
+  try { sessionStorage.removeItem("chm-reauth"); } catch (error) { /* 忽略 */ }
   return data;
 }
 function push(role, text, cls, pending) {
@@ -542,7 +562,7 @@ function readHomePrefs() {
 function markGroupSeen(groupId) {
   if (!groupId) return;
   groupSeen[String(groupId)] = Date.now();
-  try { localStorage.setItem("chm-group-seen" + PATH_PREFIX), JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
+  try { localStorage.setItem("chm-group-seen" + PATH_PREFIX, JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
 }
 function groupHasNews(group) {
   const seen = Number(groupSeen[String(group && group.id || "")] || 0);
@@ -1157,6 +1177,13 @@ async function pollLoop() {
   try {
     const res = await fetch(apiUrl("/api/events?since=" + pollSince));
     const data = await res.json();
+    if (data && data.error === "unauthorized") {
+      /* 旧页面凭据过期（电脑端重启）：自动重连一次，别停在这里一直「在线」却收不到消息 */
+      document.getElementById("status").textContent = "重连中…";
+      maybeReauth(data.error);
+      window.setTimeout(pollLoop, 3000);
+      return;
+    }
     pollSince = data.now || Date.now();
     for (const event of data.events || []) {
       if (event.threadId !== currentThreadId) continue;
