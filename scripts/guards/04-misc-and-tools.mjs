@@ -1582,6 +1582,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (feishuSrc.includes("--no-wait") && feishuSrc.includes("--device-code") ? ok : fail)(
       "【139f】登录走官方 device flow（auth login --no-wait --json → --device-code）"
     );
+    (feishuSrc.includes("let setupChild") && feishuSrc.includes("setupChild?.kill()") ? ok : fail)(
+      "【139f】重复点「去配置」不会起第二个 config init 进程（先杀旧的；两个 CLI 抢同一份配置会写出半套）"
+    );
     (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
       "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
     );
