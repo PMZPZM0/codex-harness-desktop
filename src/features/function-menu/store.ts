@@ -7,6 +7,7 @@ import {
   setFunctionMenuItemOverflow,
   setFunctionMenuLocation as withLocation,
   type FunctionMenuConfig,
+  type FunctionMenuEntryId,
   type FunctionMenuItemId,
   type FunctionMenuLocation,
 } from "./menu-model.mjs";
@@ -64,16 +65,33 @@ export function setFunctionMenuLocation(location: FunctionMenuLocation) {
   update(withLocation(config, location));
 }
 
-export function moveFunctionMenuItemInMenu(id: FunctionMenuItemId, target: "visible" | "overflow", beforeId?: FunctionMenuItemId | null) {
+export function moveFunctionMenuItemInMenu(id: FunctionMenuEntryId, target: "visible" | "overflow", beforeId?: FunctionMenuEntryId | null) {
   update(moveFunctionMenuItem(config, id, target, beforeId ?? null));
 }
 
-export function toggleFunctionMenuItemOverflow(id: FunctionMenuItemId, inOverflow: boolean) {
+export function toggleFunctionMenuItemOverflow(id: FunctionMenuEntryId, inOverflow: boolean) {
   update(setFunctionMenuItemOverflow(config, id, inOverflow));
 }
 
-export function nudgeFunctionMenuItemInMenu(id: FunctionMenuItemId, delta: number) {
+export function nudgeFunctionMenuItemInMenu(id: FunctionMenuEntryId, delta: number) {
   update(nudgeFunctionMenuItem(config, id, delta));
+}
+
+/** 新增自定义入口后把它们并进主列表（可见组末尾）—— ⛔ 不再渲染成独立区块。 */
+export function appendFunctionMenuItems(ids: FunctionMenuEntryId[]) {
+  let next = config;
+  for (const id of ids) next = moveFunctionMenuItem(next, id, "visible", null);
+  update(next);
+}
+
+/** 删除自定义入口时从 order / overflow 一起摘掉（设置页那边保存由调用方负责）。 */
+export function removeFunctionMenuItems(ids: FunctionMenuEntryId[]) {
+  const drop = new Set(ids.map(String));
+  update(normalizeFunctionMenu({
+    ...config,
+    order: config.order.filter((id) => !drop.has(String(id))),
+    overflow: config.overflow.filter((id) => !drop.has(String(id))),
+  }));
 }
 
 export function resetFunctionMenuLayoutToDefault() {

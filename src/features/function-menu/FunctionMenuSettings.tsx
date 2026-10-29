@@ -36,12 +36,14 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
       <div className="fm-compact-meta">
         <div className="fm-settings-chips" aria-label="当前拓展功能顺序">
           {visible.map((id) => {
-            const meta = FUNCTION_MENU_META[id];
+            const entry = extMenu.find((item) => item.id === id);
+            const meta = (FUNCTION_MENU_META as unknown as Record<string, { label: string; Icon: any; tone: string }>)[String(id)]
+              ?? (entry ? { label: entry.label, Icon: Puzzle, tone: "ic-cyan" } : null);
+            if (!meta) return null;
             const Icon = meta.Icon;
-            return <span className="fm-settings-chip" key={id}><Icon size={12} className={meta.tone} />{meta.label}</span>;
+            return <span className={"fm-settings-chip" + (String(id).startsWith("ext_") ? " fm-settings-custom" : "")} key={id} title={String(id).startsWith("ext_") ? "自定义入口（在「编辑菜单」里增删）" : undefined}><Icon size={12} className={meta.tone} />{meta.label}</span>;
           })}
           {overflow.length > 0 && <span className="fm-settings-chip fm-settings-more">更多 <em>{overflow.length}</em></span>}
-          {extMenu.map((entry) => <span className="fm-settings-chip fm-settings-custom" key={entry.id} title="自定义入口（在「编辑菜单」里增删）"><Puzzle size={12} className="ic-cyan" />{entry.label}</span>)}
         </div>
         <button type="button" className="secondary-setting fm-compact-edit" onClick={openFunctionMenuEditor} title="拖动排序 / 收进更多 / 添加或移除自定义入口"><Pencil size={12} />编辑菜单</button>
       </div>

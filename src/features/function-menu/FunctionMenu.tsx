@@ -31,10 +31,12 @@ import { Puzzle,
 import {
   overflowFunctionMenuItems,
   visibleFunctionMenuItems,
+  type FunctionMenuEntryId,
   type FunctionMenuItemId,
   type FunctionMenuLocation,
 } from "./menu-model.mjs";
 import {
+  appendFunctionMenuItems,
   bumpCustomMenuRevision,
   closeFunctionMenuEditor,
   dismissFunctionMenuTour,
@@ -46,6 +48,7 @@ import {
   runFunctionMenuAction,
   setFunctionMenuLocation,
   openSettingsFromFunctionMenu,
+  removeFunctionMenuItems,
   subscribeFunctionMenuTour,
   toggleFunctionMenuItemOverflow,
   useCustomMenuRevision,
@@ -69,8 +72,10 @@ export const FUNCTION_MENU_META: Record<FunctionMenuItemId, MenuMeta> = {
   newbie: { label: "新手教程", title: "新手教程：分步教你用起来", Icon: Rocket, tone: "ic-cyan" },
 };
 
-function MenuItemButton({ id, onDone, dragging, dropBefore, onDragStart, onDragEnd, onDragOver, onDrop }: {
-  id: FunctionMenuItemId;
+function MenuItemButton({ id, meta, onActivate, onDone, dragging, dropBefore, onDragStart, onDragEnd, onDragOver, onDrop }: {
+  id: string;
+  meta: MenuMeta;
+  onActivate: () => void;
   onDone?: () => void;
   dragging?: boolean;
   dropBefore?: boolean;
@@ -79,7 +84,6 @@ function MenuItemButton({ id, onDone, dragging, dropBefore, onDragStart, onDragE
   onDragOver?: (event: DragEvent<HTMLButtonElement>) => void;
   onDrop?: (event: DragEvent<HTMLButtonElement>) => void;
 }) {
-  const meta = FUNCTION_MENU_META[id];
   const Icon = meta.Icon;
   return (
     <button
@@ -91,7 +95,7 @@ function MenuItemButton({ id, onDone, dragging, dropBefore, onDragStart, onDragE
       onDragEnd={onDragEnd}
       onDragOver={onDragOver}
       onDrop={onDrop}
-      onClick={() => { runFunctionMenuAction(id); onDone?.(); }}
+      onClick={() => { onActivate(); onDone?.(); }}
     >
       <Icon size={15} className={meta.tone} /><span>{meta.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
     </button>
@@ -108,16 +112,35 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   const customRevision = useCustomMenuRevision();
   const [extMenu, setExtMenu] = useState<MenuEntrySpec[]>([]);
   useEffect(() => { void window.codex.extensionsCatalog?.().then((catalog) => setExtMenu(catalog?.menu ?? [])).catch(() => undefined); }, [customRevision]);
+  /* 自定义项与内置项**同一份 order/overflow**（10-30 用户：别在下面另起一块）；目录里新增的
+     id 若还没进配置，补进主列表末尾，保证「加了就能看到、能拖、能收进更多」。 */
+  const extMetaOf = (id: string) => {
+    const entry = extMenu.find((item) => item.id === id);
+    return entry ? ({ label: entry.label, title: "自定义入口：点一下跳到对应设置页", Icon: Puzzle, tone: "ic-cyan" } as MenuMeta) : null;
+  };
+  const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)] ?? extMetaOf(String(id));
+  const activate = (id: FunctionMenuEntryId) => {
+    const entry = extMenu.find((item) => item.id === id);
+    if (!entry) { runFunctionMenuAction(String(id) as FunctionMenuItemId); return; }
+    if (entry.action.type === "settings") openSettingsFromFunctionMenu(entry.action.target);
+    else if (entry.action.type === "url") void window.codex.openExternal(entry.action.target);
+  };
+  /* 目录里已有、但配置里还没登记的扩展项：补进主列表末尾（老用户升级 / 手改 extensions.json）。 */
+  useEffect(() => {
+    if (!extMenu.length) return;
+    const missing = extMenu.map((entry) => entry.id).filter((id) => !config.order.includes(id));
+    if (missing.length) appendFunctionMenuItems(missing);
+  }, [extMenu, config.order]);
   const moreRef = useRef<HTMLButtonElement | null>(null);
-  const [dragId, setDragId] = useState<FunctionMenuItemId | null>(null);
-  const [dropBefore, setDropBefore] = useState<FunctionMenuItemId | null>(null);
+  const [dragId, setDragId] = useState<FunctionMenuEntryId | null>(null);
+  const [dropBefore, setDropBefore] = useState<FunctionMenuEntryId | null>(null);
   const [moreDrop, setMoreDrop] = useState(false);
   if (config.location !== location) return null;
   const visible = visibleFunctionMenuItems(config);
   const overflow = overflowFunctionMenuItems(config);
   const other: FunctionMenuLocation = location === "top" ? "bottom" : "top";
   const resetDrag = () => { setDragId(null); setDropBefore(null); setMoreDrop(false); };
-  const dropVisible = (before: FunctionMenuItemId | null) => {
+  const dropVisible = (before: FunctionMenuEntryId | null) => {
     if (dragId && dragId !== before) moveFunctionMenuItemInMenu(dragId, "visible", before);
     resetDrag();
   };
@@ -128,10 +151,15 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   return (
     <div className={`function-menu function-menu-sidebar function-menu-${location}`}>
       <div className="function-menu-items" role="group" aria-label="拓展功能">
-        {visible.map((id) => (
+        {visible.map((id) => {
+          const meta = metaOf(id);
+          if (!meta) return null;
+          return (
           <MenuItemButton
             key={id}
-            id={id}
+            id={String(id)}
+            meta={meta}
+            onActivate={() => activate(id)}
             dragging={dragId === id}
             dropBefore={dropBefore === id && dragId !== id}
             onDragStart={(event) => { setDragId(id); event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", id); }}
@@ -145,21 +173,8 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
             }}
             onDrop={(event) => { event.preventDefault(); event.stopPropagation(); dropVisible(id); }}
           />
-        ))}
-        {extMenu.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className="sidebar-tab sidebar-cap-row"
-            title={entry.label}
-            onClick={() => {
-              if (entry.action.type === "url") void window.codex.openExternal(entry.action.target);
-              else if (entry.action.type === "settings") openSettingsFromFunctionMenu(entry.action.target);
-            }}
-          >
-            <Puzzle size={15} className="ic-cyan" /><span>{entry.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
-          </button>
-        ))}
+          );
+        })}
         <button
           ref={moreRef}
           type="button"
@@ -184,25 +199,30 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
         </button>
       </div>
       {moreOpen && moreRef.current && (
-        <MorePopover anchor={moreRef.current} overflow={overflow} otherLocation={other} onClose={() => setMoreOpen(false)} />
+        <MorePopover anchor={moreRef.current} overflow={overflow} extMenu={extMenu} onActivate={activate} otherLocation={other} onClose={() => setMoreOpen(false)} />
       )}
     </div>
   );
 }
 
-function MorePopover({ anchor, overflow, otherLocation, onClose }: {
+function MorePopover({ anchor, overflow, extMenu, onActivate, otherLocation, onClose }: {
   anchor: HTMLElement;
-  overflow: FunctionMenuItemId[];
+  overflow: FunctionMenuEntryId[];
+  extMenu: MenuEntrySpec[];
+  onActivate: (id: FunctionMenuEntryId) => void;
   otherLocation: FunctionMenuLocation;
   onClose: () => void;
 }) {
+  const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)]
+    ?? (extMenu.some((entry) => entry.id === id) ? { label: extMenu.find((entry) => entry.id === id)!.label, title: "自定义入口", Icon: Puzzle, tone: "ic-cyan" } as MenuMeta : null);
   /* 10-27 架构审查 P1-3：定位/点外关闭/Esc/跟随滚动统一交给 AnchorPopover（本文件不再自己量）。 */
   return (
     <AnchorPopover open anchor={anchor} onClose={onClose} axis="y" align="start" prefer="auto" width={232} className="function-menu-popover" role="menu" ariaLabel="更多拓展功能">
       {overflow.length > 0 ? overflow.map((id) => {
-        const meta = FUNCTION_MENU_META[id];
+        const meta = metaOf(id);
+        if (!meta) return null;
         const Icon = meta.Icon;
-        return <button key={id} type="button" role="menuitem" className="function-menu-popover-item" onClick={() => { runFunctionMenuAction(id); onClose(); }}>
+        return <button key={id} type="button" role="menuitem" className="function-menu-popover-item" onClick={() => { onActivate(id); onClose(); }}>
           <Icon size={14} className={meta.tone} /><span>{meta.label}</span>
         </button>;
       }) : <p className="function-menu-popover-empty">把不常用的入口拖进「更多」后会出现在这里</p>}
@@ -254,8 +274,8 @@ export function FunctionMenuEditorHost() {
 
 function FunctionMenuEditor() {
   const config = useFunctionMenuConfig();
-  const [dragId, setDragId] = useState<FunctionMenuItemId | null>(null);
-  const [dropHint, setDropHint] = useState<{ list: "visible" | "overflow"; before: FunctionMenuItemId | null } | null>(null);
+  const [dragId, setDragId] = useState<FunctionMenuEntryId | null>(null);
+  const [dropHint, setDropHint] = useState<{ list: "visible" | "overflow"; before: FunctionMenuEntryId | null } | null>(null);
   const closeRef = useRef<HTMLButtonElement | null>(null);
   const visible = visibleFunctionMenuItems(config);
   const overflow = overflowFunctionMenuItems(config);
@@ -271,11 +291,21 @@ function FunctionMenuEditor() {
   const saveMenu = async (next: MenuEntrySpec[]) => {
     try {
       const saved = await window.codex.extensionsMenuSet({ entries: next.map(rawEntry) });
-      if (!saved?.ok) return; /* 主进程拒收（非数组 / 校验全失败）：保持旧目录，不假装成功 */
+      if (!saved?.ok) return false; /* 主进程拒收（非数组 / 校验全失败）：保持旧目录，不假装成功 */
       bumpCustomMenuRevision();
-    } catch { /* 写盘失败：保留旧目录，下次打开还能再试 */ }
+      return true;
+    } catch { return false; /* 写盘失败：保留旧目录，下次打开还能再试 */ }
   };
-  const removeCustom = (entry: MenuEntrySpec) => void saveMenu(extMenu.filter((item) => item.id !== entry.id));
+  /* 删除 = 目录里删 + 从 order/overflow 摘掉（否则重启后靠「目录补进主列表」又长回来）。 */
+  const removeCustom = async (entry: MenuEntrySpec) => {
+    const ok = await saveMenu(extMenu.filter((item) => item.id !== entry.id));
+    if (ok) removeFunctionMenuItems([entry.id]);
+  };
+  const extMetaOf = (id: string) => {
+    const entry = extMenu.find((item) => item.id === id);
+    return entry ? ({ label: entry.label, title: "自定义入口：点一下跳到对应设置页", Icon: Puzzle, tone: "ic-cyan" } as MenuMeta) : null;
+  };
+  const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)] ?? extMetaOf(String(id));
   const targetLabel = (page: string) => targets.find((item) => item.page === page)?.label ?? page;
   /* 默认入口已覆盖的设置页：再加一遍会出现两个「收藏夹 / 开发工具」（10-30 审查）。 */
   const DEFAULT_MENU_PAGES = new Set(["devtools", "favorites"]);
@@ -289,15 +319,19 @@ function FunctionMenuEditor() {
     ...DEFAULT_MENU_PAGES,
     ...extMenu.map((entry) => String(entry.id).replace(/^ext_set_/, "")).filter((page) => extMenu.some((entry) => entry.id === "ext_set_" + page)),
   ]);
-  const addTargets = (pages: { page: string; label: string }[]) => {
+  const addTargets = async (pages: { page: string; label: string }[]) => {
     const next = [...extMenu];
+    const added: string[] = [];
     for (const item of pages) {
       if (next.length >= CUSTOM_MENU_LIMIT) break;
       const id = "set_" + item.page;
       if (next.some((entry) => entry.id === "ext_" + id)) continue;
       next.push({ id, label: item.label, order: 90, action: { type: "settings", target: item.page } });
+      added.push("ext_" + id);
     }
-    if (next.length !== extMenu.length) void saveMenu(next);
+    if (!added.length) return;
+    const ok = await saveMenu(next);
+    if (ok) appendFunctionMenuItems(added as FunctionMenuEntryId[]);
   };
 
   useEffect(() => {
@@ -308,20 +342,21 @@ function FunctionMenuEditor() {
 
   const resetDrag = () => { setDragId(null); setDropHint(null); };
 
-  const drop = (list: "visible" | "overflow", before: FunctionMenuItemId | null) => {
+  const drop = (list: "visible" | "overflow", before: FunctionMenuEntryId | null) => {
     const id = dragId;
     if (id && id !== before) moveFunctionMenuItemInMenu(id, list, before);
     resetDrag();
   };
 
-  const onRowDrop = (event: DragEvent, list: "visible" | "overflow", before: FunctionMenuItemId) => {
+  const onRowDrop = (event: DragEvent, list: "visible" | "overflow", before: FunctionMenuEntryId) => {
     event.preventDefault();
     event.stopPropagation();
     drop(list, before);
   };
 
-  const renderRow = (id: FunctionMenuItemId, list: "visible" | "overflow") => {
-    const meta = FUNCTION_MENU_META[id];
+  const renderRow = (id: FunctionMenuEntryId, list: "visible" | "overflow") => {
+    const meta = metaOf(id);
+    if (!meta) return null;
     const Icon = meta.Icon;
     const isDropBefore = dropHint?.list === list && dropHint.before === id;
     return (
@@ -344,12 +379,18 @@ function FunctionMenuEditor() {
             onClick={() => toggleFunctionMenuItemOverflow(id, list === "visible")}>
             {list === "visible" ? <ChevronRight size={13} /> : <ChevronLeft size={13} />}
           </button>
+          {String(id).startsWith("ext_") && (
+            <button type="button" title="移除这个自定义入口" aria-label={`移除${meta.label}`}
+              onClick={() => { const entry = extMenu.find((item) => item.id === id); if (entry) void removeCustom(entry); }}>
+              <Trash2 size={13} />
+            </button>
+          )}
         </span>
       </div>
     );
   };
 
-  const col = (list: "visible" | "overflow", ids: FunctionMenuItemId[], title: string, hint: string) => (
+  const col = (list: "visible" | "overflow", ids: FunctionMenuEntryId[], title: string, hint: string) => (
     <section
       className={`fm-edit-col ${dropHint?.list === list && dropHint.before === null ? "drop-at-end" : ""}`}
       onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDropHint({ list, before: null }); }}
@@ -388,46 +429,14 @@ function FunctionMenuEditor() {
           {col("overflow", overflow, "更多", "收进「更多」二级菜单的入口")}
         </div>
 
-        <section className="fm-custom" aria-label="自定义入口">
-          <header className="fm-custom-head">
-            <div>
-              <h3>自定义入口<small>{extMenu.length}/{CUSTOM_MENU_LIMIT}</small></h3>
-              <p>把设置页加进「功能入口」：固定排在菜单末尾，点一下直接跳到那一页。</p>
-            </div>
-            <button type="button" className="primary-setting fm-custom-add" disabled={extMenu.length >= CUSTOM_MENU_LIMIT}
-              title={extMenu.length >= CUSTOM_MENU_LIMIT ? "自定义入口最多 " + CUSTOM_MENU_LIMIT + " 个" : undefined}
-              onClick={() => setPagesOpen(true)}>
-              <Plus size={14} />添加设置页
-            </button>
-          </header>
-
-          {extMenu.length > 0 ? (
-            <div className="fm-custom-list">
-              {extMenu.map((entry) => (
-                <div className="fm-custom-row" key={entry.id}>
-                  <Puzzle size={14} className="ic-cyan" />
-                  <span className="fm-custom-name">{entry.label}</span>
-                  <em>{entry.action.type === "settings" ? targetLabel(entry.action.target) : entry.action.type === "url" ? entry.action.target : "说明"}</em>
-                  <button type="button" title="移除这个入口" aria-label={"移除" + entry.label} onClick={() => removeCustom(entry)}><Trash2 size={14} /></button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="fm-custom-empty">还没有自定义入口 —— 点右上角「添加设置页」，例如把「模型」「技能」「MCP」放到顺手的位置。</p>
-          )}
-
-          {pagesOpen && (
-            <AddPagesDialog
-              targets={targets}
-              taken={takenPages}
-              remaining={Math.max(0, CUSTOM_MENU_LIMIT - extMenu.length)}
-              onClose={() => setPagesOpen(false)}
-              onAdd={addTargets}
-            />
-          )}
-        </section>
+        
 
         <footer className="fm-editor-foot">
+          <button type="button" className="secondary-setting fm-custom-add" disabled={extMenu.length >= CUSTOM_MENU_LIMIT}
+            title={extMenu.length >= CUSTOM_MENU_LIMIT ? "自定义入口最多 " + CUSTOM_MENU_LIMIT + " 个" : "从设置页挑要加到功能入口的页面"}
+            onClick={() => setPagesOpen(true)}>
+            <Plus size={14} />添加设置页
+          </button>
           <button type="button" className="secondary-setting" onClick={resetFunctionMenuLayoutToDefault}>恢复默认</button>
           <button type="button" className="primary-setting" onClick={closeFunctionMenuEditor}>完成</button>
         </footer>

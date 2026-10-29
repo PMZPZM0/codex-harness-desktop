@@ -19,8 +19,13 @@ export const FUNCTION_MENU_DEFAULT = Object.freeze({
   overflow: [],
 });
 
+/** 扩展项 id 形如 `ext_set_models`（来自 extensions:catalog）：与内置项**同权**参与排序/更多分组。
+ *  ⛔ 10-30 用户：「新增的支持删和排序，为啥要在下面加」——别再把自定义项塞独立区块。 */
+export const FUNCTION_MENU_EXT_ID_RE = /^ext_[a-zA-Z0-9_-]{1,80}$/;
+
 export function isFunctionMenuId(id) {
-  return FUNCTION_MENU_IDS.includes(String(id ?? ""));
+  const value = String(id ?? "");
+  return FUNCTION_MENU_IDS.includes(value) || FUNCTION_MENU_EXT_ID_RE.test(value);
 }
 
 /**

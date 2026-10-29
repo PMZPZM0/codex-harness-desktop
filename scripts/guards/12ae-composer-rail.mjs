@@ -217,5 +217,9 @@ ok(/DEFAULT_MENU_PAGES = new Set\(\[\s*"devtools",\s*"favorites"\s*\]\)/.test(me
     "编辑菜单「菜单里 / 更多」两列各自内滚（列限高 + overflow-y:auto + 细滚动条）—— ⛔ 多了不许被弹窗裁掉");
 }
 
+ok(/FUNCTION_MENU_EXT_ID_RE/.test(menuModelSrc) && /appendFunctionMenuItems/.test(menuSrc2) && /removeFunctionMenuItems/.test(menuSrc2)
+  && !/fm-custom-list/.test(menuSrc2) && !/fm-custom-list/.test(read("src/styles/44-function-menu.css")),
+  "自定义入口与内置项同一份排序 / 更多分组（不再单独塞在下面）：模型接受 ext_* id、增删同轮更新 order/overflow、旧区块已删");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
