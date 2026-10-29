@@ -21,6 +21,10 @@ import path from "node:path";
 const BIN_NAME = process.platform === "win32" ? "lark-cli.exe" : "lark-cli";
 const MAX_OUTPUT = 20_000;
 
+/** `config init --new` 会一直挂着等用户在浏览器里完成（它可能就是写配置的那个进程）。
+ *  ⛔ 同一时刻只留一个：重复点「去配置」起两个进程会抢同一份配置文件。 */
+let setupChild: import("node:child_process").ChildProcess | null = null;
+
 type CliResult = { installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; user: string; detail: string; error: string };
 
 /** CLI 可执行文件候选（npm-global 的两种布局都查：win / mac 分叉见 toolchain） */
@@ -107,7 +111,10 @@ export const feishuCliFeature = defineFeature<null>({
       const binary = cliPath();
       if (!binary) return { ok: false, error: "飞书 CLI 还没安装" };
       return await new Promise((resolve) => {
-        const child = spawn(binary, ["config", "init", "--new"], { windowsHide: true, env: { ...process.env, NO_COLOR: "1" } });
+        try { setupChild?.kill(); } catch { /* 已退出 */ }
+        const child = spawn(binary, ["config", "init", "--new"], { windowsHide: true, env: { ...process.env, NO_COLOR: "1", LARK_CLI_NO_ANALYTICS: "1" } });
+        setupChild = child;
+        child.on("close", () => { if (setupChild === child) setupChild = null; });
         let buffer = "";
         let url = "";
         const timer = setTimeout(() => {
@@ -122,7 +129,7 @@ export const feishuCliFeature = defineFeature<null>({
         };
         child.stdout?.on("data", onData);
         child.stderr?.on("data", onData);
-        child.on("error", (error) => { clearTimeout(timer); resolve({ ok: false, error: String(error?.message ?? error) }); });
+        child.on("error", (error) => { clearTimeout(timer); if (setupChild === child) setupChild = null; resolve({ ok: false, error: String(error?.message ?? error) }); });
       });
     });
 

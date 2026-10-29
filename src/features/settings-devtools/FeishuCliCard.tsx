@@ -31,19 +31,31 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
   const [busy, setBusy] = useState<"" | "setup" | "login" | "logout">("");
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
-  const pollRef = useRef<number>(0);
+  const releaseRef = useRef<number>(0);
 
   const refresh = useCallback(async () => {
     try {
       const next = (await window.codex.feishuCliStatus()) as Status;
       setStatus(next);
-      if (next.loggedIn) { setLink(""); setBusy(""); }
+      /* ⛔ 配置/登录一完成，授权链接就被消费掉了 ⇒ 收起链接、放掉「等待中」。
+         只在 link 挂着时轮询，所以这里不放 busy 的话：用户中途放弃浏览器，
+         按钮会永远停在「等待浏览器…」且 disabled —— 再也点不回来。 */
+      if (next.configured || next.loggedIn) setLink("");
+      if (next.loggedIn) setBusy("");
+      else if (next.configured) setBusy((prev) => (prev === "setup" ? "" : prev));
       return next;
     } catch (err: any) {
       setError(String(err?.message ?? err));
       return null;
     }
   }, []);
+
+  /* 兜底：浏览器那一步可能被用户放弃（或用户在另一台设备完成）。10 分钟后自动解除「等待中」，
+     让按钮可以再点一次；状态仍以主进程为准。 */
+  const scheduleRelease = () => {
+    if (releaseRef.current) window.clearTimeout(releaseRef.current);
+    releaseRef.current = window.setTimeout(() => setBusy(""), 10 * 60_000);
+  };
 
   useEffect(() => { void refresh(); }, [refresh]);
 
@@ -54,12 +66,12 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
     return () => window.clearInterval(timer);
   }, [link, refresh]);
 
-  useEffect(() => () => { if (pollRef.current) window.clearInterval(pollRef.current); }, []);
+  useEffect(() => () => { if (releaseRef.current) window.clearTimeout(releaseRef.current); }, []);
 
   const installing = Boolean(runtimeInstalling?.["feishu-cli"]);
 
   const startSetup = async () => {
-    setError(""); setBusy("setup");
+    setError(""); setBusy("setup"); scheduleRelease();
     try {
       const result: any = await window.codex.feishuCliSetupStart();
       if (result?.ok && result.url) { setLink(result.url); setNotice?.("已生成飞书应用配置链接：在浏览器里完成即可"); }
@@ -68,7 +80,7 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
   };
 
   const startLogin = async () => {
-    setError(""); setBusy("login");
+    setError(""); setBusy("login"); scheduleRelease();
     try {
       const result: any = await window.codex.feishuCliLoginStart();
       if (result?.ok && result.url) { setLink(result.url); setNotice?.("已生成登录链接：浏览器确认后会自动完成"); }
