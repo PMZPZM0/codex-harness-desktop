@@ -112,6 +112,49 @@ export async function run() {
         "【127】本来就是绝对路径的 ⇒ 不动（不许被 cd 目录改写）"
       );
     }
+    /* ★ 10-30 第二次反馈（同一现象）：卡片路径**根本不存在**时（会话目录拼出来的死链），
+       用会话台账里的同名真实文件回落一次。⛔ 这几条也**真跑纯函数**。 */
+    {
+      const fb = await import(pathToFileURL(join(ROOT, "src", "lib", "path-fallback.mjs")).href);
+      const B = "\\";
+      const req = ["D:", "测试", "src", "lib", "command-display.mjs"].join(B);
+      const known = ["D:", "Codex Harness Desktop", "src", "lib", "command-display.mjs"].join(B);
+      (fb.pickKnownPathFallback({ requested: req, known, workspace: ["D:", "测试"].join(B) }) === known ? ok : fail)(
+        "【127】卡片死链按会话台账回落同名真实文件（用户现场：会话 D:\\测试、真文件在宿主仓）"
+      );
+      (fb.pickKnownPathFallback({ requested: req, known: ["D:", "x", "src", "app", "command-display.mjs"].join(B), workspace: ["D:", "测试"].join(B) }) === "" ? ok : fail)(
+        "【127】⛔ 目录尾段对不上就不回落（宁可报不存在，也不许点开不相干的同名文件）"
+      );
+      (!fb.pickKnownPathFallback({ requested: req, known: req, workspace: ["D:", "测试"].join(B) }) ? ok : fail)(
+        "【127】路径本来就对（同一路径）时不回落"
+      );
+      {
+        const preview = readFileSync(join(ROOT, "src", "hooks", "useFilePreview.ts"), "utf8");
+        const rail = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "03-workspace-files.tsx"), "utf8");
+        (/resolveExistingFile\(/.test(preview) && /lookupKnownFile/.test(preview) && /resolveExistingFile\(/.test(rail) && /lookupKnownFile/.test(rail)
+          ? ok : fail)("【127】两处预览面都接了回落（居中编辑器 + 右栏），⛔ 别只改一处");
+      }
+      /* ★ 10-30 二轮：台账里存的常是 **URL 编码**形态（`D:/Codex%20Harness%20Desktop/src/lib/x.mjs`，
+         来自 file:// 链接）⇒ 原样入库永远"不存在"（实测：用户那张卡就是因为它点不开）。
+         ⇒ 入库与取用两侧都要解一次。 */
+      {
+        const pathsSrc = readFileSync(join(ROOT, "src", "features", "app-view", "helpers", "paths.ts"), "utf8");
+        (/function decodeMaybeEncodedPath\(/.test(pathsSrc) && /decodeMaybeEncodedPath\(match\[1\]\)/.test(pathsSrc)
+          ? ok : fail)("【127】会话台账入库前解百分号编码（编码态路径永远打不开）");
+        const fbSrc = readFileSync(join(ROOT, "src", "lib", "path-fallback.mjs"), "utf8");
+        (/decodeURIComponent\(rawKnown\)/.test(fbSrc) ? ok : fail)("【127】回落取用台账值时也解一次（老缓存/其它来源兜住）");
+      }
+      /* 真跑：用**仓库里真实存在的文件**验证「死链 → 落到同名真文件」，而不是只查字符串 */
+      {
+        const realFile = join(ROOT, "src", "lib", "command-display.mjs");
+        const deadRoot = join(ROOT, "__dead_dir__");
+        const requested = join(deadRoot, "src", "lib", "command-display.mjs");
+        const pickedNow = fb.pickKnownPathFallback({ requested, known: realFile, workspace: deadRoot });
+        (existsSync(realFile) && pickedNow === realFile ? ok : fail)(
+          "【127】真跑：死链在同一工作区假设下落到真实文件（磁盘上确实存在）"
+        );
+      }
+    }
     /* 接线：点击必须走 openTarget。⛔ 退回 raw target 就恢复成本次要修的死链。 */
     (/const openTarget = commandText && target \? resolveCommandTarget\(commandText, target\) : target;/.test(termCode)
       && /onOpenFile\(openTarget\)/.test(termCode) && !/onOpenFile\(target\)/.test(termCode)
