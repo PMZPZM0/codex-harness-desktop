@@ -1591,6 +1591,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (feishuSrc.includes("identities") && feishuSrc.includes("userIdentity") && feishuSrc.includes("Boolean(data?.appId)") ? ok : fail)(
       "【139f】auth status 按**真实输出**解析（appId / identities.bot.ready / identities.user；⛔ 1.0.98 输出里没有 ok 字段，按 ok 判会永远「未配置」、卡片一直转）"
     );
+    (feishuSrc.includes("runHintOf") && feishuSrc.includes("还没登录") && feishuSrc.includes("10 * 60_000") ? ok : fail)(
+      "【139f】流程收口：工具失败回「下一步点哪里」的中文指引 + 配置进程最长挂 10 分钟（⛔ 只回英文原文 ⇒ 模型会反复重试；无限挂着 ⇒ 吃配置锁的僵尸进程）"
+    );
     (feishuSrc.includes("spawn(binary, args") ? ok : fail)(
       "【139f】CLI 执行用参数数组 spawn（⛔ 模型传入的 args 不能拼 shell）"
     );
