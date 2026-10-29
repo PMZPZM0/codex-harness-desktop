@@ -137,6 +137,11 @@ ok(/readRoleMemoryContext\(\{[\s\S]{0,200}?threadId: bag\.thread\?\.id/.test(sen
   "⛔ 渲染层发送路径按当前会话注入统一记忆段，且带 query（亲自对话与被派出读到同一份）");
 ok(/if \(roleCtx\?\.text\) memoryPrefix/.test(send),
   "角色段为空时静默跳过（普通会话行为与今天完全一致）");
+/* 10-29：取消调度独占锁后，同一角色可被多个会话**同时**派活 ⇒ 写入必须串行（读-判重-写）。
+   不串行的话两个会话写同一角色会各读旧文件、后写覆盖前者 ⇒ 静默丢记忆。 */
+ok(/withRoleFileLock\(file, async \(\) => \{/.test(roleMemory) && /const roleWriteQueues = new Map/.test(roleMemory)
+  && roleMemory.indexOf("withRoleFileLock(file") < roleMemory.indexOf("await fs.writeFile(file, content"),
+  "⛔ 角色记忆追加按文件串行（并发派同一角色时不丢条）");
 
 console.log("\n【role】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

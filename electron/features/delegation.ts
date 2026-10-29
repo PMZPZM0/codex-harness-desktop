@@ -33,15 +33,13 @@ export async function runDelegatedTask(input: {
   const origin = String(input.originThreadId ?? "");
   // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
   const originRecord = origin ? await delegateRegistry.infoOf(origin) : null;
-  // ── 独占锁校验（同一时间只允许一个会话调度）：注册侧不给工具只是「少给一次机会」，
-  //    这里才作准 —— 会话被接管、开关被关掉之后，残留的工具调用一律不认。 ──
+  // ── 许可与身份校验（10-29：不再有「调度总开关 / 全局独占锁」）──
   const originDispatch = origin ? (await threadRuntimeStore.get(origin))?.dispatch : null;
   // 身份闸：专家 / 专家团 / 被调度的会话一律不许**对外**派人（团内协作走 teams:invoke-member，不受此限）
   const originRestrict = origin ? await restrictedThreadRole(origin) : { restricted: false };
   const gate = canDispatchFrom({
     isDelegated: Boolean(originRecord),
     depth: originRecord?.depth ?? 0,
-    holdsLock: originDispatch?.enabled === true,
     restricted: originRestrict.restricted,
     restrictedLabel: originRestrict.label,
   });

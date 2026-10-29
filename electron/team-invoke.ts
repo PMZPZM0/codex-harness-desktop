@@ -65,10 +65,12 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   const effectiveModel = input.model || member.model || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法调度团队成员");
 
-  // ① 成员线程复用：同一 (团队, 成员) 始终沿用同一个线程，成员因此记得自己之前做过什么。
-  //    旧行为每次委托都新建线程 —— 同一成员被调两次是两个互不知情的会话，跨阶段上下文
-  //    只能靠主理人把结论内联进 query。
-  const existingThreadId = teamRunStore.memberThreadOf(team.teamId, member.id);
+  // ① 成员线程复用：**同一场团运行（主理人会话）+ 同一成员** 沿用同一个线程，
+  //    成员因此在多阶段派活之间记得自己做过什么（跨阶段上下文不必靠主理人内联复述）。
+  //    ⛔⛔ 10-29 起复用键含 ownerThreadId：不同用户会话派同一个团时**各自一条线程**，
+  //       成员不会带着上一个会话的历史进来（会话级归属，防跨会话串用）。
+  const ownerThreadId = String(input.leadThreadId ?? "");
+  const existingThreadId = teamRunStore.memberThreadOf(ownerThreadId, team.teamId, member.id);
   let memberThreadId = "";
   if (existingThreadId) {
     const resumed: any = await server.request("thread/resume", { threadId: existingThreadId, excludeTurns: false }).catch(() => null);
@@ -93,7 +95,7 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
     //    侧栏里会显示成一整坨提示词（09-14 实测截图）。
     try { await server.request("thread/name/set", { threadId: memberThreadId, name: memberThreadName(team.displayName.zh, member.profession.zh || member.name) }); } catch { /* 命名失败不阻塞调度 */ }
   }
-  teamRunStore.rememberMemberThread(team.teamId, member.id, memberThreadId);
+  teamRunStore.rememberMemberThread(ownerThreadId, team.teamId, member.id, memberThreadId);
   teamRunStore.setThreadTeam(memberThreadId, team.teamId);
 
   /* 主理人 → 成员这条路径同样要补记忆（09-23）。工作区用显式 cwd；拿不到就只注入 L0 用户档案。

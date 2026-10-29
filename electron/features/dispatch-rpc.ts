@@ -24,7 +24,7 @@ import { writeConnectors } from "../connector-store";
 import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-workflow-boards";
 import { saveSubAgentConfig } from "../subagent-config";
 import { runDelegatedTask } from "../features/delegation";
-import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { delegateRegistry, server, threadCwd } from "../runtime-refs";
 import { mutableState, scheduler } from "../main";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
@@ -71,13 +71,13 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   }
 
   if (name === "agent_invoke") {
-    const originDispatch = (await threadRuntimeStore.get(callerThreadId))?.dispatch;
     const restrict = await restrictedThreadRole(callerThreadId);
     const originRecord = await delegateRegistry.infoOf(callerThreadId);
+    /* 10-29：不再取「调度总开关 / 独占锁」—— 专家与子智能体默认可用、专家团按类别显式开启；
+       类别闸在 runDelegatedTask 里（dispatchKindAllowed），这里只管身份与深度（结构闸）。 */
     const gate = canDispatchFrom({
       isDelegated: Boolean(originRecord),
       depth: originRecord?.depth ?? 0,
-      holdsLock: originDispatch?.enabled === true,
       restricted: restrict.restricted,
       restrictedLabel: restrict.label,
     });
@@ -338,7 +338,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
         sandbox: args.sandbox === undefined ? undefined : String(args.sandbox),
         approvalPolicy: args.approvalPolicy === undefined ? undefined : String(args.approvalPolicy),
       });
-      return { ok: true, output: `已${created ? "创建" : "更新"}子智能体「${agent.name}」（id: ${agent.id}，推理强度: ${agent.effort}）。在「设置 → 专家/专家团 → 子智能体」刷新即可见；会话顶栏「调度」面板勾选「子智能体」后，用 agent_invoke（kind="subagent"）派活。` };
+      return { ok: true, output: `已${created ? "创建" : "更新"}子智能体「${agent.name}」（id: ${agent.id}，推理强度: ${agent.effort}）。在「设置 → 专家/专家团 → 子智能体」刷新即可见；子智能体**默认可用**（不需要开关），直接 agent_invoke（kind="subagent"）派活即可。` };
     } catch (error: any) {
       return { ok: false, error: error?.message ?? String(error) };
     }

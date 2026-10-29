@@ -455,8 +455,9 @@ bag.earlyView = earlyView as typeof bag.earlyView;
               );
             })(), document.body)}
           </div>
-          {/* 调度开关放独立窗口图标左边（09-16 用户要求）。
-              10-25：指挥中枢隐藏 —— 群编排自带独立调度（谁做什么/进度/审查都在群里走）。 */}
+          {/* 调度设置放独立窗口图标左边（09-16 用户要求）。
+              10-25：指挥中枢隐藏 —— 群编排自带独立调度（谁做什么/进度/审查都在群里走）。
+              10-29：锁 / 接管 / 一键释放全部下线（每个会话都能调度），面板只剩三类许可。 */}
           {isBossThread ? null : (
           <DispatchMenu
             topbar
@@ -464,10 +465,8 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             targets={bag.dispatchInfo.targets}
             disabled={!bag.thread?.id || bag.activeThreadRunning}
             busy={bag.dispatchBusy}
-            lockedBy={bag.dispatchHolderName}
-            onReleaseHolder={() => { void bag.releaseDispatchHolder(); }}
             restrictedLabel={bag.threadRole.restricted ? (bag.threadRole.label ?? "专家 / 专家团") : null}
-            onChange={(next, opts) => { void bag.applyDispatch(next, opts); }}
+            onChange={(next) => { void bag.applyDispatch(next); }}
           />
           )}
           {bag.popoutThreadId ? (

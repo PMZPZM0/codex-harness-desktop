@@ -152,7 +152,19 @@ export async function roleMemorySection(workspace: string | undefined, ref: Role
  * - 逐条去重（归一化后已存在就跳过）⇒ 反复写同一件事不会膨胀。
  * - 只追加、**绝不改写或删除**既有行（与 appendUserProfile / appendLesson 同纪律）。
  * - 自动维护文件头的归属自述（哪个角色的记忆），换机/手改文件后仍能对上号。
+ *
+ * ⛔⛔ 10-29（取消调度独占锁之后）：**同一角色可以被多个会话同时派活** ⇒ 这里必须是
+ *   串行的「读-判重-写」。原来是直接读改写，两个会话同时写同一角色时后者会把前者那条整段覆盖
+ *   （丢记忆，比串用更难发现）。⇒ 按文件串一条内存队列（同进程内唯一写入端，队列足够）。
  */
+const roleWriteQueues = new Map<string, Promise<unknown>>();
+function withRoleFileLock<T>(file: string, run: () => Promise<T>): Promise<T> {
+  const prev = roleWriteQueues.get(file) ?? Promise.resolve();
+  const next = prev.then(run, run);
+  roleWriteQueues.set(file, next.catch(() => undefined));
+  return next;
+}
+
 export async function appendRoleMemory(workspace: string | undefined, ref: RoleRef, line: string): Promise<{ written: boolean; reason?: string }> {
   const key = roleKey(ref);
   const text = String(line ?? "").trim();
@@ -170,15 +182,17 @@ export async function appendRoleMemory(workspace: string | undefined, ref: RoleR
      对照：appendUserProfile 的归一化也抹数字，那是用户画像（"喜欢简洁"这类），
      角色记忆是**工作事实**，口径必须更严。 */
   const norm = (s: string) => s.replace(/[\s，。！？、,.!?:：；;"'（）()【】\[\]]/g, "");
-  const existing = (await readText(file)).split("\n");
-  if (existing.some((l) => norm(l) && norm(l) === norm(text))) return { written: false, reason: "已存在相同内容" };
+  return withRoleFileLock(file, async () => {
+    const existing = (await readText(file)).split("\n");
+    if (existing.some((l) => norm(l) && norm(l) === norm(text))) return { written: false, reason: "已存在相同内容" };
 
-  const header = `<!-- 角色私有记忆 · 归属 ${key} · ${roleTitle(ref)} · 追加式，禁止改写既有行 -->`;
-  const body = existing.filter((l) => l.trim() && !l.trim().startsWith("<!--")).concat(text);
-  const content = `${header}\n${body.join("\n")}\n`;
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, content, "utf8");
-  return { written: true };
+    const header = `<!-- 角色私有记忆 · 归属 ${key} · ${roleTitle(ref)} · 追加式，禁止改写既有行 -->`;
+    const body = existing.filter((l) => l.trim() && !l.trim().startsWith("<!--")).concat(text);
+    const content = `${header}\n${body.join("\n")}\n`;
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, content, "utf8");
+    return { written: true };
+  });
 }
 
 /** 所有角色记忆的根目录（列举/清理用；⛔ 没工作区或 scratch ⇒ null）。 */

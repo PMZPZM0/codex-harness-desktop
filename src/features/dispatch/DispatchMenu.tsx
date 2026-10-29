@@ -1,29 +1,35 @@
 /**
- * 调度域（从 src/App.tsx 原样搬来，纯搬迁零行为改动）。
+ * 调度面板（10-29 改版：专家 / 子智能体默认可用，只有专家团需显式开启）。
  *
- * 公开面见同目录 index.ts。
+ * ⛔⛔ 本文件是「调度许可」在 UI 上的唯一入口。10-29 用户令原文：
+ *    「将子智能体调用和专家调度改为默认可直接调用，仅专家团功能需要显式开启」
+ *    +「不再需要做数量或使用上的限制，每个会话都可以调度它们」。
+ *    ⇒ 三处结构性改动（不是纯文案）：
+ *      ① **删掉总开关**（原来那行「允许本会话调度」= 全局独占锁的入口）：它与"每个会话都能派"
+ *         冲突，且默认可用之后再放一个总闸只会让人以为默认是关的；
+ *      ② 三类改成**平行开关**，专家 / 子智能体出厂为开（用户仍可逐类关掉）；
+ *      ③ 专家团行**自带说明**「默认关闭 · 需显式开启」—— 唯一需要用户动作的一类。
+ *    ⛔ 权限边界不在 UI：真正的闸在 `electron/dispatch.ts`（dispatchKindAllowed）+ 执行端
+ *       `runDelegatedTask`。这里拿掉 disabled 只是 UX，绕不过执行端。
  */
 
-import { Sparkles, Users, Bot, Lock, ChevronDown, Trash2, CircleCheck } from "lucide-react";
+import { Sparkles, Users, Bot, Lock, ChevronDown, CircleCheck } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useAnchoredPopover } from "../app-view/hooks/useAnchoredPopover";
 
-export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, lockedBy, onReleaseHolder, restrictedLabel }: {
-  dispatch: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean };
+/** 三类许可（与 `src/lib/thread-runtime.mjs` 的 DispatchConfig 同形：无总开关）。 */
+export type DispatchDraft = { expert: boolean; team: boolean; subagent: boolean };
+
+export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, restrictedLabel }: {
+  dispatch: DispatchDraft;
   targets: DispatchTargetEntry[];
-  onChange: (next: { enabled: boolean; expert: boolean; team: boolean; subagent: boolean }, opts?: { takeOver?: boolean }) => void;
+  onChange: (next: DispatchDraft) => void;
   disabled?: boolean;
   busy?: boolean;
   /** 顶栏形态：纯图标按钮 + 弹层向下弹（顶栏一排都是小图标，带文字的 composer 形态放不进去） */
   topbar?: boolean;
-  /** 另一个会话正持有调度独占锁时传它的显示名（本会话是持有者/没人在用时传 null）。
-   *  同一时间只允许一个会话调度 —— 这里把开关置为「锁定」态并给出接管入口。 */
-  lockedBy?: string | null;
-  /** ⛔ 一键释放（用户 09-17 要求「在调度里面加一个主动释放功能，一键释放后删除旧的调度会话」）：
-   *  把调度权从旧持有者手里收回，并删除那条旧调度会话。父组件负责确认与级联删除。 */
-  onReleaseHolder?: () => void;
-  /** 受保护会话（专家 / 专家团 / 被调度会话）时传标签 —— 按钮直接禁用，不让开。 */
+  /** 受保护会话（专家 / 专家团 / 被调度会话）时传标签 —— 按钮直接禁用，不让改。 */
   restrictedLabel?: string | null;
 }) {
   const [open, setOpen] = useState(false);
@@ -55,22 +61,14 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
     return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
   }, [open]);
   const countOf = (kind: DispatchTargetEntry["kind"]) => targets.filter((target) => target.kind === kind).length;
-  const rows: { key: "expert" | "team" | "subagent"; title: string; hint: string; n: number; icon: any }[] = [
-    { key: "expert", title: "专家", hint: "代码审查 / 内容创作 / 演示文稿等单人专家", n: countOf("expert"), icon: Sparkles },
-    { key: "team", title: "专家团", hint: "由主理人按 SOP 调度多名成员协作", n: countOf("team"), icon: Users },
-    { key: "subagent", title: "子智能体", hint: "你在设置里配置的自定义角色", n: countOf("subagent"), icon: Bot },
+  /* ⛔ 顺序即语义：先列**默认可用**的两类（平时不用动），最后是**需要显式开启**的专家团。 */
+  const rows: { key: keyof DispatchDraft; title: string; hint: string; n: number; icon: any }[] = [
+    { key: "expert", title: "专家", hint: "默认可用 · 代码审查 / 内容创作 / 演示文稿等单人专家", n: countOf("expert"), icon: Sparkles },
+    { key: "subagent", title: "子智能体", hint: "默认可用 · 你在设置里配置的自定义角色", n: countOf("subagent"), icon: Bot },
+    { key: "team", title: "专家团", hint: "默认关闭 · 需显式开启：主理人按 SOP 调度多名成员协作", n: countOf("team"), icon: Users },
   ];
   const dirty = JSON.stringify(draft) !== JSON.stringify(dispatch);
-  /* ⛔ 防呆（同「（无）」投诉）：**从关切到开**且一个类别都没勾 ⇒ 提交出去就是
-     「调度已开启 · 开启的对象类别：（无）」，模型什么也派不了。挡住它并说明原因。
-     （总开关原本就开着、之后逐行取消全部 ⇒ 不拦 —— 那是合法的"收回全部对象"，
-       对应 dispatchSelectionChangeNotice 的"当前没有任何可调度的对象"分支。）
-     ⚠️ 必须带 anyAvailable：三类**当前都没有对象**时（用户在设置里一个都没启用），
-        行全被 `row.n === 0` 禁用 ⇒ 用户根本勾不上，再拦确认就是死锁 + 文案让他做做不到的事。
-        那种情况放行（开一个空调度无害），并如实告诉他先去启用对象。 */
-  const noKindSelected = !draft.expert && !draft.team && !draft.subagent;
   const anyAvailable = rows.some((row) => row.n > 0);
-  const blockedEmptyEnable = draft.enabled && !dispatch.enabled && noKindSelected && anyAvailable;
   /*⛔⛔ 2026-10-04 用户报「点调度弹窗展示不出来」——
      根因：`.topbar` 在 d19c510 被加了 `overflow: hidden`（修「图标压到原生窗口钮底下」），
      而本弹层是 `.topbar` 的 `position: absolute` 后代 ⇒ **被整棵子树裁掉**，
@@ -80,33 +78,34 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
      定位逻辑共用 `useAnchoredPopover`（⛔ 别在这里另写一份：三处弹层同病，
      各自复制坐标算法 = 以后改一处忘两处）。 */
   const posStyle = useAnchoredPopover(open, wrapRef, 300);
+  const teamOn = dispatch.team === true;
   return (
     <div className={`composer-menu dispatch-menu ${open ? "open" : ""}`} ref={wrapRef}>
       {topbar ? (
         <button
           type="button"
-          className={`icon-button dispatch-topbar-btn ${dispatch.enabled ? "dispatch-on" : ""} ${restrictedLabel ? "is-restricted" : ""}`}
+          className={`icon-button dispatch-topbar-btn ${teamOn ? "dispatch-on" : ""} ${restrictedLabel ? "is-restricted" : ""}`}
           disabled={disabled || Boolean(restrictedLabel)}
           title={restrictedLabel
             ? `本会话是${restrictedLabel}会话，不开放调度 —— 专家 / 专家团有自己的团内协作，对外派人会让「谁在干活」失控`
-            : (dispatch.enabled ? "调度（已开启）：本会话 Codex 可把子任务交给专家 / 专家团 / 子智能体" : "调度：让 Codex 把合适的独立子任务交给专家 / 专家团 / 子智能体")}
+            : `调度：专家 / 子智能体默认可派；专家团${teamOn ? "已开启" : "未开启（需显式开启）"}`}
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
           {restrictedLabel ? <Lock size={16} /> : <Users size={16} />}
-          {dispatch.enabled && <i className="dispatch-dot" aria-hidden />}
+          {teamOn && <i className="dispatch-dot" aria-hidden />}
         </button>
       ) : (
         <button
           type="button"
-          className={`composer-setting ${dispatch.enabled ? "dispatch-on" : ""}`}
+          className={`composer-setting ${teamOn ? "dispatch-on" : ""}`}
           disabled={disabled}
           title="调度设置"
           aria-expanded={open}
           onClick={() => setOpen((value) => !value)}
         >
           <Users size={14} />
-          <span>调度{dispatch.enabled ? " · 开" : ""}</span>
+          <span>调度{teamOn ? " · 含专家团" : ""}</span>
           <ChevronDown size={12} className={`menu-caret ${open ? "up" : ""}`} />
         </button>
       )}
@@ -120,95 +119,46 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
         >
           <div className="dispatch-head">
             <strong>调度</strong>
-            <small>把合适的独立子任务交给专门的角色去做，产出回传本会话</small>
+            <small>把合适的独立子任务交给专门的角色去做，产出回传本会话（每次派活开一个独立会话，上下文互不串）</small>
           </div>
-          {/* 独占锁提示：同一时间只允许一个会话调度（用户 09-16 要求「其他灰掉，避免同时调用」） */}
-          {lockedBy && (
-            <div className={`dispatch-lock ${draft.enabled ? "takeover" : ""}`}>
-              <Lock size={13} />
-              <span>
-                <strong>已被「{lockedBy}」占用</strong>
-                <small>{draft.enabled ? "确认后会把调度权限移到本会话，原会话的开关自动关闭" : "同一时间只允许一个会话调度；开启即从它那里接管"}</small>
-                {/* ⛔ 一键释放（用户 09-17 要求）：把调度权从旧会话手里收回，并删除那条旧调度会话。
-                    为什么必须有这个显式入口：持有者是从 thread-runtime 记录**派生**的，而会话被
-                    归档/删除时历史上没人清记录 ⇒ 孤儿记录永久占着全局唯一的调度权；那条会话还可能
-                    根本不在侧栏里（用户找不到、也就关不掉）。自动自愈只管「持有者已不在列表」，
-                    持有者还在列表里、用户就是想清掉它时，靠这个按钮。 */}
-                <button
-                  type="button"
-                  className="dispatch-release"
-                  disabled={busy}
-                  onClick={() => { setOpen(false); onReleaseHolder?.(); }}
-                >
-                  <Trash2 size={12} />释放并删除该会话
-                </button>
-              </span>
-            </div>
-          )}
-          {/* 总开关做成整行可点的 switch：比裸勾选框直观，状态文案跟着变 */}
-          <button
-            type="button"
-            role="switch"
-            aria-checked={draft.enabled}
-            className={`dispatch-master ${draft.enabled ? "on" : ""}`}
-            onClick={() => {
-              if (draft.enabled) { setDraft({ ...draft, enabled: false }); return; }
-              /* ⛔⛔ 2026-10-04 用户报「开启的对象类别：（无）」——
-                 总开关开了、一个类别都没勾 ⇒ 发给 Codex 的提示词就是「没有任何可调度的对象」，
-                 等于开了个空壳（用户以为开了调度，模型却什么也派不了）。
-                 用户开总开关的语义 = 「允许本会话调度」⇒ 默认允许**当前有对象**的全部类别，
-                 之后仍可逐行取消（单独开启/关闭的能力完全保留，只是不再有"零类别的开启态"）。 */
-              const next = { ...draft, enabled: true };
-              for (const row of rows) if (row.n > 0) next[row.key] = true;
-              setDraft(next);
-            }}
-          >
-            <span className="dispatch-master-text">
-              <strong>允许本会话调度</strong>
-              <small>{draft.enabled
-                ? (lockedBy ? `接管中：将关掉「${lockedBy}」的调度` : "已开启：Codex 可以派人干活了")
-                : (lockedBy ? "已锁定：权限在别的会话手里" : "关闭中：Codex 所有事都自己干")}</small>
-            </span>
-            <span className="dispatch-toggle" aria-hidden><i /></span>
-          </button>
-          <div className={`dispatch-rows ${draft.enabled ? "" : "is-off"}`}>
+          <div className="dispatch-rows">
             {rows.map((row) => {
               const Icon = row.icon;
-              const lockedOff = !draft.enabled || row.n === 0;
+              const empty = row.n === 0;
               return (
                 <button
                   type="button"
                   key={row.key}
-                  className={`dispatch-row ${draft[row.key] && !lockedOff ? "checked" : ""}`}
-                  disabled={lockedOff}
-                  title={row.n === 0 ? "当前没有已启用的对象" : undefined}
+                  className={`dispatch-row ${draft[row.key] ? "checked" : ""}`}
+                  disabled={empty}
+                  title={empty ? "当前没有已启用的对象（先到设置里新建 / 启用）" : undefined}
                   onClick={() => setDraft({ ...draft, [row.key]: !draft[row.key] })}
                 >
                   <span className="dispatch-row-icon"><Icon size={14} /></span>
                   <span className="dispatch-row-text">
                     <strong>{row.title}{row.n ? <em>{row.n}</em> : null}</strong>
-                    <small>{row.n ? row.hint : "当前没有已启用的对象"}</small>
+                    <small>{empty ? "当前没有已启用的对象" : row.hint}</small>
                   </span>
-                  <span className="dispatch-row-check">{draft[row.key] && !lockedOff ? <CircleCheck size={15} /> : null}</span>
+                  <span className="dispatch-row-check">{draft[row.key] ? <CircleCheck size={15} /> : null}</span>
                 </button>
               );
             })}
           </div>
           <div className="dispatch-foot">
             <small className="dispatch-scope">
-              {blockedEmptyEnable
-                ? "⚠️ 请先勾选至少一类可调度对象"
-                : (draft.enabled && !anyAvailable ? "⚠️ 当前没有可调度的对象：先去设置里启用专家 / 子智能体" : "仅对当前会话生效")}
+              {!anyAvailable
+                ? "⚠️ 当前没有可调度的对象：先去设置里启用专家 / 子智能体 / 专家团"
+                : "专家/子智能体默认可用；专家团需显式开启"}
             </small>
             <div className="dispatch-actions">
               <button type="button" onClick={() => setOpen(false)}>取消</button>
               <button
                 type="button"
                 className="primary"
-                disabled={!dirty || busy || blockedEmptyEnable}
-                onClick={() => { onChange(draft, { takeOver: Boolean(lockedBy) && draft.enabled }); setOpen(false); }}
+                disabled={!dirty || busy}
+                onClick={() => { onChange(draft); setOpen(false); }}
               >
-                {busy ? "应用中…" : (lockedBy && draft.enabled ? "接管并开启" : "确认")}
+                {busy ? "应用中…" : "确认"}
               </button>
             </div>
           </div>
@@ -225,4 +175,3 @@ export function DispatchBadge({ record }: { record: DelegateRecordEntry }) {
   const note = record.status === "running" ? "执行中" : record.status === "failed" ? "执行失败" : "已完成";
   return <span className={`thread-dispatch-badge tone-${tone}`} title={`调度会话：${record.name}（${note}）`}>{label}</span>;
 }
-

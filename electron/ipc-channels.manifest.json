@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 587,
+  "count": 583,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -53,16 +53,6 @@
       "note": "10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name=\"list\" 取清单）；10-09 起图像四件套已搬去 image-lab 域自己的通道，本网关只剩其余 25 个能力"
     },
     {
-      "name": "dispatchEnabledNotice",
-      "channel": "agents:enabled-notice",
-      "paramsImpl": "next?: { expert?: boolean; team?: boolean; subagent?: boolean }",
-      "paramsDecl": "next?: { expert?: boolean; team?: boolean; subagent?: boolean }",
-      "returns": "Promise<{ text: string }>",
-      "invokeArgs": "next",
-      "cast": null,
-      "note": "总开关开启时的完整告知：按勾选类别逐段列（勾 1 类 1 段、3 类 3 段），未开启的明确否定"
-    },
-    {
       "name": "invokeAgent",
       "channel": "agents:invoke",
       "paramsImpl": "input: unknown",
@@ -80,17 +70,7 @@
       "returns": "Promise<{ text: string }>",
       "invokeArgs": "before, next",
       "cast": null,
-      "note": "10-04 逐类通知：传 before/next 勾选 ⇒ 主进程按差集生成一条按类分段的通知；不传退化为全开通知"
-    },
-    {
-      "name": "dispatchOffNotice",
-      "channel": "agents:off-notice",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ text: string }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": null
+      "note": "10-29 收敛：总开关删除后只剩「逐类许可变化」一种事件 —— 传 before/next 三类许可，主进程按差集生成**一条**按类分段的通知（新开启的类附对象名单）；未开启的类显式否定"
     },
     {
       "name": "threadRole",
@@ -4690,16 +4670,6 @@
       "note": null
     },
     {
-      "name": "dispatchOwner",
-      "channel": "thread-runtime:dispatch-owner",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<{ threadId: string | null }>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": null
-    },
-    {
       "name": "getThreadRuntime",
       "channel": "thread-runtime:get",
       "paramsImpl": "threadId: string",
@@ -4727,17 +4697,7 @@
       "returns": "Promise<{ runtime: { model: string; effort: string; sandbox: string; approval: string; rev: number; updatedAt: number }; conflict: boolean; changed: boolean; blockedBy?: string; tookOverFrom?: string; restrictedBy?: string }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": null
-    },
-    {
-      "name": "releaseDispatch",
-      "channel": "thread-runtime:release-dispatch",
-      "paramsImpl": "threadId: string",
-      "paramsDecl": "threadId: string",
-      "returns": "Promise<{ released: boolean }>",
-      "invokeArgs": "threadId",
-      "cast": null,
-      "note": null
+      "note": "10-29 起不再有 takeover / 独占锁：写的就是本会话的模型/档位/权限/调度许可"
     },
     {
       "name": "seedThreadRuntime",

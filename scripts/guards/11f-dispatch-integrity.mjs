@@ -92,11 +92,11 @@ try {
      ⇒ 判据：只勾一类时，描述必须**只列那一类**、且对其余两类**显式否定**。 */
   {
     const only = dispatchToolDescription(probeTargets, { expert: false, team: false, subagent: true });
-    ok(/只开启了：子智能体/.test(only), "只勾子智能体时描述首句写明「只开启了：子智能体」");
+    ok(/可调度：子智能体/.test(only), "只开子智能体时描述首句写明「可调度：子智能体」");
     ok(!only.includes('kind="expert"') && !only.includes('kind="team"'),
-      "只勾子智能体时**不列**任何专家/专家团条目（列了模型就会派错）");
+      "只开子智能体时**不列**任何专家/专家团条目（列了模型就会派错）");
     ok(/【专家】本会话\*\*未开启\*\*/.test(only) && /【专家团】本会话\*\*未开启\*\*/.test(only),
-      "未勾选的类别被**显式否定**（不是隐藏 —— 隐藏会让模型以为不存在而反复试错）");
+      "未开启的类别被**显式否定**（不是隐藏 —— 隐藏会让模型以为不存在而反复试错）");
     ok(only.includes('kind="subagent"'), "勾选的子智能体仍然列出");
     // 反向：全勾时三类都要出现
     const all = dispatchToolDescription(probeTargets, { expert: true, team: true, subagent: true });
@@ -127,6 +127,30 @@ try {
   ok(desc.includes("不要把子智能体当专家用"), "描述里有「三类不可互换」的显式警告");
 } finally {
   rmSync(UD, { recursive: true, force: true });
+}
+
+/* ── 会话级归属（10-29 用户令）：同一个专家 / 专家团 / 子智能体被多个会话复用时的隔离边界 ──
+   三条边界（缺一条就会串）：
+     · 委派会话：每次派活 `thread/start` **新线程**（不复用）⇒ 上下文天然隔离；
+     · 团队成员：成员线程按 (团运行会话, 团, 成员) 复用 —— **必须带 owner**，否则 A 会话派过的
+       成员会被 B 会话 resume，B 就带着 A 的历史（用户点名的"数据混淆"）；
+     · 产出与归档：一律按 `originThreadId` 归属，跨会话不许投递 / 不许归档。 */
+{
+  const runs = readFileSync(join(ROOT, "electron/team-runs.ts"), "utf8");
+  const ti = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
+  const del = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
+  ok(/export function memberThreadKey\(ownerThreadId: string, teamId: string, memberId: string\)/.test(runs)
+    && /norm\(ownerThreadId\) \|\| "-"/.test(runs),
+    "⛔ 成员线程复用键含 ownerThreadId（同一成员在不同会话里是不同线程）");
+  ok(/memberThreadOf\(ownerThreadId, team\.teamId, member\.id\)/.test(ti)
+    && /rememberMemberThread\(ownerThreadId, team\.teamId, member\.id, memberThreadId\)/.test(ti),
+    "⛔ 团队派活按 owner 取/记成员线程（接线，不是写了没接）");
+  ok(/server\.request\("thread\/start"/.test(del)
+    && !/memberThreadOf|rememberMemberThread/.test(del),
+    "委派（专家/子智能体/团长）每次新建线程，不复用历史会话 ⇒ 上下文不跨会话");
+  ok(/record\.originThreadId !== origin/.test(readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8"))
+    && /record\.originThreadId !== callerThreadId/.test(readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8")),
+    "⛔ 归档/回报按 originThreadId 归属（跨会话归档一律失败）");
 }
 
 // ── ⑥ 被调度的会话不能再调度（权限闸三处都在）──
@@ -206,7 +230,7 @@ try {
 
   // 描述兜底文案与 MCP 孪生同源：两边都必须把「以会话里那条告知为准」写出来
   //（electron/ 与 src/ 互不 import ⇒ 各留一份字面量，只能靠这条防漂移）
-  const SHARED = "以会话里那条「调度已开启 / 调度范围已更新」的告知为准";
+  const SHARED = "以会话里那条「调度范围已更新」的告知为准";
   ok(seg08.includes(SHARED) && core2.includes(SHARED),
     "⛔ 调度工具描述两侧同源（渲染层兜底 + dispatch-core 的 MCP 孪生都把会话级真相指向那条告知）");
 

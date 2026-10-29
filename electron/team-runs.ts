@@ -63,9 +63,17 @@ export interface TeamThreadsDoc {
 // 纯函数（预检可直接断言，不依赖 Electron）
 // ─────────────────────────────────────────────────────────────
 
-/** 复用键：同一 (team, member) 始终指向同一个成员线程 —— 成员因此有跨委托记忆。 */
-export function memberThreadKey(teamId: string, memberId: string): string {
-  return `${String(teamId ?? "").trim().toLowerCase()}|${String(memberId ?? "").trim().toLowerCase()}`;
+/** 复用键：同一**团运行 + 成员**指向同一个成员线程。
+ *
+ *  ⛔⛔ 10-29 用户令（会话级归属）：**必须带 ownerThreadId（主理人/团运行会话）**。
+ *     旧键是 `team|member` —— 全机唯一一份 ⇒ 会话 A 派「施工队·前端」后，会话 B 再派同一成员
+ *     会 resume **同一个线程**，B 的成员带着 A 的对话历史 ⇒ 跨会话上下文串用（用户点名的
+ *     「数据混淆」）。加上 owner 维度后：同一场团运行内多阶段派活仍复用（成员记得上一阶段的结论，
+ *     这是当初做复用的目的），不同会话之间各自一条线程、互不可见。
+ *  ⚠️ 旧记录（两段键）读不到 ⇒ 那些老成员线程不再被复用，但也不会被删（只是侧栏里留着）。 */
+export function memberThreadKey(ownerThreadId: string, teamId: string, memberId: string): string {
+  const norm = (v: unknown) => String(v ?? "").trim().toLowerCase();
+  return `${norm(ownerThreadId) || "-"}|${norm(teamId)}|${norm(memberId)}`;
 }
 
 /** 成员线程标题：`团名·成员名`。
@@ -214,17 +222,17 @@ export class TeamRunStore {
     return this.threadsDoc.leads[threadId] === true;
   }
 
-  rememberMemberThread(teamId: string, memberId: string, memberThreadId: string) {
+  rememberMemberThread(ownerThreadId: string, teamId: string, memberId: string, memberThreadId: string) {
     if (!teamId || !memberId || !memberThreadId) return;
     this.ensureThreadsLoaded();
-    this.threadsDoc.members[memberThreadKey(teamId, memberId)] = memberThreadId;
+    this.threadsDoc.members[memberThreadKey(ownerThreadId, teamId, memberId)] = memberThreadId;
     this.scheduleThreadsWrite();
   }
 
-  /** 该成员长期复用的线程 id（没有则空串 → 走新建）。 */
-  memberThreadOf(teamId: string, memberId: string): string {
+  /** 该成员在**这场团运行**里复用的线程 id（没有则空串 → 走新建）。 */
+  memberThreadOf(ownerThreadId: string, teamId: string, memberId: string): string {
     this.ensureThreadsLoaded();
-    return this.threadsDoc.members[memberThreadKey(teamId, memberId)] ?? "";
+    return this.threadsDoc.members[memberThreadKey(ownerThreadId, teamId, memberId)] ?? "";
   }
 
   listThreads(): TeamThreadsDoc {

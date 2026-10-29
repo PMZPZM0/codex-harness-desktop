@@ -2,6 +2,9 @@
  * electron/dispatch.ts —— 「Codex 调度其他智能体干活」的核心判定与文案（纯函数）。
  *
  * 09-15 起：Codex 在任意会话里都能调度 单专家 / 专家团 / 子智能体 干活。
+ * 10-29 起（用户令）：**专家与子智能体默认可用（无需任何开关，也没有数量 / 并发 / 独占锁限制）；
+ *   只有专家团默认关闭，需在顶栏「调度」面板显式开启**。本文件的 DISPATCH_DEFAULTS 是这份默认值的
+ *   唯一真相源（渲染层 emptyDispatch() 与之逐字同形）。
  * 本文件只做**纯判定与文案**（不碰 server / IPC），因此可以被离线预检 require 编译产物直接断言
  * —— 四层防护里有三层的判定都在这里：
  *
@@ -77,8 +80,14 @@ export const MAX_DEPTH = 1;
  * 这个会话能不能**发起**调度？（L3 硬闸，执行侧最后一道）
  * @param input.isDelegated 发起方会话本身是不是「被委派产生的会话」
  * @param input.depth 发起方处在调用链的第几层（用户直连会话 = 0）
+ *
+ * ⛔⛔ 10-29 用户令「不再做数量或使用上的限制，每个会话都可以调度它们」⇒
+ *   **「调度总开关」与「全局独占锁」都已删除**，这里只剩两道**结构闸**（不是配额）：
+ *     ① 身份闸：专家 / 专家团 / 被调度会话不能对外派人（它们有团内通道；对外派人会让「谁在干活」失控）；
+ *     ② 深度闸：被委派会话不能再往下派（防指数套娃 —— 每层 fan-out 3 个就是 3^n 次模型调用）。
+ *   配额类闸（并发上限）09-25 已删；类别许可改由 `dispatchKindAllowed` 按类判定（默认专家/子智能体可用）。
  */
-export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; holdsLock?: boolean; restricted?: boolean; restrictedLabel?: string }): { ok: boolean; reason?: string } {
+export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; restricted?: boolean; restrictedLabel?: string }): { ok: boolean; reason?: string } {
   const depth = Number.isFinite(Number(input?.depth)) ? Number(input?.depth) : 0;
   // 身份闸（09-16 用户要求）：专家会话 / 专家团会话（含成员会话）**一律不允许对外调度**。
   // 理由：它们有自己的团内协作通道（team_member_invoke，不受此处限制）；对外再派人会
@@ -98,18 +107,6 @@ export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; 
       reason:
         "本次调用来自一个**被委派的会话** —— 委派会话不允许再向下委派（防套娃）。" +
         "请直接在当前会话把活干完；确实需要他人协作的部分，在产出里说明清楚，由发起方决定。",
-    };
-  }
-  // 独占锁（09-16 用户要求「同一时间只能一个会话开调度，避免同时调用」）：
-  // 只有**当前持有者**的调用才作数。会话被别的会话接管、或开关被关掉之后，
-  // 残留的工具面/在途调用一律不认 —— 这是发出去之后唯一还能刹住的地方。
-  // ⚠️ 只在显式给 false 时拦（undefined = 老调用点没传，保持向后兼容，不误伤）。
-  if (input?.holdsLock === false) {
-    return {
-      ok: false,
-      reason:
-        "本会话当前**不持有调度权限**（同一时间只允许一个会话调度，可能已被另一个会话接管，或开关被关掉了）。" +
-        "请直接在当前会话把活干完，并把需要在别处协作的部分写清楚；需要恢复权限时请用户在**顶栏右上角的「调度」图标**里重新开启（会话标题栏那一排，独立窗口图标左边；主窗口与独立弹窗的顶栏都有）。",
     };
   }
   return { ok: true };
@@ -142,17 +139,30 @@ export function kindLabel(kind: DispatchKind): string {
   return KIND_LABEL[kind] ?? String(kind ?? "");
 }
 
-/** 按会话开关过滤可调度对象：总开关关 → 空；否则按三类勾选过滤。 */
+/** 三类目标的**默认许可**（10-29 用户令）：专家与子智能体默认可用 —— 不需要任何开关；
+ *  专家团默认关闭 —— 它是多角色 SOP 编排，一次派活会拉起多名成员，必须由用户**显式开启**。
+ *  ⛔ 这是「默认行为」的唯一真相源（渲染层 `emptyDispatch()` 与它逐字同形，两边各一份字面量，
+ *     `electron/` 与 `src/` 互不 import）。 */
+export const DISPATCH_DEFAULTS = { expert: true, team: false, subagent: true } as const;
+
+/** 某一类此刻的许可（dispatch 为 null = 该会话还没有运行时记录 ⇒ 取默认）。 */
+export function dispatchAllowOf(dispatch?: DispatchConfig | null): DispatchAllow {
+  const src = dispatch && typeof dispatch === "object" ? dispatch : null;
+  if (!src) return { ...DISPATCH_DEFAULTS };
+  return { expert: src.expert === true, team: src.team === true, subagent: src.subagent === true };
+}
+
+/** 按会话许可过滤可调度对象（目录给模型 / 面板计数共用这一处口径）。
+ *  ⛔ 不再有「总开关」：三类各自独立判定，默认值见 DISPATCH_DEFAULTS。 */
 export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: DispatchConfig | null): DispatchTarget[] {
   const list = Array.isArray(targets) ? targets : [];
-  const enabled = dispatch?.enabled === true;
-  if (!enabled) return [];
+  const allow = dispatchAllowOf(dispatch);
   return list.filter((target) => {
     switch (target?.kind) {
-      case "expert": return dispatch?.expert !== false;
-      case "team": return dispatch?.team !== false;
-      case "member": return dispatch?.team !== false;
-      case "subagent": return dispatch?.subagent !== false;
+      case "expert": return allow.expert;
+      case "team": return allow.team;
+      case "member": return allow.team;
+      case "subagent": return allow.subagent;
       default: return false;
     }
   });
@@ -164,39 +174,36 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
  *   此前只有**提示词**在说「只开启了 X」，执行端（canDispatchFrom）只查身份 / 深度 / 独占锁，
  *   **完全不看 kind** ⇒ 用户取消勾选「专家 / 专家团」之后，模型仍能凭 MCP 工具的参数
  *   （kind=expert）把活派出去 —— 勾选等于装饰。
- * ⛔ 判据与 filterTargetsBySwitch **同源**（member 跟随 team；总开关关 ⇒ 一律不许），
- *   绝不许两处各写一套 —— 否则「列表里没有、调用却成功」这类口径漂移迟早回来。
- * 返回值带 reason：调用被拒时模型要能读到「哪一类没开、现在开了哪几类」，
- * 才能自己改派或如实回报用户，而不是反复重试同一个被拒的 kind。 */
+ * ⛔ 判据与 filterTargetsBySwitch **同源**（member 跟随 team），绝不许两处各写一套。
+ * 返回值带 reason：调用被拒时模型要能读到「哪一类没开」，才能自己改派或如实回报用户。 */
 export function dispatchKindAllowed(
   kind: DispatchKind | string,
   dispatch?: DispatchConfig | null,
 ): { ok: boolean; reason?: string } {
-  if (dispatch?.enabled !== true) {
+  const allow = dispatchAllowOf(dispatch);
+  const key = String(kind);
+  const ok = key === "team" || key === "member"
+    ? allow.team
+    : key === "expert"
+      ? allow.expert
+      : key === "subagent"
+        ? allow.subagent
+        : false;
+  if (ok) return { ok: true };
+  if (key === "team" || key === "member") {
     return {
       ok: false,
       reason:
-        "本会话的「调度」总开关是关着的，不能派活给任何智能体。" +
-        "请自己把活干完；需要派人时请用户在顶栏的「调度」面板里开启（会话标题栏那一排的图标）。",
+        "本会话**没有开启「专家团」**——专家团默认关闭（一次派活会按 SOP 拉起多名成员），" +
+        "需要用户在顶栏的「调度」面板里显式开启后才会生效。" +
+        "专家与子智能体默认可用，可以先改用它们；或你自己在当前会话把活干完。",
     };
   }
-  const allowed: Record<string, boolean> = {
-    expert: dispatch.expert === true,
-    team: dispatch.team === true,
-    // 团队成员没有独立开关：面板勾「专家团」即代表允许团内成员被调度
-    member: dispatch.team === true,
-    subagent: dispatch.subagent === true,
-  };
-  if (allowed[String(kind)] === true) return { ok: true };
-  const on = (["expert", "team", "subagent"] as const)
-    .filter((key) => dispatch[key] === true)
-    .map((key) => KIND_LABEL[key]);
   return {
     ok: false,
     reason:
-      `本会话没有开启「${KIND_LABEL[kind as DispatchKind] ?? String(kind)}」这一类调度` +
-      `（当前开启：${on.length ? on.join("、") : "（无）"}）。` +
-      "请改用已开启的类别、或自己完成；需要放开时请用户在顶栏的「调度」面板里勾选。",
+      `用户在本会话**关闭了「${KIND_LABEL[key as DispatchKind] ?? key}」**这一类调度（默认是开启的）。` +
+      "请自己在当前会话完成；需要恢复时请用户在顶栏的「调度」面板里重新勾选。",
   };
 }
 
@@ -236,9 +243,12 @@ export function dispatchToolDescription(
   const section = (kind: DispatchTarget["kind"], title: string, when: string) => {
     const items = list.filter((t) => t.kind === kind);
     if (!items.length) return [];
-    // ⛔⛔ 有对象但用户没勾 ⇒ 必须显式否定（隐藏会让模型以为不存在而反复试错）
+    // ⛔⛔ 有对象但用户没开 ⇒ 必须显式否定（隐藏会让模型以为不存在而反复试错）
     if (!enabled(kind)) {
-      return ["", `⛔【${KIND_LABEL[kind]}】本会话**未开启**（用户没勾选）——不要派这一类，即使下面列出了名字也不要调。`];
+      const why = kind === "team"
+        ? "专家团**默认关闭**，需用户在顶栏「调度」面板显式开启"
+        : "用户在本会话关闭了这一类（默认为开启）";
+      return ["", `⛔【${KIND_LABEL[kind]}】本会话**未开启**（${why}）——不要派这一类，即使下面列出了名字也不要调。`];
     }
     return ["", `【${title}】${when}`, ...items.map(line)];
   };
@@ -248,9 +258,12 @@ export function dispatchToolDescription(
     ...section("subagent", "子智能体（你自定义的角色）", "你在设置里配置的自定义角色，适合**固定流程、专精某一类活**（如只做评审、只做翻译）。"),
   ];
   const onList = (["expert", "team", "subagent"] as const).filter(enabled);
-  // ⛔ 顶部第一句就说明“只能派勾选的那几类”——这是模型最先读到的约束
+  const offList = (["expert", "team", "subagent"] as const).filter((k) => !enabled(k));
+  // ⛔ 顶部第一句就说明“能派哪几类、哪几类没开”——这是模型最先读到的约束。
+  //   10-29 起专家/子智能体默认可用，所以措辞从「只开启了…」改成「可调度：…；未开启：…」。
   const scope = allow
-    ? `⛔ **本会话只开启了：${onList.map((k) => KIND_LABEL[k]).join("、") || "（无）"}。只能派这几类；未列出的类别一律不要派。**`
+    ? `⛔ **本会话可调度：${onList.map((k) => KIND_LABEL[k]).join("、") || "（无）"}。` +
+      (offList.length ? `未开启（不要派）：${offList.map((k) => KIND_LABEL[k]).join("、")}。**` : "**")
     : "";
   return [
     scope,
@@ -271,55 +284,21 @@ export function dispatchToolDescription(
   ].join("\n");
 }
 
-/** 开启调度开关时，自动发往对话框的那条「告知」消息。 */
-export function dispatchNoticeText(targets: DispatchTarget[]): string {  const list = Array.isArray(targets) ? targets : [];
-  const byKind = new Map<DispatchKind, string[]>();
-  for (const target of list) {
-    const arr = byKind.get(target.kind) ?? [];
-    if (target.name) arr.push(target.name);
-    byKind.set(target.kind, arr);
-  }
-  const parts: string[] = [];
-  if (byKind.get("expert")?.length) parts.push(`专家（${(byKind.get("expert") ?? []).join("、")}）`);
-  if (byKind.get("team")?.length) parts.push(`专家团（${(byKind.get("team") ?? []).join("、")}）`);
-  if (byKind.get("subagent")?.length) parts.push(`子智能体（${(byKind.get("subagent") ?? []).join("、")}）`);
-  const what = parts.length ? parts.join("、") : "（当前没有可调度的对象，请先到专家中心/子智能体页启用）";
-  return [
-    "【调度已开启】本会话已启用「调度」能力。",
-    `你可以在需要时调度这些对象替你干活：${what}。`,
-    "原则：**适合独立完成、需要专门角色、或会大量读取上下文而不该污染本会话的子任务，优先调度它们来做**，而不是自己硬做；琐碎的一两行改动、需要来回确认的活，自己做完更快。",
-    "调度它们会产生临时会话并出现在左侧侧栏；一个任务整体做完后，主动问用户是否归档这些临时会话。",
-    "收到请只回复「收到」两个字，不要展开。",
-  ].join("\n");
-}
-
-/** 关闭调度开关时，自动发往对话框的告知（让 Codex 立刻知道权限被收回了）。 */
-export function dispatchOffNoticeText(): string {
-  return [
-    "【调度已关闭】本会话已停用「调度」能力。",
-    "之后的任务都由你自己完成；即使你再尝试调度专家 / 专家团 / 子智能体，调用也会被拒绝——不要白费回合去试。",
-    "收到请只回复「收到」两个字，不要展开。",
-  ].join("\n");
-}
-
 /* ════════════════════════════════════════════════════════════════════════
- * ⛔⛔ 2026-10-04 用户拍板：勾选/取消勾选的**逐类**通知与提示词（完整映射）。
+ * 许可变化通知（10-29 重构）：**一条通知、按类分段、差异驱动**。
  *
- * 用户原话：「用户勾选某个可调度项时，被勾选的那一项要发送对应通知，并生成
- * 对应提示词内容。需分别覆盖一次勾选 1 个、2 个、3 个的场景，确保每个被勾选
- * 项都有独立的、准确的提示词文案，不遗漏也不重复发送。取消其中某一项、其他项
- * 仍开启时，同样要生成对应的提示词与通知，内容需正确反映状态。」
+ * 沿革：10-04 用户要求「勾选 / 取消某一类都要发对应通知与提示词，覆盖勾 1 / 2 / 3 个与
+ * 取消其一其余仍开」。当时有三种事件（总开关开 / 关 / 逐类变化）⇒ 三条文案、两条通道。
+ * 10-29 用户令「专家与子智能体默认可用、只有专家团需显式开启」⇒ **总开关删除**，
+ * 只剩「逐类许可变化」一种事件 ⇒ 收敛为**一个函数 + 一条通道**（agents:notice）。
+ * 映射规则与 10-04 完全一致：新增类一段独立文案、取消类一段停用文案、末尾写「当前仍可调度：…」。
  *
- * 设计（映射规则的实现，守卫【dpcat】会真跑这 8 态）：
- *   · **一条通知、按类分段**：勾了 3 类 ⇒ 通知里 3 段（每段一段说明），不是 3 条消息。
- *     ——「不遗漏」：每段都列名字与职责；「不重复发送」：一次确认只发一条。
- *   · **差异驱动**：发什么由 before → next 的**差集**决定（新增勾了什么、取消了什么），
- *     与"第几类"无关 —— 三类对称，不会漏某一类。
- *   · **取消也要发**：关闭 A、B/C 仍开 ⇒ 通知里 A 段写「已停用」、末尾写「仍可调度：B、C」。
- *   · 全部取消（三类全关）但总开关还开着 ⇒ 等价于"无对象"，也要发（模型才不会白试）。
+ * ⛔ 为什么保留「按类独立文案」：模型据此判断「用户点名的那一类能不能派」；
+ *    混成一句话它就会自由发挥（10-04 的"派错类型"事故）。
+ * ⛔ targets 可选：传了就为**新开启**的类附带该类对象名单（中途开启专家团时模型立刻知道有谁）。
  * ════════════════════════════════════════════════════════════════════════ */
 
-/** 用户在调度面板逐类勾选的结果（DispatchConfig 的三个子开关）。 */
+/** 用户在调度面板的逐类许可（DispatchConfig 的三个子开关）。 */
 export type DispatchAllow = { expert: boolean; team: boolean; subagent: boolean };
 
 export const DISPATCH_KIND_LABEL: Record<Exclude<DispatchKind, "member">, string> = {
@@ -354,83 +333,55 @@ function kindParagraph(kind: Exclude<DispatchKind, "member">): string {
 }
 
 /**
- * 勾选变化通知：总开关保持开启、面板里勾了/取消了某些类时发。
- * 映射规则（8 态全覆盖，守卫逐态断言）：
- *   · turnedOn 非空 ⇒ 每个新增类一段独立文案（不遗漏、不共用）
- *   · turnedOff 非空 ⇒ 每个取消类一段「已停用」文案
- *   · 末尾固定写「当前仍可调度：…」（正确反映其余项保持开启）
- *   · 两者都空 ⇒ 不该调用（渲染层负责不发）；真调了就给一句中性状态说明，不发空串
+ * 许可变化通知（唯一入口：面板确认后发一条，注入下一条用户消息）。
+ * @param turnedOn  本轮新开启的类（按 KIND_ORDER 归并）
+ * @param turnedOff 本轮关闭的类
+ * @param nowAllow  变化后的三类许可
+ * @param targets   可调度对象目录（可选；给了就为新开启的类附带名单）
  */
 export function dispatchSelectionChangeNotice(
   turnedOn: Exclude<DispatchKind, "member">[],
   turnedOff: Exclude<DispatchKind, "member">[],
   nowAllow: DispatchAllow,
+  targets?: DispatchTarget[],
 ): string {
   const on = KIND_ORDER.filter((k) => turnedOn.includes(k));
   const off = KIND_ORDER.filter((k) => turnedOff.includes(k));
-  /* ⛔ 仍可调度 = **当前开启的全部类**（含本轮刚勾上的）—— 之前误写成"排除本轮新增"，
-     勾 2 个时 still 恒空 ⇒ 误打「当前没有任何可调度的对象」（守卫【dnotice】抓的）。 */
+  /* ⛔ 仍可调度 = **当前开启的全部类**（含本轮刚开上的）—— 曾误写成"排除本轮新增"，
+     勾 2 个时恒空 ⇒ 误打「当前没有任何可调度的对象」（守卫【dnotice】抓的）。 */
   const nowActive = activeDispatchKinds(nowAllow);
+  const list = Array.isArray(targets) ? targets : [];
+  const namesOf = (kind: Exclude<DispatchKind, "member">) =>
+    list.filter((t) => t.kind === kind).map((t) => t.name).filter(Boolean);
   const lines: string[] = ["【调度范围已更新】本会话的可调度对象有变化。"];
   if (on.length) {
     lines.push("新开启（可以派它们干活）：");
-    for (const k of on) lines.push(kindParagraph(k));
+    for (const k of on) {
+      lines.push(kindParagraph(k));
+      const names = namesOf(k);
+      if (list.length) {
+        lines.push(names.length
+          ? `  可派对象：${names.slice(0, 12).join("、")}${names.length > 12 ? ` 等 ${names.length} 个` : ""}。`
+          : "  （该类当前没有已启用的对象——不要尝试派这一类。）");
+      }
+    }
   }
   if (off.length) {
     lines.push("已停用（之后不要再派这一类；即使工具参数里还能拼出名字，调用也会被拒绝）：");
     for (const k of off) lines.push(`【${DISPATCH_KIND_LABEL[k]}】已在本会话停用。`);
   }
   lines.push(`当前仍可调度：${kindsLabel(nowActive)}。`);
-  // 未开启且不是本轮取消的 ⇒ 从没开过（首次勾选场景）⇒ 也给一句否定（防模型去试）
+  // 未开启且不是本轮取消的 ⇒ 本来就是默认关的（当前只有专家团）⇒ 也给一句否定（防模型去试）
   const neverOn = KIND_ORDER.filter((k) => !nowActive.includes(k) && !off.includes(k));
-  if (neverOn.length) lines.push(`⛔ 未开启（用户没勾选，不要派）：${neverOn.map((k) => DISPATCH_KIND_LABEL[k]).join("、")}。`);
+  if (neverOn.length) {
+    lines.push(`⛔ 未开启（默认关闭 / 用户没开，不要派）：${neverOn.map((k) => DISPATCH_KIND_LABEL[k]).join("、")}。`);
+  }
   if (on.length) lines.push("对新增的类：收到本条后不用逐个回复，之后按需直接调度即可。");
   if (!on.length && !off.length) lines.push("（本次没有实际变化。）");
   if (nowActive.length === 0) lines.push("⚠️ 当前没有任何可调度的对象——所有任务都由你自己完成，不要尝试调度。");
+  else lines.push("原则：适合独立完成、需要专门角色、或会大量读取上下文而不该污染本会话的子任务，优先调度它们；需要来回确认的活自己做更快。");
+  lines.push("每次调度都会新开一个**独立会话**（挂在发起会话下面），产出只回传给发起它的这个会话；一个任务整体做完后，主动问用户是否归档这些临时会话。");
   lines.push("收到请只回复「收到」两个字，不要展开。");
-  return lines.join("\n");
-}
-
-/**
- * 总开关开启时的完整告知（原来那条 dispatchNoticeText 的升级版）：
- * 按当时勾选的类**逐段**列出（勾 1 类就 1 段、3 类就 3 段），未开启的类明确否定。
- */
-export function dispatchEnabledNotice(targets: DispatchTarget[], allow: DispatchAllow | null): string {
-  const list = Array.isArray(targets) ? targets : [];
-  const on = activeDispatchKinds(allow);
-  const byKind = new Map<string, string[]>();
-  for (const target of list) {
-    if (!on.includes(target.kind as Exclude<DispatchKind, "member">)) continue; // 只列开启的类
-    const arr = byKind.get(target.kind) ?? [];
-    if (target.name) arr.push(target.name);
-    byKind.set(target.kind, arr);
-  }
-  const lines: string[] = [
-    `【调度已开启】本会话已启用「调度」能力。开启的对象类别：${kindsLabel(on)}。`,
-    "",
-  ];
-  if (!on.length) {
-    lines.push("⚠️ 但没有勾选任何类别——请用户在调度面板里至少勾选一类，否则你无法派出任何任务，也不要白试。");
-  }
-  for (const k of on) {
-    lines.push(kindParagraph(k));
-    const names = byKind.get(k) ?? [];
-    lines.push(names.length ? `  可派对象：${names.slice(0, 12).join("、")}${names.length > 12 ? ` 等 ${names.length} 个` : ""}。` : "  （该类当前没有已启用的对象——不要尝试派这一类。）");
-    lines.push("");
-  }
-  // ⛔ 未勾选的类也要**显式否定**（守卫【dnotice】钉的）：只写"只开启了 X"不够，
-  //    模型看到工具参数里能拼出其它类的名字仍可能去试 ⇒ 逐类点名"没开、别派"。
-  const offAll = KIND_ORDER.filter((k) => !on.includes(k));
-  if (offAll.length && on.length) {
-    lines.push(`⛔ 未开启（用户没勾选，不要派）：${offAll.map((k) => DISPATCH_KIND_LABEL[k]).join("、")}。`);
-    lines.push("");
-  }
-  lines.push(
-    "原则：适合独立完成、需要专门角色、或会大量读取上下文而不该污染本会话的子任务，优先调度它们来做；",
-    "需要来回确认的活、自己做更快，就自己做。",
-    "调度它们会产生临时会话并出现在左侧侧栏（挂在发起调度的会话下面）；一个任务整体做完后，主动问用户是否归档这些临时会话。",
-    "收到请只回复「收到」两个字，不要展开。",
-  );
   return lines.join("\n");
 }
 

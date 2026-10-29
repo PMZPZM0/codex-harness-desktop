@@ -69,7 +69,7 @@ export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draf
             <div className="subagent-tool-row"><span className="subagent-tool-kind">派活</span><code>agent_invoke</code><small>kind="subagent"，附 name / query</small></div>
             <div className="subagent-tool-row"><span className="subagent-tool-kind">建 / 改</span><code>subagent_save</code><small>harness_tools 网关，同名即更新</small></div>
           </div>
-          <div className="connector-example"><Info size={14} /><span>先在会话顶栏「调度」面板勾选「子智能体」，Codex 才会派活；未关闭继承的项会随主对话实时生效。</span></div>
+          <div className="connector-example"><Info size={14} /><span>子智能体默认可用（不需要开关），Codex 建好就能派活；未关闭继承的项会随主对话实时生效。</span></div>
         </div>
         <footer>
           <button className="secondary-setting" onClick={onClose}>取消</button>

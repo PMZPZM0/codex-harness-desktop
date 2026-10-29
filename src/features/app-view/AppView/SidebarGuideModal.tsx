@@ -127,7 +127,7 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     ],
     steps: [
       { title: "建对象", desc: "设置 → 专家/专家团：子智能体、专家中心、专家团三张卡，按需要建或直接使用现成的。" },
-      { title: "开调度", desc: "会话顶栏「调度」面板打开总开关，勾选允许派出的类别；同一时刻只有一个会话持有调度权。" },
+      { title: "调度", desc: "专家与子智能体默认就能派（会话顶栏「调度」面板可逐类关掉）；专家团要派的话，先在面板里显式开启。" },
       { title: "直接派活", desc: "在对话里说「这个任务交给…」。Codex 也能用 expert_list / expert_save / subagent_save / agent_invoke 自己建和调。" },
     ],
     examples: [
