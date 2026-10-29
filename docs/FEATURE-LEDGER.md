@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 调度弹层改版（层级 + 共享开关） | 改动 | `src/features/dispatch/DispatchMenu.tsx`、`src/styles/19-misc-hints.css` | 用户截图：弹层平铺、开关手写。改为 352 宽卡片：图标块 + 标题 + 一句说明；专家团整行卡（左侧可点 + 共享 `ToggleSwitch`，替掉手写胶囊开关）；专家/子智能体改成数量 chips；底部「仅专家团需要开启」+ 主次按钮。⛔ 根因记录：`.composer-menu-pop button { width:100% }` 把弹层内所有按钮撑满 ⇒ 开关被拉成 292px、文字竖排；按 `.dispatch-pop` 作用域提特异性覆盖。行为不变（仍只写 team，expert/subagent 固定 true）。11e/11g 全绿，截图核对。 | 待提交 |
 | 2026-10-28 | 指挥中枢说明卡文案润色 + 事实修正 | 修复 | `src/features/boss-group-view/BossGroupHelpButton.tsx` | 04 条原写「中枢只有一个」不成立 —— 每个群对应一条中枢会话、可有多条（点侧栏回到本群那条），改为准确说法；全文润色成口语，副标题「替你拉群、派活、验活」，示例条改「一句话就能开工，比如」。 | 待提交 |
 | 2026-10-28 | 指挥中枢「?」说明卡改版 | 改动 | `src/features/boss-group-view/BossGroupHelpButton.tsx`、`src/styles/47-boss-group-view.css` | 用户截图：说明卡是一段段平铺文字。改成带层级的说明卡：琥珀图标块 + 标题 + 一句副标题（拉群 · 派活 · 审活）+ 5 段编号条目（01–05，行间细线、标题提亮、正文弱化）+ 底部「可以直接这样说」示例 chips；文案同步收紧（事实不变）。宽度 384、最大高度 min(84vh,660px)，示例条在常见窗口下不被折出视口。22 守卫全绿，截图实拍核对。 | 待提交 |
 | 2026-10-28 | 本机测试端口自动展开右栏浏览器 | 改动 | `src/features/dev-port/`（新板块）、`AppView.tsx`、`12ag-dev-port.mjs`、`accept` | 对照 Qoder：Codex 在当前会话跑的命令输出里出现**带端口**的 localhost/127.0.0.1 ⇒ 自动打开右栏浏览器到该地址并加宽到 560。数据源 = commandExecution 的流式输出与 started/completed；只认当前会话正在跑的回合；每个 URL 每会话只开一次；0.0.0.0 归一、紧跟 URL 的中文不被吞进路径（真值表抓的）。守卫 12ag 11 条（真值表真跑）；验收 `dev-port` 3/3（秒级，走桥的确定性入口）。 | 待提交 |
