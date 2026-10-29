@@ -5,6 +5,7 @@ import path from "node:path";
 import nodeFs from "node:fs";
 import { app } from "electron";
 import { toolchainEnv } from "./toolchain";
+import { ensureSessionWorkspace } from "./features/session-workspace";
 
 type RpcId = number | string;
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
@@ -498,13 +499,33 @@ export class CodexServer extends EventEmitter {
     if (!this.child && method !== "initialize") await this.start();
     if (!this.child) throw new Error("Codex app-server is not running");
     const id = this.nextId++;
-    return new Promise<unknown>((resolve, reject) => {
+    const pending = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`${method} timed out`));
       }, timeoutMs);
       this.pending.set(id, { resolve, reject, timer });
       this.write({ id, method, params });
+    });
+    /* ⛔⛔ 10-29 用户令：会话专属工作区必须建在**这一个入口**。
+       `thread/start` 有 10+ 个调用点（渲染层 IPC、专家团成员、委派专家、频道机器人、IM 入口、
+       回合摘要…）全走这里；钩子放在 codex:request 只覆盖渲染层那一条 ⇒
+       专家团成员会话、委派专家会话全都没有工作区（用户 10-29 追问时才发现的）。
+       ⛔ cwd 用引擎回的真实值：专家团成员用 group.workspace、中枢用 boss-home、
+         委派用角色工作区 —— 各是各的"项目地址"，不在调用方猜。 */
+    if (method !== "thread/start") return pending;
+    return pending.then((result) => {
+      const started = result as any;
+      const threadId = String(started?.thread?.id ?? "");
+      const cwd = String(started?.thread?.cwd ?? (params as any)?.cwd ?? "");
+      if (threadId && cwd) {
+        void ensureSessionWorkspace(app.getPath("userData"), threadId, cwd)
+          .then((out) => console.log(out.ok
+            ? `[sessionspace] 已建工作区：${threadId.slice(0, 8)} → ${out.dir}`
+            : `[sessionspace] 未建工作区（${out.reason}）：${threadId.slice(0, 8)}`))
+          .catch(() => undefined);
+      }
+      return result;
     });
   }
 

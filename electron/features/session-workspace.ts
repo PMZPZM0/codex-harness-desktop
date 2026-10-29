@@ -145,11 +145,16 @@ export async function ensureSessionWorkspace(
   if (!threadId) return { ok: false, reason: "threadId 非法" };
   const projectRoot = normalizeProjectRoot(projectRootRaw);
   if (!projectRoot) return { ok: false, reason: "项目地址不可用（不存在 / 是临时目录）" };
-  /* ⛔ userData 之下的目录不建工作区：`boss-home`（指挥中枢）、`scratch` 这类是应用**内部**目录，
-     不是用户项目。在里面套 sessions/ 只会制造没人认领的垃圾，而且 gc 扫不到（项目根不是真项目）。 */
+  /* ⛔ userData 之下的目录默认不建工作区：`scratch` 这类是应用内部临时目录，不是用户项目。
+     例外只有 `boss-home` —— 指挥中枢的 cwd 就是它（中枢有自己的"项目地址"），
+     不放行的话「中枢会话 + 它调用的专家会话」全都没有工作区（用户 10-29 追问确认要的）。 */
   const userDataRoot = path.resolve(userData);
-  if (projectRoot === userDataRoot || projectRoot.startsWith(userDataRoot + path.sep)) {
+  if (projectRoot === userDataRoot) {
     return { ok: false, reason: "应用内部目录不建会话工作区" };
+  }
+  if (projectRoot.startsWith(userDataRoot + path.sep)) {
+    const top = path.relative(userDataRoot, projectRoot).split(path.sep)[0];
+    if (top !== "boss-home") return { ok: false, reason: "应用内部目录不建会话工作区" };
   }
 
   const dir = workspaceDirOf(projectRoot, threadId);
