@@ -433,28 +433,17 @@
   margin-bottom: 8px;
 }
 
-.composer-rail.is-top {
-  right: auto;
-  left: 0;
-  top: auto;
-  bottom: 100%;              /* 整条到输入框上方 */
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding-bottom: 2px;
-}
-.composer-rail.is-top .composer-rail-toggle {
-  transform: none;           /* 横条的手柄：一条短横，不再压线 */
-  width: 40px;
-  height: 12px;
-}
-.composer-rail.is-top .composer-rail-grip {
-  width: 22px;
-  height: 4px;
-}
+/* ⛔⛔ 10-29 用户：「小粗条位置给固定下来在线上，老是变动，小屏，小粗条位置就变动了」。
+   ⇒ **整条（含手柄）永远不动**：right:100% + 上下 -8 的骑线布局是三档共用的，
+     第三态只让**图标列**脱离到输入框上方（position:absolute），手柄原地不动。
+   ⛔ 别再改 .is-top 的 right/left/top/bottom/flex-direction ——
+     上一版就是这么把手柄从"线上的小粗条"变成"上方一条横杠"的。 */
 .composer-rail.is-top .composer-rail-icons {
+  position: absolute;        /* 脱离左侧列，不再占据手柄旁边的位置 */
+  right: 0;                  /* 右缘对齐输入框左缘（rail 右缘 = composer 左缘） */
+  bottom: 100%;              /* 抬到输入框上方 */
   flex-flow: row nowrap;     /* 一排横放 */
   max-height: none;
   overflow: visible;
-  margin: 4px 0 0;
+  margin: 0 0 6px;           /* 与输入框上边缘留 6px */
 }
