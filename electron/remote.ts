@@ -1011,9 +1011,13 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 const API_BASE = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
 const KEY_DEVICE = "chm-pair-device" + API_BASE;
 const KEY_SECRET = "chm-pair-secret" + API_BASE;
+/* 10-29 用户令：「手动连接码肯定要保存啊」—— 手输过的码存下来，下次自动填好（仍需 5 分钟内有效） */
+const KEY_CODE = "chm-pair-code" + API_BASE;
 let deviceId = localStorage.getItem(KEY_DEVICE);
 if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem(KEY_DEVICE, deviceId); }
 let deviceSecret = localStorage.getItem(KEY_SECRET) || "";
+let savedCode = "";
+try { savedCode = localStorage.getItem(KEY_CODE) || ""; } catch(e) { savedCode = ""; }
 const ua = navigator.userAgent;
 const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
 const el = document.getElementById("state");
@@ -1031,6 +1035,8 @@ async function submit(){
     const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName, deviceSecret }) });
     const j = await r.json();
     if (!j.ok) { submitting = false; if (button) button.disabled = false; el.className = "err"; el.textContent = j.error || "配对失败"; return; }
+    /* 码是对的：存下来，下次进配对页自动填（不必再记/再敲） */
+    try { localStorage.setItem(KEY_CODE, code); } catch(e) { /* 忽略 */ }
     if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); }
     if (j.approved) { el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
     el.className = "wait"; el.textContent = "配对码正确，等待电脑端批准…";
@@ -1067,7 +1073,11 @@ async function autoLogin(){
 // 到这里自动填好并提交；没有码才走「设备秘密自动登录」。
 const hashCode = (location.hash.match(/code=([0-9]{6})/) || [])[1] || "";
 if (hashCode) { document.getElementById("code").value = hashCode; submit(); }
-else autoLogin();
+else {
+  /* 没有自动码时：把上次手输过的码填好（只是预填，仍需点按钮；秘密仍优先走自动登录） */
+  if (savedCode) { try { document.getElementById("code").value = savedCode; } catch(e) { /* 忽略 */ } }
+  autoLogin();
+}
 </script></html>`;
   }
 
@@ -1094,7 +1104,12 @@ else autoLogin();
   pairUrlFor(botId?: string) {
     const base = this.externalBase();
     if (!base) return base;
-    return `${base}?${botId ? `bot=${encodeURIComponent(botId)}` : "p=1"}`;
+    /* 10-29 用户令：「我都扫码了，为啥不能自动配对，还要我输入一遍连接码」——
+       手机二维码把**当前连接码放进 hash**：扫码进配对页即自动提交（hash 不进服务器日志）。
+       ⛔ 码 5 分钟过期 / 换码后要刷新二维码，否则扫到的是旧码。
+       机器人绑定二维码（botId）走另一张页面，不带这个 hash。 */
+    if (botId) return `${base}?bot=${encodeURIComponent(botId)}`;
+    return `${base}?p=1#code=${encodeURIComponent(this.pairing.code || this.rotatePairingCode())}`;
   }
 
   stop() {

@@ -45,7 +45,10 @@ export function stripHarnessBlocks(text) {
     .replace(/^\[当前时间\][\s\S]*?^\[时间结束\][ \t]*\r?\n?/gm, "")
     /* 10-26：会话级告知块（inline-notices.mjs：调度开关变化等）——⛔ 它不再单独发一轮，
        随用户**下一条消息**注入；模型要看得见，气泡/标题/导出里必须剥掉。 */
-    .replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
+    .replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "")
+    /* 10-29：中枢角色块（<!--boss-role-->…<!--/boss-role-->）。10-26 起它走 developerInstructions，
+       但旧会话/旧注入仍可能写在用户消息里 —— 手机读历史走的就是本模块，必须一起剥掉。 */
+    .replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
 
   /* ② 残缺形态：残留头标签 + 其后是注入块特征 ⇒ 从该标签吃到串尾 */
   const hit = out.match(HEAD);

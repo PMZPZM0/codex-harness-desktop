@@ -180,8 +180,13 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
     catch (error: any) { return String(error?.message ?? error); }
   };
   const refreshQrcode = async () => {
-    try { setRemoteQr(await window.codex.remoteQrcode()); return ""; }
-    catch (error: any) { return String(error?.message ?? error); }
+    try {
+      /* 10-29：二维码里带连接码 —— 先换一个新码再出图，否则 5 分钟后扫到的是过期码 */
+      const fresh = (await window.codex.remotePairRotate()).code;
+      setPairCode(fresh);
+      setRemoteQr(await window.codex.remoteQrcode());
+      return "";
+    } catch (error: any) { return String(error?.message ?? error); }
   };
   return (
     mobileRemoteOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMobileRemoteOpen(false); }}>
