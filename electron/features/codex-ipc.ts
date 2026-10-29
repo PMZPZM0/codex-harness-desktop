@@ -27,10 +27,12 @@ import { withStepParam } from "../../src/lib/step-note.mjs";
 import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, storedCompactionsForThread } from "../compaction-watch";
 import { rendererActiveByWindow } from "./renderer-fuse";
+import { app } from "electron";
 import { deletedThreadIds, purgeDeletedThread } from "./thread-deletion";
 import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
+import { ensureSessionWorkspace, removeSessionWorkspace } from "./session-workspace";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
@@ -211,6 +213,27 @@ export const codexFeature = defineFeature<null>({
           clearGrants(purgeTarget);
           dropStoredReports(purgeTarget); // 文件变更报告的落盘同样跟着会话走（另一个入口在 boot 的 thread/deleted）
           dropStoredCompactions(purgeTarget); // 压缩侦测记录同样跟着会话走（另一个入口在 boot 的 thread/deleted）
+          /* 10-29 用户令：会话专属工作区（<project>/.codex-harness/sessions/<id>）跟着会话一起走。
+             ⛔ 必须 await 前面的 purge 之后再删目录：rollout 还占着文件时删目录会失败并留下孤儿。
+             ⛔ 失败不抛（删除已经成功了，工作区残留交给下次启动的 gc 收）；另一入口在 boot 的 thread/deleted。 */
+          await removeSessionWorkspace(app.getPath("userData"), purgeTarget).catch(() => undefined);
+        }
+      }
+      /* 10-29 用户令：新建会话后，在**项目地址下**给它建专属工作区。
+         ⛔ 放在主进程而不是渲染层：这里拿到的是**引擎实际用的 cwd**（result.thread.cwd），
+            渲染层那侧的 `bag.workspace` 是全局状态，新建会话时可能还没落定（实测：为空 ⇒ 一个都没建出来）。
+         ⛔ cwd 可能就是 userData 下的中枢目录/临时目录 —— 实现里的 normalizeProjectRoot 会把它们挡掉。
+         失败静默：没有工作区不影响会话本身。 */
+      if (method === "thread/start") {
+        const created = (result as any)?.thread ?? {};
+        const newId = String(created.id ?? "");
+        const newCwd = String(created.cwd ?? (params as any)?.cwd ?? "");
+        if (newId && newCwd) {
+          void ensureSessionWorkspace(app.getPath("userData"), newId, newCwd)
+            .then((out) => console.log(out.ok
+              ? `[sessionspace] 已建工作区：${newId.slice(0, 8)} → ${out.dir}`
+              : `[sessionspace] 未建工作区（${out.reason}）：${newId.slice(0, 8)}`))
+            .catch(() => undefined);
         }
       }
       if (method === "thread/list") {

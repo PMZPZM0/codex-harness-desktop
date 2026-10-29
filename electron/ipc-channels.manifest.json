@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 581,
+  "count": 587,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5781,6 +5781,66 @@
       "invokeArgs": "kind",
       "cast": null,
       "note": "清内置浏览器（persist:harness-browser）的登录态/缓存；kind=all 连缓存一起清"
+    },
+    {
+      "name": "sessionspaceEnsure",
+      "channel": "sessionspace:ensure",
+      "paramsImpl": "threadId: string, projectRoot: string",
+      "paramsDecl": "threadId: string, projectRoot: string",
+      "returns": "Promise<{ ok: boolean; dir?: string; reason?: string }>",
+      "invokeArgs": "threadId, projectRoot",
+      "cast": null,
+      "note": "为会话建专属工作区 <project>/.codex-harness/sessions/<threadId>（幂等）"
+    },
+    {
+      "name": "sessionspaceState",
+      "channel": "sessionspace:state",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<SessionWorkspaceRecord | null>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "查某会话的工作区记录"
+    },
+    {
+      "name": "sessionspaceList",
+      "channel": "sessionspace:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<SessionWorkspaceRecord[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "列全部会话工作区记录"
+    },
+    {
+      "name": "sessionspaceSetState",
+      "channel": "sessionspace:set-state",
+      "paramsImpl": "threadId: string, state: string",
+      "paramsDecl": "threadId: string, state: string",
+      "returns": "Promise<{ ok: boolean; record?: SessionWorkspaceRecord; reason?: string }>",
+      "invokeArgs": "threadId, state",
+      "cast": null,
+      "note": "改状态 active/archived（删除走 remove）"
+    },
+    {
+      "name": "sessionspaceRemove",
+      "channel": "sessionspace:remove",
+      "paramsImpl": "threadId: string",
+      "paramsDecl": "threadId: string",
+      "returns": "Promise<{ ok: boolean; removed: boolean; reason?: string }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "删会话工作区（目录+记录）；有安全闸，只删 sessions 下本进程算出的路径"
+    },
+    {
+      "name": "sessionspaceGc",
+      "channel": "sessionspace:gc",
+      "paramsImpl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
+      "paramsDecl": "options?: { maxAgeDays?: number; dryRun?: boolean }",
+      "returns": "Promise<{ recordsRemoved: number; dirsRemoved: number; scanned: number }>",
+      "invokeArgs": "options",
+      "cast": null,
+      "note": "收口孤儿：记录在目录不在 / 目录在记录不在（后者超过 maxAgeDays 才删）"
     }
   ]
 }

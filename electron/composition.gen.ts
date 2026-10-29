@@ -85,6 +85,7 @@ import { rpaFeature as feat_rpa } from "./features/rpa-ipc";
 import { runtimeFeature as feat_runtime } from "./features/runtime-ipc";
 import { schedulerFeature as feat_scheduler } from "./features/scheduler-ipc";
 import { scratchFeature as feat_scratch } from "./features/scratch-ipc";
+import { sessionWorkspaceFeature as feat_sessionspace } from "./features/session-workspace-ipc";
 import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
 import { shellFeature as feat_shell } from "./features/shell-ipc";
 import { skillDisciplineFeature as feat_skill_discipline } from "./features/skill-discipline-ipc";
@@ -203,6 +204,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "runtime", plugin: feat_runtime as Plugin<unknown>, config: null },
   { id: "scheduler", plugin: feat_scheduler as Plugin<unknown>, config: null },
   { id: "scratch", plugin: feat_scratch as Plugin<unknown>, config: null },
+  { id: "sessionspace", plugin: feat_sessionspace as Plugin<unknown>, config: null },
   { id: "screenshot", plugin: feat_screenshot as Plugin<unknown>, config: null },
   { id: "shell", plugin: feat_shell as Plugin<unknown>, config: null },
   { id: "skill-discipline", plugin: feat_skill_discipline as Plugin<unknown>, config: null },
