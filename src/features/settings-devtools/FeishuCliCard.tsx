@@ -75,7 +75,11 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
       /* ⛔ 链接/等待态的归约走纯函数（真值表在守卫 139f）：见 configured 就收链接那次事故，
          就是把「登录等待中配置本来就已完成」这条规则漏在组件闭包里。 */
       const flow = busyRef.current;
-      const appChanged = flow === "reconfig" && next.appId !== baseAppIdRef.current;
+      /* 点重新配置时状态还没读到（appId 空）⇒ 用第一轮读到的 appId 做基线，避免把「未知 → 已知」误判成切换完成。 */
+      if (flow === "reconfig" && !baseAppIdRef.current && next.appId) baseAppIdRef.current = next.appId;
+      /* ⛔ 必须要求新 appId 非空：config init 改写配置的那一瞬间，auth status 可能读不到内容，
+         把「读到空」当成「已切换」会提前收尾、用户还没做完。 */
+      const appChanged = flow === "reconfig" && Boolean(baseAppIdRef.current) && Boolean(next.appId) && next.appId !== baseAppIdRef.current;
       const outcome = feishuPollOutcome({ flow, configured: next.configured, loggedIn: next.loggedIn, appChanged });
       if (!outcome.keepLink) setLink("");
       if (outcome.clearBusy) {
@@ -203,11 +207,11 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
           <span className="runtime-icon">{busy === "login" ? <Spinner /> : status?.loggedIn ? <Check size={15} /> : <LogIn size={15} />}</span>
           <span className="runtime-copy">
             <strong>登录飞书</strong>
-            <small>{status?.loggedIn ? `已登录${status.user ? `：${status.user}` : ""}` : "浏览器 / 扫码授权一次，之后自动复用"}</small>
+            <small>{status?.loggedIn ? `已登录${status.user ? `：${status.user}` : ""}` : "在浏览器里授权一次，之后自动复用"}</small>
           </span>
           <div className="runtime-actions">
             {status?.loggedIn
-              ? <button type="button" className="runtime-install" disabled={busy === "logout"} onClick={() => void logout()}>
+              ? <button type="button" className="runtime-install" disabled={Boolean(busy)} onClick={() => void logout()}>
                   {busy === "logout" ? <Spinner /> : <><LogOut size={13} />退出登录</>}
                 </button>
               : <button type="button" className="primary-setting runtime-install" disabled={!status?.configured || Boolean(busy)} onClick={() => void startLogin()}>

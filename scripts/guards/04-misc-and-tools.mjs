@@ -1609,7 +1609,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (cardSrc.includes("feishu-cli-cap-grid") && cardSrc.includes("怎么用") && cardSrc.includes("EXAMPLES") && readStyles().includes(".feishu-cli-guide") ? ok : fail)(
       "【139f】卡片下面有「能做什么 / 怎么用」说明区（两列能力 + 示例说法 + 注意项）且样式已写（⛔ 只有结构没有 CSS = 10-29 那次原生排版事故）"
     );
-    (cardSrc.includes("重新配置") && cardSrc.includes("startSetup(true)") && cardSrc.includes("baseAppIdRef") ? ok : fail)(
+    (cardSrc.includes("重新配置") && cardSrc.includes("startSetup(true)") && cardSrc.includes("baseAppIdRef") && cardSrc.includes("Boolean(next.appId)") ? ok : fail)(
       "【139f】已配置后仍能「重新配置」换应用（靠 appId 变化判断切换完成；⛔ 没有这个出口 = 连错应用只能卸了重装）"
     );
     // 真值表：轮询归约（纯模块，node 直接 import）。⛔ 登录那一行是 10-29 事故的回归判据。
@@ -1625,6 +1625,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       // ⛔ 没变之前必须 keepLink=true（收链接 = 2 秒轮询断掉，与登录那次事故同型）
       poll({ flow: "reconfig", configured: true, loggedIn: false, appChanged: true }) === JSON.stringify({ keepLink: false, clearBusy: true }),
       poll({ flow: "reconfig", configured: true, loggedIn: false, appChanged: false }) === JSON.stringify({ keepLink: true, clearBusy: false }),
+      // 10-29 审查：切换前旧应用仍是已登录态 —— reconfig 必须排在看 loggedIn **之前**，否则首轮轮询就收链接
+      poll({ flow: "reconfig", configured: true, loggedIn: true, appChanged: false }) === JSON.stringify({ keepLink: true, clearBusy: false }),
     ];
     (pollCases.every(Boolean) ? ok : fail)(
       "【139f】轮询归约真值表：登录等待中（配置已完成）必须留链接继续轮询；登录成功才收；配置完成只收 setup 的链接"
