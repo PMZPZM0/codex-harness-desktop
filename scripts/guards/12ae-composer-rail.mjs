@@ -221,5 +221,9 @@ ok(/FUNCTION_MENU_EXT_ID_RE/.test(menuModelSrc) && /appendFunctionMenuItems/.tes
   && !/fm-custom-list/.test(menuSrc2) && !/fm-custom-list/.test(read("src/styles/44-function-menu.css")),
   "自定义入口与内置项同一份排序 / 更多分组（不再单独塞在下面）：模型接受 ext_* id、增删同轮更新 order/overflow、旧区块已删");
 
+ok(/\{pagesOpen && \(\s*<AddPagesDialog/s.test(menuSrc2)
+  && /export function FunctionMenuEditorHost[\s\S]{0,900}appendFunctionMenuItems/.test(menuSrc2),
+  "「添加设置页」真的渲染了弹窗（⛔ 只 setState 不渲染 = 点了没反应）；扩展项并入主列表的迁移在常驻宿主里跑（菜单没展开也要生效）");
+
 console.log(`\n【rail】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
