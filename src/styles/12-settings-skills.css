@@ -1607,6 +1607,25 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .laya-card .laya-install-log summary { cursor: pointer; color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
 .laya-card .laya-install-log pre { max-height: 200px; overflow: auto; font-size: 10.5px; background: var(--panel-2, rgba(0,0,0,0.04)); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; }
 
+/* ── 飞书 CLI 卡（10-29）：三步各一行，与开发工具列表同款 .runtime-row；
+      外层一圈细边框把三步收成一组（⛔ 别自造一套没有 CSS 的 step 结构）。 ── */
+.feishu-cli-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.feishu-cli-list .runtime-row { grid-template-columns: 22px minmax(0, 1fr) auto; }
+.feishu-cli-list .runtime-row:last-child { border-bottom: 0; }
+.feishu-cli-link {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.feishu-cli-link a {
+  flex: 1 1 240px; min-width: 0; color: var(--link); font-size: 11px;
+  overflow-wrap: anywhere; text-decoration: none;
+}
+.feishu-cli-link a:hover { text-decoration: underline; }
+.feishu-cli-link .runtime-install { flex: none; }
+.runtime-install.danger-text { color: var(--danger, #c0392b); }
+.runtime-install.danger-text:hover { border-color: var(--danger, #c0392b); }
+
+
 /* ── Laya 安装/权重下载进度条（10-01：用户实测「安装进度没有」）── */
 .laya-progress { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
 .laya-progress-track {
