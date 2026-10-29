@@ -823,7 +823,8 @@ interface Window {
     setMemoryMode(mode: "local" | "cloud"): Promise<"local" | "cloud">;
     /* 碎片池召回（strictWorkspace：只回本工作区）；threadId 仅供审计 */
     recallMemory(query: string, workspace?: string, threadId?: string): Promise<{ context: string; remote: boolean; memoryCount?: number }>;
-    resetMemory(): Promise<void>;
+    /* 清空全部碎片记忆（不可恢复）；confirm !== true 一律拒（10-29 审查） */
+    resetMemory(confirm: boolean): Promise<void>;
     /* 10-05 统一记忆（读）：session 段按 threadId 硬隔离 + project 段全项目共享 + 上一版角色记忆兼容段。主会话与被调度角色走同一个 handler */
     readRoleMemoryContext(input: { threadId?: string; workspace?: string; query?: string }): Promise<{ text: string; key: string; counts: { project: number; session: number; legacy: number } }>;
     /* 10-05 记忆前端：会话↔角色归属表（fabric 命名空间只带 threadId，靠它归到人） */

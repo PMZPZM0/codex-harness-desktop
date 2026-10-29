@@ -24,7 +24,7 @@ import fs from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { app } from "electron";
-import { saveAppSettings } from "../app-settings";
+import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
 import { lookupRoleSession, listRoleSessions } from "../role-memory";
@@ -251,6 +251,16 @@ async function auditMemoryInjection(input: {
   }
 }
 
+/** 10-29 审查：「无归属碎片」是否也召回。默认 false（保持既有行为，历史条目里这类很多）。
+    打开后严格按工作区隔离：跨工作区排除 + workspace 为空的也排除。 */
+function blockOrphanRecall(): boolean {
+  try {
+    return readAppSettingsSync(app.getPath("userData")).memoryBlockOrphanRecall === true;
+  } catch {
+    return false;
+  }
+}
+
 export const memoryFeature = defineFeature<null>({
   id: "memory",
   inject: ["ipc", "host"],
@@ -292,11 +302,11 @@ export const memoryFeature = defineFeature<null>({
        ⇒ 检索根本不做工作区过滤，永远返回全库匹配（跨项目串扰的第二个入口）。
        现在显式接受 workspace 并走 strictWorkspace。 */
     ipcHost.handle("memory:search", (_event, query: string, workspace?: string) =>
-      memoryStore.search(query, 8, { workspace, strictWorkspace: true }));
+      memoryStore.search(query, 8, { workspace, strictWorkspace: true, blockOrphan: blockOrphanRecall() }));
     /* ⛔ 10-29：strictWorkspace 让碎片池**只返回本工作区**的条目（原实现跨工作区 0.5 降权仍返回
        ⇒ 别的项目的记忆混进本会话）。threadId 只用于审计，不参与检索（检索仍按工作区）。 */
     ipcHost.handle("memory:recall", async (_event, query: string, workspace?: string, threadId?: string) => {
-      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true, threadId: String(threadId ?? "") || undefined });
+      const result = await memoryStore.recall(query, { workspace, strictWorkspace: true, threadId: String(threadId ?? "") || undefined, blockOrphan: blockOrphanRecall() });
       void auditMemoryInjection({
         kind: "recall",
         threadId: String(threadId ?? ""),
@@ -396,7 +406,12 @@ export const memoryFeature = defineFeature<null>({
     });
     ipcHost.handle("memory:save", (_event, input: unknown) => memoryStore.upsert(input as { content: string; category: MemoryCategory; sourceThreadId?: string; sourceTurnId?: string; confidence?: number }));
     ipcHost.handle("memory:delete", (_event, id: string) => memoryStore.remove(id));
-    ipcHost.handle("memory:reset", () => memoryStore.reset());
+    /* ⛔ 10-29 审查：清空全部记忆不可恢复 ⇒ 必须显式 confirm。
+       与 hygiene 的危险动作同口径（守卫【107】钉「confirm !== true 直接拒」）。 */
+    ipcHost.handle("memory:reset", async (_event, confirm?: boolean) => {
+      if (confirm !== true) throw new Error("清空全部记忆不可恢复：需要显式确认（confirm=true）");
+      return memoryStore.reset();
+    });
     ipcHost.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
     ipcHost.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
     ipcHost.handle("memory:layers:read", async (_event, workspace?: string) => ({ ...(await memoryLayers.snapshot(workspace)), entries: await memoryStore.stats() }));
