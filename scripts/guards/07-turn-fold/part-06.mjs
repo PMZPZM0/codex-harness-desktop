@@ -246,6 +246,20 @@ export async function run() {
     (!/skill-usage-command|command\}<\/code>/.test(skillCode) ? ok : fail)(
       "【127】⛔ 技能卡不展示命令原文（用户 10-29：「不要展示运行命令」）"
     );
+    /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」）：动作行与「打开技能说明」的路径判定 */
+    {
+      const toolMod = await import("../../../src/lib/tool-display.mjs");
+      (toolMod.skillActionOf('Get-Content -LiteralPath "C:/a/skills/x/SKILL.md"') === "读取技能说明"
+        && toolMod.skillActionOf("node C:/a/skills/x/run.mjs") === "运行技能脚本 run.mjs"
+        && toolMod.skillActionOf("echo hi") === "执行技能命令"
+        && toolMod.skillActionOf("") === "" ? ok : fail)(
+        "【127】技能卡动作行真跑（读说明 / 跑脚本 / 其余；认不出返空串 ⇒ 不显示假动作）"
+      );
+      (toolMod.skillFilePathOf("Get-Content 'C:/a/skills/x/SKILL.md'") === "C:/a/skills/x/SKILL.md"
+        && toolMod.skillFilePathOf("cat SKILL.md") === "" ? ok : fail)(
+        "【127】⛔ 只有绝对路径才给「打开技能说明」（相对 SKILL.md 交给 onOpenFile 会去开错文件）"
+      );
+    }
     (/skillTargetLabel\(/.test(foldCode) ? ok : fail)(
       "【127】折叠芯片的技能目标走 skillTargetLabel（半截路径 / 技能目录内 / 纯点目录 一律丢弃）"
     );

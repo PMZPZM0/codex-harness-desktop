@@ -115,15 +115,21 @@ export function skillActionOf(command) {
 }
 
 /**
- * 技能文件路径（读 SKILL.md 时拿得到，用于"打开技能说明"）：命令里那段 `…/skills/<名>/SKILL.md`。
- * 认不出返回空串。
+ * 技能文件路径（读 SKILL.md 时拿得到，用于"打开技能说明"）。
+ *
+ * ⛔ 只认**绝对路径**（`D:\…` / `\\server\…` / `/…`）：命令里的 `SKILL.md` 也可能是相对路径
+ * （`cat SKILL.md`），把它交给 `onOpenFile` 会去开一个"当前工作目录下"的文件 —— 命中不了就报错，
+ * 比不显示按钮更糟。认不出/不是绝对路径一律返回空串（调用方据此不画按钮）。
  * @param {string} command
  * @returns {string}
  */
 export function skillFilePathOf(command) {
   const raw = String(command ?? "");
   const hit = raw.match(/["']?([^"'\s]*SKILL\.md)["']?/i);
-  return hit ? hit[1] : "";
+  if (!hit) return "";
+  const value = hit[1];
+  const absolute = /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\") || value.startsWith("/");
+  return absolute ? value : "";
 }
 
 /* ── 本地技能清单（09-24）：把「目录名」翻成人话的唯一真相源 ─────────────
