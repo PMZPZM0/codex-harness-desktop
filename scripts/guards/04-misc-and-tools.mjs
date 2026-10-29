@@ -1606,6 +1606,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (cardSrc.includes("feishuCliSetupStart") && cardSrc.includes("feishuCliLoginStart") && cardSrc.includes("feishuCliStatus") ? ok : fail)(
       "【139f】开发工具卡片：安装 / 配置应用 / 登录 / 状态四步齐全"
     );
+    (cardSrc.includes("feishu-cli-cap-grid") && cardSrc.includes("怎么用") && cardSrc.includes("EXAMPLES") && readStyles().includes(".feishu-cli-guide") ? ok : fail)(
+      "【139f】卡片下面有「能做什么 / 怎么用」说明区（两列能力 + 示例说法 + 注意项）且样式已写（⛔ 只有结构没有 CSS = 10-29 那次原生排版事故）"
+    );
     // 真值表：轮询归约（纯模块，node 直接 import）。⛔ 登录那一行是 10-29 事故的回归判据。
     const feishuCard = await import(pathToFileURL(join(ROOT, "src", "lib", "feishu-card.mjs")).href);
     const poll = (input) => JSON.stringify(feishuCard.feishuPollOutcome(input));

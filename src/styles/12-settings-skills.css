@@ -1625,6 +1625,60 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .runtime-install.danger-text { color: var(--danger, #c0392b); }
 .runtime-install.danger-text:hover { border-color: var(--danger, #c0392b); }
 
+/* ── 飞书 CLI 卡 · 功能说明区（10-29）：分隔线 + 分组小标题 + 两列能力格 + 示例胶囊 + 注意项 ── */
+.feishu-cli-guide {
+  display: flex; flex-direction: column; gap: 10px;
+  margin-top: 2px; padding-top: 14px; border-top: 1px solid var(--line);
+}
+.feishu-cli-guide-head { display: flex; flex-direction: column; gap: 2px; }
+.feishu-cli-guide-head strong { color: var(--text); font-size: 12.5px; font-weight: 600; }
+.feishu-cli-guide-head small { color: var(--muted); font-size: 11px; line-height: 1.55; }
+.feishu-cli-cap-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.feishu-cli-cap {
+  display: flex; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
+}
+.feishu-cli-cap-icon {
+  display: grid; place-items: center; width: 22px; height: 22px; flex: none;
+  border-radius: 7px; background: color-mix(in srgb, var(--link) 10%, transparent); color: var(--link);
+}
+.feishu-cli-cap-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.feishu-cli-cap-copy strong { color: var(--text); font-size: 12px; font-weight: 600; }
+.feishu-cli-cap-copy small { color: var(--muted); font-size: 10.5px; line-height: 1.45; }
+.feishu-cli-guide-steps {
+  display: flex; flex-direction: column; gap: 6px;
+  margin: 0; padding: 0; list-style: none; counter-reset: feishu-step;
+}
+.feishu-cli-guide-steps li {
+  position: relative; display: flex; flex-direction: column; gap: 1px;
+  padding: 7px 10px 7px 32px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2, transparent);
+}
+.feishu-cli-guide-steps li::before {
+  counter-increment: feishu-step; content: counter(feishu-step);
+  position: absolute; left: 9px; top: 8px;
+  width: 16px; height: 16px; border-radius: 999px;
+  display: grid; place-items: center;
+  font-size: 10px; font-weight: 600; color: var(--bg); background: var(--link);
+}
+.feishu-cli-guide-steps b { font-size: 12px; font-weight: 600; color: var(--text); }
+.feishu-cli-guide-steps span { color: var(--muted); font-size: 10.5px; line-height: 1.55; }
+.feishu-cli-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.feishu-cli-example {
+  padding: 4px 9px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--bg);
+  color: var(--muted); font-size: 10.5px;
+}
+.feishu-cli-notes {
+  margin: 0; padding-left: 16px;
+  display: flex; flex-direction: column; gap: 3px;
+  color: var(--faint); font-size: 10.5px; line-height: 1.6;
+}
+.feishu-cli-notes code { font-size: 10px; padding: 0 4px; border-radius: 4px; background: var(--panel-2, rgba(0, 0, 0, 0.05)); }
+@media (max-width: 640px) {
+  .feishu-cli-cap-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 
 /* ── Laya 安装/权重下载进度条（10-01：用户实测「安装进度没有」）── */
 .laya-progress { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
