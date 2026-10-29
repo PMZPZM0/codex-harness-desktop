@@ -195,9 +195,11 @@ export async function send(bag: Bag, event?: FormEvent) {
       const quotePrefix = bag.quoteItem ? `> ${bag.quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
       const contextPrefix = bag.contextItems.length ? `\n\n[用户指定的对话上下文]\n${bag.contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
       const skillPrefix = bag.selectedSkills.length ? `\n\n[本轮已引用技能]\n${bag.selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+      /* ★ 10-29 @ 点名：模型侧唯一知道"用户点名了谁"的通道（纯函数生成，空数组则一字不加） */
+      const mentionPrefix = bag.dispatchMentionBlock();
       const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
       const input = [
-        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.selectedSkills.length || bag.contextItems.length || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.selectedSkills.length || bag.contextItems.length || bag.dispatchMentions.length || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${mentionPrefix}${filePrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ];
@@ -206,6 +208,7 @@ export async function send(bag: Bag, event?: FormEvent) {
         bag.setPrompt("");
         bag.setQuoteItem(null);
         bag.setContextItems([]);
+        bag.clearDispatchMentions();
         bag.setSelectedSkills([]);
         bag.setImages([]);
         void bag.refreshQueue(bag.thread.id);
@@ -288,6 +291,8 @@ export async function send(bag: Bag, event?: FormEvent) {
     const quotePrefix = bag.quoteItem ? `> ${bag.quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
     const contextPrefix = bag.contextItems.length ? `\n\n[用户指定的对话上下文]\n${bag.contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
     const skillPrefix = bag.selectedSkills.length ? `\n\n[本轮已引用技能]\n${bag.selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+      /* ★ 10-29 @ 点名：模型侧唯一知道"用户点名了谁"的通道（纯函数生成，空数组则一字不加） */
+      const mentionPrefix = bag.dispatchMentionBlock();
     const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
     // 专家/团队成员 defer 空会话的首条消息：发送前把用户文本包装成 SYSTEM TASK 段注入角色
     // 系统提示（渲染端按既有约定折叠为「需求已发起」卡片，气泡/引用/复制只暴露用户原文）。
@@ -318,7 +323,7 @@ export async function send(bag: Bag, event?: FormEvent) {
          最新 5 个，否则乐观气泡 / 新回合在底部占位区后面，pin 找不到锚点。 */
       if (bag.thread?.id) setTurnWindowTail(bag.thread.id, 0);
       bag.setOptimisticInput({ id: optimisticId, type: "userMessage", content: [
-        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
+        ...((messageText || threadReferenceBlocks || inlineFilePaths.length || bag.dispatchMentions.length || bag.quoteItem) ? [{ type: "text", text: `${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${mentionPrefix}${filePrefix}${threadReferenceSuffix}`, text_elements: [] }] : []),
         ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
         ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
       ] });
@@ -328,6 +333,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.setPrompt("");
       bag.setQuoteItem(null);
       bag.setContextItems([]);
+      bag.clearDispatchMentions();
       bag.setImages([]);
       bag.dbg("send-arm-early");
     }
@@ -396,7 +402,7 @@ export async function send(bag: Bag, event?: FormEvent) {
          会话级系统指令，气泡里看不到、也不占每轮上下文。
        ⛔ 别在这儿再加回来 —— 拼进用户消息就必然会被渲染成用户说过的话。 */
     const input = [
-      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
+      ...((messageText || threadReferenceBlocks || inlineFilePaths.length || inlineNotices || bag.quoteItem) ? [{ type: "text", text: `${inlineNotices}${quotePrefix}${messageText}${contextPrefix}${skillPrefix}${mentionPrefix}${filePrefix}${memoryPrefix}${nowBlock()}${threadReferenceSuffix}`, text_elements: [] }] : []),
       ...inlineImagePaths.map((path) => ({ type: "localImage", path })),
       ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path })),
     ];
@@ -430,6 +436,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.setPrompt("");
       bag.setQuoteItem(null);
       bag.setContextItems([]);
+      bag.clearDispatchMentions();
       bag.setImages([]);
     }
     // （fastArm 路径的乐观气泡已在上方上屏；两种路径都只 arm 一次，之后不改 content）
@@ -501,6 +508,7 @@ export async function send(bag: Bag, event?: FormEvent) {
       bag.setPrompt("");
       bag.setQuoteItem(null);
       bag.setContextItems([]);
+      bag.clearDispatchMentions();
       bag.setImages([]);
       bag.activeModelRef.current = resolveStartModel(bag);
       /* 新一轮开工先清上一轮的任务清单（10-06 夜六轮，用户实测「新回合，旧的任务清单还在」）：

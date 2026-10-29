@@ -5,7 +5,9 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
+import { useState } from "react";
 import { enginePersonality } from "../../../../../lib/reply-style.mjs";
+import { addMention, mentionBlockOf, mentionKeyOf } from "../../../../../lib/dispatch-mention.mjs";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { resolveImagePath } from "../../../../../lib/resolve-image-path";
@@ -50,9 +52,68 @@ bag.quoteMessage = quoteMessage as typeof bag.quoteMessage;
   }
 bag.cancelQuote = cancelQuote as typeof bag.cancelQuote;
 
+  /* ★ 10-29 @ 点名：用户在本条消息里点名的调度对象（专家 / 子智能体 / 专家团）。
+     语义 = **本轮有效**：发送时拼成「[本轮点名对象]」指令块（lib/dispatch-mention.mjs 的
+     mentionBlockOf），由模型用 agent_invoke 真派活；发完即清空（不跨消息继承，避免"上一条点名
+     的对象被下一句话误派"）。
+     ⛔ 不在选中时直接派活：那会绕过 dispatch 的许可 / 身份闸，且用户还没写正文（query 为空）。 */
+  const [dispatchMentions, setDispatchMentions] = useState<DispatchTargetEntry[]>([]);
+bag.dispatchMentions = dispatchMentions as typeof bag.dispatchMentions;
+bag.setDispatchMentions = setDispatchMentions as typeof bag.setDispatchMentions;
+
+  /** 选中一个候选 ⇒ 记进本轮点名 + 清掉输入框里的 @查询词（与引用上下文 / 技能同一形态）。 */
+  function addDispatchMention(target: DispatchTargetEntry) {
+    if (!target?.kind || !String(target.name ?? "").trim()) return;
+    bag.setDispatchMentions((current) => {
+      const next = addMention(current, target) as DispatchTargetEntry[];
+      if (next.length === current.length) bag.showToast("已经点过名了", `「${target.name}」已在本条消息里`);
+      return next;
+    });
+    bag.setPrompt((current) => current.replace(/@[^\s]*$/, ""));
+    bag.setContextQuery("");
+    bag.setContextOpen(false);
+    requestAnimationFrame(() => bag.composerInputRef.current?.focus());
+  }
+bag.addDispatchMention = addDispatchMention as typeof bag.addDispatchMention;
+
+  function removeDispatchMention(key: string) {
+    bag.setDispatchMentions((current) => current.filter((entry) => mentionKeyOf(entry) !== key));
+  }
+bag.removeDispatchMention = removeDispatchMention as typeof bag.removeDispatchMention;
+
+  function clearDispatchMentions() { bag.setDispatchMentions([]); }
+bag.clearDispatchMentions = clearDispatchMentions as typeof bag.clearDispatchMentions;
+
+  /** @ 一个**不存在**的子智能体时由宿主代建（确定性：失败原因能直接告诉用户，不用烧一回合）。
+   *  ⛔ 只在用户点了面板里的「新建并 @」时调用 —— 打字过程中绝不自动建对象。
+   *  ⛔ 模型侧没有建对象的工具（dispatch-core 只暴露 agent_invoke / agent_archive_sessions），
+   *    所以这是唯一入口；建完刷新目录，之后的手动调度看到的是同一份。 */
+  async function createDispatchSubagent(name: string): Promise<DispatchTargetEntry | null> {
+    const clean = String(name ?? "").trim();
+    if (!clean) return null;
+    if (clean.length > 32) { bag.showToast("名字太长", "子智能体名称最多 32 个字"); return null; }
+    try {
+      const agent = (await window.codex.saveSubAgent({ name: clean })) as { id?: string; description?: string } | null | undefined;
+      const target: DispatchTargetEntry = { kind: "subagent", key: String(agent?.id ?? clean), name: clean, profession: "", description: String(agent?.description ?? "") };
+      await Promise.resolve(bag.refreshDispatchInfo?.()).catch(() => undefined);
+      addDispatchMention(target);
+      bag.showToast("已新建子智能体", `「${clean}」已按默认配置创建，可在 设置 → 子智能体 里补充指令`);
+      return target;
+    } catch (error) {
+      bag.showToast("新建子智能体失败", String((error as Error)?.message ?? error));
+      return null;
+    }
+  }
+bag.createDispatchSubagent = createDispatchSubagent as typeof bag.createDispatchSubagent;
+
+  /** 发送时拼进正文的指令块（空数组 ⇒ 空串，正文一字不多）。 */
+  function dispatchMentionBlock() { return mentionBlockOf(bag.dispatchMentions); }
+bag.dispatchMentionBlock = dispatchMentionBlock as typeof bag.dispatchMentionBlock;
+
   function addContextItem(item: { id: string; role: "用户" | "Codex"; text: string }) {
     bag.setContextItems((current) => [...current, item]);
-    bag.setPrompt((current) => current.replace(/@[^\s]*$/, ""));
+    /* 10-29 用户令：引用上下文的触发符从 `@` 改成 `*`（`@` 让给"点名专家/子智能体/专家团"）。 */
+    bag.setPrompt((current) => current.replace(/\*[^\s]*$/, ""));
     bag.setContextQuery("");
     bag.setContextOpen(false);
   }
@@ -79,10 +140,19 @@ bag.addSkillReference = addSkillReference as typeof bag.addSkillReference;
     //   标记滞留、下一次程序化改 prompt 被误跳过」）。
     bag.draftJustRestoredRef.current = false;
     saveDraft(bag.thread?.id ?? null, value);
-    const at = value.lastIndexOf("@");
-    const afterAt = at >= 0 ? value.slice(at + 1) : "";
-    if (at >= 0 && !/\s/.test(afterAt)) {
-      bag.setContextQuery(afterAt);
+    /* ★ 10-29 用户令：「把 @ 引用上下文改成 * 引用上下文」——引用历史消息改用 `*` 触发，
+       `@` 让给"点名专家 / 子智能体 / 专家团"（见 features/dispatch-mention 的候选面板）。
+       判据三条（缺一条就会误触）：
+         ① `*` 必须在一个词的**起点**（行首或前一个字符是空白）——避免 `a*b`、`2*3` 这种算式；
+         ② `*` 后面到行尾**没有空白**（与旧 `@` 一致：敲了空格就关闭）；
+         ③ `*` 后面紧跟的这个字符必须是**字母/数字/汉字**（或还没输入）——`*.ts`、`**粗体**`
+            这类代码与 markdown 写法不弹面板，否则每写一个通配符都跳出一堆历史消息。 */
+    const star = value.lastIndexOf("*");
+    const afterStar = star >= 0 ? value.slice(star + 1) : "";
+    const tokenStart = star === 0 || /\s/.test(value[star - 1] ?? "");
+    const looksLikeQuery = /^\s*$/.test(afterStar) || /^[\p{L}\p{N}]/u.test(afterStar);
+    if (star >= 0 && tokenStart && !/\s/.test(afterStar) && looksLikeQuery) {
+      bag.setContextQuery(afterStar);
       bag.setContextOpen(true);
     } else {
       bag.setContextOpen(false);
@@ -259,5 +329,5 @@ bag.importConversationMarkdown = importConversationMarkdown as typeof bag.import
 bag.startNewThread = startNewThread as typeof bag.startNewThread;
 
 
-  return { copyImage, quoteMessage, cancelQuote, addContextItem, removeContextItem, addSkillReference, onPromptChange, forkFromTurn, exportThreadsBackup, importThreadsBackup, exportThreadsMarkdown, forkThreadFromSidebar, importConversationMarkdown, startNewThread };
+  return { copyImage, quoteMessage, cancelQuote, addContextItem, removeContextItem, addSkillReference, dispatchMentions, setDispatchMentions, addDispatchMention, removeDispatchMention, clearDispatchMentions, createDispatchSubagent, dispatchMentionBlock, onPromptChange, forkFromTurn, exportThreadsBackup, importThreadsBackup, exportThreadsMarkdown, forkThreadFromSidebar, importConversationMarkdown, startNewThread };
 }

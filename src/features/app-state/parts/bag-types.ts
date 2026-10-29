@@ -1218,6 +1218,13 @@ export interface Bag {
   refreshThreadRole: (threadId?: string | undefined) => Promise<void>;
   delegateRecordsRef: React.RefObject<Record<string, DelegateRecordEntry>>;
   dispatchInfoRef: React.RefObject<{ description: string; targets: DispatchTargetEntry[]; }>;
+  dispatchMentions: DispatchTargetEntry[];
+  setDispatchMentions: React.Dispatch<React.SetStateAction<DispatchTargetEntry[]>>;
+  addDispatchMention: (target: DispatchTargetEntry) => void;
+  removeDispatchMention: (key: string) => void;
+  clearDispatchMentions: () => void;
+  createDispatchSubagent: (name: string) => Promise<DispatchTargetEntry | null>;
+  dispatchMentionBlock: () => string;
   refreshDispatchInfo: () => Promise<void>;
   refreshDelegateRecords: () => Promise<void>;
   dispatchBusy: boolean;
