@@ -160,12 +160,6 @@
   flex-direction: column;
   gap: 14px;
 }
-.sidebar-guide-intro {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.7;
-  color: var(--text);
-}
 .sidebar-guide-section h4 {
   margin: 0 0 6px;
   font-size: 12px;
@@ -254,31 +248,23 @@
 .sidebar-guide-steps small {
   font-size: 12px;
 }
-.sidebar-guide-codex {
-  padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--ic) 26%, var(--line));
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--ic) 7%, var(--panel));
-}
-.sidebar-guide-codex-head {
+/* 10-29 用户令：删掉整张「Codex 已配备工具」卡片与顶部长说明；
+   仅前端 UI 概览保留一行小提醒（其余入口不重复喊）。 */
+.sidebar-guide-tip {
+  margin: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ic);
-}
-.sidebar-guide-codex > p {
-  margin: 6px 0 0;
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 1.6;
   color: var(--muted);
 }
+.sidebar-guide-tip svg { flex: none; margin-top: 2px; color: var(--ic); }
 .sidebar-guide-examples {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 4px;
 }
 .sidebar-guide-example {
   display: flex;
