@@ -397,20 +397,8 @@
   font-size: 11.5px;
   font-family: Cascadia Code, Consolas, ui-monospace, monospace;
 }
-/* 技能名（读 SKILL.md 那类命令）：专有名词，跟在动作短语后面，别跟标题抢字数 */
-.cmd-card .cmd-name {
-  flex: none;
-  max-width: 45%;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 400;
-  padding: 0 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-}
+/* 10-29：`.cmd-card .cmd-name`（命令卡里的技能名）已随技能搬家删除 —— 技能名现在只出现在
+   技能卡的标题位（features/skill-usage），命令卡里不该再有技能称呼。 */
 /* ★ 10-22 用户：「『展开』字样不要，鼠标放上去再浮出箭头，移开就隐藏」。
    ⛔ 不用 display:none（会抖）：visibility 保留占位，只切透明度；
    ⛔ 展开态也不常显（用户原话「鼠标挪走就隐藏」）—— 展开与否由下方内容 + aria-expanded 表达。 */

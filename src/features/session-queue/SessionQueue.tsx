@@ -1,6 +1,6 @@
 /** 排队消息 / 折叠流 / 渐进体（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { useState, useMemo, useEffect, useRef, memo, Fragment } from "react";
-import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench, AlarmClock, X } from "lucide-react";
+import { ChevronDown, ChevronRight, GripVertical, Clock3, Image, ArrowUp, PenLine, Trash2, TerminalSquare, FileCode2, Search, Bot, Brain, Wrench, AlarmClock, X, FileText, Sparkles, Plug, Puzzle, Globe2, CircleCheck, CircleX, LoaderCircle } from "lucide-react";
 import { parseUserRefs } from "../../lib/user-refs";
 import type { ParsedUserRefs } from "../../lib/user-refs";
 import { isImagePart } from "../../lib/prompt-images";
@@ -218,6 +218,31 @@ export type FoldHandlers = {
   onApplyPlan?: (markdown: string) => void;
 };
 
+/**
+ * 折叠头左侧的**意图图标**（10-29 用户令：编辑文件 / 修改文件 / 深度思考 / 使用技能 … 前方统一加图标）。
+ *
+ * 词表口径与 `turn-fold.ts` 的 `DEFAULT_GROUP_TEXT`（分组键）逐字对齐，**键 = 分组键**：
+ *   read 查看/读取文件 · search 定位代码 · research 收集资料 · modify 编辑/修改文件 ·
+ *   command 运行命令 · skill 使用技能 · mcp 调用 MCP · plugin 用插件 · collab 协作分派 ·
+ *   reasoning 深度思考 · external 调用外部服务 · other 其他。
+ * ⛔ 新增分组必须在这里补一行，否则会掉进兜底的扳手（图标与文字不匹配 —— 用户 10-29 点的正是这个）。
+ * ⛔ 图标只表达**语义**，不表达状态（状态是右侧 `wb-fold-state` 那一枚，两者别混）。
+ */
+const FOLD_GROUP_ICONS: Record<string, typeof Wrench> = {
+  read: FileText,
+  search: Search,
+  research: Search,
+  modify: FileCode2,
+  command: TerminalSquare,
+  skill: Sparkles,
+  mcp: Plug,
+  plugin: Puzzle,
+  collab: Bot,
+  reasoning: Brain,
+  external: Globe2,
+  other: Wrench,
+};
+
 export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, failedCount, children }: {
   title: string;
   leadGroup?: string | null;
@@ -239,18 +264,19 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
     return () => cancelAnimationFrame(raf);
   }, [mountOpen]);
   const open = manualOpen ?? (mountOpen || defaultOpen);
-  const group = leadGroup ?? "other";
-  const LeadIcon = group === "command" ? TerminalSquare
-    : group === "modify" ? FileCode2
-    : group === "research" || group === "search" ? Search
-    : group === "collab" ? Bot
-    : group === "reasoning" ? Brain
-    : Wrench;
+  const LeadIcon = FOLD_GROUP_ICONS[leadGroup ?? "other"] ?? Wrench;
   return (
     <div className={`wb-fold ${open ? "open" : "collapsed"} wb-fold--${variant} ${running ? "running" : ""}`}>
       <button type="button" className="wb-fold-header" title={open ? "点击收起" : "点击展开过程"} onClick={() => setManualOpen(!open)}>
-        {variant === "summary" && <span className="wb-fold-lead"><LeadIcon size={13} /></span>}
-        {variant === "completed" && <span className={`wb-fold-dot ${failedCount ? "error" : ""}`} aria-hidden />}
+        {variant === "summary" && <span className="wb-fold-lead" aria-hidden="true"><LeadIcon size={13} /></span>}
+        {/* 完成态（回合级大折叠）**没有 lead 图标位**（它讲的是整轮，不是某一类操作）⇒ 用状态图标：
+           进行中转圈 / 完成打勾 / 有失败打叉。10-29 用户令「状态类提示需使用可区分状态的图标」——
+            此前这里是一枚被 CSS 隐藏掉的 7px 小圆点，等于什么状态都看不出来。 */}
+        {variant === "completed" && (
+          <span className={`wb-fold-state ${failedCount ? "error" : running ? "running" : "done"}`} aria-hidden="true">
+            {failedCount ? <CircleX size={13} /> : running ? <LoaderCircle size={13} className="spin" /> : <CircleCheck size={13} />}
+          </span>
+        )}
         <span className={`wb-fold-title ${running ? "shimmer-text" : ""}`}>{title}</span>
         {/* 展开/收起箭头：**放在内容之后**，默认隐藏、悬停才显形（09-23 用户：
             「展开折叠图标动态展示在内容后面就行，鼠标放上去展示，不放上去默认隐藏，点击后可以展示」）。
@@ -262,7 +288,7 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
             ⚠️ 知情代价：**展开前看不到本段干了多少活**（这曾是用户 09-23 明确要过的能力，
             同一句话里被推翻）；分类纯函数 src/lib/tool-call-classify.mjs 仍保留，
             想加回来只需在这里补一个 <span className="wb-fold-stats">{stats}</span>。
-            历史：09-20 删过「N 项失败」文字（失败由 .wb-fold-dot.error 表达），别再扩写文字。 */}
+            历史：09-20 删过「N 项失败」文字（失败由左侧状态图标 `.wb-fold-state.error` 表达），别再扩写文字。 */}
       </button>
       <Fold open={open} bare><div className="wb-fold-body">{children}</div></Fold>
     </div>

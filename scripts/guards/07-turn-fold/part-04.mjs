@@ -895,8 +895,15 @@ export async function run() {
   (!/\.wb-fold-failed\s*\{/.test(css79) ? ok : fail)(
     "【79】配套样式 .wb-fold-failed 已随文字一起删掉（不留死代码）"
   );
-  (/wb-fold-dot \$\{failedCount \? "error"/.test(app79) ? ok : fail)(
-    "【79】失败信号保留在左侧小圆点（删文字 ≠ 删掉「这轮有失败」的表达）"
+  (/wb-fold-state \$\{failedCount \? "error" : running \? "running" : "done"\}/.test(app79) ? ok : fail)(
+    "【79】折叠头状态用**可区分状态的图标**（失败叉 / 进行中转圈 / 完成勾 —— 10-29 取代被隐藏的 7px 圆点）"
+  );
+  /* 10-29 用户令：编辑文件 / 修改文件 / 深度思考 / 使用技能 前方统一加**语义匹配**的图标。
+     ⛔ 判据钉的是分组映射表本身（不是某一行的 `<LeadIcon>`），缺类目会掉进兜底扳手。 */
+  (/const FOLD_GROUP_ICONS: Record<string, typeof Wrench> = \{/.test(app79)
+    && /skill: Sparkles/.test(app79) && /read: FileText/.test(app79) && /reasoning: Brain/.test(app79)
+    && /modify: FileCode2/.test(app79) && /command: TerminalSquare/.test(app79) ? ok : fail)(
+    "【79】折叠头按分组选图标（使用技能=Sparkles / 查看=FileText / 深度思考=Brain / 编辑文件=FileCode2 / 运行命令=TerminalSquare）"
   );
 }
 }

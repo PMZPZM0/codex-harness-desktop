@@ -6,6 +6,7 @@
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
 import { isCompactionItem } from "../../../../../lib/compaction-item.mjs";
+import { skillOfItem } from "../../../../../lib/tool-display.mjs";
 import { queueInlineNotice } from "../../../../../lib/inline-notices.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/model-scope.mjs";
@@ -93,9 +94,13 @@ bag.turnFinalizing = turnFinalizing as typeof bag.turnFinalizing;
         /* ⛔ 10-28 用户令：状态精简为五种主状态 ——
              等待模型回复 / 生成回复中 / 正在编辑文件 / 正在运行命令 / 正在生成文件。
            其余状态** truthful 才出现**（搜索网页 / 调用工具），不参与"五种"的命名口径。
+           ★ 10-29 用户（附截图）：「为啥使用技能是运行命令呢，下面也没有使用技能映射反馈」
+             ⇒ 命中技能的命令**不再报「正在运行命令」**：那是一条读 SKILL.md / 跑技能脚本的命令，
+               真实发生的事是「正在使用技能」，和卡片（技能卡）说同一件事。
+               ⛔ 判据与卡片同源（`skillOfItem`，tool-display.mjs），别在这里再写一条技能识别。
            ⛔ 文案是**逻辑的唯一出口**：别在别处再拼一份（bag-types 的联合类型同步改）。 */
         switch (item.type) {
-          case "commandExecution": return "正在运行命令";
+          case "commandExecution": return skillOfItem(item) ? "正在使用技能" : "正在运行命令";
           case "fileChange": return fileChangeActivity(item);
           /* ⛔ 10-28 用户二次确认（两次原话）：「思考板块输出思考内容的时候，映射的文字就是生成回复中」
              「正在思考下面映射的文字要是生成回复中」⇒ 思考与正文**都算在产出回复**，

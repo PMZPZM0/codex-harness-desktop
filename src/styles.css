@@ -68,6 +68,7 @@
 @import "./styles/40-reasoning-strip" layer(components);
 @import "./styles/41-sidebar-guide" layer(components);
 @import "./styles/44-function-menu" layer(components);
+@import "./styles/56-skill-usage" layer(components);
 @import "./styles/42-provider-setup" layer(components);
 @import "./styles/43-ego-lite" layer(components);
 @import "./styles/45-settings-experience" layer(pages);

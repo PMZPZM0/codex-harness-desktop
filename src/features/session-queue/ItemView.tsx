@@ -11,6 +11,7 @@ import { Turn } from "../../lib/turn";
 import { UserMessageView } from "../shared/UserMessageView";
 import { MessageFooter } from "../shared/MessageFooter";
 import { CommandExecutionCard } from "../terminal";
+import { SkillUsageCard } from "../skill-usage";
 import { diffStats } from "../../lib/diff-stats";
 import type { ActionStatus } from "../../components/CardShell";
 import { basename } from "../../lib/basename";
@@ -68,6 +69,11 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     return <ReasoningCard item={item} turnActive={turnActive} />;
   }
   if (item.type === "commandExecution") {
+    /* ★ 10-29 用户令：「为啥使用技能是运行命令呢…给我做一个使用技能展示，不要展示运行命令」。
+       ⇒ 命中技能的这条命令**不进命令卡**，改走技能卡（技能名 + 它是干什么的 + 本次动作，
+         见 features/skill-usage）。⛔ 别再让命令卡兼职显示技能：那正是"上面说用了技能、
+         下面说正在运行命令"的来源（命令卡的动词映射表只懂命令意图，不懂技能）。 */
+    if (skillOfItem(item)) return <SkillUsageCard item={item} waitingForApproval={waitingForApproval} onOpenFile={onOpenFile} />;
     return <CommandExecutionCard item={item} waitingForApproval={waitingForApproval} turnActive={turnActive} />;
   }
   if (item.type === "fileChange") {
