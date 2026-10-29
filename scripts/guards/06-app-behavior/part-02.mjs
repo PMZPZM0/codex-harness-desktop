@@ -606,7 +606,12 @@ w.postMessage({id:1,op:"list",root});
       ? fail("【30】旧写法回归 —— 发送时会把用户刚选的临时目录清掉")
       : ok("【30】已无「无条件清 scratch 再弹框」的旧写法");
 
-    /const mod = mac \? event\.metaKey : event\.ctrlKey;/.test(appCode)
+    /* 10-28 起快捷键不再硬编码分发，改为「按配置表匹配」：平台分叉搬到了
+       `src/lib/shortcut-catalog.mjs` 的 bindingMatches（成对 hasMod / hasOtherMod）。
+       ⛔ 判据必须跟到**当前真相源**：继续钉已删除的旧分发器字面串 = 界面正常、守卫永远红。 */
+    const shortcutCatalogSrc = codeOnly(readFileSync(join(ROOT, "src", "lib", "shortcut-catalog.mjs"), "utf8"));
+    (/const (mod|hasMod) = (mac|isMac) \? event\.metaKey : event\.ctrlKey;/.test(appCode)
+      || /const hasMod = isMac \? event\.metaKey : event\.ctrlKey;/.test(shortcutCatalogSrc))
       ? ok("【30】快捷键命令键按平台分叉（mac = ⌘）")
       : fail("【30】快捷键写死 ctrlKey —— mac 上所有快捷键失效（⌘O 打开工作区也废）");
     // ⛔ 不能只匹配旧字面串（`!event.ctrlKey || … || event.metaKey`）—— 换成等价的
@@ -614,13 +619,13 @@ w.postMessage({id:1,op:"list",root});
     //    分叉是**成对**的两行（mod / otherMod），所以 handler 体里 `event.metaKey` 恰好出现 2 次；
     //    再把它当干扰键拦一次（旧写法）就会变成 3 次，守卫立刻红。
     {
-      const onKeyIdx = appCode.indexOf("function onKey(event: globalThis.KeyboardEvent) {");
-      const onKeyBody = onKeyIdx < 0 ? "" : appCode.slice(onKeyIdx, onKeyIdx + 1200);
-      const metaCount = (onKeyBody.match(/event\.metaKey/g) || []).length;
-      (/const mod = mac \? event\.metaKey : event\.ctrlKey;/.test(onKeyBody)
-        && /const otherMod = mac \? event\.ctrlKey : event\.metaKey;/.test(onKeyBody)
-        && metaCount === 2)
-        ? ok("【30】handler 里 metaKey 只用于成对平台分叉（没被当干扰键拦掉）")
+      /* 结构性判据（跟到新实现）：bindingMatches 里必须是**成对**分叉，
+         且 metaKey 只出现在分叉与（mac 场景的）按下判断里 —— 数量被限定，多一处就红。 */
+      const hasPair = /const hasMod = isMac \? event\.metaKey : event\.ctrlKey;/.test(shortcutCatalogSrc)
+        && /const hasOtherMod = isMac \? event\.ctrlKey : event\.metaKey;/.test(shortcutCatalogSrc);
+      const metaCount = (shortcutCatalogSrc.match(/event\.metaKey/g) || []).length;
+      (hasPair && metaCount >= 2 && metaCount <= 4)
+        ? ok("【30】metaKey 只用于成对平台分叉（没被当干扰键拦掉）")
         : fail(`【30】metaKey 用法异常（分叉缺失或出现 ${metaCount} 次）—— mac 的 ⌘ 会被 return 掉`);
     }
 

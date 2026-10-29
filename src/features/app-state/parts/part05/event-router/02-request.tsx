@@ -6,6 +6,7 @@
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
+import { handleDataAccessTool } from "../../../../data-access";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
 /* 用户人格库（行业身份预设）：与任何第三方 IP 无关。 */
 import { USER_PERSONAS, userPersonaFields } from "../../../../../lib/user-personas.mjs";
@@ -55,6 +56,10 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
           void toolCallDedupe.run(event.id, async () => {
             try {
               const args = typeof event.params?.arguments === "string" ? JSON.parse(event.params.arguments) : event.params?.arguments ?? {};
+              /* 10-29：收藏夹 / 开发日记 / 密码本（用户定的权限模型：会话级授权、默认关、
+                 只读 + 只追加、密码本写入先弹一次性确认）。执行端在 data-access/tool-handler，
+                 权限闸在主进程 dataaccess:*（这里的判断不算数）。 */
+              if (await handleDataAccessTool(event, args as Record<string, unknown>, toolCallRespond)) return;
               if (event.params?.tool === "memory_recall") {
                 /* ⛔ 10-05 统一记忆（检索）：**走同一个通道、同一套作用域** ——
                    改造前这里只查碎片池（且那个池子跨工作区只降权、不过滤），

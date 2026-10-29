@@ -1253,6 +1253,28 @@ interface Window {
     shortcutsSave(input?: { bindings?: Record<string, string[]> }): Promise<{ ok: boolean; error?: string; bindings?: Record<string, string[]>; conflicts?: string[][] }>;
     /* 恢复默认：删 shortcuts.json（截图/语音不动） */
     shortcutsReset(): Promise<{ ok: boolean; bindings: Record<string, string[]>; conflicts: string[][] }>;
+    /* 读某会话的授权（默认全关） */
+    dataaccessState(threadId: string): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
+    /* 设一个三元组（会话+模块+读/写）；只在内存，退出即失效 */
+    dataaccessGrant(input: { threadId: string; module: string; level: string; on: boolean }): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
+    /* 撤销某会话的全部授权 */
+    dataaccessRevokeAll(threadId: string): Promise<{ threadId: string; grants: Record<string, { read: boolean; write: boolean }> }>;
+    /* 模型工具：读收藏夹（需 favorites/read） */
+    dataaccessFavoritesList(input: { threadId: string; query?: string; limit?: number }): Promise<{ total: number; matched: number; items: { id: string; title: string; kind: string; content: string; tags: string[]; createdAt: string }[] }>;
+    /* 模型工具：追加一条收藏（需 favorites/write；⛔ 不能改/删已有） */
+    dataaccessFavoritesAppend(input: { threadId: string; title?: string; content: string; kind?: string; note?: string; tags?: string[] }): Promise<{ ok: boolean; id: string; title: string; total: number }>;
+    /* 模型工具：读某天日记全文（需 journal/read） */
+    dataaccessJournalRead(input: { threadId: string; date?: string }): Promise<{ date: string; content: string; truncated: boolean }>;
+    /* 模型工具：全文检索日记（需 journal/read） */
+    dataaccessJournalSearch(input: { threadId: string; query: string }): Promise<{ hits: { date: string; lines: string[] }[] }>;
+    /* 模型工具：追加一条日记（需 journal/write；⛔ 只追加不改历史） */
+    dataaccessJournalAppend(input: { threadId: string; date?: string; title?: string; body: string }): Promise<{ ok: boolean; date: string; days: number }>;
+    /* 模型工具：密码本存在性查询（需 vault/read；⛔ 永不回明文） */
+    dataaccessVaultFind(input: { threadId: string; query?: string }): Promise<{ total: number; items: { id: string; title: string; username: string; url: string; hasSecret: boolean }[] }>;
+    /* 模型工具：把密码复制到剪贴板（需 vault/read；⛔ 返回体无明文） */
+    dataaccessVaultCopy(input: { threadId: string; id: string }): Promise<{ ok: boolean; title?: string; note?: string; reason?: string }>;
+    /* 模型工具：写入密码本（需 vault/write + 渲染层一次性确认） */
+    dataaccessVaultSave(input: { threadId: string; item: Record<string, unknown> }): Promise<{ ok: boolean; total: number }>;
 /* ═══ gen:end ═══ */
 
 

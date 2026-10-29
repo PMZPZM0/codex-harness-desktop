@@ -298,6 +298,16 @@ export const IPC_DOMAINS: IpcDomainEntry[] = [
     channels: ["journal:append", "journal:list", "journal:read", "journal:remove", "journal:save", "journal:search"],
     note: "开发日记：按天一个 md，追加式记录 + 全文检索",
   },
+  /* 10-29：收藏夹 / 开发日记 / 密码本**对模型开放**的授权闸 + 执行通道。
+     授权 = 会话 + 模块 + 读/写 三元组，纯内存（退出即失效）；
+     ⛔ 没有任何删除/覆盖通道；密码本明文永不出主进程（只有 copy + 存在性查询）。 */
+  { prefix: "dataaccess", count: 11, status: "in-features", file: "features/data-access-ipc.ts",
+    channels: ["dataaccess:state", "dataaccess:grant", "dataaccess:revoke-all",
+      "dataaccess:favorites-list", "dataaccess:favorites-append",
+      "dataaccess:journal-read", "dataaccess:journal-search", "dataaccess:journal-append",
+      "dataaccess:vault-find", "dataaccess:vault-copy", "dataaccess:vault-save"],
+    note: "三模块的模型授权闸（会话+模块+读写，纯内存）与执行通道；无删除能力",
+  },
   /* 10-28：快捷键统一读口。应用内键存 userData/shortcuts.json（本域独占）；
      截图 / 语音仍是各自存储（它们的 setter 要先注册成功 globalShortcut 再落盘）——
      本域只读来聚合展示，写入由渲染层走 screenshot:hotkey-set / voice:hotkey-set，

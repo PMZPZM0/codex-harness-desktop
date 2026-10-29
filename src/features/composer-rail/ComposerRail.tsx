@@ -18,12 +18,13 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Bookmark, ExternalLink, Keyboard, KeyRound, NotebookPen, Puzzle, Smile, X } from "lucide-react";
+import { Bookmark, ExternalLink, Keyboard, KeyRound, NotebookPen, Puzzle, ShieldCheck, Smile, X } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
 import { FavoritesSettingsSection } from "../settings-favorites";
 import { PasswordBookPanel } from "./PasswordBookPanel";
 import { DevJournalPanel } from "./DevJournalPanel";
 import { MoodStickersPanel } from "./MoodStickersPanel";
+import { DataAccessPanel } from "../data-access";
 
 /** 内置面板（IPC 拿不到目录时的兜底；正常情况以主进程 `extensions:catalog` 为准）。 */
 const FALLBACK_PANELS: RailPanelSpec[] = [
@@ -32,6 +33,9 @@ const FALLBACK_PANELS: RailPanelSpec[] = [
   { id: "journal", label: "开发日记", icon: "notebook", kind: "builtin", order: 30 },
   { id: "stickers", label: "心情表情", icon: "smile", kind: "builtin", order: 40 },
   { id: "shortcuts", label: "快捷键", icon: "keyboard", kind: "builtin", order: 50 },
+  /* 10-29：三模块对模型的授权开关（会话级、默认关）—— 用户要求"删除类不开放给模型"，
+     所以这里只提供读/写两档，没有删除相关入口。 */
+  { id: "data-access", label: "数据授权", icon: "shield", kind: "builtin", order: 60 },
 ];
 
 const ICONS: Record<string, typeof Bookmark> = {
@@ -40,6 +44,7 @@ const ICONS: Record<string, typeof Bookmark> = {
   notebook: NotebookPen,
   smile: Smile,
   keyboard: Keyboard,
+  shield: ShieldCheck,
 };
 
 /* 10-28 用户令：「这四个按键都做成弹窗…这个弹窗可以应用居中，不用非要贴这里，展示太少了，
@@ -47,7 +52,7 @@ const ICONS: Record<string, typeof Bookmark> = {
    ⇒ 四个面板统一走**居中弹窗**（`.modal-backdrop` + `.composer-rail-modal`），
      尺寸与位置交给 CSS（这里不再按面板逐个算宽高，也不再有"贴边/翻边"）。 */
 
-export function ComposerRail({ app }: { app: HarnessAppApi }) {
+export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threadId?: string }) {
   const [open, setOpen] = useState<boolean>(() => {
     try { return localStorage.getItem("composer-rail-open") === "1"; } catch { return false; }
   });
@@ -262,6 +267,7 @@ export function ComposerRail({ app }: { app: HarnessAppApi }) {
             )}
             {active.id === "passwords" && <PasswordBookPanel onToast={app.showToast} onNotice={app.setNotice} />}
             {active.id === "journal" && <DevJournalPanel onInsert={(text) => app.setPrompt((current) => (current.trim() ? `${current}\n\n${text}` : text))} />}
+            {active.id === "data-access" && <DataAccessPanel threadId={threadId} onClose={() => setPanelId(null)} />}
             {active.id === "stickers" && <MoodStickersPanel onDone={() => setPanelId(null)} onInsert={(text) => app.setPrompt((current: string) => (current.trim() ? `${current} ${text}` : text))} />}
             {active.kind === "external" && (
               <div className="crp-external">

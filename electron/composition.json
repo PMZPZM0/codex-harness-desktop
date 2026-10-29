@@ -359,6 +359,13 @@
       "config": null
     },
     {
+      "id": "dataaccess",
+      "enabled": true,
+      "file": "features/data-access-ipc.ts",
+      "export": "dataAccessFeature",
+      "config": null
+    },
+    {
       "id": "kb",
       "enabled": true,
       "file": "features/knowledge-base-ipc.ts",

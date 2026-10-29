@@ -38,6 +38,9 @@ const BUILTIN_RAIL: RailPanelSpec[] = [
   /* 10-28 用户：「在面板里表情下方新增一个快捷键图标，点击后打开弹窗，集中展示应用内所有快捷键」
      —— 它不是 rail 的内联面板（内容太大），点击直接打开全局弹窗（见 ComposerRail 的特判）。 */
   { id: "shortcuts", label: "快捷键", icon: "keyboard", kind: "builtin", order: 50 },
+  /* 10-29：收藏夹 / 开发日记 / 密码本 对模型的**会话级授权**开关（默认全关）。
+     放在最后一个 —— 它不是一个"数据面板"，而是管另外三个面板能不能被模型用。 */
+  { id: "data-access", label: "数据授权", icon: "shield", kind: "builtin", order: 60 },
 ];
 
 /* 用户数据目录只在 setPath 之后才准求值 ⇒ 由 setup 经接缝取一次再传进来（【91】）。 */
