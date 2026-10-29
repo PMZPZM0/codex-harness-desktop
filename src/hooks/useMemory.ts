@@ -212,7 +212,7 @@ export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
   }
 
   async function resetMemory() {
-    await window.codex.resetMemory();
+    await window.codex.resetMemory(true);
     setMemories([]);
     setMemoryStatus(memoryMode === "cloud" ? "本地记忆缓存已清空；云端记忆需在 Gateway 管理端清理" : "本地记忆已清空");
   }

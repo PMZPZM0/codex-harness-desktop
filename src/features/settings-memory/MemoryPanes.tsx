@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 /**
  * MemoryPanes —— 旧「记忆中心」弹窗里那几个内容页的**新家**（10-10 迁移）。
  *
@@ -19,6 +20,7 @@ import { describeSchedule } from "../app-view/helpers/text";
 import { basename } from "../../lib/basename";
 import { MEMORY_INJECT_LABEL, MEMORY_SCOPE_HINT, MEMORY_SCOPE_LABEL, MEMORY_SESSION_SCOPES, layersByScope } from "../../lib/memory-scope-rules.mjs";
 import { GlobalSearchView } from "../../components/IndexLibrary";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { MemoryFunnel, MemoryHygienePanel, MemoryInjectPreview, MemoryLayersEditor, MemoryPyramid } from "../memory";
 import { MemoryWorkbench } from "../memory-ui";
 import { Cloud, CloudOff, Search, Settings2 } from "lucide-react";
@@ -132,6 +134,21 @@ export function MemoryEntriesPane({ app }: { app: HarnessAppApi }) {
 
 /** ③ 常驻记忆（容量倍率 / 层水位 / 注入预览 / 正文编辑 / 整洁清理）→ 挂进「项目共享记忆库」弹窗 */
 export function ResidentMemoryPane({ app }: { app: HarnessAppApi }) {
+  /* 召回隔离开关：读 app-settings（appSettings:read），改完立刻落盘、下一条消息起生效 */
+  const [isolateOrphanRecall, setIsolateOrphanRecall] = useState(false);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const settings = await window.codex.readAppSettings?.();
+        setIsolateOrphanRecall((settings as any)?.memoryBlockOrphanRecall === true);
+      } catch { /* 读不到就保持默认关 */ }
+    })();
+  }, []);
+  const saveIsolate = async (next: boolean) => {
+    setIsolateOrphanRecall(next);
+    try { await window.codex.saveAppSettings?.({ memoryBlockOrphanRecall: next } as any); } catch { /* 落盘失败不阻塞界面 */ }
+  };
+
   return (
     <div className="memory-center-pane">
       {/* 容量倍率：×1 基准按倍数放大常驻注入预算。⛔ 放在最上面 —— 它改的就是下面所有水位条的分母。 */}
@@ -153,6 +170,29 @@ export function ResidentMemoryPane({ app }: { app: HarnessAppApi }) {
           </div>
         </div>
       )}
+      {/* 10-29 审查：「召回隔离」的开关。
+          跨工作区的碎片**已经**被排除了（strictWorkspace）；这里管的是剩下的那一类——
+          workspace 为空的「无归属」碎片（含 scratch 会话写入的、以及旧版本留下的）。
+          默认关：历史条目里这类很多，一刀切会让它们直接消失。 */}
+      <div className="memory-center-block">
+        <div className="memory-center-block-head">
+          <div>
+            <strong>召回隔离</strong>
+            <span>跨工作区的记忆已按工作区排除。开启后，<strong>没有归属工作区</strong>的散条也不再被召回（更严，但旧条目可能看不到）。</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <ToggleSwitch
+            checked={isolateOrphanRecall}
+            onChange={(next) => void saveIsolate(next)}
+            label="不召回无归属记忆"
+            title="开启后只召回本工作区的记忆"
+          />
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>
+            {isolateOrphanRecall ? "只召回本工作区（含无归属一律排除）" : "本工作区 + 无归属散条（默认）"}
+          </span>
+        </div>
+      </div>
       <MemoryPyramid
         snapshot={app.memoryLayers}
         distilling={app.memoryDistilling}

@@ -85,7 +85,7 @@ export class MemoryStore {
 
   remoteStatus() { return { configured: Boolean(this.remote), endpoint: this.remote?.endpoint ?? "" }; }
 
-  async recall(query: string, opts?: { workspace?: string; strictWorkspace?: boolean; threadId?: string }) {
+  async recall(query: string, opts?: { workspace?: string; strictWorkspace?: boolean; threadId?: string; blockOrphan?: boolean }) {
     if (!this.remote) return { context: (await this.search(query, 10, opts)).map((entry) => `[${entry.category}] ${entry.content}`).join("\n"), remote: false };
     /* ⛔⛔ 10-29 审查：云端召回的 session_key 必须**带上会话 id**。
        原来只发 this.remote.sessionKey（网关级常量）⇒ 云端模式下所有会话共享一个召回空间，
@@ -168,7 +168,7 @@ export class MemoryStore {
     return this.records.filter((entry) => !category || entry.category === category).sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || b.updatedAt - a.updatedAt);
   }
 
-  async search(query: string, limit = 8, opts?: { workspace?: string; strictWorkspace?: boolean }) {
+  async search(query: string, limit = 8, opts?: { workspace?: string; strictWorkspace?: boolean; blockOrphan?: boolean }) {
     await this.load();
     const terms = tokenize(query);
     if (!terms.length) return [];
@@ -192,7 +192,7 @@ export class MemoryStore {
            只有**没有归属**的全局碎片（entry.workspace 为空）才放行。
            需要旧行为时显式传 strictWorkspace:false（目前没有任何调用点这么做）。 */
         const wsWeight = opts?.workspace
-          ? (entry.workspace ? (entry.workspace === opts.workspace ? 1.4 : (opts.strictWorkspace === false ? 0.5 : 0)) : 1)
+          ? (entry.workspace ? (entry.workspace === opts.workspace ? 1.4 : (opts.strictWorkspace === false ? 0.5 : 0)) : (opts.blockOrphan ? 0 : 1))
           : 1;
         // 时间衰减：越近越相关（7 天半衰）
         const age = Math.max(0, now - entry.updatedAt);

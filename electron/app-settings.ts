@@ -51,6 +51,10 @@ export type AppSettings = {
    *  可选 1 / 2 / 4 / 8 / 10 / 16（×1 = 基准）。⛔ 只放大**字符**类预算，`logDays`（回灌窗口）
    *  不参与放大。非法值由 normalizeMemoryScale 回退基准 —— 手改配置也写不出 NaN 预算。 */
   memoryScale?: number;
+  /** 10-29 审查：是否**不召回无归属碎片**（workspace 为空的条目，含 scratch 会话写入的）。
+   *  默认 false = 保持既有行为（放行），因为历史数据里这类条目很多，一刀切会让它们直接消失。
+   *  打开后严格按工作区隔离：跨工作区排除 + 无归属排除。 */
+  memoryBlockOrphanRecall?: boolean;
   /** 全局自动压缩比例：上下文用量达到该比例时引擎自动压缩（0.1~0.95，默认见 DEFAULT_AUTO_COMPACT_RATIO） */
   autoCompactRatio?: number;
   /** Codex 引擎更新用的 HTTP 代理（如 http://127.0.0.1:7890）。空 = 国内镜像直连 */

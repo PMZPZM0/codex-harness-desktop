@@ -2556,12 +2556,12 @@
     {
       "name": "resetMemory",
       "channel": "memory:reset",
-      "paramsImpl": "",
-      "paramsDecl": "",
+      "paramsImpl": "confirm: boolean",
+      "paramsDecl": "confirm: boolean",
       "returns": "Promise<void>",
-      "invokeArgs": "",
+      "invokeArgs": "confirm",
       "cast": null,
-      "note": null
+      "note": "清空全部碎片记忆（不可恢复）；confirm !== true 一律拒（10-29 审查）"
     },
     {
       "name": "readRoleMemoryContext",
