@@ -383,27 +383,82 @@
 }
 .fm-settings-actions small { color: var(--faint); font-size: 11.5px; line-height: 1.5; }
 
-/* ── 自定义入口（10-29 用户：「设置界面里面的每个选项都可以加到这里来」）── */
-.fm-custom { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
-.fm-custom > header { display: flex; flex-direction: column; gap: 2px; }
-.fm-custom h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+/* ── 自定义入口（10-29 / 10-30 用户：「做一个弹窗，搜索，批量选择功能」） ──
+   编辑器里只占一行头部 + 两列清单；添加走 950 档弹窗（搜索 + 多选），不再塞内联小清单。 */
+.fm-custom { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+.fm-custom-head { display: flex; align-items: flex-start; gap: 12px; }
+.fm-custom-head > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.fm-custom h3 { margin: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .fm-custom h3 small { color: var(--faint); font-size: 10.5px; font-weight: 500; }
-.fm-custom > header p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
-.fm-custom-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
-.fm-custom-row { display: flex; align-items: center; gap: 8px; padding: 7px 9px; background: var(--bg); border-bottom: 1px solid var(--line-soft); }
-.fm-custom-row:last-child { border-bottom: 0; }
-.fm-custom-name { color: var(--text); font-size: 12px; }
-.fm-custom-row em { margin-left: auto; color: var(--faint); font-size: 10.5px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
-.fm-custom-row > button { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer; }
+.fm-custom-head p { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.55; }
+.fm-custom-add { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; font-size: 12px; }
+.fm-custom-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.fm-custom-row {
+  display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 6px 10px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.fm-custom-name { color: var(--text); font-size: 12.5px; }
+.fm-custom-row em { margin-left: auto; color: var(--faint); font-size: 10.5px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 44%; }
+.fm-custom-row > button {
+  display: grid; place-items: center; width: 26px; height: 26px; flex: none;
+  border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--muted); cursor: pointer;
+}
 .fm-custom-row > button:hover { color: var(--danger, #c0392b); border-color: var(--danger, #c0392b); }
-.fm-custom-add { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; }
-.fm-custom-picker { display: flex; flex-direction: column; gap: 8px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-2, transparent); max-height: 210px; overflow: auto; }
-.fm-custom-group { display: flex; flex-direction: column; gap: 4px; }
-.fm-custom-group-title { color: var(--faint); font-size: 10.5px; }
-.fm-custom-chips { display: flex; flex-wrap: wrap; gap: 5px; }
-.fm-custom-chips button { padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 11px; cursor: pointer; }
-.fm-custom-chips button:hover:not(:disabled) { border-color: var(--link); color: var(--link); }
-.fm-custom-chips button.added { color: var(--faint); background: var(--panel-2, transparent); cursor: default; }
+.fm-custom-empty { margin: 0; padding: 14px 12px; border: 1px dashed var(--line); border-radius: 10px; color: var(--faint); font-size: 11.5px; text-align: center; }
+
+/* 添加设置页弹窗：压在编辑菜单（900）之上、轻浮层（1000）之下。 */
+.fm-pages-backdrop {
+  position: fixed; inset: 0; z-index: 950;
+  display: grid; place-items: center; padding: 18px;
+  background: color-mix(in srgb, #000 42%, transparent);
+}
+.fm-pages-dialog {
+  width: min(640px, 100%); max-height: min(80vh, 720px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: var(--shadow);
+}
+.fm-pages-head { display: flex; align-items: flex-start; gap: 10px; padding: 16px 16px 10px; }
+.fm-pages-head > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.fm-pages-head h3 { margin: 0; font-size: 14px; }
+.fm-pages-head p { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.55; }
+.fm-pages-close {
+  display: grid; place-items: center; width: 28px; height: 28px; flex: none;
+  border-radius: 8px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer;
+}
+.fm-pages-close:hover { border-color: var(--line); color: var(--text); }
+.fm-pages-search {
+  display: flex; align-items: center; gap: 7px; margin: 0 16px 10px; padding: 0 10px; height: 36px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--muted);
+}
+.fm-pages-search input { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--text); font-size: 12.5px; outline: none; }
+.fm-pages-search > button { display: grid; place-items: center; width: 20px; height: 20px; border: 0; border-radius: 6px; background: transparent; color: var(--faint); cursor: pointer; }
+.fm-pages-search > button:hover { color: var(--text); background: var(--panel-2); }
+.fm-pages-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 16px 12px; display: flex; flex-direction: column; gap: 12px; }
+.fm-pages-group h4 { margin: 0 0 6px; display: flex; align-items: center; gap: 6px; color: var(--faint); font-size: 11px; font-weight: 600; }
+.fm-pages-group h4 small { font-weight: 500; }
+.fm-pages-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.fm-pages-row {
+  display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
+  color: var(--text); font-size: 12.5px; text-align: left; cursor: pointer;
+  transition: border-color .12s, background .12s;
+}
+.fm-pages-row:hover:not(:disabled) { border-color: var(--link); }
+.fm-pages-row:disabled { opacity: .45; cursor: default; }
+.fm-pages-check {
+  display: grid; place-items: center; width: 16px; height: 16px; flex: none;
+  border: 1px solid var(--line); border-radius: 5px; color: var(--bg);
+}
+.fm-pages-row.on { border-color: var(--link); background: color-mix(in srgb, var(--link) 9%, var(--bg)); }
+.fm-pages-row.on .fm-pages-check { background: var(--link); border-color: var(--link); }
+.fm-pages-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-pages-row em { margin-left: auto; color: var(--faint); font-size: 10.5px; font-style: normal; white-space: nowrap; }
+.fm-pages-empty { margin: 8px 0; padding: 18px 12px; text-align: center; color: var(--faint); font-size: 12px; }
+.fm-pages-foot {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 11px 16px 14px; border-top: 1px solid var(--line-soft);
+}
+.fm-pages-foot > span { margin-right: auto; color: var(--muted); font-size: 11.5px; }
 
 @keyframes function-menu-pop {
   from { opacity: 0; transform: translateY(-3px); }
@@ -416,6 +471,7 @@
 
 @media (max-width: 640px) {
   .fm-editor-grid { grid-template-columns: 1fr; }
+  .fm-custom-list, .fm-pages-rows { grid-template-columns: 1fr; }
   .fm-location-grid { grid-template-columns: 1fr; }
   .function-menu-editor { padding: 15px 13px 12px; }
   .fm-edit-actions { opacity: 1; }

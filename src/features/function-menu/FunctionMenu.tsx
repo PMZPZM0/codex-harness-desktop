@@ -1,4 +1,5 @@
 import { createPortal } from "react-dom";
+import { AddPagesDialog } from "./AddPagesDialog";
 import { AnchorPopover } from "../../components/AnchorPopover";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type DragEvent } from "react";
 import { Puzzle,
@@ -264,26 +265,40 @@ function FunctionMenuEditor() {
   const customRevision = useCustomMenuRevision();
   const targets = useFunctionMenuSettingsTargets();
   const [extMenu, setExtMenu] = useState<MenuEntrySpec[]>([]);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pagesOpen, setPagesOpen] = useState(false);
   useEffect(() => { void window.codex.extensionsCatalog?.().then((catalog) => setExtMenu(catalog?.menu ?? [])).catch(() => undefined); }, [customRevision]);
   const rawEntry = (entry: MenuEntrySpec) => ({ id: String(entry.id).replace(/^ext_/, ""), label: entry.label, icon: entry.icon, order: entry.order, action: entry.action });
   const saveMenu = async (next: MenuEntrySpec[]) => {
     try {
-      await window.codex.extensionsMenuSet({ entries: next.map(rawEntry) });
+      const saved = await window.codex.extensionsMenuSet({ entries: next.map(rawEntry) });
+      if (!saved?.ok) return; /* 主进程拒收（非数组 / 校验全失败）：保持旧目录，不假装成功 */
       bumpCustomMenuRevision();
     } catch { /* 写盘失败：保留旧目录，下次打开还能再试 */ }
   };
   const removeCustom = (entry: MenuEntrySpec) => void saveMenu(extMenu.filter((item) => item.id !== entry.id));
-  const addTarget = (page: string, label: string) => {
-    const id = "set_" + page;
-    if (extMenu.some((item) => item.id === "ext_" + id)) return;
-    void saveMenu([...extMenu, { id, label, order: 90, action: { type: "settings", target: page } }]);
-  };
   const targetLabel = (page: string) => targets.find((item) => item.page === page)?.label ?? page;
+  /* 默认入口已覆盖的设置页：再加一遍会出现两个「收藏夹 / 开发工具」（10-30 审查）。 */
+  const DEFAULT_MENU_PAGES = new Set(["devtools", "favorites"]);
+  const CUSTOM_MENU_LIMIT = 40;
   const groups = targets.reduce<Record<string, { page: string; label: string }[]>>((acc, item) => {
     (acc[item.group] ||= []).push({ page: item.page, label: item.label });
     return acc;
   }, {});
+  /* 已占用的页面：内置默认两项 + 已加的自定义项（弹窗里置灰，避免重复）。 */
+  const takenPages = new Set<string>([
+    ...DEFAULT_MENU_PAGES,
+    ...extMenu.map((entry) => String(entry.id).replace(/^ext_set_/, "")).filter((page) => extMenu.some((entry) => entry.id === "ext_set_" + page)),
+  ]);
+  const addTargets = (pages: { page: string; label: string }[]) => {
+    const next = [...extMenu];
+    for (const item of pages) {
+      if (next.length >= CUSTOM_MENU_LIMIT) break;
+      const id = "set_" + item.page;
+      if (next.some((entry) => entry.id === "ext_" + id)) continue;
+      next.push({ id, label: item.label, order: 90, action: { type: "settings", target: item.page } });
+    }
+    if (next.length !== extMenu.length) void saveMenu(next);
+  };
 
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -374,43 +389,41 @@ function FunctionMenuEditor() {
         </div>
 
         <section className="fm-custom" aria-label="自定义入口">
-          <header>
-            <h3>自定义入口<small>{extMenu.length}</small></h3>
-            <p>从设置页挑一项加到「功能入口」（固定排在菜单末尾；内置入口的排序与「更多」分组不受影响）。</p>
+          <header className="fm-custom-head">
+            <div>
+              <h3>自定义入口<small>{extMenu.length}/{CUSTOM_MENU_LIMIT}</small></h3>
+              <p>把设置页加进「功能入口」：固定排在菜单末尾，点一下直接跳到那一页。</p>
+            </div>
+            <button type="button" className="primary-setting fm-custom-add" disabled={extMenu.length >= CUSTOM_MENU_LIMIT}
+              title={extMenu.length >= CUSTOM_MENU_LIMIT ? "自定义入口最多 " + CUSTOM_MENU_LIMIT + " 个" : undefined}
+              onClick={() => setPagesOpen(true)}>
+              <Plus size={14} />添加设置页
+            </button>
           </header>
-          {extMenu.length > 0 && (
+
+          {extMenu.length > 0 ? (
             <div className="fm-custom-list">
               {extMenu.map((entry) => (
                 <div className="fm-custom-row" key={entry.id}>
-                  <Puzzle size={13} className="ic-cyan" />
+                  <Puzzle size={14} className="ic-cyan" />
                   <span className="fm-custom-name">{entry.label}</span>
                   <em>{entry.action.type === "settings" ? targetLabel(entry.action.target) : entry.action.type === "url" ? entry.action.target : "说明"}</em>
-                  <button type="button" title="移除这个入口" aria-label={"移除" + entry.label} onClick={() => removeCustom(entry)}><Trash2 size={13} /></button>
+                  <button type="button" title="移除这个入口" aria-label={"移除" + entry.label} onClick={() => removeCustom(entry)}><Trash2 size={14} /></button>
                 </div>
               ))}
             </div>
+          ) : (
+            <p className="fm-custom-empty">还没有自定义入口 —— 点右上角「添加设置页」，例如把「模型」「技能」「MCP」放到顺手的位置。</p>
           )}
-          <button type="button" className="secondary-setting fm-custom-add" onClick={() => setPickerOpen((open) => !open)}>
-            <Plus size={13} />{pickerOpen ? "收起设置页清单" : "添加设置页"}
-          </button>
-          {pickerOpen && (
-            <div className="fm-custom-picker">
-              {Object.entries(groups).map(([group, items]) => (
-                <div className="fm-custom-group" key={group}>
-                  <span className="fm-custom-group-title">{group}</span>
-                  <div className="fm-custom-chips">
-                    {items.map((item) => {
-                      const added = extMenu.some((entry) => entry.id === "ext_set_" + item.page);
-                      return (
-                        <button key={item.page} type="button" className={added ? "added" : ""} disabled={added} onClick={() => addTarget(item.page, item.label)}>
-                          {item.label}{added ? " ✓" : ""}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
+
+          {pagesOpen && (
+            <AddPagesDialog
+              targets={targets}
+              taken={takenPages}
+              remaining={Math.max(0, CUSTOM_MENU_LIMIT - extMenu.length)}
+              onClose={() => setPagesOpen(false)}
+              onAdd={addTargets}
+            />
           )}
         </section>
 
