@@ -16,7 +16,7 @@
  * 弹层：portal 到 body，按**实测矩形**定位，右开优先、放不下翻左、上下夹进视口。
  * 跨会话：挂在输入框上 ⇒ 每个会话同一个组件；展开状态存 localStorage，所有会话一致。
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bookmark, ExternalLink, Keyboard, KeyRound, NotebookPen, Puzzle, ShieldCheck, Smile, X } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
@@ -72,13 +72,6 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
   const railRef = useRef<HTMLDivElement>(null);
   /** 图标列容器：判「是否被侧栏等元素遮住」用 */
   const iconsRef = useRef<HTMLDivElement>(null);
-  /** 10-29 用户三档（原文）：「正常展示两行在旁边，距离不够就展示一排…不要贴到输入框上面」
-      +「最小界面，左边没空间的时候，再展示在输入框上面」。
-      · columns = 左侧两列（默认，宽 76）
-      · single  = 左侧单列一到底（宽 38）—— 左边收紧但仍放得下
-      · top     = 上方横排（**兜底**：左边连单列都塞不下时才用）
-      ⛔ 优先级：能两列就两列，其次单列，最后才是上方。 */
-  const [layout, setLayout] = useState<"columns" | "single" | "top">("columns");
 
   /* Esc / Tab 都在这里处理（capture 阶段）：
      · Esc 只关这一层 —— `stopPropagation()` 防止同一次按键连带关掉背后的浮层/设置；
@@ -159,34 +152,6 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
 
   const active = panels.find((entry) => entry.id === panelId) ?? null;
 
-  /* 10-29：打开后量一次「两列放不放得下」，放不下就收成一列（仍在输入框左侧）。
-     ⛔⛔ 判据必须用**不随布局变化的量**（输入框左缘 + 固定宽度），不能拿当前图标列位置判：
-        上一版用 `icons.left` 判，而 icons 本身就在 layout 里 ⇒ 一旦判成单列、左缘右移，
-        再判时又"贴边"，宽屏也被收成单列（实测 1280 宽 single=true，自证陷阱）。
-     两列 rail 总宽 ≈ 76(两列图标) + 10(与手柄的间隙) + 6(手柄) = 92。 */
-  useLayoutEffect(() => {
-    if (!open) { setLayout("columns"); return; }
-    const el = iconsRef.current;
-    const composerEl = el?.closest(".composer") as HTMLElement | null;
-    if (!el || !composerEl) return;
-    const composerRect = composerEl.getBoundingClientRect();
-    /* 左侧可用空间的右端点 = 侧栏右缘（没有侧栏就当 0） */
-    const sidebar = document.querySelector(".sidebar") as HTMLElement | null;
-    const leftBound = sidebar ? sidebar.getBoundingClientRect().right : 0;
-    /* 预留宽度（含与手柄的 10px 间隙 + 手柄 6px）：两列 76+16=92、单列 38+16=54 */
-    const RAIL_COLUMNS = 92;
-    const RAIL_SINGLE = 54;
-    const avail = composerRect.left - leftBound;
-    /* 两列将占据的那块是不是被浮层/工具栏盖着（elementsFromPoint 实测） */
-    const probeX = Math.max(composerRect.left - RAIL_COLUMNS + 2, 1);
-    const hit = document.elementsFromPoint(probeX, composerRect.top + composerRect.height / 2);
-    const blocked = hit.length > 0 && !hit.some((node) => node.contains(el) || el.contains(node));
-    /* 三级：两列 → 单列 → 上方横排（最后才是上方，用户：「左边没空间的时候，再展示在输入框上面」） */
-    if (avail < RAIL_SINGLE + 6) setLayout("top");
-    else if (avail < RAIL_COLUMNS + 6 || blocked) setLayout("single");
-    else setLayout("columns");
-  }, [open, panels, order]);
-
   /* 10-27 用户：「这个一直展示不会自动隐藏，10秒后自动隐藏，打开了这些按键的里面的弹窗
      就暂时不触发自动隐藏」⇒ 展开后 10s 自动收回；**有面板打开时不收**；
      鼠标进竖条 / 移动一次重新计时（不然手刚伸过去就消失了）。 */
@@ -241,7 +206,7 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
   }, [app]);
 
   return (
-    <div className={`composer-rail${open ? " is-open" : ""}${layout === "single" ? " is-single" : layout === "top" ? " is-top" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
+    <div className={`composer-rail${open ? " is-open" : ""}`} ref={railRef} onMouseEnter={() => setBump((value) => value + 1)}>
       <button
         type="button"
         className="composer-rail-toggle"
