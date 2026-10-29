@@ -85,7 +85,15 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
   }, [open]);
   const list = liveTargets ?? targets;
   const countOf = (kind: DispatchTargetEntry["kind"]) => list.filter((target) => target.kind === kind).length;
-  const expertCount = countOf("expert");
+  /* 10-29 用户令：「我专家库里面这么多专家，你为啥就显示 5 个？」
+     ⛔ 之前只数 kind==="expert"（单人专家=没有成员的小团队），**团成员全漏了**。
+     ⇒ 专家数 = 单人专家 + 每个团的（主理人 1 + 成员数）。这是「专家库角色总数」口径，
+        与用户看到的专家库页面一致；团队仍由上面的开关整团派。 */
+  const expertCount = list.reduce((sum, target) => {
+    if (target.kind === "expert") return sum + 1;
+    if (target.kind === "team") return sum + 1 + Number(target.memberCount ?? 0);
+    return sum;
+  }, 0);
   const subCount = countOf("subagent");
   const teamCount = countOf("team");
   /* 面板只有一个开关（专家团）⇒ 脏判定只看它。确认时 expert/subagent 一律写 true：
@@ -189,9 +197,9 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
               数字标签也写准：expertCount 只是**单人专家**（没有成员的团队），
               不是全店专家总数（档案里 7 个团共 41 个角色）—— 写「专家 5」会被当成数错。 */}
           <div className="dispatch-always">
-            <span className="dispatch-chip">单人专家 <b>{expertCount}</b></span>
+            <span className="dispatch-chip" title="专家库里的每一位（主理人与成员）都是独立专家，都能单独使用">专家 <b>{expertCount}</b></span>
             <span className="dispatch-chip">子智能体 <b>{subCount}</b></span>
-            <small>这两类一直可派，不用开关</small>
+            <small>每位专家都能单独用</small>
           </div>
           {/* ⛔ 底部只在「一个可调度对象都没有」时才出声；正常态那句「仅专家团需要开启」
               与卡片副标题重复，属于赘述（用户点名），删掉。 */}
