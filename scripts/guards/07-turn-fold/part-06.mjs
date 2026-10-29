@@ -80,6 +80,21 @@ export async function run() {
     (/const headline = headlineText && !\(waitingForApproval && running\)/.test(termCode) ? ok : fail)(
       "【127】动作短语只给审批态让位（技能态已整体搬去技能卡 10-29，命令卡不再因子句让位）"
     );
+    /* ⛔⛔ 10-29 用户实测截图：「这个图标全部一样了」—— 每条命令都挂 SquareTerminal，
+       14px 下外框+内部符号糊成一枚绿方块，读文件 / 建目录 / 看 git 配置 / 跑脚本 长得一模一样。
+       ⇒ 判据两条：① 有按动作分类的映射函数且真的被用；② 表头不许再写死 TerminalSquare。 */
+    (/function iconOfCommand\(/.test(termCode) && /const CmdIcon = iconOfCommand\(commandText, intent\)/.test(termCode) ? ok : fail)(
+      "【127】命令卡图标按动作分类（读 / 改 / 找 / 目录 / git / 命令）并且真的接了"
+    );
+    (!/<span className="cmd-icon"><TerminalSquare/.test(termCode) ? ok : fail)(
+      "【127】⛔ 命令卡表头图标不再写死 TerminalSquare（否则所有行一个样）"
+    );
+    /* 10-29 用户实测：「编辑文件 / 运行过程中 / 运行完成后那个都不见了」——
+       动作短语一旦命中就只剩「写文件」这种无状态说法，运行中和已完成长得一样。
+       ⇒ 运行时补「正在」前缀（只给 action：purpose/原文不是动词短语，拼「正在」是病句）。 */
+    (/running && action \? `正在\$\{action\}`/.test(termCode) ? ok : fail)(
+      "【127】运行中的命令卡补「正在」前缀（否则运行中与已完成在表头上完全一样）"
+    );
     /* ★ 10-29 用户实测令：「中间有失败，不要在这里显示×显示√就行了」——
        结束的命令行一律 ✓：非零退出大多是正常探测（`git config --get user.name` 没配就 exit 1、
        非仓库里 `git status` 也非零），标成失败只会让人误以为出错。

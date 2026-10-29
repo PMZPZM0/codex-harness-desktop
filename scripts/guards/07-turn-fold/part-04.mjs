@@ -895,8 +895,17 @@ export async function run() {
   (!/\.wb-fold-failed\s*\{/.test(css79) ? ok : fail)(
     "【79】配套样式 .wb-fold-failed 已随文字一起删掉（不留死代码）"
   );
-  (/wb-fold-state \$\{failedCount \? "error" : running \? "running" : "done"\}/.test(app79) ? ok : fail)(
-    "【79】折叠头状态用**可区分状态的图标**（失败叉 / 进行中转圈 / 完成勾 —— 10-29 取代被隐藏的 7px 圆点）"
+  (/wb-fold-state \$\{running \? "running" : "done"\}/.test(app79) ? ok : fail)(
+    "【79】折叠头状态只有两态：进行中转圈 / 完成打勾（10-29 用户令：红色 ❌ 删掉，容易让人误会）"
+  );
+  /* ⛔ 10-29 用户令原话：「上面那个红色 ❌ 是什么玩意，删掉，不需要，容易让人误会」——
+     非零退出常是正常探测（`git config --get` 未配 / 非仓库 `git status` / 策略拦截都返回非零），
+     整轮打一个红叉只会让人以为出错了。失败细节仍在命令卡展开体（`.cmd-exit`）。
+     ⚠️ 判据必须读**折叠头那个文件**：`readAppUi()` 是整包拼接，别的组件（timeline 等）
+        本来就在用 CircleX，拿它查会恒红。 */
+  const foldSrc79 = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8");
+  (!/CircleX/.test(foldSrc79) ? ok : fail)(
+    "【79】⛔ 折叠头不再渲染失败红叉（failedCount 参数保留但不再参与渲染）"
   );
   /* 10-29 用户令：编辑文件 / 修改文件 / 深度思考 / 使用技能 前方统一加**语义匹配**的图标。
      ⛔ 判据钉的是分组映射表本身（不是某一行的 `<LeadIcon>`），缺类目会掉进兜底扳手。 */
