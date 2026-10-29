@@ -907,9 +907,14 @@ export class RemoteControlService {
   /** 校验 6 位配对码：过期/不匹配都算失败；连续错 PAIR_CODE_MAX_TRIES 次作废并轮换 */
   private checkPairingCode(input: string) {
     if (!this.pairing.code || Date.now() > this.pairing.expiresAt) return false;
-    this.pairing.tries += 1;
-    if (this.pairing.tries >= PAIR_CODE_MAX_TRIES) { this.rotatePairingCode(); return false; }
-    return input.trim() === this.pairing.code;
+    /* ⛔ 只有**输错**才计次：旧实现在输对时也 +1，第 10 次即使输对也会被作废并轮换（审查发现） */
+    if (input.trim() !== this.pairing.code) {
+      this.pairing.tries += 1;
+      if (this.pairing.tries >= PAIR_CODE_MAX_TRIES) this.rotatePairingCode();
+      return false;
+    }
+    this.pairing.tries = 0;
+    return true;
   }
 
   /** 待审批的配对请求列表（电脑端渲染审批卡片用） */

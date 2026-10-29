@@ -1671,6 +1671,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("pullCode") && ui.includes("remotePairState") && ui.includes("setRemoteQr"); } catch(e) { return false; } })() ? ok : fail)(
       "【139e】弹窗里的配对码 / 二维码要跟着后台轮换自动换新（否则用户照旧码输，永远过期）"
     );
+    (relaySrc.includes("if (input.trim() !== this.pairing.code)") && relaySrc.includes("this.pairing.tries = 0;") ? ok : fail)(
+      "【139e】配对码只有输错才计次（旧实现输对也 +1，第 10 次输对会被作废）"
+    );
+    ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("data-pair-code-value") && ui.includes("本窗口：") ; } catch(e) { return false; } })() ? ok : fail)(
+      "【139e】配对面板要显示「本窗口的 6 位码 + 地址」——两台电脑的码不同，避免抄错窗口"
+    );
     (relaySrc.includes("encodeURIComponent(this.pairingCode())") ? ok : fail)(
       "【139e】二维码必须用 pairingCode()（过期自动轮换），⛔ 不能把可能过期的码嵌进去"
     );
