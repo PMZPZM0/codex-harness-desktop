@@ -85,7 +85,7 @@ export class MemoryStore {
 
   remoteStatus() { return { configured: Boolean(this.remote), endpoint: this.remote?.endpoint ?? "" }; }
 
-  async recall(query: string, opts?: { workspace?: string }) {
+  async recall(query: string, opts?: { workspace?: string; strictWorkspace?: boolean }) {
     if (!this.remote) return { context: (await this.search(query, 10, opts)).map((entry) => `[${entry.category}] ${entry.content}`).join("\n"), remote: false };
     const response = await this.remoteRequest("/recall", { query, session_key: this.remote.sessionKey, user_id: this.remote.userId });
     return { context: String(response.context ?? ""), remote: true, memoryCount: response.memory_count ?? 0 };
@@ -164,7 +164,7 @@ export class MemoryStore {
     return this.records.filter((entry) => !category || entry.category === category).sort((a, b) => Number(b.pinned ?? false) - Number(a.pinned ?? false) || b.updatedAt - a.updatedAt);
   }
 
-  async search(query: string, limit = 8, opts?: { workspace?: string }) {
+  async search(query: string, limit = 8, opts?: { workspace?: string; strictWorkspace?: boolean }) {
     await this.load();
     const terms = tokenize(query);
     if (!terms.length) return [];
@@ -181,9 +181,14 @@ export class MemoryStore {
         if (!hits) return null;
         // 分类权重
         const catWeight = MEMORY_CATEGORY_WEIGHT[entry.category] ?? 1;
-        // 项目记忆：同工作区命中加权，跨工作区降权
+        /* ⛔⛔ 10-29 修「多会话记忆串扰」的根因：
+           原来跨工作区只**降权到 0.5**、仍参与排序并可以被返回 ⇒ 同一台机器上另一个项目的
+           碎片会混进本会话的上下文（用户高强度使用后表现为「会话之间互相污染」）。
+           现在默认**严格排除**（score 归零 ⇒ 被下面 score > 0 的 filter 丢掉）；
+           只有**没有归属**的全局碎片（entry.workspace 为空）才放行。
+           需要旧行为时显式传 strictWorkspace:false（目前没有任何调用点这么做）。 */
         const wsWeight = opts?.workspace
-          ? (entry.workspace ? (entry.workspace === opts.workspace ? 1.4 : 0.5) : 1)
+          ? (entry.workspace ? (entry.workspace === opts.workspace ? 1.4 : (opts.strictWorkspace === false ? 0.5 : 0)) : 1)
           : 1;
         // 时间衰减：越近越相关（7 天半衰）
         const age = Math.max(0, now - entry.updatedAt);
