@@ -1626,8 +1626,24 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("ensureApkFile") && gwSrc.includes("gh-proxy.com/") && gwSrc.includes("ghfast.top/") && !gwSrc.includes("Location: APK_URL") ? ok : fail)(
       "【139e】安装包由网关自己缓存后直发（镜像序 gh-proxy → ghfast → 直连）；⛔ 不许 302 到 GitHub（国内手机下不动）"
     );
-    (relaySrc.includes("mobile-remote-v0.1.2") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.2，APK 才能用中转前缀）"
+    /* 真跑：把生成页面的 <script> 逐个交给 new Function 解析 ——
+       一次手滑的括号（10-29 实测：localStorage 键加前缀写坏了）就让整页 JS 静默挂掉（空白 + 一直「连接中」）。 */
+    {
+      let pageSyntaxOk = true;
+      try {
+        const mod = await import(pathToFileURL(join(ROOT, "dist-electron", "remote", "web-page.js")).href);
+        const build = mod.buildRemotePageHtml ?? mod.default?.buildRemotePageHtml;
+        const html = build("mobile", undefined, undefined, "Codex Harness");
+        const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+        for (const code of scripts) { try { new Function(code); } catch (error) { pageSyntaxOk = false; console.log("      页面脚本语法错误：", error.message); } }
+      } catch (error) { pageSyntaxOk = false; console.log("      页面脚本解析失败：", error.message); }
+      (pageSyntaxOk ? ok : fail)("【139e】手机页脚本必须能解析（括号/声明顺序错误会让整页 JS 静默挂掉）");
+    }
+    (androidSrc.includes('openChat("")') && !androidSrc.includes("R.id.code") && !androidSrc.includes("R.id.connect") ? ok : fail)(
+      "【139e】安卓首屏只保留扫码（连接码在网页配对页里输一次）—— ⛔ 不再出现两个配对界面"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.3") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.3）"
     );
   }
 }
