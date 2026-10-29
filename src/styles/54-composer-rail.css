@@ -21,7 +21,9 @@
      配合下面放大到 28px 的图标，命中面积够用；两列布局也才有高度可用。 */
   top: -8px;
   bottom: -8px;
-  z-index: 30;
+  /* ⛔ 10-29：侧栏展开 z=5、折叠飞出 z=35 ⇒ 这里必须**高过 35**。
+     主区/工作区全是 overflow:visible（实测祖先链），所以不会裁；只会与侧栏抢层级。 */
+  z-index: 40;
   display: flex;
   flex-direction: row-reverse;
   align-items: center;
@@ -447,46 +449,4 @@
     padding-left: 0;
     padding-top: 40px;
   }
-}
-
-/* ── 10-29（二改）：空间不够时收成**一排（一列到底）**，仍在输入框左侧 ──────
-   用户：「正常展示两行在旁边，距离不够就展示一排，这样，不要贴到输入框上面」。
-   ⛔ 上一版把它挪到输入框**上方**横排 —— 被用户否掉了（"贴到输入框上面"）。
-   现在两档形态都在左侧、都骑在左边框线上，只有图标排列方式不同：
-     · 默认（够宽）：3 个一列、最多两列（两行，宽 76px）
-     · 不够宽（会被侧栏挤到）：收成**单列一到底**（宽 38px，高度可以探出输入框）
-   宽度从 76 降到 38 正是为了塞进被侧栏挤压后的那点空间。 */
-.composer-rail.is-single .composer-rail-icons {
-  flex-flow: column nowrap;   /* 一列到底，不再换列 */
-  max-height: none;           /* 允许比输入框高（用户早先明确过"可以比输入框高一些"） */
-  overflow: visible;
-}
-
-/* ── 第三档（10-29 用户：「最小界面，左边没空间的时候，再展示在输入框上面」）────
-   只在**左侧连单列都塞不下**时才启用（判据见 ComposerRail 的 avail 三级）。
-   ⛔ 这是兜底，不是默认：能在左边就在左边。 */
-.composer-rail.is-top {
-  right: auto;
-  left: 0;
-  top: auto;
-  bottom: 100%;              /* 整条到输入框上方 */
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding-bottom: 2px;
-}
-.composer-rail.is-top .composer-rail-toggle {
-  transform: none;           /* 横条的手柄：一条短横，不再压线 */
-  width: 40px;
-  height: 12px;
-}
-.composer-rail.is-top .composer-rail-grip {
-  width: 22px;
-  height: 4px;
-}
-.composer-rail.is-top .composer-rail-icons {
-  flex-flow: row nowrap;     /* 一排横放 */
-  max-height: none;
-  overflow: visible;
-  margin: 4px 0 0;
 }
