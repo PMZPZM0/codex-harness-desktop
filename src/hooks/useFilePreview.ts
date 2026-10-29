@@ -1,5 +1,4 @@
 import { useRef, useState } from "react";
-import { askFileTrust } from "../lib/file-trust-ask.mjs";
 
 export type FilePreview = { path: string; content: string; language: string; kind: "text" | "image" | "binary" | "pdf" };
 
@@ -97,6 +96,8 @@ export function useFilePreview({ workspace, onNotice }: Options) {
       return;
     }
     const extension = path.split(".").pop()?.toLowerCase() ?? "text";
+    /* ★ 10-29：图片 / PDF 走 `harness-image` 协议渲染（不经 fs:read）。协议侧已按用户令
+       取消可信根校验 ⇒ 任意位置的图片 / PDF 直接就能渲染，这里不再做任何路径探测或授权询问。 */
     if (IMAGE_EXTENSIONS.has(extension)) {
       const preview: FilePreview = { path, content: "", language: extension, kind: "image" };
       cacheRef.current.set(path, preview);
@@ -123,23 +124,8 @@ export function useFilePreview({ workspace, onNotice }: Options) {
       return;
     }
     try {
-      /* ⛔ 10-18：越界（OUTSIDE_TRUST:<dir>）⇒ 应用内模态问一次；允许则授权该目录并**重试一次**。
-         ⛔ 不用系统弹窗（跑出窗口外 + 吞焦点），⛔ 不内嵌（用户不知道点哪），⛔ 不静默放行。 */
-      const readWithConsent = async () => {
-        try {
-          return await window.codex.readFile(path);
-        } catch (error: any) {
-          const message = String(error?.message ?? error);
-          const outside = message.match(/OUTSIDE_TRUST:([^"]+)/);
-          if (!outside) throw error;
-          const dir = outside[1];
-          const allowed = await askFileTrust({ dir, path });
-          if (!allowed) throw new Error(`已取消：${dir} 不在可信目录内`);
-          await window.codex.allowFsPath(dir);
-          return await window.codex.readFile(path);
-        }
-      };
-      const result = await readWithConsent();
+      /* ⛔ 10-29 用户令：预览不再有授权环节 —— 主进程 fs:read 已放开可信根，任意文件直接读。 */
+      const result = await window.codex.readFile(path);
       const binary = atob(result.dataBase64 ?? "");
       const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
       // 未知扩展名兜底：文件头/NUL 嗅探出二进制同样给占位，不渲染乱码

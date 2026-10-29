@@ -17,8 +17,7 @@ export type TextEditorTransport = {
 };
 
 export function PastedTextEditor({ path, name, onClose, transport }: { path: string; name: string; onClose: () => void; transport?: TextEditorTransport }) {
-  const [state, setState] = useState<{ loading: boolean; editable: boolean; content: string; error?: string; outsideDir?: string }>({ loading: true, editable: false, content: "" });
-  /* 10-18：越界文件（会话工作区之外）⇒ 内联「允许并预览」，不弹原生模态（守卫【191】）。 */
+  const [state, setState] = useState<{ loading: boolean; editable: boolean; content: string; error?: string }>({ loading: true, editable: false, content: "" });
   const [reloadKey, setReloadKey] = useState(0);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -39,9 +38,8 @@ export function PastedTextEditor({ path, name, onClose, transport }: { path: str
         // 聚焦并全选不利于"接着改"，只把光标放到末尾
         requestAnimationFrame(() => { const el = boxRef.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
       } catch (error: any) {
-        const message = String(error?.message ?? error);
-        const outside = message.match(/OUTSIDE_TRUST:([^"]+)/);
-        if (alive) setState({ loading: false, editable: false, content: "", error: outside ? `文件不在会话工作区内：${outside[1]}` : message, ...(outside ? { outsideDir: outside[1] } : {}) });
+        /* 10-29：主进程已不再抛 OUTSIDE_TRUST（任意文件可读可编辑）⇒ 原来的「允许并预览」内联授权整段删除。 */
+        if (alive) setState({ loading: false, editable: false, content: "", error: String(error?.message ?? error) });
       }
     })();
     return () => { alive = false; };
@@ -136,24 +134,6 @@ export function PastedTextEditor({ path, name, onClose, transport }: { path: str
           <button type="button" className="pasted-text-close" title="关闭 (Esc)" onClick={() => void closeWithSave()}><X size={15} /></button>
         </div>
         {state.error ? <p className="pasted-text-error">{state.error}</p> : null}
-        {state.outsideDir ? (
-          <button
-            type="button"
-            className="secondary-setting"
-            style={{ fontSize: 12, marginTop: 6 }}
-            onClick={async () => {
-              try {
-                await window.codex.allowFsPath(state.outsideDir as string);
-                setState({ loading: true, editable: false, content: "" });
-                setReloadKey((k) => k + 1);
-              } catch (error: any) {
-                showToastEverywhere("授权失败", String(error?.message ?? error));
-              }
-            }}
-          >
-            允许并预览该目录（只需授权一次）
-          </button>
-        ) : null}
         {view === "table" && hasTables ? (
           <div className="pasted-text-body pasted-text-tablebody">
             <MdTableView text={state.content} edits={tableEdits} onEditsChange={(next) => { setTableEdits(next); setDirty(true); }} />

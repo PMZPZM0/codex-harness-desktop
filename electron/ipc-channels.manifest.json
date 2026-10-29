@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 593,
+  "count": 592,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -1921,16 +1921,6 @@
       "returns": "Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>",
       "cast": null,
       "note": null
-    },
-    {
-      "name": "allowFsPath",
-      "channel": "fs:allow",
-      "paramsImpl": "path: string",
-      "paramsDecl": "path: string",
-      "returns": "Promise<{ ok: boolean; dir: string }>",
-      "invokeArgs": "{ path }",
-      "cast": null,
-      "note": "10-18：用户点击「允许并预览」后放行该目录（持久化到 userData/trusted-paths.json）。只能由渲染层用户手势触发"
     },
     {
       "name": "fileExists",

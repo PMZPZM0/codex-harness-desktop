@@ -67,7 +67,6 @@ let userSkillsDir!: any;
 let refreshSkillDiscipline!: any;
 let readCustomModel!: any;
 let server!: any;
-let isInsideTrustedRoots!: any;
 let placeholderPngResponse!: any;
 let createWindow!: any;
 let filterForRenderer!: any;
@@ -358,7 +357,6 @@ export function bindBoot(deps: Record<string, any>) {
   refreshSkillDiscipline = deps.refreshSkillDiscipline;
   readCustomModel = deps.readCustomModel;
   server = deps.server;
-  isInsideTrustedRoots = deps.isInsideTrustedRoots;
   placeholderPngResponse = deps.placeholderPngResponse;
   createWindow = deps.createWindow;
   filterForRenderer = deps.filterForRenderer;
@@ -565,18 +563,13 @@ export async function bootApp() {
     if (!/^[a-zA-Z]:[\\/]/.test(imagePath) && !imagePath.startsWith("/")) {
       try { imagePath = decodeURIComponent(imagePath); } catch { /* 原样使用 */ }
     }
-    // ⛔ 收敛到「图片 + 可信根内」（09-13 审计 S5）：这个协议注册在**默认 session** 上，
-    // 而渲染层要渲染模型输出 / 内置浏览器里的网页 / 渠道消息 —— 不收敛就等于给它们一个
-    // `harness-image://img/?path=C:/任意文件` 的任意文件读取原语。
-    // 允许：常见图片扩展名，且落在 userData / images 缓存目录 / 任一已知会话工作目录内。
+    /* ⛔ 10-29 用户令：「不管哪里的文件，都要可以预览和编辑」⇒ 不再判可信根。
+       仍保留**扩展名白名单**（这是正确性约束：非图片交给 img 只会得到乱码，不是安全闸）。
+       ⚠️ 残余风险已知并接受：本协议注册在默认 session，主文档里的任意 HTML 都能取本机图片。 */
     if (!/\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i.test(imagePath)) {
       return new Response("Unsupported media type", { status: 415 });
     }
-    {
-      const resolved = path.resolve(imagePath);
-      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
-      imagePath = resolved;
-    }
+    imagePath = path.resolve(imagePath);
     // 斜杠方向兜底：引擎/宿主写入的路径斜杠方向可能不一致
     if (!existsSync(imagePath)) {
       const backslash = imagePath.replace(/\//g, "\\");
@@ -610,11 +603,8 @@ export async function bootApp() {
     const ext = path.extname(mediaPath).slice(1).toLowerCase();
     const mime = MEDIA_MIME[ext];
     if (!mime) return new Response("Unsupported media type", { status: 415 });
-    {
-      const resolved = path.resolve(mediaPath);
-      if (!isInsideTrustedRoots(resolved)) return new Response("Forbidden", { status: 403 });
-      mediaPath = resolved;
-    }
+    /* ⛔ 10-29 用户令：媒体同样不再判可信根（能预览图片就要能预览音视频）。保留 MIME 白名单。 */
+    mediaPath = path.resolve(mediaPath);
     // 斜杠方向兜底（与 harness-image 同款）
     if (!existsSync(mediaPath)) {
       const backslash = mediaPath.replace(/\//g, "\\");

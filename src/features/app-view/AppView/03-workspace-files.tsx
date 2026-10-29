@@ -49,10 +49,13 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
   useEffect(() => {
     if (!path) { setState(IDLE); return; }
     const ext = fileExtOf(path);
+    let cancelled = false;
+    /* ★ 10-29 用户令：预览不再有授权环节（主进程 fs:read / harness-image 已放开可信根）
+       ⇒ 右栏与居中编辑器现在都是直读；这里只保留「读失败就说清原因」。
+       ⛔ 右栏是**第二套**实现（与居中编辑器各写一份）—— 改口径时两边都要看，别只改一处。 */
     if (IMAGE_EXTENSIONS.has(ext)) { setState({ status: "ok", kind: "image", content: "", language: ext }); return; }
     if (ext === "pdf") { setState({ status: "ok", kind: "pdf", content: "", language: "pdf" }); return; }
     if (BINARY_EXTENSIONS.has(ext)) { setState({ status: "ok", kind: "binary", content: "", language: ext }); return; }
-    let cancelled = false;
     setState({ status: "loading", kind: "text", content: "", language: ext || "text" });
     void (async () => {
       try {

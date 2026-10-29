@@ -43,12 +43,8 @@ function kindIcon(kind: Kind, size = 15) {
   return <Play size={size} />;
 }
 
-async function authorizeDirectory(source: string): Promise<boolean> {
-  const dir = source.replace(/[\\/][^\\/]*$/, "");
-  if (!dir || dir === source) return false;
-  await window.codex.allowFsPath(dir);
-  return true;
-}
+/* 10-29 用户令：harness-media 协议已不判可信根（任意位置音视频都能播）⇒
+   原来这里"先授权所在目录再播放"的函数没有存在意义了，整段删除。 */
 
 /* ── 视频 ─────────────────────────────────────────────────────────────────── */
 
@@ -125,9 +121,8 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
     setNativeFailed(false);
   }, [source, reloadKey]);
 
-  const retry = async () => {
-    const ok = await authorizeDirectory(source).catch(() => false);
-    if (!ok) return;
+  /* ⛔ 10-29：重试不再需要授权（协议已放开），直接重挂载即可。 */
+  const retry = () => {
     setFatal("");
     setNativeFailed(false);
     setReloadKey((current) => current + 1);
@@ -227,9 +222,7 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
   const name = title || basenameOf(source);
   const local = isAbsoluteLocalPath(source);
 
-  const retry = async () => {
-    const ok = await authorizeDirectory(source).catch(() => false);
-    if (!ok) return;
+  const retry = () => {
     setError("");
     setReloadKey((currentKey) => currentKey + 1);
   };

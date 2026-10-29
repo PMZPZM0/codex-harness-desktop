@@ -665,6 +665,7 @@ ${st.hint}`);
                   success: info?.ok === true,
                 });
               } else if (event.params?.tool === "image_view") {
+                /* 10-29：主进程图像工坊已放开可信根（任意图片可直接看），这里不再需要授权重试。 */
                 const viewed: any = await window.codex.imageView({
                   path: String(args.path ?? ""),
                   title: args.title ? String(args.title) : undefined,

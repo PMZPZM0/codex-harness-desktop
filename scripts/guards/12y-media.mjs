@@ -45,9 +45,11 @@ ok(
   boot.includes("createReadStream") && boot.includes("toWeb") && boot.includes("Content-Range") && boot.includes("206"),
   "harness-media 必须是流式 + Range/206（整文件读内存 = 大视频卡死）",
 );
+/* ⛔ 10-29 用户令：协议**故意**不再判可信根（任意位置的音视频都要能播）。
+   断言反转：MIME 白名单 + 拒未知扩展必须仍在，可信根必须**不在**（防有人把闸加回去）。 */
 ok(
-  boot.includes("isInsideTrustedRoots") && boot.includes("MEDIA_MIME") && boot.includes("Unsupported media type"),
-  "harness-media 安全三件套：可信根 + MIME 白名单 + 拒未知扩展（⛔ 任意文件读取面）",
+  boot.includes("MEDIA_MIME") && boot.includes("Unsupported media type") && !boot.includes("isInsideTrustedRoots"),
+  "harness-media 两件套：MIME 白名单 + 拒未知扩展；⛔ 不再判可信根（10-29 用户令）",
 );
 ok(
   main.includes('"harness-media"') && /stream:\s*true/.test(main),

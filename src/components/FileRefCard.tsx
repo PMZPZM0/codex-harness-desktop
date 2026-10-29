@@ -82,6 +82,7 @@ export function FileRefCard({
   const openWith = (target: FileOpenMode = mode) => {
     if (onOpen) { onOpen(); return; }
     if (target === "editor" && onOpenEditor) { onOpenEditor(path); return; }
+    /* 10-29：主进程已不判可信根（任意文件可打开），这里直接调即可，不再有授权弹窗。 */
     if (target === "system") { try { void window.codex.shellOpen?.(path); } catch { /* 无关联程序 */ } return; }
     openRightFile(path);
   };
