@@ -1573,6 +1573,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (runtimeSrc.includes('id === "feishu-cli"') && runtimeSrc.includes("--allow-scripts=") && runtimeSrc.includes("@larksuite/cli@") ? ok : fail)(
       "【139f】安装走 npm 国内镜像 + 放行 postinstall（二进制靠它下载）；⛔ 缺 allow-scripts 会装出空壳"
     );
+    (runtimeSrc.includes("const NPM_ALLOW_SCRIPTS") && runtimeSrc.includes('NPM_ALLOW_SCRIPTS["feishu-cli"]') && runtimeSrc.includes("NPM_ALLOW_SCRIPTS[id as DevRuntimeId]") ? ok : fail)(
+      "【139f】放行脚本的名单单一真相源：安装与在线更新两条路径都带 allow-scripts（⛔ 只在安装分支放行 ⇒ 点「更新」会把飞书二进制装丢，剩一个空壳）"
+    );
     (runtimeSrc.includes("node_modules/@larksuite") && runtimeSrc.includes('"feishu-cli": { pkg: "@larksuite/cli"') ? ok : fail)(
       "【139f】卸载/在线更新都登记了 feishu-cli（包体 @larksuite/cli）"
     );
