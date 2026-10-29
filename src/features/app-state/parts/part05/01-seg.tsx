@@ -718,6 +718,17 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           return { ...current, current: Math.max(current.current, positions[event.stage] ?? current.current), engineRegistered: event.stage === "complete" ? true : current.engineRegistered, engineCheckMessage: ["complete", "pending"].includes(event.stage) ? event.message : current.engineCheckMessage };
         });
       }
+      /* 10-30 用户令「下载安装反馈」：技能后台自动更新原来全程静默。
+         主进程只在**真动过技能目录**（或有失败）时广播；全部一致时不打扰。 */
+      if (event.type === "skill-auto-update") {
+        const updated: string[] = Array.isArray(event.updated) ? event.updated : [];
+        const failed = Number(event.failed ?? 0);
+        if (updated.length) {
+          bag.showToast("技能自动更新", `已更新 ${updated.length} 个技能：${updated.slice(0, 3).join("、")}${updated.length > 3 ? "…" : ""}${failed ? `（${failed} 个失败，下个周期重试）` : ""}`);
+        } else if (failed) {
+          bag.showToast("技能自动更新", `${failed} 个技能更新失败，下个周期自动重试`);
+        }
+      }
       if (event.type === "provider-activated") {
         /* 供应商互斥是**主进程**执行的：启用 A 会把 B/C 写成 enabled=false。渲染层如果只改
            被点的那一行，旧供应商的绿开关会一直留着（用户看到"两个都启用"的假象）。
