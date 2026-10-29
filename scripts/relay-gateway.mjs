@@ -31,7 +31,7 @@ const LEGACY_TARGET = process.env.RELAY_LEGACY_TARGET || "127.0.0.1:18092";
 const STATE_FILE = process.env.RELAY_STATE || path.join(os.tmpdir(), "relay-devices.json");
 const DEVICE_RE = /^[a-z0-9]{8,24}$/;
 const MAX_BODY = 32 * 1024 * 1024;
-const REQ_TIMEOUT_MS = 35_000;
+const REQ_TIMEOUT_MS = 20_000;   // 隧道半死时别让手机干等 35s
 const MAX_INFLIGHT = 32;
 const MAX_PER_MINUTE = 900;
 /* 安装包公开下载（不要求已配对）：老版本 App 的「安装包」入口坏了，也能用手机浏览器更新 */
@@ -293,6 +293,15 @@ wss.on("connection", (ws, req) => {
       tunnels.set(id, tunnel);
       console.log(`[relay] 设备 ${id} 已上线（在线 ${tunnels.size} 台）`);
       try { ws.send(JSON.stringify({ type: "ready", id })); } catch { /* 忽略 */ }
+      /* 心跳：网关主动 ping，60s 内没有 pong 就判半死并踢掉 —— 否则请求会被投进死连接干等到超时 */
+      let lastPong = Date.now();
+      ws.on("pong", () => { lastPong = Date.now(); });
+      const beat = setInterval(() => {
+        if (tunnel.ws !== ws) { clearInterval(beat); return; }
+        if (Date.now() - lastPong > 60_000) { clearInterval(beat); try { ws.terminate(); } catch { /* 忽略 */ } return; }
+        try { ws.ping(); } catch { /* 忽略 */ }
+      }, 25_000);
+      ws.on("close", () => clearInterval(beat));
       return;
     }
     if (frame?.type === "res" || frame?.type === "reserr") {
