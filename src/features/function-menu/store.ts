@@ -163,3 +163,57 @@ export function setFunctionMenuActionHandler(fn: ((id: FunctionMenuItemId) => vo
 export function runFunctionMenuAction(id: FunctionMenuItemId) {
   try { actionHandler?.(id); } catch { /* 单个入口失败不影响其它 */ }
 }
+
+/* ── 自定义设置页入口（10-29 用户：「功能入口里面的菜单加个自定义添加功能，设置界面里面的每个选项都可以加到这里来」）──
+   两件事分开注册，谁拥有数据谁提供：侧栏壳（AppView）按 settingsNav 注册**可选项**与**跳转**；
+   功能菜单只消费，不反向 import AppView（域边界）。 */
+export type FunctionMenuSettingsTarget = { page: string; label: string; group: string };
+
+let settingsTargets: FunctionMenuSettingsTarget[] = [];
+let settingsOpener: ((page: string) => void) | null = null;
+
+export function setFunctionMenuSettingsTargets(list: FunctionMenuSettingsTarget[]) {
+  settingsTargets = Array.isArray(list) ? list : [];
+  emitCustomMenu();
+}
+
+export function getFunctionMenuSettingsTargets(): FunctionMenuSettingsTarget[] {
+  return settingsTargets;
+}
+
+export function useFunctionMenuSettingsTargets(): FunctionMenuSettingsTarget[] {
+  return useSyncExternalStore(subscribeCustomMenu, getFunctionMenuSettingsTargets, getFunctionMenuSettingsTargets);
+}
+
+export function setFunctionMenuSettingsOpener(fn: ((page: string) => void) | null) {
+  settingsOpener = fn;
+}
+
+export function openSettingsFromFunctionMenu(page: string) {
+  try { settingsOpener?.(page); } catch { /* 单次跳转失败不影响菜单 */ }
+}
+
+/* 扩展项变更（保存 / 删除）后递增一次，菜单与编辑器据此重新拉 extensions:catalog。
+   ⛔ 不缓存镜像：目录的唯一真相源是主进程的 extensions.json。 */
+let customMenuRevision = 0;
+const customMenuListeners = new Set<() => void>();
+
+function emitCustomMenu() {
+  customMenuRevision += 1;
+  for (const listener of customMenuListeners) {
+    try { listener(); } catch { /* 单个订阅者失败不影响其它 */ }
+  }
+}
+
+export function subscribeCustomMenu(listener: () => void): () => void {
+  customMenuListeners.add(listener);
+  return () => { customMenuListeners.delete(listener); };
+}
+
+export function bumpCustomMenuRevision() {
+  emitCustomMenu();
+}
+
+export function useCustomMenuRevision(): number {
+  return useSyncExternalStore(subscribeCustomMenu, () => customMenuRevision, () => 0);
+}

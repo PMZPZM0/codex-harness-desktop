@@ -8,7 +8,7 @@
 
 /* 10-25：extensions（拓展）拉出为快捷区常驻入口（新会话/中枢下面的第三行）⇒ 不再参与折叠组排序。
        旧配置里的 extensions 会被归一化丢弃（is id 校验），不会报错。 */
-export const FUNCTION_MENU_IDS = ["schedule", "frontend", "team", "identity", "login", "newbie"];
+export const FUNCTION_MENU_IDS = ["schedule", "frontend", "team", "devtools", "favorites", "identity", "login", "newbie"];
 
 /** 默认顺序 = 10-21 用户定下、10-25 起拓展拉出后的顺序（自动化 → 前端开发 → 团队 → 个性化&记忆 → 登录管理 → 新手教程）。 */
 export const FUNCTION_MENU_DEFAULT_ORDER = [...FUNCTION_MENU_IDS];
