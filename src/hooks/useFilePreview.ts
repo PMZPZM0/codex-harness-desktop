@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import { ipcErrorMessageOf } from "../lib/ipc-error.mjs";
 
 export type FilePreview = { path: string; content: string; language: string; kind: "text" | "image" | "binary" | "pdf" };
 
@@ -144,8 +145,8 @@ export function useFilePreview({ workspace, onNotice }: Options) {
       setFilePreview(preview);
       setFileEditing(false);
     } catch (error: any) {
-      // 剥掉 Electron 包装噪音（Error invoking remote method 'xxx':），只留可读原因
-      const message = String(error?.message ?? error).replace(/^Error invoking remote method '[^']+':\s*/i, "");
+      // 剥掉管道噪音（[ERR_…] 前缀 / 通道名 / Electron 包壳），只留主进程给的那句原因
+      const message = ipcErrorMessageOf(error, "读取文件失败");
       if (activeReqRef.current === path) onNotice(`读取文件失败：${message}`);
       // 失败的标签不保留，避免残留一个永远空白的 tab
       setFileTabs((prev) => prev.filter((entry) => entry !== path));

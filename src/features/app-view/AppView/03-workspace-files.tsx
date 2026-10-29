@@ -11,6 +11,8 @@ import { Spinner } from "../../../components/CardShell";
 import { Markdown, FilePreviewCode } from "../../markdown";
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, decodeText } from "../../../hooks/useFilePreview";
 import { toFileUrl } from "../../../lib/file-url.mjs";
+/* 错误文案统一去噪（10-30）：主进程抛的「文件不存在或不可读」不该被 [ERR_…] 三层包壳埋掉。 */
+import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
 
 type PreviewState = {
   status: "idle" | "loading" | "ok" | "error";
@@ -72,7 +74,7 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
         setState({ status: "ok", kind: "text", content, language: ext || "text", truncated: raw.length > PREVIEW_MAX_CHARS });
       } catch (error: any) {
         if (cancelled) return;
-        const message = String(error?.message ?? error).replace(/^Error invoking remote method '[^']+':\s*/i, "");
+        const message = ipcErrorMessageOf(error, "文件打不开");
         setState({ status: "error", kind: "text", content: "", language: ext, error: message });
       }
     })();

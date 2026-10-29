@@ -89,6 +89,35 @@ export async function run() {
     (!/<span className="cmd-icon"><TerminalSquare/.test(termCode) ? ok : fail)(
       "【127】⛔ 命令卡表头图标不再写死 TerminalSquare（否则所有行一个样）"
     );
+    /* ★ 10-30 用户实测（截图 + rollout 双证）：会话 cwd 是 D:\测试，模型却在命令里
+       `cd 'D:\Codex Harness Desktop'; … .\src\lib\command-display.mjs` ⇒ 卡片把相对路径按**会话目录**
+       拼成 D:\测试\src\lib\…，点开就是「文件不存在或不可读」。
+       ⛔ 下面这几条**真跑纯函数**（import 源码执行），不是查字符串 —— 解析规则改坏了必须当场红。 */
+    {
+      const cmdMod = await import(pathToFileURL(join(ROOT, "src", "lib", "command-display.mjs")).href);
+      const liveCmd = `cd 'D:\\Codex Harness Desktop'; $f = '.\\src\\lib\\command-display.mjs'; Copy-Item $f`;
+      (cmdMod.commandWorkdir(liveCmd) === "D:\\Codex Harness Desktop" ? ok : fail)(
+        "【127】commandWorkdir 能解析命令开头的 cd（绝对目录）"
+      );
+      (cmdMod.resolveCommandTarget(liveCmd, ".\\src\\lib\\command-display.mjs") === "D:\\Codex Harness Desktop\\src\\lib\\command-display.mjs" ? ok : fail)(
+        "【127】相对目标按**命令自己的 cd 目录**补全（⛔ 不是会话目录 —— 会话目录拼出来是死链）"
+      );
+      (cmdMod.resolveCommandTarget("Get-Content .\\a.mjs", ".\\a.mjs") === ".\\a.mjs" ? ok : fail)(
+        "【127】命令没 cd 时不猜目录，原样返回（下游按会话目录兜底）"
+      );
+      (cmdMod.resolveCommandTarget("cd ..; ls", ".\\a.txt") === ".\\a.txt" ? ok : fail)(
+        "【127】相对 cd（`cd ..`）推不出真目录 ⇒ 原样返回，不许瞎拼"
+      );
+      (cmdMod.resolveCommandTarget("cd 'D:\\x'; cat D:\\other\\b.txt", "D:\\other\\b.txt") === "D:\\other\\b.txt" ? ok : fail)(
+        "【127】本来就是绝对路径的 ⇒ 不动（不许被 cd 目录改写）"
+      );
+    }
+    /* 接线：点击必须走 openTarget。⛔ 退回 raw target 就恢复成本次要修的死链。 */
+    (/const openTarget = commandText && target \? resolveCommandTarget\(commandText, target\) : target;/.test(termCode)
+      && /onOpenFile\(openTarget\)/.test(termCode) && !/onOpenFile\(target\)/.test(termCode)
+      ? ok : fail)(
+      "【127】命令卡点击用 openTarget（按命令 cd 解析），⛔ 不再用会话目录拼出来的 raw target"
+    );
     /* 10-29 用户实测：「编辑文件 / 运行过程中 / 运行完成后那个都不见了」——
        动作短语一旦命中就只剩「写文件」这种无状态说法，运行中和已完成长得一样。
        ⇒ 运行时补「正在」前缀（只给 action：purpose/原文不是动词短语，拼「正在」是病句）。 */
@@ -102,8 +131,9 @@ export async function run() {
       "【127】动作短语尾部的文件名要剥掉（表头只留一处文件名，且那一处可点）"
     );
     /* 10-29 用户实测：「文件名字都没有亮，点击也不会联动右边展开」——
-       文件名必须是**可点按钮**（onOpenFile → 右侧预览），而不是一段死文本。 */
-    (/className="cmd-target is-link"/.test(termCode) && /onOpenFile\(target\)/.test(termCode) ? ok : fail)(
+       文件名必须是**可点按钮**（onOpenFile → 右侧预览），而不是一段死文本。
+       10-30：点击传的是 `openTarget`（按命令自己的 cd 解析过的绝对路径），不再是 raw target。 */
+    (/className="cmd-target is-link"/.test(termCode) && /onOpenFile\(openTarget\)/.test(termCode) ? ok : fail)(
       "【127】命令卡文件名可点（联动右侧预览），且不再是死文本"
     );
     /* 10-29 用户令：「编辑文件 / 修改文件 / 生成文件，只要动了文件后面都要加 +N -M」。

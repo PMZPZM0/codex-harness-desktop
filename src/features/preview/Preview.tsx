@@ -1,5 +1,6 @@
 /** 图片预览 / 搜索预览 / 粘贴文本编辑（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
+import { ipcErrorMessageOf } from "../../lib/ipc-error.mjs";
 import { openImageLightbox, registerClosePastedText, notifyToast } from "../../lib/ui-channels";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { ZoomOut, ZoomIn, Copy, FolderOpen, ExternalLink, X, MessageSquare, Archive, Clock3, Zap, User, Table2 } from "lucide-react";
@@ -39,7 +40,8 @@ export function PastedTextEditor({ path, name, onClose, transport }: { path: str
         requestAnimationFrame(() => { const el = boxRef.current; if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); } });
       } catch (error: any) {
         /* 10-29：主进程已不再抛 OUTSIDE_TRUST（任意文件可读可编辑）⇒ 原来的「允许并预览」内联授权整段删除。 */
-        if (alive) setState({ loading: false, editable: false, content: "", error: String(error?.message ?? error) });
+        /* 10-30：错误文案统一去噪（[ERR_…] 前缀 / 通道名 / Electron 包壳），别把管道噪音给用户看。 */
+        if (alive) setState({ loading: false, editable: false, content: "", error: ipcErrorMessageOf(error, "文件打不开") });
       }
     })();
     return () => { alive = false; };
@@ -59,7 +61,7 @@ export function PastedTextEditor({ path, name, onClose, transport }: { path: str
       setSavedAt(Date.now());
       if (!silent) showToastEverywhere("已保存修改", name);
     } catch (error: any) {
-      showToastEverywhere("保存失败", String(error?.message ?? error));
+      showToastEverywhere("保存失败", ipcErrorMessageOf(error, "保存失败"));
     } finally {
       setSaving(false);
     }

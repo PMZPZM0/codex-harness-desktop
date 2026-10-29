@@ -26,3 +26,8 @@ export function commandAction(command: string, max?: number): string;
 
 /** 写文件类命令的行数统计（added 可数；deleted 为 null = 数不出来，例如覆盖写） */
 export function commandWriteStats(command: string): { added: number; deleted: number | null } | null;
+
+/** 命令自己 `cd` 到的绝对目录；推不出来（无 cd / 相对 cd）返回空串 */
+export function commandWorkdir(command: string): string;
+/** 命令里的相对目标按**命令自己的 cd 目录**补全（不是会话目录）；绝对路径 / 推不出时原样返回 */
+export function resolveCommandTarget(command: string, target: string): string;

@@ -55,3 +55,31 @@ export function ipcErrorHintOf(error) {
     default: return "";
   }
 }
+
+/**
+ * 把 IPC 错误削成**用户看得懂的一句原因**。
+ *
+ * ⛔⛔ 10-30 用户截图（预览面板）：`[ERR_INVOKE_FAILED] fs:read: Error invoking remote method
+ *    'fs:read': Error: 文件不存在或不可读：D:\…` —— 三层管道壳（错误码前缀 / 通道名 /
+ *    Electron 的 "Error invoking remote method"）全糊在用户脸上，真正的原因被埋在最尾巴。
+ *    ⇒ 一律用本函数取文案；⛔ 各面板别再各写一条只认 `^Error invoking remote method` 的正则
+ *    （那一版对带 `[ERR_XXX]` 前缀的形态**完全不生效**，实测就是这个 bug）。
+ * @param {unknown} error
+ * @param {string} [fallback] 全剥空了才用的兜底文案
+ * @returns {string}
+ */
+export function ipcErrorMessageOf(error, fallback = "操作失败") {
+  const raw = error instanceof Error ? error.message : String(error ?? "");
+  let rest = raw;
+  /* ⛔ 通道名自带冒号（`fs:read`）—— 第一版用 `[^:\s]+:` 只吃到 `fs:`，留下 `read: Error invoking…`
+     （实测输出就是这串半截的），所以这里按「冒号分隔的多段 channel」整体吃。 */
+  const tag = rest.match(/^\[ERR_[A-Z_]+\]\s*/);
+  if (tag) {
+    rest = rest.slice(tag[0].length).replace(/^[^\s:]+(?::[^\s:]+)*:\s*/, "");
+  }
+  const cleaned = rest
+    .replace(/^(?:Error invoking remote method '[^']*':\s*)+/i, "") // Electron 包壳（可能重复）
+    .replace(/^(?:Error:\s*)+/i, "")                              // 残留的 `Error:` / `Error: Error:`
+    .trim();
+  return cleaned || fallback;
+}

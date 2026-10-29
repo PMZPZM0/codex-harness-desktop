@@ -11,3 +11,5 @@ export function ipcErrorChannelOf(error: unknown): string;
 
 /** 友好中文说明；未知码返回空串 */
 export function ipcErrorHintOf(error: unknown): string;
+/** 削成用户看得懂的一句原因（剥掉错误码前缀 / 通道名 / Electron 包壳）。 */
+export function ipcErrorMessageOf(error: unknown, fallback?: string): string;
