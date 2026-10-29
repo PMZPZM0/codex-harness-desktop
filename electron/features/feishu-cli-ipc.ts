@@ -75,13 +75,34 @@ function parseJson(text: string): any {
   try { return JSON.parse(String(text ?? "").trim()); } catch { return null; }
 }
 
+/** 把 CLI 的英文报错翻成「下一步该点哪里」。
+ *  ⛔ 只回 `User identity: missing` 这类原文 ⇒ 模型看不懂就会反复重试同一条命令。 */
+function runHintOf(output: string): string {
+  const text = String(output ?? "");
+  if (/no user logged in|user identity|identity: missing|not logged in|auth login/i.test(text)) {
+    return "飞书 CLI 还没登录：打开「设置 → 开发工具 → 飞书 CLI」，点第 3 步「登录」完成浏览器授权后再试。";
+  }
+  if (/not configured|config init|config not found|no app ?id/i.test(text)) {
+    return "飞书 CLI 还没配置应用：打开「设置 → 开发工具 → 飞书 CLI」，点第 2 步「去配置」完成浏览器里的创建 / 绑定后再试。";
+  }
+  return "";
+}
+
+/** `--version` 结果缓存 60 秒：卡片在等待授权时每 2 秒刷一次状态，
+ *  ⛔ 每次都再 spawn 一次版本查询 = 白跑一倍进程（1.0.98 每次 ~80ms）。 */
+let versionCache = { value: "", at: 0 };
+
 async function statusOf(): Promise<CliResult> {
   const binary = cliPath();
   const base: CliResult = { installed: Boolean(binary), path: binary, version: "", configured: false, loggedIn: false, user: "", detail: "", error: "" };
   if (!binary) return base;
   try {
-    const version = await execCli(["--version"], { timeoutMs: 10_000 });
-    base.version = String(version.stdout || version.stderr || "").trim().split(/\s+/).pop() || "";
+    if (!versionCache.value || Date.now() - versionCache.at > 60_000) {
+      const version = await execCli(["--version"], { timeoutMs: 10_000 });
+      const text = String(version.stdout || version.stderr || "").trim().split(/\s+/).pop() || "";
+      if (text) versionCache = { value: text, at: Date.now() };
+    }
+    base.version = versionCache.value;
   } catch { /* 版本拿不到不算致命 */ }
   try {
     const result = await execCli(["auth", "status", "--json"], { timeoutMs: 12_000 });
@@ -131,11 +152,14 @@ export const feishuCliFeature = defineFeature<null>({
         try { setupChild?.kill(); } catch { /* 已退出 */ }
         const child = spawn(binary, ["config", "init", "--new"], { windowsHide: true, env: { ...process.env, NO_COLOR: "1", LARK_CLI_NO_ANALYTICS: "1" } });
         setupChild = child;
-        child.on("close", () => { if (setupChild === child) setupChild = null; });
         let buffer = "";
         let url = "";
+        /* 拿到链接后这个进程还得活着（浏览器完成后由它写配置），但不能无限挂：
+           用户放弃 / 浏览器被关掉时，10 分钟后收掉，别在后台留一个吃配置锁的僵尸。 */
+        const killTimer = setTimeout(() => { try { child.kill(); } catch { /* 已退出 */ } }, 10 * 60_000);
+        child.on("close", () => { clearTimeout(killTimer); if (setupChild === child) setupChild = null; });
         const timer = setTimeout(() => {
-          if (!url) { try { child.kill(); } catch { /* 忽略 */ } resolve({ ok: false, error: "没有从 CLI 输出里拿到授权链接，请稍后重试" }); }
+          if (!url) { clearTimeout(killTimer); try { child.kill(); } catch { /* 忽略 */ } resolve({ ok: false, error: "没有从 CLI 输出里拿到授权链接，请稍后重试" }); }
         }, 30_000);
         const onData = (chunk: Buffer) => {
           buffer = (buffer + String(chunk)).slice(-8000);
@@ -199,7 +223,15 @@ export const feishuCliFeature = defineFeature<null>({
       const cwd = typeof input?.cwd === "string" && input.cwd.trim() ? input.cwd : "";
       try {
         const result = await execCli(args, { cwd, timeoutMs: 90_000 });
-        return { ok: result.code === 0, code: result.code, stdout: result.stdout, stderr: result.stderr };
+        const combined = `${result.stderr}\n${result.stdout}`;
+        const hint = result.code === 0 ? "" : runHintOf(combined);
+        return {
+          ok: result.code === 0,
+          code: result.code,
+          stdout: result.stdout,
+          stderr: result.stderr,
+          ...(hint ? { error: `${hint}\n原始输出：${combined.trim().slice(0, 800)}` } : {}),
+        };
       } catch (error: any) {
         return { ok: false, code: -1, stdout: "", stderr: "", error: String(error?.message ?? error) };
       }
