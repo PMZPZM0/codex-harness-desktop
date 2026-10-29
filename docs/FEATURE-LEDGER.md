@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-28 | 指挥中枢说明卡文案润色 + 事实修正 | 修复 | `src/features/boss-group-view/BossGroupHelpButton.tsx` | 04 条原写「中枢只有一个」不成立 —— 每个群对应一条中枢会话、可有多条（点侧栏回到本群那条），改为准确说法；全文润色成口语，副标题「替你拉群、派活、验活」，示例条改「一句话就能开工，比如」。 | 待提交 |
 | 2026-10-28 | 指挥中枢「?」说明卡改版 | 改动 | `src/features/boss-group-view/BossGroupHelpButton.tsx`、`src/styles/47-boss-group-view.css` | 用户截图：说明卡是一段段平铺文字。改成带层级的说明卡：琥珀图标块 + 标题 + 一句副标题（拉群 · 派活 · 审活）+ 5 段编号条目（01–05，行间细线、标题提亮、正文弱化）+ 底部「可以直接这样说」示例 chips；文案同步收紧（事实不变）。宽度 384、最大高度 min(84vh,660px)，示例条在常见窗口下不被折出视口。22 守卫全绿，截图实拍核对。 | 待提交 |
 | 2026-10-28 | 本机测试端口自动展开右栏浏览器 | 改动 | `src/features/dev-port/`（新板块）、`AppView.tsx`、`12ag-dev-port.mjs`、`accept` | 对照 Qoder：Codex 在当前会话跑的命令输出里出现**带端口**的 localhost/127.0.0.1 ⇒ 自动打开右栏浏览器到该地址并加宽到 560。数据源 = commandExecution 的流式输出与 started/completed；只认当前会话正在跑的回合；每个 URL 每会话只开一次；0.0.0.0 归一、紧跟 URL 的中文不被吞进路径（真值表抓的）。守卫 12ag 11 条（真值表真跑）；验收 `dev-port` 3/3（秒级，走桥的确定性入口）。 | 待提交 |
 | 2026-10-28 | 悬浮球任务姿态 + 安静陪伴 | 改动 | `VoiceCallFloat`（组件 / 状态 hook / 新增 `use-voice-task-mood`）、`VoiceSettingsSection`、`18-openai-dialog.css`、`electron/voice/voice-settings.ts`、`11z`、`accept` | 悬浮球原先只知道自己开没开麦。新增任务姿态：引擎回合状态折算成 在想 / 在干活 / 等你确认 / 干完（6s 收尾反馈）/ 出错（4s 垂眼不说话），事件按当前会话过滤、waiting 优先级最高（与宠物域同口径）；光晕/环随姿态变色，动效只走内层 mascot。安静陪伴：设置页 + 右键菜单一键「只陪你不说话」，落盘 voice-settings（ball.quiet，缺省 false）。自适应降噪：连续 3 条气泡没人理 ⇒ 当天静音，球上任何交互清零解除。`prefers-reduced-motion` 降级为静止。11z +13 条；验收 `voice-ball-task` 3/3，旧项 `voice-ball-reactions` 5/5 回归。 | 待提交 |
