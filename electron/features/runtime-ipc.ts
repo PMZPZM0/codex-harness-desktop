@@ -287,6 +287,14 @@ const NPM_PACKAGE_ARTIFACTS: Partial<Record<DevRuntimeId, { dirs: string[]; shim
   "feishu-cli": { dirs: ["node_modules/@larksuite"], shims: ["lark-cli"] },
 };
 
+/** 需要放行 postinstall 的包（**只放行点名的包**，⛔ 不全局放开脚本）。
+ *  ⛔ 安装与**在线更新**是两条调用路径，名单必须同一份 —— 只在安装分支放行的话，
+ *    更新走的就是「装出空壳」（飞书 CLI 的二进制全靠 postinstall 下载）。 */
+const NPM_ALLOW_SCRIPTS: Partial<Record<DevRuntimeId, string[]>> = {
+  "feishu-cli": ["@larksuite/cli"],
+};
+
+
 /** npm 包在某个 npm-global 根下留的 shim（不是包体，删完包体要顺手清掉）。
  *  ⛔ 10-07：显式接 `globalRoot` 参数，不再内部取 `npmGlobalRoot()` ——
  *   卸载要遍历**全部候选落位**，内部只取一个就又回到「删不干净」的旧 bug。 */
@@ -645,7 +653,7 @@ export async function performRuntimeUpdate(
   const task = (async () => {
     emitRuntimeProgress(id, `@@STAGE 更新 ${tool.label}`);
     emitRuntimeProgress(id, `正在从国内镜像更新 ${tool.pkg}@latest（当前 ${from || "未知"}）…`);
-    await runNpmInstall(id, `${tool.pkg}@latest`, tool.label, downloadSource);
+    await runNpmInstall(id, `${tool.pkg}@latest`, tool.label, downloadSource, NPM_ALLOW_SCRIPTS[id as DevRuntimeId]);
     // 引擎重启会等当前任务跑完（闸门），期间界面显示「等待任务结束后刷新引擎」
     await restartServerWhenIdle(id);
   })();
@@ -867,7 +875,7 @@ export const runtimeFeature = defineFeature<null>({
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
         } else if (id === "feishu-cli") {
           /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。 */
-          await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli}`, "飞书 CLI", downloadSource, ["@larksuite/cli"]);
+          await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
         } else if (id === "rea") {
           // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
           // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。
