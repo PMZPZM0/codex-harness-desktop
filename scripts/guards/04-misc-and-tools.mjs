@@ -1668,6 +1668,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (androidSrc.includes("for (int attempt = 0; attempt < 3") && androidSrc.includes("removeIf") && androidSrc.includes("postDelayed(() -> web.loadUrl") ? ok : fail)(
       "【139e】冷启动自动登录要重试（中转未就绪不许让人白输码）+ Cookie 去重 + 进页前等一拍"
     );
+    ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("pullCode") && ui.includes("remotePairState") && ui.includes("setRemoteQr"); } catch(e) { return false; } })() ? ok : fail)(
+      "【139e】弹窗里的配对码 / 二维码要跟着后台轮换自动换新（否则用户照旧码输，永远过期）"
+    );
+    (relaySrc.includes("encodeURIComponent(this.pairingCode())") ? ok : fail)(
+      "【139e】二维码必须用 pairingCode()（过期自动轮换），⛔ 不能把可能过期的码嵌进去"
+    );
     (tunnelPage.includes("function maybeReauth") && tunnelPage.includes("data.error === \"unauthorized\"") ? ok : fail)(
       "【139e】电脑端重启后旧页面 401 必须自动重载恢复（⛔ 不能只弹「加载失败：unauthorized」等到用户手点）"
     );

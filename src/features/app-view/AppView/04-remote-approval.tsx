@@ -138,13 +138,36 @@ import {
   Bell,
   CheckCheck,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
 export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
   /* 中转状态（10-29）：装完即用的内置隧道是否在线 —— 只看二维码猜不出「为什么连不上」 */
   const [relay, setRelay] = useState<{ state: string; id: string; error: string } | null>(null);
+  /* 配对码 5 分钟过期会被后台自动轮换：弹窗里必须跟着换（码 + 二维码一起），
+     否则用户照着旧码输，永远得到「配对码错误或已过期」（用户实测）。 */
+  const lastPairCode = useRef("");
+  useEffect(() => {
+    if (!app.mobileRemoteOpen) return;
+    let alive = true;
+    const pullCode = async () => {
+      try {
+        const state: any = await window.codex.remotePairState();
+        if (!alive) return;
+        const next = String(state?.code ?? "");
+        if (!next || next === lastPairCode.current) return;
+        lastPairCode.current = next;
+        setPairCode(next);
+        const svg = await window.codex.remoteQrcode();
+        if (alive) setRemoteQr(svg);
+      } catch { /* 引擎未就绪：下一轮再试 */ }
+    };
+    void pullCode();
+    const codeTimer = window.setInterval(() => { void pullCode(); }, 10_000);
+    return () => { alive = false; window.clearInterval(codeTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.mobileRemoteOpen]);
   useEffect(() => {
     if (!app.mobileRemoteOpen) return;
     let alive = true;
@@ -266,6 +289,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                         .catch((error: any) => setNotice(`复制失败：${String(error?.message ?? error)}`));
                     }}><Copy size={13} />复制链接</button>
                   </div>
+                  <p className="remote-relay-line">配对码 30 分钟内有效，过期自动换新（二维码同步更新）</p>
                   <p className={"remote-relay-line" + (relay?.state === "online" ? " online" : "")} data-relay-state={relay?.state ?? "unknown"}>
                     {relay?.state === "online" ? "中转在线 · 设备 " + relay.id : relay?.state === "connecting" ? "中转连接中…" : "中转离线" + (relay?.error ? "：" + relay.error : "")}
                   </p>
