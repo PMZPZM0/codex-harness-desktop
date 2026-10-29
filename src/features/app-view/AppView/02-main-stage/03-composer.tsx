@@ -4,6 +4,7 @@
  */
 import { createPortal } from "react-dom";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
+import { filterMentionTargets } from "../../../../lib/dispatch-mention.mjs";
 import {
   AlertTriangle,
   Archive,
@@ -158,6 +159,9 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     activeThreadRunning,
     activeTurnId,
     addContextItem,
+    addDispatchMention,
+    createDispatchSubagent,
+    dispatchInfo,
     addSkillReference,
     agentAsk,
     allModels,
@@ -187,6 +191,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     connectors,
     contextItems,
     contextOpen,
+    contextQuery,
     currentModelId,
     customModel,
     deleteQueued,
@@ -453,9 +458,30 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       </div>;
                     });
                   })()}</div>}
-                  {contextOpen && <div className="context-picker" role="listbox" aria-label="引用本次对话上下文">
-                    <div className="context-picker-head"><span>引用本次对话</span><small>选择后会随本条消息发送</small></div>
-                    {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p>没有匹配的历史消息</p>}
+                  {/* ★ 10-29 @ 点名（用户令：直接 @ 专家 / 子智能体 / 专家团并快速调用）：
+                        触发符分工 —— `@` 点名调度对象、`*` 引用历史消息、`#` 引用技能。
+                        ⛔ 选中**只记进本轮点名**（芯片在上方），不发消息也不立刻派活：
+                          派活发生在发送后由模型调 agent_invoke，这样许可/身份/深度三道闸仍然生效。 */}
+                  {contextOpen && <div className="context-picker" role="listbox" aria-label="点名对象或引用上下文">
+                    {(() => {
+                      const mention = filterMentionTargets(dispatchInfo?.targets ?? [], contextQuery);
+                      const query = String(contextQuery ?? "").trim();
+                      const canCreate = Boolean(query) && mention.groups.every((group) => group.kind !== "subagent");
+                      return <>
+                        {mention.groups.map((group) => <div className="context-picker-group" key={group.kind}>
+                          <div className="context-picker-group-label">{group.label}<small>{group.hint}</small></div>
+                          {group.items.map((target) => <button type="button" role="option" key={`${target.kind}:${target.key}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addDispatchMention(target as DispatchTargetEntry)}>
+                            <b>{group.label}</b><span>{target.name}{target.profession ? ` · ${target.profession}` : ""}</span>
+                          </button>)}
+                        </div>)}
+                        <div className="context-picker-group-label">历史消息<small>输入 * 唤起</small></div>
+                        {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p className="context-picker-empty">没有匹配的历史消息</p>}
+                        {!mention.groups.length && <p className="context-picker-empty">没有匹配的专家 / 子智能体 / 专家团</p>}
+                        {canCreate && <button type="button" className="context-picker-new" onMouseDown={(event) => event.preventDefault()} onClick={() => void createDispatchSubagent(query)}>
+                          <b>新建</b><span>新建子智能体「{query}」并 @（默认配置，可在设置里补充指令）</span>
+                        </button>}
+                      </>;
+                    })()}
                   </div>}
                   {/* 供应商切换「待重启生效」banner：切换只保存配置，重启前不打断任何会话 */}
                   {pendingRestart && (

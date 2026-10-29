@@ -184,6 +184,7 @@
   "src/features/app-view/helpers/paths.ts": 1,
   "src/features/composer/Composer.tsx": 1,
   "src/features/composer-rail/ComposerRail.tsx": 1,
+  "src/features/dispatch/DispatchMenu.tsx": 1,
   "src/features/html-preview/HtmlPreviewBridge.tsx": 1,
   "src/features/markdown/Markdown.tsx": 1,
   "src/features/memory-ui/normalize.ts": 1,
