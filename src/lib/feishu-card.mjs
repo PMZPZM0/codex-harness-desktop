@@ -10,12 +10,12 @@
  * @returns {{ keepLink: boolean; clearBusy: boolean }}
  */
 export function feishuPollOutcome({ flow, configured, loggedIn, appChanged = false }) {
+  /* ⛔⛔ 重新配置必须排在最前：切换前旧应用**仍然是已登录**的，若先看 loggedIn 就会在首轮
+     轮询（2 秒后）直接收链接 + 结束流程 —— 用户浏览器里还没做完，卡片就没了。
+     这条流程的唯一完成信号是 appId 变了（调用方算好 appChanged 传进来）。 */
+  if (flow === "reconfig") return appChanged ? { keepLink: false, clearBusy: true } : { keepLink: true, clearBusy: false };
   if (loggedIn) return { keepLink: false, clearBusy: true };
   if (flow === "setup" && configured) return { keepLink: false, clearBusy: true };
-  /* 重新配置（换一个飞书应用）：配置本来就是**已完成态** ⇒ configured 不能当完成信号，
-     唯一可观测的信号是 appId 变了（调用方算好 appChanged 传进来）。
-     ⛔ 没变之前必须 keepLink=true —— 收掉链接 = 2 秒轮询跟着断（登录那次事故同型）。 */
-  if (flow === "reconfig") return appChanged ? { keepLink: false, clearBusy: true } : { keepLink: true, clearBusy: false };
   /* 等登录时配置已经完成，这是正常状态 —— 链接必须留着，否则 2 秒轮询跟着断。 */
   if (flow === "login") return { keepLink: true, clearBusy: false };
   return { keepLink: false, clearBusy: false };
