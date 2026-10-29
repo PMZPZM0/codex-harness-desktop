@@ -1639,6 +1639,17 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       } catch (error) { pageSyntaxOk = false; console.log("      页面脚本解析失败：", error.message); }
       (pageSyntaxOk ? ok : fail)("【139e】手机页脚本必须能解析（括号/声明顺序错误会让整页 JS 静默挂掉）");
     }
+    (relaySrc.includes("#code=") && relaySrc.includes("KEY_CODE = \"chm-pair-code\" + API_BASE") ? ok : fail)(
+      "【139e】二维码带连接码（扫完自动配对）+ 手输电码保存下来下次自动填"
+    );
+    {
+      let stripOk = false;
+      try {
+        const mod = await import(pathToFileURL(join(ROOT, "src", "lib", "harness-block-strip.mjs")).href);
+        stripOk = mod.stripHarnessBlocks("<!--boss-role-->角色块<!--/boss-role-->你好") === "你好";
+      } catch (error) { console.log("      剥离模块导入失败：", error.message); }
+      (stripOk ? ok : fail)("【139e】手机读历史必须剥掉 <!--boss-role--> 角色块（用户截图：整块注入显示在气泡里）");
+    }
     (androidSrc.includes('openChat("")') && !androidSrc.includes("R.id.code") && !androidSrc.includes("R.id.connect") ? ok : fail)(
       "【139e】安卓首屏只保留扫码（连接码在网页配对页里输一次）—— ⛔ 不再出现两个配对界面"
     );
