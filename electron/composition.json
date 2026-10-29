@@ -135,6 +135,13 @@
       "config": null
     },
     {
+      "id": "cliagents",
+      "enabled": true,
+      "file": "features/cli-agents-ipc.ts",
+      "export": "cliAgentsFeature",
+      "config": null
+    },
+    {
       "id": "clipboard",
       "enabled": true,
       "file": "features/clipboard-ipc.ts",

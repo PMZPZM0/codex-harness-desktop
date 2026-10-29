@@ -16,8 +16,19 @@
 export const MENTION_GROUPS = [
   { kind: "expert", label: "专家", hint: "单个专家 · 开独立会话产出" },
   { kind: "subagent", label: "子智能体", hint: "你配置的自定义角色 · 没有可一键新建" },
+  { kind: "cli", label: "CLI 智能体", hint: "本机命令行工具（Claude Code / OpenClaw 等）· 在开发工具里接入" },
   { kind: "team", label: "专家团", hint: "主理人按 SOP 拉成员 · 需开启专家团" },
 ];
+
+/** 组的 kind → 芯片/列表上的类名标签。
+ *  ⛔ 10-29 晚补 cli：芯片原来写的是三元（expert ? 专家 : team ? 专家团 : 子智能体），
+ *    CLI 没分支 ⇒ 落到最后的 else，被显示成「子智能体」—— 用户会以为自己点的是别的对象。
+ *    单一真相源收在这里，面板与芯片都读它。 */
+export const MENTION_KIND_LABEL = { expert: "专家", subagent: "子智能体", cli: "CLI", team: "专家团", member: "团成员" };
+
+export function mentionKindLabel(kind) {
+  return MENTION_KIND_LABEL[String(kind ?? "")] ?? String(kind ?? "");
+}
 
 /** 每组最多显示几条（面板高度有限；超出用「还有 N 个，继续输入筛选」提示）。 */
 export const MENTION_PER_GROUP = 6;
@@ -117,8 +128,10 @@ export function mentionBlockOf(mentions) {
     "① 把本条消息的正文（不含本段）当作交给它的 query，写自包含（它看不到本会话上下文）；",
     "② 点名多个时按上面顺序**逐个**派活，不要合并成一次调用；",
     "③ kind=team（专家团）未开启时不要硬派，直接在回复里说明「专家团未开启，需要你在顶栏调度面板打开」，并给出替代方案；",
-    "④ 派活被拒或失败（权限 / 引擎 / 名字找不到）时**原样转述原因**并停止，不要换对象重试；",
-    "⑤ 派活成功就正常使用产出，不用再问用户要不要派。",
+    "④ kind=cli（CLI 智能体）就是本机的一个命令行工具：它会用自己的会话调 shell 跑它。任务里写清「要用什么命令 / 验收标准」；"
+      + "它回报「本机没装」时**原样转述并附上安装命令**，不要自己改换别的对象、也不要假装它跑过；",
+    "⑤ 派活被拒或失败（权限 / 引擎 / 名字找不到 / CLI 没装）时**原样转述原因**并停止，不要换对象重试；",
+    "⑥ 派活成功就正常使用产出，不用再问用户要不要派。",
     "[点名结束]",
     "",
   ].join("\n");

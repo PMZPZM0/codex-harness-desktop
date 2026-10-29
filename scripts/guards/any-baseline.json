@@ -198,6 +198,7 @@
   "src/features/soul-market/UserPersonaPanel.tsx": 1,
   "src/features/ssh/SshModals.tsx": 1,
   "src/features/status/GoalBar.tsx": 1,
+  "src/features/terminal/TerminalPanel.tsx": 1,
   "src/lib/input-text.ts": 1,
   "src/lib/queue-item.ts": 1,
   "src/lib/thread-item.ts": 1,

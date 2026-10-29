@@ -105,6 +105,11 @@ await probe("dispatchNotice",
   [{ expert: true, team: false, subagent: true }, { expert: true, team: true, subagent: true }],
   "agents:notice",
   [{ expert: true, team: false, subagent: true }, { expert: true, team: true, subagent: true }]);
+/* 10-29 晚 CLI 智能体（cliagents 域）：这两条都是"有参数却容易漏 invokeArgs"的形态
+   —— 漏了就是面板点「检测」永远返回 undefined、点「保存」写空对象（【2】那类静默丢参）。 */
+await probe("detectCliAgent", [{ id: "builtin-claude-code" }], "cliagents:detect", [{ id: "builtin-claude-code" }]);
+await probe("saveCliAgent", [{ name: "探针", bin: "probe" }], "cliagents:save", [{ name: "探针", bin: "probe" }]);
+await probe("removeCliAgent", ["cli-abc"], "cliagents:remove", ["cli-abc"]);
 
 /* 反向：无参通道不许被塞进 undefined 占位（__ipc 的 trim 语义）。
    10-29：`agents:off-notice` 已随总开关删除 ⇒ 换成同样无参的 `agents:catalog`。 */

@@ -31,8 +31,8 @@ import { openThread as openThreadImpl } from "./01-seg/open-thread";
  *     把目录写死进描述，就会出现"告诉模型去派一个本会话没开的类"的假信息。
  *     会话级目录的唯一投递口 = 那条告知（按类逐段列 + 显式否定未开的类）。 */
 const DISPATCH_TOOL_DESC_FALLBACK =
-  "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出。"
-  + "⛔ **专家与子智能体随时可以直接派，不需要用户开任何开关**（别让用户去调度面板勾选）；"
+  "调度专家 / 专家团 / 子智能体 / CLI 智能体 执行一个独立子任务并拿回产出。"
+  + "⛔ **专家、子智能体、CLI 智能体随时可以直接派，不需要用户开任何开关**（别让用户去调度面板勾选）；"
   + "**专家团默认关闭**，team / member 未开启时会被拒绝 —— 要团请用户打开「专家团」，别反复试。"
   + "本会话当前可派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。";
 
@@ -498,8 +498,8 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         inputSchema: {
           type: "object",
           properties: {
-            kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团, member=专家团某成员, subagent=子智能体。⛔ 专家/子智能体默认可派；专家团需用户在「调度」面板显式开启" },
-            name: { type: "string", description: "对象名称（专家名 / 团名 / 某成员名 / 子智能体名）" },
+            kind: { type: "string", enum: ["expert", "team", "member", "subagent", "cli"], description: "expert=单个专家, team=专家团, member=专家团某成员, subagent=子智能体, cli=本机命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。⛔ 专家/子智能体/CLI 默认可派；专家团需用户在「调度」面板显式开启" },
+            name: { type: "string", description: "对象名称（专家名 / 团名 / 某成员名 / 子智能体名 / CLI 名）" },
             query: { type: "string", description: "交给它的任务描述（必须自包含：它看不到你和用户的对话）" },
           },
           required: ["kind", "name", "query"],

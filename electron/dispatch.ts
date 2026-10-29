@@ -18,7 +18,7 @@
 
 import type { DispatchConfig } from "./thread-runtime-store";
 
-export type DispatchKind = "expert" | "team" | "member" | "subagent";
+export type DispatchKind = "expert" | "team" | "member" | "subagent" | "cli";
 
 /** 一个「可被调度的对象」——目录项的统一定形（专家/团队成员/子智能体都是它） */
 export type DispatchTarget = {
@@ -59,6 +59,8 @@ export function delegateScopeBlock(input: { kind: DispatchKind; name: string; or
         return "你只能调度**本团队的成员**（用 team_member_invoke）；不要调用其他专家团，也不要调用子智能体。";
       case "member":
         return "直接干活，不要委派给任何人（你不是调度方）。";
+      case "cli":
+        return "直接干活产出结论；**不要调用其他专家、专家团、子智能体或 CLI**。该用 CLI 的时候用本机 shell 跑它，跑不了就如实说没装。";
       default:
         return "直接干活产出结论；**不要调用其他专家、专家团或子智能体**。";
     }
@@ -135,7 +137,7 @@ export function clipDispatchOutput(text: unknown, threadId?: string): string {
 
 /* ─────────────── 目录 / 开关 / 工具说明 ─────────────── */
 
-const KIND_LABEL: Record<DispatchKind, string> = { expert: "专家", team: "专家团", member: "团队成员", subagent: "子智能体" };
+const KIND_LABEL: Record<DispatchKind, string> = { expert: "专家", team: "专家团", member: "团队成员", subagent: "子智能体", cli: "CLI 智能体" };
 
 export function kindLabel(kind: DispatchKind): string {
   return KIND_LABEL[kind] ?? String(kind ?? "");
@@ -143,9 +145,11 @@ export function kindLabel(kind: DispatchKind): string {
 
 /** 三类目标的**默认许可**（10-29 用户令）：专家与子智能体默认可用 —— 不需要任何开关；
  *  专家团默认关闭 —— 它是多角色 SOP 编排，一次派活会拉起多名成员，必须由用户**显式开启**。
+ *  10-29 晚追加 `cli`：CLI 智能体同样**默认可用**（用户令「与子智能体、专家、专家团保持一致」），
+ *    面板上没有它的开关 —— 关不掉的类别不该出现在许可表里，这里留字段只为与 allow 形状同源。
  *  ⛔ 这是「默认行为」的唯一真相源（渲染层 `emptyDispatch()` 与它逐字同形，两边各一份字面量，
  *     `electron/` 与 `src/` 互不 import）。 */
-export const DISPATCH_DEFAULTS = { expert: true, team: false, subagent: true } as const;
+export const DISPATCH_DEFAULTS = { expert: true, team: false, subagent: true, cli: true } as const;
 
 /** 某一类此刻的许可（dispatch 为 null = 该会话还没有运行时记录 ⇒ 取默认）。
  *  ⛔ 10-29 定稿：面板只剩「专家团」一个开关 ⇒ `expert` / `subagent` **恒为 true**（连手改
@@ -153,11 +157,12 @@ export const DISPATCH_DEFAULTS = { expert: true, team: false, subagent: true } a
  *    的状态都无法被用户纠正，只会让模型让用户去点一个不存在的开关。 */
 export function dispatchAllowOf(dispatch?: DispatchConfig | null): DispatchAllow {
   const src = dispatch && typeof dispatch === "object" ? dispatch : null;
-  return { expert: true, team: src ? src.team === true : DISPATCH_DEFAULTS.team, subagent: true };
+  // `cli` 恒 true：面板没有这一类的开关（与专家 / 子智能体同待遇）
+  return { expert: true, team: src ? src.team === true : DISPATCH_DEFAULTS.team, subagent: true, cli: true };
 }
 
 /** 按会话许可过滤可调度对象（目录给模型 / 面板计数共用这一处口径）。
- *  ⛔ 不再有「总开关」：三类各自独立判定，默认值见 DISPATCH_DEFAULTS。 */
+ *  ⛔ 不再有「总开关」：各类独立判定，默认值见 DISPATCH_DEFAULTS。 */
 export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: DispatchConfig | null): DispatchTarget[] {
   const list = Array.isArray(targets) ? targets : [];
   const allow = dispatchAllowOf(dispatch);
@@ -167,6 +172,7 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
       case "team": return allow.team;
       case "member": return allow.team;
       case "subagent": return allow.subagent;
+      case "cli": return allow.cli !== false;
       default: return false;
     }
   });
@@ -192,7 +198,9 @@ export function dispatchKindAllowed(
       ? allow.expert
       : key === "subagent"
         ? allow.subagent
-        : false;
+        : key === "cli"
+          ? allow.cli !== false
+          : false;
   if (ok) return { ok: true };
   if (key === "team" || key === "member") {
     return {
@@ -224,7 +232,7 @@ export function dispatchKindAllowed(
  *   ⚠️ allow 为 null（全 false / 取不到开关）时退化为"三类全列"，保持旧行为、不让描述变空。 */
 export function dispatchToolDescription(
   targets: DispatchTarget[],
-  allow: { expert: boolean; team: boolean; subagent: boolean } | null = null,
+  allow: { expert: boolean; team: boolean; subagent: boolean; cli?: boolean } | null = null,
 ): string {
   const list = Array.isArray(targets) ? targets : [];
   const line = (target: DispatchTarget) => {
@@ -239,11 +247,15 @@ export function dispatchToolDescription(
      根因不是"没列出来"，而是**没把"选谁"这件事讲清**：三类适用场景完全不同，
      平铺后模型只能靠名字猜。⇒ 改成**按 kind 分节 + 每节写明"什么时候选它"**，
      并显式给出"用户点名了哪类就派哪类"这条硬规则。 */
-  const KIND_LABEL: Record<string, string> = { expert: "专家", team: "专家团", subagent: "子智能体" };
+  const KIND_LABEL: Record<string, string> = { expert: "专家", team: "专家团", subagent: "子智能体", cli: "CLI 智能体" };
   /** 该类是否被用户勾选（allow 为 null ⇒ 全开，保持旧行为）。
-   *  ⚠️ `member` 不在 allow 键里（它是团结成员、不参与面板勾选）⇒ 一律按开处理。 */
-  const enabled = (kind: DispatchTarget["kind"]) =>
-    allow && (kind === "expert" || kind === "team" || kind === "subagent") ? allow[kind] === true : true;
+   *  ⚠️ `member` 不在 allow 键里（它是团结成员、不参与面板勾选）⇒ 一律按开处理。
+   *  ⚠️ `cli` 恒开（面板没有它的开关）⇒ 只有显式 false 才算关。 */
+  const enabled = (kind: DispatchTarget["kind"]) => {
+    if (!allow) return true;
+    if (kind === "cli") return allow.cli !== false;
+    return kind === "expert" || kind === "team" || kind === "subagent" ? allow[kind] === true : true;
+  };
   const section = (kind: DispatchTarget["kind"], title: string, when: string) => {
     const items = list.filter((t) => t.kind === kind);
     if (!items.length) return [];
@@ -260,13 +272,14 @@ export function dispatchToolDescription(
     ...section("expert", "专家（单人）", "一个独立的专业角色，适合评审/创作/调研这类**要专业判断、产出自己就是最终答案**的活。"),
     ...section("team", "专家团（多人协作）", "一个团队按 SOP 分工协作，适合**要多个角色配合、产出需要汇总**的活（如软件开发：设计+前端+后端+测试）。"),
     ...section("subagent", "子智能体（你自定义的角色）", "你在设置里配置的自定义角色，适合**固定流程、专精某一类活**（如只做评审、只做翻译）。"),
+    ...section("cli", "CLI 智能体（本机命令行工具）", "用户在本机装好的命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。适合**它比你在行、或要把活交给一个独立进程跑**的场景；它会在自己的会话里调 shell 跑那个 CLI，**没装就会如实回「没装」，不要当它跑过**。"),
   ];
   // ⛔ 顶部第一句就说明**能不能派、要不要用户动手** —— 这是模型最先读到的约束，
   //    也是"模型让用户去勾一个不存在的开关"这类错觉的唯一止损点。
   const scope = allow
     ? (allow.team
-      ? "⛔ **本会话：专家、子智能体、专家团都可直接派（不要再让用户去开任何开关）。**"
-      : "⛔ **本会话：专家、子智能体可直接派（不需要任何开关）；专家团未开启 —— team/member 会被拒，要团请用户在顶栏「调度」面板打开，别硬试。**")
+      ? "⛔ **本会话：专家、子智能体、CLI 智能体、专家团都可直接派（不要再让用户去开任何开关）。**"
+      : "⛔ **本会话：专家、子智能体、CLI 智能体可直接派（不需要任何开关）；专家团未开启 —— team/member 会被拒，要团请用户在顶栏「调度」面板打开，别硬试。**")
     : "";
   return [
     scope,
@@ -277,13 +290,13 @@ export function dispatchToolDescription(
     "⛔ **专家团默认关闭**：确需多角色协作时，让用户在顶栏「调度」面板打开「专家团」；在此之前用专家或子智能体并行做同样可行。",
     "",
     "⛔ **选谁：先看用户点名了哪一类，就派那一类。**用户说「派专家/找个专家」→ 专家；",
-    "   说「用专家团/让团队」→ 专家团；说「派子智能体/让 XX 角色」→ 子智能体。",
+    "   说「用专家团/让团队」→ 专家团；说「派子智能体/让 XX 角色」→ 子智能体；说「@ 某个 CLI / 用 Claude Code 跑」→ CLI 智能体。",
     "   用户没指定时，按下面各节的适用场景挑**最贴切的一类**，并在回复里说明你选了谁、为什么。",
-    "⛔ **不要把子智能体当专家用，也不要把专家当子智能体用**——它们是三套独立配置，",
+    "⛔ **不要把子智能体当专家用，也不要把专家当子智能体用，更不要拿 CLI 顶替它们**——它们是四套独立配置，",
     "   名字相似但能力和来源不同，派错类型用户会立刻发现。",
     "",
     "当前可调度的对象：",
-    ...(sections.length ? sections : ["  （当前没有任何可调度对象 —— 如需派活，先让用户到设置里启用专家/专家团/子智能体）"]),
+    ...(sections.length ? sections : ["  （当前没有任何可调度对象 —— 如需派活，先让用户到设置里启用专家 / 专家团 / 子智能体，或到「开发工具 → CLI 智能体」接入一个命令行工具）"]),
     "",
     "参数 kind 必须与上面列出的对象类型一致；name 用上面给出的值。委托时把「要它做什么、验收标准、相关文件/背景」一次说清——它看不到你和用户的对话。",
     "任务整体完成后，如果本次调度产生了临时会话，可以先问用户是否归档它们（用 agent_ask），用户同意后再调用 agent_archive_sessions。",
@@ -304,13 +317,16 @@ export function dispatchToolDescription(
  * ⛔ targets 可选：传了就为**新开启**的类附带该类对象名单（中途开启专家团时模型立刻知道有谁）。
  * ════════════════════════════════════════════════════════════════════════ */
 
-/** 用户在调度面板的逐类许可（DispatchConfig 的三个子开关）。 */
-export type DispatchAllow = { expert: boolean; team: boolean; subagent: boolean };
+/** 用户在调度面板的逐类许可（DispatchConfig 的三个子开关）。
+ *  `cli` 是**可选**的恒真项：面板上没有它的开关（10-29 晚接入 CLI 智能体时与专家/子智能体同待遇），
+ *  留字段只为让 filterTargetsBySwitch / 描述生成用同一份 allow，不必各自特判缺键。 */
+export type DispatchAllow = { expert: boolean; team: boolean; subagent: boolean; cli?: boolean };
 
 export const DISPATCH_KIND_LABEL: Record<Exclude<DispatchKind, "member">, string> = {
   expert: "专家",
   team: "专家团",
   subagent: "子智能体",
+  cli: "CLI 智能体",
 };
 
 /** 专家团的一句话职责（通知里只保留**真正会变化**的那一类，其余不占篇幅）。 */

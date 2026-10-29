@@ -466,7 +466,10 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                     {(() => {
                       const mention = filterMentionTargets(dispatchInfo?.targets ?? [], contextQuery);
                       const query = String(contextQuery ?? "").trim();
-                      const canCreate = Boolean(query) && mention.groups.every((group) => group.kind !== "subagent");
+                      /* ⛔ 10-29 晚：「新建子智能体」只在**一条都没匹配到**时出现。
+                         原来只要没命中子智能体就挂出来 —— 输入 "Claude" 明明匹配到 Claude Code，
+                         下面还跟着「新建子智能体「Claude」并 @」，点错就凭空多一个角色。 */
+                      const canCreate = Boolean(query) && mention.total === 0 && mention.groups.every((group) => group.kind !== "subagent");
                       return <>
                         {mention.groups.map((group) => <div className="context-picker-group" key={group.kind}>
                           <div className="context-picker-group-label">{group.label}<small>{group.hint}</small></div>
@@ -476,7 +479,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         </div>)}
                         <div className="context-picker-group-label">历史消息<small>输入 * 唤起</small></div>
                         {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p className="context-picker-empty">没有匹配的历史消息</p>}
-                        {!mention.groups.length && <p className="context-picker-empty">没有匹配的专家 / 子智能体 / 专家团</p>}
+                        {!mention.groups.length && <p className="context-picker-empty">没有匹配的专家 / 子智能体 / CLI 智能体 / 专家团</p>}
                         {canCreate && <button type="button" className="context-picker-new" onMouseDown={(event) => event.preventDefault()} onClick={() => void createDispatchSubagent(query)}>
                           <b>新建</b><span>新建子智能体「{query}」并 @（默认配置，可在设置里补充指令）</span>
                         </button>}

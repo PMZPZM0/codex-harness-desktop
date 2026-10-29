@@ -26,6 +26,7 @@ import { builtinFeature as feat_builtin } from "./features/builtin-ipc";
 import { capabilitiesFeature as feat_capabilities } from "./features/capabilities-ipc";
 import { channelBotFeature as feat_channel_bot } from "./features/channel-bot-ipc";
 import { channelsFeature as feat_channels } from "./features/channels-ipc";
+import { cliAgentsFeature as feat_cliagents } from "./features/cli-agents-ipc";
 import { clipboardFeature as feat_clipboard } from "./features/clipboard-ipc";
 import { closeConfirmFeature as feat_close_confirm } from "./features/close-confirm-ipc";
 import { cloudReserveFeature as feat_cloud } from "./features/cloud-reserve-ipc";
@@ -146,6 +147,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "capabilities", plugin: feat_capabilities as Plugin<unknown>, config: null },
   { id: "channel-bot", plugin: feat_channel_bot as Plugin<unknown>, config: null },
   { id: "channels", plugin: feat_channels as Plugin<unknown>, config: null },
+  { id: "cliagents", plugin: feat_cliagents as Plugin<unknown>, config: null },
   { id: "clipboard", plugin: feat_clipboard as Plugin<unknown>, config: null },
   { id: "close-confirm", plugin: feat_close_confirm as Plugin<unknown>, config: null },
   { id: "cloud", plugin: feat_cloud as Plugin<unknown>, config: null },

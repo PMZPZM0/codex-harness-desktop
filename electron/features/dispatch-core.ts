@@ -23,6 +23,7 @@ import crypto from "node:crypto";
 import { readUsableExpertTeams } from "../expert-teams";
 import type { DispatchTarget } from "../dispatch";
 import { readSubAgents } from "../main/09-agents-plugins";
+import { CLI_CATEGORIES, readUsableCliAgents } from "../cli-agents";
 import { delegateRegistry, teamRunStore } from "../runtime-refs";
 // ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
 // 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
@@ -88,14 +89,14 @@ function dispatchMcpTools(): unknown[] {
     {
       name: "agent_invoke",
       description:
-        "调度专家 / 专家团 / 子智能体 执行一个独立子任务并拿回产出。"
-        + "⛔ **专家与子智能体随时可以直接派，不需要用户开任何开关**（别让用户去调度面板勾选）；"
+        "调度专家 / 专家团 / 子智能体 / CLI 智能体 执行一个独立子任务并拿回产出。"
+        + "⛔ **专家、子智能体、CLI 智能体随时可以直接派，不需要用户开任何开关**（别让用户去调度面板勾选）；"
         + "**专家团默认关闭**，team / member 未开启时会被拒绝 —— 要团请用户打开「专家团」，别反复试。"
         + "本会话当前可派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。",
       inputSchema: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["expert", "team", "member", "subagent"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体。⛔ 专家/子智能体随时可派；专家团需用户开启" },
+          kind: { type: "string", enum: ["expert", "team", "member", "subagent", "cli"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体, cli=本机命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。⛔ 专家/子智能体/CLI 随时可派；专家团需用户开启" },
           name: { type: "string", description: "对象名称（专家名 / 团名 / 子智能体名）" },
           member: { type: "string", description: "kind=member 时的成员名" },
           query: { type: "string", description: "交给它的任务描述（要自包含：对方看不到本会话上下文）" },
@@ -621,8 +622,11 @@ let dispatchHttpReady: Promise<void> | null = null;
 
 
 
-/** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型） */
-async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams, subs] = await Promise.all([readUsableExpertTeams(), readSubAgents()]);
+/** 组装「可调度对象目录」（只含已启用的；单人专家 = 只有 lead 的团队，结构同型）
+ *  10-29 晚追加：CLI 智能体（`cliagents` 域的用户配置）也进这份目录 —— 一类一个 `kind`，
+ *  ⛔ 不塞进 subagent 冒充（那会让"关掉 CLI"变成一个它自己管不了的开关）。 */
+async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
+  const [teams, subs, clis] = await Promise.all([readUsableExpertTeams(), readSubAgents(), readUsableCliAgents()]);
   const targets: DispatchTarget[] = [];
   for (const team of teams) {
     if (!team.enabled) continue;
@@ -651,6 +655,17 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {  const [teams
   for (const sub of subs) {
     if (!sub.enabled) continue;
     targets.push({ kind: "subagent", key: sub.id, name: sub.name, profession: "", description: sub.description ?? "" });
+  }
+  /* CLI 智能体：key = cliagents 条目的稳定 id（⛔ 不是 bin —— bin 改名/换版本时 id 不变，
+     否则点名与派活历史会对不上）。profession 用分类标签，让模型一眼看出这是"编码 CLI"还是"通用智能体 CLI"。 */
+  for (const cli of clis) {
+    targets.push({
+      kind: "cli",
+      key: cli.id,
+      name: cli.name,
+      profession: CLI_CATEGORIES.find((entry) => entry.key === cli.category)?.label ?? "CLI",
+      description: cli.description,
+    });
   }
   return targets;
 }
