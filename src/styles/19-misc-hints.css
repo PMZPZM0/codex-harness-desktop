@@ -979,6 +979,7 @@
 .dispatch-row-check { flex: none; display: inline-flex; color: var(--accent); }
 
 .dispatch-foot { display: flex; align-items: center; gap: 10px; padding: 10px 16px 12px; border-top: 1px solid var(--line-soft); }
+.dispatch-foot.no-scope { justify-content: flex-end; }
 .dispatch-scope { flex: 1; font-size: 11px; color: var(--faint); }
 .dispatch-scope.is-warn { color: var(--orange); }
 .dispatch-actions { display: flex; gap: 8px; flex: none; }
