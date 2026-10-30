@@ -1356,6 +1356,38 @@
   font-size: 11.5px;
   overflow: hidden;
 }
+/* ★ 10-31 用户令「简洁」：行 = 名字（+ 灰色职业），不再重复分组名；未安装另挂一个小标记。 */
+.context-picker .context-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.context-picker .context-picker-name em {
+  margin-left: 6px;
+  color: var(--faint);
+  font-style: normal;
+  font-size: 10.5px;
+}
+.context-picker .context-picker-flag {
+  flex: none;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+  font-style: normal;
+  font-size: 10px;
+  line-height: 15px;
+}
+.context-picker .context-picker-more {
+  margin: 1px 8px 5px;
+  color: var(--faint);
+  font-size: 10.5px;
+}
 .context-picker p {
   color: var(--faint);
   margin: 7px 8px;

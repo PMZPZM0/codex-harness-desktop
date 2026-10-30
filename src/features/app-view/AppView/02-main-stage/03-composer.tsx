@@ -491,18 +491,19 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         const canCreate = Boolean(query) && mention.total === 0 && mention.groups.every((group) => group.kind !== "subagent");
                         if (mode === "history") {
                           return <>
-                            <div className="context-picker-group-label">历史消息<small>输入 * 唤起 · 引用进本轮上下文</small></div>
+                            <div className="context-picker-group-label">历史消息<small>输入 * 唤起</small></div>
                             {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p className="context-picker-empty">没有匹配的历史消息</p>}
                           </>;
                         }
                         return <>
                           {mention.groups.map((group) => <div className={`context-picker-group${group.off ? " is-off" : ""}`} key={group.kind}>
                             <div className="context-picker-group-label">{group.label}
-                              <small>{group.off ? "未开通 · 在顶栏「调度」里打开后即可选" : group.hint}</small>
+                              <small>{group.off ? "未开通 · 顶栏「调度」打开" : group.hint}</small>
                             </div>
                             {group.items.map((target) => (
                               /* ⛔ 未开通 / 未安装 = 原生 disabled（不可点、不在 tab 序里），只置灰**不隐藏**：
-                                 用户要能看到"对象在这里，只是现在选不了"，而不是以为它丢了。 */
+                                 用户要能看到"对象在这里，只是现在选不了"，而不是以为它丢了。
+                                 10-31 用户令「简洁」：行里不再重复分组名（上面已有），只留名字 + 职业 + 未安装标记。 */
                               <button
                                 type="button"
                                 role="option"
@@ -513,13 +514,15 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                                 onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => { if (!target.disabled) addDispatchMention(target as DispatchTargetEntry); }}
                               >
-                                <b>{group.label}</b><span>{target.name}{target.profession ? ` · ${target.profession}` : ""}{target.kind === "cli" && target.installed === false ? " · 未安装" : ""}</span>
+                                <span className="context-picker-name">{target.name}{target.profession ? <em>{target.profession}</em> : null}</span>
+                                {target.kind === "cli" && target.installed === false ? <i className="context-picker-flag">未安装</i> : null}
                               </button>
                             ))}
+                            {group.more > 0 ? <p className="context-picker-more">还有 {group.more} 个，继续输入筛选</p> : null}
                           </div>)}
-                          {!mention.groups.length && <p className="context-picker-empty">没有匹配的专家 / 子智能体 / CLI 智能体 / 专家团</p>}
+                          {!mention.groups.length && <p className="context-picker-empty">没有匹配的对象</p>}
                           {canCreate && <button type="button" className="context-picker-new" onMouseDown={(event) => event.preventDefault()} onClick={() => void createDispatchSubagent(query)}>
-                            <b>新建</b><span>新建子智能体「{query}」并 @（默认配置，可在设置里补充指令）</span>
+                            <b>新建</b><span>子智能体「{query}」</span>
                           </button>}
                         </>;
                       })()}
