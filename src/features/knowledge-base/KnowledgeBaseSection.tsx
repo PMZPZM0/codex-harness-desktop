@@ -3,6 +3,11 @@
  * 落点 = <项目>/.codex-harness/knowledge/（随项目走）；v1 检索 = 分块全文评分（零依赖）。
  * 自包含形态（组件库页同款）：列表 / 导入（多选 md·txt 等文本文件 + 粘贴文本）/ 搜索 / 删除。
  * ⛔ 未选工作区时功能不可用——知识库是项目级的，必须先有项目。
+ *
+ * 10-30 用户：「这个界面优化一下排版，美化一下」⇒ 按设置页统一简洁版式重排：
+ *   页头（标题 + 一句说明）→ 来源二选一（等高一排，选中描边）→ 当前来源一句话说明
+ *   → 能力增强一行 → 「文档」工作台（计数 + 工具条 + 列表/空态）。
+ *   ⛔ 不再用「大段说明卡 + 仪表盘卡片 + 工具条裸奔」混排；说明压到一句话，细节进 title。
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
@@ -14,6 +19,9 @@ import { isMacPlatform } from "../../lib/is-mac-platform";
 /** 路径分隔符：mac/Linux 用 `/`，Windows 用 `\`（⛔ 渲染层没有 node:path，按平台取字面量）。
  *  10-26 mac 适配审计：这里原来写死 `\.codex-harness\knowledge` ⇒ mac 上显示成 `/a\b\c`。 */
 const SEP = isMacPlatform() ? "/" : "\\";
+
+/** 云端知识库由这些 MCP 工具承载（数量写在这里只用于一句话说明，细节放 title）。 */
+const CLOUD_KB_TOOLS = "cloud_kb__ask / cloud_kb__search_knowledge / cloud_kb__grep_chunks / cloud_kb__list_documents / cloud_kb__read_document / cloud_kb__list_knowledge_bases";
 
 type KbDoc = { id: string; title: string; source: string; chunks: number; addedAt: string; bytes: number };
 type KbHit = { docId: string; title: string; chunkIndex: number; score: number; snippet: string };
@@ -160,46 +168,47 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
 
   if (!workspace) {
     return (
-      <section className="settings-section stack kb-page">
-        <p className="muted">还没有选择工作目录——知识库是**项目级**的，先在会话里选择一个工作文件夹。</p>
+      <section className="settings-section stack kb-page settings-exp-page">
+        <div className="settings-exp-card kb-empty">
+          <FolderOpen size={18} />
+          <p>还没有选择工作目录</p>
+          <small>知识库是项目级的——先在会话里选择一个工作文件夹。</small>
+        </div>
       </section>
     );
   }
 
   return (
-    <section className="settings-section stack kb-page">
-      {/* 10-20：知识库后端二选一 —— 本地项目库 / 云端 weknora（MCP）。
+    <section className="settings-section stack kb-page settings-exp-page">
+      {/* 来源二选一：等高一排；选中用描边 + 浅底，未选只有细线。
           ⛔ 切换**必须**落到连接器上（`kb:backend-set` 会启用/停用 cloud-kb 连接器并失效工具缓存），
              否则设置变了、云端 6 个工具还在模型工具列表里 ⇒ 模型拿云端工具去查本地库。 */}
-      <div className="memory-mode-switch" role="tablist" aria-label="知识库来源">
+      <div className="settings-exp-card kb-source-card">
+      <div className="memory-mode-switch kb-source-switch" role="tablist" aria-label="知识库来源">
         <button role="tab" aria-selected={kbBackend === "local"} className={`memory-mode-card ${kbBackend === "local" ? "active" : ""}`}
-          onClick={() => { void switchKbBackend("local"); }}>
+          onClick={() => { if (kbBackend !== "local") void switchKbBackend("local"); }}>
           <div className="memory-mode-body"><strong>本地知识库</strong><span>项目级 · 文件随项目走 · 离线可用</span></div>
         </button>
         <button role="tab" aria-selected={kbBackend === "cloud"} className={`memory-mode-card ${kbBackend === "cloud" ? "active" : ""}`}
-          onClick={() => { void switchKbBackend("cloud"); }}>
+          onClick={() => { if (kbBackend !== "cloud") void switchKbBackend("cloud"); }}>
           <div className="memory-mode-body"><strong>云端知识库</strong><span>weknora · 每账号独立库 · 用 MCP 工具检索</span></div>
         </button>
       </div>
-      {kbBackend === "cloud" ? (
-        <div className="memory-center-block" style={{ marginBottom: 12 }}>
-          <div className="memory-center-block-head">
-            <div>
-              <strong>当前使用云端知识库</strong>
-              <span>库与文档由云账号管理；模型侧通过 MCP 工具检索（<code>cloud_kb__ask</code> / <code>cloud_kb__search_knowledge</code> / <code>cloud_kb__grep_chunks</code> / <code>cloud_kb__list_documents</code> / <code>cloud_kb__read_document</code> / <code>cloud_kb__list_knowledge_bases</code>）。下面的本地库导入与检索在此模式下<b>不生效</b>（数据不会被删除，切回本地即可继续用）。</span>
-            </div>
-          </div>
-        </div>
-      ) : null}
-      {/* ⛔ 10-20：这块讲的是**本地库**。云端后端下它不再生效，标题必须如实标明 ——
-          否则用户看到「文档落在 <workspace>/…」会以为这就是模型正在查的东西（两套库是独立数据）。 */}
+
+      {/* 当前来源：一句话说清影响面（细节放 title，不再占一整张卡） */}
+      <p className="kb-source-note" title={CLOUD_KB_TOOLS}>
+        {kbBackend === "cloud"
+          ? "云端库由云账号管理，模型通过 6 个 cloud_kb__ 工具检索；本地导入与检索在此模式下不生效（数据保留，切回本地即恢复）。"
+          : `文档落在本项目的 .codex-harness${SEP}knowledge 目录，随项目走；离线可用。`}
+      </p>
+      </div>
 
       {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}
-      {embedInstalled === false ? (
-        <div className="kb-embed-card">
+      {kbBackend === "local" && embedInstalled === false ? (
+        <div className="settings-exp-card kb-embed-card">
           <span className="kb-embed-main">
             <strong>本地语义检索（可选增强）</strong>
-            <small>离线中文向量模型 + ONNX 运行库，装好后「语义检索」不再依赖供应商接口。约 110 MB，走国内镜像（npmmirror + hf-mirror），装完即用。</small>
+            <small>离线中文向量模型 + ONNX 运行库，装好后「语义检索」不再依赖供应商接口。约 110 MB，走国内镜像，装完即用。</small>
           </span>
           {embedProg || embedBusy ? (
             <span className="runtime-install-state">
@@ -219,50 +228,63 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
         </div>
       ) : null}
 
-      <div className="resource-toolbar">
-        <div className="kb-search"><Search size={13} /><input value={query} placeholder="在知识库中检索…" onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void doSearch(); }} /></div>
-        <button className="secondary-setting" disabled={busy === "search"} onClick={() => void doSearch()}>{busy === "search" ? <Spinner /> : <Search size={13} />}检索</button>
-        <button className="secondary-setting" disabled={Boolean(busy)} title="从本机选择一个或多个文本文件（md / txt / 代码等）导入" onClick={() => void importFiles()}>{busy === "import" ? <Spinner /> : <FilePlus2 size={13} />}导入文件</button>
-        <button className="secondary-setting" disabled={Boolean(busy)} onClick={() => setPasteOpen((v) => !v)}><Library size={13} />粘贴文本</button>
-        <button className="icon-button" title="刷新" onClick={() => void refreshWithReceipt(setNotice, "刷新知识库", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button>
-      </div>
-
-      {pasteOpen && (
-        <div className="kb-paste">
-          <input value={pasteTitle} placeholder="标题（可留空）" onChange={(event) => setPasteTitle(event.target.value)} />
-          <textarea value={pasteText} placeholder="粘贴要入库的内容…" rows={5} onChange={(event) => setPasteText(event.target.value)} />
-          <button className="secondary-setting" disabled={busy === "paste"} onClick={() => void importPaste()}>{busy === "paste" ? <Spinner /> : null}入库</button>
+      {/* 文档工作台：标题行（计数 + 刷新）→ 工具条 → 结果/列表/空态 */}
+      <div className="settings-exp-card kb-workbench">
+        <div className="kb-workbench-head">
+          <Library size={14} />
+          <strong>文档</strong>
+          <span className="kb-count">{loading ? "读取中…" : `${docs.length} 份`}</span>
+          <button className="icon-button" title="刷新列表" onClick={() => void refreshWithReceipt(setNotice, "刷新知识库", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button>
         </div>
-      )}
+        {kbBackend === "cloud" ? <p className="kb-mode kb-cloud-note">当前是云端模式：下面的本地文档不参与检索（导入也不生效）；切回本地即可继续使用。</p> : null}
+        <div className="resource-toolbar kb-toolbar">
+          <div className="kb-search"><Search size={13} /><input value={query} disabled={kbBackend === "cloud"} placeholder={kbBackend === "cloud" ? "云端模式下本地检索不生效" : "在知识库中检索…"} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void doSearch(); }} /></div>
+          <button className="secondary-setting" disabled={kbBackend === "cloud" || busy === "search"} onClick={() => void doSearch()}>{busy === "search" ? <Spinner /> : <Search size={13} />}检索</button>
+          <button className="secondary-setting" disabled={kbBackend === "cloud" || Boolean(busy)} title={kbBackend === "cloud" ? "云端模式下本地导入不生效" : "从本机选择一个或多个文本文件（md / txt / 代码等）导入"} onClick={() => void importFiles()}>{busy === "import" ? <Spinner /> : <FilePlus2 size={13} />}导入文件</button>
+          <button className="secondary-setting" disabled={kbBackend === "cloud" || Boolean(busy)} onClick={() => setPasteOpen((v) => !v)}><Library size={13} />粘贴文本</button>
+        </div>
 
-      {hits !== null ? (
-        <>
-        {semantic !== null ? <p className="muted kb-mode">{semantic ? "语义 + 全文双档检索（供应商 embedding 可用）" : "全文检索（供应商 embedding 不可用时的自动回落）"}</p> : null}
-        hits.length ? (
-          <div className="kb-hits">
-            {hits.map((hit, index) => (
-              <div className="kb-hit" key={hit.docId + ":" + hit.chunkIndex}>
-                <span className="kb-hit-title">{hit.title} · 第 {hit.chunkIndex + 1} 块</span>
-                <p>{hit.snippet}</p>
-                {index === 0 ? <em className="kb-hit-top">最相关</em> : null}
+        {pasteOpen && (
+          <div className="kb-paste">
+            <input value={pasteTitle} placeholder="标题（可留空）" onChange={(event) => setPasteTitle(event.target.value)} />
+            <textarea value={pasteText} placeholder="粘贴要入库的内容…" rows={5} onChange={(event) => setPasteText(event.target.value)} />
+            <button className="secondary-setting" disabled={busy === "paste"} onClick={() => void importPaste()}>{busy === "paste" ? <Spinner /> : null}入库</button>
+          </div>
+        )}
+
+        {hits !== null ? (
+          <>
+            {semantic !== null ? <p className="muted kb-mode">{semantic ? "语义 + 全文双档检索（供应商 embedding 可用）" : "全文检索（供应商 embedding 不可用时的自动回落）"}</p> : null}
+            {hits.length ? (
+              <div className="kb-hits">
+                {hits.map((hit, index) => (
+                  <div className="kb-hit" key={hit.docId + ":" + hit.chunkIndex}>
+                    <span className="kb-hit-title">{hit.title} · 第 {hit.chunkIndex + 1} 块</span>
+                    <p>{hit.snippet}</p>
+                    {index === 0 ? <em className="kb-hit-top">最相关</em> : null}
+                  </div>
+                ))}
+              </div>
+            ) : <div className="kb-empty"><Search size={18} /><p>没有命中的内容</p><small>换个关键词，或确认相关文档已导入。</small></div>}
+          </>
+        ) : (
+          docs.length ? <div className="kb-docs">
+            {docs.map((doc) => (
+              <div className="kb-doc" key={doc.id}>
+                <span className="kb-doc-main" style={{ cursor: "pointer" }} title="点击查看全文" onClick={() => void openPreview(doc)}>
+                  <strong>{doc.title}</strong><small>{doc.chunks} 块 · {Math.max(1, Math.round(doc.bytes / 1024))} KB</small>
+                </span>
+                <button className="icon-button" title={`查看「${doc.title}」全文`} onClick={(e) => { e.stopPropagation(); void openPreview(doc); }}>{<Eye size={13} />}</button>
+                <button className="icon-button" title={`删除「${doc.title}」`} disabled={Boolean(busy)} onClick={(e) => { e.stopPropagation(); void remove(doc); }}>{busy === doc.id ? <Spinner /> : <Trash2 size={13} />}</button>
               </div>
             ))}
+          </div> : <div className="kb-empty">
+            <Library size={18} />
+            <p>{loading ? "正在加载…" : "知识库还是空的"}</p>
+            <small>{loading ? "" : "用上面的「导入文件」或「粘贴文本」添加第一份文档。"}</small>
           </div>
-        ) : <p className="muted">没有命中的内容——换个关键词，或确认相关文档已导入。</p>
-        </>
-      ) : (
-        docs.length ? <div className="kb-docs">
-          {docs.map((doc) => (
-            <div className="kb-doc" key={doc.id}>
-              <span className="kb-doc-main" style={{ cursor: "pointer" }} title="点击查看全文" onClick={() => void openPreview(doc)}>
-                <strong>{doc.title}</strong><small>{doc.chunks} 块 · {Math.max(1, Math.round(doc.bytes / 1024))} KB</small>
-              </span>
-              <button className="icon-button" title={`查看「${doc.title}」全文`} onClick={(e) => { e.stopPropagation(); void openPreview(doc); }}>{<Eye size={13} />}</button>
-              <button className="icon-button" title={`删除「${doc.title}」`} disabled={Boolean(busy)} onClick={(e) => { e.stopPropagation(); void remove(doc); }}>{busy === doc.id ? <Spinner /> : <Trash2 size={13} />}</button>
-            </div>
-          ))}
-        </div> : <p className="muted">{loading ? "正在加载…" : "知识库还是空的——用上面「导入文件」或「粘贴文本」添加第一份文档。"}</p>
-      )}
+        )}
+      </div>
 
       {/* 全文预览弹窗（info-modal 体系，portal 到 body——设置页 transform 会劫持 fixed） */}
       {preview && createPortal(
