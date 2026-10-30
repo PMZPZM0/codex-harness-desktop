@@ -81,6 +81,8 @@ type RemoteEvents = {
   onRelayStatus?: (status: RelayStatus) => void;
   /** 手机页品牌名（⛔ 各仓自有：Codex Harness / PPcode），首页与标题用它 */
   brandName?: string;
+  /** 手机首页图标（data URI，来自本仓自己的应用图标；⛔ 各仓不许互相拷贝图标文件） */
+  brandIcon?: string;
   /** 引擎流式事件转发给已连接手机（turn 增量） */
   onThreadEvent?: (listener: (event: { threadId: string; kind: string; text: string; data?: any }) => void) => () => void;
   /** 设备会话记忆持久化文件（userData/remote-sessions.json）；不传则不持久化 */
@@ -495,7 +497,7 @@ export class RemoteControlService {
   }
 
   private html(code: string, botId?: string, botName?: string) {
-    return buildRemotePageHtml(code, botId, botName, this.events.brandName);
+    return buildRemotePageHtml(code, botId, botName, this.events.brandName, this.events.brandIcon);
   }
 
   private route(req: http.IncomingMessage, res: http.ServerResponse) {
