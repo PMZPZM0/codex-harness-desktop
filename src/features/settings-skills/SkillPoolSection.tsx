@@ -43,8 +43,12 @@ function basename(cwd: string): string {
   return cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || cwd;
 }
 
-export function SkillPoolSection({ projects, onNotice }: { projects?: [string, unknown][]; onNotice?: (message: string) => void }) {
-  const [open, setOpen] = useState(false);
+export function SkillPoolSection(props: { projects?: [string, unknown][]; onNotice?: (message: string) => void; open?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean }) {
+  const { projects, onNotice } = props;
+  /* 10-30：open 可由父级（技能页工具栏那颗按钮）控制；hideTrigger = 不再自带「共享技能池」触发条。 */
+  const [innerOpen, setInnerOpen] = useState(false);
+  const open = props.open ?? innerOpen;
+  const setOpen = (next: boolean) => { if (props.onOpenChange) props.onOpenChange(next); else setInnerOpen(next); };
   const [loading, setLoading] = useState(false);
   const [skills, setSkills] = useState<PoolSkill[]>([]);
   const [currentWs, setCurrentWs] = useState(readWorkspace);
@@ -114,6 +118,7 @@ export function SkillPoolSection({ projects, onNotice }: { projects?: [string, u
   const knownProjects = Array.from(new Set([currentWs, ...(projects ?? []).map(([cwd]) => cwd)].filter(Boolean))) as string[];
 
   if (!open) {
+    if (props.hideTrigger) return null;
     return (
       <div className="resource-toolbar secondary">
         <button className="secondary-setting" onClick={() => setOpen(true)}>
