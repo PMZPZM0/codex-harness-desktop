@@ -171,5 +171,20 @@ ok(!/TOOLS_ROOT="\$\{|TOOLS_ROOT=\\"/.test(rt) && /若脚本要求指定工具�
 ok(/const node = bundledNode\(\) \|\| "node"/.test(rt),
   "发命令优先用随包 node（与主进程跑安装时同源），拿不到才回落 PATH 上的 node");
 
+/* ── ⑤ 飞书 CLI 卡片：装了要能在这里卸载（10-30 用户：「提供卸载按键」）────────────
+   ⛔ 走开发工具同一条 runtime:uninstall；⛔ 不用原生 confirm（【191】禁），两步确认。 */
+{
+  const feishuCard = codeOnlyTs(read("src/features/settings-devtools/FeishuCliCard.tsx"));
+  const devtools = codeOnlyTs(read("src/features/settings-devtools/DevtoolsSettingsSection.tsx"));
+  ok(/uninstallDevRuntime\?\.\("feishu-cli"\)/.test(feishuCard) && /confirmUninstall/.test(feishuCard),
+    "飞书 CLI 卡片有「卸载」按钮（两步确认，走 runtime:uninstall feishu-cli）");
+  ok(!/window\.confirm/.test(feishuCard) && /已卸载/.test(feishuCard),
+    "⛔ 卸载不用原生 confirm，并如实回执「已卸载」");
+  ok(/登录凭据仍保留在本机/.test(feishuCard),
+    "卸载说明写清凭据保留（~/.lark-cli 不由卸载删除）");
+  ok(/<FeishuCliCard[^>]*uninstallDevRuntime=\{uninstallDevRuntime\}[^>]*runtimeUninstalling=\{runtimeUninstalling\}/.test(devtools),
+    "开发工具页把卸载通道与卸载中状态传给卡片（不传 = 按钮点了没反应）");
+}
+
 console.log(`\n【devtools-fallback】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
