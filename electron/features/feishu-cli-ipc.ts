@@ -25,6 +25,7 @@ const MAX_OUTPUT = 20_000;
 /** `config init --new` 会一直挂着等用户在浏览器里完成（它可能就是写配置的那个进程）。
  *  ⛔ 同一时刻只留一个：重复点「去配置」起两个进程会抢同一份配置文件。 */
 let setupChild: import("node:child_process").ChildProcess | null = null;
+let setupState: SetupState = "idle";
 /** device flow 的后台轮询（`auth login --device-code`）。取消授权时要能杀掉它。 */
 let loginChild: import("node:child_process").ChildProcess | null = null;
 
@@ -34,7 +35,10 @@ function openUrl(url: string): void {
   void shell.openExternal(url).catch(() => undefined);
 }
 
-type CliResult = { installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string };
+/** setupState：配置流程（config init）状态。10-30 用户实测「选已有应用 → appId 不变 → 卡片一直配置中」
+ *  ⇒ 通用完成信号是**子进程退出码**，不能只看 appId。 */
+type SetupState = "idle" | "running" | "done" | "failed";
+type CliResult = { installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string; setupState: SetupState };
 
 /** CLI 可执行文件候选（npm-global 的两种布局都查：win / mac 分叉见 toolchain） */
 function cliPath(): string {
@@ -94,7 +98,7 @@ let versionCache = { value: "", at: 0 };
 
 async function statusOf(): Promise<CliResult> {
   const binary = cliPath();
-  const base: CliResult = { installed: Boolean(binary), path: binary, version: "", configured: false, loggedIn: false, appId: "", user: "", detail: "", error: "" };
+  const base: CliResult = { installed: Boolean(binary), path: binary, version: "", configured: false, loggedIn: false, appId: "", user: "", detail: "", error: "", setupState };
   if (!binary) return base;
   try {
     if (!versionCache.value || Date.now() - versionCache.at > 60_000) {
@@ -153,6 +157,7 @@ export const feishuCliFeature = defineFeature<null>({
       if (!binary) return { ok: false, error: "飞书 CLI 还没安装" };
       return await new Promise((resolve) => {
         try { setupChild?.kill(); } catch { /* 已退出 */ }
+        setupState = "running";
         const child = spawn(binary, ["config", "init", "--new"], { windowsHide: true, env: { ...process.env, NO_COLOR: "1", LARK_CLI_NO_ANALYTICS: "1" } });
         setupChild = child;
         let buffer = "";
@@ -160,9 +165,15 @@ export const feishuCliFeature = defineFeature<null>({
         /* 拿到链接后这个进程还得活着（浏览器完成后由它写配置），但不能无限挂：
            用户放弃 / 浏览器被关掉时，10 分钟后收掉，别在后台留一个吃配置锁的僵尸。 */
         const killTimer = setTimeout(() => { try { child.kill(); } catch { /* 已退出 */ } }, 10 * 60_000);
-        child.on("close", () => { clearTimeout(killTimer); if (setupChild === child) setupChild = null; });
+        child.on("close", (code) => {
+          clearTimeout(killTimer);
+          if (setupChild === child) setupChild = null;
+          /* 10-30：浏览器里选「已有应用」时 appId 不变 ⇒ 只能靠这个退出码收官（0 = 配置已写入）。
+             用户点「取消授权」时先置 idle，这里保持 idle（别把主动取消报成失败）。 */
+          setupState = setupState === "idle" ? "idle" : code === 0 ? "done" : "failed";
+        });
         const timer = setTimeout(() => {
-          if (!url) { clearTimeout(killTimer); try { child.kill(); } catch { /* 忽略 */ } resolve({ ok: false, error: "没有从 CLI 输出里拿到授权链接，请稍后重试" }); }
+          if (!url) { setupState = "failed"; clearTimeout(killTimer); try { child.kill(); } catch { /* 忽略 */ } resolve({ ok: false, error: "没有从 CLI 输出里拿到授权链接，请稍后重试" }); }
         }, 30_000);
         const onData = (chunk: Buffer) => {
           buffer = (buffer + String(chunk)).slice(-8000);
@@ -173,7 +184,7 @@ export const feishuCliFeature = defineFeature<null>({
         };
         child.stdout?.on("data", onData);
         child.stderr?.on("data", onData);
-        child.on("error", (error) => { clearTimeout(timer); if (setupChild === child) setupChild = null; resolve({ ok: false, error: String(error?.message ?? error) }); });
+        child.on("error", (error) => { setupState = "failed"; clearTimeout(timer); if (setupChild === child) setupChild = null; resolve({ ok: false, error: String(error?.message ?? error) }); });
       });
     });
 
@@ -213,6 +224,7 @@ export const feishuCliFeature = defineFeature<null>({
         try { child.kill(); } catch { /* 已退出 */ }
       }
       setupChild = null;
+      setupState = "idle";
       loginChild = null;
       return { ok: true };
     });

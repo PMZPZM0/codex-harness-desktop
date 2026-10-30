@@ -21,6 +21,7 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { ROOT } from "./_ctx.mjs";
 
 let checks = 0, fails = 0;
@@ -194,6 +195,21 @@ ok(/const node = bundledNode\(\) \|\| "node"/.test(rt),
     "安装完成事件到达后重读状态（否则装完界面仍停在「未安装」，看着像没反应）");
   ok(/runtimeStage\?\.\["feishu-cli"\]/.test(feishuCard),
     "安装期间显示真实阶段文案（下载 51 MB 时用户能看到在动）");
+}
+
+/* ── ⑥ 飞书配置轮询真值表：选「已有应用」也必须能收尾（10-30 用户实测）───────────
+   重新配置原先只认 appId 变化；在浏览器里选已有应用（同 appId）会永远「配置中」。
+   主进程补 setupState（config init 进程 done/failed），这里跑真值表钉住三条边界。 */
+{
+  const { feishuPollOutcome } = await import(pathToFileURL(join(ROOT, "src", "lib", "feishu-card.mjs")).href);
+  const poll = (input) => JSON.stringify(feishuPollOutcome(input));
+  ok(poll({ flow: "reconfig", configured: true, loggedIn: true, appChanged: false, setupState: "done" }) === JSON.stringify({ keepLink: false, clearBusy: true }),
+    "重新配置：选**已有应用**（appId 未变）但 config init 正常退出 ⇒ 收尾（不再卡「配置中」）");
+  ok(poll({ flow: "reconfig", configured: true, loggedIn: true, appChanged: false, setupState: "running" }) === JSON.stringify({ keepLink: true, clearBusy: false }),
+    "重新配置：过程未完（running）时保持链接与等待态（⛔ 提前收尾 = 用户还没做完卡片就没了）");
+  const failed = feishuPollOutcome({ flow: "reconfig", configured: true, loggedIn: true, appChanged: false, setupState: "failed" });
+  ok(failed.clearBusy === true && failed.failed === true && failed.keepLink === false,
+    "重新配置失败 ⇒ 收尾并标记 failed（界面如实提示，可重试）");
 }
 
 
