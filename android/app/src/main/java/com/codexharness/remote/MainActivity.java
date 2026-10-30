@@ -109,7 +109,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.6");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.7");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -216,6 +216,13 @@ public class MainActivity extends AppCompatActivity {
         String stored = prefs().getString(KEY_BASE, "");
         /* 存的值可能带中转前缀（/t/<设备ID>）：整段 baseOf 才算完整入口 */
         String origin = baseOf(stored);
+        /* 0.1.7：两个产品的中转域名串了（PPcode 包装过主仓地址 / 反之）就直接丢弃 ——
+           否则手输 6 位码会打到另一台服务器，拿到 HTML 报「cannot be converted to JSONObject」。 */
+        if (BuildConfig.STALE_BASE_HOST != null && !BuildConfig.STALE_BASE_HOST.isEmpty()
+                && origin.contains(BuildConfig.STALE_BASE_HOST)) {
+            origin = "";
+            prefs().edit().remove(KEY_BASE).apply();
+        }
         baseUrl = origin.isEmpty() ? fallback : origin;
         // 连过一次之后，再打开 App 直接进对话：不带连接码，页面会用设备秘密自动登录；
         // 电脑端在线就永远是对话页，不需要重新连接。
@@ -289,7 +296,11 @@ public class MainActivity extends AppCompatActivity {
         if (busy) return;
         String digits = rawCode == null ? "" : rawCode.replaceAll("[^0-9]", "");
         if (digits.length() != 6) { showSetup("请输入电脑上显示的 6 位连接码"); return; }
-        if (baseUrl == null || baseUrl.isEmpty()) { showSetup("还没有电脑地址：请先扫码"); return; }
+        /* 0.1.7：手输码不强制先扫码 —— 没有存地址就直接用安装包内置的服务器。 */
+        if (baseUrl == null || baseUrl.isEmpty()) {
+            baseUrl = decodeBase(BuildConfig.BASE_URL_B64);
+            prefs().edit().putString(KEY_BASE, baseUrl).apply();
+        }
         if (code != null) code.setText(digits);
         setBusy(true, "正在配对…");
         new Thread(() -> {

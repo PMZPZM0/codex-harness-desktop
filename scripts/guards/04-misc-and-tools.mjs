@@ -1772,8 +1772,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("DEVICE_TTL_MS") && relaySrc.includes("private pruneApproved()") && relaySrc.includes("this.pruneApproved();") ? ok : fail)(
       "【139e】已配对设备 30 天未连接自动清理（启动时 + 读列表时），列表不再无限增长"
     );
-    (relaySrc.includes("mobile-remote-v0.1.6") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.6）"
+    (relaySrc.includes("mobile-remote-v0.1.7") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.7）"
     );
   }
 }
