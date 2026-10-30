@@ -64,14 +64,16 @@ export async function resolveExistingFile(requested, options = {}) {
     if (alt) {
       const check = await window.codex.fileExists(alt).catch(() => null);
       if (check?.exists) {
-        options.notify?.(`原路径不存在，已改用会话里出现过的同名文件：${alt}`);
+        /* ⛔ 语气随消息一起给出（success）：这两句只在**已经找到并打开**时发出，
+           让 noticeTone 从"不存在"这个词去猜，就会把成功提示画成红叉（10-30 用户点名）。 */
+        options.notify?.(`已改用会话里出现过的同名文件：${alt}`, "success");
         return alt;
       }
     }
     /* ② 台账也没有 ⇒ 让主进程按文件名在磁盘上找（有界预算，见 electron/file-locate.ts）。 */
     const found = await window.codex.locateFile(target).then((result) => String(result?.path ?? "")).catch(() => "");
     if (found && found !== target) {
-      options.notify?.(`路径不存在，已按文件名在磁盘上找到：${found}`);
+      options.notify?.(`已按文件名在磁盘上找到：${found}`, "success");
       return found;
     }
     return target;

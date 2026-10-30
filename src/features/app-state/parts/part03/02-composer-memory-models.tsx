@@ -370,7 +370,8 @@ bag.channelBot = channelBot as typeof bag.channelBot; bag.setChannelBot = setCha
       bag.applyGlobalModelChoice(modelId);
       if (effort) bag.setEffort(effort);
     },
-    onNotice: bag.setNotice,
+    /* tone 落到第 3 个参数（setNotice(text, threadId?, tone?)）—— ⛔ 不能直接传函数引用 */
+    onNotice: (message: string, tone?: "success" | "error" | "warning" | "info") => bag.setNotice(message, undefined, tone),
     onProbeSuccess: (title, detail) => bag.showToast(title, detail),
     // 设置页保存等路径已触发引擎重启生效：清掉「待重启生效」banner，避免残留误导
     onEngineApplied: () => bag.setPendingRestart(null),

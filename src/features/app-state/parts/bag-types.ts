@@ -1118,7 +1118,7 @@ export interface Bag {
   pruneSupersededCompactions: (keepId: string) => void;
   threadNameOf: (threadId: string) => string;
   scopedNotice: (text: string, threadId?: string | undefined) => void;
-  showToast: (title: string, text?: unknown, threadId?: string | undefined) => void;
+  showToast: (title: string, text?: unknown, threadId?: string | undefined, tone?: NoticeTone) => void;
   contextUsageText: () => string;
   addHookEvent: (running: boolean, hookName: string) => void;
   pendingCommandTextRef: React.RefObject<string | null>;

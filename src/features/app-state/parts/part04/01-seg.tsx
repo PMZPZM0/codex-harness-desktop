@@ -521,11 +521,14 @@ bag.threadNameOf = threadNameOf as typeof bag.threadNameOf;
   }
 bag.scopedNotice = scopedNotice as typeof bag.scopedNotice;
 
-  function showToast(title: string, text?: unknown, threadId?: string) {
+  /* ★ 10-30 用户令：「这个提示能打开，就不要红色提醒，绿色就行了」——
+     语气**显式传**，不再让 noticeTone 从文案里猜（"原路径不存在" 会被猜成 error，
+     于是"已成功打开"被画成红叉）。`tone` 为 undefined 时仍按文案推断（保持旧行为）。 */
+  function showToast(title: string, text?: unknown, threadId?: string, tone?: "success" | "error" | "warning" | "info") {
     const detail = String(text ?? "").replace(/\s+/g, " ").trim();
     const name = threadId ? bag.threadNameOf(threadId) : "";
     const prefix = name ? `【${name}】` : "";
-    bag.setNotice(prefix + (detail ? `${title}：${detail.slice(0, 220)}` : title));
+    bag.setNotice(prefix + (detail ? `${title}：${detail.slice(0, 220)}` : title), undefined, tone);
   }
 bag.showToast = showToast as typeof bag.showToast;
 

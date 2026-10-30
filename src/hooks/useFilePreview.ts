@@ -59,7 +59,8 @@ export function decodeText(bytes: Uint8Array): string {
 
 type Options = {
   workspace: string;
-  onNotice: (message: string) => void;
+  /** tone 缺省时由通知层按文案推断；成功类（找回同名文件）显式传 "success" 才会是绿色 */
+  onNotice: (message: string, tone?: "success" | "error" | "warning" | "info") => void;
 };
 
 export function useFilePreview({ workspace, onNotice }: Options) {
@@ -142,7 +143,7 @@ export function useFilePreview({ workspace, onNotice }: Options) {
     } catch (error: any) {
       // 剥掉管道噪音（[ERR_…] 前缀 / 通道名 / Electron 包壳），只留主进程给的那句原因
       const message = ipcErrorMessageOf(error, "读取文件失败");
-      if (activeReqRef.current === path) onNotice(`读取文件失败：${message}`);
+      if (activeReqRef.current === path) onNotice(`读取文件失败：${message}`, "error");
       // 失败的标签不保留，避免残留一个永远空白的 tab
       setFileTabs((prev) => prev.filter((entry) => entry !== path));
     }
@@ -170,7 +171,7 @@ export function useFilePreview({ workspace, onNotice }: Options) {
       setFileEditing(false);
       onNotice(`已保存 ${filePreview.path.split(/[\\/]/).pop()}`);
     } catch (error: any) {
-      onNotice(`保存失败：${error.message}`);
+      onNotice(`保存失败：${error.message}`, "error");
     } finally {
       setSavingFile(false);
     }
