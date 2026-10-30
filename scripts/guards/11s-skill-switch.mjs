@@ -307,10 +307,12 @@ try {
     "⛔ 负向：技能页不再展示「自动更新已移到控制台」的指路条（用户明确删掉）");
   ok(/skill-actions-line[^>]*>[\s\S]{0,600}共享技能池/.test(centerUi),
     "共享技能池按钮在右侧按钮组里（与返回市场 / 导入技能 / 刷新一起右对齐）—— ⛔ 塞在搜索与按钮组中间不好看");
+  ok(/返回技能列表/.test(centerUi) && /poolOpen \? \(\s*<SkillPoolSection[\s\S]{0,240}: <>/.test(centerUi),
+    "共享技能池是**两段式**：进去后工具栏按钮变「返回技能列表」，池页面替换列表（不是叠在列表上方）");
   ok(!/skill-installed-summary/.test(codeOnly(centerUi)),
     "⛔ 负向：已删掉「共 N 项 · 内置 / 市场 / 本地 / 停用」汇总条（用户点名删）");
-  ok(/open=\{poolOpen\}/.test(centerUi) && /onOpenChange=\{setPoolOpen\}/.test(centerUi) && /hideTrigger/.test(poolUi),
-    "共享技能池改受控：按钮在工具栏、面板仍渲染在列表内，不再自带触发条");
+  ok(/<SkillPoolSection[\s\S]{0,160}open onOpenChange=\{setPoolOpen\}/.test(centerUi) && /hideTrigger/.test(poolUi),
+    "共享技能池改受控：按钮在工具栏、池页面按需渲染（两段式），不再自带触发条");
 }
 
 console.log(`\n【skills-switch】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

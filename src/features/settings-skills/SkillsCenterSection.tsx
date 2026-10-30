@@ -65,11 +65,11 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                       )}
                       <div className="skill-actions-line">
                         {skillsManageOnly && (
-                          <button type="button" className={`secondary-setting skill-action-sm ${poolOpen ? "active-manage" : ""}`} onClick={() => setPoolOpen((v) => !v)} title="按项目生效：选择该项目里哪些全局技能可用">
-                            <FolderKanban size={13} />共享技能池
+                          <button type="button" className={`secondary-setting skill-action-sm ${poolOpen ? "active-manage" : ""}`} onClick={() => setPoolOpen((v) => !v)} title={poolOpen ? "返回我的技能列表" : "按项目生效：选择该项目里哪些全局技能可用"}>
+                            {poolOpen ? <><ArrowLeft size={13} />返回技能列表</> : <><FolderKanban size={13} />共享技能池</>}
                           </button>
                         )}
-                        <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
+                        <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => { setPoolOpen(false); setSkillsManageOnly(!skillsManageOnly); }}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
                         <button className="secondary-setting skill-action-sm" onClick={() => void importSkill()}><Paperclip size={13} />导入技能</button>
                         <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => { setMarketPage(1); return refreshMarketSkills(skillHubCategory, skillHubSearch, 1); })}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
                       </div>
@@ -153,7 +153,9 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                             ⛔ 这里只留一句指路，**不再放开关** —— 同一状态两个入口，用户会以为两边不一致。
                             真正的检查/更新在主进程后台跑（skills-ipc 的 runSkillAutoUpdate），与本页是否打开无关；
                             手动逐项更新入口 = 卡片上的「重新安装」（同一条市场安装链）。 */}
-                        <SkillPoolSection projects={props.projects} onNotice={setNotice} open={poolOpen} onOpenChange={setPoolOpen} hideTrigger />
+                        {poolOpen ? (
+                          <SkillPoolSection projects={props.projects} onNotice={setNotice} open onOpenChange={setPoolOpen} hideTrigger />
+                        ) : <>
                         {shownBuiltin.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-builtin" />Codex 内置技能<small>由 Codex app-server 自带，不支持停用</small></header><div className="skill-card-grid compact">{shownBuiltin.map((skill: any) => renderCard({ name: skill.name, description: skill.description ?? "由 Codex 引擎内置提供", path: skill.path }, "builtin"))}</div></section>}
                         {marketInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-market" />市场安装<small>从 SkillHub / CocoLoop 市场一键安装到 Codex 技能目录</small></header><div className="skill-card-grid compact">{marketInstalled.map((skill) => renderCard(skill, "market"))}</div></section>}
                         {localInstalled.length > 0 && <section className="skill-installed-group">
@@ -174,6 +176,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                           <div className="skill-card-grid compact">{localInstalled.map((skill) => renderCard(skill, "local"))}</div>
                         </section>}
                         {!shownBuiltin.length && !marketInstalled.length && !localInstalled.length && <p className="muted">{keyword ? "没有匹配的已安装技能，换个关键词试试。" : "还没有已安装技能。可通过“市场浏览”安装，或“从本地添加技能”导入 SKILL.md。"}</p>}
+                        </>}
                       </div>;
                     })() : <><div className="skill-card-grid page-turn" key={marketSafePage}>{marketFiltered.slice((marketSafePage - 1) * marketPageSizeSafe, marketSafePage * marketPageSizeSafe).map((skill: any) => { const installed = localSkills.some((entry: any) => entry.marketId === skill.id); return <article className={`skill-card ${installed ? "installed" : ""}`} key={skill.name} onClick={() => setMarketPreview({
                               kind: "skill",
