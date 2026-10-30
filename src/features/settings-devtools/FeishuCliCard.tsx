@@ -14,6 +14,7 @@ import {
   ListTodo, LogIn, LogOut, Mail, MessageSquare, RefreshCw, Table2, Trash2, Video,
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { feishuPollOutcome } from "../../lib/feishu-card.mjs";
 
@@ -61,8 +62,9 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState<"" | "setup" | "reconfig" | "login" | "logout">("");
-  /* 10-30 用户：「提供卸载按键」——CLI 装在这里，卸载也放这里。两步确认，不用原生弹窗。 */
-  const [confirmUninstall, setConfirmUninstall] = useState(false);
+  /* 10-30 用户：「提供卸载按键」→「卸载做成弹窗」——确认放在**设置内二级弹窗**里。
+     ⛔ 不用 AppView 的 openAppConfirm：它挂在设置面板的遮罩层之下，弹出来用户看不见（实测截图空白）。 */
+  const [uninstallOpen, setUninstallOpen] = useState(false);
   const uninstalling = Boolean(runtimeUninstalling?.["feishu-cli"]);
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
@@ -111,6 +113,10 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
       setNotice?.("卸载失败", String((err as { message?: unknown })?.message ?? err));
     }
   };
+
+  /* 10-30 用户：「卸载做成弹窗」——点按钮先开确认弹窗（设置内二级弹窗，见下方 JSX），
+     弹窗里点「卸载」才真正执行；⛔ 不用原生 confirm（【191】）。 */
+  const askUninstall = () => setUninstallOpen(true);
 
   /* 兜底：浏览器那一步可能被用户放弃（或用户在另一台设备完成）。10 分钟后自动解除「等待中」，
      让按钮可以再点一次；状态仍以主进程为准。 */
@@ -187,6 +193,7 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
   const copy = () => { if (link) void copyTextToClipboard(link).then(() => setNotice?.("链接已复制")).catch(() => undefined); };
 
   return (
+    <>
     <section className="settings-section stack feishu-cli-card">
       <div className="feishu-cli-list">
         <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${installing ? "busy" : ""}`}>
@@ -200,20 +207,12 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
                 <span className="runtime-badge installed">已安装</span>
                 <button
                   type="button"
-                  className={`runtime-install feishu-cli-uninstall ${confirmUninstall ? "confirming" : ""}`}
+                  className="runtime-install feishu-cli-uninstall"
                   disabled={uninstalling}
-                  title="卸载 CLI（不动本机已登录的飞书凭据 ~/.lark-cli；需要时再装回来即可）"
-                  onClick={() => {
-                    if (!confirmUninstall) {
-                      setConfirmUninstall(true);
-                      window.setTimeout(() => setConfirmUninstall(false), 4000);
-                      return;
-                    }
-                    setConfirmUninstall(false);
-                    void uninstallCli();
-                  }}
+                  title="卸载 CLI（弹窗确认；不动本机已登录的飞书凭据 ~/.lark-cli，需要时再装回来即可）"
+                  onClick={askUninstall}
                 >
-                  {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />{confirmUninstall ? "确认卸载" : "卸载"}</>}
+                  {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                 </button>
               </>
               : <button type="button" className="primary-setting runtime-install" disabled={installing} onClick={() => installDevRuntime?.("feishu-cli")}>
@@ -308,5 +307,23 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
         </ul>
       </section>
     </section>
+
+    {/* 卸载确认弹窗（设置内二级弹窗，层级 900 压得住设置面板）。
+        ⛔ 不用 AppView 的 openAppConfirm：它挂在设置遮罩层之下，弹出来用户看不见（实测截图空白）。 */}
+    {uninstallOpen && (
+      <SettingsDialog title="卸载飞书 CLI" icon={<Trash2 size={15} />} hint="只删程序包，不删登录凭据" size="sm" onClose={() => setUninstallOpen(false)}>
+        <div className="settings-section stack feishu-uninstall-confirm">
+          <p className="settings-card-hint">
+            会删除本机安装的飞书 CLI 程序包（约 51 MB）；本机已登录的飞书凭据（<code>~/.lark-cli</code>）会保留，重装后无需重新登录。
+            模型侧的 <code>feishu_cli</code> 工具也会随之消失，需要时再装回来即可。
+          </p>
+          <div className="feishu-uninstall-actions">
+            <button type="button" className="secondary-setting" onClick={() => setUninstallOpen(false)}>取消</button>
+            <button type="button" className="primary-setting danger" onClick={() => { setUninstallOpen(false); void uninstallCli(); }}><Trash2 size={13} />卸载</button>
+          </div>
+        </div>
+      </SettingsDialog>
+    )}
+    </>
   );
 }
