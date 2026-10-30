@@ -6,6 +6,7 @@ import nodeFs from "node:fs";
 import { app } from "electron";
 import { toolchainEnv } from "./toolchain";
 import { ensureSessionWorkspace } from "./features/session-workspace";
+import { threadCwd } from "./thread-cwd";
 
 type RpcId = number | string;
 type Pending = { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
@@ -529,6 +530,14 @@ export class CodexServer extends EventEmitter {
       const threadId = String(started?.thread?.id ?? "");
       const cwd = String(started?.thread?.cwd ?? (params as any)?.cwd ?? "");
       if (threadId && cwd) {
+        /* ⛔⛔ 10-30（用户：「调度会话的记忆/归档删除都要跟主会话一样」）：
+           `threadCwd` 必须**在这一个入口**登记 —— 它原来只由渲染层那条响应拦截
+           （features/codex-ipc.ts 的 thread/start 分支）写入，而**主进程自己发的**
+           thread/start（子智能体 / 委派专家 / 团主理人 / 团成员 / 渠道机器人…）全都不经过它
+           ⇒ 这些会话的 cwd 永远为空 ⇒ boot 的 turn/started 不记文件快照、
+           记忆捕获（captureBuffers 的 cwd）直接静默跳过 —— 它们「跟主会话不一样」的根源之一。
+           ⛔ 用引擎回的真实 cwd（started.thread.cwd 优先），与 ensureSessionWorkspace 同源。 */
+        if (!threadCwd.get(threadId)) threadCwd.set(threadId, cwd);
         void ensureSessionWorkspace(app.getPath("userData"), threadId, cwd)
           .then((out) => console.log(out.ok
             ? `[sessionspace] 已建工作区：${threadId.slice(0, 8)} → ${out.dir}`

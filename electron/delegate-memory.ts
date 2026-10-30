@@ -73,14 +73,25 @@ export async function buildDelegateMemory(input: {
   originThreadId?: string;
   /** 10-05 角色独立记忆：被委派者的角色归属（子智能体 / 专家 / 团主 / 团成员） */
   role?: RoleRef;
-  /** ⛔ 被委派会话自己的 threadId（建会话后才有 ⇒ 可空）。为空时用发起方会话 id 当 session 归属。 */
+  /**
+   * ⛔⛔ 被委派会话**自己的** threadId —— 这层记忆的独立 id 就是它，和主会话同款。
+   * 三个调用点都拿得到（`thread/start` 早于本函数；团成员是常驻会话）。
+   * ⛔ 不许省、也不许拿发起方会话 id 顶替：那会让它读到主会话 / 主理人的私有层，
+   *   而它自己写下的记忆（`memory_write` 用的是真实 threadId）永远读不回来。
+   */
   threadId?: string;
+  /** 专家团 id：给了才有「团内」层（⛔ 非团成员不该有团内记忆）。团主 / 团成员都要传。 */
+  teamId?: string;
+  /** 调度深度（1 = 用户直接派出；嵌套调度递增）。只用于归属标记与排查。 */
+  depth?: number;
 }): Promise<DelegateMemory> {
   const workspace = resolveDelegateWorkspace({ workspace: input?.workspace, originThreadId: input?.originThreadId });
-  /* ⛔ 被委派会话自己的 threadId（建会话后才有 ⇒ 可空）。为空时退回发起方会话 id ——
-     委派是**建会话之前**拼注入文本的，那时还没有它。这不影响隔离：
-     它写会话记忆时用的是自己的真实 threadId（见 memory-fabric-tool 的句柄构造）。 */
-  const delegateThreadId = String(input?.threadId ?? input?.originThreadId ?? "").trim();
+  /* ⛔⛔ 10-30 修（用户：「要求跟主会话一样，自动生成对应的独立 ID」）：
+     原先这里写的是 `threadId ?? originThreadId`，而三个调用点谁都没传 threadId ⇒
+     读端永远落在**发起方**的私有命名空间（`teams-ipc` 那条更是空串，连 private 层都没有）。
+     现在：sessionId **只认自己的 threadId**；没有就退成"无私有层"（只注入 L0 + 项目 + 团内），
+     ⛔ 绝不借别人的私有层 —— 借来的记忆既不是它的，也会让它写的东西永远读不回来。 */
+  const delegateThreadId = String(input?.threadId ?? "").trim();
   const includeWorkspace = workspace ? await workspaceMemoryEnabled(workspace).catch(() => false) : false;
 
   let standingChars = 0;
@@ -117,7 +128,20 @@ export async function buildDelegateMemory(input: {
   let roleKey = "";
   try {
     const agent = agentOf(input?.role);
-    const handles = await getMemoryHandles({ sessionId: delegateThreadId, workspace: workspace || undefined, agent });
+    /* ⛔ 三层归属都按「这个被委派会话自己」来：private = 它的 threadId；team = 团 id（没有就不给层）；
+       project = 工作区（共享，by design）。`dispatch` 是**防回退的硬闸**：
+       万一哪天又有人把发起方 id 传进来，getMemoryHandles 会直接不给 private 层，
+       而不是悄悄让被委派会话去读主会话的私有记忆。 */
+    const teamId = String(input?.teamId ?? "").trim();
+    const handles = await getMemoryHandles({
+      sessionId: delegateThreadId,
+      workspace: workspace || undefined,
+      agent,
+      teamId: teamId || undefined,
+      dispatch: input?.originThreadId
+        ? { originThreadId: String(input.originThreadId), depth: Math.max(1, Number(input?.depth ?? 1) || 1), teamId: teamId || undefined }
+        : null,
+    });
     const built = await buildContext({ handles, query: input?.query, legacyRole: input?.role ?? null, workspace: workspace || undefined });
     if (built.text) {
       fabricSection = built.text;

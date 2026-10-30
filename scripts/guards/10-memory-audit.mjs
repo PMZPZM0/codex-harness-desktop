@@ -957,6 +957,46 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (teams.includes("${memberMemory.text}") ? ok : fail)("【125】teams:member-session 的记忆段追到出站文本上");
     (teams.includes("${invokedMemory.text}") ? ok : fail)("【125】teams:invoke-member（主理人→成员）同理");
 
+    /* ── 10-30 用户令「要求跟主会话一样，自动生成对应的独立 ID，归档和删除也要跟主会话一样」──
+       缺陷：sessionId 原先写的是 `threadId ?? originThreadId`，而三处调用点谁都不传 threadId
+       ⇒ 读端永远落在**发起方**的私有命名空间（teams-ipc 那条更是空串 ⇒ 连 private 层都没有），
+       而写端（memory_write）用的是真实 threadId ⇒ 自己写的东西永远读不回来。 */
+    const dmCode125 = readFileSync(dmPath, "utf8").replace(/\r/g, "");
+    (!/threadId\s*\?\?\s*input\?\.originThreadId/.test(dmCode125) ? ok : fail)(
+      "【125】sessionId 只认被委派会话自己的 threadId（⛔ 不许 `threadId ?? originThreadId` 借发起方的私有层）"
+    );
+    (/originThreadId\s*\n?\s*\?/.test(dmCode125) && /dispatch:/.test(dmCode125) ? ok : fail)(
+      "【125】委派时把 originThreadId 传成 dispatch（防回退硬闸），而不是当私有归属"
+    );
+    (/teamId:\s*teamId\s*\|\|\s*undefined/.test(dmCode125) ? ok : fail)(
+      "【125】团 id 透传给 getMemoryHandles（不传 = 团内记忆那一层永远是 null，死功能）"
+    );
+    const threadIdAtCallSites = [
+      ["features/delegation.ts", deleg],
+      ["features/teams-ipc.ts", teams],
+      ["team-invoke.ts", teams],
+    ].filter(([, src]) => /buildDelegateMemory\([\s\S]{0,400}?threadId:/.test(src)).map(([n]) => n);
+    (threadIdAtCallSites.length === 3 ? ok : fail)(
+      `【125】三条派活路径都传了真实 threadId（实得 ${threadIdAtCallSites.length}/3：${threadIdAtCallSites.join(" / ")}）`
+    );
+    /* ⛔ 归档/删除「跟主会话一样」的前提：cwd 必须有登记。原先只有渲染层那条响应拦截写 threadCwd
+       ⇒ 主进程自己发的 thread/start（子智能体/专家/团成员/渠道机器人）全缺 cwd
+       ⇒ 文件快照、记忆捕获、删会话时的记忆清理全部静默跳过。 */
+    const csSrc = readFileSync(join(ROOT, "electron", "codex-server.ts"), "utf8").replace(/\r/g, "");
+    (/threadCwd\.set\(threadId, cwd\)/.test(csSrc) ? ok : fail)(
+      "【125】thread/start 唯一钩子里登记 threadCwd（缺了 ⇒ 委派会话的捕获/文件追踪/删会话清记忆全跳过）"
+    );
+    const bootSrc125 = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8").replace(/\r/g, "");
+    (bootSrc125.includes("clearSessionPrivateMemory(") && bootSrc125.includes("archiveSessionMemory(") ? ok : fail)(
+      "【125】删会话时清私有记忆目录 + 归档条目（与主会话同一条处理链）"
+    );
+    /* 10-30：`dispatch` 参数此前是**空头承诺**（只声明类型，buildContext 根本没有这个入参）。
+       现在落实为硬闸，判据也要钉住它 —— 否则下次重构又会退回"注释声称能力"。 */
+    const fabricSrc125 = readFileSync(join(ROOT, "electron", "memory-fabric.ts"), "utf8").replace(/\r/g, "");
+    (/sessionId\s*!==\s*dispatchOrigin/.test(fabricSrc125) ? ok : fail)(
+      "【125】dispatch 是真闸不是注释（私有归属 == 发起方会话 ⇒ 不给 private 层）"
+    );
+
     /* 反向绊线：主会话那条注入路径不许被这次改动顺手改掉（标记/口径是两边共同契约） */
     const sendSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "02-seg", "send.tsx"), "utf8").replace(/\r/g, "");
     (sendSrc.includes("[Harness 相关记忆，仅供参考]") ? ok : fail)(

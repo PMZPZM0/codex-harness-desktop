@@ -102,7 +102,16 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
      ⛔ 必须排在 `beginRun` **之前**：beginRun 会广播 started（点亮成员头像 + 自动弹成员工作窗），
         记忆在云模式要发一次召回请求，排在后面就会出现"面板已打开但没有任何进展"的空窗。 */
   const invokedRole = { kind: "team-member" as const, id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` };
-  const invokedMemory = await buildDelegateMemory({ workspace: input.cwd, query: String(input.query ?? ""), originThreadId: String(input.leadThreadId ?? ""), role: invokedRole });
+  const invokedMemory = await buildDelegateMemory({
+    workspace: input.cwd,
+    query: String(input.query ?? ""),
+    originThreadId: String(input.leadThreadId ?? ""),
+    role: invokedRole,
+    /* ⛔⛔ 10-30：成员是**常驻会话**（memberThreadId 会复用）⇒ 传它自己，记忆才会跨轮累积；
+       原先只传 leadThreadId ⇒ 成员读的是**主理人**的私有层，自己写的那份永远读不回来。 */
+    threadId: String(memberThreadId ?? ""),
+    teamId: team.teamId,
+  });
   await noteRoleThread(app.getPath("userData"), String(memberThreadId), invokedRole, String(input.cwd ?? "")).catch(() => undefined);
 
   // 运行记录：开始时广播 started（界面点亮头像 + 自动打开成员工作弹窗），
