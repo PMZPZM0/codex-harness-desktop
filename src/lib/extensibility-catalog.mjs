@@ -187,7 +187,7 @@ export const EXTENSIBILITY_ENTRIES = [
     purpose: "设置面板每个页面：加一页 = 联合类型 + 注册表 + 导航一项 + 帮助总览一项，派发由注册表统一完成。",
     where: [
       "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx",
-      "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/",
+      "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx",
       "src/features/app-view/helpers/catalogs.ts（settingsNav）",
       "src/features/app-view/types.ts（SettingsPage）",
       "src/components/HelpDialog.tsx（OVERVIEW_GROUPS）",
@@ -533,10 +533,8 @@ export const EXTENSIBILITY_ENTRIES = [
     name: "收藏夹（用户素材集合）",
     purpose: "新增一类「可以攒起来复用」的素材（现在有片段 / 截图 / 文件 / 链接）：一种数据 + 多个消费面。",
     where: [
-      "electron/features/favorites/store.ts（归一化 / 原子写 / 批量删除只认显式 id）",
-      "electron/features/favorites/ipc.ts（favorites:* 通道）",
-      "src/features/settings-favorites/FavoritesSettingsSection.tsx（批量管理页）",
       "src/features/app-state/parts/part07/03-seg.tsx（镜像 + 插入/发送/加入记忆）",
+      "src/features/settings-favorites/FavoritesSettingsSection.tsx（批量管理页）",
     ],
     steps: [
       "store.ts 的 FavoriteKind 加新类型 + normalizeKind 放行",
