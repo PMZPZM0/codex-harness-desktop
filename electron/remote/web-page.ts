@@ -1092,7 +1092,7 @@ async function refreshTasks() {
     const r = await rpc({ type: "tasks" });
     const pending = (r.tasks || []).filter((task) => task.state !== "done");
     setTaskText(pending.length ? ("清单 · " + pending.length + " 项未完成 · " + pending[0].title) : "");
-  } catch { setTaskText(""); }
+  } catch { setTaskText("清单读取失败"); }
 }
 function setGoalText(text) {
   const el = document.getElementById("goalbar");
@@ -1108,7 +1108,7 @@ async function refreshGoal() {
     const status = String(r.status || "");
     const state = status === "paused" ? "（已暂停）" : status === "complete" || status === "completed" ? "（已完成）" : "";
     setGoalText(objective ? ("🎯 目标：" + objective + state) : "");
-  } catch { setGoalText(""); }
+  } catch { setGoalText("目标读取失败"); }
 }
 function openSkills() {
   closeSheet();
@@ -1411,6 +1411,14 @@ async function pollLoop() {
         }
         thinkEl.querySelector(".think-text").textContent += event.text;
         list.scrollTop = list.scrollHeight;
+      } else if (event.kind === "running") {
+        /* 电脑端发起的回合：手机同步成「运行中」，按钮变「停止」，否则用户既看不到在跑、也停不了 */
+        if (!turnRunning) { setRunning(true); showThinking(); }
+      } else if (event.kind === "error") {
+        /* 失败/被停的明确反馈：旧实现只发 done，手机端看起来什么都没发生 */
+        hideThinking();
+        setRunning(false);
+        push("system", String(event.text || "运行出错"));
       } else if (event.kind === "done") {
         hideThinking();
         setRunning(false);

@@ -1883,6 +1883,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("const secretMatches = (hash") && relaySrc.includes("同一台手机换了设备 ID") ? ok : fail)(
       "【139e】同一台手机换 deviceId 时按设备秘密迁移记录（⛔ 只认秘密，deviceId 只是标签）"
     );
+    const bootSrc139e = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+    /* 10-31 用户：「运行状态不同步电脑端、电脑端停了手机不同步、还停止不了、报错反馈没有」。
+       ⇒ 回合开始/结束都要推给手机：running（运行中）/ error（失败原因或已停止）/ done。 */
+    (bootSrc139e.includes("kind: \"running\"") && bootSrc139e.includes("kind: \"error\"") && bootSrc139e.includes("const endedThreadId = String(p?.threadId ?? eventThreadId(p) ?? \"\")") ? ok : fail)(
+      "【139e】手机同步运行状态：turn/started 推 running，aborted/failed 推 error（⛔ threadId 缺失要用 eventThreadId 兜底）"
+    );
+    (tunnelPage.includes("event.kind === \"running\"") && tunnelPage.includes("event.kind === \"error\"") && tunnelPage.includes("清单读取失败") ? ok : fail)(
+      "【139e】手机页处理 running/error（按钮切停止、失败有可见文案；清单/目标读取失败不再静默空白）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );
