@@ -108,6 +108,18 @@ export function storedReportsForThread(threadId: string): { turnId: string; file
     .map(([turnId, entry]) => ({ turnId, files: Array.isArray(entry?.files) ? entry.files : [] }));
 }
 
+/**
+ * **进行中**那一轮的改动文件（10-30 任务监控：回合还没结束也要能看见"本轮改了哪些文件"）。
+ * ⛔ 与 `storedReportsForThread` 的区别：那份要等回合结算落盘；这份是内存里的实时快照。
+ * ⛔ 只返回与该 threadId 相符的那一份，不做跨会话兜底。
+ */
+export function liveFilesOf(threadId: string): { turnId: string; files: unknown[] } | null {
+  const id = String(threadId ?? "");
+  if (!id) return null;
+  const hit = liveLastFiles.get(id);
+  return hit ? { turnId: String(hit.turnId ?? ""), files: Array.isArray(hit.files) ? hit.files : [] } : null;
+}
+
 /** 会话被删 ⇒ 落盘报告跟着走（两个删除入口都调用：boot 的 thread/deleted 通知 + codex-ipc 的
     渲染层删除——与 delegateRegistry.forget 同点，那两处注释点名"两处都要有"）。 */
 export function dropStoredReports(threadId: string): void {

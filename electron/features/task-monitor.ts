@@ -24,7 +24,9 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { distillSummarize } from "../main/03-turn-summary";
-import { storedReportsForThread } from "../turn-file-watch";
+import { liveFilesOf, storedReportsForThread } from "../turn-file-watch";
+/* 技能/插件的识别口径与**技能卡完全同源**（src/lib/tool-display.mjs）；⛔ 不要在这里另写正则。 */
+import { pluginOfItem, skillOfItem } from "../../src/lib/tool-display.mjs";
 
 export type MonitorArtifact = { path: string; added: number; deleted: number; status?: string };
 
@@ -44,6 +46,8 @@ export type MonitorTurn = {
   /** 建议是否正在生成 / 生成失败原因（前端据此显示状态，不用猜） */
   suggestionState: "idle" | "running" | "ready" | "failed";
   suggestionError?: string;
+  /** true = 这一轮还在跑（面板据此标「本轮进行中」；结算后落盘的记录没有这个字段） */
+  running?: boolean;
 };
 
 type MonitorFile = { threadId: string; turns: MonitorTurn[] };
@@ -55,7 +59,10 @@ const dirOf = () => path.join(app.getPath("userData"), "task-monitor");
 
 const store = new Map<string, MonitorTurn[]>();
 /** 正在累积的回合：key = `${threadId}:${turnId}` */
-const live = new Map<string, { threadId: string; turnId: string; skills: Set<string>; mcp: Set<string>; plugins: Set<string> }>();
+const live = new Map<string, Bucket>();
+
+/** 进行中回合的累积桶；reply = 本轮最后一条模型回复（给「自我改进建议」当上下文，不落盘）。 */
+type Bucket = { threadId: string; turnId: string; skills: Set<string>; mcp: Set<string>; plugins: Set<string>; reply: string };
 
 const log = (...args: unknown[]) => console.log("[monitor]", ...args);
 
@@ -86,39 +93,63 @@ async function load(threadId: string): Promise<MonitorTurn[]> {
   return turns;
 }
 
-const skillOfCommand = (text: string): string => {
-  const hit = /[\\/]skills[\\/]([^\\/"'\s]+)[\\/]SKILL\.md/i.exec(text);
-  return hit ? hit[1] : "";
-};
+/**
+ * 一条 item → 「它是技能 / MCP / 插件」的归类。
+ *
+ * ⛔⛔ 10-30 用户截图（「用了浏览器自动化，面板里一格都没有」）根因：这里原来只看
+ *   `item.command / filePath / path` 找 `…/skills/<名>/SKILL.md`。而引擎把绝大多数工具调用
+ *   报成 `mcpToolCall`（字段是 server / tool）或 `dynamicToolCall`（字段是 tool + arguments），
+ *   技能路径往往在 **arguments 里**（`run_skill_script` 之类）—— 于是整轮一条都认不出来。
+ * ⇒ 直接复用渲染层的单一真相源 `skillOfItem` / `pluginOfItem`（技能卡用的就是它们），
+ *   ⛔ 不在这里另写一套正则（两套口径必然漂移，用户看到的就是"卡上有、面板没有"）。
+ */
+function classifyItem(item: any): { skill: string; mcp: string; plugin: string } {
+  const type = String(item?.type ?? "");
+  const skillHit = (() => { try { return skillOfItem(item); } catch { return null; } })();
+  const pluginHit = (() => { try { return pluginOfItem(item); } catch { return null; } })();
+  const skill = skillHit ? String(skillHit.label || skillHit.skill || "").slice(0, 40) : "";
+  /* MCP：mcpToolCall 的真实字段是 server / tool（⛔ 不是 name）；也兼容模型侧 mcp__ 前缀。 */
+  const rawTool = String(item?.tool ?? item?.name ?? "");
+  const mcp = type === "mcpToolCall"
+    ? `${String(item?.server ?? "")} · ${String(item?.tool ?? "")}`.replace(/^ · | · $/g, "").slice(0, 60)
+    : /^mcp__/.test(rawTool) ? rawTool.replace(/^mcp__/, "").replace(/__/g, " · ").slice(0, 60) : "";
+  /* 插件 / 宿主能力：声明插件的路径命中，或网关工具（harness_*）。
+     ⛔ 网关工具的真实能力名在 `arguments.tool`（`harness_tools{ tool: "knowledge_search" }`）——
+     直接剥前缀只会得到 "tools"，等于没信息。 */
+  const argTool = String((item?.arguments as any)?.tool ?? (item?.arguments as any)?.name ?? "").trim();
+  const plugin = skill ? ""
+    : pluginHit ? String(pluginHit.plugin ?? "").slice(0, 40)
+      : /^harness_/.test(rawTool) ? (argTool || rawTool.replace(/^harness_/, "")).slice(0, 40) : "";
+  return { skill, mcp, plugin };
+}
 
 /**
  * 引擎事件钩子（boot 在 event 分发给渲染层之前调用；⛔ 同步、不 await）。
- * 只关心两类：item/*（累积工具使用）、turn/completed（结算 + 触发建议）。
+ * 关心两类：item/*（**逐条累积**，所以进行中的回合也能被面板读到）、turn 收尾（结算 + 触发建议）。
  */
 export function noteEngineEvent(method: string, params: any): void {
   try {
     const threadId = String(params?.threadId ?? "");
     if (!threadId) return;
-    const turnId = String(params?.turnId ?? params?.turn?.id ?? "");
+    /* ⛔ turnId 的取法与 boot / turn-end 同源：`turn.id` 优先，其次 turnId / id。
+       只认 turnId（原先的写法）会漏掉带 `turn:{id}` 的形态 ⇒ 整轮 bucket 建不起来。 */
+    const turnId = String(params?.turn?.id ?? params?.turnId ?? params?.id ?? "");
     if (!turnId) return;
     const key = `${threadId}:${turnId}`;
 
     if (method === "item/started" || method === "item/completed") {
       const item = params?.item ?? params;
-      const bucket = live.get(key) ?? { threadId, turnId, skills: new Set<string>(), mcp: new Set<string>(), plugins: new Set<string>() };
+      const bucket = live.get(key) ?? { threadId, turnId, skills: new Set<string>(), mcp: new Set<string>(), plugins: new Set<string>(), reply: "" };
       live.set(key, bucket);
-      const type = String(item?.type ?? "");
-      const name = String(item?.name ?? item?.toolName ?? item?.command ?? "");
-      /* 技能：引擎里没有"技能调用"事件，靠 `…/skills/<名>/SKILL.md` 字面特征认（与渲染层同一口径）。 */
-      const fromCmd = skillOfCommand(`${item?.command ?? ""} ${item?.filePath ?? ""} ${item?.path ?? ""}`);
-      if (fromCmd) bucket.skills.add(fromCmd);
-      /* MCP：工具名带 mcp__ 前缀，或引擎直接给 mcpToolCall 类型。 */
-      if (/^mcp__/.test(name) || /mcp/i.test(type)) {
-        const label = name.replace(/^mcp__/, "").replace(/__/g, " · ") || type;
-        if (label) bucket.mcp.add(label.slice(0, 60));
+      /* 本轮最终回复：建议生成要看着它自己说了什么来提，不能只给工具清单。 */
+      if (String(item?.type ?? "") === "agentMessage") {
+        const text = String(item?.text ?? "").trim();
+        if (text) bucket.reply = text.slice(0, 1200);
       }
-      /* 插件/宿主能力：声明插件的工具与网关工具统一归到这一类（用户口径："插件"）。 */
-      if (/^harness_/.test(name)) bucket.plugins.add(name.replace(/^harness_/, "").slice(0, 40));
+      const hit = classifyItem(item);
+      if (hit.skill) bucket.skills.add(hit.skill);
+      if (hit.mcp) bucket.mcp.add(hit.mcp);
+      if (hit.plugin) bucket.plugins.add(hit.plugin);
       return;
     }
 
@@ -132,16 +163,49 @@ export function noteEngineEvent(method: string, params: any): void {
   }
 }
 
+/**
+ * **进行中**那一轮的快照（10-30 用户：「完全没有跟当前会话联动」）。
+ *
+ * 原来只在 `turn/completed` 结算 ⇒ 正在跑的这一轮面板是 0 轮、无技能、无文件 —— 用户看到的就是「一个壳」。
+ * 现在读的时候把 live bucket 也交出去：技能/MCP/插件从逐条 item 累积，产物取文件追踪的实时快照。
+ * ⛔ 不做跨会话兜底：只挑与传入 threadId 相符的 bucket。
+ */
+function liveTurnOf(threadId: string): MonitorTurn | null {
+  let bucket: { threadId: string; turnId: string; skills: Set<string>; mcp: Set<string>; plugins: Set<string> } | null = null;
+  for (const entry of live.values()) if (entry.threadId === threadId) bucket = entry;   // Map 保持插入序 ⇒ 最后一条是最新回合
+  if (!bucket) return null;
+  const liveFiles = liveFilesOf(threadId);
+  const artifacts: MonitorArtifact[] = (liveFiles && (!liveFiles.turnId || liveFiles.turnId === bucket.turnId) ? liveFiles.files : [])
+    .map((f: any) => ({ path: String(f?.path ?? ""), added: Number(f?.added ?? 0) || 0, deleted: Number(f?.deleted ?? 0) || 0, status: String(f?.status ?? "") }))
+    .filter((f) => f.path);
+  return {
+    turnId: bucket.turnId,
+    at: Date.now(),
+    skills: [...bucket.skills].slice(0, 20),
+    mcp: [...bucket.mcp].slice(0, 20),
+    plugins: [...bucket.plugins].slice(0, 20),
+    artifacts,
+    suggestion: "",
+    suggestionState: "idle",
+    /* ⛔ 面板据此标「本轮进行中」：不标的话用户分不清"还没跑完"和"没采到"。 */
+    running: true,
+  };
+}
+
 /** 回合结算：把这一轮的使用情况 + 产物落成一条记录，并在「有动作」时异步生成建议。 */
-async function settleTurn(threadId: string, turnId: string, bucket?: { skills: Set<string>; mcp: Set<string>; plugins: Set<string> }) {
+async function settleTurn(threadId: string, turnId: string, bucket?: Bucket) {
   const turns = await load(threadId);
   if (turns.some((t) => t.turnId === turnId)) return;      // 幂等：重放事件不重复记
 
-  /* 产物：走既有真相源（turn-file-watch 的落盘报告），⛔ 不在这里重复扫盘。 */
+  /* 产物：走既有真相源（turn-file-watch 的落盘报告），⛔ 不在这里重复扫盘。
+     ⛔ 10-30：报告落盘有延迟（或本机没开文件追踪）时，退回**这一轮的实时快照** ——
+     否则用户看到"本轮改了 13 个文件、面板里 0 个"。只在 turnId 相同时才用，绝不张冠李戴。 */
   let artifacts: MonitorArtifact[] = [];
   try {
     const report = storedReportsForThread(threadId).find((r) => r.turnId === turnId);
-    artifacts = (report?.files ?? []).map((f: any) => ({
+    const liveShot = report ? null : liveFilesOf(threadId);
+    const files = report?.files ?? (liveShot && (!liveShot.turnId || liveShot.turnId === turnId) ? liveShot.files : []);
+    artifacts = files.map((f: any) => ({
       path: String(f?.path ?? ""),
       added: Number(f?.added ?? 0) || 0,
       deleted: Number(f?.deleted ?? 0) || 0,
@@ -165,11 +229,13 @@ async function settleTurn(threadId: string, turnId: string, bucket?: { skills: S
 
   /* ⛔ 纯聊天轮（没工具、没改文件）不生成 —— 用户要的是"改进建议"，没有动作就没有可改进的动作面。 */
   const acted = record.skills.length + record.mcp.length + record.plugins.length + record.artifacts.length > 0;
-  if (acted) void generateSuggestion(threadId, turnId);
+  /* ⛔ 10-30 用户：「让 codex 在回合快结束时自己输出」⇒ 每轮（有动作时）自动复盘，
+     并把本轮回复一起交给它，产出才有针对性（原来只给工具清单，写出来必然是模板话）。 */
+  if (acted) void generateSuggestion(threadId, turnId, String(bucket?.reply ?? ""));
 }
 
 /** 用**本会话的模型**生成 1~3 条可执行的改进建议（复用记忆蒸馏的一次性内部会话通道）。 */
-async function generateSuggestion(threadId: string, turnId: string) {
+async function generateSuggestion(threadId: string, turnId: string, reply = "") {
   const turns = await load(threadId);
   const target = turns.find((t) => t.turnId === turnId);
   if (!target || target.suggestionState === "running") return;
@@ -181,14 +247,20 @@ async function generateSuggestion(threadId: string, turnId: string) {
     `MCP：${target.mcp.join("、") || "（未调用）"}`,
     `插件/宿主能力：${target.plugins.join("、") || "（未调用）"}`,
     `改动文件：${target.artifacts.slice(0, 20).map((a) => `${a.path} +${a.added}/-${a.deleted}`).join("、") || "（无）"}`,
-  ].join("\n");
+    reply ? `本轮我的回复（节选）：${reply.slice(0, 700)}` : "",
+  ].filter(Boolean).join("\n");
 
   try {
     const text = await distillSummarize(
       "你是这个桌面助手的内省模块。基于「这一轮干了什么」，给出 1~3 条**可执行的自我改进建议**。"
       + "要求：每条一行、以「- 」开头、不超过 40 字、针对具体动作（流程/命令/验证/协作），"
-      + "不要复述做了什么，不要客套，不要编号说明。只输出这几行。",
+      + "不要复述做了什么，不要客套，不要编号说明。只输出这几行。"
+      /* ⛔ 配套 self-review 的四个检查面（10-30 用户：「工具配套好」）：不给检查面，模型只会写空话。 */
+      + "\n重点看这四处：① 该验证却没验证（改了没跑/没看输出）；② 同一处反复失败才改对；"
+      + "③ 该同步/该提交的改动留在工作区；④ 对用户原话的理解有偏差（要返工的那种）。",
       digest,
+      /* ⛔ 带上会话 id：没有自定义模型时用**本会话自己的模型**（否则官方供应商用户永远暂无建议）。 */
+      { threadId },
     );
     const clean = String(text || "").split(/\r?\n/).map((line) => line.trim())
       .filter((line) => line && !/^```/.test(line))
@@ -213,8 +285,12 @@ export const taskMonitorFeature = defineFeature<null>({
     ipcHost.handle("monitor:read", async (_event: unknown, threadId?: string) => {
       const id = String(threadId ?? "").trim();
       /* ⛔ 按会话独立：没有 threadId 就给空表，绝不"猜一个最近的"。 */
-      if (!id) return { threadId: "", turns: [] as MonitorTurn[] };
-      return { threadId: id, turns: await load(id) };
+      if (!id) return { threadId: "", turns: [] as MonitorTurn[], ongoingTurnId: "" };
+      const settled = await load(id);
+      /* 进行中那一轮也要给出去（用户：「完全没有跟当前会话联动」）—— 已结算的不重复追加。 */
+      const ongoing = liveTurnOf(id);
+      const turns = ongoing && !settled.some((t) => t.turnId === ongoing.turnId) ? [...settled, ongoing] : settled;
+      return { threadId: id, turns, ongoingTurnId: ongoing?.turnId ?? "" };
     });
 
     ipcHost.handle("monitor:save-suggestion", async (_event: unknown, input?: { threadId?: string; turnId?: string; text?: string }) => {

@@ -25,6 +25,7 @@ import { enrichThreadWithRolloutToolsAsync, listRolloutThreadsAsync, syncToolSur
 import { markMissingRollouts, mergeThreadList } from "../tools/session-tools";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 import { dropStoredReports, storedReportsForThread } from "../turn-file-watch";
+import { noteThreadModel } from "../thread-model";
 import { dropStoredCompactions, storedCompactionsForThread } from "../compaction-watch";
 import { rendererActiveByWindow } from "./renderer-fuse";
 import { app } from "electron";
@@ -70,6 +71,16 @@ export const codexFeature = defineFeature<null>({
       //   用引擎侧真相兜底：仍有活动回合 ⇒ 拒绝，改走 queue/add 或 turn/steer。
       if (method === "turn/start") {
         const guardThreadId = String((params as any)?.threadId ?? "");
+        /* 10-30：把这一轮**真实在用**的模型记下来（宿主侧"借本会话模型"的功能靠它）。
+           ⛔ 用官方供应商的用户没有自定义模型，那些功能原先一律抛「尚未配置自定义模型」。 */
+        const usedModel = String((params as any)?.model ?? "");
+        if (guardThreadId && usedModel) {
+          noteThreadModel(guardThreadId, {
+            model: usedModel,
+            provider: String((params as any)?.modelProvider ?? "openai"),
+            config: (params as any)?.config,
+          });
+        }
         if (guardThreadId && [...engineActiveTurnIds.values()].includes(guardThreadId)) {
           console.warn(`[turn/start] 拒绝：会话 ${guardThreadId.slice(0, 8)} 仍有活动回合在跑（引擎侧记账），已阻止打断`);
           throw new Error("该会话仍有任务在运行（引擎侧确认），本次发送未执行以免打断它。等它结束，或点停止后再发。");

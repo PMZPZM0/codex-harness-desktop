@@ -102,6 +102,7 @@
       "scripts/lib/*.cjs",
       "electron/declared-plugins/**",
       "build/icon.png",
+      "public/icon.png",
       "build/icon.ico",
       "!dist-electron/**/*.tsbuildinfo",
       "build/tray.png",

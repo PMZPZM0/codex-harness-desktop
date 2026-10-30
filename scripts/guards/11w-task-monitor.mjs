@@ -95,6 +95,55 @@ const tabs = [...rail.matchAll(/className=\{`panel-tab[^`]*`\} title="([^"]+)"/g
   "barrel 不再导出 sendPrefilled（⛔ 导出会诱使调用方把合并对象当 bag 传 —— 缺字段、静默失败）"
 );
 
+/* ── 10-30 用户两张截图：「技能还显示两行」+「监控面板完全没有跟当前会话联动 / 光做个壳」──
+   三处根因，逐条钉住（都是"不报错、只是永远空"的形态，最容易被当成"还没做"）： */
+const skillCard = read("src/features/skill-usage/SkillUsageCard.tsx");
+const summarySrc = read("electron/main/03-turn-summary.ts");
+const codexIpcSrc = read("electron/features/codex-ipc.ts");
+
+/* ① 采集口径必须与技能卡同源：原先只看 item.command 找 `…/skills/<名>/SKILL.md`，
+      而引擎把工具调用报成 mcpToolCall（server/tool）或 dynamicToolCall（tool + arguments）
+      ⇒ 整轮一条技能都认不出来，面板永远是空的。 */
+(/import \{ pluginOfItem, skillOfItem \} from "\.\.\/\.\.\/src\/lib\/tool-display\.mjs"/.test(svc) ? ok : fail)(
+  "采集复用渲染层同一份 skillOfItem / pluginOfItem（⛔ 另写一套正则 = 卡上有、面板没有）"
+);
+(!/const skillOfCommand/.test(svc) ? ok : fail)("删掉了那份只看 command 的窄匹配（留着就会被误用）");
+(/type === "mcpToolCall"[\s\S]{0,160}?item\?\.server/.test(svc) ? ok : fail)(
+  "MCP 取 server / tool 两个真实字段（⛔ 不是 name）"
+);
+(/arguments?\)?\.tool \?\?|argTool/.test(svc) ? ok : fail)(
+  "网关工具（harness_*）取 arguments.tool 作能力名（直接剥前缀只会得到 \"tools\"）"
+);
+
+/* ② 进行中也要能读到：原来只在 turn/completed 结算 ⇒ 正在跑的这一轮面板 0 轮、无技能、无文件。 */
+(/function liveTurnOf\(/.test(svc) && /ongoingTurnId/.test(svc) ? ok : fail)(
+  "monitor:read 把**进行中**那一轮一起返回（ongoingTurnId）"
+);
+(/liveFilesOf/.test(svc) ? ok : fail)("进行中/未落盘的产物走 liveFilesOf（⛔ 只等落盘报告 = 本轮 0 文件）");
+(/本轮进行中/.test(panel) ? ok : fail)("面板标「本轮进行中」（不标就分不清「没跑完」和「没采到」）");
+
+/* ③ 建议要**每轮结束自己产出**，且拿得到本轮的回复与模型。 */
+(/item\?\.type \?\? ""\) === "agentMessage"|=== "agentMessage"/.test(svc) ? ok : fail)(
+  "采集本轮最终回复（复盘要看着它自己说了什么，不能只给工具清单）"
+);
+(/generateSuggestion\(threadId, turnId, String\(bucket\?\.reply/.test(svc) ? ok : fail)(
+  "回合结算时**自动**触发复盘，并带上本轮回复"
+);
+(/threadModelOf/.test(summarySrc) && /sessionModel\?\.model/.test(summarySrc) ? ok : fail)(
+  "复盘通道在没有自定义模型时退回本会话模型（⛔ 否则官方供应商用户永远「暂无建议」）"
+);
+(/noteThreadModel\(/.test(codexIpcSrc) ? ok : fail)(
+  "turn/start 时记录本会话真实使用的模型（thread-model 单点）"
+);
+(/让 Codex 评估/.test(panel) && /app\.sendPrefilled/.test(panel) ? ok : fail)(
+  "面板有「让 Codex 评估」：把本轮事实发进本会话，由 Codex 用自己的上下文复盘"
+);
+
+/* ④ 技能卡收成一行（用户：「技能还显示两行，不美观」）。 */
+(!/subtitle=\{description \|\| action/.test(skillCard) ? ok : fail)(
+  "技能卡不再传 subtitle（表头一行：已使用技能 <中文名>；动作留在右侧 info）"
+);
+
 console.log("");
 console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
 process.exit(failCount === 0 ? 0 : 1);

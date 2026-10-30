@@ -58,14 +58,15 @@ export function SkillUsageCard({ item, waitingForApproval, onOpenFile }: {
     : running ? "正在使用技能"
       : failed ? "使用技能失败"
         : "已使用技能";
-  /* 卡片骨架复用 `ActionCard`（与工具卡同一套折叠行为 / 箭头 / 状态图标 / 无障碍），
-     这里只借用它的**两行表头**（10-29 给 ActionCard 加的 `subtitle`），不手抄一份卡片壳。 */
+  /* 卡片骨架复用 `ActionCard`（与工具卡同一套折叠行为 / 箭头 / 状态图标 / 无障碍）。
+     ⛔ 10-30 用户：「技能还显示两行，不美观」⇒ **不再传 subtitle**：表头收成一行
+     「已使用技能 <中文名>」，动作行（运行技能脚本 x / 读取技能说明）留在右侧 info；
+     技能说明本来就常驻展开体第一段，不必在表头再占一行。 */
   return (
     <ActionCard
       icon={<Sparkles size={13} />}
       verb={verb}
       target={<code>{skill.label}</code>}
-      subtitle={description || action || undefined}
       status={status}
       info={(
         <>
