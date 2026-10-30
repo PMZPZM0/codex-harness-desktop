@@ -87,7 +87,8 @@ export function ExtensibilitySettingsSection(props: ExtensibilitySettingsSection
         const hit = q ? all.filter((e) => matches(e, q)) : all;
         return {
           group, all, hit,
-          preview: hit.slice(0, 3).map((e) => e.name).join(" · ") || "（本类暂无匹配）",
+          /* 两列卡只有一行宽度：列 2 个名字 + 「等 N 项」，比截断半个句子可读得多。 */
+          preview: hit.length ? `${hit.slice(0, 3).map((e) => e.name).join(" · ")}${hit.length > 3 ? ` 等 ${hit.length} 项` : ""}` : "（本类暂无匹配）",
           stat: q ? `${hit.length} / ${all.length} 命中` : `${all.length} 个拓展点`,
         };
       })
@@ -122,15 +123,15 @@ export function ExtensibilitySettingsSection(props: ExtensibilitySettingsSection
           <input
             type="search"
             value={query}
-            placeholder="搜索：IPC / 主题 / 技能 / 守卫 …（按分类筛选）"
+            placeholder="搜索：IPC / 主题 / 技能 / 守卫 …"
             onChange={(e) => setQuery(e.target.value)}
           />
           {query ? <button type="button" onClick={() => setQuery("")}>清除</button> : null}
         </label>
 
         <p className="settings-card-hint">
-          按分类看：点卡片打开该类下的全部拓展点（共 {EXTENSIBILITY_ENTRIES.length} 个拓展点 / {EXTENSIBILITY_GROUPS.length} 个分类），
-          明细在弹窗里，一类一页。
+          点分类卡查看该类下的拓展点（共 {EXTENSIBILITY_ENTRIES.length} 条 / {EXTENSIBILITY_GROUPS.length} 类）。
+
         </p>
 
         <div className="settings-cards" data-count={cards.length}>
