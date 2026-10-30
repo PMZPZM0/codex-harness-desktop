@@ -25,7 +25,8 @@ export type SettingsDialogProps = {
   /** 标题栏左侧图标（与一级卡片同一枚，保证"点哪张卡就进哪一页"的视觉连续性） */
   icon?: ReactNode;
   hint?: string;
-  size?: "md" | "lg";
+  /** sm = 确认类（宽度 520、高度随内容）；md/lg = 面板类（固定高度，内部滚动） */
+  size?: "sm" | "md" | "lg";
   onClose: () => void;
   children: ReactNode;
 };
