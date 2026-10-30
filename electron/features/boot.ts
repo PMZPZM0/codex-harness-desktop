@@ -50,7 +50,10 @@ import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPer
 
 import { repairSkillBomScan } from "../skills-market";
 import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } from "../main/09-agents-plugins";
-import { augmentedPath, nuphusBinary } from "../toolchain";
+import { augmentedPath, existingToolPath, nuphusBinary, toolsRoot } from "../toolchain";
+import { ensurePonytailPlugin } from "../ponytail-plugin";
+import { healPonytailInstall } from "../ponytail-heal";
+import { getPonytailMode } from "../conventions/ponytail-mode";
 import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
 import { startWalCheckpointWatch, trimEngineLogs } from "../sqlite-wal";
@@ -1198,7 +1201,22 @@ export async function bootApp() {
       if (healed.healed) console.log(`[boot] ${healed.message}（来源：${healed.from}）`);
       else if (healed.message !== "引擎在位") console.warn(`[boot] ${healed.message}`);
     } catch (error) { console.warn("[boot] 引擎自愈失败：", error); }
+    /* ponytail 自愈（10-30 事故）：引擎 0.16x 要求 marketplace 目录带清单文件，旧布局被丢 ⇒
+       插件/技能/钩子一起消失、控制台「写代码模式」开关点了没反应。这里在引擎启动前补齐
+       「带清单的本地市场 + 注册段」；引擎自己会扫描加载（无需重启）。
+       ⛔ 只在用户**本来就要它**（写代码模式 ≠ off）时执行 —— 不给没装的人偷偷装。 */
+    let ponytailNeedsHeal = false;
+    try {
+      if ((await getPonytailMode()) !== "off") {
+        const bundled = existingToolPath("ponytail-plugin") || path.join(toolsRoot(), "ponytail-plugin");
+        // 先把「带清单的本地市场 + 注册段」落盘（必须早于 server.start：引擎启动时扫市场）
+        await ensurePonytailPlugin(codexHome, bundled);
+        ponytailNeedsHeal = true;
+      }
+    } catch (error) { console.warn("[boot] ponytail 自愈检查失败：", error); }
     await server.start();
+    // 引擎起来后再补注册 + 按 currentHash 信任钩子（失败不阻塞启动）
+    if (ponytailNeedsHeal) void healPonytailInstall().catch((error) => console.warn("[boot] ponytail 自愈失败：", error));
   } catch (error) {
     broadcastCodexEvent({ kind: "status", status: "error", message: String(error) });
   }
