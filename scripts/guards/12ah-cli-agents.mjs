@@ -12,7 +12,7 @@
 //   c) **声明了能力却没接线**：目录 / 闸门 / 工具描述 / @ 分组 / 工具 schema 五处，少一处就是
 //      "面板上看得见、模型调不到"或反过来。
 import { createRequire } from "node:module";
-import { readFileSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -405,7 +405,10 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   {
     const devtoolsSrc = readFileSync(join(ROOT, "src/features/settings-devtools/DevtoolsSettingsSection.tsx"), "utf8");
     const hubSrc = readFileSync(join(ROOT, "src/features/settings-agentteam/AgentTeamSettingsSection.tsx"), "utf8");
-    const pagesSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/automation-agents.tsx"), "utf8");
+    /* 页面注册表位置按仓库形态二选一（主仓已拆到 pages/automation-agents.tsx；副本仍是 00-settings-registry）。 */
+    const pagesPath = join(ROOT, "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/automation-agents.tsx");
+    const registryPath = join(ROOT, "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx");
+    const pagesSrc = existsSync(pagesPath) ? readFileSync(pagesPath, "utf8") : readFileSync(registryPath, "utf8");
     ok(!/CliAgentsPanel/.test(devtoolsSrc) && !/"cli-agents"/.test(devtoolsSrc),
       "开发工具页已移除 CLI 智能体入口（不再有第二处）");
     ok(/setSettingsPage\("cli-agents"\)/.test(hubSrc) && /CLI 智能体/.test(hubSrc),
