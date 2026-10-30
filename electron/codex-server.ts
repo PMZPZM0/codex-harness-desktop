@@ -64,6 +64,16 @@ function clearEnginePid() {
 
 /** 该 pid 仍是 codex 引擎吗（防 PID 复用误杀无关进程）：只认镜像名。 */
 function isCodexProcess(pid: number): boolean {
+  if (process.platform === "darwin") {
+    /* ⛔⛔ mac 适配（10-30 审计）：darwin **没有 /proc**（下面那条 Linux 分支在 mac 上读文件恒抛
+       ⇒ 一律返回 false）⇒「清理上次遗留的引擎」在 mac 上是**死代码**，孤儿引擎不会被杀，
+       会话 writer 冲突（`thread-store conflict: already has an active writer`）照旧复发。
+       macOS 用 `ps -p <pid> -o comm=`：comm 是**可执行文件全路径**，取 basename 再比 codex。 */
+    try {
+      const out = spawnSync("ps", ["-p", String(pid), "-o", "comm="], { encoding: "utf8", timeout: 5_000 });
+      return /^codex/i.test(path.basename(String(out.stdout ?? "").trim()));
+    } catch { return false; }
+  }
   if (process.platform !== "win32") {
     try { return /^codex/i.test(nodeFs.readFileSync(`/proc/${pid}/comm`, "utf8").trim()); } catch { return false; }
   }

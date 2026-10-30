@@ -45,6 +45,17 @@ const SKIP_DIRS = new Set([
   "site-packages", "bower_components", ".pnpm-store", ".yarn", "logs", "temp", "tmp",
 ]);
 
+/**
+ * 按**绝对路径**跳过的重目录（mac）：这些目录深且全是系统/应用内容，扫进去只会吃预算。
+ * ⛔ 不并进 `SKIP_DIRS` 按名字跳 —— 项目里叫 `library` 的源码目录会被一起误杀
+ *   （`~/Library` 才是要跳的那个，名字判据分不开两者）。
+ */
+const HEAVY_ABS = new Set(
+  process.platform === "darwin"
+    ? [path.join(os.homedir(), "Library"), path.join(os.homedir(), "Applications"), "/System", "/private"]
+    : [],
+);
+
 const cache = new Map<string, { at: number; hit: string }>();
 /** 同一次查找并发时共用一个 Promise（连点多张卡不重复扫盘）。 */
 const inflight = new Map<string, Promise<string>>();
@@ -105,7 +116,8 @@ async function scanRoot(
       for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-          if (!SKIP_DIRS.has(entry.name.toLowerCase())) next.push(full);
+          const skip = SKIP_DIRS.has(entry.name.toLowerCase()) || HEAVY_ABS.has(full);
+          if (!skip) next.push(full);
           continue;
         }
         if (!entry.isFile() || entry.name.toLowerCase() !== base) continue;
@@ -137,13 +149,31 @@ function buildRoots(abs: string): Array<{ dir: string; depth: number; budgetMs: 
     out.push({ dir: value, depth, budgetMs, dirs });
   };
   if (abs) {
-    const root = path.parse(abs).root;
+    const root = scanRootOf(abs);
     if (root) push(root, 6, 1200, 12_000);
   }
   for (const cwd of threadCwd.values()) if (cwd) push(cwd, 10, 500, 6_000);
   const home = process.env.USERPROFILE || process.env.HOME || os.homedir();
   if (home) push(home, 4, 600, 6_000);
   return out;
+}
+
+/**
+ * 「目标盘根」的平台化取法。
+ *
+ * ⛔⛔ mac 适配（10-30 审计）：POSIX 的 `path.parse(x).root` **恒为 `/`** —— 直接拿它当盘根，
+ *   等于用 1200ms 预算去扫整个文件系统（/System、/private、/Library…），几乎必然扫不到目标，
+ *   还把预算烧光（Windows 的 `D:\` 是一块盘的边界，`/` 不是）。mac 上退到「头两段」才是
+ *   盘粒度：`/Users/<用户名>`、`/Volumes/<卷名>`；其余（`/Applications`、`/opt`…）取第一段。
+ */
+function scanRootOf(abs: string): string {
+  const parsed = path.parse(abs);
+  if (!parsed.root) return "";
+  if (process.platform === "win32") return parsed.root;
+  const segs = abs.slice(parsed.root.length).split(path.sep).filter(Boolean);
+  if (!segs.length) return parsed.root;
+  const twoLevel = segs[0] === "Users" || segs[0] === "Volumes" || segs[0] === "private";
+  return parsed.root + segs.slice(0, twoLevel ? 2 : 1).join(path.sep);
 }
 
 /**

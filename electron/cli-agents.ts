@@ -299,6 +299,17 @@ function locateBinary(bin: string): Promise<string> {
   });
 }
 
+/**
+ * 「这个可执行在不在 PATH 上」的唯一实现。
+ *
+ * ⛔⛔ 平台分叉只许发生在这里（10-30 mac 审计）：`where` 是 Windows 专有命令，mac/linux 上
+ *   一律是 `which`。写死 `where` 的症状极隐蔽 —— 不报错，只是**永远返回「未检测到」**
+ *   （boss 群「本机 CLI agent」名单在 mac 上会整列判成没装，拉人直接被拒）。
+ */
+export async function binOnPath(bin: string): Promise<boolean> {
+  return Boolean(await locateBinary(bin));
+}
+
 /** 尽力取版本号（取不到就空串 —— 装没装由 PATH 决定，不靠版本号判断）。 */
 function probeVersion(file: string): Promise<string> {
   return new Promise((resolve) => {
