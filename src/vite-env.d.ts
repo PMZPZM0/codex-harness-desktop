@@ -575,7 +575,6 @@ interface Window {
     /* 手动升级：运行官方 ego-browser upgrade（可能下载数百 MB） */
     egoUpgrade(): Promise<{ ok: boolean; output: string; before: string; after: string; changed: boolean }>;
     browserPopout(url: string): Promise<{ ok: boolean }>;
-    describeImage(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }): Promise<{ text: string }>;
     /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
     generateImage(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }): Promise<{ path: string; url: string }>;
     probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }): Promise<{ models: string[] }>;

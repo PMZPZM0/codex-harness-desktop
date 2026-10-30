@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // Codex Harness 内置媒体插件命令行助手：
 //   node harness-media.mjs image  "提示词"            → 生成图片，输出 JSON { path, url }（path=本地持久文件）
-//   node harness-media.mjs vision "图片URL或dataURL" ["关注点"] → 视觉描述，输出 JSON { text }
 // 配置读 userData/builtin-plugins.json（与「插件 → 内置插件」页同一份）。
 // 未配置对应插件时输出错误 JSON 并以非零码退出，引擎据此向用户说明。
 // 设计动机：dynamicTools 只在 thread/start 时注入（老会话没有），命令行助手
 // 让所有会话（新/老）都能真实调用，developer_instructions 负责告知用法。
+// ⛔ 10-30 撤 `vision` 子命令：视觉辅助插件整体移除（describe_image 工具同轮拆），不要加回。
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,16 +16,16 @@ const configPath = path.join(userData, "builtin-plugins.json");
 
 // ⛔ 密钥来源（10-13 体检 P0-1 之后）：**优先引擎进程的环境变量**。
 //   配置文件里现在只存 safeStorage 密文（`encryptedKey`）——本 CLI 是纯 Node，解不开它 ⇒
-//   主进程把明文密钥注入**引擎进程 env**（`CODEX_HARNESS_IMAGE_API_KEY` /
-//   `CODEX_HARNESS_VISION_API_KEY`，见 `electron/main/09-agents-plugins.ts` 的 builtinPluginEnv），
+//   主进程把明文密钥注入**引擎进程 env**（`CODEX_HARNESS_IMAGE_API_KEY`，
+//   见 `electron/main/09-agents-plugins.ts` 的 builtinPluginEnv），
 //   我们作为它的子进程继承得到。文件里的明文 `apiKey` 仍兼容读取
 //   （老版本、以及 `scripts/verify-image-plugin.mjs` 的端到端夹具都写它），两个来源取先有的那个。
-const ENV_KEY = { image: "CODEX_HARNESS_IMAGE_API_KEY", vision: "CODEX_HARNESS_VISION_API_KEY" };
+const ENV_KEY = { image: "CODEX_HARNESS_IMAGE_API_KEY" };
 function loadConfig() {
   let raw = {};
   try { raw = JSON.parse(fs.readFileSync(configPath, "utf8")); } catch { raw = {}; }
   const out = {};
-  for (const kind of ["image", "vision"]) {
+  for (const kind of ["image"]) {
     const conf = raw?.[kind];
     if (!conf || typeof conf !== "object") continue;
     out[kind] = { ...conf, apiKey: process.env[ENV_KEY[kind]] || conf.apiKey || "" };
@@ -159,45 +159,7 @@ async function main() {
       : { url: /^https?:/i.test(url) ? url : "(内联 data URL，已落盘见 path)", ...(warning ? { warning } : {}) }));
     return;
   }
-  if (kind === "vision") {
-    const [imageUrl, ...promptParts] = rest;
-    const prompt = promptParts.join(" ").trim() || readStdinText().trim() || "";
-    const conf = cfg.vision;
-    if (!conf || conf.enabled === false || !conf.baseUrl || !conf.apiKey || !conf.model) {
-      console.error(JSON.stringify({ error: "视觉辅助插件未配置：请到 设置 → 插件 → 内置插件 完成「视觉辅助插件」配置" }));
-      process.exit(2);
-    }
-    const target = (imageUrl ?? "").trim() || readStdinText().trim();
-    if (!target) { console.error(JSON.stringify({ error: "缺少图片地址或 data URL" })); process.exit(2); }
-    // 本地路径自动转 data URL：引擎消息里的图片是本地文件路径（不是 URL），模型照用法
-    // 原样传过来会 400「invalid image」。路径存在就直接读文件转 base64，URL/dataURL 原样透传。
-    let imageSource = target;
-    if (!/^(https?:|data:)/i.test(target)) {
-      const candidate = path.isAbsolute(target) ? target : path.resolve(target);
-      if (!fs.existsSync(candidate)) {
-        console.error(JSON.stringify({ error: "图片本地文件不存在：" + candidate }));
-        process.exit(1);
-      }
-      const mime = /\.jpe?g$/i.test(candidate) ? "image/jpeg" : /\.gif$/i.test(candidate) ? "image/gif" : /\.webp$/i.test(candidate) ? "image/webp" : "image/png";
-      imageSource = `data:${mime};base64,` + fs.readFileSync(candidate).toString("base64");
-    }
-    const base = conf.baseUrl.trim().replace(/\/$/, "");
-    const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
-    const content = [
-      { type: "text", text: prompt || "请详细描述这张图片的内容，包括画面主体、场景、文字、布局等，用中文回答。" },
-      { type: "image_url", image_url: { url: imageSource } },
-    ];
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + conf.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: conf.model, messages: [{ role: "user", content }] }),
-    });
-    if (!response.ok) { console.error(JSON.stringify({ error: "识图失败 HTTP " + response.status })); process.exit(1); }
-    const data = await response.json();
-    console.log(JSON.stringify({ text: data?.choices?.[0]?.message?.content ?? "" }));
-    return;
-  }
-  console.error(JSON.stringify({ error: "用法: harness-media.mjs image|vision <参数>（详情见 developer_instructions）" }));
+  console.error(JSON.stringify({ error: "用法: harness-media.mjs image <参数>（详情见 developer_instructions）" }));
   process.exit(2);
 }
 

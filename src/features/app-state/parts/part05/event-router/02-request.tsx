@@ -444,19 +444,6 @@ ${st.hint}`);
               } else if (event.params?.tool === "team_phase_invoke") {
                 // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回
                 await bag.invokeTeamPhase(Array.isArray(args.tasks) ? args.tasks : [], String(event.params?.threadId ?? ""), event.id!);
-              } else if (event.params?.tool === "describe_image") {
-                const cfg: any = await window.codex.readBuiltinPlugins().catch(() => null);
-                const c = cfg?.vision;
-                if (!c?.baseUrl || !c?.apiKey || !c?.model) {
-                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "视觉辅助插件未配置：请到 设置 → 插件 → 内置插件 填写视觉模型 API 地址、密钥和模型。" }], success: false });
-                } else {
-                  try {
-                    const result = await window.codex.describeImage({ baseUrl: c.baseUrl, apiKey: c.apiKey, model: c.model, imageUrl: String(args.imageUrl ?? ""), prompt: args.prompt ? String(args.prompt) : undefined });
-                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "[视觉辅助模型识别结果]\n" + (result.text || "（视觉模型未返回描述）") }], success: Boolean(result.text) });
-                  } catch (error: any) {
-                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "识图失败：" + error.message }], success: false });
-                  }
-                }
               } else if (event.params?.tool === "rpa_save") {
                 const result = await window.codex.saveRpaRecipe({ name: String(args.name ?? ""), desc: String(args.desc ?? ""), kind: String(args.kind ?? "browser"), steps: (Array.isArray(args.steps) ? args.steps : [String(args.steps ?? "")]).map(String), target: args.target ? String(args.target) : undefined, workspace: bag.workspace || undefined });
                 bag.showToast("RPA 配方已保存", `「${result.name}」共 ${result.steps.length} 步，可在 设置 → RPA 自动化 里管理`);

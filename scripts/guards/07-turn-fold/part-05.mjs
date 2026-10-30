@@ -160,18 +160,9 @@ export async function run() {
   (!/\+\s*result\.url/.test(app84) ? ok : fail)(
     "【84】App 侧不得再把 result.url 直接拼进返回文本（一拼就有 MB 级 base64 进对话历史）"
   );
-  // 识图工具的**入参**同样要劝退 data URL：模型若填了内联 base64，一样几 MB 进历史
-  (/imageUrl[\s\S]{0,240}?不要传 data URL/.test(app84) ? ok : fail)(
-    "【84】describe_image 的 imageUrl 参数描述明确劝退 data URL"
-  );
-  // 识图工具也要能吃**本地路径** —— 引擎消息里的图片就是本地文件路径，模型照用法传过来时
-  // 上游会 400「invalid image」。命令行那条路径（harness-media.mjs 的 vision 分支）早就做对了，
-  // 主进程侧曾经没有 ⇒ 同一件事两条路径行为不一致（最难查的一类问题）。
-  (/async function toImageSource\(ref: string\)/.test(main84) ? ok : fail)(
-    "【84】有 toImageSource（本地图片路径读成 data URL，与命令行路径 harness-media 同口径）"
-  );
-  (/image_url: \{ url: await toImageSource\(input\.imageUrl\) \}/.test(main84) ? ok : fail)(
-    "【84】describe_image 真的走了 toImageSource（否则模型传本地路径必然 400）"
+  // ⛔ 10-30 视觉辅助插件整体移除：describe_image 工具 / toImageSource 识图链已删，负向防复活。
+  (!/builtin:describe-image|name: "describe_image"/.test(main84 + app84) ? ok : fail)(
+    "【84】describe_image 工具链不许复活（10-30 视觉辅助插件整体移除）"
   );
   const pkg84 = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
   (/verify-image-plugin/.test(String(pkg84.scripts?.check ?? "")) ? ok : fail)(
@@ -200,8 +191,7 @@ export async function run() {
     const base = {
       platform: "win32", arch: "x64",
       desktopSwitch: true, browserSwitch: true,
-      nuphusAvailable: true, nuphusVisionEnv: true,
-      visionPlugin: true, imagePlugin: true,
+      nuphusAvailable: true, imagePlugin: true,
       egoBrowser: false, markitdown: false,
     };
     const pick = (rows, id) => rows.find((r) => r.id === id) || {};
@@ -211,39 +201,30 @@ export async function run() {
     (pick(allOn, "browser").activeId === "nuphus-cli-browser" && pick(allOn, "desktop").activeId === "nuphus-desktop" ? ok : fail)(
       "【85】总闸开着时桌面走 nuphus；未装 Ego Lite 时浏览器回落 browse-skills（nuphus-call 默认浏览器）"
     );
-    (pick(allOn, "vision").activeId === "nuphus-vision" ? ok : fail)(
-      "【85】视觉 env 已下发时，看图首选 nuphus desktop_vision（BYOK）"
+
+    // ⛔ 10-30 视觉辅助插件整体移除：看图能力只剩本地 OCR 一条后端；BYOK 视觉模型两条旧后端不许复活。
+    const visionBackends = (reg.CAPABILITIES.find((c) => c.id === "vision")?.backends ?? []).map((b) => b.id);
+    (visionBackends.length === 1 && visionBackends[0] === "local-ocr" ? ok : fail)(
+      `【85】看图能力只剩本地 OCR 一条后端（实测 ${visionBackends.join("/")}；nuphus-vision / 内置识图工具不许复活）`
+    );
+    (pick(allOn, "vision").activeId === "local-ocr" ? ok : fail)(
+      "【85】总闸开着时看图走本地 OCR（视觉插件已移除，无 BYOK 视觉模型路径）"
     );
 
     // 反转用例：总闸关掉 ⇒ **依赖 nuphus 的后端**全部不可用（掩码是硬阻断，不是提示词约束）。
-    // ⛔ 别把「总闸关掉」误写成「视觉彻底不可用」：describe_image 走的是**内置视觉插件**
-    //    （渲染层 dynamicTool → 主进程直接请求视觉 API，不经 nuphus），所以它不受总闸影响。
-    //    我第一版断言就写错了这个假设，被这条"能反转"的断言当场抓出来。
     const allOff = reg.resolveCapabilities({ ...base, desktopSwitch: false, browserSwitch: false });
     (pick(allOff, "browser").activeId === null
       && pick(allOff, "desktop").activeId === null
-      && alt(allOff, "vision", "nuphus-vision").available === false
-      && alt(allOff, "vision", "local-ocr").available === false
-      && pick(allOff, "vision").activeId === "describe-image" ? ok : fail)(
-      "【85】总闸关掉后依赖 nuphus 的后端全不可用，而 describe_image（不经 nuphus）依旧可用"
-    );
-
-    // 视觉回退链：env 未下发 → describe_image；插件也没配 → 本地 OCR
-    const noEnv = reg.resolveCapabilities({ ...base, nuphusVisionEnv: false });
-    (pick(noEnv, "vision").activeId === "describe-image" ? ok : fail)(
-      "【85】视觉 env 未下发时退到 describe_image（不是仍报 desktop_vision 可用）"
-    );
-    const noPlugin = reg.resolveCapabilities({ ...base, nuphusVisionEnv: false, visionPlugin: false });
-    (pick(noPlugin, "vision").activeId === "local-ocr" ? ok : fail)(
-      "【85】视觉插件也没配时退到本地 OCR（无需 key 的免费路径）"
+      && pick(allOff, "vision").activeId === null ? ok : fail)(
+      "【85】总闸关掉后依赖 nuphus 的后端全不可用（看图只剩 OCR 一条，跟着总闸一起关）"
     );
 
     // Intel Mac 没有本地 OCR 的平台二进制（ONNX 已放弃 osx-x64）；Apple Silicon 必须相反
-    const intelMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "x64", nuphusVisionEnv: false, visionPlugin: false });
+    const intelMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "x64" });
     (pick(intelMac, "vision").activeId === null && alt(intelMac, "vision", "local-ocr").available === false ? ok : fail)(
       "【85】Intel Mac 上本地 OCR 判为不可用，视觉能力整体判为无可用后端"
     );
-    const armMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "arm64", nuphusVisionEnv: false, visionPlugin: false });
+    const armMac = reg.resolveCapabilities({ ...base, platform: "darwin", arch: "arm64" });
     (pick(armMac, "vision").activeId === "local-ocr" ? ok : fail)(
       "【85】Apple Silicon 同条件下本地 OCR 可用（与 Intel Mac 结论相反 ⇒ 平台判据真的生效）"
     );
@@ -268,8 +249,12 @@ export async function run() {
     "【85】界面走 capabilities:snapshot 取快照（不是自己拼一套判据）"
   );
   const main85 = readMainSource();
-  (/devInstructionsInput\(\)[\s\S]{0,500}?nuphusVisionEnv\(devInput\.nuphusVision\)\.length > 0/.test(main85) ? ok : fail)(
-    "【85】主进程采集判据复用 devInstructionsInput（总闸与视觉配置的唯一来源，不另读一遍）"
+  (/devInstructionsInput\(\)/.test(main85) ? ok : fail)(
+    "【85】主进程采集判据复用 devInstructionsInput（总闸与插件配置的唯一来源，不另读一遍）"
+  );
+  // ⛔ 10-30 视觉辅助插件整体移除：探针字段不许复活
+  (!/nuphusVisionEnv|visionPlugin/.test(main85) ? ok : fail)(
+    "【85】能力探针的 nuphusVisionEnv / visionPlugin 字段不许复活（视觉插件已移除）"
   );
 }
 }

@@ -57,7 +57,6 @@ import { dirEntries, fileStat, sizeLabel } from "./features/app-diagnostics";
 import { readRelayStore, writeRelayStore } from "./features/relay-ipc";
 import { IPC_DOMAINS, domainsStillInMain } from "./ipc-registry";
 import { ensureBuiltinSkills, ensureExpertSkillsMarketplace, expertSkillsSourceDir } from "./builtin-skills";
-import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv, nuphusVisionEnvDrift } from "./nuphus-env";
 import { SKETCH_SCHEME } from "./sketch-protocol";
 import {
   buildChengxiangExpertTeam, buildDefaultExpertTeams, buildDongmingExpertTeam, buildModel3dExpertTeam, buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, buildZhiweiExpertTeam, imageGenExpert, normalizeTeamConfig, reverseEngineeringExpert, videoProductionTeam,
@@ -997,8 +996,7 @@ console.log(`[ipc-registry] ${IPC_DOMAINS.length} 个 IPC 域，${domainsStillIn
 /** 收集「能力选型」所需的环境观测值。
  *
  *  ⛔ 判据必须与**真实决策处同源**，不在这里另读一遍设置/插件（那正是本项目反复踩过的漂移）：
- *   · 总闸 → `devInstructionsInput()`（与 config.toml 写出、指令组装同一来源）
- *   · 视觉 env → `nuphusVisionEnv()`（与 config.toml 的 env 段同一来源） */
+ *   · 总闸 → `devInstructionsInput()`（与 config.toml 写出、指令组装同一来源） */
 
 /** 「当前能力链路」：同一件事有多个后端时，现在实际走哪条、其余为什么没走。
  *  为什么需要这个入口：原先这些规则散在技能文案与代码注释里，用户只能看到零散的安装状态，
@@ -1061,7 +1059,8 @@ ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
  */
 /** 当前活跃回合数（0 = 引擎可以安全重启）。验收与诊断都要靠它确认闸门拿到了真实计数。 */
 
-// ── 内置插件：生图 + 视觉辅助（路径 builtinPluginsFile 已下沉 runtime-paths.ts）──
+// ── 内置插件：生图（路径 builtinPluginsFile 已下沉 runtime-paths.ts）──
+// ⛔ 10-30 撤视觉辅助：识图工具 / harness-media vision 子命令 / nuphus 视觉 env 链整体移除。
 
 /** 把生图结果落盘到 `<userData>/images/`，返回本地绝对路径；失败返回 ""。
  *

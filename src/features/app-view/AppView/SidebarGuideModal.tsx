@@ -96,7 +96,7 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
     icon: Zap,
     capabilities: [
       { icon: Sparkles, title: "技能", desc: "一份可读的做法说明书与检查清单；合适任务会自动参考，也能点名「用 xx 技能」。", target: "skills" },
-      { icon: Store, title: "插件", desc: "一个包可带技能 / MCP / 钩子；内置插件里还能配生图、视频、视觉辅助接口。", target: "plugins" },
+      { icon: Store, title: "插件", desc: "一个包可带技能 / MCP / 钩子；内置插件里还能配生图、视频接口。", target: "plugins" },
       { icon: Server, title: "MCP 连接器", desc: "接 GitHub、数据库、公司内部系统；工具以「连接器__工具」的名字出现在工具列表。", target: "mcp" },
     ],
     steps: [

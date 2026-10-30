@@ -14,7 +14,6 @@
  */
 import { resolveCapabilities } from "../capability-registry";
 import { computerUseLauncher, egoBrowserPath, harnessUiaServer, nuphusBinary } from "../toolchain";
-import { nuphusVisionEnv } from "../nuphus-env";
 import type { CapabilityProbe } from "../capability-registry";
 import { devInstructionsInput } from "../main/12-skill-discipline";
 import { mcpOverrideEnabled, readMcpOverrides } from "../main/06-mcp-overrides";
@@ -32,11 +31,9 @@ async function collectCapabilityProbe(): Promise<CapabilityProbe> {
     desktopSwitch: devInput.desktop,
     browserSwitch: devInput.browser,
     nuphusAvailable: Boolean(nuphusBinary()) && mcpOverrideEnabled(mcpOverrides, "nuphus"),
-    nuphusVisionEnv: nuphusVisionEnv(devInput.nuphusVision).length > 0,
     // 两条新后端只看"随包文件在不在"，不看总闸（闸门由 resolveCapabilities 统一判）
     uiaAvailable: Boolean(harnessUiaServer()),
     computerUseAvailable: Boolean(computerUseLauncher()),
-    visionPlugin: devInput.visionPlugin,
     imagePlugin: devInput.imagePlugin,
     egoBrowser: Boolean(egoBrowserPath()),
     markitdown: runtimeInstalled("markitdown", devRuntimeSpecs.markitdown),

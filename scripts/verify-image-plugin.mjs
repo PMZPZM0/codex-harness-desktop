@@ -94,28 +94,7 @@ await assert.rejects(generate(input), /未返回图片/);
 
 await fs.rm(imageDir, { recursive: true, force: true });
 
-// —— 本地路径必须被读成 data URL ——
-// 理由：引擎消息里的图片就是本地文件路径，模型照用法原样传给 describe_image 时上游会
-// 400「invalid image」。命令行那条路径（harness-media.mjs 的 vision 分支）早就这么做对了，
-// 这里锁住主进程侧同口径 —— 否则同一件事两条路径行为不一致。
-const toImageSourceFn = source.slice(source.indexOf('async function toImageSource('), source.indexOf('async function describeImageWith('));
-assert.ok(toImageSourceFn.includes('toImageSource'), 'sanity: toImageSource 区间必须被抠出来');
-const toImageSource = vm.runInNewContext(ts.transpile(toImageSourceFn) + '\ntoImageSource', {
-  Buffer,
-  path,
-  fs,
-  existsSync,
-  console: { warn: () => {} },
-});
-const localDir = await fs.mkdtemp(path.join(os.tmpdir(), 'image-src-'));
-const localPng = path.join(localDir, 'local.png');
-await fs.writeFile(localPng, Buffer.from(png.split(',')[1], 'base64'));
-assert.equal(await toImageSource('https://example.com/a.png'), 'https://example.com/a.png', 'http(s) url must pass through');
-assert.equal(await toImageSource(png), png, 'data url must pass through');
-const converted = await toImageSource(localPng);
-assert.ok(converted.startsWith('data:image/png;base64,') && converted.endsWith(png.split(',')[1]), 'local path must be read into a data url');
-await assert.rejects(toImageSource(path.join(localDir, 'nope.png')), /不存在/, 'missing local file must fail loudly');
-await fs.rm(localDir, { recursive: true, force: true });
+// ⛔ 10-30 视觉辅助插件整体移除：原「toImageSource 本地路径读成 data URL」整段识图断言随之退役。
 
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'image-plugin-'));
 const server = http.createServer(async (request, response) => {
@@ -143,4 +122,4 @@ try {
   await fs.rm(path.join(temporary, 'images'), { recursive: true, force: true });
   await fs.rmdir(temporary);
 }
-console.log('PASS: image rendering, unsafe URLs blocked, no inline base64 in tool output (b64_json persisted), hosted url kept, CLI parity, package resource');
+console.log('PASS: image rendering, unsafe URLs blocked, no inline base64 in tool output (b64_json persisted), hosted url kept, CLI parity, package resource (vision chain removed 10-30)');

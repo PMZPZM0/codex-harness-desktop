@@ -16,7 +16,6 @@ import { safeProviderId } from "../provider-id";
 import { injectMcpToolRules, injectSectionExtras, tomlBareKey } from "../config-toml";
 import { developerInstructionsLine } from "../developer-instructions";
 import { augmentedPath, bundledNode, bundledPython, computerUseLauncher, harnessUiaServer, nuphusBinary, reaServerScript } from "../toolchain";
-import { NUPHUS_VISION_ENV_TABLE, nuphusVisionEnv } from "../nuphus-env";
 import type { CustomModelFile } from "../features/custom-model-types";
 import { collectSessionProviderIds } from "../features/provider-sessions";
 import { connectorEnv, connectorToml, mcpToolRulesOf } from "../main/04-connector-config";
@@ -303,16 +302,8 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       `command = "${escapeToml(nuphusBinary())}"`,
       "args = []",
       "startup_timeout_sec = 20",
-      // 视觉插件（BYOK）必须**真的下发到 nuphus 进程**：`desktop_vision` 读的是
-      // NUPHUS_MCP_VISION_* 环境变量，而不是我们这份 builtin-plugins.json
-      // （09-20 定位：这段 env 从来没写过 ⇒ 插件怎么配 `desktop_vision` 都报 "API_KEY required"）。
-      // ⛔ 子表 `[mcp_servers.X.env]` 这个形态是**真实 app-server 探针实证过**的
-      //    （假 stdio MCP 把自己进程 env 落盘 → 4 个哨兵值全部命中）；别换内联写法。
-      ...(() => {
-        const visionEnv = nuphusVisionEnv(devInput.nuphusVision);
-        if (!visionEnv.length) return [];
-        return ["", NUPHUS_VISION_ENV_TABLE, ...visionEnv.map(([key, value]) => `${key} = "${escapeToml(value)}"`)];
-      })(),
+      // ⛔ 10-30 撤 `[mcp_servers.nuphus.env]` 视觉 env 段：视觉辅助插件整体移除后
+      //    desktop_vision（BYOK）没有配置来源了；老 config.toml 里的残留段由 preserveUserConfig 收敛。
       "",
     ] : []),
     // Windows 原生控件清单通道（10-04）：`desktop_ui_*` 四个工具，走系统自带的 UIAutomation，

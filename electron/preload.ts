@@ -202,7 +202,6 @@ contextBridge.exposeInMainWorld("codex", {
   /* 手动升级：运行官方 ego-browser upgrade（可能下载数百 MB） */
   egoUpgrade: () => __ipc("browser:ego-upgrade", 0, []),
   browserPopout: (url: string) => __ipc("browser:popout", 1, [url]),
-  describeImage: (input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => __ipc("builtin:describe-image", 1, [input]),
   /* ⛔ `path` 是落盘后的本地路径（网关只回 b64_json 时也有值）；`url` **仅在网关给了 * 真托管地址时**才有值 —— data URL 绝不会回传（会把 3 MB base64 带进对话历史）。 */
   generateImage: (input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => __ipc("builtin:generate-image", 1, [input]),
   probeBuiltinModels: (input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => __ipc("builtin:probe", 1, [input]),

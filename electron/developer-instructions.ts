@@ -130,11 +130,12 @@ const BROWSER_INSTRUCTIONS =
   "⛔ Do NOT call nuphus browser_* via MCP — every such call fails with unsupported call; use the nuphus-call CLI instead. " +
   "Detailed per-session Space policy and platform command forms are in your skill browser-skill — load it when the task actually needs a browser.";
 /**
- * 内置媒体插件说明（生图 / 视觉辅助）。只在用户配置并启用对应插件后注入——
+ * 内置媒体插件说明（生图）。只在用户配置并启用对应插件后注入——
  * 引擎从而「知道」这些能力并通过 harness-media.mjs 命令行真实调用。
  * 走命令行而非 dynamicTools 的原因：dynamicTools 仅在 thread/start 注入，
  * 老会话拿不到 schema；命令行对所有会话生效（模型扫能力清单时能真实看见）。
  * mediaCommand 由 main.ts 组装（内置 node 绝对路径 + helper 脚本绝对路径）。
+ * ⛔ 10-30：视觉辅助插件整体移除，原第 5 条识图命令行用法随之撤销。
  */
 const IMAGE_INSTRUCTIONS = (mediaCommand: string) =>
   `\n4) IMAGE TOOLS — two SEPARATE families (10-09 用户要求：工具区分开、生成与编辑的 IPC 也分开)。Pick by what the user actually wants:\n`
@@ -151,9 +152,6 @@ const IMAGE_INSTRUCTIONS = (mediaCommand: string) =>
 const VIDEO_INSTRUCTIONS = `\n\nVIDEO GENERATION (async MCP tools; only if \`video_generate\` is in your tool list): the user's built-in video providers (可灵/智谱/MiniMax/Runway/Veo 等) are exposed as three tools. Flow: (1) \`video_generate\` submits and returns a jobId IMMEDIATELY — it does not wait; (2) tell the user it is rendering and continue with other work; (3) call \`video_status\` with that jobId when you need the result (it auto-downloads into the workspace and returns the local path on success). NEVER sleep/poll in a loop to wait for a video — that blocks the whole turn for minutes; a status of queued/running/pending just means "check again later". For image-to-video pass the local image path in \`image\` with mode="i2v". If the tool is missing or reports "没有配置", tell the user to set it up in Settings → Plugins → 视频生成接口 and stop. (4) FINISHING A FILM: once you have the per-shot clips, call \`video_concat\` with \`files\` listed in the intended viewing order (for a storyboard, its scene→shot order) — it merges them with ffmpeg (lossless when the clips already match, automatic unified re-encode when they do not) and returns the output path. It requires FFmpeg: if it says FFmpeg is missing, tell the user to install it from Settings → 开发工具 → FFmpeg (one-time, then retry) — do NOT try to merge by other means.`;
 /** Laya 判断工具（10-18）：只在装了 Laya 的机器上注册；文案自带「只在工具表里存在时生效」。 */
 const LAYA_INSTRUCTIONS = `\n\nLOCAL LAYA JUDGE (only if \`laya_judge\` is in your tool list): Laya is a tiny local choice classifier (~tens of ms, no text generation) for short-text, low-stakes decisions. Good uses: (1) knowledge_gate — is a note worth saving as project knowledge or just chatter; (2) duplicate — is new content a duplicate of an existing note (pass reference); (3) custom — classify into 2–6 mutually exclusive options you define (e.g. user intent: task/question/chit-chat; routing: self/expert/team; content category). Pass a short state and clear criteria, then use the returned choice + confidence. If it says 弃权 (below threshold), do NOT use its guess — decide yourself or ask the user. NEVER use it for security, legal, medical, financial, irreversible-action decisions, fact-checking, long-document understanding, or open-ended generation; it is a fast classifier, not an oracle. If the tool is absent, Laya is not installed: do not try to call it or install it yourself.`;
-
-const VISION_INSTRUCTIONS = (mediaCommand: string) =>
-  `\n5) describe_image — let a vision model describe an image you cannot parse directly. Invoke: ${mediaCommand} vision "<image>" [focus question] where <image> can be a LOCAL FILE PATH (fastest — pass it as-is, the helper reads and encodes it for you), a remote http(s) URL, or a data URL. Do NOT base64-encode local files yourself before calling — pass the path directly. Stdout is JSON {"text":"..."}; treat the text as the image content and continue the task.`;
 
 /** 交付前自查（09-21 起是「派内置评审子智能体复审」；10-27 用户令「不要内置子智能体」后
  *  改成**自己复查**——不再随应用种入任何子智能体，也不许叫一个不存在的名字）。
@@ -429,7 +427,6 @@ export type DevInstructionsInput = {
   desktop?: boolean;
   browser?: boolean;
   imagePlugin?: boolean;
-  visionPlugin?: boolean;
   mediaCommand?: string;
   /** 已开启的输出风格（`electron/output-styles.ts` 的 outputStyleTargets）—— 见上方 OUTPUT_STYLE_INSTRUCTIONS */
   outputStyles?: { skill: string; label: string; file: string }[];
@@ -457,7 +454,6 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);
-  if (input.visionPlugin) text += VISION_INSTRUCTIONS(mediaCommand);
   // 视频生成三件套（无条件下发，内容自带条件式判断：先看 video_generate 在不在工具表里）
   text += VIDEO_INSTRUCTIONS;
   text += LAYA_INSTRUCTIONS;

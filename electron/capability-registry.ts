@@ -14,7 +14,6 @@
  *
  * ⛔ 判据必须与**真实决策处同源**，不许在这里另写一套：
  *  · 自动化总闸 → `shouldRegisterNuphus` / `nuphusDisabledTools`（automation-policy.ts）
- *  · 视觉 env   → `nuphusVisionEnv`（nuphus-env.ts）
  *  否则又变回"两个地方各说各话"。
  */
 
@@ -47,10 +46,6 @@ export type CapabilityProbe = {
   uiaAvailable: boolean;
   /** mac 电脑操作后端是否就绪（open-computer-use 的启动脚本与 .app 都在） */
   computerUseAvailable: boolean;
-  /** 视觉插件的配置是否已下发给 nuphus 进程（NUPHUS_MCP_VISION_*） */
-  nuphusVisionEnv: boolean;
-  /** 内置「视觉辅助插件」是否已配置（describe_image 用） */
-  visionPlugin: boolean;
   /** 内置「生图插件」是否已配置（MCP 工具 image_generate 与命令行 generate_image **共用**这份配置） */
   imagePlugin: boolean;
   /** Ego Lite 浏览器自动化是否已安装（每会话 TaskSpace 的唯一自动化通道） */
@@ -98,9 +93,9 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     id: "vision",
     label: "看图（理解图片内容）",
     purpose: "读取截图/图片里的文字与画面内容",
+    // ⛔ 10-30 撤 nuphus-vision / describe-image 两个后端：视觉辅助插件整体移除（BYOK 视觉模型
+    //    失去唯一配置源）；看图现在只剩本地 OCR 一条免费路径。
     backends: [
-      { id: "nuphus-vision", label: "nuphus desktop_vision（BYOK 视觉模型）", why: "要用它必须把视觉插件配置下发给 nuphus 进程；改完插件配置需重启应用才生效" },
-      { id: "describe-image", label: "内置工具 describe_image（视觉辅助插件）", why: "对图片文件/网址走一遍视觉模型；不吃本地路径以外的特殊能力，但会占用一次插件调用" },
       { id: "local-ocr", label: "本地 OCR（desktop_perceive，无需 key）", why: "纯本地、免费，返回文字 + 坐标；Intel Mac 无平台二进制所以用不了" },
     ],
   },
@@ -147,8 +142,6 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
     // 判据与 automation-policy 的同名函数一致（守卫【274】比对，不许两处各写一套平台判断）
     "uia-desktop": probe.desktopSwitch && probe.uiaAvailable && probe.platform === "win32",
     "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable && probe.platform === "darwin",
-    "nuphus-vision": probe.desktopSwitch && probe.nuphusAvailable && probe.nuphusVisionEnv,
-    "describe-image": probe.visionPlugin,
     "local-ocr": probe.desktopSwitch && probe.nuphusAvailable && localOcrSupported(probe),
     "image-plugin": probe.imagePlugin,
     markitdown: probe.markitdown,
@@ -174,8 +167,7 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
 
     let note = "";
     if (capability.id === "vision") {
-      if (!localOcrSupported(probe)) note = "本机是 Intel Mac：没有本地 OCR 的平台二进制，只能靠视觉模型";
-      else if (probe.nuphusAvailable && probe.desktopSwitch && !probe.nuphusVisionEnv) note = "视觉插件配置还没下发给 nuphus（想用视觉模型看图，改完插件配置后需重启应用）";
+      if (!localOcrSupported(probe)) note = "本机是 Intel Mac：没有本地 OCR 的平台二进制，看图能力整体不可用";
     }
     if (capability.id === "browser" && !probe.browserSwitch) note = "「浏览器自动化」总闸关着：browser_* 已从工具表整体摘除（不是提示词约束，是真移除）";
     if (capability.id === "desktop" && !probe.desktopSwitch) note = "「桌面自动化」总闸关着：desktop_* 已从工具表整体摘除";

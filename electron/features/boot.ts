@@ -28,7 +28,6 @@ import { getMusicStream } from "../music-streams";
 import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace, storedReportsForThread } from "../turn-file-watch";
 import { dropStoredCompactions, loadCompactionStore, setCompactionWatchDirs, watchTurnCompleted } from "../compaction-watch";
 
-import { shouldRegisterNuphus } from "../automation-policy";
 import { SKETCH_SCHEME, sketchResponse } from "../sketch-protocol";
 import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureEgoBrowserSkill, ensureExpertSkillsMarketplace } from "../builtin-skills";
@@ -47,12 +46,11 @@ import { settleBackgroundRunsOnTurnEnd } from "../delegation/delegate-settle";
 import { isTurnEndMethod } from "../turn-end";
 import { forgetRoleSession } from "../role-memory";
 import { sweepFabric, pickWorkspacesToSweep, archiveSessionMemory } from "../memory-fabric";
-import { nuphusVisionEnvDrift } from "../nuphus-env";
 import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPersonalization } from "../personalization";
 
 import { repairSkillBomScan } from "../skills-market";
 import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } from "../main/09-agents-plugins";
-import { applyProcessPath, augmentedPath, existingToolPath, nuphusBinary, toolsRoot } from "../toolchain";
+import { applyProcessPath, augmentedPath, existingToolPath, toolsRoot } from "../toolchain";
 import { ensurePonytailPlugin } from "../ponytail-plugin";
 import { healPonytailInstall } from "../ponytail-heal";
 import { getPonytailMode } from "../conventions/ponytail-mode";
@@ -1316,22 +1314,12 @@ export async function bootApp() {
       //   两处口径必须一致。
       const envPathStale = Boolean(expectedFirst)
         && !cfgPathLine.replace(/\\\\/g, "\\").split(path.delimiter).map((entry) => entry.trim()).filter(Boolean).includes(expectedFirst);
-      // ⛔ nuphus 视觉 env 漂移（09-20，与上面的「安装目录漂移」同一类：只问「键在不在」不够）：
-      //   用户改插件里的 key / model 时上面所有判据都不动 ⇒ 不重写 ⇒ nuphus 仍拿旧 key。
-      //   判定抽成纯函数（nuphus-env.ts）——「恒真 ⇒ 每次启动整份重写」是这里最危险的失效模式，
-      //   内联在 main.ts 里只能 grep 断言，抽出来预检才能跑真行为断言（含收敛性）。
       // 覆盖表读失败按「启用」兜底：真坏了 applyCustomModel 自己也会抛（那条 try/catch 负责收尾），
       // 不该因为一个损坏的 json 把整段自愈判据一起带崩。
-      const nuphusRegisteredNow = shouldRegisterNuphus({ desktop: devInputNow.desktop, browser: devInputNow.browser })
-        && Boolean(nuphusBinary()) && mcpOverrideEnabled(await readMcpOverrides().catch(() => ({} as any)), "nuphus");
-      const nuphusVisionStale = nuphusVisionEnvDrift({
-        vision: devInputNow.nuphusVision,
-        registered: nuphusRegisteredNow,
-        configText,
-        escape: escapeToml,
-      });
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || nuphusVisionStale || disabledMissing || dispatchMcpBad || compactStale || compactKeyResidue) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, nuphusVision=${nuphusVisionStale}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactStale=${compactStale}(期望 ${expectedCompact}), compactKeyResidue=${compactKeyResidue}; rewriting`);
+      // ⛔ 10-30 撤 nuphus 视觉 env 漂移判据：视觉辅助插件整体移除后
+      //    原 nuphus-env 纯函数已删，老 config.toml 的残留 env 段由 preserveUserConfig 收敛（与「不需要 env」分支同型）。
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactStale || compactKeyResidue) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactStale=${compactStale}(期望 ${expectedCompact}), compactKeyResidue=${compactKeyResidue}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
