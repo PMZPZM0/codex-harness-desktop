@@ -8,6 +8,8 @@ export type MentionTarget = {
   name: string;
   profession?: string;
   description?: string;
+  /** 本会话未开通这一类调度 ⇒ true（面板置灰、不可选中；⛔ 仍要显示，不是隐藏） */
+  disabled?: boolean;
 };
 
 export const MENTION_GROUPS: Array<{ kind: MentionKind; label: string; hint: string }>;
@@ -23,13 +25,19 @@ export function normalizeMentionQuery(raw: unknown): string;
 /** 单条候选相关度：0 相等 / 1 前缀 / 2 包含 / -1 不匹配 */
 export function rankMentionTarget(target: MentionTarget | null | undefined, query: unknown): number;
 
-/** 按类型分组筛选（组内按相关度，同分保持目录顺序） */
+/** 按类型分组筛选（组内按相关度，同分保持目录顺序）。
+ *  给了 `allow` 时：未开通的类别**照样列出**，但每行带 `disabled: true`，组上带 `off: true`。 */
 export function filterMentionTargets(
   targets: MentionTarget[] | null | undefined,
   query: unknown,
-): { groups: Array<{ kind: MentionKind; label: string; hint: string; items: MentionTarget[] }>; total: number; overflow: number };
+  allow?: { team?: boolean } | null,
+): {
+  groups: Array<{ kind: MentionKind; label: string; hint: string; items: MentionTarget[]; off: boolean }>;
+  total: number;
+  overflow: number;
+};
 
-/** 面板 ↑↓/Enter 的线性顺序 */
+/** 面板 ↑↓/Enter 的线性顺序（⛔ 自动跳过 `disabled` 行） */
 export function flatMentionTargets(groups: unknown, limit?: number): MentionTarget[];
 
 /** 去重键（key 优先） */
@@ -40,3 +48,12 @@ export function addMention(list: MentionTarget[] | null | undefined, target: Men
 
 /** 发送时注入正文的「本轮点名对象」指令块（空数组 → 空串） */
 export function mentionBlockOf(mentions: MentionTarget[] | null | undefined): string;
+
+/** 这一类在本会话能不能派（专家/子智能体/CLI 恒可用，专家团跟随开关；与主进程 dispatchAllowOf 同口径）。 */
+export function mentionKindAllowed(allow: { team?: boolean } | null | undefined, kind: string): boolean;
+/** 第一条**可选**候选（置灰行不参与），Enter 采纳用。 */
+export function firstMentionTarget(
+  targets: any[],
+  query: string,
+  allow?: { team?: boolean } | null,
+): any | null;

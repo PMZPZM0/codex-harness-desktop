@@ -1325,6 +1325,26 @@
   background: var(--panel-2);
   color: var(--text);
 }
+/* ★ 10-30 用户令：未开通调度的类别（当前只剩「专家团」）在 @ 列表里**置灰不可选**，
+   开通后立刻恢复可选中高亮。
+   ⛔ 只降对比度 + 禁指针，⛔ 不用 display:none —— 用户要看到「它在这里，只是没开」；
+      隐藏会让人以为团队没了，进而去重建（这是上一版的真问题）。 */
+.context-picker button:disabled,
+.context-picker button[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.context-picker button:disabled:hover,
+.context-picker button[aria-disabled="true"]:hover {
+  background: transparent;
+  color: var(--muted);
+}
+.context-picker-group.is-off .context-picker-group-label {
+  color: var(--faint);
+}
+.context-picker-group.is-off .context-picker-group-label small {
+  color: var(--faint);
+}
 .context-picker button b {
   color: var(--text);
   flex: none;

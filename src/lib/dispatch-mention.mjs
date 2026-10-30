@@ -30,6 +30,23 @@ export function mentionKindLabel(kind) {
   return MENTION_KIND_LABEL[String(kind ?? "")] ?? String(kind ?? "");
 }
 
+/**
+ * 这一类在本会话能不能派（10-30 用户令：候选列表要**按调度开通状态联动**）。
+ *
+ * ⛔ 与 `electron/dispatch.ts` 的 `dispatchAllowOf` **同口径**：专家 / 子智能体 / CLI 恒可用，
+ *    专家团跟随用户开关（缺键按关处理 —— `dispatchAllowOf` 也是 `team === true`）。
+ * ⛔ 这里只回答"能不能选"，**不负责隐藏**：未开通的类别仍要出现在列表里（置灰不可选），
+ *    否则用户会以为"团队丢了"，而真因是没开开关（10-30 用户原话：置灰不可选，开通后恢复）。
+ * @param {{ team?: boolean } | null | undefined} allow 会话调度许可（`bag.activeDispatch`）
+ * @param {string} kind
+ * @returns {boolean}
+ */
+export function mentionKindAllowed(allow, kind) {
+  if (!allow || typeof allow !== "object") return true;
+  if (kind === "team" || kind === "member") return allow.team === true;
+  return true;
+}
+
 /** 每组最多显示几条（面板高度有限；超出用「还有 N 个，继续输入筛选」提示）。 */
 export const MENTION_PER_GROUP = 6;
 /** 一次消息最多点名几个对象（≥ 这个数就是"群发"，通常说明用户在乱试）。 */
@@ -61,32 +78,48 @@ export function rankMentionTarget(target, query) {
  * 按类型分组筛选候选。
  * @param {Array<{kind:string,name:string,key:string,profession?:string,description?:string}>} targets
  * @param {string} query `@` 后面那段（不含 `@`）
- * @returns {{ groups: Array<{kind:string,label:string,hint:string,items:any[]}>, total:number, overflow:number }}
+ * @param {{ team?: boolean } | null} [allow] 会话调度许可：未开通的类别**照样列出**，但每行标 `disabled`
+ * @returns {{ groups: Array<{kind:string,label:string,hint:string,items:any[],off:boolean}>, total:number, overflow:number }}
  */
-export function filterMentionTargets(targets, query) {
+export function filterMentionTargets(targets, query, allow = null) {
   const list = Array.isArray(targets) ? targets : [];
   const groups = [];
   let total = 0;
   let overflow = 0;
   for (const group of MENTION_GROUPS) {
+    /* ★ 10-30 用户令：「未开通专家团调度时列表中的『专家团』项置灰不可选，开通后自动恢复为可选中高亮」——
+       所以这里**不筛掉**未开通的类别，只给每行打 `disabled` 标记（面板负责置灰 + 拒绝选中）。
+       ⛔ 若改成"筛掉"，用户看到的是"团队不见了"，无法得知是开关没开（这是上一版的真问题）。 */
+    const off = !mentionKindAllowed(allow, group.kind);
     const hits = list
       .filter((target) => target && target.kind === group.kind)
       .map((target, index) => ({ target, rank: rankMentionTarget(target, query), index }))
       .filter((entry) => entry.rank >= 0)
       // 同分保持目录顺序（稳定），否则选区会随打字乱跳
       .sort((a, b) => a.rank - b.rank || a.index - b.index);
-    const items = hits.slice(0, MENTION_PER_GROUP).map((entry) => entry.target);
-    if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items });
+    /* ⛔ 标记成新对象（不原地改目录条目）：`dispatchInfo.targets` 是共享引用，
+       改它会污染其他消费方（调度面板的计数、工具描述展示）。 */
+    const items = hits.slice(0, MENTION_PER_GROUP).map((entry) => (off ? { ...entry.target, disabled: true } : entry.target));
+    if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items, off });
     total += items.length;
     overflow += Math.max(0, hits.length - items.length);
   }
   return { groups, total, overflow };
 }
 
-/** 面板按 ↑↓/Enter 的线性顺序（分组顺序 → 组内顺序）。 */
+/** 面板按 ↑↓/Enter 的线性顺序（分组顺序 → 组内顺序）。
+ *  ⛔ 置灰行**不参与**键盘顺序：↑↓ 停在灰行上、Enter 把灰行加进点名，都是"看得见却选不了"的反面教材。 */
 export function flatMentionTargets(groups, limit = MENTION_MAX) {
   const list = Array.isArray(groups) ? groups : [];
-  return list.flatMap((group) => (Array.isArray(group?.items) ? group.items : [])).slice(0, limit);
+  return list
+    .flatMap((group) => (Array.isArray(group?.items) ? group.items : []))
+    .filter((target) => !target?.disabled)
+    .slice(0, limit);
+}
+
+/** Enter 直接采纳"第一条可选候选"（居中编辑器与输入框两处共用，⛔ 别各写一份跳过逻辑）。 */
+export function firstMentionTarget(targets, query, allow = null) {
+  return flatMentionTargets(filterMentionTargets(targets, query, allow).groups, 1)[0] ?? null;
 }
 
 /** 已点名对象的去重键（key 优先，回落 kind+name）。 */
@@ -107,10 +140,13 @@ export function addMention(list, target) {
 /**
  * 发送时注入正文的指令块（模型侧唯一的"用户点名了谁"通道）。
  *
- * ⛔ 三条硬约束（与 dispatch.ts 的闸门/告知保持同一口径）：
+ * ⛔ 四条硬约束（与 dispatch.ts 的闸门/告知保持同一口径）：
  *   ① 只说"派给谁"，不说"当作已发生" —— 真派活是模型调 agent_invoke，失败原因照样会回；
  *   ② 失败**不许重试**、不许改派：原样转述原因（用户看到的才是真的）；
- *   ③ 专家团未开启是"用户没开开关"，必须如实说，不许自己脑补成已派出。
+ *   ③ 专家团未开启是"用户没开开关"，必须如实说，不许自己脑补成已派出；
+ *   ④ **输入框里的可选择范围 = 本段的描述**：@ 列表按调度开关实时联动，未开通的类别
+ *      在列表里**置灰不可选**（不是消失），打开开关后立刻恢复可选 —— 用户说「@ 里没有
+ *      专家团 / 专家团是灰的」时，答案永远是"去顶栏「调度」打开"，不是"没有这个团队"。
  * @param {Array<{kind:string,name:string}>} mentions
  * @returns {string} 空数组返回空串（调用方据此不加段，正文一字不多）
  */
@@ -128,10 +164,13 @@ export function mentionBlockOf(mentions) {
     "① 把本条消息的正文（不含本段）当作交给它的 query，写自包含（它看不到本会话上下文）；",
     "② 点名多个时按上面顺序**逐个**派活，不要合并成一次调用；",
     "③ kind=team（专家团）未开启时不要硬派，直接在回复里说明「专家团未开启，需要你在顶栏调度面板打开」，并给出替代方案；",
-    "④ kind=cli（CLI 智能体）就是本机的一个命令行工具：它会用自己的会话调 shell 跑它。任务里写清「要用什么命令 / 验收标准」；"
+    "④ 输入框（@ 唤出的选择列表）与本段的许可范围**始终一致**：未开通的类别仍在列表里但**置灰不可选**，"
+      + "用户打开顶栏「调度」里的对应开关后会**实时**恢复为可选中。所以用户问「为什么 @ 里专家团是灰的 / 没有团队」时，"
+      + "回答「该类别未开通，去顶栏「调度」打开即可」，**不要说这个团队不存在、也不要建议重建**；",
+    "⑤ kind=cli（CLI 智能体）就是本机的一个命令行工具：它会用自己的会话调 shell 跑它。任务里写清「要用什么命令 / 验收标准」；"
       + "它回报「本机没装」时**原样转述并附上安装命令**，不要自己改换别的对象、也不要假装它跑过；",
-    "⑤ 派活被拒或失败（权限 / 引擎 / 名字找不到 / CLI 没装）时**原样转述原因**并停止，不要换对象重试；",
-    "⑥ 派活成功就正常使用产出，不用再问用户要不要派。",
+    "⑥ 派活被拒或失败（权限 / 引擎 / 名字找不到 / CLI 没装）时**原样转述原因**并停止，不要换对象重试；",
+    "⑦ 派活成功就正常使用产出，不用再问用户要不要派。",
     "[点名结束]",
     "",
   ].join("\n");
