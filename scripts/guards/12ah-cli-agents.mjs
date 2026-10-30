@@ -185,6 +185,40 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "点名芯片的标签映射有 cli（上一版三元没分支 ⇒ CLI 被显示成「子智能体」）");
   ok(/mentionKindLabel\(target\.kind\)/.test(readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"), "utf8")),
     "芯片真的走 mentionKindLabel（映射写了不用 = 装饰品）");
+
+  /* ── 10-30 mac 审计：CLI 的「检测」与「派活执行」必须用**同一条增强 PATH** ──
+     GUI 进程（尤其 darwin）PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，CLI 基本装在
+     /opt/homebrew/bin 或 ~/.npm-global/bin ⇒ 直接继承 process.env.PATH 时：
+       · which 找不到 ⇒ 面板永远「未检测到」（装得好好的）
+       · sh -c "claude …" ⇒ command not found，派活 100% 失败
+     症状都不报错，所以必须钉住，不能靠人记得。 */
+  const runnerSrc = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
+  ok(/export function cliProcessEnv\(\)/.test(mainSrc) && /augmentedPath\(\)/.test(mainSrc),
+    "cli-agents 有统一的增强 PATH（cliProcessEnv = augmentedPath，不是继承 process.env.PATH）");
+  ok(/locateBinary[\s\S]{0,700}?env: cliProcessEnv\(\)/.test(mainSrc),
+    "检测（where/which）走增强 PATH —— ⛔ 否则 mac 上装了也永远显示未检测到");
+  ok(/probeVersion[\s\S]{0,600}?env: cliProcessEnv\(\)/.test(mainSrc),
+    "取版本号的子进程也走增强 PATH（CLI 多是 node/python 脚本，要能再找到自己的 runtime）");
+  ok(/runCliMember[\s\S]{0,2000}?env: cliProcessEnv\(\)/.test(runnerSrc),
+    "派活执行（boss 群 CLI 成员）走同一条增强 PATH —— ⛔ 只修检测不修执行 = 检测得到、跑不起来");
+  ok(/process\.platform === "win32" \? "where" : "which"/.test(mainSrc),
+    "平台分叉只发生在一处（win `where` / 其余 `which`，⛔ 不许写死 where）");
+
+  /* ── 10-30 mac 指令适配：安装命令必须「本机跑得通」 ──
+     事故类型同 mac 的 `where`：命令本身合法，只是在 mac 上不存在（裸 pip）。
+     判据：凡是**不是 npm** 的安装命令，必须给 mac 变体；否则 mac 用户复制了也装不上。 */
+  const presets2 = cli.BUILTIN_CLI_AGENTS;
+  ok(presets2.every((entry) => typeof entry.installCmdMac === "string"),
+    "每条预置都带 installCmdMac 字段（空串 = 两端同一条命令，不是「忘了填」）");
+  const nonNpm = presets2.filter((entry) => entry.installCmd && !/^npm (install|i) -g /.test(entry.installCmd));
+  ok(nonNpm.every((entry) => Boolean(entry.installCmdMac)),
+    `非 npm 的安装命令都给了 mac 变体（实得 ${nonNpm.map((e) => e.name + "→" + (e.installCmdMac || "缺")).join(" / ") || "无"}）`);
+  ok(presets2.find((entry) => entry.id === "builtin-aider")?.installCmdMac === "python3 -m pip install aider-chat",
+    "Aider 的 mac 变体是 `python3 -m pip install aider-chat`（mac 上多数环境没有裸 pip）");
+  ok(/function withPlatformCmd\(preset: CliAgentDef\)[\s\S]{0,220}?process\.platform === "darwin" && preset\.installCmdMac/.test(mainSrc),
+    "平台替换只在 darwin 生效、且只对「有 mac 变体」的条目生效");
+  ok(/const base = withPlatformCmd\(preset\);[\s\S]{0,160}?\.\.\.base, \.\.\.override/.test(mainSrc),
+    "⛔ 先换平台命令再盖用户改动（反序 = 用户改过的安装命令被 mac 变体盖回去）");
 }
 
 rmSync(sandbox, { recursive: true, force: true });

@@ -52,7 +52,7 @@ import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPer
 
 import { repairSkillBomScan } from "../skills-market";
 import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } from "../main/09-agents-plugins";
-import { augmentedPath, existingToolPath, nuphusBinary, toolsRoot } from "../toolchain";
+import { applyProcessPath, augmentedPath, existingToolPath, nuphusBinary, toolsRoot } from "../toolchain";
 import { ensurePonytailPlugin } from "../ponytail-plugin";
 import { healPonytailInstall } from "../ponytail-heal";
 import { getPonytailMode } from "../conventions/ponytail-mode";
@@ -423,6 +423,9 @@ setTurnFileWatchBroadcast((payload: any) => {
 
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
+  /* ⛔ 第一件事：把增强 PATH 写回本进程（mac GUI 只有系统目录，继承环境的子进程找不到工具）。
+     为什么需要、为什么只做一次、为什么放这里 —— 见 toolchain.applyProcessPath 的完整说明。 */
+  applyProcessPath();
   await fs.mkdir(codexHome, { recursive: true });
   // 回合文件变更报告的落盘目录（10-06 夜二改：重启后「已更改 N 个文件」卡与冻结编辑行还在）。
   // ⛔ 必须在这个时点求值（app.setPath("userData") 之后）；模块顶层 import 期求值会静默漂移。

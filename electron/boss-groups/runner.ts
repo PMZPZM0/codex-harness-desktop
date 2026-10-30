@@ -14,7 +14,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
-import { binOnPath } from "../cli-agents";
+import { binOnPath, cliProcessEnv } from "../cli-agents";
 import { bridgeDial } from "../main";
 import { readCustomModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -597,6 +597,10 @@ async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTa
       execFile(isWin ? "cmd" : "/bin/sh", [isWin ? "/c" : "-c", command], {
         cwd: group.workspace || process.cwd(), timeout: 600_000, maxBuffer: 4 * 1024 * 1024,
         windowsHide: true, ...(isWin ? { windowsVerbatimArguments: true } : {}),
+        /* ⛔⛔ mac 适配（10-30 审计）：PATH 必须增强 —— GUI 进程只有 /usr/bin:/bin:/usr/sbin:/sbin，
+           而 CLI 基本装在 /opt/homebrew/bin 或 ~/.npm-global/bin ⇒ 不增强时 `sh -c "claude …"`
+           报 command not found，派活 100% 失败（与检测侧的 cliProcessEnv 同一条 PATH）。 */
+        env: cliProcessEnv(),
       }, (error, stdout, stderr) => {
         const text = String(stdout ?? "").trim() || String(stderr ?? "").trim();
         if (error && !text) { reject(new Error(`CLI「${member.name}」执行失败：${String(error.message ?? error).slice(0, 200)}`)); return; }

@@ -1286,6 +1286,23 @@ const appSrc4 = readAppUi();
     (/rename\(tmp, modelCatalogFile\)/.test(catalogWriterSrc) ? ok : fail)(
       "model-catalog.json 写入必须走临时文件 + rename（直接覆盖 = 强杀留 0 字节文件）"
     );
+    /* ── 10-30 全链路审计：增强 PATH 必须写回 process.env（mac GUI 进程只有系统目录）──
+       「装好了却跑不起来」的根因：飞书 CLI 的 node shebang、连接器 / MCP 的 npx、手机控制的 python
+       都靠**继承环境**的子进程，而 mac 的 GUI PATH 里没有 tools/node/bin、npm-global/bin、
+       /opt/homebrew/bin ⇒ 找不到就报 command not found（或更糟：静默当成没装）。
+       ⛔ 必须写在 bootApp **最前面**（后面任何 spawn 都要吃到），且只做一次（重复调用会叠加条目）。 */
+    const toolchainSrc136 = readFileSync(join(ROOT, "electron", "toolchain.ts"), "utf8");
+    (/export function applyProcessPath\(\)[\s\S]{0,420}?process\.env\.PATH = augmentedPath\(\)/.test(toolchainSrc136) ? ok : fail)(
+      "【136】toolchain 提供 applyProcessPath（把增强 PATH 写回 process.env）"
+    );
+    (/let processPathApplied = false[\s\S]{0,200}?if \(processPathApplied\) return;/.test(toolchainSrc136) ? ok : fail)(
+      "【136】applyProcessPath 幂等（重复调用会把 PATH 条目叠加）"
+    );
+    const atApplyPath = bootSrc.indexOf("applyProcessPath();");
+    const atBootFirst = bootSrc.indexOf("export async function bootApp()");
+    (atApplyPath > atBootFirst && atApplyPath - atBootFirst < 700 ? ok : fail)(
+      "【136】bootApp 一开始就 applyProcessPath（放在后面 ⇒ 先起的子进程仍用最小 PATH）"
+    );
     const appSettingsCatalogSrc = readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8");
     const catalogNoticeSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part01", "04-optimistic-turn-approval-e2e.tsx"), "utf8");
     (/modelCatalogRepairNotice/.test(appSettingsCatalogSrc) ? ok : fail)(

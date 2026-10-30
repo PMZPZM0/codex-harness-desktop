@@ -349,6 +349,27 @@ export function toolchainEnv() {
   return env;
 }
 
+/**
+ * 把增强 PATH **写回本进程**（启动时调一次）。
+ *
+ * ⛔⛔ 为什么需要（10-30 全链路审计）：mac 的 GUI 进程 PATH 只有 `/usr/bin:/bin:/usr/sbin:/sbin`。
+ *   引擎 / 终端 / 一部分工具调用显式传了 `toolchainEnv()` 或 `augmentedPath()`，但**继承环境**的
+ *   子进程（飞书 CLI 的 node shebang、连接器与 MCP 的 `npx`、手机控制的 python、openfilm 的探针…）
+ *   拿到的仍是最小 PATH ⇒「装好了却跑不起来 / 找不到 npx」，且不报错、只在 mac 上复现。
+ *   ⇒ 在启动编排最开始写一次，后续所有 `{...process.env}` 都自带增强 PATH。
+ *
+ * ⛔ 只做一次：`augmentedPath()` 每次都从当前 `process.env.PATH` 重新拼，重复调用会把条目叠加。
+ * ⛔ 必须在 app ready 之后调（augmentedPath 依赖 app.getPath），所以放 bootApp 开头而不是模块顶层。
+ */
+let processPathApplied = false;
+export function applyProcessPath(): void {
+  if (processPathApplied) return;
+  processPathApplied = true;
+  try {
+    process.env.PATH = augmentedPath();
+  } catch { /* 取不到就保持原样：后续显式传 toolchainEnv 的调用点仍是对的 */ }
+}
+
 // 内置 pwsh 完整路径；没有则返回空串
 export function bundledPwsh() {
   return existingToolPath("pwsh", process.platform === "win32" ? "pwsh.exe" : "pwsh");
