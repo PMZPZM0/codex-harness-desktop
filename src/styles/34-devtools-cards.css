@@ -168,5 +168,5 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .skill-pack-head-row .secondary-setting { flex: none; display: inline-flex; align-items: center; gap: 5px; }
 /* 10-30：确认类弹窗（卸载等）用 sm —— 高度随内容、宽度 520，避免 720px 空盒子。
    ⛔ 其余面板仍用 md/lg 固定高度（内容多、需要内部滚动）。 */
-.settings-dialog[data-size="sm"] { width: min(520px, 100%); height: auto; max-height: min(420px, 100%); }
+.settings-dialog[data-size="sm"] { width: min(520px, 100%); height: auto; max-height: min(560px, 88vh); }
 .settings-dialog[data-size="sm"] { grid-template-rows: 56px minmax(0, auto); }
