@@ -53,19 +53,23 @@ type Status = {
   error: string;
 };
 
-export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling }: {
+export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;
-  runtimeInstalling?: Record<string, boolean> | null;
+  /** ⛔ 真实类型是「正在安装的工具 id」（单个字符串），不是 map —— 按 map 读会永远 undefined，
+      结果：点安装既没有「安装中」也没有禁用，50MB 下载期间看着像按钮坏了（10-30 用户实测）。 */
+  runtimeInstalling?: string | null;
   uninstallDevRuntime?: (id: string) => unknown;
-  runtimeUninstalling?: Record<string, boolean> | null;
+  runtimeUninstalling?: string | null;
+  /** 安装阶段文案（runtime:progress 的 message，id=feishu-cli）；用于下载进度反馈。 */
+  runtimeStage?: Record<string, string>;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState<"" | "setup" | "reconfig" | "login" | "logout">("");
   /* 10-30 用户：「提供卸载按键」→「卸载做成弹窗」——确认放在**设置内二级弹窗**里。
      ⛔ 不用 AppView 的 openAppConfirm：它挂在设置面板的遮罩层之下，弹出来用户看不见（实测截图空白）。 */
   const [uninstallOpen, setUninstallOpen] = useState(false);
-  const uninstalling = Boolean(runtimeUninstalling?.["feishu-cli"]);
+  const uninstalling = runtimeUninstalling === "feishu-cli";
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
   const releaseRef = useRef<number>(0);
@@ -140,7 +144,18 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
 
   useEffect(() => () => { if (releaseRef.current) window.clearTimeout(releaseRef.current); }, []);
 
-  const installing = Boolean(runtimeInstalling?.["feishu-cli"]);
+  const installing = runtimeInstalling === "feishu-cli";
+  /* 别的工具在装时也不许并发点（与运行时列表同口径：一次只跑一个安装）。 */
+  const otherBusy = Boolean(runtimeInstalling) && !installing;
+  /* 安装完成（runtime:progress done）后重读状态：本卡片自己的轮询只在等待授权时开，
+     不补这一条，装完界面会一直停在「未安装」，用户看着像安装按钮点了没反应（10-30 实测）。 */
+  useEffect(() => {
+    const off = window.codex.onRuntimeProgress((payload: { id?: string; done?: boolean }) => {
+      if (payload?.id !== "feishu-cli" || !payload.done) return;
+      void refresh();
+    });
+    return off;
+  }, [refresh]);
   const waiting = busy === "setup" || busy === "reconfig" || busy === "login";
 
   /** 用系统默认浏览器打开授权页；打不开就给一条能自救的提示（链接本身仍可复制）。 */
@@ -200,7 +215,7 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
           <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
           <span className="runtime-copy">
             <strong>安装 CLI</strong>
-            <small>{status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会删除本机已登录的飞书凭据` : "约 51 MB，走国内 npm 镜像；装好后可在这里卸载"}</small>
+            <small>{installing ? (runtimeStage?.["feishu-cli"] || "正在安装（下载约 51 MB，国内镜像）…") : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会删除本机已登录的飞书凭据` : "约 51 MB，走国内 npm 镜像；装好后可在这里卸载"}</small>
           </span>
           <div className="runtime-actions">
             {status?.installed ? <>
@@ -215,7 +230,7 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
                   {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                 </button>
               </>
-              : <button type="button" className="primary-setting runtime-install" disabled={installing} onClick={() => installDevRuntime?.("feishu-cli")}>
+              : <button type="button" className="primary-setting runtime-install" disabled={installing || otherBusy} onClick={() => installDevRuntime?.("feishu-cli")}>
                   {installing ? <><Spinner /> 安装中</> : <><Download size={14} />安装</>}
                 </button>}
           </div>
