@@ -165,6 +165,8 @@ let remoteEventForwarders!: any;
 /** 已经流式发过思考摘要的**条目**（`threadId:turnId:itemId`）：完整条目兜底时跳过，免得出现两遍。
  *  ⛔ 必须到条目粒度：一个回合里模型常有多段思考，按回合记会把后一段（未流式的）整段误跳过。 */
 const remoteThinkStreamed = new Set<string>();
+/* 回合结束的「错误/已停止」只给手机发一次：aborted 与 completed 两种事件形态可能都到（10-31 实测） */
+const remoteTurnEndNotified = new Set<string>();
 
 /** 文件变更：逐文件一行（最多 5 行，与桌面文件卡同口径：+N −M / 已删除） */
 function remoteFilesText(files: any[]): string {
@@ -1041,7 +1043,28 @@ export async function bootApp() {
         if (step && !internalThreads.has(String(p?.threadId ?? ""))) {
           for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "step", text: step });
         }
+      } else if (event.method === "turn/started" || event.method === "turn/begin") {
+        /* 回合开始（无论从电脑端还是手机端发起）：手机同步「运行中」，否则电脑端在跑时
+           手机还显示「发送」，既看不到状态也按不了停止（10-31 用户实测）。 */
+        if (!internalThreads.has(String(p?.threadId ?? ""))) {
+          for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "running", text: "" });
+        }
       } else if (event.method === "turn/completed") {
+        /* 另一种引擎形态：结束原因在 turn.status（interrupted / failed），没有单独的 aborted 事件 */
+        {
+          const status = String((p as any)?.turn?.status ?? "completed");
+          const endThreadId = String(p?.threadId ?? eventThreadId(p) ?? "");
+          if (status !== "completed" && endThreadId && !internalThreads.has(endThreadId)) {
+            const endKey = endThreadId + ":" + (turnIdOf(p) || "");
+            if (!remoteTurnEndNotified.has(endKey)) {
+              remoteTurnEndNotified.add(endKey);
+              if (remoteTurnEndNotified.size > 200) remoteTurnEndNotified.clear();
+              const reason = String((p as any)?.turn?.error?.message ?? "").trim();
+              const text = status === "failed" ? ("运行失败" + (reason ? "：" + reason : "")) : "已停止";
+              for (const forward of remoteEventForwarders) forward({ threadId: endThreadId, kind: "error", text });
+            }
+          }
+        }
         if (!internalThreads.has(String(p?.threadId))) {
           /* 最后一道兜底：有些供应商连单条的 item/completed 都不发，整轮的 items 里却齐全。
              在 done **之前**把没发过的思考补上（done 一到手机就把运行块折叠了）。 */
@@ -1064,10 +1087,31 @@ export async function bootApp() {
       // ⛔ 中断 / 失败的回合也必须释放缓冲：否则它永久留在 Map 里，
       //    下一次兜底会错取到它（L2 记忆串台到上一回合）
       if (/^turn\/(aborted|failed|interrupted)$/.test(String(event.method ?? ""))) {
-        takeCaptureBuffer(String(p?.threadId ?? ""), turnIdOf(p));
-        dropRemoteThinkKeys(String(p?.threadId ?? ""), turnIdOf(p));
+        /* ⛔ 引擎的 aborted/failed 事件**常常不带 threadId**（实测），必须用 eventThreadId 兜底，
+           否则手机端收不到「已停止/失败」——旧实现只发 done，且 threadId 为空被页面丢掉。 */
+        const endedThreadId = String(p?.threadId ?? eventThreadId(p) ?? "");
+        takeCaptureBuffer(endedThreadId, turnIdOf(p));
+        dropRemoteThinkKeys(endedThreadId, turnIdOf(p));
+        /* 手机端的错误反馈：失败要给出原因，被停要说「已停止」——旧实现只发 done，
+           手机端看起来就是「什么都没发生 / 一直转圈」（10-31 用户：「报错反馈没有」）。 */
+        if (!internalThreads.has(endedThreadId)) {
+          const failed = String(event.method ?? "") === "turn/failed";
+          const reason = String(
+            (p as any)?.error?.message
+            ?? (p as any)?.turn?.error?.message
+            ?? (p as any)?.message
+            ?? "",
+          ).trim();
+          const text = failed ? ("运行失败" + (reason ? "：" + reason : "")) : "已停止";
+          const endKey = endedThreadId + ":" + (turnIdOf(p) || "");
+          if (!remoteTurnEndNotified.has(endKey)) {
+            remoteTurnEndNotified.add(endKey);
+            if (remoteTurnEndNotified.size > 200) remoteTurnEndNotified.clear();
+            for (const forward of remoteEventForwarders) forward({ threadId: endedThreadId, kind: "error", text });
+          }
+        }
         // 手机端「运行中」也只认 done：中断/失败/中止同样要收尾，否则停止后按钮/状态一直挂着
-        if (!internalThreads.has(String(p?.threadId ?? ""))) for (const forward of remoteEventForwarders) forward({ threadId: p?.threadId, kind: "done", text: "" });
+        if (!internalThreads.has(endedThreadId)) for (const forward of remoteEventForwarders) forward({ threadId: endedThreadId, kind: "done", text: "" });
       }
       if (event.method === "turn/completed" && !internalThreads.has(String(p?.threadId))) {
         const threadId = String(p?.threadId ?? "");
