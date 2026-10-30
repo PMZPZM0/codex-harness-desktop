@@ -131,7 +131,10 @@ export function filterMentionTargets(targets, query, allow = null) {
        ⛔ 若改成"筛掉"，用户看到的是"团队不见了"，无法得知是开关没开（这是上一版的真问题）。 */
     const off = !mentionKindAllowed(allow, group.kind);
     const hits = list
-      .filter((target) => target && target.kind === group.kind)
+      /* ★ 10-31 用户实测「@ 里专家只显示 5 个」：团队角色（主理人 = expert、成员 = member）要并进
+         「专家」分组 —— 用户心里的"专家库"就是全部角色（单人 + 团主理人 + 团员），不是只算单人专家。
+         ⛔ 分组规则只在这里写一次；成员行的许可仍按它自己的 kind 判（team 开关）。 */
+      .filter((target) => target && (group.kind === "expert" ? (target.kind === "expert" || target.kind === "member") : target.kind === group.kind))
       .map((target, index) => ({ target, rank: rankMentionTarget(target, query), index }))
       .filter((entry) => entry.rank >= 0)
       // 同分保持目录顺序（稳定），否则选区会随打字乱跳
@@ -144,7 +147,9 @@ export function filterMentionTargets(targets, query, allow = null) {
     const items = hits.slice(0, MENTION_PER_GROUP).map((entry) => {
       const target = entry.target;
       const missing = target?.kind === "cli" && target?.installed === false;
-      if (!off && !missing) return target;
+      // 行级许可：成员（member）跟随「专家团」开关；专家团整组未开通时组头已经说明，这里只管逐行
+      const kindOff = !mentionKindAllowed(allow, target?.kind);
+      if (!off && !kindOff && !missing) return target;
       return { ...target, disabled: true, disabledReason: missing ? "cli-missing" : "kind-off" };
     });
     const more = Math.max(0, hits.length - items.length);
