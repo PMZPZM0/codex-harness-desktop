@@ -966,6 +966,12 @@ contextBridge.exposeInMainWorld("codex", {
   feishuCliCancel: () => __ipc("feishu-cli:cancel", 0, []),
   /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
   feishuCliRun: (input: unknown) => __ipc("feishu-cli:run", 1, [input]),
+  /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId） */
+  readTaskMonitor: (threadId: unknown) => __ipc("monitor:read", 1, [threadId]),
+  /* 10-30 任务监控：用户编辑后的自我改进建议落盘 */
+  saveMonitorSuggestion: (input: unknown) => __ipc("monitor:save-suggestion", 1, [input]),
+  /* 10-30 任务监控：重跑一次模型生成（复用一次性内部会话） */
+  regenerateMonitorSuggestion: (input: unknown) => __ipc("monitor:regenerate", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

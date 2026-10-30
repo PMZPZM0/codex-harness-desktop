@@ -46,6 +46,20 @@ function resolveStartModel(bag: { selectedModel?: { model?: string } | null; mod
   return resolved;
 }
 
+/**
+ * 预填并**直接发送**（任务监控「进化」用，10-30）。
+ * ⛔ 为什么不走 setPrompt + addSkillReference + send：那三个都是 setState，send 读的是**本次渲染**的
+ * bag ⇒ 正文是旧的、技能还被丢掉。这里改走两条一次性 ref（pendingCommandTextRef / pendingSkillRef），
+ * 与「自定义命令展开文本」「/命令」同一条通道 —— 发出去的就是调用方给的那份。
+ */
+export async function sendPrefilled(bag: Bag, input: { text: string; skill?: { name: string; description: string } }): Promise<void> {
+  const text = String(input?.text ?? "").trim();
+  if (!text) return;
+  bag.pendingCommandTextRef.current = text;
+  bag.pendingSkillRef.current = input.skill ?? null;
+  await send(bag);
+}
+
 export async function send(bag: Bag, event?: FormEvent) {
     event?.preventDefault();
     // 自定义命令展开文本优先消费（跳过 / 前缀解析，避免展开结果被二次当命令处理）
@@ -194,7 +208,11 @@ export async function send(bag: Bag, event?: FormEvent) {
       // 排队消息与正常发送一样带上引用段（引用/文件/技能/上下文），渲染时解析成卡片
       const quotePrefix = bag.quoteItem ? `> ${bag.quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
       const contextPrefix = bag.contextItems.length ? `\n\n[用户指定的对话上下文]\n${bag.contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
-      const skillPrefix = bag.selectedSkills.length ? `\n\n[本轮已引用技能]\n${bag.selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+      const pendingSkill = bag.pendingSkillRef?.current ?? null;
+      /* 一次性技能只对这一次发送生效 —— 读完就清，别漏到下一轮 */
+      if (pendingSkill) bag.pendingSkillRef.current = null;
+      const skillsForSend = pendingSkill ? [...bag.selectedSkills, pendingSkill] : bag.selectedSkills;
+      const skillPrefix = skillsForSend.length ? `\n\n[本轮已引用技能]\n${skillsForSend.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
       /* ★ 10-29 @ 点名：模型侧唯一知道"用户点名了谁"的通道（纯函数生成，空数组则一字不加） */
       const mentionPrefix = bag.dispatchMentionBlock();
       const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";
@@ -290,7 +308,11 @@ export async function send(bag: Bag, event?: FormEvent) {
     //   输入框同步清空，失败路径由下方 failedText 逻辑原样恢复（与原行为一致）。
     const quotePrefix = bag.quoteItem ? `> ${bag.quoteItem.text.split("\n").join("\n> ")}\n\n` : "";
     const contextPrefix = bag.contextItems.length ? `\n\n[用户指定的对话上下文]\n${bag.contextItems.map((item, index) => `(${index + 1}) ${item.role}：${item.text}`).join("\n\n")}\n[上下文结束]\n` : "";
-    const skillPrefix = bag.selectedSkills.length ? `\n\n[本轮已引用技能]\n${bag.selectedSkills.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
+    const pendingSkill = bag.pendingSkillRef?.current ?? null;
+    /* 一次性技能只对这一次发送生效 —— 读完就清，别漏到下一轮 */
+    if (pendingSkill) bag.pendingSkillRef.current = null;
+    const skillsForSend = pendingSkill ? [...bag.selectedSkills, pendingSkill] : bag.selectedSkills;
+    const skillPrefix = skillsForSend.length ? `\n\n[本轮已引用技能]\n${skillsForSend.map((skill) => `- ${skill.name}：${skill.description}`).join("\n")}\n[请按上述技能工作流执行]\n` : "";
       /* ★ 10-29 @ 点名：模型侧唯一知道"用户点名了谁"的通道（纯函数生成，空数组则一字不加） */
       const mentionPrefix = bag.dispatchMentionBlock();
     const filePrefix = inlineFilePaths.length ? `\n\n[附件文件]\n${inlineFilePaths.map((path) => `- ${path}`).join("\n")}\n[附件结束]\n` : "";

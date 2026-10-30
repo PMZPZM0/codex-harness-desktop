@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 597,
+  "count": 600,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5941,6 +5941,36 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell）"
+    },
+    {
+      "name": "readTaskMonitor",
+      "channel": "monitor:read",
+      "paramsImpl": "threadId: unknown",
+      "paramsDecl": "threadId?: string",
+      "returns": "Promise<{ threadId: string; turns: any[] }>",
+      "invokeArgs": "threadId",
+      "cast": null,
+      "note": "10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId）"
+    },
+    {
+      "name": "saveMonitorSuggestion",
+      "channel": "monitor:save-suggestion",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadId?: string; turnId?: string; text?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-30 任务监控：用户编辑后的自我改进建议落盘"
+    },
+    {
+      "name": "regenerateMonitorSuggestion",
+      "channel": "monitor:regenerate",
+      "paramsImpl": "input: unknown",
+      "paramsDecl": "input: { threadId?: string; turnId?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "10-30 任务监控：重跑一次模型生成（复用一次性内部会话）"
     }
   ]
 }

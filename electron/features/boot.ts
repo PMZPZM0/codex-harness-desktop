@@ -22,6 +22,7 @@ import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
 import { healEngineInstall } from "../engine-install-heal";
 import { debugTurnFiles } from "../debug/turn-files-debug";
+import { noteEngineEvent } from "./task-monitor";
 import { sendToWindow } from "./window-bus";
 import { getMusicStream } from "../music-streams";
 import { dropStoredReports, emitTurnFileChanges, setTurnFileWatchBroadcast, setTurnFileWatchDiag, setTurnFileWatchStore, settleTurnByTurnId, snapshotTurnWorkspace, storedReportsForThread } from "../turn-file-watch";
@@ -956,6 +957,9 @@ export async function bootApp() {
           }
         }
       }
+      // 任务监控（10-30）：每轮的技能 / MCP / 插件 / 产物 + 本轮自我改进建议。
+      // ⛔ 同步调用、绝不 await —— 采集只是记账，生成走它自己内部的 async；抛出会打断整条事件分发。
+      try { noteEngineEvent(event.method, p); } catch { /* 监控失败不影响对话 */ }
       // 回合结束（四类，见 turn-end.ts）：流式会话负责最终回复；「正在输入」指示器这时要收掉
       // ⛔ 只认 completed 时，被中断 / 失败的回合微信端「正在输入」永远不停（同型缺陷）
       if (isTurnEndMethod(event.method)) stopWeixinTyping(String(p?.threadId ?? ""));
