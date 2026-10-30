@@ -2,6 +2,7 @@
  * AppViewRemoteConsole —— AppView 的 JSX 第 5 段（09-22 从 AppView.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
+import { useEffect } from "react";
 import { AppSelect } from "../../../components/AppSelect";
 import { ToggleSwitch } from "../../../components/SettingsWidgets";
 import {
@@ -175,10 +176,25 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
     try { setPairCode((await window.codex.remotePairRotate()).code); return ""; }
     catch (error: any) { return String(error?.message ?? error); }
   };
+  /* 10-30 用户实测「这个界面没有返回功能」：机器人面板是全局弹窗，原来只有右上角 ✕。
+     补左上「返回」+ Esc —— 返回键与主操作同排靠左（用户既有偏好），Esc 在捕获阶段拦，
+     避免同一个 Esc 还把底下的面板/搜索一起关掉。 */
+  useEffect(() => {
+    if (!botManagerOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setBotManagerOpen(false);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [botManagerOpen, setBotManagerOpen]);
   return (
     botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
             <div className="bot-manager" role="dialog" aria-label="机器人">
-              <header><div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入为你的聊天机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
+              <header>
+                <button className="secondary-setting bot-back" title="返回" onClick={() => setBotManagerOpen(false)}><ArrowLeft size={14} />返回</button>
+                <div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入为你的聊天机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
               {/* 09-13：首次连接的 6 位配对码与待审批请求直接在这里展示——
                   否则用户得叉掉面板回「手机远控」看码，来回跳（用户反馈「不方便」） */}
               <div className="bot-pair-banner">
