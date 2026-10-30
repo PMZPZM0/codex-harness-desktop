@@ -1341,6 +1341,8 @@ interface Window {
     saveMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; error?: string }>;
     /* 10-30 任务监控：重跑一次模型生成（复用一次性内部会话） */
     regenerateMonitorSuggestion(input: { threadId?: string; turnId?: string }): Promise<{ ok: boolean; error?: string }>;
+    /* 10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验 */
+    adoptMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; delivered?: boolean; error?: string }>;
 /* ═══ gen:end ═══ */
 
 

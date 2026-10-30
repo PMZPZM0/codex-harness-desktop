@@ -144,6 +144,27 @@ const codexIpcSrc = read("electron/features/codex-ipc.ts");
   "技能卡不再传 subtitle（表头一行：已使用技能 <中文名>；动作留在右侧 info）"
 );
 
+/* ⑤ 采取建议（10-30 用户令）：点一下把建议交给 Codex，**以事件通知**（与群聊同通道），
+      不是用户消息；采纳后它自己把建议沉淀成经验。 */
+const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
+(chAdopt && chAdopt.invokeArgs === "input" ? ok : fail)(
+  "IPC 清单有 monitor:adopt 且实参走 input（漏 invokeArgs = preload 静默丢参）"
+);
+(/GROUP_EVENT_TAG/.test(svc) && /hostQueueMessageId\("evolve"\)/.test(svc) ? ok : fail)(
+  "采纳事件用 [群事件] 标记 + host: 队列 id（与群聊同通道；时间线按事件块渲染，排队面板不冒用户消息）"
+);
+(/turn\/steer/.test(svc) && /thread\/queue\/add/.test(svc) ? ok : fail)(
+  "投递走 steer（回合进行中）/ queue.add（空闲）两条路"
+);
+(!/turn\/start/.test(svc.slice(svc.indexOf("async function deliverHostEvent"), svc.indexOf("function adoptEventText"))) ? ok : fail)(
+  "⛔ 投递函数里不许出现 turn/start（会打断正在跑的回合）"
+);
+(/adoptedAt = Date.now\(\)/.test(svc) ? ok : fail)("采纳会落盘 adoptedAt（面板据此显示「已采取」）");
+(/采取建议/.test(panel) && /adoptMonitorSuggestion/.test(panel) ? ok : fail)(
+  "面板按钮是「采取建议」，走 adoptMonitorSuggestion（⛔ 不再是「发回对话」）"
+);
+(/沉淀|可复用的经验/.test(svc) ? ok : fail)("事件正文要求它**沉淀成经验**（记忆 / AGENTS.md / 技能），不是回一句「好的」");
+
 console.log("");
 console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
 process.exit(failCount === 0 ? 0 : 1);
