@@ -1876,6 +1876,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("previousCode") && relaySrc.includes("rotatePairingCode(\"expiry\")") && relaySrc.includes("writeStore(KEY_CODE, \"\")") ? ok : fail)(
       "【139e】配对码到期有 2 分钟宽限；被判失效后手机端清掉预填旧码（⛔ 否则一直\"填的对却过期\"）"
     );
+    /* 10-31 用户截图：同一台 Xiaomi 两条「已批准的设备」；且换过 deviceId 的手机识别不出来。 */
+    (relaySrc.includes("private dedupeApproved") && relaySrc.includes("\"name:\" + String(info.name") ? ok : fail)(
+      "【139e】旧重复设备记录合并（同名/同指纹只留最近连接的一条；⛔ 不同指纹不合并）"
+    );
+    (relaySrc.includes("const secretMatches = (hash") && relaySrc.includes("同一台手机换了设备 ID") ? ok : fail)(
+      "【139e】同一台手机换 deviceId 时按设备秘密迁移记录（⛔ 只认秘密，deviceId 只是标签）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );
