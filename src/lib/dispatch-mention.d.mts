@@ -10,6 +10,10 @@ export type MentionTarget = {
   description?: string;
   /** 本会话未开通这一类调度 ⇒ true（面板置灰、不可选中；⛔ 仍要显示，不是隐藏） */
   disabled?: boolean;
+  /** 置灰原因：`kind-off` = 本会话没开这一类；`cli-missing` = CLI 没装（去开发工具一键安装） */
+  disabledReason?: "kind-off" | "cli-missing";
+  /** CLI 智能体：本机是否已安装（主进程检测；false ⇒ 置灰不可选） */
+  installed?: boolean;
 };
 
 export const MENTION_GROUPS: Array<{ kind: MentionKind; label: string; hint: string }>;
@@ -64,3 +68,9 @@ export function mentionEnterPlan(
   query: string,
   allow?: { team?: boolean } | null,
 ): { target: any | null; disabledOnly: boolean };
+
+/** 输入框当前被哪个触发符唤起（`@` 点名 / `*` 历史消息 / 空串 = 都没唤起）。 */
+export function contextTriggerOf(value: unknown): { mode: "" | "mention" | "history"; query: string };
+
+/** 置灰行的原因文案（面板 title / 行内小字共用）。 */
+export function mentionDisabledText(target: MentionTarget | null | undefined): string;

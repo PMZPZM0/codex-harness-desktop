@@ -1,25 +1,25 @@
 /**
- * CLI 智能体面板（10-29 新板块；嵌在「设置 → 开发工具」的一级卡片里）。
+ * CLI 智能体面板（10-29 新板块；10-30 用户令升级：一键安装 + 配套卸载 + 装没装实时同步）。
  *
- * 用户令原文：「在开发工具界面新增一个「CLI 智能体」模块，用于统一管理和接入各类 CLI 工具，
- *   支持安装 Claude CLI、OpenClaw CLI、Harness CLI 及其他主流 CLI。要求按类型对已接入的 CLI
- *   进行分类管理，并提供搜索功能…同时将该 CLI 接入到「@」调用体系中」。
+ * 10-30 用户令原文：「cli 智能体没安装，都还能选离谱，这个要实时同步显示更新，安装了就能选，
+ *   没安装就不能选灰色掉，然后 cli 智能体界面，加一个一键安装功能，而不是光复制指令自己去安装，
+ *   还要配套卸载功能，cli 智能体还要主会话的模型配置自动同步给他」。
  *
- * 这一屏只做**管理面**：分类分组 / 搜索 / 检测已装 / 复制安装命令 / 启停 / 增改删。
- * 派活不在这里 —— 配好之后它就是一个可调度对象：输入框 `@` 里能选到它，
+ * 本屏 = 管理面：打开即检测（并行、只本页），每行显示已装/未装，未装且命令可一键执行的
+ * 直接「一键安装」（真进度 + 装完复核 PATH），已装的给「卸载」（弹窗确认，只动应用自己的目录）。
+ * 派活不在这里 —— 配好之后它就是一个可调度对象：@ 列表按这里的安装状态置灰/可选，
  * 模型用 `agent_invoke(kind="cli")` 派出（与专家 / 子智能体同一条链路、同一套闸门）。
  *
- * ⛔⛔ **不假装能一键安装**：`installCmd` 只在内置表核实过官方来源时才有值；
- *   没有就显示「按官方文档安装」并只给「复制文档链接」。⛔ 不在这里跑 npm/安装脚本 ——
- *   静默在用户机器上装东西是最不该有的"顺手"。
- * ⛔ 检测是**按需**的（点按钮才跑）：`where/which` 有子进程，开面板就扫一遍会让设置页卡顿。
+ * ⛔ 安装/卸载的**唯一实现**在主进程 `electron/cli-install.ts`（npm/pip 参数数组、不开 shell、
+ *   装完复核）。面板只调 IPC —— 本文件出现任何子进程调用都是绕过实现的双份。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Code2, Copy, PencilLine, Plus, RefreshCw, Search, Terminal, Trash2, X } from "lucide-react";
+import { Bot, Code2, Copy, Download, LoaderCircle, PencilLine, Plus, RefreshCw, Search, Terminal, Trash2, X } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { AppSelect } from "../../components/AppSelect";
+import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import { countCliAgents, detectLabel, groupCliAgents, type CliCategory } from "../../lib/cli-agents.mjs";
+import { countCliAgents, groupCliAgents, type CliCategory } from "../../lib/cli-agents.mjs";
 
 type DetectState = { state: "idle" | "busy" | "ok" | "miss"; version?: string; path?: string };
 
@@ -30,7 +30,7 @@ type Draft = { id: string; name: string; category: string; bin: string; installC
 
 const EMPTY_DRAFT = (category: string): Draft => ({ id: "", name: "", category, bin: "", installCmd: "", docs: "", description: "" });
 
-export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => void }) {
+export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detail?: string) => void }) {
   const [items, setItems] = useState<CliAgentEntry[]>([]);
   const [categories, setCategories] = useState<CliCategory[]>([]);
   const [query, setQuery] = useState("");
@@ -41,8 +41,13 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
   const [error, setError] = useState("");
   /** 删除要两段确认（第一段把按钮换成「确认删除」，第二段才真删）。 */
   const [confirmId, setConfirmId] = useState("");
+  /** 一键装卸在跑的条目（busy 期间按钮换 spinner、整行锁操作）。 */
+  const [busyId, setBusyId] = useState("");
+  const [logs, setLogs] = useState<{ id: string; text: string }[]>([]);
+  /** 卸载确认弹窗（SettingsDialog：设置页里 AppView 的 confirm 会被 sheet 压住看不见）。 */
+  const [uninstallId, setUninstallId] = useState("");
 
-  const notify = useCallback((text: string) => { if (text) setNotice?.(text); }, [setNotice]);
+  const notify = useCallback((text: string, detail?: string) => { if (text) setNotice?.(detail ? `${text} —— ${detail}` : text); }, [setNotice]);
 
   const refresh = useCallback(async () => {
     try {
@@ -54,13 +59,6 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
     }
   }, []);
 
-  useEffect(() => { void refresh(); }, [refresh]);
-
-  const groups = useMemo(() => groupCliAgents(items, categories, query), [items, categories, query]);
-  const counts = useMemo(() => countCliAgents(items, categories, query), [items, categories, query]);
-  const visible = tab === "all" ? groups : groups.filter((group) => group.key === tab);
-
-  /** 检测一个条目（按需触发）。⛔ 失败只写"未检测到"，不当错误弹 —— 没装是常态。 */
   const runDetect = useCallback(async (item: CliAgentEntry) => {
     setDetect((current) => ({ ...current, [item.id]: { state: "busy" } }));
     try {
@@ -76,13 +74,76 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
     }
   }, []);
 
-  const detectAll = useCallback(async () => {
-    for (const item of items) {
-      // 串行：并发 fork 一堆 where/--version 在 Windows 上会互相拖慢
+  /* 10-30 用户令「装没装要实时同步」：打开面板**自动检测一轮**（并行；有子进程，只在本页跑），
+     装卸完成后由 cli-agents-changed 广播再刷一轮。 */
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = (await window.codex.listCliAgents()) as { items: CliAgentEntry[]; categories: CliCategory[] };
+        setItems(Array.isArray(res?.items) ? res.items : []);
+        setCategories(Array.isArray(res?.categories) ? res.categories : []);
+        await Promise.all((Array.isArray(res?.items) ? res.items : []).map(runDetect));
+      } catch (e) {
+        setError(`读取 CLI 列表失败：${(e as Error)?.message ?? e}`);
+      }
+    })();
+  }, [runDetect]);
+
+  /* 进度与变更事件：cli-agent-install（装卸进度）+ cli-agents-changed（目录变了 → 重拉 + 重检测）。 */
+  useEffect(() => window.codex.onHarnessEvent?.((payload: any) => {
+    if (payload?.type === "cli-agent-install" && payload.id) {
+      const id = String(payload.id);
+      if (payload.stage === "start") setBusyId(id);
+      if (payload.stage === "log" && payload.line) setLogs((current) => [...current.slice(-9), { id, text: String(payload.line) }]);
+      if (payload.stage === "done" || payload.stage === "error") setBusyId((current) => (current === id ? "" : current));
+    }
+    if (payload?.type === "cli-agents-changed") {
+      void (async () => {
+        try {
+          const res = (await window.codex.listCliAgents()) as { items: CliAgentEntry[]; categories: CliCategory[] };
+          setItems(Array.isArray(res?.items) ? res.items : []);
+          setCategories(Array.isArray(res?.categories) ? res.categories : []);
+          await Promise.all((Array.isArray(res?.items) ? res.items : []).map(runDetect));
+        } catch { /* 面板已挂载过一次成功，事件期失败静默 */ }
+      })();
+    }
+  }), [runDetect]);
+
+  const groups = useMemo(() => groupCliAgents(items, categories, query), [items, categories, query]);
+  const counts = useMemo(() => countCliAgents(items, categories, query), [items, categories, query]);
+  const visible = tab === "all" ? groups : groups.filter((group) => group.key === tab);
+
+  const install = useCallback(async (item: CliAgentEntry) => {
+    if (busyId) return;
+    setBusyId(item.id);
+    setLogs([]);
+    try {
+      const res = await window.codex.installCliAgent(item.id);
+      if (!res?.ok) notify(res?.error ?? "安装失败");
+      else notify(res.detail || `已安装「${item.name}」`);
+    } catch (e) {
+      notify(`安装失败：${(e as Error)?.message ?? e}`);
+    } finally {
+      setBusyId("");
       await runDetect(item);
     }
-    notify("检测完成：装了的会显示版本号");
-  }, [items, runDetect, notify]);
+  }, [busyId, notify, runDetect]);
+
+  const uninstall = useCallback(async (item: CliAgentEntry) => {
+    if (busyId) return;
+    setBusyId(item.id);
+    setUninstallId("");
+    try {
+      const res = await window.codex.uninstallCliAgent(item.id);
+      if (!res?.ok) notify(res?.error ?? "卸载失败");
+      else notify(res.detail || `已卸载「${item.name}」`);
+    } catch (e) {
+      notify(`卸载失败：${(e as Error)?.message ?? e}`);
+    } finally {
+      setBusyId("");
+      await runDetect(item);
+    }
+  }, [busyId, notify, runDetect]);
 
   const toggle = useCallback(async (item: CliAgentEntry, enabled: boolean) => {
     const res = await window.codex.saveCliAgent({ id: item.id, enabled });
@@ -135,8 +196,10 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
       return;
     }
     await copyTextToClipboard(item.installCmd);
-    notify("安装命令已复制 —— 贴到终端里跑，装完回来点「检测」");
+    notify("安装命令已复制（也可以直接点「一键安装」）");
   }, [notify]);
+
+  const uninstallTarget = items.find((item) => item.id === uninstallId) ?? null;
 
   return (
     <div className="cli-agents">
@@ -153,9 +216,6 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
             <button type="button" className="cli-agents-clear" title="清空搜索" onClick={() => setQuery("")}><X size={12} /></button>
           ) : null}
         </label>
-        <button type="button" className="cli-agents-btn" onClick={() => void detectAll()} title="逐条检测是否已装（有子进程，按需点）">
-          <RefreshCw size={13} /> 全部检测
-        </button>
         <button type="button" className="cli-agents-btn primary" onClick={() => setDraft(EMPTY_DRAFT(categories[0]?.key ?? "custom"))}>
           <Plus size={13} /> 新增 CLI
         </button>
@@ -197,7 +257,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
             </label>
             <label>
               <span>安装命令（可空）</span>
-              <input value={draft.installCmd} onChange={(e) => setDraft({ ...draft, installCmd: e.target.value })} placeholder="没有核实过就留空" spellCheck={false} />
+              <input value={draft.installCmd} onChange={(e) => setDraft({ ...draft, installCmd: e.target.value })} placeholder="npm / pip 的全局安装命令（可一键执行）" spellCheck={false} />
             </label>
             <label className="wide">
               <span>一句话用途（会出现在 @ 候选和工具描述里）</span>
@@ -218,6 +278,10 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
         </div>
       ) : null}
 
+      {logs.length > 0 && (
+        <pre className="cli-agent-install-log">{logs.map((entry, index) => <span key={index}>{entry.text}{"\n"}</span>)}</pre>
+      )}
+
       {visible.map((group) => (
         <div className="cli-agent-group" key={group.key}>
           <div className="cli-agent-group-label">
@@ -231,6 +295,8 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
           ) : group.items.map((item) => {
             const Icon = CATEGORY_ICON[item.category] ?? Terminal;
             const status = detect[item.id];
+            const busy = busyId === item.id;
+            const installed = status?.state === "ok";
             return (
               <div className={`cli-agent-row ${item.enabled ? "" : "off"}`} key={item.id}>
                 <span className="cli-agent-icon"><Icon size={14} /></span>
@@ -239,27 +305,39 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
                     {item.name}
                     <code>{item.bin || "（未填可执行名）"}</code>
                     {item.builtin ? <em className="cli-agent-tag">内置</em> : null}
+                    {installed ? <em className="cli-agent-tag is-ok">已安装</em> : status?.state === "miss" ? <em className="cli-agent-tag is-miss">未安装</em> : null}
                   </div>
                   <div className="cli-agent-desc">{item.description || "（没有写说明 —— 派活时模型只能靠名字猜）"}</div>
                   {status && status.state !== "idle" ? (
                     <div className={`cli-agent-status ${status.state}`}>
-                      {detectLabel(status)}
+                      {status.state === "ok"
+                        ? `已安装${status.version ? ` · ${status.version}` : ""}`
+                        : status.state === "busy" ? "检测中…" : "未安装"}
                       {status.path ? <span title={status.path}> · {status.path}</span> : null}
                     </div>
                   ) : null}
                 </div>
                 <div className="cli-agent-actions">
-                  <button type="button" className="cli-agents-btn" onClick={() => void runDetect(item)} title="检测本机是否已装（where/which + --version）">
+                  {installed ? (
+                    <button type="button" className="cli-agents-btn" disabled={Boolean(busyId)} title="从应用的工具目录卸载（系统里你自己装的另一份不动）" onClick={() => setUninstallId(item.id)}>
+                      {busy ? <LoaderCircle size={12} className="spin" /> : <Trash2 size={12} />} 卸载
+                    </button>
+                  ) : item.installCmd ? (
+                    <button type="button" className="cli-agents-btn primary" disabled={Boolean(busyId)} title={`一键安装（${item.installCmd}）`} onClick={() => void install(item)}>
+                      {busy ? <LoaderCircle size={12} className="spin" /> : <Download size={12} />} 一键安装
+                    </button>
+                  ) : null}
+                  <button type="button" className="cli-agents-btn" disabled={Boolean(busyId)} onClick={() => void runDetect(item)} title="检测本机是否已装（where/which + --version）">
                     <RefreshCw size={12} /> 检测
                   </button>
-                  <button type="button" className="cli-agents-btn" onClick={() => void copyInstall(item)} title={item.installCmd || item.docs || "没有可复制的一键安装命令"}>
-                    <Copy size={12} /> 安装命令
+                  <button type="button" className="cli-agents-btn" disabled={Boolean(busyId)} onClick={() => void copyInstall(item)} title={item.installCmd || item.docs || "没有可复制的一键安装命令"}>
+                    <Copy size={12} /> 复制命令
                   </button>
-                  <button type="button" className="cli-agents-btn" onClick={() => setDraft({ id: item.id, name: item.name, category: item.category, bin: item.bin, installCmd: item.installCmd, docs: item.docs, description: item.description })}>
+                  <button type="button" className="cli-agents-btn" disabled={Boolean(busyId)} onClick={() => setDraft({ id: item.id, name: item.name, category: item.category, bin: item.bin, installCmd: item.installCmd, docs: item.docs, description: item.description })}>
                     <PencilLine size={12} /> 编辑
                   </button>
                   {item.builtin ? null : (
-                    <button type="button" className={`cli-agents-btn ${confirmId === item.id ? "danger" : ""}`} onClick={() => void remove(item)}>
+                    <button type="button" className={`cli-agents-btn ${confirmId === item.id ? "danger" : ""}`} disabled={Boolean(busyId)} onClick={() => void remove(item)}>
                       <Trash2 size={12} /> {confirmId === item.id ? "确认删除" : "移除"}
                     </button>
                   )}
@@ -272,9 +350,25 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string) => vo
       ))}
 
       <div className="cli-agents-foot">
-        这里<b>不会替你安装</b> —— 只给核实过的官方安装命令（复制到终端跑），其余按官方文档装。
-        装好后点「检测」确认；启用中的 CLI 会出现在输入框 @ 候选里，与专家、子智能体一起可直接派活。
+        一键安装只装进<b>应用自己的工具目录</b>（不污染系统 PATH），装完自动复核；
+        未安装的 CLI 在输入框 @ 列表里<b>置灰不可选</b>。派活时自动沿用<b>主会话的模型与供应商配置</b>，
+        不用再配一遍。装好点「检测」或直接看行上的「已安装 / 未安装」。
       </div>
+
+      {/* ── 卸载确认弹窗（⛔ 设置页里必须用 SettingsDialog：AppView 的 confirm 渲染在 sheet 之下看不见）── */}
+      {uninstallTarget && (
+        <SettingsDialog size="sm" title={`卸载「${uninstallTarget.name}」`} onClose={() => setUninstallId("")}>
+          <div className="cli-agent-confirm">
+            <p>会从应用的工具目录卸载 <code>{uninstallTarget.installCmd || uninstallTarget.bin}</code>，
+              卸载后它从 @ 候选里置灰（不可选但仍在列表里）。</p>
+            <p className="cli-agent-confirm-note">你在系统 npm / Python 里自己装的另一份不会被动。</p>
+            <div className="cli-agent-confirm-actions">
+              <button type="button" className="cli-agents-btn" onClick={() => setUninstallId("")}>取消</button>
+              <button type="button" className="cli-agents-btn danger" onClick={() => void uninstall(uninstallTarget)}>卸载</button>
+            </div>
+          </div>
+        </SettingsDialog>
+      )}
     </div>
   );
 }

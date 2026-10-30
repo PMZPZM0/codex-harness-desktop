@@ -386,6 +386,62 @@ export async function detectCliAgent(input: { id?: string; bin?: string }): Prom
   return { installed: true, path: found, version: await probeVersion(found), error: "" };
 }
 
+/* ── 「装没装」的目录缓存（10-30 用户令：@ 列表要实时反映安装状态） ───────────────
+   `buildDispatchCatalog` 每次拉目录都会跑（渲染层打开 @ 面板还会 4s 轮询）——
+   每次都 fork 一批 where/which 会让设置页卡顿，所以给「批量检测」加一个**短 TTL** 缓存：
+   · 命中条件 = 同一批 bin 且距上次检测 ≤ 5s；
+   · 安装 / 卸载 / 保存完成后调用 `invalidateCliInstalledCache()`（cli-install.ts 与 IPC 层），
+     下一次拉目录必然重检 —— 这是"实时同步"的另一半（轮询只兜"别处装的"那种场景）。 */
+let installedCache: { at: number; key: string; flags: Record<string, boolean> } | null = null;
+
+export function invalidateCliInstalledCache(): void {
+  installedCache = null;
+}
+
+/** 批量检测（并行、带 5s 缓存）。给调度目录用：每个 CLI 一个 `installed` 布尔。 */
+export async function cliInstalledFlags(entries: Array<Pick<CliAgentDef, "id" | "bin">>): Promise<Record<string, boolean>> {
+  const key = entries.map((entry) => `${entry.id}:${entry.bin}`).join("|");
+  if (installedCache && installedCache.key === key && Date.now() - installedCache.at < 5000) return installedCache.flags;
+  const flags: Record<string, boolean> = {};
+  await Promise.all(entries.map(async (entry) => {
+    flags[entry.id] = entry.bin ? await binOnPath(entry.bin) : false;
+  }));
+  installedCache = { at: Date.now(), key, flags };
+  return flags;
+}
+
+/**
+ * 「主会话的模型配置自动同步给 CLI 智能体」（10-30 用户令，方便小白不用再配一遍）。
+ *
+ * 做法：派活时把当前供应商的 base_url / key / model 以**环境变量**注入被委派会话的 shell
+ * （`thread/start` 的 `shell_environment_policy.set`，引擎按它构造每次工具调用的环境）——
+ * OpenAI 兼容系 CLI（aider / openclaw / 多数自研 CLI）认 `OPENAI_*` 这套惯例就能直接跑，
+ * 不用用户再贴一遍 Key。⛔ 两条安全边界：
+ *   ① Key 只进**该会话的 shell 环境**，不进提示词 / 不落 rollout（凭据进正文 = 进日志）；
+ *   ② 供应商口径对不上（例如 OpenAI 兼容 base_url 配 Claude Code 这种 Anthropic 协议 CLI）时
+ *      **不硬凑** —— 没有对应的 env 就不注，CLI 用它自己的账号配置（提示词里如实说）。
+ */
+export function cliModelEnv(input: { provider?: string; baseUrl?: string; model?: string }, apiKey: string): Record<string, string> {
+  const baseUrl = String(input?.baseUrl ?? "").trim();
+  const model = String(input?.model ?? "").trim();
+  const provider = String(input?.provider ?? "").trim();
+  if (!apiKey || (!baseUrl && !model)) return {};
+  const env: Record<string, string> = { OPENAI_API_KEY: apiKey };
+  if (baseUrl) {
+    env.OPENAI_BASE_URL = baseUrl;
+    env.OPENAI_API_BASE = baseUrl;
+  }
+  if (model) env.OPENAI_MODEL = model;
+  const looksAnthropic = /anthropic/i.test(`${provider} ${baseUrl}`);
+  if (looksAnthropic) {
+    if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
+    env.ANTHROPIC_AUTH_TOKEN = apiKey;
+    env.ANTHROPIC_API_KEY = apiKey;
+    if (model) env.ANTHROPIC_MODEL = model;
+  }
+  return env;
+}
+
 export { BUILTIN_CLI_AGENTS };
 
 /**
@@ -415,8 +471,10 @@ export function buildCliRolePrompt(cli: Pick<CliAgentDef, "name" | "bin" | "desc
     "⛔ **如果命令找不到 / 报「不是内部或外部命令」「command not found」**：立刻停下，如实回一句" +
       `「本机没有安装 ${name}」并给出下面的安装方式，**不要假装跑过、不要拿别的工具顶替**。`,
     install
-      ? `安装方式（原样转述给发起方，⛔ 不要自己执行安装）：${install}`
-      : "这个 CLI 没有可复制的一键安装命令 —— 按它自己的分发方式装，或让发起方换一个对象。",
+      ? `安装方式：到应用「设置 → 开发工具 → CLI 智能体」点「一键安装」；向发起方转述时原样带上这条命令：${install}。⛔ 不要自己在 shell 里执行安装。`
+      : "这个 CLI 没有可复制的一键安装命令 —— 按它自己的分发方式装（去「设置 → 开发工具 → CLI 智能体」），或让发起方换一个对象。",
+    "模型配置：本会话已自动沿用主会话的供应商与模型（无需用户再配一遍）；若你的工具认 OpenAI 兼容环境变量"
+      + "（OPENAI_BASE_URL / OPENAI_API_KEY / OPENAI_MODEL），环境里已就绪，直接用，不要向用户索要 Key。",
     "⛔ 不要调用其他专家 / 专家团 / 子智能体，也不要再派另一个 CLI。",
   ].filter(Boolean).join("\n");
 }

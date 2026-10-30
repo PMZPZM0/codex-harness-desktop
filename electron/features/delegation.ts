@@ -14,7 +14,8 @@ import { safeProviderId } from "../provider-id";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
-import { buildCliRolePrompt, readUsableCliAgents } from "../cli-agents";
+import { binOnPath, buildCliRolePrompt, cliModelEnv, readUsableCliAgents } from "../cli-agents";
+import { augmentedPath } from "../toolchain";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
@@ -86,6 +87,15 @@ export async function runDelegatedTask(input: {
     const clis = await readUsableCliAgents();
     const cli = clis.find((entry) => entry.id === target.key);
     if (!cli) return { ok: false, output: "", error: `CLI 智能体「${input.name}」不存在或已停用` };
+    /* ⛔⛔ 派活前重检「装没装」（10-30 用户令「没安装就不能还能选」的执行侧硬闸）：
+       @ 列表里的 `installed` 来自短缓存目录，UI 拦得住但拦不住模型凭参数硬调；
+       这里**现查 PATH**（一次 where/which），没装就如实拒绝 —— 别烧一回合让被委派会话自己发现。 */
+    if (!cli.bin || !(await binOnPath(cli.bin))) {
+      return {
+        ok: false, output: "",
+        error: `CLI 智能体「${cli.name}」未安装：到 设置 → 开发工具 → CLI 智能体 点「一键安装」后重试${cli.installCmd ? `（对应命令：${cli.installCmd}）` : ""}`,
+      };
+    }
     rolePrompt = buildCliRolePrompt(cli);
     displayName = cli.name;
   } else {
@@ -131,13 +141,29 @@ export async function runDelegatedTask(input: {
     || "never";
 
   ensureProjectAgentsMd(input.cwd || process.cwd());
+  /* ★ 10-30 用户令「CLI 智能体自动沿用主会话的模型配置」：把当前供应商的 base_url / key / model
+     注进**被委派会话的 shell 环境**（`shell_environment_policy.set`，引擎按它构造每次工具调用的
+     环境）⇒ CLI 子进程直接继承，OpenAI 兼容系 CLI 不用再要一遍 Key。
+     ⛔ Key 只进 shell 环境（引擎请求体），不进提示词 / 不落 rollout；PATH 一起带上 ——
+        该 policy 是整表覆盖，不写 PATH 会把 config.toml 里那份增强 PATH 顶掉（等于废掉工具链）。 */
+  const cliShellEnv = target.kind === "cli"
+    ? cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel }, apiKey)
+    : null;
+  const threadConfig: Record<string, unknown> = {};
+  if (baseUrl) {
+    threadConfig.model_provider = safeProviderId(provider);
+    threadConfig.model_providers = { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } };
+  }
+  if (cliShellEnv && Object.keys(cliShellEnv).length) {
+    threadConfig.shell_environment_policy = { inherit: "all", ignore_default_excludes: true, set: { PATH: augmentedPath(), ...cliShellEnv } };
+  }
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
     approvalPolicy: effectiveApproval,
     sandbox: effectiveSandbox,
     modelProvider: provider,
-    config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+    config: Object.keys(threadConfig).length ? threadConfig : undefined,
     // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
     // ⛔ 与主会话的 memory_save **刻意不同名**：两个作用域，别让模型以为写的是同一份。
     // ⛔ 团队工具 + 角色记忆工具 + **能力网关**合在一个数组里传（⛔ 别写两个 dynamicTools 键，后者会覆盖前者）。

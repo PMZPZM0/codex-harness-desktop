@@ -3,8 +3,9 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { createPortal } from "react-dom";
+import { useEffect } from "react";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
-import { filterMentionTargets } from "../../../../lib/dispatch-mention.mjs";
+import { contextTriggerOf, filterMentionTargets, mentionDisabledText } from "../../../../lib/dispatch-mention.mjs";
 import {
   AlertTriangle,
   Archive,
@@ -245,6 +246,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     quoteItem,
     rateLimitRetries,
     recentCompaction,
+    refreshDispatchInfo,
     relayActive,
     removeContextItem,
     reorderQueued,
@@ -333,6 +335,15 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
       })
       .catch((error: any) => showToast(nextPaused ? "暂停失败" : "继续失败", error?.message ?? String(error)));
   };
+  /* ★ 10-30 用户令「CLI 智能体装没装要实时同步显示」：面板每次打开拉一次目录，打开期间每 4s 轮询。
+     目录里的 `installed` 是主进程检测的（有短缓存），装/卸完在 CLI 智能体页操作也会广播
+     `cli-agents-changed`（part05 收到后同样刷新）⇒ 三条路都通向同一份最新目录。 */
+  useEffect(() => {
+    if (!contextOpen) return;
+    void refreshDispatchInfo?.();
+    const timer = window.setInterval(() => { void refreshDispatchInfo?.(); }, 4000);
+    return () => window.clearInterval(timer);
+  }, [contextOpen, refreshDispatchInfo]);
   return (
     <div ref={composerWrapRef} className={`composer-wrap ${isEmpty ? "docked-center" : ""}`}>
                   {/* 归档后提示浮层（09-17 建；09-23 用户三轮定稿：**窗口顶部居中** + 3 秒自动消失）：
@@ -462,49 +473,58 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                   {/* ★ 10-29 @ 点名（用户令：直接 @ 专家 / 子智能体 / 专家团并快速调用）：
                         触发符分工 —— `@` 点名调度对象、`*` 引用历史消息、`#` 引用技能。
                         ⛔ 选中**只记进本轮点名**（芯片在上方），不发消息也不立刻派活：
-                          派活发生在发送后由模型调 agent_invoke，这样许可/身份/深度三道闸仍然生效。 */}
-                  {contextOpen && <div className="context-picker" role="listbox" aria-label="点名对象或引用上下文">
-                    {(() => {
-                      /* ★ 10-30 用户令：「列表需要按调度开通状态联动展示，未开通专家团时置灰不可选，
-                         开通后自动恢复为可选中」。allow 直接读 `activeDispatch`（顶层状态）⇒
-                         拨开关即重渲染，不需要重新拉目录，也不会有"要刷新才生效"。 */
-                      const mention = filterMentionTargets(dispatchInfo?.targets ?? [], contextQuery, activeDispatch);
-                      const query = String(contextQuery ?? "").trim();
-                      /* ⛔ 10-29 晚：「新建子智能体」只在**一条都没匹配到**时出现。
-                         原来只要没命中子智能体就挂出来 —— 输入 "Claude" 明明匹配到 Claude Code，
-                         下面还跟着「新建子智能体「Claude」并 @」，点错就凭空多一个角色。 */
-                      const canCreate = Boolean(query) && mention.total === 0 && mention.groups.every((group) => group.kind !== "subagent");
-                      return <>
-                        {mention.groups.map((group) => <div className={`context-picker-group${group.off ? " is-off" : ""}`} key={group.kind}>
-                          <div className="context-picker-group-label">{group.label}
-                            <small>{group.off ? "未开通 · 在顶栏「调度」里打开后即可选" : group.hint}</small>
-                          </div>
-                          {group.items.map((target) => (
-                            /* ⛔ 未开通 = 原生 disabled（不可点、不在 tab 序里），只置灰**不隐藏**：
-                               用户要能看到"专家团在这里，只是没开"，而不是以为团队丢了。 */
-                            <button
-                              type="button"
-                              role="option"
-                              key={`${target.kind}:${target.key}`}
-                              aria-disabled={target.disabled ? true : undefined}
-                              disabled={Boolean(target.disabled)}
-                              title={target.disabled ? "该类别未开通调度：在顶栏「调度」里打开专家团后即可选中" : undefined}
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => { if (!target.disabled) addDispatchMention(target as DispatchTargetEntry); }}
-                            >
-                              <b>{group.label}</b><span>{target.name}{target.profession ? ` · ${target.profession}` : ""}</span>
-                            </button>
-                          ))}
-                        </div>)}
-                        <div className="context-picker-group-label">历史消息<small>输入 * 唤起</small></div>
-                        {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p className="context-picker-empty">没有匹配的历史消息</p>}
-                        {!mention.groups.length && <p className="context-picker-empty">没有匹配的专家 / 子智能体 / CLI 智能体 / 专家团</p>}
-                        {canCreate && <button type="button" className="context-picker-new" onMouseDown={(event) => event.preventDefault()} onClick={() => void createDispatchSubagent(query)}>
-                          <b>新建</b><span>新建子智能体「{query}」并 @（默认配置，可在设置里补充指令）</span>
-                        </button>}
-                      </>;
-                    })()}
-                  </div>}
+                          派活发生在发送后由模型调 agent_invoke，这样许可/身份/深度三道闸仍然生效。
+                        ⛔⛔ 10-30 用户令「两个指令拆开显示」：面板按 contextTriggerOf(prompt).mode 只画
+                          被唤起的那一半 —— 敲 `*` 只有历史消息、敲 `@` 只有调度对象，不再互相夹带。 */}
+                  {contextOpen && (() => {
+                    const mode = contextTriggerOf(prompt).mode || "mention";
+                    return <div className="context-picker" role="listbox" aria-label={mode === "history" ? "引用历史消息" : "点名调度对象"} data-mode={mode}>
+                      {(() => {
+                        /* ★ 10-30 用户令：「列表需要按调度开通状态联动展示，未开通专家团时置灰不可选，
+                           开通后自动恢复为可选中」。allow 直接读 `activeDispatch`（顶层状态）⇒
+                           拨开关即重渲染，不需要重新拉目录，也不会有"要刷新才生效"。 */
+                        const mention = filterMentionTargets(dispatchInfo?.targets ?? [], contextQuery, activeDispatch);
+                        const query = String(contextQuery ?? "").trim();
+                        /* ⛔ 10-29 晚：「新建子智能体」只在**一条都没匹配到**时出现。
+                           原来只要没命中子智能体就挂出来 —— 输入 "Claude" 明明匹配到 Claude Code，
+                           下面还跟着「新建子智能体「Claude」并 @」，点错就凭空多一个角色。 */
+                        const canCreate = Boolean(query) && mention.total === 0 && mention.groups.every((group) => group.kind !== "subagent");
+                        if (mode === "history") {
+                          return <>
+                            <div className="context-picker-group-label">历史消息<small>输入 * 唤起 · 引用进本轮上下文</small></div>
+                            {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p className="context-picker-empty">没有匹配的历史消息</p>}
+                          </>;
+                        }
+                        return <>
+                          {mention.groups.map((group) => <div className={`context-picker-group${group.off ? " is-off" : ""}`} key={group.kind}>
+                            <div className="context-picker-group-label">{group.label}
+                              <small>{group.off ? "未开通 · 在顶栏「调度」里打开后即可选" : group.hint}</small>
+                            </div>
+                            {group.items.map((target) => (
+                              /* ⛔ 未开通 / 未安装 = 原生 disabled（不可点、不在 tab 序里），只置灰**不隐藏**：
+                                 用户要能看到"对象在这里，只是现在选不了"，而不是以为它丢了。 */
+                              <button
+                                type="button"
+                                role="option"
+                                key={`${target.kind}:${target.key}`}
+                                aria-disabled={target.disabled ? true : undefined}
+                                disabled={Boolean(target.disabled)}
+                                title={mentionDisabledText(target) || undefined}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => { if (!target.disabled) addDispatchMention(target as DispatchTargetEntry); }}
+                              >
+                                <b>{group.label}</b><span>{target.name}{target.profession ? ` · ${target.profession}` : ""}{target.kind === "cli" && target.installed === false ? " · 未安装" : ""}</span>
+                              </button>
+                            ))}
+                          </div>)}
+                          {!mention.groups.length && <p className="context-picker-empty">没有匹配的专家 / 子智能体 / CLI 智能体 / 专家团</p>}
+                          {canCreate && <button type="button" className="context-picker-new" onMouseDown={(event) => event.preventDefault()} onClick={() => void createDispatchSubagent(query)}>
+                            <b>新建</b><span>新建子智能体「{query}」并 @（默认配置，可在设置里补充指令）</span>
+                          </button>}
+                        </>;
+                      })()}
+                    </div>;
+                  })()}
                   {/* 供应商切换「待重启生效」banner：切换只保存配置，重启前不打断任何会话 */}
                   {pendingRestart && (
                     <div className="provider-restart-banner">
