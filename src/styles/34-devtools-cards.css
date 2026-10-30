@@ -167,6 +167,17 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .skill-pack-head-row .settings-card-hint { flex: 1; min-width: 0; margin: 0; }
 .skill-pack-head-row .secondary-setting { flex: none; display: inline-flex; align-items: center; gap: 5px; }
 /* 10-30：确认类弹窗（卸载等）用 sm —— 高度随内容、宽度 520，避免 720px 空盒子。
-   ⛔ 其余面板仍用 md/lg 固定高度（内容多、需要内部滚动）。 */
-.settings-dialog[data-size="sm"] { width: min(520px, 100%); height: auto; max-height: min(560px, 88vh); }
-.settings-dialog[data-size="sm"] { grid-template-rows: 56px minmax(0, auto); }
+   ⛔ 其余面板仍用 md/lg 固定高度（内容多、需要内部滚动）。
+   ★ 10-31 用户实测「卡片没展示全，没有滚动功能」：原来 sm 仍走 grid + `minmax(0, auto)`，
+     auto 行**不会因为 max-height 收缩** ⇒ 弹窗被裁掉、body 也没有可滚动高度。
+     改成 flex 列：头固定、body `flex:1 + min-height:0 + overflow:auto` —— 内容超高时
+     **弹窗停在 88vh、正文自己滚**（团队预览这种长内容也能完整看到底）。 */
+.settings-dialog[data-size="sm"] {
+  width: min(520px, 100%);
+  height: auto;
+  max-height: min(560px, 88vh);
+  display: flex;
+  flex-direction: column;
+}
+.settings-dialog[data-size="sm"] .settings-dialog-head { flex: none; min-height: 56px; }
+.settings-dialog[data-size="sm"] .settings-dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
