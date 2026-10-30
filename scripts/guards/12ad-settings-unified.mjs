@@ -15,7 +15,7 @@
  */
 import { readFileSync, existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { codeOnly, readSettingsSurface } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -279,6 +279,58 @@ const generalPage = pageSrc("general");
 ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
   && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");
 ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的是全局开关回调");
+
+/* ★ 10-31 用户令：「专家卡片 / 专家团卡片 / 子智能体卡片做成卡通头像+介绍，纯文字卡片好丑，
+   要区分智能体、专家、专家团，不同风格头像」。
+   判据盯四件事（缺一件就会退回"纯文字卡片"或"三类共用一张脸"）：
+     ① 三类各一套图集（expert / team / subagent 分开），每类 ≥2 张、3×3 等分；
+     ② 纯函数选脸（同 id 恒定，换列表顺序不跳）；
+     ③ 三个设置页真的用了 AgentAvatar（不是画了个组件没人用）；
+     ④ 图片走 avatarAsset（BASE_URL）—— 打包后 file:// 下写死 `/avatars/` 会解析到盘符根。 */
+{
+  const avatarMod = await import(pathToFileURL(join(ROOT, "src/lib/agent-avatars.mjs")).href);
+  const libSrc = src("src/lib/agent-avatars.mjs");
+  ok(/expert: \["agent-expert-a\.webp", "agent-expert-b\.webp"\]/.test(libSrc)
+    && /team: \["agent-team-a\.webp", "agent-team-b\.webp"\]/.test(libSrc)
+    && /subagent: \["agent-subagent-a\.webp", "agent-subagent-b\.webp"\]/.test(libSrc),
+    "三类各一套卡通图集（专家人物 / 专家团合影 / 机器人，风格可区分）");
+  ok(avatarMod.AGENT_AVATAR_COLS === 3 && avatarMod.AGENT_AVATAR_CELLS === 9,
+    "图集按 3×3 等分（改图必须保持等分，否则切到别人脸上）");
+  const a1 = avatarMod.pickAgentAvatar("expert", "member-42");
+  const a2 = avatarMod.pickAgentAvatar("expert", "member-42");
+  ok(a1.file === a2.file && a1.cell === a2.cell, "同一 id 恒定一张脸（重渲染 / 换顺序不跳脸）");
+  ok([0, 50, 100].includes(a1.x) && [0, 50, 100].includes(a1.y), "切片坐标只在 0/50/100（3×3 图集的真实锚点）");
+  ok(avatarMod.pickAgentAvatar("expert", "same").file !== avatarMod.pickAgentAvatar("team", "same").file,
+    "同一 id 在专家 / 专家团下取不同风格图集");
+  ok(/avatarAsset\(pick\.file\)/.test(src("src/components/AgentAvatar.tsx")),
+    "图片 URL 走 avatarAsset（BASE_URL，file:// 下也能读）");
+  for (const [file, label, kindCheck] of [
+    ["src/features/settings-expert-center/ExpertCenterSection.tsx", "专家中心", /kind="expert"/],
+    ["src/features/settings-teams/TeamsSettingsSection.tsx", "专家团", /kind="team"/],
+    ["src/features/settings-agents/AgentsSettingsSection.tsx", "子智能体", /kind="subagent"/],
+  ]) {
+    const page = src(file);
+    ok(/AgentAvatar/.test(page) && kindCheck.test(page),
+      `${label}卡片真的用了卡通头像（⛔ 组件写了不接 = 纯文字卡片照旧）`);
+  }
+  ok(existsSync(join(ROOT, "public/avatars/agent-expert-a.webp")) && existsSync(join(ROOT, "public/avatars/agent-team-a.webp"))
+    && existsSync(join(ROOT, "public/avatars/agent-subagent-a.webp")),
+    "三套图集文件真的在 public/avatars（缺文件 = 空白方块）");
+  /* ★ 10-31 二级令：「小卡片+预览模式就行，外面一张就简洁展示，身份证或者工作证一样」。
+     ⛔ 判据 = 列表卡必须是 AgentBadge（头像+名字+一行身份），细节必须进 SettingsDialog 预览；
+       退回"一张卡铺满元数据"或"点卡直接跳走没有预览"都会被这条打红。 */
+  for (const [file, label] of [
+    ["src/features/settings-agents/AgentsSettingsSection.tsx", "子智能体"],
+    ["src/features/settings-teams/TeamsSettingsSection.tsx", "专家团"],
+    ["src/features/settings-expert-center/ExpertCenterSection.tsx", "专家"],
+  ]) {
+    const page = src(file);
+    ok(/<AgentBadge/.test(page) && /agent-badge-grid/.test(page),
+      `${label}列表 = 工作证小卡（AgentBadge + 网格），不再铺满元数据`);
+    ok(/<SettingsDialog/.test(page) && /agent-preview/.test(page),
+      `${label}点卡进入预览弹窗（细节在弹窗里，不是内联展开）`);
+  }
+}
 
 /* 10-27 用户令：「就在 codex 的个性化指令里面加一条，让 codex 自主询问（是否 handoff 交接）」
    ⇒ 指令片段挂在 lib 里（纯函数、可断言），拼进每回合下发的 developer instructions。

@@ -1495,3 +1495,149 @@
 .effort-tick.on { color: var(--text); font-weight: 650; }
 .effort-picker-hint { margin-top: 9px; }
 .effort-picker-hint > span { color: var(--text); font-weight: 600; }
+
+/* ★ 10-31 用户令：设置里的专家 / 专家团 / 子智能体卡片换成卡通头像。
+   图片 = public/avatars/agent-{expert,team,subagent}-{a,b}.webp（3×3 图集，CSS 切格）。
+   ⛔ 这里只放公共底样式：尺寸 / 圆角 / 切图位置都在组件行内（各页原规则不动）。 */
+.agent-avatar {
+  flex: none;
+  display: inline-block;
+  background-repeat: no-repeat;
+  background-color: var(--panel-2);
+}
+/* 主理人 / 领队：金色描边用 outline，避开 box-shadow（成员「运行中」光圈在用它） */
+.agent-avatar.is-lead {
+  outline: 2px solid color-mix(in srgb, #e5a53c 72%, transparent);
+  outline-offset: -2px;
+}
+
+/* ── ★ 10-31 智能体「工作证」小卡 + 预览弹窗 ──────────────────────────────
+   用户令：「小卡片+预览模式就行，外面一张就简洁展示，身份证或者工作证一样」。
+   一级 = 头像 + 名字 + 一行身份（+ 可选标签）；细节全部进预览弹窗。 */
+.agent-badge-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 10px;
+}
+.agent-badge {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--field);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+.agent-badge:hover {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  background: color-mix(in srgb, var(--accent) 4%, var(--field));
+}
+.agent-badge.is-off { opacity: .62; }
+.agent-badge-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.agent-badge-copy strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+.agent-badge-tag {
+  flex: none;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  color: var(--faint);
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 500;
+  line-height: 15px;
+}
+.agent-badge-copy small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-badge-arrow { flex: none; color: var(--faint); }
+
+/* 预览弹窗内容 */
+.agent-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.agent-preview-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.agent-preview-hero > div { min-width: 0; }
+.agent-preview-hero strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 15px;
+}
+.agent-preview-hero p {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.agent-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.agent-preview-label {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+.agent-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agent-preview-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 11px;
+}
+.agent-preview-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--field);
+  color: var(--muted);
+  font-size: 12px;
+}
+.agent-preview-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.agent-preview-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+.agent-preview-danger:hover { background: color-mix(in srgb, var(--red) 9%, transparent); }
