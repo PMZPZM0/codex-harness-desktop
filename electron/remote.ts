@@ -106,6 +106,9 @@ type PairRequest = {
   rid: string;
   deviceId: string;
   name: string;
+  /** 手机侧稳定指纹（UA/语言/时区/分辨率）—— 手机清本地存储后 deviceId 会变，指纹不变。
+   *  审批通过时用它在已批准表里**清掉同一台手机的旧记录**（用户：一个手机反复连接、旧的没删）。 */
+  fingerprint?: string;
   status: "pending" | "approved" | "denied" | "expired";
   createdAt: number;
   /** 09-24：审批通过时生成的设备秘密明文 —— 只在 /api/pair-status 那一次响应里交付，
@@ -123,7 +126,7 @@ type PairRequest = {
  *  `approvalPolicy: "never"` + `sandbox: "danger-full-access"`（见 main.ts 的 newThread）
  *  ⇒ 等于把宿主机任意命令执行权交出去。现在快路必须**同时**持有配当时下发的秘密。
  *  历史记录没有该字段 ⇒ 不认快路，自动回落完整配对流程（重新下发秘密）。 */
-type ApprovedDevice = { name: string; approvedAt: number; lastSeen: number; secretHash?: string };
+type ApprovedDevice = { name: string; approvedAt: number; lastSeen: number; secretHash?: string; fingerprint?: string };
 
 /** 秘密摘要（用于常量时间比对；长度恒为 64 个十六进制字符）。 */
 const sha256Hex = (value: string) => crypto.createHash("sha256").update(value).digest("hex");
@@ -193,7 +196,7 @@ export class RemoteControlService {
       const data = JSON.parse(fs.readFileSync(this.approvedFile, "utf8"));
       for (const [key, value] of Object.entries<any>(data ?? {})) {
         /* ⛔ 必须带回 secretHash：丢掉它 = 重启后「设备秘密快路」失效，手机会被迫重新输码（审查发现） */
-        if (value && typeof value.name === "string") this.approved.set(key, { name: value.name, approvedAt: Number(value.approvedAt ?? 0), lastSeen: Number(value.lastSeen ?? 0), secretHash: typeof value.secretHash === "string" ? value.secretHash : undefined });
+        if (value && typeof value.name === "string") this.approved.set(key, { name: value.name, approvedAt: Number(value.approvedAt ?? 0), lastSeen: Number(value.lastSeen ?? 0), secretHash: typeof value.secretHash === "string" ? value.secretHash : undefined, fingerprint: typeof value.fingerprint === "string" ? value.fingerprint : undefined });
       }
     } catch { /* 首次运行无文件 */ }
   }
@@ -541,6 +544,8 @@ export class RemoteControlService {
           const data = JSON.parse(body);
           const deviceId = String(data.deviceId ?? "").trim();
           const name = String(data.deviceName ?? "手机").slice(0, 40);
+          /* 稳定指纹：手机清本地存储后 deviceId 会变，用它来认"同一台手机"并按新配对清掉旧记录 */
+          const fingerprint = String(data.fingerprint ?? "").replace(/[^\w-]/g, "").slice(0, 64);
           /* 老朋友快路：**必须同时验设备秘密**（09-24 安全修复）。
              ⛔ 绝不能退回「只看 approved.has(deviceId)」：deviceId 不是秘密、且永久持久化，
              那样等于把一次性泄漏放大成永久访问权（进而是宿主机任意命令执行 —— 见 ApprovedDevice 注释）。
@@ -553,7 +558,7 @@ export class RemoteControlService {
             && presentedHash.length === known.secretHash.length
             && crypto.timingSafeEqual(Buffer.from(presentedHash), Buffer.from(known.secretHash))
           ) {
-            this.approved.set(deviceId, { ...known, lastSeen: Date.now() });
+            this.approved.set(deviceId, { ...known, lastSeen: Date.now(), ...(fingerprint ? { fingerprint } : {}) });
             this.saveApproved();
             this.grantCookies(res, deviceId);
             this.json(res, 200, { ok: true, approved: true });
@@ -565,7 +570,7 @@ export class RemoteControlService {
           }
           // 配对码正确 → 挂起，等电脑端在应用里点「允许」
           const rid = crypto.randomBytes(6).toString("hex");
-          this.pairRequests.set(rid, { rid, deviceId, name, status: "pending", createdAt: Date.now() });
+          this.pairRequests.set(rid, { rid, deviceId, name, status: "pending", createdAt: Date.now(), fingerprint });
           this.events.onPairRequest?.({ rid, deviceId, name });
           this.json(res, 200, { ok: true, approved: false, rid });
         } catch (error: any) {
@@ -960,7 +965,21 @@ export class RemoteControlService {
        只认 deviceId 的话，deviceId 一次性泄漏就等于永久访问权（见 ApprovedDevice 注释）。 */
     const secret = crypto.randomBytes(32).toString("base64url");
     req.secret = secret;
-    this.approved.set(req.deviceId, { name: req.name, approvedAt: Date.now(), lastSeen: Date.now(), secretHash: sha256Hex(secret) });
+    this.approved.set(req.deviceId, { name: req.name, approvedAt: Date.now(), lastSeen: Date.now(), secretHash: sha256Hex(secret), ...(req.fingerprint ? { fingerprint: req.fingerprint } : {}) });
+    /* 同一台手机重新配对：按稳定指纹清掉旧记录（用户：「一个手机反复连接，旧的配对自动清掉」）。
+       ⛔ 只清**指纹相同且不是本次 deviceId** 的条目。
+       另：升级前的旧记录没有指纹（无法证明是哪台），只清**同名且 24h 没连过**的那种 —— 那是历史重复条目；
+       同名但最近连过的不动（可能是另一台同型号手机）。 */
+    if (req.fingerprint) {
+      let removed = 0;
+      for (const [id, info] of [...this.approved]) {
+        if (id === req.deviceId) continue;
+        const sameFingerprint = info.fingerprint === req.fingerprint;
+        const staleLegacy = !info.fingerprint && info.name === req.name && Date.now() - Number(info.lastSeen ?? 0) > 24 * 3600_000;
+        if (sameFingerprint || staleLegacy) { this.approved.delete(id); removed += 1; }
+      }
+      if (removed) console.log(`[remote] 同一台手机重新配对：已清理 ${removed} 条旧记录（指纹 ${req.fingerprint}）`);
+    }
     this.saveApproved();
     return true;
   }
@@ -1087,6 +1106,13 @@ let savedCode = "";
 try { savedCode = readStore(KEY_CODE) || ""; } catch(e) { savedCode = ""; }
 const ua = navigator.userAgent;
 const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
+/* 同一台手机的稳定指纹（清本地存储/换入口后 deviceId 会变，指纹不变）：电脑端用它清掉旧配对记录 */
+const DEVICE_FP = (function(){ try {
+  const parts = [navigator.userAgent, navigator.language, Intl.DateTimeFormat().resolvedOptions().timeZone, screen.width + "x" + screen.height, String(screen.colorDepth), String(navigator.hardwareConcurrency || 0)].join("|");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < parts.length; i += 1) { h ^= parts.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return "fp-" + h.toString(16).padStart(8, "0");
+} catch (e) { return ""; } })();
 const el = document.getElementById("state");
 let submitting = false;
 /* 被拒 / 过期 / 超时后必须解锁：否则按钮永远禁用，用户只能刷新页面（审查发现） */
@@ -1101,7 +1127,7 @@ async function submit(){
   if (button) button.disabled = true;
   el.className = ""; el.textContent = "正在校验…";
   try {
-    const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName, deviceSecret }) });
+    const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName, deviceSecret, fingerprint: DEVICE_FP }) });
     const j = await r.json();
     if (!j.ok) { submitting = false; if (button) button.disabled = false; el.className = "err"; el.textContent = j.error || "配对失败"; return; }
     /* 码是对的：存下来，下次进配对页自动填（不必再记/再敲） */
@@ -1141,7 +1167,7 @@ async function autoLogin(){
   setAutoTries(autoTries() + 1);
   el.className = "wait"; el.textContent = "正在自动登录…";
   try {
-    const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ deviceId, deviceName, deviceSecret }) });
+    const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ deviceId, deviceName, deviceSecret, fingerprint: DEVICE_FP }) });
     const j = await r.json();
     if (j.ok && j.approved) { setAutoTries(0); el.className = "ok"; el.textContent = "已登录，正在进入…"; location.replace(API_BASE + "/r/mobile"); return; }
   } catch { /* 网络不通就留在表单 */ }
