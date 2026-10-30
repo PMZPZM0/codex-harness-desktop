@@ -8,6 +8,14 @@
 
 /* 技能管理：我的技能小卡片视图。 */
 .skill-installed-view { display: flex; flex-direction: column; gap: 18px; margin-top: 16px; }
+
+/* 10-30 用户：「搜索框这一排跟下面卡片合到一起」「共享技能池放到搜索框一排」 ——
+   工具栏与内容共用一个壳：工具栏当壳头（下边一条细线），卡片区不再另起一张面。 */
+.skill-center-shell { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); overflow: hidden; }
+.skill-center-shell > .skill-filter-row { margin: 0; border: 0; border-bottom: 1px solid var(--line-soft); border-radius: 0; background: transparent; }
+.skill-center-shell > .skill-installed-view { margin-top: 0; padding: 12px 14px 14px; }
+.skill-center-shell > .skill-card-grid { padding: 12px 14px 4px; }
+.skill-center-shell > .skill-market-pagination { padding: 0 14px 12px; }
 .skill-installed-summary { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 11.5px; align-self: flex-start; }
 .skill-installed-group { display: flex; flex-direction: column; gap: 8px; }
 .skill-installed-group > header { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12.5px; font-weight: 500; }

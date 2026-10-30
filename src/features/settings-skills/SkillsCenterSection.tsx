@@ -4,7 +4,8 @@
  * 纯搬迁：返回的 JSX / 体内语句与原块逐字一致（仅去掉外层缩进与 IIFE 包装）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
-import { ArrowLeft, ArrowRight, Check, CircleStop, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, CircleStop, FolderKanban, LayoutGrid, Paperclip, Play, Plus, Quote, RefreshCw, SlidersHorizontal, Trash2 } from "lucide-react";
+import { useState } from "react";
 import { Spinner } from "../../components/CardShell";
 import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { AppSelect } from "../../components/AppSelect";
@@ -25,9 +26,12 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
   const marketPageSizeSafe = Math.max(1, Number(marketPageSize) || 12);
   const marketTotalPages = Math.max(1, Math.ceil(marketFiltered.length / marketPageSizeSafe));
   const marketSafePage = Math.min(Math.max(1, Number(marketPage) || 1), marketTotalPages);
+  /* 10-30 用户：「共享技能池放到搜索框一排；搜索框这一排跟下面卡片合到一起；上面的文字注释不要了」。 */
+  const [poolOpen, setPoolOpen] = useState(false);
   return (
     <>
       <section className="settings-section stack skill-center">
+        <div className="skill-center-shell">
                     {/* 10-27 三轮用户令：「跟搜索框放一排；那一排分类小字删了；右上角帮助问号删了」——
                         搜索 + 榜单筛选 + 三颗小按键同一行；分类芯片行与页头 ? 一并删除。 */}
                     <div className="resource-toolbar secondary skill-filter-row">
@@ -58,6 +62,11 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                             />
                           </span>
                         </>
+                      )}
+                      {skillsManageOnly && (
+                        <button type="button" className={`secondary-setting skill-action-sm ${poolOpen ? "active-manage" : ""}`} onClick={() => setPoolOpen((v) => !v)} title="按项目生效：选择该项目里哪些全局技能可用">
+                          <FolderKanban size={13} />共享技能池
+                        </button>
                       )}
                       <div className="skill-actions-line">
                         <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
@@ -144,8 +153,7 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                             ⛔ 这里只留一句指路，**不再放开关** —— 同一状态两个入口，用户会以为两边不一致。
                             真正的检查/更新在主进程后台跑（skills-ipc 的 runSkillAutoUpdate），与本页是否打开无关；
                             手动逐项更新入口 = 卡片上的「重新安装」（同一条市场安装链）。 */}
-                        <p className="settings-card-hint">「技能内容更新」的自动更新开关已统一移到<b>设置 → 控制台</b>的「自动更新」里（和桌面自动化、浏览器自动化、Mac 电脑操作、Codex 引擎放在一起）。</p>
-                        <SkillPoolSection projects={props.projects} onNotice={setNotice} />
+                        <SkillPoolSection projects={props.projects} onNotice={setNotice} open={poolOpen} onOpenChange={setPoolOpen} hideTrigger />
                         <div className="skill-installed-summary skill-installed-overview">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry: any) => entry.source === "cocoloop" || entry.source === "skillhub").length} · 本地 {localSkills.filter((entry: any) => entry.source !== "cocoloop" && entry.source !== "skillhub").length} · 停用 {localSkills.filter((entry: any) => entry.enabled === false).length}</div>
                         {shownBuiltin.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-builtin" />Codex 内置技能<small>由 Codex app-server 自带，不支持停用</small></header><div className="skill-card-grid compact">{shownBuiltin.map((skill: any) => renderCard({ name: skill.name, description: skill.description ?? "由 Codex 引擎内置提供", path: skill.path }, "builtin"))}</div></section>}
                         {marketInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-market" />市场安装<small>从 SkillHub / CocoLoop 市场一键安装到 Codex 技能目录</small></header><div className="skill-card-grid compact">{marketInstalled.map((skill) => renderCard(skill, "market"))}</div></section>}
@@ -183,7 +191,8 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                               externalLabel: "SkillHub 查看",
                               note2: installed ? undefined : "安装到 Codex 技能目录，对话中可直接引用",
                             })}><div className="skill-card-head"><SkillAvatar skill={skill} /><button className="skill-add" title={installed ? "在对话中使用已安装技能" : "一键安装到 Codex 技能目录"} disabled={Boolean(installingMarketSkill)} onClick={(event) => { event.stopPropagation(); if (installed) { setSelectedSkills((current: any) => current.some((entry: any) => entry.name === skill.name) ? current : [...current, skill]); setSettingsOpen(false); setNotice(`已引用技能：${skill.name}`); } else void installMarketSkill(skill); }}>{installed ? <Check size={14} /> : <Plus size={14} />}</button></div><strong>{skill.name}</strong><p>{skill.description}</p><footer><span title={skill.category}>{skillHubCategoryName(skill.category)}{skill.subCategory ? ` · ${skill.subCategory}` : ""}</span><a href="https://skillhub.tencent.com/" onClick={(event) => { event.preventDefault(); event.stopPropagation(); void window.codex.openExternal("https://skillhub.tencent.com/"); }}>SkillHub 查看</a></footer></article>; })}</div>{marketTotalPages > 1 && <div className="skill-market-pagination"><span>共 {marketFiltered.length} 个技能 · 第 {marketSafePage} / {marketTotalPages} 页</span><div><button className="secondary-setting" disabled={marketSafePage <= 1} onClick={() => setMarketPage(marketSafePage - 1)}><ArrowLeft size={14} />上一页</button><button className="secondary-setting" disabled={marketSafePage >= marketTotalPages} onClick={() => setMarketPage(marketSafePage + 1)}>下一页<ArrowRight size={14} /></button></div></div>}</>}
-                  </section>
+        </div>
+      </section>
     </>
   );
 }
