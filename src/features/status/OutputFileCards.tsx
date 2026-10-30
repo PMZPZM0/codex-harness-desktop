@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Copy, FolderOpen, MoreHorizontal } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, Eye, FolderOpen, MoreHorizontal, Pencil } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "../../components/FileTypeIcon";
 import { openRightFile } from "../../lib/right-file.mjs";
 
@@ -43,7 +43,7 @@ function splitPath(path: string): { name: string; dir: string } {
 export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; onOpenEditor?: (path: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<OpenMode>(readMode);
-  const [menu, setMenu] = useState<{ path: string; kind: "mode" | "more"; left: number; top: number } | null>(null);
+  const [menu, setMenu] = useState<{ path: string; kind: "mode" | "more" | "context"; left: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
 
@@ -78,6 +78,24 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
     if (target === "system") { try { void window.codex.shellOpen?.(path); } catch { /* 无默认关联程序 */ } return; }
     openRightFile(path);
   };
+  /* ⛔ 10-30 用户令：卡片上**右键**也要能用（预览 / 编辑 / 打开 + ⋯ 里那两项）。
+     坐标用视口 clientX/Y（菜单 portal 到 body、position:fixed）；贴右/贴底时往回挪 —— 与共享的
+     `features/shared/InlineCards` 的 FileCardMenu 同一套翻边规则（那边是文件引用卡，两处别各写一套值）。 */
+  const CONTEXT_W = 176;
+  const CONTEXT_ITEM_H = 30;
+  const CONTEXT_PAD = 10;
+  const contextHeight = CONTEXT_PAD * 2 + 5 * CONTEXT_ITEM_H;
+  const openContextMenu = (event: ReactMouseEvent<HTMLElement>, path: string) => {
+    event.preventDefault();
+    event.stopPropagation();
+    /* 关监听按 anchorRef 判「点在自己身上不关」⇒ 这里也要指向这张卡，否则残留上一个按钮的引用，
+       在卡上再点左键时菜单不关（右键菜单挂着的那个经典症状）。 */
+    anchorRef.current = event.currentTarget;
+    const left = event.clientX + CONTEXT_W > window.innerWidth ? Math.max(4, event.clientX - CONTEXT_W) : event.clientX;
+    const top = event.clientY + contextHeight > window.innerHeight ? Math.max(4, event.clientY - contextHeight) : event.clientY;
+    setMenu({ path, kind: "context", left, top });
+  };
+
   const openMenu = (event: ReactMouseEvent<HTMLButtonElement>, path: string, kind: "mode" | "more") => {
     event.stopPropagation();
     anchorRef.current = event.currentTarget;
@@ -103,6 +121,7 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
             data-testid="turn-output-card"
             title={`${mode === "workspace" ? "在右侧栏预览" : MODE_LABEL[mode]}：${file.path}`}
             onClick={() => openWith(file.path)}
+            onContextMenu={(event) => openContextMenu(event, file.path)}
             onKeyDown={(event) => {
               if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openWith(file.path); }
             }}
@@ -138,8 +157,27 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
               <span>{MODE_LABEL[value]}</span>
               {mode === value ? <Check size={12} /> : null}
             </button>
-          )) : (
+          )) : menu.kind === "more" ? (
             <>
+              <button type="button" role="menuitem" onClick={() => { try { void navigator.clipboard?.writeText(menu.path); } catch { /* 剪贴板不可用 */ } setMenu(null); }}>
+                <Copy size={12} /><span>复制路径</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { try { void window.codex.revealInFolder(menu.path); } catch { /* 文件可能已删 */ } setMenu(null); }}>
+                <FolderOpen size={12} /><span>在文件夹中显示</span>
+              </button>
+            </>
+          ) : (
+            /* 右键菜单：预览 / 编辑 / 打开 三种打开方式 + ⋯ 里的两项（同一份动作，不另造语义） */
+            <>
+              <button type="button" role="menuitem" onClick={() => { setMenu(null); openWith(menu.path, "workspace"); }}>
+                <Eye size={12} /><span>预览（右侧栏）</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMenu(null); openWith(menu.path, "editor"); }}>
+                <Pencil size={12} /><span>在编辑器打开</span>
+              </button>
+              <button type="button" role="menuitem" onClick={() => { setMenu(null); openWith(menu.path, "system"); }}>
+                <ExternalLink size={12} /><span>用默认应用打开</span>
+              </button>
               <button type="button" role="menuitem" onClick={() => { try { void navigator.clipboard?.writeText(menu.path); } catch { /* 剪贴板不可用 */ } setMenu(null); }}>
                 <Copy size={12} /><span>复制路径</span>
               </button>

@@ -929,6 +929,16 @@
   gap: 1px;
   padding: 2px 0 4px 22px;
 }
+/* ⛔ 10-30 用户截图：展开一个**没有会话**的项目时，「暂无任务」套用了整页空态
+   （`.empty-list` 上下各 28px）⇒ 树里凭空多出一块约 70px 的空洞，两个空项目叠起来更明显。
+   树内的空态是**行级提示**不是整页空态：收成一行、小一号；⛔ 但**文字仍居中**（10-30 用户二次点名：
+   靠左看着像会话行，居中才是「这块是空的」）。 */
+.project-item.is-empty > .project-item-body > .empty-list {
+  padding: 2px 0 6px;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
 .project-menu {
   position: absolute;
   top: calc(100% - 2px);

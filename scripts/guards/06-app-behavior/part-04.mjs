@@ -26,6 +26,15 @@ export async function run() {
   (!/setSettingsPage\("backup"\)/.test(side180) ? ok : fail)(
     "【180】侧栏不再有「会话备份」入口（⛔ 设置页里的备份页仍保留，别连带删掉）"
   );
+  /* ⛔ 10-30 用户截图：展开一个**没有会话**的项目，「暂无任务」套了整页空态（`.empty-list`
+     上下各 28px）⇒ 树里凭空一块约 70px 的空洞。树内空态必须是**行级**（紧凑）；
+     ⛔ 但**文字要居中**（用户二次点名：靠左像会话行）。全局 `.empty-list` 不动。 */
+  const css180empty = codeOnly(readFileSync(join(ROOT, "src", "styles", "15-queued-messages.css"), "utf8"));
+  const treeEmpty = /\.project-item\.is-empty[^{]*\.empty-list\s*\{([^}]*)\}/.exec(css180empty)?.[1] ?? "";
+  (/padding:\s*2px 0 6px/.test(treeEmpty) && !/padding:\s*28px/.test(treeEmpty)
+    && /text-align:\s*center/.test(treeEmpty) ? ok : fail)(
+    "【180】项目树里的「暂无任务」= 行级空态 + 文字居中（⛔ 别套整页 28px 留白，也别改成靠左）"
+  );
   // ② 「自动化」→「定时任务」：它跳的本来就是 schedule 页，改名后入口与目标页同名
   /* ③ 10-21 用户**再次点名**改名 + 重排（覆盖上一条「一律 4 字」的口径）：
      名字由用户逐条给定，不再强求 4 字；入口从顶部挪到「用户名之下」。
