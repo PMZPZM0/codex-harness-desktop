@@ -5947,10 +5947,10 @@
       "channel": "monitor:read",
       "paramsImpl": "threadId: unknown",
       "paramsDecl": "threadId?: string",
-      "returns": "Promise<{ threadId: string; turns: any[] }>",
+      "returns": "Promise<{ threadId: string; turns: any[]; ongoingTurnId: string; suggestion: string; suggestionAt: number; suggestionPath: string }>",
       "invokeArgs": "threadId",
       "cast": null,
-      "note": "10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId）"
+      "note": "10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId）；suggestion 是**建议文件的全文**（Codex 往里写，新的覆盖旧的）"
     },
     {
       "name": "saveMonitorSuggestion",

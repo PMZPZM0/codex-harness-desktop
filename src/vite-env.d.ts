@@ -188,6 +188,10 @@ type DispatchTargetEntry = {
   memberId?: string;
   /** 专家团目标的成员数（不含主理人）：面板「专家总数」用它 +1（主理人）求和。 */
   memberCount?: number;
+  /** CLI 智能体：本机是否已安装（主进程检测；false ⇒ @ 列表里置灰不可选，不隐藏） */
+  installed?: boolean;
+  /** 置灰原因（@ 面板）：kind-off = 本会话没开这一类；cli-missing = 没装 */
+  disabledReason?: "kind-off" | "cli-missing";
 };
 
 /** 被调度产生的临时会话登记记录（侧栏标记 / 归档都读它） */
@@ -1335,8 +1339,8 @@ interface Window {
     feishuCliCancel(): Promise<{ ok: boolean }>;
     /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
     feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
-    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId） */
-    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[] }>;
+    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId）；suggestion 是**建议文件的全文**（Codex 往里写，新的覆盖旧的） */
+    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string; suggestion: string; suggestionAt: number; suggestionPath: string }>;
     /* 10-30 任务监控：用户编辑后的自我改进建议落盘 */
     saveMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; error?: string }>;
     /* 10-30 任务监控：重跑一次模型生成（复用一次性内部会话） */

@@ -153,3 +153,22 @@
 
 /* ⛔ 放文件最末：同优先级下后写者胜，否则会被上面的原规则盖掉（10-30 版式收紧）。 */
 .monitor-suggestion { min-height: 62px; max-height: 132px; }
+
+/* 建议文件入口（动作行右侧）：窄栏里只放文件名，完整路径进 title。 */
+.monitor-path {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  max-width: 46%;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-size: 10.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.monitor-path:hover { color: var(--accent); }

@@ -169,10 +169,24 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
 
 /* ⑥ 自动同步到输入框 + 每轮都复盘（10-30 用户：「输入框摆设吗，完全没有自动同步功能」
       「还要我手动让他总结」） */
-(/app\.setPrompt\(text\)/.test(panel) && /String\(app\.prompt \?\? ""\)\.trim\(\)\) return/.test(panel) ? ok : fail)(
-  "建议出来后自动写进输入框（⛔ 只在输入框为空时写：抢用户正在打的字比不同步更糟）"
+/* ⛔⛔ 10-30 用户纠正：「我说的是**自我进化那个输入框**，不是聊天输入框，没脑子」。
+   正确形态 = **一个固定文件**：Codex 往里写、面板读出来展示，新的覆盖旧的。
+   ⇒ 下面三条同时钉住：① 有建议文件；② 写是原子覆盖；③ 面板读文件、且**不许**再写聊天输入框。 */
+(/suggestionFileOf/.test(svc) && /\.evolve\.md/.test(svc) ? ok : fail)(
+  "建议落在一个固定文件里（<userData>/task-monitor/<会话>.evolve.md）"
 );
-(/syncedRef/.test(panel) ? ok : fail)("同一轮的同一份建议只同步一次（面板每 3 秒轮询，不去重会反复塞回去）");
+(/async function writeSuggestionFile/.test(svc) && /\$\{file\}\.tmp/.test(svc) && /rename\(tmp, file\)/.test(svc) ? ok : fail)(
+  "写建议文件是**原子整份覆盖**（tmp + rename）：新覆盖旧、强杀不留半截"
+);
+(/suggestion: file\.text \|\| /.test(svc) && /suggestionPath/.test(svc) ? ok : fail)(
+  "monitor:read 直接返回建议文件的全文与路径（Codex 写完面板就能读到）"
+);
+(/setAdvice\(/.test(panel) && !/app\.setPrompt/.test(panel) ? ok : fail)(
+  "面板读文件展示；⛔ 不许再往**聊天输入框**塞（用户明确否掉的那个形态）"
+);
+(/writeSuggestionFile\(id, suggestionFileOf\(id\)\)|suggestionFileOf\(id\)/.test(svc) ? ok : fail)(
+  "采纳事件把**文件路径**直接给 Codex（让它写进去，新的覆盖旧的）"
+);
 (!/const acted = /.test(svc) ? ok : fail)(
   "⛔ 不再用「有工具动作才复盘」的门（纯聊天轮被整轮跳过 ⇒ 面板长期停在「暂无建议」）"
 );

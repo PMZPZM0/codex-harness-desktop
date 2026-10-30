@@ -9,8 +9,8 @@
  *
  * ⛔ 一切按 threadId 取（主进程同样只认传入的 id）—— 换会话必须换数据，绝不复用上一会话的缓存。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, ChevronLeft, ChevronRight, RefreshCw, Sparkles, Wand2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, ChevronLeft, ChevronRight, FileText, RefreshCw, Sparkles, Wand2 } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
 
 type Artifact = { path: string; added: number; deleted: number; status?: string };
@@ -52,6 +52,8 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
   const [loading, setLoading] = useState(false);
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
+  /* 建议文件（新覆盖旧）：面板只负责显示与手改回写，⛔ 不再往聊天输入框塞任何东西。 */
+  const [advice, setAdvice] = useState<{ text: string; at: number; path: string }>({ text: "", at: 0, path: "" });
   /* 主进程交回的「进行中回合 id」：与 latest.turnId 相同 ⇒ 这一轮还没结束 */
   const [ongoingId, setOngoingId] = useState("");
   const [filePage, setFilePage] = useState(0);
@@ -60,9 +62,11 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
     if (!threadId) { setTurns([]); return; }
     setLoading(true);
     try {
-      const result: { turns?: Turn[]; ongoingTurnId?: string } | null = await window.codex.readTaskMonitor(threadId);
+      const result: { turns?: Turn[]; ongoingTurnId?: string; suggestion?: string; suggestionAt?: number; suggestionPath?: string } | null = await window.codex.readTaskMonitor(threadId);
       setTurns(Array.isArray(result?.turns) ? result.turns : []);
       setOngoingId(String(result?.ongoingTurnId ?? ""));
+      /* 建议的**唯一展示来源 = 建议文件**（用户在 Codex 侧/编辑器里改完也会在这里自动更新）。 */
+      setAdvice({ text: String(result?.suggestion ?? ""), at: Number(result?.suggestionAt ?? 0), path: String(result?.suggestionPath ?? "") });
     } catch { /* 读不到就保持上一次（不闪空） */ } finally { setLoading(false); }
   }, [threadId]);
 
@@ -95,26 +99,9 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
     : "由本会话模型每轮自动复盘；出来后自动同步到下方输入框（输入框有字时不抢）";
 
 
-  useEffect(() => { setDraft(latest?.suggestion ?? ""); }, [latest?.turnId, latest?.suggestion]);
-
-  /**
-   * 建议出来后**自动同步到输入框**（用户 10-30：「他输出建议，自动同步到输入框，输入框摆设吗」）。
-   *
-   * ⛔ 只在输入框**为空**时写：用户正在打自己的话时抢输入，比不同步更糟。
-   * ⛔ 同一轮的同一份建议只同步一次（stamp）：面板每 3 秒轮询，不去重就会反复把用户删掉的文字塞回去。
-   * ⛔ 用 setPrompt（真正的输入框状态），不是 pendingCommandTextRef —— 后者是"发出去"的一次性通道，
-   *    这里要的是**可编辑的草稿**（用户还想改两个字再发）。
-   */
-  const syncedRef = useRef("");
-  useEffect(() => {
-    const text = String(latest?.suggestion ?? "").trim();
-    if (!text) return;
-    const stamp = `${latest?.turnId ?? ""}:${text.slice(0, 60)}`;
-    if (syncedRef.current === stamp) return;
-    if (String(app.prompt ?? "").trim()) return;      // 用户正在写东西：不抢
-    syncedRef.current = stamp;
-    app.setPrompt(text);
-  }, [latest?.turnId, latest?.suggestion, app]);
+  /* ⛔ 跟随**文件**（suggestionAt = mtime）：Codex 写完文件、用户改了文件，这里都会自动刷新。
+     拖稿期间不动（draft 是用户正在编辑的副本，保存时才回写）。 */
+  useEffect(() => { setDraft(advice.text); }, [advice.at, advice.text]);
 
   const usage = useMemo(() => {
     /* 技能/MCP/插件只取当前回合 + 上回合（用户口径），每页 5 条 */
@@ -134,7 +121,10 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
   const saveSuggestion = async (text: string) => {
     if (!threadId || !latest) return;
     setSaving(true);
-    try { await window.codex.saveMonitorSuggestion({ threadId, turnId: latest.turnId, text }); } catch { /* 保存失败不阻塞编辑 */ } finally { setSaving(false); }
+    try {
+      await window.codex.saveMonitorSuggestion({ threadId, turnId: latest.turnId, text });
+      void load();
+    } catch { /* 保存失败不阻塞编辑 */ } finally { setSaving(false); }
   };
 
   /**
@@ -214,6 +204,12 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
         <div className="monitor-actions">
           <button type="button" className="monitor-btn primary" onClick={() => void adopt()} disabled={!draft.trim() || saving}><Wand2 size={12} />{latest?.adoptedAt ? "已采取 · 再发一次" : "采取建议"}</button>
           <button type="button" className="monitor-btn" onClick={() => void saveSuggestion(draft)} disabled={!latest || saving}>{saving ? "保存中…" : "保存修改"}</button>
+          {advice.path ? (
+            <button type="button" className="monitor-path" title={`建议文件（Codex 也写这份，新的覆盖旧的）：
+${advice.path}`} onClick={() => { try { void window.codex.shellOpen(advice.path); } catch { /* 没有关联程序 */ } }}>
+              <FileText size={11} />{advice.path.split(/[\/]/).pop()}
+            </button>
+          ) : null}
         </div>
       </section>
 
