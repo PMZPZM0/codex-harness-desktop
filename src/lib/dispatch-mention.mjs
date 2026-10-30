@@ -122,6 +122,21 @@ export function firstMentionTarget(targets, query, allow = null) {
   return flatMentionTargets(filterMentionTargets(targets, query, allow).groups, 1)[0] ?? null;
 }
 
+/**
+ * Enter 的**决策**（比 firstMentionTarget 多一件事：区分"没有候选"与"候选全被置灰"）。
+ *
+ * ⛔⛔ 为什么要区分：输入框里有两条 Enter 分支 —— 先采纳 @ 候选，再采纳入历史消息。
+ *   用户 `@软件开发专家团` + Enter 时，专家团若未开通 ⇒ 候选全被置灰 ⇒ 若只判断"没有可选候选"，
+ *   就会继续落到第二条分支，**把一条历史消息悄悄塞进输入框**（10-30 自查时发现的退化）。
+ *   置灰是"看见了但不能选"，正确反应是**什么都不做**（开关提示已经在列表里），不是替你选别的。
+ * @returns {{ target: any | null, disabledOnly: boolean }}
+ */
+export function mentionEnterPlan(targets, query, allow = null) {
+  const result = filterMentionTargets(targets, query, allow);
+  const target = flatMentionTargets(result.groups, 1)[0] ?? null;
+  return { target, disabledOnly: !target && result.total > 0 };
+}
+
 /** 已点名对象的去重键（key 优先，回落 kind+name）。 */
 export function mentionKeyOf(target) {
   const key = text(target?.key);

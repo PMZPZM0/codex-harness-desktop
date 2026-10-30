@@ -445,8 +445,12 @@ try {
     "@ 面板按 activeDispatch 联动（组 is-off + 行原生 disabled），⛔ 不是「过滤掉」也不是「点一下才更新」");
 
   const form = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer", "02-composer-form.tsx"), "utf8");
-  ok(/firstMentionTarget\(dispatchInfo\?\.targets \?\? \[\], contextQuery, activeDispatch\)/.test(form),
-    "输入框 Enter 采纳也走 firstMentionTarget（⛔ 两处各写一份跳过逻辑必漂移）");
+  ok(/mentionEnterPlan\(dispatchInfo\?\.targets \?\? \[\], contextQuery, activeDispatch\)/.test(form)
+    && /plan\.disabledOnly/.test(form),
+    "输入框 Enter 走 mentionEnterPlan（候选全置灰时什么都不做，⛔ 不许掉进历史消息分支）");
+  ok(mention.mentionEnterPlan(sample, "", { team: false }).disabledOnly === false
+    && mention.mentionEnterPlan([{ kind: "team", key: "t1", name: "软件开发专家团" }], "软件开发", { team: false }).disabledOnly === true,
+    "只有置灰候选时 Enter 判定为 disabledOnly（不误插历史消息）");
 
   /* 提示词同口径：模型要能解释「@ 里专家团是灰的」= 没开开关，不是团队不存在。 */
   const desc = describeDispatch(sample, { expert: true, team: false, subagent: true, cli: true });

@@ -57,3 +57,10 @@ export function firstMentionTarget(
   query: string,
   allow?: { team?: boolean } | null,
 ): any | null;
+
+/** Enter 的决策：target=第一条可选候选；disabledOnly=有候选但全被置灰（此时**不许**落到历史消息）。 */
+export function mentionEnterPlan(
+  targets: any[],
+  query: string,
+  allow?: { team?: boolean } | null,
+): { target: any | null; disabledOnly: boolean };
