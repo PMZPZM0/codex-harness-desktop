@@ -106,7 +106,9 @@ jobs:
             echo "release v${VERSION} 已存在 → 更新资产与说明（可重跑）"
             # ⛔ 已存在时 gh release upload 只换**资产**，说明正文不会跟着变 ⇒ 必须显式重写，
             #    否则覆盖重发后发布页永远停在首次创建时那版旧正文（10-02 实测踩过）。
-            gh release edit "v${VERSION}" --notes-file "${NOTES}"
+            # ⛔ 10-30 实证：release 若先由别的路径建出来（标题为空），GitHub 会拿**提交标题**
+            #    当发布名 ⇒ 发布页显示成 `chore(release): v0.0.51`。这条分支也必须带 --title。
+            gh release edit "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           else
             gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           fi
