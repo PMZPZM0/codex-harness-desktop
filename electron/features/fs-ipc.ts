@@ -1,8 +1,8 @@
 /**
  * fs-ipc —— **受信任根约束的本地文件读写**（写 / 读预览 / 存在性探测 / 定位文件）
  *
- * 域：fs(4)
- * 通道：fs:write / fs:read / fs:exists / fs:reveal
+ * 域：fs(5)
+ * 通道：fs:write / fs:read / fs:exists / fs:reveal / fs:locate
  *
  * ── 10-03：改为插件形态 + 接缝化（方案 §6 阶段 2/3）────────────────────────
  * 与 `remote-ipc` 同款改造，但多一步：原来直接 `import { shell } from "electron"`，
@@ -22,12 +22,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileStat, sizeLabel } from "./app-diagnostics";
+import { locateFile } from "../file-locate";
 import { threadCwd } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
-const FS_CHANNELS = ["fs:write", "fs:read", "fs:exists", "fs:reveal"];
+const FS_CHANNELS = ["fs:write", "fs:read", "fs:exists", "fs:reveal", "fs:locate"];
 
 /** 预览路径归一（10-18 修「换个目录就打不开」）：去首尾空白与包裹引号；file:// 解 URI；
  *  ~ 展开家目录；**相对路径按会话工作目录解析**（原来用 process.cwd() = 应用目录，必然找不到）。 */
@@ -97,6 +98,17 @@ export const fsFeature = defineFeature<null>({
       if (!stat || !stat.isFile()) throw new Error(`文件不存在：${input.path}`);
       host.shell.showItemInFolder(target);
       return { ok: true };
+    });
+
+    /* ★ 10-30 用户令：「只要是电脑上有的文件，不管在哪里都能打开，这个路径错」——
+       卡片手里的路径常常是**按会话目录拼出来的死链**（模型实际在另一个仓里改这个文件）。
+       ⇒ 这条通道只做一件事：**按文件名把真实文件找回来**（判定全在 ../file-locate：
+       同名 + 尾段打分 + 有界预算）。⛔ 它不读内容、不写、不返回目录，只回一条路径。 */
+    ipcHost.handle("fs:locate", async (_event, input: { path: string; threadId?: string }) => {
+      const { abs } = resolvePreviewPath(String(input?.path ?? ""), input?.threadId);
+      const direct = fileStat(abs);
+      if (direct && direct.isFile()) return { path: abs };
+      return { path: await locateFile(abs) };
     });
 
     // 卸载即摘通道（插件容器的可逆副作用语义）

@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { ipcErrorMessageOf } from "../lib/ipc-error.mjs";
 /* 卡片路径打不开时的回落（会话台账里同名真实文件），见 lib/path-fallback.mjs 头部说明 */
-import { resolveExistingFile } from "../lib/path-fallback.mjs";
+import { resolveForOpen } from "../lib/path-fallback.mjs";
 import { lookupKnownFile } from "../lib/ui-channels";
 
 export type FilePreview = { path: string; content: string; language: string; kind: "text" | "image" | "binary" | "pdf" };
@@ -74,26 +74,11 @@ export function useFilePreview({ workspace, onNotice }: Options) {
   // 最近一次请求的路径：慢响应回来时校验，防止连点多个文件后被旧响应覆盖
   const activeReqRef = useRef("");
 
-  /* ⛔⛔ 10-29 用户报「项目地址外的文件预览不了，总是显示预览失败 / 打开失败」——
-     一半原因是**相对路径**：命令卡与文件卡片给的常是 `./cmd-demo/a.txt` 这种相对形态，
-     直接丢给主进程会按**应用自己的 cwd**（安装目录）解析 ⇒ 必然"文件不存在或不可读"。
-     ⇒ 相对路径一律按当前会话工作目录拼成绝对路径；绝对路径原样透传（含盘符 / UNC / 根斜杠）。 */
-  function resolveOpenPath(raw: string): string {
-    const value = String(raw ?? "").trim();
-    if (!value) return value;
-    const absolute = /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\") || value.startsWith("/");
-    if (absolute || !workspace) return value;
-    const base = workspace.replace(/[\\/]+$/, "");
-    const sep = base.includes("\\") ? "\\" : "/";
-    const rel = value.replace(/^\.\//, "").replace(/^[\\/]+/, "");
-    return `${base}${sep}${rel.replace(/[\\/]+/g, sep)}`;
-  }
-
   async function openFile(rawPath: string) {
-    /* ★ 10-30 用户两次同一现象：卡片给的路径可能**根本不存在**（按会话目录拼出来的死链），
-       真文件在会话里出现过但位于别的仓 ⇒ 打不开就按会话台账回落一次同名真实文件。
-       ⛔ 只在 fileExists 明确说"不存在"时回落；回落不了就照旧报「文件不存在」。 */
-    const path = await resolveExistingFile(resolveOpenPath(rawPath), {
+    /* ★ 10-30（用户第三次同一现象）：卡片给的路径可能**根本不存在**（按会话目录拼出来的死链）。
+       统一入口 `resolveForOpen` 做三件事：补绝对路径 → 会话台账同名文件 → 主进程按文件名扫盘找回。
+       ⛔ 只在「确实不存在」时才回落；回落不了就照旧报「文件不存在」（不编路径）。 */
+    const path = await resolveForOpen(rawPath, {
       workspace,
       lookup: (target) => lookupKnownFile(target),
       notify: onNotice,
