@@ -134,8 +134,8 @@ bag.insertComposerAttachments = insertComposerAttachments as typeof bag.insertCo
 
   function insertComposerImages(paths: string[]) {
     // ⛔ 粘贴不再按模型模态硬拦（09-18 用户：「带图发送直接报错还不能对话，设计不合理」）：
-    // 图片照常进编辑框，发送时统一降级（见 sendMessage 里的「图片降级发送」）——
-    // 视觉插件已配置就自动转 describe_image 识图，没配置也只忽略图片、对话不中断。
+    // 图片照常进编辑框，发送时按 localImage 正常发送（见 sendMessage）——接入点真不支持时
+    // 由 healImageModalityIfUnsupported（回合错误路径）自动摘掉该模型的图片模态并提示重发。
     bag.insertComposerAttachments("image", paths);
   }
 bag.insertComposerImages = insertComposerImages as typeof bag.insertComposerImages;

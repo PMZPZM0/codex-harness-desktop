@@ -525,7 +525,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）。
 |---|---|---|
 | agent_invoke / agent_archive_sessions | 宿主 **dynamicTools**（`part08/01-seg.tsx` 的 `buildDynamicTools`，分发在 `part05/event-router/02-request.tsx`） | 派一个干净上下文的自己 / 归档本次调度产生的临时会话。执行端转 IPC `agents:invoke` / `agents:archive`，与内置 MCP harness-dispatch **共用同一个 `runDelegatedTask` 硬闸** |
 | memory_recall / memory_save | 引擎 dynamicTools | 查询/保存分层记忆（用户偏好/项目背景/工作流/任务经验）；发送前应用会自动注入相关记忆 |
-| 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`）；识图：命令行 `harness-media.mjs vision` | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引 |
+| 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`） | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引。⛔ 识图（视觉辅助插件 / describe_image / harness-media vision）已于 10-30 整体移除，不许加回 |
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |

@@ -1,8 +1,9 @@
 /**
  * builtin-ipc（10-03 从 `features/builtin-skills-ipc/01-...` 按前缀拆出，同时改为**插件形态**）
  *
- * 域：builtin(5)
- * 通道：builtin:read / save / probe / generate-image / describe-image
+ * 域：builtin(4)
+ * 通道：builtin:read / save / probe / generate-image
+ * ⛔ 10-30 撤识图通道：视觉辅助插件按用户令整体移除（工具/命令行/env 链同轮拆）。
  *
  * ⛔⛔ 三条实证口径（本次纯搬迁，一字未改）：
  *   1. **回给渲染层的是本地路径，不是 data URL**：内联 base64 会被拼进工具返回文本 ⇒
@@ -26,7 +27,7 @@ import { server } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-async function probeBuiltinModels(input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) {
+async function probeBuiltinModels(input: { kind: "image"; baseUrl: string; apiKey: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   const url = base + "/models";
   let response: Response;
@@ -123,43 +124,7 @@ export async function generateImageResilient(input: { baseUrl: string; apiKey: s
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-async function toImageSource(ref: string): Promise<string> {
-  const source = String(ref ?? "").trim();
-  if (/^(https?:|data:)/i.test(source)) return source;
-  const candidate = path.isAbsolute(source) ? source : path.resolve(source);
-  if (!existsSync(candidate)) throw new Error("图片本地文件不存在：" + candidate);
-  const mime = /\.jpe?g$/i.test(candidate) ? "image/jpeg" : /\.gif$/i.test(candidate) ? "image/gif" : /\.webp$/i.test(candidate) ? "image/webp" : "image/png";
-  return `data:${mime};base64,` + (await fs.readFile(candidate)).toString("base64");
-}
-
-async function describeImageWith(input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) {
-  const base = input.baseUrl.trim().replace(/\/$/, "");
-  const endpoint = /\/chat\/completions$/.test(base) ? base : base + "/chat/completions";
-  const content = [
-    { type: "text", text: input.prompt || "请详细描述这张图片的内容，包括画面主体、场景、文字、布局等，用中文回答。" },
-    { type: "image_url", image_url: { url: await toImageSource(input.imageUrl) } },
-  ];
-  let response: Response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: input.model, messages: [{ role: "user", content }] }),
-    });
-  } catch (error) {
-    throw describeNetworkError(error, "识图请求");
-  }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    let hint = "";
-    try { hint = JSON.parse(detail)?.error?.message ?? ""; } catch { hint = detail.slice(0, 160); }
-    throw new Error("识图失败 HTTP " + response.status + (hint ? "：" + hint : ""));
-  }
-  const data = await response.json();
-  return { text: data?.choices?.[0]?.message?.content ?? "" };
-}
-
-const BUILTIN_CHANNELS = ["builtin:read", "builtin:save", "builtin:probe", "builtin:generate-image", "builtin:describe-image"];
+const BUILTIN_CHANNELS = ["builtin:read", "builtin:save", "builtin:probe", "builtin:generate-image"];
 
 export const builtinFeature = defineFeature<null>({
   id: "builtin",
@@ -180,9 +145,8 @@ export const builtinFeature = defineFeature<null>({
       if (model) await applyCustomModel(model); else await server.restart();
       return readBuiltinPlugins();
     });
-    ipcHost.handle("builtin:probe", async (_e, input: { kind: "image" | "vision"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
+    ipcHost.handle("builtin:probe", async (_e, input: { kind: "image"; baseUrl: string; apiKey: string }) => probeBuiltinModels(input));
     ipcHost.handle("builtin:generate-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) => generateImageResilient(input));
-    ipcHost.handle("builtin:describe-image", async (_e, input: { baseUrl: string; apiKey: string; model: string; imageUrl: string; prompt?: string }) => describeImageWith(input));
 
     ctx.effect(() => {
       for (const ch of BUILTIN_CHANNELS) ipcHost.removeHandler(ch);

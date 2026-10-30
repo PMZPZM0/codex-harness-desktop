@@ -400,7 +400,6 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
    *       （electron/rollout-worker.cjs 的 syncToolSurface，见 codex-ipc 的 thread/resume 分支），
    *       否则创建于旧版本的会话永远拿不到新工具（症状：agent_ask 写着"可多选"却只能选一个）。 */
   const buildDynamicTools = useCallback(async (): Promise<any[]> => {
-    const builtinCfg = await window.codex.readBuiltinPlugins().catch(() => null);
     /* Laya 判断工具（10-18 用户：「如果安装了 laya 模型，就再暴露这个工具给 codex」）：
        ⛔ 条件注册是需求本身（没装就别让模型看见）；`layaStatus` 在主进程有 30s pip 缓存，
          新开会话/切会话问一次不会拖慢。dynamicTools 只在 thread/start / resume 生效 ⇒
@@ -416,12 +415,6 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
             挑直白的那个、另一套被绕过（项目踩过：subagent_invoke 与 agent_invoke 并存）。
             生图统一走 `image_generate`（image-lab:generate，带「图像工坊」浮层联动）。 */
       ...imageToolDefs(),
-      ...(builtinCfg?.vision?.enabled !== false && builtinCfg?.vision?.baseUrl ? [{
-        type: "function",
-        name: "describe_image",
-        description: "当你看不清或无法解析用户提供的图片内容时，调用此工具让视觉模型描述图片并把结果作为依据继续回答。",
-        inputSchema: { type: "object", properties: { imageUrl: { type: "string", description: "图片的本地文件路径或 http(s) 地址（本地图片直接传路径，会自动读取；生成/保存下来的图片就用它的路径）。⛔ 不要传 data URL —— 内联 base64 会把几 MB 文本灌进对话历史" }, prompt: { type: "string", description: "你想让视觉模型关注的问题，可省略" } }, required: ["imageUrl"] },
-      }] : []),
       // 10-20：MCP 后端自带 memory-write/read，宿主 fabric 工具在 MCP 模式不再暴露（避免同名双写）。
       ...(bag.memoryEnabled && bag.memoryBackend !== "mcp" && bag.memoryBackend !== "cloud" ? [
         { type: "function", name: "memory_recall", description: "按当前任务查询相关的分类记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },

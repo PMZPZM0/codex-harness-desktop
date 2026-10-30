@@ -34,12 +34,9 @@ export async function devInstructionsInput() {
   return {
     desktop: appSettings.desktopAutomation !== false,
     browser: appSettings.browserAutomation !== false,
-    // 内置媒体插件（生图/视觉）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
+    // 内置媒体插件（生图）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
+    // ⛔ 10-30 撤 visionPlugin / nuphusVision：视觉辅助插件整体移除（识图工具 / 命令行 / nuphus 视觉 env 同轮拆）。
     imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
-    visionPlugin: Boolean(builtinPlugins.vision?.enabled !== false && builtinPlugins.vision?.baseUrl && builtinPlugins.vision?.apiKey && builtinPlugins.vision?.model),
-    // nuphus 侧要的是**真实值**（baseUrl/apiKey/model 原样下发成 NUPHUS_MCP_VISION_*），
-    // 不是上面那个布尔。走同一个来源，改插件配置时两边一起变（见 nuphus-env.ts 的背景说明）。
-    nuphusVision: builtinPlugins.vision,
     mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
     /* 输出风格（10-06）：控制台「回复风格」开关打开的写作风格技能 —— 宿主把它翻译成
        **常驻指令**下发，这样开关一开就每轮生效，不必用户点名（见 electron/output-styles.ts）。

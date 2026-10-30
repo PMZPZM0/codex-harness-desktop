@@ -145,7 +145,7 @@ console.log("【⑤ 真跑：加密落盘 / 明文兼容 / 迁移幂等 / env �
 
       const env = mod.builtinPluginEnv(await mod.readBuiltinPlugins());
       ok(env.CODEX_HARNESS_IMAGE_API_KEY === "sk-new-456", "真跑：密钥进 env（命令行兜底的唯一来源）");
-      ok(mod.builtinPluginEnv({ vision: { baseUrl: "b", apiKey: "", model: "m" } }).CODEX_HARNESS_VISION_API_KEY === undefined,
+      ok(mod.builtinPluginEnv({ image: { baseUrl: "b", apiKey: "", model: "m" } }).CODEX_HARNESS_IMAGE_API_KEY === undefined,
         "真跑：空密钥不注入（不留空串变量）");
     }
   } catch (error) {

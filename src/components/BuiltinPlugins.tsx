@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { ImagePlus, Eye, RefreshCw, Play, Save } from "lucide-react";
+import { ImagePlus, RefreshCw, Play, Save } from "lucide-react";
 import { ModelIdInput } from "./ModelIdInput";
 import { BuiltinPluginRow } from "./BuiltinPluginRow";
 import { imageSpecHint, matchImageSpec } from "../lib/image-model-specs";
 import { VideoGenBuiltInCard } from "./VideoGenBuiltInCard";
 
 /**
- * 内置插件配置（生图 / 视觉辅助）。
+ * 内置插件配置（生图；视频生成接口是独立卡 VideoGenBuiltInCard）。
+ * ⛔ 「视觉辅助插件」已于 10-30 按用户令整体移除（识图 dynamicTool、harness-media.mjs
+ *    vision 子命令与 nuphus 视觉 env 链同轮拆）；不要加回来。
  *
  * ⛔ 09-28 重做（用户原话「太丑太老，而且没有 API 地址、密钥啊、模型啊这些自定义的填写功能」）：
  *   旧版把三个字段**全藏在一个弹层里** —— 页面上只看到两张卡片，不点开根本不知道去哪填，
@@ -15,21 +17,19 @@ import { VideoGenBuiltInCard } from "./VideoGenBuiltInCard";
  *   现在改成**字段直接摊在页面上**：进这页就能看到地址/密钥/模型的输入框，改完按各自「保存」。
  *   ⛔ 没有删掉任何能力：启用开关、模型探测（拉取列表）、内置参数提示、保存后引擎重载全部保留。
  */
-type PluginKind = "image" | "vision";
+type PluginKind = "image";
 type PluginConfig = { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
-type BuiltinCfg = { image?: PluginConfig; vision?: PluginConfig };
+type BuiltinCfg = { image?: PluginConfig };
 
 const emptyConfig = (): PluginConfig => ({ enabled: true, baseUrl: "", apiKey: "", model: "" });
-const meta = (kind: PluginKind) => kind === "image"
-  ? { title: "生图插件", desc: "配置图像生成 API；画布「生成图」与 Codex 需要配图时都调它", Icon: ImagePlus }
-  : { title: "视觉辅助插件", desc: "主模型不支持图片时，用多模态模型识图", Icon: Eye };
+const meta = (_kind: PluginKind) =>
+  ({ title: "生图插件", desc: "配置图像生成 API；画布「生成图」与 Codex 需要配图时都调它", Icon: ImagePlus });
 
 /** 三个内置插件面板本体（不带外壳）—— 行/卡两种容器共用同一份状态与弹窗。 */
 function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
   const [cfg, setCfg] = useState<BuiltinCfg>({});
   const [savedCfg, setSavedCfg] = useState<BuiltinCfg>({});
   const [imageModels, setImageModels] = useState<string[]>([]);
-  const [visionModels, setVisionModels] = useState<string[]>([]);
   const [probing, setProbing] = useState<PluginKind | null>(null);
   const [busy, setBusy] = useState<PluginKind | null>(null);
   /** 二级弹窗当前编辑哪张卡（null = 全关）。09-28：字段从卡面收进弹窗 */
@@ -61,7 +61,7 @@ function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
     try {
       const result = await window.codex.probeBuiltinModels({ kind, baseUrl: value.baseUrl, apiKey: value.apiKey });
       const models = result?.models ?? [];
-      if (kind === "image") setImageModels(models); else setVisionModels(models);
+      setImageModels(models);
       onNotice(models.length ? `探测到 ${models.length} 个模型，可在模型框里下拉选择` : "探测成功，但该地址没有返回模型列表（可直接手填模型 ID）");
     } catch (error: any) { onNotice(`探测失败：${error.message}`); }
     finally { setProbing(null); }
@@ -69,7 +69,7 @@ function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
 
   const save = async (kind: PluginKind) => {
     setBusy(kind);
-    // ⛔ 写盘要带**两份配置**（另一份保持已保存值），否则保存生图会把视觉插件的配置清掉
+    // ⛔ 写盘要带**完整已保存配置**（另一份保持已保存值），否则保存会把它清掉
     const next: BuiltinCfg = { ...savedCfg, [kind]: current(kind) };
     try {
       await window.codex.saveBuiltinPlugins(next);
@@ -86,7 +86,7 @@ function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
     const saved = savedCfg[kind];
     const ready = configured(kind);
     const off = ready && saved?.enabled === false;
-    const models = kind === "image" ? imageModels : visionModels;
+    const models = imageModels;
     // 生图模型的内置参数（尺寸 / 改图 / 质量档）：命中内置表就在字段下方摊开，
     // 免得用户选了模型却不知道它能出多大、能不能带参考图（09-18 用户要求的「内置参数」）。
     const specHint = kind === "image" ? imageSpecHint(matchImageSpec(value.model)) : [];
@@ -133,7 +133,7 @@ function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
                 <label className="vg-field">
                   <span>模型</span>
                   <div className="bi-model-row">
-                    <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={kind === "image" ? "image" : "chat"} />
+                    <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant="image" />
                     <button className="secondary-setting" disabled={probing === kind} onClick={() => void probe(kind)} title="用上面的地址与密钥拉取可用模型列表">
                       {probing === kind ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测
                     </button>
@@ -161,7 +161,6 @@ function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
 
   return <>
     {panel("image")}
-    {panel("vision")}
     <VideoGenBuiltInCard />
   </>;
 }
@@ -171,13 +170,13 @@ export function BuiltinPluginsSection({ onNotice }: { onNotice: (m: string) => v
   return <section className="settings-section stack builtin-plugins">
     <div className="settings-copy">
       <h2>内置插件</h2>
-      <p>随应用自带、无需安装的能力：生图 / 识图 / 视频生成。</p>
+      <p>随应用自带、无需安装的能力：生图 / 视频生成。</p>
     </div>
     <div className="bi-plugin-grid"><BuiltinPanels onNotice={onNotice} /></div>
   </section>;
 }
 
-/** 10-27 用户令：「我让你做成卡片放已安装里面」⇒ 只输出三张卡（无标题、无外壳），
+/** 10-27 用户令：「我让你做成卡片放已安装里面」⇒ 只输出内置卡（无标题、无外壳），
     由插件页塞进「已安装」的卡片网格里，和已安装插件同排。⛔ 内置 = 不可卸载，只有「配置」。 */
 export function BuiltinPluginCards({ onNotice }: { onNotice: (m: string) => void }) {
   return <BuiltinPanels onNotice={onNotice} />;

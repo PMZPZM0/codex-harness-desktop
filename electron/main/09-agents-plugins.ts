@@ -6,10 +6,12 @@ import fs from "node:fs/promises";
 import { safeStorage } from "electron";
 import { builtinPluginsFile, subAgentsFile } from "../runtime-paths";
 
-/** 内置插件的一段配置（生图 / 视觉）—— **内存态**：`apiKey` 是解出来的明文。 */
+/** 内置插件的一段配置（生图）—— **内存态**：`apiKey` 是解出来的明文。 */
 export type BuiltinPluginEntry = { enabled?: boolean; baseUrl: string; apiKey: string; model: string };
-/** 内存态配置（消费方只认这个形状：两处 apiKey 都是明文，用完即弃）。 */
-export type BuiltinPluginConfig = { image?: BuiltinPluginEntry; vision?: BuiltinPluginEntry };
+/** 内存态配置（消费方只认这个形状：apiKey 是明文，用完即弃）。
+ *  ⛔ 10-30 撤 `vision` 段：视觉辅助插件整体移除；存量 builtin-plugins.json 里的 vision 段
+ *    读取时直接忽略，下一次保存即被清出文件。 */
+export type BuiltinPluginConfig = { image?: BuiltinPluginEntry };
 /** 落盘态：密钥**只**以 `encryptedKey`（safeStorage/DPAPI 密文的 base64）存在；`apiKey` 仅为兼容存量文件。 */
 type StoredPluginEntry = Omit<BuiltinPluginEntry, "apiKey"> & { apiKey?: string; encryptedKey?: string };
 
@@ -54,7 +56,7 @@ function toMemoryEntry(entry: unknown): BuiltinPluginEntry | undefined {
 export async function readBuiltinPlugins(): Promise<BuiltinPluginConfig> {
   try {
     const stored = JSON.parse(await fs.readFile(builtinPluginsFile, "utf8"));
-    return { image: toMemoryEntry(stored?.image), vision: toMemoryEntry(stored?.vision) };
+    return { image: toMemoryEntry(stored?.image) };
   } catch { return {}; }
 }
 
@@ -77,7 +79,7 @@ export async function writeBuiltinPlugins(cfg: BuiltinPluginConfig): Promise<voi
     return { ...rest, encryptedKey };
   };
   const next: Record<string, StoredPluginEntry> = {};
-  for (const kind of ["image", "vision"] as const) {
+  for (const kind of ["image"] as const) {
     const stored = toStored(cfg[kind]);
     if (stored) next[kind] = stored;
   }
@@ -91,15 +93,12 @@ export async function writeBuiltinPlugins(cfg: BuiltinPluginConfig): Promise<voi
  *   （老会话没有 `image_generate` MCP 工具时，模型按 developer_instructions 里的命令行调用它），
  *   它拿不到 Electron 的 safeStorage ⇒ 配置文件加密后它没有别的途径取密钥。
  *   env 由我们的引擎进程持有，**不落盘**、不进任何备份/目录列表。
- * ⛔ 与 `nuphus-env.ts` 的 `NUPHUS_MCP_VISION_*` 同一思路（那份早就在 env 里了），只是那两个
- *   变量归 nuphus 读，这两个归 harness-media 读。
+ * ⛔ 10-30 撤 `CODEX_HARNESS_VISION_API_KEY`：视觉辅助插件整体移除。
  */
 export function builtinPluginEnv(cfg: BuiltinPluginConfig): Record<string, string> {
   const env: Record<string, string> = {};
   const image = String(cfg.image?.apiKey ?? "").trim();
-  const vision = String(cfg.vision?.apiKey ?? "").trim();
   if (image) env.CODEX_HARNESS_IMAGE_API_KEY = image;
-  if (vision) env.CODEX_HARNESS_VISION_API_KEY = vision;
   return env;
 }
 
@@ -111,7 +110,7 @@ export async function migrateBuiltinPluginSecrets(): Promise<boolean> {
   let raw: any;
   try { raw = JSON.parse(await fs.readFile(builtinPluginsFile, "utf8")); } catch { return false; }
   let changed = false;
-  for (const kind of ["image", "vision"] as const) {
+  for (const kind of ["image"] as const) {
     const entry = raw?.[kind];
     if (!entry || typeof entry !== "object") continue;
     const plain = String(entry.apiKey ?? "");

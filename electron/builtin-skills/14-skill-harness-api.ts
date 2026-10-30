@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（111 个能力域 / 603 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（111 个能力域 / 602 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -191,9 +191,9 @@ QQ 通道
 引擎生命周期（重启 / 换模型档位 / 状态查询）
 通道：engine:active-turns, engine:check-update, engine:perform-update, engine:restart-log
 
-### builtin（5 通道）
+### builtin（4 通道）
 内置模型供应商目录（读/存/探测/图像模型）
-通道：builtin:describe-image, builtin:generate-image, builtin:probe, builtin:read, builtin:save
+通道：builtin:generate-image, builtin:probe, builtin:read, builtin:save
 
 ### relay（16 通道）
 账号库（OpenAI 账号多账号管理：导入/切换/启停/用量概览）
