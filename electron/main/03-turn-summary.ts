@@ -7,6 +7,7 @@ import { RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } fr
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "./01-model-catalog";
 import { internalThreads, server } from "../runtime-refs";
+import { threadModelOf } from "../thread-model";
 import { bridgeDial } from "../bridge-dial";
 import { ensureProjectAgentsMd } from "../project-conventions";
 /** 「等待到点」的专用错误码（10-10）。⛔ 调用方据此区分**超时**与**回合真失败**：
@@ -66,15 +67,18 @@ export function turnOutputText(turn: any) {
  * 记忆蒸馏的模型通道：开一个只读的一次性会话把旧日志提炼成长期记忆。
  * 全程标记 internalThreads —— 否则它自己的 turn/completed 会被捕获逻辑当成对话写回日志。
  */
-export async function distillSummarize(prompt: string, body: string): Promise<string> {
+export async function distillSummarize(prompt: string, body: string, opts?: { threadId?: string }): Promise<string> {
   const model = await readCustomModel();
-  const effectiveModel = model?.model;
-  if (!effectiveModel) throw new Error("尚未配置自定义模型，无法蒸馏记忆");
+  /* ⛔ 10-30：没有自定义模型时（用官方供应商的用户）**退回本会话自己的模型** ——
+     引擎在 turn/start 里已经给过它；不退回的话这类用户的功能永远抛「尚未配置自定义模型」。 */
+  const sessionModel = opts?.threadId ? threadModelOf(opts.threadId) : null;
+  const effectiveModel = model?.model || sessionModel?.model;
+  if (!effectiveModel) throw new Error("还没拿到本会话的模型，无法蒸馏（等这一轮跑完再试）");
   if (model?.encryptedKey && safeStorage.isEncryptionAvailable()) {
     const apiKey = safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64"));
     if (apiKey) server.setApiKey(apiKey);
   }
-  const provider = model?.provider ?? "openai";
+  const provider = model?.provider ?? sessionModel?.provider ?? "openai";
   ensureProjectAgentsMd(process.cwd());
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
@@ -82,9 +86,10 @@ export async function distillSummarize(prompt: string, body: string): Promise<st
     approvalPolicy: "never",
     sandbox: "read-only",
     modelProvider: provider,
+    /* 自定义模型走别名 provider（bridgeDial 改写 base_url）；否则用本会话那一轮的 provider 配置原文。 */
     config: model?.baseUrl
       ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
-      : undefined,
+      : (sessionModel?.config as any) ?? undefined,
   });
   const threadId = started.thread.id;
   internalThreads.add(threadId);
