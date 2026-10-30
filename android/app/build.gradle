@@ -9,8 +9,8 @@ android {
     defaultConfig {
         minSdk 26
         targetSdk 34
-        versionCode 7
-        versionName "0.1.6"
+        versionCode 8
+        versionName "0.1.7"
     }
 
     // 两个包各自写死服务器地址：装完只要输 6 位连接码（扫码照旧可用）
@@ -22,12 +22,15 @@ android {
             applicationId "com.codexharness.remote"
             manifestPlaceholders = [appLabel: "Codex 远控"]
             buildConfigField "String", "BASE_URL_B64", "\"Mi4uKilgdXUoPzc1Lj90Kioga2hpdDspMzs=\""
+            /* 0.1.7：另一个产品的中转域名出现在本机存储里 = 旧版本串了，启动时丢弃 */
+            buildConfigField "String", "STALE_BASE_HOST", "\"ppcode.pptoken.cc\""
         }
         ppcode {
             dimension "product"
             applicationId "com.ppcode.remote"
             manifestPlaceholders = [appLabel: "PPcode 远控"]
             buildConfigField "String", "BASE_URL_B64", "\"Mi4uKilgdXUqKjk1Pj90KiouNTE/NHQ5OWBrYm5uaQ==\""
+            buildConfigField "String", "STALE_BASE_HOST", "\"remote.ppz123.asia\""
         }
     }
 
