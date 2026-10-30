@@ -441,6 +441,53 @@ function dispatchMcpTools(): unknown[] {
         required: ["name", "systemPrompt"],
       },
     },
+    /* ── CLI 智能体四件套（10-31 用户令：「看看有没有配套工具，codex 可以新建智体、专家、专家团，
+       安装 cli 智体工具」）──
+       专家 / 专家团（expert_save，members≥1）/ 子智能体（subagent_save）此前已有；
+       这里补上「装没装 / 一键装 / 卸载」的模型侧入口 —— 执行端复用主进程唯一实现
+       `electron/cli-install.ts`（⛔ 不另写一条 npm/pip 调用）。
+       ⛔⛔ 装/卸是**改用户机器**的动作：必须 `confirm:true` 且模型先征得用户同意（描述里写死），
+          被委派会话（专家/子智能体/CLI）一律拒绝。 */
+    {
+      name: "cli_agent_list",
+      description: "列出本机 CLI 智能体目录（内置 + 用户新增）：id / 名称 / 可执行名 / 分类 / 是否已安装 / 能不能一键安装。用户问「有哪些 CLI 智能体」「装没装」时先调它。",
+      inputSchema: { type: "object", properties: {} },
+    },
+    {
+      name: "cli_agent_detect",
+      description: "检测某个 CLI 在本机装没装（where/which + --version）。参数 id 或 bin 二选一。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "目录条目 id（如 builtin-qwen-code）" },
+          bin: { type: "string", description: "可执行名（如 qwen）" },
+        },
+      },
+    },
+    {
+      name: "cli_agent_install",
+      description: "一键安装一个 CLI 智能体（真的在这台机器上跑 npm/pip，可能几分钟）。⛔⛔ 调用前**必须先向用户说明要装哪个、执行哪条命令并征得同意**，然后才传 confirm:true —— 不传 confirm 直接拒绝。装完会真复核 PATH；失败原样转述，⛔ 不许假装成功。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "目录条目 id（先用 cli_agent_list 查）" },
+          confirm: { type: "boolean", description: "用户已明确同意安装 ⇒ 传 true（缺省/ false 一律拒绝）" },
+        },
+        required: ["id", "confirm"],
+      },
+    },
+    {
+      name: "cli_agent_uninstall",
+      description: "卸载一个 CLI 智能体（只动应用自己的工具目录，系统里用户自装的另一份不越界）。⛔ 同样必须先征得用户同意并传 confirm:true。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "目录条目 id" },
+          confirm: { type: "boolean", description: "用户已明确同意卸载 ⇒ 传 true" },
+        },
+        required: ["id", "confirm"],
+      },
+    },
     /* ── 配音（09-29 排查：视频工作流的配音环节模型侧没有工具 —— 声线 SOP 指望的 voice:speak
        是渲染层通道。本地 TTS 同步合成（几秒级），落盘返回路径。模型未下载时报错并指路设置页。 */
     {
