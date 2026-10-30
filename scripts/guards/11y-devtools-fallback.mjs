@@ -185,6 +185,15 @@ ok(/const node = bundledNode\(\) \|\| "node"/.test(rt),
     "弹窗与说明都写清：删程序包、留凭据（~/.lark-cli）");
   ok(/<FeishuCliCard[^>]*uninstallDevRuntime=\{uninstallDevRuntime\}[^>]*runtimeUninstalling=\{runtimeUninstalling\}/.test(devtools),
     "开发工具页把卸载通道与卸载中状态传给卡片（不传 = 按钮点了没反应）");
+  /* ★ 10-30 用户实测「卸载之后安装又点不了了」：忙态类型读错 —— bag 里的
+     runtimeInstalling 是「正在安装的工具 id」（字符串），按 Record 读永远 false ⇒
+     50MB 下载期间既没有「安装中」也不禁用，用户以为按钮坏了。 */
+  ok(/runtimeInstalling === "feishu-cli"/.test(feishuCard) && /runtimeUninstalling === "feishu-cli"/.test(feishuCard),
+    "⛔ 安装/卸载忙态按字符串 id 判断（按 map 读 = 永远 false）");
+  ok(/onRuntimeProgress[\s\S]{0,400}feishu-cli[\s\S]{0,200}refresh\(\)/.test(feishuCard),
+    "安装完成事件到达后重读状态（否则装完界面仍停在「未安装」，看着像没反应）");
+  ok(/runtimeStage\?\.\["feishu-cli"\]/.test(feishuCard),
+    "安装期间显示真实阶段文案（下载 51 MB 时用户能看到在动）");
 }
 
 
