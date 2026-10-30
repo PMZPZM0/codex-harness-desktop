@@ -972,6 +972,8 @@ contextBridge.exposeInMainWorld("codex", {
   saveMonitorSuggestion: (input: unknown) => __ipc("monitor:save-suggestion", 1, [input]),
   /* 10-30 任务监控：重跑一次模型生成（复用一次性内部会话） */
   regenerateMonitorSuggestion: (input: unknown) => __ipc("monitor:regenerate", 1, [input]),
+  /* 10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验 */
+  adoptMonitorSuggestion: (input: unknown) => __ipc("monitor:adopt", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

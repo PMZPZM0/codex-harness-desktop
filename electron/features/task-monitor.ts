@@ -25,6 +25,8 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { distillSummarize } from "../main/03-turn-summary";
 import { liveFilesOf, storedReportsForThread } from "../turn-file-watch";
+import { engineActiveTurnIds, server } from "../runtime-refs";
+import { GROUP_EVENT_TAG, hostQueueMessageId } from "../../src/lib/host-queue.mjs";
 /* 技能/插件的识别口径与**技能卡完全同源**（src/lib/tool-display.mjs）；⛔ 不要在这里另写正则。 */
 import { pluginOfItem, skillOfItem } from "../../src/lib/tool-display.mjs";
 
@@ -48,6 +50,8 @@ export type MonitorTurn = {
   suggestionError?: string;
   /** true = 这一轮还在跑（面板据此标「本轮进行中」；结算后落盘的记录没有这个字段） */
   running?: boolean;
+  /** 用户采纳这条建议的时刻（采纳 = 注入一条 `[群事件]` 让 Codex 把它沉淀成经验） */
+  adoptedAt?: number;
 };
 
 type MonitorFile = { threadId: string; turns: MonitorTurn[] };
@@ -276,6 +280,71 @@ async function generateSuggestion(threadId: string, turnId: string, reply = "") 
   await persist(threadId, turns);
 }
 
+/** 找一个线程当前活跃的回合 id（没有则空串）。与 boss-groups runner 的取法同源。 */
+function activeTurnOf(threadId: string): string {
+  for (const [turnId, owner] of engineActiveTurnIds) if (owner === threadId) return turnId;
+  return "";
+}
+
+/**
+ * 往会话里投一条**宿主事件**（`[群事件]` 文本 + `host:` 队列 id）。
+ *
+ * ⛔⛔ 10-30 用户令：「点击以消息事件通知样式通知到 codex，**不是以用户消息**，跟群聊那个一样」。
+ *   所以这里必须复用群聊那条通道（`turn/steer` 追加进当前回合 / 空闲时走 `thread/queue/add`
+ *   + `queue/start`），并且文本带 `GROUP_EVENT_TAG` —— 渲染层据此按**事件块**渲染，
+ *   `clientUserMessageId` 的 `host:` 前缀让排队面板不把它当"用户消息"。
+ * ⛔ 不用 `turn/start`：那会打断正在跑的回合（用户正在看的那一轮会被掐掉）。
+ */
+async function deliverHostEvent(threadId: string, text: string): Promise<boolean> {
+  try {
+    const turnId = activeTurnOf(threadId);
+    if (turnId) {
+      const steered = await server.request("turn/steer", {
+        threadId,
+        expectedTurnId: turnId,
+        input: [{ type: "text", text, text_elements: [] }],
+      }).then(() => true).catch(() => false);
+      if (steered) return true;
+      /* steer 失败（回合刚好结束）⇒ 落到下面的队列路径。 */
+    }
+    await server.request("thread/queue/add", {
+      threadId,
+      input: [{ type: "text", text }],
+      clientUserMessageId: hostQueueMessageId("evolve"),
+    }).catch(() => null);
+    const list: any = await server.request("thread/queue/list", { threadId, limit: 1 }).catch(() => null);
+    const head = list?.data?.[0];
+    if (head?.id) await server.request("thread/queue/start", { threadId, queuedSubmissionId: head.id }).catch(() => undefined);
+    return true;
+  } catch (error: any) {
+    log("事件投递失败", String(error?.message ?? error).slice(0, 160));
+    return false;
+  }
+}
+
+/**
+ * 「采取建议」下发给 Codex 的事件正文。
+ *
+ * ⛔ 要求它**沉淀**而不是复述：用户的目的（原话）是「codex 就开始自我学习进步，反思自己的不足，
+ *   逐渐提升自己能力，减少犯错」—— 只说"好的我记住了"等于什么都没发生，必须落到记忆 / 技能 / AGENTS。
+ */
+function adoptEventText(suggestion: string): string {
+  const body = String(suggestion ?? "").trim().slice(0, 2000);
+  return [
+    `${GROUP_EVENT_TAG}【自我进化 · 采纳建议】`,
+    "用户采纳了下面这条关于你上一轮工作的改进建议：",
+    "",
+    body,
+    "",
+    "请把它转成**可复用的经验**，而不是回一句「好的」：",
+    "① 判断它属于哪一类：流程 / 命令 / 验证 / 协作；",
+    "② 落到对应的地方 —— 值得长期记住的写进记忆（memory_write，或项目 AGENTS.md 里对应段落）；",
+    "   属于某个技能的写进那个技能的 SKILL.md（⛔ 别写进一次性对话里）；",
+    "③ 之后的同类任务**先按它做**，并在收尾时自检有没有守住；",
+    "④ 只回一句：已沉淀到哪里 + 这条经验的一句话摘要。",
+  ].join("\n");
+}
+
 export const taskMonitorFeature = defineFeature<null>({
   id: "monitor",
   inject: ["ipc"],
@@ -313,6 +382,32 @@ export const taskMonitorFeature = defineFeature<null>({
       if (!id || !turnId) return { ok: false, error: "缺少会话或回合 id" };
       void generateSuggestion(id, turnId);
       return { ok: true };
+    });
+
+    /**
+     * 采纳建议（10-30 用户令）：「如果用户觉得进化建议可以，就采取建议……点击以消息事件通知样式
+     * 通知到 codex，不是以用户消息」。
+     * ⇒ ① 建议落盘并标 adoptedAt（面板显示「已采取」）；
+     *   ② 往**本会话**投一条 `[群事件]`（与群聊同一通道、同一渲染块），Codex 收到后自己去沉淀经验。
+     * ⛔ 不发 turn/start（会打断正在跑的回合），也不伪造用户消息。
+     */
+    ipcHost.handle("monitor:adopt", async (_event: unknown, input?: { threadId?: string; turnId?: string; text?: string }) => {
+      const id = String(input?.threadId ?? "").trim();
+      const turnId = String(input?.turnId ?? "").trim();
+      const text = String(input?.text ?? "").trim();
+      if (!id || !turnId) return { ok: false, error: "缺少会话或回合 id" };
+      if (!text) return { ok: false, error: "这条建议是空的 —— 先让它生成一版，或自己写一条" };
+      const turns = await load(id);
+      const target = turns.find((t) => t.turnId === turnId);
+      if (!target) return { ok: false, error: "这一轮还没有记录" };
+      target.suggestion = text.slice(0, 4000);
+      target.suggestionState = "ready";
+      target.suggestionError = undefined;
+      target.adoptedAt = Date.now();
+      store.set(id, turns);
+      await persist(id, turns);
+      const delivered = await deliverHostEvent(id, adoptEventText(text));
+      return { ok: true, delivered, error: delivered ? undefined : "建议已保存，但事件没送进会话（可能会话正在重启）" };
     });
   },
 });

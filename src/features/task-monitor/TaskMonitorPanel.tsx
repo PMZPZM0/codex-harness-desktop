@@ -24,6 +24,8 @@ type Turn = {
   suggestion: string;
   suggestionState: "idle" | "running" | "ready" | "failed";
   suggestionError?: string;
+  /** 采纳时刻（主进程写）：有值 ⇒ 这条建议已经采取过 */
+  adoptedAt?: number;
   /** 主进程标记：这一轮还在跑（面板据此显示「本轮进行中」） */
   running?: boolean;
 };
@@ -104,37 +106,34 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
     try { await window.codex.saveMonitorSuggestion({ threadId, turnId: latest.turnId, text }); } catch { /* 保存失败不阻塞编辑 */ } finally { setSaving(false); }
   };
 
-  const evolve = async () => {
+  /**
+   * 采取建议（10-30 用户令）：把这条建议作为**事件通知**发给 Codex（`[群事件]` 文本 +
+   * `host:` 队列 id，与群聊同一通道），**不是**用户消息 —— 时间线按事件块渲染，
+   * 排队面板也不会冒出一条「我发的消息」。
+   * ⛔ 不走 sendPrefilled（那是伪造用户发言）；⛔ 也不 turn/start（会打断正在跑的回合）。
+   */
+  const adopt = async () => {
     const text = draft.trim();
-    if (!text) { app.showToast("还没有建议", "等这一轮生成完，或点右上角重新生成"); return; }
-    /* ⛔ 真·一键发送：文本走 pendingCommandTextRef、技能走 pendingSkillRef（两条一次性 ref）——
-       不用 setPrompt/addSkillReference 再 send：那两个是 setState，send 读到的是**上一次渲染**的 bag，
-       结果就是发出去旧正文、技能还被丢掉（这坑踩过一次）。
-       ⛔ 走 `app.sendPrefilled`（bag 上的绑定包装），不拿 app 当 bag 硬转：sendImpl 要读几十个
-       bag 字段，而 app 是各 part 返回值的合并对象，缺字段时会在发送中途静默走错分支。 */
+    if (!text) { app.showToast("这条建议是空的", "等它生成一版，或先自己写一条再采取"); return; }
+    if (!threadId || !latest) return;
+    setSaving(true);
     try {
-      await app.sendPrefilled({ text, skill: EVOLVE_SKILL });
-      app.showToast("已发给本会话", "已带上 self-review 技能");
+      const res = await window.codex.adoptMonitorSuggestion({ threadId, turnId: latest.turnId, text });
+      if (!res?.ok) { app.showToast("没能采取", res?.error ?? "未知原因"); return; }
+      app.showToast(latest.adoptedAt ? "已再发一次" : "已采取", "已用事件通知交给 Codex —— 它会把它沉淀成经验并照着做");
+      void load();
     } catch (error: unknown) {
-      const reason = error instanceof Error ? error.message : String(error);
-      app.showToast("发送失败", reason.slice(0, 120));
-    }
+      app.showToast("没能采取", (error instanceof Error ? error.message : String(error)).slice(0, 120));
+    } finally { setSaving(false); }
   };
 
+  /** 宿主侧重跑一版（不进对话）：给不想打扰会话、只想快速刷新文案的人用。 */
   const regenerate = async () => {
     if (!threadId || !latest) return;
     try { await window.codex.regenerateMonitorSuggestion({ threadId, turnId: latest.turnId }); } catch { /* 忽略 */ }
     void load();
   };
 
-  /**
-   * 「让 Codex 自己评估」：把这一轮的事实摘要**发进当前会话**，由本会话的 Codex 用它自己的
-   * 完整上下文复盘并给出建议（用户 10-30：「进化建议要 codex 自己输出，配套好工具」）。
-   *
-   * ⛔ 不用宿主侧那条旁路（`monitor:regenerate` = 另起一条内部会话 + 只喂摘要）：那样模型
-   *   看不到对话过程，产出必然是模板话；这里发的是**本会话的真实一轮**，它看得见自己刚干了什么。
-   * ⛔ 仍然走 `app.sendPrefilled`（一次性 ref + 直接发送），不 setState 再 send —— 那会发出旧正文。
-   */
   const askSession = async () => {
     if (!threadId) { app.showToast("未选中会话", "先打开一个会话"); return; }
     if (!latest) { app.showToast("还没有可复盘的回合", "先跑一轮再点"); return; }
@@ -180,7 +179,7 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
           onBlur={() => void saveSuggestion(draft)}
         />
         <div className="monitor-actions">
-          <button type="button" className="monitor-btn primary" onClick={evolve} disabled={!draft.trim()}><Wand2 size={12} />进化（带上技能发回对话）</button>
+          <button type="button" className="monitor-btn primary" onClick={() => void adopt()} disabled={!draft.trim() || saving}><Wand2 size={12} />{latest?.adoptedAt ? "已采取 · 再发一次" : "采取建议"}</button>
           <button type="button" className="monitor-btn" onClick={() => void saveSuggestion(draft)} disabled={!latest || saving}>{saving ? "保存中…" : "保存修改"}</button>
         </div>
       </section>
