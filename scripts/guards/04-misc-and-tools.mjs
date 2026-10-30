@@ -1644,6 +1644,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     const tunnelPage = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
     const androidSrc = readFileSync(join(ROOT, "android", "app", "src", "main", "java", "com", "codexharness", "remote", "MainActivity.java"), "utf8");
 
+    /* 10-30 用户实机：手输 6 位码报「Value <!doctype ... cannot be converted to JSONObject」——
+       根地址 /api/pair 被转去空的老通道（HTML）。现在网关按配对码/设备 cookie 找回对应电脑。 */
+    (gwSrc.includes("handleRootPair") && gwSrc.includes("handleRootPairStatus") && gwSrc.includes("pairRoutes") && gwSrc.includes("Location: `/t/${deviceId}${url}`") ? ok : fail)(
+      "【139e】根地址也能配对：/api/pair 逐台在线电脑找配对码、/api/pair-status 按 rid 找回、已配对页面按 cookie 跳到 /t/<id>（⛔ 否则手输码拿到 HTML，APK 解析 JSON 直接炸）"
+    );
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
       "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
     );

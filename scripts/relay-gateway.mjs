@@ -162,6 +162,88 @@ h1{font-size:18px;margin:0 0 8px}p{color:#6f6f69;font-size:13px;margin:8px 0}cod
   req.pipe(upstream);
 }
 
+/** 读取完整请求体（上限与隧道转发同口径）。 */
+function readBody(req, limit = MAX_BODY) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    let size = 0;
+    req.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) { try { req.destroy(); } catch { /* noop */ } resolve(Buffer.alloc(0)); return; }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", () => resolve(Buffer.alloc(0)));
+  });
+}
+
+function cookieValue(req, name) {
+  const raw = String(req.headers.cookie ?? "");
+  for (const part of raw.split(";")) {
+    const bit = part.trim();
+    if (bit.startsWith(name + "=")) return decodeURIComponent(bit.slice(name.length + 1));
+  }
+  return "";
+}
+
+function jsonReply(res, status, payload, extraHeaders = {}) {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...extraHeaders });
+  res.end(JSON.stringify(payload));
+}
+
+/** 在线设备（隧道 ws 处于打开状态）。 */
+function onlineTunnelIds() {
+  return [...tunnels.entries()].filter(([, t]) => t.ws && t.ws.readyState === 1).map(([id]) => id);
+}
+
+/** 直接向某个设备的桌面端发一次请求（不经过 /t 前缀），返回 {status, headers, body}。
+ *  手动配对码 / 配对轮询走这里：根地址上不知道设备是谁，先问每台在线电脑。 */
+function tunnelFetch(id, method, pathName, headers, body, timeoutMs = 8000) {
+  const tunnel = tunnels.get(id);
+  if (!tunnel || tunnel.ws.readyState !== 1) return Promise.reject(new Error("offline"));
+  const clean = {};
+  for (const [name, value] of Object.entries(headers ?? {})) {
+    if (isHopByHop(name) || value == null || /^(host|content-length)$/i.test(name)) continue;
+    clean[name] = Array.isArray(value) ? value.join(", ") : String(value);
+  }
+  const reqId = String(++seq);
+  tunnel.inflight += 1;
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { tunnel.pending.delete(reqId); fail(new Error("电脑端响应超时")); }, timeoutMs);
+    const fail = (error) => { tunnel.inflight = Math.max(0, tunnel.inflight - 1); reject(error); };
+    tunnel.pending.set(reqId, {
+      resolve: (frame) => {
+        clearTimeout(timer);
+        tunnel.pending.delete(reqId);
+        tunnel.inflight = Math.max(0, tunnel.inflight - 1);
+        if (frame.type === "reserr") { reject(new Error(String(frame.error ?? "电脑端处理失败"))); return; }
+        resolve({ status: Number(frame.status) || 200, headers: frame.headers ?? {}, body: frame.body ? Buffer.from(frame.body, "base64") : Buffer.alloc(0) });
+      },
+    });
+    try {
+      tunnel.ws.send(JSON.stringify({ type: "req", reqId, method, path: pathName, headers: clean, body: body && body.length ? body.toString("base64") : "" }));
+    } catch (error) {
+      clearTimeout(timer);
+      tunnel.pending.delete(reqId);
+      fail(new Error("电脑端连接已断开"));
+    }
+  });
+}
+
+/** rid → 设备（手动配对时记下，配对轮询才知道问哪台电脑）。10 分钟过期。 */
+const pairRoutes = new Map();
+function rememberPairRoute(rid, deviceId) {
+  if (!rid) return;
+  const now = Date.now();
+  for (const [key, value] of pairRoutes) if (now - value.at > 10 * 60_000) pairRoutes.delete(key);
+  pairRoutes.set(rid, { deviceId, at: now });
+}
+function routeForPair(rid, req) {
+  const hit = pairRoutes.get(rid);
+  if (hit) return hit.deviceId;
+  return cookieValue(req, "chm_dev") || cookieValue(req, "harness_device") || "";
+}
+
 function isHopByHop(name) {
   return /^(connection|keep-alive|transfer-encoding|upgrade|proxy-.*|te|trailer)$/i.test(name);
 }
@@ -246,6 +328,62 @@ async function handleTunnelRequest(id, restPath, req, res) {
   }
 }
 
+/** 根地址 POST /api/pair：不知道是哪台电脑 —— 逐台在线设备问一遍，谁认这个配对码就用谁。 */
+async function handleRootPair(req, res) {
+  const body = await readBody(req);
+  let payload = null;
+  try { payload = JSON.parse(body.toString("utf8") || "{}"); } catch { payload = null; }
+  if (!payload || typeof payload !== "object") { jsonReply(res, 400, { ok: false, error: "请求格式不对" }); return; }
+  const ids = onlineTunnelIds();
+  if (!ids.length) { jsonReply(res, 200, { ok: false, error: "没有在线的电脑：请先打开电脑端应用（手机远控服务随应用启动）" }); return; }
+  let last = null;
+  for (const id of ids) {
+    try {
+      const out = await tunnelFetch(id, "POST", "/api/pair", req.headers, body, 8000);
+      let parsed = null;
+      try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
+      if (!parsed) continue;
+      last = parsed;
+      if (parsed.ok) {
+        rememberPairRoute(String(parsed.rid ?? ""), id);
+        jsonReply(res, 200, parsed, {
+          "set-cookie": [`chm_dev=${id}; Path=/; HttpOnly; SameSite=Lax`],
+        });
+        return;
+      }
+      /* ok=false（配对码不对 / 已过期）继续问下一台；全都不认再把这句原样回给手机 */
+    } catch { /* 这台没响应：下一台 */ }
+  }
+  jsonReply(res, 200, last ?? { ok: false, error: "没有电脑响应配对请求，请确认电脑端应用已打开后重试" });
+}
+
+/** 根地址 GET /api/pair-status?rid=...：按 rid（或 chm_dev cookie）找回那台电脑。 */
+async function handleRootPairStatus(req, res, url) {
+  const rid = new URL(url, "http://x").searchParams.get("rid") ?? "";
+  const preferred = routeForPair(rid, req);
+  const ids = preferred && onlineTunnelIds().includes(preferred) ? [preferred, ...onlineTunnelIds().filter((id) => id !== preferred)] : onlineTunnelIds();
+  if (!ids.length) { jsonReply(res, 200, { ok: false, status: "expired", error: "电脑端已离线，请重新连接" }); return; }
+  let last = null;
+  for (const id of ids) {
+    try {
+      const out = await tunnelFetch(id, "GET", url, req.headers, null, 8000);
+      let parsed = null;
+      try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
+      if (!parsed) continue;
+      last = parsed;
+      if (String(parsed.status ?? "") !== "expired") {
+        if (parsed.status === "approved") rememberPairRoute(rid, id);
+        const headers = { "set-cookie": [`chm_dev=${id}; Path=/; HttpOnly; SameSite=Lax`] };
+        const dc = out.headers["set-cookie"];
+        if (dc) headers["set-cookie"] = headers["set-cookie"].concat(Array.isArray(dc) ? dc : [dc]);
+        jsonReply(res, out.status, parsed, headers);
+        return;
+      }
+    } catch { /* 下一台 */ }
+  }
+  jsonReply(res, 200, last ?? { ok: false, status: "expired", error: "配对请求已过期，请在电脑端重新生成后重试" });
+}
+
 const server = http.createServer((req, res) => {
   const url = req.url ?? "/";
   if (url === "/apk" || url.startsWith("/apk?")) {
@@ -258,6 +396,18 @@ const server = http.createServer((req, res) => {
     const rest = match[2] || "/";
     void handleTunnelRequest(id, rest, req, res);
     return;
+  }
+  /* 根地址上的配对 API：手动输 6 位码走这里（原实现转到空的老通道 = HTML，APK 解析 JSON 直接炸） */
+  if (/^\/api\/pair-status\b/.test(url) && req.method === "GET") { void handleRootPairStatus(req, res, url); return; }
+  if (/^\/api\/pair\b/.test(url) && req.method === "POST") { void handleRootPair(req, res); return; }
+  /* 已配对手机的页面请求：按 cookie 找到电脑，跳到 /t/<设备ID> 前缀（页面里的 API 才会带上前缀） */
+  if (req.method === "GET" && url.startsWith("/r/")) {
+    const deviceId = cookieValue(req, "chm_dev") || cookieValue(req, "harness_device");
+    if (DEVICE_RE.test(deviceId) && tunnels.has(deviceId)) {
+      res.writeHead(302, { Location: `/t/${deviceId}${url}`, "cache-control": "no-store" });
+      res.end();
+      return;
+    }
   }
   proxyLegacy(req, res);
 });
