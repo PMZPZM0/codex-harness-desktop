@@ -36,7 +36,7 @@ export function filterMentionTargets(
   query: unknown,
   allow?: { team?: boolean } | null,
 ): {
-  groups: Array<{ kind: MentionKind; label: string; hint: string; items: MentionTarget[]; off: boolean; more: number }>;
+  groups: Array<{ kind: MentionKind; label: string; hint: string; items: MentionTarget[]; off: boolean; more: number; total: number }>;
   total: number;
   overflow: number;
 };

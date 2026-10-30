@@ -48,9 +48,10 @@ export function mentionKindAllowed(allow, kind) {
   return true;
 }
 
-/** 每组最多显示几条（10-31 用户实测「单个专家怎么这么少」：6 → 12，面板本身可滚动；
- *  再多就用「还有 N 个，继续输入筛选」提示，⛔ 不隐藏到用户以为丢了对象）。 */
-export const MENTION_PER_GROUP = 12;
+/** 每组最多显示几条（10-31 用户实测：单独专家库有 **40 个**，「怎么这么少」「要做好实时同步」）。
+ *  ⇒ 12 → **50**（面板本身可滚动；40 个专家全列出来），超过 50 才提示「还有 N 个，继续输入筛选」。
+ *  ⛔ 不设"只显示前 N 个"的静默截断：用户会以为专家丢了。 */
+export const MENTION_PER_GROUP = 50;
 /** 一次消息最多点名几个对象（≥ 这个数就是"群发"，通常说明用户在乱试）。 */
 export const MENTION_MAX = 8;
 
@@ -147,7 +148,7 @@ export function filterMentionTargets(targets, query, allow = null) {
       return { ...target, disabled: true, disabledReason: missing ? "cli-missing" : "kind-off" };
     });
     const more = Math.max(0, hits.length - items.length);
-    if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items, off, more });
+    if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items, off, more, total: hits.length });
     total += items.length;
     overflow += more;
   }
