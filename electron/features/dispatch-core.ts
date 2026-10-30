@@ -697,6 +697,34 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
         teamId: team.teamId,
         memberCount: team.members.length,
       });
+      /* ★ 10-31 用户实测「@ 里专家只显示 5 个，好像没同步出来」：
+         多成员团队此前只进 `team` 一类，**主理人与成员都不在单人专家目录里** ⇒ @ 的「专家」
+         只有 5 个单人专家。现在把团队角色也并进来（每个角色一条，可被 @ 直接点名）：
+           · 主理人 = kind "expert"（与「单人专家 = 只有 lead 的团队」同一口径，独立会话产出）
+           · 成员   = kind "member"（团内角色；许可跟随「专家团」开关，执行端走 member 分支）
+         ⛔ key 用 `teamId:memberId`（团队内唯一；单键 teamId 会被主理人与团队撞车）。 */
+      if (team.lead?.id) {
+        targets.push({
+          kind: "expert",
+          key: `${team.teamId}:${team.lead.id}`,
+          name: team.lead.name,
+          profession: team.lead.profession?.zh ?? "",
+          description: team.lead.description ?? team.description?.zh ?? "",
+          teamId: team.teamId,
+          memberId: team.lead.id,
+        });
+      }
+      for (const member of team.members) {
+        targets.push({
+          kind: "member",
+          key: `${team.teamId}:${member.id}`,
+          name: member.name,
+          profession: member.profession?.zh ?? "",
+          description: member.description ?? "",
+          teamId: team.teamId,
+          memberId: member.id,
+        });
+      }
     }
   }
   for (const sub of subs) {

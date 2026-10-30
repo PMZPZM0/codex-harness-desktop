@@ -342,6 +342,29 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "每组超上限给「还有 N 个，继续输入筛选」（⛔ 不静默截断到用户以为对象丢了）");
   ok(/export const MENTION_PER_GROUP = 50;/.test(mentionSrc),
     "每组显示上限 = 50（10-31 用户实测「单独专家有 40 个」：12 → 50，全部列出，面板可滚动）");
+  /* ★ 10-31 用户实测「@ 里专家只显示 5 个，好像没同步出来」：团队主理人 / 成员要并进「专家」分组
+     （目录里 kind=expert / member），否则用户看到的"专家库"只有单人专家。 */
+  {
+    const sample = [
+      { kind: "expert", key: "t1", name: "单人专家" },
+      { kind: "expert", key: "t2:lead", name: "主理人甲", teamId: "t2", memberId: "lead" },
+      { kind: "member", key: "t2:m1", name: "成员乙", teamId: "t2", memberId: "m1" },
+    ];
+    const on = mentionMod.filterMentionTargets(sample, "", { team: true });
+    const group = on.groups.find((g) => g.kind === "expert");
+    ok(group?.items.length === 3 && group.total === 3,
+      "团队主理人与成员都在「专家」分组里（单人 + 团角色 = 用户心里的专家库）");
+    const off = mentionMod.filterMentionTargets(sample, "", { team: false });
+    const offGroup = off.groups.find((g) => g.kind === "expert");
+    const memberRow = offGroup?.items.find((item) => item.key === "t2:m1");
+    ok(memberRow?.disabled === true && offGroup?.items.find((item) => item.key === "t1")?.disabled !== true,
+      "专家团关闭时：成员行单独置灰、单人专家仍可选（许可按行自己的 kind 判）");
+  }
+  ok(/kind: "member",\s*\n\s*key: `\$\{team\.teamId\}:\$\{member\.id\}`/.test(coreSrc)
+    && /kind: "expert",\s*\n\s*key: `\$\{team\.teamId\}:\$\{team\.lead\.id\}`/.test(coreSrc),
+    "调度目录真的把团队主理人（expert）与成员（member）补进单人名单（key = teamId:memberId）");
+  ok(/section\("member", "团队成员（专家团里的角色）"/.test(readFileSync(join(ROOT, "electron/dispatch.ts"), "utf8")),
+    "工具描述有「团队成员」分节（否则模型拿不到成员名字）");
   ok(/context-picker-group-label">\{group\.label\}[\s\S]{0,220}\$\{group\.hint\} · \$\{group\.total\}/.test(composerSrc),
     "分组标题带实时数量（专家 · 40），让「列表少不少」一眼可核对");
   const composerSrc2 = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer.tsx"), "utf8");
@@ -376,6 +399,20 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "CLI 智能体列表 = 工作证小卡 + 机器人头像（10-31 卡片优化）");
   ok(/<SettingsDialog/.test(panelSrc) && /agent-preview/.test(panelSrc) && /size="sm"/.test(panelSrc),
     "CLI 点卡进入预览弹窗（安装状态 / 命令 / 装卸动作在弹窗里）");
+  /* ★ 10-31 用户令：「把 cli 智能体入口放到设置-专家/专家团里面」。
+     判据：① 开发工具页不再有 CLI 卡片与面板（⛔ 两处入口 = 两份目录错觉）；
+          ② 专家/专家团入口页有卡片；③ 存在独立设置页且带返回条。 */
+  {
+    const devtoolsSrc = readFileSync(join(ROOT, "src/features/settings-devtools/DevtoolsSettingsSection.tsx"), "utf8");
+    const hubSrc = readFileSync(join(ROOT, "src/features/settings-agentteam/AgentTeamSettingsSection.tsx"), "utf8");
+    const pagesSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/automation-agents.tsx"), "utf8");
+    ok(!/CliAgentsPanel/.test(devtoolsSrc) && !/"cli-agents"/.test(devtoolsSrc),
+      "开发工具页已移除 CLI 智能体入口（不再有第二处）");
+    ok(/setSettingsPage\("cli-agents"\)/.test(hubSrc) && /CLI 智能体/.test(hubSrc),
+      "专家/专家团入口页有「CLI 智能体」卡片");
+    ok(/"cli-agents": \{ render: \(\) => <CliAgentsSettingsSection[^\n]*onBack=\{\(\) => setSettingsPage\("agentteam"\)\}/.test(pagesSrc),
+      "注册了独立设置页 cli-agents，返回条回到专家/专家团");
+  }
   ok(/agent-expert-d\.webp/.test(avatarLibSrc) && /agent-subagent-d\.webp/.test(avatarLibSrc) && /agent-team-d\.webp/.test(avatarLibSrc),
     "图集扩到每类 4 张（36 造型/类，新建的专家 / 团队 / 子智能体自动从同一图集取脸）");
 
