@@ -41,4 +41,22 @@ module.exports = async function afterPack(context) {
     }
     await fs.cp(from, path.join(resources, "tools", name), { preserveTimestamps: true });
   }
+
+  /* ⛔⛔ 10-30 审计（「装完能不能跑」第二轮）：mac 的 extraResources 是空数组，于是
+     package.json 里那些**文件级** extraResources（`src/lib/video-providers.mjs` →
+     `tools/video-providers.mjs` 等）在 mac 上**从来没人复制**。
+     症状极隐蔽：Windows 正常，mac 上「视频生成」的 CLI 通道找不到厂商适配代码
+     （`harness-video.mjs` 的兜底 `__dirname/../../src/lib` 在 .app 里根本不存在）。
+     ⇒ 这里按 package.json 的文件级映射逐条补齐，保证两端 resources 布局一致。
+     目录级映射不在这里做：`resources/tools` 的整树复制已覆盖（第 16 行）。 */
+  const baseExtraResources = require("../package.json").build.extraResources || [];
+  for (const entry of baseExtraResources) {
+    const from = path.join(context.packager.projectDir, entry.from);
+    const to = path.join(resources, entry.to);
+    let stat = null;
+    try { stat = await fs.stat(from); } catch { /* 源不在这台机上（如 Windows 专属资产） */ }
+    if (!stat || !stat.isFile()) continue;
+    await fs.mkdir(path.dirname(to), { recursive: true });
+    await fs.cp(from, to, { preserveTimestamps: true });
+  }
 };

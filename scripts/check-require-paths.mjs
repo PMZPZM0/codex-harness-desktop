@@ -79,6 +79,55 @@ else {
   console.log("  源码侧可用 .workbuddy/tmp/fix-require-paths.cjs 定位与修复。");
 }
 
+/* ── ② 打包外 require：dev 态能解析 ≠ 装完能解析 ────────────────────────────
+ * 10-30 真机事故（v0.0.51 mac 启动即崩）：`features/runtime-ipc.ts` 顶层写了
+ *   require("../../scripts/lib/tools-versions.cjs")
+ * 开发机仓里这个文件在 ⇒ 本地跑得好、`npm run check` / 【96】① 全绿；但 `build.files`
+ * 白名单里**没有 scripts/**，asar 里根本没这个文件 ⇒ 用户一启动就是
+ *   `Cannot find module '../scripts/lib/tools-versions.cjs'`（主进程未捕获异常）。
+ * ⇒ 判据：凡是**逃出 dist-electron** 的相对 require，目标文件必须被 build.files 覆盖。
+ *   （`src/lib/*.mjs` 之所以安全，就是因为白名单里有那一行。） */
+const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+const includePatterns = ((pkg.build && pkg.build.files) || []).filter((p) => !String(p).startsWith("!"));
+const globToRe = (glob) =>
+  new RegExp("^" + String(glob)
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*\/?/g, "\u0000")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\u0000/g, ".*") + "$");
+const packaged = (relPath) => includePatterns.some((p) => {
+  const pat = String(p).replace(/\\/g, "/");
+  return globToRe(pat).test(relPath) || (pat.endsWith("/**") && relPath.startsWith(pat.slice(0, -2)));
+});
+
+const outsideMiss = new Map();
+let outsideCount = 0;
+for (const f of files) {
+  const src = readFileSync(f, "utf8");
+  for (const m of src.matchAll(/require\(\s*["'](\.[^"']+)["']\s*\)/g)) {
+    const target = resolveSpec(f, m[1]);
+    if (!target) continue;                       // 断链由 ① 负责，别重复报
+    const rel = relative(ROOT, target).replace(/\\/g, "/");
+    if (rel.startsWith("dist-electron/")) continue;
+    outsideCount++;
+    if (packaged(rel)) continue;
+    const from = relative(DIST, f).replace(/\\/g, "/");
+    if (!outsideMiss.has(from)) outsideMiss.set(from, new Set());
+    outsideMiss.get(from).add(rel);
+  }
+}
+
+if (outsideMiss.size === 0) {
+  ok(`产物树外的 ${outsideCount} 处相对 require 都被 build.files 覆盖（装完能解析）`);
+} else {
+  fail(`产物树外的相对 require 有 ${outsideMiss.size} 个文件不在 build.files 白名单里（装完必崩）：`);
+  for (const [from, targets] of outsideMiss) {
+    console.log("      " + from + "  → 缺 " + [...targets].join(", "));
+  }
+  console.log("\n  修法：把目标文件加进 package.json 的 build.files（照 `src/lib/*.mjs` 那行），");
+  console.log("  或把数据搬进 electron/ 变成编译产物。⛔ 不要只在本地能跑就算完 —— 用户装的是 asar。");
+}
+
 console.log("");
 console.log(`【96】require 路径断链守卫：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
 process.exit(failCount === 0 ? 0 : 1);

@@ -88,10 +88,17 @@ export function localMemoryMcpInstallRoot(): string {
  *  落点：dev = `<repo>/resources/tools/node/node.exe`（与 tray.ts 取 build/ 同法，用 getAppPath）；
  *        打包 = `<resources>/tools/node/node.exe`（extraResources 已带 tools/node）。 */
 export function bundledNodePath(): string {
-  const exe = process.platform === "win32" ? "node.exe" : "node";
+  /* ⛔⛔ mac 适配（10-30 审计）：两个平台的**随包 node 是两种解包布局** ——
+     Windows 是 `tools/node/node.exe`，darwin 是 `tools/node/bin/node`（官方 tar.gz 原样解包，
+     `install-runtimes.cjs` 的 marker 就写的 `bin/node`）。这里原先按 "node" 硬拼 ⇒ mac 得到
+     `tools/node/node`（不存在）⇒ 本地记忆后端的安装命令直接 no such file，装不上。
+     ⛔ 为什么不直接调 `toolchain.bundledNode()`：本文件被守卫【150】钉成**叶子模块**
+     （只依赖 app-settings + cloud-memory-activation，引别的会成 require 环）。
+     ⇒ 只复制「布局」这一条事实；要 spawn 请用 `toolchain.bundledNode()`（带存在性探测）。 */
+  const segs = process.platform === "win32" ? ["node.exe"] : ["bin", "node"];
   return app.isPackaged
-    ? path.join(process.resourcesPath, "tools", "node", exe)
-    : path.join(app.getAppPath(), "resources", "tools", "node", exe);
+    ? path.join(process.resourcesPath, "tools", "node", ...segs)
+    : path.join(app.getAppPath(), "resources", "tools", "node", ...segs);
 }
 
 /** 安装器落点（与 features/memory-rpa-ipc.ts 的调用同源，改一边要改两边）。
