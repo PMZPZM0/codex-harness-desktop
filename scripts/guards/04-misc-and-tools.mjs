@@ -1772,8 +1772,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("DEVICE_TTL_MS") && relaySrc.includes("private pruneApproved()") && relaySrc.includes("this.pruneApproved();") ? ok : fail)(
       "【139e】已配对设备 30 天未连接自动清理（启动时 + 读列表时），列表不再无限增长"
     );
-    (relaySrc.includes("mobile-remote-v0.1.7") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.7）"
+    /* 10-30 用户要求：加一个断开连接功能 —— 连接后右上角「断开」，清凭据回连接页。 */
+    (androidSrc.includes("R.id.disconnect") && androidSrc.includes("private void disconnect()") && androidSrc.includes("removeAllCookies") && androidSrc.includes("remove(KEY_CONNECTED)") ? ok : fail)(
+      "【139e】手机端有「断开」：确认后清 cookie / 自动登录标记 / 本机设备秘密，回到连接页"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.9") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.9）"
     );
   }
 }

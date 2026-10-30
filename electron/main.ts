@@ -724,7 +724,7 @@ const remote = new RemoteControlService({
     return () => { const index = remoteEventForwarders.indexOf(listener); if (index >= 0) remoteEventForwarders.splice(index, 1); };
   },
   // 手机安装包资产名：按产品品牌区分（GitHub Release：mobile-remote-v0.1.0）
-  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.7.apk" : "CodexRemote-0.1.7.apk",
+  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.9.apk" : "CodexRemote-0.1.9.apk",
   /* 手机首页的品牌面（⛔ 各仓自有：桌面版 = Codex Harness；PPcode 仓的 main.ts 写 PPcode） */
   brandName: app.getName().toLowerCase().includes("ppcode") ? "PPcode" : "Codex Harness",
 });

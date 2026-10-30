@@ -5,4 +5,8 @@
     <string name="code_hint">6 位数字</string>
     <string name="connect">连接</string>
     <string name="scan">扫码</string>
+    <string name="disconnect">断开</string>
+    <string name="disconnect_title">断开连接</string>
+    <string name="disconnect_body">断开后需要重新输码或扫码才能再次连接这台电脑。</string>
+    <string name="cancel">取消</string>
 </resources>
