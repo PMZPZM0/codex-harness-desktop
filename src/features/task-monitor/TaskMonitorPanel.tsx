@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, ChevronLeft, ChevronRight, RefreshCw, Sparkles, Wand2 } from "lucide-react";
-import { sendPrefilled, type HarnessAppApi } from "../app-state";
+import type { HarnessAppApi } from "../app-state";
 
 type Artifact = { path: string; added: number; deleted: number; status?: string };
 type Turn = {
@@ -54,7 +54,7 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
     if (!threadId) { setTurns([]); return; }
     setLoading(true);
     try {
-      const result: any = await window.codex.readTaskMonitor(threadId);
+      const result: { turns?: Turn[] } | null = await window.codex.readTaskMonitor(threadId);
       setTurns(Array.isArray(result?.turns) ? result.turns : []);
     } catch { /* 读不到就保持上一次（不闪空） */ } finally { setLoading(false); }
   }, [threadId]);
@@ -104,12 +104,15 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
     if (!text) { app.showToast("还没有建议", "等这一轮生成完，或点右上角重新生成"); return; }
     /* ⛔ 真·一键发送：文本走 pendingCommandTextRef、技能走 pendingSkillRef（两条一次性 ref）——
        不用 setPrompt/addSkillReference 再 send：那两个是 setState，send 读到的是**上一次渲染**的 bag，
-       结果就是发出去旧正文、技能还被丢掉（这坑踩过一次）。 */
+       结果就是发出去旧正文、技能还被丢掉（这坑踩过一次）。
+       ⛔ 走 `app.sendPrefilled`（bag 上的绑定包装），不拿 app 当 bag 硬转：sendImpl 要读几十个
+       bag 字段，而 app 是各 part 返回值的合并对象，缺字段时会在发送中途静默走错分支。 */
     try {
-      await sendPrefilled(app as any, { text, skill: EVOLVE_SKILL });
+      await app.sendPrefilled({ text, skill: EVOLVE_SKILL });
       app.showToast("已发给本会话", "已带上 self-review 技能");
-    } catch (error: any) {
-      app.showToast("发送失败", String(error?.message ?? error).slice(0, 120));
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      app.showToast("发送失败", reason.slice(0, 120));
     }
   };
 

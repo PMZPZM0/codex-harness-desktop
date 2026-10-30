@@ -13,7 +13,7 @@ import { ALL_EFFORTS } from "../../../../lib/effort";
 import { OFFICIAL_MODELS } from "../../../../lib/official-models";
 import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettingsHandler, subscribeVoiceStage } from "../../../../voice/wave-level";
 import type { Bag } from "../bag-types";
-import { send as sendImpl } from "./02-seg/send";
+import { send as sendImpl, sendPrefilled as sendPrefilledImpl } from "./02-seg/send";
 
 export function usePart08b(bag: Bag) {
   // 让「长按语音输入」在松手后走现有 send()（发送/排队/权限全部复用）。
@@ -25,6 +25,15 @@ export function usePart08b(bag: Bag) {
 }
 
 bag.send = send as typeof bag.send;
+/* 10-30 任务监控「进化」：预填 + 一次性技能 + 直接发送。
+   ⛔ 必须**绑住真正的 bag**（sendImpl 要读几十个字段）—— 拿 useHarnessApp 返回的
+   `{...p01,...p02}` 合并对象当 bag 传会缺字段（那次调用里 send 静默走错分支）。
+   与上面 send 同款：函数包一层 + `as typeof bag.X` 断言，跨 part 引用才有具体类型。 */
+function sendPrefilled(input: { text: string; skill?: { name: string; description: string } }) {
+  return sendPrefilledImpl(bag, input);
+}
+
+bag.sendPrefilled = sendPrefilled as typeof bag.sendPrefilled;
 
   async function handleLogin(info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string; saved?: any; models?: string[] }): Promise<boolean> {
     try {
@@ -135,5 +144,5 @@ bag.hadModelConfigured = hadModelConfigured as typeof bag.hadModelConfigured;
     bag.setShowLogin(true);
   }
 bag.handleLogout = handleLogout as typeof bag.handleLogout;
-  return { send, handleLogin, handleSkip, MODEL_CONFIGURED_KEY, markModelConfigured, hadModelConfigured, handleLogout };
+  return { send, sendPrefilled, handleLogin, handleSkip, MODEL_CONFIGURED_KEY, markModelConfigured, hadModelConfigured, handleLogout };
 }

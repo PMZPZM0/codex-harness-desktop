@@ -5,5 +5,5 @@
  * 而其它域本来也不需要握到组合根的实现 —— 需要的只是那个由 hook 推导出来的 API 形状。
  */
 export type { HarnessAppApi } from "./useHarnessApp";
-/* 10-30 任务监控「进化」：预填 + 一次性技能 + 直接发送（避开 setState 未刷新） */
-export { sendPrefilled } from "./parts/part08/02-seg/send";
+/* ⛔ 10-30：sendPrefilled 不从这里导出 —— 它要真正的 bag，必须走 `app.sendPrefilled`
+   （part08 里绑好 bag 的包装）。这里导出会诱使调用方把合并对象当 bag 传（缺字段，静默失败）。 */
