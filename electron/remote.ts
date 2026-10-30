@@ -171,7 +171,7 @@ export class RemoteControlService {
   /** 设备（手机端 localStorage 生成的 deviceId）→ 上次使用的会话 threadId */
   private deviceThreads = new Map<string, string>();
   /** 6 位配对码（首次配对的第二道关：光拿到链接还不够，还得看得见电脑屏幕上这串数字） */
-  private pairing = { code: "", expiresAt: 0, tries: 0 };
+  private pairing = { code: "", expiresAt: 0, tries: 0, previousCode: "", previousUntil: 0 };
   /** 待审批队列 rid → 请求（手机提交配对码后挂起，等电脑端点允许） */
   private pairRequests = new Map<string, PairRequest>();
   /** 已批准设备 deviceId → 记录（持久化到 userData/remote-devices.json） */
@@ -265,27 +265,35 @@ export class RemoteControlService {
     //   两关都过才种 HttpOnly cookie（accessToken + deviceId），之后手机页面的
     //   fetch 与 WebSocket 自动携带 —— **不需要改手机页面**。
     this.accessToken = this.loadAccessToken();
-    this.rotatePairingCode();
+    this.rotatePairingCode("start");
     this.port = port;
-    this.server = http.createServer((req, res) => this.route(req, res));
-    await new Promise<void>((resolve, reject) => {
-      const server = this.server!;
-      // ⛔ 固定端口后 listen 可能失败（端口被占用）：不挂 error 时这个 Promise 会永远悬着，
-      //    界面表现成「点了开始没反应」⇒ 失败必须清掉 server 并带端口号报错。
-      const onError = (error: Error) => {
-        this.server = null;
-        reject(new Error(`手机远控端口 ${this.port} 监听失败（自建中转要求固定端口 ${REMOTE_PORT}）：${error.message}`));
-      };
+    /* 双栈监听 [::]（同时接受 IPv4 映射连接）：本机有公网 IPv6 时手机蜂窝网络可直连，
+       没有时退化为同一 Wi-Fi 内 IPv4 访问 —— 两种场景都覆盖。
+       ⛔ 10-31 实测：机器上残留的进程（一个跑了一夜的守卫脚本）占着 17891，手机远控直接起不来，
+         用户看到的是「配对码过期」其实压根没连上。内建中转的隧道是**按实际端口**转发的，
+         所以端口被占不必硬失败：先试固定端口，冲突就退到系统分配的端口（日志与界面都写清楚）。 */
+    const listenOn = (server: http.Server, portToUse: number) => new Promise<number>((resolve, reject) => {
+      const onError = (error: any) => { server.removeListener("listening", onListening); reject(error); };
+      const onListening = () => { server.removeListener("error", onError); resolve((server.address() as any).port); };
       server.once("error", onError);
-      // 双栈监听 [::]（同时接受 IPv4 映射连接）：本机有公网 IPv6 时手机蜂窝网络可直连，
-      // 没有时退化为同一 Wi-Fi 内 IPv4 访问——两种场景都覆盖
-      server.listen(this.port, "::", () => {
-        server.removeListener("error", onError);
-        this.port = (server.address() as any).port;
-        console.log(`[remote] listening on [::]:${this.port} (dual stack)`);
-        resolve();
-      });
+      server.once("listening", onListening);
+      server.listen(portToUse, "::");
     });
+    this.server = http.createServer((req, res) => this.route(req, res));
+    try {
+      this.port = await listenOn(this.server, this.port);
+    } catch (error: any) {
+      const busy = String(error?.code ?? "") === "EADDRINUSE";
+      try { this.server.close(); } catch { /* 未监听 */ }
+      if (!busy) {
+        this.server = null;
+        throw new Error(`手机远控端口 ${port} 监听失败：${error?.message ?? error}`);
+      }
+      this.server = http.createServer((req, res) => this.route(req, res));
+      this.port = await listenOn(this.server, 0);
+      console.warn(`[remote] 端口 ${port} 被占用，已改用 ${this.port}（内建中转按实际端口转发，不影响手机连接）`);
+    }
+    console.log(`[remote] listening on [::]:${this.port} (dual stack)`);
     // ⛔ 不再自动添加防火墙放行规则（09-13 审计：静默改动系统网络策略，是这次"零鉴权暴露在
     // 局域网上"的一环）。规则已存在则续用；不存在只记日志 + 在页面给出提示，由用户显式放行。
     this.reportFirewallState();
@@ -924,29 +932,42 @@ export class RemoteControlService {
   }
 
   /** 生成新的 6 位配对码（轮换后旧码立即失效） */
-  rotatePairingCode() {
+  /* 轮换原因决定「旧码还认不认」：到期轮换给 2 分钟宽限（用户盯着屏幕输码时码刚好过期，最容易误报"我填的对"）；
+     ⛔ 输错 10 次触发的轮换**不给宽限**（那是防暴力试码，必须立刻作废旧码）。 */
+  rotatePairingCode(reason: "start" | "expiry" | "tries" = "start") {
     const { randomInt } = require("node:crypto") as typeof import("node:crypto");
-    this.pairing = { code: String(randomInt(100000, 999999)).padStart(6, "0"), expiresAt: Date.now() + PAIR_CODE_TTL, tries: 0 };
+    const previousCode = reason === "expiry" ? this.pairing.code : "";
+    this.pairing = {
+      code: String(randomInt(100000, 999999)).padStart(6, "0"),
+      expiresAt: Date.now() + PAIR_CODE_TTL,
+      tries: 0,
+      previousCode,
+      previousUntil: previousCode ? Date.now() + 2 * 60_000 : 0,
+    };
     return this.pairing.code;
   }
 
   /** 当前有效的 6 位配对码（过期自动轮换；电脑端界面展示它） */
   pairingCode() {
-    if (!this.pairing.code || Date.now() > this.pairing.expiresAt) this.rotatePairingCode();
+    if (!this.pairing.code || Date.now() > this.pairing.expiresAt) this.rotatePairingCode("expiry");
     return this.pairing.code;
   }
 
   /** 校验 6 位配对码：过期/不匹配都算失败；连续错 PAIR_CODE_MAX_TRIES 次作废并轮换 */
   private checkPairingCode(input: string) {
-    if (!this.pairing.code || Date.now() > this.pairing.expiresAt) return false;
+    if (!this.pairing.code) return false;
+    /* 到点在**校验时**才被发现：先按「到期」轮换（旧码进入 2 分钟宽限），再比较 —— 否则用户刚过期那一秒输对也会被判失败 */
+    if (Date.now() > this.pairing.expiresAt) this.rotatePairingCode("expiry");
     /* ⛔ 只有**输错**才计次：旧实现在输对时也 +1，第 10 次即使输对也会被作废并轮换（审查发现） */
-    if (input.trim() !== this.pairing.code) {
-      this.pairing.tries += 1;
-      if (this.pairing.tries >= PAIR_CODE_MAX_TRIES) this.rotatePairingCode();
-      return false;
+    const value = input.trim();
+    /* 到期轮换后的 2 分钟宽限：旧码仍可用（只针对"码刚过期"这一种情况） */
+    if (value === this.pairing.code || (this.pairing.previousCode && Date.now() <= this.pairing.previousUntil && value === this.pairing.previousCode)) {
+      this.pairing.tries = 0;
+      return true;
     }
-    this.pairing.tries = 0;
-    return true;
+    this.pairing.tries += 1;
+    if (this.pairing.tries >= PAIR_CODE_MAX_TRIES) this.rotatePairingCode("tries");
+    return false;
   }
 
   /** 待审批的配对请求列表（电脑端渲染审批卡片用） */
@@ -1129,7 +1150,13 @@ async function submit(){
   try {
     const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ code, deviceId, deviceName, deviceSecret, fingerprint: DEVICE_FP }) });
     const j = await r.json();
-    if (!j.ok) { submitting = false; if (button) button.disabled = false; el.className = "err"; el.textContent = j.error || "配对失败"; return; }
+    if (!j.ok) {
+      submitting = false; if (button) button.disabled = false; el.className = "err";
+      const message = j.error || "配对失败";
+      /* 旧码被判失效时清掉本地预填：不然用户下次进来还是旧码，反复"我填的对却过期"（10-31 实机） */
+      if (/过期|错误/.test(message)) { try { writeStore(KEY_CODE, ""); } catch (e) { /* 忽略 */ } el.textContent = message + "（已清空旧码，请填电脑端当前显示的 6 位）"; return; }
+      el.textContent = message; return;
+    }
     /* 码是对的：存下来，下次进配对页自动填（不必再记/再敲） */
     try { writeStore(KEY_CODE, code); } catch(e) { /* 忽略 */ }
     if (j.deviceSecret) { deviceSecret = j.deviceSecret; writeStore(KEY_SECRET, deviceSecret); }
