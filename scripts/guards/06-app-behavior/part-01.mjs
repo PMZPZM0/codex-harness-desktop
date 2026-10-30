@@ -718,8 +718,8 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
      返回键与其它内页同款（左箭头 + 次要按钮，放标题行最左）；Esc 等效且必须捕获阶段拦，
      否则同一个 Esc 会把底下的面板/搜索一起关掉。 */
   const botConsole = codeOnly(readFileSync(join(ROOT, "src/features/app-view/AppView/05-remote-console.tsx"), "utf8"));
-  (botConsole.includes('className="secondary-setting bot-back"') ? ok : fail)(
-    "机器人面板有「返回」（左箭头 + 次要按钮，在标题行最左）"
+  (botConsole.includes('className="secondary-setting bot-back"') && /setBotManagerOpen\(false\); setMobileRemoteOpen\(true\)/.test(botConsole) ? ok : fail)(
+    "机器人面板「返回」= 回到「移动端远程控制」面板（⛔ 不是又一个关闭按钮）"
   );
   (/if \(!botManagerOpen\) return;[\s\S]{0,240}event\.key !== "Escape"[\s\S]{0,240}stopPropagation\(\)[\s\S]{0,240}setBotManagerOpen\(false\)/.test(botConsole) ? ok : fail)(
     "机器人面板 Esc 可关（捕获阶段 stopPropagation，不误关底下面板）"

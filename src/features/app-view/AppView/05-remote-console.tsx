@@ -162,6 +162,7 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
     setBotChannelPick,
     setBotManagerOpen,
     setBotsPersist,
+    setMobileRemoteOpen,
     setChannelOnline,
     setPairCode,
     setPairPending,
@@ -176,9 +177,10 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
     try { setPairCode((await window.codex.remotePairRotate()).code); return ""; }
     catch (error: any) { return String(error?.message ?? error); }
   };
-  /* 10-30 用户实测「这个界面没有返回功能」：机器人面板是全局弹窗，原来只有右上角 ✕。
-     补左上「返回」+ Esc —— 返回键与主操作同排靠左（用户既有偏好），Esc 在捕获阶段拦，
-     避免同一个 Esc 还把底下的面板/搜索一起关掉。 */
+  /* 10-30 用户实测「这个界面没有返回功能」→「你加的返回是直接叉掉了弹窗」「并没有返回上个界面」：
+     机器人面板是从「移动端远程控制」面板点进来的，返回必须**回到那个面板**，不能等同关闭。
+     ⇒ 左上「返回」= 关掉机器人面板 + 重新打开远控面板；右上 ✕ / Esc 才是纯关闭。 */
+  const backToRemoteConsole = () => { setBotManagerOpen(false); setMobileRemoteOpen(true); };
   useEffect(() => {
     if (!botManagerOpen) return;
     const onKey = (event: KeyboardEvent) => {
@@ -193,7 +195,7 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
     botManagerOpen && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setBotManagerOpen(false); }}>
             <div className="bot-manager" role="dialog" aria-label="机器人">
               <header>
-                <button className="secondary-setting bot-back" title="返回" onClick={() => setBotManagerOpen(false)}><ArrowLeft size={14} />返回</button>
+                <button className="secondary-setting bot-back" title="返回「移动端远程控制」" onClick={backToRemoteConsole}><ArrowLeft size={14} />返回</button>
                 <div className="bot-head-left"><Link2 size={17} /><strong>机器人</strong><small>把外部聊天工具和 Webhook 接入为你的聊天机器人。</small></div><button className="icon-button relay-modal-close" title="关闭" onClick={() => setBotManagerOpen(false)}><X size={17} /></button></header>
               {/* 09-13：首次连接的 6 位配对码与待审批请求直接在这里展示——
                   否则用户得叉掉面板回「手机远控」看码，来回跳（用户反馈「不方便」） */}
