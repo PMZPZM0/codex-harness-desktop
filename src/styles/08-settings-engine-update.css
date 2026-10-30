@@ -2167,3 +2167,20 @@
   display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted);
 }
 .skill-update-remove.confirming { color: var(--danger, #c0392b); border-color: color-mix(in srgb, var(--danger, #c0392b) 45%, var(--line)); }
+
+/* 10-30：技能行里的两个小按钮原来用 .ghost-button.tiny —— 那套样式只挂在 .auto-update-row /
+   .settings-card-head 下，在 .settings-toggle-row 里等于没样式（用户：「这两个按键咋这么丑」）。
+   ⇒ 自己一套紧凑药丸按钮：图标 + 文字、hover 描边变主题色。 */
+.auto-update-switch-actions { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.auto-update-mini-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px;
+  background: transparent; color: var(--muted);
+  font-size: 11px; line-height: 1.5; cursor: pointer; white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.auto-update-mini-btn:hover {
+  color: var(--accent, var(--green));
+  border-color: color-mix(in srgb, var(--accent, var(--green)) 45%, var(--line));
+  background: color-mix(in srgb, var(--accent, var(--green)) 8%, transparent);
+}

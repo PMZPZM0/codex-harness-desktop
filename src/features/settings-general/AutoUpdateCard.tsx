@@ -18,7 +18,7 @@
  * ⛔ 进度复用既有的 `runtime:progress` 事件通道（主进程按行 id 推），不为此单开一条。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Boxes, Check, Cpu, Globe2, Monitor, Package, Puzzle, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
+import { Boxes, Check, ChevronRight, Cpu, Globe2, Monitor, Package, Puzzle, RefreshCw, ScanSearch, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { SkillUpdatePanel } from "./SkillUpdatePanel";
@@ -240,8 +240,8 @@ export function AutoUpdateCard({ onNotice, downloadSource, onOpenSkills, openApp
         </span>
         {row.kind === "skill" ? (
           <span className="auto-update-switch-actions">
-            <button type="button" className="ghost-button tiny" title="检查 / 更新 / 卸载市场技能" onClick={() => setSkillPanelOpen(true)}>技能更新…</button>
-            <button type="button" className="ghost-button tiny" title="打开技能设置页（安装与批量管理）" onClick={() => onOpenSkills?.(true)}>技能页</button>
+            <button type="button" className="auto-update-mini-btn" title="检查 / 更新 / 卸载市场技能" onClick={() => setSkillPanelOpen(true)}><Sparkles size={12} />技能更新</button>
+            <button type="button" className="auto-update-mini-btn" title="打开技能设置页（安装与批量管理）" onClick={() => onOpenSkills?.(true)}>技能页<ChevronRight size={12} /></button>
           </span>
         ) : null}
         <ToggleSwitch
