@@ -27,7 +27,7 @@ function escapeHtmlText(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[ch] ?? ch);
 }
 
-export function buildRemotePageHtml(code: string, botId?: string, botName?: string, brandName = "Codex Harness"): string {
+export function buildRemotePageHtml(code: string, botId?: string, botName?: string, brandName = "Codex Harness", brandIcon = ""): string {
     const bindingMode = Boolean(botId);
     if (bindingMode) {
       // 绑定模式：确认登录 → 确认成功后 location 换成不带 ?bot= 的对话页
@@ -68,11 +68,10 @@ async function doBind(){
 *{box-sizing:border-box}
 :root{--accent:#2f6bdd;--accent-soft:#eaf1fd;--line:#e8e8e4;--muted:#8a8a84;--ink:#23231f;--bg:#f7f7f5}
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);margin:0;color:var(--ink);display:flex;flex-direction:column;height:100vh;height:100dvh}
-header{position:relative;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;flex:0 0 auto}
-header h1{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:62%;margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.brand-logo{width:24px;height:24px;flex:none;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#6aa8ff)}
+header{position:relative;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex:0 0 auto}
+/* 10-30 用户：「把应用顶上中间的 logo 删了」⇒ 顶栏只留 ☰ + 当前会话名 + 状态点（不再放品牌 logo） */
 .menu-btn{flex:none;width:34px;height:34px;padding:0;margin:0;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:16px;line-height:1}
-.thread-label{margin-left:auto;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#8a8a84}
+.thread-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;color:var(--ink)}
 header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;background:#1a7f37;padding:0;font-size:0;overflow:hidden}
 #top-menu{position:absolute;top:52px;left:12px;z-index:40;min-width:168px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.14)}
 #top-menu[hidden]{display:none}
@@ -181,6 +180,8 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 .home-tab.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgb(0 0 0 / 7%)}
 .home-hero{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:26px 10px 6px}
 .home-logo{width:64px;height:64px;border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:30px;background:linear-gradient(135deg,var(--accent),#6aa8ff);color:#fff;margin-bottom:4px}
+/* 应用图标（PPcode / Codex Harness 各自的 public/icon.png）：铺满圆角块、不带内置渐变底 */
+img.home-logo{object-fit:cover;background:#fff;padding:0}
 .home-hero h2{margin:0;font-size:20px;color:var(--ink)}
 .home-hero p{margin:0;color:var(--muted);font-size:13px;line-height:1.7;text-align:center;white-space:nowrap}
 .home-hint{margin:14px auto 0;color:var(--faint,#a3a39c);font-size:11.5px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:92%}
@@ -220,7 +221,6 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 </style>
 <header>
   <button id="btn-menu" class="menu-btn" aria-label="菜单" onclick="toggleTopMenu()">☰</button>
-  <h1 id="title"><span class="brand-logo">✦</span><span id="title-text">Codex Harness</span></h1>
   <span id="thread-label" class="thread-label"></span>
   <span class="status" id="status" title="连接中…">连接中…</span>
   <div id="top-menu" hidden>
@@ -258,6 +258,8 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 const code = ${JSON.stringify(code)};
 // 品牌面（⛔ 各仓自有：桌面版 Codex Harness / PPcode 仓 PPcode；首页与标题都读它）
 const BRAND = ${JSON.stringify(brandName)};
+/* 首页图标：本仓自己的应用图标（data URI）。⛔ 各仓图标不许互相串（品牌面差异，见 AGENTS.md） */
+const BRAND_ICON = ${JSON.stringify(brandIcon)};
 /* 10-30 用户：首页 / 会话 / 断开连接收进左上角一个「☰」选项，品牌 logo 居中。
    ⛔ 断开连接只有 App 里可用（安卓注入 AndroidRemote 才显示）。 */
 function toggleTopMenu(force) {
@@ -496,7 +498,11 @@ async function sendCmd() {
   if (!v && !pendingImages.length) return;
   /* 10-28：首页发消息 = 建会话。中枢首页 ⇒ 中枢会话（其余入口一律普通会话）。 */
   const startAsBoss = homeVisible && homeMode === "hub";
+  const fromHome = homeVisible;
   hideHome();
+  /* 10-30：从首页进入时必须清空上一段会话的残留气泡 —— 否则新建会话后仍挂着旧消息，
+     看起来像"发到了旧会话里"（用户实测「首页直接发」的观感问题之一）。 */
+  if (fromHome) list.innerHTML = "";
   stepBox = null; // 新一轮从空步骤列表开始
   currentOutputEl = null;
 
@@ -702,7 +708,15 @@ async function renderHome() {
   body.innerHTML = "";
   if (homeMode !== "hub") {
     const hero = makeEl("div", "home-hero");
-    hero.appendChild(makeEl("div", "home-logo", "✦"));
+    if (BRAND_ICON) {
+      const logo = document.createElement("img");
+      logo.className = "home-logo";
+      logo.alt = BRAND;
+      logo.src = BRAND_ICON;
+      hero.appendChild(logo);
+    } else {
+      hero.appendChild(makeEl("div", "home-logo", "✦"));
+    }
     hero.appendChild(makeEl("h2", null, greetingHome()));
     hero.appendChild(makeEl("p", null, "直接说，我来干"));
     body.appendChild(hero);
@@ -1423,8 +1437,6 @@ pollLoop();
    以前这里会自动恢复上次会话、没有会话就连带新建一条（留一堆空会话）；
    现在首页负责落地，点会话或发第一条消息时才进入会话。 */
 readHomePrefs();
-const titleEl = document.getElementById("title");
-if (titleEl) { const text = document.getElementById("title-text"); if (text) text.textContent = BRAND; else titleEl.textContent = BRAND; }
 showHome();
 </script>`;
     return pageHtml.replace("/*__MOBILE_MARKDOWN__*/", MOBILE_MARKDOWN_SOURCE);

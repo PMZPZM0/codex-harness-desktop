@@ -1647,9 +1647,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /* 10-30 用户实机：手输 6 位码报「Value <!doctype ... cannot be converted to JSONObject」——
        根地址 /api/pair 被转去空的老通道（HTML）。现在网关按配对码/设备 cookie 找回对应电脑。 */
     /* 10-30：经 nginx /remote/ 反代时，网关必须知道对外前缀，否则 302 会把手机送到 /t/... 根路径（nginx 404）。 */
-    /* 10-30 用户：首页 / 会话 / 断开连接收进左上角一个「☰」，品牌 logo 居中；旧两颗顶栏按钮不许回来。 */
-    (tunnelPage.includes('id="top-menu"') && tunnelPage.includes("brand-logo") && !tunnelPage.includes('id="btn-home"') ? ok : fail)(
-      "【139e】手机页顶栏：☰ 菜单装首页/会话/断开连接，品牌 logo 居中（旧的两颗顶栏按钮已删）"
+    /* 10-30 用户：首页 / 会话 / 断开连接收进左上角一个「☰」；当天晚些再令「顶上中间的 logo 删了」
+       ⇒ 顶栏 = ☰ + 当前会话名 + 状态点（⛔ 居中品牌块与 brand-logo 不许回来）。 */
+    (tunnelPage.includes('id="top-menu"') && tunnelPage.includes('id="thread-label"')
+      && !tunnelPage.includes('id="btn-home"') && !tunnelPage.includes("<h1 id=\"title\"") && !tunnelPage.includes("brand-logo") ? ok : fail)(
+      "【139e】手机页顶栏：☰ 菜单装首页/会话/断开连接；⛔ 顶部中间不再放品牌 logo"
     );
     (androidSrc.includes("AndroidRemote") && androidSrc.includes("JavascriptInterface") ? ok : fail)(
       "【139e】APK 注入 AndroidRemote 桥：网页菜单的「断开连接」才能清本机 cookie / 自动登录标记 / 设备秘密"
@@ -1809,6 +1811,32 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       (shapeOk ? ok : fail)("【139e】思考文本两种形状都要取到（流式对象数组 / resume 回读字符串数组）");
       (wiringOk ? ok : fail)("【139e】手机历史 + 实时兜底 + 机器人转发统一走 reasoningItemText（⛔ 不许各写一份只认 part.text）");
     }
+    /* 10-30 用户实测：「手机首页不选会话直接发消息会失败」。两条根因一起钉住：
+       ① 建会话把**原始供应商 id** 传给引擎，而当前生效 provider 是统一的 harness ⇒ 首轮 turn/start 被拒；
+       ② 从首页进入时要清掉上一段会话的残留气泡，发完自动停在会话视图。 */
+    (tunnelPage.includes("const fromHome = homeVisible") && tunnelPage.includes('if (fromHome) list.innerHTML = "";')
+      && tunnelPage.includes('await rpc({ type: "new-thread"') && tunnelPage.includes('await rpc({ type: "send-message"') ? ok : fail)(
+      "【139e】首页直接发消息：先建会话再发送，并清掉上一段会话的残留消息（不选会话也能发）"
+    );
+    {
+      let providerOk = false;
+      try {
+        const mod = await import(pathToFileURL(join(ROOT, "dist-electron", "provider-id.js")).href);
+        const fn = mod.harnessProviderConfig ?? mod.default?.harnessProviderConfig;
+        const bound = fn?.({ name: "wbm", baseUrl: "https://example.com/v1", provider: "custom964" });
+        providerOk = typeof fn === "function"
+          && bound?.modelProvider === "harness"
+          && bound?.config?.model_provider === "harness"
+          && bound?.config?.model_providers?.harness?.base_url === "https://example.com/v1"
+          && JSON.stringify(fn({ provider: "openai-official" })) === "{}";
+      } catch (error) { console.log("      provider-id 产物解析失败：", error.message); }
+      (providerOk ? ok : fail)("【139e】手机建会话绑统一 harness 通道（⛔ 传原始供应商 id 会让首轮发送被引擎拒）");
+    }
+    (codeOnly(mainSrc).includes("harnessProviderConfig(model)") && tunnelPage.includes("const BRAND_ICON")
+      && tunnelPage.includes('logo.className = "home-logo"') && relaySrc.includes("this.events.brandIcon")
+      && codeOnly(mainSrc).includes("brandIcon: remoteBrandIcon") ? ok : fail)(
+      "【139e】手机首页图标 = 本仓自己的应用图标（brandIcon 从 main 贯通到页面；⛔ 不用写死的 ✦）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );

@@ -13,6 +13,7 @@ import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from
 import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { reasoningItemText } from "./reasoning-text";
+import { harnessProviderConfig } from "./provider-id";
 import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
 import { Scheduler } from "./scheduler";
@@ -457,6 +458,17 @@ setThreadRuntimeStore(new ThreadRuntimeStore(threadRuntimeFile));
 /** 引擎流式事件 → 手机对话页转发器（remote.ts 的 onThreadEvent 注册） */
 const remoteEventForwarders: ((event: { threadId: string; kind: string; text: string; data?: any }) => void)[] = [];
 
+/** 手机首页图标：本仓自己的应用图标（public/icon.png → data URI；打包后在 asar 里也能读）。
+ *  ⛔ 各仓用自己的图标，同步代码时不许把别仓的 icon.png 拷过来（品牌面差异）。 */
+const remoteBrandIcon = (() => {
+  for (const candidate of [path.join(app.getAppPath(), "public", "icon.png"), path.join(app.getAppPath(), "build", "icon.png")]) {
+    try {
+      if (existsSync(candidate)) return `data:image/png;base64,${readFileSync(candidate).toString("base64")}`;
+    } catch { /* 继续下一个候选 */ }
+  }
+  return "";
+})();
+
 const remote = new RemoteControlService({
   getStatus: () => "idle",
   storageFile: path.join(app.getPath("userData"), "remote-sessions.json"),
@@ -531,9 +543,9 @@ const remote = new RemoteControlService({
       cwd,
       approvalPolicy: "never",
       sandbox: "danger-full-access",
-      // 官方订阅是伪供应商：引擎配置里没有 model_providers.openai-official 段，
-      // 传给 thread/start 会导致流反复断开重连——省略让引擎走内置 openai + ChatGPT 登录凭据
-      ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
+      // ⛔ 与桌面端 providerConfig 同口径：绑统一 harness 通道 + 内联该供应商配置。
+      //   传原始 provider id 会让首轮 turn/start 被引擎拒（当前生效 provider 是 harness）。
+      ...harnessProviderConfig(model),
     }) as any;
     const id = String(started.thread.id);
     threadCwd.set(id, cwd);
@@ -726,6 +738,7 @@ const remote = new RemoteControlService({
   apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.11.apk" : "CodexRemote-0.1.11.apk",
   /* 手机首页的品牌面（⛔ 各仓自有：桌面版 = Codex Harness；PPcode 仓的 main.ts 写 PPcode） */
   brandName: app.getName().toLowerCase().includes("ppcode") ? "PPcode" : "Codex Harness",
+  brandIcon: remoteBrandIcon,
 });
 
 const rpaFile = path.join(app.getPath("userData"), "rpa-recipes.json");
