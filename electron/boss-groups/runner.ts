@@ -14,6 +14,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
+import { binOnPath } from "../cli-agents";
 import { bridgeDial } from "../main";
 import { readCustomModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -518,13 +519,7 @@ const CLI_AGENT_REGISTRY: { name: string; role: string; command: string }[] = [
   { name: "doubao", role: "本机 CLI agent（豆包）", command: 'doubao "{prompt}"' },
 ];
 
-function whereExe(exe: string): Promise<boolean> {
-  return new Promise((resolve) => {
-    execFile("where", [exe], { timeout: 5000 }, (error) => resolve(!error));
-  });
-}
-
-/** 可拉名单：专家（teams 登记表，lead+成员）+ 本机 CLI agent（登记表，附 where 探测）。 */
+/** 可拉名单：专家（teams 登记表，lead+成员）+ 本机 CLI agent（登记表，附 PATH 探测）。 */
 export async function poolForBoss(): Promise<{
   experts: {
     teamId: string; teamName: string; memberId: string; name: string; role: string;
@@ -561,7 +556,9 @@ export async function poolForBoss(): Promise<{
   } catch { /* 专家登记表读不到就只给 CLI 名单 */ }
   const cliAgents = await Promise.all(CLI_AGENT_REGISTRY.map(async (a) => ({
     ...a,
-    detected: await whereExe(a.name),
+    /* ⛔ 探测走 cli-agents 的 binOnPath（那里按平台分叉 where / which）：10-30 审计前这里写死
+       `where`，mac 上恒失败 ⇒ 名单整列「未检测到」。 */
+    detected: await binOnPath(a.name),
   })));
   return { experts, cliAgents };
 }
@@ -591,8 +588,16 @@ async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTa
          ⇒ 命令里的 `"C:\…\fake-cli-agent.js"` 变成 `"\"C:\…\fake-cli-agent.js\""`，
          子进程收到带引号的路径，直接 `Cannot find module`。内置模板 `zcode -p "{prompt}"` 全都带引号
          ⇒ **这条路径此前根本没跑通过**（拉得进来、派得出去、成品是报错）。`windowsVerbatimArguments`
-         让参数原样交给 shell，不再二次加引号。 */
-      execFile("cmd", ["/c", command], { cwd: group.workspace || process.cwd(), timeout: 600_000, maxBuffer: 4 * 1024 * 1024, windowsHide: true, windowsVerbatimArguments: true }, (error, stdout, stderr) => {
+         让参数原样交给 shell，不再二次加引号。
+         ⛔ mac 适配（10-30 审计）：`cmd` 是 Windows 专有 —— darwin/linux 上 execFile("cmd") 直接 ENOENT
+         ⇒ 派给「本机 CLI agent」的活在这两个平台**全失败**（同样是「拉得进来、派不出去」）。
+         非 Windows 走 `/bin/sh -c`：promptForCli 已把换行与 shell 元字符压掉，且 cliCommand 是
+         用户自己配的模板，信任面与 `cmd /c` 一致。 */
+      const isWin = process.platform === "win32";
+      execFile(isWin ? "cmd" : "/bin/sh", [isWin ? "/c" : "-c", command], {
+        cwd: group.workspace || process.cwd(), timeout: 600_000, maxBuffer: 4 * 1024 * 1024,
+        windowsHide: true, ...(isWin ? { windowsVerbatimArguments: true } : {}),
+      }, (error, stdout, stderr) => {
         const text = String(stdout ?? "").trim() || String(stderr ?? "").trim();
         if (error && !text) { reject(new Error(`CLI「${member.name}」执行失败：${String(error.message ?? error).slice(0, 200)}`)); return; }
         void settleSubmission(task.id, text.slice(0, 16_000) || "（CLI 没有输出）");
