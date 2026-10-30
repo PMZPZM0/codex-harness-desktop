@@ -23,6 +23,13 @@ import { countCliAgents, groupCliAgents, type CliCategory } from "../../lib/cli-
 
 type DetectState = { state: "idle" | "busy" | "ok" | "miss"; version?: string; path?: string };
 
+/**
+ * 宿主事件（`onHarnessEvent`）里本屏关心的两种：装卸进度 `cli-agent-install`、目录变更 `cli-agents-changed`。
+ * ⛔ preload 的签名参数是 any（生成物，不手改），所以**在这里收窄**：只声明真正读的四个字段，
+ *   拿到的是具体类型而不是 any（any 棘轮只许减不许增）。
+ */
+type CliAgentEvent = { type?: string; id?: string; stage?: string; line?: string };
+
 const CATEGORY_ICON: Record<string, typeof Code2> = { coding: Code2, agent: Bot, custom: Terminal };
 
 /** 新增/编辑表单的草稿（id 为空 = 新增）。 */
@@ -90,7 +97,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
   }, [runDetect]);
 
   /* 进度与变更事件：cli-agent-install（装卸进度）+ cli-agents-changed（目录变了 → 重拉 + 重检测）。 */
-  useEffect(() => window.codex.onHarnessEvent?.((payload: any) => {
+  useEffect(() => window.codex.onHarnessEvent?.((payload: CliAgentEvent) => {
     if (payload?.type === "cli-agent-install" && payload.id) {
       const id = String(payload.id);
       if (payload.stage === "start") setBusyId(id);
