@@ -13,6 +13,7 @@
  */
 import path from "node:path";
 import { codexHome, server } from "../runtime-refs";
+import { trustUntrustedHooks } from "../hooks-trust";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -38,29 +39,7 @@ export const hooksFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("hooks: 缺少 ipc 服务（宿主未提供）");
 
-    ipcHost.handle("hooks:trust", async (_event, input: { cwds?: string[] } = {}) => {
-      const result: any = await server.request("hooks/list", { cwds: input.cwds ?? [] });
-      const hooks = (result?.data ?? []).flatMap((entry: any) => entry.hooks ?? []);
-      const targets = hooks.filter((hook: any) => hook.trustStatus !== "trusted" && hook.currentHash && hook.key);
-      if (!targets.length) return { total: hooks.length, trusted: 0, alreadyTrusted: hooks.length, failures: [] };
-      const configPath = path.join(codexHome, "config.toml");
-      const failures: string[] = [];
-      for (const hook of targets) {
-        // 钩子 key 里含 Windows 路径反斜杠，写进 TOML 点路径前必须转义，否则会被吞掉、信任记录匹配不上
-        const escaped = String(hook.key).split("\\").join("\\\\");
-        try {
-          await server.request("config/value/write", {
-            filePath: configPath,
-            keyPath: `hooks.state."${escaped}".trusted_hash`,
-            value: hook.currentHash,
-            mergeStrategy: "replace",
-          });
-        } catch (error: any) {
-          failures.push(`${hook.eventName ?? hook.key}：${error.message}`);
-        }
-      }
-      return { total: hooks.length, trusted: targets.length - failures.length, alreadyTrusted: hooks.length - targets.length, failures };
-    });
+    ipcHost.handle("hooks:trust", async (_event, input: { cwds?: string[] } = {}) => trustUntrustedHooks(codexHome, input.cwds ?? []));
 
     ipcHost.handle("hooks:set-enabled", async (_event, input: { hookKeys: string[]; enabled: boolean }) => {
       const keys = (Array.isArray(input?.hookKeys) ? input.hookKeys : []).map((key) => String(key ?? "")).filter(Boolean);

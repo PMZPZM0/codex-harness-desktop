@@ -104,6 +104,28 @@ ok(!/ToggleSwitch/.test(panelSrc), "⛔ 面板里不再画第二个开关（开�
 ok(/event\.type === "skill-auto-update"/.test(read("src/features/app-state/parts/part05/01-seg.tsx")),
   "后台更新结果会弹 toast（渲染层接住了广播）");
 
+console.log("【⑦ ponytail 插件自愈（10-30 事故：技能/钩子一起消失、开关假死）】");
+const healSrc = codeOnly(read("electron/ponytail-heal.ts"));
+const pluginSrc = codeOnly(read("electron/ponytail-plugin.ts"));
+const bootSrc = codeOnly(read("electron/features/boot.ts"));
+const ponytailIpc = codeOnly(read("electron/features/ponytail-ipc.ts"));
+const runtimeSrc = codeOnly(read("electron/features/runtime-ipc.ts"));
+const hooksTrust = codeOnly(read("electron/hooks-trust.ts"));
+ok(/marketplace\.json/.test(pluginSrc) && /"\.agents", "plugins"/.test(pluginSrc),
+  "本地市场目录带清单文件（引擎 0.16x 只认带清单的 marketplace，旧布局会被丢弃）");
+ok(/plugin\/install/.test(healSrc) && /pluginName: "ponytail"/.test(healSrc),
+  "自愈会调 plugin/install 注册（光写文件引擎不认识）");
+ok(/trustUntrustedHooks/.test(healSrc) && /currentHash/.test(hooksTrust),
+  "钩子按 hooks/list 的 currentHash 信任（引擎版本/插件版本变了也不失配）");
+ok(!/PONYTAIL_HOOK_TRUSTED_HASH/.test(pluginSrc) && !/sha256:5f81d38f/.test(pluginSrc),
+  "⛔ 写死钩子 sha256 的做法已删除（4.9.0 常量与引擎 0.16x 算出来的不一致）");
+ok(/getPonytailMode/.test(bootSrc) && /ensurePonytailPlugin/.test(bootSrc) && /healPonytailInstall/.test(bootSrc),
+  "启动时「写代码模式 ≠ off」会先落盘再启动引擎（启动即可用，无需手动点修复）");
+ok(/mode !== "off"/.test(ponytailIpc) && /healPonytailInstall/.test(ponytailIpc),
+  "控制台「写代码模式」打开时顺手自愈（开关不再假死）");
+ok(/healPonytailInstall/.test(runtimeSrc) && /heal\.ok/.test(runtimeSrc),
+  "开发工具「修复安装 ponytail」走同一条自愈（失败如实报错）");
+
 console.log("【⑤ 台账同步】");
 const ledger = read("docs/FEATURE-LEDGER.md");
 ok(/插件自动更新|两个总开关|技能 \/ 插件/.test(ledger), "FEATURE-LEDGER 已记录本条");

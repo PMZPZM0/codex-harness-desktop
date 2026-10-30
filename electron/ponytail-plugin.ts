@@ -47,9 +47,9 @@ export async function listInstalledPonytailVersions(codexHome: string): Promise<
   return Array.from(new Set(versions));
 }
 
-// 钩子脚本的 sha256（引擎按内容算，4.9.0 固定）。来源：开发机 config.toml 已验证值。
-const PONYTAIL_HOOK_TRUSTED_HASH =
-  "sha256:5f81d38f47448a1581c08ec877e044d9e04dd6f814dce3f2671f7a8edadd719b";
+/* ⛔ 10-30：写死钩子 sha256 的做法已删除 —— 引擎按**当前钩子文件**算 currentHash，
+   4.9.0 的常量与引擎 0.166 算出来的不一致，写了也是 untrusted。信任统一走
+   `hooks/list` 的 currentHash 显式写入（见 electron/hooks-trust.ts）。 */
 
 async function copyDir(src: string, dst: string): Promise<void> {
   await fs.mkdir(dst, { recursive: true });
@@ -95,23 +95,63 @@ const MARKETPLACE_SECTION = (source: string) => [
   `[plugins."ponytail@ponytail"]`,
   "enabled = true",
   "",
-  `[hooks.state."ponytail@ponytail:hooks/claude-codex-hooks.json:session_start:0:0"]`,
-  `trusted_hash = "${PONYTAIL_HOOK_TRUSTED_HASH}"`,
-  "",
 ].join("\n");
+
+/**
+ * 本地 marketplace 目录（10-30）：引擎 0.16x 起，`[marketplaces.<名>]` 指向的目录**必须**
+ * 带清单文件（`.agents/plugins/marketplace.json` / `.claude-plugin/marketplace.json`）才被认；
+ * 直接把 `[marketplaces.ponytail]` 指到「插件目录本身」（旧做法）会被引擎丢掉 ⇒ 插件列表里
+ * 没有 ponytail ⇒ 它的 6 个技能和钩子一起消失（用户 10-30 实证）。
+ * ⇒ 这里自己搭一个最小市场：`plugins/ponytail`（插件本体）+ 清单文件。
+ */
+export function ponytailMarketDir(codexHome: string): string {
+  return path.join(codexHome, "plugins", "ponytail-market");
+}
+
+export function ponytailMarketManifestPath(codexHome: string): string {
+  return path.join(ponytailMarketDir(codexHome), ".agents", "plugins", "marketplace.json");
+}
+
+/** 搭本地市场并返回清单文件路径（`plugin/install` 的 marketplacePath 要传**文件**）。 */
+async function seedMarketplace(codexHome: string, bundledDir: string): Promise<string> {
+  const marketDir = ponytailMarketDir(codexHome);
+  const pluginDir = path.join(marketDir, "plugins", "ponytail");
+  const bundledVersion = /^version:\s*(\S+)/m.exec(await fs.readFile(path.join(bundledDir, "plugin.yaml"), "utf8").catch(() => ""))?.[1] ?? "";
+  const marketVersion = /"version"\s*:\s*"([^"]+)"/.exec(await fs.readFile(path.join(pluginDir, ".codex-plugin", "plugin.json"), "utf8").catch(() => ""))?.[1] ?? "";
+  if (!bundledVersion || marketVersion !== bundledVersion) {
+    await fs.rm(pluginDir, { recursive: true, force: true });
+    await copyDir(bundledDir, pluginDir);
+  }
+  const manifestPath = ponytailMarketManifestPath(codexHome);
+  const manifest = {
+    name: "ponytail",
+    interface: { displayName: "Ponytail" },
+    plugins: [
+      {
+        name: "ponytail",
+        source: { source: "local", path: "./plugins/ponytail" },
+        policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
+        category: "Productivity",
+      },
+    ],
+  };
+  await fs.mkdir(path.dirname(manifestPath), { recursive: true });
+  await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf8");
+  return marketDir;
+}
 
 /**
  * 注册段种进 config.toml：缺 [marketplaces.ponytail] 才 append 一段。
  * 这些段不在 HARNESS_CONFIG_SECTIONS，harness 后续整份重写时会被 preserveUserConfig
  * 原样拼回，不会重复；这里只在「从未出现过」时写一次。
  */
-async function seedConfigSections(codexHome: string, bundledDir: string): Promise<void> {
+async function seedConfigSections(codexHome: string, marketDir: string): Promise<void> {
   const configPath = path.join(codexHome, "config.toml");
   try {
     let existing = await fs.readFile(configPath, "utf8").catch(() => "");
     if (/\[marketplaces\.ponytail\]/.test(existing)) return; // 已有注册段则幂等跳过
-    if (!fsSync.existsSync(bundledDir)) return;
-    const append = MARKETPLACE_SECTION(bundledDir);
+    if (!fsSync.existsSync(marketDir)) return;
+    const append = MARKETPLACE_SECTION(marketDir);
     const next = existing.trim() ? existing.trimEnd() + "\n\n" + append + "\n" : append + "\n";
     await fs.writeFile(configPath, next, "utf8");
     console.log("ponytail marketplace sections seeded into config.toml");
@@ -128,13 +168,15 @@ async function seedConfigSections(codexHome: string, bundledDir: string): Promis
  * 插件 cache 列出技能（实测 cache 就位即出现 6 个 ponytail-*，plugin 标记正确）；
  * 额外种全局只会让技能列表重复（每个 ponytail-* 出现两遍，像假的）。
  */
-export async function ensurePonytailPlugin(codexHome: string, bundledDir: string, version: string = PONYTAIL_VERSION): Promise<void> {
+export async function ensurePonytailPlugin(codexHome: string, bundledDir: string, version: string = PONYTAIL_VERSION): Promise<{ marketDir: string; manifestPath: string } | null> {
   if (!bundledDir || !fsSync.existsSync(bundledDir)) {
     // dev 未放置内置目录时静默跳过（不阻塞启动），生产包必有
-    return;
+    return null;
   }
   // ⛔ version 参数：在线更新下载来的新标签版本不等于随包的 PONYTAIL_VERSION，
   //    必须按实际版本建目录 —— 落错目录名引擎就当没装（同样的目录存在过一个，但版本对不上）。
   await seedPluginCache(bundledDir, codexHome, version);
-  await seedConfigSections(codexHome, bundledDir);
+  const marketDir = await seedMarketplace(codexHome, bundledDir);
+  await seedConfigSections(codexHome, marketDir);
+  return { marketDir, manifestPath: ponytailMarketManifestPath(codexHome) };
 }

@@ -94,9 +94,10 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     setStage("正在删除技能目录…");
     try {
       const result = await window.codex.uninstallSkillPack({ id: row.id });
+      const kept = result.kept?.length ? `；另有 ${result.kept.length} 个不是本包安装的目录，已保留未动` : "";
       const verdict: Result = result.remaining.length
-        ? { tone: "error", text: `已删 ${result.removed.length} 个，但还有 ${result.remaining.length} 个删不掉（可能被占用）：${result.remaining.join("、")}` }
-        : { tone: "ok", text: `已删除 ${result.removed.length} 个技能，磁盘确认已不存在` };
+        ? { tone: "error", text: `已删 ${result.removed.length} 个，但还有 ${result.remaining.length} 个删不掉（可能被占用）：${result.remaining.join("、")}${kept}` }
+        : { tone: result.kept?.length ? "warn" : "ok", text: `已删除 ${result.removed.length} 个技能，磁盘确认已不存在${kept}` };
       setDone((prev) => ({ ...prev, [row.id]: verdict }));
       setNotice?.(`${row.name} 卸载结果`, verdict.text);
       await refresh();

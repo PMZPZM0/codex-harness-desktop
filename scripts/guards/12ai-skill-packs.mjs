@@ -59,10 +59,15 @@ ok(/head !== "PK"/.test(feature) && /下载内容不是 zip/.test(feature),
   "落盘后校验 zip 魔数（镜像返回 200 + 错误页不算成功）");
 ok(/写入后校验未通过/.test(feature) && /existsSync\(path\.join\(root, folder, "SKILL\.md"\)\)/.test(feature),
   "每个技能写完立即回读 SKILL.md（拷贝失败/进程被杀不能报成功）");
-ok(/const remaining = marker\.skills\.filter/.test(feature) && /return \{ removed, remaining \}/.test(feature),
+ok(/const remaining = owned\.filter/.test(feature) && /return \{ removed, remaining, kept \}/.test(feature),
   "卸载后回读磁盘确认目录已不存在，并把删不掉的如实返回");
 ok(/skills: \[\.\.\.installed\]/.test(feature) && !/skills: \[\.\.\.installed, \.\.\.skipped\]/.test(feature),
   "marker 只记真正写进去的目录（⛔ 记 skipped 会把用户的同名技能一起卸掉）");
+/* ★ 10-30 用户令「不要能卸载内置技能」：安装写归属凭据，卸载按凭据删（marker 被改也删不到别人的技能） */
+ok(/\.skill-pack\.json/.test(feature) && /packId: id/.test(feature),
+  "每个装进去的技能写归属凭据 .skill-pack.json（packId）");
+ok(/owner === id\) owned\.push\(folder\); else kept\.push\(folder\);/.test(feature) && /return \{ removed, remaining, kept \}/.test(feature),
+  "卸载只删带本包凭据的目录；内置 / 插件 / 用户自建的技能一律不动（kept 如实报出）");
 
 /* ── ⑤ 接线 ─────────────────────────────────────────────────────────── */
 const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
@@ -93,6 +98,8 @@ ok(/skill-pack-result \$\{result\.tone\}/.test(panel) && /tone: "error"/.test(pa
   "失败与中性结果有不同的着色（不许一律绿色糊过去）");
 ok(/打开技能目录/.test(panel) && /skillsRoot/.test(panel),
   "面板可一键打开技能目录（用户能自己核实装了什么）");
+ok(/不是本包安装的目录，已保留未动/.test(panel),
+  "界面把「不是本包安装、已保留」说清楚（用户能确认内置技能没被动）");
 ok(!/mattpocock|diagram-design|HowToLiveBetter|\bMIT\b|CC BY/.test(panel),
   "⛔ 面板不许抄一份仓库/许可文案（单一真相源在主进程清单；类型字段名不算）");
 

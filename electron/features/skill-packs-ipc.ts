@@ -175,6 +175,10 @@ async function installPack(id: string): Promise<{ installed: string[]; skipped: 
       await fs.cp(dir, path.join(root, folder), { recursive: true });
       // ⛔ 写完立即回读校验：拷贝失败/进程被杀时不能报成功
       if (!existsSync(path.join(root, folder, "SKILL.md"))) { rejected.push(`${folder}（写入后校验未通过）`); continue; }
+      /* 10-30 用户令「不要能卸载内置技能」：每个技能目录里留一份**归属凭据**。
+         卸载只删带本包凭据的目录 —— 即使 marker 文件被写坏/手工改过，也删不到
+         内置技能、插件技能或用户自己放的技能。 */
+      await fs.writeFile(path.join(root, folder, ".skill-pack.json"), JSON.stringify({ packId: id, repo: pack.repo, installedAt: new Date().toISOString() }, null, 2), "utf8").catch(() => undefined);
       installed.push(folder);
     }
     // ⛔ marker 只记**我们真的写进去的**目录：skipped 是同名已存在（可能是用户自己的技能），
@@ -191,21 +195,33 @@ async function installPack(id: string): Promise<{ installed: string[]; skipped: 
   }
 }
 
-/** 卸载后**回读磁盘**确认目录真的没了（⛔ 不能只凭 rm 返回就报「已卸载」）。 */
-async function uninstallPack(id: string): Promise<{ removed: string[]; remaining: string[] }> {
+/** 卸载后**回读磁盘**确认目录真的没了（⛔ 不能只凭 rm 返回就报「已卸载」）。
+ *  ⛔ 用户 10-30 令「不要能卸载内置技能」：只删**本包装的时候留下凭据**（.skill-pack.json 的 packId）
+ *     的目录。内置技能、插件提供的技能、用户自己放的技能一律不碰（kept 里如实报出）。
+ */
+async function uninstallPack(id: string): Promise<{ removed: string[]; remaining: string[]; kept: string[] }> {
   const marker = await readMarker(id);
   if (!marker) throw new Error("这个包不是通过本页安装的，未做删除");
   const root = path.resolve(skillsRoot());
-  const removed: string[] = [];
+  const owned: string[] = [];
+  const kept: string[] = [];
   for (const folder of marker.skills) {
     const target = path.resolve(root, folder);
-    // ⛔ 目录穿越闸：只删技能根目录内、且是自己 marker 记下的目录
+    // ⛔ 目录穿越闸：只处理技能根目录内、且是自己 marker 记下的目录
     if (!target.startsWith(root + path.sep)) continue;
     if (!existsSync(target)) continue;
+    const stamp = await fs.readFile(path.join(target, ".skill-pack.json"), "utf8").catch(() => "");
+    let owner = "";
+    try { owner = String(JSON.parse(stamp)?.packId ?? ""); } catch { owner = ""; }
+    if (owner === id) owned.push(folder); else kept.push(folder);
+  }
+  const removed: string[] = [];
+  for (const folder of owned) {
+    const target = path.join(root, folder);
     await fs.rm(target, { recursive: true, force: true });
     if (!existsSync(target)) removed.push(folder);
   }
-  const remaining = marker.skills.filter((folder) => existsSync(path.join(root, folder)));
+  const remaining = owned.filter((folder) => existsSync(path.join(root, folder)));
   if (remaining.length) {
     // 有删不掉的（被占用/权限）：marker 只留剩下的，下次还能继续清
     await fs.writeFile(markerFile(id), JSON.stringify({ ...marker, skills: remaining }, null, 2), "utf8").catch(() => undefined);
@@ -213,7 +229,7 @@ async function uninstallPack(id: string): Promise<{ removed: string[]; remaining
     await fs.rm(markerFile(id), { force: true });
   }
   if (removed.length) await server.restart();
-  return { removed, remaining };
+  return { removed, remaining, kept };
 }
 
 export const skillPacksFeature = defineFeature<null>({

@@ -31,7 +31,7 @@ import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
 import { sendToWindow } from "./window-bus";
 import { readAppSettings, saveAppSettings } from "../app-settings";
 import type { AppSettings } from "../app-settings";
-import { ensurePonytailPlugin } from "../ponytail-plugin";
+import { healPonytailInstall } from "../ponytail-heal";
 import { layaInstall } from "./laya-service";
 import { installPhoneHarness } from "./phone-harness";
 import { codexHome, server } from "../runtime-refs";
@@ -849,15 +849,11 @@ export const runtimeFeature = defineFeature<null>({
         if (id === "ponytail") {
           // ⛔ 必须排在 spec.bundled 分支**之前**：ponytail 也是 bundled，但它的修复路径是「重种插件」
           //    而不是「解压 automation-tools.zip」——漏了会让「修复安装 ponytail」把 zip 解到 npm-global。
-          await ensurePonytailPlugin(codexHome, existingToolPath("ponytail-plugin") || path.join(toolsRoot(), "ponytail-plugin"));
-          // 卸载时把注册段置成了 false，这里必须显式置回 true —— seedConfigSections 是
-          // 「段已存在就幂等跳过」，不会自己翻回 true，漏了会导致「卸载→重装」后插件永久不可用。
-          await server.request("config/value/write", {
-            filePath: path.join(codexHome, "config.toml"),
-            keyPath: 'plugins."ponytail@ponytail".enabled',
-            value: true,
-            mergeStrategy: "replace",
-          }).catch(() => undefined);
+          /* 10-30：改走 healPonytailInstall（重建**带清单文件**的本地市场 + 引擎 plugin/install
+             + enabled=true + 按 currentHash 信任钩子）。旧做法把 marketplaces 指到插件目录本身，
+             引擎 0.16x 不认 ⇒ 插件/技能/钩子一起消失（用户实测）。 */
+          const heal = await healPonytailInstall({ restart: true });
+          if (!heal.ok) throw new Error(heal.message);
         } else if (spec.bundled) {
           // 随包内置能力的「修复安装」（nuphus）：从随包 zip 重新解压。
           if (!bundledNode()) await runRuntimeInstaller("node", runtimeInstaller("install-runtimes.cjs"), ["node"], process.execPath, { DOWNLOAD_SOURCE: downloadSource });
