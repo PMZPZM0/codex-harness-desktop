@@ -733,3 +733,7 @@
 }
 .settings-toolbar-row .settings-back-row { margin: 0; }
 .settings-toolbar-row .settings-heading-actions { width: auto; }
+
+/* 10-30：知识库页必须压掉基类的 space-between（07 里的 .settings-section 后导入，
+   同特异度会盖回均匀撑开 ⇒ 每块之间空 ~140px）。本文件最后加载，用双类提高一档。 */
+.settings-exp-page.kb-page { justify-content: flex-start; }
