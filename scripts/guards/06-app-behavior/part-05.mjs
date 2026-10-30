@@ -645,6 +645,23 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts")
     (compLibSrc.includes("writeClipboard") && compLibSrc.includes("comp-lib-error") && compLibSrc.includes("loadCategory") ? ok : fail)(
       "【235】组件库页：复制走 writeClipboard、加载失败可见（⛔ 不许静默空白）、数据走基座 loadCategory"
     );
+    /* 10-30 用户截图：「这个界面，我想优化里面的展示内容，现在透明底不好看」——
+       棋盘格只用来提示透明，满屏噪点；预览台改成与主题同源的纯色面。 */
+    const skinCss235 = readFileSync(join(ROOT, "src", "styles", "23-ui-skin.css"), "utf8");
+    const previewRule235 = (skinCss235.match(/\.ui-skin-preview\s*\{[^}]*\}/) ?? [""])[0];
+    const detailRule235 = (skinCss235.match(/\.comp-lib-preview-row\s*\{[^}]*\}/) ?? [""])[0];
+    (previewRule235.includes("color-mix(in srgb, var(--text)") && !previewRule235.includes("repeating-conic-gradient")
+      && detailRule235.includes("color-mix(in srgb, var(--text)") && !detailRule235.includes("repeating-conic-gradient") ? ok : fail)(
+      "【235】组件库预览台用主题纯色面（网格 + 详情），⛔ 不许退回透明棋盘格"
+    );
+    /* 10-30 截图里「Contact Us / heavy-dragon-56」被预览框切掉一半：超大组件要按可用框等比缩小。 */
+    const skinHostSrc235 = readFileSync(join(ROOT, "src", "components", "SkinHost.tsx"), "utf8");
+    (skinHostSrc235.includes("function fitToBox") && skinHostSrc235.includes("fitToBox(host, mount)") ? ok : fail)(
+      "【235】预览宿主必须做等比缩放适配（超大社区组件不许被裁掉）"
+    );
+    (skinHostSrc235.includes("stageContrast(") && skinCss235.includes("var(--skin-stage") ? ok : fail)(
+      "【235】透明底 + 浅色文字的组件给深色预览台（浅色主题下不许看不见）"
+    );
   }
 }
 
