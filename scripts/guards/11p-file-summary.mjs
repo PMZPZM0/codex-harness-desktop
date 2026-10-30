@@ -7,6 +7,7 @@
  * 本守卫钉**代码形态 + 复用关系**；行为（真点、真右键、真复制）由验收项 `file-summary` 在真产物上跑。
  * 独立守卫（不进 check-preflight 的 checks 计数）。
  */
+import { pathToFileURL } from "node:url";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -328,6 +329,47 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   const fileHead = parseDiffLines("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n keep");
   ok(fileHead[0].kind === "meta" && fileHead[1].kind === "meta" && fileHead[3].oldNo === 1,
     "未进 hunk 的 `---`/`+++` 是文件头（meta 且不占行号）");
+}
+
+/* ══ 10-30 用户令：「这个提示能打开，就不要红色提醒，绿色就行了」 ══
+   通知条的语气原来**只从文案里猜**（`noticeTone` 见到"不存在"就判 error）⇒ "已成功找回并打开"
+   被画成红叉。修法是语气**显式传**。这里判三件事，缺一条就会退回红的：
+     ① 回落实现真的把 success 交给 notify（**真跑**这段代码，不是读字符串）；
+     ② showToast 把 tone 透传到 setNotice（⛔ 别落进 threadId 参数）；
+     ③ 右栏跳转桥把 tone 交给 showToast（缺省也要给 success）。 */
+{
+  const savedWindow = globalThis.window;
+  const tones = [];
+  globalThis.window = {
+    codex: {
+      fileExists: async (p) => ({ exists: !/\.mjs$/.test(String(p)) || /真实/.test(String(p)) }),
+      locateFile: async () => ({ path: "D:/真实/同名文件.mjs" }),
+    },
+  };
+  try {
+    const fb = await import(pathToFileURL(join(ROOT, "src", "lib", "path-fallback.mjs")).href);
+    await fb.resolveExistingFile("D:/死的路径/同名文件.mjs", { notify: (message, tone) => tones.push({ message, tone }) });
+  } finally {
+    globalThis.window = savedWindow;
+  }
+  ok(tones.length === 1 && tones[0].tone === "success",
+    "回落提示显式带 success 语气（真跑：找到同名文件时 notify 收到成功态）");
+  ok(tones.length === 1 && /^已/.test(tones[0].message) && !/不存在/.test(tones[0].message),
+    "回落文案以结果开头、不再含「不存在」（即便语气丢了也不会被 noticeTone 判成红）");
+
+  const store = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part04", "01-seg.tsx"), "utf8");
+  ok(/function showToast\(title: string, text\?: unknown, threadId\?: string, tone\?/.test(store)
+    /* ⛔ 实参里含 `.slice(0, 220)` ⇒ 不能用 `[^)]*`（会在内层括号处断掉，实测假红一次） */
+    && /setNotice\([\s\S]{0,160}?undefined, tone\)/.test(store),
+    "showToast 支持 tone 并传到 setNotice 的第三个参数（⛔ 传第二个会变成 threadId）");
+
+  const bridge = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "RightFileBridge.tsx"), "utf8");
+  ok(/notify: \(message, tone\) => ref\.current\.showToast\([^)]*tone \?\? "success"\)/.test(bridge),
+    "右栏跳转桥显式给 success（能打开就是成功，不再靠文案猜）");
+
+  const css = readFileSync(join(ROOT, "src", "styles", "05-composer-input.css"), "utf8");
+  ok(/\.notice--success/.test(css) && /\.notice--error/.test(css),
+    "通知条 success / error 两套皮肤都在（绿 = 勾，红 = 叉）");
 }
 
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

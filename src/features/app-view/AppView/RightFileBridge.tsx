@@ -25,7 +25,8 @@ export function RightFileBridge({ app }: { app: HarnessAppApi }) {
     registerRightFileResolver((raw) => resolveForOpen(raw, {
       workspace: ref.current.workspace,
       lookup: (target) => lookupKnownFile(target),
-      notify: (message) => ref.current.showToast("已切换文件", message),
+      /* ★ 10-30 用户令：能打开就是成功，别用红色 —— 语气由这里显式给，不靠文案猜。 */
+      notify: (message, tone) => ref.current.showToast("已打开文件", message, undefined, tone ?? "success"),
     }));
     return () => { registerRightFileResolver(null); };
   }, []);
