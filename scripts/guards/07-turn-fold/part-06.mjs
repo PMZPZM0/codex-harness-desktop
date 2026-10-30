@@ -131,8 +131,14 @@ export async function run() {
       {
         const preview = readFileSync(join(ROOT, "src", "hooks", "useFilePreview.ts"), "utf8");
         const rail = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "03-workspace-files.tsx"), "utf8");
-        (/resolveExistingFile\(/.test(preview) && /lookupKnownFile/.test(preview) && /resolveExistingFile\(/.test(rail) && /lookupKnownFile/.test(rail)
-          ? ok : fail)("【127】两处预览面都接了回落（居中编辑器 + 右栏），⛔ 别只改一处");
+        const bridge = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "RightFileBridge.tsx"), "utf8");
+        /* 10-30：居中预览与右栏跳转都必须走同一个回落实现（`path-fallback`）；
+           右栏的解析已提前到**广播前**（`registerRightFileResolver`）—— ⛔ 三个入口各写一份
+           拼路径逻辑，就是"修好一个、另外两个照旧"的来源。 */
+        (/resolveForOpen\(/.test(preview) && /lookupKnownFile/.test(preview)
+          && /resolveExistingFile\(/.test(rail)
+          && /registerRightFileResolver\(/.test(bridge) && /resolveForOpen\(/.test(bridge)
+          ? ok : fail)("【127】三处入口（居中预览 / 右栏 / 跳转桥）都接同一套回落，⛔ 别只改一处");
       }
       /* ★ 10-30 二轮：台账里存的常是 **URL 编码**形态（`D:/Codex%20Harness%20Desktop/src/lib/x.mjs`，
          来自 file:// 链接）⇒ 原样入库永远"不存在"（实测：用户那张卡就是因为它点不开）。

@@ -375,6 +375,8 @@ contextBridge.exposeInMainWorld("codex", {
   feishuQrStart: () => __ipc("feishu:qr-start", 0, []),
   feishuQrStatus: () => __ipc("feishu:qr-status", 0, []),
   fileExists: (path: string) => __ipc("fs:exists", 1, [{ path }]),
+  /* 10-30 用户令「只要电脑上有的文件都能打开」：给定路径不存在时**按文件名在磁盘上找回**（同名 + 尾段打分 + 有界预算，判定全在 electron/file-locate.ts）。只回路径，不读不写 */
+  locateFile: (path: string, threadId?: string) => __ipc("fs:locate", 1, [{ path, threadId }]),
   readFile: (path: string, threadId?: string) => __ipc("fs:read", 1, [{ path, threadId }]),
   /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
   revealInFolder: (path: string) => __ipc("fs:reveal", 1, [{ path }]),

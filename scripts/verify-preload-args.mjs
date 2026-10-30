@@ -111,6 +111,13 @@ await probe("detectCliAgent", [{ id: "builtin-claude-code" }], "cliagents:detect
 await probe("saveCliAgent", [{ name: "探针", bin: "probe" }], "cliagents:save", [{ name: "探针", bin: "probe" }]);
 await probe("removeCliAgent", ["cli-abc"], "cliagents:remove", ["cli-abc"]);
 
+/* 10-30 按文件名找回（fs:locate）：⚠️ 这条**真的踩过坑** —— manifest 里把 invokeArgs 写成
+   位置参数 `path, threadId`，而主进程 handler 收的是对象 ⇒ `input?.path` 恒 undefined、
+   扫的目录退化成进程 cwd，接口只回 `{path:""}`（表现：点开仍然"文件不存在"，且只花 1ms，
+   看起来像"没找到"而不是"没收到参数"）。本探针就是为了让这类错在跑测试时红，而不是让用户再截一张图。 */
+await probe("locateFile", ["D:\\probe\\a.mjs"], "fs:locate", [{ path: "D:\\probe\\a.mjs", threadId: undefined }]);
+await probe("readFile", ["D:\\probe\\a.txt"], "fs:read", [{ path: "D:\\probe\\a.txt", threadId: undefined }]);
+
 /* 反向：无参通道不许被塞进 undefined 占位（__ipc 的 trim 语义）。
    10-29：`agents:off-notice` 已随总开关删除 ⇒ 换成同样无参的 `agents:catalog`。 */
 calls.length = 0;

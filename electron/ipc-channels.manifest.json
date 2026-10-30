@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 596,
+  "count": 597,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -1931,6 +1931,16 @@
       "invokeArgs": "{ path }",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "locateFile",
+      "channel": "fs:locate",
+      "paramsImpl": "path: string, threadId?: string",
+      "paramsDecl": "path: string, threadId?: string",
+      "returns": "Promise<{ path: string }>",
+      "invokeArgs": "{ path, threadId }",
+      "cast": null,
+      "note": "10-30 用户令「只要电脑上有的文件都能打开」：给定路径不存在时**按文件名在磁盘上找回**（同名 + 尾段打分 + 有界预算，判定全在 electron/file-locate.ts）。只回路径，不读不写"
     },
     {
       "name": "readFile",
@@ -4114,7 +4124,7 @@
       "channel": "skill-packs:uninstall",
       "paramsImpl": "input: { id: string }",
       "paramsDecl": "input: { id: string }",
-      "returns": "Promise<{ removed: string[]; remaining: string[] }>",
+      "returns": "Promise<{ removed: string[]; remaining: string[]; kept: string[] }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动）"

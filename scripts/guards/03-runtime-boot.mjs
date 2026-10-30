@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
+  ALIGN_RESULT, C, CONTINUITY_TEXT, ROOT, codeOnly, existsSync, fail, join, mainSrc, mkdirSync, ok, pathToFileURL, mkdtempSync, planCompletedFold, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readVoiceCallFloatSrc, rmSync, shouldAlignProvider, sliceHandle, spawnSync, statSync, tmpdir, warn, writeFileSync,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -687,6 +687,25 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   (!/isInsideTrustedRoots\(target\)/.test(fsRead) ? ok : fail)(
     "fs:read 不判可信根（10-29 用户令：任意文件都能预览，不再弹授权）"
   );
+  /* ★ 10-30 用户令（第三次同一现象）：「这后面的文件跳转预览也同步修一下，只要是电脑上有的文件，
+     不管在哪里都能打开，这个路径错」。根因不是读取被拦，而是**卡片手里的路径本身是错的**
+     （按会话目录拼出来的死链）。⇒ 新增 fs:locate：路径不存在时按文件名在磁盘找回。
+     ⛔ 它只回一条路径（不读不写），判定与预算全在 electron/file-locate.ts。 */
+  const fsLocate = sliceHandle(mainForSec, "fs:locate", 900);
+  (/locateFile/.test(fsLocate) && /resolvePreviewPath/.test(fsLocate) ? ok : fail)(
+    "fs:locate 调 locateFile 找回文件，且与 fs:read 同一套路径归一（file:// / ~ / 相对路径口径一致）"
+  );
+  {
+    const locator = codeOnly(readFileSync(join(ROOT, "electron", "file-locate.ts"), "utf8"));
+    /* ⛔ 必须有界：时间预算 + **每根各自的**目录数预算 + 跳过重目录。
+       无界全盘遍历会让用户点一次卡就卡半分钟（这也是「找文件把界面拖死」的唯一防线）。 */
+    (/BUDGET_MS/.test(locator) && /MAX_DIRS/.test(locator) && /SKIP_DIRS/.test(locator) && /deadline/.test(locator)
+      ? ok : fail)("file-locate 有界（时间预算 + 每根目录数预算 + 跳过重目录），⛔ 不许改成无界全盘遍历");
+    /* ⛔ 同名的可能有多个：必须用**尾段证据**打分，否则会打开另一个同名文件（比报"找不到"更糟）。 */
+    (/tailScore\(/.test(locator) && /bestTail/.test(locator) ? ok : fail)(
+      "file-locate 用尾段证据打分（多个同名文件时选目录结构对得上的那个，⛔ 不靠「第一个命中」）"
+    );
+  }
   // shell:reveal / updates:reveal 同口径收敛
   // ⛔ 10-03：与下面 updates:reveal 同口径 —— 域改成插件形态后注册写的是 ipcHost.handle，
   //    只认 ipcMain.handle 会得到 -1 ⇒ slice(-1, 900) 取到聚合面尾部 ⇒ 这条**安全**断言

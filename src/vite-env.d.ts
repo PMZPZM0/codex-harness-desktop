@@ -744,6 +744,8 @@ interface Window {
     feishuQrStart(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
     feishuQrStatus(): Promise<{ state: string; qr?: string; userCode?: string; name?: string; error?: string }>;
     fileExists(path: string): Promise<{ exists: boolean }>;
+    /* 10-30 用户令「只要电脑上有的文件都能打开」：给定路径不存在时**按文件名在磁盘上找回**（同名 + 尾段打分 + 有界预算，判定全在 electron/file-locate.ts）。只回路径，不读不写 */
+    locateFile(path: string, threadId?: string): Promise<{ path: string }>;
     readFile(path: string, threadId?: string): Promise<{ dataBase64: string; size: number }>;
     /* 在系统资源管理器中定位文件（可信根校验同 fs:read）；画布生成产物「打开文件夹」 */
     revealInFolder(path: string): Promise<{ ok: boolean }>;
@@ -1074,7 +1076,7 @@ interface Window {
     /* 下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖 */
     installSkillPack(input: { id: string }): Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number }>;
     /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
-    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[] }>;
+    uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[]; kept: string[] }>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;

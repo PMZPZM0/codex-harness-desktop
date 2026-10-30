@@ -208,5 +208,6 @@
   "src/lib/usage-input-tokens.ts": 1,
   "src/lib/usage-number.ts": 1,
   "src/lib/usage-stats.ts": 1,
-  "src/voice/hotkey-match.ts": 1
+  "src/voice/hotkey-match.ts": 1,
+  "src/features/function-menu/FunctionMenuSettings.tsx": 1
 }
