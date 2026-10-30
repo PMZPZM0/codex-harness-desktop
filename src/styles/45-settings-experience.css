@@ -737,3 +737,7 @@
 /* 10-30：知识库页必须压掉基类的 space-between（07 里的 .settings-section 后导入，
    同特异度会盖回均匀撑开 ⇒ 每块之间空 ~140px）。本文件最后加载，用双类提高一档。 */
 .settings-exp-page.kb-page { justify-content: flex-start; }
+
+/* 10-30：拓展接口一级卡改成两列（原来被这条规则压成单列长条，用户：「整齐，紧凑一点」）。
+   300px 起排：设置面板 ~680px 时两列各 ~335px；更深的结构在下游文件已定，这里只覆盖列数。 */
+.settings-exp-shell .ext-page .settings-cards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }

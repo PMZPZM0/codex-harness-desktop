@@ -1357,90 +1357,44 @@
   flex-direction: column;
   gap: 10px;
 }
-.ext-page .ext-item {
+/* ⛔ 10-30：条目明细现在只出现在 SettingsDialog 里（portal 到 body，不在 .ext-page 下）——
+   旧规则全挂在 .ext-page 作用域 ⇒ 弹窗里等于没样式（用户截图「界面好丑」的真因）。
+   这里统一收成「卡片头 + 定义行」的紧凑版式：标签列 76px，内容列自适应。 */
+.ext-dialog .ext-item {
   border: 1px solid var(--line-soft);
-  border-radius: 9px;
-  padding: 10px 12px;
-  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
-}
-.ext-page .ext-item-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.ext-page .ext-item-head h3 {
-  flex: 1;
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-}
-.ext-page .ext-copy {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: 10px;
   background: var(--panel);
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 11.5px;
+  overflow: hidden;
 }
-.ext-page .ext-copy:hover {
-  color: var(--text);
-  border-color: var(--accent);
+.ext-dialog .ext-item-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--panel-2);
 }
-.ext-page .ext-purpose {
-  margin: 6px 0 8px;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.6;
+.ext-dialog .ext-item-head h3 { flex: 1; margin: 0; font-size: 13px; font-weight: 600; }
+.ext-dialog .ext-copy {
+  flex: none; display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px;
+  background: var(--panel); color: var(--muted); cursor: pointer; font-size: 11px;
 }
-.ext-page .ext-block + .ext-block {
-  margin-top: 7px;
-}
-.ext-page .ext-label {
-  display: block;
-  margin-bottom: 3px;
-  color: var(--faint);
-  font-size: 11px;
-  letter-spacing: 0.03em;
-}
-.ext-page .ext-where {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.ext-page .ext-where code {
-  padding: 2px 7px;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-  font: 11.5px/1.5 Cascadia Code, Consolas, ui-monospace, monospace;
+.ext-dialog .ext-copy:hover { color: var(--text); border-color: var(--accent); }
+.ext-dialog .ext-purpose { margin: 0; padding: 8px 12px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.ext-dialog .ext-block { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 10px; padding: 7px 12px; border-top: 1px solid var(--line-soft); }
+.ext-dialog .ext-label { color: var(--faint); font-size: 11px; line-height: 1.6; }
+.ext-dialog .ext-where { display: flex; flex-wrap: wrap; gap: 4px; }
+.ext-dialog .ext-where code {
+  padding: 1px 6px; border: 1px solid var(--line-soft); border-radius: 5px;
+  background: var(--panel-2); color: var(--text);
+  font: 11px/1.6 Cascadia Code, Consolas, ui-monospace, monospace;
   word-break: break-all;
 }
-.ext-page .ext-steps,
-.ext-page .ext-pitfalls {
-  margin: 0;
-  padding-left: 18px;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.65;
-}
-.ext-page .ext-steps li::marker {
-  color: var(--accent);
-}
-.ext-page .ext-pitfalls li::marker {
-  color: var(--orange);
-}
-.ext-page .ext-effect,
-.ext-page .ext-guards {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12.5px;
-  line-height: 1.6;
-}
+.ext-dialog .ext-steps,
+.ext-dialog .ext-pitfalls { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; line-height: 1.55; display: flex; flex-direction: column; gap: 2px; }
+.ext-dialog .ext-steps li::marker { color: var(--accent); }
+.ext-dialog .ext-pitfalls li::marker { color: var(--orange); }
+.ext-dialog .ext-effect,
+.ext-dialog .ext-guards { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .ext-page .ext-empty {
   color: var(--faint);
   font-size: 12.5px;
@@ -2017,4 +1971,13 @@
 .team-rail-node.team-rail-office:only-child::before { display: none; }
 
 /* 10-10 两级 IA：拓展接口的明细列表移进弹窗 ⇒ 只需给条目之间留间距（卡片自身样式不变）。 */
-.ext-dialog { display: flex; flex-direction: column; gap: 12px; padding-top: 8px; }
+.ext-dialog { display: flex; flex-direction: column; gap: 10px; padding-top: 6px; }
+
+/* 10-30：一级页收紧 —— 分类卡两列、预览一行截断、说明一句话（用户：「整齐，紧凑一点」）。 */
+.ext-page .settings-cards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.ext-page .settings-card { padding: 11px 12px; gap: 10px; align-items: center; }
+.ext-page .settings-card-copy small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; line-height: 1.45; }
+.ext-page .settings-card-stat { font-size: 11px; }
+.ext-page .ext-stats { margin: 0 0 2px; gap: 6px; }
+.ext-page .ext-stats span { padding: 2px 8px; font-size: 11px; }
+.ext-page .ext-search { padding: 6px 9px; }
