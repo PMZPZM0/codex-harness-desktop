@@ -183,7 +183,10 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
       {/* 来源二选一：等高一排；选中用描边 + 浅底，未选只有细线。
           ⛔ 切换**必须**落到连接器上（`kb:backend-set` 会启用/停用 cloud-kb 连接器并失效工具缓存），
              否则设置变了、云端 6 个工具还在模型工具列表里 ⇒ 模型拿云端工具去查本地库。 */}
-      <div className="settings-exp-card kb-source-card">
+      {/* 10-30 二次反馈「空白缝隙还是太多」：三块**并成一张卡**，行间只用 1px 细线分隔
+          （不再靠卡片之间的外边距和各自的圆角/描边堆留白）。 */}
+      <div className="settings-exp-card kb-board">
+      <div className="kb-board-row kb-board-source">
       <div className="memory-mode-switch kb-source-switch" role="tablist" aria-label="知识库来源">
         <button role="tab" aria-selected={kbBackend === "local"} className={`memory-mode-card ${kbBackend === "local" ? "active" : ""}`}
           onClick={() => { if (kbBackend !== "local") void switchKbBackend("local"); }}>
@@ -205,7 +208,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
 
       {/* 本地语义后端：未安装时给下载卡片（进度/速度/剩余），装完卡片消失 */}
       {kbBackend === "local" && embedInstalled === false ? (
-        <div className="settings-exp-card kb-embed-card">
+        <div className="kb-board-row kb-embed-card">
           <span className="kb-embed-main">
             <strong>本地语义检索（可选增强）</strong>
             <small>离线中文向量模型 + ONNX 运行库，装好后「语义检索」不再依赖供应商接口。约 110 MB，走国内镜像，装完即用。</small>
@@ -229,7 +232,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
       ) : null}
 
       {/* 文档工作台：标题行（计数 + 刷新）→ 工具条 → 结果/列表/空态 */}
-      <div className="settings-exp-card kb-workbench">
+      <div className="kb-board-row kb-workbench">
         <div className="kb-workbench-head">
           <Library size={14} />
           <strong>文档</strong>
@@ -284,6 +287,7 @@ export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSect
             <small>{loading ? "" : "用上面的「导入文件」或「粘贴文本」添加第一份文档。"}</small>
           </div>
         )}
+      </div>
       </div>
 
       {/* 全文预览弹窗（info-modal 体系，portal 到 body——设置页 transform 会劫持 fixed） */}
