@@ -2743,36 +2743,41 @@
   box-shadow: 0 0 0 1px var(--line);
 }
 
-/* ── 知识库页 10-30 重排（用户：优化排版、美化）────────────────────────
-   统一成设置页简洁版式：页头 + 来源二选一 + 一句说明 + 增强行 + 「文档」工作台。
-   ⛔ 不再出现「大段说明卡 / 裸工具条 / 三种卡片混排」；颜色只走主题变量。 */
-/* ⛔ 10-30 用户：「紧凑一点啊，空白那么大干嘛」—— .settings-section 基类带
-   justify-content: space-between + min-height: 100%，本页必须显式改回 flex-start，
-   否则每个子块被均匀撑开（实测每块之间空出 ~100px）。 */
+/* ── 知识库页 10-30 重排（用户两次反馈：「优化排版」→「紧凑一点，空白那么大」→「缝隙还是太多」）
+   ⇒ 最终形态 = **一张卡 + 行间 1px 细线**（不再三张卡各自带圆角/外边距）：
+   ① 来源（两块等宽 tile + 一句说明）② 本地语义检索（可选）③ 文档工作台。
+   ⛔ 颜色只走主题变量。 */
+/* ⛔ .settings-section 基类带 justify-content: space-between + min-height: 100%，
+   同特异度会被 07 号样式盖回 ⇒ 本页必须用双类压成 flex-start（见 45 号文件末尾那条）。 */
 .kb-page { max-width: 780px; margin: 0 auto; justify-content: flex-start; }
-.kb-source-card { padding: 12px 14px; }
-.kb-source-card .memory-mode-switch { margin-top: 0; }
-.kb-page .memory-mode-card { padding: 10px 12px; }
-.kb-source-note { margin: 8px 2px 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
-.settings-exp-card.kb-embed-card { border-style: solid; padding: 10px 14px; }
-.kb-workbench { padding: 0; }
-.kb-workbench-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--line-soft); }
+.kb-board { padding: 0; }
+.kb-board-row { padding: 12px 14px; }
+.kb-board-row + .kb-board-row { border-top: 1px solid var(--line-soft); }
+.kb-board .kb-source-switch { margin-top: 0; }
+.kb-board .memory-mode-card { padding: 8px 10px; }
+.kb-source-note { margin: 8px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.kb-embed-card { display: flex; align-items: center; gap: 12px; }
+.kb-embed-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.kb-embed-main strong { font-size: 12.5px; color: var(--text); }
+.kb-embed-main small { font-size: 10.5px; color: var(--faint); line-height: 1.5; }
+.kb-workbench-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .kb-workbench-head > svg { color: var(--muted); }
 .kb-workbench-head strong { font-size: 13px; }
 .kb-count { margin-right: auto; color: var(--muted); font-size: 11px; }
-.kb-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
+.kb-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
 .kb-page .kb-search { max-width: none; flex: 1 1 240px; }
 .kb-page .kb-docs,
 .kb-page .kb-hits { border: 0; border-radius: 0; background: transparent; }
-.kb-page .kb-docs { max-height: 420px; overflow-y: auto; }
-.kb-page .kb-doc { padding: 9px 14px; }
-.kb-page .kb-hits { padding: 4px 0 10px; }
-.kb-page .kb-hit { margin: 8px 14px; }
-.kb-mode { margin: 8px 14px; font-size: 11px; }
-.kb-paste { margin: 10px 14px; }
-.kb-empty { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 22px 16px; color: var(--muted); text-align: center; }
+.kb-page .kb-docs { max-height: 380px; overflow-y: auto; }
+.kb-board .kb-doc { padding: 8px 0; }
+.kb-board .kb-doc + .kb-doc { border-top: 1px solid var(--line-soft); }
+.kb-page .kb-hits { padding: 0; }
+.kb-board .kb-hit { margin: 0 0 8px; }
+.kb-board .kb-paste { margin: 0 0 8px; }
+.kb-board .kb-cloud-note { margin: 0 0 8px; color: var(--muted); font-size: 11px; }
+.kb-board .kb-empty { padding: 16px 8px; }
+.kb-empty { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px; color: var(--muted); text-align: center; }
 .kb-empty > svg { color: var(--faint); }
 .kb-empty p { margin: 2px 0 0; font-size: 12.5px; color: var(--text); }
 .kb-empty small { font-size: 11px; line-height: 1.6; }
-.settings-exp-card.kb-empty { padding: 22px 16px; }
-.kb-cloud-note { margin: 10px 14px 0; color: var(--muted); font-size: 11px; }
+.settings-exp-card.kb-empty { padding: 16px; }
