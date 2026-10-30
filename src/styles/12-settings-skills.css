@@ -16,7 +16,6 @@
 .skill-center-shell > .skill-installed-view { margin-top: 0; padding: 12px 14px 14px; }
 .skill-center-shell > .skill-card-grid { padding: 12px 14px 4px; }
 .skill-center-shell > .skill-market-pagination { padding: 0 14px 12px; }
-.skill-installed-summary { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); color: var(--muted); font-size: 11.5px; align-self: flex-start; }
 .skill-installed-group { display: flex; flex-direction: column; gap: 8px; }
 .skill-installed-group > header { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 12.5px; font-weight: 500; }
 .skill-installed-group > header > small { margin-left: 6px; color: var(--faint); font-size: 10.5px; font-weight: 400; }
@@ -118,12 +117,6 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 }
 .skill-actions-line > .icon-button.skill-action-sm { width: 28px; padding: 0; }
 /* 次级工具栏已自带边框与底色，里面的统计条去掉重复外框 */
-.resource-toolbar.secondary .skill-installed-summary {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  align-self: center;
-}
 
 .resource-toolbar > .active-manage,
 .resource-toolbar > .secondary-setting {
