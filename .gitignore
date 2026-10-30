@@ -58,6 +58,8 @@ terminal-dump.txt
 
 # 应用生成的本机数据（引擎项目级记忆目录 / 浏览器自动化运行时产物，不纳入 git）
 .codex-harness/
+# 浏览器自动化（ego）运行时产物：每次运行的 round-*.mjs 脚本
+.ego-runs/
 .playwright-cli/
 
 # 并行构建流程的临时产物
