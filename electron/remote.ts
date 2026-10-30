@@ -199,6 +199,8 @@ export class RemoteControlService {
         if (value && typeof value.name === "string") this.approved.set(key, { name: value.name, approvedAt: Number(value.approvedAt ?? 0), lastSeen: Number(value.lastSeen ?? 0), secretHash: typeof value.secretHash === "string" ? value.secretHash : undefined, fingerprint: typeof value.fingerprint === "string" ? value.fingerprint : undefined });
       }
     } catch { /* 首次运行无文件 */ }
+    /* 升级后第一次读盘就合并历史重复条目（用户截图：同一台手机两条记录） */
+    this.dedupeApproved();
   }
 
   private saveApproved() {
@@ -561,16 +563,29 @@ export class RemoteControlService {
           const known = deviceId ? this.approved.get(deviceId) : undefined;
           const presented = String(data.deviceSecret ?? "");
           const presentedHash = presented ? sha256Hex(presented) : "";
-          if (
-            known?.secretHash
-            && presentedHash.length === known.secretHash.length
-            && crypto.timingSafeEqual(Buffer.from(presentedHash), Buffer.from(known.secretHash))
-          ) {
+          const secretMatches = (hash?: string) => Boolean(hash) && presentedHash.length === hash!.length
+            && crypto.timingSafeEqual(Buffer.from(presentedHash), Buffer.from(hash!));
+          if (known?.secretHash && secretMatches(known.secretHash)) {
             this.approved.set(deviceId, { ...known, lastSeen: Date.now(), ...(fingerprint ? { fingerprint } : {}) });
             this.saveApproved();
             this.grantCookies(res, deviceId);
             this.json(res, 200, { ok: true, approved: true });
             return;
+          }
+          /* 同一台手机换过 deviceId（旧版本按 URL 前缀分桶，localStorage 里的 id 会变）：
+             秘密对得上任何一条已批准记录 ⇒ 认作同一台，把记录迁到新 id（10-31 用户：「同一个手机识别不出来」）。
+             ⛔ 仍以**设备秘密**为凭据；deviceId 只是标签，泄露它本身拿不到访问权。 */
+          if (presentedHash) {
+            for (const [id, info] of this.approved) {
+              if (id === deviceId || !info.secretHash || !secretMatches(info.secretHash)) continue;
+              this.approved.delete(id);
+              this.approved.set(deviceId, { ...info, name, lastSeen: Date.now(), ...(fingerprint ? { fingerprint } : {}) });
+              this.saveApproved();
+              console.log(`[remote] 同一台手机换了设备 ID：${id} → ${deviceId}（凭设备秘密迁移）`);
+              this.grantCookies(res, deviceId);
+              this.json(res, 200, { ok: true, approved: true });
+              return;
+            }
           }
           if (!this.checkPairingCode(String(data.code ?? ""))) {
             this.json(res, 200, { ok: false, error: "配对码错误或已过期，请对照电脑端显示的 6 位数字重输" });
@@ -895,9 +910,36 @@ export class RemoteControlService {
     if (removed) { this.saveApproved(); console.log(`[remote] 已清理 ${removed} 台超过 30 天未连接的已配对设备`); }
   }
 
-  /** 已配对设备列表（读之前顺手清理过期条目） */
+  /**
+   * 合并升级前的重复记录（10-31 用户截图：同一台 Xiaomi 出现两条「已批准的设备」）。
+   * 旧记录没有指纹 ⇒ 用「同名」认作同一台，只保留**最近连接**的那条（手机在用的正是最近那条，
+   * 删旧的不会把在用的踢掉）。
+   * ⛔ 有指纹的按指纹分组，不同指纹永远不会被合并。
+   */
+  private dedupeApproved(): number {
+    const groups = new Map<string, { id: string; lastSeen: number; approvedAt: number }[]>();
+    for (const [id, info] of this.approved) {
+      const key = info.fingerprint ? "fp:" + info.fingerprint : "name:" + String(info.name ?? "").trim();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push({ id, lastSeen: Number(info.lastSeen ?? 0), approvedAt: Number(info.approvedAt ?? 0) });
+    }
+    let removed = 0;
+    for (const [, list] of groups) {
+      if (list.length < 2) continue;
+      list.sort((a, b) => (b.lastSeen - a.lastSeen) || (b.approvedAt - a.approvedAt));
+      for (const entry of list.slice(1)) { this.approved.delete(entry.id); removed += 1; }
+    }
+    if (removed) {
+      this.saveApproved();
+      console.log(`[remote] 已合并 ${removed} 条重复的已批准设备（同名/同指纹只留最近连接的一条）`);
+    }
+    return removed;
+  }
+
+  /** 已配对设备列表（读之前顺手清理过期条目 + 合并重复） */
   approvedDevices() {
     this.pruneApproved();
+    this.dedupeApproved();
     return [...this.approved.entries()].map(([deviceId, info]) => ({ deviceId, name: info.name, approvedAt: info.approvedAt, lastSeen: info.lastSeen }));
   }
 
