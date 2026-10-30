@@ -90,8 +90,8 @@ ok(/withSkillWriteLock\(\(\) => installCocoLoopSkill/.test(skillsIpc),
 console.log("【⑥ 控制台入口 + 技能更新面板（10-30）】");
 const cardSrc = codeOnly(read("src/features/settings-general/AutoUpdateCard.tsx"));
 const panelSrc = codeOnly(read("src/features/settings-general/SkillUpdatePanel.tsx"));
-ok(/技能更新…/.test(cardSrc) && /setSkillPanelOpen\(true\)/.test(cardSrc) && /<SkillUpdatePanel/.test(cardSrc),
-  "控制台技能行能进入技能更新面板（不再是只有一个开关）");
+ok(/auto-update-mini-btn[\s\S]{0,220}技能更新[\s\S]{0,40}<\/button>/.test(cardSrc) && /setSkillPanelOpen\(true\)/.test(cardSrc) && /<SkillUpdatePanel/.test(cardSrc),
+  "控制台技能行能进入技能更新面板（紧凑药丸按钮 + 图标，不再是只有一个开关）");
 ok(/onOpenSkills\?\.\(true\)/.test(cardSrc) && /onOpenSkills\?\.\(false\)/.test(cardSrc),
   "两个出口：技能页（安装与批量管理）/ 技能市场安装");
 ok(/window\.codex\.checkSkillUpdates\(\)/.test(panelSrc) && /window\.codex\.updateSkill\(/.test(panelSrc),
