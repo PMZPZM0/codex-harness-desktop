@@ -402,8 +402,11 @@ if (!existsSync(stylesEntry)) {
      · --tag-color（10-26：自定义标签颜色 —— EntityTagEditor / 侧栏 projectTag 内联 `style={{"--tag-color": color}}`，
        消费端 color-mix 三处；颜色由用户选，不可能有单一值）
      · --bot-gaze-x / --bot-gaze-y / --bot-eye-scale（10-26：语音悬浮球眼神跟随 ——
-       use-ball-reactions.ts 用 setProperty 按指针位置实时写，CSS 侧都带 fallback） */
-  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale"]);
+       use-ball-reactions.ts 用 setProperty 按指针位置实时写，CSS 侧都带 fallback）
+     · --skin-stage（10-30：社区组件预览台底色 —— SkinHost 用 getComputedStyle 探出被嵌组件
+       其实是深底时注入 #232327、否则 removeProperty，浅色台走 CSS 里的 color-mix fallback。
+       ⛔ 不写进 CSS 单一值：同一个台子要按被嵌组件的实际底色切换，全站一个值就是错的） */
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(
     orphan.length
