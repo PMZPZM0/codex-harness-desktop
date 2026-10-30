@@ -1819,18 +1819,25 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【139e】首页直接发消息：先建会话再发送，并清掉上一段会话的残留消息（不选会话也能发）"
     );
     {
+      /* 10-31 用户实测：「App 远程发起的会话模型用不了，电脑端发起的正常」。两条都要满足：
+         ① 绑统一 harness 通道（传原始供应商 id 会被引擎拒）；
+         ② base_url 必须过本地协议桥 bridgeDial（⛔ 用原始上游地址会绕过桥：chat 类上游拿不到适配、
+            云通道拿不到注入凭据 ⇒ 发送成功但模型零输出）。 */
+      const threadProviderSrc = readFileSync(join(ROOT, "electron", "thread-provider.ts"), "utf8");
       let providerOk = false;
       try {
-        const mod = await import(pathToFileURL(join(ROOT, "dist-electron", "provider-id.js")).href);
+        const mod = await import(pathToFileURL(join(ROOT, "dist-electron", "thread-provider.js")).href);
         const fn = mod.harnessProviderConfig ?? mod.default?.harnessProviderConfig;
-        const bound = fn?.({ name: "wbm", baseUrl: "https://example.com/v1", provider: "custom964" });
+        const bound = fn?.({ name: "云端模型", baseUrl: "https://example.com/v1", provider: "cloud" });
+        const baseUrl = String(bound?.config?.model_providers?.harness?.base_url ?? "");
         providerOk = typeof fn === "function"
           && bound?.modelProvider === "harness"
           && bound?.config?.model_provider === "harness"
-          && bound?.config?.model_providers?.harness?.base_url === "https://example.com/v1"
+          && (baseUrl === "https://example.com/v1" || baseUrl.startsWith("http://127.0.0.1:"))
+          && threadProviderSrc.includes("bridgeDial(providerId, model.baseUrl)")
           && JSON.stringify(fn({ provider: "openai-official" })) === "{}";
-      } catch (error) { console.log("      provider-id 产物解析失败：", error.message); }
-      (providerOk ? ok : fail)("【139e】手机建会话绑统一 harness 通道（⛔ 传原始供应商 id 会让首轮发送被引擎拒）");
+      } catch (error) { console.log("      thread-provider 产物解析失败：", error.message); }
+      (providerOk ? ok : fail)("【139e】手机建会话：统一 harness 通道 + base_url 过本地协议桥（⛔ 原始地址 = 远程会话零输出）");
     }
     (codeOnly(mainSrc).includes("harnessProviderConfig(model)") && tunnelPage.includes("const BRAND_ICON")
       && tunnelPage.includes('logo.className = "home-logo"') && relaySrc.includes("this.events.brandIcon")
