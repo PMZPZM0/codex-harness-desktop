@@ -14,6 +14,7 @@ import { Readable } from "node:stream";
 import os from "node:os";
 import { WeixinGateway } from "../weixin-gateway";
 import { markBoot } from "../boot-timing";
+import { reasoningItemText } from "../reasoning-text";
 import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
 import { clearSessionPrivateMemory } from "../memory-fabric";
@@ -992,11 +993,7 @@ export async function bootApp() {
            已经流式发过的**这一条**不重复发（否则同一段思考会出现两遍）。 */
         const thinkKey = remoteThinkKey(p);
         if (!internalThreads.has(String(p?.threadId ?? "")) && !remoteThinkStreamed.has(thinkKey)) {
-          const item = p?.item ?? {};
-          const text = [
-            ...(item.summary ?? []).map((part: any) => String(part?.text ?? "")),
-            ...(item.content ?? []).map((part: any) => String(part?.text ?? "")),
-          ].join("").trim();
+          const text = reasoningItemText(p?.item);
           if (text) for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text });
         }
         remoteThinkStreamed.delete(thinkKey);
@@ -1047,10 +1044,7 @@ export async function bootApp() {
             if (item?.type !== "reasoning") continue;
             const key = `${p.threadId}:${turnIdOf(p)}:${String(item?.id ?? "")}`;
             if (remoteThinkStreamed.has(key)) continue;
-            const text = [
-              ...(item.summary ?? []).map((part: any) => String(part?.text ?? "")),
-              ...(item.content ?? []).map((part: any) => String(part?.text ?? "")),
-            ].join("").trim();
+            const text = reasoningItemText(item);
             if (!text) continue;
             remoteThinkStreamed.add(key);
             for (const forward of remoteEventForwarders) forward({ threadId: p.threadId, kind: "think", text });
