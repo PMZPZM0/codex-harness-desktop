@@ -104,7 +104,9 @@ export const extensionsFeature = defineFeature<null>({
      *  ⛔ 仍然是封闭动作集（url / settings 白名单），写入前逐条归一化 —— 一个 JSON 就能跑命令等于后门。
      *  ⛔ id 由渲染层给（建议 set_<设置页>），这里只做字符收敛与去重；超过 40 条截断。 */
     ipcHost.handle("extensions:menu-set", async (_event, input: any) => {
-      const entries = Array.isArray(input?.entries) ? input.entries.slice(0, 40) : [];
+      /* ⛔ 非数组一律拒绝、不写盘：空对象调用若照写 []，等于一次误调就把用户的菜单清空。 */
+      if (!Array.isArray(input?.entries)) return { ok: false, menu: [] };
+      const entries = input.entries.slice(0, 40);
       const menu: MenuEntrySpec[] = [];
       const seen = new Set<string>();
       for (const raw of entries) {
