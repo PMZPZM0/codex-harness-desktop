@@ -48,6 +48,8 @@ type Status = {
   /** 当前配置的飞书应用 id（重新配置时用它判断"换没换成功"） */
   appId: string;
   loggedIn: boolean;
+  /** 配置流程状态（主进程 config init 子进程）：选「已有应用」时 appId 不变，靠 done 收官。 */
+  setupState: "idle" | "running" | "done" | "failed";
   user: string;
   detail: string;
   error: string;
@@ -91,11 +93,13 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
       /* ⛔ 必须要求新 appId 非空：config init 改写配置的那一瞬间，auth status 可能读不到内容，
          把「读到空」当成「已切换」会提前收尾、用户还没做完。 */
       const appChanged = flow === "reconfig" && Boolean(baseAppIdRef.current) && Boolean(next.appId) && next.appId !== baseAppIdRef.current;
-      const outcome = feishuPollOutcome({ flow, configured: next.configured, loggedIn: next.loggedIn, appChanged });
+      const outcome = feishuPollOutcome({ flow, configured: next.configured, loggedIn: next.loggedIn, appChanged, setupState: next.setupState });
       if (!outcome.keepLink) setLink("");
       if (outcome.clearBusy) {
         setBusy("");
-        if (appChanged) { baseAppIdRef.current = next.appId; setNotice?.("已切换到新的飞书应用，请重新登录"); }
+        if (outcome.failed) setNotice?.("配置没有完成（浏览器里可能取消了），可以再点一次配置");
+        else if (appChanged) { baseAppIdRef.current = next.appId; setNotice?.("已切换到新的飞书应用，请重新登录"); }
+        else if (flow === "reconfig") { baseAppIdRef.current = next.appId; setNotice?.("配置已更新（仍是同一个应用）", next.loggedIn ? "登录状态保留，可直接使用" : "需要的话点「登录」完成授权"); }
       }
       return next;
     } catch (err: any) {
