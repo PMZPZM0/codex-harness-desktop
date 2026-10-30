@@ -1767,8 +1767,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("pullCode") && ui.includes("remotePairState") && ui.includes("setRemoteQr"); } catch(e) { return false; } })() ? ok : fail)(
       "【139e】弹窗里的配对码 / 二维码要跟着后台轮换自动换新（否则用户照旧码输，永远过期）"
     );
-    (relaySrc.includes("if (input.trim() !== this.pairing.code)") && relaySrc.includes("this.pairing.tries = 0;") ? ok : fail)(
-      "【139e】配对码只有输错才计次（旧实现输对也 +1，第 10 次输对会被作废）"
+    ((function(){ const at = relaySrc.indexOf("private checkPairingCode"); const body = at >= 0 ? relaySrc.slice(at, at + 900) : ""; return body.includes("value === this.pairing.code") && body.includes("this.pairing.tries += 1") && body.indexOf("this.pairing.tries = 0") < body.indexOf("this.pairing.tries += 1"); })() ? ok : fail)(
+      "【139e】配对码只有输错才计次（⛔ 输对/宽限命中必须先清零，第 10 次输对不能被作废）"
     );
     ((function(){ try { const ui=readFileSync(join(ROOT, "src/features/app-view/AppView/04-remote-approval.tsx"), "utf8"); return ui.includes("data-pair-code-value") && ui.includes("本窗口：") ; } catch(e) { return false; } })() ? ok : fail)(
       "【139e】配对面板要显示「本窗口的 6 位码 + 地址」——两台电脑的码不同，避免抄错窗口"
@@ -1866,6 +1866,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("const DEVICE_FP") && relaySrc.includes("fingerprint: DEVICE_FP")
       && relaySrc.includes("info.fingerprint === req.fingerprint") ? ok : fail)(
       "【139e】同一台手机重新配对后自动清掉旧记录（稳定指纹；历史无指纹的只清同名且 24h 未连的）"
+    );
+    /* 10-31 用户：「codex harness App 老是显示配对失败/验证码过期，我填的对的」。两处根因：
+       ① 机器上有残留进程占着远控端口 ⇒ 远控起不来，手机连的其实是别的/连不上；
+       ② 到期轮换那一秒/手机还预填着旧码 ⇒ 输对了也被判过期。 */
+    (relaySrc.includes("EADDRINUSE") && relaySrc.includes("listenOn(this.server, 0)") && relaySrc.includes("内建中转按实际端口转发") ? ok : fail)(
+      "【139e】远控端口被占用必须退到临时端口（⛔ 残留进程占 17891 = 手机永远连不上）"
+    );
+    (relaySrc.includes("previousCode") && relaySrc.includes("rotatePairingCode(\"expiry\")") && relaySrc.includes("writeStore(KEY_CODE, \"\")") ? ok : fail)(
+      "【139e】配对码到期有 2 分钟宽限；被判失效后手机端清掉预填旧码（⛔ 否则一直\"填的对却过期\"）"
     );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
