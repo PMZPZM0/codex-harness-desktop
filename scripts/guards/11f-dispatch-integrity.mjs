@@ -12,7 +12,7 @@ import { createRequire } from "node:module";
 import { mkdtempSync, copyFileSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -402,6 +402,59 @@ try {
   const seeds = readFileSync(join(ROOT, "src/lib/prompt-seeds.mjs"), "utf8");
   ok(/你不亲自干活/.test(seeds) && /先派活，再说话/.test(seeds),
     "补发文案与 06-team-tools.ts 的铁律同义（新旧会话行为一致）");
+}
+
+/* ══ 10-30 用户令：@ 候选列表按调度开通状态联动 ══
+   「未开通专家团调度时列表中的『专家团』项置灰不可选，开通后自动恢复为可选中高亮，
+     并确保该联动逻辑随开关状态实时更新、与提示词描述保持一致」。
+   ⛔ 这里判三件事，都是"读代码猜不出来"的：
+     ① 纯函数层真的按 allow 打 disabled（且**不隐藏** —— 隐藏会让用户以为团队没了）；
+     ② 键盘顺序跳过置灰行（否则 Enter 能把灰行加进点名）；
+     ③ 渲染层/提示词与本实现同口径（三处任一漂移，用户看到的就和模型读到的不一致）。 */
+{
+  const mention = await import(pathToFileURL(join(ROOT, "src", "lib", "dispatch-mention.mjs")).href);
+  const { dispatchToolDescription: describeDispatch } = req(join(ROOT, "dist-electron/dispatch.js"));
+  const sample = [
+    { kind: "expert", key: "e1", name: "单人专家" },
+    { kind: "team", key: "t1", name: "软件开发专家团" },
+    { kind: "subagent", key: "s1", name: "评审员" },
+  ];
+  const offRes = mention.filterMentionTargets(sample, "", { team: false });
+  const offTeam = offRes.groups.find((g) => g.kind === "team");
+  const offExpert = offRes.groups.find((g) => g.kind === "expert");
+  ok(Boolean(offTeam) && offTeam.off === true && offTeam.items.every((t) => t.disabled === true),
+    "团关时：专家团**仍列出**但整组 off、每行 disabled（⛔ 不许改成「筛掉」）");
+  ok(Boolean(offExpert) && offExpert.off === false && offExpert.items.every((t) => !t.disabled),
+    "团关时：专家不受影响（置灰只作用于未开通的类别）");
+  ok(mention.flatMentionTargets(offRes.groups).every((t) => t.kind !== "team"),
+    "键盘顺序（↑↓/Enter）跳过置灰行 —— 否则 Enter 会把灰行加进点名");
+  ok(mention.firstMentionTarget(sample, "", { team: false })?.kind === "expert",
+    "Enter 采纳第一条**可选**候选（置灰时不会落到专家团）");
+
+  const onRes = mention.filterMentionTargets(sample, "", { team: true });
+  const onTeam = onRes.groups.find((g) => g.kind === "team");
+  ok(Boolean(onTeam) && onTeam.off === false && onTeam.items.every((t) => !t.disabled),
+    "团开时：专家团恢复可选中（同一份数据，只换 allow）");
+
+  /* 渲染层接线：allow 必须取自**顶层状态** activeDispatch（拨开关即重渲染 ⇒ 真正"实时"），
+     且行上用原生 disabled（不可点 + 不在 tab 序），并给组挂 is-off 供置灰样式。 */
+  const composer = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer.tsx"), "utf8");
+  ok(/filterMentionTargets\(dispatchInfo\?\.targets \?\? \[\], contextQuery, activeDispatch\)/.test(composer)
+    && /disabled=\{Boolean\(target\.disabled\)\}/.test(composer)
+    && /context-picker-group\$\{group\.off \? " is-off"/.test(composer),
+    "@ 面板按 activeDispatch 联动（组 is-off + 行原生 disabled），⛔ 不是「过滤掉」也不是「点一下才更新」");
+
+  const form = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "02-main-stage", "03-composer", "02-composer-form.tsx"), "utf8");
+  ok(/firstMentionTarget\(dispatchInfo\?\.targets \?\? \[\], contextQuery, activeDispatch\)/.test(form),
+    "输入框 Enter 采纳也走 firstMentionTarget（⛔ 两处各写一份跳过逻辑必漂移）");
+
+  /* 提示词同口径：模型要能解释「@ 里专家团是灰的」= 没开开关，不是团队不存在。 */
+  const desc = describeDispatch(sample, { expert: true, team: false, subagent: true, cli: true });
+  ok(/输入框的 @ 选择列表/.test(desc) && /置灰/.test(desc) && /立刻/.test(desc),
+    "调度提示词写明「@ 列表按开通状态联动：未开通置灰不可选、开通后立刻恢复」");
+  const block = mention.mentionBlockOf([{ kind: "team", name: "软件开发专家团" }]);
+  ok(/置灰不可选/.test(block) && /实时/.test(block),
+    "点名指令块同口径（③ 未开启不硬派 + ④ 列表置灰的解释话术）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

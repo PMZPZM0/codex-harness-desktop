@@ -156,6 +156,7 @@ import { ComposerComposerForm } from "./03-composer/02-composer-form";
 export function MainStageComposer({ app }: { app: HarnessAppApi }) {
   const {
 
+    activeDispatch,
     activeThreadRunning,
     activeTurnId,
     addContextItem,
@@ -464,18 +465,36 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                           派活发生在发送后由模型调 agent_invoke，这样许可/身份/深度三道闸仍然生效。 */}
                   {contextOpen && <div className="context-picker" role="listbox" aria-label="点名对象或引用上下文">
                     {(() => {
-                      const mention = filterMentionTargets(dispatchInfo?.targets ?? [], contextQuery);
+                      /* ★ 10-30 用户令：「列表需要按调度开通状态联动展示，未开通专家团时置灰不可选，
+                         开通后自动恢复为可选中」。allow 直接读 `activeDispatch`（顶层状态）⇒
+                         拨开关即重渲染，不需要重新拉目录，也不会有"要刷新才生效"。 */
+                      const mention = filterMentionTargets(dispatchInfo?.targets ?? [], contextQuery, activeDispatch);
                       const query = String(contextQuery ?? "").trim();
                       /* ⛔ 10-29 晚：「新建子智能体」只在**一条都没匹配到**时出现。
                          原来只要没命中子智能体就挂出来 —— 输入 "Claude" 明明匹配到 Claude Code，
                          下面还跟着「新建子智能体「Claude」并 @」，点错就凭空多一个角色。 */
                       const canCreate = Boolean(query) && mention.total === 0 && mention.groups.every((group) => group.kind !== "subagent");
                       return <>
-                        {mention.groups.map((group) => <div className="context-picker-group" key={group.kind}>
-                          <div className="context-picker-group-label">{group.label}<small>{group.hint}</small></div>
-                          {group.items.map((target) => <button type="button" role="option" key={`${target.kind}:${target.key}`} onMouseDown={(event) => event.preventDefault()} onClick={() => addDispatchMention(target as DispatchTargetEntry)}>
-                            <b>{group.label}</b><span>{target.name}{target.profession ? ` · ${target.profession}` : ""}</span>
-                          </button>)}
+                        {mention.groups.map((group) => <div className={`context-picker-group${group.off ? " is-off" : ""}`} key={group.kind}>
+                          <div className="context-picker-group-label">{group.label}
+                            <small>{group.off ? "未开通 · 在顶栏「调度」里打开后即可选" : group.hint}</small>
+                          </div>
+                          {group.items.map((target) => (
+                            /* ⛔ 未开通 = 原生 disabled（不可点、不在 tab 序里），只置灰**不隐藏**：
+                               用户要能看到"专家团在这里，只是没开"，而不是以为团队丢了。 */
+                            <button
+                              type="button"
+                              role="option"
+                              key={`${target.kind}:${target.key}`}
+                              aria-disabled={target.disabled ? true : undefined}
+                              disabled={Boolean(target.disabled)}
+                              title={target.disabled ? "该类别未开通调度：在顶栏「调度」里打开专家团后即可选中" : undefined}
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => { if (!target.disabled) addDispatchMention(target as DispatchTargetEntry); }}
+                            >
+                              <b>{group.label}</b><span>{target.name}{target.profession ? ` · ${target.profession}` : ""}</span>
+                            </button>
+                          ))}
                         </div>)}
                         <div className="context-picker-group-label">历史消息<small>输入 * 唤起</small></div>
                         {availableContextItems.length ? availableContextItems.map((item) => <button type="button" role="option" key={item.id} onMouseDown={(event) => event.preventDefault()} onClick={() => addContextItem(item)}><b>{item.role}</b><span>{item.text}</span></button>) : <p className="context-picker-empty">没有匹配的历史消息</p>}
