@@ -227,6 +227,31 @@ export class RemoteControlService {
     } catch { /* 写盘失败忽略 */ }
   }
 
+  /**
+   * 控制面凭据（accessToken）**必须跨重启持久化**。
+   *
+   * ⛔⛔ 10-30 用户实测「同一个手机每次重开都要重新配对」的根因：旧实现每次 start 都随机生成新 token，
+   *    手机上的 cookie 立刻全废；再叠加手机页 localStorage 键按 URL 前缀分桶（根地址 / /t/<id> 两套），
+   *    设备秘密经常读不到 ⇒ 只能重新输码 + 电脑端再点一次允许。
+   *    ⇒ token 与设备秘密同目录落盘（`remote-auth.json`，0600）；只有用户手动删文件/清数据才会换新。
+   *    ⛔ 不要把 token 塞进二维码/URL：能力式 URL 会随截图与日志外泄（09-13 已定的加固口径不变）。
+   */
+  private loadAccessToken(): string {
+    const file = this.storageFile ? path.join(path.dirname(this.storageFile), "remote-auth.json") : "";
+    if (file) {
+      try {
+        const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+        const token = String(raw?.token ?? "");
+        if (/^[a-f0-9]{32}$/.test(token)) return token;
+      } catch { /* 没有 / 损坏：重建 */ }
+    }
+    const token = crypto.randomBytes(16).toString("hex");
+    if (file) {
+      try { fs.writeFileSync(file, JSON.stringify({ version: 1, token }, null, 2), { mode: 0o600 }); } catch { /* 写不了就本次内存 */ }
+    }
+    return token;
+  }
+
   async start(port = this.resolvedPort()) {
     if (this.server) return this.port;
     // ★ 控制面凭据（09-13 审计 P0：此前 remote 全文件**没有任何鉴权代码**…）。
@@ -236,7 +261,7 @@ export class RemoteControlService {
     //     ② 电脑端审批（手机提交正确码后挂起，等用户在应用里点「允许」）。
     //   两关都过才种 HttpOnly cookie（accessToken + deviceId），之后手机页面的
     //   fetch 与 WebSocket 自动携带 —— **不需要改手机页面**。
-    this.accessToken = require("node:crypto").randomBytes(16).toString("hex");
+    this.accessToken = this.loadAccessToken();
     this.rotatePairingCode();
     this.port = port;
     this.server = http.createServer((req, res) => this.route(req, res));
@@ -1035,15 +1060,31 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 <script>
 /* 中转前缀（10-29）：经 /t/<设备ID> 访问时接口与跳转都要带前缀，否则一律 404。⛔ 必须声明在 KEY_DEVICE / KEY_SECRET 之前（TDZ：先使用后声明 = 整段脚本挂掉） */
 const API_BASE = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
-const KEY_DEVICE = "chm-pair-device" + API_BASE;
-const KEY_SECRET = "chm-pair-secret" + API_BASE;
-/* 10-29 用户令：「手动连接码肯定要保存啊」—— 手输过的码存下来，下次自动填好（仍需 5 分钟内有效） */
-const KEY_CODE = "chm-pair-code" + API_BASE;
-let deviceId = localStorage.getItem(KEY_DEVICE);
-if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); localStorage.setItem(KEY_DEVICE, deviceId); }
-let deviceSecret = localStorage.getItem(KEY_SECRET) || "";
+/* ⛔ 10-30：配对记忆按**主机**分桶（根地址与 /t/<id> 两套前缀会互相读不到 ⇒ 设备秘密丢失 = 每次重开都要重配对）。 */
+const STORAGE_HOST = location.host || "local";
+const legacyKey = (name) => name + API_BASE;
+const storeKey = (name) => name + "@" + STORAGE_HOST;
+function readStore(name) {
+  try {
+    const value = localStorage.getItem(storeKey(name));
+    if (value != null) return value;
+    const legacy = localStorage.getItem(legacyKey(name));
+    if (legacy != null) { localStorage.setItem(storeKey(name), legacy); return legacy; }
+  } catch (e) { /* 忽略 */ }
+  return null;
+}
+function writeStore(name, value) { try { localStorage.setItem(storeKey(name), value); } catch (e) { /* 忽略 */ } }
+const KEY_DEVICE = "chm-pair-device";
+const KEY_SECRET = "chm-pair-secret";
+const KEY_CODE = "chm-pair-code";
+const KEY_TRIES = "chm-autologin-tries@" + STORAGE_HOST;
+function autoTries() { try { return Number(sessionStorage.getItem(KEY_TRIES) || 0); } catch (e) { return 0; } }
+function setAutoTries(value) { try { sessionStorage.setItem(KEY_TRIES, String(value)); } catch (e) { /* 忽略 */ } }
+let deviceId = readStore(KEY_DEVICE);
+if (!deviceId) { deviceId = "dev-" + Math.random().toString(36).slice(2,10) + Date.now().toString(36); writeStore(KEY_DEVICE, deviceId); }
+let deviceSecret = readStore(KEY_SECRET) || "";
 let savedCode = "";
-try { savedCode = localStorage.getItem(KEY_CODE) || ""; } catch(e) { savedCode = ""; }
+try { savedCode = readStore(KEY_CODE) || ""; } catch(e) { savedCode = ""; }
 const ua = navigator.userAgent;
 const deviceName = ua.includes("iPhone") ? "iPhone" : ua.includes("Android") ? "Android 手机" : "手机";
 const el = document.getElementById("state");
@@ -1064,9 +1105,9 @@ async function submit(){
     const j = await r.json();
     if (!j.ok) { submitting = false; if (button) button.disabled = false; el.className = "err"; el.textContent = j.error || "配对失败"; return; }
     /* 码是对的：存下来，下次进配对页自动填（不必再记/再敲） */
-    try { localStorage.setItem(KEY_CODE, code); } catch(e) { /* 忽略 */ }
-    if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); }
-    if (j.approved) { el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
+    try { writeStore(KEY_CODE, code); } catch(e) { /* 忽略 */ }
+    if (j.deviceSecret) { deviceSecret = j.deviceSecret; writeStore(KEY_SECRET, deviceSecret); }
+    if (j.approved) { setAutoTries(0); el.className = "ok"; el.textContent = "已配对，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
     el.className = "wait"; el.textContent = "配对码正确，等待电脑端批准…";
     poll(j.rid);
   } catch(e) { submitting = false; if (typeof button !== "undefined" && button) button.disabled = false; el.className = "err"; el.textContent = "网络错误：" + e.message; }
@@ -1078,7 +1119,7 @@ async function poll(rid){
     try {
       const r = await fetch(API_BASE + "/api/pair-status?rid=" + rid);
       const j = await r.json();
-      if (j.status === "approved") { if (j.deviceSecret) { deviceSecret = j.deviceSecret; localStorage.setItem(KEY_SECRET, deviceSecret); } el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
+      if (j.status === "approved") { setAutoTries(0); if (j.deviceSecret) { deviceSecret = j.deviceSecret; writeStore(KEY_SECRET, deviceSecret); } el.className = "ok"; el.textContent = "已批准，正在进入…"; setTimeout(() => location.replace(API_BASE + "/r/mobile"), 600); return; }
       if (j.status === "denied") { resetSubmit(); el.className = "err"; el.textContent = "电脑端拒绝了这次连接"; return; }
       if (j.status === "expired") { resetSubmit(); el.className = "err"; el.textContent = "等待超时，请重新配对"; return; }
     } catch { /* 隧道偶尔超时，继续轮询 */ }
@@ -1090,11 +1131,19 @@ async function poll(rid){
 // 带着配对时拿到的设备秘密直接换新凭据，不再让人重新输码 + 电脑端再批一次。
 async function autoLogin(){
   if (!deviceSecret) return;
+  /* ⛔ 10-30 用户截图：自动登录成功后页面仍被拒时会无限「已登录→正在自动登录」循环。
+     熔断：同一会话最多试 3 次，之后把原因摆出来（别再让用户看着转圈）。 */
+  if (autoTries() >= 3) {
+    el.className = "err";
+    el.textContent = "自动登录没有生效：请确认电脑端「手机远控」已打开，或重新输入配对码。";
+    return;
+  }
+  setAutoTries(autoTries() + 1);
   el.className = "wait"; el.textContent = "正在自动登录…";
   try {
     const r = await fetch(API_BASE + "/api/pair", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ deviceId, deviceName, deviceSecret }) });
     const j = await r.json();
-    if (j.ok && j.approved) { el.className = "ok"; el.textContent = "已登录，正在进入…"; location.replace(API_BASE + "/r/mobile"); return; }
+    if (j.ok && j.approved) { setAutoTries(0); el.className = "ok"; el.textContent = "已登录，正在进入…"; location.replace(API_BASE + "/r/mobile"); return; }
   } catch { /* 网络不通就留在表单 */ }
   el.className = ""; el.textContent = "";
 }

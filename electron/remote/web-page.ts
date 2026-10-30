@@ -295,8 +295,28 @@ let rpcSeq = 0;
 const rpcWaiters = new Map();
 // 会话记忆 key 固定（不绑定随机 code）：同一地址下扫码进入都能恢复上次会话
 /* ⛔ 全部 localStorage 键都带 PATH_PREFIX：同一部手机连两台电脑时，线程/偏好/秘密互不覆盖 */
-const THREAD_KEY = "chm-thread" + PATH_PREFIX;
-let currentThreadId = localStorage.getItem(THREAD_KEY) || "";
+/* ⛔ 10-30：手机侧记忆（会话/设备 id/偏好/设备秘密）按**主机**分桶，不再按 URL 前缀。
+   旧实现用「/」与「/t/设备ID」两套前缀 ⇒ 同一部手机在不同入口读不到自己的状态，
+   设备秘密丢失 = 每次重开都要重新输码配对（用户实测「同一个手机反复配对」）。
+   ⛔ 旧键做一次性迁移（读到旧键就搬到新键），别让升级把老用户状态清空。 */
+const STORAGE_HOST = location.host || "local";
+const legacyKey = (name) => name + PATH_PREFIX;
+const storeKey = (name) => name + "@" + STORAGE_HOST;
+function readStore(name) {
+  try {
+    const value = localStorage.getItem(storeKey(name));
+    if (value != null) return value;
+    const legacy = localStorage.getItem(legacyKey(name));
+    if (legacy != null) { localStorage.setItem(storeKey(name), legacy); return legacy; }
+  } catch (error) { /* 隐私模式：忽略 */ }
+  return null;
+}
+function writeStore(name, value) { try { localStorage.setItem(storeKey(name), value); } catch (error) { /* 忽略 */ } }
+function dropStore(name) {
+  try { localStorage.removeItem(storeKey(name)); localStorage.removeItem(legacyKey(name)); } catch (error) { /* 忽略 */ }
+}
+const THREAD_KEY = "chm-thread";
+let currentThreadId = readStore(THREAD_KEY) || "";
 let streaming = "";
 // 当前回合的「运行步骤」容器（命令/文件/工具/思考）；回合结束收成可折叠块
 let stepBox = null;
@@ -322,10 +342,11 @@ let groupSeen = {};
 let turnRunning = false;
 const list = document.getElementById("msglist");
 // 设备身份：localStorage 固定生成，服务端用它记住「这台手机上次用的会话」
-let deviceId = localStorage.getItem("chm-device-id" + PATH_PREFIX);
+// ⛔ 键按主机分桶（见 readStore）：设备 id 换了 = 电脑端多一台陌生设备、还得重新审批
+let deviceId = readStore("chm-device-id");
 if (!deviceId) {
   deviceId = "dev-" + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
-  localStorage.setItem("chm-device-id" + PATH_PREFIX, deviceId);
+  writeStore("chm-device-id", deviceId);
 }
 function saveSession() {
   // 首页态没有会话可记：别用空 id 覆盖「上次会话」映射（否则下次进来永远回到首页也找不到上次）
@@ -437,7 +458,7 @@ async function loadThreads() {
     else if (t.kind === "bossMember") title.appendChild(makeEl("i", "thread-tag member", "中枢调度"));
     title.appendChild(document.createTextNode(threadTitle(t)));
     row.querySelector("small").textContent = new Date(t.updatedAt * 1000).toLocaleString();
-    row.onclick = () => { hideHome(); currentThreadId = t.id; localStorage.setItem(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
+    row.onclick = () => { hideHome(); currentThreadId = t.id; writeStore(THREAD_KEY, t.id); document.getElementById("threads").classList.remove("open"); loadMessages(); updateThreadLabel(threadTitle(t)); saveSession(); };
     el.appendChild(row);
   }
 }
@@ -478,7 +499,7 @@ async function loadMessages() {
     const message = String(error?.message ?? error ?? "未知错误");
     if (/not found|no such|unknown thread|不存在|未找到/i.test(message)) {
       currentThreadId = "";
-      localStorage.removeItem(THREAD_KEY);
+      dropStore(THREAD_KEY);
       await newThread();
       push("system", "原会话已不存在（可能被删除），已新建会话");
       return;
@@ -531,10 +552,10 @@ async function sendCmd() {
     if (!currentThreadId) {
       const r = await rpc({ type: "new-thread", boss: startAsBoss });
       currentThreadId = r.threadId;
-      localStorage.setItem(THREAD_KEY, currentThreadId);
+      writeStore(THREAD_KEY, currentThreadId);
       loadThreads();
     }
-    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: localStorage.getItem("chm-effort" + PATH_PREFIX) || "high" });
+    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: readStore("chm-effort") || "high" });
     updateThreadLabel((v || "图片").slice(0, 20));
     saveSession();
   } catch (error) {
@@ -597,14 +618,14 @@ function greetingHome() {
 }
 function readHomePrefs() {
   try {
-    homeMode = localStorage.getItem("chm-home" + PATH_PREFIX) === "hub" ? "hub" : "normal";
-    groupSeen = JSON.parse(localStorage.getItem("chm-group-seen" + PATH_PREFIX) || "{}") || {};
+    homeMode = readStore("chm-home") === "hub" ? "hub" : "normal";
+    groupSeen = JSON.parse(readStore("chm-group-seen") || "{}") || {};
   } catch (error) { homeMode = "normal"; groupSeen = {}; }
 }
 function markGroupSeen(groupId) {
   if (!groupId) return;
   groupSeen[String(groupId)] = Date.now();
-  try { localStorage.setItem("chm-group-seen" + PATH_PREFIX, JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
+  try { writeStore("chm-group-seen", JSON.stringify(groupSeen)); } catch (error) { /* 忽略 */ }
 }
 function groupHasNews(group) {
   const seen = Number(groupSeen[String(group && group.id || "")] || 0);
@@ -621,7 +642,7 @@ function openHome() { homeVisible = true; showHome(); }
 function showHome() {
   homeVisible = true;
   currentThreadId = "";
-  try { localStorage.removeItem(THREAD_KEY); } catch (error) { /* 忽略 */ }
+  try { dropStore(THREAD_KEY); } catch (error) { /* 忽略 */ }
   document.getElementById("home").hidden = false;
   document.getElementById("msglist").hidden = true;
   document.getElementById("goalbar").hidden = true;
@@ -643,7 +664,7 @@ function hideHome() {
 }
 function switchHome(tab) {
   homeMode = tab === "hub" ? "hub" : "normal";
-  try { localStorage.setItem("chm-home" + PATH_PREFIX, homeMode); } catch (error) { /* 忽略 */ }
+  try { writeStore("chm-home", homeMode); } catch (error) { /* 忽略 */ }
   showHome();
 }
 function avatarTone(seed) {
@@ -813,7 +834,7 @@ function openGroupThread(group) {
   clearGroupNewsUI(group.id);
   hideHome();
   currentThreadId = threadId;
-  try { localStorage.setItem(THREAD_KEY, threadId); } catch (error) { /* 忽略 */ }
+  try { writeStore(THREAD_KEY, threadId); } catch (error) { /* 忽略 */ }
   document.getElementById("threads").classList.remove("open");
   void loadMessages();
   updateThreadLabel(group.name || "中枢会话");
@@ -873,7 +894,7 @@ async function startSession(boss) {
     const result = await rpc({ type: "new-thread", boss: Boolean(boss) });
     hideHome();
     currentThreadId = result.threadId;
-    try { localStorage.setItem(THREAD_KEY, currentThreadId); } catch (error) { /* 忽略 */ }
+    try { writeStore(THREAD_KEY, currentThreadId); } catch (error) { /* 忽略 */ }
     document.getElementById("threads").classList.remove("open");
     list.innerHTML = "";
     stepBox = null;
@@ -1143,13 +1164,13 @@ function openCommands() {
     effHead.style.fontWeight = "600";
     effHead.textContent = "思考强度（对后面的消息生效）";
     node.appendChild(effHead);
-    const currentEffort = localStorage.getItem("chm-effort" + PATH_PREFIX) || "high";
+    const currentEffort = readStore("chm-effort") || "high";
     const efforts = [["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "极高"]];
     for (const pair of efforts) {
       const row = document.createElement("div");
       row.className = "cmd-row";
       row.textContent = pair[1] + (pair[0] === currentEffort ? " ✓" : "");
-      row.onclick = () => { localStorage.setItem("chm-effort" + PATH_PREFIX, pair[0]); openCommands(); };
+      row.onclick = () => { writeStore("chm-effort", pair[0]); openCommands(); };
       node.appendChild(row);
     }
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
@@ -1165,7 +1186,7 @@ async function runCommand(id) {
     if (id === "new") {
       const r = await rpc({ type: "new-thread" });
       currentThreadId = r.threadId;
-      localStorage.setItem(THREAD_KEY, currentThreadId);
+      writeStore(THREAD_KEY, currentThreadId);
       list.innerHTML = "";
       stepBox = null;
       currentOutputEl = null;
@@ -1185,8 +1206,8 @@ async function runCommand(id) {
       const r = await rpc({ type: "list-threads" });
       const first = (r.threads || [])[0];
       loadThreads();
-      if (first) { currentThreadId = first.id; localStorage.setItem(THREAD_KEY, first.id); await loadMessages(); }
-      else { currentThreadId = ""; localStorage.removeItem(THREAD_KEY); await newThread(); }
+      if (first) { currentThreadId = first.id; writeStore(THREAD_KEY, first.id); await loadMessages(); }
+      else { currentThreadId = ""; dropStore(THREAD_KEY); await newThread(); }
       return;
     }
     if (id === "goal") {
@@ -1437,6 +1458,8 @@ pollLoop();
    以前这里会自动恢复上次会话、没有会话就连带新建一条（留一堆空会话）；
    现在首页负责落地，点会话或发第一条消息时才进入会话。 */
 readHomePrefs();
+/* 进到对话页 = 登录已生效：清掉配对页的自动登录尝试计数，避免下一次误判"循环" */
+try { sessionStorage.removeItem("chm-autologin-tries@" + STORAGE_HOST); } catch (error) { /* 忽略 */ }
 showHome();
 </script>`;
     return pageHtml.replace("/*__MOBILE_MARKDOWN__*/", MOBILE_MARKDOWN_SOURCE);

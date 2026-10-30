@@ -1716,11 +1716,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("lastPong") && gwSrc.includes("REQ_TIMEOUT_MS = 20_000") ? ok : fail)(
       "【139e】网关有心跳与更短超时：隧道半死时手机不会干等 35s（返回前先判死并踢连接）"
     );
-    ((function(){ const a=relaySrc.indexOf("const API_BASE = (function(){"); const k=relaySrc.indexOf('const KEY_DEVICE = "chm-pair-device" + API_BASE'); return a>=0 && k>a; })() ? ok : fail)(
-      "【139e】配对页 API_BASE 必须在 KEY_DEVICE 之前声明（TDZ：先使用后声明 = 整段脚本挂掉、按钮点了没反应）"
+    ((function(){ const a=relaySrc.indexOf("const API_BASE = (function(){"); const k=relaySrc.indexOf("const STORAGE_HOST = location.host"); return a>=0 && k>a; })() ? ok : fail)(
+      "【139e】配对页 API_BASE 必须先于存储键作用域声明（TDZ：先使用后声明 = 整段脚本挂掉、按钮点了没反应）"
     );
-    (tunnelPage.includes('THREAD_KEY = "chm-thread" + PATH_PREFIX') && relaySrc.includes('KEY_SECRET = "chm-pair-secret" + API_BASE') ? ok : fail)(
-      "【139e】localStorage 键按中转前缀隔离：同一部手机连两台电脑时，线程/偏好/设备秘密不互相覆盖"
+    (tunnelPage.includes("const STORAGE_HOST = location.host") && relaySrc.includes("const STORAGE_HOST = location.host") && relaySrc.includes("const legacyKey = (name) => name + API_BASE") ? ok : fail)(
+      "【139e】手机记忆按主机分桶：同一部手机连两台电脑不互相覆盖，同一台电脑根地址与 /t 入口共享设备秘密（⛔ 旧的前缀分桶 = 每次重开都要重配对）"
     );
     (relaySrc.includes("const API_BASE = (function(){ const p = location.pathname") && !relaySrc.includes('fetch("/api/pair' ) ? ok : fail)(
       "【139e】配对页也必须走 API_BASE（中转路径下 /api/pair 绝对路径 = 配对永远失败）"
@@ -1741,8 +1741,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       } catch (error) { pageSyntaxOk = false; console.log("      页面脚本解析失败：", error.message); }
       (pageSyntaxOk ? ok : fail)("【139e】手机页脚本必须能解析（括号/声明顺序错误会让整页 JS 静默挂掉）");
     }
-    (relaySrc.includes("#code=") && relaySrc.includes("KEY_CODE = \"chm-pair-code\" + API_BASE") ? ok : fail)(
-      "【139e】二维码带连接码（扫完自动配对）+ 手输电码保存下来下次自动填"
+    (relaySrc.includes("#code=") && relaySrc.includes("writeStore(KEY_CODE, code)") ? ok : fail)(
+      "【139e】二维码带连接码（扫完自动配对）+ 手输电码按主机保存、下次自动填"
     );
     {
       let stripOk = false;
@@ -1842,6 +1842,17 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        ⇒ 跳 /t/<id>/r/mobile 仍判未授权 ⇒ 回配对页 ⇒ 再自动登录。 */
     (gwSrc.includes("const desktopCookies = out.headers?.[\"set-cookie\"]") && gwSrc.includes("jsonReply(res, 200, parsed, { \"set-cookie\": jar })") ? ok : fail)(
       "【139e】根地址配对必须把电脑端的登录 cookie 一起下发（⛔ 丢 cookie = 手机在配对页死循环）"
+    );
+    /* 10-30 用户：「同一个手机还要反复配对，连接状态持久化都没有」——两条根因各钉一条。
+       ① accessToken 每次启动随机生成 ⇒ 手机 cookie 全废；② 手机 localStorage 键按 URL 前缀分桶
+       ⇒ 根地址 / /t/<id> 两套互读不到，设备秘密丢失 = 每次重开都要重新输码。 */
+    (relaySrc.includes("loadAccessToken(") && relaySrc.includes("remote-auth.json") && !/this\.accessToken = (?:require\("node:crypto"\)\.)?randomBytes\(16\)/.test(relaySrc) ? ok : fail)(
+      "【139e】远控 accessToken 必须跨重启持久化（⛔ 每次启动随机生成 = 手机每次都要重新配对）"
+    );
+    (tunnelPage.includes("const STORAGE_HOST = location.host") && tunnelPage.includes("function readStore(")
+      && tunnelPage.includes("function dropStore(") && relaySrc.includes("const KEY_TRIES")
+      && relaySrc.includes("if (autoTries() >= 3)") ? ok : fail)(
+      "【139e】手机侧记忆按主机分桶 + 自动登录熔断（⛔ 前缀分桶 = 设备秘密丢失；⛔ 无熔断 = 配对页死循环）"
     );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
