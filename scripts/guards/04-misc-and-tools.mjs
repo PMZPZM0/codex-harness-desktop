@@ -1837,6 +1837,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && codeOnly(mainSrc).includes("brandIcon: remoteBrandIcon") ? ok : fail)(
       "【139e】手机首页图标 = 本仓自己的应用图标（brandIcon 从 main 贯通到页面；⛔ 不用写死的 ✦）"
     );
+    /* 10-30 用户截图：PPcode 手机输完配对码在「已登录，正在进入… / 正在自动登录…」之间死循环。
+       根因：网关**根地址配对**只回自己的 chm_dev，把电脑端的 harness_remote / harness_device 丢了
+       ⇒ 跳 /t/<id>/r/mobile 仍判未授权 ⇒ 回配对页 ⇒ 再自动登录。 */
+    (gwSrc.includes("const desktopCookies = out.headers?.[\"set-cookie\"]") && gwSrc.includes("jsonReply(res, 200, parsed, { \"set-cookie\": jar })") ? ok : fail)(
+      "【139e】根地址配对必须把电脑端的登录 cookie 一起下发（⛔ 丢 cookie = 手机在配对页死循环）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );

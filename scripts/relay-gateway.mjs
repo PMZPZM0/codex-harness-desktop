@@ -350,9 +350,15 @@ async function handleRootPair(req, res) {
       last = parsed;
       if (parsed.ok) {
         rememberPairRoute(String(parsed.rid ?? ""), id);
-        jsonReply(res, 200, parsed, {
-          "set-cookie": [`chm_dev=${id}; Path=/; HttpOnly; SameSite=Lax`],
-        });
+        /* ⛔⛔ 10-30 用户实测「输完配对码一直 已登录→自动登录→已登录 循环」：根地址配对把电脑端
+           下发的登录 cookie（harness_remote / harness_device）**丢了**，只回了网关自己的 chm_dev
+           ⇒ 跳到 /t/<id>/r/mobile 时电脑端仍判未授权 ⇒ 又回配对页，死循环。
+           ⛔ 这里必须原样带上电脑端的 Set-Cookie（Path 保持 `/`：根地址与 /t 前缀都要生效）。
+           ⛔ 不要套用 /t 分支的「Path 加前缀」改写：那会把 cookie 限死在 /t/<id>，根地址 /r/mobile 收不到。 */
+        const desktopCookies = out.headers?.["set-cookie"];
+        const jar = [`chm_dev=${id}; Path=/; HttpOnly; SameSite=Lax`]
+          .concat(desktopCookies ? (Array.isArray(desktopCookies) ? desktopCookies : [desktopCookies]) : []);
+        jsonReply(res, 200, parsed, { "set-cookie": jar });
         return;
       }
       /* ok=false（配对码不对 / 已过期）继续问下一台；全都不认再把这句原样回给手机 */
