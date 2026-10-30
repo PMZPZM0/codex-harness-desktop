@@ -63,12 +63,12 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                           </span>
                         </>
                       )}
-                      {skillsManageOnly && (
-                        <button type="button" className={`secondary-setting skill-action-sm ${poolOpen ? "active-manage" : ""}`} onClick={() => setPoolOpen((v) => !v)} title="按项目生效：选择该项目里哪些全局技能可用">
-                          <FolderKanban size={13} />共享技能池
-                        </button>
-                      )}
                       <div className="skill-actions-line">
+                        {skillsManageOnly && (
+                          <button type="button" className={`secondary-setting skill-action-sm ${poolOpen ? "active-manage" : ""}`} onClick={() => setPoolOpen((v) => !v)} title="按项目生效：选择该项目里哪些全局技能可用">
+                            <FolderKanban size={13} />共享技能池
+                          </button>
+                        )}
                         <button className={`${skillsManageOnly ? "active-manage" : "secondary-setting"} skill-action-sm`} onClick={() => setSkillsManageOnly(!skillsManageOnly)}><LayoutGrid size={13} />{skillsManageOnly ? "返回市场浏览" : `我的技能 ${installedTotalCount}`}</button>
                         <button className="secondary-setting skill-action-sm" onClick={() => void importSkill()}><Paperclip size={13} />导入技能</button>
                         <button className="icon-button skill-action-sm" title="刷新技能市场" onClick={() => void refreshWithReceipt(setNotice, "刷新技能市场", () => { setMarketPage(1); return refreshMarketSkills(skillHubCategory, skillHubSearch, 1); })}>{marketLoading ? <Spinner /> : <RefreshCw size={13} />}</button>
@@ -154,7 +154,6 @@ export function SkillsCenterSection(props: SkillsCenterSectionProps) {
                             真正的检查/更新在主进程后台跑（skills-ipc 的 runSkillAutoUpdate），与本页是否打开无关；
                             手动逐项更新入口 = 卡片上的「重新安装」（同一条市场安装链）。 */}
                         <SkillPoolSection projects={props.projects} onNotice={setNotice} open={poolOpen} onOpenChange={setPoolOpen} hideTrigger />
-                        <div className="skill-installed-summary skill-installed-overview">共 {installedTotalCount} 项 · 内置 {builtinSkills.length} · 市场 {localSkills.filter((entry: any) => entry.source === "cocoloop" || entry.source === "skillhub").length} · 本地 {localSkills.filter((entry: any) => entry.source !== "cocoloop" && entry.source !== "skillhub").length} · 停用 {localSkills.filter((entry: any) => entry.enabled === false).length}</div>
                         {shownBuiltin.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-builtin" />Codex 内置技能<small>由 Codex app-server 自带，不支持停用</small></header><div className="skill-card-grid compact">{shownBuiltin.map((skill: any) => renderCard({ name: skill.name, description: skill.description ?? "由 Codex 引擎内置提供", path: skill.path }, "builtin"))}</div></section>}
                         {marketInstalled.length > 0 && <section className="skill-installed-group"><header><span className="skill-group-dot tag-market" />市场安装<small>从 SkillHub / CocoLoop 市场一键安装到 Codex 技能目录</small></header><div className="skill-card-grid compact">{marketInstalled.map((skill) => renderCard(skill, "market"))}</div></section>}
                         {localInstalled.length > 0 && <section className="skill-installed-group">
