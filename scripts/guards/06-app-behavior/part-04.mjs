@@ -35,8 +35,10 @@ export async function run() {
   const fmSrc180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "FunctionMenu.tsx"), "utf8"));
   const fmStore180 = codeOnly(readFileSync(join(ROOT, "src", "features", "function-menu", "store.ts"), "utf8"));
   const fmDefault180 = normalizeFunctionMenu(null);
-  /* ⛔ 10-26：拓展功能（技能/插件/MCP）独立成侧栏常驻行 ⇒ 从功能入口菜单的默认顺序里移出。 */
-  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>team>identity>login>newbie"
+  /* ⛔ 10-26：拓展功能（技能/插件/MCP）独立成侧栏常驻行 ⇒ 从功能入口菜单的默认顺序里移出。
+     ⛔ 10-30 用户令（efc59177c）：默认再加「开发工具 / 收藏夹」两项（位置在「团队」之后），
+       名单随之变长 —— 断言必须同步，否则「加了入口」这件事没有任何判据。 */
+  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>team>devtools>favorites>identity>login>newbie"
     && fmDefault180.location === "bottom" && fmDefault180.overflow.length === 0
     ? ok : fail)(
     "【180】功能入口默认顺序 + 默认位置 = 侧栏底部（安装默认，可折叠），数据模型单一真相源"
