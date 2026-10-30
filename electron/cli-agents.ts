@@ -24,6 +24,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
+import { augmentedPath } from "./toolchain";
+
+/**
+ * 子进程用的 PATH。
+ *
+ * ⛔⛔ mac 适配（10-30 审计）：GUI 进程的 PATH 是**精简的**（darwin 上通常只有
+ *   `/usr/bin:/bin:/usr/sbin:/sbin`，没有 `/opt/homebrew/bin`、`~/.npm-global/bin`、nvm 的 bin）。
+ *   而 CLI 智能体几乎都装在那些目录里 ⇒ 直接继承 `process.env.PATH` 的话：
+ *     · `which claude` 找不到 ⇒ 面板整列显示「未检测到」（装得好好的）；
+ *     · `sh -c "claude -p …"` 报 command not found ⇒ 派活必失败。
+ *   症状极隐蔽（不报错，只是"没装"），所以**检测与执行必须用同一条增强 PATH**。
+ *   `augmentedPath()` 已带 mac 的 homebrew / 随包 node/bin / npm-global，Windows 侧也兼容。
+ */
+export function cliProcessEnv(): NodeJS.ProcessEnv {
+  try { return { ...process.env, PATH: augmentedPath() }; } catch { return process.env; }
+}
 
 /** 分类（顺序即界面顺序）。⛔ 渲染层不复制这份字面量 —— 经 `cliagents:list` 一起下发。 */
 export const CLI_CATEGORIES = [
@@ -42,6 +58,13 @@ export type CliAgentDef = {
   bin: string;
   /** 官方安装命令；核实不到的留空串（界面会改成「按官方文档安装」） */
   installCmd: string;
+  /**
+   * mac 专用安装命令（可空）。
+   * ⛔ 只在「同一条命令在 mac 上确实跑不通」时才写：例如 pip 系（mac 上多数环境只有
+   *   pip3 / python3 -m pip，裸 `pip` 常是 command not found）。读取时按平台替换成
+   *   installCmd，界面与复制按钮都拿不到这条 —— 用户不需要知道有两份。
+   */
+  installCmdMac: string;
   /** 官方文档 / 仓库地址（可空） */
   docs: string;
   /** 一句话用途（面板副标题 + @ 候选说明） */
@@ -72,6 +95,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     category: "coding",
     bin: "claude",
     installCmd: "npm install -g @anthropic-ai/claude-code",
+    installCmdMac: "",
     docs: "https://docs.anthropic.com/en/docs/claude-code",
     description: "Anthropic 官方编码 CLI：读仓库、改代码、跑测试、按任务收口",
     promptHint: "先 `claude -p \"<任务>\"` 跑非交互单轮；需要多轮改代码时用 `claude -p --permission-mode acceptEdits`。",
@@ -85,6 +109,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     category: "coding",
     bin: "codex",
     installCmd: "npm install -g @openai/codex",
+    installCmdMac: "",
     docs: "https://github.com/openai/codex",
     description: "OpenAI 官方编码 CLI：本应用引擎同源，适合在终端里跑一轮独立任务",
     promptHint: "用 `codex exec \"<任务>\"` 跑一次性任务（非交互）；需要只读分析时加 `--sandbox read-only`。",
@@ -98,6 +123,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     category: "coding",
     bin: "gemini",
     installCmd: "npm install -g @google/gemini-cli",
+    installCmdMac: "",
     docs: "https://github.com/google-gemini/gemini-cli",
     description: "Google 官方 CLI：长上下文读大仓库、批量分析",
     promptHint: "非交互用 `gemini -p \"<任务>\"`；需要指定目录时在 cwd 里跑。",
@@ -111,6 +137,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     category: "coding",
     bin: "aider",
     installCmd: "pip install aider-chat",
+    installCmdMac: "python3 -m pip install aider-chat",
     docs: "https://aider.chat",
     description: "开源的结对编程 CLI：按文件粒度改代码并自动提交",
     promptHint: "用 `aider --message \"<任务>\" --yes <文件…>` 跑一轮；它默认会 git commit，注意先确认分支。",
@@ -124,6 +151,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     category: "agent",
     bin: "openclaw",
     installCmd: "npm install -g openclaw",
+    installCmdMac: "",
     docs: "https://openclaw.ai/install",
     description: "开源个人智能体 CLI：自带网关与多渠道接入，能干跨应用的事",
     promptHint: "先 `openclaw --help` 看清子命令；Windows 官方建议在 WSL2 里跑，装不上就如实回报。",
@@ -137,6 +165,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     category: "custom",
     bin: "harness",
     installCmd: "",
+    installCmdMac: "",
     docs: "",
     description: "自建 / 内部分发的命令行入口 —— 安装方式按你自己的分发，这里填可执行名即可",
     promptHint: "先 `<bin> --help` 摸清用法再动手；取不到帮助就如实回报「没有可用入口」，不要假装跑过。",
@@ -167,6 +196,7 @@ export function normalizeCliAgent(input: unknown, opts?: { builtin?: boolean; cr
     category,
     bin: normalizeCliBin(src.bin ?? name),
     installCmd: String(src.installCmd ?? "").trim(),
+    installCmdMac: String(src.installCmdMac ?? "").trim(),
     docs: String(src.docs ?? "").trim(),
     description: String(src.description ?? "").trim().slice(0, 160),
     promptHint: String(src.promptHint ?? "").trim().slice(0, 400),
@@ -188,7 +218,10 @@ export function mergeCliAgents(builtin: CliAgentDef[], saved: unknown): CliAgent
   for (const preset of builtin) {
     const override = byId.get(preset.id);
     byId.delete(preset.id);
-    out.push(override ? { ...preset, ...override, builtin: true, id: preset.id } : { ...preset });
+    /* ⛔ 先把预置按平台换成「本机该跑的那条命令」，再盖上用户改动 ——
+       顺序反过来会让用户在面板里改过的安装命令被 mac 变体盖回去。 */
+    const base = withPlatformCmd(preset);
+    out.push(override ? { ...base, ...override, builtin: true, id: preset.id } : { ...base });
   }
   for (const extra of byId.values()) out.push({ ...extra, builtin: false });
   return out;
@@ -222,7 +255,7 @@ async function writeDoc(items: CliAgentDef[]): Promise<void> {
       const preset = presets.get(entry.id);
       if (!preset) return entry;
       const diff: Record<string, unknown> = { id: entry.id };
-      for (const key of ["name", "category", "bin", "installCmd", "docs", "description", "promptHint", "enabled"] as const) {
+      for (const key of ["name", "category", "bin", "installCmd", "installCmdMac", "docs", "description", "promptHint", "enabled"] as const) {
         if (entry[key] !== preset[key]) diff[key] = entry[key];
       }
       return diff;
@@ -235,6 +268,21 @@ async function writeDoc(items: CliAgentDef[]): Promise<void> {
 export async function readCliAgents(): Promise<CliAgentDef[]> {
   const doc = await readDoc();
   return mergeCliAgents(BUILTIN_CLI_AGENTS, doc.items);
+}
+
+/**
+ * 单条预置的安装命令按平台替换（10-30 mac 指令适配）。
+ *
+ * 只有「同一条命令在 mac 上确实跑不通」的条目才带 `installCmdMac`（目前是 pip 系的 Aider：
+ * mac 上多数环境只有 `pip3` / `python3 -m pip`，裸 `pip` 常报 command not found）。
+ * ⛔ 替换发生在**合并预置时**（用户改动随后覆盖），所以：
+ *   · 渲染层 / 复制按钮 / 派活提示拿到的永远是「本机该跑的那一条」，界面不需要分支；
+ *   · 用户在面板里改过安装命令 ⇒ 他的值仍然生效（不会被我这条 mac 变体盖回去）。
+ */
+function withPlatformCmd(preset: CliAgentDef): CliAgentDef {
+  return process.platform === "darwin" && preset.installCmdMac
+    ? { ...preset, installCmd: preset.installCmdMac }
+    : preset;
 }
 
 /** 只有**启用**的才进调度目录（关掉的不出现在 @ 候选与工具描述里）。 */
@@ -291,7 +339,9 @@ export type CliDetectResult = { installed: boolean; path: string; version: strin
 function locateBinary(bin: string): Promise<string> {
   const cmd = process.platform === "win32" ? "where" : "which";
   return new Promise((resolve) => {
-    execFile(cmd, [bin], { timeout: 4000, windowsHide: true }, (error, stdout) => {
+    /* ⛔ env 必须走 cliProcessEnv()：⚠️ GUI 进程 PATH 里没有 /opt/homebrew/bin 等目录，
+       不增强的话 mac 上「装了也永远显示未检测到」（见 cliProcessEnv 的说明）。 */
+    execFile(cmd, [bin], { timeout: 4000, windowsHide: true, env: cliProcessEnv() }, (error, stdout) => {
       if (error) return resolve("");
       const first = String(stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
       resolve(first);
@@ -313,7 +363,8 @@ export async function binOnPath(bin: string): Promise<boolean> {
 /** 尽力取版本号（取不到就空串 —— 装没装由 PATH 决定，不靠版本号判断）。 */
 function probeVersion(file: string): Promise<string> {
   return new Promise((resolve) => {
-    execFile(file, ["--version"], { timeout: 5000, windowsHide: true }, (error, stdout, stderr) => {
+    /* ⛔ 同理走 cliEnv()：CLI 自己是 node/python 脚本，子进程要能再找到 node/python。 */
+    execFile(file, ["--version"], { timeout: 5000, windowsHide: true, env: cliProcessEnv() }, (error, stdout, stderr) => {
       const text = String(stdout ?? "") || String(stderr ?? "");
       const hit = /v?\d+\.\d+(?:\.\d+)?(?:[-+][\w.]+)?/.exec(text);
       // ⛔ 超时/非零退出也可能已经打印了版本号 ⇒ 不看 error，只看输出里有没有版本串

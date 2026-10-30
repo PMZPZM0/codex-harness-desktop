@@ -44,6 +44,18 @@ ok(/function fallbackPromptFor\(/.test(rt) && /fallbackSteps|FALLBACK_STEPS/.tes
   "主进程里有每工具一段的「首选做法」表（单工具缺条目会走通用的一键脚本文案，不会留空）");
 ok(/fallbackTargetDir\(/.test(rt) && /fallbackExpectLine\(/.test(rt),
   "「装到哪」与「装完怎么验证」各有独立函数（不许退化成一个 marker 拼接）");
+
+/* ── 10-30 mac 指令适配：这份提示词是**复制给 Codex 照着装**的 ──────────────
+   原文案按 Windows 写（MinGit / win-x64 zip / {exe} / slproweb），mac 上照做只会反复失败。
+   必须：① 有 darwin 覆盖表；② 走 fallbackStepsOf 取（darwin 优先）；③ 覆盖到那几条会跑偏的工具。 */
+ok(/const DARWIN_FALLBACK_STEPS/.test(rt) && /fallbackStepsOf\(id\)/.test(rt),
+  "「首选做法」有 mac 覆盖表，并按平台取（⛔ 只写 FALLBACK_STEPS = mac 上让模型去下 Windows 包）");
+ok(["git", "pwsh", "ffmpeg", "conda", "openssl"].every((id) => new RegExp(`\\b${id}:`).test(rt.slice(rt.indexOf("DARWIN_FALLBACK_STEPS"), rt.indexOf("function fallbackStepsOf")))),
+  "darwin 覆盖表含 git / pwsh / ffmpeg / conda / openssl（这五条在 mac 上的说法与原表完全相反）");
+ok(/xcode-select --install/.test(rt) && /osx-arm64/.test(rt) && /MacOSX/.test(rt),
+  "darwin 文案给的是 mac 真实做法（xcode-select / osx tar.gz / MacOSX 安装器）");
+ok(!/darwin[\s\S]{0,600}?win-x64/.test(rt.slice(rt.indexOf("DARWIN_FALLBACK_STEPS"), rt.indexOf("function fallbackStepsOf"))),
+  "darwin 覆盖表里不许再出现 win-x64（复制给用户就是一条必然失败的指令）");
 // ⛔ pip 包的 marker 是占位 ⇒ 期望路径必须走 pythonSiteDir，不能拼 toolsRoot()/marker
 ok(/if \(PIP_PACKAGE_DIRS\[id\]\)/.test(rt.slice(rt.indexOf("function fallbackExpectLine"), rt.indexOf("function fallbackPromptFor")))
   && /pythonSiteDir\(/.test(rt.slice(rt.indexOf("function fallbackExpectLine"), rt.indexOf("function fallbackPromptFor"))),
