@@ -59,6 +59,40 @@ type MonitorFile = { threadId: string; turns: MonitorTurn[] };
 /** 每个会话最多留 40 轮（用户：产物最多展示 30~40 个） */
 const MAX_TURNS = 40;
 const FILE_NAME = (threadId: string) => `${threadId.replace(/[^\w.-]+/g, "_").slice(0, 80)}.json`;
+
+/* ── 自我改进建议 = **一个固定文件**（10-30 用户令：「指定一个文件，让他写里面，新的覆盖旧的，
+      自我建议内容自动同步展示就行」）─────────────────────────────────────────────
+   ⛔ 为什么要有实体文件（而不是只存在 json 里）：
+     · Codex 自己也能往里写（采纳事件里把路径给它），写完面板自动读出来 —— 不需要任何"回传通道"；
+     · 一份纯文本，用户随时能用编辑器打开、改、备份；
+     · **新的覆盖旧的**：每次生成/采纳/手改都整份重写（原子写），不追加、不留历史版本。
+   ⛔ 按会话分开（不同会话的建议互不覆盖），文件名与 json 同源规则。 */
+export const suggestionFileOf = (threadId: string): string =>
+  path.join(dirOf(), `${threadId.replace(/[^\w.-]+/g, "_").slice(0, 80)}.evolve.md`);
+
+/** 整份重写（临时文件 + rename：强杀时不会留半截文件）。 */
+async function writeSuggestionFile(threadId: string, text: string): Promise<void> {
+  const file = suggestionFileOf(threadId);
+  try {
+    await fs.mkdir(dirOf(), { recursive: true });
+    const tmp = `${file}.tmp`;
+    await fs.writeFile(tmp, String(text ?? "").trimEnd() + "\n", "utf8");
+    await fs.rename(tmp, file);
+  } catch (error: any) {
+    log("建议文件写入失败", threadId.slice(0, 8), error?.message ?? error);
+  }
+}
+
+/** 读建议文件（不存在就当没有）。返回 mtime 供面板判断"变没变"。 */
+async function readSuggestionFile(threadId: string): Promise<{ text: string; at: number }> {
+  try {
+    const file = suggestionFileOf(threadId);
+    const [text, stat] = await Promise.all([fs.readFile(file, "utf8"), fs.stat(file)]);
+    return { text: String(text ?? "").trim(), at: stat.mtimeMs };
+  } catch {
+    return { text: "", at: 0 };
+  }
+}
 const dirOf = () => path.join(app.getPath("userData"), "task-monitor");
 
 const store = new Map<string, MonitorTurn[]>();
@@ -276,6 +310,8 @@ async function generateSuggestion(threadId: string, turnId: string, reply = "") 
     target.suggestion = clean;
     target.suggestionState = clean ? "ready" : "failed";
     if (!clean) target.suggestionError = "模型没有返回内容";
+    /* ⛔ 同时**整份重写**建议文件（新的覆盖旧的）：面板读的是这份文件，Codex 也写这份文件。 */
+    if (clean) await writeSuggestionFile(threadId, clean);
   } catch (error: any) {
     target.suggestionState = "failed";
     target.suggestionError = String(error?.message ?? error).slice(0, 200);
@@ -332,7 +368,7 @@ async function deliverHostEvent(threadId: string, text: string): Promise<boolean
  * ⛔ 要求它**沉淀**而不是复述：用户的目的（原话）是「codex 就开始自我学习进步，反思自己的不足，
  *   逐渐提升自己能力，减少犯错」—— 只说"好的我记住了"等于什么都没发生，必须落到记忆 / 技能 / AGENTS。
  */
-function adoptEventText(suggestion: string): string {
+function adoptEventText(suggestion: string, filePath: string): string {
   const body = String(suggestion ?? "").trim().slice(0, 2000);
   return [
     `${GROUP_EVENT_TAG}【自我进化 · 采纳建议】`,
@@ -346,6 +382,11 @@ function adoptEventText(suggestion: string): string {
     "   属于某个技能的写进那个技能的 SKILL.md（⛔ 别写进一次性对话里）；",
     "③ 之后的同类任务**先按它做**，并在收尾时自检有没有守住；",
     "④ 只回一句：已沉淀到哪里 + 这条经验的一句话摘要。",
+    "",
+    /* ⛔ 用户 10-30：「指定一个文件，让他写里面，新的覆盖旧的」—— 把**绝对路径**给它，
+       写完面板自动读出来（面板读的就是这份文件，不需要额外回传通道）。 */
+    "另外，把这次沉淀后的**自我改进建议**整份写进这个文件（新的覆盖旧的，⛔ 不要追加）：",
+    filePath,
   ].join("\n");
 }
 
@@ -358,12 +399,23 @@ export const taskMonitorFeature = defineFeature<null>({
     ipcHost.handle("monitor:read", async (_event: unknown, threadId?: string) => {
       const id = String(threadId ?? "").trim();
       /* ⛔ 按会话独立：没有 threadId 就给空表，绝不"猜一个最近的"。 */
-      if (!id) return { threadId: "", turns: [] as MonitorTurn[], ongoingTurnId: "" };
+      if (!id) return { threadId: "", turns: [] as MonitorTurn[], ongoingTurnId: "", suggestion: "", suggestionAt: 0, suggestionPath: "" };
       const settled = await load(id);
       /* 进行中那一轮也要给出去（用户：「完全没有跟当前会话联动」）—— 已结算的不重复追加。 */
       const ongoing = liveTurnOf(id);
       const turns = ongoing && !settled.some((t) => t.turnId === ongoing.turnId) ? [...settled, ongoing] : settled;
-      return { threadId: id, turns, ongoingTurnId: ongoing?.turnId ?? "" };
+      /* 建议的**唯一展示来源 = 建议文件**（Codex 往里写、面板读出来；手改也写这份）。
+         文件还没建（老会话）时退回最近一轮记录里的那份，避免升级后一片空白。 */
+      const file = await readSuggestionFile(id);
+      const fallback = [...settled].reverse().find((t) => String(t.suggestion ?? "").trim());
+      return {
+        threadId: id,
+        turns,
+        ongoingTurnId: ongoing?.turnId ?? "",
+        suggestion: file.text || String(fallback?.suggestion ?? ""),
+        suggestionAt: file.at,
+        suggestionPath: suggestionFileOf(id),
+      };
     });
 
     ipcHost.handle("monitor:save-suggestion", async (_event: unknown, input?: { threadId?: string; turnId?: string; text?: string }) => {
@@ -377,6 +429,8 @@ export const taskMonitorFeature = defineFeature<null>({
       target.suggestionState = target.suggestion ? "ready" : "idle";
       target.suggestionError = undefined;
       await persist(id, turns);
+      /* ⛔ 同一个真相源：面板里改完也整份重写建议文件（新的覆盖旧的）。 */
+      await writeSuggestionFile(id, target.suggestion);
       return { ok: true };
     });
 
@@ -410,7 +464,8 @@ export const taskMonitorFeature = defineFeature<null>({
       target.adoptedAt = Date.now();
       store.set(id, turns);
       await persist(id, turns);
-      const delivered = await deliverHostEvent(id, adoptEventText(text));
+      await writeSuggestionFile(id, text);
+      const delivered = await deliverHostEvent(id, adoptEventText(text, suggestionFileOf(id)));
       return { ok: true, delivered, error: delivered ? undefined : "建议已保存，但事件没送进会话（可能会话正在重启）" };
     });
   },
