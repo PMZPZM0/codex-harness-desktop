@@ -107,6 +107,10 @@ export interface Bag {
   enhanceBusy: boolean;
   setEnhanceBusy: React.Dispatch<React.SetStateAction<boolean>>;
   enhanceBackupRef: React.RefObject<string | null>;
+  /** 本次增强**写回输入框的那段文本**（10-31）：用来区分「模型刚写回」与「用户又手改了」。
+   *  ⛔ 没有它，备份失效判定会把「增强结果 ≠ 原文」当成「用户发散」⇒ 增强完成瞬间就清掉原文备份，
+   *    按钮永远回不到「可还原」态（实测：增强后图标仍是 ✨，第二下点是再增强，原文再也拿不回）。 */
+  enhanceResultRef: React.RefObject<string>;
   enhanceRunIdRef: React.RefObject<number>;
   hasEnhanceBackup: boolean;
   setHasEnhanceBackup: React.Dispatch<React.SetStateAction<boolean>>;

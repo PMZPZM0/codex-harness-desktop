@@ -38,6 +38,7 @@ export function usePart07c(bag: Bag) {
     if (!bag.enhanceBusy && bag.hasEnhanceBackup && bag.enhanceBackupRef.current != null) {
       bag.setPrompt(bag.enhanceBackupRef.current);
       bag.enhanceBackupRef.current = null;
+      bag.enhanceResultRef.current = "";   // 已还原：这轮的「增强结果标记」作废
       bag.setHasEnhanceBackup(false);
       bag.setNotice("已还原为你原来的输入");
       return;
@@ -62,7 +63,11 @@ export function usePart07c(bag: Bag) {
         // 保留占位符位置：文本段被替换，占位符原样保留（split 后只替换 text 段）
         const segments = splitPromptSegments(current);
         const enhanced = splitPromptSegments(result.text ?? "").filter((seg) => seg.kind === "text").map((seg) => (seg as any).text).join("\n");
-        return segments.map((seg) => seg.kind === "text" ? (seg.text.trim() ? enhanced : "") : imageToken((seg as any).path)).filter(Boolean).join(" ");
+        const next = segments.map((seg) => seg.kind === "text" ? (seg.text.trim() ? enhanced : "") : imageToken((seg as any).path)).filter(Boolean).join(" ");
+        /* ⛔ 记住「这次写回输入框的原文」—— 备份失效判定据此放行这一拍（见下面那个 effect）。
+           updater 可能被 React 调用两次（StrictMode），写同值 ⇒ 幂等，无副作用。 */
+        bag.enhanceResultRef.current = next;
+        return next;
       });
       bag.setNotice("提示词已增强，再次点击可还原原文");
     } catch (error: any) {
@@ -84,6 +89,11 @@ bag.cancelPromptEnhance = cancelPromptEnhance as typeof bag.cancelPromptEnhance;
 
   // 用户修改文本后备份失效（WorkBuddy：内容发散即清 backup，防止误还原覆盖用户输入）
   useEffect(() => {
+    /* ⛔ 10-31 实测修复：`prompt === 刚写回的增强结果` 是**模型干的**，不是用户发散 —— 必须放行。
+       原先只判「当前文本是否包含原文前 60 字」，而增强结果几乎不会逐字保留原话（系统提示只要求
+       保留**意图**）⇒ 增强成功那一拍就把备份清掉：按钮停在 ✨、「可还原」态永远到不了，
+       第二下点变成再增强，用户的原文再也拿不回来。 */
+    if (bag.hasEnhanceBackup && bag.prompt === bag.enhanceResultRef.current) return;
     if (bag.hasEnhanceBackup && bag.prompt !== bag.enhanceBackupRef.current && !bag.promptIncludesBackup(bag.prompt, bag.enhanceBackupRef.current ?? "")) {
       bag.enhanceBackupRef.current = null;
       bag.setHasEnhanceBackup(false);
