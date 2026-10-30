@@ -225,6 +225,18 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "卡片默认打开右栏，另有编辑器 / 默认应用（对应 Qoder 的 workspace / newWindow / system）");
   ok(/data-testid="turn-output-card"/.test(outputCards) && /createPortal/.test(outputCards),
     "卡片带稳定 testid；打开方式 / 更多操作菜单 portal 到 body（不被回合容器裁剪）");
+  /* 10-30 用户令：「右键也要能预览 / 打开 / 编辑」。⛔ 判据要钉三件事，缺一条都等于只有左键能用：
+     ① 卡片挂了 onContextMenu（且 preventDefault —— 否则弹出浏览器/系统的原生菜单，把我们的盖掉）；
+     ② 右键菜单项 = 预览 / 编辑器 / 默认应用 三种打开方式，**外加** ⋯ 里那两项（同一份动作不另造语义）；
+     ③ 开关沿用组件内既有 menu 状态（⛔ 别为右键再造一个 state + 第二套 portal，两处易漂移）。 */
+  ok(/onContextMenu=\{\(event\) => openContextMenu\(event, file\.path\)\}/.test(outputCards)
+    && /const openContextMenu = [\s\S]{0,400}?event\.preventDefault\(\);/.test(outputCards),
+    "本轮产物卡挂右键菜单，并 preventDefault 掉系统原生菜单");
+  ok(/预览（右侧栏）/.test(outputCards) && /在编辑器打开/.test(outputCards) && /用默认应用打开/.test(outputCards)
+    && (/复制路径/.test(outputCards) && /在文件夹中显示/.test(outputCards)),
+    "右键菜单含 预览 / 编辑 / 打开 三种方式 + ⋯ 的复制路径与在文件夹中显示");
+  ok(/kind: "mode" \| "more" \| "context"/.test(outputCards) && (outputCards.match(/setMenu\(/g) || []).length >= 4,
+    "右键复用组件内既有的 menu 状态（⛔ 不另造第二套菜单/portal）");
   ok(rightFile.includes("openRightFile") && rightFile.includes("subscribeRightFile") && appView.includes("<RightFileBridge"),
     "文件卡 → 右栏走事件箱 + AppView 桥（⛔ 不给整条组件链加 props）");
   ok(bridge.includes('setRightTab("tree")') && bridge.includes("setRightOpen(true)") && bridge.includes("setPanelWidth(420)"),
