@@ -188,10 +188,20 @@ export async function runDelegatedTask(input: {
      与启动自愈（delegate-registry.reconcileRunning）配套：这里也必须降级而不是抛出。
      buildDelegateMemory 内部已对两次记忆读取做了 catch，这是最后一道（同步路径）。
      记忆只是增强，读不到不该让整次委派失败。 */
+  /* ⛔⛔ 10-30 用户令「跟主会话一样，自动生成对应的独立 ID」：
+     `threadId` 就是这条被委派会话的**记忆独立 id**（`thread/start` 在上面已经建好了会话）。
+     读私有层用它、写（`memory_write`）也用引擎下发的同一个 ⇒ 读写同源、跨轮累积。
+     ⛔ 漏传的后果不是"少一点上下文"，而是：它会去读**发起方**的私有记忆（`teams-ipc` 那条
+        连 private 层都没有），自己写下的那份永远读不回来。
+     `teamId` 同理 —— 团主 / 团成员不给团 id，团内记忆那一层永远是 null（等于没这功能）。
+     ⚠️ 本段注释刻意放在语句**外面**：守卫【136】用「400 字符内紧跟 .catch(」判降级，
+        内联长注释会把窗口撑破（假红），别把说明挪回去。 */
   const delegateMemory = await buildDelegateMemory({
     workspace: input.cwd,
     query: String(input.query ?? ""),
     originThreadId: origin,
+    threadId: String(started?.thread?.id ?? ""),
+    teamId: roleRef?.kind === "team-lead" ? roleRef.id : undefined,
     // 10-05 统一记忆：注入「项目共享段 + 本会话段 + 上一版角色记忆兼容段」，
     // 与主会话**同一个 buildContext**（分两处拼装会出现"派出去的专家拿不到自己刚写的"）。
     role: roleRef ?? undefined,

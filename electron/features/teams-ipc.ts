@@ -197,7 +197,16 @@ export const teamsFeature = defineFeature<null>({
       /* 10-05 角色私有记忆：这个成员自己的记忆（⛔ 与其他成员、与主理人互不可见）。
          kind 用 team-member —— 成员的角色归属是「团 + 成员」两段，主理人是另一条（team-lead）。 */
       const memberRole = { kind: "team-member" as const, id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` };
-      const memberMemory = await buildDelegateMemory({ workspace: input.cwd, query: firstTask, role: memberRole });
+      const memberMemory = await buildDelegateMemory({
+        workspace: input.cwd,
+        query: firstTask,
+        role: memberRole,
+        /* ⛔⛔ 10-30：这两行是它记忆的「独立 id」与「团内归属」。
+           漏传 threadId ⇒ private 层为空（这个成员根本没有私有记忆）；
+           漏传 teamId ⇒ 团内记忆这一层永远是 null（死功能）。 */
+        threadId: String(started.thread.id),
+        teamId: team.teamId,
+      });
       await noteRoleThread(app.getPath("userData"), String(started.thread.id), memberRole, String(input.cwd ?? "")).catch(() => undefined);
       const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${firstTask}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}${memberMemory.text}`;
       const turn: any = await server.request("turn/start", {

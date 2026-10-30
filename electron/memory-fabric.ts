@@ -470,8 +470,13 @@ export async function getMemoryHandles(input: {
 
   /* ⛔⛔ private 层的归属：**委派实例用它自己的会话 id**（不是发起方的）——
      派出去的专家写的是"它自己在这条线上看到的"，与主会话的私有记忆是两份。
-     读取端另由 `dispatch` 标记决定**能不能读主会话那一层**（见 buildContext）。 */
-  const privateOwner = sessionId;
+     ⛔⛔ 10-30：上面那句「读取端另由 dispatch 决定能不能读主会话那一层」此前是**空头承诺** ——
+     `dispatch` 只声明了类型、`buildContext` 根本没有这个入参，全文件除注释外没人读过它。
+     现在落实为**硬闸**：被调度实例的私有归属若恰好等于发起方会话 id（= 调用方又把 origin 传进来了），
+     直接不给 private 层 —— 宁可它这一轮没有私有记忆，也绝不许它读写主会话那一层。
+     （正常路径下三个调用点传的都是自己的 threadId，这道闸不会触发；它是防回归的。） */
+  const dispatchOrigin = String(input?.dispatch?.originThreadId ?? "").trim();
+  const privateOwner = sessionId && sessionId !== dispatchOrigin ? sessionId : "";
   /* team 层：团 id 归一（⛔ 没有团 id 就没有 team 层，不给"空团"开后门）。 */
   const teamId = String(input?.teamId ?? input?.dispatch?.teamId ?? "").trim();
 

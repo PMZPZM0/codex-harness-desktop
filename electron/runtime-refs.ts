@@ -11,6 +11,7 @@
  * ⛔ 本文件**不得** import "./main"（会成环，且整场收敛失效）。
  */
 import { app, BrowserWindow, nativeTheme } from "electron";
+import { threadCwd } from "./thread-cwd";
 import { appendFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import QRCode from "qrcode";
@@ -58,7 +59,9 @@ export {
 export const internalThreads = new Set<string>();
 export const engineActiveTurnIds = new Map<string, string>();
 /** turnId → threadId（09-19：重启闸门记账） */
-export const threadCwd = new Map<string, string>();
+/* ⛔ 10-30：threadCwd 本体搬到叶子模块 `thread-cwd.ts`（codex-server 要在 thread/start 钩子里写它，
+   而本文件 import codex-server ⇒ 直接放在这里会成环）。习惯的 import 点不用改，这里原样再导出。 */
+export { threadCwd };
 /** 弹窗窗口 → 会话 id 的同步登记表（创建时立即写入，不依赖 URL 加载完成）。 */
 export const popoutThreadIds = new Map<BrowserWindow, string>();
 export const terminals = new Map<string, TerminalService>();
