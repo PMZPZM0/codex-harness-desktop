@@ -705,6 +705,17 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
     (/tailScore\(/.test(locator) && /bestTail/.test(locator) ? ok : fail)(
       "file-locate 用尾段证据打分（多个同名文件时选目录结构对得上的那个，⛔ 不靠「第一个命中」）"
     );
+    /* ⛔ 缓存/并发键必须带**尾段**：只按文件名键时，先查一个目录的命中会被拿去回答另一个目录的
+       同名文件 —— 等于把「按名字随便挑」偷偷放回来（审查时抓到的真问题）。 */
+    (/const key = \`\$\{base\}\|\$\{tail\.join/.test(locator) && /cache\.get\(key\)/.test(locator)
+      ? ok : fail)("file-locate 的缓存/并发键含尾段（⛔ 只按文件名键会张冠李戴）");
+  }
+  {
+    /* 右栏解析改异步后必须防乱序：后发先至会让右栏显示上一个文件。 */
+    const rightFile = codeOnly(readFileSync(join(ROOT, "src", "lib", "right-file.mjs"), "utf8"));
+    (/seq \+= 1/.test(rightFile) && /mine === seq/.test(rightFile) ? ok : fail)(
+      "right-file 打开请求带序号并丢弃过期结果（异步解析后发先至不会串台）"
+    );
   }
   // shell:reveal / updates:reveal 同口径收敛
   // ⛔ 10-03：与下面 updates:reveal 同口径 —— 域改成插件形态后注册写的是 ipcHost.handle，

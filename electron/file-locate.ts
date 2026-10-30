@@ -163,14 +163,20 @@ export async function locateFile(requested: string, options: { timeBudgetMs?: nu
      用户点的那张卡正好是 `.bak-20261029`）。扫描时反正只认 isFile，放宽没有副作用。 */
   if (!base || base.startsWith(".") || !/\.[A-Za-z0-9][A-Za-z0-9._-]{0,23}$/.test(base)) return "";
 
-  const cached = cache.get(base);
+  const tail = segmentsOf(abs);
+  /* ⛔⛔ 缓存键必须是**整条尾段**，不能只用文件名：结果依赖尾段打分（同名多个文件时挑目录结构
+     对得上的那个）⇒ 只按文件名缓存时，先查 `D:\a\src\x.mjs` 命中的路径会被拿去回答
+     `D:\b\lib\x.mjs`，等于把「按名字随便挑一个」这个我们要避免的行为偷偷放回来。
+     实测过：`command-display.mjs` 在仓里有多份（src/lib / 其它），只按文件名缓存会张冠李戴。 */
+  const key = `${base}|${tail.join("/")}`;
+
+  const cached = cache.get(key);
   if (cached && Date.now() - cached.at < (cached.hit ? HIT_TTL_MS : MISS_TTL_MS)) return cached.hit;
 
-  const running = inflight.get(base);
+  const running = inflight.get(key);
   if (running) return running;
 
   const task = (async () => {
-    const tail = segmentsOf(abs);
     const state: ScanState = { best: "", bestScore: -1, bestTail: 0 };
     const deadline = Date.now() + (options.timeBudgetMs ?? BUDGET_MS);
     for (const root of buildRoots(abs)) {
@@ -180,10 +186,12 @@ export async function locateFile(requested: string, options: { timeBudgetMs?: nu
       if (state.bestTail >= tail.length) break; // 完美尾段匹配：够准了，别再花钱
     }
     const hit = state.best || "";
-    cache.set(base, { at: Date.now(), hit });
+    /* 缓存有上限：键按路径分化后条目会随会话增长，无上限 = 长跑后内存缓慢泄漏。 */
+    if (cache.size >= 400) cache.delete(cache.keys().next().value as string);
+    cache.set(key, { at: Date.now(), hit });
     return hit;
-  })().finally(() => inflight.delete(base));
+  })().finally(() => inflight.delete(key));
 
-  inflight.set(base, task);
+  inflight.set(key, task);
   return task;
 }
