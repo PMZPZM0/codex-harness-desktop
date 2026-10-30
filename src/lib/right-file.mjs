@@ -25,14 +25,18 @@ function emit(path) {
   }
 }
 
+/** 解析改为异步（可能扫盘）后，**后发先至**会让右栏显示上一个文件 ⇒ 按请求序号丢弃过期结果。 */
+let seq = 0;
+
 /** 请求在右侧栏预览一个文件（相对路径按会话工作区解析，路径不存在时按文件名找回）。 */
 export function openRightFile(path) {
   const value = String(path || "").trim();
   if (!value) return;
+  const mine = (seq += 1);
   if (!resolver) { emit(value); return; }
   void Promise.resolve(resolver(value))
-    .then((resolved) => emit(String(resolved || value)))
-    .catch(() => emit(value));
+    .then((resolved) => { if (mine === seq) emit(String(resolved || value)); })
+    .catch(() => { if (mine === seq) emit(value); });
 }
 
 /** 最近一次请求（右栏刚挂载时用它恢复选中项）。 */
