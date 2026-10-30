@@ -13,7 +13,7 @@ import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from
 import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { reasoningItemText } from "./reasoning-text";
-import { harnessProviderConfig } from "./provider-id";
+import { harnessProviderConfig } from "./thread-provider";
 import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
 import { Scheduler } from "./scheduler";
