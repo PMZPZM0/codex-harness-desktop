@@ -1709,3 +1709,8 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .laya-progress small { color: var(--muted); font-size: 10.5px; font-variant-numeric: tabular-nums; }
 
 
+
+/* 10-30：飞书 CLI 卡片补「卸载」（两步确认）。与技能包的删除按钮同口径：平时中性灰，确认态变红。 */
+.feishu-cli-uninstall { color: var(--muted); }
+.feishu-cli-uninstall:hover { color: var(--danger, #c0392b); }
+.feishu-cli-uninstall.confirming { color: var(--danger, #c0392b); border-color: color-mix(in srgb, var(--danger, #c0392b) 45%, var(--line)); }

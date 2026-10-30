@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, CalendarDays, Check, Copy, Download, ExternalLink, FileText, FolderOpen,
-  ListTodo, LogIn, LogOut, Mail, MessageSquare, RefreshCw, Table2, Video,
+  ListTodo, LogIn, LogOut, Mail, MessageSquare, RefreshCw, Table2, Trash2, Video,
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
@@ -52,13 +52,18 @@ type Status = {
   error: string;
 };
 
-export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling }: {
-  setNotice: (text: string) => void;
+export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling }: {
+  setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;
   runtimeInstalling?: Record<string, boolean> | null;
+  uninstallDevRuntime?: (id: string) => unknown;
+  runtimeUninstalling?: Record<string, boolean> | null;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState<"" | "setup" | "reconfig" | "login" | "logout">("");
+  /* 10-30 用户：「提供卸载按键」——CLI 装在这里，卸载也放这里。两步确认，不用原生弹窗。 */
+  const [confirmUninstall, setConfirmUninstall] = useState(false);
+  const uninstalling = Boolean(runtimeUninstalling?.["feishu-cli"]);
   const [link, setLink] = useState("");
   const [error, setError] = useState("");
   const releaseRef = useRef<number>(0);
@@ -92,6 +97,20 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
       return null;
     }
   }, []);
+
+  /** 卸载 CLI：走开发工具同一条 runtime:uninstall（删 npm-global 包体 + 记账）。
+   *  ⛔ 不删 `~/.lark-cli`（官方 CLI 自己的凭据目录）——用户重装后不用重新登录；
+   *    要清凭据请用「退出登录」或手动删该目录。 */
+  const uninstallCli = async () => {
+    try {
+      setNotice?.("正在卸载飞书 CLI…");
+      await Promise.resolve(uninstallDevRuntime?.("feishu-cli"));
+      setNotice?.("飞书 CLI 已卸载", "登录凭据仍保留在本机（~/.lark-cli）；需要时可重新安装");
+      await refresh();
+    } catch (err) {
+      setNotice?.("卸载失败", String((err as { message?: unknown })?.message ?? err));
+    }
+  };
 
   /* 兜底：浏览器那一步可能被用户放弃（或用户在另一台设备完成）。10 分钟后自动解除「等待中」，
      让按钮可以再点一次；状态仍以主进程为准。 */
@@ -174,10 +193,29 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling 
           <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
           <span className="runtime-copy">
             <strong>安装 CLI</strong>
-            <small>{status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}` : "约 51 MB，走国内 npm 镜像；装完卸载 / 更新在「控制台 → 组件更新」"}</small>
+            <small>{status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会删除本机已登录的飞书凭据` : "约 51 MB，走国内 npm 镜像；装好后可在这里卸载"}</small>
           </span>
           <div className="runtime-actions">
-            {status?.installed ? <span className="runtime-badge installed">已安装</span>
+            {status?.installed ? <>
+                <span className="runtime-badge installed">已安装</span>
+                <button
+                  type="button"
+                  className={`runtime-install feishu-cli-uninstall ${confirmUninstall ? "confirming" : ""}`}
+                  disabled={uninstalling}
+                  title="卸载 CLI（不动本机已登录的飞书凭据 ~/.lark-cli；需要时再装回来即可）"
+                  onClick={() => {
+                    if (!confirmUninstall) {
+                      setConfirmUninstall(true);
+                      window.setTimeout(() => setConfirmUninstall(false), 4000);
+                      return;
+                    }
+                    setConfirmUninstall(false);
+                    void uninstallCli();
+                  }}
+                >
+                  {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />{confirmUninstall ? "确认卸载" : "卸载"}</>}
+                </button>
+              </>
               : <button type="button" className="primary-setting runtime-install" disabled={installing} onClick={() => installDevRuntime?.("feishu-cli")}>
                   {installing ? <><Spinner /> 安装中</> : <><Download size={14} />安装</>}
                 </button>}
