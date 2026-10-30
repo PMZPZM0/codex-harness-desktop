@@ -1861,6 +1861,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && relaySrc.includes("if (autoTries() >= 3)") ? ok : fail)(
       "【139e】手机侧记忆按主机分桶 + 自动登录熔断（⛔ 前缀分桶 = 设备秘密丢失；⛔ 无熔断 = 配对页死循环）"
     );
+    /* 10-31 用户：「同一个手机都识别不出来，一个手机可以反复连接，旧的配对自动清掉」
+       ⇒ 手机上报稳定指纹（UA/语言/时区/分辨率）；审批通过时清掉**同指纹**的旧记录。 */
+    (relaySrc.includes("const DEVICE_FP") && relaySrc.includes("fingerprint: DEVICE_FP")
+      && relaySrc.includes("info.fingerprint === req.fingerprint") ? ok : fail)(
+      "【139e】同一台手机重新配对后自动清掉旧记录（稳定指纹；历史无指纹的只清同名且 24h 未连的）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );
