@@ -7,6 +7,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { reasoningItemText } from "./reasoning-text";
 
 export type BotStreamSettings = { enabled: boolean; thinking: boolean; tools: boolean };
 export const BOT_STREAM_DEFAULTS: BotStreamSettings = { enabled: true, thinking: true, tools: true };
@@ -158,7 +159,7 @@ export class BotStreamSession {
         const item = p.item ?? {};
         // 思考只发 summary 快照、没有 delta 的模型：完成时补发摘要
         if (item.type === "reasoning" && this.settings.thinking && item.id && !this.reasoningSeen.has(String(item.id))) {
-          const summary = (item.summary ?? []).map((s: any) => s?.text ?? "").join("\n").trim();
+          const summary = reasoningItemText(item);
           if (summary) { this.openThinking(); this.compose(summary); this.closeThinking(); }
         }
         if (item.type === "commandExecution" && this.inCommand) {

@@ -12,6 +12,7 @@ import { ChannelBotService, type ChannelBotConfig } from "./channel-bot";
 import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from "./data-dir";
 import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
+import { reasoningItemText } from "./reasoning-text";
 import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
 import { Scheduler } from "./scheduler";
@@ -504,10 +505,8 @@ const remote = new RemoteControlService({
         }
         else if (item.type === "reasoning") {
           // 历史里的思考：与实时同一口径（摘要优先，退回正文），手机端折叠展示
-          const think = [
-            ...(item.summary ?? []).map((part: any) => String(part?.text ?? "")),
-            ...(item.content ?? []).map((part: any) => String(part?.text ?? "")),
-          ].join("").trim();
+          // ⛔ 形状交给 reasoningItemText：resume 回读是字符串数组，只读 part.text 会整段丢
+          const think = reasoningItemText(item);
           if (think) messages.push({ role: "think", text: think });
         }
         else if (item.type === "agentMessage" && item.text?.trim()) messages.push({ role: "assistant", text: item.text });

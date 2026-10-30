@@ -1096,8 +1096,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/kind: "think"/.test(bootSrc) && /summaryTextDelta/.test(bootSrc) && /event\.kind === "think"/.test(pageSrc) && /think-text/.test(pageSrc) ? ok : fail)(
     "【139b】思考内容：reasoning 摘要流转发到手机页实时展开（只报一行「思考」标签不算数）"
   );
-  (/remoteThinkStreamed/.test(bootSrc) && /item\?\.type === "reasoning"/.test(bootSrc) && /summary \?\? \[\]/.test(bootSrc) ? ok : fail)(
-    "【139b】思考内容兜底：中转供应商不流式时，用 item/completed 的完整摘要补发（流式过的不重复）"
+  (/remoteThinkStreamed/.test(bootSrc) && /item\?\.type === "reasoning"/.test(bootSrc) && /reasoningItemText\(p\?\.item\)/.test(bootSrc) ? ok : fail)(
+    "【139b】思考内容兜底：中转供应商不流式时，用 item/completed 的完整摘要补发（流式过的不重复；文本形状统一走 reasoningItemText）"
   );
   (/kind: "output"/.test(bootSrc) && /outputDelta/.test(bootSrc) && /event\.kind === "output"/.test(pageSrc) && /step-out/.test(pageSrc) ? ok : fail)(
     "【139b】命令输出同步：outputDelta 转发并挂在对应命令步骤下（桌面的命令卡有结果，手机不能只有一行命令）"
@@ -1785,6 +1785,30 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     );
     /* 10-30 用户要求：加一个断开连接功能 —— 连接后右上角「断开」，清凭据回连接页。 */
 
+    {
+      /* 10-30 用户实测：「ppcode 手机 App 能看到思考，codex harness 手机 App 看不到」。
+         根因：`thread/resume` 回读的 reasoning.summary 是**字符串数组**，流式 item 是对象数组；
+         代码只读 part.text ⇒ 历史思考恒为空。这里真跑编译产物，两种形状都必须取到文本。 */
+      let shapeOk = false;
+      let wiringOk = false;
+      try {
+        const mod = await import(pathToFileURL(join(ROOT, "dist-electron", "reasoning-text.js")).href);
+        const fn = mod.reasoningItemText ?? mod.default?.reasoningItemText;
+        shapeOk = typeof fn === "function"
+          && fn({ summary: [{ type: "summary_text", text: "增量摘要" }], content: [] }) === "增量摘要"
+          && fn({ summary: ["回读摘要"], content: [] }) === "回读摘要"
+          && fn({ summary: [], content: [{ type: "reasoning_text", text: "正文兜底" }] }) === "正文兜底"
+          && fn({ summary: [""] }) === "";
+        const bootSrc = readFileSync(join(ROOT, "electron/features/boot.ts"), "utf8");
+        const botSrc = readFileSync(join(ROOT, "electron/bot-stream.ts"), "utf8");
+        wiringOk = codeOnly(mainSrc).includes("reasoningItemText(")
+          && bootSrc.includes("reasoningItemText(")
+          && botSrc.includes("reasoningItemText(")
+          && !/map\(\(part: any\) => String\(part\?\.text \?\? ""\)\)/.test(codeOnly(mainSrc));
+      } catch (error) { console.log("      reasoning-text 产物解析失败：", error.message); }
+      (shapeOk ? ok : fail)("【139e】思考文本两种形状都要取到（流式对象数组 / resume 回读字符串数组）");
+      (wiringOk ? ok : fail)("【139e】手机历史 + 实时兜底 + 机器人转发统一走 reasoningItemText（⛔ 不许各写一份只认 part.text）");
+    }
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );
