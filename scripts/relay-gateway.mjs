@@ -36,9 +36,13 @@ const MAX_INFLIGHT = 32;
 const MAX_PER_MINUTE = 900;
 /* 安装包公开下载（不要求已配对）：老版本 App 的「安装包」入口坏了，也能用手机浏览器更新 */
 const APK_URL = process.env.RELAY_APK_URL
-  || "https://github.com/PMZPZM0/codex-harness-desktop/releases/download/mobile-remote-v0.1.9/CodexRemote-0.1.9.apk";
+  || "https://github.com/PMZPZM0/codex-harness-desktop/releases/download/mobile-remote-v0.1.11/CodexRemote-0.1.11.apk";
 /* 安装包**由网关自己缓存后再发**：国内手机直连 GitHub Release 经常超时（实测 302 过去就挂），
    ⛔ 不要退回「302 到 GitHub」——那等于把可用性交给墙。镜像顺序与 gh-mirror.ts 同源。 */
+/* 对外路径前缀（10-30）：经 nginx 的 /remote/ 反代进来时，重定向与 Cookie Path 都要带回去，
+   否则手机会被送到 /t/... 根路径（nginx 404）。直连 18443 时保持空串。 */
+const PATH_PREFIX = String(process.env.RELAY_PATH_PREFIX || "").replace(/\/+$/, "");
+
 const APK_DIR = process.env.RELAY_APK_DIR || "/var/lib/relay/apk";
 let apkFetching = null;
 function apkCandidates() {
@@ -311,13 +315,13 @@ async function handleTunnelRequest(id, restPath, req, res) {
       if (isHopByHop(name)) continue;
       let next = Array.isArray(value) ? value.join(", ") : String(value);
       /* 跳转 Location 与 Cookie 都要带上 /t/<id> 前缀：否则手机跳出中转前缀、或两台电脑的 cookie 互相覆盖 */
-      if (/^location$/i.test(name) && next.startsWith("/")) next = `/t/${id}${next}`;
+      if (/^location$/i.test(name) && next.startsWith("/")) next = `${PATH_PREFIX}/t/${id}${next}`;
       outHeaders[name] = next;
     }
     const cookies = replyFrame.headers?.["set-cookie"];
     if (cookies) {
       const list = Array.isArray(cookies) ? cookies : [cookies];
-      outHeaders["set-cookie"] = list.map((line) => String(line).replace(/;\s*Path=\/(?=;|$)/i, `; Path=/t/${id}`));
+      outHeaders["set-cookie"] = list.map((line) => String(line).replace(/;\s*Path=\/(?=;|$)/i, `; Path=${PATH_PREFIX}/t/${id}`));
     }
     res.writeHead(Number(replyFrame.status) || 200, outHeaders);
     res.end(replyFrame.body ? Buffer.from(replyFrame.body, "base64") : Buffer.alloc(0));
@@ -404,7 +408,7 @@ const server = http.createServer((req, res) => {
   if (req.method === "GET" && url.startsWith("/r/")) {
     const deviceId = cookieValue(req, "chm_dev") || cookieValue(req, "harness_device");
     if (DEVICE_RE.test(deviceId) && tunnels.has(deviceId)) {
-      res.writeHead(302, { Location: `/t/${deviceId}${url}`, "cache-control": "no-store" });
+      res.writeHead(302, { Location: `${PATH_PREFIX}/t/${deviceId}${url}`, "cache-control": "no-store" });
       res.end();
       return;
     }

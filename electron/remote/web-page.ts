@@ -68,10 +68,15 @@ async function doBind(){
 *{box-sizing:border-box}
 :root{--accent:#2f6bdd;--accent-soft:#eaf1fd;--line:#e8e8e4;--muted:#8a8a84;--ink:#23231f;--bg:#f7f7f5}
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);margin:0;color:var(--ink);display:flex;flex-direction:column;height:100vh;height:100dvh}
-header{padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;flex:0 0 auto}
-header h1{font-size:15px;font-weight:600;margin:0;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-header .status{font-size:11px;color:#1a7f37;background:#e7f3ea;border-radius:999px;padding:3px 9px;white-space:nowrap}
-header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:999px}
+header{position:relative;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;flex:0 0 auto}
+header h1{position:absolute;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:8px;max-width:62%;margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.brand-logo{width:24px;height:24px;flex:none;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:13px;color:#fff;background:linear-gradient(135deg,var(--accent),#6aa8ff)}
+.menu-btn{flex:none;width:34px;height:34px;padding:0;margin:0;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:16px;line-height:1}
+.thread-label{margin-left:auto;max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:#8a8a84}
+header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;background:#1a7f37;padding:0;font-size:0;overflow:hidden}
+#top-menu{position:absolute;top:52px;left:12px;z-index:40;min-width:168px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.14)}
+#top-menu[hidden]{display:none}
+#top-menu button{display:block;width:100%;margin:0;padding:11px 12px;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:13px;text-align:left}
 #threads{position:fixed;inset:0;background:#fff;z-index:20;display:none;flex-direction:column}
 #threads.open{display:flex}
 #threads .list{flex:1;overflow:auto;padding:4px 0 20px}
@@ -214,11 +219,15 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 .home-manage-enter{margin:12px 16px;display:block;width:calc(100% - 32px);padding:11px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600}
 </style>
 <header>
-  <button id="btn-home" onclick="openHome()" title="回到首页">首页</button>
-  <button id="btn-threads" onclick="toggleThreads()">会话</button>
-  <h1 id="title">Codex 对话</h1>
-  <span id="thread-label" style="font-size:11px;color:#8a8a84;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px"></span>
-  <span class="status" id="status">连接中…</span>
+  <button id="btn-menu" class="menu-btn" aria-label="菜单" onclick="toggleTopMenu()">☰</button>
+  <h1 id="title"><span class="brand-logo">✦</span><span id="title-text">Codex Harness</span></h1>
+  <span id="thread-label" class="thread-label"></span>
+  <span class="status" id="status" title="连接中…">连接中…</span>
+  <div id="top-menu" hidden>
+    <button type="button" onclick="toggleTopMenu(false);openHome()">首页</button>
+    <button type="button" onclick="toggleTopMenu(false);toggleThreads()">会话</button>
+    <button type="button" id="menu-disconnect" hidden onclick="topMenuDisconnect()">断开连接</button>
+  </div>
 </header>
 <div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="openNewThreadMenu()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
 <div id="home" hidden>
@@ -249,6 +258,33 @@ header button{flex:0 0 auto;width:auto;margin:0;padding:6px 12px;font-size:12px;
 const code = ${JSON.stringify(code)};
 // 品牌面（⛔ 各仓自有：桌面版 Codex Harness / PPcode 仓 PPcode；首页与标题都读它）
 const BRAND = ${JSON.stringify(brandName)};
+/* 10-30 用户：首页 / 会话 / 断开连接收进左上角一个「☰」选项，品牌 logo 居中。
+   ⛔ 断开连接只有 App 里可用（安卓注入 AndroidRemote 才显示）。 */
+function toggleTopMenu(force) {
+  const menu = document.getElementById("top-menu");
+  if (!menu) return;
+  menu.hidden = force === false ? true : (force === true ? false : !menu.hidden);
+}
+function topMenuDisconnect() {
+  toggleTopMenu(false);
+  try { if (window.AndroidRemote && typeof window.AndroidRemote.disconnect === "function") window.AndroidRemote.disconnect(); } catch (e) { /* 网页版没有桥 */ }
+}
+document.addEventListener("click", function (event) {
+  const menu = document.getElementById("top-menu");
+  if (!menu || menu.hidden) return;
+  const target = event.target;
+  if (!target) return;
+  if (target.closest && (target.closest("#top-menu") || target.closest("#btn-menu"))) return;
+  menu.hidden = true;
+});
+(function () {
+  try {
+    if (window.AndroidRemote && typeof window.AndroidRemote.disconnect === "function") {
+      const item = document.getElementById("menu-disconnect");
+      if (item) item.hidden = false;
+    }
+  } catch (e) { /* 非 App 环境 */ }
+})();
 /* 中转前缀（10-29）：经 /t/<设备ID> 访问时给所有接口加上前缀；直连（局域网/旧固定地址）时为空串 */
 const PATH_PREFIX = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
 const apiUrl = (path) => PATH_PREFIX + path;
@@ -1388,7 +1424,7 @@ pollLoop();
    现在首页负责落地，点会话或发第一条消息时才进入会话。 */
 readHomePrefs();
 const titleEl = document.getElementById("title");
-if (titleEl) titleEl.textContent = BRAND + " 对话";
+if (titleEl) { const text = document.getElementById("title-text"); if (text) text.textContent = BRAND; else titleEl.textContent = BRAND; }
 showHome();
 </script>`;
     return pageHtml.replace("/*__MOBILE_MARKDOWN__*/", MOBILE_MARKDOWN_SOURCE);

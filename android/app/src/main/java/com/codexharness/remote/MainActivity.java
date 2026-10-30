@@ -57,7 +57,6 @@ public class MainActivity extends AppCompatActivity {
     private ValueCallback<Uri[]> fileChooserCallback;
 
     private WebView web;
-    private View disconnectBtn;
     private View setup;
     private EditText code;
     private TextView hint;
@@ -103,13 +102,13 @@ public class MainActivity extends AppCompatActivity {
         setup = findViewById(R.id.setup);
         code = findViewById(R.id.code);
         hint = findViewById(R.id.hint);
-        disconnectBtn = findViewById(R.id.disconnect);
-        disconnectBtn.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
-                .setTitle(R.string.disconnect_title)
-                .setMessage(R.string.disconnect_body)
-                .setNegativeButton(R.string.cancel, null)
-                .setPositiveButton(R.string.disconnect, (dialog, which) -> disconnect())
-                .show());
+        /* 10-30：首页 / 会话 / 断开连接都收进网页顶栏左上角的「☰」菜单；这里只提供一个 JS 桥。 */
+        web.addJavascriptInterface(new Object() {
+            @android.webkit.JavascriptInterface
+            public void disconnect() {
+                runOnUiThread(MainActivity.this::confirmDisconnect);
+            }
+        }, "AndroidRemote");
         findViewById(R.id.connect).setOnClickListener(v -> startConnect(code == null ? "" : code.getText().toString()));
         findViewById(R.id.scan).setOnClickListener(v -> startScan());
 
@@ -117,7 +116,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.9");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.11");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -244,6 +243,15 @@ public class MainActivity extends AppCompatActivity {
         else showSetup("");
     }
 
+    private void confirmDisconnect() {
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.disconnect_title)
+                .setMessage(R.string.disconnect_body)
+                .setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.disconnect, (dialog, which) -> disconnect())
+                .show();
+    }
+
     /** 断开：清 cookie / 自动登录标记 / 本机设备秘密，回到「连接电脑」。 */
     private void disconnect() {
         try {
@@ -257,7 +265,6 @@ public class MainActivity extends AppCompatActivity {
         try { web.stopLoading(); web.loadUrl("about:blank"); } catch (Exception ignored) { /* 页面已销毁 */ }
         web.setVisibility(View.GONE);
         setup.setVisibility(View.VISIBLE);
-        if (disconnectBtn != null) disconnectBtn.setVisibility(View.GONE);
         hint.setText("已断开连接：可以重新输码，或扫码连接另一台电脑");
     }
 
@@ -268,7 +275,6 @@ public class MainActivity extends AppCompatActivity {
         prefs().edit().putBoolean(KEY_CONNECTED, true).apply();
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
-        if (disconnectBtn != null) disconnectBtn.setVisibility(View.VISIBLE);
         /* ⛔ 直接开 /r/mobile：根路径会 302 一次，没必要。
            延迟一拍再加载：刚 setCookie 的凭据要确保已进 WebView 的 cookie store，
            否则首帧可能 401 → 又回到配对页（审查发现）。 */
@@ -529,7 +535,6 @@ public class MainActivity extends AppCompatActivity {
     private void showSetup(String message) {
         setup.setVisibility(View.VISIBLE);
         web.setVisibility(View.GONE);
-        if (disconnectBtn != null) disconnectBtn.setVisibility(View.GONE);
         hint.setText(message == null ? "" : message);
     }
 

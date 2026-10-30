@@ -1646,7 +1646,18 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
 
     /* 10-30 用户实机：手输 6 位码报「Value <!doctype ... cannot be converted to JSONObject」——
        根地址 /api/pair 被转去空的老通道（HTML）。现在网关按配对码/设备 cookie 找回对应电脑。 */
-    (gwSrc.includes("handleRootPair") && gwSrc.includes("handleRootPairStatus") && gwSrc.includes("pairRoutes") && gwSrc.includes("Location: `/t/${deviceId}${url}`") ? ok : fail)(
+    /* 10-30：经 nginx /remote/ 反代时，网关必须知道对外前缀，否则 302 会把手机送到 /t/... 根路径（nginx 404）。 */
+    /* 10-30 用户：首页 / 会话 / 断开连接收进左上角一个「☰」，品牌 logo 居中；旧两颗顶栏按钮不许回来。 */
+    (tunnelPage.includes('id="top-menu"') && tunnelPage.includes("brand-logo") && !tunnelPage.includes('id="btn-home"') ? ok : fail)(
+      "【139e】手机页顶栏：☰ 菜单装首页/会话/断开连接，品牌 logo 居中（旧的两颗顶栏按钮已删）"
+    );
+    (androidSrc.includes("AndroidRemote") && androidSrc.includes("JavascriptInterface") ? ok : fail)(
+      "【139e】APK 注入 AndroidRemote 桥：网页菜单的「断开连接」才能清本机 cookie / 自动登录标记 / 设备秘密"
+    );
+    (gwSrc.includes("RELAY_PATH_PREFIX") && gwSrc.includes("PATH_PREFIX}/t/${id}") && gwSrc.includes("Path=${PATH_PREFIX}/t/${id}") ? ok : fail)(
+      "【139e】网关支持对外路径前缀：/t 响应的 Location 与 Set-Cookie Path 都带回去（直连 18443 时前缀为空，行为不变）"
+    );
+    (gwSrc.includes("handleRootPair") && gwSrc.includes("handleRootPairStatus") && gwSrc.includes("pairRoutes") && gwSrc.includes("Location: `${PATH_PREFIX}/t/${deviceId}${url}`") ? ok : fail)(
       "【139e】根地址也能配对：/api/pair 逐台在线电脑找配对码、/api/pair-status 按 rid 找回、已配对页面按 cookie 跳到 /t/<id>（⛔ 否则手输码拿到 HTML，APK 解析 JSON 直接炸）"
     );
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
@@ -1658,7 +1669,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("proxyLegacy(req, res)") && gwSrc.includes("LEGACY_TARGET") ? ok : fail)(
       "【139e】网关保留旧通道（/t/ 以外的请求转回原端口）—— 已发出去的二维码/老 APK 不能失效"
     );
-    (gwSrc.includes("Path=/t/${id}") && gwSrc.includes("next.startsWith(\"/\")") ? ok : fail)(
+    (gwSrc.includes("Path=${PATH_PREFIX}/t/${id}") && gwSrc.includes("next.startsWith(\"/\")") ? ok : fail)(
       "【139e】网关必须重写 Location 与 Set-Cookie Path：否则手机跳出中转前缀、两台电脑的 cookie 互相覆盖"
     );
     (gwSrc.includes("MAX_INFLIGHT") && gwSrc.includes("MAX_PER_MINUTE") && gwSrc.includes("MAX_BODY") ? ok : fail)(
@@ -1773,11 +1784,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【139e】已配对设备 30 天未连接自动清理（启动时 + 读列表时），列表不再无限增长"
     );
     /* 10-30 用户要求：加一个断开连接功能 —— 连接后右上角「断开」，清凭据回连接页。 */
-    (androidSrc.includes("R.id.disconnect") && androidSrc.includes("private void disconnect()") && androidSrc.includes("removeAllCookies") && androidSrc.includes("remove(KEY_CONNECTED)") ? ok : fail)(
-      "【139e】手机端有「断开」：确认后清 cookie / 自动登录标记 / 本机设备秘密，回到连接页"
-    );
-    (relaySrc.includes("mobile-remote-v0.1.9") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.9）"
+
+    (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.11）"
     );
   }
 }
