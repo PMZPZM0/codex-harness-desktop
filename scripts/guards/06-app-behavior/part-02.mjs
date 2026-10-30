@@ -263,7 +263,9 @@ w.postMessage({id:1,op:"list",root});
   (/gh release view "v\$\{VERSION\}" --json isDraft[\s\S]{0,120}?gh release edit "v\$\{VERSION\}" --draft=false/.test(release) ? ok : fail)(
     "【29】release.yml 有草稿态转正兜底（删 tag 重建会让同名 release 退回草稿 ⇒ 用户永远收不到更新）"
   );
-  (release.includes('gh release edit "v${VERSION}" --notes-file "${NOTES}"') ? ok : fail)(
+  /* ⛔ 10-30：这条分支现在还带 --title（release 若先被别处建出来，标题会变成提交标题）；
+     断言按「--notes-file 在这条 edit 里」判，别把 --title 的有无当条件。 */
+  (/gh release edit "v\$\{VERSION\}"[^\n]*--notes-file "\$\{NOTES\}"/.test(release) ? ok : fail)(
     "【29】release 已存在时也重写说明正文（只 upload 资产会让发布页停在首建时的旧正文）"
   );
 
