@@ -40,7 +40,21 @@ import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
 // 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
 import { compareVersions } from "../updates";
-const { TOOLS_VERSIONS } = require("../../scripts/lib/tools-versions.cjs") as { TOOLS_VERSIONS: Record<string, string> };
+/* ⛔⛔ 10-30 Windows 真机事故（0.0.51 装了打不开，用户截图：Cannot find module
+   '../../scripts/lib/tools-versions.cjs'）：这张**版本表**原先在模块顶层裸 require，而 build.files
+   白名单里没有 scripts/** ⇒ 文件没进 asar ⇒ 主进程启动即死。两件事都要有：
+   ① 已经把它加进 build.files（守卫【96】② /【288】钉住「产物树外的 require 必须被覆盖」）；
+   ② 这里**降级**：读不到就给空表 —— 用到它的地方（飞书 CLI 的版本号）自己退化成 latest。
+   ⛔ 原则：一张数据表读不到，绝不允许把应用搞崩（这条比"一定要读到"更重要）。 */
+const TOOLS_VERSIONS: Record<string, string> = (() => {
+  try {
+    const loaded = (require("../../scripts/lib/tools-versions.cjs") as { TOOLS_VERSIONS?: Record<string, string> }).TOOLS_VERSIONS;
+    return loaded && typeof loaded === "object" ? loaded : {};
+  } catch (error) {
+    console.warn("[runtime-ipc] 读不到 scripts/lib/tools-versions.cjs（打包缺文件？）—— 版本号退化为 latest", error);
+    return {};
+  }
+})();
 
 function specFor(id: DevRuntimeId, spec: DevRuntimeSpec): DevRuntimeSpec {
   if (!IS_MAC) return spec;
@@ -871,7 +885,7 @@ export const runtimeFeature = defineFeature<null>({
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
         } else if (id === "feishu-cli") {
           /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。 */
-          await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
+          await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli ?? "latest"}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
         } else if (id === "rea") {
           // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
           // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。
