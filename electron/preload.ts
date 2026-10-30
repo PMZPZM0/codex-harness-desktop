@@ -224,6 +224,10 @@ contextBridge.exposeInMainWorld("codex", {
   /* 新增/更新；内置项不可删只能关停 */
   saveCliAgent: (input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }) => __ipc("cliagents:save", 0, [input]),
   removeCliAgent: (id: string) => __ipc("cliagents:remove", 1, [id]),
+  /* 10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH */
+  installCliAgent: (id: string) => __ipc("cliagents:install", 1, [id]),
+  /* 配套卸载：只动应用自己的工具目录，系统里用户自装的另一份不越界 */
+  uninstallCliAgent: (id: string) => __ipc("cliagents:uninstall", 1, [id]),
   /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
   respondCloseConfirm: (action: "tray" | "quit" | "cancel", remember: boolean) => __ipc("close-confirm:respond", 2, [action, remember]),
   /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */

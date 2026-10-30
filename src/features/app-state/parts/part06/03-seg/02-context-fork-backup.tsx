@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { enginePersonality } from "../../../../../lib/reply-style.mjs";
-import { addMention, mentionBlockOf, mentionKeyOf } from "../../../../../lib/dispatch-mention.mjs";
+import { addMention, contextTriggerOf, mentionBlockOf, mentionKeyOf } from "../../../../../lib/dispatch-mention.mjs";
 import { loadDraft, saveDraft } from "../../../../../lib/composer-draft.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { resolveImagePath } from "../../../../../lib/resolve-image-path";
@@ -148,29 +148,11 @@ bag.addSkillReference = addSkillReference as typeof bag.addSkillReference;
        ⛔⛔ 10-29 晚补齐 `@` 的触发入口：上一版把 `@` 整体换成了 `*`（用户令「把 @ 引用上下文改成 *」），
          结果 `@ 点名` 只剩下面板渲染 + 芯片 + 发送注入，**没有任何地方把 contextOpen 打开的**
          —— 文档与交付说明都写着"输入 @ 即弹候选"，实际敲了没反应（典型的「声称能力」）。
-       判据刻意不同：
-         · `*` 后面不许有空白 —— `a*b` / `2*3` / `**粗体**` 这类不能误触；
-         · `@` 允许空格 —— 对象名本身带空格（"Claude Code"、"Codex CLI"），
-           敲到一半就关面板的话，用户永远选不到带空格的那一个。 */
-    const star = value.lastIndexOf("*");
-    const at = value.lastIndexOf("@");
-    if (at >= 0 && at > star) {
-      const afterAt = value.slice(at + 1);
-      const atStart = at === 0 || /\s/.test(value[at - 1] ?? "");
-      // 40 字上限 = 防止把整段粘贴文本当查询词（对象名不会这么长）
-      if (atStart && !/\n/.test(afterAt) && afterAt.length <= 40) {
-        bag.setContextQuery(afterAt);
-        bag.setContextOpen(true);
-        return;
-      }
-      bag.setContextOpen(false);
-      return;
-    }
-    const afterStar = star >= 0 ? value.slice(star + 1) : "";
-    const tokenStart = star === 0 || /\s/.test(value[star - 1] ?? "");
-    const looksLikeQuery = /^\s*$/.test(afterStar) || /^[\p{L}\p{N}]/u.test(afterStar);
-    if (star >= 0 && tokenStart && !/\s/.test(afterStar) && looksLikeQuery) {
-      bag.setContextQuery(afterStar);
+       ⛔⛔ 10-30 用户令「两个指令拆开显示」：判定收进纯函数 `contextTriggerOf`（面板渲染读同一份），
+         面板只画被唤起的那一半 —— 不再出现 `*` 面板里夹着专家候选。 */
+    const trigger = contextTriggerOf(value);
+    if (trigger.mode) {
+      bag.setContextQuery(trigger.query);
       bag.setContextOpen(true);
     } else {
       bag.setContextOpen(false);

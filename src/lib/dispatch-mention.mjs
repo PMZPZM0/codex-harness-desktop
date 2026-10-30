@@ -16,7 +16,7 @@
 export const MENTION_GROUPS = [
   { kind: "expert", label: "专家", hint: "单个专家 · 开独立会话产出" },
   { kind: "subagent", label: "子智能体", hint: "你配置的自定义角色 · 没有可一键新建" },
-  { kind: "cli", label: "CLI 智能体", hint: "本机命令行工具（Claude Code / OpenClaw 等）· 在开发工具里接入" },
+  { kind: "cli", label: "CLI 智能体", hint: "本机命令行工具（Claude Code / OpenClaw 等）· 未安装的会灰掉，到开发工具一键安装" },
   { kind: "team", label: "专家团", hint: "主理人按 SOP 拉成员 · 需开启专家团" },
 ];
 
@@ -75,6 +75,42 @@ export function rankMentionTarget(target, query) {
 }
 
 /**
+ * 输入框当前被哪个触发符唤起（`@` 点名 / `*` 历史消息 / 空串 = 都没唤起）。
+ *
+ * ⛔⛔ 10-30 用户令：「*上下文跟@子智能体/专家/专家团两个指令没有拆开，*@打开都一样」
+ *   —— 原来两个符号共用一个面板、两块内容**同时渲染**，敲 `*` 也能点到专家、敲 `@` 也夹着历史消息。
+ *   现在触发判定只有这一份（onPromptChange 与面板渲染都读它），面板按 mode 只画自己那一半：
+ *     · `*` 后面不许有空白 —— `a*b` / `2*3` / `**粗体**` 不能误触；
+ *     · `@` 允许空格 —— 对象名本身带空格（"Claude Code"），敲到一半就关面板会永远选不到。
+ * @param {string} value 输入框全文
+ * @returns {{ mode: "" | "mention" | "history", query: string }}
+ */
+export function contextTriggerOf(value) {
+  const text_ = String(value ?? "");
+  const star = text_.lastIndexOf("*");
+  const at = text_.lastIndexOf("@");
+  if (at >= 0 && at > star) {
+    const afterAt = text_.slice(at + 1);
+    const atStart = at === 0 || /\s/.test(text_[at - 1] ?? "");
+    // 40 字上限 = 防止把整段粘贴文本当查询词（对象名不会这么长）
+    if (atStart && !/\n/.test(afterAt) && afterAt.length <= 40) return { mode: "mention", query: afterAt };
+    return { mode: "", query: "" };
+  }
+  const afterStar = star >= 0 ? text_.slice(star + 1) : "";
+  const tokenStart = star === 0 || /\s/.test(text_[star - 1] ?? "");
+  const looksLikeQuery = /^\s*$/.test(afterStar) || /^[\p{L}\p{N}]/u.test(afterStar);
+  if (star >= 0 && tokenStart && !/\s/.test(afterStar) && looksLikeQuery) return { mode: "history", query: afterStar };
+  return { mode: "", query: "" };
+}
+
+/** 置灰行的原因文案（面板 title / 行内小字共用；⛔ 别在 JSX 里各写一份）。 */
+export function mentionDisabledText(target) {
+  if (target?.disabledReason === "cli-missing") return "未安装：到 设置 → 开发工具 → CLI 智能体 点「一键安装」";
+  if (target?.disabled) return "该类别未开通调度：在顶栏「调度」里打开专家团后即可选中";
+  return "";
+}
+
+/**
  * 按类型分组筛选候选。
  * @param {Array<{kind:string,name:string,key:string,profession?:string,description?:string}>} targets
  * @param {string} query `@` 后面那段（不含 `@`）
@@ -98,8 +134,16 @@ export function filterMentionTargets(targets, query, allow = null) {
       // 同分保持目录顺序（稳定），否则选区会随打字乱跳
       .sort((a, b) => a.rank - b.rank || a.index - b.index);
     /* ⛔ 标记成新对象（不原地改目录条目）：`dispatchInfo.targets` 是共享引用，
-       改它会污染其他消费方（调度面板的计数、工具描述展示）。 */
-    const items = hits.slice(0, MENTION_PER_GROUP).map((entry) => (off ? { ...entry.target, disabled: true } : entry.target));
+       改它会污染其他消费方（调度面板的计数、工具描述展示）。
+       ★ 10-30 用户令「CLI 智能体没安装不能还能选」：主进程目录里带 `installed`，
+         未安装的**照样列出**但置灰不可选（与专家团未开通同一种形态，只是原因不同）。
+         ⛔ 别改成筛掉 —— 用户会以为"我配的 CLI 丢了"，真因是没装。 */
+    const items = hits.slice(0, MENTION_PER_GROUP).map((entry) => {
+      const target = entry.target;
+      const missing = target?.kind === "cli" && target?.installed === false;
+      if (!off && !missing) return target;
+      return { ...target, disabled: true, disabledReason: missing ? "cli-missing" : "kind-off" };
+    });
     if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items, off });
     total += items.length;
     overflow += Math.max(0, hits.length - items.length);
@@ -183,6 +227,8 @@ export function mentionBlockOf(mentions) {
       + "用户打开顶栏「调度」里的对应开关后会**实时**恢复为可选中。所以用户问「为什么 @ 里专家团是灰的 / 没有团队」时，"
       + "回答「该类别未开通，去顶栏「调度」打开即可」，**不要说这个团队不存在、也不要建议重建**；",
     "⑤ kind=cli（CLI 智能体）就是本机的一个命令行工具：它会用自己的会话调 shell 跑它。任务里写清「要用什么命令 / 验收标准」；"
+      + "未安装的 CLI 在 @ 列表里**置灰不可选**（仍然列出，不是消失）——用户问「为什么 @ 里 CLI 是灰的」时，"
+      + "回答「该 CLI 未安装，去 设置 → 开发工具 → CLI 智能体 点一键安装」，"
       + "它回报「本机没装」时**原样转述并附上安装命令**，不要自己改换别的对象、也不要假装它跑过；",
     "⑥ 派活被拒或失败（权限 / 引擎 / 名字找不到 / CLI 没装）时**原样转述原因**并停止，不要换对象重试；",
     "⑦ 派活成功就正常使用产出，不用再问用户要不要派。",

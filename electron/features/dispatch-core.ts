@@ -23,7 +23,7 @@ import crypto from "node:crypto";
 import { readUsableExpertTeams } from "../expert-teams";
 import type { DispatchTarget } from "../dispatch";
 import { readSubAgents } from "../main/09-agents-plugins";
-import { CLI_CATEGORIES, readUsableCliAgents } from "../cli-agents";
+import { CLI_CATEGORIES, cliInstalledFlags, readUsableCliAgents } from "../cli-agents";
 import { delegateRegistry, teamRunStore } from "../runtime-refs";
 // ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
 // 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
@@ -657,7 +657,10 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
     targets.push({ kind: "subagent", key: sub.id, name: sub.name, profession: "", description: sub.description ?? "" });
   }
   /* CLI 智能体：key = cliagents 条目的稳定 id（⛔ 不是 bin —— bin 改名/换版本时 id 不变，
-     否则点名与派活历史会对不上）。profession 用分类标签，让模型一眼看出这是"编码 CLI"还是"通用智能体 CLI"。 */
+     否则点名与派活历史会对不上）。profession 用分类标签，让模型一眼看出这是"编码 CLI"还是"通用智能体 CLI"。
+     ★ 10-30 用户令「没安装就不能选」：目录每条带 `installed`（批量检测有 5s 短缓存），
+       @ 列表按它置灰 —— 未安装的**照样列出**，用户看得见、选不了。 */
+  const installedFlags = await cliInstalledFlags(clis).catch(() => ({}) as Record<string, boolean>);
   for (const cli of clis) {
     targets.push({
       kind: "cli",
@@ -665,6 +668,7 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
       name: cli.name,
       profession: CLI_CATEGORIES.find((entry) => entry.key === cli.category)?.label ?? "CLI",
       description: cli.description,
+      installed: installedFlags[cli.id] === true,
     });
   }
   return targets;

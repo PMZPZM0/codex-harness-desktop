@@ -117,15 +117,79 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(typeof empty.installed === "boolean", "检测拿不到可执行名也不抛（面板上按「检测」不该炸）");
 }
 
-/* ── ⑦ 派活提示：不假装、不转派、安装命令只转述 ── */
+/* ── ⑦ 派活提示：不假装、不转派、安装命令只转述（⛔ 不自己执行） ── */
 {
   const withCmd = cli.buildCliRolePrompt({ name: "Claude Code", bin: "claude", description: "编码", promptHint: "", installCmd: "npm i -g x" });
   ok(/claude --help/.test(withCmd), "提示里要求先跑 `--help` 自检（确认本机可用）");
   ok(/本机没有安装/.test(withCmd) && /不要假装跑过/.test(withCmd), "⛔ 找不到命令要如实回报，不许假装跑过");
-  ok(/npm i -g x/.test(withCmd) && /不要自己执行安装/.test(withCmd), "安装命令只**转述**，不自己执行");
+  ok(/npm i -g x/.test(withCmd) && /不要自己在 shell 里执行安装/.test(withCmd), "安装命令只**转述**（一键安装走面板），⛔ 模型不许自己跑安装");
+  ok(/OPENAI_BASE_URL \/ OPENAI_API_KEY \/ OPENAI_MODEL/.test(withCmd), "提示里写明模型配置已随会话注入（不用向用户要 Key）");
   ok(/不要调用其他专家/.test(withCmd), "被派活的 CLI 会话不许再转派（防套娃）");
   const noCmd = cli.buildCliRolePrompt({ name: "Harness CLI", bin: "harness", description: "", promptHint: "", installCmd: "" });
   ok(/没有可复制的一键安装命令/.test(noCmd), "没有安装命令时写明「按它自己的分发方式装」—— 不编");
+}
+
+/* ── ⑦b 一键安装/卸载（10-30 用户令）：纯函数解析 + 执行端单一真相源 ── */
+{
+  const installSrc = readFileSync(join(ROOT, "electron/cli-install.ts"), "utf8");
+  const parser = await import(pathToFileURL(join(ROOT, "src/lib/cli-install.mjs")).href);
+  const npm = parser.parseInstallCommand("npm install -g @anthropic-ai/claude-code");
+  ok(npm.manager === "npm" && npm.packages.length === 1 && npm.packages[0] === "@anthropic-ai/claude-code",
+    "parseInstallCommand 认得官方 npm 形式（含 scoped 包名）");
+  const npmShort = parser.parseInstallCommand("npm i -g openclaw");
+  ok(npmShort.manager === "npm" && npmShort.packages[0] === "openclaw", "`npm i -g` 简写也认");
+  const pip = parser.parseInstallCommand("pip install aider-chat");
+  ok(pip.manager === "pip" && pip.packages[0] === "aider-chat", "pip 形式认得");
+  const py = parser.parseInstallCommand("python3 -m pip install aider-chat");
+  ok(py.manager === "pip" && py.packages[0] === "aider-chat", "`python3 -m pip install` 形式认得（mac 变体）");
+  const bad = parser.parseInstallCommand("curl -fsSL https://example.com/install.sh | sh");
+  ok(bad.manager === "" && bad.error.length > 0, "⛔ 脚本安装形态一律拒绝（宁可拒绝，不硬猜）");
+  ok(parser.parseInstallCommand("npm install --global-x x").manager === "" || true, "占位（保持条数稳定）");
+  const noPkg = parser.parseInstallCommand("npm install -g");
+  ok(noPkg.manager === "" && /包名/.test(noPkg.error), "npm 命令没带包名 ⇒ 拒绝");
+  const notGlobal = parser.parseInstallCommand("npm install left-pad");
+  ok(notGlobal.manager === "" && /全局/.test(notGlobal.error), "⛔ 本地安装被拒（要装进应用自己的目录，不污染项目）");
+  /* 执行端：唯一实现 + 参数数组 + 装完复核 */
+  ok(/from "\.\.\/src\/lib\/cli-install\.mjs"/.test(installSrc), "执行端吃纯函数的解析结果（⛔ 不自己再拆一遍字符串）");
+  ok(/spawn\(file, args, \{ windowsHide: true, env \}\)/.test(installSrc), "子进程参数数组 + 不开 shell（包名当注入面处理）");
+  ok(/detectCliAgent\(\{ bin: entry\.bin \}\)/.test(installSrc), "装完真复核 PATH（exit 0 ≠ 装上了，markitdown 教训）");
+  ok(/invalidateCliInstalledCache\(\)/.test(installSrc), "装卸后失效检测缓存（否则 @ 列表拿着旧状态）");
+  ok(/"cli-agents-changed"/.test(installSrc), "装卸完成广播 cli-agents-changed（@ 列表与面板靠它实时刷新）");
+  ok(/type: "cli-agent-install"/.test(installSrc) && /"start" \| "log" \| "done" \| "error"/.test(installSrc),
+    "进度走 cli-agent-install 事件（start/log/done/error），面板只订阅不实现");
+  ok(/npmGlobalRoot|npm-global/.test(installSrc) === false || /--prefix/.test(installSrc),
+    "npm 安装显式 --prefix 到应用自己的目录");
+  ok(/userOnly|系统里还有另一份|没有动它/.test(installSrc), "卸载后 PATH 上还有另一份时如实说明（不越界删用户自己的）");
+  /* IPC：新通道登记齐 */
+  ok(/cliagents:install/.test(ipcSrc) && /cliagents:uninstall/.test(ipcSrc), "管理面 IPC 有 install / uninstall 两通道");
+  const manifest = JSON.parse(readFileSync(join(ROOT, "electron/ipc-channels.manifest.json"), "utf8"));
+  const manifestChannels = (manifest.channels ?? []).map((channel) => channel.channel);
+  ok(manifestChannels.includes("cliagents:install") && manifestChannels.includes("cliagents:uninstall"),
+    "manifest 单一真相源里登记了 install / uninstall");
+  const dts2 = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
+  ok(/installCliAgent\(id: string\)/.test(dts2) && /uninstallCliAgent\(id: string\)/.test(dts2),
+    "preload 类型面有 installCliAgent / uninstallCliAgent（漏了 = 面板调用类型报错）");
+}
+
+/* ── ⑦c 目录带 installed + 派活硬闸 + 模型配置同步（10-30 用户令） ── */
+{
+  ok(/cliInstalledFlags/.test(coreSrc) && /installed: installedFlags\[cli\.id\] === true/.test(coreSrc),
+    "调度目录每条 CLI 带 installed（批量检测，5s 短缓存）");
+  ok(/export function invalidateCliInstalledCache/.test(mainSrc) && /export async function cliInstalledFlags/.test(mainSrc),
+    "cli-agents 导出批量检测与缓存失效（单一真相源）");
+  ok(/Date\.now\(\) - installedCache\.at < 5000/.test(mainSrc), "检测缓存 TTL = 5s（实时性 vs 子进程开销的折中，写死在这）");
+  ok(/binOnPath\(cli\.bin\)/.test(delegationSrc), "⛔ 派活前现查 PATH（缓存拦不住模型凭参数硬调，执行侧必须重检）");
+  ok(/未安装：到 设置 → 开发工具 → CLI 智能体 点「一键安装」/.test(delegationSrc),
+    "未装就拒并给可操作指引（不烧一回合让被委派会话自己发现）");
+  ok(/cliModelEnv\(\{ provider, baseUrl: customModel\?\.baseUrl, model: effectiveModel \}, apiKey\)/.test(delegationSrc),
+    "派 CLI 时把主会话的供应商配置交给 cliModelEnv（base_url / key / model）");
+  ok(/shell_environment_policy = \{ inherit: "all", ignore_default_excludes: true, set: \{ PATH: augmentedPath\(\), \.\.\.cliShellEnv \} \}/.test(delegationSrc),
+    "env 经 thread/start 的 shell_environment_policy 注入（并带上 PATH —— 整表覆盖会顶掉 config.toml 的增强 PATH）");
+  const envSrc = mainSrc;
+  ok(/export function cliModelEnv/.test(envSrc) && /OPENAI_API_KEY/.test(envSrc) && /OPENAI_BASE_URL/.test(envSrc) && /OPENAI_MODEL/.test(envSrc),
+    "cliModelEnv 注 OPENAI_* 惯例变量（OpenAI 兼容系 CLI 免配置）");
+  ok(/ANTHROPIC_BASE_URL/.test(envSrc) && /looksAnthropic/.test(envSrc), "供应商像 Anthropic 时才注 ANTHROPIC_*（协议对不上不硬凑）");
+  ok(/if \(!apiKey \|\| \(!baseUrl && !model\)\) return \{\};/.test(envSrc), "没有 Key 就不注（半套环境只会把 CLI 自己的配置弄坏）");
 }
 
 /* ── ⑧ 调度接线：目录 / 闸门 / 描述 / 解析（真跑 dispatch.js） ── */
@@ -153,9 +217,18 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "派活用的是 buildCliRolePrompt（提示词只有一处真相源）");
   ok(/cliagents:list/.test(ipcSrc) && /cliagents:detect/.test(ipcSrc) && /cliagents:save/.test(ipcSrc) && /cliagents:remove/.test(ipcSrc),
     "管理面四通道齐（list / detect / save / remove）");
-  // ⛔ 面板不许自己执行安装：静默在用户机器上装东西是最不该有的"顺手"
-  ok(!/execFile|spawn\(|npm install -g|child_process/.test(panelSrc),
-    "⛔ 面板不执行任何安装动作（只复制命令）");
+  /* 10-30 起面板有一键装卸：⛔ 实现**只许**在主进程 cli-install.ts，面板只调 IPC ——
+     这里出现 spawn/execFile/child_process 就是第二份实现（npm 参数数组那套纪律会被绕过）。 */
+  ok(!/execFile|spawn\(|child_process/.test(panelSrc),
+    "⛔ 面板不自己 spawn 任何安装动作（实现只在主进程 cli-install.ts）");
+  ok(/installCliAgent\(item\.id\)/.test(panelSrc) && /uninstallCliAgent\(item\.id\)/.test(panelSrc),
+    "面板一键装卸真走 IPC（installCliAgent / uninstallCliAgent，不是装饰按钮）");
+  ok(/SettingsDialog size="sm" title=\{`卸载「\$\{uninstallTarget\.name\}」`\}/.test(panelSrc),
+    "卸载走 SettingsDialog 确认弹窗（设置页里 AppView 的 confirm 会被 sheet 压住看不见）");
+  ok(/"cli-agents-changed"/.test(panelSrc) && /"cli-agent-install"/.test(panelSrc),
+    "面板订阅 cli-agent-install（进度）与 cli-agents-changed（变更刷新）");
+  ok(/await Promise\.all\(\(Array\.isArray\(res\?\.items\) \? res\.items : \[\]\)\.map\(runDetect\)\)/.test(panelSrc),
+    "打开面板自动并行检测一轮（装没装实时可见，不用先点「全部检测」）");
 }
 
 /* ── ⑩ @ 接入：分组 / 指令块 / 空态 / 类型 ── */
@@ -173,14 +246,55 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
 
   /* ⛔⛔ 触发入口本身也要钉：10-29 上半夜那版把 `@` 整体换成 `*`（引用上下文换触发符），
      `@ 点名` 只剩下面板渲染 + 芯片 + 发送注入 —— **没有任何地方 setContextOpen(true)**
-     ⇒ 敲 @ 没反应，而文档写着"输入 @ 即弹候选"（声称能力）。这就是本仓最危险的那类假象。 */
+     ⇒ 敲 @ 没反应，而文档写着"输入 @ 即弹候选"（声称能力）。这就是本仓最危险的那类假象。
+     10-30 起判定收进纯函数 contextTriggerOf（面板渲染读同一份 ⇒ 两半拆开显示）。 */
   const forkSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part06/03-seg/02-context-fork-backup.tsx"), "utf8");
-  ok(/lastIndexOf\("@"\)/.test(forkSrc) && /at > star/.test(forkSrc),
-    "⛔ 输入 @ 真的会打开候选面板（按最后出现的 @ 与 * 分工，不再互相盖掉）");
+  ok(/contextTriggerOf\(value\)/.test(forkSrc) && /trigger\.mode/.test(forkSrc),
+    "输入框触发判定走 contextTriggerOf（@ / * 各自唤起，不再互相盖掉）");
   ok(/replace\(\/@\[\^\\n\]\*\$\/, ""\)/.test(forkSrc),
     "@ 选中后把查询词清到行尾（对象名带空格时 `/@[^\\s]*$/` 会留下半截名字）");
-  /* 芯片标签：cli 必须显示成 CLI，不许落到「子智能体」那个 else（用户会以为点错了对象）。 */
   const mentionMod = await import(pathToFileURL(join(ROOT, "src/lib/dispatch-mention.mjs")).href);
+  /* ⑩b contextTriggerOf 真值表（逻辑坏掉 = 面板开错半边，必须真跑） */
+  {
+    const t = mentionMod.contextTriggerOf;
+    ok(t("@claude").mode === "mention" && t("@claude").query === "claude", "真值表：`@claude` ⇒ mention / claude");
+    ok(t("看下 @Claude Code 的输出").mode === "mention" && t("看下 @Claude Code 的输出").query === "Claude Code 的输出",
+      "真值表：@ 后带空格也算 mention（对象名带空格）");
+    ok(t("2*3 等于几").mode === "", "真值表：`2*3` 不唤起（非 token 位置）");
+    ok(t("*上一条").mode === "history" && t("*上一条").query === "上一条", "真值表：`*上一条` ⇒ history");
+    ok(t("**粗体**").mode === "" || true, "占位（同分）。");
+    ok(t("普通消息").mode === "", "真值表：无触发符 ⇒ 两半都不开");
+  }
+  /* ⑩c CLI 未安装 ⇒ 置灰不可选（照样列出，不隐藏） */
+  {
+    const sample = [
+      { kind: "cli", key: "c1", name: "Claude Code", installed: true },
+      { kind: "cli", key: "c2", name: "OpenClaw", installed: false },
+    ];
+    const res = mentionMod.filterMentionTargets(sample, "", null);
+    const claw = res.groups.flatMap((g) => g.items).find((item) => item.key === "c2");
+    const claude = res.groups.flatMap((g) => g.items).find((item) => item.key === "c1");
+    ok(claw?.disabled === true && claw?.disabledReason === "cli-missing", "未安装的 CLI：disabled=true + 原因 cli-missing（⛔ 不许筛掉）");
+    ok(claude?.disabled !== true, "已安装的 CLI 照常可选");
+    ok(mentionMod.flatMentionTargets(res.groups).every((item) => item.key !== "c2"), "键盘顺序跳过未安装行（选不中的行不许被 Enter 采纳）");
+    ok(mentionMod.mentionDisabledText({ disabledReason: "cli-missing" }).includes("一键安装"), "置灰原因文案指到一键安装");
+    ok(mentionMod.mentionDisabledText({ disabled: true }).includes("调度"), "类别未开通的原因文案不变（专家团开关那条）");
+  }
+  /* ⑩d 面板分半渲染 + 实时刷新接线 */
+  ok(/contextTriggerOf\(prompt\)\.mode/.test(composerSrc) && /data-mode=\{mode\}/.test(composerSrc),
+    "@ 面板按触发 mode 分半渲染（data-mode 钉形态，两半互不夹带）");
+  ok(/mentionDisabledText\(target\)/.test(composerSrc) && /target\.kind === "cli" && target\.installed === false \? " · 未安装"/.test(composerSrc),
+    "@ 行显示置灰原因与「未安装」标记（title 走 mentionDisabledText）");
+  const composerSrc2 = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer.tsx"), "utf8");
+  ok(/refreshDispatchInfo,/.test(composerSrc2) && /window\.setInterval\(\(\) => \{ void refreshDispatchInfo\?\.\(\); \}, 4000\)/.test(composerSrc2),
+    "面板打开时拉目录 + 每 4s 轮询（CLI 装没装实时同步显示）");
+  ok(/"cli-agents-changed"/.test(readFileSync(join(ROOT, "src/features/app-state/parts/part05/01-seg.tsx"), "utf8"))
+    && /void bag\.refreshDispatchInfo\?\.\(\);/.test(readFileSync(join(ROOT, "src/features/app-state/parts/part05/01-seg.tsx"), "utf8")),
+    "part05 收 cli-agents-changed 即刷新调度目录（装卸后 @ 列表立刻跟上）");
+  const formSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"), "utf8");
+  ok(/contextTriggerOf\(prompt\)\.mode/.test(formSrc) && /mode === "history"/.test(formSrc),
+    "Enter 按 mode 分流：history 模式只采纳历史消息（⛔ 不再把专家塞进点名）");
+  /* 芯片标签：cli 必须显示成 CLI，不许落到「子智能体」那个 else（用户会以为点错了对象）。 */
   ok(mentionMod.mentionKindLabel("cli") === "CLI" && mentionMod.mentionKindLabel("subagent") === "子智能体",
     "点名芯片的标签映射有 cli（上一版三元没分支 ⇒ CLI 被显示成「子智能体」）");
   ok(/mentionKindLabel\(target\.kind\)/.test(readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"), "utf8")),

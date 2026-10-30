@@ -205,6 +205,69 @@
   font-size: 10px;
   font-weight: 500;
 }
+.cli-agent-tag.is-ok {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+.cli-agent-tag.is-miss {
+  background: color-mix(in srgb, var(--orange) 14%, transparent);
+  color: var(--orange);
+}
+
+/* 一键安装的实时日志（最多留最近几行，等宽小字） */
+.cli-agent-install-log {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 132px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* 卸载确认弹窗（SettingsDialog size=sm 里的正文） */
+.cli-agent-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cli-agent-confirm p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.cli-agent-confirm code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.cli-agent-confirm-note {
+  color: var(--faint) !important;
+  font-size: 11.5px !important;
+}
+.cli-agent-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 4px;
+}
+.cli-agent-confirm-actions .cli-agents-btn.danger {
+  border-color: var(--red);
+  color: var(--red);
+}
+.cli-agent-confirm-actions .cli-agents-btn.danger:hover {
+  background: color-mix(in srgb, var(--red) 10%, transparent);
+}
 .cli-agent-desc {
   overflow: hidden;
   color: var(--muted);

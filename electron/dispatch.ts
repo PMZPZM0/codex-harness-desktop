@@ -33,6 +33,9 @@ export type DispatchTarget = {
   memberId?: string;
   /** 专家团目标的成员数（不含主理人）：只用于面板上的「专家总数」口径，不参与调度。 */
   memberCount?: number;
+  /** CLI 智能体：本机是否已安装（主进程 where/which 检测；false ⇒ @ 列表置灰不可选，不隐藏）。
+   *  ⛔ 只是 UI 提示，真正的闸在 runDelegatedTask 派活前重检 —— 缓存过期也不能把活派给没装的 CLI。 */
+  installed?: boolean;
 };
 
 /* ─────────────── L1：被委派会话的持久指令 ─────────────── */

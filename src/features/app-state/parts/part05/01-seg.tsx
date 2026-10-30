@@ -587,6 +587,11 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         void bag.refreshDelegateRecords();
         void bag.refreshThreads();
       }
+      if (event.type === "cli-agents-changed") {
+        // CLI 智能体增删/装卸（10-30）：目录里的 installed 会变 → 重拉调度目录，
+        // @ 列表的置灰态即时跟上（面板打开时另有 4s 轮询兜底，这里走事件最快）。
+        void bag.refreshDispatchInfo?.();
+      }
       if (event.type === "delegate-run") {
         // 调度头像轨（09-16）：started 点亮头像 + 自动弹工作内容；delta 流式追加；finished 摘掉头像。
         const payload: any = event;
