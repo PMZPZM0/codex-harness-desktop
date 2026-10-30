@@ -498,7 +498,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         return <>
                           {mention.groups.map((group) => <div className={`context-picker-group${group.off ? " is-off" : ""}`} key={group.kind}>
                             <div className="context-picker-group-label">{group.label}
-                              <small>{group.off ? "未开通 · 顶栏「调度」打开" : group.hint}</small>
+                              <small>{group.off ? "未开通 · 顶栏「调度」打开" : `${group.hint} · ${group.total}`}</small>
                             </div>
                             {group.items.map((target) => (
                               /* ⛔ 未开通 / 未安装 = 原生 disabled（不可点、不在 tab 序里），只置灰**不隐藏**：
