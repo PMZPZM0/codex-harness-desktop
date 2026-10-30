@@ -30,6 +30,7 @@ import {
   FileWarning,
   FolderOpen,
   FolderPlus,
+  Activity as ActivityIcon,
   FolderTree,
   ImagePlus,
   Image,
@@ -139,6 +140,7 @@ import {
 } from "lucide-react";
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../components/CardShell";
 import BrowserPane from "../../../components/BrowserPane";
+import { TaskMonitorPanel } from "../../task-monitor/TaskMonitorPanel";
 import { TurnReviewPanel } from "../../status";
 import { WorkspaceFilePreview } from "./03-workspace-files";
 import { getRightFile, subscribeRightFile } from "../../../lib/right-file.mjs";
@@ -228,7 +230,8 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
               <div className="tabstrip-tabs">
                 {/* 10-07 用户截图后补：与侧栏「项目/分类」同一口径 —— tab 的**前缀图标**按色相上色、文字中性。 */}
                 {/* 10-22 用户：「侧边栏终端按键可以删了，替换成审阅图标」——终端标签撤掉（右栏默认 308px 时排不下五个，
-                    审阅被挤到横向滚动外），审阅顶到第二位；终端页保留，Ctrl+J / 命令面板仍可打开。 */}
+                    审阅被挤到横向滚动外），审阅顶到第二位（10-30 起「监控」排第一，审阅变第三）；终端页保留，Ctrl+J / 命令面板仍可打开。 */}
+                <button className={`panel-tab ${rightTab === "monitor" ? "active" : ""}`} title="监控：本会话的技能 / MCP / 插件、每轮产物，以及由本会话 Codex 产出的自我改进建议" onClick={() => setRightTab("monitor")}><ActivityIcon size={12} className="ic-violet" /><span>监控</span></button>
                 <button className={`panel-tab ${rightTab === "review" ? "active" : ""}`} title="变更：按范围查看 Git 改动（未暂存 / 已暂存 / 分支起点 / 上一轮）" onClick={() => setRightTab("review")}><GitBranch size={12} className="ic-green" /><span>变更</span></button>
                 <button className={`panel-tab ${rightTab === "turn-review" ? "active" : ""}`} title="审阅：本轮对话改过的文件与完整对比" onClick={() => setRightTab("turn-review")}><FileText size={12} className="ic-pink" /><span>审阅</span></button>
                 <button className={`panel-tab ${rightTab === "browser" ? "active" : ""}`} title="浏览器：在内置浏览器打开网页" onClick={() => setRightTab("browser")}><Globe2 size={12} className="ic-blue" /><span>浏览器</span></button>
@@ -240,6 +243,10 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             </div>
             <div className={`panel-page ${rightTab === "turn-review" ? "" : "hidden"}`}>
               <TurnReviewPanel workspace={workspace} active={rightTab === "turn-review"} onOpenFile={(path) => void openFile(path)} />
+            </div>
+            {/* 10-30 任务监控：本会话每轮的技能/MCP/插件、产物与自我改进建议（⛔ 数据按 threadId 取，换会话即换） */}
+            <div className={`panel-page ${rightTab === "monitor" ? "" : "hidden"}`}>
+              <TaskMonitorPanel app={app} />
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
             <div ref={filesWrapRef} className={`workspace-files${previewExpanded ? " is-preview-expanded" : ""}`}>

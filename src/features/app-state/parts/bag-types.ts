@@ -1122,6 +1122,8 @@ export interface Bag {
   contextUsageText: () => string;
   addHookEvent: (running: boolean, hookName: string) => void;
   pendingCommandTextRef: React.RefObject<string | null>;
+  /** 一次性技能：app-state 导出的 sendPrefilled 用（⛔ 不写 selectedSkills 状态 —— 那次渲染还没刷新，会丢） */
+  pendingSkillRef: React.RefObject<{ name: string; description: string } | null>;
   updateBottomStateRef: React.RefObject<() => void>;
   /** 上一次 update() 结束时记下的「内容底部 / 视口位置 / 当时是否贴底」：识别"内容变矮"（折叠）并跟随贴合。
    *  ⛔ 必须登记进 Bag —— 预检【93】要求 parts 里推断出的每个名字都在这里（漏登记 = 守卫红）。 */

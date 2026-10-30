@@ -1,0 +1,84 @@
+#!/usr/bin/env node
+/**
+ * 【289】任务监控（右栏「监控」页，10-30 用户令）的接线守护。
+ *
+ * 用户原话：「右侧栏加一个任务监控按键……第一个进化建议（自我改进建议）可以同步给 Agent，
+ * 由本会话 Codex 输出；一键净化就带上自我进化技能发给 Codex，内容可改；下面技能/MCP/插件，
+ * 再下面会话产物（每回合、最多 30~40、分页）；每回合更新；每个会话独立不要串。」
+ *
+ * ⛔ 为什么要有它：这套东西横跨「引擎事件采集 → 落盘 → IPC → 面板 → 发送」五段，任何一段断了
+ * 表面上都不报错（面板照开、只是永远空 / 点了没反应）。这里只钉**能被违反**的接线点。
+ */
+import { readFileSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = dirname(fileURLToPath(import.meta.url)) + "/../..";
+const read = (p) => { try { return readFileSync(join(ROOT, p), "utf8"); } catch { return ""; } };
+
+let okCount = 0, failCount = 0;
+const ok = (m) => { okCount++; console.log("  ✓ " + m); };
+const fail = (m) => { failCount++; console.log("  ✗ " + m); };
+
+console.log("\n【289】任务监控（右栏监控页：技能/MCP/插件 + 每轮产物 + 自我改进建议）");
+
+const svc = read("electron/features/task-monitor.ts");
+const panel = read("src/features/task-monitor/TaskMonitorPanel.tsx");
+const rail = read("src/features/app-view/AppView/03-review-panel.tsx");
+const boot = read("electron/features/boot.ts");
+const manifest = (() => { try { return JSON.parse(read("electron/ipc-channels.manifest.json")); } catch { return { channels: [] }; } })();
+const composition = (() => { try { return JSON.parse(read("electron/composition.json")); } catch { return { domains: [] }; } })();
+const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+const barrel = read("src/features/app-state/index.ts");
+
+/* ① 域注册 + 三通道（缺一个 ⇒ 面板永远读不到 / 建议存不下来） */
+ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron/features/task-monitor.ts（采集 + 落盘 + 建议）");
+(composition.domains.some((d) => d.id === "monitor" && d.enabled) ? ok : fail)(
+  "composition.json 注册了 monitor 域（没注册 = 文件在但从不挂载）"
+);
+["monitor:read", "monitor:save-suggestion", "monitor:regenerate"].forEach((channel) => {
+  (manifest.channels.some((c) => c.channel === channel) ? ok : fail)(`IPC 清单含 ${channel}`);
+});
+
+/* ② 采集必须挂在**全局**事件流上（挂到渲染层 = 历史回合与后台会话全漏） */
+(/noteEngineEvent\(event\.method, p\)/.test(boot) ? ok : fail)(
+  "boot 的引擎事件分发里调了 noteEngineEvent（⛔ 只挂渲染层会漏后台/历史回合）"
+);
+(/storedReportsForThread\(/.test(svc) ? ok : fail)("产物走 turn-file-watch 既有真相源（⛔ 不另扫盘）");
+(/distillSummarize\(/.test(svc) ? ok : fail)("建议由本会话模型产出（复用一次性内部会话，不是模板拼字）");
+(/MAX_TURNS\s*=\s*40/.test(svc) ? ok : fail)("每个会话最多留 40 轮（用户：最多展示 30~40）");
+
+/* ③ 会话隔离：读写都只认传入 threadId，⛔ 不许"取最近一个"兜底 */
+(/monitor:read", async \(_event: unknown, threadId\?: string\)/.test(svc) && /if \(!id\) return \{ threadId: "", turns: \[\]/.test(svc) ? ok : fail)(
+  "读接口没拿到 threadId 就返回空表（⛔ 绝不跨会话兜底）"
+);
+(/parsed\.threadId === threadId/.test(svc) ? ok : fail)("落盘文件里的 threadId 与请求不一致时当损坏（防串会话）");
+
+/* ④ 面板：三段 + 空态文案 + 分页 + 换会话清空 */
+(["暂无建议", "暂无使用记录", "暂无文件"].every((t) => panel.includes(t)) ? ok : fail)(
+  "三个板块的空态文案齐（暂无建议 / 暂无使用记录 / 暂无文件）"
+);
+(/PAGE_FILES\s*=\s*10/.test(panel) && /monitor-pager/.test(panel) ? ok : fail)("会话产物每页 10 轮 + 分页器");
+(/slice\(0, 5\)/.test(panel) ? ok : fail)("技能/MCP/插件每页最多 5 条");
+(/useEffect\(\(\) => \{ setTurns\(\[\]\); setDraft\(""\); setFilePage\(0\); void load\(\); \}, \[threadId, load\]\)/.test(panel) ? ok : fail)(
+  "换会话立刻清空并重读（⛔ 保留上一会话的 turns = 串会话）"
+);
+
+/* ⑤ 右栏入口：监控排第一 + 页面区块真的挂了（只加按钮不加页面 = 点了空白） */
+const tabs = [...rail.matchAll(/className=\{`panel-tab[^`]*`\} title="([^"]+)"/g)].map((m) => m[1].slice(0, 2));
+(tabs[0] === "监控" ? ok : fail)(`右栏第一个 tab 是「监控」（实得 ${tabs.join(" / ") || "无"}）`);
+(/<TaskMonitorPanel app=\{app\} \/>/.test(rail) ? ok : fail)("右栏页面区块挂了 <TaskMonitorPanel>（⛔ 只加按钮会点了空白）");
+
+/* ⑥ 一键进化：必须真发出去，且带上 self-review 技能（⛔ 不能用 setState 再 send —— 会发旧正文且丢技能） */
+(/sendPrefilled/.test(panel) ? ok : fail)("面板「进化」走 sendPrefilled（真发送，不是只填输入框）");
+(/export async function sendPrefilled/.test(sendSrc) && /pendingSkillRef\.current = input\.skill/.test(sendSrc) ? ok : fail)(
+  "sendPrefilled 用一次性 ref 传文与技能（⛔ setPrompt/addSkillReference 是 setState，send 读到旧 bag）"
+);
+(/pendingSkill \? \[\.\.\.bag\.selectedSkills, pendingSkill\]/.test(sendSrc) ? ok : fail)(
+  "发送拼 [本轮已引用技能] 时把一次性技能一起带上（漏了 = 进了对话但没技能）"
+);
+(/export \{ sendPrefilled \}/.test(barrel) ? ok : fail)("sendPrefilled 从 app-state barrel 导出（域间只经 barrel）");
+
+console.log("");
+console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
+process.exit(failCount === 0 ? 0 : 1);

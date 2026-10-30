@@ -37,7 +37,10 @@ bag.addHookEvent = addHookEvent as typeof bag.addHookEvent;
 
   // 自定义命令展开后的待发送文本：runSlashCommand 命中 .md 模板后放入，send() 直接消费
   const pendingCommandTextRef = useRef<string | null>(null);
+  /* 一次性技能（sendPrefilled）：与 pendingCommandTextRef 同款 —— 绕过 setState 的异步刷新 */
+  const pendingSkillRef = useRef<{ name: string; description: string } | null>(null);
 bag.pendingCommandTextRef = pendingCommandTextRef as typeof bag.pendingCommandTextRef;
+bag.pendingSkillRef = pendingSkillRef as typeof bag.pendingSkillRef;
 
   // 回到底部按钮：内容可滚动且当前视口距底部超过一屏的 25% 时出现
   // 缓存 update，供「内容变化」时直接调用而不必重建监听器
@@ -440,5 +443,5 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
       window.removeEventListener("codex:packet-reveal", onPacketReveal);
     };
   }, [bag.thread?.id, bag.scrollRef]);
-  return { addHookEvent, pendingCommandTextRef, updateBottomStateRef, turnResizeObserverRef, releaseToUserRef };
+  return { addHookEvent, pendingCommandTextRef, pendingSkillRef, updateBottomStateRef, turnResizeObserverRef, releaseToUserRef };
 }
