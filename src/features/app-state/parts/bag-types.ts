@@ -1387,6 +1387,8 @@ export interface Bag {
   buildDynamicTools: () => Promise<any[]>;
   createEmptyThread: () => Promise<import("../../app-view/types.ts").Thread | null>;
   send: (event?: React.FormEvent<Element> | undefined) => Promise<void>;
+  /** 预填文本 + 一次性技能后**直接发送**（10-30 任务监控「进化」）；⛔ 文本/技能走一次性 ref，不落 state */
+  sendPrefilled: (input: { text: string; skill?: { name: string; description: string } }) => Promise<void>;
   handleLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string | undefined; saved?: any; models?: string[] | undefined; }) => Promise<boolean>;
   handleSkip: () => Promise<void>;
   MODEL_CONFIGURED_KEY: "model-configured-v1";

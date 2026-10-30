@@ -30,6 +30,9 @@ const manifest = (() => { try { return JSON.parse(read("electron/ipc-channels.ma
 const composition = (() => { try { return JSON.parse(read("electron/composition.json")); } catch { return { domains: [] }; } })();
 const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
 const barrel = read("src/features/app-state/index.ts");
+/* 「进化」的接线面：bag 绑定那一层 + 类型真相源 */
+const part08 = read("src/features/app-state/parts/part08/02-seg.tsx");
+const bagTypes = read("src/features/app-state/parts/bag-types.ts");
 
 /* ① 域注册 + 三通道（缺一个 ⇒ 面板永远读不到 / 建议存不下来） */
 ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron/features/task-monitor.ts（采集 + 落盘 + 建议）");
@@ -70,14 +73,27 @@ const tabs = [...rail.matchAll(/className=\{`panel-tab[^`]*`\} title="([^"]+)"/g
 (/<TaskMonitorPanel app=\{app\} \/>/.test(rail) ? ok : fail)("右栏页面区块挂了 <TaskMonitorPanel>（⛔ 只加按钮会点了空白）");
 
 /* ⑥ 一键进化：必须真发出去，且带上 self-review 技能（⛔ 不能用 setState 再 send —— 会发旧正文且丢技能） */
-(/sendPrefilled/.test(panel) ? ok : fail)("面板「进化」走 sendPrefilled（真发送，不是只填输入框）");
+(/app\.sendPrefilled\(\{ text, skill: EVOLVE_SKILL \}\)/.test(panel) ? ok : fail)(
+  "面板「进化」走 app.sendPrefilled（真发送，不是只填输入框、也不是拿 app 当 bag 硬转）"
+);
 (/export async function sendPrefilled/.test(sendSrc) && /pendingSkillRef\.current = input\.skill/.test(sendSrc) ? ok : fail)(
   "sendPrefilled 用一次性 ref 传文与技能（⛔ setPrompt/addSkillReference 是 setState，send 读到旧 bag）"
 );
 (/pendingSkill \? \[\.\.\.bag\.selectedSkills, pendingSkill\]/.test(sendSrc) ? ok : fail)(
   "发送拼 [本轮已引用技能] 时把一次性技能一起带上（漏了 = 进了对话但没技能）"
 );
-(/export \{ sendPrefilled \}/.test(barrel) ? ok : fail)("sendPrefilled 从 app-state barrel 导出（域间只经 barrel）");
+/* ⛔ 10-30 修正：sendPrefilled 必须绑在 **bag** 上（part08 包一层并 `as typeof bag.sendPrefilled`）。
+   ⛔ 不许从 barrel 导出后让调用方 `sendPrefilled(app as any)` —— app 是各 part 返回值的合并对象，
+     而 sendImpl 要读几十个 bag 字段，缺一个就在发送中途静默走错分支。 */
+(/bag\.sendPrefilled = sendPrefilled as typeof bag\.sendPrefilled/.test(part08) ? ok : fail)(
+  "sendPrefilled 绑在 bag 上（part08 包一层，拿到的是真 bag）"
+);
+(/sendPrefilled: \(input: \{ text: string; skill\?: \{ name: string; description: string \} \}\) => Promise<void>/.test(bagTypes) ? ok : fail)(
+  "bag-types 声明了 sendPrefilled（跨 part 引用才有具体类型，【93】不许漂移）"
+);
+(!/export \{ sendPrefilled \}/.test(barrel) ? ok : fail)(
+  "barrel 不再导出 sendPrefilled（⛔ 导出会诱使调用方把合并对象当 bag 传 —— 缺字段、静默失败）"
+);
 
 console.log("");
 console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
