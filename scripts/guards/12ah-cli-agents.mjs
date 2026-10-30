@@ -45,17 +45,39 @@ const composerSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/02-ma
 const segSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part08/01-seg.tsx"), "utf8");
 const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
 
-/* ── ① 内置预置：三个点名对象都在，且字段齐全 ── */
+/* ── ① 内置预置：点名的对象都在，且字段齐全（10-31 扩充国产 CLI 到 14 条） ── */
 {
   const presets = cli.BUILTIN_CLI_AGENTS;
-  ok(Array.isArray(presets) && presets.length >= 6, `内置预置表有 ${presets?.length ?? 0} 条（Claude / Codex / Gemini / Aider / OpenClaw / Harness）`);
+  ok(Array.isArray(presets) && presets.length >= 14, `内置预置表有 ${presets?.length ?? 0} 条（含 Claude / Codex / Gemini / Aider / OpenClaw / Harness + 8 个国产 CLI）`);
   const byName = new Map(presets.map((entry) => [entry.name, entry]));
   ok(["Claude Code", "OpenClaw", "Harness CLI"].every((name) => byName.has(name)),
     "用户点名的三类都在预置表里（Claude Code / OpenClaw / Harness CLI）");
+  ok(["Qwen Code", "QwenPaw", "iFlow CLI", "Kimi Code CLI", "CodeBuddy Code", "Comate CLI", "Qoder CLI", "Trae CLI"].every((name) => byName.has(name)),
+    "国产 CLI 都在表里（通义 Qwen Code / QwenPaw · 心流 iFlow · Kimi · 腾讯 CodeBuddy · 百度 Comate · Qoder · 字节 Trae）");
   ok(presets.every((entry) => entry.id && entry.name && entry.bin && entry.category),
     "每条预置 id/name/bin/category 齐全（缺一个就派不出去）");
   ok(presets.every((entry) => cli.CLI_CATEGORIES.some((cat) => cat.key === entry.category)),
     "预置的分类值都在 CLI_CATEGORIES 里（否则面板分组会漏掉它）");
+  /* 国产条目：npm/pip 命令必须是核实过的官方包名；Trae 官方只有脚本 ⇒ 留空给文档，⛔ 不硬塞脚本 */
+  const qwen = byName.get("Qwen Code");
+  ok(qwen && qwen.installCmd === "npm install -g @qwen-code/qwen-code@latest" && qwen.bin === "qwen",
+    "Qwen Code 用官方 npm 包 @qwen-code/qwen-code（bin=qwen）");
+  const paw = byName.get("QwenPaw");
+  ok(paw && /^pip install qwenpaw$/.test(paw.installCmd) && paw.installCmdMac === "python3 -m pip install qwenpaw" && paw.bin === "qwenpaw",
+    "QwenPaw 走 PyPI qwenpaw（mac 变体 python3 -m pip；bin=qwenpaw）");
+  ok(byName.get("iFlow CLI")?.installCmd === "npm install -g @iflow-ai/iflow-cli@latest" && byName.get("iFlow CLI")?.bin === "iflow",
+    "iFlow CLI 用官方 npm 包（bin=iflow）");
+  ok(byName.get("Kimi Code CLI")?.installCmd === "npm install -g @moonshot-ai/kimi-code" && byName.get("Kimi Code CLI")?.bin === "kimi",
+    "Kimi Code CLI 用官方 npm 包（bin=kimi）");
+  ok(byName.get("CodeBuddy Code")?.installCmd === "npm install -g @tencent-ai/codebuddy-code" && byName.get("CodeBuddy Code")?.bin === "codebuddy",
+    "CodeBuddy 用腾讯官方 npm 包（bin=codebuddy）");
+  ok(byName.get("Comate CLI")?.installCmd === "npm install -g @comate/comatecli" && byName.get("Comate CLI")?.bin === "comatecli",
+    "Comate CLI 用百度官方 npm 包（bin=comatecli）");
+  ok(byName.get("Qoder CLI")?.installCmd === "npm install -g @qoder-ai/qodercli" && byName.get("Qoder CLI")?.bin === "qoder",
+    "Qoder CLI 用官方 npm 包（bin=qoder）");
+  const trae = byName.get("Trae CLI");
+  ok(trae && trae.installCmd === "" && Boolean(trae.docs) && trae.bin === "traecli",
+    "Trae CLI 官方只有安装脚本 ⇒ 一键安装留空、给文档链接（⛔ 不硬塞脚本命令）");
 }
 
 /* ── ② 不编造安装命令（核实不到就留空） ── */
