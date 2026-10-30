@@ -290,10 +290,10 @@ ok(/changeAdaptiveTone/.test(generalPage), "控制台语气自适应开关接的
 {
   const avatarMod = await import(pathToFileURL(join(ROOT, "src/lib/agent-avatars.mjs")).href);
   const libSrc = src("src/lib/agent-avatars.mjs");
-  ok(/expert: \["agent-expert-a\.webp", "agent-expert-b\.webp"\]/.test(libSrc)
-    && /team: \["agent-team-a\.webp", "agent-team-b\.webp"\]/.test(libSrc)
-    && /subagent: \["agent-subagent-a\.webp", "agent-subagent-b\.webp"\]/.test(libSrc),
-    "三类各一套卡通图集（专家人物 / 专家团合影 / 机器人，风格可区分）");
+  ok(/agent-expert-a\.webp/.test(libSrc) && /agent-expert-c\.webp/.test(libSrc)
+    && /agent-team-a\.webp/.test(libSrc) && /agent-team-c\.webp/.test(libSrc)
+    && /agent-subagent-a\.webp/.test(libSrc) && /agent-subagent-c\.webp/.test(libSrc),
+    "三类各一套卡通图集（专家人物 / 专家团合影 / 机器人），每类 ≥2 张（10-31 扩到 4 张 = 36 造型）");
   ok(avatarMod.AGENT_AVATAR_COLS === 3 && avatarMod.AGENT_AVATAR_CELLS === 9,
     "图集按 3×3 等分（改图必须保持等分，否则切到别人脸上）");
   const a1 = avatarMod.pickAgentAvatar("expert", "member-42");

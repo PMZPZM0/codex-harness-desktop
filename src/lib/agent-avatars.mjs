@@ -18,11 +18,12 @@
  */
 export const AGENT_AVATAR_KINDS = ["expert", "team", "subagent"];
 
-/** 每类两张图集（顺序即散列取模顺序）。 */
+/** 每类四张图集（顺序即散列取模顺序）—— 10-31 用户令「多丰富一些头像」：
+ *  2 张 → 4 张 ⇒ 36 个造型/类（40 个专家里重复率从 2.2 降到 1.1）。 */
 const SHEETS = {
-  expert: ["agent-expert-a.webp", "agent-expert-b.webp"],
-  team: ["agent-team-a.webp", "agent-team-b.webp"],
-  subagent: ["agent-subagent-a.webp", "agent-subagent-b.webp"],
+  expert: ["agent-expert-a.webp", "agent-expert-b.webp", "agent-expert-c.webp", "agent-expert-d.webp"],
+  team: ["agent-team-a.webp", "agent-team-b.webp", "agent-team-c.webp", "agent-team-d.webp"],
+  subagent: ["agent-subagent-a.webp", "agent-subagent-b.webp", "agent-subagent-c.webp", "agent-subagent-d.webp"],
 };
 
 /** 图集列数（3×3）。 */
@@ -39,6 +40,17 @@ export function agentAvatarHash(seed, salt = "") {
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;
+}
+
+/**
+ * 调度目录的 kind → 头像风格（`cli` 用机器人那套；`member` 是团队成员 = 专家风格）。
+ * ⛔ 映射只有这一份：@ 面板 / 输入框芯片 / 右侧头像轨都读它，别各自写三元。
+ */
+export function agentAvatarKindOf(kind) {
+  const value = String(kind ?? "").trim();
+  if (value === "team") return "team";
+  if (value === "subagent" || value === "cli") return "subagent";
+  return "expert";
 }
 
 /**

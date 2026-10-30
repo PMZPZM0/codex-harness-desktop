@@ -4,9 +4,9 @@
  */
 import { Users, X, Plus, Trash2, Info, Check, Bot, Building2, Sparkles, LoaderCircle, Clock3 } from "lucide-react";
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
-import { AVATAR_GRADIENTS, avatarToneOf } from "../../../lib/entity-avatar";
+import { AgentAvatar } from "../../../components/AgentAvatar";
+import { agentAvatarKindOf } from "../../../lib/agent-avatars.mjs";
 import { useRefObject } from "../../../lib/use-ref-object";
-import { expertIconOf } from "../../../lib/expert-icon-of";
 import { expertRoleLabel } from "../../../lib/expert-role-label";
 import { useAvatarAnchor } from "./04-avatar-anchor";
 
@@ -70,13 +70,13 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
           const running = runningByMember[member.id];
           const last = lastByMember[member.id];
           const state = running ? "running" : last ? (last.status === "failed" ? "failed" : "done") : "idle";
-          const Icon = expertIconOf(member);
           const label = expertRoleLabel(member, isLead);
           return (
             <button key={member.id} type="button" data-member-id={member.id} className={`team-rail-node is-${state}${isLead ? " is-lead" : ""}${activeMemberId === member.id ? " is-active" : ""}`}
               title={`${label}${running ? "（执行中）" : last ? (last.status === "done" ? "（已完成最近一次委托）" : "（最近一次失败）") : "（尚未接过活）"}｜点击查看工作记录`}
               onClick={() => onOpenMember(member.id)}>
-              <span className="team-rail-avatar" style={isLead ? undefined : { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] }}><Icon size={14} /></span>
+              {/* ★ 10-31 用户令：右侧轨道头像与设置页同源（卡通人物，同一个 id 同一张脸） */}
+              <AgentAvatar kind="expert" seed={member.id || member.name} size={24} lead={isLead} className="team-rail-avatar" />
               {running ? <i className="team-rail-ring" aria-hidden /> : null}
               {!running && state === "done" ? <span className="team-rail-badge" aria-hidden><Check size={9} /></span> : null}
               {state === "failed" ? <span className="team-rail-badge is-failed" aria-hidden><X size={9} /></span> : null}
@@ -102,13 +102,12 @@ export function TeamMemberHistory({ team, memberId, runs, onClose }: {
   const member = [team.lead, ...team.members].find((entry) => entry.id === memberId) ?? null;
   const isLead = Boolean(member && member.id === team.lead.id);
   const label = member ? expertRoleLabel(member, isLead) : memberId;
-  const Icon = member ? expertIconOf(member) : Bot;
   const anchorTop = useAvatarAnchor(memberId);
   return (
     <div className={`team-panel-anchor${anchorTop == null ? " is-floating" : ""}`} style={anchorTop == null ? undefined : { top: anchorTop }}>
     <section className="team-run-popup" role="dialog" aria-label={`${label} 的历史工作记录`}>
       <header>
-        <span className="team-run-popup-avatar" style={member && !isLead ? { background: AVATAR_GRADIENTS[avatarToneOf(member.id || member.name)] } : undefined}><Icon size={13} /></span>
+        <AgentAvatar kind="expert" seed={member?.id || memberId} size={20} lead={isLead} className="team-run-popup-avatar" />
         <div className="team-run-popup-title"><strong>{label}</strong><small>{runs.length ? `历史工作记录 · 共 ${runs.length} 次委托` : "还没有接过活"}</small></div>
         <button type="button" className="icon-button" title="关闭" onClick={onClose}><X size={14} /></button>
       </header>
@@ -162,8 +161,7 @@ export function DelegatedRail({ containerRef, runs, onOpen, activeId, onOpenOffi
      而用户要的正是"永远能在右侧轨道上开办公室"（原来只能挂在左下角浮动胶囊上）。
      ⇒ 现在只有「窄屏自动收」与「既没委托也没入口」两种情形不渲染。 */
   if (mode === "hidden" || (!runs.length && !onOpenOffice)) return null;
-  const kindIcon = (kind: string) => (kind === "team" ? Users : kind === "subagent" ? Bot : Sparkles);
-  const kindLabel = (kind: string) => (kind === "team" ? "专家团" : kind === "subagent" ? "子智能体" : "专家");
+  const kindLabel = (kind: string) => (kind === "team" ? "专家团" : kind === "subagent" ? "子智能体" : kind === "cli" ? "CLI 智能体" : "专家");
   return (
     /* aria-label 覆盖两种内容（10-05 起这条轨也承载办公室入口）：原来只写「调度中的对象」，
        在"没调度过、只有办公室一个节点"时是不准确的。 */
@@ -172,7 +170,6 @@ export function DelegatedRail({ containerRef, runs, onOpen, activeId, onOpenOffi
         {/* 灰线只在**真有节点要串**时画：只剩办公室一个节点时，悬空一条短线反而像画错了 */}
         {runs.length > 0 && <i className="team-rail-line" aria-hidden />}
         {runs.map((run) => {
-          const Icon = kindIcon(run.kind);
           const state = run.status === "running" ? "running" : run.status === "failed" ? "failed" : "done";
           const stateHint = state === "running" ? "执行中" : state === "failed" ? "执行失败" : "已完成";
           return (
@@ -184,7 +181,8 @@ export function DelegatedRail({ containerRef, runs, onOpen, activeId, onOpenOffi
               title={`${kindLabel(run.kind)} · ${run.name}（${stateHint}）｜点击查看工作内容`}
               onClick={() => onOpen(run.threadId)}
             >
-              <span className="team-rail-avatar"><Icon size={14} /></span>
+              {/* ★ 10-31：调度轨头像与 @ 面板/设置页同源（kind=cli 用机器人那套） */}
+              <AgentAvatar kind={agentAvatarKindOf(run.kind)} seed={run.name || run.threadId} size={24} className="team-rail-avatar" />
               <i className="team-rail-ring" aria-hidden />
               <span className="team-rail-name">{run.name}</span>
             </button>
