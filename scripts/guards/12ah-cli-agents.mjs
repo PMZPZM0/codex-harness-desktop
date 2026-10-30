@@ -283,8 +283,12 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   /* ⑩d 面板分半渲染 + 实时刷新接线 */
   ok(/contextTriggerOf\(prompt\)\.mode/.test(composerSrc) && /data-mode=\{mode\}/.test(composerSrc),
     "@ 面板按触发 mode 分半渲染（data-mode 钉形态，两半互不夹带）");
-  ok(/mentionDisabledText\(target\)/.test(composerSrc) && /target\.kind === "cli" && target\.installed === false \? " · 未安装"/.test(composerSrc),
-    "@ 行显示置灰原因与「未安装」标记（title 走 mentionDisabledText）");
+  ok(/mentionDisabledText\(target\)/.test(composerSrc) && /context-picker-flag">未安装/.test(composerSrc),
+    "@ 行显示置灰原因（title）与「未安装」小标记（10-31 起行内不再重复分组名，保持简洁）");
+  ok(/context-picker-more">还有 \{group\.more\} 个/.test(composerSrc),
+    "每组超上限给「还有 N 个，继续输入筛选」（⛔ 不静默截断到用户以为对象丢了）");
+  ok(/export const MENTION_PER_GROUP = 12;/.test(mentionSrc),
+    "每组显示上限 = 12（10-31 用户实测「单个专家怎么这么少」：6 → 12，面板可滚动）");
   const composerSrc2 = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer.tsx"), "utf8");
   ok(/refreshDispatchInfo,/.test(composerSrc2) && /window\.setInterval\(\(\) => \{ void refreshDispatchInfo\?\.\(\); \}, 4000\)/.test(composerSrc2),
     "面板打开时拉目录 + 每 4s 轮询（CLI 装没装实时同步显示）");

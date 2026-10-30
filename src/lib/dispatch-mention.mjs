@@ -12,12 +12,13 @@
  *   ⛔ 三者候选面板共用同一个弹层，但候选来源互不混（见 03-composer 的 `.context-picker`）。
  */
 
-/** 分组顺序即面板展示顺序（专家的使用频率最高；专家团最重，放最后）。 */
+/** 分组顺序即面板展示顺序（专家的使用频率最高；专家团最重，放最后）。
+ *  ⛔ 10-31 用户令「文字赘述太多，简洁一点」：hint 只留四五个字，长解释只在"不可选"时才出现。 */
 export const MENTION_GROUPS = [
-  { kind: "expert", label: "专家", hint: "单个专家 · 开独立会话产出" },
-  { kind: "subagent", label: "子智能体", hint: "你配置的自定义角色 · 没有可一键新建" },
-  { kind: "cli", label: "CLI 智能体", hint: "本机命令行工具（Claude Code / OpenClaw 等）· 未安装的会灰掉，到开发工具一键安装" },
-  { kind: "team", label: "专家团", hint: "主理人按 SOP 拉成员 · 需开启专家团" },
+  { kind: "expert", label: "专家", hint: "独立会话" },
+  { kind: "subagent", label: "子智能体", hint: "自定义角色" },
+  { kind: "cli", label: "CLI 智能体", hint: "本机命令行" },
+  { kind: "team", label: "专家团", hint: "需开启" },
 ];
 
 /** 组的 kind → 芯片/列表上的类名标签。
@@ -47,8 +48,9 @@ export function mentionKindAllowed(allow, kind) {
   return true;
 }
 
-/** 每组最多显示几条（面板高度有限；超出用「还有 N 个，继续输入筛选」提示）。 */
-export const MENTION_PER_GROUP = 6;
+/** 每组最多显示几条（10-31 用户实测「单个专家怎么这么少」：6 → 12，面板本身可滚动；
+ *  再多就用「还有 N 个，继续输入筛选」提示，⛔ 不隐藏到用户以为丢了对象）。 */
+export const MENTION_PER_GROUP = 12;
 /** 一次消息最多点名几个对象（≥ 这个数就是"群发"，通常说明用户在乱试）。 */
 export const MENTION_MAX = 8;
 
@@ -105,7 +107,7 @@ export function contextTriggerOf(value) {
 
 /** 置灰行的原因文案（面板 title / 行内小字共用；⛔ 别在 JSX 里各写一份）。 */
 export function mentionDisabledText(target) {
-  if (target?.disabledReason === "cli-missing") return "未安装：到 设置 → 开发工具 → CLI 智能体 点「一键安装」";
+  if (target?.disabledReason === "cli-missing") return "未安装：到 设置 → 开发工具 → CLI 智能体 一键安装";
   if (target?.disabled) return "该类别未开通调度：在顶栏「调度」里打开专家团后即可选中";
   return "";
 }
@@ -144,9 +146,10 @@ export function filterMentionTargets(targets, query, allow = null) {
       if (!off && !missing) return target;
       return { ...target, disabled: true, disabledReason: missing ? "cli-missing" : "kind-off" };
     });
-    if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items, off });
+    const more = Math.max(0, hits.length - items.length);
+    if (items.length) groups.push({ kind: group.kind, label: group.label, hint: group.hint, items, off, more });
     total += items.length;
-    overflow += Math.max(0, hits.length - items.length);
+    overflow += more;
   }
   return { groups, total, overflow };
 }
