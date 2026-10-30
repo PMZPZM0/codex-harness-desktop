@@ -9,7 +9,7 @@
  *
  * ⛔ 一切按 threadId 取（主进程同样只认传入的 id）—— 换会话必须换数据，绝不复用上一会话的缓存。
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Activity, ChevronLeft, ChevronRight, RefreshCw, Sparkles, Wand2 } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
 
@@ -82,8 +82,39 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
   const latest = turns[turns.length - 1];
   const prev = turns[turns.length - 2];
 
-  /* 建议编辑态跟随「最新一轮」；用户改过就先不覆盖（等保存或切轮） */
+  /* 建议区右上角的状态一句话（⛔ 要短：这一行跟两个按钮同排，长了就换行把按钮挤成两行 —— 用户截图里就是这样）。 */
+  const suggestHint = !latest
+    ? "每轮自动复盘"
+    : latest.suggestionState === "running"
+      ? "复盘…"
+      : latest.suggestionState === "failed"
+        ? "生成失败"
+        : latest.suggestion ? "已同步到输入框" : "等这一轮结束";
+  const suggestHintFull = latest?.suggestionState === "failed"
+    ? `生成失败：${latest.suggestionError ?? "未知原因"}`
+    : "由本会话模型每轮自动复盘；出来后自动同步到下方输入框（输入框有字时不抢）";
+
+
   useEffect(() => { setDraft(latest?.suggestion ?? ""); }, [latest?.turnId, latest?.suggestion]);
+
+  /**
+   * 建议出来后**自动同步到输入框**（用户 10-30：「他输出建议，自动同步到输入框，输入框摆设吗」）。
+   *
+   * ⛔ 只在输入框**为空**时写：用户正在打自己的话时抢输入，比不同步更糟。
+   * ⛔ 同一轮的同一份建议只同步一次（stamp）：面板每 3 秒轮询，不去重就会反复把用户删掉的文字塞回去。
+   * ⛔ 用 setPrompt（真正的输入框状态），不是 pendingCommandTextRef —— 后者是"发出去"的一次性通道，
+   *    这里要的是**可编辑的草稿**（用户还想改两个字再发）。
+   */
+  const syncedRef = useRef("");
+  useEffect(() => {
+    const text = String(latest?.suggestion ?? "").trim();
+    if (!text) return;
+    const stamp = `${latest?.turnId ?? ""}:${text.slice(0, 60)}`;
+    if (syncedRef.current === stamp) return;
+    if (String(app.prompt ?? "").trim()) return;      // 用户正在写东西：不抢
+    syncedRef.current = stamp;
+    app.setPrompt(text);
+  }, [latest?.turnId, latest?.suggestion, app]);
 
   const usage = useMemo(() => {
     /* 技能/MCP/插件只取当前回合 + 上回合（用户口径），每页 5 条 */
@@ -167,14 +198,16 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
       <section className="monitor-block">
         <div className="monitor-block-head">
           <Sparkles size={12} className="ic-amber" /><strong>自我改进建议</strong>
-          <span className="monitor-hint">{!latest ? "暂无建议" : latest.suggestionState === "running" ? "本会话正在复盘…" : latest.suggestionState === "failed" ? `生成失败：${latest.suggestionError ?? ""}` : (latest.suggestion ? "由本会话 Codex 每轮更新" : "暂无建议")}</span>
-          <button type="button" className="monitor-mini" onClick={() => void askSession()} disabled={!latest} title="把这一轮的事实发给本会话，由 Codex 用自己的上下文复盘"><Sparkles size={11} />让 Codex 评估</button>
-          <button type="button" className="monitor-mini" onClick={() => void regenerate()} disabled={!latest || latest.suggestionState === "running"} title="由宿主侧模型快速重跑一版（不进对话）"><RefreshCw size={11} />重新生成</button>
+          <span className="monitor-hint" title={suggestHintFull}>{suggestHint}</span>
+          <span className="monitor-tools">
+            <button type="button" className="monitor-mini" onClick={() => void askSession()} disabled={!latest} title="评估：让本会话 Codex 用自己的上下文再复盘一次（会在对话里发一条请求）"><Sparkles size={11} /></button>
+            <button type="button" className="monitor-mini" onClick={() => void regenerate()} disabled={!latest || latest.suggestionState === "running"} title="换一版：宿主侧快速重跑（不打扰对话）"><RefreshCw size={11} /></button>
+          </span>
         </div>
         <textarea
           className="monitor-suggestion"
           value={draft}
-          placeholder={latest ? "暂无建议（纯聊天轮不生成）" : "暂无建议"}
+          placeholder={latest ? "这一轮正在复盘，跑完自动填进来（也会同步到下面输入框）" : "先跑一轮，建议会自动出现在这里"}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => void saveSuggestion(draft)}
         />
@@ -186,7 +219,7 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
 
       {/* ② 技能 / MCP / 插件 */}
       <section className="monitor-block">
-        <div className="monitor-block-head"><strong>技能与 MCP / 插件</strong><span className="monitor-hint">当前回合 + 上回合，每页 5 条</span></div>
+        <div className="monitor-block-head"><strong>技能 / MCP / 插件</strong><span className="monitor-hint">本回合 + 上回合</span></div>
         {usage.length ? usage.map((row) => (
           <div className="monitor-usage" key={row.label}>
             <div className="monitor-usage-label">{row.label}</div>
@@ -203,7 +236,7 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
       <section className="monitor-block grow">
         <div className="monitor-block-head">
           <strong>会话产物</strong>
-          <span className="monitor-hint">{fileTurns.length} 轮 · 每页 {PAGE_FILES}</span>
+          <span className="monitor-hint">{fileTurns.length} 轮</span>
           <div className="monitor-pager">
             <button type="button" className="icon-button" title="上一页" disabled={filePage <= 0} onClick={() => setFilePage((p) => Math.max(0, p - 1))}><ChevronLeft size={12} /></button>
             <span>{filePage + 1} / {pageCount}</span>

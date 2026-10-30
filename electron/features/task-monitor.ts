@@ -231,11 +231,11 @@ async function settleTurn(threadId: string, turnId: string, bucket?: Bucket) {
   store.set(threadId, next);
   await persist(threadId, next);
 
-  /* ⛔ 纯聊天轮（没工具、没改文件）不生成 —— 用户要的是"改进建议"，没有动作就没有可改进的动作面。 */
-  const acted = record.skills.length + record.mcp.length + record.plugins.length + record.artifacts.length > 0;
-  /* ⛔ 10-30 用户：「让 codex 在回合快结束时自己输出」⇒ 每轮（有动作时）自动复盘，
-     并把本轮回复一起交给它，产出才有针对性（原来只给工具清单，写出来必然是模板话）。 */
-  if (acted) void generateSuggestion(threadId, turnId, String(bucket?.reply ?? ""));
+  /* ⛔⛔ 10-30 用户（附截图）：「需要 codex 输出这个建议……还要我手动让他总结？」
+     ⇒ **每一轮都自动复盘**，不再只挑「有工具动作」的轮。
+     纯聊天轮同样有可改进面（答得太长、来回追问、该动手却只动嘴），原来那道 `acted` 门
+     直接把这类轮全跳过 ⇒ 面板长期停在「暂无建议（纯聊天轮不生成）」，用户以为功能没做。 */
+  void generateSuggestion(threadId, turnId, String(bucket?.reply ?? ""));
 }
 
 /** 用**本会话的模型**生成 1~3 条可执行的改进建议（复用记忆蒸馏的一次性内部会话通道）。 */
@@ -261,7 +261,11 @@ async function generateSuggestion(threadId: string, turnId: string, reply = "") 
       + "不要复述做了什么，不要客套，不要编号说明。只输出这几行。"
       /* ⛔ 配套 self-review 的四个检查面（10-30 用户：「工具配套好」）：不给检查面，模型只会写空话。 */
       + "\n重点看这四处：① 该验证却没验证（改了没跑/没看输出）；② 同一处反复失败才改对；"
-      + "③ 该同步/该提交的改动留在工作区；④ 对用户原话的理解有偏差（要返工的那种）。",
+      + "③ 该同步/该提交的改动留在工作区；④ 对用户原话的理解有偏差（要返工的那种）。"
+      /* ⛔ 纯聊天轮（没有工具/文件）也有可改进面，否则这类轮会输出一堆空话：
+         答得过长、该动手却只动嘴、同一件事反复追问、把选择权丢回给用户。 */
+      + "\n如果这一轮**没有工具调用、也没改文件**，就从「对话方式」上找：答得太长/来回追问/"
+      + "该直接动手却在解释/该给结论却先问一堆。不要硬凑工具相关的话。",
       digest,
       /* ⛔ 带上会话 id：没有自定义模型时用**本会话自己的模型**（否则官方供应商用户永远暂无建议）。 */
       { threadId },

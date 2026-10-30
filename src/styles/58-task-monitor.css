@@ -56,6 +56,20 @@
 }
 .monitor-mini:hover { color: var(--accent); border-color: var(--accent); }
 
+/* ⛔ 10-30 用户：「这个监控板块太丑」—— 截图里两个按钮被挤成竖排、提示文字折成三行。
+   根因：表头是 flex 但没限换行，hint 又 flex:1 抢满宽度，长文案直接把按钮顶到下一行。
+   规矩：表头**永远一行**（nowrap）+ hint 单行省略 + 按钮 flex:0 0 auto 且不换行。 */
+.monitor-block-head { flex-wrap: nowrap; min-width: 0; }
+.monitor-hint { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.monitor-tools { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+.monitor-mini { flex: 0 0 auto; white-space: nowrap; }
+/* 紧凑一档：这块是右栏常驻面板，行距大了整屏都是空。 */
+.monitor-block { gap: 5px; padding: 7px 9px; border-radius: 9px; }
+.monitor-suggestion { min-height: 62px; max-height: 132px; }
+.monitor-actions { flex-wrap: nowrap; }
+.monitor-actions .monitor-btn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
+
+
 .monitor-suggestion {
   width: 100%;
   min-height: 76px;
@@ -136,3 +150,6 @@
 .monitor-file i { font-style: normal; color: var(--green, #2f9e44); font-size: 11px; }
 .monitor-file em { font-style: normal; color: var(--red, #d64545); font-size: 11px; margin-left: auto; }
 .monitor-empty { font-size: 11px; color: var(--faint); padding: 2px 0; }
+
+/* ⛔ 放文件最末：同优先级下后写者胜，否则会被上面的原规则盖掉（10-30 版式收紧）。 */
+.monitor-suggestion { min-height: 62px; max-height: 132px; }

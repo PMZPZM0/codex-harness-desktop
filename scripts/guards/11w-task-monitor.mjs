@@ -58,8 +58,9 @@ ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron
 (/parsed\.threadId === threadId/.test(svc) ? ok : fail)("落盘文件里的 threadId 与请求不一致时当损坏（防串会话）");
 
 /* ④ 面板：三段 + 空态文案 + 分页 + 换会话清空 */
-(["暂无建议", "暂无使用记录", "暂无文件"].every((t) => panel.includes(t)) ? ok : fail)(
-  "三个板块的空态文案齐（暂无建议 / 暂无使用记录 / 暂无文件）"
+/* 10-30 改：空态不再写暂无建议占位（用户嫌丑且误导），改成**说明这一块在等什么**。 */
+(["等这一轮结束", "暂无使用记录", "暂无文件"].every((t) => panel.includes(t)) ? ok : fail)(
+  "三个板块的空态文案齐（等这一轮结束 / 暂无使用记录 / 暂无文件）"
 );
 (/PAGE_FILES\s*=\s*10/.test(panel) && /monitor-pager/.test(panel) ? ok : fail)("会话产物每页 10 轮 + 分页器");
 (/slice\(0, 5\)/.test(panel) ? ok : fail)("技能/MCP/插件每页最多 5 条");
@@ -135,8 +136,9 @@ const codexIpcSrc = read("electron/features/codex-ipc.ts");
 (/noteThreadModel\(/.test(codexIpcSrc) ? ok : fail)(
   "turn/start 时记录本会话真实使用的模型（thread-model 单点）"
 );
-(/让 Codex 评估/.test(panel) && /app\.sendPrefilled/.test(panel) ? ok : fail)(
-  "面板有「让 Codex 评估」：把本轮事实发进本会话，由 Codex 用自己的上下文复盘"
+/* 10-30：按钮文案压成「评估」（两个按钮同排，「让 Codex 评估」会被挤成竖排）。 */
+(/title="评估：/.test(panel) && /app\.sendPrefilled/.test(panel) ? ok : fail)(
+  "面板有「评估」按钮（窄栏里只放图标、文字进 title）：把本轮事实发进本会话，由 Codex 用自己的上下文复盘"
 );
 
 /* ④ 技能卡收成一行（用户：「技能还显示两行，不美观」）。 */
@@ -164,6 +166,20 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
   "面板按钮是「采取建议」，走 adoptMonitorSuggestion（⛔ 不再是「发回对话」）"
 );
 (/沉淀|可复用的经验/.test(svc) ? ok : fail)("事件正文要求它**沉淀成经验**（记忆 / AGENTS.md / 技能），不是回一句「好的」");
+
+/* ⑥ 自动同步到输入框 + 每轮都复盘（10-30 用户：「输入框摆设吗，完全没有自动同步功能」
+      「还要我手动让他总结」） */
+(/app\.setPrompt\(text\)/.test(panel) && /String\(app\.prompt \?\? ""\)\.trim\(\)\) return/.test(panel) ? ok : fail)(
+  "建议出来后自动写进输入框（⛔ 只在输入框为空时写：抢用户正在打的字比不同步更糟）"
+);
+(/syncedRef/.test(panel) ? ok : fail)("同一轮的同一份建议只同步一次（面板每 3 秒轮询，不去重会反复塞回去）");
+(!/const acted = /.test(svc) ? ok : fail)(
+  "⛔ 不再用「有工具动作才复盘」的门（纯聊天轮被整轮跳过 ⇒ 面板长期停在「暂无建议」）"
+);
+(/没有工具调用、也没改文件/.test(svc) ? ok : fail)("纯聊天轮也给检查面（答太长/来回追问/该动手却只解释）");
+(/\.monitor-tools/.test(read("src/styles/58-task-monitor.css")) ? ok : fail)(
+  "表头按钮有独立容器 + 单行省略（截图里被挤成竖排的根因：hint 抢满宽度且允许换行）"
+);
 
 console.log("");
 console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
