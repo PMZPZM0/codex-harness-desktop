@@ -1641,3 +1641,23 @@
 }
 .agent-preview-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
 .agent-preview-danger:hover { background: color-mix(in srgb, var(--red) 9%, transparent); }
+
+/* ★ 10-31：输入框 @ 芯片里的小头像（头像 + 类型 + 名字） */
+.mention-chip .mention-chip-avatar { flex: none; margin-right: 1px; }
+
+/* 预览弹窗里的状态徽标 / 命令原文 */
+.agent-preview-meta span.is-ok {
+  background: color-mix(in srgb, var(--green) 13%, transparent);
+  color: var(--green);
+}
+.agent-preview-code {
+  display: block;
+  padding: 5px 8px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.5;
+  word-break: break-all;
+}

@@ -306,6 +306,26 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/mentionKindLabel\(target\.kind\)/.test(readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"), "utf8")),
     "芯片真的走 mentionKindLabel（映射写了不用 = 装饰品）");
 
+  /* ── ⑩e 卡通头像同源（10-31 用户令：「@ 面板 / 输入框芯片 / 右侧轨道 / CLI 智能体卡片都要头像」）──
+     ⛔ 四处必须读同一份映射（agentAvatarKindOf）：各自写三元 ⇒ CLI 在一处显示成人、一处显示成机器人。 */
+  const avatarLibSrc = readFileSync(join(ROOT, "src/lib/agent-avatars.mjs"), "utf8");
+  ok(/value === "subagent" \|\| value === "cli"/.test(avatarLibSrc),
+    "kind 映射单一真相源：subagent 与 cli 共用机器人风格（都是工具型智能体）");
+  ok(/AgentAvatar/.test(composerSrc) && /className="context-picker-avatar"/.test(composerSrc),
+    "@ 候选行展示卡通头像（与设置页同一套）");
+  ok(/className="mention-chip-avatar"/.test(formSrc) && /agentAvatarKindOf\(target\.kind\)/.test(formSrc),
+    "@ 之后输入框里的芯片也展示头像（走同一份 kind 映射）");
+  const railSrc = readFileSync(join(ROOT, "src/features/experts-teams/ExpertsTeams/02-rails.tsx"), "utf8");
+  ok(/AgentAvatar/.test(railSrc) && /agentAvatarKindOf\(run\.kind\)/.test(railSrc)
+    && /kind="expert" seed=\{member\.id \|\| member\.name\}/.test(railSrc),
+    "右侧轨道头像同源（成员轨 = 专家人物、调度轨 = 按 kind 映射，CLI 用机器人）");
+  ok(/<AgentBadge/.test(panelSrc) && /agent-badge-grid/.test(panelSrc) && /kind="subagent"/.test(panelSrc),
+    "CLI 智能体列表 = 工作证小卡 + 机器人头像（10-31 卡片优化）");
+  ok(/<SettingsDialog/.test(panelSrc) && /agent-preview/.test(panelSrc) && /size="sm"/.test(panelSrc),
+    "CLI 点卡进入预览弹窗（安装状态 / 命令 / 装卸动作在弹窗里）");
+  ok(/agent-expert-d\.webp/.test(avatarLibSrc) && /agent-subagent-d\.webp/.test(avatarLibSrc) && /agent-team-d\.webp/.test(avatarLibSrc),
+    "图集扩到每类 4 张（36 造型/类，新建的专家 / 团队 / 子智能体自动从同一图集取脸）");
+
   /* ── 10-30 mac 审计：CLI 的「检测」与「派活执行」必须用**同一条增强 PATH** ──
      GUI 进程（尤其 darwin）PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin，CLI 基本装在
      /opt/homebrew/bin 或 ~/.npm-global/bin ⇒ 直接继承 process.env.PATH 时：

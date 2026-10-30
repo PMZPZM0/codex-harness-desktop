@@ -150,69 +150,9 @@
   color: var(--faint);
   font-size: 12px;
 }
-.cli-agent-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: var(--field);
-}
-.cli-agent-row.off {
-  opacity: 0.55;
-}
-.cli-agent-icon {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: var(--accent);
-}
-.cli-agent-main {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.cli-agent-title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--text);
-  font-size: 13px;
-  font-weight: 600;
-}
-.cli-agent-title code {
-  padding: 1px 5px;
-  border-radius: 5px;
-  background: color-mix(in srgb, var(--text) 7%, transparent);
-  color: var(--muted);
-  font-family: var(--mono);
-  font-size: 10.5px;
-  font-weight: 400;
-}
-.cli-agent-tag {
-  font-style: normal;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: var(--panel);
-  color: var(--faint);
-  font-size: 10px;
-  font-weight: 500;
-}
-.cli-agent-tag.is-ok {
-  background: color-mix(in srgb, var(--green) 14%, transparent);
-  color: var(--green);
-}
-.cli-agent-tag.is-miss {
-  background: color-mix(in srgb, var(--orange) 14%, transparent);
-  color: var(--orange);
-}
+
+/* 10-31：行卡已换成「工作证」（AgentBadge 通用样式在 13-subagents-page.css），
+   这里只保留列表结构里还在用的标签 / 日志 / 确认弹窗。 */
 
 /* 一键安装的实时日志（最多留最近几行，等宽小字） */
 .cli-agent-install-log {
@@ -267,31 +207,6 @@
 }
 .cli-agent-confirm-actions .cli-agents-btn.danger:hover {
   background: color-mix(in srgb, var(--red) 10%, transparent);
-}
-.cli-agent-desc {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11.5px;
-  line-height: 1.45;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cli-agent-status {
-  color: var(--faint);
-  font-size: 11px;
-}
-.cli-agent-status.ok { color: var(--green); }
-.cli-agent-status.miss { color: var(--orange); }
-.cli-agent-status.busy { color: var(--muted); }
-.cli-agent-actions {
-  display: flex;
-  flex: none;
-  gap: 5px;
-}
-.cli-agent-actions .cli-agents-btn {
-  height: 26px;
-  padding: 0 8px;
-  font-size: 11.5px;
 }
 
 /* ── 新增/编辑表单 ── */
@@ -360,9 +275,7 @@
   line-height: 1.55;
 }
 
-/* 窄屏：表单单列、行内动作换行（⛔ 不隐藏动作 —— 藏了就变成"这个 CLI 不能检测"） */
+/* 窄屏：表单单列（10-31 行卡已换成工作证网格，网格自身会自适应列数） */
 @media (max-width: 720px) {
   .cli-agent-form-grid { grid-template-columns: 1fr; }
-  .cli-agent-row { flex-wrap: wrap; }
-  .cli-agent-actions { order: 3; }
 }

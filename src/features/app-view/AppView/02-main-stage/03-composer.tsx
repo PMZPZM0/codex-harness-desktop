@@ -6,6 +6,8 @@ import { createPortal } from "react-dom";
 import { useEffect } from "react";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
 import { contextTriggerOf, filterMentionTargets, mentionDisabledText } from "../../../../lib/dispatch-mention.mjs";
+import { agentAvatarKindOf } from "../../../../lib/agent-avatars.mjs";
+import { AgentAvatar } from "../../../../components/AgentAvatar";
 import {
   AlertTriangle,
   Archive,
@@ -514,6 +516,8 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                                 onMouseDown={(event) => event.preventDefault()}
                                 onClick={() => { if (!target.disabled) addDispatchMention(target as DispatchTargetEntry); }}
                               >
+                                {/* ★ 10-31 用户令：@ 候选行也展示卡通头像（与设置页同一套） */}
+                                <AgentAvatar kind={agentAvatarKindOf(target.kind)} seed={target.key || target.name} size={22} className="context-picker-avatar" />
                                 <span className="context-picker-name">{target.name}{target.profession ? <em>{target.profession}</em> : null}</span>
                                 {target.kind === "cli" && target.installed === false ? <i className="context-picker-flag">未安装</i> : null}
                               </button>

@@ -1357,6 +1357,10 @@
   overflow: hidden;
 }
 /* ★ 10-31 用户令「简洁」：行 = 名字（+ 灰色职业），不再重复分组名；未安装另挂一个小标记。 */
+.context-picker .context-picker-avatar {
+  flex: none;
+  margin-right: 1px;
+}
 .context-picker .context-picker-name {
   flex: 1;
   min-width: 0;
