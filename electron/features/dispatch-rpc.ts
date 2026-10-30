@@ -16,6 +16,8 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
 import { normalizeTeamConfig, readExpertTeams, readUsableExpertTeams, writeExpertTeams } from "../expert-teams";
+import { CLI_CATEGORIES, cliInstalledFlags, detectCliAgent, readCliAgents } from "../cli-agents";
+import { installCliAgent, uninstallCliAgent } from "../cli-install";
 import { readConnectors } from "../main";
 import { voiceService } from "../main";
 import { loadVoiceSettings } from "../voice/voice-settings";
@@ -342,6 +344,46 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     } catch (error: any) {
       return { ok: false, error: error?.message ?? String(error) };
     }
+  }
+  /* ── CLI 智能体四件套（10-31 用户令）：装没装 / 一键装 / 卸载的模型侧入口 ─────────
+     ⛔ 执行端复用主进程唯一实现 cli-install.ts（同一套 npm/pip 参数数组与装完复核），
+        这里只做参数校验 + 权限闸 + 文案，⛔ 不另写一份安装逻辑。
+     ⛔⛔ 装/卸必须 confirm:true（用户已同意）且**被委派会话一律拒绝**：
+        专家/子智能体/CLI 会话是"干活"的，不该有权往用户机器上装软件（越权面）。 */
+  if (name === "cli_agent_list" || name === "cli_agent_detect" || name === "cli_agent_install" || name === "cli_agent_uninstall") {
+    const items = await readCliAgents();
+    if (name === "cli_agent_list") {
+      if (!items.length) return { ok: true, output: "（CLI 智能体目录为空）" };
+      const flags = await cliInstalledFlags(items.map((entry) => ({ id: entry.id, bin: entry.bin }))).catch(() => ({}) as Record<string, boolean>);
+      const categoryLabel = (key: string) => CLI_CATEGORIES.find((cat) => cat.key === key)?.label ?? key;
+      const lines = items.map((entry) => `- ${entry.id}｜${entry.name}｜bin=${entry.bin || "?"}｜${categoryLabel(entry.category)}｜${flags[entry.id] ? "已安装" : "未安装"}${entry.installCmd ? "｜可一键安装" : "｜按官方文档安装"}${entry.enabled ? "" : "｜已停用"}`);
+      return { ok: true, output: lines.join("\n") };
+    }
+    if (name === "cli_agent_detect") {
+      const input = { id: args.id ? String(args.id) : undefined, bin: args.bin ? String(args.bin) : undefined };
+      if (!input.id && !input.bin) return { ok: false, error: "id 或 bin 至少给一个" };
+      const result = await detectCliAgent(input);
+      const name_ = input.id ? items.find((entry) => entry.id === input.id)?.name ?? input.id : input.bin;
+      return { ok: true, output: result.installed ? `${name_}：已安装${result.version ? ` · ${result.version}` : ""}（${result.path}）` : `${name_}：未安装${result.error ? `（${result.error}）` : ""}` };
+    }
+    const item = items.find((entry) => entry.id === String(args.id ?? ""));
+    if (!item) return { ok: false, error: `找不到 CLI 条目「${String(args.id ?? "")}」（先用 cli_agent_list 查 id）` };
+    if (args.confirm !== true) {
+      return { ok: false, error: `拒绝执行：${name === "cli_agent_install" ? "安装" : "卸载"}会真的改动用户机器 —— 先向用户说明要${name === "cli_agent_install" ? "装" : "卸"}哪个、执行哪条命令，用户明确同意后再传 confirm:true` };
+    }
+    const restrict = await restrictedThreadRole(callerThreadId);
+    const delegated = Boolean(await delegateRegistry.infoOf(callerThreadId));
+    if (restrict.restricted || delegated) {
+      return { ok: false, error: `当前会话（${restrict.label || "被调度的会话"}）不允许安装/卸载本机软件 —— 请让用户在主会话或「设置 → 开发工具 → CLI 智能体」操作` };
+    }
+    if (name === "cli_agent_install") {
+      const result = await installCliAgent(item.id);
+      return result.ok
+        ? { ok: true, output: `${result.detail || `已安装 ${item.name}`}。现在可以在输入框 @ 它，或 agent_invoke(kind="cli", name="${item.name}") 派活。` }
+        : { ok: false, error: result.error ?? "安装失败" };
+    }
+    const result = await uninstallCliAgent(item.id);
+    return result.ok ? { ok: true, output: result.detail || `已卸载 ${item.name}` } : { ok: false, error: result.error ?? "卸载失败" };
   }
   if (name === "voice_generate") {
     const text = String(args.text ?? "").trim();

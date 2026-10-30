@@ -214,6 +214,37 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/if \(!apiKey \|\| \(!baseUrl && !model\)\) return \{\};/.test(envSrc), "没有 Key 就不注（半套环境只会把 CLI 自己的配置弄坏）");
 }
 
+/* ── ⑦d 模型侧配套工具（10-31 用户令：「看看有没有配套工具，codex 可以新建智体、专家、专家团，
+   安装 cli 智体工具」）：建对象的两件套早就有（expert_save / subagent_save），这轮补 CLI 四件套。
+   判据盯四件事（少一件就是"界面上有、模型调不到"）：
+     ① MCP 工具面里有 cli_agent_list / detect / install / uninstall（才会进 harness_tools 网关）；
+     ② 装/卸必须 confirm:true + 被委派会话拒绝（改用户机器 = 高风险面）；
+     ③ 执行端复用 cli-install.ts（⛔ 不另写 npm/pip 调用）；
+     ④ 网关描述与常驻指令都点名这些工具（写了不告诉模型 = 白配）。 */
+{
+  const coreSrc = readFileSync(join(ROOT, "electron/features/dispatch-core.ts"), "utf8");
+  const rpcSrc = readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8");
+  const part08 = readFileSync(join(ROOT, "src/features/app-state/parts/part08/01-seg.tsx"), "utf8");
+  const instr = readFileSync(join(ROOT, "electron/developer-instructions.ts"), "utf8");
+  for (const tool of ["cli_agent_list", "cli_agent_detect", "cli_agent_install", "cli_agent_uninstall"]) {
+    ok(coreSrc.includes(`name: "${tool}"`), `MCP 工具面有 ${tool}（才会进 harness_tools 网关）`);
+  }
+  ok(/name: "cli_agent_install"[\s\S]{0,900}confirm: \{ type: "boolean"/.test(coreSrc)
+    && /name: "cli_agent_uninstall"[\s\S]{0,700}confirm: \{ type: "boolean"/.test(coreSrc)
+    && /if \(args\.confirm !== true\)/.test(rpcSrc),
+    "装/卸必须 confirm:true（用户明确同意；缺省一律拒绝）");
+  ok(/const restrict = await restrictedThreadRole\(callerThreadId\);\s*\n\s*const delegated = Boolean\(await delegateRegistry\.infoOf\(callerThreadId\)\);/.test(rpcSrc)
+    && /restrict\.restricted \|\| delegated/.test(rpcSrc),
+    "被委派 / 受保护会话无权装卸软件（越权面）");
+  ok(/await installCliAgent\(item\.id\)/.test(rpcSrc) && /await uninstallCliAgent\(item\.id\)/.test(rpcSrc),
+    "执行端复用 cli-install.ts（⛔ 不另写 npm/pip 调用）");
+  ok(/cli_agent_list \/ cli_agent_detect/.test(part08) && /cli_agent_install \/ cli_agent_uninstall/.test(part08),
+    "harness_tools 网关描述点名 CLI 四件套（模型才知道能调）");
+  ok(/const AGENT_MANAGEMENT_INSTRUCTIONS/.test(instr) && /text \+= AGENT_MANAGEMENT_INSTRUCTIONS;/.test(instr)
+    && /expert_save/.test(instr) && /subagent_save/.test(instr) && /cli_agent_install/.test(instr) && /confirm: true/.test(instr),
+    "常驻指令写明「建专家/团队/子智能体 + 装 CLI 要先征得同意」（工具在表里但模型不知道 = 白配）");
+}
+
 /* ── ⑧ 调度接线：目录 / 闸门 / 描述 / 解析（真跑 dispatch.js） ── */
 {
   const probe = [{ kind: "cli", key: "builtin-claude-code", name: "Claude Code", profession: "编码 CLI", description: "编码 CLI" }];

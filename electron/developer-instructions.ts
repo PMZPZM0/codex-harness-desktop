@@ -160,6 +160,22 @@ const LAYA_INSTRUCTIONS = `\n\nLOCAL LAYA JUDGE (only if \`laya_judge\` is in yo
 const REVIEW_INSTRUCTIONS =
   "\n6) self-review before handing over — for a non-trivial result (a code change, a plan, a document), re-read what you are about to deliver before calling it done: does it actually do what was asked, are the paths/commands/APIs real (not remembered), did you leave half-finished edits or debug leftovers. Fix what you find, and say plainly what you checked. Do not dispatch a reviewer subagent for this — there is no built-in one; if the user created their own subagent you may use it right away (subagents are always available, no switch to turn on). Expert teams are the one exception: they are off by default and need the user to enable 「专家团」 in the top-bar 调度 panel — so never tell the user to go enable subagents or experts.";
 
+/**
+ * 10-31 用户令：「看看有没有配套工具，codex 可以新建智体、专家、专家团，安装 cli 智体工具」。
+ *
+ * 专家 / 专家团 / 子智能体的**建**通道早就有（expert_save / subagent_save，走能力网关），
+ * 但 CLI 智能体此前只有界面 IPC —— 模型看不到「装没装 / 怎么装」。这里把两类能力一起说清，
+ * 且把「装软件必须先问用户」写成硬规则（与 UIA / 桌面自动化的 confirm 口径一致）。
+ * ⛔ 条件式表述（先看工具在不在）—— 老会话工具面可能还是旧的。
+ */
+const AGENT_MANAGEMENT_INSTRUCTIONS =
+  "\n### 创建专家 / 专家团 / 子智能体 · 安装 CLI 智能体\n"
+  + "If `harness_tools` is in your tool list, you can do these directly (if it is not, this session's tool surface is old — tell the user to switch away and back):\n"
+  + "- 用户说「新建/改一个专家」→ `expert_save`（只给 lead = 单人专家）；「新建专家团 / 多人协作」→ `expert_save` + `members`（≥1）。建前先 `expert_list` 查重（⛔ 不要建同名重复）；⛔ 内置六专家是启动时确保的，不要用它们的 teamId 去覆盖。写清 systemPrompt（角色 + 工作方式 + 输出规范 + 边界）。\n"
+  + "- 用户说「新建一个子智能体」→ `subagent_save`（name + systemPrompt 必填）。子智能体默认可用；专家团默认关闭，需要用户自己在顶栏「调度」里打开。\n"
+  + "- 用户问「有哪些 CLI 智能体 / 装没装」→ `cli_agent_list` / `cli_agent_detect`。内置里已有 Claude Code、Codex CLI、Gemini CLI、Aider、OpenClaw、Qwen Code、QwenPaw、iFlow CLI、Kimi Code CLI、CodeBuddy Code、Comate CLI、Qoder CLI、Trae CLI（Trae 官方只有安装脚本 ⇒ 只能引导按文档装，不能一键）。\n"
+  + "- 用户说「装一下 / 卸载某个 CLI」→ ⛔⛔ **先向用户说明要装什么、会执行哪条命令，征得明确同意后**再调 `cli_agent_install` / `cli_agent_uninstall` 并传 `confirm: true`；没有 confirm 会被拒绝，也不要绕过（不要自己跑 npm/pip 安装）。装/卸只动应用自己的工具目录；**被委派的会话（专家/子智能体/CLI）无权装卸**。装完如实转述结果（含失败原因与文档链接），装好的 CLI 会出现在输入框 @ 列表里（没装好时是置灰的）。\n";
+
 /** ⛔⛔ 名字 / 称呼**不是**画像事实（10-24 实测定案，同一句要贴到每一档记忆文案里）。
  *
  *  事故形态（用户截图）：用户给助手取名「小布子」、自称「小潘总」，模型回「记住了」，
@@ -459,6 +475,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += LAYA_INSTRUCTIONS;
   // 复审指引无条件下发（内容自带条件式判断：先看 agent_invoke 在不在工具表里）
   text += REVIEW_INSTRUCTIONS;
+  // 10-31：专家 / 专家团 / 子智能体的建、CLI 智能体的装/卸（都要模型知道工具存在）
+  text += AGENT_MANAGEMENT_INSTRUCTIONS;
   // 记忆分层与踩坑留痕：无条件下发（用户 09-22 点名的痛点：坑不记 ⇒ 反复踩）
   text += memoryInstructions();
   /* 10-20：**当前生效后端**（记忆三态 + 知识库两态 + 真实工具名 + 以工具列表为准的口诀）。
