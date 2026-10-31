@@ -8,7 +8,7 @@ import { Turn } from "../../../lib/turn";
 import { FoldHandlers, TurnFoldStream } from "../../session-queue";
 import { useCodexName, CodexAvatar } from "../../../components/CodexAvatar";
 import { isTurnRunning } from "../../../lib/turn-fold";
-import { useEffect, useMemo, memo, useState, useRef } from "react";
+import { useEffect, useMemo, memo, useState, useRef, Fragment } from "react";
 import { RUN_CLOCK } from "../../../lib/run-clock-2";
 import { describeTurnStop } from "../../../lib/turn-stop-reason.mjs";
 import { formatDuration } from "../../../lib/format-duration";
@@ -43,6 +43,26 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
     if (!running) RUN_CLOCK.forget(turn.id);
   }, [running, turn.id]);
   const userItems = turn.items.filter((item) => item.type === "userMessage");
+  /* ⛔⛔ 10-31 用户令：「插队消息发出去，后续的消息就要在我们的消息下面」——
+     旧渲染把回合内**所有**用户消息都搬到卡片顶上（plainUserItems.map 在最前），
+     插队/排队并入的用户消息落在回合**中段**也被拽到顶部 ⇒ 插队之后产生的回复/工具
+     全部显示在用户消息上面（用户截图实证「还在上面跑出消息」）。
+     ⇒ 按**流中顺序**切段：每条普通用户消息 = 一段边界，各自渲染在自己的流位置上；
+        第一条用户消息之前没有响应项（正常单条发送）⇒ 维持旧渲染（气泡在卡片上方）不动。 */
+  const flowSegments = useMemo<{ user: any; items: any[] }[]>(() => {
+    const segs: { user: any; items: any[] }[] = [{ user: null, items: [] }];
+    for (const item of turn.items) {
+      if (isCompactionItem(item)) continue;   // 压缩线已由 timeline 层归位，不进内容区
+      if (item.type === "userMessage") {
+        if (isGroupEventMessage(itemText(item))) continue;  // 群广播由悬浮播报承担，不是边界
+        segs.push({ user: item, items: [] });
+        continue;
+      }
+      segs[segs.length - 1].items.push(item);
+    }
+    return segs;
+  }, [turn.items]);
+  const interleaved = flowSegments[0].items.length > 0 && flowSegments.length > 1;
   /* ⛔⛔ 10-26 用户令：「放到消息下面，不要放上面」——
      群广播（宿主注入的 `[群事件] …`）**不是用户说的话**，不该占着"用户消息"的位置
      压在回复上面（之前它就是一条 userMessage ⇒ 渲染在回复上方，看着像用户自己发的）。
@@ -107,6 +127,64 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
         : item?.type === "commandExecution" || item?.type === "fileChange" || item?.type === "mcpToolCall" || item?.type === "webSearch",
   );
   if (userItems.length === 0 && !hasRealContent) return null;
+  /* ⛔⛔ 插队分段渲染（10-31）：第一条用户消息**之前就有响应项**（插队/排队并进的回合）
+     ⇒ 按流中顺序切段：每条用户气泡渲染在自己的流位置上，后续内容全部在它下面。
+     ⛔ 只有**最后一段**带「耗时 X」收尾皮肤（耗时属于整个回合，段段都挂就是同屏多个）。 */
+  if (interleaved) {
+    const lastIndex = flowSegments.length - 1;
+    return (
+      <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
+        {flowSegments.map((seg, index) => {
+          const last = index === lastIndex;
+          const segFold = seg.items;
+          return (
+            <Fragment key={seg.user?.id ?? `flow-seg-${index}`}>
+              {seg.user && <MemoUserMessageView item={seg.user} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} />}
+              {(segFold.length > 0 || (last && (running || responseItems.length > 0))) && (
+                <div className="turn-card">
+                  {index === 0 && userItems.length > 0 && (running || responseItems.length > 0) && (
+                    <div className="turn-head">
+                      <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
+                      <span className="turn-head-name">{codexName}</span>
+                      <SessionAnnounceToggle threadId={threadId} />
+                    </div>
+                  )}
+                  {index === 0 && running && userItems.length > 0 && <RunningProcessTime turnId={turn.id} />}
+                  <div className="turn-card-body">
+                    <div className="codex-turn">
+                      {last && !running && !stoppedWithoutReply && !userStopped && stopReason.label && (
+                        <div className={`turn-stop-notice stop-${stopReason.kind}`} role="status" title={stopReason.detail}>
+                          <AlertTriangle size={15} />
+                          <div>
+                            <strong>{turn.durationMs ? `${stopReason.label} · 耗时 ${formatDuration(turn.durationMs)}` : stopReason.label}</strong>
+                            {stopReason.detail && <span>{stopReason.detail.split("\n")[0]}</span>}
+                          </div>
+                        </div>
+                      )}
+                      <TurnFoldStream items={segFold} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={last ? finalAgent?.id : undefined} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} completedSkin={last} />
+                      {last && turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />}
+                      {last && userStopped && (
+                        <div className="turn-user-stopped" role="status">
+                          <CircleStop size={14} />
+                          <div>
+                            <strong>用户已停止</strong>
+                            <span>运行过程与内容都已保留，接着发消息即可继续</span>
+                          </div>
+                        </div>
+                      )}
+                      {last && turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} />}
+                      {last && <Slot id="turn.after-content" props={{ turnId: turn.id, running, status: turn.status }} />}
+                      {last && <PollTaskBoard turnId={turn.id} />}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Fragment>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
       {plainUserItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
