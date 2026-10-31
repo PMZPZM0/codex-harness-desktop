@@ -1277,7 +1277,10 @@
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
     margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
-    background-color 0.22s;
+    background-color 0.22s,
+    /* 放大镜：指针附近往外散开（内联 translate，见 01-message-ruler 的 fanDy）。
+       ⛔ 只过渡 translate（独立变换属性）—— 用 transform 会盖掉定位与其它变换。 */
+    translate 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
   position: relative;
 }
 /* 刻度尺上的「压缩」绿段（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）：
@@ -1298,7 +1301,8 @@
   pointer-events: auto;
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
-    margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+    margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
+    translate 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 /* 绿线也跟波浪：静止 12px，波浪中心/邻近与普通刻度同宽（26/18/15px），左端同样不动。 */
 .message-ruler .ruler-compaction.wave-0 { width: 26px; margin-left: 12px; transition-delay: 0s; }
@@ -1330,51 +1334,102 @@
   margin-left: 12px;
   transition-delay: 80ms;
 }
-.message-ruler .ruler-tip {
+/* ── 放大镜镜头（10-31 用户：「刻度线放上去，能不能做出来这种放大镜效果，这样找起来更快」）──
+   语义：悬停刻度尺 ⇒ 指针附近那一段被放大，右竖列出来的是**真实消息预览**（一行一条，右边一根刻度短线）。
+   ⛔ 与旧 `.ruler-tip`（单条、最多 5 行、跟着指针上下跳）是两种东西：那是"读一条"，这是"扫一段"。
+   ⛔ 行高 26px = 刻度槽 14px 放大后的间距（JS 里的 LENS_ROW 与 fanDy 同一套参数），
+      两者不对齐时会出现「线在这、字在那」的错位感。
+   ⛔ 定位：`top` 由 JS 给（贴着指针那根刻度、贴边时钳制）；行的纵向位置走内联 `translate`，
+      切换一格就整列滑一行 —— 这就是用户要的「里面滚动效果」。 */
+.message-ruler .ruler-lens {
   border: 1px solid var(--line);
-  background: var(--panel);
-  width: max-content;
-  max-width: 300px;
+  /* ⛔ 用 --bg 而不是 --panel：消息卡 / 气泡本身就是 --panel，同色叠上去会糊成一片
+     （暗色实测：面板与卡片都是 #222221，只能看见边框）。--bg 在明暗两套里都与卡片有色差。 */
+  background: var(--bg);
   box-shadow: var(--shadow);
-  color: var(--text);
-  text-align: left;
-  -webkit-line-clamp: 5;
-  white-space: pre-wrap;
-  word-break: break-word;
-  pointer-events: none;
-  z-index: 20;
-  border-radius: 12px;
-  -webkit-box-orient: vertical;
-  padding: 8px 12px;
-  font-size: 12.5px;
-  line-height: 1.55;
-  animation: 0.14s ruler-tip-in;
-  display: -webkit-box;
+  border-radius: 14px;
+  width: 320px;
+  /* 9 行 × 26px（与 01-message-ruler 的 LENS_H 同值） */
+  height: 234px;
+  z-index: 22;
+  box-sizing: border-box;
   position: absolute;
-  left: 26px;
+  /* ⛔ 从刻度线右侧让开最宽的那根（12+26=38px），否则镜头会把高亮刻度压在下面 */
+  left: 42px;
   overflow: hidden;
-  transform: translateY(-50%);
+  /* 上下边缘渐隐：行被"镜头"切掉时是淡出而不是硬切 */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  pointer-events: none;
+  transform-origin: 0 50%;
+  /* 进场：从刻度一侧"撑开"（缩放 + 轻微左移），⛔ 关键帧只用 translate/scale。
+     200ms 比 --dur-menu(140) 长一点：这里要看得见"放大"的过程，太快就成了闪现。 */
+  animation: ruler-lens-in 0.2s var(--ease-enter) both;
+  /* 贴边钳制时框会跳一格，补个短过渡让它滑过去；镜头跟指针移动本身不做过渡（会拖手） */
+  transition: top 0.12s var(--ease-enter);
 }
-.message-ruler .ruler-tip:before {
-  content: "";
-  background: var(--panel);
-  border-left: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  width: 8px;
-  height: 8px;
-  position: absolute;
-  top: 50%;
-  left: -4px;
-  transform: translateY(-50%) rotate(45deg);
-}
-@keyframes ruler-tip-in {
-  0% {
+@keyframes ruler-lens-in {
+  from {
     opacity: 0;
-    transform: translateY(-50%) translate(-5px);
+    scale: 0.9;
+    translate: -8px 0;
   }
   to {
     opacity: 1;
-    transform: translateY(-50%);
+    scale: 1;
+    translate: 0 0;
+  }
+}
+.message-ruler .ruler-lens-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+  line-height: 26px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* 换行时整列上滑一行 = 「里面滚动」；透明度只做远近层次 */
+  transition:
+    translate 0.2s var(--ease-enter),
+    opacity 0.2s linear;
+}
+.message-ruler .ruler-lens-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.message-ruler .ruler-lens-dash {
+  flex: none;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+  border-radius: 1px;
+  width: 16px;
+  height: 2px;
+  transition:
+    width 0.2s var(--ease-enter),
+    background-color 0.16s;
+}
+.message-ruler .ruler-lens-row.is-active {
+  color: var(--text);
+  font-weight: 600;
+}
+.message-ruler .ruler-lens-row.is-active .ruler-lens-dash {
+  background: var(--text);
+  width: 24px;
+}
+/* 无障碍：镜头会跟着指针不停位移，减少动效下直接落位 */
+@media (prefers-reduced-motion: reduce) {
+  .message-ruler .ruler-lens,
+  .message-ruler .ruler-lens-row,
+  .message-ruler .ruler-lens-dash {
+    animation-duration: 0.001ms;
+    transition-duration: 0.001ms;
   }
 }
 @media (width<=1080px) {

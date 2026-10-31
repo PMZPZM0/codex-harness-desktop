@@ -195,5 +195,39 @@ ok(ruler.includes("parseUserRefs, userDisplayText")
 ok(/wheelTimer = setTimeout\(\(\) => \{ waveRef\.current = false; setWheelWave\(false\); \}, 600\)/.test(ruler),
   "停下 600ms 后波浪与声音一起收（⛔ 不许常驻呼吸）");
 
+/* ── 放大镜（10-31 用户：「刻度线放上去能不能做出这种放大镜效果，这样找起来更快」）──────
+   判据只钉**几何与同源关系**，不判"好不好看"（观感靠 `.workbuddy/tmp/ruler-lens` 的真机采样）。 */
+ok(/const LENS_ROW = 26;/.test(ruler) && /const LENS_SPREAD = 0\.85;/.test(ruler) && /const LENS_SIGMA = 36;/.test(ruler)
+  && /\.message-ruler \.ruler-lens \{[\s\S]{0,900}?height: 234px/.test(css),
+  "放大镜参数单一来源：组件 26px/格 + σ36；CSS 面板高 234 = 9×26（两处不同值就会出现「线在这、字在那」）");
+ok(/const fanDy = \(base: number, pointerY: number\) => \{[\s\S]{0,240}?d \* LENS_SPREAD \* Math\.exp\(-\(d \* d\) \/ \(2 \* LENS_SIGMA \* LENS_SIGMA\)\)/.test(ruler),
+  "刻度鱼眼是**连续放大映射** d·SPREAD·e^(-d²/2σ²)：⛔ 不用 sign(d)·A·falloff —— 后者在 d=0 处符号翻转，指针正上/正下两根会瞬跳一个 A");
+ok(/const slotOf = \(index: number\) => index \+ \(compactionIndex >= 0 && index >= compactionIndex \? 1 : 0\);/.test(ruler)
+  && /style=\{fanStyleOf\(slotOf\(index\)\)\}/.test(ruler)
+  && /style=\{fanStyleOf\(marks\.length \+ \(compactionIndex >= 0 \? 1 : 0\)\)\}/.test(ruler),
+  "鱼眼位移按**槽位**算（绿段也占一格 ⇒ 它之后的刻度 +1），末尾绿段接在最后");
+ok(/rowY: anchor - top - LENS_ROW \/ 2/.test(ruler),
+  "高亮行**顶边** = 锚点 − 半行高（漏了这 13px，字会比指针下那根刻度低半行，像串行）");
+ok(/className=\{`ruler-lens-row\$\{dist === 0 \? " is-active" : ""\}`\}/.test(ruler)
+  && /translate: `0 \$\{\(lens\.rowY \+ \(i - active\) \* LENS_ROW\)\.toFixed\(1\)\}px`/.test(ruler)
+  && /const active = Math\.min\(lens\.index, marks\.length - 1\);/.test(ruler)
+  && /\{lens && marks\.length > 0 && \(/.test(ruler),
+  "镜头行位置 = rowY + (i−active)×26 ⇒ 指针走一格、整列滑一行（=「里面滚动」）；⛔ active 必须夹住（滑窗口后旧下标越界 = marks[i] undefined ⇒ 整页崩）");
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?animation: ruler-lens-in 0\.2s var\(--ease-enter\) both/.test(css)
+  && /@keyframes ruler-lens-in \{[\s\S]{0,200}?scale: 0\.9/.test(css)
+  && !/@keyframes ruler-lens-in \{[\s\S]{0,240}?[^-]transform:/.test(css),
+  "进场是「撑开」动画（scale 0.9→1 + 左移 8px），⛔ 关键帧不写 transform（会盖掉定位）");
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?background: var\(--bg\)/.test(css)
+  && /\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?pointer-events: none/.test(css),
+  "面板底用 --bg（⛔ 不用 --panel：与消息卡同色，暗色下只剩一圈边框）+ 不吃指针（吃了滑进面板就触发轨道 mouseleave，镜头当场消失）");
+/* ⛔⛔ 用户 10-31 明确交代：「波浪效果和刻度线声音记得保留」——
+   放大镜是**叠加**层，不许拿它替换既有反馈：长波浪（wave-0/1/2）与三条播声通道必须一条不少。 */
+ok(/wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2"/.test(ruler)
+  && /hoverIndex != null \? hoverIndex : \(wheelWave && currentPos >= 0 \? currentPos : null\)/.test(ruler)
+  && /playWheelTick\(prev == null \|\| best > prev \? 1 : -1, \{ channel: "hover", minGapMs: 24 \}\)/.test(ruler)
+  && /playWheelTick\(waveDirRef\.current, \{ channel: "scroll", minGapMs: 28 \}\)/.test(ruler)
+  && /playWheelTick\(direction, \{ channel: "ruler", minGapMs: 30 \}\)/.test(ruler),
+  "放大镜叠加在原有反馈之上：波浪（wave-0/1/2）+ 三条播声通道（hover/scroll/ruler）全部保留");
+
 console.log(fails ? `\n【compaction-anchor】${checks} 条断言 / ${fails} 条失败` : `\n【compaction-anchor】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);
