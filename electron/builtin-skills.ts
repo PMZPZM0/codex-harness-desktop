@@ -31,6 +31,7 @@ import { OPENFILM_SKILL } from "./builtin-skills/26-skill-openfilm";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
+import { CHALLENGE_REQUIREMENTS_SKILL } from "./builtin-skills/25-skill-challenge-requirements";
 import { HANDOFF_SKILL } from "./builtin-skills/25-skill-handoff";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
@@ -154,6 +155,8 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     //  用户点名「帮我内置成技能」。⛔ 两份合成一份：本应用没有 Claude Code 的 Skill 工具，
     //  照抄代理层就是一条指向不存在能力的死指针。
     ["grill-me", GRILL_ME_SKILL],
+    // 10-31：回复风格「敢于反驳」的配套技能（与 grill-me 同一套逻辑：风格启用即按本技能执行）。
+    ["challenge-requirements", CHALLENGE_REQUIREMENTS_SKILL],
     // 10-26：交接文档技能（写总结/提示词），与根目录 HANDOFF.md 配套 ——
     //  五段结构直接来自用户原话；「生效方式」与「锚点」两段是本项目反复白干的教训。
     ["handoff", HANDOFF_SKILL],

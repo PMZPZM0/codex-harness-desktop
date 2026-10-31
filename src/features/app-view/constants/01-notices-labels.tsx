@@ -85,6 +85,7 @@ const SKILL_ZH_NOTES: Record<string, string> = {
   "memory-mcp-backend": "MCP 记忆后端：启用 MCP 记忆时的写入方式（与分类互斥）",
   "harness-api": "宿主接口清单：模型可调的全部 IPC 通道与拓展点",
   "grill-me": "盘问方案：设计树 + 轮次把方案问到你没有静默假设（附推荐答案，不自动触发）",
+  "challenge-requirements": "需求反驳：先审需求的前提/约束/代价，有错按固定结构指出并给替代方案；你坚持就照做并写清风险",
   "handoff": "交接文档：给零上下文的新会话写状态快照（在做什么/已完成/卡在哪/下一步/坑）",
   "zy-cinematic-realism": "造梦师：电影感 Prompt 工作流（Scene Master → 模型原生 Prompt → 修复 → 多帧连续性；CC BY-NC）",
   /* ── 专家技能包（resources/expert-skills/，随包分发）── */
@@ -128,6 +129,8 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "visualization-guide",
   /* 10-26：盘问方案 + 交接文档（与 electron/builtin-skills.ts 的 entries 同轮登记） */
   "grill-me",
+  /* 10-31：「敢于反驳」回复风格的配套技能（与 entries 同轮登记） */
+  "challenge-requirements",
   "handoff",
   /* 10-27：OpenFilm 剪辑手册（与 electron/builtin-skills.ts 的 entries 同轮登记）。
      ⛔ 漏这里 = 用户在 # 面板看不到它（引擎清单要等重扫，保底是唯一无条件透出的通道）。 */

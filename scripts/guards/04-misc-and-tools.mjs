@@ -1090,6 +1090,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     );
   }
   const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+  /* 10-31：步骤文案抽到叶子模块（实时与历史共用）⇒ 断言跟着看新文件 */
+  const remoteStepSrc = readFileSync(join(ROOT, "electron", "remote-step.ts"), "utf8");
   (/kind: "step"/.test(bootSrc) && /event\.kind === "step"/.test(pageSrc) ? ok : fail)(
     "【139b】运行步骤：主进程按 item 事件转发（命令/文件/工具/搜索/思考），手机页渲染成可折叠「运行过程」"
   );
@@ -1116,7 +1118,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (/exitCode/.test(bootSrc) ? ok : fail)(
       "【139b】命令结束状态：引擎带 exitCode / status 时给结论（不带就静默，不瞎猜）"
     );
-    (/\?\? \.arguments/.test(bootSrc) || /item\?\.arguments/.test(bootSrc)) && /dynamicToolCall/.test(bootSrc) ? ok : fail(
+    (/\?\? \.arguments/.test(remoteStepSrc) || /item\?\.arguments/.test(remoteStepSrc)) && /dynamicToolCall/.test(remoteStepSrc) ? ok : fail(
       "【139b】工具步骤带 server 前缀 + 参数摘要（与桌面工具卡同口径，手机上看得出来调了什么）"
     );
   }

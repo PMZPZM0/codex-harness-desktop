@@ -26,6 +26,7 @@ export function defaultProfile(): UserProfile {
 
 const STYLE_OPTIONS = [
   { value: "inquiry", label: "需求询问", desc: "先问清需求再动手（个性化页可选）" },
+  { value: "challenge", label: "敢于反驳", desc: "需求有错先指出，给依据与更优方案" },
   { value: "pragmatic", label: "务实", desc: "直接给结论和代码" },
   { value: "friendly", label: "友好", desc: "多解释思路与取舍" },
   { value: "none", label: "默认", desc: "不额外注入语气" },

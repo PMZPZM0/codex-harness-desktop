@@ -18,6 +18,7 @@ const stylePresets = [
   /* 10-27 用户令：「四个正方形卡片太丑了，Codex 回复风格尾部选项里面加上这四个选项，不需要过多文字赘述」
      ⇒ 大卡片整块去掉，改成标题行右侧的胶囊分段控件；说明只留在 title 悬停里，界面上只有档位名。 */
   { value: "inquiry", title: "需求询问", desc: "动手前先按 grill-me 技能问清目标 / 边界 / 验收，问完再做" },
+  { value: "challenge", title: "敢于反驳", desc: "按 challenge-requirements 技能审需求：有错先指出并给依据与更优方案；你坚持就照做并写清风险" },
   { value: "pragmatic", title: "务实", desc: "直接给结论和代码，少铺垫" },
   { value: "friendly", title: "友好", desc: "解释更详细，主动交代思路与取舍" },
   { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令" },
