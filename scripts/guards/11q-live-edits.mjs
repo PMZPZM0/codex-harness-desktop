@@ -343,6 +343,19 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     && /setTimeout\(\(\) => setDelegatedPopupId\(""\), 1600\)/.test(timelineSrc)
     && /setTimeout\(\(\) => setTeamPopupRunId\(""\), 1600\)/.test(timelineSrc),
     "调度弹窗输出完成自动隐藏（专家团成员 + 普通调度两处；⛔ 只在 running→done 那一刻关，failed/翻历史不关）");
+
+  /* ⛔⛔ 10-31 用户令：「主会话向被调度的子会话发送消息时，不能以用户视角显示在右侧头像位置，
+     必须同样显示在左侧，并以主会话自身的身份发出」。
+     ⇒ `[SYSTEM TASK · 调度会话]` 那种壳（delegation 主进程拼的）走**左对齐的上级气泡**；
+     ⛔ 成员/团队会话的壳可能是用户自己打字（send.tsx 那条路），不能左移 —— 会把用户的话伪造成上级发言。 */
+  const umv = codeOnly(read("src/features/shared/UserMessageView.tsx"));
+  ok(/const isParentTask = refs\.teamTask\?\.label === "调度会话"/.test(umv)
+    && /<div className="parent-task-stack"/.test(umv)
+    && /parent-task-name">主会话/.test(umv) ? ok : fail,
+    "调度任务在子会话里以「主会话」身份左对齐渲染（⛔ 只认 调度会话 壳，成员/团队壳不动）");
+  const msgCss = read("src/styles/03-messages-turns.css");
+  ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss) ? ok : fail,
+    "上级任务气泡的样式在位（左对齐 + 左侧强调线；⛔ 只加类不写样式 = 还是贴在右侧）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

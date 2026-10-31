@@ -16,7 +16,7 @@ import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
-import { User, Sparkles, FileText, Film, Music2, Box } from "lucide-react";
+import { User, Sparkles, FileText, Film, Music2, Box, Bot } from "lucide-react";
 import { UserRefsRow } from "./InlineCards";
 import { FileRefCard } from "../../components/FileRefCard";
 import { ImportedRecordCard } from "./ImportRecords";
@@ -137,6 +137,26 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
       // `q842iQAAAABJRU5ErkJggg==` 这种 base64 尾巴（09-18 代码审查抓到的真缺陷）。
       inlineAttachItems.push({ path: src, name: attachChipName(part, src), image: true });
     }
+  }
+  /* ⛔⛔ 10-31 用户令：「主会话向被调度的子会话发送消息时，不能以用户视角显示在右侧头像位置，
+     必须同样显示在左侧，并以主会话自身的身份发出」。
+     ⛔ 只对 **`调度会话`** 这一种壳改位置：它是 delegation 派活时**主进程**拼的，确实是"上级发来的任务"。
+         `团队成员 / 成员会话` 这两种壳还兼着"用户在成员会话里自己打的字"（send.tsx 那条路径），
+         一律左移会把用户自己的话伪造成上级发言 —— 所以那几种维持原样。
+     左对齐 + 身份写「主会话」：宿主没有把上级会话名传下来（只有 threadId），
+     名字留待后续接（见 docs/FEATURE-LEDGER 同名条），这里先把"不属于用户"这件事表达出来。 */
+  const isParentTask = refs.teamTask?.label === "调度会话";
+  if (isParentTask) {
+    return (
+      <div className="parent-task-stack" data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
+        <div className="parent-task-head">
+          <span className="parent-task-avatar"><Bot size={13} /></span>
+          <span className="parent-task-name">主会话</span>
+          <span className="parent-task-hint">派发任务</span>
+        </div>
+        <div className="parent-task-body">{refs.teamTask?.requirement}</div>
+      </div>
+    );
   }
   return (
     <div className="user-message-stack">
