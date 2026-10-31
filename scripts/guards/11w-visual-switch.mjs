@@ -149,5 +149,38 @@ ok(/tq-rays/.test(THEME_SWITCH) && /tq-star/.test(THEME_SWITCH),
 ok(/aria-pressed=/.test(THEME_SWITCH) && /role="group"/.test(THEME_SWITCH),
   "⑧ 无障碍：容器 role=group + 按钮 aria-pressed 表达当前档位");
 
+/* ── ⑨ 10-31 追加：图标交叉淡入淡出 + 涟漪高光描边 ──────────────────────
+   ① 两枚图标要"此消彼长"（选中的淡入放大、未选中的淡出缩小），且透明度挂在 svg 上而不是按钮上
+      —— 挂按钮上会把 hover 一起吃掉，两枚图标就变成"各自渐变"而不是交叉。
+   ② 高光必须是沿扩散圆边缘的**环**：VT 的 new(root) 只有一层，drop-shadow 会被 clip 吃掉、
+      box-shadow 是矩形 ⇒ 只能是独立的 top-layer 元素，且半径要靠 @property 注册后才插值。 */
+const cards17 = read("src/styles/17-visual-cards.css");
+ok(/\.theme-quick-btn svg \{[^}]*opacity:\s*0\.45/.test(cards17) &&
+  /\.theme-quick-btn\[aria-pressed="true"\] svg \{[^}]*opacity:\s*1/.test(cards17),
+  "⑨ 图标交叉淡入淡出：未选中 svg 半透明、选中 svg 全亮（透明度挂在 svg 上，不挂在按钮上）");
+ok(!/\.theme-quick-btn \{[^}]*opacity:\s*0\.62/.test(cards17),
+  "⑨ 负向：按钮本身不再带 opacity（带了会连 hover 一起吃掉，两枚图标就不是交叉淡入淡出）");
+
+ok(/function mountRim\(/.test(codeOnly(vs)) && /function unmountRim\(/.test(codeOnly(vs)),
+  "⑨ 涟漪高光是独立元素（mountRim / unmountRim 成对）");
+ok(/setAttribute\("popover", "manual"\)/.test(codeOnly(vs)),
+  "⑨ 高光走 popover ⇒ top layer，才能画在 view-transition 快照之上");
+ok(/Promise\.resolve\(ready\)\.then\(withElapsed/.test(codeOnly(vs)) && /mountRim\(typeof performance/.test(codeOnly(vs)),
+  "⑨ 高光在 transition.ready 之后才挂（早了会被拍进新主题快照，裁完只剩一团色块）");
+ok(/animationDelay = .*-.*elapsedMs.*ms/.test(codeOnly(vs)),
+  "⑨ 高光用**负 delay 追平相位**（实测落后约 1 帧就会缩在深色圆内部、肉眼看不见）");
+ok(/unmountRim\(\);\s*\n\s*root\.classList\.remove\(VISUAL_RIPPLE_CLASS\)/.test(codeOnly(vs)),
+  "⑨ 收尾时先摘高光再摘转场类（不留孤儿节点）");
+
+ok(/@property --rim-r \{[^}]*syntax: "<length>"/.test(codeOnly(base)),
+  "⑨ 高光半径 --rim-r 用 @property 注册（不注册就不能插值，只能整段跳）");
+/* ⛔ 取**规则块内容**再判，不用"距选择器 N 字符内"那种写法：
+   块里的 radial-gradient 很长，字符窗口一放不下就假红（本轮踩到）。 */
+const rimBlock = /\.theme-ripple-rim \{([\s\S]*?)\n\}/.exec(codeOnly(base))?.[1] ?? "";
+ok(/radial-gradient/.test(rimBlock) && /pointer-events:\s*none/.test(rimBlock),
+  "⑨ 高光是沿圆心的 radial-gradient 环，且 pointer-events: none（纯装饰不吃点击）");
+ok(/@keyframes fx-ripple-rim[\s\S]{0,200}?var\(--switch-r/.test(codeOnly(base)),
+  "⑨ 高光终点半径复用同一个 --switch-r（与裁切圆同一条几何，不另算）");
+
 console.log(`\n  【visual-switch】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);

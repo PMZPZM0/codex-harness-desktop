@@ -102,6 +102,38 @@ export function runVisualSwitch(
   fadeSwitch(kind, label, apply, onNotice);
 }
 
+/* ── 涟漪的高光描边（10-31 追加）────────────────────────────────────────────
+   为什么要一个独立 DOM 而不是纯 CSS：VT 的 `::view-transition-new(root)` 只有一层，
+   给它加 `filter: drop-shadow` 会被 `clip-path` 先裁掉（滤镜在内、裁切在外），加 `box-shadow`
+   是矩形阴影 —— 都做不出"沿着扩散圆边缘的一圈光"。
+   ⇒ 在同一条圆形轨迹上叠一个 popover（**top layer**，绘制在 VT 伪元素之上），
+     用 `radial-gradient` 在半径处画一圈极淡高光，半径由 `@property --rim-r` 插值。
+   ⛔ 必须在 `transition.ready` 之后才挂：早了会被拍进"新主题快照"，被裁切后变成一团色块。
+   ⛔ `pointer-events: none` + `aria-hidden`：纯装饰，不吃点击、不进读屏。 */
+let rimEl: HTMLDivElement | null = null;
+
+function mountRim(elapsedMs = 0): void {
+  try {
+    const el = document.createElement("div");
+    el.className = "theme-ripple-rim";
+    el.setAttribute("aria-hidden", "true");
+    el.setAttribute("popover", "manual");   // 进 top layer ⇒ 画在 view-transition 快照之上
+    document.body.appendChild(el);
+    /* ⛔ 负 delay 追平相位：光边在 ready 之后才挂，若从 0 开始播就会落后裁剪圆
+       （实测 150ms 时半径 483px vs 应有 ~650px）⇒ 落后时被压在深色圆内部、肉眼看不见。 */
+    if (elapsedMs > 0) el.style.animationDelay = `-${Math.round(elapsedMs)}ms`;
+    (el as HTMLElement & { showPopover?: () => void }).showPopover?.();
+    rimEl = el;
+  } catch {
+    rimEl = null;   // 老环境没有 popover：只是没有高光，动画本体照常
+  }
+}
+
+function unmountRim(): void {
+  try { rimEl?.remove(); } catch { /* 已被移除 */ }
+  rimEl = null;
+}
+
 /** ① 涟漪转场：整屏快照 + 从指针位置扩散的圆形裁切（CSS 见 `html.fx-ripple::view-transition-*`）。 */
 function rippleSwitch(
   start: (update: () => void) => { finished: Promise<void> },
@@ -122,6 +154,7 @@ function rippleSwitch(
   root.classList.add(VISUAL_RIPPLE_CLASS);
 
   const finish = () => {
+    unmountRim();
     root.classList.remove(VISUAL_RIPPLE_CLASS);
     /* 三个内联变量只在动画期有用；留着会让下次的圆心停留在旧位置（若指针事件缺失）。 */
     root.style.removeProperty("--switch-x");
@@ -130,6 +163,7 @@ function rippleSwitch(
     onNotice?.(noticeOf(kind, label));
   };
 
+  const startedAt = typeof performance !== "undefined" ? performance.now() : 0;
   let transition: { finished: Promise<void> } | null = null;
   try {
     transition = start(() => { apply(); });
@@ -138,10 +172,15 @@ function rippleSwitch(
        ⛔ 必须留一行日志：这条 catch 曾把一个「裸调用 Illegal invocation」吞了整整半天，
           表现为"改了没动画"，只能靠时间轴探针才挖出来。 */
     console.warn("[visual-switch] 涟漪转场起不来，回落颜色过渡：", error);
+    unmountRim();
     root.classList.remove(VISUAL_RIPPLE_CLASS);
     fadeSwitch(kind, label, apply, onNotice);
     return;
   }
+  /* ⛔ 等 `ready`（快照已拍完、伪元素已就绪）再挂高光：早一步就会被算进新主题快照。 */
+  const ready = (transition as unknown as { ready?: Promise<void> })?.ready;
+  const withElapsed = () => mountRim(typeof performance !== "undefined" ? performance.now() - startedAt : 0);
+  Promise.resolve(ready).then(withElapsed, withElapsed);
   Promise.resolve(transition?.finished).then(finish, finish);
 }
 
