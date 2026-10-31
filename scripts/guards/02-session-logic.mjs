@@ -1639,8 +1639,10 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/flex:\s*0\s+0\s+var\(--tag-col-w/.test(tagsRule) && /width:\s*var\(--tag-col-w/.test(tagsRule) ? ok : fail)(
       "【285】行首标签列宽走 --tag-col-w（自适应最宽标签；⛔ 别退回定宽 —— 用户截图点名中间别留一大截）"
     );
-    (/--tag-col-w/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8"))) ? ok : fail)(
-      "【285】01-sidebar-shell 每次渲染量最宽标签并钉 --tag-col-w（html 根上，全列表共用 ⇒ 名称起点仍对齐）"
+    (/--tag-col-w/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8")))
+      && /--tag-col-w-nested/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8")))
+      && /--tag-col-w-nested/.test(cssSrc285) ? ok : fail)(
+      "【285】顶层行与嵌套子行分开量标签列宽（--tag-col-w / --tag-col-w-nested）—— 展开调度会话不再推移父行标题"
     );
     (/flex:\s*1\s+1\s+auto/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
       "【285】名称列可伸缩（flex:1 1 auto + min-width:0）"
