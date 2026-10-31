@@ -71,7 +71,8 @@ async function doBind(){
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);margin:0;color:var(--ink);display:flex;flex-direction:column;height:100vh;height:100dvh}
 header{position:relative;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex:0 0 auto}
 /* 10-30 用户：「把应用顶上中间的 logo 删了」⇒ 顶栏只留 ☰ + 当前会话名 + 状态点（不再放品牌 logo） */
-.menu-btn{flex:none;width:34px;height:34px;padding:0;margin:0;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:16px;line-height:1}
+.menu-btn,.icon-btn{flex:none;width:34px;height:34px;padding:0;margin:0;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:16px;line-height:1}
+html[data-theme="dark"] .menu-btn,html[data-theme="dark"] .icon-btn{background:#1b2029}
 .thread-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;color:var(--ink)}
 header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;background:#1a7f37;padding:0;font-size:0;overflow:hidden}
 #top-menu{position:absolute;top:52px;left:12px;z-index:40;min-width:168px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.14)}
@@ -138,6 +139,9 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 .msg hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 #plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 #file-pick{display:none}
+#camera-pick{display:none}
+.emoji-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:6px 14px 4px}
+.emoji-grid button{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 0;font-size:20px;line-height:1}
 #imgs{display:none;gap:8px;padding:8px 12px 0;background:#fff;overflow-x:auto}
 #imgs.on{display:flex}
 #imgs .chip{position:relative;width:56px;height:56px;flex:0 0 auto;border-radius:10px;overflow:hidden;border:1px solid var(--line)}
@@ -147,7 +151,7 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 .mask.on{display:block}
 #sheet{position:fixed;left:0;right:0;bottom:0;z-index:30;display:none;background:#fff;border-top:1px solid var(--line);border-radius:16px 16px 0 0;box-shadow:0 -6px 24px rgba(0,0,0,.12);padding:12px 12px calc(14px + env(safe-area-inset-bottom))}
 #sheet.open{display:block}
-#sheet .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+#sheet .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 #sheet .grid button{border:0;background:#f4f4f1;border-radius:12px;padding:12px 6px;font-size:12px;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:6px}
 #sheet .grid button b{font-size:18px;font-weight:600}
 .panel{position:fixed;inset:0;z-index:40;display:none;flex-direction:column;background:#fff}
@@ -219,6 +223,34 @@ img.home-logo{object-fit:cover;background:#fff;padding:0}
 .panel-note{padding:14px 16px;color:#8a8a84;font-size:11.5px;line-height:1.7}
 .home-retry{margin:14px auto 0;display:block;padding:8px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:12.5px}
 .home-manage-enter{margin:12px 16px;display:block;width:calc(100% - 32px);padding:11px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600}
+/* ── 首页 v2（10-31 用户：「首页花点心思，看着有点 low」）──
+   结构：品牌卡（渐变+光晕）→ 两个主行动 → 继续上次 → 最近会话。
+   ⛔ 全部走主题变量：暗色下自动跟着变，不另写一套。 */
+.home-page{display:flex;flex-direction:column;gap:12px;padding:2px 0 8px}
+.home-recent{display:flex;flex-direction:column;gap:8px}
+.home-hero{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:20px 18px;border:1px solid var(--line);border-radius:20px;overflow:hidden;text-align:left;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 16%,var(--panel)),var(--panel) 62%)}
+.home-hero::after{content:"";position:absolute;right:-54px;top:-64px;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--accent) 38%,transparent),transparent 68%);pointer-events:none}
+.home-hero img.home-logo,.home-hero .home-logo{width:52px;height:52px;border-radius:14px;margin:0 0 12px;box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 28%,transparent)}
+.home-greet{font-size:22px;font-weight:700;letter-spacing:.2px;line-height:1.25}
+.home-sub{margin-top:4px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.home-quick{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.home-quick button{display:flex;align-items:center;justify-content:center;gap:6px;padding:13px 8px;border-radius:14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);font-size:13.5px;font-weight:600}
+.home-quick button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.home-quick button:active{opacity:.86}
+.home-section{display:flex;align-items:center;justify-content:space-between;margin:4px 2px -2px}
+.home-section b{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.4px}
+.home-section span{font-size:11.5px;color:var(--faint,#a3a39c)}
+.home-thread{display:flex;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel)}
+.home-thread:active{background:color-mix(in srgb,var(--accent) 6%,var(--panel))}
+.home-thread .ht-main{flex:1;min-width:0}
+.home-thread .ht-title{display:block;font-size:13.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-thread .ht-meta{margin-top:3px;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-thread .ht-go{flex:none;color:var(--faint,#a3a39c);font-size:16px}
+.home-thread .ht-badge{flex:none;padding:1px 7px;border-radius:6px;font-size:10.5px;background:var(--accent-soft);color:var(--accent)}
+.home-empty-hint{font-size:12px;color:var(--faint,#a3a39c);text-align:center;padding:8px 0 2px}
+.home-skel{height:52px;border:1px dashed var(--line);border-radius:14px;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
+html[data-theme="dark"] .home-hero{background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 22%,#161a20),#161a20 62%)}
+html[data-theme="dark"] .home-thread{background:#161a20}
 /* ── 主题：白天 / 黑夜（10-31 用户令）──
    ⛔ 只换背景不够：气泡、输入框、面板、代码块、卡片都是浅色字面量，必须逐个覆盖，
       否则暗色下会出现"白底白字 / 浅灰上浅灰"看不见。 */
@@ -265,11 +297,11 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
 <header>
   <button id="btn-menu" class="menu-btn" aria-label="菜单" onclick="toggleTopMenu()">☰</button>
   <span id="thread-label" class="thread-label"></span>
+  <button type="button" id="theme-btn" class="icon-btn" aria-label="切换白天/黑夜" onclick="toggleTheme()">🌙</button>
   <span class="status" id="status" title="连接中…">连接中…</span>
   <div id="top-menu" hidden>
     <button type="button" onclick="toggleTopMenu(false);openHome()">首页</button>
-    <button type="button" onclick="toggleTopMenu(false);toggleThreads()">会话</button>
-    <button type="button" id="theme-btn" onclick="toggleTopMenu(false);toggleTheme()">🌙 夜间模式</button>
+    <button type="button" onclick="toggleTopMenu(false);toggleThreads()">选择会话</button>
     <button type="button" id="menu-disconnect" hidden onclick="topMenuDisconnect()">断开连接</button>
   </div>
 </header>
@@ -286,9 +318,12 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
 <!-- 占位：构建时替换成 src/lib/mobile-markdown.mjs 的源码 -->
 <script>/*__MOBILE_MARKDOWN__*/</script>
 <input type="file" id="file-pick" accept="image/*" multiple>
+<input type="file" id="camera-pick" accept="image/*" capture="environment">
 <div id="sheet-mask" class="mask" onclick="closeSheet()"></div>
 <div id="sheet"><div class="grid">
   <button onclick="pickImage()"><b>🖼</b>图片</button>
+  <button onclick="takePhoto()"><b>📷</b>拍照</button>
+  <button onclick="openEmoji()"><b>😊</b>表情</button>
   <button onclick="openFiles()"><b>📄</b>文件</button>
   <button onclick="openSkills()"><b>#</b>技能</button>
   <button onclick="openCommands()"><b>/</b>指令</button>
@@ -389,7 +424,7 @@ function applyTheme(theme) {
   const next = theme === "dark" ? "dark" : "light";
   document.documentElement.dataset.theme = next;
   const btn = document.getElementById("theme-btn");
-  if (btn) btn.textContent = next === "dark" ? "☀️ 白天模式" : "🌙 夜间模式";
+  if (btn) { btn.textContent = next === "dark" ? "☀️" : "🌙"; btn.setAttribute("aria-label", next === "dark" ? "切换到白天模式" : "切换到夜间模式"); }
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", next === "dark" ? "#161a20" : "#f7f7f5");
 }
@@ -812,6 +847,8 @@ async function renderHome() {
   if (!body) return;
   body.innerHTML = "";
   if (homeMode !== "hub") {
+    const page = makeEl("div", "home-page");
+    /* 品牌卡：图标 + 问候 + 一句说明（渐变光晕，暗色自动跟随主题变量） */
     const hero = makeEl("div", "home-hero");
     if (BRAND_ICON) {
       const logo = document.createElement("img");
@@ -822,10 +859,75 @@ async function renderHome() {
     } else {
       hero.appendChild(makeEl("div", "home-logo", "✦"));
     }
-    hero.appendChild(makeEl("h2", null, greetingHome()));
-    hero.appendChild(makeEl("p", null, "直接说，我来干"));
-    body.appendChild(hero);
-    body.appendChild(makeEl("div", "home-hint", "发消息即新建会话"));
+    hero.appendChild(makeEl("div", "home-greet", greetingHome()));
+    hero.appendChild(makeEl("div", "home-sub", "今天想做点什么？直接说，我来干。"));
+    page.appendChild(hero);
+
+    /* 两个主行动：普通 / 中枢（比让小字提示"发消息即新建会话"更好点） */
+    const quick = makeEl("div", "home-quick");
+    const newChat = makeEl("button", "primary", "＋ 新建会话");
+    newChat.type = "button";
+    newChat.onclick = () => { void startSession(false); };
+    const hubChat = makeEl("button", null, "👑 中枢会话");
+    hubChat.type = "button";
+    hubChat.onclick = () => { void startSession(true); };
+    quick.appendChild(newChat);
+    quick.appendChild(hubChat);
+    page.appendChild(quick);
+
+    /* 最近会话：进页面最常用的动作是"回到刚才那个" */
+    const head = makeEl("div", "home-section");
+    head.appendChild(makeEl("b", null, "最近会话"));
+    head.appendChild(makeEl("span", null, "点击继续"));
+    page.appendChild(head);
+    const recent = makeEl("div", "home-recent");
+    recent.appendChild(makeEl("div", "home-skel"));
+    page.appendChild(recent);
+    body.appendChild(page);
+
+    void (async () => {
+      try {
+        const result = await rpc({ type: "list-threads" });
+        if (seq !== homeRenderSeq) return;
+        const threads = (result && result.threads || []).slice(0, 4);
+        recent.innerHTML = "";
+        if (!threads.length) {
+          recent.appendChild(makeEl("div", "home-empty-hint", "还没有会话，点上面的「新建会话」开始"));
+          return;
+        }
+        threads.forEach((thread) => {
+          const row = makeEl("div", "home-thread");
+          const main = makeEl("div", "ht-main");
+          main.appendChild(makeEl("span", "ht-title", threadTitle(thread)));
+          const meta = (thread.kind === "boss" ? "中枢 · " : thread.kind === "bossMember" ? "团队成员 · " : "") + (clockOf(thread.updatedAt) || "刚刚");
+          main.appendChild(makeEl("span", "ht-meta", meta));
+          row.appendChild(main);
+          if (thread.kind === "boss") row.appendChild(makeEl("span", "ht-badge", "中枢"));
+          row.appendChild(makeEl("span", "ht-go", "›"));
+          row.onclick = () => {
+            hideHome();
+            currentThreadId = thread.id;
+            writeStore(THREAD_KEY, thread.id);
+            list.innerHTML = "";
+            stepBox = null;
+            currentOutputEl = null;
+            lastFilesData = null;
+            setRunning(false);
+            updateThreadLabel(threadTitle(thread));
+            void loadMessages();
+            saveSession();
+          };
+          recent.appendChild(row);
+        });
+      } catch (error) {
+        if (seq !== homeRenderSeq) return;
+        recent.innerHTML = "";
+        recent.appendChild(makeEl("div", "home-empty-hint", "会话列表读取失败：" + (error.message || "未知错误")));
+        const retry = makeEl("button", "home-retry", "重试");
+        retry.onclick = () => { void renderHome(); };
+        recent.appendChild(retry);
+      }
+    })();
     return;
   }
   body.appendChild(makeEl("div", "empty-tip", "加载群…"));
@@ -971,6 +1073,40 @@ function openNewThreadMenu() {
   add("默认会话", "普通对话，直接开干", false);
   add("中枢会话", "带群，能派活、盯进度、验收", true);
 }
+/* 表情：与电脑端「心情表情」同一套（48 个，三组）——用户：「同步电脑端表情」 */
+const EMOJI_GROUPS = [
+  ["正向", "👍🎉🚀🙏💡👏🔥✅👌💪🥳🤩😎🫡⭐🧠"],
+  ["负向", "😤🤔😑🫠⏳😡🤦🙃😮‍💨🥲🚩🔁🧱❗"],
+  ["中性", "👀🤝🧪📌🤷🕐📝🔍🎯🔧📦☕🤖🫵👋📊🔗🗂️"],
+];
+function insertAtCursor(text) {
+  const input = document.getElementById("cmd");
+  if (!input) return;
+  const start = typeof input.selectionStart === "number" ? input.selectionStart : input.value.length;
+  const end = typeof input.selectionEnd === "number" ? input.selectionEnd : input.value.length;
+  input.value = input.value.slice(0, start) + text + input.value.slice(end);
+  const caret = start + text.length;
+  try { input.setSelectionRange(caret, caret); } catch (error) { /* 忽略 */ }
+  input.focus();
+}
+function openEmoji() {
+  closeSheet();
+  const node = document.createElement("div");
+  EMOJI_GROUPS.forEach(([label, chars]) => {
+    node.appendChild(makeEl("div", "panel-note", label));
+    const grid = makeEl("div", "emoji-grid");
+    Array.from(chars).forEach((emoji) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = emoji;
+      button.onclick = () => { insertAtCursor(emoji); closePanel(); };
+      grid.appendChild(button);
+    });
+    node.appendChild(grid);
+  });
+  showPanel("表情", node, null);
+}
+function takePhoto() { closeSheet(); const input = document.getElementById("camera-pick"); if (input) input.click(); }
 async function startSession(boss) {
   closePanel();
   closeSheet();
@@ -1041,6 +1177,22 @@ document.getElementById("file-pick").addEventListener("change", (event) => {
     const reader = new FileReader();
     reader.onload = () => { pendingImages.push({ dataUrl: String(reader.result || ""), name: file.name }); renderImages(); done(); };
     reader.onerror = () => { push("system", "读取图片失败：" + file.name); done(); };
+    reader.readAsDataURL(file);
+  });
+});
+document.getElementById("camera-pick").addEventListener("change", (event) => {
+  const picked = Array.prototype.slice.call(event.target.files || []);
+  const room = Math.max(0, 4 - pendingImages.length);
+  const files = picked.slice(0, room);
+  if (picked.length > room) push("system", "一次最多 4 张图");
+  let left = files.length;
+  const done = () => { if (--left <= 0) event.target.value = ""; };
+  if (!left) { event.target.value = ""; return; }
+  files.forEach((file) => {
+    if (file.size > 8 * 1024 * 1024) { push("system", "图片太大（上限 8MB）"); done(); return; }
+    const reader = new FileReader();
+    reader.onload = () => { pendingImages.push({ dataUrl: String(reader.result || ""), name: "camera.jpg" }); renderImages(); done(); };
+    reader.onerror = () => { push("system", "拍照图片读取失败"); done(); };
     reader.readAsDataURL(file);
   });
 });

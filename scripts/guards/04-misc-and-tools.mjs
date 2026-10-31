@@ -1906,6 +1906,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (relaySrc.includes("chm-theme@") && relaySrc.includes("html[data-theme=\"dark\"]") ? ok : fail)(
       "【139e】配对页跟随手机主题（选过黑夜时配对页也是黑的）"
     );
+    /* 10-31 用户：「首页花点心思，看着有点 low」+ 顶栏图标/拍照/表情 */
+    (tunnelPage.includes("home-page") && tunnelPage.includes("home-quick") && tunnelPage.includes("home-thread") && tunnelPage.includes("type: \"list-threads\"") ? ok : fail)(
+      "【139e】首页 v2：品牌卡 + 新建/中枢两个主行动 + 最近会话（⛔ 不再只有一句问候）"
+    );
+    (tunnelPage.includes("EMOJI_GROUPS") && tunnelPage.includes("function openEmoji") && tunnelPage.includes("camera-pick") && tunnelPage.includes("选择会话") ? ok : fail)(
+      "【139e】手机页：表情（与电脑端同一套）/ 拍照入口 / 菜单「选择会话」"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );
