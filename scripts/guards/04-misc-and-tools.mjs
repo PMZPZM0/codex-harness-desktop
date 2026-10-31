@@ -1892,6 +1892,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("event.kind === \"running\"") && tunnelPage.includes("event.kind === \"error\"") && tunnelPage.includes("清单读取失败") ? ok : fail)(
       "【139e】手机页处理 running/error（按钮切停止、失败有可见文案；清单/目标读取失败不再静默空白）"
     );
+    /* 10-31 用户：「手机点断开连接后，直接把配对设备删除掉，联动做好一点」 */
+    (relaySrc.includes("url.startsWith(\"/api/disconnect\") && req.method === \"POST\"") && relaySrc.includes("socketDevice.socket.close()") && relaySrc.includes("this.deviceThreads.delete(deviceId)") ? ok : fail)(
+      "【139e】手机断开要联动电脑端：撤销批准记录 + 关长连接 + 清会话映射（⛔ 只清手机 cookie = 两边不一致）"
+    );
+    (tunnelPage.includes("/api/disconnect") && tunnelPage.includes("localStorage.removeItem(storeKey(\"chm-pair-secret\"))") ? ok : fail)(
+      "【139e】手机页「断开连接」先确认再通知电脑端，并清掉本机秘密（电脑端离线也要如实提示）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );

@@ -267,9 +267,29 @@ function toggleTopMenu(force) {
   if (!menu) return;
   menu.hidden = force === false ? true : (force === true ? false : !menu.hidden);
 }
+/* 手机主动断开：**同时通知电脑端撤销这台设备**（否则电脑端还留着、下次也不用重配，两边不一致）。
+   ⛔ 先让用户确认；电脑端没响应也清本机状态，并把实情说出来，不许静默。 */
+async function remoteDisconnect() {
+  try {
+    const res = await fetch(apiUrl("/api/disconnect"), { method: "POST" });
+    return res.ok;
+  } catch (error) { return false; }
+}
 function topMenuDisconnect() {
   toggleTopMenu(false);
-  try { if (window.AndroidRemote && typeof window.AndroidRemote.disconnect === "function") window.AndroidRemote.disconnect(); } catch (e) { /* 网页版没有桥 */ }
+  let confirmed = true;
+  try { confirmed = window.confirm("断开后电脑端会移除这台手机，下次需要重新配对。确定断开？"); } catch (e) { confirmed = true; }
+  if (!confirmed) return;
+  void remoteDisconnect().then((done) => {
+    try {
+      localStorage.removeItem(storeKey("chm-pair-secret"));
+      localStorage.removeItem(storeKey("chm-pair-device"));
+      localStorage.removeItem(storeKey("chm-pair-code"));
+      dropStore(THREAD_KEY);
+    } catch (error) { /* 忽略 */ }
+    if (!done) { try { alert("电脑端没有确认断开（可能已离线）；本机登录状态已清除。"); } catch (e) { /* 忽略 */ } }
+    location.replace(apiUrl("/r/mobile"));
+  });
 }
 document.addEventListener("click", function (event) {
   const menu = document.getElementById("top-menu");
