@@ -1924,8 +1924,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("prefers-reduced-motion") && tunnelPage.includes("@keyframes fade-up") && tunnelPage.includes("@keyframes home-in") && tunnelPage.includes(".ripple") && tunnelPage.includes("menu-group") ? ok : fail)(
       "【139e】手机页动效体系：入场/切换/涟漪/菜单弹出 + 跟随系统减弱动效；☰ 菜单带图标与说明"
     );
-    (relaySrc.includes("mobile-remote-v0.1.13") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.13）"
+    (relaySrc.includes("mobile-remote-v0.1.14") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.14）"
     );
   }
 }

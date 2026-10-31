@@ -14,6 +14,16 @@
         android:theme="@style/Theme.Remote"
         android:usesCleartextTraffic="false">
 
+        <!-- 相机拍照：把缓存文件以 content:// 交给系统相机（⛔ 不用 file://，Android 7+ 直接抛 FileUriExposed） -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout"
