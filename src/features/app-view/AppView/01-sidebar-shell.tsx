@@ -162,7 +162,6 @@ import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
-import { CloseConfirmDialog } from "../../../components/CloseConfirmDialog";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
@@ -961,7 +960,6 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     ) : null}
     {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
         close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。 */}
-    <CloseConfirmDialog />
     {/* 工作区外文件预览的授权确认（10-18，应用内模态；⛔ 不用系统弹窗） */}
     {/* 会话 / 项目标签编辑（10-25）：自订阅，portal 到 body。 */}
     <EntityTagEditorHost />
