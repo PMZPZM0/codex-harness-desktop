@@ -430,6 +430,7 @@ export function HelpDialog({ helpKey, onClose, onNavigate }: { helpKey: HelpTopi
           </header>
           <div className="help-body">
             <p className="help-intro">{renderRich(`设置分 ${OVERVIEW_GROUPS.length} 组、共 ${OVERVIEW_GROUPS.reduce((n, g) => n + g.items.length, 0)} 页。**新手只需先配「模型」**，其余按需。不知道去哪一页，就先点下面的「我想做…」；每页都写了「它是干什么的」和「什么时候会用到它」，点页名可直接跳过去。`)}</p>
+            <p className="help-intro">{renderRich("**手机远控不在设置里**：点顶栏的 📱 图标打开「移动端远程控制」—— 扫码或输 6 位码配对，断开连接会同时移除电脑端这台设备。")}</p>
             <div className="overview-quick">
               <div className="overview-quick-head"><h3>我想做…</h3><span>点一下直接跳到那一页</span></div>
               <div className="overview-quick-grid">
