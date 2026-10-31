@@ -1108,7 +1108,9 @@
 .login-tabs button { flex: 1; height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: var(--muted); cursor: pointer; font-size: 12.5px; transition: all 0.18s ease; }
 .login-tabs button.active { border-color: var(--green); background: color-mix(in srgb, var(--green) 12%, var(--bg)); color: var(--text); font-weight: 500; }
 /* 登录方式：双列卡（末位单数个 ⇒ 自动整行，避免出现半张卡的缺口） */
-.login-card.is-expanded { width: min(700px, 100%); }
+/* 10-31 二次调整（用户：「宽度收成这样吧」）：展开**不改宽度**，只长高 ——
+   宽度跳动在视觉上像"换了个界面"，收在 560 更稳。 */
+.login-card.is-expanded { width: min(560px, 100%); }
 /* 表单展开/收起：height:auto 不能过渡 ⇒ 用 grid-template-rows 0fr→1fr（内容 overflow:hidden）。
    ⛔ 不要改成 max-height 动画：内容高低差很大时会出现"先慢后半空"的假动画。 */
 .login-form-wrap {
@@ -1132,7 +1134,7 @@
   gap: 6px;
   /* 网格整块居中：卡片铺满 720 会显得"贴边"，收一点并自动居中，两行都对称 */
   width: 100%;
-  max-width: 520px;
+  max-width: 100%;
   margin: 2px auto 2px;
 }
 .login-option { grid-column: span 2; }
@@ -1223,21 +1225,27 @@
 .login-endpoint-trigger small { color: var(--faint); font-size: 10.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .login-endpoint-trigger > svg { flex: none; color: var(--muted); transition: transform .16s ease; }
 .login-endpoint-select.open .login-endpoint-trigger > svg { transform: rotate(180deg); }
+/* ⛔⛔ 10-31 用户截图「离谱」：端点下拉原来是**绝对定位浮层**，而登录表单为了展开动画包了
+   `overflow: hidden` 的容器 ⇒ 菜单被裁掉一半，且压在"API 密钥 + 探测并登录"上面。
+   改成**行内展开**（position: static）：菜单参与布局 ⇒ 卡片跟着长高，不裁切、不遮挡。
+   3 个端点这种短列表本来也不值得用浮层。 */
 .login-endpoint-menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 5px);
-  left: 0;
-  right: 0;
+  position: static;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  margin-top: 6px;
   padding: 5px;
+  max-height: 232px;
+  overflow-y: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--panel);
-  box-shadow: 0 12px 32px color-mix(in srgb, #000 20%, transparent);
-  animation: menu-pop .14s ease both;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--panel-2) 60%, var(--bg));
+  animation: login-menu-in 0.16s ease both;
+}
+@keyframes login-menu-in {
+  from { opacity: 0; translate: 0 -4px; }
+  to { opacity: 1; translate: 0 0; }
 }
 .login-endpoint-menu button {
   min-height: 44px;

@@ -99,6 +99,8 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   /* 10-31 用户：「默认小选项，点击后放大登录界面」—— 默认只列选项（小卡），
      点一张才展开表单（卡片变宽 + 高度用 grid-rows 0fr→1fr 动画撑开）。 */
   const [expanded, setExpanded] = useState(false);
+  /* 10-31 用户：「点击外面自动缩起来，点击卡片就展开」——范围判定只认卡片本身。 */
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
   const [apiBase, setApiBase] = useState(PPTokenEndpoints[0].url);
   const [apiKey, setApiKey] = useState("");
@@ -133,6 +135,19 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
   const [openaiProxy, setOpenaiProxy] = useState(() => localStorage.getItem("openai-proxy") ?? "");
   const openaiTimerRef = useRef<number | null>(null);
   useEffect(() => () => { if (openaiTimerRef.current) window.clearInterval(openaiTimerRef.current); }, []);
+
+  /* 展开态下点卡片外面 ⇒ 收起（回到"只列选项"）。用 mousedown 捕获阶段：
+     先于按钮的 click 触发，避免"点某个选项 → 先收起再展开"的抖动。 */
+  useEffect(() => {
+    if (!expanded) return;
+    const onDown = (event: MouseEvent) => {
+      const el = cardRef.current;
+      if (!el || el.contains(event.target as Node)) return;
+      setExpanded(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => document.removeEventListener("mousedown", onDown, true);
+  }, [expanded]);
 
   useEffect(() => {
     if (!endpointOpen) return;
@@ -322,7 +337,12 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
 
   return (
     <div className="login-screen">
-      <div className={`login-card${expanded ? " is-expanded" : ""}`}>
+      <div
+        ref={cardRef}
+        className={`login-card${expanded ? " is-expanded" : ""}`}
+        /* 收起态点卡片任意处 = 展开（默认就是 PPToken 推荐那一栏） */
+        onClick={() => { if (!expanded) setExpanded(true); }}
+      >
         <div className="login-brand"><img className="login-logo-img" src="./icon.png" alt="" width={40} height={40} /><div><strong>Codex Harness</strong></div></div>
         <h1>开始使用</h1>
         <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
