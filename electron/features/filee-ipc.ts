@@ -20,6 +20,8 @@ import os from "node:os";
 import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { toolRootsRead } from "../toolchain";
+// 仓库地址单一真相源 = runtime-ipc 的 FILEE_REPO（安装与声明区共用；⛔ 前端不写第二份 URL）
+import { FILEE_REPO } from "./runtime-ipc";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -34,14 +36,30 @@ function cliPath(): string {
 
 const MAX_OUTPUT = 32_000;
 
-type FileeStatus = { installed: boolean; path: string; version: string; detail: string };
+type FileeStatus = {
+  installed: boolean;
+  path: string;
+  version: string;
+  detail: string;
+  /** 开源声明（FileeCard 声明区/跳转按钮从这里取；⛔ 前端不硬编码 URL —— 发现 1 审查修正） */
+  attribution: { license: string; home: string; site: string };
+};
+
+/** 官网地址（仓库地址走 runtime-ipc 的 FILEE_REPO；两处都在主进程，前端零字面量）。 */
+const FILEE_SITE = "https://filee.sh";
 
 /** `--version` 缓存 60 秒（状态卡片轮询时别每次 spawn 一倍进程，同 feishu-cli 口径）。 */
 let versionCache = { value: "", at: 0 };
 
 async function statusOf(): Promise<FileeStatus> {
   const binary = cliPath();
-  const base: FileeStatus = { installed: Boolean(binary), path: binary, version: "", detail: "" };
+  const base: FileeStatus = {
+    installed: Boolean(binary),
+    path: binary,
+    version: "",
+    detail: "",
+    attribution: { license: "MIT", home: `https://github.com/${FILEE_REPO}`, site: FILEE_SITE },
+  };
   if (!binary) return base;
   try {
     if (!versionCache.value || Date.now() - versionCache.at > 60_000) {

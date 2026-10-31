@@ -93,6 +93,12 @@ const versions = read("scripts/lib/tools-versions.cjs");
     "卸载走设置内二级弹窗确认（⛔ 不用原生 confirm / openAppConfirm，飞书卡同款口径）");
   ok(fileeCard.includes("控制台 → 组件更新") && fileeCard.includes("runtime-row"),
     "卡片指路控制台更新 + 行结构用 runtime-row（自造样式没有 CSS，飞书卡教训）");
+  // ⛔ 10-31 补审查（发现 1）：声明区 URL 必须由主进程下发 —— 前端硬编码 github 字面量 = 第二真相源
+  ok(fileeIpc.includes("attribution: { license: \"MIT\", home: `https://github.com/${FILEE_REPO}`, site: FILEE_SITE }")
+    && /export const FILEE_REPO/.test(runtimeIpc),
+    "filee:status 下发 attribution（仓库地址单一真相源 = runtime-ipc 导出的 FILEE_REPO）");
+  ok(!/github\.com\/KnifeLemon/.test(fileeCard) && fileeCard.includes("status.attribution.home"),
+    "⛔ FileeCard 不硬编码 GitHub 字面量（跳转按钮消费 status.attribution）");
 }
 
 console.log("");

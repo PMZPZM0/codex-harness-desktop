@@ -1333,8 +1333,8 @@ interface Window {
     sessionspaceGc(options?: { maxAgeDays?: number; dryRun?: boolean }): Promise<{ recordsRemoved: number; dirsRemoved: number; orphanRetried: number; scanned: number }>;
     /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
     feishuCliStatus(): Promise<{ installed: boolean; path: string; version: string; configured: boolean; loggedIn: boolean; appId: string; user: string; detail: string; error: string }>;
-    /* 10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s） */
-    fileeStatus(): Promise<{ installed: boolean; path: string; version: string; detail: string }>;
+    /* 10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）/ 开源声明（仓库与官网地址单一真相源在主进程，前端零字面量 —— 10-31 补审查修正） */
+    fileeStatus(): Promise<{ installed: boolean; path: string; version: string; detail: string; attribution: { license: string; home: string; site: string } }>;
     /* 10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容 */
     fileeConvert(input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }): Promise<{ ok: boolean; code: number; report: { preset?: string; target?: string; converted?: number; skipped?: number; failed?: number; files?: { source?: string; state?: string; outputs?: string[]; error?: string }[] } | null; error: string; raw: string }>;
     /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
