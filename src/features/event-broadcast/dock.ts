@@ -22,7 +22,12 @@
 
 export type DockEdge = "left" | "right" | "top" | "bottom";
 
-export type StageRect = { left: number; right: number; top: number; bottom: number };
+export type StageRect = {
+  left: number; right: number; top: number; bottom: number;
+  /** 输入框的实际左右边界：面板与横幅的**宽度对齐口径**（聊天区还含 rail/内边距，不能直接用） */
+  composerLeft?: number;
+  composerWidth?: number;
+};
 
 /** 磁吸阈值：松手时图标**边缘**距边框 ≤ 这个值才吸附，否则保持自由悬浮。
  *  ⛔ 10-31 用户反馈：「拉都拉不出来，不管拉到哪里都自动吸附过去了，他可以悬浮展示的」
@@ -60,8 +65,10 @@ export function measureStage(): StageRect {
   const top = topbar ? Math.round(topbar.bottom) : 0;
   const bottom = composer ? Math.round(composer.top) : vh;
   /* 极端情形（左右栏同时展开把聊天区挤没）兜底：至少留 120px，否则图标会跑到栏上 */
-  if (right - left < 120) return { left, right: Math.min(vw, left + 120), top, bottom };
-  return { left, right, top, bottom };
+  const composerLeft = composer ? Math.round(composer.left) : undefined;
+  const composerWidth = composer ? Math.round(composer.width) : undefined;
+  if (right - left < 120) return { left, right: Math.min(vw, left + 120), top, bottom, composerLeft, composerWidth };
+  return { left, right, top, bottom, composerLeft, composerWidth };
 }
 
 export type DockState = {
@@ -77,11 +84,11 @@ export type DockState = {
 
 /** 自由悬浮态的圆钮尺寸（含 padding），锚点布局与 CSS 必须同一个值。 */
 export const POD_SIZE = 44;
-/** 收纳态把手的半宽 / 半高（26×44）—— **贴边落位按各自轴的半宽算**，
+/** 收纳态把手的半宽 / 半高（22×40）—— **贴边落位按各自轴的半宽算**，
  *  让把手的**边缘**正好压在边框线上，而不是中心对中心（那会内缩 9px，看着"浮在旁边"）。
  *  ⛔ 两个轴不能共用一个值：横向用 13、纵向用 22，否则贴上/下边时把手会压进顶栏/输入框。 */
-export const DOCK_HALF_W = 13;
-export const DOCK_HALF_H = 22;
+export const DOCK_HALF_W = 11;
+export const DOCK_HALF_H = 20;
 
 /** 把一个中心点吸附到最近的边，并夹进聊天区（防止吸到被挤没的区域）。 */
 export function snapPoint(

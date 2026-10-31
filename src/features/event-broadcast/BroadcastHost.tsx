@@ -14,7 +14,7 @@
  *     所以锚点用 `margin-left/top` 做中心对齐，不占用 transform。
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Megaphone, Square, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Megaphone, Square, X } from "lucide-react";
 import { getAnnounceStatus, requestAnnounceStop, subscribeAnnounceStatus } from "../../voice/announce-bus";
 import { dismissBroadcast, getBroadcastSnapshot, pushBroadcast, setBroadcastOpen, subscribeBroadcast, BROADCAST_CHANNEL, type BroadcastPushDetail } from "./store";
 import {
@@ -33,6 +33,7 @@ import {
   type StageRect,
 } from "./dock";
 import { BroadcastPanel } from "./BroadcastPanel";
+import { TypedText } from "./TypedText";
 import { kindMetaOf } from "./kinds";
 
 const DOCK_KEY = "harness-broadcast-dock";
@@ -84,6 +85,7 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
       setStage((prev) => {
         const next = measureStage();
         return prev.left === next.left && prev.right === next.right && prev.top === next.top && prev.bottom === next.bottom
+          && prev.composerLeft === next.composerLeft && prev.composerWidth === next.composerWidth
           ? prev
           : next;
       });
@@ -114,6 +116,14 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
     if (dock.docked) return pointForDock(dock, stage);
     return clampIntoStage(dock.free ?? pointForDock({ edge: "left", ratio: 0 }, stage), stage);
   }, [free, dock, stage]);
+
+  /* ⛔ 用户令（10-31）：「播报内容按会话独立显示」——
+     面板与角标只算**当前会话**的条目；无 threadId 的是全局播报（系统级），当前会话也看。 */
+  const mine = useMemo(
+    () => snap.history.filter((item) => !item.threadId || item.threadId === (threadId ?? "")),
+    [snap.history, threadId],
+  );
+  const myUnread = (snap.unreadBy?.[threadId ?? ""] ?? 0) + (snap.unreadBy?.[""] ?? 0);
 
   /* 当前该按哪条边出横幅：贴边用吸附边，自由悬浮用最近边 */
   const activeEdge: DockEdge = dock.docked && !free ? dock.edge : nearestEdgeOf(point, stage);
@@ -205,13 +215,35 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
     bounceTimer.current = window.setTimeout(() => setBounce(false), 400);
   }, [point, stage]);
 
+  /* ⛔ 10-31 用户令：「修复播报弹窗的关闭问题：点击弹窗外部应能收起，按 Esc 键也应能正常关闭」。
+     ⛔ 用 mousedown 而不是 click：click 会等 pointerup，拖动图标时松手落到别处会误关；
+        mousedown 与项目里其它浮层（AppSelect / BossGroupMembersButton）同一套判据。 */
+  useEffect(() => {
+    if (!snap.open) return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      if (target?.closest?.(".bc-panel")) return;
+      if (target?.closest?.(".bc-anchor")) return;
+      setBroadcastOpen(false, threadId ?? "");
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setBroadcastOpen(false, threadId ?? "");
+    };
+    window.addEventListener("mousedown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("mousedown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [snap.open, threadId]);
+
   const onPodClick = useCallback(() => {
     if (movedRef.current) {
       movedRef.current = false;
       return;
     }
-    setBroadcastOpen(!snap.open);
-  }, [snap.open]);
+    setBroadcastOpen(!snap.open, threadId ?? "");
+  }, [snap.open, threadId]);
 
   /* ⛔⛔ 10-31 事故（用户：「压根没有同步改动」）——之前这里有
      `if (!snap.history.length && !snap.announcing) return null;`
@@ -224,9 +256,12 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
   const half = POD_SIZE / 2;
   /* 气泡朝**聊天区内侧**滑出（贴左边就往右弹，贴右边就往左弹） */
   const bubble = (() => {
-    /* 横幅宽度：占聊天区约 60%，上限 420 —— 太窄会退化成"小气泡"，太宽会像整块面板 */
-    const W = 420;
-    const width = Math.min(W, Math.max(240, Math.round((stage.right - stage.left) * 0.6)));
+    /* ⛔ 用户令：「宽度与输入框对齐，可展示更长的内容，超出输入框宽度时自动换行」——
+       横幅宽度直接取聊天区可用宽（两侧留 12px），钳进 [320, 560]：
+       太窄长消息会被截三行，再宽就没法和输入框对齐了。 */
+    const width = stage.composerWidth
+      ? Math.round(stage.composerWidth)
+      : Math.max(320, Math.min(560, stage.right - stage.left - 24));
     if (activeEdge === "left") {
       return { left: point.x + half + 10, top: point.y - 30, width, origin: "left" as const };
     }
@@ -238,6 +273,9 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
     }
     return { left: Math.max(stage.left + 8, Math.min(point.x - width / 2, stage.right - width - 8)), top: point.y - half - 10 - 96, width, origin: "bottom" as const };
   })();
+
+  /* 箭头朝内：贴左边 ⇒ 指向右；贴右边 ⇒ 指向左；贴上 ⇒ 向下；贴下 ⇒ 向上 */
+  const Arrow = activeEdge === "left" ? ChevronRight : activeEdge === "right" ? ChevronLeft : activeEdge === "top" ? ChevronDown : ChevronUp;
 
   const announcingMeta = snap.announcing ? kindMetaOf(snap.announcing.kind) : null;
   const AnnouncingIcon = announcingMeta?.icon;
@@ -269,7 +307,7 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
           onPointerUp={finishDrag}
           onPointerCancel={finishDrag}
           onClick={onPodClick}
-          aria-label={`播报（${snap.history.length} 条${snap.unread ? `，${snap.unread} 条未读` : ""}）`}
+          aria-label={`播报（${mine.length} 条${myUnread ? `，${myUnread} 条未读` : ""}）`}
           aria-expanded={snap.open}
           title={snap.open ? "收起播报列表" : "播报：点击查看历史，拖动可贴边"}
         >
@@ -279,11 +317,15 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
                 ② 群事件播报 ⇒ 喇叭口向外扩散的三道声波（.bc-wave）；
                 ③ 语音播报 ⇒ 喇叭下方的四根音量柱律动（.bc-eq，绿色）。
                 两套动效互斥由 class 决定：语音优先（它在播真人声音，信息更即时）。 */}
+            {/* ⛔ 用户令：「贴进去就展示一个上下左右的自适应小箭头」——
+                收纳态只留一枚箭头（朝聊天区内侧），hover/播报/展开时才换成喇叭。
+                方向由 data-edge 决定（见下方 Arrow 计算）。 */}
+            <Arrow className="bc-arrow" size={13} strokeWidth={2.6} />
             <Megaphone className="bc-pod-icon" size={19} strokeWidth={2} />
             <i className="bc-wave w1" /><i className="bc-wave w2" /><i className="bc-wave w3" />
             <i className="bc-eq e1" /><i className="bc-eq e2" /><i className="bc-eq e3" /><i className="bc-eq e4" />
           </span>
-          {snap.unread > 0 && !snap.open ? <span className="bc-badge">{snap.unread > 9 ? "9+" : snap.unread}</span> : null}
+          {myUnread > 0 && !snap.open ? <span className="bc-badge">{myUnread > 9 ? "9+" : myUnread}</span> : null}
           {snap.announcing || voice.active ? <span className="bc-pulse" aria-hidden /> : null}
         </button>
       </div>
@@ -304,7 +346,11 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
           </span>
           <span className="bc-bubble-main">
             <span className="bc-bubble-kind">语音播报{voice.pending > 0 ? ` · 待播 ${voice.pending} 句` : ""}</span>
-            <span className="bc-bubble-title">{String(voice.current ?? "").trim() || "正在播报…"}</span>
+            <span className="bc-bubble-title">
+              {String(voice.current ?? "").trim()
+                ? <TypedText text={String(voice.current ?? "").trim()} variant="voice" />
+                : "正在播报…"}
+            </span>
           </span>
           <button
             type="button"
@@ -327,8 +373,18 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
           </span>
           <span className="bc-bubble-main">
             <span className="bc-bubble-kind">{announcingMeta.label}</span>
-            <span className="bc-bubble-title">{snap.announcing.title}</span>
-            {snap.announcing.text ? <span className="bc-bubble-text">{snap.announcing.text}</span> : null}
+            <span className="bc-bubble-title">
+              {snap.announcing.kind === "group"
+                ? <TypedText text={snap.announcing.title} variant="group" />
+                : snap.announcing.title}
+            </span>
+            {snap.announcing.text ? (
+              <span className="bc-bubble-text">
+                {snap.announcing.kind === "group" || snap.announcing.kind === "voice"
+                  ? <TypedText text={snap.announcing.text} variant={snap.announcing.kind === "voice" ? "voice" : "group"} />
+                  : snap.announcing.text}
+              </span>
+            ) : null}
           </span>
           <button
             type="button"
@@ -346,11 +402,12 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
 
       {snap.open ? (
         <BroadcastPanel
-          items={snap.history}
+          items={mine}
           edge={activeEdge}
           stage={stage}
           icon={point}
           paused={snap.paused}
+          threadId={threadId}
         />
       ) : null}
 
