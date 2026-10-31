@@ -6,7 +6,8 @@ import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcM
 import { HARNESS_PROVIDER_ID, RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "./01-model-catalog";
-import { internalThreads, server } from "../runtime-refs";
+import { engineActiveTurnIds, internalThreads, server } from "../runtime-refs";
+import { GROUP_EVENT_TAG } from "../../src/lib/host-queue.mjs";
 import { rememberInternalThread } from "../internal-threads";
 import { threadModelOf } from "../thread-model";
 import { bridgeDial } from "../bridge-dial";
@@ -65,10 +66,14 @@ export function turnOutputText(turn: any) {
 }
 
 /**
- * 记忆蒸馏的模型通道：开一个只读的一次性会话把旧日志提炼成长期记忆。
- * 全程标记 internalThreads —— 否则它自己的 turn/completed 会被捕获逻辑当成对话写回日志。
+ * 记忆蒸馏的模型通道。
+ *
+ * ⛔⛔ 10-31 用户令：「记忆蒸馏改一下，不要开新会话蒸馏，会话自己蒸馏」——
+ *   **优先在传入的会话里跑这一轮**（`opts.inThread`）：不开新会话，用的是这条会话自己的
+ *   模型与上下文，产出的蒸馏结果直接回给调用方。只有当**那条会话正在跑回合**时才退回
+ *   「一次性内部会话」（不能在别人跑着的时候插一条 turn/start —— 会把用户那轮打断）。
  */
-export async function distillSummarize(prompt: string, body: string, opts?: { threadId?: string; cwd?: string }): Promise<string> {
+export async function distillSummarize(prompt: string, body: string, opts?: { threadId?: string; cwd?: string; inThread?: string }): Promise<string> {
   const model = await readCustomModel();
   /* ⛔ 10-30：没有自定义模型时（用官方供应商的用户）**退回本会话自己的模型** ——
      引擎在 turn/start 里已经给过它；不退回的话这类用户的功能永远抛「尚未配置自定义模型」。 */
@@ -88,6 +93,26 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
   const provider = model?.baseUrl
     ? HARNESS_PROVIDER_ID
     : safeProviderId(sessionConfig?.model_provider ?? sessionModel?.provider ?? model?.provider ?? "openai");
+
+  const promptText = `${prompt}\n\n下面是原始日志：\n\n${body}`;
+  /* ① 会话自己蒸馏（用户令）：那条会话空闲才走这条 —— 用 `[群事件]` 标记，
+     时间线按事件块渲染，不会被当成"用户自己说的话"。 */
+  const inThread = String(opts?.inThread ?? "").trim();
+  if (inThread && ![...engineActiveTurnIds.values()].includes(inThread)) {
+    const turn: any = await server.request("turn/start", {
+      threadId: inThread,
+      input: [{ type: "text", text: `${GROUP_EVENT_TAG}${promptText}`, text_elements: [] }],
+      model: effectiveModel,
+      effort: "low",
+    });
+    const turnId = turn.turn?.id;
+    if (!turnId) throw new Error("蒸馏回合启动失败：未返回 turnId");
+    const completed = await waitForTurnCompletion(inThread, turnId, 300_000);
+    return turnOutputText(completed);
+  }
+
+  /* ② 兜底（会话正忙 / 调用方没给会话）：开一个只读的一次性内部会话。
+     全程标记 internalThreads —— 否则它自己的 turn/completed 会被捕获逻辑当成对话写回日志。 */
   /* ⛔ cwd 不写死：优先用调用方给的本会话工作目录（任务监控传 threadCwd），否则才退回进程目录。
      AGENTS.md 与产物都跟着这个目录走 —— 写死在安装目录会让 mac 上写出意料之外的路径。 */
   const cwd = String(opts?.cwd ?? "").trim() || process.cwd();
@@ -111,7 +136,7 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
   try {
     const turn: any = await server.request("turn/start", {
       threadId,
-      input: [{ type: "text", text: `${prompt}\n\n下面是原始日志：\n\n${body}`, text_elements: [] }],
+      input: [{ type: "text", text: promptText, text_elements: [] }],
       model: effectiveModel,
       effort: "low",
     });

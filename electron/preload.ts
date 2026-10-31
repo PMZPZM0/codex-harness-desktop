@@ -453,7 +453,8 @@ contextBridge.exposeInMainWorld("codex", {
   /* 切换记忆后端并回传新状态；选云端但未开通/未接通 ⇒ 不落盘，回执带 refused 原因 */
   setMemoryBackend: (backend: "builtin" | "mcp" | "cloud") => __ipc("memory:backend:set", 1, [backend]),
   deleteMemory: (id: string) => __ipc("memory:delete", 1, [id]),
-  distillMemory: (workspace?: string) => __ipc("memory:distill", 0, [workspace]),
+  /* 10-31：蒸馏**不再开新会话**，在传入的会话里跑这一轮（会话正忙时才退回一次性内部会话） */
+  distillMemory: (workspace?: string, threadId?: string) => __ipc("memory:distill", 0, [workspace, threadId]),
   /* 10-05 统一记忆只读：某命名空间的条目（含来源智能体/权重/归档态） */
   listFabricEntries: (input: unknown) => __ipc("memory:fabric-entries", 1, [input]),
   /* 10-05 统一记忆只读：命名空间概览（两种作用域 + 条数）—— 前端分区渲染用 */
