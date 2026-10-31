@@ -19,7 +19,7 @@ import { augmentedPath } from "../toolchain";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
-import { readCustomModel } from "../main/01-model-catalog";
+import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { readSubAgents, type SubAgentConfig } from "../main/09-agents-plugins";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -126,8 +126,15 @@ export async function runDelegatedTask(input: {
   const providerName = customModel?.name ?? provider;
   const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
   if (apiKey) server.setApiKey(apiKey);
+  /* ⛔⛔ 10-31 用户令「被调度的子智能体 / CLI / 专家 / 专家团 / 成员都默认跟随主会话的模型配置」：
+     模型优先级 = 显式指定 → 子智能体表单里**显式关掉**「跟随主对话」的存档模型 →
+     **发起方会话的会话级模型**（originSessionModel，按激活供应商清单归一）→ 全局激活模型。
+     原先跳过发起方直接落全局/存档模型 ⇒ 发起方换了模型、被派会话还跑在旧模型 + 旧供应商
+     （实测：成员被建在 harness 下拿着 custom964，引擎拒「供应商不一致」建不起来）。 */
+  const originRuntimeModel = await originSessionModel(origin, threadRuntimeStore);
   const effectiveModel = input.model
     || (subAgentConfig && !subAgentConfig.inheritModel ? subAgentConfig.model : undefined)
+    || (originRuntimeModel || undefined)
     || customModel?.model;
   if (!effectiveModel) return { ok: false, output: "", error: "尚未配置模型，无法发起调度" };
   /* 10-27：子智能体表单里的四项配置真正生效（未关闭继承时仍用主对话的值）。
