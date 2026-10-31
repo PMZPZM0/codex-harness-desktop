@@ -20,6 +20,7 @@ import { collectTurnWebSources } from "../../../lib/turn-web-sources.mjs";
 import { UserMessageView } from "../../shared/UserMessageView";
 import { isGroupEventMessage } from "../../../lib/user-refs";
 import { itemText } from "../../../lib/item-text";
+import { headSegmentIndex, shouldFlowSegment, splitFlowSegments } from "../../../lib/turn-flow-segments.mjs";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
@@ -43,26 +44,23 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
     if (!running) RUN_CLOCK.forget(turn.id);
   }, [running, turn.id]);
   const userItems = turn.items.filter((item) => item.type === "userMessage");
-  /* ⛔⛔ 10-31 用户令：「插队消息发出去，后续的消息就要在我们的消息下面」——
-     旧渲染把回合内**所有**用户消息都搬到卡片顶上（plainUserItems.map 在最前），
-     插队/排队并入的用户消息落在回合**中段**也被拽到顶部 ⇒ 插队之后产生的回复/工具
-     全部显示在用户消息上面（用户截图实证「还在上面跑出消息」）。
-     ⇒ 按**流中顺序**切段：每条普通用户消息 = 一段边界，各自渲染在自己的流位置上；
-        第一条用户消息之前没有响应项（正常单条发送）⇒ 维持旧渲染（气泡在卡片上方）不动。 */
-  const flowSegments = useMemo<{ user: any; items: any[] }[]>(() => {
-    const segs: { user: any; items: any[] }[] = [{ user: null, items: [] }];
-    for (const item of turn.items) {
-      if (isCompactionItem(item)) continue;   // 压缩线已由 timeline 层归位，不进内容区
-      if (item.type === "userMessage") {
-        if (isGroupEventMessage(itemText(item))) continue;  // 群广播由悬浮播报承担，不是边界
-        segs.push({ user: item, items: [] });
-        continue;
-      }
-      segs[segs.length - 1].items.push(item);
-    }
-    return segs;
-  }, [turn.items]);
-  const interleaved = flowSegments[0].items.length > 0 && flowSegments.length > 1;
+  /* ⛔⛔ 10-31 用户令（两次点名，附 WorkBuddy 对照截图）：「排队/插队消息发出去后，
+     后续 codex 消息要在**我这条消息下面**，新消息要在用户插队消息下面」。
+     ⛔ 上一版的门判写成了「第一条用户消息**之前**已有响应项」（`flowSegments[0].items.length > 0`）——
+     那只覆盖"回合先有输出、后来才插话"这一种；而真实数据（rollout 实测）是
+     `USER1 → tool → tool → USER2 → tool → answer`，**回合以用户消息开头** ⇒ 门判恒 false，
+     分段渲染根本没跑起来，仍旧走旧渲染把所有气泡搬到卡片顶上（用户看到的就是"我的消息跳上去了、
+     后续内容还堆在上面"）。
+     ⇒ 正确判据只看**这个回合里有几条普通用户消息**：≥2 就是插队/排队并进，必须按流中顺序分段落。
+        只有一条时维持旧渲染（气泡在卡片上方）—— 那条路径是 09-17 起就在用的，别动。 */
+  const flowSegments = useMemo<{ user: any; items: any[] }[]>(
+    () => splitFlowSegments(turn.items, { isCompaction: isCompactionItem, isGroupEvent: isGroupEventMessage, textOf: itemText }),
+    [turn.items],
+  );
+  const interleaved = shouldFlowSegment(flowSegments);
+  /* 「Codex 头像 + 名字」与「正在处理 N 秒」挂在**第一段真的会渲染的块**上（不是死板的首段）：
+     首段经常是空段（回合以用户消息开头），写死 index===0 会让头像整轮都不出现。 */
+  const headSegIndex = headSegmentIndex(flowSegments);
   /* ⛔⛔ 10-26 用户令：「放到消息下面，不要放上面」——
      群广播（宿主注入的 `[群事件] …`）**不是用户说的话**，不该占着"用户消息"的位置
      压在回复上面（之前它就是一条 userMessage ⇒ 渲染在回复上方，看着像用户自己发的）。
@@ -142,14 +140,14 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
               {seg.user && <MemoUserMessageView item={seg.user} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} />}
               {(segFold.length > 0 || (last && (running || responseItems.length > 0))) && (
                 <div className="turn-card">
-                  {index === 0 && userItems.length > 0 && (running || responseItems.length > 0) && (
+                  {index === headSegIndex && userItems.length > 0 && (running || responseItems.length > 0) && (
                     <div className="turn-head">
                       <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
                       <span className="turn-head-name">{codexName}</span>
                       <SessionAnnounceToggle threadId={threadId} />
                     </div>
                   )}
-                  {index === 0 && running && userItems.length > 0 && <RunningProcessTime turnId={turn.id} />}
+                  {index === headSegIndex && running && userItems.length > 0 && <RunningProcessTime turnId={turn.id} />}
                   <div className="turn-card-body">
                     <div className="codex-turn">
                       {last && !running && !stoppedWithoutReply && !userStopped && stopReason.label && (

@@ -316,13 +316,19 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/multiple === true \|\| args\.multiple === "true"/.test(codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"))),
     "agent_ask 的 multiple 解析容错字符串 \"true\"（个别模型会传字符串）");
 
-  /* ⛔⛔ 10-31 用户令「插队消息发出去，后续的消息要在我们的消息下面」——插队分段渲染：
-     回合内多条用户消息（插队/排队并进）按**流中顺序**切段渲染，⛔ 不许再把所有用户气泡
-     搬到卡片顶上（那会把插队后的回复全顶到消息上面，用户截图实证）。 */
-  ok(/const flowSegments = useMemo/.test(turnView) && /const interleaved = flowSegments\[0\]\.items\.length > 0 && flowSegments\.length > 1/.test(turnView),
-    "插队分段：按流中顺序切段 + 门判（首条用户消息前已有响应项才走分段，正常单条发送维持旧渲染）");
+  /* ⛔⛔ 10-31 用户令（两次点名 + WorkBuddy 对照截图）：「排队/插队消息发出去后，
+     后续 codex 消息要在我这条消息下面」。插队分段渲染 = 回合内多条用户消息按**流中顺序**切段，
+     ⛔ 不许再把所有用户气泡搬到卡片顶上。
+     ⛔⛔ 门判必须是「**回合里有 ≥2 条普通用户消息**」，⛔ 不能写成「首条用户消息之前已有响应项」——
+     真实 rollout 是 `USER1 → tool → tool → USER2 → tool → answer`（回合以用户消息开头）
+     ⇒ 那样写门判恒 false、分段永远不跑，用户看到的就是"我的消息跳上去、后续内容堆在上面"（上一版就栽在这）。 */
+  ok(/splitFlowSegments\(turn\.items/.test(turnView) && /const interleaved = shouldFlowSegment\(flowSegments\)/.test(turnView) && /shouldFlowSegment/.test(read("src/lib/turn-flow-segments.mjs")),
+    "插队分段：门判 = 回合内 ≥2 条普通用户消息（⛔ 不是「首条用户消息前有响应项」，那个判据在真实数据上恒假）");
   ok(/flowSegments\.map\(\(seg, index\) => \{[\s\S]{0,400}?MemoUserMessageView item=\{seg\.user\}/.test(turnView),
     "插队分段：用户气泡渲染在自己的流位置上（段内 MemoUserMessageView）");
+  ok(/const headSegIndex = headSegmentIndex\(flowSegments\)/.test(turnView)
+    && /index === headSegIndex && userItems\.length > 0/.test(turnView) && !/index === 0 && userItems/.test(turnView),
+    "插队分段：头像/「正在处理 N 秒」挂在**首段实块**（回合以用户消息开头时首段是空段，写死 index===0 会整轮没头像）");
   ok(/finalAgentId=\{last \? finalAgent\?\.id : undefined\}/.test(turnView) && /completedSkin=\{last\}/.test(turnView),
     "插队分段：只有最后一段带最终答复/收尾皮肤（耗时属于整个回合，⛔ 段段都挂就是同屏多个）");
   const queueStream = codeOnly(read("src/features/session-queue/SessionQueue.tsx"));
