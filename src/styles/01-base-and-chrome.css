@@ -485,6 +485,13 @@ button {
 .brand-mark {
   /* 黑底白字徽标（用户指定）：纯深色底 + 白色 CH，尺寸固定醒目；切换动画（CH↔箭头）继续保留。 */
   color: #fff;
+  /* ⛔⛔ 10-31 用户：「这个 logo 边框一圈，黑色边框」——
+     那不是谁画的描边，是 **UA 给 `<button>` 的原生边框**：`border: 2px outset rgb(0,0,0)`
+     + `appearance: auto`。项目里**没有**全局 `button { border: 0 }` reset（只有 font/color），
+     所以每个自绘按钮都得自己清 ⇒ 这一圈随手一数就是 4px 内容损失。
+     ⛔ 别只写 `border: 0`：`appearance: auto` 仍会让 Chromium 画原生 button 底/边。 */
+  border: 0;
+  appearance: none;
   background: linear-gradient(155deg, #26282c 0%, #101113 70%, #0a0b0c 100%);
   cursor: pointer;
   width: 30px;
@@ -559,10 +566,16 @@ button.brand-mark.sidebar-toggle {
   background: transparent;
 }
 button.brand-mark.sidebar-toggle:hover {
-  background: linear-gradient(155deg, #26282c 0%, #101113 70%, #0a0b0c 100%);
+  /* 10-31 用户：「鼠标放上去的展示不要黑色折叠箭头，适配 logo 色来」——
+     原来 hover 是纯黑渐变 + 白箭头，与旁边那颗蓝图标割裂。改成图标同色系的蓝。
+     （配色取自 icon.png 的实测主色 rgb(63,125,235)） */
+  background: linear-gradient(155deg, #5b93f2 0%, #3f7deb 55%, #2f66d0 100%);
 }
-.sidebar-toggle-arrow {
+.brand-mark .sidebar-toggle-arrow {
   z-index: 2;
+  /* ⛔ 必须带 `.brand-mark` 前缀：`.brand-row span { color: var(--faint) }`（0,1,1）
+     比光秃秃的 `.sidebar-toggle-arrow`（0,1,0）更特异 ⇒ 箭头一直是 `--faint` 灰，
+     压在黑底上就是"黑色折叠箭头"。这里 (0,2,0) 才压得住。 */
   color: #fff;
   opacity: 0;
   place-items: center;
