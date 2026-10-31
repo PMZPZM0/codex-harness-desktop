@@ -220,6 +220,20 @@ const preload = read("electron/preload.ts");
     && /\.sidebar-resizer::after \{[\s\S]{0,200}?width: 1px;[\s\S]{0,200}?background: transparent/.test(shellCss)
     && /\.sidebar-resizer:hover::after,[\s\S]{0,80}?background: var\(--accent\)/.test(shellCss),
     "拖动条 = 7px 命中面 + **平时不画线**（hover/拖动才亮主题色）");
+
+  /* ── ⑩ 侧栏品牌按钮：UA 边框要清掉 + 折叠箭头跟 logo 同色系（10-31 用户截图两次）────
+     ① 那圈"黑色边框"是 UA 给 `<button>` 的原生 `border: 2px outset` + `appearance: auto`
+        （项目没有全局 button reset，自绘按钮都得自己清）；
+     ② 箭头本是 `#fff`，却被 `.brand-row span { color: var(--faint) }` 吃掉 ⇒ 灰箭头压黑底 =
+        「黑色折叠箭头」；③ hover 底色原来是黑渐变，与旁边蓝图标割裂。 */
+  const shellCode = codeOnly(read("src/styles/01-base-and-chrome.css"));
+  ok(/\.brand-mark \{[\s\S]{0,700}?border: 0;[\s\S]{0,160}?appearance: none;/.test(shellCode),
+    "⑩ 品牌按钮清掉了 UA 原生边框（2px outset 在圆角上就是那一圈黑边）");
+  ok(!/button\.brand-mark\.sidebar-toggle:hover \{[\s\S]{0,240}?#26282c/.test(shellCode),
+    "⑩ 负向：悬停不许再回到黑色渐变（箭头压黑底 = 「黑色折叠箭头」）");
+  ok(/\.brand-mark \.sidebar-toggle-arrow \{[\s\S]{0,320}?color: #fff/.test(shellCode),
+    "⑩ 折叠箭头 color 必须带 .brand-mark 前缀（否则被 `.brand-row span{color:var(--faint)}` 吃掉、变灰）");
+
   /* ⛔ 10-31 改为「只有一个 owner 画这条线」：用户两次反馈「还是这么粗」，实测剖面证明粗的不是
      1px 本身，而是 ①主区右边 6px `--panel` 底色带 ②scaleX(.5) 在 dpr=1 下被抗锯齿摊成两个像素
      ③面板自己的 border-left —— 三份叠加。现在只留分隔线一条实心 1px（与左侧同宽同色）。 */
