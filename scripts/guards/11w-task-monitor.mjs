@@ -254,6 +254,33 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
   "网页列表默认前 6 条 + 查看更多（不一次性铺满）"
 );
 
+/* ── 10-31 用户：「这三个板块有做自适应上下吗，输出多了，会有翻页和滚轮吗，还有右侧栏的大滚轮，
+   万一一屏展示不下」+「要不然不要底色了，看着怪怪的」──
+   ⛔⛔ 真 bug：`.monitor-panel` 原来是 `height: 100% + overflow: hidden`，而滚动容器是**它的父级
+   `.panel-page`（05 里已有 overflow-y: auto）**。本层被钉死在 100% ⇒ 永远不超过父容器 ⇒
+   父层滚动条永不出现，底部板块被**裁掉且滚不到**（grow 块还会被上面内容多的块压到 0 高）。
+   真机对照（同 CSS 复现页）：旧规则 scrollH 687 == clientH 687（不可滚）、b1 被压 160→75；
+   修后 scrollH 1460 > 687，滚到底最后一块 bottom 764 ≤ 容器 778（完全可见）。 */
+{
+  const monCss = read("src/styles/58-task-monitor.css");
+  const panelRule = (monCss.match(/\.monitor-panel \{[\s\S]*?\n\}/) || [""])[0];
+  /* ⛔ 本文件的 ok/fail 是**单参函数**（`ok(msg)`），写 `ok(cond, msg)` 只会把 cond 当消息打印
+     ⇒ 恒通过（假绿）。必须用下面这个 `(cond ? ok : fail)(msg)` 形式。 */
+  (/overflow: visible/.test(panelRule) && /flex: 1 0 auto/.test(panelRule) ? ok : fail)(
+    "监控面板**可被内容撑高**（overflow: visible + flex-shrink 0）：⛔ 别回到 `height:100% + overflow:hidden` —— 那样一屏放不下就裁掉且滚不到"
+  );
+  (!/height: 100%/.test(panelRule) && !/overflow: hidden/.test(panelRule) ? ok : fail)(
+    "负向：面板层不再钉死 100% 高、不再 hidden（滚动交给父级 .panel-page 一层，避免双层滚动条）"
+  );
+  const blockRule = (monCss.match(/\.monitor-block \{[\s\S]*?\n\}/) || [""])[0];
+  (/background: transparent/.test(blockRule) && !/background: var\(--panel-2\)/.test(monCss) ? ok : fail)(
+    "板块**不再铺底色**（用户：「不要底色了，看着怪怪的」）—— 分区只靠 --line 边框；⛔ 别再写 --panel-2（皮肤/暗色下像卡片套卡片）"
+  );
+  (/flex: 1 0 auto; overflow: visible/.test(monCss) ? ok : fail)(
+    "产物块 shrink 0（上面板块变长时不被压成 0 高）、且不自带滚动（单层滚动）"
+  );
+}
+
 console.log("");
 console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
 process.exit(failCount === 0 ? 0 : 1);
