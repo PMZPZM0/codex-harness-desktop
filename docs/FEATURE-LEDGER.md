@@ -1,5 +1,4 @@
-# 功能更新清单（FEATURE LEDGER）| 2026-10-31 | 插队分段：门判修正（上一版在真实数据上恒假） | 修复 | `src/lib/turn-flow-segments.mjs`（新增纯函数）、`SessionTurn/03-turn-view.tsx`、守卫 07【44a】/11q | 用户两轮点名「排队/插队消息发出去后，后续 codex 消息要在我的消息下面」（附 WorkBuddy 对照截图）。上一版门判写成「首条用户消息**之前**已有响应项」⇒ 真实 rollout 是 `USER1→tool→tool→USER2→tool→answer`（回合以用户消息开头）⇒ 恒 false，分段渲染从未生效。改法：切段抽成纯函数 `splitFlowSegments/shouldFlowSegment/headSegmentIndex`，门判 = **回合内 ≥2 条普通用户消息**；头像/「正在处理 N 秒」挂首段**实块**（首段常为空段）。守卫 07 新增【44a】8 条**行为**断言（用真机顺序跑纯函数）+ 顺带修【67】provider 别名口径、【122】completedSkin 门。 | 本轮 |
-
+# 功能更新清单（FEATURE LEDGER）
 
 > **定位**：功能新增/改动的**权威台账**。发布时写更新日志、GitHub Release Notes、
 > `whats-new-notes.ts` 要点，一律以本文件为数据源——不重新翻 commit、不靠记忆。
@@ -36,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-10-31 | 插队分段：门判修正（上一版在真实数据上恒假） | 修复 | `src/lib/turn-flow-segments.mjs`（新增纯函数）、`SessionTurn/03-turn-view.tsx`、守卫 07【44a】/11q | 用户两轮点名「排队/插队消息发出去后，后续 codex 消息要在我的消息下面」（附 WorkBuddy 对照截图）。上一版门判写成「首条用户消息**之前**已有响应项」⇒ 真实 rollout 是 `USER1→tool→tool→USER2→tool→answer`（回合以用户消息开头）⇒ 恒 false，分段渲染从未生效。改法：切段抽成纯函数 `splitFlowSegments/shouldFlowSegment/headSegmentIndex`，门判 = **回合内 ≥2 条普通用户消息**；头像/「正在处理 N 秒」挂首段**实块**（首段常为空段）。守卫 07 新增【44a】8 条**行为**断言（用真机顺序跑纯函数）+ 顺带修【67】provider 别名口径、【122】completedSkin 门。 | 本轮 |
 | 2026-10-31 | 插队消息按流中位置渲染（后续内容在消息下面） | 修复 | `src/features/session-turn/SessionTurn/03-turn-view.tsx`、`src/features/session-queue/SessionQueue.tsx`、守卫 11q | 用户实测「发了插队消息，新消息还在上面一直展示」。根因：回合视图把回合内**所有**用户消息都搬到卡片顶上渲染（`plainUserItems.map` 在最前），插队消息落在回合中段也被拽到顶部 ⇒ 插队之后产生的回复/工具全在消息上面。改法：按**流中顺序**切段渲染——每条普通用户消息渲染在自己的流位置上（首条用户消息之前没有响应项的正常发送维持旧渲染不动）；只有最后一段带「耗时 X」收尾皮肤（`TurnFoldStream` 新增 `completedSkin`，耗时属于整个回合）。守卫 11q +4（变异验证：删门判 / 删段内气泡全部抓红）。 | 本轮 |
 | 2026-10-31 | 排队消息发出即上屏 + 发送提示统一「消息发送成功」 | 改动 | `src/features/app-state/parts/part04/03-seg/02-browser-queue-settings.tsx`、`part05/event-router/07-turn-completed-settle.tsx` | 用户对照 Qoder 截图两连：① 排队消息（定时到点 / 立即 / 回合结束自动启动）发出去要**立刻当用户消息上屏**——消息在下、「等待模型回复」状态条在消息下面、回复再下面，不能干等引擎 1~2s 回声 ⇒ 复用正常发送的乐观气泡机制（`showQueuedOptimistic`，与钉顶意图同闸同撤，引擎回声由既有确认逻辑合并，steer 进当前回合的也会被认出）；② 发送成功的提示统一为「**消息发送成功**」，「定时」字样只属于设置/取消/忙时重排（定时是定时的）。 | 本轮 |
 | 2026-10-31 | 中枢群归属硬闸（跨中枢调度防串） | 修复 | `src/features/app-state/parts/part05/event-router/02-request.tsx`、`electron/features/boss-groups-ipc.ts`、守卫 22 | 用户实测「多个中枢会话产生调度，全部归类到一个中枢下面 —— 每个中枢都是独立的」。根因：群工具不校验归属，`group_status` 还把**所有群**（含别的中枢的 groupId）报给模型 ⇒ 拿别人的群派活，成员全部缩进到别人的中枢行下。① 群工具（create/assign/status/review/escalate/member/delete）全部携带引擎下发的 `callerThreadId`（⛔ 不许回落 bag.threadRef）；② 主进程写侧逐个 `assertGroupOwned`：群只属于创建它的中枢，跨中枢派活/删群直接拒绝；③ `group_status` 只报调用者自己名下的群；④ `create` 的群归属以 callerThreadId 为权威。守卫 22 +5（变异验证：去硬闸/去 caller 全部抓红）。 | 本轮 |
