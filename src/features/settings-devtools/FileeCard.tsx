@@ -10,7 +10,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
-  AlertTriangle, Archive, BookOpen, Check, Download, FileText, Film, Image as ImageIcon,
+  AlertTriangle, Archive, BookOpen, Check, Download, ExternalLink, FileText, Film, Image as ImageIcon,
   Music, Presentation, RefreshCw, Sigma, Table2, Trash2, Type, Boxes,
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -161,6 +161,19 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
             <li>更新去「控制台 → 组件更新」手动检查；卸载只删程序（约 151 MB），不动你的任何文件。</li>
           </ul>
         </section>
+
+        {/* 开源声明（用户令 10-31：必须标注项目声明与 GitHub 跳转；复用 OpenFilm 卡的声明样式） */}
+        <p className="openfilm-attribution">
+          第三方开源项目 Filee · 许可 <b>MIT</b> · 由 Myeonggu Kim（KnifeLemon）与 Filee 贡献者开发 ·
+          <button type="button" className="openfilm-link" onClick={() => void window.codex.openExternal("https://github.com/KnifeLemon/Filee")}>
+            github.com/KnifeLemon/Filee <ExternalLink size={10} />
+          </button>
+          · <button type="button" className="openfilm-link" onClick={() => void window.codex.openExternal("https://filee.sh")}>
+            官网 filee.sh <ExternalLink size={10} />
+          </button>
+          <br />
+          <span className="openfilm-fineprint">本应用只做 Filee 官方 CLI 的下载与调用；转换完全在用户本机完成，与 Filee 项目无隶属关系，问题反馈请到其 GitHub 仓库。</span>
+        </p>
       </section>
 
       {/* 卸载确认弹窗（设置内二级弹窗，同飞书 CLI 卡口径）。 */}
