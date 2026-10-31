@@ -3,7 +3,7 @@
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
 import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
-import { RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } from "../provider-id";
+import { HARNESS_PROVIDER_ID, RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "./01-model-catalog";
 import { internalThreads, server } from "../runtime-refs";
@@ -85,7 +85,7 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
      `This chat uses custom964, but your current provider is harness. Switch to custom964 to continue.`
      ⇒ 有自定义 baseUrl 时用自家别名；退回会话配置时，**以 config.model_provider 为准**。 */
   const provider = model?.baseUrl
-    ? safeProviderId(model.provider ?? "openai")
+    ? HARNESS_PROVIDER_ID
     : safeProviderId(sessionConfig?.model_provider ?? sessionModel?.provider ?? model?.provider ?? "openai");
   /* ⛔ cwd 不写死：优先用调用方给的本会话工作目录（任务监控传 threadCwd），否则才退回进程目录。
      AGENTS.md 与产物都跟着这个目录走 —— 写死在安装目录会让 mac 上写出意料之外的路径。 */

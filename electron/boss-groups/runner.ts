@@ -20,7 +20,7 @@ import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
-import { safeProviderId } from "../provider-id";
+import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
@@ -473,7 +473,7 @@ async function providerEnv() {
     model: String(custom?.model ?? ""),
     provider,
     config: baseUrl
-      ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: custom?.name ?? provider, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
+      ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: custom?.name ?? provider, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
       : undefined,
   };
 }
@@ -499,7 +499,7 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
       threadId: member.threadId,
       excludeTurns: true,
       ...(model ? { model } : {}),
-      modelProvider: env.provider,
+      modelProvider: HARNESS_PROVIDER_ID,
       sandbox: member.sandbox || "workspace-write",
       approvalPolicy: member.approvalPolicy || "on-request",
       ...(env.config ? { config: env.config } : {}),
@@ -519,7 +519,7 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
     cwd,
     approvalPolicy: member.approvalPolicy || "on-request",
     sandbox: member.sandbox || "workspace-write",
-    modelProvider: env.provider,
+    modelProvider: HARNESS_PROVIDER_ID,
     config: env.config,
   });
   const threadId = String(started.thread.id);

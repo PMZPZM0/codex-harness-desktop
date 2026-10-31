@@ -15,7 +15,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { dialog } from "electron";
-import { safeProviderId } from "../provider-id";
+import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { BACKUP_FORMAT, BACKUP_VERSION, applySessionsBackup, backupFromRolloutFile, buildMarkdownExport, buildSessionsBackup, buildThreadPreview, parseMarkdownConversation } from "../thread-backup";
 import { bridgeDial, readCustomModel } from "../main";
@@ -147,9 +147,9 @@ export const threadsFeature = defineFeature<null>({
         cwd: input?.cwd || process.cwd(),
         approvalPolicy: input?.approvalPolicy || "never",
         sandbox: input?.sandbox || "workspace-write",
-        modelProvider: provider,
+        modelProvider: HARNESS_PROVIDER_ID,
         personality: input?.personality || null,
-        config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+        config: baseUrl ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
       });
       const threadName = `导入：${parsed.title || path.basename(filePath, path.extname(filePath))}`.slice(0, 80);
       try { await server.request("thread/name/set", { threadId: started.thread.id, name: threadName }); } catch { /* 命名失败不阻塞进入会话 */ }

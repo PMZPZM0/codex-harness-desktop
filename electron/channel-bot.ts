@@ -1,5 +1,5 @@
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
-import { safeProviderId } from "./provider-id";
+import { HARNESS_PROVIDER_ID } from "./provider-id";
 import { isTurnEndMethod } from "./turn-end";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import fs from "node:fs/promises";
@@ -204,8 +204,8 @@ export class ChannelBotService {
         approvalPolicy: "never",
         sandbox: config.sandbox,
         personality: "pragmatic",
-        modelProvider: model.provider,
-        config: { model_provider: safeProviderId(model.provider), model_providers: { [safeProviderId(model.provider)]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+        modelProvider: HARNESS_PROVIDER_ID,
+        config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
       }) as any;
       thread = started.thread;
       this.bindings[key] = { threadId: thread.id, chatId, updatedAt: Date.now() };

@@ -23,7 +23,7 @@ import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
-import { safeProviderId } from "../provider-id";
+import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "../main/01-model-catalog";
@@ -109,9 +109,9 @@ export const teamsFeature = defineFeature<null>({
         cwd: input.cwd || process.cwd(),
         approvalPolicy: input.approvalPolicy || "never",
         sandbox: input.sandbox || "workspace-write",
-        modelProvider: provider,
+        modelProvider: HARNESS_PROVIDER_ID,
         personality: input.personality || null,
-        config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+        config: baseUrl ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
         // 10-21：主进程自己发的 thread/start 不经过 codex-ipc 的拦截 ⇒ 工具面各自包一层 `withStepParam`
         dynamicTools: withStepParam([teamTool, teamPhaseTool, buildDelegateHarnessTool()]),
       });
@@ -163,9 +163,9 @@ export const teamsFeature = defineFeature<null>({
         cwd: input.cwd || process.cwd(),
         approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
         sandbox: member.sandbox || input.sandbox || "workspace-write",
-        modelProvider: provider,
+        modelProvider: HARNESS_PROVIDER_ID,
         personality: input.personality || null,
-        config: baseUrl ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+        config: baseUrl ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
         // 10-05：成员会话能写自己的私有记忆（主进程侧应答，见 role-memory-tool.ts）
         // 10-10：+ 能力网关（用户令「全开 harness_tools」；见 delegate-harness-tool.ts。
         //        ⛔ 权限边界在执行端，被拒时工具会如实回报原因）

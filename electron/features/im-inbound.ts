@@ -8,6 +8,7 @@
  * 会被重新赋值的符号经 `mutableState` 访问器读写（ESM 里 import 的绑定不可赋值）。
  */
 import { plainTextForChannel } from "../channel-text";
+import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { app } from "electron";
 import { botStreamSessions, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qqReplyContexts, telegramBindings, telegramGateway, weixinBindings, weixinGateway, writeBotBindings } from "../features/im-gateways";
 import { readChannelBot } from "../main/04-connector-config";
@@ -70,7 +71,7 @@ export async function handleWeixinMessage(message: { from: string; text: string;
         cwd: (botConfig?.workspace || app.getPath("home")),
         approvalPolicy: "never",
         sandbox: "danger-full-access",
-        ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }),
+        ...(model.provider === "openai-official" ? {} : { modelProvider: HARNESS_PROVIDER_ID }),
       }) as any;
       threadId = started.thread.id;
       // 新会话自动写入渠道级绑定：重启后继续该会话（原内存绑定重启即丢，每次重启都开新会话）
@@ -115,7 +116,7 @@ export async function handleTelegramMessage(message: { from: string; chatId: num
     }
     if (!threadId) {
       const botConfig = await readChannelBot().catch(() => null);
-      const started = await server.request("thread/start", { model: model.model, cwd: (botConfig?.workspace || app.getPath("home")), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }) }) as any;
+      const started = await server.request("thread/start", { model: model.model, cwd: (botConfig?.workspace || app.getPath("home")), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: HARNESS_PROVIDER_ID }) }) as any;
       threadId = started.thread.id;
       weixinBindings.set("tg:" + message.from, threadId);
       channelBotBindings.telegram = { threadId, title: `Telegram 会话 ${new Date().toLocaleDateString("zh-CN")}`, updatedAt: Date.now() };
@@ -176,7 +177,7 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     }
     if (!threadId) {
       const botConfig = await readChannelBot().catch(() => null);
-      const started = await server.request("thread/start", { model: model.model, cwd: (botConfig?.workspace || app.getPath("home")), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: model.provider }) }) as any;
+      const started = await server.request("thread/start", { model: model.model, cwd: (botConfig?.workspace || app.getPath("home")), approvalPolicy: "never", sandbox: "danger-full-access", ...(model.provider === "openai-official" ? {} : { modelProvider: HARNESS_PROVIDER_ID }) }) as any;
       threadId = started.thread.id;
       weixinBindings.set(prefix + from, threadId);
       channelBotBindings[channel] = { threadId, title: `${channel} 会话 ${new Date().toLocaleDateString("zh-CN")}`, updatedAt: Date.now() };
