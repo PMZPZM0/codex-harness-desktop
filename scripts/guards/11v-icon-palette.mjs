@@ -93,10 +93,13 @@ for (const [file, re] of consumers) {
   ok(re.test(read(file)), `④ ${file.split("/").pop()} 的图标取色写的是 var(--ic, 原色)（没挂 ic-* 时自动保持原样）`);
 }
 
-/* 设置导航：回落用 currentColor —— 按钮 hover/active 会把 color 刷成 --text，
-   写死回落会让选中项图标变回灰色（跟文字脱节）。 */
-ok(/\.settings-nav \.settings-group button svg \{[\s\S]{0,120}?color:\s*var\(--ic,\s*currentColor\)/.test(read("src/styles/05-composer-input.css")),
-  "④ 设置左栏图标回落用 currentColor（选中态图标跟着文字走，不掉回灰）");
+/* 设置导航：**两段配色**（10-31 用户令「未选中一段、选中一段」）——
+   未选中跟文字同色（灰），只有选中项才亮出该分类色相。 */
+const navCss = read("src/styles/05-composer-input.css");
+ok(/\.settings-nav \.settings-group button svg \{[\s\S]{0,120}?color:\s*currentColor/.test(navCss),
+  "④ 设置左栏图标未选中 = currentColor（统一灰，不跟分类色相常亮）");
+ok(/\.settings-nav \.settings-group button\.active svg \{[\s\S]{0,120}?color:\s*var\(--ic,\s*currentColor\)/.test(navCss),
+  "④ 设置左栏图标**选中态**才读 var(--ic)（当前分类的色相，只给选中项上色）");
 
 /* 设置页内两类图标读 --ic-page，且回落是各自原来的颜色 */
 ok(/\.settings-card-head svg \{[\s\S]{0,200}?color:\s*var\(--ic-page,\s*var\(--green\)\)/.test(read("src/styles/07-settings-mcp-connectors.css")),
