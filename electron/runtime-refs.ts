@@ -243,29 +243,20 @@ export { memoryBackend, type MemoryBackend } from "./memory-backend";
 /** 当前主题是否深色（main.ts 的 applyWindowChrome 维护；未设置时回退系统）。 */
 let appThemeDark: boolean | null = null;
 export function setAppThemeDark(v: boolean | null) { appThemeDark = v; }
-export function titleBarOverlayOptions() {
-  const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
-  // ⛔ 符号色必须与 main.ts 的 CHROME_SYMBOL_DARK/LIGHT 逐字一致（664/666 行）——
-  //   改任一处都要同步另一处（守卫【132】比对）。
-  /* ⛔⛔ height 必须与 window-factory 建窗时的 55 **完全一致**（10-31 用户截图：
-     「右上角按键不跟下面对齐」）。顶栏是 `margin-top: 6px` + `height: 44px` ⇒ 视觉中心
-     在 6 + 22 = 28px；原生钮在 overlay 区垂直居中 ⇒ height 必须是 28×2 = 55。
-     此前建窗给 55、这里给 43：首显 / 切主题任一发生就把高度打回 43（中心 21.5）⇒ 钮整体上移 6.5px。
-     ⛔ Electron 没有 getTitleBarOverlay 读回接口，写错不会报错、只能靠肉眼 —— 守卫【11x】钉三处一致。 */
-  return { color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 55 };
-}
 
-/* ⛔ appThemeDark 的取值在 main.ts 的 applyWindowChrome 维护——上面 titleBarOverlayOptions
- *   依赖它 ⇒ main.ts 每次设置主题时调 setAppThemeDark(dark)。symbolColor 的明暗两值
- *   原写在 main.ts 的 CHROME_SYMBOL_DARK/LIGHT 常量里，此处按原值内联。 */
+/* ⛔⛔ 10-31 删掉 `titleBarOverlayOptions()`（连同 main.ts 的 CHROME_SYMBOL_* 与
+   window-factory 的两处 titleBarOverlay）：Windows 已改 `frame: false`，三个窗口钮由渲染层
+   自绘（`src/components/WindowControls.tsx`）⇒ 系统不再画钮，也就没有"符号色/overlay 高度"
+   这回事了。那段历史（43↔55 打回、暗色符号看不见）随之作废 —— 顶点色现在只由 CSS 变量决定，
+   换主题自动跟随，不需要主进程再下发。
+   ⛔ 谁要是想恢复原生钮：这条链会一起要回来（height 三处一致 + symbolColor 两处逐字一致），
+      别只加一半。 */
 
 /** 把**当前主题**的原生外观应用到**单个**窗口（建窗后 / 首次显示后各补设一次）。
  *
- *  ⛔ 存在的理由（10-16 用户实测：「暗色主题下独立窗口右上角的系统缩小/全屏/叉掉看不见」）：
- *     建窗只在构造参数里读了一次 `titleBarOverlayOptions()`（而且那时 appThemeDark 可能还是
- *     null ⇒ 退到**系统**主题）。Windows 又会在窗口**首次显示**时做边框延展，把构造期设好的
- *     属性覆盖掉 —— 与 `win-rounded-corners.ts` 记的圆角时序坑是同一件事。
- *     ⇒ 暗色顶栏上画的是系统主题的近黑符号 = 看不见。所以：建窗补一次、`show` 之后再补一次（幂等）。
+ *  ⛔ 只剩窗口底色：无边框自绘钮之后，标题栏符号色不再是主进程的事（CSS 变量跟着主题走）。
+ *  ⛔ 为什么建窗补一次、`show` 之后再补一次：Windows 首次显示会做边框延展，把构造期设的
+ *     窗口属性覆盖掉（与 `win-rounded-corners.ts` 记的圆角时序坑是同一件事）。幂等，成本为零。
  *  ⛔ 与 applyWindowChrome 的分工：那个遍历**全部**总线窗口、由主题切换触发；
  *     这个只管传入的那一个、由建窗/首显触发 —— 两者互补，缺一就会出现
  *     「新开的窗口外观不对 / 换了主题旧窗口不跟」。 */
@@ -273,5 +264,4 @@ export function applyThemeToWindow(win: BrowserWindow): void {
   if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return;
   const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
   try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
-  try { win.setTitleBarOverlay(titleBarOverlayOptions()); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
 }

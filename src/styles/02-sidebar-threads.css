@@ -426,12 +426,11 @@
   gap: 10px;
   min-width: 0;
   padding-left: 16px;
-  /* 10-31 用户「右上角也跟他这样紧凑一点」：预留区从 145 收到 **132**。
-     算法：Windows 原生三钮 = 46×3 = 138px，从窗口右缘起算；而顶栏自身有 6px 外圈 margin
-     ⇒ 要让操作簇右缘正好贴住系统按钮左缘，padding 必须是 138 − 6 = **132**。
-     ⛔ 145 是早年拍的估值（多留 13px 空白，图标簇与窗口钮之间空出一截）。
-     ⛔ 改这里必须同时看 `.topbar-actions` 的 gap 与 `.icon-button` 的尺寸 —— 三者一起决定"紧凑度"。 */
-  padding-right: 132px;
+  /* 10-31 三次调整（用户：「整体往左边挪一点，现在太靠右了，而且太紧凑了散开一点点」）：
+     自绘三钮 28×3 + 6×2 间 = **96**，簇距窗口右缘 **14**（原来是贴边 6 ⇒ 太靠右）。
+     顶栏自身有 6px 外圈 margin ⇒ 内容要给 96 + (14−6) + 8 呼吸 = **112**。
+     ⛔ 改这里必须同时看 `.window-controls` 的按钮尺寸与间距（三者相加就是"紧凑度"）。 */
+  padding-right: 112px;
   display: flex;
   -webkit-app-region: drag;
   height: 44px;
@@ -451,6 +450,59 @@
 .topbar-actions {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+/* ── 自绘窗口钮（10-31；win32 走 `frame: false`，见 components/WindowControls.tsx）─────────
+   系统 WCO 的钮是 46×32、hover 块也是系统的，渲染层只能挪位置、改不了尺寸
+   ⇒ 用户要「更小的按钮 + 更小的 hover 块」就只能自己画：26×26 / 圆角 6 / hover 块=钮本身。
+   ⛔ 必须 fixed + z-index 1000：原生钮是**系统合成层**永远可点；自绘后若留在顶栏(z30)里，
+     办公室浮层(400) / 确认框(950) 一开就把它埋掉 ⇒ 窗口关不掉。portal 到 body 后复刻同一语义。
+   ⛔ 定位与顶栏卡片严格对齐：`.app-shell > .topbar` 是 `margin: 6px 6px 0 3px; height: 44px`
+     ⇒ top/right 都取 6px、height 取 44px，钮的垂直中线 = 顶栏图标行中线（不会又"不对齐"）。 */
+.window-controls {
+  position: fixed;
+  top: 6px;
+  /* 14 而不是 6：贴边会显得"顶到窗口外框"，留一点呼吸（用户：「太靠右了」） */
+  right: 14px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  /* 6 而不是 2：三钮挨太紧像一整块（用户：「太紧凑了，散开一点点」） */
+  gap: 6px;
+  z-index: 1000;
+  /* 顶栏整条是 drag：按钮不标 no-drag 会被 OS 当成标题栏吞掉点击 */
+  -webkit-app-region: no-drag;
+}
+.window-controls button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  /* 窗口钮用默认指针（不跟应用内的 pointer 走），与系统标题栏一致 */
+  cursor: default;
+  transition:
+    background-color var(--dur-ui) ease,
+    color var(--dur-ui) ease;
+}
+.window-controls button:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+.window-controls button:active {
+  background: color-mix(in srgb, var(--text) 14%, transparent);
+}
+/* 关闭钮 = Windows 11 的红块 + 白叉（离开立刻回灰，不做渐隐，与系统观感一致） */
+.window-controls button.window-close:hover {
+  background: #c42b1c;
+  color: #fff;
+}
+.window-controls button.window-close:active {
+  background: #b02015;
+  color: #fff;
 }
 /* 侧栏折叠/窄屏：侧栏变 fixed 飞出层，顶行补位跨全宽 */
 .app-shell.side-collapsed:not(.narrow) .topbar,

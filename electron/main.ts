@@ -87,7 +87,7 @@ import {
   rpaStore, server, setAppThemeDark, setDelegateRegistry, setMainWindow, setMemoryLayers,
   setMemoryStore, setRpaStore, setServer, setTeamRunStore, setThreadRuntimeStore,
   setVoiceModelsRoot, setVoiceService, sshSessions,
-  syncEngineWatchdog, teamRunStore, terminals, threadCwd, threadRuntimeStore, titleBarOverlayOptions,
+  syncEngineWatchdog, teamRunStore, terminals, threadCwd, threadRuntimeStore,
   trustPicked, upsertCustomModel,
 } from "./runtime-refs";
 import { readCustomModel, readCustomModels, writeCustomModels, healReservedProviderConfig, normalizeProvider, writeModelCatalogToml, readUserConfigSplit } from "./main/01-model-catalog";
@@ -228,12 +228,11 @@ try {
     app.disableHardwareAcceleration();
   }
   /* 主题也在这里（app ready 前、**窗口创建前**）落地一次（10-16 与云助手同轮同步）。
-     ⛔ 为什么必须落盘再读：窗口创建时 `window-factory` 会取 `titleBarOverlayOptions()`
-        画标题栏 overlay 的符号色（右上角最小化/最大化/关闭），而渲染层的主题存在
-        localStorage —— 主进程读不到 ⇒ 只能退 `nativeTheme.shouldUseDarkColors`（**系统**主题）。
-        系统亮 + 应用暗时符号色是近黑的 #1b1b1a，画在深色顶栏上几乎看不见；
-        要等渲染层挂载后调 theme:apply 才修正（那之前一直是错的，且那个 effect 在非聊天界面
-        还不一定及时跑）。这里补一刀 ⇒ 窗口一出生就是对的（含独立会话弹窗）。 */
+     ⛔ 为什么必须落盘再读：窗口创建时 `window-factory` 会按主题设**窗口底色**，而渲染层的
+        主题存在 localStorage —— 主进程读不到 ⇒ 只能退 `nativeTheme.shouldUseDarkColors`
+        （**系统**主题）。系统亮 + 应用暗时，深色界面外边会先露出一圈白底再被纠正。
+        这里补一刀 ⇒ 窗口一出生就是对的（含独立会话弹窗）。
+     （10-31 起窗口钮由渲染层自绘，符号色不再是主进程的事 —— CSS 变量直接跟着主题走。） */
   if (boot.theme === "dark" || boot.theme === "light") {
     setAppThemeDark(boot.theme === "dark");
     nativeTheme.themeSource = boot.theme;
@@ -903,30 +902,21 @@ let sessionProviderIdsCache: { at: number; ids: Set<string> } | null = null;
  *  渲染层通过 URL query `?popout=<threadId>` 进入弹窗模式（只渲染对话区并锁定该会话）。
  *  主题/事件都走全局广播，弹窗无需额外维护。 */
 
-// 无边框标题栏（Windows titleBarOverlay）的符号色：深色主题用浅符号，亮色主题近黑。
-const CHROME_SYMBOL_DARK = "#e8e8e5";
-
-const CHROME_SYMBOL_LIGHT = "#1b1b1a";
-
 /** 应用当前主题（由 theme:apply 写入）。null = 渲染层还没告知过 ⇒ 退回跟随系统。 */
 let appThemeDark: boolean | null = null;
 
-
-/** 把主题应用到**所有**应用窗口的原生外观（窗口底色 + 标题栏控制钮符号色）。
+/** 把主题应用到**所有**应用窗口的原生外观（窗口底色）。
  *  ⛔ 必须遍历全部窗口：独立会话窗口（popout）是另建的 BrowserWindow，只改 mainWindow
- *  会让它在深色模式下控制钮符号仍是近黑的 #1b1b1a，而顶栏也是深色 ⇒「看不见但能点」
- *  （09-21 用户实测）。日志打「已下发的符号色 + 覆盖窗口数」——⛔ Electron 本版**没有
- *  getTitleBarOverlay 读回接口**（写出来 TS 直接报 TS2551），所以真机是否可见只能看窗口右上角。 */
+ *  会让它的底色不跟（深色主题下露出一圈白边）。
+ *  ⛔⛔ 10-31 起这里**不再下发标题栏符号色**（原 `setTitleBarOverlay` + CHROME_SYMBOL_*）：
+ *  Windows 已改 `frame: false`，三个窗口钮由渲染层自绘（`src/components/WindowControls.tsx`），
+ *  颜色由 CSS 变量跟着主题走 ⇒ 主进程少一份真相源。历史坑（43↔55 打回、暗色近黑符号看不见）随之作废。 */
 function applyWindowChrome(dark: boolean) {
-  const symbol = dark ? CHROME_SYMBOL_DARK : CHROME_SYMBOL_LIGHT;
   const targets = allBusWindows().filter((win) => Boolean(win && !win.isDestroyed()));
   for (const win of targets) {
     try { win.setBackgroundColor(dark ? "#1b1b1a" : "#ffffff"); } catch { /* 窗口可能正在销毁 */ }
-    /* height 必须与 titleBarOverlayOptions() / window-factory 的 55 一致（10-31）：
-       这里原来是 43，切主题就把原生钮打回上移 6.5px —— «右上角按键不跟下面对齐» 的真因。 */
-    try { win.setTitleBarOverlay({ color: "#00000000", symbolColor: symbol, height: 55 }); } catch { /* overlay 未启用（非 win32 等）时忽略 */ }
   }
-  if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发标题栏符号色 ${symbol}`);
+  if (targets.length) console.log(`[theme] 窗口外观 → ${dark ? "dark" : "light"}；已给 ${targets.length} 个窗口下发底色`);
 }
 
 // 前端切主题时同步窗口外观：nativeTheme.themeSource 让系统标题栏与 Chromium 默认
@@ -1459,7 +1449,7 @@ export { filePreviewAllowed, fileStat, pastedTextDir, sshSessions, syncEngineWat
 export { devInstructionsInput };
 export { applyMemoryMode, distillSummarize, memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile, readMemoryMode, rpaStore, scheduler, workspaceMemoryEnabled };
 export { collectSessionProviderIds, connectorToml, dispatchHttpPort, dispatchToken, ensureDispatchHttp, escapeToml, mcpToolRulesOf, readUserConfigSplit, writeModelCatalogToml };
-export { notifyPopoutClosed, popoutThreadIds, titleBarOverlayOptions };
+export { notifyPopoutClosed, popoutThreadIds };
 export { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, ensureDispatchToken, stableKey };
 export { appSourceRoot, voiceService };
 export { botStreamSessions, channelLog, channelThreadChat, qqReplyContexts };
