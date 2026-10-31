@@ -1623,4 +1623,34 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       "【284】欢迎副语避免连续重复（记住上一条；⛔ 别退回纯随机 —— 连撞同一句会显得「根本没变」）"
     );
   }
+
+  /* ══ 【285】会话行对齐：行首定宽标签列 + 名称同一起点（10-31 用户：「标签对齐标签…
+        下面会话首个文字要对齐」「有没有标签一下就能看得直白，会话列表也整整齐齐」）══ */
+  {
+    const rowsSrc285 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
+    const cssSrc285 = codeOnly(readStyles());
+    const tagsRule = /\.thread-row-tags\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
+    const nameRule = /\.thread-row-name\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
+    (/flex:\s*0\s+0\s+50px/.test(tagsRule) && /width:\s*50px/.test(tagsRule) ? ok : fail)(
+      "【285】行首标签列定宽 50px（标签最多一个，没标签的行也占同宽 ⇒ 会话名称同一起点）"
+    );
+    (/flex:\s*1\s+1\s+auto/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
+      "【285】名称列可伸缩（flex:1 1 auto + min-width:0）"
+    );
+    (rowsSrc285.indexOf("thread-row-tags") >= 0 && rowsSrc285.indexOf("thread-row-tags") < rowsSrc285.indexOf("thread-row-name") ? ok : fail)(
+      "【285】JSX 里标签列在名称之前（标签留在行首，一眼看得出有没有标签）"
+    );
+    (/\.thread-row-tags\s*\{[^}]*overflow\s*:\s*(hidden|clip)/.test(cssSrc285) ? fail : ok)(
+      "【285】标签列容器不裁剪（spinner 判据 11c：会话行类祖先不得 overflow:hidden/clip）"
+    );
+    (/hasIdentityBadge\s*\?\s*undefined/.test(rowsSrc285) && /!hasIdentityBadge\s*&&/.test(rowsSrc285) ? ok : fail)(
+      "【285】标签最多一个：带中枢/专家/专家团/调度身份徽标的会话不给加自定义标签（普通会话才可加）"
+    );
+    (/has-row-color/.test(rowsSrc285) && /--row-color/.test(rowsSrc285) ? ok : fail)(
+      "【285】会话行底色接线（has-row-color 类 + --row-color 内联变量）"
+    );
+    (/\.thread-row\.has-row-color\s*\{[^}]*color-mix\(in srgb, var\(--row-color\)\s+9%/.test(cssSrc285) && /\.thread-row\.has-row-color\.active\s*\{[^}]*color-mix\(in srgb, var\(--row-color\)\s+18%/.test(cssSrc285) ? ok : fail)(
+      "【285】会话底色两档：未选中浅色常驻 9% / 选中后深一档 18%"
+    );
+  }
 }
