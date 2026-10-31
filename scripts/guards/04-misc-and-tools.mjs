@@ -1899,6 +1899,13 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("/api/disconnect") && tunnelPage.includes("localStorage.removeItem(storeKey(\"chm-pair-secret\"))") ? ok : fail)(
       "【139e】手机页「断开连接」先确认再通知电脑端，并清掉本机秘密（电脑端离线也要如实提示）"
     );
+    /* 10-31 用户：「给手机 App 加一个白天黑夜切换功能」 */
+    (tunnelPage.includes("id=\"theme-btn\"") && tunnelPage.includes("function toggleTheme()") && tunnelPage.includes("storeKey(THEME_KEY)") && tunnelPage.includes("html[data-theme=\"dark\"]") ? ok : fail)(
+      "【139e】手机页白天/黑夜切换：按主机记住、默认跟随系统、暗色覆盖到气泡/输入框/面板/代码块"
+    );
+    (relaySrc.includes("chm-theme@") && relaySrc.includes("html[data-theme=\"dark\"]") ? ok : fail)(
+      "【139e】配对页跟随手机主题（选过黑夜时配对页也是黑的）"
+    );
     (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
       "【139e】安装包版本与 Release 对齐（0.1.11）"
     );

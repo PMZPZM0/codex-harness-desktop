@@ -64,6 +64,7 @@ async function doBind(){
 </script></html>`;
     }
     const pageHtml = `<!doctype html><html lang="zh"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta name="theme-color" content="#f7f7f5">
 <title>Codex 对话</title><style>
 *{box-sizing:border-box}
 :root{--accent:#2f6bdd;--accent-soft:#eaf1fd;--line:#e8e8e4;--muted:#8a8a84;--ink:#23231f;--bg:#f7f7f5}
@@ -218,6 +219,48 @@ img.home-logo{object-fit:cover;background:#fff;padding:0}
 .panel-note{padding:14px 16px;color:#8a8a84;font-size:11.5px;line-height:1.7}
 .home-retry{margin:14px auto 0;display:block;padding:8px 16px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:12.5px}
 .home-manage-enter{margin:12px 16px;display:block;width:calc(100% - 32px);padding:11px;border:0;border-radius:11px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600}
+/* ── 主题：白天 / 黑夜（10-31 用户令）──
+   ⛔ 只换背景不够：气泡、输入框、面板、代码块、卡片都是浅色字面量，必须逐个覆盖，
+      否则暗色下会出现"白底白字 / 浅灰上浅灰"看不见。 */
+html[data-theme="dark"]{--accent:#5b95ff;--accent-soft:#1b2a41;--line:#2a3038;--muted:#9aa3ad;--ink:#e7eaee;--bg:#0f1115;color-scheme:dark}
+html[data-theme="dark"] body{background:var(--bg);color:var(--ink)}
+html[data-theme="dark"] header,html[data-theme="dark"] #threads,html[data-theme="dark"] .threads-head,html[data-theme="dark"] #inputbar,html[data-theme="dark"] #taskbar,html[data-theme="dark"] #sheet,html[data-theme="dark"] .panel,html[data-theme="dark"] .panel-head,html[data-theme="dark"] #top-menu{background:#161a20}
+html[data-theme="dark"] .menu-btn,html[data-theme="dark"] .threads-head button,html[data-theme="dark"] .panel-head button,html[data-theme="dark"] .empty-tip button,html[data-theme="dark"] .home-actions button,html[data-theme="dark"] .home-empty button,html[data-theme="dark"] .home-retry,html[data-theme="dark"] .home-group,html[data-theme="dark"] .home-tab.on{background:#1b2029;color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] #cmd{background:#12161c;border-color:var(--line);color:var(--ink)}
+html[data-theme="dark"] #plus{background:#1b2029;color:var(--ink);border-color:var(--line)}
+html[data-theme="dark"] #sheet .grid button{background:#1b2029;color:var(--ink)}
+html[data-theme="dark"] .msg.user{background:#1c2b44;border-color:#2a4468;color:#e7eaee}
+html[data-theme="dark"] .msg.assistant{background:#161a20;border-color:var(--line);box-shadow:none}
+html[data-theme="dark"] .msg.system{background:#1d2229;color:#a9b1ba}
+html[data-theme="dark"] .run-steps{background:#151a20;border-color:#262d36}
+html[data-theme="dark"] .run-steps .think{color:#a9b1ba;border-top-color:#2b323b}
+html[data-theme="dark"] .run-steps .step-out{background:#12161c;border-color:var(--line);color:#c3c9d1}
+html[data-theme="dark"] .ask-card{background:#1a1a12;border-color:#4a4326}
+html[data-theme="dark"] .ask-q{color:#d8c98a}
+html[data-theme="dark"] .ask-opt,html[data-theme="dark"] .step-more{color:#8fb4ff;border-color:#2f4a75;background:#141a23}
+html[data-theme="dark"] #goalbar{background:#1a1418;color:#e9a6bd;border-top-color:var(--line)}
+html[data-theme="dark"] .thread-row{border-bottom-color:#222831}
+html[data-theme="dark"] .thread-row:active{background:#1b2029}
+html[data-theme="dark"] .thread-row.active{background:var(--accent-soft)}
+html[data-theme="dark"] .home-group{background:#161a20}
+html[data-theme="dark"] .home-tabs{background:#1b2029;border-color:var(--line)}
+html[data-theme="dark"] .home-tab{color:var(--muted)}
+html[data-theme="dark"] .home-tab.on{background:#222a35;color:var(--ink);box-shadow:none}
+html[data-theme="dark"] .home-sec-head b,html[data-theme="dark"] .home-group-title b{color:var(--ink)}
+html[data-theme="dark"] .home-hint,html[data-theme="dark"] .home-events time{color:#7c8591}
+html[data-theme="dark"] .panel-row,html[data-theme="dark"] .file-row,html[data-theme="dark"] .cmd-row{border-bottom-color:#222831}
+html[data-theme="dark"] .panel-note{color:#9aa3ad}
+html[data-theme="dark"] .msg code{background:#222831;color:#e7eaee}
+html[data-theme="dark"] .msg .md-pre{background:#12161c;border-color:var(--line)}
+html[data-theme="dark"] .msg .md-pre code{background:none}
+html[data-theme="dark"] .msg th{background:#1b2029}
+html[data-theme="dark"] .msg th,html[data-theme="dark"] .msg td{border-color:#2a3038}
+html[data-theme="dark"] .msg blockquote{color:#a9b1ba;border-left-color:#2a3038}
+html[data-theme="dark"] .msg hr{border-top-color:#2a3038}
+html[data-theme="dark"] .thread-tag.boss{background:#3a2c12;color:#e5bc74}
+html[data-theme="dark"] .thread-tag.member{background:#1c2b44;color:#9db9ef}
+html[data-theme="dark"] #imgs{background:#161a20}
+html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
 </style>
 <header>
   <button id="btn-menu" class="menu-btn" aria-label="菜单" onclick="toggleTopMenu()">☰</button>
@@ -226,6 +269,7 @@ img.home-logo{object-fit:cover;background:#fff;padding:0}
   <div id="top-menu" hidden>
     <button type="button" onclick="toggleTopMenu(false);openHome()">首页</button>
     <button type="button" onclick="toggleTopMenu(false);toggleThreads()">会话</button>
+    <button type="button" id="theme-btn" onclick="toggleTopMenu(false);toggleTheme()">🌙 夜间模式</button>
     <button type="button" id="menu-disconnect" hidden onclick="topMenuDisconnect()">断开连接</button>
   </div>
 </header>
@@ -335,6 +379,26 @@ function writeStore(name, value) { try { localStorage.setItem(storeKey(name), va
 function dropStore(name) {
   try { localStorage.removeItem(storeKey(name)); localStorage.removeItem(legacyKey(name)); } catch (error) { /* 忽略 */ }
 }
+/* 主题（10-31 用户：白天/黑夜切换）：按主机记住；没选过跟随系统 */
+const THEME_KEY = "chm-theme";
+function currentTheme() {
+  try { const saved = localStorage.getItem(storeKey(THEME_KEY)); if (saved === "dark" || saved === "light") return saved; } catch (error) { /* 忽略 */ }
+  try { return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"; } catch (error) { return "light"; }
+}
+function applyTheme(theme) {
+  const next = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = next;
+  const btn = document.getElementById("theme-btn");
+  if (btn) btn.textContent = next === "dark" ? "☀️ 白天模式" : "🌙 夜间模式";
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute("content", next === "dark" ? "#161a20" : "#f7f7f5");
+}
+function toggleTheme() {
+  const next = currentTheme() === "dark" ? "light" : "dark";
+  try { localStorage.setItem(storeKey(THEME_KEY), next); } catch (error) { /* 忽略 */ }
+  applyTheme(next);
+}
+applyTheme(currentTheme());
 const THREAD_KEY = "chm-thread";
 let currentThreadId = readStore(THREAD_KEY) || "";
 let streaming = "";
