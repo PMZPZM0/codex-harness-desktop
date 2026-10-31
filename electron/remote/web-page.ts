@@ -67,6 +67,7 @@ async function doBind(){
 <meta name="theme-color" content="#f7f7f5">
 <title>Codex 对话</title><style>
 *{box-sizing:border-box}
+html,body{max-width:100%;overflow-x:hidden}
 :root{--accent:#2f6bdd;--accent-soft:#eaf1fd;--line:#e8e8e4;--muted:#8a8a84;--ink:#23231f;--bg:#f7f7f5}
 body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--bg);margin:0;color:var(--ink);display:flex;flex-direction:column;height:100vh;height:100dvh}
 header{position:relative;padding:10px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex:0 0 auto}
