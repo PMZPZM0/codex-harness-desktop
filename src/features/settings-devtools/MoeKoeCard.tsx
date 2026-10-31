@@ -3,6 +3,7 @@
  * 外部酷狗客户端走系统级安装，不在「运行时与工具链」里平铺；这里给唯一的手动安装/启动入口。
  * ⛔ 安装过程复用 runtime:install 的进度与并发闸（id=moekoe），界面不另造一套下载器。
  */
+import { PluginGuide } from "./PluginGuide";
 import { BookOpen, CircleCheck, Copy, ExternalLink, Music2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
@@ -82,6 +83,22 @@ export function MoeKoeCard({
       <p className="settings-card-hint">
         声明：本应用**仅用于接口调用** —— 只通过 MoeKoe Music 的本地 KuGouMusicApi 接口进行调用，不内置其源码/资源、未收取任何费用、未对原项目进行二次创作；MoeKoe Music（GPL-2.0）与 KuGouMusicApi（MIT）版权归原作者，音乐内容版权归源站/权利人。仅用于在线试听。
       </p>
+      <PluginGuide
+        capabilities={[
+          { icon: Music2, title: "搜歌 / 播放", desc: "通过 6521 本地 API，按歌名、歌手搜歌并直接播放" },
+          { icon: BookOpen, title: "歌单与歌词", desc: "读取当前播放、歌单与歌词（数据来自 MoeKoe 客户端）" },
+          { icon: CircleCheck, title: "权限不越界", desc: "曲库与播放权限由 MoeKoe 客户端管理，本应用只做接口调用" },
+        ]}
+        steps={[
+          { b: "装好并启动 MoeKoe", s: "点上面的按钮安装；装完点「启动 MoeKoe」，客户端会以独立窗口打开。" },
+          { b: "在对话里直接说", s: "例如「放一首周杰伦的歌」「下一首」「现在放的是什么」；Codex 通过本地 API 完成。" },
+          { b: "没声音先看客户端", s: "声音由 MoeKoe 自己播放，本应用不接管音频；先确认客户端里能正常播放。" },
+        ]}
+        notes={[
+          "安装向导可能弹 UAC；卸载请到系统「应用和功能」/ 把 App 移到废纸篓。",
+          "仅用于接口调用：不内置其源码或曲库，音乐版权归源站 / 权利人，仅供在线试听。",
+        ]}
+      />
     </div>
   );
 }

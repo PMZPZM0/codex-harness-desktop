@@ -6,6 +6,7 @@
  * 危险命令护栏 / 消息分诊 / 专家路由（见 electron/features/laya-service.ts 头注）。
  * 状态与 electron/features/laya-service.ts 同源；这里只渲染，不自己判定。
  */
+import { PluginGuide } from "./PluginGuide";
 import { useCallback, useEffect, useState } from "react";
 import { BrainCircuit, Download, CircleCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -106,7 +107,8 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
     : "未安装";
 
   return (
-    <div className="runtime-row laya-card">
+    <div className="settings-section stack">
+      <div className="runtime-row laya-card">
       <span className="runtime-icon">{busy ? <Spinner /> : status?.ready ? <CircleCheck size={16} /> : <BrainCircuit size={16} />}</span>
       <span className="runtime-copy">
         <strong>Laya 智能判断{status?.version ? ` · v${status.version}` : ""}</strong>
@@ -138,6 +140,23 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
           <pre>{log}</pre>
         </details>
       )}
+      </div>
+      <PluginGuide
+        capabilities={[
+          { icon: BrainCircuit, title: "自动选思考档位", desc: "思考等级「自动」时，发送前判断该用 低 / 中 / 高 / 极高" },
+          { icon: CircleCheck, title: "本机 33ms 决策", desc: "本地小模型单次前向，不联网、不上传对话内容" },
+          { icon: Download, title: "不装也能用", desc: "没安装时自动档会回落到你手动选的档位，不影响聊天" },
+        ]}
+        steps={[
+          { b: "点「安装」", s: "走清华镜像装 laya[serve]，含 PyTorch，约 800MB，可能 10–20 分钟。" },
+          { b: "首次使用会下权重", s: "判断模型权重约 700MB，第一次判断时自动下载（国内镜像），进度就在这张卡上。" },
+          { b: "无需其它设置", s: "装好后思考等级保持「自动」即可；想手动控制就选具体档位。" },
+        ]}
+        notes={[
+          "完全本地运行：判断请求不出这台电脑。",
+          "装不上 / 装坏了可以点「卸载」重来；日志在卡片下方。",
+        ]}
+      />
     </div>
   );
 }
