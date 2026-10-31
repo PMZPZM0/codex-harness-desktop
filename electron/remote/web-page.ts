@@ -1206,6 +1206,7 @@ function voiceInput() {
 }
 window.onVoiceResult = function (text) { const value = String(text || "").trim(); if (value) insertAtCursor(value + " "); };
 window.onVoiceError = function (message) { push("system", "语音输入失败：" + String(message || "未识别到语音")); };
+window.onUploadNotice = function (message) { push("system", String(message || "")); };
 const MENTION_KIND_LABEL = { expert: "专家", member: "团队成员", team: "专家团", subagent: "子智能体", cli: "CLI 智能体" };
 function openMentions() {
   closeSheet();

@@ -3,6 +3,7 @@ package com.codexharness.remote;
 import android.app.DownloadManager;
 import android.content.Intent;
 import android.content.ContentValues;
+import androidx.core.content.FileProvider;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.Manifest;
@@ -29,6 +30,7 @@ import android.widget.TextView;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -134,7 +136,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.13");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.14");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -168,20 +170,29 @@ public class MainActivity extends AppCompatActivity {
                    而我们原先一律起 ACTION_GET_CONTENT（相册）—— capture 被无视。
                    现在按 params.isCaptureEnabled() 分流：真拍照走系统相机，照片 Uri 直接回给页面。 */
                 if (params.isCaptureEnabled()) {
+                    /* ⛔ 10-31 实机：旧实现失败时调 showSetup() ⇒ 整个页面被切回「连接电脑」，
+                       用户以为被踢下线。现在：FileProvider 出 content:// 给相机；失败只提示，
+                       并回退到相册选择，页面保持原样。 */
                     try {
-                        ContentValues values = new ContentValues();
-                        values.put(MediaStore.Images.Media.DISPLAY_NAME, "codex-cam-" + System.currentTimeMillis() + ".jpg");
-                        values.put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
-                        cameraUri = getContentResolver().insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values);
+                        File dir = new File(getCacheDir(), "camera");
+                        if (!dir.exists()) dir.mkdirs();
+                        File file = new File(dir, "codex-cam-" + System.currentTimeMillis() + ".jpg");
+                        cameraUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", file);
                         Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                        if (cameraUri != null) camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+                        camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
+                        camera.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
                         startActivityForResult(camera, CAMERA_REQUEST);
                         return true;
                     } catch (Exception error) {
-                        fileChooserCallback = null;
                         cameraUri = null;
-                        showSetup("没有可用的相机应用");
-                        return false;
+                        notifyPage("这台手机没有可用的相机应用，已改为从相册选择");
+                        fileChooserCallback = callback;
+                        Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
+                        fallback.addCategory(Intent.CATEGORY_OPENABLE);
+                        fallback.setType("image/*");
+                        try { startActivityForResult(Intent.createChooser(fallback, "选择图片"), FILE_CHOOSER_REQUEST); }
+                        catch (Exception ignored) { fileChooserCallback = null; return false; }
+                        return true;
                     }
                 }
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
@@ -307,6 +318,13 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+    }
+
+    /** 给网页一条不打断的提示（相机不可用等），⛔ 不再切 setup 页 */
+    private void notifyPage(String message) {
+        if (web == null) return;
+        final String quoted; try { quoted = JSONObject.quote(message); } catch (Exception e) { return; }
+        web.post(() -> web.evaluateJavascript("window.onUploadNotice && onUploadNotice(" + quoted + ")", null));
     }
 
     private void sendVoiceResult(String text) {
@@ -657,7 +675,9 @@ public class MainActivity extends AppCompatActivity {
             } else if (resultCode == RESULT_CANCELED) {
                 sendVoiceError("已取消语音输入");
             } else {
-                sendVoiceError("语音识别失败，请重试");
+                /* 用户截图「似乎出错了呢 (2)」= 系统语音服务自身不可用（不是我们没授权）。
+                   识别器的错误码拿不到稳定 extra，直接给可操作的指引。 */
+                sendVoiceError("系统语音引擎不可用（常见于没有 Google 语音服务的机型）；可换用键盘上的语音键，或在电脑端使用语音");
             }
             return;
         }
