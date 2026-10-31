@@ -48,7 +48,7 @@ type RemoteEvents = {
   onCommand?: (command: string, device: { id: string; name: string }) => void;
   /** 手机端对话 UI 需要的引擎桥：会话列表 / 读取某会话消息 / 新建会话 / 向某会话发消息 */
   listThreads?: () => Promise<{ id: string; name: string; preview: string; updatedAt: number }[]>;
-  getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system" | "think"; text: string }[]>;
+  getThreadMessages?: (threadId: string) => Promise<{ role: "user" | "assistant" | "system" | "think" | "step"; text: string }[]>;
   /** boss=true ⇒ 建**中枢会话**（cwd = boss-home、登记中枢身份）；手机中枢首页发消息走它 */
   newThread?: (boss?: boolean) => Promise<{ id: string }>;
   /** 群快照（手机中枢首页的群卡 / 群详情）：与桌面群列表同一份映射 */

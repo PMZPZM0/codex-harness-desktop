@@ -584,19 +584,7 @@ function push(role, text, cls, pending) {
   list.scrollTop = list.scrollHeight;
   return div;
 }
-// 历史里的思考：折叠成一块（默认收起，点开看全文）
-function pushThinkHistory(text) {
-  const box = document.createElement("details");
-  box.className = "run-steps";
-  const summary = document.createElement("summary");
-  summary.textContent = "思考";
-  const body = document.createElement("div");
-  body.className = "think";
-  body.textContent = text;
-  box.appendChild(summary);
-  box.appendChild(body);
-  list.appendChild(box);
-}
+// 历史里的思考/工具由 loadMessages 按引擎原始顺序收进「运行过程」块（不再单独的历史折叠函数）
 // 会话行只显示标题：引擎的 preview 是**整条消息正文**（常含换行），直接当标题会把列表撑成一屏一条
 function clipText(value, max) {
   const chars = [...value];
@@ -671,10 +659,56 @@ async function loadMessages() {
     void refreshTasks();
     const r = await rpc({ type: "get-messages", threadId: currentThreadId });
     const msgs = r.messages || [];
+    /* 历史里的运行过程：思考与工具**按引擎原始顺序**铺开（每一段都留在它第一次出现的位置），
+       连续的一段收成「运行过程 · N 步」；遇到正文/用户消息先收口，位置不变。
+       ⛔ 不要再合并成整回合一块、也不许挪到回合末尾（用户令 10-31：不要挪到底部去）。 */
+    let processBox = null;
+    const closeProcess = () => {
+      if (!processBox) return;
+      const box = processBox;
+      processBox = null;
+      if (!box.children.length) { box.remove(); return; }
+      const details = document.createElement("details");
+      details.className = "run-steps";
+      const sum = document.createElement("summary");
+      const hasThink = Boolean(box.querySelector(".think .think-text"));
+      sum.textContent = "运行过程 · " + box.children.length + " 步" + (hasThink ? " · 含思考" : "");
+      details.appendChild(sum);
+      while (box.firstChild) details.appendChild(box.firstChild);
+      box.replaceWith(details);
+    };
     for (const m of msgs) {
-      if (m.role === "think") pushThinkHistory(m.text);
-      else push(m.role, m.text);
+      if (m.role === "think" || m.role === "step") {
+        if (!processBox) {
+          processBox = document.createElement("div");
+          processBox.className = "run-steps";
+          list.appendChild(processBox);
+        }
+        if (m.role === "step") {
+          const line = document.createElement("div");
+          line.className = "step";
+          line.textContent = m.text;
+          processBox.appendChild(line);
+        } else {
+          let think = processBox.querySelector(".think");
+          if (!think) {
+            think = document.createElement("div");
+            think.className = "think";
+            think.appendChild(document.createTextNode("思考："));
+            const body = document.createElement("span");
+            body.className = "think-text";
+            think.appendChild(body);
+            processBox.appendChild(think);
+          }
+          const body = think.querySelector(".think-text");
+          if (body) body.textContent += (body.textContent ? "\n" : "") + m.text;
+        }
+      } else {
+        closeProcess();
+        push(m.role, m.text);
+      }
     }
+    closeProcess();
     if (msgs.length > 0) {
       const firstUser = msgs.find((m) => m.role === "user");
       updateThreadLabel(firstUser ? firstUser.text.slice(0, 20) : "会话");
