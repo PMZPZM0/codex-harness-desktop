@@ -175,10 +175,19 @@ ok(/const startY = rect\.top \+ Math\.max\(0, \(rect\.height - total \* RULER_SL
   "悬停定位是**槽位数学**（1 次 rect，⛔ 不再逐格读布局 —— 每 mousemove 12~50 次强制布局就是延迟来源）");
 /* ⛔ 10-26 用户：「刻度线中间那么小一个缝隙，我鼠标在上面上下滑动，都会断，都没有很好的连贯性」
    ⇒ 悬停改成**整条轨道**按指针 Y 取最近刻度（每格自己 enter/leave 必然在缝隙处断开）。 */
-ok(/onMouseMove=\{\(event\) => hoverAt\(event\.clientY\)\}/.test(ruler)
+ok(/onMouseMove=\{\(event\) => \{[\s\S]{0,600}?hoverAt\(event\.clientY\);\s*\}\}/.test(ruler)
   && /const hoverAt = \(clientY: number\) => \{/.test(ruler)
   && /minGapMs: 24/.test(ruler),
   "悬停/划动是**整条轨道连续响应**（按指针取最近刻度，⛔ 不靠每格 enter/leave —— 缝隙处必断）；节流 24ms（45ms 快速扫回时密度不够 ⇒「划回去没声音」）");
+/* ⛔⛔ 10-31 第二轮用户：「他这种放大效果是可以选的，你的不能选项，鼠标挪不进去，一离开刻度线就没了」——
+   三条一起钉：① 指针进面板后 lens 必须**冻住**（否则 14px/格 的映射会把 26px/行 的列表拖着自己跑）；
+   ② 行是 button 且能点（跳转）；③ 面板吃指针（CSS）。 */
+ok(/closest\?\.\("\.ruler-lens"\)\) return;/.test(ruler),
+  "指针落在镜头面板里时轨道的 mousemove 直接 return（镜头冻住，⛔ 否则列表在鼠标脚下自己滚，点不中）");
+ok(/onMouseEnter=\{\(\) => setPick\(i\)\}/.test(ruler)
+  && /onClick=\{\(\) => \{ onJump\(marks\[i\]\.turnId\); setLens\(null\); setPick\(null\);/.test(ruler)
+  && /role="menuitem"/.test(ruler),
+  "镜头每行可悬停高亮 + 点击跳到该消息（「可以选」）；高亮走 pick，与刻度的 lens.index 分家");
 ok(!/onMouseEnter=\{\(event\) => \{[\s\S]{0,200}?setTip\(/.test(ruler),
   "刻度自身不再承担 hover（避免与轨道处理器互相打断：tip 闪断 / 声音漏）");
 /* ⛔ 10-26 用户：「刻度线要对应消息和群里展示的事件，不要对应那些不展示的」——
@@ -197,18 +206,27 @@ ok(/wheelTimer = setTimeout\(\(\) => \{ waveRef\.current = false; setWheelWave\(
 
 /* ── 放大镜（10-31 用户：「刻度线放上去能不能做出这种放大镜效果，这样找起来更快」）──────
    判据只钉**几何与同源关系**，不判"好不好看"（观感靠 `.workbuddy/tmp/ruler-lens` 的真机采样）。 */
-ok(/const LENS_ROW = 26;/.test(ruler) && /const LENS_SPREAD = 0\.85;/.test(ruler) && /const LENS_SIGMA = 36;/.test(ruler)
+ok(/const LENS_ROW = 26;/.test(ruler) && /const LENS_ROWS = 9;/.test(ruler)
   && /\.message-ruler \.ruler-lens \{[\s\S]{0,900}?height: 234px/.test(css),
-  "放大镜参数单一来源：组件 26px/格 + σ36；CSS 面板高 234 = 9×26（两处不同值就会出现「线在这、字在那」）");
-ok(/const fanDy = \(base: number, pointerY: number\) => \{[\s\S]{0,240}?d \* LENS_SPREAD \* Math\.exp\(-\(d \* d\) \/ \(2 \* LENS_SIGMA \* LENS_SIGMA\)\)/.test(ruler),
-  "刻度鱼眼是**连续放大映射** d·SPREAD·e^(-d²/2σ²)：⛔ 不用 sign(d)·A·falloff —— 后者在 d=0 处符号翻转，指针正上/正下两根会瞬跳一个 A");
-ok(/const slotOf = \(index: number\) => index \+ \(compactionIndex >= 0 && index >= compactionIndex \? 1 : 0\);/.test(ruler)
-  && /style=\{fanStyleOf\(slotOf\(index\)\)\}/.test(ruler)
-  && /style=\{fanStyleOf\(marks\.length \+ \(compactionIndex >= 0 \? 1 : 0\)\)\}/.test(ruler),
-  "鱼眼位移按**槽位**算（绿段也占一格 ⇒ 它之后的刻度 +1），末尾绿段接在最后");
+  "放大镜参数单一来源：组件 26px/行 × 9 行；CSS 面板高 234 = 9×26（两处不同值就会出现「线在这、字在那」）");
+/* ⛔⛔ 10-31 第二轮用户：「现在中间刻度线老是飘动，鼠标上滑，会断显示，这样不舒服，连贯性很差」
+   ⇒ 刻度自身的鱼眼位移**整体删除**（原来 14px 槽在指针处散到 25px：随指针呼吸=飘；
+      散开处相邻被挤到 9px=像断；视觉位置与命中槽位错开=指针下那根和高亮那根不是同一根）。
+     放大镜的"放大"只由面板承担 ⇒ 这里反过来钉住"不许再往回加"。 */
+ok(!/fanDy|fanStyleOf|LENS_SPREAD|LENS_SIGMA/.test(ruler) && !/style=\{fanStyleOf/.test(ruler),
+  "刻度**不做**鱼眼位移（等距恒定）：飘动/断开/高亮错位三个症状都来自它");
+/* 面板内滚轮 = 逐格滚动 + 联动刻度选区 + 声音 + 波浪（用户：「放大镜里面也可以滚动，联动外面刻度线一起滚动」） */
+ok(/const stepLens = \(dir: number\) => \{/.test(ruler)
+  && /setLens\(\{ \.\.\.lens, index: next \}\)/.test(ruler)
+  && /setHoverIndex\(next\);/.test(ruler)
+  && /playWheelTick\(dir, \{ channel: "ruler", minGapMs: 26 \}\)/.test(ruler)
+  && /waveTimerRef\.current = setTimeout\(\(\) => setWheelWave\(false\), 600\)/.test(ruler),
+  "镜头内滚轮一次一格：行滑动 + hoverIndex 跟着走（刻度波浪）+ 咔哒声 + 600ms 收波");
+ok(/node\.addEventListener\("wheel", \(event\) => \{\s*\n\s*event\.preventDefault\(\);\s*\n\s*event\.stopPropagation\(\);/.test(ruler),
+  "面板滚轮必须**原生非 passive + stopPropagation**（React 的 onWheel 在根容器才触发，会先被轨道那条\"滑一页\"吃掉）");
 ok(/rowY: anchor - top - LENS_ROW \/ 2/.test(ruler),
   "高亮行**顶边** = 锚点 − 半行高（漏了这 13px，字会比指针下那根刻度低半行，像串行）");
-ok(/className=\{`ruler-lens-row\$\{dist === 0 \? " is-active" : ""\}`\}/.test(ruler)
+ok(/className=\{`ruler-lens-row\$\{i === focus \? " is-active" : ""\}`\}/.test(ruler)
   && /translate: `0 \$\{\(lens\.rowY \+ \(i - active\) \* LENS_ROW\)\.toFixed\(1\)\}px`/.test(ruler)
   && /const active = Math\.min\(lens\.index, marks\.length - 1\);/.test(ruler)
   && /\{lens && marks\.length > 0 && \(/.test(ruler),
@@ -217,9 +235,17 @@ ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?animation: ruler-lens-in 0\.2s
   && /@keyframes ruler-lens-in \{[\s\S]{0,200}?scale: 0\.9/.test(css)
   && !/@keyframes ruler-lens-in \{[\s\S]{0,240}?[^-]transform:/.test(css),
   "进场是「撑开」动画（scale 0.9→1 + 左移 8px），⛔ 关键帧不写 transform（会盖掉定位）");
-ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?background: var\(--bg\)/.test(css)
-  && /\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?pointer-events: none/.test(css),
-  "面板底用 --bg（⛔ 不用 --panel：与消息卡同色，暗色下只剩一圈边框）+ 不吃指针（吃了滑进面板就触发轨道 mouseleave，镜头当场消失）");
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1400}?background: var\(--panel\)/.test(css)
+  && /\.message-ruler \.ruler-lens \{[\s\S]{0,1400}?pointer-events: auto/.test(css)
+  && !/\.message-ruler \.ruler-lens \{[\s\S]{0,1400}?pointer-events: none/.test(css),
+  "面板底用 --panel（白底压白底只剩一条线，浮层立不住）+ **吃指针**（10-31 第二轮：可点选；不吃就挪不进去）");
+/* ⛔ 刻度 ↔ 面板之间**不许留死区**：最宽刻度右缘 12+26=38，面板 left 必须 ≤38，
+   否则指针横移那几 px 先离开轨道 ⇒ 面板卸载，永远点不到（用户实测的原症状）。 */
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1400}?left: 36px/.test(css),
+  "面板 left 36 ≤ 最宽刻度右缘 38 ⇒ 刻度与面板**贴着**，没有「移过去就关」的死区");
+ok(/\.message-ruler \.ruler-lens-row \{[\s\S]{0,400}?appearance: none/.test(css)
+  && /\.message-ruler \.ruler-lens-row \{[\s\S]{0,400}?cursor: pointer/.test(css),
+  "行是 button：appearance:none + cursor:pointer（⛔ 暗色下原生 button 按浅色 UA 绘制）");
 /* ⛔⛔ 用户 10-31 明确交代：「波浪效果和刻度线声音记得保留」——
    放大镜是**叠加**层，不许拿它替换既有反馈：长波浪（wave-0/1/2）与三条播声通道必须一条不少。 */
 ok(/wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2"/.test(ruler)

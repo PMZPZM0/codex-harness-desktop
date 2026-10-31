@@ -1277,10 +1277,7 @@
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
     margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
-    background-color 0.22s,
-    /* 放大镜：指针附近往外散开（内联 translate，见 01-message-ruler 的 fanDy）。
-       ⛔ 只过渡 translate（独立变换属性）—— 用 transform 会盖掉定位与其它变换。 */
-    translate 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+    background-color 0.22s;
   position: relative;
 }
 /* 刻度尺上的「压缩」绿段（10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」）：
@@ -1301,8 +1298,7 @@
   pointer-events: auto;
   transition:
     width 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
-    margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1),
-    translate 0.18s cubic-bezier(0.22, 0.61, 0.36, 1);
+    margin-left 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 /* 绿线也跟波浪：静止 12px，波浪中心/邻近与普通刻度同宽（26/18/15px），左端同样不动。 */
 .message-ruler .ruler-compaction.wave-0 { width: 26px; margin-left: 12px; transition-delay: 0s; }
@@ -1343,9 +1339,10 @@
       切换一格就整列滑一行 —— 这就是用户要的「里面滚动效果」。 */
 .message-ruler .ruler-lens {
   border: 1px solid var(--line);
-  /* ⛔ 用 --bg 而不是 --panel：消息卡 / 气泡本身就是 --panel，同色叠上去会糊成一片
-     （暗色实测：面板与卡片都是 #222221，只能看见边框）。--bg 在明暗两套里都与卡片有色差。 */
-  background: var(--bg);
+  /* ⛔ 用 --panel（不是 --bg）：面板浮在消息列上，而消息列多半是**页面底色** --
+     白底卡片压白底 = 只剩一条 1px 线，看不出是浮层（实测 1:1 观感过淡）。
+     --panel 在明暗两套里都比页面底色"浅一档/亮一档"，加上 border+shadow 才立得住。 */
+  background: var(--panel);
   box-shadow: var(--shadow);
   border-radius: 14px;
   width: 320px;
@@ -1354,12 +1351,18 @@
   z-index: 22;
   box-sizing: border-box;
   position: absolute;
-  /* ⛔ 从刻度线右侧让开最宽的那根（12+26=38px），否则镜头会把高亮刻度压在下面 */
-  left: 42px;
+  /* ⛔ 36 而不是 42：最宽那根刻度是 12+26=38（悬停后 wave-0 拉长）——
+     面板必须**贴住**它，刻度与面板之间不能留死区：指针横移那几 px 会先离开轨道，
+     面板当场卸载 ⇒ 用户报的「鼠标挪不进去、一离开刻度线就没了」。
+     重叠的 2px 归面板（后挂 + z22），代价是那 2px 上点不到刻度，可以接受。 */
+  left: 36px;
   overflow: hidden;
   /* 上下边缘渐隐：行被"镜头"切掉时是淡出而不是硬切 */
   mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
-  pointer-events: none;
+  /* ⛔ 可交互（10-31 第二轮）：面板是轨道的**后代** ⇒ 鼠标从刻度移进面板不会触发轨道的
+     mouseleave，镜头不会消失；进面板后轨道的 mousemove 被显式忽略（lens 冻住），
+     由行自己的 hover/click 接管。 */
+  pointer-events: auto;
   transform-origin: 0 50%;
   /* 进场：从刻度一侧"撑开"（缩放 + 轻微左移），⛔ 关键帧只用 translate/scale。
      200ms 比 --dur-menu(140) 长一点：这里要看得见"放大"的过程，太快就成了闪现。 */
@@ -1385,18 +1388,35 @@
   gap: 10px;
   height: 26px;
   box-sizing: border-box;
-  padding: 0 12px;
+  /* 行是 <button>（可点选）⇒ 必须把 UA 的边框/底色/字体全部归零。
+     ⛔ 暗色下原生 button 会按**浅色 UA** 绘制（记忆 §5 同型坑）⇒ appearance:none 一起写上。 */
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 8px;
+  padding: 0 8px;
   color: var(--muted);
   font-size: 12.5px;
   line-height: 26px;
   position: absolute;
   top: 0;
-  left: 0;
-  right: 0;
+  /* 左右各留 6px：hover 底块是圆角小块，不贴死面板边框 */
+  left: 6px;
+  right: 6px;
   /* 换行时整列上滑一行 = 「里面滚动」；透明度只做远近层次 */
   transition:
     translate 0.2s var(--ease-enter),
-    opacity 0.2s linear;
+    opacity 0.2s linear,
+    background-color var(--dur-ui) ease;
+}
+/* 鼠标移进面板后高亮跟着鼠标（= 「可以选」）；点击跳转由 JS 接 */
+.message-ruler .ruler-lens-row:hover {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
 }
 .message-ruler .ruler-lens-text {
   flex: 1;
