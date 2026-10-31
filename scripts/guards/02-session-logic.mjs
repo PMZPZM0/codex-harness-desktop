@@ -1489,15 +1489,20 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     );
     /* ⛔⛔ 2026-10-04 用户拍板**覆盖** 09-XX 的「代理」口径：被调度会话统一挂「调度」徽标
        （用户需求1原文：「为其添加一个类似"专家团"风格的标签，标签文案为"调度"」；
-       角色信息在会话名里，徽标只标"它是被调度的"）。主会话挂「已调度」。 */
+       角色信息在会话名里，徽标只标"它是被调度的"）。
+       ⚠️ 10-31：**主会话**那个「已调度」徽标已被用户撤掉（见下方负向断言）。 */
     (/thread-source-badge/.test(rowsSrc) && /tone-\$\{sourceBadge\.tone\}/.test(rowsSrc) && /tone: "team"/.test(rowsSrc) && /tone: "expert"/.test(rowsSrc) && /tone: "dispatch"/.test(rowsSrc) ? ok : fail)(
       "【207】来源标签已接线（专家团/专家/调度三种映射齐备——10-04「代理」改「调度」）"
     );
     (/delegateKind\s*\?\s*\{[^}]*tone: "dispatch"/.test(rowsSrc) && rowsSrc.includes(String.fromCharCode(35843,24230)) ? ok : fail)(
       "【207】被调度会话统一「调度」标签（10-04 用户需求1逐字点名，覆盖旧「代理」口径）"
     );
-    (/hasLiveDelegates/.test(rowsSrc) && rowsSrc.includes(String.fromCharCode(24050,35843,24230)) ? ok : fail)(
-      "【207】派出调度会话的主会话挂「已调度」徽标（用户 19:31 逐字点名）"
+    /* ⛔⛔ 10-31 用户令（截图）：「这个已调度标签可以不要」——**推翻** 10-04 的「主会话挂已调度」。
+       理由：主会话下方本来就有缩进的调度子行，徽标是同一件事的第二次表达。
+       ⇒ 这里改成**负向断言**（防复活）：源码里不许再出现那个徽标。
+       ⛔ 注释里提到徽标文案是允许的（下面这行自己就写了），判据只认**渲染用的 className**。 */
+    (!/tone-dispatch"[^>]*>\s*已调度|>已调度<\/span>/.test(rowsSrc) ? ok : fail)(
+      "【207】主会话不再挂「已调度」徽标（10-31 用户令覆盖 10-04 口径；调度关系由缩进子行表达）"
     );
     // ⛔ 10-01 用户实测「新建专家又没有标签了」：新建会话进不了启动时加载的 teamThreadsIndex，
     //    徽标必须同时认「创建当刻就写入」的两条即时来源（角色登记 + teamThreadMapRef）。

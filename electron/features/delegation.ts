@@ -10,7 +10,7 @@
 import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, dispatchKindAllowed, kindLabel, resolveDispatchTarget } from "../dispatch";
 import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
 import { app, safeStorage } from "electron";
-import { safeProviderId } from "../provider-id";
+import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
@@ -158,8 +158,8 @@ export async function runDelegatedTask(input: {
     : null;
   const threadConfig: Record<string, unknown> = {};
   if (baseUrl) {
-    threadConfig.model_provider = safeProviderId(provider);
-    threadConfig.model_providers = { [safeProviderId(provider)]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } };
+    threadConfig.model_provider = HARNESS_PROVIDER_ID;
+    threadConfig.model_providers = { [HARNESS_PROVIDER_ID]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } };
   }
   if (cliShellEnv && Object.keys(cliShellEnv).length) {
     threadConfig.shell_environment_policy = { inherit: "all", ignore_default_excludes: true, set: { PATH: augmentedPath(), ...cliShellEnv } };
@@ -169,7 +169,14 @@ export async function runDelegatedTask(input: {
     cwd: input.cwd || process.cwd(),
     approvalPolicy: effectiveApproval,
     sandbox: effectiveSandbox,
-    modelProvider: provider,
+    /* ⛔⛔ 10-31 实测「调度不了」：这里原先传的是**原始供应商 id**（custom964 / cloud），
+       而 config.toml 顶层恒为 `model_provider = "harness"` ⇒ 引擎直接拒
+       `This chat uses custom964, but your current provider is harness`。
+       ⇒ 与渲染层建会话（04-project-groups-cwd-names）同口径：绑统一别名 HARNESS_PROVIDER_ID，
+         真实上游写进下面内联的 model_providers[harness].base_url。
+       ⛔ 没有 baseUrl（官方订阅 / 未配置自定义模型）时**留空**，让引擎用全局那份 —— 
+         硬绑 harness 在官方模式下反而找不到该 provider 段。 */
+    modelProvider: baseUrl ? HARNESS_PROVIDER_ID : undefined,
     config: Object.keys(threadConfig).length ? threadConfig : undefined,
     // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
     // ⛔ 与主会话的 memory_save **刻意不同名**：两个作用域，别让模型以为写的是同一份。

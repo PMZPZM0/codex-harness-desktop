@@ -6,7 +6,7 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { safeProviderId } from "./provider-id";
+import { HARNESS_PROVIDER_ID } from "./provider-id";
 import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
@@ -547,11 +547,11 @@ export class Scheduler {
         await ensureProjectAgentsMd(String(task.workspace));
         const started = await this.server.request("thread/start", {
           model: task.model || model.model,
-          modelProvider: model.provider,
+          modelProvider: HARNESS_PROVIDER_ID,
           cwd: task.workspace,
           approvalPolicy: "never",
           sandbox: "workspace-write",
-          config: { model_provider: safeProviderId(model.provider), model_providers: { [safeProviderId(model.provider)]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+          config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
           dynamicTools: [
             { type: "function", name: "memory_recall", description: "按当前任务查询相关记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
           ],
