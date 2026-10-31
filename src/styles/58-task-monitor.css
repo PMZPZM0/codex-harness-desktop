@@ -2,14 +2,22 @@
  * 任务监控面板（右栏「监控」页，10-30）。
  * ⛔ 只用主题变量（写死色值会在暗色/皮肤套装下瞎掉）。
  */
+/* ⛔⛔ 10-31 用户：「这三个板块有做自适应上下吗，输出多了，会有翻页和滚轮吗，还有右侧栏的大滚轮，
+   万一一屏展示不下」—— 原来这里是 `height: 100% + overflow: hidden`，而真正的滚动容器是**上一层的
+   `.panel-page`（05 里已 overflow-y: auto）**。本层被钉死在 100% 高 ⇒ 永远不超过父容器 ⇒
+   父层的滚动条永远不会出现，底部那几块直接被**裁掉且滚不到**（`.monitor-block.grow` 虽有
+   `flex: 1 1 auto`，但也会被上面内容多的块压到 0 高，只剩一条缝）。
+   修法：本层**允许被内容撑高、不参与压缩**（`flex: 1 0 auto` + `height: auto` + `overflow: visible`），
+   滚动只由 `.panel-page` 一层负责 —— ⛔ 不要再开第二层滚动（窄栏里两个滚动条最难看）。 */
 .monitor-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  height: 100%;
+  flex: 1 0 auto;
+  height: auto;
   min-height: 0;
   padding: 10px 12px 14px;
-  overflow: hidden;
+  overflow: visible;
 }
 .monitor-head {
   display: flex;
@@ -22,17 +30,23 @@
 .monitor-head .icon-button { margin-left: auto; }
 .monitor-sub { color: var(--faint); font-size: 11px; }
 
+/* ⛔ 10-31 用户：「边栏这个，要不然不要底色了，看着怪怪的」——
+   原来每块都铺一层 `--panel-2`，在 `--bg` 的面板上就是"卡片套卡片"（三块灰底 + 一圈边）。
+   现在底色全去掉，只留一条淡边框做分区；层次交给标题与内容自己。 */
 .monitor-block {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  /* 边框仍用 --line（--line-soft 在暗色下几乎看不见 ⇒ 四块糊成一片，实测对比过） */
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 8px 10px;
-  background: var(--panel-2);
+  background: transparent;
   min-height: 0;
 }
-.monitor-block.grow { flex: 1 1 auto; overflow: hidden; }
+/* 产物块：内容多时按内容撑高（`flex-shrink: 0`），少时吃掉剩余空间 ⇒ 不挤压、也不留空洞。
+   ⛔ 原来 `1 1 auto` = 可被压缩，上面两块一长就把它压成 0 高。 */
+.monitor-block.grow { flex: 1 0 auto; overflow: visible; }
 .monitor-block-head {
   display: flex;
   align-items: center;
@@ -64,6 +78,7 @@
 .monitor-tools { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
 .monitor-mini { flex: 0 0 auto; white-space: nowrap; }
 /* 紧凑一档：这块是右栏常驻面板，行距大了整屏都是空。 */
+/* 紧凑一档：这块是右栏常驻面板，行距大了整屏都是空。⛔ 只调间距，别再写 background（底色已取消）。 */
 .monitor-block { gap: 5px; padding: 7px 9px; border-radius: 9px; }
 .monitor-suggestion { min-height: 62px; max-height: 132px; }
 .monitor-actions { flex-wrap: nowrap; }
@@ -121,7 +136,8 @@
 .monitor-chip.more { color: var(--faint); }
 
 .monitor-pager { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--faint); }
-.monitor-artifacts { overflow: auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
+/* 产物列表不再自己滚（外面 `.panel-page` 已经在滚）—— 两层滚动条在 300px 宽的栏里最劝退。 */
+.monitor-artifacts { overflow: visible; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding-right: 2px; }
 .monitor-turn { display: flex; flex-direction: column; gap: 2px; }
 .monitor-turn-head {
   display: flex; align-items: baseline; gap: 6px;
