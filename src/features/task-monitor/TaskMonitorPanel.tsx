@@ -10,8 +10,10 @@
  * ⛔ 一切按 threadId 取（主进程同样只认传入的 id）—— 换会话必须换数据，绝不复用上一会话的缓存。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Activity, ChevronLeft, ChevronRight, FileText, RefreshCw, Sparkles, Wand2 } from "lucide-react";
+import { Activity, ChevronLeft, ChevronRight, FileText, Globe2, RefreshCw, Sparkles, Wand2 } from "lucide-react";
 import type { HarnessAppApi } from "../app-state";
+import { WebFavicon } from "../shared/TurnWebSources";
+import { collectTurnWebSources } from "../../lib/turn-web-sources.mjs";
 
 type Artifact = { path: string; added: number; deleted: number; status?: string };
 type Turn = {
@@ -57,6 +59,8 @@ export function TaskMonitorPanel({ app, active = true }: { app: HarnessAppApi; a
   /* 主进程交回的「进行中回合 id」：与 latest.turnId 相同 ⇒ 这一轮还没结束 */
   const [ongoingId, setOngoingId] = useState("");
   const [filePage, setFilePage] = useState(0);
+  /** 网页查阅：默认只列前 6 个，「查看更多」展开全部（与 Qoder 同款形态）。 */
+  const [webExpanded, setWebExpanded] = useState(false);
 
   const load = useCallback(async () => {
     if (!threadId) { setTurns([]); return; }
@@ -119,6 +123,12 @@ export function TaskMonitorPanel({ app, active = true }: { app: HarnessAppApi; a
   }, [latest, prev]);
 
   const fileTurns = useMemo(() => [...turns].reverse(), [turns]);
+  /* ★ 10-31 用户令：「下面再加一个最新回合查询过的网页，接线展示到这里」——
+     数据源 = **最新回合**的 items（含运行中），与消息底部「网页来源」同一份纯函数
+     collectTurnWebSources（⛔ 不另写一套 URL 提取）。切换会话/新回合开始时自动换。 */
+  const latestTurn = app.thread?.turns?.at(-1);
+  const webSources = useMemo(() => (latestTurn ? collectTurnWebSources(latestTurn as any) : []), [latestTurn]);
+  const visibleWeb = webExpanded ? webSources : webSources.slice(0, 6);
   const pageCount = Math.max(1, Math.ceil(fileTurns.length / PAGE_FILES));
   const pageTurns = fileTurns.slice(filePage * PAGE_FILES, filePage * PAGE_FILES + PAGE_FILES);
 
@@ -253,16 +263,48 @@ ${advice.path}`} onClick={() => { try { void window.codex.shellOpen(advice.path)
                 <em>{fmtTime(turn.at)}</em>
                 <span className="monitor-turn-count">{turn.artifacts.length} 个文件</span>
               </div>
-              {turn.artifacts.length ? turn.artifacts.map((file) => (
-                <button type="button" className="monitor-file" key={turn.turnId + file.path} title={file.path} onClick={() => app.openFile?.(file.path)}>
-                  <b>{baseName(file.path)}</b>
-                  <i>+{file.added}</i><em>-{file.deleted}</em>
-                </button>
-              )) : <div className="monitor-empty">暂无文件</div>}
+              {turn.artifacts.length ? turn.artifacts.map((file) => {
+                /* ★ 10-31 用户令：「产出文件如果删除后，加一个这个划线显示」——
+                   status=deleted 的行加删除线（并禁用打开：文件已经不在磁盘上了）。 */
+                const deleted = String(file.status ?? "") === "deleted";
+                return (
+                  <button type="button" className={`monitor-file${deleted ? " is-deleted" : ""}`} key={turn.turnId + file.path}
+                    title={deleted ? `${file.path}（已删除）` : file.path}
+                    disabled={deleted}
+                    onClick={() => app.openFile?.(file.path)}>
+                    <b>{baseName(file.path)}</b>
+                    {deleted ? <span className="monitor-file-flag">已删除</span> : null}
+                    <i>+{file.added}</i><em>-{file.deleted}</em>
+                  </button>
+                );
+              }) : <div className="monitor-empty">暂无文件</div>}
             </div>
           ))}
           {!pageTurns.length && <div className="monitor-empty">暂无文件</div>}
         </div>
+      </section>
+
+      {/* ④ 最新回合的网页查阅（10-31 用户令）：与消息底部「网页来源」同源，切换会话/新回合自动换 */}
+      <section className="monitor-block">
+        <div className="monitor-block-head">
+          <Globe2 size={12} className="ic-blue" /><strong>网页查阅</strong>
+          <span className="monitor-hint">{webSources.length ? `${webSources.length} 个网站 · 最新回合` : "最新回合"}</span>
+        </div>
+        {webSources.length ? (
+          <div className="monitor-web-list">
+            {visibleWeb.map((source) => (
+              <button type="button" key={source.host} className="monitor-web"
+                title={`${source.url}（默认浏览器打开）`}
+                onClick={() => { try { void window.codex.openExternal(source.url); } catch { /* 外部浏览器可能被拒 */ } }}>
+                <WebFavicon host={source.host} size={14} />
+                <span>{source.host}</span>
+              </button>
+            ))}
+            {webSources.length > 6 && !webExpanded ? (
+              <button type="button" className="monitor-web-more" onClick={() => setWebExpanded(true)}>查看更多（{webSources.length - 6}）</button>
+            ) : null}
+          </div>
+        ) : <div className="monitor-empty">这一轮没有访问网页</div>}
       </section>
     </div>
   );

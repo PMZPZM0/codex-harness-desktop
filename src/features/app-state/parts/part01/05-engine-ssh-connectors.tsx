@@ -372,7 +372,9 @@ bag.sidebarCollapsed = sidebarCollapsed as typeof bag.sidebarCollapsed; bag.setS
 
 
 
-  const [rightTab, setRightTab] = useState<string>(() => "review");
+    /* 10-31 用户令：「右侧栏手动展开，默认展示这个监控面板；其他联动展示按联动内容来」
+     ⇒ 初始 tab = monitor；联动入口（点文件 → 文件页、HTML 预览 → 浏览器、审阅桥 → 审阅）各自 setRightTab，互不影响。 */
+  const [rightTab, setRightTab] = useState<string>(() => "monitor");
 bag.rightTab = rightTab as typeof bag.rightTab; bag.setRightTab = setRightTab as typeof bag.setRightTab;
 
 

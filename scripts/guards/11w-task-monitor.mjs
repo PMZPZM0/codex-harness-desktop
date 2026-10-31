@@ -235,6 +235,25 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
   "建议文件按钮用 baseName（正/反斜杠都认；⛔ 不再把整条 Windows 路径铺出来）"
 );
 
+/* ── 10-31 用户令（对照 Qoder 右栏截图）：产出里已删除文件划线 + 最新回合网页查阅接线 + 手动展开默认监控 ── */
+(/const deleted = String\(file\.status \?\? ""\) === "deleted"/.test(panel)
+  && /monitor-file\$\{deleted \? " is-deleted" : ""\}/.test(panel)
+  && /disabled=\{deleted\}/.test(panel) ? ok : fail)(
+  "产出里的已删除文件加删除线并禁止打开（文件已不在磁盘）"
+);
+(/\.monitor-file\.is-deleted b \{ text-decoration: line-through/.test(read("src/styles/58-task-monitor.css")) ? ok : fail)(
+  "删除线样式真在（⛔ 只加 class 不写样式 = 看不出来）"
+);
+(/collectTurnWebSources/.test(panel) && /网页查阅/.test(panel) && /window\.codex\.openExternal\(source\.url\)/.test(panel) ? ok : fail)(
+  "最新回合的网页查阅接进监控（与消息底部同一份 collectTurnWebSources，点击走默认浏览器）"
+);
+(/app\.thread\?\.turns\?\.at\(-1\)/.test(panel) ? ok : fail)(
+  "网页查阅取**最新回合**（切会话/新回合自动换，不缓存旧数据）"
+);
+(/webSources\.slice\(0, 6\)/.test(panel) && /查看更多/.test(panel) ? ok : fail)(
+  "网页列表默认前 6 条 + 查看更多（不一次性铺满）"
+);
+
 console.log("");
 console.log(`【289】任务监控守护：${failCount === 0 ? "通过" : "失败 " + failCount + " 项"}`);
 process.exit(failCount === 0 ? 0 : 1);
