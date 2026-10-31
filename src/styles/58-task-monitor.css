@@ -216,3 +216,20 @@
   cursor: pointer;
 }
 .monitor-web-more:hover { color: var(--accent); }
+
+/* ── 右栏横向内边距：只留一个 owner（10-31 用户「这里还有空白诶条，还挺多的」）──────────
+   原来两层叠加：`.context-panel` 10px ＋ 各页自己的 10~12px（monitor 12 / turn-review 10 /
+   tree 12 / review 10）⇒ 内容起点 20~22px，而标签条是 10+8=18px —— 中间那条竖着的空白条
+   既宽又和标签差 4px 不齐。
+   ⛔⛔ 这条规则必须待在**本文件**（`layer(pages)`，styles.css 里 45+ 的文件）：
+      `.monitor-panel` 等各页规则也在 pages 层，**层序压过优先级** —— 同样一条规则写在
+      05-composer-input（components 层）里，选择器再具体也不会生效（实测 computed 仍是 12px，
+      往页面里注入同样规则才变 0 ⇒ 就是层的问题）。
+   ⛔ 只归零左右，不动上下（各页 10/14px 的纵向节奏是各自的）。
+   ⛔ `.review-panel-themed` 被设置页的存储页复用 ⇒ 必须限定在 `.context-panel` 之内。 */
+.context-panel > .panel-page > *,
+.context-panel .workspace-files > .tree-section,
+.context-panel .workspace-files > .workspace-file-preview {
+  padding-left: 0;
+  padding-right: 0;
+}
