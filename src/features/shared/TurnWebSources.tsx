@@ -19,8 +19,9 @@ function faviconUrl(host: string, step: number): string {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(host)}&sz=32`;
 }
 
-/** 单个 favicon 圆标：两级远程源都 404 时退回首字母色块（保持可点、不破版）。 */
-function WebFavicon({ host, size = 20 }: { host: string; size?: number }) {
+/** 单个 favicon 圆标：两级远程源都 404 时退回首字母色块（保持可点、不破版）。
+ *  ⛔ 同时给任务监控面板的「网页查阅」列表复用 —— 两处各写一套加载链必然漂移。 */
+export function WebFavicon({ host, size = 20 }: { host: string; size?: number }) {
   const [step, setStep] = useState(0);
   if (step >= 2) {
     return (

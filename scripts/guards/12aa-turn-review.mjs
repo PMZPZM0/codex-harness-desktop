@@ -195,9 +195,11 @@ const diffLib = await import("../../src/lib/diff-view.mjs");
   const rightState = read("src/features/app-state/parts/part01/05-engine-ssh-connectors.tsx");
   const toggle = read("src/features/app-state/parts/part09/02-seg.tsx");
   const css = read("src/styles/05-composer-input.css");
-  ok(/rightTab[^\n]*useState<string>\(\(\) => "review"\)/.test(rightState)
-    && /!bag\.rightTab\) bag\.setRightTab\("review"\)/.test(toggle),
-    "右栏展开默认 = 变更（状态初值 + 切换按钮兜底，两处都改）");
+  ok(/rightTab[^\n]*useState<string>\(\(\) => "monitor"\)/.test(rightState)
+    && /bag\.setRightTab\("monitor"\); bag\.setRightOpen\(true\)/.test(toggle),
+    "右栏展开默认 = 监控（10-31 用户令：手动展开默认监控；点文件/HTML 预览等联动入口各自 setRightTab）");
+  ok(!/useState<string>\(\(\) => "review"\)/.test(rightState) && !/bag\.setRightTab\("review"\)/.test(toggle),
+    "⛔ 不再回落到「变更」（10-25 的默认被 10-31 用户令取代）");
   ok(/review-hero/.test(reviewPanel) && /review-search/.test(reviewPanel)
     && /normalizedQuery/.test(reviewPanel) && /file\.content\.toLowerCase\(\)\.includes\(normalizedQuery\)/.test(reviewPanel)
     && /visibleFiles/.test(reviewPanel) && /FileTypeIcon/.test(reviewPanel),
