@@ -478,6 +478,14 @@ try {
   ok(/async function bossModelOf\(group: BossGroup\)/.test(runnerSrc)
     && /await bossModelOf\(group\)\) \|\| member\.model/.test(runnerSrc),
     "中枢群成员跟随 boss 会话模型（建线程与每次派活两处都在 member.model 之前）");
+  /* 旧会话自动更新（10-31 用户令）：复用常驻线程必须走 thread/resume 官方迁移通道重绑模型，
+     ⛔ 不带 sandbox/approvalPolicy 会把线程权限重置回默认（渲染层迁移实证）。 */
+  ok(/thread\/resume", \{\s*\n\s*threadId: existingThreadId,\s*\n\s*excludeTurns: true,\s*\n\s*model: effectiveModel,/.test(tiSrc)
+    && /model: effectiveModel,[\s\S]{0,200}?sandbox: member\.sandbox \|\| input\.sandbox/.test(tiSrc),
+    "team-invoke 复用成员线程即重绑（excludeTurns:true + model + 权限三件套）");
+  ok(/thread\/resume", \{\s*\n\s*threadId: member\.threadId,\s*\n\s*excludeTurns: true,/.test(runnerSrc)
+    && /\.\.\.\(model \? \{ model \} : \{\}\),/.test(runnerSrc),
+    "中枢群复用成员线程即重绑到 boss 当前模型（excludeTurns:true + 可选 model）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

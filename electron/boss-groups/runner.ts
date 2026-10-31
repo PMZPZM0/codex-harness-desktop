@@ -489,7 +489,21 @@ async function bossModelOf(group: BossGroup): Promise<string> {
 /** 成员的常驻会话：同一 (群, 成员) 永远同一线程 —— 成员因此记得自己之前做过什么。 */
 async function ensureMemberThread(group: BossGroup, member: GroupMember): Promise<string> {
   if (member.threadId) {
-    const resumed: any = await server.request("thread/resume", { threadId: member.threadId, excludeTurns: false }).catch(() => null);
+    /* ⛔⛔ 10-31 用户令「旧会话也要自动更新」：成员常驻线程按创建那一刻的模型/供应商绑定，
+       boss 换模型后光靠 turn/start 带 model 会撞「线程绑定 ≠ 模型」⇒ 复用时走 thread/resume
+       官方迁移通道重绑到 boss 当前模型（excludeTurns:true，与渲染层 alignThreadToProvider 同款）。
+       ⛔ resume 必须带 sandbox/approvalPolicy：不带会把线程权限重置回默认（渲染层迁移实证）。 */
+    const env = await providerEnv();
+    const model = (await bossModelOf(group)) || member.model || env.model;
+    const resumed: any = await server.request("thread/resume", {
+      threadId: member.threadId,
+      excludeTurns: true,
+      ...(model ? { model } : {}),
+      modelProvider: env.provider,
+      sandbox: member.sandbox || "workspace-write",
+      approvalPolicy: member.approvalPolicy || "on-request",
+      ...(env.config ? { config: env.config } : {}),
+    }).catch(() => null);
     if (resumed?.thread?.id) {
       threadCwd.set(member.threadId, group.workspace || process.cwd());
       return member.threadId;
