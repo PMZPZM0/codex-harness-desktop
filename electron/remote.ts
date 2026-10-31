@@ -1149,7 +1149,14 @@ body{font-family:system-ui,sans-serif;background:#f7f7f5;margin:0;color:#23231f}
 h1{font-size:18px;margin:0 0 8px}p{color:#6f6f69;font-size:13px;line-height:1.75;margin:10px 0}
 input{width:100%;box-sizing:border-box;margin-top:14px;padding:14px;font-size:22px;letter-spacing:8px;text-align:center;border:1px solid #d7d9d4;border-radius:12px}
 button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;background:#1e1e1c;color:#fff;font-size:15px;cursor:pointer}
-.err{color:#c0392b} .ok{color:#1a7f37;font-weight:600} .wait{color:#8a6d1f}
+ .err{color:#c0392b} .ok{color:#1a7f37;font-weight:600} .wait{color:#8a6d1f}
+/* 与对话页共用主题：手机选过黑夜，配对页也黑 */
+html[data-theme="dark"]{color-scheme:dark}
+html[data-theme="dark"] body{background:#0f1115;color:#e7eaee}
+html[data-theme="dark"] .card{background:#161a20;border-color:#2a3038}
+html[data-theme="dark"] input{background:#12161c;color:#e7eaee;border-color:#2a3038}
+html[data-theme="dark"] p{color:#9aa3ad}
+html[data-theme="dark"] button{background:#e7eaee;color:#12161c}
 </style>
 <div class="card"><h1>配对这台手机</h1><p>打开电脑端「手机远控」，填入 <b>6 位连接码</b>。<br>首次连接需在电脑上点「允许」。</p>
 <input id="code" inputmode="numeric" maxlength="6" placeholder="······" autocomplete="one-time-code">
@@ -1157,6 +1164,7 @@ button{width:100%;margin-top:14px;padding:13px;border:0;border-radius:12px;backg
 <script>
 /* 中转前缀（10-29）：经 /t/<设备ID> 访问时接口与跳转都要带前缀，否则一律 404。⛔ 必须声明在 KEY_DEVICE / KEY_SECRET 之前（TDZ：先使用后声明 = 整段脚本挂掉） */
 const API_BASE = (function(){ const p = location.pathname; const i = p.indexOf("/r/"); return i > 0 ? p.slice(0, i) : ""; })();
+try { const savedTheme = localStorage.getItem("chm-theme@" + (location.host || "local")); if (savedTheme === "dark" || savedTheme === "light") document.documentElement.dataset.theme = savedTheme; } catch (e) { /* 忽略 */ }
 /* ⛔ 10-30：配对记忆按**主机**分桶（根地址与 /t/<id> 两套前缀会互相读不到 ⇒ 设备秘密丢失 = 每次重开都要重配对）。 */
 const STORAGE_HOST = location.host || "local";
 const legacyKey = (name) => name + API_BASE;
