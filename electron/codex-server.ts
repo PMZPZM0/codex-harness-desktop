@@ -109,28 +109,37 @@ function clearEnginePids() {
     ⛔ 跨实例遗留清理的第二道网：旧版本只写单个 pid（还会被覆盖），今天的现场里最早那个 pid
        就不在任何台账上 —— 只靠 pid 台账清不掉它。这里只比**可执行文件全路径**：
        桌面版 / PPcode / 云助手各有自己的 node_modules 与安装目录，别的产品的引擎不会被误杀。 */
-function listCodexPidsByBinary(binary: string): number[] {
+function listCodexPidsByBinary(binary: string): { pid: number; ppid: number }[] {
   const target = binary.replace(/\//g, "\\").toLowerCase();
   try {
     if (process.platform === "win32") {
       const out = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-        "Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" | ForEach-Object { $_.ProcessId.ToString() + '|' + $_.ExecutablePath }",
+        "Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" | ForEach-Object { $_.ProcessId.ToString() + '|' + $_.ParentProcessId.ToString() + '|' + $_.ExecutablePath }",
       ], { encoding: "utf8", windowsHide: true, timeout: 10_000 });
       return String(out.stdout ?? "").split(/\r?\n/).flatMap((line) => {
-        const [id, exePath] = line.trim().split("|");
+        const [id, parent, exePath] = line.trim().split("|");
         const pid = Number(id);
-        return Number.isInteger(pid) && pid > 1 && String(exePath ?? "").replace(/\//g, "\\").toLowerCase() === target ? [pid] : [];
+        const ppid = Number(parent);
+        return Number.isInteger(pid) && pid > 1 && String(exePath ?? "").replace(/\//g, "\\").toLowerCase() === target
+          ? [{ pid, ppid: Number.isInteger(ppid) ? ppid : 0 }]
+          : [];
       });
     }
     // mac/Linux：ps 的 command/args 首段就是可执行文件（含路径）
-    const out = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: 5_000 });
+    const out = spawnSync("ps", ["-axo", "pid=,ppid=,command="], { encoding: "utf8", timeout: 5_000 });
     return String(out.stdout ?? "").split(/\r?\n/).flatMap((line) => {
-      const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+      const match = /^\s*(\d+)\s+(\d+)\s+(.+)$/.exec(line);
       if (!match) return [];
-      const exePath = match[2].trim().replace(/^"|"$/g, "").split(/\s+/)[0];
-      return exePath === binary ? [Number(match[1])] : [];
+      const exePath = match[3].trim().replace(/^"|"$/g, "").split(/\s+/)[0];
+      return exePath === binary ? [{ pid: Number(match[1]), ppid: Number(match[2]) }] : [];
     });
   } catch { return []; }
+}
+
+/** 进程是否还活着（Windows 上 signal 0 只查存在性，不真发信号）。 */
+function isProcessAlive(pid: number): boolean {
+  if (!pid || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException)?.code === "EPERM"; }
 }
 
 /** 该 pid 仍是 codex 引擎吗（防 PID 复用误杀无关进程）：只认镜像名。 */
@@ -465,7 +474,13 @@ export class CodexServer extends EventEmitter {
    *  两道证据取并集：① 多 pid 台账；② 按可执行文件全路径扫描（旧版本只写单个 pid，会被覆盖）。
    *  ⛔ 只比二进制全路径：三仓（桌面 / PPcode / 云助手）各有自己的安装目录，互不误杀。 */
   private reapStaleEngines() {
-    const candidates = new Set<number>([...readEnginePids(), ...listCodexPidsByBinary(codexBinaryPath())]);
+    const candidates = new Set<number>(readEnginePids());
+    for (const { pid, ppid } of listCodexPidsByBinary(codexBinaryPath())) {
+      /* ⛔ 父进程还活着且不是本进程 ⇒ 这是**别的活实例**（e2e / 守卫真跑会拉起真引擎）的引擎，
+         动了就会把别人的测试打断；真正的孤儿（应用崩溃后 parent 已退出）才清理。 */
+      if (ppid !== process.pid && isProcessAlive(ppid)) continue;
+      candidates.add(pid);
+    }
     for (const pid of candidates) {
       if (!isCodexProcess(pid)) continue;
       this.debugLog(`[spawn] 清理遗留引擎进程 PID=${pid}（异常退出/重叠启动留下的孤儿，占着会话 writer）`);
