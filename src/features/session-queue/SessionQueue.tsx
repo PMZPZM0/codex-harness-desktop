@@ -304,7 +304,7 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
   );
 }
 
-export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage, keepProcessOpen }: {
+export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage, keepProcessOpen, completedSkin = true }: {
   items: ThreadItem[];
   turn: Turn;
   running: boolean;
@@ -318,6 +318,9 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
    *  ⛔ 用户 09-18「点停止后运行过程和内容要保持在，方便继续任务」—— 折叠成一行虽然内容没丢，
    *  但用户看不到"刚才做到哪了"，也没法顺着接着交代。所以停止的回合把过程摊开。 */
   keepProcessOpen?: boolean;
+  /** 「耗时 X · 停止原因」回合收尾皮肤（10-31）：插队分段渲染时**只有最后一段**带它 ——
+   *  耗时属于整个回合，每段各挂一个就是同屏多个「耗时」（与 09-15 修过的重复头同型）。 */
+  completedSkin?: boolean;
 }) {
   /* ── 对话流：简洁（默认）────────────────────────────────────────────────────
      用户 10-31：「两个正文中间只展示一个把控，里面一直播放最新工具内容，也支持展开查看」。
@@ -501,12 +504,12 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
             {entry.kind === "fold"
               ? (
                 <FoldGroup
-                  variant={index === leadFoldIndex ? "completed" : "summary"}
+                  variant={index === leadFoldIndex && completedSkin ? "completed" : "summary"}
                   /* 非首段：标题用**意图摘要**（09-23 用户选定「收起那一行写意图词，如『运行命令』
                      『修改文件、运行命令：<目标>』」）。首段仍是回合收尾皮肤（耗时/停止原因）——
                      停止标记那边明确定过「耗时由过程组标题负责，同一屏只说一次」（守卫【50】）。
                      ⛔ 右侧统计小字已删（见 FoldGroup 处注释）。 */
-                  title={index === leadFoldIndex ? completedTitle : computeFoldSummary(entry.units, false, waitingForApproval)}
+                  title={index === leadFoldIndex && completedSkin ? completedTitle : computeFoldSummary(entry.units, false, waitingForApproval)}
                   leadGroup={topToolGroup(entry.units)}
                   failedCount={(index === leadFoldIndex ? turnFailedTotal : failedCountOf(entry.units)) || undefined}
                   defaultOpen={keepProcessOpen}
@@ -536,9 +539,9 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
       out.push(
         <FoldGroup
           key={`fold-${seg.units[0].item.id}`}
-          variant={lead ? "completed" : "summary"}
+          variant={lead && completedSkin ? "completed" : "summary"}
           /* 与 planCompletedFold 分支同口径：非首段标题 = 意图摘要（见那处注释，两条分支必须同时改） */
-          title={lead ? completedTitle : computeFoldSummary(seg.units, false, waitingForApproval)}
+          title={lead && completedSkin ? completedTitle : computeFoldSummary(seg.units, false, waitingForApproval)}
           leadGroup={topToolGroup(seg.units)}
           failedCount={failedCountOf(seg.units) || undefined}
           defaultOpen={keepProcessOpen}

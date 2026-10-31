@@ -315,6 +315,19 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "⛔ codex-ipc 在 thread/resume **之前** await 工具面同步（引擎就是在这条 resume 上 spawn 会话并读首行；晚一步就白做）");
   ok(/multiple === true \|\| args\.multiple === "true"/.test(codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"))),
     "agent_ask 的 multiple 解析容错字符串 \"true\"（个别模型会传字符串）");
+
+  /* ⛔⛔ 10-31 用户令「插队消息发出去，后续的消息要在我们的消息下面」——插队分段渲染：
+     回合内多条用户消息（插队/排队并进）按**流中顺序**切段渲染，⛔ 不许再把所有用户气泡
+     搬到卡片顶上（那会把插队后的回复全顶到消息上面，用户截图实证）。 */
+  ok(/const flowSegments = useMemo/.test(turnView) && /const interleaved = flowSegments\[0\]\.items\.length > 0 && flowSegments\.length > 1/.test(turnView),
+    "插队分段：按流中顺序切段 + 门判（首条用户消息前已有响应项才走分段，正常单条发送维持旧渲染）");
+  ok(/flowSegments\.map\(\(seg, index\) => \{[\s\S]{0,400}?MemoUserMessageView item=\{seg\.user\}/.test(turnView),
+    "插队分段：用户气泡渲染在自己的流位置上（段内 MemoUserMessageView）");
+  ok(/finalAgentId=\{last \? finalAgent\?\.id : undefined\}/.test(turnView) && /completedSkin=\{last\}/.test(turnView),
+    "插队分段：只有最后一段带最终答复/收尾皮肤（耗时属于整个回合，⛔ 段段都挂就是同屏多个）");
+  const queueStream = codeOnly(read("src/features/session-queue/SessionQueue.tsx"));
+  ok(/completedSkin = true/.test(queueStream) && /leadFoldIndex && completedSkin \? "completed" : "summary"/.test(queueStream),
+    "TurnFoldStream 支持 completedSkin（非末段不挂回合收尾皮肤）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
