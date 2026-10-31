@@ -459,6 +459,25 @@ try {
   const block = mention.mentionBlockOf([{ kind: "team", name: "软件开发专家团" }]);
   ok(/置灰不可选/.test(block) && /实时/.test(block),
     "点名指令块同口径（③ 未开启不硬派 + ④ 列表置灰的解释话术）");
+
+  /* ⛔⛔ 10-31 用户令「被调度的子智能体 / CLI / 专家 / 专家团 / 成员默认跟随主会话的模型配置」：
+     三条派活链的模型链都必须带「发起方会话级模型」一环（originSessionModel），且排在
+     实体存档模型（member.model）之前 —— 否则发起方换了模型，被派会话还跑在旧模型 + 旧供应商
+     （实测：成员被建在 harness 供应商下拿着 custom964，引擎拒「供应商不一致」建不起来）。 */
+  const catalogSrc = readFileSync(join(ROOT, "electron/main/01-model-catalog.ts"), "utf8");
+  const delSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
+  const tiSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
+  ok(/export async function originSessionModel\(/.test(catalogSrc) && /offered\.some\(\(m\) => m\.id === raw/.test(catalogSrc),
+    "originSessionModel 存在：发起方会话级模型 + 按激活供应商清单归一（不在清单回落全局）");
+  ok(/originSessionModel\(origin, threadRuntimeStore\)/.test(delSrc) && /originRuntimeModel \|\| undefined\)\s*\|\| customModel\?\.model/.test(delSrc),
+    "delegation 模型链：发起方会话级模型排在全局激活模型之前");
+  ok(/originSessionModel\(String\(input\.leadThreadId \?\? ""\), threadRuntimeStore\)/.test(tiSrc)
+    && /input\.model \|\| originModel \|\| member\.model/.test(tiSrc),
+    "team-invoke 成员模型链：发起方会话级模型排在 member.model 存档之前");
+  const runnerSrc = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
+  ok(/async function bossModelOf\(group: BossGroup\)/.test(runnerSrc)
+    && /await bossModelOf\(group\)\) \|\| member\.model/.test(runnerSrc),
+    "中枢群成员跟随 boss 会话模型（建线程与每次派活两处都在 member.model 之前）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
