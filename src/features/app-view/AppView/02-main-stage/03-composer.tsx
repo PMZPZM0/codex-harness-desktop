@@ -143,7 +143,7 @@ import {
   CheckCheck,
 } from "lucide-react";
 import VoiceWaveform from "../../../../components/VoiceWaveform";
-import { VoiceAnnounceIndicator } from "../../../voice-announce";
+/* 10-31：语音播报的状态条已迁到右侧悬浮播报窗（图标绿点 + 面板"语音播报中"）。 */
 import { BackgroundTaskCapsule } from "../../../polling";
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
 import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../session-queue";
@@ -547,10 +547,10 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                   )}
                   {/* 实时语音舞台：彩色波浪 + 中英字幕，只在通话中显示（状态来自 voice/wave-level 广播） */}
                   <VoiceWaveform />
-                  {/* 「语音播报中」状态条（10-09）：只出声不收音的场景（实时正文 / 结束汇总 / Codex 插播）
-                      用户看不见念到哪、也喊不停 ⇒ 这条给出当前句 + 待播数 + 停止按钮。
-                      播报一旦有东西在念就出现，念完自动收起 —— 平时不占任何 DOM。 */}
-                  <VoiceAnnounceIndicator />
+                  {/* ⛔ 10-31 用户令：「把语音播报也迁移到悬浮窗中统一播报」——
+                      原先这里那条「念正文 · 待播 N 句 · 停止」的状态条已撤掉，
+                      改由右侧悬浮播报窗承担：图标绿点 + 面板里的「语音播报中」实时行与停止按钮。
+                      ⛔ 不要再在这里挂第二条：同一个状态两个出口只会互相抢注意力（本项目 10-22 已裁过一次）。 */}
                   {/* ── 状态区（10-11 用户定稿的布局规则）────────────────────────────────
                       · 回合状态胶囊（步骤清单/文件修改）：输入框上方**居中**（grid 中列）；
                       · 后台命令胶囊：输入框**左上**（grid 首列 start）；

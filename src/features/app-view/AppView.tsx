@@ -179,6 +179,9 @@ import { ImageLabBridge } from "../image-lab";
 /* 语音播报（10-08 新增域）：实时正文播报 + 结束汇总播报。⛔ 整个应用**只挂一次**
    （它订阅模块级总线，挂两次会念两遍）；通话中由 VoiceCallFloat 接管，它自己避让。 */
 import { VoiceAnnounceBridge } from "../voice-announce";
+/* 悬浮播报（10-31）：群事件 / 语音播报 / 系统提示 / 回合异常 / 等待确认 统一播报中心 */
+import { BroadcastHost } from "../event-broadcast/BroadcastHost";
+import { BroadcastCollector } from "../event-broadcast/collector";
 import { PollBridge } from "../polling";
 import { WallpaperLayer } from "../wallpaper";
 /* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。
@@ -803,6 +806,12 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {/* 悬浮球右键菜单里的「语音设置」：把「打开设置并跳到语音页」注册给 VoiceCallFloat
       （悬浮球是 body portal，拿不到这里的 setSettingsPage） */}
       <VoiceCallFloat threadId={thread?.id ?? ""} />
+      {/* 悬浮播报（10-31 新增板块 event-broadcast）：群事件从对话流撤出后由它统一播报；
+          播报气泡 → 自动收纳成图标（未读角标）→ 点开看历史；图标可拖拽吸附到聊天区四边。
+          ⛔ 宿主与采集器**各挂一次**（都在 root 层，全局唯一）——挂两次会把同一条播报念两遍。
+              采集器的首屏静默由它自己处理（切会话先对齐基线，只播增量）。 */}
+      <BroadcastHost threadId={thread?.id ?? ""} />
+      <BroadcastCollector thread={thread} systemEvents={systemEvents} activityLabel={activityLabel} />
       {/*指挥中枢群面板（boss-groups 域）：右侧停靠浮层，全局开关在侧栏「指挥中枢」按钮。
           ⛔ 传入当前会话 id ⇒ 面板里的群/成员**按会话隔离**（指挥中枢可创建多个，各会话互不串项）。 */}
       <BossGroupPanel threadId={thread?.id ?? ""} />

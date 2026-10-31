@@ -81,3 +81,6 @@
 @import "./styles/57-cli-agents" layer(pages);
 @import "./styles/58-task-monitor" layer(pages);
 @import "./styles/59-motion" layer(components);
+/* 10-31 悬浮播报（群事件/语音播报/系统提示统一播报中心）。放在最后：它只有自己的 .bc-* 类，
+   与既有分节无选择器重叠；顺序靠后只为让"新板块在样式表末尾"这件事可读。 */
+@import "./styles/60-event-broadcast" layer(components);

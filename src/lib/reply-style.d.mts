@@ -11,3 +11,14 @@ export function enginePersonality(personality: unknown): "pragmatic" | "friendly
 
 /** 需求询问模式要下发的 developer instructions 片段（其他风格为空串） */
 export function inquiryInstruction(personality: unknown): string;
+
+/* 10-31：回复风格新增「敢于反驳」—— 实现已在 reply-style.mjs（f5a97a8ed），
+   声明漏在这里 ⇒ 三仓 `tsc -b` 全报 TS2305。下面四条与实现逐字对齐，⛔ 别再漏。 */
+export const CHALLENGE_STYLE: "challenge";
+export const CHALLENGE_HEADING: string;
+
+/** 是否处于「敢于反驳」模式 */
+export function isChallengeStyle(personality: unknown): boolean;
+
+/** 敢于反驳模式要下发的 developer instructions 片段（其他风格为空串） */
+export function challengeInstruction(personality: unknown): string;
