@@ -39,6 +39,26 @@ export async function readCustomModel(): Promise<CustomModelFile | null> {
   }
 }
 
+/** 10-31 用户令「被调度的子智能体 / CLI / 专家 / 专家团 / 成员默认跟随主会话的模型配置」：
+ *  取发起方会话的**会话级模型**（runtime store，模型选择器落在它上面），并按**当前激活供应商**
+ *  的模型清单归一 —— 与渲染层 send 的解析同口径（ wantedModel 不在清单里 ⇒ 回落全局激活模型）。
+ *  ⛔ 不做归一就会拿着别的供应商的模型名在新供应商下被引擎拒「供应商不一致」
+ *  （实测：成员会话被建在 harness 下拿着 custom964，`group_assign` 直接建不起来）。 */
+export async function originSessionModel(
+  originThreadId: string,
+  store: { get(id: string): Promise<{ model?: string } | null> },
+): Promise<string> {
+  const id = String(originThreadId ?? "").trim();
+  if (!id) return "";
+  let raw = "";
+  try { raw = String((await store.get(id))?.model ?? "").trim(); } catch { return ""; }
+  if (!raw) return "";
+  const active = await readCustomModel();
+  const offered = (active?.models ?? []) as { id?: string; enabled?: boolean }[];
+  const ok = !offered.length || offered.some((m) => m.id === raw && m.enabled !== false);
+  return ok ? raw : String(active?.model ?? "");
+}
+
 export async function readCustomModels(): Promise<CustomModelFile[]> {
   try {
     const list: CustomModelFile[] = JSON.parse(await fs.readFile(customModelsFile, "utf8"));
