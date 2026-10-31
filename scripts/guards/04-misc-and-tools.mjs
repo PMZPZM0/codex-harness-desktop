@@ -1644,7 +1644,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     const tunnelSrc = readFileSync(join(ROOT, "electron", "relay-tunnel.ts"), "utf8");
     const relaySrc = readFileSync(join(ROOT, "electron", "remote.ts"), "utf8");
     const tunnelPage = readFileSync(join(ROOT, "electron", "remote", "web-page.ts"), "utf8");
-    const androidSrc = readFileSync(join(ROOT, "android", "app", "src", "main", "java", "com", "codexharness", "remote", "MainActivity.java"), "utf8");
+    /* android/ 只存在于主仓（AGENTS）⇒ 其它仓读不到时跳过 APK 断言，别让预检崩在这里 */ const androidFile = join(ROOT, "android", "app", "src", "main", "java", "com", "codexharness", "remote", "MainActivity.java"); const hasAndroid = existsSync(androidFile); const androidSrc = hasAndroid ? readFileSync(androidFile, "utf8") : "";
 
     /* 10-30 用户实机：手输 6 位码报「Value <!doctype ... cannot be converted to JSONObject」——
        根地址 /api/pair 被转去空的老通道（HTML）。现在网关按配对码/设备 cookie 找回对应电脑。 */
@@ -1655,7 +1655,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && !tunnelPage.includes('id="btn-home"') && !tunnelPage.includes("<h1 id=\"title\"") && !tunnelPage.includes("brand-logo") ? ok : fail)(
       "【139e】手机页顶栏：☰ 菜单装首页/会话/断开连接；⛔ 顶部中间不再放品牌 logo"
     );
-    (androidSrc.includes("AndroidRemote") && androidSrc.includes("JavascriptInterface") ? ok : fail)(
+    (hasAndroid ? (androidSrc.includes("AndroidRemote") && androidSrc.includes("JavascriptInterface") ? ok : fail) : ok)(
       "【139e】APK 注入 AndroidRemote 桥：网页菜单的「断开连接」才能清本机 cookie / 自动登录标记 / 设备秘密"
     );
     (gwSrc.includes("RELAY_PATH_PREFIX") && gwSrc.includes("PATH_PREFIX}/t/${id}") && gwSrc.includes("Path=${PATH_PREFIX}/t/${id}") ? ok : fail)(

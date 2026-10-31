@@ -35,6 +35,8 @@ const ENGINE_START_ATTEMPTS = 3;
 const ENGINE_START_RETRY_MS = [300, 900];
 /** doRestart 等待旧引擎进程真正退出的上限（Windows 上 kill = TerminateProcess，实测毫秒级）。 */
 const ENGINE_EXIT_WAIT_MS = 3_000;
+/** 引擎 pid 台账上限（只留最近的；跨实例清理用，不是历史日志）。 */
+const ENGINE_PID_CAP = 16;
 
 /* ── 引擎进程台账与树杀（10-28 用户：「每次关闭应用带着进程一起杀掉，保留干净的后台」）────
    ⛔ 只 kill 父进程不够：codex 会派 pwsh / node / MCP 子进程，父进程一死它们变孤儿，
@@ -61,6 +63,74 @@ function writeEnginePid(pid: number | undefined) {
 
 function clearEnginePid() {
   try { nodeFs.unlinkSync(enginePidFile()); } catch { /* 本来就不存在 */ }
+}
+
+/* ── 多 pid 台账（10-31）──────────────────────────────────────────────────────
+   ⛔ 单 pid 台账（engine.pid）只记「最后一次 spawn」：启动序列重叠时前一个引擎会被覆盖掉，
+      应用崩溃后再启动就再也找不到它 ⇒ 它会一直占着同一 codex-home 的会话 writer。
+   云助手实测事故（10-31）：2 秒内 4 次 [spawn]，两个 codex.exe 同时活着，
+   打开任何会话都报 `thread-store conflict: thread … already has an active writer`。
+   ⇒ 台账改成**数组**（最近的 ENGINE_PID_CAP 个），stop() 与下次启动据此逐个清理。 */
+function enginePidListFile(): string {
+  try { return path.join(app.getPath("userData"), "engine.pids.json"); } catch { return ""; }
+}
+
+function readEnginePids(): number[] {
+  const pids: number[] = [];
+  try {
+    const parsed = JSON.parse(nodeFs.readFileSync(enginePidListFile(), "utf8"));
+    if (Array.isArray(parsed)) {
+      for (const value of parsed) {
+        const pid = Number(value);
+        if (Number.isInteger(pid) && pid > 1) pids.push(pid);
+      }
+    }
+  } catch { /* 没有台账 / 旧版本没写过 */ }
+  const legacy = readEnginePid();   // 旧版本的单个 pid 台账，一并纳入迁移
+  if (legacy) pids.push(legacy);
+  return [...new Set(pids)];
+}
+
+function appendEnginePid(pid: number | undefined) {
+  if (!pid) return;
+  try {
+    const pids = readEnginePids().filter((value) => value !== pid);
+    pids.push(pid);
+    nodeFs.writeFileSync(enginePidListFile(), JSON.stringify(pids.slice(-ENGINE_PID_CAP)));
+  } catch { /* 台账写不进去不该挡住启动 */ }
+}
+
+function clearEnginePids() {
+  try { nodeFs.unlinkSync(enginePidListFile()); } catch { /* 本来就不存在 */ }
+  clearEnginePid();
+}
+
+/** 列出「可执行文件就是本应用的引擎二进制」的 codex 进程。
+    ⛔ 跨实例遗留清理的第二道网：旧版本只写单个 pid（还会被覆盖），今天的现场里最早那个 pid
+       就不在任何台账上 —— 只靠 pid 台账清不掉它。这里只比**可执行文件全路径**：
+       桌面版 / PPcode / 云助手各有自己的 node_modules 与安装目录，别的产品的引擎不会被误杀。 */
+function listCodexPidsByBinary(binary: string): number[] {
+  const target = binary.replace(/\//g, "\\").toLowerCase();
+  try {
+    if (process.platform === "win32") {
+      const out = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+        "Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" | ForEach-Object { $_.ProcessId.ToString() + '|' + $_.ExecutablePath }",
+      ], { encoding: "utf8", windowsHide: true, timeout: 10_000 });
+      return String(out.stdout ?? "").split(/\r?\n/).flatMap((line) => {
+        const [id, exePath] = line.trim().split("|");
+        const pid = Number(id);
+        return Number.isInteger(pid) && pid > 1 && String(exePath ?? "").replace(/\//g, "\\").toLowerCase() === target ? [pid] : [];
+      });
+    }
+    // mac/Linux：ps 的 command/args 首段就是可执行文件（含路径）
+    const out = spawnSync("ps", ["-axo", "pid=,command="], { encoding: "utf8", timeout: 5_000 });
+    return String(out.stdout ?? "").split(/\r?\n/).flatMap((line) => {
+      const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+      if (!match) return [];
+      const exePath = match[2].trim().replace(/^"|"$/g, "").split(/\s+/)[0];
+      return exePath === binary ? [Number(match[1])] : [];
+    });
+  } catch { return []; }
 }
 
 /** 该 pid 仍是 codex 引擎吗（防 PID 复用误杀无关进程）：只认镜像名。 */
@@ -199,14 +269,34 @@ export class CodexServer extends EventEmitter {
     }
   }
 
-  async start() {
+  async start(): Promise<void> {
     if (this.child) return;
     if (this.starting) return this.starting;
-    this.starting = this.launch();
+    /* ⛔ 10-31：重启序列进行中不许再 spawn（它会自己把引擎拉起来）。
+       旧写法在这里直接 `this.starting = this.launch()` —— doRestart 清空 child 之后要等旧进程
+       退出（最长 3 秒），这个窗口里任何 request() 都能顺手 start() 出一个新引擎，紧接着被
+       doRestart 的 reject 打成「重启中失败」并重试 ⇒ 两个引擎同时活着抢同一份会话。 */
+    if (this.restartInFlight) {
+      await this.restartInFlight.catch(() => undefined);
+      return this.start();
+    }
+    return this.startInternal();
+  }
+
+  /** 真正的启动入口（重启序列内部用，绕过 restartInFlight 等待，否则自己等自己）。
+   *  ⛔ `starting` 的清理必须**比对 promise 身份**：旧写法无条件 `this.starting = undefined`，
+   *    会把更晚那条启动序列刚赋的值抹掉 ⇒ 再来一个 start() 就会看到"没在启动、也没 child"
+   *    而并发 spawn 第二个引擎（同一 codex-home ⇒ active writer 冲突）。 */
+  private async startInternal(): Promise<void> {
+    if (this.child) return;
+    const inFlight = this.starting;
+    if (inFlight) return inFlight;
+    const promise = this.launch();
+    this.starting = promise;
     try {
-      await this.starting;
+      await promise;
     } finally {
-      this.starting = undefined;
+      if (this.starting === promise) this.starting = undefined;
     }
   }
 
@@ -243,6 +333,8 @@ export class CodexServer extends EventEmitter {
   private restartLog: { t: number; reason: string; busy: boolean; activeTurns: number; action: "now" | "defer" | "flush" | "force" }[] = [];
   /** 上次实例遗留的引擎只清一次（每次 spawn 都做会多花一次 tasklist/taskkill）。 */
   private reapedPreviousEngine = false;
+  /** 进行中的重启序列（10-31）：并发 restart() 合并成一次；start() 在它收尾前不得 spawn。 */
+  private restartInFlight: Promise<void> | null = null;
 
   /** 注入「当前有几个回合在跑」的判定（主进程用 turn/started|completed 的真实记账）。
    *  ⛔ 返回**数量**而不是布尔：台账里要能看出"当时确实有 2 个任务在跑"，
@@ -307,43 +399,79 @@ export class CodexServer extends EventEmitter {
     await this.doRestart();
   }
 
+  /** 并发 restart() 合并成一次（10-31）：启动期 20+ 处调用点里常有两三处同时触发，
+   *  旧写法会各跑一遍「清 child → 等退出 → spawn」，互相把对方刚 spawn 的引擎打成孤儿。 */
   private async doRestart() {
+    if (this.restartInFlight) return this.restartInFlight;
+    const run = this.performRestart();
+    this.restartInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (this.restartInFlight === run) this.restartInFlight = null;
+    }
+  }
+
+  private async performRestart() {
     this.stopping = false;   // 显式重启（不是退出）→ 恢复正常崩溃自愈
     // 作废在途启动序列的重试：它 spawn 的进程马上会被杀掉，不许它自己再补一个。
     this.launchToken += 1;
-    const dying = this.child;
-    this.child = undefined;
-    if (dying) {
-      // ⛔⛔ 必须**等旧进程真的退出**再 spawn（10-08 事故）：引擎 0.157 起启动时要在
-      //   codex-home 下初始化 sqlite state runtime，两个进程重叠时新进程会以
-      //   `failed to initialize sqlite state runtime under …` 直接 exit 1。
-      //   摘掉 exit/error 监听（否则会触发 fail() 的自动重启）后 kill，用 once("exit")
-      //   等它落地；超时兜底 ENGINE_EXIT_WAIT_MS，绝不无限等。
-      dying.removeAllListeners("exit");
-      dying.removeAllListeners("error");
-      await new Promise<void>((resolve) => {
-        let settled = false;
-        const finish = () => { if (settled) return; settled = true; clearTimeout(timer); resolve(); };
-        const timer = setTimeout(finish, ENGINE_EXIT_WAIT_MS);
-        dying.once("exit", finish);
-        const dyingPid = dying.pid;
-        try { dying.kill(); } catch { finish(); }
-        /* ⛔ 重启同样要连树杀（10-28）：只结束 app-server 本体时，它派生的 pwsh / MCP 会留在
-           后台并继续握着会话 writer —— 下一个进程打开同一会话就报 already has an active writer。
-           ⛔ 必须在等 exit **之前**同步做完：异步树杀会在"新进程已 spawn、旧子进程还在"的窗口里打架。 */
-        killProcessTree(dyingPid);
-      });
-    }
+    /* ⛔⛔ 10-31 顺序修正（云助手「会话正被另一个引擎进程占用」事故）：
+       旧写法**先等旧进程退出（最长 3 秒）、后 reject 在途请求**。这个窗口里 child 已被清空、
+       starting 也可能刚被清，任何 request() 都会顺手 start() 出一个新引擎；等退出完成后这里
+       再 reject，打中的正是**新引擎的 initialize** ✗ ⇒ launch() 看到 token 没变、按「瞬时失败」
+       重试又 spawn 一个 ⇒ 两个引擎同时活着，各自占着同一份 codex-home 的会话 writer。
+       ⇒ 先 reject（在途启动序列立刻失败让位），再杀、再等退出。 */
     for (const { reject, timer } of this.pending.values()) {
       clearTimeout(timer);
       reject(new Error("Codex app-server restarted"));
     }
     this.pending.clear();
+    // ⛔⛔ 必须**等旧进程真的退出**再 spawn（10-08 事故）：引擎 0.157 起启动时要在
+    //   codex-home 下初始化 sqlite state runtime，两个进程重叠时新进程会以
+    //   `failed to initialize sqlite state runtime under …` 直接 exit 1。
+    await this.reapCurrentChild();
     // 在途启动序列（如果有）已被上面 reject 打断，等它真正收尾再 start ——
     // 否则 `start()` 会因为 `this.starting` 仍被那个注定失败的 promise 占用而直接返回它，
     // 结果既不 spawn 也不报错，引擎静默停在"已退出"（10-08 日志里 8 秒无 spawn 就是这个）。
     await this.starting?.catch(() => undefined);
-    if (!this.child) await this.start();
+    if (!this.child) await this.startInternal();
+  }
+
+  /** 杀掉当前 child（含子进程树）并等它真正退出；没有 child 时是 no-op。
+   *  ⛔ 摘掉 exit/error 监听（否则会触发 fail() 的自动重启），用 once("exit") 等落地，
+   *    超时兜底 ENGINE_EXIT_WAIT_MS，绝不无限等。
+   *  ⛔ 连树杀（10-28）：只结束 app-server 本体时，它派生的 pwsh / MCP 会留在后台并继续
+   *    握着会话 writer —— 下一个进程打开同一会话就报 already has an active writer。
+   *  ⛔ 必须在等 exit **之前**同步做完：异步树杀会在"新进程已 spawn、旧子进程还在"的窗口里打架。 */
+  private async reapCurrentChild() {
+    const dying = this.child;
+    this.child = undefined;
+    if (!dying) return;
+    dying.removeAllListeners("exit");
+    dying.removeAllListeners("error");
+    await new Promise<void>((resolve) => {
+      let settled = false;
+      const finish = () => { if (settled) return; settled = true; clearTimeout(timer); resolve(); };
+      const timer = setTimeout(finish, ENGINE_EXIT_WAIT_MS);
+      dying.once("exit", finish);
+      const dyingPid = dying.pid;
+      try { dying.kill(); } catch { finish(); }
+      killProcessTree(dyingPid);
+    });
+  }
+
+  /** 清掉**本应用二进制**遗留的引擎（上一次实例被强杀 / 旧版本启动序列重叠留下的孤儿）。
+   *  两道证据取并集：① 多 pid 台账；② 按可执行文件全路径扫描（旧版本只写单个 pid，会被覆盖）。
+   *  ⛔ 只比二进制全路径：三仓（桌面 / PPcode / 云助手）各有自己的安装目录，互不误杀。 */
+  private reapStaleEngines() {
+    const candidates = new Set<number>([...readEnginePids(), ...listCodexPidsByBinary(codexBinaryPath())]);
+    for (const pid of candidates) {
+      if (!isCodexProcess(pid)) continue;
+      this.debugLog(`[spawn] 清理遗留引擎进程 PID=${pid}（异常退出/重叠启动留下的孤儿，占着会话 writer）`);
+      killProcessTree(pid);
+    }
+    clearEnginePids();
   }
 
   /** 启动序列（含瞬时失败重试）。`this.launching` 覆盖**整个**序列（含重试间隔）——
@@ -383,20 +511,20 @@ export class CodexServer extends EventEmitter {
   private async launchOnce() {
     /* 10-28：首次 spawn 前先清掉**上一个实例**留下的引擎（应用被强杀/崩溃时来不及 stop）。
        证据 = 上次 spawn 写下的 pid 台账；同一 userData 只会有一个实例在跑（单实例锁），
-       所以这条 pid 必然属于已退出的那个实例 —— 杀掉不会误伤别人的任务。
+       所以台账里的 pid 必然属于已退出的那个实例 —— 杀掉不会误伤别人的任务。
+       ⛔ 10-31 扩成**多 pid 台账 + 二进制全路径扫描**：单 pid 台账会被后一次 spawn 覆盖，
+          旧版本里 2 秒 4 次 [spawn] 的事故中最早那个进程根本不在台账上。
        ⛔ 不做这一步，旧引擎会一直握着会话 writer，新实例打开该会话就报
-          `thread-store conflict: already has an active writer`（用户 10-28 截图）。 */
+          `thread-store conflict: already has an active writer`（用户 10-28 / 10-31 截图）。 */
     if (!this.reapedPreviousEngine) {
       this.reapedPreviousEngine = true;
-      const stalePid = readEnginePid();
-      if (stalePid) {
-        if (isCodexProcess(stalePid)) {
-          this.debugLog(`[spawn] 清理上次遗留的引擎进程 PID=${stalePid}（异常退出留下的孤儿，占着会话 writer）`);
-          killProcessTree(stalePid);
-        }
-        clearEnginePid();
-      }
+      this.reapStaleEngines();
     }
+    /* ⛔⛔ 10-31（云助手事故）：每次 spawn 前先把**本次进程里**已经存在的 child 回收掉。
+       启动重试 / 启动与重启交错时，上一次尝试 spawn 的进程可能还活着（它的 initialize 被
+       doRestart reject，但进程本身没退出）⇒ 直接 spawn 会把它从 this.child 顶掉，
+       变成永远没人管的孤儿，占着同一 codex-home 的会话 writer。 */
+    await this.reapCurrentChild();
     this.emitEvent({ kind: "status", status: "starting" });
     const binary = codexBinaryPath();
     const spawnEnv: Record<string, string> = {
@@ -430,8 +558,11 @@ export class CodexServer extends EventEmitter {
       env: spawnEnv,
     });
     this.child = child;
-    /* 台账：崩溃/强杀后下次启动靠它找出"我上次留下的引擎"（见 launchOnce 开头的清理）。 */
+    /* 台账：崩溃/强杀后下次启动靠它找出"我上次留下的引擎"（见 launchOnce 开头的清理）。
+       ⛔ 10-31 起追加进**多 pid** 台账：重叠启动序列留下的每一个 pid 都要留痕，
+          否则最早那个永远清不掉。 */
     writeEnginePid(child.pid);
+    appendEnginePid(child.pid);
     this.debugLog(`[spawn] HTTPS_PROXY=${spawnEnv.HTTPS_PROXY ?? "(无)"} NO_PROXY=${spawnEnv.NO_PROXY ?? "(无)"} CODEX_HOME=${spawnEnv.CODEX_HOME} provider 相关 env 已注入 ${this.externalEnv.HTTPS_PROXY ? "externalEnv" : "externalEnv 无代理"} | connectorEnv 键=${Object.keys(this.externalEnv).filter((key) => !/^(HTTPS?_PROXY|NO_PROXY|no_proxy)$/.test(key)).join(",") || "(无)"}`);
     // ⛔ 进程级清账（09-19，用户：「每个会话都是绝对独立运行状态，互不影响」）：
     //   新引擎 = 旧进程里那些回合**全部不存在了**（它们的子进程/会话随进程销毁）。主进程那份
@@ -571,9 +702,14 @@ export class CodexServer extends EventEmitter {
     /* ⛔ 10-28 用户令「每次关闭应用带着进程一起杀掉，保留干净的后台」：
        `child.kill()` 只结束 app-server 本体，它派生的 pwsh / node / MCP 会变成孤儿并**继续
        占着会话 rollout 的 writer**（下次启动打开同一会话 ⇒ `already has an active writer`）。
-       ⇒ 退出一律连树杀一遍（同步执行，保证进程真的死透再让 Electron 退出）。 */
+       ⇒ 退出一律连树杀一遍（同步执行，保证进程真的死透再让 Electron 退出）。
+       ⛔ 10-31：台账里可能不止一个 pid（重叠启动序列留下的）—— 逐个连树杀掉，后台必须干净。 */
     killProcessTree(pid);
-    clearEnginePid();
+    for (const stale of readEnginePids()) {
+      if (stale === pid) continue;
+      if (isCodexProcess(stale)) killProcessTree(stale);
+    }
+    clearEnginePids();
   }
 
   private write(message: unknown) {

@@ -547,13 +547,39 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   //     （`failed to initialize sqlite state runtime under <codexHome>`），紧接着的重启必定成功。
   //     ⛔ 切片锚点必须是**唯一**标记：`"  /** 启动序列"` 会撞上 `launching` 字段那条同名注释
   //        （出现得更早 ⇒ 切出空串 ⇒ 断言假红，10-08 实测踩过），所以锚在 `private async launch()`。
-  const restartBody = serverSrc.slice(serverSrc.indexOf("  private async doRestart()"), serverSrc.indexOf("  private async launch()"));
-  /removeAllListeners\("exit"\)/.test(restartBody)
-    && /once\("exit", finish\)/.test(restartBody)
-    && /ENGINE_EXIT_WAIT_MS/.test(restartBody)
-    && /this\.launchToken \+= 1/.test(restartBody)
-    ? ok("doRestart 等旧引擎进程真正退出后才 spawn（摘 exit 监听 + once('exit') + 超时兜底 + 作废在途启动）")
-    : fail("doRestart 杀掉旧进程就立刻 spawn：两个引擎在同一 codex-home 重叠，新进程会以 sqlite state runtime 初始化失败退出 1");
+  const restartBody = serverSrc.slice(serverSrc.indexOf("  private async performRestart()"), serverSrc.indexOf("  private async launch()"));
+  const reapBody = serverSrc.slice(serverSrc.indexOf("  private async reapCurrentChild()"), serverSrc.indexOf("  private async launch()"));
+  /removeAllListeners\("exit"\)/.test(reapBody)
+    && /once\("exit", finish\)/.test(reapBody)
+    && /ENGINE_EXIT_WAIT_MS/.test(reapBody)
+    ? ok("reapCurrentChild 等旧引擎进程真正退出后才返回（摘 exit 监听 + once('exit') + 超时兜底 + 连树杀）")
+    : fail("reapCurrentChild 杀掉旧进程就返回：两个引擎会在同一 codex-home 重叠，新进程以 sqlite state runtime 初始化失败退出 1");
+  /* ⛔ 10-31 云助手事故（用户：「这条会话正被另一个引擎进程占用」，日志 2 秒 4 次 [spawn]）：
+     重启必须**先 reject 在途请求、再杀/等旧进程**。顺序颠倒时，等退出的 3 秒窗口里任何
+     request() 都能顺手 start() 出新引擎，随后被这里的 reject 打成「重启中失败」并重试 ⇒ 两个引擎。 */
+  const restartRejectAt = restartBody.indexOf('reject(new Error("Codex app-server restarted"))');
+  const restartReapAt = restartBody.indexOf("await this.reapCurrentChild()");
+  restartRejectAt >= 0 && restartReapAt > restartRejectAt
+    ? ok("performRestart 先 reject 在途请求、再杀/等旧进程（杜绝等退出窗口里叠出第二个引擎）")
+    : fail("performRestart 先等旧进程退出、后 reject —— 窗口期会被 request() 叠出一个新引擎，再被 reject 打成重试");
+  const doRestartBody = serverSrc.slice(serverSrc.indexOf("  private async doRestart()"), serverSrc.indexOf("  private async performRestart()"));
+  /this\.launchToken \+= 1/.test(restartBody) && /if \(this\.restartInFlight\) return this\.restartInFlight/.test(doRestartBody)
+    ? ok("performRestart 作废在途启动序列，且并发 restart() 合并成一次（restartInFlight）")
+    : fail("并发 restart() 没有合并：启动期多路重启会互相把刚 spawn 的引擎打成孤儿");
+  const startBody = serverSrc.slice(serverSrc.indexOf("  async start()"), serverSrc.indexOf("  setApiKey("));
+  /if \(this\.starting === promise\)/.test(startBody)
+    ? ok("startInternal 按 promise 身份清 starting（晚到的旧序列不得抹掉新序列的启动态）")
+    : fail("start() 无条件清 starting —— 旧序列 finally 会把新序列刚赋的值抹掉，再 start() 就并发 spawn 第二个引擎");
+  /if \(this\.restartInFlight\)/.test(startBody) && /await this\.restartInFlight/.test(startBody)
+    ? ok("start() 在重启序列收尾前不再 spawn（等 restartInFlight 结束再决定）")
+    : fail("start() 不认重启窗口 —— 与 performRestart 并发时会叠出双引擎");
+  const launchOnceBody = serverSrc.slice(serverSrc.indexOf("  private async launchOnce()"), serverSrc.indexOf("  /** 引擎子进程是否存活"));
+  /this\.reapStaleEngines\(\)/.test(launchOnceBody) && /await this\.reapCurrentChild\(\)/.test(launchOnceBody)
+    ? ok("launchOnce 每次 spawn 前回收既有 child，首次再按台账 + 二进制全路径清遗留引擎")
+    : fail("launchOnce 不回收既有 child/遗留引擎 —— 重叠启动会留下占着会话 writer 的孤儿");
+  /appendEnginePid\(child\.pid\)/.test(serverSrc) && /listCodexPidsByBinary/.test(serverSrc)
+    ? ok("引擎 pid 台账记全部（多 pid）并按二进制全路径兜底扫描遗留进程")
+    : fail("引擎台账只记最后一条 —— 重叠启动中最早那个进程永远清不掉（10-31 事故现场）");
   /for \(let attempt = 1; attempt <= ENGINE_START_ATTEMPTS; attempt\+\+\)/.test(serverSrc)
     && /ENGINE_START_RETRY_MS\[attempt - 1\]/.test(serverSrc)
     && /token !== this\.launchToken/.test(serverSrc)
