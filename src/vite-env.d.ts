@@ -1346,14 +1346,8 @@ interface Window {
     feishuCliCancel(): Promise<{ ok: boolean }>;
     /* Codex 工具 feishu_cli 的执行端：参数数组直传 lark-cli（⛔ 不过 shell） */
     feishuCliRun(input: { args: string[]; cwd?: string }): Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error?: string }>;
-    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物与自我改进建议（⛔ 只认传入的 threadId）；suggestion 是**建议文件的全文**（Codex 往里写，新的覆盖旧的） */
-    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string; suggestion: string; suggestionAt: number; suggestionPath: string }>;
-    /* 10-30 任务监控：用户编辑后的自我改进建议落盘 */
-    saveMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; error?: string }>;
-    /* 10-30 任务监控：重跑一次模型生成（复用一次性内部会话） */
-    regenerateMonitorSuggestion(input: { threadId?: string; turnId?: string }): Promise<{ ok: boolean; error?: string }>;
-    /* 10-30 任务监控：采纳一条自我改进建议 —— 落盘 adoptedAt，并往本会话投一条 [群事件]（与群聊同通道），由 Codex 自己沉淀成经验 */
-    adoptMonitorSuggestion(input: { threadId?: string; turnId?: string; text?: string }): Promise<{ ok: boolean; delivered?: boolean; error?: string }>;
+    /* 10-30 任务监控：按会话读每轮技能/MCP/插件/产物（⛔ 只认传入的 threadId） */
+    readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>;
 /* ═══ gen:end ═══ */
 
 

@@ -1,9 +1,8 @@
 /**
  * 任务监控（10-30 用户令）：右栏「监控」页的数据源 —— **按会话独立**。
  *
- * 用户原话：「右侧栏加一个任务监控按键……第一个进化建议（自我改进建议）可以同步给 Agent，
- * 由本会话当前 Codex 输出；一键净化就带上自我进化技能发给 Codex，内容可改；
- * 下面依次是技能 / MCP / 插件（本回合用了什么）、再下面是会话产物（每回合，最多 30~40，分页）；
+ * 用户原话：「右侧栏加一个任务监控按键……下面依次是技能 / MCP / 插件（本回合用了什么）、
+ * 再下面是会话产物（每回合，最多 30~40，分页）；
  * 技能最多 5 个/页、只看当前回合与上回合；都要每回合更新；每个会话独立，不要串。」
  *
  * ── 为什么采集放主进程 ──────────────────────────────────────────────
@@ -14,19 +13,18 @@
  * ── 三条硬约束 ──────────────────────────────────────────────────────
  *  ① **按会话独立**：一切状态以 threadId 为键，落盘 `<userData>/task-monitor/<id>.json`，
  *     读取端只认传入的 threadId（⛔ 不许"取最近一个"这种跨会话兜底）。
- *  ② **绝不阻塞回合**：所有采集同步完成、生成走 async，任何失败只记日志。
- *  ③ 建议由**本会话的模型**产出（复用 `distillSummarize` 的一次性内部会话），且只在
- *     「这轮有动作（工具/改文件/技能）」时才跑 —— 纯聊天轮不烧 token。
+ *  ② **绝不阻塞回合**：所有采集同步完成、写盘走 async，任何失败只记日志。
+ *  ③ **只做记录，不再"自动复盘"**：10-31 用户令「自我进化建议这个板块和配套删了，不要了」——
+ *     原来每轮结束都会起一条内省会话让模型写改进建议（外加自噬环事故），整条链已删除。
+ *     ⛔ 别再把"回合结束顺手调一次模型"加回来：它既烧 token，又会让侧栏冒出内部会话。
  */
 import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
-import { distillSummarize } from "../main/03-turn-summary";
 import { liveFilesOf, storedReportsForThread } from "../turn-file-watch";
-import { engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
-import { GROUP_EVENT_TAG, hostQueueMessageId } from "../../src/lib/host-queue.mjs";
+import { engineActiveTurnIds, internalThreads } from "../runtime-refs";
 /* 技能/插件的识别口径与**技能卡完全同源**（src/lib/tool-display.mjs）；⛔ 不要在这里另写正则。 */
 import { pluginOfItem, skillOfItem } from "../../src/lib/tool-display.mjs";
 
@@ -43,15 +41,8 @@ export type MonitorTurn = {
   plugins: string[];
   /** 本回合改动的文件（新增/修改/删除都算，口径与消息底部「已更改 N 个文件」一致） */
   artifacts: MonitorArtifact[];
-  /** 本轮由模型产出的自我改进建议（可被用户编辑后覆盖） */
-  suggestion: string;
-  /** 建议是否正在生成 / 生成失败原因（前端据此显示状态，不用猜） */
-  suggestionState: "idle" | "running" | "ready" | "failed";
-  suggestionError?: string;
   /** true = 这一轮还在跑（面板据此标「本轮进行中」；结算后落盘的记录没有这个字段） */
   running?: boolean;
-  /** 用户采纳这条建议的时刻（采纳 = 注入一条 `[群事件]` 让 Codex 把它沉淀成经验） */
-  adoptedAt?: number;
 };
 
 type MonitorFile = { threadId: string; turns: MonitorTurn[] };
@@ -59,48 +50,14 @@ type MonitorFile = { threadId: string; turns: MonitorTurn[] };
 /** 每个会话最多留 40 轮（用户：产物最多展示 30~40 个） */
 const MAX_TURNS = 40;
 const FILE_NAME = (threadId: string) => `${threadId.replace(/[^\w.-]+/g, "_").slice(0, 80)}.json`;
-
-/* ── 自我改进建议 = **一个固定文件**（10-30 用户令：「指定一个文件，让他写里面，新的覆盖旧的，
-      自我建议内容自动同步展示就行」）─────────────────────────────────────────────
-   ⛔ 为什么要有实体文件（而不是只存在 json 里）：
-     · Codex 自己也能往里写（采纳事件里把路径给它），写完面板自动读出来 —— 不需要任何"回传通道"；
-     · 一份纯文本，用户随时能用编辑器打开、改、备份；
-     · **新的覆盖旧的**：每次生成/采纳/手改都整份重写（原子写），不追加、不留历史版本。
-   ⛔ 按会话分开（不同会话的建议互不覆盖），文件名与 json 同源规则。 */
-export const suggestionFileOf = (threadId: string): string =>
-  path.join(dirOf(), `${threadId.replace(/[^\w.-]+/g, "_").slice(0, 80)}.evolve.md`);
-
-/** 整份重写（临时文件 + rename：强杀时不会留半截文件）。 */
-async function writeSuggestionFile(threadId: string, text: string): Promise<void> {
-  const file = suggestionFileOf(threadId);
-  try {
-    await fs.mkdir(dirOf(), { recursive: true });
-    const tmp = `${file}.tmp`;
-    await fs.writeFile(tmp, String(text ?? "").trimEnd() + "\n", "utf8");
-    await fs.rename(tmp, file);
-  } catch (error: any) {
-    log("建议文件写入失败", threadId.slice(0, 8), error?.message ?? error);
-  }
-}
-
-/** 读建议文件（不存在就当没有）。返回 mtime 供面板判断"变没变"。 */
-async function readSuggestionFile(threadId: string): Promise<{ text: string; at: number }> {
-  try {
-    const file = suggestionFileOf(threadId);
-    const [text, stat] = await Promise.all([fs.readFile(file, "utf8"), fs.stat(file)]);
-    return { text: String(text ?? "").trim(), at: stat.mtimeMs };
-  } catch {
-    return { text: "", at: 0 };
-  }
-}
 const dirOf = () => path.join(app.getPath("userData"), "task-monitor");
 
 const store = new Map<string, MonitorTurn[]>();
 /** 正在累积的回合：key = `${threadId}:${turnId}` */
 const live = new Map<string, Bucket>();
 
-/** 进行中回合的累积桶；reply = 本轮最后一条模型回复（给「自我改进建议」当上下文，不落盘）。 */
-type Bucket = { threadId: string; turnId: string; skills: Set<string>; mcp: Set<string>; plugins: Set<string>; reply: string };
+/** 进行中回合的累积桶。 */
+type Bucket = { threadId: string; turnId: string; skills: Set<string>; mcp: Set<string>; plugins: Set<string> };
 
 const log = (...args: unknown[]) => console.log("[monitor]", ...args);
 
@@ -127,17 +84,7 @@ async function load(threadId: string): Promise<MonitorTurn[]> {
     /* ⛔ 只认自己的：文件里写着别人的 threadId 就当损坏（换机器/手改过的兜底） */
     if (parsed && parsed.threadId === threadId && Array.isArray(parsed.turns)) turns = parsed.turns;
   } catch { /* 没有历史 = 空 */ }
-  /* ★ 10-31 用户实测「回合结束后刷新还显示下一回合 / 一直自动刷新」：
-     上次进程被杀时正在生成的那一轮会把 suggestionState 留在 "running" —— 读到它时已经没有
-     任何人在生成，面板就会每 3s 轮询一次、永远转不完。⇒ 读盘时把**遗留的 running 收敛为 failed**。 */
-  let changed = false;
-  turns = turns.map((turn) => {
-    if (turn?.suggestionState !== "running") return turn;
-    changed = true;
-    return { ...turn, suggestionState: "failed" as const, suggestionError: "上次生成被中断（应用重启/退出），点「换一版」重试" };
-  });
   store.set(threadId, turns);
-  if (changed) void persist(threadId, turns);
   return turns;
 }
 
@@ -193,13 +140,8 @@ export function noteEngineEvent(method: string, params: any): void {
 
     if (method === "item/started" || method === "item/completed") {
       const item = params?.item ?? params;
-      const bucket = live.get(key) ?? { threadId, turnId, skills: new Set<string>(), mcp: new Set<string>(), plugins: new Set<string>(), reply: "" };
+      const bucket = live.get(key) ?? { threadId, turnId, skills: new Set<string>(), mcp: new Set<string>(), plugins: new Set<string>() };
       live.set(key, bucket);
-      /* 本轮最终回复：建议生成要看着它自己说了什么来提，不能只给工具清单。 */
-      if (String(item?.type ?? "") === "agentMessage") {
-        const text = String(item?.text ?? "").trim();
-        if (text) bucket.reply = text.slice(0, 1200);
-      }
       const hit = classifyItem(item);
       if (hit.skill) bucket.skills.add(hit.skill);
       if (hit.mcp) bucket.mcp.add(hit.mcp);
@@ -239,14 +181,12 @@ function liveTurnOf(threadId: string): MonitorTurn | null {
     mcp: [...bucket.mcp].slice(0, 20),
     plugins: [...bucket.plugins].slice(0, 20),
     artifacts,
-    suggestion: "",
-    suggestionState: "idle",
     /* ⛔ 面板据此标「本轮进行中」：不标的话用户分不清"还没跑完"和"没采到"。 */
     running: true,
   };
 }
 
-/** 回合结算：把这一轮的使用情况 + 产物落成一条记录，并在「有动作」时异步生成建议。 */
+/** 回合结算：把这一轮的使用情况 + 产物落成一条记录。 */
 async function settleTurn(threadId: string, turnId: string, bucket?: Bucket) {
   const turns = await load(threadId);
   if (turns.some((t) => t.turnId === turnId)) return;      // 幂等：重放事件不重复记
@@ -274,138 +214,16 @@ async function settleTurn(threadId: string, turnId: string, bucket?: Bucket) {
     mcp: [...(bucket?.mcp ?? [])].slice(0, 20),
     plugins: [...(bucket?.plugins ?? [])].slice(0, 20),
     artifacts,
-    suggestion: "",
-    suggestionState: "idle",
   };
   const next = [...turns, record].slice(-MAX_TURNS);
   store.set(threadId, next);
   await persist(threadId, next);
-
-  /* ⛔⛔ 10-30 用户（附截图）：「需要 codex 输出这个建议……还要我手动让他总结？」
-     ⇒ **每一轮都自动复盘**，不再只挑「有工具动作」的轮。
-     纯聊天轮同样有可改进面（答得太长、来回追问、该动手却只动嘴），原来那道 `acted` 门
-     直接把这类轮全跳过 ⇒ 面板长期停在「暂无建议（纯聊天轮不生成）」，用户以为功能没做。 */
-  void generateSuggestion(threadId, turnId, String(bucket?.reply ?? ""));
-}
-
-/** 用**本会话的模型**生成 1~3 条可执行的改进建议（复用记忆蒸馏的一次性内部会话通道）。 */
-async function generateSuggestion(threadId: string, turnId: string, reply = "") {
-  const turns = await load(threadId);
-  const target = turns.find((t) => t.turnId === turnId);
-  if (!target || target.suggestionState === "running") return;
-  target.suggestionState = "running";
-  store.set(threadId, turns);
-
-  const digest = [
-    `技能：${target.skills.join("、") || "（未使用技能）"}`,
-    `MCP：${target.mcp.join("、") || "（未调用）"}`,
-    `插件/宿主能力：${target.plugins.join("、") || "（未调用）"}`,
-    `改动文件：${target.artifacts.slice(0, 20).map((a) => `${a.path} +${a.added}/-${a.deleted}`).join("、") || "（无）"}`,
-    reply ? `本轮我的回复（节选）：${reply.slice(0, 700)}` : "",
-  ].filter(Boolean).join("\n");
-
-  try {
-    const text = await distillSummarize(
-      "你是这个桌面助手的内省模块。基于「这一轮干了什么」，给出 1~3 条**可执行的自我改进建议**。"
-      + "要求：每条一行、以「- 」开头、不超过 40 字、针对具体动作（流程/命令/验证/协作），"
-      + "不要复述做了什么，不要客套，不要编号说明。只输出这几行。"
-      /* ⛔ 配套 self-review 的四个检查面（10-30 用户：「工具配套好」）：不给检查面，模型只会写空话。 */
-      + "\n重点看这四处：① 该验证却没验证（改了没跑/没看输出）；② 同一处反复失败才改对；"
-      + "③ 该同步/该提交的改动留在工作区；④ 对用户原话的理解有偏差（要返工的那种）。"
-      /* ⛔ 纯聊天轮（没有工具/文件）也有可改进面，否则这类轮会输出一堆空话：
-         答得过长、该动手却只动嘴、同一件事反复追问、把选择权丢回给用户。 */
-      + "\n如果这一轮**没有工具调用、也没改文件**，就从「对话方式」上找：答得太长/来回追问/"
-      + "该直接动手却在解释/该给结论却先问一堆。不要硬凑工具相关的话。",
-      digest,
-      /* ⛔ 带上会话 id：没有自定义模型时用**本会话自己的模型**（否则官方供应商用户永远暂无建议）。
-         ⛔ cwd 用本会话的工作目录（不写死进程目录）：临时会话写出的 AGENTS/产物要落在项目里，
-             mac 上进程目录是安装包内部路径，写那儿既看不见也更不该写。 */
-      { threadId, cwd: threadCwd.get(threadId) ?? "" },
-    );
-    const clean = String(text || "").split(/\r?\n/).map((line) => line.trim())
-      .filter((line) => line && !/^```/.test(line))
-      .slice(0, 3).join("\n");
-    target.suggestion = clean;
-    target.suggestionState = clean ? "ready" : "failed";
-    if (!clean) target.suggestionError = "模型没有返回内容";
-    /* ⛔ 同时**整份重写**建议文件（新的覆盖旧的）：面板读的是这份文件，Codex 也写这份文件。 */
-    if (clean) await writeSuggestionFile(threadId, clean);
-  } catch (error: any) {
-    target.suggestionState = "failed";
-    target.suggestionError = String(error?.message ?? error).slice(0, 200);
-  }
-  store.set(threadId, turns);
-  await persist(threadId, turns);
 }
 
 /** 找一个线程当前活跃的回合 id（没有则空串）。与 boss-groups runner 的取法同源。 */
 function activeTurnOf(threadId: string): string {
   for (const [turnId, owner] of engineActiveTurnIds) if (owner === threadId) return turnId;
   return "";
-}
-
-/**
- * 往会话里投一条**宿主事件**（`[群事件]` 文本 + `host:` 队列 id）。
- *
- * ⛔⛔ 10-30 用户令：「点击以消息事件通知样式通知到 codex，**不是以用户消息**，跟群聊那个一样」。
- *   所以这里必须复用群聊那条通道（`turn/steer` 追加进当前回合 / 空闲时走 `thread/queue/add`
- *   + `queue/start`），并且文本带 `GROUP_EVENT_TAG` —— 渲染层据此按**事件块**渲染，
- *   `clientUserMessageId` 的 `host:` 前缀让排队面板不把它当"用户消息"。
- * ⛔ 不用 `turn/start`：那会打断正在跑的回合（用户正在看的那一轮会被掐掉）。
- */
-async function deliverHostEvent(threadId: string, text: string): Promise<boolean> {
-  try {
-    const turnId = activeTurnOf(threadId);
-    if (turnId) {
-      const steered = await server.request("turn/steer", {
-        threadId,
-        expectedTurnId: turnId,
-        input: [{ type: "text", text, text_elements: [] }],
-      }).then(() => true).catch(() => false);
-      if (steered) return true;
-      /* steer 失败（回合刚好结束）⇒ 落到下面的队列路径。 */
-    }
-    await server.request("thread/queue/add", {
-      threadId,
-      input: [{ type: "text", text }],
-      clientUserMessageId: hostQueueMessageId("evolve"),
-    }).catch(() => null);
-    const list: any = await server.request("thread/queue/list", { threadId, limit: 1 }).catch(() => null);
-    const head = list?.data?.[0];
-    if (head?.id) await server.request("thread/queue/start", { threadId, queuedSubmissionId: head.id }).catch(() => undefined);
-    return true;
-  } catch (error: any) {
-    log("事件投递失败", String(error?.message ?? error).slice(0, 160));
-    return false;
-  }
-}
-
-/**
- * 「采取建议」下发给 Codex 的事件正文。
- *
- * ⛔ 要求它**沉淀**而不是复述：用户的目的（原话）是「codex 就开始自我学习进步，反思自己的不足，
- *   逐渐提升自己能力，减少犯错」—— 只说"好的我记住了"等于什么都没发生，必须落到记忆 / 技能 / AGENTS。
- */
-function adoptEventText(suggestion: string, filePath: string): string {
-  const body = String(suggestion ?? "").trim().slice(0, 2000);
-  return [
-    `${GROUP_EVENT_TAG}【自我进化 · 采纳建议】`,
-    "用户采纳了下面这条关于你上一轮工作的改进建议：",
-    "",
-    body,
-    "",
-    "请把它转成**可复用的经验**，而不是回一句「好的」：",
-    "① 判断它属于哪一类：流程 / 命令 / 验证 / 协作；",
-    "② 落到对应的地方 —— 值得长期记住的写进记忆（memory_write，或项目 AGENTS.md 里对应段落）；",
-    "   属于某个技能的写进那个技能的 SKILL.md（⛔ 别写进一次性对话里）；",
-    "③ 之后的同类任务**先按它做**，并在收尾时自检有没有守住；",
-    "④ 只回一句：已沉淀到哪里 + 这条经验的一句话摘要。",
-    "",
-    /* ⛔ 用户 10-30：「指定一个文件，让他写里面，新的覆盖旧的」—— 把**绝对路径**给它，
-       写完面板自动读出来（面板读的就是这份文件，不需要额外回传通道）。 */
-    "另外，把这次沉淀后的**自我改进建议**整份写进这个文件（新的覆盖旧的，⛔ 不要追加）：",
-    filePath,
-  ].join("\n");
 }
 
 export const taskMonitorFeature = defineFeature<null>({
@@ -417,7 +235,7 @@ export const taskMonitorFeature = defineFeature<null>({
     ipcHost.handle("monitor:read", async (_event: unknown, threadId?: string) => {
       const id = String(threadId ?? "").trim();
       /* ⛔ 按会话独立：没有 threadId 就给空表，绝不"猜一个最近的"。 */
-      if (!id) return { threadId: "", turns: [] as MonitorTurn[], ongoingTurnId: "", suggestion: "", suggestionAt: 0, suggestionPath: "" };
+      if (!id) return { threadId: "", turns: [] as MonitorTurn[], ongoingTurnId: "" };
       /* ★ 10-31 用户实测「回合结束后刷新还显示下一回合」：引擎那边已经没有活动回合，但 bucket
          还在（turn 收尾事件丢了 / 回放时序错位）⇒ 面板会一直把它当「本轮进行中」，并且每 3s
          轮询一次、看起来像"自动刷新出下一回合"。这里补一次幂等结算，然后按已结算读。 */
@@ -431,69 +249,7 @@ export const taskMonitorFeature = defineFeature<null>({
       /* 进行中那一轮也要给出去（用户：「完全没有跟当前会话联动」）—— 已结算的不重复追加。 */
       const ongoing = liveTurnOf(id);
       const turns = ongoing && !settled.some((t) => t.turnId === ongoing.turnId) ? [...settled, ongoing] : settled;
-      /* 建议的**唯一展示来源 = 建议文件**（Codex 往里写、面板读出来；手改也写这份）。
-         文件还没建（老会话）时退回最近一轮记录里的那份，避免升级后一片空白。 */
-      const file = await readSuggestionFile(id);
-      const fallback = [...settled].reverse().find((t) => String(t.suggestion ?? "").trim());
-      return {
-        threadId: id,
-        turns,
-        ongoingTurnId: ongoing?.turnId ?? "",
-        suggestion: file.text || String(fallback?.suggestion ?? ""),
-        suggestionAt: file.at,
-        suggestionPath: suggestionFileOf(id),
-      };
-    });
-
-    ipcHost.handle("monitor:save-suggestion", async (_event: unknown, input?: { threadId?: string; turnId?: string; text?: string }) => {
-      const id = String(input?.threadId ?? "").trim();
-      const turnId = String(input?.turnId ?? "").trim();
-      if (!id || !turnId) return { ok: false, error: "缺少会话或回合 id" };
-      const turns = await load(id);
-      const target = turns.find((t) => t.turnId === turnId);
-      if (!target) return { ok: false, error: "这一轮还没有记录" };
-      target.suggestion = String(input?.text ?? "").slice(0, 4000);
-      target.suggestionState = target.suggestion ? "ready" : "idle";
-      target.suggestionError = undefined;
-      await persist(id, turns);
-      /* ⛔ 同一个真相源：面板里改完也整份重写建议文件（新的覆盖旧的）。 */
-      await writeSuggestionFile(id, target.suggestion);
-      return { ok: true };
-    });
-
-    ipcHost.handle("monitor:regenerate", async (_event: unknown, input?: { threadId?: string; turnId?: string }) => {
-      const id = String(input?.threadId ?? "").trim();
-      const turnId = String(input?.turnId ?? "").trim();
-      if (!id || !turnId) return { ok: false, error: "缺少会话或回合 id" };
-      void generateSuggestion(id, turnId);
-      return { ok: true };
-    });
-
-    /**
-     * 采纳建议（10-30 用户令）：「如果用户觉得进化建议可以，就采取建议……点击以消息事件通知样式
-     * 通知到 codex，不是以用户消息」。
-     * ⇒ ① 建议落盘并标 adoptedAt（面板显示「已采取」）；
-     *   ② 往**本会话**投一条 `[群事件]`（与群聊同一通道、同一渲染块），Codex 收到后自己去沉淀经验。
-     * ⛔ 不发 turn/start（会打断正在跑的回合），也不伪造用户消息。
-     */
-    ipcHost.handle("monitor:adopt", async (_event: unknown, input?: { threadId?: string; turnId?: string; text?: string }) => {
-      const id = String(input?.threadId ?? "").trim();
-      const turnId = String(input?.turnId ?? "").trim();
-      const text = String(input?.text ?? "").trim();
-      if (!id || !turnId) return { ok: false, error: "缺少会话或回合 id" };
-      if (!text) return { ok: false, error: "这条建议是空的 —— 先让它生成一版，或自己写一条" };
-      const turns = await load(id);
-      const target = turns.find((t) => t.turnId === turnId);
-      if (!target) return { ok: false, error: "这一轮还没有记录" };
-      target.suggestion = text.slice(0, 4000);
-      target.suggestionState = "ready";
-      target.suggestionError = undefined;
-      target.adoptedAt = Date.now();
-      store.set(id, turns);
-      await persist(id, turns);
-      await writeSuggestionFile(id, text);
-      const delivered = await deliverHostEvent(id, adoptEventText(text, suggestionFileOf(id)));
-      return { ok: true, delivered, error: delivered ? undefined : "建议已保存，但事件没送进会话（可能会话正在重启）" };
+      return { threadId: id, turns, ongoingTurnId: ongoing?.turnId ?? "" };
     });
   },
 });
