@@ -10,6 +10,7 @@ import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFu
 import { settingsNav } from "../helpers";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
+import { getThreadRowColors, subscribeThreadRowColors } from "../../../lib/thread-row-colors.mjs";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
 import { useShortcuts } from "../../shortcuts";
 import { bindingMatches } from "../../../lib/shortcut-catalog.mjs";
@@ -175,6 +176,21 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
   /* 10-25 用户令：项目支持自定义标签（文字 + 颜色），默认无标签。 */
   const entityTags = useSyncExternalStore(subscribeEntityTags, getEntityTagState, getEntityTagState);
+  /* 10-31 用户令：会话行底色自选 —— 订阅让选色立刻重渲染本列表（行组件读 store 取色）。 */
+  useSyncExternalStore(subscribeThreadRowColors, getThreadRowColors, getThreadRowColors);
+  /* 10-31 用户令（截图点名）：「标签一列、会话列表开头一列，中间别留一大截」——
+     标签列宽**自适应**：量出当前所有行里最宽的标签内容，钉成根上的 `--tag-col-w`，
+     所有行共用 ⇒ 名称起点仍逐行对齐，但标签与名称之间不再有定宽列留下的空白。
+     每次渲染后重量（标签 / 徽标 / 选中态变化即时跟上）；⛔ 没有标签的列表列宽为 0。 */
+  useLayoutEffect(() => {
+    let max = 0;
+    for (const el of document.querySelectorAll(".thread-row-tags")) {
+      const kids = Array.from(el.children) as HTMLElement[];
+      const w = kids.reduce((s, c) => s + c.offsetWidth, 0) + Math.max(0, kids.length - 1) * 4;
+      if (w > max) max = w;
+    }
+    document.documentElement.style.setProperty("--tag-col-w", `${Math.min(max, 96)}px`);
+  });
   /* 10-25 用户令：新建指挥中枢时弹**应用内**对话框选项目地址（两个选项），
      ⛔ 不用系统 messageBox、⛔ 不用 toast 内联提示。
      ⛔ 开关走**全局 store**（boss-dir-dialog-store）：点侧栏「指挥中枢」先落进欢迎界面，
