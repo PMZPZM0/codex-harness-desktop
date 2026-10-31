@@ -1655,9 +1655,10 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && !tunnelPage.includes('id="btn-home"') && !tunnelPage.includes("<h1 id=\"title\"") && !tunnelPage.includes("brand-logo") ? ok : fail)(
       "【139e】手机页顶栏：☰ 菜单装首页/会话/断开连接；⛔ 顶部中间不再放品牌 logo"
     );
-    (hasAndroid ? (androidSrc.includes("AndroidRemote") && androidSrc.includes("JavascriptInterface") ? ok : fail) : ok)(
-      "【139e】APK 注入 AndroidRemote 桥：网页菜单的「断开连接」才能清本机 cookie / 自动登录标记 / 设备秘密"
-    );
+    const bridgeOk = !hasAndroid || (androidSrc.includes("AndroidRemote") && androidSrc.includes("JavascriptInterface"));
+    (bridgeOk ? ok : fail)(hasAndroid
+      ? "【139e】APK 注入 AndroidRemote 桥：网页菜单的「断开连接」才能清本机 cookie / 自动登录标记 / 设备秘密"
+      : "【139e】本仓不含 android 工程（AGENTS：只存在于主仓）⇒ 跳过 APK 桥断言");
     (gwSrc.includes("RELAY_PATH_PREFIX") && gwSrc.includes("PATH_PREFIX}/t/${id}") && gwSrc.includes("Path=${PATH_PREFIX}/t/${id}") ? ok : fail)(
       "【139e】网关支持对外路径前缀：/t 响应的 Location 与 Set-Cookie Path 都带回去（直连 18443 时前缀为空，行为不变）"
     );
