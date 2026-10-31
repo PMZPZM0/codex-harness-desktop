@@ -190,7 +190,11 @@ export function usePart04b2(bag: Bag) {
     bag.pinSentMessage(el, bag.thread?.id);
   }, [bag.optimisticInput, bag.pinSentMessage]);
 
-  useEffect(() => {
+  /* ⛔ 10-31：必须 **useLayoutEffect**，不能退回 useEffect ——
+     明暗切场用 View Transitions（`lib/visual-switch.ts` 的涟漪路径）在 `apply()` 返回后**立刻**
+     拍新快照；调用方用 `flushSync` 刷新 React，但被动 effect（useEffect）不在 flushSync 里同步跑，
+     `dataset.theme` 会晚一拍 ⇒ 两张快照一模一样，动画等于没有。布局 effect 在 commit 阶段同步执行。 */
+  useLayoutEffect(() => {
     document.documentElement.dataset.theme = bag.theme;
     localStorage.setItem("theme", bag.theme);
     // 同步窗口外观：深色模式下标题栏 overlay 与背景跟随主题（不再残留浅色外框）

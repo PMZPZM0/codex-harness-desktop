@@ -3,7 +3,8 @@
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
+import { ThemeQuickSwitch } from "../../../components/ThemeQuickSwitch";
 import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, setFunctionMenuSettingsOpener, setFunctionMenuSettingsTargets, useFunctionMenuConfig } from "../../function-menu";
 import { settingsNav } from "../helpers";
@@ -60,7 +61,6 @@ import {
   MessageSquare,
   MessageSquarePlus,
   Monitor,
-  Moon,
   MoreHorizontal,
   Plus,
   Quote,
@@ -838,11 +838,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     <button className="account-menu-item" onClick={() => setAccountMenuSub("lang")}><Globe2 size={15} className="ic-cyan" /><span>界面语言</span><ChevronRight size={14} className="account-menu-arrow" /></button>
                     <div className="account-menu-item account-menu-theme" role="menuitem">
                       <Sun size={15} className="ic-pink" /><span>界面主题</span>
-                      <span className="theme-quick">
-                        {/* 10-07：与设置页主题卡同一条切换链（过渡 + 完成后回执）——见 lib/visual-switch */}
-                        <button type="button" title="浅色" className={theme === "light" ? "active" : ""} onClick={() => runVisualSwitch("主题", themeLabelOf("light"), () => setTheme("light"), showToast)}><Sun size={13} /></button>
-                        <button type="button" title="深色" className={theme === "dark" ? "active" : ""} onClick={() => runVisualSwitch("主题", themeLabelOf("dark"), () => setTheme("dark"), showToast)}><Moon size={13} /></button>
-                      </span>
+                        {/* 10-07：与设置页主题卡同一条切换链（过渡 + 完成后回执）——见 lib/visual-switch。
+                            10-31：控件本体换成 ThemeQuickSwitch（滑轨胶囊 + 自绘日/月）；两枚按钮仍各走
+                            `runVisualSwitch`，且 setTheme 用 flushSync 包住 —— 涟漪转场要求"回调返回时
+                            DOM 已经是新主题"，否则拍到的两张快照一模一样，看着就是没动。 */}
+                        <ThemeQuickSwitch
+                          theme={theme}
+                          onLight={() => runVisualSwitch("主题", themeLabelOf("light"), () => flushSync(() => setTheme("light")), showToast)}
+                          onDark={() => runVisualSwitch("主题", themeLabelOf("dark"), () => flushSync(() => setTheme("dark")), showToast)}
+                        />
                     </div>
                     <button className="account-menu-item" onClick={() => setAccountMenuSub("zoom")}><ZoomIn size={15} className="ic-violet" /><span>界面缩放</span><ChevronRight size={14} className="account-menu-arrow" /></button>
                     <button className="account-menu-item" onClick={() => setAccountMenuSub("update")}>

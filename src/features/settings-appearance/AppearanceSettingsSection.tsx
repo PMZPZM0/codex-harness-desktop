@@ -6,6 +6,7 @@
  *    + styles 里加一段 `:root[data-theme="<id>"]` 变量块，这里与 bag 零改动。
  */
 import { Brain, FileCode2, Sun, ZoomIn } from "lucide-react";
+import { flushSync } from "react-dom";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
 import { FunctionMenuSettings } from "../function-menu";
 import { WallpaperSettingsSection } from "../wallpaper";
@@ -34,7 +35,7 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
             <span className="settings-pill-row-label"><Sun size={13} />主题</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="主题">
               {THEMES.map((t) => (
-                <button key={t.id} type="button" className={theme === t.id ? "active" : ""} aria-pressed={theme === t.id} title={`切换到${t.label}主题`} onClick={() => runVisualSwitch("主题", themeLabelOf(t.id), () => setTheme(t.id), onNotice)}>{t.label}</button>
+                <button key={t.id} type="button" className={theme === t.id ? "active" : ""} aria-pressed={theme === t.id} title={`切换到${t.label}主题`} onClick={() => runVisualSwitch("主题", themeLabelOf(t.id), () => flushSync(() => setTheme(t.id)), onNotice)}>{t.label}</button>
               ))}
             </div>
           </div>

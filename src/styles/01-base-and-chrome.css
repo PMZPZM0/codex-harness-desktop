@@ -298,6 +298,9 @@
      VISUAL_FX_MS **必须一致**：那边是 JS 摘过渡类与发回执的时点，不一致会出现
      "提示弹了但颜色还在变"或"颜色变完了提示才来"。守卫 11w 钉这个同源关系。 */
   --dur-theme: 240ms;
+  /* 明暗切场的「整屏涟漪」时长（10-31）。⛔ 只在 View Transitions 路径用：
+     由 transition.finished 驱动收尾，JS 侧不写死数字（避免与 CSS 两处不同步）。 */
+  --dur-switch: 520ms;
   /* 交互反馈（hover / 选中 / 切换）的统一时长。
      ⛔ 此前散着 .16s / .18s / .22s 好几档，同类控件观感对不齐 ⇒ 一律走这个变量。 */
   --dur-ui: 160ms;
@@ -1080,6 +1083,32 @@ html.fx-theme *::after {
     background-color, color, border-color, fill, stroke, box-shadow;
   transition-duration: var(--dur-theme, 240ms);
   transition-timing-function: ease;
+}
+
+/* ── 明暗切场：整屏涟漪（10-31 用户：「白天黑夜切换太生硬，一点动画没有，应用级怎么做」）──
+   做法：View Transitions 拍两张整屏快照，新主题以**圆心在点击处**的圆形裁切扩散覆盖旧主题。
+   ⛔ 为什么不用"给每个元素加 transition"：大面积深浅底之间插值会经过一段发灰的死色，
+      肉眼读作硬闪；整屏快照扩散是**几何运动**，眼睛能跟上"从哪变过来"。
+   ⛔ 必须同时把 old/new 的默认淡入淡出关掉（`animation: none`），否则会和裁切叠加成糊影。
+   ⛔ 这组规则不受全局 `prefers-reduced-motion` 兜底影响（伪元素不在 `*` 选择器范围内）
+      ⇒ 单独写一条 media 关掉它；JS 侧也在该偏好下直接不进这条路径（双保险）。
+   ⛔ 只用 `clip-path`（合成层完成，不触发布局）：不碰 width/height/transform，无布局跳动。 */
+html.fx-ripple::view-transition-old(root),
+html.fx-ripple::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+html.fx-ripple::view-transition-old(root) { z-index: 1; }
+html.fx-ripple::view-transition-new(root) {
+  z-index: 2;
+  animation: fx-theme-ripple var(--dur-switch, 520ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes fx-theme-ripple {
+  from { clip-path: circle(0px at var(--switch-x, 50%) var(--switch-y, 100%)); }
+  to { clip-path: circle(var(--switch-r, 150vmax) at var(--switch-x, 50%) var(--switch-y, 100%)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.fx-ripple::view-transition-new(root) { animation-duration: 0.001ms; }
 }
 
 /* ── 切换类控件的统一过渡（10-07 用户：「统一补齐…悬停/点击反馈」）────────────

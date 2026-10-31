@@ -103,5 +103,51 @@ const design = read("DESIGN.md");
 ok(/--dur-theme/.test(design) && /visual-switch/.test(design),
   "⑦ DESIGN.md 已登记过渡变量与统一入口（⛔ 改了 CSS 变量/新增约定就必须同步）");
 
+/* ── ⑧ 10-31：明暗切场改成整屏涟漪（用户「太生硬、一点切换动画没有」）──────
+   守四件事：走 View Transitions、圆心来自点击处、快照前 DOM 必须已是新主题、
+   以及「不支持/减少动效」时仍能回落（不能让动画成为切换的前置条件）。 */
+ok(/export const VISUAL_RIPPLE_CLASS = "fx-ripple"/.test(vs), "⑧ 涟漪转场类名字面量 = `fx-ripple`（改名须同步 CSS 与本守卫）");
+ok(/startViewTransition/.test(codeOnly(vs)) && /prefersReducedMotion\(\)/.test(codeOnly(vs)),
+  "⑧ 首选 View Transitions，且 `prefers-reduced-motion` 下**不进**该路径（回落到颜色过渡）");
+ok(/addEventListener\("pointerdown"[\s\S]{0,120}capture: true/.test(codeOnly(vs)),
+  "⑧ 涟漪圆心取自指针按下位置（capture 阶段，按钮 stopPropagation 也收得到）");
+ok(/--switch-x/.test(codeOnly(vs)) && /--switch-r/.test(codeOnly(vs)),
+  "⑧ 把圆心与半径写进 CSS 变量（JS 不参与画：几何归 CSS）");
+/* ⛔ catch 允许带参数与日志（10-31 加：那个 catch 曾把「裸调用 Illegal invocation」吞掉，
+   表现为"怎么改都没动画"，所以现在必须 console.warn 出来 —— 断言跟着放宽到 `catch (e) {`）。 */
+ok(/catch(?: \([^)]*\))? \{[\s\S]{0,400}?fadeSwitch\(/.test(codeOnly(vs)),
+  "⑧ 负向兜底：`startViewTransition` 抛错时回落颜色过渡（⛔ 不许让主题切不动）");
+
+const rippleBlock = /html\.fx-ripple::view-transition-new\(root\) \{([^}]*)\}/.exec(codeOnly(base))?.[1] ?? "";
+ok(/html\.fx-ripple::view-transition-old\(root\)/.test(codeOnly(base)) && rippleBlock.length > 0,
+  "⑧ CSS 侧有 `::view-transition-old/new(root)` 规则（旧快照留底、新快照盖上来）");
+ok(/clip-path: circle\(0px at var\(--switch-x/.test(codeOnly(base)) &&
+  /clip-path: circle\(var\(--switch-r/.test(codeOnly(base)),
+  "⑧ 新快照用**圆形裁切**从圆心扩散（几何运动，不是整屏插值发灰）");
+ok(!/!important/.test(rippleBlock), "⑧ 负向：涟漪规则同样不加 `!important`（无障碍兜底要压得住）");
+ok(/@media \(prefers-reduced-motion: reduce\) \{\s*\n\s*html\.fx-ripple/.test(codeOnly(base)),
+  "⑧ 涟漪伪元素不受全局 `*` 兜底覆盖 ⇒ 单独写了一条 reduced-motion 关动画");
+
+/* 快照时序：flushSync 必须包住 setState（三处切换点），否则拍到的新旧快照相同 = 没动画 */
+const SYNC_CALLS = [
+  [SIDEBAR, /runVisualSwitch\("主题"[\s\S]{0,120}flushSync\(\(\) => setTheme/, "侧栏浅/深切换"],
+  [APPEAR, /runVisualSwitch\("主题"[\s\S]{0,120}flushSync\(\(\) => setTheme/, "设置页主题卡"],
+  [CODEAPP, /runVisualSwitch\("代码高亮"[\s\S]{0,160}flushSync\(\(\) => setCodeSettings/, "代码高亮卡"],
+];
+for (const [file, re, name] of SYNC_CALLS) {
+  ok(re.test(read(file)), `⑧ ${name} 用 flushSync 包住状态更新（快照前 DOM 必须已是新主题）`);
+}
+ok(/useLayoutEffect\(\(\) => \{\s*\n\s*document\.documentElement\.dataset\.theme = bag\.theme;/.test(read("src/features/app-state/parts/part04/02-seg/02-chat-search-history.tsx")),
+  "⑧ `dataset.theme` 写在 useLayoutEffect 里（useEffect 会晚一拍 ⇒ 两张快照相同）");
+
+/* 明暗切换控件：滑轨 thumb + 自绘图标，且两枚图标仍在（不许退化成纯文字） */
+const THEME_SWITCH = read("src/components/ThemeQuickSwitch.tsx");
+ok(/theme-quick-thumb/.test(THEME_SWITCH) && /is-dark/.test(THEME_SWITCH),
+  "⑧ 明暗控件是滑轨胶囊（thumb 随当前态平移，有「在哪一档」的几何线索）");
+ok(/tq-rays/.test(THEME_SWITCH) && /tq-star/.test(THEME_SWITCH),
+  "⑧ 太阳光线 / 月旁星各自可独立动效（激活时点亮）");
+ok(/aria-pressed=/.test(THEME_SWITCH) && /role="group"/.test(THEME_SWITCH),
+  "⑧ 无障碍：容器 role=group + 按钮 aria-pressed 表达当前档位");
+
 console.log(`\n  【visual-switch】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);
