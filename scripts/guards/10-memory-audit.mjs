@@ -286,6 +286,17 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (Array.isArray(snap.layers) && snap.layers.length === 8 ? ok : fail)("【104】快照带八层水位（设置页可见漏斗）");
     rmSync(ws, { recursive: true, force: true });
 
+    /* ── 10-31 用户令：「记忆蒸馏不要开新会话，会话自己蒸馏」──
+       主路在会话自己里跑；只有它正忙时才退回一次性内部会话。
+       ⛔⛔ `turn/start` 会**打断已有回合** ⇒ 必须：① 会话内并发占位；② 起回合失败要落兜底（不许抛）。 */
+    const distillSrc = readFileSync(join(ROOT, "electron", "main", "03-turn-summary.ts"), "utf8");
+    (/inFlightDistill\.has\(inThread\)/.test(distillSrc) && /engineActiveTurnIds\.values\(\)\]\.includes\(inThread\)/.test(distillSrc) ? ok : fail)(
+      "【104】会话自己蒸馏：跑之前判「该会话空闲 + 没有正在跑的蒸馏」（⛔ turn/start 会打断用户那轮）"
+    );
+    (/\.catch\(\(error: any\) => \{[\s\S]{0,200}?return null;/.test(distillSrc) && /if \(turnId\) \{/.test(distillSrc) ? ok : fail)(
+      "【104】会话内蒸馏起不来时**落兜底**，不抛错（宁可多条内部会话，也不能掐掉用户回合）"
+    );
+
     /* ⑤ 与指令 / 技能同源 */
     const skillSrc = readFileSync(join(ROOT, "electron", "builtin-skills", "08-skill-memory-distill.ts"), "utf8");
     const missingIds = MEMORY_PYRAMID.map((l) => l.id).filter((id) => !skillSrc.includes(`**${id}**`));
