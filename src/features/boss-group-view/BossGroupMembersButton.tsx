@@ -115,14 +115,50 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
     setTick((n) => n + 1);
   };
 
-  const popStyle: CSSProperties = (() => {
-    const r = btnRef.current?.getBoundingClientRect();
-    const width = 300;
-    return r
-      ? { top: r.bottom + 8, left: Math.max(8, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - 8)), right: "auto" }
-      : { top: 60, left: Math.max(8, (window.innerWidth - width) / 2), right: "auto" };
-  })();
-
+  /* ⛔⛔ 10-31 用户令（截图）：弹窗「没有自适应位置，还被裁剪了」。
+     根因：CSS 里宽度是 `min(420px, calc(100vw - 24px))`，而这里手写的 clamp 常量是 **300**
+     ⇒ 少算 120px，「右边不许出界」的钳制因此失效 —— 实测 420 宽的卡右边缘直接跑到窗口外，
+     连同卡头那个关闭钮一起被裁掉。
+     ⇒ 宽度与位置一律**按实测算**：宽度 = 与 CSS 同口径的 min(420, innerWidth - 2×8)，
+        水平居中于按钮后钳进视口；竖向优先下方，下方放不下且上方更宽裕就**翻到按钮上方**
+        （用 `bottom` 定位，高度按内容自适应，不再写死）。
+     用 portal + `fixed`：`.topbar` 会裁掉栏内绝对定位弹层（历史实测），fixed 不受祖先影响。
+     ⛔ 首帧先 `visibility: hidden`，测量完再显示 —— 否则会先在中位闪一下再跳到正确位置。 */
+  const [popStyle, setPopStyle] = useState<CSSProperties>(() => ({
+    position: "fixed", top: 60, left: 8, right: "auto", visibility: "hidden",
+  }));
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const MARGIN = 8;
+      const width = Math.min(420, window.innerWidth - MARGIN * 2);
+      /* 高度上限与 CSS 的 70vh 同口径，再按上下实际可用空间收窄（弹窗内部 overflow-y:auto 兜底） */
+      const wanted = Math.min(window.innerHeight * 0.7, 560);
+      const r = btnRef.current?.getBoundingClientRect();
+      if (!r) {
+        setPopStyle({ position: "fixed", top: 60, left: MARGIN, right: "auto", width, maxHeight: wanted, visibility: "visible" });
+        return;
+      }
+      const left = Math.max(MARGIN, Math.min(r.left + r.width / 2 - width / 2, window.innerWidth - width - MARGIN));
+      const below = window.innerHeight - r.bottom - MARGIN - 8;
+      const above = r.top - MARGIN - 8;
+      /* 下方连 200px 都放不下、而上方更宽裕 ⇒ 向上翻（弹窗底边贴按钮上沿） */
+      const up = below < Math.min(wanted, 200) && above > below;
+      setPopStyle({
+        position: "fixed",
+        top: up ? "auto" : r.bottom + 8,
+        bottom: up ? window.innerHeight - r.top + 8 : "auto",
+        left,
+        right: "auto",
+        width,
+        maxHeight: Math.max(120, Math.min(wanted, up ? above : below)),
+        visibility: "visible",
+      });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
   return (
     <div className="boss-members-wrap">
       <button

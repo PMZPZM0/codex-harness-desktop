@@ -179,6 +179,27 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
             </div>
           )}
           {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} />}
+          {/* ⛔⛔ 10-31 用户令（截图）：「群事件通知这一类型的，在运行过程中，展示在 codex 消息板块
+              下面；不要卡在消息板块底部那个『正在等待模型回复』的上面，卡在中间很丑」。
+              原实现把群广播渲染在 `.turn-card` **之外**（`turn-group` 的直接子节点）⇒ 它落在
+              「卡片底 ↔ 底部状态行（run-activity-bar / working-indicator）」那道缝里，
+              前后都没有归属，看着像一块飘在中间的东西。
+              ⇒ 现在收进 `codex-turn` **之内**、正文/操作栏之后：它是这一回合内容的最后一块，
+                紧贴消息板块（= 用户说的「消息板块下面」），底部状态行仍独占最后一行。
+              ⛔ 位置仍在**消息下方**（10-26 用户令不变）：用户气泡在卡片上方，这里在卡片内末尾。 */}
+          {groupUserItems.map((item) => (
+            <MemoUserMessageView
+              item={item}
+              turn={turn}
+              fallbackWindow={fallbackWindow}
+              onCopy={handlers.onCopy}
+              onQuote={handlers.onQuote}
+              onImageCopy={handlers.onImageCopy}
+              onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)}
+              onOpenFile={handlers.onOpenFile}
+              key={item.id}
+            />
+          ))}
           {/* 10-04 第 9 个插槽位：**回合内容之下**（codex-turn 之内、气泡区末尾）。
               行级插槽 —— 每个回合渲染一次。⛔ 必须传 turnId：插件拿到才知道
               自己作用在哪一回合（与 sidebar.thread-row-actions 同一条纪律：拿不到 id
@@ -195,23 +216,6 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
         </div>
       </div>
       )}
-      {/* ⛔⛔ 10-26 用户令：「放到消息下面，不要放上面」——
-          群广播（成员汇报 / 交活 / 审查结论）渲染在**整张消息卡之后**，
-          与其它会话里「产物文件卡贴在消息下面」同一套位置感。
-          ⛔ 它是宿主注入的机器消息，不是用户说的话 ⇒ 不占用户气泡的位置。 */}
-      {groupUserItems.map((item) => (
-        <MemoUserMessageView
-          item={item}
-          turn={turn}
-          fallbackWindow={fallbackWindow}
-          onCopy={handlers.onCopy}
-          onQuote={handlers.onQuote}
-          onImageCopy={handlers.onImageCopy}
-          onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)}
-          onOpenFile={handlers.onOpenFile}
-          key={item.id}
-        />
-      ))}
     </div>
   );
 }

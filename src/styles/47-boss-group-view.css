@@ -818,7 +818,10 @@
    —— 每张只有一行居中灰字却带细边框 + 极淡底 + 卡头，看着像警告条刷屏。 */
 .group-sys-stack {
   display: flex; flex-direction: column; gap: 2px;
-  margin: 6px 0; min-width: 0;
+  /* ⛔ 10-31：群事件已收进 `.codex-turn` 之内（消息板块的最后一块，见 03-turn-view.tsx）
+     ⇒ 上贴内容、下不留白。下面那点间距交给底部状态行/回合间距，
+        否则它又会像原来那样"浮在消息板块与『正在等待模型回复』中间"。 */
+  margin: 8px 0 0; min-width: 0;
 }
 .group-sys {
   align-self: center; max-width: 92%;
