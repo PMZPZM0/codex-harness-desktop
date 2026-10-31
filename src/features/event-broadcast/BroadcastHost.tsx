@@ -274,11 +274,21 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
     return { left: Math.max(stage.left + 8, Math.min(point.x - width / 2, stage.right - width - 8)), top: point.y - half - 10 - 96, width, origin: "bottom" as const };
   })();
 
+  /* ⛔ 收纳态判定：class 与图标选择**必须同源**。
+     上一轮 class 用一份条件、CSS 又各写一次 display ⇒ 收纳态里箭头与喇叭同时可见，
+     被单列 grid 排成上下两行伸出把手（用户：「为啥要展示两个图标呢」）。 */
+  const merged = dock.docked && !dragging && !snap.announcing && !snap.open;
+
   /* 箭头朝内：贴左边 ⇒ 指向右；贴右边 ⇒ 指向左；贴上 ⇒ 向下；贴下 ⇒ 向上 */
   const Arrow = activeEdge === "left" ? ChevronRight : activeEdge === "right" ? ChevronLeft : activeEdge === "top" ? ChevronDown : ChevronUp;
 
   const announcingMeta = snap.announcing ? kindMetaOf(snap.announcing.kind) : null;
   const AnnouncingIcon = announcingMeta?.icon;
+
+  /* ⛔ 只有「聊天区真的存在」时才渲染（composer 是最后挂载的那块，用它当判据）。
+     没有它时 measureStage 全 0 ⇒ 把手会落到窗口 (0,0) 那个角上，
+     在登录页 / 空工作区（只有一枚大 logo 那屏）露出一枚无主的箭头。 */
+  if (!stage.composerWidth) return null;
 
   return (
     <>
@@ -301,7 +311,7 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
           /* ⛔ 「融入边框」= 平时收成一个贴在边线内侧的把手（`.is-merged`），
              hover / 播报 / 面板打开 / 拖动时才展开成完整圆钮。状态全在这里判，
              CSS 只管两种形态长什么样 —— 不要用 JS 算尺寸。 */
-          className={`bc-pod${dragging ? " is-dragging" : ""}${bounce ? " is-snap" : ""}${snap.announcing ? " is-announcing" : ""}${snap.paused ? " is-paused" : ""}${voice.active ? " is-voice" : ""}${dock.docked && !dragging && !snap.announcing && !snap.open ? " is-merged" : ""}`}
+          className={`bc-pod${dragging ? " is-dragging" : ""}${bounce ? " is-snap" : ""}${snap.announcing ? " is-announcing" : ""}${snap.paused ? " is-paused" : ""}${voice.active ? " is-voice" : ""}${merged ? " is-merged" : ""}`}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={finishDrag}
@@ -317,13 +327,20 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
                 ② 群事件播报 ⇒ 喇叭口向外扩散的三道声波（.bc-wave）；
                 ③ 语音播报 ⇒ 喇叭下方的四根音量柱律动（.bc-eq，绿色）。
                 两套动效互斥由 class 决定：语音优先（它在播真人声音，信息更即时）。 */}
-            {/* ⛔ 用户令：「贴进去就展示一个上下左右的自适应小箭头」——
-                收纳态只留一枚箭头（朝聊天区内侧），hover/播报/展开时才换成喇叭。
-                方向由 data-edge 决定（见下方 Arrow 计算）。 */}
-            <Arrow className="bc-arrow" size={13} strokeWidth={2.6} />
-            <Megaphone className="bc-pod-icon" size={19} strokeWidth={2} />
-            <i className="bc-wave w1" /><i className="bc-wave w2" /><i className="bc-wave w3" />
-            <i className="bc-eq e1" /><i className="bc-eq e2" /><i className="bc-eq e3" /><i className="bc-eq e4" />
+            {/* ⛔⛔ 用户令：「吸附进去了，就不要展示喇叭，这样多丑呢」——
+                收纳态**只渲染箭头**（朝聊天区内侧），喇叭**根本不进 DOM**。
+                ⛔ 不要退回 display:none 的做法：`.bc-glyph` 是单列 grid，
+                  两个可见子元素会被排成上下两行、撑出 24px 高度（上一版截图里那一坨）。
+                展开态（拖动 / 播报中 / 面板打开 / 自由悬浮）才渲染喇叭 + 声波 + 音量柱。 */}
+            {merged
+              ? <Arrow className="bc-arrow" size={13} strokeWidth={2.6} />
+              : <Megaphone className="bc-pod-icon" size={19} strokeWidth={2} />}
+            {merged ? null : (
+              <>
+                <i className="bc-wave w1" /><i className="bc-wave w2" /><i className="bc-wave w3" />
+                <i className="bc-eq e1" /><i className="bc-eq e2" /><i className="bc-eq e3" /><i className="bc-eq e4" />
+              </>
+            )}
           </span>
           {myUnread > 0 && !snap.open ? <span className="bc-badge">{myUnread > 9 ? "9+" : myUnread}</span> : null}
           {snap.announcing || voice.active ? <span className="bc-pulse" aria-hidden /> : null}
