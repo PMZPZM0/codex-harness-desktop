@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { CloseConfirmDialog } from "./components/CloseConfirmDialog";
 import { WindowControls } from "./components/WindowControls";
 import { startAnnounceEngineProbe } from "./voice/engine-ready";
 import { PetFloat, PetActivity } from "./features/pet";
@@ -48,6 +49,11 @@ createRoot(document.getElementById("root")!).render(
     </ErrorBoundary>
     {/* 透明宠物浮窗不挂窗口钮（它本来就不该有窗框感） */}
     {!(isPetWindow || isPetActivityWindow) && <WindowControls />}
+    {/* ⛔⛔ 10-31 用户：「登录界面右上角三个按键都是假的」——关窗被主进程 preventDefault 后
+        经 `close-confirm:ask` 找渲染层要答案，而这张卡原来挂在 AppView 里 ⇒ **登录页根本没有
+        AppView**，问出去没人接，窗口永远关不掉（最小化/最大化是直接生效的，所以只有它"假"）。
+        ⇒ 与窗口钮同样挂到根上（错误边界之外）。 */}
+    {!(isPetWindow || isPetActivityWindow) && <CloseConfirmDialog />}
   </StrictMode>,
 );
 

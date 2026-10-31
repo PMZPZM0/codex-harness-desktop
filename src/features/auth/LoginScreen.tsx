@@ -96,6 +96,9 @@ export function FieldHelp({ text }: { text: string }) {
 
 export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string; saved?: any; models?: string[] }) => Promise<boolean> }) {
   const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai" | "cloud">("pptoken");
+  /* 10-31 用户：「默认小选项，点击后放大登录界面」—— 默认只列选项（小卡），
+     点一张才展开表单（卡片变宽 + 高度用 grid-rows 0fr→1fr 动画撑开）。 */
+  const [expanded, setExpanded] = useState(false);
   const [username, setUsername] = useState(() => localStorage.getItem("username") || "");
   const [apiBase, setApiBase] = useState(PPTokenEndpoints[0].url);
   const [apiKey, setApiKey] = useState("");
@@ -319,118 +322,124 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
 
   return (
     <div className="login-screen">
-      <div className="login-card">
-        <div className="login-brand"><div className="brand-mark login-logo"><b className="">CH</b></div><div><strong>Codex Harness</strong></div></div>
-        <h1>欢迎使用 Codex Harness</h1>
+      <div className={`login-card${expanded ? " is-expanded" : ""}`}>
+        <div className="login-brand"><img className="login-logo-img" src="./icon.png" alt="" width={40} height={40} /><div><strong>Codex Harness</strong></div></div>
+        <h1>开始使用</h1>
         <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
 
         <div className="login-options">
-          <button type="button" className={`login-option ${mode === "pptoken" ? "active" : ""}`} onClick={() => { setMode("pptoken"); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}>
-            <Rocket size={16} /><span className="login-option-title">PPtoken 推荐</span><small>中转线路 · 粘贴 Key 即用</small>
+          <button type="button" className={`login-option ${mode === "pptoken" ? "active" : ""}`} onClick={() => { setMode("pptoken"); setExpanded((open) => (mode === "pptoken" ? !open : true)); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}>
+            <Rocket size={16} /><span className="login-option-text"><span className="login-option-title">PPtoken 推荐</span><small>中转线路 · 粘贴 Key 即用</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "openai" ? "active" : ""}`} onClick={() => { setMode("openai"); setEndpointOpen(false); }}>
-            <CircleGauge size={16} /><span className="login-option-title">OpenAI 官方订阅</span><small>ChatGPT 账号设备码登录</small>
+          <button type="button" className={`login-option ${mode === "openai" ? "active" : ""}`} onClick={() => { setMode("openai"); setExpanded((open) => (mode === "openai" ? !open : true)); setEndpointOpen(false); }}>
+            <CircleGauge size={16} /><span className="login-option-text"><span className="login-option-title">OpenAI 官方订阅</span><small>ChatGPT 账号设备码登录</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "relay" ? "active" : ""}`} onClick={() => { setMode("relay"); setEndpointOpen(false); }}>
-            <Wallet size={16} /><span className="login-option-title">中转站账户</span><small>sub2api 网关 · 余额/套餐</small>
+          <button type="button" className={`login-option ${mode === "relay" ? "active" : ""}`} onClick={() => { setMode("relay"); setExpanded((open) => (mode === "relay" ? !open : true)); setEndpointOpen(false); }}>
+            <Wallet size={16} /><span className="login-option-text"><span className="login-option-title">中转站账户</span><small>sub2api 网关 · 余额/套餐</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "custom" ? "active" : ""}`} onClick={() => { setMode("custom"); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}>
-            <Settings2 size={16} /><span className="login-option-title">自定义 API</span><small>任意 OpenAI 兼容端点</small>
+          <button type="button" className={`login-option ${mode === "custom" ? "active" : ""}`} onClick={() => { setMode("custom"); setExpanded((open) => (mode === "custom" ? !open : true)); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}>
+            <Settings2 size={16} /><span className="login-option-text"><span className="login-option-title">自定义 API</span><small>任意 OpenAI 兼容端点</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "cloud" ? "active" : ""}`} onClick={() => { setMode("cloud"); setEndpointOpen(false); }}>
-            <Cloud size={16} /><span className="login-option-title">云账号</span><small>登录即用，自动配好模型/知识库/记忆</small>
+          <button type="button" className={`login-option ${mode === "cloud" ? "active" : ""}`} onClick={() => { setMode("cloud"); setExpanded((open) => (mode === "cloud" ? !open : true)); setEndpointOpen(false); }}>
+            <Cloud size={16} /><span className="login-option-text"><span className="login-option-title">云账号</span><small>登录即用，自动配好模型/知识库/记忆</small></span>
           </button>
         </div>
 
-        {mode === "openai" ? (
-          <div className="login-fields">
-            <p className="relay-login-hint">点击下方按钮后浏览器会打开 OpenAI 授权页，输入验证码即可；登录成功自动启用 Codex 订阅并进入主界面。OpenAI 有区域限制，需要可访问 OpenAI 的网络（代理）。</p>
-            <label className="se-field"><span>用户名（选填）</span>
-              <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
-            </label>
-            <label className="se-field"><span>代理地址（可选）</span>
-              <input value={openaiProxy} onChange={(e) => setOpenaiProxy(e.target.value)} placeholder="http://127.0.0.1:7890" />
-            </label>
-        {openaiDevice && (
-              <div className="official-device openai-device-panel">
-                {openaiDevice.url && <>浏览器已打开授权页，输入验证码：<b>{openaiDevice.code || "见下方引擎输出"}</b></>}
-                {!openaiDevice.url && "正在向 OpenAI 申请设备验证码…"}
-                {openaiDevice.raw && <pre className="official-usage">{openaiDevice.raw}</pre>}
+        {/* 10-31：表单整体包在 grid-rows 容器里 —— 收起时 0fr（高度为 0），展开时 1fr，
+            高度过渡才可能平滑（`height: auto` 无法过渡）。 */}
+        <div className="login-form-wrap">
+          <div className="login-form-inner">
+            {mode === "openai" ? (
+              <div className="login-fields">
+                <p className="relay-login-hint">点击下方按钮后浏览器会打开 OpenAI 授权页，输入验证码即可；登录成功自动启用 Codex 订阅并进入主界面。OpenAI 有区域限制，需要可访问 OpenAI 的网络（代理）。</p>
+                <label className="se-field"><span>用户名（选填）</span>
+                  <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
+                </label>
+                <label className="se-field"><span>代理地址（可选）</span>
+                  <input value={openaiProxy} onChange={(e) => setOpenaiProxy(e.target.value)} placeholder="http://127.0.0.1:7890" />
+                </label>
+            {openaiDevice && (
+                  <div className="official-device openai-device-panel">
+                    {openaiDevice.url && <>浏览器已打开授权页，输入验证码：<b>{openaiDevice.code || "见下方引擎输出"}</b></>}
+                    {!openaiDevice.url && "正在向 OpenAI 申请设备验证码…"}
+                    {openaiDevice.raw && <pre className="official-usage">{openaiDevice.raw}</pre>}
+                  </div>
+                )}
               </div>
+            ) : mode === "relay" ? (
+              <div className="login-fields">
+                <label className="se-field"><span>中转站地址（sub2api 网关）</span>
+                  <input value={relayDraft.baseUrl} onChange={(e) => setRelayDraft({ ...relayDraft, baseUrl: e.target.value })} placeholder="https://api.pptoken.cc" />
+                </label>
+                <label className="se-field"><span>邮箱</span>
+                  <input value={relayDraft.email} onChange={(e) => setRelayDraft({ ...relayDraft, email: e.target.value })} placeholder="你在中转站的账号邮箱" />
+                </label>
+                <label className="se-field"><span>密码</span>
+                  <input type="password" value={relayDraft.password} onChange={(e) => setRelayDraft({ ...relayDraft, password: e.target.value })} placeholder="中转站账号密码" onKeyDown={(e) => { if (e.key === "Enter" && relayDraft.email && relayDraft.password && !busy) void relayLogin(); }} />
+                </label>
+                <p className="relay-login-hint">登录后自动同步余额与订阅套餐，优先使用生效中的套餐（无套餐走余额），并生成好供应商直接开聊；后续可在 设置 → 中转站 切换计费方式。</p>
+              </div>
+            ) : mode === "cloud" ? (
+              <div className="login-fields">
+                <label className="se-field"><span>云账号</span>
+                  <input value={cloudDraft.username} onChange={(e) => setCloudDraft({ ...cloudDraft, username: e.target.value })} placeholder="你在云端的账号（与网页端同一个）" />
+                </label>
+                <label className="se-field"><span>密码</span>
+                  <input type="password" value={cloudDraft.password} onChange={(e) => setCloudDraft({ ...cloudDraft, password: e.target.value })} placeholder="云账号密码" onKeyDown={(e) => { if (e.key === "Enter" && cloudDraft.username.trim() && cloudDraft.password.trim() && !busy) void cloudLogin(); }} />
+                </label>
+                <label className="se-field"><span>服务地址（可选）</span>
+                  <input value={cloudDraft.baseUrl} onChange={(e) => setCloudDraft({ ...cloudDraft, baseUrl: e.target.value })} placeholder="留空用默认云端；自建部署才需要填" />
+                </label>
+                <p className="relay-login-hint">登录后自动配好：云端勾选的模型同步成本机供应商，云端知识库与记忆一并接通（未开通的会写明原因）。之后可在 设置 → 云账号 查看就绪状态 / 手动同步 / 退出。</p>
+              </div>
+            ) : (
+            <div className="login-fields">
+              <label className="se-field"><span>用户名（选填）</span>
+                <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
+              </label>
+
+              {mode === "pptoken" ? (
+                <label className="se-field"><span>API 端点</span>
+                  <div className={`login-endpoint-select ${endpointOpen ? "open" : ""}`} ref={endpointRef}>
+                    <button type="button" className="login-endpoint-trigger" onClick={() => setEndpointOpen((open) => !open)} aria-expanded={endpointOpen}>
+                      <span><b>{PPTokenEndpoints[endpoint].label}</b><small>{PPTokenEndpoints[endpoint].url}</small></span><ChevronDown size={15} />
+                    </button>
+                    {endpointOpen && <div className="login-endpoint-menu" role="listbox">{PPTokenEndpoints.map((option, index) => <button type="button" role="option" aria-selected={index === endpoint} className={index === endpoint ? "active" : ""} key={option.id} onClick={() => { setEndpoint(index); setApiBase(option.url); setEndpointOpen(false); }}><span><b>{option.label}</b><small>{option.url}</small></span>{index === endpoint && <Check size={14} />}</button>)}</div>}
+                  </div>
+                </label>
+              ) : (
+                <label className="se-field"><span>API 地址</span>
+                  <input ref={apiBaseRef} autoFocus value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="https://api.example.com/v1" />
+                </label>
+              )}
+
+              <label className="se-field"><span>API 密钥</span>
+                <div className="pw-wrap"><input ref={apiKeyRef} type={showPw ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." /><button type="button" className="pw-toggle" onClick={() => setShowPw(!showPw)}>{showPw ? "隐藏" : "显示"}</button></div>
+              </label>
+            </div>
+            )}
+
+            {status && <div className="login-status">{status}</div>}
+
+            {mode === "openai" ? (
+              <button className="primary-setting login-btn" disabled={busy} onClick={() => void openaiLogin()}>
+                {busy ? <><Spinner />等待浏览器登录…</> : <><CircleGauge size={15} />登录并启用订阅</>}
+              </button>
+            ) : mode === "relay" ? (
+              <button className="primary-setting login-btn" disabled={!relayDraft.baseUrl.trim() || !relayDraft.email.trim() || !relayDraft.password.trim() || busy} onClick={() => void relayLogin()}>
+                {busy ? <><Spinner />正在登录中转站…</> : <><Wallet size={15} />登录并自动配置</>}
+              </button>
+            ) : mode === "cloud" ? (
+              <button className="primary-setting login-btn" disabled={!cloudDraft.username.trim() || !cloudDraft.password.trim() || busy} onClick={() => void cloudLogin()}>
+                {busy ? <><Spinner />正在登录并自动配置…</> : <><Cloud size={15} />登录并自动配置</>}
+              </button>
+            ) : (
+            <button className="primary-setting login-btn" disabled={!apiBase.trim() || !apiKey.trim() || busy} onClick={() => { const selected = PPTokenEndpoints[endpoint]; void doLogin(mode === "pptoken" ? selected.id : `custom-login-${Date.now()}`, mode === "pptoken" ? selected.name : "自定义 API", apiBase.trim().replace(/\/$/, ""), apiKey.trim()); }}>
+              {busy ? <><Spinner />正在探测模型…</> : <><KeyRound size={15} />探测并登录</>}
+            </button>
             )}
           </div>
-        ) : mode === "relay" ? (
-          <div className="login-fields">
-            <label className="se-field"><span>中转站地址（sub2api 网关）</span>
-              <input value={relayDraft.baseUrl} onChange={(e) => setRelayDraft({ ...relayDraft, baseUrl: e.target.value })} placeholder="https://api.pptoken.cc" />
-            </label>
-            <label className="se-field"><span>邮箱</span>
-              <input value={relayDraft.email} onChange={(e) => setRelayDraft({ ...relayDraft, email: e.target.value })} placeholder="你在中转站的账号邮箱" />
-            </label>
-            <label className="se-field"><span>密码</span>
-              <input type="password" value={relayDraft.password} onChange={(e) => setRelayDraft({ ...relayDraft, password: e.target.value })} placeholder="中转站账号密码" onKeyDown={(e) => { if (e.key === "Enter" && relayDraft.email && relayDraft.password && !busy) void relayLogin(); }} />
-            </label>
-            <p className="relay-login-hint">登录后自动同步余额与订阅套餐，优先使用生效中的套餐（无套餐走余额），并生成好供应商直接开聊；后续可在 设置 → 中转站 切换计费方式。</p>
-          </div>
-        ) : mode === "cloud" ? (
-          <div className="login-fields">
-            <label className="se-field"><span>云账号</span>
-              <input value={cloudDraft.username} onChange={(e) => setCloudDraft({ ...cloudDraft, username: e.target.value })} placeholder="你在云端的账号（与网页端同一个）" />
-            </label>
-            <label className="se-field"><span>密码</span>
-              <input type="password" value={cloudDraft.password} onChange={(e) => setCloudDraft({ ...cloudDraft, password: e.target.value })} placeholder="云账号密码" onKeyDown={(e) => { if (e.key === "Enter" && cloudDraft.username.trim() && cloudDraft.password.trim() && !busy) void cloudLogin(); }} />
-            </label>
-            <label className="se-field"><span>服务地址（可选）</span>
-              <input value={cloudDraft.baseUrl} onChange={(e) => setCloudDraft({ ...cloudDraft, baseUrl: e.target.value })} placeholder="留空用默认云端；自建部署才需要填" />
-            </label>
-            <p className="relay-login-hint">登录后自动配好：云端勾选的模型同步成本机供应商，云端知识库与记忆一并接通（未开通的会写明原因）。之后可在 设置 → 云账号 查看就绪状态 / 手动同步 / 退出。</p>
-          </div>
-        ) : (
-        <div className="login-fields">
-          <label className="se-field"><span>用户名（选填）</span>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="怎么称呼你？登录后显示在界面左上角" />
-          </label>
-
-          {mode === "pptoken" ? (
-            <label className="se-field"><span>API 端点</span>
-              <div className={`login-endpoint-select ${endpointOpen ? "open" : ""}`} ref={endpointRef}>
-                <button type="button" className="login-endpoint-trigger" onClick={() => setEndpointOpen((open) => !open)} aria-expanded={endpointOpen}>
-                  <span><b>{PPTokenEndpoints[endpoint].label}</b><small>{PPTokenEndpoints[endpoint].url}</small></span><ChevronDown size={15} />
-                </button>
-                {endpointOpen && <div className="login-endpoint-menu" role="listbox">{PPTokenEndpoints.map((option, index) => <button type="button" role="option" aria-selected={index === endpoint} className={index === endpoint ? "active" : ""} key={option.id} onClick={() => { setEndpoint(index); setApiBase(option.url); setEndpointOpen(false); }}><span><b>{option.label}</b><small>{option.url}</small></span>{index === endpoint && <Check size={14} />}</button>)}</div>}
-              </div>
-            </label>
-          ) : (
-            <label className="se-field"><span>API 地址</span>
-              <input ref={apiBaseRef} autoFocus value={apiBase} onChange={(e) => setApiBase(e.target.value)} placeholder="https://api.example.com/v1" />
-            </label>
-          )}
-
-          <label className="se-field"><span>API 密钥</span>
-            <div className="pw-wrap"><input ref={apiKeyRef} type={showPw ? "text" : "password"} value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." /><button type="button" className="pw-toggle" onClick={() => setShowPw(!showPw)}>{showPw ? "隐藏" : "显示"}</button></div>
-          </label>
         </div>
-        )}
-
-        {status && <div className="login-status">{status}</div>}
-
-        {mode === "openai" ? (
-          <button className="primary-setting login-btn" disabled={busy} onClick={() => void openaiLogin()}>
-            {busy ? <><Spinner />等待浏览器登录…</> : <><CircleGauge size={15} />登录并启用订阅</>}
-          </button>
-        ) : mode === "relay" ? (
-          <button className="primary-setting login-btn" disabled={!relayDraft.baseUrl.trim() || !relayDraft.email.trim() || !relayDraft.password.trim() || busy} onClick={() => void relayLogin()}>
-            {busy ? <><Spinner />正在登录中转站…</> : <><Wallet size={15} />登录并自动配置</>}
-          </button>
-        ) : mode === "cloud" ? (
-          <button className="primary-setting login-btn" disabled={!cloudDraft.username.trim() || !cloudDraft.password.trim() || busy} onClick={() => void cloudLogin()}>
-            {busy ? <><Spinner />正在登录并自动配置…</> : <><Cloud size={15} />登录并自动配置</>}
-          </button>
-        ) : (
-        <button className="primary-setting login-btn" disabled={!apiBase.trim() || !apiKey.trim() || busy} onClick={() => { const selected = PPTokenEndpoints[endpoint]; void doLogin(mode === "pptoken" ? selected.id : `custom-login-${Date.now()}`, mode === "pptoken" ? selected.name : "自定义 API", apiBase.trim().replace(/\/$/, ""), apiKey.trim()); }}>
-          {busy ? <><Spinner />正在探测模型…</> : <><KeyRound size={15} />探测并登录</>}
-        </button>
-        )}
         <button className="ghost login-skip" onClick={onSkip}><WifiOff size={14} />暂时不登录，直接进入</button>
         <a className="login-sponsor-link" href="https://api.pptoken.cc/register?aff=X82JSNVC3W3S" onClick={(event) => { event.preventDefault(); void window.codex.openExternal("https://api.pptoken.cc/register?aff=X82JSNVC3W3S"); }}>
           <Rocket size={12} />没有 API Key？注册 PPtoken 领取体验额度<ExternalLink size={11} />
