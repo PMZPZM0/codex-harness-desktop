@@ -246,7 +246,7 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
             </div>
             {/* 10-30 任务监控：本会话每轮的技能/MCP/插件、产物与自我改进建议（⛔ 数据按 threadId 取，换会话即换） */}
             <div className={`panel-page ${rightTab === "monitor" ? "" : "hidden"}`}>
-              <TaskMonitorPanel app={app} />
+              <TaskMonitorPanel app={app} active={rightTab === "monitor"} />
             </div>
             <div className={`panel-page ${rightTab === "tree" ? "" : "hidden"}`}>
             <div ref={filesWrapRef} className={`workspace-files${previewExpanded ? " is-preview-expanded" : ""}`}>

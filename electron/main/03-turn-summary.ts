@@ -67,29 +67,40 @@ export function turnOutputText(turn: any) {
  * 记忆蒸馏的模型通道：开一个只读的一次性会话把旧日志提炼成长期记忆。
  * 全程标记 internalThreads —— 否则它自己的 turn/completed 会被捕获逻辑当成对话写回日志。
  */
-export async function distillSummarize(prompt: string, body: string, opts?: { threadId?: string }): Promise<string> {
+export async function distillSummarize(prompt: string, body: string, opts?: { threadId?: string; cwd?: string }): Promise<string> {
   const model = await readCustomModel();
   /* ⛔ 10-30：没有自定义模型时（用官方供应商的用户）**退回本会话自己的模型** ——
      引擎在 turn/start 里已经给过它；不退回的话这类用户的功能永远抛「尚未配置自定义模型」。 */
   const sessionModel = opts?.threadId ? threadModelOf(opts.threadId) : null;
+  const sessionConfig = (sessionModel?.config ?? null) as Record<string, any> | null;
   const effectiveModel = model?.model || sessionModel?.model;
   if (!effectiveModel) throw new Error("还没拿到本会话的模型，无法蒸馏（等这一轮跑完再试）");
   if (model?.encryptedKey && safeStorage.isEncryptionAvailable()) {
     const apiKey = safeStorage.decryptString(Buffer.from(model.encryptedKey, "base64"));
     if (apiKey) server.setApiKey(apiKey);
   }
-  const provider = model?.provider ?? sessionModel?.provider ?? "openai";
-  ensureProjectAgentsMd(process.cwd());
+  /* ⛔⛔ provider 必须与「我们要传下去的 config」**同源**（10-31 用户实测「生成失败」）：
+     会话实际走的是别名 `harness`（config.model_provider = harness），而 threadModelOf.provider
+     记的是自定义供应商名（custom964）⇒ 两边不一致时引擎直接拒：
+     `This chat uses custom964, but your current provider is harness. Switch to custom964 to continue.`
+     ⇒ 有自定义 baseUrl 时用自家别名；退回会话配置时，**以 config.model_provider 为准**。 */
+  const provider = model?.baseUrl
+    ? safeProviderId(model.provider ?? "openai")
+    : safeProviderId(sessionConfig?.model_provider ?? sessionModel?.provider ?? model?.provider ?? "openai");
+  /* ⛔ cwd 不写死：优先用调用方给的本会话工作目录（任务监控传 threadCwd），否则才退回进程目录。
+     AGENTS.md 与产物都跟着这个目录走 —— 写死在安装目录会让 mac 上写出意料之外的路径。 */
+  const cwd = String(opts?.cwd ?? "").trim() || process.cwd();
+  ensureProjectAgentsMd(cwd);
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
-    cwd: process.cwd(),
+    cwd,
     approvalPolicy: "never",
     sandbox: "read-only",
     modelProvider: provider,
     /* 自定义模型走别名 provider（bridgeDial 改写 base_url）；否则用本会话那一轮的 provider 配置原文。 */
     config: model?.baseUrl
-      ? { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
-      : (sessionModel?.config as any) ?? undefined,
+      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
+      : sessionConfig ?? undefined,
   });
   const threadId = started.thread.id;
   internalThreads.add(threadId);
