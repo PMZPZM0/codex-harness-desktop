@@ -1631,8 +1631,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     const cssSrc285 = codeOnly(readStyles());
     const tagsRule = /\.thread-row-tags\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
     const nameRule = /\.thread-row-name\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
-    (/flex:\s*0\s+0\s+50px/.test(tagsRule) && /width:\s*50px/.test(tagsRule) ? ok : fail)(
-      "【285】行首标签列定宽 50px（标签最多一个，没标签的行也占同宽 ⇒ 会话名称同一起点）"
+    (/flex:\s*0\s+0\s+var\(--tag-col-w/.test(tagsRule) && /width:\s*var\(--tag-col-w/.test(tagsRule) ? ok : fail)(
+      "【285】行首标签列宽走 --tag-col-w（自适应最宽标签；⛔ 别退回定宽 —— 用户截图点名中间别留一大截）"
+    );
+    (/--tag-col-w/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8"))) ? ok : fail)(
+      "【285】01-sidebar-shell 每次渲染量最宽标签并钉 --tag-col-w（html 根上，全列表共用 ⇒ 名称起点仍对齐）"
     );
     (/flex:\s*1\s+1\s+auto/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
       "【285】名称列可伸缩（flex:1 1 auto + min-width:0）"

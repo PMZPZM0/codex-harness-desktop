@@ -150,10 +150,11 @@
   min-width: 0;
 }
 .thread-row-tags {
-  /* 10-31：标签最多一个（身份徽标与自定义标签互斥）⇒ 列宽 62 → **50px**，
-     最长身份「中枢调度 / 记录丢失」(≈48px) 仍放得下，标题多拿 12px。 */
-  flex: 0 0 50px;
-  width: 50px;
+  /* 10-31：列宽**自适应**（用户截图点名「标签一列、会话开头一列，中间别留一大截」）：
+     01-sidebar-shell 每次渲染量出最宽标签内容钉成 `--tag-col-w`（html 根上），
+     所有行共用 ⇒ 名称起点仍然对齐，但标签与名称之间不再有定宽留下的空白。 */
+  flex: 0 0 var(--tag-col-w, 30px);
+  width: var(--tag-col-w, 30px);
   min-width: 0;
   display: inline-flex;
   align-items: center;
