@@ -1265,14 +1265,14 @@ html.fx-ripple::view-transition-new(root) {
 .app-shell { background: var(--panel); }
 :root[data-theme="dark"] .app-shell { background: var(--bg); }
 .app-shell > .topbar {
-  /* ★ 10-31 用户令「右上角系统按键要跟图标对齐」：原生窗口钮固定在窗口顶（overlay），
-     顶栏一旦下移就永远差那几像素 ⇒ 顶栏改回贴顶（上/下/左都不画线），只保留右侧缝与外圈线。 */
-  margin: 0 6px 0 3px;
+  /* ★ 10-31 用户令（三次修正）：外圈顶缝要回来（截图红框在最上面），同时系统窗口钮要对齐图标：
+     顶栏下移 6px，而原生窗口钮的位置由 titleBarOverlay.height 决定 —— 把 overlay 高度从 43
+     调到 **55**（55/2≈27.5 ≈ 顶栏 6+44/2=28），两者在同一行。 */
+  margin: 6px 6px 0 3px;
   border: 1px solid var(--line-soft);
-  border-top: 0;
   border-left: 0;
   border-bottom: 0;
-  border-radius: 0;
+  border-radius: 12px 12px 0 0;
   background: var(--bg);
 }
 .app-shell > .workspace {
@@ -1300,7 +1300,21 @@ html.fx-ripple::view-transition-new(root) {
 .app-shell > .topbar::after { display: none; }
 .app-shell > .sidebar { border-right: 0; }
 /* 主区/右栏之间的拖拽条：一条很细的灰线（10-31 用户令），悬停/拖动变主题色 */
-.app-shell.with-context > .panel-divider { background: var(--line-soft); }
+.app-shell.with-context > .panel-divider { background: transparent; }
+/* ★ 10-31 用户令「右边中间这条线还是这么粗」：1px 在 125%/150% 缩放下会占 2 个设备像素 ⇒
+   用半像素线（scaleX(.5)）画在 1px 轨道正中，视觉上就是一条很细的灰线。 */
+.app-shell.with-context > .panel-divider::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--line-soft);
+  transform: translateX(-50%) scaleX(0.5);
+}
+.app-shell.with-context > .panel-divider:hover::after,
+.app-shell.with-context > .panel-divider:active::after { background: var(--muted); }
 .app-shell.with-context > .panel-divider:hover,
 .app-shell.with-context > .panel-divider:active { background: var(--muted); }
 :root[data-theme="dark"] .app-shell > .topbar,

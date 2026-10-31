@@ -77,7 +77,7 @@ export function createWindow() {
     ...(process.platform === "win32"
       ? {
         titleBarStyle: "hidden" as const,
-        titleBarOverlay: { color: "#00000000", symbolColor: titleBarOverlayOptions().symbolColor, height: 43 },
+        titleBarOverlay: { color: "#00000000", symbolColor: titleBarOverlayOptions().symbolColor, height: 55 },
       }
       : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
@@ -271,7 +271,7 @@ export function createPopoutWindow(threadId: string) {
         titleBarOverlay: {
           color: "#00000000",
           symbolColor: titleBarOverlayOptions().symbolColor,
-          height: 43,
+          height: 55,
         },
       }
       : { titleBarStyle: "hiddenInset" as const }),
