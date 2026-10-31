@@ -33,10 +33,9 @@ export type RulerMark = { id: string; turnId: string; itemId: string; type: "use
 const RULER_MAX = 50;
 
 export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject; /** 压缩线所在回合（green 标记画在该回合用户消息的刻度之前；空串 = 无压缩线） */ compactionTurnId?: string; /** 压缩发生在最后一回合**之后**（手动压缩的空回合被过滤掉）⇒ 绿段画在最后一个刻度之后 */ compactionAtEnd?: boolean }) {
-  /* 放大镜状态：index = 指针下的刻度，cy = 指针在**内容坐标**里的位置（刻度中心同坐标系），
+  /* 放大镜状态：index = 指针下的刻度（面板里滚轮改的就是它），
      top / rowY = 面板在轨道里的落点与「当前行」在面板内的纵向位置（面板贴边时会被钳制，
-     所以 rowY 不能恒等于面板半高）。⛔ 每次 mousemove 都会更新 cy（鱼眼位移要用连续值，
-     只给 index 的话刻度会在两格之间"跳"）。 */
+     所以 rowY 不能恒等于面板半高）。⛔ 刻度本身不做位移（10-31 已删鱼眼），这里只留面板几何。 */
   const [lens, setLens] = useState<{ index: number; top: number; rowY: number } | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   /* 面板里的**选中行**（10-31 用户：「他这种放大效果是可以选的，你的不能选项，鼠标挪不进去」）。
@@ -287,13 +286,13 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
      ⛔ 不复用轨道那条滚轮监听：那条是"一次滑一页"（RULER_PAGE=5），在镜头里会跳 5 格。 */
   const stepLens = (dir: number) => {
     if (!lens) return;
-    const track = trackRef.current;
-    if (!track) return;
     const last = marks.length - 1;
     if (last < 1) return;
     let next = lens.index + dir;
     if (next < 0 || next > last) {
-      /* 到窗口边缘：把刻度选区滑一格（外面的刻度跟着滚），列表内容随之前进 */
+      /* 到窗口边缘：把刻度选区滑一格（外面的刻度跟着滚），列表内容随之前进。
+         ⛔ 滑窗后**下标不变**（marks 整体挪了一格 ⇒ 同一个下标指着下一条消息），
+            所以下面的 moved 为 false —— 但用户确实滚了一下，声音/波浪不能漏（审查修正）。 */
       const ctxNow = wheelCtxRef.current;
       if (ctxNow.allMarks.length <= ctxNow.windowSize) return;
       const maxOffset = ctxNow.allMarks.length - ctxNow.windowSize - ctxNow.currentIndex;
@@ -302,11 +301,12 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
       setWindowOffset(nextOffset);
       next = Math.max(0, Math.min(last, next));
     }
-    if (next === lens.index) return;
-    setLens({ ...lens, index: next });
-    setHoverIndex(next);
-    setPick(null);
-    lastHoverRef.current = next;
+    if (next !== lens.index) {
+      setLens({ ...lens, index: next });
+      setHoverIndex(next);
+      setPick(null);
+      lastHoverRef.current = next;
+    }
     /* 波浪：与滚轮滚动同一条语义（亮 600ms 自动收），中心跟着当前选中行 */
     if (waveTimerRef.current) clearTimeout(waveTimerRef.current);
     setWheelWave(true);
