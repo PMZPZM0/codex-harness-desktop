@@ -385,7 +385,10 @@ button {
 }
 .app-shell {
   background: var(--bg);
-  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr);
+  /* ⛔ 10-31 右侧抽屉化：模板**恒为 4 条轨道**（侧栏 / 主区 / 1px 分隔 / 右栏），
+     右栏宽度走 `--right-w`（0px ↔ 面板宽）。之前是"开右栏才换 4 列模板"——
+     轨道数变了 CSS 就不能插值，右栏和主区一起瞬移（和左侧折叠同一个病根）。 */
+  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr) 1px var(--right-w, 0px);
   /* 第一行 = 全宽顶行（任务名 + 操作簇 + 原生窗口钮），第二行 = 侧栏/聊天/右栏。
      右栏从第二行开始：拖分隔条只影响面板，顶行纹丝不动。 */
   grid-template-rows: 44px minmax(0, 1fr);
@@ -393,8 +396,14 @@ button {
   height: 100%;
   display: grid;
 }
+/* 右栏展开时才占宽；`.with-context` 仍负责主区圆角等外观语义 */
 .app-shell.with-context {
-  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr) 1px var(--right-w, 308px);
+  --right-w: var(--panel-w, 308px);
+}
+/* 拖分隔条期间禁掉插值：否则改宽度会滞后 220ms，拖起来发粘 */
+.app-shell.panel-resizing,
+.app-shell.panel-resizing * {
+  transition: none !important;
 }
 /* ── 侧栏展开/折叠：让**列宽**跟着动（10-31 立）──────────────────────────────
    ⛔ 原来折叠是把 grid-template-columns 换成"少一列"的模板 —— **轨道数变了就不能插值**，
@@ -407,8 +416,14 @@ button {
   inherits: true;
   initial-value: 256px;
 }
+/* 右栏宽度同理（10-31）：注册成 <length> 才能参与过渡，0px ↔ 面板宽 */
+@property --right-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
 .app-shell {
-  transition: --side-w var(--dur-panel) var(--ease-enter);
+  transition: --side-w var(--dur-panel) var(--ease-enter), --right-w var(--dur-panel) var(--ease-enter);
 }
 .app-shell:not(.narrow).side-collapsed {
   --side-w: 0px;
@@ -417,7 +432,7 @@ button {
   grid-template-columns: minmax(0, 1fr);
 }
 .app-shell.narrow.side-collapsed.with-context {
-  grid-template-columns: minmax(0, 1fr) 1px 308px;
+  grid-template-columns: minmax(0, 1fr) 1px var(--right-w, 0px);
 }
 .sidebar-hotzone {
   z-index: 34;
@@ -586,6 +601,12 @@ button.brand-mark.sidebar-toggle:hover {
   cursor: col-resize;
   position: relative;
   background: var(--line-soft);
+  /* 与右栏同拍淡出（10-31）：分隔条现在常驻，关右栏时不能"啪"一下消失 */
+  transition: opacity var(--dur-panel) var(--ease-enter);
+}
+.panel-divider[data-state="closed"] {
+  opacity: 0;
+  pointer-events: none;
 }
 /* 视觉 1px 细线，前后各扩 3px 命中区方便抓取 */
 .panel-divider::before {
@@ -605,6 +626,33 @@ button.brand-mark.sidebar-toggle:hover {
   background: var(--panel);
   min-width: 0;
 }
+/* ── 右侧面板：横向抽屉（10-31 用户：「左边做了右边为啥不做」）──────────────────
+   宽度恒定（--panel-w），开合靠两件事同时发生：网格第 4 列 `--right-w` 插值 +
+   面板自身 translate 滑入/滑出。⛔ 别再回到"条件渲染 + 换列模板"：
+   那样轨道数一变就不能插值，主区与面板一起瞬移，观感是闪现而不是拉开。
+   ⛔ 关闭态的 translate 需要组件**延迟卸载**配合（220ms），否则卸载即消失、没有退场可播。 */
+.context-panel {
+  /* 减 6px = 面板自身的 margin-right（否则固定宽度会顶出列宽 6px） */
+  width: calc(var(--panel-w, 308px) - 6px);
+  min-width: calc(var(--panel-w, 308px) - 6px);
+  /* 面板外观原先只写在 `.app-shell.with-context > .context-panel` 上：
+     ⛔ 必须挂在面板自己身上 —— 关右栏那一拍 with-context 类就没了，
+        挂在父级状态上会让退场动画期间边框/圆角/边距突然跳掉。 */
+  margin: 0 6px 6px 0;
+  border: 1px solid var(--line-soft);
+  border-top: 0;
+  border-left: 0;
+  border-radius: 0 0 12px 0;
+  background: var(--bg);
+  transition: translate var(--dur-panel) var(--ease-enter), opacity var(--dur-panel) var(--ease-enter);
+  will-change: translate;
+}
+.context-panel[data-state="closed"] {
+  translate: 100% 0;
+  opacity: 0;
+  pointer-events: none;
+}
+:root[data-theme="dark"] .context-panel { background: var(--panel); }
 .sidebar {
   border-right: 1px solid var(--line);
   /* ⛔ 10-31 抽屉化：宽度**恒定 256**，折叠只做横向平移。
@@ -1201,51 +1249,48 @@ html.fx-ripple::view-transition-new(root) {
     box-shadow var(--dur-ui) ease;
 }
 
-/* ★ 10-31 用户令（截图红框在**应用外圈**，不是对话框）：
-   「应用的四边留一点点缝隙，看着舒服、有一点点立体感；上面跟这样连着左边侧边栏」
-   ⇒ 内容卡（顶栏 + 聊天 + 右栏）从窗口上/右/下三边和侧栏各退 6px：
-      顶栏与聊天**连成一张卡**（顶栏底边不画线、聊天顶边不画线），只有外圈有圆角 + 细边；
-      左侧栏贴边通高（截图里它就在框外，红框从它右缘开始）。
-   ⛔ 不用 shell padding：侧栏是 grid-row 1/3，padding 会把它一起缩进去；改成给各块加 margin。
-   ⛔ 原生窗口钮是 overlay：顶栏仍留 145px 让位，卡片上移 6px 不影响按钮命中。 */
+/* ★ 10-31 用户令（两次修正后定稿）：
+   「四边留一点点缝隙、有立体感；上面连着左边侧边栏」→「中间线太多了，正常颜色过渡就行；
+     缝隙太大了；右上角系统按键对齐下面的」。
+   ⇒ 内容卡（顶栏 + 聊天 + 右栏）从窗口**右/下**与侧栏各退 **4px**，**顶部不空**（系统窗口钮
+     与顶栏图标同一行）；不再画任何边框/分隔线：侧栏 → 缝隙 → 白卡的过渡只靠底色差；
+     侧栏右边界线也去掉（⛔ 三段线叠在一起就是用户说的"分段线太多"）。 */
 .app-shell { background: var(--panel); }
 :root[data-theme="dark"] .app-shell { background: var(--bg); }
 .app-shell > .topbar {
-  margin: 6px 6px 0 6px;
-  border: 1px solid var(--line-soft);
-  border-bottom: 0;
+  margin: 0 4px 0 4px;
+  border: 0;
   border-radius: 12px 12px 0 0;
   background: var(--bg);
 }
 .app-shell > .workspace {
-  margin: 0 6px 6px 6px;
-  border: 1px solid var(--line-soft);
-  border-top: 0;
-  border-right: 0;
+  margin: 0 4px 4px 4px;
+  border: 0;
   border-radius: 0 0 0 12px;
   background: var(--bg);
 }
 .app-shell:not(.with-context) > .workspace {
-  border-right: 1px solid var(--line-soft);
   border-radius: 0 0 12px 12px;
 }
 .app-shell.with-context > .context-panel {
-  margin: 0 6px 6px 0;
-  border: 1px solid var(--line-soft);
-  border-top: 0;
-  border-left: 0;
+  margin: 0 4px 4px 0;
+  border: 0;
   border-radius: 0 0 12px 0;
   background: var(--bg);
 }
-/* 顶栏与聊天之间不出现横线（同一张卡）；右栏与主区用分隔条当内部分隔线 */
+/* 顶栏与聊天之间不出现横线（同一张卡）；侧栏边界线去掉（只剩底色过渡） */
 .app-shell > .topbar::after { display: none; }
-.app-shell.with-context > .panel-divider { background: var(--line-soft); }
+.app-shell > .sidebar { border-right: 0; }
+/* 主区/右栏之间的拖拽条：默认透明（没有线），悬停/拖动才显形 */
+.app-shell.with-context > .panel-divider { background: transparent; }
+.app-shell.with-context > .panel-divider:hover,
+.app-shell.with-context > .panel-divider:active { background: var(--muted); }
 :root[data-theme="dark"] .app-shell > .topbar,
 :root[data-theme="dark"] .app-shell > .workspace,
 :root[data-theme="dark"] .app-shell.with-context > .context-panel { background: var(--panel); }
 @media (max-width: 760px) {
-  .app-shell > .topbar { margin: 4px 4px 0 4px; border-radius: 10px 10px 0 0; }
-  .app-shell > .workspace { margin: 0 4px 4px 4px; border-radius: 0 0 0 10px; }
+  .app-shell > .topbar { margin: 0 3px 0 3px; border-radius: 10px 10px 0 0; }
+  .app-shell > .workspace { margin: 0 3px 3px 3px; border-radius: 0 0 0 10px; }
   .app-shell:not(.with-context) > .workspace { border-radius: 0 0 10px 10px; }
-  .app-shell.with-context > .context-panel { margin: 0 4px 4px 0; border-radius: 0 0 10px 0; }
+  .app-shell.with-context > .context-panel { margin: 0 3px 3px 0; border-radius: 0 0 10px 0; }
 }
