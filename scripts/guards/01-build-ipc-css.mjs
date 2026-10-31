@@ -405,8 +405,11 @@ if (!existsSync(stylesEntry)) {
        use-ball-reactions.ts 用 setProperty 按指针位置实时写，CSS 侧都带 fallback）
      · --skin-stage（10-30：社区组件预览台底色 —— SkinHost 用 getComputedStyle 探出被嵌组件
        其实是深底时注入 #232327、否则 removeProperty，浅色台走 CSS 里的 color-mix fallback。
-       ⛔ 不写进 CSS 单一值：同一个台子要按被嵌组件的实际底色切换，全站一个值就是错的） */
-  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage"]);
+       ⛔ 不写进 CSS 单一值：同一个台子要按被嵌组件的实际底色切换，全站一个值就是错的）
+     · --switch-x / --switch-y / --switch-r（10-31：明暗切场涟漪的圆心与半径 ——
+       lib/visual-switch.ts 在点击那一刻按**指针位置**与视口对角线算出来再 setProperty，
+       每次点击都不一样，CSS 里只有 fallback（50% / 150vmax）；写死一个值就变成"永远从中间扩散"） */
+  const whitelist = new Set(["--effort-color", "--fill-color", "--t", "--submenu-top", "--voice-level", "--vscode-scrollbar-shadow", "--composer-editor-h", "--composer-editor-max", "--ic-page", "--group-hue", "--tag-color", "--bot-gaze-x", "--bot-gaze-y", "--bot-eye-scale", "--skin-stage", "--switch-x", "--switch-y", "--switch-r"]);
   const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
   (orphan.length === 0 ? ok : fail)(
     orphan.length

@@ -398,10 +398,11 @@
    grid 模板不含 256px 侧栏列；右栏项目树展开时也只占 1px 分隔 + 面板宽，
    对话区始终拿满剩余宽度、随窗口缩放自适应（不再被侧栏列挤扁/变透明）。 */
 .app-shell.popout-shell {
-  grid-template-columns: minmax(0, 1fr);
+  /* 10-31：与主壳同一套右侧抽屉 —— 轨道数恒定，右栏宽度走 `--right-w` 才能插值 */
+  grid-template-columns: minmax(0, 1fr) 1px var(--right-w, 0px);
 }
 .app-shell.popout-shell.with-context {
-  grid-template-columns: minmax(0, 1fr) 1px 308px;
+  --right-w: var(--panel-w, 308px);
 }
 .app-shell.popout-shell .sidebar {
   display: none;
