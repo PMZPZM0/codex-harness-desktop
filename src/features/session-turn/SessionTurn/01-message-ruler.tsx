@@ -14,6 +14,28 @@ const RULER_PAGE = 5;
 /** 单槽高度：2px 线 + 上下 6px 命中区 = 14px（与 CSS 同口径；悬停/容量估算都用它） */
 const RULER_SLOT = 14;
 
+/* ── 放大镜（10-31 用户：「刻度线放上去能不能做出这种放大镜效果，找起来更快」）──────────
+   ⛔ 不是把刻度整体做大（那只是变粗），而是**指针附近的一小段被放大、往外散开**：
+      · 刻度本身：以指针为中心做鱼眼位移（14px 槽 → 中心约 25px），越远越回到原位；
+      · 右侧镜头面板：把这段真实消息预览按 26px 一行列出来，行跟着指针滑（=「里面滚动」）。
+   两者同一套物理：中心放大率 = 1 + LENS_SPREAD ⇒ 14px 槽在中心变成 ≈ 25px，与 LENS_ROW(26) 对齐。
+   ⛔ σ 决定「放大镜口径」：36px ≈ 中心 ±2.5 格，再远就回到原间距（口径太大整根尺子都在抖）。 */
+const LENS_ROW = 26;              // 面板行高（= 放大后的一格间距）
+const LENS_ROWS = 9;              // 面板可见行数
+const LENS_H = LENS_ROW * LENS_ROWS;
+const LENS_REACH = 9;             // 面板上下各多渲染几行：给滑动进出的余量（多出来的会被裁掉）
+const LENS_SPREAD = 0.85;         // 中心放大率 - 1
+const LENS_SIGMA = 36;            // 高斯口径（px）
+
+/** 鱼眼位移：d = 元素基准中心到指针的距离 ⇒ 位移 d·SPREAD·e^(-d²/2σ²)。
+ *  ⛔ 必须用这份「连续放大映射」而不是 sign(d)·A·falloff(d)：后者在 d=0 处符号翻转，
+ *    正上/正下两根刻度会在指针处**瞬跳**一个 A（看起来像抖了一下）。本式在 d=0 处恒为 0 且单调
+ *    （f'(d) 最小值 ≈0.55 > 0，两根刻度永远不会交叉）。 */
+const fanDy = (base: number, pointerY: number) => {
+  const d = base - pointerY;
+  return d * LENS_SPREAD * Math.exp(-(d * d) / (2 * LENS_SIGMA * LENS_SIGMA));
+};
+
 export type RulerMark = { id: string; turnId: string; itemId: string; type: "user" | "agent"; label: string };
 
 /** 刻度数 = 有内容的消息数（一条消息一个刻度），窗口固定 50 条，随滚动位置滑动 */
@@ -21,7 +43,11 @@ export type RulerMark = { id: string; turnId: string; itemId: string; type: "use
 const RULER_MAX = 50;
 
 export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject; /** 压缩线所在回合（green 标记画在该回合用户消息的刻度之前；空串 = 无压缩线） */ compactionTurnId?: string; /** 压缩发生在最后一回合**之后**（手动压缩的空回合被过滤掉）⇒ 绿段画在最后一个刻度之后 */ compactionAtEnd?: boolean }) {
-  const [tip, setTip] = useState<{ text: string; top: number } | null>(null);
+  /* 放大镜状态：index = 指针下的刻度，cy = 指针在**内容坐标**里的位置（刻度中心同坐标系），
+     top / rowY = 面板在轨道里的落点与「当前行」在面板内的纵向位置（面板贴边时会被钳制，
+     所以 rowY 不能恒等于面板半高）。⛔ 每次 mousemove 都会更新 cy（鱼眼位移要用连续值，
+     只给 index 的话刻度会在两格之间"跳"）。 */
+  const [lens, setLens] = useState<{ index: number; cy: number; top: number; rowY: number } | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   /* ⛔⛔ 10-26 二次事故：lastHoverRef 一度声明在下方 `if (…) return null` **之后** ⇒
      提前 return 的渲染少调一个 hook ⇒ React #310 渲染层整页崩溃（用户截图实锤）。
@@ -223,6 +249,8 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
        轨道是 `justify-content: center` + 每槽固定 14px ⇒ 直接算，**一次 rect 读都不需要每个元素**。 */
     const rect = track.getBoundingClientRect();
     const startY = rect.top + Math.max(0, (rect.height - total * RULER_SLOT) / 2);
+    /* 内容在轨道里的居中留白：放大镜的「镜头」也活在同一个内容坐标系里 */
+    const pad = startY - rect.top;
     let best = Math.floor((clientY - startY) / RULER_SLOT);
     if (best < 0) best = 0;
     if (best >= total) best = total - 1;
@@ -234,10 +262,25 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
          24ms（原 45ms）：快速扫回时出声密度翻倍，「划回去没声音」的密度问题一并解决。 */
       playWheelTick(prev == null || best > prev ? 1 : -1, { channel: "hover", minGapMs: 24 });
     }
-    setTip({ text: marks[best]?.label ?? "", top: best * RULER_SLOT + RULER_SLOT / 2 + Math.max(0, (rect.height - total * RULER_SLOT) / 2) });
+    /* 放大镜：锚点 = 指针下那根刻度的中心（轨道坐标）⇒ 面板以它为纵向中心，
+       贴到轨道上下边时**只钳面板框**、不钳锚点（否则高亮行会离开指针，看着像串了行）。 */
+    const anchor = best * RULER_SLOT + RULER_SLOT / 2 + pad;
+    const top = Math.min(Math.max(anchor - LENS_H / 2, 4), Math.max(4, rect.height - LENS_H - 4));
+    /* ⛔ rowY 是行的**顶边**：要让高亮行的中线落在锚点上，必须再减半个行高
+       （漏了这 13px，字会比指针下那根刻度低半行，看着像串行）。 */
+    setLens({ index: best, cy: clientY - startY, top, rowY: anchor - top - LENS_ROW / 2 });
   };
 
   const currentPos = currentItemId ? marks.findIndex((m) => m.itemId === currentItemId) : -1;
+  /* 绿段也占一个 14px 槽 ⇒ 它之后的刻度槽位要 +1（否则放大镜的口径会整体错一格）。 */
+  const compactionIndex = compactionTurnId ? marks.findIndex((m) => m.turnId === compactionTurnId) : -1;
+  const slotOf = (index: number) => index + (compactionIndex >= 0 && index >= compactionIndex ? 1 : 0);
+  /** 刻度（按**槽位**而非下标）的鱼眼位移；|dy|<0.2px 视作原位，不发内联样式（少一半 diff） */
+  const fanStyleOf = (slot: number) => {
+    if (!lens) return undefined;
+    const dy = fanDy(slot * RULER_SLOT + RULER_SLOT / 2, lens.cy);
+    return Math.abs(dy) < 0.2 ? undefined : { translate: `0 ${dy.toFixed(1)}px` };
+  };
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
       <div
@@ -265,7 +308,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
           }, { passive: false });
         }}
         onMouseMove={(event) => hoverAt(event.clientY)}
-        onMouseLeave={() => { lastHoverRef.current = null; setHoverIndex(null); setTip(null); }}
+        onMouseLeave={() => { lastHoverRef.current = null; setHoverIndex(null); setLens(null); }}
       >
         {marks.map((mark, index) => {
           /* ⛔ 10-18 用户：「刻度线里面如那两个中间产生压缩线，就在那两个中间产生一个绿色线」——
@@ -281,6 +324,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               {compactionHere && <button
                 type="button"
                 className={`ruler-compaction${wave}`}
+                style={fanStyleOf(slotOf(index))}
                 title="上下文已压缩（点击跳到该回合）"
                 aria-label="上下文已压缩，点击跳到该回合"
                 data-turn-id={mark.turnId}
@@ -288,6 +332,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               />}
               <button
               className={`ruler-tick ${mark.type} ${mark.id === latestId ? "latest" : ""} ${mark.itemId === currentItemId ? "current" : ""}${wave}`}
+              style={fanStyleOf(slotOf(index))}
               onClick={() => onJump(mark.turnId)}
               aria-label={mark.label}
               data-turn-id={mark.turnId}
@@ -310,10 +355,43 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               aria-label="上下文已压缩，点击跳到最新回合"
               data-turn-id={allMarks[allMarks.length - 1]?.turnId ?? ""}
               onClick={() => { const last = allMarks[allMarks.length - 1]; if (last) onJump(last.turnId); }}
+              style={fanStyleOf(marks.length + (compactionIndex >= 0 ? 1 : 0))}
             />
           );
         })()}
-        {tip && <div className="ruler-tip" style={{ top: tip.top }}>{tip.text}</div>}
+        {/* ── 放大镜镜头（10-31）：指针附近那一段刻度被放大成 26px 一行，右侧竖列出真实消息预览。
+            行的纵向位置 = rowY + (i - index) × LENS_ROW ⇒ 指针下移一格时整列往上滑一行（=「里面滚动」）。
+            ⛔ 面板只做展示（pointer-events: none）：鼠标始终留在 30px 刻度轨上，靠轨道的 mousemove 驱动，
+               一旦让面板吃指针，滑进面板就会触发轨道的 mouseleave（镜头当场消失）。 */}
+        {lens && marks.length > 0 && (
+          <div className="ruler-lens" style={{ top: lens.top }} aria-hidden="true">
+            {(() => {
+              /* ⛔ active 必须夹住：滚轮滑窗口 / 刻度变少时 marks 会换一批，
+                 lens.index 是上一次 mousemove 留下的旧下标，越界就是 marks[i] undefined ⇒ 整页崩。 */
+              const active = Math.min(lens.index, marks.length - 1);
+              const rows: number[] = [];
+              const from = Math.max(0, active - LENS_REACH);
+              const to = Math.min(marks.length - 1, active + LENS_REACH);
+              for (let i = from; i <= to; i++) rows.push(i);
+              return rows.map((i) => {
+                const dist = Math.abs(i - active);
+                return (
+                  <div
+                    key={marks[i].id}
+                    className={`ruler-lens-row${dist === 0 ? " is-active" : ""}`}
+                    style={{
+                      translate: `0 ${(lens.rowY + (i - active) * LENS_ROW).toFixed(1)}px`,
+                      opacity: Math.max(0.08, 1 - dist * 0.16),
+                    }}
+                  >
+                    <span className="ruler-lens-text">{marks[i].label.replace(/\s+/g, " ").trim()}</span>
+                    <i className="ruler-lens-dash" />
+                  </div>
+                );
+              });
+            })()}
+          </div>
+        )}
       </div>
     </div>
   );
