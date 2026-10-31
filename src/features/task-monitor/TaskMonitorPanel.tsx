@@ -46,7 +46,7 @@ const fmtTime = (ts: number) => {
 };
 const baseName = (p: string) => String(p || "").replaceAll("\\", "/").split("/").pop() || p;
 
-export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
+export function TaskMonitorPanel({ app, active = true }: { app: HarnessAppApi; active?: boolean }) {
   const threadId = app.thread?.id ?? "";
   const [turns, setTurns] = useState<Turn[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,15 +73,19 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
   /* 换会话 ⇒ 立刻清空并重读（⛔ 不保留上一会话的 turns） */
   useEffect(() => { setTurns([]); setDraft(""); setFilePage(0); void load(); }, [threadId, load]);
 
-  /* 建议由主进程异步生成（回合结束后才回来）⇒ 面板可见时轻量轮询，拿到就停。 */
+  /* 建议由主进程异步生成（回合结束后才回来）⇒ 面板可见时轻量轮询，拿到就停。
+     ★ 10-31 用户实测「回合结束后刷新还显示下一回合、输出自动刷新」：
+       原判据是「最近一轮还没有建议」⇒ **用户手改/清空建议后该条件永远成立**，面板每 3s 拉一次，
+       下一次有新回合时就像"自己刷新出下一回合"。现在只在这两种真实进行中的状态轮询：
+         · 引擎还有进行中的回合（ongoingId 非空）；
+         · 某一轮的建议正在生成（running）。
+       ⛔ 面板不在前台（active=false）也不轮询 —— 后台每 3s 拉一次没有任何意义。 */
+  const pendingWork = Boolean(ongoingId) || turns.some((t) => t.suggestionState === "running");
   useEffect(() => {
-    if (!threadId) return;
-    const timer = window.setInterval(() => {
-      const pending = turns.some((t) => t.suggestionState === "running" || (!t.suggestion && t.suggestionState === "idle" && t.turnId === latest?.turnId));
-      if (pending) void load();
-    }, 3000);
+    if (!threadId || !active || !pendingWork) return;
+    const timer = window.setInterval(() => { void load(); }, 3000);
     return () => window.clearInterval(timer);
-  }, [threadId, turns, load]);
+  }, [threadId, active, pendingWork, load]);
 
   const latest = turns[turns.length - 1];
   const prev = turns[turns.length - 2];
@@ -93,10 +97,10 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
       ? "复盘…"
       : latest.suggestionState === "failed"
         ? "生成失败"
-        : latest.suggestion ? "已同步到输入框" : "等这一轮结束";
+        : latest.suggestion ? "已生成" : "等这一轮结束";
   const suggestHintFull = latest?.suggestionState === "failed"
     ? `生成失败：${latest.suggestionError ?? "未知原因"}`
-    : "由本会话模型每轮自动复盘；出来后自动同步到下方输入框（输入框有字时不抢）";
+    : "由本会话模型每轮自动复盘；生成后可直接改、采纳会交给 Codex 沉淀";
 
 
   /* ⛔ 跟随**文件**（suggestionAt = mtime）：Codex 写完文件、用户改了文件，这里都会自动刷新。
@@ -197,7 +201,7 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
         <textarea
           className="monitor-suggestion"
           value={draft}
-          placeholder={latest ? "这一轮正在复盘，跑完自动填进来（也会同步到下面输入框）" : "先跑一轮，建议会自动出现在这里"}
+          placeholder={latest ? "这一轮正在复盘，跑完自动填进来" : "先跑一轮，建议会自动出现在这里"}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={() => void saveSuggestion(draft)}
         />
@@ -205,9 +209,11 @@ export function TaskMonitorPanel({ app }: { app: HarnessAppApi }) {
           <button type="button" className="monitor-btn primary" onClick={() => void adopt()} disabled={!draft.trim() || saving}><Wand2 size={12} />{latest?.adoptedAt ? "已采取 · 再发一次" : "采取建议"}</button>
           <button type="button" className="monitor-btn" onClick={() => void saveSuggestion(draft)} disabled={!latest || saving}>{saving ? "保存中…" : "保存修改"}</button>
           {advice.path ? (
+            /* ⛔ 只显示文件名：原来 `split(/[\/]/)` 只切正斜杠，Windows 整条 C:\…\xx.evolve.md 会原样
+               铺进按钮（用户截图里那行 "C:\Users\Administrator\AppDa…"）—— 用 baseName 两边通吃。 */
             <button type="button" className="monitor-path" title={`建议文件（Codex 也写这份，新的覆盖旧的）：
 ${advice.path}`} onClick={() => { try { void window.codex.shellOpen(advice.path); } catch { /* 没有关联程序 */ } }}>
-              <FileText size={11} />{advice.path.split(/[\/]/).pop()}
+              <FileText size={11} />{baseName(advice.path)}
             </button>
           ) : null}
         </div>

@@ -71,7 +71,7 @@ ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron
 /* ⑤ 右栏入口：监控排第一 + 页面区块真的挂了（只加按钮不加页面 = 点了空白） */
 const tabs = [...rail.matchAll(/className=\{`panel-tab[^`]*`\} title="([^"]+)"/g)].map((m) => m[1].slice(0, 2));
 (tabs[0] === "监控" ? ok : fail)(`右栏第一个 tab 是「监控」（实得 ${tabs.join(" / ") || "无"}）`);
-(/<TaskMonitorPanel app=\{app\} \/>/.test(rail) ? ok : fail)("右栏页面区块挂了 <TaskMonitorPanel>（⛔ 只加按钮会点了空白）");
+(/<TaskMonitorPanel app=\{app\}[^>]*\/>/.test(rail) ? ok : fail)("右栏页面区块挂了 <TaskMonitorPanel>（⛔ 只加按钮会点了空白）");
 
 /* ⑥ 一键进化：必须真发出去，且带上 self-review 技能（⛔ 不能用 setState 再 send —— 会发旧正文且丢技能） */
 (/app\.sendPrefilled\(\{ text, skill: EVOLVE_SKILL \}\)/.test(panel) ? ok : fail)(
@@ -193,6 +193,46 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
 (/没有工具调用、也没改文件/.test(svc) ? ok : fail)("纯聊天轮也给检查面（答太长/来回追问/该动手却只解释）");
 (/\.monitor-tools/.test(read("src/styles/58-task-monitor.css")) ? ok : fail)(
   "表头按钮有独立容器 + 单行省略（截图里被挤成竖排的根因：hint 抢满宽度且允许换行）"
+);
+
+/* ── 10-31 用户三连报：「监控面板串位 / 回合结束后刷新还显示下一回合、输出自动刷新 / 路径写死，注意 mac」──
+   逐条钉根因（都是"看着像 UI，其实是数据与线程"的形态）： */
+/* ① 建议生成失败（真机 dump：suggestionError = "This chat uses custom964, but your current provider is harness"）
+      ⇒ provider 必须与传下去的 config 同源；cwd 不许写死 process.cwd()。 */
+(/const sessionConfig = /.test(summarySrc) && /sessionConfig\?\.model_provider/.test(summarySrc) ? ok : fail)(
+  "复盘/蒸馏的 provider 以会话 config.model_provider 为准（⛔ 否则引擎报 provider 不一致，建议永远失败）"
+);
+(/model_provider: provider, model_providers: \{ \[provider\]/.test(summarySrc) ? ok : fail)(
+  "自建 provider 时 modelProvider 与 config.model_provider 用同一个变量（⛔ 两边不同 = 引擎直接拒）"
+);
+(/const cwd = String\(opts\?\.cwd \?\? ""\)\.trim\(\) \|\| process\.cwd\(\)/.test(summarySrc)
+  && /cwd,\n\s*approvalPolicy: "never"/.test(summarySrc) ? ok : fail)(
+  "蒸馏会话的 cwd 由调用方给（会话工作目录），不写死进程目录（mac 打包后是安装包内部路径）"
+);
+(/cwd: threadCwd\.get\(threadId\) \?\? ""/.test(svc) ? ok : fail)(
+  "任务监控把本会话工作目录传给复盘通道（与上面 cwd 同源）"
+);
+/* ② 「回合结束后刷新还显示下一回合 / 自动刷新」：
+      · 上次进程中断留下的 running 必须收敛，否则面板永远轮询；
+      · 引擎已无活动回合但 bucket 还在（收尾事件丢失）要补幂等结算。 */
+(/suggestionState: "failed" as const, suggestionError: "上次生成被中断/.test(svc) ? ok : fail)(
+  "读盘时把遗留的 running 收敛为 failed（⛔ 否则每 3s 轮询永不停止）"
+);
+(/const stale = liveTurnOf\(id\);[\s\S]{0,260}?settleTurn\(id, stale\.turnId, staleBucket\)/.test(svc) ? ok : fail)(
+  "引擎已无活动回合时补一次幂等结算（不补 ⇒ 面板永远「本轮进行中」，像自动冒出下一回合）"
+);
+(/const pendingWork = Boolean\(ongoingId\) \|\| turns\.some\(\(t\) => t\.suggestionState === "running"\)/.test(panel) ? ok : fail)(
+  "面板只在这两种真实进行中状态下轮询（⛔ 不再按「最近一轮没建议」判 —— 用户清空建议后条件恒真）"
+);
+(!/!t\.suggestion && t\.suggestionState === "idle"/.test(panel) ? ok : fail)(
+  "删掉恒真的旧轮询判据（清空/手改建议后永不停止，看起来像自动刷新下一回合）"
+);
+(/active && !pendingWork|!active \|\| !pendingWork/.test(panel) ? ok : fail)(
+  "面板不在前台（active=false）不轮询"
+);
+/* ③ 路径只显示文件名：原来只切 `/`，Windows 的 C:\…\x.evolve.md 会整条铺进按钮。 */
+(/baseName\(advice\.path\)/.test(panel) && !/advice\.path\.split\(\/\[\\\/\]\/\)/.test(panel) ? ok : fail)(
+  "建议文件按钮用 baseName（正/反斜杠都认；⛔ 不再把整条 Windows 路径铺出来）"
 );
 
 console.log("");

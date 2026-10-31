@@ -25,7 +25,7 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { distillSummarize } from "../main/03-turn-summary";
 import { liveFilesOf, storedReportsForThread } from "../turn-file-watch";
-import { engineActiveTurnIds, server } from "../runtime-refs";
+import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
 import { GROUP_EVENT_TAG, hostQueueMessageId } from "../../src/lib/host-queue.mjs";
 /* 技能/插件的识别口径与**技能卡完全同源**（src/lib/tool-display.mjs）；⛔ 不要在这里另写正则。 */
 import { pluginOfItem, skillOfItem } from "../../src/lib/tool-display.mjs";
@@ -127,7 +127,17 @@ async function load(threadId: string): Promise<MonitorTurn[]> {
     /* ⛔ 只认自己的：文件里写着别人的 threadId 就当损坏（换机器/手改过的兜底） */
     if (parsed && parsed.threadId === threadId && Array.isArray(parsed.turns)) turns = parsed.turns;
   } catch { /* 没有历史 = 空 */ }
+  /* ★ 10-31 用户实测「回合结束后刷新还显示下一回合 / 一直自动刷新」：
+     上次进程被杀时正在生成的那一轮会把 suggestionState 留在 "running" —— 读到它时已经没有
+     任何人在生成，面板就会每 3s 轮询一次、永远转不完。⇒ 读盘时把**遗留的 running 收敛为 failed**。 */
+  let changed = false;
+  turns = turns.map((turn) => {
+    if (turn?.suggestionState !== "running") return turn;
+    changed = true;
+    return { ...turn, suggestionState: "failed" as const, suggestionError: "上次生成被中断（应用重启/退出），点「换一版」重试" };
+  });
   store.set(threadId, turns);
+  if (changed) void persist(threadId, turns);
   return turns;
 }
 
@@ -301,8 +311,10 @@ async function generateSuggestion(threadId: string, turnId: string, reply = "") 
       + "\n如果这一轮**没有工具调用、也没改文件**，就从「对话方式」上找：答得太长/来回追问/"
       + "该直接动手却在解释/该给结论却先问一堆。不要硬凑工具相关的话。",
       digest,
-      /* ⛔ 带上会话 id：没有自定义模型时用**本会话自己的模型**（否则官方供应商用户永远暂无建议）。 */
-      { threadId },
+      /* ⛔ 带上会话 id：没有自定义模型时用**本会话自己的模型**（否则官方供应商用户永远暂无建议）。
+         ⛔ cwd 用本会话的工作目录（不写死进程目录）：临时会话写出的 AGENTS/产物要落在项目里，
+             mac 上进程目录是安装包内部路径，写那儿既看不见也更不该写。 */
+      { threadId, cwd: threadCwd.get(threadId) ?? "" },
     );
     const clean = String(text || "").split(/\r?\n/).map((line) => line.trim())
       .filter((line) => line && !/^```/.test(line))
@@ -400,6 +412,15 @@ export const taskMonitorFeature = defineFeature<null>({
       const id = String(threadId ?? "").trim();
       /* ⛔ 按会话独立：没有 threadId 就给空表，绝不"猜一个最近的"。 */
       if (!id) return { threadId: "", turns: [] as MonitorTurn[], ongoingTurnId: "", suggestion: "", suggestionAt: 0, suggestionPath: "" };
+      /* ★ 10-31 用户实测「回合结束后刷新还显示下一回合」：引擎那边已经没有活动回合，但 bucket
+         还在（turn 收尾事件丢了 / 回放时序错位）⇒ 面板会一直把它当「本轮进行中」，并且每 3s
+         轮询一次、看起来像"自动刷新出下一回合"。这里补一次幂等结算，然后按已结算读。 */
+      const stale = liveTurnOf(id);
+      if (stale && !activeTurnOf(id)) {
+        const staleBucket = live.get(`${id}:${stale.turnId}`);
+        live.delete(`${id}:${stale.turnId}`);
+        await settleTurn(id, stale.turnId, staleBucket);
+      }
       const settled = await load(id);
       /* 进行中那一轮也要给出去（用户：「完全没有跟当前会话联动」）—— 已结算的不重复追加。 */
       const ongoing = liveTurnOf(id);
