@@ -1111,6 +1111,47 @@ html.fx-ripple::view-transition-new(root) {
   html.fx-ripple::view-transition-new(root) { animation-duration: 0.001ms; }
 }
 
+/* ── 涟漪的高光描边（10-31 追加）────────────────────────────────────────────
+   沿扩散圆边缘的一圈极淡光，扩散时有"光在推着界面变"的感觉。
+   ⛔ 为什么不是纯 CSS：VT 的 new(root) 只有一层 —— `filter: drop-shadow` 会被先裁掉（滤镜在内、
+      裁切在外），`box-shadow` 又是矩形 ⇒ 做不出"沿着圆边的一圈光"。这里是独立的 popover 元素
+      （top layer，画在 VT 快照之上），半径 `--rim-r` 用 `@property` 注册后才能插值。
+   ⛔ `pointer-events: none`：纯装饰，绝不能挡住点击。
+   ⛔ 半径与缓动必须与 `--dur-switch` / 同一条 cubic-bezier 一致，否则光边会"跑在圆前面"。 */
+@property --rim-r {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+.theme-ripple-rim {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  background-image: radial-gradient(
+    circle at var(--switch-x, 50%) var(--switch-y, 50%),
+    transparent calc(var(--rim-r) - 4px),
+    color-mix(in srgb, var(--accent) 45%, transparent) calc(var(--rim-r) - 2px),
+    rgba(255, 255, 255, 0.55) var(--rim-r),
+    transparent calc(var(--rim-r) + 4px)
+  );
+  pointer-events: none;
+  overflow: hidden;
+  animation: fx-ripple-rim var(--dur-switch, 520ms) cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes fx-ripple-rim {
+  0% { --rim-r: 0px; opacity: 0; }
+  10% { opacity: 1; }
+  100% { --rim-r: var(--switch-r, 150vmax); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .theme-ripple-rim { display: none; }
+}
+
 /* ── 切换类控件的统一过渡（10-07 用户：「统一补齐…悬停/点击反馈」）────────────
    这些控件此前**只有终态、没有过程**：点下去颜色瞬变，与已经做了"两段反馈"的按钮观感不一致。
    ⛔ 只过渡**颜色 / 边框 / 阴影**：绝不碰 width / height / margin / padding / font-size /
