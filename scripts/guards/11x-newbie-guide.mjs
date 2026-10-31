@@ -293,6 +293,17 @@ const preload = read("electron/preload.ts");
     ok(reRead > 0 && observe > reRead && /if \(now\) \{ setOs\(now\); return; \}/.test(wcSrc),
       "窗口钮在挂 MutationObserver **之前**重读 data-os（否则「App 的 effect 先写、本组件后挂」这条竞态会让按钮永久消失）");
   }
+  /* ⛔⛔ 10-31 用户「这里还有空白诶条，还挺多的」：右栏内容左缘 22px（面板 10 + 各页 12）、
+     标签条 18px ⇒ 贴分隔线一条空白竖条。归零规则**必须待在 pages 层**（58 那个文件）：
+     本项目 CSS 是 `@layer base → components → pages`，层序压过选择器优先级 —— 同一条规则写在
+     05-composer-input（components）里，选择器再具体也不生效（实测 computed 仍是 12px）。 */
+  {
+    const monCss = read("src/styles/58-task-monitor.css");
+    const stylesEntry = read("src/styles.css");
+    ok(/\.context-panel > \.panel-page > \*/.test(monCss)
+      && /58-task-monitor" layer\(pages\)/.test(stylesEntry),
+      "右栏横向内边距单一 owner：归零规则在 pages 层（58-task-monitor）；写进 components 层会被层序压掉");
+  }
   /* ⛔ 10-31 审查：右栏代码预览曾经三层各自上色（外壳 --panel + 内层代码主题色）⇒
      永远露出一条不同色的边。现在只有一个 owner：滚动区取代码主题色、外壳透明。 */
   const wsFilesSrc = read("src/features/app-view/AppView/03-workspace-files.tsx");

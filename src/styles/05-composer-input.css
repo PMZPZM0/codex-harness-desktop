@@ -858,7 +858,12 @@
   border-bottom: 1px solid var(--line-soft);
   align-items: center;
   gap: 4px;
-  padding: 6px 8px;
+  /* ⛔ 10-31 用户「这里还有空白诶条，还挺多的」：横向内边距**只能有一个 owner**。
+     原来 `padding: 6px 8px` 叠在 `.context-panel` 的 10px 之上 ⇒ 标签起点 18px；
+     而各页自己又各有 10~12px（monitor 12 / turn-review 10 / tree 12）⇒ 内容起点 20~22px。
+     两层叠加的观感就是贴着分隔线的一条 20px 空白竖条，标签与卡片还差 4px 不齐。
+     ⇒ 唯一 owner = `.context-panel` 的 10px；这里只留纵向 6px，左右归零。 */
+  padding: 6px 0;
   display: flex;
   flex-wrap: nowrap;
 }
