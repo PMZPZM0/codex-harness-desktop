@@ -126,8 +126,12 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 #goalbar{padding:6px 12px;background:#fff6f8;border-top:1px solid var(--line);font-size:12px;color:#8a2f4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #taskbar{padding:6px 12px;background:#fff;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .run-steps .think{margin-top:5px;padding-top:5px;border-top:1px dashed #ddd9d2;color:#6f6f69;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
-.run-steps .step-out{display:none;margin:2px 0 6px;padding:6px 8px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.5;max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:#4a4a46}
-.run-steps .step-out.on{display:block}
+.run-steps .step-out-wrap{margin:2px 0 6px}
+.run-steps .step-out-wrap>summary{cursor:pointer;list-style:none;color:var(--muted);font-size:11px}
+.run-steps .step-out-wrap>summary::-webkit-details-marker{display:none}
+.run-steps .step-out-wrap>summary::before{content:"▸ "}
+.run-steps .step-out-wrap[open]>summary::before{content:"▾ "}
+.run-steps .step-out{display:block;margin:4px 0 0;padding:6px 8px;background:#fff;border:1px solid var(--line);border-radius:8px;font-size:11px;line-height:1.5;max-height:160px;overflow:auto;white-space:pre-wrap;word-break:break-all;color:#4a4a46}
 .msg.assistant.md{white-space:normal}
 .msg p{margin:6px 0}
 .msg p:first-child{margin-top:0}
@@ -1660,9 +1664,16 @@ async function pollLoop() {
           line.textContent = event.text;
           stepBox.appendChild(line);
           if (event.text.indexOf("命令") === 0) {
+            /* 用户令（10-31）：命令不要展开 —— 输出收进默认折叠的「输出」里，只有思考保持展开实时滚动 */
+            const wrap = document.createElement("details");
+            wrap.className = "step-out-wrap";
+            const sum = document.createElement("summary");
+            sum.textContent = "输出";
+            wrap.appendChild(sum);
             currentOutputEl = document.createElement("pre");
             currentOutputEl.className = "step-out";
-            stepBox.appendChild(currentOutputEl);
+            wrap.appendChild(currentOutputEl);
+            stepBox.appendChild(wrap);
           }
           list.scrollTop = list.scrollHeight;
         }
@@ -1676,14 +1687,22 @@ async function pollLoop() {
           list.appendChild(stepBox);
         }
         if (!currentOutputEl) {
+          const wrap = document.createElement("details");
+          wrap.className = "step-out-wrap";
+          const sum = document.createElement("summary");
+          sum.textContent = "输出";
+          wrap.appendChild(sum);
           currentOutputEl = document.createElement("pre");
           currentOutputEl.className = "step-out";
-          stepBox.appendChild(currentOutputEl);
+          wrap.appendChild(currentOutputEl);
+          stepBox.appendChild(wrap);
         }
         currentOutputEl.textContent += event.text;
         if (currentOutputEl.textContent.length > 6000) currentOutputEl.textContent = currentOutputEl.textContent.slice(-6000);
-        currentOutputEl.classList.add("on");
         currentOutputEl.scrollTop = currentOutputEl.scrollHeight;
+        const wrapEl = currentOutputEl.closest(".step-out-wrap");
+        const sumEl = wrapEl ? wrapEl.querySelector("summary") : null;
+        if (sumEl) sumEl.textContent = "输出 · " + currentOutputEl.textContent.split("\\n").length + " 行";
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "files") {
         // 文件变更：一行原地更新（宿主每拍都会推，不能一行行追加）
