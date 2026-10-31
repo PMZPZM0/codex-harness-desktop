@@ -150,7 +150,6 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 .msg hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 #plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 #file-pick{display:none}
-#camera-pick{display:none}
 .emoji-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:6px 14px 4px}
 .emoji-grid button{border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 0;font-size:20px;line-height:1}
 #imgs{display:none;gap:8px;padding:8px 12px 0;background:#fff;overflow-x:auto}
@@ -362,11 +361,9 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
 <!-- 占位：构建时替换成 src/lib/mobile-markdown.mjs 的源码 -->
 <script>/*__MOBILE_MARKDOWN__*/</script>
 <input type="file" id="file-pick" accept="image/*" multiple>
-<input type="file" id="camera-pick" accept="image/*" capture="environment">
 <div id="sheet-mask" class="mask" onclick="closeSheet()"></div>
 <div id="sheet"><div class="grid">
   <button onclick="pickImage()"><b>🖼</b>图片</button>
-  <button onclick="takePhoto()"><b>📷</b>拍照</button>
   <button onclick="openEmoji()"><b>😊</b>表情</button>
   <button onclick="openMentions()"><b>@</b>提及</button>
   <button onclick="openFiles()"><b>📄</b>文件</button>
@@ -1233,7 +1230,6 @@ function openEmoji() {
   });
   showPanel("表情", node, null);
 }
-function takePhoto() { closeSheet(); const input = document.getElementById("camera-pick"); if (input) input.click(); }
 async function startSession(boss) {
   closePanel();
   closeSheet();
@@ -1304,22 +1300,6 @@ document.getElementById("file-pick").addEventListener("change", (event) => {
     const reader = new FileReader();
     reader.onload = () => { pendingImages.push({ dataUrl: String(reader.result || ""), name: file.name }); renderImages(); done(); };
     reader.onerror = () => { push("system", "读取图片失败：" + file.name); done(); };
-    reader.readAsDataURL(file);
-  });
-});
-document.getElementById("camera-pick").addEventListener("change", (event) => {
-  const picked = Array.prototype.slice.call(event.target.files || []);
-  const room = Math.max(0, 4 - pendingImages.length);
-  const files = picked.slice(0, room);
-  if (picked.length > room) push("system", "一次最多 4 张图");
-  let left = files.length;
-  const done = () => { if (--left <= 0) event.target.value = ""; };
-  if (!left) { event.target.value = ""; return; }
-  files.forEach((file) => {
-    if (file.size > 8 * 1024 * 1024) { push("system", "图片太大（上限 8MB）"); done(); return; }
-    const reader = new FileReader();
-    reader.onload = () => { pendingImages.push({ dataUrl: String(reader.result || ""), name: "camera.jpg" }); renderImages(); done(); };
-    reader.onerror = () => { push("system", "拍照图片读取失败"); done(); };
     reader.readAsDataURL(file);
   });
 });

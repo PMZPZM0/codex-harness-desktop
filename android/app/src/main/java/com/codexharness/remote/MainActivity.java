@@ -3,12 +3,10 @@ package com.codexharness.remote;
 import android.app.DownloadManager;
 import android.content.Intent;
 import android.content.ContentValues;
-import androidx.core.content.FileProvider;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.Manifest;
 import android.net.Uri;
-import android.provider.MediaStore;
 import android.os.Build;
 import android.os.Bundle;
 import android.speech.RecognizerIntent;
@@ -30,7 +28,6 @@ import android.widget.TextView;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -60,12 +57,9 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_BASE = "server_base";
     private static final String KEY_CONNECTED = "connected_once";
     private static final int FILE_CHOOSER_REQUEST = 2001;
-    /** 真拍照（capture）：与相册选择分开处理，照片直接回给网页 */
-    private static final int CAMERA_REQUEST = 2003;
 
     /** WebView 文件选择回调（＋ → 图片）。⚠️ 一次选择期间只允许一个挂起回调。 */
     private ValueCallback<Uri[]> fileChooserCallback;
-    private Uri cameraUri;
 
     private WebView web;
     private View setup;
@@ -74,6 +68,10 @@ public class MainActivity extends AppCompatActivity {
     private String baseUrl;
     /** 配对进行中：按钮禁用，提示「正在配对 / 等待电脑端批准」 */
     private volatile boolean busy;
+    /** 认证代际：回到配对页 / 断开时 +1，在途的自动登录与配对回调随之作废（⛔ 否则它会把用户又拽回对话，或把按钮永久置灰） */
+    private volatile int authGen = 0;
+    /** 配对页被用户主动切回（返回键）：期间任何迟到的页面加载都不许再把界面翻回对话页 */
+    private volatile boolean setupPinned = false;
 
     private final ActivityResultLauncher<ScanOptions> scanLauncher =
             registerForActivityResult(new ScanContract(), result -> {
@@ -157,35 +155,8 @@ public class MainActivity extends AppCompatActivity {
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
                 if (fileChooserCallback != null) fileChooserCallback.onReceiveValue(null);
                 fileChooserCallback = callback;
-                /* ⛔ 10-31 用户实测：「拍照」打开的是相册。原因是 WebView 把 capture 属性带过来了，
-                   而我们原先一律起 ACTION_GET_CONTENT（相册）—— capture 被无视。
-                   现在按 params.isCaptureEnabled() 分流：真拍照走系统相机，照片 Uri 直接回给页面。 */
-                if (params.isCaptureEnabled()) {
-                    /* ⛔ 10-31 实机：旧实现失败时调 showSetup() ⇒ 整个页面被切回「连接电脑」，
-                       用户以为被踢下线。现在：FileProvider 出 content:// 给相机；失败只提示，
-                       并回退到相册选择，页面保持原样。 */
-                    try {
-                        File dir = new File(getCacheDir(), "camera");
-                        if (!dir.exists()) dir.mkdirs();
-                        File file = new File(dir, "codex-cam-" + System.currentTimeMillis() + ".jpg");
-                        cameraUri = FileProvider.getUriForFile(MainActivity.this, getPackageName() + ".fileprovider", file);
-                        Intent camera = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-                        camera.putExtra(MediaStore.EXTRA_OUTPUT, cameraUri);
-                        camera.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                        startActivityForResult(camera, CAMERA_REQUEST);
-                        return true;
-                    } catch (Exception error) {
-                        cameraUri = null;
-                        notifyPage("这台手机没有可用的相机应用，已改为从相册选择");
-                        fileChooserCallback = callback;
-                        Intent fallback = new Intent(Intent.ACTION_GET_CONTENT);
-                        fallback.addCategory(Intent.CATEGORY_OPENABLE);
-                        fallback.setType("image/*");
-                        try { startActivityForResult(Intent.createChooser(fallback, "选择图片"), FILE_CHOOSER_REQUEST); }
-                        catch (Exception ignored) { fileChooserCallback = null; return false; }
-                        return true;
-                    }
-                }
+                /* ⛔ 10-31 用户令：删除拍照功能（实机唤不起系统相机）—— 这里只做相册/文件选择，
+                   页面端也不再有 capture 输入框；一次最多选 4 张。 */
                 Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
                 intent.setType("image/*");
@@ -219,6 +190,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 if (url == null || !url.startsWith("http")) return;
+                if (setupPinned) return;   // 用户在配对页：迟到加载不许把界面翻回对话
                 setup.setVisibility(View.GONE);
                 web.setVisibility(View.VISIBLE);
                 /* 把设备秘密同步给页面：万一 cookie 被清，页面自己的 autoLogin 还能救回来
@@ -306,6 +278,7 @@ public class MainActivity extends AppCompatActivity {
             cookies.removeAllCookies(null);
             cookies.flush();
         } catch (Exception ignored) { /* 个别 ROM 不支持 flush */ }
+        authGen += 1;
         prefs().edit().remove(KEY_CONNECTED).remove(secretKey()).apply();
         setBusy(false, "");
         if (code != null) code.setText("");
@@ -317,8 +290,8 @@ public class MainActivity extends AppCompatActivity {
 
     /** 已拿到 cookie：进对话页 */
     private void enterChat() {
-        busy = false;
-        hint.setText("");
+        setupPinned = false;
+        setBusy(false, "");
         prefs().edit().putBoolean(KEY_CONNECTED, true).apply();
         setup.setVisibility(View.GONE);
         web.setVisibility(View.VISIBLE);
@@ -379,6 +352,8 @@ public class MainActivity extends AppCompatActivity {
     private void startConnect(String rawCode) {
         if (busy) return;
         String digits = rawCode == null ? "" : rawCode.replaceAll("[^0-9]", "");
+        /* ⛔ 0.1.16：本机已存设备秘密时，空的「连接」= 重试自动登录（网络抖一下就要求重输码是假故障）。 */
+        if (digits.isEmpty() && !savedSecret().isEmpty()) { autoLogin(); return; }
         if (digits.length() != 6) { showSetup("请输入电脑上显示的 6 位连接码"); return; }
         /* 0.1.7：手输码不强制先扫码 —— 没有存地址就直接用安装包内置的服务器。 */
         if (baseUrl == null || baseUrl.isEmpty()) {
@@ -386,6 +361,7 @@ public class MainActivity extends AppCompatActivity {
             prefs().edit().putString(KEY_BASE, baseUrl).apply();
         }
         if (code != null) code.setText(digits);
+        final int gen = authGen;
         setBusy(true, "正在配对…");
         new Thread(() -> {
             try {
@@ -401,19 +377,20 @@ public class MainActivity extends AppCompatActivity {
                 String secret = json.optString("deviceSecret", "");
                 if (!secret.isEmpty()) saveSecret(secret);
                 applyCookies(result.cookies);
-                if (json.optBoolean("approved")) { runOnUiThread(this::enterChat); return; }
+                if (json.optBoolean("approved")) { runOnUiThread(() -> { if (gen == authGen) enterChat(); }); return; }
                 String rid = json.optString("rid", "");
-                runOnUiThread(() -> setBusy(true, "配对码正确，等待电脑端批准…"));
-                pollApproval(rid, jar);
+                runOnUiThread(() -> { if (gen == authGen) setBusy(true, "配对码正确，等待电脑端批准…"); });
+                pollApproval(rid, jar, gen);
             } catch (Exception error) {
-                runOnUiThread(() -> setBusy(false, "配对失败：" + String.valueOf(error.getMessage())));
+                runOnUiThread(() -> { if (gen == authGen) setBusy(false, "配对失败：" + String.valueOf(error.getMessage())); });
             }
         }).start();
     }
 
-    private void pollApproval(String rid, List<String> jar) {
+    private void pollApproval(String rid, List<String> jar, int gen) {
         long deadline = System.currentTimeMillis() + 120_000;
         while (System.currentTimeMillis() < deadline) {
+            if (gen != authGen) return;
             try { Thread.sleep(1500); } catch (InterruptedException interrupted) { return; }
             try {
                 HttpResult result = http("GET", "/api/pair-status?rid=" + Uri.encode(rid), null, jar);
@@ -423,19 +400,20 @@ public class MainActivity extends AppCompatActivity {
                     String secret = json.optString("deviceSecret", "");
                     if (!secret.isEmpty()) saveSecret(secret);
                     applyCookies(result.cookies);
-                    runOnUiThread(this::enterChat);
+                    runOnUiThread(() -> { if (gen == authGen) enterChat(); });
                     return;
                 }
-                if ("denied".equals(status)) { runOnUiThread(() -> setBusy(false, "电脑端拒绝了这次连接")); return; }
-                if ("expired".equals(status)) { runOnUiThread(() -> setBusy(false, "配对码已过期，请刷新电脑端二维码后重试")); return; }
+                if ("denied".equals(status)) { runOnUiThread(() -> { if (gen == authGen) setBusy(false, "电脑端拒绝了这次连接"); }); return; }
+                if ("expired".equals(status)) { runOnUiThread(() -> { if (gen == authGen) setBusy(false, "配对码已过期，请刷新电脑端二维码后重试"); }); return; }
             } catch (Exception ignored) { /* 网络抖动：继续轮询 */ }
         }
-        runOnUiThread(() -> setBusy(false, "等待批准超时，请重试"));
+        runOnUiThread(() -> { if (gen == authGen) setBusy(false, "等待批准超时，请重试"); });
     }
 
     /** 重开应用：用设备秘密换新 cookie 再进对话（accessToken 每次启动都重生成） */
     private void autoLogin() {
         if (savedSecret().isEmpty()) { showSetup(""); return; }
+        final int gen = authGen;
         setBusy(true, "正在自动登录…");
         new Thread(() -> {
             String failure = "连接已失效，请重新输入连接码或扫码";
@@ -450,7 +428,7 @@ public class MainActivity extends AppCompatActivity {
                     JSONObject json = new JSONObject(result.body);
                     if (json.optBoolean("ok") && json.optBoolean("approved")) {
                         applyCookies(result.cookies);
-                        runOnUiThread(this::enterChat);
+                        runOnUiThread(() -> { if (gen == authGen) enterChat(); });
                         return;
                     }
                     if (!json.optBoolean("ok")) {
@@ -467,7 +445,7 @@ public class MainActivity extends AppCompatActivity {
                 try { Thread.sleep(1500); } catch (InterruptedException interrupted) { return; }
             }
             final String message = failure;
-            runOnUiThread(() -> { setBusy(false, message); showSetup(message); });
+            runOnUiThread(() -> { if (gen != authGen) return; showSetup(message); });
         }).start();
     }
 
@@ -580,9 +558,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void showSetup(String message) {
+        /* ⛔ 10-31 用户实测「返回配对界面后卡死，啥也点不了」：
+           根因是 enterChat() 只把 busy 置回 false、没恢复按钮可用（配对/自动登录期间 setBusy(true) 已把两个按钮禁用），
+           用户一按返回切回 setup 就看到两个灰按钮 + 空提示 = 卡死。
+           这里统一收口：显示配对页时**必然**恢复交互态，并作废在途的自动登录/配对（其回调不许再把用户拽走）。 */
+        authGen += 1;
+        setupPinned = true;
+        setBusy(false, message);
         setup.setVisibility(View.VISIBLE);
         web.setVisibility(View.GONE);
-        hint.setText(message == null ? "" : message);
     }
 
     @Override
@@ -595,29 +579,18 @@ public class MainActivity extends AppCompatActivity {
         web.evaluateJavascript("(window.__remoteBack && window.__remoteBack()) ? '1' : '0'", value -> {
             if ("\"1\"".equals(value)) return;
             runOnUiThread(() -> {
-                if (web != null && web.canGoBack()) {
-                    web.goBack();
-                    return;
-                }
-                // 回到连接码页：换连接码 / 换服务器都不需要清数据重装
-                showSetup("");
+                /* ⛔⛔ 10-31 用户实测（设计缺陷）：侧滑返回后落到「重新输入配对码」页，但设备秘密还在、
+                   重启应用本来就能自动登录 ⇒ 让人再配对一次既多余又像被踢下线。
+                   正确行为：页面自己的面板先收（上面的 __remoteBack）；收到最底层就把应用**退到后台**，
+                   不改任何连接状态、不弹配对页。换电脑/换服务器走菜单里的「断开连接」（会清秘密并回配对页）。
+                   ⛔ 不要改回 showSetup()：那会在已有秘密时显示一张要求重新输码的假配对页。 */
+                moveTaskToBack(true);
             });
         });
     }
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        if (requestCode == CAMERA_REQUEST) {
-            ValueCallback<Uri[]> callback = fileChooserCallback;
-            fileChooserCallback = null;
-            Uri shot = cameraUri;
-            cameraUri = null;
-            if (callback != null) {
-                if (resultCode == RESULT_OK && shot != null) callback.onReceiveValue(new Uri[]{shot});
-                else callback.onReceiveValue(null);
-            }
-            return;
-        }
         if (requestCode != FILE_CHOOSER_REQUEST) { super.onActivityResult(requestCode, resultCode, data); return; }
         ValueCallback<Uri[]> callback = fileChooserCallback;
         fileChooserCallback = null;

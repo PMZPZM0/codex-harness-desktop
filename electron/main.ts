@@ -508,6 +508,11 @@ const remote = new RemoteControlService({
     const resumed = await server.request("thread/resume", { threadId, excludeTurns: false }) as any;
     const messages: { role: "user" | "assistant" | "system" | "think"; text: string }[] = [];
     for (const turn of resumed.thread?.turns ?? []) {
+      /* ⛔ 10-31 用户实测「思考板块重新进会话就到上面去了」：实时是边聊边把思考块追加在该回合流尾部
+         （思考摘要常在回答之后才到），而历史若按 item 原顺序把 reasoning 排在 agentMessage 前面，
+         重新进会话就会看到思考被抬到回答上方、还按条拆成好几个块。
+         ⇒ 每个回合先收齐思考、合并成**一块**，放在该回合最后（与实时观感一致）。 */
+      const thinks: string[] = [];
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") {
           // 手机是「阅读」视角：常驻记忆 / 当前时间 / 会话告知等机器块，与桌面一样剥掉
@@ -515,13 +520,13 @@ const remote = new RemoteControlService({
           if (text) messages.push({ role: "user", text });
         }
         else if (item.type === "reasoning") {
-          // 历史里的思考：与实时同一口径（摘要优先，退回正文），手机端折叠展示
           // ⛔ 形状交给 reasoningItemText：resume 回读是字符串数组，只读 part.text 会整段丢
           const think = reasoningItemText(item);
-          if (think) messages.push({ role: "think", text: think });
+          if (think) thinks.push(think);
         }
         else if (item.type === "agentMessage" && item.text?.trim()) messages.push({ role: "assistant", text: item.text });
       }
+      if (thinks.length) messages.push({ role: "think", text: thinks.join("\n\n") });
     }
     return messages;
   },
@@ -743,7 +748,7 @@ const remote = new RemoteControlService({
     return () => { const index = remoteEventForwarders.indexOf(listener); if (index >= 0) remoteEventForwarders.splice(index, 1); };
   },
   // 手机安装包资产名：按产品品牌区分（GitHub Release：mobile-remote-v0.1.0）
-  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.15.apk" : "CodexRemote-0.1.15.apk",
+  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.16.apk" : "CodexRemote-0.1.16.apk",
   /* 手机首页的品牌面（⛔ 各仓自有：桌面版 = Codex Harness；PPcode 仓的 main.ts 写 PPcode） */
   brandName: app.getName().toLowerCase().includes("ppcode") ? "PPcode" : "Codex Harness",
   brandIcon: remoteBrandIcon,

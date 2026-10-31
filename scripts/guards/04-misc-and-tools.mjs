@@ -1913,8 +1913,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("home-page") && tunnelPage.includes("home-quick") && tunnelPage.includes("home-thread") && tunnelPage.includes("type: \"list-threads\"") ? ok : fail)(
       "【139e】首页 v2：品牌卡 + 新建/中枢两个主行动 + 最近会话（⛔ 不再只有一句问候）"
     );
-    (tunnelPage.includes("EMOJI_GROUPS") && tunnelPage.includes("function openEmoji") && tunnelPage.includes("camera-pick") && tunnelPage.includes("选择会话") ? ok : fail)(
-      "【139e】手机页：表情（与电脑端同一套）/ 拍照入口 / 菜单「选择会话」"
+    (tunnelPage.includes("EMOJI_GROUPS") && tunnelPage.includes("function openEmoji") && !tunnelPage.includes("camera-pick") && !tunnelPage.includes("takePhoto") && tunnelPage.includes("选择会话") ? ok : fail)(
+      "【139e】手机页：表情（与电脑端同一套）/ ⛔ 拍照入口已移除 / 菜单「选择会话」"
     );
     /* 10-31 用户：「语音输入、@ 指令，同步电脑端的」 */
     (tunnelPage.includes("function openMentions") && tunnelPage.includes("mentions: pendingMentions") && !tunnelPage.includes("function voiceInput") ? ok : fail)(
@@ -1927,8 +1927,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("prefers-reduced-motion") && tunnelPage.includes("@keyframes fade-up") && tunnelPage.includes("@keyframes home-in") && tunnelPage.includes(".ripple") && tunnelPage.includes("menu-group") ? ok : fail)(
       "【139e】手机页动效体系：入场/切换/涟漪/菜单弹出 + 跟随系统减弱动效；☰ 菜单带图标与说明"
     );
-    (relaySrc.includes("mobile-remote-v0.1.15") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.15）"
+    (relaySrc.includes("mobile-remote-v0.1.16") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.16）"
     );
   }
 }
