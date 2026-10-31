@@ -1703,10 +1703,14 @@
   font-size: 12px;
   display: flex;
 }
-/* 10-06 用户「设置里面的图标也加点色彩」：左栏分类图标按各自色相常亮（色相真相源 = settingsNav 的第 4 位）。
-   ⛔ 回落用 `currentColor` 而不是某个具体色：按钮自己的 hover/active 会把 color 刷成 --text，
-      写死回落会让选中项的图标变回灰色（跟文字脱节）。 */
+/* 两段配色（10-31 用户令）：左栏分类图标**未选中一律灰**、**选中才出该分类色相**
+   （色相真相源 = settingsNav 的第 4 位）。
+   ⛔ 未选中跟按钮文字同色（currentColor：--muted，hover 时 --text），色彩只为「当前在哪一页」服务；
+   ⛔ 不许改回「全部常亮」——一屏彩色图标分不出选中项，用户已点名。 */
 .settings-nav .settings-group button svg {
+  color: currentColor;
+}
+.settings-nav .settings-group button.active svg {
   color: var(--ic, currentColor);
 }
 .settings-nav .settings-group button:hover {
