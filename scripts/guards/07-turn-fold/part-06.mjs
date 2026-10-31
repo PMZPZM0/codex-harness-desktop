@@ -608,8 +608,33 @@ export async function run() {
       const planSrc = readFileSync(join(ROOT, "src", "lib", "turn-fold-plan.mjs"), "utf8").replace(/\r/g, "");
       const queueSrc = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8").replace(/\r/g, "");
       const cardsSrc = readFileSync(join(ROOT, "src", "features", "session-cards", "SessionCards.tsx"), "utf8").replace(/\r/g, "");
-      (/buildSegments\(units, !running\)/.test(queueSrc) && !/inlineThinking/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id\)/.test(queueSrc) && !/planCompletedFold\(units, finalUnit\.item\.id, \{/.test(queueSrc) ? ok : fail)(
-        "【161】直播用原分段（已结束思考进过程段）；完成态全交 planCompletedFold 大折叠（无 thinking 旁路）"
+      /* ⛔ 10-31 改口径：分段入口从 `buildSegments(units, !running)` 变成
+         `buildSegments(units, simpleFlow ? true : !running)` —— 「对话流：简洁」靠**这一个参数**
+         同时达成两件事（直播思考也并进过程段、末段也折叠）。旧断言会把新写法判红，已同步。 */
+      (/buildSegments\(units, simpleFlow \? true : !running\)/.test(queueSrc) && !/inlineThinking/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id\)/.test(queueSrc) && !/planCompletedFold\(units, finalUnit\.item\.id, \{/.test(queueSrc) ? ok : fail)(
+        "【161】直播分段：详细=原分段（已结束思考进过程段）；简洁=`? true` 强制全段折叠；完成态全交 planCompletedFold（无 thinking 旁路）"
+      );
+      /* ── 10-31 用户令：「运行过程下面加一个对话流，简洁 详细，默认简洁」──
+         简洁 = 两个正文之间只留**一个**过程块，块头一直显示最新一步，点开看全部。
+         ⛔ 四条一起钉：设置项在运行过程下面、store 默认 simple、简洁真的改了分段、块头取最后一条。 */
+      const appearanceSrc = readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8").replace(/\r/g, "");
+      const flowStore = readFileSync(join(ROOT, "src", "lib", "dialog-flow-mode.ts"), "utf8").replace(/\r/g, "");
+      const flowTitle = readFileSync(join(ROOT, "src", "lib", "dialog-flow-title.ts"), "utf8").replace(/\r/g, "");
+      const runIdx = appearanceSrc.indexOf("运行过程");
+      const flowIdx = appearanceSrc.indexOf("对话流");
+      (runIdx > 0 && flowIdx > runIdx ? ok : fail)(
+        "【290】设置 → 外观：「对话流」这一行紧跟在「运行过程」下面（用户点名的位置）"
+      );
+      (/localStorage\.getItem\(KEY\) === "detailed" \? "detailed" : "simple"/.test(flowStore) ? ok : fail)(
+        "【290】对话流**默认简洁**：没有存过这个键（老档案）一律 simple"
+      );
+      /* 块头是纯函数（src/lib/dialog-flow-title.ts）—— 真行为由 .workbuddy/tmp/flow-test 的脚本跑；
+         这里钉**形状**：取最后一条非思考单元 + 全思考兜底 + 单条不写步数。 */
+      (/const steps = group\.filter\(\(unit\) => unit\.item\.type !== "reasoning"\)/.test(flowTitle)
+        && /const last = steps\[steps\.length - 1\]/.test(flowTitle)
+        && /if \(!last\) return waitingForApproval \? "等待确认…" : "深度思考…"/.test(flowTitle)
+        && /steps\.length > 1 \? ` · 共 \$\{steps\.length\} 步`/.test(flowTitle) ? ok : fail)(
+        "【290】简洁块头 = **最新一步**（取最后一条非思考单元；全思考给「深度思考…」；单条不写「共 1 步」）"
       );
       (/unitLimit=\{seg\.kind === "foldable" \? 8 : undefined\}/.test(queueSrc) && /unitLimit\?: number/.test(cardsSrc) && /<CappedToolRun label="过程"/.test(cardsSrc) ? ok : fail)(
         "【161】直播末段统一上限 8 条：工具/命令/编辑/搜索/看图/已结束思考都收；正文段不传 unitLimit（不藏正文）"

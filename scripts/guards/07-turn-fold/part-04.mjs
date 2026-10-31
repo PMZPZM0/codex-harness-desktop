@@ -869,8 +869,14 @@ export async function run() {
   (!/symbolColor:\s*"#1b1b1a"/.test(main81) ? ok : fail)(
     "【81】窗口创建处不得写死浅色符号色（深色模式下新开的独立窗口会立刻复现「看不见但能点」）"
   );
-  (/已给 \$\{targets\.length\} 个窗口下发标题栏符号色/.test(main81) ? ok : fail)(
-    "【81】下发后打日志（含覆盖窗口数 + 已下发符号色）——⛔ 本版 Electron 没有 getTitleBarOverlay 读回接口，别写它（TS2551 会直接让构建失败）"
+  /* ⛔ 10-31 口径变更（用户：「更小的按钮 + 更小的 hover 块，只能自绘」）：
+     win32 改 `frame: false`，三个窗口钮由渲染层自绘 ⇒ **符号色不再是主进程的事**
+     （颜色由 CSS 变量跟着主题走），`titleBarOverlayOptions` / `CHROME_SYMBOL_*` / `setTitleBarOverlay`
+     整条链路已删除。断言只保留"下发后要打日志（含覆盖窗口数）"这个意图。 */
+  (/已给 \$\{targets\.length\} 个窗口下发底色/.test(main81) /* 负向只认**调用**形式：main.ts 里还留着说明性注释（`setTitleBarOverlay` 带反引号），
+         按裸词匹配会被注释误伤（刚踩过：改成 /\.setTitleBarOverlay\(/ 才不误判）。 */
+   && !/\.setTitleBarOverlay\(/.test(main81) ? ok : fail)(
+    "【81】主题下发后打日志（含覆盖窗口数）且不再下发标题栏符号色 —— win32 已 frame:false、窗口钮自绘"
   );
   (!/getTitleBarOverlay\s*\(/.test(main81) ? ok : fail)(
     "【81】不**调用**不存在的 getTitleBarOverlay（本版 Electron 无此 API；注释里提到不算，只认带括号的调用）"

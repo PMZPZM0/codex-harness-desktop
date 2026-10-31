@@ -5,7 +5,7 @@
  * ⛔ 主题按钮由 src/lib/themes.ts 的 THEMES 注册表渲染：新增主题 = 表里加一行
  *    + styles 里加一段 `:root[data-theme="<id>"]` 变量块，这里与 bag 零改动。
  */
-import { Brain, FileCode2, Sun, ZoomIn } from "lucide-react";
+import { Brain, FileCode2, List, Sun, ZoomIn } from "lucide-react";
 import { flushSync } from "react-dom";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
 import { FunctionMenuSettings } from "../function-menu";
@@ -14,6 +14,7 @@ import { BootIntroSettingsRow } from "./boot550c";
 import { THEMES } from "../../lib/themes";
 import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { setRunProcessMode, useRunProcessMode } from "../../lib/run-process-mode";
+import { setDialogFlowMode, useDialogFlowMode } from "../../lib/dialog-flow-mode";
 import { runVisualSwitch, themeLabelOf } from "../../lib/visual-switch";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
 
@@ -23,6 +24,7 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
   const { theme, setTheme, uiFont, setUiFont, onNotice } = props;
   const reasoningDisplay = useReasoningDisplayMode();
   const runProcessMode = useRunProcessMode();
+  const dialogFlow = useDialogFlowMode();
   return (
     <>
       <section className="settings-section stack appearance-page settings-exp-page">
@@ -59,6 +61,16 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
             <div className="segmented-tabs row-pills" role="group" aria-label="运行过程">
               <button type="button" className={runProcessMode === "simple" ? "active" : ""} aria-pressed={runProcessMode === "simple"} title="只显示文件编辑行与实时 +N -M，不自动展开内容（默认）" onClick={() => { if (runProcessMode === "simple") return; setRunProcessMode("simple"); onNotice?.("运行过程：简洁"); }}>简洁</button>
               <button type="button" className={runProcessMode === "detailed" ? "active" : ""} aria-pressed={runProcessMode === "detailed"} title="文件变化时弹浮窗，跟随最新内容 / diff，静止 3 秒自动收起" onClick={() => { if (runProcessMode === "detailed") return; setRunProcessMode("detailed"); onNotice?.("运行过程：详细"); }}>详细</button>
+            </div>
+          </div>
+          {/* ⛔ 10-31 用户令：「运行过程下面加一个，这个对话流，简洁 详细，默认简洁」——
+              与上一行**是两件事**（那个管单条卡片要不要跟着弹内容，这个管正文之间要不要收成一个块）。
+              ⛔ 顺序是用户点名的（就压在运行过程下面），别挪到别的卡片里去。 */}
+          <div className="settings-pill-row">
+            <span className="settings-pill-row-label"><List size={13} />对话流</span>
+            <div className="segmented-tabs row-pills" role="group" aria-label="对话流">
+              <button type="button" className={dialogFlow === "simple" ? "active" : ""} aria-pressed={dialogFlow === "simple"} title="正文之间只留一个过程块，块头一直显示最新一步（跟着流实时换），点开看全部（默认）" onClick={() => { if (dialogFlow === "simple") return; setDialogFlowMode("simple"); onNotice?.("对话流：简洁"); }}>简洁</button>
+              <button type="button" className={dialogFlow === "detailed" ? "active" : ""} aria-pressed={dialogFlow === "detailed"} title="过程逐条展示：正在跑的那一段直接铺在正文之间，工具卡各自可见" onClick={() => { if (dialogFlow === "detailed") return; setDialogFlowMode("detailed"); onNotice?.("对话流：详细"); }}>详细</button>
             </div>
           </div>
         </div>
