@@ -163,6 +163,13 @@
 /* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
    ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
 .thread-row-tags > * { min-width: 0; }
+/* ⛔ 10-31 用户实测：展开「调度会话」后父行标题被推右 —— 子行带着「调度 + 自定义标签」，
+   把全列表共用的列宽撑大了。⇒ 嵌套子行用独立列宽（层内仍对齐），父行只按顶层行测量。 */
+.dispatch-child .thread-row-tags,
+.team-cluster-body .thread-row-tags {
+  flex-basis: var(--tag-col-w-nested, var(--tag-col-w, 30px));
+  width: var(--tag-col-w-nested, var(--tag-col-w, 30px));
+}
 /* 自定义标签不超出标签列（长标签省略，保持整列整齐）。 */
 .thread-custom-tag { max-width: 50px; }
 /* ── 会话行底色（10-31 用户令）：未选中浅色常驻、选中后深一档 ───────────────── */

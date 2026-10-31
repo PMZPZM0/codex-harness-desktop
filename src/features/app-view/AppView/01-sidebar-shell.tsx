@@ -182,13 +182,20 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      所有行共用 ⇒ 名称起点仍逐行对齐，但标签与名称之间不再有定宽列留下的空白。
      每次渲染后重量（标签 / 徽标 / 选中态变化即时跟上）；⛔ 没有标签的列表列宽为 0。 */
   useLayoutEffect(() => {
-    let max = 0;
+    /* ⛔ 10-31 用户实测：「展开/收起调度会话，父行标题会左右挪」。根因：标签列宽是量**当前 DOM
+       里所有行**的最宽标签 —— 展开后子行多出「调度 + 自定义标签」，列宽变大 ⇒ 父行标题被推右。
+       ⇒ 顶层行与嵌套子行（调度子会话 / 团队展开成员）**分开测量**：
+         父行只用顶层行定宽，展开收起不再影响它的标题起点；子行各用各的列宽，层内仍对齐。 */
+    let maxTop = 0;
+    let maxNested = 0;
     for (const el of document.querySelectorAll(".thread-row-tags")) {
       const kids = Array.from(el.children) as HTMLElement[];
       const w = kids.reduce((s, c) => s + c.offsetWidth, 0) + Math.max(0, kids.length - 1) * 4;
-      if (w > max) max = w;
+      if (el.closest(".dispatch-child, .team-cluster-body")) { if (w > maxNested) maxNested = w; }
+      else if (w > maxTop) maxTop = w;
     }
-    document.documentElement.style.setProperty("--tag-col-w", `${Math.min(max, 96)}px`);
+    document.documentElement.style.setProperty("--tag-col-w", `${Math.min(maxTop, 96)}px`);
+    document.documentElement.style.setProperty("--tag-col-w-nested", `${Math.min(maxNested || maxTop, 96)}px`);
   });
   /* 10-25 用户令：新建指挥中枢时弹**应用内**对话框选项目地址（两个选项），
      ⛔ 不用系统 messageBox、⛔ 不用 toast 内联提示。
