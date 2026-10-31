@@ -474,9 +474,10 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       ref={shellRef}
       className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
       data-thread-id={thread?.id ?? ""}
-      // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时不能塞入一个 0px 首列，
-      // 否则 CSS Grid 会保留隐式轨道，把 workspace 挤到最右侧。
-      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : sidebarCollapsed ? `minmax(0, 1fr) 1px ${panelWidth}px` : `256px minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
+      // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时**不再换模板**（10-31）：
+      // 模板恒为 4 条轨道、首列走 `var(--side-w)`，折叠只把该变量插值到 0 ⇒ 列宽有过渡。
+      // ⛔ 别退回"折叠时少一列"：轨道数变了 CSS 就不能插值，主区会瞬移 256px（用户报的"生硬"）。
+      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : `var(--side-w, 256px) minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
     >
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}

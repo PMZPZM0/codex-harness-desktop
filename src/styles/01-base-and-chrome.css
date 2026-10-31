@@ -304,6 +304,15 @@
   /* 交互反馈（hover / 选中 / 切换）的统一时长。
      ⛔ 此前散着 .16s / .18s / .22s 好几档，同类控件观感对不齐 ⇒ 一律走这个变量。 */
   --dur-ui: 160ms;
+  /* 浮层「打开动效」三档（10-31 立，见 59-motion.css）：
+     ⛔ 之前散在 20 多个分节里各写一套（.12s/.14s/.16s/.18s/.2s/.3s 混用），
+        同一屏两个浮层会一个快一个慢。现在按语义只留三档 + 一条进场曲线。 */
+  --dur-overlay: 160ms;   /* 遮罩 / 背景层：纯淡入 */
+  --dur-panel: 220ms;     /* 面板 / 对话框：淡入 + 上浮 + 轻微放大 */
+  --dur-menu: 140ms;      /* 菜单 / 气泡：更短，跟着点击马上出现 */
+  /* 进场缓动：起步快、收尾缓（"东西被推进来"而不是"匀速出现"）。
+     ⛔ 出场不用它：本项目的浮层是条件渲染（关闭即卸载），没有退场画面可播。 */
+  --ease-enter: cubic-bezier(0.22, 0.61, 0.36, 1);
   background: #fff;
   font-family:
     Inter,
@@ -376,7 +385,7 @@ button {
 }
 .app-shell {
   background: var(--bg);
-  grid-template-columns: 256px minmax(0, 1fr);
+  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr);
   /* 第一行 = 全宽顶行（任务名 + 操作簇 + 原生窗口钮），第二行 = 侧栏/聊天/右栏。
      右栏从第二行开始：拖分隔条只影响面板，顶行纹丝不动。 */
   grid-template-rows: 44px minmax(0, 1fr);
@@ -385,15 +394,29 @@ button {
   display: grid;
 }
 .app-shell.with-context {
-  grid-template-columns: 256px minmax(0, 1fr) 1px 308px;
+  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr) 1px var(--right-w, 308px);
+}
+/* ── 侧栏展开/折叠：让**列宽**跟着动（10-31 立）──────────────────────────────
+   ⛔ 原来折叠是把 grid-template-columns 换成"少一列"的模板 —— **轨道数变了就不能插值**，
+      于是 `.sidebar` 自己在滑、主区却瞬移 256px（用户看到的就是"生硬"）。
+   ⛔ 现在轨道数恒为 3/4，只让首列宽度 `--side-w` 在 256px ↔ 0px 之间插值（@property 注册后
+      长度变量才可动画）；`.sidebar` 仍按既有规则转 fixed + 位移出场。
+   ⛔ 窄屏（.narrow）保持原来的"少一列"写法：那里侧栏是覆盖层，列宽动画没有意义。 */
+@property --side-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 256px;
 }
 .app-shell {
-  transition: grid-template-columns 0.22s;
+  transition: --side-w var(--dur-panel) var(--ease-enter);
 }
-.app-shell.side-collapsed {
+.app-shell:not(.narrow).side-collapsed {
+  --side-w: 0px;
+}
+.app-shell.narrow.side-collapsed {
   grid-template-columns: minmax(0, 1fr);
 }
-.app-shell.side-collapsed.with-context {
+.app-shell.narrow.side-collapsed.with-context {
   grid-template-columns: minmax(0, 1fr) 1px 308px;
 }
 .sidebar-hotzone {
@@ -414,7 +437,7 @@ button {
   box-shadow: var(--shadow);
   pointer-events: none;
   padding: 12px 10px 10px;
-  transition: transform 0.2s;
+  transition: transform var(--dur-panel) var(--ease-enter);
   position: fixed;
   inset: 0 auto 0 0;
   overflow: hidden;
