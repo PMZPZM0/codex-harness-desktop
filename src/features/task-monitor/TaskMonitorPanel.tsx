@@ -127,7 +127,7 @@ export function TaskMonitorPanel({ app, active = true }: { app: HarnessAppApi; a
      数据源 = **最新回合**的 items（含运行中），与消息底部「网页来源」同一份纯函数
      collectTurnWebSources（⛔ 不另写一套 URL 提取）。切换会话/新回合开始时自动换。 */
   const latestTurn = app.thread?.turns?.at(-1);
-  const webSources = useMemo(() => (latestTurn ? collectTurnWebSources(latestTurn as any) : []), [latestTurn]);
+  const webSources = useMemo(() => (latestTurn ? collectTurnWebSources(latestTurn as { items?: Array<{ type: string; [key: string]: unknown }> }) : []), [latestTurn]);
   const visibleWeb = webExpanded ? webSources : webSources.slice(0, 6);
   const pageCount = Math.max(1, Math.ceil(fileTurns.length / PAGE_FILES));
   const pageTurns = fileTurns.slice(filePage * PAGE_FILES, filePage * PAGE_FILES + PAGE_FILES);
