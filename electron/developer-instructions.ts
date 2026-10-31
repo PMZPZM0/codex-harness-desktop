@@ -153,6 +153,15 @@ const VIDEO_INSTRUCTIONS = `\n\nVIDEO GENERATION (async MCP tools; only if \`vid
 /** Laya 判断工具（10-18）：只在装了 Laya 的机器上注册；文案自带「只在工具表里存在时生效」。 */
 const LAYA_INSTRUCTIONS = `\n\nLOCAL LAYA JUDGE (only if \`laya_judge\` is in your tool list): Laya is a tiny local choice classifier (~tens of ms, no text generation) for short-text, low-stakes decisions. Good uses: (1) knowledge_gate — is a note worth saving as project knowledge or just chatter; (2) duplicate — is new content a duplicate of an existing note (pass reference); (3) custom — classify into 2–6 mutually exclusive options you define (e.g. user intent: task/question/chit-chat; routing: self/expert/team; content category). Pass a short state and clear criteria, then use the returned choice + confidence. If it says 弃权 (below threshold), do NOT use its guess — decide yourself or ask the user. NEVER use it for security, legal, medical, financial, irreversible-action decisions, fact-checking, long-document understanding, or open-ended generation; it is a fast classifier, not an oracle. If the tool is absent, Laya is not installed: do not try to call it or install it yourself.`;
 
+/** Filee 文件转换（10-30，KnifeLemon/Filee，MIT）。只在 tools/filee/filee-cli.exe 存在时注入。
+ *  ⛔ 条件式（同 BROWSER / REVIEW 纪律）：没装的机器上工具不在表里，指令说了也白说。
+ *  ⛔ 编号占回第 5 条（原 describe_image 识图段 10-30 已随视觉辅助插件移除）。 */
+const FILEE_INSTRUCTIONS =
+  "\n5) FILE CONVERT — filee_convert converts files fully offline (244 formats: images, PDF, Office docs, spreadsheets, slides, e-books, audio/video, subtitles, archives, CAD, fonts, data formats, 3D models). " +
+  "Pass LOCAL file paths in `inputs` and the target extension in `to` (e.g. to=\"jpg\", to=\"pdf\"). The result lists per-file output paths — reference those local paths afterward (or show images with image_view). " +
+  "Common pairs: heic→jpg, png/webp/avif↔, psd→png, pdf↔docx/pptx/txt/png, docx/xlsx/pptx↔pdf, epub/mobi/azw3↔pdf/docx, mp4/mkv/mov→mp3/webm/gif (needs local ffmpeg), zip/7z/rar↔extract, dwg/dxf→pdf/svg, json/yaml/toml/xml/csv↔, glb/stl/obj↔. " +
+  "Lossy image quality: quality 1-100. Batch up to 64 inputs; directories need recursive=true. If the tool is absent, Filee is not installed — tell the user to install it in 设置 → 开发工具 → Filee 文件转换, and never retry in a loop.";
+
 /** 交付前自查（09-21 起是「派内置评审子智能体复审」；10-27 用户令「不要内置子智能体」后
  *  改成**自己复查**——不再随应用种入任何子智能体，也不许叫一个不存在的名字）。
  *  ⛔ 保留这条的原因：模型仍然会"写完就交"，交付前过一遍是唯一不依赖额外对象的质量兜底。
@@ -443,6 +452,8 @@ export type DevInstructionsInput = {
   desktop?: boolean;
   browser?: boolean;
   imagePlugin?: boolean;
+  /** Filee 文件转换（10-30）装没装（tools/filee/filee-cli.exe 存在）—— 装了才注入第 5 条用法段 */
+  fileeInstalled?: boolean;
   mediaCommand?: string;
   /** 已开启的输出风格（`electron/output-styles.ts` 的 outputStyleTargets）—— 见上方 OUTPUT_STYLE_INSTRUCTIONS */
   outputStyles?: { skill: string; label: string; file: string }[];
@@ -470,6 +481,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);
+  // Filee 文件转换（10-30）：装了才注入第 5 条（filee_convert 工具在表里的机器必然装了）
+  if (input.fileeInstalled) text += FILEE_INSTRUCTIONS;
   // 视频生成三件套（无条件下发，内容自带条件式判断：先看 video_generate 在不在工具表里）
   text += VIDEO_INSTRUCTIONS;
   text += LAYA_INSTRUCTIONS;

@@ -561,6 +561,21 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           args: { type: "array", items: { type: "string" }, description: "命令行参数数组，例如 calendar +agenda 或 im +messages-send --chat-id oc_xxx --text hi" },
           cwd: { type: "string", description: "可选执行目录（上传本地文件时传文件所在目录）" },
         }, required: ["args"] } },
+      /* Filee 文件转换（10-30，KnifeLemon/Filee，MIT）：本地 244 种格式离线互转。
+         ⛔ 口径同 feishu_cli：无条件注册（dynamicTools 只在 thread/start / resume 生效，带条件 = 中途变化不生效）；
+           未安装时执行端回「去哪里装」的指引，模型不要反复重试。
+         ⛔ 常用格式对直接写进描述（模型选 --to 全靠它）；全量 244 种在 filee 官方文档，别塞这里。 */
+      { type: "function", name: "filee_convert",
+        description: "用本机 Filee 把文件转换成别的格式（完全离线、不上传）：图片（heic→jpg、png↔webp、psd→png、raw→jpg）、PDF（pdf↔docx/pptx/txt/png、合并拆分压缩）、Office（docx/xlsx/pptx ↔ pdf/odp/csv/json）、电子书（epub/mobi/azw3↔pdf/docx）、音视频（mp4/mkv/mov↔mp3/webm/gif，需本机 ffmpeg）、字幕、归档（zip/7z/rar 解压与打包）、CAD（dwg/dxf→pdf/svg）、字体、数据格式（json/yaml/toml/xml/csv 互转）、3D 模型（glb/stl/obj）。⛔ 需要用户先在「设置 → 开发工具 → Filee 文件转换」安装；没装时提示用户去那里装，不要反复重试。",
+        inputSchema: { type: "object", properties: {
+          inputs: { type: "array", items: { type: "string" }, description: "要转换的文件路径（1~64 个；本地路径直接传；目录要配 recursive=true）" },
+          to: { type: "string", description: "目标格式扩展名，如 jpg / png / webp / pdf / docx / xlsx / epub / mp3 / zip" },
+          outputDir: { type: "string", description: "输出目录；省略 = 保存在源文件旁边" },
+          quality: { type: "number", description: "有损图像质量 1-100（jpg/webp/avif），省略用默认" },
+          overwrite: { type: "boolean", description: "覆盖已有输出；省略 = 自动加编号" },
+          recursive: { type: "boolean", description: "inputs 是目录时包含子文件夹" },
+          keepDates: { type: "boolean", description: "保留原文件的创建/修改时间" },
+        }, required: ["inputs", "to"] } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。**单选还是多选由你根据问题性质决定**：答案互斥（选一条就够）传 multiple=false 或省略；多项可以并存（要改哪几个文件 / 勾选要处理的项）传 multiple=true 让用户勾选多条。用户先选中、再点确认按钮提交，勾选与自定义输入会用「；」拼接返回。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, multiple: { type: "boolean", description: "true = 多选（用户可勾选多项）；false/省略 = 单选（只能选一项）。两种都是：用户先选中、再点「确认/提交」按钮才把答案回给你" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
       // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
       { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },

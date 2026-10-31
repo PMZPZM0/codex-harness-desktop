@@ -20,11 +20,14 @@
  * ⛔ 待接缝化（阶段 2）：app / shell / spawn 为宿主能力。
  */
 import fs from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, createWriteStream } from "node:fs";
+import { once } from "node:events";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
+import { mirrorCandidates } from "../gh-mirror";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -466,6 +469,180 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
   throw lastError ?? new Error(`${label} 安装失败`);
 }
 
+/* ── Filee 文件转换（10-30）───────────────────────────────────────────────────
+ * GitHub release 直下型（**不是 npm 包**）：镜像序下载便携包 → SHA256 校验 → 解压 tools/filee/。
+ * ⛔ 镜像序单一真相源 = gh-mirror.mirrorCandidates（gh-proxy → ghfast → 直连），别在这里另写一份。
+ * ⛔ 151MB 大包必须 SHA256 校验（release 自带 Filee-<ver>-SHA256SUMS.txt）：镜像转发偶发截断，
+ *   坏包解压一半比「下载失败」更难排查（10-30 实测 CLI 真跑通过后定的口径）。
+ * ⛔ 装完写 version.txt：更新链的 installedVersionOf 读它 —— `filee-cli --version` 要 spawn 一次太慢。
+ * ⛔ CLI 输出/取消：下载用流式 + 进度（同 skill-packs 的 10-30 口径「要真安装」），取消走
+ *   isCancelRequested 轮询（fetch 不能被 trackRuntimeProc 杀，每 chunk 自查）。
+ */
+const FILEE_REPO = "KnifeLemon/Filee";
+function fileeInstallDir(): string { return path.join(writeToolsRoot(), "filee"); }
+function fileeVersionFile(): string { return path.join(fileeInstallDir(), "version.txt"); }
+
+/** Filee 便携包资产名（按平台/架构；资产名规律 10-30 实测自 GitHub release v2.2.0）。 */
+function fileeAssetName(version: string): string {
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  if (process.platform === "win32") return `Filee-${version}-win-Portable.zip`;
+  if (process.platform === "darwin") return `Filee-${version}-osx-${arch}.tar.gz`;
+  return `Filee-${version}-linux-${arch}.tar.gz`;
+}
+
+/** 读盘上已装版本（安装时落盘的 version.txt；读不到 = 未安装/旧版安装）。 */
+function fileeInstalledVersion(): string {
+  try { return readFileSync(fileeVersionFile(), "utf8").trim(); } catch { return ""; }
+}
+
+/** 镜像序流式下载一个 release 资产到 target（进度 + 取消 + SHA 逐块算；失败/取消删半截文件）。 */
+async function fileeDownloadAsset(id: DevRuntimeId, urlPath: string, target: string, expectZipMagic: boolean): Promise<void> {
+  await fs.mkdir(path.dirname(target), { recursive: true });
+  const url = `https://github.com/${FILEE_REPO}/releases/download/${urlPath}`;
+  const controller = new AbortController();
+  const tried: string[] = [];
+  try {
+    for (const candidate of mirrorCandidates(url)) {
+      let host = candidate;
+      try { host = new URL(candidate).host; } catch { /* 原样显示 */ }
+      try {
+        const res = await fetch(candidate, { redirect: "follow", signal: controller.signal });
+        if (!res.ok || !res.body) { tried.push(`${host}(HTTP ${res.status})`); continue; }
+        const total = Number(res.headers.get("content-length") ?? 0) || 0;
+        const file = createWriteStream(target);
+        const hash = createHash("sha256");
+        let received = 0;
+        let reported = 0;
+        const finished = once(file, "finish");
+        let aborted = false;
+        try {
+          for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+            if (isCancelRequested(id)) { aborted = true; controller.abort(); break; }
+            received += chunk.byteLength;
+            hash.update(chunk);
+            if (!file.write(chunk)) await once(file, "drain");
+            // 首块必报（151MB 大包要让用户立刻看见在下），之后每 5% / 1MB 报一次
+            if ((reported === 0 && received > 0) || received - reported >= Math.max(total ? total / 20 : 0, 1024 * 1024)) {
+              reported = received;
+              const pct = total ? Math.round((received / total) * 100) : 0;
+              emitRuntimeProgress(id, `@@PROGRESS ${pct} 正在下载（${host}）…`);
+            }
+          }
+        } finally { file.end(); }
+        await finished;
+        if (aborted) throw new Error("已取消");
+        if (!received) throw new Error("下载到 0 字节");
+        if (expectZipMagic) {
+          const head = (await fs.readFile(target)).subarray(0, 2).toString("latin1");
+          if (head !== "PK") throw new Error("下载内容不是 zip（镜像可能返回了错误页）");
+        }
+        // 整包 SHA 在下载时逐块算好交给调用方校验（不重读 151MB）
+        fileeLastSha.set(target, hash.digest("hex"));
+        return;
+      } catch (error) {
+        tried.push(`${host}(${String((error as { message?: unknown })?.message ?? error).slice(0, 60)})`);
+        if (isCancelRequested(id)) break;
+      }
+    }
+    throw new Error(`Filee 下载失败：${tried.join(" → ")}`);
+  } finally {
+    // 成功时 target 要留给解压步骤；失败/取消（没返回）时删半截文件 —— staging 目录不许攒垃圾
+    if (!fileeLastSha.has(target)) await fs.rm(target, { force: true }).catch(() => undefined);
+  }
+}
+const fileeLastSha = new Map<string, string>();
+
+/** 安装 / 更新 Filee（version 传具体版本号；更新链传 GitHub 最新 tag）。 */
+async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promise<void> {
+  if (!/^[0-9][0-9A-Za-z.\-]*$/.test(version)) throw new Error(`Filee 版本号异常：${version}`);
+  const dir = fileeInstallDir();
+  const staging = path.join(writeToolsRoot(), ".filee-download");
+  await fs.mkdir(staging, { recursive: true });
+  const asset = fileeAssetName(version);
+  emitRuntimeProgress(id, `@@STAGE 下载 Filee ${version}`);
+  const archive = path.join(staging, asset);
+  fileeLastSha.delete(archive);
+  await fileeDownloadAsset(id, `v${version}/${asset}`, archive, process.platform === "win32");
+  // SHA256 校验（校验表也走镜像序；拿不到表或表里没这行 = 如实说明并跳过，不装哑巴包也不瞎报错）
+  const actualSha = fileeLastSha.get(archive) ?? "";
+  emitRuntimeProgress(id, "校验 SHA256…");
+  let expectedSha = "";
+  for (const candidate of mirrorCandidates(`https://github.com/${FILEE_REPO}/releases/download/v${version}/Filee-${version}-SHA256SUMS.txt`)) {
+    try {
+      const res = await fetch(candidate, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
+      if (!res.ok) continue;
+      const text = await res.text();
+      const row = text.split(/\r?\n/).find((line) => line.toLowerCase().includes(asset.toLowerCase()));
+      const hex = row?.trim().split(/\s+/)[0]?.toLowerCase() ?? "";
+      if (/^[0-9a-f]{64}$/.test(hex)) { expectedSha = hex; break; }
+    } catch { /* 下一个镜像 */ }
+  }
+  if (expectedSha && actualSha && expectedSha !== actualSha) {
+    await fs.rm(archive, { force: true });
+    throw new Error(`Filee 安装包 SHA256 校验失败（下载可能被截断）：期望 ${expectedSha.slice(0, 12)}…，实际 ${actualSha.slice(0, 12)}… —— 请重试`);
+  }
+  // 清旧目录（解压目标整体重建；临时下载件在 staging、不受影响）
+  emitRuntimeProgress(id, "正在解压…");
+  await fs.rm(dir, { recursive: true, force: true });
+  await fs.mkdir(dir, { recursive: true });
+  const zipMagic = process.platform === "win32";
+  if (zipMagic) {
+    const sevenZip = existingToolPath("sevenzip", "7z.exe");
+    if (!sevenZip) throw new Error("缺少随包 7-Zip（sevenzip/7z.exe），解压不了 Filee 安装包");
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(sevenZip, ["x", archive, `-o${dir}`, "-y"], { windowsHide: true });
+      trackRuntimeProc(id, child);
+      let tail = "";
+      const grab = (c: unknown) => { tail = `${tail}\n${String(c)}`.slice(-2000); };
+      child.stdout?.on("data", grab);
+      child.stderr?.on("data", grab);
+      child.on("error", reject);
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）：${tail.trim().slice(-600)}`)));
+    });
+  } else {
+    // mac / linux：系统自带 tar（osx-*.tar.gz / linux-*.tar.gz）
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn("tar", ["-xzf", archive, "-C", dir], { windowsHide: true });
+      trackRuntimeProc(id, child);
+      child.on("error", reject);
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）`)));
+    });
+  }
+  // 落版本号（更新链 installedVersionOf 读它）
+  await fs.writeFile(fileeVersionFile(), version + "\n", "utf8");
+  await fs.rm(staging, { recursive: true, force: true });
+}
+
+/* ── GitHub 直下型工具的「检查更新 / 升级」（Filee，10-30）──────────────────────
+ * ⛔ 不并入 UPDATEABLE_TOOLS（那是 npm 包专用：pkg + fetchRegistryLatest）。
+ *   · 查最新版走 GitHub releases/latest（api 镜像序），比 npm 慢一点但 Filee 没有 npm 源；
+ *   · 升级 = 重跑同一条安装函数（带最新 tag），装完复核 version.txt。
+ * ⛔ 自动更新循环不收 filee：autoUpdateItems 只认配了开关的工具（151MB 不许后台偷下），
+ *   filee 只出现在「控制台 → 组件更新」的手动检查里 —— 这个边界别改。 */
+const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string }> = {
+  filee: { repo: FILEE_REPO, label: "Filee 文件转换" },
+};
+
+/** 查 GitHub 最新 release tag（去 v 前缀）：api 镜像序，20s 超时。 */
+async function fetchGitHubLatestTag(repo: string): Promise<string> {
+  let lastError = "";
+  for (const candidate of mirrorCandidates(`https://api.github.com/repos/${repo}/releases/latest`)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const res = await fetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } });
+      if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
+      const json = (await res.json()) as { tag_name?: unknown };
+      const tag = typeof json?.tag_name === "string" ? json.tag_name.replace(/^v/, "") : "";
+      if (tag) return tag;
+      lastError = "响应里没有 tag_name";
+    } catch (error) {
+      lastError = String((error as Error)?.message ?? error);
+    } finally { clearTimeout(timer); }
+  }
+  throw new Error(`查 GitHub 最新版失败：${lastError}`);
+}
+
 export type DevRuntimeHealth = {
   id: string;
   name: string;
@@ -482,6 +659,7 @@ const HEALTH_ARGS: Partial<Record<DevRuntimeId, string[]>> = {
   node: ["-v"], python: ["--version"], git: ["--version"], rg: ["--version"], uv: ["--version"],
   jq: ["--version"], ninja: ["--version"], sevenzip: [], "yt-dlp": ["--version"], cmake: ["--version"],
   ffmpeg: ["-version"], "platform-tools": ["version"],
+  filee: ["--version"],
   pwsh: ["-NoLogo", "-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()"],
   "vscode-cli": ["--version"], conda: ["--version"], mingw: ["--version"],
 };
@@ -583,7 +761,10 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
 /** 单个可更新工具的包名 / 显示名（**唯一真相源**）：自动更新板块从这里取，⛔ 不许另抄一份包名。 */
 export function updateableToolMeta(id: string): { pkg: string; label: string } | null {
   const tool = UPDATEABLE_TOOLS[id];
-  return tool ? { pkg: tool.pkg, label: tool.label } : null;
+  if (tool) return { pkg: tool.pkg, label: tool.label };
+  const gh = GITHUB_UPDATEABLE[id];
+  if (gh) return { pkg: `github:${gh.repo}`, label: gh.label };
+  return null;
 }
 
 export type RuntimeUpdateRow = {
@@ -597,17 +778,19 @@ export type RuntimeUpdateRow = {
   error: string;
 };
 
-/** 当前平台**真正**可更新的工具 id（桌面 → 浏览器 → 电脑操作，顺序稳定）。
+/** 当前平台**真正**可更新的工具 id（桌面 → 浏览器 → 电脑操作 → GitHub 直下型，顺序稳定）。
  *  ⛔ 界面与后台调度都必须走这里，别各写一份清单（本项目反复栽在两处各写一套上）。 */
 export function updateableToolIds(): string[] {
-  return Object.keys(UPDATEABLE_TOOLS).filter((id) => {
-    const platforms = UPDATEABLE_TOOLS[id].platforms;
+  return [...Object.keys(UPDATEABLE_TOOLS), ...Object.keys(GITHUB_UPDATEABLE)].filter((id) => {
+    const platforms = UPDATEABLE_TOOLS[id]?.platforms;
     return !platforms || platforms.includes(process.platform);
   });
 }
 
-/** 读磁盘上已装的版本号（双落位都查；读不到返回空串 = 当未安装）。 */
+/** 读磁盘上已装的版本号（npm 包读 package.json；GitHub 直下型读安装时落的 version.txt）。 */
 function installedVersionOf(id: string): string {
+  const gh = GITHUB_UPDATEABLE[id];
+  if (gh) return fileeInstalledVersion();
   const tool = UPDATEABLE_TOOLS[id];
   if (!tool) return "";
   const segments = tool.pkg.split("/");
@@ -665,6 +848,17 @@ async function fetchRegistryLatest(
  *    （症状：界面说「已是最新」、后台却在偷偷装，或反之）。界面按钮只是这两个函数的薄包装。
  */
 export async function checkRuntimeUpdateRow(id: string): Promise<RuntimeUpdateRow> {
+  const gh = GITHUB_UPDATEABLE[id];
+  if (gh) {
+    // GitHub 直下型（Filee）：查 releases/latest tag，与盘上 version.txt 比
+    const current = installedVersionOf(id);
+    try {
+      const latest = await fetchGitHubLatestTag(gh.repo);
+      return { id, name: gh.label, pkg: `github:${gh.repo}`, current, latest, registry: "github", hasUpdate: !current || compareVersions(latest, current) > 0, error: "" };
+    } catch (error) {
+      return { id, name: gh.label, pkg: `github:${gh.repo}`, current, latest: "", registry: "", hasUpdate: false, error: (error as Error)?.message ?? String(error) };
+    }
+  }
   const tool = UPDATEABLE_TOOLS[id];
   if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
   const source = await readDownloadSource();
@@ -682,6 +876,33 @@ export async function checkRuntimeUpdateRow(id: string): Promise<RuntimeUpdateRo
 export async function performRuntimeUpdate(
   id: string,
 ): Promise<{ ok: boolean; from: string; to: string; cancelled?: boolean; joined?: boolean }> {
+  const gh = GITHUB_UPDATEABLE[id];
+  if (gh) {
+    // GitHub 直下型（Filee）：升级 = 重跑同一条安装函数（最新 tag），装完复核 version.txt
+    const inFlight = runtimeInstalls.get(id);
+    if (inFlight) { await inFlight; return { ok: true, joined: true, from: "", to: installedVersionOf(id) }; }
+    const from = installedVersionOf(id);
+    const task = (async () => {
+      emitRuntimeProgress(id, `@@STAGE 更新 ${gh.label}`);
+      const latest = await fetchGitHubLatestTag(gh.repo);
+      await installFileeFromGitHub(id as DevRuntimeId, latest);
+      await restartServerWhenIdle(id);
+    })();
+    runtimeInstalls.set(id, task);
+    try {
+      await task;
+      const to = installedVersionOf(id);
+      if (!to) throw new Error(`${gh.label} 更新流程已结束，但读不到已装版本 —— 请重试或重新安装`);
+      sendToWindow("runtime:progress", { id, message: `已更新到 ${to}`, percent: 100, speed: "", done: true });
+      return { ok: true, from, to };
+    } catch (error) {
+      if (isCancelRequested(id)) return { ok: true, cancelled: true, from, to: "" };
+      throw error;
+    } finally {
+      runtimeInstalls.delete(id);
+      clearCancelRequest(id);
+    }
+  }
   const tool = UPDATEABLE_TOOLS[id];
   if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
   const inFlight = runtimeInstalls.get(id);
@@ -912,6 +1133,10 @@ export const runtimeFeature = defineFeature<null>({
         } else if (id === "feishu-cli") {
           /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。 */
           await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli ?? "latest"}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
+        } else if (id === "filee") {
+          /* Filee 文件转换（10-30）：GitHub release 直下型（151MB，镜像序 + SHA256 校验）。
+             更新链（performRuntimeUpdate 的 GITHUB_UPDATEABLE 分支）也走这一个函数。 */
+          await installFileeFromGitHub(id, TOOLS_VERSIONS.filee ?? (await fetchGitHubLatestTag(FILEE_REPO)));
         } else if (id === "rea") {
           // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
           // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。

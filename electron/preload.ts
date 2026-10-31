@@ -960,6 +960,10 @@ contextBridge.exposeInMainWorld("codex", {
   sessionspaceGc: (options?: { maxAgeDays?: number; dryRun?: boolean }) => __ipc("sessionspace:gc", 0, [options]),
   /* 10-29 飞书官方 CLI（@larksuite/cli）状态：是否安装 / 是否配置应用 / 是否已登录 */
   feishuCliStatus: () => __ipc("feishu-cli:status", 0, []),
+  /* 10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s） */
+  fileeStatus: () => __ipc("filee:status", 0, []),
+  /* 10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容 */
+  fileeConvert: (input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }) => __ipc("filee:convert", 1, [input]),
   /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
   feishuCliSetupStart: () => __ipc("feishu-cli:setup-start", 0, []),
   /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */

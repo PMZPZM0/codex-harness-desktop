@@ -407,6 +407,35 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: feishuText.slice(0, 18000) }],
                   success: feishuResult?.ok === true,
                 });
+              } else if (event.params?.tool === "filee_convert") {
+                /* Filee 文件转换（10-30）：参数直传执行端（spawn 参数数组不进 shell）；
+                   未安装时执行端回「去哪里装」，模型不要反复重试。回执以 --json 结构化为准。 */
+                const fileeResult: any = await window.codex.fileeConvert({
+                  inputs: Array.isArray(args.inputs) ? args.inputs.map(String) : [],
+                  to: String(args.to ?? ""),
+                  outputDir: typeof args.outputDir === "string" && args.outputDir.trim() ? args.outputDir : undefined,
+                  quality: typeof args.quality === "number" ? args.quality : undefined,
+                  overwrite: args.overwrite === true,
+                  recursive: args.recursive === true,
+                  keepDates: args.keepDates === true,
+                });
+                let fileeText: string;
+                if (fileeResult?.ok) {
+                  const r = fileeResult.report ?? {};
+                  const lines = (r.files ?? []).map((f: any) => {
+                    const state = f?.state === "done" ? "✓" : f?.state === "skipped" ? "跳过" : "✗";
+                    const outs = Array.isArray(f?.outputs) && f.outputs.length ? ` → ${f.outputs.join("、")}` : (f?.error ? `（${f.error}）` : "");
+                    return `${state} ${f?.source ?? "?"}${outs}`;
+                  });
+                  fileeText = `转换完成：成功 ${r.converted ?? 0}，跳过 ${r.skipped ?? 0}，失败 ${r.failed ?? 0}（目标格式 ${r.target ?? "?"}）\n` + lines.join("\n");
+                  if (fileeResult.error) fileeText += `\n注意：${fileeResult.error}`;
+                } else {
+                  fileeText = "转换没有成功" + (fileeResult?.code ? `（退出码 ${fileeResult.code}）` : "") + "：" + (fileeResult?.error || fileeResult?.raw || "未知原因");
+                }
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: fileeText.slice(0, 16000) }],
+                  success: fileeResult?.ok === true,
+                });
               } else if (event.params?.tool === "laya_judge") {
                 /* Laya 局部判断（10-18）：工具只在装了 Laya 的机器上注册；执行端做参数校验、
                    未就绪最多等 15s 预热、低置信返回「弃权」文案。⛔ 不走能力网关（专用工具）。 */

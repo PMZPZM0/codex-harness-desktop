@@ -765,6 +765,13 @@
    "config": null
   },
   {
+   "id": "filee",
+   "enabled": true,
+   "file": "features/filee-ipc.ts",
+   "export": "fileeFeature",
+   "config": null
+  },
+  {
    "id": "monitor",
    "enabled": true,
    "file": "features/task-monitor.ts",

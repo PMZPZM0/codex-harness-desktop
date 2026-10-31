@@ -22,6 +22,12 @@ const TOOLS_VERSIONS = {
   computerUse: "0.3.6",
   /** 飞书官方 CLI（@larksuite/cli，Go 二进制，npm postinstall 按平台下载）。50MB 出头 ⇒ 按需安装，不随包 */
   feishuCli: "1.0.98",
+  /**
+   * Filee 文件转换（KnifeLemon/Filee，MIT，.NET 10）：win-Portable.zip 约 151MB ⇒ 按需安装，不随包。
+   * CLI = 便携包根部的 filee-cli.exe（10-30 实测：--version 输出 `filee 2.2.0`，convert --json 结构化）。
+   * 升级时改这里 + 同轮核对 GitHub release 资产名（Filee-<ver>-win-Portable.zip / -SHA256SUMS.txt）。
+   */
+  filee: "2.2.0",
   /** ponytail 写代码模式插件（首启自动种入） */
   ponytail: "v4.9.0",
 };
