@@ -32,18 +32,6 @@ export function announceEngineReadyCached(): boolean {
   return announceReadyCache ?? true;
 }
 
-/** 扫一次磁盘刷新缓存；失败保持原值（⛔ 不要因为读不到就翻成"不可用"）。 */
-export async function refreshAnnounceEngineReady(): Promise<void> {
-  try {
-    const root = requireVoiceModelsRoot();
-    const st = await voiceModelsStatus(root, ALL_VOICE_REPOS);
-    const base = st.totalFiles > 0 ? st.readyFiles === st.totalFiles : st.ready;
-    /* 任一套可用即算就绪（用户可以只装 Kokoro）。情感语音的 runnable 恒 false（缺 onnxruntime），
-       这里按"装了也合成不出来"处理 ⇒ 不计入就绪，与设置页那张卡的口径一致。 */
-    announceReadyCache = base || kokoroReady(root);
-  } catch { /* 保持原值 */ }
-}
-
 /**
  * 取 voiceService 单例（10-03 由 main.ts 构造完成后经 runtime-refs 注入）。
  *
