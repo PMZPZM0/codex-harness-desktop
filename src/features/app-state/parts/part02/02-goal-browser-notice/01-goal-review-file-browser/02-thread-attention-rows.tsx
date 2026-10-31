@@ -291,7 +291,17 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             )}
             {/* 10-31 用户令：会话行底色自选 —— 未选中浅色常驻、选中后颜色稍深一档。 */}
             <div className="thread-row-color-field" role="group" aria-label="会话颜色">
-              <span className="thread-row-color-label"><Palette size={13} />会话颜色</span>
+              {/* 10-31 用户令（截图）：「恢复默认」键放标签行左侧（色板第一行前面），别掉到第二行。 */}
+              <span className="thread-row-color-label">
+                <Palette size={13} />会话颜色
+                <button
+                  type="button"
+                  className={`thread-row-color-clear${rowColor ? "" : " on"}`}
+                  title="恢复默认底色"
+                  aria-label="恢复默认底色"
+                  onClick={(event) => { event.stopPropagation(); setThreadRowColor(entry.id, ""); bag.setThreadRowMenu(null); }}
+                />
+              </span>
               <span className="thread-row-color-dots">
                 {ROW_COLORS.map((color) => (
                   <button
@@ -304,13 +314,6 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
                     onClick={(event) => { event.stopPropagation(); setThreadRowColor(entry.id, color.value); bag.setThreadRowMenu(null); }}
                   />
                 ))}
-                <button
-                  type="button"
-                  className={`thread-row-color-dot is-clear${rowColor ? "" : " on"}`}
-                  title="恢复默认底色"
-                  aria-label="恢复默认底色"
-                  onClick={(event) => { event.stopPropagation(); setThreadRowColor(entry.id, ""); bag.setThreadRowMenu(null); }}
-                />
               </span>
             </div>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
