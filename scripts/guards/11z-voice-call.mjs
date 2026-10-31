@@ -781,12 +781,14 @@ ok(/<span className="turn-head-name">\{codexName\}<\/span>\s*<SessionAnnounceTog
   "📢 开关就渲染在回合头的 Codex 名字**后面**（不是别处；顺序错了用户找不到）");
 ok(/const muted = useSyncExternalStore\(/.test(announceToggleTsx)
   && /const globalOn = useSyncExternalStore\(/.test(announceToggleTsx)
-  && /const enabled = globalOn && !muted/.test(announceToggleTsx)
+  /* 10-31：enabled 还要叠加引擎就绪（没装模型时不能看着是开的），
+     总开关关着仍然禁用（`disabled={engineReady && !globalOn}`）—— 两个条件都在。 */
+  && /const enabled = engineReady && globalOn && !muted/.test(announceToggleTsx)
   && /function AnnounceIcon\(/.test(announceToggleTsx)
   && /announce-slash/.test(announceToggleTsx)
   && /aria-pressed=\{enabled\}/.test(announceToggleTsx)
   && /<AnnounceIcon muted=\{!enabled\}/.test(announceToggleTsx)
-  && /disabled=\{!globalOn\}/.test(announceToggleTsx)
+  && /disabled=\{engineReady && !globalOn\}/.test(announceToggleTsx)
   && /is-off/.test(announceToggleTsx)
   && /语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开/.test(announceToggleTsx)
   && /requestAnnounceStop\(threadId\)/.test(announceToggleTsx)
@@ -1081,5 +1083,32 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   const ballElectron = read("electron/voice/voice-settings.ts");
   ok(/quiet\?: boolean/.test(ballElectron) && /quiet: \(ball as any\)\.quiet === true/.test(ballElectron),
     "voice-settings 落盘 quiet（缺省 false，老档案升级不改行为）");
+
+  /* ⛔⛔ 10-31 用户：「我没有下载语音模型啊，ppcode 怎么开开关语音播报」——
+     10-26 只把**设置页那张卡片**的开关与引擎就绪联动，回合头的 📢 和主进程下发的
+     「当前播报：已开启」都没看引擎 ⇒ 没装模型时：开关亮着、模型回复里承诺"念给你"、
+     真播却静默无声（连报错都没有）。三仓同一份代码，所以三边现象一致。
+     判据三条：渲染层有就绪探针 + 📢 用它门控 + 主进程拼指令前也看引擎。 */
+  {
+    const ready = read("src/voice/engine-ready.ts");
+    const toggle = codeOnlyTs(read("src/features/voice-announce/SessionAnnounceToggle.tsx"));
+    const bootTsx = read("src/main.tsx");
+    const dirMain = read("electron/features/voice-ipc/01-voice-hotkey-models.ts");
+    const discipline = read("electron/main/12-skill-discipline.ts");
+    ok(/export function getAnnounceEngineReady/.test(ready)
+      && /voiceModelsStatus/.test(ready)
+      && /downloadDone/.test(ready)
+      && /const next = base \|\| kokoro \|\| emotivoice;/.test(ready),
+      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / Kokoro / 情感语音），装完 downloadDone 自动重探");
+    ok(/const engineReady = useSyncExternalStore/.test(toggle)
+      && /const enabled = engineReady && globalOn && !muted;/.test(toggle)
+      && /if \(!engineReady\) \{[\s\S]{0,200}?setNotice\(/.test(toggle),
+      "回合头 📢 与就绪联动：没装模型时置灰 + 点击给「去哪下载」（⛔ 不翻转、不静默吞点击）");
+    ok(/startAnnounceEngineProbe\(\)/.test(bootTsx) && !/isPetWindow \|\| isPetActivityWindow\) startAnnounceEngineProbe/.test(bootTsx),
+      "开机起一次探针（宠物浮窗不探）");
+    ok(/announceEngineReadyCached\(\),/.test(discipline)
+      && /export function announceEngineReadyCached/.test(dirMain),
+      "主进程下发 announceEnabled 前也看引擎（否则模型会承诺播报，实际静默失败）");
+  }
 }
 process.exit(fails ? 1 : 0);

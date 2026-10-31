@@ -12,6 +12,8 @@ import { readConnectors } from "./07-connectors-io";
 import { readBuiltinPlugins } from "./09-agents-plugins";
 // Filee 安装判定（10-30）：runtimeInstalled 按 marker 探测（win/mac 布局分叉都在那一份真相源里）
 import { devRuntimeSpecs, runtimeInstalled } from "../features/dev-runtimes";
+/* 播报引擎就绪缓存（10-31）：与 `voice:models-status` 同一判据，见该文件顶部说明。 */
+import { announceEngineReadyCached } from "../features/voice-ipc/01-voice-hotkey-models";
 import { codexHome } from "../runtime-paths";
 import { readCustomModel } from "./01-model-catalog";
 import { server } from "../runtime-refs";
@@ -49,7 +51,10 @@ export async function devInstructionsInput() {
     /* 语音播报开关（10-09 第三轮）：把**当前值**下发到常驻指令里 —— 模型在会话一开始就知道
        该不该写回复末尾那段播报稿，不必等用户开口、也不必只靠"开关翻转时那一条告知"
        （告知在新会话里根本不存在 ⇒ 用户报「不说他自己都不写」）。真相源是语音设置文件本身。 */
-    announceEnabled: loadVoiceSettings(app.getPath("userData")).announce.enabled !== false,
+    /* ⛔ 10-31：除了开关值，**还要看引擎装没装** —— 没装 TTS 时把"开着"告诉模型，
+       它就会在回复里承诺「我会把关键结论念给你」，而真播只会静默失败（用户实测）。 */
+    announceEnabled: loadVoiceSettings(app.getPath("userData")).announce.enabled !== false
+      && announceEngineReadyCached(),
   };
 }
 

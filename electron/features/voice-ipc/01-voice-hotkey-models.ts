@@ -17,6 +17,33 @@ import type { IpcHost } from "../../ipc-host";
 import type { HostCaps } from "../../runtime/seams";
 import { voiceService, voiceModelsRoot } from "../../runtime-refs";
 
+/* ⛔⛔ 播报引擎就绪缓存（10-31，用户：「我没有下载语音模型啊，怎么开开关语音播报」）：
+   主进程把「语音播报开关」的当前值写进常驻指令（`12-skill-discipline.ts` 的 announceEnabled），
+   模型据此在回复里宣称「我会把关键结论念给你」。但**引擎没装时那句宣称是假的** ——
+   真播只会静默失败（没有 TTS，连报错都没有）。所以下发给模型之前必须先看引擎。
+   ⛔ 为什么用缓存：拼指令是同步的（每轮都可能跑），而 `voiceModelsStatus` 要扫盘 + 校验文件。
+     开机预热一次、每次 `voice:models-status`（渲染层探针/设置页都会调）顺带刷新即可。
+   ⛔ 未知时按 **就绪** 处理（null → true）：宁可多写一段被剥掉的稿子，
+     也别因为一次没探到就把正常用户的播报静音。 */
+let announceReadyCache: boolean | null = null;
+
+/** 供拼常驻指令同步读取（`?? true` 的语义见上）。 */
+export function announceEngineReadyCached(): boolean {
+  return announceReadyCache ?? true;
+}
+
+/** 扫一次磁盘刷新缓存；失败保持原值（⛔ 不要因为读不到就翻成"不可用"）。 */
+export async function refreshAnnounceEngineReady(): Promise<void> {
+  try {
+    const root = requireVoiceModelsRoot();
+    const st = await voiceModelsStatus(root, ALL_VOICE_REPOS);
+    const base = st.totalFiles > 0 ? st.readyFiles === st.totalFiles : st.ready;
+    /* 任一套可用即算就绪（用户可以只装 Kokoro）。情感语音的 runnable 恒 false（缺 onnxruntime），
+       这里按"装了也合成不出来"处理 ⇒ 不计入就绪，与设置页那张卡的口径一致。 */
+    announceReadyCache = base || kokoroReady(root);
+  } catch { /* 保持原值 */ }
+}
+
 /**
  * 取 voiceService 单例（10-03 由 main.ts 构造完成后经 runtime-refs 注入）。
  *
@@ -192,6 +219,11 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
 
   ipcHost.handle("voice:models-status", async () => {
     const status = await voiceModelsStatus(modelsRoot(), ALL_VOICE_REPOS);
+    /* 顺带刷新播报就绪缓存（同一个判据、同一次扫盘，不额外开销）—— 见文件顶部那段说明 */
+    {
+      const base = status.totalFiles > 0 ? status.readyFiles === status.totalFiles : status.ready;
+      announceReadyCache = base || kokoroReady(modelsRoot());
+    }
     // ⛔ 10-03：启用状态要与"是否就绪"**分开**回传 —— 两者正交：
     //    停用中的资源文件仍在磁盘（installed 仍为 true），只是不加载（enabled=false）。
     //    只回一个就必然丢信息：回 installed 会让「停用」显示成「已就绪」，

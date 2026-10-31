@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { WindowControls } from "./components/WindowControls";
+import { startAnnounceEngineProbe } from "./voice/engine-ready";
 import { PetFloat, PetActivity } from "./features/pet";
 import { AppLockGate } from "./features/app-lock";
 import "./styles.css";
@@ -32,6 +33,10 @@ window.addEventListener("vite:preloadError", (event) => {
   sessionStorage.setItem(KEY, String(Date.now()));
   location.reload();
 });
+
+/* 播报引擎就绪探针（10-31）：开机探一次 —— 主进程靠 `voice:models-status` 顺手刷新
+   自己的缓存，从而在下发常驻指令时知道「播报到底能不能出声」。⛔ 宠物浮窗不探（它不出声）。 */
+if (!isPetWindow && !isPetActivityWindow) startAnnounceEngineProbe();
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
