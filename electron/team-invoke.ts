@@ -17,10 +17,10 @@ import { bridgeDial } from "./main";
 import { ensureProjectAgentsMd } from "./project-conventions";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { safeProviderId } from "./provider-id";
-import { readCustomModel } from "./main/01-model-catalog";
+import { readCustomModel, originSessionModel } from "./main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { noteRoleThread } from "./role-memory-tool";
-import { server, teamRunStore, threadCwd } from "./runtime-refs";
+import { server, teamRunStore, threadCwd, threadRuntimeStore } from "./runtime-refs";
 import { readUsableExpertTeams } from "./expert-teams";
 
 /** 成员调度入参（渲染层与主进程兜底共用）。 */
@@ -62,7 +62,12 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   const name = customModel?.name ?? provider;
   const apiKey = customModel?.encryptedKey && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(customModel.encryptedKey, "base64")) : "";
   if (apiKey) server.setApiKey(apiKey);
-  const effectiveModel = input.model || member.model || customModel?.model;
+  /* ⛔⛔ 10-31 用户令「成员跟随主会话的模型配置」：成员模型优先级 = 显式指定 →
+     **主理人会话的会话级模型**（originSessionModel，按激活供应商清单归一）→ 成员档案里存的旧值 → 全局。
+     原先把 member.model 排在主会话前面 ⇒ 主理人换了模型、成员还跑在几周前存的旧模型上
+     （实测：成员被建在 harness 供应商下却拿着 custom964 —— 引擎直接拒「供应商不一致」）。 */
+  const originModel = await originSessionModel(String(input.leadThreadId ?? ""), threadRuntimeStore);
+  const effectiveModel = input.model || originModel || member.model || customModel?.model;
   if (!effectiveModel) throw new Error("尚未配置自定义模型，无法调度团队成员");
 
   // ① 成员线程复用：**同一场团运行（主理人会话）+ 同一成员** 沿用同一个线程，

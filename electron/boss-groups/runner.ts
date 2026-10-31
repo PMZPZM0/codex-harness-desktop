@@ -16,12 +16,12 @@ import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
 import { binOnPath, cliProcessEnv } from "../cli-agents";
 import { bridgeDial } from "../main";
-import { readCustomModel } from "../main/01-model-catalog";
+import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { safeProviderId } from "../provider-id";
-import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
+import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { egoBrowserPath } from "../toolchain";
 import { bossStore } from "./store";
 import { addMember, addTask, assignTask, createGroup, groupOf, markRunning, memberOf, parseVerdict, pickReassignee, pushEvent, recordReview, removeMember, setPinned, snapshot, submitTask, taskOf } from "./state";
@@ -478,6 +478,14 @@ async function providerEnv() {
   };
 }
 
+/** 10-31 用户令「群成员跟随主会话（boss）的模型配置」：读 boss 会话的会话级模型
+ *  （originSessionModel：按激活供应商清单归一）；读不到给空串，由调用方继续走各自的后备链。 */
+async function bossModelOf(group: BossGroup): Promise<string> {
+  const boss = String(group.bossThreadId ?? "").trim();
+  if (!boss) return "";
+  return originSessionModel(boss, threadRuntimeStore);
+}
+
 /** 成员的常驻会话：同一 (群, 成员) 永远同一线程 —— 成员因此记得自己之前做过什么。 */
 async function ensureMemberThread(group: BossGroup, member: GroupMember): Promise<string> {
   if (member.threadId) {
@@ -488,7 +496,7 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
     }
   }
   const env = await providerEnv();
-  const model = member.model || env.model;
+  const model = (await bossModelOf(group)) || member.model || env.model;
   if (!model) throw new Error("尚未配置模型，无法派活（先在设置 → 模型里配一个）");
   const cwd = group.workspace || process.cwd();
   ensureProjectAgentsMd(cwd);
@@ -673,7 +681,8 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     }
     const threadId = await ensureMemberThread(group, member);
     const env = await providerEnv();
-    const model = member.model || env.model;
+    /* ⛔ 每次派活都重新跟随 boss 当前模型（成员线程是常驻的，boss 换模型后成员要跟上来）。 */
+    const model = (await bossModelOf(group)) || member.model || env.model;
     const turn: any = await server.request("turn/start", {
       threadId,
       input: [{ type: "text", text: memberPrompt(group, member, task, attempt.n), text_elements: [] }],
