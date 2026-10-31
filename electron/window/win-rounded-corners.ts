@@ -58,9 +58,9 @@ function roundOnce(win: BrowserWindow): void {
  * 给窗口开启 Windows 11 原生圆角。非 win32 平台直接跳过。
  *
  * 关键时序：本函数通常在 `new BrowserWindow(...)` 之后立即调用，但此时窗口尚未显示。
- * 对于使用 `titleBarOverlay`（titleBarStyle:"hidden"）的窗口，系统会在窗口**首次显示**
- * 时把边框延展进客户端区（DwmExtendFrameIntoClientArea），这一步会把构造期设置的
- * DWM 圆角属性覆盖回直角——这正是「主窗口/弹窗是方的、标准边框弹窗自动圆」的根因。
+ * 无边框窗（10-31 起 win32 走 `frame: false`）首次显示时系统会做边框延展
+ * （DwmExtendFrameIntoClientArea），这一步会把构造期设置的 DWM 圆角属性覆盖回直角
+ * ——这正是「主窗口/弹窗是方的、标准边框弹窗自动圆」的根因。
  * 因此必须在 'show' 事件之后（边框延展完成）再补设一次，圆角才能真正生效。
  * 同时：最大化时系统自动回方（预期），在 unmaximize 时防御性复圆。
  */

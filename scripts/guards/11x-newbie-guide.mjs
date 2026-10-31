@@ -240,8 +240,8 @@ const preload = read("electron/preload.ts");
      ③ mac 品牌行 margin-top 32→**38**：顶栏首行已从 44 改 50（6 外圈 + 44 本体），
         12(侧栏 padding-top) + 38 = 50 才与顶栏底边齐平 —— 锚在 32 会高 6px。 */
   const threadsCss = codeOnly(read("src/styles/02-sidebar-threads.css"));
-  ok(/\.topbar \{[\s\S]{0,700}?padding-right: 132px/.test(threadsCss),
-    "⑪ 顶栏右侧预留 = 132px（138 原生钮 − 6 外圈）：图标簇右缘正好贴住窗口钮");
+  ok(/\.topbar \{[\s\S]{0,700}?padding-right: 112px/.test(threadsCss),
+    "⑪ 顶栏右侧预留 = 90px（自绘三钮 26×3+2 = 82，+8 呼吸）：图标簇右缘不再压到钮下面");
   ok(/\.topbar-actions \{[\s\S]{0,200}?gap: 0;/.test(threadsCss),
     "⑪ 操作簇 gap = 0（盒内已有内边距，再叠 2px 显散）");
   ok(/\.topbar \.icon-button \{[\s\S]{0,120}?width: 28px;[\s\S]{0,60}?height: 28px;/.test(threadsCss),
@@ -259,11 +259,21 @@ const preload = read("electron/preload.ts");
   ok(/\.app-shell\.with-context > \.panel-divider::after \{[\s\S]{0,220}?width: 1px;[\s\S]{0,120}?background: var\(--line-soft\)/.test(shellCss)
     && !/scaleX\(0\.5\)/.test(shellCss),
     "右栏与主区之间只有分隔线一条实心 1px 灰线（⛔ 半像素、面板左边框、6px 底色带都已去掉）");
-  /* ★ 系统窗口钮对齐：原生 overlay 高度 55 ⇒ 钮中心 27.5 ≈ 顶栏 6+44/2=28。 */
+  /* ★ 10-31：窗口钮改**自绘**（用户「更小的按钮 + 更小的 hover 块」）——
+     判据从「原生 overlay 高度 55」换成「win32 真的无边框 + 三钮由渲染层画」。
+     ⛔ 反过来也要钉住：不许再出现 titleBarOverlay（frame:false 下它会再画一套系统钮，
+        两套叠在右上角 = "点了没反应/点错"）。 */
   const windowFactorySrc = read("electron/features/window-factory.ts");
-  ok(/titleBarOverlay: \{ color: "#00000000", symbolColor: titleBarOverlayOptions\(\)\.symbolColor, height: 55 \}/.test(windowFactorySrc)
-    && /titleBarOverlay: \{[\s\S]{0,120}?height: 55,/.test(windowFactorySrc),
-    "主窗口/独立窗口的 titleBarOverlay 高度 55（与顶栏下移 6px 后同一行）");
+  ok(/process\.platform === "win32" \? \{ frame: false \}/.test(windowFactorySrc)
+    && (windowFactorySrc.match(/process\.platform === "win32" \? \{ frame: false \}/g) || []).length >= 2,
+    "主窗口 + 独立弹窗都用 frame:false（win32）；mac 仍走 hiddenInset 的红绿灯");
+  /* ⛔ 判在**去注释后的代码**上：说明里写着"不再给 titleBarOverlay"是必要的，不剥注释会自己把自己顶红。 */
+  ok(!/titleBarOverlay/.test(windowFactorySrc.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/[^\n]*/g, "")),
+    "负向：建窗不再传 titleBarOverlay（frame:false 下系统会再画一套钮 ⇒ 与自绘钮重叠）");
+  /* 自绘钮的样式在 02-sidebar-threads（顶栏那一节），⛔ 不是 01-base 的壳层。 */
+  const topbarCss11x = read("src/styles/02-sidebar-threads.css");
+  ok(/width: 28px;[\s\S]{0,120}?height: 28px/.test(topbarCss11x) && /\.window-controls \{[\s\S]{0,420}?z-index: 1000/.test(topbarCss11x),
+    "自绘窗口钮 28×28 且 z-index 1000（比确认框 950 高 —— 复刻「系统层永远可点」，否则弹窗一开窗口关不掉）");
 }
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

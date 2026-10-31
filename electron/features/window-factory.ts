@@ -19,10 +19,7 @@ import { flushBootTiming, markBoot } from "../boot-timing";
 import { installContextMenu } from "../main/10-window-menu";
 import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBridge, engineActiveTurnIds, notifyPopoutClosed, popoutThreadIds } from "../runtime-refs";
 import { closePetWindow } from "./pet-window";
-/* ⛔ 10-26（守卫【132】）：`titleBarOverlayOptions` 的**真来源**是 runtime-refs，
-   main.ts 只是转发导出。域直接连真来源，别从 main 绕一圈（那会让 main 变成依赖黑洞）。 */
 import { mutableState } from "../main";
-import { titleBarOverlayOptions } from "../runtime-refs";
 import { isInsideTrustedRoots } from "../runtime-refs";
 export function createWindow() {
   /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
@@ -69,17 +66,14 @@ export function createWindow() {
     title: "Codex Harness Desktop",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
-    // 无边框标题栏：系统标题栏隐藏，应用 topbar 顶到窗口边缘（省 ~32px 高度）。
-    // ⛔ 平台分叉（09-16 mac 适配）：titleBarOverlay 的窗口控制钮是 **Windows 专属**
-    // （右上角贴靠/双击最大化等原生行为）；mac 上硬传只是被忽略，红绿灯仍画在左上角，
-    // 而渲染层按 Windows 预留的右上 145px 空白就成了纯浪费。mac 走 hiddenInset——
-    // 红绿灯按系统标准内缩，渲染层用 [data-os="darwin"] 把顶行内容让开（styles.css）。
-    ...(process.platform === "win32"
-      ? {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: { color: "#00000000", symbolColor: titleBarOverlayOptions().symbolColor, height: 55 },
-      }
-      : { titleBarStyle: "hiddenInset" as const }),
+    /* ⛔⛔ 10-31 用户：「更小的按钮 + 更小的 hover 块」——原生 WCO 三钮是系统画的
+       （46×32 + 系统 hover 块），渲染层**改不了尺寸**（改 titleBarOverlay.height 只挪位置）。
+       要变小只能整条 chrome 自己画 ⇒ win32 走 `frame: false`，三个钮由渲染层
+       `src/components/WindowControls.tsx` 画在顶栏右端（走 IPC `shell:window-*`，通道早在）。
+       · mac 不动：红绿灯由系统画（`hiddenInset` 内缩），它本来就是小圆点。
+       · ⛔ 不再给 titleBarOverlay：frame:false 下它没有意义，留着会让系统在客户区再画一套钮
+         （两套钮叠在右上角 —— 这就是"点了没反应/点错"的来源）。 */
+    ...(process.platform === "win32" ? { frame: false } : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
       contextIsolation: true,
@@ -264,17 +258,8 @@ export function createPopoutWindow(threadId: string) {
     title: "Codex Harness Desktop — 独立会话",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
-    // 独立弹窗同款平台分叉（mac hiddenInset / win overlay），理由见 createWindow
-    ...(process.platform === "win32"
-      ? {
-        titleBarStyle: "hidden" as const,
-        titleBarOverlay: {
-          color: "#00000000",
-          symbolColor: titleBarOverlayOptions().symbolColor,
-          height: 55,
-        },
-      }
-      : { titleBarStyle: "hiddenInset" as const }),
+    // 独立弹窗同款平台分叉（mac hiddenInset / win32 自绘三钮），理由见 createWindow
+    ...(process.platform === "win32" ? { frame: false } : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
       contextIsolation: true,

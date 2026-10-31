@@ -151,10 +151,15 @@ ok(/\.shell-drag-top \{[^}]*height: 6px/.test(base) && /\.shell-drag-top \{[^}]*
   "⑧ 顶部外圈 6px 铺了 drag 条（外圈是卡片 margin 让出来的死区，不补就拖不动窗口）")
 ok(/className="shell-drag-top"/.test(appViewFull),
   "⑧ 外圈拖拽条真的挂进了 DOM（只写 CSS 不挂元素 = 装饰品）")
-ok(/height: 55 \};/.test(rrSrc) && !/height: 43/.test(rrSrc),
-  "⑧ titleBarOverlay 高度 = 55（顶栏中心 6+22=28 ⇒ 原生钮 27.5 才同行；43 ⇒ 中心 21.5，整体上移 6.5px）")
-ok(!/symbolColor: symbol, height: 43/.test(mainTs),
-  "⑧ 负向：切主题时的 setTitleBarOverlay 不许再用 43（一写就把建窗的 55 打回去，表现是\"改了没生效\"）")
+/* ★ 10-31 二次改动：窗口钮从原生 WCO 换成**自绘**（用户「更小的按钮 + 更小的 hover 块」）。
+   原来这两条钉的是「overlay 高度必须 55 / 不许回 43」—— 现在 overlay 整条链路已删，
+   判据换成「自绘簇钉在顶栏那条带里」：top/right 都 = 外圈 6、height = 顶栏 44
+   ⇒ 钮中心 6+22=28 与顶栏图标行同轴（这就是当初 55 想解决的那件事）。 */
+ok(!/titleBarOverlayOptions/.test(rrSrc) && !/setTitleBarOverlay/.test(rrSrc) && !/CHROME_SYMBOL/.test(mainTs),
+  "⑧ 原生 titleBarOverlay 链路已整体移除（frame:false 自绘；符号色改由 CSS 变量跟着主题走）")
+const shellThreads = codeOnly(read("src/styles/02-sidebar-threads.css"));
+ok(/\.window-controls \{[\s\S]{0,420}?top: 6px;[\s\S]{0,200}?height: 44px;/.test(shellThreads),
+  "⑧ 自绘钮与外圈/顶栏同轴（top:6 = 卡片 margin-top，height:44 = 顶栏高 ⇒ 中线 28 与图标行齐平）；right 只影响贴边距离，不参与对齐")
 ok(/\.app-shell\.with-context > \.panel-divider:hover::after,[\s\S]{0,120}?background: var\(--accent\)/.test(base),
   "⑧ 右栏分隔条悬停/拖动 = 主题色光（与左侧 .sidebar-resizer:hover::after 同款）")
 ok(!/\.panel-divider:hover,\s*\n?\.panel-divider:active \{[^}]*background: var\(--muted\)/.test(base),
