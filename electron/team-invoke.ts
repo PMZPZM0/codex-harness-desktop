@@ -16,6 +16,7 @@ import { memberThreadName } from "./team-runs";
 import { bridgeDial } from "./main";
 import { ensureProjectAgentsMd } from "./project-conventions";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
+import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { HARNESS_PROVIDER_ID } from "./provider-id";
 import { readCustomModel, originSessionModel } from "./main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
@@ -117,6 +118,9 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   }
   teamRunStore.rememberMemberThread(ownerThreadId, team.teamId, member.id, memberThreadId);
   teamRunStore.setThreadTeam(memberThreadId, team.teamId);
+  /* ★ 10-31 用户令：成员会话也要有笔名、也知道自己归哪个主管（= 本团主理人会话）。 */
+  await ensureSessionAlias(memberThreadId, String(input.leadThreadId ?? "")).catch(() => undefined);
+  const memberSupervisor = await supervisorLabelOf(memberThreadId).catch(() => "");
 
   /* 主理人 → 成员这条路径同样要补记忆（09-23）。工作区用显式 cwd；拿不到就只注入 L0 用户档案。
      ⛔ 必须排在 `beginRun` **之前**：beginRun 会广播 started（点亮成员头像 + 自动弹成员工作窗），
@@ -152,7 +156,7 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
   // 09-14：包上 [SYSTEM TASK · 成员会话] 壳——渲染端 userDisplayText 只认这个壳，
   // 不包壳的话用户打开成员会话时整段角色提示词会裸露在首条气泡里（用户实测反馈）。
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${memberSupervisor ? `上级主管：${memberSupervisor}\n` : ""}主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
   let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
   try {
     const turn: any = await server.request("turn/start", {

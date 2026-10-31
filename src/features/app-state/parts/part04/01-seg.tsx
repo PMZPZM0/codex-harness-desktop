@@ -17,11 +17,22 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import { BUILTIN_DISTRIBUTED_SKILLS } from "../../../app-view/constants";
 import type { Bag } from "../bag-types";
+import { setAliasSnapshot } from "../../../session-alias/alias-store.mjs";
 
 export function usePart04a(bag: Bag) {
+  /* ★ 10-31 会话笔名快照：进应用先拉一次，之后靠主进程广播 `aliases-changed` 整份替换。
+     ⛔ 笔名是跨板块共享的只读快照 ⇒ 走 store（src/features/session-alias/alias-store.mjs），
+        不要往 bag 加字段（bag 新字段要同时改 bag-types + 各 seg 的 return，容易漂）。 */
+  useEffect(() => {
+    void window.codex.sessionAliasSnapshot?.().then((snapshot: any) => setAliasSnapshot(snapshot)).catch(() => undefined);
+  }, []);
   useEffect(() => {
     const handler = (event: MessageEvent) => {
       const data: any = event.data;
+      // 笔名新增/改名（含"改完主管名，子会话的上级身份跟着变"）⇒ 整份替换
+      if (data?.channel === "harness:event" && data?.event?.type === "aliases-changed") {
+        setAliasSnapshot(data.event.snapshot);
+      }
       // 调度登记变化（发起 / 结束 / 归档）→ 刷新「被调度的临时会话」：驱动侧栏标记与注册侧过滤
       if (data?.channel === "harness:event" && data?.event?.type === "delegates-changed") {
         void bag.refreshDelegateRecords();

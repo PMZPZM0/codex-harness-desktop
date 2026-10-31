@@ -20,7 +20,7 @@ export type ParsedUserRefs = {
   files: string[];
   skills: { name: string; description: string }[];
   contexts: { role: string; text: string }[];
-  teamTask?: { kind: "team" | "member"; /** 壳上的原始标签（团队会话 / 成员会话 / 群成员会话 / 调度会话…），渲染时原样展示 */ label?: string; requirement: string };
+  teamTask?: { kind: "team" | "member"; /** 壳上的原始标签（团队会话 / 成员会话 / 群成员会话 / 调度会话…），渲染时原样展示 */ label?: string; requirement: string; /** 10-31：上级主管 ID（`青崖主管（01a1…）`），调度任务里才有 */ supervisor?: string };
   imported?: { note: string; content: string };
   threadReferences: ThreadReferencePayload[];
   /** 群广播（`[群事件] …`）：宿主投进中枢会话的群消息，界面按块渲染成"头像 + 名字 + 内容"。
@@ -125,9 +125,14 @@ export function parseUserRefs(text: string): ParsedUserRefs {
       .replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "")
       .trim();
     if (taskMatch) requirement = requirement.replace(/^标题\s*[：:]\s*/, "");
+    /* ★ 10-31 用户令：被调度会话要知道「上级是谁，哪个主管」——
+       delegation 会在需求体第一行写 `上级主管：青崖主管（01a1…）`。
+       ⛔ 这行是**宿主元信息**，不属于需求正文：抽出来单独给气泡头部用，正文里要删掉。 */
+    const supervisorLine = body.match(/^\s*上级主管\s*[：:]\s*(.+?)\s*$/m);
+    if (supervisorLine) requirement = requirement.replace(/^\s*上级主管\s*[：:].*$/m, "").trim();
     if (requirement) {
       clean = "";
-      teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement };
+      teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement, ...(supervisorLine ? { supervisor: supervisorLine[1].trim() } : {}) };
     } else {
       /* 兜底（壳的格式以后变了，别把整条消息吞成空白）：至少剥掉壳头与尾部指令段。 */
       clean = tail.replace(/^\[SYSTEM TASK · [^\]\n]+\]\s*/, "").replace(/===\s*END\s*===[\s\S]*$/, "").trim();

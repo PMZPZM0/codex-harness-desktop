@@ -148,6 +148,7 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../../../components/CardShell";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../../lib/user-refs";
 import { getEntityTagState, openTagEditor } from "../../../../../../lib/entity-tags.mjs";
+import { aliasLabelOf, getAliasState, setAliasSnapshot, subscribeAliases } from "../../../../../../features/session-alias/alias-store.mjs";
 import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../../../lib/thread-row-colors.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
@@ -199,6 +200,19 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
        ⛔ 用户语义映射：专家团主会话与专家团调度 =「专家团」；成员与专家调度 =「专家」；
        子智能体调度 =「代理」；普通会话（main）**无标签**。 */
     const delegateKind = bag.delegateRecords[entry.id]?.kind;
+    /* ★ 10-31 用户令：每个会话都有两字笔名（主会话 = 「XX主管」，用户 = 总经理）。
+       展示在标题前（小徽标），可在会话菜单里改；改名经主进程校验后广播，
+       被调度会话里的「上级主管」当场跟着变。 */
+    const aliasState = useSyncExternalStore(subscribeAliases, getAliasState);
+    const aliasLabel = aliasLabelOf(aliasState, entry.id);
+    const aliasMeaning = String(aliasState.aliases?.[entry.id]?.meaning ?? "");
+    const editSessionAlias = async (threadId: string, current: string) => {
+      const next = await bag.openAppPrompt("改笔名（两个字）", current.replace(/主管$/, "")).catch(() => null);
+      if (!next?.trim()) return;
+      const result: any = await window.codex.sessionAliasSet({ threadId, alias: next.trim() }).catch(() => null);
+      if (!result?.ok) { bag.scopedNotice?.(String(result?.error ?? "改名失败"), threadId); return; }
+      setAliasSnapshot(result.snapshot);
+    };
     // 团队成员数（10-01 用户反馈）：专家市场包装出来的是**只有主理人的团队**（members 空），
     // 它的会话应该挂「专家」徽标，不该跟多成员专家团混用「专家团」。
     // ⛔ teamId 三路取证（10-01 二改，用户：「新建专家又没有标签了」——新建会话进不了启动时
@@ -265,7 +279,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><span className="thread-row-tags">{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}{!sourceBadge && fallbackTeamBadge && <span className={`thread-source-badge tone-${fallbackTeamBadge.tone}`} title={`来源：${fallbackTeamBadge.label}`}>{fallbackTeamBadge.label}</span>}{customTag && <span className="entity-tag thread-custom-tag" style={{ "--tag-color": customTag.color } as any} title={`标签：${customTag.text}`}>{customTag.text}</span>}{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><span className="thread-row-name" title={rawTitle}>{displayTitle}</span></span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><span className="thread-row-tags">{aliasLabel && <span className="thread-alias-badge" title={aliasMeaning ? `笔名：${aliasLabel} —— ${aliasMeaning}` : `笔名：${aliasLabel}`}>{aliasLabel}</span>}{sourceBadge && <span className={`thread-source-badge tone-${sourceBadge.tone}`} title={`来源：${sourceBadge.label}`}>{sourceBadge.label}</span>}{!sourceBadge && fallbackTeamBadge && <span className={`thread-source-badge tone-${fallbackTeamBadge.tone}`} title={`来源：${fallbackTeamBadge.label}`}>{fallbackTeamBadge.label}</span>}{customTag && <span className="entity-tag thread-custom-tag" style={{ "--tag-color": customTag.color } as any} title={`标签：${customTag.text}`}>{customTag.text}</span>}{bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><span className="thread-row-name" title={rawTitle}>{displayTitle}</span></span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -287,6 +301,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsMarkdown([entry.id]); }}><FileText size={13} /><span>导出会话</span><small>.md</small></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsBackup([entry.id]); }}><Download size={13} /><span>完整备份</span><small>.json</small></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.openAppPrompt("重命名任务", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><PenLine size={13} /><span>重命名</span></button>
+            {/* ★ 10-31 用户令：会话有**两字笔名**（主会话对外是「XX主管」），用户可改；
+                改完主进程广播，被调度会话里的「上级主管」当场跟着变。 */}
+            <button onClick={() => { bag.setThreadRowMenu(null); void editSessionAlias(entry.id, aliasLabel); }}><UserRound size={13} /><span>改笔名</span><small>{aliasLabel || "—"}</small></button>
             {!hasIdentityBadge && (
             <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span></button>
             )}

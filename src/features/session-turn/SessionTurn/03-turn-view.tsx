@@ -137,7 +137,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
           const segFold = seg.items;
           return (
             <Fragment key={seg.user?.id ?? `flow-seg-${index}`}>
-              {seg.user && <MemoUserMessageView item={seg.user} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} />}
+              {seg.user && <MemoUserMessageView item={seg.user} turn={turn} threadId={threadId} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} />}
               {(segFold.length > 0 || (last && (running || responseItems.length > 0))) && (
                 <div className="turn-card">
                   {index === headSegIndex && userItems.length > 0 && (running || responseItems.length > 0) && (
@@ -185,7 +185,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
   }
   return (
     <div className={`turn-group ${running ? "running" : turn.error ? "error" : "completed"}`} id={`turn-${turn.id}`} data-current-turn={isLastTurn ? "true" : undefined}>
-      {plainUserItems.map((item) => <MemoUserMessageView item={item} turn={turn} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
+      {plainUserItems.map((item) => <MemoUserMessageView item={item} turn={turn} threadId={threadId} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)} onOpenFile={handlers.onOpenFile} key={item.id} />)}
       {(userItems.length > 0 || hasVisible) && (
       <div className="turn-card">
         {/* 回合标识：一轮会话只有一份「头像 + 名字」（09-17 用户「一轮会话就一个 Codex 名字和

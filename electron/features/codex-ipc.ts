@@ -34,6 +34,7 @@ import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
 import { removeSessionWorkspace } from "./session-workspace";
+import { ensureSessionAlias } from "../session-alias";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -273,6 +274,10 @@ export const codexFeature = defineFeature<null>({
           // ⛔ 结果优先（10-07）：引擎回执里的 cwd 是**解析后的权威值**；请求参数可能是空串
           //   （`?? ` 只挡 null/undefined，空串会赢）⇒ 空串会让快照被静默跳过（文件追踪失明）。
           threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? p?.cwd ?? ""));
+          /* ★ 10-31 用户令：新建会话**自动取一个两字笔名**（主会话 = 「XX主管」，用户 = 总经理）。
+             ⛔ 主进程自建的会话（delegation / teams / runner）不经过这里，它们在自家建会话处
+                另外调 `ensureSessionAlias(threadId, originThreadId)`（带上上级）。 */
+          void ensureSessionAlias(String(r.thread.id)).catch(() => undefined);
         } else if (method === "thread/resume" && r?.thread?.id) {
           // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里，失败就退化为「不增强」。
           const __t0 = performance.now();

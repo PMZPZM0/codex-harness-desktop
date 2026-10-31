@@ -46,12 +46,17 @@ export const DELEGATE_HEADING = "调度约束（会话级·权威）";
  * 给**被委派会话**下发的约束块。措辞刻意只禁「转派人员」，不禁正常工具
  * （洞明要读文件、主理人要用调度工具管本团成员）—— 禁宽了会把它的本职能力一起废掉。
  */
-export function delegateScopeBlock(input: { kind: DispatchKind; name: string; origin?: string }): string {
+export function delegateScopeBlock(input: { kind: DispatchKind; name: string; origin?: string; supervisor?: string }): string {
   const name = String(input?.name ?? "").trim() || "（未命名）";
   const origin = String(input?.origin ?? "").trim();
+  /* ⛔ 10-31 用户令：「调度的子会话都要知道上级是谁，哪个主管，每个主管对应后面自己的 ID」。
+     上级 = 「青崖主管（01a1…）」这种**可读名字 + id**，不是光秃秃一个 uuid
+     （旧版只有 `发起方会话：<uuid>`，模型认不出"我在替谁干活"，用户也读不懂）。 */
+  const supervisor = String(input?.supervisor ?? "").trim();
   const head = [
     DELEGATE_HEADING,
     `- 你的身份：被**委派**执行本次任务的角色「${name}」`,
+    supervisor ? `- 你的上级：${supervisor}（它对用户负责，你的产出回给它）` : "",
     origin ? `- 发起方会话：${origin}` : "",
     `- 你已进入**执行态**：本轮的目标是把事情做完并回传结论。`,
   ].filter(Boolean);
