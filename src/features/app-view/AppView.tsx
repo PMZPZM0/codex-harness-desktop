@@ -5,7 +5,7 @@
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
 import { createPortal } from "react-dom";
-import { useSyncExternalStore, useMemo } from "react";
+import { useSyncExternalStore, useMemo, useRef, useState, type CSSProperties } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
 import { ShortcutsDialog } from "../shortcuts";
@@ -227,6 +227,43 @@ function truncateThreadTitle(text: string, max = 6): string {
 }
 
 export function AppView({ app }: { app: HarnessAppApi }) {
+
+  /* ★ 10-31 用户令：「左侧栏也加一个拖动功能」——拖侧栏右缘改宽度（200–420px），
+     localStorage 持久化；折叠 / 窄屏 / 独立弹窗三种状态不响应（那里宽度是布局决定的）。
+     ⛔ 只改 CSS 变量 --side-w（grid 用它的那条），不换模板：轨道数不变才能插值动画。 */
+  const SIDEBAR_MIN = 200;
+  const SIDEBAR_MAX = 420;
+  const SIDEBAR_DEFAULT = 256;
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    try {
+      const stored = Number(localStorage.getItem("sidebar-width"));
+      return Number.isFinite(stored) && stored >= SIDEBAR_MIN && stored <= SIDEBAR_MAX ? stored : SIDEBAR_DEFAULT;
+    } catch { return SIDEBAR_DEFAULT; }
+  });
+  const sidebarWidthRef = useRef(sidebarWidth);
+  sidebarWidthRef.current = sidebarWidth;
+  const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+  const beginSidebarResize = (event: React.PointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    sidebarDragRef.current = { startX: event.clientX, startWidth: sidebarWidthRef.current };
+    /* ⛔ 落盘用闭包里的最新值：pointermove 里 setState 是异步的，pointerup 紧跟着到的话
+       sidebarWidthRef 还停在旧值（实测只存到默认 256），下次启动就"拖了没记住"。 */
+    let latestWidth = sidebarWidthRef.current;
+    const onMove = (move: PointerEvent) => {
+      const drag = sidebarDragRef.current;
+      if (!drag) return;
+      latestWidth = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(drag.startWidth + (move.clientX - drag.startX))));
+      setSidebarWidth(latestWidth);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      try { localStorage.setItem("sidebar-width", String(latestWidth)); } catch { /* 隐私模式 */ }
+      sidebarDragRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
 
 
   // ↓ useHarnessApp() 暴露的视图接口（751 个名字；与原实现的局部作用域逐个对应）
@@ -474,11 +511,22 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       ref={shellRef}
       className={`app-shell ${rightOpen ? "with-context" : ""} ${sidebarCollapsed ? "side-collapsed" : ""} ${narrow ? "narrow" : ""} ${popoutThreadId ? "popout-shell" : ""}`}
       data-thread-id={thread?.id ?? ""}
-      // 右侧上下文面板仅在用户显式开启后参与网格；收起左栏时**不再换模板**（10-31）：
-      // 模板恒为 4 条轨道、首列走 `var(--side-w)`，折叠只把该变量插值到 0 ⇒ 列宽有过渡。
-      // ⛔ 别退回"折叠时少一列"：轨道数变了 CSS 就不能插值，主区会瞬移 256px（用户报的"生硬"）。
-      style={rightOpen ? { gridTemplateColumns: popoutThreadId ? `minmax(0, 1fr) 1px ${panelWidth}px` : `var(--side-w, 256px) minmax(0, 1fr) 1px ${panelWidth}px` } : undefined}
+      // 右侧上下文面板（10-31 抽屉化）：**不再 inline 写列模板** —— 模板由 CSS 恒定为
+      // 4 条轨道（popout 3 条），这里只给面板宽度变量，`--right-w` 才能在 0 ↔ 面板宽之间插值。
+      // ⛔ 别退回"开右栏才 inline 换模板"：轨道数变了不能插值，面板与主区一起瞬移。
+      style={{
+        "--panel-w": `${panelWidth}px`,
+        /* 拖动改的侧栏宽度：只在展开态下写（折叠 / 窄屏 / 独立窗口由布局决定） */
+        ...(!sidebarCollapsed && !narrow && !popoutThreadId ? { "--side-w": `${sidebarWidth}px` } : {}),
+      } as CSSProperties}
     >
+      {/* ★ 10-31 用户令：侧栏右缘可拖动改宽度（折叠 / 窄屏 / 独立窗口不出现） */}
+      {!sidebarCollapsed && !narrow && !popoutThreadId && (
+        <div className="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="拖动调整侧栏宽度"
+          title="拖动调整侧栏宽度（双击恢复默认）"
+          onPointerDown={beginSidebarResize}
+          onDoubleClick={() => { setSidebarWidth(SIDEBAR_DEFAULT); try { localStorage.setItem("sidebar-width", String(SIDEBAR_DEFAULT)); } catch { /* 隐私模式 */ } }} />
+      )}
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
@@ -546,7 +594,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
 
       <AppViewMainStage app={app} />
 
-      {rightOpen && <div className="panel-divider" onMouseDown={startPanelDrag} />}
+      {/* 分隔条**常驻**（10-31 抽屉化）：关右栏时它只淡出（pointer-events: none），
+          不卸载 —— 卸载会让那条 1px 线跟着面板一起"啪"地消失。 */}
+      <div className="panel-divider" data-state={rightOpen ? "open" : "closed"} onMouseDown={startPanelDrag} />
 
       <AppViewReviewPanel app={app} />
 

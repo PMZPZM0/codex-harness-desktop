@@ -206,6 +206,19 @@ const preload = read("electron/preload.ts");
     "外圈卡：上/右/下 6px + 细边；中间只留 3px 且不画线（用户：外边保持，减少中间的缝和线）");
   ok(/\.app-shell > \.sidebar \{ border-right: 0; \}/.test(shellCss),
     "侧栏右边界线去掉（中间只剩底色过渡）");
+  /* ★ 10-31 用户令：「左侧栏也加拖动功能」「右侧栏中间一条灰色细线就行」 */
+  const appViewSrc = read("src/features/app-view/AppView.tsx");
+  ok(/className="sidebar-resizer"/.test(appViewSrc) && /onPointerDown=\{beginSidebarResize\}/.test(appViewSrc)
+    && /SIDEBAR_MIN = 200/.test(appViewSrc) && /SIDEBAR_MAX = 420/.test(appViewSrc),
+    "侧栏右缘可拖动改宽（200–420 钳制，双击复位）");
+  ok(/localStorage\.setItem\("sidebar-width"/.test(appViewSrc) && /localStorage\.getItem\("sidebar-width"\)/.test(appViewSrc)
+    && /"--side-w": `\$\{sidebarWidth\}px`/.test(appViewSrc),
+    "侧栏宽度落盘 + 用 --side-w 下发（换算一条真相源，轨道数不变）");
+  ok(/\.sidebar-resizer \{[\s\S]{0,260}?left: calc\(var\(--side-w, 256px\) - 3px\)[\s\S]{0,260}?cursor: col-resize/.test(shellCss)
+    && /\.sidebar-resizer::after \{[\s\S]{0,200}?width: 1px;[\s\S]{0,120}?background: var\(--line-soft\)/.test(shellCss),
+    "拖动条 = 7px 命中面 + 1px 细线（⛔ 不做成一条粗条）");
+  ok(/\.app-shell\.with-context > \.panel-divider \{ background: var\(--line\); \}/.test(shellCss),
+    "右栏与主区之间是一条灰色细线（10-31 用户令）");
 }
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -400,10 +400,13 @@ button {
 .app-shell.with-context {
   --right-w: var(--panel-w, 308px);
 }
-/* 拖分隔条期间禁掉插值：否则改宽度会滞后 220ms，拖起来发粘 */
+/* 拖分隔条期间禁掉插值：否则改宽度会滞后 220ms，拖起来发粘。
+   ⛔ 这里刻意不加 important 标记 —— 靠选择器特异性压住
+      （`.app-shell.panel-resizing *` = 两个类 + 通配，高于 `.context-panel` / `.app-shell`
+       这些单类规则）。base 层的 important 预算是硬基线，加了会被【架构】判红。 */
 .app-shell.panel-resizing,
 .app-shell.panel-resizing * {
-  transition: none !important;
+  transition: none;
 }
 /* ── 侧栏展开/折叠：让**列宽**跟着动（10-31 立）──────────────────────────────
    ⛔ 原来折叠是把 grid-template-columns 换成"少一列"的模板 —— **轨道数变了就不能插值**，
@@ -1289,8 +1292,8 @@ html.fx-ripple::view-transition-new(root) {
 /* 内部连接处不画线；侧栏右边界线去掉（中间只留 3px 底色过渡） */
 .app-shell > .topbar::after { display: none; }
 .app-shell > .sidebar { border-right: 0; }
-/* 主区/右栏之间的拖拽条：默认透明（没有线），悬停/拖动才显形 */
-.app-shell.with-context > .panel-divider { background: transparent; }
+/* 主区/右栏之间的拖拽条：一条很细的灰线（10-31 用户令），悬停/拖动变主题色 */
+.app-shell.with-context > .panel-divider { background: var(--line); }
 .app-shell.with-context > .panel-divider:hover,
 .app-shell.with-context > .panel-divider:active { background: var(--muted); }
 :root[data-theme="dark"] .app-shell > .topbar,
@@ -1302,3 +1305,28 @@ html.fx-ripple::view-transition-new(root) {
   .app-shell:not(.with-context) > .workspace { border-radius: 0 0 10px 10px; }
   .app-shell.with-context > .context-panel { margin: 0 4px 4px 0; border-radius: 0 0 10px 0; }
 }
+
+/* ★ 10-31 用户令：「左侧栏也加一个拖动功能」——侧栏右缘 7px 命中面，实际只有 1px 细线；
+   悬停/拖动变主题色。⛔ 只改 --side-w（grid 用它的那条），折叠 / 窄屏 / 独立窗口不渲染该元素。 */
+.app-shell { position: relative; }
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--side-w, 256px) - 3px);
+  width: 7px;
+  z-index: 45;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--line-soft);
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:active::after { background: var(--accent); }
