@@ -1657,8 +1657,10 @@ async function pollLoop() {
           stepBox.className = "run-steps";
           list.appendChild(stepBox);
         }
-        const lastStep = stepBox.lastElementChild;
-        if (!lastStep || lastStep.textContent !== event.text) {
+        /* ⛔ 10-31 审查：不能用 lastElementChild.textContent 判重 —— 命令步骤后面紧跟的是
+           「输出」details（文本完全不同）⇒ 判重恒假、重复事件会再铺一行。改记在 stepBox 上。 */
+        if (stepBox.dataset.lastStep !== event.text) {
+          stepBox.dataset.lastStep = event.text;
           const line = document.createElement("div");
           line.className = "step";
           line.textContent = event.text;
@@ -1672,6 +1674,7 @@ async function pollLoop() {
             wrap.appendChild(sum);
             currentOutputEl = document.createElement("pre");
             currentOutputEl.className = "step-out";
+            currentOutputEl.dataset.lines = "1";
             wrap.appendChild(currentOutputEl);
             stepBox.appendChild(wrap);
           }
@@ -1694,15 +1697,23 @@ async function pollLoop() {
           wrap.appendChild(sum);
           currentOutputEl = document.createElement("pre");
           currentOutputEl.className = "step-out";
+          currentOutputEl.dataset.lines = "1";
           wrap.appendChild(currentOutputEl);
           stepBox.appendChild(wrap);
         }
-        currentOutputEl.textContent += event.text;
-        if (currentOutputEl.textContent.length > 6000) currentOutputEl.textContent = currentOutputEl.textContent.slice(-6000);
+        /* ⛔ 10-31 审查：行数用增量计数，别每块输出都 split 整段 6000 字（手机端高频输出会卡）。 */
+        const addedText = String(event.text);
+        currentOutputEl.textContent += addedText;
+        let lineCount = Number(currentOutputEl.dataset.lines || "1") + (addedText.match(/\\n/g) || []).length;
+        if (currentOutputEl.textContent.length > 6000) {
+          currentOutputEl.textContent = currentOutputEl.textContent.slice(-6000);
+          lineCount = currentOutputEl.textContent.split("\\n").length;
+        }
+        currentOutputEl.dataset.lines = String(lineCount);
         currentOutputEl.scrollTop = currentOutputEl.scrollHeight;
         const wrapEl = currentOutputEl.closest(".step-out-wrap");
         const sumEl = wrapEl ? wrapEl.querySelector("summary") : null;
-        if (sumEl) sumEl.textContent = "输出 · " + currentOutputEl.textContent.split("\\n").length + " 行";
+        if (sumEl) sumEl.textContent = "输出 · " + lineCount + " 行";
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "files") {
         // 文件变更：一行原地更新（宿主每拍都会推，不能一行行追加）
