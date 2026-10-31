@@ -67,8 +67,8 @@ const CHECKS = [
           userCols:cols(".uc-presets"), codexCols:cols(".codex-id-preset-grid"),
           userPersonaHere:!!m.querySelector(".user-persona-grid") };
       })()`).catch(() => null);
-      h.check("① 用户中心：常规头像 5 列、Codex 形象两栏 3 列、用户人格已移出",
-        Boolean(uc && uc.avatars.length >= 8 && uc.codex.length >= 6 && uc.userCols === 5 && uc.codexCols === 3
+      h.check("① 用户中心：常规头像 5 列、Codex 形象 6 个铺满整行、用户人格已移出",
+        Boolean(uc && uc.avatars.length >= 8 && uc.codex.length >= 6 && uc.userCols === 5 && uc.codexCols === 6
           && !uc.userPersonaHere),
         JSON.stringify(uc));
 

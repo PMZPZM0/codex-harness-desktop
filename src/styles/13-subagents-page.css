@@ -769,12 +769,6 @@
   color: var(--text);
   line-height: 1.4;
 }
-.codex-id-desc {
-  margin-top: 2px;
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
-}
 .codex-id-label {
   margin: 12px 0 5px;
   font-size: 12px;
@@ -794,6 +788,10 @@
 .codex-name-input {
   height: 34px;
   width: 200px;
+  /* 10-31：宽屏下名字输入固定 200px，右侧会空一大块（身份卡改两栏后更明显）⇒ 弹性吃掉剩余宽度，
+     窄屏由 min-width 兜底、`用默认名` 按钮仍固定在右侧。 */
+  flex: 1 1 180px;
+  min-width: 140px;
   max-width: 100%;
   padding: 0 10px;
   border: 1px solid var(--line);
