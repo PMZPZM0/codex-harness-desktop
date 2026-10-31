@@ -138,6 +138,8 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 .msg a{color:var(--accent);text-decoration:underline}
 .msg hr{border:0;border-top:1px solid var(--line);margin:10px 0}
 #plus{flex:0 0 auto;width:44px;height:44px;margin:0;padding:0;font-size:22px;line-height:40px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
+#voice{flex:0 0 auto;width:38px;height:38px;margin:0;padding:0;font-size:18px;line-height:36px;color:var(--ink);background:#f2f2ef;border:1px solid var(--line);border-radius:12px}
+html[data-theme="dark"] #voice{background:#1b2029}
 #file-pick{display:none}
 #camera-pick{display:none}
 .emoji-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;padding:6px 14px 4px}
@@ -314,7 +316,7 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
 <div id="goalbar" hidden></div>
 <div id="taskbar" hidden></div>
 <div id="imgs"></div>
-<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="handleSend()">发送</button></div>
+<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><button id="voice" title="语音输入" onclick="voiceInput()">🎤</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="handleSend()">发送</button></div>
 <!-- 占位：构建时替换成 src/lib/mobile-markdown.mjs 的源码 -->
 <script>/*__MOBILE_MARKDOWN__*/</script>
 <input type="file" id="file-pick" accept="image/*" multiple>
@@ -324,6 +326,7 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
   <button onclick="pickImage()"><b>🖼</b>图片</button>
   <button onclick="takePhoto()"><b>📷</b>拍照</button>
   <button onclick="openEmoji()"><b>😊</b>表情</button>
+  <button onclick="openMentions()"><b>@</b>提及</button>
   <button onclick="openFiles()"><b>📄</b>文件</button>
   <button onclick="openSkills()"><b>#</b>技能</button>
   <button onclick="openCommands()"><b>/</b>指令</button>
@@ -442,6 +445,8 @@ let stepBox = null;
 // 待发图片（本地预览，发送时才上传）+ 能力目录缓存 + 面板返回动作
 let pendingImages = [];
 let catalogCache = null;
+/* @ 点名（10-31）：与电脑端同一个调度目录，选中后随消息一起发（正文里也留 @名字 给人看） */
+let pendingMentions = [];
 let panelBack = null;
 // 当前命令步骤的输出块（桌面对话框的命令卡里有结果，手机端挂在对应命令下面）
 let currentOutputEl = null;
@@ -674,7 +679,8 @@ async function sendCmd() {
       writeStore(THREAD_KEY, currentThreadId);
       loadThreads();
     }
-    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: readStore("chm-effort") || "high" });
+    await rpc({ type: "send-message", threadId: currentThreadId, text: v, images: paths, effort: readStore("chm-effort") || "high", mentions: pendingMentions });
+    pendingMentions = [];
     updateThreadLabel((v || "图片").slice(0, 20));
     saveSession();
   } catch (error) {
@@ -1088,6 +1094,52 @@ function insertAtCursor(text) {
   const caret = start + text.length;
   try { input.setSelectionRange(caret, caret); } catch (error) { /* 忽略 */ }
   input.focus();
+}
+/* 语音输入：APK 有原生识别桥就用原生（Android WebView 不支持网页语音识别），网页版退回 Web Speech */
+function voiceInput() {
+  try {
+    if (window.AndroidRemote && typeof window.AndroidRemote.startVoice === "function") { window.AndroidRemote.startVoice(); return; }
+  } catch (error) { /* 继续尝试网页方案 */ }
+  const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Recognition) { push("system", "当前环境不支持语音输入：请用新版 APK，或使用键盘自带的语音"); return; }
+  const recognition = new Recognition();
+  recognition.lang = "zh-CN";
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+  recognition.onresult = (event) => { const text = event.results && event.results[0] && event.results[0][0] ? event.results[0][0].transcript : ""; if (text) insertAtCursor(text + " "); };
+  recognition.onerror = (event) => { push("system", "语音输入失败：" + String(event && event.error || "未知错误")); };
+  try { recognition.start(); } catch (error) { push("system", "语音输入启动失败：" + (error.message || error)); }
+}
+window.onVoiceResult = function (text) { const value = String(text || "").trim(); if (value) insertAtCursor(value + " "); };
+window.onVoiceError = function (message) { push("system", "语音输入失败：" + String(message || "未识别到语音")); };
+const MENTION_KIND_LABEL = { expert: "专家", member: "团队成员", team: "专家团", subagent: "子智能体", cli: "CLI 智能体" };
+function openMentions() {
+  closeSheet();
+  const node = document.createElement("div");
+  node.appendChild(panelMessage("加载中…"));
+  showPanel("@ 提及", node, null);
+  loadCatalog().then((catalog) => {
+    const agents = catalog.agents || [];
+    node.innerHTML = "";
+    if (!agents.length) { node.appendChild(panelMessage("电脑端还没有可点名的专家 / 子智能体 / CLI")); return; }
+    const groups = {};
+    agents.forEach((agent) => { const key = MENTION_KIND_LABEL[agent.kind] || agent.kind; (groups[key] = groups[key] || []).push(agent); });
+    Object.keys(groups).forEach((label) => {
+      node.appendChild(makeEl("div", "panel-note", label));
+      groups[label].forEach((agent) => {
+        const row = makeEl("div", "cmd-row");
+        row.appendChild(makeEl("b", null, "@" + agent.name));
+        row.appendChild(makeEl("small", null, [agent.profession, agent.installed === false ? "未安装" : ""].filter(Boolean).join(" · ") || MENTION_KIND_LABEL[agent.kind]));
+        if (agent.installed === false) { row.style.opacity = "0.45"; }
+        else row.onclick = () => {
+          pendingMentions = pendingMentions.filter((entry) => entry.key !== agent.key).slice(0, 4).concat([{ kind: agent.kind, key: agent.key, name: agent.name }]);
+          insertAtCursor("@" + agent.name + " ");
+          closePanel();
+        };
+        node.appendChild(row);
+      });
+    });
+  }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("@ 列表加载失败：" + (error.message || "未知错误"))); });
 }
 function openEmoji() {
   closeSheet();

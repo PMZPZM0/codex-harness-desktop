@@ -1913,8 +1913,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("EMOJI_GROUPS") && tunnelPage.includes("function openEmoji") && tunnelPage.includes("camera-pick") && tunnelPage.includes("选择会话") ? ok : fail)(
       "【139e】手机页：表情（与电脑端同一套）/ 拍照入口 / 菜单「选择会话」"
     );
-    (relaySrc.includes("mobile-remote-v0.1.11") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.11）"
+    /* 10-31 用户：「语音输入、@ 指令，同步电脑端的」 */
+    (tunnelPage.includes("function voiceInput") && tunnelPage.includes("onVoiceResult") && tunnelPage.includes("function openMentions") && tunnelPage.includes("mentions: pendingMentions") ? ok : fail)(
+      "【139e】手机页：语音输入（原生桥优先/网页回退）+ @ 提及（选中随消息上送）"
+    );
+    (codeOnly(mainSrc).includes("buildDispatchCatalog") && codeOnly(mainSrc).includes("mobileMentionBlock(mentions)") && relaySrc.includes("allowedKinds") ? ok : fail)(
+      "【139e】@ 提及与电脑端同一目录（专家/团队/子智能体/CLI），主进程过滤 kind 后注入点名块"
+    );
+    (relaySrc.includes("mobile-remote-v0.1.12") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.12）"
     );
   }
 }
