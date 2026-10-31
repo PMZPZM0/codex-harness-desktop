@@ -78,7 +78,22 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   const existingThreadId = teamRunStore.memberThreadOf(ownerThreadId, team.teamId, member.id);
   let memberThreadId = "";
   if (existingThreadId) {
-    const resumed: any = await server.request("thread/resume", { threadId: existingThreadId, excludeTurns: false }).catch(() => null);
+    /* ⛔⛔ 10-31 用户令「旧会话也要自动更新」：复用的成员线程是**创建那一刻**绑定的模型/供应商
+       —— 发起方后来换了模型，光靠 turn/start 带 model 仍会撞「线程绑定供应商 ≠ 模型」的墙。
+       ⇒ 复用时走 thread/resume 的**官方迁移通道**（渲染层 alignThreadToProvider 同款：
+         excludeTurns:true + model/modelProvider/config 重绑），把常驻线程重新钉到主会话当前模型。
+       ⛔ resume 必须带 sandbox/approvalPolicy：不带会把线程权限重置回默认（渲染层迁移实证）。 */
+    const resumed: any = await server.request("thread/resume", {
+      threadId: existingThreadId,
+      excludeTurns: true,
+      model: effectiveModel,
+      modelProvider: provider,
+      sandbox: member.sandbox || input.sandbox || "workspace-write",
+      approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
+      ...(baseUrl ? {
+        config: { model_provider: safeProviderId(provider), model_providers: { [safeProviderId(provider)]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+      } : {}),
+    }).catch(() => null);
     if (resumed?.thread?.id) {
       memberThreadId = String(resumed.thread.id);
       threadCwd.set(memberThreadId, String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01，复用线程同样要登记） */
