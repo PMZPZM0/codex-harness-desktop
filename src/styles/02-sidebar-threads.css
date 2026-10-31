@@ -134,10 +134,49 @@
   font-size: 12.5px;
   overflow: hidden;
 }
-/* 标题行（标签 + 名称）吃掉整行的可用宽度；时间单独占尾部，不参与压缩。 */
+/* 标题行 = **固定宽度的标签列 + 名称**（10-31 用户：「标签还在最左边，但下面会话首个文字要对齐」
+   —— 标签留在行首一眼可辨，同时用定宽标签列把**所有会话名称钉在同一条竖线上**）。
+   没有标签的行也占同样的列宽（行内 span 为空）⇒ 名称不会忽左忽右。
+   ⛔ 时间不设定位宽（各时间文案长短不一），名称起点不受它影响。 */
 .thread-row > button:first-child > .thread-row-title-line {
   flex: 1 1 auto;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.thread-row-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.thread-row-tags {
+  /* 10-31：标签最多一个（身份徽标与自定义标签互斥）⇒ 列宽 62 → **50px**，
+     最长身份「中枢调度 / 记录丢失」(≈48px) 仍放得下，标题多拿 12px。 */
+  flex: 0 0 50px;
+  width: 50px;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
+   ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
+.thread-row-tags > * { min-width: 0; }
+/* 自定义标签不超出标签列（长标签省略，保持整列整齐）。 */
+.thread-custom-tag { max-width: 50px; }
+/* ── 会话行底色（10-31 用户令）：未选中浅色常驻、选中后深一档 ───────────────── */
+.thread-row.has-row-color {
+  background: color-mix(in srgb, var(--row-color) 9%, transparent);
+}
+.thread-row.has-row-color:hover {
+  background: color-mix(in srgb, var(--row-color) 14%, transparent);
+}
+/* ⛔ 比 01-base 的 `.thread-row.active`（accent 13%）权重高：自选色要压过主题蓝底。 */
+.thread-row.has-row-color.active {
+  background: color-mix(in srgb, var(--row-color) 18%, transparent);
+}
+.thread-row.has-row-color.active::before {
+  background: var(--row-color);
 }
 /* ⛔⛔ spinner 豁免上面那条（2026-10-04 用户反馈「是不是空间留少了」= 形状缺了一角）：
      上面 `.thread-row span` 是**标题省略号**规则（text-overflow:ellipsis + overflow:hidden），
@@ -160,9 +199,12 @@
   white-space: nowrap;
   font-size: 10.5px;
   overflow: hidden;
-  /* 10-25 用户令：时间常驻行尾；hover 时让位给操作键（见下一条规则）。 */
+  /* 10-25 用户令：时间常驻行尾；hover 时让位给操作键（见下一条规则）。
+     10-31：时间列宽随文案长短（不占定宽），右对齐贴住行尾；名称起点由标签列固定，
+     不依赖时间列宽度。 */
   flex: 0 0 auto;
   margin-left: auto;
+  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 /* 鼠标移到行上：尾部时间换成置顶/归档/更多（运行中的行同样切换，转圈仍常驻在按键之后）。 */
@@ -257,6 +299,57 @@
 .thread-row-menu button:hover { background: var(--panel-2); }
 .thread-row-menu button.danger { color: var(--red); border-top: 1px solid var(--line-soft); margin-top: 2px; padding-top: 7px; }
 .thread-row-menu button svg { flex: none; }
+/* ── 会话颜色选择（10-31 用户令）────────────────────────────────────── */
+.thread-row-color-field {
+  display: grid;
+  gap: 5px;
+  padding: 6px 9px 3px;
+  margin-top: 2px;
+  border-top: 1px solid var(--line-soft);
+}
+.thread-row-color-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.thread-row-color-dots {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.thread-row-menu .thread-row-color-dot {
+  width: 14px;
+  min-width: 14px;
+  height: 14px;
+  min-height: 14px;
+  flex: none;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--dot) 55%, transparent);
+  border-radius: 50%;
+  background: var(--dot);
+  display: block;
+  cursor: pointer;
+}
+.thread-row-menu .thread-row-color-dot:hover { background: var(--dot); filter: brightness(1.08); }
+.thread-row-menu .thread-row-color-dot.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--dot); }
+.thread-row-menu .thread-row-color-dot.is-clear {
+  background: transparent;
+  border-color: var(--line);
+  position: relative;
+}
+.thread-row-menu .thread-row-color-dot.is-clear::after {
+  content: "×";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+}
 .archive-button {
   width: 28px;
   height: 28px;
@@ -1662,7 +1755,15 @@ html[data-ui-font="large"] .action-content pre {
   font-weight: 600;
   line-height: 1.15;
 }
-.thread-custom-tag { margin-right: 4px; }
+/* 会话标签与来源徽标**同一形态**（10-31 对齐）：同一行里一个圆角胶囊、一个方角，
+   还会一前一后 ⇒ 看着乱。统一成 9.5px / 3px 圆角 / 1px 内边距，整排标签像一列。 */
+.thread-custom-tag {
+  margin-right: 0;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 9.5px;
+  line-height: 1;
+}
 .project-custom-tag { margin-right: 2px; }
 
 .entity-tag-backdrop {
