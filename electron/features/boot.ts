@@ -19,6 +19,7 @@ import { remoteStepOf } from "../remote-step";
 import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
 import { initInternalThreads, loadInternalThreads } from "../internal-threads";
+import { captureScopeOf } from "../memory-capture-scope";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
@@ -1111,12 +1112,23 @@ export async function bootApp() {
         const willCapture = !isWelcomeGen && Boolean(buffer.user.trim() || buffer.assistant.trim());
         debugMemoryCapture({ method: "turn/completed", threadId, turnId: turnIdOf(p) || null, via: taken.via, userLen: buffer.user.length, assistantLen: buffer.assistant.length, itemsLen: items.length, cwd: buffer.cwd ?? null, isWelcomeGen, willCapture });
         if (willCapture) {
-          /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」。
-             BOSS 会话跑在用户选的项目目录里 ⇒ 捕获写入若还用 `buffer.cwd`，
-             它的日志/纪律会**写进那个项目的记忆** ⇒ 与普通会话混在一起。
-             ⇒ BOSS 会话改写它自己的专属记忆目录（`<userData>/boss-home/memories/<threadId>`）。
-                名单在主进程（session-registry.ts），这里能直接判。 */
+          /* ⛔⛔ 10-31 用户令（「检查会话跟调度会话会不会串记忆，深度查」）——
+             被调度的会话（专家 / 子智能体 / 团成员）**不进共享记忆捕获**：它们的"用户消息"是宿主拼的
+             `[SYSTEM TASK · 调度会话] …` 壳，不是用户说的话。实测污染过三处：项目 L4 日常日志
+             （真机日志里有整段 `- 需求：[SYSTEM TASK · 调度会话] …`）、L1.5 纪律（合成提示词抽出的假教训）、
+             L0 画像（全局生效，最脏）。判据见 electron/memory-capture-scope.ts 文件头。
+             ⛔ 这里必须 await 判据（登记表是异步的）⇒ 放进下面那个已有的 async IIFE，别在同步段 await。 */
           void (async () => {
+            const scope = await captureScopeOf(threadId, buffer.user).catch(() => ({ skip: false, reason: "interactive" as const }));
+            if (scope.skip) {
+              debugMemoryCapture({ method: "turn/completed", threadId, skipped: scope.reason });
+              return;
+            }
+            /* ⛔⛔ 10-25 用户令：「记忆板块里面加一个BOSS会话记忆板块，跟普通会话完全拆开」。
+               BOSS 会话跑在用户选的项目目录里 ⇒ 捕获写入若还用 `buffer.cwd`，
+               它的日志/纪律会**写进那个项目的记忆** ⇒ 与普通会话混在一起。
+               ⇒ BOSS 会话改写它自己的专属记忆目录（`<userData>/boss-home/memories/<threadId>`）。
+                  名单在主进程（session-registry.ts），这里能直接判。 */
             let ws = buffer.cwd;
             try {
               if (await isBossSession(threadId)) ws = bossMemoryWorkspace(threadId) || buffer.cwd;

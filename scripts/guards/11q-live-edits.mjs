@@ -334,6 +334,15 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const queueStream = codeOnly(read("src/features/session-queue/SessionQueue.tsx"));
   ok(/completedSkin = true/.test(queueStream) && /leadFoldIndex && completedSkin \? "completed" : "summary"/.test(queueStream),
     "TurnFoldStream 支持 completedSkin（非末段不挂回合收尾皮肤）");
+
+  /* ⛔⛔ 10-31 用户令：「调度得专家，显示那个弹窗输出内容，输出完成，弹窗不会自动隐藏」
+     ⇒ 两个调度弹窗跑完自动收（running→done 那一刻留 1.6s），failed 不关、翻历史也不关。 */
+  const timelineSrc = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"));
+  ok(/popupCloseRef/.test(timelineSrc)
+    && /prev\.id !== id \|\| prev\.status !== "running" \|\| status !== "done"/.test(timelineSrc)
+    && /setTimeout\(\(\) => setDelegatedPopupId\(""\), 1600\)/.test(timelineSrc)
+    && /setTimeout\(\(\) => setTeamPopupRunId\(""\), 1600\)/.test(timelineSrc),
+    "调度弹窗输出完成自动隐藏（专家团成员 + 普通调度两处；⛔ 只在 running→done 那一刻关，failed/翻历史不关）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

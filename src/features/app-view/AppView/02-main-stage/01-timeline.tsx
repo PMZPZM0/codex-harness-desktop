@@ -6,7 +6,7 @@ import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { compactionStateOf, reportCompactionState } from "../../../../lib/compaction-state.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
-import { Fragment, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { BossThreadIntro, getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
@@ -295,6 +295,35 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     waitingForApproval,
     waitingForInput,
   } = app;
+  /* ⛔⛔ 10-31 用户令：「调度得专家，显示那个弹窗输出内容，输出完成，弹窗不会自动隐藏」——
+     两个调度弹窗（专家团成员 TeamRunPopup / 普通调度 DelegatedRunPopup）**跑完自动收起**。
+     口径：
+       · 只在 running → done 的**那一刻**关（留 1.6s 让人看到最后一行）；⛔ 不是立刻关，否则最后一句被吞掉；
+       · ⛔ 打开一条**已经跑完**的历史 run 时不自动关（那不是"刚跑完"，用户是来翻记录的）；
+       · `failed` 不关（失败要能被看到、被复述），只能手动关；
+       · 记录消失（归档/gc/切会话）⇒ 渲染守卫已经挡住，这里只负责收 id。
+     ⛔ 别把「自动关」写进弹窗组件内部：那个组件是纯展示，关闭权在宿主（这里）。 */
+  const popupCloseRef = useRef<{ id: string; status: string }>({ id: "", status: "" });
+  useEffect(() => {
+    const id = String(delegatedPopupId ?? "");
+    if (!id) { popupCloseRef.current = { id: "", status: "" }; return; }
+    const status = String(delegatedPopupRun?.status ?? "");
+    const prev = popupCloseRef.current;
+    popupCloseRef.current = { id, status };
+    if (prev.id !== id || prev.status !== "running" || status !== "done") return;
+    const timer = window.setTimeout(() => setDelegatedPopupId(""), 1600);
+    return () => window.clearTimeout(timer);
+  }, [delegatedPopupId, delegatedPopupRun?.status]);
+  useEffect(() => {
+    const id = String(popupRun?.memberId ?? "");
+    if (!id) { popupCloseRef.current = { id: "", status: "" }; return; }
+    const status = String(popupRun?.status ?? "");
+    const prev = popupCloseRef.current;
+    popupCloseRef.current = { id, status };
+    if (prev.id !== id || prev.status !== "running" || status !== "done") return;
+    const timer = window.setTimeout(() => setTeamPopupRunId(""), 1600);
+    return () => window.clearTimeout(timer);
+  }, [popupRun?.memberId, popupRun?.status]);
   /* 压缩记录变化 ⇒ 本组件主动重渲染（10-07）：广播/重播到达时若恰好没有其它 state 更新，
      压缩线要等下一次被动重渲染才出现（竞态）。订阅记录模块的版本号，一变即重渲染；
      线本体仍在下方的 IIFE 里按 thread 取（这里只负责触发）。 */
