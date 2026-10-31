@@ -103,17 +103,6 @@ export function supervisorIdOf(alias) {
   return name ? `${name}${SUPERVISOR_SUFFIX}` : "";
 }
 
-/**
- * 被调度会话的展示名：「青崖主管 › 半山」。
- * ⛔ 上级缺失时只显示自己的笔名（别写成「› 半山」那种断头串）。
- */
-export function subordinateLabelOf(input) {
-  const self = String(input?.alias ?? "").trim();
-  const supervisor = String(input?.supervisorAlias ?? "").trim();
-  if (!self) return "";
-  return supervisor ? `${supervisorIdOf(supervisor)} › ${self}` : self;
-}
-
 /** 用户可改笔名的校验：必须两字中文，且不与现有（别人的）重名。 */
 export function validateAlias(input, used = []) {
   const name = String(input ?? "").trim();

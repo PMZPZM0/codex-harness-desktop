@@ -338,8 +338,8 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   /* ⛔⛔ 10-31 用户令：「调度得专家，显示那个弹窗输出内容，输出完成，弹窗不会自动隐藏」
      ⇒ 两个调度弹窗跑完自动收（running→done 那一刻留 1.6s），failed 不关、翻历史也不关。 */
   const timelineSrc = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"));
-  ok(/popupCloseRef/.test(timelineSrc)
-    && /prev\.id !== id \|\| prev\.status !== "running" \|\| status !== "done"/.test(timelineSrc)
+  ok(/delegatedCloseRef/.test(timelineSrc) && /teamCloseRef/.test(timelineSrc)
+    && (timelineSrc.match(/prev\.id !== id \|\| prev\.status !== "running" \|\| status !== "done"/g) || []).length === 2
     && /setTimeout\(\(\) => setDelegatedPopupId\(""\), 1600\)/.test(timelineSrc)
     && /setTimeout\(\(\) => setTeamPopupRunId\(""\), 1600\)/.test(timelineSrc),
     "调度弹窗输出完成自动隐藏（专家团成员 + 普通调度两处；⛔ 只在 running→done 那一刻关，failed/翻历史不关）");
@@ -404,6 +404,46 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "侧栏显示笔名 + 菜单可改（改完用返回的 snapshot 立刻刷新）");
   ok(/subscribeAliases/.test(read("src/features/shared/UserMessageView.tsx")),
     "上级气泡订阅笔名快照（父会话改名 ⇒ 子会话这里当场变）");
+
+  /* ⛔⛔ 10-31 审查实测出的撞名：并发 ensure 时两条会话拿到同一个笔名（真机构造 hash 同模的
+     threadId 复现，两条都是「墨藤」）。修法是「读已用集合 → 挑名 → 写」整段串行。
+     这里断言**行为**（并发三个任务不交错），断言源码只会漏掉"包是包了但没 await"这种写法。 */
+  const { createSerialQueue } = await import("../../src/lib/serial-queue.mjs");
+  const serialRun = createSerialQueue();
+  const log = [];
+  let inCritical = 0;
+  const task = (name) => async () => {
+    inCritical += 1;
+    log.push(`${name}:in`);
+    await new Promise((resolve) => setTimeout(resolve, 5));   // 模拟 await 读盘
+    log.push(`${name}:out`);
+    inCritical -= 1;
+    return name;
+  };
+  const results = await Promise.all([serialRun(task("a")), serialRun(task("b")), serialRun(task("c"))]);
+  const interleaved = log.join(",") !== "a:in,a:out,b:in,b:out,c:in,c:out";
+  ok(results.join("") === "abc" && !interleaved,
+    "串行队列：并发任务不交错进入临界区（⛔ 交错 = 两个会话挑到同一个笔名）");
+  /* 抛错不能卡死队列（后续任务还要能跑） */
+  const survivied = await serialRun(() => { throw new Error("boom"); }).catch(() => "caught");
+  const afterFail = await serialRun(() => "next");
+  ok(survivied === "caught" && afterFail === "next",
+    "串行队列：前一个任务抛错不卡死后面（否则改名一次失败，后面全部排队等死）");
+  const aliasSvc = read("electron/session-alias.ts");
+  ok(/const serial = createSerialQueue\(\)/.test(aliasSvc)
+    && /return serial\(\(\) => ensureSessionAliasLocked/.test(aliasSvc)
+    && /return serial\(\(\) => setSessionAliasLocked/.test(aliasSvc),
+    "笔名的分配与改名都走串行闸（ensure / set 两处，缺一处就还能撞名）");
+  ok(/await flushSessionAliases\(\);/.test(aliasSvc) && !/saveTimer|scheduleSave/.test(aliasSvc),
+    "落盘在返回前完成（⛔ 不要再回到 debounce：那需要一个退出钩子才能不丢改名）");
+  /* 两个调度弹窗的自动关基线必须各记各的 */
+  const tl = read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx");
+  ok(/delegatedCloseRef/.test(tl) && /teamCloseRef/.test(tl) && !/popupCloseRef/.test(tl),
+    "两个调度弹窗各记各的关闭基线（⛔ 共用一个 ref ⇒ 交替出现时前一个永远不自动关）");
+  /* 死代码卫生：上一版写了但没接线的三个函数已删（要展示再用 aliasLabelOf 组） */
+  ok(!/displayNameOf|resetSessionAliasCache/.test(aliasSvc)
+    && !/subordinateLabelOf/.test(read("src/lib/session-names.mjs")),
+    "没接线的一次性包装已删（displayNameOf / subordinateLabelOf / resetSessionAliasCache）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

@@ -10,8 +10,6 @@ export function pickSessionAlias(seed: string | null | undefined, used?: Set<str
 
 export function supervisorIdOf(alias: string | null | undefined): string;
 
-export function subordinateLabelOf(input: { alias?: string; supervisorAlias?: string } | null | undefined): string;
-
 export function validateAlias(
   input: string | null | undefined,
   used?: Set<string> | string[],
