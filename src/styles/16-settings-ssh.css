@@ -1412,6 +1412,13 @@
 .codex-id-panel {
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 7%, var(--panel)), var(--panel));
   border-color: color-mix(in srgb, var(--accent) 20%, var(--line));
+  /* 10-31 用户实测「身份卡右边一大片空白」：卡是整宽的，但内置形象网格写死 392px、
+     名字区又不吃宽 ⇒ 右半边永远是空的。改成两栏：左边身份与名字（占满剩余宽度），
+     右边 3×2 形象画廊 —— 内容把整张卡填满。 */
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(200px, 248px);
+  gap: 14px 20px;
+  align-items: start;
 }
 .codex-id-badge {
   display: inline-flex;
@@ -1431,13 +1438,17 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding-top: 12px;
-  border-top: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line));
 }
 .codex-id-presets-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
 .codex-id-presets-head strong { font-size: 12.5px; font-weight: 600; color: var(--text); }
 .codex-id-presets-head span { font-size: 12px; color: var(--muted); }
-.codex-id-preset-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; max-width: 392px; }
+.codex-id-preset-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+/* 窄窗（<=620）没有两栏可用：回到上下堆叠，画廊恢复 5 列，并补回分隔线 */
+@media (max-width: 620px) {
+  .codex-id-panel { grid-template-columns: minmax(0, 1fr); }
+  .codex-id-presets { padding-top: 12px; border-top: 1px solid color-mix(in srgb, var(--accent) 14%, var(--line)); }
+  .codex-id-preset-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); max-width: 392px; }
+}
 .codex-id-preset {
   position: relative;
   width: 100%;

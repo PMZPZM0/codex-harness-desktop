@@ -669,8 +669,9 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-format.ts")
 {
     const ucCss = readFileSync(join(ROOT, "src", "styles", "16-settings-ssh.css"), "utf8");
     (/\.uc-presets\s*\{[\s\S]{0,100}?grid-template-columns:\s*repeat\(5/.test(ucCss)
-      && /\.codex-id-preset-grid\s*\{[\s\S]{0,120}?grid-template-columns:\s*repeat\(5/.test(ucCss) ? ok : fail)(
-      "用户 / Codex 头像选择区放大到 5 列（缩略图变大，看得清）"
+      && /\.codex-id-preset-grid\s*\{[\s\S]{0,120}?grid-template-columns:\s*repeat\(3/.test(ucCss)
+      && /@media \(max-width: 620px\)[\s\S]{0,400}?\.codex-id-preset-grid\s*\{[\s\S]{0,120}?repeat\(5/.test(ucCss) ? ok : fail)(
+      "用户头像 5 列；Codex 形象在宽屏两栏卡里 3 列、窄屏回落 5 列（身份卡右半边不再空白）"
     );
   }
 }
