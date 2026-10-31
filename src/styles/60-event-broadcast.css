@@ -113,12 +113,14 @@
 .bc-pod.is-merged[data-edge="bottom"] { width: 40px; height: 22px; }
 .bc-pod.is-merged[data-edge="top"] { border-radius: 0 0 11px 11px; }
 .bc-pod.is-merged[data-edge="bottom"] { border-radius: 11px 11px 0 0; }
-/* 收纳态把图标缩到很小：一个按钮该有的体量，不是一颗球 */
+/* ⛔⛔ 收纳态**只允许一枚箭头**（10-31 用户令：「吸附进去了，就不要展示喇叭，这样多丑呢」）。
+   根因：`.bc-glyph` 是 `display:grid` 单列网格 ⇒ 两个可见子元素会被排成**上下两行**，
+   箭头在上、喇叭在下，挤出 24px 高度（截图里那一坨就是这么来的）。
+   ⇒ 现在由 JSX 直接二选一渲染（merged 只有 .bc-arrow，喇叭不进 DOM），CSS 只做兜底：
+   ⛔ 别在文件后面再写 `is-merged .bc-pod-icon { display: block }` —— 同特异性靠后者胜，会把它又打开。 */
 .bc-arrow { display: none; }
 .bc-pod.is-merged .bc-arrow { display: block; }
 .bc-pod.is-merged .bc-pod-icon { display: none; }
-.bc-pod.is-merged:hover .bc-arrow { display: none; }
-.bc-pod.is-merged:hover .bc-pod-icon { display: block; }
 .bc-pod.is-merged .bc-badge { top: 2px; }
 /* 未读：收纳态只留一个点（数字在窄把手里挤成一坨） */
 .bc-pod.is-merged .bc-badge {
@@ -140,18 +142,19 @@
   transform: none;
 }
 
-/* hover 展开：变回完整圆钮（放在方向规则之后，同 specificity 靠后者胜） */
+/* hover：**不再变回圆钮**（用户令「吸附进去了，就不要展示喇叭」⇒ 收纳态就该一直是把手，
+   不能一碰就弹成一颗球）。只给一点点反馈：底色抬亮一档 + 箭头变品牌色 + 朝内侧轻推 2px，
+   像被手指按住、正准备拉出来。真正的"拉出"发生在拖动 / 播报中 / 打开面板时（那时 is-merged 被摘掉）。 */
+.bc-arrow { transition: transform 0.16s ease, color 0.16s ease; }
 .bc-pod.is-merged:hover {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
   color: var(--accent);
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
-  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+  background: color-mix(in srgb, var(--panel) 88%, var(--text));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 24%, transparent);
 }
-.bc-pod.is-merged:hover svg { width: 19px; height: 19px; }
-.bc-pod.is-merged:hover .bc-badge { top: -3px; right: -3px; transform: none; min-width: 16px; height: 16px; padding: 0 4px; font-size: 9.5px; line-height: 16px; box-shadow: 0 0 0 2px var(--bg, #16181d); }
+.bc-pod.is-merged[data-edge="left"]:hover .bc-arrow { transform: translateX(2px); }
+.bc-pod.is-merged[data-edge="right"]:hover .bc-arrow { transform: translateX(-2px); }
+.bc-pod.is-merged[data-edge="top"]:hover .bc-arrow { transform: translateY(2px); }
+.bc-pod.is-merged[data-edge="bottom"]:hover .bc-arrow { transform: translateY(-2px); }
 
 /* 播报中的呼吸光圈（只在这一条要念的时候亮） */
 .bc-pulse {
@@ -518,11 +521,13 @@
 .bc-pod.is-voice:not(.is-merged) .bc-pod-icon { display: none; }
 .bc-pod.is-voice .bc-pulse { border-color: color-mix(in srgb, var(--ok, var(--green, #46a758)) 55%, transparent); }
 
-/* 收纳态（把手）：太窄，声波/音量柱都放不下 ⇒ 只保留本体脉冲，避免糊成一坨 */
+/* 收纳态（把手）：22×40 太窄，声波/音量柱/喇叭都放不下 ⇒ 只剩一枚箭头。
+   ⛔⛔ 这里**绝对不许**出现 `.is-merged .bc-pod-icon { display: block }`：
+      曾经加过这条，与上方「收纳态只显示箭头」同特异性、靠后者胜 ⇒ 箭头和喇叭同时可见，
+      被单列 grid 排成上下两行撑出把手（用户截图「为啥要展示两个图标」）。
+      喇叭在该态下由 JSX 直接不渲染，CSS 只是兜底。 */
 .bc-pod.is-merged .bc-eq,
 .bc-pod.is-merged .bc-wave { display: none; }
-.bc-pod.is-merged .bc-pod-icon { display: block; }
-.bc-pod.is-merged.is-announcing .bc-pod-icon { animation: bc-breathe 0.8s ease-in-out infinite; }
 
 /* ── 两套气泡特效 ── */
 /* 语音气泡：绿色系 + 左侧实时音量柱（与图标里那组同源，一眼对上"是它在说话"） */
