@@ -1375,7 +1375,13 @@ html.fx-ripple::view-transition-new(root) {
   bottom: 0;
   left: 3px;
   width: 1px;
-  background: var(--line-soft);
+  /* ⛔ 平时**不画线**（10-31 用户：「左侧栏上有一条线，能不能不显示，但也要支持拖动」）——
+     侧栏与主区之间靠底色过渡分隔，留一条常驻灰线反而显得脏。
+     命中面（7px）+ cursor 不受影响，拖动照旧；只有真正要拖的时候才亮。
+     线宽/定位仍留着：hover 态直接改颜色就是那道「光」，不用另画一条。 */
+  background: transparent;
+  /* 亮起来要有过渡，不然鼠标扫过是"啪"一下闪出来 */
+  transition: background-color var(--dur-ui) ease;
 }
 .sidebar-resizer:hover::after,
 .sidebar-resizer:active::after { background: var(--accent); }
