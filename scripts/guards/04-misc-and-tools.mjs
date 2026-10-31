@@ -1914,8 +1914,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【139e】手机页：表情（与电脑端同一套）/ 拍照入口 / 菜单「选择会话」"
     );
     /* 10-31 用户：「语音输入、@ 指令，同步电脑端的」 */
-    (tunnelPage.includes("function voiceInput") && tunnelPage.includes("onVoiceResult") && tunnelPage.includes("function openMentions") && tunnelPage.includes("mentions: pendingMentions") ? ok : fail)(
-      "【139e】手机页：语音输入（原生桥优先/网页回退）+ @ 提及（选中随消息上送）"
+    (tunnelPage.includes("function openMentions") && tunnelPage.includes("mentions: pendingMentions") && !tunnelPage.includes("function voiceInput") ? ok : fail)(
+      "【139e】手机页 @ 提及（选中随消息上送；语音入口已按用户要求移除）"
     );
     (codeOnly(mainSrc).includes("buildDispatchCatalog") && codeOnly(mainSrc).includes("mobileMentionBlock(mentions)") && relaySrc.includes("allowedKinds") ? ok : fail)(
       "【139e】@ 提及与电脑端同一目录（专家/团队/子智能体/CLI），主进程过滤 kind 后注入点名块"
@@ -1924,8 +1924,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("prefers-reduced-motion") && tunnelPage.includes("@keyframes fade-up") && tunnelPage.includes("@keyframes home-in") && tunnelPage.includes(".ripple") && tunnelPage.includes("menu-group") ? ok : fail)(
       "【139e】手机页动效体系：入场/切换/涟漪/菜单弹出 + 跟随系统减弱动效；☰ 菜单带图标与说明"
     );
-    (relaySrc.includes("mobile-remote-v0.1.14") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.14）"
+    (relaySrc.includes("mobile-remote-v0.1.15") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.15）"
     );
   }
 }
