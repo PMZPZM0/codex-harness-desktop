@@ -1,6 +1,7 @@
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { Check, ListOrdered, Palette, Type, WrapText } from "lucide-react";
 import { codeFonts, codePreviewSnippet, codeThemes } from "../lib/code-themes";
+import { flushSync } from "react-dom";
 import { ToggleSwitch } from "./SettingsWidgets";
 import { setCodeSettings, useCodeSettings, type CodeFontScale } from "../lib/code-settings";
 import { runVisualSwitch } from "../lib/visual-switch";
@@ -55,7 +56,7 @@ export function CodeAppearanceSection({ onNotice }: { onNotice?: (text: string) 
             aria-pressed={settings.theme === theme.id}
             /* 10-07：与界面主题同一条切换链（过渡 + 完成后回执）。
                ⛔ 高亮主题改的是代码块的行内色，同样走 `fx-theme` 那条颜色过渡。 */
-            onClick={() => runVisualSwitch("代码高亮", theme.label, () => setCodeSettings({ theme: theme.id }), onNotice)}
+            onClick={() => runVisualSwitch("代码高亮", theme.label, () => flushSync(() => setCodeSettings({ theme: theme.id })), onNotice)}
           >
             <ThemePreview style={theme.style} background={theme.background} />
             <span className="code-theme-label">
