@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { WindowControls } from "./components/WindowControls";
 import { PetFloat, PetActivity } from "./features/pet";
 import { AppLockGate } from "./features/app-lock";
 import "./styles.css";
@@ -34,9 +35,14 @@ window.addEventListener("vite:preloadError", (event) => {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    {/* ⛔⛔ 自绘窗口钮必须在 ErrorBoundary **外面**：渲染层一旦抛错，边界会把整棵树换成
+        「界面发生错误」卡片；钮若在树里就跟着消失，用户连关窗口都点不到（10-31 #310 实测）。
+        原生窗框时代系统钮是独立的合成层，没有这个问题 —— 自绘就得自己把它放到同一层级。 */}
     <ErrorBoundary>
       {isPetActivityWindow ? <PetActivity /> : isPetWindow ? <PetFloat /> : <AppLockGate><App /></AppLockGate>}
     </ErrorBoundary>
+    {/* 透明宠物浮窗不挂窗口钮（它本来就不该有窗框感） */}
+    {!(isPetWindow || isPetActivityWindow) && <WindowControls />}
   </StrictMode>,
 );
 

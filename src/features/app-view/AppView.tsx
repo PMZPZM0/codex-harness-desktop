@@ -195,7 +195,6 @@ import { Slot } from "../../runtime/registry";
 import { BossGroupPanel, getBossDirDialogState, getBossThreads, isBossSessionContext, openBossDirDialog, subscribeBossDirDialog, subscribeBossThreads } from "../boss-group-view";
 import { activeMembersOf, useGroupMembers } from "../boss-group-view";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
-import { WindowControls } from "../../components/WindowControls";
 
 
 
@@ -596,9 +595,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
             插件按钮会落进窗口拖拽区右侧，不影响拖动）。守卫【268】盯它有真实消费点。 */}
         <Slot id="topbar.end" loader={() => import("../../runtime/plugin-slots")} />
       </header>
-      {/* 10-31：Windows 的自绘窗口钮（win32 `frame:false`）。portal 到 body，
-          所以放在壳里任何位置都不影响它贴着窗口右上角。mac 返回 null。 */}
-      <WindowControls />
+      {/* ⛔ 10-31 审查修正：自绘窗口钮**不在这里** —— 它挂在 main.tsx 的 ErrorBoundary
+          **外面**。放壳里的话，一旦渲染层抛错（如 #310），错误边界把整棵树换成错误卡片，
+          窗口钮跟着消失 ⇒ 用户连关窗口都点不到（原生窗框时代不存在这个问题）。 */}
       <AppViewSidebarShell app={app} onOpenSettings={(page) => { setSearchPreview(null); setSettingsPage(page as SettingsPage); setSettingsOpen(true); }} />
       {popoutThreadId && <div className="" aria-hidden />}
 

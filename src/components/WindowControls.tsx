@@ -34,19 +34,28 @@ export function WindowControls() {
   const [maximized, setMaximized] = useState(false);
   useEffect(() => {
     if (!isWin) return;
-    const apply = (next: boolean) => {
-      setMaximized(next);
-      document.documentElement.dataset.maximized = next ? "1" : "";
-    };
+    /* ⛔ 只更新按钮图标，**不动壳的外边距**：最大化时那 6px 外圈是用户点名要的卡片外观
+       （「应用外边就很好」），原生 overlay 时代也是同样的 6px。
+       （10-31 审查：原来还写 `dataset.maximized`，但全仓没有消费方 —— 死信号已删。） */
+    const apply = (next: boolean) => setMaximized(next);
     const off = window.codex.onHarnessEvent?.((event: any) => {
       if (event?.type === "shell:maximized") apply(Boolean(event.maximized));
     });
     void window.codex.windowState?.().then((state: any) => apply(Boolean(state?.maximized))).catch(() => undefined);
     /* 双击拖拽区 / Win+↑ / 贴边吸附最大化都不会有按钮回执 ⇒ 尺寸一变就主动对一次状态
        （图标要从「□」翻成「还原」） */
-    const onResize = () => { void window.codex.windowState?.().then((state: any) => apply(Boolean(state?.maximized))).catch(() => undefined); };
+    /* ⛔ 必须节流：拖边改大小时 resize 每帧都发，一次一条 IPC（window-state）纯属浪费；
+       60ms 足够让图标跟上，拖完最后一次也一定补上。 */
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const onResize = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = undefined;
+        void window.codex.windowState?.().then((state: any) => apply(Boolean(state?.maximized))).catch(() => undefined);
+      }, 60);
+    };
     window.addEventListener("resize", onResize);
-    return () => { off?.(); window.removeEventListener("resize", onResize); };
+    return () => { off?.(); if (timer) clearTimeout(timer); window.removeEventListener("resize", onResize); };
   }, [isWin]);
   if (!isWin) return null;
   return createPortal(
@@ -60,10 +69,7 @@ export function WindowControls() {
         aria-label={maximized ? "还原" : "最大化"}
         onClick={async () => {
           const state: any = await window.codex.windowToggleMaximize?.().catch(() => null);
-          if (state) {
-            setMaximized(Boolean(state.maximized));
-            document.documentElement.dataset.maximized = state.maximized ? "1" : "";
-          }
+          if (state) setMaximized(Boolean(state.maximized));
         }}
       >
         {maximized ? <Copy size={14} strokeWidth={2} /> : <Square size={13} strokeWidth={2} />}

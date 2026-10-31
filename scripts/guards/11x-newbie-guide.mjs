@@ -274,6 +274,21 @@ const preload = read("electron/preload.ts");
   const topbarCss11x = read("src/styles/02-sidebar-threads.css");
   ok(/width: 28px;[\s\S]{0,120}?height: 28px/.test(topbarCss11x) && /\.window-controls \{[\s\S]{0,420}?z-index: 1000/.test(topbarCss11x),
     "自绘窗口钮 28×28 且 z-index 1000（比确认框 950 高 —— 复刻「系统层永远可点」，否则弹窗一开窗口关不掉）");
+  /* ⛔⛔ 10-31 审查：自绘钮必须挂在 **ErrorBoundary 外面** —— 渲染层抛错时边界会把整棵树
+     换成「界面发生错误」卡片（用户 #310 截图），钮若在树里就一起消失 ⇒ 连关窗口都点不到。
+     原生窗框时代系统钮是独立合成层，没有这个问题。 */
+  const mainTsx11x = read("src/main.tsx");
+  ok(mainTsx11x.includes("<WindowControls />")
+    && mainTsx11x.indexOf("<WindowControls />") > mainTsx11x.indexOf("</ErrorBoundary>")
+    && !/\{?\s*<WindowControls\s*\/?>/.test(read("src/features/app-view/AppView.tsx")),
+    "窗口钮挂在 ErrorBoundary **之外**（崩溃时的错误卡片不会连带吞掉窗口钮），且壳里不再重复渲染");
+  /* ⛔ 10-31 审查：右栏代码预览曾经三层各自上色（外壳 --panel + 内层代码主题色）⇒
+     永远露出一条不同色的边。现在只有一个 owner：滚动区取代码主题色、外壳透明。 */
+  const wsFilesSrc = read("src/features/app-view/AppView/03-workspace-files.tsx");
+  const css14 = read("src/styles/14-model-onboarding.css");
+  ok(/codeThemes/.test(wsFilesSrc) && /background: codeSurface/.test(wsFilesSrc)
+    && /\.workspace-file-preview-body > \.file-preview-code \{ background: transparent; \}/.test(css14),
+    "右栏代码预览底色只有**一个 owner**：滚动区用代码主题色（读 lib/code-themes），外壳透明（⛔ 别再自己画 var(--panel)）");
 }
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
