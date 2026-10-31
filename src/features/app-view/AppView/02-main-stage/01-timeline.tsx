@@ -303,23 +303,27 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
        · `failed` 不关（失败要能被看到、被复述），只能手动关；
        · 记录消失（归档/gc/切会话）⇒ 渲染守卫已经挡住，这里只负责收 id。
      ⛔ 别把「自动关」写进弹窗组件内部：那个组件是纯展示，关闭权在宿主（这里）。 */
-  const popupCloseRef = useRef<{ id: string; status: string }>({ id: "", status: "" });
+  /* ⛔⛔ 两个弹窗必须各记各的基线（10-31 审查实测）：早先两个 effect 共用一个 ref，
+     同时/交替出现时会互相覆盖 prev ⇒ 第一个弹窗从 running→done 时判断成「不是同一条」
+     ⇒ **永远不自动关**（正是用户报的那个 bug 的复发路径）。 */
+  const delegatedCloseRef = useRef<{ id: string; status: string }>({ id: "", status: "" });
   useEffect(() => {
     const id = String(delegatedPopupId ?? "");
-    if (!id) { popupCloseRef.current = { id: "", status: "" }; return; }
+    if (!id) { delegatedCloseRef.current = { id: "", status: "" }; return; }
     const status = String(delegatedPopupRun?.status ?? "");
-    const prev = popupCloseRef.current;
-    popupCloseRef.current = { id, status };
+    const prev = delegatedCloseRef.current;
+    delegatedCloseRef.current = { id, status };
     if (prev.id !== id || prev.status !== "running" || status !== "done") return;
     const timer = window.setTimeout(() => setDelegatedPopupId(""), 1600);
     return () => window.clearTimeout(timer);
   }, [delegatedPopupId, delegatedPopupRun?.status]);
+  const teamCloseRef = useRef<{ id: string; status: string }>({ id: "", status: "" });
   useEffect(() => {
     const id = String(popupRun?.memberId ?? "");
-    if (!id) { popupCloseRef.current = { id: "", status: "" }; return; }
+    if (!id) { teamCloseRef.current = { id: "", status: "" }; return; }
     const status = String(popupRun?.status ?? "");
-    const prev = popupCloseRef.current;
-    popupCloseRef.current = { id, status };
+    const prev = teamCloseRef.current;
+    teamCloseRef.current = { id, status };
     if (prev.id !== id || prev.status !== "running" || status !== "done") return;
     const timer = window.setTimeout(() => setTeamPopupRunId(""), 1600);
     return () => window.clearTimeout(timer);
