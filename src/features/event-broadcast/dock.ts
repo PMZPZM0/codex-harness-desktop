@@ -75,8 +75,13 @@ export type DockState = {
   free?: { x: number; y: number };
 };
 
-/** 图标尺寸（含 padding），几何计算与 CSS 必须同一个值。 */
+/** 自由悬浮态的圆钮尺寸（含 padding），锚点布局与 CSS 必须同一个值。 */
 export const POD_SIZE = 44;
+/** 收纳态把手的半宽 / 半高（26×44）—— **贴边落位按各自轴的半宽算**，
+ *  让把手的**边缘**正好压在边框线上，而不是中心对中心（那会内缩 9px，看着"浮在旁边"）。
+ *  ⛔ 两个轴不能共用一个值：横向用 13、纵向用 22，否则贴上/下边时把手会压进顶栏/输入框。 */
+export const DOCK_HALF_W = 13;
+export const DOCK_HALF_H = 22;
 
 /** 把一个中心点吸附到最近的边，并夹进聊天区（防止吸到被挤没的区域）。 */
 export function snapPoint(
@@ -85,11 +90,10 @@ export function snapPoint(
   size = POD_SIZE,
   inset = DOCK_INSET,
 ): { edge: DockEdge; x: number; y: number } {
-  const half = size / 2;
-  const minX = stage.left + half + inset;
-  const maxX = Math.max(minX, stage.right - half - inset);
-  const minY = stage.top + half + inset;
-  const maxY = Math.max(minY, stage.bottom - half - inset);
+  const minX = stage.left + DOCK_HALF_W + inset;
+  const maxX = Math.max(minX, stage.right - DOCK_HALF_W - inset);
+  const minY = stage.top + DOCK_HALF_H + inset;
+  const maxY = Math.max(minY, stage.bottom - DOCK_HALF_H - inset);
   const cx = Math.max(minX, Math.min(maxX, center.x));
   const cy = Math.max(minY, Math.min(maxY, center.y));
 
@@ -99,10 +103,10 @@ export function snapPoint(
   const db = stage.bottom - cy;
   const nearest = Math.min(dl, dr, dt, db);
 
-  if (nearest === dl) return { edge: "left", x: stage.left + half + inset, y: cy };
-  if (nearest === dr) return { edge: "right", x: stage.right - half - inset, y: cy };
-  if (nearest === dt) return { edge: "top", x: cx, y: stage.top + half + inset };
-  return { edge: "bottom", x: cx, y: stage.bottom - half - inset };
+  if (nearest === dl) return { edge: "left", x: stage.left + DOCK_HALF_W + inset, y: cy };
+  if (nearest === dr) return { edge: "right", x: stage.right - DOCK_HALF_W - inset, y: cy };
+  if (nearest === dt) return { edge: "top", x: cx, y: stage.top + DOCK_HALF_H + inset };
+  return { edge: "bottom", x: cx, y: stage.bottom - DOCK_HALF_H - inset };
 }
 
 /** 按「边 + 比例」算出图标中心点（侧栏拖动 / 右栏开合 / 窗口 resize 后重新落位）。 */
@@ -112,17 +116,16 @@ export function pointForDock(
   size = POD_SIZE,
   inset = DOCK_INSET,
 ): { x: number; y: number } {
-  const half = size / 2;
   if (dock.edge === "left" || dock.edge === "right") {
-    const minY = stage.top + half + inset;
-    const maxY = Math.max(minY, stage.bottom - half - inset);
+    const minY = stage.top + DOCK_HALF_H + inset;
+    const maxY = Math.max(minY, stage.bottom - DOCK_HALF_H - inset);
     const y = minY + (maxY - minY) * clamp01(dock.ratio);
-    return { x: dock.edge === "left" ? stage.left + half + inset : stage.right - half - inset, y };
+    return { x: dock.edge === "left" ? stage.left + DOCK_HALF_W + inset : stage.right - DOCK_HALF_W - inset, y };
   }
-  const minX = stage.left + half + inset;
-  const maxX = Math.max(minX, stage.right - half - inset);
+  const minX = stage.left + DOCK_HALF_W + inset;
+  const maxX = Math.max(minX, stage.right - DOCK_HALF_W - inset);
   const x = minX + (maxX - minX) * clamp01(dock.ratio);
-  return { x, y: dock.edge === "top" ? stage.top + half + inset : stage.bottom - half - inset };
+  return { x, y: dock.edge === "top" ? stage.top + DOCK_HALF_H + inset : stage.bottom - DOCK_HALF_H - inset };
 }
 
 /** 由吸附后的中心点反推「沿边比例」，用于拖动结束后落盘。 */
@@ -133,14 +136,13 @@ export function ratioForPoint(
   size = POD_SIZE,
   inset = DOCK_INSET,
 ): number {
-  const half = size / 2;
   if (edge === "left" || edge === "right") {
-    const minY = stage.top + half + inset;
-    const maxY = Math.max(minY, stage.bottom - half - inset);
+    const minY = stage.top + DOCK_HALF_H + inset;
+    const maxY = Math.max(minY, stage.bottom - DOCK_HALF_H - inset);
     return maxY === minY ? 0.5 : clamp01((point.y - minY) / (maxY - minY));
   }
-  const minX = stage.left + half + inset;
-  const maxX = Math.max(minX, stage.right - half - inset);
+  const minX = stage.left + DOCK_HALF_W + inset;
+  const maxX = Math.max(minX, stage.right - DOCK_HALF_W - inset);
   return maxX === minX ? 0.5 : clamp01((point.x - minX) / (maxX - minX));
 }
 

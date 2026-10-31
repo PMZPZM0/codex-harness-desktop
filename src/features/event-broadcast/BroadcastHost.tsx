@@ -213,7 +213,13 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
     setBroadcastOpen(!snap.open);
   }, [snap.open]);
 
-  if (!snap.history.length && !snap.announcing) return null;
+  /* ⛔⛔ 10-31 事故（用户：「压根没有同步改动」）——之前这里有
+     `if (!snap.history.length && !snap.announcing) return null;`
+     ⇒ 历史为空（新装 / 还没发生过群事件）时**图标根本不渲染**，
+       用户装上新版本看不到任何变化，自然判定"没同步"。
+     ⇒ 用户最初的要求就是「**在指定位置新增一个悬浮图标**」= 常驻入口。
+        所以这里**永远渲染**：没有播报时它就是一个安静的贴边把手（或自由悬浮的圆钮），
+        点开面板显示空态文案「群事件、语音播报、系统提示都会收到这里」。 */
 
   const half = POD_SIZE / 2;
   /* 气泡朝**聊天区内侧**滑出（贴左边就往右弹，贴右边就往左弹） */
