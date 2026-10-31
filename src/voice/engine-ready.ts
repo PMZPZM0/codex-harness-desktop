@@ -15,6 +15,15 @@
  *    （用户可以只装 Kokoro/情感语音而不装基础模型）。
  *  ⛔ 探针只起一次；`downloadDone` 到达就重拉（装完立刻能开播报，不必重启）。
  */
+/** `voice:models-status` 里本模块用到的字段（⛔ 不写 `any`：渲染层 any 是棘轮判据，新文件不许加基线）。 */
+type ModelsStatusShape = {
+  totalFiles?: number;
+  readyFiles?: number;
+  ready?: boolean;
+  kokoro?: { ready?: boolean; runnable?: boolean };
+  emotivoice?: { ready?: boolean; runnable?: boolean };
+};
+
 let ready = true;               // 未探测前按"就绪"处理：⛔ 不要用 false 当初始值，那会把正常用户误标成不可用
 let started = false;
 const listeners = new Set<() => void>();
@@ -31,7 +40,7 @@ export function subscribeAnnounceEngineReady(fn: () => void): () => void {
 /** 重新探测（可安全重复调用：并发只会多发一次 IPC）。 */
 export async function refreshAnnounceEngineReady(): Promise<void> {
   try {
-    const st: any = await window.codex.voiceModelsStatus?.();
+    const st = (await window.codex.voiceModelsStatus?.()) as ModelsStatusShape | undefined;
     if (!st) return;
     /* 与 `use-voice-settings-section-state` 的 packs 同口径：
        基础模型按「就绪文件数 == 总数」；Kokoro 要求 ready 且 runnable；
@@ -55,7 +64,7 @@ export function startAnnounceEngineProbe(): void {
   started = true;
   void refreshAnnounceEngineReady();
   try {
-    window.codex.onVoiceEvent?.((event: any) => {
+    window.codex.onVoiceEvent?.((event: { type?: string }) => {
       if (event?.type === "downloadDone") void refreshAnnounceEngineReady();
     });
   } catch { /* 忽略：没有该桥时仅剩首次探测 */ }
