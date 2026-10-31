@@ -351,11 +351,59 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const umv = codeOnly(read("src/features/shared/UserMessageView.tsx"));
   ok(/const isParentTask = refs\.teamTask\?\.label === "调度会话"/.test(umv)
     && /<div className="parent-task-stack"/.test(umv)
-    && /parent-task-name">主会话/.test(umv) ? ok : fail,
+    && /parent-task-name/.test(umv),
     "调度任务在子会话里以「主会话」身份左对齐渲染（⛔ 只认 调度会话 壳，成员/团队壳不动）");
   const msgCss = read("src/styles/03-messages-turns.css");
-  ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss) ? ok : fail,
+  ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss),
     "上级任务气泡的样式在位（左对齐 + 左侧强调线；⛔ 只加类不写样式 = 还是贴在右侧）");
+
+  /* ⛔⛔ 10-31 用户令：会话笔名体系（两字笔名 / 主管职级 / 上级联动）——
+     行为断言优先：拿名字库真跑，不看正则形状。⛔ 本文件用 ok(cond, msg) 形态（没有 fail）。 */
+  const names = await import("../../src/lib/session-names.mjs");
+  ok(Array.isArray(names.ALIAS_POOL) && names.ALIAS_POOL.length >= 200,
+    `笔名池 ≥200（实得 ${names.ALIAS_POOL?.length ?? 0}）—— 用户要求「200 个会话不能有重复名字」`);
+  ok(new Set(names.ALIAS_POOL).size === names.ALIAS_POOL.length, "笔名池自身无重复");
+  ok(names.ALIAS_POOL.every((alias) => /^[\u4e00-\u9fa5]{2}$/.test(alias)), "每个笔名都是**两个字**中文");
+  ok(names.ALIAS_POOL.slice(0, 50).every((alias) => names.aliasMeaningOf(alias).length > 0),
+    "每个名字都有寓意（首字 + 尾字各一句，⛔ 不能是空串）");
+  const picked = new Set();
+  for (let i = 0; i < 200; i += 1) picked.add(names.pickSessionAlias(`thread-${i}`, picked));
+  ok(picked.size === 200 && !picked.has(""), `连续分配 200 个会话拿到 200 个互不重名的笔名（实得 ${picked.size}）`);
+  ok(names.pickSessionAlias("same-thread", []) === names.pickSessionAlias("same-thread", []), "同一会话重复取值稳定（确定性选取，重开不变）");
+  /* ⛔ 断言的是**行为**（被占用的名字绝不会选中、且仍然确定），不是"下一个元素是谁" ——
+     选取是"哈希起步 + 顺延"，起步点不一定是池头。 */
+  const taken5 = names.ALIAS_POOL.slice(0, 5);
+  const afterSkip = names.pickSessionAlias("x", taken5);
+  ok(afterSkip && !taken5.includes(afterSkip) && afterSkip === names.pickSessionAlias("x", taken5),
+    "名字被占用时顺延探测（⛔ 不会撞名，且结果仍然确定）");
+  ok(names.supervisorIdOf("青崖") === "青崖主管" && names.supervisorIdOf("") === "",
+    "主会话 ID = 笔名 +「主管」；空笔名不造出孤零零的「主管」");
+  ok(names.USER_TITLE === "总经理", "用户职级 = 总经理");
+  ok(names.validateAlias("青", []).ok === false && names.validateAlias("abc", []).ok === false && names.validateAlias("青崖", ["青崖"]).ok === false,
+    "改名校验：必须两字中文、且不与别人重名");
+
+  /* 接线：新建会话自动分配 / 子会话带上级 / 改名广播 / 侧栏可改 */
+  const aliasIpc = read("electron/features/session-alias-ipc.ts");
+  ok(/session-alias:snapshot/.test(aliasIpc) && /session-alias:set/.test(aliasIpc) && /session-alias:ensure/.test(aliasIpc),
+    "笔名三通道齐（快照 / 改名 / 新建自动分配）");
+  const codexIpcSrc = read("electron/features/codex-ipc.ts");
+  ok(/ensureSessionAlias\(String\(r\.thread\.id\)\)/.test(codexIpcSrc),
+    "新建会话自动取笔名（thread/start 回执处，⛔ 靠 UI 触发就会漏后台建会话）");
+  const delegationSrc = read("electron/features/delegation.ts");
+  ok(/ensureSessionAlias\(threadId, origin\)/.test(delegationSrc) && /supervisor: supervisorLabel/.test(delegationSrc),
+    "调度的子会话：笔名 + 上级（写进持久指令 delegateScopeBlock）");
+  ok(/上级主管：\$\{supervisorLabel\}/.test(delegationSrc),
+    "调度的首任务带「上级主管：XX主管」（会话视图据此显示上级身份）");
+  const teamInvokeSrc = read("electron/team-invoke.ts");
+  ok(/ensureSessionAlias\(memberThreadId, String\(input\.leadThreadId/.test(teamInvokeSrc) && /上级主管：\$\{memberSupervisor\}/.test(teamInvokeSrc),
+    "专家团成员会话同样带上级（主理人会话）");
+  ok(/setSessionAliasEmitter\(/.test(read("electron/features/boot.ts")),
+    "改名后广播（⛔ 不广播 = 改完主管名，子会话还显示旧名字）");
+  const rowSrc = read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx");
+  ok(/thread-alias-badge/.test(rowSrc) && /改笔名/.test(rowSrc) && /sessionAliasSet/.test(rowSrc),
+    "侧栏显示笔名 + 菜单可改（改完用返回的 snapshot 立刻刷新）");
+  ok(/subscribeAliases/.test(read("src/features/shared/UserMessageView.tsx")),
+    "上级气泡订阅笔名快照（父会话改名 ⇒ 子会话这里当场变）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

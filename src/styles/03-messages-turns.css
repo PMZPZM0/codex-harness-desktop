@@ -1744,3 +1744,29 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+
+/* ── 10-31 用户令：会话两字笔名（主会话对外「XX主管」，用户 = 总经理）──
+   放在会话行标题前，**与身份徽标同规格**但更淡：它是 ID，不是状态。 */
+.thread-alias-badge {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  white-space: nowrap;
+  letter-spacing: 0.2px;
+}
+
+/* 10-31：用户职级（总经理）——挂在用户气泡名字旁，与会话侧「XX主管」对应 */
+.user-head-rank {
+  font-size: 10px;
+  line-height: 1.4;
+  padding: 0 5px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  margin-right: 6px;
+}

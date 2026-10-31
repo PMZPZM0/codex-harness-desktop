@@ -26,6 +26,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
    口径：写给引擎看 —— 用户提什么需求时该想到这个域、能力边界在哪。一句话。 */
 const DOMAIN_DESCRIPTIONS = {
   "monitor": "任务监控（右栏「监控」页，10-30）：按会话读每轮的技能 / MCP / 插件使用与本轮产物，以及本会话模型产出的「自我改进建议」。建议可编辑、可重生成，一键「进化」会带 self-review 技能直接发回对话。⛔ 全部按 threadId 隔离，一个会话看不到另一个会话的记录",
+  "session-alias": "会话笔名与上下级（10-31）：每个会话自动分配一个两字笔名（主会话对外是「XX主管」，用户是总经理），被调度会话知道自己的上级主管；用户可改笔名（两字中文、全局不重名），改完主进程广播，子会话那边的上级身份随之更新。⛔ 职级与笔名是展示层与指令层共用的同一份真相源",
   "feishu-cli": "飞书官方 CLI（@larksuite/cli）：安装（约 51MB，npm 国内镜像）、飞书应用配置（config init）、用户登录授权（device flow）与命令执行；安装/登录在「设置 → 开发工具 → 飞书 CLI」完成，Codex 通过 feishu_cli 工具调用",
   "filee": "Filee 文件转换（KnifeLemon/Filee，MIT）：244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档/CAD/3D，不需要 Office 或 LibreOffice）；安装（约 151MB，GitHub release 镜像序 + SHA256 校验）在「设置 → 开发工具 → Filee 文件转换」，Codex 通过 filee_convert 工具调用（--json 结构化回执）",
   "sessionspace": "会话专属工作区（10-29）：每个会话在项目地址下有一个 `<project>/.codex-harness/sessions/<threadId>/`，作为本会话的产物与临时落点。生命周期：新建即建、归档保留（可恢复）、永久删除时目录一并清理、启动时收口孤儿。⛔ 它不是记忆 workspace —— 项目记忆仍按项目根寻址（跨会话共享），会话私有走 private 层",

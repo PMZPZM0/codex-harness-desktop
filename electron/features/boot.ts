@@ -20,6 +20,7 @@ import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
 import { initInternalThreads, loadInternalThreads } from "../internal-threads";
 import { captureScopeOf } from "../memory-capture-scope";
+import { setSessionAliasEmitter } from "../session-alias";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
@@ -438,6 +439,10 @@ export async function bootApp() {
     initInternalThreads(app.getPath("userData"));
     await loadInternalThreads(String(codexHome ?? ""));
   } catch (error) { console.warn("internal-threads 载入失败：", error); }
+  /* ⛔ 10-31 会话笔名：改名后必须**广播** —— 否则"改完主管名、子会话那边还显示旧名字"，
+     正是用户点名的联动要求（正向/反向都要动）。 */
+  try { setSessionAliasEmitter((payload) => sendToWindow("harness:event", payload)); }
+  catch (error) { console.warn("session-alias 广播接线失败：", error); }
 
   /* 10-29 用户令：启动时收口「孤立工作区」。
      两类：记录在但目录不在（会话被外部删掉 / 用户手删了目录）、目录在但记录不在

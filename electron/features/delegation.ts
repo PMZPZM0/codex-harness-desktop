@@ -18,6 +18,7 @@ import { binOnPath, buildCliRolePrompt, cliModelEnv, readUsableCliAgents } from 
 import { augmentedPath } from "../toolchain";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
+import { ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -191,6 +192,10 @@ export async function runDelegatedTask(input: {
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
+  /* ★ 10-31 用户令：被调度的子会话也要有笔名，并且**知道自己的上级是谁**（哪个主管）。
+     ⛔ 必须在建会话之后、下发指令/首任务之前拿到 —— 上级名字要拼进那两处。 */
+  await ensureSessionAlias(threadId, origin).catch(() => undefined);
+  const supervisorLabel = await supervisorLabelOf(threadId).catch(() => "");
   /* 10-05 登记「这个会话就是这个角色」——主进程应答 role_memory_save 时靠它反查归属
      （⛔ 渲染层收不到被委派会话的工具事件，见 role-memory-tool.ts 文件头）。登记失败不阻塞调度。 */
   if (roleRef) await noteRoleThread(app.getPath("userData"), threadId, roleRef, String(input.cwd ?? "")).catch(() => undefined);
@@ -202,7 +207,7 @@ export async function runDelegatedTask(input: {
   try {
     const baseRead: any = await server.request("config/read", {}).catch(() => null);
     const baseInstructions = String(baseRead?.config?.developer_instructions ?? "");
-    const block = delegateScopeBlock({ kind: target.kind, name: displayName, origin });
+    const block = delegateScopeBlock({ kind: target.kind, name: displayName, origin, supervisor: supervisorLabel });
     const merged = baseInstructions ? `${baseInstructions}\n\n---\n\n${block}` : block;
     await server.request("thread/settings/update", {
       threadId,
@@ -252,6 +257,9 @@ export async function runDelegatedTask(input: {
   const finalQuery = [
     "[SYSTEM TASK · 调度会话]",
     "=== 用户需求 ===",
+    /* ⛔ 10-31：把**上级主管**写在第一条任务里（不只是持久指令）—— 子会话的会话视图据此显示
+       「主会话 · 青崖主管」而不是伪造成用户发言；渲染层按这行解析（src/lib/user-refs.ts）。 */
+    ...(supervisorLabel ? [`上级主管：${supervisorLabel}`] : []),
     `发起方交给你的任务：${String(input.query ?? "").trim()}`,
     "=== END ===",
     "",

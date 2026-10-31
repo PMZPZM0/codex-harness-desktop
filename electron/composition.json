@@ -1,782 +1,789 @@
 {
- "$comment": "域组合配置（P1 单一真相源）。enabled=false 的域不会被 composition.gen.ts 挂载；改完必须跑 npm run gen:domains（守卫【253】比对生成物，过期即红）。⛔ 一行恒等于一个域前缀，且**一个 file 只许出现一次** —— 一个文件恒等于一个域前缀（多前缀文件必须拆开，守卫【253】有棘轮盯着这条不许长回来）。",
- "$schema": {
-  "id": "kebab-case 域前缀（= ipc-registry.ts 的 prefix = 目录/类名前缀）；必须与域文件里 defineFeature 的 id 逐字一致（守卫【253】）",
-  "enabled": "boolean：是否挂载",
-  "file": "相对 electron/ 的域文件路径（必须是插件形态：export defineFeature 的产物）；⛔ 一个文件只能被一行引用（多前缀文件要拆成多个文件）",
-  "export": "该文件里导出的 feature 变量名",
-  "config": "传给 feature 的 config（可 null）"
- },
- "domains": [
-  {
-   "id": "agents",
-   "enabled": true,
-   "file": "features/agents-ipc.ts",
-   "export": "agentsFeature",
-   "config": null
-  },
-  {
-   "id": "app",
-   "enabled": true,
-   "file": "features/app-diagnostics.ts",
-   "export": "appFeature",
-   "config": null
-  },
-  {
-   "id": "app-lock",
-   "enabled": true,
-   "file": "features/app-lock-ipc.ts",
-   "export": "appLockFeature",
-   "config": null
-  },
-  {
-   "id": "appSettings",
-   "enabled": true,
-   "file": "features/app-settings-ipc.ts",
-   "export": "appSettingsFeature",
-   "config": null
-  },
-  {
-   "id": "autoUpdate",
-   "enabled": true,
-   "file": "features/auto-update-ipc.ts",
-   "export": "autoUpdateFeature",
-   "config": null
-  },
-  {
-   "id": "awake",
-   "enabled": true,
-   "file": "features/awake-ipc.ts",
-   "export": "awakeFeature",
-   "config": null
-  },
-  {
-   "id": "backup",
-   "enabled": true,
-   "file": "features/change-backup-ipc.ts",
-   "export": "backupFeature",
-   "config": null
-  },
-  {
-   "id": "boss-groups",
-   "enabled": true,
-   "file": "features/boss-groups-ipc.ts",
-   "export": "bossGroupsFeature",
-   "config": null
-  },
-  {
-   "id": "bot",
-   "enabled": true,
-   "file": "features/bot-ipc.ts",
-   "export": "botFeature",
-   "config": null
-  },
-  {
-   "id": "bot-binding",
-   "enabled": true,
-   "file": "features/bot-binding-ipc.ts",
-   "export": "botBindingFeature",
-   "config": null
-  },
-  {
-   "id": "bot-stream",
-   "enabled": true,
-   "file": "features/bot-stream-ipc.ts",
-   "export": "botStreamFeature",
-   "config": null
-  },
-  {
-   "id": "bots",
-   "enabled": true,
-   "file": "features/bots-ipc.ts",
-   "export": "botsFeature",
-   "config": null
-  },
-  {
-   "id": "bridge",
-   "enabled": true,
-   "file": "features/bridge-ipc.ts",
-   "export": "bridgeFeature",
-   "config": null
-  },
-  {
-   "id": "browser",
-   "enabled": true,
-   "file": "features/browser-ipc.ts",
-   "export": "browserFeature",
-   "config": null
-  },
-  {
-   "id": "builtin",
-   "enabled": true,
-   "file": "features/builtin-ipc.ts",
-   "export": "builtinFeature",
-   "config": null
-  },
-  {
-   "id": "capabilities",
-   "enabled": true,
-   "file": "features/capabilities-ipc.ts",
-   "export": "capabilitiesFeature",
-   "config": null
-  },
-  {
-   "id": "channel-bot",
-   "enabled": true,
-   "file": "features/channel-bot-ipc.ts",
-   "export": "channelBotFeature",
-   "config": null
-  },
-  {
-   "id": "channels",
-   "enabled": true,
-   "file": "features/channels-ipc.ts",
-   "export": "channelsFeature",
-   "config": null
-  },
-  {
-   "id": "cliagents",
-   "enabled": true,
-   "file": "features/cli-agents-ipc.ts",
-   "export": "cliAgentsFeature",
-   "config": null
-  },
-  {
-   "id": "clipboard",
-   "enabled": true,
-   "file": "features/clipboard-ipc.ts",
-   "export": "clipboardFeature",
-   "config": null
-  },
-  {
-   "id": "close-confirm",
-   "enabled": true,
-   "file": "features/close-confirm-ipc.ts",
-   "export": "closeConfirmFeature",
-   "config": null
-  },
-  {
-   "id": "cloud",
-   "enabled": true,
-   "file": "features/cloud-reserve-ipc.ts",
-   "export": "cloudReserveFeature",
-   "config": null
-  },
-  {
-   "id": "cloud-auth",
-   "enabled": true,
-   "file": "features/cloud-auth-ipc.ts",
-   "export": "cloudAuthFeature",
-   "config": null
-  },
-  {
-   "id": "cloud-kb",
-   "enabled": true,
-   "file": "features/cloud-kb-ipc.ts",
-   "export": "cloudKbFeature",
-   "config": null
-  },
-  {
-   "id": "cloud-memory",
-   "enabled": true,
-   "file": "features/cloud-memory-ipc.ts",
-   "export": "cloudMemoryFeature",
-   "config": null
-  },
-  {
-   "id": "cloud-models",
-   "enabled": true,
-   "file": "features/cloud-models-ipc.ts",
-   "export": "cloudModelsFeature",
-   "config": null
-  },
-  {
-   "id": "codex",
-   "enabled": true,
-   "file": "features/codex-ipc.ts",
-   "export": "codexFeature",
-   "config": null
-  },
-  {
-   "id": "codex-official-market",
-   "enabled": true,
-   "file": "features/codex-official-market-ipc.ts",
-   "export": "codexOfficialMarketFeature",
-   "config": null
-  },
-  {
-   "id": "commands",
-   "enabled": true,
-   "file": "features/commands-ipc.ts",
-   "export": "commandsFeature",
-   "config": null
-  },
-  {
-   "id": "connectors",
-   "enabled": true,
-   "file": "features/connectors-ipc.ts",
-   "export": "connectorsFeature",
-   "config": null
-  },
-  {
-   "id": "custom-model",
-   "enabled": true,
-   "file": "features/custom-model-ipc.ts",
-   "export": "customModelFeature",
-   "config": null
-  },
-  {
-   "id": "dataDir",
-   "enabled": true,
-   "file": "features/data-dir-ipc.ts",
-   "export": "dataDirFeature",
-   "config": null
-  },
-  {
-   "id": "declared-plugins",
-   "enabled": true,
-   "file": "features/declared-plugins-ipc.ts",
-   "export": "declaredPluginsFeature",
-   "config": null
-  },
-  {
-   "id": "dialog",
-   "enabled": true,
-   "file": "features/dialog-ipc.ts",
-   "export": "dialogFeature",
-   "config": null
-  },
-  {
-   "id": "dingtalk",
-   "enabled": true,
-   "file": "features/dingtalk-ipc.ts",
-   "export": "dingtalkFeature",
-   "config": null
-  },
-  {
-   "id": "domains",
-   "enabled": true,
-   "file": "features/domains-ipc.ts",
-   "export": "domainsFeature",
-   "config": null
-  },
-  {
-   "id": "drama-canvas",
-   "enabled": true,
-   "file": "features/drama-canvas.ts",
-   "export": "dramaCanvasFeature",
-   "config": null
-  },
-  {
-   "id": "engine",
-   "enabled": true,
-   "file": "features/engine-ipc.ts",
-   "export": "engineFeature",
-   "config": null
-  },
-  {
-   "id": "expert-market",
-   "enabled": true,
-   "file": "features/expert-market-ipc.ts",
-   "export": "expertMarketFeature",
-   "config": null
-  },
-  {
-   "id": "extensions",
-   "enabled": true,
-   "file": "features/extensions-ipc.ts",
-   "export": "extensionsFeature",
-   "config": null
-  },
-  {
-   "id": "external",
-   "enabled": true,
-   "file": "features/external-ipc.ts",
-   "export": "externalFeature",
-   "config": null
-  },
-  {
-   "id": "favorites",
-   "enabled": true,
-   "file": "features/favorites/ipc.ts",
-   "export": "favoritesFeature",
-   "config": null
-  },
-  {
-   "id": "feishu",
-   "enabled": true,
-   "file": "features/feishu-ipc.ts",
-   "export": "feishuFeature",
-   "config": null
-  },
-  {
-   "id": "fs",
-   "enabled": true,
-   "file": "features/fs-ipc.ts",
-   "export": "fsFeature",
-   "config": null
-  },
-  {
-   "id": "git",
-   "enabled": true,
-   "file": "features/git-ipc.ts",
-   "export": "gitFeature",
-   "config": null
-  },
-  {
-   "id": "history",
-   "enabled": true,
-   "file": "features/history-search-ipc.ts",
-   "export": "historySearchFeature",
-   "config": null
-  },
-  {
-   "id": "hooks",
-   "enabled": true,
-   "file": "features/hooks-ipc.ts",
-   "export": "hooksFeature",
-   "config": null
-  },
-  {
-   "id": "html-preview",
-   "enabled": true,
-   "file": "features/html-preview-ipc.ts",
-   "export": "htmlPreviewFeature",
-   "config": null
-  },
-  {
-   "id": "html-video",
-   "enabled": true,
-   "file": "features/html-video-ipc.ts",
-   "export": "htmlVideoFeature",
-   "config": null
-  },
-  {
-   "id": "image-lab",
-   "enabled": true,
-   "file": "features/image-lab.ts",
-   "export": "imageLabFeature",
-   "config": null
-  },
-  {
-   "id": "journal",
-   "enabled": true,
-   "file": "features/journal-ipc.ts",
-   "export": "journalFeature",
-   "config": null
-  },
-  {
-   "id": "dataaccess",
-   "enabled": true,
-   "file": "features/data-access-ipc.ts",
-   "export": "dataAccessFeature",
-   "config": null
-  },
-  {
-   "id": "kb",
-   "enabled": true,
-   "file": "features/knowledge-base-ipc.ts",
-   "export": "knowledgeBaseFeature",
-   "config": null
-  },
-  {
-   "id": "laya",
-   "enabled": true,
-   "file": "features/laya-service.ts",
-   "export": "layaFeature",
-   "config": null
-  },
-  {
-   "id": "mcp-servers",
-   "enabled": true,
-   "file": "features/mcp-servers-ipc.ts",
-   "export": "mcpServersFeature",
-   "config": null
-  },
-  {
-   "id": "memory",
-   "enabled": true,
-   "file": "features/memory-ipc.ts",
-   "export": "memoryFeature",
-   "config": null
-  },
-  {
-   "id": "model-specs",
-   "enabled": true,
-   "file": "features/model-specs-ipc.ts",
-   "export": "modelSpecsFeature",
-   "config": null
-  },
-  {
-   "id": "model-viewer",
-   "enabled": true,
-   "file": "features/model-viewer-ipc.ts",
-   "export": "modelViewerFeature",
-   "config": null
-  },
-  {
-   "id": "notify",
-   "enabled": true,
-   "file": "features/notify-ipc.ts",
-   "export": "notifyFeature",
-   "config": null
-  },
-  {
-   "id": "openai",
-   "enabled": true,
-   "file": "features/openai-ipc.ts",
-   "export": "openaiFeature",
-   "config": null
-  },
-  {
-   "id": "openfilm",
-   "enabled": true,
-   "file": "features/openfilm-ipc.ts",
-   "export": "openfilmFeature",
-   "config": null
-  },
-  {
-   "id": "pasted-text",
-   "enabled": true,
-   "file": "features/pasted-text-ipc.ts",
-   "export": "pastedTextFeature",
-   "config": null
-  },
-  {
-   "id": "personalization",
-   "enabled": true,
-   "file": "features/personalization-ipc.ts",
-   "export": "personalizationFeature",
-   "config": null
-  },
-  {
-   "id": "pet",
-   "enabled": true,
-   "file": "features/pet-ipc.ts",
-   "export": "petFeature",
-   "config": null
-  },
-  {
-   "id": "phone",
-   "enabled": true,
-   "file": "features/phone-harness-ipc.ts",
-   "export": "phoneHarnessFeature",
-   "config": null
-  },
-  {
-   "id": "plugin",
-   "enabled": true,
-   "file": "features/plugin-ipc.ts",
-   "export": "pluginFeature",
-   "config": null
-  },
-  {
-   "id": "plugins",
-   "enabled": true,
-   "file": "features/plugins-ipc.ts",
-   "export": "pluginsFeature",
-   "config": null
-  },
-  {
-   "id": "poll",
-   "enabled": true,
-   "file": "features/poll-ipc.ts",
-   "export": "pollFeature",
-   "config": null
-  },
-  {
-   "id": "ponytail",
-   "enabled": true,
-   "file": "features/ponytail-ipc.ts",
-   "export": "ponytailFeature",
-   "config": null
-  },
-  {
-   "id": "prompt",
-   "enabled": true,
-   "file": "features/prompt-ipc.ts",
-   "export": "promptFeature",
-   "config": null
-  },
-  {
-   "id": "qq",
-   "enabled": true,
-   "file": "features/qq-ipc.ts",
-   "export": "qqFeature",
-   "config": null
-  },
-  {
-   "id": "queue-timer",
-   "enabled": true,
-   "file": "features/queue-timer-ipc.ts",
-   "export": "queueTimerFeature",
-   "config": null
-  },
-  {
-   "id": "relay",
-   "enabled": true,
-   "file": "features/relay-ipc.ts",
-   "export": "relayFeature",
-   "config": null
-  },
-  {
-   "id": "remote",
-   "enabled": true,
-   "file": "features/remote-ipc.ts",
-   "export": "remoteFeature",
-   "config": null
-  },
-  {
-   "id": "rpa",
-   "enabled": true,
-   "file": "features/rpa-ipc.ts",
-   "export": "rpaFeature",
-   "config": null
-  },
-  {
-   "id": "runtime",
-   "enabled": true,
-   "file": "features/runtime-ipc.ts",
-   "export": "runtimeFeature",
-   "config": null
-  },
-  {
-   "id": "scheduler",
-   "enabled": true,
-   "file": "features/scheduler-ipc.ts",
-   "export": "schedulerFeature",
-   "config": null
-  },
-  {
-   "id": "scratch",
-   "enabled": true,
-   "file": "features/scratch-ipc.ts",
-   "export": "scratchFeature",
-   "config": null
-  },
-  {
-   "id": "sessionspace",
-   "enabled": true,
-   "file": "features/session-workspace-ipc.ts",
-   "export": "sessionWorkspaceFeature",
-   "config": null
-  },
-  {
-   "id": "screenshot",
-   "enabled": true,
-   "file": "features/screenshot-ipc.ts",
-   "export": "screenshotFeature",
-   "config": null
-  },
-  {
-   "id": "shell",
-   "enabled": true,
-   "file": "features/shell-ipc.ts",
-   "export": "shellFeature",
-   "config": null
-  },
-  {
-   "id": "skill-discipline",
-   "enabled": true,
-   "file": "features/skill-discipline-ipc.ts",
-   "export": "skillDisciplineFeature",
-   "config": null
-  },
-  {
-   "id": "skill-packs",
-   "enabled": true,
-   "file": "features/skill-packs-ipc.ts",
-   "export": "skillPacksFeature",
-   "config": null
-  },
-  {
-   "id": "skills",
-   "enabled": true,
-   "file": "features/skills-ipc.ts",
-   "export": "skillsFeature",
-   "config": null
-  },
-  {
-   "id": "soul-market",
-   "enabled": true,
-   "file": "features/soul-market-ipc.ts",
-   "export": "soulMarketFeature",
-   "config": null
-  },
-  {
-   "id": "ssh",
-   "enabled": true,
-   "file": "features/ssh-ipc.ts",
-   "export": "sshFeature",
-   "config": null
-  },
-  {
-   "id": "subagents",
-   "enabled": true,
-   "file": "features/subagents-ipc.ts",
-   "export": "subagentsFeature",
-   "config": null
-  },
-  {
-   "id": "tasks",
-   "enabled": true,
-   "file": "features/tasks-ipc.ts",
-   "export": "tasksFeature",
-   "config": null
-  },
-  {
-   "id": "team",
-   "enabled": true,
-   "file": "features/team-mode.ts",
-   "export": "teamModeFeature",
-   "config": null
-  },
-  {
-   "id": "team-runs",
-   "enabled": true,
-   "file": "features/team-runs-ipc.ts",
-   "export": "teamRunsFeature",
-   "config": null
-  },
-  {
-   "id": "team-threads",
-   "enabled": true,
-   "file": "features/team-threads-ipc.ts",
-   "export": "teamThreadsFeature",
-   "config": null
-  },
-  {
-   "id": "teams",
-   "enabled": true,
-   "file": "features/teams-ipc.ts",
-   "export": "teamsFeature",
-   "config": null
-  },
-  {
-   "id": "telegram",
-   "enabled": true,
-   "file": "features/telegram-ipc.ts",
-   "export": "telegramFeature",
-   "config": null
-  },
-  {
-   "id": "terminal",
-   "enabled": true,
-   "file": "features/terminal-ipc.ts",
-   "export": "terminalFeature",
-   "config": null
-  },
-  {
-   "id": "thread-runtime",
-   "enabled": true,
-   "file": "features/thread-runtime-ipc.ts",
-   "export": "threadRuntimeFeature",
-   "config": null
-  },
-  {
-   "id": "threads",
-   "enabled": true,
-   "file": "features/threads-ipc.ts",
-   "export": "threadsFeature",
-   "config": null
-  },
-  {
-   "id": "tools",
-   "enabled": true,
-   "file": "features/tools-ipc.ts",
-   "export": "toolsFeature",
-   "config": null
-  },
-  {
-   "id": "updates",
-   "enabled": true,
-   "file": "features/updates-ipc.ts",
-   "export": "updatesFeature",
-   "config": null
-  },
-  {
-   "id": "user",
-   "enabled": true,
-   "file": "features/user-ipc.ts",
-   "export": "userFeature",
-   "config": null
-  },
-  {
-   "id": "vault",
-   "enabled": true,
-   "file": "features/vault-ipc.ts",
-   "export": "vaultFeature",
-   "config": null
-  },
-  {
-   "id": "video",
-   "enabled": true,
-   "file": "features/video-gen.ts",
-   "export": "videoFeature",
-   "config": null
-  },
-  {
-   "id": "voice",
-   "enabled": true,
-   "file": "features/voice-ipc.ts",
-   "export": "voiceFeature",
-   "config": null
-  },
-  {
-   "id": "wecom-webhook",
-   "enabled": true,
-   "file": "features/wecom-webhook-ipc.ts",
-   "export": "wecomWebhookFeature",
-   "config": null
-  },
-  {
-   "id": "weixin",
-   "enabled": true,
-   "file": "features/weixin-ipc.ts",
-   "export": "weixinFeature",
-   "config": null
-  },
-  {
-   "id": "whatsnew",
-   "enabled": true,
-   "file": "features/whats-new-ipc.ts",
-   "export": "whatsNewFeature",
-   "config": null
-  },
-  {
-   "id": "work-logs",
-   "enabled": true,
-   "file": "features/work-logs.ts",
-   "export": "workLogsFeature",
-   "config": null
-  },
-  {
-   "id": "shortcuts",
-   "enabled": true,
-   "file": "features/shortcuts-ipc.ts",
-   "export": "shortcutsFeature",
-   "config": null
-  },
-  {
-   "id": "feishu-cli",
-   "enabled": true,
-   "file": "features/feishu-cli-ipc.ts",
-   "export": "feishuCliFeature",
-   "config": null
-  },
-  {
-   "id": "filee",
-   "enabled": true,
-   "file": "features/filee-ipc.ts",
-   "export": "fileeFeature",
-   "config": null
-  },
-  {
-   "id": "monitor",
-   "enabled": true,
-   "file": "features/task-monitor.ts",
-   "export": "taskMonitorFeature",
-   "config": null
-  }
- ]
+  "$comment": "域组合配置（P1 单一真相源）。enabled=false 的域不会被 composition.gen.ts 挂载；改完必须跑 npm run gen:domains（守卫【253】比对生成物，过期即红）。⛔ 一行恒等于一个域前缀，且**一个 file 只许出现一次** —— 一个文件恒等于一个域前缀（多前缀文件必须拆开，守卫【253】有棘轮盯着这条不许长回来）。",
+  "$schema": {
+    "id": "kebab-case 域前缀（= ipc-registry.ts 的 prefix = 目录/类名前缀）；必须与域文件里 defineFeature 的 id 逐字一致（守卫【253】）",
+    "enabled": "boolean：是否挂载",
+    "file": "相对 electron/ 的域文件路径（必须是插件形态：export defineFeature 的产物）；⛔ 一个文件只能被一行引用（多前缀文件要拆成多个文件）",
+    "export": "该文件里导出的 feature 变量名",
+    "config": "传给 feature 的 config（可 null）"
+  },
+  "domains": [
+    {
+      "id": "agents",
+      "enabled": true,
+      "file": "features/agents-ipc.ts",
+      "export": "agentsFeature",
+      "config": null
+    },
+    {
+      "id": "app",
+      "enabled": true,
+      "file": "features/app-diagnostics.ts",
+      "export": "appFeature",
+      "config": null
+    },
+    {
+      "id": "app-lock",
+      "enabled": true,
+      "file": "features/app-lock-ipc.ts",
+      "export": "appLockFeature",
+      "config": null
+    },
+    {
+      "id": "appSettings",
+      "enabled": true,
+      "file": "features/app-settings-ipc.ts",
+      "export": "appSettingsFeature",
+      "config": null
+    },
+    {
+      "id": "autoUpdate",
+      "enabled": true,
+      "file": "features/auto-update-ipc.ts",
+      "export": "autoUpdateFeature",
+      "config": null
+    },
+    {
+      "id": "awake",
+      "enabled": true,
+      "file": "features/awake-ipc.ts",
+      "export": "awakeFeature",
+      "config": null
+    },
+    {
+      "id": "backup",
+      "enabled": true,
+      "file": "features/change-backup-ipc.ts",
+      "export": "backupFeature",
+      "config": null
+    },
+    {
+      "id": "boss-groups",
+      "enabled": true,
+      "file": "features/boss-groups-ipc.ts",
+      "export": "bossGroupsFeature",
+      "config": null
+    },
+    {
+      "id": "bot",
+      "enabled": true,
+      "file": "features/bot-ipc.ts",
+      "export": "botFeature",
+      "config": null
+    },
+    {
+      "id": "bot-binding",
+      "enabled": true,
+      "file": "features/bot-binding-ipc.ts",
+      "export": "botBindingFeature",
+      "config": null
+    },
+    {
+      "id": "bot-stream",
+      "enabled": true,
+      "file": "features/bot-stream-ipc.ts",
+      "export": "botStreamFeature",
+      "config": null
+    },
+    {
+      "id": "bots",
+      "enabled": true,
+      "file": "features/bots-ipc.ts",
+      "export": "botsFeature",
+      "config": null
+    },
+    {
+      "id": "bridge",
+      "enabled": true,
+      "file": "features/bridge-ipc.ts",
+      "export": "bridgeFeature",
+      "config": null
+    },
+    {
+      "id": "browser",
+      "enabled": true,
+      "file": "features/browser-ipc.ts",
+      "export": "browserFeature",
+      "config": null
+    },
+    {
+      "id": "builtin",
+      "enabled": true,
+      "file": "features/builtin-ipc.ts",
+      "export": "builtinFeature",
+      "config": null
+    },
+    {
+      "id": "capabilities",
+      "enabled": true,
+      "file": "features/capabilities-ipc.ts",
+      "export": "capabilitiesFeature",
+      "config": null
+    },
+    {
+      "id": "channel-bot",
+      "enabled": true,
+      "file": "features/channel-bot-ipc.ts",
+      "export": "channelBotFeature",
+      "config": null
+    },
+    {
+      "id": "channels",
+      "enabled": true,
+      "file": "features/channels-ipc.ts",
+      "export": "channelsFeature",
+      "config": null
+    },
+    {
+      "id": "cliagents",
+      "enabled": true,
+      "file": "features/cli-agents-ipc.ts",
+      "export": "cliAgentsFeature",
+      "config": null
+    },
+    {
+      "id": "clipboard",
+      "enabled": true,
+      "file": "features/clipboard-ipc.ts",
+      "export": "clipboardFeature",
+      "config": null
+    },
+    {
+      "id": "close-confirm",
+      "enabled": true,
+      "file": "features/close-confirm-ipc.ts",
+      "export": "closeConfirmFeature",
+      "config": null
+    },
+    {
+      "id": "cloud",
+      "enabled": true,
+      "file": "features/cloud-reserve-ipc.ts",
+      "export": "cloudReserveFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-auth",
+      "enabled": true,
+      "file": "features/cloud-auth-ipc.ts",
+      "export": "cloudAuthFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-kb",
+      "enabled": true,
+      "file": "features/cloud-kb-ipc.ts",
+      "export": "cloudKbFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-memory",
+      "enabled": true,
+      "file": "features/cloud-memory-ipc.ts",
+      "export": "cloudMemoryFeature",
+      "config": null
+    },
+    {
+      "id": "cloud-models",
+      "enabled": true,
+      "file": "features/cloud-models-ipc.ts",
+      "export": "cloudModelsFeature",
+      "config": null
+    },
+    {
+      "id": "codex",
+      "enabled": true,
+      "file": "features/codex-ipc.ts",
+      "export": "codexFeature",
+      "config": null
+    },
+    {
+      "id": "codex-official-market",
+      "enabled": true,
+      "file": "features/codex-official-market-ipc.ts",
+      "export": "codexOfficialMarketFeature",
+      "config": null
+    },
+    {
+      "id": "commands",
+      "enabled": true,
+      "file": "features/commands-ipc.ts",
+      "export": "commandsFeature",
+      "config": null
+    },
+    {
+      "id": "connectors",
+      "enabled": true,
+      "file": "features/connectors-ipc.ts",
+      "export": "connectorsFeature",
+      "config": null
+    },
+    {
+      "id": "custom-model",
+      "enabled": true,
+      "file": "features/custom-model-ipc.ts",
+      "export": "customModelFeature",
+      "config": null
+    },
+    {
+      "id": "dataDir",
+      "enabled": true,
+      "file": "features/data-dir-ipc.ts",
+      "export": "dataDirFeature",
+      "config": null
+    },
+    {
+      "id": "declared-plugins",
+      "enabled": true,
+      "file": "features/declared-plugins-ipc.ts",
+      "export": "declaredPluginsFeature",
+      "config": null
+    },
+    {
+      "id": "dialog",
+      "enabled": true,
+      "file": "features/dialog-ipc.ts",
+      "export": "dialogFeature",
+      "config": null
+    },
+    {
+      "id": "dingtalk",
+      "enabled": true,
+      "file": "features/dingtalk-ipc.ts",
+      "export": "dingtalkFeature",
+      "config": null
+    },
+    {
+      "id": "domains",
+      "enabled": true,
+      "file": "features/domains-ipc.ts",
+      "export": "domainsFeature",
+      "config": null
+    },
+    {
+      "id": "drama-canvas",
+      "enabled": true,
+      "file": "features/drama-canvas.ts",
+      "export": "dramaCanvasFeature",
+      "config": null
+    },
+    {
+      "id": "engine",
+      "enabled": true,
+      "file": "features/engine-ipc.ts",
+      "export": "engineFeature",
+      "config": null
+    },
+    {
+      "id": "expert-market",
+      "enabled": true,
+      "file": "features/expert-market-ipc.ts",
+      "export": "expertMarketFeature",
+      "config": null
+    },
+    {
+      "id": "extensions",
+      "enabled": true,
+      "file": "features/extensions-ipc.ts",
+      "export": "extensionsFeature",
+      "config": null
+    },
+    {
+      "id": "external",
+      "enabled": true,
+      "file": "features/external-ipc.ts",
+      "export": "externalFeature",
+      "config": null
+    },
+    {
+      "id": "favorites",
+      "enabled": true,
+      "file": "features/favorites/ipc.ts",
+      "export": "favoritesFeature",
+      "config": null
+    },
+    {
+      "id": "feishu",
+      "enabled": true,
+      "file": "features/feishu-ipc.ts",
+      "export": "feishuFeature",
+      "config": null
+    },
+    {
+      "id": "fs",
+      "enabled": true,
+      "file": "features/fs-ipc.ts",
+      "export": "fsFeature",
+      "config": null
+    },
+    {
+      "id": "git",
+      "enabled": true,
+      "file": "features/git-ipc.ts",
+      "export": "gitFeature",
+      "config": null
+    },
+    {
+      "id": "history",
+      "enabled": true,
+      "file": "features/history-search-ipc.ts",
+      "export": "historySearchFeature",
+      "config": null
+    },
+    {
+      "id": "hooks",
+      "enabled": true,
+      "file": "features/hooks-ipc.ts",
+      "export": "hooksFeature",
+      "config": null
+    },
+    {
+      "id": "html-preview",
+      "enabled": true,
+      "file": "features/html-preview-ipc.ts",
+      "export": "htmlPreviewFeature",
+      "config": null
+    },
+    {
+      "id": "html-video",
+      "enabled": true,
+      "file": "features/html-video-ipc.ts",
+      "export": "htmlVideoFeature",
+      "config": null
+    },
+    {
+      "id": "image-lab",
+      "enabled": true,
+      "file": "features/image-lab.ts",
+      "export": "imageLabFeature",
+      "config": null
+    },
+    {
+      "id": "journal",
+      "enabled": true,
+      "file": "features/journal-ipc.ts",
+      "export": "journalFeature",
+      "config": null
+    },
+    {
+      "id": "dataaccess",
+      "enabled": true,
+      "file": "features/data-access-ipc.ts",
+      "export": "dataAccessFeature",
+      "config": null
+    },
+    {
+      "id": "kb",
+      "enabled": true,
+      "file": "features/knowledge-base-ipc.ts",
+      "export": "knowledgeBaseFeature",
+      "config": null
+    },
+    {
+      "id": "laya",
+      "enabled": true,
+      "file": "features/laya-service.ts",
+      "export": "layaFeature",
+      "config": null
+    },
+    {
+      "id": "mcp-servers",
+      "enabled": true,
+      "file": "features/mcp-servers-ipc.ts",
+      "export": "mcpServersFeature",
+      "config": null
+    },
+    {
+      "id": "memory",
+      "enabled": true,
+      "file": "features/memory-ipc.ts",
+      "export": "memoryFeature",
+      "config": null
+    },
+    {
+      "id": "model-specs",
+      "enabled": true,
+      "file": "features/model-specs-ipc.ts",
+      "export": "modelSpecsFeature",
+      "config": null
+    },
+    {
+      "id": "model-viewer",
+      "enabled": true,
+      "file": "features/model-viewer-ipc.ts",
+      "export": "modelViewerFeature",
+      "config": null
+    },
+    {
+      "id": "notify",
+      "enabled": true,
+      "file": "features/notify-ipc.ts",
+      "export": "notifyFeature",
+      "config": null
+    },
+    {
+      "id": "openai",
+      "enabled": true,
+      "file": "features/openai-ipc.ts",
+      "export": "openaiFeature",
+      "config": null
+    },
+    {
+      "id": "openfilm",
+      "enabled": true,
+      "file": "features/openfilm-ipc.ts",
+      "export": "openfilmFeature",
+      "config": null
+    },
+    {
+      "id": "pasted-text",
+      "enabled": true,
+      "file": "features/pasted-text-ipc.ts",
+      "export": "pastedTextFeature",
+      "config": null
+    },
+    {
+      "id": "personalization",
+      "enabled": true,
+      "file": "features/personalization-ipc.ts",
+      "export": "personalizationFeature",
+      "config": null
+    },
+    {
+      "id": "pet",
+      "enabled": true,
+      "file": "features/pet-ipc.ts",
+      "export": "petFeature",
+      "config": null
+    },
+    {
+      "id": "phone",
+      "enabled": true,
+      "file": "features/phone-harness-ipc.ts",
+      "export": "phoneHarnessFeature",
+      "config": null
+    },
+    {
+      "id": "plugin",
+      "enabled": true,
+      "file": "features/plugin-ipc.ts",
+      "export": "pluginFeature",
+      "config": null
+    },
+    {
+      "id": "plugins",
+      "enabled": true,
+      "file": "features/plugins-ipc.ts",
+      "export": "pluginsFeature",
+      "config": null
+    },
+    {
+      "id": "poll",
+      "enabled": true,
+      "file": "features/poll-ipc.ts",
+      "export": "pollFeature",
+      "config": null
+    },
+    {
+      "id": "ponytail",
+      "enabled": true,
+      "file": "features/ponytail-ipc.ts",
+      "export": "ponytailFeature",
+      "config": null
+    },
+    {
+      "id": "prompt",
+      "enabled": true,
+      "file": "features/prompt-ipc.ts",
+      "export": "promptFeature",
+      "config": null
+    },
+    {
+      "id": "qq",
+      "enabled": true,
+      "file": "features/qq-ipc.ts",
+      "export": "qqFeature",
+      "config": null
+    },
+    {
+      "id": "queue-timer",
+      "enabled": true,
+      "file": "features/queue-timer-ipc.ts",
+      "export": "queueTimerFeature",
+      "config": null
+    },
+    {
+      "id": "relay",
+      "enabled": true,
+      "file": "features/relay-ipc.ts",
+      "export": "relayFeature",
+      "config": null
+    },
+    {
+      "id": "remote",
+      "enabled": true,
+      "file": "features/remote-ipc.ts",
+      "export": "remoteFeature",
+      "config": null
+    },
+    {
+      "id": "rpa",
+      "enabled": true,
+      "file": "features/rpa-ipc.ts",
+      "export": "rpaFeature",
+      "config": null
+    },
+    {
+      "id": "runtime",
+      "enabled": true,
+      "file": "features/runtime-ipc.ts",
+      "export": "runtimeFeature",
+      "config": null
+    },
+    {
+      "id": "scheduler",
+      "enabled": true,
+      "file": "features/scheduler-ipc.ts",
+      "export": "schedulerFeature",
+      "config": null
+    },
+    {
+      "id": "scratch",
+      "enabled": true,
+      "file": "features/scratch-ipc.ts",
+      "export": "scratchFeature",
+      "config": null
+    },
+    {
+      "id": "sessionspace",
+      "enabled": true,
+      "file": "features/session-workspace-ipc.ts",
+      "export": "sessionWorkspaceFeature",
+      "config": null
+    },
+    {
+      "id": "screenshot",
+      "enabled": true,
+      "file": "features/screenshot-ipc.ts",
+      "export": "screenshotFeature",
+      "config": null
+    },
+    {
+      "id": "shell",
+      "enabled": true,
+      "file": "features/shell-ipc.ts",
+      "export": "shellFeature",
+      "config": null
+    },
+    {
+      "id": "skill-discipline",
+      "enabled": true,
+      "file": "features/skill-discipline-ipc.ts",
+      "export": "skillDisciplineFeature",
+      "config": null
+    },
+    {
+      "id": "skill-packs",
+      "enabled": true,
+      "file": "features/skill-packs-ipc.ts",
+      "export": "skillPacksFeature",
+      "config": null
+    },
+    {
+      "id": "skills",
+      "enabled": true,
+      "file": "features/skills-ipc.ts",
+      "export": "skillsFeature",
+      "config": null
+    },
+    {
+      "id": "soul-market",
+      "enabled": true,
+      "file": "features/soul-market-ipc.ts",
+      "export": "soulMarketFeature",
+      "config": null
+    },
+    {
+      "id": "ssh",
+      "enabled": true,
+      "file": "features/ssh-ipc.ts",
+      "export": "sshFeature",
+      "config": null
+    },
+    {
+      "id": "subagents",
+      "enabled": true,
+      "file": "features/subagents-ipc.ts",
+      "export": "subagentsFeature",
+      "config": null
+    },
+    {
+      "id": "tasks",
+      "enabled": true,
+      "file": "features/tasks-ipc.ts",
+      "export": "tasksFeature",
+      "config": null
+    },
+    {
+      "id": "team",
+      "enabled": true,
+      "file": "features/team-mode.ts",
+      "export": "teamModeFeature",
+      "config": null
+    },
+    {
+      "id": "team-runs",
+      "enabled": true,
+      "file": "features/team-runs-ipc.ts",
+      "export": "teamRunsFeature",
+      "config": null
+    },
+    {
+      "id": "team-threads",
+      "enabled": true,
+      "file": "features/team-threads-ipc.ts",
+      "export": "teamThreadsFeature",
+      "config": null
+    },
+    {
+      "id": "teams",
+      "enabled": true,
+      "file": "features/teams-ipc.ts",
+      "export": "teamsFeature",
+      "config": null
+    },
+    {
+      "id": "telegram",
+      "enabled": true,
+      "file": "features/telegram-ipc.ts",
+      "export": "telegramFeature",
+      "config": null
+    },
+    {
+      "id": "terminal",
+      "enabled": true,
+      "file": "features/terminal-ipc.ts",
+      "export": "terminalFeature",
+      "config": null
+    },
+    {
+      "id": "thread-runtime",
+      "enabled": true,
+      "file": "features/thread-runtime-ipc.ts",
+      "export": "threadRuntimeFeature",
+      "config": null
+    },
+    {
+      "id": "threads",
+      "enabled": true,
+      "file": "features/threads-ipc.ts",
+      "export": "threadsFeature",
+      "config": null
+    },
+    {
+      "id": "tools",
+      "enabled": true,
+      "file": "features/tools-ipc.ts",
+      "export": "toolsFeature",
+      "config": null
+    },
+    {
+      "id": "updates",
+      "enabled": true,
+      "file": "features/updates-ipc.ts",
+      "export": "updatesFeature",
+      "config": null
+    },
+    {
+      "id": "user",
+      "enabled": true,
+      "file": "features/user-ipc.ts",
+      "export": "userFeature",
+      "config": null
+    },
+    {
+      "id": "vault",
+      "enabled": true,
+      "file": "features/vault-ipc.ts",
+      "export": "vaultFeature",
+      "config": null
+    },
+    {
+      "id": "video",
+      "enabled": true,
+      "file": "features/video-gen.ts",
+      "export": "videoFeature",
+      "config": null
+    },
+    {
+      "id": "voice",
+      "enabled": true,
+      "file": "features/voice-ipc.ts",
+      "export": "voiceFeature",
+      "config": null
+    },
+    {
+      "id": "wecom-webhook",
+      "enabled": true,
+      "file": "features/wecom-webhook-ipc.ts",
+      "export": "wecomWebhookFeature",
+      "config": null
+    },
+    {
+      "id": "weixin",
+      "enabled": true,
+      "file": "features/weixin-ipc.ts",
+      "export": "weixinFeature",
+      "config": null
+    },
+    {
+      "id": "whatsnew",
+      "enabled": true,
+      "file": "features/whats-new-ipc.ts",
+      "export": "whatsNewFeature",
+      "config": null
+    },
+    {
+      "id": "work-logs",
+      "enabled": true,
+      "file": "features/work-logs.ts",
+      "export": "workLogsFeature",
+      "config": null
+    },
+    {
+      "id": "shortcuts",
+      "enabled": true,
+      "file": "features/shortcuts-ipc.ts",
+      "export": "shortcutsFeature",
+      "config": null
+    },
+    {
+      "id": "feishu-cli",
+      "enabled": true,
+      "file": "features/feishu-cli-ipc.ts",
+      "export": "feishuCliFeature",
+      "config": null
+    },
+    {
+      "id": "filee",
+      "enabled": true,
+      "file": "features/filee-ipc.ts",
+      "export": "fileeFeature",
+      "config": null
+    },
+    {
+      "id": "monitor",
+      "enabled": true,
+      "file": "features/task-monitor.ts",
+      "export": "taskMonitorFeature",
+      "config": null
+    },
+    {
+      "id": "session-alias",
+      "enabled": true,
+      "file": "features/session-alias-ipc.ts",
+      "export": "sessionAliasFeature",
+      "config": null
+    }
+  ]
 }

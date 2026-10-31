@@ -2,7 +2,9 @@
 import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { useUserName, UserAvatar } from "../../components/UserAvatar";
-import { useState, useEffect, useMemo } from "react";
+import { getAliasState, subscribeAliases, supervisorLabelOfAliases } from "../session-alias/alias-store.mjs";
+import { USER_TITLE } from "../../lib/session-names.mjs";
+import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";
 import { itemText } from "../../lib/item-text";
@@ -27,10 +29,13 @@ import { hk } from "../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "./COMPOSER_CHIP_ICON";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 
-export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
+export function UserMessageView({ item, turn, threadId, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; /** 10-31：本会话 id —— 上级气泡用它查「我的上级主管是谁」（笔名快照） */ threadId?: string; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
   // 「你」的名字（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）：走外部 store，
   // 与 Codex 名字同一套机制。⛔ 必须与其它 hook 一起放在 early return 之前（注释见下）。
   const userName = useUserName();
+  /* 10-31: live supervisor alias (parent rename reflects here immediately). */
+  const aliasState = useSyncExternalStore(subscribeAliases, getAliasState);
+  const liveSupervisor = threadId ? supervisorLabelOfAliases(aliasState, threadId) : "";
   const [editing, setEditing] = useState(false);
   // 首帧同步判定（useState 惰性初始化）：just-sent class 随首帧 DOM 一起出现，入场动画
   // 必定从挂载瞬间播放。旧版在 effect 里补 class：晚一帧、且与钉顶程序化滚动同帧，
@@ -151,7 +156,11 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
       <div className="parent-task-stack" data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
         <div className="parent-task-head">
           <span className="parent-task-avatar"><Bot size={13} /></span>
-          <span className="parent-task-name">主会话</span>
+          {/* ⛔ 10-31 用户令：「子会话上级就默认是某某主管」——上级名字由 delegation 写进首任务
+              （`上级主管：青崖主管（…）`），这里优先显示；**并优先用笔名快照**：父会话改名后
+              广播一到达这里就换成新名字（不然只有新派的任务才更新，老任务还挂旧名）。
+              两处都没有才退回通用「主会话」。 */}
+          <span className="parent-task-name">{liveSupervisor || refs.teamTask?.supervisor || "主会话"}</span>
           <span className="parent-task-hint">派发任务</span>
         </div>
         <div className="parent-task-body">{refs.teamTask?.requirement}</div>
@@ -166,6 +175,8 @@ export function UserMessageView({ item, turn, fallbackWindow, pending, onCopy, o
           的布局占位，所以这里不会重复出头像。 */}
       <div className="user-head">
         <span className="user-head-name">{userName}</span>
+        {/* ★ 10-31 用户令：「用户就是总经理身份」——职级标在名字旁边（会话侧是「XX主管」）。 */}
+        <span className="user-head-rank" title="你在公司架构里的职级">{USER_TITLE}</span>
         <UserAvatar size={22} />
       </div>
       <div
