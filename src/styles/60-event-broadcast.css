@@ -1,0 +1,605 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   悬浮播报 · 图标 / 气泡 / 历史面板（10-31 新增板块 src/features/event-broadcast）
+   ──────────────────────────────────────────────────────────────────────────
+   用户令：「群事件改成悬浮播报组件，播完收纳成图标，点开看历史，可拖拽吸附到对话框边框，
+   侧栏拖动与左右栏开合要自适应，配吸附与拉出动画；语音播报与其它播报类型一并接入。」
+
+   ⛔ 位置相关的一切（left/top）都由 JS 按 DOM 实测算好后写行内样式 —— 这里只管长相与动画。
+   ⛔ 所有 <button> 都要写 appearance:none + 自己的背景/边框：暗色下原生按钮按**浅色 UA**
+      绘制，只改 color 会得到一块突兀的浅底（本项目铁律，已踩过多次）。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 图标锚点：位置动画在这一层（拖动时由 .is-dragging 关掉 transition，才是跟手） ── */
+.bc-anchor {
+  position: fixed;
+  z-index: 880;
+  /* 吸附/侧栏拖动/右栏开合 ⇒ 位置平滑过渡（"吸附动画"的主体） */
+  transition: left 0.3s cubic-bezier(0.22, 0.61, 0.36, 1), top 0.3s cubic-bezier(0.22, 0.61, 0.36, 1);
+  will-change: left, top;
+}
+.bc-anchor.is-dragging { transition: none; }
+
+.bc-pod {
+  appearance: none;
+  -webkit-appearance: none;
+  /* ⛔ 角标 / 呼吸光圈是 absolute ⇒ 必须有包含块；同时用 inset+margin:auto 做**中心对齐**，
+     这样收纳态与展开态尺寸不同、中心也不漂（比 transform 便宜，且不与 scale 动画打架）。 */
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  /* 展开态：极淡的品牌色斜向渐变 + 内高光 ⇒ 有质感，不是一块纯色饼 */
+  background:
+    linear-gradient(155deg, color-mix(in srgb, var(--accent) 14%, var(--panel)), color-mix(in srgb, var(--panel) 97%, transparent));
+  color: var(--accent);
+  box-shadow: 0 6px 20px rgb(0 0 0 / 26%), 0 1px 0 rgb(255 255 255 / 7%) inset;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    width 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
+    height 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-radius 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.18s ease;
+}
+.bc-pod:hover {
+  transform: scale(1.06);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 34%);
+}
+.bc-pod:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+/* 拉出态：抓起时放大 + 阴影加重 + 手势提示 */
+.bc-pod.is-dragging {
+  transform: scale(1.1);
+  cursor: grabbing;
+  box-shadow: 0 14px 34px rgb(0 0 0 / 42%);
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+}
+/* 吸附回收：回来时弹一下（拉出 → 吸附 的首尾呼应） */
+.bc-pod.is-snap { animation: bc-snap 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.bc-pod.is-paused { color: var(--faint); }
+.bc-pod.is-announcing { border-color: color-mix(in srgb, var(--accent) 50%, var(--line)); }
+
+/* 语音正在播报：左下角一颗绿灯（与"有未读播报"的红角标区分开，互不遮挡） */
+.bc-pod.is-voice { border-color: color-mix(in srgb, var(--ok, var(--green)) 50%, var(--line)); }
+.bc-pod.is-voice::after {
+  content: "";
+  position: absolute;
+  left: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ok, var(--green, #46a758));
+  box-shadow: 0 0 0 2px var(--bg, #16181d);
+  animation: bc-voice-blink 1.5s ease-in-out infinite;
+}
+
+/* ══ 收纳态：**融入边框**（10-31 用户令「吸附是跟边框融入到一起，留一个展开按键就行」）══
+   中心正好落在边框线上（DOCK_INSET=0）⇒ 常态只露出朝内的半截，像边框上长出来的一条把手：
+   · 贴着边线的那一侧**不做圆角**（圆角只给朝内的两个角），所以看着是"从边框里伸出来"；
+   · 背景/描边取面板与线条色，去掉投影 ⇒ 不悬浮、不抢眼；
+   · 朝内边缘给一条 accent 细高光，提示"这里可以点"。
+   hover / 播报中 / 面板打开 / 拖动 时由 class 切换回完整圆钮（见下方 :hover 与各 is-* 态）。 */
+.bc-pod.is-merged {
+  width: 26px;
+  height: 44px;
+  /* ⛔ 融入 ≠ 隐形：底色略深于面板（贴边才不会糊成一片），朝内边缘压一条 accent 高光
+     —— 那是唯一的"可点"暗示，去掉它这个把手就完全看不见了（用户第一版反馈"太丑/看不见"）。 */
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg, #16181d));
+  border-color: color-mix(in srgb, var(--line) 86%, var(--muted));
+  box-shadow: inset 1.5px 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent);
+  color: var(--accent);
+}
+.bc-pod.is-merged[data-edge="right"] { border-radius: 12px 0 0 12px; box-shadow: inset 1.5px 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+.bc-pod.is-merged[data-edge="left"] { border-radius: 0 12px 12px 0; box-shadow: inset -1.5px 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+.bc-pod.is-merged[data-edge="top"],
+.bc-pod.is-merged[data-edge="bottom"] { width: 44px; height: 26px; }
+.bc-pod.is-merged[data-edge="top"] { border-radius: 0 0 12px 12px; box-shadow: inset 0 -1.5px 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+.bc-pod.is-merged[data-edge="bottom"] { border-radius: 12px 12px 0 0; box-shadow: inset 0 1.5px 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+/* 收纳态把图标缩到很小：一个按钮该有的体量，不是一颗球 */
+.bc-pod.is-merged svg { width: 13px; height: 13px; stroke-width: 2.1; }
+/* 未读：收纳态只留一个点（数字在窄把手里挤成一坨） */
+.bc-pod.is-merged .bc-badge {
+  top: 3px;
+  right: 50%;
+  transform: translateX(50%);
+  min-width: 7px;
+  height: 7px;
+  padding: 0;
+  font-size: 0;
+  line-height: 7px;
+  box-shadow: none;
+}
+.bc-pod.is-merged[data-edge="top"] .bc-badge,
+.bc-pod.is-merged[data-edge="bottom"] .bc-badge {
+  top: auto;
+  right: 3px;
+  bottom: auto;
+  transform: none;
+}
+
+/* hover 展开：变回完整圆钮（放在方向规则之后，同 specificity 靠后者胜） */
+.bc-pod.is-merged:hover {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+  box-shadow: 0 8px 24px rgb(0 0 0 / 30%);
+}
+.bc-pod.is-merged:hover svg { width: 19px; height: 19px; }
+.bc-pod.is-merged:hover .bc-badge { top: -3px; right: -3px; transform: none; min-width: 16px; height: 16px; padding: 0 4px; font-size: 9.5px; line-height: 16px; box-shadow: 0 0 0 2px var(--bg, #16181d); }
+
+/* 播报中的呼吸光圈（只在这一条要念的时候亮） */
+.bc-pulse {
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  animation: bc-pulse 1.5s ease-out infinite;
+  pointer-events: none;
+}
+
+/* 未读角标 */
+.bc-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--red, #e5484d);
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg, #16181d);
+}
+
+/* ── 播报气泡（贴着图标内侧滑出，播完自动收纳） ── */
+/* ── 播报横幅（10-31 用户：「我看看播报的字怎么出横幅」）──────────────────────
+   形态口径：**横幅**而不是气泡 —— 扁、宽、单行标题突出、正文一行截断、右端关闭；
+   入场方向跟着贴边方向走（贴右边从左滑入，贴左边从右滑入），像一条通知横着划出来。 */
+.bc-bubble {
+  position: fixed;
+  z-index: 881;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--panel) 98%, transparent), color-mix(in srgb, var(--panel) 94%, transparent));
+  box-shadow: 0 16px 40px rgb(0 0 0 / 34%), 0 1px 0 rgb(255 255 255 / 6%) inset;
+  backdrop-filter: blur(10px);
+  cursor: default;
+  animation: 0.28s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  animation-name: bc-bubble-in;
+}
+.bc-bubble.is-left { transform-origin: left center; animation-name: bc-bubble-from-left; }
+.bc-bubble.is-right { transform-origin: right center; animation-name: bc-bubble-from-right; }
+.bc-bubble.is-top { transform-origin: center top; animation-name: bc-bubble-from-top; }
+.bc-bubble.is-bottom { transform-origin: center bottom; animation-name: bc-bubble-from-bottom; }
+
+.bc-bubble-icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.bc-bubble-icon.tone-ok { color: var(--ok, var(--green)); background: color-mix(in srgb, var(--ok, #46a758) 12%, transparent); border-color: color-mix(in srgb, var(--ok, #46a758) 26%, transparent); }
+.bc-bubble-icon.tone-warn { color: var(--orange, #f5a524); background: color-mix(in srgb, var(--orange, #f5a524) 12%, transparent); border-color: color-mix(in srgb, var(--orange, #f5a524) 26%, transparent); }
+.bc-bubble-icon.tone-error { color: var(--red, #e5484d); background: color-mix(in srgb, var(--red, #e5484d) 12%, transparent); border-color: color-mix(in srgb, var(--red, #e5484d) 26%, transparent); }
+
+.bc-bubble-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bc-bubble-kind { font-size: 10px; letter-spacing: 0.04em; color: var(--faint); }
+.bc-bubble-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.45;
+  word-break: break-word;
+}
+.bc-bubble-text {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  /* 气泡里只留两行摘要，全文在面板里看 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.bc-bubble-close {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.bc-bubble-close:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
+
+/* ── 历史面板 ── */
+.bc-panel {
+  position: fixed;
+  z-index: 881;
+  display: flex;
+  flex-direction: column;
+  min-height: 160px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 20px 48px rgb(0 0 0 / 42%);
+  overflow: hidden;
+  animation: bc-panel-in 0.22s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.bc-panel.is-left { transform-origin: left center; }
+.bc-panel.is-right { transform-origin: right center; }
+.bc-panel.is-top { transform-origin: center top; }
+.bc-panel.is-bottom { transform-origin: center bottom; }
+
+.bc-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 12px;
+  color: var(--text);
+}
+.bc-panel-head b { font-weight: 600; }
+.bc-panel-count {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+}
+.bc-panel-spacer { flex: 1; }
+
+.bc-mini {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.bc-mini:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); border-color: var(--line); }
+
+.bc-panel-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overscroll-behavior: contain;
+}
+.bc-empty {
+  padding: 22px 12px;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.8;
+  color: var(--faint);
+}
+
+/* 单条播报 */
+.bc-item {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.bc-item:hover { background: color-mix(in srgb, var(--text) 5%, transparent); border-color: var(--line); }
+.bc-item.is-open { background: color-mix(in srgb, var(--text) 4%, transparent); border-color: var(--line); }
+
+.bc-item-icon {
+  flex: none;
+  width: 21px;
+  height: 21px;
+  margin-top: 1px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.bc-item.tone-ok .bc-item-icon { color: var(--ok, var(--green)); background: color-mix(in srgb, var(--ok, #46a758) 10%, transparent); border-color: color-mix(in srgb, var(--ok, #46a758) 24%, transparent); }
+.bc-item.tone-warn .bc-item-icon { color: var(--orange, #f5a524); background: color-mix(in srgb, var(--orange, #f5a524) 10%, transparent); border-color: color-mix(in srgb, var(--orange, #f5a524) 24%, transparent); }
+.bc-item.tone-error .bc-item-icon { color: var(--red, #e5484d); background: color-mix(in srgb, var(--red, #e5484d) 10%, transparent); border-color: color-mix(in srgb, var(--red, #e5484d) 24%, transparent); }
+
+.bc-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bc-item-top { display: flex; align-items: center; gap: 6px; }
+.bc-item-kind { font-size: 10px; color: var(--faint); letter-spacing: 0.03em; }
+.bc-item-time { font-size: 10px; color: var(--faint); margin-left: auto; }
+.bc-item-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.bc-item-text {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.6;
+  word-break: break-word;
+  white-space: pre-wrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* 展开：全文可见（群事件的交付说明经常有十几行，两行摘要不够） */
+.bc-item.is-open .bc-item-text { display: block; -webkit-line-clamp: unset; overflow: visible; }
+.bc-item-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.bc-tag {
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid var(--line);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+.bc-panel-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.bc-foot-btn {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.bc-foot-btn:hover { color: var(--text); background: color-mix(in srgb, var(--text) 8%, transparent); }
+.bc-foot-btn.is-stop { margin-left: auto; color: var(--red, #e5484d); border-color: color-mix(in srgb, var(--red, #e5484d) 30%, var(--line)); }
+
+/* ── 语音播报实时行（原先在输入框上方的那条状态条，10-31 迁进面板） ── */
+.bc-voice-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--ok, var(--green, #46a758)) 7%, transparent);
+}
+.bc-voice-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--ok, var(--green, #46a758));
+  animation: bc-voice-blink 1.4s ease-in-out infinite;
+}
+.bc-voice-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.bc-voice-title { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--text); }
+.bc-voice-pending { font-weight: 400; font-size: 10.5px; color: var(--faint); }
+.bc-voice-text {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+.bc-mini.is-stop { color: var(--red, #e5484d); }
+.bc-mini.is-stop:hover { background: color-mix(in srgb, var(--red, #e5484d) 12%, transparent); color: var(--red, #e5484d); }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   图标动态化（10-31 用户令：「喇叭一样的，图标要动态化，播报语音效果和播报群事件效果，
+   不同展示播放特效，动态消费点要做全」）
+
+   ── 四个消费点（同一份 store 状态，四种呈现）──────────────────────────────
+   ① 把手/图标本体 = **常驻状态指示**：未读角标 / 播报中声波 / 语音中音量柱；
+   ② 播报气泡       = **一次性消费**（4.2s 自动收纳），按 kind 分特效（语音=绿柱 / 事件=广播条）；
+   ③ 历史面板       = **回看消费**（点开才读，不打扰）；
+   ④ 面板底部/语音行 = **控制出口**（停止语音 / 暂停自动播报）。
+   分派点只有一处：`kindMetaOf(kind)` + 这里的 `.is-*` 状态类 —— ⛔ 新增类型不要另写一套动效。
+
+   ── 两套播放特效，互斥 ────────────────────────────────────────────────────
+   · 群事件（`.is-announcing`）：喇叭本体微呼吸 + 喇叭口向右扩散**三道声波**（广播感）；
+   · 语音（`.is-voice`）：喇叭让位给**四根音量柱**律动（绿色，像真的在出声）。
+     ⛔ 语音优先：真人声正在响时，声波会让位，避免两种动效打架。
+   ══════════════════════════════════════════════════════════════════════════ */
+.bc-glyph { position: relative; display: grid; place-items: center; width: 24px; height: 24px; }
+.bc-pod-icon { position: relative; z-index: 2; animation: bc-breathe 3.4s ease-in-out infinite; }
+
+/* 群事件声波：只留右侧一道弧，从喇叭口向外扩 */
+.bc-wave {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 24px;
+  height: 24px;
+  margin: -12px 0 0 -12px;
+  border-radius: 50%;
+  border: 1.6px solid color-mix(in srgb, var(--accent) 78%, transparent);
+  border-left-color: transparent;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+  opacity: 0;
+  animation: bc-wave-out 1.5s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+  pointer-events: none;
+}
+.bc-pod.is-announcing:not(.is-voice) .bc-wave { display: block; }
+.bc-wave.w2 { animation-delay: 0.28s; }
+.bc-wave.w3 { animation-delay: 0.56s; }
+
+/* 语音音量柱 */
+.bc-eq { display: none; position: absolute; bottom: 7px; width: 3px; border-radius: 2px; background: var(--ok, var(--green, #46a758)); transform-origin: bottom center; animation: bc-eq-bar 0.92s ease-in-out infinite; }
+.bc-eq.e1 { left: 4px; height: 9px; animation-delay: 0s; }
+.bc-eq.e2 { left: 9px; height: 15px; animation-delay: 0.12s; }
+.bc-eq.e3 { left: 14px; height: 11px; animation-delay: 0.24s; }
+.bc-eq.e4 { left: 19px; height: 7px; animation-delay: 0.36s; }
+.bc-pod.is-voice .bc-eq { display: block; }
+/* 语音时喇叭让位（音量柱本身就是"在出声"的符号，两个一起画会糊成一团） */
+.bc-pod.is-voice:not(.is-merged) .bc-pod-icon { display: none; }
+.bc-pod.is-voice .bc-pulse { border-color: color-mix(in srgb, var(--ok, var(--green, #46a758)) 55%, transparent); }
+
+/* 收纳态（把手）：太窄，声波/音量柱都放不下 ⇒ 只保留本体脉冲，避免糊成一坨 */
+.bc-pod.is-merged .bc-eq,
+.bc-pod.is-merged .bc-wave { display: none; }
+.bc-pod.is-merged .bc-pod-icon { display: block; }
+.bc-pod.is-merged.is-announcing .bc-pod-icon { animation: bc-breathe 0.8s ease-in-out infinite; }
+
+/* ── 两套气泡特效 ── */
+/* 语音气泡：绿色系 + 左侧实时音量柱（与图标里那组同源，一眼对上"是它在说话"） */
+.bc-bubble.kind-voice { border-color: color-mix(in srgb, var(--ok, var(--green, #46a758)) 34%, var(--line)); }
+.bc-bubble.kind-voice .bc-bubble-kind { color: color-mix(in srgb, var(--ok, var(--green, #46a758)) 78%, var(--text)); }
+.bc-bubble.kind-voice .bc-bubble-title { font-weight: 500; }
+.bc-eq-bubble { flex: none; display: flex; align-items: flex-end; gap: 2px; height: 18px; padding: 0 3px; }
+.bc-eq-bubble i { width: 2px; border-radius: 1px; background: var(--ok, var(--green, #46a758)); transform-origin: bottom center; animation: bc-eq-bar 0.92s ease-in-out infinite; }
+.bc-eq-bubble i:nth-child(1) { height: 6px; animation-delay: 0s; }
+.bc-eq-bubble i:nth-child(2) { height: 11px; animation-delay: 0.12s; }
+.bc-eq-bubble i:nth-child(3) { height: 8px; animation-delay: 0.24s; }
+.bc-eq-bubble i:nth-child(4) { height: 4px; animation-delay: 0.36s; }
+
+/* 群事件气泡：左侧一条"广播条"（自上而下渐隐），与语音气泡区分开 */
+.bc-bubble.kind-group::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 9px;
+  bottom: 9px;
+  width: 2px;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent), transparent);
+  opacity: 0.75;
+}
+.bc-bubble.kind-group { padding-left: 13px; }
+
+/* ── 动画 ── */
+@keyframes bc-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes bc-wave-out {
+  0% { opacity: 0.75; transform: scale(0.55); }
+  70% { opacity: 0; }
+  100% { opacity: 0; transform: scale(1.4); }
+}
+@keyframes bc-eq-bar {
+  0%, 100% { transform: scaleY(0.34); }
+  50% { transform: scaleY(1); }
+}
+@keyframes bc-voice-blink {
+  0%, 100% { opacity: 0.45; transform: scale(0.92); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+@keyframes bc-snap {
+  0% { transform: scale(1.1); }
+  55% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+@keyframes bc-pulse {
+  0% { transform: scale(0.94); opacity: 0.75; }
+  70% { transform: scale(1.28); opacity: 0; }
+  100% { transform: scale(1.28); opacity: 0; }
+}
+@keyframes bc-bubble-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+/* 横幅入场：**沿贴边方向横着划进来**（贴右边 ⇒ 从右往左；贴左边反之） */
+@keyframes bc-bubble-from-right {
+  from { opacity: 0; transform: translateX(20px) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes bc-bubble-from-left {
+  from { opacity: 0; transform: translateX(-20px) scale(0.985); }
+  to { opacity: 1; transform: translateX(0) scale(1); }
+}
+@keyframes bc-bubble-from-top {
+  from { opacity: 0; transform: translateY(-10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bc-bubble-from-bottom {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes bc-panel-in {
+  from { opacity: 0; transform: translateY(3px) scale(0.985); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 减少动态偏好：去掉所有位移/缩放动画（不影响可用性；音量柱/声波停在中位） */
+@media (prefers-reduced-motion: reduce) {
+  .bc-anchor { transition: none; }
+  .bc-pod.is-snap,
+  .bc-pulse,
+  .bc-bubble,
+  .bc-panel,
+  .bc-pod-icon,
+  .bc-eq,
+  .bc-eq-bubble i { animation: none; }
+  .bc-wave { display: none !important; }
+}

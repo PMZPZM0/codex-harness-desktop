@@ -53,7 +53,6 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
      注入的 Harness 记忆块，记忆正文提到过 `[群事件]` 这个词 ⇒ 用户自己的消息被判成群广播，
      按下面的规则渲染到回复**下方**。现在改判「剥完注入段之后是否真是群广播」
      （isGroupEventMessage = parseUserRefs 的 groupEvents，与气泡样式同源）。 */
-  const groupUserItems = userItems.filter((item) => isGroupEventMessage(itemText(item)));
   const plainUserItems = userItems.filter((item) => !isGroupEventMessage(itemText(item)));
   // 回合已结束但个别工具/命令的 item/completed 事件丢失（状态仍 inProgress）→
   // 渲染层兜底落成完成态，避免「任务都完成了还卡在正在运行」。仅回合结束时兜底，
@@ -179,27 +178,13 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
             </div>
           )}
           {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} />}
-          {/* ⛔⛔ 10-31 用户令（截图）：「群事件通知这一类型的，在运行过程中，展示在 codex 消息板块
-              下面；不要卡在消息板块底部那个『正在等待模型回复』的上面，卡在中间很丑」。
-              原实现把群广播渲染在 `.turn-card` **之外**（`turn-group` 的直接子节点）⇒ 它落在
-              「卡片底 ↔ 底部状态行（run-activity-bar / working-indicator）」那道缝里，
-              前后都没有归属，看着像一块飘在中间的东西。
-              ⇒ 现在收进 `codex-turn` **之内**、正文/操作栏之后：它是这一回合内容的最后一块，
-                紧贴消息板块（= 用户说的「消息板块下面」），底部状态行仍独占最后一行。
-              ⛔ 位置仍在**消息下方**（10-26 用户令不变）：用户气泡在卡片上方，这里在卡片内末尾。 */}
-          {groupUserItems.map((item) => (
-            <MemoUserMessageView
-              item={item}
-              turn={turn}
-              fallbackWindow={fallbackWindow}
-              onCopy={handlers.onCopy}
-              onQuote={handlers.onQuote}
-              onImageCopy={handlers.onImageCopy}
-              onEditSubmit={(entry) => handlers.onEdit(turn.id, entry)}
-              onOpenFile={handlers.onOpenFile}
-              key={item.id}
-            />
-          ))}
+          {/* ⛔⛔ 10-31 用户令：「群事件当前的展示方式太丑，重构为悬浮播报组件」——
+              群广播从**对话流里彻底撤出**（不再占消息位、也不夹在消息与状态行之间），
+              改由 `features/event-broadcast` 的悬浮窗统一播报：
+                · 采集端 `collector.tsx` 扫最近几个回合的群事件 item，解析成播报条目（含交活/审查/文件）；
+                · 展示端是右上/贴边的悬浮图标 —— 播报气泡 → 自动收纳 → 点开看历史。
+              ⛔ 群事件仍是 userMessage，**必须**在上面 from `plainUserItems` 的过滤里摘掉：
+                 不摘就会被当成用户自己说的话渲染成右侧气泡（10-26 踩过「倒反天罡」）。这里只是不渲染它们。 */}
           {/* 10-04 第 9 个插槽位：**回合内容之下**（codex-turn 之内、气泡区末尾）。
               行级插槽 —— 每个回合渲染一次。⛔ 必须传 turnId：插件拿到才知道
               自己作用在哪一回合（与 sidebar.thread-row-actions 同一条纪律：拿不到 id
