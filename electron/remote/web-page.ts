@@ -231,7 +231,7 @@ img.home-logo{object-fit:cover;background:#fff;padding:0}
    ⛔ 全部走主题变量：暗色下自动跟着变，不另写一套。 */
 .home-page{display:flex;flex-direction:column;gap:12px;padding:2px 0 8px}
 .home-recent{display:flex;flex-direction:column;gap:8px}
-.home-hero{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:20px 18px;border:1px solid var(--line);border-radius:20px;overflow:hidden;text-align:left;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 16%,var(--panel)),var(--panel) 62%)}
+.home-hero{position:relative;display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px;padding:22px 18px;border:1px solid var(--line);border-radius:20px;overflow:hidden;background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 16%,var(--panel)),var(--panel) 62%)}
 .home-hero::after{content:"";position:absolute;right:-54px;top:-64px;width:170px;height:170px;border-radius:50%;background:radial-gradient(circle,color-mix(in srgb,var(--accent) 38%,transparent),transparent 68%);pointer-events:none}
 .home-hero img.home-logo,.home-hero .home-logo{width:52px;height:52px;border-radius:14px;margin:0 0 12px;box-shadow:0 8px 20px color-mix(in srgb,var(--accent) 28%,transparent)}
 .home-greet{font-size:22px;font-weight:700;letter-spacing:.2px;line-height:1.25}
