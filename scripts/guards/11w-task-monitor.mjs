@@ -20,7 +20,7 @@ let okCount = 0, failCount = 0;
 const ok = (m) => { okCount++; console.log("  ✓ " + m); };
 const fail = (m) => { failCount++; console.log("  ✗ " + m); };
 
-console.log("\n【289】任务监控（右栏监控页：技能/MCP/插件 + 每轮产物 + 自我改进建议）");
+console.log("\n【289】任务监控（右栏监控页：技能/MCP/插件 + 每轮产物 + 网页查阅）");
 
 const svc = read("electron/features/task-monitor.ts");
 const panel = read("src/features/task-monitor/TaskMonitorPanel.tsx");
@@ -34,21 +34,26 @@ const barrel = read("src/features/app-state/index.ts");
 const part08 = read("src/features/app-state/parts/part08/02-seg.tsx");
 const bagTypes = read("src/features/app-state/parts/bag-types.ts");
 
-/* ① 域注册 + 三通道（缺一个 ⇒ 面板永远读不到 / 建议存不下来） */
-ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron/features/task-monitor.ts（采集 + 落盘 + 建议）");
+/* ① 域注册 + 通道（缺了 ⇒ 面板永远读不到） */
+ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron/features/task-monitor.ts（采集 + 落盘）");
 (composition.domains.some((d) => d.id === "monitor" && d.enabled) ? ok : fail)(
   "composition.json 注册了 monitor 域（没注册 = 文件在但从不挂载）"
 );
-["monitor:read", "monitor:save-suggestion", "monitor:regenerate"].forEach((channel) => {
-  (manifest.channels.some((c) => c.channel === channel) ? ok : fail)(`IPC 清单含 ${channel}`);
-});
+(manifest.channels.some((c) => c.channel === "monitor:read") ? ok : fail)("IPC 清单含 monitor:read");
+/* ⛔ 10-31 用户令「自我进化建议这个板块和配套删了」——三个建议通道必须一起消失：
+   只删 UI 留通道 = 死接口，守卫【2】的域 count 也会对不上。 */
+(["monitor:save-suggestion", "monitor:regenerate", "monitor:adopt"].every((channel) => !manifest.channels.some((c) => c.channel === channel)) ? ok : fail)(
+  "建议相关的三个 IPC 通道已删除（save-suggestion / regenerate / adopt）"
+);
 
 /* ② 采集必须挂在**全局**事件流上（挂到渲染层 = 历史回合与后台会话全漏） */
 (/noteEngineEvent\(event\.method, p\)/.test(boot) ? ok : fail)(
   "boot 的引擎事件分发里调了 noteEngineEvent（⛔ 只挂渲染层会漏后台/历史回合）"
 );
 (/storedReportsForThread\(/.test(svc) ? ok : fail)("产物走 turn-file-watch 既有真相源（⛔ 不另扫盘）");
-(/distillSummarize\(/.test(svc) ? ok : fail)("建议由本会话模型产出（复用一次性内部会话，不是模板拼字）");
+(!/distillSummarize\(/.test(svc) && !/generateSuggestion/.test(svc) ? ok : fail)(
+  "⛔ 回合结束**不再**调模型复盘（删掉自动建议后，task-monitor 只做记录；调回来自噬环与烧 token 都会回来）"
+);
 (/MAX_TURNS\s*=\s*40/.test(svc) ? ok : fail)("每个会话最多留 40 轮（用户：最多展示 30~40）");
 
 /* ③ 会话隔离：读写都只认传入 threadId，⛔ 不许"取最近一个"兜底 */
@@ -57,14 +62,14 @@ ok(existsSync(join(ROOT, "electron/features/task-monitor.ts")), "存在 electron
 );
 (/parsed\.threadId === threadId/.test(svc) ? ok : fail)("落盘文件里的 threadId 与请求不一致时当损坏（防串会话）");
 
-/* ④ 面板：三段 + 空态文案 + 分页 + 换会话清空 */
-/* 10-30 改：空态不再写暂无建议占位（用户嫌丑且误导），改成**说明这一块在等什么**。 */
-(["等这一轮结束", "暂无使用记录", "暂无文件"].every((t) => panel.includes(t)) ? ok : fail)(
-  "三个板块的空态文案齐（等这一轮结束 / 暂无使用记录 / 暂无文件）"
+/* ④ 面板：三段（技能/MCP/插件 · 会话产物 · 网页查阅）+ 空态文案 + 分页 + 换会话清空 */
+/* 空态要说明「这一块在等什么」，不是写一个丑陋的占位。 */
+(["暂无使用记录", "暂无文件", "这一轮没有访问网页"].every((t) => panel.includes(t)) ? ok : fail)(
+  "三个板块的空态文案齐（技能/MCP/插件 · 会话产物 · 网页查阅）"
 );
 (/PAGE_FILES\s*=\s*10/.test(panel) && /monitor-pager/.test(panel) ? ok : fail)("会话产物每页 10 轮 + 分页器");
 (/slice\(0, 5\)/.test(panel) ? ok : fail)("技能/MCP/插件每页最多 5 条");
-(/useEffect\(\(\) => \{ setTurns\(\[\]\); setDraft\(""\); setFilePage\(0\); void load\(\); \}, \[threadId, load\]\)/.test(panel) ? ok : fail)(
+(/useEffect\(\(\) => \{ setTurns\(\[\]\); setFilePage\(0\); void load\(\); \}, \[threadId, load\]\)/.test(panel) ? ok : fail)(
   "换会话立刻清空并重读（⛔ 保留上一会话的 turns = 串会话）"
 );
 
@@ -73,17 +78,9 @@ const tabs = [...rail.matchAll(/className=\{`panel-tab[^`]*`\} title="([^"]+)"/g
 (tabs[0] === "监控" ? ok : fail)(`右栏第一个 tab 是「监控」（实得 ${tabs.join(" / ") || "无"}）`);
 (/<TaskMonitorPanel app=\{app\}[^>]*\/>/.test(rail) ? ok : fail)("右栏页面区块挂了 <TaskMonitorPanel>（⛔ 只加按钮会点了空白）");
 
-/* ⑥ 一键进化：必须真发出去，且带上 self-review 技能（⛔ 不能用 setState 再 send —— 会发旧正文且丢技能） */
-(/app\.sendPrefilled\(\{ text, skill: EVOLVE_SKILL \}\)/.test(panel) ? ok : fail)(
-  "面板「进化」走 app.sendPrefilled（真发送，不是只填输入框、也不是拿 app 当 bag 硬转）"
-);
-(/export async function sendPrefilled/.test(sendSrc) && /pendingSkillRef\.current = input\.skill/.test(sendSrc) ? ok : fail)(
-  "sendPrefilled 用一次性 ref 传文与技能（⛔ setPrompt/addSkillReference 是 setState，send 读到旧 bag）"
-);
-(/pendingSkill \? \[\.\.\.bag\.selectedSkills, pendingSkill\]/.test(sendSrc) ? ok : fail)(
-  "发送拼 [本轮已引用技能] 时把一次性技能一起带上（漏了 = 进了对话但没技能）"
-);
-/* ⛔ 10-30 修正：sendPrefilled 必须绑在 **bag** 上（part08 包一层并 `as typeof bag.sendPrefilled`）。
+/* ⛔ 10-31：面板的「评估 / 进化」入口随建议板块一起删掉了；sendPrefilled 作为通用能力保留
+   （它仍是「带一次性技能真发一条」的唯一正确做法），但**这里不再断言面板用到它**。
+   ⛔ 10-30 修正：sendPrefilled 必须绑在 **bag** 上（part08 包一层并 `as typeof bag.sendPrefilled`）。
    ⛔ 不许从 barrel 导出后让调用方 `sendPrefilled(app as any)` —— app 是各 part 返回值的合并对象，
      而 sendImpl 要读几十个 bag 字段，缺一个就在发送中途静默走错分支。 */
 (/bag\.sendPrefilled = sendPrefilled as typeof bag\.sendPrefilled/.test(part08) ? ok : fail)(
@@ -123,76 +120,15 @@ const codexIpcSrc = read("electron/features/codex-ipc.ts");
 (/liveFilesOf/.test(svc) ? ok : fail)("进行中/未落盘的产物走 liveFilesOf（⛔ 只等落盘报告 = 本轮 0 文件）");
 (/本轮进行中/.test(panel) ? ok : fail)("面板标「本轮进行中」（不标就分不清「没跑完」和「没采到」）");
 
-/* ③ 建议要**每轮结束自己产出**，且拿得到本轮的回复与模型。 */
-(/item\?\.type \?\? ""\) === "agentMessage"|=== "agentMessage"/.test(svc) ? ok : fail)(
-  "采集本轮最终回复（复盘要看着它自己说了什么，不能只给工具清单）"
+/* ⛔⛔ 10-31 用户令（对照截图）：「那就把自我进化建议修改个板块和配套删了吧，不要了，右侧栏同步更新」。
+   删干净 = 面板段 + 主进程生成链 + 三个通道 + 建议文件 + 那段 CSS。⛔ 别只藏 UI：
+   后台每轮调一次模型既烧 token，又会让侧栏冒出内部会话（30 秒 9 条那次的根）。 */
+(!/自我改进建议/.test(panel) && !/monitor-suggestion/.test(panel) && !/suggestionFileOf|generateSuggestion|adoptMonitorSuggestion/.test(svc) ? ok : fail)(
+  "「自我改进建议」整块已删除（面板 + 主进程 + 建议文件），右侧栏同步更新"
 );
-(/generateSuggestion\(threadId, turnId, String\(bucket\?\.reply/.test(svc) ? ok : fail)(
-  "回合结算时**自动**触发复盘，并带上本轮回复"
-);
-(/threadModelOf/.test(summarySrc) && /sessionModel\?\.model/.test(summarySrc) ? ok : fail)(
-  "复盘通道在没有自定义模型时退回本会话模型（⛔ 否则官方供应商用户永远「暂无建议」）"
-);
-(/noteThreadModel\(/.test(codexIpcSrc) ? ok : fail)(
-  "turn/start 时记录本会话真实使用的模型（thread-model 单点）"
-);
-/* 10-30：按钮文案压成「评估」（两个按钮同排，「让 Codex 评估」会被挤成竖排）。 */
-(/title="评估：/.test(panel) && /app\.sendPrefilled/.test(panel) ? ok : fail)(
-  "面板有「评估」按钮（窄栏里只放图标、文字进 title）：把本轮事实发进本会话，由 Codex 用自己的上下文复盘"
-);
-
 /* ④ 技能卡收成一行（用户：「技能还显示两行，不美观」）。 */
 (!/subtitle=\{description \|\| action/.test(skillCard) ? ok : fail)(
   "技能卡不再传 subtitle（表头一行：已使用技能 <中文名>；动作留在右侧 info）"
-);
-
-/* ⑤ 采取建议（10-30 用户令）：点一下把建议交给 Codex，**以事件通知**（与群聊同通道），
-      不是用户消息；采纳后它自己把建议沉淀成经验。 */
-const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
-(chAdopt && chAdopt.invokeArgs === "input" ? ok : fail)(
-  "IPC 清单有 monitor:adopt 且实参走 input（漏 invokeArgs = preload 静默丢参）"
-);
-(/GROUP_EVENT_TAG/.test(svc) && /hostQueueMessageId\("evolve"\)/.test(svc) ? ok : fail)(
-  "采纳事件用 [群事件] 标记 + host: 队列 id（与群聊同通道；时间线按事件块渲染，排队面板不冒用户消息）"
-);
-(/turn\/steer/.test(svc) && /thread\/queue\/add/.test(svc) ? ok : fail)(
-  "投递走 steer（回合进行中）/ queue.add（空闲）两条路"
-);
-(!/turn\/start/.test(svc.slice(svc.indexOf("async function deliverHostEvent"), svc.indexOf("function adoptEventText"))) ? ok : fail)(
-  "⛔ 投递函数里不许出现 turn/start（会打断正在跑的回合）"
-);
-(/adoptedAt = Date.now\(\)/.test(svc) ? ok : fail)("采纳会落盘 adoptedAt（面板据此显示「已采取」）");
-(/采取建议/.test(panel) && /adoptMonitorSuggestion/.test(panel) ? ok : fail)(
-  "面板按钮是「采取建议」，走 adoptMonitorSuggestion（⛔ 不再是「发回对话」）"
-);
-(/沉淀|可复用的经验/.test(svc) ? ok : fail)("事件正文要求它**沉淀成经验**（记忆 / AGENTS.md / 技能），不是回一句「好的」");
-
-/* ⑥ 自动同步到输入框 + 每轮都复盘（10-30 用户：「输入框摆设吗，完全没有自动同步功能」
-      「还要我手动让他总结」） */
-/* ⛔⛔ 10-30 用户纠正：「我说的是**自我进化那个输入框**，不是聊天输入框，没脑子」。
-   正确形态 = **一个固定文件**：Codex 往里写、面板读出来展示，新的覆盖旧的。
-   ⇒ 下面三条同时钉住：① 有建议文件；② 写是原子覆盖；③ 面板读文件、且**不许**再写聊天输入框。 */
-(/suggestionFileOf/.test(svc) && /\.evolve\.md/.test(svc) ? ok : fail)(
-  "建议落在一个固定文件里（<userData>/task-monitor/<会话>.evolve.md）"
-);
-(/async function writeSuggestionFile/.test(svc) && /\$\{file\}\.tmp/.test(svc) && /rename\(tmp, file\)/.test(svc) ? ok : fail)(
-  "写建议文件是**原子整份覆盖**（tmp + rename）：新覆盖旧、强杀不留半截"
-);
-(/suggestion: file\.text \|\| /.test(svc) && /suggestionPath/.test(svc) ? ok : fail)(
-  "monitor:read 直接返回建议文件的全文与路径（Codex 写完面板就能读到）"
-);
-(/setAdvice\(/.test(panel) && !/app\.setPrompt/.test(panel) ? ok : fail)(
-  "面板读文件展示；⛔ 不许再往**聊天输入框**塞（用户明确否掉的那个形态）"
-);
-(/writeSuggestionFile\(id, suggestionFileOf\(id\)\)|suggestionFileOf\(id\)/.test(svc) ? ok : fail)(
-  "采纳事件把**文件路径**直接给 Codex（让它写进去，新的覆盖旧的）"
-);
-(!/const acted = /.test(svc) ? ok : fail)(
-  "⛔ 不再用「有工具动作才复盘」的门（纯聊天轮被整轮跳过 ⇒ 面板长期停在「暂无建议」）"
-);
-(/没有工具调用、也没改文件/.test(svc) ? ok : fail)("纯聊天轮也给检查面（答太长/来回追问/该动手却只解释）");
-(/\.monitor-tools/.test(read("src/styles/58-task-monitor.css")) ? ok : fail)(
-  "表头按钮有独立容器 + 单行省略（截图里被挤成竖排的根因：hint 抢满宽度且允许换行）"
 );
 
 /* ── 10-31 用户三连报：「监控面板串位 / 回合结束后刷新还显示下一回合、输出自动刷新 / 路径写死，注意 mac」──
@@ -209,32 +145,15 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
   && /cwd,\s*approvalPolicy: "never"/.test(summarySrc) ? ok : fail)(
   "蒸馏会话的 cwd 由调用方给（会话工作目录），不写死进程目录（mac 打包后是安装包内部路径）"
 );
-(/cwd: threadCwd\.get\(threadId\) \?\? ""/.test(svc) ? ok : fail)(
-  "任务监控把本会话工作目录传给复盘通道（与上面 cwd 同源）"
-);
-/* ② 「回合结束后刷新还显示下一回合 / 自动刷新」：
-      · 上次进程中断留下的 running 必须收敛，否则面板永远轮询；
-      · 引擎已无活动回合但 bucket 还在（收尾事件丢失）要补幂等结算。 */
-(/suggestionState: "failed" as const, suggestionError: "上次生成被中断/.test(svc) ? ok : fail)(
-  "读盘时把遗留的 running 收敛为 failed（⛔ 否则每 3s 轮询永不停止）"
-);
 (/const stale = liveTurnOf\(id\);[\s\S]{0,260}?settleTurn\(id, stale\.turnId, staleBucket\)/.test(svc) ? ok : fail)(
   "引擎已无活动回合时补一次幂等结算（不补 ⇒ 面板永远「本轮进行中」，像自动冒出下一回合）"
 );
-(/const pendingWork = Boolean\(ongoingId\) \|\| turns\.some\(\(t\) => t\.suggestionState === "running"\)/.test(panel) ? ok : fail)(
-  "面板只在这两种真实进行中状态下轮询（⛔ 不再按「最近一轮没建议」判 —— 用户清空建议后条件恒真）"
-);
-(!/!t\.suggestion && t\.suggestionState === "idle"/.test(panel) ? ok : fail)(
-  "删掉恒真的旧轮询判据（清空/手改建议后永不停止，看起来像自动刷新下一回合）"
+(/const pendingWork = Boolean\(ongoingId\);/.test(panel) ? ok : fail)(
+  "面板只在「引擎还有进行中的回合」时轮询（⛔ 别用「最近一轮没建议」那种恒真判据）"
 );
 (/active && !pendingWork|!active \|\| !pendingWork/.test(panel) ? ok : fail)(
   "面板不在前台（active=false）不轮询"
 );
-/* ③ 路径只显示文件名：原来只切 `/`，Windows 的 C:\…\x.evolve.md 会整条铺进按钮。 */
-(/baseName\(advice\.path\)/.test(panel) && !/advice\.path\.split\(\/\[\\\/\]\/\)/.test(panel) ? ok : fail)(
-  "建议文件按钮用 baseName（正/反斜杠都认；⛔ 不再把整条 Windows 路径铺出来）"
-);
-
 /* ── 10-31 用户令（对照 Qoder 右栏截图）：产出里已删除文件划线 + 最新回合网页查阅接线 + 手动展开默认监控 ── */
 (/const deleted = String\(file\.status \?\? ""\) === "deleted"/.test(panel)
   && /monitor-file\$\{deleted \? " is-deleted" : ""\}/.test(panel)

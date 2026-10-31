@@ -56,68 +56,14 @@
 }
 .monitor-block-head strong { font-size: 12px; }
 .monitor-hint { color: var(--faint); font-size: 11px; flex: 1 1 auto; }
-.monitor-mini {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--muted);
-  background: none;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 1px 8px;
-  cursor: pointer;
-}
-.monitor-mini:hover { color: var(--accent); border-color: var(--accent); }
-
 /* ⛔ 10-30 用户：「这个监控板块太丑」—— 截图里两个按钮被挤成竖排、提示文字折成三行。
    根因：表头是 flex 但没限换行，hint 又 flex:1 抢满宽度，长文案直接把按钮顶到下一行。
    规矩：表头**永远一行**（nowrap）+ hint 单行省略 + 按钮 flex:0 0 auto 且不换行。 */
 .monitor-block-head { flex-wrap: nowrap; min-width: 0; }
 .monitor-hint { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.monitor-tools { display: inline-flex; align-items: center; gap: 4px; flex: 0 0 auto; }
-.monitor-mini { flex: 0 0 auto; white-space: nowrap; }
 /* 紧凑一档：这块是右栏常驻面板，行距大了整屏都是空。 */
 /* 紧凑一档：这块是右栏常驻面板，行距大了整屏都是空。⛔ 只调间距，别再写 background（底色已取消）。 */
 .monitor-block { gap: 5px; padding: 7px 9px; border-radius: 9px; }
-.monitor-suggestion { min-height: 62px; max-height: 132px; }
-.monitor-actions { flex-wrap: nowrap; }
-.monitor-actions .monitor-btn { flex: 1 1 auto; justify-content: center; white-space: nowrap; }
-
-
-.monitor-suggestion {
-  width: 100%;
-  min-height: 76px;
-  max-height: 160px;
-  resize: vertical;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.6;
-  padding: 7px 9px;
-  outline: 0;
-}
-.monitor-suggestion:focus { border-color: var(--accent); }
-
-.monitor-actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.monitor-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
-  padding: 4px 10px;
-  border-radius: 7px;
-  border: 1px solid var(--line);
-  background: var(--panel);
-  color: var(--text);
-  cursor: pointer;
-}
-.monitor-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.monitor-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.monitor-btn:disabled { opacity: 0.5; cursor: default; }
-
 .monitor-usage { display: flex; flex-direction: column; gap: 3px; }
 .monitor-usage-label { font-size: 11px; color: var(--faint); }
 .monitor-chips { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -166,28 +112,6 @@
 .monitor-file i { font-style: normal; color: var(--green, #2f9e44); font-size: 11px; }
 .monitor-file em { font-style: normal; color: var(--red, #d64545); font-size: 11px; margin-left: auto; }
 .monitor-empty { font-size: 11px; color: var(--faint); padding: 2px 0; }
-
-/* ⛔ 放文件最末：同优先级下后写者胜，否则会被上面的原规则盖掉（10-30 版式收紧）。 */
-.monitor-suggestion { min-height: 62px; max-height: 132px; }
-
-/* 建议文件入口（动作行右侧）：窄栏里只放文件名，完整路径进 title。 */
-.monitor-path {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  margin-left: auto;
-  max-width: 46%;
-  padding: 0 2px;
-  border: 0;
-  background: none;
-  color: var(--faint);
-  font-size: 10.5px;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.monitor-path:hover { color: var(--accent); }
 
 /* ★ 10-31 用户令：产出文件里**已删除**的行加删除线（并禁用打开 —— 文件已经不在磁盘上） */
 .monitor-file.is-deleted { opacity: .72; cursor: default; }
