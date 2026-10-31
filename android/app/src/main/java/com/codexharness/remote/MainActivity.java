@@ -60,12 +60,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_BASE = "server_base";
     private static final String KEY_CONNECTED = "connected_once";
     private static final int FILE_CHOOSER_REQUEST = 2001;
-    /** 语音输入（10-31）：系统识别器返回文本后回灌到网页输入框 */
-    private static final int VOICE_REQUEST = 2002;
     /** 真拍照（capture）：与相册选择分开处理，照片直接回给网页 */
     private static final int CAMERA_REQUEST = 2003;
-    /** 运行时申请麦克风权限（语音输入） */
-    private static final int MIC_PERMISSION_REQUEST = 2004;
 
     /** WebView 文件选择回调（＋ → 图片）。⚠️ 一次选择期间只允许一个挂起回调。 */
     private ValueCallback<Uri[]> fileChooserCallback;
@@ -123,11 +119,6 @@ public class MainActivity extends AppCompatActivity {
             public void disconnect() {
                 runOnUiThread(MainActivity.this::confirmDisconnect);
             }
-            /** 语音输入：Android WebView 没有网页语音识别，交给系统识别器（页面收到 onVoiceResult） */
-            @android.webkit.JavascriptInterface
-            public void startVoice() {
-                runOnUiThread(MainActivity.this::startVoiceInput);
-            }
         }, "AndroidRemote");
         findViewById(R.id.connect).setOnClickListener(v -> startConnect(code == null ? "" : code.getText().toString()));
         findViewById(R.id.scan).setOnClickListener(v -> startScan());
@@ -136,7 +127,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.14");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.15");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -292,51 +283,11 @@ public class MainActivity extends AppCompatActivity {
         else showSetup("");
     }
 
-    private void startVoiceInput() {
-        /* 10-31 用户实测：语音拉起直接报「需要系统授权」。Android 6+ 要运行时申请麦克风，
-           先在应用内弹系统授权框；拒绝后给明确指引，不再只弹一个识别器的错。 */
-        if (Build.VERSION.SDK_INT >= 23 && checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, MIC_PERMISSION_REQUEST);
-            return;
-        }
-        try {
-            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
-            intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话");
-            startActivityForResult(intent, VOICE_REQUEST);
-        } catch (Exception error) {
-            sendVoiceError("本机没有可用的语音识别应用");
-        }
-    }
-
-    @Override
-    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
-        if (requestCode == MIC_PERMISSION_REQUEST) {
-            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) startVoiceInput();
-            else sendVoiceError("麦克风权限被拒绝：请在系统设置里允许本应用使用麦克风");
-            return;
-        }
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-    }
-
-    /** 给网页一条不打断的提示（相机不可用等），⛔ 不再切 setup 页 */
+    /** 给网页一条不打断的提示（相机不可用等），⛔ 不切 setup 页 */
     private void notifyPage(String message) {
         if (web == null) return;
         final String quoted; try { quoted = JSONObject.quote(message); } catch (Exception e) { return; }
         web.post(() -> web.evaluateJavascript("window.onUploadNotice && onUploadNotice(" + quoted + ")", null));
-    }
-
-    private void sendVoiceResult(String text) {
-        if (web == null) return;
-        final String quoted; try { quoted = JSONObject.quote(text); } catch (Exception e) { return; }
-        web.post(() -> web.evaluateJavascript("window.onVoiceResult && onVoiceResult(" + quoted + ")", null));
-    }
-
-    private void sendVoiceError(String message) {
-        if (web == null) return;
-        final String quoted; try { quoted = JSONObject.quote(message); } catch (Exception e) { return; }
-        web.post(() -> web.evaluateJavascript("window.onVoiceError && onVoiceError(" + quoted + ")", null));
     }
 
     private void confirmDisconnect() {
@@ -664,20 +615,6 @@ public class MainActivity extends AppCompatActivity {
             if (callback != null) {
                 if (resultCode == RESULT_OK && shot != null) callback.onReceiveValue(new Uri[]{shot});
                 else callback.onReceiveValue(null);
-            }
-            return;
-        }
-        if (requestCode == VOICE_REQUEST) {
-            if (resultCode == RESULT_OK && data != null) {
-                ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
-                if (results != null && !results.isEmpty() && !TextUtils.isEmpty(results.get(0))) sendVoiceResult(results.get(0));
-                else sendVoiceError("没有识别到内容，请再说一次");
-            } else if (resultCode == RESULT_CANCELED) {
-                sendVoiceError("已取消语音输入");
-            } else {
-                /* 用户截图「似乎出错了呢 (2)」= 系统语音服务自身不可用（不是我们没授权）。
-                   识别器的错误码拿不到稳定 extra，直接给可操作的指引。 */
-                sendVoiceError("系统语音引擎不可用（常见于没有 Google 语音服务的机型）；可换用键盘上的语音键，或在电脑端使用语音");
             }
             return;
         }

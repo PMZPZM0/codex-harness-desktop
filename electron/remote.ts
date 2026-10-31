@@ -12,13 +12,13 @@ import { buildRemotePageHtml } from "./remote/web-page";
 import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
-const REMOTE_APK_RELEASE = "mobile-remote-v0.1.14";
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.15";
 
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.14.apk": "3b8c6f9b2da67b8f4818fb6a8f98efa7c7acd1a20a94d6668c599dce097896b6",
-  "PPcodeRemote-0.1.14.apk": "1521c53bf84144a58ab0e88c1ccb7b944b2d8a7e1d47d734ddf8ea5310ddd46d",
+  "CodexRemote-0.1.15.apk": "9691d3e4b6e76eb54fa8ab719d791bc096c1c8a4fd2b490fd308c0ac0a9fa09c",
+  "PPcodeRemote-0.1.15.apk": "772c94fbeb374bc550eaff8bc36d19bd09139c10ffbd51b6e02e2f95be8302b6",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
