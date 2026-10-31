@@ -566,6 +566,13 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   /this\.launchToken \+= 1/.test(restartBody) && /if \(this\.restartInFlight\) return this\.restartInFlight/.test(doRestartBody)
     ? ok("performRestart 作废在途启动序列，且并发 restart() 合并成一次（restartInFlight）")
     : fail("并发 restart() 没有合并：启动期多路重启会互相把刚 spawn 的引擎打成孤儿");
+  /* ⛔ 10-31 审查补：退出（stop 置 stopping）后才收尾的在途重启**不许再拉起引擎** ——
+     否则退出过程中新 spawn 的进程会活过 Electron，正好违背「退出杀干净」。 */
+  const stoppingAt = restartBody.indexOf("if (this.stopping) return;");
+  const awaitingLaunchAt = restartBody.indexOf("await this.starting?.catch");
+  awaitingLaunchAt >= 0 && stoppingAt > awaitingLaunchAt
+    ? ok("performRestart 在退出流程开始后不再拉起引擎（退出杀干净）")
+    : fail("performRestart 收尾不看 stopping —— 退出途中被在途重启拉起一个新引擎，它会活过应用占着会话 writer");
   const startBody = serverSrc.slice(serverSrc.indexOf("  async start()"), serverSrc.indexOf("  setApiKey("));
   /if \(this\.starting === promise\)/.test(startBody)
     ? ok("startInternal 按 promise 身份清 starting（晚到的旧序列不得抹掉新序列的启动态）")
@@ -577,9 +584,9 @@ console.log(C.bold("\n【11】09-13 审计 P0 修复不得回退（引擎生命�
   /this\.reapStaleEngines\(\)/.test(launchOnceBody) && /await this\.reapCurrentChild\(\)/.test(launchOnceBody)
     ? ok("launchOnce 每次 spawn 前回收既有 child，首次再按台账 + 二进制全路径清遗留引擎")
     : fail("launchOnce 不回收既有 child/遗留引擎 —— 重叠启动会留下占着会话 writer 的孤儿");
-  /appendEnginePid\(child\.pid\)/.test(serverSrc) && /listCodexPidsByBinary/.test(serverSrc)
-    ? ok("引擎 pid 台账记全部（多 pid）并按二进制全路径兜底扫描遗留进程")
-    : fail("引擎台账只记最后一条 —— 重叠启动中最早那个进程永远清不掉（10-31 事故现场）");
+  /appendEnginePid\(child\.pid\)/.test(serverSrc) && /listCodexPidsByBinary/.test(serverSrc) && /\[Console\]::OutputEncoding/.test(serverSrc)
+    ? ok("引擎 pid 台账记全部（多 pid）并按二进制全路径兜底扫描遗留进程（PowerShell 强制 UTF-8 输出）")
+    : fail("引擎台账只记最后一条 / 扫描没强制 UTF-8 —— 重叠启动中最早那个进程永远清不掉，中文路径还会乱码（10-31 事故现场）");
   /for \(let attempt = 1; attempt <= ENGINE_START_ATTEMPTS; attempt\+\+\)/.test(serverSrc)
     && /ENGINE_START_RETRY_MS\[attempt - 1\]/.test(serverSrc)
     && /token !== this\.launchToken/.test(serverSrc)

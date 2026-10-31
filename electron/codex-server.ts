@@ -94,7 +94,9 @@ function readEnginePids(): number[] {
 function appendEnginePid(pid: number | undefined) {
   if (!pid) return;
   try {
-    const pids = readEnginePids().filter((value) => value !== pid);
+    /* 写入时顺手剪掉已退出的 pid：台账只留"可能还活着"的引擎，退出时不必为十几条死 pid
+       各跑一次 tasklist（每条最长 5s，极端环境下退出会明显卡顿）。 */
+    const pids = readEnginePids().filter((value) => value !== pid && isProcessAlive(value));
     pids.push(pid);
     nodeFs.writeFileSync(enginePidListFile(), JSON.stringify(pids.slice(-ENGINE_PID_CAP)));
   } catch { /* 台账写不进去不该挡住启动 */ }
@@ -114,7 +116,10 @@ function listCodexPidsByBinary(binary: string): { pid: number; ppid: number }[] 
   try {
     if (process.platform === "win32") {
       const out = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
-        "Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" | ForEach-Object { $_.ProcessId.ToString() + '|' + $_.ParentProcessId.ToString() + '|' + $_.ExecutablePath }",
+        /* ⛔ 必须先把控制台输出编码改成 UTF-8：Windows PowerShell 写管道时按 OEM 代码页（中文机 = GBK），
+           而这里按 utf8 解码 ⇒ 安装路径带中文时 `ExecutablePath` 变乱码、路径比对永远不相等，
+           遗留引擎就清不掉。与 harness-uia 的 PowerShell 通道是同一条实测纪律。 */
+        "[Console]::OutputEncoding=[Text.Encoding]::UTF8; Get-CimInstance Win32_Process -Filter \"Name='codex.exe'\" | ForEach-Object { $_.ProcessId.ToString() + '|' + $_.ParentProcessId.ToString() + '|' + $_.ExecutablePath }",
       ], { encoding: "utf8", windowsHide: true, timeout: 10_000 });
       return String(out.stdout ?? "").split(/\r?\n/).flatMap((line) => {
         const [id, parent, exePath] = line.trim().split("|");
@@ -444,6 +449,9 @@ export class CodexServer extends EventEmitter {
     // 否则 `start()` 会因为 `this.starting` 仍被那个注定失败的 promise 占用而直接返回它，
     // 结果既不 spawn 也不报错，引擎静默停在"已退出"（10-08 日志里 8 秒无 spawn 就是这个）。
     await this.starting?.catch(() => undefined);
+    /* ⛔ 退出流程已经开始（stop() 置了 stopping）：绝不能再拉起引擎 —— 否则退出过程中新 spawn
+       的进程会活过 Electron，变成占着会话 writer 的孤儿（用户令「退出杀干净」）。 */
+    if (this.stopping) return;
     if (!this.child) await this.startInternal();
   }
 
@@ -482,7 +490,7 @@ export class CodexServer extends EventEmitter {
       candidates.add(pid);
     }
     for (const pid of candidates) {
-      if (!isCodexProcess(pid)) continue;
+      if (!isProcessAlive(pid) || !isCodexProcess(pid)) continue;
       this.debugLog(`[spawn] 清理遗留引擎进程 PID=${pid}（异常退出/重叠启动留下的孤儿，占着会话 writer）`);
       killProcessTree(pid);
     }
@@ -722,7 +730,9 @@ export class CodexServer extends EventEmitter {
     killProcessTree(pid);
     for (const stale of readEnginePids()) {
       if (stale === pid) continue;
-      if (isCodexProcess(stale)) killProcessTree(stale);
+      // ⛔ 先判存活再跑 tasklist 校验：台账最多 16 条、每条最长 5s，死 pid 不该拖慢退出。
+      if (!isProcessAlive(stale) || !isCodexProcess(stale)) continue;
+      killProcessTree(stale);
     }
     clearEnginePids();
   }

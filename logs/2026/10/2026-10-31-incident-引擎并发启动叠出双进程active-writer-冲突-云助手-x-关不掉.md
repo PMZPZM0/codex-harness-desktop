@@ -30,5 +30,12 @@ importance: normal
 - 云助手窗口按钮：/__ipc 的 sender 改为本机窗口（助手窗优先，其次主窗），× 真正退出；minimize / maximize / state 同时恢复。
 - 判定口径不变：`active writer` 的中文提示仍保留（其它实例/旧版本残留的兜底）。
 
+## 审查补修（同日，清点 diff 时发现）
+- PowerShell 输出按 OEM 代码页（中文机 GBK）写管道 ⇒ 强制 `[Console]::OutputEncoding=UTF8`，否则中文安装路径比对失败、遗留引擎清不掉。
+- 退出中途收尾的在途重启可能再拉起引擎 ⇒ `performRestart` 在 `await this.starting` 之后加 `if (this.stopping) return;`，守卫 03 新增 1 条并做过变异（去掉该行必报 ✗）。
+- 退出/清理时台账里的死 pid 会白跑 tasklist（每条最长 5s）⇒ 改为先判存活再校验；台账写入时顺手剪掉已退出的 pid。
+- 云助手 /__ipc 的 sender 选择改为「助手窗 → 主窗、优先可见」；守卫 04 去掉嵌套三元并区分「本仓无 android」的提示文案。
+- 判定依据：三仓 tsc 0 错误、守卫 03 新增断言全绿、两处变异全抓。
+
 ## 回滚
 回退 `electron/codex-server.ts`、`electron/headless.ts` 与守卫 03/04/_ctx 的对应改动即可；`engine.pids.json` 是运行时台账，删掉无副作用。
