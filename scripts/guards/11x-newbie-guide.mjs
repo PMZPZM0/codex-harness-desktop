@@ -217,8 +217,12 @@ const preload = read("electron/preload.ts");
   ok(/\.sidebar-resizer \{[\s\S]{0,260}?left: calc\(var\(--side-w, 256px\) - 3px\)[\s\S]{0,260}?cursor: col-resize/.test(shellCss)
     && /\.sidebar-resizer::after \{[\s\S]{0,200}?width: 1px;[\s\S]{0,120}?background: var\(--line-soft\)/.test(shellCss),
     "拖动条 = 7px 命中面 + 1px 细线（⛔ 不做成一条粗条）");
-  ok(/\.app-shell\.with-context > \.panel-divider::after \{[\s\S]{0,220}?background: var\(--line-soft\)[\s\S]{0,160}?scaleX\(0\.5\)/.test(shellCss),
-    "右栏与主区之间是半像素灰线（125%/150% 缩放下也不会显成 2px）");
+  /* ⛔ 10-31 改为「只有一个 owner 画这条线」：用户两次反馈「还是这么粗」，实测剖面证明粗的不是
+     1px 本身，而是 ①主区右边 6px `--panel` 底色带 ②scaleX(.5) 在 dpr=1 下被抗锯齿摊成两个像素
+     ③面板自己的 border-left —— 三份叠加。现在只留分隔线一条实心 1px（与左侧同宽同色）。 */
+  ok(/\.app-shell\.with-context > \.panel-divider::after \{[\s\S]{0,220}?width: 1px;[\s\S]{0,120}?background: var\(--line-soft\)/.test(shellCss)
+    && !/scaleX\(0\.5\)/.test(shellCss),
+    "右栏与主区之间只有分隔线一条实心 1px 灰线（⛔ 半像素、面板左边框、6px 底色带都已去掉）");
   /* ★ 系统窗口钮对齐：原生 overlay 高度 55 ⇒ 钮中心 27.5 ≈ 顶栏 6+44/2=28。 */
   const windowFactorySrc = read("electron/features/window-factory.ts");
   ok(/titleBarOverlay: \{ color: "#00000000", symbolColor: titleBarOverlayOptions\(\)\.symbolColor, height: 55 \}/.test(windowFactorySrc)

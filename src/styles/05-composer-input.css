@@ -525,7 +525,11 @@
   background: 0 0;
 }
 .context-panel {
-  border-left: 1px solid var(--line);
+  /* ⛔ 左边框交给 `.panel-divider` 那条半像素细线（10-31 用户「还是这么粗啊」）——
+     这里原来自己有 `border-left: 1px solid var(--line)`，与分隔线叠成 **2px**：
+     1px 半像素线（几乎看不见）+ 1px #e7e7e4（深灰）= 看起来像 2~3px 的粗条。
+     ⛔ 两个 owner 画同一条边，样式改了也还是粗 —— 只能留一个。 */
+  border-left: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;

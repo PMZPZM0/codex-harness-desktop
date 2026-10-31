@@ -1292,6 +1292,12 @@ html.fx-ripple::view-transition-new(root) {
   border-right: 1px solid var(--line-soft);
   border-radius: 0 0 12px 12px;
 }
+/* ⛔ 开右栏时主区**不许留右边缝**（10-31 用户「还是这么粗啊」）：
+   6px 的 `--panel` 底色带夹在白卡片与 1px 细线之间，观感就是"一条很粗的线"。
+   中间只留 `.panel-divider` 那条半像素线；右栏自己的外圈缝在它右边（margin-right）。 */
+.app-shell.with-context > .workspace {
+  margin-right: 0;
+}
 .app-shell.with-context > .context-panel {
   margin: 0 6px 6px 0;
   border: 1px solid var(--line-soft);
@@ -1317,17 +1323,19 @@ html.fx-ripple::view-transition-new(root) {
 .app-shell > .sidebar { border-right: 0; }
 /* 主区/右栏之间的拖拽条：一条很细的灰线（10-31 用户令），悬停/拖动变主题色 */
 .app-shell.with-context > .panel-divider { background: transparent; }
-/* ★ 10-31 用户令「右边中间这条线还是这么粗」：1px 在 125%/150% 缩放下会占 2 个设备像素 ⇒
-   用半像素线（scaleX(.5)）画在 1px 轨道正中，视觉上就是一条很细的灰线。 */
+/* ★ 10-31 用户「还是这么粗啊」：粗的真因是**两个 owner 画同一条边**（这里 1px 半像素线 +
+   面板自己的 `border-left: 1px solid var(--line)` = 2px），加上主区右边 6px 的 `--panel` 底色带。
+   那两处已去掉（见 `.app-shell.with-context > .workspace` 与 05 的 `.context-panel`）。
+   ⛔ 同时**不再用 `scaleX(.5)`**：dpr=1 时 0.5px 要靠抗锯齿摊到两个像素上，反而更宽更糊；
+   实心 1px 与左侧 `.sidebar-resizer::after` 完全同宽同色，两侧观感才统一。 */
 .app-shell.with-context > .panel-divider::after {
   content: "";
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 50%;
+  left: 0;
   width: 1px;
   background: var(--line-soft);
-  transform: translateX(-50%) scaleX(0.5);
 }
 /* 悬停/拖动 = 主题色「光」，与左侧 `.sidebar-resizer:hover::after` 完全同款（用户：
    「加一下跟左边一样的，拖动大小的光」）。⛔ 别改回 `--muted` 整列涂灰：

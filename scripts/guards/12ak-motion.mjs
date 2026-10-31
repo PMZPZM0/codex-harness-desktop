@@ -159,5 +159,17 @@ ok(/\.app-shell\.with-context > \.panel-divider:hover::after,[\s\S]{0,120}?backg
   "⑧ 右栏分隔条悬停/拖动 = 主题色光（与左侧 .sidebar-resizer:hover::after 同款）")
 ok(!/\.panel-divider:hover,\s*\n?\.panel-divider:active \{[^}]*background: var\(--muted\)/.test(base),
   "⑧ 负向：不许再给分隔条整列铺 --muted（1px 格子涂满 + 高分屏缩放 = 看着像 2~3px 的粗条）")
+
+/* ── ⑨ 右栏那条线只许有一个 owner（10-31 用户连问两次「还是这么粗啊」）────────────
+   第一次以为是 1px 被缩放放大，其实粗的是三份叠加：主区右边 6px `--panel` 底色带 +
+   半像素线（dpr=1 抗锯齿摊成两像素）+ 面板自己的 `border-left: 1px var(--line)`。 */
+const composerCss = codeOnly(read("src/styles/05-composer-input.css"));
+
+ok(/\.context-panel \{[^}]*border-left: 0/.test(composerCss) && !/\.context-panel \{[^}]*border-left: 1px solid/.test(composerCss),
+  "⑨ 右栏面板自身不再画左边框（与分隔线叠 = 2px，改分隔线样式也还是粗）")
+ok(/\.app-shell\.with-context > \.workspace \{[^}]*margin-right: 0/.test(base),
+  "⑨ 开右栏时主区右边不留 6px 底色带（那条带子本身就是「粗线」观感的主因）")
+ok(!/scaleX\(0\.5\)/.test(base),
+  "⑨ 负向：分隔线不许再用 scaleX(.5)（dpr=1 时要靠抗锯齿摊到两个像素，反而更宽更糊）")
 console.log(`\n  【motion】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);
