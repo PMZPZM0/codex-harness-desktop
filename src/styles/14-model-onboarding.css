@@ -1461,9 +1461,13 @@
   overflow: visible !important;
   max-width: none;
 }
-/* 代码块不再裁内容 ⇒ 横向滚到右边时露出的是容器底色：跟着代码面板同色，
-   否则右侧会突然变白/变深一条（观感像"内容被截断"）。 */
+/* ⛔⛔ 10-31 用户：「这个为啥底色还不统一」——这里原来是 `background: var(--panel)` 兜底，
+   但代码块自己要吃 `14px 16px` 内边距、内层再用**代码主题自己的底色**（#282c34 等）
+   ⇒ 永远露出一圈 `--panel` 的边（明暗两套里都看得出来）。
+   正确口径：**滚动区就用代码主题的底色**（底色值由 03-workspace-files.tsx 读
+   `lib/code-themes` 注册表内联上来），外壳不再自己上色。 */
 .workspace-file-preview-body:has(> .file-preview-code) { background: var(--panel); }
+.workspace-file-preview-body > .file-preview-code { background: transparent; }
 .workspace-file-preview-empty,
 .workspace-file-preview-loading {
   height: 100%;
