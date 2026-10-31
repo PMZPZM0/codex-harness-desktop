@@ -40,7 +40,14 @@ const EXAMPLES = [
   "把这批 png 全部压成 webp，质量 80",
 ];
 
-type Status = { installed: boolean; path: string; version: string; detail: string };
+type Status = {
+  installed: boolean;
+  path: string;
+  version: string;
+  detail: string;
+  /** 开源声明（主进程下发；跳转按钮从这里取 URL —— 前端零字面量，10-31 补审查修正） */
+  attribution: { license: string; home: string; site: string };
+};
 
 export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage }: {
   setNotice: (text: string, detail?: string) => void;
@@ -162,18 +169,22 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
           </ul>
         </section>
 
-        {/* 开源声明（用户令 10-31：必须标注项目声明与 GitHub 跳转；复用 OpenFilm 卡的声明样式） */}
-        <p className="openfilm-attribution">
-          第三方开源项目 Filee · 许可 <b>MIT</b> · 由 Myeonggu Kim（KnifeLemon）与 Filee 贡献者开发 ·
-          <button type="button" className="openfilm-link" onClick={() => void window.codex.openExternal("https://github.com/KnifeLemon/Filee")}>
-            github.com/KnifeLemon/Filee <ExternalLink size={10} />
-          </button>
-          · <button type="button" className="openfilm-link" onClick={() => void window.codex.openExternal("https://filee.sh")}>
-            官网 filee.sh <ExternalLink size={10} />
-          </button>
-          <br />
-          <span className="openfilm-fineprint">本应用只做 Filee 官方 CLI 的下载与调用；转换完全在用户本机完成，与 Filee 项目无隶属关系，问题反馈请到其 GitHub 仓库。</span>
-        </p>
+        {/* 开源声明（用户令 10-31：必须标注项目声明与 GitHub 跳转；复用 OpenFilm 卡的声明样式。
+            ⛔ 仓库/官网地址从 filee:status 的 attribution 下发（单一真相源 = 主进程 FILEE_REPO）——
+            10-31 补审查抓到前端硬编码 URL 是第二真相源，已改。status 读不到时整段隐藏（同 OpenFilm 口径）。 */}
+        {status?.attribution && (
+          <p className="openfilm-attribution">
+            第三方开源项目 Filee · 许可 <b>{status.attribution.license}</b> · 由 Myeonggu Kim（KnifeLemon）与 Filee 贡献者开发 ·
+            <button type="button" className="openfilm-link" onClick={() => void window.codex.openExternal(status.attribution.home)}>
+              {status.attribution.home.replace(/^https?:\/\/(www\.)?/, "")} <ExternalLink size={10} />
+            </button>
+            · <button type="button" className="openfilm-link" onClick={() => void window.codex.openExternal(status.attribution.site)}>
+              官网 {status.attribution.site.replace(/^https?:\/\//, "")} <ExternalLink size={10} />
+            </button>
+            <br />
+            <span className="openfilm-fineprint">本应用只做 Filee 官方 CLI 的下载与调用；转换完全在用户本机完成，与 Filee 项目无隶属关系，问题反馈请到其 GitHub 仓库。</span>
+          </p>
+        )}
       </section>
 
       {/* 卸载确认弹窗（设置内二级弹窗，同飞书 CLI 卡口径）。 */}

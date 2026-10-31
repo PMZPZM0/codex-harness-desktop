@@ -477,8 +477,8 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
  * ⛔ 装完写 version.txt：更新链的 installedVersionOf 读它 —— `filee-cli --version` 要 spawn 一次太慢。
  * ⛔ CLI 输出/取消：下载用流式 + 进度（同 skill-packs 的 10-30 口径「要真安装」），取消走
  *   isCancelRequested 轮询（fetch 不能被 trackRuntimeProc 杀，每 chunk 自查）。
- */
-const FILEE_REPO = "KnifeLemon/Filee";
+ * ⛔ 导出 FILEE_REPO：filee:status 的声明区（FileeCard 跳转按钮）从它取 —— 前端不写第二份 URL。 */
+export const FILEE_REPO = "KnifeLemon/Filee";
 function fileeInstallDir(): string { return path.join(writeToolsRoot(), "filee"); }
 function fileeVersionFile(): string { return path.join(fileeInstallDir(), "version.txt"); }
 

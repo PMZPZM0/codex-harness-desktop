@@ -5907,10 +5907,10 @@
       "channel": "filee:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; path: string; version: string; detail: string }>",
+      "returns": "Promise<{ installed: boolean; path: string; version: string; detail: string; attribution: { license: string; home: string; site: string } }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）"
+      "note": "10-30 Filee 文件转换（KnifeLemon/Filee，MIT）状态：是否安装 / 版本号（--version 缓存 60s）/ 开源声明（仓库与官网地址单一真相源在主进程，前端零字面量 —— 10-31 补审查修正）"
     },
     {
       "name": "fileeConvert",
