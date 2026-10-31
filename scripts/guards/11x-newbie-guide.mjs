@@ -181,5 +181,31 @@ const preload = read("electron/preload.ts");
   ok(!/from "[^"]+\.(png|jpe?g|webp|gif|svg)\?/.test(guide + figures) && !/\.(png|jpe?g|webp|gif)"/.test(figures),
     "⛔ 不用位图资产（截图会过期、生成图与界面对不上；JS import 的位图还会被 before-pack 当死块删掉）");
 }
+
+/* ── 10-31 用户截图：侧栏能力教程弹窗被压成侧栏宽度、文字一字一行 ──
+   根因：弹窗挂在 `.sidebar` 子树里，而侧栏有 translate（transform）⇒ 作为 fixed 的包含块，
+   把遮罩/弹窗关进 256px；同时「能做什么」写死 3 列，窄宽度下挤成竖排。
+   判据：① 两个侧栏内弹窗都必须 portal 到 body；② 卡片网格按宽度自适应（不许写死 3 列）。 */
+{
+  const guideModal = read("src/features/app-view/AppView/SidebarGuideModal.tsx");
+  const loginModal = read("src/features/app-view/AppView/LoginManagerModal.tsx");
+  const guideCss = read("src/styles/41-sidebar-guide.css");
+  ok(/createPortal\(/.test(guideModal) && /document\.body/.test(guideModal),
+    "教程弹窗 portal 到 body（⛔ 侧栏有 transform，内嵌时 fixed 会被压成侧栏宽度）");
+  ok(/createPortal\(/.test(loginModal) && /document\.body/.test(loginModal),
+    "登录管理弹窗同样 portal（同一坑，别只修一个）");
+  ok(/grid-template-columns: repeat\(auto-fit, minmax\(210px, 1fr\)\)/.test(guideCss)
+    && !/repeat\(3, minmax\(0, 1fr\)\)/.test(guideCss),
+    "「能做什么」卡片按可用宽度自适应列数（⛔ 不许写死 3 列 → 窄窗口一字一行）");
+  ok(/@media \(max-width: 720px\)[\s\S]{0,400}?\.sidebar-guide-caps \{ grid-template-columns: 1fr; \}/.test(guideCss),
+    "窄窗口兜底：单列（媒体查询阈值 720，覆盖平板宽度）");
+  /* 外圈边框（10-31 两轮修正）：缝隙 4px、不画边框线、顶栏不留上缝（系统窗口钮要对齐）。 */
+  const shellCss = read("src/styles/01-base-and-chrome.css");
+  ok(/\.app-shell > \.topbar \{[\s\S]{0,160}?margin: 0 4px 0 4px;[\s\S]{0,80}?border: 0;/.test(shellCss)
+    && /\.app-shell > \.workspace \{[\s\S]{0,160}?margin: 0 4px 4px 4px;[\s\S]{0,80}?border: 0;/.test(shellCss),
+    "外圈卡：缝隙 4px、不画边框（用户：中间线太多，正常颜色过渡）");
+  ok(/\.app-shell > \.sidebar \{ border-right: 0; \}/.test(shellCss),
+    "侧栏右边界线去掉（多段线叠在一起 = 用户说的分段线太多）");
+}
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

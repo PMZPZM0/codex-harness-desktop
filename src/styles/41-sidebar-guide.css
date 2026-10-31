@@ -169,7 +169,11 @@
 }
 .sidebar-guide-caps {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* ★ 10-31 用户截图：窄窗口下 3 列被压成「一字一行」的竖排 —— 固定 3 列就是根因。
+     改成按可用宽度自适应：≥~700 三列、~460 两列、更窄自动一列（⛔ 不再靠下面那条 media 兜底，
+     因为弹窗有时是被嵌在更窄的容器里，媒体查询看的是窗口宽度，救不了它）。 */
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  align-items: stretch;
   gap: 6px;
 }
 .sidebar-guide-cap {
@@ -224,6 +228,8 @@
   font-size: 12px;
   line-height: 1.5;
   color: var(--muted);
+  /* 极窄时也不要出现「一个字一行」的竖排：先按词/字正常折，必要时才在任意位置断 */
+  overflow-wrap: anywhere;
 }
 .sidebar-guide-cap-go {
   flex: none;
@@ -331,7 +337,7 @@
   filter: brightness(1.05);
 }
 
-@media (max-width: 640px) {
+@media (max-width: 720px) {
   .sidebar-guide-mask {
     padding: 8px;
     align-items: stretch;

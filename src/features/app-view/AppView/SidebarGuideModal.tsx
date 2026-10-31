@@ -10,6 +10,7 @@
  * ⛔ 本组件自包含：只收 props，不进 bag；弹窗关闭三路（✕ / 遮罩 / Esc）并归还焦点。
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowUpRight,
   BookOpen,
@@ -224,7 +225,10 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
     copyTimerRef.current = window.setTimeout(() => setCopied(""), 1600);
   };
 
-  return (
+  /* ⛔⛔ 必须 portal 到 body（10-31 实测：弹窗被压成侧栏宽度、文字一字一行）：
+     它挂在 `.sidebar` 子树里，而侧栏做了 translate 动画 ⇒ transform 让 `position: fixed`
+     的包含块退化成侧栏（256px 宽），遮罩与弹窗都被关进那一条。portal 后按视口定位。 */
+  return createPortal(
     <div className="info-modal-mask sidebar-guide-mask" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div
         ref={dialogRef}
@@ -332,6 +336,7 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
           </div>
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
