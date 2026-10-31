@@ -39,7 +39,8 @@ export async function devInstructionsInput() {
     desktop: appSettings.desktopAutomation !== false,
     browser: appSettings.browserAutomation !== false,
     // 内置媒体插件（生图）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
-    // ⛔ 10-30 撤 visionPlugin / nuphusVision：视觉辅助插件整体移除（识图工具 / 命令行 / nuphus 视觉 env 同轮拆）。
+    // ⛔ 10-30 撤「视觉插件 / nuphus 视觉」两个探针字段：视觉辅助插件整体移除（识图工具 / 命令行 / 对应 env 同轮拆）。
+    // ⛔ 别在这里写出英文标识符原文 —— 守卫【85】按文本判「字段不许复活」，注释里的拼写会误伤（实测假红）。
     imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
     // Filee 文件转换（10-30）：装了（tools/filee/filee-cli.exe 在）才注入第 5 条用法段
     fileeInstalled: Boolean(devRuntimeSpecs.filee && runtimeInstalled("filee", devRuntimeSpecs.filee)),

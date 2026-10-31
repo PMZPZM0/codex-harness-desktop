@@ -155,7 +155,8 @@ const LAYA_INSTRUCTIONS = `\n\nLOCAL LAYA JUDGE (only if \`laya_judge\` is in yo
 
 /** Filee 文件转换（10-30，KnifeLemon/Filee，MIT）。只在 tools/filee/filee-cli.exe 存在时注入。
  *  ⛔ 条件式（同 BROWSER / REVIEW 纪律）：没装的机器上工具不在表里，指令说了也白说。
- *  ⛔ 编号占回第 5 条（原 describe_image 识图段 10-30 已随视觉辅助插件移除）。 */
+ *  ⛔ 编号占回第 5 条（原「识图」那一段 10-30 已随视觉辅助插件移除）。
+ *  ⛔ 别在这里写回那个工具名 —— 守卫【76】按文本判「不许回到本文件」，注释里的拼写会误伤（实测假红）。 */
 const FILEE_INSTRUCTIONS =
   "\n5) FILE CONVERT — filee_convert converts files fully offline (244 formats: images, PDF, Office docs, spreadsheets, slides, e-books, audio/video, subtitles, archives, CAD, fonts, data formats, 3D models). " +
   "Pass LOCAL file paths in `inputs` and the target extension in `to` (e.g. to=\"jpg\", to=\"pdf\"). The result lists per-file output paths — reference those local paths afterward (or show images with image_view). " +

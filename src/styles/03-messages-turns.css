@@ -1511,6 +1511,16 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 简洁对话流的块头：文案随「最新一步」换，换的时候重挂一次播这段淡入 ——
+   观感是"里面的东西在往前走"，而不是整块内容重新渲染（10-31 用户：「里面一直播放最新工具内容」）。
+   ⛔ 关键帧只用 translate / opacity，别写 transform（会盖掉右侧省略号的布局）。 */
+.wb-fold-title-live {
+  animation: wb-fold-title-in 0.24s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+@keyframes wb-fold-title-in {
+  from { opacity: 0; translate: 0 4px; }
+  to { opacity: 1; translate: 0 0; }
+}
 /* 只过渡 grid-template-rows：流式期间内容增长不会触发高度补间（避免出字时上跳/闪烁） */
 .wb-fold-content {
   display: grid;

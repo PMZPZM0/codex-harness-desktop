@@ -22,6 +22,8 @@ import { QueueItem } from "../../lib/queue-item";
 import { inputText } from "../../lib/input-text";
 import { reasoningDuration } from "../../lib/reasoning-duration";
 import { ItemView } from "./ItemView";
+import { useDialogFlowMode } from "../../lib/dialog-flow-mode";
+import { dialogFlowStepTitle } from "../../lib/dialog-flow-title";
 
 export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entries: QueueItem[];
@@ -243,13 +245,15 @@ const FOLD_GROUP_ICONS: Record<string, typeof Wrench> = {
   other: Wrench,
 };
 
-export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, children }: {
+export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, animateTitle, children }: {
   title: string;
   leadGroup?: string | null;
   variant: "summary" | "completed" | "process";
   running?: boolean;
   defaultOpen?: boolean;
   autoFold?: boolean;
+  /** 标题会随流实时变化时置真：换文案时重播一次淡入（简洁对话流的块头） */
+  animateTitle?: boolean;
   failedCount?: number;
   children: React.ReactNode;
 }) {
@@ -280,7 +284,9 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
             {running ? <LoaderCircle size={13} className="spin" /> : <CircleCheck size={13} />}
           </span>
         )}
-        <span className={`wb-fold-title ${running ? "shimmer-text" : ""}`}>{title}</span>
+        {/* key={title} 在 `animateTitle` 时让标题随**最新一步**换文案时重挂一次 ⇒ 播一次淡入，
+            观感才是"里面的内容在往前走"（不是死板地整体重渲染）。 */}
+        <span key={animateTitle ? title : undefined} className={`wb-fold-title ${running ? "shimmer-text" : ""}${animateTitle ? " wb-fold-title-live" : ""}`}>{title}</span>
         {/* 展开/收起箭头：**放在内容之后**，默认隐藏、悬停才显形（09-23 用户：
             「展开折叠图标动态展示在内容后面就行，鼠标放上去展示，不放上去默认隐藏，点击后可以展示」）。
             形态与显隐规则见 03-messages-turns.css 的 .wb-fold-caret。
@@ -313,11 +319,22 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
    *  但用户看不到"刚才做到哪了"，也没法顺着接着交代。所以停止的回合把过程摊开。 */
   keepProcessOpen?: boolean;
 }) {
+  /* ── 对话流：简洁（默认）────────────────────────────────────────────────────
+     用户 10-31：「两个正文中间只展示一个把控，里面一直播放最新工具内容，也支持展开查看」。
+     实现靠 **一个参数**：`buildSegments(units, true)` 同时做掉两件事 ——
+       ① `thinkingLive` 需要 `!turnFinished` ⇒ 传 true 后"正在直播的思考"也算已结束，会被并进过程段
+          （于是正文之间只剩**一个**块，而不是"块 + 一张思考卡"）；
+       ② `shouldFold = bodyTextAfter || turnFinished` ⇒ 传 true 后**末段也折叠**，
+          不再把正在跑的那段铺在正文之间。
+     ⛔ 详细模式保持原样（`!running`）：正在跑的末段内联，只有被后续正文隔开的段才折。
+     ⛔ 别在这里改 buildSegments 本身的语义 —— 完成态（`!running`）两条分支共用它，改内部会一起变。 */
+  const flowMode = useDialogFlowMode();
+  const simpleFlow = flowMode === "simple";
   const units = useMemo(() => items
     .filter((item) => !(item.type === "agentMessage" && !String(item.text ?? "").trim()))
     .map((item) => ({ item, kind: classifyUnit(item) })),
   [items]);
-  const segments = useMemo(() => buildSegments(units, !running), [units, running]);
+  const segments = useMemo(() => buildSegments(units, simpleFlow ? true : !running), [units, running, simpleFlow]);
 
   /* ── 「编辑 <文件> +N -M」行的**就地锚定**（运行中）+ **收尾冻结块**（结束后常驻可见）─────────
      一改（用户纠正）：「在哪个地方就展示在哪个地方，不是一直在新消息下面，这样多丑」——
@@ -402,9 +419,11 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
         <FoldGroup
           key={`fold-live-${seg.units[0].item.id}`}
           variant="summary"
-          title={computeFoldSummary(seg.units, false, waitingForApproval)}
+          /* 简洁：块头 = 最新一步（跟着流换）；详细：沿用意图摘要 */
+          title={simpleFlow ? dialogFlowStepTitle(seg.units, waitingForApproval) : computeFoldSummary(seg.units, false, waitingForApproval)}
           leadGroup={topToolGroup(seg.units)}
           failedCount={failedCountOf(seg.units) || undefined}
+          animateTitle={simpleFlow}
           /* autoFold：挂载帧先展开、下一帧收起 ⇒ 1fr→0fr 的高度过渡跑得起来（不闪）。
               这段已被折叠块收住 ⇒ cap={false}，不再叠「同一工具 >3 条」那层。 */
           autoFold
