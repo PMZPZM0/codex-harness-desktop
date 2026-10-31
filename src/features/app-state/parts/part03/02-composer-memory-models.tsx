@@ -273,7 +273,9 @@ bag.saveMemoryLayer = saveMemoryLayer as typeof bag.saveMemoryLayer;
     if (!bag.memoryManagementWorkspace) { bag.setMemoryStatus("请先在记忆中心选择项目"); return; }
     bag.setMemoryDistilling(true);
     try {
-      const result = await window.codex.distillMemory(bag.memoryManagementWorkspace);
+      /* ⛔ 10-31 用户令「不要开新会话蒸馏，会话自己蒸馏」：把**当前会话**传下去，
+         主进程就在这条会话里跑蒸馏那一轮（只在它正忙时退回一次性内部会话）。 */
+      const result = await window.codex.distillMemory(bag.memoryManagementWorkspace, bag.thread?.id ?? "");
       bag.applyMemoryLayers(await window.codex.readMemoryLayers(bag.memoryManagementWorkspace), bag.memoryLayerScope);
       bag.setMemoryStatus(`蒸馏完成：${result.dates.length} 天日志已提炼进项目记忆（${result.added} 字）`);
     } catch (error: any) { bag.setMemoryStatus(error.message); }

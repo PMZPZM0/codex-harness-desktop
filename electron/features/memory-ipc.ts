@@ -36,7 +36,7 @@ import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
 import { applyMemoryMode, readMemoryMode, readWorkspaceMemorySettings, workspaceMemoryEnabled } from "../main/05-memory-mode";
 import { distillSummarize } from "../main/03-turn-summary";
 import { readMemoryGateway } from "../main/08-channel-bot-io";
-import { memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile } from "../runtime-refs";
+import { memoryGatewayFile, memoryLayers, memoryStore, memoryWorkspaceFile, threadCwd } from "../runtime-refs";
 import { MEMORY_SCALE_OPTIONS } from "../memory-layers";
 import { userSkillsDir } from "../main";
 import type { MemoryMode, StoredMemoryGateway } from "../main";
@@ -515,9 +515,15 @@ export const memoryFeature = defineFeature<null>({
       //    少一个字段就会让「保存后健康度行消失」（09-22 评审）。
       return { ...(await memoryLayers.snapshot(input.workspace)), entries: await memoryStore.stats() };
     });
-    ipcHost.handle("memory:distill", async (_event, workspace?: string) => {
+    ipcHost.handle("memory:distill", async (_event, workspace?: string, threadId?: string) => {
       if (!workspace) throw new Error("尚未选择工作区，无法蒸馏项目记忆");
-      const result = await memoryLayers.distill(workspace, distillSummarize, true);
+      /* ⛔ 10-31 用户令：「记忆蒸馏改一下，不要开新会话蒸馏，会话自己蒸馏」——
+         把**当前会话 id** 传下去：蒸馏那一轮就在这条会话里跑（不开新会话），
+         只有它正在跑回合时才退回一次性内部会话（见 distillSummarize 的两条分支）。 */
+      const inThread = String(threadId ?? "").trim();
+      const result = await memoryLayers.distill(workspace, (prompt: string, body: string) =>
+        distillSummarize(prompt, body, { inThread, threadId: inThread, cwd: inThread ? threadCwd.get(inThread) : "" }),
+      true);
       if (!result.ok) throw new Error(result.reason ?? "没有需要蒸馏的日志");
       return result;
     });

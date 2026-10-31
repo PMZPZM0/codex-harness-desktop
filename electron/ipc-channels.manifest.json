@@ -2396,12 +2396,12 @@
     {
       "name": "distillMemory",
       "channel": "memory:distill",
-      "paramsImpl": "workspace?: string",
-      "paramsDecl": "workspace?: string",
+      "paramsImpl": "workspace?: string, threadId?: string",
+      "paramsDecl": "workspace?: string, threadId?: string",
       "returns": "Promise<{ ok: boolean; dates: string[]; added: number; reason?: string }>",
-      "invokeArgs": "workspace",
+      "invokeArgs": "workspace, threadId",
       "cast": null,
-      "note": null
+      "note": "10-31：蒸馏**不再开新会话**，在传入的会话里跑这一轮（会话正忙时才退回一次性内部会话）"
     },
     {
       "name": "listFabricEntries",

@@ -826,7 +826,8 @@ interface Window {
     /* 切换记忆后端并回传新状态；选云端但未开通/未接通 ⇒ 不落盘，回执带 refused 原因 */
     setMemoryBackend(backend: "builtin" | "mcp" | "cloud"): Promise<{ backend: "builtin" | "mcp" | "cloud"; effective: "builtin" | "mcp" | "cloud"; installed: boolean; serverPath: string; installRoot: string; installCommand: string; fallbackReason: string | null; cloudActivation: { state: "active" | "inactive" | "unknown"; reason: string; entitled: boolean; applied: boolean; checkedAt: number; reasonText: string }; refused?: string }>;
     deleteMemory(id: string): Promise<void>;
-    distillMemory(workspace?: string): Promise<{ ok: boolean; dates: string[]; added: number; reason?: string }>;
+    /* 10-31：蒸馏**不再开新会话**，在传入的会话里跑这一轮（会话正忙时才退回一次性内部会话） */
+    distillMemory(workspace?: string, threadId?: string): Promise<{ ok: boolean; dates: string[]; added: number; reason?: string }>;
     /* 10-05 统一记忆只读：某命名空间的条目（含来源智能体/权重/归档态） */
     listFabricEntries(input: { workspace?: string; namespace?: string; includeArchived?: boolean }): Promise<any[]>;
     /* 10-05 统一记忆只读：命名空间概览（两种作用域 + 条数）—— 前端分区渲染用 */
