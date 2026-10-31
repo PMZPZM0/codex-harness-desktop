@@ -29,6 +29,16 @@ import type { Bag } from "../../bag-types";
  * ⛔ 放**模块级**而不是 hook 体内：hook 体里的顶层声明会被 bag-types 生成器当成跨段 API
  *   （实测会把内部辅助函数收进 `bag`）—— 它只是本文件内部实现，且已带 bag 入参。
  */
+/** 10-31 用户令（对照 Qoder 截图）：排队消息发出去要**立刻当用户消息上屏** ——
+ *  新回复在它下面、「等待模型回复」状态条在消息下面；不能干等引擎 1~2s 后的回声。
+ *  复用正常发送的乐观气泡机制：引擎回声由既有确认逻辑合并（steer 进当前回合的也会被
+ *  optimisticConfirmed 认出，安全阀兜底回收），失败路径由调用方显式清掉。
+ *  ⛔ 放模块级（同 deliverAutoContinue 的理由：hook 体顶层声明会被 bag-types 生成器收进 bag）。 */
+function showQueuedOptimistic(bag: Bag, input: any) {
+  if (!Array.isArray(input) || !input.length) return;
+  bag.setOptimisticInput({ id: crypto.randomUUID(), type: "userMessage", content: input });
+}
+
 function deliverAutoContinue(bag: Bag, threadId: string, prompt: string, opts: { delayMs: number; toastTitle: string; toastBody: string; pinTag: string; dbgTag: string; failTitle: string }) {
   window.setTimeout(() => {
     if (bag.threadRef.current?.id !== threadId) return; // 用户已切走：不再自动动那个会话
@@ -48,6 +58,7 @@ function deliverAutoContinue(bag: Bag, threadId: string, prompt: string, opts: {
       const head = list?.data?.[0];
       if (!head) return;
       const armed = bag.armPinForReleasedQueue(threadId, opts.pinTag);
+      if (armed) showQueuedOptimistic(bag, head.input ?? [{ type: "text", text: prompt }]);
       // 429 兜底也要覆盖这条续接回合（续接场景正是上游不稳的高发区）
       bag.armRetryForQueueRelease(threadId, head.input ?? [{ type: "text", text: prompt }]);
       try {
@@ -141,9 +152,10 @@ export function usePart04c2(bag: Bag) {
     const entries: QueueItem[] = list?.data ?? [];
     const entry = entries.find((item) => item.id === id);
     if (!entry) return; // 消息已被删除/已被启动：定时自然失效
-    bag.armPinForReleasedQueue(threadId, "queue-timer");
+    const armedDue = bag.armPinForReleasedQueue(threadId, "queue-timer");
     // 与「立即」同款：定时释放的消息也要被 429 兜底覆盖
     bag.armRetryForQueueRelease(threadId, entry.input);
+    if (armedDue) showQueuedOptimistic(bag, entry.input);
     const busy = bag.runningThreadIdsRef.current.has(threadId);
     if (busy) {
       try {
@@ -160,7 +172,7 @@ export function usePart04c2(bag: Bag) {
       await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: id });
       if (bag.threadRef.current?.id === threadId) bag.setQueue((current) => current.filter((item) => item.id !== id));
       void bag.refreshQueue(threadId);
-      bag.showToast("定时已发送", "排队消息已到设定时间，开始执行", threadId);
+      bag.showToast("消息发送成功", "排队消息已发出，开始执行", threadId);
     } catch (error: any) {
       const message = String(error?.message ?? error);
       if (isQueueAlreadyStartedError(message)) {
@@ -458,6 +470,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
     if (steerTurnId && entry) {
       // 「立即」= 这条消息马上会作为用户消息出现在当前回合里 → 先建立钉顶意图（否则它落进内容流）
       const armedForSteer = bag.armPinForReleasedQueue(bag.thread.id, "steer");
+      if (armedForSteer) showQueuedOptimistic(bag, entry.input);
       // 这条消息会并入当前回合；若该回合以 429 结束，重发的就是它（同手动发送的语义）
       bag.armRetryForQueueRelease(bag.thread.id, entry.input);
       try {
@@ -471,12 +484,12 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
         void bag.refreshQueue(bag.thread.id);
         // 「立即」已经把这条发出去了 ⇒ 它的定时一并撤（否则到点 due 只能靠引擎对账静默兜底）
         void bag.setQueuedTimer(bag.thread.id, entry.id, null);
-        bag.showToast("已发送", "这条排队消息已并入当前任务");
+        bag.showToast("消息发送成功", "这条排队消息已并入当前任务");
         return;
       } catch (error: any) {
         const message = String(error?.message ?? error ?? "");
         if (!/no active turn/i.test(message)) {
-          if (armedForSteer) bag.disarmPinIntent("steer-fail");   // 意图悬空会去钉别的消息
+          if (armedForSteer) { bag.disarmPinIntent("steer-fail"); bag.setOptimisticInput(null); }   // 意图悬空会去钉别的消息；乐观气泡一并撤
           bag.showToast("发送失败", message);
           return;
         }
@@ -487,6 +500,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
       }
     }
     const armedForStart = bag.armPinForReleasedQueue(bag.thread.id, "queue-start");
+    if (armedForStart && entry) showQueuedOptimistic(bag, entry.input);
     // 「立即」启动的回合同样要被 429 兜底覆盖（用排队条目自己的 input）
     bag.armRetryForQueueRelease(bag.thread.id, entry?.input);
     try {
@@ -498,7 +512,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
         void bag.setQueuedTimer(bag.thread.id, id, null); // 已立即发出 ⇒ 定时一并撤
       }
       void bag.refreshQueue(bag.thread.id);
-      bag.showToast("已发送", "排队消息已开始执行");
+      bag.showToast("消息发送成功", "排队消息已开始执行");
     } catch (error: any) {
       const message = String(error?.message ?? error);
       // ⛔「立即」与引擎自动启动撞车：消息其实**已经发出去了**（用户 09-24 反馈「排队消息出去，
@@ -506,7 +520,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
       if (isQueueAlreadyStartedError(message)) {
         bag.dbg("queue-start-raced-by-engine", { threadId: bag.thread.id, message });
       } else {
-        if (armedForStart) bag.disarmPinIntent("queue-start-fail");
+        if (armedForStart) { bag.disarmPinIntent("queue-start-fail"); bag.setOptimisticInput(null); }
         bag.showToast("发送失败", message);
       }
     }

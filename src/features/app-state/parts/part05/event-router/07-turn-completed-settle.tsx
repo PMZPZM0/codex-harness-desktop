@@ -124,6 +124,13 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
             // 这条排队消息马上会变成真实回合的用户消息 → 先建立钉顶意图（否则它落进内容流，
             // 用户看到的就是「钉顶没生效」）。只对当前正在看的会话生效，见函数注释。
             armedByAutoStart = bag.armPinForReleasedQueue(params.threadId, "auto-start");
+            /* ⛔⛔ 10-31 用户令（对照 Qoder 截图）：排队消息发出去要**立刻当用户消息上屏** ——
+               消息在下、「等待模型回复」状态条在消息下面、回复再下面；不能干等引擎回声。
+               乐观气泡由既有确认逻辑合并（真实 userMessage 落地即接管）；失败路径显式清掉。 */
+            if (armedByAutoStart) {
+              bag.setOptimisticInput({ id: crypto.randomUUID(), type: "userMessage", content: head.input ?? [] });
+              if (bag.threadRef.current?.id === params.threadId) bag.showToast("消息发送成功", "排队消息已发出");
+            }
             // 429 兜底也要覆盖这条自动启动的回合（用户实测缺口：429 后直接报错、不重试）
             bag.armRetryForQueueRelease(params.threadId, head.input ?? []);
             return window.codex.request("thread/queue/start", { threadId: params.threadId, queuedSubmissionId: head.id });
@@ -148,8 +155,8 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
               bag.dbg("queue-autostart-busy-thread", { threadId: params.threadId, message });
               return;
             }
-            // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）
-            if (armedByAutoStart) bag.disarmPinIntent("auto-start-fail");
+            // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）；乐观气泡一并撤
+            if (armedByAutoStart) { bag.disarmPinIntent("auto-start-fail"); bag.setOptimisticInput(null); }
             bag.showToast("队列启动失败", message);
           });
         }
