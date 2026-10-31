@@ -24,10 +24,15 @@ export type BossProjectDirChoice = "pick" | "auto" | "cancel";
 export function BossProjectDirDialog({
   open,
   busy,
+  error,
   onChoose,
 }: {
   open: boolean;
   busy?: boolean;
+  /** 上一次失败的原因（自动新建失败 / 目录没权限等）。
+   *  ⛔ 为什么要显示：失败时原先只有一句 `catch {}` —— 点下去按钮闪一下、弹窗还在，
+   *     用户完全不知道为什么（10-31 实测「点了没法确认，闪一下还是这个界面」）。 */
+  error?: string;
   onChoose: (choice: BossProjectDirChoice) => void;
 }) {
   if (!open || typeof document === "undefined") return null;
@@ -70,7 +75,7 @@ export function BossProjectDirDialog({
         </div>
 
         <footer className="boss-dir-foot">
-          <span className="boss-dir-foot-note">也可以点外面取消。</span>
+          {error ? <span className="boss-dir-error" role="alert">{error}</span> : <span className="boss-dir-foot-note">也可以点外面取消。</span>}
           <button type="button" className="boss-dir-cancel" onClick={() => onChoose("cancel")} disabled={busy}>取消</button>
         </footer>
       </div>

@@ -708,6 +708,8 @@
 
 .boss-dir-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .boss-dir-foot-note { font-size: 12px; color: var(--muted); }
+/* 失败原因（10-31）：占 note 那一格，红色一行 —— 别再静默 `catch {}`，用户要看得见为什么没成 */
+.boss-dir-error { flex: 1; min-width: 0; font-size: 12px; line-height: 1.5; color: var(--danger, #e5534b); }
 .boss-dir-cancel {
   padding: 6px 14px; min-height: 32px;
   border: 1px solid var(--line); border-radius: 9px;
