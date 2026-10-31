@@ -271,8 +271,12 @@ ok(!existsSync(join(ROOT, "src/features/settings-personalization/Personalization
   "个性化旧区块组件已删除（语气自适应整块搬走）");
 /* 10-27 用户令：「回复风格跟用户中心重复了，那边前端删除这个选项，但不能影响新手引导生效；
    搭配 Grill-me 技能加一个需求询问选项，启用就默认用这个技能」 */
-ok(/value: "inquiry"/.test(personalPage) && /需求询问/.test(personalPage),
-  "回复风格新增「需求询问」档（启用即按 grill-me 先问清需求）");
+const replyStyleSrc = src("src/lib/reply-style.mjs");
+ok(/value: "inquiry"/.test(personalPage) && /需求询问/.test(personalPage)
+  && /value: "challenge"/.test(personalPage) && /敢于反驳/.test(personalPage)
+  && /export function challengeInstruction/.test(replyStyleSrc)
+  && /仍坚持|坚持原方案/.test(replyStyleSrc),
+  "回复风格含「需求询问」与「敢于反驳」两档（后者先指出需求错误，用户坚持则照做并写清风险）");
 ok(!/uc-style-options/.test(src("src/components/UserCenter.tsx")) && /STYLE_OPTIONS/.test(src("src/components/UserCenter.tsx")),
   "用户中心不再重复「回复风格」选择区（唯一入口在个性化页），风格标签回显保留");
 const generalPage = pageSrc("general");

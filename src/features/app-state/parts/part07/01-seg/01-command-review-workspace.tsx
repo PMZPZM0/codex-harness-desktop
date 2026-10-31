@@ -51,7 +51,7 @@ export function usePart07a1(bag: Bag) {
       else if (name === "cd") await bag.chooseWorkspace();
       else if (name === "pwd") bag.setInfoModal({ title: "当前工作目录", body: bag.workspace || "尚未选择工作区" });
       else if (name === "diff") { bag.setRightOpen(true); bag.showToast("文件改动", "已在右侧面板展示本轮 diff"); }
-      else if (name === "status") bag.setInfoModal({ title: "任务状态", body: `模型：${bag.customModel?.model ?? "未配置"}\n思考：${effortLabels[bag.effort] ?? bag.effort}\n风格：${bag.personality === "pragmatic" ? "务实" : bag.personality === "friendly" ? "友好" : "默认"}\n线程：${bag.thread?.status?.type ?? "未开始"}\n回合：${bag.thread?.turns.at(-1)?.status ?? "无"}\n工作区：${bag.workspace || "未选择"}` });
+      else if (name === "status") bag.setInfoModal({ title: "任务状态", body: `模型：${bag.customModel?.model ?? "未配置"}\n思考：${effortLabels[bag.effort] ?? bag.effort}\n风格：${({ pragmatic: "务实", friendly: "友好", inquiry: "需求询问", challenge: "敢于反驳" } as Record<string, string>)[String(bag.personality)] ?? "默认"}\n线程：${bag.thread?.status?.type ?? "未开始"}\n回合：${bag.thread?.turns.at(-1)?.status ?? "无"}\n工作区：${bag.workspace || "未选择"}` });
       else if (name === "help") bag.setInfoModal({ title: "可用命令", body: builtinCommandCatalog.map((cmd) => `/${cmd.name}${cmd.hint ? " " + cmd.hint : ""} — ${cmd.description}`).join("\n") });
       else if (name === "context") bag.setInfoModal({ title: "上下文占用", body: bag.contextUsageText() });
       else if (name === "doctor") await bag.runEnvironmentCheck();

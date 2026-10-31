@@ -196,13 +196,14 @@ const CHECKS = [
           hasNickText:(page.textContent||"").includes("称呼"),
           hasTone:(page.textContent||"").includes("语气自适应"),
           hasStyle:!!page.querySelector(".personalization-style-tabs"),
+          styleTabs:[...page.querySelectorAll(".personalization-style-tabs button")].map((b)=>String(b.textContent||"").trim()),
           hasInstructions:!!page.querySelector(".personalization-instructions"),
           pageW:Math.round(page.getBoundingClientRect().width),
           groupW:Math.round((page.querySelector(".personalization-group")?.getBoundingClientRect().width)||0) };
       })()`).catch(() => null);
       h.check("⑧ 个性化：无称呼输入、无语气自适应；回复风格与自定义指令仍在",
         Boolean(per && per.page === "个性化" && !per.hasNickInput && !per.hasNickText && !per.hasTone
-          && per.hasStyle && per.hasInstructions && per.groupW >= per.pageW - 12),
+          && per.hasStyle && per.styleTabs.includes("敢于反驳") && per.hasInstructions && per.groupW >= per.pageW - 12),
         JSON.stringify(per));
       h.check("⑨ 控制台回复风格卡：语气自适应开关在位（挪来这儿，不是删功能）",
         Boolean(ctrl && ctrl.toneInReply && ctrl.toneOn !== null),

@@ -13,7 +13,7 @@ import { resolveModelForOpen, shouldSyncOpenThread } from "../../../../../lib/mo
 import { composeScopeInstructions, sessionScopeBlock, sessionScopeSignature } from "../../../../../lib/session-scope.mjs";
 import { getAnnounceGlobalEnabled, isAnnounceMutedForThread } from "../../../../../voice/announce-bus";
 import { advanceMood, composeMoodInstructions, emptyMood, moodBlock, moodSignature, moodTone, normalizeMood, userSignalOf } from "../../../../../lib/agent-mood.mjs";
-import { inquiryInstruction } from "../../../../../lib/reply-style.mjs";
+import { challengeInstruction, inquiryInstruction } from "../../../../../lib/reply-style.mjs";
 import { handoffNudge } from "../../../../../lib/handoff-nudge.mjs";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../../lib/thread-runtime.mjs";
 import { describeTurnStop, turnHeadline, isAwaitingTurnClose } from "../../../../../lib/turn-stop-reason.mjs";
@@ -332,7 +332,7 @@ bag.loadBaseInstructions = loadBaseInstructions as typeof bag.loadBaseInstructio
         settings: {
           model,
           reasoning_effort: effortValue || null,
-          developer_instructions: [composeMoodInstructions(composeScopeInstructions(base, sessionScopeBlock(values)), bag.adaptiveToneRef.current ? moodBlock(bag.readMood(threadId)) : ""), inquiryInstruction(bag.personality), handoffNudge()].filter(Boolean).join("\n\n"),
+          developer_instructions: [composeMoodInstructions(composeScopeInstructions(base, sessionScopeBlock(values)), bag.adaptiveToneRef.current ? moodBlock(bag.readMood(threadId)) : ""), inquiryInstruction(bag.personality), challengeInstruction(bag.personality), handoffNudge()].filter(Boolean).join("\n\n"),
         },
       },
     };

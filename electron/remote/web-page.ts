@@ -701,7 +701,7 @@ async function loadMessages() {
             processBox.appendChild(think);
           }
           const body = think.querySelector(".think-text");
-          if (body) body.textContent += (body.textContent ? "\n" : "") + m.text;
+          if (body) body.textContent += (body.textContent ? "\\n" : "") + m.text;
         }
       } else {
         closeProcess();
