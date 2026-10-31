@@ -88,8 +88,8 @@ ok(/\.app-shell:not\(\.narrow\)\.side-collapsed \{\s*--side-w:\s*0px;/.test(base
   "⑤ 折叠只把 `--side-w` 置 0（轨道数不变），且只在非窄屏生效（窄屏侧栏是覆盖层）");
 ok(!/\.app-shell\.side-collapsed \{[^}]*grid-template-columns/.test(base),
   "⑤ 负向：折叠态**不许**再整体替换 grid 模板（轨道数变化 ⇒ 不能插值 ⇒ 主区瞬移）");
-ok(/gridTemplateColumns:[\s\S]{0,200}?var\(--side-w/.test(appView),
-  "⑤ JSX 的 inline 模板同样用 `var(--side-w)`（否则 inline 一写死就把 CSS 的插值盖掉）");
+ok(!/gridTemplateColumns:\s*`?minmax\(0, 1fr\) 1px \$\{panelWidth\}/.test(appView) && !/gridTemplateColumns: popoutThreadId/.test(appView),
+  "⑤ 负向：JSX 的 inline 模板不许写死（10-31 起整份模板交给 CSS，inline 只留 `--panel-w`）");
 
 
 /* ── ⑥ 侧栏抽屉手感（用户："要那种从侧边横向抽屉的感觉"）──────────────────
@@ -106,5 +106,36 @@ ok(!/\.app-shell\.side-collapsed:not\(\.narrow\) \.sidebar \{[^}]*position: fixe
 ok(/\.sidebar\.flyout-open \{[^}]*translate: 0 0;/.test(base),
   "⑥ 悬停展开（flyout）同样用 translate 滑回原位（写 transform 会叠加成两次位移、拉不出来）");
 
+
+/* ── ⑦ 右侧面板同为横向抽屉（10-31 用户：「左边这里这抽屉效果，右边为什么不」）──────
+   判据：轨道数恒定 + 宽度走 --right-w 插值 + 面板自己横向滑入/滑出 + 关闭延迟卸载。
+   ⛔ 四条缺一条就会退回「闪现」：换列模板（轨道数变）／换 inline 模板／条件渲染（无退场元素）。 */
+const reviewPanel = codeOnly(read("src/features/app-view/AppView/03-review-panel.tsx"));
+const dragSrc = codeOnly(read("src/features/app-state/parts/part02/01-mcp-teams-plan/02-team-roles-import.tsx"));
+
+ok(/@property --right-w \{\s*syntax: "<length>"/.test(base),
+  "⑦ --right-w 注册为 <length>（不注册就插值不了，右栏只能瞬开瞬关）");
+ok(/grid-template-columns: var\(--side-w, 256px\) minmax\(0, 1fr\) 1px var\(--right-w, 0px\)/.test(base),
+  "⑦ 主壳模板恒为 4 轨、右栏宽度走 var(--right-w)（轨道数不变才可插值）");
+ok(/\.app-shell\.with-context \{[^}]*--right-w: var\(--panel-w, 308px\)/.test(base),
+  "⑦ 开右栏只改变量 --right-w，不换模板");
+ok(/transition: --side-w var\(--dur-panel\)[^;]*--right-w var\(--dur-panel\)/.test(base),
+  "⑦ 侧栏与右栏同一条时长/缓动（不然一边快一边慢）");
+ok(/\.context-panel \{[^}]*transition: translate var\(--dur-panel\)/.test(base),
+  "⑦ 面板自身过渡 translate（横向抽屉），不是位移瞬变");
+ok(/\.context-panel\[data-state="closed"\] \{[^}]*translate: 100% 0/.test(base),
+  "⑦ 关闭态把面板整体推出右侧（translate 100%）");
+ok(/setTimeout\(\(\) => setMounted\(false\), 220\)/.test(reviewPanel),
+  "⑦ 关闭**延迟卸载** 220ms（立刻卸载 = 没有退场元素，CSS 过渡无从触发）");
+ok(/data-state=\{rightOpen && entered \? "open" : "closed"\}/.test(reviewPanel),
+  "⑦ 面板按状态挂 data-state（开/合各有样式，退场靠它）");
+ok(/requestAnimationFrame\(\(\) => \{ raf2 = requestAnimationFrame\(\(\) => setEntered\(true\)\)/.test(reviewPanel),
+  "⑦ 进场用**两次 rAF** 先挂关闭态再切 open（直接以最终态插入 = CSS 过渡不触发，打开仍是瞬现）");
+ok(!/gridTemplateColumns: popoutThreadId|gridTemplateColumns: `var\(--side-w/.test(appView) && /--panel-w/.test(appView),
+  "⑦ 负向：AppView 不许再 inline 写整份列模板（写死就插值不了）");
+ok(/classList\.add\("panel-resizing"\)/.test(dragSrc) && /setProperty\("--panel-w"/.test(dragSrc),
+  "⑦ 拖分隔条只改 --panel-w 并挂 panel-resizing（否则列宽滞后 220ms、拖起来发粘）");
+ok(!/style\.gridTemplateColumns =/.test(dragSrc),
+  "⑦ 负向：拖拽不许再写 style.gridTemplateColumns（钉死 inline 后变量变化全失效）");
 console.log(`\n  【motion】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);

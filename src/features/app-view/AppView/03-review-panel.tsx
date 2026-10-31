@@ -224,8 +224,28 @@ export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
     const sep = workspace.includes("\\") ? "\\" : "/";
     return `${workspace.replace(/[\\/]+$/, "")}${sep}${workspaceFile.replace(/^[\\/]+/, "")}`;
   }, [workspaceFile, workspace]);
+  /* 10-31 右侧抽屉：关闭时**延迟卸载** 220ms（= --dur-panel），让 [data-state="closed"]
+     的 translate 退场真的播出来。⛔ 立刻卸载 = 元素没了，CSS 过渡无从触发 ⇒ 关闭仍是闪现。 */
+  const [mounted, setMounted] = useState(rightOpen);
+  /* 进场要「先以关闭态挂上、下一帧再切 open」：元素插入那一拍若已是最终态，
+     CSS 过渡不会触发（实测打开时 translate 恒为 none、只有列宽在动）。
+     ⛔ 两次 rAF：单次可能仍在同一个布局批次里，切了也播不动。 */
+  const [entered, setEntered] = useState(rightOpen);
+  useEffect(() => {
+    if (!rightOpen) { setEntered(false); return; }
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => { raf2 = requestAnimationFrame(() => setEntered(true)); });
+    return () => { cancelAnimationFrame(raf1); if (raf2) cancelAnimationFrame(raf2); };
+  }, [rightOpen]);
+  useEffect(() => {
+    if (rightOpen) { setMounted(true); return; }
+    if (!mounted) return;
+    const timer = window.setTimeout(() => setMounted(false), 220);
+    return () => window.clearTimeout(timer);
+  }, [rightOpen, mounted]);
+  if (!mounted) return null;
   return (
-    rightOpen && <aside className="context-panel">
+    <aside className="context-panel" data-state={rightOpen && entered ? "open" : "closed"}>
             <div className="panel-tabstrip">
               <div className="tabstrip-tabs">
                 {/* 10-07 用户截图后补：与侧栏「项目/分类」同一口径 —— tab 的**前缀图标**按色相上色、文字中性。 */}

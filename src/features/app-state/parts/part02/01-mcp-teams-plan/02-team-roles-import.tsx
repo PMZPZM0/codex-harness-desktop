@@ -201,19 +201,24 @@ bag.shellRef = shellRef as typeof bag.shellRef;
 
   function startPanelDrag(event: ReactMouseEvent) {
     event.preventDefault();
-    // 性能关键：拖拽期间直接改 shell 的 grid 样式（不走 React state）——
+    // 性能关键：拖拽期间直接改变量（不走 React state）——
     // 此前每个 mousemove setPanelWidth 触发整棵应用重渲染，拖动明显卡顿。
     // mouseup 才提交 state 并落盘，重渲染仅一次。
+    // ⛔ 10-31：只写 `--panel-w`，**不再写整份 gridTemplateColumns** —— 模板已由 CSS 恒定给出
+    //    （4 轨：侧栏 / 主区 / 1px / 右栏）。写整份模板会把 inline 钉死，之后变量变化
+    //    （包括关右栏时 --right-w 归零）全都失效。
     const shell = bag.shellRef.current;
-    const sidebarCollapsedNow = bag.sidebarCollapsed;
+    /* 拖拽期间禁掉插值（.panel-resizing），否则列宽滞后 --dur-panel、拖起来发粘 */
+    shell?.classList.add("panel-resizing");
     const move = (e: MouseEvent) => {
       const width = Math.min(560, Math.max(240, window.innerWidth - e.clientX));
       bag.dragWidthRef.current = width;
-      if (shell) shell.style.gridTemplateColumns = `${sidebarCollapsedNow ? "minmax(0, 1fr)" : "256px minmax(0, 1fr)"} 1px ${width}px`;
+      shell?.style.setProperty("--panel-w", `${width}px`);
     };
     const up = () => {
       window.removeEventListener("mousemove", move);
       window.removeEventListener("mouseup", up);
+      shell?.classList.remove("panel-resizing");
       localStorage.setItem("panel-width", String(bag.dragWidthRef.current));
       bag.setPanelWidth(bag.dragWidthRef.current);
       document.body.style.cursor = "";
