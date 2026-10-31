@@ -1147,8 +1147,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
   (/stripHarnessBlocks\(/.test(gmBody) ? ok : fail)(
     "【139b】手机读历史必须剥掉注入块（常驻记忆 / 当前时间），否则整段机器文本铺进气泡"
   );
-  (/role: "think"/.test(mainSrc) && /pushThinkHistory/.test(pageSrc) ? ok : fail)(
-    "【139b】读历史也带思考：reasoning 摘要进历史接口，手机端折叠展示（只做实时 = 翻上去一片空白）"
+  (/role: "think"/.test(mainSrc) && /role: "step"/.test(mainSrc) && /运行过程 · /.test(pageSrc) ? ok : fail)(
+    "【139b】读历史按原顺序回放思考与工具步骤（连续段收成「运行过程 · N 步」，位置不挪动）"
   );
   /* 10-28 审查修复的四处：每处都是「看着接好了，真机点下去是错的」那类 */
   (/if \(Array\.isArray\(event\.data\?\.files\)\) lastFilesData = event\.data\.files;/.test(pageSrc)

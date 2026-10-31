@@ -13,6 +13,7 @@ import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from
 import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { reasoningItemText } from "./reasoning-text";
+import { remoteStepOf } from "./remote-step";
 import { mobileMentionBlock } from "./dispatch";
 import { harnessProviderConfig } from "./thread-provider";
 import { BotPairingService } from "./bots/bot-pairing";
@@ -506,13 +507,11 @@ const remote = new RemoteControlService({
   listBossGroups: async () => listBossGroupSummaries(),
   getThreadMessages: async (threadId) => {
     const resumed = await server.request("thread/resume", { threadId, excludeTurns: false }) as any;
-    const messages: { role: "user" | "assistant" | "system" | "think"; text: string }[] = [];
+    const messages: { role: "user" | "assistant" | "system" | "think" | "step"; text: string }[] = [];
     for (const turn of resumed.thread?.turns ?? []) {
-      /* ⛔ 10-31 用户实测「思考板块重新进会话就到上面去了」：实时是边聊边把思考块追加在该回合流尾部
-         （思考摘要常在回答之后才到），而历史若按 item 原顺序把 reasoning 排在 agentMessage 前面，
-         重新进会话就会看到思考被抬到回答上方、还按条拆成好几个块。
-         ⇒ 每个回合先收齐思考、合并成**一块**，放在该回合最后（与实时观感一致）。 */
-      const thinks: string[] = [];
+      /* ⛔ 10-31 用户令：「运行过程 / 思考 / 工具都在它第一次出现的位置，不要挪到底部去」。
+         历史严格按引擎 item 顺序回放（与服务端下发的先后一致）：思考、工具各留在原位，
+         既不合并成一块，也不后置。 */
       for (const item of turn.items ?? []) {
         if (item.type === "userMessage") {
           // 手机是「阅读」视角：常驻记忆 / 当前时间 / 会话告知等机器块，与桌面一样剥掉
@@ -522,11 +521,15 @@ const remote = new RemoteControlService({
         else if (item.type === "reasoning") {
           // ⛔ 形状交给 reasoningItemText：resume 回读是字符串数组，只读 part.text 会整段丢
           const think = reasoningItemText(item);
-          if (think) thinks.push(think);
+          if (think) messages.push({ role: "think", text: think });
         }
         else if (item.type === "agentMessage" && item.text?.trim()) messages.push({ role: "assistant", text: item.text });
+        else {
+          // 工具 / 命令 / 搜索：与实时 kind:"step" 同一套文案，按 item 原位置插回历史
+          const step = remoteStepOf(item, "started");
+          if (step) messages.push({ role: "step", text: step });
+        }
       }
-      if (thinks.length) messages.push({ role: "think", text: thinks.join("\n\n") });
     }
     return messages;
   },
