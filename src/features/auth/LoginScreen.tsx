@@ -348,19 +348,19 @@ export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: 
         <p className="login-sub">配置 API 即可开始；暂不登录可直接体验主界面</p>
 
         <div className="login-options">
-          <button type="button" className={`login-option ${mode === "pptoken" ? "active" : ""}`} onClick={() => { setMode("pptoken"); setExpanded((open) => (mode === "pptoken" ? !open : true)); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}>
+          <button type="button" className={`login-option ${expanded && mode === "pptoken" ? "active" : ""}`} onClick={() => { setMode("pptoken"); setExpanded((open) => (mode === "pptoken" ? !open : true)); setEndpointOpen(false); queueMicrotask(() => apiKeyRef.current?.focus()); }}>
             <Rocket size={16} /><span className="login-option-text"><span className="login-option-title">PPtoken 推荐</span><small>中转线路 · 粘贴 Key 即用</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "openai" ? "active" : ""}`} onClick={() => { setMode("openai"); setExpanded((open) => (mode === "openai" ? !open : true)); setEndpointOpen(false); }}>
+          <button type="button" className={`login-option ${expanded && mode === "openai" ? "active" : ""}`} onClick={() => { setMode("openai"); setExpanded((open) => (mode === "openai" ? !open : true)); setEndpointOpen(false); }}>
             <CircleGauge size={16} /><span className="login-option-text"><span className="login-option-title">OpenAI 官方订阅</span><small>ChatGPT 账号设备码登录</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "relay" ? "active" : ""}`} onClick={() => { setMode("relay"); setExpanded((open) => (mode === "relay" ? !open : true)); setEndpointOpen(false); }}>
+          <button type="button" className={`login-option ${expanded && mode === "relay" ? "active" : ""}`} onClick={() => { setMode("relay"); setExpanded((open) => (mode === "relay" ? !open : true)); setEndpointOpen(false); }}>
             <Wallet size={16} /><span className="login-option-text"><span className="login-option-title">中转站账户</span><small>sub2api 网关 · 余额/套餐</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "custom" ? "active" : ""}`} onClick={() => { setMode("custom"); setExpanded((open) => (mode === "custom" ? !open : true)); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}>
+          <button type="button" className={`login-option ${expanded && mode === "custom" ? "active" : ""}`} onClick={() => { setMode("custom"); setExpanded((open) => (mode === "custom" ? !open : true)); setEndpointOpen(false); queueMicrotask(() => { apiBaseRef.current?.focus(); apiBaseRef.current?.select(); }); }}>
             <Settings2 size={16} /><span className="login-option-text"><span className="login-option-title">自定义 API</span><small>任意 OpenAI 兼容端点</small></span>
           </button>
-          <button type="button" className={`login-option ${mode === "cloud" ? "active" : ""}`} onClick={() => { setMode("cloud"); setExpanded((open) => (mode === "cloud" ? !open : true)); setEndpointOpen(false); }}>
+          <button type="button" className={`login-option ${expanded && mode === "cloud" ? "active" : ""}`} onClick={() => { setMode("cloud"); setExpanded((open) => (mode === "cloud" ? !open : true)); setEndpointOpen(false); }}>
             <Cloud size={16} /><span className="login-option-text"><span className="login-option-title">云账号</span><small>登录即用，自动配好模型/知识库/记忆</small></span>
           </button>
         </div>

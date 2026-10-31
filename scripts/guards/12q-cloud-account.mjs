@@ -217,6 +217,20 @@ ok(
   /login-option-title">云账号</.test(loginSrc),
   "首启登录页有「云账号」选项卡（缺了 ⇒ 新用户看不到这套能力）",
 );
+/* ⛔⛔ 10-31 用户截图（PPcode 登录页）：「没有选中的时候不要亮着」——
+   登录方式卡片的选中态原来只看 `mode`（默认 pptoken），所以**收起态第一张永远是亮的**，
+   看起来像已经被选中、可表单根本没展开。选中态必须与 `expanded` 同时成立。 */
+ok(
+  !/\$\{mode === "(pptoken|openai|relay|custom|cloud)" \? "active" : ""\}/.test(loginSrc)
+  && (loginSrc.match(/expanded && mode === "(pptoken|openai|relay|custom|cloud)" \? "active"/g) || []).length >= 5,
+  "登录方式卡的选中态绑定 expanded：收起态一张都不亮（只列选项时不该有\"已选中\"的观感）",
+);
+/* ⛔ 同轮：云管理登录页不要放外链注册入口（用户：「注册界面有就行」）——
+   登录页只负责登录，注册是上方「注册」页签的事；两处都有会让人以为要先去网页注册。 */
+ok(
+  !/还没有云账号\?去云端用户中心注册|authx-cloud-link/.test(loginSrc),
+  "云管理登录页不放「去云端用户中心注册」外链（注册页里有入口，登录页只登录）",
+);
 const provisionSrc = read("src/lib/cloud-provision.mjs");
 ok(
   /cloudAuthLogin/.test(loginSrc) && /provisionCloud/.test(loginSrc)
