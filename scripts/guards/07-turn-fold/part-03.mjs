@@ -818,15 +818,20 @@ export async function run() {
   (/const rawList: Array<\{ provider\?: string \}> = raw \? JSON\.parse\(raw\) : \[\]/.test(mainSrc67) ? ok : fail)(
     "【67】自愈按原始档案判断是否需要改名（不是按已归一化的结果）"
   );
-  const calls67 = (mainSrc67.match(/model_provider: safeProviderId\(/g) || []).length;
+  /* ⛔ 10-31 口径升级：建会话时 `model_provider` 一律写**统一别名 HARNESS_PROVIDER_ID**（= `harness`），
+     原始供应商 id 只喂 `bridgeDial` 做上游协议路由。原因：config.toml 顶层恒为 `model_provider = "harness"`，
+     传原始 id（custom964/cloud）会被引擎拒 —— `This chat uses custom964, but your current provider is harness`。
+     ⛔ 本条守卫的**原意仍然成立**：写进 config 的必须是**归一化过的安全 id**（保留名 `openai` 会让引擎
+     整份拒载）。`HARNESS_PROVIDER_ID` 天然满足（恒不是保留名），所以两种写法都算过： */
+  const calls67 = (mainSrc67.match(/model_provider: (?:safeProviderId\(|HARNESS_PROVIDER_ID)/g) || []).length;
   (calls67 >= 7 ? ok : fail)(
-    `【67】会话级 config 覆盖也过 safeProviderId（${calls67} 处）`
+    `【67】会话级 config 覆盖都写归一化/别名 provider（${calls67} 处）`
   );
   /* 09-22：harness-services.ts 拆成 memory-store.ts + scheduler.ts（原文件是两个无关的域）⇒ 断言跟着搬 */
   for (const rel of ["electron/channel-bot.ts", "electron/scheduler.ts"]) {
     const src = readFileSync(join(ROOT, rel), "utf8");
-    (/model_provider: safeProviderId\(model\.provider\)/.test(src) ? ok : fail)(
-      `【67】${rel} 的会话/子代理 config 同样过 safeProviderId`
+    (/model_provider: (?:safeProviderId\(model\.provider\)|HARNESS_PROVIDER_ID)/.test(src) ? ok : fail)(
+      `【67】${rel} 的会话/子代理 config 同样写归一化/别名 provider`
     );
   }
 }

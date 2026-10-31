@@ -1,4 +1,5 @@
-# 功能更新清单（FEATURE LEDGER）
+# 功能更新清单（FEATURE LEDGER）| 2026-10-31 | 插队分段：门判修正（上一版在真实数据上恒假） | 修复 | `src/lib/turn-flow-segments.mjs`（新增纯函数）、`SessionTurn/03-turn-view.tsx`、守卫 07【44a】/11q | 用户两轮点名「排队/插队消息发出去后，后续 codex 消息要在我的消息下面」（附 WorkBuddy 对照截图）。上一版门判写成「首条用户消息**之前**已有响应项」⇒ 真实 rollout 是 `USER1→tool→tool→USER2→tool→answer`（回合以用户消息开头）⇒ 恒 false，分段渲染从未生效。改法：切段抽成纯函数 `splitFlowSegments/shouldFlowSegment/headSegmentIndex`，门判 = **回合内 ≥2 条普通用户消息**；头像/「正在处理 N 秒」挂首段**实块**（首段常为空段）。守卫 07 新增【44a】8 条**行为**断言（用真机顺序跑纯函数）+ 顺带修【67】provider 别名口径、【122】completedSkin 门。 | 本轮 |
+
 
 > **定位**：功能新增/改动的**权威台账**。发布时写更新日志、GitHub Release Notes、
 > `whats-new-notes.ts` 要点，一律以本文件为数据源——不重新翻 commit、不靠记忆。

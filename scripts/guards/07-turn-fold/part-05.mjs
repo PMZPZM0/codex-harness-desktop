@@ -865,7 +865,9 @@ export async function run() {
     const seqLine = readFileSync(join(ROOT, "src", "features", "session-queue", "SessionQueue.tsx"), "utf8")
       .replace(/\r/g, "")
       .replace(/\/\*[\s\S]*?\*\//g, "");
-    const leadTernary = (seqLine.match(/variant=\{(?:index === leadFoldIndex|lead) \? "completed" : "summary"\}/g) || []).length;
+    /* ⛔ 10-31：插队分段后「completed 皮肤只给 lead 段」多了一道 `completedSkin` 门
+       （非末段不挂回合收尾皮肤 —— 耗时属于整个回合）。两种写法都算：带门与不带门。 */
+    const leadTernary = (seqLine.match(/variant=\{(?:index === leadFoldIndex|lead)(?: && completedSkin)? \? "completed" : "summary"\}/g) || []).length;
     (leadTernary === 2 ? ok : fail)(
       `【122】两条渲染分支的 completed 皮肤都只给 lead 段（实得 ${leadTernary} 处，需 2）`
     );

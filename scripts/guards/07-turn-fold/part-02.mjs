@@ -73,6 +73,32 @@ export async function run() {
 
 {
 {
+    /* ⛔⛔ 10-31 用户令（两次点名 + WorkBuddy 对照截图）：「排队/插队消息发出去后，
+       后续 codex 消息要在我这条消息下面」。行为断言 —— 用**真机 rollout 的 item 顺序**跑纯函数：
+         USER1 → tool → tool → USER2 → tool → answer
+       上一版的门判写成「首条用户消息之前已有响应项」，在这个形状上恒为 false（回合以用户消息开头）
+       ⇒ 分段渲染永远不跑，气泡还被打包到卡片顶上。这条断言钉住的是**行为**，不是正则形状。 */
+    console.log(C.bold("\n【44a】插队消息分段（后续内容必须在用户消息下面）"));
+    const flow = await import("../../../src/lib/turn-flow-segments.mjs");
+    const u = (id) => ({ id, type: "userMessage", text: id });
+    const tool = (id) => ({ id, type: "mcpToolCall" });
+    const real = [u("u1"), tool("t1"), tool("t2"), u("u2"), tool("t3"), { id: "a1", type: "agentMessage", text: "答" }];
+    const segs = flow.splitFlowSegments(real);
+    (segs.length === 3 ? ok : fail)(`【44a】真机顺序切成 3 段（首段空 + 两条用户消息段），实得 ${segs.length}`);
+    (segs[0].user === null && segs[0].items.length === 0 ? ok : fail)("【44a】首段是空段（回合以用户消息开头）——⛔ 不能因为首段空就不分段");
+    (segs[1].user.id === "u1" && segs[1].items.map((i) => i.id).join(",") === "t1,t2" ? ok : fail)("【44a】段内 items 保持流中顺序（u1 只带它之后的 t1/t2）");
+    (segs[2].user.id === "u2" && segs[2].items.map((i) => i.id).join(",") === "t3,a1" ? ok : fail)("【44a】插队消息 u2 之后的 tool/答复落在它**自己的段**里（= 显示在它下面）");
+    (flow.shouldFlowSegment(segs) === true ? ok : fail)("【44a】≥2 条普通用户消息 ⇒ 走分段渲染（上一版这条是 false，功能等于没生效）");
+    (flow.shouldFlowSegment(flow.splitFlowSegments([u("u1"), tool("t1")])) === false ? ok : fail)("【44a】单条用户消息 ⇒ 维持旧渲染（气泡在卡片上方，别动既有路径）");
+    (flow.headSegmentIndex(segs) === 1 ? ok : fail)(`【44a】头像/计时挂首段实块（实得 ${flow.headSegmentIndex(segs)}；写死 0 会整轮没头像）`);
+    const groupOnly = flow.splitFlowSegments([u("u1"), tool("t1"), { id: "g1", type: "userMessage", text: "[群事件] 群消息" }, tool("t2")], {
+      isGroupEvent: (text) => String(text ?? "").includes("群事件"),
+      textOf: (item) => String(item.text ?? ""),
+    });
+    (flow.shouldFlowSegment(groupOnly) === false ? ok : fail)("【44a】群广播（[群事件]）不算分段边界（它由悬浮播报承担）");
+  }
+
+{
     console.log(C.bold("\n【44】回合结束原因（为什么停 / 能不能接着跑）"));
     const { describeTurnStop, turnHeadline, isAwaitingTurnClose } = await import("../../../src/lib/turn-stop-reason.mjs");
     const appSrc = readAppUi();
