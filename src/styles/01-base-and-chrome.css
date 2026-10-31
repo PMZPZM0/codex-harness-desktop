@@ -385,6 +385,10 @@ button {
 }
 .app-shell {
   background: var(--bg);
+  /* 右栏宽度的**静态默认**（10-31）：JSX 会用 inline style 覆盖成用户拖出来的宽度并落盘。
+     ⛔ 这个默认必须有：`var(--panel-w, 308px)` 只是 fallback，判据要求"引用即定义"
+        （否则暗色下会恒落写死值）。 */
+  --panel-w: 308px;
   /* ⛔ 10-31 右侧抽屉化：模板**恒为 4 条轨道**（侧栏 / 主区 / 1px 分隔 / 右栏），
      右栏宽度走 `--right-w`（0px ↔ 面板宽）。之前是"开右栏才换 4 列模板"——
      轨道数变了 CSS 就不能插值，右栏和主区一起瞬移（和左侧折叠同一个病根）。 */
@@ -1261,11 +1265,14 @@ html.fx-ripple::view-transition-new(root) {
 .app-shell { background: var(--panel); }
 :root[data-theme="dark"] .app-shell { background: var(--bg); }
 .app-shell > .topbar {
-  margin: 6px 6px 0 3px;
+  /* ★ 10-31 用户令「右上角系统按键要跟图标对齐」：原生窗口钮固定在窗口顶（overlay），
+     顶栏一旦下移就永远差那几像素 ⇒ 顶栏改回贴顶（上/下/左都不画线），只保留右侧缝与外圈线。 */
+  margin: 0 6px 0 3px;
   border: 1px solid var(--line-soft);
+  border-top: 0;
   border-left: 0;
   border-bottom: 0;
-  border-radius: 12px 12px 0 0;
+  border-radius: 0;
   background: var(--bg);
 }
 .app-shell > .workspace {
@@ -1293,7 +1300,7 @@ html.fx-ripple::view-transition-new(root) {
 .app-shell > .topbar::after { display: none; }
 .app-shell > .sidebar { border-right: 0; }
 /* 主区/右栏之间的拖拽条：一条很细的灰线（10-31 用户令），悬停/拖动变主题色 */
-.app-shell.with-context > .panel-divider { background: var(--line); }
+.app-shell.with-context > .panel-divider { background: var(--line-soft); }
 .app-shell.with-context > .panel-divider:hover,
 .app-shell.with-context > .panel-divider:active { background: var(--muted); }
 :root[data-theme="dark"] .app-shell > .topbar,
