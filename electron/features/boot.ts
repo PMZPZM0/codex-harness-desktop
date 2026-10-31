@@ -18,6 +18,7 @@ import { reasoningItemText } from "../reasoning-text";
 import { remoteStepOf } from "../remote-step";
 import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
+import { initInternalThreads, loadInternalThreads } from "../internal-threads";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { debugMemoryCapture } from "../memory-capture-debug";
 import { bossMemoryWorkspace, isBossSession } from "../boss-groups/session-registry";
@@ -429,6 +430,13 @@ export async function bootApp() {
   // 已删除会话的墓碑必须在**第一次 thread/list 之前**载入：渲染层启动就会拉列表，靠懒加载
   // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
   try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
+  /* ⛔ 内部会话（内省/蒸馏用的一次性会话）登记表：必须在**第一次 thread/list 之前**载入，
+     否则重启后的首屏会把它们当普通会话画出来（10-31 用户截图：侧栏刷出一排「你是这个桌面助手的…」）。
+     首次运行会顺便认领历史遗留。失败不阻塞启动。 */
+  try {
+    initInternalThreads(app.getPath("userData"));
+    await loadInternalThreads(String(codexHome ?? ""));
+  } catch (error) { console.warn("internal-threads 载入失败：", error); }
 
   /* 10-29 用户令：启动时收口「孤立工作区」。
      两类：记录在但目录不在（会话被外部删掉 / 用户手删了目录）、目录在但记录不在

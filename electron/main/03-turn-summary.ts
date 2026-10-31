@@ -7,6 +7,7 @@ import { HARNESS_PROVIDER_ID, RESERVED_PROVIDER_IDS, safeProviderId, stripReserv
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "./01-model-catalog";
 import { internalThreads, server } from "../runtime-refs";
+import { rememberInternalThread } from "../internal-threads";
 import { threadModelOf } from "../thread-model";
 import { bridgeDial } from "../bridge-dial";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -104,6 +105,9 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
   });
   const threadId = started.thread.id;
   internalThreads.add(threadId);
+  /* ⛔ 必须落盘（10-31）：只放内存的话重启就忘了 ⇒ 这些内省会话又会爬回侧栏。
+     见 electron/internal-threads.ts 的三道闸说明。 */
+  rememberInternalThread(threadId);
   try {
     const turn: any = await server.request("turn/start", {
       threadId,

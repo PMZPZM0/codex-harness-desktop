@@ -31,7 +31,7 @@ import { rendererActiveByWindow } from "./renderer-fuse";
 import { app } from "electron";
 import { deletedThreadIds, purgeDeletedThread } from "./thread-deletion";
 import { bridgeDial, mutableState, readCustomModel } from "../main";
-import { codexHome, delegateRegistry, engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
+import { codexHome, delegateRegistry, engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
 import { removeSessionWorkspace } from "./session-workspace";
 import { clearSessionPrivateMemory } from "../memory-fabric";
@@ -253,7 +253,14 @@ export const codexFeature = defineFeature<null>({
           // 「记录已丢失」标记：判据与实测口径见 session-tools.ts 的 markMissingRollouts 注释
           const present = new Set(fallback.map((entry: any) => String(entry?.id ?? "").toLowerCase()));
           markMissingRollouts(merged, present);
-          result = { ...response, data: merged };
+          /* ⛔⛔ 10-31 用户（截图 + 原话「开个中枢新会话，一直自动新建这个，有病吗」）：
+             内省 / 蒸馏 / 记忆提炼用的**内部会话**（`internalThreads`，由 distillSummarize 建）
+             原先只挡了事件转发，**没挡列表** ⇒ 每轮复盘都在侧栏多出一行
+             「你是这个桌面助手的…」（标题就是内省提示词首句），看着像应用在自我繁殖。
+             ⇒ 列表出口统一剔除：这些会话是宿主的临时工作区，用户不该看见，也不该被点开续聊。
+             ⛔ 剔除点放在**这里**（thread/list 唯一出口）：只挡渲染层的话，
+                引擎索引 / rollout 兜底扫描两条来源会各自漏一次。 */
+          result = { ...response, data: merged.filter((entry: any) => !internalThreads.has(String(entry?.id ?? ""))) };
         } catch (error: any) {
           console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
         }
