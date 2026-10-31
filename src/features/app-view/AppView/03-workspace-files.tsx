@@ -4,11 +4,19 @@
  * 只读预览：文档排版 / 代码高亮 / 图片 / PDF；二进制给占位并引导「默认应用」。
  * ⛔ 读文件走 `window.codex.readFile`（同一道可信根闸）；⛔ 不在这里做写入/编辑（编辑仍走居中编辑器）。
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, FileText, FolderOpen, RotateCcw, ChevronsUp, ChevronsDown } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "../../../components/FileTypeIcon";
 import { Spinner } from "../../../components/CardShell";
 import { Markdown, FilePreviewCode } from "../../markdown";
+/* ⛔ 10-31 用户：「这个为啥底色还不统一」——右栏代码预览是**三层各自上色**：
+   ① `.file-preview-code` 外壳 = var(--panel)（还带 14/16 的内边距）
+   ② 内层（主题块）= 代码主题自己的底色（如 #282c34）
+   ③ `code` 内联 = 同一个主题色
+   ⇒ 外壳那圈内边距永远露出一条与代码区不同的颜色。修法不是再调一条 border，
+   而是让**滚动区本身就用代码主题的底色**（下面 body 的 inline style），外壳透明。 */
+import { useCodeSettings } from "../../../lib/code-settings";
+import { codeThemes } from "../../../lib/code-themes";
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, decodeText } from "../../../hooks/useFilePreview";
 import { toFileUrl } from "../../../lib/file-url.mjs";
 /* 卡片路径打不开时的回落（会话台账里同名真实文件），与居中编辑器同一个实现 */
@@ -92,6 +100,14 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
 
   const name = path ? nameOf(path) : "";
   const ext = path ? fileExtOf(path) : "";
+  /* 代码预览的底色 = 当前代码主题的 background（单一真相源：lib/code-themes 的注册表） */
+  const codeSettings = useCodeSettings();
+  const codeSurface = useMemo(
+    () => (codeThemes.find((theme) => theme.id === codeSettings.theme) ?? codeThemes[0]).background,
+    [codeSettings.theme],
+  );
+  const isMarkdown = /^mdx?$|^markdown$/i.test(state.language);
+  const usesCodeSurface = state.status === "ok" && state.kind === "text" && !isMarkdown;
   return (
     <div className="workspace-file-preview" data-testid="workspace-file-preview">
       <div className="workspace-file-preview-head">
@@ -123,7 +139,10 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
           {state.resolvedPath || path}
         </div>
       )}
-      <div className="workspace-file-preview-body">
+      <div
+        className="workspace-file-preview-body"
+        style={usesCodeSurface ? { background: codeSurface } : undefined}
+      >
         {state.status === "idle" ? (
           <div className="workspace-file-preview-empty">
             <FileText size={26} />
@@ -148,7 +167,7 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
             <span>用系统默认应用打开它，或在上面的项目树里换一个文本 / 图片 / PDF 文件。</span>
             <button type="button" onClick={() => void window.codex.shellOpen?.(path)}><ExternalLink size={12} />默认应用打开</button>
           </div>
-        ) : /^mdx?$|^markdown$/i.test(state.language) ? (
+        ) : isMarkdown ? (
           <div className="workspace-file-preview-markdown markdown"><Markdown>{state.content}</Markdown></div>
         ) : (
           <FilePreviewCode
