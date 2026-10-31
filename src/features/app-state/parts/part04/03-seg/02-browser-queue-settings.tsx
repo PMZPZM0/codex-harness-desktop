@@ -155,7 +155,6 @@ export function usePart04c2(bag: Bag) {
     const armedDue = bag.armPinForReleasedQueue(threadId, "queue-timer");
     // 与「立即」同款：定时释放的消息也要被 429 兜底覆盖
     bag.armRetryForQueueRelease(threadId, entry.input);
-    if (armedDue) showQueuedOptimistic(bag, entry.input);
     const busy = bag.runningThreadIdsRef.current.has(threadId);
     if (busy) {
       try {
@@ -168,6 +167,16 @@ export function usePart04c2(bag: Bag) {
       }
       return;
     }
+    /* ⛔⛔ 批量审查（10-31）抓到的两个洞（都是本轮引入）：
+       ① 乐观气泡原来放在 busy 判定**之前** ⇒ 忙时重排（消息还没发出去）也会上屏；
+       ② 新回合释放路径没重置「安全阀」状态（sawRunningTurnRef）—— 旧回合刚 completed 的瞬间
+          回收阀看到「没在跑 + 上轮跑过」⇒ 气泡上屏几毫秒就被撤（与正常发送的 send 路径
+          显式重置同口径，见 part08/02-seg/send.tsx）。 */
+    if (armedDue) {
+      bag.sawRunningTurnRef.current = false;
+      bag.optimisticTurnIdRef.current = null;
+      showQueuedOptimistic(bag, entry.input);
+    }
     try {
       await window.codex.request("thread/queue/start", { threadId, queuedSubmissionId: id });
       if (bag.threadRef.current?.id === threadId) bag.setQueue((current) => current.filter((item) => item.id !== id));
@@ -179,8 +188,10 @@ export function usePart04c2(bag: Bag) {
         // 与引擎自动启动撞车：消息其实已发出（同「立即」的竞态口径），按成功处理
         bag.dbg("queue-timer-raced-by-engine", { threadId, message });
       } else if (/not found|no such|empty|找不到/i.test(message)) {
-        // 条目已被删/已被启动：静默
+        // 条目已被删/已被启动：静默；前者消息不会出现 ⇒ 乐观气泡一并撤（批量审查补）
+        if (armedDue) bag.setOptimisticInput(null);
       } else {
+        if (armedDue) bag.setOptimisticInput(null);
         bag.showToast("定时发送失败", message, threadId);
       }
     }
@@ -500,7 +511,12 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
       }
     }
     const armedForStart = bag.armPinForReleasedQueue(bag.thread.id, "queue-start");
-    if (armedForStart && entry) showQueuedOptimistic(bag, entry.input);
+    if (armedForStart && entry) {
+      /* ⛔ 新回合释放：同 releaseQueuedTimerDue，重置安全阀状态（否则气泡上屏即被回收）。 */
+      bag.sawRunningTurnRef.current = false;
+      bag.optimisticTurnIdRef.current = null;
+      showQueuedOptimistic(bag, entry.input);
+    }
     // 「立即」启动的回合同样要被 429 兜底覆盖（用排队条目自己的 input）
     bag.armRetryForQueueRelease(bag.thread.id, entry?.input);
     try {

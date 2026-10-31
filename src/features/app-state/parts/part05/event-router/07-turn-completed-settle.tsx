@@ -128,6 +128,10 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
                消息在下、「等待模型回复」状态条在消息下面、回复再下面；不能干等引擎回声。
                乐观气泡由既有确认逻辑合并（真实 userMessage 落地即接管）；失败路径显式清掉。 */
             if (armedByAutoStart) {
+              /* ⛔ 新回合释放：重置安全阀状态（旧回合刚 completed 的瞬间回收阀会把气泡上屏即撤，
+                 与正常发送的 send 路径显式重置同口径 —— 批量审查 10-31 抓到的洞）。 */
+              bag.sawRunningTurnRef.current = false;
+              bag.optimisticTurnIdRef.current = null;
               bag.setOptimisticInput({ id: crypto.randomUUID(), type: "userMessage", content: head.input ?? [] });
               if (bag.threadRef.current?.id === params.threadId) bag.showToast("消息发送成功", "排队消息已发出");
             }
