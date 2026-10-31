@@ -442,7 +442,13 @@
   cursor: pointer;
   overflow: hidden;
 }
-.account-avatar:hover { opacity: .85; }
+/* 10-31 用户令（第二次澄清）：头像 hover **要有**反馈 —— 描边环 + 轻微提亮（像被选中）。
+   ⛔ 不换底色：头像本体是不透明图片，底色看不见；环画在外圈才有效果。 */
+.account-avatar { transition: box-shadow .15s ease, opacity .15s ease; }
+.account-avatar:hover {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 38%, transparent);
+  opacity: .92;
+}
 .account-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
 .account-avatar-emoji { font-size: 15px; line-height: 1; }
 .account-avatar-letter { font-size: 12px; font-weight: 600; }
