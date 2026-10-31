@@ -1920,8 +1920,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (codeOnly(mainSrc).includes("buildDispatchCatalog") && codeOnly(mainSrc).includes("mobileMentionBlock(mentions)") && relaySrc.includes("allowedKinds") ? ok : fail)(
       "【139e】@ 提及与电脑端同一目录（专家/团队/子智能体/CLI），主进程过滤 kind 后注入点名块"
     );
-    (relaySrc.includes("mobile-remote-v0.1.12") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.12）"
+    (relaySrc.includes("mobile-remote-v0.1.13") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.13）"
     );
   }
 }

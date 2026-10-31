@@ -251,6 +251,8 @@ img.home-logo{object-fit:cover;background:#fff;padding:0}
 .home-thread .ht-badge{flex:none;padding:1px 7px;border-radius:6px;font-size:10.5px;background:var(--accent-soft);color:var(--accent)}
 .home-empty-hint{font-size:12px;color:var(--faint,#a3a39c);text-align:center;padding:8px 0 2px}
 .home-skel{height:52px;border:1px dashed var(--line);border-radius:14px;background:color-mix(in srgb,var(--text) 3%,var(--panel))}
+.hub-logo{display:flex;align-items:center;justify-content:center;font-size:26px;background:linear-gradient(135deg,#f0b13b,#e0873f)!important;color:#fff;box-shadow:0 8px 20px rgba(224,135,63,.28)!important}
+.home-groups{display:flex;flex-direction:column;gap:10px}
 html[data-theme="dark"] .home-hero{background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 22%,#161a20),#161a20 62%)}
 html[data-theme="dark"] .home-thread{background:#161a20}
 /* ── 主题：白天 / 黑夜（10-31 用户令）──
@@ -952,14 +954,35 @@ async function renderHome() {
     return;
   }
   body.innerHTML = "";
-  const head = makeEl("div", "home-sec-head");
+  /* 中枢首页 v2（10-31 用户：「没做中枢会话首页」）：与普通首页同一套骨架 */
+  const page = makeEl("div", "home-page");
+  const hero = makeEl("div", "home-hero hub-hero");
+  hero.appendChild(makeEl("div", "home-logo hub-logo", "👑"));
+  hero.appendChild(makeEl("div", "home-greet", "中枢工作台"));
+  hero.appendChild(makeEl("div", "home-sub", "群、成员、任务都在这里；发消息即开中枢会话。"));
+  page.appendChild(hero);
+  const quick = makeEl("div", "home-quick");
+  const newHub = makeEl("button", "primary", "＋ 新建中枢会话");
+  newHub.type = "button";
+  newHub.onclick = () => { void startSession(true); };
+  const refresh = makeEl("button", null, "↻ 刷新群");
+  refresh.type = "button";
+  refresh.onclick = () => { void renderHome(); };
+  quick.appendChild(newHub);
+  quick.appendChild(refresh);
+  page.appendChild(quick);
+  const head = makeEl("div", "home-section");
   head.appendChild(makeEl("b", null, "我的群"));
-  body.appendChild(head);
+  head.appendChild(makeEl("span", null, groups.length ? groups.length + " 个" : ""));
+  page.appendChild(head);
+  const listHost = makeEl("div", "home-groups");
+  page.appendChild(listHost);
+  body.appendChild(page);
   if (!groups.length) {
     const empty = makeEl("div", "home-empty");
     empty.appendChild(makeEl("div", null, "还没有群。"));
-    empty.appendChild(makeEl("div", null, "在电脑端建群（群管理）后，这里会出现群卡：成员、事件、未完成都能看，也能直接进中枢。"));
-    body.appendChild(empty);
+    empty.appendChild(makeEl("div", null, "还没有群。点上面「新建中枢会话」直接开工，或去电脑端建群。"));
+    listHost.appendChild(empty);
     return;
   }
   groups.forEach((group) => {
@@ -976,6 +999,7 @@ async function renderHome() {
       + (typeof group.openTaskCount === "number" ? " · " + group.openTaskCount + " 项未完成" : "")));
     header.appendChild(title);
     if (news) header.appendChild(makeEl("span", "home-dot"));
+    header.appendChild(makeEl("span", "ht-go", "›"));
     card.appendChild(header);
 
     if (group.members && group.members.length) {
@@ -987,7 +1011,7 @@ async function renderHome() {
     }
 
     const events = makeEl("ul", "home-events");
-    const recent = (group.recentEvents || []).slice(0, 3);
+    const recent = (group.recentEvents || []).slice(0, 1);
     if (!recent.length) events.appendChild(makeEl("li", null, "群里还没有动静"));
     recent.forEach((event) => {
       const line = makeEl("li");
@@ -1005,7 +1029,7 @@ async function renderHome() {
     actions.appendChild(enter);
     actions.appendChild(manage);
     card.appendChild(actions);
-    body.appendChild(card);
+    listHost.appendChild(card);
   });
   body.appendChild(makeEl("div", "home-hint", "群增删 / 派活 / 审查在电脑端操作；手机上直接说话即可。"));
 }
