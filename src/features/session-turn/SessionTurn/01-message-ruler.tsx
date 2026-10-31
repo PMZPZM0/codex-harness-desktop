@@ -52,6 +52,11 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
      `wheelWave` 状态，最后一次点亮者决定何时收 —— 同时用时差不超过 600ms，看不出打架）。 */
   const waveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (waveTimerRef.current) clearTimeout(waveTimerRef.current); }, []);
+  /* 镜头内滚轮的处理器（原生监听只绑一次 ⇒ 经这个 ref 取最新闭包）。
+     ⛔⛔ 必须声明在**这里**（hooks 区、提前 return 之前）：10-31 它一度写在
+     `if (allMarks.length < 1 || …) return null` 之后 ⇒ 首次渲染少调一个 hook、有刻度时多调一个
+     ⇒ React #310 整页白屏（用户截图实锤）。与 10-26 那次是同一个坑。 */
+  const lensCtxRef = useRef<null | ((dir: number) => void)>(null);
   /* 波浪**只在滚轮滚动时**出现（10-24 用户：「默认不触发波浪效果，只有滚轮滚动的时候才触发」
      「现在不滚动也触发，看着不太舒服」）。hover 是显式交互，仍然以鼠标位置为准。 */
   const [wheelWave, setWheelWave] = useState(false);
@@ -280,7 +285,6 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
      + 棘轮咔哒（ruler 通道）+ 走到窗口边缘把刻度窗口滑一格（= 外面刻度线一起滚）。
      ⛔ 面板**不动**（top/rowY 不变）：它是"镜头"，镜头不该跟着内容跑；动的只有行。
      ⛔ 不复用轨道那条滚轮监听：那条是"一次滑一页"（RULER_PAGE=5），在镜头里会跳 5 格。 */
-  const lensCtxRef = useRef<null | ((dir: number) => void)>(null);
   const stepLens = (dir: number) => {
     if (!lens) return;
     const track = trackRef.current;

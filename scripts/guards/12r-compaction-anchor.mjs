@@ -254,6 +254,17 @@ ok(/wave-0" : dist === 1 \? " wave-1" : dist === 2 \? " wave-2"/.test(ruler)
   && /playWheelTick\(waveDirRef\.current, \{ channel: "scroll", minGapMs: 28 \}\)/.test(ruler)
   && /playWheelTick\(direction, \{ channel: "ruler", minGapMs: 30 \}\)/.test(ruler),
   "放大镜叠加在原有反馈之上：波浪（wave-0/1/2）+ 三条播声通道（hover/scroll/ruler）全部保留");
+/* ⛔⛔ 10-31 事故（用户截图「界面发生错误 / React #310」）：`lensCtxRef = useRef(...)` 被写在
+   `if (allMarks.length < 1 || !scrollable || containerNarrow) return null;` **之后** ——
+   没有会话时提前 return（少调一个 hook），一有刻度就多调一个 ⇒ 钩子数变化 ⇒ 整页白屏。
+   与 10-26 那次是同一个坑（那次是 lastHoverRef）。判据：提前 return 之后**不许**再有任何 hook 调用。 */
+{
+  /* ⛔ 锚点必须是**整行语句**：只写 `if (allMarks.length < 1` 会命中我自己上面那段说明里的引用，
+     切片就退回到 hooks 区，把合法的 useRef 也算进去（假红）。 */
+  const afterEarly = ruler.slice(ruler.indexOf("if (allMarks.length < 1 || !scrollable || containerNarrow) return null;"));
+  ok(afterEarly.length > 0 && !/\buse(State|Ref|Effect|Memo|Callback|LayoutEffect)\s*[(<]/.test(afterEarly),
+    "提前 return 之后不许再调用任何 hook（#310：首次渲染少调一个、有刻度时多调一个 ⇒ 整页白屏）");
+}
 
 console.log(fails ? `\n【compaction-anchor】${checks} 条断言 / ${fails} 条失败` : `\n【compaction-anchor】${checks} 条断言全部通过`);
 process.exit(fails ? 1 : 0);
