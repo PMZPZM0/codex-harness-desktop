@@ -346,7 +346,6 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           </div>
           <div className="codex-id-info">
             <div className="codex-id-title">Codex 的身份 <span className="codex-id-badge"><Sparkles size={11} />AI 助手</span></div>
-            <div className="codex-id-desc">这里的名字与头像会显示在每条回复的上方</div>
             <label className="codex-id-label" htmlFor="codex-name-input">它的名字</label>
             <div className="codex-id-row">
               <input
@@ -370,7 +369,6 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
         <div className="codex-id-presets">
           <div className="codex-id-presets-head">
             <strong>内置形象</strong>
-            <span>点选即时生效，也可点头像右下角相机上传自己的图片</span>
           </div>
           <div className="codex-id-preset-grid" role="group" aria-label="Codex 内置形象">
             {CODEX_AVATAR_PRESETS.map((preset) => {
