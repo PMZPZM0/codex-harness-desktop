@@ -27,6 +27,7 @@ const OUT = path.join(ROOT, "electron", "builtin-skills", "14-skill-harness-api.
 const DOMAIN_DESCRIPTIONS = {
   "monitor": "任务监控（右栏「监控」页，10-30）：按会话读每轮的技能 / MCP / 插件使用与本轮产物，以及本会话模型产出的「自我改进建议」。建议可编辑、可重生成，一键「进化」会带 self-review 技能直接发回对话。⛔ 全部按 threadId 隔离，一个会话看不到另一个会话的记录",
   "feishu-cli": "飞书官方 CLI（@larksuite/cli）：安装（约 51MB，npm 国内镜像）、飞书应用配置（config init）、用户登录授权（device flow）与命令执行；安装/登录在「设置 → 开发工具 → 飞书 CLI」完成，Codex 通过 feishu_cli 工具调用",
+  "filee": "Filee 文件转换（KnifeLemon/Filee，MIT）：244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档/CAD/3D，不需要 Office 或 LibreOffice）；安装（约 151MB，GitHub release 镜像序 + SHA256 校验）在「设置 → 开发工具 → Filee 文件转换」，Codex 通过 filee_convert 工具调用（--json 结构化回执）",
   "sessionspace": "会话专属工作区（10-29）：每个会话在项目地址下有一个 `<project>/.codex-harness/sessions/<threadId>/`，作为本会话的产物与临时落点。生命周期：新建即建、归档保留（可恢复）、永久删除时目录一并清理、启动时收口孤儿。⛔ 它不是记忆 workspace —— 项目记忆仍按项目根寻址（跨会话共享），会话私有走 private 层",
   "dataaccess": "收藏夹 / 开发日记 / 密码本**对模型开放**的授权闸（10-29）：按「会话 + 模块 + 读/写」三元组授权，默认全关、只存在内存（应用退出即失效）。开启后收藏与日记只允许 read + append（⛔ 不能删/改历史）；密码本只允许存在性查询与「复制到剪贴板」（明文永不出主进程），写入必须先经用户在界面一次性确认。⛔ 没有删除类通道 —— 删除只能由用户本人在界面操作",
   "shortcuts": "键盘快捷键统一读口（10-28）：应用内快捷键存 userData/shortcuts.json，弹窗与「设置 → 控制台 → 键盘快捷键」读写同一份；截图/语音的全局键仍存各自设置文件（它们的 setter 要先注册成功 globalShortcut 再落盘），本域只读来聚合展示。⛔ 模型侧不调用它——改键是用户界面动作，不是工具能力",

@@ -505,7 +505,11 @@ ponytail 写代码模式插件 · **Python（完整版，自带 pip + Tkinter）
 （后 9 件为本次按 50MB 口径新纳入；打包靠上面两个 prepare 脚本现造，CI 干净检出必然命中）。
 
 **按需下载（>50MB / 内核）**：PowerShell 7（282MB）· Git（90MB，缺了首启自动补装）·
-FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）。
+FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· **Filee 文件转换**（151MB，10-30 立，
+KnifeLemon/Filee MIT：244 种格式本地离线互转；GitHub release 镜像序直下 + SHA256 校验 →
+`tools/filee/filee-cli.exe`；配套 Codex 工具 `filee_convert`（`filee:convert`，--json 结构化回执）
+与「控制台 → 组件更新」的手动更新行（`GITHUB_UPDATEABLE`，⛔ 不进后台自动更新）。
+卡片在「设置 → 开发工具 → Filee 文件转换」，CLI 实测口径与守卫见 12aj）。
 全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），
 由「设置 → 开发工具」跳官方安装器；浏览器自动化优先走它，未安装回落 browse-skills
 （`nuphus-call browser_*` 驱动默认浏览器）。**Playwright CLI 与浏览器内核已整体移除。**
@@ -527,6 +531,7 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）。
 | memory_recall / memory_save | 引擎 dynamicTools | 查询/保存分层记忆（用户偏好/项目背景/工作流/任务经验）；发送前应用会自动注入相关记忆 |
 | 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`） | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引。⛔ 识图（视觉辅助插件 / describe_image / harness-media vision）已于 10-30 整体移除，不许加回 |
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
+| filee_convert | dynamicTools（10-30） | 调本机 Filee（`filee-cli.exe`）把文件离线转换格式：244 种（图片/PDF/Office/电子书/音视频/归档/CAD/数据/3D），恒带 `--json` 结构化回执；需在 设置→开发工具→Filee 文件转换 安装（151MB，GitHub 镜像序 + SHA256 校验），装后 developer_instructions 注入第 5 条用法；更新在「控制台 → 组件更新」 |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
 | frontend_get_doc / frontend_apply_doc | dynamicTools（前端开发，10-05；两轮改名：sketch_* → mobile_ui_* → frontend_*） | 读/写应用内「前端开发」画布（m3e-canvas，手机 / 电脑 / 网页三种形态）：读回整份文档 JSON + 摘要；写回=在文档基础上改（追加屏/加部件/调坐标），走上游分享哈希导入、用户实时可见可 Ctrl+Z。写侧先过 `validateSketchDoc` 前置校验（失败回中文原因）；画布没开自动打开等桥就绪；描述列全 44 种 kind，字段速查在内置技能 frontend-canvas。做手机/电脑/网页界面时主动用（常驻指令第 13 条配套） |

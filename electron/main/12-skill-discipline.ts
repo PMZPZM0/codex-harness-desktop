@@ -10,6 +10,8 @@ import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGIST
 import { applyCustomModel } from "../features/custom-model-apply";
 import { readConnectors } from "./07-connectors-io";
 import { readBuiltinPlugins } from "./09-agents-plugins";
+// Filee 安装判定（10-30）：runtimeInstalled 按 marker 探测（win/mac 布局分叉都在那一份真相源里）
+import { devRuntimeSpecs, runtimeInstalled } from "../features/dev-runtimes";
 import { codexHome } from "../runtime-paths";
 import { readCustomModel } from "./01-model-catalog";
 import { server } from "../runtime-refs";
@@ -37,6 +39,8 @@ export async function devInstructionsInput() {
     // 内置媒体插件（生图）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
     // ⛔ 10-30 撤 visionPlugin / nuphusVision：视觉辅助插件整体移除（识图工具 / 命令行 / nuphus 视觉 env 同轮拆）。
     imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
+    // Filee 文件转换（10-30）：装了（tools/filee/filee-cli.exe 在）才注入第 5 条用法段
+    fileeInstalled: Boolean(devRuntimeSpecs.filee && runtimeInstalled("filee", devRuntimeSpecs.filee)),
     mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
     /* 输出风格（10-06）：控制台「回复风格」开关打开的写作风格技能 —— 宿主把它翻译成
        **常驻指令**下发，这样开关一开就每轮生效，不必用户点名（见 electron/output-styles.ts）。
