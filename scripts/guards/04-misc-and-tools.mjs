@@ -1450,8 +1450,10 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (/matchMedia\("\(width<=760px\)"\)/.test(goalPal250) && /ctxMenuOpen\)[\s\S]{0,400}setCtxMenuOpen\(false\)/.test(goalPal250) ? ok : fail)(
       "【250】缩到窄屏必须**逻辑关掉**工作区浮层（只靠 CSS 会出现「按钮没了 ⇒ 浮层点不掉」的死角）"
     );
-    (/padding-right: 145px/.test(readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8")) ? ok : fail)(
-      "【250】顶栏保留 145px 给原生窗口钮（Windows 无边框窗的 WCO 渲染层碰不到）"
+    /* ⛔ 10-31 由 145 → **132**（用户「右上角紧凑一点」）：Windows 原生三钮 46×3=138，
+       顶栏自身还有 6px 外圈 margin ⇒ 132+6=138 才正好贴住；145 是早年估值（多留 13px 空白）。 */
+    (/padding-right: 132px/.test(readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8")) ? ok : fail)(
+      "【250】顶栏预留 132px（= 138 原生钮 − 6 外圈）给原生窗口钮，操作簇右缘正好贴住它"
     );
 
     /* ⛔⛔ 本轮真正的根因（10-03 用户截图「搜索跟调度图标没有隐藏」）：

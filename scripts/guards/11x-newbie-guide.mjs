@@ -234,6 +234,25 @@ const preload = read("electron/preload.ts");
   ok(/\.brand-mark \.sidebar-toggle-arrow \{[\s\S]{0,320}?color: #fff/.test(shellCode),
     "⑩ 折叠箭头 color 必须带 .brand-mark 前缀（否则被 `.brand-row span{color:var(--faint)}` 吃掉、变灰）");
 
+  /* ── ⑪ 顶栏右侧紧凑 + mac 品牌行锚点（10-31 用户：「右上角跟他这样紧凑一点，注意 mac 适配」）─
+     ① 预留区 145→**132**：Windows 原生三钮 46×3=138，顶栏自身还有 6px 外圈 margin ⇒
+        要贴住必须 138−6；② 图标盒 32→**28**（只限 .topbar）、簇间 gap 2→**0**；
+     ③ mac 品牌行 margin-top 32→**38**：顶栏首行已从 44 改 50（6 外圈 + 44 本体），
+        12(侧栏 padding-top) + 38 = 50 才与顶栏底边齐平 —— 锚在 32 会高 6px。 */
+  const threadsCss = codeOnly(read("src/styles/02-sidebar-threads.css"));
+  ok(/\.topbar \{[\s\S]{0,700}?padding-right: 132px/.test(threadsCss),
+    "⑪ 顶栏右侧预留 = 132px（138 原生钮 − 6 外圈）：图标簇右缘正好贴住窗口钮");
+  ok(/\.topbar-actions \{[\s\S]{0,200}?gap: 0;/.test(threadsCss),
+    "⑪ 操作簇 gap = 0（盒内已有内边距，再叠 2px 显散）");
+  ok(/\.topbar \.icon-button \{[\s\S]{0,120}?width: 28px;[\s\S]{0,60}?height: 28px;/.test(threadsCss),
+    "⑪ 顶栏图标盒 28px（⛔ 只限 .topbar：32 是别的面板口径）");
+  ok(/\[data-os=\"darwin\"\] \.sidebar \.brand-row \{[\s\S]{0,320}?margin-top: 38px/.test(threadsCss)
+    && !/\[data-os=\"darwin\"\] \.sidebar \.brand-row \{[^}]*margin-top: 32px/.test(threadsCss),
+    "⑪ mac 品牌行锚点 = 38（12+38=50 = 顶栏底边；⛔ 不许退回 32，那会让品牌行高 6px）");
+  ok(/\[data-os=\"darwin\"\] \.topbar \{[\s\S]{0,160}?padding-right: 16px/.test(threadsCss),
+    "⑪ mac 顶栏把 132 的窗口钮预留全部还回去（红绿灯在左上，右侧不留区）");
+
+
   /* ⛔ 10-31 改为「只有一个 owner 画这条线」：用户两次反馈「还是这么粗」，实测剖面证明粗的不是
      1px 本身，而是 ①主区右边 6px `--panel` 底色带 ②scaleX(.5) 在 dpr=1 下被抗锯齿摊成两个像素
      ③面板自己的 border-left —— 三份叠加。现在只留分隔线一条实心 1px（与左侧同宽同色）。 */
