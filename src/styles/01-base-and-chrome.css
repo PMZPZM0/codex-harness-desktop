@@ -432,20 +432,18 @@ button {
 }
 .app-shell.side-collapsed:not(.narrow) .sidebar {
   z-index: 35;
-  width: 256px;
-  min-width: 256px;
   box-shadow: var(--shadow);
   pointer-events: none;
-  padding: 12px 10px 10px;
-  transition: transform var(--dur-panel) var(--ease-enter);
-  position: fixed;
-  inset: 0 auto 0 0;
-  overflow: hidden;
-  transform: translate(-100%);
+  /* ⛔ 用独立属性 translate（不是 transform）：它在网格里**保持原位与恒定宽度**，
+     只把自己推到视口左侧 ⇒ 折叠/展开都是同一条横向位移，
+     不再出现"在流内 ↔ position:fixed"的位置瞬跳（那是折叠顺、展开硬的原因）。 */
+  translate: -100% 0;
 }
 .app-shell.side-collapsed:not(.narrow) .sidebar.flyout-open {
   pointer-events: auto;
-  transform: translate(0);
+  /* ⛔ 与折叠态同一条属性（translate）：悬停把它滑回原位 —— 就是"抽屉被拉开"。
+     写 transform 会与 translate 叠加成两次位移（表现为拉不出来）。 */
+  translate: 0 0;
 }
 .app-shell.side-collapsed:not(.narrow) .sidebar .brand-row {
   justify-content: flex-start;
@@ -609,6 +607,13 @@ button.brand-mark.sidebar-toggle:hover {
 }
 .sidebar {
   border-right: 1px solid var(--line);
+  /* ⛔ 10-31 抽屉化：宽度**恒定 256**，折叠只做横向平移。
+     原先宽度跟着网格轨道走 ⇒ 展开时是被"压扁→撑开"，侧栏内容一路重排（实测 142→238→256），
+     看起来像"挤开"而不是抽屉滑出。 */
+  width: 256px;
+  min-width: 256px;
+  transition: translate var(--dur-panel) var(--ease-enter);
+  will-change: translate;
   /* 通高：logo 行与顶行（任务名）同一行，不额外多出一行 */
   grid-row: 1 / 3;
   grid-column: 1;
@@ -1194,4 +1199,53 @@ html.fx-ripple::view-transition-new(root) {
     color var(--dur-ui) ease,
     border-color var(--dur-ui) ease,
     box-shadow var(--dur-ui) ease;
+}
+
+/* ★ 10-31 用户令（截图红框在**应用外圈**，不是对话框）：
+   「应用的四边留一点点缝隙，看着舒服、有一点点立体感；上面跟这样连着左边侧边栏」
+   ⇒ 内容卡（顶栏 + 聊天 + 右栏）从窗口上/右/下三边和侧栏各退 6px：
+      顶栏与聊天**连成一张卡**（顶栏底边不画线、聊天顶边不画线），只有外圈有圆角 + 细边；
+      左侧栏贴边通高（截图里它就在框外，红框从它右缘开始）。
+   ⛔ 不用 shell padding：侧栏是 grid-row 1/3，padding 会把它一起缩进去；改成给各块加 margin。
+   ⛔ 原生窗口钮是 overlay：顶栏仍留 145px 让位，卡片上移 6px 不影响按钮命中。 */
+.app-shell { background: var(--panel); }
+:root[data-theme="dark"] .app-shell { background: var(--bg); }
+.app-shell > .topbar {
+  margin: 6px 6px 0 6px;
+  border: 1px solid var(--line-soft);
+  border-bottom: 0;
+  border-radius: 12px 12px 0 0;
+  background: var(--bg);
+}
+.app-shell > .workspace {
+  margin: 0 6px 6px 6px;
+  border: 1px solid var(--line-soft);
+  border-top: 0;
+  border-right: 0;
+  border-radius: 0 0 0 12px;
+  background: var(--bg);
+}
+.app-shell:not(.with-context) > .workspace {
+  border-right: 1px solid var(--line-soft);
+  border-radius: 0 0 12px 12px;
+}
+.app-shell.with-context > .context-panel {
+  margin: 0 6px 6px 0;
+  border: 1px solid var(--line-soft);
+  border-top: 0;
+  border-left: 0;
+  border-radius: 0 0 12px 0;
+  background: var(--bg);
+}
+/* 顶栏与聊天之间不出现横线（同一张卡）；右栏与主区用分隔条当内部分隔线 */
+.app-shell > .topbar::after { display: none; }
+.app-shell.with-context > .panel-divider { background: var(--line-soft); }
+:root[data-theme="dark"] .app-shell > .topbar,
+:root[data-theme="dark"] .app-shell > .workspace,
+:root[data-theme="dark"] .app-shell.with-context > .context-panel { background: var(--panel); }
+@media (max-width: 760px) {
+  .app-shell > .topbar { margin: 4px 4px 0 4px; border-radius: 10px 10px 0 0; }
+  .app-shell > .workspace { margin: 0 4px 4px 4px; border-radius: 0 0 0 10px; }
+  .app-shell:not(.with-context) > .workspace { border-radius: 0 0 10px 10px; }
+  .app-shell.with-context > .context-panel { margin: 0 4px 4px 0; border-radius: 0 0 10px 0; }
 }

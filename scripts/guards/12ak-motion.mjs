@@ -91,5 +91,20 @@ ok(!/\.app-shell\.side-collapsed \{[^}]*grid-template-columns/.test(base),
 ok(/gridTemplateColumns:[\s\S]{0,200}?var\(--side-w/.test(appView),
   "⑤ JSX 的 inline 模板同样用 `var(--side-w)`（否则 inline 一写死就把 CSS 的插值盖掉）");
 
+
+/* ── ⑥ 侧栏抽屉手感（用户："要那种从侧边横向抽屉的感觉"）──────────────────
+   判据：宽度恒定 + 只做横向 translate + 折叠态不再切成 position:fixed。
+   ⛔ 三条缺一条就会退回"压扁再撑开"（实测宽度 142→238→256 的重排）或"折叠顺、展开硬"的位置瞬跳。 */
+ok(/\.sidebar \{[^}]*width: 256px;/.test(base) && /\.sidebar \{[^}]*min-width: 256px;/.test(base),
+  "⑥ 侧栏宽度恒定 256px（跟着网格轨道走会在展开时被压扁重排）");
+ok(/\.sidebar \{[^}]*transition: translate var\(--dur-panel\)/.test(base),
+  "⑥ 侧栏过渡的是 translate（横向抽屉位移），与列宽同一条时长/缓动");
+ok(/\.app-shell\.side-collapsed:not\(\.narrow\) \.sidebar \{[^}]*translate: -100% 0;/.test(base),
+  "⑥ 折叠态用 translate: -100% 推出侧边（抽屉滑出）");
+ok(!/\.app-shell\.side-collapsed:not\(\.narrow\) \.sidebar \{[^}]*position: fixed;/.test(base),
+  "⑥ 负向：折叠态**不许**再切 position:fixed —— 位置切换无法过渡，展开那一下会硬跳");
+ok(/\.sidebar\.flyout-open \{[^}]*translate: 0 0;/.test(base),
+  "⑥ 悬停展开（flyout）同样用 translate 滑回原位（写 transform 会叠加成两次位移、拉不出来）");
+
 console.log(`\n  【motion】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);
