@@ -12,13 +12,13 @@ import { buildRemotePageHtml } from "./remote/web-page";
 import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
-const REMOTE_APK_RELEASE = "mobile-remote-v0.1.11";
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.12";
 
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.11.apk": "f4e8e9e26176e0c16b45ad2592c1155effff32456065ff1d279ae438479d22cf",
-  "PPcodeRemote-0.1.11.apk": "98ee9dfc27c2ff70982d14c47d13131e35b19778ba8db8031dbb75ae2ff07c6c",
+  "CodexRemote-0.1.12.apk": "e742732812c06e6e555016d0fcde45081c3c75f1e04eb7f6e85ce2c5fa4974c1",
+  "PPcodeRemote-0.1.12.apk": "cce1712bfc599c93f39318dfe91ba64a438329636484b4c2b322fd81ec8622f1",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
@@ -54,7 +54,7 @@ type RemoteEvents = {
   /** 群快照（手机中枢首页的群卡 / 群详情）：与桌面群列表同一份映射 */
   listBossGroups?: () => Promise<any[]>;
   /** images = 本机绝对路径（只接受 /api/upload 刚落盘的 remote-uploads 内的文件）；effort ∈ low/medium/high/xhigh */
-  sendMessage?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
+  sendMessage?: (threadId: string, text: string, images?: string[], effort?: string, mentions?: { kind: string; name: string; key?: string }[]) => Promise<void>;
   /** 手机端能力目录：可执行指令 + 技能清单（# 引用用） */
   catalog?: () => Promise<{ commands: { id: string; label: string }[]; skills: { name: string; description?: string }[] }>;
   interruptThread?: (threadId: string) => Promise<void>;
@@ -881,7 +881,13 @@ export class RemoteControlService {
       if (data.type === "send-message") {
         const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
         const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
-        void (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort) ?? Promise.resolve()).then(() => reply({ ok: true })).catch((e) => reply({ error: e.message }));
+        /* @ 点名：只收允许的 kind + 限长，避免手机侧塞任意字符串进系统提示 */
+        const allowedKinds = ["expert", "member", "team", "subagent", "cli"];
+        const mentions = (Array.isArray(data.mentions) ? data.mentions : [])
+          .map((entry: any) => ({ kind: String(entry?.kind ?? ""), name: String(entry?.name ?? "").slice(0, 60), key: String(entry?.key ?? "").slice(0, 80) }))
+          .filter((entry: any) => allowedKinds.includes(entry.kind) && entry.name)
+          .slice(0, 5);
+        void (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort, mentions) ?? Promise.resolve()).then(() => reply({ ok: true })).catch((e) => reply({ error: e.message }));
         return;
       }
     } catch { /* ignore */ }

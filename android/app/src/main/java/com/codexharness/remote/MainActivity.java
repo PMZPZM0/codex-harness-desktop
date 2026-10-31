@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
+import android.speech.RecognizerIntent;
 import android.text.TextUtils;
 import android.util.Base64;
 import android.view.View;
@@ -52,6 +53,8 @@ public class MainActivity extends AppCompatActivity {
     private static final String KEY_BASE = "server_base";
     private static final String KEY_CONNECTED = "connected_once";
     private static final int FILE_CHOOSER_REQUEST = 2001;
+    /** 语音输入（10-31）：系统识别器返回文本后回灌到网页输入框 */
+    private static final int VOICE_REQUEST = 2002;
 
     /** WebView 文件选择回调（＋ → 图片）。⚠️ 一次选择期间只允许一个挂起回调。 */
     private ValueCallback<Uri[]> fileChooserCallback;
@@ -108,6 +111,11 @@ public class MainActivity extends AppCompatActivity {
             public void disconnect() {
                 runOnUiThread(MainActivity.this::confirmDisconnect);
             }
+            /** 语音输入：Android WebView 没有网页语音识别，交给系统识别器（页面收到 onVoiceResult） */
+            @android.webkit.JavascriptInterface
+            public void startVoice() {
+                runOnUiThread(MainActivity.this::startVoiceInput);
+            }
         }, "AndroidRemote");
         findViewById(R.id.connect).setOnClickListener(v -> startConnect(code == null ? "" : code.getText().toString()));
         findViewById(R.id.scan).setOnClickListener(v -> startScan());
@@ -116,7 +124,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.11");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.12");
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -241,6 +249,30 @@ public class MainActivity extends AppCompatActivity {
         /* 连过一次：App 自己用设备秘密换新 cookie 再进对话（⛔ 不再让网页配对页出现） */
         if (prefs().getBoolean(KEY_CONNECTED, false)) autoLogin();
         else showSetup("");
+    }
+
+    private void startVoiceInput() {
+        try {
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "请说话");
+            startActivityForResult(intent, VOICE_REQUEST);
+        } catch (Exception error) {
+            sendVoiceError("本机没有可用的语音识别应用");
+        }
+    }
+
+    private void sendVoiceResult(String text) {
+        if (web == null) return;
+        final String quoted; try { quoted = JSONObject.quote(text); } catch (Exception e) { return; }
+        web.post(() -> web.evaluateJavascript("window.onVoiceResult && onVoiceResult(" + quoted + ")", null));
+    }
+
+    private void sendVoiceError(String message) {
+        if (web == null) return;
+        final String quoted; try { quoted = JSONObject.quote(message); } catch (Exception e) { return; }
+        web.post(() -> web.evaluateJavascript("window.onVoiceError && onVoiceError(" + quoted + ")", null));
     }
 
     private void confirmDisconnect() {
@@ -560,6 +592,18 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        if (requestCode == VOICE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                ArrayList<String> results = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+                if (results != null && !results.isEmpty() && !TextUtils.isEmpty(results.get(0))) sendVoiceResult(results.get(0));
+                else sendVoiceError("没有识别到内容，请再说一次");
+            } else if (resultCode == RESULT_CANCELED) {
+                sendVoiceError("已取消语音输入");
+            } else {
+                sendVoiceError("语音识别失败，请重试");
+            }
+            return;
+        }
         if (requestCode != FILE_CHOOSER_REQUEST) { super.onActivityResult(requestCode, resultCode, data); return; }
         ValueCallback<Uri[]> callback = fileChooserCallback;
         fileChooserCallback = null;

@@ -13,6 +13,7 @@ import { defaultUserDataDir, ensureTrustedProject, resolveStartupUserData } from
 import { consumeResetRequest } from "./app-lock";
 import { CodexServer, codexBinaryPath } from "./codex-server";
 import { reasoningItemText } from "./reasoning-text";
+import { mobileMentionBlock } from "./dispatch";
 import { harnessProviderConfig } from "./thread-provider";
 import { BotPairingService } from "./bots/bot-pairing";
 import { MemoryStore, type MemoryCategory, type MemoryRemoteConfig } from "./memory-store";
@@ -551,7 +552,7 @@ const remote = new RemoteControlService({
     if (boss) await registerBossSession(id).catch(() => null);
     return { id };
   },
-  sendMessage: async (threadId, text, images = [], effort = "high") => {
+  sendMessage: async (threadId, text, images = [], effort = "high", mentions = []) => {
     const model = await readCustomModel();
     const validEffort = ["low", "medium", "high", "xhigh"].includes(String(effort ?? "")) ? String(effort) : "high";
     /* ⛔ 图片路径来自手机（外部输入）：只认 /api/upload 刚落进 remote-uploads 的文件，
@@ -562,7 +563,9 @@ const remote = new RemoteControlService({
       return resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && existsSync(resolved);
     });
     const input: any[] = [];
-    if (String(text ?? "").trim()) input.push({ type: "text", text: String(text), text_elements: [] });
+    const mentionBlock = mobileMentionBlock(mentions);
+    const composed = mentionBlock + String(text ?? "");
+    if (composed.trim()) input.push({ type: "text", text: composed, text_elements: [] });
     for (const file of allowed) input.push({ type: "localImage", path: file });
     if (!input.length) return;
     await server.request("turn/start", { threadId, input, model: model?.model, effort: validEffort });
@@ -583,6 +586,12 @@ const remote = new RemoteControlService({
     } catch {
       // 引擎未就绪：指令照给，技能列表空着（手机端会提示）
     }
+    /* @ 提及：与电脑端同一个调度目录（专家/团队成员/专家团/子智能体/CLI），手机只展示与点名 */
+    let agents: { kind: string; key: string; name: string; profession?: string; installed?: boolean }[] = [];
+    try {
+      const { buildDispatchCatalog } = await import("./features/dispatch-core");
+      agents = (await buildDispatchCatalog()).map((target: any) => ({ kind: String(target.kind), key: String(target.key), name: String(target.name), profession: String(target.profession ?? ""), installed: target.installed !== false }));
+    } catch { /* 目录读取失败不影响其它能力 */ }
     return {
       commands: [
         { id: "new", label: "新会话" },
@@ -590,6 +599,7 @@ const remote = new RemoteControlService({
         { id: "compact", label: "压缩上下文" },
       ],
       skills,
+      agents,
     };
   },
   interruptThread: async (threadId) => {
@@ -734,7 +744,7 @@ const remote = new RemoteControlService({
     return () => { const index = remoteEventForwarders.indexOf(listener); if (index >= 0) remoteEventForwarders.splice(index, 1); };
   },
   // 手机安装包资产名：按产品品牌区分（GitHub Release：mobile-remote-v0.1.0）
-  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.11.apk" : "CodexRemote-0.1.11.apk",
+  apkFile: app.getName().toLowerCase().includes("ppcode") ? "PPcodeRemote-0.1.12.apk" : "CodexRemote-0.1.12.apk",
   /* 手机首页的品牌面（⛔ 各仓自有：桌面版 = Codex Harness；PPcode 仓的 main.ts 写 PPcode） */
   brandName: app.getName().toLowerCase().includes("ppcode") ? "PPcode" : "Codex Harness",
   brandIcon: remoteBrandIcon,

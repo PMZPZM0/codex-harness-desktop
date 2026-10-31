@@ -426,3 +426,28 @@ export function resolveDispatchTarget(
   if (kind && hit.kind !== kind) return { error: `「${raw}」的类型是${kindLabel(hit.kind)}，与传入的 kind=${kind} 不一致` };
   return { target: hit };
 }
+
+/** 手机端 @ 提名的指令块（10-31）。格式与规则同 \`src/lib/dispatch-mention.mjs#mentionBlockOf\`：
+    ⛔ 只列"派给谁"，不假设已派出；团队/CLI 未开通要如实说；失败原样转述不重试。
+    两处文风若不一致，模型对同一条消息会产生不同行为 —— 改这里时同步改渲染层那份。 */
+export function mobileMentionBlock(mentions: Array<{ kind?: string; name?: string }> | null | undefined): string {
+  const list = (Array.isArray(mentions) ? mentions : []).filter((entry) => entry && entry.kind && String(entry.name ?? "").trim());
+  if (!list.length) return "";
+  const rows = list.map((entry) => "- kind=" + String(entry.kind) + " name=" + String(entry.name).trim()).join("\n");
+  return [
+    "",
+    "",
+    "[本轮点名对象]",
+    "用户在本条消息里用 @ 点名了下面这些对象。**必须**用 agent_invoke 把它们派出去，再用它们的产出回答：",
+    rows,
+    "规则：",
+    "① 把本条消息的正文（不含本段）当作交给它的 query，写自包含（它看不到本会话上下文）；",
+    "② 点名多个时按上面顺序**逐个**派活，不要合并成一次调用；",
+    "③ kind=team（专家团）未开启时不要硬派，直接在回复里说明「专家团未开启，需要你在顶栏调度面板打开」，并给出替代方案；",
+    "④ kind=cli（CLI 智能体）就是本机的一个命令行工具：未安装时如实说「未安装」并附安装路径（设置 → 开发工具 → CLI 智能体），不许假装它跑过；",
+    "⑤ 派活被拒或失败（权限 / 引擎 / 名字找不到 / CLI 没装）时**原样转述原因**并停止，不要换对象重试；",
+    "⑥ 派活成功就正常使用产出，不用再问用户要不要派。",
+    "[点名结束]",
+    "",
+  ].join("\n");
+}
