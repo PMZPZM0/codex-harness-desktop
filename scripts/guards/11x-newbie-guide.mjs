@@ -282,6 +282,17 @@ const preload = read("electron/preload.ts");
     && mainTsx11x.indexOf("<WindowControls />") > mainTsx11x.indexOf("</ErrorBoundary>")
     && !/\{?\s*<WindowControls\s*\/?>/.test(read("src/features/app-view/AppView.tsx")),
     "窗口钮挂在 ErrorBoundary **之外**（崩溃时的错误卡片不会连带吞掉窗口钮），且壳里不再重复渲染");
+  /* ⛔⛔ 10-31 事故（三仓右上角全空白）：钮挪到 main.tsx（比 App 更早挂载）后，
+     同一次 commit 里 App 的 effect 先写 `data-os`、本组件的 effect 才跑 —— 此时 state 还是首帧空串，
+     写操作已经过去，后挂的 MutationObserver 永远等不到 ⇒ 永久 return null。
+     判据：**挂观察器之前必须再读一次属性**（顺序也要对）。 */
+  {
+    const wcSrc = read("src/components/WindowControls.tsx");
+    const reRead = wcSrc.indexOf('const now = el.dataset.os || "";');
+    const observe = wcSrc.indexOf("observer.observe(el");
+    ok(reRead > 0 && observe > reRead && /if \(now\) \{ setOs\(now\); return; \}/.test(wcSrc),
+      "窗口钮在挂 MutationObserver **之前**重读 data-os（否则「App 的 effect 先写、本组件后挂」这条竞态会让按钮永久消失）");
+  }
   /* ⛔ 10-31 审查：右栏代码预览曾经三层各自上色（外壳 --panel + 内层代码主题色）⇒
      永远露出一条不同色的边。现在只有一个 owner：滚动区取代码主题色、外壳透明。 */
   const wsFilesSrc = read("src/features/app-view/AppView/03-workspace-files.tsx");

@@ -23,6 +23,14 @@ export function WindowControls() {
   useEffect(() => {
     if (os) return;
     const el = document.documentElement;
+    /* ⛔⛔ 挂观察器**之前必须再读一次**（10-31 事故：三仓右上角全空白）。
+       本组件从 10-31 起挂在 `main.tsx`（错误边界之外、比 App 更早挂载），于是同一次 commit 里
+       App 的 effect 先跑并写入 `data-os`，紧接着才轮到这里的 effect —— 此时 state 还是首帧的
+       空串，而写操作**已经发生过**，后挂上的 MutationObserver 永远等不到第二次写入
+       ⇒ 从此 return null，按钮永久消失（之前放在 AppView 里挂得晚，首帧就读到了值，所以没暴露）。
+       这一次重读把「同一批 effect 里已被别人写掉」这个窗口关掉；之后的写入仍由观察器负责。 */
+    const now = el.dataset.os || "";
+    if (now) { setOs(now); return; }
     const observer = new MutationObserver(() => {
       const next = el.dataset.os || "";
       if (next) { setOs(next); observer.disconnect(); }
