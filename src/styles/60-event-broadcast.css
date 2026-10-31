@@ -94,23 +94,32 @@
    · 朝内边缘给一条 accent 细高光，提示"这里可以点"。
    hover / 播报中 / 面板打开 / 拖动 时由 class 切换回完整圆钮（见下方 :hover 与各 is-* 态）。 */
 .bc-pod.is-merged {
-  width: 26px;
-  height: 44px;
-  /* ⛔ 融入 ≠ 隐形：底色略深于面板（贴边才不会糊成一片），朝内边缘压一条 accent 高光
-     —— 那是唯一的"可点"暗示，去掉它这个把手就完全看不见了（用户第一版反馈"太丑/看不见"）。 */
-  background: color-mix(in srgb, var(--panel) 90%, var(--bg, #16181d));
-  border-color: color-mix(in srgb, var(--line) 86%, var(--muted));
-  box-shadow: inset 1.5px 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent);
-  color: var(--accent);
+  width: 22px;
+  height: 40px;
+  /* ⛔ 10-31 用户令：「贴进去，就展示一个上下左右的自适应小箭头，贴边融入效果要做好一点」
+     +「你看看现在这种样式，属实丑」——
+     上一版的问题：**蓝色内高光 + 描边 + 喇叭图标**三样挤在 26×44 里，像一块贴纸。
+     ⇒ 现在：无描边、无高光，只靠"底色比面板深一档"把轮廓托出来；里面**只放一枚箭头**。
+        箭头 muted、hover 才变 accent —— 安静，但一眼看得出能点。 */
+  background: color-mix(in srgb, var(--panel) 86%, var(--bg, #16181d));
+  border-color: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 55%, transparent);
+  color: var(--muted);
 }
-.bc-pod.is-merged[data-edge="right"] { border-radius: 12px 0 0 12px; box-shadow: inset 1.5px 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
-.bc-pod.is-merged[data-edge="left"] { border-radius: 0 12px 12px 0; box-shadow: inset -1.5px 0 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+.bc-pod.is-merged:hover { color: var(--accent); }
+.bc-pod.is-merged[data-edge="right"] { border-radius: 11px 0 0 11px; }
+.bc-pod.is-merged[data-edge="left"] { border-radius: 0 11px 11px 0; }
 .bc-pod.is-merged[data-edge="top"],
-.bc-pod.is-merged[data-edge="bottom"] { width: 44px; height: 26px; }
-.bc-pod.is-merged[data-edge="top"] { border-radius: 0 0 12px 12px; box-shadow: inset 0 -1.5px 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
-.bc-pod.is-merged[data-edge="bottom"] { border-radius: 12px 12px 0 0; box-shadow: inset 0 1.5px 0 0 color-mix(in srgb, var(--accent) 30%, transparent); }
+.bc-pod.is-merged[data-edge="bottom"] { width: 40px; height: 22px; }
+.bc-pod.is-merged[data-edge="top"] { border-radius: 0 0 11px 11px; }
+.bc-pod.is-merged[data-edge="bottom"] { border-radius: 11px 11px 0 0; }
 /* 收纳态把图标缩到很小：一个按钮该有的体量，不是一颗球 */
-.bc-pod.is-merged svg { width: 13px; height: 13px; stroke-width: 2.1; }
+.bc-arrow { display: none; }
+.bc-pod.is-merged .bc-arrow { display: block; }
+.bc-pod.is-merged .bc-pod-icon { display: none; }
+.bc-pod.is-merged:hover .bc-arrow { display: none; }
+.bc-pod.is-merged:hover .bc-pod-icon { display: block; }
+.bc-pod.is-merged .bc-badge { top: 2px; }
 /* 未读：收纳态只留一个点（数字在窄把手里挤成一坨） */
 .bc-pod.is-merged .bc-badge {
   top: 3px;
@@ -332,17 +341,21 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  padding: 7px 8px;
-  border: 1px solid transparent;
-  border-radius: 9px;
+  padding: 9px 6px;
+  border: 0;
+  /* ⛔「群事件按行清晰展示」= 一条一条的列表行（行间细分隔线），
+     不是一叠灰底小卡片（那样两条正文叠在一起根本分不清哪句属于谁）。 */
+  border-radius: 0;
+  border-bottom: 1px solid var(--line-soft);
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
 }
-.bc-item:hover { background: color-mix(in srgb, var(--text) 5%, transparent); border-color: var(--line); }
-.bc-item.is-open { background: color-mix(in srgb, var(--text) 4%, transparent); border-color: var(--line); }
+.bc-item:hover { background: color-mix(in srgb, var(--text) 4%, transparent); }
+.bc-item.is-open { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.bc-item:last-child { border-bottom: 0; }
 
 .bc-item-icon {
   flex: none;
@@ -378,11 +391,11 @@
   word-break: break-word;
   white-space: pre-wrap;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-/* 展开：全文可见（群事件的交付说明经常有十几行，两行摘要不够） */
+/* 展开：全文可见（群事件的交付说明经常有十几行，三行摘要也不够） */
 .bc-item.is-open .bc-item-text { display: block; -webkit-line-clamp: unset; overflow: visible; }
 .bc-item-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .bc-tag {
@@ -536,6 +549,27 @@
   opacity: 0.75;
 }
 .bc-bubble.kind-group { padding-left: 13px; }
+
+/* ── 逐字出场（10-31 用户令：「群事件…加入文字逐字展示动画；语音也要有逐字出字效果，两种不一样」）
+   · .is-group ⇒ **打字机**：字干脆地"敲"出来（16ms 步进、无模糊、极轻下坠）
+   · .is-voice ⇒ **说话**：字从模糊里浮上来（34ms、更慢更柔）
+   ⛔ 逐字用 inline-block 才能各自跑动画；文本换行仍由外层容器负责。 ── */
+.bc-typed > span {
+  display: inline-block;
+  opacity: 0;
+  will-change: opacity, transform;
+}
+.bc-typed.is-group > span { animation: bc-char-type 0.16s steps(1, end) both; }
+.bc-typed.is-voice > span { animation: bc-char-speak 0.34s ease-out both; }
+@keyframes bc-char-type {
+  from { opacity: 0; transform: translateY(-1.5px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes bc-char-speak {
+  from { opacity: 0; filter: blur(3px); transform: translateY(2px); }
+  to { opacity: 1; filter: blur(0); transform: none; }
+}
+.bc-foot-hint { margin-left: auto; font-size: 10px; color: var(--faint); }
 
 /* ── 动画 ── */
 @keyframes bc-breathe {

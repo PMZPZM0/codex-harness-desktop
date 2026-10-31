@@ -48,8 +48,19 @@ export type BroadcastItem = {
 
 /** 历史条数上限（面板只展示最近这些；⛔ 不无限增长 —— 群事件在长会话里非常密集）。 */
 export const BROADCAST_MAX = 80;
-/** 单条播报气泡的展示时长 */
-const ANNOUNCE_MS = 4200;
+/** 单条播报气泡的展示时长（按类型区分）。
+ *  ⛔ 10-31 用户令：「忙碌提醒同样需要加长展示」—— 等待确认/回合异常这类需要用户**行动**的，
+ *     4.2 秒根本来不及看清；群事件与语音是"知会一下就够"，保持短。
+ *     ⛔ 逐字动画的时长上限（约 1.4s）也在这个预算里，别把短的再压。 */
+const ANNOUNCE_MS: Record<BroadcastKind, number> = {
+  group: 4200,
+  voice: 3200,
+  system: 5200,
+  compact: 5200,
+  turn: 8000,
+  approval: 9000,
+};
+const announceMsOf = (kind: BroadcastKind) => ANNOUNCE_MS[kind] ?? 4200;
 const STORAGE_KEY = "harness-broadcast-history";
 /** 只保留最近 7 天（更早的群事件没有回看价值，还占 localStorage 配额）。 */
 const KEEP_MS = 7 * 24 * 60 * 60 * 1000;
@@ -60,8 +71,9 @@ type Snapshot = {
   announcing: BroadcastItem | null;
   /** 面板是否展开 */
   open: boolean;
-  /** 未读条数（收纳后累加，打开面板清零） */
-  unread: number;
+  /** 未读条数（按会话分账：⛔ 用户令「播报内容按会话独立显示」——
+   *  别的会话来的播报不能算到当前会话头上，否则角标一直挂着、点开却看不到东西） */
+  unreadBy: Record<string, number>;
   /** 暂停自动播报（仍入库，只是不自动冒泡） */
   paused: boolean;
 };
@@ -71,7 +83,7 @@ const seen = new Set<string>();
 let history: BroadcastItem[] = [];
 let announcing: BroadcastItem | null = null;
 let open = false;
-let unread = 0;
+let unreadBy: Record<string, number> = {};
 let paused = false;
 let timer = 0;
 /** 队列：同时到多条时依次播，而不是互相顶掉 */
@@ -120,7 +132,7 @@ for (const item of history) seen.add(item.id);
 let cached: Snapshot | null = null;
 
 function snapshot(): Snapshot {
-  if (!cached) cached = { history, announcing, open, unread, paused };
+  if (!cached) cached = { history, announcing, open, unreadBy, paused };
   return cached;
 }
 
@@ -150,7 +162,7 @@ function nextInQueue(): void {
   if (!item) { announcing = null; emit(); return; }
   announcing = item;
   emit();
-  timer = window.setTimeout(() => nextInQueue(), ANNOUNCE_MS);
+  timer = window.setTimeout(() => nextInQueue(), announceMsOf(item.kind));
 }
 
 /**
@@ -176,7 +188,8 @@ export function pushBroadcast(item: Omit<BroadcastItem, "at"> & { at?: number })
   persist();
   /* 面板开着时不抢注意力（用户正在回看历史）——只入库，不弹气泡、不计数未读。 */
   if (open) { emit(); return true; }
-  unread += 1;
+  const bucket = entry.threadId ?? "";
+  unreadBy = { ...unreadBy, [bucket]: (unreadBy[bucket] ?? 0) + 1 };
   queue.push(entry);
   if (!announcing) nextInQueue();
   else emit();
@@ -184,11 +197,16 @@ export function pushBroadcast(item: Omit<BroadcastItem, "at"> & { at?: number })
 }
 
 /** 面板开合：打开时收起气泡并清未读（用户已经看到了）。 */
-export function setBroadcastOpen(next: boolean): void {
+export function setBroadcastOpen(next: boolean, threadId = ""): void {
   if (open === next) return;
   open = next;
   if (next) {
-    unread = 0;
+    /* ⛔ 只清当前会话的未读：别的会话攒着的播报不能被我这一下抹掉 */
+    if (unreadBy[threadId]) {
+      const rest = { ...unreadBy };
+      delete rest[threadId];
+      unreadBy = rest;
+    }
     window.clearTimeout(timer);
     timer = 0;
     announcing = null;
@@ -229,7 +247,7 @@ export function clearBroadcastHistory(): void {
   history = [];
   queue.length = 0;
   seen.clear();
-  unread = 0;
+  unreadBy = {};
   announcing = null;
   open = false;
   persist();
@@ -266,6 +284,6 @@ export function broadcastStats(): { history: number; seen: number; queued: numbe
 }
 
 /* ── 面板开合的对外出口（供键盘/全局入口调用；⛔ 不给外部直接改 open） ── */
-export function toggleBroadcastPanel(): void {
-  setBroadcastOpen(!open);
+export function toggleBroadcastPanel(threadId = ""): void {
+  setBroadcastOpen(!open, threadId);
 }
