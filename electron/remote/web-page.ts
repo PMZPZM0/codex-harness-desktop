@@ -180,7 +180,7 @@ html[data-theme="dark"] #voice{background:#1b2029}
 #send.stop{background:#c0392b}
 .confirm-card{margin:40vh auto 0;max-width:340px;text-align:center}
 /* ── 首页（普通 / 中枢）── */
-#home{flex:1;overflow:auto;padding:16px 14px 24px}
+#home{flex:1;overflow-y:auto;overflow-x:hidden;padding:16px 14px 24px}
 #home[hidden]{display:none}
 .home-tabs{display:flex;gap:6px;padding:3px;border:1px solid var(--line);border-radius:999px;background:#f4f4f1;width:max-content;margin:0 auto 16px}
 .home-tab{border:0;background:transparent;color:var(--muted);font-size:12.5px;padding:7px 16px;border-radius:999px;cursor:pointer}
