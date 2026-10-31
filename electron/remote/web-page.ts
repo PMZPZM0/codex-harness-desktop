@@ -76,9 +76,19 @@ header{position:relative;padding:10px 14px;background:#fff;border-bottom:1px sol
 html[data-theme="dark"] .menu-btn,html[data-theme="dark"] .icon-btn{background:#1b2029}
 .thread-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:600;color:var(--ink)}
 header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;background:#1a7f37;padding:0;font-size:0;overflow:hidden}
-#top-menu{position:absolute;top:52px;left:12px;z-index:40;min-width:168px;padding:6px;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.14)}
+#top-menu{position:absolute;top:52px;left:12px;z-index:40;width:236px;padding:6px;background:var(--panel,#fff);border:1px solid var(--line);border-radius:16px;box-shadow:0 18px 44px rgba(0,0,0,.18);transform-origin:12px 0}
 #top-menu[hidden]{display:none}
-#top-menu button{display:block;width:100%;margin:0;padding:11px 12px;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:13px;text-align:left}
+#top-menu.open{animation:menu-in .18s cubic-bezier(.2,.9,.3,1.2)}
+#top-menu .menu-group{border-bottom:1px solid var(--line);padding-bottom:6px;margin-bottom:6px}
+#top-menu button{display:flex;align-items:center;gap:10px;width:100%;margin:0;padding:10px 10px;border:0;border-radius:11px;background:transparent;color:var(--ink);font-size:13px;text-align:left;transition:background .15s}
+#top-menu button:active{background:color-mix(in srgb,var(--accent) 12%,transparent)}
+#top-menu button i{flex:none;width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;background:var(--accent-soft);font-style:normal}
+#top-menu button span{display:flex;flex-direction:column;gap:2px;min-width:0}
+#top-menu button b{font-size:13.5px;font-weight:600}
+#top-menu button small{font-size:11px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#top-menu button.danger b{color:#d0463b}
+#top-menu button.danger i{background:color-mix(in srgb,#d0463b 14%,transparent)}
+@keyframes menu-in{from{opacity:0;transform:scale(.92) translateY(-6px)}to{opacity:1;transform:none}}
 #threads{position:fixed;inset:0;background:#fff;z-index:20;display:none;flex-direction:column}
 #threads.open{display:flex}
 #threads .list{flex:1;overflow:auto;padding:4px 0 20px}
@@ -256,6 +266,34 @@ img.home-logo{object-fit:cover;background:#fff;padding:0}
 .home-groups{display:flex;flex-direction:column;gap:10px}
 html[data-theme="dark"] .home-hero{background:linear-gradient(140deg,color-mix(in srgb,var(--accent) 22%,#161a20),#161a20 62%)}
 html[data-theme="dark"] .home-thread{background:#161a20}
+/* ── 动效系统（10-31 用户：随系统动画、现代化过渡）──
+   ⛔ 全部走 CSS；系统开「减弱动效」时整段自动失效（最后一条 media query）。 */
+:root{--ease:cubic-bezier(.22,.61,.36,1);--spring:cubic-bezier(.34,1.4,.64,1)}
+@keyframes fade-up{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes fade-slide{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+@keyframes pop-in{from{opacity:0;transform:translateY(6px) scale(.985)}to{opacity:1;transform:none}}
+@keyframes sheet-up{from{transform:translateY(100%)}to{transform:none}}
+@keyframes panel-in{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes hero-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes home-in{from{opacity:0;transform:translateY(14px) scale(.985);filter:blur(5px)}to{opacity:1;transform:none;filter:none}}
+#home.home-enter .home-page{animation:home-in .34s var(--ease) both}
+@keyframes glow-drift{from{transform:translate(0,0) scale(1)}to{transform:translate(-16px,12px) scale(1.15)}}
+@keyframes ripple{to{transform:scale(2.8);opacity:0}}
+.home-page > *{animation:fade-up .3s var(--ease) both}
+.home-page > *:nth-child(2){animation-delay:.05s}
+.home-page > *:nth-child(3){animation-delay:.1s}
+.home-page > *:nth-child(4){animation-delay:.15s}
+.home-page > *:nth-child(5){animation-delay:.2s}
+.home-hero::after{animation:glow-drift 9s ease-in-out infinite alternate}
+.home-hero img.home-logo,.home-hero .home-logo{animation:hero-float 4.6s ease-in-out infinite}
+#home:not([hidden]),#msglist:not([hidden]),#threads.open{animation:fade-slide .22s var(--ease)}
+.msg-enter{animation:pop-in .22s var(--ease)}
+#sheet.open{animation:sheet-up .26s var(--spring)}
+.panel.open{animation:panel-in .24s var(--ease)}
+body,header,#inputbar,#taskbar,#msglist,.msg,.home-thread,.home-group,#top-menu{transition:background-color .25s var(--ease),color .25s var(--ease),border-color .25s var(--ease)}
+.ripple{position:absolute;border-radius:50%;pointer-events:none;background:currentColor;opacity:.18;transform:scale(0);animation:ripple .5s ease-out forwards}
+button,.home-thread,.thread-row{position:relative;overflow:hidden}
+@media (prefers-reduced-motion: reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 /* ── 主题：白天 / 黑夜（10-31 用户令）──
    ⛔ 只换背景不够：气泡、输入框、面板、代码块、卡片都是浅色字面量，必须逐个覆盖，
       否则暗色下会出现"白底白字 / 浅灰上浅灰"看不见。 */
@@ -305,9 +343,12 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
   <button type="button" id="theme-btn" class="icon-btn" aria-label="切换白天/黑夜" onclick="toggleTheme()">🌙</button>
   <span class="status" id="status" title="连接中…">连接中…</span>
   <div id="top-menu" hidden>
-    <button type="button" onclick="toggleTopMenu(false);openHome()">首页</button>
-    <button type="button" onclick="toggleTopMenu(false);toggleThreads()">选择会话</button>
-    <button type="button" id="menu-disconnect" hidden onclick="topMenuDisconnect()">断开连接</button>
+    <div class="menu-group">
+      <button type="button" onclick="toggleTopMenu(false);openHome()"><i>🏠</i><span><b>首页</b><small>回到首页，直接开始</small></span></button>
+      <button type="button" onclick="toggleTopMenu(false);toggleThreads()"><i>🗂️</i><span><b>选择会话</b><small>最近会话与中枢</small></span></button>
+      <button type="button" onclick="toggleTopMenu(false);toggleTheme()"><i id="menu-theme-icon">🌙</i><span><b id="menu-theme-label">夜间模式</b><small>也可以跟随系统</small></span></button>
+    </div>
+    <button type="button" class="danger" id="menu-disconnect" hidden onclick="topMenuDisconnect()"><i>⏏️</i><span><b>断开连接</b><small>同时移除电脑端这台设备</small></span></button>
   </div>
 </header>
 <div id="threads"><div class="threads-head"><button onclick="toggleThreads()">← 返回</button><b>选择会话</b><button class="new-thread" onclick="openNewThreadMenu()">＋ 新建</button></div><div class="list" id="thread-list"></div></div>
@@ -350,7 +391,10 @@ const BRAND_ICON = ${JSON.stringify(brandIcon)};
 function toggleTopMenu(force) {
   const menu = document.getElementById("top-menu");
   if (!menu) return;
-  menu.hidden = force === false ? true : (force === true ? false : !menu.hidden);
+  const nextOpen = force === false ? false : (force === true ? true : menu.hidden);
+  menu.classList.remove("open");
+  menu.hidden = !nextOpen;
+  if (nextOpen) { void menu.offsetWidth; menu.classList.add("open"); }
 }
 /* 手机主动断开：**同时通知电脑端撤销这台设备**（否则电脑端还留着、下次也不用重配，两边不一致）。
    ⛔ 先让用户确认；电脑端没响应也清本机状态，并把实情说出来，不许静默。 */
@@ -376,6 +420,22 @@ function topMenuDisconnect() {
     location.replace(apiUrl("/r/mobile"));
   });
 }
+/* 按钮涟漪（跟随 Android 触感）：按下时在元素内扩散一个圆 */
+document.addEventListener("pointerdown", function (event) {
+  const host = event.target && event.target.closest ? event.target.closest("button, .home-thread, .thread-row") : null;
+  if (!host) return;
+  const rect = host.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height);
+  if (!size) return;
+  const dot = document.createElement("span");
+  dot.className = "ripple";
+  dot.style.width = size + "px";
+  dot.style.height = size + "px";
+  dot.style.left = (event.clientX - rect.left - size / 2) + "px";
+  dot.style.top = (event.clientY - rect.top - size / 2) + "px";
+  host.appendChild(dot);
+  window.setTimeout(function () { if (dot.parentNode) dot.parentNode.removeChild(dot); }, 520);
+}, { passive: true });
 document.addEventListener("click", function (event) {
   const menu = document.getElementById("top-menu");
   if (!menu || menu.hidden) return;
@@ -431,6 +491,10 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = next;
   const btn = document.getElementById("theme-btn");
   if (btn) { btn.textContent = next === "dark" ? "☀️" : "🌙"; btn.setAttribute("aria-label", next === "dark" ? "切换到白天模式" : "切换到夜间模式"); }
+  const menuIcon = document.getElementById("menu-theme-icon");
+  const menuLabel = document.getElementById("menu-theme-label");
+  if (menuIcon) menuIcon.textContent = next === "dark" ? "☀️" : "🌙";
+  if (menuLabel) menuLabel.textContent = next === "dark" ? "白天模式" : "夜间模式";
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", next === "dark" ? "#161a20" : "#f7f7f5");
 }
@@ -512,7 +576,7 @@ async function rpc(payload) {
 }
 function push(role, text, cls, pending) {
   const div = document.createElement("div");
-  div.className = "msg " + (cls || role) + (role === "assistant" ? " md" : "");
+  div.className = "msg msg-enter " + (cls || role) + (role === "assistant" ? " md" : "");
   if (pending) div.dataset.pending = "1";
   if (role === "assistant") {
     // 助手消息走 Markdown（渲染器输出已转义，见 src/lib/mobile-markdown.mjs）
@@ -771,7 +835,12 @@ function showHome() {
   homeVisible = true;
   currentThreadId = "";
   try { dropStore(THREAD_KEY); } catch (error) { /* 忽略 */ }
-  document.getElementById("home").hidden = false;
+  const homeEl = document.getElementById("home");
+  homeEl.hidden = false;
+  /* 每次进首页都重放整页入场动画（先摘类再强制 reflow，否则同一个类不会重新触发） */
+  homeEl.classList.remove("home-enter");
+  void homeEl.offsetWidth;
+  homeEl.classList.add("home-enter");
   document.getElementById("msglist").hidden = true;
   document.getElementById("goalbar").hidden = true;
   document.getElementById("taskbar").hidden = true;
