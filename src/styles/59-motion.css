@@ -1,0 +1,201 @@
+/**
+ * 统一「打开动效」层（10-31 立，用户：「多数元素直接闪现，没有平滑过渡」）
+ *
+ * 为什么单独一层而不是逐个改原文件：
+ *   浮层散在 20 多个分节里，逐个加 `animation` 会得到 20 套不同的时长/曲线（现状就是
+ *   0.12s / 0.14s / 0.16s / 0.18s / 0.3s 混着用）。这里按**语义归三档**统一打进一层：
+ *     · 遮罩/背景   → `--dur-overlay`（160ms）纯淡入（跟随它盖住的东西，不需要位移）
+ *     · 面板/对话框 → `--dur-panel`（220ms）淡入 + 上浮 10px + 轻微放大
+ *     · 菜单/气泡   → `--dur-menu`（140ms）淡入 + 上浮 4px + 轻微放大
+ *   ⛔ 本文件由 styles.css **最后**引入（layer(components)）⇒ 同优先级下后写者胜，
+ *     能覆盖各分节里历史遗留的 `animation: xxx .12s ease`，不需要回去改 20 个文件。
+ *
+ * ⛔⛔ 关键帧只用 **独立变换属性**（`translate` / `scale`），绝不用 `transform`：
+ *   很多菜单靠 `transform: translate(...)` 做定位/翻转（`.task-menu.ctx-menu-fixed` 等），
+ *   用 `transform` 写动画会在动画期间覆盖定位、结束后又回到 `none` ⇒ 菜单跳到错的位置。
+ *   独立属性与 `transform` 是**叠加**关系，不动别人。
+ *
+ * ⛔ 关闭动画的边界（如实声明）：这些浮层在 React 里是**条件渲染**（`open && <div>`），
+ *   关闭即卸载 —— 没有元素可播退场，除非改成"保留挂载 + class 切换"（会牵动焦点/滚动锁定/
+ *   无障碍语义，风险远大于收益）。所以本层只做**进场**；唯一例外是常驻元素（侧栏折叠、
+ *   侧栏选项折叠）走 `transition`，进出都有。
+ *
+ * ⛔ 无障碍：`prefers-reduced-motion: reduce` 下把时长压到 0.001ms（与 02-sidebar 的全局兜底一致）。
+ */
+
+/* ── 1. 遮罩 / 背景层：只淡入 ───────────────────────────────────────────── */
+@keyframes motion-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-backdrop,
+.menu-backdrop,
+.thread-row-menu-backdrop,
+.entity-tag-backdrop,
+.palette-backdrop,
+.lightbox,
+.turn-diff-modal-mask,
+.devtools-error-backdrop,
+.relay-modal-backdrop,
+.flow-export-backdrop,
+.drama-canvas-backdrop,
+.drama-canvas-modal-mask,
+.drama-canvas-headmenu-backdrop,
+.comp-lib-detail-backdrop,
+.app-select-overlay,
+.office-overlay,
+.market-preview-backdrop,
+.model-editor-backdrop,
+.skill-install-backdrop,
+.memory-config-backdrop,
+.connector-modal-backdrop {
+  animation: motion-fade-in var(--dur-overlay) var(--ease-enter) both;
+}
+
+/* ── 2. 面板 / 对话框：淡入 + 上浮 + 轻微放大 ───────────────────────────── */
+@keyframes motion-panel-in {
+  from { opacity: 0; translate: 0 10px; scale: 0.99; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+.settings-modal,
+.remote-panel2,
+.pasted-text-modal,
+.office-overlay-stage,
+.drama-canvas-modal-mask > div {
+  animation: motion-panel-in var(--dur-panel) var(--ease-enter) both;
+}
+/* 右侧抽屉式面板：从右滑入（位移方向跟着"它在右边"这个事实走） */
+@keyframes motion-slide-in-right {
+  from { opacity: 0; translate: 12px 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+.chat-search-panel,
+.history-search-panel,
+.browser-pane {
+  animation: motion-slide-in-right var(--dur-panel) var(--ease-enter) both;
+}
+
+/* ── 3. 菜单 / 气泡：淡入 + 上浮 4px + 轻微放大（锚点在上方，从"贴着按钮"长出来）── */
+@keyframes motion-menu-in {
+  from { opacity: 0; translate: 0 -4px; scale: 0.98; }
+  to { opacity: 1; translate: 0 0; scale: 1; }
+}
+
+.task-menu,
+.task-menu-fixed,
+.task-menu.ctx-menu-fixed,
+.thread-row-menu,
+.scope-menu,
+.turn-review-menu,
+.turn-output-menu,
+.notice-center-panel,
+.composer-menu-pop,
+.file-card-menu,
+.queued-timer-menu,
+.sidebar-more-menu,
+.project-menu,
+.browser-menu,
+.browser-pane-menu,
+.welcome-cwd-menu,
+.flow-export-menu,
+.drama-canvas-headmenu,
+.drama-canvas-addmenu-body,
+.command-palette,
+.context-picker {
+  animation: motion-menu-in var(--dur-menu) var(--ease-enter) both;
+}
+
+/* 记忆中心是大弹窗（面板档），灯箱工具条跟着灯箱淡入 */
+.memory-center-modal {
+  animation: motion-panel-in var(--dur-panel) var(--ease-enter) both;
+}
+.memory-center-backdrop,
+.lightbox-toolbar,
+.browser-pane-note {
+  animation: motion-fade-in var(--dur-overlay) var(--ease-enter) both;
+}
+
+/* ── 4. 历史遗留的进场时长/曲线归一（只覆盖时长与缓动，不动各自关键帧）────── */
+/* 这些之前各写一套（.12s/.14s/.16s/.2s/.3s + ease / ease-out / 各种 bezier），
+   同一屏里两个浮层会"一个快一个慢"。统一到令牌后观感一致。 */
+.account-menu,
+.function-menu-popover,
+.function-menu-tour,
+.thread-switch-overlay,
+.login-endpoint-menu,
+.voice-ball-menu,
+.memory-project-picker-menu,
+.poll-bg-panel,
+.demo-modal-backdrop,
+.browser-drawer {
+  animation-duration: var(--dur-menu);
+  animation-timing-function: var(--ease-enter);
+}
+
+/* 面板级的几个历史动画归到面板档（它们本来就是整块滑入，用菜单档会显得急促） */
+.team-rail-badge,
+.update-ready-card,
+.announce-toast {
+  animation-duration: var(--dur-panel);
+  animation-timing-function: var(--ease-enter);
+}
+
+/* ── 5. 无障碍：跟随系统"减少动效" ────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .menu-backdrop,
+  .thread-row-menu-backdrop,
+  .entity-tag-backdrop,
+  .palette-backdrop,
+  .lightbox,
+  .turn-diff-modal-mask,
+  .devtools-error-backdrop,
+  .relay-modal-backdrop,
+  .flow-export-backdrop,
+  .drama-canvas-backdrop,
+  .drama-canvas-modal-mask,
+  .drama-canvas-headmenu-backdrop,
+  .comp-lib-detail-backdrop,
+  .app-select-overlay,
+  .office-overlay,
+  .market-preview-backdrop,
+  .model-editor-backdrop,
+  .skill-install-backdrop,
+  .memory-config-backdrop,
+  .connector-modal-backdrop,
+  .settings-modal,
+  .remote-panel2,
+  .pasted-text-modal,
+  .office-overlay-stage,
+  .chat-search-panel,
+  .history-search-panel,
+  .browser-pane,
+  .task-menu,
+  .task-menu-fixed,
+  .thread-row-menu,
+  .scope-menu,
+  .turn-review-menu,
+  .turn-output-menu,
+  .notice-center-panel,
+  .composer-menu-pop,
+  .file-card-menu,
+  .queued-timer-menu,
+  .sidebar-more-menu,
+  .project-menu,
+  .browser-menu,
+  .browser-pane-menu,
+  .welcome-cwd-menu,
+  .flow-export-menu,
+  .drama-canvas-headmenu,
+  .drama-canvas-addmenu-body,
+  .command-palette,
+  .context-picker,
+  .memory-center-modal,
+  .memory-center-backdrop,
+  .lightbox-toolbar,
+  .browser-pane-note {
+    animation-duration: 0.001ms;
+  }
+}
