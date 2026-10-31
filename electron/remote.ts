@@ -660,6 +660,16 @@ export class RemoteControlService {
       });
       return;
     }
+    /* 手机主动「断开连接」：**同时撤销电脑端的已批准记录**（10-31 用户：「断开后直接把配对设备删除掉」）。
+       旧实现只清手机自己的 cookie，电脑端列表里还留着这台手机、下次也不用重新配对 —— 两边状态不一致。
+       ⛔ 必须是已鉴权请求（cookie 已配对），否则任何人发个 POST 就能踢掉设备。 */
+    if (url.startsWith("/api/disconnect") && req.method === "POST") {
+      const device = this.authorizedDevice(req);
+      if (!device) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
+      /* revokeDevice 内部已联动：删批准记录 + 关长连接 + 清「上次会话」映射 */
+      this.json(res, 200, { ok: true, revoked: this.revokeDevice(device) });
+      return;
+    }
     // 图片上传（+ 号）：只收 dataUrl 图片，落盘到 userData/remote-uploads，回本机绝对路径
     if (url === "/api/upload" && req.method === "POST") {
       void this.readBody(req).then((body) => {
@@ -1055,10 +1065,15 @@ export class RemoteControlService {
     return true;
   }
 
-  /** 撤销已批准设备（下次连接重新走配对码 + 审批） */
+  /** 撤销已批准设备（下次连接重新走配对码 + 审批）。
+   *  联动（10-31）：撤销后手机必须**立刻**失效 —— 关掉它的长连接、清掉「上次会话」映射，
+   *  否则手机还在「在线」、还能继续发指令（用户：「联动做好一点」）。 */
   revokeDevice(deviceId: string) {
     const gone = this.approved.delete(deviceId);
     if (gone) this.saveApproved();
+    const socketDevice = this.devices.get(deviceId);
+    if (socketDevice) { try { socketDevice.socket.close(); } catch { /* 已断 */ } this.devices.delete(deviceId); }
+    if (this.deviceThreads.delete(deviceId)) this.saveDeviceThreads();
     return gone;
   }
 
