@@ -206,7 +206,7 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
   "自建 provider 时 modelProvider 与 config.model_provider 用同一个变量（⛔ 两边不同 = 引擎直接拒）"
 );
 (/const cwd = String\(opts\?\.cwd \?\? ""\)\.trim\(\) \|\| process\.cwd\(\)/.test(summarySrc)
-  && /cwd,\n\s*approvalPolicy: "never"/.test(summarySrc) ? ok : fail)(
+  && /cwd,\s*approvalPolicy: "never"/.test(summarySrc) ? ok : fail)(
   "蒸馏会话的 cwd 由调用方给（会话工作目录），不写死进程目录（mac 打包后是安装包内部路径）"
 );
 (/cwd: threadCwd\.get\(threadId\) \?\? ""/.test(svc) ? ok : fail)(
