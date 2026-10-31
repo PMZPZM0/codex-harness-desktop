@@ -1065,6 +1065,25 @@ if (state) {
     && /if \(status && status !== "completed"\)/.test(runnerSrc)
     && /failTask\(taskId, `成员回合/.test(runnerSrc),
     "⛔ 非 completed 的回合走 failTask（失败不能当交活：空文件 + 卡在 reviewing）");
+
+  /* ⛔⛔ 10-31 用户令「每个中枢会话都是独立的，调度必须归在自己的中枢下面」——群归属硬闸：
+     · 渲染层：群工具全部带 callerThreadId = 引擎下发的 event.params.threadId，
+       ⛔ 不许回落 bag.threadRef（后台中枢的调用不能算到当前打开的会话头上）；
+     · 主进程：写侧（delete/assign/review/escalate/member）逐个 assertGroupOwned，
+       create 的 bossThreadId 以 callerThreadId 为权威。 */
+  const ipcSrc = codeOnly(read("electron/features/boss-groups-ipc.ts"));
+  ok(/const assertGroupOwned = \(group/.test(ipcSrc) && /owner !== caller/.test(ipcSrc),
+    "群归属硬闸：assertGroupOwned 存在（群只属于创建它的中枢会话）");
+  ok(/assertGroupOwned\(Object\.values\(st\.groups/.test(ipcSrc) && /assertGroupOwned\(groupOfTask\(state/.test(ipcSrc),
+    "群归属硬闸落在全部写侧 handler（delete/assign/review/escalate/member）");
+  ok(/bossThreadId: String\(input\?\.callerThreadId \?\? ""\) \|\| String\(input\?\.bossThreadId \?\? ""\)/.test(ipcSrc),
+    "create 的群归属以 callerThreadId（引擎事实）为权威");
+  const routerSrc = codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"));
+  ok(/const bossCaller = String\(event\.params\?\.threadId \?\? ""\);/.test(routerSrc)
+    && (routerSrc.match(/callerThreadId: bossCaller/g) || []).length >= 6,
+    "群工具全部携带 callerThreadId（引擎下发的调用者，≥6 处；⛔ 不许回落 bag.threadRef）");
+  ok(/tool === "group_status"[\s\S]{0,2400}?filter\(\(g: any\) => !bossCaller \|\| String\(g\?\.bossThreadId/.test(routerSrc),
+    "group_status 只报调用者自己名下的群（防模型拿别的中枢 groupId 跨群派活）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
