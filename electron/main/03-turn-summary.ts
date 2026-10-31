@@ -65,6 +65,9 @@ export function turnOutputText(turn: any) {
   return text || String(turn?.finalMessage ?? "").trim();
 }
 
+/** 正在「会话自己蒸馏」的会话 id（防同一会话连点两次各起一轮，那会互相打断）。 */
+const inFlightDistill = new Set<string>();
+
 /**
  * 记忆蒸馏的模型通道。
  *
@@ -96,19 +99,33 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
 
   const promptText = `${prompt}\n\n下面是原始日志：\n\n${body}`;
   /* ① 会话自己蒸馏（用户令）：那条会话空闲才走这条 —— 用 `[群事件]` 标记，
-     时间线按事件块渲染，不会被当成"用户自己说的话"。 */
+     时间线按事件块渲染，不会被当成"用户自己说的话"。
+     ⛔⛔ `turn/start` 会**打断已有回合**（codex-ipc 那条注释实证）：所以
+        · 进 `inFlightDistill` 占位（同一会话连点两次不会各起一轮）；
+        · 发请求前**再判一次** engineActiveTurnIds（判到发之间还有毫秒级窗口）；
+        · 请求失败（正好撞上用户开回合）**不抛**，直接落到下面的兜底分支，
+          宁可多一条内部会话，也绝不能把用户那一轮掐掉。 */
   const inThread = String(opts?.inThread ?? "").trim();
-  if (inThread && ![...engineActiveTurnIds.values()].includes(inThread)) {
-    const turn: any = await server.request("turn/start", {
-      threadId: inThread,
-      input: [{ type: "text", text: `${GROUP_EVENT_TAG}${promptText}`, text_elements: [] }],
-      model: effectiveModel,
-      effort: "low",
-    });
-    const turnId = turn.turn?.id;
-    if (!turnId) throw new Error("蒸馏回合启动失败：未返回 turnId");
-    const completed = await waitForTurnCompletion(inThread, turnId, 300_000);
-    return turnOutputText(completed);
+  if (inThread && !inFlightDistill.has(inThread) && ![...engineActiveTurnIds.values()].includes(inThread)) {
+    inFlightDistill.add(inThread);
+    try {
+      const turn: any = await server.request("turn/start", {
+        threadId: inThread,
+        input: [{ type: "text", text: `${GROUP_EVENT_TAG}${promptText}`, text_elements: [] }],
+        model: effectiveModel,
+        effort: "low",
+      }).catch((error: any) => {
+        console.warn("[distill] 会话内蒸馏没能起回合，改走内部会话：", String(error?.message ?? error).slice(0, 160));
+        return null;
+      });
+      const turnId = turn?.turn?.id;
+      if (turnId) {
+        const completed = await waitForTurnCompletion(inThread, turnId, 300_000);
+        return turnOutputText(completed);
+      }
+    } finally {
+      inFlightDistill.delete(inThread);
+    }
   }
 
   /* ② 兜底（会话正忙 / 调用方没给会话）：开一个只读的一次性内部会话。
