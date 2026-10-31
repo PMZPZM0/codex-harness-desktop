@@ -297,6 +297,30 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
       "【104】会话内蒸馏起不来时**落兜底**，不抛错（宁可多条内部会话，也不能掐掉用户回合）"
     );
 
+    /* ── 10-31 用户令：「检查会话跟调度会话会不会串记忆，深度查」──
+       实测**会串**：被调度会话（专家/子智能体/团成员）的回合也被捕获，以 workspace 为键写进同一份
+       L4 日志与 L1.5 纪律（真机日志实证：`- 需求：[SYSTEM TASK · 调度会话] …`），L0 画像还可能被
+       合成提示词污染。⇒ 捕获前过归属闸，非交互会话不写共享记忆。 */
+    const scopeSrc = readFileSync(join(ROOT, "electron", "memory-capture-scope.ts"), "utf8");
+    const bootSrc = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
+    (/captureScopeOf\(threadId, buffer\.user\)[\s\S]{0,200}?if \(scope\.skip\)/.test(bootSrc) ? ok : fail)(
+      "【104】捕获前过归属闸（跳过的判定必须发生在 captureTurn **之前**，事后过滤等于已经写脏了）"
+    );
+    const { isNonInteractiveUserText } = await import("../../dist-electron/memory-capture-scope.js");
+    (isNonInteractiveUserText("[SYSTEM TASK · 调度会话]\n=== 用户需求 ===\n发起方交给你的任务：…") === true ? ok : fail)(
+      "【104】`[SYSTEM TASK · 调度会话]` 壳判为非交互（专家/子智能体的『用户消息』不是用户说的）"
+    );
+    (isNonInteractiveUserText("[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n…") === true ? ok : fail)(
+      "【104】`[SYSTEM TASK · 成员会话]` 壳同样跳过（兜住没进委派登记表的团成员线程）"
+    );
+    (isNonInteractiveUserText("[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n…") === false ? ok : fail)(
+      "【104】`[SYSTEM TASK · 团队会话]` **不跳**（那是用户真正对话的专家团主会话，跳过就等于聊了记不住）"
+    );
+    (isNonInteractiveUserText("帮我把登录页的间距调一下") === false ? ok : fail)("【104】普通用户消息照常捕获（闸不能误伤主会话）");
+    (/internalThreads\.has\(id\)/.test(scopeSrc) && /delegateRegistry\.infoOf\(id\)/.test(scopeSrc) ? ok : fail)(
+      "【104】非交互判定三路齐：内部会话 / 委派登记表 / 系统任务壳"
+    );
+
     /* ⑤ 与指令 / 技能同源 */
     const skillSrc = readFileSync(join(ROOT, "electron", "builtin-skills", "08-skill-memory-distill.ts"), "utf8");
     const missingIds = MEMORY_PYRAMID.map((l) => l.id).filter((id) => !skillSrc.includes(`**${id}**`));
