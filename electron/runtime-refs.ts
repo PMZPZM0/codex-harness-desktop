@@ -247,7 +247,12 @@ export function titleBarOverlayOptions() {
   const dark = appThemeDark ?? nativeTheme.shouldUseDarkColors;
   // ⛔ 符号色必须与 main.ts 的 CHROME_SYMBOL_DARK/LIGHT 逐字一致（664/666 行）——
   //   改任一处都要同步另一处（守卫【132】比对）。
-  return { color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 43 };
+  /* ⛔⛔ height 必须与 window-factory 建窗时的 55 **完全一致**（10-31 用户截图：
+     「右上角按键不跟下面对齐」）。顶栏是 `margin-top: 6px` + `height: 44px` ⇒ 视觉中心
+     在 6 + 22 = 28px；原生钮在 overlay 区垂直居中 ⇒ height 必须是 28×2 = 55。
+     此前建窗给 55、这里给 43：首显 / 切主题任一发生就把高度打回 43（中心 21.5）⇒ 钮整体上移 6.5px。
+     ⛔ Electron 没有 getTitleBarOverlay 读回接口，写错不会报错、只能靠肉眼 —— 守卫【11x】钉三处一致。 */
+  return { color: "#00000000", symbolColor: dark ? "#e8e8e5" : "#1b1b1a", height: 55 };
 }
 
 /* ⛔ appThemeDark 的取值在 main.ts 的 applyWindowChrome 维护——上面 titleBarOverlayOptions

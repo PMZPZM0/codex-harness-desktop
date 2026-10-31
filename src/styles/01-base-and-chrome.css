@@ -395,7 +395,11 @@ button {
   grid-template-columns: var(--side-w, 256px) minmax(0, 1fr) 1px var(--right-w, 0px);
   /* 第一行 = 全宽顶行（任务名 + 操作簇 + 原生窗口钮），第二行 = 侧栏/聊天/右栏。
      右栏从第二行开始：拖分隔条只影响面板，顶行纹丝不动。 */
-  grid-template-rows: 44px minmax(0, 1fr);
+  /* ⛔⛔ 行高 = 6px 外圈缝 + 44px 顶栏 = 50（10-31 用户：「对话框滚轮上面的那个一点点被遮住」）。
+     顶栏在第一行里是 `margin-top: 6px; height: 44px` ⇒ 视觉底边在 50，而第 2 行原本从 44 起
+     ⇒ 主区/右栏**顶部 6px 被顶栏压住**（右栏滚动区首行被切、主区对话顶端也被切）。
+     ⛔ 别把顶栏改成 height:50：那会把图标行整体下移、与原生窗口钮错位。 */
+  grid-template-rows: 50px minmax(0, 1fr);
   width: 100%;
   height: 100%;
   display: grid;
@@ -607,8 +611,12 @@ button.brand-mark.sidebar-toggle:hover {
 .panel-divider {
   cursor: col-resize;
   position: relative;
-  background: var(--line-soft);
-  /* 与右栏同拍淡出（10-31）：分隔条现在常驻，关右栏时不能"啪"一下消失 */
+  /* 10-31 用户：「右侧栏跟对话框中间的线太粗了」+「加一下跟左边一样的拖动大小的光」——
+     ⇒ 与 `.sidebar-resizer` 同款：**底色留空**，细线只由 `::after` 画（具体线宽在下面
+       `.app-shell.with-context > .panel-divider::after` 里按半像素画，别在这里再画一条）。
+     ⛔ 整列铺 `--muted` 的那套已删：1px 格子被涂满 + 125%/150% 缩放 = 看着像 2~3px 的粗条。 */
+  background: transparent;
+  /* 与右栏同拍淡出（10-31）：分隔条常驻，关右栏时不能"啪"一下消失 */
   transition: opacity var(--dur-panel) var(--ease-enter);
 }
 .panel-divider[data-state="closed"] {
@@ -623,10 +631,6 @@ button.brand-mark.sidebar-toggle:hover {
   bottom: 0;
   left: -3px;
   right: -3px;
-}
-.panel-divider:hover,
-.panel-divider:active {
-  background: var(--muted);
 }
 .sidebar,
 .context-panel {
@@ -1298,6 +1302,18 @@ html.fx-ripple::view-transition-new(root) {
 }
 /* 内部连接处不画线；侧栏右边界线去掉（中间只留 3px 底色过渡） */
 .app-shell > .topbar::after { display: none; }
+
+/* 顶部外圈拖拽条（10-31）：外圈 6px 缝本来是"看得见但拖不动"的死区。
+   ⛔ 高度锁死 6px = 顶栏的 margin-top，写大了会盖住顶栏图标行的点击。 */
+.shell-drag-top {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  z-index: 60;
+  -webkit-app-region: drag;
+}
 .app-shell > .sidebar { border-right: 0; }
 /* 主区/右栏之间的拖拽条：一条很细的灰线（10-31 用户令），悬停/拖动变主题色 */
 .app-shell.with-context > .panel-divider { background: transparent; }
@@ -1313,14 +1329,18 @@ html.fx-ripple::view-transition-new(root) {
   background: var(--line-soft);
   transform: translateX(-50%) scaleX(0.5);
 }
+/* 悬停/拖动 = 主题色「光」，与左侧 `.sidebar-resizer:hover::after` 完全同款（用户：
+   「加一下跟左边一样的，拖动大小的光」）。⛔ 别改回 `--muted` 整列涂灰：
+   那既不是"光"，也会让 1px 轨道看起来变粗。 */
 .app-shell.with-context > .panel-divider:hover::after,
-.app-shell.with-context > .panel-divider:active::after { background: var(--muted); }
-.app-shell.with-context > .panel-divider:hover,
-.app-shell.with-context > .panel-divider:active { background: var(--muted); }
+.app-shell.with-context > .panel-divider:active::after { background: var(--accent); }
 :root[data-theme="dark"] .app-shell > .topbar,
 :root[data-theme="dark"] .app-shell > .workspace,
 :root[data-theme="dark"] .app-shell.with-context > .context-panel { background: var(--panel); }
 @media (max-width: 760px) {
+  /* 窄屏顶栏 margin-top 只有 4 ⇒ 行高跟着收（4 + 44），否则第 2 行上方会多 2px 空档 */
+  .app-shell { grid-template-rows: 48px minmax(0, 1fr); }
+  .shell-drag-top { height: 4px; }
   .app-shell > .topbar { margin: 4px 4px 0 3px; border-radius: 10px 10px 0 0; }
   .app-shell > .workspace { margin: 0 4px 4px 3px; border-radius: 0 0 0 10px; }
   .app-shell:not(.with-context) > .workspace { border-radius: 0 0 10px 10px; }

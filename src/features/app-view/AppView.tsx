@@ -527,6 +527,12 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           onPointerDown={beginSidebarResize}
           onDoubleClick={() => { setSidebarWidth(SIDEBAR_DEFAULT); try { localStorage.setItem("sidebar-width", String(SIDEBAR_DEFAULT)); } catch { /* 隐私模式 */ } }} />
       )}
+      {/* 顶部外圈拖拽条（10-31 用户：「上面外面那一圈不能动」）——
+          外圈 6px 缝是 app-shell 各卡片 margin 让出来的背景区，它既不是 drag 也不是 no-drag
+          ⇒ 鼠标落在最上面那条缝上拖不动窗口。这里铺一条 fixed 的 drag 条补上。
+          ⛔ 高度必须 = 顶栏 margin-top（6px），高一点会咬进顶栏、把图标行的点击吃掉。
+          ⛔ 原生窗口钮是 overlay、层级高于页面，不受这条遮挡。 */}
+      <div className="shell-drag-top" aria-hidden />
       {/* 壁纸层（wallpaper 域）：app-shell 首子元素 + isolation 堆叠上下文，负 z 层透出在
           全应用表面（侧栏/聊天/输入框周边）之下、内容之上；用户关掉时不在 DOM。 */}
       <WallpaperLayer />
