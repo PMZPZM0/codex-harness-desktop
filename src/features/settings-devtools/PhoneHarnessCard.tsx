@@ -5,6 +5,7 @@
  *   · darwin        —— Android 通道 + iPhone 镜像（还要辅助功能 / 屏幕录制授权）。
  *   状态与主进程 electron/features/phone-harness.ts 同源；这里只渲染，不自己判定。
  */
+import { PluginGuide } from "./PluginGuide";
 import { useCallback, useEffect, useState } from "react";
 import { Smartphone, Cable, Download, Trash2, Stethoscope, ShieldCheck, CircleCheck, AlertTriangle } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -156,6 +157,23 @@ export function PhoneHarnessCard({ setNotice, installDevRuntime, runtimeInstalli
           ))}
         </div>
       )}
+      <PluginGuide
+        capabilities={[
+          { icon: Smartphone, title: "看屏幕 / 点按 / 打字", desc: "让 Codex 直接操作真机：点击、滑动、输入、返回、截屏读取结果" },
+          { icon: ShieldCheck, title: "关掉上游遥测", desc: "装完自动关闭上游默认开启的遥测（它会带任务文本与调用参数）" },
+          { icon: Stethoscope, title: "体检与修复", desc: "本页一键体检 adb / 设备 / 权限，缺什么按提示补" },
+        ]}
+        steps={[
+          { b: "手机开开发者选项", s: "设置 → 关于手机 → 连点「版本号」7 次；再进开发者选项打开「USB 调试」。" },
+          { b: "USB 连接并授权", s: "用数据线连电脑，手机上点「允许 USB 调试」；回到本页点「体检」。" },
+          { b: "无线调试（可选）", s: "同一 Wi-Fi 下用配对码：在终端跑 phone-harness android pair <配对码>。" },
+          { b: "开始用", s: "在对话里说「用手机打开… / 在手机上点…」，模型会按内置技能调用。" },
+        ]}
+        notes={[
+          "iPhone 通道需要 macOS，本机不支持。",
+          "上游是 MIT 许可的 Python CLI，按需安装，方便随时拉上游修复。",
+        ]}
+      />
       {log ? <pre className="phone-log">{log}</pre> : null}
     </div>
   );
