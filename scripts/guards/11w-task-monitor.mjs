@@ -279,6 +279,18 @@ const chAdopt = manifest.channels.find((c) => c.channel === "monitor:adopt");
   (/flex: 1 0 auto; overflow: visible/.test(monCss) ? ok : fail)(
     "产物块 shrink 0（上面板块变长时不被压成 0 高）、且不自带滚动（单层滚动）"
   );
+
+  /* ── 10-31 用户（截图 +「开个中枢新会话，一直自动新建这个，有病吗」）──
+     内省会话自噬环：某轮结束 → 生成建议 → distillSummarize 建一条内省会话 →
+     它的回合结束又触发复盘 → 再建一条。实测 30 秒刷出 9 条，侧栏被「你是这个桌面助手的…」刷屏。
+     两道闸缺一不可（少一道就会重新长出来）： */
+  (/if \(internalThreads\.has\(threadId\)\) return;/.test(svc) ? ok : fail)(
+    "⛔ 内部会话（内省/蒸馏）的回合不参与复盘 —— 否则每轮复盘又建一条会话，自噬环"
+  );
+  const ipcSrc = read("electron/features/codex-ipc.ts");
+  (/internalThreads\.has\(String\(entry\?\.id/.test(ipcSrc) ? ok : fail)(
+    "⛔ 内部会话不进 thread/list（侧栏不显示；只挡事件转发挡不住列表）"
+  );
 }
 
 console.log("");

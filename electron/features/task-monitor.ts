@@ -25,7 +25,7 @@ import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { distillSummarize } from "../main/03-turn-summary";
 import { liveFilesOf, storedReportsForThread } from "../turn-file-watch";
-import { engineActiveTurnIds, server, threadCwd } from "../runtime-refs";
+import { engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
 import { GROUP_EVENT_TAG, hostQueueMessageId } from "../../src/lib/host-queue.mjs";
 /* 技能/插件的识别口径与**技能卡完全同源**（src/lib/tool-display.mjs）；⛔ 不要在这里另写正则。 */
 import { pluginOfItem, skillOfItem } from "../../src/lib/tool-display.mjs";
@@ -179,6 +179,12 @@ export function noteEngineEvent(method: string, params: any): void {
   try {
     const threadId = String(params?.threadId ?? "");
     if (!threadId) return;
+    /* ⛔⛔ 10-31 用户（截图 +「有病吗」）：**内部会话的回合不参与复盘**。
+       不加这道闸就是一个自噬环：某轮结束 → 生成建议 → `distillSummarize` 建一条内省会话
+       → 内省会话的回合结束又触发复盘 → 再建一条 …… 实测 30 秒刷出 9 条会话，侧栏被
+       「你是这个桌面助手的…」刷屏。⛔ 别只在「生成建议」里判重（每条新会话的 store 都是空的，
+       判重在**会话维度**上永远不命中）。 */
+    if (internalThreads.has(threadId)) return;
     /* ⛔ turnId 的取法与 boot / turn-end 同源：`turn.id` 优先，其次 turnId / id。
        只认 turnId（原先的写法）会漏掉带 `turn:{id}` 的形态 ⇒ 整轮 bucket 建不起来。 */
     const turnId = String(params?.turn?.id ?? params?.turnId ?? params?.id ?? "");
