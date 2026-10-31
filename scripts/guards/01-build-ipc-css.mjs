@@ -498,17 +498,20 @@ console.log(C.bold("\n【284】mac 窗口 chrome 让位（红绿灯那一排）"
 const cssAll = readStyles();
 const px = (re) => { const m = cssAll.match(re); return m ? Number(m[1]) : Number.NaN; };
 
-/* 「系统钮那一排」的高度 = 顶栏高。win32 侧 = titleBarOverlay.height 43 + .topbar::after 1px
-   （见 electron/runtime-refs.ts 的 titleBarOverlayOptions() 与下面 .topbar 的 height）。 */
+/* 「系统钮那一排」的高度 = 顶栏的**视觉**底边 = 外圈 margin-top + 顶栏 height。
+   ⛔ 10-31 修：只取 `.topbar { height }` 是错的 —— 顶栏自 10-31 起带 6px 外圈 margin
+   （`.app-shell > .topbar { margin: 6px 6px 0 3px }`），视觉底边 = 6+44 = 50。
+   品牌行要对齐的是 50，不是 44（锚 44 会高 6px）。 */
 const topbarH = px(/\.topbar\s*\{[^}]*?height:\s*(\d+)px/);
+const topbarMarginTop = px(/\.app-shell\s*>\s*\.topbar\s*\{[^}]*?margin:\s*(\d+)px/);
 const sidebarPadTop = px(/\.sidebar\s*\{[^}]*?padding:\s*(\d+)px\s+10px\s+10px/);
 const brandMarginTop = px(/\[data-os="darwin"\]\s+\.sidebar\s+\.brand-row\s*\{[^}]*?margin-top:\s*(\d+)px/);
 
 (Number.isFinite(brandMarginTop) && brandMarginTop > 0 ? ok : fail)(
   `【284】mac 品牌行靠 margin-top **下移**到红绿灯下方（实测 margin-top=${brandMarginTop}；⛔ 0/缺失 = 退回与红绿灯并排）`
 );
-(Number.isFinite(topbarH) && Number.isFinite(sidebarPadTop) && sidebarPadTop + brandMarginTop === topbarH ? ok : fail)(
-  `【284】mac 品牌行顶边 == 顶栏底边（${sidebarPadTop}+${brandMarginTop}=${sidebarPadTop + brandMarginTop} vs 顶栏 ${topbarH}）—— mac 让位高度与 Windows titleBarOverlay 同源，只有一个数`
+(Number.isFinite(topbarH) && Number.isFinite(topbarMarginTop) && sidebarPadTop + brandMarginTop === topbarMarginTop + topbarH ? ok : fail)(
+  `【284】mac 品牌行顶边 == 顶栏**视觉**底边（${sidebarPadTop}+${brandMarginTop}=${sidebarPadTop + brandMarginTop} vs 外圈 ${topbarMarginTop} + 顶栏 ${topbarH} = ${topbarMarginTop + topbarH}）—— 两边同源，只有一个数`
 );
 /* 负向：不许再用**横向**让位（那是「并排」形态的指纹），也防止有人"顺手加回去"。 */
 (!/\[data-os="darwin"\]\s+\.sidebar\s+\.brand-row\s*\{[^}]*padding-left/.test(cssAll) ? ok : fail)(

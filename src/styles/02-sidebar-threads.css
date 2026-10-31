@@ -394,7 +394,9 @@
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 2px;
+  /* 10-31 用户「右上角紧凑一点」：2px → 0。按钮盒子本身留有 6px 内边距（28 盒 / 16 图标），
+     盒间再叠 2px 会显得散。与 `.topbar .icon-button` 的 28px 一起决定最终视觉间距（12px）。 */
+  gap: 0;
   -webkit-app-region: no-drag;
 }
 /* ⛔ 修复「目标钮和⋯钮竖着挤在一起」（09-16 用户截图）：操作簇总宽超出可用空间时，
@@ -424,10 +426,12 @@
   gap: 10px;
   min-width: 0;
   padding-left: 16px;
-  /* 145 = 原生窗口钮预留区：操作簇右缘紧贴系统按钮，位置恒定
-     （titleBarStyle:"hidden" + titleBarOverlay ⇒ 系统钮是**浮在页面上的原生 overlay**、
-     不占文档流，这段padding 是唯一让位手段） */
-  padding-right: 145px;
+  /* 10-31 用户「右上角也跟他这样紧凑一点」：预留区从 145 收到 **132**。
+     算法：Windows 原生三钮 = 46×3 = 138px，从窗口右缘起算；而顶栏自身有 6px 外圈 margin
+     ⇒ 要让操作簇右缘正好贴住系统按钮左缘，padding 必须是 138 − 6 = **132**。
+     ⛔ 145 是早年拍的估值（多留 13px 空白，图标簇与窗口钮之间空出一截）。
+     ⛔ 改这里必须同时看 `.topbar-actions` 的 gap 与 `.icon-button` 的尺寸 —— 三者一起决定"紧凑度"。 */
+  padding-right: 132px;
   display: flex;
   -webkit-app-region: drag;
   height: 44px;
@@ -476,7 +480,10 @@
    ⛔ 原 `padding-left: 68px` 已删：品牌行既然在红绿灯下方，横向无需再让位（回落到 .brand-row
       自己的 `padding: 0 8px`）。⛔ 别再把它加回来 —— 加了就变回「并排」。 */
 [data-os="darwin"] .sidebar .brand-row {
-  margin-top: 32px;
+  /* ⛔ 10-31 重算：顶栏首行已从 44 改成 **50**（6px 外圈 margin + 44px 顶栏本体，
+     修「顶栏压住第二行 6px」那条）。品牌行要与顶栏底边齐平 ⇒ 侧栏 padding-top(12) + 38 = 50。
+     ⛔ 别再写回 32：那是顶栏还从窗口顶端起算时的值，会让 mac 上品牌行比顶栏高 6px（错位）。 */
+  margin-top: 38px;
 }
 /* 底部分隔线止于窗口钮左侧——原生 overlay 区域画不进线，避免「线断一截」 */
 .topbar::after {
@@ -605,6 +612,15 @@
   place-items: center;
   padding: 0;
   display: grid;
+}
+/* 10-31 用户「右上角跟他这样紧凑一点」：顶栏这一排单独收到 28px。
+   ⛔ 只限 `.topbar` 内 —— 32px 是别的面板（卡片头、设置页）的既有口径，改全局会波及一片。
+   28 盒 / 16 图标 ⇒ 视觉间距 12px；配合 `.topbar-actions { gap: 0 }` 与 132px 预留区，
+   整簇右缘正好贴住 Windows 原生三钮（46×3=138）的左缘。
+   mac 同样受益（红绿灯在左上，右侧不留预留区），两条规则都不分平台。 */
+.topbar .icon-button {
+  width: 28px;
+  height: 28px;
 }
 .icon-button:hover {
   /* ⛔ hover 不许把色相刷掉：回落 `--text` 保持原行为，挂了 `ic-*` 的则**常亮它的色相**
