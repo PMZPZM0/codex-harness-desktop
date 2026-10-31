@@ -315,6 +315,35 @@
   font-size: 11.5px;
   color: var(--muted);
 }
+/* 恢复默认键（10-31 用户截图）：放在标签行**左侧**、「会话颜色」文字后面 ——
+   别混进色板（挤到第二行）。未设色时亮 ring 提示「现在就是默认」。 */
+.thread-row-menu .thread-row-color-clear {
+  width: 15px;
+  min-width: 15px;
+  height: 15px;
+  min-height: 15px;
+  flex: none;
+  padding: 0;
+  margin-left: 2px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  display: block;
+  cursor: pointer;
+  position: relative;
+}
+.thread-row-menu .thread-row-color-clear::after {
+  content: "×";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+}
+.thread-row-menu .thread-row-color-clear:hover { background: var(--panel-2); }
+.thread-row-menu .thread-row-color-clear.on { border-color: var(--faint); }
 .thread-row-color-dots {
   display: flex;
   align-items: center;
@@ -336,21 +365,6 @@
 }
 .thread-row-menu .thread-row-color-dot:hover { background: var(--dot); filter: brightness(1.08); }
 .thread-row-menu .thread-row-color-dot.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--dot); }
-.thread-row-menu .thread-row-color-dot.is-clear {
-  background: transparent;
-  border-color: var(--line);
-  position: relative;
-}
-.thread-row-menu .thread-row-color-dot.is-clear::after {
-  content: "×";
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--muted);
-}
 .archive-button {
   width: 28px;
   height: 28px;
