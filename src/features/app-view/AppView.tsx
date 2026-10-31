@@ -231,9 +231,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
   /* ★ 10-31 用户令：「左侧栏也加一个拖动功能」——拖侧栏右缘改宽度（200–420px），
      localStorage 持久化；折叠 / 窄屏 / 独立弹窗三种状态不响应（那里宽度是布局决定的）。
      ⛔ 只改 CSS 变量 --side-w（grid 用它的那条），不换模板：轨道数不变才能插值动画。 */
-  const SIDEBAR_MIN = 220;
+  const SIDEBAR_MIN = 260;
   const SIDEBAR_MAX = 420;
-  const SIDEBAR_DEFAULT = 256;
+  const SIDEBAR_DEFAULT = 260;
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     try {
       const stored = Number(localStorage.getItem("sidebar-width"));
