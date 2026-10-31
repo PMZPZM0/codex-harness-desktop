@@ -193,6 +193,18 @@ export const bossGroupsFeature = defineFeature<null>({
       return { ok: true, rebound: hit.length };
     });
 
+    /* ⛔⛔ 10-31 用户令「每个中枢会话都是独立的，调度必须归在自己的中枢下面」：
+       群工具的**归属硬闸**（写侧，主进程最终把关）—— 群只属于创建它的那个中枢会话。
+       模型在别的中枢里能从 group_status 看到群 id（读侧已在渲染层过滤）⇒ 不拦就会
+       跨中枢拿别人的群派活/删群，被派会话全部缩进到别人的中枢行下（用户实测截图）。 */
+    const assertGroupOwned = (group: { bossThreadId?: string } | null | undefined, callerThreadId: unknown): void => {
+      const caller = String(callerThreadId ?? "").trim();
+      if (!caller) return; /* 身份缺失（旧调用方 / 设置页 UI）不拦 —— 引擎 tool call 恒带 threadId */
+      const owner = String(group?.bossThreadId ?? "").trim();
+      if (owner && owner !== caller) throw new Error("这个群属于另一个指挥中枢：跨中枢派活/操作已禁止（只能在中枢自己的群里派）。");
+    };
+    const groupOfTask = (state: any, taskId: string) => state?.groups?.[state?.tasks?.[String(taskId ?? "")]?.groupId ?? ""];
+
     ipcHost.handle("boss-groups:status", async (_event, groupId: string) => {
       await bossStore.load();
       return statusForBoss(String(groupId ?? ""));
@@ -203,7 +215,9 @@ export const bossGroupsFeature = defineFeature<null>({
       return createGroupForBoss({
         name: String(input?.name ?? ""),
         workspace: String(input?.workspace ?? ""),
-        bossThreadId: String(input?.bossThreadId ?? ""),
+        /* ⛔ 群归属以**引擎下发的调用者 threadId**为权威（callerThreadId）——
+           两个中枢同时建群时，bossThreadId 绝不能串（用户实测全部串到一个中枢下面）。 */
+        bossThreadId: String(input?.callerThreadId ?? "") || String(input?.bossThreadId ?? ""),
         members: Array.isArray(input?.members) ? input.members : [],
         policy: input?.policy ?? undefined,
       });
@@ -213,7 +227,8 @@ export const bossGroupsFeature = defineFeature<null>({
        ⛔ 联动就在 runner 里：先往中枢回投 [群事件]，再清群/任务/事件三处账本。
        ⛔ 会话不删（成员产出与轨迹保留）；memberThreadIds 也随之失效，侧栏的「中枢调度」标签自然消失。 */
     ipcHost.handle("boss-groups:delete", async (_event, input: any) => {
-      await bossStore.load();
+      const st = await bossStore.load();
+      assertGroupOwned(Object.values(st.groups ?? {}).find((g: any) => g.id === String(input?.groupId ?? "")), input?.callerThreadId);
       return deleteGroupForBoss({
         groupId: String(input?.groupId ?? ""),
         by: input?.by === "boss" ? "boss" : "user",
@@ -222,7 +237,8 @@ export const bossGroupsFeature = defineFeature<null>({
     });
 
     ipcHost.handle("boss-groups:assign", async (_event, input: any) => {
-      await bossStore.load();
+      const st = await bossStore.load();
+      assertGroupOwned(Object.values(st.groups ?? {}).find((g: any) => g.id === String(input?.groupId ?? "")), input?.callerThreadId);
       return addTaskForBoss({
         groupId: String(input?.groupId ?? ""),
         title: String(input?.title ?? ""),
@@ -237,6 +253,7 @@ export const bossGroupsFeature = defineFeature<null>({
     ipcHost.handle("boss-groups:review", async (_event, input: any) => {
       const state = await bossStore.load();
       const verdict = input?.verdict === "approved" ? "approved" : "rejected";
+      assertGroupOwned(groupOfTask(state, String(input?.taskId ?? "")), input?.callerThreadId);
       const task = recordReview(state, String(input?.taskId ?? ""), {
         by: String(input?.by ?? "user"),
         verdict,
@@ -263,6 +280,7 @@ export const bossGroupsFeature = defineFeature<null>({
       if (!choice) {
         throw new Error(`choice 只能是 retry / relax-criteria / user-takeover（收到「${String(input?.choice ?? "")}」）`);
       }
+      assertGroupOwned(groupOfTask(state, String(input?.taskId ?? "")), input?.callerThreadId);
       const task = resolveEscalation(state, String(input?.taskId ?? ""), choice, String(input?.note ?? ""));
       bossStore.save();
       if (choice !== "user-takeover" && task.status === "queued") {
@@ -276,8 +294,9 @@ export const bossGroupsFeature = defineFeature<null>({
 
     /** 拉人 / 移人（boss 工具与群视图面板共用）。移人不删会话、不打断在跑任务。 */
     ipcHost.handle("boss-groups:member", async (_event, input: any) => {
-      await bossStore.load();
+      const st = await bossStore.load();
       const action = input?.action === "add" ? "add" : "remove";
+      assertGroupOwned(Object.values(st.groups ?? {}).find((g: any) => g.id === String(input?.groupId ?? "")), input?.callerThreadId);
       return memberForBoss({
         groupId: String(input?.groupId ?? ""),
         action,

@@ -191,6 +191,11 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                    ⛔ 规则不在这里：状态机在 electron/boss-groups/state.ts（纯函数 + 守卫真跑），
                       本分支只做「参数整形 + 转 IPC + 把结果讲成模型能读的一句话」。 */
                 const tool = String(event.params?.tool);
+                /* ⛔⛔ 10-31 用户令「每个中枢会话都是独立的，调度必须归在自己的中枢下面」：
+                   群工具全部带上**引擎下发的调用者 threadId**，主进程据此做「群归属硬闸」——
+                   群只属于创建它的那个中枢，别的中枢拿 groupId 来派活/删群一律拒绝。
+                   ⛔ 这里不许回落 bag.threadRef（后台中枢的调用不能被算到当前打开的会话头上）。 */
+                const bossCaller = String(event.params?.threadId ?? "");
                 const ok = (text: string) => toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
                 const bad = (text: string) => toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: false });
                 try {
@@ -208,6 +213,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       bossThreadId: String(event.params?.threadId ?? bag.threadRef.current?.id ?? ""),
                       members,
                       policy: { maxRejects: args.maxRejects },
+                      callerThreadId: bossCaller,
                     });
                     const group = res?.group;
                     if (!group) await bad(`建群失败：宿主没有返回群信息`);
@@ -222,6 +228,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       brief: String(args.brief ?? ""),
                       criteria: String(args.criteria ?? ""),
                       assignee: args.assignee ? String(args.assignee) : undefined,
+                      callerThreadId: bossCaller,
                     });
                     if (!res?.ok) await bad(`派活失败：${res?.error ?? "未知原因"}`);
                     else await ok(`已派活（taskId=${res.taskId}）${res.dispatched ? "，成员已经在它自己的会话里开工" : "，但暂时没派出去"}。
@@ -229,10 +236,13 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                   } else if (tool === "group_status") {
                     const groupId = String(args.groupId ?? "");
                     if (!groupId) {
-                      const [list, pool] = await Promise.all([
+                      const [listAll, pool] = await Promise.all([
                         window.codex.listBossGroups(),
                         window.codex.bossGroupPool().catch(() => null),
                       ]);
+                      /* ⛔ 群归属硬闸（读侧）：只把**自己名下**的群报给这个中枢 ——
+                         否则模型会拿着别的中枢的 groupId 来派活（用户实测全部串到一个中枢下面）。 */
+                      const list = (listAll ?? []).filter((g: any) => !bossCaller || String(g?.bossThreadId ?? "") === bossCaller);
                       const poolText = pool
                         ? `\n可拉专家：${(pool.experts ?? []).map((x: any) => `${x.name}[${x.teamName}]`).join("、") || "（无）"}`
                           + `\n可拉本机 CLI agent：${(pool.cliAgents ?? []).map((x: any) => `${x.name}${x.detected ? "✓" : "（未检测到命令）"}`).join("、")}`
@@ -240,6 +250,10 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       await ok(`共 ${list?.length ?? 0} 个群：${(list ?? []).map((g: any) => `${g.name}(id=${g.id}${g.paused ? "，已暂停" : ""})`).join("；") || "（无）"}${poolText}`);
                     } else {
                       const snap = await window.codex.bossGroupStatus(groupId);
+                      /* ⛔ 群归属硬闸（渲染层读侧）：别的中枢的群不许看/不许操作（主进程在写侧硬拦）。 */
+                      if ((snap as any)?.group && bossCaller && String((snap as any).group.bossThreadId ?? "") !== bossCaller) {
+                        await bad(`这个群属于另一个指挥中枢（跨中枢操作已禁止）。只用 group_status 不带 id 查自己名下的群。`);
+                      } else {
                       /* ⛔⛔ 10-25 用户实测：「用户移除的群成员没有真实生效，Codex 不知道我移除了」。
                          原来这里直接把整份 snapshot 的 JSON 丢给模型 —— members 里还带着
                          status="removed" 的那几位，模型就照着数成"成员 3 位"（截图实证）。
@@ -258,6 +272,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       if (rest?.group) rest.group = { ...rest.group, members: activeMembers, removedMembers };
                       await ok(`群「${gm?.name ?? ""}」（id=${gm?.id ?? groupId}）当前成员 ${activeMembers.length} 位：${memberText}${removedText}
 （下面是其余状态：${JSON.stringify(rest).slice(0, 4000)}）`);
+                      }
                     }
                   } else if (tool === "group_review") {
                     const res = await window.codex.reviewBossTask({
@@ -265,6 +280,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       verdict: args.verdict === "approved" ? "approved" : "rejected",
                       reasons: Array.isArray(args.reasons) ? args.reasons.map(String) : [],
                       by: "boss",
+                      callerThreadId: bossCaller,
                     });
                     await ok(`审查已记录：任务 ${res?.task?.id} 现在 ${res?.task?.status}（打回 ${res?.task?.rejects} 次，锁定作者 ${JSON.stringify(res?.task?.lockedAuthors ?? [])}）`);
                   } else if (tool === "group_escalate") {
@@ -272,6 +288,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       taskId: String(args.taskId ?? ""),
                       choice: String(args.choice ?? ""),
                       note: String(args.note ?? ""),
+                      callerThreadId: bossCaller,
                     });
                     await ok(`升级已处理：任务 ${res?.taskId} 现在 ${res?.status}${res?.dispatched ? "，已重新派活" : ""}${res?.error ? `（${res.error}）` : ""}`);
                   } else if (tool === "group_add_member") {
@@ -286,6 +303,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       expertMemberId: args.expertMemberId ? String(args.expertMemberId) : undefined,
                       cliName: args.cliName ? String(args.cliName) : undefined,
                       cliCommand: args.cliCommand ? String(args.cliCommand) : undefined,
+                      callerThreadId: bossCaller,
                     });
                     if (!res?.ok) await bad(`加人失败：${res?.error ?? "未知原因"}`);
                     else await ok(`新成员进群：${res.member?.name}（${res.member?.role}${res.member?.source === "cli" ? "，本机 CLI agent" : ""}，id=${res.member?.id}）。TA 第一次被派活时才建执行体；用 group_assign 指派时传这个 id。`);
@@ -293,6 +311,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                     const res = await window.codex.bossGroupMember({
                       groupId: String(args.groupId ?? ""), action: "remove",
                       memberId: String(args.memberId ?? ""),
+                      callerThreadId: bossCaller,
                     });
                     if (!res?.ok) { await bad(`移人失败：${res?.error ?? "未知原因"}`); }
                     else {
@@ -315,6 +334,7 @@ export function handleEventRouter2(bag: Bag, event: any): boolean {
                       groupId: String(args.groupId ?? ""),
                       by: "boss",
                       reason: args.reason ? String(args.reason) : undefined,
+                      callerThreadId: bossCaller,
                     });
                     if (!res?.ok) await bad(`删群失败：${res?.error ?? "未知原因"}`);
                     else await ok(`群「${res?.deleted?.name ?? ""}」已删除：清掉 ${res?.deleted?.tasks ?? 0} 条任务与 ${res?.deleted?.events ?? 0} 条事件`
