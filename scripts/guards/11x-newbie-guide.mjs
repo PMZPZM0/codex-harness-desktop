@@ -199,13 +199,13 @@ const preload = read("electron/preload.ts");
     "「能做什么」卡片按可用宽度自适应列数（⛔ 不许写死 3 列 → 窄窗口一字一行）");
   ok(/@media \(max-width: 720px\)[\s\S]{0,400}?\.sidebar-guide-caps \{ grid-template-columns: 1fr; \}/.test(guideCss),
     "窄窗口兜底：单列（媒体查询阈值 720，覆盖平板宽度）");
-  /* 外圈边框（10-31 两轮修正）：缝隙 4px、不画边框线、顶栏不留上缝（系统窗口钮要对齐）。 */
+  /* 外圈边框（10-31 三次定稿）：外圈保持 6px + 细边；中间（侧栏↔内容）3px 且不画线。 */
   const shellCss = read("src/styles/01-base-and-chrome.css");
-  ok(/\.app-shell > \.topbar \{[\s\S]{0,160}?margin: 0 4px 0 4px;[\s\S]{0,80}?border: 0;/.test(shellCss)
-    && /\.app-shell > \.workspace \{[\s\S]{0,160}?margin: 0 4px 4px 4px;[\s\S]{0,80}?border: 0;/.test(shellCss),
-    "外圈卡：缝隙 4px、不画边框（用户：中间线太多，正常颜色过渡）");
+  ok(/\.app-shell > \.topbar \{[\s\S]{0,200}?margin: 6px 6px 0 3px;[\s\S]{0,120}?border-left: 0;/.test(shellCss)
+    && /\.app-shell > \.workspace \{[\s\S]{0,200}?margin: 0 6px 6px 3px;[\s\S]{0,120}?border-left: 0;/.test(shellCss),
+    "外圈卡：上/右/下 6px + 细边；中间只留 3px 且不画线（用户：外边保持，减少中间的缝和线）");
   ok(/\.app-shell > \.sidebar \{ border-right: 0; \}/.test(shellCss),
-    "侧栏右边界线去掉（多段线叠在一起 = 用户说的分段线太多）");
+    "侧栏右边界线去掉（中间只剩底色过渡）");
 }
 console.log(`\n【newbie-guide】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

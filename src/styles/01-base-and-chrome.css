@@ -1249,36 +1249,44 @@ html.fx-ripple::view-transition-new(root) {
     box-shadow var(--dur-ui) ease;
 }
 
-/* ★ 10-31 用户令（两次修正后定稿）：
-   「四边留一点点缝隙、有立体感；上面连着左边侧边栏」→「中间线太多了，正常颜色过渡就行；
-     缝隙太大了；右上角系统按键对齐下面的」。
-   ⇒ 内容卡（顶栏 + 聊天 + 右栏）从窗口**右/下**与侧栏各退 **4px**，**顶部不空**（系统窗口钮
-     与顶栏图标同一行）；不再画任何边框/分隔线：侧栏 → 缝隙 → 白卡的过渡只靠底色差；
-     侧栏右边界线也去掉（⛔ 三段线叠在一起就是用户说的"分段线太多"）。 */
+/* ★ 10-31 用户令（三次修正后定稿）：
+   「应用外边就很好」+「只是减少中间的缝隙和线」——
+   ⇒ **外圈保持上一版**：上/右/下留 6px 缝 + 细边 + 圆角；
+      **中间（侧栏 ↔ 内容）**：缝缩到 3px、不画线（卡片左边框与侧栏右边框都去掉，只靠底色过渡）；
+      卡片内部的连接处（顶栏底边、聊天顶边）也不画线。
+   ⛔ 窗口钮是 overlay：卡片上移 6px 只影响命中区，不影响按钮位置。 */
 .app-shell { background: var(--panel); }
 :root[data-theme="dark"] .app-shell { background: var(--bg); }
 .app-shell > .topbar {
-  margin: 0 4px 0 4px;
-  border: 0;
+  margin: 6px 6px 0 3px;
+  border: 1px solid var(--line-soft);
+  border-left: 0;
+  border-bottom: 0;
   border-radius: 12px 12px 0 0;
   background: var(--bg);
 }
 .app-shell > .workspace {
-  margin: 0 4px 4px 4px;
-  border: 0;
+  margin: 0 6px 6px 3px;
+  border: 1px solid var(--line-soft);
+  border-top: 0;
+  border-left: 0;
+  border-right: 0;
   border-radius: 0 0 0 12px;
   background: var(--bg);
 }
 .app-shell:not(.with-context) > .workspace {
+  border-right: 1px solid var(--line-soft);
   border-radius: 0 0 12px 12px;
 }
 .app-shell.with-context > .context-panel {
-  margin: 0 4px 4px 0;
-  border: 0;
+  margin: 0 6px 6px 0;
+  border: 1px solid var(--line-soft);
+  border-top: 0;
+  border-left: 0;
   border-radius: 0 0 12px 0;
   background: var(--bg);
 }
-/* 顶栏与聊天之间不出现横线（同一张卡）；侧栏边界线去掉（只剩底色过渡） */
+/* 内部连接处不画线；侧栏右边界线去掉（中间只留 3px 底色过渡） */
 .app-shell > .topbar::after { display: none; }
 .app-shell > .sidebar { border-right: 0; }
 /* 主区/右栏之间的拖拽条：默认透明（没有线），悬停/拖动才显形 */
@@ -1289,8 +1297,8 @@ html.fx-ripple::view-transition-new(root) {
 :root[data-theme="dark"] .app-shell > .workspace,
 :root[data-theme="dark"] .app-shell.with-context > .context-panel { background: var(--panel); }
 @media (max-width: 760px) {
-  .app-shell > .topbar { margin: 0 3px 0 3px; border-radius: 10px 10px 0 0; }
-  .app-shell > .workspace { margin: 0 3px 3px 3px; border-radius: 0 0 0 10px; }
+  .app-shell > .topbar { margin: 4px 4px 0 3px; border-radius: 10px 10px 0 0; }
+  .app-shell > .workspace { margin: 0 4px 4px 3px; border-radius: 0 0 0 10px; }
   .app-shell:not(.with-context) > .workspace { border-radius: 0 0 10px 10px; }
-  .app-shell.with-context > .context-panel { margin: 0 3px 3px 0; border-radius: 0 0 10px 0; }
+  .app-shell.with-context > .context-panel { margin: 0 4px 4px 0; border-radius: 0 0 10px 0; }
 }
