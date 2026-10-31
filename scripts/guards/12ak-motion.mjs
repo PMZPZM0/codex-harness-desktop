@@ -137,5 +137,27 @@ ok(/classList\.add\("panel-resizing"\)/.test(dragSrc) && /setProperty\("--panel-
   "⑦ 拖分隔条只改 --panel-w 并挂 panel-resizing（否则列宽滞后 220ms、拖起来发粘）");
 ok(!/style\.gridTemplateColumns =/.test(dragSrc),
   "⑦ 负向：拖拽不许再写 style.gridTemplateColumns（钉死 inline 后变量变化全失效）");
+
+/* ── ⑧ 顶栏 / 外圈 / 右栏细线（10-31 用户四连问）───────────────────────────────
+   ① 原生窗口钮要跟顶栏图标行同一条水平线；② 顶部外圈那条缝要能拖窗口；
+   ③ 右栏与主区之间的线要细；④ 悬停/拖动要有跟左侧一样的主题色光。 */
+const rrSrc = codeOnly(read("electron/runtime-refs.ts"));
+const mainTs = codeOnly(read("electron/main.ts"));
+const appViewFull = codeOnly(read("src/features/app-view/AppView.tsx"));
+
+ok(/grid-template-rows: 50px minmax\(0, 1fr\)/.test(base),
+  "⑧ 首行 = 6px 外圈 + 44px 顶栏（50px）：第 2 行不再被顶栏压住 6px —— 否则右栏滚动区/对话区顶端会被切一条")
+ok(/\.shell-drag-top \{[^}]*height: 6px/.test(base) && /\.shell-drag-top \{[^}]*app-region: drag/.test(base),
+  "⑧ 顶部外圈 6px 铺了 drag 条（外圈是卡片 margin 让出来的死区，不补就拖不动窗口）")
+ok(/className="shell-drag-top"/.test(appViewFull),
+  "⑧ 外圈拖拽条真的挂进了 DOM（只写 CSS 不挂元素 = 装饰品）")
+ok(/height: 55 \};/.test(rrSrc) && !/height: 43/.test(rrSrc),
+  "⑧ titleBarOverlay 高度 = 55（顶栏中心 6+22=28 ⇒ 原生钮 27.5 才同行；43 ⇒ 中心 21.5，整体上移 6.5px）")
+ok(!/symbolColor: symbol, height: 43/.test(mainTs),
+  "⑧ 负向：切主题时的 setTitleBarOverlay 不许再用 43（一写就把建窗的 55 打回去，表现是\"改了没生效\"）")
+ok(/\.app-shell\.with-context > \.panel-divider:hover::after,[\s\S]{0,120}?background: var\(--accent\)/.test(base),
+  "⑧ 右栏分隔条悬停/拖动 = 主题色光（与左侧 .sidebar-resizer:hover::after 同款）")
+ok(!/\.panel-divider:hover,\s*\n?\.panel-divider:active \{[^}]*background: var\(--muted\)/.test(base),
+  "⑧ 负向：不许再给分隔条整列铺 --muted（1px 格子涂满 + 高分屏缩放 = 看着像 2~3px 的粗条）")
 console.log(`\n  【motion】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);
