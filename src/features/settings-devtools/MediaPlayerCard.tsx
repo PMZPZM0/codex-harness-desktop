@@ -111,7 +111,7 @@ export function MediaPlayerCard({ onNotice }: { onNotice?: (message: string) => 
       <div className="voice-devtools-actions">
         {ready ? (
           <>
-            <span className="voice-devtools-badge">内核 {(kernel.length / 1024).toFixed(0)} KB</span>
+            <small style={{ color: "var(--muted)", marginRight: "auto" }}>内核 {(kernel.length / 1024).toFixed(0)} KB</small>
             <button className="secondary-setting" onClick={uninstall}>
               <Trash2 size={13} />卸载
             </button>
