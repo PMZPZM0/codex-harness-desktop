@@ -90,6 +90,12 @@ export async function run() {
     (segs[2].user.id === "u2" && segs[2].items.map((i) => i.id).join(",") === "t3,a1" ? ok : fail)("【44a】插队消息 u2 之后的 tool/答复落在它**自己的段**里（= 显示在它下面）");
     (flow.shouldFlowSegment(segs) === true ? ok : fail)("【44a】≥2 条普通用户消息 ⇒ 走分段渲染（上一版这条是 false，功能等于没生效）");
     (flow.shouldFlowSegment(flow.splitFlowSegments([u("u1"), tool("t1")])) === false ? ok : fail)("【44a】单条用户消息 ⇒ 维持旧渲染（气泡在卡片上方，别动既有路径）");
+    /* ⛔⛔ 11-01 用户令：「运行的时候这样是对的，回合结束后要跟着当前回合一起折叠，用户消息放
+       codex 消息上面按顺序排，不管中间插队多少条效果都要一样」—— 分段只服务运行中。
+       这条断言打的是**行为**：同一组 items，running=true 时分段、false 时回到整轮形态。 */
+    (flow.shouldSegmentNow(segs, true) === true ? ok : fail)("【44a】运行中：多条用户消息 ⇒ 按流中位置分段");
+    (flow.shouldSegmentNow(segs, false) === false ? ok : fail)("【44a】回合结束：不同段（消息全在上、内容在下，插队几条都一个样）");
+    (flow.shouldSegmentNow(flow.splitFlowSegments([u("u1"), tool("t1")]), true) === false ? ok : fail)("【44a】运行中但只有一条用户消息 ⇒ 也不分段");
     (flow.headSegmentIndex(segs) === 1 ? ok : fail)(`【44a】头像/计时挂首段实块（实得 ${flow.headSegmentIndex(segs)}；写死 0 会整轮没头像）`);
     /* ⛔ 10-31 审查：两条**相邻**用户消息（刚排队就点「立即」的形态）时首段没有 items，
        而组件只给有 items 的段 / 最后一段渲染卡片 ⇒ 头像与「正在处理 N 秒」必须挂到有内容的段。 */

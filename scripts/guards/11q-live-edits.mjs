@@ -322,8 +322,16 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
      ⛔⛔ 门判必须是「**回合里有 ≥2 条普通用户消息**」，⛔ 不能写成「首条用户消息之前已有响应项」——
      真实 rollout 是 `USER1 → tool → tool → USER2 → tool → answer`（回合以用户消息开头）
      ⇒ 那样写门判恒 false、分段永远不跑，用户看到的就是"我的消息跳上去、后续内容堆在上面"（上一版就栽在这）。 */
-  ok(/splitFlowSegments\(turn\.items/.test(turnView) && /const interleaved = shouldFlowSegment\(flowSegments\)/.test(turnView) && /shouldFlowSegment/.test(read("src/lib/turn-flow-segments.mjs")),
-    "插队分段：门判 = 回合内 ≥2 条普通用户消息（⛔ 不是「首条用户消息前有响应项」，那个判据在真实数据上恒假）");
+  ok(/splitFlowSegments\(turn\.items/.test(turnView) && /const interleaved = shouldSegmentNow\(flowSegments, running\)/.test(turnView) && /export function shouldSegmentNow/.test(read("src/lib/turn-flow-segments.mjs")),
+    "插队分段：门判 = 回合内 ≥2 条普通用户消息 **且正在运行**");
+  /* ⛔⛔ 11-01 用户令（对照截图）：「运行的时候这样是对的，回合结束后要跟着当前回合一起折叠起来，
+     用户消息就放 codex 消息上面按顺序排，不管中间插队多少个消息效果都要一样」——
+     分段只服务"运行中看清我的话后面跟的是哪段输出"；**结束态必须回到整轮形态**：
+     用户气泡全部在 turn-card 之前（plainUserItems），过程与答复收在下面的折叠组。
+     ⛔ 结束后还分段 = 消息被永久劈开在过程之间（用户截图正是这个）。 */
+  ok(/const interleaved = shouldSegmentNow\(flowSegments, running\)/.test(turnView)
+    && /\{plainUserItems\.map\(\(item\) => <MemoUserMessageView/.test(turnView),
+    "结束态不分段：用户消息按顺序全在卡片上方（插队几条都长一个样）");
   ok(/flowSegments\.map\(\(seg, index\) => \{[\s\S]{0,400}?MemoUserMessageView item=\{seg\.user\}/.test(turnView),
     "插队分段：用户气泡渲染在自己的流位置上（段内 MemoUserMessageView）");
   ok(/const headSegIndex = headSegmentIndex\(flowSegments\)/.test(turnView)

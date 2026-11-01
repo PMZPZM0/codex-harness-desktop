@@ -31,8 +31,12 @@ const port = Number(process.argv[2] || 9391);
 const settleMs = Number(process.argv[3] || 10000);
 
 const profile = path.resolve(".workbuddy/tmp/verifyprof");
-fs.rmSync(profile, { recursive: true, force: true });
+/* ⛔ 不复用就每次都是"全新首启"：要建 codex-home、扫 rollout、首次渲染更慢 ——
+   实测会超过 60s 等不到页面（假 FAIL）。⇒ 只清**单实例锁**与缓存，其余保留（热 profile）。 */
 fs.mkdirSync(profile, { recursive: true });
+for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
+  try { fs.rmSync(path.join(profile, name), { force: true }); } catch { /* 不存在就算了 */ }
+}
 
 const env = { ...process.env, CODEX_HARNESS_DEBUG_PORT: String(port) };
 for (const key of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS", "http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]) delete env[key];

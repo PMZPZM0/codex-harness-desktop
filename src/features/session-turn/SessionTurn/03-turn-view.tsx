@@ -20,7 +20,7 @@ import { collectTurnWebSources } from "../../../lib/turn-web-sources.mjs";
 import { UserMessageView } from "../../shared/UserMessageView";
 import { isGroupEventMessage } from "../../../lib/user-refs";
 import { itemText } from "../../../lib/item-text";
-import { headSegmentIndex, shouldFlowSegment, splitFlowSegments } from "../../../lib/turn-flow-segments.mjs";
+import { headSegmentIndex, shouldSegmentNow, splitFlowSegments } from "../../../lib/turn-flow-segments.mjs";
 import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
@@ -57,7 +57,14 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
     () => splitFlowSegments(turn.items, { isCompaction: isCompactionItem, isGroupEvent: isGroupEventMessage, textOf: itemText }),
     [turn.items],
   );
-  const interleaved = shouldFlowSegment(flowSegments);
+  /* ⛔⛔ 11-01 用户令（对照截图）：「运行的时候这样是对的，但回合结束后是不是跟着当前回合
+     一起折叠起来，而不是这样被插队分开；用户消息就放 codex 消息上面，按顺序排就行，
+     不管中间插队多少个消息效果都要一样」。
+     ⇒ 分段渲染**只在 running 时**用（运行中能看清"我的话后面跟的是哪段输出"，这正是它存在的理由）；
+       回合结束（含用户点停止）后回到"整轮一张卡"的形态：所有用户气泡按顺序排在卡片上方，
+       过程与答复收在下面的折叠组里 —— 插队几条都长一个样。
+     ⛔ 结束态若还按流中位置分段，消息就被永久"劈开"在过程之间（用户截图就是这个）。 */
+  const interleaved = shouldSegmentNow(flowSegments, running);
   /* 「Codex 头像 + 名字」与「正在处理 N 秒」挂在**第一段真的会渲染的块**上（不是死板的首段）：
      首段经常是空段（回合以用户消息开头），写死 index===0 会让头像整轮都不出现。 */
   const headSegIndex = headSegmentIndex(flowSegments);

@@ -11,6 +11,9 @@ export function splitFlowSegments(
   },
 ): FlowSegment[];
 
+/** 当前这一帧该不该分段：多条用户消息 **且** 正在运行（11-01 用户令）。 */
+export function shouldSegmentNow(segs: { user: any; items: any[] }[], running: boolean): boolean;
+
 export function shouldFlowSegment(segs: ReadonlyArray<FlowSegment> | null | undefined): boolean;
 
 export function headSegmentIndex(segs: ReadonlyArray<FlowSegment> | null | undefined): number;

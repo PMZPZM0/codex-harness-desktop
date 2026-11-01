@@ -52,6 +52,16 @@ export function shouldFlowSegment(segs) {
  *     `USER1 → USER2 → tool…`（两条相邻用户消息，第一条还没产出任何输出，正是"刚排队就点立即"的形态）
  *     时，首段只有 user、没有 items，而组件**只给有 items 或最后一段渲染卡片** ⇒ 头像与计时整轮都不出现。
  *  ⇒ 优先挂第一个有 items 的段；一段 items 都没有（全空）时挂最后一段（组件必渲染它）。 */
+/**
+ * **当前这一帧该不该走分段渲染**（11-01 用户令）。
+ * 运行中：分段（看清"我这句后面跟的是哪段输出"）；
+ * 回合结束 / 用户点停止：**不分段** —— 整轮回到"用户消息全在上、过程与答复在下"，
+ * 插队几条都长一个样。⛔ 结束态还分段 = 消息被永久劈开在过程之间（用户截图正是这个）。
+ */
+export function shouldSegmentNow(segs, running) {
+  return Boolean(running) && shouldFlowSegment(segs);
+}
+
 export function headSegmentIndex(segs) {
   const list = Array.isArray(segs) ? segs : [];
   const withItems = list.findIndex((seg) => (seg?.items?.length ?? 0) > 0);
