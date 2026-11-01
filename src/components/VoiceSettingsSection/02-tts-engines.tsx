@@ -282,7 +282,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           </div>
         )}
         <div className="voice-engine-grid">
-          {ENGINES.map((engine) => {
+          {/* ⛔ 11-01 用户令：EmotiVoice 的生成器 ONNX 托管地址没配（EMOTIVOICE_ONNX_BASE），
+              下载必然失败 —— 与其让用户点了白等、看着红字报错，不如**先不展示**。
+              数据与后端通道都保留（配好地址后把这一行过滤删掉即可恢复）。 */}
+          {ENGINES.filter((engine) => engine.id !== "emotivoice").map((engine) => {
             const state = packs[engine.id];
             const ready = Boolean(state?.ready);
             const selected = current === engine.id;
