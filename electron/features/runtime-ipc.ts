@@ -695,7 +695,24 @@ function probeTool(file: string, args: string[]): Promise<{ ok: boolean; detail:
       const child = spawn(file, args, {
         windowsHide: true,
         cwd: isConda ? condaRoot : baseDir,
-        env: isConda ? { ...toolchainEnv(), CONDA_PREFIX: condaRoot } : toolchainEnv(),
+        /* conda 的 launcher 还要能找到自己的 python 与 conda 包：只给 CONDA_PREFIX 不够，
+           必须把 miniconda 根 / Scripts / Libraryin 放进 PATH，并指认 CONDA_EXE。 */
+        env: isConda
+          ? (() => {
+              const base = toolchainEnv() as Record<string, string>;
+              const sep = process.platform === "win32" ? ";" : ":";
+              const pathKey = Object.keys(base).find((k) => k.toUpperCase() === "PATH") || "PATH";
+              const extra = [condaRoot, condaRoot + sep + "Scripts", condaRoot + sep + "Library" + sep + "bin"].join(sep);
+              /* ⛔⛔ 实测关键：conda.exe 本身是 Python 启动器，若继承了 toolchainEnv 里的
+                 PYTHONHOME / PYTHONPATH（指向随包 python），它会用自己的解释器去加载别的标准库
+                 ⇒ 直接抛 Traceback（「退出码 1」就是这么来的）。手动跑（不带这些变量）一直是正常的。
+                 ⇒ conda 探测前把这三个变量剔除。 */
+              for (const k of ["PYTHONHOME", "PYTHONPATH", "PYTHONEXECUTABLE"]) {
+                for (const real of Object.keys(base)) if (real.toUpperCase() === k) delete (base as any)[real];
+              }
+              return { ...base, [pathKey]: extra + sep + String(base[pathKey] || ""), CONDA_PREFIX: condaRoot, CONDA_EXE: file };
+            })()
+          : toolchainEnv(),
         timeout: 8000,
       });
       let out = "";
