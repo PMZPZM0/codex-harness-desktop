@@ -237,3 +237,6 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .devtool-health-row.is-bad .devtool-health-badge { color: #dc2626; }
 .devtool-health-name { font-weight: 600; }
 .devtool-health-detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ⛔ 11-01：「准备检查…」这类整行文案别继承三列网格（否则被挤进 18px 徽标列，变成竖排）。 */
+.devtool-health-row.is-plain { display: block; grid-template-columns: none; color: var(--muted); }

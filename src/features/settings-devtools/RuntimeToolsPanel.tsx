@@ -298,7 +298,7 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
         <div className="devtool-health-backdrop" onClick={() => { if (!healthBusy) setHealthRows(null); }}>
           <div className="devtool-health-dialog" onClick={(e) => e.stopPropagation()}>
             <div className="devtool-health-head">
-              <strong>工具自检{healthBusy ? ` · ${healthDone}/${healthRows.length || "…"}` : ` · ${healthRows.length} 项`}</strong>
+              <strong>工具自检{healthBusy ? (healthRows.length ? ` · ${healthDone}/${healthRows.length}` : " · 准备中") : ` · ${healthRows.length} 项`}</strong>
               <button className="secondary-setting" onClick={() => setHealthRows(null)} disabled={healthBusy}>关闭</button>
             </div>
             <div className="devtool-health-progress">
@@ -312,7 +312,7 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                   <span className="devtool-health-detail">{row.ok ? row.detail || "可运行" : row.detail}</span>
                 </div>
               ))}
-              {healthBusy && healthRows.length === 0 ? <div className="devtool-health-row">准备检查…</div> : null}
+              {healthBusy && healthRows.length === 0 ? <div className="devtool-health-row is-plain">准备检查…</div> : null}
             </div>
           </div>
         </div>
