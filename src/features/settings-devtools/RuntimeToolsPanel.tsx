@@ -147,7 +147,13 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                         ⛔ 两条路径都要有可见反馈，不允许按钮区空白（无响应状态）。 */}
                     {busy ? (
                       runtimeUninstalling === runtime.id
-                        ? <span className="runtime-badge busy">卸载中…</span>
+                        ? (
+                          /* ⛔ 11-01 用户令「卸载也都要加上进度条」：原来只有一句「卸载中…」闷到结束。
+                             主进程 removeTargetsWithProgress 本来就在按字节发 percent，这里接上。 */
+                          <span className="runtime-badge busy" title={runtimeStage?.[runtime.id] ?? ""}>
+                            卸载中… {Math.round(Number(runtimePercent?.[runtime.id] ?? 0))}%
+                          </span>
+                        )
                         : <button className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime(runtime.id)}>取消</button>
                     ) : (<>
                     {builtinBadge ? <span className="runtime-badge">内置</span>

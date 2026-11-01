@@ -972,14 +972,20 @@ export const runtimeFeature = defineFeature<null>({
       /* ⛔⛔ 11-01 用户实测「都不是内置的，怎么卸载还删不掉」：
          工具被装/解到了 resources/tools（随包根）时，删除目标只解析到可写根 ⇒ 删了个不存在的位置。
          ⇒ 把同一相对路径在随包根里的副本也加入删除清单（两边都删，状态才会真的回落）。 */
-      for (const target of [...targets]) {
-        try {
-          const rel = path.relative(writeToolsRoot(), target);
-          if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
-            const alt = path.join(toolsRoot(), rel);
-            if (existsSync(alt) && !targets.includes(alt)) targets.push(alt);
+      /* ⛔ 11-01：两个根**互为镜像**展开 —— 不管原目标算在哪个根下，
+         都把同一相对路径在另一个根里的副本补进删除清单（pip 包 / zip 解包 / npm 前缀都在两处出现过）。 */
+      for (const from of [writeToolsRoot(), toolsRoot()]) {
+        for (const to of [writeToolsRoot(), toolsRoot()]) {
+          if (!from || !to || from === to) continue;
+          for (const target of [...targets]) {
+            try {
+              const rel = path.relative(from, target);
+              if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) continue;
+              const alt = path.join(to, rel);
+              if (existsSync(alt) && !targets.includes(alt)) targets.push(alt);
+            } catch { /* 相对化失败就跳过 */ }
           }
-        } catch { /* 相对化失败就跳过 */ }
+        }
       }
       // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
       // 要求每个 target 必须落在允许根之内，且不等于这些根本身。
