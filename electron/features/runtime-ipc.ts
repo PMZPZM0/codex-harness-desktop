@@ -1142,17 +1142,32 @@ export const runtimeFeature = defineFeature<null>({
         // 知识库本地 embedding 后端（10-04 改判：npm 树 463MB 远超 50MB 内置线 ⇒ 不随包，按需下载）。
         // npm 装 @huggingface/transformers 到 <userData>/kb-backend + 预下载 bge 模型（hf-mirror）。
         // 进度事件直接透传给渲染层（知识库页与开发工具页共用 runtime:progress）。
+        /* ⛔ 11-01 用户实测「取消是假的」：这条链原来不看取消标记 ⇒ 界面回落了、npm/模型下载还在跑。
+           ⇒ 把 isCancelRequested 传进去（npm 子进程 kill、模型下载 abort），取消后清掉半成品。 */
         const task = (async () => {
           if (kbEmbeddingInstalled()) return; // 已装好（三件齐）⇒ 幂等早退，不重下 463MB
           sendToWindow("runtime:progress", { id, message: "正在安装本地 embedding 运行库（npmmirror + hf-mirror）…" });
-          await installKbEmbedding((p) => sendToWindow("runtime:progress", { id, ...p }));
+          await installKbEmbedding((p) => sendToWindow("runtime:progress", { id, ...p }), () => isCancelRequested(id));
+          if (isCancelRequested(id)) throw new Error("已取消安装（知识库本地语义检索）");
           // ⛔ 这里**不许**发 done:true 的「安装完成」：紧随其后的 assertInstallVerified 才是判据
           //   （10-08 自审抓到：旧写法在这条分支上先报完成、再复核 —— 复核失败就成了
           //   「先绿条后报错」，正是本次要根除的那类「假成功」。真正的那条完成消息在复核之后发。）
           sendToWindow("runtime:progress", { id, message: "正在复核安装结果…" });
         })();
         runtimeInstalls.set(id, task.finally(() => runtimeInstalls.delete(id)) as Promise<void>);
-        await task.catch((error) => { throw error instanceof Error ? error : new Error(String(error)); });
+        try {
+          await task;
+        } catch (error) {
+          if (isCancelRequested(id)) {
+            // 半装的 node_modules / 下载中的模型文件都不留（否则下次安装判定混乱、也占 400MB+）
+            await uninstallKbEmbedding().catch(() => undefined);
+            sendToWindow("runtime:progress", { id, message: "已取消安装，临时文件已清理", cancelled: true, done: true });
+            return { ok: true, cancelled: true, runtimes: runtimeList() };
+          }
+          throw error instanceof Error ? error : new Error(String(error));
+        } finally {
+          clearCancelRequest(id);
+        }
         assertInstallVerified(id, spec);
         return { ok: true, runtimes: runtimeList() };
       }

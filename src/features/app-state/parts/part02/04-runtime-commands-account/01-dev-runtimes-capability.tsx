@@ -133,8 +133,15 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
           bag.setRuntimeProgress((current) => ({ ...current, markitdown: "正在安装文档转换…" }));
         }
       }
-      const result = await window.codex.installRuntime(id);
+      const result = await window.codex.installRuntime(id) as { cancelled?: boolean; runtimes: typeof bag.devRuntimes };
       bag.setDevRuntimes(result.runtimes);
+      /* ⛔ 11-01 用户实测「取消是假的」：知识库那条链现在真能取消了，主进程回 cancelled
+         ⇒ 这里不能再报「安装完成」（否则取消完一闪又变成成功）。 */
+      if (result.cancelled) {
+        bag.setRuntimeProgress((current) => ({ ...current, [id]: "已取消" }));
+        bag.setNotice("已取消安装，未完成的下载已清理");
+        return;
+      }
       // 同步能力总闸联动开关（桌面/浏览器自动化）与工具状态，安装后立即生效
       await Promise.all([bag.refreshSettingsResources(), bag.refreshToolsStatus()]);
       bag.setRuntimeModal((m) => m ? { ...m, done: true } : m);

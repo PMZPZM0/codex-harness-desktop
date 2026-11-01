@@ -1275,6 +1275,30 @@ const CHECKS = [
         Boolean(cardHasAction) && (cardHasAction.installs > 0 || cardHasAction.allReady),
         JSON.stringify(cardHasAction));
 
+      /* ⛔ 11-01 用户实测「一键卸载也没有」：分类卡上也要有「一键卸载」，且点了先出确认弹窗（不许直删）。 */
+      const uninstallBtns = await h.eval(`document.querySelectorAll(".devtools-cards .devtools-card-uninstall").length`).catch(() => 0);
+      h.check("⑦b 分类卡也有一键卸载", uninstallBtns > 0, String(uninstallBtns));
+      if (uninstallBtns > 0) {
+        await h.eval(`document.querySelector(".devtools-cards .devtools-card-uninstall").click()`);
+        await h.waitFor(`!!document.querySelector(".settings-dialog .runtime-uninstall")`, { label: "一键卸载确认弹窗", timeoutMs: 8000 });
+        const confirm = await h.eval(`(function(){
+          const d=document.querySelector(".settings-dialog");
+          return { title:(d.querySelector(".settings-dialog-heading strong")?.textContent||"").trim(),
+            body:(d.querySelector(".settings-dialog-body")?.textContent||"").trim(),
+            confirm:(d.querySelector(".runtime-uninstall")?.textContent||"").trim() };
+        })()`).catch(() => null);
+        h.check("⑦c 点一键卸载先出确认弹窗（列出将删的工具，确认前不执行）",
+          Boolean(confirm) && confirm.title.includes("一键卸载") && confirm.body.includes("不可恢复") && confirm.confirm.includes("确认卸载"),
+          JSON.stringify(confirm && { title: confirm.title, confirm: confirm.confirm }));
+        /* 只关掉确认弹窗，**不执行**卸载（验收不删用户环境里的工具）。 */
+        await h.eval(`(function(){
+          const d=document.querySelector(".settings-dialog");
+          const cancelBtn=[...d.querySelectorAll("button")].find(function(b){ return (b.textContent||"").trim()==="取消"; });
+          cancelBtn&&cancelBtn.click(); return 1;
+        })()`);
+        await wait(250);
+      }
+
       await h.eval(`document.querySelector('.devtools-card[data-card="tools-health"]').querySelector(".devtools-card-open").click()`);
       await h.waitFor(`!!document.querySelector(".settings-dialog .runtime-check")`, { label: "工具自检弹窗", timeoutMs: 8000 });
       const health = await h.eval(`(function(){

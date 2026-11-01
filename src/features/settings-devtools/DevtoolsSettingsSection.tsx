@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Music2, PackageOpen, Puzzle, Smartphone, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Music2, PackageOpen, Puzzle, Smartphone, Trash2, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -30,7 +30,7 @@ import { FeishuCliCard } from "./FeishuCliCard";
 import { FileeCard } from "./FileeCard";
 import { SkillPacksPanel } from "../skill-packs";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
-import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, readyLabel, runtimeGroupItems, type RuntimeBatch, type RuntimeGroup, type RuntimeRow } from "./runtime-groups";
+import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel, runtimeGroupItems, type RuntimeBatch, type RuntimeGroup, type RuntimeRow } from "./runtime-groups";
 
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
@@ -56,6 +56,8 @@ function CardBody({ card, onOpen }: { card: CardSpec; onOpen: () => void }) {
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
   const [openCard, setOpenCard] = useState<DevtoolsCardKey | null>(null);
+  /* 分类卡「一键卸载」的确认（真删本地文件，不可恢复）：卡片上直接点 → 弹确认 → 才执行。 */
+  const [confirmCardUninstall, setConfirmCardUninstall] = useState<{ card: string; title: string; list: RuntimeRow[] } | null>(null);
   const runtimes = (Array.isArray(devRuntimes) ? devRuntimes : []) as RuntimeRow[];
 
   /* ── 一键安装 / 一键卸载（串行、可取消）────────────────────────────────────
@@ -157,14 +159,24 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       );
     }
     const installables = items.filter(isInstallable);
-    if (!installables.length) return null;
+    const removables = items.filter(isRemovable);
+    if (!installables.length && !removables.length) return null;
     return (
       <div className="devtools-card-actions">
-        <button type="button" className="primary-setting devtools-card-install" disabled={batch.kind !== null}
-          title={batch.kind !== null ? "另一组正在安装/卸载，等它跑完再装这一组" : undefined}
-          onClick={() => void runBatch("install", installables, card.key)}>
-          一键安装（{installables.length}）
-        </button>
+        {removables.length ? (
+          <button type="button" className="secondary-setting devtools-card-uninstall" disabled={batch.kind !== null}
+            title={batch.kind !== null ? "另一组正在安装/卸载，等它跑完再操作" : `卸载这一组已装的 ${removables.length} 项`}
+            onClick={() => setConfirmCardUninstall({ card: card.key, title: card.title, list: removables })}>
+            <Trash2 size={13} />一键卸载（{removables.length}）
+          </button>
+        ) : null}
+        {installables.length ? (
+          <button type="button" className="primary-setting devtools-card-install" disabled={batch.kind !== null}
+            title={batch.kind !== null ? "另一组正在安装/卸载，等它跑完再装这一组" : undefined}
+            onClick={() => void runBatch("install", installables, card.key)}>
+            一键安装（{installables.length}）
+          </button>
+        ) : null}
       </div>
     );
   };
@@ -290,6 +302,26 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeOtherCard.title} icon={<Puzzle size={15} />} hint="声明式：只描述挂什么、调哪条通道" size="lg" onClose={() => setOpenCard(null)}>
           {/* ⛔ 同上：`settings.devtools.declared-plugins` 是 KNOWN_SLOTS 白名单项，id 不动。 */}
           <Slot id="settings.devtools.declared-plugins" loader={() => import("./DeclaredPluginsPanel")} />
+        </SettingsDialog>
+      )}
+
+      {/* 分类卡「一键卸载」确认（真删本地文件，不可恢复） */}
+      {confirmCardUninstall && (
+        <SettingsDialog title={`一键卸载 · ${confirmCardUninstall.title}`} icon={<Trash2 size={15} />} size="sm" onClose={() => setConfirmCardUninstall(null)}>
+          <div className="settings-section stack">
+            <p className="settings-card-hint">
+              将删除这 {confirmCardUninstall.list.length} 个工具的本地文件（不可恢复），然后刷新引擎与工具状态：
+              <br />
+              {confirmCardUninstall.list.map((row) => row.name).join("、")}
+            </p>
+            <div className="devtools-batch">
+              <button type="button" className="danger-setting runtime-uninstall"
+                onClick={() => { const job = confirmCardUninstall; setConfirmCardUninstall(null); void runBatch("uninstall", job.list, job.card); }}>
+                <Trash2 size={13} />确认卸载
+              </button>
+              <button type="button" className="secondary-setting" onClick={() => setConfirmCardUninstall(null)}>取消</button>
+            </div>
+          </div>
         </SettingsDialog>
       )}
 

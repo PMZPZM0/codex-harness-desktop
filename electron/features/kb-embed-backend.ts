@@ -108,14 +108,20 @@ async function pruneForeignBinaries(dir: string): Promise<void> {
 }
 
 /** 安装（知识库页 / 开发工具页 runtime:install 共用）：npm 装包（国内镜像优先，带进度/速度/剩余）
- *  → 裁剪 → 预下载模型权重（hf-mirror，带进度）→ 落 worker。全程结束后 installed === true。 */
-export async function installKbEmbedding(onProgress?: (p: KbInstallProgress) => void): Promise<void> {
+ *  → 裁剪 → 预下载模型权重（hf-mirror，带进度）→ 落 worker。全程结束后 installed === true。
+ *  ⛔ 11-01 用户实测「取消是假的」：原来这条链完全不看取消标记 ⇒ 开发工具页点了取消，
+ *   界面回落了、npm 与模型下载仍在后台跑（再点还报「没有正在进行的安装」）。
+ *   现在 `shouldCancel` 在每个阶段与每个下载块轮询：npm 子进程被 kill、模型下载 abort。 */
+export async function installKbEmbedding(onProgress?: (p: KbInstallProgress) => void, shouldCancel?: () => boolean): Promise<void> {
   if (installInFlight) return installInFlight;
-  installInFlight = doInstall(onProgress ?? (() => undefined)).finally(() => { installInFlight = null; });
+  installInFlight = doInstall(onProgress ?? (() => undefined), shouldCancel).finally(() => { installInFlight = null; });
   return installInFlight;
 }
 
-async function doInstall(onProgress: (p: KbInstallProgress) => void): Promise<void> {
+const CANCELED = () => new Error("已取消安装（知识库本地语义检索）");
+
+async function doInstall(onProgress: (p: KbInstallProgress) => void, shouldCancel?: () => boolean): Promise<void> {
+  const check = () => { if (shouldCancel?.()) throw CANCELED(); };
   const node = bundledNode();
   if (!node) throw new Error("缺少内置 Node，无法安装知识库 embedding 后端");
   // ⛔ 按平台候选探测（Windows zip 布局 / mac tar.gz 布局）—— 别在这里复制路径字面量，见 toolchain.bundledNpmCli
@@ -150,6 +156,7 @@ async function doInstall(onProgress: (p: KbInstallProgress) => void): Promise<vo
     const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];
     let lastError: Error | null = null;
     for (const registry of registries) {
+      check();
       try {
         await new Promise<void>((resolve, reject) => {
           const env: Record<string, string> = {
@@ -166,19 +173,28 @@ async function doInstall(onProgress: (p: KbInstallProgress) => void): Promise<vo
           const report = (chunk: Buffer | string) => { tail = `${tail}\n${chunk}`.slice(-4000); };
           child.stdout?.on("data", report);
           child.stderr?.on("data", report);
-          child.on("error", reject);
-          child.on("exit", (code) => (code === 0 ? resolve() : reject(new Error(`npm install 退出码 ${code}\n${tail.slice(-800)}`))));
+          /* 取消轮询：npm 本身没有取消接口 ⇒ 每 300ms 看一眼取消标记，命中就 kill 子进程。 */
+          const killTimer = setInterval(() => { if (shouldCancel?.()) { try { child.kill(); } catch { /* 已退出 */ } } }, 300);
+          child.on("error", (error) => { clearInterval(killTimer); reject(error); });
+          child.on("exit", (code) => {
+            clearInterval(killTimer);
+            if (shouldCancel?.()) reject(CANCELED());
+            else if (code === 0) resolve();
+            else reject(new Error(`npm install 退出码 ${code}\n${tail.slice(-800)}`));
+          });
         });
         lastError = null;
         break;
-      } catch (error) { lastError = error as Error; }
+      } catch (error) { lastError = error as Error; if (shouldCancel?.()) throw CANCELED(); }
     }
     if (lastError) throw lastError;
+    check();
     onProgress({ percent: 70, message: "运行库下载完成，正在清理无关平台的二进制…" });
     await pruneForeignBinaries(dir);
   } finally {
     clearInterval(poller);
   }
+  check();
 
   // ── 阶段 3/3（76→100%）：预下载模型权重（hf-mirror）——装完即用，首次检索不再等模型。
   await fs.mkdir(path.join(modelDir(), "onnx"), { recursive: true });
@@ -188,6 +204,7 @@ async function doInstall(onProgress: (p: KbInstallProgress) => void): Promise<vo
   ];
   const base = 76;
   for (const file of files) {
+    check();
     const url = `${HF_MIRROR}/${MODEL_REPO}/resolve/main/${file.rel}`;
     const dest = path.join(modelDir(), ...file.rel.split("/"));
     const weight = file.big ? 24 : 1; // 小文件几乎瞬间；onnx 按实测 ~23MB 当权重
@@ -201,7 +218,7 @@ async function doInstall(onProgress: (p: KbInstallProgress) => void): Promise<vo
         remaining: total > 0 ? `剩余 ${Math.max(0, Math.round((total - bytes) / 1048576))} MB` : `${(bytes / 1048576).toFixed(1)} MB`,
         message: file.big ? "下载语义模型权重（约 23 MB，hf-mirror）" : "下载模型配置文件",
       });
-    });
+    }, shouldCancel);
   }
 
   await fs.writeFile(workerFile(), WORKER_SOURCE, "utf8");
@@ -222,9 +239,16 @@ async function dirBytes(dir: string): Promise<number> {
   return total;
 }
 
-/** 单文件下载：跟随重定向（hf-mirror 302 到 CDN），按流计数回报进度。失败不残留半截文件。 */
-async function downloadToFile(url: string, dest: string, onTick: (bytes: number, total: number, mbs: number) => void): Promise<void> {
-  const response = await fetch(url, { signal: AbortSignal.timeout(600_000) });
+/** 单文件下载：跟随重定向（hf-mirror 302 到 CDN），按流计数回报进度。失败不残留半截文件。
+ *  ⛔ 11-01：支持取消（取消时 abort 请求、删半截文件、抛「已取消」）。 */
+async function downloadToFile(url: string, dest: string, onTick: (bytes: number, total: number, mbs: number) => void, shouldCancel?: () => boolean): Promise<void> {
+  const controller = new AbortController();
+  const timer = setInterval(() => { if (shouldCancel?.()) controller.abort(); }, 300);
+  const timeout = setTimeout(() => controller.abort(), 600_000);
+  const response = await fetch(url, { signal: controller.signal }).catch((error) => {
+    if (shouldCancel?.()) throw CANCELED();
+    throw error;
+  });
   if (!response.ok || !response.body) throw new Error(`模型下载失败：HTTP ${response.status}（${url}）`);
   const total = Number(response.headers.get("content-length")) || 0;
   const tmp = `${dest}.downloading`;
@@ -234,6 +258,7 @@ async function downloadToFile(url: string, dest: string, onTick: (bytes: number,
   let lastBytes = 0;
   try {
     for await (const chunk of response.body) {
+      if (shouldCancel?.()) throw CANCELED();
       await handle.write(Buffer.from(chunk));
       bytes += chunk.length;
       const now = Date.now();
@@ -250,7 +275,10 @@ async function downloadToFile(url: string, dest: string, onTick: (bytes: number,
   } catch (error) {
     await handle.close().catch(() => undefined);
     await fs.rm(tmp, { force: true }).catch(() => undefined);
-    throw error;
+    throw shouldCancel?.() ? CANCELED() : error;
+  } finally {
+    clearInterval(timer);
+    clearTimeout(timeout);
   }
 }
 

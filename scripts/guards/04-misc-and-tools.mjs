@@ -284,6 +284,15 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
     : fail("工具卡取消/二次确认被摘 —— 卸载一击即删、下载停不下来都是回潮");  (/if \(event\.cancelled\)/.test(capSrc3) && /已取消下载，临时文件已清理/.test(capSrc3) && /bag\.setRuntimeUninstalling/.test(capSrc3))
     ? ok("进度事件处理：cancelled 分支回落状态并提示（取消 ≠ 失败）")
     : fail("渲染层没处理 cancelled 事件 —— 取消后「正在安装」挂着不动（无响应状态）");
+  /* ⛔ 11-01 用户实测「取消是假的」：知识库 embedding 的安装链必须真响应取消
+     （npm 子进程 kill + 模型下载 abort），否则界面回落了、后台还在下。 */
+  {
+    const kbSrc31 = readFileSync(join(ROOT, "electron", "features", "kb-embed-backend.ts"), "utf8");
+    (/installKbEmbedding\([\s\S]{0,220}isCancelRequested\(id\)/.test(rtSrc3)
+      && /shouldCancel/.test(kbSrc31) && /controller\.abort\(\)/.test(kbSrc31) && /child\.kill\(\)/.test(kbSrc31) ? ok : fail)(
+      "知识库 embedding 安装真响应取消（npm 子进程 kill + 模型下载 abort，取消后清半成品）"
+    );
+  }
   // ⑥ 通道账本：runtime 前缀 5 条（【2】只验 manifest 自洽，这里钉人读的账本别漏登记）
   (/prefix: "runtime", count: 7/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))
     ? ok("ipc-registry runtime 账本 count=7（含 10-12 的 update-check/update）且含 runtime:cancel")
@@ -328,6 +337,11 @@ console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
      关掉弹窗后循环要继续、卡片上要看得到进度与取消。 */
   (/runBatch\("install", installables, card\.key\)/.test(dtPage) && /devtools-card-progress/.test(dtPage) && /cancelBatch/.test(dtPage) ? ok : fail)(
     "分类卡底部有一键安装 + 进度条 + 取消（批处理状态在页面级，关窗也在跑）"
+  );
+  /* ⛔ 11-01 用户实测「一键卸载也没有」：分类卡要同时给「一键卸载（N）」，且先确认再删。 */
+  (/devtools-card-uninstall/.test(dtPage) && /confirmCardUninstall/.test(dtPage)
+    && /runBatch\("uninstall", job\.list, job\.card\)/.test(dtPage) && /确认卸载/.test(dtPage) ? ok : fail)(
+    "分类卡也有一键卸载（真删本地文件 —— 先弹确认，确认后才执行）"
   );
   (/useState<RuntimeBatch>/.test(dtPage) && /batch: RuntimeBatch/.test(dtPanel) && !/useState<\{ kind: "install"/.test(dtPanel) ? ok : fail)(
     "⛔ 批处理状态只在页面级（弹窗卸载后循环还在跑，卡片上仍能看到进度与取消）"
