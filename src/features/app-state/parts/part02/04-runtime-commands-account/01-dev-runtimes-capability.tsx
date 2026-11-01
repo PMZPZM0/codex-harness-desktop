@@ -129,7 +129,16 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
         if (py && !py.installed) {
           bag.setNotice("文档转换依赖 Python（含 tkinter / pip）—— 先装基础运行时…");
           bag.setRuntimeProgress((current) => ({ ...current, markitdown: "先安装 Python 运行时…" }));
-          await window.codex.installRuntime("python").then(() => bag.refreshDevRuntimes()).catch(() => undefined);
+          /* ⛔ 审查补充：前置装失败就**中止** —— 否则会在 python 未就绪时再装 markitdown，
+             用户连吃两条红字，真正原因被后一条盖住。 */
+          const pyOk = await window.codex.installRuntime("python").then(() => true).catch(() => false);
+          await bag.refreshDevRuntimes();
+          if (!pyOk) {
+            bag.setRuntimeProgress((current) => ({ ...current, markitdown: "需要先装好 Python 才能装文档转换" }));
+            bag.setRuntimeModal((m) => (m ? { ...m, done: true, failed: true, error: "前置运行时 Python 安装失败，已中止。请先单独安装「Python + Tkinter + pip」，再重试文档转换。" } : null));
+            bag.setNotice("已中止：前置 Python 未就绪");
+            return false;
+          }
           bag.setRuntimeProgress((current) => ({ ...current, markitdown: "正在安装文档转换…" }));
         }
       }

@@ -478,6 +478,9 @@ async function download(url, file, extraSources = []) {
   }
   if (SOURCE !== "auto") console.log(`[download] 指定下载源: ${SOURCE}`);
   let lastError;
+  /* ⛔ 审查补充：低速换源会删半截文件重下。若所有源都慢，307MB 会被重复下载 N 次。
+     换源满 2 次之后改为**保留半截并用  续传**，不再从头再来。 */
+  let lowSpeedSwitches = 0;
   for (const [label, args, effectiveUrl] of attempts) {
     try {
       console.log(`[download] via ${label}: ${effectiveUrl}`);
@@ -492,7 +495,12 @@ async function download(url, file, extraSources = []) {
       /* 低速换源：半截文件留着会让下一个镜像用 -C - 续传（不同源的 Range 语义不一致，
          实测更容易直接失败），所以先删干净再换。 */
       if (/速度过低/.test(String(error && error.message || error))) {
-        try { fs.rmSync(file, { force: true }); } catch { /* 删不掉就让下一源自己覆盖 */ }
+        lowSpeedSwitches += 1;
+        if (lowSpeedSwitches <= 2) {
+          try { fs.rmSync(file, { force: true }); } catch { /* 删不掉就让下一源自己覆盖 */ }
+        } else {
+          console.log(`[download] 已连续 ${lowSpeedSwitches} 次低速换源，改为续传（不再删除半截文件）`);
+        }
       }
       console.log(`[download] ${label} 失败，换下一通道`);
     }
