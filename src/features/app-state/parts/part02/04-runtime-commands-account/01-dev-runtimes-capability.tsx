@@ -120,6 +120,19 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
     bag.setRuntimeProgress((current) => ({ ...current, [id]: "准备下载…" }));
     bag.setRuntimeModal({ id, name: bag.devRuntimes.find((r) => r.id === id)?.name ?? id, mode: "install", done: false, failed: false, error: "" });
     try {
+      /* ⛔ 11-01 用户实测：「文档转换安装失败：需要先安装 Python + Tkinter + pip」。
+         它是个 pip 包，前置是基础运行时 —— 让用户自己去找「基础运行时」分组、再点一次，
+         等于把一步操作拆成三步。⇒ 这里**自动连带**：markitdown 缺 python 就先装 python，
+         装完再继续装它自己（失败也继续，让主进程给出真正的错误原因）。 */
+      if (id === "markitdown") {
+        const py = bag.devRuntimes.find((r) => r.id === "python");
+        if (py && !py.installed) {
+          bag.setNotice("文档转换依赖 Python（含 tkinter / pip）—— 先装基础运行时…");
+          bag.setRuntimeProgress((current) => ({ ...current, markitdown: "先安装 Python 运行时…" }));
+          await window.codex.installRuntime("python").then(() => bag.refreshDevRuntimes()).catch(() => undefined);
+          bag.setRuntimeProgress((current) => ({ ...current, markitdown: "正在安装文档转换…" }));
+        }
+      }
       const result = await window.codex.installRuntime(id);
       bag.setDevRuntimes(result.runtimes);
       // 同步能力总闸联动开关（桌面/浏览器自动化）与工具状态，安装后立即生效
@@ -180,12 +193,18 @@ bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
       bag.setRuntimeProgress((current) => ({ ...current, [id]: "卸载完成" }));
       bag.setNotice(`已卸载「${spec.name}」`);
     } catch (error: any) {
-      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: String(error?.message ?? error) } : m);
-      bag.setRuntimeProgress((current) => ({ ...current, [id]: `卸载失败：${error.message}` }));
-      bag.setNotice(`卸载失败：${error.message}`);
+      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: ipcErrorMessageOf(error) } : m);
+      bag.setRuntimeProgress((current) => ({ ...current, [id]: `卸载失败：${ipcErrorMessageOf(error)}` }));
+      bag.setNotice(`卸载失败：${ipcErrorMessageOf(error)}`);
     } finally {
       bag.setRuntimeInstalling(null);
       bag.setRuntimeUninstalling(null);
+      /* ⛔ 11-01 卸载闭环：不论成败都按主进程清单重拉一次 + 进度归零。
+         原来只在成功分支用返回值刷列表，失败时界面停在「正在卸载…」，
+         和取消那条是同一个毛病（状态两套真相）。 */
+      bag.setRuntimePercent((current) => ({ ...current, [id]: 0 }));
+      bag.setRuntimeStage((current) => ({ ...current, [id]: "" }));
+      bag.refreshDevRuntimes();
     }
   }
 bag.uninstallDevRuntime = uninstallDevRuntime as typeof bag.uninstallDevRuntime;
