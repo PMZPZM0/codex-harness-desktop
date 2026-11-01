@@ -157,7 +157,7 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
   // 09-14：包上 [SYSTEM TASK · 成员会话] 壳——渲染端 userDisplayText 只认这个壳，
   // 不包壳的话用户打开成员会话时整段角色提示词会裸露在首条气泡里（用户实测反馈）。
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${memberSupervisor ? `上级主管：${memberSupervisor}\n` : ""}主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${memberSupervisor ? `上级：${memberSupervisor}\n` : ""}主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
   let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
   try {
     const turn: any = await server.request("turn/start", {

@@ -260,7 +260,7 @@ export async function runDelegatedTask(input: {
     "=== 用户需求 ===",
     /* ⛔ 10-31：把**上级主管**写在第一条任务里（不只是持久指令）—— 子会话的会话视图据此显示
        「主会话 · 青崖主管」而不是伪造成用户发言；渲染层按这行解析（src/lib/user-refs.ts）。 */
-    ...(supervisorLabel ? [`上级主管：${supervisorLabel}`] : []),
+    ...(supervisorLabel ? [`上级：${supervisorLabel}`] : []),
     `发起方交给你的任务：${String(input.query ?? "").trim()}`,
     "=== END ===",
     "",

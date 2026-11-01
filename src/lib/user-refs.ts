@@ -128,8 +128,8 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     /* ★ 10-31 用户令：被调度会话要知道「上级是谁，哪个主管」——
        delegation 会在需求体第一行写 `上级主管：青崖主管（01a1…）`。
        ⛔ 这行是**宿主元信息**，不属于需求正文：抽出来单独给气泡头部用，正文里要删掉。 */
-    const supervisorLine = body.match(/^\s*上级主管\s*[：:]\s*(.+?)\s*$/m);
-    if (supervisorLine) requirement = requirement.replace(/^\s*上级主管\s*[：:].*$/m, "").trim();
+    const supervisorLine = body.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*$/m);
+    if (supervisorLine) requirement = requirement.replace(/^\s*上级(?:主管)?\s*[：:].*$/m, "").trim();
     if (requirement) {
       clean = "";
       teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement, ...(supervisorLine ? { supervisor: supervisorLine[1].trim() } : {}) };

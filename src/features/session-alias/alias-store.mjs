@@ -32,7 +32,8 @@ export function subscribeAliases(fn) {
 export function aliasLabelOf(aliasesState, threadId) {
   const record = aliasesState?.aliases?.[String(threadId ?? "")];
   if (!record?.alias) return "";
-  return record.supervisorThreadId ? record.alias : supervisorIdOf(record.alias);
+  /* 11-01：笔名不再带后缀，主/子会话显示名都是笔名本身（supervisorIdOf 已恒等）。 */
+  return record.alias;
 }
 
 /** 某会话的上级主管 ID（子会话才有）：`青崖主管`。 */

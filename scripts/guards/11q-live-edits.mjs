@@ -395,10 +395,11 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const delegationSrc = read("electron/features/delegation.ts");
   ok(/ensureSessionAlias\(threadId, origin\)/.test(delegationSrc) && /supervisor: supervisorLabel/.test(delegationSrc),
     "调度的子会话：笔名 + 上级（写进持久指令 delegateScopeBlock）");
-  ok(/上级主管：\$\{supervisorLabel\}/.test(delegationSrc),
-    "调度的首任务带「上级主管：XX主管」（会话视图据此显示上级身份）");
+  /* ⛔ 11-01 用户令去掉「主管」称谓 ⇒ 注入文案统一成「上级：笔名（id）」。 */
+  ok(/上级：\$\{supervisorLabel\}/.test(delegationSrc) && !/上级主管：/.test(delegationSrc),
+    "调度的首任务带「上级：笔名」（不再用「主管」称谓）");
   const teamInvokeSrc = read("electron/team-invoke.ts");
-  ok(/ensureSessionAlias\(memberThreadId, String\(input\.leadThreadId/.test(teamInvokeSrc) && /上级主管：\$\{memberSupervisor\}/.test(teamInvokeSrc),
+  ok(/ensureSessionAlias\(memberThreadId, String\(input\.leadThreadId/.test(teamInvokeSrc) && /上级：\$\{memberSupervisor\}/.test(teamInvokeSrc),
     "专家团成员会话同样带上级（主理人会话）");
   ok(/setSessionAliasEmitter\(/.test(read("electron/features/boot.ts")),
     "改名后广播（⛔ 不广播 = 改完主管名，子会话还显示旧名字）");
@@ -485,6 +486,11 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/for \(const host of Array\.from\(document\.querySelectorAll<HTMLElement>\("\.dispatch-children, \.team-cluster-body"\)\)\)/.test(sidebarSrc)
     && !/document\.documentElement\.style\.setProperty\("--tag-col-w-nested"/.test(sidebarSrc),
     "嵌套列宽按簇各自设置（⛔ 不再写 html 根 —— 那会让展开 A 组改掉 B 组的对齐）");
+  /* ⛔ 11-01 用户令：「普通会话也要留好标签的位置，不要完全靠左了」——
+     列宽自适应到 0 会让没标签的行把标题贴到最左，与有标签的行错位 ⇒ 必须有最小占位。 */
+  ok(/const TAG_COL_MIN = \d+/.test(sidebarSrc) && /Math\.max\(maxTop, TAG_COL_MIN\)/.test(sidebarSrc)
+    && /Math\.max\(maxNested, TAG_COL_MIN\)/.test(sidebarSrc),
+    "标签列有最小占位（⛔ 不能缩到 0，否则普通会话的标题与有标签的行对不齐）");
   ok(/if \(el\.closest\("\.dispatch-child, \.team-cluster-body"\)\) continue;/.test(sidebarSrc),
     "顶层列宽只量顶层行（子行不参与，展开/收起不推父行与其它行）");
   const segSrc = read("src/features/app-state/parts/part08/01-seg.tsx");

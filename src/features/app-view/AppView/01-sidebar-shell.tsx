@@ -187,6 +187,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
        ① 顶层列宽曾经把**展开出来的子行**也算进去 ⇒ 展开就把整列撑宽、所有顶层行的标题一起右移；
        ② 嵌套列宽写在 **html 根**上一个变量 ⇒ 展开 A 组的子行会改 B 组子行的标题起点。
        ⇒ 顶层只用顶层行定宽（子行一律不参与），嵌套列宽**按簇各自一份**（挂在簇容器上继承）。 */
+    /* ⛔ 11-01 用户令：「普通会话也要留好标签的位置，不要完全靠左了」——
+       没有标签的行不能把列宽缩到 0（标题会贴最左、与有标签的行错位）⇒ 保底留出**一个标签位**。 */
+    const TAG_COL_MIN = 30;
     let maxTop = 0;
     for (const el of document.querySelectorAll(".thread-row-tags")) {
       if (el.closest(".dispatch-child, .team-cluster-body")) continue;   // 子行不参与顶层测量
@@ -194,7 +197,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       const w = kids.reduce((s, c) => s + c.offsetWidth, 0) + Math.max(0, kids.length - 1) * 4;
       if (w > maxTop) maxTop = w;
     }
-    document.documentElement.style.setProperty("--tag-col-w", `${Math.min(maxTop, 96)}px`);
+    document.documentElement.style.setProperty("--tag-col-w", `${Math.min(Math.max(maxTop, TAG_COL_MIN), 96)}px`);
     /* 每个簇容器自己一份嵌套列宽（`--tag-col-w-nested` 走 CSS 变量继承，只影响自己簇里的子行）。
        ⛔ 不要写回 html 根：那会让"展开这个簇"波及到别的簇 / 别的项目。 */
     for (const host of Array.from(document.querySelectorAll<HTMLElement>(".dispatch-children, .team-cluster-body"))) {
@@ -205,7 +208,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         const w = kids.reduce((s, c) => s + c.offsetWidth, 0) + Math.max(0, kids.length - 1) * 4;
         if (w > maxNested) maxNested = w;
       }
-      host.style.setProperty("--tag-col-w-nested", `${Math.min(maxNested || maxTop, 96)}px`);
+      host.style.setProperty("--tag-col-w-nested", `${Math.min(Math.max(maxNested, TAG_COL_MIN), 96)}px`);
     }
   });
   /* 10-25 用户令：新建指挥中枢时弹**应用内**对话框选项目地址（两个选项），
