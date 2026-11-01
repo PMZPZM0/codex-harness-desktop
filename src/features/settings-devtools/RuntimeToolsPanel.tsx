@@ -8,7 +8,7 @@
  *
  * 自带的状态（检查工具结果 / 卸载二次确认）只服务于本面板 ⇒ 随面板一起搬，不占一级页面。
  */
-import { useState } from "react";
+import {useState, useRef } from "react";
 import { Activity, AlertTriangle, ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
@@ -39,6 +39,27 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
   // 卸载二次确认（10-07 重构）：点「卸载」先出**行内确认**（沿用插件市场页的既有范式），再点才真删 ——
   // 卸载是真删本地文件，不可恢复，不该一击即中。
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
+  /* ⛔ 11-01 用户令：新手不要一个个点。加「串行」批量执行器 —— 不并发，一个装完再下一个，
+     避免两个工具同时解压互相踩 staging 目录；中途可取消。 */
+  const [batch, setBatch] = useState<{ kind: "install" | "uninstall" | null; done: number; total: number; name: string }>({ kind: null, done: 0, total: 0, name: "" });
+  const batchCancel = useRef(false);
+  const runBatch = async (kind: "install" | "uninstall", list: any[]) => {
+    if (!list.length || batch.kind) return;
+    batchCancel.current = false;
+    setBatch({ kind, done: 0, total: list.length, name: list[0]?.name ?? "" });
+    let ok = 0;
+    for (let i = 0; i < list.length; i += 1) {
+      if (batchCancel.current) break;
+      setBatch({ kind, done: i, total: list.length, name: list[i].name });
+      try {
+        if (kind === "install") await installDevRuntime(list[i].id);
+        else await uninstallDevRuntime(list[i].id);
+        ok += 1;
+      } catch { /* 单项失败不中断整批 */ }
+    }
+    setBatch({ kind: null, done: 0, total: 0, name: "" });
+    setNotice((kind === "install" ? "安装" : "卸载") + "完成：成功 " + ok + " / " + list.length);
+  };
   const runHealth = async () => {
     setHealthBusy(true);
     setHealthError("");
@@ -58,6 +79,33 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
     <div className="settings-section stack">
       {/* 浏览器自动化主通道：外部安装的 ego lite（每会话一个 TaskSpace；不随包内置 611MB 浏览器） */}
       <EgoLiteCard onNotice={setNotice} />
+      {/* 新手模式：一键装完所有可下载工具（串行、可取消、带进度与结果提示） */}
+      {(() => {
+        const installables = devRuntimes.filter((r: any) => !r.builtIn && r.kind !== "guide" && !r.installed);
+        const removables = devRuntimes.filter((r: any) => !r.builtIn && r.kind !== "guide" && r.installed);
+        if (!installables.length && !removables.length) return null;
+        return (
+          <div className="devtools-batch">
+            {batch.kind ? (
+              <>
+                <span className="devtools-batch-text">
+                  正在{batch.kind === "install" ? "安装" : "卸载"} {Math.min(batch.done + 1, batch.total)}/{batch.total}：{batch.name}
+                </span>
+                <button className="secondary-setting" onClick={() => { batchCancel.current = true; }}>取消</button>
+              </>
+            ) : (
+              <>
+                <button className="primary-setting" disabled={!installables.length} onClick={() => void runBatch("install", installables)}>
+                  一键安装全部（新手推荐，{installables.length} 项）
+                </button>
+                <button className="secondary-setting" disabled={!removables.length} onClick={() => void runBatch("uninstall", removables)}>
+                  一键卸载全部（{removables.length} 项）
+                </button>
+              </>
+            )}
+          </div>
+        );
+      })()}
       {(() => {
         // 09-16 用户「自动化工具拆开，拆详细一点」：不再一张「桌面与浏览器自动化」大卡，
         // 拆成逐条能力卡（Nuphus / ponytail；浏览器自动化走外部 Ego Lite）。
