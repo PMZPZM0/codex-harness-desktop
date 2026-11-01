@@ -15,12 +15,11 @@ const LEGACY_MODES = ["pattern", "particles", "stars", "vanta"];
    ⛔ 不许有文字 / 水印 / 主体 —— 它垫在界面下面，不是海报。
    ⛔ 资源必须落在 public/wallpapers（随构建进 dist），路径固定在下面这张表里。 */
 export const WALLPAPER_PRESETS = [
-  { id: "obsidian-smoke", name: "曜石烟", src: "wallpapers/obsidian-smoke.jpg" },
-  { id: "midnight-aurora", name: "极夜", src: "wallpapers/midnight-aurora.jpg" },
-  { id: "jade-ink", name: "墨玉", src: "wallpapers/jade-ink.jpg" },
-  { id: "moon-silk", name: "月白", src: "wallpapers/moon-silk.jpg" },
-  { id: "champagne-dunes", name: "香槟", src: "wallpapers/champagne-dunes.jpg" },
-  { id: "porcelain-blue", name: "青瓷", src: "wallpapers/porcelain-blue.jpg" },
+  { id: "snow", name: "雪山", day: "wallpapers/snow-day.jpg", night: "wallpapers/snow-night.jpg" },
+  { id: "lake", name: "湖光", day: "wallpapers/lake-day.jpg", night: "wallpapers/lake-night.jpg" },
+  { id: "cloudsea", name: "云海", day: "wallpapers/cloudsea-day.jpg", night: "wallpapers/cloudsea-night.jpg" },
+  { id: "forest", name: "晨雾森林", day: "wallpapers/forest-day.jpg", night: "wallpapers/forest-night.jpg" },
+  { id: "desert", name: "沙丘", day: "wallpapers/desert-day.jpg", night: "wallpapers/desert-night.jpg" },
 ];
 
 export function presetById(id) {
@@ -36,7 +35,11 @@ export function normalizeWallpaper(raw) {
   const r = raw && typeof raw === "object" ? raw : {};
   const raw2 = LEGACY_MODES.includes(r.mode) ? "aurora" : r.mode;
   const mode = WALLPAPER_MODES.includes(raw2) ? raw2 : "off";
-  const image = typeof r.image === "string" ? r.image : "";
+  let image = typeof r.image === "string" ? r.image : "";
+  /* 旧的内置 id（抽象图那批）已删除 ⇒ 落到第一张风景图，避免「选了却没有背景」。 */
+  if (image.startsWith("preset:") && !WALLPAPER_PRESETS.some((item) => item.id === image.slice("preset:".length))) {
+    image = `preset:${WALLPAPER_PRESETS[0].id}`;
+  }
   return { mode, image };
 }
 

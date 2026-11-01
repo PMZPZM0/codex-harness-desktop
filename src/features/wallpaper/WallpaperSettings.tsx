@@ -15,7 +15,7 @@ const MODE_LABELS: Record<string, string> = {
   aurora: "极光",
   ribbon: "流光",
   halo: "光晕",
-  depth: "3D 深空",
+  depth: "3D 山景",
   custom: "静态壁纸",
 };
 
@@ -110,7 +110,10 @@ export function WallpaperSettingsSection() {
             title={p.name}
             onClick={() => update({ mode: "custom", image: `preset:${p.id}` })}
           >
-            <span className="wallpaper-preset-face" style={{ backgroundImage: `url("./${p.src}")` }} />
+            <span className="wallpaper-preset-face">
+              <i className="wp-thumb-day" style={{ backgroundImage: `url("./${p.day}")` }} />
+              <i className="wp-thumb-night" style={{ backgroundImage: `url("./${p.night}")` }} />
+            </span>
             <span className="wallpaper-preset-name">{p.name}</span>
           </button>
         ))}

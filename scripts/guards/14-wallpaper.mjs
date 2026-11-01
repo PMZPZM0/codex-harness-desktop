@@ -52,32 +52,38 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
 
 /* ── ② 静态壁纸 = 生图资产 ── */
 {
-  const ids = [...libSrc.matchAll(/\{ id: "([a-z-]+)", name: "([^"]+)", src: "wallpapers\/([a-z-]+\.jpg)" \}/g)];
-  ok(ids.length >= 6, `静态壁纸 ≥6 张生图资产（实测 ${ids.length}）`);
-  const missing = ids.filter((m) => !existsSync(join(ROOT, "public", "wallpapers", m[3])));
-  ok(missing.length === 0, `壁纸图片都在 public/wallpapers（缺：${missing.map((m) => m[3]).join("、") || "无"}）`);
-  const oversized = ids
-    .map((m) => join(ROOT, "public", "wallpapers", m[3]))
+  const ids = [...libSrc.matchAll(/\{ id: "([a-z-]+)", name: "([^"]+)", day: "wallpapers\/([a-z-]+\.jpg)", night: "wallpapers\/([a-z-]+\.jpg)" \}/g)];
+  ok(ids.length >= 5, `静态壁纸 ≥5 组生图资产（每组 day+night，实测 ${ids.length} 组）`);
+  const missing = ids.flatMap((m) => [m[3], m[4]]).filter((file) => !existsSync(join(ROOT, "public", "wallpapers", file)));
+  ok(missing.length === 0, `壁纸图片都在 public/wallpapers（缺：${missing.join("、") || "无"}）`);
+  ok(/{ id: "snow", name: "雪山"/.test(libSrc) && /id: "lake", name: "湖光"/.test(libSrc) && /id: "cloudsea"/.test(libSrc) && /id: "forest"/.test(libSrc) && /id: "desert"/.test(libSrc), "风景壁纸齐全：雪山 / 湖光 / 云海 / 晨雾森林 / 沙丘（用户：「风景山川等等」）");
+  const oversized = ids.flatMap((m) => [m[3], m[4]])
+    .map((file) => join(ROOT, "public", "wallpapers", file))
     .filter((file) => existsSync(file) && statSync(file).size > 800 * 1024);
   ok(oversized.length === 0, `单张壁纸 ≤800KB（超了先压再进包：${oversized.map((f) => f.split(/[\\/]/).pop()).join("、") || "无"}）`);
-  ok(/isPresetImage/.test(layerSrc) && /presetById/.test(layerSrc) && /url\("\.\/\$\{preset\.src\}"\)|url\(`\.\/\$\{preset\.src\}`\)/.test(layerSrc),
-    "壁纸层按 preset.src 加载图片（不是 CSS 渐变字符串）");
-  ok(/WALLPAPER_PRESETS\.map/.test(settingsSrc) && /url\("\.\/\$\{p\.src\}"\)|url\(`\.\/\$\{p\.src\}`\)/.test(settingsSrc),
-    "设置页缩略图用同一张图（点击即用）");
+  ok(/isPresetImage/.test(layerSrc) && /presetById/.test(layerSrc) && /preset\.day/.test(layerSrc) && /preset\.night/.test(layerSrc)
+    && /wp-sky-day/.test(layerSrc) && /wp-sky-night/.test(layerSrc),
+    "壁纸层按 day/night 成对加载（明暗主题各一张，不是同一张硬顶）");
+  ok(/WALLPAPER_PRESETS\.map/.test(settingsSrc) && /p\.day/.test(settingsSrc) && /p\.night/.test(settingsSrc) && /wp-thumb-night/.test(settingsSrc),
+    "设置页缩略图同样按主题显示日/夜图（点击即用）");
+  ok(/\.wp-sky-night \{ display: none; \}/.test(cssSrc) && /\[data-theme-mode="dark"\] \.wp-sky-day \{ display: none; \}/.test(cssSrc),
+    "日/夜图由主题属性切换（不是 JS 猜明暗）");
   ok(!/#[0-9a-fA-F]{6}/.test(libSrc.slice(libSrc.indexOf("WALLPAPER_PRESETS"), libSrc.indexOf("presetById"))),
     "⛔ 静态壁纸不许回到写死糖果色（旧六款的问题）");
 }
 
 /* ── ③ 动态光幕：四档（含 3D 深空）+ 鼠标视差 + 减动效 ── */
 {
-  ok(["aurora", "ribbon", "halo", "depth"].every((mode) => libSrc.includes(`"${mode}"`)), "四档动态壁纸都在清单里（含 3D 深空）");
-  ok(/function DepthField/.test(layerSrc) && /getContext\("webgl"/.test(layerSrc) && /float fbm\(vec2 p\)/.test(layerSrc)
-    && /uMouse/.test(layerSrc) && /FRAG/.test(layerSrc),
-    "3D 深空 = 自带 WebGL fbm 体积光（无第三方引擎）+ 鼠标视差（用户 11-02「3d动态壁纸也没有」）");
-  ok(/failRef\.current\(\)/.test(layerSrc) && /depthFailed/.test(layerSrc) && /<MotionVeil variant="aurora" \/>/.test(layerSrc),
-    "WebGL 起不来时回退极光（不白屏）");
+  ok(["aurora", "ribbon", "halo", "depth"].every((mode) => libSrc.includes(`"${mode}"`)), "四档动态壁纸都在清单里（含 3D 山景）");
+  ok(/function DepthField/.test(layerSrc) && /getContext\("2d"\)/.test(layerSrc) && /createLinearGradient/.test(layerSrc)
+    && /const ridge = /.test(layerSrc) && /ridge\(/.test(layerSrc),
+    "3D 山景 = canvas 逐帧风景（天空/三层山脊/流雾）");
+  ok(/addEventListener\("mousemove"/.test(layerSrc) && /mx \* 14 \* \(i \+ 1\)/.test(layerSrc),
+    "3D 山景跟鼠标走（三层山脊不同位移 = 纵深）");
+  ok(/attributeFilter: \["data-theme"\]/.test(layerSrc) && /buildPalette/.test(layerSrc),
+    "3D 山景跟随主题换调色板（切换只重绘，不重建 canvas）");
   ok(/DepthField reduced=\{prefersReducedMotion\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
-    "3D 深空尊重减动效偏好（只渲染一帧）+ 画布样式在位");
+    "3D 山景尊重减动效偏好（只画一帧）+ 画布样式在位");
   ok(/function MotionVeil/.test(layerSrc) && /is-\$\{variant\}/.test(layerSrc) && /<i><b \/><\/i><i><b \/><\/i><i><b \/><\/i>/.test(layerSrc),
     "动态光幕 = 三层柔光组件（外层视差 / 内层动画各管一件事）");
   ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")

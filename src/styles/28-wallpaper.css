@@ -237,3 +237,13 @@
 :root[data-theme-mode="light"] .wallpaper-preset::after {
   background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 38%, transparent), color-mix(in srgb, var(--bg) 16%, transparent));
 }
+
+/* 静态风景壁纸：明暗主题各一张（day/night 叠在一起，由主题切换显隐） */
+.wp-sky-night { display: none; }
+:root[data-theme-mode="dark"] .wp-sky-day { display: none; }
+:root[data-theme-mode="dark"] .wp-sky-night { display: block; }
+.wallpaper-preset-face { position: relative; overflow: hidden; }
+.wallpaper-preset-face i { position: absolute; inset: 0; display: block; background-size: cover; background-position: center; }
+.wallpaper-preset-face .wp-thumb-night { display: none; }
+:root[data-theme-mode="dark"] .wallpaper-preset-face .wp-thumb-day { display: none; }
+:root[data-theme-mode="dark"] .wallpaper-preset-face .wp-thumb-night { display: block; }

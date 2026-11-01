@@ -2,9 +2,9 @@
 export const WALLPAPER_KEY: string;
 export const WALLPAPER_EVENT: string;
 export const WALLPAPER_MODES: string[];
-export const WALLPAPER_PRESETS: { id: string; name: string; src: string }[];
+export const WALLPAPER_PRESETS: { id: string; name: string; day: string; night: string }[];
 export function isPresetImage(image: unknown): boolean;
-export function presetById(id: string): { id: string; name: string; src: string } | null;
+export function presetById(id: string): { id: string; name: string; day: string; night: string } | null;
 export function normalizeWallpaper(raw: unknown): { mode: string; image: string };
 export function readWallpaper(): { mode: string; image: string };
 export function saveWallpaper(next: unknown): { mode: string; image: string };
