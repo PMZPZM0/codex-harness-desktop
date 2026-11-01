@@ -522,16 +522,20 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               <div className="uc-hero-kicker" style={{ margin: "10px 0 6px" }}>联动套餐（点卡片立即生效：用户人格 + Codex 人格 同套）</div>
               <div className="uc-combo-grid">
                 {COMBO_PACKS.map((pack: any) => {
-                  const userHit = USER_PERSONAS.find((p: any) => p.id === pack.userPersonaId);
                   const on = personaInfo?.soulSlug === pack.soulSlug;
                   const busy = busyPack === pack.id;
                   return (
                     <button type="button" key={pack.id} className={`uc-combo ${on ? "on" : ""} ${busy ? "busy" : ""}`} disabled={busy}
-                      title={pack.desc} onClick={() => void applyCombo(pack.id)}>
-                      {on && <span className="uc-combo-check"><Check size={10} /></span>}
-                      <strong>{pack.label}</strong>
-                      <small>{userHit?.label ?? pack.userPersonaId} + {pack.soulSlug.replace("built-in:", "")} —— {pack.desc}</small>
-                      <span className="uc-combo-state">{busy ? "应用中…" : on ? "已生效 · 下一新会话起用" : "点一下应用"}</span>
+                      aria-pressed={on} title={pack.desc} onClick={() => void applyCombo(pack.id)}>
+                      <span className="uc-combo-head">
+                        <strong>{pack.label}</strong>
+                        {on && <span className="uc-combo-check" aria-hidden><Check size={11} /></span>}
+                      </span>
+                      <small>{pack.desc}</small>
+                      <span className="uc-combo-foot">
+                        <span className="uc-combo-state">{busy ? "应用中…" : on ? "已生效 · 下一新会话起用" : "点一下应用"}</span>
+                        {!on && !busy && <span className="uc-combo-cta">应用<ChevronRight size={12} /></span>}
+                      </span>
                     </button>
                   );
                 })}

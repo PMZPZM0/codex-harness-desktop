@@ -1843,15 +1843,16 @@
 }
 /* 11-01：弹窗里的保存栏只有单个动作键时，space-between 会让它贴左 —— 弹窗内一律靠右。 */
 .settings-dialog .uc-savebar { justify-content: flex-end; }
-/* 11-01 v4：人格联动套餐卡（整卡可点 + 选中颜色反馈；色值走主题变量） */
+/* 11-01 v5：人格联动套餐卡 —— 标题 / 说明 / 底部动作三段，等高、不叠字；
+   选中徽标放进标题行（旧的绝对定位会压住正文）。色值一律走主题变量。 */
 .uc-combo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .uc-combo {
-  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 5px;
-  padding: 12px 14px;
+  align-items: stretch;
+  gap: 6px;
+  min-height: 118px;
+  padding: 13px 14px 11px;
   text-align: left;
   font: inherit;
   color: var(--text);
@@ -1859,18 +1860,14 @@
   border: 1px solid var(--line-soft);
   border-radius: 12px;
   cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
 }
-.uc-combo:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
-.uc-combo strong { font-size: 13px; font-weight: 600; }
-.uc-combo small { color: var(--muted); font-size: 11.5px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.user-center .uc-combo-state { color: var(--faint); font-size: 10.5px; }
-.uc-combo.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
-.uc-combo.on .uc-combo-state { color: var(--accent); }
-.uc-combo.busy { cursor: progress; opacity: 0.75; }
+.uc-combo:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 3%, var(--panel)); }
+.uc-combo:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+.uc-combo-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.uc-combo strong { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-center .uc-combo-check {
-  position: absolute;
-  top: 8px;
-  right: 8px;
+  flex: none;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -1879,4 +1876,12 @@
   background: var(--accent);
   color: var(--panel);
 }
+.uc-combo small { color: var(--muted); font-size: 11.5px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.uc-combo-foot { margin-top: auto; display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px dashed var(--line-soft); }
+.uc-combo-state { color: var(--faint); font-size: 10.5px; }
+.uc-combo-cta { margin-left: auto; display: inline-flex; align-items: center; gap: 2px; color: var(--muted); font-size: 11px; font-weight: 600; }
+.uc-combo:hover .uc-combo-cta { color: var(--accent); }
+.uc-combo.on { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.uc-combo.on .uc-combo-state { color: var(--accent); }
+.uc-combo.busy { cursor: progress; opacity: 0.75; }
 @media (max-width: 700px) { .uc-combo-grid { grid-template-columns: 1fr; } }

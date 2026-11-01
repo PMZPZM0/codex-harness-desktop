@@ -158,6 +158,14 @@ ok(/\.app-lock-seg\s*\{[^}]*margin-left:\s*auto/.test(appLockCss)
   && /\.settings-exp-page\.app-lock-page\s*\{[^}]*justify-content:\s*flex-start/.test(appLockCss)
   && /\.app-lock-status-card\s*\{\s*padding:\s*0/.test(appLockCss),
   "应用锁页自顶顺排、状态卡不留双内边距（卡片间空白归零）");
+/* 11-01 用户截图：联动套餐卡选中后正文被压住 ⇒ 标题 / 说明 / 底部动作三段、等高、徽标进标题行。 */
+const userCenterSrc = read("src/components/UserCenter.tsx");
+ok(/className="uc-combo-head"/.test(userCenterSrc) && /className="uc-combo-foot"/.test(userCenterSrc)
+  && /aria-pressed=\{on\}/.test(userCenterSrc)
+  && /\.uc-combo\s*\{[^}]*min-height:\s*118px/.test(sshCss)
+  && /\.uc-combo-foot\s*\{[^}]*margin-top:\s*auto/.test(sshCss)
+  && !/\.uc-combo-check\s*\{[^}]*position:\s*absolute/.test(sshCss),
+  "人格联动套餐卡：标题/说明/底部动作三段 + 等高，选中徽标不再叠住正文");
 const expertCenterSrc = read("src/features/settings-expert-center/ExpertCenterSection.tsx");
 ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) && !/PageInfo/.test(expertCenterSrc), "专家中心返回与专家市场并排，帮助问号已删");
 ok(!/"expert-center": \{ back:/.test(codeOnly(readSettingsSurface())), "专家中心返回键不再由壳层单独占一行");
