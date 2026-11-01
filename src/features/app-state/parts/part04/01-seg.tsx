@@ -26,29 +26,32 @@ export function usePart04a(bag: Bag) {
   useEffect(() => {
     void window.codex.sessionAliasSnapshot?.().then((snapshot: any) => setAliasSnapshot(snapshot)).catch(() => undefined);
   }, []);
+  /* ⛔⛔ 11-01 用户（截图：「名字没同步左侧栏…这里还是显示未命名任务」）：
+     只靠"进应用拉一次 + 变更时广播"是不够的 —— 广播是**一次性事件**，
+     窗口还没挂上监听、或那次广播正好被 debounce 合并掉，界面就永久停在旧快照上
+     （磁盘里明明有名字，侧栏却显示未命名任务）。
+     ⇒ 会话列表**每变一次**（新建 / 切换 / 名字变）就重拉一份：几 KB 的快照，比"名字错乱"便宜得多。
+     ⛔ 只依赖 `threads.length` 与当前会话 id：不能依赖整个 threads 数组（每次刷新都是新数组 ⇒ 死循环）。 */
+  const aliasRefreshKey = `${bag.threads.length}|${bag.thread?.id ?? ""}`;
   useEffect(() => {
-    const handler = (event: MessageEvent) => {
-      const data: any = event.data;
-      // 笔名新增/改名（含"改完主管名，子会话的上级身份跟着变"）⇒ 整份替换
-      if (data?.channel === "harness:event" && data?.event?.type === "aliases-changed") {
-        setAliasSnapshot(data.event.snapshot);
-      }
-      // 调度登记变化（发起 / 结束 / 归档）→ 刷新「被调度的临时会话」：驱动侧栏标记与注册侧过滤
-      if (data?.channel === "harness:event" && data?.event?.type === "delegates-changed") {
-        void bag.refreshDelegateRecords();
-        // 调度会**新建会话**：只刷登记表不够，侧栏列表也必须跟着拉一次，
-        // 否则新会话根本不在 threads 里 → 用户看不到刚被调度的临时会话（09-15 验收实测踩到）。
-        void bag.refreshThreads();
-      }
-      if (data?.channel === "harness:event" && data?.event?.type === "team-run") bag.setTeamThreadsIndex((prev) => {
-        const run = data.event.run;
-        if (!run?.leadThreadId || !run?.teamId || prev[run.leadThreadId] === run.teamId) return prev;
-        return { ...prev, [run.leadThreadId]: run.teamId };
-      });
-    };
-    window.addEventListener("message", handler);
-    return () => window.removeEventListener("message", handler);
-  }, []);
+    void window.codex.sessionAliasSnapshot?.().then((snapshot: any) => setAliasSnapshot(snapshot)).catch(() => undefined);
+  }, [aliasRefreshKey]);
+  /* ⛔⛔ 11-01 实测抓出来的真 bug：这里原来监听的是 `window` 的 `message` 事件，判据
+     `data.channel === "harness:event"` —— 可是**没有任何地方** postMessage 这种形状
+     （主进程走 `webContents.send("harness:event", 裸 payload)`，preload 直接回调监听者）。
+     ⇒ 整块 handler 是死代码：`aliases-changed` 从来没被应用过，于是
+       「主进程明明改了名/分配了名字，侧栏还显示旧名或未命名任务」（用户截图就是这个）。
+     ⇒ 改走 `window.codex.onHarnessEvent`（与 part05 同源）；`delegates-changed` 由 part05
+       负责刷新，这里不重复拉，避免每次调度变化打两次列表请求。 */
+  useEffect(() => window.codex.onHarnessEvent((event: any) => {
+    // 会话名新增/改名（含"改完名字，子会话的上级身份跟着变"）⇒ 整份替换快照
+    if (event?.type === "aliases-changed") setAliasSnapshot(event.snapshot);
+    if (event?.type === "team-run") bag.setTeamThreadsIndex((prev) => {
+      const run = event.run;
+      if (!run?.leadThreadId || !run?.teamId || prev[run.leadThreadId] === run.teamId) return prev;
+      return { ...prev, [run.leadThreadId]: run.teamId };
+    });
+  }), []);
 
   /** 展开的专家团簇（teamId 集合）。默认全部折叠（用户定稿：默认合并）。 */
   const [expandedTeamClusters, setExpandedTeamClusters] = useState<Set<string>>(new Set());

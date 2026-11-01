@@ -40,6 +40,12 @@ for (const name of ["SingletonLock", "SingletonCookie", "SingletonSocket"]) {
 
 const env = { ...process.env, CODEX_HARNESS_DEBUG_PORT: String(port) };
 for (const key of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS", "http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]) delete env[key];
+/* ⛔⛔ 11-01 实测踩到的坑：`--user-data-dir` **改不了** `app.getPath("userData")` ——
+   本应用在 main.ts 里显式 `app.setPath("userData", resolveStartupUserData())`，
+   只认 `CODEX_HARNESS_USER_DATA` 环境变量 ⇒ 之前所有"隔离实例"其实都在读写**用户的真实数据目录**。
+   普通探针只读，问题不大；但 `--alias-e2e` 会给会话**改名**，那会改到用户头上。
+   ⇒ 显式传这个环境变量，隔离才是真的。 */
+env.CODEX_HARNESS_USER_DATA = profile;
 
 const child = spawn(electronPath, [".", `--user-data-dir=${profile}`], { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
 let appLog = "";
@@ -113,9 +119,14 @@ const evaluate = (expression) => new Promise((resolve) => {
 
 const probe = await evaluate(`(() => ({
   boundary: Boolean(document.querySelector('.app-error-boundary, [class*="error-boundary"]')) || document.body.innerText.includes('界面发生错误'),
-  shell: Boolean(document.querySelector('.app-shell')),
+  /* ⛔ 全新 profile 首启会停在登录页（没有 .app-shell）——那也算"界面渲染成功"，
+     否则每次第一跑都是假 FAIL。有 profile 的前提下才要求是主壳。 */
+  shell: Boolean(document.querySelector('.app-shell')) || /开始使用|暂时不登录/.test(document.body.innerText || ''),
   rootChildren: document.getElementById('root')?.childElementCount ?? 0,
-  aliasBadges: document.querySelectorAll('.thread-alias-badge').length,
+  /* ⛔ 11-01：会话名徽标已撤（名字本身就是标题），改看「有没有还在显示『未命名任务』的行」
+     —— 那正是用户截图里"侧栏没同步名字"的可见症状。 */
+  untitledRows: Array.from(document.querySelectorAll('.thread-row-name')).filter((el) => /未命名任务/.test(el.textContent || '')).length,
+  namedRows: Array.from(document.querySelectorAll('.thread-row-name')).map((el) => (el.textContent || '').trim()).filter(Boolean).slice(0, 4),
   threadRows: document.querySelectorAll('[data-thread-row], .thread-row').length,
   bodyText: (document.body.innerText || '').slice(0, 160).replace(/\\n+/g, ' | '),
 }))()`);
@@ -128,21 +139,34 @@ if (!probe?.shell && (probe?.rootChildren ?? 0) === 0) fail.push("#root 空（�
 console.log(`\n[运行时探针] 端口 ${port} / 等待 ${settleMs}ms`);
 console.log(`  · ErrorBoundary: ${probe?.boundary ? "✗ 出现" : "✓ 无"}`);
 console.log(`  · .app-shell: ${probe?.shell ? "✓" : "✗"} | #root 子节点: ${probe?.rootChildren ?? "?"}`);
-console.log(`  · 侧栏笔名徽标: ${probe?.aliasBadges ?? "?"} 个 | 会话行: ${probe?.threadRows ?? "?"} 个`);
+console.log(`  · 会话行: ${probe?.threadRows ?? "?"} 个 | 未命名行: ${probe?.untitledRows ?? "?"} 个（应为 0） | 名字样本: ${(probe?.namedRows ?? []).join(" / ") || "(无)"}`);
 console.log(`  · 首屏文本: ${probe?.bodyText || "(空)"}`);
-/* 可选：笔名链路（`--alias-e2e`）—— 检查桥是否接上 + 快照里有多少条笔名。
-   ⛔ 老会话**本来就没有笔名**（只对新建会话分配，用户令「以后每次新建会话自动取笔名」）⇒
-      徽标 0 个是**预期**，不是故障。这里只证明「桥通、快照可读」，分配逻辑另有守卫与实测。 */
+/* 可选：会话名联动 e2e（`--alias-e2e`）——
+   ⛔ 验的是**用户点名的那个现象**：改一个名字，侧栏和顶栏要同时变（原来是「顶栏暗匣 / 侧栏未命名任务」）。
+   只在探针自己的临时 profile 里改名，不碰真实数据；没有会话行时跳过（全新 profile 首启确实一条都没有）。 */
 if (process.argv.includes("--alias-e2e")) {
-  const aliasProbe = await evaluate(`(async () => ({
-    hasEnsure: typeof window.codex?.sessionAliasEnsure === 'function',
-    hasSet: typeof window.codex?.sessionAliasSet === 'function',
-    hasSnapshot: typeof window.codex?.sessionAliasSnapshot === 'function',
-    count: Object.keys((await window.codex?.sessionAliasSnapshot?.()) ?? {}).length,
-  }))()`);
-  const bridged = aliasProbe?.hasEnsure && aliasProbe?.hasSet && aliasProbe?.hasSnapshot;
-  console.log(`  · 笔名链路: ${bridged ? "✓ 三个通道都在" : "✗ 通道缺失"}`
-    + ` | 已有笔名 ${aliasProbe?.count ?? "?"} 条（老会话不分配，0 属正常）`);
+  const aliasProbe = await evaluate(`(async () => {
+    const pick = () => document.querySelector('[data-thread-id]');
+    const threadId = pick()?.getAttribute('data-thread-id') || '';
+    const count = Object.keys((await window.codex?.sessionAliasSnapshot?.()) ?? {}).length;
+    if (!threadId) return { count, skipped: '没有会话行' };
+    const sidebarOf = () => document.querySelector('[data-thread-id="' + threadId + '"] .thread-row-name')?.textContent || '';
+    const topbarOf = () => document.querySelector('.task-title strong')?.textContent || '';
+    const before = { sidebar: sidebarOf(), topbar: topbarOf() };
+    const probeName = '联动' + String(Date.now() % 10000);\n    const set = await window.codex.sessionAliasSet({ threadId, alias: probeName, allowDuplicate: true });
+    await new Promise((r) => setTimeout(r, 1200));
+    const after = { sidebar: sidebarOf(), topbar: topbarOf() };\n    return { count, before, after, probeName, ok: Boolean(set?.ok) };
+  })()`);
+  const state = aliasProbe?.skipped ? `— 跳过（${aliasProbe.skipped}）` : aliasProbe?.ok ? "✓ 改名成功" : "✗ 改名失败";
+  console.log(`  · 会话名联动: ${state}`
+    + ` | 侧栏 ${aliasProbe?.before?.sidebar ?? "?"} → ${aliasProbe?.after?.sidebar ?? "?"}`
+    + ` | 顶栏 ${aliasProbe?.before?.topbar ?? "?"} → ${aliasProbe?.after?.topbar ?? "?"}`
+    + ` | 快照 ${aliasProbe?.count ?? "?"} 条`);
+  const probeName = aliasProbe?.probeName ?? "";
+  if (aliasProbe && !aliasProbe.skipped && (aliasProbe.after?.sidebar !== probeName || aliasProbe.after?.topbar !== probeName
+    || aliasProbe.before?.sidebar === probeName)) {
+    fail.push("改名没有同时反映到侧栏与顶栏");
+  }
 }
 if (reactNoise.length) {
   console.log(`  · 报错明细:`);

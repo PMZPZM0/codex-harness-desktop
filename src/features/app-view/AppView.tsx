@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { useSyncExternalStore, useMemo, useRef, useState, type CSSProperties } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
+import { aliasLabelOf, getAliasState, subscribeAliases } from "../session-alias/alias-store.mjs";
 import { ShortcutsDialog } from "../shortcuts";
 import { VaultWriteConfirm } from "../data-access";
 import {
@@ -469,6 +470,12 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      办公室在**中枢会话**里坐的是**群里的人**（第三条来源：专家团 / 普通会话委托 / 群成员）。
      ⛔ 群 id 从 bossThreads 里按 bossThreadId 匹配当前会话（与轨道同一份判定）。 */
   const bossThreadsForDir = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  /* ⛔⛔ 11-01 用户（截图：「名字没同步左侧栏这个会话选项呢，这里还是显示未命名任务」）：
+     顶栏和侧栏**必须读同一份名字**。侧栏读别名快照（笔名/改名后的名字），顶栏原来只读
+     引擎的 `thread.name` ⇒ 没被 `thread/name/set` 写过名的会话（中枢、调度、存量会话）
+     两边必然不一致。⇒ 顶栏也先读别名快照，取不到才回落引擎名。 */
+  const aliasSnapForTitle = useSyncExternalStore(subscribeAliases, getAliasState);
+  const headerAlias = aliasLabelOf(aliasSnapForTitle, thread?.id ?? "");
   const bossDirState = useSyncExternalStore(subscribeBossDirDialog, getBossDirDialogState);
   const bossDirContext = isBossSessionContext(bossThreadsForDir, thread?.id);
   const officeBossGroupId = useMemo(() => {
@@ -587,7 +594,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
               )
             )}
           </div>
-          {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击修改任务名称" onDoubleClick={() => { if (!thread) return; setRenameDraft(cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{truncateThreadTitle(cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) }))}</strong>}
+          {inlineRename ? <input ref={inlineRenameRef} value={renameDraft} aria-label="任务名称" onChange={(event) => setRenameDraft(event.target.value)} onBlur={saveInlineRename} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); saveInlineRename(); } if (event.key === "Escape") { event.preventDefault(); setInlineRename(false); } }} /> : <strong title="双击改名字" onDoubleClick={() => { if (!thread) return; setRenameDraft(headerAlias || cleanThreadDisplayTitle(thread.name, { preview: thread.preview })); setInlineRename(true); queueMicrotask(() => { inlineRenameRef.current?.focus(); inlineRenameRef.current?.select(); }); }}>{truncateThreadTitle(headerAlias || cleanThreadDisplayTitle(thread?.name, { preview: thread?.preview, fallback: cleanThreadDisplayTitle(switchingMeta?.name, { preview: switchingMeta?.preview, fallback: "新任务" }) }))}</strong>}
           {/* ⛔ 读 `topbarDir`（本会话自己的目录），⛔ 不是全局 `workspace`：否则没选地址的
              指挥中枢会显示成别的会话的项目（用户实测「没选地址，左上角也自动抓到了地址」）。 */}
           <span>{topbarDir || (bossDirContext ? "尚未选择项目地址" : "尚未选择工作区")}</span>

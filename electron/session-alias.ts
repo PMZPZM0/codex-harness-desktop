@@ -4,10 +4,9 @@
  * 渲染层通过 `session-alias:*` 通道读写；主进程内部（delegation / teams / runner）直接调函数。
  *
  * 口径（⛔ 与 src/lib/session-names.mjs 同源，改规则去那边改，这里只做落盘与联动）：
- *   · 用户 = 总经理（不算会话）；
- *   · **主会话 = 主管**，ID = 笔名 + 「主管」（如「青崖主管」）；
- *   · 被调度的子会话挂在自己的上级主管下面，**不再带「主管」后缀**；
- *   · 笔名两字、全局不重名（用户自改的也算占用）；用户改过的一律以用户为准，不再自动分配。
+ *   · **名字即会话名**（11-01 用户令：取消「主管」后缀、取消"笔名/会话名"两个概念）；
+ *   · 自动分配从池子里取两字（器物词），用户改名可写 1~24 字符，仍不重名；
+ *   · 被调度的子会话记着上级 id（气泡与指令里的「上级：X」由此而来），用户改过的一律以用户为准。
  *
  * ⛔ 为什么落盘在主进程而不是 localStorage：被调度会话的**上级名字**要在主进程拼进它的
  *   持久指令与首条任务里（渲染层那时还没参与）；只存渲染层的话，主进程这边永远是空。
@@ -145,19 +144,30 @@ async function ensureSessionAliasLocked(threadId: string, supervisorThreadId: st
   return record;
 }
 
-/** 用户改笔名：校验（两字中文 + 不与别人重名）→ 落盘 → 返回最新记录。 */
-export function setSessionAlias(threadId: string, alias: string): Promise<{ ok: boolean; error?: string; record?: SessionAliasRecord }> {
-  return serial(() => setSessionAliasLocked(threadId, alias));
+/** 用户改名（= 改笔名，同一个操作）：校验 → 落盘 → 广播，返回最新记录。 */
+export function setSessionAlias(
+  threadId: string,
+  alias: string,
+  /** `allowDuplicate`：显式改名（含团队/专家的自动命名）允许重名。
+      自动分配永远走池子（不重名）；这里放行是因为"用户/system 明确要把这个会话叫这个名字"
+      比"名字唯一"优先 —— 否则团队里两个同名职能就没法命名了。 */
+  opts: { allowDuplicate?: boolean } = {},
+): Promise<{ ok: boolean; error?: string; record?: SessionAliasRecord }> {
+  return serial(() => setSessionAliasLocked(threadId, alias, opts));
 }
 
-async function setSessionAliasLocked(threadId: string, alias: string): Promise<{ ok: boolean; error?: string; record?: SessionAliasRecord }> {
+async function setSessionAliasLocked(
+  threadId: string,
+  alias: string,
+  opts: { allowDuplicate?: boolean },
+): Promise<{ ok: boolean; error?: string; record?: SessionAliasRecord }> {
   const id = String(threadId ?? "").trim();
   if (!id) return { ok: false, error: "缺少会话 id" };
   const map = await load();
   const taken = await usedAliases();
   const current = map[id]?.alias;
   if (current) taken.delete(current);          // 自己的旧名不算占用（允许同名回填/原样保存）
-  const verdict = validateAlias(alias, taken);
+  const verdict = validateAlias(alias, opts.allowDuplicate ? [] : taken);
   if (!verdict.ok) return { ok: false, error: verdict.reason };
   const record: SessionAliasRecord = { ...(map[id] ?? { updatedAt: 0 }), alias: verdict.alias, userEdited: true, updatedAt: Date.now() };
   map[id] = record;
@@ -186,14 +196,54 @@ export async function snapshotSessionAliases(): Promise<Record<string, SessionAl
   return out;
 }
 
-/** 改名后通知所有窗口（渲染层据此立刻刷新侧栏/上级气泡，不用等轮询）。 */
+/**
+ * 批量为**缺名字**的会话补分配（幂等）。
+ *
+ * ⛔⛔ 11-01 用户（截图：「名字没同步左侧栏这个会话选项呢，这里还是显示未命名任务」）：
+ *   原先只有「新建会话」那一刻分配，于是
+ *     ① 存量会话永远没有名字 ⇒ 侧栏只能显示"未命名任务"，而顶栏显示的是引擎名 ⇒ 两边不一致；
+ *     ② 建会话发生在渲染层订阅**之前**时，那次广播丢了（`emitFn` 还没接上）⇒ 名字在磁盘上、
+ *        界面永远看不到。
+ *   ⇒ 列表出口统一补一次（`thread/list` 是侧栏数据的唯一来源），并把"广播丢了"这件事在
+ *      接线时补发（见 `setSessionAliasEmitter`）。
+ * @returns 是否有新增（有 ⇒ 调用方可以放心广播）
+ */
+export function ensureAliasesFor(threadIds: string[]): Promise<boolean> {
+  return serial(async () => {
+    const map = await load();
+    const used = new Set(Object.values(map).map((entry) => entry?.alias).filter(Boolean));
+    let changed = false;
+    for (const raw of Array.isArray(threadIds) ? threadIds : []) {
+      const id = String(raw ?? "").trim();
+      if (!id || map[id]?.alias) continue;
+      const alias = pickSessionAlias(id, used);
+      if (!alias) continue;
+      used.add(alias);
+      map[id] = { alias, updatedAt: Date.now() };
+      changed = true;
+    }
+    if (changed) {
+      await flushSessionAliases();
+      scheduledEmit();
+    }
+    return changed;
+  });
+}
+
+/**
+ * ⛔ 改名后通知所有窗口（渲染层据此立刻刷新侧栏/上级气泡，不用等轮询）。
+ * 11-01 补：`emitFn` 还没接上时**记住有待广播**，接上那一刻补发一次 ——
+ *   否则"启动早期分配的名字"会永久停在磁盘上、界面永远看不见（用户看到的"未命名任务"）。
+ */
 let emitFn: ((payload: unknown) => void) | null = null;
 let emitTimer: NodeJS.Timeout | null = null;
+let emitPending = false;
 export function setSessionAliasEmitter(fn: (payload: unknown) => void) {
   emitFn = fn;
+  if (emitPending) { emitPending = false; scheduledEmit(); }
 }
 function scheduledEmit() {
-  if (!emitFn) return;
+  if (!emitFn) { emitPending = true; return; }
   if (emitTimer) clearTimeout(emitTimer);
   emitTimer = setTimeout(async () => {
     emitTimer = null;

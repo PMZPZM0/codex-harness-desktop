@@ -1351,8 +1351,8 @@ interface Window {
     readTaskMonitor(threadId?: string): Promise<{ threadId: string; turns: any[]; ongoingTurnId: string }>;
     /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
     sessionAliasSnapshot(): Promise<Record<string, any>>;
-    /* 10-31：用户改笔名（两字中文 + 全局不重名，主进程校验后广播） */
-    sessionAliasSet(input: { threadId?: string; alias?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
+    /* 11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用 */
+    sessionAliasSet(input: { threadId?: string; alias?: string; allowDuplicate?: boolean }): Promise<{ ok: boolean; error?: string; record?: any; engineError?: string; snapshot?: any }>;
     /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
     sessionAliasEnsure(input: { threadId?: string; supervisorThreadId?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
 /* ═══ gen:end ═══ */

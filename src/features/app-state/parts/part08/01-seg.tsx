@@ -21,6 +21,7 @@ import { DATA_ACCESS_TOOLS } from "../../../data-access";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
+import { setAliasSnapshot } from "../../../session-alias/alias-store.mjs";
 
 /** 调度工具 `agent_invoke` 的**兜底描述**（描述还没算出来时用）。
  *  ⛔ 与 `electron/features/dispatch-core.ts` 里那条 MCP 孪生描述**逐字同源**
@@ -265,6 +266,16 @@ bag.archiveThread = archiveThread as typeof bag.archiveThread;
     let engineError: any = null;
     try { await window.codex.request("thread/name/set", { threadId: id, name }); }
     catch (error: any) { engineError = error; }
+    /* ⛔⛔ 11-01 用户令（截图「名字没同步左侧栏…还是显示未命名任务」）：
+       **改名必须同时落别名记录** —— 侧栏标题、被调度会话里的「上级：X」都读那份快照。
+       原来只有侧栏菜单那一条路会写别名记录，而顶栏双击 / 斜杠命令 / 团队自动命名都只改了
+       引擎名 ⇒ 侧栏与顶栏各显示一个名字。现在**所有入口都收敛到这一个函数**：
+         本地覆盖表 → threads 内存表 → 引擎会话名 → 别名记录（+ 广播）。
+       `allowDuplicate`：系统自动命名（团队 / 专家）会撞名，拦下来就等于"专家没名字"，所以放行。 */
+    try {
+      const aliasResult: any = await window.codex.sessionAliasSet({ threadId: id, alias: name, allowDuplicate: true });
+      if (aliasResult?.snapshot) setAliasSnapshot(aliasResult.snapshot);
+    } catch { /* 别名记录写失败不回滚改名（侧栏仍按本地覆盖表显示） */ }
     await bag.refreshThreads().catch(() => undefined);
     // ⛔ 措辞必须说清「哪一侧没同步」：改名在本地已经生效，说「重命名失败」会让用户以为白改了
     //    （这正是本 bug 的观感来源之一 —— 引擎侧那份名字随后还会被首条消息顶掉）。

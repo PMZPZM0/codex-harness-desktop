@@ -93,11 +93,21 @@ export function supervisorIdOf(alias) {
   return String(alias ?? "").trim();
 }
 
-/** 用户可改笔名的校验：必须两字中文，且不与现有（别人的）重名。 */
+/**
+ * 用户改名的校验。
+ *
+ * ⛔ 11-01 用户令：「笔名就是会话选项名，为啥要重复两个改名字的选项呢」——
+ *    ⇒ **名字 = 会话名**，不再是"两字笔名"这个独立概念。
+ *    自动分配仍然从池子里取两字（`pickSessionAlias`），但用户手动改的时候可以写任意
+ *    「1~24 个字符」的自然名字（如「英伟达调研」「Jetson 选型」），否则"改名"和"改笔名"
+ *    就永远不是一回事、也没法合并成一个入口。
+ * 仍然保留**不重名**（用户 10-31 明确要求「确保 200 个会话不能有重复名字」；
+ *   重名会让"上级是谁"在气泡里分不清）。
+ */
 export function validateAlias(input, used = []) {
-  const name = String(input ?? "").trim();
-  if (name.length !== 2) return { ok: false, reason: "笔名要求两个字" };
-  if (!/^[\u4e00-\u9fa5]{2}$/.test(name)) return { ok: false, reason: "笔名只能是中文" };
+  const name = String(input ?? "").replace(/[\r\n\t]+/g, " ").trim();
+  if (!name) return { ok: false, reason: "名字不能为空" };
+  if ([...name].length > 24) return { ok: false, reason: "名字最多 24 个字" };
   const taken = used instanceof Set ? used : new Set(Array.isArray(used) ? used : []);
   if (taken.has(name)) return { ok: false, reason: "这个名字已经被别的会话用了" };
   return { ok: true, alias: name };

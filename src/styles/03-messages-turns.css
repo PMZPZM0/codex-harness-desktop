@@ -1760,13 +1760,3 @@ html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag 
   letter-spacing: 0.2px;
 }
 
-/* 10-31：用户职级（总经理）——挂在用户气泡名字旁，与会话侧「XX主管」对应 */
-.user-head-rank {
-  font-size: 10px;
-  line-height: 1.4;
-  padding: 0 5px;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  margin-right: 6px;
-}

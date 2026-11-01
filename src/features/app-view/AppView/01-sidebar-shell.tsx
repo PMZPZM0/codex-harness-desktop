@@ -811,13 +811,18 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   {projectGroups.length ? projectGroups.map(([cwd, items]) => {
                     const expanded = expandedProjects.has(cwd);
                     const projectTag = entityTags.projects[cwd];
+                    /* ⛔ 11-01 用户令（对照截图）：「普通会话的项目 logo 蓝色，中枢会话的项目 logo 黄色」
+                       ⇒ 配色按**项目里有没有指挥中枢会话**决定，而不是一律琥珀色。
+                         中枢会话的判定与徽标同源（bossIds = 群 boss 线程，sessionIds = 已登记中枢）。 */
+                    const hasBossThread = items.some((entry) => bossThreads.bossIds.includes(entry.id) || (bossThreads.sessionIds ?? []).includes(entry.id));
                     return (
                       <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
                         <div className="project-item-head" onMouseLeave={() => setProjectMenu((current) => current === cwd ? null : current)}>
                           <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
                             <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
-                            {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力） */}
-                            <FolderOpen size={13} className="ic-amber" />
+                            {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力）。
+                                11-01 用户令：普通项目蓝、含指挥中枢的项目琥珀色 —— 一眼区分"这是中枢那个盘"。 */}
+                            <FolderOpen size={13} className={hasBossThread ? "ic-amber" : "ic-blue"} />
                             {projectTag && <span className="entity-tag project-custom-tag" style={{ "--tag-color": projectTag.color } as any} title={`标签：${projectTag.text}`}>{projectTag.text}</span>}
                             <strong>{projectNameOf(cwd)}</strong>
                           </button>

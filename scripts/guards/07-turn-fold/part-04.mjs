@@ -780,8 +780,11 @@ export async function run() {
     "【78】resume 回包也贴覆盖（打开会话时顶栏标题才不会回退）"
   );
   // 写入点在乐观更新之前：引擎那份不可靠，本地必须先落
+  /* ⛔ 窗口别写死 1600 字：函数会继续长（11-01 加了别名写穿 + 注释），
+     写死长度会让"末尾那句提示"跑到窗口外 ⇒ 假红。按**函数结尾锚**取整段。 */
   const rn = app78.indexOf("async function renameThread");
-  const body = rn >= 0 ? app78.slice(rn, rn + 1600) : "";
+  const rnEnd = rn >= 0 ? app78.indexOf("bag.renameThread = renameThread", rn) : -1;
+  const body = rn >= 0 && rnEnd > rn ? app78.slice(rn, rnEnd) : (rn >= 0 ? app78.slice(rn, rn + 2600) : "");
   (body && /rememberThreadName\(id, name\);[\s\S]{0,260}?setThreads\(\(current\) => current\.map\(applyName\)\)/.test(body) ? ok : fail)(
     "【78】renameThread 先落本地覆盖再做乐观更新（顺序反了就会被刷新覆盖）"
   );

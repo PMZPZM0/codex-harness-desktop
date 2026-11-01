@@ -389,9 +389,14 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "会话显示名 = 笔名本身（⛔ 不再拼「主管」后缀；11-01 用户嫌它像人名+标签）");
   ok(!names.ALIAS_POOL.some((alias) => /[李王张刘陈杨赵黄周吴徐孙马朱胡林郭何高罗郑梁谢宋唐许韩冯邓曹彭曾萧田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤]/.test(alias)),
     "笔名池不含姓氏字（⛔ 上一版「林钟/青崖」被判像人名 —— 现在全是器物词，如「快刀 / 明镜 / 稳舟」）");
-  ok(names.USER_TITLE === "总经理", "用户职级 = 总经理");
-  ok(names.validateAlias("青", []).ok === false && names.validateAlias("abc", []).ok === false && names.validateAlias("青崖", ["青崖"]).ok === false,
-    "改名校验：必须两字中文、且不与别人重名");
+  /* ⛔ 11-01 用户令：「这个总经理标签可以不用给用户名这里加上，后台有这个 ID 就行了」
+     ⇒ 职级常量保留（数据层身份仍在），但**界面不许再渲染**它。 */
+  ok(names.USER_TITLE === "总经理" && !/user-head-rank/.test(read("src/features/shared/UserMessageView.tsx"))
+    && !/user-head-rank/.test(read("src/styles/03-messages-turns.css")),
+    "用户职级只在数据层（⛔ 不许再在用户名旁挂「总经理」标签）");
+  ok(names.validateAlias("", []).ok === false && names.validateAlias("青崖", ["青崖"]).ok === false
+    && names.validateAlias("英伟达调研", []).ok === true && names.validateAlias("x".repeat(30), []).ok === false,
+    "改名校验：非空 / 不重名 / 允许自然名字（1~24 字；⛔ 不再限制两字中文）");
 
   /* 接线：新建会话自动分配 / 子会话带上级 / 改名广播 / 侧栏可改 */
   const aliasIpc = read("electron/features/session-alias-ipc.ts");
@@ -422,6 +427,30 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/const badgeCycle = useSyncExternalStore\(subscribeBadgeCycle/.test(rowSrc)
     && rowSrc.indexOf("const badgeCycle = useSyncExternalStore") < rowSrc.indexOf("const renderThreadRow"),
     "标签切换下标在 hook 顶层订阅（⛔ 写进 renderThreadRow 就是 React #310 白屏）");
+  /* ⛔⛔ 11-01 第二轮用户反馈（五张截图）—— 逐条钉成断言： */
+  /* ① 侧栏与顶栏**读同一份名字**：顶栏原来只看引擎 name，没被写过的会话两边必然不一致
+     （截图：顶栏「暗匣」/ 侧栏「未命名任务」）。 */
+  const appViewSrc = read("src/features/app-view/AppView.tsx");
+  ok(/const headerAlias = aliasLabelOf\(aliasSnapForTitle/.test(appViewSrc)
+    && /truncateThreadTitle\(headerAlias \|\| cleanThreadDisplayTitle/.test(appViewSrc),
+    "侧栏与顶栏读同一份名字（别名快照优先；⛔ 顶栏只读引擎 name ⇒ 没写过名的会话两边不一致）");
+  /* ② 列表出口兜底补名字：存量会话 + 广播丢失都靠它救回来。 */
+  ok(/ensureAliasesFor\(/.test(codexIpcSrc) && /ensureAliasesFor/.test(read("electron/session-alias.ts")),
+    "thread/list 出口为缺名字的会话补分配（⛔ 只管新建 ⇒ 存量会话永远显示「未命名任务」）");
+  ok(/let emitPending = false/.test(read("electron/session-alias.ts")) && /if \(emitPending\)/.test(read("electron/session-alias.ts")),
+    "广播没接上时记住待发（⛔ 启动早期分配的名字会永久停在磁盘上、界面看不到）");
+  /* ③ 只有一个改名入口（重命名 / 改笔名合并）。 */
+  ok(/<span>改名字<\/span>/.test(rowSrc) && !/<span>重命名<\/span>/.test(rowSrc) && !/<span>改笔名<\/span>/.test(rowSrc),
+    "只有「改名字」一个入口（⛔ 重命名 + 改笔名 = 同一个操作两个选项，用户点名删）");
+  ok(/sessionAliasSet\(\{ threadId: id, alias: name, allowDuplicate: true \}\)/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
+    "改名写穿到别名记录（顶栏双击 / 侧栏菜单 / 命令走同一个函数，⛔ 只改引擎名 = 两边不一样）");
+  /* ④ 自定义标签入口恢复：不再被"已有身份徽标/名字"门控。 */
+  ok(/const customTag = getEntityTagState\(\)\.threads\[entry\.id\]/.test(rowSrc) && !/hasIdentityBadge/.test(rowSrc),
+    "自定义标签不再被身份徽标门控（⛔ 每个会话都有名字 ⇒ 上一版把入口全屏蔽了，用户以为功能没了）");
+  /* ⑤ 项目 logo 配色：普通蓝、含中枢的琥珀。 */
+  const sidebarSrc2 = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  ok(/const hasBossThread = items\.some/.test(sidebarSrc2) && /className=\{hasBossThread \? "ic-amber" : "ic-blue"\}/.test(sidebarSrc2),
+    "项目 logo：普通项目蓝色 / 中枢项目黄色（11-01 用户令）");
   ok(/subscribeAliases/.test(read("src/features/shared/UserMessageView.tsx")),
     "上级气泡订阅笔名快照（父会话改名 ⇒ 子会话这里当场变）");
 

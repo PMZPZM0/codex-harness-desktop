@@ -978,7 +978,7 @@ contextBridge.exposeInMainWorld("codex", {
   readTaskMonitor: (threadId: unknown) => __ipc("monitor:read", 1, [threadId]),
   /* 10-31：会话笔名全量快照（threadId → alias/上级/寓意） */
   sessionAliasSnapshot: () => __ipc("session-alias:snapshot", 0, []),
-  /* 10-31：用户改笔名（两字中文 + 全局不重名，主进程校验后广播） */
+  /* 11-01：会话改名（= 改笔名，唯一入口）—— 校验后落盘 + 写穿引擎会话名 + 广播快照；allowDuplicate 供系统自动命名用 */
   sessionAliasSet: (input: unknown) => __ipc("session-alias:set", 1, [input]),
   /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
   sessionAliasEnsure: (input: unknown) => __ipc("session-alias:ensure", 1, [input]),

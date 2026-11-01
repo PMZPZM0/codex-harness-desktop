@@ -107,7 +107,6 @@ import {
   Keyboard,
   Server,
   WifiOff,
-  UserRound,
   Rocket,
   BookMarked,
   Users,
@@ -148,7 +147,7 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../../../components/CardShell";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../../lib/user-refs";
 import { getEntityTagState, openTagEditor } from "../../../../../../lib/entity-tags.mjs";
-import { aliasLabelOf, getAliasState, setAliasSnapshot, subscribeAliases } from "../../../../../../features/session-alias/alias-store.mjs";
+import { aliasLabelOf, getAliasState, subscribeAliases } from "../../../../../../features/session-alias/alias-store.mjs";
 import { badgeCycleIndexOf, cycleThreadBadge, getBadgeCycleState, subscribeBadgeCycle } from "../../../../../../lib/thread-badge-cycle.mjs";
 import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../../../lib/thread-row-colors.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
@@ -218,12 +217,17 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
           不要在这一行调 hook：本函数是普通函数，不是组件（React #310）。 */
     const aliasLabel = aliasLabelOf(aliasState, entry.id);
     const aliasMeaning = String(aliasState.aliases?.[entry.id]?.meaning ?? "");
-    const editSessionAlias = async (threadId: string, current: string) => {
-      const next = await bag.openAppPrompt("改笔名（两个字）", current.replace(/主管$/, "")).catch(() => null);
+    /**
+     * **改名字**（唯一入口，11-01 用户令：「重新命名和改笔名不是一样的逻辑吗，为啥要两个选项」）。
+     *
+     * ⛔ 不做第二套写入逻辑：整条链收敛在 `bag.renameThread` ——
+     *   本地覆盖表 → threads 内存表 → 引擎会话名 → 别名记录（+ 广播）。
+     *   侧栏菜单、侧栏双击标题、顶栏双击、斜杠命令走的是**同一个函数**，所以四处的名字永远一致。
+     */
+    const renameSession = async (threadId: string, current: string) => {
+      const next = await bag.openAppPrompt("改名字", String(current ?? "").trim()).catch(() => null);
       if (!next?.trim()) return;
-      const result: any = await window.codex.sessionAliasSet({ threadId, alias: next.trim() }).catch(() => null);
-      if (!result?.ok) { bag.scopedNotice?.(String(result?.error ?? "改名失败"), threadId); return; }
-      setAliasSnapshot(result.snapshot);
+      await bag.renameThread(threadId, next.trim());
     };
     // 团队成员数（10-01 用户反馈）：专家市场包装出来的是**只有主理人的团队**（members 空），
     // 它的会话应该挂「专家」徽标，不该跟多成员专家团混用「专家团」。
@@ -274,13 +278,12 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const fallbackTeamBadge = !sourceBadge && variant !== "member" && (entryTeamId || expertRole)
       ? (expertRole?.kind === "member" ? { tone: "expert", label: "专家" } : leadBadge)
       : null;
-    /* 10-31 用户令：标签最多一个 —— 已经带着「中枢 / 专家 / 专家团 / 调度」这类身份徽标的会话
-       **不再给加自定义标签**（标签列里每种身份只占一格）；只有普通会话能加自定义标签。
-       ⛔ 已有存量标签不删数据，只是不再渲染 / 不再给编辑入口。 */
-    /* ⛔ 10-31 审查补：笔名也算"已占位" —— 否则一个既有笔名、又没有身份徽标的普通会话
-       会同时显示「笔名 + 自定义标签」两个标签，与用户「标签就一个」的要求不符。 */
-    const hasIdentityBadge = Boolean(aliasLabel || sourceBadge || fallbackTeamBadge);
-    const customTag = hasIdentityBadge ? undefined : getEntityTagState().threads[entry.id];
+    /* ⛔⛔ 11-01 用户（截图：「会话的新增标签功能没了」）：
+       上一版把「已有身份徽标 / 已有笔名就不给加自定义标签」做成了硬门 —— 而**每个会话都有名字**，
+       于是所有人都没有入口、存量自定义标签也不再渲染（等于功能被静默删掉）。
+       ⇒ 标签位就是**槽位**：谁都能加，多个标签靠点击循环（同一时刻只显示一个）。
+       ⛔ 存量标签一律保留、照常参与循环，不删数据。 */
+    const customTag = getEntityTagState().threads[entry.id];
     /* ⛔ 10-31 用户令（对照截图）：「这个标签子会话为啥会重复，保留最左边一个就行」——
        **子会话行**（variant=member）只保留一个标签：有笔名就显示笔名（最左），没笔名才退回首身份徽标；
        调度进度徽标 / 额外徽标不再叠加 —— "它被谁派出、跑到哪一步"在缩进的父行与展开块里已经说过。
@@ -313,8 +316,8 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       data-thread-id={entry.id}
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
-      <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined} title={rowBadges.length > 1 ? `点击切换标签（${badgeIndex + 1}/${rowBadges.length}）` : undefined}>{shownBadge}{rowBadges.length > 1 && <span className="thread-tag-cycle" title={`点击切换标签（${badgeIndex + 1}/${rowBadges.length}）`} aria-hidden>+{rowBadges.length - 1}</span>}</span><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span></span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
+      <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击改名字"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined} title={rowBadges.length > 1 ? `点击切换标签（${badgeIndex + 1}/${rowBadges.length}）` : undefined}>{shownBadge}{rowBadges.length > 1 && <span className="thread-tag-cycle" title={`点击切换标签（${badgeIndex + 1}/${rowBadges.length}）`} aria-hidden>+{rowBadges.length - 1}</span>}</span><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span></span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
@@ -335,13 +338,11 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
           <div className="thread-row-menu" role="menu" style={{ top: bag.threadRowMenu.top, right: bag.threadRowMenu.right }}>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsMarkdown([entry.id]); }}><FileText size={13} /><span>导出会话</span><small>.md</small></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsBackup([entry.id]); }}><Download size={13} /><span>完整备份</span><small>.json</small></button>
-            <button onClick={() => { bag.setThreadRowMenu(null); void bag.openAppPrompt("重命名任务", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><PenLine size={13} /><span>重命名</span></button>
-            {/* ★ 10-31 用户令：会话有**两字笔名**（主会话对外是「XX主管」），用户可改；
-                改完主进程广播，被调度会话里的「上级主管」当场跟着变。 */}
-            <button onClick={() => { bag.setThreadRowMenu(null); void editSessionAlias(entry.id, aliasLabel); }}><UserRound size={13} /><span>改笔名</span><small>{aliasLabel || "—"}</small></button>
-            {!hasIdentityBadge && (
+            {/* ⛔ 11-01 用户令：**只留一个改名入口**。
+                「重命名」和「改笔名」本来是同一个操作（笔名就是会话名），两个选项让人以为分工不同。
+                现在统一叫「改名字」：写别名记录 + 写引擎会话名 + 广播（子会话里的「上级：X」跟着变）。 */}
+            <button onClick={() => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText); }}><PenLine size={13} /><span>改名字</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span></button>
-            )}
             {/* 10-31 用户令：会话行底色自选 —— 未选中浅色常驻、选中后颜色稍深一档。 */}
             <div className="thread-row-color-field" role="group" aria-label="会话颜色">
               {/* 10-31 用户令：「恢复默认」放标签行（色板上方），做**淡字按钮**——圆圈 × 太难看。 */}

@@ -3,7 +3,6 @@ import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { useUserName, UserAvatar } from "../../components/UserAvatar";
 import { getAliasState, subscribeAliases, supervisorLabelOfAliases } from "../session-alias/alias-store.mjs";
-import { USER_TITLE } from "../../lib/session-names.mjs";
 import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";
@@ -175,8 +174,6 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
           的布局占位，所以这里不会重复出头像。 */}
       <div className="user-head">
         <span className="user-head-name">{userName}</span>
-        {/* ★ 10-31 用户令：「用户就是总经理身份」——职级标在名字旁边（会话侧是「XX主管」）。 */}
-        <span className="user-head-rank" title="你在公司架构里的职级">{USER_TITLE}</span>
         <UserAvatar size={22} />
       </div>
       <div
