@@ -519,22 +519,20 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
             <section className="uc-panel">
               <div className="uc-hero-kicker" style={{ marginBottom: 6 }}>当前生效</div>
               <p className="settings-card-hint">{personaSummary}{personaInfo?.persona ? "（已写入档案，下一新会话生效）" : ""}</p>
-              <div className="uc-hero-kicker" style={{ margin: "10px 0 6px" }}>联动套餐（一键同套：用户人格 + Codex 人格）</div>
-              <div className="uc-grid uc-grid-2">
+              <div className="uc-hero-kicker" style={{ margin: "10px 0 6px" }}>联动套餐（点卡片立即生效：用户人格 + Codex 人格 同套）</div>
+              <div className="uc-combo-grid">
                 {COMBO_PACKS.map((pack: any) => {
-                  const userHit = USER_PERSONAS.find((p) => p.id === pack.userPersonaId);
+                  const userHit = USER_PERSONAS.find((p: any) => p.id === pack.userPersonaId);
+                  const on = personaInfo?.soulSlug === pack.soulSlug;
+                  const busy = busyPack === pack.id;
                   return (
-                    <div key={pack.id} className="uc-panel" style={{ padding: "10px 12px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <strong style={{ fontSize: 13 }}>{pack.label}</strong>
-                        <button type="button" className="uc-chip uc-chip-button" disabled={busyPack === pack.id} title={pack.desc} onClick={() => void applyCombo(pack.id)}>
-                          {busyPack === pack.id ? "应用中…" : "一键应用"}
-                        </button>
-                      </div>
-                      <small style={{ color: "var(--muted)", fontSize: 11.5, lineHeight: 1.5, display: "block", marginTop: 4 }}>
-                        {userHit?.label ?? pack.userPersonaId} + {pack.soulSlug.replace("built-in:", "")} —— {pack.desc}
-                      </small>
-                    </div>
+                    <button type="button" key={pack.id} className={`uc-combo ${on ? "on" : ""} ${busy ? "busy" : ""}`} disabled={busy}
+                      title={pack.desc} onClick={() => void applyCombo(pack.id)}>
+                      {on && <span className="uc-combo-check"><Check size={10} /></span>}
+                      <strong>{pack.label}</strong>
+                      <small>{userHit?.label ?? pack.userPersonaId} + {pack.soulSlug.replace("built-in:", "")} —— {pack.desc}</small>
+                      <span className="uc-combo-state">{busy ? "应用中…" : on ? "已生效 · 下一新会话起用" : "点一下应用"}</span>
+                    </button>
                   );
                 })}
               </div>
