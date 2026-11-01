@@ -318,6 +318,15 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onN
         )}
       </div>
 
+      {/* ⛔ 11-01 用户实测「语音模型卸载没有进度条」：deleting 状态原来设了却**从来没渲染**，
+          点删除后界面毫无变化。这里补一条与下载同款的进度条（删除无法精确计量 ⇒ 走不定态动画）。 */}
+      {deleting && (
+        <div className="voice-devtools-progress">
+          <div className="voice-devtools-progress-bar"><span className="is-indeterminate" /></div>
+          <small>正在删除本地文件…（大包可能要十几秒）</small>
+        </div>
+      )}
+
       <div className="voice-devtools-actions">
         {/* ⛔ 11-01 用户实测「每次进来都显示这个，要等一会才刷新」：status 初值 null，
             ready/baseInstalled 都算 false ⇒ 卡片先渲染出「下载模型」按钮（和标题的「读取中…」自相矛盾），
