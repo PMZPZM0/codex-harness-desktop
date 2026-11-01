@@ -36,6 +36,9 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
   const [health, setHealth] = useState<any[] | null>(null);
   const [healthBusy, setHealthBusy] = useState(false);
   const [healthError, setHealthError] = useState("");
+  /* ⛔ 11-01 用户令：自检要有弹窗 + 进度条，检查完一个亮一个绿。 */
+  const [healthRows, setHealthRows] = useState<any[] | null>(null);
+  const [healthDone, setHealthDone] = useState(0);
   // 卸载二次确认（10-07 重构）：点「卸载」先出**行内确认**（沿用插件市场页的既有范式），再点才真删 ——
   // 卸载是真删本地文件，不可恢复，不该一击即中。
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
@@ -63,9 +66,19 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
   const runHealth = async () => {
     setHealthBusy(true);
     setHealthError("");
+    setHealthRows([]);
+    setHealthDone(0);
     try {
       const rows = await (window as any).codex.runtimeHealth();
-      setHealth(Array.isArray(rows) ? rows : []);
+      const list = Array.isArray(rows) ? rows : [];
+      /* 结果由主进程一次返回（它内部是串行探测的）；这里按顺序逐项点亮，
+         让用户看到「一个接一个变绿」，而不是最后一起蹦出来。 */
+      for (let i = 0; i < list.length; i += 1) {
+        setHealthRows(list.slice(0, i + 1));
+        setHealthDone(i + 1);
+        if (i < list.length - 1) await new Promise((r) => setTimeout(r, 90));
+      }
+      setHealth(list);
     } catch (error) {
       setHealthError(`自检失败：${String((error as any)?.message ?? error).slice(0, 200)}`);
     } finally {
@@ -280,6 +293,30 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
           <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
         </div>
       </details>
+      {/* 自检弹窗：进度条 + 逐项结果（绿=可用，红=不可用） */}
+      {healthRows ? (
+        <div className="devtool-health-backdrop" onClick={() => { if (!healthBusy) setHealthRows(null); }}>
+          <div className="devtool-health-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="devtool-health-head">
+              <strong>工具自检{healthBusy ? ` · ${healthDone}/${healthRows.length || "…"}` : ` · ${healthRows.length} 项`}</strong>
+              <button className="secondary-setting" onClick={() => setHealthRows(null)} disabled={healthBusy}>关闭</button>
+            </div>
+            <div className="devtool-health-progress">
+              <span style={{ width: healthRows.length ? Math.round((healthDone / Math.max(healthRows.length, 1)) * 100) + "%" : "6%" }} />
+            </div>
+            <div className="devtool-health-list">
+              {healthRows.map((row: any) => (
+                <div key={row.id} className={"devtool-health-row " + (row.ok ? "is-ok" : "is-bad")}>
+                  <span className="devtool-health-badge">{row.ok ? "✓" : "✕"}</span>
+                  <span className="devtool-health-name">{row.name}</span>
+                  <span className="devtool-health-detail">{row.ok ? row.detail || "可运行" : row.detail}</span>
+                </div>
+              ))}
+              {healthBusy && healthRows.length === 0 ? <div className="devtool-health-row">准备检查…</div> : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
       <p className="settings-card-hint">随应用内置（安装包自带、离线可用）：引擎、Node、VS Code CLI、Nuphus 桌面自动化、ponytail 写代码模式插件，以及下载体积 50MB 以内的小工具 —— Python（完整版，含 pip 与 Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）；按需下载：Git、PowerShell 7（npmmirror / gh 加速，失败自动回落官方源，首次启动检测到缺 Git 会自动补装）、FFmpeg、Miniconda、MinGW、文档转换（markitdown，pip 清华镜像）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。Ego Lite 浏览器自动化是**首选**通道，在卡片里跳官方安装器（不随包内置 611MB 浏览器）；未安装时回落 browse-skills（nuphus 默认浏览器）。除内置项外都可卸载（卸载是真删）。日常浏览用内置浏览器视图；浏览器自动化由每个会话自己的 Ego Lite Space 执行。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
     </div>
   );

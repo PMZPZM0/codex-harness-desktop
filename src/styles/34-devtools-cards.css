@@ -220,3 +220,20 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .devtools-tool-row > .runtime-actions { grid-area: actions; display: flex; align-items: center; gap: 6px; }
 .devtools-tool-row > .devtools-progress-row,
 .devtools-tool-row > .runtime-failed { grid-area: prog; }
+
+/* ⛔ 11-01 自检弹窗（专属类，不复用公共行样式，避免再次污染别的界面） */
+.devtool-health-backdrop { position: fixed; inset: 0; z-index: 960; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
+.devtool-health-dialog { width: min(560px, 92vw); max-height: 76vh; display: flex; flex-direction: column; gap: 10px;
+  padding: 16px 18px; border-radius: 12px; background: var(--bg, #fff); border: 1px solid var(--line-soft, rgba(0,0,0,.1)); box-shadow: 0 18px 48px rgba(0,0,0,.18); }
+.devtool-health-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.devtool-health-progress { height: 6px; border-radius: 999px; background: color-mix(in srgb, var(--text) 10%, transparent); overflow: hidden; }
+.devtool-health-progress > span { display: block; height: 100%; background: var(--accent, #2f7cf6); transition: width .18s ease; }
+.devtool-health-list { overflow: auto; display: flex; flex-direction: column; gap: 6px; }
+.devtool-health-row { display: grid; grid-template-columns: 18px 120px minmax(0,1fr); align-items: center; gap: 8px; padding: 6px 8px; border-radius: 8px; font-size: 12px; }
+.devtool-health-row.is-ok { background: color-mix(in srgb, #16a34a 8%, transparent); }
+.devtool-health-row.is-bad { background: color-mix(in srgb, #dc2626 8%, transparent); }
+.devtool-health-badge { font-weight: 700; }
+.devtool-health-row.is-ok .devtool-health-badge { color: #16a34a; }
+.devtool-health-row.is-bad .devtool-health-badge { color: #dc2626; }
+.devtool-health-name { font-weight: 600; }
+.devtool-health-detail { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
