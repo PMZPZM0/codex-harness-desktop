@@ -130,6 +130,26 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
           const items = devRuntimes.filter(g.filter);
           if (!items.length) return null;
           return <div className="devtools-group" key={g.key}>
+            {/* 分类级一键：只对该分类下的可下载项生效（内置/系统级不算） */}
+            {(() => {
+              const inst = items.filter((r: any) => !r.builtIn && r.kind !== "guide" && !r.installed);
+              const rem = items.filter((r: any) => !r.builtIn && r.kind !== "guide" && r.installed);
+              if (!inst.length && !rem.length) return null;
+              return (
+                <div className="devtools-batch">
+                  {inst.length ? (
+                    <button className="primary-setting" disabled={Boolean(batch.kind)} onClick={() => void runBatch("install", inst)}>
+                      本组一键安装（{inst.length}）
+                    </button>
+                  ) : null}
+                  {rem.length ? (
+                    <button className="secondary-setting" disabled={Boolean(batch.kind)} onClick={() => void runBatch("uninstall", rem)}>
+                      本组一键卸载（{rem.length}）
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })()}
             <div className="settings-subhead">{g.icon}{g.title}<span className="settings-subhead-hint">{g.hint}</span></div>
             <div className="runtime-list">
               {items.filter((runtime: any) => !runtime.hidden).map((runtime: any) => {
