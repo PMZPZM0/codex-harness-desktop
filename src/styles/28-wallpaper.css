@@ -208,3 +208,9 @@
 .wallpaper-motion.is-halo i:nth-child(1) b {
   background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 44%, transparent), transparent 68%);
 }
+
+/* 静态壁纸常驻展示（11-02 用户：「那里啊」—— 原来藏在「静态壁纸」模式后面，找不到） */
+.wallpaper-preset-hint { display: flex; align-items: baseline; gap: 8px; margin: 6px 0 2px; font-size: 12px; font-weight: 500; color: var(--text); }
+.wallpaper-preset-hint span { font-size: 11px; font-weight: 400; color: var(--muted); }
+.wallpaper-preset-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
+.wallpaper-preset-face { height: 58px; }

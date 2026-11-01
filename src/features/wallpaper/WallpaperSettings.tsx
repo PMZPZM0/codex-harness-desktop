@@ -83,38 +83,44 @@ export function WallpaperSettingsSection() {
       )}
       <div className="theme-switch wallpaper-modes" role="group" aria-label="壁纸模式">
         {WALLPAPER_MODES.map((mode) => (
-          <button key={mode} type="button" className={cfg.mode === mode ? "active" : ""} onClick={() => update({ mode })}>
+          <button
+            key={mode}
+            type="button"
+            className={cfg.mode === mode ? "active" : ""}
+            onClick={() => {
+              /* 切到「静态壁纸」但还没选图时，自动用第一张 —— 否则是"选了模式却什么都没有"的空白态。 */
+              if (mode === "custom" && !cfg.image) update({ mode, image: `preset:${WALLPAPER_PRESETS[0].id}` });
+              else update({ mode });
+            }}
+          >
             {MODE_LABELS[mode] ?? mode}
           </button>
         ))}
       </div>
-      {cfg.mode === "custom" && (
-        <>
-          {/* 内置静态壁纸（生图资产）：点击即用 */}
-          <div className="wallpaper-preset-grid" role="group" aria-label="静态壁纸">
-            {WALLPAPER_PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className={`wallpaper-preset-card ${cfg.image === `preset:${p.id}` ? "active" : ""}`}
-                aria-pressed={cfg.image === `preset:${p.id}`}
-                title={p.name}
-                onClick={() => update({ mode: "custom", image: `preset:${p.id}` })}
-              >
-                <span className="wallpaper-preset-face" style={{ backgroundImage: `url("./${p.src}")` }} />
-                <span className="wallpaper-preset-name">{p.name}</span>
-              </button>
-            ))}
-          </div>
-          <div className="wallpaper-custom-row">
-            <button type="button" className="btn" onClick={() => { void pickImage(); }}>选择图片…</button>
-            {cfg.image && !isPresetImage(cfg.image) && (
-              <button type="button" className="btn" onClick={() => update({ image: "" })}><Trash2 size={12} />清除</button>
-            )}
-            {cfg.image && !isPresetImage(cfg.image) && <span className="wallpaper-custom-path" title={cfg.image}>{cfg.image.split(/[\\/]/).pop()}</span>}
-          </div>
-        </>
-      )}
+      {/* 6 张静态壁纸**常驻展示**（不再藏在「静态壁纸」按钮后面 —— 用户实测「那里啊」，根本找不到） */}
+      <div className="wallpaper-preset-hint">静态壁纸<span>点图即用；也可以选本机图片</span></div>
+      <div className="wallpaper-preset-grid" role="group" aria-label="静态壁纸">
+        {WALLPAPER_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={`wallpaper-preset-card ${cfg.mode === "custom" && cfg.image === `preset:${p.id}` ? "active" : ""}`}
+            aria-pressed={cfg.mode === "custom" && cfg.image === `preset:${p.id}`}
+            title={p.name}
+            onClick={() => update({ mode: "custom", image: `preset:${p.id}` })}
+          >
+            <span className="wallpaper-preset-face" style={{ backgroundImage: `url("./${p.src}")` }} />
+            <span className="wallpaper-preset-name">{p.name}</span>
+          </button>
+        ))}
+      </div>
+      <div className="wallpaper-custom-row">
+        <button type="button" className="btn" onClick={() => { void pickImage(); }}>选择本机图片…</button>
+        {cfg.mode === "custom" && cfg.image && !isPresetImage(cfg.image) && (
+          <button type="button" className="btn" onClick={() => update({ image: "" })}><Trash2 size={12} />清除</button>
+        )}
+        {cfg.mode === "custom" && cfg.image && !isPresetImage(cfg.image) && <span className="wallpaper-custom-path" title={cfg.image}>{cfg.image.split(/[\\/]/).pop()}</span>}
+      </div>
     </>
   );
 }
