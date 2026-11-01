@@ -230,6 +230,15 @@ ok(/kind !== "video" && kind !== "audio"/.test(previewSrc),
 ok(/body:has\(\[class\*="backdrop"\]\) \.voice-float-layer/.test(dialogCss2) && /body:has\(\[class\*="backdrop"\]\) \.voice-announce-bar/.test(dialogCss2),
   "任何弹窗打开时播报悬浮球与播报条一律隐藏（半透明遮罩下也不露出、不挡按钮）");
 
+/* ── 音乐取流：主链 403/HTML 时换 backup，MIME 笼统时补（11-01 用户实测播放失败）────── */
+const bootSrc = codeOnly(read("electron/features/boot.ts"));
+const musicStreamsSrc = codeOnly(read("electron/music-streams.ts"));
+ok(/Array\.isArray\(urls\)/.test(musicStreamsSrc) && /urls: string\[\]/.test(musicStreamsSrc),
+  "音乐取流令牌保留全部候选地址（主链 + backupUrl）");
+ok(/for \(const candidate of candidates\)/.test(bootSrc) && /musicMimeOf\(candidate\)/.test(bootSrc)
+  && /!isOk \|\| \(!isMedia && type !== "application\/octet-stream"\)/.test(bootSrc),
+  "harness-music 协议：按候选逐个试，403/HTML 换下一条；MIME 笼统时按扩展名补");
+
 console.log(`
 【media】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

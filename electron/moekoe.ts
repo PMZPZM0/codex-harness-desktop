@@ -251,7 +251,7 @@ export async function playMoeKoe(input: MoeKoePlayInput) {
     throw new Error(`${normalized.error}${pay}。标准音质（quality=standard）通常可完整播放；高音质失败可降档重试，仍失败再在 MoeKoe 客户端播放一次完成安全验证。`);
   }
   // ⛔ 不要加 Referer：酷狗 CDN 对 Referer 返回 ERR_BLOCKED_BY_CLIENT（实测），只带 UA 即可
-  const token = createMusicStream(normalized.url, { "user-agent": USER_AGENT });
+  const token = createMusicStream(normalized.urls.length ? normalized.urls : normalized.url, { "user-agent": USER_AGENT });
   const displayTitle = `${title || "MoeKoe 音乐"}${artist ? ` - ${artist}` : ""}`;
   const { sendToWindow } = await import("./features/window-bus");
   sendToWindow("media-preview:open", {

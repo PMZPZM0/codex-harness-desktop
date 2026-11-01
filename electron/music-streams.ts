@@ -8,7 +8,9 @@
  */
 import { randomUUID } from "node:crypto";
 
-export type MusicStreamEntry = { url: string; headers: Record<string, string>; expiresAt: number };
+/* 酷狗直链会间歇性 403（实测同一首歌第一次 403 text/html、第二次 200 audio/mpeg）⇒
+   一条流保留**全部候选地址**（主链 + backupUrl），协议端按顺序试到拿到媒体为止。 */
+export type MusicStreamEntry = { urls: string[]; headers: Record<string, string>; expiresAt: number };
 
 const STREAMS = new Map<string, MusicStreamEntry>();
 const TTL_MS = 30 * 60_000;
@@ -25,11 +27,14 @@ function prune(now: number): void {
   }
 }
 
-export function createMusicStream(url: string, headers: Record<string, string> = {}): string {
+export function createMusicStream(urls: string | string[], headers: Record<string, string> = {}): string {
   const now = Date.now();
   prune(now);
+  const list = (Array.isArray(urls) ? urls : [urls]).map((item) => String(item ?? "").trim()).filter(Boolean);
+  const unique = [...new Set(list)];
+  if (!unique.length) throw new Error("音乐取流没有可用地址");
   const token = randomUUID().replace(/-/g, "");
-  STREAMS.set(token, { url, headers, expiresAt: now + TTL_MS });
+  STREAMS.set(token, { urls: unique, headers, expiresAt: now + TTL_MS });
   return token;
 }
 

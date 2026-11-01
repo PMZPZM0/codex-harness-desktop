@@ -42,6 +42,9 @@ test("MoeKoe 取流响应：数组/字符串/备份/试听/风控", () => {
   assert.equal(normalizeMoeKoeSongUrl({ url: ["https://a/1.mp3"] }).url, "https://a/1.mp3");
   assert.equal(normalizeMoeKoeSongUrl({ url: "https://a/2.mp3" }).url, "https://a/2.mp3");
   assert.equal(normalizeMoeKoeSongUrl({ url: [], backupUrl: ["https://a/3.mp3"] }).url, "https://a/3.mp3");
+  /* 11-01：主链 + backupUrl 全部保留（酷狗单链会间歇 403，协议端按序重试）。 */
+  const multi = normalizeMoeKoeSongUrl({ url: ["https://a/1.mp3"], backupUrl: ["https://b/1.mp3", "https://a/1.mp3"] });
+  assert.deepEqual(multi.urls, ["https://a/1.mp3", "https://b/1.mp3"]);
   const trial = normalizeMoeKoeSongUrl({ hash_offset: { end_ms: 60000 } });
   assert.equal(trial.trial, true);
   assert.equal(trial.url, "");

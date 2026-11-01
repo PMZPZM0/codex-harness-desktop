@@ -100,6 +100,14 @@ let captureBuffers!: any;
  * ⛔ 09-22 实测 turn/completed 的 id 在 `params.turn.id` —— 写端曾用 `p.turnId` ⇒ 两端 key 对不上
  *    （`tid:undefined` vs `tid:null`）⇒ buffer 永远取不到、assistant 也累积不到 ⇒ 整条捕获链静默断掉。
  */
+/* 音乐 MIME 兜底（协议层）：上游没给 content-type 或给 octet-stream 时按扩展名补 ——
+   Chromium 认 MIME，octet-stream 会被 <audio> 判成「不支持的源」。 */
+function musicMimeOf(url: string): string {
+  const ext = /.(mp3|m4a|aac|flac|ogg|wav|mp4|webm)(?:[?#]|$)/i.exec(String(url ?? ""))?.[1]?.toLowerCase() ?? "";
+  const table: Record<string, string> = { mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", flac: "audio/flac", ogg: "audio/ogg", wav: "audio/wav", mp4: "video/mp4", webm: "video/webm" };
+  return table[ext] || "audio/mpeg";
+}
+
 function turnIdOf(params: any): string {
   return String(params?.turn?.id ?? params?.turnId ?? params?.id ?? "");
 }
@@ -654,29 +662,55 @@ export async function bootApp() {
 
   /* `harness-music://stream/<token>`：音乐源取流代理（10-20）。
      真实音频地址 + Referer/UA 只留在主进程的短命令牌表（music-streams）；渲染层拿不到任意 URL。
-     协议按 token 反查，带 Range 转发（播放器拖进度要 206），并补 CORS。 */
+     协议按 token 反查，带 Range 转发（播放器拖进度要 206），并补 CORS。
+     ⛔⛔ 11-01 用户实测「The element has no supported audio source」：酷狗直链会**间歇性 403
+       并返回 text/html**（自测同一首歌第一次 403、第二次 200 audio/mpeg）。旧实现只取主链、
+       把 HTML 原样转给 <audio> ⇒ 播放器永远救不回来。现在：按主链→backupUrl 逐个试，
+       只接受 2xx 且 MIME 是 audio/video 的响应；全都失败才回 502（前端显示「无法播放」）。 */
   protocol.handle("harness-music", async (request) => {
     const url = new URL(request.url);
     const token = url.hostname === "stream" ? url.pathname.replace(/^\/+/, "") : url.hostname;
     const stream = getMusicStream(token);
     if (!stream) return new Response("Not found", { status: 404 });
-    const headers = new Headers(stream.headers);
     const range = request.headers.get("range");
-    if (range) headers.set("range", range);
-    let upstream: Response;
-    try {
-      upstream = await net.fetch(stream.url, { headers, redirect: "follow" });
-    } catch (error) {
-      return new Response(`Upstream failed: ${String((error as Error)?.message ?? error)}`, { status: 502 });
+    const candidates = stream.urls?.length ? stream.urls : [];
+    let lastStatus = 0;
+    let lastType = "";
+    for (const candidate of candidates) {
+      const headers = new Headers(stream.headers);
+      if (range) headers.set("range", range);
+      let upstream: Response;
+      try {
+        upstream = await net.fetch(candidate, { headers, redirect: "follow" });
+      } catch (error) {
+        lastStatus = 502;
+        lastType = String((error as Error)?.message ?? error).slice(0, 120);
+        continue;
+      }
+      const type = String(upstream.headers.get("content-type") ?? "").toLowerCase();
+      const isMedia = /^(audio|video)\//i.test(type);
+      const isOk = upstream.status >= 200 && upstream.status < 300;
+      if (!isOk || (!isMedia && type !== "application/octet-stream")) {
+        lastStatus = upstream.status;
+        lastType = type || "no content-type";
+        try { await upstream.body?.cancel(); } catch { /* 已关闭 */ }
+        continue;
+      }
+      const out = new Headers();
+      for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag", "last-modified"]) {
+        const value = upstream.headers.get(name);
+        if (value) out.set(name, value);
+      }
+      /* MIME 缺失/笼统时按扩展名补一个（Chromium 认 MIME，octet-stream 会直接被判"不支持"）。 */
+      if (!isMedia) out.set("content-type", musicMimeOf(candidate));
+      out.set("Access-Control-Allow-Origin", "*");
+      out.set("Cache-Control", "no-store");
+      return new Response(upstream.body, { status: upstream.status, headers: out });
     }
-    const out = new Headers();
-    for (const name of ["content-type", "content-length", "content-range", "accept-ranges"]) {
-      const value = upstream.headers.get(name);
-      if (value) out.set(name, value);
-    }
-    out.set("Access-Control-Allow-Origin", "*");
-    out.set("Cache-Control", "no-store");
-    return new Response(upstream.body, { status: upstream.status, headers: out });
+    return new Response(`音乐取流失败（上游 ${lastStatus || "无响应"}${lastType ? ` ${lastType}` : ""}）`, {
+      status: 502,
+      headers: { "content-type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
   });
 
   /* `pet://`：只服务**宠物目录下的图集**（09-30 加）。

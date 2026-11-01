@@ -82,7 +82,7 @@ export function normalizeMoeKoeSearch(payload: unknown, limit = 20): MoeKoeSong[
   return out;
 }
 
-export type MoeKoePlayResult = { url: string; trial: boolean; error: string };
+export type MoeKoePlayResult = { url: string; /** 主链 + backupUrl 全量去重（协议端按序重试，酷狗单链会间歇 403） */ urls: string[]; trial: boolean; error: string };
 
 /** 兼容 `/song/url` 的 `url: string[]`、`url: string`、`backupUrl` 与付费 offset。 */
 export function normalizeMoeKoeSongUrl(payload: unknown): MoeKoePlayResult {
@@ -91,12 +91,13 @@ export function normalizeMoeKoeSongUrl(payload: unknown): MoeKoePlayResult {
   if (Array.isArray(root.url)) candidates.push(...root.url);
   else if (typeof root.url === "string") candidates.push(root.url);
   if (Array.isArray(root.backupUrl)) candidates.push(...root.backupUrl);
-  const url = candidates.find((item) => typeof item === "string" && /^https?:\/\//i.test(item)) ?? "";
-  if (url) return { url, trial: false, error: "" };
-  if (root.hash_offset) return { url: "", trial: true, error: "会员/付费歌曲：当前 MoeKoe 登录态只返回 60 秒试听，没有完整直链" };
+  const urls = [...new Set(candidates.filter((item) => typeof item === "string" && /^https?:\/\//i.test(item)))];
+  const url = urls[0] ?? "";
+  if (url) return { url, urls, trial: false, error: "" };
+  if (root.hash_offset) return { url: "", urls: [], trial: true, error: "会员/付费歌曲：当前 MoeKoe 登录态只返回 60 秒试听，没有完整直链" };
   const message = text(root.error ?? root.msg);
-  if (Number(root.errcode) === 20028 || /验证/.test(message)) return { url: "", trial: false, error: "酷狗要求安全验证：请在 MoeKoe 客户端搜索/播放一次完成验证后再试" };
-  return { url: "", trial: false, error: message || "MoeKoe API 没有返回可播放地址" };
+  if (Number(root.errcode) === 20028 || /验证/.test(message)) return { url: "", urls: [], trial: false, error: "酷狗要求安全验证：请在 MoeKoe 客户端搜索/播放一次完成验证后再试" };
+  return { url: "", urls: [], trial: false, error: message || "MoeKoe API 没有返回可播放地址" };
 }
 
 /**
