@@ -988,6 +988,12 @@ export const runtimeFeature = defineFeature<null>({
         return { ok: true, runtimes: runtimeList() };
       }
       await removeTargetsWithProgress(id, targets);
+      /* ⛔⛔ 11-01 用户实测「这个是假卸载吧」：PS7 等实际来自**随包资源**（resources/tools），
+         而这里只删可写根里的同名目录 ⇒ 文件根本没删，界面仍显示已安装，却弹了已卸载。
+         ⇒ 删完必须**回读判定**：仍装着就如实报错，绝不再谎报成功。 */
+      if (runtimeList().find((r) => r.id === id)?.installed) {
+        throw new Error("该工具来自随包内置资源（resources/tools），无法从这里删除；如需移除请重装应用包");
+      }
       // ponytail 卸载后要显式关掉 config.toml 里的注册段（否则引擎重启找不到已删的 cache）：
       // 插件 key 是 **"ponytail@ponytail"**（见 ponytail-plugin.ts 的 MARKETPLACE_SECTION）。
       // ⛔ 引擎必填 mergeStrategy：缺了整条请求被判 Invalid request，而这里是 catch 静默吞掉
