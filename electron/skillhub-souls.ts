@@ -40,6 +40,9 @@ export async function listSkillHubSouls(): Promise<{ items: SkillHubSoul[]; tota
 
 /** 人格详情（content = 完整人设文本） */
 export async function getSkillHubSoul(slug: string): Promise<SkillHubSoul & { content: string }> {
+  /* ⛔ 内置人格分流：本地直读（离线可用），不打 SkillHub API——丢这条 404 会打进远端（11-01 实测） */
+  const builtIn = getBuiltInSoul(String(slug ?? "").trim());
+  if (builtIn) return builtIn;
   const response = await net.fetch(`${API}/api/v1/souls/${encodeURIComponent(String(slug ?? "").trim())}`, { signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`人格详情获取失败（HTTP ${response.status}）`);
   const payload: any = await response.json();
