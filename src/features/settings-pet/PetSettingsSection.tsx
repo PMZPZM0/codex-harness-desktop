@@ -44,18 +44,28 @@ function rigPaletteOf(pkg: PetPackage): string {
   }
 }
 
-/** 列表项的小预览：图集切第 0 行第 0 帧；动画包/关节包用 idle 静帧整张缩略。 */
+/** 列表项的小预览：动画包用 idle **动画**做背景（用户的「动画图标」），关节包用姿态图 + 呼吸动作；
+ *  图集包仍切第 0 行第 0 帧（没有动画源）。减少动效偏好时回落静帧。 */
 function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: number }) {
   const k = height / (pkg.frameHeight || 208);
+  const width = pkg.frameWidth * k;
+  const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const rigStill = pkg.rig ? pkg.rig.palettes?.[rigPaletteOf(pkg)]?.idle : "";
-  const animationStill = pkg.animationSet?.idle?.stillSrc;
-  const source = rigStill || animationStill || pkg.spritesheet;
-  const contain = Boolean(rigStill || animationStill);
+  if (rigStill) {
+    return (
+      <span className="pet-thumb pet-thumb-rig" style={{ width: `${width}px`, height: `${height}px` }}>
+        <img src={petAssetUrl(rigStill)} alt="" draggable={false} loading="lazy" />
+      </span>
+    );
+  }
+  const animation = pkg.animationSet?.idle;
+  const source = (animation ? (reduced ? animation.stillSrc : animation.animatedSrc) : "") || pkg.spritesheet;
+  const contain = Boolean(animation);
   return (
     <span
-      className="pet-thumb"
+      className={`pet-thumb${animation && !reduced ? " pet-thumb-animated" : ""}`}
       style={{
-        width: `${pkg.frameWidth * k}px`,
+        width: `${width}px`,
         height: `${height}px`,
         backgroundImage: source ? `url("${petAssetUrl(source)}")` : undefined,
         backgroundSize: contain ? "contain" : `${pkg.columns * pkg.frameWidth * k}px ${pkg.rows * pkg.frameHeight * k}px`,

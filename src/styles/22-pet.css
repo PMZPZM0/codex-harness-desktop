@@ -433,6 +433,29 @@ html[data-pet-window="activity"] #root {
   background-position: 0 0;
   flex: none;
 }
+/* 11-02 用户：「其他几个的动画图标也跟小C一样」——动物缩略图改播 idle 动画（animated WebP 在
+   CSS background-image 里会动），机器人缩略图用 idle 姿态 + 呼吸动作；图集包没有动画源，保持静态。 */
+.pet-thumb-rig { display: grid; place-items: center; overflow: hidden; }
+.pet-thumb-rig img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  pointer-events: none;
+  animation: pet-rig-breathe 3.8s ease-in-out infinite;
+}
+/* 动画包宠物也补上同一套状态微动作（原先只有逐帧图，切换时缺"活着"的感觉）。 */
+.pet-sprite-anim[data-state="running"] { transform-origin: 50% 92%; animation: pet-rig-work 1.35s ease-in-out infinite; }
+.pet-sprite-anim[data-state="running-left"] { transform-origin: 50% 92%; animation: pet-rig-lean-left 1.8s ease-in-out infinite; }
+.pet-sprite-anim[data-state="running-right"] { transform-origin: 50% 92%; animation: pet-rig-lean-right 1.8s ease-in-out infinite; }
+.pet-sprite-anim[data-state="waving"] { transform-origin: 50% 92%; animation: pet-rig-wave 1.4s ease-in-out infinite; }
+.pet-sprite-anim[data-state="waiting"] { transform-origin: 50% 92%; animation: pet-rig-wait 2.8s ease-in-out infinite; }
+.pet-sprite-anim[data-state="review"] { transform-origin: 50% 92%; animation: pet-rig-review 2.6s ease-in-out infinite; }
+.pet-sprite-anim[data-state="failed"] { transform-origin: 50% 92%; animation: pet-rig-sad 3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .pet-thumb-rig img,
+  .pet-sprite-anim[data-state] { animation: none !important; }
+}
 .pet-item-name { grid-area: name; font-weight: 600; }
 .pet-item-source {
   grid-area: source;

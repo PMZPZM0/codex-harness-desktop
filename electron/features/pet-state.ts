@@ -412,7 +412,7 @@ export function feedPetEvent(event: unknown): boolean {
     } else if (type === "agentMessage") {
       const text = petItemText(item);
       setStatusIfNotWaiting(threadId, "running", { detail: petDetailFromText(text) || "正在整理结果…", detailAt: Date.now() }, true);
-    } else if (["commandExecution", "fileChange", "webSearch", "mcpToolCall", "dynamicToolCall"].includes(type)) {
+    } else if (["commandExecution", "fileChange", "webSearch", "mcpToolCall", "dynamicToolCall", "collabToolCall", "imageGeneration"].includes(type)) {
       lastTool = type;
       setStatusIfNotWaiting(threadId, "running", { detail: petToolDetail(item), detailAt: Date.now(), turnId: turnIdOf(p) || activities.get(threadId)?.turnId || "" }, true);
       const now = Date.now();

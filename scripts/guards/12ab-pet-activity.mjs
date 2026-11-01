@@ -263,8 +263,14 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     `16 向看帧全部存在且 ${frameW}×${frameH}（问题：${lookMissing.join("、") || "无"}）`);
   ok(totalBytes > 0 && totalBytes <= 8 * 1024 * 1024,
     `整包体积受控（实测 ${(totalBytes / 1024 / 1024).toFixed(1)}MB ≤ 8MB）`);
-  ok(settingsPetSrc.includes("pkg.animationSet?.idle?.stillSrc") && settingsPetSrc.includes('"contain"'),
-    "设置页缩略图用 idle 静帧（动画包没有图集可切）");
+  /* 11-02 用户：「其他几个的动画图标也跟小C一样」——
+     动画包缩略图改播 idle 动画（减少动效时回落 stillSrc）；关节包用姿态图 + 呼吸动作。 */
+  ok(/reduced \? animation\.stillSrc : animation\.animatedSrc/.test(settingsPetSrc)
+    && /pet-thumb-rig/.test(settingsPetSrc) && /pet-thumb-rig img/.test(petCss) && /pet-thumb-animated/.test(settingsPetSrc),
+    "设置页缩略图：动物播 idle 动画、机器人姿态图带呼吸动作（减少动效回落静帧）");
+  ok(/pet-sprite-anim\[data-state="running"\][^{]*\{[^}]*animation: pet-rig-work/.test(petCss)
+    && /pet-sprite-anim\[data-state="waiting"\][^{]*\{[^}]*animation: pet-rig-wait/.test(petCss),
+    "动画包宠物也补同一套状态微动作（运行/等待/审阅/失败不再只靠逐帧硬切）");
   ok(petCss.includes(".pet-sprite-anim img") && petCss.includes("object-fit: contain"),
     "动画帧铺满本体且不拦截指针（object-fit: contain）");
 
