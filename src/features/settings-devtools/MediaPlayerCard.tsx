@@ -19,6 +19,16 @@ const HLS_CDN = [
 
 type Kernel = "idle" | "loading" | "ready" | "failed";
 
+/* ⛔ 内置影视源的**接口地址**（苹果CMS v10 vod 接口）。这里只做展示与复制，
+   真正的请求在内存侧的 media-sources.ts（同一份配置，单一真相源）。
+   用户要看「资源从哪来」时，直接把这几条给出来，不用去翻配置文件。 */
+const SOURCE_APIS: Array<[string, string]> = [
+  ["非凡资源", "https://api.ffzyapi.com/api.php/provide/vod"],
+  ["量子资源", "https://cj.lziapi.com/api.php/provide/vod"],
+  ["光速资源", "https://api.guangsuapi.com/api.php/provide/vod"],
+  ["暴风资源", "https://bfzyapi.com/api.php/provide/vod"],
+];
+
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const el = document.createElement("script");
@@ -90,7 +100,7 @@ export function MediaPlayerCard({ onNotice }: { onNotice?: (message: string) => 
         <div className="voice-devtools-card-head">
           <div className="voice-devtools-icon"><Tv size={20} /></div>
           <strong className="voice-devtools-name">影视播放器</strong>
-          <span className="voice-devtools-badge">{kernel === "ready" ? "内核已就绪" : "按需加载"}</span>
+          <span className="voice-devtools-badge">{kernel === "ready" ? "内核已就绪 · 按需下载" : "按需下载"}</span>
         </div>
         <div className="voice-devtools-body">
           <span className="voice-devtools-sub">hls.js（MIT）+ 原生 video · m3u8 / mp4 · 不内置播放器二进制</span>
@@ -101,6 +111,16 @@ export function MediaPlayerCard({ onNotice }: { onNotice?: (message: string) => 
             <br />
             只做索引与播放，不托管、不下载任何影视内容。
           </div>
+        </div>
+        <div className="voice-devtools-actions" style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>资源网址（内置源接口，对话里由 Codex 自动调用）：</div>
+          {SOURCE_APIS.map(([name, api]) => (
+            <div key={api} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12 }}>
+              <span style={{ width: 64, flex: "none" }}>{name}</span>
+              <code style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{api}</code>
+              <button className="secondary-setting" style={{ flex: "none" }} onClick={() => { void navigator.clipboard?.writeText(api); onNotice?.("已复制源地址"); }}>复制</button>
+            </div>
+          ))}
         </div>
         <div className="voice-devtools-actions">
           <button className="primary-setting" onClick={() => setOpen(true)}>
