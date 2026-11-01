@@ -1127,4 +1127,24 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
       "主进程下发 announceEnabled 前也看引擎（否则模型会承诺播报，实际静默失败）");
   }
 }
+/* ── ⑪ 语音资源危险动作走确认弹窗（10-31 用户令：「卸载，停用，清空都做成弹窗」）──────
+   旧形态是按钮行里展开确认条（voice-uninstall-hint）；停用更是无确认直接执行。
+   新契约：三者统一一个 portal 弹窗（.voice-confirm-modal），Esc / 点遮罩 / ✕ 三路关闭。 */
+{
+  const devtoolsConfirmSrc = read("src/components/VoiceDevToolsSection.tsx");
+  const confirmCss = read("src/styles/18-openai-dialog.css");
+  ok(/createPortal\(\([\s\S]{0,400}?className="voice-confirm-backdrop"/.test(devtoolsConfirmSrc)
+    && /voice-confirm-modal/.test(devtoolsConfirmSrc)
+    && !/voice-uninstall-hint/.test(devtoolsConfirmSrc) && !/voice-uninstall-hint/.test(confirmCss),
+    "删除 / 停用 / 全部清空 = 统一确认弹窗（⛔ 不再在按钮行里内联展开确认条）");
+  ok(/setConfirmDisable\("base"\)/.test(devtoolsConfirmSrc)
+    && /setConfirmDisable\("zipvoice"\)/.test(devtoolsConfirmSrc)
+    && !/onClick=\{\(\) => setEnabled\("base", false/.test(devtoolsConfirmSrc)
+    && !/onClick=\{\(\) => setEnabled\("zipvoice", false/.test(devtoolsConfirmSrc),
+    "停用也走确认弹窗（⛔ 不再点一下直接停用）");
+  ok(/\.voice-confirm-backdrop \{[\s\S]{0,200}?z-index: 950/.test(confirmCss)
+    && /z-index: 950/.test(confirmCss),
+    "确认弹窗 z-index 950（高于设置弹窗 900，设置页里也压得住）");
+}
+
 process.exit(fails ? 1 : 0);

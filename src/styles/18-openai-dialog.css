@@ -906,24 +906,7 @@
   border-color: color-mix(in srgb, #c0392b 30%, var(--line));
 }
 
-/* 卸载二次确认（10-03）：第一次点「卸载」只展开这条提示 + 「确认卸载 / 取消」。
-   沿用本项目其它不可逆动作的惯例（drama 删除 / 记忆清理 / 删订阅账号），
-   不用 window.confirm —— 原生框会抢焦点、打断输入。 */
-.voice-uninstall-hint {
-  flex: 1 1 100%;
-  min-width: 0;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #c0392b;
-  background: color-mix(in srgb, #c0392b 7%, transparent);
-  border: 1px solid color-mix(in srgb, #c0392b 28%, var(--line));
-  border-radius: 6px;
-  padding: 6px 8px;
-}
-.voice-uninstall-hint strong {
-  font-weight: 500;
-  color: #c0392b;
-}
+/* 卸载确认已改弹窗（10-31 用户令），旧的按钮行内提示条样式随 JSX 一起删除。 */
 
 .voice-devtools-path {
   display:flex; align-items:center; gap:8px;
@@ -2082,4 +2065,57 @@
   justify-content: flex-start;
   padding: 2px 0 0;
   border-top: 1px dashed var(--line-soft);
+}
+
+/* ── 10-31 用户令：「卸载，停用，清空都做成弹窗」——语音资源的最小确认弹窗（portal 到 body）──
+   z-index 950：高于设置弹窗（900），低于全局模态之上的轻浮层；Esc / 点遮罩 / ✕ 三路关闭。 */
+.voice-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: #00000059;
+}
+.voice-confirm-modal {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, .28);
+  display: grid;
+  gap: 0;
+  overflow: hidden;
+}
+.voice-confirm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 14px 10px;
+}
+.voice-confirm-head strong { font-size: 13.5px; color: var(--text); }
+.voice-confirm-close {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted);
+  cursor: pointer;
+}
+.voice-confirm-close:hover { background: var(--panel-2); color: var(--text); }
+.voice-confirm-body {
+  padding: 0 14px 12px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--muted);
+}
+.voice-confirm-body strong { color: var(--text); }
+.voice-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 14px 14px;
+  border-top: 1px solid var(--line-soft);
 }

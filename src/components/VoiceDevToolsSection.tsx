@@ -10,6 +10,7 @@
  * 模型数据走 `<userData>/voice-models/` 按需下载）。
  */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Download, ExternalLink, FolderOpen, LoaderCircle, Mic, Power, Trash2, X } from "lucide-react";
 
 type Status = {
@@ -91,6 +92,21 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
    *    「音色克隆」点删除时把「基础模型」的确认条也弹出来（同款"共享槽位两态"坑，09-23 返工过）。
    */
   const [confirmDelete, setConfirmDelete] = useState<ResourceKind | null>(null);
+  /** 10-31 用户令：「卸载，停用，清空都做成弹窗」——停用也走确认弹窗（与删除/清空同款）。 */
+  const [confirmDisable, setConfirmDisable] = useState<ResourceKind | null>(null);
+
+  /* 弹窗打开时 Esc 关闭（捕获阶段：别让同一个 Esc 把底下的设置弹窗一起关掉）。 */
+  useEffect(() => {
+    if (!(confirmDelete || confirmDisable || confirmUninstall)) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false);
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [confirmDelete, confirmDisable, confirmUninstall]);
   /** 正在切换启用状态的资源（按钮转圈 + 防连点） */
   const [toggling, setToggling] = useState<ResourceKind | null>(null);
   /** 正在删除的资源 */
@@ -367,47 +383,19 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
               <button
                 className="secondary-setting"
                 disabled={toggling === "base"}
-                onClick={() => setEnabled("base", false, "语音基础模型")}
+                onClick={() => setConfirmDisable("base")}
                 title="停用后不加载该模型（省内存/CPU），文件仍保留在本机，可随时重新启用"
               >
                 {toggling === "base" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}停用
               </button>
             )}
-            {confirmDelete === "base" ? (
-              <>
-                <span className="voice-uninstall-hint">
-                  将删除语音基础模型{sizeMB ? `（约 ${sizeMB} MB` : ""}，<strong>需重新下载才能恢复</strong>。
-                  若只是想暂时不用，请改用「停用」。
-                </span>
-                <button className="secondary-setting voice-uninstall" onClick={() => doDelete("base", "语音基础模型")}>
-                  <X size={13} />确认删除
-                </button>
-                <button className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
-              </>
-            ) : (
-              <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("base", "语音基础模型")}>
-                <Trash2 size={13} />删除
-              </button>
-            )}
-            {/* 全部清空（含音色克隆模型）——与「删除」区分：那个只删本卡片这一个资源 */}
-            {confirmUninstall ? (
-              <>
-                <span className="voice-uninstall-hint">
-                  将删除<strong>全部</strong>语音模型
-                  {sizeMB ? `（基础约 ${sizeMB} MB` : ""}
-                  {zipBytesMB ? ` + 音色克隆约 ${zipBytesMB} MB` : ""}
-                  ，需重新下载才能恢复。<strong>你的音色（参考音频）不会被删除。</strong>
-                </span>
-                <button className="secondary-setting voice-uninstall" onClick={uninstall}>
-                  <X size={13} />确认全部清空
-                </button>
-                <button className="secondary-setting" onClick={() => setConfirmUninstall(false)}>取消</button>
-              </>
-            ) : (
-              <button className="secondary-setting voice-uninstall" onClick={() => setConfirmUninstall(true)}>
-                <X size={13} />全部清空
-              </button>
-            )}
+            <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("base", "语音基础模型")}>
+              <Trash2 size={13} />删除
+            </button>
+            {/* 全部清空（含音色克隆模型）——与「删除」区分：那个只删本卡片这一个资源；确认走弹窗 */}
+            <button className="secondary-setting voice-uninstall" onClick={() => setConfirmUninstall(true)}>
+              <X size={13} />全部清空
+            </button>
           </>
         ) : (
           <>
@@ -425,8 +413,7 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
 
     {/* 音色克隆模型（ZipVoice）：zero-shot 克隆，导入/录制一段参考音频即可拥有专属音色。
         按需下载、不进安装包；与基础语音模型（识别+合成）独立安装、独立卸载。 */}
-    {(!only || only === "zipvoice") && (
-    <div className="voice-devtools-card" style={{ marginTop: only ? 0 : 12 }}>
+    {(!only || only === "zipvoice") && (    <div className="voice-devtools-card" style={{ marginTop: only ? 0 : 12 }}>
       <div className="voice-devtools-card-head">
         <div className="voice-devtools-icon">
           {zipDownloading ? <LoaderCircle className="spin" size={20} /> : zipReady ? <Mic size={20} /> : <Download size={20} />}
@@ -475,28 +462,15 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
               <button
                 className="secondary-setting"
                 disabled={toggling === "zipvoice"}
-                onClick={() => setEnabled("zipvoice", false, "音色克隆模型")}
+                onClick={() => setConfirmDisable("zipvoice")}
                 title="停用后合成会回退到内置音色，156MB 文件仍保留在本机，可随时重新启用"
               >
                 {toggling === "zipvoice" ? <LoaderCircle className="spin" size={13} /> : <Power size={13} />}停用
               </button>
             )}
-            {confirmDelete === "zipvoice" ? (
-              <>
-                <span className="voice-uninstall-hint">
-                  将删除音色克隆模型{zipBytesMB ? `（约 ${zipBytesMB} MB` : ""}，<strong>需重新下载才能恢复</strong>。
-                  若只是想暂时不用，请改用「停用」。<strong>你已导入/录制的音色（参考音频）不会被删除。</strong>
-                </span>
-                <button className="secondary-setting voice-uninstall" onClick={() => doDelete("zipvoice", "音色克隆模型")}>
-                  <X size={13} />确认删除
-                </button>
-                <button className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
-              </>
-            ) : (
-              <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("zipvoice", "音色克隆模型")}>
-                <Trash2 size={13} />删除
-              </button>
-            )}
+            <button className="secondary-setting voice-uninstall" onClick={() => requestDelete("zipvoice", "音色克隆模型")}>
+              <Trash2 size={13} />删除
+            </button>
           </>
         ) : (
           <button className="primary-setting" onClick={installZipvoice}>
@@ -506,6 +480,57 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
       </div>
     </div>
     )}
+    {/* ⛔ 10-31 用户令：「卸载，停用，清空都做成弹窗」——不再在按钮行里展开确认条。
+        统一一个弹窗：portal 到 body（设置页也有 stacking context）、z-index 950（高于设置 900）、
+        Esc 捕获阶段关闭、点遮罩关闭。 */}
+    {(confirmDelete || confirmDisable || confirmUninstall) && createPortal((
+      <div className="voice-confirm-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false); } }}>
+        <div className="voice-confirm-modal" role="alertdialog" aria-modal="true" aria-label={
+          confirmDelete ? `删除${confirmDelete === "zipvoice" ? "音色克隆模型" : "语音基础模型"}`
+            : confirmDisable ? `停用${confirmDisable === "zipvoice" ? "音色克隆模型" : "语音基础模型"}`
+              : "清空全部语音模型"
+        }>
+          <div className="voice-confirm-head">
+            <strong>{
+              confirmDelete ? `删除${confirmDelete === "zipvoice" ? "音色克隆模型" : "语音基础模型"}`
+                : confirmDisable ? `停用${confirmDisable === "zipvoice" ? "音色克隆模型" : "语音基础模型"}`
+                  : "清空全部语音模型"
+            }</strong>
+            <button type="button" className="voice-confirm-close" aria-label="关闭" onClick={() => { setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false); }}><X size={15} /></button>
+          </div>
+          <div className="voice-confirm-body">
+            {confirmDelete ? (
+              confirmDelete === "zipvoice"
+                ? <>将删除音色克隆模型{zipBytesMB ? `（约 ${zipBytesMB} MB）` : ""}，<strong>需重新下载才能恢复</strong>。你已导入/录制的音色（参考音频）不会被删除。</>
+                : <>将删除语音基础模型{sizeMB ? `（约 ${sizeMB} MB）` : ""}，<strong>需重新下载才能恢复</strong>。若只是想暂时不用，请改用「停用」。</>
+            ) : confirmDisable ? (
+              confirmDisable === "zipvoice"
+                ? <>停用后语音合成会回退到内置音色；文件仍保留在本机（约 {zipBytesMB ?? 156} MB），重新启用即可恢复，无需重新下载。</>
+                : <>停用后语音识别与默认播报都不再加载这个模型（省内存 / CPU）；文件仍保留在本机{sizeMB ? `（约 ${sizeMB} MB）` : ""}，重新启用即可恢复，无需重新下载。</>
+            ) : (
+              <>将删除<strong>全部</strong>语音模型{sizeMB ? `（基础约 ${sizeMB} MB` : ""}{zipBytesMB ? ` + 音色克隆约 ${zipBytesMB} MB` : ""}{sizeMB || zipBytesMB ? "）" : ""}，需重新下载才能恢复。<strong>你的音色（参考音频）不会被删除。</strong></>
+            )}
+          </div>
+          <div className="voice-confirm-actions">
+            <button type="button" className="secondary-setting" onClick={() => { setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false); }}>取消</button>
+            <button
+              type="button"
+              className="secondary-setting voice-uninstall"
+              onClick={() => {
+                if (confirmDelete === "base") void doDelete("base", "语音基础模型");
+                else if (confirmDelete === "zipvoice") void doDelete("zipvoice", "音色克隆模型");
+                else if (confirmDisable === "base") void setEnabled("base", false, "语音基础模型");
+                else if (confirmDisable === "zipvoice") void setEnabled("zipvoice", false, "音色克隆模型");
+                else if (confirmUninstall) uninstall();
+                setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false);
+              }}
+            >
+              {confirmDelete ? "确认删除" : confirmDisable ? "停用" : "确认全部清空"}
+            </button>
+          </div>
+        </div>
+      </div>
+    ), document.body)}
     </>
   );
 }
