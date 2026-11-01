@@ -1175,9 +1175,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
    删除入口不渲染且主进程拒绝删除。 */
 {
   const presetsJson = JSON.parse(read("resources/voice-presets/presets.json"));
-  const youth = (Array.isArray(presetsJson) ? presetsJson : []).find((p) => p.id === "youth-female-zh");
-  ok(Boolean(youth && youth.builtIn === true),
-    "presets.json：活泼女声 · 小夏 标记 builtIn（随包自带音色）");
+  const builtInIds = (Array.isArray(presetsJson) ? presetsJson : []).filter((p) => p.builtIn === true).map((p) => p.id).sort();
+  ok(builtInIds.join(",") === "cosyvoice-female-zh,youth-female-zh",
+    "presets.json：小夏 / 晓晨 两个女性预设标记 builtIn（随包自带音色；阿远 / Nature 仍是一键启用样本）");
   const presetIpc = read("electron/features/voice-ipc/02-voice-profiles-presets.ts");
   ok(/async function ensureBuiltInProfiles\(\)/.test(presetIpc) && /void ensureBuiltInProfiles\(\);/.test(presetIpc),
     "启动即确保内置音色档案存在（幂等，失败静默）");

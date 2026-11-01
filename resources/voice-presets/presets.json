@@ -14,7 +14,8 @@
     "desc": "清甜温柔女声（音源：CosyVoice 官方示例 · FunAudioLLM）",
     "lang": "zh",
     "wav": "cosyvoice-female-zh.wav",
-    "refText": "希望你以后能够做的比我还好呦。"
+    "refText": "希望你以后能够做的比我还好呦。",
+    "builtIn": true
   },
   {
     "id": "firered-male-zh",
