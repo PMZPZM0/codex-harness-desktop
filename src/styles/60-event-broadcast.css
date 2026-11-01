@@ -270,6 +270,9 @@
   display: flex;
   flex-direction: column;
   min-height: 160px;
+  /* ⛔ 11-01 用户：「最多展示四个吧，多了就滚轮，要不然铺满了」——
+     面板本身也不许顶到屏幕上下沿（列表再长也只到这里的上限）。 */
+  max-height: min(560px, calc(100vh - 72px));
   border-radius: 14px;
   border: 1px solid var(--line);
   background: var(--panel);
@@ -321,6 +324,10 @@
 .bc-panel-list {
   flex: 1;
   min-height: 0;
+  /* ⛔ 11-01 用户令：**最多露出 4 条**，再多走滚轮（否则一条长群事件就把整屏铺满）。
+     一行 ≈ 标题 + 3 行正文 + 上下内边距 ≈ 88px ⇒ 4 行 352px；超出在列表内滚动，
+     头/尾固定不动。⛔ 别改回"高度随内容长"——那正是铺满屏的原因。 */
+  max-height: calc(var(--bc-item-h, 88px) * 4);
   overflow-y: auto;
   padding: 6px;
   display: flex;

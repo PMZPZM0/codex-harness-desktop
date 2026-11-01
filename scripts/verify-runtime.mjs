@@ -188,8 +188,9 @@ if (process.argv.includes("--broadcast-e2e")) {
     /* ⛔ 不靠"碰巧有群事件历史"：直接走对外推播口（harness:broadcast）塞两条，
        这样面板渲染 / 逐字 / 单条删除三条路径每次都能被真跑一遍。 */
     await closePanel();
-    for (const [title, text] of [['探针播报一', '这是用于验证面板渲染与删除的正文。'], ['探针播报二', '第二条。']]) {
-      window.dispatchEvent(new CustomEvent('harness:broadcast', { detail: { kind: 'group', title, text } }));
+    /* 推 6 条：既要验删除，也要验「最多露 4 条、多的走滚轮」（11-01 用户令） */
+    for (let i = 1; i <= 6; i += 1) {
+      window.dispatchEvent(new CustomEvent('harness:broadcast', { detail: { kind: 'group', title: '探针播报' + i, text: '这是用于验证面板渲染、滚动上限与单条删除的正文。' } }));
     }
     await sleep(300);
     await openPanel();
@@ -204,15 +205,22 @@ if (process.argv.includes("--broadcast-e2e")) {
     const del = document.querySelector('.bc-item-del');
     if (del) del.click();
     await sleep(400);
-    return { before, after: items().length, dupes, hasDel: Boolean(del) };
+    /* 「最多露 4 条」的判据：列表被钳高且有溢出（scrollHeight > clientHeight） */
+    const list = document.querySelector('.bc-panel-list');
+    const listH = Math.round(list?.clientHeight || 0);
+    const overflow = Boolean(list && list.scrollHeight > list.clientHeight + 4);
+    return { before, after: items().length, dupes, hasDel: Boolean(del), listH, overflow };
   })()`);
   const st = bc?.skipped ? `— 跳过（${bc.skipped}）` : `✓ 面板 ${bc?.before ?? "?"} 条`;
   console.log(`  · 播报面板: ${st} | 单条删除 ${bc?.hasDel ? `✓ ${bc?.before} → ${bc?.after}` : "✗ 没有删除按钮"}`
-    + ` | 标题/正文重复 ${bc?.dupes ?? "?"} 条（应为 0）`);
+    + ` | 标题/正文重复 ${bc?.dupes ?? "?"} 条（应为 0）`
+    + ` | 列表高 ${bc?.listH ?? "?"}px 可滚 ${bc?.overflow ? "✓" : "✗"}`);
   if (bc && !bc.skipped) {
     if (!bc.hasDel) fail.push("播报面板没有单条删除按钮");
     else if (bc.after !== bc.before - 1) fail.push("点删除后条数没变（删除没生效）");
     if (bc.dupes > 0) fail.push(`播报面板有 ${bc.dupes} 条标题与正文同文（重复展示）`);
+    if (!bc.overflow) fail.push("播报列表没有限高（超过 4 条仍继续变高 ⇒ 会铺满屏幕）");
+    if (bc.listH > 380) fail.push(`播报列表高 ${bc.listH}px 超过 4 行上限`);
   }
 }
 if (reactNoise.length) {
