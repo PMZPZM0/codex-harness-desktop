@@ -76,7 +76,7 @@ const preload = read("electron/preload.ts");
   ok(guide.includes('className="guide-nav"') && guide.includes('className="guide-body"'),
     "左选项 / 右内容两栏结构在");
   ok(/onMouseDown[\s\S]{0,120}?event\.target === event\.currentTarget[\s\S]{0,60}?setOpen\(false\)/.test(guide)
-    && /key === "Escape"[\s\S]{0,80}?setOpen\(false\)/.test(guide) && guide.includes('className="guide-close"'),
+    && /useEscapeLayer\(open, \(\) => setOpen\(false\)\)/.test(guide) && guide.includes('className="guide-close"'),
     "关闭三路：点遮罩 / Esc / ✕（与本仓既有弹窗同口径）");
   ok(/setOpen\(false\);\s*\n?\s*onOpenSettings\?\.\(page\)/.test(guide) || /onOpenSettings\?\.\(page\)/.test(guide),
     "「打开设置」= 关弹窗 + onOpenSettings(page) 跳真设置页（映射的落点）");

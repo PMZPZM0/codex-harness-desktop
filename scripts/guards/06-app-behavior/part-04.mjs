@@ -255,8 +255,8 @@ export async function run() {
   (/aria-modal="true"/.test(loginMgrSrc) && /role="dialog"/.test(loginMgrSrc) ? ok : fail)(
     "【180】登录管理是个真对话框（role=dialog + aria-modal）"
   );
-  (/addEventListener\("keydown", onKey, true\)/.test(loginMgrSrc) && /event\.key === "Escape"/.test(loginMgrSrc) ? ok : fail)(
-    "【180】Esc 能关（键盘用户的主出口；⛔ 只做 ✕ 与遮罩等于把键盘用户关在里面）"
+  (/useEscapeLayer\(/.test(loginMgrSrc) && /useEscapeLayer\(true, \(\) => onClose\(\)\)/.test(loginMgrSrc) ? ok : fail)(
+    "【180】Esc 能关（走全局 ESC 栈：只关最上层；⛔ 只做 ✕ 与遮罩等于把键盘用户关在里面）"
   );
   (/event\.key !== "Tab"/.test(loginMgrSrc) && /document\.activeElement === last/.test(loginMgrSrc) ? ok : fail)(
     "【180】Tab 焦点陷阱在（aria-modal 承诺焦点只在本框内；⛔ 不拦 Tab 焦点会跑到背后的侧栏/消息区）"

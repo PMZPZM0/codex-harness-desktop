@@ -71,9 +71,8 @@ ok(/createPortal\(/.test(rail) && /modal-backdrop/.test(rail) && /composer-rail-
   && /\.composer-rail-panel\s*\{[^}]*max-height:\s*min\(520px/s.test(railCss),
   "四个入口都是**居中弹窗**（portal + modal-backdrop + 宽 640 / 高自适应上限 520），不再是贴边内联浮层");
 ok(/onMouseDown=\{\(event\) => \{ if \(event\.target === event\.currentTarget\) setPanelId\(null\); \}\}/.test(rail)
-  && /addEventListener\("keydown", onKey, true\)/.test(rail)
-  && /event\.key === "Escape"/.test(rail) && /event\.stopPropagation\(\)/.test(rail),
-  "点遮罩 / 按 Esc 关闭（capture + stopPropagation，不连带关掉背后的层）");
+  && /useEscapeLayer\(Boolean\(panelId\), \(\) => setPanelId\(null\)\)/.test(rail),
+  "点遮罩 / 按 Esc 关闭（Esc 走全局 ESC 栈：只关最上层）");
 /* 10-28 审查补：声明了 aria-modal 就必须把焦点圈住 + 关闭后归还（否则键盘用户掉到 body）。 */
 ok(/event\.key !== "Tab"/.test(rail) && /event\.preventDefault\(\); first\.focus\(\)/.test(rail)
   && /event\.preventDefault\(\); last\.focus\(\)/.test(rail),

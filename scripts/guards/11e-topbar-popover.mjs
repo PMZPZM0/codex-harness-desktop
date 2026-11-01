@@ -181,8 +181,7 @@ ok(
   ok(/addEventListener\("mousedown", onDown\)/.test(segCode)
     && /target\?\.closest\?\.\("\.ctx-menu"\)/.test(segCode)
     && /ctxBtnRef\.current\?\.contains\(target as Node\)/.test(segCode)
-    && /if \(!bag\.ctxMenuOpen\) return;[\s\S]{0,600}key === "Escape"/.test(segCode)
-    && /addEventListener\("keydown", onKey\)/.test(segCode),
+    && /useEscapeLayer\(Boolean\(bag\.ctxMenuOpen\), \(\) => bag\.setCtxMenuOpen\(false\)\)/.test(segCode),
     "工作区菜单关闭 = window mousedown 判外部（**非阻塞**：点图标一次就关闭且图标照常生效；弹层内用 closest('.ctx-menu') 判、📁 按钮用 ctxBtnRef 判）+ Esc 兜底");
   ok(!appViewCode.includes("menu-backdrop"),
     "⛔ 工作区菜单不许再挂 menu-backdrop 遮罩（顶栏 drag 子树里的全屏遮罩 = 点击被吞成拖窗口、全屏点不动 —— 撤掉改非阻塞，别加回来）");
