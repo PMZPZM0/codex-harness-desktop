@@ -122,8 +122,12 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
             ...p,
             nickname: cfg.nickname || p.nickname,
             occupation,
-            field: p.field && p.field !== occupation ? p.field : "",
+            /* ⛔ 11-01：专业领域来自档案的 about（不是本地缓存的 field）—— 原来只认缓存，
+               所以选人格/存过之后重进必空。 */
+            field: String((cfg as any).about || "").trim() || (p.field && p.field !== occupation ? p.field : ""),
             hobby: cfg.interests || p.hobby,
+            /* ⛔ 11-01：自我介绍来自档案的 userContext —— 同上，以前压根没读。 */
+            bio: String((cfg as any).userContext || "").trim() || p.bio,
             habit: cfg.habits || p.habit,
           };
         });
@@ -146,6 +150,11 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       occupation: profile.occupation,
       interests: profile.hobby,
       habits: profile.habit,
+      /* ⛔⛔ 11-01 用户实测「专业领域、自我介绍永远是空的」：
+         这两个输入框绑的是 field / bio，而保存时**只提交了 nickname/occupation/interests/habits**，
+         它们从来没被写进档案 ⇒ 存不住、重进必空。档案 schema 里对应的是 about / userContext。 */
+      about: profile.field,
+      userContext: profile.bio,
     }).then(() => {
       try { window.dispatchEvent(new Event("codex-profile-updated")); } catch { /* 忽略 */ }
     }).catch(() => undefined);

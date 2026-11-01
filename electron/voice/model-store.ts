@@ -854,8 +854,20 @@ async function extractTarBz2(archivePath: string, destDir: string, resourcesTool
   const tar = await run("tar", ["-xjf", archivePath, "-C", destDir]);
   if (tar.code === 0) return { ok: true };
 
-  const sevenZip = join(resourcesToolsDir, "sevenzip", process.platform === "win32" ? "7z.exe" : "7z");
-  if (!existsSync(sevenZip)) {
+  /* ⛔⛔ 11-01 用户实测「解压失败：Can't initialize filter; unable to run program bzip2 -d」：
+     Windows 自带 tar 不带 bzip2，随包 python 又不一定可用 ⇒ 只能靠 7z。
+     但原来 7z 只在**可写工具根**（userData/tools）里找，而 7z 是**随包内置**的
+     （resources/tools/sevenzip）⇒ 永远找不到，于是必然报这个错。
+     ⇒ 两个根都找：可写根 + 随包根（${resourcesPath}/tools 与 app 目录下的 resources/tools）。 */
+  const sevenZipName = process.platform === "win32" ? "7z.exe" : "7z";
+  const sevenZipCandidates = [
+    join(resourcesToolsDir, "sevenzip", sevenZipName),
+    join(String((process as any).resourcesPath || ""), "tools", "sevenzip", sevenZipName),
+    join(String((process as any).resourcesPath || ""), "app.asar.unpacked", "resources", "tools", "sevenzip", sevenZipName),
+    join(String((globalThis as any)?.process?.resourcesPath || ""), "app.asar.unpacked", "resources", "tools", "sevenzip", sevenZipName),
+  ].filter(Boolean);
+  const sevenZip = sevenZipCandidates.find((c) => c && existsSync(c)) || "";
+  if (!sevenZip) {
     return { ok: false, error: "解压失败（随包 Python 不可用，tar: " + tar.stderr.slice(-120) + "），且未找到随包 7z" };
   }
   const stage = await run(sevenZip, ["x", archivePath, "-o" + destDir, "-y"]);
