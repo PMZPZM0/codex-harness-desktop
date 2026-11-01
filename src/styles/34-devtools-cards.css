@@ -201,3 +201,17 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 /* ⛔ 11-01 用户令「鼠标在右边，按键放右边」：一键按钮靠右对齐，不再与左对齐标题撞在一起。 */
 .devtools-batch { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .devtools-batch-text { margin-right: auto; }
+
+/* ⛔⛔ 11-01 用户给了版式（名字+介绍 | 图标 | 安装 | 卸载，下面一条横跨的进度条）：
+   不改 DOM 层级，用 display:contents 把 .runtime-copy 拆成网格项 ——
+   名字/介绍占左列，尺寸徽标与操作占右列，进度条横跨整行（grid-column: 1/-1）。 */
+.runtime-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 10px; row-gap: 4px; }
+.runtime-row > .runtime-copy { display: contents; }
+.runtime-row > .runtime-copy > strong { grid-column: 1; grid-row: auto; font-size: 13px; }
+.runtime-row > .runtime-copy > small { grid-column: 1; grid-row: auto; color: var(--muted); }
+.runtime-row > .runtime-copy > .runtime-install-state,
+.runtime-row > .runtime-copy > .runtime-hint { grid-column: 1 / -1; }
+.runtime-row > .runtime-size,
+.runtime-row > .runtime-actions { grid-column: 2; }
+.runtime-row > .runtime-actions { display: flex; align-items: center; gap: 6px; }
+.runtime-row > .runtime-failed { grid-column: 1 / -1; }
