@@ -526,10 +526,11 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               <div className="uc-combo-grid">
                 {COMBO_PACKS.map((pack: any) => {
                   const on = personaInfo?.soulSlug === pack.soulSlug;
-                  const busy = busyPack === pack.id;
+                  /* ⛔ 任一套餐应用中就禁点其它卡：两个 saveIdentity 并发会把 persona/soulSlug 交错写（补审查 F1） */
+                  const busy = Boolean(busyPack);
                   return (
-                    <button type="button" key={pack.id} className={`uc-combo ${on ? "on" : ""} ${busy ? "busy" : ""}`} disabled={busy}
-                      aria-pressed={on} title={pack.desc} onClick={() => void applyCombo(pack.id)}>
+                    <button type="button" key={pack.id} className={`uc-combo ${on ? "on" : ""} ${busy ? "busy" : ""}`} disabled={busy} title={pack.desc}
+                      aria-pressed={on} onClick={() => void applyCombo(pack.id)}>
                       <span className="uc-combo-head">
                         <strong>{pack.label}</strong>
                         {on && <span className="uc-combo-check" aria-hidden><Check size={11} /></span>}

@@ -30,7 +30,7 @@ export function UserPersonaPanel({ onNotice, action }: { onNotice: (message: str
     const base = personaId === "default" ? { occupation: "", userContext: "" } : userPersonaFields(personaId);
     /* ⛔ 11-01 联动拉满：选了人格 = 档案已配置 ⇒ 同步标记引导已看过，
        否则用户每次登录还会被问一遍已经填好的信息。 */
-    const fields = { ...base, persona: personaId === "default" ? "" : personaId, onboarded: true, profileGuideSeen: true };
+    const fields = { ...base, persona: personaId === "default" ? "" : personaId, soulSlug: "", onboarded: true, profileGuideSeen: true };
     if (!fields) { onNotice(`没有叫「${personaId}」的用户人格`); return; }
     try {
       await window.codex.saveIdentity(fields);

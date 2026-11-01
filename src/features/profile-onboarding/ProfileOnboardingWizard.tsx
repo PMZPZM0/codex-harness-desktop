@@ -295,7 +295,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   if (!checked || !open) return null;
 
   const selectedPersona = USER_PERSONAS.find((item) => item.id === personaId) ?? null;
-  const selectedAssistantPersona = ASSISTANT_PERSONAS.find((item) => item.id === assistantPersonaId) ?? ASSISTANT_PERSONAS[0];
+  /* ⛔ 用合并池（简版 + 内置六套）——选内置人格时确认页才显示对应名字（补审查 F3） */
+  const selectedAssistantPersona = [...ASSISTANT_PERSONAS, ...BUILT_IN_SOULS.map((soul: { slug: string; displayName: string; summary: string; content: string }) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug }))].find((item: any) => item.id === assistantPersonaId) ?? ASSISTANT_PERSONAS[0];
   const active = STEPS[step];
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
   const effectiveInterests = [...interests, customInterest.trim()].filter(Boolean).join("、");
