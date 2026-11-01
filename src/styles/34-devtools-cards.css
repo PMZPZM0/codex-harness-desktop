@@ -201,3 +201,22 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 /* ⛔ 11-01 用户令「鼠标在右边，按键放右边」：一键按钮靠右对齐，不再与左对齐标题撞在一起。 */
 .devtools-batch { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .devtools-batch-text { margin-right: auto; }
+
+/* ⛔⛔ 11-01 用户版式：名字+介绍 | 尺寸 | 安装/卸载，进度条横跨整行。
+   ⛔ 必须用**本面板专属类** .devtools-tool-row 作用域 —— .runtime-row 在飞书/Filee 等弹窗里也被复用，
+      上一版直接改它把那些界面挤成了竖排（已撤回）。 */
+.devtools-tool-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    "main size actions"
+    "prog prog prog";
+  align-items: center;
+  column-gap: 10px;
+  row-gap: 4px;
+}
+.devtools-tool-row > .runtime-copy { grid-area: main; }
+.devtools-tool-row > .runtime-size { grid-area: size; }
+.devtools-tool-row > .runtime-actions { grid-area: actions; display: flex; align-items: center; gap: 6px; }
+.devtools-tool-row > .devtools-progress-row,
+.devtools-tool-row > .runtime-failed { grid-area: prog; }

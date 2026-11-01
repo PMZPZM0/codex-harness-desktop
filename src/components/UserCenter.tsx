@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles } from "lucide-react";
+import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles, ChevronRight } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
+import { SettingsDialog } from "./SettingsDialog";
 
 export type UserProfile = {
   nickname: string;
@@ -253,161 +254,197 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   const styleLabel = STYLE_OPTIONS.find((option) => option.value === personality)?.label ?? "务实";
   const displayName = profile.nickname || username || "未设置昵称";
 
+  /* 11-01：一级卡/二级弹窗的开关（照开发工具页模式）；avatarStat 给「头像」卡显示当前头像小图。 */
+  const [openCard, setOpenCard] = useState<null | "identity" | "avatar" | "about" | "codex">(null);
+  const close = () => setOpenCard(null);
+  const avatarStat = profile.avatarType === "image" && profile.avatar
+    ? <img src={profile.avatar} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} />
+    : <span>{profile.avatarType === "emoji" ? "Emoji 头像" : "默认形象"}</span>;
+
   return (
     <section className="settings-section stack user-center">
-      <div className="uc-hero">
-        <div className="uc-hero-main">
-          <div className="uc-avatar uc-avatar-hero">
-            {avatarRender}
-            <button className="uc-avatar-edit" title="上传图片头像" onClick={() => fileRef.current?.click()}><Camera size={14} /></button>
-            <input ref={fileRef} type="file" accept="image/*" hidden onChange={onAvatarFile} />
+      {/* 11-01 用户令：用户中心改「一级卡片 + 二级弹窗」（照开发工具页同款模式）。
+          ⛔ 全部状态 / 联动 / 保存逻辑保持原位不动（上方 hooks 与 save/setField/头像压缩一条不改）——
+             这里只重排渲染：四个板块各一张一级卡（摘要 + 状态），编辑字段收进点开的二级弹窗。
+             交互保留口径：头像点一下立即生效、Codex 名字失焦即时保存、保存资料按钮仍在资料弹窗里。 */}
+      <div className="devtools-cards" data-count={4}>
+        <button type="button" className="devtools-card" data-card="identity" onClick={() => setOpenCard("identity")}>
+          <span className="devtools-card-logo"><UserRound size={15} /></span>
+          <span className="devtools-card-copy">
+            <strong>我的身份</strong>
+            <small>昵称 / 职业 / 专业领域 —— Codex 怎么称呼你</small>
+            <span className="devtools-card-stat">{displayName}{profile.occupation ? ` · ${profile.occupation}` : ""}{personality ? ` · ${styleLabel}` : ""}</span>
+          </span>
+          <ChevronRight size={15} className="devtools-card-arrow" />
+        </button>
+
+        <button type="button" className="devtools-card" data-card="avatar" onClick={() => setOpenCard("avatar")}>
+          <span className="devtools-card-logo"><Camera size={15} /></span>
+          <span className="devtools-card-copy">
+            <strong>头像</strong>
+            <small>内置形象点一下立即生效，也可以上传自己的照片</small>
+            <span className="devtools-card-stat">{avatarStat}</span>
+          </span>
+          <ChevronRight size={15} className="devtools-card-arrow" />
+        </button>
+
+        <button type="button" className="devtools-card" data-card="about" onClick={() => setOpenCard("about")}>
+          <span className="devtools-card-logo"><Heart size={15} /></span>
+          <span className="devtools-card-copy">
+            <strong>关于我</strong>
+            <small>兴趣 / 习惯 / 语言 / 自我介绍 —— 让回答更贴近你的生活</small>
+            <span className="devtools-card-stat">{[profile.hobby, profile.habit].filter(Boolean).join(" · ") || "未填写"}</span>
+          </span>
+          <ChevronRight size={15} className="devtools-card-arrow" />
+        </button>
+
+        <button type="button" className="devtools-card" data-card="codex" onClick={() => setOpenCard("codex")}>
+          <span className="devtools-card-logo"><Sparkles size={15} /></span>
+          <span className="devtools-card-copy">
+            <strong>Codex 的身份</strong>
+            <small>AI 助手的名字与形象（改完立即生效）</small>
+            <span className="devtools-card-stat">{assistantName || CODEX_DEFAULT_NAME}</span>
+          </span>
+          <ChevronRight size={15} className="devtools-card-arrow" />
+        </button>
+      </div>
+
+      {onLogout && (
+        <div className="uc-savebar">
+          <span className="uc-savebar-note"><Sparkles size={13} />资料会同步到侧栏与 Codex 的称呼</span>
+          <div className="uc-savebar-actions">
+            <button type="button" className="danger-setting" onClick={onLogout}><LogOut size={14} />退出登录</button>
           </div>
-          <div className="uc-hero-copy">
-            <div className="uc-hero-kicker">你的身份</div>
-            <div className="uc-name">{displayName}</div>
-            <div className="uc-meta">{[profile.occupation || "未填写职业", profile.field && profile.field !== profile.occupation ? profile.field : ""].filter(Boolean).join(" · ")}</div>
-            <div className="uc-hero-chips">
-              <span className="uc-chip"><Wand2 size={12} />{styleLabel}</span>
-              <span className="uc-chip"><Languages size={12} />{profile.language || "中文"}</span>
-              <button type="button" className="uc-chip uc-chip-button" title="重新走一遍称呼/头像/职业/Codex 人格/兴趣配置" onClick={() => { try { window.dispatchEvent(new Event("codex-open-profile-guide")); } catch { /* 忽略 */ } }}><Wand2 size={12} />重新配置引导</button>
+        </div>
+      )}
+
+      {/* ── 二级弹窗：我的身份 ── */}
+      {openCard === "identity" && (
+        <SettingsDialog title="我的身份" icon={<UserRound size={15} />} hint="Codex 怎么称呼你、你做什么" onClose={close}>
+          <section className="uc-panel">
+            <div className="uc-grid uc-grid-2">
+              <label className="se-field"><span>昵称（Codex 怎么称呼你）</span><input value={profile.nickname} onChange={(e) => setField("nickname", e.target.value)} placeholder="保存后同步到界面与引擎称呼" /></label>
+              <label className="se-field"><span><Briefcase size={12} />职业</span><input value={profile.occupation} onChange={(e) => setField("occupation", e.target.value)} placeholder="如：后端工程师 / 产品经理" /></label>
+              <label className="se-field"><span><GraduationCap size={12} />专业领域</span><input value={profile.field} onChange={(e) => setField("field", e.target.value)} placeholder="如：Web 开发 / 数据分析" /></label>
             </div>
+          </section>
+          <div className="uc-savebar">
+            <button type="button" className="uc-chip uc-chip-button" title="重新走一遍称呼/头像/职业/Codex 人格/兴趣配置" onClick={() => { try { window.dispatchEvent(new Event("codex-open-profile-guide")); } catch { /* 忽略 */ } }}><Wand2 size={12} />重新配置引导</button>
+            <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
           </div>
+        </SettingsDialog>
+      )}
+
+      {/* ── 二级弹窗：头像（点一下立即生效，无保存按钮） ── */}
+      {openCard === "avatar" && (
+        <SettingsDialog title="头像" icon={<Camera size={15} />} hint="点一下立即生效" onClose={close}>
           <div className="uc-avatar-side">
             <div className="uc-avatar-side-head"><strong>换个头像</strong><span>点一下立即生效</span></div>
             <div className="uc-presets uc-presets-images">
-              {USER_AVATAR_PRESETS.map((preset) => {
-                const value = avatarAsset(preset.file);
-                const active = profile.avatarType === "image" && profile.avatar === value;
-                return (
-                  <button
-                    type="button"
-                    key={preset.id}
-                    className={active ? "active" : ""}
-                    title={preset.label}
-                    aria-label={`使用${preset.label}头像`}
-                    aria-pressed={active}
-                    onClick={() => pickPresetAvatar(preset.file)}
-                  >
-                    <img src={value} alt="" loading="lazy" />
-                  </button>
-                );
-              })}
+              {USER_AVATAR_PRESETS.map((preset) => (
+                <button key={preset.file} type="button" className={`uc-preset ${profile.avatarType === "image" && profile.avatar === avatarAsset(preset.file) ? "active" : ""}`} title={preset.label || preset.file} onClick={() => pickPresetAvatar(preset.file)}>
+                  <img src={avatarAsset(preset.file)} alt="" draggable={false} />
+                </button>
+              ))}
             </div>
             <button type="button" className="uc-upload-link" onClick={() => fileRef.current?.click()}>
-              <Camera size={12} />上传自己的照片
+              <Camera size={13} />上传自己的照片
             </button>
+            <input ref={fileRef} type="file" accept="image/*" hidden onChange={onAvatarFile} />
           </div>
-        </div>
-      </div>
+        </SettingsDialog>
+      )}
 
-      <div className="uc-layout">
-        <section className="uc-panel">
-          <div className="uc-panel-head">
-            <span className="uc-panel-icon"><UserRound size={14} /></span>
-            <div><strong>基本资料</strong><small>Codex 怎么称呼你、你做什么</small></div>
+      {/* ── 二级弹窗：关于我 ── */}
+      {openCard === "about" && (
+        <SettingsDialog title="关于我" icon={<Heart size={15} />} hint="让回答更贴近你的生活" onClose={close}>
+          <section className="uc-panel">
+            <div className="uc-grid uc-grid-2">
+              <label className="se-field"><span><Heart size={12} />兴趣爱好</span><input value={profile.hobby} onChange={(e) => setField("hobby", e.target.value)} placeholder="如：摄影 / 跑步 / 游戏" /></label>
+              <label className="se-field"><span><Clock3 size={12} />生活习惯</span><input value={profile.habit} onChange={(e) => setField("habit", e.target.value)} placeholder="如：早九晚六 / 夜猫子" /></label>
+              <label className="se-field"><span><Languages size={12} />常用语言</span><input value={profile.language} onChange={(e) => setField("language", e.target.value)} placeholder="中文" /></label>
+              <label className="se-field uc-field-full"><span><Lightbulb size={12} />自我介绍</span><textarea rows={2} value={profile.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="一句话介绍自己，Codex 会记住" /></label>
+            </div>
+          </section>
+          <div className="uc-savebar">
+            <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
           </div>
-          <div className="uc-grid uc-grid-2">
-            <label className="se-field"><span>昵称（Codex 怎么称呼你）</span><input value={profile.nickname} onChange={(e) => setField("nickname", e.target.value)} placeholder="保存后同步到界面与引擎称呼" /></label>
-            <label className="se-field"><span><Briefcase size={12} />职业</span><input value={profile.occupation} onChange={(e) => setField("occupation", e.target.value)} placeholder="如：后端工程师 / 产品经理" /></label>
-            <label className="se-field"><span><GraduationCap size={12} />专业领域</span><input value={profile.field} onChange={(e) => setField("field", e.target.value)} placeholder="如：Web 开发 / 数据分析" /></label>
-          </div>
-        </section>
+        </SettingsDialog>
+      )}
 
-        <section className="uc-panel">
-          <div className="uc-panel-head">
-            <span className="uc-panel-icon"><Heart size={14} /></span>
-            <div><strong>关于我</strong><small>让回答更贴近你的生活</small></div>
-          </div>
-          <div className="uc-grid uc-grid-2">
-            <label className="se-field"><span><Heart size={12} />兴趣爱好</span><input value={profile.hobby} onChange={(e) => setField("hobby", e.target.value)} placeholder="如：摄影 / 跑步 / 游戏" /></label>
-            <label className="se-field"><span><Clock3 size={12} />生活习惯</span><input value={profile.habit} onChange={(e) => setField("habit", e.target.value)} placeholder="如：早九晚六 / 夜猫子" /></label>
-            <label className="se-field"><span><Languages size={12} />常用语言</span><input value={profile.language} onChange={(e) => setField("language", e.target.value)} placeholder="中文" /></label>
-            <label className="se-field uc-field-full"><span><Lightbulb size={12} />自我介绍</span><textarea rows={2} value={profile.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="一句话介绍自己，Codex 会记住" /></label>
-          </div>
-        </section>
-      </div>
-
-      {/* 10-27 用户令：「这个回复风格跟用户中心重复了，那边前端删除这个选项，但不能影响新手引导生效」
-          ⇒ 「交流偏好」这一块整块从用户中心移除（回复风格只在「设置 → 个性化」调一次）。
-          ⛔ 只删界面：下面这些一条都不能删 —— 新手引导把 replyStyle 写进 personalization，
-             本页仍要读它并回显（hero 上的风格 chip），保存时也仍同步 profile.style。 */}
-      <div className="uc-savebar">
-        <span className="uc-savebar-note"><Sparkles size={13} />资料会同步到侧栏与 Codex 的称呼</span>
-        <div className="uc-savebar-actions">
-          {onLogout && <button type="button" className="danger-setting" onClick={onLogout}><LogOut size={14} />退出登录</button>}
-          <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
-        </div>
-      </div>
-
-      {/* Codex 的身份（09-17 用户要求）：名字 + 头像。与上方"你自己"的资料分开成卡，避免混淆。
+      {/* ── 二级弹窗：Codex 的身份 ──
           ⛔ 这里必须用**独立类名**（codex-id-*），不能复用上面那些 .uc-*：
           复用它会把「用默认名」按钮压成 30px 宽、文字竖排断行（用户截图实测就是这么坏的）；
           `.uc-avatar` 的圆形底 + 尺寸还会把方形默认头像裁圆。 */}
-      <section className="uc-panel codex-id-panel">
-        <div className="codex-id-head">
-          <div className="codex-id-avatar">
-            {codexAvatar?.type === "image" && codexAvatar.value
-              ? <img src={codexAvatar.value} alt="Codex 头像" />
-              : <DefaultCodexAvatar size={60} />}
-            <button className="codex-id-avatar-btn" title="上传 Codex 头像（建议用正方形图片）" onClick={() => codexFileRef.current?.click()}><Camera size={12} /></button>
-            {codexAvatar?.type === "image" && (
-              <button className="codex-id-avatar-btn reset" title="恢复到默认头像" onClick={() => { onCodexAvatarChange?.({ type: "default", value: "" }); onNotice("已恢复默认头像"); }}><RotateCcw size={12} /></button>
-            )}
-            <input ref={codexFileRef} type="file" accept="image/*" hidden onChange={onCodexAvatarFile} />
-          </div>
-          <div className="codex-id-info">
-            <div className="codex-id-title">Codex 的身份 <span className="codex-id-badge"><Sparkles size={11} />AI 助手</span></div>
-            <label className="codex-id-label" htmlFor="codex-name-input">它的名字</label>
-            <div className="codex-id-row">
-              <input
-                id="codex-name-input"
-                className="codex-name-input"
-                value={assistantDraft}
-                maxLength={24}
-                placeholder={CODEX_DEFAULT_NAME}
-                onChange={(e) => setAssistantDraft(e.target.value)}
-                onBlur={commitAssistantName}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
-                  if (e.key === "Escape") { skipNameCommitRef.current = true; setAssistantDraft(assistantName); e.currentTarget.blur(); }
-                }}
-              />
-              <button className="codex-name-reset" onClick={() => { setAssistantDraft(CODEX_DEFAULT_NAME); onAssistantNameChange?.(CODEX_DEFAULT_NAME); onNotice("名字已恢复为 Codex"); }}>用默认名</button>
+      {openCard === "codex" && (
+        <SettingsDialog title="Codex 的身份" icon={<Sparkles size={15} />} hint="AI 助手的名字与形象，改完立即生效" onClose={close}>
+          <section className="uc-panel codex-id-panel">
+            <div className="codex-id-head">
+              <div className="codex-id-avatar">
+                {codexAvatar?.type === "image" && codexAvatar.value
+                  ? <img src={codexAvatar.value} alt="Codex 头像" />
+                  : <DefaultCodexAvatar size={60} />}
+                <button className="codex-id-avatar-btn" title="上传 Codex 头像（建议用正方形图片）" onClick={() => codexFileRef.current?.click()}><Camera size={12} /></button>
+                {codexAvatar?.type === "image" && (
+                  <button className="codex-id-avatar-btn reset" title="恢复到默认头像" onClick={() => { onCodexAvatarChange?.({ type: "default", value: "" }); onNotice("已恢复默认头像"); }}><RotateCcw size={12} /></button>
+                )}
+                <input ref={codexFileRef} type="file" accept="image/*" hidden onChange={onCodexAvatarFile} />
+              </div>
+              <div className="codex-id-info">
+                <div className="codex-id-title">Codex 的身份 <span className="codex-id-badge"><Sparkles size={11} />AI 助手</span></div>
+                <label className="codex-id-label" htmlFor="codex-name-input">它的名字</label>
+                <div className="codex-id-row">
+                  <input
+                    id="codex-name-input"
+                    className="codex-name-input"
+                    value={assistantDraft}
+                    maxLength={24}
+                    placeholder={CODEX_DEFAULT_NAME}
+                    onChange={(e) => setAssistantDraft(e.target.value)}
+                    onBlur={commitAssistantName}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); }
+                      if (e.key === "Escape") { skipNameCommitRef.current = true; setAssistantDraft(assistantName); e.currentTarget.blur(); }
+                    }}
+                  />
+                  <button className="codex-name-reset" onClick={() => { setAssistantDraft(CODEX_DEFAULT_NAME); onAssistantNameChange?.(CODEX_DEFAULT_NAME); onNotice("名字已恢复为 Codex"); }}>用默认名</button>
+                </div>
+                <div className="codex-id-hint">回车或点别处即时保存</div>
+              </div>
             </div>
-            <div className="codex-id-hint">回车或点别处即时保存</div>
-          </div>
-        </div>
-        <div className="codex-id-presets">
-          <div className="codex-id-presets-head">
-            <strong>内置形象</strong>
-          </div>
-          <div className="codex-id-preset-grid" role="group" aria-label="Codex 内置形象">
-            {CODEX_AVATAR_PRESETS.map((preset) => {
-              const isDefault = preset.file === CODEX_DEFAULT_AVATAR_FILE;
-              const active = isDefault
-                ? !codexAvatar || codexAvatar.type !== "image"
-                : codexAvatar?.type === "image" && codexAvatar.value === avatarAsset(preset.file);
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`codex-id-preset ${active ? "active" : ""}`}
-                  aria-pressed={active}
-                  aria-label={`使用「${preset.label}」形象`}
-                  title={preset.label}
-                  onClick={() => {
-                    onCodexAvatarChange?.(isDefault ? { type: "default", value: "" } : { type: "image", value: avatarAsset(preset.file) });
-                    onNotice(isDefault ? "已切换为默认形象" : `已切换为「${preset.label}」形象`);
-                  }}
-                >
-                  <img src={avatarAsset(preset.file)} alt="" draggable={false} />
-                  {active ? <span className="codex-id-preset-check"><Check size={10} /></span> : null}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+            <div className="codex-id-presets">
+              <div className="codex-id-presets-head">
+                <strong>内置形象</strong>
+              </div>
+              <div className="codex-id-preset-grid" role="group" aria-label="Codex 内置形象">
+                {CODEX_AVATAR_PRESETS.map((preset) => {
+                  const isDefault = preset.file === CODEX_DEFAULT_AVATAR_FILE;
+                  const active = isDefault
+                    ? !codexAvatar || codexAvatar.type !== "image"
+                    : codexAvatar?.type === "image" && codexAvatar.value === avatarAsset(preset.file);
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      className={`codex-id-preset ${active ? "active" : ""}`}
+                      aria-pressed={active}
+                      aria-label={`使用「${preset.label}」形象`}
+                      title={preset.label}
+                      onClick={() => {
+                        onCodexAvatarChange?.(isDefault ? { type: "default", value: "" } : { type: "image", value: avatarAsset(preset.file) });
+                        onNotice(isDefault ? "已切换为默认形象" : `已切换为「${preset.label}」形象`);
+                      }}
+                    >
+                      <img src={avatarAsset(preset.file)} alt="" draggable={false} />
+                      {active ? <span className="codex-id-preset-check"><Check size={10} /></span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        </SettingsDialog>
+      )}
 
     </section>
   );

@@ -163,10 +163,10 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                    10-11：完整报错改走「完整报错」弹窗，卡片只留一行摘要，点开重看（弹窗关了报错不丢）。 */
                 const installFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("安装失败");
                 const uninstallFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("卸载失败");
-                return <div className={`runtime-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
+                return <div className={`runtime-row devtools-tool-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
                   <span className="runtime-icon">{busy ? <Spinner /> : isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
                   <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>
-                    {busy ? <span className="runtime-install-state">
+                    </span>{busy ? <span className="runtime-install-state devtools-progress-row">
                       {/* 进度条（09-19 用户要求：安装过程不弹窗，用进度条可视化） */}
                       <span className="runtime-progress-bar" role="progressbar" aria-label={`${runtime.name} 安装进度`} aria-valuenow={runtimePercent[runtime.id] ?? 0} aria-valuemin={0} aria-valuemax={100}>
                         <i style={{ width: `${runtimePercent[runtime.id] ?? 0}%` }} />
@@ -180,7 +180,6 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
                     </span>
                       : !isDone && runtime.bundled ? <em className="runtime-hint">随包内置能力缺失时可点「修复安装」从包内恢复</em>
                       : null}
-                  </span>
                   {/* 10-11 改版：失败不再内联一大块 —— 完整报错进「完整报错」弹窗（DevtoolsSettingsSection 渲染），
                       卡片只留一行摘要，点开重看。⛔ 失败判据与产出侧同一前缀（守卫 11y 两边同名钉）。 */}
                   {installFailed ? (
