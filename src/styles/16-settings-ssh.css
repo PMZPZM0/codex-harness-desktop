@@ -1803,3 +1803,41 @@
 .memory-pin-badge { padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); font-size: 10px; }
 .memory-ws-badge { padding: 1px 7px; border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 10px; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .memory-card-head .icon-button.pin-on { color: var(--orange); }
+/* 11-01 v3：用户中心一级页的**紧凑行卡**（专属作用域，不蹭 devtools-card 的网格/撑高形态）。
+   色值一律走主题变量（DESIGN.md 纪律）；紧凑 = 单卡两行、padding 13px、hover 只描边。 */
+.user-center .uc-row-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 13px 16px;
+  text-align: left;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--panel);
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+}
+.user-center .uc-row-card:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.user-center .uc-row-icon {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--panel-2);
+  color: var(--muted);
+  overflow: hidden;
+}
+.user-center .uc-row-copy { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.user-center .uc-row-copy strong { font-size: 13.5px; font-weight: 600; }
+.user-center .uc-row-copy small { color: var(--muted); font-size: 11.5px; line-height: 1.5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-center .uc-row-arrow { flex: 0 0 auto; color: var(--faint); transition: transform 0.15s ease, color 0.15s ease; }
+.user-center .uc-row-card:hover .uc-row-arrow { color: var(--accent); transform: translateX(2px); }
+/* hero 右侧的「换个头像」小卡（窄屏时退化为整行） */
+.user-center .uc-row-side { flex: 0 0 220px; }
+@media (max-width: 760px) {
+  .user-center .uc-row-side { flex-basis: 100%; }
+}

@@ -260,54 +260,68 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   const avatarStat = profile.avatarType === "image" && profile.avatar
     ? <img src={profile.avatar} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} />
     : <span>{profile.avatarType === "emoji" ? "Emoji 头像" : "默认形象"}</span>;
+  /** 摘要里截长文本（顶栏 truncateThreadTitle 同款：展开防代理对，⛔ 不用 slice 劈 emoji） */
+  const truncateText = (value: string, max: number) => ([...value].length > max ? [...value].slice(0, max).join("") + "…" : value);
 
   return (
     <section className="settings-section stack user-center">
-      {/* 11-01 用户令：用户中心改「一级卡片 + 二级弹窗」（照开发工具页同款模式）。
-          ⛔ 全部状态 / 联动 / 保存逻辑保持原位不动（上方 hooks 与 save/setField/头像压缩一条不改）——
-             这里只重排渲染：四个板块各一张一级卡（摘要 + 状态），编辑字段收进点开的二级弹窗。
-             交互保留口径：头像点一下立即生效、Codex 名字失焦即时保存、保存资料按钮仍在资料弹窗里。 */}
-      <div className="devtools-cards" data-count={4}>
-        <button type="button" className="devtools-card" data-card="identity" onClick={() => setOpenCard("identity")}>
-          <span className="devtools-card-logo"><UserRound size={15} /></span>
-          <span className="devtools-card-copy">
-            <strong>我的身份</strong>
-            <small>昵称 / 职业 / 专业领域 —— Codex 怎么称呼你</small>
-            <span className="devtools-card-stat">{displayName}{profile.occupation ? ` · ${profile.occupation}` : ""}{personality ? ` · ${styleLabel}` : ""}</span>
-          </span>
-          <ChevronRight size={15} className="devtools-card-arrow" />
-        </button>
-
-        <button type="button" className="devtools-card" data-card="avatar" onClick={() => setOpenCard("avatar")}>
-          <span className="devtools-card-logo"><Camera size={15} /></span>
-          <span className="devtools-card-copy">
-            <strong>头像</strong>
-            <small>内置形象点一下立即生效，也可以上传自己的照片</small>
-            <span className="devtools-card-stat">{avatarStat}</span>
-          </span>
-          <ChevronRight size={15} className="devtools-card-arrow" />
-        </button>
-
-        <button type="button" className="devtools-card" data-card="about" onClick={() => setOpenCard("about")}>
-          <span className="devtools-card-logo"><Heart size={15} /></span>
-          <span className="devtools-card-copy">
-            <strong>关于我</strong>
-            <small>兴趣 / 习惯 / 语言 / 自我介绍 —— 让回答更贴近你的生活</small>
-            <span className="devtools-card-stat">{[profile.hobby, profile.habit].filter(Boolean).join(" · ") || "未填写"}</span>
-          </span>
-          <ChevronRight size={15} className="devtools-card-arrow" />
-        </button>
-
-        <button type="button" className="devtools-card" data-card="codex" onClick={() => setOpenCard("codex")}>
-          <span className="devtools-card-logo"><Sparkles size={15} /></span>
-          <span className="devtools-card-copy">
-            <strong>Codex 的身份</strong>
-            <small>AI 助手的名字与形象（改完立即生效）</small>
-            <span className="devtools-card-stat">{assistantName || CODEX_DEFAULT_NAME}</span>
-          </span>
-          <ChevronRight size={15} className="devtools-card-arrow" />
-        </button>
+      {/* 11-01 v3（用户「不太好看」）：恢复原 hero 作身份视觉锚点（头像+名字+chips），
+          下方编辑入口改**两张紧凑行卡**（专属 .uc-row-card，不蹭 devtools-card 的撑高网格）。
+          ⛔ 状态/联动/保存逻辑仍全部原位不动。 */}
+      <div className="uc-hero">
+        <div className="uc-hero-main">
+          <div className="uc-avatar uc-avatar-hero">
+            {avatarRender}
+            <button className="uc-avatar-edit" title="上传图片头像" onClick={() => setOpenCard("avatar")}><Camera size={14} /></button>
+          </div>
+          <div className="uc-hero-copy">
+            <div className="uc-hero-kicker">你的身份</div>
+            <div className="uc-name">{displayName}</div>
+            <div className="uc-meta">{[profile.occupation || "未填写职业", profile.field && profile.field !== profile.occupation ? profile.field : ""].filter(Boolean).join(" · ")}</div>
+            <div className="uc-hero-chips">
+              <span className="uc-chip"><Wand2 size={12} />{styleLabel}</span>
+              <span className="uc-chip"><Languages size={12} />{profile.language || "中文"}</span>
+              <button type="button" className="uc-chip uc-chip-button" title="重新走一遍称呼/头像/职业/Codex 人格/兴趣配置" onClick={() => { try { window.dispatchEvent(new Event("codex-open-profile-guide")); } catch { /* 忽略 */ } }}><Wand2 size={12} />重新配置引导</button>
+            </div>
+          </div>
+          <button type="button" className="uc-row-card uc-row-side" onClick={() => setOpenCard("avatar")} title="换个头像">
+            <span className="uc-row-icon"><Camera size={15} /></span>
+            <span className="uc-row-copy"><strong>换个头像</strong><small>点一下立即生效</small></span>
+            <ChevronRight size={14} className="uc-row-arrow" />
+          </button>
+        </div>
       </div>
+
+      <button type="button" className="uc-row-card" onClick={() => setOpenCard("identity")}>
+        <span className="uc-row-icon"><UserRound size={15} /></span>
+        <span className="uc-row-copy">
+          <strong>我的身份</strong>
+          <small>{[profile.nickname ? `称呼「${profile.nickname}」` : "未设置称呼", profile.occupation, profile.field].filter(Boolean).join(" · ") || "Codex 怎么称呼你、你做什么"}</small>
+        </span>
+        <ChevronRight size={14} className="uc-row-arrow" />
+      </button>
+
+      <button type="button" className="uc-row-card" onClick={() => setOpenCard("about")}>
+        <span className="uc-row-icon"><Heart size={15} /></span>
+        <span className="uc-row-copy">
+          <strong>关于我</strong>
+          <small>{[profile.hobby ? `兴趣：${profile.hobby}` : "", profile.habit ? `习惯：${profile.habit}` : "", profile.bio ? truncateText(profile.bio, 24) : ""].filter(Boolean).join(" · ") || "兴趣 / 习惯 / 语言 / 自我介绍"}</small>
+        </span>
+        <ChevronRight size={14} className="uc-row-arrow" />
+      </button>
+
+      <button type="button" className="uc-row-card" onClick={() => setOpenCard("codex")}>
+        <span className="uc-row-icon">
+          {codexAvatar?.type === "image" && codexAvatar.value
+            ? <img src={codexAvatar.value} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover" }} />
+            : <Sparkles size={15} />}
+        </span>
+        <span className="uc-row-copy">
+          <strong>Codex 的身份</strong>
+          <small>{assistantName || CODEX_DEFAULT_NAME} · 名字与形象改完立即生效</small>
+        </span>
+        <ChevronRight size={14} className="uc-row-arrow" />
+      </button>
 
       {onLogout && (
         <div className="uc-savebar">
