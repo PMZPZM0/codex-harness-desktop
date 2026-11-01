@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Download, FolderOpen, Image as ImageIcon, PawPrint, RefreshCw, TriangleAlert } from "lucide-react";
 import { petAssetUrl } from "../pet";
+import { readStoredCodexAvatar } from "../../lib/codex-identity.mjs";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
 
@@ -30,11 +31,26 @@ const SOURCE_LABEL: Record<PetPackage["source"], string> = {
   petdex: "Petdex",
 };
 
-/** 列表项的小预览：图集切第 0 行第 0 帧；动画包用 idle 静帧整张缩略。 */
+/** 关节包当前该用哪个调色板（跟 Codex 头像联动；读不到就回落默认）。 */
+function rigPaletteOf(pkg: PetPackage): string {
+  const rig = pkg.rig;
+  if (!rig) return "";
+  try {
+    const spec = readStoredCodexAvatar() as { type?: string; value?: string };
+    const file = spec?.type === "image" ? String(spec.value ?? "").split(/[\\/]/).pop()?.split("?")[0] ?? "" : "";
+    return (file && rig.avatarPalette?.[file]) || rig.defaultPalette;
+  } catch {
+    return rig.defaultPalette;
+  }
+}
+
+/** 列表项的小预览：图集切第 0 行第 0 帧；动画包/关节包用 idle 静帧整张缩略。 */
 function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: number }) {
   const k = height / (pkg.frameHeight || 208);
+  const rigStill = pkg.rig ? pkg.rig.palettes?.[rigPaletteOf(pkg)]?.idle : "";
   const animationStill = pkg.animationSet?.idle?.stillSrc;
-  const source = animationStill || pkg.spritesheet;
+  const source = rigStill || animationStill || pkg.spritesheet;
+  const contain = Boolean(rigStill || animationStill);
   return (
     <span
       className="pet-thumb"
@@ -42,8 +58,8 @@ function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: numbe
         width: `${pkg.frameWidth * k}px`,
         height: `${height}px`,
         backgroundImage: source ? `url("${petAssetUrl(source)}")` : undefined,
-        backgroundSize: animationStill ? "contain" : `${pkg.columns * pkg.frameWidth * k}px ${pkg.rows * pkg.frameHeight * k}px`,
-        backgroundPosition: animationStill ? "center bottom" : "0 0",
+        backgroundSize: contain ? "contain" : `${pkg.columns * pkg.frameWidth * k}px ${pkg.rows * pkg.frameHeight * k}px`,
+        backgroundPosition: contain ? "center bottom" : "0 0",
       }}
     />
   );

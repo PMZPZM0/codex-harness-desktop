@@ -70,6 +70,13 @@ export interface PetPackage {
   source: "builtin" | "user" | "codex" | "petdex";
   /** 30fps 动画包：每个状态一对动画 WebP + 静帧（存在时不使用 spritesheet） */
   animationSet?: Record<string, { animatedSrc: string; stillSrc: string }>;
+  /** 关节包（11-01 机器人宠物）：按「Codex 头像 → 调色板 → 九态姿态图」取图，
+      渲染层用 CSS 做呼吸 / 敲键盘 / 跳跃等动作，避免逐帧动画的僵硬切换。 */
+  rig?: {
+    defaultPalette: string;
+    palettes: Record<string, Record<string, string>>;
+    avatarPalette: Record<string, string>;
+  };
   /** 16 向看帧（动画包专用；绝对路径） */
   lookFrameSet?: string[];
   supportsLookTracking?: boolean;
@@ -89,9 +96,14 @@ export interface PetSettings {
   /** 窗口左上角坐标（null = 默认右下角） */
   x: number | null;
   y: number | null;
+  /** 一次性迁移标记：旧默认宠物（阿焰）已切到跟随头像的机器人。 */
+  robotMigrated?: boolean;
 }
 
-const DEFAULT_SETTINGS: PetSettings = { enabled: false, active: "harness-fox", scale: 1, opacity: 0.92, x: null, y: null };
+/** 11-01 用户令：宠物跟 Codex 头像联动 ⇒ 默认换成「小C」机器人（换头像它就换配色）。 */
+const DEFAULT_SETTINGS: PetSettings = { enabled: false, active: "codex-robot", scale: 1, opacity: 0.92, x: null, y: null };
+/** 旧默认宠物：只对这一只做一次迁移，用户显式选过别的宠物不动。 */
+const LEGACY_DEFAULT_PET = "harness-fox";
 
 function settingsFile(): string {
   return path.join(app.getPath("userData"), "pet-settings.json");
@@ -111,13 +123,21 @@ export function normalizePetSettings(raw: unknown): PetSettings {
     opacity: clamp(Number(value.opacity), 0.4, 1, DEFAULT_SETTINGS.opacity),
     x: Number.isFinite(Number(value.x)) ? Number(value.x) : null,
     y: Number.isFinite(Number(value.y)) ? Number(value.y) : null,
+    robotMigrated: value.robotMigrated === true,
   };
 }
 
 export function readPetSettings(): PetSettings {
   try {
     const raw = fs.readFileSync(settingsFile(), "utf8");
-    return normalizePetSettings(JSON.parse(raw));
+    const parsed = JSON.parse(raw);
+    const value = normalizePetSettings(parsed);
+    /* 11-01：老档案里 active 还是旧默认「阿焰」时切一次机器人；用户自己选过别的宠物保持不动。 */
+    if (!value.robotMigrated) {
+      const next = { ...value, robotMigrated: true, active: value.active === LEGACY_DEFAULT_PET ? DEFAULT_SETTINGS.active : value.active };
+      return writePetSettings(next);
+    }
+    return value;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -197,6 +217,37 @@ function readPetPackage(dir: string, id: string, source: PetPackage["source"]): 
   const columns = Number(meta.columns) || DEFAULT_COLS;
   const frameWidth = Number(frame.width) || DEFAULT_FRAME.width;
   const frameHeight = Number(frame.height) || DEFAULT_FRAME.height;
+
+  /* 关节包（11-01 机器人宠物）：palettes = 调色板 → 九态姿态图；avatarPalette = 头像文件 → 调色板。
+     ⛔ 只做路径解析与白名单校验，动画由渲染层 CSS 驱动（不用逐帧图）。 */
+  const rigMeta = meta.rig as { defaultPalette?: unknown; palettes?: unknown; avatarPalette?: unknown } | undefined;
+  if (rigMeta && typeof rigMeta === "object" && !Array.isArray(rigMeta)) {
+    const palettesMeta = (rigMeta.palettes ?? {}) as Record<string, unknown>;
+    const missing: string[] = [];
+    const palettes: Record<string, Record<string, string>> = {};
+    for (const [palette, entries] of Object.entries(palettesMeta)) {
+      const set: Record<string, string> = {};
+      for (const state of states) {
+        const abs = resolvePetFile(dir, (entries as Record<string, unknown> | null)?.[state]);
+        if (!abs) missing.push(`${palette}.${state}`);
+        else set[state] = abs;
+      }
+      palettes[palette] = set;
+    }
+    const paletteKeys = Object.keys(palettes);
+    const defaultPalette = String(rigMeta.defaultPalette ?? paletteKeys[0] ?? "hero");
+    if (!palettes[defaultPalette]) missing.push(`defaultPalette(${defaultPalette})`);
+    const avatarPalette: Record<string, string> = {};
+    for (const [file, palette] of Object.entries((rigMeta.avatarPalette ?? {}) as Record<string, unknown>)) {
+      if (palettes[String(palette)]) avatarPalette[file] = String(palette);
+    }
+    return {
+      id, name, description, dir, spritesheet: "",
+      columns, rows, frameWidth, frameHeight, states, source,
+      rig: { defaultPalette, palettes, avatarPalette },
+      problem: missing.length ? `关节包缺少文件：${missing.slice(0, 6).join("、")}` : undefined,
+    };
+  }
 
   /* 30fps 动画包（10-21 美术替代）：每态 animatedSrc + stillSrc；可选 16 向 lookFrameSet。
      ⛔ 这是**我们自己的内置格式**，与 Petdex 8×9 图集并存；渲染层按 animationSet 是否存在分流。 */

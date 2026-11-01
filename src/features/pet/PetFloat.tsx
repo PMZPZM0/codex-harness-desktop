@@ -10,6 +10,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ExternalLink, ListTodo, X } from "lucide-react";
+import { CODEX_AVATAR_KEY, readStoredCodexAvatar } from "../../lib/codex-identity.mjs";
 import { PET_DEFAULT_COLUMNS, PET_DEFAULT_FRAME, PET_DEFAULT_ROWS, PET_FRAME_MS, PET_STATES, petAssetUrl, petFrameStyle, petRowOf, type PetStateId } from "./pet-format";
 
 /** 空闲溜达的节奏：12~30s 一次，绕两圈（往右跑 → 往左跑）再回待机。 */
@@ -42,6 +43,13 @@ type PetSignalLike = {
 
 const EMPTY_SIGNAL: PetSignalLike = { state: "idle", bubble: "", busy: 0, tool: null, activities: [], attention: "", activityCollapsed: false, ts: 0 };
 
+/** 当前 Codex 头像的文件名（codex-*.png / 用户自己传的图）。 */
+function avatarFileOf(spec: { type?: string; value?: string } | null): string {
+  const value = String(spec?.value ?? "");
+  if (spec?.type !== "image" || !value) return "";
+  return value.split(/[\\/]/).pop()?.split("?")[0] ?? "";
+}
+
 export type PetFloatProps = {
   /** 舞台高度占窗口高度的比例（默认 0.66：上留气泡位、下留落地余量） */
   stageRatio?: number;
@@ -58,6 +66,16 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   const [look, setLook] = useState({ x: 0, y: 0 });
   const [renderedFrameHeight, setRenderedFrameHeight] = useState(0);
   const [frame, setFrame] = useState(0);
+  /* 11-01：宠物跟 Codex 头像联动 —— 主窗改头像写 localStorage，这里靠 storage 事件同步换调色板。 */
+  const [avatarFile, setAvatarFile] = useState(() => avatarFileOf(readStoredCodexAvatar() as { type?: string; value?: string }));
+  /* 姿态切换加最短停留，避免事件抖动时角色一闪一闪（跳跃/等待/失败这类明确事件不等）。 */
+  const [stableState, setStableState] = useState<PetStateId>("idle");
+  const stableRef = useRef<{ state: PetStateId; at: number }>({ state: "idle", at: 0 });
+  /* 姿态图交叉淡入淡出：新图垫底、旧图在上淡出 ⇒ 不会"啪"地换一张。 */
+  const [fadeFront, setFadeFront] = useState("");
+  const [fadeBack, setFadeBack] = useState("");
+  const lastFadeRef = useRef("");
+  const [reduceMotion, setReduceMotion] = useState(false);
   const hostRef = useRef<HTMLDivElement>(null);
   const spriteRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -96,6 +114,37 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   /* 主进程按光标轮询推来的 hover：鼠标移出可交互矩形后窗口会被切成穿透，
      页面收不到 pointerleave ⇒ 工具栏会永久挂着（用户实测「下面图标一直在」）。 */
   useEffect(() => window.codex.onPetHover((inside) => setHover(Boolean(inside))), []);
+
+  /* 头像联动：主窗改 Codex 头像 = 写 localStorage ⇒ storage 事件在宠物窗里触发，立即换调色板。 */
+  useEffect(() => {
+    const sync = () => setAvatarFile(avatarFileOf(readStoredCodexAvatar() as { type?: string; value?: string }));
+    sync();
+    const onStorage = (event: StorageEvent) => { if (!event.key || event.key === CODEX_AVATAR_KEY) sync(); };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const update = () => setReduceMotion(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+
+  /* 最短停留：普通状态切换至少隔 450ms；跳跃/等待/失败是明确事件，立即播。 */
+  useEffect(() => {
+    const next = signal.state;
+    const now = Date.now();
+    if (next === stableRef.current.state) return;
+    const urgent = next === "jumping" || next === "waiting" || next === "failed";
+    const delay = Math.max(0, (urgent ? 0 : 450) - (now - stableRef.current.at));
+    const timer = window.setTimeout(() => {
+      stableRef.current = { state: next, at: Date.now() };
+      setStableState(next);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [signal.state]);
 
   /* ── 启动问候：只有 idle 时挥手 2.6s（Qoder 同款） ── */
   useEffect(() => {
@@ -157,7 +206,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
     return () => { cancelled = true; timers.forEach((t) => window.clearTimeout(t)); };
   }, [signal.state, greeting, dragMotion]);
 
-  const effectiveState = dragMotion ?? wander ?? (greeting && signal.state === "idle" ? "waving" : signal.state);
+  const effectiveState = dragMotion ?? wander ?? (greeting && signal.state === "idle" ? "waving" : stableState);
   const geometry = useMemo(() => ({
     columns: pkg?.columns ?? PET_DEFAULT_COLUMNS,
     rows: pkg?.rows ?? PET_DEFAULT_ROWS,
@@ -168,17 +217,38 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
      v1 包没有这两行，用下面 CSS 的轻微倾斜代替，绝不越界读行。 */
   const lookDirection = Math.round(((Math.atan2(look.x, -look.y) * 180 / Math.PI + 360) % 360) / 22.5) % 16;
   const showSheetLook = Boolean(
-    !pkg?.animationSet && pkg && pkg.rows >= 11 && effectiveState === "idle" && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.18,
+    !pkg?.animationSet && !pkg?.rig && pkg && pkg.rows >= 11 && effectiveState === "idle" && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.18,
   );
   const animation = pkg?.animationSet?.[effectiveState] ?? pkg?.animationSet?.idle;
   const showAnimationLook = Boolean(
     pkg?.animationSet && pkg.lookFrameSet?.length === 16 && effectiveState === "idle"
       && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.12,
   );
-  const animationSrc = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : animation.animatedSrc) : "";
+  const animationSrc = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : reduceMotion ? animation.stillSrc : animation.animatedSrc) : "";
   const animationStill = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : animation.stillSrc) : "";
+  /* 关节包：头像文件 → 调色板 → 当前姿态图；缺图回落 idle。 */
+  const rigPalette = pkg?.rig ? (pkg.rig.avatarPalette?.[avatarFile] ?? pkg.rig.defaultPalette) : "";
+  const rigSrc = pkg?.rig ? (pkg.rig.palettes?.[rigPalette]?.[effectiveState] ?? pkg.rig.palettes?.[rigPalette]?.idle ?? "") : "";
+  const fadeSrc = pkg?.rig ? rigSrc : animationSrc;
+  const rigHeight = renderedFrameHeight || geometry.frameHeight;
+  const rigWidth = Math.round(rigHeight * (geometry.frameWidth / Math.max(1, geometry.frameHeight)));
   const row = showSheetLook ? 9 + Math.floor(lookDirection / 8) : petRowOf(pkg?.states ?? PET_STATES, effectiveState);
   const style = petFrameStyle(geometry, row, showSheetLook ? lookDirection % 8 : frame, renderedFrameHeight || geometry.frameHeight);
+
+  /* 姿态图交叉过渡：旧图在上淡出、新图垫底 ⇒ 换姿态不再"啪"一下。
+     看方向帧属于高频切换（鼠标移动），不做淡入淡出，避免闪烁。 */
+  useEffect(() => {
+    if (!fadeSrc) { setFadeFront(""); setFadeBack(""); lastFadeRef.current = ""; return; }
+    if (fadeSrc === lastFadeRef.current) return;
+    if (!lastFadeRef.current || reduceMotion || showAnimationLook) {
+      setFadeFront(fadeSrc); setFadeBack(""); lastFadeRef.current = fadeSrc; return;
+    }
+    setFadeBack(lastFadeRef.current);
+    setFadeFront(fadeSrc);
+    lastFadeRef.current = fadeSrc;
+    const timer = window.setTimeout(() => setFadeBack(""), 320);
+    return () => window.clearTimeout(timer);
+  }, [fadeSrc, reduceMotion, showAnimationLook]);
 
   const openMain = useCallback(() => { void window.codex.petOpenMain().catch(() => undefined); }, []);
   const hidePet = useCallback(() => { void window.codex.petHide().catch(() => undefined); }, []);
@@ -327,11 +397,15 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
         </div>
       )}
       <div className="pet-stage" title={pkg ? `${pkg.name}${pkg.description ? ` · ${pkg.description}` : ""}` : "没有可用的宠物包"}>
-        {pkg && (pkg.spritesheet || pkg.animationSet) ? (
+        {pkg && (pkg.spritesheet || pkg.animationSet || pkg.rig) ? (
           <div
-            className={`pet-sprite${pkg.animationSet ? " pet-sprite-anim" : ""}`}
+            className={`pet-sprite${pkg.animationSet ? " pet-sprite-anim" : ""}${pkg.rig ? " pet-sprite-rig" : ""}`}
             ref={spriteRef}
-            style={{
+            data-state={effectiveState}
+            style={pkg.rig ? {
+              width: rigWidth,
+              height: rigHeight,
+            } : {
               ...style,
               backgroundImage: pkg.animationSet ? undefined : `url("${petAssetUrl(pkg.spritesheet)}")`,
               transform: showAnimationLook ? undefined : `translate(${look.x * 4}px, ${look.y * 2}px) rotate(${look.x * 1.2}deg)`,
@@ -342,11 +416,23 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
             onPointerUp={finishDrag}
             onPointerCancel={finishDrag}
           >
-            {pkg.animationSet ? (
-              <picture>
-                <source media="(prefers-reduced-motion: reduce)" srcSet={petAssetUrl(animationStill)} />
-                <img src={petAssetUrl(animationSrc)} alt="" draggable={false} />
-              </picture>
+            {pkg.rig ? (
+              <>
+                <span className="pet-rig-shadow" aria-hidden />
+                <div className="pet-rig-look" style={{ transform: `translate(${look.x * 3}px, ${look.y * 1.5}px)` }}>
+                  <div className="pet-rig-motion">
+                    {fadeFront && <img className="pet-fade-layer is-front" src={petAssetUrl(fadeFront)} alt="" draggable={false} />}
+                    {fadeBack && <img className="pet-fade-layer is-back" src={petAssetUrl(fadeBack)} alt="" draggable={false} />}
+                  </div>
+                </div>
+              </>
+            ) : pkg.animationSet ? (
+              <>
+                {fadeFront && <img className="pet-fade-layer is-front" src={petAssetUrl(fadeFront)} alt="" draggable={false} />}
+                {fadeBack && <img className="pet-fade-layer is-back" src={petAssetUrl(fadeBack)} alt="" draggable={false} />}
+                {/* 减少动效时仍给一张静帧兜底（fadeFront 为空的首帧） */}
+                {!fadeFront && animationStill ? <img className="pet-fade-layer is-front" src={petAssetUrl(animationStill)} alt="" draggable={false} /> : null}
+              </>
             ) : null}
             {toolbar}
           </div>

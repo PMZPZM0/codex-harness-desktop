@@ -423,6 +423,12 @@ type PetPackage = {
   source: "builtin" | "user" | "codex" | "petdex";
   /** 30fps 动画包：每态一对动画 WebP + 静帧（存在时不使用 spritesheet） */
   animationSet?: Record<string, { animatedSrc: string; stillSrc: string }>;
+  /** 关节包（机器人宠物）：头像 → 调色板 → 九态姿态图（渲染层用 CSS 动作） */
+  rig?: {
+    defaultPalette: string;
+    palettes: Record<string, Record<string, string>>;
+    avatarPalette: Record<string, string>;
+  };
   /** 16 向看帧（动画包专用；绝对路径） */
   lookFrameSet?: string[];
   supportsLookTracking?: boolean;

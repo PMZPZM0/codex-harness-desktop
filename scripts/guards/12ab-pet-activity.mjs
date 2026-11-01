@@ -180,17 +180,33 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     return { duration: buf.readUIntLE(at + 20, 3), width: (buf.readUIntLE(at + 14, 3) + 1) * 2, height: (buf.readUIntLE(at + 17, 3) + 1) * 2 };
   };
 
-  ok(ipcSrc.includes('active: "harness-fox"') && /active: typeof value\.active[\s\S]{0,140}?DEFAULT_SETTINGS\.active/.test(ipcSrc),
-    "默认宠物 = 阿焰（harness-fox；老档案 active 为空也回落到它，已有用户显式选别的宠物不被改写）");
+  ok(ipcSrc.includes('active: "codex-robot"') && /active: typeof value\.active[\s\S]{0,140}?DEFAULT_SETTINGS\.active/.test(ipcSrc)
+    && ipcSrc.includes('LEGACY_DEFAULT_PET = "harness-fox"') && /robotMigrated[\s\S]{0,220}?LEGACY_DEFAULT_PET/.test(ipcSrc),
+    "默认宠物 = 跟随 Codex 头像的小C（codex-robot）；旧默认阿焰只迁移一次，用户显式选过的其它宠物不动");
   ok(petFloatSrc.includes("pkg?.animationSet") && petFloatSrc.includes("if (pkg?.animationSet) return;"),
     "动画包走 <img> 自己播，图集帧循环按 animationSet 早退（两套格式互不打架）");
   ok(/\}, \[pkg\?\.columns, pkg\?\.animationSet\]\);/.test(petFloatSrc),
     "帧循环依赖含 animationSet（切包时能取消/重启，否则切回图集同列数会冻结）");
-  ok(petFloatSrc.includes('className={`pet-sprite${pkg.animationSet ? " pet-sprite-anim" : ""}`}')
+  ok(/className=\{`pet-sprite\$\{pkg\.animationSet \? " pet-sprite-anim" : ""\}\$\{pkg\.rig \? " pet-sprite-rig" : ""\}`\}/.test(petFloatSrc)
     && petFloatSrc.includes("backgroundImage: pkg.animationSet ? undefined :"),
-    "动画包不挂 background-image（图集切帧路径保持原样）");
-  ok(petFloatSrc.includes("<picture>") && petFloatSrc.includes('media="(prefers-reduced-motion: reduce)"') && petFloatSrc.includes("animationStill"),
-    "减少动效偏好回落静帧（<picture> source，不靠 JS 判断）");
+    "动画包/关节包不挂 background-image（图集切帧路径保持原样）");
+  ok(petFloatSrc.includes("pet-fade-layer") && petFloatSrc.includes("lastFadeRef") && petCss.includes("pet-layer-fade-out"),
+    "动画包/姿态切换走交叉淡入淡出（旧图在上淡出，不再硬切）");
+  ok(petFloatSrc.includes("prefers-reduced-motion: reduce") && petFloatSrc.includes("animation.stillSrc") && petCss.includes("@media (prefers-reduced-motion: reduce)"),
+    "减少动效偏好回落静帧 + 停掉关节动画");
+  /* 11-01 用户令：宠物跟 Codex 头像联动（换头像 → 宠物换配色）；机器人关节包 = 姿态图 + CSS 动作。 */
+  ok(petFloatSrc.includes("readStoredCodexAvatar") && petFloatSrc.includes('addEventListener("storage"')
+    && petFloatSrc.includes("rig.avatarPalette") && petFloatSrc.includes("rig.palettes"),
+    "宠物跟 Codex 头像联动：storage 事件同步换调色板，不重启浮窗");
+  ok(petFloatSrc.includes("pet-rig-motion") && petFloatSrc.includes("data-state={effectiveState}")
+    && petCss.includes("pet-rig-work") && petCss.includes("pet-rig-hop") && petCss.includes("pet-rig-wait")
+    && petCss.includes("pet-rig-review") && petCss.includes("pet-rig-sad"),
+    "关节包按状态播放自然动作（敲笔记本 / 跳跃 / 等待 / 审阅 / 失败），不靠逐帧硬切");
+  ok(petFloatSrc.includes("stableRef") && petFloatSrc.includes("450") && petFloatSrc.includes("urgent"),
+    "普通状态切换有最短停留（450ms），跳跃/等待/失败这类明确动作立即播");
+  ok(stateSrc.includes('pulseMotion("jumping", "写完一个文件"') && stateSrc.includes('pulseMotion("running-right", "正在查资料…"')
+    && stateSrc.includes('pulseMotion("review", "想一下…"') && stateSrc.includes('pulseMotion("waving", "等你确认一下"'),
+    "事件联动扩展：写文件跳一下 / 搜索左右看 / 思考举放大镜 / 等你确认先挥手");
   ok(ipcSrc.includes("animationSet") && ipcSrc.includes("lookFrameSet") && ipcSrc.includes("function resolvePetFile")
     && ipcSrc.includes("abs.startsWith(root + path.sep)"),
     "主进程解析动画包，且素材路径被限制在宠物目录内（防目录穿越）");
@@ -274,6 +290,20 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     }
   }
   ok(otherBad.length === 0, `其他五只新内置宠物全部是九态 + 16 看帧动画包（问题：${otherBad.join(" | ") || "无"}）`);
+
+  /* 机器人关节包（11-01）：6 套头像配色 × 九态姿态图；头像文件名映射必须与内置头像一致。 */
+  const robotDir = join(ROOT, "public", "pets", "codex-robot");
+  let robotMeta = null;
+  try { robotMeta = JSON.parse(readFileSync(join(robotDir, "pet.json"), "utf8")); } catch { /* 下面断言会红 */ }
+  const robotPalettes = ["hero", "amber", "indigo", "mint", "obsidian", "sakura"];
+  const robotMiss = [];
+  for (const palette of robotPalettes) {
+    for (const state of STATES) if (!existsSync(join(robotDir, palette, `${state}.webp`))) robotMiss.push(`${palette}/${state}`);
+  }
+  const avatarFiles = ["codex-hero.png", "codex-amber.png", "codex-indigo.png", "codex-mint.png", "codex-obsidian.png", "codex-sakura.png"];
+  ok(Boolean(robotMeta?.rig) && robotMiss.length === 0
+    && avatarFiles.every((file) => Boolean(robotMeta.rig?.avatarPalette?.[file])),
+    `Codex 机器人关节包：6 套头像配色 × 九态姿态图齐备（问题：${robotMiss.slice(0, 6).join("、") || "无"}）`);
   const genMetaSrc = read("scripts/gen-pet-animation-set.py");
   ok(genMetaSrc.includes("pet-meta.json") && genMetaSrc.includes("_fill_fur_gaps") && genMetaSrc.includes("render"),
     "生成器支持按宠物读 pet-meta.json（名称 / 尾巴方向 / 画布 / 补毛缝）");

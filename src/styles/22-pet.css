@@ -62,6 +62,104 @@ html[data-pet-window="activity"] #root {
   user-select: none;
 }
 
+/* ── 姿态图交叉过渡（11-01）：新图垫底、旧图在上淡出，换姿态不再"啪"一下 ── */
+.pet-fade-layer {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+.pet-fade-layer.is-front { z-index: 1; }
+.pet-fade-layer.is-back { z-index: 2; animation: pet-layer-fade-out 300ms ease forwards; }
+@keyframes pet-layer-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+/* ── 关节包（机器人宠物）：一张透明姿态图 + CSS 动作，过渡连续、不靠逐帧硬切 ── */
+.pet-sprite-rig { display: block; }
+.pet-rig-look {
+  position: absolute;
+  inset: 0;
+  transition: transform 220ms ease-out;
+}
+.pet-rig-motion {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 92%;
+  will-change: transform;
+}
+.pet-rig-shadow {
+  position: absolute;
+  left: 50%;
+  bottom: 1.5%;
+  width: 54%;
+  height: 5%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.22), transparent 70%);
+  filter: blur(2px);
+  pointer-events: none;
+}
+.pet-sprite-rig[data-state="idle"] .pet-rig-motion { animation: pet-rig-breathe 3.8s ease-in-out infinite; }
+.pet-sprite-rig[data-state="running"] .pet-rig-motion { animation: pet-rig-work 1.35s ease-in-out infinite; }
+.pet-sprite-rig[data-state="running-left"] .pet-rig-motion { animation: pet-rig-lean-left 1.6s ease-in-out infinite; }
+.pet-sprite-rig[data-state="running-right"] .pet-rig-motion { animation: pet-rig-lean-right 1.6s ease-in-out infinite; }
+.pet-sprite-rig[data-state="waving"] .pet-rig-motion { animation: pet-rig-wave 1.15s ease-in-out infinite; }
+.pet-sprite-rig[data-state="jumping"] .pet-rig-motion { animation: pet-rig-hop 0.92s cubic-bezier(.3,.7,.4,1) infinite; }
+.pet-sprite-rig[data-state="failed"] .pet-rig-motion { animation: pet-rig-sad 2.8s ease-in-out infinite; }
+.pet-sprite-rig[data-state="waiting"] .pet-rig-motion { animation: pet-rig-wait 2.6s ease-in-out infinite; }
+.pet-sprite-rig[data-state="review"] .pet-rig-motion { animation: pet-rig-review 2.4s ease-in-out infinite; }
+.pet-sprite-rig[data-state="jumping"] .pet-rig-shadow { animation: pet-rig-shadow-hop 0.92s cubic-bezier(.3,.7,.4,1) infinite; }
+.pet-sprite-rig[data-state="failed"] .pet-fade-layer { filter: saturate(0.7); }
+
+@keyframes pet-rig-breathe {
+  0%, 100% { transform: translateY(0) scale(1, 1); }
+  50% { transform: translateY(-1.2%) scale(1.004, 1.012); }
+}
+@keyframes pet-rig-work {
+  0%, 100% { transform: translateY(0.6%) scale(1.004, 0.996) rotate(0.2deg); }
+  50% { transform: translateY(-0.5%) scale(0.997, 1.004) rotate(-0.2deg); }
+}
+@keyframes pet-rig-lean-left {
+  0%, 100% { transform: translateX(-0.8%) rotate(-2deg); }
+  50% { transform: translateX(-1.6%) rotate(-2.8deg); }
+}
+@keyframes pet-rig-lean-right {
+  0%, 100% { transform: translateX(0.8%) rotate(2deg); }
+  50% { transform: translateX(1.6%) rotate(2.8deg); }
+}
+@keyframes pet-rig-wave {
+  0%, 100% { transform: rotate(-2.5deg); }
+  50% { transform: rotate(2.5deg); }
+}
+@keyframes pet-rig-hop {
+  0% { transform: translateY(0) scale(1.03, 0.95); }
+  30% { transform: translateY(-9%) scale(0.98, 1.03); }
+  58% { transform: translateY(0) scale(1.05, 0.94); }
+  72% { transform: translateY(-2%) scale(0.995, 1.01); }
+  100% { transform: translateY(0) scale(1.02, 0.97); }
+}
+@keyframes pet-rig-shadow-hop {
+  0%, 58%, 100% { transform: translateX(-50%) scale(1, 1); opacity: 0.9; }
+  30% { transform: translateX(-50%) scale(0.78, 0.8); opacity: 0.55; }
+}
+@keyframes pet-rig-sad {
+  0%, 100% { transform: translateY(0.8%) rotate(-0.6deg); }
+  50% { transform: translateY(1.4%) rotate(-1.2deg); }
+}
+@keyframes pet-rig-wait {
+  0%, 100% { transform: translateY(0) rotate(-1deg); }
+  50% { transform: translateY(-1%) rotate(1deg); }
+}
+@keyframes pet-rig-review {
+  0%, 100% { transform: translateY(0) rotate(-1.5deg); }
+  50% { transform: translateY(-0.8%) rotate(-0.6deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pet-rig-motion, .pet-rig-shadow, .pet-fade-layer.is-back { animation: none !important; }
+}
+
 /* 悬停工具栏：打开主窗 / 任务横幅 / 隐藏（Qoder 同款只在悬停时出现） */
 .pet-toolbar {
   position: absolute;

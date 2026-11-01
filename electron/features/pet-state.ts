@@ -92,6 +92,10 @@ let reviewUntil = 0;
 let motion: { state: PetStateName; until: number; fallback: PetStateName } | null = null;
 let clock: NodeJS.Timeout | null = null;
 let lastTool: string | null = null;
+/* 事件动作节流：写文件/思考很密集，不给节流会一直跳。 */
+let lastFilePulseAt = 0;
+let lastReasonPulseAt = 0;
+let lastSearchPulseAt = 0;
 const MAX_ACTIVITIES = 5;
 const COMPLETED_TTL_MS = 30 * 60_000;
 const DETAIL_THROTTLE_MS = 280;
@@ -311,7 +315,8 @@ export function feedPetEvent(event: unknown): boolean {
     if (requestId && target) pendingRequests.set(requestId, target);
     if (target) {
       upsertActivity(target, { status: "waiting", detail: "等待你的确认…" });
-      showBubble("等你确认一下");
+      /* 11-01：等待时先挥手提醒一下，再落回抱膝等待的姿势（自然过渡，不是一直傻站）。 */
+      pulseMotion("waving", "等你确认一下", 1400, "waiting");
     }
     return `${petActivitySignature([...activities.values()])}|${store.signal.state}|${store.signal.bubble}` !== before;
   }
@@ -410,8 +415,24 @@ export function feedPetEvent(event: unknown): boolean {
     } else if (["commandExecution", "fileChange", "webSearch", "mcpToolCall", "dynamicToolCall"].includes(type)) {
       lastTool = type;
       setStatusIfNotWaiting(threadId, "running", { detail: petToolDetail(item), detailAt: Date.now(), turnId: turnIdOf(p) || activities.get(threadId)?.turnId || "" }, true);
+      const now = Date.now();
+      const phaseDone = method === "item/completed";
+      /* 动作按事件类型分开，不全都傻站着：写文件完成 = 跳一下庆祝；联网搜索 = 左右张望；
+         命令/工具 = 坐下敲笔记本（running 姿态）。密集事件节流，免得一直抖。 */
+      if (phaseDone && type === "fileChange" && now - lastFilePulseAt > 2600) {
+        lastFilePulseAt = now;
+        pulseMotion("jumping", "写完一个文件", 900, "running");
+      } else if (type === "webSearch" && !phaseDone && now - lastSearchPulseAt > 2600) {
+        lastSearchPulseAt = now;
+        pulseMotion("running-right", "正在查资料…", 1500, "running");
+      }
     } else if (type === "reasoning") {
       setStatusIfNotWaiting(threadId, "running", { detail: "正在推演…", detailAt: Date.now() }, true);
+      const now = Date.now();
+      if (method === "item/started" && now - lastReasonPulseAt > 5000) {
+        lastReasonPulseAt = now;
+        pulseMotion("review", "想一下…", 1400, "running");
+      }
     }
     return `${petActivitySignature([...activities.values()])}|${store.signal.state}|${store.signal.bubble}` !== before;
   }
