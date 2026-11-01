@@ -37,7 +37,7 @@ fs.mkdirSync(profile, { recursive: true });
 const env = { ...process.env, APPDATA: profile, CODEX_HARNESS_DEBUG_PORT: String(port) };
 for (const key of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS", "http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]) delete env[key];
 
-const child = spawn(electronPath, ["."], { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
+const child = spawn(electronPath, [".", `--user-data-dir=${profile}`], { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
 let appLog = "";
 child.stdout.on("data", (d) => { appLog += d.toString(); });
 child.stderr.on("data", (d) => { appLog += d.toString(); });

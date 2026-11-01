@@ -308,7 +308,36 @@ bag.unarchiveThread = unarchiveThread as typeof bag.unarchiveThread;
    *  拆出来是为了让「一键释放调度」（它有自己的确认文案）复用同一条级联链路 —— 删一个会话
    *  必须把它的**衍生状态**一起带走：专家团成员会话、会话缓存、供应商登记、当前会话的
    *  运行/计划/目标状态。⛔ 别在别处再写一份简版删除（漏一项就是孤儿）。 */
-  async function deleteThreadCore(id: string) {
+  /* ⛔⛔ 10-31 用户实测：「把中枢会话删了，它下面的子会话还自动跑到另外一个项目」——
+     调度子会话的缩进归属靠 `originThreadId`，源头一删它就成了孤儿行，
+     按自己的 cwd 落到别的项目下（看起来像"子会话自己跑走了"）。
+     ⇒ 删父会话必须**连它的调度子会话一起删**（BFS 收集全部后代：子会话自己也可能派过人）。
+     ⛔ 顺序：先子后父 —— 反过来父先没了，子会话的 `originThreadId` 就查不到归属了。 */
+  function delegateDescendantsOf(rootId: string): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>([rootId]);
+    const queue = [rootId];
+    while (queue.length) {
+      const current = queue.shift() as string;
+      for (const record of Object.values(bag.delegateRecords ?? {})) {
+        const child = String((record as any)?.threadId ?? "");
+        const origin = String((record as any)?.originThreadId ?? "");
+        if (!child || origin !== current || seen.has(child)) continue;
+        seen.add(child);
+        out.push(child);
+        queue.push(child);
+      }
+    }
+    return out;
+  }
+
+  async function deleteThreadCore(id: string, options?: { skipDelegates?: boolean }) {
+    /* 先删后代（`skipDelegates` 防重复递归：收集时已经展开过整棵树） */
+    if (!options?.skipDelegates) {
+      for (const childId of delegateDescendantsOf(id)) {
+        await deleteThreadCore(childId, { skipDelegates: true }).catch(() => undefined);
+      }
+    }
     await bag.cascadeTeamCluster(id, "delete");
     await window.codex.request("thread/delete", { threadId: id });
     void window.codex.egoCleanup(id).catch(() => undefined);
@@ -333,7 +362,13 @@ bag.deleteThreadCore = deleteThreadCore as typeof bag.deleteThreadCore;
   async function deleteThread(id: string) {
     const cluster = bag.clusteredSidebar.clusters.find((entry) => entry.lead?.id === id);
     const memberCount = cluster?.members.length ?? 0;
-    const extra = memberCount ? `\n\n这是「专家团」主会话，将同时永久删除其 ${memberCount} 条成员会话。` : "";
+    /* ⛔ 10-31：删除会**连带**它派出的调度子会话（否则它们变成孤儿行、按自己的 cwd 挂到别的项目下）
+       ⇒ 确认文案必须说清楚，不能"悄悄多删几条"。 */
+    const delegateCount = delegateDescendantsOf(id).length;
+    const extra = [
+      memberCount ? `这是「专家团」主会话，将同时永久删除其 ${memberCount} 条成员会话。` : "",
+      delegateCount ? `它派出的 ${delegateCount} 条调度会话也会一并删除（否则会变成挂在别的项目下的孤儿会话）。` : "",
+    ].filter(Boolean).join("\n\n");
     if (!await bag.openAppConfirm("删除会话", `当前会话及其中的消息、工具记录将被永久删除，此操作无法撤销。${extra}`, "永久删除")) return;
     bag.setOpeningThread(id);
     try {

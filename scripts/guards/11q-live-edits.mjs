@@ -463,6 +463,28 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "renderThreadRow 里不许调 hook（它是普通函数，不是组件 —— 调了就 React #310 白屏）");
   ok(rowFnAt > 0 && /const aliasState = useSyncExternalStore/.test(rowsAliasSrc.slice(0, rowFnAt)),
     "笔名快照在 usePart02b12 顶层订阅一次（renderThreadRow 读闭包，不自己订阅）");
+  /* ⛔ 10-31 用户令（对照截图，三件一起）：① 子会话标签重复 ⇒ 只留最左一个；
+     ② 展开子会话把正常行的对齐也带跑 ⇒ 列宽分开量、嵌套宽度**不写 html 根**；
+     ③ 删除中枢会话，子会话变成孤儿跑到别的项目下 ⇒ 删除要级联。 */
+  ok(/const oneBadge = variant === "member"/.test(rowsAliasSrc)
+    && /const secondaryBadge = oneBadge \? null :/.test(rowsAliasSrc)
+    && /!oneBadge && bag\.delegateRecords\[entry\.id\]/.test(rowsAliasSrc),
+    "子会话行只留一个标签（笔名优先；身份徽标与调度进度徽标不再叠加）");
+  const sidebarSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  ok(/for \(const host of Array\.from\(document\.querySelectorAll<HTMLElement>\("\.dispatch-children, \.team-cluster-body"\)\)\)/.test(sidebarSrc)
+    && !/document\.documentElement\.style\.setProperty\("--tag-col-w-nested"/.test(sidebarSrc),
+    "嵌套列宽按簇各自设置（⛔ 不再写 html 根 —— 那会让展开 A 组改掉 B 组的对齐）");
+  ok(/if \(el\.closest\("\.dispatch-child, \.team-cluster-body"\)\) continue;/.test(sidebarSrc),
+    "顶层列宽只量顶层行（子行不参与，展开/收起不推父行与其它行）");
+  const segSrc = read("src/features/app-state/parts/part08/01-seg.tsx");
+  /* ⛔ 顺序要在 **deleteThreadCore 函数体内**比较 —— 文件别处（archiveThread / cascadeTeamCluster）
+     也有 `thread/delete`，用全文件 indexOf 会比到错误的那个位置上。 */
+  const coreAt = segSrc.indexOf("async function deleteThreadCore");
+  const coreBody = coreAt < 0 ? "" : segSrc.slice(coreAt, segSrc.indexOf("bag.deleteThreadCore ="));
+  ok(/function delegateDescendantsOf\(/.test(segSrc)
+    && coreBody.includes("delegateDescendantsOf(id)")
+    && coreBody.indexOf("delegateDescendantsOf(id)") < coreBody.indexOf("thread/delete"),
+    "删会话先级联删它的调度子会话（⛔ 顺序：先子后父；否则子会话成孤儿行、按自己 cwd 挂到别的项目）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
