@@ -319,7 +319,12 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onN
       </div>
 
       <div className="voice-devtools-actions">
-        {downloading ? (
+        {/* ⛔ 11-01 用户实测「每次进来都显示这个，要等一会才刷新」：status 初值 null，
+            ready/baseInstalled 都算 false ⇒ 卡片先渲染出「下载模型」按钮（和标题的「读取中…」自相矛盾），
+            等状态回来才跳成「已就绪/打开目录」。⇒ 状态没回来之前只显示读取中，不出按钮。 */}
+        {!status ? (
+          <span className="voice-devtools-badge">读取中…</span>
+        ) : downloading ? (
           <button className="secondary-setting" onClick={cancel}>
             <X size={13} />取消{downloading.mode === "import" ? "导入" : "下载"}
           </button>
