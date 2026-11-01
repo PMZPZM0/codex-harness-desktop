@@ -15,6 +15,7 @@ const MODE_LABELS: Record<string, string> = {
   aurora: "极光",
   ribbon: "流光",
   halo: "光晕",
+  depth: "3D 深空",
   custom: "静态壁纸",
 };
 
@@ -115,9 +116,9 @@ export function WallpaperSettingsSection() {
         ))}
       </div>
       <div className="wallpaper-custom-row">
-        <button type="button" className="btn" onClick={() => { void pickImage(); }}>选择本机图片…</button>
+        <button type="button" className="secondary-setting" onClick={() => { void pickImage(); }}>选择本机图片…</button>
         {cfg.mode === "custom" && cfg.image && !isPresetImage(cfg.image) && (
-          <button type="button" className="btn" onClick={() => update({ image: "" })}><Trash2 size={12} />清除</button>
+          <button type="button" className="secondary-setting" onClick={() => update({ image: "" })}><Trash2 size={12} />清除</button>
         )}
         {cfg.mode === "custom" && cfg.image && !isPresetImage(cfg.image) && <span className="wallpaper-custom-path" title={cfg.image}>{cfg.image.split(/[\\/]/).pop()}</span>}
       </div>

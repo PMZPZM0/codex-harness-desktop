@@ -4,7 +4,7 @@
  * 11-02 用户三连：「把旧的壁纸删了，多做几套新的，主题色」→「太失望了，旧的线条都还在」→
  *   「你生成一些好看的壁纸，静态动态，你全部重新做」。
  * 现在的形态（这就是本守卫要钉住的契约）：
- *   · 模式只有 5 档：off / aurora / ribbon / halo / custom；旧图案·粒子·星空**整组删除**
+ *   · 模式共 6 档：off / aurora / ribbon / halo / depth(3D) / custom；旧图案·粒子·星空**整组删除**
  *     （老档案里的值统一迁移到 aurora）；⛔ 负向断言防复活。
  *   · 静态壁纸 = 6 张**生图资产**（public/wallpapers/*.jpg），不是 CSS 糖果色；资源必须在仓里。
  *   · 动态壁纸 = 纯 CSS 柔光（主题 token 上色）+ 鼠标视差（--wp-px/--wp-py × --wp-depth）；
@@ -34,10 +34,10 @@ const dispatchCore = codeOnly(read("electron/features/dispatch-core.ts"));
 const dispatchRpc = codeOnly(read("electron/features/dispatch-rpc.ts"));
 const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSettingsSection.tsx"));
 
-/* ── ① 模式集合：只许 5 档，旧模式负向 ── */
+/* ── ① 模式集合：6 档（含 3D 深空），旧模式负向 ── */
 {
-  ok(/WALLPAPER_MODES = \["off", "aurora", "ribbon", "halo", "custom"\]/.test(libSrc),
-    "模式 = off / aurora / ribbon / halo / custom（旧图案·粒子·星空已删除）");
+  ok(/WALLPAPER_MODES = \["off", "aurora", "ribbon", "halo", "depth", "custom"\]/.test(libSrc),
+    "模式 = off / aurora / ribbon / halo / depth / custom（旧图案·粒子·星空已删除）");
   ok(/LEGACY_MODES = \["pattern", "particles", "stars", "vanta"\]/.test(libSrc) && /LEGACY_MODES\.includes\(r\.mode\) \? "aurora"/.test(libSrc),
     "老档案里的旧模式迁移到 aurora（不会突然没壁纸）");
   ok(!/WALLPAPER_PATTERNS/.test(libSrc) && !/patternMask/.test(libSrc) && !/patternMask/.test(libDts),
@@ -68,9 +68,16 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     "⛔ 静态壁纸不许回到写死糖果色（旧六款的问题）");
 }
 
-/* ── ③ 动态光幕：三档 + 鼠标视差 + 减动效 ── */
+/* ── ③ 动态光幕：四档（含 3D 深空）+ 鼠标视差 + 减动效 ── */
 {
-  ok(["aurora", "ribbon", "halo"].every((mode) => libSrc.includes(`"${mode}"`)), "三档动态壁纸都在清单里");
+  ok(["aurora", "ribbon", "halo", "depth"].every((mode) => libSrc.includes(`"${mode}"`)), "四档动态壁纸都在清单里（含 3D 深空）");
+  ok(/function DepthField/.test(layerSrc) && /getContext\("webgl"/.test(layerSrc) && /float fbm\(vec2 p\)/.test(layerSrc)
+    && /uMouse/.test(layerSrc) && /FRAG/.test(layerSrc),
+    "3D 深空 = 自带 WebGL fbm 体积光（无第三方引擎）+ 鼠标视差（用户 11-02「3d动态壁纸也没有」）");
+  ok(/failRef\.current\(\)/.test(layerSrc) && /depthFailed/.test(layerSrc) && /<MotionVeil variant="aurora" \/>/.test(layerSrc),
+    "WebGL 起不来时回退极光（不白屏）");
+  ok(/DepthField reduced=\{prefersReducedMotion\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
+    "3D 深空尊重减动效偏好（只渲染一帧）+ 画布样式在位");
   ok(/function MotionVeil/.test(layerSrc) && /is-\$\{variant\}/.test(layerSrc) && /<i><b \/><\/i><i><b \/><\/i><i><b \/><\/i>/.test(layerSrc),
     "动态光幕 = 三层柔光组件（外层视差 / 内层动画各管一件事）");
   ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")
@@ -102,6 +109,11 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     && /backdrop-filter: blur\(22px\)/.test(cssSrc),
     "大块表面（顶栏 / 右栏 / 设置 / 二级弹窗）加玻璃模糊");
   ok(/\.wallpaper-preset::before \{[\s\S]{0,300}feTurbulence/.test(cssSrc), "静态壁纸叠细噪点（渐变/图片有质感）");
+  ok(/:root\[data-theme-mode="light"\]\[data-wallpaper="on"\] \{[\s\S]{0,300}--bg: color-mix\(in srgb, var\(--bg-base\) 94%/.test(cssSrc)
+    && /:root\[data-theme-mode="light"\]\[data-wallpaper="on"\] \.composer \{ background: color-mix\(in srgb, var\(--bg-base\) 88%/.test(cssSrc),
+    "浅色主题的壁纸表面更实（84–95%），不发灰发脏（用户：「适配性和差点意思，白天黑夜得」）");
+  ok(settingsSrc.includes('className="secondary-setting"') && !/className="btn"/.test(settingsSrc),
+    "设置页按钮一律 secondary-setting（⛔ `.btn` 在这个作用域没有样式 = 一块白按钮，用户截图点名）");
   ok(styles.includes("styles/28-wallpaper"), "styles.css 已接入 28-wallpaper");
 }
 
@@ -111,8 +123,8 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     "外观页接壁纸设置段（模式 / 静态壁纸 / 自定义图全部落地）");
   ok(/MODE_LABELS[\s\S]{0,260}aurora: "极光"/.test(settingsSrc) && /ribbon: "流光"/.test(settingsSrc) && /halo: "光晕"/.test(settingsSrc),
     "设置页档位文案：极光 / 流光 / 光晕");
-  ok(/mode: \{ type: "string", description: "off \/ aurora \/ ribbon \/ halo \/ custom" \}/.test(dispatchCore)
-    && /\["off", "aurora", "ribbon", "halo", "custom"\]/.test(dispatchRpc),
+  ok(/mode: \{ type: "string", description: "off \/ aurora \/ ribbon \/ halo \/ depth \/ custom" \}/.test(dispatchCore)
+    && /\["off", "aurora", "ribbon", "halo", "depth", "custom"\]/.test(dispatchRpc),
     "引擎工具 wallpaper_set 的模式白名单同步（否则 Codex 切不了新壁纸）");
 }
 

@@ -878,8 +878,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
      （与 model-viewer 同一套 isInsideTrustedRoots）；preset: 前缀交给渲染层校验 id。 */
   if (name === "wallpaper_set") {
     const mode = String(args.mode ?? "");
-    if (!["off", "aurora", "ribbon", "halo", "custom"].includes(mode)) {
-      return { ok: false, error: "mode 只支持 off / aurora / ribbon / halo / custom" };
+    if (!["off", "aurora", "ribbon", "halo", "depth", "custom"].includes(mode)) {
+      return { ok: false, error: "mode 只支持 off / aurora / ribbon / halo / depth / custom" };
     }
     let image = String(args.image ?? "").trim();
     if (mode === "custom") {

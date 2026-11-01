@@ -5,7 +5,7 @@
 
 export const WALLPAPER_KEY = "wallpaper";
 export const WALLPAPER_EVENT = "wallpaper-change";
-export const WALLPAPER_MODES = ["off", "aurora", "ribbon", "halo", "custom"];
+export const WALLPAPER_MODES = ["off", "aurora", "ribbon", "halo", "depth", "custom"];
 
 /** 旧模式：图案=线条瓷砖 / 粒子=连线网 / 星空=点阵 —— 老档案里这些值统一迁移到 aurora。 */
 const LEGACY_MODES = ["pattern", "particles", "stars", "vanta"];

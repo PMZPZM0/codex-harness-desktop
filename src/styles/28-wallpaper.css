@@ -214,3 +214,26 @@
 .wallpaper-preset-hint span { font-size: 11px; font-weight: 400; color: var(--muted); }
 .wallpaper-preset-grid { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
 .wallpaper-preset-face { height: 58px; }
+
+/* ── 3D 深空（WebGL 体积光）────────────────────────────────────────────────── */
+.wallpaper-depth { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* ── 浅色主题的玻璃要比深色更实一点（11-02 用户：「适配性和差点意思，白天黑夜得…按键好丑」）──
+   实测：浅色下 composer 只有 49.5% 不透明度，压在沙丘壁纸上发灰发脏。
+   浅色统一抬高到 84–95%，深色维持原来的通透。 */
+:root[data-theme-mode="light"][data-wallpaper="on"] {
+  --bg: color-mix(in srgb, var(--bg-base) 94%, transparent);
+  --panel: color-mix(in srgb, var(--panel-base) 95%, transparent);
+  --panel-2: color-mix(in srgb, var(--panel-2-base) 93%, transparent);
+  --field: color-mix(in srgb, var(--field-base) 92%, transparent);
+}
+:root[data-theme-mode="light"][data-wallpaper="on"] .composer { background: color-mix(in srgb, var(--bg-base) 88%, transparent); }
+/* 深色下输入框也要能读字：3D/极光的亮部会从底下透出来（实测 placeholder 发虚） */
+:root[data-theme-mode="dark"][data-wallpaper="on"] .composer { background: color-mix(in srgb, var(--bg-base) 74%, transparent); }
+:root[data-theme-mode="light"][data-wallpaper="on"] .sidebar { background: color-mix(in srgb, var(--bg-base) 84%, transparent); }
+:root[data-theme-mode="light"][data-wallpaper="on"] .topbar,
+:root[data-theme-mode="light"][data-wallpaper="on"] .context-panel { background: color-mix(in srgb, var(--bg-base) 93%, transparent); }
+/* 浅色壁纸的雾再加一点（24% 太透，文字压在沙丘上吃力） */
+:root[data-theme-mode="light"] .wallpaper-preset::after {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 38%, transparent), color-mix(in srgb, var(--bg) 16%, transparent));
+}

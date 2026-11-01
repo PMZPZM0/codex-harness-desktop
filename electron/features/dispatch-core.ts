@@ -383,11 +383,11 @@ function dispatchMcpTools(): unknown[] {
        同一条链路（与设置页同源）。这就是壁纸的**免改码拓展接口**：做新图 = 新壁纸。 */
     {
       name: "wallpaper_set",
-      description: "设置应用壁纸（用户立刻可见）。用法：① mode=aurora / ribbon / halo（动态光幕，跟随主题色）；② mode=custom + image=`preset:<id>`（内置生图壁纸：obsidian-smoke 曜石烟 / midnight-aurora 极夜 / jade-ink 墨玉 / moon-silk 月白 / champagne-dunes 香槟 / porcelain-blue 青瓷）或 image=<图片绝对路径>；③ mode=off 关闭。给自己做壁纸：用生图出图 → 写入工作区 → 调本工具传路径（推荐 1792×1024、无文字）。",
+      description: "设置应用壁纸（用户立刻可见）。用法：① mode=aurora / ribbon / halo（动态光幕）/ depth（3D 体积光星云），均跟随主题色；② mode=custom + image=`preset:<id>`（内置生图壁纸：obsidian-smoke 曜石烟 / midnight-aurora 极夜 / jade-ink 墨玉 / moon-silk 月白 / champagne-dunes 香槟 / porcelain-blue 青瓷）或 image=<图片绝对路径>；③ mode=off 关闭。给自己做壁纸：用生图出图 → 写入工作区 → 调本工具传路径（推荐 1792×1024、无文字）。",
       inputSchema: {
         type: "object",
         properties: {
-          mode: { type: "string", description: "off / aurora / ribbon / halo / custom" },
+          mode: { type: "string", description: "off / aurora / ribbon / halo / depth / custom" },
           image: { type: "string", description: "mode=custom 时：`preset:<id>` 或图片绝对路径（须在工作区/应用数据目录内）" },
         },
         required: ["mode"],
