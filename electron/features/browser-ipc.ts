@@ -21,8 +21,11 @@ import type { IpcHost } from "../ipc-host";
 /** 内置浏览器 webview 的**持久分区**：登录态跟着它落盘（⛔ 别改成内存分区，否则重启就掉登录）。 */
 export const BROWSER_PARTITION = "persist:harness-browser";
 
-/** 官方下载页会自动识别 Windows / macOS（只带安装器，不内置 611MB 解包目录）。 */
-const EGO_DOWNLOAD_URL = "https://lite.ego.app/download?auto=1";
+/** 官方入口（用户 11-01 指正）：`https://lite.ego.app/zh-cn`。
+ *  ⛔ 原来用 `https://lite.ego.app/download?auto=1` —— 实测那个地址**无视 UA 强制给 Mac 版**
+ *    （带 Windows UA 抓回来标题仍是「Download ... for Mac」），Windows 用户下到的包一装就废
+ *    （用户实测：「下载时出错：与服务器的连接意外终止」）。官网 `/zh-cn` 才是平台自适应的入口。 */
+const EGO_DOWNLOAD_URL = "https://lite.ego.app/zh-cn";
 
 /** 清理指定会话（或全部 codex-*）的 Space。
  *  ⛔ 用 `taskSpace(name)` 续用自己的 Space 再 finish；`claimTaskSpace` 对脚本已退出的 Space

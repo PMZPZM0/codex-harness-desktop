@@ -338,6 +338,7 @@ function downloadWithProgress(args, opts) {
     let lastSize = opts.startSize ?? 0;
     let lastAt = Date.now();
     let lastPercent = -1;
+    let lowSince = 0;   // 低速停滞计时（0 = 未进入低速）
     let finished = false;
     const stop = () => {
       if (finished) return;
@@ -359,6 +360,24 @@ function downloadWithProgress(args, opts) {
       const speed = Math.max(0, (size - lastSize) / seconds);
       lastSize = size;
       lastAt = now;
+      /* ⛔⛔ 11-01 用户实测「飞书 CLI 本来就是国内源还这么慢」「FFmpeg 4.7KB/s」：
+         原来一条通道一旦连上就**死磕到底** —— gh-proxy 对大文件常年 5~10KB/s，
+         而代码里只有 900s 总超时，等于让用户干等半小时。
+         ⇒ 加**低速停滞判据**：大于 20MB 的包，连续 12 秒低于 80KB/s 就掐掉这条通道，
+           交给上层换下一个源（download() 里会先删半截文件再重来）。 */
+      const STALL_KBPS = 80;
+      const STALL_MS = 12_000;
+      if ((opts.total ?? 0) > 20 * 1048576 && speed < STALL_KBPS * 1024) {
+        if (!lowSince) lowSince = now;
+        if (now - lowSince >= STALL_MS) {
+          try { child.kill(); } catch { /* 已退出 */ }
+          stop();
+          reject(new Error(`速度过低（${formatSpeed(speed) || "0 KB/s"}），换源重试`));
+          return;
+        }
+      } else {
+        lowSince = 0;
+      }
       if (opts.total > 0) {
         // 上限留 1%：curl 干净退出后我们再补 100，避免进度条先满再干等
         const percent = Math.max(0, Math.min(99, Math.round((size / opts.total) * 100)));
@@ -455,6 +474,11 @@ async function download(url, file, extraSources = []) {
       return;
     } catch (error) {
       lastError = error;
+      /* 低速换源：半截文件留着会让下一个镜像用 -C - 续传（不同源的 Range 语义不一致，
+         实测更容易直接失败），所以先删干净再换。 */
+      if (/速度过低/.test(String(error && error.message || error))) {
+        try { fs.rmSync(file, { force: true }); } catch { /* 删不掉就让下一源自己覆盖 */ }
+      }
       console.log(`[download] ${label} 失败，换下一通道`);
     }
   }

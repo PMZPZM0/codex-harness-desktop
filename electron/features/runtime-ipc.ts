@@ -1017,6 +1017,11 @@ export const runtimeFeature = defineFeature<null>({
       requestRuntimeCancel(id);
       const killed = cancelRuntimeInstall(id);
       cleanupRuntimeTempFiles(id);
+      /* ⛔ 11-01：立刻把这条安装从「进行中」表里摘掉 —— 渲染层的 `busy` 判据是
+         `runtimeInstalls.has(id)`（经 runtime:list 下发），不摘的话取消后界面仍显示
+         「正在下载」并继续画进度条（用户实测：「取消都不刷新状态，界面还在走下载」）。
+         安装 promise 收尾时还会 delete 一次，Map.delete 幂等。 */
+      runtimeInstalls.delete(id);
       sendToWindow("runtime:progress", { id, message: "已取消下载，临时文件已清理", cancelled: true, done: true });
       return { ok: true, killed };
     });

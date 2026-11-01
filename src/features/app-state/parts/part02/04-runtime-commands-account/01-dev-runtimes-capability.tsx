@@ -7,6 +7,9 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { Bag } from "../../bag-types";
+/* ⛔ 11-01：主进程 reject 的消息带  外壳，
+   直接塞进弹窗就是「[ERR_INVOKE_FAILED] …」那坨噪音（用户截图）。统一去壳。 */
+import { ipcErrorMessageOf } from "../../../../../lib/ipc-error.mjs";
 
 export function usePart02d1(bag: Bag) {
   // 下载速度（09-20 用户要求「把下载速度显示」）：主进程按 500ms 采样输出文件大小算好速率后下发，
@@ -71,6 +74,8 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
     if (event.cancelled) {
       bag.setRuntimeSpeed((current) => ({ ...current, [event.id]: "" }));
       bag.setRuntimeProgress((current) => ({ ...current, [event.id]: "已取消" }));
+      bag.setRuntimePercent((current) => ({ ...current, [event.id]: 0 }));
+      bag.setRuntimeStage((current) => ({ ...current, [event.id]: "" }));
       bag.setRuntimeInstalling(null);
       bag.setRuntimeUninstalling(null);
       bag.setNotice("已取消下载，临时文件已清理");
@@ -124,9 +129,9 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
       bag.setNotice("开发工具安装成功，Codex 引擎已刷新");
     } catch (error: any) {
       // 完整报错原文进 runtimeModal（开发工具页弹「完整报错」弹窗）；toast 只发一行摘要
-      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: String(error?.message ?? error) } : m);
-      bag.setRuntimeProgress((current) => ({ ...current, [id]: `安装失败：${error.message}` }));
-      bag.setNotice(`开发工具安装失败：${error.message}`);
+      bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: ipcErrorMessageOf(error) } : m);
+      bag.setRuntimeProgress((current) => ({ ...current, [id]: `安装失败：${ipcErrorMessageOf(error)}` }));
+      bag.setNotice(`开发工具安装失败：${ipcErrorMessageOf(error)}`);
     } finally {
       bag.setRuntimeInstalling(null);
     }
@@ -140,6 +145,16 @@ bag.installDevRuntime = installDevRuntime as typeof bag.installDevRuntime;
   async function cancelDevRuntime(id: string) {
     try {
       const result = await window.codex.cancelRuntime(id);
+      /* ⛔⛔ 11-01 用户实测「取消后状态不刷新，界面还在走下载」：
+         原来只等主进程推 cancelled 事件才收口；若那次取消压根没命中（not-running），
+         或事件晚到，界面就停在「正在下载 x%」不动。⇒ 不管走哪条分支都**本地立即收口**，
+         再向主进程重拉一次清单（清单才是「installing」的唯一真相）。
+         注意 not-running 不报错：装完了/刚结束也会走到这里，提示成「没有进行中的安装」太吵。 */
+      bag.setRuntimePercent((current) => ({ ...current, [id]: 0 }));
+      bag.setRuntimeStage((current) => ({ ...current, [id]: "" }));
+      bag.setRuntimeSpeed((current) => ({ ...current, [id]: "" }));
+      bag.setRuntimeInstalling(null);
+      bag.refreshDevRuntimes();
       if (!result?.ok) bag.setNotice(result?.reason === "not-running" ? "该工具没有正在进行的安装" : "无法取消当前操作");
     } catch (error: any) {
       bag.setNotice(`取消失败：${error?.message ?? error}`);
