@@ -5,7 +5,8 @@
     "desc": "年轻活泼女声，像朋友聊天一样带语气（音源：CosyVoice 示例 · 本机生成，3 秒短样本，播报更快）",
     "lang": "zh",
     "wav": "youth-female-zh.wav",
-    "refText": "哇，搞定啦！这次真的稳了，你就放心吧。"
+    "refText": "哇，搞定啦！这次真的稳了，你就放心吧。",
+    "builtIn": true
   },
   {
     "id": "cosyvoice-female-zh",

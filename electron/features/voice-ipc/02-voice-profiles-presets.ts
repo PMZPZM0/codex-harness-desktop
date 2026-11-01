@@ -50,10 +50,47 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     };
   }
 
-  ipcHost.handle("voice:profiles-list", async () => ({
-    profiles: await voiceProfiles.listProfiles(app.getPath("userData")),
-    zipvoiceReady: zipvoiceReady(modelsRoot()),
-  }));
+  /** 内置音色（10-31 用户令：「活泼女声 · 小夏改成内置音色」）：presets.json 里带 `builtIn: true` 的预设
+   *  = 随应用自带的音色，不再是「用户自己创建的克隆档案」——
+   *    · 首次进入设置页时**自动落成档案**（与点「启用」同一条 createProfile，不另写一套）；
+   *    · 档案按名字标记 builtIn（历史档案同名即视为内置）；
+   *    · ⛔ 删除内置音色直接拒绝（随包自带，删了也会在下次启动恢复，留着按钮只会误导）。 */
+  async function readPresetFile(): Promise<any[]> {
+    try {
+      const raw = JSON.parse(await fs.readFile(path.join(voicePresetsDir(), "presets.json"), "utf8"));
+      return Array.isArray(raw) ? raw : [];
+    } catch { return []; }
+  }
+  async function builtInPresets(): Promise<any[]> {
+    return (await readPresetFile()).filter((p: any) => p && p.builtIn === true && p.id && p.name);
+  }
+  /** 确保内置音色档案存在（幂等；失败静默——下次打开设置页再试）。 */
+  async function ensureBuiltInProfiles(): Promise<void> {
+    const presets = await builtInPresets();
+    if (!presets.length) return;
+    const have = new Set((await voiceProfiles.listProfiles(app.getPath("userData"))).map((p) => p.name));
+    for (const preset of presets) {
+      if (have.has(String(preset.name ?? ""))) continue;
+      try {
+        const parsed = voiceProfiles.readWav(await fs.readFile(path.join(voicePresetsDir(), String(preset.wav ?? ""))));
+        if (!parsed) continue;
+        await voiceProfiles.createProfile(app.getPath("userData"), {
+          name: String(preset.name ?? ""),
+          refText: String(preset.refText ?? ""),
+          samples: parsed.samples,
+          sampleRate: parsed.sampleRate,
+        });
+        have.add(String(preset.name ?? ""));
+      } catch { /* 内置音色建不出来不影响其它音色 */ }
+    }
+  }
+
+  ipcHost.handle("voice:profiles-list", async () => {
+    const names = new Set((await builtInPresets()).map((p) => String(p.name ?? "")));
+    const profiles = (await voiceProfiles.listProfiles(app.getPath("userData")))
+      .map((profile) => ({ ...profile, builtIn: names.has(profile.name) }));
+    return { profiles, zipvoiceReady: zipvoiceReady(modelsRoot()) };
+  });
 
   /** 内置音色预设（合成音源的克隆预设）：wav+参考文本随包分发，一键创建档案。
    *  目录解析与 resolveFfmpegPath 同规则：开发版用项目 resources/，打包版用 process.resourcesPath/。 */
@@ -72,6 +109,7 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
         name: String(p.name ?? ""),
         desc: String(p.desc ?? ""),
         lang: String(p.lang ?? "zh"),
+        builtIn: p.builtIn === true,
         applied: profiles.some((profile) => profile.name === String(p.name ?? "")),
       }));
       return { presets };
@@ -220,9 +258,15 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     }
   });
 
-  ipcHost.handle("voice:profiles-delete", async (_event, id: string) => ({
-    ok: await voiceProfiles.deleteProfile(app.getPath("userData"), String(id ?? "")),
-  }));
+  ipcHost.handle("voice:profiles-delete", async (_event, id: string) => {
+    /* ⛔ 内置音色不许删（10-31）：随包自带，删了下次启动也会自动恢复；留着"能删"只会误导。 */
+    const target = (await voiceProfiles.listProfiles(app.getPath("userData"))).find((p) => p.id === String(id ?? ""));
+    const builtInNames = new Set((await builtInPresets()).map((p) => String(p.name ?? "")));
+    if (target && builtInNames.has(target.name)) {
+      return { ok: false, error: "内置音色不能删除（随应用自带；想换声音就选别的音色）" };
+    }
+    return { ok: await voiceProfiles.deleteProfile(app.getPath("userData"), String(id ?? "")) };
+  });
 
   /** 选用某个音色（写进语音设置 tts.profileId；空串 = 用内置预置音色）。 */
   ipcHost.handle("voice:profiles-select", async (_event, id: string) => {
@@ -239,5 +283,9 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
     const reloaded = await svc().reloadTtsVoice();
     return { ok: true, profileId: String(id ?? ""), ttsError: reloaded.ok ? undefined : reloaded.error };
   });
+  /* 内置音色档案：启动即确保存在（幂等、失败静默）——不然「内置」只在内置音色列表里，
+     选择器里永远没有它（10-31 用户令「小夏改成内置音色」的落地口径）。 */
+  void ensureBuiltInProfiles();
+
   return { voiceProfilesDirOf, draftProfileAudio, voicePresetsDir };
 }

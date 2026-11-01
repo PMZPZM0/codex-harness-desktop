@@ -1147,4 +1147,26 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "确认弹窗 z-index 950（高于设置弹窗 900，设置页里也压得住）");
 }
 
+
+/* ── ⑫ 内置音色（10-31 用户令：「活泼女声 · 小夏改成内置音色」）──────────────────
+   presets.json 里 builtIn:true 的预设 = 随包自带音色：启动即自动落成档案、档案标 builtIn、
+   删除入口不渲染且主进程拒绝删除。 */
+{
+  const presetsJson = JSON.parse(read("resources/voice-presets/presets.json"));
+  const youth = (Array.isArray(presetsJson) ? presetsJson : []).find((p) => p.id === "youth-female-zh");
+  ok(Boolean(youth && youth.builtIn === true),
+    "presets.json：活泼女声 · 小夏 标记 builtIn（随包自带音色）");
+  const presetIpc = read("electron/features/voice-ipc/02-voice-profiles-presets.ts");
+  ok(/async function ensureBuiltInProfiles\(\)/.test(presetIpc) && /void ensureBuiltInProfiles\(\);/.test(presetIpc),
+    "启动即确保内置音色档案存在（幂等，失败静默）");
+  ok(/builtIn: names\.has\(profile\.name\)/.test(presetIpc),
+    "profiles-list 给档案标 builtIn（按预设名匹配，历史档案同名也算）");
+  ok(/内置音色不能删除/.test(presetIpc),
+    "profiles-delete 拒绝删除内置音色（随包自带，删了也会恢复）");
+  const cloneUi = read("src/components/VoiceSettingsSection/02-voice-clone-profile.tsx");
+  ok(/voice-profile-builtin/.test(cloneUi) && /!p\.builtIn && <button/.test(cloneUi) && /removeProfile\(p\.id\)/.test(cloneUi),
+    "档案行：内置徽标 + 内置音色不渲染「删除」");
+  ok(/presets\.filter\(\(preset(?:: any)?\) => !preset\.builtIn\)/.test(cloneUi),
+    "「内置音色（一键启用）」列表排除已内置的预设（它们已自动落成档案）");}
+
 process.exit(fails ? 1 : 0);

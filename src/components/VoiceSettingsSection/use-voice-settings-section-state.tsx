@@ -219,7 +219,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
 
   // ── 内置音色预设（台湾腔小美 / 贾维斯风管家）：一键创建档案并启用（参考文本随包，无需转写）──
-  const [presets, setPresets] = useState<{ id: string; name: string; desc: string; lang: string; applied: boolean }[]>([]);
+  const [presets, setPresets] = useState<{ id: string; name: string; desc: string; lang: string; applied: boolean; builtIn?: boolean }[]>([]);
 
   useEffect(() => {
     window.codex.voicePresetList().then((r) => setPresets(r?.presets ?? [])).catch(() => undefined);

@@ -12,7 +12,7 @@ type Props = {
   importProfile: () => Promise<void>;
   /** 上传音色（10-08）：走主进程 voice:profile-upload，与「导入」同一条草稿/校对链 */
   uploadProfile: () => Promise<void>;
-  presets: { id: string; name: string; desc: string; lang: string; applied: boolean; }[];
+  presets: { id: string; name: string; desc: string; lang: string; applied: boolean; builtIn?: boolean }[];
   previewProfile: (id: string) => Promise<void>;
   profileBusy: string;
   profilePreview: { id: string; phase: "synth" | "playing"; } | null;
@@ -75,10 +75,10 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
               {profileBusy && <div className="voice-card-hint">{profileBusy}</div>}
     
               {/* 内置音色预设：一键创建 + 启用（需要已安装音色克隆模型） */}
-              {zipReady && presets.length > 0 && (
+              {zipReady && presets.filter((preset: any) => !preset.builtIn).length > 0 && (
                 <div className="voice-profile-list">
                   <div className="voice-card-hint">内置音色（一键启用）：</div>
-                  {presets.map((preset) => (
+                  {presets.filter((preset: any) => !preset.builtIn).map((preset) => (
                     <div key={preset.id} className="voice-profile-item">
                       <span className="voice-profile-pick"><span>{preset.name}</span><em>{preset.lang === "zh" ? "中" : "英"}</em></span>
                       <button className="secondary-setting" title={preset.desc} onClick={() => void applyPreset(preset.id)} disabled={Boolean(profileBusy)}>
@@ -104,6 +104,7 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
                           onChange={() => void selectProfile(p.id)}
                         />
                         <span>{p.name}</span>
+                        {p.builtIn && <em className="voice-profile-builtin" title="内置音色：随应用自带，不能删除">内置</em>}
                         <em>{p.durationSec}s</em>
                       </label>
                       <button
@@ -117,7 +118,7 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
                             ? <><Square size={12} />停止</>
                             : <><Play size={12} />试听</>}
                       </button>
-                      <button className="secondary-setting" onClick={() => void removeProfile(p.id)}><Trash2 size={12} />删除</button>
+                      {!p.builtIn && <button className="secondary-setting" onClick={() => void removeProfile(p.id)}><Trash2 size={12} />删除</button>}
                     </div>
                     );
                   })}

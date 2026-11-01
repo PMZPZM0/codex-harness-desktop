@@ -1982,3 +1982,15 @@
 .ext-page .ext-stats { margin: 0 0 2px; gap: 6px; }
 .ext-page .ext-stats span { padding: 2px 8px; font-size: 11px; }
 .ext-page .ext-search { padding: 6px 9px; }
+
+/* 内置音色标记（10-31 用户令「活泼女声 · 小夏改成内置音色」）：档案行上的小徽标，
+   与时长同时存在；内置音色不渲染「删除」按钮（随包自带，删了下次启动也会恢复）。 */
+.voice-profile-pick em.voice-profile-builtin {
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line-soft));
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 1.5;
+  font-size: 10px;
+}
