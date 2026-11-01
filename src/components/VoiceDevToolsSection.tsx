@@ -72,7 +72,7 @@ const STATE_BADGE: Record<ResourceState, string> = {
  *    守卫 07 的「语音页 ? 在」判据只扫 VoiceSettingsSection.tsx 及其子目录，
  *    ? 写在这里会被判成「帮助入口丢了」。所以本体留在调用方，这里只负责摆位置。
  */
-export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact }: { onNotice: (m: string) => void; only?: "base" | "zipvoice"; helpSlot?: ReactNode; /** 只出「路径 + 进度 + 操作按钮」，不带卡片外壳/说明（10-31 用户：基础模型卡与轻量播报卡重复，保留下面的，把按钮挪上去）。 */ compact?: boolean }) {
+export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact, onStatusChange }: { onNotice: (m: string) => void; only?: "base" | "zipvoice"; helpSlot?: ReactNode; /** 只出「路径 + 进度 + 操作按钮」，不带卡片外壳/说明（10-31 用户：基础模型卡与轻量播报卡重复，保留下面的，把按钮挪上去）。 */ compact?: boolean; /** 状态刚刷新完（装完/删除/停用/导入后）—— 外层据此联动（10-31：引擎卡不刷新 ⇒ 「未安装」是旧状态）。 */ onStatusChange?: () => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [downloading, setDownloading] = useState<DownloadState>(null);
   // 音色克隆模型（ZipVoice）独立下载状态：与基础语音模型分开显示/取消
@@ -96,9 +96,15 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
   /** 正在删除的资源 */
   const [deleting, setDeleting] = useState<ResourceKind | null>(null);
   const unsubRef = useRef<(() => void) | null>(null);
+  /** 读取失败/超时标记（10-31）：⛔ 不许无限停在「读取中…」——失败要给「重试」出口。 */
+  const [statusFailed, setStatusFailed] = useState(false);
 
   const refresh = useCallback(() => {
-    window.codex.voiceModelsStatus()
+    /* ⛔ 超时兜底：主进程扫描卡住时 Promise 可能久不落地 ⇒ 8s 判失败，给重试按钮。 */
+    const timed = new Promise<never>((_, reject) => {
+      window.setTimeout(() => reject(new Error("读取超时")), 8000);
+    });
+    Promise.race([window.codex.voiceModelsStatus(), timed])
       .then((s: any) => setStatus({
         ready: s.readyFiles ?? s.ready ?? 0,
         total: s.totalFiles ?? s.total ?? 0,
@@ -111,8 +117,9 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
         zipvoice: s.zipvoice ? { ...s.zipvoice, enabled: s.zipvoice.enabled !== false } : undefined,
         baseEnabled: s.baseEnabled !== false,
       }))
-      .catch((e: any) => onNotice(`读取语音模型状态失败：${e?.message ?? e}`));
-  }, [onNotice]);
+      .then(() => { setStatusFailed(false); onStatusChange?.(); })
+      .catch((e: any) => { setStatusFailed(true); onNotice(`读取语音模型状态失败：${e?.message ?? e}`); });
+  }, [onNotice, onStatusChange]);
 
   useEffect(() => {
     refresh();
@@ -336,6 +343,10 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
         ) : downloading ? (
           <button className="secondary-setting" onClick={cancel}>
             <X size={13} />取消{downloading.mode === "import" ? "导入" : "下载"}
+          </button>
+        ) : statusFailed ? (
+          <button className="secondary-setting" onClick={() => refresh()} title="重新读取语音模型状态">
+            <Power size={13} />读取失败 · 重试
           </button>
         ) : baseInstalled ? (
           <>

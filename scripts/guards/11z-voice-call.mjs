@@ -353,9 +353,9 @@ ok(/<details className="voice-profile-guide">/.test(read("src/components/VoiceSe
 const devtoolsPage = read("src/features/settings-devtools/DevtoolsSettingsSection.tsx");
 /* ⛔ 10-26：按组拆成两处渲染（`only="base"` 归「必需」组、`only="zipvoice"` 归「可选克隆」组）——
    判据打"在这一页里确实渲染了这两张卡"，别锚死自闭合形态（拆组后必然变化）。 */
-ok(/<VoiceDevToolsSection[\s\S]{0,80}?only="base"/.test(read("src/components/VoiceSettingsSection.tsx"))
+ok(/<VoiceDevToolsSection[\s\S]{0,80}?compact[\s\S]{0,40}?only="base"/.test(read("src/components/VoiceSettingsSection/02-tts-engines.tsx"))
   && /<VoiceDevToolsSection[\s\S]{0,80}?only="zipvoice"/.test(read("src/components/VoiceSettingsSection.tsx")),
-  "语音模型 / 音色克隆模型的卡片渲染在「语音通话」页（两处分开挂：必需组 / 可选克隆组）");
+  "语音模型 / 音色克隆模型的卡片都在「语音通话」页（基础模型 compact 并入轻量播报卡 / 音色克隆独立卡）");
 ok(!/<VoiceDevToolsSection/.test(codeOnlyTs(devtoolsPage)),
   "开发工具页**不再渲染**它（是迁移不是复制 —— 同一份状态两处渲染 = 双真相源）");
 ok(!/VoiceDevToolsSection/.test(codeOnly(readSettingsSurface())),
@@ -1030,15 +1030,15 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/const inUse = selected && ready/.test(enginesSrc)
     && !/\{active && <span className="voice-engine-flag"/.test(enginesSrc),
     "「使用中」= 选中 **且** 已安装（⛔ 只看设置里选了谁 ⇒ 没下载也打「使用中」= 假声明）");
-  ok(enginesSrc.includes("去装基础模型") && enginesSrc.includes("jumpToModels"),
-    "基础模型只在「语音模型」区下载：引擎卡只做跳转（⛔ 不挂第二个下载入口）");
+  ok(!/jumpToModels/.test(enginesSrc) && /<VoiceDevToolsSection compact only="base"/.test(enginesSrc),
+    "基础模型的下载/打开目录/停用/删除**并入轻量播报卡**（10-31 合并重复卡；⛔ 不再有独立下载入口，也没有外跳按钮）");
   const enginesCss = read("src/styles/18-openai-dialog.css");
   ok(/\.voice-engine-grid \{ display: grid; grid-template-columns: minmax\(0, 1fr\)/.test(enginesCss)
     && /\.voice-engine-lists \{ display: grid/.test(enginesCss),
     "引擎卡是单列长卡片 + 优点/缺点并排（⛔ 别回 auto-fit 三小列：长句被挤成五六个字一行）");
   const sectionSrc = read("src/components/VoiceSettingsSection.tsx");
-  ok(sectionSrc.indexOf("<VoiceDevToolsSection") < sectionSrc.indexOf("<VoiceSettingsSectionTtsEngines"),
-    "页面顺序：模型下载区排在引擎选择之前（先装再选，别让用户先被三个下载按钮糊住）");
+  ok(!/id="voice-models"/.test(sectionSrc) && sectionSrc.indexOf("<VoiceSettingsSectionTtsEngines") < sectionSrc.indexOf("<VoiceSettingsSectionVoicePicker"),
+    "页面顺序：引擎组（含基础模型操作）在选声音之前；独立「基础语音模型」组已删除（10-31 合并）");
   ok(/voice-engine-progress-line/.test(enginesSrc) && /Math\.round\(progress!\.percent\)/.test(enginesSrc),
     "模型下载有**进度条 + 百分比读数**（⛔ 只有一条会跑的进度条，用户不知道还剩多少）");
   ok(/voice-engine-feedback/.test(enginesSrc) && /kind: "ok" \| "err" \| "info"/.test(enginesSrc),
@@ -1053,9 +1053,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   const devtoolsSrc = read("src/components/VoiceDevToolsSection.tsx");
   ok(/voice-group-tag is-required/.test(sectionSrc + devtoolsSrc) && /voice-group-head/.test(sectionSrc),
     "页面分组带性质标签（必需 / 可选 / 选声音 / 日常），⛔ 标签只做说明、不做准入");
-  ok(!/settings-copy/.test(codeOnly(sectionSrc)) && /<PageInfo[\s\S]{0,400}?helpKey="voice"/.test(sectionSrc)
-    && /helpSlot/.test(sectionSrc) && /helpSlot/.test(devtoolsSrc),
-    "语音页页头已删（上方不留空行）；帮助 ? 由本页创建、挂到基础模型卡卡头右上角");
+  ok(!/settings-copy/.test(codeOnly(sectionSrc)) && /<PageInfo[\s\S]{0,400}?helpKey="voice"/.test(sectionSrc),
+    "语音页页头已删（上方不留空行）；帮助 ? 挂在组头（基础模型卡已合并删除，? 不能跟着丢）");
   /* ── 缺模型联动（10-26 用户：「我没装语音模型，播报开关是不是也不能打开」）── */
   const voiceHookSrc = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
   const announceSrc = read("src/components/VoiceSettingsSection/10-announce.tsx");

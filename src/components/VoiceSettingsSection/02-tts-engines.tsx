@@ -150,6 +150,12 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   useEffect(() => {
     const unsub = window.codex.onVoiceEvent((event: any) => {
       const target = event?.target;
+      /* ⛔ 10-31 联动：基础模型（无 target）装完 ⇒ 轻量播报卡「已安装/缺模型」必须跟着刷新，
+         否则装好了上面还写着「未安装」（用户实测「旧的内容不更新」）。 */
+      if (!target) {
+        if (event?.type === "downloadDone") void refresh();
+        return;
+      }
       if (target !== "kokoro" && target !== "emotivoice") return;
       if (event?.type === "download") {
         setProgress({ pack: target, percent: Number(event.percent ?? -1), message: String(event.message ?? "下载中…") });
@@ -262,14 +268,14 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       </div>
       <div className="voice-card-body">
         <div className="voice-card-hint">
-          三个引擎并存、互不干扰：下载新的不会动旧的，删掉新的旧的照样能用。切换后通话与播报都用它。
+          各引擎独立安装、互不干扰：下载新的不会动旧的，删掉新的旧的照样能用；切换后通话与播报都用它。
         </div>
         {!anyReady && (
           <div className="voice-engine-empty">
             <TriangleAlert size={13} />
             <span>
               现在<strong>一个合成引擎都还没装</strong>，语音通话与播报都无法出声。
-              轻量播报随「基础语音模型」一起装（本卡下方就是它的下载/导入按钮）；其它引擎包各自单独下载。
+              轻量播报随「基础语音模型」一起装 —— 用下方「轻量播报」卡里的「下载模型 / 本地导入」；其它引擎包各自单独下载。
             </span>
           </div>
         )}
@@ -349,7 +355,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                     基础模型（必需）不再单独占一张卡：路径 / 下载导入 / 打开目录 / 停用 / 删除 / 全部清空
                     全部并进「轻量播报」这张卡（它本来就写着「装完基础模型就能用」）。
                     ⛔ compact 模式复用 VoiceDevToolsSection 的全部状态与动作逻辑（不复制第二套 IPC 调用）。 */}
-                {engine.id === "vits" && <VoiceDevToolsSection compact only="base" onNotice={onNotice} />}
+                {engine.id === "vits" && <VoiceDevToolsSection compact only="base" onNotice={onNotice} onStatusChange={refresh} />}
 
                 {/* 下载中：进度条 + 百分比 + 主进程给的阶段说明（"已下载 42MB / 140MB" 这类） */}
                 {downloading && (
