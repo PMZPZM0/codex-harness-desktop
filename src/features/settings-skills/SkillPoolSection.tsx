@@ -45,7 +45,6 @@ function basename(cwd: string): string {
 }
 
 export function SkillPoolSection(props: { projects?: [string, unknown][]; onNotice?: (message: string) => void; open?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean }) {
-  useEscapeLayer(menuOpen, () => setMenuOpen(false));
   const { projects, onNotice } = props;
   /* 10-30：open 可由父级（技能页工具栏那颗按钮）控制；hideTrigger = 不再自带「共享技能池」触发条。 */
   const [innerOpen, setInnerOpen] = useState(false);
@@ -59,6 +58,7 @@ export function SkillPoolSection(props: { projects?: [string, unknown][]; onNoti
   const [busy, setBusy] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  useEscapeLayer(menuOpen, () => setMenuOpen(false));
   const pickerRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async (cwd = target) => {
