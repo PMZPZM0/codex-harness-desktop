@@ -181,3 +181,19 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 }
 .settings-dialog[data-size="sm"] .settings-dialog-head { flex: none; min-height: 56px; }
 .settings-dialog[data-size="sm"] .settings-dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
+/* ⛔ 11-01 用户令「一个大卡片：分类名 / 工具名 / 介绍 / 下面一键安装-卸载」：
+   不改 DOM，用卡片容器 + flex 排序把两个一键按钮沉到卡片底部（原来夹在分类标题和列表之间，很乱）。 */
+.devtools-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft, rgba(0, 0, 0, 0.08));
+  border-radius: 12px;
+  background: var(--bg-elevated, rgba(255, 255, 255, 0.6));
+}
+.devtools-group > .devtools-batch { order: 90; margin-top: 4px; }
+.devtools-group > .devtools-batch .primary-setting,
+.devtools-group > .devtools-batch .secondary-setting { min-width: 140px; }
