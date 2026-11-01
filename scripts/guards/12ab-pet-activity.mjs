@@ -304,6 +304,15 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(Boolean(robotMeta?.rig) && robotMiss.length === 0
     && avatarFiles.every((file) => Boolean(robotMeta.rig?.avatarPalette?.[file])),
     `Codex 机器人关节包：6 套头像配色 × 九态姿态图齐备（问题：${robotMiss.slice(0, 6).join("、") || "无"}）`);
+
+  /* 11-02 用户截图「宠物好几个，展示不全」：45 文件那条 170px 会盖掉 22 文件的 160px，
+     7 只又回到 3 列、最后一张掉到折叠线以下。⇒ 4 列 + 描述两行定高 + 立像式预览。 */
+  const petSettingsCss = read("src/styles/45-settings-experience.css");
+  ok(/\.settings-exp-page \.pet-grid\s*\{[^}]*minmax\(150px/.test(petSettingsCss)
+    && /\.settings-exp-page \.pet-grid\s*\{[^}]*gap:\s*8px/.test(petSettingsCss)
+    && /\.pet-item-desc\s*\{[^}]*-webkit-line-clamp:\s*2/.test(petCss)
+    && /\.pet-showcase-art\s*\{[^}]*width:\s*132px/.test(petSettingsCss),
+    "宠物列表 4 列两行全部露出（7 只不用滚），描述固定两行、立像预览不空一个大方框");
   const genMetaSrc = read("scripts/gen-pet-animation-set.py");
   ok(genMetaSrc.includes("pet-meta.json") && genMetaSrc.includes("_fill_fur_gaps") && genMetaSrc.includes("render"),
     "生成器支持按宠物读 pet-meta.json（名称 / 尾巴方向 / 画布 / 补毛缝）");

@@ -405,7 +405,9 @@ html[data-pet-window="activity"] #root {
 .pet-slider input[type="range"] { flex: 1; accent-color: var(--accent); }
 
 /* 宠物网格：一行一只，缩略图 + 名字 + 来源 */
-.pet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px; }
+/* 11-02 用户截图「宠物好几个，展示不全」：7 只（6 动物 + 小C）在 3 列时最后一张被挤到滚动区下方。
+   ⛔ 改成更紧凑的 4 列（160px 起）+ 描述固定两行高，7 只两行内全部露出，不用滚到底才看见。 */
+.pet-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; }
 .pet-item {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -442,7 +444,18 @@ html[data-pet-window="activity"] #root {
   color: var(--muted);
 }
 .pet-item-source.source-builtin { background: var(--accent-soft); color: var(--accent); }
-.pet-item-desc { grid-area: desc; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.pet-item-desc {
+  grid-area: desc;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  /* 固定两行：不同描述长短把卡片撑成高低不齐，同一屏看着更乱。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.8em;
+}
 
 .pet-warn, .pet-broken p {
   display: flex; align-items: center; gap: 6px;

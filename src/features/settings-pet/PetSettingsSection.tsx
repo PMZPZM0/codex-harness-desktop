@@ -155,7 +155,7 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
       <section className="pet-card pet-showcase-card">
         <div className="pet-showcase">
           <div className="pet-showcase-art">
-            {active ? <PetThumb pkg={active} height={120} /> : <span className="pet-showcase-empty"><PawPrint size={30} /></span>}
+            {active ? <PetThumb pkg={active} height={140} /> : <span className="pet-showcase-empty"><PawPrint size={30} /></span>}
           </div>
           <div className="pet-showcase-info">
             <h4>

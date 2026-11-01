@@ -175,7 +175,9 @@
 .settings-exp-page.pet-settings { max-width: 780px; }
 .settings-exp-page .pet-card { padding: 14px 16px 16px; gap: 10px; }
 .settings-exp-page .pet-card > h4 { font-size: 13.5px; gap: 8px; }
-.settings-exp-page .pet-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+/* ⛔ 11-02：这条 170px 会盖掉 22-pet.css 的 160px（特异性更高）⇒ 7 只又回到 3 列、最后一张被
+   挤到折叠线以下（用户截图「展示不全」）。压到 150px ⇒ 4 列，7 只两行全部露出。 */
+.settings-exp-page .pet-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
 .settings-exp-page .pet-item {
   padding: 10px;
   border-radius: 10px;
@@ -205,11 +207,12 @@
   background: var(--panel);
   border: 1px solid var(--line-soft);
 }
+/* 立像式预览：机器人/角色是竖长的，方框会把两侧空成一片（用户截图圈过「太小、周围全空」）。 */
 .pet-showcase-art {
   flex: none;
   display: grid;
   place-items: center;
-  width: 176px;
+  width: 132px;
   height: 150px;
   border-radius: 10px;
   background: var(--bg);
