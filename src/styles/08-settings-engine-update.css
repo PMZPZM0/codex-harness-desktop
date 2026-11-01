@@ -1977,6 +1977,10 @@
    放在开发工具页的二级弹窗里。⛔ 卡片里**不出现上游 Logo**（品牌面纪律），只用文字链接 + 声明。
    配色一律用主题变量（暗色下不瞎）。 */
 .openfilm-card { display: flex; flex-direction: column; gap: 10px; }
+/* 10-31 用户令：OpenFilm 弹窗改用飞书 CLI 三步行版式 —— 动作按钮较多，允许换行，
+   窄弹窗下不把说明文字挤没（行内仍右对齐）。 */
+.openfilm-card .runtime-actions { flex-wrap: wrap; row-gap: 4px; }
+.openfilm-card .feishu-cli-list .runtime-row { padding: 8px 10px; }
 .openfilm-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .openfilm-head strong { display: block; color: var(--text); font-size: 13.5px; font-weight: 600; }
 .openfilm-head small { display: block; margin-top: 3px; color: var(--faint); font-size: 11.5px; line-height: 1.6; }
