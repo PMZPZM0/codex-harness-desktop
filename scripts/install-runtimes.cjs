@@ -656,8 +656,27 @@ async function install(label, url, destDir, opts = {}) {
   }
   fs.mkdirSync(destDir, { recursive: true });
   process.stdout.write("@@STAGE 解压\n");
-  await extractArchive(zip, destDir, Boolean(opts.strip), label);
-  chmodExec(destDir);
+  /* ⛔⛔ 11-01 用户实测「取消一次以后就装不了」的系统性修法：**先解到 staging 再整体换入**。
+     原来直接解进 destDir ⇒ 取消/断网会留下半个目录；如果 marker 恰好已解出来，
+     卡片会显示「已安装」而工具其实缺文件；没 marker 时 Miniconda 这类安装器又会因目录非空永久失败。
+     staging 与被换入目录同父级（同一分区），rename 是原子的；取消只留下 staging，下次安装开头清掉。 */
+  const stage = `${destDir}.installing-${Date.now().toString(36)}`;
+  try {
+    for (const name of fs.readdirSync(path.dirname(destDir))) {
+      if (name.startsWith(`${path.basename(destDir)}.installing-`)) {
+        try { fs.rmSync(path.join(path.dirname(destDir), name), { recursive: true, force: true }); } catch { /* 上次残留 */ }
+      }
+    }
+  } catch { /* 父目录读不到就跳过清理 */ }
+  fs.mkdirSync(stage, { recursive: true });
+  try {
+    await extractArchive(zip, stage, Boolean(opts.strip), label);
+    chmodExec(stage);
+    fs.rmSync(destDir, { recursive: true, force: true });
+    fs.renameSync(stage, destDir);
+  } finally {
+    if (fs.existsSync(stage)) { try { fs.rmSync(stage, { recursive: true, force: true }); } catch { /* 清理失败不影响结果 */ } }
+  }
   console.log(`[${label}] extracted to ${destDir}`);
 }
 
@@ -665,8 +684,14 @@ async function installFile(label, url, destDir, fileName) {
   const target = path.join(destDir, fileName);
   if (fs.existsSync(target) && fs.statSync(target).size > 10 * 1024) { console.log(`[skip] ${label} already at ${target}`); return; }
   fs.mkdirSync(destDir, { recursive: true });
+  /* ⛔ 11-01：下载先落 `.part`，完整下载完再改名。原来直接写 target，
+     取消后留下半截文件（>10KB）⇒ 下次被当成「已安装」直接 skip，工具永远不可用。 */
+  const part = `${target}.part`;
+  try { fs.rmSync(part, { force: true }); } catch { /* 不存在 */ }
   console.log(`[${label}] downloading ${url}`);
-  await download(url, target);
+  await download(url, part);
+  try { fs.rmSync(target, { force: true }); } catch { /* 不存在 */ }
+  fs.renameSync(part, target);
   chmodExec(target);
   console.log(`[${label}] installed to ${target}`);
 }

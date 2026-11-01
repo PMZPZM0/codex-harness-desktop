@@ -305,6 +305,18 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
       && /installDocTools\(toolDir\("python"\)\)/.test(installerSrc31) ? ok : fail)(
       "随包/下载两个工具根都参与解析（内置 Python 在随包根里也能被文档转换找到）"
     );
+    /* ⛔ 取消不留「半个安装」：解压先进 staging、完整后原子换入；单文件先下 .part。
+       否则 marker 恰好已解出来时卡片显示「已安装」，工具其实缺文件，重装还会被 skip。 */
+    (/extractArchive\(zip, stage, Boolean\(opts\.strip\), label\)/.test(installerSrc31)
+      && /fs\.renameSync\(stage, destDir\)/.test(installerSrc31) ? ok : fail)(
+      "压缩包类工具先解到 staging 再换入（取消只留 staging，不会留下半个安装目录）"
+    );
+    (/await download\(url, part\)/.test(installerSrc31) && /fs\.renameSync\(part, target\)/.test(installerSrc31) ? ok : fail)(
+      "单文件工具先下 .part 再改名（取消留下的半截文件不会被当成已安装）"
+    );
+    (/const stage = \`\$\{dir\}\.installing\`/.test(rtSrc3) && /fs\.rename\(stage, dir\)/.test(rtSrc3) ? ok : fail)(
+      "Filee 同样先解到 staging 再换入（取消不会留下半个安装）"
+    );
   }
   // ⑥ 通道账本：runtime 前缀 5 条（【2】只验 manifest 自洽，这里钉人读的账本别漏登记）
   (/prefix: "runtime", count: 7/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))

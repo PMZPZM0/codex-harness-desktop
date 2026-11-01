@@ -592,31 +592,40 @@ async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promis
     throw new Error(`Filee 安装包 SHA256 校验失败（下载可能被截断）：期望 ${expectedSha.slice(0, 12)}…，实际 ${actualSha.slice(0, 12)}… —— 请重试`);
   }
   // 清旧目录（解压目标整体重建；临时下载件在 staging、不受影响）
+  /* ⛔ 11-01「取消后装不上」系统性修法：解压先进 staging，完整后再换入安装目录。
+     取消时只会留下 .installing 目录（下次安装开头清掉），不会出现「半个 filee 但 marker 在」。 */
   emitRuntimeProgress(id, "正在解压…");
-  await fs.rm(dir, { recursive: true, force: true });
-  await fs.mkdir(dir, { recursive: true });
+  const stage = `${dir}.installing`;
+  await fs.rm(stage, { recursive: true, force: true });
+  await fs.mkdir(stage, { recursive: true });
   const zipMagic = process.platform === "win32";
-  if (zipMagic) {
-    const sevenZip = existingToolPath("sevenzip", "7z.exe");
-    if (!sevenZip) throw new Error("缺少随包 7-Zip（sevenzip/7z.exe），解压不了 Filee 安装包");
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn(sevenZip, ["x", archive, `-o${dir}`, "-y"], { windowsHide: true });
-      trackRuntimeProc(id, child);
-      let tail = "";
-      const grab = (c: unknown) => { tail = `${tail}\n${String(c)}`.slice(-2000); };
-      child.stdout?.on("data", grab);
-      child.stderr?.on("data", grab);
-      child.on("error", reject);
-      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）：${tail.trim().slice(-600)}`)));
-    });
-  } else {
-    // mac / linux：系统自带 tar（osx-*.tar.gz / linux-*.tar.gz）
-    await new Promise<void>((resolve, reject) => {
-      const child = spawn("tar", ["-xzf", archive, "-C", dir], { windowsHide: true });
-      trackRuntimeProc(id, child);
-      child.on("error", reject);
-      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）`)));
-    });
+  try {
+    if (zipMagic) {
+      const sevenZip = existingToolPath("sevenzip", "7z.exe");
+      if (!sevenZip) throw new Error("缺少随包 7-Zip（sevenzip/7z.exe），解压不了 Filee 安装包");
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(sevenZip, ["x", archive, `-o${stage}`, "-y"], { windowsHide: true });
+        trackRuntimeProc(id, child);
+        let tail = "";
+        const grab = (c: unknown) => { tail = `${tail}\n${String(c)}`.slice(-2000); };
+        child.stdout?.on("data", grab);
+        child.stderr?.on("data", grab);
+        child.on("error", reject);
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）：${tail.trim().slice(-600)}`)));
+      });
+    } else {
+      // mac / linux：系统自带 tar（osx-*.tar.gz / linux-*.tar.gz）
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn("tar", ["-xzf", archive, "-C", stage], { windowsHide: true });
+        trackRuntimeProc(id, child);
+        child.on("error", reject);
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）`)));
+      });
+    }
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rename(stage, dir);
+  } finally {
+    await fs.rm(stage, { recursive: true, force: true }).catch(() => undefined);
   }
   // 落版本号（更新链 installedVersionOf 读它）
   await fs.writeFile(fileeVersionFile(), version + "\n", "utf8");
