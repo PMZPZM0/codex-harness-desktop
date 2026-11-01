@@ -1,14 +1,18 @@
 /**
- * 应用壁纸判据（wallpaper 域，2026-10-05，纯离线、可随预检跑）
+ * 应用壁纸判据（wallpaper 域，10-05 立；11-02 全部重做后重写）。
  *
- * ⛔ 三条铁律（都是"看起来接好了、其实会出事"的接缝）：
- *   ① 壁纸层必须 pointer-events:none + z-index:-1 —— 纯视觉层永不挡交互、永不盖内容；
- *   ② tsparticles 的 fullScreen 必须关 —— 默认全屏会劫持 body，壁纸只属于聊天区；
- *   ③ 星野是**自绘 canvas**、点之间**零连线**（用户 10-11：「黑夜→星空、白天→动态点，点不要连线」；
- *      原 vanta NET 只能画"点+连线"的网 ⇒ 整体退役，负向断言防复活）。
- * 附：懒加载（import()）是主包体积红线；素材颜色一律 token（mask + --accent），不写死色值。
+ * 11-02 用户三连：「把旧的壁纸删了，多做几套新的，主题色」→「太失望了，旧的线条都还在」→
+ *   「你生成一些好看的壁纸，静态动态，你全部重新做」。
+ * 现在的形态（这就是本守卫要钉住的契约）：
+ *   · 模式只有 5 档：off / aurora / ribbon / halo / custom；旧图案·粒子·星空**整组删除**
+ *     （老档案里的值统一迁移到 aurora）；⛔ 负向断言防复活。
+ *   · 静态壁纸 = 6 张**生图资产**（public/wallpapers/*.jpg），不是 CSS 糖果色；资源必须在仓里。
+ *   · 动态壁纸 = 纯 CSS 柔光（主题 token 上色）+ 鼠标视差（--wp-px/--wp-py × --wp-depth）；
+ *     减动效偏好下静帧（保留柔光，不突然变纯黑）。
+ *   · 层本体：fixed 铺满 / z-index:-1 / pointer-events:none；html 让位 + 表面令牌半透明，
+ *     保证输入框 / 卡片 / 菜单 / 弹窗全都跟着壁纸走。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
@@ -21,120 +25,99 @@ const read = (p) => readFileSync(join(ROOT, p), "utf8");
 const libSrc = codeOnly(read("src/lib/wallpaper.mjs"));
 const libDts = read("src/lib/wallpaper.d.mts");
 const layerSrc = codeOnly(read("src/features/wallpaper/WallpaperLayer.tsx"));
-const particlesSrc = codeOnly(read("src/features/wallpaper/ParticlesPane.tsx"));
 const settingsSrc = codeOnly(read("src/features/wallpaper/WallpaperSettings.tsx"));
 const cssSrc = read("src/styles/28-wallpaper.css");
 const styles = read("src/styles.css");
-const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSettingsSection.tsx"));
-const timeline = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"));
+const baseCss = read("src/styles/01-base-and-chrome.css");
 const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
-const part08 = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
-const core = read("dist-electron/features/dispatch-core.js");
-const rpc = read("dist-electron/features/dispatch-rpc.js");
-const preload = read("dist-electron/preload.js");
+const dispatchCore = codeOnly(read("electron/features/dispatch-core.ts"));
+const dispatchRpc = codeOnly(read("electron/features/dispatch-rpc.ts"));
+const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSettingsSection.tsx"));
 
-/* ── 数据面 ── */
-ok(libSrc.includes("off") && libSrc.includes("particles") && libSrc.includes("stars") && libSrc.includes("custom"), "模式注册表含 off/pattern/particles/stars/custom（归一化白名单）");
-ok(libSrc.includes('r.mode === "vanta" ? "stars"'), "旧值 vanta 迁移到 stars（老档案里存着 vanta 的用户不会突然没壁纸）");
-ok(libSrc.includes("Math.min(40, Math.max") && libDts.includes("normalizeWallpaper"), "浓度归一夹在 2~40%（避免满壁纸盖脸 / 0% 看不见）");
-ok(layerSrc.includes("cfg.opacity / 100 : 1"), "浓度只压图案/自定义图（粒子/3D 被层透明度压住 = 全部隐身，10-05 实测「假功能」观感的真凶之一）");
-const patternCount = (libSrc.split("WALLPAPER_PRESETS")[0].match(/id: "/g) ?? []).length;
-ok(patternCount >= 10, "图案库 ≥10 款 48px 大瓷砖（24px 小瓷砖铺出来像噪点 = 「不好看」主因；实测 " + patternCount + "）");
-const presetCount = (libSrc.split("WALLPAPER_PRESETS")[1]?.match(/id: "/g) ?? []).length;
-ok(presetCount >= 6 && libDts.includes("WALLPAPER_PRESETS"), "精选渐变壁纸 ≥6 款（自定义图档的内置好看款，点击即用）");
-ok(layerSrc.includes("isPresetImage") && layerSrc.includes("presetById"), "壁纸层认识 preset: 前缀（精选渐变走 CSS 背景、不走文件协议）");
-ok(settingsSrc.includes("WALLPAPER_PRESETS.map") && settingsSrc.includes("preset:"), "设置段渲染精选壁纸缩略图行（点击即用）");
-ok(particlesSrc.includes("links: { enable: true"), "粒子开了邻接连线（素点无连线肉眼几乎不可见 = 「粒子没效果」主因）");
-ok(cssSrc.includes("mask-size: 48px 48px") && cssSrc.includes("background-color: var(--accent)"), "图案层用 --accent 上色（token，不写死色值）");
-
-/* ── 层本体：铁律① ── */
-ok(cssSrc.includes("z-index: -1; pointer-events: none;"), "壁纸层 z-index:-1 + pointer-events:none（挡交互/盖内容 = 直接不可用）");
-ok(styles.includes("styles/28-wallpaper"), "styles.css 已接入 28-wallpaper");
-
-/* ── 动效引擎：铁律②③ + 懒加载 ── */
-ok(layerSrc.includes("lazy(() => import(\"./ParticlesPane\")") && layerSrc.includes("Suspense"), "tsparticles 整块 React.lazy（包装器会静态拖进 @tsparticles/engine，顶层 import = 主包变大）");
-ok(particlesSrc.includes("fullScreen: { enable: false }"), "tsparticles fullScreen 已关（默认全屏劫持 body = 壁纸铺满整窗）");
-ok(layerSrc.includes("wallpaper-stars") && layerSrc.includes('getContext("2d")') && layerSrc.includes("ResizeObserver"), "星野 = 自绘 2D canvas（铺满 + 跟随容器尺寸），不依赖第三方引擎");
-ok(!/(moveTo|lineTo|stroke)\(/.test(layerSrc), "⛔ 点之间不画任何连线（用户 10-11「黑点直接不要连线」）—— canvas 绘制里不许出现 moveTo/lineTo/stroke");
-ok(!/vanta/.test(layerSrc) && !/"three"/.test(layerSrc), "vanta / three 整体退役且不许复活（它只能画「点+连线」的网；负向）");
-ok(layerSrc.includes("prefers-reduced-motion") && layerSrc.includes("pattern"), "减动效偏好下粒子/3D 退回静态图案（accessibility 基本盘）");
-
-/* ── 主题色适配（10-11 用户实测：「3D 背景跟自定义的主题有些没做主题色适配，太丑了」）──
-   ⛔ 三条都是"看着能跑、其实切主题就露馅"的接缝，静态断言正是它们唯一的防线。 */
-ok(cssSrc.includes(':root[data-theme-mode="dark"] .wallpaper-custom::after'), "自定义图/精选渐变的「雾」按主题分档（深色主题压更狠 —— 浅色壁纸在深色界面下会把主内容区整片染亮，侧栏顶栏却是黑的）");
-ok((layerSrc.match(/attributeFilter: \["data-theme"\]/g) ?? []).length >= 1 && layerSrc.includes('readHex("--text"'), "星野跟随主题：监听 data-theme 重绘 + 颜色取 --text（浅色=深色点 / 深色=浅色星）");
-ok(layerSrc.includes("prefersReducedMotion()") && layerSrc.includes("if (motion && !disposed)"), "减动效偏好下星野只画一帧、不起 rAF（accessibility）");
-ok(
-  layerSrc.includes('addEventListener("mousemove"') &&
-    layerSrc.includes("curX += (targetX - curX)") &&
-    layerSrc.includes('removeEventListener("mousemove"'),
-  "星野跟鼠标动（缓动视差 + 纵深系数）+ 卸载时摘监听（用户 10-11「都要动态星空、跟着鼠标动，不是静态的」）"
-);
-ok(
-  /Math\.max\(120,\s*Math\.min\(3000/.test(layerSrc) && layerSrc.includes("dark ? 1000 : 1600"),
-  "星野密度按面积自适应且有下限（用户 10-11「星空太差了、太少了」——首版 1280×800 才 51 颗，不像星空）；上限 3000 让「比例」滑杆全量程有效（1600 时 300% 会被截）"
-);
-ok(layerSrc.includes("bright") && /Math\.random\(\) < 0\.08/.test(layerSrc), "约 8% 亮星做层次（全是均匀细点看着像噪点、不像星空）");
-ok(
-  settingsSrc.includes('cfg.mode === "stars"') && settingsSrc.includes("starScale") && /min=\{20\}[\s\S]{0,120}?max=\{300\}/.test(settingsSrc),
-  "星空档有「比例」滑杆（20%~300%，默认 100%）—— 用户 10-11「星空加一个比例拉动板块」"
-);
-ok(
-  libSrc.includes("starScale") && layerSrc.includes("scale / 100") && layerSrc.includes("StarfieldPane scale={cfg.starScale}"),
-  "比例真正作用到密度（不是摆设）：密度 = 面积基线 × 比例/100"
-);
-ok(
-  settingsSrc.includes("RangeSlider") &&
-    settingsSrc.includes('{live && <span className="wallpaper-range-bubble"') &&
-    (settingsSrc.match(/<RangeSlider /g) ?? []).length >= 2,
-  "两个滑杆（浓度 / 比例）共用带数字气泡的 RangeSlider，且气泡由 live 条件渲染（拖动或聚焦时跟手）—— 用户 10-11「再改个显示数字，别只看滑杆拖动」"
-);
-ok(cssSrc.includes(".wallpaper-range-bubble") && cssSrc.includes("bottom: calc(100% + 6px)"), "气泡样式在（贴滑块上方、pointer-events:none 不挡交互）");
-ok(!/const color = accentHex\(\)/.test(particlesSrc) && particlesSrc.includes("useThemeColor()"), "粒子档接上 useThemeColor()（原来那个 hook 是死代码 —— 挂载取一次色，切主题不换色）");
-
-/* ── 接线：挂载 + 设置段 ── */
-// ⛔ 10-06 铺满全应用：挂载点从 timeline-wrap 上移到 app-shell 根（fixed 铺满视口）。
-ok(appView.includes("<WallpaperLayer />") && !timeline.includes("<WallpaperLayer />"), "WallpaperLayer 挂在 AppView 根（app-shell 内铺满全应用；timeline 内旧挂载已撤）");
-ok(cssSrc.includes(".app-shell { isolation: isolate; }") && cssSrc.includes("position: fixed"), "app-shell 是堆叠上下文 + 层 fixed 铺满（负 z 层画在 shell 背景上、内容下）");
-ok(cssSrc.includes(':root[data-wallpaper="on"] .app-shell') && cssSrc.includes(':root[data-wallpaper="on"] .composer') && cssSrc.includes(':root[data-wallpaper="on"] .workspace') && cssSrc.includes(':root[data-wallpaper="on"] .sidebar'), "data-wallpaper 驱动表面透明化（app-shell/workspace 透明 + composer/sidebar 半透明，漏一层 = 一块白底，10-06 真机遍历抓出）");
-ok(appearance.includes("WallpaperSettingsSection") && settingsSrc.includes("saveWallpaper") && settingsSrc.includes("chooseImages"), "外观页接了壁纸设置段（模式/图案/浓度/自定义图全部落到 saveWallpaper）");
-ok(libSrc.includes("WALLPAPER_EVENT") && libSrc.includes("dispatchEvent") && layerSrc.includes("subscribeWallpaper") && settingsSrc.includes("subscribeWallpaper"), "配置变更经 CustomEvent 广播（设置页与壁纸层同源联动，不走 bag 不走 IPC）");
-ok(layerSrc.includes("dataset.wallpaper"), "层挂载时驱动 data-wallpaper 属性（CSS 透明化的开关必须来自真实挂载状态）");
-
-/* ── 拓展接口：Codex 自助做壁纸（10-06 用户「留好拓展接口，Codex 自己也能给自己做壁纸」）── */
-ok(core.includes('"wallpaper_set"') && /wallpaper_set/.test(core), "网关有 wallpaper_set（免改码拓展接口：生图→写工作区→设壁纸）");
-ok(rpc.includes('"wallpaper:apply"') && /isInsideTrustedRoots/.test(rpc.slice(rpc.indexOf('"wallpaper_set"'), rpc.indexOf('"wallpaper_set"') + 1600)), "wallpaper_set 执行端：路径过可信根闸 → sendToWindow(wallpaper:apply)");
-ok(preload.includes("onWallpaperApply") && preload.includes('"wallpaper:apply"'), "preload 推送桥 onWallpaperApply → wallpaper:apply（手写桥）");
-ok(layerSrc.includes("onWallpaperApply") && layerSrc.includes("saveWallpaper"), "壁纸层接 apply 推送并落 saveWallpaper（与设置页同一条链路）");
-ok(part08.includes("wallpaper_set"), "harness_tools 网关描述列了 wallpaper_set（模型读不到 list 就靠这段常驻文本）");
-
-/* ── ？号制作教程：提示词卡 + 一键复制 ── */
-ok(settingsSrc.includes("GUIDE_PROMPTS") && (settingsSrc.match(/title: "/g) ?? []).length >= 4, "教程含 ≥4 类制作提示词（渐变/图案/图片/动效调参）");
-ok(settingsSrc.includes("copyTextToClipboard") && settingsSrc.includes("复制提示词"), "每条提示词带一键复制（用户点名「支持复制提示词」）");
-ok(settingsSrc.includes("WALLPAPER_SET_HINT") || settingsSrc.includes("wallpaper_set"), "教程提到 wallpaper_set（Codex 自助设壁纸的接口要在教程里可发现）");
-
-/* ── 11-02 主题色壁纸改版（用户：「把旧的壁纸删了，多做几套新的，主题色，多来几套」）──────
-   ⛔ 旧版精选渐变写死糖果色 ⇒ 深色界面上像贴纸；新版全部 color-mix + 主题 token，
-      切白天/黑夜/曜石自动换配色。旧六款（sunrise/mint/dusk/ocean/graphite/ember）已删除。 */
+/* ── ① 模式集合：只许 5 档，旧模式负向 ── */
 {
-  ok(["aurora", "ribbon", "halo"].every((mode) => libSrc.includes(`"${mode}"`)), "新增三档主题色动态壁纸：极光 / 流光 / 光晕");
-  ok(layerSrc.includes("MotionVeil") && layerSrc.includes("wallpaper-motion") && /is-\$\{variant\}/.test(layerSrc), "动态光幕由独立组件渲染（极光/流光/光晕同一实现，按 variant 分支）");
-  ok(["aurora", "ribbon", "halo"].every((mode) => cssSrc.includes(`is-${mode}`)), "三档动态光幕样式齐备（keyframes + 柔光层）");
-  ok(/prefers-reduced-motion: reduce[\s\S]{0,260}\.wallpaper-motion i b \{ animation: none/.test(cssSrc), "减动效偏好下动态光幕静帧（保留柔光，不突然变纯黑）");
+  ok(/WALLPAPER_MODES = \["off", "aurora", "ribbon", "halo", "custom"\]/.test(libSrc),
+    "模式 = off / aurora / ribbon / halo / custom（旧图案·粒子·星空已删除）");
+  ok(/LEGACY_MODES = \["pattern", "particles", "stars", "vanta"\]/.test(libSrc) && /LEGACY_MODES\.includes\(r\.mode\) \? "aurora"/.test(libSrc),
+    "老档案里的旧模式迁移到 aurora（不会突然没壁纸）");
+  ok(!/WALLPAPER_PATTERNS/.test(libSrc) && !/patternMask/.test(libSrc) && !/patternMask/.test(libDts),
+    "⛔ 图案库 / patternMask 已删除（用户：「旧的那种线条都还在」）");
+  ok(!existsSync(join(ROOT, "src/features/wallpaper/ParticlesPane.tsx")),
+    "⛔ 粒子引擎（tsparticles 连线网）已删除，不许复活");
+  ok(!/wallpaper-stars|StarfieldPane|starScale/.test(layerSrc + settingsSrc + libSrc),
+    "⛔ 星空点阵（canvas 点阵）已删除，不许复活");
+  ok(!/wallpaper-pattern|wallpaper-swatch|theme-switch\.five/.test(cssSrc),
+    "⛔ 旧图案 CSS 已删除（防死样式回头）");
+}
+
+/* ── ② 静态壁纸 = 生图资产 ── */
+{
+  const ids = [...libSrc.matchAll(/\{ id: "([a-z-]+)", name: "([^"]+)", src: "wallpapers\/([a-z-]+\.jpg)" \}/g)];
+  ok(ids.length >= 6, `静态壁纸 ≥6 张生图资产（实测 ${ids.length}）`);
+  const missing = ids.filter((m) => !existsSync(join(ROOT, "public", "wallpapers", m[3])));
+  ok(missing.length === 0, `壁纸图片都在 public/wallpapers（缺：${missing.map((m) => m[3]).join("、") || "无"}）`);
+  const oversized = ids
+    .map((m) => join(ROOT, "public", "wallpapers", m[3]))
+    .filter((file) => existsSync(file) && statSync(file).size > 800 * 1024);
+  ok(oversized.length === 0, `单张壁纸 ≤800KB（超了先压再进包：${oversized.map((f) => f.split(/[\\/]/).pop()).join("、") || "无"}）`);
+  ok(/isPresetImage/.test(layerSrc) && /presetById/.test(layerSrc) && /url\("\.\/\$\{preset\.src\}"\)|url\(`\.\/\$\{preset\.src\}`\)/.test(layerSrc),
+    "壁纸层按 preset.src 加载图片（不是 CSS 渐变字符串）");
+  ok(/WALLPAPER_PRESETS\.map/.test(settingsSrc) && /url\("\.\/\$\{p\.src\}"\)|url\(`\.\/\$\{p\.src\}`\)/.test(settingsSrc),
+    "设置页缩略图用同一张图（点击即用）");
+  ok(!/#[0-9a-fA-F]{6}/.test(libSrc.slice(libSrc.indexOf("WALLPAPER_PRESETS"), libSrc.indexOf("presetById"))),
+    "⛔ 静态壁纸不许回到写死糖果色（旧六款的问题）");
+}
+
+/* ── ③ 动态光幕：三档 + 鼠标视差 + 减动效 ── */
+{
+  ok(["aurora", "ribbon", "halo"].every((mode) => libSrc.includes(`"${mode}"`)), "三档动态壁纸都在清单里");
+  ok(/function MotionVeil/.test(layerSrc) && /is-\$\{variant\}/.test(layerSrc) && /<i><b \/><\/i><i><b \/><\/i><i><b \/><\/i>/.test(layerSrc),
+    "动态光幕 = 三层柔光组件（外层视差 / 内层动画各管一件事）");
   ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")
     && /\.wallpaper-motion i \{[^}]*var\(--wp-px\)/.test(cssSrc) && /--wp-depth/.test(cssSrc),
-    "动态光幕跟鼠标走（视差缓动 + 每层不同深度；用户 11-02「动态壁纸要加上鼠标动态交互效果」）");
-  ok(/:root\[data-wallpaper="on"\] \{\s*[\s\S]{0,220}background: transparent;/.test(cssSrc) && /--bg-base/.test(read("src/styles/01-base-and-chrome.css")),
+    "鼠标视差在位（缓动 + 每层不同深度；用户 11-02「动态壁纸要加上鼠标动态交互效果」）");
+  ok(/prefersReducedMotion\(\)/.test(layerSrc) && /prefers-reduced-motion: reduce[\s\S]{0,260}\.wallpaper-motion i b \{ animation: none/.test(cssSrc)
+    && /\.wallpaper-motion i \{ transform: none !important; \}/.test(cssSrc),
+    "减动效偏好：视差监听不挂、动画静帧（保留柔光）");
+  ok(["is-aurora", "is-ribbon", "is-halo"].every((cls) => cssSrc.includes(cls)), "三档样式齐备（keyframes + 柔光层）");
+  ok(/color-mix\(in srgb, var\(--(accent|ic-)/.test(cssSrc), "动态光幕颜色取主题 token（切主题自动换色）");
+  ok(/\.wallpaper-motion::after/.test(cssSrc) && /feTurbulence/.test(cssSrc) && /\.wallpaper-motion::before/.test(cssSrc),
+    "动态光幕叠颗粒 + 暗角（有材质，不像 PPT 渐变）");
+  ok(/\.wallpaper-preset::after \{[\s\S]{0,160}24%/.test(cssSrc) && !/\.wallpaper-preset::after[^{]*\{[^}]*82%/.test(cssSrc),
+    "静态壁纸的雾只压 24–34%（旧值 82% 把画面压没了 = 「普通壁纸也丑」的直接原因）");
+}
+
+/* ── ④ 层本体 + 全界面适配 ── */
+{
+  ok(/\.wallpaper-layer \{ position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; \}/.test(cssSrc),
+    "壁纸层 fixed + z-index:-1 + pointer-events:none（不挡交互、不盖内容）");
+  ok(/\.app-shell \{ isolation: isolate; \}/.test(cssSrc) && styleMountOk(), "app-shell 堆叠上下文 + 层挂载在 AppView 根");
+  ok(/:root\[data-wallpaper="on"\] \{\s*[\s\S]{0,220}background: transparent;/.test(cssSrc) && /--bg-base/.test(baseCss),
     "壁纸开着时 html 画布让位（负 z 层不被底色盖住）+ 表面基准令牌在位");
-  ok(/:root\[data-wallpaper="on"\] \{\s*[\s\S]{0,420}--bg: color-mix\(in srgb, var\(--bg-base\)/.test(cssSrc)
+  ok(/:root\[data-wallpaper="on"\] \{\s*[\s\S]{0,460}--bg: color-mix\(in srgb, var\(--bg-base\)/.test(cssSrc)
     && /--panel: color-mix\(in srgb, var\(--panel-base\)/.test(cssSrc)
     && /--field: color-mix\(in srgb, var\(--field-base\)/.test(cssSrc),
-    "表面令牌统一半透明（输入框/卡片/菜单/弹窗都跟着 --bg/--panel/--field 走，无需逐个类名补）");
-  ok(/is-aurora[\s\S]{0,600}var\(--accent\)/.test(cssSrc) && /is-ribbon[\s\S]{0,600}var\(--ic-/.test(cssSrc), "动态光幕颜色取主题 token（切主题自动换色，不写死色值）");
-  const presetsSrc = libSrc.slice(libSrc.indexOf("WALLPAPER_PRESETS"), libSrc.indexOf("export function presetById"));
-  ok(presetsSrc.includes("var(--") && !/#[0-9a-fA-F]{6}\b/.test(presetsSrc), "静态壁纸全部用主题 token 上色（旧写死糖果色已删除）");
-  ok(!/id: "sunrise"/.test(presetsSrc) && !/id: "ember"/.test(presetsSrc), "旧六款精选壁纸已删除（防复活）");
-  ok(libSrc.includes('"aurora"') && settingsSrc.includes("aurora:") && settingsSrc.includes("极光"), "设置页有新档位文案（极光/流光/光晕）");
+    "表面令牌统一半透明（输入框 / 卡片 / 菜单 / 弹窗自动跟随）");
+  ok(/:root\[data-wallpaper="on"\] :where\(\.settings-dialog, \.media-preview-dialog/.test(cssSrc)
+    && /backdrop-filter: blur\(22px\)/.test(cssSrc),
+    "大块表面（顶栏 / 右栏 / 设置 / 二级弹窗）加玻璃模糊");
+  ok(/\.wallpaper-preset::before \{[\s\S]{0,300}feTurbulence/.test(cssSrc), "静态壁纸叠细噪点（渐变/图片有质感）");
+  ok(styles.includes("styles/28-wallpaper"), "styles.css 已接入 28-wallpaper");
+}
+
+/* ── ⑤ 接线：设置页 + 引擎自助接口 ── */
+{
+  ok(appearance.includes("WallpaperSettingsSection") && settingsSrc.includes("saveWallpaper") && settingsSrc.includes("chooseImages"),
+    "外观页接壁纸设置段（模式 / 静态壁纸 / 自定义图全部落地）");
+  ok(/MODE_LABELS[\s\S]{0,260}aurora: "极光"/.test(settingsSrc) && /ribbon: "流光"/.test(settingsSrc) && /halo: "光晕"/.test(settingsSrc),
+    "设置页档位文案：极光 / 流光 / 光晕");
+  ok(/mode: \{ type: "string", description: "off \/ aurora \/ ribbon \/ halo \/ custom" \}/.test(dispatchCore)
+    && /\["off", "aurora", "ribbon", "halo", "custom"\]/.test(dispatchRpc),
+    "引擎工具 wallpaper_set 的模式白名单同步（否则 Codex 切不了新壁纸）");
+}
+
+function styleMountOk() {
+  return appView.includes("<WallpaperLayer />");
 }
 
 console.log(`\n【wp】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

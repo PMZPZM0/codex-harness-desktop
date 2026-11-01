@@ -1051,7 +1051,7 @@
 .codex-turn > .message-footer {
   margin: 2px 0 10px;
 }
-:root:not([data-theme="dark"]) .approval-card {
+:root:not([data-theme-mode="dark"]) .approval-card {
   background: #fffaf1;
   border-color: #f0dcb8;
   overflow: hidden;
@@ -1065,7 +1065,7 @@
   padding: 0 12px;
   display: flex;
 }
-:root:not([data-theme="dark"]) .approval-card > p {
+:root:not([data-theme-mode="dark"]) .approval-card > p {
   color: #5b4a2e;
   margin: 12px;
   line-height: 1.55;
@@ -2770,11 +2770,11 @@
 
 
 /* 10-28 用户（浅色截图）：输入框顶部拖动条改白色（深色保持原灰）。 */
-:root:not([data-theme="dark"]) .composer-resize-grip {
+:root:not([data-theme-mode="dark"]) .composer-resize-grip {
   background: #fff;
   box-shadow: 0 0 0 1px var(--line);
 }
-:root:not([data-theme="dark"]) .composer-resize-handle:hover .composer-resize-grip {
+:root:not([data-theme-mode="dark"]) .composer-resize-handle:hover .composer-resize-grip {
   background: #fff;
   box-shadow: 0 0 0 1px var(--line);
 }

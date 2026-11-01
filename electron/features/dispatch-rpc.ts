@@ -878,11 +878,9 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
      （与 model-viewer 同一套 isInsideTrustedRoots）；preset: 前缀交给渲染层校验 id。 */
   if (name === "wallpaper_set") {
     const mode = String(args.mode ?? "");
-    if (!["off", "pattern", "particles", "stars", "custom"].includes(mode)) {
-      return { ok: false, error: "mode 只支持 off / pattern / particles / stars / custom" };
+    if (!["off", "aurora", "ribbon", "halo", "custom"].includes(mode)) {
+      return { ok: false, error: "mode 只支持 off / aurora / ribbon / halo / custom" };
     }
-    const opacityNum = Number(args.opacity);
-    const opacity = Number.isFinite(opacityNum) ? Math.min(40, Math.max(2, Math.round(opacityNum))) : 16;
     let image = String(args.image ?? "").trim();
     if (mode === "custom") {
       if (!image) return { ok: false, error: "mode=custom 需要 image（`preset:<id>` 或图片绝对路径）" };
@@ -898,7 +896,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       }
     }
     const { sendToWindow } = await import("./window-bus");
-    sendToWindow("wallpaper:apply", { mode, pattern: String(args.pattern ?? "dots"), opacity, image });
+    sendToWindow("wallpaper:apply", { mode, image });
     return { ok: true, output: `壁纸已切换（mode=${mode}${image ? `，image=${image}` : ""}），用户立即可见。` };
   }
   return { ok: false, error: `未知工具：${String(name)}` };

@@ -2,12 +2,10 @@
 export const WALLPAPER_KEY: string;
 export const WALLPAPER_EVENT: string;
 export const WALLPAPER_MODES: string[];
-export const WALLPAPER_PATTERNS: { id: string; name: string; tile: string }[];
-export const WALLPAPER_PRESETS: { id: string; name: string; css: string }[];
+export const WALLPAPER_PRESETS: { id: string; name: string; src: string }[];
 export function isPresetImage(image: unknown): boolean;
-export function presetById(id: string): { id: string; name: string; css: string } | null;
-export function normalizeWallpaper(raw: unknown): { mode: string; pattern: string; opacity: number; starScale: number; image: string };
-export function readWallpaper(): { mode: string; pattern: string; opacity: number; starScale: number; image: string };
-export function saveWallpaper(next: unknown): { mode: string; pattern: string; opacity: number; starScale: number; image: string };
-export function subscribeWallpaper(onChange: (cfg: { mode: string; pattern: string; opacity: number; starScale: number; image: string }) => void): () => void;
-export function patternMask(patternId: string): string;
+export function presetById(id: string): { id: string; name: string; src: string } | null;
+export function normalizeWallpaper(raw: unknown): { mode: string; image: string };
+export function readWallpaper(): { mode: string; image: string };
+export function saveWallpaper(next: unknown): { mode: string; image: string };
+export function subscribeWallpaper(onChange: (cfg: { mode: string; image: string }) => void): () => void;

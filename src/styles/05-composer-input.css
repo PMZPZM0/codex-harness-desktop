@@ -507,20 +507,20 @@
   font-size: 12.5px;
   line-height: 1.75;
 }
-:root[data-theme="dark"] .approval-card {
+:root[data-theme-mode="dark"] .approval-card {
   background: #26221c;
   border-color: #514331;
 }
-:root[data-theme="dark"] .approval-card header {
+:root[data-theme-mode="dark"] .approval-card header {
   border-bottom-color: #3a3226;
 }
-:root[data-theme="dark"] .approval-card footer {
+:root[data-theme-mode="dark"] .approval-card footer {
   border-top-color: #3a3226;
 }
-:root[data-theme="dark"] .approval-card > p {
+:root[data-theme-mode="dark"] .approval-card > p {
   color: #d8d5cb;
 }
-:root[data-theme="dark"] .approval-card pre {
+:root[data-theme-mode="dark"] .approval-card pre {
   color: var(--muted);
   background: 0 0;
 }

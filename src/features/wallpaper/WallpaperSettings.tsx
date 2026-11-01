@@ -1,20 +1,14 @@
 /**
- * 外观设置页的「壁纸」段（wallpaper 域，2026-10-05）：自包含（localStorage + 自定义事件），
- * ⛔ 不进 bag —— 只有本页与壁纸层两个消费方（样板 = codex-official-market 的本地 state 口径）。
+ * 外观设置页的「壁纸」段（wallpaper 域，10-05 立；11-02 重做）。
+ *
+ * 11-02 用户：「把旧的壁纸删了，多做几套新的…你生成一些好看的壁纸，静态动态，你全部重新做」
+ *   ⇒ 只剩 5 档：关 / 极光 / 流光 / 光晕 / 静态壁纸（6 张生成图）。
+ * ⛔ 旧图案/粒子/星空与滑杆全部删除 —— 不要再加回来（守卫 14 有负向断言）。
  */
 import { useEffect, useState } from "react";
 import { BookOpen, Copy, ImagePlus, Trash2 } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import {
-  WALLPAPER_MODES,
-  WALLPAPER_PATTERNS,
-  WALLPAPER_PRESETS,
-  isPresetImage,
-  patternMask,
-  readWallpaper,
-  saveWallpaper,
-  subscribeWallpaper,
-} from "../../lib/wallpaper.mjs";
+import { WALLPAPER_MODES, WALLPAPER_PRESETS, isPresetImage, readWallpaper, saveWallpaper, subscribeWallpaper } from "../../lib/wallpaper.mjs";
 
 const MODE_LABELS: Record<string, string> = {
   off: "关闭",
@@ -22,59 +16,24 @@ const MODE_LABELS: Record<string, string> = {
   ribbon: "流光",
   halo: "光晕",
   custom: "静态壁纸",
-  stars: "星空",
-  pattern: "图案",
-  particles: "粒子",
 };
 
-/** 带「拖动浮出数字气泡」的滑杆（用户 10-11：「再改个显示数字，别只看滑杆拖动」）。
- *  气泡只在拖动 / 键盘聚焦时出现，位置按比例贴在滑块上方；行尾另有一个常驻数值。
- *  ⛔ 两个滑杆（图案的「浓度」与星空的「比例」）共用它 —— 只给一个加气泡会不一致。 */
-function RangeSlider({ min, max, step, value, onChange }: { min: number; max: number; step: number; value: number; onChange: (v: number) => void }) {
-  const [live, setLive] = useState(false);
-  const pct = ((value - min) / (max - min)) * 100;
-  return (
-    <span className="wallpaper-range">
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(event) => onChange(Number(event.target.value))}
-        onPointerDown={() => setLive(true)}
-        onPointerUp={() => setLive(false)}
-        onPointerCancel={() => setLive(false)}
-        onFocus={() => setLive(true)}
-        onBlur={() => setLive(false)}
-      />
-      {live && <span className="wallpaper-range-bubble" style={{ left: `${pct}%` }}>{value}%</span>}
-    </span>
-  );
-}
-
-/** 制作教程提示词（10-06 用户：「怎么做壁纸几个类型都做好提示词，放 ? 号教程，支持复制」）。
- *  每条都能整段复制后直接发给 Codex 执行；⛔ 提示词里提到的 id 清单必须与本文件注册表一致。 */
+/** 制作教程提示词（可整段复制发给 Codex）。⛔ 提到的清单必须与本文件注册表一致。 */
 const GUIDE_PROMPTS: { id: string; title: string; prompt: string }[] = [
   {
     id: "preset",
-    title: "做一款精选渐变壁纸（无需找图，改一款即全局生效）",
-    prompt: "请给应用壁纸加一款精选渐变：在 src/lib/wallpaper.mjs 的 WALLPAPER_PRESETS 数组里新增一项 { id: \"<英文id>\", name: \"<中文名>\", css: \"…\" }。css 用 3~4 层 radial-gradient(at x% y%, 颜色 0px, transparent 55%) 叠加、最后一层 linear-gradient 打底；先定一个主色再取邻近色，深色款四角都要压暗。加完跑 npm run build:vite，设置页缩略图会自动出现。",
-  },
-  {
-    id: "pattern",
-    title: "做一款平铺图案壁纸（几何纹理，跟主题色）",
-    prompt: "请给应用壁纸加一款平铺图案：在 src/lib/wallpaper.mjs 的 WALLPAPER_PATTERNS 里新增 { id, name, tile }。tile 是 48×48 的 SVG data-uri（形状用白色、走 CSS mask，颜色由主题主色自动提供）；先想好几何母题（蜂窝 / 三角 / 十字编织 / 波浪叠层…）再写 path，线条 1.2px 左右。加完跑 npm run build:vite 生效。",
+    title: "再加一张静态壁纸（生图 → 落 public/wallpapers → 注册）",
+    prompt: "请给应用加一张静态壁纸：用 image-generation 技能生成一张 1792×1024 的高级感底图（抽象材质、低对比、大面积留白、无文字无水印无主体），保存为 public/wallpapers/<英文id>.jpg；然后在 src/lib/wallpaper.mjs 的 WALLPAPER_PRESETS 里加一行 { id: \"<英文id>\", name: \"<中文名>\", src: \"wallpapers/<英文id>.jpg\" }；跑 npm run build:vite 后设置页缩略图会自动出现。",
   },
   {
     id: "image",
-    title: "做一张图片壁纸并直接设置（不改代码，Codex 全程自助）",
-    prompt: "请帮我做一张应用壁纸并直接设置：用生图工具按下面的要求出图——低对比度、大面积留白、无文字无水印、色彩不超过三组、适合垫在聊天文字下方；把图保存到当前工作区（如 assets/wallpaper.png），然后调用 harness_tools 工具（name=\"wallpaper_set\"），参数 { \"mode\": \"custom\", \"image\": \"<图片绝对路径>\" }，让壁纸立刻生效。以后想换图，重复这个流程即可。",
+    title: "做一张图片壁纸并直接设置（不改代码）",
+    prompt: "请帮我做一张应用壁纸并直接设置：用生图工具按下面的要求出图——低对比度、大面积留白、无文字无水印、适合垫在聊天文字下方；把图保存到当前工作区（如 assets/wallpaper.png），然后调用 harness_tools 工具（name=\"wallpaper_set\"），参数 { \"mode\": \"custom\", \"image\": \"<图片绝对路径>\" }，让壁纸立刻生效。以后想换图，重复这个流程即可。",
   },
   {
     id: "motion",
-    title: "调粒子 / 星空的效果参数",
-    prompt: "请调整壁纸粒子效果：编辑 src/features/wallpaper/ParticlesPane.tsx 的 options——数量 number.value、点半径 size.value、连线距离 links.distance 与透明度 links.opacity（数值越大越热闹）。改完跑 npm run build:vite 重启生效。想要「星空」就选壁纸模式里的星空档（自绘 canvas 点阵：深色主题=星、浅色主题=动态点，点之间没有连线）。",
+    title: "调动态壁纸的观感（极光 / 流光 / 光晕）",
+    prompt: "请调整应用动态壁纸：编辑 src/styles/28-wallpaper.css 里 .wallpaper-motion 的三档（is-aurora 三团柔光的 `color-mix(... N%, transparent)` 透明度、blur 半径、animation 时长；is-ribbon 光带的高度/角度/速度；is-halo 光晕大小与呼吸周期），以及 src/features/wallpaper/WallpaperLayer.tsx 里 MotionVeil 的鼠标视差幅度 --wp-depth。改完跑 npm run build:vite 重启生效。颜色一律用主题 token（var(--accent) / var(--ic-*)），不要写死色值。",
   },
 ];
 
@@ -101,7 +60,7 @@ export function WallpaperSettingsSection() {
   return (
     <>
       <div className="settings-subhead">
-        <ImagePlus size={13} />壁纸<span className="settings-subhead-hint">铺满应用（侧栏/聊天/输入框半透明透出）；动效在减动效偏好下自动静帧</span>
+        <ImagePlus size={13} />壁纸<span className="settings-subhead-hint">铺满应用（侧栏/聊天/输入框半透明透出）；动态档在减动效偏好下自动静帧</span>
         <button type="button" className={`wallpaper-guide-toggle ${guideOpen ? "active" : ""}`} title="让 Codex 给你做壁纸——每种类型的提示词，可复制" onClick={() => setGuideOpen((v) => !v)}>
           <BookOpen size={12} />? 制作教程
         </button>
@@ -129,26 +88,10 @@ export function WallpaperSettingsSection() {
           </button>
         ))}
       </div>
-      {cfg.mode === "pattern" && (
-        <div className="wallpaper-pattern-grid" role="group" aria-label="图案">
-          {WALLPAPER_PATTERNS.map((p) => (
-            <button
-              key={p.id}
-              type="button"
-              className={`wallpaper-swatch ${cfg.pattern === p.id ? "active" : ""}`}
-              aria-pressed={cfg.pattern === p.id}
-              title={p.name}
-              onClick={() => update({ pattern: p.id })}
-            >
-              <span className="wallpaper-swatch-face" style={{ WebkitMaskImage: patternMask(p.id), maskImage: patternMask(p.id) }} />
-            </button>
-          ))}
-        </div>
-      )}
       {cfg.mode === "custom" && (
         <>
-          {/* 内置精选渐变壁纸：点击即用，不需要用户自己找图（10-05 用户「内置几个好看一点的」） */}
-          <div className="wallpaper-preset-grid" role="group" aria-label="精选壁纸">
+          {/* 内置静态壁纸（生图资产）：点击即用 */}
+          <div className="wallpaper-preset-grid" role="group" aria-label="静态壁纸">
             {WALLPAPER_PRESETS.map((p) => (
               <button
                 key={p.id}
@@ -158,7 +101,7 @@ export function WallpaperSettingsSection() {
                 title={p.name}
                 onClick={() => update({ mode: "custom", image: `preset:${p.id}` })}
               >
-                <span className="wallpaper-preset-face" style={{ backgroundImage: p.css }} />
+                <span className="wallpaper-preset-face" style={{ backgroundImage: `url("./${p.src}")` }} />
                 <span className="wallpaper-preset-name">{p.name}</span>
               </button>
             ))}
@@ -171,21 +114,6 @@ export function WallpaperSettingsSection() {
             {cfg.image && !isPresetImage(cfg.image) && <span className="wallpaper-custom-path" title={cfg.image}>{cfg.image.split(/[\\/]/).pop()}</span>}
           </div>
         </>
-      )}
-      {cfg.mode === "pattern" && (
-        <label className="wallpaper-opacity">
-          <span>浓度</span>
-          <RangeSlider min={2} max={40} step={1} value={cfg.opacity} onChange={(v) => update({ opacity: v })} />
-          <span className="wallpaper-opacity-value">{cfg.opacity}%</span>
-        </label>
-      )}
-      {/* 星野密度比例（用户 10-11「星空加一个比例拉动板块」）：100% = 默认，20%~300% 可调 */}
-      {cfg.mode === "stars" && (
-        <label className="wallpaper-opacity">
-          <span>比例</span>
-          <RangeSlider min={20} max={300} step={5} value={cfg.starScale} onChange={(v) => update({ starScale: v })} />
-          <span className="wallpaper-opacity-value">{cfg.starScale}%</span>
-        </label>
       )}
     </>
   );

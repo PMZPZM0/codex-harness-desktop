@@ -1070,7 +1070,7 @@
    ⛔ 09-26 主题适配：原来整块用 `--color-background-primary` / `--text-primary` / `--blue` 这类
    **从未定义的变量**（全仓库没有一处 `--color-*:` 声明）⇒ 永远落在亮色 fallback 上，暗色主题
    下菜单白底黑字（用户截图实锤）。改用主题真 tokens：--bg/--panel-2/--line/--text/--muted/
-   --faint/--accent(--soft)/--shadow，`:root[data-theme="dark"]` 有整套暗色值，两主题自动跟随。 */
+   --faint/--accent(--soft)/--shadow，`:root[data-theme-mode="dark"]` 有整套暗色值，两主题自动跟随。 */
 .welcome-cwd-picker { position: absolute; bottom: calc(100% + 5px); left: 12px; z-index: 6; }
 .welcome-cwd-chip {
   display: inline-flex; align-items: center; gap: 6px;

@@ -18,8 +18,6 @@
 
 .wallpaper-layer { position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; }
 
-/* 图案档：SVG 走 mask（形状=alpha），颜色 = --accent；48px 大瓷砖（24px 铺出来像噪点） */
-.wallpaper-pattern { position: absolute; inset: 0; background-color: var(--accent); mask-size: 48px 48px; -webkit-mask-size: 48px 48px; mask-repeat: repeat; -webkit-mask-repeat: repeat; }
 
 /* 自定义图 / 精选渐变：cover 铺满 + 一层 --bg 雾保证文字可读。
    ⛔ 雾必须**按主题分档**（10-11 用户实测「3D 背景跟自定义的主题有些没做主题色适配，太丑了」）：
@@ -41,20 +39,12 @@
 
 /* 粒子 / 星野档：引擎/画布铺满本层 */
 /* ⛔ 10-06 用户实测：粒子档在深色主题下整块发白 —— 引擎画布背景不可信，CSS 强制透明 */
-.wallpaper-layer canvas { background: transparent !important; }
-.wallpaper-stars { position: absolute; inset: 0; width: 100%; height: 100%; }
 
 @media (prefers-reduced-motion: reduce) {
   .wallpaper-layer { animation: none !important; }
 }
 
 /* ── 外观设置段 ── */
-.theme-switch.five { grid-template-columns: repeat(5, 1fr); }
-.wallpaper-pattern-grid { display: grid; grid-template-columns: repeat(10, 44px); gap: 8px; }
-.wallpaper-swatch { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 9px; cursor: pointer; }
-.wallpaper-swatch:hover { border-color: var(--accent); }
-.wallpaper-swatch.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.wallpaper-swatch-face { display: block; width: 100%; height: 100%; background-color: var(--accent); mask-size: 16px 16px; -webkit-mask-size: 16px 16px; mask-repeat: repeat; -webkit-mask-repeat: repeat; opacity: 0.75; }
 .wallpaper-preset-grid { display: grid; grid-template-columns: repeat(6, 96px); gap: 10px; }
 .wallpaper-preset-card { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; padding: 0; cursor: pointer; background: var(--panel); }
 .wallpaper-preset-card:hover { border-color: var(--accent); }
@@ -63,26 +53,6 @@
 .wallpaper-preset-name { display: block; font-size: 11px; color: var(--text); padding: 4px 6px; text-align: left; }
 .wallpaper-custom-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .wallpaper-custom-path { color: var(--muted); font-size: 12px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.wallpaper-opacity { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 12px; }
-.wallpaper-opacity-value { color: var(--muted); min-width: 34px; }
-/* 带数字气泡的滑杆（用户 10-11：「再改个显示数字，别只看滑杆拖动」）——
-   气泡在拖动 / 键盘聚焦时出现，按比例贴在滑块上方；行尾另有常驻数值。 */
-.wallpaper-range { position: relative; flex: 1 1 auto; display: flex; min-width: 0; }
-.wallpaper-range input { width: 100%; }
-.wallpaper-range-bubble {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 1px 6px;
-  font-size: 11px;
-  line-height: 1.5;
-  white-space: nowrap;
-  pointer-events: none;
-}
 
 /* ── ？号制作教程（提示词卡 + 一键复制）── */
 .wallpaper-guide-toggle { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
@@ -197,4 +167,44 @@
 :root[data-wallpaper="on"] :where(.modal-backdrop > *, .settings-dialog-backdrop > *) {
   background-color: var(--panel);
   backdrop-filter: blur(22px) saturate(1.08);
+}
+
+/* ── 11-02 第三次改版：静态改生图、动态加强 ──────────────────────────────────
+   静态：雾只压 24–34%（旧值 82% 把画面压没了，用户判「普通壁纸也丑」的直接原因）。
+   动态：透明度拉高、模糊略降，并叠一层极细颗粒 + 暗角 —— 有材质才不像 PPT 渐变。 */
+.wallpaper-preset::after {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 24%, transparent), color-mix(in srgb, var(--bg) 8%, transparent));
+}
+:root[data-theme-mode="dark"] .wallpaper-preset::after {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 34%, transparent), color-mix(in srgb, var(--bg) 14%, transparent));
+}
+.wallpaper-motion::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 42%, transparent 40%, color-mix(in srgb, var(--bg) 42%, transparent) 100%);
+}
+.wallpaper-motion::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0.055;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wallpaper-motion i b { filter: blur(52px); opacity: .8; }
+.wallpaper-motion.is-aurora i:nth-child(1) b {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 70%, transparent), transparent 70%);
+}
+.wallpaper-motion.is-aurora i:nth-child(2) b {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ic-cyan) 58%, transparent), transparent 70%);
+}
+.wallpaper-motion.is-aurora i:nth-child(3) b {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ic-violet) 52%, transparent), transparent 70%);
+}
+.wallpaper-motion.is-ribbon i b { height: 18%; filter: blur(34px); opacity: .62; }
+.wallpaper-motion.is-halo i:nth-child(1) b {
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 44%, transparent), transparent 68%);
 }

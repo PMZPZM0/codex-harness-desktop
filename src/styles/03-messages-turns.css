@@ -158,11 +158,11 @@
   margin-bottom: 4px;
   letter-spacing: 0.2px;
 }
-html[data-theme="dark"] .user-message-team-task {
+html[data-theme-mode="dark"] .user-message-team-task {
   background: rgba(129, 140, 248, 0.08);
   border-color: rgba(129, 140, 248, 0.25);
 }
-html[data-theme="dark"] .user-message-team-task-tag {
+html[data-theme-mode="dark"] .user-message-team-task-tag {
   color: #a5b4fc;
 }
 .user-message-team-task-body {
@@ -185,7 +185,7 @@ html[data-theme="dark"] .user-message-team-task-tag {
   word-break: keep-all;
   overflow-wrap: break-word;
 }
-html[data-theme="dark"] .import-record-card {
+html[data-theme-mode="dark"] .import-record-card {
   background: rgba(52, 211, 153, 0.07);
   border-color: rgba(52, 211, 153, 0.32);
 }
@@ -213,7 +213,7 @@ html[data-theme="dark"] .import-record-card {
   color: #059669;
   white-space: nowrap;
 }
-html[data-theme="dark"] .import-record-tag { color: #34d399; }
+html[data-theme-mode="dark"] .import-record-tag { color: #34d399; }
 .import-record-note {
   flex: 1 1 180px;
   min-width: 0;
@@ -280,12 +280,12 @@ html[data-theme="dark"] .import-record-tag { color: #34d399; }
   border-color: rgba(59, 130, 246, 0.32);
   background: rgba(59, 130, 246, 0.05);
 }
-html[data-theme="dark"] .import-record-card.thread-reference {
+html[data-theme-mode="dark"] .import-record-card.thread-reference {
   background: rgba(96, 165, 250, 0.08);
   border-color: rgba(96, 165, 250, 0.34);
 }
 .import-record-card.thread-reference .import-record-tag { color: #2563eb; }
-html[data-theme="dark"] .import-record-card.thread-reference .import-record-tag { color: #60a5fa; }
+html[data-theme-mode="dark"] .import-record-card.thread-reference .import-record-tag { color: #60a5fa; }
 /* 未发送预览槽：消息区顶部，宽度由 `.timeline` 的内边距（--chat-column-max）钳制，自身不再二次收窄 */
 .import-preview-slot {
   width: 100%;
