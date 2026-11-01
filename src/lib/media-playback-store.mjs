@@ -57,7 +57,3 @@ export function getTurnMedia(threadId, turnId) {
   turnCache.set(key, filtered);
   return filtered;
 }
-
-export function clearThreadMedia(threadId) {
-  if (byThread.delete(String(threadId ?? ""))) emit();
-}

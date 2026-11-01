@@ -225,6 +225,8 @@ ok(/recordMediaPlayback/.test(previewSrc) && /recordMediaPlayback/.test(codeOnly
   "回合汇总下方有播放卡（点击重开；视频/音频同一逻辑）—— 记录 → 卡片 → 回合视图三处接线");
 ok(/open\(event, true\)/.test(previewSrc) && /if \(!fromEngine\) return;/.test(previewSrc) && /if \(!turnId\) return;/.test(previewSrc),
   "⛔ 只有引擎打开（Codex 调了视频/音乐工具）且当时有运行中回合才记卡片（用户自己点附件不算）");
+ok(/kind !== "video" && kind !== "audio"/.test(previewSrc),
+  "⛔ 只给视频/音乐出播放卡（media_preview 也能开 3D 模型，卡片点了会按视频重开 —— 审查发现）");
 ok(/body:has\(\[class\*="backdrop"\]\) \.voice-float-layer/.test(dialogCss2) && /body:has\(\[class\*="backdrop"\]\) \.voice-announce-bar/.test(dialogCss2),
   "任何弹窗打开时播报悬浮球与播报条一律隐藏（半透明遮罩下也不露出、不挡按钮）");
 

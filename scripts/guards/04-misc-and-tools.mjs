@@ -301,9 +301,9 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
     (/目标目录不完整（缺 \$\{marker\}），清空后重装/.test(installerSrc31) && /fs\.rmSync\(destDir, \{ recursive: true, force: true \}\)/.test(installerSrc31) ? ok : fail)(
       "Miniconda：残留半装目录先清空再装（否则安装器报 Directory is not empty，永远装不上）"
     );
-    (/BUNDLED_TOOLS_ROOT/.test(drSrc3) && /function toolDir\(name\)/.test(installerSrc31)
-      && /installDocTools\(toolDir\("python"\)\)/.test(installerSrc31) ? ok : fail)(
-      "随包/下载两个工具根都参与解析（内置 Python 在随包根里也能被文档转换找到）"
+    (/BUNDLED_TOOLS_ROOT/.test(drSrc3) && /function toolDir\(name, marker\)/.test(installerSrc31)
+      && /installDocTools\(toolDir\("python", process\.platform === "darwin"/.test(installerSrc31) ? ok : fail)(
+      "随包/下载两个工具根都参与解析（内置 Python 在随包根里也能被找到；按 marker 选真装好的那个，空壳目录不算）"
     );
     /* ⛔ 取消不留「半个安装」：解压先进 staging、完整后原子换入；单文件先下 .part。
        否则 marker 恰好已解出来时卡片显示「已安装」，工具其实缺文件，重装还会被 skip。 */

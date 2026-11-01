@@ -16,4 +16,3 @@ export function recordMediaPlayback(entry: {
   kind?: string;
 }): void;
 export function getTurnMedia(threadId: string, turnId: string): MediaPlaybackEntry[];
-export function clearThreadMedia(threadId: string): void;

@@ -506,15 +506,12 @@ export function MediaPreviewBridge({ threadId = "", runningTurnIdsRef }: { threa
       if (!next?.source) return;
       setTarget(next);
       if (!fromEngine) return;
+      /* 只给视频/音乐出卡片：media_preview 也能开 3D 模型，那种卡片点了会按视频重开（错类型）。 */
+      const kind = String(next.kind ?? "") || mediaKindOf(next.source);
+      if (kind !== "video" && kind !== "audio") return;
       const turnId = runningTurnIdsRef?.current?.get(String(threadId ?? "")) ?? "";
       if (!turnId) return;
-      recordMediaPlayback({
-        threadId,
-        turnId,
-        source: next.source,
-        title: next.title ?? "",
-        kind: String(next.kind ?? ""),
-      });
+      recordMediaPlayback({ threadId, turnId, source: next.source, title: next.title ?? "", kind });
     };
     registerMediaPreview((next) => open(next, false));
     const api = window.codex as unknown as MediaBridgeApi;

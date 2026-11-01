@@ -22,7 +22,7 @@ export function TurnMediaCard({ threadId, turnId }: { threadId: string; turnId: 
   if (!items.length) return null;
   return (
     <div className="turn-media-cards" aria-label="本回合打开过的媒体">
-      {items.map((item) => {
+      {items.filter((item) => item.kind === "video" || item.kind === "audio").map((item) => {
         const audio = item.kind === "audio";
         return (
           <button

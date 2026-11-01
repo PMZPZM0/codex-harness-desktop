@@ -126,8 +126,14 @@ const TOOLS = process.env.TOOLS_ROOT || path.join(__dirname, "..", "resources", 
    `resources/tools/python`，点文档转换就报「需要先安装 Python」，而卡片上 Python 明明是就绪的。
    主进程现在同时下发 BUNDLED_TOOLS_ROOT；这里按「可写根优先、随包根兜底」解析。 */
 const BUNDLED_TOOLS = process.env.BUNDLED_TOOLS_ROOT || path.join(__dirname, "..", "resources", "tools");
-function toolDir(name) {
+function toolDir(name, marker) {
   const candidates = [path.join(TOOLS, name), path.join(BUNDLED_TOOLS, name)];
+  /* 有 marker 时优先「真装好」的那个根：取消/旧版本可能留下一个空目录，
+     只看 existsSync 会选中空壳（随后报缺 python.exe / 装到半截目录）。 */
+  if (marker) {
+    const healthy = candidates.find((dir) => fs.existsSync(path.join(dir, marker)));
+    if (healthy) return healthy;
+  }
   return candidates.find((dir) => fs.existsSync(dir)) || candidates[0];
 }
 const TMP = process.env.TEMP || process.env.TMP || os.tmpdir();
@@ -948,7 +954,7 @@ async function main() {
   const nodeDir = path.join(TOOLS, "node");
   const psDir = path.join(TOOLS, "pwsh");
   const gitDir = path.join(TOOLS, "git");
-  const pythonDir = toolDir("python");
+  const pythonDir = toolDir("python", process.platform === "darwin" ? "bin/python3" : "python.exe");
   const ffmpegDir = path.join(TOOLS, "ffmpeg");
   const vscodeCliDir = path.join(TOOLS, "vscode-cli");
   const jqDir = path.join(TOOLS, "jq");
@@ -1152,7 +1158,7 @@ async function mainMac() {
   // 文档转换依赖：mac 侧的按需补装入口（默认已随上面的 pip 安装装好，这里给老用户补装/修复）。
   //  ⛔ 必须与 Windows 侧**对称存在**：预检【34】会比对两平台的安装表，只在一侧有的话，
   //    另一平台点「文档转换」卡片会静默什么都不装（用户以为装上了）。
-  if (want("markitdown")) await installDocTools(toolDir("python"));
+  if (want("markitdown")) await installDocTools(toolDir("python", process.platform === "darwin" ? "bin/python3" : "python.exe"));
   /* FFmpeg（mac）：**必须解压**，且走国内源（10-07 用户报「FFmpeg 不是国内源，太慢了，几十K」）。
      · ffmpeg 主源 = ffmpeg-static 的单文件构建（npmmirror 优先 → gh 加速 → 直连），
        兜底 = evermeet 的 zip（境外，慢但可用）。
