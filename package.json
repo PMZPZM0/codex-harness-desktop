@@ -32,7 +32,8 @@
     "verify:reasoning": "node scripts/verify-reasoning-transport.cjs",
     "voice:models": "node scripts/install-voice-models.cjs",
     "memory:audit": "node scripts/memory-audit.mjs",
-    "memory:recall": "node scripts/memory-recall.mjs"
+    "memory:recall": "node scripts/memory-recall.mjs",
+    "verify:runtime": "node scripts/verify-runtime.mjs"
   },
   "dependencies": {
     "@google/model-viewer": "^4.3.1",

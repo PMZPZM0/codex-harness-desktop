@@ -155,6 +155,13 @@ import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntr
 import type { Bag } from "../../../bag-types";
 
 export function usePart02b12(bag: Bag) {
+  /* ⛔⛔ 笔名快照**必须在这里订阅一次**（10-31 白屏实证：`Minified React error #310`）——
+     `renderThreadRow` 只是本 hook 里的一个**普通函数**（由侧栏组件 `map` 调用，不是组件），
+     在里面调 `useSyncExternalStore` 等于“每渲染一行就往调用方组件的 hook 链上插一个”
+     ⇒ 行数一变（展开/收起/新会话）hook 数量就变 ⇒ `Rendered more hooks than during the previous render`
+     ⇒ 整个界面被 ErrorBoundary 兜成「界面发生错误」。
+     ⇒ 订阅在 hook 顶层做一次，`renderThreadRow` 只读闭包里的快照（快照变 ⇒ 本 hook 重渲染 ⇒ 闭包更新）。 */
+  const aliasState = useSyncExternalStore(subscribeAliases, getAliasState);
   // 会话行「等待用户操作」动态徽标：侧栏对应会话上亮起需审批/需选择/需确认字样
   // 优先级：需审批 > 需选择 > 需确认；审批请求缺 threadId 时归当前会话
   const threadAttention = useMemo(() => {
@@ -202,8 +209,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const delegateKind = bag.delegateRecords[entry.id]?.kind;
     /* ★ 10-31 用户令：每个会话都有两字笔名（主会话 = 「XX主管」，用户 = 总经理）。
        展示在标题前（小徽标），可在会话菜单里改；改名经主进程校验后广播，
-       被调度会话里的「上级主管」当场跟着变。 */
-    const aliasState = useSyncExternalStore(subscribeAliases, getAliasState);
+       被调度会话里的「上级主管」当场跟着变。
+       ⛔ 这里的 `aliasState` 是**闭包**读的（订阅在 `usePart02b12` 顶层做一次）——
+          不要在这一行调 hook：本函数是普通函数，不是组件（React #310）。 */
     const aliasLabel = aliasLabelOf(aliasState, entry.id);
     const aliasMeaning = String(aliasState.aliases?.[entry.id]?.meaning ?? "");
     const editSessionAlias = async (threadId: string, current: string) => {

@@ -451,6 +451,18 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/armPinForReleasedQueue\(bag\.thread\.id, "steer"\)/.test(queueSrc)
     && !/armedForSteer\) showQueuedOptimistic/.test(queueSrc),
     "「立即」并入当前回合时不上乐观气泡（⛔ 上 = 同一条消息显示两遍，且整个回合都确认不了）");
+  /* ⛔⛔ 10-31 白屏（用户：「这都报错，你咋验收的」）：`renderThreadRow` 是 `usePart02b12` 里的
+     **普通函数**，由侧栏组件 map 调用（不是组件）⇒ 里面调 hook 等于每渲染一行就往调用方组件的
+     hook 链上插一个 ⇒ 行数一变（展开/收起/新会话）hook 数量就变 ⇒ React #310
+     （Rendered more hooks than during the previous render）⇒ 整个界面被 ErrorBoundary 兜住。
+     ⇒ 订阅必须在 hook 顶层做一次，renderThreadRow 只读闭包。 */
+  const rowsAliasSrc = read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx");
+  const rowFnAt = rowsAliasSrc.indexOf("const renderThreadRow =");
+  const rowFnBody = rowFnAt < 0 ? "" : rowsAliasSrc.slice(rowFnAt, rowsAliasSrc.indexOf("bag.renderThreadRow ="));
+  ok(rowFnBody.length > 0 && !/\buse[A-Z]\w*\s*\(/.test(rowFnBody),
+    "renderThreadRow 里不许调 hook（它是普通函数，不是组件 —— 调了就 React #310 白屏）");
+  ok(rowFnAt > 0 && /const aliasState = useSyncExternalStore/.test(rowsAliasSrc.slice(0, rowFnAt)),
+    "笔名快照在 usePart02b12 顶层订阅一次（renderThreadRow 读闭包，不自己订阅）");
 }
 
 console.log(`\n【live-edits】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
