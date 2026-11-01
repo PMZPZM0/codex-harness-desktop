@@ -223,6 +223,11 @@ ok(/\.media-video-bar \{[^}]*display: flex;/s.test(previewCss) && /\.media-video
   "视频工具条是上方独立一行（标题+倍速/画中画/全屏），⛔ 不浮在画面上（用户实测位置不对）");
 ok(/recordMediaPlayback/.test(previewSrc) && /recordMediaPlayback/.test(codeOnly(read("src/lib/media-playback-store.mjs"))) && /<TurnMediaCard/.test(codeOnly(read("src/features/session-turn/SessionTurn/03-turn-view.tsx"))),
   "回合汇总下方有播放卡（点击重开；视频/音频同一逻辑）—— 记录 → 卡片 → 回合视图三处接线");
+{
+  const cardSrc = codeOnly(read("src/features/media/TurnMediaCard.tsx"));
+  ok(/getTurnFileChanges/.test(cardSrc) && /getTurnLiveFileChanges/.test(cardSrc) && /mediaKindOf/.test(cardSrc) && /generated/.test(cardSrc),
+    "生成的视频/音乐文件也出播放卡（回合文件追踪 → 卡片，不必模型再调播放工具）");
+}
 ok(/open\(event, true\)/.test(previewSrc) && /if \(!fromEngine\) return;/.test(previewSrc) && /if \(!turnId\) return;/.test(previewSrc),
   "⛔ 只有引擎打开（Codex 调了视频/音乐工具）且当时有运行中回合才记卡片（用户自己点附件不算）");
 ok(/kind !== "video" && kind !== "audio"/.test(previewSrc),
