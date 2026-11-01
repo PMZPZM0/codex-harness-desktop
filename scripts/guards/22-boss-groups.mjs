@@ -793,10 +793,12 @@ if (state) {
   const bossTools = read("src/features/app-view/constants/05-boss-group-tools.tsx");
   ok(/from=\\"expert/.test(bossTools) && /from=\\"cli/.test(bossTools) && /cliName/.test(bossTools) && /cliCommand/.test(bossTools),
     "拉人来源覆盖专家/专家团 + 本机 CLI（group_add_member 的 from 两个分支）");
-  /* ⛔ 10-25 用户令：「BOSS 会话」这个称呼改叫**指挥中枢**（四字）⇒ 标签跟着改「中枢调度」
-     （与普通「调度」区分）。判据一起改，否则文案改了守卫还钉着旧字。 */
-  ok(/isBossMemberThread[\s\S]{0,260}?"中枢调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
-    "侧栏给群成员会话打「中枢调度」标签（与普通「调度」区分）");
+  /* ⛔ 11-01 用户（截图）：「被调度的会话，就显示调度两个字就行了，不要加中枢两个字」——
+     10-25 的「中枢调度」口径被这一条**覆盖**：徽标统一成「调度」，被谁派的由缩进层级表达。
+     ⛔ 断言跟着文案一起改，否则改了字守卫还钉着旧值（假红）。 */
+  ok(/isBossMemberThread[\s\S]{0,260}?label: "调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"))
+    && !/"中枢调度"/.test(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx")),
+    "侧栏给群成员会话打「调度」标签（⛔ 不再用「中枢调度」，用户点名去掉「中枢」二字）");
   /* ── 14. rollout 丢失的会话要能自愈（10-25 用户实测：红条 + 消息发不出去 + 输入框被塞记忆）── */
   const sendFile = read("src/features/app-state/parts/part08/02-seg/send.tsx");
   ok(/unavailable = \/not found\|no such thread\|unloaded\|no rollout found\//.test(sendFile),

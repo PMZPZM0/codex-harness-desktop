@@ -1346,8 +1346,10 @@
   box-shadow: var(--shadow);
   border-radius: 14px;
   width: 320px;
-  /* 9 行 × 26px（与 01-message-ruler 的 LENS_H 同值） */
-  height: 234px;
+  /* ⛔ 高度**由 JS 按实际行数给**（内联 style），这里只兜底 9 行 × 26px + 上下 4px；
+     写死会让消息少的会话留一大片空框（11-01 用户实测截图）。 */
+  height: auto;
+  max-height: 242px;
   z-index: 22;
   box-sizing: border-box;
   position: absolute;
@@ -1357,8 +1359,9 @@
      重叠的 2px 归面板（后挂 + z22），代价是那 2px 上点不到刻度，可以接受。 */
   left: 36px;
   overflow: hidden;
-  /* 上下边缘渐隐：行被"镜头"切掉时是淡出而不是硬切 */
-  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  /* ⛔ 上下边缘渐隐只在**真的装不下**时才挂（11-01）：面板现在按内容收缩，
+     行数 ≤ 9 时上下各有 4px 呼吸，再叠 18px 渐隐会把首尾两行糊掉。
+     ⇒ 渐隐移到 .is-scroll（行数超过可见行数）才生效。 */
   /* ⛔ 可交互（10-31 第二轮）：面板是轨道的**后代** ⇒ 鼠标从刻度移进面板不会触发轨道的
      mouseleave，镜头不会消失；进面板后轨道的 mousemove 被显式忽略（lens 冻住），
      由行自己的 hover/click 接管。 */
@@ -1870,3 +1873,8 @@ button.search-box:hover {
 .backup-picker-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .backup-picker-meta { flex: none; color: var(--muted); font-size: 11px; }
 .backup-picker-empty { padding: 14px; text-align: center; color: var(--muted); font-size: 12px; }
+
+/* 行数装不下（超过可见 9 行）时才做上下渐隐裁切 —— 与 01-message-ruler 的 is-scroll 同源 */
+.message-ruler .ruler-lens.is-scroll {
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+}

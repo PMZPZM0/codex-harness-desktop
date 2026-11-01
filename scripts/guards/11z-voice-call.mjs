@@ -660,6 +660,22 @@ ok(!/<VoiceAnnounceIndicator \/>/.test(composerTsx),
   "composer 不再挂语音状态条（10-31 改由悬浮播报窗统一展示；⛔ 复活 = 输入框上方多一条和气泡抢位置）");
 ok(/getAnnounceStatus\(\)/.test(broadcastHost) && /subscribeAnnounceStatus/.test(broadcastHost),
   "播报窗订阅的是 announce-bus 的**事实**（在念 / 念哪句 / 还排几句），不自己猜状态");
+/* ── 11-01 三条播报面板的用户反馈（截图实证）────────────────────────────── */
+const broadcastPanel = read("src/features/event-broadcast/BroadcastPanel.tsx");
+const broadcastStore = read("src/features/event-broadcast/store.ts");
+const broadcastCollector = read("src/features/event-broadcast/collector.tsx");
+const typedText = read("src/features/event-broadcast/TypedText.tsx");
+ok(/text: text\.length > title\.length \+ 8 \? text : undefined/.test(broadcastCollector),
+  "短群事件不再「标题 + 正文」重复同一句（⛔ 用户实测：卡片里同一行出现两遍，像播了两条）");
+ok(/removeBroadcastItem\(item\.id\)/.test(broadcastPanel) && /export function removeBroadcastItem/.test(broadcastStore),
+  "每条播报可单独删除（11-01 用户令「给每个群事件后面都加一个单独删除功能」）");
+ok(/removeBroadcastItem[\s\S]{0,700}?seen\.delete/.test(broadcastStore) === false && /seen\.add\(id\)/.test(broadcastStore),
+  "单条删除**不**清 seen 墓碑（否则删完立刻被采集端重新扫到、又冒出来）");
+ok(/role="button"/.test(broadcastPanel),
+  "播报行不是 <button>（行内要放删除按钮；按钮嵌按钮是非法结构 ⇒ 点删除会连带展开）");
+ok(/playedKeys/.test(typedText) && /playKey=\{/.test(broadcastPanel),
+  "逐字动画只在该条第一次出现时播（⛔ 开合面板会重挂载 ⇒ 整屏历史再敲一遍，用户实测「每次点开都播放一次」）");
+
 /* ── ⑬′ 10-12 三条用户反馈的钉死（「停止都停止不了，一直播报」「不用这么长」「有点丑」）──
    ⛔ 这三条都是**用户当面试出来的**，形态也各自特殊，所以每条都钉"判据所在的那一处"而不是
       某个字面量：静音要在 speak() 入口（唯一点）、字数要在 speak() 里扣（回合级）、

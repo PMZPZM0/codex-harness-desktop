@@ -8,6 +8,7 @@ export { BroadcastCollector } from "./collector";
 export {
   pushBroadcast,
   markBroadcastSeen,
+  removeBroadcastItem,
   toggleBroadcastPanel,
   setBroadcastOpen,
   type BroadcastItem,

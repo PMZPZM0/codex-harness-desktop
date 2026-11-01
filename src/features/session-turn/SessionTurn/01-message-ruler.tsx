@@ -36,7 +36,10 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   /* 放大镜状态：index = 指针下的刻度（面板里滚轮改的就是它），
      top / rowY = 面板在轨道里的落点与「当前行」在面板内的纵向位置（面板贴边时会被钳制，
      所以 rowY 不能恒等于面板半高）。⛔ 刻度本身不做位移（10-31 已删鱼眼），这里只留面板几何。 */
-  const [lens, setLens] = useState<{ index: number; top: number; rowY: number } | null>(null);
+  /* ⛔ trackH：11-01 用户「这个刻度线放大镜，上下空白太多了」——
+     面板原来固定 234px（9 行），消息少的时候下面留一大片空白。
+     ⇒ 改成按**实际行数**收缩高度，收缩后重新钳 top 需要知道轨道有多高（只在 mousemove 时能读 rect）。 */
+  const [lens, setLens] = useState<{ index: number; top: number; rowY: number; trackH: number } | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   /* 面板里的**选中行**（10-31 用户：「他这种放大效果是可以选的，你的不能选项，鼠标挪不进去」）。
      ⛔ 面板可交互后必须与「指针在刻度上」分家：鼠标进到面板里时 lens.index 要冻住
@@ -273,7 +276,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     const top = Math.min(Math.max(anchor - LENS_H / 2, 4), Math.max(4, rect.height - LENS_H - 4));
     /* ⛔ rowY 是行的**顶边**：要让高亮行的中线落在锚点上，必须再减半个行高
        （漏了这 13px，字会比指针下那根刻度低半行，看着像串行）。 */
-    setLens({ index: best, top, rowY: anchor - top - LENS_ROW / 2 });
+    setLens({ index: best, top, rowY: anchor - top - LENS_ROW / 2, trackH: rect.height });
   };
 
   const currentPos = currentItemId ? marks.findIndex((m) => m.itemId === currentItemId) : -1;
@@ -406,10 +409,31 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
                  鼠标进面板后 lens 冻住（轨道的 mousemove 遇到面板直接 return），点行 = 跳到那条消息。
                  刻度与面板之间那条死区靠 CSS 的 `.ruler-lens::before` 过桥 ——
                  少了它，鼠标从刻度横移过去会先离开轨道 ⇒ 面板当场卸载，永远点不到。 */}
-        {lens && marks.length > 0 && (
+        {lens && marks.length > 0 && (() => {
+          /* ⛔ active 必须夹住：滚轮滑窗口 / 刻度变少时 marks 会换一批，
+             lens.index 是上一次 mousemove 留下的旧下标，越界就是 marks[i] undefined ⇒ 整页崩。 */
+          const active = Math.min(lens.index, marks.length - 1);
+          /* 面板里选中的行优先（鼠标在面板上时高亮跟着鼠标走） */
+          const focus = pick != null ? Math.min(pick, marks.length - 1) : active;
+          const rows: number[] = [];
+          const from = Math.max(0, active - LENS_REACH);
+          const to = Math.min(marks.length - 1, active + LENS_REACH);
+          for (let i = from; i <= to; i++) rows.push(i);
+          const count = rows.length;
+          /* ⛔⛔ 11-01 用户（截图）：「这个刻度线放大镜，上下空白太多了」——
+             原来面板写死 234px（9 行），只有 3~5 条消息时底下留一大片空框。
+             ⇒ 高度 = min(9 行, 实际行数) + 上下 4px 呼吸；**锚点仍钉在指针那根刻度上**
+                （top 按"高亮行落在锚点"反推，再用轨道高度重新钳制）。
+             行数超过 9 才需要滚动裁切（那时才挂 is-scroll 做上下渐隐）。 */
+          const panelH = Math.min(LENS_H, count * LENS_ROW + 8);
+          const anchor = lens.top + lens.rowY + LENS_ROW / 2;      // 反解出指针锚点（轨道坐标）
+          const activeCenter = (active - from) * LENS_ROW + LENS_ROW / 2 + 4;
+          const top = Math.min(Math.max(anchor - activeCenter, 4), Math.max(4, (lens.trackH || 0) - panelH - 4));
+          const rowBase = activeCenter - LENS_ROW / 2;             // 高亮行的顶边（面板内坐标）
+          return (
           <div
-            className="ruler-lens"
-            style={{ top: lens.top }}
+            className={`ruler-lens${count > LENS_ROWS ? " is-scroll" : ""}`}
+            style={{ top, height: panelH }}
             role="menu"
             aria-label="附近消息（可点击跳转、可滚动）"
             ref={(node) => {
@@ -425,39 +449,27 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
               }, { passive: false });
             }}
           >
-            {(() => {
-              /* ⛔ active 必须夹住：滚轮滑窗口 / 刻度变少时 marks 会换一批，
-                 lens.index 是上一次 mousemove 留下的旧下标，越界就是 marks[i] undefined ⇒ 整页崩。 */
-              const active = Math.min(lens.index, marks.length - 1);
-              /* 面板里选中的行优先（鼠标在面板上时高亮跟着鼠标走） */
-              const focus = pick != null ? Math.min(pick, marks.length - 1) : active;
-              const rows: number[] = [];
-              const from = Math.max(0, active - LENS_REACH);
-              const to = Math.min(marks.length - 1, active + LENS_REACH);
-              for (let i = from; i <= to; i++) rows.push(i);
-              return rows.map((i) => {
-                return (
-                  <button
-                    key={marks[i].id}
-                    type="button"
-                    role="menuitem"
-                    title={marks[i].label}
-                    className={`ruler-lens-row${i === focus ? " is-active" : ""}`}
-                    style={{
-                      translate: `0 ${(lens.rowY + (i - active) * LENS_ROW).toFixed(1)}px`,
-                      opacity: Math.max(0.08, 1 - Math.abs(i - active) * 0.16),
-                    }}
-                    onMouseEnter={() => setPick(i)}
-                    onClick={() => { onJump(marks[i].turnId); setLens(null); setPick(null); lastHoverRef.current = null; setHoverIndex(null); }}
-                  >
-                    <span className="ruler-lens-text">{marks[i].label.replace(/\s+/g, " ").trim()}</span>
-                    <i className="ruler-lens-dash" />
-                  </button>
-                );
-              });
-            })()}
+            {rows.map((i) => (
+              <button
+                key={marks[i].id}
+                type="button"
+                role="menuitem"
+                title={marks[i].label}
+                className={`ruler-lens-row${i === focus ? " is-active" : ""}`}
+                style={{
+                  translate: `0 ${(rowBase + (i - active) * LENS_ROW).toFixed(1)}px`,
+                  opacity: Math.max(0.08, 1 - Math.abs(i - active) * 0.16),
+                }}
+                onMouseEnter={() => setPick(i)}
+                onClick={() => { onJump(marks[i].turnId); setLens(null); setPick(null); lastHoverRef.current = null; setHoverIndex(null); }}
+              >
+                <span className="ruler-lens-text">{marks[i].label.replace(/\s+/g, " ").trim()}</span>
+                <i className="ruler-lens-dash" />
+              </button>
+            ))}
           </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );

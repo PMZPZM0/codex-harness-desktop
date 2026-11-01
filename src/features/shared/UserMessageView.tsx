@@ -144,12 +144,20 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
   }
   /* ⛔⛔ 10-31 用户令：「主会话向被调度的子会话发送消息时，不能以用户视角显示在右侧头像位置，
      必须同样显示在左侧，并以主会话自身的身份发出」。
-     ⛔ 只对 **`调度会话`** 这一种壳改位置：它是 delegation 派活时**主进程**拼的，确实是"上级发来的任务"。
+     ⛔ 白名单只放**主进程唯一产出**的壳（`调度会话` = delegation、`群成员会话` = 中枢群派活）：
+         它们是"上级发来的任务"，不是用户打的字。
          `团队成员 / 成员会话` 这两种壳还兼着"用户在成员会话里自己打的字"（send.tsx 那条路径），
          一律左移会把用户自己的话伪造成上级发言 —— 所以那几种维持原样。
-     左对齐 + 身份写「主会话」：宿主没有把上级会话名传下来（只有 threadId），
-     名字留待后续接（见 docs/FEATURE-LEDGER 同名条），这里先把"不属于用户"这件事表达出来。 */
-  const isParentTask = refs.teamTask?.label === "调度会话";
+     左对齐 + 头部写上级名字（笔名快照 / 壳里的 `上级：X`），两处都没有才退回通用「主会话」。 */
+  /* ⛔⛔ 11-01 用户（截图：「为啥，他调度会话，还是以我的身份发出去的」）：
+     这条首任务也是**宿主拼的**，不是用户打的字。原先只认 `调度会话` 一种壳，而中枢派活给
+     群成员用的是 `[SYSTEM TASK · 群成员会话]`（electron/boss-groups/runner.ts）⇒ 它照旧渲染成
+     用户气泡（右对齐 + 用户头像 + 「群成员会话 · 需求已发起」），看着像我在给成员派活。
+     ⇒ 加进白名单。⛔ 白名单只放**主进程唯一产出的壳**：
+        `调度会话`（delegation）/ `群成员会话`（中枢群）。`成员会话` / `团队会话` 仍不放 ——
+        它们还兼着"用户自己在成员会话里打字"（send.tsx 会包同款壳），一律左移会把用户的话
+        伪造成上级发言。 */
+  const isParentTask = refs.teamTask?.label === "调度会话" || refs.teamTask?.label === "群成员会话";
   if (isParentTask) {
     return (
       <div className="parent-task-stack" data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>

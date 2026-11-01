@@ -207,8 +207,9 @@ ok(/wheelTimer = setTimeout\(\(\) => \{ waveRef\.current = false; setWheelWave\(
 /* ── 放大镜（10-31 用户：「刻度线放上去能不能做出这种放大镜效果，这样找起来更快」）──────
    判据只钉**几何与同源关系**，不判"好不好看"（观感靠 `.workbuddy/tmp/ruler-lens` 的真机采样）。 */
 ok(/const LENS_ROW = 26;/.test(ruler) && /const LENS_ROWS = 9;/.test(ruler)
-  && /\.message-ruler \.ruler-lens \{[\s\S]{0,900}?height: 234px/.test(css),
-  "放大镜参数单一来源：组件 26px/行 × 9 行；CSS 面板高 234 = 9×26（两处不同值就会出现「线在这、字在那」）");
+  && /\.message-ruler \.ruler-lens \{[\s\S]{0,900}?max-height: 242px/.test(css)
+  && /height: auto;/.test(css),
+  "放大镜行高仍单一来源（26px × 9 行），但**面板高度改由 JS 按实际行数给**（CSS 只兜底 max-height）");
 /* ⛔⛔ 10-31 第二轮用户：「现在中间刻度线老是飘动，鼠标上滑，会断显示，这样不舒服，连贯性很差」
    ⇒ 刻度自身的鱼眼位移**整体删除**（原来 14px 槽在指针处散到 25px：随指针呼吸=飘；
       散开处相邻被挤到 9px=像断；视觉位置与命中槽位错开=指针下那根和高亮那根不是同一根）。
@@ -224,10 +225,21 @@ ok(/const stepLens = \(dir: number\) => \{/.test(ruler)
   "镜头内滚轮一次一格：行滑动 + hoverIndex 跟着走（刻度波浪）+ 咔哒声 + 600ms 收波");
 ok(/node\.addEventListener\("wheel", \(event\) => \{\s*\n\s*event\.preventDefault\(\);\s*\n\s*event\.stopPropagation\(\);/.test(ruler),
   "面板滚轮必须**原生非 passive + stopPropagation**（React 的 onWheel 在根容器才触发，会先被轨道那条\"滑一页\"吃掉）");
+/* ⛔ 11-01 用户（截图）：「这个刻度线放大镜，上下空白太多了」——
+   面板原来写死 9 行高，消息少时底下留一大片空框。判据钉三件事：
+   ① 高度 = min(9 行, 实际行数)；② 锚点从 top/rowY **反解**回来（收缩后仍钉在指针那根刻度上）；
+   ③ 上下渐隐只在行数装不下时才挂（否则首尾行被糊掉）。 */
+ok(/const panelH = Math\.min\(LENS_H, count \* LENS_ROW \+ 8\)/.test(ruler)
+  && /const anchor = lens\.top \+ lens\.rowY \+ LENS_ROW \/ 2/.test(ruler)
+  && /const rowBase = activeCenter - LENS_ROW \/ 2/.test(ruler)
+  && /trackH: rect\.height/.test(ruler),
+  "放大镜面板按**实际行数**收缩，收缩后仍以指针那根刻度为锚点（⛔ 不收缩 = 上下大片空白）");
+ok(/count > LENS_ROWS \? " is-scroll" : ""/.test(ruler) && /\.ruler-lens\.is-scroll \{/.test(css),
+  "上下渐隐只在行数超过可见行数时生效（⛔ 常挂会把首尾行糊成半个字）");
 ok(/rowY: anchor - top - LENS_ROW \/ 2/.test(ruler),
   "高亮行**顶边** = 锚点 − 半行高（漏了这 13px，字会比指针下那根刻度低半行，像串行）");
 ok(/className=\{`ruler-lens-row\$\{i === focus \? " is-active" : ""\}`\}/.test(ruler)
-  && /translate: `0 \$\{\(lens\.rowY \+ \(i - active\) \* LENS_ROW\)\.toFixed\(1\)\}px`/.test(ruler)
+  && /translate: `0 \$\{\(rowBase \+ \(i - active\) \* LENS_ROW\)\.toFixed\(1\)\}px`/.test(ruler)
   && /const active = Math\.min\(lens\.index, marks\.length - 1\);/.test(ruler)
   && /\{lens && marks\.length > 0 && \(/.test(ruler),
   "镜头行位置 = rowY + (i−active)×26 ⇒ 指针走一格、整列滑一行（=「里面滚动」）；⛔ active 必须夹住（滑窗口后旧下标越界 = marks[i] undefined ⇒ 整页崩）");

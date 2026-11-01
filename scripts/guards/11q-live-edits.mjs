@@ -357,13 +357,23 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
      ⇒ `[SYSTEM TASK · 调度会话]` 那种壳（delegation 主进程拼的）走**左对齐的上级气泡**；
      ⛔ 成员/团队会话的壳可能是用户自己打字（send.tsx 那条路），不能左移 —— 会把用户的话伪造成上级发言。 */
   const umv = codeOnly(read("src/features/shared/UserMessageView.tsx"));
-  ok(/const isParentTask = refs\.teamTask\?\.label === "调度会话"/.test(umv)
+  /* ⛔ 11-01 用户（截图：「为啥，他调度会话，还是以我的身份发出去的」）：中枢派活给群成员用的是
+     `[SYSTEM TASK · 群成员会话]`，原先不在白名单 ⇒ 照旧渲染成用户气泡。白名单必须是**两条**。 */
+  ok(/const isParentTask = refs\.teamTask\?\.label === "调度会话" \|\| refs\.teamTask\?\.label === "群成员会话"/.test(umv)
     && /<div className="parent-task-stack"/.test(umv)
     && /parent-task-name/.test(umv),
-    "调度任务在子会话里以「主会话」身份左对齐渲染（⛔ 只认 调度会话 壳，成员/团队壳不动）");
+    "调度/群成员任务在子会话里以「上级」身份左对齐渲染（⛔ 只认 调度会话 + 群成员会话；成员/团队壳不动）");
   const msgCss = read("src/styles/03-messages-turns.css");
   ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss),
     "上级任务气泡的样式在位（左对齐 + 左侧强调线；⛔ 只加类不写样式 = 还是贴在右侧）");
+  /* 中枢派活的壳里要带「上级：」（模型侧知道谁派的）+ 成员线程登记上级（气泡头部的名字来源，
+     中枢改名后子会话跟着变）。⛔ 两处缺一处：气泡只能退回通用「主会话」。 */
+  const bossRunner = read("electron/boss-groups/runner.ts");
+  ok(/上级：\$\{supervisor\}/.test(bossRunner) && /memberPrompt\(group, member, task, attempt\.n, bossSupervisor\)/.test(bossRunner),
+    "中枢派活的壳里写「上级：<中枢会话名>」（⛔ 不写 = 子会话不知道上级是谁）");
+  ok(/ensureSessionAlias\(threadId, String\(group\.bossThreadId/.test(bossRunner)
+    && /ensureSessionAlias\(member\.threadId, String\(group\.bossThreadId/.test(bossRunner),
+    "群成员线程登记上级 = 中枢会话（新建 + 复用两条路都要，气泡里的名字靠这条链）");
 
   /* ⛔⛔ 10-31 用户令：会话笔名体系（两字笔名 / 主管职级 / 上级联动）——
      行为断言优先：拿名字库真跑，不看正则形状。⛔ 本文件用 ok(cond, msg) 形态（没有 fail）。 */

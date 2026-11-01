@@ -145,7 +145,12 @@ function toBroadcast(threadId: string, itemId: string, index: number, block: Gro
   if (block.type === "notice") {
     const text = String(block.text ?? "").trim();
     if (!text) return null;
-    return { ...base, kind: "group", title: headOf(text, 48), text, tone: "info" };
+    /* ⛔⛔ 11-01 用户（截图：「这个群事件，还重复展示」）：
+       面板对每一条渲染 **标题 + 正文** 两行。群事件短通知（「新成员进群：X（架构师，id=…）。」）
+       的标题就是全文（headOf 只在超长时截断）⇒ 同一句话在卡片里出现两遍，看着像推了两条。
+       ⇒ 正文**只在标题装不下时**才给（长通知才需要"标题摘要 + 全文"）。 */
+    const title = headOf(text, 48);
+    return { ...base, kind: "group", title, text: text.length > title.length + 8 ? text : undefined, tone: "info" };
   }
   if (block.type === "deliverable") {
     const title = booked(block.title);

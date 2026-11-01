@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Bell, BellOff, Square, Trash2, X } from "lucide-react";
 import { requestAnnounceStop, subscribeAnnounceStatus, getAnnounceStatus } from "../../voice/announce-bus";
-import { clearBroadcastHistory, setBroadcastPaused, setBroadcastOpen, type BroadcastItem } from "./store";
+import { clearBroadcastHistory, removeBroadcastItem, setBroadcastPaused, setBroadcastOpen, type BroadcastItem } from "./store";
 import type { DockEdge, StageRect } from "./dock";
 import { kindMetaOf, relativeTime } from "./kinds";
 import { TypedText } from "./TypedText";
@@ -109,11 +109,20 @@ export function BroadcastPanel({ items, edge, stage, icon, paused, threadId }: {
           const expanded = expandedId === item.id;
           const body = String(item.text ?? "").trim();
           return (
-            <button
-              type="button"
+            /* ⛔ 11-01：整行不能再是 <button> —— 行内要放「删除这一条」的按钮，
+               button 里嵌 button 是非法结构（浏览器会把它拍平成两个并列按钮，点删除会连带展开）。
+               ⇒ 行改成 role="button" + 自己处理 Enter/Space，删除按钮才是真 <button>。 */
+            <div
               key={item.id}
+              role="button"
+              tabIndex={0}
               className={`bc-item kind-${item.kind} tone-${item.tone ?? meta.tone}${expanded ? " is-open" : ""}`}
               onClick={() => setExpandedId(expanded ? "" : item.id)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                setExpandedId(expanded ? "" : item.id);
+              }}
               title={body || item.title}
             >
               <span className="bc-item-icon" aria-hidden><Icon size={13} /></span>
@@ -122,14 +131,15 @@ export function BroadcastPanel({ items, edge, stage, icon, paused, threadId }: {
                   <span className="bc-item-kind">{meta.label}</span>
                   <span className="bc-item-time">{relativeTime(item.at)}</span>
                 </span>
-                {/* 群事件标题走打字机；其它类型标题保持静态（避免一屏字全在动） */}
+                {/* 群事件标题走打字机；其它类型标题保持静态（避免一屏字全在动）。
+                    ⛔ `playKey`：只在该条第一次出现时逐字，之后开合面板不再重播（11-01 用户实报）。 */}
                 <span className="bc-item-title">
-                  {item.kind === "group" ? <TypedText text={item.title} variant="group" /> : item.title}
+                  {item.kind === "group" ? <TypedText text={item.title} variant="group" playKey={`${item.id}:title`} /> : item.title}
                 </span>
                 {body ? (
                   <span className="bc-item-text">
                     {item.kind === "group" || item.kind === "voice"
-                      ? <TypedText text={body} variant={item.kind === "voice" ? "voice" : "group"} />
+                      ? <TypedText text={body} variant={item.kind === "voice" ? "voice" : "group"} playKey={`${item.id}:text`} />
                       : body}
                   </span>
                 ) : null}
@@ -139,7 +149,17 @@ export function BroadcastPanel({ items, edge, stage, icon, paused, threadId }: {
                   </span>
                 ) : null}
               </span>
-            </button>
+              {/* 11-01 用户令：「给每个群事件后面都加一个单独删除功能」 */}
+              <button
+                type="button"
+                className="bc-item-del"
+                title="删除这条播报"
+                aria-label="删除这条播报"
+                onClick={(event) => { event.stopPropagation(); removeBroadcastItem(item.id); }}
+              >
+                <Trash2 size={12} />
+              </button>
+            </div>
           );
         })}
       </div>

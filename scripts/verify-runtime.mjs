@@ -168,6 +168,53 @@ if (process.argv.includes("--alias-e2e")) {
     fail.push("改名没有同时反映到侧栏与顶栏");
   }
 }
+/* 可选：播报面板 e2e（`--broadcast-e2e`）——
+   11-01 用户三条反馈：① 短群事件「标题+正文」重复同一句；② 每条要能单独删除；③ 开合不重播逐字。
+   这里能验 ①②（③ 是动画观感，靠"只播一次"的标记断言 + 肉眼）。 */
+if (process.argv.includes("--broadcast-e2e")) {
+  const bc = await evaluate(`(async () => {
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const pod = () => document.querySelector('.bc-pod');
+    if (!pod()) return { skipped: '没有播报按钮' };
+    const items = () => Array.from(document.querySelectorAll('.bc-item'));
+    const openPanel = async () => {
+      if (!document.querySelector('.bc-panel')) pod().click();
+      await sleep(600);
+    };
+    const closePanel = async () => {
+      if (document.querySelector('.bc-panel')) pod().click();
+      await sleep(200);
+    };
+    /* ⛔ 不靠"碰巧有群事件历史"：直接走对外推播口（harness:broadcast）塞两条，
+       这样面板渲染 / 逐字 / 单条删除三条路径每次都能被真跑一遍。 */
+    await closePanel();
+    for (const [title, text] of [['探针播报一', '这是用于验证面板渲染与删除的正文。'], ['探针播报二', '第二条。']]) {
+      window.dispatchEvent(new CustomEvent('harness:broadcast', { detail: { kind: 'group', title, text } }));
+    }
+    await sleep(300);
+    await openPanel();
+    if (!items().length) return { skipped: '推播后面板仍为空' };
+    const before = items().length;
+    /* 同一条里标题与正文是否说同一句话（重复展示的判据） */
+    const dupes = items().filter((row) => {
+      const title = (row.querySelector('.bc-item-title')?.textContent || '').trim();
+      const body = (row.querySelector('.bc-item-text')?.textContent || '').trim();
+      return Boolean(title && body && (title === body || (body.length <= title.length + 8 && title.startsWith(body.slice(0, 12)))));
+    }).length;
+    const del = document.querySelector('.bc-item-del');
+    if (del) del.click();
+    await sleep(400);
+    return { before, after: items().length, dupes, hasDel: Boolean(del) };
+  })()`);
+  const st = bc?.skipped ? `— 跳过（${bc.skipped}）` : `✓ 面板 ${bc?.before ?? "?"} 条`;
+  console.log(`  · 播报面板: ${st} | 单条删除 ${bc?.hasDel ? `✓ ${bc?.before} → ${bc?.after}` : "✗ 没有删除按钮"}`
+    + ` | 标题/正文重复 ${bc?.dupes ?? "?"} 条（应为 0）`);
+  if (bc && !bc.skipped) {
+    if (!bc.hasDel) fail.push("播报面板没有单条删除按钮");
+    else if (bc.after !== bc.before - 1) fail.push("点删除后条数没变（删除没生效）");
+    if (bc.dupes > 0) fail.push(`播报面板有 ${bc.dupes} 条标题与正文同文（重复展示）`);
+  }
+}
 if (reactNoise.length) {
   console.log(`  · 报错明细:`);
   for (const line of [...new Set(reactNoise)].slice(0, 6)) console.log(`      ${line.slice(0, 220)}`);

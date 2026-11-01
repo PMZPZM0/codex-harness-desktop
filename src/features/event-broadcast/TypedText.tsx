@@ -14,12 +14,29 @@ import { useMemo } from "react";
 
 export type TypedVariant = "group" | "voice";
 
-export function TypedText({ text, variant, className }: {
+/**
+ * ⛔⛔ 11-01 用户（截图 + 原话：「每次点开这个，都播放一次」）：
+ *   逐字效果是 CSS animation，**元素一重建就从头播一遍** —— 而播报面板是可开合的，
+ *   每开一次 <TypedText> 就重新挂载一次 ⇒ 整屏历史事件集体再敲一遍（像重新播报）。
+ *   ⇒ 记忆「这条内容已经敲过了」（按 `playKey`，模块级，跨挂载存活）：
+ *     第一次进场逐字，之后任何重挂载都静态呈现。⛔ 不是缓存动画进度，是"只敲一次"。
+ */
+const playedKeys = new Set<string>();
+
+export function TypedText({ text, variant, className, playKey }: {
   text: string;
   variant: TypedVariant;
   className?: string;
+  /** 一次性的"已经播过"标记（同一条播报的同一处文字共用一个 key）。不给就每次都动。 */
+  playKey?: string;
 }) {
   const chars = useMemo(() => Array.from(String(text ?? "")), [text]);
+  const key = String(playKey ?? "");
+  const animate = key ? !playedKeys.has(key) : true;
+  if (key && animate) playedKeys.add(key);
+  if (!animate) {
+    return <span className={`bc-typed is-${variant}${className ? ` ${className}` : ""}`}>{String(text ?? "")}</span>;
+  }
   const step = variant === "voice" ? 26 : 14;
   return (
     <span className={`bc-typed is-${variant}${className ? ` ${className}` : ""}`}>

@@ -247,7 +247,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
        「标签（已调度）主会话 / 调度会话--专家名字或者专家团名字或者子智能体随机名字」。
        角色信息在会话名里已经有了（调度时按对象命名），徽标只标"它是被调度的"。
        层级（挂主会话下面）由 buildDispatchChildren 的 childrenOf/childIds 负责（09-25 已有）。 */
-    /* 10-25 用户令：中枢群派出去的成员会话打「中枢调度」标签（区别于普通「调度」）。
+    /* ⛔ 11-01 用户（截图：「被调度的会话，就显示调度两个字就行了，不要加中枢两个字」）：
+       中枢群的成员会话原来打「中枢调度」⇒ 改成统一的「调度」。
+       ⛔ 它被谁派的在**层级**里已经说了（缩进挂在那个中枢会话下面），徽标只标"它是被调度的"。
        ⛔ 成员会话是派活时 thread/start 新建的，不走 delegate 登记 ⇒ 只能由群账本回传的
           memberThreadIds 认（store 由侧栏订阅，这里读快照即可，渲染期不发起请求）。 */
     const bossSnap = getBossThreads();
@@ -259,7 +261,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const sourceBadge = isBossOwnThread
       ? { tone: "boss", label: "中枢" }
       : isBossMemberThread
-      ? { tone: "dispatch", label: "中枢调度" }
+      ? { tone: "dispatch", label: "调度" }
       : delegateKind
       ? { tone: "dispatch", label: "调度" }
       : variant === "lead" || expertRole?.kind === "team"

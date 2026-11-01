@@ -20,6 +20,7 @@ import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
+import { aliasRecordOf, ensureSessionAlias } from "../session-alias";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -508,6 +509,7 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
     }).catch(() => null);
     if (resumed?.thread?.id) {
       threadCwd.set(member.threadId, group.workspace || process.cwd());
+      void ensureSessionAlias(member.threadId, String(group.bossThreadId ?? "")).catch(() => undefined);
       return member.threadId;
     }
   }
@@ -530,6 +532,8 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
   member.threadId = threadId;
   member.threadName = `${group.name}·${member.name}`;
   bossStore.save();
+  /* ⛔ 登记上级（中枢会话）：气泡头部「谁派的活」读这条链；中枢改名后子会话那边跟着变。 */
+  void ensureSessionAlias(threadId, String(group.bossThreadId ?? "")).catch(() => undefined);
   return threadId;
 }
 
@@ -661,9 +665,10 @@ function browserAppendix(): string {
 }
 
 /* ── 派活 ─────────────────────────────────────────────────────────────────── */
-function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, attemptNo: number): string {
+function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, attemptNo: number, supervisor = ""): string {
   return `[SYSTEM TASK · 群成员会话]
 你是「${group.name}」群里的 **${member.name}**（${member.role}）。
+${supervisor ? `上级：${supervisor}\n` : ""}
 ${member.systemPrompt ? `${member.systemPrompt}\n` : ""}
 === 本次任务（第 ${attemptNo} 次尝试）===
 标题：${task.title}
@@ -696,12 +701,17 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
       return { ok: true, taskId: task.id, memberId: member.id };
     }
     const threadId = await ensureMemberThread(group, member);
+    /* ⛔ 11-01：中枢派活的首任务要以**上级身份**展示（用户：「为啥他调度会话，还是以我的身份发出去的」）
+       ⇒ 把中枢会话的名字写进壳里，渲染端据此显示「<中枢名> 派发任务」而不是用户气泡。
+       快照里查得到就用快照（改名会跟着变），查不到退回群名（绝不是"主会话"这种空话）。 */
+    const bossAlias = (await aliasRecordOf(String(group.bossThreadId ?? "")).catch(() => null))?.alias ?? "";
+    const bossSupervisor = bossAlias || group.name;
     const env = await providerEnv();
     /* ⛔ 每次派活都重新跟随 boss 当前模型（成员线程是常驻的，boss 换模型后成员要跟上来）。 */
     const model = (await bossModelOf(group)) || member.model || env.model;
     const turn: any = await server.request("turn/start", {
       threadId,
-      input: [{ type: "text", text: memberPrompt(group, member, task, attempt.n), text_elements: [] }],
+      input: [{ type: "text", text: memberPrompt(group, member, task, attempt.n, bossSupervisor), text_elements: [] }],
       model,
       effort: member.effort || "high",
     });

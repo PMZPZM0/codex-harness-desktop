@@ -254,6 +254,34 @@ export function clearBroadcastHistory(): void {
   emit();
 }
 
+/**
+ * 删掉**单条**播报（11-01 用户：「然后给每个群事件后面都加一个单独删除功能」）。
+ *
+ * ⛔ 只从历史和队列里摘掉，**`seen` 不删** —— 那是"这条事件已经播过"的墓碑：
+ *   采集端每次重渲染都会重新扫到对话流里的同一个群事件 item，删掉 seen 就会立刻被重新采集、
+ *   重新播一遍（用户会看到"删了又冒出来"）。
+ * ⛔ 正在念的那条被删 ⇒ 立刻收气泡并推进队列（不然会卡在一条已经不存在的条目上）。
+ */
+export function removeBroadcastItem(id: string): void {
+  const key = String(id ?? "").trim();
+  if (!key) return;
+  const target = history.find((entry) => entry.id === key);
+  history = history.filter((entry) => entry.id !== key);
+  const qi = queue.findIndex((entry) => entry.id === key);
+  if (qi >= 0) queue.splice(qi, 1);
+  if (target?.threadId && unreadBy[target.threadId] > 0) {
+    unreadBy = { ...unreadBy, [target.threadId]: unreadBy[target.threadId] - 1 };
+  }
+  if (announcing?.id === key) {
+    window.clearTimeout(timer);
+    timer = 0;
+    announcing = null;
+    if (!open) { nextInQueue(); return; }
+  }
+  persist();
+  emit();
+}
+
 /* ── 对外推送入口（CustomEvent，与 `codex-profile-updated` / 壁纸联动同一套范式）──────
    为什么要有：① 演示/自动化需要从外部推一条播报来验效果；② 将来任何模块、插件槽、
    外部脚本想"播报一句话"都走这里 —— 不必 import 组件，也不会开出第二个渲染实例。

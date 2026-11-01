@@ -642,3 +642,34 @@
   .bc-eq-bubble i { animation: none; }
   .bc-wave { display: none !important; }
 }
+
+/* ── 11-01 用户令：「给每个群事件后面都加一个单独删除功能」──────────────
+   行的右侧一枚小垃圾桶：平时淡出（不抢正文注意力），鼠标移到这一行 / 键盘聚焦时才显形。
+   ⛔ 行本身是 role="button"（可展开），删除按钮必须能独立点中 ⇒ 它自己 stopPropagation。 */
+.bc-item-del {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s, border-color 0.12s;
+}
+.bc-item:hover .bc-item-del,
+.bc-item:focus-within .bc-item-del { opacity: 1; }
+.bc-item-del:hover {
+  color: var(--red, #e5484d);
+  background: color-mix(in srgb, var(--red, #e5484d) 10%, transparent);
+  border-color: color-mix(in srgb, var(--red, #e5484d) 26%, transparent);
+}
+.bc-item-del:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; opacity: 1; }
+/* 触屏没有 hover：删除按钮常显，否则根本点不到 */
+@media (hover: none) { .bc-item-del { opacity: 1; } }
