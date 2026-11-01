@@ -319,8 +319,12 @@ w.postMessage({id:1,op:"list",root});
     const versionsPath = join(ROOT, "scripts", "lib", "tools-versions.cjs");
     (existsSync(versionsPath) ? ok : fail)("【141】scripts/lib/tools-versions.cjs 存在（版本单一来源）");
     const versionsSrc = readFileSync(versionsPath, "utf8");
-    (/"0\.2\.3"/.test(versionsSrc) && /computerUse: "0\.3\.6"/.test(versionsSrc) && !/playwright/i.test(versionsSrc) ? ok : fail)(
-      "【141】版本表只剩 nuphus / computer-use / ponytail 等实际随包件（Playwright 已移除）"
+    /* ⛔ 11-01：判据只认**键**，不认具体版本号 —— 原来把 0.2.3 / 0.3.6 写进断言，
+       升级随包工具（nuphus 0.3.3 / computer-use 1.1.3）就会假红，而它本意是
+       「表里只留真正随包的件、Playwright 已移除」。版本值由各自的下载/构建脚本消费。 */
+    (/nuphus:\s*"/.test(versionsSrc) && /computerUse:\s*"/.test(versionsSrc)
+      && /ponytail:\s*"/.test(versionsSrc) && !/playwright/i.test(versionsSrc) ? ok : fail)(
+      "【141】版本表只装实际随包件（nuphus / computer-use / ponytail 等，Playwright 已移除）"
     );
     const prepWinSrc = readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8");
     const prepMacSrc = readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8");

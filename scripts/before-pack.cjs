@@ -228,8 +228,8 @@ module.exports = async function beforePack() {
   if (!pluginOk) {
     const message = `[before-pack] 缺少 ${pluginDir}（或里面没有 plugin.yaml / skills）\n`
       + "  没有它，装出来的应用「ponytail 写代码模式插件」是空的（插件 0、钩子空、6 个技能全无）。\n"
-      + "  补法（v4.9.0）：\n"
-      + "    curl -L -o ponytail.tar.gz https://github.com/DietrichGebert/ponytail/archive/refs/tags/v4.9.0.tar.gz\n"
+      + "  补法（v5.3.3）：\n"
+      + "    curl -L -o ponytail.tar.gz https://github.com/DietrichGebert/ponytail/archive/refs/tags/v5.3.3.tar.gz\n"
       + "    tar -xzf ponytail.tar.gz -C resources/tools/ponytail-plugin --strip-components=1\n"
       + "  确实要出一版不带它的包：设 AUTOMATION_ZIP_OPTIONAL=1。";
     if (optional) {

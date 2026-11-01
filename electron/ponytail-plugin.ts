@@ -15,7 +15,7 @@ import fsSync from "node:fs";
 import path from "node:path";
 
 // 随包插件的固定版本目录名（引擎安装落点 = plugins/cache/<市场>/<插件>/<版本>）。
-export const PONYTAIL_VERSION = "4.9.0";
+export const PONYTAIL_VERSION = "5.3.3";
 
 /** ponytail 在引擎安装落点下的版本根目录（`<codexHome>/plugins/cache/<市场>/<插件>/<版本>`）。 */
 export function ponytailCacheRoot(codexHome: string): string {
@@ -26,9 +26,9 @@ export function ponytailCacheRoot(codexHome: string): string {
  * 读**引擎安装落点里实际存在**的 ponytail 版本（不排序；空数组 = 一个都没装）。
  *
  * ⛔⛔ 别拿随包常量 `PONYTAIL_VERSION` 当「当前版本」：在线更新装的是**按标签命名**的目录
- *    （`…/ponytail/ponytail/5.2.0`），与随包版本（4.9.0）不同名。只报常量会让控制台的
- *    那一行永远停在「4.9.0 → v5.2.0（有可用更新）」——更新成功了也不刷新、版本号不动
- *    （10-13 用户实测：磁盘上只剩 5.2.0，界面仍报 4.9.0）。
+ *    （`…/ponytail/ponytail/<ver>`，按标签命名），与随包版本不同名。只报常量会让控制台的
+ *    那一行永远停在旧版本上 —— 更新成功了也不刷新、版本号不动
+ *    （10-13 用户实测：磁盘上只剩新版本，界面仍报随包的那一个）。
  *    随包常量只回答「随包的是什么」，不回答「**装的是什么**」。
  *    版本大小比较不在本文件做：单一真相源是 `electron/updates.ts` 的 `compareVersions`。
  */
@@ -48,7 +48,7 @@ export async function listInstalledPonytailVersions(codexHome: string): Promise<
 }
 
 /* ⛔ 10-30：写死钩子 sha256 的做法已删除 —— 引擎按**当前钩子文件**算 currentHash，
-   4.9.0 的常量与引擎 0.166 算出来的不一致，写了也是 untrusted。信任统一走
+   随包版本的常量与引擎 0.166 算出来的不一致，写了也是 untrusted。信任统一走
    `hooks/list` 的 currentHash 显式写入（见 electron/hooks-trust.ts）。 */
 
 async function copyDir(src: string, dst: string): Promise<void> {

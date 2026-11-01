@@ -197,7 +197,7 @@ async function ponytailLatestTag(source: DownloadSourceSetting): Promise<string>
  *
  * ⛔ 别拿随包常量 `PONYTAIL_VERSION` 当当前版本：在线更新装的是**按标签命名**的目录
  *    （`…/ponytail/ponytail/5.2.0`），与随包版本（4.9.0）不同名 —— 只报常量会让控制台
- *    永远停在「4.9.0 → v5.2.0（有可用更新）」，更新成功了也不刷新（10-13 用户实测）。
+ *    永远停在旧版本上，更新成功了也不刷新（10-13 用户实测）。
  * 版本大小比较走 `updates.ts` 的 `compareVersions`（单一真相源，别在这里手写第二份）。
  */
 async function installedPonytailVersion(codexHome: string): Promise<string> {

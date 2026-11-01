@@ -12,7 +12,7 @@
  *   npm-global/       ← npm i -g --prefix：@nuphus/nuphus-mcp（浏览器自动化走外部 Ego Lite）
  *   vscode-cli/       ← update.code.visualstudio.com cli-win32-x64
  *   cloudflared.exe   ← cloudflare/cloudflared release
- *   ponytail-plugin/  ← ponytail v4.9.0 源码包（strip 1）
+ *   ponytail-plugin/  ← ponytail 源码包（版本取 TOOLS_VERSIONS.ponytail，strip 1）
  *   pwsh-headless/    ← 由随包源码 pwsh-headless/PwshHeadless.cs 现场编译（无窗口 pwsh 转发壳）
  *   python/ rg/ uv/ jq/ ninja/ sevenzip/ yt-dlp/ cmake/ platform-tools/
  *                     ← 6.5 步：**下载体积 ≤50MB 的小工具一律随包内置**（10-01 用户定稿），

@@ -13,13 +13,13 @@
  */
 const TOOLS_VERSIONS = {
   /** 桌面自动化 MCP（nuphus）：四处同源，升级理由通常是安全依赖 */
-  nuphus: "0.2.3",
+  nuphus: "0.3.3",
   /**
    * Codex 式电脑操作（open-computer-use，MIT）：**只在 macOS 随包**，作为 mac 的桌面自动化后端。
    * npm 包已内置四平台二进制（解包 13MB），postinstall 只打印安装提示 ⇒ CI 用 --ignore-scripts 也装得动。
    * Windows 不用它（那边是 nuphus + 我们自己的 UIA 控件清单通道）。
    */
-  computerUse: "0.3.6",
+  computerUse: "1.1.3",
   /** 飞书官方 CLI（@larksuite/cli，Go 二进制，npm postinstall 按平台下载）。50MB 出头 ⇒ 按需安装，不随包 */
   feishuCli: "1.0.98",
   /**
@@ -29,7 +29,7 @@ const TOOLS_VERSIONS = {
    */
   filee: "2.2.0",
   /** ponytail 写代码模式插件（首启自动种入） */
-  ponytail: "v4.9.0",
+  ponytail: "v5.3.3",
 };
 
 module.exports = { TOOLS_VERSIONS };
