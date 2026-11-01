@@ -217,12 +217,22 @@ function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   return lines.join("\n");
 }
 
+/** marker 落在**随包根**（resources/tools）即为随包内置，删不掉。 */
+function installedFromBundle(spec: DevRuntimeSpec): boolean {
+  const marker = (spec as any).marker;
+  const rels: string[] = Array.isArray(marker) ? marker : marker ? [marker] : [];
+  return rels.some((rel) => { try { return existsSync(path.join(toolsRoot(), rel)); } catch { return false; } });
+}
+
 function runtimeList() {
   return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
     .filter(([id]) => !(IS_MAC && DARWIN_HIDDEN.has(id)))
     .map(([id, spec]) => ({
       id, ...specFor(id, spec),
       installed: runtimeInstalled(id, spec),
+      /* ⛔ 11-01：随包资源（resources/tools）里的工具**删不掉**，但原来照样给「卸载」按钮，
+         点了才报错 —— 用户原话「搞笑吗这是」。这里把来源标出来，让界面直接显示「内置」。 */
+      fromBundle: installedFromBundle(spec),
       installedBySystem: runtimeInstalledBySystem(id),
       installing: runtimeInstalls.has(id),
       // 装不上时的备用方案：预置一段可直接发给 Codex 的提示词（渲染层只展示 + 复制）
@@ -959,6 +969,18 @@ export const runtimeFeature = defineFeature<null>({
       // 随包内置资源（zip / 插件目录），不是联网下载 —— 删了没有可靠的重取途径，直接拒绝
       if (spec.noUninstall) throw new Error("该工具来自随包内置资源，删除后难以恢复，因此不支持卸载");
       const targets = runtimeUninstallTargets(id, spec);
+      /* ⛔⛔ 11-01 用户实测「都不是内置的，怎么卸载还删不掉」：
+         工具被装/解到了 resources/tools（随包根）时，删除目标只解析到可写根 ⇒ 删了个不存在的位置。
+         ⇒ 把同一相对路径在随包根里的副本也加入删除清单（两边都删，状态才会真的回落）。 */
+      for (const target of [...targets]) {
+        try {
+          const rel = path.relative(writeToolsRoot(), target);
+          if (rel && !rel.startsWith("..") && !path.isAbsolute(rel)) {
+            const alt = path.join(toolsRoot(), rel);
+            if (existsSync(alt) && !targets.includes(alt)) targets.push(alt);
+          }
+        } catch { /* 相对化失败就跳过 */ }
+      }
       // 防御：marker 解析异常时 target 可能退化成某个根目录 —— 那会把**所有**工具/插件删光。
       // 要求每个 target 必须落在允许根之内，且不等于这些根本身。
       // ⛔ 10-07：kb-embedding 装在 <userData>/kb-backend（userData 下），需要放行。
