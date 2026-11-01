@@ -86,9 +86,9 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
   const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
-  /** 缺模型时直达「必需 · 基础语音模型」组（与引擎卡的跳转同一处落点）。 */
+  /** 缺模型时直达「换一个更好听的引擎」组（基础模型的操作按钮已并入轻量播报卡，落点跟着挪）。 */
   const goModels = () => {
-    const el = document.getElementById("voice-models");
+    const el = document.getElementById("voice-engines");
     if (!el) return;
     el.scrollIntoView({ behavior: "smooth", block: "start" });
     el.classList.add("is-flash");
@@ -112,24 +112,21 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           ③ 帮助 ? 改挂在基础模型卡右上角，文案重写成「这块是什么、怎么装」。 */}
 
       {/* ⛔⛔ 10-26 用户两轮实测：「我看不懂…好几个下载的地方，看的眼花缭乱」/「分好类、排序好，
-          不装用不了的和拓展音色的要分开」⇒ 整页按**用途与依赖**分 4 组，每组一个标签说明性质：
-             必需（基础模型）→ 可选（换引擎）→ 选声音（音色）→ 可选（克隆自己的声音）。
-          ⛔ 别再把"下载"入口散落各处：基础模型只在「必需」组下载，引擎卡缺模型时只做跳转。 */}
-      <div className="voice-group" id="voice-models">
-        <VoiceDevToolsSection onNotice={onNotice} only="base" helpSlot={
-          <PageInfo
-            label="基础语音模型"
-            helpKey="voice"
-            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」，支持 HF 快照 / 单个仓库 / 仓库根三种目录结构。不装它，语音通话与默认播报都用不了；换引擎（Kokoro 等）也仍要靠它做识别。</>}
-          />
-        } />
-      </div>
-
+          不装用不了的和拓展音色的要分开」⇒ 整页按**用途与依赖**分组，每组一个标签说明性质。
+          10-31 用户：「这两个卡片重复了，保留下面的就行了，把打开目录、卸载、停用放到卡片上去」
+          ⇒ 基础模型不再单独成卡，操作并进轻量播报卡（见 02-tts-engines 的 compact 嵌入）；
+            页面现在 = 换引擎（含基础模型操作）→ 选声音 → 克隆声音 → 日常。 */}
       <div className="voice-group">
-        <div className="voice-group-head">
+        <div className="voice-group-head" id="voice-engines">
           <span className="voice-group-tag is-optional">可选</span>
           <strong>换一个更好听的引擎</strong>
           <span className="voice-group-sub">不装也能用轻量播报；装好后到下面「音色」里挑声音</span>
+          {/* 基础模型的帮助挪到引擎组头（卡片已并入轻量播报卡，? 不能跟着丢） */}
+          <PageInfo
+            label="基础语音模型"
+            helpKey="voice"
+            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」。不装它，语音通话与默认播报都用不了；换引擎（Kokoro 等）也仍要靠它做识别。</>}
+          />
         </div>
         <VoiceSettingsSectionTtsEngines apply={apply} onNotice={onNotice} reloadMeta={reloadMeta} settings={settings} />
       </div>

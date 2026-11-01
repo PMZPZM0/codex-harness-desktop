@@ -2058,3 +2058,28 @@
 .domains-dot.off { background:#b8791f; box-shadow:0 0 0 3px color-mix(in srgb, #b8791f 18%, transparent); }
 .domains-tile-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .domains-toggle { padding:3px 9px !important; font-size:11px !important; }
+
+/* ── 10-31 用户令：「基础模型卡与轻量播报卡重复，保留下面的，把打开目录/卸载/停用放到卡片上去」 ──
+   基础模型的操作区以 **compact** 形式并进「轻量播报」卡：去掉卡片外壳与重复说明，
+   只留「路径 + 进度 + 操作按钮」；按钮行左对齐与卡的正文同一基线。 */
+.voice-devtools-card.is-compact {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  gap: 6px;
+}
+.voice-devtools-card.is-compact .voice-devtools-card-head { display: none; }
+.voice-devtools-card.is-compact .voice-devtools-sub,
+.voice-devtools-card.is-compact .voice-devtools-desc,
+.voice-devtools-card.is-compact .voice-devtools-import-hint { display: none; }
+.voice-devtools-card.is-compact .voice-devtools-body { padding: 0; gap: 6px; }
+.voice-devtools-card.is-compact .voice-devtools-path {
+  font-size: 11px;
+  opacity: 0.8;
+  max-width: 100%;
+}
+.voice-devtools-card.is-compact .voice-devtools-actions {
+  justify-content: flex-start;
+  padding: 2px 0 0;
+  border-top: 1px dashed var(--line-soft);
+}

@@ -12,6 +12,7 @@
 import { Check, Download, LoaderCircle, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Settings } from "../VoiceSettingsSection";
+import VoiceDevToolsSection from "../VoiceDevToolsSection";
 
 type Props = {
   apply: (patch: Partial<Settings>) => void;
@@ -189,7 +190,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   }, []);
 
   const install = useCallback(async (id: PackId) => {    if (id === "vits") {
-      onNotice("轻量播报跟着基础语音模型一起装：到上方「语音模型」区下载/导入基础模型即可");
+      onNotice("轻量播报跟着基础语音模型一起装：点本卡的「下载模型 / 本地导入」装基础模型即可");
       return;
     }
     setBusy(id);
@@ -245,15 +246,6 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     setFlash({ pack: id, kind: "info", text: msg });
   }, [apply, current, onNotice, packs, reloadMeta, settings]);
 
-  /** 跳到「语音模型」区（基础模型的唯一下载入口）—— 引擎卡不再自己挂第二个下载按钮。 */
-  const jumpToModels = useCallback(() => {
-    const el = document.getElementById("voice-models");
-    if (!el) return;
-    el.scrollIntoView({ behavior: "smooth", block: "start" });
-    el.classList.add("is-flash");
-    window.setTimeout(() => el.classList.remove("is-flash"), 1400);
-  }, []);
-
   /* ⛔ 10-26：「当前」也要说真话 —— 设置里选的是它，但没装就合成不了。
      另：三个都没装时整块给一句明确指路（用户原话「我模型都没下载呢」）。 */
   const currentReady = Boolean(packs[current]?.ready);
@@ -277,7 +269,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             <TriangleAlert size={13} />
             <span>
               现在<strong>一个合成引擎都还没装</strong>，语音通话与播报都无法出声。
-              先到本页上方「语音模型」下载基础模型（轻量播报随它一起装），或直接下载下面任一引擎包。
+              轻量播报随「基础语音模型」一起装（本卡下方就是它的下载/导入按钮）；其它引擎包各自单独下载。
             </span>
           </div>
         )}
@@ -326,13 +318,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                             </button>
                           )}
                         </>
-                      ) : engine.id === "vits" ? (
-                        /* ⛔ 10-26 用户：「好几个下载的地方，看的眼花缭乱」——
-                           基础模型只在「语音模型」区下载，这里只做跳转（别再加第二个下载入口）。 */
-                        <button className="secondary-setting" onClick={jumpToModels}>
-                          <Download size={13} />去装基础模型
-                        </button>
-                      ) : (
+                      ) : engine.id === "vits" ? null : (
                         <button className="secondary-setting" onClick={() => void install(engine.id)} disabled={downloading}>
                           {downloading ? <><LoaderCircle size={13} className="spin" />下载中…</> : <><Download size={13} />下载引擎包</>}
                         </button>
@@ -358,6 +344,12 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                     {engine.cons.map((c) => <li key={c}><TriangleAlert size={12} />{c}</li>)}
                   </ul>
                 </div>
+
+                {/* ⛔ 10-31 用户令：「这两个卡片重复了，保留下面的就行了，把打开目录、卸载、停用放到卡片上去」——
+                    基础模型（必需）不再单独占一张卡：路径 / 下载导入 / 打开目录 / 停用 / 删除 / 全部清空
+                    全部并进「轻量播报」这张卡（它本来就写着「装完基础模型就能用」）。
+                    ⛔ compact 模式复用 VoiceDevToolsSection 的全部状态与动作逻辑（不复制第二套 IPC 调用）。 */}
+                {engine.id === "vits" && <VoiceDevToolsSection compact only="base" onNotice={onNotice} />}
 
                 {/* 下载中：进度条 + 百分比 + 主进程给的阶段说明（"已下载 42MB / 140MB" 这类） */}
                 {downloading && (

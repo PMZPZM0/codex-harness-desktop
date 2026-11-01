@@ -72,7 +72,7 @@ const STATE_BADGE: Record<ResourceState, string> = {
  *    守卫 07 的「语音页 ? 在」判据只扫 VoiceSettingsSection.tsx 及其子目录，
  *    ? 写在这里会被判成「帮助入口丢了」。所以本体留在调用方，这里只负责摆位置。
  */
-export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onNotice: (m: string) => void; only?: "base" | "zipvoice"; helpSlot?: ReactNode }) {
+export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact }: { onNotice: (m: string) => void; only?: "base" | "zipvoice"; helpSlot?: ReactNode; /** 只出「路径 + 进度 + 操作按钮」，不带卡片外壳/说明（10-31 用户：基础模型卡与轻量播报卡重复，保留下面的，把按钮挪上去）。 */ compact?: boolean }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [downloading, setDownloading] = useState<DownloadState>(null);
   // 音色克隆模型（ZipVoice）独立下载状态：与基础语音模型分开显示/取消
@@ -260,7 +260,7 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onN
   return (
     <>
     {(!only || only === "base") && (
-    <div className="voice-devtools-card">
+    <div className={`voice-devtools-card${compact ? " is-compact" : ""}`}>
       {/* 10-27 用户：「把必须放到基础模型里面…首个卡片内容布局调一下，现在有点乱」——
           卡头收成**一行**：图标 + 必需标签 + 名称 + 状态徽标 + 帮助 ?；
           副标题与安装路径下沉到正文区各占一行（标题列不再被挤窄、路径不再被省略号吃掉一半）。 */}
