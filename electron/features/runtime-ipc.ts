@@ -1009,6 +1009,25 @@ export const runtimeFeature = defineFeature<null>({
       //   常驻 embedding worker 子进程正抱着模型文件，Windows 上文件被占用时 fs.rm 直接 EBUSY/EPERM
       //   （try/catch 还把它吞成「删成功」）⇒ 又一个「卸载了但一直显示已安装」。
       //   uninstallKbEmbedding() 内部先 disposeKbEmbedWorker() 再删，与 10-04 的安装/卸载设计同源。
+      /* ⛔⛔ 11-01 用户实测「文档转换怎么都卸不掉」：它是 **pip 包**，文件在 python/Lib/site-packages 里，
+         靠「按路径删目录」在不同根/不同大小写布局下极易漏 ⇒ 残文件仍在，判定依旧是已安装。
+         ⇒ 先走包管理器真正卸载（它自己清 pkg / dist-info / entry-points），再走目录清理兜底。 */
+      if (PIP_PACKAGE_DIRS[id]) {
+        const pyCandidates = [
+          path.join(toolsRoot(), "python", process.platform === "win32" ? "python.exe" : "bin/python3"),
+          path.join(writeToolsRoot(), "python", process.platform === "win32" ? "python.exe" : "bin/python3"),
+        ];
+        const py = pyCandidates.find((c) => { try { return existsSync(c); } catch { return false; } });
+        if (py) {
+          sendToWindow("runtime:progress", { id, stage: "正在卸载 pip 包", percent: 0 });
+          try {
+            require("node:child_process").spawnSync(
+              py, ["-m", "pip", "uninstall", "-y", String(PIP_PACKAGE_DIRS[id])],
+              { windowsHide: true, timeout: 180_000 },
+            );
+          } catch { /* pip 不可用就走下面的目录清理 */ }
+        }
+      }
       if (id === "kb-embedding") {
         sendToWindow("runtime:progress", { id, stage: "正在删除文件", percent: 0 });
         await uninstallKbEmbedding();
