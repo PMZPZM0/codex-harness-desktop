@@ -365,7 +365,9 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setCurrent(0); }}
-        onError={() => setError("音频加载失败（文件不存在或路径不在可信目录内）")}
+        onError={() => setError(source.startsWith("harness-music://")
+          ? "音乐取流失败：酷狗直链被拒（可稍后重试、换一首，或让 Codex 重新播放一次）"
+          : "音频加载失败（文件不存在或路径不在可信目录内）")}
       />
     </div>
   );
