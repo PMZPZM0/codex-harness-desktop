@@ -312,7 +312,11 @@ function createPetActivityWindow(): BrowserWindow {
     },
   });
   activityWindow = win;
-  win.setAlwaysOnTop(true);
+  /* ⛔⛔ 11-01 用户实测「播报/宠物浮窗一直压在办公室预览上面，怎么也关不掉」：
+       它是**独立置顶窗口**，setAlwaysOnTop(true) 会盖住应用里任何窗口（办公室预览是另一个 BrowserWindow，
+       CSS 层级对它无效）。⇒ 取消全局置顶：它仍是一个正常窗口，主窗口聚焦时自然在上面，
+       但不会再浮到别的窗口之上。 */
+      win.setAlwaysOnTop(false);
   win.on("closed", () => {
     if (activityWindow === win) activityWindow = null;
   });
@@ -471,7 +475,11 @@ function createPetWindow(settings: PetSettings): BrowserWindow {
   // 置顶重申：Windows 上偶发被其它置顶窗盖住，ready-to-show 再申明一次（幂等、零成本）
   win.once("ready-to-show", () => {
     try {
-      win.setAlwaysOnTop(true);
+      /* ⛔⛔ 11-01 用户实测「播报/宠物浮窗一直压在办公室预览上面，怎么也关不掉」：
+       它是**独立置顶窗口**，setAlwaysOnTop(true) 会盖住应用里任何窗口（办公室预览是另一个 BrowserWindow，
+       CSS 层级对它无效）。⇒ 取消全局置顶：它仍是一个正常窗口，主窗口聚焦时自然在上面，
+       但不会再浮到别的窗口之上。 */
+      win.setAlwaysOnTop(false);
       win.setOpacity(settings.opacity);
       win.showInactive();          // ⛔ showInactive：显示宠物**不抢当前应用的焦点**
       // 光标轮询开跑；矩形尚未上报前**整块穿透**（fail-safe：绝不挡桌面）
@@ -540,7 +548,11 @@ export function showPetWindow(settings: PetSettings) {
     const pos = clampToWorkArea(b.x, b.y, width, height);
     win.setBounds({ ...pos, width, height });
     win.setOpacity(settings.opacity);
-    win.setAlwaysOnTop(true);
+    /* ⛔⛔ 11-01 用户实测「播报/宠物浮窗一直压在办公室预览上面，怎么也关不掉」：
+       它是**独立置顶窗口**，setAlwaysOnTop(true) 会盖住应用里任何窗口（办公室预览是另一个 BrowserWindow，
+       CSS 层级对它无效）。⇒ 取消全局置顶：它仍是一个正常窗口，主窗口聚焦时自然在上面，
+       但不会再浮到别的窗口之上。 */
+      win.setAlwaysOnTop(false);
     win.showInactive();
     startPetMouseWatch();
     syncPetActivityWindow(petSignal());
