@@ -21,6 +21,8 @@ import {
   Lightbulb, LoaderCircle, Music, Palette, PenLine, Sparkles, TrendingUp, UserRound, Video, X,
 } from "lucide-react";
 import { USER_PERSONAS, userPersonaFields } from "../../lib/user-personas.mjs";
+// 内置 Codex 人格（11-01 用户令「联动引导配置」）：与引导简版四选一并列，选内置写完整人设 + soulSlug
+import { BUILT_IN_SOULS } from "../../lib/builtin-souls.mjs";
 import { setCodexIdentity, storeCodexAvatar } from "../../lib/codex-identity.mjs";
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../../lib/avatar-presets";
 
@@ -56,7 +58,7 @@ const STEPS = [
  *   ⛔ 只用通用性格描述，不引用任何第三方 IP。 */
 const ASSISTANT_PERSONAS = [
   { id: "default", label: "默认 Codex", desc: "平衡、直接，按任务切换表达", persona: "" },
-  { id: "engineer", label: "严谨工程师", desc: "先验证再下结论，给命令与检查项", persona: "你是严谨的工程搭档：先确认事实与边界，再给可执行的步骤；结论要有依据，不知道就直说；改代码前说明影响面，改完给出验证方式。" },
+  /* ⛔ 「严谨工程师」简版已删：与内置 built-in:engineer（极简工程师，完整人设）重复 —— 由下方合并项提供 */
   { id: "assistant", label: "高效助理", desc: "结论先行，少客套，直接给动作", persona: "你是高效助理：结论先行，能一句话说清就不写三段；直接给动作与结果，少寒暄，不主动扩展无关话题。" },
   { id: "teacher", label: "耐心老师", desc: "把原理讲透，循序渐进", persona: "你是耐心的老师：先给结论，再用类比与步骤解释原理；重要概念配小例子；不堆术语，不一次塞太多。" },
   { id: "creative", label: "创意搭档", desc: "多给点子，敢提不同方案", persona: "你是创意搭档：先理解目标，再给 2~3 个不同方向的方案与取舍；鼓励尝试，但明确风险与成本。" },
@@ -220,7 +222,12 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
         return;
       }
       const selected = USER_PERSONAS.find((item) => item.id === personaId) ?? null;
-      const selectedAssistant = ASSISTANT_PERSONAS.find((item) => item.id === assistantPersonaId) ?? ASSISTANT_PERSONAS[0];
+      /* 合并池里找（简版四选一 + 内置六套）；找不到回落默认项 */
+      const mergedAssistants: Array<{ id: string; label: string; desc: string; persona: string; soulSlug?: string }> = [
+        ...ASSISTANT_PERSONAS,
+        ...BUILT_IN_SOULS.map((soul) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug })),
+      ];
+      const selectedAssistant = mergedAssistants.find((item: any) => item.id === assistantPersonaId) ?? mergedAssistants[0];
       const fields = selected ? userPersonaFields(selected.id) : null;
       const finalOccupation = occupation.trim() || fields?.occupation || "";
       const interestText = [...interests, customInterest.trim()].filter(Boolean).join("、");
@@ -238,7 +245,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
         ...(tone !== "none" ? { tone: tone === "casual" ? "轻松幽默" : "专业中性" } : {}),
         ...(habitText ? { habits: habitText } : {}),
         ...(customInstructions.trim() ? { customInstructions: customInstructions.trim() } : {}),
-        ...(assistantPersonaTouched ? { persona: selectedAssistant.persona, soulSlug: "" } : {}),
+        ...(assistantPersonaTouched ? { persona: selectedAssistant.persona, soulSlug: selectedAssistant.soulSlug ?? "" } : {}),
       };
       const saved = (await window.codex.saveIdentity(payload as unknown as Record<string, string>)) as Config;
       try {
@@ -381,7 +388,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
             {step === 2 && (
               <div className="profile-guide-assistant">
                 <div className="profile-guide-personas">
-                  {ASSISTANT_PERSONAS.map((persona, index) => (
+                  {[...ASSISTANT_PERSONAS, ...BUILT_IN_SOULS.map((soul: { slug: string; displayName: string; summary: string; content: string }) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug }))].map((persona, index) => (
                     <button type="button" key={persona.id} className={`profile-guide-persona ${assistantPersonaId === persona.id ? "on" : ""}`} onClick={() => { setAssistantPersonaId(persona.id); setAssistantPersonaTouched(true); }}>
                       <span className={`profile-guide-persona-mark tone-${index % 5}`}>{persona.label.slice(0, 1)}</span>
                       <div><strong>{persona.label}</strong><small>{persona.desc}</small></div>

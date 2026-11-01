@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, UserRound, Briefcase, GraduationCap, Clock3, Heart, Languages, Lightbulb, Save, Wand2, LogOut, RotateCcw, Check, Sparkles, ChevronRight } from "lucide-react";
 import { DefaultCodexAvatar } from "./DefaultCodexAvatar";
 import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.mjs";
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
+import { USER_PERSONAS, COMBO_PACKS, userPersonaFields } from "../lib/user-personas.mjs";
 import { SettingsDialog } from "./SettingsDialog";
 
 export type UserProfile = {
@@ -34,7 +35,7 @@ const STYLE_OPTIONS = [
   { value: "none", label: "默认", desc: "不额外注入语气" },
 ];
 
-export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout, assistantName = CODEX_DEFAULT_NAME, onAssistantNameChange, codexAvatar, onCodexAvatarChange }: {
+export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout, assistantName = CODEX_DEFAULT_NAME, onAssistantNameChange, codexAvatar, onCodexAvatarChange, onOpenPersonaMarket }: {
   username: string;
   onUsernameChange: (name: string) => void;
   personality: string;
@@ -50,6 +51,8 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   /** Codex 的头像：默认内置矢量头像，可上传替换。 */
   codexAvatar?: CodexAvatarSpec;
   onCodexAvatarChange?: (spec: CodexAvatarSpec) => void;
+  /** 跳「设置 → 个性化 → 人格市场」（11-01 用户令：人格市场跳转入口） */
+  onOpenPersonaMarket?: () => void;
 }) {
   const [profile, setProfile] = useState<UserProfile>(() => {
     try {
@@ -255,11 +258,33 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   const displayName = profile.nickname || username || "未设置昵称";
 
   /* 11-01：一级卡/二级弹窗的开关（照开发工具页模式）；avatarStat 给「头像」卡显示当前头像小图。 */
-  const [openCard, setOpenCard] = useState<null | "identity" | "avatar" | "about" | "codex">(null);
+  const [openCard, setOpenCard] = useState<null | "identity" | "avatar" | "about" | "codex" | "persona">(null);
+  /* 套餐应用中标记：⛔ 必须在组件顶层 —— 原先写在条件渲染的 IIFE 里是非法 Hook 调用（React 抛错，弹窗打不开） */
+  const [busyPack, setBusyPack] = useState("");
   const close = () => setOpenCard(null);
   const avatarStat = profile.avatarType === "image" && profile.avatar
     ? <img src={profile.avatar} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} />
     : <span>{profile.avatarType === "emoji" ? "Emoji 头像" : "默认形象"}</span>;
+  /* 11-01 人格卡：当前生效人格（persona 字段被两类人格共用 —— 值 ∈ USER_PERSONAS = 用户人格 id；
+     否则 soulSlug 非空 = Codex 人格（内置 slug 本地可显名）。读 currentSoulMarket 一处拿全。 */
+  const [personaInfo, setPersonaInfo] = useState<{ soulSlug: string; persona: string; displayName: string } | null>(null);
+  const refreshPersona = useCallback(() => {
+    window.codex.currentSoulMarket?.().then((info: any) => setPersonaInfo(info ?? null)).catch(() => undefined);
+  }, []);
+  useEffect(() => { refreshPersona(); }, [refreshPersona]);
+  useEffect(() => {
+    const off = window.codex.onHarnessEvent?.((payload: any) => {
+      if (payload?.type === "codex-profile-updated") refreshPersona();
+    });
+    return off;
+  }, [refreshPersona]);
+  const personaSummary = (() => {
+    const persona = personaInfo?.persona ?? "";
+    const hit = persona ? USER_PERSONAS.find((p) => p.id === persona) : null;
+    if (hit) return "用户人格 · " + hit.label;
+    if (personaInfo?.soulSlug) return "Codex 人格 · " + (personaInfo.displayName || personaInfo.soulSlug.replace(/^built-in:/, ""));
+    return "默认（未安装人格）";
+  })();
   /** 摘要里截长文本（顶栏 truncateThreadTitle 同款：展开防代理对，⛔ 不用 slice 劈 emoji） */
   const truncateText = (value: string, max: number) => ([...value].length > max ? [...value].slice(0, max).join("") + "…" : value);
 
@@ -319,6 +344,15 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
         <span className="uc-row-copy">
           <strong>Codex 的身份</strong>
           <small>{assistantName || CODEX_DEFAULT_NAME} · 名字与形象改完立即生效</small>
+        </span>
+        <ChevronRight size={14} className="uc-row-arrow" />
+      </button>
+
+      <button type="button" className="uc-row-card" onClick={() => setOpenCard("persona")}>
+        <span className="uc-row-icon"><Wand2 size={15} /></span>
+        <span className="uc-row-copy">
+          <strong>人格</strong>
+          <small>{personaSummary} · 用户人格与 Codex 人格成套搭配</small>
         </span>
         <ChevronRight size={14} className="uc-row-arrow" />
       </button>
@@ -459,6 +493,59 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           </section>
         </SettingsDialog>
       )}
+
+      {/* ── 二级弹窗：人格（用户人格 / Codex 人格 / 联动套餐 / 跳人格市场） ──
+          ⛔ 套餐一键应用 = 用户档案字段（userPersonaFields）+ Codex persona（内置 soul content）同时落档；
+             两个字段都可视、可各自再改（应用后派发 codex-profile-updated 让个性化页同步刷新）。 */}
+      {openCard === "persona" && (() => {
+        const applyCombo = async (packId: string) => {
+          const pack = COMBO_PACKS.find((c: any) => c.id === packId);
+          if (!pack || busyPack) return;
+          setBusyPack(packId);
+          try {
+            const detail: any = await window.codex.getSoulMarket({ slug: pack.soulSlug });
+            const fields = userPersonaFields(pack.userPersonaId) as any;
+            if (!fields || !detail?.content) throw new Error("套餐数据读取失败");
+            await window.codex.saveIdentity({ ...fields, persona: detail.content, soulSlug: pack.soulSlug, onboarded: true, profileGuideSeen: true });
+            try { window.dispatchEvent(new Event("codex-profile-updated")); } catch { /* 忽略 */ }
+            refreshPersona();
+            onNotice?.("已应用套餐「" + pack.label + "」—— 下一新会话生效，两个身份都能在人格市场里单独改");
+          } catch (error: any) {
+            onNotice?.("套餐应用失败：" + (error?.message ?? error));
+          } finally { setBusyPack(""); }
+        };
+        return (
+          <SettingsDialog title="人格" icon={<Wand2 size={15} />} hint="用户人格 × Codex 人格，成套搭配" onClose={close}>
+            <section className="uc-panel">
+              <div className="uc-hero-kicker" style={{ marginBottom: 6 }}>当前生效</div>
+              <p className="settings-card-hint">{personaSummary}{personaInfo?.persona ? "（已写入档案，下一新会话生效）" : ""}</p>
+              <div className="uc-hero-kicker" style={{ margin: "10px 0 6px" }}>联动套餐（一键同套：用户人格 + Codex 人格）</div>
+              <div className="uc-grid uc-grid-2">
+                {COMBO_PACKS.map((pack: any) => {
+                  const userHit = USER_PERSONAS.find((p) => p.id === pack.userPersonaId);
+                  return (
+                    <div key={pack.id} className="uc-panel" style={{ padding: "10px 12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <strong style={{ fontSize: 13 }}>{pack.label}</strong>
+                        <button type="button" className="uc-chip uc-chip-button" disabled={busyPack === pack.id} title={pack.desc} onClick={() => void applyCombo(pack.id)}>
+                          {busyPack === pack.id ? "应用中…" : "一键应用"}
+                        </button>
+                      </div>
+                      <small style={{ color: "var(--muted)", fontSize: 11.5, lineHeight: 1.5, display: "block", marginTop: 4 }}>
+                        {userHit?.label ?? pack.userPersonaId} + {pack.soulSlug.replace("built-in:", "")} —— {pack.desc}
+                      </small>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+            <div className="uc-savebar">
+              <span className="uc-savebar-note"><Sparkles size={13} />想自由搭配（16 种用户人格 / 22 种 Codex 人格）？</span>
+              <button type="button" className="primary-setting" onClick={() => { close(); onOpenPersonaMarket?.(); }}>打开人格市场</button>
+            </div>
+          </SettingsDialog>
+        );
+      })()}
 
     </section>
   );

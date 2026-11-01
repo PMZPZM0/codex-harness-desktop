@@ -1103,7 +1103,7 @@ interface Window {
     /* 应用人格（slug=null 还原默认）：写 personalization.persona + 同步 $CODEX_HOME/AGENTS.md，新会话即生效 */
     applySoulMarket(input: { slug: string | null }): Promise<{ slug: string; displayName: string }>;
     /* 当前生效人格（soulSlug 空 = 默认人格） */
-    currentSoulMarket(): Promise<{ soulSlug: string; persona: string }>;
+    currentSoulMarket(): Promise<{ soulSlug: string; persona: string; displayName: string }>;
     /* 人格详情（content = 完整中文人设） */
     getSoulMarket(input: { slug: string }): Promise<{ slug: string; displayName: string; summary: string; version: string; content: string }>;
     /* SkillHub 人格市场（skillhub.cn/soul，16 套全量） */

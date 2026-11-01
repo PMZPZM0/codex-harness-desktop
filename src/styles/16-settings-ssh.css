@@ -1841,3 +1841,5 @@
 @media (max-width: 760px) {
   .user-center .uc-row-side { flex-basis: 100%; }
 }
+/* 11-01：弹窗里的保存栏只有单个动作键时，space-between 会让它贴左 —— 弹窗内一律靠右。 */
+.settings-dialog .uc-savebar { justify-content: flex-end; }

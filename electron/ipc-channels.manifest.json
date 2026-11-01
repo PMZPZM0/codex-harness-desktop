@@ -4264,7 +4264,7 @@
       "channel": "soul-market:current",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ soulSlug: string; persona: string }>",
+      "returns": "Promise<{ soulSlug: string; persona: string; displayName: string }>",
       "invokeArgs": "",
       "cast": null,
       "note": "当前生效人格（soulSlug 空 = 默认人格）"
