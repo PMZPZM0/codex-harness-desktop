@@ -78,5 +78,22 @@
     "look-13.webp",
     "look-14.webp",
     "look-15.webp"
-  ]
+  ],
+  "rig": {
+    "defaultPalette": "main",
+    "avatarPalette": {},
+    "palettes": {
+      "main": {
+        "idle": "poses/idle.webp",
+        "running": "poses/work.webp",
+        "running-left": "poses/idle.webp",
+        "running-right": "poses/idle.webp",
+        "waving": "poses/wave.webp",
+        "jumping": "poses/cheer.webp",
+        "failed": "poses/sad.webp",
+        "waiting": "poses/hug.webp",
+        "review": "poses/review.webp"
+      }
+    }
+  }
 }

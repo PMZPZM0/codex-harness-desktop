@@ -265,9 +265,11 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     `整包体积受控（实测 ${(totalBytes / 1024 / 1024).toFixed(1)}MB ≤ 8MB）`);
   /* 11-02 用户：「其他几个的动画图标也跟小C一样」——
      动画包缩略图改播 idle 动画（减少动效时回落 stillSrc）；关节包用姿态图 + 呼吸动作。 */
-  ok(/reduced \? animation\.stillSrc : animation\.animatedSrc/.test(settingsPetSrc)
-    && /pet-thumb-rig/.test(settingsPetSrc) && /pet-thumb-rig img/.test(petCss) && /pet-thumb-animated/.test(settingsPetSrc),
-    "设置页缩略图：动物播 idle 动画、机器人姿态图带呼吸动作（减少动效回落静帧）");
+  ok(/const animation = pkg\.animationSet\?\.idle;/.test(settingsPetSrc)
+    && /pet-thumb-animated/.test(settingsPetSrc) && /animation\.animatedSrc/.test(settingsPetSrc)
+    && /animation\.stillSrc/.test(settingsPetSrc)
+    && /pet-thumb-rig/.test(settingsPetSrc) && /pet-thumb-rig img/.test(petCss),
+    "设置页缩略图：动物优先播 idle 动画、机器人姿态图带呼吸动作（减少动效回落静帧）");
   ok(/pet-sprite-anim\[data-state="running"\][^{]*\{[^}]*animation: pet-rig-work/.test(petCss)
     && /pet-sprite-anim\[data-state="waiting"\][^{]*\{[^}]*animation: pet-rig-wait/.test(petCss),
     "动画包宠物也补同一套状态微动作（运行/等待/审阅/失败不再只靠逐帧硬切）");
@@ -313,6 +315,26 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
 
   /* 11-02 用户截图「宠物好几个，展示不全」：45 文件那条 170px 会盖掉 22 文件的 160px，
      7 只又回到 3 列、最后一张掉到折叠线以下。⇒ 4 列 + 描述两行定高 + 立像式预览。 */
+  /* 11-02 用户确认：「其他六只也做和小C一样的姿态集」——六只动物补 poses/ 关节包
+     （站立 / 敲笔记本 / 抱膝 / 放大镜 / 难过 / 挥手 / 庆祝），原 9 态动画保留不删。 */
+  const animalRigBad = [];
+  for (const slug of ["harness-fox", "harness-mochi", "harness-tuantuan", "harness-chai", "harness-lizi", "harness-qingtuan"]) {
+    try {
+      const dir = join(ROOT, "public", "pets", slug);
+      const meta = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
+      const missing = STATES.filter((state) => {
+        const rel = meta.rig?.palettes?.main?.[state];
+        return !rel || !existsSync(join(dir, String(rel)));
+      });
+      if (!meta.rig || missing.length) animalRigBad.push(`${slug}(${missing.join(",") || "无 rig"})`);
+    } catch (error) {
+      animalRigBad.push(`${slug}:${error.message}`);
+    }
+  }
+  ok(animalRigBad.length === 0, `六只动物都有与小C同级的九态姿态集（问题：${animalRigBad.join(" | ") || "无"}）`);
+  ok(/const animation = pkg\.animationSet\?\.idle;\s*\n\s*if \(animation && !reduced\)/.test(settingsPetSrc),
+    "动画包缩略图仍优先播原 idle 动画（转关节包后图标不退回静图）");
+
   const petSettingsCss = read("src/styles/45-settings-experience.css");
   ok(/\.settings-exp-page \.pet-grid\s*\{[^}]*minmax\(150px/.test(petSettingsCss)
     && /\.settings-exp-page \.pet-grid\s*\{[^}]*gap:\s*8px/.test(petSettingsCss)

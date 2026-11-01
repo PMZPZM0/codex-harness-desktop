@@ -50,6 +50,23 @@ function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: numbe
   const k = height / (pkg.frameHeight || 208);
   const width = pkg.frameWidth * k;
   const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  /* ⛔ 先看动画包：动物转成关节包后仍保留原 idle 动画，缩略图继续播动画（比呼吸动作更有辨识度）。
+     没有动画包（小C）才用姿态图 + 呼吸。 */
+  const animation = pkg.animationSet?.idle;
+  if (animation && !reduced) {
+    return (
+      <span
+        className="pet-thumb pet-thumb-animated"
+        style={{
+          width: `${width}px`,
+          height: `${height}px`,
+          backgroundImage: `url("${petAssetUrl(animation.animatedSrc)}")`,
+          backgroundSize: "contain",
+          backgroundPosition: "center bottom",
+        }}
+      />
+    );
+  }
   const rigStill = pkg.rig ? pkg.rig.palettes?.[rigPaletteOf(pkg)]?.idle : "";
   if (rigStill) {
     return (
@@ -58,8 +75,8 @@ function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: numbe
       </span>
     );
   }
-  const animation = pkg.animationSet?.idle;
-  const source = (animation ? (reduced ? animation.stillSrc : animation.animatedSrc) : "") || pkg.spritesheet;
+  const animationStill = animation ? animation.stillSrc : "";
+  const source = animationStill || pkg.spritesheet;
   const contain = Boolean(animation);
   return (
     <span
