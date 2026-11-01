@@ -6,7 +6,7 @@
  *    每个名字要么是本段刚声明的局部，要么走 bag（跨 part 用），要么由段末 return 交给组合根转交 App。
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
-import { enginePersonality } from "../../../../lib/reply-style.mjs";
+import { enginePersonality, inquiryInstruction, challengeInstruction, essenceInstruction } from "../../../../lib/reply-style.mjs";
 import { removeBossSessionId } from "../../../boss-group-view";
 /*指挥中枢的项目地址：⛔ **它自己的目录**，不是全局 workspace ——
    10-25 用户实测：「下面已经自动选了别的会话的项目地址」「每次指挥中枢都不要自动选择旧的会话项目地址」。
@@ -731,7 +731,9 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
     const bossRoleSeed = (() => {
       try { return getBossThreads().pending ? BOSS_ROLE_PROMPT : ""; } catch { return ""; }
     })();
-    const developerInstructions = [bossRoleSeed, scopeSeed, onboardingInstructions].filter(Boolean).join("\n\n");
+    /* ⛔ 11-01 用户令「选了那个就必须生效那个」：回复风格块直接随 thread/start 下发 ——
+       不依赖发送前的 pushSessionScope（那条与 send 有 800ms 竞速，引擎慢时首回合会漏风格）。 */
+    const developerInstructions = [bossRoleSeed, scopeSeed, onboardingInstructions, inquiryInstruction(bag.personality), challengeInstruction(bag.personality), essenceInstruction(bag.personality)].filter(Boolean).join("\n\n");
     const started = await window.codex.request("thread/start", {
       model: bag.selectedModel?.model ?? modelName(bag.modelId),
       // 欢迎页「无项目」模式：本会话用自动创建的独立临时目录（每个会话单独一个）；

@@ -334,6 +334,20 @@ const enginePersonalitySends = [
 const rawPersonality = enginePersonalitySends.filter((rel) => /personality:\s*bag\.personality\b/.test(read(rel)));
 ok(rawPersonality.length === 0 && enginePersonalitySends.every((rel) => /enginePersonality\(bag\.personality\)/.test(read(rel))),
   `引擎入口下发 personality 一律过 enginePersonality（违规：${rawPersonality.join(" / ") || "无"}）`);
+/* ⛔ 11-01 用户实测「老是自动默认，那我做的这些都是摆设吗」：引擎按 none 回推 thread/settings/updated，
+   旧逻辑无条件覆盖。回复风格是用户全局偏好（localStorage），引擎回推只反映它自己的三档 ——
+   这里**一律不许回写**，否则任何非官方三档的选择都留不住。 */
+const settingsUpdatedSrc = codeOnly(read("src/features/app-state/parts/part05/event-router/09-thread-settings-updated.tsx"));
+ok(!/bag\.setPersonality\(/.test(settingsUpdatedSrc),
+  "引擎 settings/updated 回推不写回复风格（选中哪个就保持哪个，绝不自动回默认）");
+/* 自定义风格必须真的下发：① 随 thread/start 的 developerInstructions（首回合就生效，不等 push 竞速）；
+   ② 改风格当场重下发当前会话（不等下一次发送）。 */
+const threadStartOwner = read("src/features/app-state/parts/part08/01-seg.tsx");
+ok(/inquiryInstruction\(bag\.personality\)[\s\S]{0,400}challengeInstruction\(bag\.personality\)[\s\S]{0,400}essenceInstruction\(bag\.personality\)/.test(threadStartOwner),
+  "自定义回复风格随 thread/start 的 developerInstructions 下发（首回合即生效）");
+const personalitySetter = read("src/features/app-state/parts/part06/03-seg/01-permission-effort-copy.tsx");
+ok(/function changePersonality[\s\S]{0,900}pushSessionScope\(threadId\)/.test(personalitySetter),
+  "切换回复风格当场重下发当前会话的 developer instructions");
 const generalPage = pageSrc("general");
 ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
   && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");

@@ -45,7 +45,10 @@ export function handleEventRouter9(bag: Bag, params: any): boolean {
           const localEffort = threadId ? loadThreadEffort(threadId) : "";
           bag.setEffort(normalizeEffort(localEffort || params.threadSettings.effort) || "");
         }
-        bag.setPersonality(params.threadSettings.personality ?? "none");
+        /* ⛔⛔ 11-01 用户实测「老是自动默认，那我做的这些都是摆设吗」「选了哪个就必须生效那个」：
+           回复风格是**用户的全局偏好**（存 localStorage），引擎回推的 personality 只反映它自己的
+           三档语气（自定义风格按 none 下发，回推必然是 none）。旧逻辑拿回推值覆盖 UI ⇒ 刚选中的
+           风格当场被拉回「默认」。这里**不再让引擎回写风格**：改风格只走用户点击 / 启动读档。 */
       
   return false;
 }

@@ -211,6 +211,10 @@ bag.layaReady = layaReady as typeof bag.layaReady;
     /* 10-27：引擎只认官方三档 ⇒ 「需求询问」这类自定义风格按 none 下发，
        它真正的效果由 developer instructions 里的 grill-me 指令承担（见 src/lib/reply-style.mjs）。 */
     void bag.updateThreadSettings({ personality: enginePersonality(value) });
+    /* ⛔ 11-01 用户令「选了就必须生效」：自定风格的行为靠 developer instructions，改完立刻重下发，
+       不等下一次发送（签名含风格，未变会自动跳过）。 */
+    const threadId = bag.threadRef.current?.id;
+    if (threadId) void bag.pushSessionScope(threadId);
   }
 bag.changePersonality = changePersonality as typeof bag.changePersonality;
 
