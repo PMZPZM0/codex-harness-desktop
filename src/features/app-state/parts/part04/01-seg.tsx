@@ -17,14 +17,14 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import { BUILTIN_DISTRIBUTED_SKILLS } from "../../../app-view/constants";
 import type { Bag } from "../bag-types";
-import { setAliasSnapshot } from "../../../session-alias/alias-store.mjs";
+import { setAliasSnapshot } from "../../../../lib/alias-store.mjs";
 
 export function usePart04a(bag: Bag) {
   /* ★ 10-31 会话笔名快照：进应用先拉一次，之后靠主进程广播 `aliases-changed` 整份替换。
-     ⛔ 笔名是跨板块共享的只读快照 ⇒ 走 store（src/features/session-alias/alias-store.mjs），
+     ⛔ 笔名是跨板块共享的只读快照 ⇒ 走 store（src/lib/alias-store.mjs），
         不要往 bag 加字段（bag 新字段要同时改 bag-types + 各 seg 的 return，容易漂）。 */
   useEffect(() => {
-    void window.codex.sessionAliasSnapshot?.().then((snapshot: any) => setAliasSnapshot(snapshot)).catch(() => undefined);
+    void window.codex.sessionAliasSnapshot?.().then((snapshot) => setAliasSnapshot(snapshot)).catch(() => undefined);
   }, []);
   /* ⛔⛔ 11-01 用户（截图：「名字没同步左侧栏…这里还是显示未命名任务」）：
      只靠"进应用拉一次 + 变更时广播"是不够的 —— 广播是**一次性事件**，
@@ -34,7 +34,7 @@ export function usePart04a(bag: Bag) {
      ⛔ 只依赖 `threads.length` 与当前会话 id：不能依赖整个 threads 数组（每次刷新都是新数组 ⇒ 死循环）。 */
   const aliasRefreshKey = `${bag.threads.length}|${bag.thread?.id ?? ""}`;
   useEffect(() => {
-    void window.codex.sessionAliasSnapshot?.().then((snapshot: any) => setAliasSnapshot(snapshot)).catch(() => undefined);
+    void window.codex.sessionAliasSnapshot?.().then((snapshot) => setAliasSnapshot(snapshot)).catch(() => undefined);
   }, [aliasRefreshKey]);
   /* ⛔⛔ 11-01 实测抓出来的真 bug：这里原来监听的是 `window` 的 `message` 事件，判据
      `data.channel === "harness:event"` —— 可是**没有任何地方** postMessage 这种形状

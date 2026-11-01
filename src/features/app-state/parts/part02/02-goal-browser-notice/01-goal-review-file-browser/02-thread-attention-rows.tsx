@@ -147,7 +147,7 @@ import {
 import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../../../../../components/CardShell";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../../lib/user-refs";
 import { getEntityTagState, openTagEditor } from "../../../../../../lib/entity-tags.mjs";
-import { aliasLabelOf, getAliasState, subscribeAliases } from "../../../../../../features/session-alias/alias-store.mjs";
+import { aliasLabelOf, getAliasState, subscribeAliases } from "../../../../../../lib/alias-store.mjs";
 import { badgeCycleIndexOf, cycleThreadBadge, getBadgeCycleState, subscribeBadgeCycle } from "../../../../../../lib/thread-badge-cycle.mjs";
 import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../../../lib/thread-row-colors.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
@@ -190,7 +190,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
   /** variant="member"：专家团成员会话行（次要层级）。09-14 用户反馈「会话主次明显不对，
    *  主会话右边才亮图标」——成员会话是程序管理的子会话，不给归档/置顶/更多按钮，
    *  宽度留给标题（否则标题被挤成「交易分析专家团…」分不清谁是谁）。样式差异全在 CSS。 */
-  const renderThreadRow = (entry: Thread, variant?: "member" | "lead", extras?: { actions?: any; badge?: any }) => {
+  const renderThreadRow = (entry: Thread, variant?: "member" | "lead", extras?: { actions?: ReactNode; badge?: ReactNode }) => {
     const running = bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = bag.threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
