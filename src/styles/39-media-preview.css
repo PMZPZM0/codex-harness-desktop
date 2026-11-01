@@ -111,8 +111,28 @@
 
 .media-stage-video {
   display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+
+/* 视频工具条（11-01）：视频上方一行，左标题右工具。⛔ 不再浮在画面上（会压住画面/原生控制条）。 */
+.media-video-bar {
+  flex: none;
+  display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #0b0b0c;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+.media-video-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
 }
 
 .media-video-wrap {
@@ -124,6 +144,7 @@
   justify-content: center;
   background: #000;
 }
+.media-stage-video .media-video-wrap { flex: 1; min-height: 0; height: auto; }
 
 .media-video {
   width: 100%;
@@ -145,34 +166,11 @@
   pointer-events: none;
 }
 
-.media-stage-caption {
-  position: absolute;
-  left: 16px;
-  top: 14px;
-  max-width: 60%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 12px;
-  pointer-events: none;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-
-/* 播放工具条（11-01）：倍速 / 画中画 / 全屏。原生 controls 没有稳定的倍速菜单 ⇒ 自绘一条。
-   ⛔ 放**右上角**：原生控制条在底部，放右下会正好压住音量/全屏/⋮。 */
+/* 播放工具（11-01）：倍速 / 画中画 / 全屏，摆在视频上方的工具条里（不浮在画面上）。 */
 .media-video-tools {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  z-index: 3;
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 6px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
 }
 .media-video-rate { display: inline-flex; align-items: center; gap: 4px; color: rgba(255, 255, 255, 0.82); font-size: 11px; }
 .media-video-rate select {
@@ -226,8 +224,8 @@
   aspect-ratio: 16 / 9;
 }
 .media-preview-backdrop.is-mini .media-preview-foot { display: none; }
-.media-preview-backdrop.is-mini .media-stage-caption { display: none; }
-.media-preview-backdrop.is-mini .media-video-tools { right: 8px; bottom: 8px; padding: 2px 4px; }
+.media-preview-backdrop.is-mini .media-video-bar { padding: 4px 8px; }
+.media-preview-backdrop.is-mini .media-video-tool { display: none; }
 .media-preview-backdrop.is-mini .media-preview-head { padding: 6px 10px; }
 .media-preview-backdrop.is-mini .media-preview-kind { display: none; }
 /* 音频迷你条：只留播放/进度/时间（±15、循环、倍速、音量收起来，边听边干活不占地方） */
@@ -690,4 +688,48 @@
   .media-audio-cover { width: 48px; height: 48px; }
   .media-audio-volume { display: none; }
   .media-result-name { max-width: 160px; }
+}
+
+/* ── 回合播放卡（11-01 用户令：「汇总消息下面加播放组件展示卡片，叉掉了也能点回来」）────
+   与「已更改文件」汇总卡同一位置感：回合结束、汇总卡下方一行；点击重开播放器。 */
+.turn-media-cards { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 2px; }
+.turn-media-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.turn-media-card:hover { border-color: var(--accent); background: var(--panel-2, var(--panel)); }
+.turn-media-card-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent) 13%, var(--bg));
+  color: var(--accent);
+}
+.turn-media-card.is-audio .turn-media-card-icon { background: color-mix(in srgb, #22c55e 13%, var(--bg)); color: #22c55e; }
+.turn-media-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.turn-media-card-main strong { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.turn-media-card-main small { color: var(--muted); font-size: 11px; }
+.turn-media-card-play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
 }

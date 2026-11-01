@@ -59,7 +59,7 @@ ok(/media-src[^;]*harness-media:/.test(html), "CSP media-src 放行 harness-medi
 ok(Boolean(pkg.dependencies?.["hls.js"]), "hls.js 已进依赖（Chromium 不原生播 m3u8）");
 
 /* ── 渲染层：弹窗 / 懒加载 / 三处入口 ── */
-ok(appView.includes("<MediaPreviewBridge />"), "AppView 挂了 <MediaPreviewBridge />");
+ok(appView.includes("<MediaPreviewBridge") && /runningTurnIdsRef={app.runningTurnIdsRef}/.test(appView), "AppView 挂了 <MediaPreviewBridge />（并把当前会话/回合传进去，播放记录才能归到正确回合）");
 ok(styles.includes("styles/39-media-preview"), "styles.css 引入 39-media-preview");
 ok(
   media.includes('import("hls.js")') && media.includes("controls") && media.includes("AudioPlayer"),
@@ -219,8 +219,12 @@ ok(/setLoop/.test(previewSrc) && /skip\(-15\)/.test(previewSrc) && /skip\(15\)/.
   "音频：±15 秒 / 循环 / 倍速");
 ok(/\.media-preview-backdrop\.is-mini \{[^}]*pointer-events: none;[^}]*z-index: 70/s.test(previewCss),
   "迷你窗不吃点击（pointer-events:none）、z=70（低于设置页 80 / 全局模态 400）");
-ok(/\.media-video-tools \{[^}]*top: 12px/s.test(previewCss) && /\.media-stage-caption \{[^}]*top: 14px/s.test(previewCss),
-  "播放工具条与标题移到顶部（放右下会压住原生音量/全屏按钮）");
+ok(/\.media-video-bar \{[^}]*display: flex;/s.test(previewCss) && /\.media-video-title \{/s.test(previewCss) && !/\.media-video-tools \{[^}]*position: absolute/s.test(previewCss),
+  "视频工具条是上方独立一行（标题+倍速/画中画/全屏），⛔ 不浮在画面上（用户实测位置不对）");
+ok(/recordMediaPlayback/.test(previewSrc) && /recordMediaPlayback/.test(codeOnly(read("src/lib/media-playback-store.mjs"))) && /<TurnMediaCard/.test(codeOnly(read("src/features/session-turn/SessionTurn/03-turn-view.tsx"))),
+  "回合汇总下方有播放卡（点击重开；视频/音频同一逻辑）—— 记录 → 卡片 → 回合视图三处接线");
+ok(/open\(event, true\)/.test(previewSrc) && /if \(!fromEngine\) return;/.test(previewSrc) && /if \(!turnId\) return;/.test(previewSrc),
+  "⛔ 只有引擎打开（Codex 调了视频/音乐工具）且当时有运行中回合才记卡片（用户自己点附件不算）");
 ok(/body:has\(\[class\*="backdrop"\]\) \.voice-float-layer/.test(dialogCss2) && /body:has\(\[class\*="backdrop"\]\) \.voice-announce-bar/.test(dialogCss2),
   "任何弹窗打开时播报悬浮球与播报条一律隐藏（半透明遮罩下也不露出、不挡按钮）");
 

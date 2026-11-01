@@ -15,6 +15,7 @@ import type { PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Box, ExternalLink, FolderOpen, Loader2, Maximize, Maximize2, Minimize2, Music2, Pause, PictureInPicture2, Play, Repeat, RotateCcw, RotateCw, Volume2, VolumeX, X } from "lucide-react";
 import { collectMediaPaths, isHlsSource, isRemoteMediaSource, mediaDisplaySrc, mediaKindOf, type MediaKind } from "../../lib/media-kind.mjs";
 import { openMediaPreview, registerMediaPreview, resolveFilePath, type MediaPreviewTarget } from "../../lib/ui-channels";
+import { recordMediaPlayback } from "../../lib/media-playback-store.mjs";
 import { openModelViewer } from "../model-viewer";
 
 type Kind = Exclude<MediaKind, "">;
@@ -156,6 +157,27 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
 
   return (
     <div className="media-stage media-stage-video" ref={stageRef}>
+      {/* 11-01 用户实测「这一排按键显示位置不对」：不再浮在画面上，改成视频上方的一行工具条
+          （左边标题、右边倍速/画中画/全屏）。浮层无论放哪都会压住画面或原生控制条。 */}
+      <div className="media-video-bar">
+        <span className="media-video-title" title={source}>{title}</span>
+        <div className="media-video-tools">
+          <label className="media-video-rate" title="播放速度">
+            倍速
+            <select value={rate} onChange={(event) => setRate(Number(event.target.value))} aria-label="播放速度">
+              {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
+            </select>
+          </label>
+          {pipSupported ? (
+            <button type="button" className="media-video-tool" onClick={togglePip} title="画中画（浮到最前，不挡操作）" aria-label="画中画">
+              <PictureInPicture2 size={14} />
+            </button>
+          ) : null}
+          <button type="button" className="media-video-tool" onClick={toggleFullscreen} title="全屏" aria-label="全屏">
+            <Maximize size={14} />
+          </button>
+        </div>
+      </div>
       {hls ? (
         <HlsVideo key={reloadKey} source={source} poster={poster} autoPlay={autoPlay} onFatal={setFatal} />
       ) : (
@@ -184,25 +206,6 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
           </div>
         </div>
       ) : null}
-      {/* 播放工具条（11-01 用户「丰富一下功能」）：倍速 / 画中画 / 全屏。
-          ⛔ 缩小到迷你播放器在弹窗标题栏（与关闭同排），不在这里重复一份。 */}
-      <div className="media-video-tools">
-        <label className="media-video-rate" title="播放速度">
-          倍速
-          <select value={rate} onChange={(event) => setRate(Number(event.target.value))} aria-label="播放速度">
-            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
-          </select>
-        </label>
-        {pipSupported ? (
-          <button type="button" className="media-video-tool" onClick={togglePip} title="画中画（浮到最前，不挡操作）" aria-label="画中画">
-            <PictureInPicture2 size={14} />
-          </button>
-        ) : null}
-        <button type="button" className="media-video-tool" onClick={toggleFullscreen} title="全屏" aria-label="全屏">
-          <Maximize size={14} />
-        </button>
-      </div>
-      <span className="media-stage-caption" title={source}>{title}</span>
     </div>
   );
 }
@@ -492,18 +495,35 @@ type MediaBridgeApi = {
   onMediaPreviewOpen?: (listener: (event: MediaPreviewTarget) => void) => (() => void) | undefined;
 };
 
-export function MediaPreviewBridge() {
+export function MediaPreviewBridge({ threadId = "", runningTurnIdsRef }: { threadId?: string; runningTurnIdsRef?: { current: Map<string, string> | null } }) {
   const [target, setTarget] = useState<MediaPreviewTarget | null>(null);
 
   useEffect(() => {
-    registerMediaPreview((next) => setTarget(next));
+    /* 打开预览：来自**引擎**（`media-preview:open` = Codex 调了视频/音乐工具）才记卡片；
+       用户自己点附件/文件卡打开的不记 —— 否则汇总下面会冒出一堆"没让 Codex 放过"的卡片。
+       ⛔ 且必须当时有运行中的回合（runningTurnIdsRef），否则归不到任一回合、卡片无处可挂。 */
+    const open = (next: MediaPreviewTarget, fromEngine = false) => {
+      if (!next?.source) return;
+      setTarget(next);
+      if (!fromEngine) return;
+      const turnId = runningTurnIdsRef?.current?.get(String(threadId ?? "")) ?? "";
+      if (!turnId) return;
+      recordMediaPlayback({
+        threadId,
+        turnId,
+        source: next.source,
+        title: next.title ?? "",
+        kind: String(next.kind ?? ""),
+      });
+    };
+    registerMediaPreview((next) => open(next, false));
     const api = window.codex as unknown as MediaBridgeApi;
-    const off = api.onMediaPreviewOpen?.((event) => { if (event?.source) setTarget(event); });
+    const off = api.onMediaPreviewOpen?.((event) => { if (event?.source) open(event, true); });
     return () => {
       off?.();
       registerMediaPreview(null);
     };
-  }, []);
+  }, [threadId, runningTurnIdsRef]);
 
   if (!target) return null;
   return <MediaPreviewModal target={target} onClose={() => setTarget(null)} />;

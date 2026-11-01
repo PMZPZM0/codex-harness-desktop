@@ -25,6 +25,7 @@ import { isTaskTurn } from "../SessionTurn";
 import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
 import { SessionAnnounceToggle } from "../../voice-announce";
+import { TurnMediaCard } from "../../media";
 export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
@@ -172,6 +173,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
                       )}
                       <TurnFoldStream items={segFold} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={last ? finalAgent?.id : undefined} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} completedSkin={last} />
                       {last && turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />}
+                      {turnFinished && <TurnMediaCard threadId={threadId} turnId={turn.id} />}
                       {last && userStopped && (
                         <div className="turn-user-stopped" role="status">
                           <CircleStop size={14} />
@@ -251,6 +253,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
               ⛔ 运行中的实时「编辑」行**不在这里**（用户 10-06 二次纠正：「在哪个地方就展示在哪个地方，
                  不是一直在新消息下面，这样多丑」）—— 它们由 TurnFoldStream 按锚点挂在对应工具项后面。 */}
           {turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />}
+          {turnFinished && <TurnMediaCard threadId={threadId} turnId={turn.id} />}
           {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
               ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是
               同屏两处（用户对重复文案零容忍，09-18 已因同类问题返工过一次）。这里只说

@@ -805,7 +805,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       {pluginInstall && <PluginInstallModal state={pluginInstall} onClose={() => setPluginInstall(null)} />}
       <AppViewFilePreviewEditor app={app} />
       {/* 视频 / 音频 / 3D 统一预览（media 域，10-20）：自挂载，监听 ui-channels 与 media-preview:open */}
-      <MediaPreviewBridge />
+      <MediaPreviewBridge threadId={thread?.id ?? ""} runningTurnIdsRef={app.runningTurnIdsRef} />
       {/* 3D 预览弹窗（model-viewer 域）：自挂载，监听 model-viewer:open 推送（引擎 preview_3d） */}
       <ModelViewerBridge />
       {/* 图像工坊浮层（image-lab 域，10-09）：Codex 的图像生成/编辑工具调用时弹出预览，结束自动收起 */}
