@@ -760,6 +760,11 @@ export async function bootApp() {
        返回 false = 不是 openfilm_ 前缀，照原流程往下走。 */
     void handleOpenfilmToolCall({ event, respond: (id, result) => server.respond(id as any, result) })
       .catch(() => false);
+    /* 11-01 影视工具（media_*）：同 openfilm，前台/后台会话都要有人应答。 */
+    void (async () => {
+      const { handleMediaToolCall } = await import("../media-tools");
+      return handleMediaToolCall({ event, respond: (id, result) => server.respond(id as any, result) });
+    })().catch(() => false);
     /* 10-22 专家团工具兜底（`team_member_invoke` / `team_phase_invoke`）：这两条原来只由渲染层应答，
        而 `item/tool/call` 不在跨会话白名单里 ⇒ 后台跑的团队主理人（从普通会话 agent_invoke(kind:"team")
        派出去的）根本没人应答，成员永远不被调用（用户报「无法调用成员干活」）。

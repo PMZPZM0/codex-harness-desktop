@@ -117,6 +117,16 @@ export const codexFeature = defineFeature<null>({
         } catch (error: any) {
           console.warn("[openfilm] 工具注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
         }
+        /* 11-01 影视工具（media_search / media_detail / media_preview）：原来只挂在 harness-dispatch
+           MCP 里，那条链路有身份硬闸（只放行委派/团队会话）⇒ 普通会话调不到（用户实测被拒）。
+           提到 dynamicTools 面向所有会话；安全限制仍在 media-sources.ts 内部。 */
+        try {
+          const { buildMediaTools } = await import("../media-tools");
+          const existingMedia = Array.isArray((params as any)?.dynamicTools) ? (params as any).dynamicTools : [];
+          (params as any).dynamicTools = [...existingMedia, ...buildMediaTools()];
+        } catch (error: any) {
+          console.warn("[media-tools] 工具注入失败（不影响 thread/start）：", String(error?.message ?? error).slice(0, 160));
+        }
         /* 10-21：给工具面注入可选 `step` —— 模型填一句中文「这一步在干什么」，卡片直接当标题。
            ⛔ 位置必须在 MCP 合并**之后**：并进来的那批也要有；且要放在 try **外面**，
               合并失败时渲染层自己那批照样能拿到（漏掉就是"工具卡有时没标题"的幽灵差异）。
