@@ -101,7 +101,9 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
                           type="radio"
                           name="voice-profile"
                           checked={(settings?.tts?.profileId ?? "") === p.id}
-                          onChange={() => void selectProfile(p.id)}
+                          disabled={!zipReady}
+                          title={!zipReady ? "先安装音色克隆模型，装好后才能选用克隆音色" : undefined}
+                          onChange={() => { if (!zipReady) return; void selectProfile(p.id); }}
                         />
                         <span>{p.name}</span>
                         {p.builtIn && <em className="voice-profile-builtin" title="内置音色：随应用自带，不能删除">内置</em>}
@@ -109,8 +111,9 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
                       </label>
                       <button
                         className="secondary-setting"
-                        onClick={() => void previewProfile(p.id)}
-                        disabled={previewPhase === "synth" && previewPhase !== null}
+                        onClick={() => { if (!zipReady) return; void previewProfile(p.id); }}
+                        disabled={!zipReady || (previewPhase === "synth" && previewPhase !== null)}
+                        title={!zipReady ? "先安装音色克隆模型（约 156MB），装好后才能试听克隆音色" : undefined}
                       >
                         {previewPhase === "synth"
                           ? <><Square size={12} />合成中…</>
@@ -122,6 +125,12 @@ export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draf
                     </div>
                     );
                   })}
+                  {!zipReady && (settings?.tts?.profileId ?? "") && (
+                    <div className="voice-resource-note">
+                      当前选中的克隆音色<strong>不可用</strong>（音色克隆模型未安装或已停用）——
+                      装好 / 启用后即可恢复；也可以点下面的「改回内置音色」。
+                    </div>
+                  )}
                   {(settings?.tts?.profileId ?? "") && (
                     <button className="secondary-setting" onClick={() => void selectProfile("")}>改回内置音色</button>
                   )}

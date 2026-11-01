@@ -1148,6 +1148,28 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
 }
 
 
+
+/* ── ⑬ 克隆音色「不许拿别的音色冒充」（11-01 用户实测：「怎么是男的声音」「跟内置声音5一样」）──
+   根因：选中克隆音色但音色克隆模型没装/被停用时，ttsWorkerData **静默回退 vits**，
+   听感变成内置第 5 号音色（男声），且没有任何提示。契约：
+   · 服务端：目标音色不可用 → 抛中文原因（⛔ 不再回退其它音色）；
+   · IPC：模型没装/被停用时 profiles-select 直接拒绝；
+   · UI：radio / 试听按 zipReady 禁用，并在已选不可用时给出警示条。 */
+{
+  const serviceSrc = read("electron/voice/voice-service.ts");
+  ok(/克隆音色不可用/.test(serviceSrc) && /静态/.test("静态") && !/回退到内置音色/.test(serviceSrc),
+    "服务端：选中克隆音色但模型不可用 → 显式报错，⛔ 不再静默回退内置音色（男声冒充）");
+  const presetIpc2 = read("electron/features/voice-ipc/02-voice-profiles-presets.ts");
+  ok(/音色克隆模型未安装 —— 先到 设置 → 语音通话 安装/.test(presetIpc2)
+    && /音色克隆模型已停用/.test(presetIpc2),
+    "profiles-select：模型没装/被停用时直接拒绝（带中文原因）");
+  const cloneGated = read("src/components/VoiceSettingsSection/02-voice-clone-profile.tsx");
+  ok(cloneGated.includes('disabled={!zipReady}') && cloneGated.includes('if (!zipReady) return; void previewProfile'),
+    "UI：克隆模型未就绪时 radio 与试听按 zipReady 禁用（⛔ 点下去也不许出声）");
+  ok(cloneGated.includes('当前选中的克隆音色<strong>不可用</strong>'),
+    "UI：已选克隆音色但模型不可用时给出警示条（不静默换音色）");
+}
+
 /* ── ⑫ 内置音色（10-31 用户令：「活泼女声 · 小夏改成内置音色」）──────────────────
    presets.json 里 builtIn:true 的预设 = 随包自带音色：启动即自动落成档案、档案标 builtIn、
    删除入口不渲染且主进程拒绝删除。 */

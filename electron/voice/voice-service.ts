@@ -548,8 +548,13 @@ export class VoiceService {
   private async ttsWorkerData(sherpaPath: string, numThreads: number, profileId?: string): Promise<Record<string, unknown>> {
     const wanted = String(profileId ?? this.currentSettings?.tts?.profileId ?? "").trim();
     const zipEnabled = isVoiceResourceEnabled(this.settingsNow(), "zipvoice");
-    if (wanted && !zipEnabled) {
-      this.deps.log("info", "音色克隆模型已被停用 —— 本次朗读回退到内置音色（文件仍保留，重新启用即可恢复）");
+    /* ⛔⛔ 11-01 用户实测（原话「怎么是男的声音啊」）：「我的音色」选中后、克隆模型没装/被停用，
+       这里**静默回退 vits** ⇒ 用内置第 5 号音色（男声）顶替，听感完全变了却没有任何提示。
+       现在改成**显式失败**：选中克隆音色但模型不可用时直接报中文原因，绝不拿别的音色冒充。 */
+    if (wanted && (!zipEnabled || !zipvoiceReady(this.deps.modelsRoot))) {
+      throw new Error(zipEnabled
+        ? "你选中的克隆音色不可用：音色克隆模型未安装 —— 到 设置 → 语音通话 装好后重试，或点「改回内置音色」"
+        : "你选中的克隆音色不可用：音色克隆模型已停用 —— 到 设置 → 语音通话 重新启用，或点「改回内置音色」");
     }
     if (wanted && zipEnabled && zipvoiceReady(this.deps.modelsRoot)) {
       const profile = (await listProfiles(this.deps.userDataDir)).find((p: VoiceProfile) => p.id === wanted);
@@ -571,6 +576,8 @@ export class VoiceService {
           },
         };
       }
+      /* 模型在、档案没了/参考文本空：同样显式失败（⛔ 不许静默换内置音色）。 */
+      throw new Error("你选中的克隆音色档案已不可用（档案被删除或缺少参考文本）—— 到 设置 → 语音通话 重新选择，或点「改回内置音色」");
     }
     /* 10-26：合成引擎（vits / Kokoro）；装配在独立模块（本文件受守卫【265】棘轮，只许缩不许长）。
      * ⛔ 优先级：克隆音色 > Kokoro > vits（克隆分支在上面先返回）。
@@ -654,7 +661,7 @@ export class VoiceService {
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
     if (!(await this.refreshModelsReady())) {
-      return { ok: false, error: "语音模型未下载完整，请先到「开发工具 → 语音模型」下载" };
+      return { ok: false, error: "语音模型未下载完整 —— 到 设置 → 语音通话 下载基础语音模型（必需）后再试" };
     }
     const worker = await this.ensurePreviewWorker(sherpaPath, wanted, numThreads);
     try {

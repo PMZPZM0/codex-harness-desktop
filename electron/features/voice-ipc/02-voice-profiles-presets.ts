@@ -9,6 +9,7 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import * as voiceProfiles from "../../voice/voice-profiles";
+import { isVoiceResourceEnabled } from "../../voice/voice-settings";
 import { sendToWindow } from "../window-bus";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import type { registerVoiceIpc1 } from "./01-voice-hotkey-models";
@@ -270,6 +271,15 @@ export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
 
   /** 选用某个音色（写进语音设置 tts.profileId；空串 = 用内置预置音色）。 */
   ipcHost.handle("voice:profiles-select", async (_event, id: string) => {
+    /* ⛔ 11-01 用户实测「怎么是男的声音」：克隆音色能选中、音频却来自 vits 内置第 5 号音色。
+       根因之一是**模型不可用时仍允许选中** ⇒ 这里先闸：没装 / 被停用时直接拒绝并给中文原因。 */
+    const wanted = String(id ?? "").trim();
+    if (wanted && !isVoiceResourceEnabled(svc().getSettings(), "zipvoice")) {
+      return { ok: false, profileId: "", error: "音色克隆模型已停用 —— 先到 设置 → 语音通话 重新启用，再选克隆音色" };
+    }
+    if (wanted && !zipvoiceReady(modelsRoot())) {
+      return { ok: false, profileId: "", error: "音色克隆模型未安装 —— 先到 设置 → 语音通话 安装（约 156MB），装好后才能使用克隆音色" };
+    }
     const { saveVoiceSettings } = require("../../voice/voice-settings");
     const current = svc().getSettings();
     const next = saveVoiceSettings(app.getPath("userData"), {
