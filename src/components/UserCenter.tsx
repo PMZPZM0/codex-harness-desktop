@@ -317,45 +317,48 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
         </div>
       </div>
 
-      <button type="button" className="uc-row-card" onClick={() => setOpenCard("identity")}>
-        <span className="uc-row-icon"><UserRound size={15} /></span>
-        <span className="uc-row-copy">
-          <strong>我的身份</strong>
-          <small>{[profile.nickname ? `称呼「${profile.nickname}」` : "未设置称呼", profile.occupation, profile.field].filter(Boolean).join(" · ") || "Codex 怎么称呼你、你做什么"}</small>
-        </span>
-        <ChevronRight size={14} className="uc-row-arrow" />
-      </button>
+      {/* 11-01 v6：四行资料收进一张清单卡（行间细线），不再四张独立飘卡。 */}
+      <div className="uc-row-list">
+        <button type="button" className="uc-row-card" onClick={() => setOpenCard("identity")}>
+          <span className="uc-row-icon"><UserRound size={15} /></span>
+          <span className="uc-row-copy">
+            <strong>我的身份</strong>
+            <small>{[profile.nickname ? `称呼「${profile.nickname}」` : "未设置称呼", profile.occupation, profile.field].filter(Boolean).join(" · ") || "Codex 怎么称呼你、你做什么"}</small>
+          </span>
+          <ChevronRight size={14} className="uc-row-arrow" />
+        </button>
 
-      <button type="button" className="uc-row-card" onClick={() => setOpenCard("about")}>
-        <span className="uc-row-icon"><Heart size={15} /></span>
-        <span className="uc-row-copy">
-          <strong>关于我</strong>
-          <small>{[profile.hobby ? `兴趣：${profile.hobby}` : "", profile.habit ? `习惯：${profile.habit}` : "", profile.bio ? truncateText(profile.bio, 24) : ""].filter(Boolean).join(" · ") || "兴趣 / 习惯 / 语言 / 自我介绍"}</small>
-        </span>
-        <ChevronRight size={14} className="uc-row-arrow" />
-      </button>
+        <button type="button" className="uc-row-card" onClick={() => setOpenCard("about")}>
+          <span className="uc-row-icon"><Heart size={15} /></span>
+          <span className="uc-row-copy">
+            <strong>关于我</strong>
+            <small>{[profile.hobby ? `兴趣：${profile.hobby}` : "", profile.habit ? `习惯：${profile.habit}` : "", profile.bio ? truncateText(profile.bio, 24) : ""].filter(Boolean).join(" · ") || "兴趣 / 习惯 / 语言 / 自我介绍"}</small>
+          </span>
+          <ChevronRight size={14} className="uc-row-arrow" />
+        </button>
 
-      <button type="button" className="uc-row-card" onClick={() => setOpenCard("codex")}>
-        <span className="uc-row-icon">
-          {codexAvatar?.type === "image" && codexAvatar.value
-            ? <img src={codexAvatar.value} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover" }} />
-            : <Sparkles size={15} />}
-        </span>
-        <span className="uc-row-copy">
-          <strong>Codex 的身份</strong>
-          <small>{assistantName || CODEX_DEFAULT_NAME} · 名字与形象改完立即生效</small>
-        </span>
-        <ChevronRight size={14} className="uc-row-arrow" />
-      </button>
+        <button type="button" className="uc-row-card" onClick={() => setOpenCard("codex")}>
+          <span className="uc-row-icon">
+            {codexAvatar?.type === "image" && codexAvatar.value
+              ? <img src={codexAvatar.value} alt="" style={{ width: 20, height: 20, borderRadius: "50%", objectFit: "cover" }} />
+              : <Sparkles size={15} />}
+          </span>
+          <span className="uc-row-copy">
+            <strong>Codex 的身份</strong>
+            <small>{assistantName || CODEX_DEFAULT_NAME} · 名字与形象改完立即生效</small>
+          </span>
+          <ChevronRight size={14} className="uc-row-arrow" />
+        </button>
 
-      <button type="button" className="uc-row-card" onClick={() => setOpenCard("persona")}>
-        <span className="uc-row-icon"><Wand2 size={15} /></span>
-        <span className="uc-row-copy">
-          <strong>人格</strong>
-          <small>{personaSummary} · 用户人格与 Codex 人格成套搭配</small>
-        </span>
-        <ChevronRight size={14} className="uc-row-arrow" />
-      </button>
+        <button type="button" className="uc-row-card" onClick={() => setOpenCard("persona")}>
+          <span className="uc-row-icon"><Wand2 size={15} /></span>
+          <span className="uc-row-copy">
+            <strong>人格</strong>
+            <small>{personaSummary} · 用户人格与 Codex 人格成套搭配</small>
+          </span>
+          <ChevronRight size={14} className="uc-row-arrow" />
+        </button>
+      </div>
 
       {onLogout && (
         <div className="uc-savebar">

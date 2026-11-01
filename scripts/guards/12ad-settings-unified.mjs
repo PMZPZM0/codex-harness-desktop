@@ -166,6 +166,11 @@ ok(/className="uc-combo-head"/.test(userCenterSrc) && /className="uc-combo-foot"
   && /\.uc-combo-foot\s*\{[^}]*margin-top:\s*auto/.test(sshCss)
   && !/\.uc-combo-check\s*\{[^}]*position:\s*absolute/.test(sshCss),
   "人格联动套餐卡：标题/说明/底部动作三段 + 等高，选中徽标不再叠住正文");
+/* 11-01 用户「用户中心帮我美化一下」：四行资料并成一张清单卡，底部状态行不再单独一张空壳卡。 */
+ok(/className="uc-row-list"/.test(userCenterSrc)
+  && /\.uc-row-list \.uc-row-card \+ \.uc-row-card\s*\{[^}]*border-top/.test(sshCss)
+  && /\.user-center > \.uc-savebar\s*\{[^}]*border:\s*0/.test(sshCss),
+  "用户中心：四行资料收成一张清单卡（细线分隔），底部状态行不再多一张空壳");
 const expertCenterSrc = read("src/features/settings-expert-center/ExpertCenterSection.tsx");
 ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) && !/PageInfo/.test(expertCenterSrc), "专家中心返回与专家市场并排，帮助问号已删");
 ok(!/"expert-center": \{ back:/.test(codeOnly(readSettingsSurface())), "专家中心返回键不再由壳层单独占一行");
