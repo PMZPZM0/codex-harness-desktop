@@ -234,6 +234,17 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
   }, [snap.open, threadId]);
   useEscapeLayer(Boolean(snap.open), () => setBroadcastOpen(false, threadId ?? ""));
 
+  /* ⛔ 11-01 用户实测「切走会话后弹窗不隐藏」：open 是**全局 store**，不跟 threadId 走，
+     切会话时它保持 true，于是新会话里还挂着上一个会话的播报面板。
+     ⇒ 监听 threadId 变化，变了就立刻收起（与「切会话立即停播」同一条判据）。 */
+  const prevBroadcastThreadRef = useRef(threadId ?? "");
+  useEffect(() => {
+    const next = threadId ?? "";
+    if (prevBroadcastThreadRef.current === next) return;
+    prevBroadcastThreadRef.current = next;
+    if (getBroadcastSnapshot().open) setBroadcastOpen(false, next);
+  }, [threadId]);
+
   const onPodClick = useCallback(() => {
     if (movedRef.current) {
       movedRef.current = false;
