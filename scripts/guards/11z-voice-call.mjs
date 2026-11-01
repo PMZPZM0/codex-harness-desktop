@@ -675,6 +675,13 @@ ok(/role="button"/.test(broadcastPanel),
   "播报行不是 <button>（行内要放删除按钮；按钮嵌按钮是非法结构 ⇒ 点删除会连带展开）");
 ok(/max-height: 352px/.test(read("src/styles/60-event-broadcast.css")),
   "播报列表最多露出 4 条、再多走滚轮（⛔ 高度随内容长 = 一条长群事件铺满整屏，用户实测）");
+/* 11-01 用户：「播放悬浮图标和播报弹窗还在视频/音乐播放组件上面」——媒体预览不是 modal-backdrop，
+   全屏预览要隐藏播报；迷你播放器不隐藏但把播报降到它下面（重叠时播放器在上）。 */
+const broadcastCss = read("src/styles/60-event-broadcast.css");
+ok(/body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-anchor\s*\{\s*display:\s*none/.test(broadcastCss)
+  && /body:has\(\.media-preview-backdrop\.is-mini\) \.bc-anchor\s*\{[^}]*z-index:\s*68/.test(broadcastCss)
+  && /body:has\(\.media-preview-backdrop\.is-mini\) \.bc-bubble,\s*body:has\(\.media-preview-backdrop\.is-mini\) \.bc-panel\s*\{[^}]*z-index:\s*69/.test(broadcastCss),
+  "播报图标/横幅/面板不压视频与音乐播放组件（全屏预览隐藏，迷你播放器时降到它下面）");
 ok(/playedKeys/.test(typedText) && /playKey=\{/.test(broadcastPanel),
   "逐字动画只在该条第一次出现时播（⛔ 开合面板会重挂载 ⇒ 整屏历史再敲一遍，用户实测「每次点开都播放一次」）");
 
