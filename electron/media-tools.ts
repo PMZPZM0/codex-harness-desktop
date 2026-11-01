@@ -103,6 +103,13 @@ export async function handleMediaToolCall(input: {
     if (tool === "media_preview") {
       const url = String(args.url ?? "").trim();
       if (!/^https?:\/\//i.test(url)) return reply(false, "需要一个 http(s) 视频地址（m3u8 或 mp4）。"), true;
+      /* ⛔ 审查补充：只允许公网地址 —— 模型可被诱导传入内网/回环地址让播放器去加载。 */
+      try {
+        const host = new URL(url).hostname;
+        const isPrivate = host === "localhost" || host === "0.0.0.0" || /^127\./.test(host) || /^10\./.test(host)
+          || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host);
+        if (isPrivate) return reply(false, "不允许播放内网/本机地址（仅支持公网片源）。"), true;
+      } catch { return reply(false, "地址格式不合法。"), true; }
       const { sendToWindow } = await import("./features/window-bus");
       sendToWindow("media-preview:open", {
         source: url,
@@ -118,7 +125,9 @@ export async function handleMediaToolCall(input: {
     if (tool === "media_search") {
       const keyword = String(args.keyword ?? "").trim();
       if (!keyword) return reply(false, "请给出片名关键词。"), true;
-      const res: any = await (media as any).searchMediaSources({ keyword, page: Number(args.page ?? 1) });
+      /* ⛔ 契约对齐（审查发现）：MediaSearchInput 是 { query, sources, limit, timeoutMs }，
+         传 keyword/page 会**永远搜不到东西且不报错**。 */
+      const res: any = await (media as any).searchMediaSources({ query: keyword, limit: Number(args.limit ?? 8) });
       const items: any[] = Array.isArray(res?.items) ? res.items : Array.isArray(res) ? res : [];
       if (!items.length) return reply(true, `没有搜到「${keyword}」。换个片名或换个源再试。`), true;
       const lines = items.slice(0, 12).map((it: any, i: number) =>

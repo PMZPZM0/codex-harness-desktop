@@ -1,26 +1,20 @@
 /**
- * 影视播放器 · 卡片（11-01 第三版，按用户逐条纠正）
+ * 影视播放器 · 卡片（11-01 第四版，按代码审查结论修正）
  *
- * ⛔ 用户裁定（每次都是踩过的点，别再改回去）：
- *   ① **放在「媒体与文档」分组里**，不要挂到页面上（上一版飘在「拓展与集成」下面）。
- *   ② 卡片内**不展示播放器本体**：播放交给对话播放器（media_preview → media-preview:open），
- *      这里只做「资源网址 / 内核安装 / 状态」。
- *   ③ 复制**必须真的写进剪贴板**：走 `copyTextToClipboard`（navigator.clipboard 在 file:// 下会静默失败，
- *      上一版就是这样"假复制"的）。
- *   ④ 要有**下载 / 安装 / 卸载**配套，与其它工具一致（内核 = hls.js，按需下载，可卸载）。
+ * ⛔⛔ 审查发现（已修）：上一版有「下载并安装内核 / 卸载 + 内核 404KB」——
+ *   全是**装饰性的**：hls.js 本来就随包（`package.json` 依赖 + `MediaPreview.tsx` 里
+ *   `await import("hls.js")`），而那段 CDN 下载存进 localStorage 的文本**没有任何代码读**。
+ *   界面显示"已安装"，断网却照样播不了 ⇒ 会误导用户，比没有按钮更糟。已整块删除。
  *
- * 搜索：搜片由对话里的 Codex 调用后端工具（media_search → media_detail → media_preview）完成；
- *   卡片不重复实现（渲染层没有 media:* IPC，硬做只能是假搜索）。
+ * ⛔ 现在这张卡的职责只有三件（都是真实能力）：
+ *   ① 交代影视源在哪（内置源接口，可复制）；
+ *   ② 说明播放走**对话播放器**（media_preview → media-preview:open）；
+ *   ③ 免责声明。
+ *
+ * ⛔ 复制必须走 `copyTextToClipboard`：`navigator.clipboard` 在 file:// 下会静默失败（"假复制"）。
  */
-import { useCallback, useEffect, useState } from "react";
-import { Download, Play, Trash2, Tv } from "lucide-react";
+import { Tv } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
-
-const HLS_CDN = [
-  "https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js",
-  "https://unpkg.com/hls.js@1.5.17/dist/hls.min.js",
-];
-const KERNEL_KEY = "harness.media.kernel.v1";
 
 const SOURCE_APIS: Array<[string, string]> = [
   ["非凡资源", "https://api.ffzyapi.com/api.php/provide/vod"],
@@ -30,62 +24,20 @@ const SOURCE_APIS: Array<[string, string]> = [
 ];
 
 export function MediaPlayerCard({ onNotice }: { onNotice?: (message: string) => void }) {
-  const [kernel, setKernel] = useState<string>("");     // 已安装的内核文本（空 = 未安装）
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    try { setKernel(localStorage.getItem(KERNEL_KEY) || ""); } catch { /* 隐私模式忽略 */ }
-  }, []);
-
-  const install = useCallback(async () => {
-    if (busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      let text = "";
-      for (const src of HLS_CDN) {
-        try {
-          const res = await fetch(src, { cache: "force-cache" });
-          if (!res.ok) continue;
-          text = await res.text();
-          if (text.length > 10_000) break;
-        } catch { /* 换下一个 CDN */ }
-      }
-      if (!text) { setError("内核下载失败（网络受限）—— 仍可用外部播放器打开地址。"); return; }
-      localStorage.setItem(KERNEL_KEY, text);
-      setKernel(text);
-      onNotice?.("播放内核已就绪");
-    } catch (e: any) {
-      setError(`安装失败：${String(e?.message ?? e).slice(0, 120)}`);
-    } finally { setBusy(false); }
-  }, [busy, onNotice]);
-
-  const uninstall = useCallback(() => {
-    try { localStorage.removeItem(KERNEL_KEY); } catch { /* 忽略 */ }
-    setKernel("");
-    onNotice?.("已移除播放内核");
-  }, [onNotice]);
-
-  const ready = kernel.length > 0;
-
   return (
     <div className="voice-devtools-card">
       <div className="voice-devtools-card-head">
         <div className="voice-devtools-icon"><Tv size={20} /></div>
-        <span className="voice-group-tag">按需</span>
-        <strong className="voice-devtools-name">影视播放器内核</strong>
-        <span className="voice-devtools-badge">{ready ? "已安装" : "未安装"}</span>
+        <strong className="voice-devtools-name">影视播放器</strong>
+        <span className="voice-devtools-badge">内核随包 · hls.js</span>
       </div>
 
       <div className="voice-devtools-body">
-        <span className="voice-devtools-sub">hls.js（MIT）· m3u8 / mp4 · 不随包分发，按需下载后可卸载</span>
+        <span className="voice-devtools-sub">hls.js（MIT，已随应用打包）· m3u8 / mp4</span>
         <div className="voice-devtools-desc">
-          影视源已在后端。在对话里说「放某部电影」，Codex 会搜片并在<b>对话播放器</b>里起播；
-          这里的「安装」只负责把播放内核取到本机，卡片本身不展示播放器。
+          影视源在后端。<strong>在对话里直接说「放某部电影」</strong>，Codex 会调用内置源搜索，
+          并在<b>对话播放器</b>里起播；播放内核已随应用打包，不需要单独下载。
         </div>
-
-        {error ? <div className="voice-devtools-desc" style={{ color: "#dc2626" }}>{error}</div> : null}
 
         <div style={{ marginTop: 8, fontSize: 12 }}>
           <div style={{ color: "var(--muted)", marginBottom: 4 }}>资源网址（内置源接口）：</div>
@@ -106,21 +58,6 @@ export function MediaPlayerCard({ onNotice }: { onNotice?: (message: string) => 
             </div>
           ))}
         </div>
-      </div>
-
-      <div className="voice-devtools-actions">
-        {ready ? (
-          <>
-            <small style={{ color: "var(--muted)", marginRight: "auto" }}>内核 {(kernel.length / 1024).toFixed(0)} KB</small>
-            <button className="secondary-setting" onClick={uninstall}>
-              <Trash2 size={13} />卸载
-            </button>
-          </>
-        ) : (
-          <button className="primary-setting" disabled={busy} onClick={() => void install()}>
-            <Download size={13} />{busy ? "下载中…" : "下载并安装内核"}
-          </button>
-        )}
       </div>
 
       <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>

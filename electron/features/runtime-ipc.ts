@@ -1012,8 +1012,11 @@ export const runtimeFeature = defineFeature<null>({
          ⇒ 把同一相对路径在随包根里的副本也加入删除清单（两边都删，状态才会真的回落）。 */
       /* ⛔ 11-01：两个根**互为镜像**展开 —— 不管原目标算在哪个根下，
          都把同一相对路径在另一个根里的副本补进删除清单（pip 包 / zip 解包 / npm 前缀都在两处出现过）。 */
-      for (const from of [writeToolsRoot(), toolsRoot()]) {
-        for (const to of [writeToolsRoot(), toolsRoot()]) {
+      /* ⛔⛔ 审查修正（11-01）：随包根的镜像展开**只在开发态**做。
+         打包安装后 resources/tools 属于安装目录：删了没有自动恢复途径，而且下次更新又会回来
+         （用户会看到「卸载了但更新后复活」）。打包态只删可写根，删不掉就按既有逻辑如实报错。 */
+      for (const from of (app.isPackaged ? [writeToolsRoot()] : [writeToolsRoot(), toolsRoot()])) {
+        for (const to of (app.isPackaged ? [writeToolsRoot()] : [writeToolsRoot(), toolsRoot()])) {
           if (!from || !to || from === to) continue;
           for (const target of [...targets]) {
             try {
