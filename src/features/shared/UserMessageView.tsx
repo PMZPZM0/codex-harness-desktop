@@ -2,7 +2,7 @@
 import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { useUserName, UserAvatar } from "../../components/UserAvatar";
-import { getAliasState, subscribeAliases, supervisorLabelOfAliases } from "../session-alias/alias-store.mjs";
+import { getAliasState, subscribeAliases, supervisorLabelOfAliases } from "../../lib/alias-store.mjs";
 import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";

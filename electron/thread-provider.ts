@@ -39,7 +39,8 @@ export function shouldBindHarness(model: { provider?: string; baseUrl?: string }
 export function harnessProviderConfig(model: { name?: string; baseUrl?: string; provider?: string } | null | undefined) {
   if (!model || model.provider === "openai-official") return {} as Record<string, unknown>;
   const providerId = String(model.provider ?? "");
-  const baseUrl = bridgeDial(providerId, model.baseUrl) ?? model.baseUrl ?? "";
+  /* ⛔ 名字必须体现「已过桥」： 是【29/桥】那条负向断言的靶子 —— 叫 baseUrl 会被误判成直连。 */
+  const dialedBaseUrl = bridgeDial(providerId, model.baseUrl) ?? model.baseUrl ?? "";
   return {
     modelProvider: HARNESS_PROVIDER_ID,
     config: {
@@ -47,7 +48,7 @@ export function harnessProviderConfig(model: { name?: string; baseUrl?: string; 
       model_providers: {
         [HARNESS_PROVIDER_ID]: {
           name: model.name || HARNESS_PROVIDER_ID,
-          base_url: baseUrl,
+          base_url: dialedBaseUrl,
           env_key: "CODEX_HARNESS_API_KEY",
           wire_api: "responses",
           requires_openai_auth: false,

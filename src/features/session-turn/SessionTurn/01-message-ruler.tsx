@@ -59,6 +59,9 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
      `if (allMarks.length < 1 || …) return null` 之后 ⇒ 首次渲染少调一个 hook、有刻度时多调一个
      ⇒ React #310 整页白屏（用户截图实锤）。与 10-26 那次是同一个坑。 */
   const lensCtxRef = useRef<null | ((dir: number) => void)>(null);
+  /* 放大镜面板本体（11-01：滚轮监听改由 useEffect 绑在它上面 —— 见面板 ref 处的事故说明）。
+     ⛔ 同样必须声明在 hooks 区、提前 return 之前（React #310 那条纪律）。 */
+  const lensPanelRef = useRef<HTMLDivElement | null>(null);
   /* 波浪**只在滚轮滚动时**出现（10-24 用户：「默认不触发波浪效果，只有滚轮滚动的时候才触发」
      「现在不滚动也触发，看着不太舒服」）。hover 是显式交互，仍然以鼠标位置为准。 */
   const [wheelWave, setWheelWave] = useState(false);
@@ -230,6 +233,27 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     // 并每帧强制同步布局 —— 这是长回复越往后越卡的主要来源之一。
     // 元素在 update 内部实时查询 DOM，只需在刻度数量变化时重建监听。
   }, [scrollRef, allMarks.length]);
+  /* 放大镜里的滚轮（11-01 用户：「放大镜里面没有滚轮」）。
+     ⛔ 必须原生非 passive 且挂在面板**自己**身上：React 的 onWheel 委托在根容器上，
+        事件会先冒到轨道那条监听里、被当成「滑一页」整页吃掉；这里自己
+        preventDefault + stopPropagation，只走 stepLens 的逐格滚动。
+     ⛔ 依赖是 `lensOpen`（面板在不在），不是 lens.index —— 每滚一格 index 就变，
+        重绑监听纯属浪费，而且会在快速滚动时丢事件。
+     ⛔⛔ 位置必须在下面那条 `if (…) return null` **之前**：写在之后 = 有无刻度时 hook 数量不同
+        ⇒ React #310 整页白屏（11-01 我自己又踩了一次，守卫 12w-hooks-order 现在钉住这一类）。 */
+  const lensOpen = lens !== null;
+  useEffect(() => {
+    const node = lensPanelRef.current;
+    if (!node) return;
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      lensCtxRef.current?.(event.deltaY > 0 ? 1 : -1);
+    };
+    node.addEventListener("wheel", onWheel, { passive: false });
+    return () => node.removeEventListener("wheel", onWheel);
+  }, [lensOpen]);
+
   // 没有用户消息、内容不满一屏、或容器太窄（右侧面板打开压窄 timeline）时自动隐藏刻度尺。
   // 专家/专家团会话常常只有一条任务消息 + 超长执行输出，内容早就可滚了，
   // 若仍要求 ≥2 条用户消息，这类窗口永远没有刻度线 —— 放宽为 ≥1 条即可定位回任务消息。
@@ -317,6 +341,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     playWheelTick(dir, { channel: "ruler", minGapMs: 26 });
   };
   lensCtxRef.current = stepLens;
+
 
   return (
     <div className="message-ruler" role="navigation" aria-label="消息定位">
@@ -437,16 +462,13 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
             role="menu"
             aria-label="附近消息（可点击跳转、可滚动）"
             ref={(node) => {
-              /* ⛔ 必须**原生非 passive**且挂在面板自己身上：React 的 onWheel 走根容器
-                 （在轨道之后才触发），事件会先冒到轨道那条监听里、被当成"滑一页"吃掉。
-                 自己 preventDefault + stopPropagation，只走逐格滚动。 */
-              if (!node || node.dataset.wheelBound) return;
-              node.dataset.wheelBound = "1";
-              node.addEventListener("wheel", (event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                lensCtxRef.current?.(event.deltaY > 0 ? 1 : -1);
-              }, { passive: false });
+              /* ⛔⛔ 11-01 用户实测「放大镜里面没有滚轮」—— 根因是**绑定方式**：
+                 原来在这里挂 `node.dataset.wheelBound` 做去重标记。React 复用同一个 DOM 节点、
+                 但组件被条件渲染卸载再挂载时，标记还留在节点上 ⇒ 新的绑定被 `return` 掉，
+                 而卸掉的那份监听指向**旧的 lensCtxRef**（闭包里的 lens 已被清空）⇒ 滚了没反应。
+                 ⇒ 改法：这里只存 ref，事件由 useEffect 随挂载/卸载自动绑与解绑
+                    （依赖 `lensOpen`），永远不会出现"标记还在、监听已死"的状态。 */
+              lensPanelRef.current = node;
             }}
           >
             {rows.map((i) => (
@@ -458,7 +480,10 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
                 className={`ruler-lens-row${i === focus ? " is-active" : ""}`}
                 style={{
                   translate: `0 ${(rowBase + (i - active) * LENS_ROW).toFixed(1)}px`,
-                  opacity: Math.max(0.08, 1 - Math.abs(i - active) * 0.16),
+                  /* ⛔⛔ 11-01 用户实测「上边跟下边展示要做好，压根看不清楚」：原来每远一格降 0.16、
+                     下限 0.08 ⇒ 第 4 格就只剩三成、第 6 格几乎隐形。放大镜是用来**读**的，
+                     远近只需轻微区分 ⇒ 每格 0.08、下限 0.55（边缘仍看得清）。 */
+                  opacity: Math.max(0.55, 1 - Math.abs(i - active) * 0.08),
                 }}
                 onMouseEnter={() => setPick(i)}
                 onClick={() => { onJump(marks[i].turnId); setLens(null); setPick(null); lastHoverRef.current = null; setHoverIndex(null); }}

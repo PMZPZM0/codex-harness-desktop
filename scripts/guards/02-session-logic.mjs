@@ -1491,7 +1491,7 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
        （用户需求1原文：「为其添加一个类似"专家团"风格的标签，标签文案为"调度"」；
        角色信息在会话名里，徽标只标"它是被调度的"）。
        ⚠️ 10-31：**主会话**那个「已调度」徽标已被用户撤掉（见下方负向断言）。 */
-    (/thread-source-badge/.test(rowsSrc) && /tone-\$\{sourceBadge\.tone\}/.test(rowsSrc) && /tone: "team"/.test(rowsSrc) && /tone: "expert"/.test(rowsSrc) && /tone: "dispatch"/.test(rowsSrc) ? ok : fail)(
+    (/thread-source-badge/.test(rowsSrc) && /tone-\$\{\w+\.tone\}/.test(rowsSrc) && /tone: "team"/.test(rowsSrc) && /tone: "expert"/.test(rowsSrc) && /tone: "dispatch"/.test(rowsSrc) ? ok : fail)(
       "【207】来源标签已接线（专家团/专家/调度三种映射齐备——10-04「代理」改「调度」）"
     );
     (/delegateKind\s*\?\s*\{[^}]*tone: "dispatch"/.test(rowsSrc) && rowsSrc.includes(String.fromCharCode(35843,24230)) ? ok : fail)(
@@ -1653,8 +1653,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-row-tags\s*\{[^}]*overflow\s*:\s*(hidden|clip)/.test(cssSrc285) ? fail : ok)(
       "【285】标签列容器不裁剪（spinner 判据 11c：会话行类祖先不得 overflow:hidden/clip）"
     );
-    (/hasIdentityBadge\s*\?\s*undefined/.test(rowsSrc285) && /!hasIdentityBadge\s*&&/.test(rowsSrc285) ? ok : fail)(
-      "【285】标签最多一个：带中枢/专家/专家团/调度身份徽标的会话不给加自定义标签（普通会话才可加）"
+    (/const shownBadge = rowBadges\[badgeIndex\]/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
+      "【285】标签最多露一个：超出靠点击标签循环（11-01 用户令；⛔ 不再按身份徽标禁加自定义标签）"
     );
     (/has-row-color/.test(rowsSrc285) && /--row-color/.test(rowsSrc285) ? ok : fail)(
       "【285】会话行底色接线（has-row-color 类 + --row-color 内联变量）"

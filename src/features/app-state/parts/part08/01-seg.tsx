@@ -21,7 +21,7 @@ import { DATA_ACCESS_TOOLS } from "../../../data-access";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 import { openThread as openThreadImpl } from "./01-seg/open-thread";
-import { setAliasSnapshot } from "../../../session-alias/alias-store.mjs";
+import { setAliasSnapshot } from "../../../../lib/alias-store.mjs";
 
 /** 调度工具 `agent_invoke` 的**兜底描述**（描述还没算出来时用）。
  *  ⛔ 与 `electron/features/dispatch-core.ts` 里那条 MCP 孪生描述**逐字同源**
@@ -273,7 +273,7 @@ bag.archiveThread = archiveThread as typeof bag.archiveThread;
          本地覆盖表 → threads 内存表 → 引擎会话名 → 别名记录（+ 广播）。
        `allowDuplicate`：系统自动命名（团队 / 专家）会撞名，拦下来就等于"专家没名字"，所以放行。 */
     try {
-      const aliasResult: any = await window.codex.sessionAliasSet({ threadId: id, alias: name, allowDuplicate: true });
+      const aliasResult = await window.codex.sessionAliasSet({ threadId: id, alias: name, allowDuplicate: true });
       if (aliasResult?.snapshot) setAliasSnapshot(aliasResult.snapshot);
     } catch { /* 别名记录写失败不回滚改名（侧栏仍按本地覆盖表显示） */ }
     await bag.refreshThreads().catch(() => undefined);
@@ -331,8 +331,8 @@ bag.unarchiveThread = unarchiveThread as typeof bag.unarchiveThread;
     while (queue.length) {
       const current = queue.shift() as string;
       for (const record of Object.values(bag.delegateRecords ?? {})) {
-        const child = String((record as any)?.threadId ?? "");
-        const origin = String((record as any)?.originThreadId ?? "");
+        const child = String((record)?.threadId ?? "");
+        const origin = String((record)?.originThreadId ?? "");
         if (!child || origin !== current || seen.has(child)) continue;
         seen.add(child);
         out.push(child);

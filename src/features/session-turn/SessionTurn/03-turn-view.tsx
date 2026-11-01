@@ -65,6 +65,10 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
        过程与答复收在下面的折叠组里 —— 插队几条都长一个样。
      ⛔ 结束态若还按流中位置分段，消息就被永久"劈开"在过程之间（用户截图就是这个）。 */
   const interleaved = shouldSegmentNow(flowSegments, running);
+  /* ⛔ 同一个 slot id 只在**一处**写 <Slot>（【268-c】）：插队分段与整轮是两个互斥 return，
+     各写一遍字面量会被判「双消费」——真正的问题是将来两边一旦同时渲染就会画两遍。 */
+  const afterContentSlot = <Slot id="turn.after-content" props={{ turnId: turn.id, running, status: turn.status }} />;
+
   /* 「Codex 头像 + 名字」与「正在处理 N 秒」挂在**第一段真的会渲染的块**上（不是死板的首段）：
      首段经常是空段（回合以用户消息开头），写死 index===0 会让头像整轮都不出现。 */
   const headSegIndex = headSegmentIndex(flowSegments);
@@ -178,7 +182,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
                         </div>
                       )}
                       {last && turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} />}
-                      {last && <Slot id="turn.after-content" props={{ turnId: turn.id, running, status: turn.status }} />}
+                      {last && afterContentSlot}
                       {last && <PollTaskBoard turnId={turn.id} />}
                     </div>
                   </div>
@@ -275,7 +279,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
               ⛔ 位置在 codex-turn **之内**而非 turn-card-body 外：回合容器是折叠/贴顶/
               working-indicator 的边界（记忆里「钉顶几何只看正文底 bodyBottomOf」），
               插在外面会落在折叠区之外，展开/收起时跟着错位。 */}
-          <Slot id="turn.after-content" props={{ turnId: turn.id, running, status: turn.status }} />
+          {afterContentSlot}
           {/* 轮询板块（10-09 新增的独立渲染分支）：本回合里「模型在等异步任务结果」的那些卡。
               ⛔ 它是既有分支的**兄弟节点** —— 消息/工具/思考的渲染逻辑一行都没改；
               没有轮询任务时它渲染 null（连 DOM 都不产生）。 */}

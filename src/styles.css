@@ -80,7 +80,10 @@
 @import "./styles/55-data-access" layer(pages);
 @import "./styles/57-cli-agents" layer(pages);
 @import "./styles/58-task-monitor" layer(pages);
-@import "./styles/59-motion" layer(components);
-/* 10-31 悬浮播报（群事件/语音播报/系统提示统一播报中心）。放在最后：它只有自己的 .bc-* 类，
-   与既有分节无选择器重叠；顺序靠后只为让"新板块在样式表末尾"这件事可读。 */
+/* 10-31 悬浮播报（群事件/语音播报/系统提示统一播报中心）。只有自己的 .bc-* 类，
+   与既有分节无选择器重叠。
+   ⛔⛔ 11-01 修正：它原先被追加到 `59-motion` **之后**，直接破了「59-motion 必须是最后一条
+      @import」的不变量（motion 靠后写者胜去覆盖各分节的时长变量）——【motion】① 当场报红。
+      新板块要插在 59-motion **之前**，不是"文件末尾"。 */
 @import "./styles/60-event-broadcast" layer(components);
+@import "./styles/59-motion" layer(components);

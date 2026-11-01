@@ -10,6 +10,7 @@ import { ThreadItem } from "../../../../../lib/thread-item";
 import { reasoningDuration } from "../../../../../lib/reasoning-duration";
 import { itemText } from "../../../../../lib/item-text";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
+import { playNotifyTone } from "../../../../../lib/notify-sound";
 import type { Bag } from "../../bag-types";
 
 export function handleEventRouter7(bag: Bag, params: any): boolean {
@@ -87,7 +88,13 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
             const name = cleanThreadDisplayTitle(entry?.name, { preview: entry?.preview, fallback: "" })
               || firstUserTextInTurn(params.turn).slice(0, 30)
               || "任务";
-            void window.codex.showNotification(params.turn.error?.message ? "任务失败" : "任务完成", `${name.slice(0, 40)} ${params.turn.error?.message ? "运行失败" : "已运行完成"}`);
+            /* ⛔ 提示音挂在**通知真的弹出去**之后（showNotification 返回 true）：
+              · 系统不支持通知 / 被策略拦下时就不该响；
+              · 主进程已改为 silent，声音只由这里出（详见 src/lib/notify-sound.ts 头注释）。 */
+            const errored = Boolean(params.turn.error?.message);
+            void window.codex.showNotification(errored ? "任务失败" : "任务完成", `${name.slice(0, 40)} ${errored ? "运行失败" : "已运行完成"}`)
+              .then((shown) => { if (shown) playNotifyTone(errored ? "error" : "done"); })
+              .catch(() => undefined);
           }
         } catch { /* 通知失败不影响主流程 */ }
         // 回合结束 → 自动启动下一条排队消息。

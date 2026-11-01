@@ -168,7 +168,9 @@ const SVG_OWN = [
   /* 10-25 分类视图撤下（只剩项目 / 任务两 tab）⇒ 断言跟着改成「任务」那一支；
      ⛔ 别留着已删的 `Layers` 断言：它永远不匹配，等于这条守卫静默失效。 */
   ["任务视图 tab", sidebar, /<ListChecks size=\{14\} className="ic-blue"/],
-  ["项目行文件夹", sidebar, /<FolderOpen size=\{13\} className="ic-amber"/],
+  /* 11-01 用户令：「普通项目蓝、含指挥中枢的项目琥珀色」⇒ 项目行文件夹的色相改成**条件表达式**。
+     ⛔ 断言跟着改成三元整体，别只留 `ic-amber` 六个字：那样普通项目（ic-blue）也满足，等于白钉。 */
+  ["项目行文件夹", sidebar, /<FolderOpen size=\{13\} className=\{hasBossThread \? "ic-amber" : "ic-blue"\}/],
   // ④c 10-25 用户令：「只看该项目」筛选 chip 已随功能整段删除 ⇒ 该图标断言移除（防复活由 sidebar-shell 的负向检查承担）。
 ];
 for (const [label, src, re] of SVG_OWN) ok(re.test(src), `④c ${label}的图标自己挂了色相类`);

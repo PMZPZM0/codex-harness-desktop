@@ -133,7 +133,7 @@ function BuiltinPanels({ onNotice }: { onNotice: (m: string) => void }) {
                 <label className="vg-field">
                   <span>模型</span>
                   <div className="bi-model-row">
-                    <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant="image" />
+                    <ModelIdInput value={value.model} onChange={(next) => setKind(kind, { model: next })} extraIds={models} placeholder="选择或输入模型 ID" ariaLabel={`${title}模型`} variant={kind === "image" ? "image" : "chat"} />
                     <button className="secondary-setting" disabled={probing === kind} onClick={() => void probe(kind)} title="用上面的地址与密钥拉取可用模型列表">
                       {probing === kind ? <RefreshCw size={13} className="spin" /> : <Play size={13} />}检测
                     </button>

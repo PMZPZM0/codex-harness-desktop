@@ -388,8 +388,10 @@ ${st.hint}`);
                 const kindArg = (["expert", "team", "member", "subagent"] as const).includes(kindRaw as any)
                   ? (kindRaw as "expert" | "team" | "member" | "subagent")
                   : null;
-                const delegated: any = kindArg === null
-                  ? { ok: false, error: `kind 必须是 expert / team / member / subagent 之一（收到「${kindRaw}」）` }
+                /* ⛔ 两支必须同形：错误分支也带 `output` —— 否则联合类型收窄后 `delegated.output`
+                   取不到（原来靠 `: any` 盖着，11-01 收 any 时暴露）。 */
+                const delegated = kindArg === null
+                  ? { ok: false, error: `kind 必须是 expert / team / member / subagent 之一（收到「${kindRaw}」）`, output: "" }
                   : await window.codex.invokeAgent({
                     kind: kindArg,
                     name: String(args.name ?? ""),
@@ -403,7 +405,7 @@ ${st.hint}`);
                 }
               } else if (event.params?.tool === "agent_archive_sessions") {
                 const dispatchOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
-                const archived: any = await window.codex.archiveDelegates({
+                const archived = await window.codex.archiveDelegates({
                   threadIds: Array.isArray(args.threadIds) ? args.threadIds.map(String) : [],
                   originThreadId: dispatchOrigin,
                 });

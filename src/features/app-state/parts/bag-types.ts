@@ -1388,6 +1388,15 @@ export interface Bag {
   deleteThreadCore: (id: string) => Promise<void>;
   deleteThread: (id: string) => Promise<void>;
   deleteThreadsByCwd: (cwd: string) => Promise<void>;
+  /* 11-01 笔名体系（会话名即笔名）：
+     · aliasState —— 主进程 `session-alias:snapshot` 的只读快照，store 在 `src/lib/alias-store.mjs`；
+     · aliasRefreshKey —— 快照代次，用来让依赖它的 memo 失效；
+     · badgeCycle —— 行内「最多露一个标签」的轮播下标（thread-badge-cycle store）；
+     · delegateDescendantsOf —— 删会话时先级联删它派出去的子会话（⛔ 先子后父）。 */
+  aliasState: import("../../../lib/alias-store.mjs").AliasState;
+  aliasRefreshKey: string;
+  badgeCycle: { index: Record<string, number> };
+  delegateDescendantsOf: (rootId: string) => string[];
   buildDynamicTools: () => Promise<any[]>;
   createEmptyThread: () => Promise<import("../../app-view/types.ts").Thread | null>;
   send: (event?: React.FormEvent<Element> | undefined) => Promise<void>;

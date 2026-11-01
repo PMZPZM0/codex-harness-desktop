@@ -29,7 +29,12 @@ export const notifyFeature = defineFeature<null>({
 
     ipcHost.handle("notify:show", (_event, title: string, body: string) => {
       if (!Notification.isSupported()) return false;
-      const n = new Notification({ title: String(title ?? "Codex Harness"), body: String(body ?? ""), silent: false });
+      /* ⛔ 11-01 用户：「现在通知是系统默认的声音不好听，加一个音效」——
+        主进程**只管弹通知、不出声**（silent: true）：系统音在三端各不相同且不可定制，
+        提示音改由渲染层  用 WebAudio 合成（唯一调用点在
+        event-router/07-turn-completed-settle.tsx，与调用方判定同源）。
+        ⛔ 别再改回 silent: false —— 那会和自绘提示音叠成两声。 */
+      const n = new Notification({ title: String(title ?? "Codex Harness"), body: String(body ?? ""), silent: true });
       /* ⛔ 10-26 用户实测：「点击通知不会打开应用，点通知弹窗没反应」——
          原来只 show/focus：窗口**最小化**时不会还原（Windows 上就表现为"点了没反应"），
          窗口已销毁时 mainWindow 也不为空。口径对齐 main.ts 的唤窗范式（isDestroyed + restore）。 */

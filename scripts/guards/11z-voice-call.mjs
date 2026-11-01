@@ -673,7 +673,7 @@ ok(/removeBroadcastItem[\s\S]{0,700}?seen\.delete/.test(broadcastStore) === fals
   "单条删除**不**清 seen 墓碑（否则删完立刻被采集端重新扫到、又冒出来）");
 ok(/role="button"/.test(broadcastPanel),
   "播报行不是 <button>（行内要放删除按钮；按钮嵌按钮是非法结构 ⇒ 点删除会连带展开）");
-ok(/max-height: calc\(var\(--bc-item-h, 88px\) \* 4\)/.test(read("src/styles/60-event-broadcast.css")),
+ok(/max-height: 352px/.test(read("src/styles/60-event-broadcast.css")),
   "播报列表最多露出 4 条、再多走滚轮（⛔ 高度随内容长 = 一条长群事件铺满整屏，用户实测）");
 ok(/playedKeys/.test(typedText) && /playKey=\{/.test(broadcastPanel),
   "逐字动画只在该条第一次出现时播（⛔ 开合面板会重挂载 ⇒ 整屏历史再敲一遍，用户实测「每次点开都播放一次」）");

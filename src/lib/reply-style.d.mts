@@ -22,3 +22,14 @@ export function isChallengeStyle(personality: unknown): boolean;
 
 /** 敢于反驳模式要下发的 developer instructions 片段（其他风格为空串） */
 export function challengeInstruction(personality: unknown): string;
+
+/* 11-01：回复风格新增「直击本质」—— 同上一条是同一个坑（实现进了 .mjs，声明漏在这里触发 TS2305）。
+   ⛔ 以后加回复风格一律四处齐：.mjs 实现 / .d.mts 声明 / 设置页选项 / 守卫。 */
+export const ESSENCE_STYLE: "essence";
+export const ESSENCE_HEADING: string;
+
+/** 是否处于「直击本质」模式 */
+export function isEssenceStyle(personality: unknown): boolean;
+
+/** 直击本质模式要下发的 developer instructions 片段（其他风格为空串） */
+export function essenceInstruction(personality: unknown): string;

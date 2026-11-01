@@ -1338,12 +1338,16 @@
    ⛔ 定位：`top` 由 JS 给（贴着指针那根刻度、贴边时钳制）；行的纵向位置走内联 `translate`，
       切换一格就整列滑一行 —— 这就是用户要的「里面滚动效果」。 */
 .message-ruler .ruler-lens {
-  border: 1px solid var(--line);
+  /* ⛔ 11-01 用户：「加上一个边框，不要透明了」—— --line 太淡，压在白底消息列上等于没有。
+     用正文色的 18% 混出可见边框（两主题自动跟随，不写死色值）。 */
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   /* ⛔ 用 --panel（不是 --bg）：面板浮在消息列上，而消息列多半是**页面底色** --
      白底卡片压白底 = 只剩一条 1px 线，看不出是浮层（实测 1:1 观感过淡）。
      --panel 在明暗两套里都比页面底色"浅一档/亮一档"，加上 border+shadow 才立得住。 */
   background: var(--panel);
-  box-shadow: var(--shadow);
+  /* ⛔ 11-01：只有 var(--shadow) 时，压在白底消息列上像一层半透明膜（用户「透明的」）。
+     补一圈贴身描边阴影把边界立起来，不动主题色。 */
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
   border-radius: 14px;
   width: 320px;
   /* ⛔ 高度**由 JS 按实际行数给**（内联 style），这里只兜底 9 行 × 26px + 上下 4px；
@@ -1402,8 +1406,11 @@
   cursor: pointer;
   border-radius: 8px;
   padding: 0 8px;
-  color: var(--muted);
-  font-size: 12.5px;
+  /* ⛔⛔ 11-01 用户实测「放大镜里面透明的、有点看不清」：原来是 --muted 灰 + 12.5px，
+     再叠上下渐隐，首尾两行几乎读不出来。放大镜唯一用途就是**读** ⇒ 正文色 + 13px；
+     层次感交给 hover 底块，而不是让文字变淡。 */
+  color: var(--text);
+  font-size: 13px;
   line-height: 26px;
   position: absolute;
   top: 0;
@@ -1876,5 +1883,7 @@ button.search-box:hover {
 
 /* 行数装不下（超过可见 9 行）时才做上下渐隐裁切 —— 与 01-message-ruler 的 is-scroll 同源 */
 .message-ruler .ruler-lens.is-scroll {
-  mask-image: linear-gradient(to bottom, transparent 0, #000 18px, #000 calc(100% - 18px), transparent 100%);
+  /* ⛔ 18px 会把首尾整行糊掉（12px 字号下一行 26px，18px 渐隐吃掉 2/3）⇒ 收到 10px：
+     只让边缘「虚一点」，不牺牲可读性。 */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
 }

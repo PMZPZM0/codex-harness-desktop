@@ -9,7 +9,7 @@
  * ⛔ 为什么不塞进 bag：笔名是"跨板块共享的只读快照"，走 store 比往 bag 加字段更省
  *    （bag 新字段要同时改 `bag-types.ts` 与各 seg 的 return，容易漂）。
  */
-import { supervisorIdOf } from "../../lib/session-names.mjs";
+import { supervisorIdOf } from "./session-names.mjs";
 
 let state = { aliases: {} };
 const listeners = new Set();

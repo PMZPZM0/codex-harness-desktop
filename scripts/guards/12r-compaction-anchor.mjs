@@ -243,7 +243,9 @@ ok(/className=\{`ruler-lens-row\$\{i === focus \? " is-active" : ""\}`\}/.test(r
   && /const active = Math\.min\(lens\.index, marks\.length - 1\);/.test(ruler)
   && /\{lens && marks\.length > 0 && \(/.test(ruler),
   "镜头行位置 = rowY + (i−active)×26 ⇒ 指针走一格、整列滑一行（=「里面滚动」）；⛔ active 必须夹住（滑窗口后旧下标越界 = marks[i] undefined ⇒ 整页崩）");
-ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1200}?animation: ruler-lens-in 0\.2s var\(--ease-enter\) both/.test(css)
+/* ⛔ 窗口从 1200 放到 1800（11-01）：.ruler-lens 的规则块里补了边框/阴影/可读性注释，
+   1200 字符的匹配窗被注释挤爆 ⇒ 假红。窗口只用来「跨过中间那些声明」，放大不放松判据。 */
+ok(/\.message-ruler \.ruler-lens \{[\s\S]{0,1800}?animation: ruler-lens-in 0\.2s var\(--ease-enter\) both/.test(css)
   && /@keyframes ruler-lens-in \{[\s\S]{0,200}?scale: 0\.9/.test(css)
   && !/@keyframes ruler-lens-in \{[\s\S]{0,240}?[^-]transform:/.test(css),
   "进场是「撑开」动画（scale 0.9→1 + 左移 8px），⛔ 关键帧不写 transform（会盖掉定位）");

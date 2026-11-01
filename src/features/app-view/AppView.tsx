@@ -8,7 +8,7 @@ import { createPortal } from "react-dom";
 import { useSyncExternalStore, useMemo, useRef, useState, type CSSProperties } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
-import { aliasLabelOf, getAliasState, subscribeAliases } from "../session-alias/alias-store.mjs";
+import { aliasLabelOf, getAliasState, subscribeAliases } from "../../lib/alias-store.mjs";
 import { ShortcutsDialog } from "../shortcuts";
 import { VaultWriteConfirm } from "../data-access";
 import {

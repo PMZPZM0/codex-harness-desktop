@@ -34,7 +34,7 @@ import type { Bag } from "../../bag-types";
  *  复用正常发送的乐观气泡机制：引擎回声由既有确认逻辑合并（steer 进当前回合的也会被
  *  optimisticConfirmed 认出，安全阀兜底回收），失败路径由调用方显式清掉。
  *  ⛔ 放模块级（同 deliverAutoContinue 的理由：hook 体顶层声明会被 bag-types 生成器收进 bag）。 */
-function showQueuedOptimistic(bag: Bag, input: any) {
+function showQueuedOptimistic(bag: Bag, input: unknown) {
   if (!Array.isArray(input) || !input.length) return;
   bag.setOptimisticInput({ id: crypto.randomUUID(), type: "userMessage", content: input });
 }
