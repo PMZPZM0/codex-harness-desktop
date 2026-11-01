@@ -65,13 +65,15 @@ ok(/if \(PIP_PACKAGE_DIRS\[id\]\)/.test(rt.slice(rt.indexOf("function fallbackEx
    10-11 用户令：「每个下载的工具的卡片内加一个提示词复制功能图标，常驻」+
    「报错和失败做成弹窗，注意弹窗顺序」。旧的内联大块（.runtime-fallback）由
    常驻图标（.runtime-prompt-copy）+「完整报错」弹窗（.devtools-error-*）替代。 */
-ok(/安装失败：\$\{error\.message\}/.test(capability),
+ok(/`安装失败：\$\{(?:error\.message|ipcErrorMessageOf\(error\))\}`/.test(capability),
   "产出侧：安装失败时把 `安装失败：<原因>` 写进 runtimeProgress（失败判据的产出侧）");
-ok(/failed: true,\s*error: String\(error/.test(capability) && (capability.match(/error: String\(error/g) ?? []).length >= 2,
+// 11-01：报错原文先过 ipcErrorMessageOf（去掉 [ERR_INVOKE_FAILED] 外壳再展示）。
+ok(/failed: true,\s*error: (?:String\(error|ipcErrorMessageOf\(error)/.test(capability)
+  && (capability.match(/error: (?:String\(error|ipcErrorMessageOf\(error)/g) ?? []).length >= 2,
   "产出侧：安装与卸载的 catch 都把**完整报错原文**写进 runtimeModal.error（弹窗的数据源，toast 只承载一行摘要）");
 ok(/runtimeProgress\?\.\[runtime\.id\][^;]*startsWith\("安装失败"\)/.test(page),
   "消费侧：开发工具页按同一个前缀判断「这个工具刚装失败了」");
-ok(/runtime-prompt-copy/.test(page) && /copyTextToClipboard\(runtime\.fallbackPrompt\)/.test(page),
+ok(/runtime-prompt-copy/.test(page) && /copyTextToClipboard\((?:runtime\.)?fallbackPrompt\)/.test(page),
   "常驻图标：每个可下载工具的卡片上有「复制安装提示词」图标（复制的是主进程下发的原文，不等失败才出现）");
 ok(/runtime-failed/.test(page) && /failed: true,\s*error:/.test(page) && /setRuntimeModal\(\{ id: runtime\.id/.test(page),
   "卡片失败摘要可点开重看完整报错（弹窗关闭后报错不丢 —— 从 runtimeProgress 的同一前缀行重建）");
@@ -85,8 +87,10 @@ ok(/runtimeModal\?\.failed/.test(section) && /createPortal\(/.test(section) && /
   "弹窗接线：DevtoolsSettingsSection 在 runtimeModal.failed 时 portal 渲染「完整报错」弹窗");
 ok(/z-index:\s*950;/.test(css) && /z-index:\s*900;/.test(dialogCss),
   "弹窗顺序：错误弹窗 z-index 950 **严格大于**二级 SettingsDialog 的 900（错误弹窗压过工具列表弹窗；⛔ 分号锚定 —— 写 9500 也会命中 950 前缀，变异测试实测抓过）");
-ok(/stopPropagation\(\)/.test(section),
-  "弹窗顺序：Esc 在捕获阶段 stopPropagation —— 同一个 Esc 不许把底下的 SettingsDialog 一起关掉");
+/* ⛔ 11-01：Esc 改走全局 ESC 栈（只关最上层）—— 错误弹窗与二级 SettingsDialog 不再各自
+   window keydown 抢同一个 Esc。判据 = 错误弹窗把自己的层登记进 useEscapeLayer。 */
+ok(/useEscapeLayer\(Boolean\(runtimeModal\?\.failed\)/.test(section),
+  "弹窗顺序：错误弹窗登记进全局 ESC 栈（同一个 Esc 只关最上层，不许连底下 SettingsDialog 一起关）");
 ok(/white-space:\s*pre-wrap/.test(css),
   "报错正文 pre-wrap（多行报错完整展示 —— 旧版单行 toast 裁剪就是这次要修的病）");
 {

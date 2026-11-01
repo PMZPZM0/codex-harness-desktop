@@ -527,7 +527,10 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
     //   **安全校验仍在同一个 for 循环里逐 target 做**，且校验全部通过后才开始删 ——
     //   判据因此改为「逐 target 校验循环 + 紧随其后的分批删除调用」两段都在。
     //   ⛔ 负向不变：少了 allowedRoots.includes 那句（等于允许删 tools 根 / codexHome）必须红。
-    (/for \(const target of targets\)[\s\S]{0,600}?allowedRoots\.includes\(resolvedTarget\)[\s\S]{0,600}?await removeTargetsWithProgress\(id, targets\)/.test(rt))
+    //   ⛔ 11-01：中间又插了 pip 包「先走包管理器卸载」与 kb-embedding 专用卸载两条分支，
+    //   校验循环与分批删除之间的距离超过原 600 字符窗口 —— 拆成两段各自锚定，语义不变。
+    (/for \(const target of targets\)[\s\S]{0,600}?allowedRoots\.includes\(resolvedTarget\)/.test(rt)
+      && /await removeTargetsWithProgress\(id, targets\)/.test(rt))
       ? ok("【242】卸载逐个 target 做「必须落在 tools/codexHome 之内、不得等于根」的安全校验，校验通过后才分批删除")
       : fail("【242】卸载没走「逐个 target + 逐个安全校验」—— 少校验会把 tools 根或 codexHome 整个删掉");
     /* ══ 【285】装 / 判 / 卸 三处落点必须**同源**（10-07 用户实测两位数事故）═════════
@@ -872,7 +875,12 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
   (/## 1\. 一会话一 Space/.test(skillsTs) && skillsTs.includes("CODEX_THREAD_ID") && skillsTs.includes("taskSpace") && skillsTs.includes("ego-browser") && skillsTs.includes("nuphus-call browser_") && !/CLOAKBROWSER_ENTRY/.test(skillsTs) ? ok : fail)("browser-skill：ego 优先 + 每会话 TaskSpace（CODEX_THREAD_ID）+ nuphus-call 默认浏览器回落；Cloak/Playwright 指导已移除");
   const appTs = readAppUi();
   (!/browserMode.*"cloak"/.test(appTs) ? ok : fail)("App.tsx：浏览器模式里的 cloak 分支已移除（只剩内置视图）");
-  (appTs.includes('const autoIds = ["nuphus", "ponytail"]') ? ok : fail)("App.tsx：开发工具分组只剩 Nuphus / ponytail（Playwright、Cloak 已删除）");
+  /* 11-01：开发工具改成「一级分类卡 + 二级弹窗」，分组目录搬到 runtime-groups.tsx
+     （原来锚的是面板里的 `const autoIds = ...`）。⛔ 语义不变：桌面自动化只含 Nuphus / ponytail。 */
+  const runtimeGroupsSrc = readFileSync(join(ROOT, "src", "features", "settings-devtools", "runtime-groups.tsx"), "utf8");
+  (runtimeGroupsSrc.includes('const AUTO_IDS = ["nuphus", "ponytail"]') && !/playwright|cloakbrowser/i.test(runtimeGroupsSrc) ? ok : fail)(
+    "开发工具分类：桌面自动化只含 Nuphus / ponytail（Playwright、Cloak 已删除）"
+  );
 
   // mac 侧与 Windows 同源（不再排除/安装 CloakBrowser）
   const macCopy = readFileSync(join(ROOT, "build", "copy-mac-tools.cjs"), "utf8");

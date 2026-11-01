@@ -31,11 +31,10 @@ if (existsSync(join(ROOT, "src", "features", "team-office"))) {
     /* 组件与数据面 */
     const viewPath = join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx");
     const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
-    /* ⛔ 10-05 修订：原来两条断言的是"组件自己调 `teamThreadsMap()` / `runningThreadIds`"——
-       而当前实现已改为**纯 props 驱动**（成员运行态由宿主从引擎事件流归约后传入，
-       见该文件头「数据边界」注释）。⇒ 旧断言过时，且方向与新架构**相反**。
-       ⛔ 新判据：**组件不许自己拉数据 / 订阅引擎**（这才是域组件的规矩）。 */
-    (!/window\.codex|teamThreadsMap\(|runningThreadIds/.test(codeOnly(viewSrc)) ? ok : fail)(
+    /* ⛔ 新判据：**组件不许自己拉数据 / 订阅引擎**（这才是域组件的规矩）。
+       11-01：允许 petHide/petShow（预览期间隐藏置顶播报浮窗）—— 先摘掉再看还剩什么。 */
+    const viewNoPet = codeOnly(viewSrc).replace(/window\.codex\.pet(?:Hide|Show)\?\.\(\)/g, "");
+    (!/window\.codex|teamThreadsMap\(|runningThreadIds/.test(viewNoPet) ? ok : fail)(
       "【154】⛔⛔ 预览是**纯 props 驱动**：不自己拉 IPC（成员状态由宿主归约后传入）"
     );
     (viewSrc.includes("runningByMember") ? ok : fail)("【154】角色状态映射真实成员运行记录 runningByMember（唯一数据源）");

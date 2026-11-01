@@ -1049,14 +1049,14 @@ console.log(C.bold("\n【4e】语音唤醒关键词模型（KWS，读音匹配�
       ? ok("资源三态：基础模型停用后拒绝下载（不产生「下完不用」）")
       : fail(`资源三态：基础模型停用后仍可下载 —— 停用语义被架空（判据=${baseGateCall}/${baseGateMsg}）`);
 
-    //   ② zipvoice：合成时判定停用 ⇒ 回退内置音色，且**带日志说明**（静默回退会被当成"音色坏了"）
-    //      同样拆开断言（记号之间隔着 if 条件与 return，串起来就是在赌距离）
+    //   ② zipvoice：合成时判定不可用 ⇒ **显式失败并说明原因**（11-01 用户实测「怎么是男的声音啊」：
+    //      原来静默回退内置 vits 第 5 号音色顶替，听感全变却没有任何提示 ⇒ 绝不许再静默冒充）。
     const zipGateCall = /zipEnabled\s*=\s*isVoiceResourceEnabled\(/.test(serviceSrc3);
     const zipGateBranch = /if \(wanted && zipEnabled && zipvoiceReady\(/.test(serviceSrc3);
-    const zipGateLog = /音色克隆模型已被停用/.test(serviceSrc3);
+    const zipGateLog = /音色克隆模型已停用/.test(serviceSrc3);
     zipGateCall && zipGateBranch && zipGateLog
-      ? ok("资源三态：音色克隆停用后合成回退内置音色（并记日志说明原因）")
-      : fail(`资源三态：音色克隆停用后仍走克隆模式，或回退时无任何说明（判据=${zipGateCall}/${zipGateBranch}/${zipGateLog}）`);
+      ? ok("资源三态：音色克隆不可用时显式报错（模型停用 / 未装都说明原因，不静默换内置音色）")
+      : fail(`资源三态：音色克隆停用后仍走克隆模式，或失败时无任何说明（判据=${zipGateCall}/${zipGateBranch}/${zipGateLog}）`);
 
     // ③ zipvoice/kws 的安装入口也要拦停用（主进程侧）
     //    ⛔ 必须真读到源文件，否则正则对着空串跑会**恒真** —— 恒真的守卫比没有守卫更危险

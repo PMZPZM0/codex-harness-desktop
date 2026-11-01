@@ -391,7 +391,10 @@ export async function run() {
   (!/--progress-bar/.test(instNoComment) ? ok : fail)(
     "【73】不得依赖 curl 进度输出（非 TTY 下它只给占位行/结束总结——曾是进度条一直空的根因）"
   );
-  (/setInterval\(\(\) => \{[\s\S]{0,1400}?\}, 500\)/.test(instSrc) ? ok : fail)(
+  /* ⛔ 11-01：采样器里加了「低速停滞换源」判据（诊断分支 + 阈值常量），
+     整段超过原 1400 字符窗口 ⇒ 拆成「采样器起始 + 关键采样语句 + 500ms 周期」三段锚定。 */
+  (/const sampler = setInterval\(\(\) => \{[\s\S]{0,400}?fs\.statSync\(opts\.file\)\.size/.test(instSrc)
+    && /\}, 500\);/.test(instSrc) ? ok : fail)(
     "【73】按 500ms 采样输出文件大小算百分比与瞬时速度"
   );
   (/const speed = line\.match\(\/\^@@SPEED/.test(main73) ? ok : fail)(

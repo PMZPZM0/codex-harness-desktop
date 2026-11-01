@@ -1,323 +1,174 @@
 /**
- * 运行时与工具链面板（10-10 从 DevtoolsSettingsSection 原样搬出，内容零改写）。
+ * 运行时分类面板（11-01 改版：一个分类一份内容，只在二级弹窗里渲染）。
  *
- * ⛔ 为什么拆出来：开发工具页改两级 IA —— 一级只放分类卡片，本面板的内容在**二级弹窗**里渲染
- *   （用户要求「点击卡片后通过二级弹窗展示，弹窗内容不得内嵌到主界面」）。搬出时不改任何
- *   文案 / 类名 / 判据：守卫【04】锚的 `runtime-cancel` / `cancelDevRuntime(runtime.id)` /
- *   `confirmUninstall === runtime.id` / `确认卸载` 仍逐字在这份文件里（守卫已同步改路径）。
+ * 一级（开发工具页）= 分类卡片 + 一键安装；本面板是点开卡片后的明细：
+ * 每个工具一行，手动下载 / 卸载 / 取消，下载与卸载都有进度条。
  *
- * 自带的状态（检查工具结果 / 卸载二次确认）只服务于本面板 ⇒ 随面板一起搬，不占一级页面。
+ * ⛔ 一键安装/卸载的**批处理状态不放这里**：它挂在页面级（DevtoolsSettingsSection），
+ *   否则关掉弹窗组件卸载，批量循环还在跑、卡片上却看不到进度（也点不到取消）。
+ * ⛔ 卸载仍走行内二次确认（真删本地文件，不可恢复）；批量卸载同样先确认。
+ * ⛔ 取消只对下载/安装显示 —— 主进程的 runtime:cancel 只认安装进程（卸载不可取消）。
  */
-import {useState, useRef } from "react";
-import { Activity, AlertTriangle, ArrowDown, BookOpen, CircleCheck, Copy, Download, ExternalLink, Globe2, TerminalSquare, Wrench } from "lucide-react";
+import { useState } from "react";
+import { AlertTriangle, ArrowDown, CircleCheck, Copy, ExternalLink, TerminalSquare } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { EgoLiteCard } from "./EgoLiteCard";
+import { isRemovable, runtimeGroupItems, type RuntimeBatch, type RuntimeGroup, type RuntimeRow } from "./runtime-groups";
 
 export type RuntimeToolsPanelProps = {
-  devRuntimes: any;
-  runtimeInstalling: any;
-  runtimeUninstalling: any;
-  runtimePercent: any;
-  runtimeStage: any;
-  runtimeSpeed: any;
-  runtimeProgress: any;
-  installDevRuntime: any;
-  uninstallDevRuntime: any;
-  cancelDevRuntime: any;
-  setNotice: any;
-  setRuntimeModal: any;
+  group: RuntimeGroup;
+  devRuntimes: RuntimeRow[];
+  runtimeInstalling: string | null;
+  runtimeUninstalling: string | null;
+  runtimePercent: Record<string, number>;
+  runtimeStage: Record<string, string>;
+  runtimeSpeed: Record<string, string>;
+  runtimeProgress: Record<string, string>;
+  installDevRuntime: (id: string) => Promise<void> | void;
+  uninstallDevRuntime: (id: string) => Promise<void> | void;
+  cancelDevRuntime: (id: string) => Promise<void> | void;
+  setNotice: (text: string) => void;
+  setRuntimeModal: (modal: { id: string; name: string; mode: "install" | "uninstall"; done: boolean; failed: boolean; error: string } | null) => void;
+  batch: RuntimeBatch;
+  runBatch: (kind: "install" | "uninstall", list: RuntimeRow[], cardKey: string) => void;
 };
 
 export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
-  const { devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, setNotice, setRuntimeModal } = props;
-  // 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明**文件在**，不证明**能跑**。
-  // 点一次让主进程逐个真跑版本命令，把不可用的挑出来显示 —— 结果只存本组件（打开页面即清空）。
-  const [health, setHealth] = useState<any[] | null>(null);
-  const [healthBusy, setHealthBusy] = useState(false);
-  const [healthError, setHealthError] = useState("");
-  /* ⛔ 11-01 用户令：自检要有弹窗 + 进度条，检查完一个亮一个绿。 */
-  const [healthRows, setHealthRows] = useState<any[] | null>(null);
-  const [healthDone, setHealthDone] = useState(0);
-  // 卸载二次确认（10-07 重构）：点「卸载」先出**行内确认**（沿用插件市场页的既有范式），再点才真删 ——
-  // 卸载是真删本地文件，不可恢复，不该一击即中。
+  const { group, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, setNotice, setRuntimeModal, batch, runBatch } = props;
+  // 卸载二次确认（真删本地文件，不可恢复）：行内两步确认，不用原生 confirm。
   const [confirmUninstall, setConfirmUninstall] = useState<string | null>(null);
-  /* ⛔ 11-01 用户令：新手不要一个个点。加「串行」批量执行器 —— 不并发，一个装完再下一个，
-     避免两个工具同时解压互相踩 staging 目录；中途可取消。 */
-  const [batch, setBatch] = useState<{ kind: "install" | "uninstall" | null; done: number; total: number; name: string }>({ kind: null, done: 0, total: 0, name: "" });
-  const batchCancel = useRef(false);
-  const runBatch = async (kind: "install" | "uninstall", list: any[]) => {
-    if (!list.length || batch.kind) return;
-    batchCancel.current = false;
-    setBatch({ kind, done: 0, total: list.length, name: list[0]?.name ?? "" });
-    let ok = 0;
-    for (let i = 0; i < list.length; i += 1) {
-      if (batchCancel.current) break;
-      setBatch({ kind, done: i, total: list.length, name: list[i].name });
-      try {
-        if (kind === "install") await installDevRuntime(list[i].id);
-        else await uninstallDevRuntime(list[i].id);
-        ok += 1;
-      } catch { /* 单项失败不中断整批 */ }
-    }
-    setBatch({ kind: null, done: 0, total: 0, name: "" });
-    setNotice((kind === "install" ? "安装" : "卸载") + "完成：成功 " + ok + " / " + list.length);
-  };
-  const runHealth = async () => {
-    setHealthBusy(true);
-    setHealthError("");
-    setHealthRows([]);
-    setHealthDone(0);
-    try {
-      const rows = await (window as any).codex.runtimeHealth();
-      const list = Array.isArray(rows) ? rows : [];
-      /* 结果由主进程一次返回（它内部是串行探测的）；这里按顺序逐项点亮，
-         让用户看到「一个接一个变绿」，而不是最后一起蹦出来。 */
-      for (let i = 0; i < list.length; i += 1) {
-        setHealthRows(list.slice(0, i + 1));
-        setHealthDone(i + 1);
-        if (i < list.length - 1) await new Promise((r) => setTimeout(r, 90));
-      }
-      setHealth(list);
-    } catch (error) {
-      setHealthError(`自检失败：${String((error as any)?.message ?? error).slice(0, 200)}`);
-    } finally {
-      setHealthBusy(false);
-    }
-  };
-  const healthInstalled = health ? health.filter((row: any) => row.installed) : [];
-  const healthBad = healthInstalled.filter((row: any) => !row.ok);
-  const healthMissing = health ? health.filter((row: any) => !row.installed).length : 0;
+  const [confirmBatch, setConfirmBatch] = useState(false);
+
+  const items = runtimeGroupItems(group, devRuntimes);
+  const removables = items.filter(isRemovable);
+  const cardKey = `tools-${group.key}`;
+  const batching = batch.kind !== null && batch.card === cardKey;
+
   return (
     <div className="settings-section stack">
-      {/* 浏览器自动化主通道：外部安装的 ego lite（每会话一个 TaskSpace；不随包内置 611MB 浏览器） */}
-      <EgoLiteCard onNotice={setNotice} />
-      {/* 新手模式：一键装完所有可下载工具（串行、可取消、带进度与结果提示） */}
-      {(() => {
-        const installables = devRuntimes.filter((r: any) => !r.hidden && !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && !r.installed);
-        const removables = devRuntimes.filter((r: any) => !r.hidden && !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && r.installed);
-        if (!installables.length && !removables.length) return null;
-        return (
-          <div className="devtools-batch">
-            {batch.kind ? (
-              <>
-                <span className="devtools-batch-text">
-                  正在{batch.kind === "install" ? "安装" : "卸载"} {Math.min(batch.done + 1, batch.total)}/{batch.total}：{batch.name}
-                </span>
-                <button className="secondary-setting" onClick={() => { batchCancel.current = true; }}>取消</button>
-              </>
-            ) : (
-              <>
-                <button className="primary-setting" disabled={!installables.length} onClick={() => void runBatch("install", installables)}>
-                  一键安装全部（新手推荐，{installables.length} 项）
+      {/* 浏览器自动化主通道：外部安装的 ego lite（每会话一个 TaskSpace；不随包内置） */}
+      {group.key === "auto" ? <EgoLiteCard onNotice={setNotice} /> : null}
+
+      <div className="settings-subhead">
+        {group.icon}{group.title}
+        <span className="settings-subhead-hint">{group.hint}</span>
+      </div>
+
+      <div className="runtime-list">
+        {items.map((runtime) => {
+          const busy = runtimeInstalling === runtime.id || runtime.installing;
+          const done = Boolean(runtime.installed || runtime.installedBySystem);
+          const isGuide = runtime.kind === "guide";
+          const builtinBadge = runtime.builtIn || (runtime.bundled && done);
+          const percent = runtimePercent?.[runtime.id] ?? 0;
+          const uninstalling = runtimeUninstalling === runtime.id;
+          /* 「这个工具刚装失败了」的判据 = app-state 写进 runtimeProgress 的那一行
+             （`安装失败：<原因>`）。⛔ 前缀是**契约**：产出侧写死的字符串在
+             01-dev-runtimes-capability.tsx，守卫【287】两边一起钉。 */
+          const installFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("安装失败");
+          const uninstallFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("卸载失败");
+          const fallbackPrompt = runtime.fallbackPrompt;
+          return <div className={`runtime-row devtools-tool-row ${done ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id} data-runtime={runtime.id}>
+            <span className="runtime-icon">{busy ? <Spinner /> : done ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
+            <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small></span>
+            {busy ? <span className="runtime-install-state devtools-progress-row">
+              {/* 进度条：下载 / 安装 / 卸载共用（卸载也按字节发 percent） */}
+              <span className="runtime-progress-bar" role="progressbar" aria-label={`${runtime.name}${uninstalling ? "卸载" : "安装"}进度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+                <i style={{ width: `${percent}%` }} />
+              </span>
+              <em className="runtime-progress">
+                {uninstalling ? "正在卸载 · " : runtimeStage[runtime.id] ? `${runtimeStage[runtime.id]} · ` : ""}
+                {typeof runtimePercent[runtime.id] === "number" ? `${percent}%` : "准备中"}
+                {runtimeSpeed[runtime.id] ? ` · ${runtimeSpeed[runtime.id]}` : ""}
+                {runtimeProgress[runtime.id] ? ` · ${runtimeProgress[runtime.id]}` : ""}
+              </em>
+            </span>
+              : !done && runtime.bundled ? <em className="runtime-hint">随包内置能力缺失时可点「修复安装」从包内恢复</em>
+                : null}
+            {installFailed ? (
+              <button type="button" className="runtime-failed"
+                onClick={() => setRuntimeModal({ id: runtime.id, name: runtime.name, mode: "install", done: true, failed: true, error: String(runtimeProgress?.[runtime.id] ?? "").replace(/^安装失败：/, "") })}>
+                <AlertTriangle size={12} />安装失败 · 点开完整报错与备用方案
+              </button>
+            ) : uninstallFailed ? (
+              <button type="button" className="runtime-failed"
+                onClick={() => setRuntimeModal({ id: runtime.id, name: runtime.name, mode: "uninstall", done: true, failed: true, error: String(runtimeProgress?.[runtime.id] ?? "").replace(/^卸载失败：/, "") })}>
+                <AlertTriangle size={12} />卸载失败 · 点开完整报错
+              </button>
+            ) : null}
+            <span className="runtime-size">{runtime.size}</span>
+            <div className="runtime-actions">
+              {/* 常驻「复制安装提示词」：网差时的正路 —— 复制给 Codex 让它在这台机器上直接装。
+                  ⛔ 提示词正文 = 主进程 runtime:list 下发的 fallbackPrompt（单一真相源）。 */}
+              {fallbackPrompt && !isGuide ? (
+                <button type="button" className="runtime-prompt-copy"
+                  title={`复制「${runtime.name}」的安装提示词 —— 发到任意会话里，Codex 就能帮你装`}
+                  aria-label={`复制 ${runtime.name} 的安装提示词`}
+                  onClick={() => {
+                    void copyTextToClipboard(fallbackPrompt);
+                    setNotice(`已复制「${runtime.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`);
+                  }}>
+                  <Copy size={14} />
                 </button>
-                <button className="secondary-setting" disabled={!removables.length} onClick={() => void runBatch("uninstall", removables)}>
-                  一键卸载全部（{removables.length} 项）
-                </button>
-              </>
-            )}
-          </div>
-        );
-      })()}
-      {(() => {
-        // 09-16 用户「自动化工具拆开，拆详细一点」：不再一张「桌面与浏览器自动化」大卡，
-        // 拆成逐条能力卡（Nuphus / ponytail；浏览器自动化走外部 Ego Lite）。
-        // bundled=true 的卡片显示「内置」（随包预装，无需安装；缺失时给「修复安装」）。
-        // 10-07 重构（用户「对工具合理分类整理」）：按用途细分五类，末组兜底 ——
-        // ⛔ 末组必须存在：将来新增工具忘了归类时落在「其它」而不是从界面上凭空消失。
-        const autoIds = ["nuphus", "ponytail"];
-        const devChainIds = ["pwsh", "git", "conda", "mingw"];
-        const mediaIds = ["ffmpeg", "markitdown"];
-        const aiIds = ["kb-embedding"];
-        const notIn = (ids: string[]) => (r: any) => !ids.includes(r.id);
-        const groups = [
-          { key: "base", title: "基础运行时", hint: "随应用内置，离线可用", icon: <Wrench size={13} />, filter: (r: any) => r.builtIn },
-          { key: "auto", title: "桌面与浏览器自动化", hint: "Nuphus 随包内置（Ego Lite 未装时作默认浏览器回落）；自动化优先外部 Ego Lite", icon: <TerminalSquare size={13} />, filter: (r: any) => autoIds.includes(r.id) },
-          { key: "devchain", title: "开发工具链", hint: "Git / PowerShell 7 / Miniconda 等，按需下载（国内镜像优先）", icon: <Download size={13} />, filter: (r: any) => devChainIds.includes(r.id) },
-          { key: "media", title: "媒体与文档", hint: "音视频处理与文档格式转换", icon: <Activity size={13} />, filter: (r: any) => mediaIds.includes(r.id) },
-          { key: "ai", title: "本地智能", hint: "本地推理 / 语义检索，模型走国内镜像", icon: <BookOpen size={13} />, filter: (r: any) => aiIds.includes(r.id) },
-          { key: "system", title: "系统级安装", hint: "打开官网手动安装", icon: <Globe2 size={13} />, filter: (r: any) => r.kind === "guide" },
-          { key: "ondemand", title: "其它按需下载", hint: "联网下载安装（国内镜像优先）", icon: <Download size={13} />, filter: (r: any) => !r.builtIn && notIn(autoIds)(r) && notIn(devChainIds)(r) && notIn(mediaIds)(r) && notIn(aiIds)(r) && r.kind !== "guide" },
-        ];
-        return groups.map((g) => {
-          const items = devRuntimes.filter(g.filter);
-          if (!items.length) return null;
-          return <div className="devtools-group" key={g.key}>
-            {/* 分类级一键：只对该分类下的可下载项生效（内置/系统级不算） */}
-            {(() => {
-              const inst = items.filter((r: any) => !r.hidden && !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && !r.installed);
-              const rem = items.filter((r: any) => !r.hidden && !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && r.installed);
-              if (!inst.length && !rem.length) return null;
-              return (
-                <div className="devtools-batch">
-                  {inst.length ? (
-                    <button className="primary-setting" disabled={Boolean(batch.kind)} onClick={() => void runBatch("install", inst)}>
-                      本组一键安装（{inst.length}）
-                    </button>
-                  ) : null}
-                  {rem.length ? (
-                    <button className="secondary-setting" disabled={Boolean(batch.kind)} onClick={() => void runBatch("uninstall", rem)}>
-                      本组一键卸载（{rem.length}）
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })()}
-            <div className="settings-subhead">{g.icon}{g.title}<span className="settings-subhead-hint">{g.hint}</span></div>
-            <div className="runtime-list">
-              {items.filter((runtime: any) => !runtime.hidden).map((runtime: any) => {
-                const busy = runtimeInstalling === runtime.id || runtime.installing;
-                const isDone = runtime.installed || runtime.installedBySystem;
-                const isGuide = runtime.kind === "guide";
-                const builtinBadge = runtime.builtIn || (runtime.bundled && isDone);
-                /* 「这个工具刚装失败了」的判据 = app-state 写进 runtimeProgress 的那一行
-                   （`安装失败：<原因>`）。⛔ 前缀是**契约**：产出侧写死的字符串在
-                   01-dev-runtimes-capability.tsx，守卫【287】两边一起钉。
-                   10-11：完整报错改走「完整报错」弹窗，卡片只留一行摘要，点开重看（弹窗关了报错不丢）。 */
-                const installFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("安装失败");
-                const uninstallFailed = String(runtimeProgress?.[runtime.id] ?? "").startsWith("卸载失败");
-                return <div className={`runtime-row devtools-tool-row ${isDone ? "installed" : "missing"} ${busy ? "busy" : ""}`} key={runtime.id}>
-                  <span className="runtime-icon">{busy ? <Spinner /> : isDone ? <CircleCheck size={16} /> : <TerminalSquare size={16} />}</span>
-                  <span className="runtime-copy"><strong>{runtime.name}</strong><small>{runtime.description}</small>
-                    </span>{busy ? <span className="runtime-install-state devtools-progress-row">
-                      {/* 进度条（09-19 用户要求：安装过程不弹窗，用进度条可视化） */}
-                      <span className="runtime-progress-bar" role="progressbar" aria-label={`${runtime.name} 安装进度`} aria-valuenow={runtimePercent[runtime.id] ?? 0} aria-valuemin={0} aria-valuemax={100}>
-                        <i style={{ width: `${runtimePercent[runtime.id] ?? 0}%` }} />
-                      </span>
-                      <em className="runtime-progress">
-                        {runtimeStage[runtime.id] ? `${runtimeStage[runtime.id]} · ` : ""}
-                        {typeof runtimePercent[runtime.id] === "number" ? `${runtimePercent[runtime.id]}%` : "准备中"}
-                        {runtimeSpeed[runtime.id] ? ` · ${runtimeSpeed[runtime.id]}` : ""}
-                        {runtimeProgress[runtime.id] ? ` · ${runtimeProgress[runtime.id]}` : ""}
-                      </em>
-                    </span>
-                      : !isDone && runtime.bundled ? <em className="runtime-hint">随包内置能力缺失时可点「修复安装」从包内恢复</em>
-                      : null}
-                  {/* 10-11 改版：失败不再内联一大块 —— 完整报错进「完整报错」弹窗（DevtoolsSettingsSection 渲染），
-                      卡片只留一行摘要，点开重看。⛔ 失败判据与产出侧同一前缀（守卫 11y 两边同名钉）。 */}
-                  {installFailed ? (
-                    <button type="button" className="runtime-failed"
-                      onClick={() => setRuntimeModal({ id: runtime.id, name: runtime.name, mode: "install", done: true, failed: true, error: String(runtimeProgress?.[runtime.id] ?? "").replace(/^安装失败：/, "") })}>
-                      <AlertTriangle size={12} />安装失败 · 点开完整报错与备用方案
-                    </button>
-                  ) : uninstallFailed ? (
-                    <button type="button" className="runtime-failed"
-                      onClick={() => setRuntimeModal({ id: runtime.id, name: runtime.name, mode: "uninstall", done: true, failed: true, error: String(runtimeProgress?.[runtime.id] ?? "").replace(/^卸载失败：/, "") })}>
-                      <AlertTriangle size={12} />卸载失败 · 点开完整报错
-                    </button>
-                  ) : null}
-                  <span className="runtime-size">{runtime.size}</span>
-                  <div className="runtime-actions">
-                    {/* 10-11 用户令：**常驻**「复制安装提示词」图标 —— 不用等失败才出现，任何可下载工具
-                        随时都能复制一段提示词发给 Codex、让它在这台机器上直接装（网差时的正路）。
-                        ⛔ 提示词正文 = 主进程 runtime:list 下发的 fallbackPrompt，这里只复制（单一真相源）。
-                        系统级安装（kind=guide，点按钮开官网）不走 Codex 安装，不出这个图标。 */}
-                    {runtime.fallbackPrompt && !isGuide ? (
-                      <button type="button" className="runtime-prompt-copy"
-                        title={`复制「${runtime.name}」的安装提示词 —— 发到任意会话里，Codex 就能帮你装`}
-                        aria-label={`复制 ${runtime.name} 的安装提示词`}
-                        onClick={() => {
-                          void copyTextToClipboard(runtime.fallbackPrompt);
-                          setNotice(`已复制「${runtime.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`);
-                        }}>
-                        <Copy size={14} />
-                      </button>
-                    ) : null}
-                    {/* 忙碌态（10-07 重构）：安装 → 给「取消」；卸载 → 不可取消，只给状态徽章。
-                        ⛔ 两条路径都要有可见反馈，不允许按钮区空白（无响应状态）。 */}
-                    {busy ? (
-                      runtimeUninstalling === runtime.id
-                        ? (
-                          /* ⛔ 11-01 用户令「卸载也都要加上进度条」：原来只有一句「卸载中…」闷到结束。
-                             主进程 removeTargetsWithProgress 本来就在按字节发 percent，这里接上。 */
-                          <span className="runtime-badge busy" title={runtimeStage?.[runtime.id] ?? ""}>
-                            卸载中… {Math.round(Number(runtimePercent?.[runtime.id] ?? 0))}%
-                          </span>
-                        )
-                        : <button className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime(runtime.id)}>取消</button>
-                    ) : (<>
-                    {builtinBadge ? <span className="runtime-badge">内置</span>
-                      : runtime.bundled
-                        ? <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}修复安装</button>
-                        : isDone ? <>
-                            <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
-                            {/* 10-01 用户规则：**只有「内置」的不能卸载**，其余一律可真卸载
-                                （下载类工具 + npm 包 + pip 包都走 runtime:uninstall 真删；
-                                 内置项走上面的 builtinBadge 分支，显示「内置」不给卸载键）
-                                10-07 重构：卸载先行内**二次确认**（真删本地文件，不可恢复）。 */}
-                            {!runtime.installedBySystem && (confirmUninstall === runtime.id ? (
-                              <span className="runtime-confirm">
-                                <em>删除本地文件，不可恢复？</em>
-                                <button className="danger-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => { setConfirmUninstall(null); void uninstallDevRuntime(runtime.id); }}>确认卸载</button>
-                                <button className="secondary-setting" onClick={() => setConfirmUninstall(null)}>取消</button>
-                              </span>
-                            ) : (
-                              <button className="secondary-setting runtime-uninstall" onClick={() => setConfirmUninstall(runtime.id)}>卸载</button>
-                            ))}
-                          </>
-                          : isGuide
-                            ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
-                            : <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}>{busy ? <Spinner /> : <ArrowDown size={14} />}下载</button>}
-                    </>)}
-                  </div>
-                </div>;
-              })}
+              ) : null}
+              {busy ? (
+                uninstalling
+                  ? <span className="runtime-badge busy" title={runtimeStage?.[runtime.id] ?? ""}>卸载中… {Math.round(Number(percent))}%</span>
+                  : <button className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime(runtime.id)}>取消</button>
+              ) : (<>
+                {builtinBadge ? <span className="runtime-badge">内置</span>
+                  : runtime.bundled
+                    ? <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}><ArrowDown size={14} />修复安装</button>
+                    : done ? <>
+                      <span className="runtime-badge installed">{runtime.installedBySystem ? "系统已装" : "已安装"}</span>
+                      {!runtime.installedBySystem && (confirmUninstall === runtime.id ? (
+                        <span className="runtime-confirm">
+                          <em>删除本地文件，不可恢复？</em>
+                          <button className="danger-setting runtime-uninstall" disabled={Boolean(runtimeInstalling)} onClick={() => { setConfirmUninstall(null); void uninstallDevRuntime(runtime.id); }}>确认卸载</button>
+                          <button className="secondary-setting" onClick={() => setConfirmUninstall(null)}>取消</button>
+                        </span>
+                      ) : (
+                        <button className="secondary-setting runtime-uninstall" onClick={() => setConfirmUninstall(runtime.id)}>卸载</button>
+                      ))}
+                    </>
+                    : isGuide
+                      ? <button className="secondary-setting runtime-install" onClick={() => void installDevRuntime(runtime.id)}><ExternalLink size={13} />去官网安装</button>
+                      : <button className="primary-setting runtime-install" disabled={Boolean(runtimeInstalling)} onClick={() => void installDevRuntime(runtime.id)}><ArrowDown size={14} />下载</button>}
+              </>)}
             </div>
           </div>;
-        });
-      })()}
-      {!devRuntimes.length && <div className="runtime-loading"><Spinner />正在读取开发工具状态…</div>}
-      {/* 「检查工具」（10-02 用户要的）：卡片上的「已安装」只证明文件在，不证明能跑。
-          点一次让主进程**真的跑一遍**（版本命令 / pip 可用性），把不可用的挑出来。 */}
-      <div className="devtools-health">
-        <button className="secondary-setting runtime-check" disabled={healthBusy} onClick={() => void runHealth()}><Activity size={13} />{healthBusy ? "检查中…" : "检查工具"}</button>
-        {health
-          ? <span className="settings-card-hint">{healthBad.length === 0 ? "已安装的工具全部可运行" : `发现 ${healthBad.length} 项不可用`}（另有 {healthMissing} 项未安装）</span>
-          : <span className="settings-card-hint">点一下，逐个验证已装的工具能不能真跑起来</span>}
+        })}
       </div>
-      {healthError ? <div className="runtime-loading">{healthError}</div> : null}
-      {healthBad.length > 0 && (
-        <div className="runtime-list" data-health-bad={healthBad.length}>
-          {healthBad.map((row: any) => (
-            <div className="runtime-row missing" key={`health-${row.id}`}>
-              <span className="runtime-icon"><AlertTriangle size={16} /></span>
-              <span className="runtime-copy"><strong>{row.name}</strong><small>{row.detail}</small></span>
-            </div>
-          ))}
-        </div>
-      )}
-      <details className="devtools-manifest">
-        <summary><BookOpen size={13} />工具清单说明（Codex 引擎安装参考）<span className="settings-subhead-hint">点击展开 / 复制</span></summary>
-        <div className="devtools-manifest-body">
-          <pre>{devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")}</pre>
-          <button className="secondary-setting" onClick={() => { void copyTextToClipboard(devRuntimes.map((r: any) => `# ${r.name}\n${r.description}\n${r.installed || r.builtIn ? "状态：已就绪" : "状态：未安装"}\n`).join("\n")); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
-        </div>
-      </details>
-      {/* 自检弹窗：进度条 + 逐项结果（绿=可用，红=不可用） */}
-      {healthRows ? (
-        <div className="devtool-health-backdrop" onClick={() => { if (!healthBusy) setHealthRows(null); }}>
-          <div className="devtool-health-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="devtool-health-head">
-              <strong>工具自检{healthBusy ? (healthRows.length ? ` · ${healthDone}/${healthRows.length}` : " · 准备中") : ` · ${healthRows.length} 项`}</strong>
-              <button className="secondary-setting" onClick={() => setHealthRows(null)} disabled={healthBusy}>关闭</button>
-            </div>
-            <div className="devtool-health-progress">
-              <span style={{ width: healthRows.length ? Math.round((healthDone / Math.max(healthRows.length, 1)) * 100) + "%" : "6%" }} />
-            </div>
-            <div className="devtool-health-list">
-              {healthRows.map((row: any) => (
-                <div key={row.id} className={"devtool-health-row " + (row.ok ? "is-ok" : "is-bad")}>
-                  <span className="devtool-health-badge">{row.ok ? "✓" : "✕"}</span>
-                  <span className="devtool-health-name">{row.name}</span>
-                  <span className="devtool-health-detail">{row.ok ? row.detail || "可运行" : row.detail}</span>
-                </div>
-              ))}
-              {healthBusy && healthRows.length === 0 ? <div className="devtool-health-row is-plain">准备检查…</div> : null}
-            </div>
-          </div>
+      {!devRuntimes.length && <div className="runtime-loading"><Spinner />正在读取开发工具状态…</div>}
+
+      {/* 本组一键卸载：只对「已安装且可真删」的项生效；先确认再动手。 */}
+      {removables.length > 0 ? (
+        <div className="devtools-batch">
+          {confirmBatch ? (
+            <>
+              <span className="devtools-batch-text">将删除这 {removables.length} 个工具的本地文件，不可恢复。确认卸载？</span>
+              <button className="danger-setting runtime-uninstall" disabled={Boolean(batch.kind)} onClick={() => { setConfirmBatch(false); runBatch("uninstall", removables, cardKey); }}>确认卸载</button>
+              <button className="secondary-setting" onClick={() => setConfirmBatch(false)}>取消</button>
+            </>
+          ) : (
+            <>
+              <span className="devtools-batch-text">本组可卸载 {removables.length} 项</span>
+              <button className="secondary-setting" disabled={Boolean(batch.kind)} onClick={() => setConfirmBatch(true)}>本组一键卸载（{removables.length}）</button>
+            </>
+          )}
         </div>
       ) : null}
-      <p className="settings-card-hint">随应用内置（安装包自带、离线可用）：引擎、Node、VS Code CLI、Nuphus 桌面自动化、ponytail 写代码模式插件，以及下载体积 50MB 以内的小工具 —— Python（完整版，含 pip 与 Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）；按需下载：Git、PowerShell 7（npmmirror / gh 加速，失败自动回落官方源，首次启动检测到缺 Git 会自动补装）、FFmpeg、Miniconda、MinGW、文档转换（markitdown，pip 清华镜像）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。Ego Lite 浏览器自动化是**首选**通道，在卡片里跳官方安装器（不随包内置 611MB 浏览器）；未安装时回落 browse-skills（nuphus 默认浏览器）。除内置项外都可卸载（卸载是真删）。日常浏览用内置浏览器视图；浏览器自动化由每个会话自己的 Ego Lite Space 执行。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
+      {batching ? (
+        <p className="settings-card-hint">
+          正在{batch.kind === "install" ? "安装" : "卸载"} {Math.min(batch.done + 1, batch.total)}/{batch.total}：{batch.name}（进度显示在分类卡片上，可关窗继续）
+        </p>
+      ) : null}
+      <p className="settings-card-hint">
+        {group.key === "base"
+          ? "这些运行时随安装包自带、离线可用；缺失时点「修复安装」从随包资源恢复。"
+          : "安装与卸载都真实改动本机文件；下载中可取消，卸载不可取消（会逐文件删除并显示进度）。"}
+      </p>
     </div>
   );
 }

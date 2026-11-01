@@ -17,29 +17,47 @@
    「窄标签列 + hover 上浮 + 手型光标」—— 控制台页（GeneralSettingsSection）与
    DomainsPanel 的信息卡是 div.settings-card（head 在上、body 在下的竖向结构），
    被压成竖排标签（用户截图「排版坏了」）。信息卡与可点击卡是两个家族：
-   button = 分类卡（devtools / extensibility / 记忆中心），div = 信息卡（控制台等）。 */
+   button = 分类卡（devtools / extensibility / 记忆中心），div = 信息卡（控制台等）。
+   11-01：.devtools-card 变成「列容器」—— 上半是打开按钮（整块可点），底部放一键安装 /
+   进度条；不再整体写成 <button>（按钮里套按钮是非法结构）。 */
 .devtools-card,
 button.settings-card {
   display: flex;
-  align-items: flex-start;
-  gap: 11px;
+  flex-direction: column;
   text-align: left;
-  padding: 13px 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
   color: inherit;
-  cursor: pointer;
+  overflow: hidden;
   transition: border-color .15s ease, transform .15s ease, box-shadow .15s ease;
 }
+button.settings-card {
+  align-items: flex-start;
+  gap: 11px;
+  padding: 13px 14px;
+  cursor: pointer;
+}
+.devtools-card-open {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  width: 100%;
+  padding: 13px 14px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.devtools-card-open:focus-visible,
+button.settings-card:focus-visible { outline: 2px solid var(--accent, var(--green)); outline-offset: -2px; border-radius: 11px; }
 .devtools-card:hover,
 button.settings-card:hover {
   border-color: var(--accent, var(--green));
   transform: translateY(-1px);
   box-shadow: 0 6px 18px #00000012;
 }
-.devtools-card:focus-visible,
-button.settings-card:focus-visible { outline: 2px solid var(--accent, var(--green)); outline-offset: 2px; }
 
 .settings-card-logo,
 .devtools-card-logo {
@@ -64,6 +82,35 @@ button.settings-card:focus-visible { outline: 2px solid var(--accent, var(--gree
 .devtools-card-arrow { flex: none; margin-top: 2px; color: var(--muted); }
 .devtools-card:hover .devtools-card-arrow,
 button.settings-card:hover .settings-card-arrow { color: var(--green); }
+
+/* 11-01：分类卡底部的「一键安装」与批量进度（进度条 + 取消；关掉弹窗也能看到）。
+   ⛔ 按键靠右（用户 11-01：「按键靠右」）—— 与弹窗里工具行的动作列、本组一键卸载同一侧。 */
+.devtools-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0 14px 12px; }
+.devtools-card-install { min-height: 30px; padding: 0 12px; font-size: 11.5px; }
+.devtools-card-progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 0 14px 12px;
+}
+.devtools-card-progress-bar {
+  grid-column: 1 / -1;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text) 10%, transparent);
+}
+.devtools-card-progress-bar > i { display: block; height: 100%; background: var(--accent, var(--green)); transition: width .18s ease; }
+.devtools-card-progress-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 11px;
+}
+.devtools-card-cancel { min-height: 26px; padding: 0 10px; font-size: 11px; }
 
 /* ── 二级：弹窗（设置内档 z=900，与 .memory-center-modal 同规范）──────────── */
 .settings-dialog-backdrop {
@@ -182,23 +229,9 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .settings-dialog[data-size="sm"] .settings-dialog-head { flex: none; min-height: 56px; }
 .settings-dialog[data-size="sm"] .settings-dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
-/* ⛔ 11-01 用户令「一个大卡片：分类名 / 工具名 / 介绍 / 下面一键安装-卸载」：
-   不改 DOM，用卡片容器 + flex 排序把两个一键按钮沉到卡片底部（原来夹在分类标题和列表之间，很乱）。 */
-.devtools-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 10px 0;
-  padding: 12px 14px;
-  border: 1px solid var(--line-soft, rgba(0, 0, 0, 0.08));
-  border-radius: 12px;
-  background: var(--bg-elevated, rgba(255, 255, 255, 0.6));
-}
-.devtools-group > .devtools-batch { order: 90; margin-top: 4px; }
-.devtools-group > .devtools-batch .primary-setting,
-.devtools-group > .devtools-batch .secondary-setting { min-width: 140px; }
-
-/* ⛔ 11-01 用户令「鼠标在右边，按键放右边」：一键按钮靠右对齐，不再与左对齐标题撞在一起。 */
+/* ⛔ 11-01 用户令「鼠标在右边，按键放右边」：一键按钮靠右对齐，不再与左对齐标题撞在一起。
+   （旧 .devtools-group 大卡随一级页分类卡改版退役 —— 分类内容现在只在二级弹窗里，
+     弹窗内由 .runtime-list + .devtools-batch 承载。） */
 .devtools-batch { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 .devtools-batch-text { margin-right: auto; }
 
@@ -217,7 +250,7 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 }
 .devtools-tool-row > .runtime-copy { grid-area: main; }
 .devtools-tool-row > .runtime-size { grid-area: size; }
-.devtools-tool-row > .runtime-actions { grid-area: actions; display: flex; align-items: center; gap: 6px; }
+.devtools-tool-row > .runtime-actions { grid-area: actions; display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
 .devtools-tool-row > .devtools-progress-row,
 .devtools-tool-row > .runtime-failed { grid-area: prog; }
 

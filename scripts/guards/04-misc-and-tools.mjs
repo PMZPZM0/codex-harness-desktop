@@ -303,21 +303,63 @@ console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
   const dtCss = readFileSync(join(ROOT, "src", "styles", "34-devtools-cards.css"), "utf8");
   const dtStylesEntry = readFileSync(join(ROOT, "src", "styles.css"), "utf8");
 
-  /* ① 一级 = 卡片网格：6 张分类卡，且每张卡都有对应的弹窗分支（key 一一对应） */
-  const CARD_KEYS = ["runtime", "capability", "phone", "laya", "domains", "plugins"];
-  const missingCard = CARD_KEYS.filter((k) => !new RegExp(`key: "${k}"`).test(dtPage));
-  (missingCard.length === 0 ? ok : fail)(`一级页 6 张分类卡片齐全（缺：${missingCard.join("/") || "无"}）`);
+  /* ① 一级 = 卡片网格：工具分类来自同一份目录（runtime-groups）+ 其余板块各一张卡。
+     11-01 用户令「外面只展示分类名字，二级弹窗预览内容」：原来那张「运行时与工具链」总卡
+     拆成 7 个工具分类卡，每张卡带「一键安装」，明细只在弹窗里。 */
+  const dtGroups = readFileSync(join(ROOT, "src", "features", "settings-devtools", "runtime-groups.tsx"), "utf8");
+  const dtPanel = readFileSync(join(ROOT, "src", "features", "settings-devtools", "RuntimeToolsPanel.tsx"), "utf8");
+  const GROUP_KEYS = ["base", "auto", "devchain", "media", "ai", "system", "ondemand"];
+  const missingGroup = GROUP_KEYS.filter((k) => !new RegExp(`key: "${k}"`).test(dtGroups));
+  (missingGroup.length === 0 ? ok : fail)(`工具分类目录齐全（缺：${missingGroup.join("/") || "无"}）`);
+  (/RUNTIME_GROUPS\.map/.test(dtPage) ? ok : fail)(
+    "一级页的工具分类卡由 RUNTIME_GROUPS 生成（⛔ 分类名不许在页面里另写一份）"
+  );
   /* 结构指纹：卡片用 `data-card={card.key}` 渲染（DOM 上可定位）—— 后续 UI 断言靠它选元素。 */
   (/data-card=\{card\.key\}/.test(dtPage) ? ok : fail)("卡片网格以 card.key 渲染 data-card（DOM 定位锚）");
+  const CARD_KEYS = ["tools-health", "skill-packs", "moekoe", "capability", "phone", "laya", "feishu-cli", "filee", "openfilm", "domains", "plugins"];
+  const missingCard = CARD_KEYS.filter((k) => !new RegExp(`key: "${k}"`).test(dtPage));
+  (missingCard.length === 0 ? ok : fail)(`其余板块卡片齐全（缺：${missingCard.join("/") || "无"}）`);
   const missingDialog = CARD_KEYS.filter((k) => !new RegExp(`openCard === "${k}"`).test(dtPage));
-  (missingDialog.length === 0 ? ok : fail)(`每张卡片都有对应的二级弹窗分支（缺：${missingDialog.join("/") || "无"}）`);
+  (missingDialog.length === 0 ? ok : fail)(`每张其余卡片都有对应的二级弹窗分支（缺：${missingDialog.join("/") || "无"}）`);
+  (/groupOfCardKey/.test(dtPage) && /activeGroup && activeToolCard/.test(dtPage) ? ok : fail)(
+    "7 张工具分类卡共用一条二级弹窗分支（按目录取 group —— 一张卡一份内容，不各写一份）"
+  );
+  /* 工具的「一键安装」在卡片底部（用户令「外面卡片就是一键安装」），批处理状态挂在页面级：
+     关掉弹窗后循环要继续、卡片上要看得到进度与取消。 */
+  (/runBatch\("install", installables, card\.key\)/.test(dtPage) && /devtools-card-progress/.test(dtPage) && /cancelBatch/.test(dtPage) ? ok : fail)(
+    "分类卡底部有一键安装 + 进度条 + 取消（批处理状态在页面级，关窗也在跑）"
+  );
+  (/useState<RuntimeBatch>/.test(dtPage) && /batch: RuntimeBatch/.test(dtPanel) && !/useState<\{ kind: "install"/.test(dtPanel) ? ok : fail)(
+    "⛔ 批处理状态只在页面级（弹窗卸载后循环还在跑，卡片上仍能看到进度与取消）"
+  );
+  (/!GROUPED_IDS\.has\(runtime\.id\)/.test(dtGroups) && /GROUPED_IDS = new Set/.test(dtGroups) ? ok : fail)(
+    "「其它按需下载」是兜底且排除已分类 id（同一条工具不会在两张卡里画两遍）"
+  );
+  (/runtimeGroupItems\(group, runtimes\)/.test(dtPage) && /runtimeGroupItems\(group, devRuntimes\)/.test(dtPanel) ? ok : fail)(
+    "一级卡片与二级弹窗取同一份分类内容（runtimeGroupItems —— 卡片数字与弹窗行同源）"
+  );
+  (/uninstalling \? "正在卸载 · "/.test(dtPanel) && /aria-label=\{`\$\{runtime\.name\}\$\{uninstalling \? "卸载" : "安装"\}进度`\}/.test(dtPanel) ? ok : fail)(
+    "安装与卸载共用进度条（卸载不再只有一句「卸载中」）"
+  );
+  /* ⛔ 11-01 用户令「按键靠右」：分类卡的一键安装、工具行动作列、本组一键卸载都在右侧。 */
+  (/\.devtools-card-actions \{[^}]*justify-content: flex-end/.test(dtCss)
+    && /\.devtools-tool-row > \.runtime-actions \{[^}]*justify-content: flex-end/.test(dtCss)
+    ? ok : fail)("分类卡与工具行的按键靠右（一键安装 / 下载·卸载 / 本组一键卸载同一侧）");
 
-  /* ② ⛔⛔ 内容只在弹窗里：四个面板组件 + 两个声明式插槽都必须紧跟在自己的弹窗分支内 */
-  const inDialog = (name) => new RegExp(`openCard === "[a-z]+"[\\s\\S]{0,700}?${name}`).test(dtPage);
-  const panelNames = ["RuntimeToolsPanel", "CapabilityChainPanel", "PhoneHarnessCard", "LayaCard"];
-  const leaked = panelNames.filter((n) => !inDialog(n));
-  (leaked.length === 0 ? ok : fail)(`⛔ 四个面板只在弹窗分支里渲染（漏回一级页的：${leaked.join("/") || "无"}）`);
-  (inDialog("settings.devtools.bottom") && inDialog("settings.devtools.declared-plugins") ? ok : fail)(
+  /* ② ⛔⛔ 内容只在弹窗里：面板组件 + 两个声明式插槽都必须紧跟在自己的弹窗分支内。
+     ⛔ 判据用**位置**而不是正则窗口：一级渲染分支 = 第一个 <SettingsDialog 之前的全部源码；
+        面板组件出现在那里 = 内容内嵌回一级页（那正是用户 10-10 反馈的长滚动堆叠）。 */
+  const firstDialogAt = dtPage.indexOf("<SettingsDialog");
+  const levelOne = firstDialogAt > 0 ? dtPage.slice(0, firstDialogAt) : dtPage;
+  const panelNames = ["RuntimeToolsPanel", "ToolsHealthPanel", "CapabilityChainPanel", "PhoneHarnessCard", "LayaCard"];
+  const leaked = panelNames.filter((n) => levelOne.includes(`<${n}`));
+  (leaked.length === 0 ? ok : fail)(`⛔ 面板组件只在弹窗分支里渲染（漏回一级页的：${leaked.join("/") || "无"}）`);
+  const notInDialog = panelNames.filter((n) => dtPage.indexOf(`<${n}`) < firstDialogAt);
+  (notInDialog.length === 0 ? ok : fail)(`面板组件都在 <SettingsDialog> 之后渲染（缺：${notInDialog.join("/") || "无"}）`);
+  /* ⛔ 注释里也写着这两个 id（说明白名单来源）⇒ 位置判据必须先剥注释。 */
+  const dtCode = codeOnly(dtPage);
+  const firstDialogCode = dtCode.indexOf("<SettingsDialog");
+  (["settings.devtools.bottom", "settings.devtools.declared-plugins"].every((id) => dtCode.indexOf(`id="${id}"`) > firstDialogCode) ? ok : fail)(
     "⛔ 两个声明式插槽的消费点也在弹窗里（一级页不放 ⇒ 同一 id 全局只消费一次）"
   );
   (/<SettingsDialog/.test(dtPage) ? ok : fail)("二级载体统一走 SettingsDialog（⛔ 不许各面板自造弹窗 —— 规范要一致）");

@@ -9,6 +9,8 @@
 //   ⑤ sidebar-adaptive：「功能入口」是侧栏右侧浮层，不占纵向空间；Esc 收起
 //   ⑥ file-preview-controls：右栏文件树/预览可拖动分栏 + 预览向上拉满（按钮/Alt+↑↓）
 //   ⑦ composer-rail：输入框竖条（收起贴线 / 四入口 / 选表情只插表情 / 弹层期不自动收 / 双写 / 10s 自动收）
+//   ⑧ devtools-categories：开发工具页工具分类（11-01）—— 外面只有分类卡 + 一键安装，
+//      明细只在二级弹窗里（⛔ 一级不许出现工具行）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -1192,6 +1194,98 @@ const CHECKS = [
         JSON.stringify(packs));
       h.check("④ 清单来自主进程且三条 id 各不相同",
         Array.isArray(packs) && new Set(packs.map((p) => p.id)).size === 3, JSON.stringify(packs && packs.map((p) => p.id)));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(300);
+    },
+  },
+  {
+    id: "devtools-categories",
+    name: "🧰 开发工具 · 工具分类：外面只有分类卡，明细进二级弹窗（11-01）",
+    run: async (h) => {
+      /* 11-01 用户令：「把工具分类，外面只展示分类名字，二级弹窗预览内容，预览里手动下载，
+         外面卡片一键安装」。这里只验**界面层级**与接线（真下载几 GB 不进秒级验收；
+         安装/取消/进度的结构由守卫 04/11y 钉）。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="tools-devchain"]')`, { label: "工具分类卡", timeoutMs: 15000 });
+      await wait(400);
+      const level1 = await h.eval(`(function(){
+        const grid=document.querySelectorAll(".devtools-cards")[0];
+        if(!grid) return null;
+        const cards=[...grid.querySelectorAll(".devtools-card")];
+        return {
+          keys: cards.map(function(c){ return c.dataset.card||""; }),
+          opens: cards.filter(function(c){ return !!c.querySelector(".devtools-card-open"); }).length,
+          stats: cards.map(function(c){ return (c.querySelector(".devtools-card-stat")?.textContent||"").trim(); }),
+          rows: document.querySelectorAll(".devtools-cards .devtools-tool-row").length,
+        };
+      })()`).catch(() => null);
+      const toolKeys = ["tools-base","tools-auto","tools-devchain","tools-media","tools-ai","tools-system","tools-ondemand","tools-health"];
+      h.check("① 一级页 = 8 张工具分类卡（7 类 + 自检），每张都有打开按钮",
+        Boolean(level1) && toolKeys.every((k) => level1.keys.includes(k)) && level1.opens === level1.keys.length,
+        JSON.stringify(level1 && { keys: level1.keys, opens: level1.opens }));
+      h.check("② 一级页不出现工具明细行（明细只在二级弹窗 —— 两级 IA）",
+        Boolean(level1) && level1.rows === 0, JSON.stringify(level1 && { rows: level1.rows }));
+      h.check("③ 每张分类卡都显示当前就绪数（不是空壳）",
+        Boolean(level1) && level1.stats.length >= toolKeys.length && level1.stats.every((s) => s.length > 0),
+        JSON.stringify(level1 && level1.stats));
+
+      await h.eval(`document.querySelector('.devtools-card[data-card="tools-devchain"]').querySelector(".devtools-card-open").click()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog .devtools-tool-row")`, { label: "分类弹窗工具行", timeoutMs: 10000 });
+      await wait(300);
+      const dialog = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        if(!d) return null;
+        const rows=[...d.querySelectorAll(".devtools-tool-row")];
+        return {
+          title:(d.querySelector(".settings-dialog-heading strong")?.textContent||"").trim(),
+          ids:rows.map(function(r){ return r.dataset.runtime||""; }),
+          actions:rows.map(function(r){ return (r.querySelector(".runtime-actions")?.textContent||"").trim(); }),
+          progressCss:!!(document.querySelector("style")||true),
+        };
+      })()`).catch(() => null);
+      const devchain = ["pwsh","git","conda","mingw"];
+      h.check("④ 点分类卡打开二级弹窗，标题 = 分类名",
+        Boolean(dialog) && dialog.title === "开发工具链", JSON.stringify(dialog && dialog.title));
+      h.check("⑤ 弹窗只列该分类的工具（开发工具链 4 项；没有别的分类混进来）",
+        Boolean(dialog) && dialog.ids.length > 0 && dialog.ids.every((id) => devchain.includes(id)),
+        JSON.stringify(dialog && dialog.ids));
+      h.check("⑥ 每行都有手动动作（下载 / 修复 / 已安装 / 内置 / 卸载）",
+        Boolean(dialog) && dialog.actions.length === dialog.ids.length && dialog.actions.every((a) => a.length > 0),
+        JSON.stringify(dialog && dialog.actions));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(300);
+
+      const cardHasAction = await h.eval(`(function(){
+        const cards=[...document.querySelectorAll(".devtools-cards")[0].querySelectorAll(".devtools-card")];
+        const stats=cards.map(function(c){ return (c.querySelector(".devtools-card-stat")?.textContent||"").trim(); });
+        const allReady=stats.length>0 && stats.every(function(s){
+          const m=/已就绪 (\\d+) \\/ (\\d+) 项/.exec(s);
+          return !m || m[1]===m[2];
+        });
+        return {
+          installs: cards.filter(function(c){ return !!c.querySelector(".devtools-card-install"); }).length,
+          allReady: allReady,
+          stats: stats,
+        };
+      })()`).catch(() => null);
+      h.check("⑦ 有可下载项的分类卡底部出现「一键安装」（全都就绪时不出现按钮）",
+        Boolean(cardHasAction) && (cardHasAction.installs > 0 || cardHasAction.allReady),
+        JSON.stringify(cardHasAction));
+
+      await h.eval(`document.querySelector('.devtools-card[data-card="tools-health"]').querySelector(".devtools-card-open").click()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog .runtime-check")`, { label: "工具自检弹窗", timeoutMs: 8000 });
+      const health = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        return { title:(d.querySelector(".settings-dialog-heading strong")?.textContent||"").trim(),
+          check:(d.querySelector(".runtime-check")?.textContent||"").trim(),
+          manifest:!!d.querySelector(".devtools-manifest") };
+      })()`).catch(() => null);
+      h.check("⑧ 工具自检与清单独立成卡：弹窗里有「检查工具」与可复制的清单",
+        Boolean(health) && health.title === "工具自检与清单" && health.check.includes("检查工具") && health.manifest,
+        JSON.stringify(health));
       await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
       await wait(300);
     },
