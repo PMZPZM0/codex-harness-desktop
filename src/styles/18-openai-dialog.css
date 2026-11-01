@@ -256,6 +256,12 @@
   gap: 10px;
   pointer-events: none;
 }
+/* ⛔⛔ 11-01 用户令：「播报悬浮图标 & 播报弹窗不能在任何弹窗上」。
+   半透明遮罩挡不住它们（z 240 只是被压暗，仍然看得见、还会挡住弹窗按钮）⇒ 只要有全屏遮罩
+   （设置二级弹窗 / 媒体预览 / 图片工坊 / 模型查看器 / modal-backdrop 等）在场，两者一律隐藏。
+   ⛔ 用 body:has 而不是给每个弹窗逐个挂类：遮罩类太多，漏一个就复发。 */
+body:has([class*="backdrop"]) .voice-float-layer,
+body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-float-layer > * {
   pointer-events: auto;
 }

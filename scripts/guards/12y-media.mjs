@@ -206,6 +206,24 @@ ok(
   "MusicFree 插件依赖已移除（专注 MoeKoe，不把远程插件运行时带进包）",
 );
 
+/* ── 播放器迷你模式 + 播报浮层让位（11-01 用户令）──────────────────────────
+   「开了这个窗口只能 ❌ 掉才能继续干活」+「音乐也要能边听边干活」+「播报悬浮图标/弹窗不能在任何弹窗上」。 */
+const previewSrc = codeOnly(read("src/features/media/MediaPreview.tsx"));
+const previewCss = read("src/styles/39-media-preview.css");
+const dialogCss2 = read("src/styles/18-openai-dialog.css");
+ok(/const \[mini, setMini\] = useState\(false\)/.test(previewSrc) && /is-mini/.test(previewSrc) && /startMiniDrag/.test(previewSrc),
+  "视频/音频可缩成迷你悬浮窗（同一 DOM ⇒ 播放不中断；标题栏可拖动）");
+ok(/requestPictureInPicture|PictureInPicture2/.test(previewSrc) && /playbackRate = rate/.test(previewSrc) && /requestFullscreen/.test(previewSrc),
+  "视频：倍速 / 画中画 / 全屏三件都在（原生 controls 没有稳定的倍速菜单）");
+ok(/setLoop/.test(previewSrc) && /skip\(-15\)/.test(previewSrc) && /skip\(15\)/.test(previewSrc) && /media-audio-rate/.test(previewSrc),
+  "音频：±15 秒 / 循环 / 倍速");
+ok(/\.media-preview-backdrop\.is-mini \{[^}]*pointer-events: none;[^}]*z-index: 70/s.test(previewCss),
+  "迷你窗不吃点击（pointer-events:none）、z=70（低于设置页 80 / 全局模态 400）");
+ok(/\.media-video-tools \{[^}]*top: 12px/s.test(previewCss) && /\.media-stage-caption \{[^}]*top: 14px/s.test(previewCss),
+  "播放工具条与标题移到顶部（放右下会压住原生音量/全屏按钮）");
+ok(/body:has\(\[class\*="backdrop"\]\) \.voice-float-layer/.test(dialogCss2) && /body:has\(\[class\*="backdrop"\]\) \.voice-announce-bar/.test(dialogCss2),
+  "任何弹窗打开时播报悬浮球与播报条一律隐藏（半透明遮罩下也不露出、不挡按钮）");
+
 console.log(`
 【media】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

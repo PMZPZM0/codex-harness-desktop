@@ -11,7 +11,8 @@
  * 3D：复用既有 ModelViewerModal（本地 glb/gltf）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, Box, ExternalLink, FolderOpen, Loader2, Music2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
+import type { PointerEvent as ReactPointerEvent } from "react";
+import { AlertTriangle, Box, ExternalLink, FolderOpen, Loader2, Maximize, Maximize2, Minimize2, Music2, Pause, PictureInPicture2, Play, Repeat, RotateCcw, RotateCw, Volume2, VolumeX, X } from "lucide-react";
 import { collectMediaPaths, isHlsSource, isRemoteMediaSource, mediaDisplaySrc, mediaKindOf, type MediaKind } from "../../lib/media-kind.mjs";
 import { openMediaPreview, registerMediaPreview, resolveFilePath, type MediaPreviewTarget } from "../../lib/ui-channels";
 import { openModelViewer } from "../model-viewer";
@@ -115,11 +116,36 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
   const [reloadKey, setReloadKey] = useState(0);
   const local = isAbsoluteLocalPath(source);
   const failed = Boolean(fatal) || nativeFailed;
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  const [rate, setRate] = useState(1);
 
   useEffect(() => {
     setFatal("");
     setNativeFailed(false);
   }, [source, reloadKey]);
+
+  /* 倍速：原生 controls 在 Chromium 里没有稳定的倍速菜单 ⇒ 自绘一个。
+     ⛔ 直接在 DOM 上找 <video>（HLS 与原生两条分支都由它渲染），不为写法差异各存一份 ref。 */
+  const videoEl = (): HTMLVideoElement | null => stageRef.current?.querySelector("video") ?? null;
+  useEffect(() => {
+    const video = videoEl();
+    if (video) video.playbackRate = rate;
+  }, [rate, reloadKey]);
+
+  const toggleFullscreen = () => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+    else void stage.requestFullscreen?.().catch(() => undefined);
+  };
+  const togglePip = () => {
+    const video = videoEl();
+    if (!video) return;
+    const doc = document as Document & { pictureInPictureEnabled?: boolean; exitPictureInPicture?: () => Promise<void> };
+    if (document.pictureInPictureElement) void doc.exitPictureInPicture?.().catch(() => undefined);
+    else void video.requestPictureInPicture?.().catch(() => undefined);
+  };
+  const pipSupported = typeof document !== "undefined" && Boolean((document as Document & { pictureInPictureEnabled?: boolean }).pictureInPictureEnabled);
 
   /* ⛔ 10-29：重试不再需要授权（协议已放开），直接重挂载即可。 */
   const retry = () => {
@@ -129,7 +155,7 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
   };
 
   return (
-    <div className="media-stage media-stage-video">
+    <div className="media-stage media-stage-video" ref={stageRef}>
       {hls ? (
         <HlsVideo key={reloadKey} source={source} poster={poster} autoPlay={autoPlay} onFatal={setFatal} />
       ) : (
@@ -158,6 +184,24 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
           </div>
         </div>
       ) : null}
+      {/* 播放工具条（11-01 用户「丰富一下功能」）：倍速 / 画中画 / 全屏。
+          ⛔ 缩小到迷你播放器在弹窗标题栏（与关闭同排），不在这里重复一份。 */}
+      <div className="media-video-tools">
+        <label className="media-video-rate" title="播放速度">
+          倍速
+          <select value={rate} onChange={(event) => setRate(Number(event.target.value))} aria-label="播放速度">
+            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
+          </select>
+        </label>
+        {pipSupported ? (
+          <button type="button" className="media-video-tool" onClick={togglePip} title="画中画（浮到最前，不挡操作）" aria-label="画中画">
+            <PictureInPicture2 size={14} />
+          </button>
+        ) : null}
+        <button type="button" className="media-video-tool" onClick={toggleFullscreen} title="全屏" aria-label="全屏">
+          <Maximize size={14} />
+        </button>
+      </div>
       <span className="media-stage-caption" title={source}>{title}</span>
     </div>
   );
@@ -175,6 +219,10 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [posterFailed, setPosterFailed] = useState(false);
+  /* 11-01 用户令「音乐播放组件也丰富一下，要可以边听歌边干活」：
+     倍速 / 循环 / ±15 秒（原生 controls 的音频条做不出这些）；缩小到迷你播放器在标题栏。 */
+  const [rate, setRate] = useState(1);
+  const [loop, setLoop] = useState(false);
 
   useEffect(() => { setPosterFailed(false); }, [poster]);
 
@@ -188,6 +236,16 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
   useEffect(() => {
     if (autoPlay) void audioRef.current?.play().catch(() => undefined);
   }, [autoPlay, source, reloadKey]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) audio.playbackRate = rate;
+  }, [rate, reloadKey]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (audio) audio.loop = loop;
+  }, [loop, reloadKey]);
 
   const toggle = () => {
     const audio = audioRef.current;
@@ -216,6 +274,13 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
     const next = !audio.muted;
     audio.muted = next;
     setMuted(next);
+  };
+
+  const skip = (delta: number) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const durationSeconds = Number.isFinite(audio.duration) ? audio.duration : 0;
+    audio.currentTime = Math.max(0, Math.min(durationSeconds || audio.currentTime + delta, audio.currentTime + delta));
   };
 
   const progress = duration > 0 ? Math.min(100, Math.max(0, (current / duration) * 100)) : 0;
@@ -254,6 +319,13 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
             onChange={(event) => seek(Number(event.target.value))}
           />
           <span className="media-audio-time">{formatTime(duration)}</span>
+          {/* 11-01：±15 秒 / 循环 / 倍速（音频原生控件做不到这些） */}
+          <button type="button" className="media-audio-iconbtn" title="后退 15 秒" aria-label="后退 15 秒" onClick={() => skip(-15)}><RotateCcw size={14} /></button>
+          <button type="button" className="media-audio-iconbtn" title="前进 15 秒" aria-label="前进 15 秒" onClick={() => skip(15)}><RotateCw size={14} /></button>
+          <button type="button" className={`media-audio-iconbtn${loop ? " is-on" : ""}`} title={loop ? "取消循环" : "循环播放"} aria-label="循环播放" onClick={() => setLoop((value) => !value)}><Repeat size={14} /></button>
+          <select className="media-audio-rate" value={rate} onChange={(event) => setRate(Number(event.target.value))} aria-label="播放速度" title="播放速度">
+            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
+          </select>
           {!compact ? (
             <div className="media-audio-volume">
               <button type="button" className="media-audio-iconbtn" title={muted ? "取消静音" : "静音"} onClick={toggleMute}>
@@ -329,24 +401,73 @@ export function MediaPreviewModal({ target, onClose }: { target: MediaPreviewTar
   const remote = isRemoteMediaSource(source);
   const resolved = resolveFilePath(source);
   const local = isAbsoluteLocalPath(resolved);
+  /* 11-01 用户实测：「开了这个窗口只能 ❌ 掉才能继续干活」⇒ 迷你模式：
+     去掉全屏遮罩与页面拦截，缩到右下角小窗继续播；点「还原」回到大窗。
+     ⛔ 只切样式、不换 DOM —— 换写法会重建 <video>，进度与播放状态全丢。 */
+  const [mini, setMini] = useState(false);
+  const [miniPos, setMiniPos] = useState<{ left: number; top: number } | null>(null);
+  const backdropRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{ sx: number; sy: number; left: number; top: number } | null>(null);
+  useEffect(() => { setMini(false); setMiniPos(null); }, [source]);
+
+  /* 迷你窗拖动：默认停右上角，按住标题栏可拖到任意位置（不挡输入框/侧栏）。 */
+  const startMiniDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    if (!mini) return;
+    if ((event.target as HTMLElement).closest("button")) return;
+    const el = backdropRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    dragRef.current = { sx: event.clientX, sy: event.clientY, left: rect.left, top: rect.top };
+    const move = (ev: PointerEvent) => {
+      const start = dragRef.current;
+      if (!start) return;
+      const width = el.offsetWidth;
+      const height = el.offsetHeight;
+      setMiniPos({
+        left: Math.max(8, Math.min(window.innerWidth - width - 8, start.left + ev.clientX - start.sx)),
+        top: Math.max(8, Math.min(window.innerHeight - height - 8, start.top + ev.clientY - start.sy)),
+      });
+    };
+    const up = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
-      onClose();
+      if (mini) setMini(false);
+      else onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, [onClose, mini]);
 
   return (
-    <div className="media-preview-backdrop" role="dialog" aria-modal="true" aria-label={title} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
-      <div className={`media-preview-dialog is-${kind || "unknown"}`} onMouseDown={(event) => event.stopPropagation()}>
-        <header className="media-preview-head">
+    <div
+      ref={backdropRef}
+      className={`media-preview-backdrop${mini ? " is-mini" : ""}`}
+      style={mini && miniPos ? { left: `${miniPos.left}px`, top: `${miniPos.top}px`, right: "auto", bottom: "auto" } : undefined}
+      role="dialog"
+      aria-modal={mini ? "false" : "true"}
+      aria-label={title}
+      onMouseDown={(event) => { if (!mini && event.target === event.currentTarget) onClose(); }}
+    >
+      <div className={`media-preview-dialog is-${kind || "unknown"}${mini ? " is-mini" : ""}`} onMouseDown={(event) => event.stopPropagation()}>
+        <header className="media-preview-head" onPointerDown={startMiniDrag} style={mini ? { cursor: "move" } : undefined}>
           <span className="media-preview-kind">{kind ? kindIcon(kind) : <AlertTriangle size={15} />}{kind ? KIND_LABEL[kind] : "媒体"}</span>
           <strong className="media-preview-title" title={source}>{title}</strong>
+          {mini ? (
+            <button type="button" className="media-preview-iconbtn" title="还原大窗" aria-label="还原" onClick={() => { setMini(false); setMiniPos(null); }}><Maximize2 size={16} /></button>
+          ) : (
+            <button type="button" className="media-preview-iconbtn" title="缩小为悬浮小窗（可拖动，不挡操作）" aria-label="缩小" onClick={() => setMini(true)}><Minimize2 size={16} /></button>
+          )}
           <button type="button" className="media-preview-iconbtn" title="关闭 (Esc)" aria-label="关闭" onClick={onClose}><X size={16} /></button>
         </header>
         <div className="media-preview-body">

@@ -148,8 +148,8 @@
 .media-stage-caption {
   position: absolute;
   left: 16px;
-  bottom: 14px;
-  max-width: 70%;
+  top: 14px;
+  max-width: 60%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -158,6 +158,87 @@
   pointer-events: none;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
+
+/* 播放工具条（11-01）：倍速 / 画中画 / 全屏。原生 controls 没有稳定的倍速菜单 ⇒ 自绘一条。
+   ⛔ 放**右上角**：原生控制条在底部，放右下会正好压住音量/全屏/⋮。 */
+.media-video-tools {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+.media-video-rate { display: inline-flex; align-items: center; gap: 4px; color: rgba(255, 255, 255, 0.82); font-size: 11px; }
+.media-video-rate select {
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px;
+  font-size: 11px;
+  padding: 1px 3px;
+}
+.media-video-rate option { color: #111; }
+.media-video-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #e8e8e8;
+  cursor: pointer;
+}
+.media-video-tool:hover { background: rgba(255, 255, 255, 0.14); }
+
+/* ── 迷你播放器（11-01 用户：「开了这个窗口只能 ❌ 掉才能继续干活」）────────────
+   只切布局、不换 DOM：<video> 不重建，播放进度不丢。
+   ⛔ 遮罩整层 pointer-events:none ⇒ 底下的工作区照常可点；z=70 高于内容与思考浮窗（60）、
+      低于设置页（80）与全局模态（400）—— 开设置时自动被盖住。 */
+.media-preview-backdrop.is-mini {
+  inset: auto;
+  top: 60px;
+  right: 16px;
+  width: min(380px, 46vw);
+  padding: 0;
+  background: transparent;
+  pointer-events: none;
+  z-index: 70;
+  display: block;
+}
+.media-preview-backdrop.is-mini .media-preview-dialog {
+  pointer-events: auto;
+  width: 100%;
+  height: auto;
+  max-height: 56vh;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+.media-preview-backdrop.is-mini .media-preview-dialog.is-video .media-preview-body {
+  flex: none;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.media-preview-backdrop.is-mini .media-preview-foot { display: none; }
+.media-preview-backdrop.is-mini .media-stage-caption { display: none; }
+.media-preview-backdrop.is-mini .media-video-tools { right: 8px; bottom: 8px; padding: 2px 4px; }
+.media-preview-backdrop.is-mini .media-preview-head { padding: 6px 10px; }
+.media-preview-backdrop.is-mini .media-preview-kind { display: none; }
+/* 音频迷你条：只留播放/进度/时间（±15、循环、倍速、音量收起来，边听边干活不占地方） */
+.media-preview-backdrop.is-mini .media-preview-dialog.is-audio { width: 100%; min-height: 0; }
+.media-preview-backdrop.is-mini .media-preview-dialog.is-audio .media-preview-body { padding: 0; }
+.media-preview-backdrop.is-mini .media-audio { width: 100%; padding: 10px; gap: 10px; border: 0; border-radius: 0; }
+.media-preview-backdrop.is-mini .media-audio-cover { width: 40px; height: 40px; }
+.media-preview-backdrop.is-mini .media-audio-title { display: none; }
+.media-preview-backdrop.is-mini .media-audio-iconbtn,
+.media-preview-backdrop.is-mini .media-audio-rate,
+.media-preview-backdrop.is-mini .media-audio-volume { display: none; }
 
 .media-preview-overlay {
   position: absolute;
@@ -387,6 +468,19 @@
   align-items: center;
   gap: 8px;
   margin-top: 8px;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+.media-audio-iconbtn.is-on { color: var(--accent); }
+.media-audio-rate {
+  flex: none;
+  height: 22px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .media-audio-toggle,
