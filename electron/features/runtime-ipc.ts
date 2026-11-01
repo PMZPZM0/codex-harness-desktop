@@ -685,7 +685,19 @@ function probeTool(file: string, args: string[]): Promise<{ ok: boolean; detail:
     };
     if (!existsSync(file)) return done(false, "已安装但找不到可执行文件（目录可能被手动删过，点「修复安装」）");
     try {
-      const child = spawn(file, args, { windowsHide: true, env: toolchainEnv(), timeout: 8000 });
+      /* ⛔⛔ 11-01 用户实测「Miniconda 检查报 Traceback，是不是用不了」：实测 cd 到安装目录里跑
+         conda --version 完全正常（conda 25.1.1 / Python 3.12.9），报错是**探测方式**造成的 ——
+         conda 的启动器要先定位自己的安装根，没有正确 cwd / CONDA_PREFIX 时会抛 Python Traceback。
+         ⇒ 探测一律在该工具自己的目录里跑；conda 额外把 cwd 落到 miniconda 根并给 CONDA_PREFIX。 */
+      const baseDir = require("node:path").dirname(file);
+      const isConda = /conda(.exe)?$/i.test(file);
+      const condaRoot = isConda ? require("node:path").dirname(baseDir) : "";
+      const child = spawn(file, args, {
+        windowsHide: true,
+        cwd: isConda ? condaRoot : baseDir,
+        env: isConda ? { ...toolchainEnv(), CONDA_PREFIX: condaRoot } : toolchainEnv(),
+        timeout: 8000,
+      });
       let out = "";
       const grab = (chunk: unknown) => { out += String(chunk); };
       child.stdout?.on("data", grab);
