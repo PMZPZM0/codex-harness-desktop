@@ -15,7 +15,6 @@
  *   · 颜色一律走主题变量（--line/--bg/--dim/--green…），皮肤切换自动跟随
  *   · ⛔ 不锁 body 滚动：设置面板自己就是滚动容器，锁了会跳位
  */
-import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";

@@ -80,6 +80,7 @@ const files = [
   "src/features/event-broadcast/BroadcastHost.tsx",
   "src/features/newbie-guide/NewbieGuide.tsx",
   "src/features/preview/Preview.tsx",
+  "src/features/app-state/parts/part04/03-seg/01-chat-search-file-tree.tsx",
 ];
 /* 这两个还保留**元素级** Esc（行内输入框），只要求它们把浮层那部分接进栈 */
 const elementLevelEsc = [
@@ -92,6 +93,14 @@ ok(missingLayer.length === 0, `⑤ 各级弹窗/浮层全部走全局 ESC 栈（
 
 const rawEscape = files.filter((rel) => /key === "Escape"/.test(raw(rel)));
 ok(rawEscape.length === 0, `⑥ 负向：这些弹窗不再自己监听 Esc（否则一次按键多层一起关；违规：${rawEscape.join(" / ") || "无"}）`);
+
+/* ⑦ 全局「逐步关最上层」的兜底链也必须入栈：它以前自己挂 window keydown，
+   注册顺序早于各弹窗自己的层 ⇒ 一次 Esc 先把设置关掉，二级弹窗跟着被卸载
+   （用户实测「开了二级界面，esc 二级界面跟着设置界面一起关了」的真根因）。 */
+const globalEscSrc = raw("src/features/app-state/parts/part04/03-seg/01-chat-search-file-tree.tsx");
+/* ⛔ 同文件的快捷键热键也挂 window keydown（onKey 同名），负向只盯 ESC 判定那一句。 */
+ok(/useEscapeLayer\(!bag\.showLogin/.test(globalEscSrc) && !/event\.key !== "Escape"/.test(globalEscSrc),
+  "⑦ 全局 ESC 兜底链入栈（不再自挂 window keydown 抢在弹窗层之前）");
 
 console.log(`\n  【esc】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);

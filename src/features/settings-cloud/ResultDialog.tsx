@@ -6,7 +6,6 @@
  *    成功后用户常常往下滚动就看不到了。弹窗是**阻断式**反馈，不会漏。
  * ⛔ 必须 Portal 到 body：设置面板祖先有 transform，fixed 会被降级+裁切（已踩过）。
  */
-import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 

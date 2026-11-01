@@ -145,7 +145,19 @@ const sshPage = pageSrc("ssh");
 ok(!/PageInfo|settings-copy/.test(sshPage) && /ssh-status-select/.test(sshPage) && /ssh-actions-line/.test(sshPage), "SSH 页问号/页头已删，状态筛选下拉与三颗操作并进搜索行");
 const sshCss = read("src/styles/16-settings-ssh.css");
 ok(/\.ssh-filter-row/.test(sshCss) && /\.ssh-action-sm\s*\{[^}]*height:\s*28px/.test(sshCss), "SSH 操作按钮小尺寸（28px）");
-ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(read("src/styles/48-app-lock.css")), "应用锁操作按钮靠右");
+const appLockSrc = codeOnly(read("src/features/settings-app-lock/AppLockSettingsSection.tsx"));
+const appLockCss = read("src/styles/48-app-lock.css");
+ok(/\.app-lock-actions\s*\{[^}]*justify-content:\s*flex-end/.test(appLockCss), "应用锁操作按钮靠右");
+/* 10-31 用户令：「把文字开启放到那个开关位置，替换掉，然后做成两段按键显示，开启 和停用」。 */
+ok(/className="app-lock-seg"/.test(appLockSrc) && /aria-pressed=\{enabled\}/.test(appLockSrc)
+  && /aria-pressed=\{Boolean\(status\) && !enabled\}/.test(appLockSrc)
+  && !/ToggleSwitch/.test(appLockSrc) && !/app-lock-state/.test(appLockSrc),
+  "应用锁开关改「开启 / 停用」两段按键（状态胶囊与 ToggleSwitch 已删）");
+/* 通用 .settings-section 是 space-between：本页内容短时状态卡与规则卡之间空出 201px（实测）。 */
+ok(/\.app-lock-seg\s*\{[^}]*margin-left:\s*auto/.test(appLockCss)
+  && /\.settings-exp-page\.app-lock-page\s*\{[^}]*justify-content:\s*flex-start/.test(appLockCss)
+  && /\.app-lock-status-card\s*\{\s*padding:\s*0/.test(appLockCss),
+  "应用锁页自顶顺排、状态卡不留双内边距（卡片间空白归零）");
 const expertCenterSrc = read("src/features/settings-expert-center/ExpertCenterSection.tsx");
 ok(/expert-center-head/.test(expertCenterSrc) && /onBack/.test(expertCenterSrc) && !/PageInfo/.test(expertCenterSrc), "专家中心返回与专家市场并排，帮助问号已删");
 ok(!/"expert-center": \{ back:/.test(codeOnly(readSettingsSurface())), "专家中心返回键不再由壳层单独占一行");

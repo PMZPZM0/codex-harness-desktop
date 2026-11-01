@@ -15,6 +15,7 @@ import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntr
 import type { Bag } from "../../bag-types";
 import { useShortcuts } from "../../../../shortcuts";
 import { bindingMatches } from "../../../../../lib/shortcut-catalog.mjs";
+import { useEscapeLayer } from "../../../../../hooks/useEscapeLayer";
 
 export function usePart04c1(bag: Bag) {
   // 搜索结果消息高亮打标（DOM 级，随结果/当前项变化重打）
@@ -201,64 +202,62 @@ bag.shortcutBindings = shortcutBindings as typeof bag.shortcutBindings;
 
   // 全局 ESC：从最上层弹窗开始关闭；焦点在输入控件里时先退出焦点，再按同一栈关弹窗
   // （否则问答卡/输入弹窗聚焦时按 ESC 会被这里吞掉，转而关掉底下的设置弹窗）。
-  useEffect(() => {
-    if (bag.showLogin) return;
-    function onKey(event: globalThis.KeyboardEvent) {
-      if (event.key !== "Escape") return;
-      const target = event.target as HTMLElement | null;
-      const tag = target?.tagName ?? "";
-      if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag))) {
-        if (target instanceof HTMLInputElement && target.type !== "checkbox" && target.type !== "radio" && target.type !== "button") target.blur();
-      }
-      const closers: Array<() => boolean> = [
-        () => { if (bag.skillInstall && (bag.skillInstall.failed || bag.skillInstall.current >= 7)) { bag.setSkillInstall(null); return true; } return false; },
-        () => { if (bag.skillRemove && (bag.skillRemove.failed || bag.skillRemove.current > 5)) { bag.setSkillRemove(null); return true; } return false; },
-        () => { if (bag.agentAsk) { bag.agentAsk.resolve(""); bag.setAgentAsk(null); return true; } return false; },
-        () => { if (bag.appConfirm) { bag.appConfirm.resolve(false); bag.setAppConfirm(null); return true; } return false; },
-        () => { if (bag.appPrompt) { bag.appPrompt.resolve(null); bag.setAppPrompt(null); return true; } return false; },
-        () => { if (bag.searchPreview) { bag.setSearchPreview(null); return true; } return false; },
-        () => { if (bag.memoryPreview) { bag.setMemoryPreview(null); return true; } return false; },
-        () => { if (bag.filePreview) { bag.setFilePreview(null); return true; } return false; },
-        () => { if (bag.lightbox) { bag.setLightbox(null); return true; } return false; },
-        // 粘贴文本大窗口：走统一管线（本组件自己也监听 Esc 会变成两条链各关一次）。
-        // 它需要"关窗前先保存"，所以回调走模块级 requestClosePastedText（组件内挂载时注册）。
-        () => { if (bag.pastedText) { requestClosePastedText(); return true; } return false; },
-        () => { if (bag.modelEditor) { bag.setModelEditor(null); return true; } return false; },
-        () => { if (bag.connectorEditorOpen) { bag.setConnectorEditorOpen(false); return true; } return false; },
-        () => { if (bag.connectorTemplateModal) { bag.setConnectorTemplateModal(null); return true; } return false; },
-        () => { if (bag.commandEditor) { bag.setCommandEditor(null); return true; } return false; },
-        () => { if (bag.subAgentEditorOpen) { bag.setSubAgentEditorOpen(false); return true; } return false; },
-        () => { if (bag.expertTeamEditorOpen) { bag.setExpertTeamEditorOpen(false); return true; } return false; },
-        // 10-06 夜三轮：原「目标面板开着先关它」的分支已随 goals-pop 撤掉 —— 留着会让每次
-        // 启动后的**第一次 Esc 被无声吞掉**（goalsOpen 初值 true 且再没人能把它置回 false）。
-        () => { if (bag.memoryConfigOpen) { bag.setMemoryConfigOpen(false); return true; } return false; },
-        () => { if (bag.infoModal) { bag.setInfoModal(null); return true; } return false; },
-        () => { if (bag.autoFormVisible) { bag.setAutoFormVisible(false); return true; } return false; },
-        () => { if (bag.reviewReport) { bag.setReviewReport(""); return true; } return false; },
-        () => { if (bag.settingsOpen) { bag.setSettingsOpen(false); return true; } return false; },
-        () => { if (bag.shortcutsOpen) { bag.setShortcutsOpen(false); return true; } return false; },
-        () => { if (bag.paletteOpen) { bag.setPaletteOpen(false); return true; } return false; },
-        () => { if (bag.skillMenuOpen) { bag.setSkillMenuOpen(false); return true; } return false; },
-        () => { if (bag.connectorMenuOpen) { bag.setConnectorMenuOpen(false); return true; } return false; },
-        () => { if (bag.attachmentMenuOpen) { bag.setAttachmentMenuOpen(false); return true; } return false; },
-        () => { if (bag.contextOpen) { bag.setContextOpen(false); return true; } return false; },
-        () => { if (bag.switcherOpen) { bag.setSwitcherOpen(false); return true; } return false; },
-        () => { if (bag.mobileNav) { bag.setMobileNav(false); return true; } return false; },
-        () => { if (bag.chatSearchOpen) { bag.setChatSearchOpen(false); return true; } return false; },
-        () => { if (bag.browserMenuOpen) { bag.setBrowserMenuOpen(false); return true; } return false; },
-        () => { if (bag.sidebarFlyout) { bag.setSidebarFlyout(false); return true; } return false; },
-        () => { if (bag.taskMenuOpen) { bag.setTaskMenuOpen(false); return true; } return false; },
-        () => { if (bag.botManagerOpen) { bag.setBotManagerOpen(false); return true; } return false; },
-        () => { if (bag.mobileRemoteOpen) { bag.setMobileRemoteOpen(false); return true; } return false; },
-        () => { if (bag.ctxMenuOpen) { bag.setCtxMenuOpen(false); return true; } return false; },
-        () => { if (bag.accountMenuOpen) { bag.setAccountMenuOpen(false); return true; } return false; },
-      ];
-      for (const close of closers) if (close()) { event.preventDefault(); return; }
-      if (bag.rightOpen) { bag.setRightOpen(false); event.preventDefault(); return; }
+  // ⛔⛔ 10-31：改走全局 ESC 栈（本层在最底层）。原来是自己挂 window keydown，它**先于**各弹窗
+  //   后来注册的层级监听执行 ⇒ 一次 Esc 把二级弹窗和设置一起关掉（用户实测点名）。入栈后
+  //   后挂的弹窗层优先，本层只在没有更上层消费时才动手。
+  useEscapeLayer(!bag.showLogin, (event) => {
+    const target = event.target as HTMLElement | null;
+    const tag = target?.tagName ?? "";
+    if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(tag))) {
+      if (target instanceof HTMLInputElement && target.type !== "checkbox" && target.type !== "radio" && target.type !== "button") target.blur();
     }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [bag.showLogin, bag.skillInstall, bag.skillRemove, bag.agentAsk, bag.appConfirm, bag.appPrompt, bag.memoryPreview, bag.searchPreview, bag.filePreview, bag.lightbox, bag.pastedText, bag.modelEditor, bag.connectorEditorOpen, bag.connectorTemplateModal, bag.commandEditor, bag.subAgentEditorOpen, bag.expertTeamEditorOpen, bag.goalsOpen, bag.memoryConfigOpen, bag.infoModal, bag.reviewReport, bag.settingsOpen, bag.shortcutsOpen, bag.paletteOpen, bag.skillMenuOpen, bag.connectorMenuOpen, bag.attachmentMenuOpen, bag.contextOpen, bag.switcherOpen, bag.mobileNav, bag.sidebarFlyout, bag.autoFormVisible, bag.taskMenuOpen, bag.botManagerOpen, bag.mobileRemoteOpen, bag.ctxMenuOpen, bag.accountMenuOpen, bag.rightOpen]);
+    const closers: Array<() => boolean> = [
+    () => { if (bag.skillInstall && (bag.skillInstall.failed || bag.skillInstall.current >= 7)) { bag.setSkillInstall(null); return true; } return false; },
+    () => { if (bag.skillRemove && (bag.skillRemove.failed || bag.skillRemove.current > 5)) { bag.setSkillRemove(null); return true; } return false; },
+    () => { if (bag.agentAsk) { bag.agentAsk.resolve(""); bag.setAgentAsk(null); return true; } return false; },
+    () => { if (bag.appConfirm) { bag.appConfirm.resolve(false); bag.setAppConfirm(null); return true; } return false; },
+    () => { if (bag.appPrompt) { bag.appPrompt.resolve(null); bag.setAppPrompt(null); return true; } return false; },
+    () => { if (bag.searchPreview) { bag.setSearchPreview(null); return true; } return false; },
+    () => { if (bag.memoryPreview) { bag.setMemoryPreview(null); return true; } return false; },
+    () => { if (bag.filePreview) { bag.setFilePreview(null); return true; } return false; },
+    () => { if (bag.lightbox) { bag.setLightbox(null); return true; } return false; },
+    // 粘贴文本大窗口：走统一管线（本组件自己也监听 Esc 会变成两条链各关一次）。
+    // 它需要"关窗前先保存"，所以回调走模块级 requestClosePastedText（组件内挂载时注册）。
+    () => { if (bag.pastedText) { requestClosePastedText(); return true; } return false; },
+    () => { if (bag.modelEditor) { bag.setModelEditor(null); return true; } return false; },
+    () => { if (bag.connectorEditorOpen) { bag.setConnectorEditorOpen(false); return true; } return false; },
+    () => { if (bag.connectorTemplateModal) { bag.setConnectorTemplateModal(null); return true; } return false; },
+    () => { if (bag.commandEditor) { bag.setCommandEditor(null); return true; } return false; },
+    () => { if (bag.subAgentEditorOpen) { bag.setSubAgentEditorOpen(false); return true; } return false; },
+    () => { if (bag.expertTeamEditorOpen) { bag.setExpertTeamEditorOpen(false); return true; } return false; },
+    // 10-06 夜三轮：原「目标面板开着先关它」的分支已随 goals-pop 撤掉 —— 留着会让每次
+    // 启动后的**第一次 Esc 被无声吞掉**（goalsOpen 初值 true 且再没人能把它置回 false）。
+    () => { if (bag.memoryConfigOpen) { bag.setMemoryConfigOpen(false); return true; } return false; },
+    () => { if (bag.infoModal) { bag.setInfoModal(null); return true; } return false; },
+    () => { if (bag.autoFormVisible) { bag.setAutoFormVisible(false); return true; } return false; },
+    () => { if (bag.reviewReport) { bag.setReviewReport(""); return true; } return false; },
+    () => { if (bag.settingsOpen) { bag.setSettingsOpen(false); return true; } return false; },
+    () => { if (bag.shortcutsOpen) { bag.setShortcutsOpen(false); return true; } return false; },
+    () => { if (bag.paletteOpen) { bag.setPaletteOpen(false); return true; } return false; },
+    () => { if (bag.skillMenuOpen) { bag.setSkillMenuOpen(false); return true; } return false; },
+    () => { if (bag.connectorMenuOpen) { bag.setConnectorMenuOpen(false); return true; } return false; },
+    () => { if (bag.attachmentMenuOpen) { bag.setAttachmentMenuOpen(false); return true; } return false; },
+    () => { if (bag.contextOpen) { bag.setContextOpen(false); return true; } return false; },
+    () => { if (bag.switcherOpen) { bag.setSwitcherOpen(false); return true; } return false; },
+    () => { if (bag.mobileNav) { bag.setMobileNav(false); return true; } return false; },
+    () => { if (bag.chatSearchOpen) { bag.setChatSearchOpen(false); return true; } return false; },
+    () => { if (bag.browserMenuOpen) { bag.setBrowserMenuOpen(false); return true; } return false; },
+    () => { if (bag.sidebarFlyout) { bag.setSidebarFlyout(false); return true; } return false; },
+    () => { if (bag.taskMenuOpen) { bag.setTaskMenuOpen(false); return true; } return false; },
+    () => { if (bag.botManagerOpen) { bag.setBotManagerOpen(false); return true; } return false; },
+    () => { if (bag.mobileRemoteOpen) { bag.setMobileRemoteOpen(false); return true; } return false; },
+    () => { if (bag.ctxMenuOpen) { bag.setCtxMenuOpen(false); return true; } return false; },
+    () => { if (bag.accountMenuOpen) { bag.setAccountMenuOpen(false); return true; } return false; },
+    ];
+    for (const close of closers) if (close()) return true;
+    if (bag.rightOpen) { bag.setRightOpen(false); return true; }
+    return false;
+  });
 
   // （原 App 层每秒 nowTick 定时器已移除：无读取点，纯重渲染开销，见 nowTick 处注释。）
 

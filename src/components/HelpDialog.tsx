@@ -1,5 +1,4 @@
 import { createPortal } from "react-dom";
-import { useEffect } from "react";
 import { ArrowRight, X, BookOpen } from "lucide-react";
 import { useEscapeLayer } from "../hooks/useEscapeLayer";
 

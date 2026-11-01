@@ -96,31 +96,41 @@
 }
 
 /* ── 设置页 ─────────────────────────────────────────────────────────────── */
-.app-lock-toggle { margin-left: auto; }
-.app-lock-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.app-lock-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--green, #22c55e) 12%, transparent);
-  color: var(--green, #1a7f37);
-  font-size: 11px;
-  font-weight: 600;
-}
-.app-lock-meta { color: var(--faint); font-size: 11.5px; }
-.app-lock-state {
+/* 10-31 用户令：顶部状态文字挪到开关位置，换成「开启 / 停用」两段按键（不再用胶囊开关）。 */
+.app-lock-seg {
   flex: none;
-  margin-left: 2px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.6;
+  margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--panel-2);
 }
-.app-lock-state.is-on { color: var(--green, #1a7f37); background: color-mix(in srgb, var(--green, #22c55e) 13%, transparent); }
-.app-lock-state.is-off { color: var(--faint); background: color-mix(in srgb, var(--faint) 10%, transparent); }
+.app-lock-seg button {
+  min-width: 52px;
+  height: 26px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, color .15s ease;
+}
+.app-lock-seg button:hover:not(:disabled):not([aria-pressed="true"]) { color: var(--text); }
+.app-lock-seg button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 2px #00000018; }
+.app-lock-seg button[aria-pressed="true"].is-enable { color: var(--green, #1a7f37); }
+.app-lock-seg button:disabled { opacity: .45; cursor: not-allowed; }
+/* 状态卡头/体自带内边距，外层 exp-card 再补 14px 就是那圈大片空白（10-31 用户截图点名）。 */
+.app-lock-status-card { padding: 0; }
+/* ⛔ 通用 .settings-section 是 justify-content:space-between；本页内容短，卡片会被推到两头
+   （实测状态卡与规则卡之间空出 201px）。本页改成从顶部顺排，空白只留在内容末尾。 */
+.settings-exp-page.app-lock-page { justify-content: flex-start; }
+.app-lock-rules { padding: 12px 14px; }
+.app-lock-meta { margin: 0; color: var(--faint); font-size: 11.5px; }
 .app-lock-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; justify-content: flex-end; }
 .app-lock-loading { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; }
 /* 开场提示：比一行灰字更像「操作前须知」，同时把按钮与说明分开。 */

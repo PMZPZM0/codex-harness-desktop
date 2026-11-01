@@ -9,9 +9,8 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
-import { Check, Copy, EyeOff, HardDrive, KeyRound, LoaderCircle, Lock, RefreshCw, ShieldAlert, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Check, Copy, EyeOff, HardDrive, KeyRound, LoaderCircle, Lock, RefreshCw, ShieldAlert, Sparkles, X } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
-import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
@@ -199,78 +198,61 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
       />
 
       <div className="settings-exp-card app-lock-status-card">
-        <div className="settings-card">
-          <div className="settings-card-head">
-            <Lock size={15} />
-            <strong>应用密码锁</strong>
-            <span className={`app-lock-state ${enabled ? "is-on" : "is-off"}`}>{enabled ? "已开启" : "默认关闭"}</span>
-            <ToggleSwitch
-              className="app-lock-toggle"
-              checked={enabled}
-              disabled={!status || setupBusy || disableBusy}
-              label="应用锁"
-              onChange={(next) => { if (next) openEnable(); else openDisable("off"); }}
-            />
+        <div className="settings-card-head">
+          <Lock size={15} />
+          <strong>应用密码锁</strong>
+          <div className="app-lock-seg" role="group" aria-label="应用锁开关">
+            <button type="button" className="is-enable" aria-pressed={enabled} disabled={!status || setupBusy || disableBusy} onClick={() => { if (!enabled) openEnable(); }}>开启</button>
+            <button type="button" className="is-disable" aria-pressed={Boolean(status) && !enabled} disabled={!status || setupBusy || disableBusy} onClick={() => { if (enabled) openDisable("off"); }}>停用</button>
           </div>
-          <div className="settings-card-body">
-            {loadError ? (
-              <div className="app-lock-inline-error"><ShieldAlert size={14} />{loadError}<button type="button" className="secondary-setting" onClick={() => void refresh()}><RefreshCw size={13} />重试</button></div>
-            ) : !status ? (
-              <div className="app-lock-loading"><LoaderCircle size={14} className="spin" />正在读取状态…</div>
-            ) : enabled ? (
-              <>
-                <div className="app-lock-status-row">
-                  <span className="app-lock-badge"><ShieldCheck size={13} />已开启</span>
-                  <span className="app-lock-meta">{kindLabel}{createdLabel ? ` · 开启于 ${createdLabel}` : ""}</span>
-                </div>
-                <p className="settings-card-hint">密码不会再次显示。需要换密码时先关闭再重新开启；关闭与更换都要验证当前密码。</p>
-                <div className="app-lock-actions">
-                  <button type="button" className="secondary-setting" onClick={() => openDisable("change")}><KeyRound size={14} />更换密码</button>
-                  <button type="button" className="secondary-setting" onClick={() => openDisable("off")}><Lock size={14} />关闭应用锁</button>
-                  <button type="button" className="primary-setting" onClick={lockNow}><Lock size={14} />立即锁定</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="app-lock-callout">
-                  <span className="app-lock-callout-icon"><ShieldAlert size={15} /></span>
-                  <div>
-                    <b>开启前先准备备份</b>
-                    <p>会生成随机或自定义密码，只展示一次；连续输错 10 次会清空应用数据并重置。</p>
-                  </div>
-                </div>
-                <div className="app-lock-actions">
-                  <button type="button" className="primary-setting" onClick={openEnable}><Sparkles size={14} />开启应用锁</button>
-                </div>
-              </>
-            )}
-          </div>
+        </div>
+        <div className="settings-card-body">
+          {loadError ? (
+            <div className="app-lock-inline-error"><ShieldAlert size={14} />{loadError}<button type="button" className="secondary-setting" onClick={() => void refresh()}><RefreshCw size={13} />重试</button></div>
+          ) : !status ? (
+            <div className="app-lock-loading"><LoaderCircle size={14} className="spin" />正在读取状态…</div>
+          ) : enabled ? (
+            <>
+              <p className="app-lock-meta">{kindLabel}{createdLabel ? ` · 开启于 ${createdLabel}` : ""}</p>
+              <p className="settings-card-hint">密码不会再次显示。需要换密码时先停用再重新开启；停用与更换都要验证当前密码。</p>
+              <div className="app-lock-actions">
+                <button type="button" className="secondary-setting" onClick={() => openDisable("change")}><KeyRound size={14} />更换密码</button>
+                <button type="button" className="primary-setting" onClick={lockNow}><Lock size={14} />立即锁定</button>
+              </div>
+            </>
+          ) : (
+            <div className="app-lock-callout">
+              <span className="app-lock-callout-icon"><ShieldAlert size={15} /></span>
+              <div>
+                <b>开启前先准备备份</b>
+                <p>点右上角「开启」后会生成随机或自定义密码，只展示一次；连续输错 10 次会清空应用数据并重置。</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="settings-exp-card">
-        <div className="settings-card app-lock-rules">
-          <div className="app-lock-rules-grid">
-            <div className="app-lock-rule">
-              <span className="app-lock-rule-icon"><EyeOff size={15} /></span>
-              <div><b>密码只展示一次</b><p>随机或自定义密码都只在开启流程里出现一次，关闭后无法再次查看。</p></div>
-            </div>
-            <div className="app-lock-rule is-danger">
-              <span className="app-lock-rule-icon"><ShieldAlert size={15} /></span>
-              <div><b>10 次输错 = 重置</b><p>失败次数会落盘，重启也累计；第 10 次会清空会话、配置、密钥、记忆与技能并重启，不可撤销。</p></div>
-            </div>
-            <div className="app-lock-rule">
-              <span className="app-lock-rule-icon"><KeyRound size={15} /></span>
-              <div><b>忘记无法找回</b><p>没有备用密码或管理员通道；只能按 10 次重置规则处理，请务必先备份。</p></div>
-            </div>
-            <div className="app-lock-rule">
-              <span className="app-lock-rule-icon"><HardDrive size={15} /></span>
-              <div><b>界面门禁，不加密磁盘</b><p>能阻止别人在运行中的应用里操作；能直接读取本机文件的人仍可绕过。</p></div>
-            </div>
-            <div className="app-lock-rule is-wide">
-              <span className="app-lock-rule-icon"><RefreshCw size={15} /></span>
-              <div><b>重新显示会再锁</b><p>窗口隐藏或最小化超过 30 秒再回来需要重新输入；点「立即锁定」可马上回到锁屏。</p></div>
-            </div>
+      <div className="settings-exp-card app-lock-rules">
+        <div className="app-lock-rules-grid">
+          <div className="app-lock-rule">
+            <span className="app-lock-rule-icon"><EyeOff size={15} /></span>
+            <div><b>密码只展示一次</b><p>随机或自定义密码都只在开启流程里出现一次，关闭后无法再次查看。</p></div>
+          </div>
+          <div className="app-lock-rule is-danger">
+            <span className="app-lock-rule-icon"><ShieldAlert size={15} /></span>
+            <div><b>10 次输错 = 重置</b><p>失败次数会落盘，重启也累计；第 10 次会清空会话、配置、密钥、记忆与技能并重启，不可撤销。</p></div>
+          </div>
+          <div className="app-lock-rule">
+            <span className="app-lock-rule-icon"><KeyRound size={15} /></span>
+            <div><b>忘记无法找回</b><p>没有备用密码或管理员通道；只能按 10 次重置规则处理，请务必先备份。</p></div>
+          </div>
+          <div className="app-lock-rule">
+            <span className="app-lock-rule-icon"><HardDrive size={15} /></span>
+            <div><b>界面门禁，不加密磁盘</b><p>能阻止别人在运行中的应用里操作；能直接读取本机文件的人仍可绕过。</p></div>
+          </div>
+          <div className="app-lock-rule is-wide">
+            <span className="app-lock-rule-icon"><RefreshCw size={15} /></span>
+            <div><b>重新显示会再锁</b><p>窗口隐藏或最小化超过 30 秒再回来需要重新输入；点「立即锁定」可马上回到锁屏。</p></div>
           </div>
         </div>
       </div>
