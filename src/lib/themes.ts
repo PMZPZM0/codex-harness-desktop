@@ -24,7 +24,15 @@ export interface ThemeDef {
 export const THEMES: readonly ThemeDef[] = [
   { id: "light", label: "白天", preview: "tpw-light" },
   { id: "dark", label: "黑夜", preview: "tpw-dark" },
+  /* 11-02 高级感主题：深炭黑 + 香槟金点缀（用户原话「主题背景都好 low，要一套高级感的」）。 */
+  { id: "obsidian", label: "曜石", preview: "tpw-obsidian" },
 ] as const;
+
+/** 深色系主题（决定 color-scheme / 窗口底色 / 壁纸取色）。⛔ 新增暗色主题必须加进来，
+ *  否则主进程会按「非暗色」处理（窗口露出白底、滚动条变浅）。 */
+export function isDarkTheme(value: unknown): boolean {
+  return value === "dark" || value === "obsidian";
+}
 
 /** 兜底：未知 id（旧 localStorage 脏值）回退到 light，避免 data-theme 落到无变量块的值。 */
 export function normalizeThemeId(value: unknown): ThemeId {

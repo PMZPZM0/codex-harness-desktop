@@ -61,7 +61,7 @@ ok(layerSrc.includes("prefers-reduced-motion") && layerSrc.includes("pattern"), 
 
 /* ── 主题色适配（10-11 用户实测：「3D 背景跟自定义的主题有些没做主题色适配，太丑了」）──
    ⛔ 三条都是"看着能跑、其实切主题就露馅"的接缝，静态断言正是它们唯一的防线。 */
-ok(cssSrc.includes(':root[data-theme="dark"] .wallpaper-custom::after'), "自定义图/精选渐变的「雾」按主题分档（深色主题压更狠 —— 浅色壁纸在深色界面下会把主内容区整片染亮，侧栏顶栏却是黑的）");
+ok(cssSrc.includes(':root[data-theme-mode="dark"] .wallpaper-custom::after'), "自定义图/精选渐变的「雾」按主题分档（深色主题压更狠 —— 浅色壁纸在深色界面下会把主内容区整片染亮，侧栏顶栏却是黑的）");
 ok((layerSrc.match(/attributeFilter: \["data-theme"\]/g) ?? []).length >= 1 && layerSrc.includes('readHex("--text"'), "星野跟随主题：监听 data-theme 重绘 + 颜色取 --text（浅色=深色点 / 深色=浅色星）");
 ok(layerSrc.includes("prefersReducedMotion()") && layerSrc.includes("if (motion && !disposed)"), "减动效偏好下星野只画一帧、不起 rAF（accessibility）");
 ok(
@@ -112,6 +112,30 @@ ok(part08.includes("wallpaper_set"), "harness_tools 网关描述列了 wallpaper
 ok(settingsSrc.includes("GUIDE_PROMPTS") && (settingsSrc.match(/title: "/g) ?? []).length >= 4, "教程含 ≥4 类制作提示词（渐变/图案/图片/动效调参）");
 ok(settingsSrc.includes("copyTextToClipboard") && settingsSrc.includes("复制提示词"), "每条提示词带一键复制（用户点名「支持复制提示词」）");
 ok(settingsSrc.includes("WALLPAPER_SET_HINT") || settingsSrc.includes("wallpaper_set"), "教程提到 wallpaper_set（Codex 自助设壁纸的接口要在教程里可发现）");
+
+/* ── 11-02 主题色壁纸改版（用户：「把旧的壁纸删了，多做几套新的，主题色，多来几套」）──────
+   ⛔ 旧版精选渐变写死糖果色 ⇒ 深色界面上像贴纸；新版全部 color-mix + 主题 token，
+      切白天/黑夜/曜石自动换配色。旧六款（sunrise/mint/dusk/ocean/graphite/ember）已删除。 */
+{
+  ok(["aurora", "ribbon", "halo"].every((mode) => libSrc.includes(`"${mode}"`)), "新增三档主题色动态壁纸：极光 / 流光 / 光晕");
+  ok(layerSrc.includes("MotionVeil") && layerSrc.includes("wallpaper-motion") && /is-\$\{variant\}/.test(layerSrc), "动态光幕由独立组件渲染（极光/流光/光晕同一实现，按 variant 分支）");
+  ok(["aurora", "ribbon", "halo"].every((mode) => cssSrc.includes(`is-${mode}`)), "三档动态光幕样式齐备（keyframes + 柔光层）");
+  ok(/prefers-reduced-motion: reduce[\s\S]{0,260}\.wallpaper-motion i b \{ animation: none/.test(cssSrc), "减动效偏好下动态光幕静帧（保留柔光，不突然变纯黑）");
+  ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")
+    && /\.wallpaper-motion i \{[^}]*var\(--wp-px\)/.test(cssSrc) && /--wp-depth/.test(cssSrc),
+    "动态光幕跟鼠标走（视差缓动 + 每层不同深度；用户 11-02「动态壁纸要加上鼠标动态交互效果」）");
+  ok(/:root\[data-wallpaper="on"\] \{\s*[\s\S]{0,220}background: transparent;/.test(cssSrc) && /--bg-base/.test(read("src/styles/01-base-and-chrome.css")),
+    "壁纸开着时 html 画布让位（负 z 层不被底色盖住）+ 表面基准令牌在位");
+  ok(/:root\[data-wallpaper="on"\] \{\s*[\s\S]{0,420}--bg: color-mix\(in srgb, var\(--bg-base\)/.test(cssSrc)
+    && /--panel: color-mix\(in srgb, var\(--panel-base\)/.test(cssSrc)
+    && /--field: color-mix\(in srgb, var\(--field-base\)/.test(cssSrc),
+    "表面令牌统一半透明（输入框/卡片/菜单/弹窗都跟着 --bg/--panel/--field 走，无需逐个类名补）");
+  ok(/is-aurora[\s\S]{0,600}var\(--accent\)/.test(cssSrc) && /is-ribbon[\s\S]{0,600}var\(--ic-/.test(cssSrc), "动态光幕颜色取主题 token（切主题自动换色，不写死色值）");
+  const presetsSrc = libSrc.slice(libSrc.indexOf("WALLPAPER_PRESETS"), libSrc.indexOf("export function presetById"));
+  ok(presetsSrc.includes("var(--") && !/#[0-9a-fA-F]{6}\b/.test(presetsSrc), "静态壁纸全部用主题 token 上色（旧写死糖果色已删除）");
+  ok(!/id: "sunrise"/.test(presetsSrc) && !/id: "ember"/.test(presetsSrc), "旧六款精选壁纸已删除（防复活）");
+  ok(libSrc.includes('"aurora"') && settingsSrc.includes("aurora:") && settingsSrc.includes("极光"), "设置页有新档位文案（极光/流光/光晕）");
+}
 
 console.log(`\n【wp】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

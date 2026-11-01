@@ -18,10 +18,13 @@ import {
 
 const MODE_LABELS: Record<string, string> = {
   off: "关闭",
+  aurora: "极光",
+  ribbon: "流光",
+  halo: "光晕",
+  custom: "静态壁纸",
+  stars: "星空",
   pattern: "图案",
   particles: "粒子",
-  stars: "星空",
-  custom: "自定义图片",
 };
 
 /** 带「拖动浮出数字气泡」的滑杆（用户 10-11：「再改个显示数字，别只看滑杆拖动」）。
@@ -98,7 +101,7 @@ export function WallpaperSettingsSection() {
   return (
     <>
       <div className="settings-subhead">
-        <ImagePlus size={13} />壁纸<span className="settings-subhead-hint">铺满应用（侧栏/聊天/输入框半透明透出）；动效在减动效偏好下自动退回图案</span>
+        <ImagePlus size={13} />壁纸<span className="settings-subhead-hint">铺满应用（侧栏/聊天/输入框半透明透出）；动效在减动效偏好下自动静帧</span>
         <button type="button" className={`wallpaper-guide-toggle ${guideOpen ? "active" : ""}`} title="让 Codex 给你做壁纸——每种类型的提示词，可复制" onClick={() => setGuideOpen((v) => !v)}>
           <BookOpen size={12} />? 制作教程
         </button>
@@ -119,7 +122,7 @@ export function WallpaperSettingsSection() {
           ))}
         </div>
       )}
-      <div className="theme-switch five" role="group" aria-label="壁纸模式">
+      <div className="theme-switch wallpaper-modes" role="group" aria-label="壁纸模式">
         {WALLPAPER_MODES.map((mode) => (
           <button key={mode} type="button" className={cfg.mode === mode ? "active" : ""} onClick={() => update({ mode })}>
             {MODE_LABELS[mode] ?? mode}

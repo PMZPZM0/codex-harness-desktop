@@ -384,8 +384,8 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts")
     );
 
     // ⛔ 核心：变量表的亮/暗两栏必须与 CSS 里的**真值一致**
-    const lightBlock = css170.slice(css170.indexOf(":root {"), css170.indexOf(':root[data-theme="dark"]'));
-    const darkBlock = css170.slice(css170.indexOf(':root[data-theme="dark"] {'));
+    const lightBlock = css170.slice(css170.indexOf(":root {"), css170.indexOf(':root[data-theme-mode="dark"]'));
+    const darkBlock = css170.slice(css170.indexOf(':root[data-theme-mode="dark"] {'));
     const cssVal = (blk, name) => {
       const m = blk.match(new RegExp("--" + name + ":\\s*(#[0-9a-fA-F]{3,8})"));
       return m ? m[1].toLowerCase() : null;

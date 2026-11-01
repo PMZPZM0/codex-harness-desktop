@@ -1327,6 +1327,35 @@
 .tpw-dark .tpw-main i {
   background: #333331;
 }
+/* 曜石：深炭黑 + 香槟金标题点 + 玉青侧栏条 */
+.tpw-obsidian {
+  background: #0b0d10;
+}
+.tpw-obsidian .tpw-titlebar {
+  background: #12151a;
+  border-color: #222831;
+}
+.tpw-obsidian .tpw-titlebar i {
+  background: #262c35;
+}
+.tpw-obsidian .tpw-titlebar i:nth-child(3) {
+  background: #8a6a45;
+}
+.tpw-obsidian .tpw-titlebar b {
+  background: #c9a86a;
+}
+.tpw-obsidian .tpw-side {
+  background: #101318;
+}
+.tpw-obsidian .tpw-side i {
+  background: #2a303a;
+}
+.tpw-obsidian .tpw-main {
+  background: #0b0d10;
+}
+.tpw-obsidian .tpw-main i {
+  background: #1d222a;
+}
 .theme-preview-label {
   align-items: center;
   gap: 6px;

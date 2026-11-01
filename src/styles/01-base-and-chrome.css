@@ -243,12 +243,16 @@
   text-rendering: optimizelegibility;
   letter-spacing: 0;
   --bg: #fff;
+  --bg-base: #fff;
   --panel: #f8f8f7;
+  --panel-base: #f8f8f7;
   --panel-2: #f1f1ef;
+  --panel-2-base: #f1f1ef;
   --line: #e7e7e4;
   --line-soft: #efefec;
   --line-strong: #d9d9d4;
   --field: #ffffff;
+  --field-base: #ffffff;
   --text: #23231f;
   --muted: #6f6f69;
   --faint: #9b9b95;
@@ -324,15 +328,19 @@
 @media (width <= 760px) {
   :root { --chat-side-reserve: 23px; }
 }
-:root[data-theme="dark"] {
+:root[data-theme-mode="dark"] {
   color: #ececea;
   --bg: #1b1b1a;
+  --bg-base: #1b1b1a;
   --panel: #222221;
+  --panel-base: #222221;
   --panel-2: #2c2c2b;
+  --panel-2-base: #2c2c2b;
   --line: #373736;
   --line-soft: #2e2e2d;
   --line-strong: #4a4a48;
   --field: #1b1b1a;
+  --field-base: #1b1b1a;
   --text: #ececea;
   --muted: #a6a6a1;
   --faint: #7d7d78;
@@ -361,6 +369,53 @@
   --ic-cyan: #4bb8cc;
   --shadow: 0 1px 3px #00000059, 0 10px 30px #00000059;
   background: #1b1b1a;
+}
+/* ── 曜石 · 深色高级主题（11-02 用户：「主题背景都好 low，要一套高级感的」）────────────
+   设计语言：近黑冷灰分层 + 发丝级描边 + 两个克制的强调色
+   · 香槟金 `--accent`：选中 / 链接 / 焦点（品牌感）
+   · 玉青 `--green`：主操作按钮 / 成功（保语义，不与金色抢）
+   ⛔ 与 dark 同一套变量名、另一组人工调过的值；深色专属规则由 `data-theme-mode="dark"` 命中，
+      所以新增的深色主题**不用**再复制那 20 多条分支规则。 */
+:root[data-theme="obsidian"] {
+  color-scheme: dark;
+  color: #e9eaec;
+  --bg: #0b0d10;
+  --bg-base: #0b0d10;
+  --panel: #12151a;
+  --panel-base: #12151a;
+  --panel-2: #191d23;
+  --panel-2-base: #191d23;
+  --line: #222831;
+  --line-soft: #1a1f26;
+  --line-strong: #333b46;
+  --field: #0e1115;
+  --field-base: #0e1115;
+  --text: #e9eaec;
+  --muted: #9da5b1;
+  --faint: #6b7380;
+  --green: #57b98a;
+  --green-dark: #1b2320;
+  --accent: #c9a86a;
+  --accent-text: #14120c;
+  --accent-soft: #c9a86a1f;
+  --link: #d6bb85;
+  --orange: #dfa15f;
+  --amber: #dfa15f;
+  --purple: #a38fe0;
+  --cyan: #5db4c4;
+  --red: #dd7a70;
+  --danger: var(--red);
+  --ok: #57b98a;
+  --add: #74c79b;
+  --del: #dd7a70;
+  --ic-blue: #8fb1e6;
+  --ic-green: #57b98a;
+  --ic-amber: #cfa96d;
+  --ic-pink: #d394ba;
+  --ic-violet: #a38fe0;
+  --ic-cyan: #5db4c4;
+  --shadow: 0 1px 2px #00000080, 0 16px 44px #0000008f;
+  background: #0b0d10;
 }
 * {
   box-sizing: border-box;
@@ -676,7 +731,7 @@ button.brand-mark.sidebar-toggle:hover {
   opacity: 0;
   pointer-events: none;
 }
-:root[data-theme="dark"] .context-panel { background: var(--panel); }
+:root[data-theme-mode="dark"] .context-panel { background: var(--panel); }
 .sidebar {
   border-right: 1px solid var(--line);
   /* ⛔ 10-31 抽屉化：宽度**恒定 256**，折叠只做横向平移。
@@ -1280,7 +1335,7 @@ html.fx-ripple::view-transition-new(root) {
       卡片内部的连接处（顶栏底边、聊天顶边）也不画线。
    ⛔ 窗口钮是 overlay：卡片上移 6px 只影响命中区，不影响按钮位置。 */
 .app-shell { background: var(--panel); }
-:root[data-theme="dark"] .app-shell { background: var(--bg); }
+:root[data-theme-mode="dark"] .app-shell { background: var(--bg); }
 .app-shell > .topbar {
   /* ★ 10-31 用户令（三次修正）：外圈顶缝要回来（截图红框在最上面），同时系统窗口钮要对齐图标：
      顶栏下移 6px，而原生窗口钮的位置由 titleBarOverlay.height 决定 —— 把 overlay 高度从 43
@@ -1355,9 +1410,9 @@ html.fx-ripple::view-transition-new(root) {
    那既不是"光"，也会让 1px 轨道看起来变粗。 */
 .app-shell.with-context > .panel-divider:hover::after,
 .app-shell.with-context > .panel-divider:active::after { background: var(--accent); }
-:root[data-theme="dark"] .app-shell > .topbar,
-:root[data-theme="dark"] .app-shell > .workspace,
-:root[data-theme="dark"] .app-shell.with-context > .context-panel { background: var(--panel); }
+:root[data-theme-mode="dark"] .app-shell > .topbar,
+:root[data-theme-mode="dark"] .app-shell > .workspace,
+:root[data-theme-mode="dark"] .app-shell.with-context > .context-panel { background: var(--panel); }
 @media (max-width: 760px) {
   /* 窄屏顶栏 margin-top 只有 4 ⇒ 行高跟着收（4 + 44），否则第 2 行上方会多 2px 空档 */
   .app-shell { grid-template-rows: 48px minmax(0, 1fr); }

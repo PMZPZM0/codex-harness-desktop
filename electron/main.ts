@@ -932,18 +932,21 @@ function applyWindowChrome(dark: boolean) {
 // 避免深色模式下「外边框/滚轮」残留浅色。
 // ⛔ 多主题扩展点（09-24，主题清单见 src/lib/themes.ts）：这里只有"暗/不暗"二元 ——
 //    新增非暗色系主题无需动这里；新增**暗色系**第三主题时，把判定换成注册表口径。
+/* 深色系主题 id —— 与渲染层 src/lib/themes.ts 的 isDarkTheme 同口径。
+   ⛔ 新增暗色主题必须两处一起加：漏这里 → 窗口底色/系统控件按浅色走（露出一圈白边）。 */
+const DARK_THEME_IDS = new Set(["dark", "obsidian"]);
+const THEME_IDS = new Set(["light", "dark", "obsidian"]);
 ipcMain.handle("theme:apply", (_event, theme: string) => {
-  const dark = theme === "dark";
+  const nextTheme = THEME_IDS.has(theme) ? theme : "light";
+  const dark = DARK_THEME_IDS.has(nextTheme);
   appThemeDark = dark;
   setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
   applyWindowChrome(dark);
   /* ⛔ 广播给所有窗口（10-16，与云助手同轮同步）：独立会话弹窗当初只在**创建时**取主题，
      主窗口之后换主题它不会跟着变（用户令「独立窗口的主题色要跟着主界面变」）。
-     推给全部窗口后，渲染层订阅 onThemeChanged 改自己的主题状态，
-     再由 theme effect 落到 dataset/localStorage ⇒ 全窗口一致。
-     同值重复推送无副作用（React 同值 setState 不重渲染）。 */
-  broadcastToAll("theme:changed", dark ? "dark" : "light");
+     11-02：广播**主题 id 本身**（不再压成 dark/light）—— 否则副窗切到「曜石」会退回旧「黑夜」。 */
+  broadcastToAll("theme:changed", nextTheme);
   return { ok: true };
 });
 

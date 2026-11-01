@@ -4,7 +4,7 @@
 
 export const WALLPAPER_KEY = "wallpaper";
 export const WALLPAPER_EVENT = "wallpaper-change";
-export const WALLPAPER_MODES = ["off", "pattern", "particles", "stars", "custom"];
+export const WALLPAPER_MODES = ["off", "aurora", "ribbon", "halo", "custom", "stars", "pattern", "particles"];
 
 /* ── 图案库（原创几何，hero-patterns 风格）────────────────────────
    ⛔ 瓷砖一律 48px：24px 的小瓷砖铺出来密密麻麻像噪点（10-05 首版实测「都不好看」的主因），
@@ -29,34 +29,35 @@ export const WALLPAPER_PATTERNS = [
   { id: "topo", name: "等高线", tile: tileStroke('<path d="M4 34c10-14 30-14 40-2M10 44c12-10 22-4 30-10M0 16c14-10 30 6 48-8"/>', 48) },
 ];
 
-/* ── 精选渐变壁纸（自定义图档的内置款）────────────────────────
-   mesh-gradient 风格：多层 radial-gradient 叠加 + CSS 类里再叠一层噪点（feTurbulence data-uri）。
-   ⛔ 配色是刻意的艺术选择，不跟主题 token —— 「好看」本身就是这档的卖点；文字可读性由
-   设置页缩略图与层上的半透明遮罩保证（浅色系自带白雾、深色系自带深雾，见 28-wallpaper.css）。 */
+/* ── 静态高级壁纸（11-02 用户：「把旧的壁纸删了，多做几套新的，主题色」）──────
+   ⛔ 与旧版的关键差别：**全部用主题 token 上色**（color-mix + var(--bg/--panel/--accent/--ic-*)），
+     不写死任何色值 ⇒ 切「白天 / 黑夜 / 曜石」时整套壁纸自动换配色，不再出现糖果色垫在深色界面上。
+   结构：两层大面积 radial（低饱和强调色 + 极淡次要色）+ 一层主题底色线性渐变；
+   页面上的雾面遮罩仍由 28-wallpaper.css 按主题明暗再压一层。 */
 export const WALLPAPER_PRESETS = [
   {
-    id: "sunrise", name: "霞光",
-    css: "radial-gradient(at 18% 22%, #ffd9c0 0px, transparent 55%), radial-gradient(at 82% 18%, #ffb3a7 0px, transparent 50%), radial-gradient(at 70% 80%, #f7a6c1 0px, transparent 55%), radial-gradient(at 25% 85%, #ffe9b8 0px, transparent 50%), linear-gradient(135deg, #fff7ef, #fde8dd)",
+    id: "veil", name: "墨雾",
+    css: "radial-gradient(120% 90% at 18% 12%, color-mix(in srgb, var(--accent) 16%, transparent) 0%, transparent 62%), radial-gradient(90% 80% at 82% 80%, color-mix(in srgb, var(--ic-cyan) 10%, transparent) 0%, transparent 60%), linear-gradient(155deg, var(--bg), var(--panel) 58%, var(--panel-2))",
   },
   {
-    id: "mint", name: "青柠",
-    css: "radial-gradient(at 20% 25%, #d8f3dc 0px, transparent 55%), radial-gradient(at 80% 20%, #b7e4c7 0px, transparent 50%), radial-gradient(at 75% 78%, #95d5b2 0px, transparent 55%), radial-gradient(at 20% 80%, #e9f5db 0px, transparent 50%), linear-gradient(135deg, #f6fbf4, #dcf2e3)",
+    id: "champagne", name: "香槟",
+    css: "radial-gradient(110% 85% at 22% 18%, color-mix(in srgb, var(--accent) 24%, transparent) 0%, transparent 60%), radial-gradient(85% 75% at 80% 84%, color-mix(in srgb, var(--amber) 12%, transparent) 0%, transparent 58%), linear-gradient(150deg, var(--panel), var(--bg) 70%)",
   },
   {
-    id: "dusk", name: "暮紫",
-    css: "radial-gradient(at 22% 20%, #e0c3fc 0px, transparent 55%), radial-gradient(at 78% 25%, #c3a6f2 0px, transparent 50%), radial-gradient(at 72% 78%, #f0c3e8 0px, transparent 55%), radial-gradient(at 25% 82%, #d9c7ff 0px, transparent 50%), linear-gradient(135deg, #f7f2fb, #e8dcf7)",
+    id: "jade", name: "玉岑",
+    css: "radial-gradient(115% 90% at 20% 20%, color-mix(in srgb, var(--green) 18%, transparent) 0%, transparent 60%), radial-gradient(90% 80% at 82% 78%, color-mix(in srgb, var(--ic-cyan) 10%, transparent) 0%, transparent 58%), linear-gradient(160deg, var(--bg), var(--panel) 62%, var(--panel-2))",
   },
   {
-    id: "ocean", name: "深海",
-    css: "radial-gradient(at 20% 25%, #123b5c 0px, transparent 55%), radial-gradient(at 80% 20%, #0b6e8f 0px, transparent 50%), radial-gradient(at 75% 80%, #0a2f4f 0px, transparent 55%), radial-gradient(at 25% 85%, #0d7a9e 0px, transparent 45%), linear-gradient(135deg, #081c30, #06263e)",
+    id: "ink", name: "玄墨",
+    css: "radial-gradient(120% 90% at 28% 8%, color-mix(in srgb, var(--text) 7%, transparent) 0%, transparent 58%), radial-gradient(90% 70% at 78% 92%, color-mix(in srgb, var(--text) 4%, transparent) 0%, transparent 60%), linear-gradient(165deg, var(--panel), var(--bg) 60%)",
   },
   {
-    id: "graphite", name: "墨石",
-    css: "radial-gradient(at 22% 22%, #3a3f47 0px, transparent 55%), radial-gradient(at 80% 18%, #2b3038 0px, transparent 50%), radial-gradient(at 72% 80%, #454b54 0px, transparent 55%), radial-gradient(at 25% 85%, #1f242b 0px, transparent 50%), linear-gradient(135deg, #1c2127, #262c33)",
+    id: "sand", name: "暮砂",
+    css: "radial-gradient(115% 90% at 78% 16%, color-mix(in srgb, var(--ic-amber) 18%, transparent) 0%, transparent 60%), radial-gradient(90% 80% at 18% 84%, color-mix(in srgb, var(--accent) 9%, transparent) 0%, transparent 58%), linear-gradient(150deg, var(--bg), var(--panel) 60%, var(--panel-2))",
   },
   {
-    id: "ember", name: "余烬",
-    css: "radial-gradient(at 20% 25%, #5c2e3e 0px, transparent 55%), radial-gradient(at 80% 20%, #7a3b4f 0px, transparent 50%), radial-gradient(at 75% 80%, #b4566b 0px, transparent 45%), radial-gradient(at 28% 82%, #40222e 0px, transparent 50%), linear-gradient(135deg, #2a1620, #3d1f2a)",
+    id: "nocturne", name: "夜岚",
+    css: "radial-gradient(120% 92% at 24% 14%, color-mix(in srgb, var(--ic-violet) 20%, transparent) 0%, transparent 60%), radial-gradient(90% 80% at 84% 80%, color-mix(in srgb, var(--ic-pink) 9%, transparent) 0%, transparent 58%), linear-gradient(155deg, var(--bg), var(--panel) 58%, var(--panel-2))",
   },
 ];
 

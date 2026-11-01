@@ -180,7 +180,7 @@ export async function run() {
     (/<BootSplash/.test(appBoot) && /done=\{bootReady \|\| Boolean\(showLogin\)\}/.test(appBoot))
       ? ok("【32】启动页活到首屏数据就绪才退场（done=bootReady，不是挂载即退）")
       : fail("【32】BootSplash 的 done 没绑首屏数据 —— 挂载即退场，等于没做");
-    (/\.boot-splash\s*\{/.test(html) && /data-theme="dark"\]\s*\.boot-splash/.test(html) && /boot-splash-logo/.test(html) && /icon\.png/.test(html))
+    (/\.boot-splash\s*\{/.test(html) && /data-theme-mode="dark"\]\s*\.boot-splash/.test(html) && /boot-splash-logo/.test(html) && /icon\.png/.test(html))
       ? ok("【32】启动页样式内联在 index.html（含主题分叉 + 蓝图标）")
       : fail("【32】index.html 缺启动页内联样式/主题分叉/蓝图标 —— 首帧会黑闪或用错图标");
     (!/boot-splash-logo">CH</.test(html) && !/>CH<\/div>/.test(html))

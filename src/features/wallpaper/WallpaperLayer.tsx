@@ -51,7 +51,7 @@ function StarfieldPane({ scale }: { scale: number }) {
     let raf = 0;
     let disposed = false;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const dark = document.documentElement.dataset.theme === "dark";
+    const dark = document.documentElement.dataset.themeMode === "dark" || document.documentElement.dataset.theme === "dark";
     const color = readHex("--text", dark ? "#ececea" : "#1b1b1a");
     const motion = !prefersReducedMotion();
     // 鼠标视差：目标值来自指针位置（归一化 −1..1），实际值缓动追随 —— 直接跟随会"跳"
@@ -126,6 +126,42 @@ function StarfieldPane({ scale }: { scale: number }) {
   return <canvas ref={ref} className="wallpaper-stars" aria-hidden />;
 }
 
+
+/** 动态光幕（11-02 用户：「多做几套新的，主题色」）：极光流带 / 流光丝带 / 呼吸光晕。
+ *  ⛔ 纯 CSS 动效（大块柔光 + blur + GPU transform），不引第三方引擎：比 canvas 逐帧重绘便宜，
+ *    也比 tsparticles 安静 —— 这三档要的是氛围，不是粒子。
+ *  ⛔ 颜色一律主题 token（color-mix + var(--accent/--ic-*)）⇒ 白天/黑夜/曜石自动换色。 */
+function MotionVeil({ variant }: { variant: "aurora" | "ribbon" | "halo" }) {
+  const ref = useRef<HTMLDivElement>(null);
+  /* 鼠标视差（用户 11-02：「动态壁纸要加上鼠标动态交互效果」）：指针位置缓动追随，
+     每团光按 --wp-depth 不同的位移量 ⇒ 有纵深；减动效偏好下不挂监听、不动。 */
+  useEffect(() => {
+    if (prefersReducedMotion()) return;
+    const el = ref.current;
+    if (!el) return;
+    let targetX = 0, targetY = 0, curX = 0, curY = 0, raf = 0;
+    const onMove = (event: MouseEvent) => {
+      targetX = (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1;
+      targetY = (event.clientY / Math.max(1, window.innerHeight)) * 2 - 1;
+    };
+    const tick = () => {
+      curX += (targetX - curX) * 0.06;
+      curY += (targetY - curY) * 0.06;
+      el.style.setProperty("--wp-px", curX.toFixed(4));
+      el.style.setProperty("--wp-py", curY.toFixed(4));
+      raf = requestAnimationFrame(tick);
+    };
+    window.addEventListener("mousemove", onMove, { passive: true });
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); window.removeEventListener("mousemove", onMove); };
+  }, [variant]);
+  return (
+    <div ref={ref} className={`wallpaper-motion is-${variant}`} aria-hidden>
+      <i><b /></i><i><b /></i><i><b /></i>
+    </div>
+  );
+}
+
 export function WallpaperLayer() {
   const [cfg, setCfg] = useState<WallpaperConfig>(() => readWallpaper());
   useEffect(() => subscribeWallpaper(setCfg as (c: ReturnType<typeof readWallpaper>) => void), []);
@@ -159,6 +195,7 @@ export function WallpaperLayer() {
       )}
       {mode === "particles" && <Suspense fallback={null}><ParticlesPane /></Suspense>}
       {mode === "stars" && <StarfieldPane scale={cfg.starScale} />}
+      {(mode === "aurora" || mode === "ribbon" || mode === "halo") && <MotionVeil variant={mode as "aurora" | "ribbon" | "halo"} />}
       {mode === "custom" && preset && <div className="wallpaper-custom wallpaper-preset" style={{ backgroundImage: preset.css }} />}
       {mode === "custom" && !preset && cfg.image && (
         <div className="wallpaper-custom" style={{ backgroundImage: `url("${localImageUrl(cfg.image)}")` }} />

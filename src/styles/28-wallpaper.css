@@ -28,7 +28,7 @@
       侧栏顶栏是黑的、主内容区是米黄的，很难看。 */
 .wallpaper-custom { position: absolute; inset: 0; background-size: cover; background-position: center; }
 .wallpaper-custom::after { content: ""; position: absolute; inset: 0; background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 46%, transparent), color-mix(in srgb, var(--bg) 18%, transparent)); }
-:root[data-theme="dark"] .wallpaper-custom::after { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 82%, transparent), color-mix(in srgb, var(--bg) 54%, transparent)); }
+:root[data-theme-mode="dark"] .wallpaper-custom::after { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 82%, transparent), color-mix(in srgb, var(--bg) 54%, transparent)); }
 
 /* 精选渐变壁纸：叠一层细噪点（feTurbulence），渐变才有质感不塑料 */
 .wallpaper-preset::before {
@@ -95,3 +95,106 @@
 .wallpaper-guide-copy { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 6px; padding: 2px 8px; font-size: 11px; cursor: pointer; flex: none; }
 .wallpaper-guide-copy:hover { border-color: var(--accent); color: var(--accent); }
 .wallpaper-guide-prompt { margin: 0; padding: 8px 10px; font-size: 11px; line-height: 1.7; color: var(--text); white-space: pre-wrap; word-break: break-all; max-height: 132px; overflow-y: auto; }
+
+/* ── 动态光幕（11-02）：极光流带 / 流光丝带 / 呼吸光晕 ─────────────────────────
+   纯 CSS 动效：大块柔光 + blur + GPU transform，颜色全走主题 token（var(--accent/--ic-*)），
+   白天 / 黑夜 / 曜石 自动换色。鼠标视差由 MotionVeil 写 --wp-px/--wp-py，每层按 --wp-depth 位移。
+   ⛔ 减动效偏好下：视差 JS 不挂、动画静帧（保留一层静态柔光，不会突然变纯黑）。 */
+.wallpaper-motion { position: absolute; inset: -15%; overflow: hidden; --wp-px: 0; --wp-py: 0; }
+.wallpaper-motion i { position: absolute; inset: 0; display: block; will-change: transform;
+  transform: translate3d(calc(var(--wp-px) * var(--wp-depth, 18px)), calc(var(--wp-py) * var(--wp-depth, 18px)), 0); }
+.wallpaper-motion i:nth-child(1) { --wp-depth: 26px; }
+.wallpaper-motion i:nth-child(2) { --wp-depth: 18px; }
+.wallpaper-motion i:nth-child(3) { --wp-depth: 11px; }
+.wallpaper-motion i b { position: absolute; display: block; filter: blur(58px); opacity: .62; will-change: transform; }
+
+/* 极光：三团大面积椭圆缓慢漂移、明暗呼吸 */
+.wallpaper-motion.is-aurora i:nth-child(1) b {
+  width: 76%; height: 58%; left: 2%; top: 6%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 54%, transparent), transparent 72%);
+  animation: wp-aurora-a 46s ease-in-out infinite alternate;
+}
+.wallpaper-motion.is-aurora i:nth-child(2) b {
+  width: 70%; height: 56%; right: -2%; top: 14%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ic-cyan) 42%, transparent), transparent 72%);
+  animation: wp-aurora-b 54s ease-in-out infinite alternate;
+}
+.wallpaper-motion.is-aurora i:nth-child(3) b {
+  width: 82%; height: 60%; left: 12%; bottom: -8%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ic-violet) 38%, transparent), transparent 72%);
+  animation: wp-aurora-c 62s ease-in-out infinite alternate;
+}
+@keyframes wp-aurora-a { from { transform: translate3d(-4%, -2%, 0) scale(1); opacity: .46; } to { transform: translate3d(10%, 7%, 0) scale(1.18); opacity: .7; } }
+@keyframes wp-aurora-b { from { transform: translate3d(4%, 4%, 0) scale(1.08); opacity: .38; } to { transform: translate3d(-9%, -6%, 0) scale(.96); opacity: .62; } }
+@keyframes wp-aurora-c { from { transform: translate3d(-6%, 4%, 0) scale(.98); opacity: .36; } to { transform: translate3d(7%, -5%, 0) scale(1.14); opacity: .58; } }
+
+/* 流光：三条细长光带斜向缓速流动 */
+.wallpaper-motion.is-ribbon i b {
+  width: 150%; height: 14%; left: -25%; border-radius: 999px;
+  filter: blur(44px); opacity: .5;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 38%, transparent) 38%, color-mix(in srgb, var(--ic-cyan) 30%, transparent) 62%, transparent);
+}
+.wallpaper-motion.is-ribbon i:nth-child(1) b { top: 14%; animation: wp-ribbon-x 34s ease-in-out infinite alternate; }
+.wallpaper-motion.is-ribbon i:nth-child(2) b {
+  top: 44%;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ic-violet) 34%, transparent) 40%, color-mix(in srgb, var(--accent) 26%, transparent) 64%, transparent);
+  animation: wp-ribbon-x 44s ease-in-out infinite alternate-reverse;
+}
+.wallpaper-motion.is-ribbon i:nth-child(3) b { top: 74%; animation: wp-ribbon-x 54s ease-in-out infinite alternate; }
+@keyframes wp-ribbon-x { from { transform: translate3d(-6%, 0, 0) rotate(-12deg); } to { transform: translate3d(6%, 2%, 0) rotate(-12deg); } }
+
+/* 呼吸光晕：一团大柔光缓慢呼吸 + 一处小反光 */
+.wallpaper-motion.is-halo i:nth-child(1) b {
+  width: 64%; height: 64%; left: 18%; top: 8%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%);
+  animation: wp-halo-breathe 28s ease-in-out infinite alternate;
+}
+.wallpaper-motion.is-halo i:nth-child(2) b {
+  width: 34%; height: 34%; left: 58%; top: 56%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--ic-cyan) 26%, transparent), transparent 70%);
+  animation: wp-halo-breathe 36s ease-in-out infinite alternate-reverse;
+}
+.wallpaper-motion.is-halo i:nth-child(3) b { display: none; }
+@keyframes wp-halo-breathe { from { transform: scale(1); opacity: .46; } to { transform: scale(1.16); opacity: .72; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .wallpaper-motion i { transform: none !important; }
+  .wallpaper-motion i b { animation: none !important; }
+}
+
+/* 壁纸模式 8 档：4 列两行（5 列的 .five 留给旧布局，别混用） */
+.theme-switch.wallpaper-modes { grid-template-columns: repeat(4, 1fr); }
+
+/* ── 全界面适配（11-02 用户：「输入框那些等等，还有我没想到的」）──────────────────
+   ⛔ 不逐个类名补 —— 那样永远会漏。这里把**表面令牌**在壁纸开启时统一换成半透明：
+      --bg / --panel / --panel-2 / --field 是所有输入框、卡片、菜单、弹层、表格、按钮底色的来源，
+      一处生效 ⇒ 新增组件自动跟着走。百分比按「能透出壁纸纹理、又不伤正文对比度」定。
+   大块表面（顶栏 / 右栏 / 设置面板 / 二级弹窗）额外加 backdrop-filter，做出玻璃层。 */
+:root[data-wallpaper="on"] {
+  /* ⛔ 11-02 定位：html 默认有 var(--bg) 不透明底 —— 负 z 的壁纸层会被它盖住。
+     壁纸开启时把画布底色让出来（body/#root 本来就是透明）。 */
+  background: transparent;
+  --bg: color-mix(in srgb, var(--bg-base) 90%, transparent);
+  --panel: color-mix(in srgb, var(--panel-base) 91%, transparent);
+  --panel-2: color-mix(in srgb, var(--panel-2-base) 90%, transparent);
+  --field: color-mix(in srgb, var(--field-base) 86%, transparent);
+}
+:root[data-wallpaper="on"] .topbar,
+:root[data-wallpaper="on"] .context-panel {
+  background: var(--bg);
+  backdrop-filter: blur(16px) saturate(1.05);
+}
+:root[data-wallpaper="on"] .settings-modal {
+  background: var(--bg);
+  backdrop-filter: blur(20px) saturate(1.06);
+}
+:root[data-wallpaper="on"] .settings-nav,
+:root[data-wallpaper="on"] .settings-content { background: transparent; }
+:root[data-wallpaper="on"] :where(.settings-dialog, .media-preview-dialog, .model-viewer-dialog, .image-lab-dialog) {
+  background: var(--panel);
+  backdrop-filter: blur(22px) saturate(1.08);
+}
+:root[data-wallpaper="on"] :where(.modal-backdrop > *, .settings-dialog-backdrop > *) {
+  background-color: var(--panel);
+  backdrop-filter: blur(22px) saturate(1.08);
+}

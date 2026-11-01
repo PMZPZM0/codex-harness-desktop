@@ -54,7 +54,7 @@ ok(!/<Settings2 /.test(codeOnly(sidebarSrc)),
 /* ── ② 色板：亮/暗两套都定义，且是两套**不同**的值 ───────────────────── */
 const base = read(BASE);
 const rootBlock = /:root\s*\{([\s\S]*?)\n\}/.exec(base)?.[1] ?? "";
-const darkBlock = /:root\[data-theme="dark"\]\s*\{([\s\S]*?)\n\}/.exec(base)?.[1] ?? "";
+const darkBlock = /:root\[data-theme-mode="dark"\]\s*\{([\s\S]*?)\n\}/.exec(base)?.[1] ?? "";
 const pick = (block, name) => new RegExp(`--ic-${name}\\s*:\\s*([^;]+);`).exec(block)?.[1]?.trim() ?? "";
 
 ok(rootBlock && darkBlock, "② 亮色块与暗色块都定位到了（变量表在 01-base-and-chrome.css）");

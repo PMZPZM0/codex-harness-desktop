@@ -46,10 +46,14 @@
          与 App.tsx 的 localStorage "theme" 同源（默认 light）。 */
       (function () {
         try {
-          var t = localStorage.getItem("theme");
-          document.documentElement.setAttribute("data-theme", t === "dark" ? "dark" : "light");
+          var t = localStorage.getItem("theme") || "light";
+          if (t !== "light" && t !== "dark" && t !== "obsidian") t = "light";
+          document.documentElement.setAttribute("data-theme", t);
+          /* 深色系 = dark + obsidian：首帧就要把「模式」落上去，否则新主题会先闪一帧浅色。 */
+          document.documentElement.setAttribute("data-theme-mode", t === "dark" || t === "obsidian" ? "dark" : "light");
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
+          document.documentElement.setAttribute("data-theme-mode", "light");
         }
         /* ⛔ 550C 开机动画档位（默认 full）：开启时首帧只用**动画自己的底色**占屏，
            不显示 logo/文案，避免先闪一眼白底启动页再跳黑（上游同款口径：「首帧是一块纯色」）。
@@ -116,7 +120,7 @@
         font-family: "Segoe UI", system-ui, sans-serif;
         user-select: none;
       }
-      html[data-theme="dark"] .boot-splash {
+      html[data-theme-mode="dark"] .boot-splash {
         background: #171916;
         color: #e8e8e8;
       }
@@ -131,7 +135,7 @@
         box-shadow: 0 18px 48px rgba(20, 20, 15, 0.16), 0 2px 8px rgba(20, 20, 15, 0.08);
         animation: boot-breathe 1.7s ease-in-out infinite;
       }
-      html[data-theme="dark"] .boot-splash-logo {
+      html[data-theme-mode="dark"] .boot-splash-logo {
         box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.4);
       }
       /* ⛔ 呼吸动画不许用 transform:scale —— 连续缩放让合成器每帧重采样 512px 大图，
@@ -155,7 +159,7 @@
         font-size: 12px;
         color: #6b6b66;
       }
-      html[data-theme="dark"] .boot-splash p {
+      html[data-theme-mode="dark"] .boot-splash p {
         color: rgba(255, 255, 255, 0.55);
       }
       /* 淡出：首屏数据到达后由 React 层加这个类，播完再卸载 */
