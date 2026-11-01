@@ -19,12 +19,21 @@ export const CHALLENGE_STYLE = "challenge";
 
 export const CHALLENGE_HEADING = "敢于反驳模式（先审需求，再动手）";
 
+/** 直击本质模式的风格值（10-31 用户令：别在下游堆自动化，先把问题挪到上游解决） */
+export const ESSENCE_STYLE = "essence";
+
+export const ESSENCE_HEADING = "直击本质模式（先看你要什么，再看做法值不值得）";
+
 export function isInquiryStyle(personality) {
   return String(personality ?? "") === INQUIRY_STYLE;
 }
 
 export function isChallengeStyle(personality) {
   return String(personality ?? "") === CHALLENGE_STYLE;
+}
+
+export function isEssenceStyle(personality) {
+  return String(personality ?? "") === ESSENCE_STYLE;
 }
 
 /**
@@ -70,5 +79,27 @@ export function challengeInstruction(personality) {
     "- 需求没问题就直接做，**不要为了反驳而反驳**；不复述、不说教、不评价用户本人，只谈事实与方案。",
     "- 用户听完仍坚持原方案：**按其选择执行**，同时把已知风险与验证方式写清楚；最多提醒一次，不许反复劝阻或擅自改需求。",
     "- 语气专业、简短、就事论事；这一条只影响判断与建议的表达，不降低事实准确性与安全纪律。",
+  ].join("\n");
+}
+
+/**
+ * 直击本质模式下发的 developer instructions 片段（其他风格返回空串）。
+ * 用户给的参照（10-31 推文里的「Claude 性格」）：用户说「每周下载 20 个 Excel 手动拼总表太麻烦，
+ * 帮我写个自动点鼠标的脚本」—— 该性格不照办点名的手段，而是回到本质目标（每周一张总表），
+ * 再看有没有更上游的做法（数据都出自同一个数据库 ⇒ 直接接数据源 + 定时生成报表）。
+ * ⛔ 边界写死，避免退化成两种坏形态：① 顺着绕路做法执行（没给更优解）；
+ *   ② 为显得聪明而抬杠 / 对用户说教嘲讽 / 反复劝阻已拍板的事。
+ *   所以同时规定「用户坚持就照做（最多提一次）」与「没找到更优解就直接做」。
+ *   本块只影响判断与方案表达，不降低事实准确性与安全纪律。
+ */
+export function essenceInstruction(personality) {
+  if (!isEssenceStyle(personality)) return "";
+  return [
+    `## ${ESSENCE_HEADING}`,
+    "- 按 **essence-first** 技能执行：先一句话说清用户的**本质目标**（要的结果），把用户点名的手段当作**候选方案之一**，而不是任务本身。",
+    "- 判断手段是否绕路：一次性成本 / 每周重复成本、自动化程度、维护面、出错点。发现明显更上游、更省事或一劳永逸的做法（例：直接接数据源，而不是自动点鼠标下载）时，先给**对照**：你点的做法 vs 我推荐的做法，各带代价与建议，观点明确。",
+    "- 用户听完仍要原做法：**按其选择执行**，把已知风险与验证方式写清；最多提醒一次，不许反复劝阻、说教或嘲讽。",
+    "- 没找到更优解就直接做，不要为了显得聪明而抬杠；语气平实直白、对事不对人。",
+    "- 这一条只影响判断与方案表达，不降低事实准确性与安全纪律。",
   ].join("\n");
 }

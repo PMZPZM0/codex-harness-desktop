@@ -274,9 +274,28 @@ ok(!existsSync(join(ROOT, "src/features/settings-personalization/Personalization
 const replyStyleSrc = src("src/lib/reply-style.mjs");
 ok(/value: "inquiry"/.test(personalPage) && /需求询问/.test(personalPage)
   && /value: "challenge"/.test(personalPage) && /敢于反驳/.test(personalPage)
+  && /value: "essence"/.test(personalPage) && /直击本质/.test(personalPage)
   && /export function challengeInstruction/.test(replyStyleSrc)
+  && /export function essenceInstruction/.test(replyStyleSrc)
   && /仍坚持|坚持原方案/.test(replyStyleSrc),
-  "回复风格含「需求询问」与「敢于反驳」两档（后者先指出需求错误，用户坚持则照做并写清风险）");
+  "回复风格含「需求询问」「敢于反驳」「直击本质」三档（后两档：先给更优做法/错在哪，用户坚持则照做并写清风险）");
+/* ⛔ 10-31「直击本质」配套技能必须三处同轮登记（entries / 中文导读 / 已知清单）——少一处就是「选了风格但技能不存在」。 */
+const builtinSkillsSrc = src("electron/builtin-skills.ts");
+ok(/\["essence-first", ESSENCE_FIRST_SKILL\]/.test(builtinSkillsSrc)
+  && /26-skill-essence-first/.test(builtinSkillsSrc),
+  "essence-first 技能已注册进内置技能 entries（import + 条目）");
+/* 真跑纯函数（静态断言只能证明写了字，证明不了行为对） */
+const replyStyleModule = await import("../../src/lib/reply-style.mjs").catch(() => null);
+ok(Boolean(replyStyleModule), "reply-style.mjs 可 import（真跑纯函数）");
+if (replyStyleModule) {
+  const essenceText = String(replyStyleModule.essenceInstruction?.("essence") ?? "");
+  ok(essenceText.includes("本质目标") && essenceText.includes("essence-first") && essenceText.includes("仍要原做法"),
+    "essenceInstruction 真跑：本质目标 + essence-first 指针 + 「用户坚持就照做」边界");
+  ok(replyStyleModule.essenceInstruction?.("challenge") === "" && replyStyleModule.essenceInstruction?.("") === "",
+    "essenceInstruction 只对 essence 生效（其它风格返回空串，不串味）");
+  ok(replyStyleModule.enginePersonality?.("essence") === null,
+    "essence 发给引擎时按 none 处理（引擎只认官方三档，未知值不能直发）");
+}
 ok(!/uc-style-options/.test(src("src/components/UserCenter.tsx")) && /STYLE_OPTIONS/.test(src("src/components/UserCenter.tsx")),
   "用户中心不再重复「回复风格」选择区（唯一入口在个性化页），风格标签回显保留");
 const generalPage = pageSrc("general");

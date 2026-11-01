@@ -33,6 +33,7 @@ import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
 import { CHALLENGE_REQUIREMENTS_SKILL } from "./builtin-skills/25-skill-challenge-requirements";
 import { HANDOFF_SKILL } from "./builtin-skills/25-skill-handoff";
+import { ESSENCE_FIRST_SKILL } from "./builtin-skills/26-skill-essence-first";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
 import { SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
@@ -157,6 +158,8 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     ["grill-me", GRILL_ME_SKILL],
     // 10-31：回复风格「敢于反驳」的配套技能（与 grill-me 同一套逻辑：风格启用即按本技能执行）。
     ["challenge-requirements", CHALLENGE_REQUIREMENTS_SKILL],
+    // 10-31：回复风格「直击本质」的配套技能（先看本质目标，再看点名的手段是否绕路）。
+    ["essence-first", ESSENCE_FIRST_SKILL],
     // 10-26：交接文档技能（写总结/提示词），与根目录 HANDOFF.md 配套 ——
     //  五段结构直接来自用户原话；「生效方式」与「锚点」两段是本项目反复白干的教训。
     ["handoff", HANDOFF_SKILL],
