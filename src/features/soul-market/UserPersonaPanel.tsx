@@ -28,7 +28,9 @@ export function UserPersonaPanel({ onNotice, action }: { onNotice: (message: str
     /* ⛔ 11-01 用户实测「只更新了职业，其他详细信息都没更新」：原来只写 occupation/userContext。
        把 persona id 一并落盘，其它面板（用户中心 / 档案）才能按同一个 id 联动，而不是各猜一套。 */
     const base = personaId === "default" ? { occupation: "", userContext: "" } : userPersonaFields(personaId);
-    const fields = { ...base, persona: personaId === "default" ? "" : personaId };
+    /* ⛔ 11-01 联动拉满：选了人格 = 档案已配置 ⇒ 同步标记引导已看过，
+       否则用户每次登录还会被问一遍已经填好的信息。 */
+    const fields = { ...base, persona: personaId === "default" ? "" : personaId, onboarded: true, profileGuideSeen: true };
     if (!fields) { onNotice(`没有叫「${personaId}」的用户人格`); return; }
     try {
       await window.codex.saveIdentity(fields);
