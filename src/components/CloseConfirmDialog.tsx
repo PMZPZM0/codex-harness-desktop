@@ -16,6 +16,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { LogOut, Minimize2, X } from "lucide-react";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 type AskPayload = { busy: number; appName: string };
 type CloseAction = "tray" | "quit" | "cancel";
@@ -38,18 +39,11 @@ export function CloseConfirmDialog() {
   /* ⛔ 10-28 审查（对话框组件）：这个确认框原来**只能用鼠标**关 —— 有 role/aria-modal、有取消按钮，
      但没有 Esc，键盘用户按 Esc 什么都不会发生（全局 Esc 还会去关别的面板）。
      ⇒ capture 阶段拦 Esc = 取消（方向安全：Esc 永远不会误触"退出应用"）。 */
-  useEffect(() => {
-    if (!ask) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || event.defaultPrevented) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setSending(true);
-      void window.codex.respondCloseConfirm?.("cancel", remember).catch(() => undefined).finally(() => setAsk(null));
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [ask, remember]);
+  useEscapeLayer(Boolean(ask), (event) => {
+    if (event.defaultPrevented) return false;
+    setSending(true);
+    void window.codex.respondCloseConfirm?.("cancel", remember).catch(() => undefined).finally(() => setAsk(null));
+  });
 
   if (!ask || typeof document === "undefined") return null;
 

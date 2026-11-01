@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties }
 import { createPortal } from "react-dom";
 import { Tag, X } from "lucide-react";
 import { closeTagEditor, getEntityTagState, removeEntityTag, setEntityTag, subscribeEntityTags, TAG_COLORS } from "../lib/entity-tags.mjs";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 /** 会话 / 项目标签编辑器（10-25）：文字 + 8 色可选，默认无标签。 */
 export function EntityTagEditorHost() {
@@ -19,12 +20,7 @@ export function EntityTagEditorHost() {
     return () => window.clearTimeout(timer);
   }, [editor]);
 
-  useEffect(() => {
-    if (!editor) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeTagEditor(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [editor]);
+  useEscapeLayer(Boolean(editor), () => closeTagEditor());
 
   if (!editor) return null;
   const kindLabel = editor.kind === "project" ? "项目标签" : "会话标签";

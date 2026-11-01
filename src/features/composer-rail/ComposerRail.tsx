@@ -25,6 +25,7 @@ import { PasswordBookPanel } from "./PasswordBookPanel";
 import { DevJournalPanel } from "./DevJournalPanel";
 import { MoodStickersPanel } from "./MoodStickersPanel";
 import { DataAccessPanel } from "../data-access";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 /** 内置面板（IPC 拿不到目录时的兜底；正常情况以主进程 `extensions:catalog` 为准）。 */
 const FALLBACK_PANELS: RailPanelSpec[] = [
@@ -93,11 +94,6 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
        若每次都覆盖就会把"该还给谁"丢失，关闭后焦点落到 body。 */
     if (!returnFocusRef.current) returnFocusRef.current = (document.activeElement as HTMLElement | null) ?? null;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.stopPropagation();
-        setPanelId(null);
-        return;
-      }
       if (event.key !== "Tab") return;
       const focusables = Array.from(panel.querySelectorAll<HTMLElement>(
         'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
@@ -113,6 +109,7 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
     panel.focus();
     return () => window.removeEventListener("keydown", onKey, true);
   }, [panelId]);
+  useEscapeLayer(Boolean(panelId), () => setPanelId(null));
 
   /* 目录：内置 + 用户扩展（userData/extensions.json）。失败就用兜底，绝不让竖条消失。 */
   useEffect(() => {

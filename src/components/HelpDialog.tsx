@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { useEffect } from "react";
 import { ArrowRight, X, BookOpen } from "lucide-react";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 /** 设置页「使用帮助」：面向新手的逐步说明弹窗。
  *
@@ -406,17 +407,8 @@ export const HELP_CONTENT: Record<HelpKey, HelpContent> = {
 /** 帮助弹窗：受控组件，`helpKey` 为 null 时不渲染。
  *  `overview` 是设置总览（分组地图 + 动线），其余是逐页操作帮助。 */
 export function HelpDialog({ helpKey, onClose, onNavigate }: { helpKey: HelpTopic | null; onClose: () => void; onNavigate?: (page: string) => void }) {
-  useEffect(() => {
-    if (!helpKey) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [helpKey, onClose]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）。 */
+  useEscapeLayer(Boolean(helpKey), () => onClose());
 
   if (!helpKey) return null;
 

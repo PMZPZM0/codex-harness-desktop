@@ -15,6 +15,7 @@ import { classifyProviderProbeFailure, UpstreamProtocol } from "../../hooks/useM
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export type ModelSettingsSectionProps = { refreshActive?: () => void; autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
 
@@ -162,14 +163,11 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
     setEditingProvider(null);
     setEditorOpen(true);
   };
-  useEffect(() => {
-    if (!editorOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !modelEditor && !savingSettings) setEditorOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [editorOpen, modelEditor, savingSettings]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）；正在编辑/保存时消费掉但不关。 */
+  useEscapeLayer(editorOpen, () => {
+    if (modelEditor || savingSettings) return;
+    setEditorOpen(false);
+  });
   const openAutoSetup = () => {
     let n = Date.now() % 1000;
     while (providersList.some((p: any) => p.provider === `custom${n}`)) n = (n + 1) % 1000;

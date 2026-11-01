@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 export type AnchorRect = { left: number; right: number; top: number; bottom: number };
 export type PopoverAxis = "x" | "y";
@@ -133,14 +134,12 @@ export function AnchorPopover({
       if (element?.contains(target)) return;
       onClose();
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     window.addEventListener("mousedown", onDown, true);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", onDown, true);
-      window.removeEventListener("keydown", onKey);
     };
   }, [open, anchor, ignoreRef, onClose]);
+  useEscapeLayer(Boolean(open), () => onClose());
 
   if (!open) return null;
   return createPortal(

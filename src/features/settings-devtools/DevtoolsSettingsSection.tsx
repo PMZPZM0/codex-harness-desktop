@@ -32,6 +32,7 @@ import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
 import { FileeCard } from "./FileeCard";
 import { SkillPacksPanel } from "../skill-packs";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
@@ -61,16 +62,8 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
      ⛔ 弹窗顺序：必须压过二级 SettingsDialog（遮罩 z=900）⇒ 950 档 + portal 到 body。
      ⛔ Esc 在**捕获阶段**拦截并 stopPropagation —— 否则同一个 Esc 会把底下的 SettingsDialog
        一起关掉（两个都是 window keydown 监听，冒泡阶段分不出先后归属）。 */
-  useEffect(() => {
-    if (!runtimeModal?.failed) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      setRuntimeModal(null);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [runtimeModal?.failed, setRuntimeModal]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）。 */
+  useEscapeLayer(Boolean(runtimeModal?.failed), () => setRuntimeModal(null));
 
   /* 「复制提示词」用的原文仍来自 runtime:list 下发的 fallbackPrompt（单一真相源，守卫 11y）。
      卸载失败与「交给 Codex 装」无关 ⇒ 不出那个按钮，只给「复制错误信息」。 */

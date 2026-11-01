@@ -13,6 +13,7 @@ import { Check, Copy, EyeOff, HardDrive, KeyRound, LoaderCircle, Lock, RefreshCw
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 type LockStatus = Awaited<ReturnType<typeof window.codex.appLockStatus>>;
 type Prepared = { setupId: string; password: string; kind: "random" | "custom" };
@@ -58,18 +59,12 @@ export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string)
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  useEffect(() => {
-    if (!setupOpen && !disableOpen) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      if (setupBusy || disableBusy) return;
-      if (setupOpen) closeSetup();
-      else closeDisable();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [setupOpen, disableOpen, setupBusy, disableBusy, prepared]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）；忙碌时消费掉但不关。 */
+  useEscapeLayer(setupOpen || disableOpen, () => {
+    if (setupBusy || disableBusy) return;
+    if (setupOpen) closeSetup();
+    else closeDisable();
+  });
 
   const openEnable = () => {
     setMode("random");

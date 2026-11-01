@@ -35,6 +35,7 @@ import {
 import { BroadcastPanel } from "./BroadcastPanel";
 import { TypedText } from "./TypedText";
 import { kindMetaOf } from "./kinds";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 const DOCK_KEY = "harness-broadcast-dock";
 const EDGES: DockEdge[] = ["left", "right", "top", "bottom"];
@@ -226,16 +227,12 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
       if (target?.closest?.(".bc-anchor")) return;
       setBroadcastOpen(false, threadId ?? "");
     };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setBroadcastOpen(false, threadId ?? "");
-    };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
     };
   }, [snap.open, threadId]);
+  useEscapeLayer(Boolean(snap.open), () => setBroadcastOpen(false, threadId ?? ""));
 
   const onPodClick = useCallback(() => {
     if (movedRef.current) {

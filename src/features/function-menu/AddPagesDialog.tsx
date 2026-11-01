@@ -9,6 +9,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboa
 import { createPortal } from "react-dom";
 import { Check, Search, X } from "lucide-react";
 import type { FunctionMenuSettingsTarget } from "./store";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 type PageItem = { page: string; label: string; group: string };
 
@@ -28,15 +29,9 @@ export function AddPagesDialog({ targets, taken, remaining, onClose, onAdd }: {
 
   useEffect(() => {
     inputRef.current?.focus();
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      /* ⛔ 捕获阶段拦下：否则同一个 Esc 会把底下的「编辑拓展功能」一起关掉。 */
-      event.stopPropagation();
-      onClose();
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
+  }, []);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）。 */
+  useEscapeLayer(true, () => onClose());
 
   const keyword = query.trim().toLowerCase();
   const groups = useMemo(() => {

@@ -9,6 +9,7 @@ import { Spinner } from "../../components/CardShell";
 import { resolveImagePath } from "../../lib/resolve-image-path";
 import { parseMarkdownTables, renderMarkdownTables } from "../../lib/md-table.mjs";
 import { MdTableView } from "./MdTableEditor";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 /** 文件弹窗编辑的读写通道（09-26）：会话工作区文件走 fs:read/fs:write（可信根校验在主进程）；
  *  不传 = 粘贴文本默认通道（pasted-text:read/update，只限粘贴文本目录）。 */
@@ -174,11 +175,7 @@ export function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; al
   const dragRef = useRef<{ x: number; y: number; baseX: number; baseY: number } | null>(null);
   const [dragging, setDragging] = useState(false);
   const clampZoom = (value: number) => Math.min(6, Math.max(1, value));
-  useEffect(() => {
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeLayer(true, () => onClose());
   const endDrag = () => { dragRef.current = null; setDragging(false); };
   return (
     <div className="lightbox" onClick={onClose} role="dialog" aria-label={alt}>

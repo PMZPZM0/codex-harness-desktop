@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 import { ArrowRight, ChevronLeft, ChevronRight, ExternalLink, Lightbulb, LoaderCircle, Rocket, Search, X } from "lucide-react";
 import { GUIDE_SECTIONS, type GuideSection, type GuideTier } from "./sections";
 import { GuideFigureView } from "./figures";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 type HistoryEntry = { version: string; date: string; items: { t: string; d?: string }[]; releaseUrl: string };
 type HistoryState = { status: "idle" | "loading" | "ok" | "error"; entries: HistoryEntry[]; error?: string };
@@ -89,12 +90,7 @@ export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
     if (open && active?.changelog && history.status === "idle") loadHistory();
   }, [open, active?.changelog, history.status, loadHistory]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  useEscapeLayer(open, () => setOpen(false));
 
   /* 每次重新打开都回到「无搜索」状态：上次搜的词不该把这一轮导航锁剩几节。 */
   useEffect(() => { if (open) setQuery(""); }, [open]);

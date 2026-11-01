@@ -19,6 +19,7 @@ import { useEffect } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { X } from "lucide-react";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 export type SettingsDialogProps = {
   title: string;
@@ -32,11 +33,8 @@ export type SettingsDialogProps = {
 };
 
 export function SettingsDialog({ title, icon, hint, size = "md", onClose, children }: SettingsDialogProps) {
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）—— 不再自己监听 window keydown。 */
+  useEscapeLayer(true, () => onClose());
 
   return createPortal(
     /* ⛔ 只在**点遮罩本身**时关（e.target === currentTarget）：冒泡上来的内容区点击不关。 */

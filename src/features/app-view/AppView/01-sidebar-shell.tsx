@@ -162,6 +162,7 @@ import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
+import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
@@ -469,16 +470,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       const item = target.closest(".function-menu-popover-item");
       if ((row && !row.classList.contains("function-menu-more")) || item) closeOptions();
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") closeOptions(); };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("pointerdown", onDown);
       document.removeEventListener("click", onClick);
-      document.removeEventListener("keydown", onKey);
     };
   }, [optionsCollapsed, closeOptions]);
+  useEscapeLayer(!optionsCollapsed, () => closeOptions());
   /*指挥中枢按钮（历史与实测依据收在 scripts/guards/22-boss-groups.mjs，此处只留行为契约）：
      ① **先跳到 欢迎界面，再弹项目地址对话框**（10-25 用户实测：「点指挥中枢，先出来
         这个弹窗，不会跳转到 欢迎界面，再跳这个弹窗」⇒ 顺序反了）——

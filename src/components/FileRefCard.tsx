@@ -12,6 +12,7 @@ import { FileTypeIcon, fileExtOf } from "./FileTypeIcon";
 import { openRightFile } from "../lib/right-file.mjs";
 import { openFileTextEditor } from "../lib/ui-channels";
 import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS } from "../hooks/useFilePreview";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 export type FileOpenMode = "workspace" | "editor" | "system";
 const MODE_KEY = "output-file-open-target";
@@ -70,14 +71,12 @@ export function FileRefCard({
       if (menuRef.current?.contains(target) || anchorRef.current?.contains(target)) return;
       setMenu(null);
     };
-    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMenu(null); };
     window.addEventListener("mousedown", close);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", close);
-      window.removeEventListener("keydown", onKey);
     };
   }, [menu]);
+  useEscapeLayer(Boolean(menu), () => setMenu(null));
 
   const openWith = (target: FileOpenMode = mode) => {
     if (onOpen) { onOpen(); return; }

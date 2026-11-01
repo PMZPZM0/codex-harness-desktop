@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 type SessionRow = {
   id: string;
@@ -107,13 +108,11 @@ export function SessionSyncDialog(props: {
   useEffect(() => { void load(); }, [load]);
 
   // Esc 关闭（提交中不允许，避免半途中断）
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && phase !== "submitting") onClose(phase === "success" ? { kind: "ok", text: message } : null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [phase, message, onClose]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）；提交中不关闭（消费掉，别让外层跟着关）。 */
+  useEscapeLayer(true, () => {
+    if (phase === "submitting") return;
+    onClose(phase === "success" ? { kind: "ok", text: message } : null);
+  });
 
   const allPicked = rows.length > 0 && picked.size === rows.length;
   const toggleAll = () => setPicked(allPicked ? new Set() : new Set(rows.map((r) => r.id)));

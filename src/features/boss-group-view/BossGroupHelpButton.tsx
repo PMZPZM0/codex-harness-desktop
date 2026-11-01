@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { HelpCircle, X } from "lucide-react";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 const ROWS: Array<{ title: string; body: string }> = [
   {
@@ -48,10 +49,9 @@ export function BossGroupHelpButton() {
       setOpen(false);
     };
     window.addEventListener("mousedown", onDown);
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+    return () => { window.removeEventListener("mousedown", onDown); };
   }, [open]);
+  useEscapeLayer(open, () => setOpen(false));
 
   const toggle = () => {
     if (!open) {

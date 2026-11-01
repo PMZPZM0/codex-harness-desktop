@@ -21,6 +21,7 @@ import { useAnchoredPopover } from "../app-view/hooks/useAnchoredPopover";
 /* ⛔ 胶囊开关一律走共享 ToggleSwitch（守卫【234】⑧）—— 本面板原先手写了一个
    `.dispatch-toggle`（轨道 + 圆点），与别处长不一样，已换掉。 */
 import { ToggleSwitch } from "../../components/SettingsWidgets";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 /** 三类许可（与 `src/lib/thread-runtime.mjs` 的 DispatchConfig 同形：无总开关）。 */
 export type DispatchDraft = { expert: boolean; team: boolean; subagent: boolean };
@@ -59,11 +60,10 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
       if (popRef.current?.contains(target)) return;
       setOpen(false);
     };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => { window.removeEventListener("mousedown", onDown); window.removeEventListener("keydown", onKey); };
+    return () => { window.removeEventListener("mousedown", onDown); };
   }, [open]);
+  useEscapeLayer(open, () => setOpen(false));
   /* 10-29 用户令：「专家数量要实时同步后台有的专家数量」。
      ⛔ 不能只靠父级缓存：`dispatchInfo` 只在 expertTeams/subAgents 变化时才刷一次，
         在设置里新建/停用专家后，面板上的数字会一直停在旧值。

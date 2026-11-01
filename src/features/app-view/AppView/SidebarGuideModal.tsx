@@ -33,6 +33,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { copyTextToClipboard } from "../../../lib/clipboard";
+import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 export type SidebarGuideKey = "frontend" | "extensions" | "agents" | "identity";
 
@@ -169,7 +170,9 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
   const firstViewRef = useRef(true);
   const copyTimerRef = useRef<number | null>(null);
 
-  /* Esc 关闭 + Tab 焦点陷阱 + 关闭后把焦点还给触发按钮（设计规范要求，别只做遮罩点击）。 */
+  /* Esc 关闭 + Tab 焦点陷阱 + 关闭后把焦点还给触发按钮（设计规范要求，别只做遮罩点击）。
+     ⛔ Esc 走全局 ESC 栈（只关最上层）—— 这里只管 Tab 陷阱。 */
+  useEscapeLayer(true, () => closeRef.current());
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     const dialog = dialogRef.current;
@@ -178,12 +181,6 @@ export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey:
     );
     focusables()[0]?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        closeRef.current();
-        return;
-      }
       if (event.key !== "Tab") return;
       const list = focusables();
       if (!list.length) return;

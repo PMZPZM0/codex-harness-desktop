@@ -8,6 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { SearchPreviewTarget } from "../../../../../components/IndexLibrary";
 import type { Bag } from "../../bag-types";
+import { useEscapeLayer } from "../../../../../hooks/useEscapeLayer";
 
 export function usePart02a1(bag: Bag) {
   // app-server MCP 状态卡：引擎直管服务器的启停覆盖表 + 勾选/忙碌态。
@@ -101,11 +102,10 @@ bag.memoryProjectPickerRef = memoryProjectPickerRef as typeof bag.memoryProjectP
       const target = event.target;
       if (!(target instanceof Node) || !bag.memoryProjectPickerRef.current?.contains(target)) bag.setMemoryProjectMenuOpen(false);
     };
-    const onKeyDown = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") bag.setMemoryProjectMenuOpen(false); };
     document.addEventListener("pointerdown", close, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => { document.removeEventListener("pointerdown", close, true); document.removeEventListener("keydown", onKeyDown, true); };
+    return () => { document.removeEventListener("pointerdown", close, true); };
   }, [bag.memoryProjectMenuOpen]);
+  useEscapeLayer(Boolean(bag.memoryProjectMenuOpen), () => bag.setMemoryProjectMenuOpen(false));
 
   function openAppPrompt(title: string, defaultValue = "", multiline = false): Promise<string | null> {
     return new Promise((resolve) => bag.setAppPrompt({ title, value: defaultValue, multiline, resolve }));

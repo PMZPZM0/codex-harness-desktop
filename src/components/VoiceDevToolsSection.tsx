@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Download, ExternalLink, FolderOpen, LoaderCircle, Mic, Power, Trash2, X } from "lucide-react";
+import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 type Status = {
   ready: number;
@@ -96,17 +97,10 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot, compact
   const [confirmDisable, setConfirmDisable] = useState<ResourceKind | null>(null);
 
   /* 弹窗打开时 Esc 关闭（捕获阶段：别让同一个 Esc 把底下的设置弹窗一起关掉）。 */
-  useEffect(() => {
-    if (!(confirmDelete || confirmDisable || confirmUninstall)) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false);
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [confirmDelete, confirmDisable, confirmUninstall]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）。 */
+  useEscapeLayer(Boolean(confirmDelete || confirmDisable || confirmUninstall), () => {
+    setConfirmDelete(null); setConfirmDisable(null); setConfirmUninstall(false);
+  });
   /** 正在切换启用状态的资源（按钮转圈 + 防连点） */
   const [toggling, setToggling] = useState<ResourceKind | null>(null);
   /** 正在删除的资源 */

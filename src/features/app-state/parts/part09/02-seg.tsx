@@ -144,6 +144,7 @@ import {
 import { locateMatchEl } from "../../../app-view/helpers";
 import { useAnchoredPopover } from "../../../app-view/hooks/useAnchoredPopover";
 import type { Bag } from "../bag-types";
+import { useEscapeLayer } from "../../../../hooks/useEscapeLayer";
 
 export function usePart09b(bag: Bag) {
   // 团队会话里正在被调度的成员（主理人通过 team_member_invoke 分发子任务时点亮其头像）
@@ -308,14 +309,12 @@ bag.earlyView = earlyView as typeof bag.earlyView;
       if (ctxBtnRef.current?.contains(target as Node)) return; // 📁 按钮：交给自身 onClick 开关切
       bag.setCtxMenuOpen(false);
     };
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") bag.setCtxMenuOpen(false); };
     window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
     };
   }, [bag.ctxMenuOpen]);
+  useEscapeLayer(Boolean(bag.ctxMenuOpen), () => bag.setCtxMenuOpen(false));
   const taskBtnRef = useRef<HTMLButtonElement | null>(null);
   const taskMenuStyle = useAnchoredPopover(bag.taskMenuOpen, taskBtnRef, 226, "bottom-center");
   const closeHistoryPanel = useCallback(() => {
@@ -342,9 +341,6 @@ bag.earlyView = earlyView as typeof bag.earlyView;
   // 面板开着时 Esc 关闭（输入框自身的 Esc 也会冒泡到这里，行为一致）
   useEffect(() => {
     if (!bag.chatSearchOpen) return;
-    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === "Escape") closeHistoryPanel(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
   }, [bag.chatSearchOpen, closeHistoryPanel]);
 
   // 顶栏操作簇（🔍 搜索 / 调度 / 独立弹窗 / ⋯ 任务菜单 / 右栏开关；📁 工作区 10-06 夜七轮

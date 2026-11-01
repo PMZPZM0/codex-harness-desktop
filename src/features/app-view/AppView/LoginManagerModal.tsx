@@ -14,6 +14,7 @@
 import { useEffect, useRef, type ComponentType } from "react";
 import { createPortal } from "react-dom";
 import { ChevronRight, CircleGauge, Cloud, LogIn, Wallet, X } from "lucide-react";
+import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 /** 直达的设置页 id（与 settings-registry / catalogs.ts 的「账户与模型」组一致）。 */
 export type LoginManagerTarget = "openai" | "relay" | "cloud";
@@ -67,15 +68,12 @@ export function LoginManagerModal({ onNavigate, onClose, targets }: {
 
   /* Esc 关闭 + 焦点归还（与侧栏教程弹窗同一套口径：打开时把焦点送进来，
      关闭时还回触发它的那个按钮，键盘用户不会"焦点掉回 body"）。 */
+  useEscapeLayer(true, () => onClose());
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
     firstRef.current?.focus();
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
+      /* Esc 交给全局 ESC 栈（只关最上层）—— 这里只管 Tab 焦点陷阱。 */
       /* Tab 焦点陷阱：`aria-modal` 承诺「焦点只在这个对话框里」——
          不拦 Tab 的话焦点会跑到背后的侧栏/消息区，键盘用户会「消失」在弹窗外。 */
       if (event.key !== "Tab") return;

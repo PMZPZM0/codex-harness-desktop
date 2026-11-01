@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FolderOpen, FolderPlus, Keyboard, X, Loader2, ChevronRight } from "lucide-react";
+import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 type Option = { id: "open" | "new" | "path"; title: string; desc: string; Icon: typeof FolderOpen };
 const OPTIONS: Option[] = [
@@ -44,11 +45,14 @@ export function NewProjectDialog({ open, onClose, onCreate }: {
     setMode("choose"); setParentDir(""); setFolderName(""); setPathInput(""); setError(""); setBusy(false);
     const prev = document.activeElement as HTMLElement | null;
     firstRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); if (modeRef.current === "choose") onCloseRef.current(); else { setMode("choose"); setError(""); } } };
-    window.addEventListener("keydown", onKey, true);
-    return () => { window.removeEventListener("keydown", onKey, true); prev?.focus?.(); };
+    return () => { prev?.focus?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）；"选目录"步骤里 Esc 先退回选择页。 */
+  useEscapeLayer(open, () => {
+    if (modeRef.current === "choose") onCloseRef.current();
+    else { setMode("choose"); setError(""); }
+  });
 
   if (!open) return null;
 

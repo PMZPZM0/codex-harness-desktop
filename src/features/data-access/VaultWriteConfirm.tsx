@@ -12,22 +12,14 @@ import { useEffect, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { KeyRound, ShieldAlert, X } from "lucide-react";
 import { currentVaultWrite, settleVaultWrite, subscribeVaultWrite } from "./vault-write-gate";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export function VaultWriteConfirm() {
   const pending = useSyncExternalStore(subscribeVaultWrite, currentVaultWrite, () => null);
 
   /* Esc = 取消（与其它弹窗一致；这里 capture 掉，别让 Esc 顺带关掉背后的会话面板） */
-  useEffect(() => {
-    if (!pending) return;
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.preventDefault();
-      event.stopPropagation();
-      settleVaultWrite(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [pending]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）。 */
+  useEscapeLayer(Boolean(pending), () => settleVaultWrite(false));
 
   if (!pending) return null;
   const { draft } = pending;

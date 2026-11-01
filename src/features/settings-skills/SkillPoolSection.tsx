@@ -23,6 +23,7 @@ import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { SearchField, ToggleSwitch } from "../../components/SettingsWidgets";
 import { CJK_TEXT_RE, SKILL_ZH_NOTES } from "../app-view/constants";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 type PoolSkill = { name: string; globalDisabled: boolean; projectDisabled: boolean; active: boolean };
 
@@ -44,6 +45,7 @@ function basename(cwd: string): string {
 }
 
 export function SkillPoolSection(props: { projects?: [string, unknown][]; onNotice?: (message: string) => void; open?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean }) {
+  useEscapeLayer(menuOpen, () => setMenuOpen(false));
   const { projects, onNotice } = props;
   /* 10-30：open 可由父级（技能页工具栏那颗按钮）控制；hideTrigger = 不再自带「共享技能池」触发条。 */
   const [innerOpen, setInnerOpen] = useState(false);
@@ -87,10 +89,8 @@ export function SkillPoolSection(props: { projects?: [string, unknown][]; onNoti
       const node = event.target;
       if (!(node instanceof Node) || !pickerRef.current?.contains(node)) setMenuOpen(false);
     };
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") setMenuOpen(false); };
     document.addEventListener("pointerdown", close, true);
-    document.addEventListener("keydown", onKeyDown, true);
-    return () => { document.removeEventListener("pointerdown", close, true); document.removeEventListener("keydown", onKeyDown, true); };
+    return () => { document.removeEventListener("pointerdown", close, true); };
   }, [menuOpen]);
 
   /* ⛔ 每次拨动都要回执（10-06 用户：「很多开发都没有通知提醒，全部检查一下」）。

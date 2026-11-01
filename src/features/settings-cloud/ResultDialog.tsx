@@ -8,6 +8,7 @@
  */
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export type ResultTone = "ok" | "err" | "info";
 
@@ -26,11 +27,8 @@ export function ResultDialog(props: {
 }) {
   const { title, tone, message, details, actions, onClose } = props;
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）。 */
+  useEscapeLayer(true, () => onClose());
 
   const accent = tone === "ok" ? "#1a7f37" : tone === "err" ? "#c0392b" : "#6a6a64";
   const soft = tone === "ok" ? "#e8f5ec" : tone === "err" ? "#fdecea" : "#fafaf8";
