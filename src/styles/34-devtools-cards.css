@@ -197,3 +197,7 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .devtools-group > .devtools-batch { order: 90; margin-top: 4px; }
 .devtools-group > .devtools-batch .primary-setting,
 .devtools-group > .devtools-batch .secondary-setting { min-width: 140px; }
+
+/* ⛔ 11-01 用户令「鼠标在右边，按键放右边」：一键按钮靠右对齐，不再与左对齐标题撞在一起。 */
+.devtools-batch { display: flex; align-items: center; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.devtools-batch-text { margin-right: auto; }

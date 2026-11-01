@@ -81,8 +81,8 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
       <EgoLiteCard onNotice={setNotice} />
       {/* 新手模式：一键装完所有可下载工具（串行、可取消、带进度与结果提示） */}
       {(() => {
-        const installables = devRuntimes.filter((r: any) => !r.builtIn && r.kind !== "guide" && !r.installed);
-        const removables = devRuntimes.filter((r: any) => !r.builtIn && r.kind !== "guide" && r.installed);
+        const installables = devRuntimes.filter((r: any) => !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && !r.installed);
+        const removables = devRuntimes.filter((r: any) => !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && r.installed);
         if (!installables.length && !removables.length) return null;
         return (
           <div className="devtools-batch">
@@ -132,8 +132,8 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
           return <div className="devtools-group" key={g.key}>
             {/* 分类级一键：只对该分类下的可下载项生效（内置/系统级不算） */}
             {(() => {
-              const inst = items.filter((r: any) => !r.builtIn && r.kind !== "guide" && !r.installed);
-              const rem = items.filter((r: any) => !r.builtIn && r.kind !== "guide" && r.installed);
+              const inst = items.filter((r: any) => !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && !r.installed);
+              const rem = items.filter((r: any) => !r.builtIn && !r.bundled && !r.noUninstall && r.kind !== "guide" && r.installed);
               if (!inst.length && !rem.length) return null;
               return (
                 <div className="devtools-batch">
