@@ -13,7 +13,7 @@
  *    ⇒ 不读 main 的任何值，被 main.ts 顶部 import 时不存在「读到未初始化常量」的时序问题。
  */
 import path from "node:path";
-import { existsSync, readdirSync, rmSync, watch as watchFs } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, watch as watchFs } from "node:fs";
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { app } from "electron";
 import type { AppSettings } from "../app-settings";
@@ -445,6 +445,9 @@ async function restartServerWhenIdle(id: string) {
 let toolsWatchDebounce: NodeJS.Timeout | null = null;
 for (const toolsDir of toolRootsRead()) {
   try {
+    /* ⛔ 11-01 实测：全新 userData（新装 / 清档 / 隔离 profile）下 tools 目录还不存在，
+       fs.watch 直接抛 ENOENT，日志刷一屏错误，看起来像"应用起不来"。先把目录建出来。 */
+    mkdirSync(toolsDir, { recursive: true });
     watchFs(toolsDir, { recursive: true }, () => {
       if (toolsWatchDebounce) clearTimeout(toolsWatchDebounce);
       // 去抖 1.5s：安装是「下载 zip → 解压很多文件」的高频写入，等写入稳定后再刷新一次

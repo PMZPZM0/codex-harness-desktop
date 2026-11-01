@@ -15,7 +15,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
-import { pickSessionAlias, supervisorIdOf, validateAlias, aliasMeaningOf } from "../src/lib/session-names.mjs";
+import { ALIAS_POOL, pickSessionAlias, supervisorIdOf, validateAlias, aliasMeaningOf } from "../src/lib/session-names.mjs";
 import { createSerialQueue } from "../src/lib/serial-queue.mjs";
 
 export type SessionAliasRecord = {
@@ -45,6 +45,7 @@ async function load(): Promise<Record<string, SessionAliasRecord>> {
   })();
   await loading;
   loading = null;
+  if (cache && migrateLegacyAliases(cache)) void flushSessionAliases();
   return cache ?? {};
 }
 
@@ -54,6 +55,31 @@ async function load(): Promise<Record<string, SessionAliasRecord>> {
  *   （改名是人手点的，新建会话一天几十次），一次全量 JSON 写盘（几百字节~几 KB）不值得为它多两个机制。
  *   写失败不影响内存态（下一次写会带上全部记录）。
  */
+/**
+ * 一次性迁移（11-01 用户：「笔名最后不要用人名啊，这样会被投诉的」）。
+ * 旧池是「山水/姓名感」两字（林钟 / 青崖…），新池是器物词（快刀 / 明镜 / 稳舟…）。
+ * ⇒ 记录里的名字**不在新池**且**不是用户自改的**，重新分配一个；userEdited 的一律保留
+ *   （那是用户自己起的，不能悄悄改）。
+ * ⛔ 只改记录、不在这里发 thread/name/set：会话名的落地在主进程建会话 / 打开会话那侧，
+ *    本模块不依赖引擎连接（导入 server 会绕出循环）。
+ */
+function migrateLegacyAliases(map: Record<string, SessionAliasRecord>): boolean {
+  const pool = new Set(ALIAS_POOL);
+  const used = new Set(Object.values(map).map((record) => record?.alias).filter(Boolean));
+  let changed = false;
+  for (const [id, record] of Object.entries(map)) {
+    if (!record?.alias || record.userEdited) continue;
+    if (pool.has(record.alias)) continue;
+    used.delete(record.alias);
+    const next = pickSessionAlias(id, used);
+    if (!next) continue;
+    used.add(next);
+    map[id] = { ...record, alias: next, updatedAt: Date.now() };
+    changed = true;
+  }
+  return changed;
+}
+
 export async function flushSessionAliases(): Promise<void> {
   if (!cache) return;
   try { await fs.writeFile(fileOf(), JSON.stringify(cache, null, 2), "utf8"); } catch { /* 写失败不影响内存态 */ }

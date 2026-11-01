@@ -149,6 +149,7 @@ import { CardStatusIcon, Spinner, useCardOpen, type ActionStatus } from "../../.
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../../lib/user-refs";
 import { getEntityTagState, openTagEditor } from "../../../../../../lib/entity-tags.mjs";
 import { aliasLabelOf, getAliasState, setAliasSnapshot, subscribeAliases } from "../../../../../../features/session-alias/alias-store.mjs";
+import { badgeCycleIndexOf, cycleThreadBadge, getBadgeCycleState, subscribeBadgeCycle } from "../../../../../../lib/thread-badge-cycle.mjs";
 import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../../../lib/thread-row-colors.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
@@ -162,6 +163,9 @@ export function usePart02b12(bag: Bag) {
      ⇒ 整个界面被 ErrorBoundary 兜成「界面发生错误」。
      ⇒ 订阅在 hook 顶层做一次，`renderThreadRow` 只读闭包里的快照（快照变 ⇒ 本 hook 重渲染 ⇒ 闭包更新）。 */
   const aliasState = useSyncExternalStore(subscribeAliases, getAliasState);
+  /* ⛔ 11-01 用户令：「标签最多只能显示一个，多了在标签上加一个切换功能」——
+     下标走独立 store，订阅**只能在这里做一次**（renderThreadRow 是普通函数，不是组件）。 */
+  const badgeCycle = useSyncExternalStore(subscribeBadgeCycle, getBadgeCycleState);
   // 会话行「等待用户操作」动态徽标：侧栏对应会话上亮起需审批/需选择/需确认字样
   // 优先级：需审批 > 需选择 > 需确认；审批请求缺 threadId 时归当前会话
   const threadAttention = useMemo(() => {
@@ -273,19 +277,33 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     /* 10-31 用户令：标签最多一个 —— 已经带着「中枢 / 专家 / 专家团 / 调度」这类身份徽标的会话
        **不再给加自定义标签**（标签列里每种身份只占一格）；只有普通会话能加自定义标签。
        ⛔ 已有存量标签不删数据，只是不再渲染 / 不再给编辑入口。 */
-    const hasIdentityBadge = Boolean(sourceBadge || fallbackTeamBadge);
+    /* ⛔ 10-31 审查补：笔名也算"已占位" —— 否则一个既有笔名、又没有身份徽标的普通会话
+       会同时显示「笔名 + 自定义标签」两个标签，与用户「标签就一个」的要求不符。 */
+    const hasIdentityBadge = Boolean(aliasLabel || sourceBadge || fallbackTeamBadge);
     const customTag = hasIdentityBadge ? undefined : getEntityTagState().threads[entry.id];
     /* ⛔ 10-31 用户令（对照截图）：「这个标签子会话为啥会重复，保留最左边一个就行」——
        **子会话行**（variant=member）只保留一个标签：有笔名就显示笔名（最左），没笔名才退回首身份徽标；
        调度进度徽标 / 额外徽标不再叠加 —— "它被谁派出、跑到哪一步"在缩进的父行与展开块里已经说过。
        顶层行（普通会话 / 簇头）维持原样：笔名 + 身份徽标是两件不同的事，用户没让删。 */
     const oneBadge = variant === "member";
-    const identityBadge = aliasLabel
-      ? <span className="thread-alias-badge" title={aliasMeaning ? `笔名：${aliasLabel} —— ${aliasMeaning}` : `笔名：${aliasLabel}`}>{aliasLabel}</span>
-      : null;
     const secondaryBadge = oneBadge ? null : (sourceBadge || fallbackTeamBadge);
+    /* ⛔ 11-01 用户令：「直接改会话名字，而不是在前面加一个什么主管标签」——
+       笔名不再做成徽标（它已经是标题本身），徽标位只留给身份 / 状态。 */
+    /* 标签集合：**最多只渲染一个**，其余靠点击标签循环（顺序 = 先提醒、再身份、再附加）。 */
+    const rowBadges: ReactNode[] = [];
+    if (attentionLabel) rowBadges.push(<span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>);
+    if (entry.rolloutMissing) rowBadges.push(<span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>);
+    if (secondaryBadge) rowBadges.push(<span className={`thread-source-badge tone-${secondaryBadge.tone}`} title={`来源：${secondaryBadge.label}`}>{secondaryBadge.label}</span>);
+    if (customTag) rowBadges.push(<span className="entity-tag thread-custom-tag" style={{ "--tag-color": customTag.color } as any} title={`标签：${customTag.text}`}>{customTag.text}</span>);
+    if (!oneBadge && bag.delegateRecords[entry.id]) rowBadges.push(<DispatchBadge record={bag.delegateRecords[entry.id]} />);
+    if (!oneBadge && extras?.badge) rowBadges.push(extras.badge);
+    const badgeIndex = badgeCycleIndexOf(badgeCycle, entry.id, rowBadges.length);
+    const shownBadge = rowBadges[badgeIndex] ?? null;
     /* 10-31 用户令：会话行可自选底色 —— 未选中浅色常驻、选中后稍深一档。 */
     const rowColor = getThreadRowColors().colors[entry.id] ?? "";
+    /* ⛔ 11-01 用户令：「会话选项名字…不要跟着用户首个消息内容去会话名字」——
+       有笔名就**用笔名当标题**（笔名即名），没有笔名才回落"会话名 / 首条消息预览"。 */
+    const titleText = aliasLabel || displayTitle;
     /* 10-25 用户令：时间常驻行尾，但**运行中不展示**（尾部位置让给转圈/加载指示）。 */
     const showRowTime = !running && bag.openingThread !== entry.id;
     return (
@@ -296,7 +314,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击修改任务名称"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><span className="thread-row-tags">{identityBadge}{secondaryBadge && <span className={`thread-source-badge tone-${secondaryBadge.tone}`} title={`来源：${secondaryBadge.label}`}>{secondaryBadge.label}</span>}{customTag && <span className="entity-tag thread-custom-tag" style={{ "--tag-color": customTag.color } as any} title={`标签：${customTag.text}`}>{customTag.text}</span>}{!oneBadge && bag.delegateRecords[entry.id] ? <DispatchBadge record={bag.delegateRecords[entry.id]} /> : null}{!oneBadge && extras?.badge}{entry.rolloutMissing && <span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>}{attentionLabel && <span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>}</span><span className="thread-row-name" title={rawTitle}>{displayTitle}</span></span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void bag.openAppPrompt("修改任务名称", cleanThreadDisplayTitle(entry.name, { preview: entry.preview })).then((next) => { if (next?.trim()) void bag.renameThread(entry.id, next); }); }}><span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined} title={rowBadges.length > 1 ? `点击切换标签（${badgeIndex + 1}/${rowBadges.length}）` : undefined}>{shownBadge}{rowBadges.length > 1 && <span className="thread-tag-cycle" title={`点击切换标签（${badgeIndex + 1}/${rowBadges.length}）`} aria-hidden>+{rowBadges.length - 1}</span>}</span><span className="thread-row-name" title={titleText}>{titleText}</span></span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>

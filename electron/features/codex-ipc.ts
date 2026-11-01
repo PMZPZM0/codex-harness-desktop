@@ -285,7 +285,15 @@ export const codexFeature = defineFeature<null>({
           /* ★ 10-31 用户令：新建会话**自动取一个两字笔名**（主会话 = 「XX主管」，用户 = 总经理）。
              ⛔ 主进程自建的会话（delegation / teams / runner）不经过这里，它们在自家建会话处
                 另外调 `ensureSessionAlias(threadId, originThreadId)`（带上上级）。 */
-          void ensureSessionAlias(String(r.thread.id)).catch(() => undefined);
+          /* ⛔ 11-01 用户令「直接改会话名字，而不是在前面加一个主管标签」——
+             主会话拿到笔名后**直接把会话名设成笔名**（引擎 name），侧栏标题就与首条消息脱钩了。
+             ⛔ 被调度的子会话不在这里设名（它有"调度·角色"的命名，且带上级关系）。 */
+          void ensureSessionAlias(String(r.thread.id))
+            .then(async (record) => {
+              if (!record?.alias || record.supervisorThreadId) return;
+              await server.request("thread/name/set", { threadId: String(r.thread.id), name: record.alias }).catch(() => undefined);
+            })
+            .catch(() => undefined);
         } else if (method === "thread/resume" && r?.thread?.id) {
           // 零阻塞宿主（09-12）：rollout 增强解析也在 worker 线程里，失败就退化为「不增强」。
           const __t0 = performance.now();

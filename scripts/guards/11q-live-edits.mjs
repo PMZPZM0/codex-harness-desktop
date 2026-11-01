@@ -376,8 +376,11 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   const afterSkip = names.pickSessionAlias("x", taken5);
   ok(afterSkip && !taken5.includes(afterSkip) && afterSkip === names.pickSessionAlias("x", taken5),
     "名字被占用时顺延探测（⛔ 不会撞名，且结果仍然确定）");
-  ok(names.supervisorIdOf("青崖") === "青崖主管" && names.supervisorIdOf("") === "",
-    "主会话 ID = 笔名 +「主管」；空笔名不造出孤零零的「主管」");
+  /* ⛔ 11-01 用户令：「不要用人名，会被投诉」「直接改会话名字，而不是加一个主管标签」 */
+  ok(names.supervisorIdOf("快刀") === "快刀" && names.supervisorIdOf("") === "" && names.SUPERVISOR_SUFFIX === "",
+    "会话显示名 = 笔名本身（⛔ 不再拼「主管」后缀；11-01 用户嫌它像人名+标签）");
+  ok(!names.ALIAS_POOL.some((alias) => /[李王张刘陈杨赵黄周吴徐孙马朱胡林郭何高罗郑梁谢宋唐许韩冯邓曹彭曾萧田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤]/.test(alias)),
+    "笔名池不含姓氏字（⛔ 上一版「林钟/青崖」被判像人名 —— 现在全是器物词，如「快刀 / 明镜 / 稳舟」）");
   ok(names.USER_TITLE === "总经理", "用户职级 = 总经理");
   ok(names.validateAlias("青", []).ok === false && names.validateAlias("abc", []).ok === false && names.validateAlias("青崖", ["青崖"]).ok === false,
     "改名校验：必须两字中文、且不与别人重名");
@@ -400,8 +403,16 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/setSessionAliasEmitter\(/.test(read("electron/features/boot.ts")),
     "改名后广播（⛔ 不广播 = 改完主管名，子会话还显示旧名字）");
   const rowSrc = read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx");
-  ok(/thread-alias-badge/.test(rowSrc) && /改笔名/.test(rowSrc) && /sessionAliasSet/.test(rowSrc),
-    "侧栏显示笔名 + 菜单可改（改完用返回的 snapshot 立刻刷新）");
+  ok(/const titleText = aliasLabel \|\| displayTitle/.test(rowSrc) && /\{titleText\}<\/span>/.test(rowSrc)
+    && !/thread-alias-badge\"/.test(rowSrc),
+    "标题 = 笔名（⛔ 不再跟首条用户消息走，也不在名字前挂「主管」徽标）");
+  ok(/cycleThreadBadge\(entry\.id, rowBadges\.length\)/.test(rowSrc)
+    && /const shownBadge = rowBadges\[badgeIndex\] \?\? null/.test(rowSrc)
+    && /thread-tag-cycle/.test(rowSrc),
+    "标签位最多一个 + 点击循环（11-01 用户令；⛔ 多标签并排又会挤掉标题）");
+  ok(/const badgeCycle = useSyncExternalStore\(subscribeBadgeCycle/.test(rowSrc)
+    && rowSrc.indexOf("const badgeCycle = useSyncExternalStore") < rowSrc.indexOf("const renderThreadRow"),
+    "标签切换下标在 hook 顶层订阅（⛔ 写进 renderThreadRow 就是 React #310 白屏）");
   ok(/subscribeAliases/.test(read("src/features/shared/UserMessageView.tsx")),
     "上级气泡订阅笔名快照（父会话改名 ⇒ 子会话这里当场变）");
 

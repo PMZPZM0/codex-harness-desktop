@@ -345,12 +345,15 @@ bag.unarchiveThread = unarchiveThread as typeof bag.unarchiveThread;
     bag.threadCacheRef.current.delete(id);
     bag.threadProviderRef.current.delete(id);
     bag.setThreads((current) => current.filter((entry) => entry.id !== id));
+    /* 运行态标记**无条件**清（10-31 审查）：原来只在"被删的就是当前会话"时清 ——
+       而级联删掉的调度子会话几乎从来不是当前会话 ⇒ runningThreadIds 里留永久垃圾，
+       且它被删除时若还在跑，主进程那边已经不会再发 turn/completed 来收尾。 */
+    bag.markThreadStopped(id);
     if (bag.threadRef.current?.id === id) {
       bag.threadRef.current = null;
       bag.setThread(null);
       bag.setOptimisticInput(null);
       bag.setActiveTurnId(null);
-      bag.markThreadStopped(id);
       bag.setWorkStartedAt(null);
       bag.setSystemEvents([]);
       bag.setPlanSteps([]);

@@ -34,7 +34,7 @@ const profile = path.resolve(".workbuddy/tmp/verifyprof");
 fs.rmSync(profile, { recursive: true, force: true });
 fs.mkdirSync(profile, { recursive: true });
 
-const env = { ...process.env, APPDATA: profile, CODEX_HARNESS_DEBUG_PORT: String(port) };
+const env = { ...process.env, CODEX_HARNESS_DEBUG_PORT: String(port) };
 for (const key of ["ELECTRON_RUN_AS_NODE", "NODE_OPTIONS", "http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"]) delete env[key];
 
 const child = spawn(electronPath, [".", `--user-data-dir=${profile}`], { cwd: process.cwd(), env, stdio: ["ignore", "pipe", "pipe"] });
@@ -116,7 +116,7 @@ const probe = await evaluate(`(() => ({
   bodyText: (document.body.innerText || '').slice(0, 160).replace(/\\n+/g, ' | '),
 }))()`);
 
-const reactNoise = [...errors, ...consoleErrors].filter((line) => /React|Minified React error|#310|#300|Cannot read|is not a function/i.test(line));const fail = [];
+const reactNoise = [...errors, ...consoleErrors].filter((line) => /React|Minified React error|#\d{3}\b|TypeError|ReferenceError|RangeError|is not a function|is not defined|Cannot read|undefined is not/i.test(line));const fail = [];
 if (probe?.boundary) fail.push("ErrorBoundary 遮罩出现（界面已经崩了）");
 if (reactNoise.length) fail.push(`运行时报错 ${reactNoise.length} 条`);
 if (!probe?.shell && (probe?.rootChildren ?? 0) === 0) fail.push("#root 空（主界面没渲染）");
