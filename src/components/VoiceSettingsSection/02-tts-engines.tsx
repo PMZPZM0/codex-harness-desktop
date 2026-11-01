@@ -9,7 +9,7 @@
  *     点了给**明确说明**（10-20 教训：灰按钮点了没反应是最差体验）。
  *   · 优势/劣势必须写**实测数字**，不写"更快更好"这种空话。
  */
-import { Check, Download, LoaderCircle, Sparkles, Trash2, TriangleAlert } from "lucide-react";
+import { Check, Download, LoaderCircle, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Settings } from "../VoiceSettingsSection";
 
@@ -157,9 +157,11 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         setBusy(null);
         void refresh();
         if (!event.ok) {
-          const msg = `下载失败：${event.error ?? "未知原因"}`;
-          onNotice(msg);
-          setFlash({ pack: target, kind: "err", text: msg });
+          /* 用户主动取消 ⇒ 中性提示，不弹红色「下载失败」（abort 也算失败，但那不是故障）。 */
+          const cancelled = /取消|abort|cancel/i.test(String(event.error ?? ""));
+          const msg = cancelled ? "已取消下载" : `下载失败：${event.error ?? "未知原因"}`;
+          if (!cancelled) onNotice(msg);
+          setFlash({ pack: target, kind: cancelled ? "info" : "err", text: msg });
         } else {
           const msg = target === "kokoro" ? "Kokoro 已就绪，可以点「用它」切换" : "情感语音模型已下载（还缺推理运行时，暂不能合成）";
           onNotice(msg);
@@ -175,8 +177,18 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     return id === "kokoro" || id === "emotivoice" ? id : "vits";
   }, [settings]);
 
-  const install = useCallback(async (id: PackId) => {
-    if (id === "vits") {
+  /* ⛔ 11-01 用户实测「取消不了」：主进程早就有 `voice:tts-pack-cancel`（abort 掉下载用的
+     AbortController），但界面从来没接 —— 卡片上只有「下载中…」没有取消入口；而上面那张
+     基础模型卡片的「取消下载」调的是 `voiceModelsCancel`（只取消基础语音模型），
+     点多少次都停不掉 TTS 的下载。⇒ 这里补一个真取消。 */
+  const cancelPack = useCallback(async (id: PackId) => {
+    try { await window.codex.voiceTtsPackCancel(); } catch { /* 通道失败也不该把界面卡在"下载中" */ }
+    setBusy(null);
+    setProgress((p) => (p && p.pack === id ? null : p));
+    setFlash({ pack: id, kind: "info", text: "已取消下载" });
+  }, []);
+
+  const install = useCallback(async (id: PackId) => {    if (id === "vits") {
       onNotice("轻量播报跟着基础语音模型一起装：到上方「语音模型」区下载/导入基础模型即可");
       return;
     }
@@ -353,6 +365,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                     <div className="voice-engine-progress-line">
                       <small>{progress?.message ?? "下载中…"}</small>
                       <b>{(progress?.percent ?? -1) >= 0 ? `${Math.round(progress!.percent)}%` : "…"}</b>
+                      {/* ⛔ 11-01：取消入口必须在**这一张卡**上（它才知道取消哪个包）。 */}
+                      <button type="button" className="voice-engine-cancel" onClick={() => void cancelPack(engine.id)}>
+                        <X size={12} />取消
+                      </button>
                     </div>
                   </div>
                 )}

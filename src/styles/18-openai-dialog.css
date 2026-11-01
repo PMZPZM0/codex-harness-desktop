@@ -1955,6 +1955,14 @@
 }
 .voice-engine-progress-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .voice-engine-progress-line b { font-size: 11px; color: var(--text); font-variant-numeric: tabular-nums; }
+/* ⛔ 11-01 用户实测「取消不了」：取消入口跟着进度条走，只出现在**正在下载的那张卡**上。 */
+.voice-engine-cancel {
+  display: inline-flex; align-items: center; gap: 4px; flex: none;
+  margin-left: auto; padding: 2px 8px; border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  background: transparent; color: var(--muted); font-size: 11px; cursor: pointer;
+}
+.voice-engine-cancel:hover { color: var(--text); border-color: color-mix(in srgb, var(--text) 34%, transparent); }
 
 /* ⛔⛔ 10-26 用户实测：「弄成自适应长的卡片吧，不要这种小的」——
    原来 repeat(auto-fit, minmax(210px,1fr)) 在 600px 面板里排成三列，每列 ~190px，

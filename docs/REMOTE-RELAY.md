@@ -31,7 +31,7 @@ relay-gateway.mjs（服务器 127.0.0.1:18700，systemd: relay-gateway）
 
 - APK 扫码后**连路径前缀一起存**（`https://域名/t/<设备ID>`）；旧版只存 origin，会在中转路径下 404。
 - 手机页所有接口都拼 `PATH_PREFIX`（`/t/<设备ID>`），直连（局域网/旧固定地址）时前缀为空。
-- 安装包可公开下载：手机浏览器打开 `https://remote.ppz123.asia/apk`（网关 302 到 GitHub Release）。
+- 安装包可公开下载：手机浏览器打开 `https://remote.ppz123.asia/apk`（网关按  从**各自仓库**的 Release 镜像链拉取并缓存后直发：桌面版/云助手=本仓 ，PPcode=）。
 
 ## 服务端部署
 

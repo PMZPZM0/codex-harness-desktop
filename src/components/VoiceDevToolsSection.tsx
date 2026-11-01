@@ -117,11 +117,18 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onN
   useEffect(() => {
     refresh();
     const unsub = window.codex.onVoiceEvent((event: any) => {
+      /* ⛔⛔ 11-01 用户实测：「下面下载，上面也跟着走进度条，而且取消不了」。
+         根因：基础模型自己的下载事件**不带 target**，而这里只特判了 zipvoice，
+         于是 kokoro / emotivoice / kws 的进度全被写进「基础模型」的状态 ——
+         上面那张卡开始显示「正在下载 Kokoro…」，它的「取消下载」又调的是
+         `voiceModelsCancel`（只取消基础模型），点多少次都停不掉那个 TTS 下载。
+         ⇒ 判据反过来：**只有不带 target 的事件才属于基础模型**；带 target 的一律不管。 */
       if (event?.type === "download") {
         if (event.target === "zipvoice") {
           setZipDownloading((d) => ({ percent: Number(event.percent ?? -1), message: String(event.message ?? ""), mode: d?.mode ?? "download" }));
           return;
         }
+        if (event.target) return;
         setDownloading((d) => ({ percent: Number(event.percent ?? -1), message: String(event.message ?? ""), mode: d?.mode ?? "download" }));
       }
       if (event?.type === "downloadDone") {
@@ -132,6 +139,7 @@ export default function VoiceDevToolsSection({ onNotice, only, helpSlot }: { onN
           else onNotice(`音色克隆模型安装失败：${event.error ?? "未知"}`);
           return;
         }
+        if (event.target) return;
         setDownloading(null);
         refresh();
         if (event.ok) onNotice("语音模型就绪");

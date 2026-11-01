@@ -144,9 +144,13 @@ export function zipvoiceReady(modelsRoot: string): boolean {
 export const KOKORO_DIR = "kokoro-int8-multi-lang-v1_1";
 export const KOKORO_ARCHIVE = {
   dir: KOKORO_DIR,
+  /* ⛔⛔ 11-01：上游在 2026-10-26 **重新上传**过这个包，文件内容变了
+     （sha256 a1e94694… → 259c9c8b…，体积 147,031,220 → 147,052,523）。
+     旧值会让下载跑完、sha256 对不上 ⇒ 用户看到「校验失败」，且重试永远失败。
+     判据来源：GitHub release asset 的 digest 字段（比下载 147MB 再算更快）。 */
   url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2",
-  sha256: "a1e94694776049035c4f2c6529f003aaece993c76aae9a78995831c3c4dcafc6",
-  bytes: 147_031_220,
+  sha256: "259c9c8bc906d6078e4e0570421885dabb68b539c2f970fcbb890a58eeaf3e9c",
+  bytes: 147_052_523,
   /** 解压后必须存在的关键文件（就绪判定用；体积为实测字节数） */
   readyFiles: ["model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-zh.txt"],
   /** 最小合理体积：实测 114,299,010 / 53,790,720 / 1,111 / 2,119,465 ⇒ 取 ~30% 挡半截 */
