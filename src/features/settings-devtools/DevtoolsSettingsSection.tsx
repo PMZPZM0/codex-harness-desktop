@@ -210,8 +210,6 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
             </div>
           ))}
         </div>
-        {/* 11-01 影视播放器（hls.js 按需加载）：对话里 Codex 也能用 media_preview 直接起播 */}
-        <MediaPlayerCard onNotice={setNotice} />
         {/* 10-08 迁移：语音模型 / 音色克隆模型的选择项已搬到「设置 → 语音通话」——
             用户要求语音相关的东西集中在一处（音色 / 模型 / 播报 / 语速同页）。
             ⛔ 这里只留一句指路，不要再留第二份渲染（同一份状态两处渲染 = 双真相源）。 */}

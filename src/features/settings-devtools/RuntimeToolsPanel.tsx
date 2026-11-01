@@ -14,6 +14,7 @@ import { AlertTriangle, ArrowDown, CircleCheck, Copy, ExternalLink, TerminalSqua
 import { Spinner } from "../../components/CardShell";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { EgoLiteCard } from "./EgoLiteCard";
+import { MediaPlayerCard } from "./MediaPlayerCard";
 import { isRemovable, runtimeGroupItems, type RuntimeBatch, type RuntimeGroup, type RuntimeRow } from "./runtime-groups";
 
 export type RuntimeToolsPanelProps = {
@@ -49,6 +50,8 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
     <div className="settings-section stack">
       {/* 浏览器自动化主通道：外部安装的 ego lite（每会话一个 TaskSpace；不随包内置） */}
       {group.key === "auto" ? <EgoLiteCard onNotice={setNotice} /> : null}
+      {/* 11-01 影视：放在「媒体与文档」分类里（与 FFmpeg / 文档转换同级），不挂页面 */}
+      {group.key === "media" ? <MediaPlayerCard onNotice={setNotice} /> : null}
 
       <div className="settings-subhead">
         {group.icon}{group.title}
