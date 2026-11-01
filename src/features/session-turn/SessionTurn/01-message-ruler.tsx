@@ -452,7 +452,16 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
              行数超过 9 才需要滚动裁切（那时才挂 is-scroll 做上下渐隐）。 */
           const panelH = Math.min(LENS_H, count * LENS_ROW + 8);
           const anchor = lens.top + lens.rowY + LENS_ROW / 2;      // 反解出指针锚点（轨道坐标）
-          const activeCenter = (active - from) * LENS_ROW + LENS_ROW / 2 + 4;
+          /* ⛔⛔ 11-01 用户（截图对照）：「上下留一大空白…人家这种 9 条填满，一目了然」。
+             根因：`activeCenter` 原来算成 `(active - from) × LENS_ROW + 13 + 4` —— 那个公式成立的前提是
+             `LENS_REACH === 4`（上下各 4 行 = 9 行窗口）。后来 REACH 为滑动余量改成 9，公式没跟着改
+             ⇒ 高亮行被推到 9×26≈234px 处，而面板只有 242px 高 ⇒ 高亮行挤到面板外，上方一大片空。
+             ⇒ 正解：**可见窗口整体夹住**（visible 行从 windowStart 起），高亮行在其中尽量居中；
+               到头/到尾时窗口贴边、高亮行跟着贴边 —— 这样永远有 9 条铺满，没有半屏空白。
+               （⛔ 别退回「高亮行恒居正中」：边界处那样会上下各空一半。） */
+          const visibleRows = Math.min(LENS_ROWS, marks.length);
+          const windowStart = Math.max(0, Math.min(active - Math.floor((visibleRows - 1) / 2), marks.length - visibleRows));
+          const activeCenter = (active - windowStart) * LENS_ROW + LENS_ROW / 2 + 4;
           const top = Math.min(Math.max(anchor - activeCenter, 4), Math.max(4, (lens.trackH || 0) - panelH - 4));
           const rowBase = activeCenter - LENS_ROW / 2;             // 高亮行的顶边（面板内坐标）
           return (

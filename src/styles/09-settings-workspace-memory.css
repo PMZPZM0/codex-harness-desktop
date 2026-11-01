@@ -1881,9 +1881,11 @@ button.search-box:hover {
 .backup-picker-meta { flex: none; color: var(--muted); font-size: 11px; }
 .backup-picker-empty { padding: 14px; text-align: center; color: var(--muted); font-size: 12px; }
 
-/* 行数装不下（超过可见 9 行）时才做上下渐隐裁切 —— 与 01-message-ruler 的 is-scroll 同源 */
+/* ⛔⛔ 11-01 用户第二次反馈「下面还有没加载出来的别切掉了」—— 渐隐（mask）本身就会把首尾行
+   切掉半截，缩到 10px 也照样糊。参考图的效果是**首尾完整可见**：面板高度已按
+   「9 行 + 上下各 4px 呼吸」由 JS 给好（.ruler-lens 的 height），不需要靠渐隐暗示「还有更多」；
+   溢出部分由 overflow:hidden 裁掉、滚轮照样能翻。
+   ⇒ 这条不再做遮罩，只保留 .is-scroll 类名（其它地方仍按它判断「要不要滚」）。 */
 .message-ruler .ruler-lens.is-scroll {
-  /* ⛔ 18px 会把首尾整行糊掉（12px 字号下一行 26px，18px 渐隐吃掉 2/3）⇒ 收到 10px：
-     只让边缘「虚一点」，不牺牲可读性。 */
-  mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+  mask-image: none;
 }
