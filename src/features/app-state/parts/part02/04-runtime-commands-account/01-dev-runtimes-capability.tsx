@@ -115,7 +115,7 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
   }, []);
 
 
-  async function installDevRuntime(id: string) {
+  async function installDevRuntime(id: string): Promise<boolean> {
     bag.setRuntimeInstalling(id);
     bag.setRuntimeProgress((current) => ({ ...current, [id]: "准备下载…" }));
     bag.setRuntimeModal({ id, name: bag.devRuntimes.find((r) => r.id === id)?.name ?? id, mode: "install", done: false, failed: false, error: "" });
@@ -140,23 +140,25 @@ bag.refreshCapabilities = refreshCapabilities as typeof bag.refreshCapabilities;
       if (result.cancelled) {
         bag.setRuntimeProgress((current) => ({ ...current, [id]: "已取消" }));
         bag.setNotice("已取消安装，未完成的下载已清理");
-        return;
+        return false;
       }
       // 同步能力总闸联动开关（桌面/浏览器自动化）与工具状态，安装后立即生效
       await Promise.all([bag.refreshSettingsResources(), bag.refreshToolsStatus()]);
       bag.setRuntimeModal((m) => m ? { ...m, done: true } : m);
       bag.setRuntimeProgress((current) => ({ ...current, [id]: "安装完成" }));
       bag.setNotice("开发工具安装成功，Codex 引擎已刷新");
+      return true;
     } catch (error: any) {
       // 完整报错原文进 runtimeModal（开发工具页弹「完整报错」弹窗）；toast 只发一行摘要
       bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: ipcErrorMessageOf(error) } : m);
       bag.setRuntimeProgress((current) => ({ ...current, [id]: `安装失败：${ipcErrorMessageOf(error)}` }));
       bag.setNotice(`开发工具安装失败：${ipcErrorMessageOf(error)}`);
+      return false;
     } finally {
       bag.setRuntimeInstalling(null);
     }
   }
-bag.installDevRuntime = installDevRuntime as typeof bag.installDevRuntime;
+bag.installDevRuntime = installDevRuntime as unknown as typeof bag.installDevRuntime;
 
 
   /** 取消下载（10-07 用户要求「取消后需清理临时文件并给出提示」）：
@@ -184,10 +186,10 @@ bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
 
 
 
-  async function uninstallDevRuntime(id: string) {
+  async function uninstallDevRuntime(id: string): Promise<boolean> {
     const spec = bag.devRuntimes.find((r) => r.id === id);
     // 内置 / 随包资源 / 系统级安装都不允许卸载（UI 也不出按钮，这里是第二道防线）
-    if (!spec || spec.builtIn || spec.noUninstall) return;
+    if (!spec || spec.builtIn || spec.noUninstall) return false;
     bag.setRuntimeInstalling(id);
     bag.setRuntimeUninstalling(id);
     bag.setRuntimeProgress((current) => ({ ...current, [id]: "正在卸载…" }));
@@ -199,10 +201,12 @@ bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
       bag.setRuntimeModal((m) => m ? { ...m, done: true } : m);
       bag.setRuntimeProgress((current) => ({ ...current, [id]: "卸载完成" }));
       bag.setNotice(`已卸载「${spec.name}」`);
+      return true;
     } catch (error: any) {
       bag.setRuntimeModal((m) => m ? { ...m, done: true, failed: true, error: ipcErrorMessageOf(error) } : m);
       bag.setRuntimeProgress((current) => ({ ...current, [id]: `卸载失败：${ipcErrorMessageOf(error)}` }));
       bag.setNotice(`卸载失败：${ipcErrorMessageOf(error)}`);
+      return false;
     } finally {
       bag.setRuntimeInstalling(null);
       bag.setRuntimeUninstalling(null);
@@ -214,7 +218,7 @@ bag.cancelDevRuntime = cancelDevRuntime as typeof bag.cancelDevRuntime;
       bag.refreshDevRuntimes();
     }
   }
-bag.uninstallDevRuntime = uninstallDevRuntime as typeof bag.uninstallDevRuntime;
+bag.uninstallDevRuntime = uninstallDevRuntime as unknown as typeof bag.uninstallDevRuntime;
 
 
   useEffect(() => { if (bag.settingsOpen) bag.refreshToolsStatus(); }, [bag.settingsOpen]);

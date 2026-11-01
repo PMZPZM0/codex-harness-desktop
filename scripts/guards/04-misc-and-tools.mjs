@@ -293,6 +293,19 @@ console.log(C.bold("\n【工具取消/卸载】10-07 重构的四条不变量"))
       "知识库 embedding 安装真响应取消（npm 子进程 kill + 模型下载 abort，取消后清半成品）"
     );
   }
+  /* ⛔ 11-01 用户实测「取消一次以后就装不了」：
+     · 半装目录（取消/失败留下）⇒ Miniconda 安装器直接报 Directory is not empty，必须清空再装；
+     · 安装器只拿到用户可写根 ⇒ 看不到随包里的 Python，文档转换误报「需要先安装 Python」。 */
+  {
+    const installerSrc31 = readFileSync(join(ROOT, "scripts", "install-runtimes.cjs"), "utf8");
+    (/目标目录不完整（缺 \$\{marker\}），清空后重装/.test(installerSrc31) && /fs\.rmSync\(destDir, \{ recursive: true, force: true \}\)/.test(installerSrc31) ? ok : fail)(
+      "Miniconda：残留半装目录先清空再装（否则安装器报 Directory is not empty，永远装不上）"
+    );
+    (/BUNDLED_TOOLS_ROOT/.test(drSrc3) && /function toolDir\(name\)/.test(installerSrc31)
+      && /installDocTools\(toolDir\("python"\)\)/.test(installerSrc31) ? ok : fail)(
+      "随包/下载两个工具根都参与解析（内置 Python 在随包根里也能被文档转换找到）"
+    );
+  }
   // ⑥ 通道账本：runtime 前缀 5 条（【2】只验 manifest 自洽，这里钉人读的账本别漏登记）
   (/prefix: "runtime", count: 7/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")) && /"runtime:cancel"/.test(readFileSync(join(ROOT, "electron", "ipc-registry.ts"), "utf8")))
     ? ok("ipc-registry runtime 账本 count=7（含 10-12 的 update-check/update）且含 runtime:cancel")
@@ -342,6 +355,11 @@ console.log(C.bold("\n【dtIA】开发工具页两级 IA 契约"));
   (/devtools-card-uninstall/.test(dtPage) && /confirmCardUninstall/.test(dtPage)
     && /runBatch\("uninstall", job\.list, job\.card\)/.test(dtPage) && /确认卸载/.test(dtPage) ? ok : fail)(
     "分类卡也有一键卸载（真删本地文件 —— 先弹确认，确认后才执行）"
+  );
+  /* ⛔ 11-01 用户实测「安装失败却在顶部报安装完成：成功 1/1」：install/uninstall 内部吞错，
+     批处理必须按**返回值**计数（false = 失败）。 */
+  (/succeeded === false/.test(dtPage) && /失败 \$\{failed\}/.test(dtPage) ? ok : fail)(
+    "批处理按返回的成败计数（失败不再报成「成功 N/N」）"
   );
   (/useState<RuntimeBatch>/.test(dtPage) && /batch: RuntimeBatch/.test(dtPanel) && !/useState<\{ kind: "install"/.test(dtPanel) ? ok : fail)(
     "⛔ 批处理状态只在页面级（弹窗卸载后循环还在跑，卡片上仍能看到进度与取消）"

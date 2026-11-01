@@ -73,20 +73,25 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     const progress = (i: number) => setBatch({ kind, done: i, total: list.length, id: list[i]?.id ?? "", name: list[i]?.name ?? "", card: cardKey });
     progress(0);
     let ok = 0;
+    let failed = 0;
     for (let i = 0; i < list.length; i += 1) {
       if (batchCancel.current) break;
       progress(i);
       try {
-        if (kind === "install") await installDevRuntime(list[i].id);
-        else await uninstallDevRuntime(list[i].id);
-        ok += 1;
-      } catch { /* 单项失败不中断整批 */ }
+        /* ⛔ 11-01 用户实测「安装失败却在顶部报安装完成：成功 1/1」：
+           install/uninstallDevRuntime 内部 catch 了错误、**不抛** ⇒ 这里必须按返回值计数。 */
+        const succeeded = kind === "install" ? await installDevRuntime(list[i].id) : await uninstallDevRuntime(list[i].id);
+        if (succeeded === false) failed += 1; else ok += 1;
+      } catch { failed += 1; /* 单项失败不中断整批 */ }
     }
     batchRunning.current = false;
     setBatch({ kind: null, done: 0, total: 0, id: "", name: "", card: "" });
     const cancelled = batchCancel.current;
     batchCancel.current = false;
-    setNotice(cancelled ? `已取消：完成 ${ok} / ${list.length}` : `${kind === "install" ? "安装" : "卸载"}完成：成功 ${ok} / ${list.length}`);
+    const label = kind === "install" ? "安装" : "卸载";
+    setNotice(cancelled
+      ? `已取消：完成 ${ok} / ${list.length}${failed ? `，失败 ${failed}` : ""}`
+      : `${label}完成：成功 ${ok} / ${list.length}${failed ? `，失败 ${failed}` : ""}`);
   };
   const cancelBatch = () => {
     batchCancel.current = true;

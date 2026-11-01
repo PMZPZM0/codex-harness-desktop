@@ -121,6 +121,15 @@ const WINLIBS_ZIP = "winlibs-x86_64-posix-seh-gcc-16.2.0-mingw-w64ucrt-14.0.0-r1
 const WINLIBS_URL = `https://github.com/brechtsanders/winlibs_mingw/releases/download/${WINLIBS_VERSION}/${WINLIBS_ZIP}`;
 
 const TOOLS = process.env.TOOLS_ROOT || path.join(__dirname, "..", "resources", "tools");
+/* ⛔ 11-01 用户实测「取消一次以后再也装不上」里的另一条：随包工具与下载工具**分属两个根**。
+   安装器只拿到 TOOLS_ROOT（用户可写根）⇒ 判断 Python 是否存在时永远看不到随包里的
+   `resources/tools/python`，点文档转换就报「需要先安装 Python」，而卡片上 Python 明明是就绪的。
+   主进程现在同时下发 BUNDLED_TOOLS_ROOT；这里按「可写根优先、随包根兜底」解析。 */
+const BUNDLED_TOOLS = process.env.BUNDLED_TOOLS_ROOT || path.join(__dirname, "..", "resources", "tools");
+function toolDir(name) {
+  const candidates = [path.join(TOOLS, name), path.join(BUNDLED_TOOLS, name)];
+  return candidates.find((dir) => fs.existsSync(dir)) || candidates[0];
+}
 const TMP = process.env.TEMP || process.env.TMP || os.tmpdir();
 const requested = new Set(process.argv.slice(2).filter((arg) => !arg.startsWith("--")));
 const want = (id) => requested.size === 0 || requested.has(id);
@@ -716,6 +725,14 @@ async function installMacBinary(label, destDir, name, sources) {
 async function installConda(destDir) {
   const marker = path.join(destDir, "Scripts", "conda.exe");
   if (fs.existsSync(marker)) { console.log(`[skip] miniconda already at ${marker}`); return; }
+  /* ⛔⛔ 11-01 用户实测：Miniconda 安装器遇到非空目录直接失败 ——
+     `Directory '…\\tools\\miniconda' is not empty, please choose a different location.`
+     上一次安装被取消 / 下到一半失败，就会永久留在「目录非空、marker 不存在」的状态（再也装不上）。
+     没有 conda.exe 就不算有效安装 ⇒ 先清空再装（这是本应用自己的 tools 目录）。 */
+  if (fs.existsSync(destDir)) {
+    console.log(`[miniconda] 目标目录不完整（缺 ${marker}），清空后重装：${destDir}`);
+    fs.rmSync(destDir, { recursive: true, force: true });
+  }
   const installer = path.join(TMP, `Miniconda3-${MINICONDA_VERSION}-Windows-x86_64.exe`);
   if (!fs.existsSync(installer) || fs.statSync(installer).size < 20 * 1024 * 1024) {
     console.log(`[miniconda] downloading ${MINICONDA_TUNA_URL}（官方站兜底）`);
@@ -906,7 +923,7 @@ async function main() {
   const nodeDir = path.join(TOOLS, "node");
   const psDir = path.join(TOOLS, "pwsh");
   const gitDir = path.join(TOOLS, "git");
-  const pythonDir = path.join(TOOLS, "python");
+  const pythonDir = toolDir("python");
   const ffmpegDir = path.join(TOOLS, "ffmpeg");
   const vscodeCliDir = path.join(TOOLS, "vscode-cli");
   const jqDir = path.join(TOOLS, "jq");
@@ -1110,7 +1127,7 @@ async function mainMac() {
   // 文档转换依赖：mac 侧的按需补装入口（默认已随上面的 pip 安装装好，这里给老用户补装/修复）。
   //  ⛔ 必须与 Windows 侧**对称存在**：预检【34】会比对两平台的安装表，只在一侧有的话，
   //    另一平台点「文档转换」卡片会静默什么都不装（用户以为装上了）。
-  if (want("markitdown")) await installDocTools(path.join(TOOLS, "python"));
+  if (want("markitdown")) await installDocTools(toolDir("python"));
   /* FFmpeg（mac）：**必须解压**，且走国内源（10-07 用户报「FFmpeg 不是国内源，太慢了，几十K」）。
      · ffmpeg 主源 = ffmpeg-static 的单文件构建（npmmirror 优先 → gh 加速 → 直连），
        兜底 = evermeet 的 zip（境外，慢但可用）。
@@ -1154,6 +1171,8 @@ async function mainMac() {
     const condaDir = path.join(TOOLS, "miniconda");
     if (fs.existsSync(path.join(condaDir, "bin", "conda"))) { console.log(`[skip] miniconda already at ${condaDir}`); }
     else {
+      /* ⛔ 与 Windows 侧同一条：残留的半装目录会让 `-b -p` 直接失败 ⇒ 先清空再装。 */
+      if (fs.existsSync(condaDir)) fs.rmSync(condaDir, { recursive: true, force: true });
       const mcName = `Miniconda3-py312_25.1.1-2-MacOSX-${arch === "arm64" ? "arm64" : "x86_64"}.sh`;
       const installer = path.join(TMP, mcName);
       // ⛔ 10-07：与 Windows 侧同一修法——清华镜像打头（国内直连官方站极慢 = 「miniconda

@@ -400,7 +400,7 @@ function runRuntimeInstaller(id: DevRuntimeId, script: string, args: string[], n
   return new Promise<void>((resolve, reject) => {
     const child = spawn(node, [script, ...args], {
       windowsHide: true,
-      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: userToolsRoot() || toolsRoot(), ...extraEnv },
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: node === process.execPath ? "1" : undefined, TOOLS_ROOT: userToolsRoot() || toolsRoot(), BUNDLED_TOOLS_ROOT: toolsRoot(), ...extraEnv },
     });
     trackRuntimeProc(id, child);
     let tail = "";
