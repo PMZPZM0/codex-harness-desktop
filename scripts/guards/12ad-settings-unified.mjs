@@ -323,6 +323,17 @@ if (replyStyleModule) {
 }
 ok(!/uc-style-options/.test(src("src/components/UserCenter.tsx")) && /STYLE_OPTIONS/.test(src("src/components/UserCenter.tsx")),
   "用户中心不再重复「回复风格」选择区（唯一入口在个性化页），风格标签回显保留");
+/* ⛔ 实测事故（11-01 用户截图）：风格设成「直击本质」后发消息，turn/start 把 essence 原样当
+   personality 发给引擎 ⇒ `unknown variant essence, expected none/friendly/pragmatic`。
+   判据：三处引擎入口（thread/start · turn/start · 专家团建会话）都必须过 enginePersonality。 */
+const enginePersonalitySends = [
+  "src/features/app-state/parts/part07/02-seg/02-team-sessions-skills.tsx",
+  "src/features/app-state/parts/part08/01-seg.tsx",
+  "src/features/app-state/parts/part08/02-seg/send.tsx",
+];
+const rawPersonality = enginePersonalitySends.filter((rel) => /personality:\s*bag\.personality\b/.test(read(rel)));
+ok(rawPersonality.length === 0 && enginePersonalitySends.every((rel) => /enginePersonality\(bag\.personality\)/.test(read(rel))),
+  `引擎入口下发 personality 一律过 enginePersonality（违规：${rawPersonality.join(" / ") || "无"}）`);
 const generalPage = pageSrc("general");
 ok(/语气自适应/.test(generalPage) && /ToggleSwitch/.test(generalPage)
   && /card-reply/.test(generalPage), "控制台「回复风格」卡里有语气自适应开关");

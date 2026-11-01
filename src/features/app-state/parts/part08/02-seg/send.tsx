@@ -4,6 +4,7 @@
  * ⛔ 原函数对宿主局部绑定的闭包 = 0（跨段依赖全走 bag）⇒ 只需补一个 `bag` 首参，函数体逐字照搬。
  * ⛔ 宿主里留同名薄壳转调，调用点与函数提升语义都不变。
  */
+import { enginePersonality } from "../../../../../lib/reply-style.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { attachmentToken, fileToken, promptFilePaths, shouldSavePastedTextAsFile, splitAttachmentSegments, stripAttachmentTokens } from "../../../../../lib/composer-attachments.mjs";
 import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider } from "../../../../../lib/provider-continuity.mjs";
@@ -505,7 +506,7 @@ export async function send(bag: Bag, event?: FormEvent) {
         input: sendInput,
         model: resolveStartModel(bag),
         effort: effectiveEffort,
-        personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+        personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
         // 审批档位逐回合下发（TurnStartParams.approvalPolicy，协议 schema 实证 09-06）：
         // 权限胶囊切「完全访问/never」后即使 resume 未及时生效，本条回合也按新档位审批
         approvalPolicy: bag.approvalPolicy,
@@ -618,7 +619,7 @@ export async function send(bag: Bag, event?: FormEvent) {
           input: sendInput,
           model: resolveStartModel(bag),
           effort: bag.effort || null,
-          personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+          personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
         });
         const hydratedTurn = hydrateTurnUserMessage(result.turn, sendInput);
         bag.optimisticTurnIdRef.current = hydratedTurn.id;
@@ -670,7 +671,7 @@ export async function send(bag: Bag, event?: FormEvent) {
             input: sendInput,
             model: resolveStartModel(bag),
             effort: bag.effort || null,
-            personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+            personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
           });
           bag.scheduleRateLimitRetry(retryThreadId, 1);
           return;
@@ -698,7 +699,7 @@ export async function send(bag: Bag, event?: FormEvent) {
             input: sendInput,
             model: fallbackModelId,
             effort: fallback,
-            personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+            personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
           };
           bag.showToast(
             `「${effortLabels[bag.effort] ?? bag.effort}」不被支持`,

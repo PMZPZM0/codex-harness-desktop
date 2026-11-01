@@ -6,6 +6,7 @@
  *    每个名字要么是本段刚声明的局部，要么走 bag（跨 part 用），要么由段末 return 交给组合根转交 App。
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
+import { enginePersonality } from "../../../../lib/reply-style.mjs";
 import { removeBossSessionId } from "../../../boss-group-view";
 /*指挥中枢的项目地址：⛔ **它自己的目录**，不是全局 workspace ——
    10-25 用户实测：「下面已经自动选了别的会话的项目地址」「每次指挥中枢都不要自动选择旧的会话项目地址」。
@@ -740,7 +741,7 @@ bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
       approvalPolicy: bag.approvalPolicy,
       sandbox: bag.sandbox,
       sandboxPolicy: sandboxPolicy(bag.sandbox, sessionCwd),
-      personality: bag.selectedModel?.supportsPersonality ? bag.personality : null,
+      personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
       developerInstructions,
       ...bag.providerConfig,
       ...memoryTools,
