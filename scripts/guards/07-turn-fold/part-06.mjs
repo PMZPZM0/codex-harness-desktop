@@ -614,9 +614,9 @@ export async function run() {
       (/buildSegments\(units, simpleFlow \? true : !running\)/.test(queueSrc) && !/inlineThinking/.test(queueSrc) && /planCompletedFold\(units, finalUnit\.item\.id\)/.test(queueSrc) && !/planCompletedFold\(units, finalUnit\.item\.id, \{/.test(queueSrc) ? ok : fail)(
         "【161】直播分段：详细=原分段（已结束思考进过程段）；简洁=`? true` 强制全段折叠；完成态全交 planCompletedFold（无 thinking 旁路）"
       );
-      /* ── 10-31 用户令：「运行过程下面加一个对话流，简洁 详细，默认简洁」──
+      /* ── 10-31 用户令：「运行过程下面加一个对话流，简洁 详细」；11-01 改默认详细 ──
          简洁 = 两个正文之间只留**一个**过程块，块头一直显示最新一步，点开看全部。
-         ⛔ 四条一起钉：设置项在运行过程下面、store 默认 simple、简洁真的改了分段、块头取最后一条。 */
+         ⛔ 四条一起钉：设置项在运行过程下面、store 默认 detailed、简洁真的改了分段、块头取最后一条。 */
       const appearanceSrc = readFileSync(join(ROOT, "src", "features", "settings-appearance", "AppearanceSettingsSection.tsx"), "utf8").replace(/\r/g, "");
       const flowStore = readFileSync(join(ROOT, "src", "lib", "dialog-flow-mode.ts"), "utf8").replace(/\r/g, "");
       const flowTitle = readFileSync(join(ROOT, "src", "lib", "dialog-flow-title.ts"), "utf8").replace(/\r/g, "");
@@ -625,8 +625,8 @@ export async function run() {
       (runIdx > 0 && flowIdx > runIdx ? ok : fail)(
         "【290】设置 → 外观：「对话流」这一行紧跟在「运行过程」下面（用户点名的位置）"
       );
-      (/localStorage\.getItem\(KEY\) === "detailed" \? "detailed" : "simple"/.test(flowStore) ? ok : fail)(
-        "【290】对话流**默认简洁**：没有存过这个键（老档案）一律 simple"
+      (/localStorage\.getItem\(KEY\) === "simple" \? "simple" : "detailed"/.test(flowStore) ? ok : fail)(
+        "【290】对话流**默认详细**：没有存过这个键（老档案）一律 detailed"
       );
       /* 块头是纯函数（src/lib/dialog-flow-title.ts）—— 真行为由 .workbuddy/tmp/flow-test 的脚本跑；
          这里钉**形状**：取最后一条非思考单元 + 全思考兜底 + 单条不写步数。 */

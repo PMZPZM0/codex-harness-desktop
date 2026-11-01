@@ -1,12 +1,13 @@
 import { useSyncExternalStore } from "react";
 
-/** 运行过程展示（10-25 用户令）：简洁 = 默认只显示文件行 +N -M；
- *  详细 = 每个生成/修改/编辑文件自动展开内容或 diff，并跟随最新内容。 */
+/** 运行过程展示（10-25 用户令）：简洁 = 只显示文件行 +N -M；
+ *  详细 = 每个生成/修改/编辑文件自动展开内容或 diff，并跟随最新内容。
+ *  ⛔ 11-01 用户令「运行过程默认详细」：没存过键（老档案）一律 detailed。 */
 export type RunProcessMode = "simple" | "detailed";
 
 const KEY = "run-process-mode-v1";
 let mode: RunProcessMode = (() => {
-  try { return localStorage.getItem(KEY) === "detailed" ? "detailed" : "simple"; } catch { return "simple"; }
+  try { return localStorage.getItem(KEY) === "simple" ? "simple" : "detailed"; } catch { return "detailed"; }
 })();
 const listeners = new Set<() => void>();
 

@@ -11,14 +11,13 @@ import { useSyncExternalStore } from "react";
  *   这个管「正文之间的过程要不要整体收敛成一个块」（整条流的结构）。
  *   两者正交：可以「运行过程：详细 + 对话流：简洁」（看内容但不让过程把正文顶散）。
  *
- * ⛔ 默认必须是 simple：用户 10-31 明确「默认简洁」。老档案没有这个键时也走 simple ——
- *   所以读取时不能拿 `localStorage.getItem(KEY) === "detailed"` 之外的值当 detailed。
+ * ⛔ 11-01 用户令「对话流默认详细」：没存过键（老档案）一律 detailed；显式选过简洁的保持 simple。
  */
 export type DialogFlowMode = "simple" | "detailed";
 
 const KEY = "dialog-flow-mode-v1";
 let mode: DialogFlowMode = (() => {
-  try { return localStorage.getItem(KEY) === "detailed" ? "detailed" : "simple"; } catch { return "simple"; }
+  try { return localStorage.getItem(KEY) === "simple" ? "simple" : "detailed"; } catch { return "detailed"; }
 })();
 const listeners = new Set<() => void>();
 
