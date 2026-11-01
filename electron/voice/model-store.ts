@@ -10,6 +10,7 @@
  */
 
 import { createHash } from "crypto";
+import { existingToolPath } from "../toolchain";
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink } from "fs/promises";
@@ -845,7 +846,12 @@ async function extractTarBz2(archivePath: string, destDir: string, resourcesTool
 
   await mkdir(destDir, { recursive: true });
 
-  const python = join(resourcesToolsDir, "python", process.platform === "win32" ? "python.exe" : "bin/python3");
+  /* ⛔⛔ 11-01 二次修正：这些内置件（python / 7z）都随包放在 **resources/tools**，
+     而传进来的 resourcesToolsDir 是**可写根**（userData/tools）—— 在可写根里永远找不到，
+     于是 python 判定「不可用」、7z 判定「未找到」，只剩系统 tar 去解 bz2 ⇒ 必然失败。
+     ⇒ 统一用 existingToolPath()（它的职责就是「随包根 + 可写根都找」）。 */
+  const python = existingToolPath("python", process.platform === "win32" ? "python.exe" : "bin/python3")
+    || join(resourcesToolsDir, "python", process.platform === "win32" ? "python.exe" : "bin/python3");
   if (existsSync(python)) {
     const py = await run(python, ["-c", "import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2])", archivePath, destDir]);
     if (py.code === 0) return { ok: true };
@@ -866,7 +872,7 @@ async function extractTarBz2(archivePath: string, destDir: string, resourcesTool
     join(String((process as any).resourcesPath || ""), "app.asar.unpacked", "resources", "tools", "sevenzip", sevenZipName),
     join(String((globalThis as any)?.process?.resourcesPath || ""), "app.asar.unpacked", "resources", "tools", "sevenzip", sevenZipName),
   ].filter(Boolean);
-  const sevenZip = sevenZipCandidates.find((c) => c && existsSync(c)) || "";
+  const sevenZip = existingToolPath("sevenzip", sevenZipName) || sevenZipCandidates.find((c) => c && existsSync(c)) || "";
   if (!sevenZip) {
     return { ok: false, error: "解压失败（随包 Python 不可用，tar: " + tar.stderr.slice(-120) + "），且未找到随包 7z" };
   }
