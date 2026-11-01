@@ -20,7 +20,7 @@
  *   ⇒ 现在改为按 run 记录如实推导 **`RunPhase`**（见 `phaseOfRun`），
  *     并且**两条成员来源（专家团 / 普通会话委托）共用同一份推导**，不会各写一套。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 import {
   OfficeCanvas, OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN,
@@ -131,6 +131,14 @@ export function phaseOfRun(run: RunFacts | null | undefined, now: number): {
 }
 
 export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, lastByMember, openThread, delegatedRuns, self, groupMembers }: TeamOfficePreviewProps) {
+  /* ⛔ 11-01 用户实测「播报悬浮窗压在办公室预览上面」：那个播报窗是**独立置顶窗口**
+     （electron/features/pet-window.ts 里 setAlwaysOnTop(true)），CSS z-index 管不到它。
+     ⇒ 办公室预览存活期间把它藏起来，关闭时恢复，而不是去调层级。 */
+  useEffect(() => {
+    window.codex.petHide?.();
+    return () => { window.codex.petShow?.(); };
+  }, []);
+
   const team = useMemo(() => teams.find((t) => t.teamId === teamId) ?? null, [teams, teamId]);
 
   /* ⭐ 「点了没反应」的显式反馈（10-05 晚）。
