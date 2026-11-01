@@ -648,19 +648,18 @@ ok(/stripVoiceScript\(children\)/.test(markdownTsx) && /hasWidgetFence\(text\)/.
 ok(/export function publishAnnounceStatus/.test(bus) && /export function subscribeAnnounceStatus/.test(bus)
   && /export type AnnounceStatus/.test(bus) && /publishAnnounceStatus\(\{/.test(announceHook),
   "状态经 announce-bus 广播（执行端推**事实**：有没有在念 / 正在念哪句 / 还排几句；基座不反向依赖域）");
-ok(/getAnnounceStatus\(\)/.test(indicatorTsx) && /if \(!status\.active\) return null;/.test(indicatorTsx)
-  && !/is-stopped/.test(codeOnlyTs(indicatorTsx)) && !/已停止播报/.test(codeOnlyTs(indicatorTsx)),
-  "状态条只在**真的在念**时出现（10-22 用户：「有这个小喇叭就行了，下面这个已停止播报的这个不要」"
-  + "—— 静音/恢复只留在回合头 📢 与悬浮球菜单，状态条不再常驻）");
-ok(/待播 \{status\.pending\}/.test(indicatorTsx) && /voice-announce-stop/.test(indicatorTsx) && /requestAnnounceStop\(\)/.test(indicatorTsx),
-  "状态条给出「当前句 + 待播句数 + 停止按钮」（看不见这条 = 用户既不知念到哪、也不知去哪儿掐断）");
-ok(/<VoiceAnnounceIndicator \/>/.test(composerTsx) && /VoiceAnnounceIndicator/.test(read("src/features/voice-announce/index.ts")),
-  "状态条挂在 composer 里（它要 `closest('.composer-wrap')` 才能贴输入框；挂错地方就掉到别的位置）");
-ok(/closest\("\.composer-wrap"\)/.test(indicatorTsx) && /el\.style\.bottom =/.test(indicatorTsx) && /ResizeObserver/.test(indicatorTsx),
-  "状态条定位与舞台条同套：按 composer 实际矩形行内写 left/bottom + 跟随尺寸变化");
-ok(/\.voice-announce-bar\s*\{/.test(codeOnlyCss(stageCss)) && !/(?<![-\w])(top|left)\s*:/.test(
-    (codeOnlyCss(stageCss).match(/\.voice-announce-bar\s*\{[^}]*\}/) || [""])[0]),
-  "`.voice-announce-bar` 的 CSS 块里不写 top/left（与舞台条同款纪律：几何由 JS 按 composer 写）");
+/* ★ 10-31：语音状态条（VoiceAnnounceIndicator）**退役** —— b209e3edc 把群事件重构成悬浮播报窗后，
+   语音状态（当前句 / 待播 N 句 / 停止）由播报窗的气泡与面板承担。能力没丢，**挂载点变了**。
+   ⛔ 断言要跟着"能力在哪"走，不要钉在退役组件的内部实现上（那等于测死代码，永远绿、永远骗人）。 */
+const broadcastHost = read("src/features/event-broadcast/BroadcastHost.tsx");
+ok(/voice\.active && !snap\.open/.test(broadcastHost)
+  && /待播 \$\{voice\.pending\} 句/.test(broadcastHost)
+  && /requestAnnounceStop\(\)/.test(broadcastHost),
+  "语音播报中：气泡给出「当前句 + 待播 N 句 + 停止」（10-22 用户：「不知道念到哪、也不知道去哪儿掐断」）");
+ok(!/<VoiceAnnounceIndicator \/>/.test(composerTsx),
+  "composer 不再挂语音状态条（10-31 改由悬浮播报窗统一展示；⛔ 复活 = 输入框上方多一条和气泡抢位置）");
+ok(/getAnnounceStatus\(\)/.test(broadcastHost) && /subscribeAnnounceStatus/.test(broadcastHost),
+  "播报窗订阅的是 announce-bus 的**事实**（在念 / 念哪句 / 还排几句），不自己猜状态");
 /* ── ⑬′ 10-12 三条用户反馈的钉死（「停止都停止不了，一直播报」「不用这么长」「有点丑」）──
    ⛔ 这三条都是**用户当面试出来的**，形态也各自特殊，所以每条都钉"判据所在的那一处"而不是
       某个字面量：静音要在 speak() 入口（唯一点）、字数要在 speak() 里扣（回合级）、

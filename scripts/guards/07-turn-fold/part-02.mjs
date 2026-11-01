@@ -91,6 +91,12 @@ export async function run() {
     (flow.shouldFlowSegment(segs) === true ? ok : fail)("【44a】≥2 条普通用户消息 ⇒ 走分段渲染（上一版这条是 false，功能等于没生效）");
     (flow.shouldFlowSegment(flow.splitFlowSegments([u("u1"), tool("t1")])) === false ? ok : fail)("【44a】单条用户消息 ⇒ 维持旧渲染（气泡在卡片上方，别动既有路径）");
     (flow.headSegmentIndex(segs) === 1 ? ok : fail)(`【44a】头像/计时挂首段实块（实得 ${flow.headSegmentIndex(segs)}；写死 0 会整轮没头像）`);
+    /* ⛔ 10-31 审查：两条**相邻**用户消息（刚排队就点「立即」的形态）时首段没有 items，
+       而组件只给有 items 的段 / 最后一段渲染卡片 ⇒ 头像与「正在处理 N 秒」必须挂到有内容的段。 */
+    const adjacent = flow.splitFlowSegments([u("u1"), u("u2"), tool("t1")]);
+    (flow.headSegmentIndex(adjacent) === 2 ? ok : fail)(
+      `【44a】相邻两条用户消息：头像挂**有内容**的段（实得 ${flow.headSegmentIndex(adjacent)}；挂首段会让整轮没头像）`
+    );
     const groupOnly = flow.splitFlowSegments([u("u1"), tool("t1"), { id: "g1", type: "userMessage", text: "[群事件] 群消息" }, tool("t2")], {
       isGroupEvent: (text) => String(text ?? "").includes("群事件"),
       textOf: (item) => String(item.text ?? ""),

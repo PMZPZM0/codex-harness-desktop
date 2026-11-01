@@ -206,9 +206,19 @@ const codexIpcSrc = read("electron/features/codex-ipc.ts");
   (/if \(internalThreads\.has\(threadId\)\) return;/.test(svc) ? ok : fail)(
     "⛔ 内部会话（内省/蒸馏）的回合不参与复盘 —— 否则每轮复盘又建一条会话，自噬环"
   );
+  /* ⛔⛔ 10-31 审查：登记表**只增不删** —— `internalThreads` 同时被事件转发闸 / 列表闸 / 复盘闸消费，
+     在 distillSummarize 的 finally 里 delete 掉它，列表闸当场对这条会话失效 ⇒ 蒸馏跑完一刷新，
+     内省会话又回到侧栏（磁盘登记还在 ⇒ 重启又消失，用户看到的是"忽隐忽现"）。 */
+  (!/internalThreads\.delete\(/.test(summarySrc) ? ok : fail)(
+    "⛔ 内部会话登记表只增不删（finally delete = 列表闸对该会话失效，蒸馏跑完就回侧栏）"
+  );
   const ipcSrc = read("electron/features/codex-ipc.ts");
   (/internalThreads\.has\(String\(entry\?\.id/.test(ipcSrc) ? ok : fail)(
     "⛔ 内部会话不进 thread/list（侧栏不显示；只挡事件转发挡不住列表）"
+  );
+  /* ⛔ 剔除必须在 try/catch **之外**：worker 兜底扫描失败那一次走 catch，写在 try 里就会整批漏出。 */
+  (/const listed = \(result as any\)\?\.data;/.test(ipcSrc) && /listed\.filter\(\(entry: any\) => !internalThreads\.has/.test(ipcSrc) ? ok : fail)(
+    "内部会话的剔除在 try/catch 之外（worker 失败那次也要剔，否则整批漏回侧栏）"
   );
 }
 

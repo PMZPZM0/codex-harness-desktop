@@ -828,6 +828,28 @@ export async function run() {
     `【67】会话级 config 覆盖都写归一化/别名 provider（${calls67} 处）`
   );
   /* 09-22：harness-services.ts 拆成 memory-store.ts + scheduler.ts（原文件是两个无关的域）⇒ 断言跟着搬 */
+  /* ⛔⛔ 10-31 审查：**要不要绑 harness** 的唯一判据是 `shouldBindHarness`（看 provider 是不是
+     openai-official）。旧写法 `baseUrl ? HARNESS_PROVIDER_ID : undefined` 在官方订阅下**恒为真**
+     （官方档案的 baseUrl 是 https://chatgpt.com/backend-api/codex）⇒ 官方用户的调度 / 团队 / 定时会话
+     被硬绑到 harness + env_key=CODEX_HARNESS_API_KEY，而他们手里没有这把 Key ⇒ 401。 */
+  const bindSites67 = [
+    "electron/features/delegation.ts", "electron/team-invoke.ts", "electron/features/teams-ipc.ts",
+    "electron/features/threads-ipc.ts", "electron/scheduler.ts", "electron/boss-groups/runner.ts",
+    "electron/channel-bot.ts", "electron/main/03-turn-summary.ts",
+  ];
+  const noGuard67 = bindSites67.filter((rel) => !/shouldBindHarness/.test(readFileSync(join(ROOT, rel), "utf8")));
+  (noGuard67.length === 0 ? ok : fail)(
+    `【67】主进程每条建会话路径都过 shouldBindHarness（缺：${noGuard67.join(" / ") || "无"}）`
+  );
+  const stale67 = bindSites67.filter((rel) => /baseUrl \? HARNESS_PROVIDER_ID/.test(readFileSync(join(ROOT, rel), "utf8")));
+  (stale67.length === 0 ? ok : fail)(
+    `【67】没有残留「baseUrl ? HARNESS_PROVIDER_ID」（baseUrl 判不出官方订阅；残留：${stale67.join(" / ") || "无"}）`
+  );
+  /* 别名只用于绑引擎；喂 bridgeDial 做协议路由的必须是**真实**供应商 id（传 harness = 按未知协议登记） */
+  const summary67 = readFileSync(join(ROOT, "electron/main/03-turn-summary.ts"), "utf8");
+  (/bridgeDial\(upstreamProvider/.test(summary67) ? ok : fail)(
+    "【67】蒸馏内联的 base_url 用真实供应商做协议路由（⛔ 传别名 harness 会让桥按未知协议登记）"
+  );
   for (const rel of ["electron/channel-bot.ts", "electron/scheduler.ts"]) {
     const src = readFileSync(join(ROOT, rel), "utf8");
     (/model_provider: (?:safeProviderId\(model\.provider\)|HARNESS_PROVIDER_ID)/.test(src) ? ok : fail)(

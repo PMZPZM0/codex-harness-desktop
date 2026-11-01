@@ -21,7 +21,6 @@ import { internalThreads } from "./runtime-refs";
 
 /** 内省提示词的首句（`task-monitor.generateSuggestion` 用的就是它）—— 只用于**老数据**一次性认领。 */
 const LEGACY_MARKER = "你是这个桌面助手的内省模块";
-const KEEP = 500;
 
 let file = "";
 let loading: Promise<void> | null = null;
@@ -31,12 +30,25 @@ export function initInternalThreads(userData: string): void {
   file = path.join(userData, "internal-threads.json");
 }
 
+let persistChain: Promise<void> = Promise.resolve();
+
+/** 落盘。⛔ 两个坑（10-31 审查）：
+ *  ① 必须**原子写**（tmp + rename）：并发 persist 或写一半被杀会留下半截 JSON，
+ *     而损坏在 load 里被当成"首次" ⇒ 只会重认最近 3 天，更老的内部会话从此漏认回侧栏。
+ *  ② 必须**串行**：两次并发 writeFile 同一路径会互相截断。
+ *  ⛔ 不截断列表（原来 slice(-500)）：内存里比磁盘多，超过 500 条后旧 id 从文件消失 ⇒ 重启就复活。 */
 async function persist(): Promise<void> {
   if (!file) return;
-  try {
-    const ids = [...internalThreads].slice(-KEEP);
-    await fs.writeFile(file, JSON.stringify(ids, null, 2), "utf8");
-  } catch { /* 写失败不影响运行（只是重启后少一条豁免） */ }
+  const ids = [...internalThreads];
+  const payload = JSON.stringify(ids, null, 2);
+  persistChain = persistChain.then(async () => {
+    try {
+      const tmp = `${file}.tmp`;
+      await fs.writeFile(tmp, payload, "utf8");
+      await fs.rename(tmp, file);
+    } catch { /* 写失败不影响运行（只是重启后少一条豁免） */ }
+  }).catch(() => undefined);
+  return persistChain;
 }
 
 /** 登记一条内部会话（`distillSummarize` 建完立刻调）——内存 + 落盘。 */

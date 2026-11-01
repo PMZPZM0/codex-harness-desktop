@@ -1,5 +1,7 @@
 import { createDecipheriv, createHash, timingSafeEqual } from "node:crypto";
 import { HARNESS_PROVIDER_ID } from "./provider-id";
+import { bridgeDial } from "./bridge-dial";
+import { shouldBindHarness } from "./thread-provider";
 import { isTurnEndMethod } from "./turn-end";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import fs from "node:fs/promises";
@@ -204,8 +206,10 @@ export class ChannelBotService {
         approvalPolicy: "never",
         sandbox: config.sandbox,
         personality: "pragmatic",
-        modelProvider: HARNESS_PROVIDER_ID,
-        config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+        /* ⛔ base_url 必须过 bridgeDial（10-31 审查）：直连原始地址会绕过本地协议桥 ——
+           chat/completions 类上游拿不到适配，表现是「发送成功但模型零输出」。 */
+        ...(shouldBindHarness(model) ? { modelProvider: HARNESS_PROVIDER_ID } : {}),
+        ...(shouldBindHarness(model) ? { config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: model.name, base_url: bridgeDial(String(model.provider ?? ""), model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } } : {}),
       }) as any;
       thread = started.thread;
       this.bindings[key] = { threadId: thread.id, chatId, updatedAt: Date.now() };

@@ -7,6 +7,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { HARNESS_PROVIDER_ID } from "./provider-id";
+import { bridgeDial } from "./bridge-dial";
+import { shouldBindHarness } from "./thread-provider";
 import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
@@ -547,11 +549,13 @@ export class Scheduler {
         await ensureProjectAgentsMd(String(task.workspace));
         const started = await this.server.request("thread/start", {
           model: task.model || model.model,
-          modelProvider: HARNESS_PROVIDER_ID,
+          /* ⛔ 官方订阅 / 未配置自定义模型时留空（判据见 thread-provider.shouldBindHarness）；
+             有自定义供应商时 base_url 必须过 bridgeDial —— 直连原始地址会绕过本地协议桥。 */
+          ...(shouldBindHarness(model) ? { modelProvider: HARNESS_PROVIDER_ID } : {}),
           cwd: task.workspace,
           approvalPolicy: "never",
           sandbox: "workspace-write",
-          config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: model.name, base_url: model.baseUrl, env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
+          ...(shouldBindHarness(model) ? { config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name: model.name, base_url: bridgeDial(String(model.provider ?? ""), model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } } : {}),
           dynamicTools: [
             { type: "function", name: "memory_recall", description: "按当前任务查询相关记忆。", inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] } },
           ],

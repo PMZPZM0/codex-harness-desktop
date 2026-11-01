@@ -47,7 +47,14 @@ export function shouldFlowSegment(segs) {
   return (Array.isArray(segs) ? segs : []).filter((seg) => seg?.user).length > 1;
 }
 
-/** 头像 / 「正在处理 N 秒」挂哪一段：第一段**真的会渲染内容**的（首段常常是空段）。 */
+/** 头像 / 「正在处理 N 秒」挂哪一段：**第一个真的会渲染卡片**的段。
+ *  ⛔ 不能写成「第一个有 user 或 items 的段」（10-31 审查实测）：
+ *     `USER1 → USER2 → tool…`（两条相邻用户消息，第一条还没产出任何输出，正是"刚排队就点立即"的形态）
+ *     时，首段只有 user、没有 items，而组件**只给有 items 或最后一段渲染卡片** ⇒ 头像与计时整轮都不出现。
+ *  ⇒ 优先挂第一个有 items 的段；一段 items 都没有（全空）时挂最后一段（组件必渲染它）。 */
 export function headSegmentIndex(segs) {
-  return (Array.isArray(segs) ? segs : []).findIndex((seg) => seg?.user || (seg?.items?.length ?? 0) > 0);
+  const list = Array.isArray(segs) ? segs : [];
+  const withItems = list.findIndex((seg) => (seg?.items?.length ?? 0) > 0);
+  if (withItems >= 0) return withItems;
+  return list.length ? list.length - 1 : 0;
 }

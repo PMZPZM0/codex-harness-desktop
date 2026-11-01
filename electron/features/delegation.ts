@@ -11,6 +11,7 @@ import { canDispatchFrom, clipDispatchOutput, delegateScopeBlock, dispatchKindAl
 import { buildTeamPhaseTool, buildTeamSystemPrompt, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
 import { app, safeStorage } from "electron";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
+import { shouldBindHarness } from "../thread-provider";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
@@ -158,7 +159,7 @@ export async function runDelegatedTask(input: {
     ? cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel }, apiKey)
     : null;
   const threadConfig: Record<string, unknown> = {};
-  if (baseUrl) {
+  if (shouldBindHarness(customModel)) {
     threadConfig.model_provider = HARNESS_PROVIDER_ID;
     threadConfig.model_providers = { [HARNESS_PROVIDER_ID]: { name: providerName, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } };
   }
@@ -177,7 +178,7 @@ export async function runDelegatedTask(input: {
          真实上游写进下面内联的 model_providers[harness].base_url。
        ⛔ 没有 baseUrl（官方订阅 / 未配置自定义模型）时**留空**，让引擎用全局那份 —— 
          硬绑 harness 在官方模式下反而找不到该 provider 段。 */
-    modelProvider: baseUrl ? HARNESS_PROVIDER_ID : undefined,
+    modelProvider: shouldBindHarness(customModel) ? HARNESS_PROVIDER_ID : undefined,
     config: Object.keys(threadConfig).length ? threadConfig : undefined,
     // 10-05 角色私有记忆：被委派会话拿得到「写自己记忆」的工具（主进程侧应答，见 role-memory-tool）。
     // ⛔ 与主会话的 memory_save **刻意不同名**：两个作用域，别让模型以为写的是同一份。

@@ -16,6 +16,26 @@
 import { HARNESS_PROVIDER_ID } from "./provider-id";
 import { bridgeDial } from "./bridge-dial";
 
+/**
+ * 「这个会话要不要绑 harness 别名」的**唯一判据**（10-31 审查后收口）。
+ *
+ * ⛔⛔ 别再用「baseUrl 是否为空」判：官方订阅档案的 baseUrl 恒为
+ *    `https://chatgpt.com/backend-api/codex`（非空）⇒ 用 baseUrl 判**永远判不出官方模式**，
+ *    结果是官方订阅用户的调度 / 团队 / 定时会话被硬绑到 harness + `env_key=CODEX_HARNESS_API_KEY`，
+ *    而他们手里根本没有这把 Key ⇒ 401，且报错离现场很远（用户看到的是"调度失败"）。
+ *
+ * 三种情况：
+ *   · 官方订阅（provider = openai-official）⇒ **不绑**（引擎用内置 openai + ChatGPT 登录凭据，
+ *     任何内联 provider 段都会触发密钥校验）；
+ *   · 没有自定义模型档案（未配置）⇒ **不绑**（让引擎用 config.toml 顶层那份）；
+ *   · 有自定义 baseUrl 的非官方供应商 ⇒ **绑** harness，真实上游写进内联 base_url。
+ */
+export function shouldBindHarness(model: { provider?: string; baseUrl?: string } | null | undefined): boolean {
+  if (!model) return false;
+  if (String(model.provider ?? "") === "openai-official") return false;
+  return Boolean(String(model.baseUrl ?? "").trim());
+}
+
 export function harnessProviderConfig(model: { name?: string; baseUrl?: string; provider?: string } | null | undefined) {
   if (!model || model.provider === "openai-official") return {} as Record<string, unknown>;
   const providerId = String(model.provider ?? "");

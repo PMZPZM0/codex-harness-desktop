@@ -480,8 +480,14 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
     const steerTurnId = bag.activeTurnId && bag.activeTurnId === runningTurnId ? bag.activeTurnId : runningTurnId;
     if (steerTurnId && entry) {
       // 「立即」= 这条消息马上会作为用户消息出现在当前回合里 → 先建立钉顶意图（否则它落进内容流）
-      const armedForSteer = bag.armPinForReleasedQueue(bag.thread.id, "steer");
-      if (armedForSteer) showQueuedOptimistic(bag, entry.input);
+      bag.armPinForReleasedQueue(bag.thread.id, "steer");
+      /* ⛔⛔ 这里**不上乐观气泡**（10-31 审查实测）：
+         steer 的消息由引擎插进**当前回合**，会立刻在回合内原位渲染出来；
+         再给它一个末尾的乐观气泡 = 同一条消息显示两遍，而且 `optimisticConfirmed` 的兜底只在
+         「baseline 之外的新回合」里找（这个回合正是 baseline 本身）⇒ 整个回合都确认不了，
+         要等到回合结束才被收尾逻辑撤掉。这也与 09-13 的定案一致（排队消息点立即 = 并入当前任务 +
+         弹窗提醒，不在聊天区另外造一条）。 */
+      /* 钉顶意图照旧建立（能不能钉取决于回合是否已开始渲染，返回 false 属正常）。 */
       // 这条消息会并入当前回合；若该回合以 429 结束，重发的就是它（同手动发送的语义）
       bag.armRetryForQueueRelease(bag.thread.id, entry.input);
       try {
@@ -500,7 +506,9 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
       } catch (error: any) {
         const message = String(error?.message ?? error ?? "");
         if (!/no active turn/i.test(message)) {
-          if (armedForSteer) { bag.disarmPinIntent("steer-fail"); bag.setOptimisticInput(null); }   // 意图悬空会去钉别的消息；乐观气泡一并撤
+          /* 撤掉刚建立的钉顶意图（意图悬空会去钉别的消息 / 视口莫名跳回旧消息）。
+             ⛔ 不撤气泡：这条路径根本没有上气泡（见上面的说明）。 */
+          bag.disarmPinIntent("steer-fail");
           bag.showToast("发送失败", message);
           return;
         }

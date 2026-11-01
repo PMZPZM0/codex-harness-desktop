@@ -18,6 +18,7 @@ import { ensureProjectAgentsMd } from "./project-conventions";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { HARNESS_PROVIDER_ID } from "./provider-id";
+import { shouldBindHarness } from "./thread-provider";
 import { readCustomModel, originSessionModel } from "./main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { noteRoleThread } from "./role-memory-tool";
@@ -88,10 +89,10 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
       threadId: existingThreadId,
       excludeTurns: true,
       model: effectiveModel,
-      modelProvider: baseUrl ? HARNESS_PROVIDER_ID : undefined,
+      modelProvider: shouldBindHarness(customModel) ? HARNESS_PROVIDER_ID : undefined,
       sandbox: member.sandbox || input.sandbox || "workspace-write",
       approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
-      ...(baseUrl ? {
+      ...(shouldBindHarness(customModel) ? {
         config: { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } },
       } : {}),
     }).catch(() => null);
@@ -107,8 +108,8 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
       cwd: input.cwd || process.cwd(),
       approvalPolicy: member.approvalPolicy || input.approvalPolicy || "never",
       sandbox: member.sandbox || input.sandbox || "workspace-write",
-      modelProvider: baseUrl ? HARNESS_PROVIDER_ID : undefined,
-      config: baseUrl ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
+      modelProvider: shouldBindHarness(customModel) ? HARNESS_PROVIDER_ID : undefined,
+      config: shouldBindHarness(customModel) ? { model_provider: HARNESS_PROVIDER_ID, model_providers: { [HARNESS_PROVIDER_ID]: { name, base_url: bridgeDial(provider, baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } } : undefined,
     });
     memberThreadId = String(started.thread.id);
     threadCwd.set(memberThreadId, String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */

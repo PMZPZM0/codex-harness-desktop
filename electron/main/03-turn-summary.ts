@@ -4,6 +4,7 @@
  */
 import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import { HARNESS_PROVIDER_ID, RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } from "../provider-id";
+import { shouldBindHarness } from "../thread-provider";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { readCustomModel } from "./01-model-catalog";
 import { engineActiveTurnIds, internalThreads, server } from "../runtime-refs";
@@ -93,7 +94,16 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
      记的是自定义供应商名（custom964）⇒ 两边不一致时引擎直接拒：
      `This chat uses custom964, but your current provider is harness. Switch to custom964 to continue.`
      ⇒ 有自定义 baseUrl 时用自家别名；退回会话配置时，**以 config.model_provider 为准**。 */
-  const provider = model?.baseUrl
+  /* ⛔ 两个用途别混（10-31 审查）：
+     ① 传给引擎的 modelProvider = **别名** harness（绑错会让引擎拒「供应商不一致」）；
+     ② 喂 bridgeDial 做上游协议路由 = **真实**供应商 id（传 harness 会让桥按未知协议登记
+        ⇒ anthropic 上游先试 responses 再回退、chat 上游每跳多一次探测，且内联 base_url
+        与全局 [model_providers.harness] 指向两个不同路径）。 */
+  const bindHarness = shouldBindHarness(model);
+  const upstreamProvider = safeProviderId(
+    model?.provider ?? sessionConfig?.model_provider ?? sessionModel?.provider ?? "openai",
+  );
+  const provider = bindHarness
     ? HARNESS_PROVIDER_ID
     : safeProviderId(sessionConfig?.model_provider ?? sessionModel?.provider ?? model?.provider ?? "openai");
 
@@ -141,8 +151,8 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
     sandbox: "read-only",
     modelProvider: provider,
     /* 自定义模型走别名 provider（bridgeDial 改写 base_url）；否则用本会话那一轮的 provider 配置原文。 */
-    config: model?.baseUrl
-      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: bridgeDial(provider, model.baseUrl), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
+    config: bindHarness
+      ? { model_provider: provider, model_providers: { [provider]: { name: model?.name ?? provider, base_url: bridgeDial(upstreamProvider, String(model?.baseUrl ?? "")), env_key: "CODEX_HARNESS_API_KEY", wire_api: "responses", requires_openai_auth: false, ...PROVIDER_RETRY_TUNING } } }
       : sessionConfig ?? undefined,
   });
   const threadId = started.thread.id;
@@ -150,18 +160,20 @@ export async function distillSummarize(prompt: string, body: string, opts?: { th
   /* ⛔ 必须落盘（10-31）：只放内存的话重启就忘了 ⇒ 这些内省会话又会爬回侧栏。
      见 electron/internal-threads.ts 的三道闸说明。 */
   rememberInternalThread(threadId);
-  try {
-    const turn: any = await server.request("turn/start", {
-      threadId,
-      input: [{ type: "text", text: promptText, text_elements: [] }],
-      model: effectiveModel,
-      effort: "low",
-    });
-    const turnId = turn.turn?.id;
-    if (!turnId) throw new Error("蒸馏回合启动失败：未返回 turnId");
-    const completed = await waitForTurnCompletion(threadId, turnId, 300_000);
-    return turnOutputText(completed);
-  } finally {
-    internalThreads.delete(threadId);
-  }
+  /* ⛔ 这里没有 try/finally：登记表**只增不删**（10-31 审查实测）——`internalThreads` 同时被三处消费：
+     事件转发闸（boot）、列表闸（codex-ipc 的 thread/list）、复盘闸（task-monitor）。
+     早先在 `finally` 里 delete，删掉的那一刻**列表闸就对这个会话失效** ⇒ 蒸馏跑完用户刷新侧栏，
+     这条内省会话又冒出来（磁盘登记还在 ⇒ 重启后又消失，变成"本次可见 / 重启后丢失"的抖动）。
+     ⛔ 后续事件被继续拦掉也没有副作用 —— 它本来就不该往渲染层转发。
+     （真正需要"临时屏蔽一段时间"的是 `inFlightDistill`，那是另一个集合，与这里无关。） */
+  const turn: any = await server.request("turn/start", {
+    threadId,
+    input: [{ type: "text", text: promptText, text_elements: [] }],
+    model: effectiveModel,
+    effort: "low",
+  });
+  const turnId = turn.turn?.id;
+  if (!turnId) throw new Error("蒸馏回合启动失败：未返回 turnId");
+  const completed = await waitForTurnCompletion(threadId, turnId, 300_000);
+  return turnOutputText(completed);
 }

@@ -261,9 +261,17 @@ export const codexFeature = defineFeature<null>({
              ⇒ 列表出口统一剔除：这些会话是宿主的临时工作区，用户不该看见，也不该被点开续聊。
              ⛔ 剔除点放在**这里**（thread/list 唯一出口）：只挡渲染层的话，
                 引擎索引 / rollout 兜底扫描两条来源会各自漏一次。 */
-          result = { ...response, data: merged.filter((entry: any) => !internalThreads.has(String(entry?.id ?? ""))) };
+          result = { ...response, data: merged };
         } catch (error: any) {
           console.warn("[thread/list] rollout 兜底扫描（worker）失败，本次仅返回引擎索引：", error?.message);
+        }
+        /* ⛔ 内部会话的剔除必须放在 try/catch **之外**（10-31 审查实测）：
+           写在 try 里的话，worker 不可用/超时那一次走 catch ⇒ result 保持引擎索引原样
+           ⇒ 内部会话整批漏出侧栏（引擎索引那一路根本没过滤）。放在这里 = 不管哪条来源成功，
+           出口只有一个。 */
+        const listed = (result as any)?.data;
+        if (Array.isArray(listed)) {
+          (result as any).data = listed.filter((entry: any) => !internalThreads.has(String(entry?.id ?? "")));
         }
       }
       // 记忆捕获用：记录 threadId → cwd（新建线程响应 / 线程设置更新都带 cwd）
