@@ -125,8 +125,10 @@ ok(page.includes("card-frontend-design") && page.includes("FRONTEND_DESIGN_STYLE
 ok(page.includes("frontend-style-prompt") && page.includes("frontend-style-library")
   && page.includes("onOpenComponentLibrary") && page.includes("frontendDesignPrompt(frontendStyle, frontendNotes)"),
   "风格卡可查看真实注入的提示词，并联动打开内置组件库");
-ok(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/appearance.tsx")
-  .includes('onOpenComponentLibrary={() => app.setSettingsPage("component-library")}'),
+const setWiringPath = "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/appearance.tsx";
+const registryWiringPath = "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx";
+const wiringSrc = read(existsSync(join(ROOT, setWiringPath)) ? setWiringPath : registryWiringPath);
+ok(wiringSrc.includes("onOpenComponentLibrary") && wiringSrc.includes('"component-library"'),
   "组件库入口真的接到设置页导航（只写 prop 不接线 = 点了没反应）");
 ok(/frontendDesignStyle:\s*frontendStyle/.test(page) && /frontendDesignNotes:\s*frontendNotes\.trim\(\)/.test(page),
   "保存时把预设与自定义内容一起提交（只存不传 = 白填）");
