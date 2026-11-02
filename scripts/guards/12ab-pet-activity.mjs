@@ -187,11 +187,21 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     "动画包走 <img> 自己播，图集帧循环按 animationSet 早退（两套格式互不打架）");
   ok(/\}, \[pkg\?\.columns, pkg\?\.animationSet\]\);/.test(petFloatSrc),
     "帧循环依赖含 animationSet（切包时能取消/重启，否则切回图集同列数会冻结）");
-  ok(/className=\{`pet-sprite\$\{pkg\.animationSet \? " pet-sprite-anim" : ""\}\$\{pkg\.rig \? " pet-sprite-rig" : ""\}`\}/.test(petFloatSrc)
-    && petFloatSrc.includes("backgroundImage: pkg.animationSet ? undefined :"),
+  ok(/className=\{`pet-sprite\$\{pkg\.animationSet \|\| pkg\.gifSet \? " pet-sprite-anim" : ""\}\$\{pkg\.rig \? " pet-sprite-rig" : ""\}`\}/.test(petFloatSrc)
+    && petFloatSrc.includes("backgroundImage: pkg.animationSet || pkg.gifSet ? undefined :"),
     "动画包/关节包不挂 background-image（图集切帧路径保持原样）");
   ok(petFloatSrc.includes("pet-fade-layer") && petFloatSrc.includes("lastFadeRef") && petCss.includes("pet-layer-fade-out"),
     "动画包/姿态切换走交叉淡入淡出（旧图在上淡出，不再硬切）");
+  /* 11-02 用户令：GIF 宠物 —— pet.json 写 `gif`（一张循环）或 `gifSet`（每态一张），
+     渲染层按状态切图 + 交叉淡化；GIF 缩略图在设置页也会动。 */
+  ok(/const gifSingle = typeof meta\.gif/.test(ipcSrc) && /const gifMeta = meta\.gifSet/.test(ipcSrc)
+    && /gifSet,/.test(ipcSrc) && /gifStillSet/.test(ipcSrc),
+    "GIF/动图宠物包：支持 pet.json 的 gif（单张映射全部状态）与 gifSet（每态一张，可选静帧）");
+  ok(/pkg\.gifSet\[effectiveState\]/.test(petFloatSrc) && /gifSrc \? gifSrc : animationSrc/.test(petFloatSrc)
+    && /\(pkg\.animationSet \|\| pkg\.gifSet\) \?/.test(petFloatSrc),
+    "动图包按状态切图并复用交叉淡化（减少动效时回落 gifStillSet）");
+  ok(/const gifEntry = pkg\.gifSet/.test(settingsPetSrc) && /pet-thumb-animated/.test(settingsPetSrc),
+    "设置页缩略图：GIF 宠物直接播动图");
   ok(petFloatSrc.includes("prefers-reduced-motion: reduce") && petFloatSrc.includes("animation.stillSrc") && petCss.includes("@media (prefers-reduced-motion: reduce)"),
     "减少动效偏好回落静帧 + 停掉关节动画");
   /* 11-01 用户令：宠物跟 Codex 头像联动（换头像 → 宠物换配色）；机器人关节包 = 姿态图 + CSS 动作。 */

@@ -229,7 +229,11 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   /* 关节包：头像文件 → 调色板 → 当前姿态图；缺图回落 idle。 */
   const rigPalette = pkg?.rig ? (pkg.rig.avatarPalette?.[avatarFile] ?? pkg.rig.defaultPalette) : "";
   const rigSrc = pkg?.rig ? (pkg.rig.palettes?.[rigPalette]?.[effectiveState] ?? pkg.rig.palettes?.[rigPalette]?.idle ?? "") : "";
-  const fadeSrc = pkg?.rig ? rigSrc : animationSrc;
+  /* GIF/动图包：每态一张动图；单张 gif 已在主进程映射到全部状态。 */
+  const gifAnimated = pkg?.gifSet ? (pkg.gifSet[effectiveState] ?? pkg.gifSet.idle ?? "") : "";
+  const gifStill = pkg?.gifStillSet ? (pkg.gifStillSet[effectiveState] ?? pkg.gifStillSet.idle ?? "") : "";
+  const gifSrc = gifAnimated ? (reduceMotion && gifStill ? gifStill : gifAnimated) : "";
+  const fadeSrc = pkg?.rig ? rigSrc : gifSrc ? gifSrc : animationSrc;
   const rigHeight = renderedFrameHeight || geometry.frameHeight;
   const rigWidth = Math.round(rigHeight * (geometry.frameWidth / Math.max(1, geometry.frameHeight)));
   const row = showSheetLook ? 9 + Math.floor(lookDirection / 8) : petRowOf(pkg?.states ?? PET_STATES, effectiveState);
@@ -397,9 +401,9 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
         </div>
       )}
       <div className="pet-stage" title={pkg ? `${pkg.name}${pkg.description ? ` · ${pkg.description}` : ""}` : "没有可用的宠物包"}>
-        {pkg && (pkg.spritesheet || pkg.animationSet || pkg.rig) ? (
+        {pkg && (pkg.spritesheet || pkg.animationSet || pkg.gifSet || pkg.rig) ? (
           <div
-            className={`pet-sprite${pkg.animationSet ? " pet-sprite-anim" : ""}${pkg.rig ? " pet-sprite-rig" : ""}`}
+            className={`pet-sprite${pkg.animationSet || pkg.gifSet ? " pet-sprite-anim" : ""}${pkg.rig ? " pet-sprite-rig" : ""}`}
             ref={spriteRef}
             data-state={effectiveState}
             style={pkg.rig ? {
@@ -407,7 +411,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
               height: rigHeight,
             } : {
               ...style,
-              backgroundImage: pkg.animationSet ? undefined : `url("${petAssetUrl(pkg.spritesheet)}")`,
+              backgroundImage: pkg.animationSet || pkg.gifSet ? undefined : `url("${petAssetUrl(pkg.spritesheet)}")`,
               transform: showAnimationLook ? undefined : `translate(${look.x * 4}px, ${look.y * 2}px) rotate(${look.x * 1.2}deg)`,
             }}
             onDoubleClick={openMain}
@@ -426,12 +430,12 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
                   </div>
                 </div>
               </>
-            ) : pkg.animationSet ? (
+            ) : (pkg.animationSet || pkg.gifSet) ? (
               <>
                 {fadeFront && <img className="pet-fade-layer is-front" src={petAssetUrl(fadeFront)} alt="" draggable={false} />}
                 {fadeBack && <img className="pet-fade-layer is-back" src={petAssetUrl(fadeBack)} alt="" draggable={false} />}
                 {/* 减少动效时仍给一张静帧兜底（fadeFront 为空的首帧） */}
-                {!fadeFront && animationStill ? <img className="pet-fade-layer is-front" src={petAssetUrl(animationStill)} alt="" draggable={false} /> : null}
+                {!fadeFront && (gifStill || animationStill) ? <img className="pet-fade-layer is-front" src={petAssetUrl(gifStill || animationStill)} alt="" draggable={false} /> : null}
               </>
             ) : null}
             {toolbar}

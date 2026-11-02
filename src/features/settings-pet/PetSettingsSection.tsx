@@ -50,6 +50,17 @@ function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: numbe
   const k = height / (pkg.frameHeight || 208);
   const width = pkg.frameWidth * k;
   const reduced = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  /* GIF/动图包优先：动图在 CSS background-image 里会自己播，是最直观的"图标也是动的"。 */
+  const gifEntry = pkg.gifSet ? (pkg.gifSet.idle ?? Object.values(pkg.gifSet)[0] ?? "") : "";
+  if (gifEntry) {
+    const gifSrc = reduced ? (pkg.gifStillSet?.idle || gifEntry) : gifEntry;
+    return (
+      <span
+        className={`pet-thumb${reduced ? "" : " pet-thumb-animated"}`}
+        style={{ width: `${width}px`, height: `${height}px`, backgroundImage: `url("${petAssetUrl(gifSrc)}")`, backgroundSize: "contain", backgroundPosition: "center bottom" }}
+      />
+    );
+  }
   /* ⛔ 先看动画包：动物转成关节包后仍保留原 idle 动画，缩略图继续播动画（比呼吸动作更有辨识度）。
      没有动画包（小C）才用姿态图 + 呼吸。 */
   const animation = pkg.animationSet?.idle;
@@ -290,7 +301,9 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
           <b>② 动画包（内置六只用这个）</b>：九态各一段 30fps 动画 WebP + 静帧，可选 16 向看帧，画布 288×312 或 256×277。
           做法：六张姿态图（站立/欢呼/难过/奔跑/工作/审阅）放进 <code>scripts/pet-art/&lt;名字&gt;/</code>，
           加 <code>pet-meta.json</code>，运行 <code>python scripts/gen-pet-animation-set.py &lt;名字&gt;</code>。
-          完整教程见仓库 <code>docs/PET-MAKING.md</code>。
+          完整教程见仓库 <code>docs/PET-MAKING.md</code>。<br />
+          <b>③ GIF / 动图包（最省事）</b>：<code>pet.json</code> 里写 <code>"gif": "pet.gif"</code>（一张循环动图映射全部状态），
+          或 <code>"gifSet"</code> 给每个状态一张 GIF / 动画 WebP；可选 <code>"gifStillSet"</code> 提供静帧（减少动效偏好时使用）。
         </p>
       </section>
       </details>

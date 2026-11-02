@@ -70,6 +70,11 @@ export interface PetPackage {
   source: "builtin" | "user" | "codex" | "petdex";
   /** 30fps 动画包：每个状态一对动画 WebP + 静帧（存在时不使用 spritesheet） */
   animationSet?: Record<string, { animatedSrc: string; stillSrc: string }>;
+  /** GIF/动图包（11-02 用户令）：每个状态一张动图（GIF / 动画 WebP / APNG 存成 png 也可）。
+      渲染层按状态切图 + 交叉淡化；单张 `gif` 会映射到全部状态。 */
+  gifSet?: Record<string, string>;
+  /** 动图包的可选静帧（减少动效偏好时用；缺省回落到动图本身）。 */
+  gifStillSet?: Record<string, string>;
   /** 关节包（11-01 机器人宠物）：按「Codex 头像 → 调色板 → 九态姿态图」取图，
       渲染层用 CSS 做呼吸 / 敲键盘 / 跳跃等动作，避免逐帧动画的僵硬切换。 */
   rig?: {
@@ -217,6 +222,35 @@ function readPetPackage(dir: string, id: string, source: PetPackage["source"]): 
   const columns = Number(meta.columns) || DEFAULT_COLS;
   const frameWidth = Number(frame.width) || DEFAULT_FRAME.width;
   const frameHeight = Number(frame.height) || DEFAULT_FRAME.height;
+
+  /* GIF/动图包（11-02）：`gif` = 一张动图映射全部状态；`gifSet` = 每态一张；
+     `gifStillSet` 可选（减少动效时用静帧）。文件扩展名由 pet:// 协议白名单再兜一层。 */
+  const gifSingle = typeof meta.gif === "string" ? resolvePetFile(dir, meta.gif) : "";
+  const gifMeta = meta.gifSet && typeof meta.gifSet === "object" && !Array.isArray(meta.gifSet) ? (meta.gifSet as Record<string, unknown>) : null;
+  if (gifSingle || gifMeta) {
+    const missing: string[] = [];
+    const gifSet: Record<string, string> = {};
+    for (const state of states) {
+      const abs = gifSingle || resolvePetFile(dir, gifMeta?.[state]);
+      if (!abs) missing.push(`gifSet.${state}`);
+      else gifSet[state] = abs;
+    }
+    const gifStillSet: Record<string, string> = {};
+    const stillMeta = meta.gifStillSet && typeof meta.gifStillSet === "object" && !Array.isArray(meta.gifStillSet) ? (meta.gifStillSet as Record<string, unknown>) : null;
+    if (stillMeta) {
+      for (const state of states) {
+        const abs = resolvePetFile(dir, stillMeta[state]);
+        if (abs) gifStillSet[state] = abs;
+      }
+    }
+    return {
+      id, name, description, dir, spritesheet: "",
+      columns, rows, frameWidth, frameHeight, states, source,
+      gifSet,
+      ...(Object.keys(gifStillSet).length ? { gifStillSet } : {}),
+      problem: missing.length ? `动图包缺少文件：${missing.slice(0, 6).join("、")}` : undefined,
+    };
+  }
 
   /* 关节包（11-01 机器人宠物）：palettes = 调色板 → 九态姿态图；avatarPalette = 头像文件 → 调色板。
      ⛔ 只做路径解析与白名单校验，动画由渲染层 CSS 驱动（不用逐帧图）。 */
