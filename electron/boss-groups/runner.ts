@@ -20,7 +20,7 @@ import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
-import { aliasRecordOf, ensureSessionAlias } from "../session-alias";
+import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -370,6 +370,8 @@ export function watchMemberSettlements(): void {
       engineIsReady = true;
       /* ⛔ 就绪后再对账一次：setup 那次必然被闸住（引擎还没起来）⇒ 残留任务在这里补。 */
       void reconcileRunningTasks().catch(() => undefined);
+      /* ⛔ 11-03：旧成员会话也要知道真实上级（只修新建的 = 截图里那条历史会话永远答错）。 */
+      void refreshGroupMemberScopes().catch(() => undefined);
       return;
     }
     if (event?.kind !== "notification" || event.method !== "turn/completed") return;
@@ -489,6 +491,120 @@ async function bossModelOf(group: BossGroup): Promise<string> {
   return originSessionModel(boss, threadRuntimeStore);
 }
 
+/**
+ * 群成员会话的**权威身份块**（11-03 用户：「笔名都内置好了，就是为了上下级关系准备的」）。
+ *
+ * ⛔ 修的是这个真实事故：成员会话继承的是主会话的全局指令 / 工具目录（里面列着「承枢·交付总监」
+ *   等可调度对象），却没有一句话写「谁派的你」。模型被问「你的上级是谁」时就从目录和角色模板里
+ *   猜，答成了专家团主理人，而侧栏里的真实上级是中枢「岚烟（01a1…）」。
+ * ⇒ 明确三件事：① 我是哪个群的哪个成员；② 直接上级是哪个**笔名 + id**；③ 目录/角色模板不是上级关系。
+ * ⛔ 放在 base instructions **前面**：后面的全局目录再长，也不该盖过这一块。
+ */
+function groupMemberScopeBlock(group: BossGroup, member: GroupMember, supervisor: string): string {
+  const sup = String(supervisor ?? "").trim();
+  const bossId = String(group.bossThreadId ?? "").trim();
+  return [
+    "群编排约束（会话级·权威）",
+    `- 你的身份：「${group.name}」群里的成员「${member.name}」${member.role ? `（${member.role}）` : ""}。`,
+    sup ? `- 你的直接上级：${sup}（群任务由它派发，产出回给它审查）。` : "- 你的直接上级：这个群的指挥中枢会话（群任务由它派发）。",
+    bossId ? `- 上级会话 id：${bossId}` : "",
+    "- 你是**执行方**，不是调度方：只完成分给你的任务，不要再把专家 / 专家团 / 子智能体 / CLI 派出去。",
+    "⛔ 工具说明或历史记录里出现的「可调度对象 / 专家团主理人 / 角色模板」是宿主全局说明，**不是你的上级关系**；",
+    "   用户问「你的上级是谁」时，只按上面「直接上级」这条回答，不要按角色模板或旧对话猜。",
+    "信息不足时在产出里写清「缺什么、需要谁提供」；最终回答会被完整回传，不要调用回传工具。",
+  ].filter(Boolean).join("\n");
+}
+
+/** 把权威身份块写进成员会话的会话级 developer_instructions（base 在前会被盖掉，所以块放最前）。 */
+async function applyGroupMemberScope(group: BossGroup, member: GroupMember, threadId: string, supervisor: string, model: string): Promise<void> {
+  const baseRead: any = await server.request("config/read", {}).catch(() => null);
+  const base = String(baseRead?.config?.developer_instructions ?? "");
+  const block = groupMemberScopeBlock(group, member, supervisor);
+  const merged = base ? `${block}\n\n---\n\n${base}` : block;
+  await server.request("thread/settings/update", {
+    threadId,
+    collaborationMode: { mode: "default", settings: { ...(model ? { model } : {}), developer_instructions: merged } },
+  }).catch(() => undefined);
+}
+
+/** 成员的直接上级 = 中枢会话的笔名 + id；别名记录缺失时退回群名（绝不留空让模型自己猜）。 */
+async function supervisorLabelForMember(group: BossGroup, threadId: string): Promise<string> {
+  const bossId = String(group.bossThreadId ?? "").trim();
+  if (bossId) await ensureSessionAlias(threadId, bossId).catch(() => undefined);
+  const label = await supervisorLabelOf(threadId).catch(() => "");
+  return label || (bossId ? `${group.name}（${bossId.slice(0, 8)}）` : group.name);
+}
+
+let memberScopeRefreshInFlight: Promise<number> | null = null;
+let memberScopeRefreshedAt = 0;
+/** 启动/引擎就绪/改名后刷新所有群成员的身份块（旧会话也要跟上，不能只修新建的）。 */
+export function refreshGroupMemberScopes(): Promise<number> {
+  if (!engineReady()) return Promise.resolve(0);
+  if (memberScopeRefreshInFlight) return memberScopeRefreshInFlight;
+  if (Date.now() - memberScopeRefreshedAt < 30_000) return Promise.resolve(0);
+  memberScopeRefreshInFlight = (async () => {
+    const state = await bossStore.load();
+    let changed = 0;
+    for (const group of Object.values(state.groups ?? {})) {
+      const model = (await bossModelOf(group)) || "";
+      for (const member of group.members ?? []) {
+        if (!member.threadId || member.source === "cli") continue;
+        try {
+          const supervisor = await supervisorLabelForMember(group, member.threadId);
+          await applyGroupMemberScope(group, member, member.threadId, supervisor, model);
+          changed += 1;
+        } catch { /* 单个成员失败不影响其余 */ }
+      }
+    }
+    memberScopeRefreshedAt = Date.now();
+    return changed;
+  })().finally(() => { memberScopeRefreshInFlight = null; });
+  return memberScopeRefreshInFlight;
+}
+
+/**
+ * 单个成员会话被打开（thread/resume）后立刻刷新身份块。
+ * ⛔ 启动时的批量刷新可能因「线程还没被引擎加载」而 update 失败；resume 之后线程一定在，
+ *    这时补写一次，用户点开成员会话再问「上级是谁」就不会拿到旧答案。
+ */
+export async function refreshMemberScopeForThread(threadId: string): Promise<boolean> {
+  if (!engineReady()) return false;
+  const id = String(threadId ?? "").trim();
+  if (!id) return false;
+  const state = await bossStore.load();
+  for (const group of Object.values(state.groups ?? {})) {
+    const member = (group.members ?? []).find((entry) => entry.threadId === id);
+    if (!member || member.source === "cli") continue;
+    const supervisor = await supervisorLabelForMember(group, id);
+    const model = (await bossModelOf(group)) || member.model || "";
+    await applyGroupMemberScope(group, member, id, supervisor, model);
+    return true;
+  }
+  return false;
+}
+
+/** 某个中枢改名 / 换上级后，只刷新它名下的成员（不用全量扫）。 */
+export async function refreshMemberScopesForSupervisor(supervisorThreadId: string): Promise<number> {  if (!engineReady()) return 0;
+  const bossId = String(supervisorThreadId ?? "").trim();
+  if (!bossId) return 0;
+  const state = await bossStore.load();
+  let changed = 0;
+  for (const group of Object.values(state.groups ?? {})) {
+    if (String(group.bossThreadId ?? "").trim() !== bossId) continue;
+    const model = (await bossModelOf(group)) || "";
+    for (const member of group.members ?? []) {
+      if (!member.threadId || member.source === "cli") continue;
+      try {
+        const supervisor = await supervisorLabelForMember(group, member.threadId);
+        await applyGroupMemberScope(group, member, member.threadId, supervisor, model);
+        changed += 1;
+      } catch { /* 单个成员失败不影响其余 */ }
+    }
+  }
+  memberScopeRefreshedAt = Date.now();
+  return changed;
+}
+
 /** 成员的常驻会话：同一 (群, 成员) 永远同一线程 —— 成员因此记得自己之前做过什么。 */
 async function ensureMemberThread(group: BossGroup, member: GroupMember): Promise<string> {
   if (member.threadId) {
@@ -509,7 +625,8 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
     }).catch(() => null);
     if (resumed?.thread?.id) {
       threadCwd.set(member.threadId, group.workspace || process.cwd());
-      void ensureSessionAlias(member.threadId, String(group.bossThreadId ?? "")).catch(() => undefined);
+      // ⛔ 上级关系必须在派活前落盘（气泡/指令都读它；别留 void 竞态）
+      await ensureSessionAlias(member.threadId, String(group.bossThreadId ?? "")).catch(() => undefined);
       return member.threadId;
     }
   }
@@ -533,7 +650,7 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
   member.threadName = `${group.name}·${member.name}`;
   bossStore.save();
   /* ⛔ 登记上级（中枢会话）：气泡头部「谁派的活」读这条链；中枢改名后子会话那边跟着变。 */
-  void ensureSessionAlias(threadId, String(group.bossThreadId ?? "")).catch(() => undefined);
+  await ensureSessionAlias(threadId, String(group.bossThreadId ?? "")).catch(() => undefined);
   return threadId;
 }
 
@@ -668,7 +785,7 @@ function browserAppendix(): string {
 function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, attemptNo: number, supervisor = ""): string {
   return `[SYSTEM TASK · 群成员会话]
 你是「${group.name}」群里的 **${member.name}**（${member.role}）。
-${supervisor ? `上级：${supervisor}\n` : ""}
+${supervisor ? `上级：${supervisor}（你的直接上级就是这一行；工具说明里的「可调度对象 / 专家团主理人」是宿主全局说明，不是你的上级）\n` : ""}
 ${member.systemPrompt ? `${member.systemPrompt}\n` : ""}
 === 本次任务（第 ${attemptNo} 次尝试）===
 标题：${task.title}
@@ -705,10 +822,14 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
        ⇒ 把中枢会话的名字写进壳里，渲染端据此显示「<中枢名> 派发任务」而不是用户气泡。
        快照里查得到就用快照（改名会跟着变），查不到退回群名（绝不是"主会话"这种空话）。 */
     const bossAlias = (await aliasRecordOf(String(group.bossThreadId ?? "")).catch(() => null))?.alias ?? "";
-    const bossSupervisor = bossAlias || group.name;
     const env = await providerEnv();
     /* ⛔ 每次派活都重新跟随 boss 当前模型（成员线程是常驻的，boss 换模型后成员要跟上来）。 */
     const model = (await bossModelOf(group)) || member.model || env.model;
+    /* ⛔ 11-03：把真实上级（笔名 + id）写成成员会话的权威指令，并每次派活刷新 —— 旧会话也跟上。
+       只靠首条任务里的「上级：…」会被历史/压缩淹没，模型于是从工具目录里猜成专家团主理人。 */
+    const supervisorLabel = await supervisorLabelForMember(group, threadId);
+    await applyGroupMemberScope(group, member, threadId, supervisorLabel, model).catch(() => undefined);
+    const bossSupervisor = supervisorLabel || bossAlias || group.name;
     const turn: any = await server.request("turn/start", {
       threadId,
       input: [{ type: "text", text: memberPrompt(group, member, task, attempt.n, bossSupervisor), text_elements: [] }],

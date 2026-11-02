@@ -14,7 +14,8 @@ import path from "node:path";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
-import { addTaskForBoss, browserStatus, createGroupForBoss, deleteGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reconcileRunningTasks, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies, watchMemberSettlements } from "../boss-groups/runner";
+import { addTaskForBoss, browserStatus, createGroupForBoss, deleteGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reconcileRunningTasks, refreshMemberScopesForSupervisor, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies, watchMemberSettlements } from "../boss-groups/runner";
+import { setSessionAliasChangeHook } from "../session-alias";
 import { normalizeEscalateChoice, recordReview, resolveEscalation } from "../boss-groups/state";
 import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
 import { broadcastCodexEvent } from "./window-bus";
@@ -340,6 +341,9 @@ export const bossGroupsFeature = defineFeature<null>({
        ⇒ 挂引擎事件监听：回合结束按 turnId 反查任务并结算（重启后依然有效）。 */
     watchMemberSettlements();
 
+    /* ⛔ 11-03：中枢改名后，成员会话的权威身份块要跟着重写（「上级：笔名」不能停在旧名）。 */
+    setSessionAliasChangeHook((threadId) => { void refreshMemberScopesForSupervisor(threadId).catch(() => undefined); });
+
     /* ⛔ 启动对账：把上次没结算完的**残留** running 任务与引擎真相对齐
        （回合早结束 ⇒ 补结算；引擎里没这一回合 ⇒ 静默标失败并释放成员）。
        ⛔ 静默：不回投中枢（凭空造"执行失败"是噪声，而回投走的就是用户消息队列）。 */
@@ -352,6 +356,7 @@ export const bossGroupsFeature = defineFeature<null>({
 
     ctx.effect(() => {
       setBossEventSink(null);
+      setSessionAliasChangeHook(null);
       for (const channel of ["boss-groups:list", "boss-groups:status", "boss-groups:create", "boss-groups:delete", "boss-groups:assign", "boss-groups:review", "boss-groups:escalate", "boss-groups:browser", "boss-groups:member", "boss-groups:pin", "boss-groups:say", "boss-groups:pool"]) {
         ipcHost.removeHandler(channel);
       }

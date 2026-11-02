@@ -1102,6 +1102,30 @@ if (state) {
     "群工具全部携带 callerThreadId（引擎下发的调用者，≥6 处；⛔ 不许回落 bag.threadRef）");
   ok(/tool === "group_status"[\s\S]{0,2400}?filter\(\(g: any\) => !bossCaller \|\| String\(g\?\.bossThreadId/.test(routerSrc),
     "group_status 只报调用者自己名下的群（防模型拿别的中枢 groupId 跨群派活）");
+
+  /* ⛔ 11-03 用户（截图：成员被问「你的上级是谁」答成了专家团主理人「承枢」）：
+     成员会话拿到了主会话的调度目录，却没有一句「谁派的你」的权威身份。
+     ⇒ 必须在会话级指令里写明真实上级（中枢笔名 + id），并明确目录/角色模板不是上级关系；
+       派活前、引擎就绪时、中枢改名后都要刷新，历史会话不能停在旧答案。 */
+  ok(/群编排约束（会话级·权威）/.test(runnerSrc)
+    && /你的直接上级/.test(runnerSrc)
+    && /不是你的上级关系/.test(runnerSrc)
+    && /执行方/.test(runnerSrc),
+    "成员会话有权威身份块：直接上级 = 中枢笔名 + id，工具目录/角色模板明确不是上级");
+  ok(/await ensureSessionAlias\(member\.threadId/.test(runnerSrc)
+    && /await ensureSessionAlias\(threadId/.test(runnerSrc),
+    "成员上级关系在派活前落盘（不再 void 竞态）");
+  const dispatchPos = runnerSrc.indexOf("async function dispatchTask");
+  ok(dispatchPos >= 0
+    && /applyGroupMemberScope\(group, member, threadId, supervisorLabel, model\)/.test(runnerSrc)
+    && runnerSrc.indexOf("applyGroupMemberScope(group, member, threadId", dispatchPos) < runnerSrc.indexOf('server.request("turn/start"', dispatchPos),
+    "每次派活前刷新成员身份块（旧会话也跟着改，且在 turn/start 之前）");
+  ok(/refreshGroupMemberScopes\(\)/.test(runnerSrc) && /refreshMemberScopesForSupervisor/.test(runnerSrc),
+    "引擎就绪 + 中枢改名都会刷新成员身份");
+  ok(/refreshMemberScopeForThread/.test(runnerSrc) && /refreshMemberScopeForThread/.test(read("electron/features/codex-ipc.ts")),
+    "成员会话被打开（thread/resume）后补写身份块（启动批量刷新失败也有兜底）");
+  ok(/setSessionAliasChangeHook/.test(bossIpcSrc) && /refreshMemberScopesForSupervisor/.test(bossIpcSrc),
+    "改名广播钩子接到成员身份刷新（上级笔名变了，模型不能还记旧名）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

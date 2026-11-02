@@ -368,6 +368,11 @@ export const codexFeature = defineFeature<null>({
           mutableState.resumeEnrichMs += __enrich;
           if (__enrich > mutableState.resumeMaxMs) mutableState.resumeMaxMs = __enrich;
           threadCwd.set(String(r.thread.id), String(r.thread.cwd ?? r.cwd ?? p?.cwd ?? ""));
+          /* ⛔ 11-03：成员会话被打开后补写「真实上级」身份块（启动批量刷新可能因线程未加载而失败；
+             resume 之后线程一定在）。非群成员会直接 no-op。 */
+          void import("../boss-groups/runner")
+            .then(({ refreshMemberScopeForThread }) => refreshMemberScopeForThread(String(r.thread.id)))
+            .catch(() => undefined);
           /* 文件变更报告**重播**（10-06 夜二改）：本线程的存量报告按原事件形态重发 ——
              重启/切回会话后「已更改 N 个文件」卡与收尾冻结的编辑行仍在（渲染层收件零改动）。
              失败静默：重播只是锦上添花，不影响 resume 本身。 */
