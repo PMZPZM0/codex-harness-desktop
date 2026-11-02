@@ -1423,6 +1423,47 @@ const CHECKS = [
       }
     },
   },
+  {
+    id: "wallpaper-mac-motion",
+    name: "🌌 壁纸 mac 适配：系统「减少动态效果」下星空/光幕仍动（11-02）",
+    run: async (h) => {
+      /* 用户反馈「3D 星空没有适配 mac」：全站默认 data-motion=force（无视系统开关），
+         但壁纸的 canvas 星空与鼠标视差曾直接读媒体查询 ⇒ mac 开「减少动态效果」时只有壁纸冻住。
+         这里用 CDP 模拟系统开关，断言壁纸仍逐帧 + 光幕动画没被静音。 */
+      await h.eval(`localStorage.setItem("theme", "obsidian")`);
+      await h.eval(`localStorage.setItem("wallpaper", JSON.stringify({ mode: "depth", image: "preset:snow" }))`);
+      await h.reload({ waitMs: 2400 });
+      await h.waitFor(`!!document.querySelector(".wallpaper-depth")`, { label: "3D 星空画布", timeoutMs: 15000 });
+      await wait(700);
+      try {
+        await h._send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-reduced-motion", value: "reduce" }] });
+        await wait(600);
+        const meta = await h.eval(`({ motion: document.documentElement.dataset.motion || "", media: matchMedia("(prefers-reduced-motion: reduce)").matches })`);
+        h.check("① 系统「减少动态效果」已模拟生效，应用策略仍是 force", meta.motion === "force" && meta.media === true, JSON.stringify(meta));
+        const sig = () => h.eval(`(function(){
+          const c=document.querySelector(".wallpaper-depth"); if(!c) return "no-canvas";
+          const d=c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+          let sum=0; for(let i=0;i<d.length;i+=4999) sum=(sum*31+d[i])>>>0;
+          return sum;
+        })()`);
+        const a = await sig();
+        await wait(700);
+        const b = await sig();
+        h.check("② 3D 星空仍在逐帧（两帧像素不一致）", a !== b, `${a} / ${b}`);
+        await h.eval(`localStorage.setItem("wallpaper", JSON.stringify({ mode: "aurora", image: "preset:snow" }))`);
+        await h.eval(`window.dispatchEvent(new CustomEvent("wallpaper-change"))`);
+        await h.waitFor(`!!document.querySelector(".wallpaper-motion")`, { label: "极光光幕", timeoutMs: 8000 });
+        await wait(400);
+        const anim = await h.eval(`(function(){ const b=document.querySelector(".wallpaper-motion i b"); return b ? getComputedStyle(b).animationName : ""; })()`);
+        h.check("③ 极光光幕动画没有被系统开关静音", Boolean(anim) && anim !== "none", String(anim));
+      } finally {
+        await h._send("Emulation.setEmulatedMedia", { features: [] }).catch(() => undefined);
+        await h.eval(`localStorage.setItem("wallpaper", JSON.stringify({ mode: "off", image: "" }))`).catch(() => undefined);
+        await h.eval(`localStorage.setItem("theme", "light")`).catch(() => undefined);
+        await h.eval(`window.dispatchEvent(new CustomEvent("wallpaper-change"))`).catch(() => undefined);
+      }
+    },
+  },
 ];
 
 if (flag("list")) {

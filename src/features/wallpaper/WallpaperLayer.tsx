@@ -3,12 +3,13 @@
  *
  * ⛔ 铁律：
  *   ① pointer-events: none + z-index: -1 —— 纯视觉层，永不挡交互；
- *   ② 新壁纸全部是**主题色 + CSS 动效**（无第三方引擎、无 canvas 逐帧）；
- *   ③ 减动效偏好下只停动画/不挂鼠标监听（保留一层静态柔光，不突然变纯黑）。
+ *   ② 动态档 = CSS 柔光 / canvas 2D 星空，颜色全部读主题 token；减动效按**应用策略**
+ *      （见 shouldReduceMotion），⛔ 不直接读系统媒体查询（mac「减少动态效果」会单独冻住星空/视差）；
+ *   ③ 减动效下只停动画/不挂鼠标监听（保留一层静态柔光，不突然变纯黑）。
  *
  * 11-02 用户判「动态壁纸太失望 / 普通壁纸也丑 / 旧的那种线条都还在」⇒ 三类旧壁纸
  * （图案瓷砖 / 粒子连线 / 星空点阵）**整组移除**；只剩：
- *   aurora 极光流带 · ribbon 流光丝带 · halo 呼吸光晕 · custom 静态壁纸（6 款主题色）。
+ *   aurora 极光流带 · ribbon 流光丝带 · halo 呼吸光晕 · depth 3D 星空 · custom 静态壁纸（5 组日夜风景）。
  */
 import { useEffect, useRef, useState } from "react";
 import { localImageUrl } from "../../lib/image-src.mjs";
@@ -16,7 +17,14 @@ import { isPresetImage, presetById, readWallpaper, saveWallpaper, subscribeWallp
 
 type WallpaperConfig = { mode: string; image: string };
 
-function prefersReducedMotion(): boolean {
+/** 减动效策略（11-02 mac 反馈：「3D 星空没有适配 mac」）。
+ *  ⛔ 与全站同一条策略：应用默认 `data-motion="force"` = **无视系统「减少动态效果」**
+ *    （mac 用户实测这个系统开关会把动画全冻住；CSS 侧已用 `html:not([data-motion="force"])` 前缀）。
+ *    壁纸的 JS 动效也必须走这个判断 —— 直接读媒体查询会出现「其它都在动，只有星空/视差冻住」。
+ *  ⛔ 属性缺失按默认 force 处理：首帧 effect 可能早于设置 `data-motion` 的那条 effect。 */
+function shouldReduceMotion(): boolean {
+  const policy = document.documentElement.dataset.motion;
+  if (!policy || policy === "force") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
@@ -29,7 +37,7 @@ function MotionVeil({ variant }: { variant: "aurora" | "ribbon" | "halo" }) {
   /* 鼠标视差（用户 11-02：「动态壁纸要加上鼠标动态交互效果」）：指针位置缓动追随，
      每团光按 --wp-depth 不同的位移量 ⇒ 有纵深；减动效偏好下不挂监听、不动。 */
   useEffect(() => {
-    if (prefersReducedMotion()) return;
+    if (shouldReduceMotion()) return;
     const el = ref.current;
     if (!el) return;
     let targetX = 0, targetY = 0, curX = 0, curY = 0, raf = 0;
@@ -284,7 +292,7 @@ export function WallpaperLayer() {
       {(cfg.mode === "aurora" || cfg.mode === "ribbon" || cfg.mode === "halo") && (
         <MotionVeil variant={cfg.mode as "aurora" | "ribbon" | "halo"} />
       )}
-      {cfg.mode === "depth" && <DepthField reduced={prefersReducedMotion()} />}
+      {cfg.mode === "depth" && <DepthField reduced={shouldReduceMotion()} />}
       {cfg.mode === "custom" && preset && (
         <>
           <div className="wallpaper-custom wallpaper-preset wp-sky-day" style={{ backgroundImage: `url("./${preset.day}")` }} />

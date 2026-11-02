@@ -82,16 +82,20 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     "3D 星空跟鼠标走（星点按 depth 不同位移 = 纵深）");
   ok(/attributeFilter: \["data-theme"\]/.test(layerSrc) && /buildPalette/.test(layerSrc),
     "3D 星空跟随主题换调色板（浅色淡星 / 深色星野；切换只重绘）");
-  ok(/DepthField reduced=\{prefersReducedMotion\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
-    "3D 星空尊重减动效偏好（只画一帧）+ 画布样式在位");
+  ok(/DepthField reduced=\{shouldReduceMotion\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
+    "3D 星空按应用减动效策略决定是否逐帧（只画一帧）+ 画布样式在位");
   ok(/function MotionVeil/.test(layerSrc) && /is-\$\{variant\}/.test(layerSrc) && /<i><b \/><\/i><i><b \/><\/i><i><b \/><\/i>/.test(layerSrc),
     "动态光幕 = 三层柔光组件（外层视差 / 内层动画各管一件事）");
   ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")
     && /\.wallpaper-motion i \{[^}]*var\(--wp-px\)/.test(cssSrc) && /--wp-depth/.test(cssSrc),
     "鼠标视差在位（缓动 + 每层不同深度；用户 11-02「动态壁纸要加上鼠标动态交互效果」）");
-  ok(/prefersReducedMotion\(\)/.test(layerSrc) && /prefers-reduced-motion: reduce[\s\S]{0,260}\.wallpaper-motion i b \{ animation: none/.test(cssSrc)
-    && /\.wallpaper-motion i \{ transform: none !important; \}/.test(cssSrc),
-    "减动效偏好：视差监听不挂、动画静帧（保留柔光）");
+  ok(/function shouldReduceMotion/.test(layerSrc) && /dataset\.motion/.test(layerSrc)
+    && /html:not\(\[data-motion="force"\]\) \.wallpaper-layer \{ animation: none/.test(cssSrc)
+    && /html:not\(\[data-motion="force"\]\) \.wallpaper-motion i b \{ animation: none/.test(cssSrc)
+    && !/@media \(prefers-reduced-motion: reduce\) \{\s*\.wallpaper-(layer|motion)/.test(cssSrc)
+    && /setAttribute\("data-motion", "force"\)/.test(read("index.html"))
+    && !/prefersReducedMotion/.test(layerSrc),
+    "mac 适配：壁纸 CSS/JS 同一条减动效策略（data-motion=force 时不被系统「减少动态效果」单独冻住）");
   ok(["is-aurora", "is-ribbon", "is-halo"].every((cls) => cssSrc.includes(cls)), "三档样式齐备（keyframes + 柔光层）");
   ok(/color-mix\(in srgb, var\(--(accent|ic-)/.test(cssSrc), "动态光幕颜色取主题 token（切主题自动换色）");
   ok(/\.wallpaper-motion::after/.test(cssSrc) && /feTurbulence/.test(cssSrc) && /\.wallpaper-motion::before/.test(cssSrc),

@@ -41,7 +41,10 @@
 /* ⛔ 10-06 用户实测：粒子档在深色主题下整块发白 —— 引擎画布背景不可信，CSS 强制透明 */
 
 @media (prefers-reduced-motion: reduce) {
-  .wallpaper-layer { animation: none !important; }
+  /* ⛔ 11-02 mac 反馈：「3D 星空没有适配 mac」——macOS「减少动态效果」会把这两段静音块点亮，
+     而全站默认 data-motion="force"（无视系统开关）。必须与全站同前缀，否则会出现
+     「其它都在动、只有壁纸冻住」。JS 侧的星空/视差也走同一条策略（WallpaperLayer.tsx）。 */
+  html:not([data-motion="force"]) .wallpaper-layer { animation: none !important; }
 }
 
 /* ── 外观设置段 ── */
@@ -128,8 +131,8 @@
 @keyframes wp-halo-breathe { from { transform: scale(1); opacity: .46; } to { transform: scale(1.16); opacity: .72; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .wallpaper-motion i { transform: none !important; }
-  .wallpaper-motion i b { animation: none !important; }
+  html:not([data-motion="force"]) .wallpaper-motion i { transform: none !important; }
+  html:not([data-motion="force"]) .wallpaper-motion i b { animation: none !important; }
 }
 
 /* 壁纸模式 8 档：4 列两行（5 列的 .five 留给旧布局，别混用） */

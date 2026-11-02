@@ -46,6 +46,10 @@
          与 App.tsx 的 localStorage "theme" 同源（默认 light）。 */
       (function () {
         try {
+          /* 减动效策略：默认 force = 无视系统「减少动态效果」（mac 实测这个系统开关会把动画冻住）。
+             首帧就落上 —— 全站 CSS 静音块都带 html:not([data-motion="force"]) 前缀，
+             壁纸 JS（3D 星空 / 鼠标视差）也读同一个属性，晚一步会先冻一帧。 */
+          document.documentElement.setAttribute("data-motion", "force");
           var t = localStorage.getItem("theme") || "light";
           if (t !== "light" && t !== "dark" && t !== "obsidian") t = "light";
           document.documentElement.setAttribute("data-theme", t);
