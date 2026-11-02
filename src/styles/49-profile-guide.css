@@ -360,6 +360,5 @@
   .profile-guide-summary-row { grid-template-columns: 62px minmax(0, 1fr) auto; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .profile-guide-card,
-  .profile-guide-body { animation: none; }
+  html:not([data-motion="force"]) .profile-guide-card, html:not([data-motion="force"]) .profile-guide-body { animation: none; }
 }

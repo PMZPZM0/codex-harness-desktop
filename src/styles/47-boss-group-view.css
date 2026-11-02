@@ -113,7 +113,7 @@
   color: var(--text);
 }
 @media (prefers-reduced-motion: reduce) {
-  .boss-panel, .boss-panel-mini, .boss-panel-pin { transition: none; }
+  html:not([data-motion="force"]) .boss-panel, html:not([data-motion="force"]) .boss-panel-mini, html:not([data-motion="force"]) .boss-panel-pin { transition: none; }
 }
 
 /* ── 10-24 深夜改版：群对话框（聊天气泡 + 输入框）+ 顶栏成员图标 ── */
@@ -460,7 +460,7 @@
 }
 /* ⛔ 系统「减少动态效果」：不淡入（JS 那边同时不再自动翻条） */
 @media (prefers-reduced-motion: reduce) {
-  .boss-mood { animation: none; }
+  html:not([data-motion="force"]) .boss-mood { animation: none; }
 }
 /* ⛔ 10-25 用户令：欢迎界面里**不再有**「选项目地址」按钮（也不自动弹窗）。
    项目地址控件搬到**输入框左上角**，与普通会话欢迎界面同一处（`.welcome-cwd-chip` 骨架，

@@ -37,7 +37,7 @@
 
 /* ⛔ 尊重系统「减弱动效」：只保留出现，不做位移（与全站动效纪律一致）。 */
 @media (prefers-reduced-motion: reduce) {
-  .update-ready-toast { animation: none; }
+  html:not([data-motion="force"]) .update-ready-toast { animation: none; }
 }
 
 .update-ready-icon {

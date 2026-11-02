@@ -656,15 +656,9 @@ body:has(.media-preview-backdrop.is-mini) .bc-panel { z-index: 69; }
 
 /* 减少动态偏好：去掉所有位移/缩放动画（不影响可用性；音量柱/声波停在中位） */
 @media (prefers-reduced-motion: reduce) {
-  .bc-anchor { transition: none; }
-  .bc-pod.is-snap,
-  .bc-pulse,
-  .bc-bubble,
-  .bc-panel,
-  .bc-pod-icon,
-  .bc-eq,
-  .bc-eq-bubble i { animation: none; }
-  .bc-wave { display: none !important; }
+  html:not([data-motion="force"]) .bc-anchor { transition: none; }
+  html:not([data-motion="force"]) .bc-pod.is-snap, html:not([data-motion="force"]) .bc-pulse, html:not([data-motion="force"]) .bc-bubble, html:not([data-motion="force"]) .bc-panel, html:not([data-motion="force"]) .bc-pod-icon, html:not([data-motion="force"]) .bc-eq, html:not([data-motion="force"]) .bc-eq-bubble i { animation: none; }
+  html:not([data-motion="force"]) .bc-wave { display: none !important; }
 }
 
 /* ── 11-01 用户令：「给每个群事件后面都加一个单独删除功能」──────────────

@@ -467,6 +467,6 @@
   .fm-edit-actions { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .function-menu-popover, .function-menu-tour, .function-menu-editor { animation: none; }
-  .function-menu-pill, .fm-location-card, .fm-edit-actions { transition: none; }
+  html:not([data-motion="force"]) .function-menu-popover, html:not([data-motion="force"]) .function-menu-tour, html:not([data-motion="force"]) .function-menu-editor { animation: none; }
+  html:not([data-motion="force"]) .function-menu-pill, html:not([data-motion="force"]) .fm-location-card, html:not([data-motion="force"]) .fm-edit-actions { transition: none; }
 }

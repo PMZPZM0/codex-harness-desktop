@@ -1048,8 +1048,7 @@
   50% { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .run-activity-text,
-  .run-activity-text.shimmer-text { animation: none; opacity: 1; -webkit-text-fill-color: currentColor; }
+  html:not([data-motion="force"]) .run-activity-text, html:not([data-motion="force"]) .run-activity-text.shimmer-text { animation: none; opacity: 1; -webkit-text-fill-color: currentColor; }
 }
 @keyframes run-activity-in {
   from { opacity: 0; transform: translateY(4px); }

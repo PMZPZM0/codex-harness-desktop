@@ -817,7 +817,7 @@
   pointer-events: auto;
 }
 @media (prefers-reduced-motion: reduce) {
-  .view-toolbar { transition: none; }
+  html:not([data-motion="force"]) .view-toolbar { transition: none; }
 }
 .view-toolbar-btn {
   display: inline-flex;

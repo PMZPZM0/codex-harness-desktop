@@ -43,8 +43,8 @@
 
 /* ⛔ 尊重系统「减弱动效」：只保留出现，不做位移（与全站动效纪律一致）。 */
 @media (prefers-reduced-motion: reduce) {
-  .close-confirm-backdrop { animation: none; }
-  .close-confirm-card { animation: none; }
+  html:not([data-motion="force"]) .close-confirm-backdrop { animation: none; }
+  html:not([data-motion="force"]) .close-confirm-card { animation: none; }
 }
 
 .close-confirm-head {

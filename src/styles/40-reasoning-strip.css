@@ -97,7 +97,7 @@
   to { transform: translateX(-50%); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .reasoning-strip-marquee.is-scrolling { animation: none; }
+  html:not([data-motion="force"]) .reasoning-strip-marquee.is-scrolling { animation: none; }
 }
 /* ⛔ 10-28 用户（截图）：「展开折叠图标自适应在内容尾部就行，鼠标放上去展示，默认隐藏」
    ⇒ ① 箭头默认不可见（不是半透明，连占位都不抢眼）；

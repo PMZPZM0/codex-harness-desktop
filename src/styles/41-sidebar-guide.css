@@ -575,5 +575,5 @@
   to   { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sidebar-options-flyout { animation: none; }
+  html:not([data-motion="force"]) .sidebar-options-flyout { animation: none; }
 }

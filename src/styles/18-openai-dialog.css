@@ -350,7 +350,7 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 @keyframes voice-task-fail { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-1.5px); } 75% { transform: translateX(1.5px); } }
 
 @media (prefers-reduced-motion: reduce) {
-  .voice-ball[data-task] .voice-mascot { animation: none !important; }
+  html:not([data-motion="force"]) .voice-ball[data-task] .voice-mascot { animation: none !important; }
 }
 
 /* 打字时从球上方弹出迷你键盘（10-26 用户：「打字有键盘出来」）。

@@ -197,7 +197,7 @@
 }
 /* 系统「减少动态效果」：不播动画，直接消失 */
 @media (prefers-reduced-motion: reduce) {
-  .boss-groups-group-item.is-removing { animation: none; opacity: 0; }
+  html:not([data-motion="force"]) .boss-groups-group-item.is-removing { animation: none; opacity: 0; }
 }
 .boss-groups-note {
   flex: 1;

@@ -666,11 +666,8 @@ html[data-theme-mode="dark"] .import-record-card.thread-reference .import-record
   100% { transform: scale(1); }
 }
 @media (prefers-reduced-motion: reduce) {
-  /* 关掉弹动，但**保留对勾与颜色**：反馈是信息，动效才是装饰（同本文件其他 reduce 块的口径） */
-  .message-footer button[data-phase="done"],
-  .selection-action-bar button[data-phase="done"],
-  .md-table-copy[data-phase="done"],
-  .md-code-copy[data-phase="done"] {
+  html:not([data-motion="force"]) /* 关掉弹动，但**保留对勾与颜色**：反馈是信息，动效才是装饰（同本文件其他 reduce 块的口径） */
+  .message-footer button[data-phase="done"], html:not([data-motion="force"]) .selection-action-bar button[data-phase="done"], html:not([data-motion="force"]) .md-table-copy[data-phase="done"], html:not([data-motion="force"]) .md-code-copy[data-phase="done"] {
     animation: none;
   }
 }

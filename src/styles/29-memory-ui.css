@@ -135,7 +135,7 @@
 }
 .mui-spin { animation: mui-spin 0.9s linear infinite; }
 @keyframes mui-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .mui-spin { animation: none; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion="force"]) .mui-spin { animation: none; } }
 
 .mui-skeleton { display: flex; flex-direction: column; gap: 8px; }
 .mui-skeleton-row {
@@ -145,7 +145,7 @@
   animation: mui-shimmer 1.3s steps(16) infinite; /* steps：同 shimmer-sweep 的理由 */
 }
 @keyframes mui-shimmer { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
-@media (prefers-reduced-motion: reduce) { .mui-skeleton-row { animation: none; } }
+@media (prefers-reduced-motion: reduce) { html:not([data-motion="force"]) .mui-skeleton-row { animation: none; } }
 
 /* ══ 小组件 ═════════════════════════════════════════════════════════════ */
 .mui-badge {

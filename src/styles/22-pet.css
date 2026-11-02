@@ -160,7 +160,7 @@ html[data-pet-window="activity"] #root {
   50% { transform: translateY(-0.8%) rotate(-0.6deg); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pet-rig-motion, .pet-rig-shadow, .pet-fade-layer.is-back { animation: none !important; }
+  html:not([data-motion="force"]) .pet-rig-motion, html:not([data-motion="force"]) .pet-rig-shadow, html:not([data-motion="force"]) .pet-fade-layer.is-back { animation: none !important; }
 }
 
 /* 悬停工具栏：打开主窗 / 任务横幅 / 隐藏（Qoder 同款只在悬停时出现） */
@@ -210,7 +210,8 @@ html[data-pet-window="activity"] #root {
 /* 气泡：窗口顶部居中，淡出 */
 .pet-bubble {
   position: absolute;
-  top: 2%;
+  /* 11-02 用户「离宠物近一点，贴着宠物上方」：改由组件按舞台高度给 bottom（贴着精灵头顶）。 */
+  top: auto;
   left: 50%;
   transform: translate(-50%, -4px);
   max-width: 92%;
@@ -374,7 +375,7 @@ html[data-pet-window="activity"] #root {
 .pet-activity-btn.stop { color: #b14040; }
 .pet-activity-btn:disabled { opacity: 0.55; cursor: default; }
 @media (prefers-reduced-motion: reduce) {
-  .pet-activity-card, .pet-activity-spin { transition: none; animation: none; }
+  html:not([data-motion="force"]) .pet-activity-card, html:not([data-motion="force"]) .pet-activity-spin { transition: none; animation: none; }
 }
 
 
@@ -450,7 +451,7 @@ html[data-pet-window="activity"] #root {
 /* ⛔ 11-02 用户：「宠物不要晃动，工作/事件联动时晃得不舒服」——
    动画包宠物**不再叠 CSS 状态微动作**（WebP 自身已有动作），避免整只宠物跟着上下晃/歪。 */
 @media (prefers-reduced-motion: reduce) {
-  .pet-thumb-rig img { animation: none !important; }
+  html:not([data-motion="force"]) .pet-thumb-rig img { animation: none !important; }
 }
 .pet-item-name { grid-area: name; font-weight: 600; }
 .pet-item-source {
