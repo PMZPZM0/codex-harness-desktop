@@ -259,6 +259,11 @@
   --line: #e7e7e4;
   --line-soft: #efefec;
   --line-strong: #d9d9d4;
+  /* 外圈细线（11-02 用户：「细节，这边上的线也要做主题色和壁纸适配」）：
+     主题基色混一档主题色 —— 顶栏/主区/右栏的外框线不再是中性灰，换主题就换色。
+     ⛔ 只微混 14%：混多了外框会变成彩色描边（正文区贴边看很花）。
+     壁纸下的半透明版本见 28-wallpaper.css。 */
+  --shell-edge: color-mix(in srgb, var(--line) 86%, var(--accent) 14%);
   --field: #ffffff;
   --field-base: #ffffff;
   --text: #23231f;
@@ -1349,7 +1354,7 @@ html.fx-ripple::view-transition-new(root) {
      顶栏下移 6px，而原生窗口钮的位置由 titleBarOverlay.height 决定 —— 把 overlay 高度从 43
      调到 **55**（55/2≈27.5 ≈ 顶栏 6+44/2=28），两者在同一行。 */
   margin: 6px 6px 0 3px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--shell-edge);
   border-left: 0;
   border-bottom: 0;
   border-radius: 12px 12px 0 0;
@@ -1357,7 +1362,7 @@ html.fx-ripple::view-transition-new(root) {
 }
 .app-shell > .workspace {
   margin: 0 6px 6px 3px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--shell-edge);
   border-top: 0;
   border-left: 0;
   border-right: 0;
@@ -1365,7 +1370,7 @@ html.fx-ripple::view-transition-new(root) {
   background: var(--bg);
 }
 .app-shell:not(.with-context) > .workspace {
-  border-right: 1px solid var(--line-soft);
+  border-right: 1px solid var(--shell-edge);
   border-radius: 0 0 12px 12px;
 }
 /* ⛔ 开右栏时主区**不许留右边缝**（10-31 用户「还是这么粗啊」）：
@@ -1376,7 +1381,7 @@ html.fx-ripple::view-transition-new(root) {
 }
 .app-shell.with-context > .context-panel {
   margin: 0 6px 6px 0;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--shell-edge);
   border-top: 0;
   border-left: 0;
   border-radius: 0 0 12px 0;

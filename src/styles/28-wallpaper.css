@@ -260,3 +260,20 @@
   background: transparent;
   border-top-color: color-mix(in srgb, var(--line) 65%, transparent);
 }
+
+/* 外圈细线（11-02 用户：「细节，这边上的线也要做主题色和壁纸适配」）：
+   壁纸下外框线转半透明并微混主题色 —— 否则三张卡片压在图上是三条实心灰边，
+   既不跟壁纸也不跟主题。顶栏再加一道内高光，做出玻璃片的上沿反光。
+   ⛔ 只在壁纸开启时加高光：关掉壁纸恢复原来那块平卡片，不引入新的常驻边线。 */
+:root[data-theme-mode="dark"][data-wallpaper="on"] {
+  /* ⛔ 别写三色 color-mix（`a 55%, b 18%, transparent 27%`）：本机 Chromium 解析失败
+     ⇒ 整条 border 简写失效、边框直接退成 0px（实测：壁纸一开外框线整条消失）。
+     两层两色 mix：内层调色相，外层调透明度。 */
+  --shell-edge: color-mix(in srgb, color-mix(in srgb, var(--line-strong) 72%, var(--accent) 28%) 73%, transparent);
+}
+:root[data-theme-mode="light"][data-wallpaper="on"] {
+  --shell-edge: color-mix(in srgb, color-mix(in srgb, var(--line) 77%, var(--accent) 23%) 71%, transparent);
+}
+:root[data-wallpaper="on"] .app-shell > .topbar {
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 10%, transparent);
+}

@@ -129,6 +129,20 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
   ok(/\[data-wallpaper="on"\] \.app-shell > \.topbar \{[\s\S]{0,200}backdrop-filter/.test(cssSrc)
     && /\[data-wallpaper="on"\] \.account-row \{\s*background: transparent/.test(cssSrc),
     "顶栏与左下账户区在壁纸下做玻璃适配（截图红框的两处白块）");
+  /* 11-02 追加：外圈细线（用户：「细节，这边上的线也要做主题色和壁纸适配」） */
+  ok(/--shell-edge: color-mix\(in srgb, var\(--line\) 86%, var\(--accent\) 14%\)/.test(baseCss),
+    "外圈线走 --shell-edge：主题基色混 14% 主题色（换主题就换色）");
+  ok(/\.app-shell > \.topbar \{[\s\S]{0,220}?border: 1px solid var\(--shell-edge\)/.test(baseCss)
+    && /\.app-shell > \.workspace \{[\s\S]{0,220}?border: 1px solid var\(--shell-edge\)/.test(baseCss)
+    && /\.app-shell\.with-context > \.context-panel \{[\s\S]{0,220}?border: 1px solid var\(--shell-edge\)/.test(baseCss),
+    "顶栏 / 主区 / 右栏三张卡片的外框都用 --shell-edge（不是写死 --line-soft）");
+  ok(/:root\[data-theme-mode="dark"\]\[data-wallpaper="on"\] \{[\s\S]{0,260}?--shell-edge: color-mix\(in srgb, color-mix\(in srgb, var\(--line-strong\) 72%, var\(--accent\) 28%\) 73%, transparent\)/.test(cssSrc)
+    && /:root\[data-theme-mode="light"\]\[data-wallpaper="on"\] \{[\s\S]{0,260}?--shell-edge: color-mix\(in srgb, color-mix\(in srgb, var\(--line\) 77%, var\(--accent\) 23%\) 71%, transparent\)/.test(cssSrc),
+    "壁纸下外框线转半透明 + 主题色微光（明暗两套透明度）");
+  ok(!/--shell-edge: color-mix\(in srgb, (?!color-mix)[^;]*transparent \d+%/.test(cssSrc),
+    "⛔ 外框线不许用三色 color-mix（本机 Chromium 解析失败 ⇒ 整条 border 失效、边线消失）");
+  ok(/:root\[data-wallpaper="on"\] \.app-shell > \.topbar \{\s*box-shadow: inset 0 1px 0 color-mix\(in srgb, var\(--text\) 10%, transparent\);/.test(cssSrc),
+    "壁纸下顶栏加一道内高光（玻璃片上沿反光）");
   /* 11-02 追加：3D 星空 = 日夜两套 + 鼠标跟随 */
   ok(/pointerX/.test(layerSrc) && /palette\.dark \? palette\.nebulaA/.test(layerSrc) && /!palette\.dark/.test(layerSrc),
     "3D 星空有鼠标跟随柔光 + 白昼流云（不只是星点漂移）");
