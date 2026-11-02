@@ -131,6 +131,10 @@ const petCss = read("src/styles/22-pet.css");
     && ipcSrc.includes('sendToWindow("harness:event", { type: "pet-open-thread"'), "活动「打开」：清已看 → 聚焦主窗 → 发 pet-open-thread");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-stop"') && ipcSrc.includes('server.request("turn/interrupt"'),
     "活动「停止」：主进程直接 turn/interrupt（主窗没开也能停）");
+  ok(/export function markPetActivityStopped/.test(stateSrc) && /function isEndedTurnItem/.test(stateSrc)
+    && /markPetActivityStopped\(id, record\.turnId\)/.test(ipcSrc)
+    && /if \(isEndedTurnItem\(threadId, p\)\) return false;/.test(stateSrc),
+    "停止后立即标记已停止 + 忽略该回合迟到的 item/delta（不再卡在「正在执行」）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-reply"') && ipcSrc.includes('server.request("turn/steer"') && ipcSrc.includes("expectedTurnId"),
     "活动「回复」：主进程 turn/steer 把一句话补进当前回合（不新起回合）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-toggle"') && ipcSrc.includes("togglePetActivity()"), "活动收起/展开走主进程状态（两个浮窗同步）");

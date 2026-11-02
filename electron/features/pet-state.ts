@@ -231,6 +231,29 @@ export function petActivityRecord(threadId: string): PetActivity | null {
   return { ...rest, canStop: rest.status === "running" && Boolean(rest.turnId), canReply: rest.status === "running" && Boolean(rest.turnId) };
 }
 
+/** 11-02 用户实测「我都停止了，宠物还在正在执行」：
+ *  ① 点停止后**立刻**把活动标成已停止（不等引擎回 turn/interrupted，有些版本会晚/不回）；
+ *  ② 回合结束后到达的 item/delta 一律忽略，不能把状态又改回 running。 */
+export function markPetActivityStopped(threadId: string, turnId?: string): boolean {
+  const id = String(threadId ?? "");
+  const item = activities.get(id);
+  if (!item) return false;
+  if (turnId && item.turnId && item.turnId !== turnId) return false;
+  reviewUntil = 0;
+  upsertActivity(id, { status: "interrupted", detail: "本轮已停止", turnId: item.turnId });
+  showBubble("已停止");
+  return true;
+}
+
+/** 这是不是「已经结束的那一轮」的迟到事件？ */
+function isEndedTurnItem(threadId: string, params: any): boolean {
+  const item = activities.get(threadId);
+  if (!item) return false;
+  if (item.status !== "completed" && item.status !== "failed" && item.status !== "interrupted") return false;
+  const incoming = turnIdOf(params);
+  return Boolean(incoming) && (!item.turnId || item.turnId === incoming);
+}
+
 /** 用户从活动气泡打开了会话 ⇒ completed/failed 视为已看，清掉（running/waiting 不动）。 */
 export function markPetActivitySeen(threadId: string): boolean {
   const id = String(threadId ?? "");
@@ -374,7 +397,9 @@ export function feedPetEvent(event: unknown): boolean {
     if (threadId) {
       const existing = activities.get(threadId);
       const title = existing?.title ?? fallbackTitle(threadId);
-      if (method === "turn/completed") {
+      /* ⛔ 有些引擎版本用 turn/completed + status=interrupted 表示「用户停止」，别再当完成处理。 */
+      const stoppedByUser = /interrupt|abort|cancel/i.test(String(p.turn?.status ?? p.status ?? ""));
+      if (method === "turn/completed" && !stoppedByUser) {
         const detail = existing?.detail && !existing.detail.startsWith("正在") ? existing.detail : "本轮已完成";
         reviewUntil = Date.now() + REVIEW_HOLD_MS;
         upsertActivity(threadId, { turnId: turnIdOf(p) || existing?.turnId || "", status: "completed", detail, title });
@@ -398,6 +423,8 @@ export function feedPetEvent(event: unknown): boolean {
     const item = (p.item ?? {}) as Record<string, unknown>;
     const type = normalizePetItemType(item.type);
     if (!threadId) return false;
+    /* 停止/结束后引擎可能还会吐几条 item（flush）：不能再把卡片改回「正在执行」。 */
+    if (isEndedTurnItem(threadId, p)) return false;
     if (type === "userMessage") {
       const text = petItemText(item);
       const existing = activities.get(threadId);
@@ -422,6 +449,7 @@ export function feedPetEvent(event: unknown): boolean {
 
   if (method === "item/agentMessage/delta") {
     if (!threadId) return false;
+    if (isEndedTurnItem(threadId, p)) return false;
     const delta = String(p.delta ?? "");
     const existing = activities.get(threadId);
     if (delta.trim() && (!existing || Date.now() - existing.detailAt >= DETAIL_THROTTLE_MS)) {

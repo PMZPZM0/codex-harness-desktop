@@ -80,15 +80,15 @@
     "look-15.webp"
   ],
   "webpSet": {
-    "idle": "idle.webp",
-    "running-right": "running-right.webp",
-    "running-left": "running-left.webp",
-    "waving": "waving.webp",
-    "jumping": "jumping.webp",
-    "failed": "failed.webp",
-    "waiting": "waiting.webp",
-    "running": "running.webp",
-    "review": "review.webp"
+    "idle": "anim/idle.webp",
+    "running-right": "anim/running-right.webp",
+    "running-left": "anim/running-left.webp",
+    "waving": "anim/waving.webp",
+    "jumping": "anim/jumping.webp",
+    "failed": "anim/failed.webp",
+    "waiting": "anim/waiting.webp",
+    "running": "anim/running.webp",
+    "review": "anim/review.webp"
   },
   "webpStillSet": {
     "idle": "idle-still.webp",

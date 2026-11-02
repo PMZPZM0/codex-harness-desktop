@@ -25,7 +25,7 @@ import { app, shell } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { petSignal, markPetActivitySeen, petActivityRecord, togglePetActivity, setPetFocusThread } from "./pet-state";
+import { petSignal, markPetActivitySeen, markPetActivityStopped, petActivityRecord, togglePetActivity, setPetFocusThread } from "./pet-state";
 import { applyPetSettings, hidePetWindow, isPetVisible, petWindowBounds, petWindowDiagnostics, petActivityWindowBounds, pushPetConfig, setPetInteractiveRect, setPetMoveHandler, showPetWindow, startPetDrag, movePet, endPetDrag } from "./pet-window";
 import { server } from "../runtime-refs";
 import { showMainWindow } from "./window-factory";
@@ -497,6 +497,8 @@ export const petFeature = defineFeature<null>({
       if (!record.canStop || !record.turnId) return { ok: false, error: "当前没有可停止的执行" };
       try {
         await server.request("turn/interrupt", { threadId: id, turnId: record.turnId });
+        /* ⛔ 不等引擎回 turn/interrupted：有些版本会晚到或不回，卡片会一直停在「正在执行」。 */
+        markPetActivityStopped(id, record.turnId);
         return { ok: true };
       } catch (error) {
         return { ok: false, error: (error as Error)?.message ?? String(error) };
