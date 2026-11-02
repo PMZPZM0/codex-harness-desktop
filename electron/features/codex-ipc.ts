@@ -181,7 +181,15 @@ export const codexFeature = defineFeature<null>({
             } catch (error: any) {
               console.warn("[tool-surface] resume 合并影视工具失败：", String(error?.message ?? error).slice(0, 160));
             }
-            const surface = withStepParam([...(resumeTools as any[]), ...extras]) as unknown[];
+            /* ⛔ 自查发现：合并可能产生**同名重复**（渲染层将来若也带上 MCP 工具，或两条来源重叠）。
+               引擎对重复工具名的行为未定义，宁可在这里按名字去重：后出现的保留（主进程侧是权威）。 */
+            const byName = new Map<string, any>();
+            for (const tool of [...(resumeTools as any[]), ...extras]) {
+              const key = String(tool?.name ?? tool?.function?.name ?? "");
+              if (!key) continue;
+              byName.set(key, tool);
+            }
+            const surface = withStepParam([...byName.values()]) as unknown[];
             await syncToolSurfaceAsync(codexHome, resumeThreadId, surface);
             console.log("[tool-surface] resume 升级 " + resumeThreadId.slice(0, 8) + " → " + String(surface.length) + " 个（宿主 " + String(resumeTools.length) + " + 主进程 " + String(extras.length) + "）");
             /* 11-02 诊断（用户报 Dynamic tool ... is not registered）：把实际同步的数量打出来，
