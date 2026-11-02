@@ -325,6 +325,22 @@ bag.importConversationMarkdown = importConversationMarkdown as typeof bag.import
     bag.setGoalText("");
     // 立即与引擎同步一次列表：让左侧会话列表反映最新状态（含刚发起的专家团会话等）
     void bag.refreshThreads();
+    /* 11-02 用户实测：「新建会话，不会自动展开项目、展示新建的会话并选中」。
+       ⇒ 新建即展开目标项目（欢迎界面正落在该项目里）；发出首条消息拿到会话 id 后，
+         part03 的 thread-change effect 还会按会话自己的 cwd 再兜一次（含中枢选了别的目录）。
+       ⛔ 只在「新建」这个动作上展开 —— 同一会话里用户手动折叠不会被抢回。
+       ⛔ 取 workspaceRef 而不是 bag.workspace：项目行「＋」是「先切 workspace 再立即开新会话」，
+          state 还没重渲染，读 bag.workspace 会展开**上一个**项目。 */
+    const nextCwd = bag.workspaceRef.current || bag.workspace;
+    if (nextCwd) {
+      bag.setExpandedProjects((prev) => {
+        if (prev.has(nextCwd)) return prev;
+        const next = new Set(prev);
+        next.add(nextCwd);
+        try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+        return next;
+      });
+    }
   }
 bag.startNewThread = startNewThread as typeof bag.startNewThread;
 

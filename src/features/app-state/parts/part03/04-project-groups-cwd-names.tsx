@@ -315,6 +315,27 @@ bag.projectAutoExpandRef = projectAutoExpandRef as typeof bag.projectAutoExpandR
     });
   }, [bag.projectGroups, bag.effectiveCwd, bag.workspace]);
 
+  /* 11-02 用户实测：「新建会话，不会自动展开项目、展示新会话并选中；发出去消息也不展开」。
+     ⇒ **任何非空会话成为当前会话**（打开 / 新建后发出首条消息拿到 id）时，自动展开它所在的项目。
+     ⛔ 只在 thread id 变化时做一次（同一会话内用户手动折叠不再被抢回）；
+     ⛔ cwd 可能晚一拍到：没拿到就先不记 id，等它到了再展开。 */
+  const threadAutoExpandRef = useRef("");
+  useEffect(() => {
+    const current = bag.thread;
+    const id = String(current?.id ?? "");
+    if (!id || id === threadAutoExpandRef.current) return;
+    const cwd = bag.effectiveCwd(id, current?.cwd) || "";
+    if (!cwd) return;
+    threadAutoExpandRef.current = id;
+    bag.setExpandedProjects((prev) => {
+      if (prev.has(cwd)) return prev;
+      const next = new Set(prev);
+      next.add(cwd);
+      try { localStorage.setItem("sidebar-projects-expanded-v1", JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  }, [bag.thread?.id, bag.thread?.cwd, bag.effectiveCwd]);
+
   /* 侧栏「分类」视图（09-25 用户要求）：按**会话来源**归类 ——
      主代理会话 / 专家团主理人 / 团队成员子任务 / 专家调度 / 子智能体调度 / 专家团调度。
      口径收在纯模块 src/lib/thread-source.mjs（可被预检直接跑断言）；数据全为既有真相源。 */

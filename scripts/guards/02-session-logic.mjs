@@ -1691,4 +1691,22 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       "【286】⛔ 别退回无条件写提示（旧实现在回合结束后仍会重新挂上）"
     );
   }
+
+  /* ══ 【287】新建 / 打开会话时自动展开它所在的项目（11-02 用户实测）══
+     「新建会话，不会自动展开项目、展示新建的会话并选中；发出去消息也没有展开」。 */
+  {
+    const groupsSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part03", "04-project-groups-cwd-names.tsx"), "utf8"));
+    const newThreadSrc = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part06", "03-seg", "02-context-fork-backup.tsx"), "utf8"));
+    console.log(C.bold("\n【287】新建 / 打开会话 ⇒ 自动展开所在项目"));
+    (/const threadAutoExpandRef = useRef\(""\)/.test(groupsSrc)
+      && /if \(!id \|\| id === threadAutoExpandRef\.current\) return;/.test(groupsSrc)
+      && /const cwd = bag\.effectiveCwd\(id, current\?\.cwd\) \|\| ""/.test(groupsSrc)
+      && /setExpandedProjects/.test(groupsSrc) ? ok : fail)(
+      "【287】当前会话变化就展开它所在的项目（只做一次；cwd 晚到不抢跑）"
+    );
+    (/const nextCwd = bag\.workspaceRef\.current \|\| bag\.workspace;/.test(newThreadSrc) && /setExpandedProjects/.test(newThreadSrc)
+      && /sidebar-projects-expanded-v1/.test(newThreadSrc) ? ok : fail)(
+      "【287】startNewThread 新建即展开目标项目（取 workspaceRef：项目行「＋」先切目录再立即开新会话）"
+    );
+  }
 }
