@@ -431,6 +431,8 @@ type PetPackage = {
     defaultPalette: string;
     palettes: Record<string, Record<string, string>>;
     avatarPalette: Record<string, string>;
+    animated?: boolean;
+    animatedPalettes?: Record<string, Record<string, string>>;
   };
   /** 16 向看帧（动画包专用；绝对路径） */
   lookFrameSet?: string[];

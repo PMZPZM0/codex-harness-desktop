@@ -228,7 +228,12 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   const animationStill = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : animation.stillSrc) : "";
   /* 关节包：头像文件 → 调色板 → 当前姿态图；缺图回落 idle。 */
   const rigPalette = pkg?.rig ? (pkg.rig.avatarPalette?.[avatarFile] ?? pkg.rig.defaultPalette) : "";
-  const rigSrc = pkg?.rig ? (pkg.rig.palettes?.[rigPalette]?.[effectiveState] ?? pkg.rig.palettes?.[rigPalette]?.idle ?? "") : "";
+  const rigStillSrc = pkg?.rig ? (pkg.rig.palettes?.[rigPalette]?.[effectiveState] ?? pkg.rig.palettes?.[rigPalette]?.idle ?? "") : "";
+  const rigAnimatedSrc = pkg?.rig?.animated
+    ? (pkg.rig.animatedPalettes?.[rigPalette]?.[effectiveState] ?? pkg.rig.animatedPalettes?.[rigPalette]?.idle ?? "")
+    : "";
+  const rigIsAnimated = Boolean(rigAnimatedSrc && !reduceMotion);
+  const rigSrc = rigIsAnimated ? rigAnimatedSrc : rigStillSrc;
   /* GIF/动图包：每态一张动图；单张 gif 已在主进程映射到全部状态。 */
   const gifAnimated = pkg?.gifSet ? (pkg.gifSet[effectiveState] ?? pkg.gifSet.idle ?? "") : "";
   const gifStill = pkg?.gifStillSet ? (pkg.gifStillSet[effectiveState] ?? pkg.gifStillSet.idle ?? "") : "";
@@ -403,7 +408,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
       <div className="pet-stage" title={pkg ? `${pkg.name}${pkg.description ? ` · ${pkg.description}` : ""}` : "没有可用的宠物包"}>
         {pkg && (pkg.spritesheet || pkg.animationSet || pkg.gifSet || pkg.rig) ? (
           <div
-            className={`pet-sprite${pkg.animationSet || pkg.gifSet ? " pet-sprite-anim" : ""}${pkg.rig ? " pet-sprite-rig" : ""}`}
+            className={`pet-sprite${pkg.animationSet || pkg.gifSet ? " pet-sprite-anim" : ""}${pkg.rig ? " pet-sprite-rig" : ""}${rigIsAnimated ? " is-animated" : ""}`}
             ref={spriteRef}
             data-state={effectiveState}
             style={pkg.rig ? {

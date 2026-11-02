@@ -3,7 +3,10 @@
   "displayName": "小C",
   "description": "跟着 Codex 头像变色的机器人：工作时坐下敲笔记本，等人时抱膝等，完成后举手庆祝；切换有自然过渡。",
   "builtin": true,
-  "frameSize": { "width": 640, "height": 660 },
+  "frameSize": {
+    "width": 640,
+    "height": 660
+  },
   "states": [
     "idle",
     "running-right",
@@ -91,6 +94,75 @@
         "waiting": "sakura/waiting.webp",
         "running": "sakura/running.webp",
         "review": "sakura/review.webp"
+      }
+    },
+    "animated": true,
+    "animatedPalettes": {
+      "hero": {
+        "idle": "hero/anim/idle.webp",
+        "running-right": "hero/anim/running-right.webp",
+        "running-left": "hero/anim/running-left.webp",
+        "waving": "hero/anim/waving.webp",
+        "jumping": "hero/anim/jumping.webp",
+        "failed": "hero/anim/failed.webp",
+        "waiting": "hero/anim/waiting.webp",
+        "running": "hero/anim/running.webp",
+        "review": "hero/anim/review.webp"
+      },
+      "amber": {
+        "idle": "amber/anim/idle.webp",
+        "running-right": "amber/anim/running-right.webp",
+        "running-left": "amber/anim/running-left.webp",
+        "waving": "amber/anim/waving.webp",
+        "jumping": "amber/anim/jumping.webp",
+        "failed": "amber/anim/failed.webp",
+        "waiting": "amber/anim/waiting.webp",
+        "running": "amber/anim/running.webp",
+        "review": "amber/anim/review.webp"
+      },
+      "indigo": {
+        "idle": "indigo/anim/idle.webp",
+        "running-right": "indigo/anim/running-right.webp",
+        "running-left": "indigo/anim/running-left.webp",
+        "waving": "indigo/anim/waving.webp",
+        "jumping": "indigo/anim/jumping.webp",
+        "failed": "indigo/anim/failed.webp",
+        "waiting": "indigo/anim/waiting.webp",
+        "running": "indigo/anim/running.webp",
+        "review": "indigo/anim/review.webp"
+      },
+      "mint": {
+        "idle": "mint/anim/idle.webp",
+        "running-right": "mint/anim/running-right.webp",
+        "running-left": "mint/anim/running-left.webp",
+        "waving": "mint/anim/waving.webp",
+        "jumping": "mint/anim/jumping.webp",
+        "failed": "mint/anim/failed.webp",
+        "waiting": "mint/anim/waiting.webp",
+        "running": "mint/anim/running.webp",
+        "review": "mint/anim/review.webp"
+      },
+      "obsidian": {
+        "idle": "obsidian/anim/idle.webp",
+        "running-right": "obsidian/anim/running-right.webp",
+        "running-left": "obsidian/anim/running-left.webp",
+        "waving": "obsidian/anim/waving.webp",
+        "jumping": "obsidian/anim/jumping.webp",
+        "failed": "obsidian/anim/failed.webp",
+        "waiting": "obsidian/anim/waiting.webp",
+        "running": "obsidian/anim/running.webp",
+        "review": "obsidian/anim/review.webp"
+      },
+      "sakura": {
+        "idle": "sakura/anim/idle.webp",
+        "running-right": "sakura/anim/running-right.webp",
+        "running-left": "sakura/anim/running-left.webp",
+        "waving": "sakura/anim/waving.webp",
+        "jumping": "sakura/anim/jumping.webp",
+        "failed": "sakura/anim/failed.webp",
+        "waiting": "sakura/anim/waiting.webp",
+        "running": "sakura/anim/running.webp",
+        "review": "sakura/anim/review.webp"
       }
     }
   }

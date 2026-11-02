@@ -112,6 +112,9 @@ html[data-pet-window="activity"] #root {
 .pet-sprite-rig[data-state="review"] .pet-rig-motion { animation: pet-rig-review 2.4s ease-in-out infinite; }
 .pet-sprite-rig[data-state="jumping"] .pet-rig-shadow { animation: pet-rig-shadow-hop 0.92s cubic-bezier(.3,.7,.4,1) infinite; }
 .pet-sprite-rig[data-state="failed"] .pet-fade-layer { filter: saturate(0.7); }
+/* 关节包已是逐态动画 WebP（小C）：关掉 CSS 动作，避免"动画 + CSS"两层同时动。 */
+.pet-sprite-rig.is-animated .pet-rig-motion,
+.pet-sprite-rig.is-animated .pet-rig-shadow { animation: none !important; }
 
 @keyframes pet-rig-breathe {
   0%, 100% { transform: translateY(0) scale(1, 1); }

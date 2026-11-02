@@ -187,7 +187,7 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     "动画包走 <img> 自己播，图集帧循环按 animationSet 早退（两套格式互不打架）");
   ok(/\}, \[pkg\?\.columns, pkg\?\.animationSet\]\);/.test(petFloatSrc),
     "帧循环依赖含 animationSet（切包时能取消/重启，否则切回图集同列数会冻结）");
-  ok(/className=\{`pet-sprite\$\{pkg\.animationSet \|\| pkg\.gifSet \? " pet-sprite-anim" : ""\}\$\{pkg\.rig \? " pet-sprite-rig" : ""\}`\}/.test(petFloatSrc)
+  ok(/className=\{`pet-sprite\$\{pkg\.animationSet \|\| pkg\.gifSet \? " pet-sprite-anim" : ""\}\$\{pkg\.rig \? " pet-sprite-rig" : ""\}\$\{rigIsAnimated \? " is-animated" : ""\}`\}/.test(petFloatSrc)
     && petFloatSrc.includes("backgroundImage: pkg.animationSet || pkg.gifSet ? undefined :"),
     "动画包/关节包不挂 background-image（图集切帧路径保持原样）");
   ok(petFloatSrc.includes("pet-fade-layer") && petFloatSrc.includes("lastFadeRef") && petCss.includes("pet-layer-fade-out"),
@@ -322,6 +322,19 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(Boolean(robotMeta?.rig) && robotMiss.length === 0
     && avatarFiles.every((file) => Boolean(robotMeta.rig?.avatarPalette?.[file])),
     `Codex 机器人关节包：6 套头像配色 × 九态姿态图齐备（问题：${robotMiss.slice(0, 6).join("、") || "无"}）`);
+  /* 11-02 用户令：「静态不好看，都做动态宠物」——小C 每态也是动画 WebP（6 套配色 × 九态）。 */
+  const robotAnimMiss = [];
+  for (const palette of robotPalettes) {
+    for (const state of STATES) {
+      const rel = robotMeta?.rig?.animatedPalettes?.[palette]?.[state];
+      if (!rel || !existsSync(join(robotDir, String(rel)))) robotAnimMiss.push(`${palette}.${state}`);
+    }
+  }
+  ok(robotMeta?.rig?.animated === true && robotAnimMiss.length === 0,
+    `小C：六套配色的九态动画 WebP 齐备（问题：${robotAnimMiss.slice(0, 6).join("、") || "无"}）`);
+  ok(/pkg\.rig\.animatedPalettes/.test(petFloatSrc) && /rigIsAnimated/.test(petFloatSrc)
+    && /\.pet-sprite-rig\.is-animated\s+\.pet-rig-motion/.test(petCss),
+    "小C 逐态动画：渲染层用 animatedPalettes，且不再叠 CSS 动作（避免双动）");
 
   /* 11-02 用户截图「宠物好几个，展示不全」：45 文件那条 170px 会盖掉 22 文件的 160px，
      7 只又回到 3 列、最后一张掉到折叠线以下。⇒ 4 列 + 描述两行定高 + 立像式预览。 */

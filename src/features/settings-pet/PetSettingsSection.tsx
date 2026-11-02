@@ -80,9 +80,13 @@ function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: numbe
   }
   const rigStill = pkg.rig ? pkg.rig.palettes?.[rigPaletteOf(pkg)]?.idle : "";
   if (rigStill) {
+    const rigAnimated = pkg.rig?.animated
+      ? (pkg.rig.animatedPalettes?.[rigPaletteOf(pkg)]?.idle ?? "")
+      : "";
+    const rigThumbSrc = !reduced && rigAnimated ? rigAnimated : rigStill;
     return (
       <span className="pet-thumb pet-thumb-rig" style={{ width: `${width}px`, height: `${height}px` }}>
-        <img src={petAssetUrl(rigStill)} alt="" draggable={false} loading="lazy" />
+        <img src={petAssetUrl(rigThumbSrc)} alt="" draggable={false} loading="lazy" />
       </span>
     );
   }

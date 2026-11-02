@@ -81,6 +81,10 @@ export interface PetPackage {
     defaultPalette: string;
     palettes: Record<string, Record<string, string>>;
     avatarPalette: Record<string, string>;
+    /** 该关节包的每态图是**动画 WebP**（渲染层不再叠 CSS 动作，避免双动）。 */
+    animated?: boolean;
+    /** 调色板 → 九态动画文件（animated=true 时使用；减少动效偏好回落 palettes 静帧）。 */
+    animatedPalettes?: Record<string, Record<string, string>>;
   };
   /** 16 向看帧（动画包专用；绝对路径） */
   lookFrameSet?: string[];
@@ -258,7 +262,7 @@ function readPetPackage(dir: string, id: string, source: PetPackage["source"]): 
 
   /* 关节包（11-01 机器人宠物）：palettes = 调色板 → 九态姿态图；avatarPalette = 头像文件 → 调色板。
      ⛔ 只做路径解析与白名单校验，动画由渲染层 CSS 驱动（不用逐帧图）。 */
-  const rigMeta = meta.rig as { defaultPalette?: unknown; palettes?: unknown; avatarPalette?: unknown } | undefined;
+  const rigMeta = meta.rig as { defaultPalette?: unknown; palettes?: unknown; avatarPalette?: unknown; animated?: unknown; animatedPalettes?: unknown } | undefined;
   if (rigMeta && typeof rigMeta === "object" && !Array.isArray(rigMeta)) {
     const palettesMeta = (rigMeta.palettes ?? {}) as Record<string, unknown>;
     const missing: string[] = [];
@@ -279,10 +283,26 @@ function readPetPackage(dir: string, id: string, source: PetPackage["source"]): 
     for (const [file, palette] of Object.entries((rigMeta.avatarPalette ?? {}) as Record<string, unknown>)) {
       if (palettes[String(palette)]) avatarPalette[file] = String(palette);
     }
+    /* 11-02：关节包也可以是**逐态动画 WebP**（小C 的「真动起来」）：animatedPalettes 按调色板解析。 */
+    const animatedPalettes: Record<string, Record<string, string>> = {};
+    const animatedMeta = rigMeta.animatedPalettes;
+    if (animatedMeta && typeof animatedMeta === "object" && !Array.isArray(animatedMeta)) {
+      for (const [palette, entries] of Object.entries(animatedMeta as Record<string, unknown>)) {
+        if (!palettes[palette]) continue;
+        const set: Record<string, string> = {};
+        for (const state of states) {
+          const abs = resolvePetFile(dir, (entries as Record<string, unknown> | null)?.[state]);
+          if (!abs) missing.push(`animated.${palette}.${state}`);
+          else set[state] = abs;
+        }
+        animatedPalettes[palette] = set;
+      }
+    }
+    const animated = rigMeta.animated === true && Object.keys(animatedPalettes).length > 0;
     return {
       id, name, description, dir, spritesheet: "",
       columns, rows, frameWidth, frameHeight, states, source,
-      rig: { defaultPalette, palettes, avatarPalette },
+      rig: { defaultPalette, palettes, avatarPalette, ...(animated ? { animated: true, animatedPalettes } : {}) },
       problem: missing.length ? `关节包缺少文件：${missing.slice(0, 6).join("、")}` : undefined,
     };
   }
