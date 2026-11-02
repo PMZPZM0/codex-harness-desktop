@@ -575,5 +575,23 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
     "⛔ 切换条能点（pointer-events:auto）且不压住临时提示");
 }
 
+/* ══ 组 H：显示器写**真实目标**（11-02 用户：「做一些真实的联动展示效果」）══
+   要求：开浏览器 / 写读改文件 / 跑命令时，屏幕上要出现**真实的地址、文件名、命令**，
+   而不是只有抽象色条；空闲仍是屏保。 */
+{
+  console.log("\n【screen-real】显示器内容写真实目标");
+  ok(/function targetLabel/.test(screen) && /\(mode === "service" \|\| mode === "collab"\) && info\.detail/.test(screen),
+    "顶栏只在服务/协作模式写目标（文件/浏览器/终端写进各自画面里，避免同一句话出现三遍）");
+  const tabs = (screen.match(/fileTab\(ctx, x, cy, w, u, t, info\.detail/g) ?? []).length;
+  ok(tabs >= 4, `四个文件模式都有「真实文件名」标签条（实测 ${tabs} 处）`);
+  ok(['TERMINAL', 'KEYWORD', 'NEW TAB'].every((word) => screen.includes(`|| "${word}"`)),
+    "终端 / 搜索 / 浏览器写入真实命令、查询词、地址（含无 ASCII 细节时的兜底词）");
+  ok(!/const ticker = TOOL_SCREEN_MODES/.test(screen),
+    "⛔ 底部滚动字幕已删除（真实目标进画面后，再叠一条 = 同一句出现两遍 + 白占 6px）");
+  const actSrc = readFileSync(join(ROOT, "src", "features", "team-office", "office-activity.ts"), "utf8");
+  ok(actSrc.includes("https?:\\/\\/[^\\s") && actSrc.includes("args?.url ?? args?.href"),
+    "「开浏览器」取真实 URL（命令里的 URL / MCP 入参的 url），不是只写工具名");
+}
+
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

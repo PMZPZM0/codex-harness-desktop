@@ -125,7 +125,10 @@ export function classifyOfficeItem(item: any): { kind: OfficeActivityKind; detai
       /* 浏览器优先判：`start chrome https://…` 也会被 commandIntentOf 判成 read/command，
          那样显示器就会演成"查看文件"，而用户看到的是浏览器打开了。 */
       if (BROWSER_RE.test(raw)) {
-        return { kind: "browser", detail: tickerSafe(commandTarget(raw) || displayCommand(raw, 80)) };
+        /* 11-02：让办公室屏幕上出现**真实地址**（用户要「开浏览器」的联动感）——
+           优先从命令里抠 URL，其次才退回命令目标/命令原文。 */
+        const url = (raw.match(/https?:\/\/[^\s"']+/i) ?? [])[0] || commandTarget(raw) || displayCommand(raw, 80);
+        return { kind: "browser", detail: tickerSafe(url) };
       }
       const detail = tickerSafe(commandTarget(raw) || commandPurpose(raw, 40) || displayCommand(raw, 80));
       switch (commandIntentOf(raw)) {
@@ -147,7 +150,14 @@ export function classifyOfficeItem(item: any): { kind: OfficeActivityKind; detai
     case "mcpToolCall":
     case "dynamicToolCall": {
       const tool = [item.server, item.tool].filter(Boolean).join(" ");
-      if (BROWSER_RE.test(tool)) return { kind: "browser", detail: tickerSafe(item.tool ?? "") };
+      if (BROWSER_RE.test(tool)) {
+        /* 浏览器类 MCP：真实 URL 在入参里（browser_navigate {url}）⇒ 屏幕写地址，不写工具名。 */
+        const args = item.arguments ?? item.input ?? item.args;
+        const target = typeof args === "string"
+          ? args
+          : String(args?.url ?? args?.href ?? args?.query ?? args?.text ?? "");
+        return { kind: "browser", detail: tickerSafe(target || item.tool || "") };
+      }
       return { kind: "service", detail: tickerSafe(tool) };
     }
     case "collabAgentToolCall":

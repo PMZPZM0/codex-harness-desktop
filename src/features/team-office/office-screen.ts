@@ -281,8 +281,38 @@ export function marqueeText(text: string, widthPx: number, t: number, px = 1): s
   return (padded.slice(offset) + padded.slice(0, offset)).slice(0, maxChars);
 }
 
-/** 画一个 5×5 点阵图（✓ / ✗ 这类"一眼可辨"的符号）。 */
-function drawBitmap5(ctx: CanvasRenderingContext2D, rows: readonly string[], x: number, y: number, px: number, color: string): void {
+/** 真实目标的短标签（文件名 / 域名 / 命令）：写在 HUD 右侧。
+ *  ⛔ 长度按**屏宽**算，不写死：h=34 的屏只有约 16 个字宽，写长了会压到模式词。 */
+function targetLabel(detail: string, maxChars: number): string {
+  const clean = String(detail ?? "").toUpperCase().replace(/\s+/g, " ").trim();
+  if (!clean || maxChars < 3) return "";
+  return clean.length > maxChars ? `${clean.slice(0, Math.max(1, maxChars - 2))}..` : clean;
+}
+
+/** 文件类模式的「编辑器标签条」：真实文件名 + 活动点。返回正文起始 y。
+ *  ⛔ 有了它，同一屏「改文件」和「看文件」才一眼可分（否则都只是几行彩色条）。 */
+function fileTab(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  cy: number,
+  w: number,
+  u: number,
+  t: number,
+  detail: string,
+  color: string,
+): number {
+  const h = u + 2;
+  ctx.fillStyle = PAL.hudLine;
+  ctx.fillRect(x, cy, w, h);
+  const clean = String(detail ?? "").trim();
+  const text = marqueeText(clean || "FILE", Math.max(4, w - u * 2 - 4), t, 1);
+  if (text) drawMicroText(ctx, text, x + 2, cy + 1, color, 1);
+  ctx.fillStyle = color;
+  ctx.fillRect(x + w - u - 2, cy + 2, Math.max(1, u - 1), Math.max(1, u - 1));
+  return cy + h;
+}
+
+/** 画一个 5×5 点阵图（✓ / ✗ 这类"一眼可辨"的符号）。 */function drawBitmap5(ctx: CanvasRenderingContext2D, rows: readonly string[], x: number, y: number, px: number, color: string): void {
   ctx.fillStyle = color;
   for (let r = 0; r < rows.length; r += 1) {
     for (let c = 0; c < rows[r].length; c += 1) {
@@ -908,11 +938,18 @@ export function drawScreen(
   ctx.fillRect(x, y, 2, hudH);
   const label = hudLabelOf(mode);
   if (label) drawMicroText(ctx, label, x + 4, hudTextY, accentOf(mode), 1);
-  const right = mode === "report" && info.chars != null
+  /* 11-02 用户：「显示器内容做真实的联动」——
+     工具类模式的**真实目标**写在**画面里**（文件标签条 / 地址栏 / 命令提示行 / 搜索框），
+     顶栏右侧只留给「跑了多久 / 产出多少」。
+     ⛔ 不能两处都写：用户截图里同一文件名会在顶栏、标签条、底部字幕出现三遍。 */
+  const target = (mode === "service" || mode === "collab") && info.detail
+    ? targetLabel(info.detail, Math.max(0, Math.floor((w - microWidth(label, 1) - 10) / 4)))
+    : "";
+  const right = target || (mode === "report" && info.chars != null
     ? charsText(info.chars)
-    : secsText(info.elapsedMs);
+    : secsText(info.elapsedMs));
   if (right && microWidth(right, 1) + microWidth(label, 1) + 8 < w) {
-    drawMicroText(ctx, right, x + w - microWidth(right, 1) - 2, hudTextY, PAL.hudText, 1);
+    drawMicroText(ctx, right, x + w - microWidth(right, 1) - 2, hudTextY, target ? accentOf(mode) : PAL.hudText, 1);
   }
   ctx.fillStyle = PAL.hudLine;
   ctx.fillRect(x, y + hudH, w, 1);
@@ -920,18 +957,10 @@ export function drawScreen(
   // 内容区（顶栏之下）
   const cy = y + hudH + 1;
   const ch = h - hudH - 1;
-  /* ⭐ 底部滚动字幕（**真实事件细节**）：只在有 detail 的工具类模式出现，
-     占 6px；不够高就不画（宁可少一行信息，也不要把内容挤成一条线）。 */
-  const ticker = TOOL_SCREEN_MODES.has(mode) && info.detail && ch >= 20;
-  const tickerH = ticker ? 6 : 0;
-  const bodyH = ch - tickerH;
+  /* ⛔ 底部滚动字幕已**删除**（11-02）：真实目标已经写进各自的画面里（标签条/地址栏/提示行），
+     再叠一条字幕就是同一句话出现两遍，且白占 6px 屏高。 */
+  const bodyH = ch;
   const innerCH = bodyH - pad;
-  if (ticker) {
-    ctx.fillStyle = PAL.hudLine;
-    ctx.fillRect(x, cy + bodyH, w, 1);
-    const line = marqueeText(String(info.detail), innerW, t, 1);
-    if (line) drawMicroText(ctx, line, x + pad, cy + bodyH + 1, PAL.hudText, 1);
-  }
 
   /* ⛔ 离席（去接水 / 洗手间 / 跑步 / 举铁）——
      原来是"纯黑 + 久不久闪一下"，是**最常出现却最没信息**的一块。
@@ -1040,10 +1069,14 @@ export function drawScreen(
     // 放大镜
     ctx.fillStyle = PAL.searchBg;
     ctx.fillRect(x + pad + u, cy + Math.floor(u / 2), u, u);
-    // 搜索光标：在框内**来回扫**（位移幅度 = 框宽，肉眼明确）
-    const curX = x + pad + u * 2 + Math.round((Math.sin(t * 3.4) * 0.5 + 0.5) * Math.max(0, boxW - u * 4));
-    ctx.fillStyle = "#e8f0f6";
-    ctx.fillRect(curX, cy + Math.floor(u / 2), u, u);
+    // **真实查询词**（联网检索 / 文件搜索的 detail）；长词按框宽滚动
+    const query = marqueeText(String(info.detail ?? "").trim() || "KEYWORD", Math.max(4, boxW - u * 4), t, 1);
+    if (query) drawMicroText(ctx, query, x + pad + u * 3, cy + Math.floor((barH - 5) / 2), PAL.searchBg, 1);
+    // 输入光标：跟在查询词末尾闪烁（⛔ 不再整条框乱扫，看着像"在打字"）
+    if ((t * 2) % 1 < 0.6) {
+      ctx.fillStyle = "#e8f0f6";
+      ctx.fillRect(x + pad + u * 3 + microWidth(query, 1) + 1, cy + Math.floor((barH - 5) / 2), 1, 5);
+    }
     // 结果行：内容随"行号"变化（滚动感）+ 命中行逐行下移
     const resTop = cy + barH + u;
     const resRows = Math.max(1, Math.floor((cy + bodyH + pad - resTop) / (u * 2)));
@@ -1070,18 +1103,20 @@ export function drawScreen(
   // file-write：【块标记】下面这一段是 file-write 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "file-write") {
     /* **写入 / 新建文件**（真实 fileChange 且全是新增行）。
-       画面语言：纸张 + 一行行**从上往下长出来**的新行（绿色），右侧一个"已写入"高度条。 */
-    const rows = Math.max(1, Math.floor(innerCH / (u + 1)));
+       画面语言：编辑器标签条（真实文件名）+ 一行行**从上往下长出来**的新行（绿色）。 */
+    const contentTop = fileTab(ctx, x, cy, w, u, t, info.detail ?? "", PAL.fileNew);
+    const contentH = Math.max(u + 1, cy + bodyH - contentTop);
+    const rows = Math.max(1, Math.floor(contentH / (u + 1)));
     const grown = ((t * 1.8 + seed * 0.29) % (rows + 3));   // 每轮长满再重来 ⇒ 永远在长
-    fileRows(ctx, x, cy, innerW, rows, u, pad, PAL.fileLine, seed);
+    fileRows(ctx, x, contentTop, innerW, rows, u, pad, PAL.fileLine, seed);
     for (let r = 0; r < rows; r += 1) {
       if (r > grown) break;
       const len = innerW * (0.4 + ((r * 17 + seed * 5) % 50) / 100);
       ctx.fillStyle = PAL.fileNew;
-      ctx.fillRect(x + pad, cy + r * (u + 1), Math.max(2, Math.round(len)), Math.max(1, u - 1));
+      ctx.fillRect(x + pad, contentTop + r * (u + 1), Math.max(2, Math.round(len)), Math.max(1, u - 1));
     }
     // 写入光标：跟着最新一行走
-    const caretY = cy + Math.min(rows - 1, Math.floor(grown)) * (u + 1);
+    const caretY = contentTop + Math.min(rows - 1, Math.floor(grown)) * (u + 1);
     if ((t * 2.4) % 1 < 0.6) {
       ctx.fillStyle = "#e8f0f6";
       ctx.fillRect(x + w - pad - u, caretY, u, Math.max(1, u - 1));
@@ -1092,70 +1127,79 @@ export function drawScreen(
   // file-read：【块标记】下面这一段是 file-read 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "file-read") {
     /* **查看文件**（真实命令意图 = 查看）。
-       画面语言：文件行 + 一条高亮"视线"自上而下缓慢扫过（像人在读）+ 右侧滚动条滑块。 */
-    const rows = Math.max(1, Math.floor(innerCH / (u + 1)));
-    fileRows(ctx, x, cy, innerW - u, rows, u, pad, PAL.fileLine, seed);
+       画面语言：编辑器标签条（真实文件名）+ 文件行 + 一条高亮"视线"自上而下扫过 + 滚动条。 */
+    const contentTop = fileTab(ctx, x, cy, w, u, t, info.detail ?? "", PAL.fileLine);
+    const contentH = Math.max(u + 1, cy + bodyH - contentTop);
+    const rows = Math.max(1, Math.floor(contentH / (u + 1)));
+    fileRows(ctx, x, contentTop, innerW - u, rows, u, pad, PAL.fileLine, seed);
     const readRow = Math.floor(((t * 0.9 + seed * 0.21) % 1) * rows);
     for (let r = 0; r < rows; r += 1) {
       if (r !== readRow) continue;
       const len = innerW * (0.5 + ((r * 17 + seed * 5) % 40) / 100);
       ctx.fillStyle = PAL.fileHit;
-      ctx.fillRect(x + pad, cy + r * (u + 1), Math.max(2, Math.round(len)), Math.max(1, u - 1));
+      ctx.fillRect(x + pad, contentTop + r * (u + 1), Math.max(2, Math.round(len)), Math.max(1, u - 1));
     }
     // 滚动条：滑块位置 = 视线位置（两者同源，⛔ 别各算一套）
     const trackX = x + w - pad - Math.max(1, Math.round(u * 0.5));
     const trackW = Math.max(1, Math.round(u * 0.5));
     ctx.fillStyle = PAL.hudLine;
-    ctx.fillRect(trackX, cy, trackW, innerCH);
+    ctx.fillRect(trackX, contentTop, trackW, contentH);
     ctx.fillStyle = PAL.fileHit;
-    ctx.fillRect(trackX, cy + Math.round((readRow / Math.max(1, rows)) * Math.max(1, innerCH - u * 2)), trackW, u * 2);
+    ctx.fillRect(trackX, contentTop + Math.round((readRow / Math.max(1, rows)) * Math.max(1, contentH - u * 2)), trackW, u * 2);
     return;
   }
 
   // file-search：【块标记】下面这一段是 file-search 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "file-search") {
     /* **搜索文件内容**（真实命令意图 = 搜索）。
-       画面语言：放大镜在文件行上**来回扫**（行程 = 屏宽）+ 被扫到的行变黄。 */
-    const rows = Math.max(1, Math.floor(innerCH / (u + 1)));
-    fileRows(ctx, x, cy, innerW, rows, u, pad, PAL.fileLine, seed);
+       画面语言：编辑器标签条（真实文件名）+ 放大镜在文件行上**来回扫** + 被扫到的行变黄。 */
+    const contentTop = fileTab(ctx, x, cy, w, u, t, info.detail ?? "", PAL.fileHit);
+    const contentH = Math.max(u + 1, cy + bodyH - contentTop);
+    const rows = Math.max(1, Math.floor(contentH / (u + 1)));
+    fileRows(ctx, x, contentTop, innerW, rows, u, pad, PAL.fileLine, seed);
+    const midY = contentTop + Math.round(contentH / 2);
     const scanX = x + pad + Math.round((Math.sin(t * 1.9 + seed * 0.3) * 0.5 + 0.5) * Math.max(0, innerW - u * 2));
     // 命中行：离扫描线最近的两行变黄（像"搜到了"）
     for (let r = 0; r < rows; r += 1) {
-      const ry = cy + r * (u + 1);
-      const hit = Math.abs(ry - (cy + bodyH * 0.5)) < u * 1.5 && Math.abs(scanX - (x + pad + innerW * 0.5)) < innerW * 0.5;
+      const ry = contentTop + r * (u + 1);
+      const hit = Math.abs(ry - midY) < u * 1.5 && Math.abs(scanX - (x + pad + innerW * 0.5)) < innerW * 0.5;
       if (!hit) continue;
       ctx.fillStyle = PAL.fileHit;
       ctx.fillRect(x + pad, ry, Math.max(2, Math.round(innerW * 0.8)), Math.max(1, u - 1));
     }
     // 放大镜
     ctx.fillStyle = PAL.fileHit;
-    ctx.fillRect(scanX, cy + Math.round(bodyH * 0.5) - u, u, u);
+    ctx.fillRect(scanX, midY - u, u, u);
     ctx.fillStyle = PAL.fileBg;
-    ctx.fillRect(scanX + u, cy + Math.round(bodyH * 0.5) - u * 2, u, u);
+    ctx.fillRect(scanX + u, midY - u * 2, u, u);
     return;
   }
 
   // file-edit：【块标记】下面这一段是 file-edit 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "file-edit") {
     /* **修改文件**（真实 fileChange 带删除行）。
-       画面语言：左红右绿的 diff 双栏 + 整体缓慢上滚（像在逐块过改动）。 */
+       画面语言：编辑器标签条（真实文件名）+ 左红右绿的 diff 双栏（带 -/+ 行首符号）+ 缓慢上滚。 */
+    const contentTop = fileTab(ctx, x, cy, w, u, t, info.detail ?? "", PAL.fileDel);
+    const contentH = Math.max(u + 1, cy + bodyH - contentTop);
     const rowH2 = u + 1;
-    const rows = Math.max(1, Math.floor(innerCH / rowH2));
+    const rows = Math.max(1, Math.floor(contentH / rowH2));
     const yOff2 = -((t * 0.6 * rowH2) % rowH2);
-    const half = Math.max(3, Math.floor((innerW - u) / 2));
+    const half = Math.max(8, Math.floor((innerW - u) / 2));
     // 中缝
     ctx.fillStyle = PAL.hudLine;
-    ctx.fillRect(x + pad + half, cy, 1, innerCH);
+    ctx.fillRect(x + pad + half, contentTop, 1, contentH);
     for (let r = 0; r < rows; r += 1) {
-      const ly = Math.round(cy + r * rowH2 + yOff2);
-      if (ly + u <= cy || ly >= cy + bodyH) continue;
+      const ly = Math.round(contentTop + r * rowH2 + yOff2);
+      if (ly + u <= contentTop || ly >= cy + bodyH) continue;
       const idx = r + Math.floor(t * 0.6);
-      const delLen = Math.max(2, Math.round(half * (0.35 + ((idx * 13 + seed) % 45) / 100)));
-      const addLen = Math.max(2, Math.round(half * (0.35 + ((idx * 19 + seed * 3) % 55) / 100)));
+      drawMicroText(ctx, "-", x + pad, ly, PAL.fileDel, 1);
+      drawMicroText(ctx, "+", x + pad + half + 2, ly, PAL.fileNew, 1);
+      const delLen = Math.max(2, Math.round((half - 6) * (0.35 + ((idx * 13 + seed) % 45) / 100)));
+      const addLen = Math.max(2, Math.round((half - 6) * (0.35 + ((idx * 19 + seed * 3) % 55) / 100)));
       ctx.fillStyle = PAL.fileDel;
-      ctx.fillRect(x + pad, ly, delLen, Math.max(1, u - 1));
+      ctx.fillRect(x + pad + 4, ly, delLen, Math.max(1, u - 1));
       ctx.fillStyle = PAL.fileNew;
-      ctx.fillRect(x + pad + half + 2, ly, addLen, Math.max(1, u - 1));
+      ctx.fillRect(x + pad + half + 6, ly, addLen, Math.max(1, u - 1));
     }
     return;
   }
@@ -1163,25 +1207,30 @@ export function drawScreen(
   // terminal：【块标记】下面这一段是 terminal 模式的绘制代码（判据面依赖这个标记定位）
   if (mode === "terminal") {
     /* **跑命令 / 构建 / 测试**（真实命令意图 = 运行）。
-       画面语言：首行提示符（黄） + 输出行持续上滚 + 底部闪烁光标。 */
+       画面语言：提示符 + **真实命令**（滚动显示全句）+ 输出行持续上滚 + 底部闪烁光标。 */
+    drawMicroText(ctx, "$", x + pad, cy + 1, PAL.termPrompt, 1);
+    const cmdText = marqueeText(String(info.detail ?? "").trim() || "TERMINAL", Math.max(4, innerW - 6), t, 1);
+    if (cmdText) drawMicroText(ctx, cmdText, x + pad + 5, cy + 1, PAL.termText, 1);
+    const promptH = u + 2;
+    ctx.fillStyle = PAL.hudLine;
+    ctx.fillRect(x + pad, cy + promptH, innerW, 1);
+    const outputTop = cy + promptH + 2;
+    const outputH = Math.max(u, cy + bodyH - outputTop);
     const rowH2 = u + 1;
-    const rows = Math.max(1, Math.floor(innerCH / rowH2));
-    // 提示符行（固定在最上）
-    ctx.fillStyle = PAL.termPrompt;
-    ctx.fillRect(x + pad, cy, u * 2, Math.max(1, u - 1));
+    const rows = Math.max(1, Math.floor(outputH / rowH2));
     const yOff2 = -((t * 1.4 * rowH2) % rowH2);
     for (let r = 0; r < rows; r += 1) {
-      const ly = Math.round(cy + (r + 1) * rowH2 + yOff2);
-      if (ly + u <= cy || ly >= cy + bodyH) continue;
+      const ly = Math.round(outputTop + r * rowH2 + yOff2);
+      if (ly + u <= outputTop || ly >= cy + bodyH) continue;
       const idx = r + Math.floor(t * 1.4);
       const len = Math.round(innerW * (0.25 + ((idx * 23 + seed * 11) % 70) / 100));
       ctx.fillStyle = PAL.termText;
       ctx.fillRect(x + pad, ly, Math.max(2, len), Math.max(1, u - 1));
     }
-    const caretY = cy + Math.min(rows, 1 + Math.floor(yOff2 + t * 1.4)) * rowH2;
+    const caretY = outputTop + Math.min(rows, 1 + Math.floor(t * 1.4)) * rowH2;
     if ((t * 2.6) % 1 < 0.6) {
       ctx.fillStyle = "#e8f0f6";
-      ctx.fillRect(x + pad, Math.max(cy, Math.min(cy + innerCH - u, caretY)), u, Math.max(1, u - 1));
+      ctx.fillRect(x + pad, Math.max(outputTop, Math.min(cy + innerCH - u, caretY)), u, Math.max(1, u - 1));
     }
     return;
   }
@@ -1292,11 +1341,14 @@ export function drawScreen(
     const addrY = cy + tabH;
     ctx.fillStyle = PAL.browserBar;
     ctx.fillRect(x + pad, addrY, innerW, Math.max(2, u));
-    // 地址栏里的 URL：随时间左右扫（像在加载）
-    const urlW = Math.max(3, Math.round(innerW * 0.62));
-    const urlX = x + pad + u + Math.round((Math.sin(t * 1.3) * 0.5 + 0.5) * Math.max(0, innerW - urlW - u * 2));
-    ctx.fillStyle = PAL.browserUrl;
-    ctx.fillRect(urlX, addrY + 1, urlW, Math.max(1, u - 2));
+    // **真实地址**（浏览器的 detail：URL / 工具名）；长地址按栏宽滚动
+    const urlText = marqueeText(String(info.detail ?? "").trim() || "NEW TAB", Math.max(4, innerW - u * 3), t, 1);
+    if (urlText) drawMicroText(ctx, urlText, x + pad + 2, addrY + 1, PAL.browserUrl, 1);
+    // 加载动画：地址栏底部一条细光来回走（保留"正在加载"的动感）
+    const loadW = Math.max(4, Math.round(innerW * 0.22));
+    const loadX = x + pad + Math.round((Math.sin(t * 2.1) * 0.5 + 0.5) * Math.max(0, innerW - loadW));
+    ctx.fillStyle = PAL.browserTabOn;
+    ctx.fillRect(loadX, addrY + Math.max(2, u) - 1, loadW, 1);
     // 页面：标题 + 两行正文 + 一个图片占位
     const pageY = addrY + Math.max(2, u) + 1;
     const pageH = Math.max(3, cy + bodyH - pageY);
