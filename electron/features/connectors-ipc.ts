@@ -200,10 +200,30 @@ export const connectorsFeature = defineFeature<null>({
       const command = String(input.command ?? "").trim();
       const url = String(input.url ?? "").trim();
       if (transport === "stdio" && !command) throw new Error("stdio 连接器必须填写启动命令");
+      /* ⛔⛔ 11-02 用户实测：cos-mcp 的配置长这样 ——
+         args = ["cos-mcp","--Region=","--Bucket=","--SecretId=","--SecretKey=","--DatasetName="]
+         六个参数**全是空值**。原来只在「命令行是否为空」上校验，把「有标志没值」的形态
+         一路存进磁盘，npx 拿到空字符串，握手必然失败，而报错只说「握手失败」，
+         用户根本看不出缺的是哪个参数。这里在**保存时**拦下并指名道姓。 */
+      if (transport === "stdio" && Array.isArray(input.args)) {
+        const emptyFlags = (input.args as unknown[])
+          .map((value) => String(value ?? ""))
+          .filter((flag) => /^--?[\w.-]+=$/.test(flag.trim()));
+        if (emptyFlags.length) {
+          throw new Error("这些参数只有名字没有值：" + emptyFlags.join("、") + "。请补全后再保存，否则 MCP 启动必然握手失败。");
+        }
+      }
       if (transport === "streamable_http") {
         let parsed: URL;
         try { parsed = new URL(url); } catch { throw new Error("HTTP MCP 地址不是合法 URL"); }
         if (parsed.protocol !== "https:" && parsed.protocol !== "http:") throw new Error("HTTP MCP 地址必须使用 http 或 https");
+      }
+      /* ⛔ 11-02 同类问题（tencent-docs 401）：headers 里带了 Authorization 但**值是空**，
+         请求自然 401。保存时就拦，别让它变成一个「永远 401」的连接器。 */
+      if (transport === "streamable_http" && input.headers && typeof input.headers === "object") {
+        const badHeader = Object.entries(input.headers as Record<string, unknown>)
+          .find(([key, value]) => /^authorization$/i.test(String(key).trim()) && !String(value ?? "").trim());
+        if (badHeader) throw new Error("Authorization 头的值为空，请填写令牌后再保存（否则连接器会一直 401）。");
       }
       const list = await readConnectors();
       const previous = list.find((entry) => entry.id === id);
