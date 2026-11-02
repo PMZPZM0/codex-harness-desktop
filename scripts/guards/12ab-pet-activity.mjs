@@ -95,7 +95,8 @@ const petFloatSrc = codeOnly(read("src/features/pet/PetFloat.tsx"));
   ok(winSrc.includes('query: { pet: "activity" }') && winSrc.includes("pet=activity") && winSrc.includes("focusable: true"),
     "活动窗加载 ?pet=activity，且可聚焦（按钮/输入可点）");
   ok(winSrc.includes("positionPetActivityWindow") && /const hit = petInteractiveRect/.test(winSrc)
-    && /let y = petTop - size\.height - ACTIVITY_EDGE/.test(winSrc) && /Math\.min\(Math\.max\(x, work\.x \+ ACTIVITY_EDGE\)/.test(winSrc),
+    && /let y = petTop - size\.height \+ overlap/.test(winSrc) && /const overlap = ACTIVITY_PADDING - ACTIVITY_EDGE/.test(winSrc)
+    && /Math\.min\(Math\.max\(x, work\.x \+ ACTIVITY_EDGE\)/.test(winSrc),
     "活动窗贴宠物**本体**上方居中（不再贴窗口透明上沿），并夹进工作区");
   ok(winSrc.includes("syncPetActivityWindow") && winSrc.includes("signal.activityCollapsed") && winSrc.includes("signal.activities.length === 0"),
     "无活动/收起/宠物隐藏时活动窗不出现");
@@ -393,7 +394,7 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(manifest.channels.some((c) => c.channel === "pet:focus-thread") && /pet:focus-thread/.test(read("electron/preload.ts")),
     "pet:focus-thread 通道贯通（manifest → preload）");
   const windowSrc = read("electron/features/pet-window.ts");
-  ok(/const hit = petInteractiveRect/.test(windowSrc) && /petTop - size\.height - ACTIVITY_EDGE/.test(windowSrc),
+  ok(/const hit = petInteractiveRect/.test(windowSrc) && /petTop - size\.height \+ overlap/.test(windowSrc),
     "活动气泡按宠物本体矩形定位（不再贴窗口上沿的透明留白 = 用户实测「离得太远」）");
   ok(/if \(isPetActivityWindowOpen\(\)\) positionPetActivityWindow/.test(windowSrc),
     "拖宠物 / 本体矩形上报时气泡同步重排（不会甩在原地）");

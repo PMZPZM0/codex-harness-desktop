@@ -233,8 +233,8 @@ const ACTIVITY_WIDTH = 320;
 const ACTIVITY_CARD_HEIGHT = 82;
 const ACTIVITY_GAP = 4;
 const ACTIVITY_PADDING = 12;
-/* 活动卡与宠物头顶的间距：11-02 用户「贴着宠物上方，现在太远了」⇒ 8 → 3。 */
-const ACTIVITY_EDGE = 3;
+/* 活动卡与宠物头顶的**可见**间距：11-02 用户两次要求贴近 ⇒ 可见距离 = 2px。 */
+const ACTIVITY_EDGE = 2;
 
 function activityWindowSize(signal: PetSignal) {
   const count = Math.max(1, Math.min(2, signal.activities.length));
@@ -269,8 +269,12 @@ function positionPetActivityWindow(size: { width: number; height: number }) {
   const petRight = petBounds.x + (hit ? hit.x + hit.width : petBounds.width);
   const petBottom = petBounds.y + (hit ? hit.y + hit.height : petBounds.height);
   let x = Math.round((petLeft + petRight) / 2 - size.width / 2);
-  let y = petTop - size.height - ACTIVITY_EDGE;
-  if (y < work.y + ACTIVITY_EDGE) y = petBottom + ACTIVITY_EDGE;
+  /* ⛔ 11-02 用户「再近一点，贴着宠物头顶」：窗口四周有 ACTIVITY_PADDING 的透明内边距，
+     只减 EDGE 时卡片可见底边离头顶还有 12+3px。⇒ 把这段内边距叠进间距里，
+     让**可见卡片底边**离头顶只剩 ACTIVITY_EDGE（2px）。 */
+  const overlap = ACTIVITY_PADDING - ACTIVITY_EDGE;
+  let y = petTop - size.height + overlap;
+  if (y < work.y + ACTIVITY_EDGE) y = petBottom - ACTIVITY_PADDING + ACTIVITY_EDGE;
   x = Math.min(Math.max(x, work.x + ACTIVITY_EDGE), work.x + work.width - size.width - ACTIVITY_EDGE);
   y = Math.min(Math.max(y, work.y + ACTIVITY_EDGE), work.y + work.height - size.height - ACTIVITY_EDGE);
   try { win.setBounds({ x, y, ...size }); } catch { /* 忽略 */ }
