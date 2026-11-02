@@ -287,6 +287,10 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 > 三个真相源的分工：`AGENTS.md` 管「怎么建」· `docs/ARCHITECTURE-RULES.md` 管「架构怎么划」· `DESIGN.md` 管「长什么样」。
 > ⛔ 改了 CSS 变量必须同步 `DESIGN.md` 的变量表 —— 守卫【170】做的是**真值对账**（文档里的色值 ≠ CSS 真值会打红），不是检查"文件存在"。
 > ⛔⛔ **加浮层前先查 `DESIGN.md` 的「层叠层级带」**（09-29 立，守卫【198】）：主界面 <30 < 设置内 backdrop 80~97 < **画布 90** < 全局模态 400 < 轻浮层 1000/1001 < toast 9999+。四条硬规则：轻浮层必高于模态遮罩、全局模态必高于画布、**画布专属弹层只能画布内渲染（不许 portal 到 body）**、画布根 backdrop-filter 会创建 containing block。
+>
+> 🧩 **设计方法已内置成技能 `frontend-design`**（11-03）：正文唯一真相源 = `DESIGN.md` 的 `DESIGN-METHOD` 标记区，
+> 由 `scripts/gen-design-skill.mjs` 生成为内置技能（守卫 12at 比对新鲜度）；改方法段后跑 `node scripts/gen-design-skill.mjs`
+> （`npm run gen:ipc` 已带上）。打包版没有源码树，Codex 靠这个技能 + developer_instructions 第 19 条拿到同一套方法。
 
 ## ⛔ 临时产物放哪（硬性，2026-09-21 立）
 

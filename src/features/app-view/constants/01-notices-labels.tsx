@@ -127,6 +127,9 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "knowledge-backend",
   "harness-api",
   "frontend-canvas",
+  /* 11-03：前端设计方法（与 electron/builtin-skills.ts 的 entries 同轮登记）——
+     ⛔ 漏这里 = 用户在 # 面板看不到它。 */
+  "frontend-design",
   "visualization-guide",
   /* 10-26：盘问方案 + 交接文档（与 electron/builtin-skills.ts 的 entries 同轮登记） */
   "grill-me",

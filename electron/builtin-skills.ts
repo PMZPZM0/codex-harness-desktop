@@ -29,6 +29,7 @@ import { KNOWLEDGE_SKILL } from "./builtin-skills/23-skill-knowledge";
 import { HARNESS_API_SKILL } from "./builtin-skills/14-skill-harness-api";
 import { OPENFILM_SKILL } from "./builtin-skills/26-skill-openfilm";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
+import { FRONTEND_DESIGN_SKILL } from "./builtin-skills/27-skill-frontend-design";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
 import { CHALLENGE_REQUIREMENTS_SKILL } from "./builtin-skills/25-skill-challenge-requirements";
@@ -149,6 +150,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     //  36 种组件的字段速查 + 手机/电脑/网页三种形态 + 导航/主题；与工具 frontend_* 及
     //  指令第 13 条（FRONTEND_CANVAS_INSTRUCTIONS）同源，名字改了要一起改（守卫【283】钉）。
     ["frontend-canvas", FRONTEND_CANVAS_SKILL],
+    // 11-03：前端设计方法（用户：「把你的前端设计思路做成 design.md，放项目里，内置，供 codex 参考使用」）——
+    //  ⛔ 正文由 DESIGN.md 的 DESIGN-METHOD 标记区生成（scripts/gen-design-skill.mjs），别在这里手写第二份。
+    ["frontend-design", FRONTEND_DESIGN_SKILL],
     // 10-17：可视化输出规范（用户立项「Codex 画可视化只会随手写 HTML」）——
     //  形态选择/硬性输出要求（单文件零外部依赖）/设计 token；输出走文件卡→预览→浏览器打开通道。
     ["visualization-guide", VISUALIZATION_SKILL],

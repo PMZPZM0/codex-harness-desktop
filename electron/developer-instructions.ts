@@ -337,6 +337,17 @@ const FRONTEND_CANVAS_INSTRUCTIONS =
   `   \`frontend_get_doc\` reads the current design FIRST (frames = screens, groups = parts); \`frontend_apply_doc\` writes an edited FULL document back (edit what get returned — never rewrite from memory). The user watches it live, can keep hand-editing, preview it, and Ctrl+Z. Phone screens are 412×892; computer screens 1280×800 (set w/h); \`platform\` picks android app vs web page. The built-in skill \`frontend-canvas\` carries the full component manual (all 44 kinds with their fields + navigation + modes) — read it before composing.\n` +
   `   It doubles as the shared design surface: assemble/iterate screens there, then implement the frontend from that document. If the tools are absent (a session started before this feature), say so instead of inventing canvas contents.`;
 
+/* ── 第 19 条：前端设计方法（11-03 用户令：「把你的前端设计思路做成 design.md，放项目里，内置，
+   供 codex 参考使用」）──
+   ⛔ 常驻原因与第 12/13 条同款：技能是渐进披露的，写界面时模型不会自动想起去读设计规范；
+   而"随手写一版样式 / 只做默认态 / 代码看着对就交付"是默认习惯。
+   ⛔ 正文只维护一份：DESIGN.md 的 DESIGN-METHOD 标记区 → scripts/gen-design-skill.mjs 生成内置技能。
+   本段只负责"什么时候读 + 读哪份"（方法在内置技能，具体 token 在项目 DESIGN.md）。 */
+const FRONTEND_DESIGN_INSTRUCTIONS =
+  `\n19) FRONTEND DESIGN METHOD — before writing or changing ANY UI (page / component / layout / settings page / form / dialog / card list / styles / responsive / theme), read the built-in skill \`frontend-design\` FIRST:\n` +
+  `   It is the shared design playbook: understand the real task and data before drawing, then go 层级 → 布局 → 状态 → 细节. It carries ten hard rules (single accent, borders over shadows, baseline alignment, actions pinned right, real content, all states), component/interaction patterns, theme/wallpaper/DPI/reduced-motion adaptation, a delivery checklist and anti-patterns. The workspace \`DESIGN.md\` holds this app's concrete tokens and classes — when both exist, DESIGN.md wins for VALUES, the skill wins for METHOD.\n` +
+  `   ⛔ Do not invent a second style system and do not hard-code colors. ⛔ Never claim a UI change is done from reading code alone: render it (screenshot / real app) and check default/hover/disabled, empty/loading/error, long text, narrow window, and light/dark themes.`;
+
 /* ── 第 14 条：任务清单（10-06 夜三轮，用户：「任务清单必须有 codex 自己更新，他自己完成任务清单后
    就主动更新任务清单」；界面 = 输入框上方胶囊的「步骤 N/M」，悬停展开步骤清单）──
    ⛔ 常驻原因与第 12/13 条同款：工具在表里模型未必主动用，而这份清单直接驱动用户可见的进度
@@ -509,6 +520,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += UI_COMPONENT_INSTRUCTIONS;
   // 前端开发画布（10-05 夜：做手机/电脑/网页界面时把拼装搬进应用内画布，Codex 直接读写）
   text += FRONTEND_CANVAS_INSTRUCTIONS;
+  // 前端设计方法（11-03：写/改任何界面前先读内置 skill frontend-design；正文源 = DESIGN.md 标记区）
+  text += FRONTEND_DESIGN_INSTRUCTIONS;
   // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
   text += TASK_LIST_INSTRUCTIONS;
   // 影视源检索（10-20：用户给的 LibreTV/TVBox 源 + media_source_search/detail/open 三件套）
