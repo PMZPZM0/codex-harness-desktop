@@ -87,5 +87,58 @@ ok(instrBlock.includes("render it") && instrBlock.includes("empty/loading/error"
 ok(read("package.json").includes("node scripts/gen-design-skill.mjs"),
   "生成器接进 npm run gen:ipc（改 DESIGN.md 后重跑会带上它）");
 
+/* ── ④ 设置 → 个性化：前端设计风格 + 自定义内容（11-03 用户追加）──────────
+   ⛔ 这条链断在任何一处都表现成「选了没生效」：界面预设表 / 主进程归一 / 写 AGENTS.md /
+      预览校验。四段都在才算通。 */
+const styleLib = read("src/lib/frontend-design-style.mjs");
+ok(styleLib.includes("FRONTEND_DESIGN_STYLES") && styleLib.includes('DEFAULT_FRONTEND_DESIGN_STYLE = "auto"')
+  && styleLib.includes("export function normalizeFrontendDesignStyle")
+  && styleLib.includes("export function frontendDesignPrompt"),
+  "共享预设表存在（主进程与渲染层同一份 id，未知值回落跟随项目）");
+ok(styleLib.includes('id: "apple"') && styleLib.includes('id: "tech"') && styleLib.includes('id: "swiss"')
+  && styleLib.includes('id: "glass"') && styleLib.includes('id: "material"')
+  && styleLib.includes("prompt:") && styleLib.includes("swatches:"),
+  "内置风格库含苹果 / 科技 / 瑞士 / 玻璃 / Material 等提示词与色板（随应用更新）");
+ok(styleLib.includes("ui_component_search") && styleLib.includes("ui_component_get"),
+  "风格提示词联动内置组件库（实现前先搜 Uiverse，再按风格改造）");
+ok(/preset\?\.prompt/.test(styleLib),
+  "frontendDesignPrompt 真的使用预设提示词（只登记不注入 = 白写）");
+ok(read("src/lib/frontend-design-style.d.mts").includes("FRONTEND_DESIGN_STYLES"),
+  "共享预设表有类型声明（tsc 能检查界面消费点）");
+
+const personalSrc = read("electron/personalization.ts");
+ok(personalSrc.includes("frontendDesignStyle?: string") && personalSrc.includes("frontendDesignNotes?: string")
+  && /frontendDesignPrompt\(personalization\.frontendDesignStyle/.test(personalSrc)
+  && /normalizeFrontendDesignStyle\(/.test(personalSrc),
+  "主进程档案含两个字段，且写入 AGENTS.md 时真的调用 frontendDesignPrompt");
+
+const pipc = read("electron/features/personalization-ipc.ts");
+ok(pipc.includes("frontendDesignPrompt(stored.frontendDesignStyle")
+  && pipc.includes("frontendDesignNotes?: unknown"),
+  "personalization:save 接收新字段；verify 的 expects 把前端风格也算作已配置");
+
+const page = read("src/components/PersonalizationPage.tsx");
+ok(page.includes("card-frontend-design") && page.includes("FRONTEND_DESIGN_STYLES.map")
+  && page.includes('aria-label="前端设计风格"') && page.includes('aria-label="前端设计自定义内容"')
+  && page.includes("frontend-style-chips") && page.includes("data-style-id"),
+  "个性化页渲染前端设计风格库（9 套胶囊 + 色板 + 自定义内容输入）");
+ok(page.includes("frontend-style-prompt") && page.includes("frontend-style-library")
+  && page.includes("onOpenComponentLibrary") && page.includes("frontendDesignPrompt(frontendStyle, frontendNotes)"),
+  "风格卡可查看真实注入的提示词，并联动打开内置组件库");
+ok(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/appearance.tsx")
+  .includes('onOpenComponentLibrary={() => app.setSettingsPage("component-library")}'),
+  "组件库入口真的接到设置页导航（只写 prop 不接线 = 点了没反应）");
+ok(/frontendDesignStyle:\s*frontendStyle/.test(page) && /frontendDesignNotes:\s*frontendNotes\.trim\(\)/.test(page),
+  "保存时把预设与自定义内容一起提交（只存不传 = 白填）");
+ok(/const dirty[\s\S]*frontendNotes\.trim\(\)/.test(page),
+  "dirty 判定包含前端风格内容（否则改了按钮仍是灰的）");
+
+const manifest = read("electron/ipc-channels.manifest.json");
+ok(/paramsImpl[^\n]*frontendDesignStyle[^\n]*frontendDesignNotes/.test(manifest)
+  && /paramsDecl[^\n]*frontendDesignStyle[^\n]*frontendDesignNotes/.test(manifest),
+  "manifest 的 paramsImpl/paramsDecl 含新字段（生成物才会带上类型）");
+ok(read("src/styles/12-settings-skills.css").includes(".personalization-frontend-notes"),
+  "前端设计自定义内容的样式在位（输入区高度与其它输入区分档）");
+
 console.log(`\n【design】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

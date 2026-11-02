@@ -22,7 +22,7 @@
 //
 // 被测 profile：.e2e-profile/<name>/（跨轮复用，含真实历史；勿入库）
 
-import { existsSync, mkdirSync, writeFileSync, truncateSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, truncateSync, rmSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -201,12 +201,23 @@ const CHECKS = [
           hasStyle:!!page.querySelector(".personalization-style-tabs"),
           styleTabs:[...page.querySelectorAll(".personalization-style-tabs button")].map((b)=>String(b.textContent||"").trim()),
           hasInstructions:!!page.querySelector(".personalization-instructions"),
+          hasFrontend:!!page.querySelector(".card-frontend-design"),
+          frontendTabs:[...page.querySelectorAll(".card-frontend-design .frontend-style-chip")].map((b)=>String(b.textContent||"").trim()),
+          hasFrontendNotes:!!page.querySelector(".personalization-frontend-notes"),
+          hasFrontendSave:!!page.querySelector(".card-frontend-design .primary-setting"),
+          hasFrontendPrompt:!!page.querySelector(".frontend-style-prompt"),
+          hasFrontendLibrary:!!page.querySelector(".frontend-style-library button"),
           pageW:Math.round(page.getBoundingClientRect().width),
           groupW:Math.round((page.querySelector(".personalization-group")?.getBoundingClientRect().width)||0) };
       })()`).catch(() => null);
       h.check("⑧ 个性化：无称呼输入、无语气自适应；回复风格与自定义指令仍在",
         Boolean(per && per.page === "个性化" && !per.hasNickInput && !per.hasNickText && !per.hasTone
           && per.hasStyle && per.styleTabs.includes("敢于反驳") && per.hasInstructions && per.groupW >= per.pageW - 12),
+        JSON.stringify(per));
+      h.check("⑧b 个性化：内置风格库 9 套（含苹果 / 科技）+ 提示词预览 + 组件库入口 + 保存",
+        Boolean(per && per.hasFrontend && per.frontendTabs.length === 9
+          && per.frontendTabs.some((x) => x.includes("苹果")) && per.frontendTabs.some((x) => x.includes("科技"))
+          && per.hasFrontendNotes && per.hasFrontendSave && per.hasFrontendPrompt && per.hasFrontendLibrary),
         JSON.stringify(per));
       h.check("⑨ 控制台回复风格卡：语气自适应开关在位（挪来这儿，不是删功能）",
         Boolean(ctrl && ctrl.toneInReply && ctrl.toneOn !== null),
@@ -1514,6 +1525,69 @@ const CHECKS = [
       await h.eval(`document.querySelector(".office-overlay-close")?.click()`);
       await wait(400);
       await h.eval(`localStorage.removeItem("officeProbe")`).catch(() => undefined);
+    },
+  },
+  {
+    id: "frontend-design-setting",
+    name: "个性化前端设计风格：预设 + 自定义内容真写入 AGENTS.md（保存 / 回读 / 复位）",
+    run: async (h) => {
+      const marker = "ACCEPTANCE-FRONTEND-DESIGN-6B5CFF";
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(900);
+      const nav = (label) => h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()===${JSON.stringify(label)}; }); if(!b) return 0; b.click(); return 1; })()`);
+      await nav("个性化");
+      await wait(900);
+      /* 联动内置组件库：风格卡里的入口必须真的切到「组件库」页，而不是一个装饰链接。 */
+      const libClicked = await h.eval(`(function(){ const b=document.querySelector(".frontend-style-library button"); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(700);
+      const libPage = await h.eval(`(document.querySelector(".settings-nav button.active")?.textContent||"").trim()`);
+      h.check("⓪ 风格卡「打开组件库」真的切到组件库页", Boolean(libClicked) && libPage === "组件库", `${libClicked}/${libPage}`);
+      await nav("个性化");
+      await wait(700);
+      const pick = (label) => h.eval(`(function(){ const b=[...document.querySelectorAll(".card-frontend-design .frontend-style-chip")].find(function(x){ return (x.textContent||"").trim().includes(${JSON.stringify(label)}); }); if(!b) return 0; b.click(); return 1; })()`);
+      const stored = () => h.eval(`window.codex.readPersonalization()`);
+      const initial = await stored().catch(() => null);
+      const waitStored = async (predicate, ms = 20000) => {
+        const deadline = Date.now() + ms;
+        let last = null;
+        while (Date.now() < deadline) {
+          last = await stored().catch(() => null);
+          if (last && predicate(last)) return last;
+          await wait(300);
+        }
+        return last;
+      };
+
+      h.check("① 选中「温暖」预设 + 填写自定义内容后，保存按钮从禁用变可用",
+        await pick("温暖") === 1
+          && await h.setInput(".personalization-frontend-notes", `主色用蓝紫色 ${marker}`).then(() => true)
+          && await wait(250).then(() => h.eval(`document.querySelector(".card-frontend-design .primary-setting")?.disabled === false`)),
+        "tab/输入/保存态");
+      await h.screenshot("个性化-前端设计风格");
+
+      await h.click(".card-frontend-design .primary-setting");
+      const saved = await waitStored((v) => v.frontendDesignStyle === "warm" && String(v.frontendDesignNotes || "").includes(marker));
+      h.check("② 档案真的落盘（warm + 自定义内容）",
+        Boolean(saved && saved.frontendDesignStyle === "warm" && String(saved.frontendDesignNotes || "").includes(marker)),
+        JSON.stringify(saved));
+
+      const verify = await h.eval(`window.codex.verifyPersonalization()`).catch(() => null);
+      const agentsText = verify?.agentsPath && existsSync(verify.agentsPath) ? readFileSync(verify.agentsPath, "utf8") : "";
+      h.check("③ AGENTS.md 真包含设计方向与自定义内容（不是只写 personalization.json）",
+        Boolean(verify?.inSync) && agentsText.includes("Visual direction — warm") && agentsText.includes(marker),
+        JSON.stringify({ inSync: verify?.inSync, path: verify?.agentsPath, hit: agentsText.includes(marker) }));
+
+      /* 复位：恢复到本轮开始前的值（测试 profile 也可能带着用户之前配的风格）。 */
+      await h.eval(`window.codex.savePersonalization({ frontendDesignStyle: ${JSON.stringify(initial?.frontendDesignStyle || "auto")}, frontendDesignNotes: ${JSON.stringify(initial?.frontendDesignNotes || "")} })`);
+      const reset = await waitStored((v) => v.frontendDesignStyle === (initial?.frontendDesignStyle || "auto")
+        && String(v.frontendDesignNotes || "") === String(initial?.frontendDesignNotes || ""));
+      const verify2 = await h.eval(`window.codex.verifyPersonalization()`).catch(() => null);
+      const agents2 = verify2?.agentsPath && existsSync(verify2.agentsPath) ? readFileSync(verify2.agentsPath, "utf8") : "";
+      h.check("④ 复位后档案与 AGENTS.md 都不再带测试内容",
+        Boolean(reset && String(reset.frontendDesignNotes || "") === String(initial?.frontendDesignNotes || ""))
+          && !agents2.includes(marker),
+        JSON.stringify({ reset, stillInAgents: agents2.includes(marker) }));
     },
   },
   {

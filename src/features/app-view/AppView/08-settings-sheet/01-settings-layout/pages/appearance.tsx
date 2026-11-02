@@ -72,7 +72,7 @@ export function appearancePages(app: HarnessAppApi): Partial<Record<SettingsPage
        各自 registerSlot，声明式插件照旧能挂到这些位置 —— 10-07 那次「同一 id 写成两处 ⇒
        功能域画两遍、声明式插件从不显示」的坑，继续由【268-c】按 id 全局去重钉着。 */
     appearance: { render: () => <AppearanceSettingsSection theme={theme} setTheme={setTheme} uiFont={uiFont} setUiFont={setUiFont} onNotice={setNotice} /> },
-    personalization: { render: () => <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} /> },
+    personalization: { render: () => <PersonalizationPage personality={personality} onPersonalityChange={changePersonality} onNotice={setNotice} onOpenComponentLibrary={() => app.setSettingsPage("component-library")} /> },
     pet: { render: () => <PetSettingsSection onNotice={setNotice} /> },
     voice: { render: () => <VoiceSettingsSection onNotice={setNotice} /> },
     screenshot: { render: () => <ScreenshotSettingsSection onNotice={setNotice} /> },

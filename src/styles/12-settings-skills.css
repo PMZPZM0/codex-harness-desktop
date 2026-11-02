@@ -1183,6 +1183,90 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex-wrap: wrap;   /* 窄屏：主按钮整行落下去，不去挤压左边的计数 */
   display: flex;
 }
+/* 前端设计风格：紧凑胶囊（9 套，换行不横向溢出）+ 色板点 + 选中对勾。
+   ⛔ 不做 9 张大卡：用户 10-27 明确否过「正方形卡片太多/太丑」，风格库要能一眼扫完。 */
+.frontend-style-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.frontend-style-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color var(--dur-ui) ease, background var(--dur-ui) ease;
+}
+.frontend-style-chip:hover { border-color: var(--line-strong); background: var(--panel-2); }
+.frontend-style-chip.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.frontend-style-chip.active > svg { color: var(--accent); }
+.frontend-style-swatches { display: inline-flex; gap: 2px; }
+.frontend-style-swatches i {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+}
+.frontend-style-current {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+.frontend-style-prompt { margin-top: 6px; }
+.frontend-style-prompt summary {
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  width: fit-content;
+}
+.frontend-style-prompt summary:hover { color: var(--text); }
+.frontend-style-prompt pre {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow: auto;
+}
+.frontend-style-library {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.frontend-style-library button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 11.5px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+/* 前端设计自定义内容：比自定义指令短一档（它是补充项，不是主输入区）。 */
+.personalization-frontend-notes { min-height: 100px; }
 .personalization-counter {
   color: var(--muted);
   margin-left: auto;

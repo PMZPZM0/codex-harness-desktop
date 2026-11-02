@@ -1,8 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Info, MessageSquare, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
+import { Check, Info, MessageSquare, Palette, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import { SettingsPageHero } from "./SettingsPageHero";
+import {
+  DEFAULT_FRONTEND_DESIGN_STYLE,
+  FRONTEND_DESIGN_STYLES,
+  frontendDesignPrompt,
+  normalizeFrontendDesignStyle,
+} from "../lib/frontend-design-style.mjs";
 
-type PersonalizationConfig = { nickname?: string; customInstructions?: string };
+type PersonalizationConfig = {
+  nickname?: string;
+  customInstructions?: string;
+  frontendDesignStyle?: string;
+  frontendDesignNotes?: string;
+};
 
 /** personalization:verify 的回读结果：直接读真实落盘的 AGENTS.md，不是「我以为写成功了」 */
 type VerifyResult = {
@@ -37,13 +48,17 @@ export function PersonalizationPage({
   personality,
   onPersonalityChange,
   onNotice,
+  onOpenComponentLibrary,
 }: {
   personality: string;
   onPersonalityChange: (value: string) => void;
   onNotice: (message: string) => void;
+  onOpenComponentLibrary?: () => void;
 }) {
   const [config, setConfig] = useState<PersonalizationConfig>({});
   const [instructions, setInstructions] = useState("");
+  const [frontendStyle, setFrontendStyle] = useState(DEFAULT_FRONTEND_DESIGN_STYLE);
+  const [frontendNotes, setFrontendNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [verify, setVerify] = useState<VerifyResult | null>(null);
@@ -65,6 +80,8 @@ export function PersonalizationPage({
         if (!alive) return;
         setConfig(next);
         setInstructions(next.customInstructions ?? "");
+        setFrontendStyle(normalizeFrontendDesignStyle(next.frontendDesignStyle));
+        setFrontendNotes(next.frontendDesignNotes ?? "");
         initial.current = next;
       })
       .catch(() => undefined)
@@ -73,23 +90,35 @@ export function PersonalizationPage({
     return () => { alive = false; };
   }, [runVerify]);
 
-  const dirty = instructions.trim() !== (initial.current.customInstructions ?? "");
+  const dirty = instructions.trim() !== (initial.current.customInstructions ?? "")
+    || frontendStyle !== normalizeFrontendDesignStyle(initial.current.frontendDesignStyle)
+    || frontendNotes.trim() !== (initial.current.frontendDesignNotes ?? "");
+  const selectedFrontendStyle = FRONTEND_DESIGN_STYLES.find((preset) => preset.id === frontendStyle) ?? FRONTEND_DESIGN_STYLES[0];
 
   async function save() {
     if (saving) return;
     setSaving(true);
     try {
-      /* ⛔ 只传 customInstructions：昵称改到「用户中心」后这里就**不碰** nickname 了。
+      /* ⛔ 只传本页负责的字段（自定义指令 + 前端设计风格）；昵称改到「用户中心」后这里就**不碰** nickname 了。
          writePersonalization 是 partial 语义（字段 undefined = 保留原值），
          所以昵称不会被这页保存误清掉。 */
-      const next = await window.codex.savePersonalization({ customInstructions: instructions.trim() });
+      const next = await window.codex.savePersonalization({
+        customInstructions: instructions.trim(),
+        frontendDesignStyle: frontendStyle,
+        frontendDesignNotes: frontendNotes.trim(),
+      });
       setConfig(next);
       initial.current = next;
       // 保存完立刻回读 AGENTS.md，确认真的写进去了再提示成功
       const check = await window.codex.verifyPersonalization().catch(() => null);
       if (check) setVerify(check);
+      const hasAny = Boolean(
+        next.customInstructions
+        || next.frontendDesignNotes
+        || normalizeFrontendDesignStyle(next.frontendDesignStyle) !== DEFAULT_FRONTEND_DESIGN_STYLE,
+      );
       if (!check?.exists) onNotice("已保存，但引擎主目录还没生成——先去「模型」页配置一个供应商，个性化才会写入");
-      else if (check.inSync) onNotice(next.customInstructions ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已清空个性化设置，AGENTS.md 已同步移除");
+      else if (check.inSync) onNotice(hasAny ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已清空个性化设置，AGENTS.md 已同步移除");
       else onNotice("已保存，但引擎的 AGENTS.md 还没对上——点「重新校验」确认，或重启应用");
     } catch (error: any) {
       onNotice(`保存个性化失败：${error?.message ?? error}`);
@@ -125,6 +154,62 @@ export function PersonalizationPage({
         </div>
       </div>
 
+      <div className="personalization-group card-frontend-design">
+        <div className="settings-subhead">
+          <Palette size={13} />前端设计风格
+          <span className="settings-subhead-hint">内置风格库 · 随应用更新</span>
+        </div>
+        <div className="frontend-style-chips" role="radiogroup" aria-label="前端设计风格">
+          {FRONTEND_DESIGN_STYLES.map((preset) => {
+            const active = frontendStyle === preset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                role="radio"
+                aria-checked={active}
+                data-style-id={preset.id}
+                className={`frontend-style-chip${active ? " active" : ""}`}
+                title={preset.desc}
+                onClick={() => setFrontendStyle(preset.id)}
+              >
+                <span className="frontend-style-swatches" aria-hidden>
+                  {preset.swatches.slice(0, 3).map((color) => <i key={color} style={{ backgroundColor: color }} />)}
+                </span>
+                <span>{preset.label}</span>
+                {active ? <Check size={12} /> : null}
+              </button>
+            );
+          })}
+        </div>
+        <p className="frontend-style-current">
+          {selectedFrontendStyle.desc}。具体色值仍从项目 DESIGN.md / CSS 变量派生。
+        </p>
+        <details className="frontend-style-prompt">
+          <summary>查看将注入的提示词</summary>
+          <pre>{frontendDesignPrompt(frontendStyle, frontendNotes) || "跟随项目：不额外注入视觉方向，只按项目 DESIGN.md 与现有组件落地。"}</pre>
+        </details>
+        <div className="frontend-style-library">
+          <span>实现时 Codex 会先查内置组件库，再按这套风格改造。</span>
+          {onOpenComponentLibrary ? <button type="button" onClick={onOpenComponentLibrary}>打开组件库</button> : null}
+        </div>
+        <textarea
+          className="personalization-instructions personalization-frontend-notes"
+          value={frontendNotes}
+          spellCheck={false}
+          maxLength={4000}
+          aria-label="前端设计自定义内容"
+          placeholder={"例如：\n· 主色 #6b5cff，圆角 10px，字体 Inter / 思源黑体\n· 不要渐变和重阴影，卡片一律 1px 边框\n· 表格行高 36px，焦点环 2px"}
+          onChange={(event) => setFrontendNotes(event.target.value)}
+        />
+        <div className="personalization-actions">
+          <span className="personalization-counter">{frontendNotes.length} / 4000</span>
+          <button type="button" className="primary-setting" disabled={saving || !dirty} onClick={() => void save()}>
+            {saving ? <span className="spinner" aria-hidden /> : <Check size={14} />}保存并重启引擎
+          </button>
+        </div>
+      </div>
+
       <div className="personalization-group card-instructions">
         <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
         <textarea
@@ -153,7 +238,7 @@ export function PersonalizationPage({
           <strong>
             {!verify ? "引擎指令校验中…"
               : !verify.exists ? "引擎主目录还没生成"
-              : !verify.expects ? (verify.applied ? "AGENTS.md 里仍有旧内容，点保存清掉" : "未设置个性化，引擎只有基础工程指令")
+              : !verify.expects ? "未设置个性化：引擎只保留基础指令（emoji / 语言）"
               : verify.applied ? "已确认写入 AGENTS.md，Codex 每次对话都会读到"
               : "还没写进 AGENTS.md，点「保存并重启引擎」"}
           </strong>

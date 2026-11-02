@@ -15,6 +15,7 @@
 import path from "node:path";
 import fs from "node:fs/promises";
 import { applyPersonalizationToAgentsMd, buildAgentsMd, readPersonalization, writePersonalization } from "../personalization";
+import { frontendDesignPrompt } from "../../src/lib/frontend-design-style.mjs";
 import { applyCustomModel } from "./custom-model-apply";
 import { readCustomModel } from "../main/01-model-catalog";
 import { refreshSkillDiscipline } from "../main/12-skill-discipline";
@@ -30,7 +31,7 @@ export const personalizationFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("personalization: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("personalization:read", async () => readPersonalization());
-    ipcHost.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown }) => {
+    ipcHost.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown; frontendDesignStyle?: unknown; frontendDesignNotes?: unknown }) => {
       const config = await writePersonalization(input);
       await applyPersonalizationToAgentsMd(config, codexHome);
       void refreshSkillDiscipline();
@@ -58,7 +59,11 @@ export const personalizationFeature = defineFeature<null>({
     });
     ipcHost.handle("personalization:verify", async () => {
       const stored = await readPersonalization();
-      const expects = Boolean(stored.nickname || stored.customInstructions);
+      const expects = Boolean(
+        stored.nickname
+        || stored.customInstructions
+        || frontendDesignPrompt(stored.frontendDesignStyle, stored.frontendDesignNotes),
+      );
       const agentsPath = path.join(codexHome, "AGENTS.md");
       const expectedText = buildAgentsMd(stored);
       let raw = "";

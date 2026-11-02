@@ -346,6 +346,7 @@ const FRONTEND_CANVAS_INSTRUCTIONS =
 const FRONTEND_DESIGN_INSTRUCTIONS =
   `\n19) FRONTEND DESIGN METHOD — before writing or changing ANY UI (page / component / layout / settings page / form / dialog / card list / styles / responsive / theme), read the built-in skill \`frontend-design\` FIRST:\n` +
   `   It is the shared design playbook: understand the real task and data before drawing, then go 层级 → 布局 → 状态 → 细节. It carries ten hard rules (single accent, borders over shadows, baseline alignment, actions pinned right, real content, all states), component/interaction patterns, theme/wallpaper/DPI/reduced-motion adaptation, a delivery checklist and anti-patterns. The workspace \`DESIGN.md\` holds this app's concrete tokens and classes — when both exist, DESIGN.md wins for VALUES, the skill wins for METHOD.\n` +
+  `   If the user's AGENTS.md carries a "Frontend design direction" section (Settings → 个性化 → 前端设计风格), that is the user's chosen visual direction — express it through the project's own tokens instead of hard-coding a second palette.\n` +
   `   ⛔ Do not invent a second style system and do not hard-code colors. ⛔ Never claim a UI change is done from reading code alone: render it (screenshot / real app) and check default/hover/disabled, empty/loading/error, long text, narrow window, and light/dark themes.`;
 
 /* ── 第 14 条：任务清单（10-06 夜三轮，用户：「任务清单必须有 codex 自己更新，他自己完成任务清单后

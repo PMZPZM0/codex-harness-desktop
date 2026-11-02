@@ -1,6 +1,7 @@
 import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { frontendDesignPrompt, normalizeFrontendDesignStyle } from "../src/lib/frontend-design-style.mjs";
 
 /**
  * 个性化配置：称呼与自定义指令。
@@ -29,6 +30,10 @@ export type PersonalizationConfig = {
   habits?: string;
   /** 用户补充的自我介绍（引导对话收集，写进 About the user 段） */
   userContext?: string;
+  /** 前端设计风格预设 id（见 src/lib/frontend-design-style.mjs；缺省跟随项目） */
+  frontendDesignStyle?: string;
+  /** 前端设计自定义内容（颜色 / 圆角 / 字体 / 间距 / 禁止项；写进 AGENTS.md） */
+  frontendDesignNotes?: string;
   /** 人格市场安装的人设全文（人格市场 soul-market 应用；为空 = 默认人格） */
   persona?: string;
   /** 当前生效的人格包 slug（人格市场「还原默认」时清空） */
@@ -70,6 +75,8 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       interests: str(stored?.interests),
       habits: str(stored?.habits),
       userContext: str(stored?.userContext),
+      frontendDesignStyle: normalizeFrontendDesignStyle(stored?.frontendDesignStyle),
+      frontendDesignNotes: str(stored?.frontendDesignNotes),
       persona: str(stored?.persona),
       soulSlug: str(stored?.soulSlug),
       onboarded: stored?.onboarded === true,
@@ -106,6 +113,12 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
     interests: pick("interests", 600),
     habits: pick("habits", 600),
     userContext: pick("userContext", 2000),
+    /* ⛔ 风格 id 必须过 normalize：界面与主进程共用同一份预设表，未知值统一回落「跟随项目」，
+       不许把一个主进程不认识的字符串写进档案（表现就是「选了没生效」）。 */
+    frontendDesignStyle: normalizeFrontendDesignStyle(
+      input2.frontendDesignStyle === undefined ? current.frontendDesignStyle : input2.frontendDesignStyle,
+    ),
+    frontendDesignNotes: pick("frontendDesignNotes", 4000),
     persona: pick("persona", 12000),
     soulSlug: pick("soulSlug", 120),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
@@ -235,6 +248,13 @@ export function buildAgentsMd(personalization: PersonalizationConfig): string {
   if (personalization.interests) lines.push(`- Interests (nice small-talk anchors): ${personalization.interests}.`);
   if (personalization.habits) lines.push(`- Long-term habits/preferences: ${personalization.habits}.`);
   if (personalization.userContext) lines.push(`- About the user: ${personalization.userContext}`);
+  /* 前端设计方向：只在选了预设或写了自定义内容时注入（默认「跟随项目」不占预算）。 */
+  const frontendDesign = frontendDesignPrompt(personalization.frontendDesignStyle, personalization.frontendDesignNotes);
+  if (frontendDesign) {
+    lines.push("- Frontend design direction (apply to every UI you build or change; concrete values still come from the project's own DESIGN.md / CSS tokens):");
+    lines.push("");
+    lines.push(frontendDesign);
+  }
   if (personalization.persona) {
     lines.push("- Persona (installed from the persona market; follow it for character, speech style, and behavior):");
     lines.push("");

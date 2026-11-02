@@ -240,7 +240,7 @@ type OfficialMarketPluginEntry = {
 type OfficialMarketListResult = { items: OfficialMarketPluginEntry[]; installedIds: string[]; live: boolean; catalogGeneratedAt: string; total: number; page: number; pageSize: number };
 type OfficialMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; manifestPath: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string; /** 专家市场包元技能（.skillhub.json kind=skillset） */ skillset?: boolean; /** 专家包子技能：所属包 slug（.skillhub.json kind=skillset-child） */ skillsetSlug?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; about?: string; occupation?: string; replyStyle?: string; tone?: string; interests?: string; habits?: string; userContext?: string; persona?: string; soulSlug?: string; onboarded?: boolean; profileGuideSeen?: boolean; greeted?: boolean };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; about?: string; occupation?: string; replyStyle?: string; tone?: string; interests?: string; habits?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; persona?: string; soulSlug?: string; onboarded?: boolean; profileGuideSeen?: boolean; greeted?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -925,7 +925,7 @@ interface Window {
     updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
     markIdentityGreeted(): Promise<PersonalizationConfig>;
     readPersonalization(): Promise<PersonalizationConfig>;
-    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
+    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
     /* ⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。 */
     saveIdentity(input: Record<string, unknown>): Promise<unknown>;
     /* 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */

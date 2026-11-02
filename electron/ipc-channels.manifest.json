@@ -2995,8 +2995,8 @@
     {
       "name": "savePersonalization",
       "channel": "personalization:save",
-      "paramsImpl": "input: { nickname?: string; customInstructions?: string }",
-      "paramsDecl": "input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; onboarded?: boolean; greeted?: boolean }",
+      "paramsImpl": "input: { nickname?: string; customInstructions?: string; frontendDesignStyle?: string; frontendDesignNotes?: string }",
+      "paramsDecl": "input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; onboarded?: boolean; greeted?: boolean }",
       "returns": "Promise<PersonalizationConfig>",
       "invokeArgs": "input",
       "cast": null,
