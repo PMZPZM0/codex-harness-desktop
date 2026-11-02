@@ -11,6 +11,7 @@
  * ⛔ 单一职责：本模块**只做扫描/打包/上传/记游标**；触发时机（启动、定时、手动）由壳决定。
  * ⛔ 不做的事（P1+）：不下载、不合并、不做项目/记忆/技能的同步；不含任何凭据读取。
  */
+import { guardedFetch } from "./net-guard";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, join, relative } from "node:path";
 import { canonicalStamp } from "./thread-backup";
@@ -137,7 +138,7 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
   if (!payload.length) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: files.length };
 
   try {
-    const res = await fetch(`${deps.accountsBase}/sync/push`, {
+    const res = await guardedFetch(`${deps.accountsBase}/sync/push`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ sessions: payload }),
@@ -208,7 +209,7 @@ export async function pullCloudSessions(deps: SyncDeps, ids: string[] = []): Pro
   const token = deps.deviceToken();
   if (!token) return { ok: false, reason: "not-paired", pulled: 0, skipped: 0, failed: 0 };
   try {
-    const idxRes = await fetch(`${deps.accountsBase}/sync/index`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
+    const idxRes = await guardedFetch(`${deps.accountsBase}/sync/index`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) });
     const idx = (await idxRes.json().catch(() => null)) as { ok?: boolean; sessions?: { id: string }[] } | null;
     if (!idxRes.ok || !idx?.ok) return { ok: false, reason: `index-http-${idxRes.status}`, pulled: 0, skipped: 0, failed: 0 };
     const wanted = (idx.sessions || []).filter((r) => !ids.length || ids.includes(r.id));
@@ -219,7 +220,7 @@ export async function pullCloudSessions(deps: SyncDeps, ids: string[] = []): Pro
     for (const row of wanted) {
       if (local.has(row.id)) { skipped += 1; continue; }
       try {
-        const res = await fetch(`${deps.accountsBase}/sync/session?id=${encodeURIComponent(row.id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
+        const res = await guardedFetch(`${deps.accountsBase}/sync/session?id=${encodeURIComponent(row.id)}`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
         const body = (await res.json().catch(() => null)) as { ok?: boolean; content?: string } | null;
         if (!res.ok || !body?.ok || typeof body.content !== "string") { failed += 1; continue; }
         const lines = body.content.split("\n").filter((l) => l.trim());

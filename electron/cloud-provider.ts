@@ -18,6 +18,7 @@
  *   基座层引用它与 `compaction-watch.ts → ./features/window-bus` 同性质。它只在**真正改动了
  *   生效档案**时才调用 —— 每次同步都重写 config.toml 会无谓打断在跑的回合。
  */
+import { guardedFetch } from "./net-guard";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readCustomModel, readCustomModels, writeCustomModels } from "./main/01-model-catalog";
@@ -86,7 +87,7 @@ async function attachUpstreamCredits(models: ProviderModel[], proxyBaseUrl: stri
   try {
     const key = decrypt(encryptedKey);
     if (!key) return models;
-    const res = await fetch(`${proxyBaseUrl.replace(/\/$/, "")}/models`, {
+    const res = await guardedFetch(`${proxyBaseUrl.replace(/\/$/, "")}/models`, {
       headers: { Authorization: `Bearer ${key}`, Accept: "application/json" },
       signal: AbortSignal.timeout(5000),
     });
