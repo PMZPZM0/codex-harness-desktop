@@ -21,7 +21,7 @@
 //
 // 被测 profile：.e2e-profile/<name>/（跨轮复用，含真实历史；勿入库）
 
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, truncateSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
@@ -1357,6 +1357,70 @@ const CHECKS = [
       await wait(1200);
       const page = await h.eval(`(document.querySelector(".settings-modal .settings-nav button.active")?.textContent||"").trim()`).catch(() => "");
       h.check("④ 点「技能页」直接进入技能设置页（安装与批量管理在那里）", page === "技能", String(page));
+    },
+  },
+  {
+    id: "voice-clone-refresh",
+    name: "🎙 语音克隆：模型装好后，下方「我的音色」立即解锁（11-02）",
+    run: async (h) => {
+      /* 用户实测：模型卡已显示「已就绪」，下面「我的音色」还挂着「还没安装音色克隆模型」、
+         radio 全禁用（zipReady 只在挂载时读一次，安装完成事件只刷新了播报引擎）。
+         这里走真实链路：页面加载 → 落模型文件 → 点卡片安装（主进程见已就绪直接回 ok）→
+         断言下方卡片解锁。模型文件用稀疏文件只满足体积门槛，不下载 156MB。
+         ⛔ 只动测试 profile 自己的 voice-models；若已有真模型，不删除，只验「挂载即就绪」。 */
+      const modelDir = join(h.userDataDir, "voice-models", "sherpa-onnx-zipvoice-distill-int8-zh-en-emilia");
+      const preexisting = existsSync(modelDir);
+      if (!preexisting) rmSync(modelDir, { recursive: true, force: true });
+      if (!(await h.exists(".settings-modal"))) {
+        await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 10000 });
+        await wait(500);
+      }
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="语音通话"; }); b&&b.click(); return !!b; })()`);
+      await h.waitFor(`!!document.querySelector(".voice-settings")`, { label: "语音设置页", timeoutMs: 15000 });
+      await wait(1000);
+      const readUi = () => h.eval(`(function(){
+        const card=[...document.querySelectorAll(".voice-card")].find(function(c){ return (c.innerText||"").includes("我的音色"); });
+        const hint=card?(card.querySelector(".voice-card-hint")?.innerText||"").trim():"";
+        const radios=[...document.querySelectorAll('input[name="voice-profile"]')];
+        const dev=[...document.querySelectorAll(".voice-devtools-card")].find(function(c){ return (c.innerText||"").includes("音色克隆模型"); });
+        return { hint:hint, radios:radios.length, disabled:radios.filter(function(r){ return r.disabled; }).length,
+          badge:dev?(dev.querySelector(".voice-devtools-badge")?.innerText||"").trim():"" };
+      })()`);
+      const before = await readUi();
+      if (preexisting) {
+        h.check("已有模型：进入页面即解锁（提示不含「还没安装」+ radio 可用）",
+          Boolean(before && !before.hint.includes("还没安装") && before.disabled === 0), JSON.stringify(before));
+        return;
+      }
+      h.check("① 前置：未装克隆模型时，下方音色卡提示安装且 radio 全禁用",
+        Boolean(before && before.hint.includes("还没安装") && before.radios > 0 && before.disabled === before.radios),
+        JSON.stringify(before));
+      mkdirSync(modelDir, { recursive: true });
+      const sparse = (name, bytes) => { const file = join(modelDir, name); writeFileSync(file, ""); truncateSync(file, bytes); };
+      sparse("encoder.int8.onnx", 1_000_000);
+      sparse("decoder.int8.onnx", 20_000_000);
+      writeFileSync(join(modelDir, "tokens.txt"), "x".repeat(300));
+      sparse("lexicon.txt", 200_000);
+      sparse("vocos_24khz.onnx", 51_400_000);
+      try {
+        const clicked = await h.eval(`(function(){
+          const dev=[...document.querySelectorAll(".voice-devtools-card")].find(function(c){ return (c.innerText||"").includes("音色克隆模型"); });
+          const b=dev?[...dev.querySelectorAll("button")].find(function(x){ return (x.innerText||"").includes("下载音色克隆模型"); }):null;
+          if(!b) return false; b.click(); return true;
+        })()`);
+        h.check("② 前置：模型卡仍显示「下载音色克隆模型」按钮（页面状态还是旧的）", clicked === true);
+        let after = null;
+        for (let i = 0; i < 40; i++) {
+          await wait(300);
+          after = await readUi();
+          if (after && !after.hint.includes("还没安装") && after.disabled === 0) break;
+        }
+        h.check("③ 安装完成后下方「我的音色」立即解锁（radio 不再禁用、提示消失）",
+          Boolean(after && !after.hint.includes("还没安装") && after.disabled === 0), JSON.stringify(after));
+      } finally {
+        rmSync(modelDir, { recursive: true, force: true });
+      }
     },
   },
 ];

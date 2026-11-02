@@ -146,7 +146,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           <strong>用自己的声音（音色克隆）</strong>
           <span className="voice-group-sub">先装 156MB 的克隆模型，再导入或录一段参考音频</span>
         </div>
-        <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" />
+        {/* 11-02 用户实测：模型卡已显示「已就绪」，下面「我的音色」却还挂着「还没安装音色克隆模型」
+            （zipReady 只在挂载时读一次；安装完成事件只刷新了播报引擎）⇒ 卡刷新完状态就回拉音色列表，
+            装好 / 删除 / 导入后立即同步，不必重进页面。 */}
+        <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" onStatusChange={() => { void reloadProfiles(); }} />
         <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
       </div>
 

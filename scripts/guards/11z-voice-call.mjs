@@ -1179,6 +1179,13 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "UI：克隆模型未就绪时 radio 与试听按 zipReady 禁用（⛔ 点下去也不许出声）");
   ok(cloneGated.includes('当前选中的克隆音色<strong>不可用</strong>'),
     "UI：已选克隆音色但模型不可用时给出警示条（不静默换音色）");
+  /* 11-02 用户实测：克隆模型装好后模型卡已显示「已就绪」，下面「我的音色」仍显示
+     「还没安装音色克隆模型」、radio 全禁用 —— zipReady 只在挂载时读一次，安装完成事件
+     只刷新了播报引擎。修法：模型卡刷新完状态回调外层重拉音色列表（装 / 删 / 导入都覆盖）。 */
+  ok(/<VoiceDevToolsSection[^>]*only="zipvoice"[^>]*onStatusChange=\{\(\) => \{ void reloadProfiles\(\); \}\}/.test(read("src/components/VoiceSettingsSection.tsx")),
+    "克隆模型卡状态刷新后联动重拉音色列表（⛔ 装好还停在「还没安装」）");
+  ok(/\.then\(\(\) => \{ setStatusFailed\(false\); onStatusChange\?\.\(\); \}\)/.test(read("src/components/VoiceDevToolsSection.tsx")),
+    "VoiceDevToolsSection 每次状态刷新都回调 onStatusChange（安装完成 / 删除 / 导入后都通知外层）");
 }
 
 /* ── ⑫ 内置音色（10-31 用户令：「活泼女声 · 小夏改成内置音色」）──────────────────
