@@ -97,6 +97,25 @@ const COMPLETED_TTL_MS = 30 * 60_000;
 const DETAIL_THROTTLE_MS = 280;
 /** 完成后的审阅姿态停留时长（活动记录不动，只是宠物姿态回 idle）。 */
 const REVIEW_HOLD_MS = 6_000;
+/** 「已中断/已停止」卡片自动消失的停留时长（用户：「状态一直这样吗，不刷新吗」）。 */
+const INTERRUPTED_HOLD_MS = 4_500;
+const interruptedTimers = new Map<string, NodeJS.Timeout>();
+
+/** 停止状态只作短暂提示：到点自动清掉活动，宠物回到待机、卡片不再一直挂着。 */
+function scheduleInterruptedClear(threadId: string) {
+  const old = interruptedTimers.get(threadId);
+  if (old) clearTimeout(old);
+  const timer = setTimeout(() => {
+    interruptedTimers.delete(threadId);
+    const item = activities.get(threadId);
+    if (item?.status === "interrupted") {
+      activities.delete(threadId);
+      publish(true);
+    }
+  }, INTERRUPTED_HOLD_MS);
+  timer.unref?.();
+  interruptedTimers.set(threadId, timer);
+}
 
 const store = {
   signal: {
@@ -242,6 +261,7 @@ export function markPetActivityStopped(threadId: string, turnId?: string): boole
   reviewUntil = 0;
   upsertActivity(id, { status: "interrupted", detail: "本轮已停止", turnId: item.turnId });
   showBubble("已停止");
+  scheduleInterruptedClear(id);
   return true;
 }
 
@@ -260,6 +280,8 @@ export function markPetActivitySeen(threadId: string): boolean {
   const item = activities.get(id);
   if (!item) return false;
   if (item.status === "completed" || item.status === "failed" || item.status === "interrupted") {
+    const pending = interruptedTimers.get(id);
+    if (pending) { clearTimeout(pending); interruptedTimers.delete(id); }
     activities.delete(id);
     reviewUntil = 0;
     publish(true);
@@ -378,6 +400,8 @@ export function feedPetEvent(event: unknown): boolean {
 
   if (method === "turn/started") {
     if (threadId) {
+      const pending = interruptedTimers.get(threadId);
+      if (pending) { clearTimeout(pending); interruptedTimers.delete(threadId); }
       motion = null;
       reviewUntil = 0;
       const existing = activities.get(threadId);
@@ -413,6 +437,7 @@ export function feedPetEvent(event: unknown): boolean {
       } else {
         reviewUntil = 0;
         upsertActivity(threadId, { turnId: turnIdOf(p) || existing?.turnId || "", status: "interrupted", detail: "本轮已中断", title });
+        scheduleInterruptedClear(threadId);
         pulseMotion("failed", "已中断", 2200, "failed");
       }
     }
@@ -485,6 +510,8 @@ function ensureClock() {
 
 /** 仅供测试/诊断：重置到空闲（不对外暴露给 IPC）。 */
 export function resetPetState() {
+  for (const timer of interruptedTimers.values()) clearTimeout(timer);
+  interruptedTimers.clear();
   activities.clear();
   pendingRequests.clear();
   motion = null;

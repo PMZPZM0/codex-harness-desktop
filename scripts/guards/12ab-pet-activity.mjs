@@ -135,6 +135,9 @@ const petCss = read("src/styles/22-pet.css");
     && /markPetActivityStopped\(id, record\.turnId\)/.test(ipcSrc)
     && /if \(isEndedTurnItem\(threadId, p\)\) return false;/.test(stateSrc),
     "停止后立即标记已停止 + 忽略该回合迟到的 item/delta（不再卡在「正在执行」）");
+  ok(/INTERRUPTED_HOLD_MS/.test(stateSrc) && /function scheduleInterruptedClear/.test(stateSrc)
+    && /scheduleInterruptedClear\(id\)/.test(stateSrc) && /scheduleInterruptedClear\(threadId\)/.test(stateSrc),
+    "已停止/已中断只作短暂提示，4.5s 后自动清掉活动（宠物回待机，卡片不常驻）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-reply"') && ipcSrc.includes('server.request("turn/steer"') && ipcSrc.includes("expectedTurnId"),
     "活动「回复」：主进程 turn/steer 把一句话补进当前回合（不新起回合）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-toggle"') && ipcSrc.includes("togglePetActivity()"), "活动收起/展开走主进程状态（两个浮窗同步）");
