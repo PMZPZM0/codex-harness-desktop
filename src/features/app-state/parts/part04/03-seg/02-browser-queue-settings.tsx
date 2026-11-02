@@ -16,6 +16,7 @@ import { inputText } from "../../../../../lib/input-text";
 import { notePollAutoContinue } from "../../../../../polling/poll-store";
 import type { PollTask } from "../../../../../polling/poll-store";
 import type { Bag } from "../../bag-types";
+import { isQueueTimerEnabled, subscribeQueueTimerMode } from "../../../../../lib/queue-timer-mode";
 
 /**
  * 「回合结束 → 应用替用户补一条续接」的**投递部分**（二次确认 + 入队 + 启动 + 钉顶 + 429 武装）。
@@ -104,8 +105,15 @@ export function usePart04c2(bag: Bag) {
   /** 设/取消某条排队消息的定时。runAt=null 表示取消。 */
   bag.setQueuedTimer = setQueuedTimer as typeof bag.setQueuedTimer;
 
-  async function setQueuedTimer(threadId: string, id: string, runAt: number | null) {
+  async function setQueuedTimer(threadId: string, id: string, runAt: number | null, opts: { silent?: boolean } = {}) {
     if (!threadId || !id) return;
+    // 总闸关闭 ⇒ 不接受新定时（按钮已隐藏，这里是防御路径）
+    if (runAt != null && !isQueueTimerEnabled()) return;
+    /* ⛔ 11-02 用户实测「每次排队消息发出去都显示定时了」：发送后的清理也会走这里（runAt=null），
+       原来无条件弹「已取消定时」—— 即便这条根本没设过定时。没有定时就什么都不做：
+       不发 IPC、不弹 toast。 */
+    const hadTimer = queueTimers[threadId]?.[id] != null;
+    if (runAt == null && !hadTimer) return;
     try {
       if (runAt == null) {
         await window.codex.queueTimerCancel({ queuedSubmissionId: id });
@@ -124,6 +132,7 @@ export function usePart04c2(bag: Bag) {
       persistQueueTimers(next);
       return next;
     });
+    if (opts.silent) return;
     if (runAt == null) bag.showToast("已取消定时", "这条排队消息恢复为普通排队", threadId);
     else bag.showToast("定时已设置", `到点自动发送：${new Date(runAt).toLocaleString()}`, threadId);
   }
@@ -136,6 +145,8 @@ export function usePart04c2(bag: Bag) {
   bag.releaseQueuedTimerDue = releaseQueuedTimerDue as typeof bag.releaseQueuedTimerDue;
 
   async function releaseQueuedTimerDue(threadId: string, id: string) {
+    // 总闸已关：在途 due 事件不再发送（定时器本体会在关闭时被撤销）
+    if (!isQueueTimerEnabled()) return;
     // 到点即消费：无论后面成败，本地定时态先清掉（引擎队列里这条还在不在由下面判定）
     setQueueTimers((current) => {
       const forThread = current[threadId];
@@ -209,14 +220,37 @@ export function usePart04c2(bag: Bag) {
   useEffect(() => {
     if (queueTimersLoadedRef.current) return;
     queueTimersLoadedRef.current = true;
+    // 总闸默认关闭（11-02）：关闭态不恢复任何定时，连同旧档案里的定时一并清掉
+    if (!isQueueTimerEnabled()) {
+      try { localStorage.removeItem("queue-timers-v1"); } catch { /* 忽略 */ }
+      return;
+    }
     try { setQueueTimers(JSON.parse(localStorage.getItem("queue-timers-v1") ?? "{}")); } catch { /* 损坏当空 */ }
+  }, []);
+
+  /* 总开关关闭（11-02）：撤掉所有已设的定时 —— 主进程定时器与本地徽标一起清，
+     否则消息会在用户看不见的地方到点自动发出。订阅模块级 store（不占用 bag 名字），
+     无论从设置页还是别处切开关都会立刻生效。 */
+  useEffect(() => {
+    const clearAllTimers = () => {
+      setQueueTimers((current) => {
+        const ids: string[] = [];
+        for (const forThread of Object.values(current)) ids.push(...Object.keys(forThread));
+        if (!ids.length) return current;
+        for (const id of ids) void window.codex.queueTimerCancel({ queuedSubmissionId: id }).catch(() => undefined);
+        return {};
+      });
+      try { localStorage.removeItem("queue-timers-v1"); } catch { /* 忽略 */ }
+    };
+    if (!isQueueTimerEnabled()) clearAllTimers();
+    return subscribeQueueTimerMode(() => { if (!isQueueTimerEnabled()) clearAllTimers(); });
   }, []);
 
   // 当前会话的定时对账：队列条目消失（已启动/被删）⇒ 悬空定时一并撤；
   // 仍有效的定时 ⇒ 主进程定时器幂等重设（reload 恢复路径）。
   useEffect(() => {
     const threadId = bag.thread?.id;
-    if (!threadId) return;
+    if (!threadId || !isQueueTimerEnabled()) return;
     const forThread = bag.queueTimers[threadId] ?? {};
     const liveIds = new Set(bag.queue.map((item) => item.id));
     const stale = Object.keys(forThread).filter((id) => !liveIds.has(id));
@@ -499,8 +533,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
         });
         await bag.deleteQueued(entry.id);
         void bag.refreshQueue(bag.thread.id);
-        // 「立即」已经把这条发出去了 ⇒ 它的定时一并撤（否则到点 due 只能靠引擎对账静默兜底）
-        void bag.setQueuedTimer(bag.thread.id, entry.id, null);
+        // 「立即」已经把这条发出去了；定时已由 deleteQueued 一并撤销，这里不再重复清理
         bag.showToast("消息发送成功", "这条排队消息已并入当前任务");
         return;
       } catch (error: any) {
@@ -533,7 +566,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
       // 同「回合结束自动启动」：先本地摘掉，避免与真实气泡并存（否则会短暂重复展示）
       if (id) {
         bag.setQueue((current) => current.filter((entry) => entry.id !== id));
-        void bag.setQueuedTimer(bag.thread.id, id, null); // 已立即发出 ⇒ 定时一并撤
+        void bag.setQueuedTimer(bag.thread.id, id, null, { silent: true }); // 已立即发出 ⇒ 定时一并撤，不弹「已取消定时」
       }
       void bag.refreshQueue(bag.thread.id);
       bag.showToast("消息发送成功", "排队消息已开始执行");

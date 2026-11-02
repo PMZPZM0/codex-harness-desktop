@@ -10,13 +10,14 @@
  */
 import { AppSelect } from "../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Settings2, ShieldCheck, Sparkles, Waves, Zap } from "lucide-react";
+import { Code2, Copy, FolderOpen, FolderTree, Globe2, HelpCircle, Keyboard, Monitor, MonitorUp, PanelRightOpen, RefreshCw, Settings2, ShieldCheck, Sparkles, Waves, Zap, AlarmClock } from "lucide-react";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { moodTone } from "../../lib/agent-mood.mjs";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { BuiltinSkillSwitch } from "./BuiltinSkillSwitch";
 import { AutoUpdateCard } from "./AutoUpdateCard";
 import { SettingsPageHero } from "../../components/SettingsPageHero";
+import { useQueueTimerEnabled, setQueueTimerEnabled } from "../../lib/queue-timer-mode";
 
 export type GeneralSettingsSectionProps = { globalPermApproval: any; applyGlobalPermissionMode: any; workspace: any; chooseWorkspace: any; userDataPath: any; setNotice: any; rightOpen: any; setRightOpen: any; capabilityHint: any; desktopAuto: any; groupBusy: any; toggleDesktopAuto: any; browserAuto: any; toggleBrowserAuto: any; ponytailOn: any; applyGroup: any; hardwareAccel: any; changeHardwareAccel: any; restartPending: any; SHORTCUT_GROUPS: any; setShortcutsOpen: any; engineVersion: any; engineCheck: any; engineUpdating: any; checkEngineUpdateNow: any; performEngineUpdateNow: any; engineUpdatePercent: any; engineUpdateStageText: any; engineUpdateLog: any; engineUpdateResult: any; relaunchCountdown: any; downloadSource: any; adaptiveTone: any; changeAdaptiveTone: any; thread: any; readMood: any; onOpenSkills?: (manage: boolean) => void; openAppConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean> };
 
@@ -140,6 +141,7 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource, adaptiveTone, changeAdaptiveTone, thread, readMood } = props;
   const [showAccelHelp, setShowAccelHelp] = useState(false);
+  const queueTimerEnabled = useQueueTimerEnabled();
   return (
     <>
       <section className="settings-section stack general-page settings-exp-page">
@@ -201,6 +203,20 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                           <ToggleSwitch checked={ponytailOn} disabled={groupBusy === "writing-code"} label="写代码模式（代码钩子）" onChange={(next) => void applyGroup("writing-code", next)} />
                         </div>
                         <p className="settings-card-hint">这两个是能力总闸：开关直接决定 Codex 引擎能不能用对应能力，并联动其下的 MCP、技能与插件（例如桌面自动化会一并启停 nuphus MCP 与 desktop-automation 技能）。在技能 / MCP / 插件页点关这些子项时会提示你回到这里操作，保证状态一致。</p>
+                      </div>
+                    </div>
+
+                    {/* 排队消息定时（11-02 用户令：「定时加一个开启关闭功能，定时默认关闭状态，
+                        这样排队消息就不显示」）。默认关闭 ⇒ 排队卡只留 立即/编辑/删除，
+                        不出现「定时」按钮与倒计时徽标；关闭时已设的定时会一并撤销（见 part04c2）。 */}
+                    <div className="settings-card card-queue-timer">
+                      <div className="settings-card-head"><AlarmClock size={15} /><strong>排队消息定时发送</strong><span className="settings-subhead-hint">默认关闭</span></div>
+                      <div className="settings-card-body settings-toggle-list">
+                        <div className="settings-toggle-row">
+                          <span className="settings-toggle-icon"><AlarmClock size={16} /></span>
+                          <span className="settings-toggle-text"><strong>显示定时入口</strong><small>开启后，排队消息卡片上会出现「定时」按钮，可设为几分钟后或指定时间自动发送；关闭时该按钮与倒计时徽标都不再显示，已设的定时会被取消。</small></span>
+                          <ToggleSwitch checked={queueTimerEnabled} label="排队消息定时发送" onChange={(next) => setQueueTimerEnabled(next)} />
+                        </div>
                       </div>
                     </div>
 

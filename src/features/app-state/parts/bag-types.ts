@@ -565,7 +565,7 @@ export interface Bag {
   setQueueTimers: React.Dispatch<React.SetStateAction<Record<string, Record<string, number>>>>;
   queueTimersLoadedRef: React.RefObject<boolean>;
   persistQueueTimers: (next: Record<string, Record<string, number>>) => void;
-  setQueuedTimer: (threadId: string, id: string, runAt: number | null) => Promise<void>;
+  setQueuedTimer: (threadId: string, id: string, runAt: number | null, opts?: { silent?: boolean }) => Promise<void>;
   releaseQueuedTimerDue: (threadId: string, id: string) => Promise<void>;
   queueDragIndex: number | null;
   setQueueDragIndex: React.Dispatch<React.SetStateAction<number | null>>;

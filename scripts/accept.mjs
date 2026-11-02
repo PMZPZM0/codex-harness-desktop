@@ -11,6 +11,7 @@
 //   ⑦ composer-rail：输入框竖条（收起贴线 / 四入口 / 选表情只插表情 / 弹层期不自动收 / 双写 / 10s 自动收）
 //   ⑧ devtools-categories：开发工具页工具分类（11-01）—— 外面只有分类卡 + 一键安装，
 //      明细只在二级弹窗里（⛔ 一级不许出现工具行）
+//   ⑨ queue-timer：排队消息定时总开关（11-02）—— 默认关闭、开启落盘、关闭即清
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -1513,6 +1514,34 @@ const CHECKS = [
       await h.eval(`document.querySelector(".office-overlay-close")?.click()`);
       await wait(400);
       await h.eval(`localStorage.removeItem("officeProbe")`).catch(() => undefined);
+    },
+  },
+  {
+    id: "queue-timer",
+    name: "排队消息定时总开关（默认关 / 开启后落盘 / 关闭即清）",
+    run: async (h) => {
+      /* 11-02 用户令：定时默认关闭，关闭时排队卡不显示定时入口。
+         这里验偏好本身（排队卡的隐藏/撤销由守卫 12as 静态钉住）；
+         ⛔ 必须先清键再 reload：持久 profile 可能保留上一轮开启过的状态。 */
+      await h.eval(`localStorage.removeItem("queue-timer-enabled-v1"); localStorage.removeItem("queue-timers-v1"); true`);
+      await h.reload({ waitMs: 2000 });
+      await h.waitFor(`!!document.querySelector(".app-shell")`, { label: "reload 后主界面", timeoutMs: 30000 });
+      await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置弹窗", timeoutMs: 10000 });
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find((x)=>(x.textContent||"").trim()==="控制台"); if(b){b.click(); return true;} return false; })()`);
+      await h.waitFor(`!!document.querySelector('[aria-label="排队消息定时发送"]')`, { label: "定时总开关", timeoutMs: 10000 });
+      const initial = await h.eval(`document.querySelector('[aria-label="排队消息定时发送"]').getAttribute("aria-checked")`);
+      h.check("① 没存过偏好时定时开关默认关闭", initial === "false", String(initial));
+      await h.click('[aria-label="排队消息定时发送"]');
+      await wait(250);
+      const on = await h.eval(`({ checked: document.querySelector('[aria-label="排队消息定时发送"]').getAttribute("aria-checked"), pref: localStorage.getItem("queue-timer-enabled-v1") })`);
+      h.check("② 开启后立即落盘（排队卡据此显示定时入口）", on.checked === "true" && on.pref === "true", JSON.stringify(on));
+      await h.click('[aria-label="排队消息定时发送"]');
+      await wait(250);
+      const off = await h.eval(`({ checked: document.querySelector('[aria-label="排队消息定时发送"]').getAttribute("aria-checked"), pref: localStorage.getItem("queue-timer-enabled-v1"), timers: localStorage.getItem("queue-timers-v1") })`);
+      h.check("③ 关闭后偏好为 false 且本地定时被清空", off.checked === "false" && off.pref === "false" && !off.timers, JSON.stringify(off));
+      await h.eval(`document.querySelector(".settings-modal header .relay-modal-close")?.click(); true`);
+      await wait(300);
     },
   },
 ];

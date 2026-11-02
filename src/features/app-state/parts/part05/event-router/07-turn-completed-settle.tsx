@@ -4,6 +4,7 @@
  *    调用处 `if (handleN(...)) return;` —— 提前退出的效果逐位保留（回调的返回值本来就被丢弃）。
  */
 import { AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, autoContinuePrompt, isTruncatedEmptyTurn, truncationNotice } from "../../../../../lib/turn-truncation.mjs";
+import { isTurnRunning } from "../../../../../lib/turn-fold";
 import {isQueueAlreadyStartedError, isQueueBusyError } from "../../../../../lib/queue-errors.mjs";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../../../../lib/user-refs";
 import { ThreadItem } from "../../../../../lib/thread-item";
@@ -16,6 +17,9 @@ import type { Bag } from "../../bag-types";
 /* ⛔ 11-02 用户「排队消息一下出去两个」：turn 结束事件可能重复/连发，自动启动必须按会话加锁，
    同一时刻只允许一条 queue/start 在飞（否则队头被并发启动，第二张卡也顺势被引擎带出去）。 */
 const queueAutoStartLocks = new Set<string>();
+/* 同一个回合的 turn/completed 只处理一次自动启动：事件重复时（同一 turnId 再来一遍）
+   直接跳过，而不是靠「锁刚好还在」碰运气。 */
+const queueAutoStartSettledTurns = new Set<string>();
 
 export function handleEventRouter7(bag: Bag, params: any): boolean {
         bag.setSending(false);
@@ -113,12 +117,34 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
         // 于是 `.timeline-queue` 里那条「排队中」气泡会与真实气泡**同时存在**——
         // 同一条消息显示两次，直到用户切会话/再发一条才刷新掉。
         let armedByAutoStart = false;
-        if (wasManualStop) {
+        const queueTurnKey = `${params.threadId}:${String(params.turn?.id ?? "")}`;
+        const duplicateCompletion = queueAutoStartSettledTurns.has(queueTurnKey);
+        if (!duplicateCompletion) {
+          queueAutoStartSettledTurns.add(queueTurnKey);
+          if (queueAutoStartSettledTurns.size > 500) queueAutoStartSettledTurns.clear();
+        }
+        if (duplicateCompletion) {
+          // 同一回合的 turn/completed 重复送达：无论上次是正常收尾还是手动停止，都不再动队列
+          bag.dbg("queue-autostart-skipped-duplicate", { threadId: params.threadId, turnId: params.turn?.id });
+        } else if (wasManualStop) {
           bag.dbg("manual-stop-no-autostart", { threadId: params.threadId });
         } else if (queueAutoStartLocks.has(params.threadId)) {
           bag.dbg("queue-autostart-skipped-inflight", { threadId: params.threadId });
         } else {
           queueAutoStartLocks.add(params.threadId);
+          const threadRunningNow = () => bag.runningThreadIdsRef.current.has(params.threadId)
+            || bag.threads.some((entry) => entry.id === params.threadId && (entry.status === "inProgress" || entry.status === "running"))
+            || (bag.threadRef.current?.id === params.threadId && (bag.threadRef.current?.turns ?? []).some((entry) => isTurnRunning(entry)));
+          /* ⛔⛔ 11-02 用户「还是一次出去两个」：引擎在 turn/completed 后约 9ms 就会自己启动队头。
+             宿主若立刻再列一次队列，拿到的可能已是「引擎刚拿走队头后剩下的下一条」⇒ 再 start
+             就是两条一起出去。所以先等一拍让 turn/started 落地；会话已在跑就完全交给引擎，
+             只有「引擎没启动且仍空闲」时才由宿主兜底启动队头。 */
+          window.setTimeout(() => {
+          if (threadRunningNow()) {
+            bag.dbg("queue-autostart-skipped-running", { threadId: params.threadId });
+            queueAutoStartLocks.delete(params.threadId);
+            return;
+          }
           void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => {
             const head = result?.data?.[0];
             if (!head) return undefined;
@@ -132,6 +158,11 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
             const timerAt = bag.queueTimers?.[params.threadId]?.[head.id];
             if (typeof timerAt === "number" && timerAt > Date.now()) {
               bag.dbg("queue-autostart-skipped-timer", { threadId: params.threadId, id: head.id, runAt: timerAt });
+              return undefined;
+            }
+            // 列队期间引擎可能已经启动了队头（turn/started 晚于我们的请求）⇒ 再查一次，绝不并发启动
+            if (threadRunningNow()) {
+              bag.dbg("queue-autostart-skipped-running-late", { threadId: params.threadId });
               return undefined;
             }
             bag.setQueue((current) => current.filter((entry) => entry.id !== head.id));
@@ -179,6 +210,7 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
           }).finally(() => {
             queueAutoStartLocks.delete(params.threadId);
           });
+          }, 350);
         }
         // 计划模式：方案回合正常结束 → 弹「开始执行」确认条；失败则静默复位（错误已 toast）
         if (bag.planTurnRef.current && bag.planTurnRef.current.threadId === params.threadId && bag.planTurnRef.current.turnId === String(params.turn?.id ?? "")) {

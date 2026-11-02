@@ -954,8 +954,8 @@ if (state) {
     "群事件与子智能体回报投递时都带宿主保留前缀（⛔ 不带就会被当成用户排队消息显示）");
 
   ok(/isHostQueueItem/.test(queueTree)
-    && /filter\(\(entry: any\) => !isHostQueueItem\(entry\)\)/.test(queueTree),
-    "排队面板按宿主前缀过滤（用户自己的排队消息照常显示，引擎那边照收照发）");
+    && /filter\(\(entry: any\) => !isHostQueueItem\(entry\)/.test(queueTree),
+    "排队面板按宿主前缀过滤（用户自己的排队消息照常显示，引擎那边照收照发；再叠加已落地剔除）");
 
   ok(/const registryIds = sessions\.map/.test(bossStore)
     && /const sessionIds = \[\.\.\.new Set\(\[\.\.\.registryIds, \.\.\.cachedIds\]\)\]/.test(bossStore)

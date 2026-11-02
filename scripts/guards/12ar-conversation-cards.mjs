@@ -67,6 +67,11 @@ const settleSrc = read("src/features/app-state/parts/part05/event-router/07-turn
 ok(/queueAutoStartLocks/.test(settleSrc) && /queue-autostart-skipped-inflight/.test(settleSrc)
   && /\.finally\(\(\) => \{\s*queueAutoStartLocks\.delete/.test(settleSrc),
   "回合结束自动启动按会话加锁：同一时刻只启动一条队头（事件重复不会连发两条）");
+ok(/queueAutoStartSettledTurns/.test(settleSrc) && /queue-autostart-skipped-duplicate/.test(settleSrc),
+  "同一 turn/completed 重复送达只处理一次（含手动停止后的重复事件）");
+ok(/threadRunningNow/.test(settleSrc) && /queue-autostart-skipped-running/.test(settleSrc)
+  && /queue-autostart-skipped-running-late/.test(settleSrc) && /window\.setTimeout\(/.test(settleSrc),
+  "引擎自己启动队头后宿主不再补启动（等一拍 + 启动前二次检查运行态；3 条排队实测 9/9）");
 
 const codeSrc = read("src/features/shared/ToolCodeBlock.tsx");
 ok(/className="tool-code-copy"/.test(codeSrc) && /copyTextToClipboard\(text\)/.test(codeSrc)
