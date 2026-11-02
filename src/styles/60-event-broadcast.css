@@ -17,13 +17,19 @@
    ⛔ 也别只把层级降到遮罩之下：遮罩是半透明的，图标会透出来成一块模糊残影（用户实测「还在呢」）。
    ⇒ 直接 display:none；弹窗关掉自动回来（内部状态不动、正在播的语音不中断）。
    ⛔ 必须挂在**根**上判定（:has(模态)），因为 .bc-anchor 可能被 portal 到别处。 */
-body:has(.modal-backdrop) .bc-anchor { display: none; }
+/* ⛔ 审查修正（11-02）：面板与横幅是 .bc-anchor 的兄弟节点，只藏 anchor 时它们仍会盖在
+   设置弹窗 / 全屏媒体预览上面。三件套一起藏。 */
+body:has(.modal-backdrop) .bc-anchor,
+body:has(.modal-backdrop) .bc-bubble,
+body:has(.modal-backdrop) .bc-panel { display: none; }
 /* ⛔⛔ 11-01 用户实测：「播放悬浮图标和播报弹窗还在视频/音乐播放组件上面」——
    媒体预览（视频/音频）不是 .modal-backdrop，旧规则管不到：
      · 全屏预览（z=400）：播报整组隐藏，别挡播放器；
      · 迷你播放器（z=70）：不隐藏（用户还要边听边干活），但把播报整体降到它下面（68/69），
        重叠时由迷你播放器盖住，没重叠时播报照常可见。 */
-body:has(.media-preview-backdrop:not(.is-mini)) .bc-anchor { display: none; }
+body:has(.media-preview-backdrop:not(.is-mini)) .bc-anchor,
+body:has(.media-preview-backdrop:not(.is-mini)) .bc-bubble,
+body:has(.media-preview-backdrop:not(.is-mini)) .bc-panel { display: none; }
 body:has(.media-preview-backdrop.is-mini) .bc-anchor { z-index: 68; }
 body:has(.media-preview-backdrop.is-mini) .bc-bubble,
 body:has(.media-preview-backdrop.is-mini) .bc-panel { z-index: 69; }

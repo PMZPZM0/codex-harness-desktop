@@ -255,6 +255,9 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   const fadeSrc = pkg?.rig ? rigSrc : gifSrc ? gifSrc : animationSrc;
   const rigHeight = renderedFrameHeight || geometry.frameHeight;
   const rigWidth = Math.round(rigHeight * (geometry.frameWidth / Math.max(1, geometry.frameHeight)));
+  /* 小气泡也要贴可见头顶（坐姿留白大，否则气泡会落进身体里）。 */
+  const bubbleContentTop = pkg?.rig ? (RIG_CONTENT_TOP[effectiveState] ?? 0) : 0;
+  const bubbleBottomPct = stageRatio * (1 + bubbleContentTop) * 100;
   const row = showSheetLook ? 9 + Math.floor(lookDirection / 8) : petRowOf(pkg?.states ?? PET_STATES, effectiveState);
   const style = petFrameStyle(geometry, row, showSheetLook ? lookDirection % 8 : frame, renderedFrameHeight || geometry.frameHeight);
 
@@ -426,7 +429,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
           className={`pet-bubble${bubbleVisible ? " is-visible" : ""}`}
           role="status"
           aria-live="polite"
-          style={{ bottom: `calc(${Math.round(stageRatio * 100)}% + 6px)` }}
+          style={{ bottom: `calc(${bubbleBottomPct.toFixed(1)}% + 6px)` }}
         >
           {signal.bubble}
           {signal.busy > 1 && <span className="pet-bubble-busy">×{signal.busy}</span>}

@@ -166,6 +166,9 @@ ok(/className="uc-combo-head"/.test(userCenterSrc) && /className="uc-combo-foot"
   && /\.uc-combo-foot\s*\{[^}]*margin-top:\s*auto/.test(sshCss)
   && !/\.uc-combo-check\s*\{[^}]*position:\s*absolute/.test(sshCss),
   "人格联动套餐卡：标题/说明/底部动作三段 + 等高，选中徽标不再叠住正文");
+  ok(/const busy = busyPack === pack\.id/.test(userCenterSrc) && /const locked = Boolean\(busyPack\)/.test(userCenterSrc)
+    && /disabled=\{locked\}/.test(userCenterSrc),
+    "套餐应用时只有正在应用的那张卡显示「应用中…」，其它卡只禁用不冒充加载中");
 /* 11-01 用户「用户中心帮我美化一下」：四行资料并成一张清单卡，底部状态行不再单独一张空壳卡。 */
 ok(/className="uc-row-list"/.test(userCenterSrc)
   && /\.uc-row-list \.uc-row-card \+ \.uc-row-card\s*\{[^}]*border-top/.test(sshCss)

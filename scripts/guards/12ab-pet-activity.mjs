@@ -138,6 +138,9 @@ const petCss = read("src/styles/22-pet.css");
   ok(/INTERRUPTED_HOLD_MS/.test(stateSrc) && /function scheduleInterruptedClear/.test(stateSrc)
     && /scheduleInterruptedClear\(id\)/.test(stateSrc) && /scheduleInterruptedClear\(threadId\)/.test(stateSrc),
     "已停止/已中断只作短暂提示，4.5s 后自动清掉活动（宠物回待机，卡片不常驻）");
+  ok(/Boolean\(incoming\) && Boolean\(item\.turnId\)/.test(stateSrc)
+    && /existing\?\.status === "interrupted" && existing\.turnId/.test(stateSrc),
+    "停止后的迟到 item/结束事件不会复活状态（没记 turnId 的也不会吞掉下一轮）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-reply"') && ipcSrc.includes('server.request("turn/steer"') && ipcSrc.includes("expectedTurnId"),
     "活动「回复」：主进程 turn/steer 把一句话补进当前回合（不新起回合）");
   ok(ipcSrc.includes('ipcHost.handle("pet:activity-toggle"') && ipcSrc.includes("togglePetActivity()"), "活动收起/展开走主进程状态（两个浮窗同步）");
@@ -288,8 +291,9 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(/const animation = pkg\.animationSet\?\.idle;/.test(settingsPetSrc)
     && /pet-thumb-animated/.test(settingsPetSrc) && /animation\.animatedSrc/.test(settingsPetSrc)
     && /animation\.stillSrc/.test(settingsPetSrc)
-    && /pet-thumb-rig/.test(settingsPetSrc) && /pet-thumb-rig img/.test(petCss),
-    "设置页缩略图：动物优先播 idle 动画、机器人姿态图带呼吸动作（减少动效回落静帧）");
+    && /pet-thumb-rig/.test(settingsPetSrc) && /pet-thumb-rig img/.test(petCss)
+    && /pet-thumb-rig\.is-animated img\s*\{\s*animation:\s*none/.test(petCss),
+    "设置页缩略图：动物优先播 idle 动画、机器人姿态图带呼吸动作（动画图不再叠 CSS 呼吸）");
   ok(!/pet-sprite-anim\[data-state=/.test(petCss),
     "动画包宠物不再叠 CSS 状态微动作（WebP 自身有动作，叠上去整只会晃）");
   ok(petCss.includes(".pet-sprite-anim img") && petCss.includes("object-fit: contain"),
@@ -344,6 +348,8 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(/pkg\.rig\.animatedPalettes/.test(petFloatSrc) && /rigIsAnimated/.test(petFloatSrc)
     && /\.pet-sprite-rig\.is-animated\s+\.pet-rig-motion/.test(petCss),
     "小C 逐态动画：渲染层用 animatedPalettes，且不再叠 CSS 动作（避免双动）");
+  ok(/bubbleContentTop/.test(petFloatSrc) && /bubbleBottomPct/.test(petFloatSrc),
+    "宠物窗小气泡按当前姿态的可见头顶定位（坐姿不会落进身体里）");
 
   /* 11-02 用户截图「宠物好几个，展示不全」：45 文件那条 170px 会盖掉 22 文件的 160px，
      7 只又回到 3 列、最后一张掉到折叠线以下。⇒ 4 列 + 描述两行定高 + 立像式预览。 */

@@ -261,6 +261,8 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   const [openCard, setOpenCard] = useState<null | "identity" | "avatar" | "about" | "codex" | "persona">(null);
   /* 套餐应用中标记：⛔ 必须在组件顶层 —— 原先写在条件渲染的 IIFE 里是非法 Hook 调用（React 抛错，弹窗打不开） */
   const [busyPack, setBusyPack] = useState("");
+  /* ⛔ 状态是异步的：同一帧连点两下时两个 applyCombo 都会通过 busyPack 判断 ⇒ 用 ref 做同步闸。 */
+  const busyPackRef = useRef("");
   const close = () => setOpenCard(null);
   const avatarStat = profile.avatarType === "image" && profile.avatar
     ? <img src={profile.avatar} alt="" style={{ width: 22, height: 22, borderRadius: "50%", objectFit: "cover" }} />
@@ -503,7 +505,8 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
       {openCard === "persona" && (() => {
         const applyCombo = async (packId: string) => {
           const pack = COMBO_PACKS.find((c: any) => c.id === packId);
-          if (!pack || busyPack) return;
+          if (!pack || busyPackRef.current) return;
+          busyPackRef.current = packId;
           setBusyPack(packId);
           try {
             const detail: any = await window.codex.getSoulMarket({ slug: pack.soulSlug });
@@ -515,7 +518,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
             onNotice?.("已应用套餐「" + pack.label + "」—— 下一新会话生效，两个身份都能在人格市场里单独改");
           } catch (error: any) {
             onNotice?.("套餐应用失败：" + (error?.message ?? error));
-          } finally { setBusyPack(""); }
+          } finally { busyPackRef.current = ""; setBusyPack(""); }
         };
         return (
           <SettingsDialog title="人格" icon={<Wand2 size={15} />} hint="用户人格 × Codex 人格，成套搭配" onClose={close}>
@@ -526,10 +529,12 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               <div className="uc-combo-grid">
                 {COMBO_PACKS.map((pack: any) => {
                   const on = personaInfo?.soulSlug === pack.soulSlug;
-                  /* ⛔ 任一套餐应用中就禁点其它卡：两个 saveIdentity 并发会把 persona/soulSlug 交错写（补审查 F1） */
-                  const busy = Boolean(busyPack);
+                  /* ⛔ 任一套餐应用中就禁点其它卡：两个 saveIdentity 并发会把 persona/soulSlug 交错写。
+                     但「应用中…」只挂在正在应用的那张卡上，不能让所有卡都显示成加载中。 */
+                  const busy = busyPack === pack.id;
+                  const locked = Boolean(busyPack);
                   return (
-                    <button type="button" key={pack.id} className={`uc-combo ${on ? "on" : ""} ${busy ? "busy" : ""}`} disabled={busy} title={pack.desc}
+                    <button type="button" key={pack.id} className={`uc-combo ${on ? "on" : ""} ${busy ? "busy" : ""}`} disabled={locked} title={pack.desc}
                       aria-pressed={on} onClick={() => void applyCombo(pack.id)}>
                       <span className="uc-combo-head">
                         <strong>{pack.label}</strong>
@@ -538,7 +543,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
                       <small>{pack.desc}</small>
                       <span className="uc-combo-foot">
                         <span className="uc-combo-state">{busy ? "应用中…" : on ? "已生效 · 下一新会话起用" : "点一下应用"}</span>
-                        {!on && !busy && <span className="uc-combo-cta">应用<ChevronRight size={12} /></span>}
+                        {!on && !locked && <span className="uc-combo-cta">应用<ChevronRight size={12} /></span>}
                       </span>
                     </button>
                   );

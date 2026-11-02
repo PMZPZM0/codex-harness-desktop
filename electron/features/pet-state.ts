@@ -271,7 +271,8 @@ function isEndedTurnItem(threadId: string, params: any): boolean {
   if (!item) return false;
   if (item.status !== "completed" && item.status !== "failed" && item.status !== "interrupted") return false;
   const incoming = turnIdOf(params);
-  return Boolean(incoming) && (!item.turnId || item.turnId === incoming);
+  /* ⛔ 必须两侧都有 turnId 才判「迟到」：否则活动没记到 turnId 时会把**下一轮**的事件全吞掉。 */
+  return Boolean(incoming) && Boolean(item.turnId) && item.turnId === incoming;
 }
 
 /** 用户从活动气泡打开了会话 ⇒ completed/failed 视为已看，清掉（running/waiting 不动）。 */
@@ -420,6 +421,8 @@ export function feedPetEvent(event: unknown): boolean {
   if (isTurnEndMethod(method)) {
     if (threadId) {
       const existing = activities.get(threadId);
+      /* 已按「用户停止」处理过的那一轮，后续迟到的 completed/failed 不再改状态（等自动清除）。 */
+      if (existing?.status === "interrupted" && existing.turnId && turnIdOf(p) === existing.turnId) return false;
       const title = existing?.title ?? fallbackTitle(threadId);
       /* ⛔ 有些引擎版本用 turn/completed + status=interrupted 表示「用户停止」，别再当完成处理。 */
       const stoppedByUser = /interrupt|abort|cancel/i.test(String(p.turn?.status ?? p.status ?? ""));

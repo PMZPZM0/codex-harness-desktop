@@ -448,6 +448,8 @@ html[data-pet-window="activity"] #root {
   pointer-events: none;
   animation: pet-rig-breathe 3.8s ease-in-out infinite;
 }
+/* 缩略图本身已是动画 WebP 时不再叠 CSS 呼吸（避免双层动作）。 */
+.pet-thumb-rig.is-animated img { animation: none; }
 /* ⛔ 11-02 用户：「宠物不要晃动，工作/事件联动时晃得不舒服」——
    动画包宠物**不再叠 CSS 状态微动作**（WebP 自身已有动作），避免整只宠物跟着上下晃/歪。 */
 @media (prefers-reduced-motion: reduce) {
