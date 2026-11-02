@@ -27,6 +27,8 @@ import { readSubAgents, type SubAgentConfig } from "../main/09-agents-plugins";
 import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
+import { readPersonalization } from "../personalization";
+import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 import type { RoleRef } from "../role-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
@@ -120,6 +122,15 @@ export async function runDelegatedTask(input: {
         ? { kind: "expert", id: team.teamId, label: team.displayName?.zh || target.name }
         : { kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName?.zh || team.teamId}·${member.name}` };
     }
+  }
+
+  /* 联动专家（11-03 用户令）：前端设计规范 + 后端开发 / 应用架构规范都要跟着角色提示词
+     进入专家、专家团主理人、团成员与子智能体会话；CLI 是外部程序，不塞角色提示词。 */
+  if (target.kind !== "cli") {
+    const norms = await readPersonalization()
+      .then((config) => personalNormsPrompt(config))
+      .catch(() => "");
+    if (norms) rolePrompt = `${rolePrompt}\n\n# User norms (frontend design + backend engineering / architecture)\n${norms}`;
   }
 
   const customModel = await readCustomModel();

@@ -93,8 +93,9 @@ ok(read("package.json").includes("node scripts/gen-design-skill.mjs"),
 const styleLib = read("src/lib/frontend-design-style.mjs");
 ok(styleLib.includes("FRONTEND_DESIGN_STYLES") && styleLib.includes('DEFAULT_FRONTEND_DESIGN_STYLE = "auto"')
   && styleLib.includes("export function normalizeFrontendDesignStyle")
-  && styleLib.includes("export function frontendDesignPrompt"),
-  "共享预设表存在（主进程与渲染层同一份 id，未知值回落跟随项目）");
+  && styleLib.includes("export function frontendDesignPrompt")
+  && styleLib.includes("enabled === false"),
+  "共享预设表存在（主进程与渲染层同一份 id，未知值回落跟随项目；支持关闭）");
 ok(styleLib.includes('id: "apple"') && styleLib.includes('id: "tech"') && styleLib.includes('id: "swiss"')
   && styleLib.includes('id: "glass"') && styleLib.includes('id: "material"')
   && styleLib.includes("prompt:") && styleLib.includes("swatches:"),
@@ -118,7 +119,7 @@ ok(read("src/lib/frontend-design-style.d.mts").includes("FRONTEND_DESIGN_STYLES"
 
 const personalSrc = read("electron/personalization.ts");
 ok(personalSrc.includes("frontendDesignStyle?: string") && personalSrc.includes("frontendDesignNotes?: string")
-  && /frontendDesignPrompt\(personalization\.frontendDesignStyle/.test(personalSrc)
+  && /frontendDesignPrompt\([\s\S]{0,120}personalization\.frontendDesignStyle/.test(personalSrc)
   && /normalizeFrontendDesignStyle\(/.test(personalSrc),
   "主进程档案含两个字段，且写入 AGENTS.md 时真的调用 frontendDesignPrompt");
 
@@ -155,6 +156,67 @@ ok(/paramsImpl[^\n]*frontendDesignStyle[^\n]*frontendDesignNotes/.test(manifest)
   "manifest 的 paramsImpl/paramsDecl 含新字段（生成物才会带上类型）");
 ok(read("src/styles/12-settings-skills.css").includes(".personalization-frontend-notes"),
   "前端设计自定义内容的样式在位（输入区高度与其它输入区分档）");
+
+/* ── ⑤ 软件开发规范 / 应用架构规范（11-03 用户追加）+ 联动专家 ───────────
+   ⛔ 只写进 AGENTS.md 不够：用户点名「记得这个联动专家」⇒ 派发专家 / 团 / 成员时
+      角色提示词也必须带上同一份规范（AGENTS.md 与角色提示词两条路都要通）。 */
+const engineeringLib = read("src/lib/engineering-norms.mjs");
+ok(engineeringLib.includes("SOFTWARE_DEV_NORMS") && engineeringLib.includes("APP_ARCHITECTURE_NORMS")
+  && engineeringLib.includes("personalNormsPrompt")
+  && engineeringLib.includes("务实稳健") && engineeringLib.includes("分层单体")
+  && engineeringLib.includes("阿里巴巴 Java 开发手册") && engineeringLib.includes("凤凰架构"),
+  "软件开发 / 应用架构规范库存在（预设 + 规范全文 + 国内参考文档）");
+ok(engineeringLib.includes("backend / server-side code") && engineeringLib.includes("frontend UI only")
+  && engineeringLib.includes("not visual design") && engineeringLib.includes("enabled === false"),
+  "规范适用范围写清：前端设计只给 UI，软件开发按后端，架构按后端 / 全栈；且支持关闭");
+ok(read("src/lib/engineering-norms.d.mts").includes("EngineeringNormPreset")
+  && read("src/lib/engineering-norms.d.mts").includes("personalNormsPrompt"),
+  "工程规范库有类型声明（tsc 能检查设置页消费点）");
+
+const personalNormSrc = read("electron/personalization.ts");
+ok(personalNormSrc.includes("softwareDevStyle?: string") && personalNormSrc.includes("appArchitectureStyle?: string")
+  && personalNormSrc.includes("frontendDesignEnabled?: boolean") && personalNormSrc.includes("softwareDevEnabled?: boolean")
+  && personalNormSrc.includes("appArchitectureEnabled?: boolean")
+  && /engineeringNormsPrompt\(personalization\)/.test(personalNormSrc)
+  && personalNormSrc.includes("Frontend design direction (frontend UI only")
+  && personalNormSrc.includes("Backend engineering norms")
+  && personalNormSrc.includes("normalizeSoftwareDevNorm") && personalNormSrc.includes("normalizeAppArchitectureNorm"),
+  "个性化档案含两套规范字段与三个开关，AGENTS.md 分区写清前端 / 后端适用范围");
+
+const delegationNormSrc = read("electron/features/delegation.ts");
+ok(delegationNormSrc.includes("personalNormsPrompt")
+  && /rolePrompt = .*User norms/.test(delegationNormSrc)
+  && /target\.kind !== "cli"/.test(delegationNormSrc),
+  "派发专家 / 团 / 成员 / 子智能体时，角色提示词追加前端设计 + 后端规范（联动专家）");
+const teamsNormSrc = read("electron/features/teams-ipc.ts");
+ok(teamsNormSrc.includes("personalNormsBlock") && teamsNormSrc.includes("withPersonalNorms")
+  && (teamsNormSrc.match(/withPersonalNorms\(/g) || []).length >= 4,
+  "专家团开团 / 成员会话 / 会话配置都带完整规范");
+ok(read("electron/team-invoke.ts").includes("personalNormsPrompt")
+  && /User norms/.test(read("electron/team-invoke.ts")),
+  "主理人调用成员（team_member_invoke）也带完整规范");
+
+const pageNorm = read("src/components/PersonalizationPage.tsx");
+ok(pageNorm.includes("NormCard") && pageNorm.includes("SOFTWARE_DEV_NORMS") && pageNorm.includes("APP_ARCHITECTURE_NORMS")
+  && pageNorm.includes("data-norm-card={cardId}") && pageNorm.includes('cardId="software-dev"')
+  && pageNorm.includes('cardId="app-architecture"')
+  && pageNorm.includes("软件开发规范（后端）") && pageNorm.includes("应用架构规范（后端 / 全栈）"),
+  "个性化页渲染软件开发（后端）+ 应用架构（后端 / 全栈）两张规范卡");
+ok(/frontendDesignEnabled: frontendEnabled/.test(pageNorm)
+  && /softwareDevEnabled,/.test(pageNorm) && /appArchitectureEnabled: appArchEnabled/.test(pageNorm)
+  && pageNorm.includes("ToggleSwitch") && pageNorm.includes("norm-toggle")
+  && pageNorm.includes("personalization-norm-off"),
+  "三类规范各有启用开关；关闭后不注入但保留配置");
+ok(/softwareDevStyle,/.test(pageNorm) && /appArchitectureStyle: appArchStyle/.test(pageNorm)
+  && /const dirty[\s\S]*softwareDevNotes\.trim\(\)[\s\S]*appArchNotes\.trim\(\)/.test(pageNorm)
+  && /const dirty[\s\S]*softwareDevEnabled[\s\S]*appArchEnabled/.test(pageNorm)
+  && pageNorm.includes("personalization-savebar"),
+  "两套规范参与保存 / dirty / 启用态判定，并由页面统一保存条提交");
+ok(/softwareDevStyle[^\n]*softwareDevNotes[^\n]*softwareDevEnabled[^\n]*appArchitectureStyle[^\n]*appArchitectureNotes[^\n]*appArchitectureEnabled/.test(manifest)
+  && /frontendDesignEnabled/.test(manifest),
+  "manifest 的保存参数含两套工程规范字段与三个开关（生成物才会带上类型）");
+ok(read("src/styles/12-settings-skills.css").includes(".personalization-savebar"),
+  "页面统一保存条样式在位（四类设置共用一个保存动作）");
 
 console.log(`\n【design】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

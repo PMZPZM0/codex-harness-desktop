@@ -204,7 +204,10 @@ const CHECKS = [
           hasFrontend:!!page.querySelector(".card-frontend-design"),
           frontendTabs:[...page.querySelectorAll(".card-frontend-design .frontend-style-chip")].map((b)=>String(b.textContent||"").trim()),
           hasFrontendNotes:!!page.querySelector(".personalization-frontend-notes"),
-          hasFrontendSave:!!page.querySelector(".card-frontend-design .primary-setting"),
+          hasFrontendSave:!!page.querySelector(".personalization-savebar .primary-setting"),
+          hasNormCards:!!page.querySelector('[data-norm-card="software-dev"]') && !!page.querySelector('[data-norm-card="app-architecture"]'),
+          normChips:[...page.querySelectorAll(".card-norm .frontend-style-chip")].length,
+          normToggles:[...page.querySelectorAll(".personalization-page .norm-toggle")].length,
           hasFrontendPrompt:!!page.querySelector(".frontend-style-prompt"),
           hasFrontendLibrary:!!page.querySelector(".frontend-style-library button"),
           hasFrontendRefs:!!page.querySelector(".frontend-style-refs-more"),
@@ -221,6 +224,9 @@ const CHECKS = [
           && per.frontendTabs.some((x) => x.includes("苹果")) && per.frontendTabs.some((x) => x.includes("科技"))
           && per.hasFrontendNotes && per.hasFrontendSave && per.hasFrontendPrompt && per.hasFrontendLibrary
           && per.hasFrontendRefs && per.hasFrontendSpec),
+        JSON.stringify(per));
+      h.check("⑧c 个性化：软件开发（后端）/ 应用架构（后端/全栈）两张规范卡 + 三个启用开关 + 统一保存",
+        Boolean(per && per.hasNormCards && per.normChips >= 12 && per.normToggles >= 3 && per.hasFrontendSave),
         JSON.stringify(per));
       h.check("⑨ 控制台回复风格卡：语气自适应开关在位（挪来这儿，不是删功能）",
         Boolean(ctrl && ctrl.toneInReply && ctrl.toneOn !== null),
@@ -1565,7 +1571,7 @@ const CHECKS = [
       h.check("① 选中「温暖」预设 + 填写自定义内容后，保存按钮从禁用变可用",
         await pick("温暖") === 1
           && await h.setInput(".personalization-frontend-notes", `主色用蓝紫色 ${marker}`).then(() => true)
-          && await wait(250).then(() => h.eval(`document.querySelector(".card-frontend-design .primary-setting")?.disabled === false`)),
+          && await wait(250).then(() => h.eval(`document.querySelector(".personalization-savebar .primary-setting")?.disabled === false`)),
         "tab/输入/保存态");
       await wait(250);
       const refs = await h.eval(`(function(){
@@ -1591,7 +1597,7 @@ const CHECKS = [
           && refs.prompt.includes("nutui.jd.com"), refs.prompt.slice(0, 160));
       await h.screenshot("个性化-前端设计风格");
 
-      await h.click(".card-frontend-design .primary-setting");
+      await h.click(".personalization-savebar .primary-setting");
       const saved = await waitStored((v) => v.frontendDesignStyle === "warm" && String(v.frontendDesignNotes || "").includes(marker));
       h.check("② 档案真的落盘（warm + 自定义内容）",
         Boolean(saved && saved.frontendDesignStyle === "warm" && String(saved.frontendDesignNotes || "").includes(marker)),
@@ -1613,6 +1619,102 @@ const CHECKS = [
         Boolean(reset && String(reset.frontendDesignNotes || "") === String(initial?.frontendDesignNotes || ""))
           && !agents2.includes(marker),
         JSON.stringify({ reset, stillInAgents: agents2.includes(marker) }));
+    },
+  },
+  {
+    id: "engineering-norms-setting",
+    name: "个性化后端开发 / 应用架构规范：启用开关、写入 AGENTS.md、关闭即停止注入、复位",
+    run: async (h) => {
+      const devMarker = "ACCEPTANCE-BACKEND-NORM-71C2";
+      const archMarker = "ACCEPTANCE-ARCH-NORM-93F4";
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(900);
+      const nav = (label) => h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()===${JSON.stringify(label)}; }); if(!b) return 0; b.click(); return 1; })()`);
+      await nav("个性化");
+      await wait(900);
+      const pickNorm = (card, label) => h.eval(`(function(){ const root=document.querySelector('[data-norm-card="${card}"]'); if(!root) return 0; const b=[...root.querySelectorAll(".frontend-style-chip")].find(function(x){ return (x.textContent||"").trim().includes(${JSON.stringify(label)}); }); if(!b) return 0; b.click(); return 1; })()`);
+      const toggleNorm = (card) => h.eval(`(function(){ const root=document.querySelector('[data-norm-card="${card}"]'); const b=root&&root.querySelector(".norm-toggle"); if(!b) return 0; b.click(); return 1; })()`);
+      const stored = () => h.eval(`window.codex.readPersonalization()`);
+      const initial = await stored().catch(() => null);
+      const waitStored = async (predicate, ms = 20000) => {
+        const deadline = Date.now() + ms;
+        let last = null;
+        while (Date.now() < deadline) {
+          last = await stored().catch(() => null);
+          if (last && predicate(last)) return last;
+          await wait(300);
+        }
+        return last;
+      };
+      const agentsText = async () => {
+        const verify = await h.eval(`window.codex.verifyPersonalization()`).catch(() => null);
+        return verify?.agentsPath && existsSync(verify.agentsPath) ? readFileSync(verify.agentsPath, "utf8") : "";
+      };
+      const save = () => h.click(".personalization-savebar .primary-setting");
+
+      h.check("① 两张后端规范卡各 6 档、各有启用开关",
+        await h.eval(`(function(){ const dev=document.querySelector('[data-norm-card="software-dev"]'); const arch=document.querySelector('[data-norm-card="app-architecture"]'); return Boolean(dev&&arch&&dev.querySelectorAll(".frontend-style-chip").length===6&&arch.querySelectorAll(".frontend-style-chip").length===6&&dev.querySelector(".norm-toggle")&&arch.querySelector(".norm-toggle")); })()`));
+      await h.screenshot("个性化-后端规范");
+
+      await pickNorm("software-dev", "务实稳健");
+      await pickNorm("app-architecture", "分层单体");
+      await h.setInput('[data-norm-card="software-dev"] textarea', `后端规范 ${devMarker}`);
+      await h.setInput('[data-norm-card="app-architecture"] textarea', `架构规范 ${archMarker}`);
+      await toggleNorm("app-architecture");
+      await wait(250);
+      h.check("② 关闭架构规范后显示「已关闭」提示，配置仍保留",
+        await h.eval(`(function(){ const root=document.querySelector('[data-norm-card="app-architecture"]'); return Boolean(root&&root.classList.contains("is-off")&&root.querySelector(".personalization-norm-off")&&root.querySelector("textarea")?.value.includes(${JSON.stringify(archMarker)})); })()`));
+
+      await save();
+      const saved = await waitStored((v) => v.softwareDevStyle === "pragmatic" && String(v.softwareDevNotes || "").includes(devMarker) && v.appArchitectureEnabled === false);
+      const agents1 = await agentsText();
+      h.check("③ 保存后：后端规范写入 AGENTS.md，关闭的架构规范不注入",
+        Boolean(saved && saved.softwareDevEnabled !== false && saved.appArchitectureEnabled === false)
+          && agents1.includes("Software development norms") && agents1.includes(devMarker)
+          && !agents1.includes("Application architecture norms") && !agents1.includes(archMarker),
+        JSON.stringify({ saved, dev: agents1.includes(devMarker), arch: agents1.includes(archMarker) }));
+
+      await toggleNorm("app-architecture");
+      await wait(250);
+      await save();
+      const reopened = await waitStored((v) => v.appArchitectureEnabled !== false);
+      const agents2 = await agentsText();
+      h.check("④ 重新打开架构规范并保存：两套规范都进入 AGENTS.md",
+        Boolean(reopened && reopened.appArchitectureEnabled !== false)
+          && agents2.includes("Software development norms") && agents2.includes(devMarker)
+          && agents2.includes("Application architecture norms") && agents2.includes(archMarker),
+        JSON.stringify({ reopened, dev: agents2.includes(devMarker), arch: agents2.includes(archMarker) }));
+
+      await toggleNorm("software-dev");
+      await wait(250);
+      await save();
+      const devOff = await waitStored((v) => v.softwareDevEnabled === false);
+      const agents3 = await agentsText();
+      h.check("⑤ 关闭后端规范并保存：只停止注入，配置仍在，架构规范不受影响",
+        Boolean(devOff && devOff.softwareDevEnabled === false && String(devOff.softwareDevNotes || "").includes(devMarker))
+          && !agents3.includes("Software development norms") && !agents3.includes(devMarker)
+          && agents3.includes("Application architecture norms") && agents3.includes(archMarker),
+        JSON.stringify({ devOff, dev: agents3.includes(devMarker), arch: agents3.includes(archMarker) }));
+
+      /* 复位到本轮开始前的值（包括三个开关），避免污染持久 profile。 */
+      await h.eval(`window.codex.savePersonalization({
+        frontendDesignStyle: ${JSON.stringify(initial?.frontendDesignStyle || "auto")},
+        frontendDesignNotes: ${JSON.stringify(initial?.frontendDesignNotes || "")},
+        frontendDesignEnabled: ${initial?.frontendDesignEnabled !== false},
+        softwareDevStyle: ${JSON.stringify(initial?.softwareDevStyle || "auto")},
+        softwareDevNotes: ${JSON.stringify(initial?.softwareDevNotes || "")},
+        softwareDevEnabled: ${initial?.softwareDevEnabled !== false},
+        appArchitectureStyle: ${JSON.stringify(initial?.appArchitectureStyle || "auto")},
+        appArchitectureNotes: ${JSON.stringify(initial?.appArchitectureNotes || "")},
+        appArchitectureEnabled: ${initial?.appArchitectureEnabled !== false}
+      })`);
+      const reset = await waitStored((v) => v.softwareDevEnabled === (initial?.softwareDevEnabled !== false)
+        && v.appArchitectureEnabled === (initial?.appArchitectureEnabled !== false));
+      const agents4 = await agentsText();
+      h.check("⑥ 复位后档案与 AGENTS.md 都不再带测试内容",
+        Boolean(reset) && !agents4.includes(devMarker) && !agents4.includes(archMarker),
+        JSON.stringify({ reset, dev: agents4.includes(devMarker), arch: agents4.includes(archMarker) }));
     },
   },
   {

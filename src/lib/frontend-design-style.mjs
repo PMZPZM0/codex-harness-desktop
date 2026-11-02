@@ -244,8 +244,9 @@ export function normalizeFrontendDesignStyle(value) {
   return FRONTEND_DESIGN_STYLES.some((style) => style.id === id) ? id : DEFAULT_FRONTEND_DESIGN_STYLE;
 }
 
-/** 生成写进 AGENTS.md 的前端设计段；空字符串 = 不注入（跟随项目且没有自定义内容）。 */
-export function frontendDesignPrompt(style, notes) {
+/** 生成写进 AGENTS.md 的前端设计段；空字符串 = 不注入（关闭 / 跟随项目且没有自定义内容）。 */
+export function frontendDesignPrompt(style, notes, enabled = true) {
+  if (enabled === false) return "";
   const id = normalizeFrontendDesignStyle(style);
   const preset = FRONTEND_DESIGN_STYLES.find((item) => item.id === id);
   const custom = String(notes ?? "").trim();

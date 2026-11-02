@@ -2,6 +2,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { frontendDesignPrompt, normalizeFrontendDesignStyle } from "../src/lib/frontend-design-style.mjs";
+import { engineeringNormsPrompt, normalizeAppArchitectureNorm, normalizeSoftwareDevNorm } from "../src/lib/engineering-norms.mjs";
 
 /**
  * 个性化配置：称呼与自定义指令。
@@ -34,6 +35,20 @@ export type PersonalizationConfig = {
   frontendDesignStyle?: string;
   /** 前端设计自定义内容（颜色 / 圆角 / 字体 / 间距 / 禁止项；写进 AGENTS.md） */
   frontendDesignNotes?: string;
+  /** 前端设计规范总开关（关闭后不注入，配置保留） */
+  frontendDesignEnabled?: boolean;
+  /** 软件开发规范预设 id（见 src/lib/engineering-norms.mjs；缺省跟随项目） */
+  softwareDevStyle?: string;
+  /** 软件开发规范自定义内容（写进 AGENTS.md，并联动专家会话） */
+  softwareDevNotes?: string;
+  /** 软件开发规范总开关（关闭后不注入，配置保留） */
+  softwareDevEnabled?: boolean;
+  /** 应用架构规范预设 id（见 src/lib/engineering-norms.mjs；缺省跟随项目） */
+  appArchitectureStyle?: string;
+  /** 应用架构规范自定义内容（写进 AGENTS.md，并联动专家会话） */
+  appArchitectureNotes?: string;
+  /** 应用架构规范总开关（关闭后不注入，配置保留） */
+  appArchitectureEnabled?: boolean;
   /** 人格市场安装的人设全文（人格市场 soul-market 应用；为空 = 默认人格） */
   persona?: string;
   /** 当前生效的人格包 slug（人格市场「还原默认」时清空） */
@@ -77,6 +92,13 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       userContext: str(stored?.userContext),
       frontendDesignStyle: normalizeFrontendDesignStyle(stored?.frontendDesignStyle),
       frontendDesignNotes: str(stored?.frontendDesignNotes),
+      frontendDesignEnabled: stored?.frontendDesignEnabled !== false,
+      softwareDevStyle: normalizeSoftwareDevNorm(stored?.softwareDevStyle),
+      softwareDevNotes: str(stored?.softwareDevNotes),
+      softwareDevEnabled: stored?.softwareDevEnabled !== false,
+      appArchitectureStyle: normalizeAppArchitectureNorm(stored?.appArchitectureStyle),
+      appArchitectureNotes: str(stored?.appArchitectureNotes),
+      appArchitectureEnabled: stored?.appArchitectureEnabled !== false,
       persona: str(stored?.persona),
       soulSlug: str(stored?.soulSlug),
       onboarded: stored?.onboarded === true,
@@ -119,6 +141,23 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
       input2.frontendDesignStyle === undefined ? current.frontendDesignStyle : input2.frontendDesignStyle,
     ),
     frontendDesignNotes: pick("frontendDesignNotes", 4000),
+    frontendDesignEnabled: input2.frontendDesignEnabled === undefined
+      ? current.frontendDesignEnabled !== false
+      : input2.frontendDesignEnabled === true,
+    softwareDevStyle: normalizeSoftwareDevNorm(
+      input2.softwareDevStyle === undefined ? current.softwareDevStyle : input2.softwareDevStyle,
+    ),
+    softwareDevNotes: pick("softwareDevNotes", 4000),
+    softwareDevEnabled: input2.softwareDevEnabled === undefined
+      ? current.softwareDevEnabled !== false
+      : input2.softwareDevEnabled === true,
+    appArchitectureStyle: normalizeAppArchitectureNorm(
+      input2.appArchitectureStyle === undefined ? current.appArchitectureStyle : input2.appArchitectureStyle,
+    ),
+    appArchitectureNotes: pick("appArchitectureNotes", 4000),
+    appArchitectureEnabled: input2.appArchitectureEnabled === undefined
+      ? current.appArchitectureEnabled !== false
+      : input2.appArchitectureEnabled === true,
     persona: pick("persona", 12000),
     soulSlug: pick("soulSlug", 120),
     onboarded: input.onboarded === undefined ? current.onboarded : input.onboarded === true,
@@ -249,11 +288,22 @@ export function buildAgentsMd(personalization: PersonalizationConfig): string {
   if (personalization.habits) lines.push(`- Long-term habits/preferences: ${personalization.habits}.`);
   if (personalization.userContext) lines.push(`- About the user: ${personalization.userContext}`);
   /* 前端设计方向：只在选了预设或写了自定义内容时注入（默认「跟随项目」不占预算）。 */
-  const frontendDesign = frontendDesignPrompt(personalization.frontendDesignStyle, personalization.frontendDesignNotes);
+  const frontendDesign = frontendDesignPrompt(
+    personalization.frontendDesignStyle,
+    personalization.frontendDesignNotes,
+    personalization.frontendDesignEnabled,
+  );
   if (frontendDesign) {
-    lines.push("- Frontend design direction (apply to every UI you build or change; concrete values still come from the project's own DESIGN.md / CSS tokens):");
+    lines.push("- Frontend design direction (frontend UI only; concrete values still come from the project's own DESIGN.md / CSS tokens):");
     lines.push("");
     lines.push(frontendDesign);
+  }
+  /* 软件开发 / 应用架构规范：同时写进 AGENTS.md，并在派发专家时附加到角色提示词（联动专家）。 */
+  const engineeringNorms = engineeringNormsPrompt(personalization);
+  if (engineeringNorms) {
+    lines.push("- Backend engineering norms (apply to backend / service code and application architecture; frontend UI uses the frontend design direction; project-specific conventions still win):");
+    lines.push("");
+    lines.push(engineeringNorms);
   }
   if (personalization.persona) {
     lines.push("- Persona (installed from the persona market; follow it for character, speech style, and behavior):");

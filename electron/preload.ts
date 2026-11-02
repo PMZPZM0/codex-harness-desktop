@@ -541,7 +541,7 @@ contextBridge.exposeInMainWorld("codex", {
   updatePastedText: (path: string, content: string) => __ipc("pasted-text:update", 1, [{ path, content }]),
   markIdentityGreeted: () => __ipc("personalization:mark-greeted", 0, []),
   readPersonalization: () => __ipc("personalization:read", 0, []),
-  savePersonalization: (input: { nickname?: string; customInstructions?: string; frontendDesignStyle?: string; frontendDesignNotes?: string }) => __ipc("personalization:save", 1, [input]),
+  savePersonalization: (input: { nickname?: string; customInstructions?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; frontendDesignEnabled?: boolean; softwareDevStyle?: string; softwareDevNotes?: string; softwareDevEnabled?: boolean; appArchitectureStyle?: string; appArchitectureNotes?: string; appArchitectureEnabled?: boolean }) => __ipc("personalization:save", 1, [input]),
   /* ⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。 */
   saveIdentity: (input: Record<string, unknown>) => __ipc("personalization:save-identity", 1, [input]),
   /* 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */

@@ -1183,6 +1183,34 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   flex-wrap: wrap;   /* 窄屏：主按钮整行落下去，不去挤压左边的计数 */
   display: flex;
 }
+.personalization-savebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.personalization-savebar .primary-setting { margin-left: auto; }
+.personalization-save-hint {
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.norm-toggle { margin-left: 8px; flex: none; }
+.personalization-norm-off {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.personalization-group.is-off .frontend-style-chips,
+.personalization-group.is-off .frontend-style-current,
+.personalization-group.is-off .frontend-style-refs,
+.personalization-group.is-off .frontend-style-spec {
+  opacity: 0.55;
+}
 /* 前端设计风格：紧凑胶囊（9 套，换行不横向溢出）+ 色板点 + 选中对勾。
    ⛔ 不做 9 张大卡：用户 10-27 明确否过「正方形卡片太多/太丑」，风格库要能一眼扫完。 */
 .frontend-style-chips {

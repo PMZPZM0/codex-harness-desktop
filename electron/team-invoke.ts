@@ -15,6 +15,8 @@ import { buildDelegateMemory } from "./delegate-memory";
 import { memberThreadName } from "./team-runs";
 import { bridgeDial } from "./main";
 import { ensureProjectAgentsMd } from "./project-conventions";
+import { readPersonalization } from "./personalization";
+import { personalNormsPrompt } from "../src/lib/engineering-norms.mjs";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";
@@ -154,7 +156,12 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
     memberThreadId,
     query: String(input.query ?? ""),
   });
-  const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
+  /* 联动专家（11-03）：成员被主理人调用时也带上前端设计 + 后端工程 / 架构规范。 */
+  const userNorms = await readPersonalization()
+    .then((config) => personalNormsPrompt(config))
+    .catch(() => "");
+  const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`
+    + (userNorms ? `# User norms (frontend design + backend engineering / architecture)\n${userNorms}\n\n` : "");
   // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
   //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值
   //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, Info, MessageSquare, Palette, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Check, Code2, Info, MessageSquare, Network, Palette, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import { SettingsPageHero } from "./SettingsPageHero";
+import { ToggleSwitch } from "./SettingsWidgets";
 import {
   DEFAULT_FRONTEND_DESIGN_STYLE,
   FRONTEND_DESIGN_STYLES,
@@ -8,12 +9,29 @@ import {
   frontendDesignPrompt,
   normalizeFrontendDesignStyle,
 } from "../lib/frontend-design-style.mjs";
+import {
+  APP_ARCHITECTURE_NORMS,
+  DEFAULT_APP_ARCHITECTURE_NORM,
+  DEFAULT_SOFTWARE_DEV_NORM,
+  SOFTWARE_DEV_NORMS,
+  engineeringNormsPrompt,
+  normalizeAppArchitectureNorm,
+  normalizeSoftwareDevNorm,
+  type EngineeringNormPreset,
+} from "../lib/engineering-norms.mjs";
 
 type PersonalizationConfig = {
   nickname?: string;
   customInstructions?: string;
   frontendDesignStyle?: string;
   frontendDesignNotes?: string;
+  frontendDesignEnabled?: boolean;
+  softwareDevStyle?: string;
+  softwareDevNotes?: string;
+  softwareDevEnabled?: boolean;
+  appArchitectureStyle?: string;
+  appArchitectureNotes?: string;
+  appArchitectureEnabled?: boolean;
 };
 
 /** personalization:verify 的回读结果：直接读真实落盘的 AGENTS.md，不是「我以为写成功了」 */
@@ -36,6 +54,108 @@ const stylePresets = [
   { value: "friendly", title: "友好", desc: "解释更详细，主动交代思路与取舍" },
   { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令" },
 ];
+
+/** 软件开发规范 / 应用架构规范共用的规范卡（胶囊预设 + 参考文档 + 规范全文 + 自定义内容）。
+ *  ⛔ 与设计风格卡同一套交互与样式，但内容来自 engineering-norms；⛔ 不另造第二套设计语言。 */
+function NormCard({
+  cardId,
+  title,
+  icon,
+  hint,
+  presets,
+  style,
+  onStyle,
+  notes,
+  onNotes,
+  enabled,
+  onEnabled,
+  ariaLabel,
+  placeholder,
+}: {
+  cardId: string;
+  title: string;
+  icon: ReactNode;
+  hint: string;
+  presets: EngineeringNormPreset[];
+  style: string;
+  onStyle: (value: string) => void;
+  notes: string;
+  onNotes: (value: string) => void;
+  enabled: boolean;
+  onEnabled: (value: boolean) => void;
+  ariaLabel: string;
+  placeholder: string;
+}) {
+  const selected = presets.find((preset) => preset.id === style) ?? presets[0];
+  return (
+    <div className={`personalization-group card-norm${enabled ? "" : " is-off"}`} data-norm-card={cardId}>
+      <div className="settings-subhead">
+        {icon}{title}
+        <span className="settings-subhead-hint">{hint}</span>
+        <ToggleSwitch
+          checked={enabled}
+          label={`启用${title}`}
+          title={enabled ? "关闭后不写入 AGENTS.md，也不带给专家；配置保留" : "启用后写入 AGENTS.md，并带给专家"}
+          className="norm-toggle"
+          onChange={onEnabled}
+        />
+      </div>
+      {enabled ? null : (
+        <p className="personalization-norm-off" role="status">已关闭：不写入 AGENTS.md，也不带给专家；下方配置会保留，随时可再打开。</p>
+      )}
+      <div className="frontend-style-chips" role="radiogroup" aria-label={ariaLabel}>
+        {presets.map((preset) => {
+          const active = style === preset.id;
+          return (
+            <button
+              key={preset.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              data-norm-id={preset.id}
+              className={`frontend-style-chip${active ? " active" : ""}`}
+              title={preset.desc}
+              onClick={() => onStyle(preset.id)}
+            >
+              <span>{preset.label}</span>
+              {active ? <Check size={12} /> : null}
+            </button>
+          );
+        })}
+      </div>
+      <p className="frontend-style-current">{selected.desc}</p>
+      {selected.refs.length ? (
+        <p className="frontend-style-refs">
+          参考：
+          {selected.refs.map((ref, index) => (
+            <span key={ref.url}>
+              {index ? " · " : ""}
+              <a href={ref.url} onClick={(event) => { event.preventDefault(); void window.codex.openExternal(ref.url); }}>
+                {ref.name}
+              </a>
+            </span>
+          ))}
+        </p>
+      ) : null}
+      <details className="frontend-style-spec">
+        <summary>查看规范全文（{selected.label}）</summary>
+        <pre>{selected.spec}</pre>
+      </details>
+      <textarea
+        className="personalization-instructions personalization-frontend-notes"
+        value={notes}
+        spellCheck={false}
+        maxLength={4000}
+        aria-label={ariaLabel}
+        placeholder={placeholder}
+        onChange={(event) => onNotes(event.target.value)}
+      />
+      <div className="personalization-actions">
+        <span className="personalization-counter">{notes.length} / 4000</span>
+      </div>
+    </div>
+  );
+}
 
 /**
  * 个性化设置页：回复风格 + 自定义指令。
@@ -60,6 +180,13 @@ export function PersonalizationPage({
   const [instructions, setInstructions] = useState("");
   const [frontendStyle, setFrontendStyle] = useState(DEFAULT_FRONTEND_DESIGN_STYLE);
   const [frontendNotes, setFrontendNotes] = useState("");
+  const [frontendEnabled, setFrontendEnabled] = useState(true);
+  const [softwareDevStyle, setSoftwareDevStyle] = useState(DEFAULT_SOFTWARE_DEV_NORM);
+  const [softwareDevNotes, setSoftwareDevNotes] = useState("");
+  const [softwareDevEnabled, setSoftwareDevEnabled] = useState(true);
+  const [appArchStyle, setAppArchStyle] = useState(DEFAULT_APP_ARCHITECTURE_NORM);
+  const [appArchNotes, setAppArchNotes] = useState("");
+  const [appArchEnabled, setAppArchEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [verify, setVerify] = useState<VerifyResult | null>(null);
@@ -83,6 +210,13 @@ export function PersonalizationPage({
         setInstructions(next.customInstructions ?? "");
         setFrontendStyle(normalizeFrontendDesignStyle(next.frontendDesignStyle));
         setFrontendNotes(next.frontendDesignNotes ?? "");
+        setFrontendEnabled(next.frontendDesignEnabled !== false);
+        setSoftwareDevStyle(normalizeSoftwareDevNorm(next.softwareDevStyle));
+        setSoftwareDevNotes(next.softwareDevNotes ?? "");
+        setSoftwareDevEnabled(next.softwareDevEnabled !== false);
+        setAppArchStyle(normalizeAppArchitectureNorm(next.appArchitectureStyle));
+        setAppArchNotes(next.appArchitectureNotes ?? "");
+        setAppArchEnabled(next.appArchitectureEnabled !== false);
         initial.current = next;
       })
       .catch(() => undefined)
@@ -93,7 +227,14 @@ export function PersonalizationPage({
 
   const dirty = instructions.trim() !== (initial.current.customInstructions ?? "")
     || frontendStyle !== normalizeFrontendDesignStyle(initial.current.frontendDesignStyle)
-    || frontendNotes.trim() !== (initial.current.frontendDesignNotes ?? "");
+    || frontendNotes.trim() !== (initial.current.frontendDesignNotes ?? "")
+    || frontendEnabled !== (initial.current.frontendDesignEnabled !== false)
+    || softwareDevStyle !== normalizeSoftwareDevNorm(initial.current.softwareDevStyle)
+    || softwareDevNotes.trim() !== (initial.current.softwareDevNotes ?? "")
+    || softwareDevEnabled !== (initial.current.softwareDevEnabled !== false)
+    || appArchStyle !== normalizeAppArchitectureNorm(initial.current.appArchitectureStyle)
+    || appArchNotes.trim() !== (initial.current.appArchitectureNotes ?? "")
+    || appArchEnabled !== (initial.current.appArchitectureEnabled !== false);
   const selectedFrontendStyle = FRONTEND_DESIGN_STYLES.find((preset) => preset.id === frontendStyle) ?? FRONTEND_DESIGN_STYLES[0];
 
   async function save() {
@@ -107,6 +248,13 @@ export function PersonalizationPage({
         customInstructions: instructions.trim(),
         frontendDesignStyle: frontendStyle,
         frontendDesignNotes: frontendNotes.trim(),
+        frontendDesignEnabled: frontendEnabled,
+        softwareDevStyle,
+        softwareDevNotes: softwareDevNotes.trim(),
+        softwareDevEnabled,
+        appArchitectureStyle: appArchStyle,
+        appArchitectureNotes: appArchNotes.trim(),
+        appArchitectureEnabled: appArchEnabled,
       });
       setConfig(next);
       initial.current = next;
@@ -115,8 +263,8 @@ export function PersonalizationPage({
       if (check) setVerify(check);
       const hasAny = Boolean(
         next.customInstructions
-        || next.frontendDesignNotes
-        || normalizeFrontendDesignStyle(next.frontendDesignStyle) !== DEFAULT_FRONTEND_DESIGN_STYLE,
+        || frontendDesignPrompt(next.frontendDesignStyle, next.frontendDesignNotes, next.frontendDesignEnabled)
+        || engineeringNormsPrompt(next),
       );
       if (!check?.exists) onNotice("已保存，但引擎主目录还没生成——先去「模型」页配置一个供应商，个性化才会写入");
       else if (check.inSync) onNotice(hasAny ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已清空个性化设置，AGENTS.md 已同步移除");
@@ -155,11 +303,21 @@ export function PersonalizationPage({
         </div>
       </div>
 
-      <div className="personalization-group card-frontend-design">
+      <div className={`personalization-group card-frontend-design${frontendEnabled ? "" : " is-off"}`}>
         <div className="settings-subhead">
           <Palette size={13} />前端设计风格
-          <span className="settings-subhead-hint">内置风格库 · 随应用更新</span>
+          <span className="settings-subhead-hint">前端 UI 专用 · 随应用更新</span>
+          <ToggleSwitch
+            checked={frontendEnabled}
+            label="启用前端设计规范"
+            title={frontendEnabled ? "关闭后不写入 AGENTS.md，也不带给专家；配置保留" : "启用后写入 AGENTS.md，并带给专家"}
+            className="norm-toggle"
+            onChange={setFrontendEnabled}
+          />
         </div>
+        {frontendEnabled ? null : (
+          <p className="personalization-norm-off" role="status">已关闭：不写入 AGENTS.md，也不带给专家；下方配置会保留，随时可再打开。</p>
+        )}
         <div className="frontend-style-chips" role="radiogroup" aria-label="前端设计风格">
           {FRONTEND_DESIGN_STYLES.map((preset) => {
             const active = frontendStyle === preset.id;
@@ -256,11 +414,40 @@ export function PersonalizationPage({
         />
         <div className="personalization-actions">
           <span className="personalization-counter">{frontendNotes.length} / 4000</span>
-          <button type="button" className="primary-setting" disabled={saving || !dirty} onClick={() => void save()}>
-            {saving ? <span className="spinner" aria-hidden /> : <Check size={14} />}保存并重启引擎
-          </button>
         </div>
       </div>
+
+      <NormCard
+        cardId="software-dev"
+        title="软件开发规范（后端）"
+        icon={<Code2 size={13} />}
+        hint="面向后端 / 服务端 · 随应用更新 · 专家同样生效"
+        presets={SOFTWARE_DEV_NORMS}
+        style={softwareDevStyle}
+        onStyle={setSoftwareDevStyle}
+        notes={softwareDevNotes}
+        onNotes={setSoftwareDevNotes}
+        enabled={softwareDevEnabled}
+        onEnabled={setSoftwareDevEnabled}
+        ariaLabel="软件开发规范（后端）"
+        placeholder={"例如：\n· 接口必须校验输入、写清错误码与超时\n· 写操作要有幂等键，重试不能重复扣款 / 重复发消息\n· 修 bug 先写复现测试，再改代码"}
+      />
+
+      <NormCard
+        cardId="app-architecture"
+        title="应用架构规范（后端 / 全栈）"
+        icon={<Network size={13} />}
+        hint="后端 / 全栈架构 · 随应用更新 · 专家同样生效"
+        presets={APP_ARCHITECTURE_NORMS}
+        style={appArchStyle}
+        onStyle={setAppArchStyle}
+        notes={appArchNotes}
+        onNotes={setAppArchNotes}
+        enabled={appArchEnabled}
+        onEnabled={setAppArchEnabled}
+        ariaLabel="应用架构规范（后端 / 全栈）"
+        placeholder={"例如：\n· 分层单向依赖，禁止跨层深链与循环依赖\n· 写服务契约：请求 / 响应 / 错误码 / 超时 / 重试\n· 关键路径必须有日志、指标与回滚方案"}
+      />
 
       <div className="personalization-group card-instructions">
         <div className="settings-subhead"><Wrench size={13} />自定义指令<span className="settings-subhead-hint">每次对话都生效，优先级高于风格默认</span></div>
@@ -275,10 +462,14 @@ export function PersonalizationPage({
         />
         <div className="personalization-actions">
           <span className="personalization-counter">{instructions.length} / 8000</span>
-          <button type="button" className="primary-setting" disabled={saving || !dirty} onClick={() => void save()}>
-            {saving ? <span className="spinner" aria-hidden /> : <Check size={14} />}保存并重启引擎
-          </button>
         </div>
+      </div>
+
+      <div className="personalization-savebar">
+        <span className="personalization-save-hint">修改后保存，下一次对话生效；专家与专家团会话同样带上这些规范。</span>
+        <button type="button" className="primary-setting" disabled={saving || !dirty} onClick={() => void save()}>
+          {saving ? <span className="spinner" aria-hidden /> : <Check size={14} />}保存并重启引擎
+        </button>
       </div>
 
       {/* 校验条独立成块：它汇报的是「自定义指令」的落盘结果，不并入上面任何一组。 */}

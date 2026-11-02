@@ -32,7 +32,18 @@ import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, wait
 import { server, teamRunStore, threadCwd } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
+import { readPersonalization } from "../personalization";
+import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 import { defineFeature } from "../context";
+
+/** 用户配置的完整规范（前端设计 + 后端工程 / 架构）：写进团队 / 成员会话提示词。 */
+async function personalNormsBlock(): Promise<string> {
+  try { return personalNormsPrompt(await readPersonalization()); }
+  catch { return ""; }
+}
+function withPersonalNorms(prompt: string, norms: string): string {
+  return norms ? `${prompt}\n\n# User norms (frontend design + backend engineering / architecture)\n${norms}` : prompt;
+}
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
@@ -79,13 +90,13 @@ export const teamsFeature = defineFeature<null>({
       const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === teamId);
       if (!team) throw new Error(`专家团「${teamId}」不存在`);
-      return { tools: team.members.map((m) => ({ id: m.id, name: m.name, profession: m.profession.zh, description: m.description })), teamSystemPrompt: buildTeamSystemPrompt(team), teamTool: buildTeamTools(team) };
+      return { tools: team.members.map((m) => ({ id: m.id, name: m.name, profession: m.profession.zh, description: m.description })), teamSystemPrompt: withPersonalNorms(buildTeamSystemPrompt(team), await personalNormsBlock()), teamTool: buildTeamTools(team) };
     });
     ipcHost.handle("teams:session-config", async (_event, teamId: string) => {
       const list = await readUsableExpertTeams();
       const team = list.find((entry) => entry.teamId === teamId);
       if (!team) throw new Error(`专家团「${teamId}」不存在`);
-      return { team, systemPrompt: buildTeamSystemPrompt(team), teamTool: buildTeamTools(team) };
+      return { team, systemPrompt: withPersonalNorms(buildTeamSystemPrompt(team), await personalNormsBlock()), teamTool: buildTeamTools(team) };
     });
     ipcHost.handle("teams:start-session", async (_event, input: { teamId: string; task?: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; personality?: string | null; defer?: boolean }) => {
       const list = await readUsableExpertTeams();
@@ -104,6 +115,7 @@ export const teamsFeature = defineFeature<null>({
       // 并行阶段工具：SOP 标「并行」的阶段由它一次性提交，宿主并发执行 —— 不依赖模型自觉
       // （09-14 实测：只改提示词让它「一次发多个调用」无效，模型照样逐个发 → 退化成串行）
       const teamPhaseTool = buildTeamPhaseTool(team);
+      const teamSystemPrompt = withPersonalNorms(buildTeamSystemPrompt(team), await personalNormsBlock());
       ensureProjectAgentsMd(input.cwd || process.cwd());
       const started: any = await server.request("thread/start", {
         model: effectiveModel,
@@ -128,10 +140,10 @@ export const teamsFeature = defineFeature<null>({
         return {
           thread: { ...started.thread, name: threadName },
           turnId: null,
-          role: { kind: "team", prefix: `${buildTeamSystemPrompt(team)}\n\n`, instruction: TEAM_TASK_INSTRUCTION },
+          role: { kind: "team", prefix: `${teamSystemPrompt}\n\n`, instruction: TEAM_TASK_INSTRUCTION },
         };
       }
-      const systemPrefix = buildTeamSystemPrompt(team);
+      const systemPrefix = teamSystemPrompt;
       const finalTask = `${systemPrefix}\n\n[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n${String(input.task ?? "")}\n=== END ===\n\n${TEAM_TASK_INSTRUCTION}`;
       const turn: any = await server.request("turn/start", {
         threadId: started.thread.id,
@@ -172,7 +184,8 @@ export const teamsFeature = defineFeature<null>({
         //        ⛔ 权限边界在执行端，被拒时工具会如实回报原因）
         dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()],
       });
-      const systemPrefix = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`;
+      const systemBase = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}`;
+      const systemPrefix = `${withPersonalNorms(systemBase, await personalNormsBlock())}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       teamRunStore.setThreadTeam(started.thread.id, team.teamId);
       if (input.defer) {

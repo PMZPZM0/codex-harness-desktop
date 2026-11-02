@@ -240,7 +240,7 @@ type OfficialMarketPluginEntry = {
 type OfficialMarketListResult = { items: OfficialMarketPluginEntry[]; installedIds: string[]; live: boolean; catalogGeneratedAt: string; total: number; page: number; pageSize: number };
 type OfficialMarketInstallResult = { id: string; name: string; path: string; version: string; description: string; marketId: string; manifestPath: string; engineRegistered?: boolean; engineCheckMessage?: string };
 type LocalSkillEntry = { name: string; folder?: string; path: string; description: string; descriptionZh?: string; marketId?: string; pluginId?: string; sourceUrl?: string; installedAt?: string; engineRegistered?: boolean; engineCheckMessage?: string; source?: "cocoloop" | "skillhub" | "local"; enabled?: boolean; allowedTools?: string[]; icon?: string; category?: string; /** 专家市场包元技能（.skillhub.json kind=skillset） */ skillset?: boolean; /** 专家包子技能：所属包 slug（.skillhub.json kind=skillset-child） */ skillsetSlug?: string };
-type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; about?: string; occupation?: string; replyStyle?: string; tone?: string; interests?: string; habits?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; persona?: string; soulSlug?: string; onboarded?: boolean; profileGuideSeen?: boolean; greeted?: boolean };
+type PersonalizationConfig = { nickname?: string; customInstructions?: string; assistantName?: string; about?: string; occupation?: string; replyStyle?: string; tone?: string; interests?: string; habits?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; frontendDesignEnabled?: boolean; softwareDevStyle?: string; softwareDevNotes?: string; softwareDevEnabled?: boolean; appArchitectureStyle?: string; appArchitectureNotes?: string; appArchitectureEnabled?: boolean; persona?: string; soulSlug?: string; onboarded?: boolean; profileGuideSeen?: boolean; greeted?: boolean };
 
 /** SSH 跳板机（ProxyJump）配置 */
 type SshJumpHost = {
@@ -471,7 +471,7 @@ interface Window {
     listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;
     /* 10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name="list" 取清单）；10-09 起图像四件套已搬去 image-lab 域自己的通道，本网关只剩其余 25 个能力 */
     callDispatchTool(input: { name: string; args?: Record<string, unknown>; callerThreadId: string }): Promise<{ ok: boolean; output: string; error?: string }>;
-    invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
+    invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent" | "cli"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
     /* 10-29 收敛：总开关删除后只剩「逐类许可变化」一种事件 —— 传 before/next 三类许可，主进程按差集生成**一条**按类分段的通知（新开启的类附对象名单）；未开启的类显式否定 */
     dispatchNotice(before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
     threadRole(threadId: string): Promise<{ restricted: boolean; label?: string }>;
@@ -925,7 +925,7 @@ interface Window {
     updatePastedText(path: string, content: string): Promise<{ ok: boolean; size: number }>;
     markIdentityGreeted(): Promise<PersonalizationConfig>;
     readPersonalization(): Promise<PersonalizationConfig>;
-    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
+    savePersonalization(input: { nickname?: string; customInstructions?: string; assistantName?: string; userContext?: string; frontendDesignStyle?: string; frontendDesignNotes?: string; frontendDesignEnabled?: boolean; softwareDevStyle?: string; softwareDevNotes?: string; softwareDevEnabled?: boolean; appArchitectureStyle?: string; appArchitectureNotes?: string; appArchitectureEnabled?: boolean; onboarded?: boolean; greeted?: boolean }): Promise<PersonalizationConfig>;
     /* ⛔ d.ts 历史上本有两处声明（宽口径 Record<string,string> 与窄口径 3 字段），提取去重保留宽口径 —— identity_onboard 调用点传 8 个字段，窄口径会爆 excess-property。 */
     saveIdentity(input: Record<string, unknown>): Promise<unknown>;
     /* 仅更新称呼：写 personalization.json + AGENTS.md，不重启引擎 */

@@ -18,4 +18,4 @@ export const FRONTEND_DESIGN_STYLES: FrontendDesignStyle[];
 export const FRONTEND_REFERENCE_SYSTEMS: FrontendDesignRef[];
 export const DEFAULT_FRONTEND_DESIGN_STYLE: string;
 export function normalizeFrontendDesignStyle(value: unknown): string;
-export function frontendDesignPrompt(style: unknown, notes: unknown): string;
+export function frontendDesignPrompt(style: unknown, notes: unknown, enabled?: boolean): string;
