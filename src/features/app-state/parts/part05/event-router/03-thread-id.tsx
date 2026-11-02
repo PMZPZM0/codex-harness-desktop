@@ -197,6 +197,15 @@ export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
           //   （`params.threadId !== threadRef.current?.id → return`），后台会话的完成事件
           //   走不到那里 —— 第一版把点亮挂在那边，真机验收当场红（绿点永不出现）。
           if (!params.threadId || params.threadId !== bag.threadRef.current?.id) bag.markThreadDoneUnread(params.threadId);
+          /* 11-02：失败 / 中止同样要收掉上游重连提示（与 turn/completed 同一条清场规则）——
+             否则引擎放弃重试后，那条「正在自动重连」会一直挂着。
+             ⛔ 位置在绿点点亮**之后**：`【60】` 锚 markThreadStopped 与绿点的相邻代码。 */
+          bag.setUpstreamRetries((current) => {
+            if (!(params.threadId in current)) return current;
+            const next = { ...current };
+            delete next[params.threadId];
+            return next;
+          });
           // ★ 10-11 兜底：被中断/失败/中止的回合，界面上「等用户操作」的覆盖层（询问卡 / 审批卡）
           //   必须跟着消失 —— 它们是阻塞式的，回合都没了就没有"答复"的语义了。
           //   ⛔ 这条路径覆盖**停止按钮之外**的所有结束方式：引擎侧中止、手机端停止、语音打断

@@ -30,6 +30,16 @@ export function handleEventRouter4(bag: Bag, params: any, method: any): boolean 
           // 否则会「先落完成态、后补字」，表现为完成后正文被覆盖或整段丢失。
           if (bag.pendingDeltaRef.current.length) flushDeltas();
           bag.lastStreamTsRef.current = Date.now();
+          /* ⛔ 11-02 用户实测「上游限流提示，模型都正常回复了还在」：上游重连提示是
+             **过渡态**，一旦该会话重新出内容/工具项，就说明连接已经恢复 ⇒ 立刻收掉，
+             不等 turn/completed（完成事件在重连后偶发迟到/缺失，提示就会一直挂着）。 */
+          if (params.threadId) bag.setUpstreamRetries((current) => {
+            const tid = String(params.threadId);
+            if (!(tid in current)) return current;
+            const next = { ...current };
+            delete next[tid];
+            return next;
+          });
           const next = applyThreadEvent(bag.threadRef.current, method, params);
           if (next !== bag.threadRef.current) {
             bag.threadRef.current = next;

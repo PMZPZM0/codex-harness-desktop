@@ -1663,4 +1663,32 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       "【285】会话底色两档：未选中浅色常驻 9% / 选中后深一档 18%"
     );
   }
+
+  /* ══ 【286】上游限流 / 重连提示不许在模型正常回复后残留（11-02 用户实测）══
+     Reconnecting 是"引擎还在重试"的进度提示，不是终态：不能当回合结束；迟到的通知不许
+     把提示挂回去；连接恢复（出内容）或任何终态事件都要收掉。 */
+  {
+    const err8Src = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "event-router", "08-error.tsx"), "utf8"));
+    const stream4Src = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "event-router", "04-thread-stream-method.tsx"), "utf8"));
+    const thread3Src = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part05", "event-router", "03-thread-id.tsx"), "utf8"));
+    console.log(C.bold("\n【286】上游限流 / 重连提示的生命周期"));
+    (/const reconnecting = Boolean\(reconnectMatch\);[\s\S]{0,160}?if \(!reconnecting\) \{[\s\S]{0,120}?bag\.setSending\(false\);[\s\S]{0,80}?bag\.markThreadStopped\(params\.threadId\)/.test(err8Src) ? ok : fail)(
+      "【286】Reconnecting 不算回合终态（不熄发送态、不标停 —— 否则重连成功后回复照常来，提示没人收）"
+    );
+    (/const alive = bag\.runningThreadIdsRef\.current\.has\(reconnectTid\)[\s\S]{0,120}?reconnectTid in current;[\s\S]{0,80}?if \(!alive\) return current;/.test(err8Src) ? ok : fail)(
+      "【286】迟到的重连通知不许把提示挂回去（既没在跑、也没有已有提示 ⇒ 过期忽略）"
+    );
+    (/120_000/.test(err8Src) && /entry\.no !== reconnectNo[\s\S]{0,80}?entry\.total !== reconnectTotal/.test(err8Src) ? ok : fail)(
+      "【286】2 分钟无新进度自动收掉（旧定时器对后续进度 no-op）"
+    );
+    (/if \(params\.threadId\) bag\.setUpstreamRetries\(\(current\) => \{[\s\S]{0,200}?delete next\[tid\]/.test(stream4Src) ? ok : fail)(
+      "【286】连接恢复（任何流式内容/工具项）立即收掉提示，不等可能迟到的 turn/completed"
+    );
+    ((thread3Src.match(/setUpstreamRetries\(/g) ?? []).length === 3 ? ok : fail)(
+      "【286】三处终态都清提示：turn/started + turn/completed + aborted/failed/interrupted"
+    );
+    (!/setUpstreamRetries\(\(current\) => \(\{ \.\.\.current, \[tid\]:/.test(err8Src) ? ok : fail)(
+      "【286】⛔ 别退回无条件写提示（旧实现在回合结束后仍会重新挂上）"
+    );
+  }
 }

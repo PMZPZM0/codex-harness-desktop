@@ -8,19 +8,46 @@ import { isRateLimitError } from "../../../../../lib/rate-limit-retry";
 import type { Bag } from "../../bag-types";
 
 export function handleEventRouter8(bag: Bag, params: any): boolean {
-        bag.setSending(false);
-        bag.setInterrupting(false);
-        bag.markThreadStopped(params.threadId);
         // error 通知也可能是限流（引擎 RPC 直接报错）：同样进入自动重试
         const rawError = params.error?.message ?? params.message ?? "";
         const details = String(params.error?.additionalDetails ?? params.additionalDetails ?? "");
         // 引擎的 Reconnecting 是英文原始报错，直接显示不友好——翻译成中文提醒：
         // 401=Key 错配（供应商切换后旧会话），流中断=网关不稳（pptoken 常见），均会自动重试。
         const reconnectMatch = rawError.match(/^Reconnecting\.\.\.\s*(\d+)\/(\d+)/);
-        // 引擎自己正在重连/重试 → 显示进度（否则用户看到的就是"空转半天没反应"）
-        if (reconnectMatch) {
-          const tid = String(params.threadId ?? "");
-          if (tid) bag.setUpstreamRetries((current) => ({ ...current, [tid]: { no: Number(reconnectMatch[1]), total: Number(reconnectMatch[2]) } }));
+        /* ⛔⛔ 11-02 用户实测：「上游限流那个提示，模型都正常回复了，还在」。
+           Reconnecting 是**引擎正在重试中的进度提示**，不是回合终态：
+           ① 不能当成回合结束（否则发送态被熄、线程被标停，重连成功后回复照常来，提示却没人收）；
+           ② 迟到的重连通知（回合已经跑完才到）不许把提示再挂回去 —— 该会话既不在运行、
+              也没有正在显示的上游提示 ⇒ 视为过期直接忽略。
+           ⛔ 清场在 turn/started、流式内容、turn/completed / aborted / failed / interrupted 四处。 */
+        const reconnecting = Boolean(reconnectMatch);
+        if (!reconnecting) {
+          bag.setSending(false);
+          bag.setInterrupting(false);
+          bag.markThreadStopped(params.threadId);
+        }
+        const reconnectTid = String(params.threadId ?? "");
+        if (reconnectMatch && reconnectTid) {
+          const reconnectNo = Number(reconnectMatch[1]);
+          const reconnectTotal = Number(reconnectMatch[2]);
+          bag.setUpstreamRetries((current) => {
+            const alive = bag.runningThreadIdsRef.current.has(reconnectTid)
+              || bag.runningTurnIdsRef.current.has(reconnectTid)
+              || reconnectTid in current;
+            if (!alive) return current;
+            return { ...current, [reconnectTid]: { no: reconnectNo, total: reconnectTotal } };
+          });
+          // 兜底：连续 2 分钟没有任何新的重连进度 ⇒ 视为已恢复（或引擎不再报），提示自动消失。
+          // ⛔ 只在条目仍是本次写入的那一条时才清（后续进度会刷新 no，旧定时器一律 no-op）。
+          window.setTimeout(() => {
+            bag.setUpstreamRetries((current) => {
+              const entry = current[reconnectTid];
+              if (!entry || entry.no !== reconnectNo || entry.total !== reconnectTotal) return current;
+              const next = { ...current };
+              delete next[reconnectTid];
+              return next;
+            });
+          }, 120_000);
         }
         let errorMessage = rawError;
       if (reconnectMatch) {
