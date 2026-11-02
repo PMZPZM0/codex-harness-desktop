@@ -8,7 +8,8 @@
  * 失效方式全是有害且静默的：
  *   · 参数回退成 pageNum ⇒ 又回到「点了没反应」且无报错（最阴的一类）；
  *   · 某个翻页点漏掉 page-turn ⇒ 翻页反馈四个市场不一致（用户点名要统一）；
- *   · 动画没有 reduced-motion 逃生口 ⇒ 违反全局减动效纪律。
+ *   · 动画没有 reduced-motion 逃生口 ⇒ 违反全局减动效纪律；
+ *   · 逃生口没带 data-motion=\"force\" 守卫 ⇒ mac 系统开关会把动画吃掉（11-02 用户实测）。
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -53,8 +54,13 @@ const ok = (condition, message) => {
   const css = read("src/styles/11-settings-secrets.css");
   ok(/@keyframes page-turn-in \{/.test(css) && /\.page-turn \{ animation: page-turn-in/.test(css),
     "统一动画 keyframes + .page-turn（淡入 + 上移 10px + 微缩放）");
-  ok(/@media \(prefers-reduced-motion: reduce\) \{ \.page-turn \{ animation: none; \} \}/.test(css),
-    "⛔ 减动效偏好下关动画（全局纪律）");
+  /* ⛔ 11-02 判据更新（用户改判，不是放松）：用户令「把 mac 的『减少动态效果』关了，
+     肯定要动画的啊」。项目语义是 index.html 首帧写 data-motion="force" = **无视系统偏好**，
+     所以静音块必须带 html:not([data-motion="force"]) 前缀才有意义（不带 = 系统开关会吃掉动画，
+     这正是用户 11-02 报的「没动效/生硬」）。判据从"必须静音"改为"静音必须带守卫"：
+     ① 仍要求存在 reduce 逃生口（可访问性不丢）；② 且它必须受 force 守卫控制。 */
+  ok(/@media \(prefers-reduced-motion: reduce\) \{ html:not\(\[data-motion="force"\]\) \.page-turn \{ animation: none/.test(css),
+    "⛔ 减动效逃生口必须在 data-motion=\"force\" 守卫下（否则 mac 系统开关会把动画全吃掉）");
 }
 
 /* ── 四、check 链登记 ────────────────────────────────────────────────── */

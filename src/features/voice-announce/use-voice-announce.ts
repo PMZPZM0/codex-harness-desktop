@@ -179,6 +179,12 @@ function joinAnnounceChunks(parts: Float32Array[], sampleRate: number): Float32A
  */
 const MAX_LIVE_CHARS_PER_TURN = 600;
 
+/* ⛔ 11-02（any 棘轮）：看门狗定时器与「这句念的是什么」原来是 `(source as any).__watchdog`
+   这种挂属性写法，每处都是一次 any 逃逸（棘轮 16→21 直接报红）。改用 WeakMap：
+   类型安全、source 播完可被回收、也不会在对象上留下我们自己的字段。 */
+const announceTimers = new WeakMap<AudioBufferSourceNode, number>();
+const announceTexts = new WeakMap<AudioBufferSourceNode, string>();
+
 /**
  * 结尾播报稿的**独立预算**（字符）。⛔ 用户 10-21 明确要求「两部分互不影响」：
  * 正文把 600 字吃光时，结尾那句「重点播报」必须照样念（否则正是本轮要修的症状之一）。
@@ -308,11 +314,11 @@ export function useVoiceAnnounce(threadId: string = ""): void {
 
   /** 把当前的真实状况推给状态栏（唯一出口：凡是会改变「看起来在不在念」的地方都要调它） */
   const publishStatus = useCallback(() => {
-    const first: any = queueRef.current[0];
+    const first = queueRef.current[0];
     const active = Boolean(first) || busyRef.current > 0;
     publishAnnounceStatus({
       active,
-      current: String(first?.__text ?? ""),
+      current: String((first && announceTexts.get(first)) || ""),
       pending: Math.max(0, queueRef.current.length - 1),
       source: active ? sourceRef.current : "",
       stopped: !active && stoppedRef.current,
@@ -349,8 +355,8 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       try { source.stop(); } catch { /* 已经播完 */ }
       /* ⛔ 11-02：停播要把看门狗一起清掉，否则定时器到点还会 publishStatus 一次
          （表现为「停了之后状态又闪一下」）。 */
-      const watchdog = (source as any).__watchdog;
-      if (watchdog) { window.clearTimeout(watchdog); (source as any).__watchdog = null; }
+      const watchdog = announceTimers.get(source);
+      if (watchdog) { window.clearTimeout(watchdog); announceTimers.delete(source); }
     }
     queueRef.current = [];
     /* ⛔ 积压计数也清零（10-21）：停止/打断后链上残留的任务会因世代号不匹配空转返回，
@@ -445,21 +451,21 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     const last: any = queueRef.current[queueRef.current.length - 1];
     const startAt = last ? Math.max(ctx.currentTime, last.__endsAt ?? 0) : ctx.currentTime;
     (source as any).__endsAt = startAt + buffer.duration;
-    (source as any).__text = text;
+    announceTexts.set(source, text);
     queueRef.current.push(source);
     let settled = false;
     const settle = () => {
       if (settled) return;
       settled = true;
-      const w = (source as any).__watchdog;
-      if (w) { window.clearTimeout(w); (source as any).__watchdog = null; }
+      const w = announceTimers.get(source);
+      if (w) { window.clearTimeout(w); announceTimers.delete(source); }
       queueRef.current = queueRef.current.filter((item) => item !== source);
       publishStatus();
     };
     source.onended = settle;
     // 看门狗：buffer 时长 + 2s 兜底（mac 上 onended 偶发不回调，会导致队列永不清）
     const watchdog = window.setTimeout(settle, Math.ceil(buffer.duration * 1000) + 2000);
-    (source as any).__watchdog = watchdog;
+    announceTimers.set(source, watchdog);
     source.start(startAt);
     publishStatus();
   }, [ensureCtx, publishStatus]);

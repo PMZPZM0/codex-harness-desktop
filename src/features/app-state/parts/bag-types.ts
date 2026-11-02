@@ -78,6 +78,9 @@ export interface Bag {
   dictationBaseRef: React.RefObject<string>;
   /** 上一次写进输入框的听写字幕（判断用户期间是否动过输入框的位标，见 lib/dictation-merge.mjs） */
   dictationWrittenRef: React.RefObject<string>;
+  /** 11-02：侧栏「打开 / 新建会话后自动展开所在项目」的去重位标（part03/04-project-groups）。
+      ⛔ 原来只在 hook 里声明、没进 Bag，【93】报「推断有 Bag 没有」——按既有口径补齐。 */
+  threadAutoExpandRef: React.RefObject<string>;
   attachmentMenuOpen: boolean;
   setAttachmentMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
   attachSubmenu: "none" | "files" | "thread-files" | "experts" | "skills" | "connectors" | "favorites";

@@ -306,7 +306,13 @@ export async function run() {
       "【127】step-note.mjs 三件套齐（注入 / 剥离 / 读取 —— 单一真相源，⛔ 不许各工具 schema 各写一份）"
     );
     const codexIpcSrc = readFileSync(join(ROOT, "electron", "features", "codex-ipc.ts"), "utf8").replace(/\r/g, "");
-    (/withStepParam\(\(params as any\)\.dynamicTools\)/.test(codexIpcSrc) && /syncToolSurfaceAsync\(codexHome, resumeThreadId, withStepParam\(resumeTools\)/.test(codexIpcSrc) ? ok : fail)(
+    /* ⛔ 11-02 判据更新（不是放松）：resume 那处的工具面现在是「宿主面 + 主进程三批（MCP/OpenFilm/影视）」
+       合并去重后的 `surface`，不再直接是 withStepParam(resumeTools)。要求的语义没变——
+       **两处注入都必须带 step**；所以盯「surface 由 withStepParam 产生」+「同步的就是 surface」，
+       不再绑实参字面（绑了的话，以后改合并逻辑就会假红，而真语义其实没动）。 */
+    (/withStepParam\(\(params as any\)\.dynamicTools\)/.test(codexIpcSrc)
+      && /const surface = withStepParam\(/.test(codexIpcSrc)
+      && /syncToolSurfaceAsync\(codexHome, resumeThreadId, surface\)/.test(codexIpcSrc) ? ok : fail)(
       "【127】注入点是主进程工具面**两处**（thread/start MCP 合并后 + resume 改写 rollout 首行前）—— ⛔ 少 resume 那处，老会话 resume 一次就退回无 step 的旧形态"
     );
     const bridgeSrc = readFileSync(join(ROOT, "electron", "mcp-bridge.ts"), "utf8").replace(/\r/g, "");
