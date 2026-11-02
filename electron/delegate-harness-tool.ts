@@ -26,7 +26,7 @@
 import { dispatchMcpTools } from "./features/dispatch-core";
 import { dispatchRpcCall } from "./features/dispatch-rpc";
 import { lookupRoleSession } from "./role-memory";
-import { delegateRegistry, teamRunStore, threadCwd } from "./runtime-refs";
+import { threadCwd } from "./runtime-refs";
 
 /** 工具名：与主会话的网关**完全同名** —— 两个环境里是同一件事，⛔ 不另起名字。 */
 export const DELEGATE_HARNESS_TOOL = "harness_tools";
@@ -91,17 +91,13 @@ export async function handleDelegateHarnessToolCall(input: {
   /* 身份硬闸：只用引擎下发的 threadId，⛔ 不用 args 里的任何东西当身份。 */
   const threadId = String(event?.params?.threadId ?? "");
   const found = await lookupRoleSession(userDataDir, threadId).catch(() => null);
-  /* 团队主会话那一类没有角色登记（teams-ipc 的 teams:session 只登记 threadCwd）⇒ 用
-     「被委派登记表 / 团队会话表」兜底；两者都不认 ⇒ 拒绝（fail-closed，不当"随便哪个会话"）。 */
-  const isDelegated = Boolean(found)
-    || Boolean(await delegateRegistry.infoOf(threadId).catch(() => null))
-    || Boolean(teamRunStore.teamOfThread(threadId));
   /* ⛔⛔ 11-02 用户令（原话：「harness_tools 一下就限制了很多，放开，不要限制」）：
      **撤掉身份硬闸**，普通对话会话同样可以使用宿主能力网关。
-     ⛔ 安全边界说明：网关能力（文件读写/命令/系统操作）从此对模型在**所有会话**可达，
-     真正的约束回到下面的执行端（路径可信校验、命令白名单等），而不是"先挡住调用者"。
-     保留 isDelegated 的计算：后面工作目录兜底仍要按它区分被委派会话。 */
-  void isDelegated;
+     ⛔ 安全边界：网关能力（文件读写/命令/系统操作）对模型在**所有会话**可达，
+     真正的约束回到执行端（路径可信校验、命令白名单），而不是"先挡住调用者"。
+     ⛔ 审查补充（11-02）：撤闸后 isDelegated 已无消费方，比原来还多两次无谓 async IO
+     （delegateRegistry.infoOf + teamRunStore.teamOfThread）⇒ 整段计算一并删除。
+     工作目录兜底只用 found?.workspace，与 isDelegated 无关。 */
   /* ⛔ 工作目录兜底（10-10）：被委派会话原来只登记在角色表里，`threadCwd` 是空的 ——
      而网关里的 `knowledge_search` 等能力要靠它定位**项目级**资源。缺了会让这类调用
      直接失败（"无法确定工作目录"）。这里用角色表里的 workspace 补登记（同 delegation 建会话时

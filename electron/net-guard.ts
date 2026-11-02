@@ -78,12 +78,6 @@ export async function guardedFetch(
   const retries = Math.max(0, options.retries ?? 0);
   const origin = originOf(input);
 
-  // 同源串行：等前一条落地（成功或失败都要等，否则又回到并发 TLS）
-  const prev = inflight.get(origin);
-  if (prev) {
-    try { await prev; } catch { /* 前一条的失败不影响本条 */ }
-  }
-
   const run = async (): Promise<Response> => {
     await waitCooldown(origin);
     let lastError: unknown;
@@ -104,7 +98,9 @@ export async function guardedFetch(
         return response;
       } catch (error) {
         lastError = error;
-        markFailure(origin, cooldownMs);
+        /* ⛔ 审查修正：callerSignal 主动中止不是上游故障，不计入失败冷却。
+           否则用户点一次「停止」，这个 origin 后面要白等 1.5s×n。 */
+        if (!callerSignal?.aborted) markFailure(origin, cooldownMs);
         if (attempt < retries) await waitCooldown(origin);
       } finally {
         clearTimeout(timer);
@@ -113,7 +109,12 @@ export async function guardedFetch(
     throw lastError instanceof Error ? lastError : new Error(String(lastError));
   };
 
-  const promise = run();
+  /* ⛔⛔ 审查修正（11-02）：原来写的是「读一次 inflight 再 await 它」——
+     并发时三个请求会在同一个 tick 都读到同一条 prev（后两个还没 set），
+     await 结束后**一起放行**，串行等于没做。改成链在**尾巴**上：
+     新请求接到"当前最后一条"的后面，形成严格串行链，读与写都在同一个同步块内。 */
+  const tail = inflight.get(origin) ?? Promise.resolve();
+  const promise = tail.catch(() => undefined).then(() => run());
   inflight.set(origin, promise as Promise<unknown>);
   try {
     return await promise;

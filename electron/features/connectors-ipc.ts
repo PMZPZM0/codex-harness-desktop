@@ -206,9 +206,16 @@ export const connectorsFeature = defineFeature<null>({
          一路存进磁盘，npx 拿到空字符串，握手必然失败，而报错只说「握手失败」，
          用户根本看不出缺的是哪个参数。这里在**保存时**拦下并指名道姓。 */
       if (transport === "stdio" && Array.isArray(input.args)) {
-        const emptyFlags = (input.args as unknown[])
-          .map((value) => String(value ?? ""))
-          .filter((flag) => /^--?[\w.-]+=$/.test(flag.trim()));
+        const rawArgs = (input.args as unknown[]).map((value) => String(value ?? ""));
+        const emptyFlags = rawArgs.filter((flag) => /^--?[\w.-]+=$/.test(flag.trim()));
+        /* ⛔ 审查补充（11-02）：还有第二种写法 —— 标志与空值分成两段
+           （`["--Bucket", ""]`），npx 照样拿到空串，而上面那条正则只看单段，拦不住。
+           只在"下一个元素是空串"时判定，所以 `--verbose` 这类无值开关不会误杀。 */
+        const danglingFlags = rawArgs.filter((flag, index) =>
+          /^--?[\w.-]+$/.test(flag.trim())
+          && index + 1 < rawArgs.length
+          && rawArgs[index + 1].trim() === "");
+        if (danglingFlags.length) emptyFlags.push(...danglingFlags.map((flag) => flag + " ''"));
         if (emptyFlags.length) {
           throw new Error("这些参数只有名字没有值：" + emptyFlags.join("、") + "。请补全后再保存，否则 MCP 启动必然握手失败。");
         }

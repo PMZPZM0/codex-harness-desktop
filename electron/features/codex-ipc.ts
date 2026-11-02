@@ -150,7 +150,7 @@ export const codexFeature = defineFeature<null>({
         /* ⛔ 11-02：resume 没带 dynamicTools ⇒ 老会话工具面**永远不会升级**（引擎只读首行），
            症状就是新工具报 not registered。这里至少留下证据，别静默。 */
         if (resumeThreadId && !(Array.isArray(resumeTools) && resumeTools.length)) {
-          console.warn();
+          console.warn("[tool-surface] resume " + resumeThreadId.slice(0, 8) + " 未带 dynamicTools ⇒ 工具面不会升级");
         }
         if (resumeThreadId && Array.isArray(resumeTools) && resumeTools.length) {
           try {
@@ -192,9 +192,6 @@ export const codexFeature = defineFeature<null>({
             const surface = withStepParam([...byName.values()]) as unknown[];
             await syncToolSurfaceAsync(codexHome, resumeThreadId, surface);
             console.log("[tool-surface] resume 升级 " + resumeThreadId.slice(0, 8) + " → " + String(surface.length) + " 个（宿主 " + String(resumeTools.length) + " + 主进程 " + String(extras.length) + "）");
-            /* 11-02 诊断（用户报 Dynamic tool ... is not registered）：把实际同步的数量打出来，
-               与 thread/start 注入的数量对照即可判定"首行没升级"还是"根本没注入"。 */
-            console.log();
           } catch (error: any) {
             console.warn("[tool-surface] 工具面同步失败（不影响 resume）：", String(error?.message ?? error).slice(0, 200));
           }
