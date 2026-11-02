@@ -4,6 +4,7 @@ import { SettingsPageHero } from "./SettingsPageHero";
 import {
   DEFAULT_FRONTEND_DESIGN_STYLE,
   FRONTEND_DESIGN_STYLES,
+  FRONTEND_REFERENCE_SYSTEMS,
   frontendDesignPrompt,
   normalizeFrontendDesignStyle,
 } from "../lib/frontend-design-style.mjs";
@@ -185,6 +186,57 @@ export function PersonalizationPage({
         <p className="frontend-style-current">
           {selectedFrontendStyle.desc}。具体色值仍从项目 DESIGN.md / CSS 变量派生。
         </p>
+        {selectedFrontendStyle.refs.length ? (
+          <p className="frontend-style-refs">
+            参考：
+            {selectedFrontendStyle.refs.map((ref, index) => (
+              <span key={ref.url}>
+                {index ? " · " : ""}
+                <a
+                  href={ref.url}
+                  onClick={(event) => { event.preventDefault(); void window.codex.openExternal(ref.url); }}
+                >
+                  {ref.name}
+                </a>
+              </span>
+            ))}
+          </p>
+        ) : null}
+        {selectedFrontendStyle.materials.length ? (
+          <p className="frontend-style-refs frontend-style-materials">
+            素材：
+            {selectedFrontendStyle.materials.map((item, index) => (
+              <span key={item.url}>
+                {index ? " · " : ""}
+                <a
+                  href={item.url}
+                  onClick={(event) => { event.preventDefault(); void window.codex.openExternal(item.url); }}
+                >
+                  {item.name}
+                </a>
+              </span>
+            ))}
+          </p>
+        ) : null}
+        <details className="frontend-style-spec">
+          <summary>查看设计规范（色彩 / 字体 / 布局 / 组件 / 动效）</summary>
+          <pre>{selectedFrontendStyle.spec}</pre>
+        </details>
+        <details className="frontend-style-refs-more">
+          <summary>国内设计系统参考（{FRONTEND_REFERENCE_SYSTEMS.length} 个）</summary>
+          <div className="frontend-style-reference-grid">
+            {FRONTEND_REFERENCE_SYSTEMS.map((ref) => (
+              <a
+                key={ref.url}
+                href={ref.url}
+                onClick={(event) => { event.preventDefault(); void window.codex.openExternal(ref.url); }}
+              >
+                {ref.name}
+                <small>{ref.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</small>
+              </a>
+            ))}
+          </div>
+        </details>
         <details className="frontend-style-prompt">
           <summary>查看将注入的提示词</summary>
           <pre>{frontendDesignPrompt(frontendStyle, frontendNotes) || "跟随项目：不额外注入视觉方向，只按项目 DESIGN.md 与现有组件落地。"}</pre>

@@ -207,6 +207,8 @@ const CHECKS = [
           hasFrontendSave:!!page.querySelector(".card-frontend-design .primary-setting"),
           hasFrontendPrompt:!!page.querySelector(".frontend-style-prompt"),
           hasFrontendLibrary:!!page.querySelector(".frontend-style-library button"),
+          hasFrontendRefs:!!page.querySelector(".frontend-style-refs-more"),
+          hasFrontendSpec:!!page.querySelector(".frontend-style-spec"),
           pageW:Math.round(page.getBoundingClientRect().width),
           groupW:Math.round((page.querySelector(".personalization-group")?.getBoundingClientRect().width)||0) };
       })()`).catch(() => null);
@@ -214,10 +216,11 @@ const CHECKS = [
         Boolean(per && per.page === "个性化" && !per.hasNickInput && !per.hasNickText && !per.hasTone
           && per.hasStyle && per.styleTabs.includes("敢于反驳") && per.hasInstructions && per.groupW >= per.pageW - 12),
         JSON.stringify(per));
-      h.check("⑧b 个性化：内置风格库 9 套（含苹果 / 科技）+ 提示词预览 + 组件库入口 + 保存",
+      h.check("⑧b 个性化：内置风格库 9 套（含苹果 / 科技）+ 设计规范 + 参考文档/素材 + 提示词预览 + 组件库入口 + 保存",
         Boolean(per && per.hasFrontend && per.frontendTabs.length === 9
           && per.frontendTabs.some((x) => x.includes("苹果")) && per.frontendTabs.some((x) => x.includes("科技"))
-          && per.hasFrontendNotes && per.hasFrontendSave && per.hasFrontendPrompt && per.hasFrontendLibrary),
+          && per.hasFrontendNotes && per.hasFrontendSave && per.hasFrontendPrompt && per.hasFrontendLibrary
+          && per.hasFrontendRefs && per.hasFrontendSpec),
         JSON.stringify(per));
       h.check("⑨ 控制台回复风格卡：语气自适应开关在位（挪来这儿，不是删功能）",
         Boolean(ctrl && ctrl.toneInReply && ctrl.toneOn !== null),
@@ -1564,6 +1567,28 @@ const CHECKS = [
           && await h.setInput(".personalization-frontend-notes", `主色用蓝紫色 ${marker}`).then(() => true)
           && await wait(250).then(() => h.eval(`document.querySelector(".card-frontend-design .primary-setting")?.disabled === false`)),
         "tab/输入/保存态");
+      await wait(250);
+      const refs = await h.eval(`(function(){
+        const perStyle=[...document.querySelectorAll(".frontend-style-refs a")].map((a)=>({ text:(a.textContent||"").trim(), href:a.getAttribute("href")||"" }));
+        const materials=[...document.querySelectorAll(".frontend-style-materials a")].map((a)=>({ text:(a.textContent||"").trim(), href:a.getAttribute("href")||"" }));
+        const systems=[...document.querySelectorAll(".frontend-style-reference-grid a")].map((a)=>a.getAttribute("href")||"");
+        const spec=document.querySelector(".frontend-style-spec pre")?.textContent||"";
+        const prompt=document.querySelector(".frontend-style-prompt pre")?.textContent||"";
+        return { perStyle, materials, systems, spec, prompt };
+      })()`);
+      h.check("①b 温暖风带 NutUI / Vant 参考地址；国内设计系统清单 ≥10 条且都是 https",
+        Boolean(refs.perStyle.length >= 2
+          && refs.perStyle.every((r) => r.href.startsWith("https://"))
+          && refs.perStyle.some((r) => /NutUI|Vant/.test(r.text))
+          && refs.systems.length >= 10 && refs.systems.every((href) => href.startsWith("https://"))),
+        JSON.stringify({ perStyle: refs.perStyle, systems: refs.systems.length }));
+      h.check("①c 温暖风有完整设计规范 + 参考素材地址",
+        refs.spec.includes("设计规范（温暖）") && refs.spec.includes("动效")
+          && refs.materials.length >= 2 && refs.materials.every((m) => m.href.startsWith("https://")),
+        JSON.stringify({ spec: refs.spec.slice(0, 40), materials: refs.materials }));
+      h.check("①d 将注入的提示词带设计规范 + 参考文档/素材地址",
+        refs.prompt.includes("Design specification") && refs.prompt.includes("Reference materials")
+          && refs.prompt.includes("nutui.jd.com"), refs.prompt.slice(0, 160));
       await h.screenshot("个性化-前端设计风格");
 
       await h.click(".card-frontend-design .primary-setting");

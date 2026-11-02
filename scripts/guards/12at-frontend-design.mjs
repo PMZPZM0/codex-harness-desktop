@@ -99,6 +99,16 @@ ok(styleLib.includes('id: "apple"') && styleLib.includes('id: "tech"') && styleL
   && styleLib.includes('id: "glass"') && styleLib.includes('id: "material"')
   && styleLib.includes("prompt:") && styleLib.includes("swatches:"),
   "内置风格库含苹果 / 科技 / 瑞士 / 玻璃 / Material 等提示词与色板（随应用更新）");
+ok(styleLib.includes("refs:") && styleLib.includes("FRONTEND_REFERENCE_SYSTEMS")
+  && styleLib.includes("Ant Design") && styleLib.includes("Arco Design") && styleLib.includes("TDesign")
+  && styleLib.includes("Semi Design") && styleLib.includes("Vant") && styleLib.includes("NutUI"),
+  "每套风格带参考设计系统地址 + 国内设计系统清单（Ant / Arco / TDesign / Semi / Vant / NutUI…）");
+ok(styleLib.includes("spec:") && styleLib.includes("设计规范（苹果风）") && styleLib.includes("设计规范（科技风）")
+  && styleLib.includes("materials:") && styleLib.includes("Reference materials"),
+  "每套风格有一套设计规范（色彩/字体/布局/组件/动效）+ 参考素材（随应用更新）");
+ok(styleLib.includes("Design specification") && styleLib.includes("Reference design docs")
+  && styleLib.includes("Reference materials") && styleLib.includes("read their specs"),
+  "注入提示词同时带设计规范、参考文档与参考素材地址（不只给一句方向）");
 ok(styleLib.includes("ui_component_search") && styleLib.includes("ui_component_get"),
   "风格提示词联动内置组件库（实现前先搜 Uiverse，再按风格改造）");
 ok(/preset\?\.prompt/.test(styleLib),
@@ -125,6 +135,10 @@ ok(page.includes("card-frontend-design") && page.includes("FRONTEND_DESIGN_STYLE
 ok(page.includes("frontend-style-prompt") && page.includes("frontend-style-library")
   && page.includes("onOpenComponentLibrary") && page.includes("frontendDesignPrompt(frontendStyle, frontendNotes)"),
   "风格卡可查看真实注入的提示词，并联动打开内置组件库");
+ok(page.includes("frontend-style-refs") && page.includes("FRONTEND_REFERENCE_SYSTEMS.map")
+  && page.includes("window.codex.openExternal") && page.includes("frontend-style-spec")
+  && page.includes("frontend-style-materials") && page.includes("selectedFrontendStyle.materials.map"),
+  "风格卡显示设计规范、参考文档、参考素材与国内设计系统清单，链接走系统浏览器打开");
 const setWiringPath = "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/appearance.tsx";
 const registryWiringPath = "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx";
 const wiringSrc = read(existsSync(join(ROOT, setWiringPath)) ? setWiringPath : registryWiringPath);
