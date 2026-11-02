@@ -79,21 +79,26 @@
     "look-14.webp",
     "look-15.webp"
   ],
-  "rig": {
-    "defaultPalette": "main",
-    "avatarPalette": {},
-    "palettes": {
-      "main": {
-        "idle": "poses/idle.webp",
-        "running": "poses/work.webp",
-        "running-left": "poses/idle.webp",
-        "running-right": "poses/idle.webp",
-        "waving": "poses/wave.webp",
-        "jumping": "poses/cheer.webp",
-        "failed": "poses/sad.webp",
-        "waiting": "poses/hug.webp",
-        "review": "poses/review.webp"
-      }
-    }
+  "webpSet": {
+    "idle": "idle.webp",
+    "running-right": "running-right.webp",
+    "running-left": "running-left.webp",
+    "waving": "waving.webp",
+    "jumping": "jumping.webp",
+    "failed": "failed.webp",
+    "waiting": "waiting.webp",
+    "running": "running.webp",
+    "review": "review.webp"
+  },
+  "webpStillSet": {
+    "idle": "idle-still.webp",
+    "running-right": "running-right-still.webp",
+    "running-left": "running-left-still.webp",
+    "waving": "waving-still.webp",
+    "jumping": "jumping-still.webp",
+    "failed": "failed-still.webp",
+    "waiting": "waiting-still.webp",
+    "running": "running-still.webp",
+    "review": "review-still.webp"
   }
 }

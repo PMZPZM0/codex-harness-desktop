@@ -325,23 +325,23 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
 
   /* 11-02 用户截图「宠物好几个，展示不全」：45 文件那条 170px 会盖掉 22 文件的 160px，
      7 只又回到 3 列、最后一张掉到折叠线以下。⇒ 4 列 + 描述两行定高 + 立像式预览。 */
-  /* 11-02 用户确认：「其他六只也做和小C一样的姿态集」——六只动物补 poses/ 关节包
-     （站立 / 敲笔记本 / 抱膝 / 放大镜 / 难过 / 挥手 / 庆祝），原 9 态动画保留不删。 */
-  const animalRigBad = [];
+  /* 11-02 用户确认：内置六只改走「每态一段动画 WebP」（webpSet，文件复用原九态动画），
+     姿态 rig 下线；小C 继续用头像联动姿态包。 */
+  const animalWebpBad = [];
   for (const slug of ["harness-fox", "harness-mochi", "harness-tuantuan", "harness-chai", "harness-lizi", "harness-qingtuan"]) {
     try {
       const dir = join(ROOT, "public", "pets", slug);
       const meta = JSON.parse(readFileSync(join(dir, "pet.json"), "utf8"));
       const missing = STATES.filter((state) => {
-        const rel = meta.rig?.palettes?.main?.[state];
+        const rel = meta.webpSet?.[state];
         return !rel || !existsSync(join(dir, String(rel)));
       });
-      if (!meta.rig || missing.length) animalRigBad.push(`${slug}(${missing.join(",") || "无 rig"})`);
+      if (meta.rig || missing.length || !meta.webpStillSet) animalWebpBad.push(`${slug}(${missing.join(",") || "无 webpSet"})`);
     } catch (error) {
-      animalRigBad.push(`${slug}:${error.message}`);
+      animalWebpBad.push(`${slug}:${error.message}`);
     }
   }
-  ok(animalRigBad.length === 0, `六只动物都有与小C同级的九态姿态集（问题：${animalRigBad.join(" | ") || "无"}）`);
+  ok(animalWebpBad.length === 0, `六只动物 = 九态动画 WebP（webpSet，rig 已下线）（问题：${animalWebpBad.join(" | ") || "无"}）`);
   ok(/const animation = pkg\.animationSet\?\.idle;\s*\n\s*if \(animation && !reduced\)/.test(settingsPetSrc),
     "动画包缩略图仍优先播原 idle 动画（转关节包后图标不退回静图）");
 

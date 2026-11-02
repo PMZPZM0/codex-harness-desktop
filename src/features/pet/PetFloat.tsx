@@ -221,7 +221,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   );
   const animation = pkg?.animationSet?.[effectiveState] ?? pkg?.animationSet?.idle;
   const showAnimationLook = Boolean(
-    pkg?.animationSet && pkg.lookFrameSet?.length === 16 && effectiveState === "idle"
+    pkg?.animationSet && !pkg.gifSet && pkg.lookFrameSet?.length === 16 && effectiveState === "idle"
       && !dragMotion && !greeting && Math.hypot(look.x, look.y) > 0.12,
   );
   const animationSrc = animation ? (showAnimationLook ? pkg?.lookFrameSet?.[lookDirection] ?? "" : reduceMotion ? animation.stillSrc : animation.animatedSrc) : "";
