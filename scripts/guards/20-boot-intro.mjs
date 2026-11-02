@@ -111,8 +111,8 @@ ok(showSrc.includes("clipPath") && !/\.style\.transform/.test(showSrc), "⛔ log
 
 /* ── 启动接线 ── */
 ok(
-  gateSrc.includes("prefers-reduced-motion") && gateSrc.includes('get("pet")') && gateSrc.includes("readBootIntroMode"),
-  "启动分派门读了三条判据（减弱动效 / 宠物浮窗 / 档位）"
+  /const reducedMotion = readMotionReduced\(\)/.test(gateSrc) && gateSrc.includes('get("pet")') && gateSrc.includes("readBootIntroMode"),
+  "启动分派门读了三条判据（应用减动效策略 / 宠物浮窗 / 档位）—— ⛔ 不再直接读系统媒体查询"
 );
 ok(timeline.includes("<BootIntroGate") && !timeline.includes("<BootSplash"), "01-timeline 改走 BootIntroGate（不再直接渲染 BootSplash —— 否则片头根本没机会播）");
 ok(appearance.includes("BootIntroSettingsRow"), "外观设置页渲染了「开机动画」行");
@@ -124,8 +124,15 @@ ok(
   html.includes('setAttribute("data-boot-intro"') && html.includes('getItem("boot-intro")') && html.includes("background: #050403"),
   "index.html 首帧：读 boot-intro 键 ⇒ setAttribute 打 data-boot-intro ⇒ 底色用动画自己的 #050403（断言锚代码形态，不锚注释）"
 );
-/* 10-21 起宠物有两个浮窗面（?pet=1 / ?pet=activity），首帧判定改成 petSurface 合取式。 */
-ok(html.includes('get("pet")') && /petSurface\s*===\s*"1"\s*\|\|\s*petSurface\s*===\s*"activity"/.test(html) && html.includes("prefers-reduced-motion"), "首帧判定也带宠物浮窗（含活动气泡）与减弱动效（否则透明窗上会闪一块黑）");
+/* 10-21 起宠物有两个浮窗面（?pet=1 / ?pet=activity），首帧判定改成 petSurface 合取式。
+   ⛔ 11-02 mac 反馈「启动动画在 mac 上也没有」：首帧的「减弱动效」必须走应用策略
+      （data-motion=force 无视系统开关），直接读媒体查询会让 mac 用户唯独片头被跳过。 */
+ok(
+  html.includes('get("pet")') && /petSurface\s*===\s*"1"\s*\|\|\s*petSurface\s*===\s*"activity"/.test(html)
+    && html.includes("prefers-reduced-motion")
+    && html.includes('getAttribute("data-motion")') && /motionPolicy !== "force"/.test(html),
+  "首帧判定带宠物浮窗（含活动气泡）与「按应用策略判断的减弱动效」（否则透明窗上会闪一块黑 / mac 上片头被跳过）"
+);
 /* ⛔⛔ 首帧内联脚本**必须与 shouldPlayBootIntro 逐条一致** —— 它比 React 闸门早，
    漏一条的后果是"还没轮到闸门就已经画错了"。实测事故：漏了独立会话弹窗 ⇒
    点开花出去的会话窗口**先黑一下**（首帧被涂成动画底色 #050403），而 React 那侧早就改对了。

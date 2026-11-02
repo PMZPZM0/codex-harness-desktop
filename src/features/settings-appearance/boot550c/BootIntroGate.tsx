@@ -12,13 +12,16 @@
 import { useState } from "react";
 import { BootSplash, type BootStage } from "../../../components/BootSplash";
 import { bootIntroPlayMode, readBootIntroMode, readBootIntroScheme, shouldPlayBootIntro } from "../../../lib/boot-intro.mjs";
+import { readMotionReduced } from "../../../lib/motion-policy.mjs";
 import { BootIntro550c } from "./BootIntro550c";
 
 export function BootIntroGate({ stage, done }: { stage: BootStage; done: boolean }) {
   const [decision] = useState(() => {
     const storage = typeof localStorage === "undefined" ? null : localStorage;
-    const reducedMotion =
-      typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+    /* ⛔ 11-02 mac 反馈「启动动画在 mac 上也没有」：不能直接读 prefers-reduced-motion ——
+       全站默认 data-motion="force"（无视系统「减少动态效果」），开机动画必须同一条策略，
+       否则 mac 开了这个系统开关，其它界面都在动、唯独片头被跳过。 */
+    const reducedMotion = readMotionReduced();
     const petWindow =
       typeof location !== "undefined" && new URLSearchParams(location.search).get("pet") === "1";
     /* ⛔ 只认"有没有这个参数"，不认它是不是空：`?popout=` 也是弹窗（会话 id 缺省时照样是分出去的窗口）。 */

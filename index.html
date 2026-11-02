@@ -64,12 +64,17 @@
            档位键与 src/lib/boot-intro.mjs 的 BOOT_INTRO_STORAGE_KEY 同源；这里内联脚本
            不能用 import，所以是写死的同名字面量。判定必须与 shouldPlayBootIntro **逐条一致**：
            关闭档 / 减弱动效 / 宠物浮窗 / **独立会话弹窗** 四者都回落既有启动页。
+           ⛔ 11-02 mac 反馈「启动动画在 mac 上也没有」：减弱动效必须走**应用策略**
+             （data-motion=force 无视系统开关，与壁纸 / 全站 CSS 同一条规则）——
+             直接读媒体查询会让 mac 用户「其它都在动、唯独片头被跳过」。
            ⛔⛔ 漏掉"独立会话弹窗"的后果是**首帧就黑一下**：弹窗本不该播片头，却在首帧被涂上
              动画底色 #050403（React 闸门改得再对也来不及 —— 它比内联脚本晚）。用户实测报过
              「点对话框的独立弹窗现在还是会黑一下，之前都不会」。 */
         try {
           var bi = localStorage.getItem("boot-intro");
-          var reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+          var motionPolicy = document.documentElement.getAttribute("data-motion");
+          var reduced = motionPolicy !== "force"
+            && window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
           var petSurface = new URLSearchParams(location.search).get("pet");
           var isPet = petSurface === "1" || petSurface === "activity";
           /* ⛔ 只认参数在不在：`?popout=` 空值也是分出去的窗口（与 BootIntroGate 同口径）。 */

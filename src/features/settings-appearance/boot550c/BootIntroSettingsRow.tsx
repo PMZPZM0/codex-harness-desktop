@@ -20,6 +20,7 @@ import {
   writeBootIntroMode,
   writeBootIntroScheme,
 } from "../../../lib/boot-intro.mjs";
+import { readMotionReduced } from "../../../lib/motion-policy.mjs";
 import { BootIntro550c } from "./BootIntro550c";
 
 const storage = () => (typeof localStorage === "undefined" ? null : localStorage);
@@ -43,7 +44,8 @@ export function BootIntroSettingsRow({ onNotice }: { onNotice?: (text: string) =
     onNotice?.(`开机动画配色：${bootIntroSchemeLabel(normalized)}`);
   };
 
-  const reducedMotion = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  /* 与启动接管 / 壁纸同一条策略：默认 force 时无视系统「减少动态效果」（mac 实测会冻住动画）。 */
+  const reducedMotion = readMotionReduced();
   const canPreview = shouldPlayBootIntro(mode, { reducedMotion, petWindow: false });
 
   return (

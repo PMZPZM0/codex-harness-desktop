@@ -82,14 +82,27 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     "3D 星空跟鼠标走（星点按 depth 不同位移 = 纵深）");
   ok(/attributeFilter: \["data-theme"\]/.test(layerSrc) && /buildPalette/.test(layerSrc),
     "3D 星空跟随主题换调色板（浅色淡星 / 深色星野；切换只重绘）");
-  ok(/DepthField reduced=\{shouldReduceMotion\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
+  ok(/DepthField reduced=\{readMotionReduced\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
     "3D 星空按应用减动效策略决定是否逐帧（只画一帧）+ 画布样式在位");
   ok(/function MotionVeil/.test(layerSrc) && /is-\$\{variant\}/.test(layerSrc) && /<i><b \/><\/i><i><b \/><\/i><i><b \/><\/i>/.test(layerSrc),
     "动态光幕 = 三层柔光组件（外层视差 / 内层动画各管一件事）");
   ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")
     && /\.wallpaper-motion i \{[^}]*var\(--wp-px\)/.test(cssSrc) && /--wp-depth/.test(cssSrc),
     "鼠标视差在位（缓动 + 每层不同深度；用户 11-02「动态壁纸要加上鼠标动态交互效果」）");
-  ok(/function shouldReduceMotion/.test(layerSrc) && /dataset\.motion/.test(layerSrc)
+  {
+    const motionLib = codeOnly(read("src/lib/motion-policy.mjs"));
+    const motion = await import(new URL("../../src/lib/motion-policy.mjs", import.meta.url).href);
+    const table = [
+      [undefined, true, false, "属性缺失按默认 force"],
+      ["force", true, false, "force 无视系统开关"],
+      ["system", true, true, "显式跟随系统 + 系统要减弱"],
+      ["system", false, false, "显式跟随系统 + 系统正常"],
+    ];
+    ok(table.every(([flag, sys, want]) => motion.shouldReduceMotion(flag, sys) === want)
+      && /export function shouldReduceMotion/.test(motionLib),
+      "减动效策略真值表（唯一口径 src/lib/motion-policy.mjs）");
+  }
+  ok(/readMotionReduced/.test(layerSrc) && /lib\/motion-policy\.mjs/.test(layerSrc)
     && /html:not\(\[data-motion="force"\]\) \.wallpaper-layer \{ animation: none/.test(cssSrc)
     && /html:not\(\[data-motion="force"\]\) \.wallpaper-motion i b \{ animation: none/.test(cssSrc)
     && !/@media \(prefers-reduced-motion: reduce\) \{\s*\.wallpaper-(layer|motion)/.test(cssSrc)
