@@ -8,11 +8,11 @@
  * 数据口径（全部为既有真相源，零新增 IPC）：
  *   · 成员会话集合 = team-threads.json 的 members 值（权威；⛔ 不靠标题猜）
  *   · 团队会话索引 = team-threads.json 的 threads（threadId → teamId）
- *   · 调度来源 = 主进程 listDelegates() 的 kind: expert | team | member | subagent
+ *   · 调度来源 = 主进程 listDelegates() 的 kind: expert | team | member | subagent | cli
  */
 
 /** 分类顺序（也是侧栏里的展示顺序：越靠前越「主」） */
-export const THREAD_SOURCE_ORDER = ["main", "lead", "member", "expert", "subagent", "team"];
+export const THREAD_SOURCE_ORDER = ["main", "lead", "member", "expert", "subagent", "cli", "team"];
 
 /** 分类标签（中文） */
 export const THREAD_SOURCE_LABELS = {
@@ -21,13 +21,14 @@ export const THREAD_SOURCE_LABELS = {
   member: "团队成员子任务",
   expert: "专家调度",
   subagent: "子智能体调度",
+  cli: "CLI 智能体调度",
   team: "专家团调度",
 };
 
 /**
  * 判定一个会话的来源分类。
  * @param {{ delegateKind?: string, teamId?: string, isTeamMember?: boolean }} input
- *   delegateKind —— 主进程调度登记的 kind（expert/team/member/subagent）
+ *   delegateKind —— 主进程调度登记的 kind（expert/team/member/subagent/cli）
  *   teamId —— 该会话所属团队（team-threads.json 的 threads）
  *   isTeamMember —— 该会话是否为团队成员会话（team-threads.json 的 members 值）
  */
@@ -37,6 +38,7 @@ export function classifyThreadSource(input) {
   if (isTeamMember) return "member";
   if (delegateKind === "expert") return "expert";
   if (delegateKind === "subagent") return "subagent";
+  if (delegateKind === "cli") return "cli";
   if (delegateKind === "team") return "team";
   // 有团队归属但不是成员会话 ⇒ 团队主会话（主理人）
   if (teamId) return "lead";

@@ -385,13 +385,13 @@ ${st.hint}`);
                 const kindRaw = String(args.kind ?? "");
                 // kind 是联合类型：非法值**不硬塞**（先校验再断言，断言因此可证安全），
                 // 当场回一条可读的拒绝，而不是让 IPC 抛类型错——模型据此立刻改参数。
-                const kindArg = (["expert", "team", "member", "subagent"] as const).includes(kindRaw as any)
-                  ? (kindRaw as "expert" | "team" | "member" | "subagent")
+                const kindArg = (["expert", "team", "member", "subagent", "cli"] as const).includes(kindRaw as any)
+                  ? (kindRaw as "expert" | "team" | "member" | "subagent" | "cli")
                   : null;
                 /* ⛔ 两支必须同形：错误分支也带 `output` —— 否则联合类型收窄后 `delegated.output`
                    取不到（原来靠 `: any` 盖着，11-01 收 any 时暴露）。 */
                 const delegated = kindArg === null
-                  ? { ok: false, error: `kind 必须是 expert / team / member / subagent 之一（收到「${kindRaw}」）`, output: "" }
+                  ? { ok: false, error: `kind 必须是 expert / team / member / subagent / cli 之一（收到「${kindRaw}」）`, output: "" }
                   : await window.codex.invokeAgent({
                     kind: kindArg,
                     name: String(args.name ?? ""),

@@ -295,6 +295,10 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/CLI 智能体/.test(composerSrc), "@ 面板空态文案含 CLI（否则用户以为不支持）");
   ok(/kind: "expert" \| "team" \| "member" \| "subagent" \| "cli"/.test(dts), "DispatchTargetEntry 的 kind 联合含 cli");
   ok(/enum: \["expert", "team", "member", "subagent", "cli"\]/.test(segSrc), "渲染层 agent_invoke 的 schema 枚举含 cli（漏了 = 模型被前端拒）");
+  const requestSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part05/event-router/02-request.tsx"), "utf8");
+  ok(/\["expert", "team", "member", "subagent", "cli"\]/.test(requestSrc)
+    && /kindRaw as "expert" \| "team" \| "member" \| "subagent" \| "cli"/.test(requestSrc),
+    "agent_invoke 执行端 kind 白名单含 cli（schema 能选、执行被拒 = CLI 派不出去）");
   ok(/enum: \["expert", "team", "member", "subagent", "cli"\]/.test(coreSrc), "主进程 MCP 的 schema 枚举含 cli");
 
   /* ⛔⛔ 触发入口本身也要钉：10-29 上半夜那版把 `@` 整体换成 `*`（引用上下文换触发符），

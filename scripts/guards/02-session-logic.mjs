@@ -1338,6 +1338,7 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
         [{ isTeamMember: true, teamId: "t1", delegateKind: "member" }, "member"],
         [{ delegateKind: "expert" }, "expert"],
         [{ delegateKind: "subagent" }, "subagent"],
+        [{ delegateKind: "cli" }, "cli"],
         [{ delegateKind: "team" }, "team"],
         [{ teamId: "t1" }, "lead"],
         [{}, "main"],
@@ -1347,7 +1348,7 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
         const got = mod.classifyThreadSource(input);
         if (got !== expect) bad.push(JSON.stringify(input) + "=" + got + "(期望" + expect + ")");
       }
-      (bad.length === 0 ? ok : fail)("【156】分类判定 6 例全对" + (bad.length ? "（" + bad.join("；") + "）" : ""));
+      (bad.length === 0 ? ok : fail)("【156】分类判定 7 例全对" + (bad.length ? "（" + bad.join("；") + "）" : ""));
       (mod.classifyThreadSource({ isTeamMember: true, delegateKind: "team" }) === "member" ? ok : fail)("【156】成员身份优先于调度记录（members 映射权威，不靠标题猜）");
       const groups = mod.groupThreadsBySource(
         [{ id: "a", updatedAt: 1 }, { id: "b", updatedAt: 2 }, { id: "c", updatedAt: 3 }],

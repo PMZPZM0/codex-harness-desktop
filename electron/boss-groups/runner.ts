@@ -21,7 +21,6 @@ import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from ".
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
-import { refreshAllSupervisorScopes } from "../session-scope";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -371,10 +370,9 @@ export function watchMemberSettlements(): void {
       engineIsReady = true;
       /* ⛔ 就绪后再对账一次：setup 那次必然被闸住（引擎还没起来）⇒ 残留任务在这里补。 */
       void reconcileRunningTasks().catch(() => undefined);
-      /* ⛔ 11-03：旧成员会话也要知道真实上级（只修新建的 = 截图里那条历史会话永远答错）。 */
+      /* ⛔ 11-03：旧成员会话也要知道真实上级（只修新建的 = 截图里那条历史会话永远答错）。
+         普通被派活会话的启动补齐挂在核心域 codex-ipc 的 watchSupervisorScopes，不在这里重复。 */
       void refreshGroupMemberScopes().catch(() => undefined);
-      /* 普通被派活会话（专家 / 子智能体 / 团队成员）同样有上级：启动时一并补齐。 */
-      void refreshAllSupervisorScopes().catch(() => undefined);
       return;
     }
     if (event?.kind !== "notification" || event.method !== "turn/completed") return;

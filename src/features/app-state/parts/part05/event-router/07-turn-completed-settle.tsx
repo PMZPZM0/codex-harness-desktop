@@ -202,10 +202,14 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
                我们这次"启动下一条"本就不该成功 ⇒ 按成功处理：不弹红错、保留钉顶意图。 */
             if (isQueueBusyError(message)) {
               bag.dbg("queue-autostart-busy-thread", { threadId: params.threadId, message });
+              /* 本地在 start 之前已把队头摘掉；busy 说明它可能仍在引擎队列里 ⇒ 对账拉回来，
+                 不能出现「卡片没了、消息也没发」。 */
+              void bag.refreshQueue(params.threadId);
               return;
             }
             // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）；乐观气泡一并撤
             if (armedByAutoStart) { bag.disarmPinIntent("auto-start-fail"); bag.setOptimisticInput(null); }
+            void bag.refreshQueue(params.threadId); // 摘早了：失败时把引擎队列重新拉回来
             bag.showToast("队列启动失败", message);
           }).finally(() => {
             queueAutoStartLocks.delete(params.threadId);

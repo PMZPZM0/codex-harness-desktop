@@ -132,3 +132,17 @@ export function refreshAllSupervisorScopes(): Promise<number> {
   })().finally(() => { allRefreshInFlight = null; });
   return allRefreshInFlight;
 }
+
+/**
+ * 引擎就绪时自动补齐存量会话（挂在核心域 codex-ipc，不依赖群编排域）。
+ * @returns 取消监听函数（域卸载时调用）。
+ */
+export function watchSupervisorScopes(): () => void {
+  const handler = (event: any) => {
+    if (event?.kind === "status" && event.status === "ready") {
+      void refreshAllSupervisorScopes().catch(() => undefined);
+    }
+  };
+  server.on("event", handler);
+  return () => { server.off("event", handler); };
+}

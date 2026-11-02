@@ -50,14 +50,17 @@ ok(/refreshSupervisorScopeForThread\(memberThreadId\)/.test(teamSrc)
 const ipcSrc = read("electron/features/codex-ipc.ts");
 ok(/refreshSupervisorScopeForThread/.test(ipcSrc) && /refreshMemberScopeForThread/.test(ipcSrc),
   "打开任意会话（thread/resume）都按当前笔名刷新上级身份");
-
-const bossIpcSrc = read("electron/features/boss-groups-ipc.ts");
-ok(/refreshChildScopesForSupervisor/.test(bossIpcSrc) && /refreshMemberScopesForSupervisor/.test(bossIpcSrc),
-  "上级改名后：群成员 + 普通子会话一起刷新");
+ok(/setSessionAliasChangeHook/.test(ipcSrc) && /refreshChildScopesForSupervisor/.test(ipcSrc)
+  && /refreshMemberScopesForSupervisor/.test(ipcSrc) && /watchSupervisorScopes/.test(ipcSrc),
+  "改名钩子与启动补齐挂在核心域 codex-ipc（不依赖群编排域是否启用）");
 
 const runnerSrc = read("electron/boss-groups/runner.ts");
-ok(/refreshAllSupervisorScopes/.test(runnerSrc),
-  "引擎就绪后补齐所有存量被派活会话（不只群成员）");
+ok(/watchSupervisorScopes/.test(scopeSrc) && /watchSupervisorScopes\(\)/.test(ipcSrc)
+  && !/refreshAllSupervisorScopes/.test(runnerSrc),
+  "引擎就绪后的存量补齐挂在核心域 codex-ipc（runner 不重复挂）");
+const mainSrc = read("electron/main.ts");
+ok(/snapshotSessionAliases/.test(mainSrc) && /aliasSnapshot\[id\]\?\.alias/.test(mainSrc),
+  "手机端会话名走别名快照（与桌面同一套笔名，不拿旧引擎名）");
 
 console.log(fails ? `\n【supervisor-scope】失败 ${fails} 项` : `\n【supervisor-scope】通过 ${checks} 项`);
 process.exit(fails ? 1 : 0);

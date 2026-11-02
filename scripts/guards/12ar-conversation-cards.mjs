@@ -72,6 +72,9 @@ ok(/queueAutoStartSettledTurns/.test(settleSrc) && /queue-autostart-skipped-dupl
 ok(/threadRunningNow/.test(settleSrc) && /queue-autostart-skipped-running/.test(settleSrc)
   && /queue-autostart-skipped-running-late/.test(settleSrc) && /window\.setTimeout\(/.test(settleSrc),
   "引擎自己启动队头后宿主不再补启动（等一拍 + 启动前二次检查运行态；3 条排队实测 9/9）");
+ok(/isQueueBusyError\(message\)[\s\S]{0,500}?refreshQueue\(params\.threadId\)/.test(settleSrc)
+  && /auto-start-fail[\s\S]{0,220}?refreshQueue\(params\.threadId\)/.test(settleSrc),
+  "自动启动 busy/失败时把引擎队列拉回来（不能出现卡片没了、消息也没发）");
 
 const codeSrc = read("src/features/shared/ToolCodeBlock.tsx");
 ok(/className="tool-code-copy"/.test(codeSrc) && /copyTextToClipboard\(text\)/.test(codeSrc)

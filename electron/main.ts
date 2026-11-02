@@ -28,6 +28,7 @@ import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
 import { stripHarnessBlocks } from "../src/lib/harness-block-strip.mjs";
 import { safeJoin, previewKind } from "../src/lib/remote-files.mjs";
+import { snapshotSessionAliases } from "./session-alias";
 import { storedReportsForThread } from "./turn-file-watch";
 /* 手机端中枢首页 / 中枢会话（10-28）：与桌面共用同一份群快照与中枢目录（⛔ 不各写一份） */
 import { ensureBossHomeDir, listBossGroupSummaries } from "./features/boss-groups-ipc";
@@ -487,6 +488,9 @@ const remote = new RemoteControlService({
     const ownBossIds = new Set<string>((Array.isArray(sessions) ? sessions : []).map((entry: any) => String(entry?.id ?? "")).filter(Boolean));
     const memberIds = new Set<string>(groups.flatMap((group: any) => (Array.isArray(group?.memberThreadIds) ? group.memberThreadIds : []).map(String)));
     const groupNameOf = (id: string) => String(groups.find((group: any) => String(group?.bossThreadId ?? "") === id)?.name ?? "");
+    /* ⛔ 11-03：手机端与桌面同一套笔名。引擎 thread.name 可能还是旧名（改名/换池只更新了别名记录），
+       手机直接用引擎名就会和桌面不一致 ⇒ 列表出口统一按别名快照覆盖。 */
+    const aliasSnapshot = await snapshotSessionAliases().catch(() => ({} as Record<string, { alias?: string }>));
     // 已永久删除的会话不进手机端列表：这条链路直接打引擎（不过 thread/list 的合并逻辑），
     // 不挡的话手机上会看到电脑端已经删掉的会话（见 purgeDeletedThread 注释）。
     return (result.data ?? [])
@@ -496,7 +500,7 @@ const remote = new RemoteControlService({
         const isBoss = bossIds.has(id) || ownBossIds.has(id);
         return {
           id: entry.id,
-          name: entry.name ?? null,
+          name: aliasSnapshot[id]?.alias || entry.name || null,
           preview: entry.preview ?? "",
           updatedAt: entry.updatedAt ?? 0,
           kind: isBoss ? "boss" : memberIds.has(id) ? "bossMember" : "normal",

@@ -1124,8 +1124,9 @@ if (state) {
     "引擎就绪 + 中枢改名都会刷新成员身份");
   ok(/refreshMemberScopeForThread/.test(runnerSrc) && /refreshMemberScopeForThread/.test(read("electron/features/codex-ipc.ts")),
     "成员会话被打开（thread/resume）后补写身份块（启动批量刷新失败也有兜底）");
-  ok(/setSessionAliasChangeHook/.test(bossIpcSrc) && /refreshMemberScopesForSupervisor/.test(bossIpcSrc),
-    "改名广播钩子接到成员身份刷新（上级笔名变了，模型不能还记旧名）");
+  const codexIpcSrc = read("electron/features/codex-ipc.ts");
+  ok(/setSessionAliasChangeHook/.test(codexIpcSrc) && /refreshMemberScopesForSupervisor/.test(codexIpcSrc),
+    "改名广播钩子接到成员身份刷新（挂在核心域，上级笔名变了模型不能还记旧名）");
 }
 
 console.log(`\n【boss-groups】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

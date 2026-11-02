@@ -34,7 +34,8 @@ import { bridgeDial, mutableState, readCustomModel } from "../main";
 import { codexHome, delegateRegistry, engineActiveTurnIds, internalThreads, server, threadCwd } from "../runtime-refs";
 import { clearGrants } from "./data-access-ipc";
 import { removeSessionWorkspace } from "./session-workspace";
-import { ensureAliasesFor, ensureSessionAlias } from "../session-alias";
+import { ensureAliasesFor, ensureSessionAlias, setSessionAliasChangeHook } from "../session-alias";
+import { refreshChildScopesForSupervisor, watchSupervisorScopes } from "../session-scope";
 import { clearSessionPrivateMemory } from "../memory-fabric";
 import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
@@ -429,7 +430,21 @@ export const codexFeature = defineFeature<null>({
       return { ok: true };
     });
 
+    /* ⛔ 11-03：上级身份刷新挂在**核心域**（codex-ipc 始终加载），不依赖群编排域是否启用：
+       · 上级改名 ⇒ 普通子会话（专家/子智能体/团队成员/CLI）与群成员一起刷新；
+       · 引擎就绪 ⇒ 补齐存量被派活会话。
+       群成员由 boss-groups/runner 的专用块负责，动态引入避免顶层成环。 */
+    setSessionAliasChangeHook((threadId) => {
+      void refreshChildScopesForSupervisor(threadId).catch(() => undefined);
+      void import("../boss-groups/runner")
+        .then(({ refreshMemberScopesForSupervisor }) => refreshMemberScopesForSupervisor(threadId))
+        .catch(() => undefined);
+    });
+    const stopScopeWatch = watchSupervisorScopes();
+
     ctx.effect(() => {
+      stopScopeWatch();
+      setSessionAliasChangeHook(null);
       for (const ch of ["codex:request", "codex:respond", "codex:set-active-thread"]) ipcHost.removeHandler(ch);
     });
   },
