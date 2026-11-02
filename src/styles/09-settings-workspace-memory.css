@@ -1915,3 +1915,21 @@ button.search-box:hover {
 .workspace-csv-preview td { color: var(--muted); }
 .workspace-csv-preview tr:nth-child(even) td { background: color-mix(in srgb, var(--panel-2) 40%, transparent); }
 .workspace-csv-preview p { margin: 8px 0 0; color: var(--faint); font-size: 11px; }
+
+/* ── Office 内嵌预览（11-02）：docx 段落 / xlsx 表格 / pptx 分页文本 ───────── */
+.office-preview { display: flex; flex-direction: column; gap: 8px; height: 100%; padding: 10px 12px; box-sizing: border-box; overflow: auto; }
+.office-preview-head { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; }
+.office-preview-note { margin: 6px 0 0; color: var(--faint); font-size: 11px; line-height: 1.5; }
+.office-doc-body { display: flex; flex-direction: column; gap: 6px; }
+.office-doc-body p { margin: 0; color: var(--text); font-size: 12.5px; line-height: 1.72; white-space: pre-wrap; overflow-wrap: anywhere; }
+.office-sheet-scroll { overflow: auto; border: 1px solid var(--line-soft); border-radius: 8px; }
+.office-sheet table { border-collapse: collapse; min-width: 100%; font-size: 11.5px; }
+.office-sheet th,
+.office-sheet td { max-width: 260px; padding: 5px 9px; border: 1px solid var(--line-soft); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.office-sheet th { position: sticky; top: 0; background: var(--panel-2); color: var(--text); font-weight: 600; }
+.office-sheet td { color: var(--muted); }
+.office-slides-list { display: flex; flex-direction: column; gap: 8px; }
+.office-slide { display: flex; gap: 9px; padding: 10px 11px; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--panel); }
+.office-slide-no { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--panel-2); color: var(--faint); font-size: 11px; }
+.office-slide strong { display: block; color: var(--text); font-size: 12.5px; }
+.office-slide ul { margin: 4px 0 0; padding-left: 16px; color: var(--muted); font-size: 11.5px; line-height: 1.6; }

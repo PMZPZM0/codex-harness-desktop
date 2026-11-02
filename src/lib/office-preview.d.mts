@@ -1,0 +1,11 @@
+export type OfficeSheet = { kind: "sheet"; sheetName: string; rows: string[][]; cols: number; truncated: boolean };
+export type OfficeDoc = { kind: "doc"; paragraphs: string[]; truncated: boolean };
+export type OfficeSlides = { kind: "slides"; slides: Array<{ name: string; title: string; lines: string[] }>; truncated: boolean };
+export type OfficePreviewData = OfficeDoc | OfficeSheet | OfficeSlides;
+export declare function decodeXmlText(value: unknown): string;
+export declare function parseDocxXml(xml: unknown, maxParagraphs?: number, maxChars?: number): OfficeDoc;
+export declare function parseXlsxXml(sheetXml: unknown, sharedXml: unknown, sheetName?: string, maxRows?: number, maxCols?: number): OfficeSheet;
+export declare function parsePptxSlides(slides: Array<{ name: string; xml: string }>, maxSlides?: number, maxChars?: number): OfficeSlides;
+export declare function readZipFiles(bytes: Uint8Array, names: string[]): Promise<Map<string, Uint8Array>>;
+export declare function parseOfficeBytes(bytes: Uint8Array, ext: string): Promise<OfficePreviewData>;
+export declare function isOfficePreviewExt(ext: unknown): boolean;

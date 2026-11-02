@@ -25,12 +25,16 @@ import { lookupKnownFile } from "../../../lib/ui-channels";
 /* 错误文案统一去噪（10-30）：主进程抛的「文件不存在或不可读」不该被 [ERR_…] 三层包壳埋掉。 */
 import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
 import { delimiterOf, parseDelimited } from "../../../lib/csv-preview.mjs";
+import { isOfficePreviewExt, parseOfficeBytes } from "../../../lib/office-preview.mjs";
+import { OfficePreview } from "../../office-preview/OfficePreview";
 
 type PreviewState = {
   status: "idle" | "loading" | "ok" | "error";
   /** 回落之后真正打开的路径（卡片给的可能是死链；与 path 不同就说明用的是会话台账里的同名文件） */
   resolvedPath?: string;
-  kind: "text" | "image" | "pdf" | "binary";
+  kind: "text" | "image" | "pdf" | "binary" | "office";
+  /** Office 预览结构（doc/sheet/slides） */
+  data?: any;
   content: string;
   language: string;
   truncated?: boolean;
@@ -93,6 +97,20 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
         const realExt = fileExtOf(target);
         if (IMAGE_EXTENSIONS.has(realExt)) { setState({ status: "ok", kind: "image", content: "", language: realExt, resolvedPath: target }); return; }
         if (realExt === "pdf") { setState({ status: "ok", kind: "pdf", content: "", language: "pdf", resolvedPath: target }); return; }
+        if (isOfficePreviewExt(realExt)) {
+          try {
+            const result = await window.codex.readFile(target);
+            const binary = atob(result.dataBase64 ?? "");
+            const bytes = Uint8Array.from(binary, (value) => value.charCodeAt(0));
+            const data = await parseOfficeBytes(bytes, realExt);
+            if (cancelled) return;
+            setState({ status: "ok", kind: "office", content: "", language: realExt, data, resolvedPath: target });
+          } catch (error: any) {
+            if (cancelled) return;
+            setState({ status: "error", kind: "text", content: "", language: realExt, error: ipcErrorMessageOf(error, "Office 文档解析失败") });
+          }
+          return;
+        }
         if (BINARY_EXTENSIONS.has(realExt)) { setState({ status: "ok", kind: "binary", content: "", language: realExt, resolvedPath: target }); return; }
         const result = await window.codex.readFile(target);
         const binary = atob(result.dataBase64 ?? "");
@@ -178,6 +196,8 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
           <img className="workspace-file-preview-image" src={toFileUrl(path)} alt={name} />
         ) : state.kind === "pdf" ? (
           <iframe className="workspace-file-preview-pdf" src={toFileUrl(path)} title={name} />
+        ) : state.kind === "office" ? (
+          <OfficePreview data={state.data} />
         ) : state.kind === "binary" ? (
           <div className="workspace-file-preview-empty">
             <strong>这个格式不能内嵌预览</strong>

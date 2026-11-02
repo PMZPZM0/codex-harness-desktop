@@ -48,6 +48,15 @@ const filePreviewSrc = read("src/features/app-view/AppView/03-workspace-files.ts
 ok(/<CsvPreview text=\{state\.content\}/.test(filePreviewSrc) && /function CsvPreview/.test(filePreviewSrc),
   "右栏 CSV/TSV 渲染成表格（不再只是一大段文本）");
 
+const office = await import(pathToFileURL(join(ROOT, "src", "lib", "office-preview.mjs")).href);
+const doc = office.parseDocxXml('<w:document><w:body><w:p><w:r><w:t>标题</w:t></w:r></w:p><w:p></w:p><w:p><w:r><w:t>正文 &amp; 结尾</w:t></w:r></w:p></w:body></w:document>');
+ok(doc.paragraphs.length === 2 && doc.paragraphs[1] === "正文 & 结尾", "DOCX 段落解析（跳过空段 + 实体解码）");
+const sheetData = office.parseXlsxXml('<row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>42</v></c></row>', "<si><t>名称</t></si>", "Sheet1");
+ok(sheetData.rows[0][0] === "名称" && sheetData.rows[0][1] === "42", "XLSX 表格解析（共享字符串 + 数字）");
+const slides = office.parsePptxSlides([{ name: "ppt/slides/slide2.xml", xml: "<p:sld><a:t>第二页</a:t></p:sld>" }, { name: "ppt/slides/slide1.xml", xml: "<p:sld><a:t>第一页</a:t><a:t>正文</a:t></p:sld>" }]);
+ok(slides.slides.length === 2 && slides.slides[0].title === "第一页" && slides.slides[0].lines[0] === "正文", "PPTX 按页排序并取标题/正文");
+ok(/isOfficePreviewExt\(realExt\)/.test(filePreviewSrc) && /<OfficePreview data=\{state\.data\}/.test(filePreviewSrc), "右栏 Office 文档走内嵌预览（不再统一退成二进制占位）");
+
 const codeSrc = read("src/features/shared/ToolCodeBlock.tsx");
 ok(/className="tool-code-copy"/.test(codeSrc) && /copyTextToClipboard\(text\)/.test(codeSrc)
   && /\.tool-code-copy\s*\{/.test(read("src/styles/03-messages-turns.css")),
