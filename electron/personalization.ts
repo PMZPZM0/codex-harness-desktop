@@ -92,13 +92,20 @@ export async function readPersonalization(): Promise<PersonalizationConfig> {
       userContext: str(stored?.userContext),
       frontendDesignStyle: normalizeFrontendDesignStyle(stored?.frontendDesignStyle),
       frontendDesignNotes: str(stored?.frontendDesignNotes),
-      frontendDesignEnabled: stored?.frontendDesignEnabled !== false,
+      /* 默认关闭：没有显式开关时，只有「已经选过风格 / 写过自定义内容」才视为开启（兼容旧档案）。 */
+      frontendDesignEnabled: typeof stored?.frontendDesignEnabled === "boolean"
+        ? stored.frontendDesignEnabled
+        : (normalizeFrontendDesignStyle(stored?.frontendDesignStyle) !== "auto" || str(stored?.frontendDesignNotes).length > 0),
       softwareDevStyle: normalizeSoftwareDevNorm(stored?.softwareDevStyle),
       softwareDevNotes: str(stored?.softwareDevNotes),
-      softwareDevEnabled: stored?.softwareDevEnabled !== false,
+      softwareDevEnabled: typeof stored?.softwareDevEnabled === "boolean"
+        ? stored.softwareDevEnabled
+        : (normalizeSoftwareDevNorm(stored?.softwareDevStyle) !== "auto" || str(stored?.softwareDevNotes).length > 0),
       appArchitectureStyle: normalizeAppArchitectureNorm(stored?.appArchitectureStyle),
       appArchitectureNotes: str(stored?.appArchitectureNotes),
-      appArchitectureEnabled: stored?.appArchitectureEnabled !== false,
+      appArchitectureEnabled: typeof stored?.appArchitectureEnabled === "boolean"
+        ? stored.appArchitectureEnabled
+        : (normalizeAppArchitectureNorm(stored?.appArchitectureStyle) !== "auto" || str(stored?.appArchitectureNotes).length > 0),
       persona: str(stored?.persona),
       soulSlug: str(stored?.soulSlug),
       onboarded: stored?.onboarded === true,
@@ -142,21 +149,21 @@ export async function writePersonalization(input: Record<string, unknown>): Prom
     ),
     frontendDesignNotes: pick("frontendDesignNotes", 4000),
     frontendDesignEnabled: input2.frontendDesignEnabled === undefined
-      ? current.frontendDesignEnabled !== false
+      ? current.frontendDesignEnabled === true
       : input2.frontendDesignEnabled === true,
     softwareDevStyle: normalizeSoftwareDevNorm(
       input2.softwareDevStyle === undefined ? current.softwareDevStyle : input2.softwareDevStyle,
     ),
     softwareDevNotes: pick("softwareDevNotes", 4000),
     softwareDevEnabled: input2.softwareDevEnabled === undefined
-      ? current.softwareDevEnabled !== false
+      ? current.softwareDevEnabled === true
       : input2.softwareDevEnabled === true,
     appArchitectureStyle: normalizeAppArchitectureNorm(
       input2.appArchitectureStyle === undefined ? current.appArchitectureStyle : input2.appArchitectureStyle,
     ),
     appArchitectureNotes: pick("appArchitectureNotes", 4000),
     appArchitectureEnabled: input2.appArchitectureEnabled === undefined
-      ? current.appArchitectureEnabled !== false
+      ? current.appArchitectureEnabled === true
       : input2.appArchitectureEnabled === true,
     persona: pick("persona", 12000),
     soulSlug: pick("soulSlug", 120),

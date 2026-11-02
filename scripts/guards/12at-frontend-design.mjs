@@ -179,11 +179,13 @@ const personalNormSrc = read("electron/personalization.ts");
 ok(personalNormSrc.includes("softwareDevStyle?: string") && personalNormSrc.includes("appArchitectureStyle?: string")
   && personalNormSrc.includes("frontendDesignEnabled?: boolean") && personalNormSrc.includes("softwareDevEnabled?: boolean")
   && personalNormSrc.includes("appArchitectureEnabled?: boolean")
+  && personalNormSrc.includes('typeof stored?.frontendDesignEnabled === "boolean"')
+  && personalNormSrc.includes("current.frontendDesignEnabled === true")
   && /engineeringNormsPrompt\(personalization\)/.test(personalNormSrc)
   && personalNormSrc.includes("Frontend design direction (frontend UI only")
   && personalNormSrc.includes("Backend engineering norms")
   && personalNormSrc.includes("normalizeSoftwareDevNorm") && personalNormSrc.includes("normalizeAppArchitectureNorm"),
-  "个性化档案含两套规范字段与三个开关，AGENTS.md 分区写清前端 / 后端适用范围");
+  "个性化档案含两套规范字段与三个开关（默认关闭、旧配置按内容推断），AGENTS.md 分区写清前端 / 后端适用范围");
 
 const delegationNormSrc = read("electron/features/delegation.ts");
 ok(delegationNormSrc.includes("personalNormsPrompt")
@@ -213,6 +215,11 @@ ok(/frontendDesignEnabled: frontendEnabled/.test(pageNorm)
   && pageNorm.includes("ToggleSwitch") && pageNorm.includes("norm-toggle")
   && pageNorm.includes("personalization-norm-off"),
   "三类规范各有启用开关；关闭后不注入但保留配置");
+const defaultOffCount = [...pageNorm.matchAll(/const \[(?:frontendEnabled|softwareDevEnabled|appArchEnabled), set\w+\] = useState\(false\)/g)].length;
+ok(defaultOffCount === 3
+  && /next\.frontendDesignEnabled === true/.test(pageNorm)
+  && /frontendEnabled !== \(initial\.current\.frontendDesignEnabled === true\)/.test(pageNorm),
+  "三个规范开关默认关闭；载入 / dirty 均以 true 为开启（新用户默认不注入）");
 ok(/softwareDevStyle,/.test(pageNorm) && /appArchitectureStyle: appArchStyle/.test(pageNorm)
   && /const dirty[\s\S]*softwareDevNotes\.trim\(\)[\s\S]*appArchNotes\.trim\(\)/.test(pageNorm)
   && /const dirty[\s\S]*softwareDevEnabled[\s\S]*appArchEnabled/.test(pageNorm)

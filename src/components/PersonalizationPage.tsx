@@ -180,13 +180,13 @@ export function PersonalizationPage({
   const [instructions, setInstructions] = useState("");
   const [frontendStyle, setFrontendStyle] = useState(DEFAULT_FRONTEND_DESIGN_STYLE);
   const [frontendNotes, setFrontendNotes] = useState("");
-  const [frontendEnabled, setFrontendEnabled] = useState(true);
+  const [frontendEnabled, setFrontendEnabled] = useState(false);
   const [softwareDevStyle, setSoftwareDevStyle] = useState(DEFAULT_SOFTWARE_DEV_NORM);
   const [softwareDevNotes, setSoftwareDevNotes] = useState("");
-  const [softwareDevEnabled, setSoftwareDevEnabled] = useState(true);
+  const [softwareDevEnabled, setSoftwareDevEnabled] = useState(false);
   const [appArchStyle, setAppArchStyle] = useState(DEFAULT_APP_ARCHITECTURE_NORM);
   const [appArchNotes, setAppArchNotes] = useState("");
-  const [appArchEnabled, setAppArchEnabled] = useState(true);
+  const [appArchEnabled, setAppArchEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [verify, setVerify] = useState<VerifyResult | null>(null);
@@ -210,13 +210,13 @@ export function PersonalizationPage({
         setInstructions(next.customInstructions ?? "");
         setFrontendStyle(normalizeFrontendDesignStyle(next.frontendDesignStyle));
         setFrontendNotes(next.frontendDesignNotes ?? "");
-        setFrontendEnabled(next.frontendDesignEnabled !== false);
+        setFrontendEnabled(next.frontendDesignEnabled === true);
         setSoftwareDevStyle(normalizeSoftwareDevNorm(next.softwareDevStyle));
         setSoftwareDevNotes(next.softwareDevNotes ?? "");
-        setSoftwareDevEnabled(next.softwareDevEnabled !== false);
+        setSoftwareDevEnabled(next.softwareDevEnabled === true);
         setAppArchStyle(normalizeAppArchitectureNorm(next.appArchitectureStyle));
         setAppArchNotes(next.appArchitectureNotes ?? "");
-        setAppArchEnabled(next.appArchitectureEnabled !== false);
+        setAppArchEnabled(next.appArchitectureEnabled === true);
         initial.current = next;
       })
       .catch(() => undefined)
@@ -228,13 +228,13 @@ export function PersonalizationPage({
   const dirty = instructions.trim() !== (initial.current.customInstructions ?? "")
     || frontendStyle !== normalizeFrontendDesignStyle(initial.current.frontendDesignStyle)
     || frontendNotes.trim() !== (initial.current.frontendDesignNotes ?? "")
-    || frontendEnabled !== (initial.current.frontendDesignEnabled !== false)
+    || frontendEnabled !== (initial.current.frontendDesignEnabled === true)
     || softwareDevStyle !== normalizeSoftwareDevNorm(initial.current.softwareDevStyle)
     || softwareDevNotes.trim() !== (initial.current.softwareDevNotes ?? "")
-    || softwareDevEnabled !== (initial.current.softwareDevEnabled !== false)
+    || softwareDevEnabled !== (initial.current.softwareDevEnabled === true)
     || appArchStyle !== normalizeAppArchitectureNorm(initial.current.appArchitectureStyle)
     || appArchNotes.trim() !== (initial.current.appArchitectureNotes ?? "")
-    || appArchEnabled !== (initial.current.appArchitectureEnabled !== false);
+    || appArchEnabled !== (initial.current.appArchitectureEnabled === true);
   const selectedFrontendStyle = FRONTEND_DESIGN_STYLES.find((preset) => preset.id === frontendStyle) ?? FRONTEND_DESIGN_STYLES[0];
 
   async function save() {
@@ -306,7 +306,7 @@ export function PersonalizationPage({
       <div className={`personalization-group card-frontend-design${frontendEnabled ? "" : " is-off"}`}>
         <div className="settings-subhead">
           <Palette size={13} />前端设计风格
-          <span className="settings-subhead-hint">前端 UI 专用 · 随应用更新</span>
+          <span className="settings-subhead-hint">前端 UI 专用 · 默认关闭 · 随应用更新</span>
           <ToggleSwitch
             checked={frontendEnabled}
             label="启用前端设计规范"
@@ -423,7 +423,7 @@ export function PersonalizationPage({
         cardId="software-dev"
         title="软件开发规范（后端）"
         icon={<Code2 size={13} />}
-        hint="面向后端 / 服务端 · 随应用更新 · 专家同样生效"
+        hint="面向后端 / 服务端 · 默认关闭 · 专家同样生效"
         presets={SOFTWARE_DEV_NORMS}
         style={softwareDevStyle}
         onStyle={setSoftwareDevStyle}
@@ -439,7 +439,7 @@ export function PersonalizationPage({
         cardId="app-architecture"
         title="应用架构规范（后端 / 全栈）"
         icon={<Network size={13} />}
-        hint="后端 / 全栈架构 · 随应用更新 · 专家同样生效"
+        hint="后端 / 全栈架构 · 默认关闭 · 专家同样生效"
         presets={APP_ARCHITECTURE_NORMS}
         style={appArchStyle}
         onStyle={setAppArchStyle}

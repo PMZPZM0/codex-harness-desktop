@@ -104,7 +104,7 @@ description: 前端设计作业手册：先读懂任务与真实数据，再按�
   瑞士网格 / 玻璃拟态 / Material 3，提示词随应用更新；每套带完整设计规范（色彩 / 字体 / 布局 / 组件 / 动效）、
   参考文档、参考素材与地址，另列 Ant Design / Arco / TDesign / Semi / Element Plus / Naive UI / Vant / NutUI
   等国内设计系统）。同页的**软件开发规范按后端 / 服务端**理解，**应用架构规范按后端 / 全栈架构**理解；
-  三类规范都有启用开关，关闭后不写 AGENTS.md、也不带给专家，但配置保留。
+  三类规范**默认关闭**，打开后才写 AGENTS.md、才带给专家；关闭时配置保留。
   这些内容会写进引擎 \`AGENTS.md\` 的 \`Frontend design direction\` / \`Backend engineering norms\` 段；
   有规则时按它选方向，但具体色值仍从项目 token 派生；⛔ 不要因为用户选了一个风格就另起一套写死色值。
   风格提示词还会联动内置组件库（先搜 Uiverse 再按方向改造）。
