@@ -274,7 +274,11 @@ bag.collapseTurnWindow = collapseTurnWindow as typeof bag.collapseTurnWindow;
   const allItems = bag.thread?.turns.flatMap((turn) => turn.items) ?? [];
 bag.allItems = allItems as typeof bag.allItems;
 
-  const isEmpty = !bag.thread && !bag.allItems.length;
+  /* ⛔⛔ 11-02 用户实测「发出去的消息在首页停一会才进对话框」：
+     判据只看 thread 与已落地条目 —— 首条消息要等引擎 thread/start 回来才有 thread，
+     这段时间欢迎页还占着屏，用户看到自己的消息"发在首页"，然后才跳进对话。
+     乐观输入（optimisticInput）一出现就说明"已经有消息了"，据此立刻离开欢迎态。 */
+  const isEmpty = !bag.thread && !bag.allItems.length && !bag.optimisticInput;
 bag.isEmpty = isEmpty as typeof bag.isEmpty;
 
   // 欢迎页（空会话）自动聚焦输入框：docked-center 的 absolute 定位 + 过渡动画期间命中区域会

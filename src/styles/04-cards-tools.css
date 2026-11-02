@@ -2817,3 +2817,26 @@
 .kb-empty p { margin: 2px 0 0; font-size: 12.5px; color: var(--text); }
 .kb-empty small { font-size: 11px; line-height: 1.6; }
 .settings-exp-card.kb-empty { padding: 16px; }
+
+/* ── 11-02 首页 → 对话的过渡（用户：消息在首页停一会才进对话框、中间没有过渡动画）──
+   真因在 isEmpty 判据（已修：乐观输入一出现就离开欢迎态）。这里补**观感**：
+   欢迎页入场 + 首条回合入场，两段都只动 opacity/transform，240~280ms，
+   与项目 --dur-switch 同曲线；⌘ 减少动态效果时按 data-motion 守卫静音。 */
+@keyframes welcome-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes turn-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.welcome-state { animation: welcome-in 280ms cubic-bezier(.22,.61,.36,1) both; }
+/* 只给**最后一条**回合入场动画：历史回合重渲染时不闪，长会话也不加额外合成开销 */
+.turn-group:last-child { animation: turn-in 240ms cubic-bezier(.22,.61,.36,1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .welcome-state,
+  html:not([data-motion="force"]) .turn-group:last-child {
+    animation: none !important;
+  }
+}
