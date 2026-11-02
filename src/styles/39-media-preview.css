@@ -733,3 +733,65 @@
   color: var(--accent);
   font-size: 11px;
 }
+
+/* ── 11-02 mac 动效适配（用户：视频/音乐组件「在 mac 上缺动效、生硬」）──────────
+   mac 的观感基线是「短距离位移 + 轻微缩放 + 240~300ms」，而不是 Windows 那种几乎瞬间的
+   淡入淡出。这里只动 opacity / transform（合成层完成，不触发布局），时长与缓动对齐项目里
+   既有的 `--dur-switch` 曲线 (0.22, 0.61, 0.36, 1)。
+   ⛔ 一律带 `html:not([data-motion="force"])` 守卫才有意义的方向：本项目默认 force（无视系统
+      「减少动态效果」），所以只在 @media 里条件关闭，不改变默认观感。 */
+@keyframes media-dialog-in {
+  from { opacity: 0; transform: translateY(10px) scale(.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes media-backdrop-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes media-surface-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes media-cover-in {
+  from { opacity: 0; transform: scale(.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.media-preview-backdrop { animation: media-backdrop-in 200ms ease-out both; }
+.media-preview-dialog { animation: media-dialog-in 280ms cubic-bezier(.22,.61,.36,1) both; }
+/* 画面本体与工具条错开 40ms 入场：同帧一起出现会显得"整块弹出来" */
+.media-video-wrap { animation: media-surface-in 260ms cubic-bezier(.22,.61,.36,1) 40ms both; }
+.media-video-bar  { animation: media-surface-in 240ms cubic-bezier(.22,.61,.36,1) both; }
+.media-audio-cover { animation: media-cover-in 260ms cubic-bezier(.22,.61,.36,1) both; }
+
+/* 按钮按下反馈：mac 上「点了没反应」的主因是只有颜色变化、没有位移/缩放 */
+.media-preview-iconbtn,
+.media-video-tool,
+.media-audio-iconbtn {
+  transition: background-color .15s ease, color .15s ease, transform .12s ease;
+}
+.media-preview-iconbtn:active,
+.media-video-tool:active,
+.media-audio-iconbtn:active {
+  transform: scale(.94);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .media-preview-backdrop,
+  html:not([data-motion="force"]) .media-preview-dialog,
+  html:not([data-motion="force"]) .media-video-wrap,
+  html:not([data-motion="force"]) .media-video-bar,
+  html:not([data-motion="force"]) .media-audio-cover {
+    animation: none !important;
+  }
+  /* 均衡器是无限循环：静音时保留静态柱形，避免"三条线突然消失" */
+  html:not([data-motion="force"]) .media-audio-cover.is-playing span {
+    animation: none !important;
+    transform: scaleY(1);
+  }
+  html:not([data-motion="force"]) .media-preview-iconbtn,
+  html:not([data-motion="force"]) .media-video-tool,
+  html:not([data-motion="force"]) .media-audio-iconbtn {
+    transition: none !important;
+  }
+}

@@ -977,9 +977,17 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
   background: color-mix(in srgb, #000 45%, transparent);
   display: grid; place-items: center;
   z-index: 1200;
-  animation: modal-fade .15s ease-out;
+  animation: modal-fade .18s ease-out both;
 }
 @keyframes modal-fade { from { opacity: 0 } to { opacity: 1 } }
+/* ── 11-02 mac 动效适配（用户：对话框动画「在 mac 上生硬」）───────────────
+   原来只有整块 .15s 淡入，卡片本身不动 ⇒ mac 上读作"啪一下出现"。
+   补一条卡片入场：上移 8px + 缩到 .98 再归位，240ms、与项目 --dur-switch 同曲线。
+   ⛔ 只动 opacity/transform（合成层），不碰 box-shadow/filter —— 那两个在 mac 上逐帧重绘。 */
+@keyframes modal-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
 .modal-card {
   width: min(440px, 92vw);
   background: var(--bg);
@@ -988,6 +996,11 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
   box-shadow: 0 16px 48px rgba(0,0,0,.25);
   display: flex; flex-direction: column;
   max-height: 80vh; overflow: hidden;
+  animation: modal-card-in 240ms cubic-bezier(.22,.61,.36,1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .modal-overlay { animation: none !important; }
+  html:not([data-motion="force"]) .modal-card { animation: none !important; }
 }
 .modal-card > header {
   padding: 12px 16px; border-bottom: 1px solid var(--line-soft);

@@ -16,7 +16,7 @@
  *     再挂一次会重复触发。本文件由内核直接调一次，不需要退订（进程级订阅）。
  *   ③ **不得让取证失败影响主流程** —— 写日志、读GPU 状态全部 try/catch 吞掉。
  */
-import { app } from "electron";
+import { app, dialog } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -60,13 +60,48 @@ export function installCrashDiagnostics(): void {
   if (installed) return;
   installed = true;
 
+  /* ⛔⛔ 11-02（用户实测「mac 进设置-控制台必闪退」）：原实现**无条件 reload**。
+     如果崩溃是"打开某页必崩"这种确定性崩溃，reload 会立刻再崩一次 ⇒ 用户看到的是
+     "窗口一闪就没"（重载风暴），而且原因只落在 voice-crash.log 里，屏幕上什么都没有。
+     现在：① 30 秒窗口内只允许自动重载 1 次；② 再次崩溃就**不再重载**，直接弹原生对话框
+     把 reason/exitCode/页面 URL/日志路径写在屏幕上 —— 用户截一张图就能定位，A 也不用猜。 */
+  let lastReloadAt = 0;
   app.on("render-process-gone", (_event, contents, details) => {
-    logCrash("renderer-gone", { reason: details?.reason, exitCode: details?.exitCode });
-    if (details?.reason === "clean-exit") return;
+    const reason = String(details?.reason ?? "");
+    const exitCode = details?.exitCode;
+    let url = "";
+    try { url = contents.isDestroyed() ? "" : contents.getURL(); } catch { /* 取不到就算了 */ }
+    logCrash("renderer-gone", { reason, exitCode, url });
+    if (reason === "clean-exit") return;
+
+    const now = Date.now();
+    const canAutoReload = now - lastReloadAt > 30_000;
+    if (canAutoReload) {
+      lastReloadAt = now;
+      try {
+        if (!contents.isDestroyed()) contents.reload();
+      } catch {
+        /* 重载失败就交给用户手动重开 */
+      }
+      return;
+    }
+
+    // 崩溃风暴：停下来把证据交给用户，别再闪
     try {
-      if (!contents.isDestroyed()) contents.reload();
+      dialog.showErrorBox(
+        "界面崩溃了（已停止自动重载）",
+        [
+          `原因：${reason || "未知"}（exitCode=${exitCode ?? "?"}）`,
+          url ? `发生在页面：${url}` : "",
+          "",
+          "崩溃详情已写入日志：",
+          app.getPath("userData") + "/voice-crash.log",
+          "",
+          "请把这段文字或日志截图反馈，便于定位。",
+        ].filter(Boolean).join("\n"),
+      );
     } catch {
-      /* 重载失败就交给用户手动重开 */
+      /* 弹窗失败不能影响主流程 */
     }
   });
 
