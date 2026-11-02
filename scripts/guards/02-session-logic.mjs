@@ -1681,6 +1681,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/120_000/.test(err8Src) && /entry\.no !== reconnectNo[\s\S]{0,80}?entry\.total !== reconnectTotal/.test(err8Src) ? ok : fail)(
       "【286】2 分钟无新进度自动收掉（旧定时器对后续进度 no-op）"
     );
+    (/engineActiveTurns\(\)[\s\S]{0,600}?markThreadStopped\(reconnectTid\)[\s\S]{0,260}?bag\.setSending\(false\)/.test(err8Src) ? ok : fail)(
+      "【286】兜底同时向引擎核对运行态：重试耗尽却没有终态事件时不留下永久转圈（含发送/停止键状态）"
+    );
     (/if \(params\.threadId\) bag\.setUpstreamRetries\(\(current\) => \{[\s\S]{0,200}?delete next\[tid\]/.test(stream4Src) ? ok : fail)(
       "【286】连接恢复（任何流式内容/工具项）立即收掉提示，不等可能迟到的 turn/completed"
     );

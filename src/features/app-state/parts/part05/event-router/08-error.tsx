@@ -47,6 +47,20 @@ export function handleEventRouter8(bag: Bag, params: any): boolean {
               delete next[reconnectTid];
               return next;
             });
+            /* 审查补强：重连提示不再把线程标停（见上），万一引擎重试耗尽却不发终态事件，
+               运行态会永久挂着 —— 这里向引擎核对一次：它已经不在跑就直接熄灯（含当前会话的
+               发送/停止键状态；否则线程停了、输入框还停在「停止」）。 */
+            if (bag.runningThreadIdsRef.current.has(reconnectTid)) {
+              void window.codex.engineActiveTurns().then((info) => {
+                if ((info?.threadIds ?? []).map(String).includes(reconnectTid)) return;
+                bag.markThreadStopped(reconnectTid);
+                if (bag.threadRef.current?.id === reconnectTid) {
+                  bag.setSending(false);
+                  bag.setInterrupting(false);
+                  bag.setActiveTurnId(null);
+                }
+              }).catch(() => undefined);
+            }
           }, 120_000);
         }
         let errorMessage = rawError;
