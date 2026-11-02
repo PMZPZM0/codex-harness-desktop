@@ -224,14 +224,22 @@
 .xterm .xterm-scrollable-element > .shadow.top.left {
   box-shadow: var(--vscode-scrollbar-shadow, #000) 6px 0 6px -6px inset;
 }
-/* 滚动条跟随主题：thumb/track 取 CSS 变量，深色模式不再残留系统浅色滚轮 */
+/* 滚动条跟随主题（11-02：全局所有滚轮都走 token，壁纸开启时也不发白/发脏）
+   ⛔ thumb 用 --muted 混合、hover 用 --accent：三套主题（白天/黑夜/曜石）自动换色；
+      不再用 --panel-2/--bg 做 thumb/track —— 壁纸模式下这两个令牌是半透明的，滚轮会"隐身"。 */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 6px; border: 2px solid var(--bg); }
-::-webkit-scrollbar-thumb:hover { background: var(--line); }
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 42%, transparent);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 32px;
+}
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--accent) 62%, transparent); background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 /* Chromium 117+ / Firefox 标准滚动条配色 */
-* { scrollbar-width: thin; scrollbar-color: var(--panel-2) var(--bg); }
+* { scrollbar-width: thin; scrollbar-color: color-mix(in srgb, var(--muted) 48%, transparent) transparent; }
 
 :root {
   color: #23231f;

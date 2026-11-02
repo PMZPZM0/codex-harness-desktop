@@ -247,3 +247,16 @@
 .wallpaper-preset-face .wp-thumb-night { display: none; }
 :root[data-theme-mode="dark"] .wallpaper-preset-face .wp-thumb-day { display: none; }
 :root[data-theme-mode="dark"] .wallpaper-preset-face .wp-thumb-night { display: block; }
+
+/* 顶栏 / 左下账户区：壁纸开启时做真正的玻璃（用户截图红框：原来是一条白带 + 一块白色账户卡） */
+:root[data-wallpaper="on"] .app-shell > .topbar {
+  background: color-mix(in srgb, var(--bg-base) 56%, transparent);
+  backdrop-filter: blur(18px) saturate(1.12);
+}
+:root[data-theme-mode="light"][data-wallpaper="on"] .app-shell > .topbar {
+  background: color-mix(in srgb, #fff 62%, transparent);
+}
+:root[data-wallpaper="on"] .account-row {
+  background: transparent;
+  border-top-color: color-mix(in srgb, var(--line) 65%, transparent);
+}

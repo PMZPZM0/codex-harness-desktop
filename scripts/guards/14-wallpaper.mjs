@@ -72,18 +72,18 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     "⛔ 静态壁纸不许回到写死糖果色（旧六款的问题）");
 }
 
-/* ── ③ 动态光幕：四档（含 3D 深空）+ 鼠标视差 + 减动效 ── */
+/* ── ③ 动态光幕：四档（含 3D 星空）+ 鼠标视差 + 减动效 ── */
 {
-  ok(["aurora", "ribbon", "halo", "depth"].every((mode) => libSrc.includes(`"${mode}"`)), "四档动态壁纸都在清单里（含 3D 山景）");
-  ok(/function DepthField/.test(layerSrc) && /getContext\("2d"\)/.test(layerSrc) && /createLinearGradient/.test(layerSrc)
-    && /const ridge = /.test(layerSrc) && /ridge\(/.test(layerSrc),
-    "3D 山景 = canvas 逐帧风景（天空/三层山脊/流雾）");
-  ok(/addEventListener\("mousemove"/.test(layerSrc) && /mx \* 14 \* \(i \+ 1\)/.test(layerSrc),
-    "3D 山景跟鼠标走（三层山脊不同位移 = 纵深）");
+  ok(["aurora", "ribbon", "halo", "depth"].every((mode) => libSrc.includes(`"${mode}"`)), "四档动态壁纸都在清单里（含 3D 星空）");
+  ok(/function DepthField/.test(layerSrc) && /getContext\("2d"\)/.test(layerSrc) && /const seedStars = /.test(layerSrc)
+    && /createRadialGradient/.test(layerSrc) && /cycle = t % 7/.test(layerSrc),
+    "3D 星空 = canvas 逐帧星空（三层星点 + 星云柔光 + 夜间流星）");
+  ok(/addEventListener\("mousemove"/.test(layerSrc) && /star\.depth/.test(layerSrc),
+    "3D 星空跟鼠标走（星点按 depth 不同位移 = 纵深）");
   ok(/attributeFilter: \["data-theme"\]/.test(layerSrc) && /buildPalette/.test(layerSrc),
-    "3D 山景跟随主题换调色板（切换只重绘，不重建 canvas）");
+    "3D 星空跟随主题换调色板（浅色淡星 / 深色星野；切换只重绘）");
   ok(/DepthField reduced=\{prefersReducedMotion\(\)\}/.test(layerSrc) && /\.wallpaper-depth \{ position: absolute/.test(cssSrc),
-    "3D 山景尊重减动效偏好（只画一帧）+ 画布样式在位");
+    "3D 星空尊重减动效偏好（只画一帧）+ 画布样式在位");
   ok(/function MotionVeil/.test(layerSrc) && /is-\$\{variant\}/.test(layerSrc) && /<i><b \/><\/i><i><b \/><\/i><i><b \/><\/i>/.test(layerSrc),
     "动态光幕 = 三层柔光组件（外层视差 / 内层动画各管一件事）");
   ok(/addEventListener\("mousemove"/.test(layerSrc) && layerSrc.includes("--wp-px") && layerSrc.includes("--wp-py")
@@ -121,6 +121,17 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
   ok(settingsSrc.includes('className="secondary-setting"') && !/className="btn"/.test(settingsSrc),
     "设置页按钮一律 secondary-setting（⛔ `.btn` 在这个作用域没有样式 = 一块白按钮，用户截图点名）");
   ok(styles.includes("styles/28-wallpaper"), "styles.css 已接入 28-wallpaper");
+  /* 11-02 追加：全局滚轮 + 顶栏/账户区玻璃 */
+  ok(/::-webkit-scrollbar-thumb \{\s*background: color-mix\(in srgb, var\(--muted\) 42%/.test(baseCss)
+    && /scrollbar-color: color-mix\(in srgb, var\(--muted\) 48%/.test(baseCss)
+    && !/scrollbar-color: var\(--panel-2\) var\(--bg\)/.test(baseCss),
+    "全局所有滚轮走主题 token（--muted 轨道 + --accent hover，三主题/壁纸下都不隐身）");
+  ok(/\[data-wallpaper="on"\] \.app-shell > \.topbar \{[\s\S]{0,200}backdrop-filter/.test(cssSrc)
+    && /\[data-wallpaper="on"\] \.account-row \{\s*background: transparent/.test(cssSrc),
+    "顶栏与左下账户区在壁纸下做玻璃适配（截图红框的两处白块）");
+  /* 11-02 追加：3D 星空 = 日夜两套 + 鼠标跟随 */
+  ok(/pointerX/.test(layerSrc) && /palette\.dark \? palette\.nebulaA/.test(layerSrc) && /!palette\.dark/.test(layerSrc),
+    "3D 星空有鼠标跟随柔光 + 白昼流云（不只是星点漂移）");
 }
 
 /* ── ⑤ 接线：设置页 + 引擎自助接口 ── */
@@ -129,6 +140,8 @@ const appearance = codeOnly(read("src/features/settings-appearance/AppearanceSet
     "外观页接壁纸设置段（模式 / 静态壁纸 / 自定义图全部落地）");
   ok(/MODE_LABELS[\s\S]{0,260}aurora: "极光"/.test(settingsSrc) && /ribbon: "流光"/.test(settingsSrc) && /halo: "光晕"/.test(settingsSrc),
     "设置页档位文案：极光 / 流光 / 光晕");
+  ok(/id: "theme"/.test(settingsSrc) && /id: "sky"/.test(settingsSrc) && /day: \\?"wallpapers\//.test(settingsSrc),
+    "「制作教程」含：主题制作（明暗两段）/ 日·夜风景壁纸 / 3D 星空调参（用户：「写进主题制作教程」）");
   ok(/mode: \{ type: "string", description: "off \/ aurora \/ ribbon \/ halo \/ depth \/ custom" \}/.test(dispatchCore)
     && /\["off", "aurora", "ribbon", "halo", "depth", "custom"\]/.test(dispatchRpc),
     "引擎工具 wallpaper_set 的模式白名单同步（否则 Codex 切不了新壁纸）");

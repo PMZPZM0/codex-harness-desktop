@@ -15,16 +15,21 @@ const MODE_LABELS: Record<string, string> = {
   aurora: "极光",
   ribbon: "流光",
   halo: "光晕",
-  depth: "3D 山景",
+  depth: "3D 星空",
   custom: "静态壁纸",
 };
 
 /** 制作教程提示词（可整段复制发给 Codex）。⛔ 提到的清单必须与本文件注册表一致。 */
 const GUIDE_PROMPTS: { id: string; title: string; prompt: string }[] = [
   {
+    id: "theme",
+    title: "做一套「明暗两段」主题（新增主题的全流程）",
+    prompt: "请给应用加一套主题：① 在 src/lib/themes.ts 的 THEMES 里加一行 { id: \"<英文id>\", label: \"<中文名>\", preview: \"tpw-<英文id>\" }，并把 isDarkTheme() 纳入新 id（若为深色）；② 在 src/styles/01-base-and-chrome.css 里照 :root[data-theme=\"obsidian\"] 复制一段变量块改成新配色（bg/panel/panel-2/line/field/text/muted/accent/green/--ic-* 一套都要）；③ 深色专属规则只写 :root[data-theme-mode=\"dark\"]，不要再给新主题复制分支；④ electron/main.ts 的 DARK_THEME_IDS 加新 id，窗口底色按新主题取色；⑤ 在 src/styles/07-settings-mcp-connectors.css 补 .tpw-<英文id> 预览卡；⑥ 跑 npm run build:vite + 守卫 01，并同步 DESIGN.md。",
+  },
+  {
     id: "preset",
-    title: "再加一张静态壁纸（生图 → 落 public/wallpapers → 注册）",
-    prompt: "请给应用加一张静态壁纸：用 image-generation 技能生成一张 1792×1024 的高级感底图（抽象材质、低对比、大面积留白、无文字无水印无主体），保存为 public/wallpapers/<英文id>.jpg；然后在 src/lib/wallpaper.mjs 的 WALLPAPER_PRESETS 里加一行 { id: \"<英文id>\", name: \"<中文名>\", src: \"wallpapers/<英文id>.jpg\" }；跑 npm run build:vite 后设置页缩略图会自动出现。",
+    title: "加一组风景壁纸（日/夜成对，自动跟随主题）",
+    prompt: "请给应用加一组风景壁纸：用 image-generation 技能生成同一场景的**两张** 1792×1024 底图（一张白昼、一张夜晚，低对比、无文字无水印），分别存为 public/wallpapers/<id>-day.jpg 与 <id>-night.jpg；然后在 src/lib/wallpaper.mjs 的 WALLPAPER_PRESETS 里加一行 { id: \"<id>\", name: \"<中文名>\", day: \"wallpapers/<id>-day.jpg\", night: \"wallpapers/<id>-night.jpg\" }。浅色主题会自动显示 day、深色显示 night（.wp-sky-day/.wp-sky-night 由 data-theme-mode 切换），不用写 JS 判明暗；跑 npm run build:vite + 守卫 14。",
   },
   {
     id: "image",
@@ -32,9 +37,14 @@ const GUIDE_PROMPTS: { id: string; title: string; prompt: string }[] = [
     prompt: "请帮我做一张应用壁纸并直接设置：用生图工具按下面的要求出图——低对比度、大面积留白、无文字无水印、适合垫在聊天文字下方；把图保存到当前工作区（如 assets/wallpaper.png），然后调用 harness_tools 工具（name=\"wallpaper_set\"），参数 { \"mode\": \"custom\", \"image\": \"<图片绝对路径>\" }，让壁纸立刻生效。以后想换图，重复这个流程即可。",
   },
   {
+    id: "sky",
+    title: "调 3D 星空动态壁纸（白天/黑夜两套 + 鼠标交互）",
+    prompt: "请调整应用 3D 星空动态壁纸：编辑 src/features/wallpaper/WallpaperLayer.tsx 的 DepthField —— ① 白天/黑夜两套调色板在 buildPalette() 里（浅色=日间天空+流云+淡星，深色=深空+星云+亮星），颜色一律从 CSS token 现读；② 鼠标交互：星点按 star.depth 做视差、指针处跟一团主题色柔光，nebulae/sun 也随 mx/my 偏移；③ 夜间流星节奏在 cycle = t % 7；④ 减动效偏好只画一帧。改完跑 npm run build:vite，切「3D 星空」档、白天/黑夜各看一遍。",
+  },
+  {
     id: "motion",
-    title: "调动态壁纸的观感（极光 / 流光 / 光晕）",
-    prompt: "请调整应用动态壁纸：编辑 src/styles/28-wallpaper.css 里 .wallpaper-motion 的三档（is-aurora 三团柔光的 `color-mix(... N%, transparent)` 透明度、blur 半径、animation 时长；is-ribbon 光带的高度/角度/速度；is-halo 光晕大小与呼吸周期），以及 src/features/wallpaper/WallpaperLayer.tsx 里 MotionVeil 的鼠标视差幅度 --wp-depth。改完跑 npm run build:vite 重启生效。颜色一律用主题 token（var(--accent) / var(--ic-*)），不要写死色值。",
+    title: "调极光 / 流光 / 光晕三档动态壁纸",
+    prompt: "请调整应用动态光幕：编辑 src/styles/28-wallpaper.css 里 .wallpaper-motion 的三档（is-aurora 三团柔光的 color-mix 透明度、blur 半径、animation 时长；is-ribbon 光带高度/角度/速度；is-halo 光晕大小与呼吸周期），以及 WallpaperLayer.tsx 里 MotionVeil 的鼠标视差幅度 --wp-depth。颜色一律用主题 token（var(--accent) / var(--ic-*)），不要写死色值。改完跑 npm run build:vite 生效。",
   },
 ];
 
