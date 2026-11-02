@@ -822,6 +822,11 @@ export async function run() {
     (/(minChars|maxFlushes|flushIntervalMs)/.test(streamSrc) && /this\.budget\.maxFlushes/.test(streamSrc) && /this\.budget\.minChars/.test(streamSrc))
       ? ok("【38】流式会话真的按预算节流（maxFlushes / minChars / flushIntervalMs 都参与判断）")
       : fail("【38】BotStreamBudget 定义了却没参与判断 —— 预算形同虚设");
+    (/const pendingText = pending\.trim\(\)/.test(streamSrc)
+      && /test\(pendingText\)\) return;/.test(streamSrc)
+      && /\[：:\]/.test(streamSrc))
+      ? ok("【38】句尾是冒号/省略号先攒着（模型刚说完「接下来…：」就被节流切成独立气泡 = 用户截图里的「输出断流 / 一段段」）")
+      : fail("【38】缺少「整句」保护：工具调用前的半句会被节流单独发成一条气泡");
     (/private newMessageId\(\)/.test(streamSrc) && /this\.sink\.append\(pending, this\.newMessageId\(\)\)/.test(streamSrc)
       && /this\.newMessageId\(\)/.test(streamSrc.split("finalizeAppend(")[1] ?? ""))
       ? ok("【38】每条消息新 client_id（服务端按 id 去重：同一 id 连发只有首条落地，后续含收尾被静默丢弃）")

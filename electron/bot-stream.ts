@@ -226,9 +226,15 @@ export class BotStreamSession {
   private async flushAppend() {
     if (this.finished || this.flushBusy || !this.sink.append) return;
     const pending = this.composed.slice(this.flushedLen);
-    if (!pending.trim() || this.flushes >= this.budget.maxFlushes) return;
+    const pendingText = pending.trim();
+    if (!pendingText || this.flushes >= this.budget.maxFlushes) return;
     // 首次追加不限字数（让用户尽早看到动静）；之后攒够 minChars 再发，避免一堆碎片气泡
     if (this.flushes > 0 && pending.length < this.budget.minChars) return;
+    /* ⛔ 11-02 渠道实测截图：模型刚说完「接下来…：」、工具结果还没出来时，3 秒节流就把
+       这半句单独发成一条气泡（后面再接一条工具/正文）——用户看到的就是「输出断流/一段段」。
+       句尾是冒号 / 省略号先攒着，等下一段（工具行或结果）一起发。
+       ⛔ 真正的回合收尾走 finalizeAppend，不经过这里 ⇒ 即使整段只到冒号也不会丢。 */
+    if (/(?:[：:]|…|\.\.\.)$/.test(pendingText)) return;
     this.flushBusy = true;
     try {
       await this.sink.append(pending, this.newMessageId());
