@@ -447,17 +447,10 @@ html[data-pet-window="activity"] #root {
   pointer-events: none;
   animation: pet-rig-breathe 3.8s ease-in-out infinite;
 }
-/* 动画包宠物也补上同一套状态微动作（原先只有逐帧图，切换时缺"活着"的感觉）。 */
-.pet-sprite-anim[data-state="running"] { transform-origin: 50% 92%; animation: pet-rig-work 1.35s ease-in-out infinite; }
-.pet-sprite-anim[data-state="running-left"] { transform-origin: 50% 92%; animation: pet-rig-lean-left 1.8s ease-in-out infinite; }
-.pet-sprite-anim[data-state="running-right"] { transform-origin: 50% 92%; animation: pet-rig-lean-right 1.8s ease-in-out infinite; }
-.pet-sprite-anim[data-state="waving"] { transform-origin: 50% 92%; animation: pet-rig-wave 1.4s ease-in-out infinite; }
-.pet-sprite-anim[data-state="waiting"] { transform-origin: 50% 92%; animation: pet-rig-wait 2.8s ease-in-out infinite; }
-.pet-sprite-anim[data-state="review"] { transform-origin: 50% 92%; animation: pet-rig-review 2.6s ease-in-out infinite; }
-.pet-sprite-anim[data-state="failed"] { transform-origin: 50% 92%; animation: pet-rig-sad 3s ease-in-out infinite; }
+/* ⛔ 11-02 用户：「宠物不要晃动，工作/事件联动时晃得不舒服」——
+   动画包宠物**不再叠 CSS 状态微动作**（WebP 自身已有动作），避免整只宠物跟着上下晃/歪。 */
 @media (prefers-reduced-motion: reduce) {
-  .pet-thumb-rig img,
-  .pet-sprite-anim[data-state] { animation: none !important; }
+  .pet-thumb-rig img { animation: none !important; }
 }
 .pet-item-name { grid-area: name; font-weight: 600; }
 .pet-item-source {

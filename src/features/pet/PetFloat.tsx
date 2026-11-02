@@ -428,7 +428,8 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
             {pkg.rig ? (
               <>
                 <span className="pet-rig-shadow" aria-hidden />
-                <div className="pet-rig-look" style={{ transform: `translate(${look.x * 3}px, ${look.y * 1.5}px)` }}>
+                {/* ⛔ 跟随鼠标只在待机时生效：工作时整只宠物跟着光标偏移，用户会觉得在晃。 */}
+                <div className="pet-rig-look" style={effectiveState === "idle" ? { transform: `translate(${look.x * 2}px, ${look.y}px)` } : undefined}>
                   <div className="pet-rig-motion">
                     {fadeFront && <img className="pet-fade-layer is-front" src={petAssetUrl(fadeFront)} alt="" draggable={false} />}
                     {fadeBack && <img className="pet-fade-layer is-back" src={petAssetUrl(fadeBack)} alt="" draggable={false} />}

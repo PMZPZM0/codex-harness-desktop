@@ -62,8 +62,8 @@ const stateSrc = codeOnly(read("electron/features/pet-state.ts"));
     "状态/提醒/推送去重都走纯函数（不在归约里另写一套）");
   ok(stateSrc.includes("normalizePetItemType(item.type)") && stateSrc.includes("commandExecution") && !stateSrc.includes("TOOL_ITEM_TYPES"),
     "item 类型先归一（旧实现 camelCase 匹配 PascalCase = 工具事件全漏）");
-  ok(stateSrc.includes('status: "completed"') && stateSrc.includes('pulseMotion("jumping"') && stateSrc.includes("markPetActivitySeen"),
-    "turn/completed 落 completed（review 持久），只做一次 jumping 动作覆盖");
+  ok(stateSrc.includes('status: "completed"') && stateSrc.includes('showBubble("搞定！")') && stateSrc.includes("markPetActivitySeen"),
+    "turn/completed 落 completed（review 持久），只弹气泡不跳（避免事件联动时晃动）");
   ok(stateSrc.includes('status: "failed"') && stateSrc.includes('status: "interrupted"') && stateSrc.includes("isTurnEndMethod"),
     "失败/中断落 failed/interrupted（不自动回 idle）");
   ok(stateSrc.includes("pendingRequests") && stateSrc.includes("serverRequest/resolved") && stateSrc.includes('status: "waiting"'),
@@ -214,9 +214,11 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     "关节包按状态播放自然动作（敲笔记本 / 跳跃 / 等待 / 审阅 / 失败），不靠逐帧硬切");
   ok(petFloatSrc.includes("stableRef") && petFloatSrc.includes("450") && petFloatSrc.includes("urgent"),
     "普通状态切换有最短停留（450ms），跳跃/等待/失败这类明确动作立即播");
-  ok(stateSrc.includes('pulseMotion("jumping", "写完一个文件"') && stateSrc.includes('pulseMotion("running-right", "正在查资料…"')
-    && stateSrc.includes('pulseMotion("review", "想一下…"') && stateSrc.includes('pulseMotion("waving", "等你确认一下"'),
-    "事件联动扩展：写文件跳一下 / 搜索左右看 / 思考举放大镜 / 等你确认先挥手");
+  /* 11-02 用户：「宠物不要晃动，工作/事件联动时晃得不舒服」。 */
+  ok(!stateSrc.includes('pulseMotion("jumping", "写完一个文件"') && !stateSrc.includes('pulseMotion("running-right"')
+    && !stateSrc.includes('pulseMotion("review"') && !stateSrc.includes('pulseMotion("waving"')
+    && !stateSrc.includes('pulseMotion("jumping", "搞定！"'),
+    "事件联动不晃动：工作时只更新文案，不再为写文件/搜索/思考/等待切跳跃、张望、挥手动作");
   ok(ipcSrc.includes("animationSet") && ipcSrc.includes("lookFrameSet") && ipcSrc.includes("function resolvePetFile")
     && ipcSrc.includes("abs.startsWith(root + path.sep)"),
     "主进程解析动画包，且素材路径被限制在宠物目录内（防目录穿越）");
@@ -280,9 +282,8 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     && /animation\.stillSrc/.test(settingsPetSrc)
     && /pet-thumb-rig/.test(settingsPetSrc) && /pet-thumb-rig img/.test(petCss),
     "设置页缩略图：动物优先播 idle 动画、机器人姿态图带呼吸动作（减少动效回落静帧）");
-  ok(/pet-sprite-anim\[data-state="running"\][^{]*\{[^}]*animation: pet-rig-work/.test(petCss)
-    && /pet-sprite-anim\[data-state="waiting"\][^{]*\{[^}]*animation: pet-rig-wait/.test(petCss),
-    "动画包宠物也补同一套状态微动作（运行/等待/审阅/失败不再只靠逐帧硬切）");
+  ok(!/pet-sprite-anim\[data-state=/.test(petCss),
+    "动画包宠物不再叠 CSS 状态微动作（WebP 自身有动作，叠上去整只会晃）");
   ok(petCss.includes(".pet-sprite-anim img") && petCss.includes("object-fit: contain"),
     "动画帧铺满本体且不拦截指针（object-fit: contain）");
 
