@@ -285,6 +285,7 @@ export function ComposerRail({ app, threadId = "" }: { app: HarnessAppApi; threa
         >
           <section
             className="composer-rail-panel"
+            data-panel={active.id}
             role="dialog"
             aria-modal="true"
             aria-label={active.label}

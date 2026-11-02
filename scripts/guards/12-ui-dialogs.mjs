@@ -137,4 +137,35 @@ export async function run() {
   } catch (error) {
     fail(`【287】真跑释放函数失败：${error?.message ?? error}`);
   }
+
+  /* ══ 【288】数据授权面板：开关在右 / 卡片化 / 底栏常驻（11-02 用户截图：「开关放右边，界面做好看一点」）══ */
+  console.log(C.bold("\n【288】数据授权面板布局"));
+  {
+    const daSrc = readFileSync(join(ROOT, "src", "features", "data-access", "DataAccessPanel.tsx"), "utf8");
+    const daCss = readFileSync(join(ROOT, "src", "styles", "55-data-access.css"), "utf8");
+    const railSrc = readFileSync(join(ROOT, "src", "features", "composer-rail", "ComposerRail.tsx"), "utf8");
+    const copyAt = daSrc.indexOf('className="da-switch-copy"');
+    const switchAt = daSrc.indexOf("<ToggleSwitch");
+    (copyAt >= 0 && switchAt > copyAt ? ok : fail)(
+      "【288】权限行「说明在左、开关在右」（JSX 顺序）"
+    );
+    const switchRule = /\.da-switch\s*\{([^}]*)\}/.exec(daCss)?.[1] ?? "";
+    (/justify-content:\s*space-between/.test(switchRule) && /\.da-toggle\s*\{[^}]*flex:\s*none/.test(daCss) ? ok : fail)(
+      "【288】两端对齐 + .da-toggle flex:none（文字再长也不许把开关挤回左边）"
+    );
+    const footerRule = /\.da-footer\s*\{([^}]*)\}/.exec(daCss)?.[1] ?? "";
+    (/\.da-scroll\s*\{[^}]*overflow:\s*auto/.test(daCss) && /flex:\s*none/.test(footerRule) && !/position:\s*sticky/.test(footerRule) ? ok : fail)(
+      "【288】卡片列表自己滚、底栏固定露着（⛔ 不再 sticky 在内容末尾被裁到视口外）"
+    );
+    (/data-panel=\{active\.id\}/.test(railSrc) && /\[data-panel="data-access"\]\s*\{[^}]*max-height/.test(daCss) ? ok : fail)(
+      "【288】数据授权页单独加高（640 / 84vh），三张卡 + 底栏一屏看全"
+    );
+    (/\.da-icon\s*\{/.test(daCss) && /\.da-state\.is-on\s*\{/.test(daCss) ? ok : fail)(
+      "【288】卡片有图标胶囊与状态胶囊（未授权 / 已授权）"
+    );
+    const panelCss = daCss.slice(0, Math.max(0, daCss.indexOf(".vault-confirm-backdrop")));
+    (!/#[0-9a-fA-F]{3,8}\b/.test(panelCss) ? ok : fail)(
+      "【288】面板样式只用语义变量（无写死色值 —— 浅色 / 深色 / 曜石 / 壁纸都跟得上）"
+    );
+  }
 }

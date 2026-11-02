@@ -116,33 +116,54 @@ export function DataAccessPanel({ threadId, onClose }: { threadId: string; onClo
             : "当前还没有会话：先发一条消息，再回来授权。"}
         </p>
 
-        {ROWS.map((row) => {
-          const Icon = row.icon;
-          const grant = grants[row.module];
-          return (
-            <section className="da-row" key={row.module}>
-              <div className="da-row-head">
-                <Icon size={14} />
-                <strong>{row.label}</strong>
-                <span className={`da-state${grant.read || grant.write ? " is-on" : ""}`}>
-                  {grant.read || grant.write ? "已授权" : "未授权"}
-                </span>
-              </div>
-              <div className="da-switches">
-                <label className="da-switch">
-                  <ToggleSwitch checked={grant.read} disabled={busy || !threadId} onChange={(next) => void toggle(row.module, "read", next)} label={`${row.label} 读取`} />
-                  <span><b>读取</b><em>{row.readHint}</em></span>
-                </label>
-                <label className="da-switch">
-                  <ToggleSwitch checked={grant.write} disabled={busy || !threadId} onChange={(next) => void toggle(row.module, "write", next)} label={`${row.label} 写入`} />
-                  <span><b>写入</b><em>{row.writeHint}</em></span>
-                </label>
-              </div>
-            </section>
-          );
-        })}
+        <div className="da-scroll">
+          {ROWS.map((row) => {
+            const Icon = row.icon;
+            const grant = grants[row.module];
+            const anyOn = grant.read || grant.write;
+            return (
+              <section className={`da-row${anyOn ? " is-on" : ""}`} key={row.module}>
+                <div className="da-row-head">
+                  <span className="da-icon"><Icon size={15} /></span>
+                  <strong>{row.label}</strong>
+                  <span className={`da-state${anyOn ? " is-on" : ""}`}>
+                    {anyOn ? "已授权" : "未授权"}
+                  </span>
+                </div>
+                <div className="da-switches">
+                  {(["read", "write"] as const).map((level) => {
+                    const on = grant[level];
+                    const title = level === "read" ? "读取" : "写入";
+                    const hint = level === "read" ? row.readHint : row.writeHint;
+                    const blocked = busy || !threadId;
+                    return (
+                      <div
+                        key={level}
+                        className="da-switch"
+                        /* 整行可点（开关自己会 stopPropagation，不会点一次翻两次） */
+                        onClick={() => { if (!blocked) void toggle(row.module, level, !on); }}
+                      >
+                        <span className="da-switch-copy">
+                          <b>{title}</b>
+                          <em>{hint}</em>
+                        </span>
+                        <ToggleSwitch
+                          checked={on}
+                          disabled={blocked}
+                          onChange={(next) => void toggle(row.module, level, next)}
+                          label={`${row.label} ${title}`}
+                          className="da-toggle"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
 
-        {error ? <p className="da-error">{error}</p> : null}
+          {error ? <p className="da-error">{error}</p> : null}
+        </div>
 
         <div className="da-footer">
           <span className="da-count">已开启 {enabledCount} / 6 项</span>

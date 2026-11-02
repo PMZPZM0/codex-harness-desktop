@@ -6,51 +6,101 @@
  * ⛔ 原生 button 一律 `appearance:none`（暗色下浏览器按"浅色 UA"画，会变成浅灰底，见 08/13/18 惯例）。
  */
 
+/* 数据授权页信息密度高（3 张卡 + 底栏）：弹窗比通用 rail 面板再高一档，三张卡尽量一屏看全 */
+.composer-rail-panel[data-panel="data-access"] { max-height: min(640px, 84vh); }
+
 /* ── 授权面板（复用 rail 面板的居中弹窗壳，这里只管内部排布）────────────── */
-/* 内容量固定（3 行 + 底栏），收紧一点才装得进 rail 弹窗的 520 高度 */
-.da-body { display: flex; flex-direction: column; gap: 8px; }
+/* 11-02 用户截图：「开关放右边，界面做好看一点」——
+   ⇒ 每个模块一张卡：图标胶囊 + 名称 + 右侧状态胶囊；权限行「说明在左、开关在右」，
+     行间虚线分隔，整行可点。只读语义变量，浅色/深色/曜石与壁纸都自动跟。 */
+.da-body { display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+/* 卡片列表自己滚，底栏永远露着（用户截图里「全部关闭 / 已开启 N 项」不能被裁到视口外） */
+.da-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow: auto;
+  padding-right: 2px;
+}
 .da-lead {
-  margin: 0;
+  margin: 0 2px;
   font-size: 11.5px;
-  line-height: 1.45;
+  line-height: 1.5;
   color: var(--muted);
 }
 .da-row {
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  padding: 7px 11px;
-  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 12px 4px;
+  background: var(--panel);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 4%, transparent);
+  transition: border-color var(--dur-ui) ease, box-shadow var(--dur-ui) ease;
 }
+.da-row:hover { border-color: color-mix(in srgb, var(--line-strong) 70%, var(--accent) 30%); }
+.da-row.is-on { border-color: color-mix(in srgb, var(--accent) 34%, var(--line)); }
 .da-row-head {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: 8px;
+  min-height: 26px;
+  font-size: 12.5px;
   color: var(--text);
 }
-.da-row-head svg { color: var(--muted); }
-.da-state { margin-left: auto; font-size: 11px; color: var(--faint); }
-.da-state.is-on { color: var(--accent); }
-.da-switches { display: flex; flex-direction: column; gap: 5px; margin-top: 6px; }
-.da-switch {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  cursor: pointer;
+.da-icon {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 11%, transparent);
+  color: var(--accent);
 }
-.da-switch > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.da-switch b { font-size: 11.5px; font-weight: 600; color: var(--text); }
-.da-switch em { font-style: normal; font-size: 11px; line-height: 1.4; color: var(--muted); }
-.da-error { margin: 0; font-size: 12px; color: var(--red); }
-/* ⛔ 粘在滚动区底部：内容再多也不会被弹窗底边裁掉（实测过 footer 溢出 47px 不可见） */
-.da-footer {
-  position: sticky;
-  bottom: 0;
+.da-row-head strong { font-size: 12.5px; font-weight: 600; }
+.da-state {
+  margin-left: auto;
+  padding: 2px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--faint);
+}
+.da-state.is-on {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 32%, transparent);
+  background: var(--accent-soft);
+}
+.da-switches { display: flex; flex-direction: column; margin-top: 2px; }
+.da-switch {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: auto;
-  padding: 6px 0 2px;
+  gap: 12px;
+  padding: 8px 2px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.da-switch + .da-switch { border-top: 1px dashed var(--line-soft); }
+.da-switch:hover .da-switch-copy b { color: var(--accent); }
+.da-switch-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.da-switch-copy b { font-size: 11.5px; font-weight: 600; color: var(--text); transition: color var(--dur-ui) ease; }
+.da-switch-copy em { font-style: normal; font-size: 11px; line-height: 1.45; color: var(--muted); }
+/* ⛔ 开关固定在行尾：说明文字再长也不许把它挤到左边 */
+.da-toggle { flex: none; }
+.da-error { margin: 0; font-size: 12px; color: var(--red); }
+/* ⛔ 底栏固定在滚动区外（不再 sticky 在内容末尾）：内容再多也始终露着 */
+.da-footer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 2px 0;
+  border-top: 1px solid var(--line-soft);
   background: var(--panel);
 }
 .da-count { font-size: 11.5px; color: var(--faint); }
