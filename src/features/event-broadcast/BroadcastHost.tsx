@@ -264,22 +264,34 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
   const half = POD_SIZE / 2;
   /* 气泡朝**聊天区内侧**滑出（贴左边就往右弹，贴右边就往左弹） */
   const bubble = (() => {
-    /* ⛔ 用户令：「宽度与输入框对齐，可展示更长的内容，超出输入框宽度时自动换行」——
-       横幅宽度直接取聊天区可用宽（两侧留 12px），钳进 [320, 560]：
-       太窄长消息会被截三行，再宽就没法和输入框对齐了。 */
-    const width = stage.composerWidth
+    /* 11-02 用户令：「跟着播报出文字，自适应多长，最长就是跟输入框一样长」——
+       宽度不再写死，改 `width: max-content` + `maxWidth = 输入框宽`：
+       文字一边打出来，气泡一边变长；到输入框宽度就换行、变高。 */
+    const composerWidth = stage.composerWidth
       ? Math.round(stage.composerWidth)
       : Math.max(320, Math.min(560, stage.right - stage.left - 24));
     if (activeEdge === "left") {
-      return { left: point.x + half + 10, top: point.y - 30, width, origin: "left" as const };
+      const left = point.x + half + 10;
+      return {
+        position: { left, top: point.y - 30 },
+        maxWidth: Math.max(180, Math.min(composerWidth, stage.right - left - 8)),
+        origin: "left" as const,
+      };
     }
     if (activeEdge === "right") {
-      return { left: point.x - half - 10 - width, top: point.y - 30, width, origin: "right" as const };
+      const right = Math.max(8, Math.round(window.innerWidth - (point.x - half - 10)));
+      return {
+        position: { right, top: point.y - 30 },
+        maxWidth: Math.max(180, Math.min(composerWidth, window.innerWidth - right - stage.left - 8)),
+        origin: "right" as const,
+      };
     }
-    if (activeEdge === "top") {
-      return { left: Math.max(stage.left + 8, Math.min(point.x - width / 2, stage.right - width - 8)), top: point.y + half + 10, width, origin: "top" as const };
-    }
-    return { left: Math.max(stage.left + 8, Math.min(point.x - width / 2, stage.right - width - 8)), top: point.y - half - 10 - 96, width, origin: "bottom" as const };
+    const left = Math.max(stage.left + 8, Math.min(point.x - composerWidth / 2, stage.right - composerWidth - 8));
+    return {
+      position: { left, top: activeEdge === "top" ? point.y + half + 10 : point.y - half - 10 - 96 },
+      maxWidth: composerWidth,
+      origin: activeEdge === "top" ? ("top" as const) : ("bottom" as const),
+    };
   })();
 
   /* ⛔ 收纳态判定：class 与图标选择**必须同源**。
@@ -362,7 +374,7 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
       {voice.active && !snap.open ? (
         <div
           className={`bc-bubble kind-voice is-${bubble.origin}`}
-          style={{ left: Math.round(bubble.left), top: Math.round(bubble.top), width: bubble.width }}
+          style={{ ...bubble.position, maxWidth: bubble.maxWidth }}
           role="status"
           aria-live="polite"
         >
@@ -389,7 +401,7 @@ export function BroadcastHost({ threadId }: { threadId?: string }) {
       ) : snap.announcing && !snap.open && announcingMeta && AnnouncingIcon ? (
         <div
           className={`bc-bubble kind-${snap.announcing.kind} is-${bubble.origin}`}
-          style={{ left: Math.round(bubble.left), top: Math.round(bubble.top), width: bubble.width }}
+          style={{ ...bubble.position, maxWidth: bubble.maxWidth }}
           role="status"
           aria-live="polite"
         >

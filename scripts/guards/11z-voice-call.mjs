@@ -684,6 +684,10 @@ ok(/body:has\(\.media-preview-backdrop:not\(\.is-mini\)\) \.bc-anchor,\s*body:ha
   "播报图标/横幅/面板不压视频与音乐播放组件（全屏预览三件套都隐藏，迷你播放器时降到它下面）");
 ok(/body:has\(\.modal-backdrop\) \.bc-anchor,\s*body:has\(\.modal-backdrop\) \.bc-bubble,\s*body:has\(\.modal-backdrop\) \.bc-panel\s*\{\s*display:\s*none/.test(broadcastCss),
   "设置等模态打开时播报图标/横幅/面板整体隐藏（横幅与面板不是 anchor 的子节点，不能只藏图标）");
+/* 11-02 用户：「跟着播报出文字自适应多长，最长跟输入框一样长」。 */
+ok(/width:\s*max-content/.test(broadcastCss) && /maxWidth:\s*bubble\.maxWidth/.test(broadcastHost)
+  && /composerWidth/.test(broadcastHost) && !/width:\s*bubble\.width/.test(broadcastHost),
+  "播报横幅宽度跟随文字自适应，上限与输入框同宽");
 ok(/playedKeys/.test(typedText) && /playKey=\{/.test(broadcastPanel),
   "逐字动画只在该条第一次出现时播（⛔ 开合面板会重挂载 ⇒ 整屏历史再敲一遍，用户实测「每次点开都播放一次」）");
 

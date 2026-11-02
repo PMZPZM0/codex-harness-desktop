@@ -214,6 +214,9 @@ body:has(.media-preview-backdrop.is-mini) .bc-panel { z-index: 69; }
 .bc-bubble {
   position: fixed;
   z-index: 881;
+  /* 11-02 用户：跟随播报文字自适应长度（上限由行内 maxWidth = 输入框宽度控）。 */
+  width: max-content;
+  max-width: min(560px, 80vw);
   display: flex;
   align-items: flex-start;
   gap: 9px;
