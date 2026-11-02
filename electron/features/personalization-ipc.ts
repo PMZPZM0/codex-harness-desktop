@@ -32,7 +32,7 @@ export const personalizationFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("personalization: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("personalization:read", async () => readPersonalization());
-    ipcHost.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown; frontendDesignStyle?: unknown; frontendDesignNotes?: unknown; softwareDevStyle?: unknown; softwareDevNotes?: unknown; appArchitectureStyle?: unknown; appArchitectureNotes?: unknown }) => {
+    ipcHost.handle("personalization:save", async (_event, input: { nickname?: unknown; customInstructions?: unknown; frontendDesignStyle?: unknown; frontendDesignNotes?: unknown; frontendDesignEnabled?: unknown; softwareDevStyle?: unknown; softwareDevNotes?: unknown; softwareDevEnabled?: unknown; appArchitectureStyle?: unknown; appArchitectureNotes?: unknown; appArchitectureEnabled?: unknown }) => {
       const config = await writePersonalization(input);
       await applyPersonalizationToAgentsMd(config, codexHome);
       void refreshSkillDiscipline();
