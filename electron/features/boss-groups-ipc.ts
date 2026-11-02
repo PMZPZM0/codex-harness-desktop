@@ -16,6 +16,7 @@ import type { IpcHost } from "../ipc-host";
 import { bossStore } from "../boss-groups/store";
 import { addTaskForBoss, browserStatus, createGroupForBoss, deleteGroupForBoss, dispatchTask, memberForBoss, pinForBoss, poolForBossIpc, postToBoss, reconcileRunningTasks, refreshMemberScopesForSupervisor, reviewTask, sayToGroup, setBossEventSink, statusForBoss, tickAll, watchBossReplies, watchMemberSettlements } from "../boss-groups/runner";
 import { setSessionAliasChangeHook } from "../session-alias";
+import { refreshChildScopesForSupervisor } from "../session-scope";
 import { normalizeEscalateChoice, recordReview, resolveEscalation } from "../boss-groups/state";
 import { backfillFromGroups, clearBossMemory, listBossSessions, registerBossSession, renameBossSession, unregisterBossSession } from "../boss-groups/session-registry";
 import { broadcastCodexEvent } from "./window-bus";
@@ -341,8 +342,12 @@ export const bossGroupsFeature = defineFeature<null>({
        ⇒ 挂引擎事件监听：回合结束按 turnId 反查任务并结算（重启后依然有效）。 */
     watchMemberSettlements();
 
-    /* ⛔ 11-03：中枢改名后，成员会话的权威身份块要跟着重写（「上级：笔名」不能停在旧名）。 */
-    setSessionAliasChangeHook((threadId) => { void refreshMemberScopesForSupervisor(threadId).catch(() => undefined); });
+    /* ⛔ 11-03：中枢改名后，成员会话的权威身份块要跟着重写（「上级：笔名」不能停在旧名）。
+       群成员由 runner 的专用块负责；普通被派活子会话（专家/子智能体/团队成员）走通用块。 */
+    setSessionAliasChangeHook((threadId) => {
+      void refreshMemberScopesForSupervisor(threadId).catch(() => undefined);
+      void refreshChildScopesForSupervisor(threadId).catch(() => undefined);
+    });
 
     /* ⛔ 启动对账：把上次没结算完的**残留** running 任务与引擎真相对齐
        （回合早结束 ⇒ 补结算；引擎里没这一回合 ⇒ 静默标失败并释放成员）。

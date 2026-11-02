@@ -209,7 +209,8 @@ export async function runDelegatedTask(input: {
     const baseRead: any = await server.request("config/read", {}).catch(() => null);
     const baseInstructions = String(baseRead?.config?.developer_instructions ?? "");
     const block = delegateScopeBlock({ kind: target.kind, name: displayName, origin, supervisor: supervisorLabel });
-    const merged = baseInstructions ? `${baseInstructions}\n\n---\n\n${block}` : block;
+    // ⛔ 身份块放在 base 前面：后面的全局目录再长，也不能盖过「你的上级是谁」。
+    const merged = baseInstructions ? `${block}\n\n---\n\n${baseInstructions}` : block;
     await server.request("thread/settings/update", {
       threadId,
       collaborationMode: { mode: "default", settings: { model: effectiveModel, developer_instructions: merged } },

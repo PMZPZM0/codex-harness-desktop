@@ -373,6 +373,10 @@ export const codexFeature = defineFeature<null>({
           void import("../boss-groups/runner")
             .then(({ refreshMemberScopeForThread }) => refreshMemberScopeForThread(String(r.thread.id)))
             .catch(() => undefined);
+          /* ⛔ 普通被派活会话（专家 / 子智能体 / 团队成员）同样有上级：打开时按当前笔名重写。 */
+          void import("../session-scope")
+            .then(({ refreshSupervisorScopeForThread }) => refreshSupervisorScopeForThread(String(r.thread.id)))
+            .catch(() => undefined);
           /* 文件变更报告**重播**（10-06 夜二改）：本线程的存量报告按原事件形态重发 ——
              重启/切回会话后「已更改 N 个文件」卡与收尾冻结的编辑行仍在（渲染层收件零改动）。
              失败静默：重播只是锦上添花，不影响 resume 本身。 */

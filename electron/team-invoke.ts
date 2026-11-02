@@ -17,6 +17,7 @@ import { bridgeDial } from "./main";
 import { ensureProjectAgentsMd } from "./project-conventions";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
+import { refreshSupervisorScopeForThread } from "./session-scope";
 import { HARNESS_PROVIDER_ID } from "./provider-id";
 import { shouldBindHarness } from "./thread-provider";
 import { readCustomModel, originSessionModel } from "./main/01-model-catalog";
@@ -122,6 +123,8 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
   /* ★ 10-31 用户令：成员会话也要有笔名、也知道自己归哪个主管（= 本团主理人会话）。 */
   await ensureSessionAlias(memberThreadId, String(input.leadThreadId ?? "")).catch(() => undefined);
   const memberSupervisor = await supervisorLabelOf(memberThreadId).catch(() => "");
+  /* ⛔ 11-03：普通被调度会话也要有会话级「直接上级」，不能只写在首条任务里（会被历史淹没）。 */
+  await refreshSupervisorScopeForThread(memberThreadId).catch(() => false);
 
   /* 主理人 → 成员这条路径同样要补记忆（09-23）。工作区用显式 cwd；拿不到就只注入 L0 用户档案。
      ⛔ 必须排在 `beginRun` **之前**：beginRun 会广播 started（点亮成员头像 + 自动弹成员工作窗），

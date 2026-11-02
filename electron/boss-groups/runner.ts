@@ -21,6 +21,7 @@ import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from ".
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
+import { refreshAllSupervisorScopes } from "../session-scope";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { engineActiveTurnIds, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
@@ -372,6 +373,8 @@ export function watchMemberSettlements(): void {
       void reconcileRunningTasks().catch(() => undefined);
       /* ⛔ 11-03：旧成员会话也要知道真实上级（只修新建的 = 截图里那条历史会话永远答错）。 */
       void refreshGroupMemberScopes().catch(() => undefined);
+      /* 普通被派活会话（专家 / 子智能体 / 团队成员）同样有上级：启动时一并补齐。 */
+      void refreshAllSupervisorScopes().catch(() => undefined);
       return;
     }
     if (event?.kind !== "notification" || event.method !== "turn/completed") return;
@@ -517,13 +520,16 @@ function groupMemberScopeBlock(group: BossGroup, member: GroupMember, supervisor
 
 /** 把权威身份块写进成员会话的会话级 developer_instructions（base 在前会被盖掉，所以块放最前）。 */
 async function applyGroupMemberScope(group: BossGroup, member: GroupMember, threadId: string, supervisor: string, model: string): Promise<void> {
-  const baseRead: any = await server.request("config/read", {}).catch(() => null);
+  const baseRead = await server.request("config/read", {}).catch(() => null) as { config?: { developer_instructions?: string } } | null;
   const base = String(baseRead?.config?.developer_instructions ?? "");
   const block = groupMemberScopeBlock(group, member, supervisor);
   const merged = base ? `${block}\n\n---\n\n${base}` : block;
+  /* ⛔ thread/settings/update 必填 model（实测 "missing field `model`"）：成员线程复用时
+     运行时可还没加载 ⇒ 退到全局激活模型，别让身份块静默写不进去。 */
+  const effectiveModel = model || String((await readCustomModel().catch(() => null))?.model ?? "");
   await server.request("thread/settings/update", {
     threadId,
-    collaborationMode: { mode: "default", settings: { ...(model ? { model } : {}), developer_instructions: merged } },
+    collaborationMode: { mode: "default", settings: { ...(effectiveModel ? { model: effectiveModel } : {}), developer_instructions: merged } },
   }).catch(() => undefined);
 }
 
