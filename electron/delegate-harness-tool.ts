@@ -96,10 +96,12 @@ export async function handleDelegateHarnessToolCall(input: {
   const isDelegated = Boolean(found)
     || Boolean(await delegateRegistry.infoOf(threadId).catch(() => null))
     || Boolean(teamRunStore.teamOfThread(threadId));
-  if (!isDelegated) {
-    reply("能力调用失败：该会话不是被调度 / 团队会话，无权使用宿主能力网关。", false);
-    return true;
-  }
+  /* ⛔⛔ 11-02 用户令（原话：「harness_tools 一下就限制了很多，放开，不要限制」）：
+     **撤掉身份硬闸**，普通对话会话同样可以使用宿主能力网关。
+     ⛔ 安全边界说明：网关能力（文件读写/命令/系统操作）从此对模型在**所有会话**可达，
+     真正的约束回到下面的执行端（路径可信校验、命令白名单等），而不是"先挡住调用者"。
+     保留 isDelegated 的计算：后面工作目录兜底仍要按它区分被委派会话。 */
+  void isDelegated;
   /* ⛔ 工作目录兜底（10-10）：被委派会话原来只登记在角色表里，`threadCwd` 是空的 ——
      而网关里的 `knowledge_search` 等能力要靠它定位**项目级**资源。缺了会让这类调用
      直接失败（"无法确定工作目录"）。这里用角色表里的 workspace 补登记（同 delegation 建会话时
