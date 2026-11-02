@@ -118,6 +118,8 @@ header .status{width:8px;height:8px;flex:none;margin-left:8px;border-radius:50%;
 .run-steps .step{padding:2px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .run-steps .step-files{white-space:pre-line;word-break:break-all;max-height:120px;overflow:auto}
 .run-steps .step-notice{color:#8a6d1f;background:#fdf6e0;border-radius:6px;padding:3px 6px;white-space:normal;overflow:visible;text-overflow:clip}
+.run-steps .step-wait{color:#8a4b00;background:#fff2d8;border:1px solid #f0c674;border-radius:8px;padding:8px 10px;font-weight:600;display:block;white-space:normal;overflow:visible;line-height:1.5}
+html[data-theme="dark"] .run-steps .step-wait{color:#f3c879;background:#3a2f18;border-color:#6a5320}
 .ask-card{margin:6px 0;padding:8px;border:1px solid #e6d9a8;background:#fffdf3;border-radius:10px;display:flex;flex-direction:column;gap:6px}
 .ask-q{font-size:12.5px;color:#6a5a1f;line-height:1.5;white-space:pre-wrap}
 .ask-opts{display:flex;flex-wrap:wrap;gap:6px}
@@ -1741,7 +1743,12 @@ async function pollLoop() {
         }
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "notice") {
-        // 审批 / 询问：手机端没有交互，明确让用户去电脑上点
+        /* ⛔⛔ 11-02 用户实测「手机上一直显示等待你的确认、卡住」：
+           审批（引擎原生 require_escalated 等）在手机端**没有任何交互**，原来只把文案
+           追加进步骤流，混在一堆步骤里完全看不出"球在等谁"，用户以为卡死。
+           这里改成一条**醒目的等待卡**：写清「需要你在电脑上确认」，并给一个
+           「我已在电脑确认」的按钮去重新拉一次状态（不改变权限边界：
+           ⛔ 手机端不代用户批准工具执行，那是权限放大，需产品口径确认）。 */
         hideThinking();
         setRunning(true);
         if (!stepBox) {
@@ -1750,8 +1757,8 @@ async function pollLoop() {
           list.appendChild(stepBox);
         }
         const notice = document.createElement("div");
-        notice.className = "step step-notice";
-        notice.textContent = event.text;
+        notice.className = "step step-notice step-wait";
+        notice.textContent = "⚠️ 需要你在电脑上确认：" + String(event.text || "");
         stepBox.appendChild(notice);
         list.scrollTop = list.scrollHeight;
       } else if (event.kind === "ask") {
