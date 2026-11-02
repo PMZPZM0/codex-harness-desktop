@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent } from "react";
 import { AlertTriangle, Box, ExternalLink, FolderOpen, Loader2, Maximize, Maximize2, Minimize2, Music2, Pause, PictureInPicture2, Play, Repeat, RotateCcw, RotateCw, Volume2, VolumeX, X } from "lucide-react";
+import { AppSelect } from "../../components/AppSelect";
 import { collectMediaPaths, isHlsSource, isRemoteMediaSource, mediaDisplaySrc, mediaKindOf, type MediaKind } from "../../lib/media-kind.mjs";
 import { openMediaPreview, registerMediaPreview, resolveFilePath, type MediaPreviewTarget } from "../../lib/ui-channels";
 import { recordMediaPlayback } from "../../lib/media-playback-store.mjs";
@@ -164,9 +165,7 @@ function VideoStage({ source, title, poster, autoPlay }: { source: string; title
         <div className="media-video-tools">
           <label className="media-video-rate" title="播放速度">
             倍速
-            <select value={rate} onChange={(event) => setRate(Number(event.target.value))} aria-label="播放速度">
-              {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
-            </select>
+            <AppSelect value={String(rate)} onChange={(value) => setRate(Number(value))} options={RATE_OPTIONS} ariaLabel="播放速度" className="media-video-rate-select" />
           </label>
           {pipSupported ? (
             <button type="button" className="media-video-tool" onClick={togglePip} title="画中画（浮到最前，不挡操作）" aria-label="画中画">
@@ -326,9 +325,7 @@ export function AudioPlayer({ source, title, autoPlay, compact = false, poster }
           <button type="button" className="media-audio-iconbtn" title="后退 15 秒" aria-label="后退 15 秒" onClick={() => skip(-15)}><RotateCcw size={14} /></button>
           <button type="button" className="media-audio-iconbtn" title="前进 15 秒" aria-label="前进 15 秒" onClick={() => skip(15)}><RotateCw size={14} /></button>
           <button type="button" className={`media-audio-iconbtn${loop ? " is-on" : ""}`} title={loop ? "取消循环" : "循环播放"} aria-label="循环播放" onClick={() => setLoop((value) => !value)}><Repeat size={14} /></button>
-          <select className="media-audio-rate" value={rate} onChange={(event) => setRate(Number(event.target.value))} aria-label="播放速度" title="播放速度">
-            {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => <option key={value} value={value}>{value}×</option>)}
-          </select>
+          <AppSelect className="media-audio-rate" value={String(rate)} onChange={(value) => setRate(Number(value))} options={RATE_OPTIONS} ariaLabel="播放速度" title="播放速度" />
           {!compact ? (
             <div className="media-audio-volume">
               <button type="button" className="media-audio-iconbtn" title={muted ? "取消静音" : "静音"} onClick={toggleMute}>
@@ -398,6 +395,8 @@ function ModelStage({ source, title }: { source: string; title: string }) {
 }
 
 /* ── 弹窗 / 桥 ────────────────────────────────────────────────────────────── */
+
+const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({ value: String(value), label: `${value}×` }));
 
 export function MediaPreviewModal({ target, onClose }: { target: MediaPreviewTarget; onClose: () => void }) {
   const source = target.source;

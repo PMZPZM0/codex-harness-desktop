@@ -128,10 +128,10 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
             occupation,
             /* ⛔ 11-01：专业领域来自档案的 about（不是本地缓存的 field）—— 原来只认缓存，
                所以选人格/存过之后重进必空。 */
-            field: String((cfg as any).about || "").trim() || (p.field && p.field !== occupation ? p.field : ""),
+            field: String(cfg.about || "").trim() || (p.field && p.field !== occupation ? p.field : ""),
             hobby: cfg.interests || p.hobby,
             /* ⛔ 11-01：自我介绍来自档案的 userContext —— 同上，以前压根没读。 */
-            bio: String((cfg as any).userContext || "").trim() || p.bio,
+            bio: String(cfg.userContext || "").trim() || p.bio,
             habit: cfg.habits || p.habit,
           };
         });

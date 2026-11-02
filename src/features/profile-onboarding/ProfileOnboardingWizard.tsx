@@ -227,7 +227,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
         ...ASSISTANT_PERSONAS,
         ...BUILT_IN_SOULS.map((soul) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug })),
       ];
-      const selectedAssistant = mergedAssistants.find((item: any) => item.id === assistantPersonaId) ?? mergedAssistants[0];
+      const selectedAssistant = mergedAssistants.find((item) => item.id === assistantPersonaId) ?? mergedAssistants[0];
       const fields = selected ? userPersonaFields(selected.id) : null;
       const finalOccupation = occupation.trim() || fields?.occupation || "";
       const interestText = [...interests, customInterest.trim()].filter(Boolean).join("、");
@@ -274,8 +274,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
       setOpen(false);
       onApplied?.(saved as Config);
       onNotice?.("配置已保存，下一条消息起生效");
-    } catch (err: any) {
-      setError(String(err?.message ?? err ?? "保存失败，请重试"));
+    } catch (err) {
+      setError(String(err instanceof Error ? err.message : err ?? "保存失败，请重试"));
     } finally {
       setSaving(false);
     }

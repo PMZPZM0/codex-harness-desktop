@@ -299,6 +299,9 @@ export function OpenfilmCard() {
             )}
             {desktop?.supported && desktop.installed.installed && (
               <>
+                {/* ⛔ 11-02 守卫【23】要求这段**用户可见**文案（重构时被移进注释就丢了）：
+                    卸载只做引导，绝不代删 /Applications 或 Program Files。 */}
+                <span className="runtime-hint">卸载引导：只告诉你去系统里怎么删，不会替你删系统目录</span>
                 <button type="button" className="runtime-install" disabled={desktopBusy} onClick={() => void desktopAction("reveal")}>打开安装位置</button>
                 <button type="button" className="runtime-install danger-lite" disabled={desktopBusy} onClick={() => void desktopAction("uninstall")}>卸载引导</button>
               </>

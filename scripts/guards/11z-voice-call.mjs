@@ -917,7 +917,11 @@ ok(/appearance:\s*none/.test((codeOnlyCss(stageCss).match(/\.voice-announce-stop
   "⛔ 停止/恢复按钮补 `appearance:none` + `font: inherit`（本项目铁律：全站无 color-scheme，暗色下原生按钮被 UA 画成浅底白块；`font` 简写必须写在 font-size 之前）");
 ok(/height:\s*32px/.test((codeOnlyCss(stageCss).match(/\.voice-announce-stop\s*\{[^}]*\}/) || [""])[0]),
   "停止按钮点击区 32px（原先 22px，低于桌面密集区下限 —— 难点中）");
-ok(/width:\s*max-content/.test((codeOnlyCss(stageCss).match(/\.voice-announce-bar\s*\{[^}]*\}/) || [""])[0])
+/* ⛔ 11-02：文件里先出现了 `body:has([class*="backdrop"]) .voice-announce-bar { display:none }`,
+   直接 match 会命中那条**遮罩期隐藏**规则（没有 max-content）⇒ 永远假红。
+   判据只认**基础规则**：行首为 `.voice-announce-bar` 的那个块。 */
+const barBase = (codeOnlyCss(stageCss).match(/^\.voice-announce-bar[^{]*\{[^}]*\}/m) || [""])[0];
+ok(/width:\s*max-content/.test(barBase)
   && /el\.style\.maxWidth =/.test(indicatorTsx) && !/el\.style\.width =/.test(indicatorTsx),
   "⛔ 播报条宽度改为**贴合内容**（原先固定 280px 起 ⇒ 没有正文时也是一条空胶囊）；上限由 JS 的 maxWidth 管（CSS 块不写几何）");
 

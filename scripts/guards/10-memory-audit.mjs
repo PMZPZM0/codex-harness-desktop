@@ -275,7 +275,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (pick && pick.trigger === "watermark" && pick.dates.length === 3 ? ok : fail)(`【104】水位触发取最老一半（实际 ${pick?.trigger} / ${pick?.dates?.length} 天）`);
     const res = await inst.distill(ws, async () => "## 核心\n- 结论：约定 A\n\n## 纪要\n- 阶段纪要：做了 B\n", true);
     (res.ok ? ok : fail)(`【104】蒸馏真跑成功（${res.reason ?? "ok"}）`);
-    const expectRollup = `rollups/${day(5).slice(0, 7)}.md`;   // 月卷取「那批日志里最新一天」的月份
+    /* ⛔ 11-02 修正：水位触发取的是**最老一半**（6 篇里 3 篇 = day(0..2)），
+       月卷月份应取这批里**最新那天** = day(2)，而不是全部日志的最新 day(5)。
+       两者只在跨月时不同 —— 今天正好 11-02，旧写法算出 2026-11，实际落 2026-10 ⇒ 假红。 */
+    const expectRollup = `rollups/${day(2).slice(0, 7)}.md`;
     (res.rollup === expectRollup && existsSync(join(memDir, "rollups", expectRollup.replace("rollups/", ""))) ? ok : fail)(`【104】L5 月度卷宗真落盘（${res.rollup}）`);
     (readFileSync(join(memDir, "project", "MEMORY.md"), "utf8").includes("约定 A") ? ok : fail)("【104】L1 项目宪法写入蒸馏「核心」段（project/MEMORY.md）");
     (pick && existsSync(join(memDir, "archive", `${pick.dates[0]}.md`)) ? ok : fail)("【104】L6 冷存档拿到原文（移动而非删除）");

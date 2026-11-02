@@ -861,7 +861,7 @@ export async function run() {
 {
 {
   const main81 = readMainSource();
-  (/function applyWindowChrome\(dark: boolean\)/.test(main81) ? ok : fail)(
+  (/function applyWindowChrome\(dark: boolean(?:[,\)])/.test(main81) ? ok : fail)(
     "【81】存在 applyWindowChrome（主题 → 窗口原生外观的唯一入口）"
   );
   // 09-21 主进程按域拆分：窗口集合已收敛到 electron/features/window-bus（allBusWindows() =

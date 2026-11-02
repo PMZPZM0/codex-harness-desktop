@@ -744,8 +744,8 @@ export interface Bag {
   capabilityError: string;
   setCapabilityError: React.Dispatch<React.SetStateAction<string>>;
   refreshCapabilities: () => void;
-  installDevRuntime: (id: string) => Promise<void>;
-  uninstallDevRuntime: (id: string) => Promise<void>;
+  installDevRuntime: (id: string) => Promise<boolean>;
+  uninstallDevRuntime: (id: string) => Promise<boolean>;
   cancelDevRuntime: (id: string) => Promise<void>;
   runtimeUninstalling: string | null;
   setRuntimeUninstalling: React.Dispatch<React.SetStateAction<string | null>>;

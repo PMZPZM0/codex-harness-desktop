@@ -181,7 +181,10 @@ ok(/装到哪：.*mingw\b/.test(data?.mingw ?? "") && /g\+\+\.exe/.test(data?.mi
 const kbVerifyAt = rt.indexOf("assertInstallVerified(id, spec);");
 const kbStart = rt.lastIndexOf('if (id === "kb-embedding")', kbVerifyAt);
 const kbSlice = kbStart >= 0 && kbVerifyAt > kbStart ? codeOnlyTs(rt.slice(kbStart, kbVerifyAt)) : "";
-ok(kbSlice.length > 0 && !/done:\s*true/.test(kbSlice),
+/* ⛔ 11-02：切片里还包含**取消**分支的 `{cancelled:true, done:true}` —— 那是清界面用的,
+   不是「安装完成」。判据先剔掉取消事件再查 done:true，否则合法取消会被误判成假成功（假红）。 */
+const kbSliceNoCancel = kbSlice.replace(/cancelled:\s*true[^\n]*/g, "");
+ok(kbSliceNoCancel.length > 0 && !/done:\s*true/.test(kbSliceNoCancel),
   "kb-embedding 分支在**复核之前**不许发 done:true 的「安装完成」（否则复核失败时先绿条后报错 —— 还是假成功）");
 ok(!/TOOLS_ROOT="\$\{|TOOLS_ROOT=\\"/.test(rt) && /若脚本要求指定工具目录/.test(rt),
   "备用方案里的命令**不是** POSIX 的 `VAR=\"x\" cmd` 写法（那是给 Windows 机器用的提示词，cmd/PowerShell 跑不了）");

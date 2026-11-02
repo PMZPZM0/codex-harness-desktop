@@ -316,7 +316,9 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
   ok(/saveSettings\(\{ mirror: "auto" \}\)/.test(card) && /saveSettings\(\{ mirror: "official" \}\)/.test(card),
     "下载源可切（国内镜像优先 / 仅官方）");
   ok(/status\.attribution\.home/.test(card), "界面地址取自 status.attribution（⛔ 不写死 URL）");
-  ok(/window\.codex\.openfilmStudioOpen\(/.test(card) && /status\.studio\.alive/.test(card),
+  /* ⛔ 11-02：卡片改用可选链 `status?.studio.alive`（重构后 status 可能为 undefined），
+   原来的正则只认 `status.studio.alive` ⇒ 假红。意图不变：连接状态取自 status.studio.alive。 */
+  ok(/window\.codex\.openfilmStudioOpen\(/.test(card) && /status\??\.studio\.alive/.test(card),
     "卡片有「打开 / 连接 Studio」并显示连接状态");
 
   const devtools = code("src/features/settings-devtools/DevtoolsSettingsSection.tsx");

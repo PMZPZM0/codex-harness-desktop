@@ -20,7 +20,6 @@ import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
 import { RuntimeToolsPanel } from "./RuntimeToolsPanel";
-import { MediaPlayerCard } from "./MediaPlayerCard";
 import { ToolsHealthPanel } from "./ToolsHealthPanel";
 import { CapabilityChainPanel } from "./CapabilityChainPanel";
 import { PhoneHarnessCard } from "./PhoneHarnessCard";
