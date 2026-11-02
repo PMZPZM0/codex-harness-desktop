@@ -302,8 +302,10 @@ export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
           做法：六张姿态图（站立/欢呼/难过/奔跑/工作/审阅）放进 <code>scripts/pet-art/&lt;名字&gt;/</code>，
           加 <code>pet-meta.json</code>，运行 <code>python scripts/gen-pet-animation-set.py &lt;名字&gt;</code>。
           完整教程见仓库 <code>docs/PET-MAKING.md</code>。<br />
-          <b>③ GIF / 动图包（最省事）</b>：<code>pet.json</code> 里写 <code>"gif": "pet.gif"</code>（一张循环动图映射全部状态），
-          或 <code>"gifSet"</code> 给每个状态一张 GIF / 动画 WebP；可选 <code>"gifStillSet"</code> 提供静帧（减少动效偏好时使用）。
+          <b>③ 动图包（最省事，推荐动画 WebP）</b>：<code>pet.json</code> 里写 <code>"webp": "pet.webp"</code>
+          （一张循环动图映射全部状态，也兼容 <code>"gif"</code>），或 <code>"webpSet"</code> / <code>"gifSet"</code>
+          给每个状态一张动画 WebP / GIF；可选 <code>"webpStillSet"</code> / <code>"gifStillSet"</code> 提供静帧
+          （减少动效偏好时使用）。WebP 是真透明、边缘干净、体积更小。
         </p>
       </section>
       </details>

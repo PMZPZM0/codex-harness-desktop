@@ -194,9 +194,9 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     "动画包/姿态切换走交叉淡入淡出（旧图在上淡出，不再硬切）");
   /* 11-02 用户令：GIF 宠物 —— pet.json 写 `gif`（一张循环）或 `gifSet`（每态一张），
      渲染层按状态切图 + 交叉淡化；GIF 缩略图在设置页也会动。 */
-  ok(/const gifSingle = typeof meta\.gif/.test(ipcSrc) && /const gifMeta = meta\.gifSet/.test(ipcSrc)
-    && /gifSet,/.test(ipcSrc) && /gifStillSet/.test(ipcSrc),
-    "GIF/动图宠物包：支持 pet.json 的 gif（单张映射全部状态）与 gifSet（每态一张，可选静帧）");
+  ok(/typeof meta\.webp === "string"/.test(ipcSrc) && /meta\.webpSet \?\? meta\.gifSet/.test(ipcSrc)
+    && /meta\.webpStillSet \?\? meta\.gifStillSet/.test(ipcSrc) && /gifSet,/.test(ipcSrc),
+    "动图宠物包：WebP 优先（webp / webpSet / webpStillSet），GIF 兼容写法保留");
   ok(/pkg\.gifSet\[effectiveState\]/.test(petFloatSrc) && /gifSrc \? gifSrc : animationSrc/.test(petFloatSrc)
     && /\(pkg\.animationSet \|\| pkg\.gifSet\) \?/.test(petFloatSrc),
     "动图包按状态切图并复用交叉淡化（减少动效时回落 gifStillSet）");

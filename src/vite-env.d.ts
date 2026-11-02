@@ -423,7 +423,7 @@ type PetPackage = {
   source: "builtin" | "user" | "codex" | "petdex";
   /** 30fps 动画包：每态一对动画 WebP + 静帧（存在时不使用 spritesheet） */
   animationSet?: Record<string, { animatedSrc: string; stillSrc: string }>;
-  /** GIF/动图包：每态一张动图（GIF/动画 WebP/APNG）；单张 `gif` 会映射全部状态 */
+  /** 动图包：每态一张动图（推荐动画 WebP，GIF/APNG 兼容）；单张 `webp`/`gif` 会映射全部状态 */
   gifSet?: Record<string, string>;
   gifStillSet?: Record<string, string>;
   /** 关节包（机器人宠物）：头像 → 调色板 → 九态姿态图（渲染层用 CSS 动作） */
