@@ -302,7 +302,23 @@ bag.scheduleSidebarRefresh = scheduleSidebarRefresh as typeof bag.scheduleSideba
          宿主侧给它们打了保留前缀（host:…）⇒ 这里按前缀过滤掉。
          ⛔ 引擎那边照收照发，投递链路与 FIFO 一概不动（过滤只发生在**显示层**）。 */
       const raw = result.data ?? [];
-      const visible = raw.filter((entry: any) => !isHostQueueItem(entry));
+      /* ⛔ 11-02 用户实测「两个排队消息一起出去」：引擎把排队消息**注入当前回合**后会先落一条
+         userMessage（还带同一个 clientUserMessageId），但队列列表不一定马上刷新 ⇒ 界面上同一条
+         消息既出现在对话里、又挂着「排队中」，看起来像一次发了两个。
+         ⇒ 已经以用户消息落地的条目立即从队列里剔除，并让引擎也删掉（防二次发送）。 */
+      const threadItems: any[] = ((bag.thread as any)?.turns ?? []).flatMap((turn: any) => turn?.items ?? []);
+      const injectedClientIds = new Set(
+        threadItems
+          .filter((item: any) => item?.type === "userMessage" && item?.clientUserMessageId)
+          .map((item: any) => String(item.clientUserMessageId)),
+      );
+      for (const entry of raw) {
+        const clientId = String((entry as any)?.clientUserMessageId ?? "");
+        if (!clientId || !injectedClientIds.has(clientId)) continue;
+        void window.codex.request("thread/queue/delete", { threadId, queuedSubmissionId: String(entry.id ?? "") }).catch(() => undefined);
+      }
+      const visible = raw.filter((entry: any) => !isHostQueueItem(entry)
+        && !(entry.clientUserMessageId && injectedClientIds.has(String(entry.clientUserMessageId))));
       /* ⛔⛔ 10-26 用户现场：「一启动应用，直接炸了，50多条队列」。
          引擎队列里的**看门狗刷屏提醒**（同一个任务反复报「已经 N 秒没有进展 / 已交活 N 分钟
          仍没有审查结论」）不删掉的话：① 面板一进来就几十条；② 引擎把它们**逐条当用户消息

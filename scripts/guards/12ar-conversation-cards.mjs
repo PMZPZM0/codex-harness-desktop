@@ -57,6 +57,17 @@ const slides = office.parsePptxSlides([{ name: "ppt/slides/slide2.xml", xml: "<p
 ok(slides.slides.length === 2 && slides.slides[0].title === "第一页" && slides.slides[0].lines[0] === "正文", "PPTX 按页排序并取标题/正文");
 ok(/isOfficePreviewExt\(realExt\)/.test(filePreviewSrc) && /<OfficePreview data=\{state\.data\}/.test(filePreviewSrc), "右栏 Office 文档走内嵌预览（不再统一退成二进制占位）");
 
+/* 11-02 用户「排队消息一下出去两个」：引擎把排队消息注入当前回合后会先落 userMessage，
+   队列列表还可能留着同一条 ⇒ 已落地的按 clientUserMessageId 从队列剔除并让引擎删掉；
+   自动启动按会话加锁，事件重复时不会并发启动队头。 */
+const queueSrc = read("src/features/app-state/parts/part04/03-seg/01-chat-search-file-tree.tsx");
+ok(/injectedClientIds/.test(queueSrc) && /thread\/queue\/delete/.test(queueSrc) && /injectedClientIds\.has\(String\(entry\.clientUserMessageId\)\)/.test(queueSrc),
+  "已落地的排队消息按 clientUserMessageId 从队列剔除（不再同一条消息显示两次）");
+const settleSrc = read("src/features/app-state/parts/part05/event-router/07-turn-completed-settle.tsx");
+ok(/queueAutoStartLocks/.test(settleSrc) && /queue-autostart-skipped-inflight/.test(settleSrc)
+  && /\.finally\(\(\) => \{\s*queueAutoStartLocks\.delete/.test(settleSrc),
+  "回合结束自动启动按会话加锁：同一时刻只启动一条队头（事件重复不会连发两条）");
+
 const codeSrc = read("src/features/shared/ToolCodeBlock.tsx");
 ok(/className="tool-code-copy"/.test(codeSrc) && /copyTextToClipboard\(text\)/.test(codeSrc)
   && /\.tool-code-copy\s*\{/.test(read("src/styles/03-messages-turns.css")),

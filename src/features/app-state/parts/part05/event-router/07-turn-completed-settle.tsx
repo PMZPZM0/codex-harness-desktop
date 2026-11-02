@@ -13,6 +13,10 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import { playNotifyTone } from "../../../../../lib/notify-sound";
 import type { Bag } from "../../bag-types";
 
+/* ⛔ 11-02 用户「排队消息一下出去两个」：turn 结束事件可能重复/连发，自动启动必须按会话加锁，
+   同一时刻只允许一条 queue/start 在飞（否则队头被并发启动，第二张卡也顺势被引擎带出去）。 */
+const queueAutoStartLocks = new Set<string>();
+
 export function handleEventRouter7(bag: Bag, params: any): boolean {
         bag.setSending(false);
         bag.setInterrupting(false);
@@ -111,7 +115,10 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
         let armedByAutoStart = false;
         if (wasManualStop) {
           bag.dbg("manual-stop-no-autostart", { threadId: params.threadId });
+        } else if (queueAutoStartLocks.has(params.threadId)) {
+          bag.dbg("queue-autostart-skipped-inflight", { threadId: params.threadId });
         } else {
+          queueAutoStartLocks.add(params.threadId);
           void window.codex.request("thread/queue/list", { threadId: params.threadId, limit: 1 }).then((result) => {
             const head = result?.data?.[0];
             if (!head) return undefined;
@@ -169,6 +176,8 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
             // 启动失败 ⇒ 那条消息不会出现，撤回意图（否则钉顶会去钉别的消息）；乐观气泡一并撤
             if (armedByAutoStart) { bag.disarmPinIntent("auto-start-fail"); bag.setOptimisticInput(null); }
             bag.showToast("队列启动失败", message);
+          }).finally(() => {
+            queueAutoStartLocks.delete(params.threadId);
           });
         }
         // 计划模式：方案回合正常结束 → 弹「开始执行」确认条；失败则静默复位（错误已 toast）
