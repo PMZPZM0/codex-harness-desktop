@@ -7,6 +7,7 @@
  * ⛔ 内容全部来自真实事件（office-activity）：没有数据就如实写"等待真实输出"，
  *    绝不编假日志/假页面。
  */
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import type { OfficeActivityEntry } from "./office-activity";
 import type { OfficeMemberState } from "./office-format";
@@ -44,6 +45,7 @@ export function OfficeInspector({
   activity,
   modeLabel,
   elapsedMs,
+  allowBrowserShot,
   onClose,
   onMouseEnter,
   onMouseLeave,
@@ -52,6 +54,8 @@ export function OfficeInspector({
   activity: OfficeActivityEntry | null;
   modeLabel: string;
   elapsedMs: number;
+  /** 只有「本会话」（= 应用内浏览器面板的主人）才允许截真图；外部 ego 浏览器截不到 */
+  allowBrowserShot?: boolean;
   onClose: () => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
@@ -61,6 +65,33 @@ export function OfficeInspector({
   const preview = activity?.preview ?? [];
   const title = KIND_LABEL[kind] ?? modeLabel ?? "待机";
   const seconds = elapsedMs >= 1000 ? Math.round(elapsedMs / 1000) : 0;
+  /* 第二步（真实截图镜像）：应用内浏览器的 <webview> 可以 capturePage；
+     外部 ego / Playwright 的页面不在应用进程里，capturePage 拿不到 ⇒ 只显示地址。
+     ⛔ 只在**地址对得上**时截图：否则会拿用户正在看的别的页面冒充成员的操作。 */
+  const [browserShot, setBrowserShot] = useState("");
+  useEffect(() => {
+    if (kind !== "browser" || !allowBrowserShot) { setBrowserShot(""); return; }
+    let disposed = false;
+    const hostOf = (value: string) => {
+      try { return new URL(value).host.toLowerCase(); } catch { return ""; }
+    };
+    const capture = async () => {
+      const wv = document.querySelector("webview") as unknown as { capturePage?: () => Promise<{ toDataURL?: () => string }>; getURL?: () => string } | null;
+      if (!wv?.capturePage) return;
+      const current = String(wv.getURL?.() ?? "");
+      const currentHost = hostOf(current);
+      const eventHost = hostOf(detail);
+      if (!currentHost || !eventHost || currentHost !== eventHost) { if (!disposed) setBrowserShot(""); return; }
+      try {
+        const image = await wv.capturePage();
+        const url = String(image?.toDataURL?.() ?? "");
+        if (!disposed && url) setBrowserShot(url);
+      } catch { /* guest 未就绪 / 已销毁：保持地址视图 */ }
+    };
+    void capture();
+    const timer = window.setInterval(() => void capture(), 2000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [kind, allowBrowserShot, detail]);
 
   return (
     <aside
@@ -83,10 +114,18 @@ export function OfficeInspector({
         {kind === "browser" ? (
           <div className="office-inspector-browser">
             <div className="office-inspector-url">{detail || "尚未拿到地址"}</div>
-            <div className="office-inspector-page">
-              <span /><span /><span />
-            </div>
-            <p className="office-inspector-note">地址来自成员的真实浏览器操作；页面画面待「真实截图镜像」接入后显示。</p>
+            {browserShot ? (
+              <img className="office-inspector-shot" src={browserShot} alt="应用内浏览器实时截图" />
+            ) : (
+              <div className="office-inspector-page">
+                <span /><span /><span />
+              </div>
+            )}
+            <p className="office-inspector-note">
+              {browserShot
+                ? "截图来自应用内浏览器（每 2 秒刷新一次；只在本会话打开同一页面时显示）。"
+                : "地址来自真实浏览器操作；外部 ego / Playwright 页面不在应用进程里，无法截图，仅显示地址。"}
+            </p>
           </div>
         ) : kind === "file-edit" || kind === "file-write" ? (
           <div className="office-inspector-editor">

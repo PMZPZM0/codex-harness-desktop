@@ -292,6 +292,17 @@
   padding: 6px 8px;
   word-break: break-all;
 }
+/* 应用内浏览器实时截图（外部 ego 浏览器拿不到，只显示地址） */
+.office-inspector-shot {
+  display: block;
+  width: 100%;
+  max-height: 190px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
 .office-inspector-page { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px dashed var(--line); border-radius: 8px; }
 .office-inspector-page span { display: block; height: 8px; border-radius: 4px; background: var(--panel-2); }
 .office-inspector-page span:nth-child(1) { width: 72%; }

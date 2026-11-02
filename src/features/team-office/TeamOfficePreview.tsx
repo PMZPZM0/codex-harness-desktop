@@ -459,6 +459,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
             activity={inspectActivity}
             modeLabel={inspectState?.event ? eventWordZhOf(inspectState.event.kind) : ""}
             elapsedMs={inspectState?.event?.elapsedMs ?? 0}
+            allowBrowserShot={Boolean(self?.threadId && inspectMember.threadId === self.threadId)}
             onClose={() => {
               if (inspectTimer.current) { window.clearTimeout(inspectTimer.current); inspectTimer.current = null; }
               setInspectId(null);

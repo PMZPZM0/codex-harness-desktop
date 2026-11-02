@@ -1469,15 +1469,21 @@ const CHECKS = [
     name: "🏢 办公室：悬停显示器弹放大屏（真实内容卡，11-02）",
     run: async (h) => {
       /* 用内置假团队打开办公室（officeProbe，只读诊断钩子），悬停第一块显示器：
-         放大卡应出现并显示该成员；移开自动收起。 */
+         放大卡应出现并显示该成员；移开自动收起。
+         ⛔ 先清掉残留的 officeProbe / 已开的办公室：多个 .office-overlay 同时在场时
+            `window.__officeSim` 与首个 `.office-pixel-canvas` 可能来自不同一间（坐标对不上 → target null）。 */
+      await h.eval(`localStorage.removeItem("officeProbe")`);
+      await h.eval(`(() => { document.querySelectorAll(".office-overlay-close").forEach((b) => b.click()); return true; })()`);
+      await wait(500);
       await h.eval(`localStorage.setItem("officeProbe", "1")`);
       await h.reload({ waitMs: 2300 });
-      await h.waitFor(`!!document.querySelector(".office-overlay")`, { label: "办公室浮层", timeoutMs: 20000 });
-      await h.waitFor(`!!window.__officeSim && !!window.__officeSeats`, { label: "办公室调试句柄", timeoutMs: 12000 });
+      await h.waitFor(`[...document.querySelectorAll(".office-overlay")].some((el) => (el.querySelector(".office-overlay-name")?.textContent || "").includes("诊断用团队"))`, { label: "诊断用办公室浮层", timeoutMs: 20000 });
+      await h.waitFor(`!!window.__officeSim && window.__officeSim.agents.length > 0 && !!window.__officeSeats`, { label: "办公室调试句柄与成员", timeoutMs: 12000 });
       await wait(900);
       const target = await h.eval(`(function(){
         const seats=window.__officeSeats, sim=window.__officeSim;
-        const canvas=document.querySelector(".office-pixel-canvas");
+        const overlay=[...document.querySelectorAll(".office-overlay")].find((el) => (el.querySelector(".office-overlay-name")?.textContent || "").includes("诊断用团队"));
+        const canvas=overlay && overlay.querySelector(".office-pixel-canvas");
         if(!seats||!sim||!canvas) return null;
         const agent=sim.agents[0]; if(!agent) return null;
         const seat=seats[agent.seatIndex], sc=seat&&seat.screen; if(!sc) return null;

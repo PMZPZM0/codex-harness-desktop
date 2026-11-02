@@ -612,6 +612,14 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
   ok(/\.office-inspector\s*\{[^}]*position:\s*absolute[^}]*top:\s*76px[^}]*right:\s*14px/.test(officeCss)
     && /\.office-inspector-code/.test(officeCss) && /\.office-inspector-code code\.is-add/.test(officeCss),
     "放大卡固定右上角（不跟随指针防抖动）+ diff 增删配色");
+  /* 第二步：真实截图镜像 = **应用内浏览器**可 capturePage；外部 ego 拿不到 ⇒ 只显示地址。 */
+  ok(/capturePage/.test(inspectorSrc) && /getURL\?\.\(\)/.test(inspectorSrc)
+    && /currentHost !== eventHost/.test(inspectorSrc) && /allowBrowserShot/.test(inspectorSrc),
+    "放大卡：应用内浏览器 capturePage 真截图，且**地址对得上**才展示（不拿别的页面冒充）");
+  ok(/allowBrowserShot=\{Boolean\(self\?\.threadId && inspectMember\.threadId === self\.threadId\)\}/.test(previewSrc),
+    "只有本会话工位启用内置浏览器截图（外部成员浏览器无截图权限）");
+  ok(/\.office-inspector-shot\s*\{[^}]*object-fit:\s*cover/.test(officeCss),
+    "截图缩略图样式在位（裁顶不出界）");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
