@@ -149,6 +149,36 @@ console.log(await page.snapshot());        // 每轮最后打印一次，作为�
 - SPA 抓数据优先 \`page.evaluate\` 取结构化数据，别整页 dump HTML。
 - 每轮把截图 / JSON 写到工作区绝对路径，不要把大段内容贴进对话。
 
+## 4.5 截图超时（15s 的 \`CdpRequestTimeoutError\`）
+
+\`page.screenshot()\` 在 ego 内部有**固定 15 秒**的 CDP 请求超时，没有可调参数。
+⛔ 不要原样重试：每失败一次就烧 15 秒，连着试三次一轮就废了。按下面顺序判一次，只判一次。
+
+**① 先看页面是不是被挡住（macOS 上最常见）**
+
+\`\`\`js
+console.log(await page.info());   // 看 visibilityState / 窗口是否 hidden
+\`\`\`
+
+macOS 上 Chromium 对**被完全遮挡或最小化**的窗口会停掉合成器，截图就一直等不到帧 ⇒ 到点超时。
+\`visibilityState\` 是 \`hidden\` 时：让用户把浏览器窗口露出来，或换 \`snapshot()\` 继续干活，别在截图上报错收工。
+
+**② 页面主线程卡住时，先停加载再截**
+
+\`\`\`js
+await page.cdp("Page.stopLoading");
+const path = await page.screenshot({ path: "/绝对路径/after-stop.png" });
+\`\`\`
+
+**③ 只是要信息，就别要图**：DOM 页用 \`snapshot()\` 拿可交互元素，比截图快两个数量级；
+只有 canvas / 富文本 / 地图这类没有 DOM 语义的界面才真的需要截图。
+
+**④ 以上都不行 ⇒ 如实报告，不要再试**：
+写明「截图在当前环境超时」+ 已试过哪几步 + 用 \`snapshot()\` 能拿到的信息，让用户决定。
+⛔ 不要为了"拿到一张图"反复重试同一个页面，也不要改去用别的浏览器通道绕（通道优先级见第 0 节）。
+
+**⑤ 判据汇总（本机实测，Windows / ego 0.6.2.5）**：空白页 84ms、example.com 968ms、bing.com 166ms。
+也就是说正常情况下截图是**秒级以内**；一旦慢到 15s，问题一定在「页面被遮挡 / 主线程卡死 / 尺寸异常」三者之一，不是网速。
 ## 5. ego 未安装时：browse-skills 默认浏览器回落
 
 如果 \`ego-browser\` 不存在或连不上，改用 **\`nuphus-call browser_*\`**（nuphus 的浏览器自动化 CLI，操作本机默认浏览器；\`nuphus-call\` 已在 PATH）：
