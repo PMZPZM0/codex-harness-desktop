@@ -499,6 +499,22 @@ if (state) {
     "对话框卡片宽度 ≥500px（⛔ 旧版约 400 ⇒ 用户骂「真小气」）");
   ok(/\.boss-dir-option\s*\{/.test(bossDirCss) && /\.boss-dir-option-body/.test(bossDirCss),
     "两个选项是**大选项卡**（图标 + 标题 + 说明），不是并排小按钮");
+  /* ⛔ 11-02 mac 实测截图：点「在软件所在盘自动新建」报 `mkdir '/指挥中枢项目-…'` ——
+     mac 没有盘符，`path.parse(execPath).root` 恒为 `/`（只读）⇒ 必然失败。
+     主进程改为「文稿 → 用户目录」兜底；文案也按平台分叉（Windows 保持原说法）。 */
+  ok(/isMacPlatform/.test(bossDirDlg) && /在「文稿」自动新建/.test(bossDirDlg) && /在软件所在盘自动新建/.test(bossDirDlg),
+    "mac 文案：显示「在文稿自动新建」（Windows 仍为「在软件所在盘自动新建」）");
+  const bossDiagSrc = codeOnly(read("electron/features/app-diagnostics.ts"));
+  ok(/bossProjectRoots\(\{ platform: process\.platform/.test(bossDiagSrc) && /src\/lib\/boss-project-dir\.mjs/.test(bossDiagSrc),
+    "主进程用 bossProjectRoots 按目标平台取自动新建根（⛔ 不再各写一份）");
+  const bossRoots = await import(new URL("../../src/lib/boss-project-dir.mjs", import.meta.url).href);
+  const winRoots = bossRoots.bossProjectRoots({ platform: "win32", execPath: "D:\\App\\x\\app.exe", home: "C:\\Users\\u" });
+  const macRoots = bossRoots.bossProjectRoots({ platform: "darwin", execPath: "/Applications/X.app/Contents/MacOS/X", home: "/Users/u" });
+  ok(winRoots.length === 1 && winRoots[0] === "D:\\"
+    && macRoots[0] === "/Users/u/Documents" && macRoots[1] === "/Users/u",
+    "真值表：win 落安装盘根；mac 落「文稿」并退用户目录（⛔ 不再 mkdir '/'）");
+  ok(/ipcErrorMessageOf\(error/.test(codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"))),
+    "新建失败原因去掉 IPC 三层壳（`[ERR_INVOKE_FAILED] … 通道 … Error invoking remote method`）");
   const bossSideSrc = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
   const bossBlock = bossSideSrc.slice(Math.max(0, bossSideSrc.indexOf("sidebar-quick-boss") - 2600), bossSideSrc.indexOf("sidebar-quick-boss") + 400);
   /* ⛔ 注释嵌套检测：**正则里不能出现块注释起始符**（那会把本守卫自己的注释提前闭合，

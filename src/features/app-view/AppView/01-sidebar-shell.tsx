@@ -15,6 +15,7 @@ import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
 import { useShortcuts } from "../../shortcuts";
 import { bindingMatches } from "../../../lib/shortcut-catalog.mjs";
 import { isMacPlatform } from "../../../lib/is-mac-platform";
+import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
 import {
   AlertTriangle,
   Archive,
@@ -261,9 +262,10 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     } catch (error) {
       /* ⛔ 不许再静默：失败要把原因写在弹窗里（"点了没反应"是最难自查的一类故障）。
          常见两种：① 主进程那条通道没有实现（invoke 到空 handler ⇒ 直接 reject）；
-                   ② 盘根不可写 / 权限被拦。 */
-      const message = error instanceof Error ? error.message : String(error ?? "");
-      setBossDirError(message || "自动新建失败，请手动选择项目地址");
+                   ② 盘根不可写 / 权限被拦。
+         ⛔ 11-02 mac 截图：`[ERR_INVOKE_FAILED] app:boss-project-dir: Error invoking remote method
+            …` 三层壳全糊在弹窗里 —— 统一用 ipcErrorMessageOf 只留最后的原因。 */
+      setBossDirError(ipcErrorMessageOf(error, "自动新建失败，请手动选择项目地址"));
     }
     finally { setBossDirBusy(false); }
   };

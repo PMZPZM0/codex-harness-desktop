@@ -18,6 +18,7 @@
  */
 import { createPortal } from "react-dom";
 import { FolderOpen, FolderPlus, X } from "lucide-react";
+import { isMacPlatform } from "../../lib/is-mac-platform";
 
 export type BossProjectDirChoice = "pick" | "auto" | "cancel";
 
@@ -36,6 +37,10 @@ export function BossProjectDirDialog({
   onChoose: (choice: BossProjectDirChoice) => void;
 }) {
   if (!open || typeof document === "undefined") return null;
+  /* ⛔ 11-02 mac 截图：点「在软件所在盘自动新建」报 `mkdir '/指挥中枢项目…'` ——
+     mac 没有盘符、根目录只读。主进程改为在「文稿」里建，文案必须跟着说清楚；
+     Windows 仍保持原来的"软件所在盘"（用户早已用惯 D:\… 那套目录）。 */
+  const mac = isMacPlatform();
   return createPortal(
     <div
       className="boss-dir-backdrop"
@@ -68,8 +73,12 @@ export function BossProjectDirDialog({
           <button type="button" className="boss-dir-option" onClick={() => onChoose("auto")} disabled={busy}>
             <span className="boss-dir-option-icon"><FolderPlus size={18} /></span>
             <span className="boss-dir-option-body">
-              <strong>在软件所在盘自动新建</strong>
-              <small>建一个专属目录（如 <code>指挥中枢项目-2026-10-25</code>），互不干扰。</small>
+              <strong>{mac ? "在「文稿」自动新建" : "在软件所在盘自动新建"}</strong>
+              <small>
+                {mac ? "在你的「文稿」里建一个专属目录（如 " : "建一个专属目录（如 "}
+                <code>指挥中枢项目-2026-10-25</code>
+                ），互不干扰。
+              </small>
             </span>
           </button>
         </div>
