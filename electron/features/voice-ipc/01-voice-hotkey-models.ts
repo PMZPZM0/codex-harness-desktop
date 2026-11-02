@@ -4,7 +4,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
-import { app, dialog, globalShortcut, shell, systemPreferences } from "electron";
+import { app, dialog, globalShortcut, shell, systemPreferences, webContents } from "electron";
 import { VoiceService } from "../../voice/voice-service";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { ensureEmotivoice, ensureKokoro, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
@@ -25,6 +25,9 @@ import { voiceService, voiceModelsRoot } from "../../runtime-refs";
      开机预热一次、每次 `voice:models-status`（渲染层探针/设置页都会调）顺带刷新即可。
    ⛔ 未知时按 **就绪** 处理（null → true）：宁可多写一段被剥掉的稿子，
      也别因为一次没探到就把正常用户的播报静音。 */
+/* ⛔ 11-02：当前通话由哪个 webContents 发起 —— 僵尸锁自愈的判据（见 voice:start）。 */
+let callOwnerWcId: number | null = null;
+
 let announceReadyCache: boolean | null = null;
 
 /** 供拼常驻指令同步读取（`?? true` 的语义见上）。 */
@@ -95,17 +98,40 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     return next;
   });
 
-  ipcHost.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation" }) => {
+  ipcHost.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation"; force?: boolean }) => {
     // ⛔ 全局互斥（09-13 用户要求）：语音通话是**全应用唯一**的（麦克风/ASR/TTS 线程只有一份），
     // 多窗口下每个窗口都渲染了自己的悬浮球——A 窗口通话中，B 窗口再点会被 svc()
     // 静默复用（`if (this.active) return ok`），把 B 的会话绑不上、音频还全喂给了 A 的通话。
     // 规则：同一会话重复 start = 恢复语义放行；不同会话 → 明确拒绝，前端据此把悬浮球置灰。
-    const status = svc().status();
     const requestedThread = String(threadId ?? "");
-    if (status.active && status.threadId && requestedThread && status.threadId !== requestedThread) {
-      return { ok: false, busy: true, error: "另一个窗口正在语音通话中，请先挂断那边的通话再试" };
+
+    /* ⛔⛔ 11-02 用户实测「通话根本打不开：voice:start 被互斥拦掉，提示另一个窗口正在通话」：
+       互斥只认 svc().status().active，而**没有任何地方记录"谁在通话"** —— 上一个窗口
+       关掉 / 渲染进程崩掉 / 异常退出时 active 留在 true、threadId 是旧会话 ⇒ 从此所有窗口
+       都被永久锁死，只能重启应用。
+       修法：① 记下发起 start 的 webContents.id；② 每次 start 先做**持有者存活判定**，
+       窗口已不存在就把僵尸态释放掉；③ 显式 force（用户在悬浮球上点了通话）时无条件接管。 */
+    const ownerAlive = callOwnerWcId != null && webContents.fromId(callOwnerWcId) != null;
+    const status = svc().status();
+    if (status.active && (options?.force === true || !ownerAlive)) {
+      await svc().stop().catch(() => undefined);
+      callOwnerWcId = null;
+    }
+
+    const live = svc().status();
+    if (live.active && live.threadId && requestedThread && live.threadId !== requestedThread) {
+      return {
+        ok: false,
+        busy: true,
+        error: `另一个窗口正在语音通话中（会话 ${String(live.threadId).slice(0, 8)}），请先挂断那边的通话再试`,
+        status: live,
+      };
     }
     const result = await svc().start({ threadId: requestedThread, mode: options?.mode });
+    if (result && (result as any).ok !== false) {
+      const senderId = Number((event as any)?.sender?.id ?? 0);
+      callOwnerWcId = senderId > 0 ? senderId : null;
+    }
     return { ...result, status: svc().status() };
   });
 
@@ -114,6 +140,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   ipcHost.handle("voice:endpoint-now", async () => svc().endpointNow());
   ipcHost.handle("voice:stop", async () => {
     await svc().stop();
+    callOwnerWcId = null;
     return { ok: true, status: svc().status() };
   });
 

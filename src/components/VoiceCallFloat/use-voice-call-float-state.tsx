@@ -820,16 +820,12 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
       setExpanded(true);
       return;
     }
-    // 跨窗口互斥：别的窗口通话中 → 明确提示（悬浮球平时已置灰，这里是竞态兜底：
-    // 刚置灰检查完、那边的通话恰好开始）
-    try {
-      const st = await window.codex.voiceStatus();
-      if (st?.active && st?.threadId && threadId && st.threadId !== threadId) {
-        setNotice("另一个窗口正在语音通话中，请先挂断那边的通话再试");
-        setExpanded(true);
-        return;
-      }
-    } catch { /* 查不到就按原流程走，主进程侧还有第二道拦截 */ }
+    /* ⛔⛔ 11-02 用户实测「通话根本打不开，提示另一个窗口正在通话」：
+       这里原来在**发 voice:start 之前**先查 voiceStatus，一旦 active 且会话不同就直接 return ——
+       而主进程的 active 可能是**僵尸态**（上个窗口关了/渲染进程崩了但没 stop），
+       ⇒ 悬浮球永远不进通话态、voice:start 根本没发出去、麦克风自然也不会启动。
+       现在把裁决权交回主进程（voice:start 内有持有者存活判定 + 僵尸自愈），
+       这里只负责：失败就把状态复位并如实提示（下面 catch 已经做了）。 */
     voiceModeRef.current = mode;
     setPhase("starting");
     prebufferRef.current = [];
@@ -1023,13 +1019,11 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
       draggedRef.current = false;
       return;
     }
-    // 跨窗口互斥：别的窗口通话中 → 置灰态，点了只提示不动手（09-13 用户要求：
-    // 「独立会话窗口只能有一个窗口用这个，开了一个另外一个就灰掉，挂掉之后再恢复」）
-    if (phaseRef.current === "idle" && busyElsewhere) {
-      setNotice("另一个窗口正在语音通话中，请先挂断那边的通话再试");
-      setExpanded(true);
-      return;
-    }
+    /* ⛔⛔ 11-02 用户实测「点了没反应」：这里原来在 idle 且 busyElsewhere 时**直接 return**，
+       连 voice:start 都不发。而 busyElsewhere 来自 voiceStatus 的 2 秒轮询，主进程那个 active
+       可能是僵尸态（上个窗口已关但没 stop）⇒ 悬浮球永远灰着、点了永远只弹提示、麦克风永不启动。
+       现在：置灰只作**视觉提示**，点击一律尝试发起；真正的互斥由主进程判断
+       （里面有持有者存活判定 + 僵尸自愈），被拒会在这里 catch 并如实提示。 */
     if (phaseRef.current === "active") setExpanded((prev) => !prev);
     else void startCall();
   };
