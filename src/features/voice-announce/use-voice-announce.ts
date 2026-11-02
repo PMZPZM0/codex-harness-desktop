@@ -328,10 +328,29 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     filterRef.current = null;
   }, []);
 
+  /* ⛔ 用户手势解锁（mac 自动播放策略）：首次 pointerdown / keydown 时把 ctx 拉起来，
+     之后再有播报就不会卡在 suspended。只挂一次、passive，不影响任何交互。 */
+  useEffect(() => {
+    const unlock = () => {
+      const ctx = ctxRef.current;
+      if (ctx && ctx.state === "suspended") void ctx.resume().catch(() => undefined);
+    };
+    window.addEventListener("pointerdown", unlock, { passive: true });
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
   const stopPlayback = useCallback((byUser = false) => {
     epochRef.current += 1;
     for (const source of queueRef.current) {
       try { source.stop(); } catch { /* 已经播完 */ }
+      /* ⛔ 11-02：停播要把看门狗一起清掉，否则定时器到点还会 publishStatus 一次
+         （表现为「停了之后状态又闪一下」）。 */
+      const watchdog = (source as any).__watchdog;
+      if (watchdog) { window.clearTimeout(watchdog); (source as any).__watchdog = null; }
     }
     queueRef.current = [];
     /* ⛔ 积压计数也清零（10-21）：停止/打断后链上残留的任务会因世代号不匹配空转返回，
@@ -401,6 +420,19 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     const ctx = ensureCtx();
     if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
     if (epoch !== epochRef.current) return;
+    /* ⛔⛔ 11-02 mac 实测「播报没有声音、过一会才不响」：
+       macOS 的 Chromium 自动播放策略比 Windows 严 —— 没有**用户手势**就创建的
+       AudioContext 会停在 suspended，resume() 也可能被拒。此时 source.start() 不推进时间、
+       onended **永不触发** ⇒ ① 一点声音都没有；② queue 里的 source 永不清空，播报条卡在
+       「在念」，直到某次超时清理才复位（用户看到的就是"过一会才不响"）。
+       这里做两件事：状态没真正跑起来就**如实放弃并清队**，别假装在播；真正开始播了再加
+       一条看门狗，按 buffer 时长兜底清理（onended 在 mac 上偶发丢）。 */
+    if (ctx.state !== "running") {
+      console.warn("[announce] AudioContext 未能运行（state=" + ctx.state + "）—— 放弃本次播报并清队");
+      queueRef.current = [];
+      publishStatus();
+      return;
+    }
     const buffer = ctx.createBuffer(1, samples.length, sampleRate);
     // copyToChannel 要求底层是 ArrayBuffer（跨 IPC 回来的可能是 ArrayBufferLike），拷一份最稳
     buffer.copyToChannel(new Float32Array(samples), 0);
@@ -415,10 +447,19 @@ export function useVoiceAnnounce(threadId: string = ""): void {
     (source as any).__endsAt = startAt + buffer.duration;
     (source as any).__text = text;
     queueRef.current.push(source);
-    source.onended = () => {
+    let settled = false;
+    const settle = () => {
+      if (settled) return;
+      settled = true;
+      const w = (source as any).__watchdog;
+      if (w) { window.clearTimeout(w); (source as any).__watchdog = null; }
       queueRef.current = queueRef.current.filter((item) => item !== source);
       publishStatus();
     };
+    source.onended = settle;
+    // 看门狗：buffer 时长 + 2s 兜底（mac 上 onended 偶发不回调，会导致队列永不清）
+    const watchdog = window.setTimeout(settle, Math.ceil(buffer.duration * 1000) + 2000);
+    (source as any).__watchdog = watchdog;
     source.start(startAt);
     publishStatus();
   }, [ensureCtx, publishStatus]);
