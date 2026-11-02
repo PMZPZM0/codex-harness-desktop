@@ -1889,3 +1889,29 @@ button.search-box:hover {
 .message-ruler .ruler-lens.is-scroll {
   mask-image: none;
 }
+
+/* ── CSV / TSV 右栏表格预览（11-02）──────────────────────────────────────── */
+.workspace-csv-preview { padding: 10px 12px; overflow: auto; height: 100%; box-sizing: border-box; }
+.workspace-csv-preview table { border-collapse: collapse; min-width: 100%; font-size: 11.5px; }
+.workspace-csv-preview th,
+.workspace-csv-preview td {
+  max-width: 260px;
+  padding: 5px 9px;
+  border: 1px solid var(--line-soft);
+  text-align: left;
+  vertical-align: top;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.workspace-csv-preview th {
+  position: sticky;
+  top: 0;
+  background: var(--panel-2);
+  color: var(--text);
+  font-weight: 600;
+  z-index: 1;
+}
+.workspace-csv-preview td { color: var(--muted); }
+.workspace-csv-preview tr:nth-child(even) td { background: color-mix(in srgb, var(--panel-2) 40%, transparent); }
+.workspace-csv-preview p { margin: 8px 0 0; color: var(--faint); font-size: 11px; }

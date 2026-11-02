@@ -22,7 +22,7 @@ import { resolveTeamMember, AVATAR_GRADIENTS, avatarToneOf } from "../../lib/ent
 import { formatDuration } from "../../lib/format-duration";
 import { PlanEditor } from "../../components/PlanEditor";
 import { ImagePreview } from "../preview";
-import { MediaResultCards } from "../media";
+import { FileResultCards, MediaResultCards } from "../media";
 import { Markdown } from "../markdown";
 import { InlineFileCards } from "../inline-cards";
 import { usePacketRevealText } from "../shared/use-packet-reveal-text";
@@ -32,6 +32,7 @@ import { bufferedToolRevealStarts } from "../../lib/buffered-tool-reveal-starts"
 import { ReasoningCard } from "../shared/ReasoningCard";
 import { skillOfItem, argSummary, pluginOfItem } from "../../lib/tool-display.mjs";
 import { stepOf } from "../../lib/step-note.mjs";
+import { webSearchResultsOf } from "../../lib/web-search-results.mjs";
 
 export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
@@ -139,6 +140,7 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
       >
         <ProgressiveToolPayload itemId={`${item.id}-payload`} text={String(item.progress || JSON.stringify(item.result ?? item.arguments ?? item.contentItems, null, 2) || "")} active={turnActive} />
         <MediaResultCards text={mediaText} />
+        <FileResultCards text={mediaText} />
       </ActionCard>
     );
   }
@@ -154,8 +156,30 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
   }
   if (item.type === "webSearch") {
     /* 10-22：查询词不是"地址"，它就是这次操作的对象 ⇒ 进折叠行（短目标）；⛔ 原来还把英文 status 摆表头 */
+    /* 11-02：引擎带回结果时出「搜索结果卡」（标题/站点/摘要，点击外链）；拿不到结果仍只显示一行。 */
+    const results = webSearchResultsOf(item);
     return (
-      <ActionCard icon={<Search size={13} />} verb="网页搜索" target={item.query ? <code>{item.query}</code> : undefined} status="done" />
+      <ActionCard
+        icon={<Search size={13} />}
+        verb="网页搜索"
+        target={item.query ? <code>{item.query}</code> : undefined}
+        info={results.length ? <span className="action-arg">{results.length} 条结果</span> : undefined}
+        status="done"
+      >
+        {results.length ? (
+          <ul className="web-search-results">
+            {results.map((result) => (
+              <li key={result.url}>
+                <button type="button" className="web-search-result" title={result.url} onClick={() => void window.codex.openExternal(result.url)}>
+                  <span className="web-search-result-title">{result.title}</span>
+                  <span className="web-search-result-host">{result.host}</span>
+                  {result.snippet ? <span className="web-search-result-snippet">{result.snippet}</span> : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </ActionCard>
     );
   }
   if (item.type === "collabAgentToolCall" || item.type === "subAgentActivity") {

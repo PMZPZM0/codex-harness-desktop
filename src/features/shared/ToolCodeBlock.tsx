@@ -1,5 +1,7 @@
 /** ToolCodeBlock（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
 import { memo, useMemo, useRef, useState, useCallback, useLayoutEffect } from "react";
+import { Check, Copy } from "lucide-react";
+import { copyTextToClipboard } from "../../lib/clipboard";
 import { useCodeSettings, codeFontSize } from "../../lib/code-settings";
 import { HIGHLIGHT_CACHE } from "../../lib/highlight-cache";
 import { makeCachedHighlightRenderer } from "../../lib/make-cached-highlight-renderer";
@@ -19,6 +21,20 @@ export const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revea
   maxHeight?: number;
 }) {
   const settings = useCodeSettings();
+  /* 11-02 用户：工具输出/命令/diff 也要能一键复制（正文 Markdown 代码块早就有复制键）。 */
+  const [copied, setCopied] = useState(false);
+  const copy = useCallback(() => {
+    if (!text) return;
+    void copyTextToClipboard(text).then(() => {
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    }).catch(() => undefined);
+  }, [text]);
+  const copyButton = text ? (
+    <button type="button" className="tool-code-copy" title={copied ? "已复制" : "复制内容"} aria-label="复制代码或输出" onClick={copy}>
+      {copied ? <Check size={12} /> : <Copy size={12} />}
+    </button>
+  ) : null;
   // 大 diff 走行级虚拟化（09-14，学 WorkBuddy 的 tool-diff 行虚拟化）：
   // 一个几千行的 diff 真建几千个行节点 + 语法高亮，是「切会话/展开编辑卡就卡」的主要来源。
   // 只在「diff + 行数够多 + 未开启折行（行高恒定）+ 不在流式追字」时启用——流水追字期间文本还在长，
@@ -44,6 +60,7 @@ export const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revea
         <div ref={wrapRef} className="tool-code-pre code-highlight" data-lazy-highlight="pending">
           <div style={{ ...styles.pre, fontSize: codeFontSize(settings.fontScale), fontFamily: codeFontStack(settings.font), lineHeight: 1.55, maxHeight, margin: 0, overflow: "auto" }}><code style={styles.code}>{text || " "}</code></div>
         </div>
+        {copyButton}
       </div>
     );
   }
@@ -71,6 +88,7 @@ export const ToolCodeBlock = memo(function ToolCodeBlock({ language, text, revea
           >{text || " "}</SyntaxHighlighter>
         )}
       {revealing ? <span className="packet-stream-cursor tool-code-cursor" aria-hidden /> : null}
+      {copyButton}
     </div>
   );
 });

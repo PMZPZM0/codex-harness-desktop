@@ -24,6 +24,7 @@ import { resolveExistingFile } from "../../../lib/path-fallback.mjs";
 import { lookupKnownFile } from "../../../lib/ui-channels";
 /* 错误文案统一去噪（10-30）：主进程抛的「文件不存在或不可读」不该被 [ERR_…] 三层包壳埋掉。 */
 import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
+import { delimiterOf, parseDelimited } from "../../../lib/csv-preview.mjs";
 
 type PreviewState = {
   status: "idle" | "loading" | "ok" | "error";
@@ -51,6 +52,21 @@ function looksBinary(bytes: Uint8Array): boolean {
   const limit = Math.min(bytes.length, 4096);
   for (let i = 0; i < limit; i += 1) if (bytes[i] === 0) return true;
   return false;
+}
+
+function CsvPreview({ text, ext }: { text: string; ext: string }) {
+  const { rows, truncated, cols } = useMemo(() => parseDelimited(text, delimiterOf(ext), 300, 40), [text, ext]);
+  if (!rows.length) return <div className="workspace-file-preview-empty"><strong>空表格</strong><span>文件里没有可显示的行。</span></div>;
+  const [head, ...body] = rows;
+  return (
+    <div className="workspace-csv-preview">
+      <table>
+        <thead><tr>{Array.from({ length: cols }, (_, i) => <th key={i}>{head[i] ?? ""}</th>)}</tr></thead>
+        <tbody>{body.map((row, r) => <tr key={r}>{Array.from({ length: cols }, (_, c) => <td key={c}>{row[c] ?? ""}</td>)}</tr>)}</tbody>
+      </table>
+      {truncated ? <p>只显示前 300 行 / 40 列，完整内容请用「在编辑器打开」。</p> : null}
+    </div>
+  );
 }
 
 function nameOf(path: string): string {
@@ -107,7 +123,8 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
     [codeSettings.theme],
   );
   const isMarkdown = /^mdx?$|^markdown$/i.test(state.language);
-  const usesCodeSurface = state.status === "ok" && state.kind === "text" && !isMarkdown;
+  const isDelimited = /^(csv|tsv)$/i.test(state.language);
+  const usesCodeSurface = state.status === "ok" && state.kind === "text" && !isMarkdown && !isDelimited;
   return (
     <div className="workspace-file-preview" data-testid="workspace-file-preview">
       <div className="workspace-file-preview-head">
@@ -167,6 +184,8 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
             <span>用系统默认应用打开它，或在上面的项目树里换一个文本 / 图片 / PDF 文件。</span>
             <button type="button" onClick={() => void window.codex.shellOpen?.(path)}><ExternalLink size={12} />默认应用打开</button>
           </div>
+        ) : isDelimited ? (
+          <CsvPreview text={state.content} ext={state.language} />
         ) : isMarkdown ? (
           <div className="workspace-file-preview-markdown markdown"><Markdown>{state.content}</Markdown></div>
         ) : (
