@@ -147,11 +147,46 @@ export const codexFeature = defineFeature<null>({
       if (method === "thread/resume") {
         const resumeThreadId = String((params as any)?.threadId ?? "");
         const resumeTools = (params as any)?.dynamicTools;
+        /* ⛔ 11-02：resume 没带 dynamicTools ⇒ 老会话工具面**永远不会升级**（引擎只读首行），
+           症状就是新工具报 not registered。这里至少留下证据，别静默。 */
+        if (resumeThreadId && !(Array.isArray(resumeTools) && resumeTools.length)) {
+          console.warn();
+        }
         if (resumeThreadId && Array.isArray(resumeTools) && resumeTools.length) {
           try {
             /* ⛔ 同步进去的是**最终工具面**：这里也要带 `step`，否则 resume 一次就把
                首行的工具面换回无 step 的旧形态（老会话 = 卡片永远没有标题）。 */
-            await syncToolSurfaceAsync(codexHome, resumeThreadId, withStepParam(resumeTools) as unknown[]);
+            /* ⛔⛔ 11-02 实测定案（用户报 Dynamic tool ... is not registered）：
+               resume 升级原来只拿**渲染层**那份工具面（buildDynamicTools），而主进程在
+               thread/start 还另外拼三批：MCP 连接器（cloud_kb__* / cos_mcp__*）、
+               OpenFilm 六个工具、影视（media_*）。用渲染层那份覆盖首行 = **把首行降级**，
+               于是这些工具在新会话能用、切一次会话就失效（首行里没了）。
+               修法：resume 时把同样的三批并回来再写首行。 */
+            const extras: any[] = [];
+            try {
+              const { listMcpDynamicTools, toDynamicTools } = await import("../mcp-bridge");
+              extras.push(...toDynamicTools(await listMcpDynamicTools()));
+            } catch (error: any) {
+              console.warn("[tool-surface] resume 合并 MCP 工具失败：", String(error?.message ?? error).slice(0, 160));
+            }
+            try {
+              const { buildOpenfilmTools } = await import("../openfilm/tools");
+              extras.push(...buildOpenfilmTools());
+            } catch (error: any) {
+              console.warn("[tool-surface] resume 合并 OpenFilm 工具失败：", String(error?.message ?? error).slice(0, 160));
+            }
+            try {
+              const { buildMediaTools } = await import("../media-tools");
+              extras.push(...buildMediaTools());
+            } catch (error: any) {
+              console.warn("[tool-surface] resume 合并影视工具失败：", String(error?.message ?? error).slice(0, 160));
+            }
+            const surface = withStepParam([...(resumeTools as any[]), ...extras]) as unknown[];
+            await syncToolSurfaceAsync(codexHome, resumeThreadId, surface);
+            console.log("[tool-surface] resume 升级 " + resumeThreadId.slice(0, 8) + " → " + String(surface.length) + " 个（宿主 " + String(resumeTools.length) + " + 主进程 " + String(extras.length) + "）");
+            /* 11-02 诊断（用户报 Dynamic tool ... is not registered）：把实际同步的数量打出来，
+               与 thread/start 注入的数量对照即可判定"首行没升级"还是"根本没注入"。 */
+            console.log();
           } catch (error: any) {
             console.warn("[tool-surface] 工具面同步失败（不影响 resume）：", String(error?.message ?? error).slice(0, 200));
           }
