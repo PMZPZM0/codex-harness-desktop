@@ -210,16 +210,18 @@ function promptFor(presets, fallback, style, notes, title, scope) {
   const id = normalize(presets, style, fallback);
   const preset = presets.find((item) => item.id === id);
   const custom = String(notes ?? "").trim();
+  /* 跟随项目 = 不额外注入规范；只有用户写了自定义内容时才注入。 */
+  if (id === "auto" && !custom) return "";
   const parts = [`Scope: ${scope}`];
-  if (preset?.spec) parts.push(preset.spec);
-  if (preset?.refs?.length) {
+  if (id !== "auto" && preset?.spec) parts.push(preset.spec);
+  if (id !== "auto" && preset?.refs?.length) {
     parts.push(
       "Reference docs: "
       + preset.refs.map((ref) => `${ref.name} — ${ref.url}`).join("; "),
     );
   }
   if (custom) parts.push("User notes:\n" + custom);
-  if (!parts.length) return "";
+  if (parts.length <= 1) return "";
   return `## ${title}\n\n${parts.join("\n\n")}`;
 }
 

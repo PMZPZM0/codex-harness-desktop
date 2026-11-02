@@ -13,6 +13,8 @@ import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./_ctx.mjs";
 import { buildDesignSkill } from "../../scripts/gen-design-skill.mjs";
+import { frontendDesignPrompt } from "../../src/lib/frontend-design-style.mjs";
+import { appArchitectureNormsPrompt, softwareDevNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 
 let checks = 0;
 let fails = 0;
@@ -195,6 +197,10 @@ ok(teamsNormSrc.includes("personalNormsBlock") && teamsNormSrc.includes("withPer
 ok(read("electron/team-invoke.ts").includes("personalNormsPrompt")
   && /User norms/.test(read("electron/team-invoke.ts")),
   "主理人调用成员（team_member_invoke）也带完整规范");
+const bossNormSrc = read("electron/boss-groups/runner.ts");
+ok(bossNormSrc.includes("personalNormsPrompt") && /memberPrompt\([^)]*userNorms/.test(bossNormSrc)
+  && /memberPrompt\([^)]*norms\)/.test(bossNormSrc),
+  "创世 boss 群成员会话也带完整规范（LLM 成员与 CLI 成员两条路径）");
 
 const pageNorm = read("src/components/PersonalizationPage.tsx");
 ok(pageNorm.includes("NormCard") && pageNorm.includes("SOFTWARE_DEV_NORMS") && pageNorm.includes("APP_ARCHITECTURE_NORMS")
@@ -217,6 +223,20 @@ ok(/softwareDevStyle[^\n]*softwareDevNotes[^\n]*softwareDevEnabled[^\n]*appArchi
   "manifest 的保存参数含两套工程规范字段与三个开关（生成物才会带上类型）");
 ok(read("src/styles/12-settings-skills.css").includes(".personalization-savebar"),
   "页面统一保存条样式在位（四类设置共用一个保存动作）");
+
+/* ── 真跑行为：默认不注入 / 关闭不注入 / 选中后有内容 ─────────────────── */
+ok(frontendDesignPrompt("auto", "") === ""
+  && softwareDevNormsPrompt("auto", "") === ""
+  && appArchitectureNormsPrompt("auto", "") === "",
+  "默认「跟随项目」三套规范都不注入（否则默认就占 AGENTS.md 与专家提示词）");
+ok(frontendDesignPrompt("warm", "", false) === ""
+  && softwareDevNormsPrompt("pragmatic", "", false) === ""
+  && appArchitectureNormsPrompt("layered", "", false) === "",
+  "关闭开关后前端 / 后端 / 架构规范都不注入（配置保留）");
+ok(frontendDesignPrompt("warm", "") !== ""
+  && softwareDevNormsPrompt("pragmatic", "") !== ""
+  && appArchitectureNormsPrompt("layered", "") !== "",
+  "选中风格后三套规范都有可注入内容");
 
 console.log(`\n【design】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

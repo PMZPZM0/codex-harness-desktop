@@ -267,7 +267,7 @@ export function PersonalizationPage({
         || engineeringNormsPrompt(next),
       );
       if (!check?.exists) onNotice("已保存，但引擎主目录还没生成——先去「模型」页配置一个供应商，个性化才会写入");
-      else if (check.inSync) onNotice(hasAny ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已清空个性化设置，AGENTS.md 已同步移除");
+      else if (check.inSync) onNotice(hasAny ? "个性化已写入 AGENTS.md 并重启引擎，下次对话生效" : "已保存：当前没有启用任何规范或自定义指令，AGENTS.md 仅保留基础指令");
       else onNotice("已保存，但引擎的 AGENTS.md 还没对上——点「重新校验」确认，或重启应用");
     } catch (error: any) {
       onNotice(`保存个性化失败：${error?.message ?? error}`);
@@ -397,7 +397,9 @@ export function PersonalizationPage({
         </details>
         <details className="frontend-style-prompt">
           <summary>查看将注入的提示词</summary>
-          <pre>{frontendDesignPrompt(frontendStyle, frontendNotes) || "跟随项目：不额外注入视觉方向，只按项目 DESIGN.md 与现有组件落地。"}</pre>
+          <pre>{frontendEnabled
+            ? (frontendDesignPrompt(frontendStyle, frontendNotes) || "跟随项目：不额外注入视觉方向，只按项目 DESIGN.md 与现有组件落地。")
+            : "已关闭：不会写入 AGENTS.md，也不会带给专家。"}</pre>
         </details>
         <div className="frontend-style-library">
           <span>实现时 Codex 会先查内置组件库，再按这套风格改造。</span>

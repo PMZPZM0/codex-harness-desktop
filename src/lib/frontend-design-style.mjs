@@ -250,9 +250,11 @@ export function frontendDesignPrompt(style, notes, enabled = true) {
   const id = normalizeFrontendDesignStyle(style);
   const preset = FRONTEND_DESIGN_STYLES.find((item) => item.id === id);
   const custom = String(notes ?? "").trim();
+  /* 跟随项目 = 不额外注入方向；只有用户写了自定义内容时才注入。 */
+  if (id === "auto" && !custom) return "";
   const parts = [];
   if (preset?.prompt) parts.push(preset.prompt);
-  if (preset?.spec) parts.push(`Design specification:\n${preset.spec}`);
+  if (id !== "auto" && preset?.spec) parts.push(`Design specification:\n${preset.spec}`);
   if (preset?.refs?.length) {
     parts.push(
       "Reference design docs (read their specs for patterns and states; do not copy brand assets): "

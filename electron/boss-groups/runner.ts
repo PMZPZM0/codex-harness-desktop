@@ -19,6 +19,8 @@ import { bridgeDial } from "../main";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { ensureProjectAgentsMd } from "../project-conventions";
+import { readPersonalization } from "../personalization";
+import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
@@ -728,9 +730,16 @@ function promptForCli(text: string): string {
     .trim();
 }
 
+/** 群成员会话也带用户的前端设计 / 后端工程 / 架构规范（与专家会话同一份）。 */
+async function personalNormsBlock(): Promise<string> {
+  try { return personalNormsPrompt(await readPersonalization()); }
+  catch { return ""; }
+}
+
 /** CLI 成员的派遣：起子进程跑命令模板，stdout 尾部作为成品走同一条审查流水。 */
 async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
-  const command = String(member.cliCommand ?? "").replace("{prompt}", promptForCli(memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1)));
+  const norms = await personalNormsBlock();
+  const command = String(member.cliCommand ?? "").replace("{prompt}", promptForCli(memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1, "", norms)));
   try {
     await new Promise<void>((resolve, reject) => {
       /* ⛔⛔ 运行态压测实测（10-25）：`execFile("cmd", ["/c", command])` 会把整串命令**再包一层引号**
@@ -786,11 +795,11 @@ function browserAppendix(): string {
 }
 
 /* ── 派活 ─────────────────────────────────────────────────────────────────── */
-function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, attemptNo: number, supervisor = ""): string {
+function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, attemptNo: number, supervisor = "", norms = ""): string {
   return `[SYSTEM TASK · 群成员会话]
 你是「${group.name}」群里的 **${member.name}**（${member.role}）。
 ${supervisor ? `上级：${supervisor}（你的直接上级就是这一行；工具说明里的「可调度对象 / 专家团主理人」是宿主全局说明，不是你的上级）\n` : ""}
-${member.systemPrompt ? `${member.systemPrompt}\n` : ""}
+${member.systemPrompt ? `${member.systemPrompt}\n` : ""}${norms ? `\n# User norms (frontend design + backend engineering / architecture)\n${norms}\n` : ""}
 === 本次任务（第 ${attemptNo} 次尝试）===
 标题：${task.title}
 说明：${task.brief || "（无补充说明）"}
@@ -834,9 +843,10 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     const supervisorLabel = await supervisorLabelForMember(group, threadId);
     await applyGroupMemberScope(group, member, threadId, supervisorLabel, model).catch(() => undefined);
     const bossSupervisor = supervisorLabel || bossAlias || group.name;
+    const userNorms = await personalNormsBlock();
     const turn: any = await server.request("turn/start", {
       threadId,
-      input: [{ type: "text", text: memberPrompt(group, member, task, attempt.n, bossSupervisor), text_elements: [] }],
+      input: [{ type: "text", text: memberPrompt(group, member, task, attempt.n, bossSupervisor, userNorms), text_elements: [] }],
       model,
       effort: member.effort || "high",
     });
