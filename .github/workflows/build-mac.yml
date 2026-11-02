@@ -40,6 +40,14 @@ jobs:
           ref: v0.3.3
           path: .test-tmp/nuphus-src
 
+      # 11-02：x64 那条作业每次都要**冷编** nuphus-mcp（实测 16.2 分钟，整条作业 30 分钟），
+      # arm64 不编引擎所以只要 7 分钟。加 Rust 构建缓存：命中后这一步降到 1~3 分钟。
+      - name: Cache Rust build (nuphus-mcp)
+        if: matrix.mac_target == 'x64'
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ".test-tmp/nuphus-src -> target"
+          key: ${{ runner.os }}-${{ matrix.mac_target }}-nuphus
       - name: Build native desktop engine (Intel)
         if: matrix.mac_target == 'x64'
         working-directory: .test-tmp/nuphus-src
