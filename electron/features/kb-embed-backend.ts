@@ -14,6 +14,12 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, toolchainEnv, toolsRoot } from "../toolchain";
+import { guardedFetch } from "../net-guard";
+
+/* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
+   ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
+   超时取本项目此处的语义值（120s），不要和默认 12s 混用。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 120000 });
 
 const PKG = "@huggingface/transformers";
 const MODEL_REPO = "Xenova/bge-small-zh-v1.5";
@@ -245,7 +251,7 @@ async function downloadToFile(url: string, dest: string, onTick: (bytes: number,
   const controller = new AbortController();
   const timer = setInterval(() => { if (shouldCancel?.()) controller.abort(); }, 300);
   const timeout = setTimeout(() => controller.abort(), 600_000);
-  const response = await fetch(url, { signal: controller.signal }).catch((error) => {
+  const response = await outboundFetch(url, { signal: controller.signal }).catch((error) => {
     if (shouldCancel?.()) throw CANCELED();
     throw error;
   });

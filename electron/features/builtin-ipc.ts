@@ -26,13 +26,19 @@ import { writeBuiltinPlugins, builtinPluginEnv } from "../main/09-agents-plugins
 import { server } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import { guardedFetch } from "../net-guard";
+
+/* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
+   ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
+   超时取本项目此处的语义值（130s），不要和默认 12s 混用。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 130000 });
 
 async function probeBuiltinModels(input: { kind: "image"; baseUrl: string; apiKey: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   const url = base + "/models";
   let response: Response;
   try {
-    response = await fetch(url, { headers: { Authorization: "Bearer " + (input.apiKey || ""), "Content-Type": "application/json" } });
+    response = await outboundFetch(url, { headers: { Authorization: "Bearer " + (input.apiKey || ""), "Content-Type": "application/json" } });
   } catch (error) {
     throw describeNetworkError(error, "检测");
   }
@@ -53,7 +59,7 @@ async function persistGeneratedImage(url: string, dirOverride?: string): Promise
     if (/^data:/i.test(url)) {
       await fs.writeFile(file, Buffer.from(url.slice(url.indexOf(",") + 1), "base64"));
     } else if (/^https?:/i.test(url)) {
-      const res = await fetch(url, { signal: AbortSignal.timeout(120_000) });
+      const res = await outboundFetch(url, { signal: AbortSignal.timeout(120_000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       await fs.writeFile(file, Buffer.from(await res.arrayBuffer()));
     } else {
@@ -73,7 +79,7 @@ export async function generateImageWith(input: { baseUrl: string; apiKey: string
   const endpoint = /\/images\/generations$/.test(base) ? base : base + "/images/generations";
   let response: Response;
   try {
-    response = await fetch(endpoint, {
+    response = await outboundFetch(endpoint, {
       method: "POST",
       headers: { Authorization: "Bearer " + input.apiKey, "Content-Type": "application/json" },
       // ⛔ size / negative_prompt 只在**显式给了**才带上：不同网关接受的字段名与取值差异很大，

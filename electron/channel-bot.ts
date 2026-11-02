@@ -9,6 +9,12 @@ import type { CodexEvent, CodexServer } from "./codex-server";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
 import { ensureProjectAgentsMd } from "./project-conventions";
+import { guardedFetch } from "./net-guard";
+
+/* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
+   ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
+   超时取本项目此处的语义值（20s），不要和默认 12s 混用。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 20000 });
 export type ChannelBotConfig = {
   enabled: boolean;
   host: "127.0.0.1" | "0.0.0.0";
@@ -251,7 +257,7 @@ export class ChannelBotService {
 
   private async sendFeishu(config: ChannelBotConfig, chatId: string, text: string) {
     const token = await this.getTenantToken(config);
-    const response = await fetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id", {
+    const response = await outboundFetch("https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=chat_id", {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify({ receive_id: chatId, msg_type: "text", content: JSON.stringify({ text: text.slice(0, 120_000) }) }),
@@ -264,7 +270,7 @@ export class ChannelBotService {
 
   private async getTenantToken(config: ChannelBotConfig, force = false) {
     if (!force && this.tenantToken && this.tenantToken.expiresAt > Date.now()) return this.tenantToken.value;
-    const response = await fetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
+    const response = await outboundFetch("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ app_id: config.appId, app_secret: config.appSecret }),

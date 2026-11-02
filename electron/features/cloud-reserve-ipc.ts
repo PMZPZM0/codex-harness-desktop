@@ -30,6 +30,12 @@ import { defineFeature } from "../context";
 import { accountsBase, activeCredential } from "../cloud-api";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, listLocalSessions } from "../cloud-sync";
 import type { IpcHost } from "../ipc-host";
+import { guardedFetch } from "../net-guard";
+
+/* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
+   ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
+   超时取本项目此处的语义值（12s），不要和默认 12s 混用。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 12000 });
 
 const CHANNELS = [
   "cloud:sync/status", "cloud:sync/push", "cloud:sync/pull", "cloud:sync/conflict/resolve",
@@ -183,7 +189,7 @@ export const cloudReserveFeature = defineFeature<null>({
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 4000);
-        const res = await fetch(`${ASSISTANT_UPDATE_BASE}/version.json?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" });
+        const res = await outboundFetch(`${ASSISTANT_UPDATE_BASE}/version.json?t=${Date.now()}`, { signal: controller.signal, cache: "no-store" });
         clearTimeout(timer);
         if (!res.ok) return { available: false, reason: `服务器 HTTP ${res.status}` };
         const meta = (await res.json()) as { version?: string; url?: string; notes?: string };

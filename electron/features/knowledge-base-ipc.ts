@@ -12,6 +12,12 @@ import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import { app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
+import { guardedFetch } from "../net-guard";
+
+/* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
+   ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
+   超时取本项目此处的语义值（60s），不要和默认 12s 混用。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 60000 });
 
 const KB_CHANNELS = ["kb:list", "kb:add-text", "kb:add-files", "kb:remove", "kb:search", "kb:read", "kb:embed-status", "kb:embed-install", "kb:embed-uninstall", "kb:backend-get", "kb:backend-set"];
 
@@ -52,7 +58,7 @@ function buildEmbedFn(secure: HostCaps["secure"] | null): ((texts: string[]) => 
     const key = cfg.encryptedKey && secure.isEncryptionAvailable() ? secure.decryptString(Buffer.from(cfg.encryptedKey, "base64")) : "";
     if (!key) throw new Error("no api key");
     const base = String(cfg.baseUrl).replace(/\/$/, "");
-    const response = await fetch(`${base}/embeddings`, {
+    const response = await outboundFetch(`${base}/embeddings`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({ model: (cfg as any).embeddingModel || cfg.model, input: texts }),

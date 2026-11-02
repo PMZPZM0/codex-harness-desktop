@@ -29,6 +29,12 @@ import { publicConnector, writeConnectors } from "../connector-store";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
+import { guardedFetch } from "../net-guard";
+
+/* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
+   ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
+   超时取本项目此处的语义值（30s），不要和默认 12s 混用。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 30000 });
 
 function sendOAuthEvent(payload: { templateId: string; phase: "waiting" | "authorized" | "failed"; message: string; authorizeUrl?: string }) {
   sendToWindow("connectors:oauth-event", payload);
@@ -120,9 +126,9 @@ async function exchangeOAuthToken(spec: ConnectorOAuthSpec, params: Record<strin
   const body = { ...(spec.tokenParams ?? {}), ...params };
   let response: Response;
   if (spec.tokenMethod === "POST") {
-    response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    response = await outboundFetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   } else {
-    response = await fetch(`${url}?${new URLSearchParams(body)}`);
+    response = await outboundFetch(`${url}?${new URLSearchParams(body)}`);
   }
   const data: any = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(`令牌接口返回 ${response.status}：${JSON.stringify(data)}`);

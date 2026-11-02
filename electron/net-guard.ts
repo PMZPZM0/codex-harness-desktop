@@ -19,6 +19,8 @@
  * ⛔ 只在**主进程**用；渲染层要走 net.fetch（受 CSP 与可信根约束）。
  */
 
+import { net } from "electron";
+
 type Inflight = { origin: string; promise: Promise<unknown> };
 
 const inflight = new Map<string, Promise<unknown>>();
@@ -88,8 +90,16 @@ export async function guardedFetch(
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
+      /* 调用方自带的 signal（长任务 / 外部取消）必须**叠加**而不是被覆盖：
+         AbortSignal.any 任一触发即中止（Node 22 支持）。 */
+      const callerSignal = init?.signal ?? null;
+      const signal = callerSignal ? AbortSignal.any([controller.signal, callerSignal]) : controller.signal;
       try {
-        const response = await fetch(input, { ...init, signal: controller.signal });
+        /* ⛔⛔ 关键：走 **Electron net（Chromium 网络栈）**，不是 Node 的 fetch。
+           Node 那条路才会经过 node::crypto::TLSWrap（崩溃点）；Chromium 的 TLS 实现是另一套，
+           没有这个 use-after-free。能拿到 net 就用 net，拿不到（极早期/测试环境）才回落。 */
+        const doFetch = (typeof net?.fetch === "function" ? net.fetch.bind(net) : fetch) as typeof fetch;
+        const response = await doFetch(input, { ...init, signal });
         markSuccess(origin);
         return response;
       } catch (error) {

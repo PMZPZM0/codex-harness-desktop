@@ -38,6 +38,13 @@ import { dirFingerprint, withRollback } from "./update-safety";
 import { bundledPython } from "./toolchain";
 import { PIP_COMMON_ARGS } from "./features/pip-sources";
 import { userSkillsDir } from "./main";
+import { guardedFetch } from "./net-guard";
+
+/* 11-02：自动更新检测的出站请求统一走守卫（Electron net 栈 + 同源串行 + 失败冷却）。
+   ⛔ 崩溃链路：控制台 → 自动更新扫描 → 镜像源超时 → 立刻重发新 TLS → Node TLSWrap use-after-free。
+   这些请求原本自带 AbortController，守卫会与之叠加（AbortSignal.any），不会吞掉取消。 */
+const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedFetch(input, init, { timeoutMs: 15_000 });
+
 
 export type UpdateAction = "updated" | "unchanged" | "failed" | "skipped";
 
@@ -103,7 +110,7 @@ async function fetchJsonThroughMirrors(urls: string[]): Promise<any> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20_000);
-      const response = await fetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
+      const response = await outboundFetch(url, { signal: controller.signal, headers: { accept: "application/json" } });
       clearTimeout(timer);
       if (!response.ok) { errors.push(`${url} → HTTP ${response.status}`); continue; }
       return await response.json();
@@ -139,7 +146,7 @@ async function pipLatestVersion(pkg: string, source: DownloadSourceSetting): Pro
       const url = `${index.replace(/\/$/, "")}/${encodeURIComponent(pkg)}/`;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 20_000);
-      const response = await fetch(url, { signal: controller.signal });
+      const response = await outboundFetch(url, { signal: controller.signal });
       clearTimeout(timer);
       if (!response.ok) { errors.push(`${index} → HTTP ${response.status}`); continue; }
       const html = await response.text();
@@ -215,7 +222,7 @@ async function updatePonytail(ctx: UpdateContext, tag: string): Promise<void> {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 120_000);
-      const response = await fetch(withPrefix(url, prefix), { signal: controller.signal });
+      const response = await outboundFetch(withPrefix(url, prefix), { signal: controller.signal });
       clearTimeout(timer);
       if (!response.ok) { errors.push(`${prefix || "直连"} → HTTP ${response.status}`); continue; }
       archive = Buffer.from(await response.arrayBuffer());
