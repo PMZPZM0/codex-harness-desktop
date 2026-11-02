@@ -273,6 +273,9 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
   const visibleMembers = members.slice(officePage * OFFICE_SEATS, (officePage + 1) * OFFICE_SEATS);
   /* ⛔ 每间办公室一份独立 sim（见 OfficeCanvas 的 officeSimFor）：切页不重置人物位置。 */
   const officeSimKey = `${teamId ?? "office"}:${officePage}`;
+  /* 换页 / 换团队时收起放大卡。⛔ 必须在 `if (!teamId) return null` **之前**：
+     放到早退之后会让 hook 数量随 teamId 变化（React #310：Rendered more hooks than …）。 */
+  useEffect(() => { setInspectId(null); }, [officeSimKey]);
 
   /** 点角色 → 该成员最近的会话（跑过才有；没跑过给出**明确提示**，⛔ 不静默）。 */
   const openMember = (memberId: string) => {
@@ -386,8 +389,6 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     : isGroupOffice
       ? "群里的人实时映射成工位 · 正在干活的敲键盘 · 点角色打开会话"
       : "调度出去的子会话会变成办公室里的人 · 点角色打开子会话";
-
-  useEffect(() => { setInspectId(null); }, [officeSimKey]);
 
   const inspectMember = inspectId ? visibleMembers.find((m) => m.id === inspectId) ?? null : null;
   const inspectState = inspectMember ? eventStateOf(inspectMember.id) : null;

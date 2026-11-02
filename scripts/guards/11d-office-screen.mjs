@@ -620,6 +620,11 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
     "只有本会话工位启用内置浏览器截图（外部成员浏览器无截图权限）");
   ok(/\.office-inspector-shot\s*\{[^}]*object-fit:\s*cover/.test(officeCss),
     "截图缩略图样式在位（裁顶不出界）");
+  /* ⛔ 11-02 用户实测「办公室预览进去就报错」：`if (!teamId) return null` 之后加了 useEffect
+     ⇒ teamId 从 null 变有值时 hook 数量变化（React #310）。早退之后**不许**再有任何 hook。 */
+  const afterGuard = previewSrc.slice(previewSrc.indexOf("if (!teamId) return null;"));
+  ok(afterGuard.length > 0 && !/use(?:State|Effect|Ref|Memo|Callback)\s*\(/.test(afterGuard),
+    "⛔ 早退之后不许再有 hook（否则 office 从 null 打开时 React #310 直接报错）");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
