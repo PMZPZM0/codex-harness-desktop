@@ -115,6 +115,8 @@ export const CHAIR_BACKREST = { dx: -30, dy: -30, w: 60, h: 64 } as const;
 /** 成员在办公室里的一条状态（宿主按引擎事件流归约后传入）。 */
 export type OfficeMemberState = {
   id: string;
+  /** 该成员真正的会话 id（专家团成员 id ≠ threadId）；放大屏按它取真实事件/输出 */
+  threadId?: string;
   name: string;
   /** 正在跑任务 ⇒ 坐工位敲键盘 */
   running: boolean;

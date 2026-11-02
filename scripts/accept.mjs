@@ -1464,6 +1464,51 @@ const CHECKS = [
       }
     },
   },
+  {
+    id: "office-inspector",
+    name: "🏢 办公室：悬停显示器弹放大屏（真实内容卡，11-02）",
+    run: async (h) => {
+      /* 用内置假团队打开办公室（officeProbe，只读诊断钩子），悬停第一块显示器：
+         放大卡应出现并显示该成员；移开自动收起。 */
+      await h.eval(`localStorage.setItem("officeProbe", "1")`);
+      await h.reload({ waitMs: 2300 });
+      await h.waitFor(`!!document.querySelector(".office-overlay")`, { label: "办公室浮层", timeoutMs: 20000 });
+      await h.waitFor(`!!window.__officeSim && !!window.__officeSeats`, { label: "办公室调试句柄", timeoutMs: 12000 });
+      await wait(900);
+      const target = await h.eval(`(function(){
+        const seats=window.__officeSeats, sim=window.__officeSim;
+        const canvas=document.querySelector(".office-pixel-canvas");
+        if(!seats||!sim||!canvas) return null;
+        const agent=sim.agents[0]; if(!agent) return null;
+        const seat=seats[agent.seatIndex], sc=seat&&seat.screen; if(!sc) return null;
+        const r=canvas.getBoundingClientRect();
+        return { name: agent.name,
+          cx: Math.round(r.left+(seat.x+sc.x+sc.w/2)/960*r.width),
+          cy: Math.round(r.top+(seat.y+sc.y+sc.h/2)/640*r.height) };
+      })()`);
+      h.check("① 找到可悬停的成员显示器", Boolean(target && target.cx), JSON.stringify(target));
+      await h.eval(`(function(){
+        const canvas=document.querySelector(".office-pixel-canvas");
+        canvas && canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: ${Number(target?.cx ?? 0)}, clientY: ${Number(target?.cy ?? 0)}, bubbles: true }));
+        return true;
+      })()`);
+      await wait(450);
+      const card = await h.eval(`(function(){
+        const el=document.querySelector(".office-inspector");
+        if(!el) return null;
+        return { title: el.querySelector("strong")?.textContent?.trim() || "",
+          mode: el.querySelector(".office-inspector-mode")?.textContent?.trim() || "",
+          body: (el.querySelector(".office-inspector-body")?.innerText || "").slice(0, 60) };
+      })()`);
+      h.check("② 悬停弹出放大屏，标题是当前成员", Boolean(card && card.title && target && card.title === target.name), JSON.stringify(card));
+      await h.eval(`(function(){ const canvas=document.querySelector(".office-pixel-canvas"); canvas && canvas.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false })); return true; })()`);
+      await wait(900);
+      h.check("③ 移开自动收起（600ms 宽限后消失）", await h.eval(`!document.querySelector(".office-inspector")`));
+      await h.eval(`document.querySelector(".office-overlay-close")?.click()`);
+      await wait(400);
+      await h.eval(`localStorage.removeItem("officeProbe")`).catch(() => undefined);
+    },
+  },
 ];
 
 if (flag("list")) {

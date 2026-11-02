@@ -27,7 +27,8 @@ import {
   type OfficeEventState, type OfficeZoomControls,
 } from "./OfficeCanvas";
 import { activityElapsedMs, officeActivityOf } from "./office-activity";
-import { REPORT_CHARS, WAIT_AFTER_MS, type RunPhase } from "./office-screen";
+import { REPORT_CHARS, WAIT_AFTER_MS, eventWordZhOf, type RunPhase } from "./office-screen";
+import { OfficeInspector } from "./OfficeInspector";
 import type { OfficeMemberState } from "./office-format";
 
 export type TeamOfficePreviewProps = {
@@ -159,6 +160,24 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
         （⛔ 不回报倍率 ⇒ 已经放到最大、按钮却还亮着 = 点了没反应）。 */
   const zoomCtl = useRef<OfficeZoomControls | null>(null);
   const [zoom, setZoom] = useState(OFFICE_ZOOM_MIN);
+  /* 悬停显示器 ⇒ 放大屏（11-02）：移开后留 600ms 宽限，方便把鼠标移进卡片继续看。 */
+  const [inspectId, setInspectId] = useState<string | null>(null);
+  const inspectTimer = useRef<number | null>(null);
+  const [, setInspectTick] = useState(0);
+  const showInspect = useCallback((id: string | null) => {
+    if (inspectTimer.current) { window.clearTimeout(inspectTimer.current); inspectTimer.current = null; }
+    if (id) { setInspectId(id); return; }
+    inspectTimer.current = window.setTimeout(() => setInspectId(null), 600);
+  }, []);
+  const keepInspect = useCallback(() => {
+    if (inspectTimer.current) { window.clearTimeout(inspectTimer.current); inspectTimer.current = null; }
+  }, []);
+  useEffect(() => {
+    if (!inspectId) return;
+    const timer = window.setInterval(() => setInspectTick((value) => value + 1), 500);
+    return () => window.clearInterval(timer);
+  }, [inspectId]);
+  useEffect(() => () => { if (inspectTimer.current) window.clearTimeout(inspectTimer.current); }, []);
 
   const members: OfficeMemberState[] = useMemo(() => {
     /* ── 普通会话模式（10-04 起）──
@@ -178,6 +197,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
     if (groupMembers && groupMembers.length) {
       return groupMembers.map((m) => ({
         id: m.id,
+        threadId: m.threadId,
         name: m.name || "成员",
         profession: m.role || "群成员",
         running: m.status === "busy",
@@ -194,12 +214,13 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
          ⭐ 10-25 用户令：一个办公室 6 人，**超出的不再挤掉老人** —— 全部成员都在列表里，
             由下面的分间逻辑按 6 人一间切开；新员工进新办公室，老员工留在原来的办公室。 */
       const mine: OfficeMemberState[] = self?.threadId
-        ? [{ id: self.threadId, name: self.name || "本会话", profession: "本会话", running: self.running, hasThread: false }]
+        ? [{ id: self.threadId, threadId: self.threadId, name: self.name || "本会话", profession: "本会话", running: self.running, hasThread: false }]
         : [];
       return [...mine, ...(delegatedRuns ?? [])
         .map((r) => ({
           //⛔ id 用 threadId（唯一且稳定）而不是数组下标 —— 下标会随列表变化导致人物"换位"。
           id: r.threadId,
+          threadId: r.threadId,
           name: delegateNameOf(r),
           // 职业名留空：普通会话没有"专业"概念，冒牌反而不像
           profession: r.kind === "subagent" ? "子智能体" : r.kind === "expert" ? "专家" : "组员",
@@ -222,6 +243,7 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
       const selfLead = m.id === team.lead.id && Boolean(self?.threadId);
       return {
         id: m.id,
+        threadId: String((run ?? last)?.memberThreadId ?? (selfLead ? self?.threadId ?? "" : "")) || undefined,
         name: m.name,
         profession: m.profession?.zh ?? "",
         running: Boolean(run) || (selfLead && Boolean(self?.running)),
@@ -365,6 +387,12 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
       ? "群里的人实时映射成工位 · 正在干活的敲键盘 · 点角色打开会话"
       : "调度出去的子会话会变成办公室里的人 · 点角色打开子会话";
 
+  useEffect(() => { setInspectId(null); }, [officeSimKey]);
+
+  const inspectMember = inspectId ? visibleMembers.find((m) => m.id === inspectId) ?? null : null;
+  const inspectState = inspectMember ? eventStateOf(inspectMember.id) : null;
+  const inspectActivity = inspectMember ? officeActivityOf(String(inspectMember.threadId ?? inspectMember.id)) : null;
+
   return (
     <div className="office-overlay" role="dialog" aria-label="像素办公室">
       <header className="office-overlay-bar">
@@ -420,10 +448,25 @@ export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, las
           simKey={officeSimKey}
           members={visibleMembers}
           onOpenMember={openMember}
+          onInspect={showInspect}
           eventStateOf={eventStateOf}
           controlsRef={zoomCtl}
           onZoomChange={setZoom}
         />
+        {inspectMember && (
+          <OfficeInspector
+            member={inspectMember}
+            activity={inspectActivity}
+            modeLabel={inspectState?.event ? eventWordZhOf(inspectState.event.kind) : ""}
+            elapsedMs={inspectState?.event?.elapsedMs ?? 0}
+            onClose={() => {
+              if (inspectTimer.current) { window.clearTimeout(inspectTimer.current); inspectTimer.current = null; }
+              setInspectId(null);
+            }}
+            onMouseEnter={keepInspect}
+            onMouseLeave={() => showInspect(null)}
+          />
+        )}
         {visibleMembers.length === 0 && (
           <p className="office-overlay-empty">
             {team ? "这个团队还没有成员。" : "还没有调度任何子会话 —— 派一个子智能体或专家出去，这里就会多一个人。"}

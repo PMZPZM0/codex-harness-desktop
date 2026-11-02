@@ -591,6 +591,27 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
   const actSrc = readFileSync(join(ROOT, "src", "features", "team-office", "office-activity.ts"), "utf8");
   ok(actSrc.includes("https?:\\/\\/[^\\s") && actSrc.includes("args?.url ?? args?.href"),
     "「开浏览器」取真实 URL（命令里的 URL / MCP 入参的 url），不是只写工具名");
+
+  /* ⭐ 悬停放大屏（11-02 用户：「先做 1 再做 2」）：
+     小屏写模式与目标，悬停显示器弹一张正常字号的卡片看**真实内容**。 */
+  const canvasSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeCanvas.tsx"), "utf8");
+  const previewSrc = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
+  const inspectorSrc = readFileSync(join(ROOT, "src", "features", "team-office", "OfficeInspector.tsx"), "utf8");
+  const officeCss = readFileSync(join(ROOT, "src", "styles", "20-team-office.css"), "utf8");
+  ok(/onInspect\?:/.test(canvasSrc) && /screenHitTest/.test(canvasSrc)
+    && /inspectRef\.current\?\.\(inspectId\)/.test(canvasSrc) && /screenHoverSeatRef/.test(canvasSrc),
+    "画布：悬停显示器命中 → 回调成员 id（屏幕矩形与角色命中分开，另有细框提示）");
+  ok(/onInspect=\{showInspect\}/.test(previewSrc) && /<OfficeInspector/.test(previewSrc)
+    && /officeActivityOf\(String\(inspectMember\.threadId/.test(previewSrc),
+    "办公室：悬停 → 放大卡；按成员真实 threadId 取事件/输出");
+  ok(/diffPreviewOf\(changes\)/.test(actSrc) && /item\/commandExecution\/outputDelta/.test(actSrc)
+    && /previewLinesOf\(/.test(actSrc),
+    "真实内容进卡片：fileChange 的 diff 行 + 命令 outputDelta（末 12 行，剥 ANSI）");
+  ok(/activity\?\.preview/.test(inspectorSrc) && /等待真实改动/.test(inspectorSrc) && /等待真实输出/.test(inspectorSrc),
+    "放大卡只显示真实 preview；没有数据就写「等待真实…」，⛔ 不编假日志");
+  ok(/\.office-inspector\s*\{[^}]*position:\s*absolute[^}]*top:\s*76px[^}]*right:\s*14px/.test(officeCss)
+    && /\.office-inspector-code/.test(officeCss) && /\.office-inspector-code code\.is-add/.test(officeCss),
+    "放大卡固定右上角（不跟随指针防抖动）+ diff 增删配色");
 }
 
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

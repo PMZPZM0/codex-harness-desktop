@@ -60,6 +60,12 @@ export type OfficeActivityEntry = {
   updatedAt: number;
   /** 完成时记下耗时（running=false 后屏面显示它） */
   tookMs: number;
+  /** 真实内容预览（diff 行 / 命令输出行）：只给「放大屏」卡片用，像素屏不画。
+   *  ⛔ 与 detail 分开：detail 会 tickerSafe 成大写 ASCII（像素字模只能画这些），
+   *     preview 保留原文，放大卡里按 HTML 正常显示。 */
+  preview?: string[];
+  /** 命令输出的累积缓冲（内部用；随 outputDelta 追加，⛔ 不参与渲染） */
+  outputBuf?: string;
 };
 
 /** 模块级单例（刻意的：办公室是"整个应用的一份世界状态"，不属于某个组件）。 */
@@ -105,6 +111,30 @@ function fileNamesOf(changes: any[]): string {
     .join(" ");
 }
 
+/** fileChange 的真实 diff 行（给「放大屏」卡片用）：只留增删行，最多 10 行。 */
+function diffPreviewOf(changes: any[]): string[] {
+  const lines: string[] = [];
+  for (const change of changes) {
+    for (const line of String(change?.diff ?? "").split("\n")) {
+      if (!/^[+-]/.test(line) || /^(\+\+\+|---)/.test(line)) continue;
+      lines.push(line.slice(0, 200));
+      if (lines.length >= 10) return lines;
+    }
+  }
+  return lines;
+}
+
+/** 命令输出 → 末 12 行（剥 ANSI）；给放大屏用。 */
+function previewLinesOf(text: string): string[] {
+  return String(text ?? "")
+    .replace(/\x1b\[[0-9;]*m/g, "")
+    .replace(/\r/g, "")
+    .split("\n")
+    .filter((line, index, all) => line.length > 0 || index < all.length - 1)
+    .slice(-12)
+    .map((line) => line.slice(0, 200));
+}
+
 /**
  * 单条 item ⇒ 办公室事件（纯函数，预检可直接跑）。
  * @returns null 表示这条 item **不该出现在显示器上**（正文/用户消息/计划/生图）。
@@ -113,7 +143,7 @@ function fileNamesOf(changes: any[]): string {
  *   为 null 的（agentMessage/userMessage/plan/imageGeneration）**一律不演** ——
  *   ⛔ 别在这里"顺手"给它们编一个画面：那会让显示器出现对话框里根本没有的步骤。
  */
-export function classifyOfficeItem(item: any): { kind: OfficeActivityKind; detail: string } | null {
+export function classifyOfficeItem(item: any): { kind: OfficeActivityKind; detail: string; preview?: string[] } | null {
   if (!item || typeof item !== "object") return null;
   const bucket = toolCallBucket(item);
   if (!bucket) return null;
@@ -143,6 +173,7 @@ export function classifyOfficeItem(item: any): { kind: OfficeActivityKind; detai
       return {
         kind: changesHaveRemoval(changes) ? "file-edit" : "file-write",
         detail: tickerSafe(fileNamesOf(changes)),
+        preview: diffPreviewOf(changes),
       };
     }
     case "webSearch":
@@ -182,6 +213,22 @@ export function classifyOfficeItem(item: any): { kind: OfficeActivityKind; detai
  * @param method 事件方法名（只处理 item/started 与 item/completed）
  */
 export function noteOfficeActivity(params: any, method: string): void {
+  /* 命令输出（11-02）：放大屏要显示**真实输出**，这是唯一的来源。
+     ⛔ 高频事件：只对已有 terminal / 读文件 / 搜文件 的条目追加，且**原地改字符串**（不 set 新对象、
+        不触发 React）；像素屏不读 preview，只有放大卡在轮询。 */
+  if (method === "item/commandExecution/outputDelta") {
+    const threadId = String(params?.threadId ?? "");
+    const prev = STORE.get(threadId);
+    const delta = String(params?.delta ?? params?.chunk ?? "");
+    if (!prev || !delta) return;
+    if (prev.kind !== "terminal" && prev.kind !== "file-read" && prev.kind !== "file-search") return;
+    const clean = delta.replace(/\x1b\[[0-9;]*m/g, "").replace(/\r/g, "");
+    const buf = `${prev.outputBuf ?? ""}${clean}`.slice(-4000);
+    prev.outputBuf = buf;
+    prev.preview = previewLinesOf(buf);
+    prev.updatedAt = Date.now();
+    return;
+  }
   /* ⛔ 先按方法名短路：item/agentMessage/delta 这类高频事件每字一条，
      不短路的话这里会变成一条真的热路径。 */
   if (method !== "item/started" && method !== "item/completed") return;
@@ -198,6 +245,8 @@ export function noteOfficeActivity(params: any, method: string): void {
     /* 同一条事件重复 started（引擎会重放）⇒ 保留原计时，别把"已跑 8 秒"重置成 0 */
     STORE.set(threadId, {
       ...info,
+      preview: info.preview ?? [],
+      outputBuf: "",
       at: same && prev.running ? prev.at : now,
       running: true,
       updatedAt: now,
@@ -207,8 +256,13 @@ export function noteOfficeActivity(params: any, method: string): void {
     /* completed：内容形状可能比 started 更全（例如 fileChange 完成时才带 diff），
        所以用新 info 覆盖，但**开始时刻沿用旧的** —— 否则耗时永远是 0。 */
     const startedAt = same ? prev.at : now;
+    const agg = String((item as any).aggregatedOutput ?? (item as any).output ?? "");
+    const preview = item.type === "commandExecution" && agg.trim()
+      ? previewLinesOf(agg)
+      : (info.preview ?? prev?.preview ?? []);
     STORE.set(threadId, {
       ...info,
+      preview,
       at: startedAt,
       running: false,
       updatedAt: now,

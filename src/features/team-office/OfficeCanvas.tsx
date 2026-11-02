@@ -104,6 +104,8 @@ export type OfficeCanvasProps = {
    *     切回来时上一间的人物位置原样保留。 */
   simKey?: string;
   onOpenMember?: (memberId: string) => void;
+  /** 悬停工位显示器 ⇒ 放大屏（11-02）；null = 移开 */
+  onInspect?: (memberId: string | null) => void;
   /** 取某成员的真实事件状态（null = 该成员当下无运行信息）。
    *  ⛔ 由上层从 run 记录派生（不订阅引擎，见 TeamOfficePreview 注释）。 */
   eventStateOf?: (memberId: string) => OfficeEventState | null;
@@ -165,10 +167,13 @@ function statusOf(a: Agent, nowMs: number): { text: string; color: string } {
   return { text: "待机", color: "#8ea3b8" };
 }
 
-export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
+export function OfficeCanvas({ members, simKey, onOpenMember, onInspect, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const membersRef = useRef(members);
   const openRef = useRef(onOpenMember);
+  const inspectRef = useRef(onInspect);
+  const inspectIdRef = useRef<string | null>(null);
+  const screenHoverSeatRef = useRef(-1);
   const eventRef = useRef(eventStateOf);
   const onZoomRef = useRef(onZoomChange);
   /* 悬停的成员 id（⭐ 10-05 晚新增）：画布上"能点"这件事原来**没有任何视觉提示**，
@@ -176,6 +181,7 @@ export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, cont
   const hoverRef = useRef<string | null>(null);
   membersRef.current = members;
   openRef.current = onOpenMember;
+  inspectRef.current = onInspect;
   eventRef.current = eventStateOf;
   onZoomRef.current = onZoomChange;
 
@@ -291,6 +297,8 @@ export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, cont
       const sim = officeSimFor(simKey ?? "");
       /* 调试/e2e 句柄：探针据此断言 agents 状态（⛔ 只读使用，别在业务里碰它） */
       (window as unknown as Record<string, unknown>).__officeSim = sim;
+      /* 调试/e2e 句柄：座位的显示器矩形（只读；探针据此把指针移到某块屏幕上验放大卡）。 */
+      (window as unknown as Record<string, unknown>).__officeSeats = SEATS;
       let lastSync = 0;
       let last = performance.now();
 
@@ -412,6 +420,18 @@ export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, cont
               }
               : undefined,
           );
+          ctx.restore();
+        }
+
+        /* 悬停显示器：描一圈主题色细框（提示"这里有可看的真实内容"）。
+           ⛔ 画在屏幕循环之后、角色之前：不能进 ctx.clip 里（会被裁掉半个像素）。 */
+        const hoverSeat = SEATS[screenHoverSeatRef.current];
+        const hoverScreen = hoverSeat?.screen;
+        if (hoverSeat && hoverScreen) {
+          ctx.save();
+          ctx.strokeStyle = "#8fb6e8";
+          ctx.lineWidth = 1;
+          ctx.strokeRect(Math.round(hoverSeat.x + hoverScreen.x) - 0.5, Math.round(hoverSeat.y + hoverScreen.y) - 0.5, hoverScreen.w + 1, hoverScreen.h + 1);
           ctx.restore();
         }
 
@@ -653,6 +673,25 @@ export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, cont
         const a = hitTest(ev.clientX, ev.clientY);
         if (a) openRef.current?.(a.id);
       };
+      /* 显示器命中（11-02 放大屏）：与角色命中**分开** —— 悬停屏幕看真实内容，
+         点角色开会话；两者互不干扰。 */
+      const screenHitTest = (clientX: number, clientY: number): { seatIndex: number; agent: Agent } | null => {
+        const rect = canvas.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return null;
+        const sx = ((clientX - rect.left) / rect.width) * CANVAS_W;
+        const sy = ((clientY - rect.top) / rect.height) * CANVAS_H;
+        for (let i = 0; i < SEATS.length; i++) {
+          const seat = SEATS[i];
+          const sc = seat?.screen;
+          if (!seat || !sc) continue;
+          const x0 = seat.x + sc.x - 4;
+          const y0 = seat.y + sc.y - 4;
+          if (sx < x0 || sx > x0 + sc.w + 8 || sy < y0 || sy > y0 + sc.h + 8) continue;
+          const agent = sim.agents.find((item) => item.seatIndex === i) ?? null;
+          return agent ? { seatIndex: i, agent } : null;
+        }
+        return null;
+      };
       const onMove = (ev: MouseEvent) => {
         const a = hitTest(ev.clientX, ev.clientY);
         const id = a?.id ?? null;
@@ -660,8 +699,20 @@ export function OfficeCanvas({ members, simKey, onOpenMember, eventStateOf, cont
           hoverRef.current = id;
           canvas.style.cursor = id ? "pointer" : "default";
         }
+        const screen = screenHitTest(ev.clientX, ev.clientY);
+        screenHoverSeatRef.current = screen ? screen.seatIndex : -1;
+        const inspectId = screen?.agent.id ?? null;
+        if (inspectId !== inspectIdRef.current) {
+          inspectIdRef.current = inspectId;
+          inspectRef.current?.(inspectId);
+        }
       };
       const onLeave = () => {
+        screenHoverSeatRef.current = -1;
+        if (inspectIdRef.current !== null) {
+          inspectIdRef.current = null;
+          inspectRef.current?.(null);
+        }
         if (hoverRef.current !== null) {
           hoverRef.current = null;
           canvas.style.cursor = "default";
