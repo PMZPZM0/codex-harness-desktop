@@ -231,9 +231,10 @@ export function pushPetConfig(payload: { settings: PetSettings; active: PetPacka
    只在有活动、未收起、宠物可见时出现。 */
 const ACTIVITY_WIDTH = 320;
 const ACTIVITY_CARD_HEIGHT = 82;
-const ACTIVITY_GAP = 8;
+const ACTIVITY_GAP = 4;
 const ACTIVITY_PADDING = 12;
-const ACTIVITY_EDGE = 8;
+/* 活动卡与宠物头顶的间距：11-02 用户「贴着宠物上方，现在太远了」⇒ 8 → 3。 */
+const ACTIVITY_EDGE = 3;
 
 function activityWindowSize(signal: PetSignal) {
   const count = Math.max(1, Math.min(2, signal.activities.length));

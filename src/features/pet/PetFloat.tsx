@@ -55,6 +55,20 @@ export type PetFloatProps = {
   stageRatio?: number;
 };
 
+/** 关节包各姿态的「可见内容顶部」比例（画布 640×660、角色底对齐；透明留白要让活动卡贴住头）。
+ *  数值来自姿态图内容高度：idle/review 560、running 430、waiting/failed 470、waving 600。 */
+const RIG_CONTENT_TOP: Record<string, number> = {
+  idle: 0.14,
+  running: 0.33,
+  "running-left": 0.14,
+  "running-right": 0.14,
+  waving: 0.08,
+  jumping: 0.14,
+  failed: 0.27,
+  waiting: 0.27,
+  review: 0.14,
+};
+
 export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   const [pkg, setPkg] = useState<PetPackage | null>(null);
   const [signal, setSignal] = useState<PetSignalLike>(EMPTY_SIGNAL);
@@ -364,7 +378,15 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
       raf = 0;
       const boxes = [spriteRef.current, missingRef.current, hover ? toolbarRef.current : null]
         .filter((el): el is HTMLDivElement => Boolean(el))
-        .map((el) => el.getBoundingClientRect())
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          /* 关节包画布上沿有透明留白（工作时坐姿留得最多）⇒ 上报矩形要抬到**可见头肩**，
+             活动气泡才能贴着头顶，而不是浮在窗口上沿。 */
+          const ratio = el === spriteRef.current && pkg?.rig ? (RIG_CONTENT_TOP[effectiveState] ?? 0) : 0;
+          return ratio > 0
+            ? { left: r.left, top: r.top + r.height * ratio, right: r.right, bottom: r.bottom, width: r.width, height: r.height * (1 - ratio) }
+            : r;
+        })
         .filter((r) => r.width > 0 && r.height > 0);
       if (!boxes.length) { void window.codex.petInteractiveRect(null).catch(() => undefined); return; }
       const x = Math.min(...boxes.map((r) => r.left));
@@ -387,7 +409,7 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
          穿透 —— 用户正好在这一帧按下左键，宠物就「拖不动」。null 只在组件真正卸载时发（下面那个
          mount-only effect）。 */
     };
-  }, [pkg, renderedFrameHeight, hover]);
+  }, [pkg, renderedFrameHeight, hover, effectiveState]);
   useEffect(() => () => {
     void window.codex.petInteractiveRect(null).catch(() => undefined);
   }, []);
@@ -400,7 +422,12 @@ export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
       onPointerLeave={() => { setHover(false); setLook({ x: 0, y: 0 }); }}
     >
       {signal.bubble && (
-        <div className={`pet-bubble${bubbleVisible ? " is-visible" : ""}`} role="status" aria-live="polite">
+        <div
+          className={`pet-bubble${bubbleVisible ? " is-visible" : ""}`}
+          role="status"
+          aria-live="polite"
+          style={{ bottom: `calc(${Math.round(stageRatio * 100)}% + 6px)` }}
+        >
           {signal.bubble}
           {signal.busy > 1 && <span className="pet-bubble-busy">×{signal.busy}</span>}
         </div>

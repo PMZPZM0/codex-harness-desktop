@@ -398,7 +398,7 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
   ok(/if \(isPetActivityWindowOpen\(\)\) positionPetActivityWindow/.test(windowSrc),
     "拖宠物 / 本体矩形上报时气泡同步重排（不会甩在原地）");
   const float = read("src/features/pet/PetFloat.tsx");
-  const depsAt = float.indexOf("}, [pkg, renderedFrameHeight, hover]);");
+  const depsAt = float.indexOf("}, [pkg, renderedFrameHeight, hover, effectiveState]);");
   const cleanupStart = depsAt >= 0 ? float.lastIndexOf("return () => {", depsAt) : -1;
   const cleanup = cleanupStart >= 0 ? float.slice(cleanupStart, depsAt) : "";
   ok(cleanup && !/petInteractiveRect\(null\)/.test(cleanup)
