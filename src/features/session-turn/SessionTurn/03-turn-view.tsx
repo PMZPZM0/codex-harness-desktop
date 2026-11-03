@@ -101,7 +101,25 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
   //    末尾 ⇒ 只把线提到「所在回合」顶部还不够。归位逻辑上收到 **timeline 层**（见
   //    01-timeline.tsx 的 compactionLine：固定插在最后一条用户消息回合正上方）。这里只负责
   //    把压缩 item 从内容区剔除——线绝不能再随 items 顺序落到回复下面（首修的教训）。
-  const foldItems = useMemo(() => responseItems.filter((item) => !isCompactionItem(item)), [responseItems]);
+  /* ⛔ 11-03 用户令（截图：「就这个折叠里面啊，压缩线就一个记录在里面，在哪里压缩就一个历史记录
+     在哪里展示这样」）：回合**中途**的自动压缩要**留在过程列表里** —— 按发生顺序排在
+     「已深度思考 / 请求接口 / 已使用技能」之间，跟着这段过程一起折叠，不再一律剔除。
+     ⛔ 只保留一种剔除：**整回合只有压缩项**（手动 /compact 跑成的独立压缩回合）继续剔除 ——
+     那种回合整组不渲染（下面的 hasRealContent 白名单不含 compaction），线由 timeline 层单独画；
+     否则会多出一张只有一条灰线的空卡片。 */
+  const foldItems = useMemo(() => {
+    const hasSibling = responseItems.some((item) => !isCompactionItem(item));
+    return responseItems.filter((item: any) => {
+      if (!isCompactionItem(item)) return true;
+      /* 整回合只有压缩项（手动 /compact 的独立压缩回合）⇒ 剔除，整组不渲染，线交给 timeline */
+      if (!hasSibling) return false;
+      /* ⛔ 运行中的压缩项仍剔除：`ItemView` 的 running 分支**没有停止按钮**，
+         而「压缩要能手动停止」是 09-26 用户明确要求、只能由 timeline 那条提供。
+         ⇒ 运行中由 timeline 画（带停止），**完成后**才回到过程列表里当一条历史记录。 */
+      const running = item?.status === "inProgress" || item?.status === "running";
+      return !running;
+    });
+  }, [responseItems]);
   // 最终答复 = 最后一条有正文的 agentMessage
   const finalAgent = [...foldItems].reverse().find((item) => item.type === "agentMessage" && String(item.text ?? "").trim()) ?? null;
   const hasContent = foldItems.some((item) => item.type !== "agentMessage" || Boolean(String(item.text ?? "").trim()));

@@ -605,7 +605,24 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                          · 完成后 —— 再上移到**所属回合的用户消息上方**（传 boundaryTurnId 走 ① 分支）。
                          ⛔ 两种锚点必须分开传：运行中「空 turnId + 时间」、完成「turnId」。
                            传反的结果分别是「提前上移」和「永不归位」。 */
-                      if (runningCompactionTurnId) {
+                      /* ⛔ 11-03 用户令（「压缩线就一个记录在里面，在哪里压缩就一个历史记录在哪里
+                         展示这样」）：压缩项现在会留在**回合过程列表**里（见 03-turn-view 的 foldItems）——
+                         只要它所属回合**还有别的 item**，回合内就已经按发生顺序渲染了那一条
+                         ⇒ 这里必须让位，否则同一时刻会出现两条线。
+                         ⛔ 只有「整回合只有压缩项」时（手动 /compact 跑成的独立压缩回合，整组不渲染）
+                           才继续由这里画 —— 那是 10-18 修过的「刚压缩完就不见了」不能回退。 */
+                      const compactionOwnerTurnId = runningCompactionTurnId
+                        || lastCompactionTurnId
+                        || String(hostCompaction?.turnId ?? "");
+                      const compactionOwnerTurn = visible.find((t: any) => String(t?.id ?? "") === compactionOwnerTurnId);
+                      /* ⛔ 只对**已完成**让位：运行中必须由这里画 —— `ItemView` 的 running 分支没有
+                         停止按钮，而「压缩要能手动停止」只能由这条提供（09-26 用户要求）。 */
+                      const compactionRenderedInTurn = !runningCompactionTurnId
+                        && Boolean(compactionOwnerTurn
+                          && (compactionOwnerTurn.items ?? []).some((i: any) => !isCompactionItem(i)));
+                      if (compactionRenderedInTurn) {
+                        compactionLine = null;
+                      } else if (runningCompactionTurnId) {
                         const startedAt = Number((cs.item as any)?.startedAtMs ?? 0);
                         insertBefore = resolveCompactionAnchor(visible, "", { compactionAt: startedAt });
                         /* 空列表才会走到这（有回合时上面的函数至少给 list.length - 1） */
