@@ -614,7 +614,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       const compactionOwnerTurnId = runningCompactionTurnId
                         || lastCompactionTurnId
                         || String(hostCompaction?.turnId ?? "");
-                      const compactionOwnerTurn = visible.find((t: any) => String(t?.id ?? "") === compactionOwnerTurnId);
+                      const compactionOwnerTurn = visible.find((t) => String((t as { id?: unknown })?.id ?? "") === compactionOwnerTurnId);
                       /* ⛔ 只对**已完成**让位：运行中必须由这里画 —— `ItemView` 的 running 分支没有
                          停止按钮，而「压缩要能手动停止」只能由这条提供（09-26 用户要求）。 */
                       /* ⛔⛔ 11-03 审查修正（两个会让「线消失 / 显示错状态」的时序）：
@@ -629,11 +629,11 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                         && !toastAborted
                         && Boolean(lastCompaction)
                         && Boolean(compactionOwnerTurn
-                          && (compactionOwnerTurn.items ?? []).some((i: any) => !isCompactionItem(i)));
+                          && ((compactionOwnerTurn as { items?: unknown[] }).items ?? []).some((i) => !isCompactionItem(i)));
                       if (compactionRenderedInTurn) {
                         compactionLine = null;
                       } else if (runningCompactionTurnId) {
-                        const startedAt = Number((cs.item as any)?.startedAtMs ?? 0);
+                        const startedAt = Number((cs.item as { startedAtMs?: number } | null | undefined)?.startedAtMs ?? 0);
                         insertBefore = resolveCompactionAnchor(visible, "", { compactionAt: startedAt });
                         /* 空列表才会走到这（有回合时上面的函数至少给 list.length - 1） */
                         if (insertBefore < 0) insertBefore = Math.max(0, visible.length - 1);
