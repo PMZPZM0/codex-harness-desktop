@@ -36,6 +36,8 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-03 | 排队面板按发送顺序展示 | 修复 | `src/features/session-queue/SessionQueue.tsx`、守卫 12as | 用户截图：「顺序不对，我发新消息在已排队的上面」。排队卡原按显示倒序渲染（数组末尾的最新条目在最顶），与引擎 FIFO 发送顺序相反 ⇒ 改为原样渲染数组序：先排的在上、新发的在最下面；折叠时露末尾 2 条（最新入队，不能露前 2 条否则新消息被藏）；拖拽显示序按 offset 映射回原数组序；序号徽标「排队中 N/M」改读真实队列位置。守卫 12as +1 条（禁止 reverse / 折叠取末尾 / offset 映射 / 徽标位置）。 | 本轮 |
+
 | 2026-11-01 | 温柔女声 · 晓晨也改为内置音色 | 改动 | `resources/voice-presets/presets.json`、守卫 11z | 用户令：「这个也内置一下」。presets.json 给 cosyvoice-female-zh 标 `builtIn: true`（与自带音色管理口径一致：启动自动落档、行内「内置」徽标、不可删除、一键启用列表不再重复出现）；阿远 / Nature 仍是一键启用样本。守卫 11z 断言更新为「小夏 + 晓晨两个内置」，变异验证（去掉标记即红）。 | 本轮 |
 | 2026-10-31 | 克隆音色不再被内置音色冒充（女声变男声事故） | 修复 | `voice-service.ts`、`voice-ipc/02-voice-profiles-presets.ts`、`02-voice-clone-profile.tsx`、守卫 11z | 用户实测「怎么是男的声音」「跟内置声音5一样」。根因：选中克隆音色但音色克隆模型没装/被停用时，`ttsWorkerData` **静默回退 vits** ⇒ 用内置第 5 号音色（男声）顶替，零提示。修法：① 服务端目标音色不可用直接抛中文原因（⛔ 不再回退其它音色）；② `profiles-select` 在模型没装/停用时拒绝；③ UI 的 radio 与「试听」按 `zipReady` 禁用，已选但不可用时给警示条；④ 顺手修正指错的旧文案（「开发工具 → 语音模型」→ 设置 → 语音通话）。探针实测：radio/试听 disabled、select IPC 拒绝带原因。守卫 11z +4（变异：回退复活/去掉选择闸/去掉禁用/去掉警示，全部抓红）。 | 本轮 |
 | 2026-10-31 | 活泼女声 · 小夏改为内置音色 | 改动 | `resources/voice-presets/presets.json`、`voice-ipc/02-voice-profiles-presets.ts`、`02-voice-clone-profile.tsx`、`19-misc-hints.css`、守卫 11z | 用户令：「活泼女声 · 小夏改成内置音色」。① presets.json 给 youth-female-zh 标 `builtIn: true`；② 启动即幂等确保内置音色档案存在（复用 createProfile，历史同名档案自动视为内置）；③ profiles-list 给档案标 builtIn，删除内置音色由主进程直接拒绝（删了下次启动也会恢复）；④ UI：档案行加「内置」徽标、内置音色不渲染删除按钮，「一键启用」列表排除已内置预设。探针实测：档案自动生成且 builtIn=true、无删除按钮；守卫 11z +6（变异：去掉标记 / 去掉删除拦截 / UI 不隐藏删除，全部抓红）。 | 本轮 |
