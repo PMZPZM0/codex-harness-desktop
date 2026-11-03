@@ -1582,7 +1582,10 @@ html[data-ui-font="large"] .action-content pre {
    外层用 display:contents ⇒ 不产生盒子，不干扰既有 .thread-list 的直接子选择器。 */
 .dispatch-parent { display: contents; }
 .dispatch-children {
-  margin: 2px 0 4px 20px;
+  /* ⛔ 11-03 用户（截图圈出「子会话 · 4」）：「放右边放一点，现在展示有点不好看」——
+     原先固定 20px，缩进还停在**标签列**里、比父行标题更靠左。改为对齐父行标题列
+     （标签列宽 + 行内左内距 10px），子块与标题同一竖列，层级一眼能看出来。 */
+  margin: 2px 0 4px calc(var(--tag-col-w, 30px) + 10px);
   padding-left: 8px;
   border-left: 1px dashed var(--line);
 }
@@ -1593,17 +1596,22 @@ html[data-ui-font="large"] .action-content pre {
   width: 100%;
   align-items: center;
   gap: 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--muted);
   background: none;
   border: 0;
-  padding: 2px 0 2px 2px;
+  padding: 3px 6px 3px 2px;
+  border-radius: 6px;
   cursor: pointer;
   user-select: none;
   font-family: inherit;
   text-align: left;
+  transition: color 0.15s ease, background 0.15s ease;
 }
-.dispatch-children-label:hover { color: var(--text); }
+.dispatch-children-label:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
 .dispatch-children.collapsed { padding-bottom: 0; border-left-color: transparent; }
 
 /* ─────────────────────────────── 选中态改造（09-29 用户）：

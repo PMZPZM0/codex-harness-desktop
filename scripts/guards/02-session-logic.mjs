@@ -1445,8 +1445,12 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       /* ⛔ 断言写法注意：readAppUi() 会归一化（剥掉 `bag.` 前缀），别按源码字面量写正则。 */
       (/cwdMap\[entry\.id\][\s\S]{0,200}?该项目下已无对话/.test(appSrc2) ? ok : fail)("【156】删除整个项目按**有效 cwd** 取目标（否则跟随过来的被调度会话删不掉 / 误删他项目会话）");
       /* 项目视图与分类视图**共用**同一份调度归属渲染（09-25 用户：「项目里面也这样展示可以嘛」）——
-         ⛔ 断言「只有一份实现」：两个视图各写一份就会再次分叉成「分类有、项目没有」。 */
-      ((appSrc2.match(/dispatch-children-label/g) || []).length === 1 ? ok : fail)("【156】调度归属渲染只有一份实现（⛔ 不许分类/项目各写一份再分叉）");
+         ⛔ 断言「只有一份实现」：两个视图各写一份就会再次分叉成「分类有、项目没有」。
+         ⛔ 11-03：专家团簇的成员块也复用同款「↳ 子会话 · N」表头（用户要求所有子会话同款展示）
+            ⇒ 计数口径从"全应用 1 处"收紧为"**分类/项目视图的调度归属渲染器**里 1 处"，
+            AppView 侧只允许 `renderDispatchedList` 这一处（专家团簇在会话行渲染器里，属另一件事）。 */
+      const dispatchedRendererSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
+      ((dispatchedRendererSrc.match(/dispatch-children-label/g) || []).length === 1 ? ok : fail)("【156】调度归属渲染只有一份实现（⛔ 不许分类/项目各写一份再分叉）");
       (appSrc2.includes("renderDispatchedList(g.items)") ? ok : fail)("【156】分类视图用共用的调度归属渲染器");
       (/renderDispatchedList\([\s\S]{0,260}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】项目视图用同一渲染器 + 先把子会话从顶层剔除（否则同一会话显示两遍）");
       /* 10-27 用户令（截图）：「已经显示调度会话，任务列表外面又全部显示一次」
@@ -1463,6 +1467,12 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (appSrc2.includes("renderClusterList([childThread])") ? ok : fail)("【156】被调度的会话走聚类渲染（它本身可能就是专家团主会话，⛔ 用 renderThreadRow 会漏掉成员会话）");
       (appSrc2.includes("`dispatch:${id}`") || appSrc2.includes("dispatchBlockKeys") ? ok : fail)("【156】批量展开/折叠带上调度折叠块（否则点「全部展开」这些块纹丝不动）");
       (appSrc2.includes('className="dispatch-children-label"') ? ok : fail)("【156】调度块表头是**按钮**（可点开合，不是纯文本标签）");
+      /* ⛔ 11-03 用户（截图圈「子会话 · N」）：「放右边放一点，现在展示有点不好看」——
+         子会话块缩进必须跟父行标题列走（标签列宽 + 行内左内距），⛔ 不许退回写死的小缩进
+         （写死 20px 会停在标签列里、比父行标题更靠左，层级看起来是反的）。 */
+      (/\.dispatch-children \{[^}]*margin:[^;]*var\(--tag-col-w,\s*30px\)/.test(readStyles()) ? ok : fail)(
+        "【156】子会话块缩进对齐父行标题列（--tag-col-w + 行内左内距）"
+      );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }
