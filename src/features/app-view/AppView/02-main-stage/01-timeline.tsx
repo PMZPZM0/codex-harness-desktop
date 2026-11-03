@@ -2,7 +2,6 @@
  * MainStageTimeline —— AppViewMainStage 的 JSX 第 1 段（09-22 从 02-main-stage.tsx 分出，纯搬迁）。
  * ⛔ 收一个 `app`（类型 HarnessAppApi = hook 的返回类型）并按需解构 ⇒ 类型不落快照。
  */
-import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { compactionStateOf, reportCompactionState } from "../../../../lib/compaction-state.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
@@ -586,25 +585,16 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                          再来新消息也不会把线拽下去）。 */
                       const compactionAt = Number(hostCompaction?.at ?? 0);
                       insertBefore = resolveCompactionAnchor(visible, boundaryTurnId, { compactionAt });
-                      /* ⛔ 运行中的压缩线（优先于"已完成"线）：锚在压缩所在回合的用户消息之上；
-                         找不到用户消息回合就锚在最后一回合之上。⛔ 不与底部兜底线同屏 ——
-                         底部那条的条件已排除"存在 in-progress 压缩项"的情况。 */
+                      /* ⛔⛔ 11-03 用户令（原话：「运行过程的压缩线留在它产生的位置，等压缩完成后，
+                         再放到回合消息上面」）：
+                         · 运行中 —— **不进回合区**，由时间线末尾那条贴输入框的线显示（压缩就发生在那里，
+                           人能看见它在转、也能点停止）；
+                         · 完成后 —— 底部那条消失，这里按 resolveCompactionAnchor 归位到**所属回合的
+                           用户消息上方**，变成一条历史标记，之后随内容一起被顶上去。
+                         ⛔ 不要在这里再给运行中线算回合锚点：压缩还在进行，它没有"归属回合"，
+                           提前钉到某个回合上就会出现「线在上方转圈、压缩其实在底下跑」的错位。 */
                       if (runningCompactionTurnId) {
-                        insertBefore = resolveCompactionAnchor(visible, runningCompactionTurnId);
-                        if (insertBefore < 0) insertBefore = Math.max(0, visible.length - 1);
-                        compactionLine = (
-                          <div className="compact-divider compact-divider--running" role="status" aria-label="上下文压缩状态" key={`compact-running-${thread.id}`}>
-                            <i className="compact-divider-line" aria-hidden />
-                            <span className="compact-divider-text">
-                              <LoaderCircle size={13} className="spin" />
-                              {compactToast?.state === "running" && compactToast.threadId === thread.id ? compactToast.message : "正在自动压缩上下文…（完成后自动继续，无需操作）"}
-                            </span>
-                            <button type="button" className="compact-divider-cancel" title="停止压缩" onClick={() => app.cancelCompaction()}>
-                              <CircleStop size={12} />停止
-                            </button>
-                            <i className="compact-divider-line" aria-hidden />
-                          </div>
-                        );
+                        compactionLine = null;
                       } else if (lastCompaction && insertBefore >= 0) {
                         compactionLine = <ItemView item={lastCompaction} onCopy={messageHandlers.onCopy} onQuote={messageHandlers.onQuote} key={`compact-${lastCompaction.id}`} />;
                       } else if (hostCompaction && insertBefore >= 0) {
@@ -708,7 +698,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                   {/* ⛔ 成功/失败的压缩线**只在上面的归位处渲染一处**（09-26 用户截图「两条压缩线」：
                       归位一条 + 这里尾部兜底一条）。这条尾部兜底已删除——任何时序下同屏只可能有一条
                       「已完成」压缩线。进行中的转圈（running）仍留在底部贴输入框，见下方。 */}
-                  {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && !(thread?.turns ?? []).some((t) => (t.items ?? []).some((i) => isCompactionItem(i) && (i.status === "inProgress" || i.status === "running"))) && (
+                  {/* ⛔ 11-03：这里原来排除了「时间线里已有 in-progress 压缩项」的情况 —— 那是旧设计的
+                      分工（运行线在回合区、这里只是兜底）。现在运行线**只**在这里显示，排除条件会把
+                      唯一的线也挡掉（压缩期间界面上什么都没有）。 */}
+                  {compactToast && compactToast.state === "running" && compactToast.threadId === thread?.id && (
                     <div className={`compact-divider compact-divider--running`} role="status" aria-label="上下文压缩状态">
                       <i className="compact-divider-line" aria-hidden />
                       <span className="compact-divider-text">
