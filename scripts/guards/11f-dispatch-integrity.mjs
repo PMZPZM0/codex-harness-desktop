@@ -505,6 +505,9 @@ try {
   const fallbackSrc = readFileSync(join(ROOT, "electron/team-tool-fallback.ts"), "utf8");
   ok(phaseUiSrc.includes("dedupeTeamPhaseTasks") && fallbackSrc.includes("dedupeTeamPhaseTasks"),
     "渲染层与主进程兜底都走去重（只改一边 = 另一半仍会重复建会话）");
+  ok(/setTeamThreadsIndex/.test(phaseUiSrc) && /setTeamMemberThreadIds/.test(phaseUiSrc)
+    && /member\.id !== team\.lead\.id/.test(phaseUiSrc),
+    "新开团 / 成员直达会话即时更新侧栏聚簇索引（不等 teamThreadsMap 重拉）");
   ok(/withMemberLock/.test(tiSrc) && /memberLocks\.set\(key, tail\)/.test(tiSrc)
     && /return withMemberLock\(lockKey/.test(tiSrc),
     "team-invoke 同一成员并发串行（不同成员仍可并行）");
@@ -530,8 +533,9 @@ try {
   ok(/restrictedThreadRole\(callerThreadId\)/.test(rpcSrc) && /canDispatchFrom\(\{/.test(rpcSrc)
     && /const GATEWAY_EXCLUDED = new Set\(\["agent_invoke", "agent_archive_sessions"\]\)/.test(harnessSrc),
     "子会话对外调度硬闸：agent_invoke 查身份/深度，能力网关也不暴露调度工具");
-  ok(/aliasRecordOf\(threadId\)/.test(coreSrc) && /supervisorThreadId/.test(coreSrc),
-    "凡是「有上级」的会话一律判定为子会话（群成员/团队直达等未走 delegateRegistry 的路径也挡住）");
+  ok(/aliasRecordOf\(threadId\)/.test(coreSrc) && /supervisorThreadId/.test(coreSrc)
+    && /bossStore/.test(coreSrc) && /群成员会话/.test(coreSrc),
+    "凡是「有上级」或群成员的会话一律判定为子会话（未走 delegateRegistry 的路径也挡住）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

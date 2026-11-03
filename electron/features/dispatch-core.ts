@@ -21,6 +21,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { aliasRecordOf } from "../session-alias";
+import { bossStore } from "../boss-groups/store";
 import { readUsableExpertTeams } from "../expert-teams";
 import type { DispatchTarget } from "../dispatch";
 import { readSubAgents } from "../main/09-agents-plugins";
@@ -44,6 +45,15 @@ async function restrictedThreadRole(threadId: string): Promise<{ restricted: boo
      ⛔ 主会话没有上级，不受影响；团队主理人的内部调度走 team_member_invoke，另有主理人硬闸。 */
   const alias = await aliasRecordOf(threadId).catch(() => null);
   if (alias?.supervisorThreadId) return { restricted: true, label: "被调度的子会话" };
+  /* 兜底：群成员即使别名表尚未写入，也在 boss-groups.json 的 members.threadId 里。 */
+  const boss = await bossStore.load().catch(() => null);
+  if (boss) {
+    for (const group of Object.values(boss.groups ?? {})) {
+      if ((group.members ?? []).some((member) => String(member.threadId ?? "") === threadId)) {
+        return { restricted: true, label: "群成员会话" };
+      }
+    }
+  }
   return { restricted: false };
 }
 
