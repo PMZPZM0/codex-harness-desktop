@@ -1,21 +1,30 @@
-import path from "node:path";
-import os from "node:os";
-import fs from "node:fs";
 // QQ 机器人网关：QQ 开放平台（q.qq.com）官方协议轻实现。
 // 用户在 q.qq.com 创建机器人（需实名）拿 AppID + AppSecret → 填入即连。
-// 协议：GET /openapi/auth/get_wps_token？不对——官方链路是：
-//   1) AppID+Secret → POST /app/getAppAccessToken 拿 access_token（qq bot api）
+// 协议（2026 官方文档，统一地址 https://api.bot.qq.com）：
+//   1) AppID+Secret → POST /app/getAppAccessToken 拿 access_token
+//      ⛔ token 接口在 api.bot.qq.com / bots.qq.com —— api.sgroup.qq.com 上是 404「不支持的调用」，
+//        实测（2026-11）：旧地址 POST 404 {code:40011002}，这正是「QQ 连不上」的根因。
 //   2) GET /gateway 拿 WebSocket 地址 → WSS 长连接收事件（含鉴权 op2/心跳 op1/恢复 op6）
 //   3) 群聊 @机器人 事件 GROUP_AT_MESSAGE_CREATE / 单聊 C2C_MESSAGE_CREATE
 //   4) 回复：POST /v2/groups/{group_openid}/messages（msg_id 被动回复，需开放平台开通权限）
 // 仅依赖 node 原生 ws 不内置——用官方 ws 包（Electron 主进程可用）。
+import { app } from "electron";
+import path from "node:path";
+import os from "node:os";
+import fs from "node:fs";
 import WebSocket from "ws";
 
-const API = "https://api.sgroup.qq.com";
-const STATE_FILE = path.join(
-  process.env.CODEX_HARNESS_USER_DATA || path.join(os.homedir(), "AppData", "Roaming", "Codex Harness Desktop"),
-  "qq-account.json",
-);
+const API = "https://api.bot.qq.com";
+
+/** 账号落盘路径：⛔ 跟随 userData（用户可自定义配置目录），不能写死默认 AppData ——
+ *  否则自定义目录用户的「重启自动恢复」永远读不到账号（读的是另一个目录）。 */
+function stateFile(): string {
+  try { return path.join(app.getPath("userData"), "qq-account.json"); } catch { /* app 未就绪（测试/工具态）走环境变量兜底 */ }
+  return path.join(
+    process.env.CODEX_HARNESS_USER_DATA || path.join(os.homedir(), "AppData", "Roaming", "Codex Harness Desktop"),
+    "qq-account.json",
+  );
+}
 
 export type QqEvents = {
   onMessage: (message: { from: string; chatId: string; text: string; msgId: string; scene: "group" | "c2c" }) => void;
@@ -28,6 +37,8 @@ export class QqGateway {
   private accessToken = "";
   private tokenExpireAt = 0;
   private ws: WebSocket | null = null;
+  /** WebSocket 真正 open 且未断开才算「已连接」（⛔ hasSession 不再用「对象存在」糊弄 UI） */
+  private socketReady = false;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private lastSeq: number | null = null;
   private running = false;
@@ -40,13 +51,16 @@ export class QqGateway {
   private log(level: "info" | "error", message: string) { this.events.log?.(level, message); }
 
   private async fetchToken(): Promise<void> {
-    const res = await fetch(`${API}/app/getAppAccessToken`, {
+    const response = await fetch(`${API}/app/getAppAccessToken`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ appId: this.appId, clientSecret: this.appSecret }),
       signal: AbortSignal.timeout(10_000),
-    }).then((r) => r.json()) as any;
-    if (!res.access_token) throw new Error(`获取 access_token 失败：${res.message ?? JSON.stringify(res).slice(0, 120)}。请检查 AppID/AppSecret（q.qq.com → 开发设置）`);
+    });
+    const res = await response.json().catch(() => ({})) as any;
+    if (!response.ok || !res.access_token) {
+      throw new Error(`获取 access_token 失败（HTTP ${response.status}）：${res.message ?? res.msg ?? JSON.stringify(res).slice(0, 120)}。请检查 AppID/AppSecret（q.qq.com → 开发设置），并确认机器人未在 IP 白名单里排除本机`);
+    }
     this.accessToken = res.access_token;
     this.tokenExpireAt = Date.now() + (Number(res.expires_in ?? 7200) - 300) * 1000;
   }
@@ -66,14 +80,26 @@ export class QqGateway {
     await this.fetchToken(); // 凭据校验
     const gw = await fetch(`${API}/gateway`, { headers: await this.authHeaders(), signal: AbortSignal.timeout(10_000) }).then((r) => r.json()) as any;
     if (!gw.url) throw new Error(`获取网关地址失败：${JSON.stringify(gw).slice(0, 120)}`);
+    this.detachSocket(); // ⛔ 重复连接（手动重连/扫码后旧 socket 还在）会开两条 WS、消息双份
     this.openSocket(String(gw.url));
-    try { fs.mkdirSync(path.dirname(STATE_FILE), { recursive: true }); fs.writeFileSync(STATE_FILE, JSON.stringify({ appId: id, appSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
+    try { fs.mkdirSync(path.dirname(stateFile()), { recursive: true }); fs.writeFileSync(stateFile(), JSON.stringify({ appId: id, appSecret: secret }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
     this.log("info", `QQ 机器人（AppID ${id.slice(0, 8)}…）已连接`);
     return { ok: true, name: "QQ 机器人" };
   }
 
+  /** 摘掉旧 socket（清心跳 + 摘监听再关，防止 close 触发重连把旧连接拉回来） */
+  private detachSocket(): void {
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
+    if (this.ws) {
+      try { this.ws.removeAllListeners(); this.ws.close(); } catch { /* 忽略 */ }
+      this.ws = null;
+    }
+    this.socketReady = false;
+  }
+
   private openSocket(url: string) {
     this.ws = new WebSocket(url);
+    this.ws.on("open", () => { this.socketReady = true; });
     this.ws.on("message", (raw: WebSocket.RawData) => {
       const packet = JSON.parse(String(raw)) as any;
       this.lastSeq = packet.s ?? this.lastSeq;
@@ -90,11 +116,16 @@ export class QqGateway {
         case 7: // Reconnect
           this.resumeSocket();
           break;
+        case 9: // Invalid Session（鉴权失败/会话失效）：不处理就会「看着连着、实际收不到」
+          this.log("error", "QQ 会话鉴权被拒（op9）：检查 AppID/AppSecret 与机器人是否已上线，5s 后重连");
+          this.resumeSocket();
+          break;
         case 11: // Heartbeat ACK
           break;
       }
     });
     this.ws.on("close", () => {
+      this.socketReady = false;
       if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
       if (this.running) setTimeout(() => this.resumeSocket(), 5000); // 断线 5s 重连
     });
@@ -154,26 +185,26 @@ export class QqGateway {
 
   async resume(): Promise<boolean> {
     try {
-      const raw = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+      const raw = JSON.parse(fs.readFileSync(stateFile(), "utf8"));
       if (raw.appId && raw.appSecret) {
         await this.connect(String(raw.appId), String(raw.appSecret));
         return true;
       }
     } catch (error: any) {
+      if (error?.code === "ENOENT") return false; // 没绑过 QQ：不是错误，别刷 channel-log
       this.log("error", `QQ 自动恢复失败：${error?.message ?? error}`);
     }
     return false;
   }
 
-  hasSession() { return Boolean(this.ws); }
+  hasSession() { return this.socketReady; }
 
   logout() {
     this.running = false;
-    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
-    try { this.ws?.close(); } catch { /* 忽略 */ }
-    this.ws = null;
+    this.detachSocket();
     this.accessToken = "";
-    try { fs.rmSync(STATE_FILE, { force: true }); } catch { /* 忽略 */ }
+    this.tokenExpireAt = 0;
+    try { fs.rmSync(stateFile(), { force: true }); } catch { /* 忽略 */ }
     this.log("info", "QQ 登录态已清除，可重新绑定");
   }
 }
