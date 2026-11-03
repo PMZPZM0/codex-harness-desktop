@@ -435,13 +435,39 @@ function downloadWithProgress(args, opts) {
  *  ⛔ 不能用命令行参数传：argv 里的裸词会被当成工具 id（want() 的 requested 集合）。 */
 const SOURCE = (process.env.DOWNLOAD_SOURCE || "auto").toLowerCase();
 
+/* ── curl 能力探测（进程内缓存一次）────────────────────────
+   ⛔ 11-03 定案（终端用户截图，四条通道全挂）：`--retry-all-errors` 是 curl 7.71.0
+   （2020-07）才加入的选项；Windows 自带的 C://Windows//System32//curl.exe 常年停在
+   7.55~7.6x，**在参数解析阶段直接退出**（`curl: option --retry-all-errors: is unknown`）
+   ⇒ npmmirror / gh-proxy / ghfast / 直连四条通道全部秒挂，下载根本没发生。
+   截图里「文件大小 37.2 MB」能取到，正说明网络没问题 —— 大小探测走 `curl -sIL`，
+   不带这个参数。故：先探测版本，旧 curl 就不加这个参数（重试退回默认语义，
+   通道级回落本来就是我们自己的循环，不依赖它）。 */
+let curlRetryAllErrorsCache = null;
+function curlSupportsRetryAllErrors() {
+  if (curlRetryAllErrorsCache !== null) return curlRetryAllErrorsCache;
+  try {
+    const probed = spawnSync("curl", ["--version"], { encoding: "utf8", windowsHide: true, timeout: 10000 });
+    const m = String(probed && probed.stdout ? probed.stdout : "").match(/curl[ ]+(\d+)\.(\d+)(?:\.(\d+))?/i);
+    curlRetryAllErrorsCache = m
+      ? (Number(m[1]) > 7 || (Number(m[1]) === 7 && Number(m[2]) >= 71))
+      : false;
+  } catch {
+    /* 探测失败按「不支持」处理：宁可少一次重试语义，也不能让下载在参数解析阶段挂掉 */
+    curlRetryAllErrorsCache = false;
+  }
+  return curlRetryAllErrorsCache;
+}
+
 async function download(url, file, extraSources = []) {
   process.stdout.write("@@STAGE 下载\n");
   // @@TARGET（10-07 取消功能配套）：把下载落盘路径报给主进程 —— 取消安装时按它删半截压缩包。
   process.stdout.write("@@TARGET " + file + "\n");
   // 见 downloadWithProgress 的注释：进度与速度都靠采样文件大小，curl 这边只要「安静地下载」。
-  const curlArgs = ["-L", "--fail", "--show-error", "--retry", "3", "--retry-all-errors",
+  const curlArgs = ["-L", "--fail", "--show-error", "--retry", "3",
     "--connect-timeout", "30", "--continue-at", "-", "-o", file];
+  /* ⛔ 见 curlSupportsRetryAllErrors 的注释：只有 curl ≥ 7.71 才敢加这个参数 */
+  if (curlSupportsRetryAllErrors()) curlArgs.splice(5, 0, "--retry-all-errors");
   const mirror = chinaMirrorUrl(url);
   const isGh = url.includes("github.com");
   const ghAccels = isGh
