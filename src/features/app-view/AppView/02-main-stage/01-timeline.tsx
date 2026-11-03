@@ -570,7 +570,16 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       reportCompactionState(thread.id, cs);
                       const lastCompaction: any = cs.state === "done" ? cs.item : null;
                       const lastCompactionTurnId = cs.state === "done" ? cs.turnId : "";
-                      const runningCompactionTurnId = cs.state === "compacting" ? cs.turnId : "";
+                      /* ⛔ 11-03 审查修正：`compactionStateOf` 的优先级是「有 in-progress 压缩项 ⇒ 一律
+                         compacting」，而 `cancelCompaction` **只清 pendingRef + 设 cancelled，不 prune 压缩项**
+                         ⇒ 用户点「停止」后残留项会让 state 永远是 compacting。运行线现已挪到时间线末尾，
+                         若这里仍按 compacting 挡掉回合区，底部那条又因 toast 不是 running 不画
+                         ⇒ 取消后**一条线都没有**（比改前更差：改前至少能看到「正在压缩」）。
+                         所以：终态 toast（已取消 / 失败 / 成功）优先，让下面的 else 链去画对应那条。 */
+                      const toastTerminal = compactToast?.state === "cancelled"
+                        || compactToast?.state === "error"
+                        || compactToast?.state === "success";
+                      const runningCompactionTurnId = cs.state === "compacting" && !toastTerminal ? cs.turnId : "";
                       /* 压缩线第三源（10-07）：当前引擎的压缩 item 不进 turns API/事件流（实测）——
                          引擎 item 找不到时，退回主进程 `compaction-watch` 的侦测记录（thread-compacted-host，
                          宿主侧按 rollout 对账、落盘、resume 重播）。锚点语义与引擎 item 完全一致：以压缩
