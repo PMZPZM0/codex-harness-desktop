@@ -47,13 +47,16 @@ export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQ
   /* 11-02 用户令：定时是可选能力，默认关闭；关闭时排队卡**不显示**定时按钮与徽标。 */
   const timerEnabled = useQueueTimerEnabled();
   if (!entries.length) return null;
-  // 新消息往上叠加：渲染倒序（数组末尾的最新消息显示在最顶部）。拖拽 index 是显示序，需镜像回原数组序。
-  const reversed = [...entries].reverse();
+  /* ⛔ 11-03 用户实测：「顺序不对，我发新消息在已排队的上面」。
+     数组序 = 引擎队列的发送顺序（FIFO）⇒ **原样渲染**：先排的在上、新发的在最下面。
+     折叠时只露**末尾 2 条**（= 最新入队的），不能露前 2 条（新消息会被藏起来）。
+     拖拽 index 是显示序 ⇒ 加 offset 映射回原数组序。 */
   const n = entries.length;
   const collapsible = n > 2;
-  const visible = collapsible && !expanded ? reversed.slice(0, 2) : reversed;
+  const visible = collapsible && !expanded ? entries.slice(-2) : entries;
   const hiddenCount = n - visible.length;
-  const mapIndex = (displayIndex: number) => n - 1 - displayIndex;
+  const offset = n - visible.length;
+  const mapIndex = (displayIndex: number) => offset + displayIndex;
   return (
     <div className="queued-messages">
       {collapsible && (
@@ -64,7 +67,7 @@ export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQ
           <span className="queued-collapse-hint">{expanded ? "收起" : `展开全部 ${n} 条（还有 ${hiddenCount} 条）`}</span>
         </button>
       )}
-      {visible.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} total={entries.length} timerEnabled={timerEnabled} timerRunAt={timers[entry.id]} onSetTimer={(runAt) => onSetTimer(entry, runAt)} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
+      {visible.map((entry, displayIndex) => <QueuedMessageItem key={entry.id} entry={entry} index={displayIndex} position={offset + displayIndex + 1} total={n} timerEnabled={timerEnabled} timerRunAt={timers[entry.id]} onSetTimer={(runAt) => onSetTimer(entry, runAt)} onOpenFile={onOpenFile} onQuote={onQuote} onDelete={onDelete} onStart={onStart} onSave={onSave} onReorder={(from, to) => onReorder(mapIndex(from), mapIndex(to))} dragIndex={dragIndex} setDragIndex={setDragIndex} />)}
     </div>
   );
 }
@@ -72,8 +75,8 @@ export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQ
 /** 定时选项（分钟）：相对延迟 + 自定义。与「立即」并列的动作入口。 */
 const TIMER_PRESET_MINUTES = [5, 15, 30, 60];
 
-export function QueuedMessageItem({ entry, index, total, timerEnabled, timerRunAt, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
-  entry: QueueItem; index: number; total: number;
+export function QueuedMessageItem({ entry, index, position, total, timerEnabled, timerRunAt, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
+  entry: QueueItem; index: number; position: number; total: number;
   timerEnabled: boolean;
   timerRunAt?: number;
   onSetTimer: (runAt: number | null) => void;
@@ -131,7 +134,7 @@ export function QueuedMessageItem({ entry, index, total, timerEnabled, timerRunA
     >
       <span className="queued-grip" aria-hidden="true"><GripVertical size={14} /></span>
       <div className="queued-main">
-        <span className="queued-badge"><Clock3 size={11} />排队中{total > 1 ? ` ${index + 1}/${total}` : ""}</span>
+        <span className="queued-badge"><Clock3 size={11} />排队中{total > 1 ? ` ${position}/${total}` : ""}</span>
         {timerEnabled && timerRunAt != null && (
           <span className="queued-badge queued-timer-badge" title={`到点自动发送：${new Date(timerRunAt).toLocaleString()}`}>
             <AlarmClock size={11} />{new Date(timerRunAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 发送

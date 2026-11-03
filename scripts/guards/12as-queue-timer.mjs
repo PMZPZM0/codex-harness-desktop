@@ -68,5 +68,16 @@ ok(/该会话仍有任务在运行/.test(sendSrc) && /thread\/queue\/add/.test(s
   && /消息已放入排队/.test(sendSrc) && /busyThreadId/.test(sendSrc),
   "引擎 busy 拒收 ⇒ 自动入队并提示「消息已放入排队」，不再直接报发送失败");
 
+/* 11-03 用户截图「顺序不对，我发新消息在已排队的上面」：
+   数组序 = 引擎队列的发送顺序（FIFO）⇒ 面板必须**原样渲染**（先排的在上、新发的在最下面）。
+   ⛔ 曾经用 `[...entries].reverse()` 倒序展示"新消息往上叠加"，正好把发送顺序摆反。
+   折叠时露末尾 2 条（最新入队的）；拖拽显示序必须加 offset 映射回原数组序，
+   否则收起态拖最后两条会去改队头。 */
+ok(/const visible = collapsible && !expanded \? entries\.slice\(-2\) : entries;/.test(queueSrc)
+  && /const offset = n - visible\.length;/.test(queueSrc)
+  && /const mapIndex = \(displayIndex: number\) => offset \+ displayIndex;/.test(queueSrc)
+  && !/\.reverse\(\)/.test(queueSrc),
+  "排队面板按发送顺序渲染（先排的在上、新消息在最下面；折叠露最新 2 条；拖拽按 offset 映射）");
+
 console.log(fails ? `\n【queue-timer】失败 ${fails} 项` : `\n【queue-timer】通过 ${checks} 项`);
 process.exit(fails ? 1 : 0);
