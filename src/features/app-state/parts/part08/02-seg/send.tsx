@@ -658,6 +658,30 @@ export async function send(bag: Bag, event?: FormEvent) {
       // 没有这一步，用户强制选回被标灰的档位、或网关后来放开了，标记会永久留着（一直标灰）。
       if (bag.effort) clearEffortUnsupported(resolveStartModel(bag), bag.effort);
     } catch (error: any) {
+      /* ⛔ 11-03 用户截图「排队消息都发不出去了」：后台任务/引擎回合仍在跑，
+         但渲染层 runningThreadIds 偶尔没记上（例如后台任务队列自动启动、goal 自续）⇒
+         走了空闲直发，被主进程 busy 闸拒。引擎是权威：busy 就直接入队，
+         不要再把消息还给输入框、更不要报「发送失败」。 */
+      const busyThreadId = createdThreadId ?? bag.optimisticBaselineRef.current.threadId ?? bag.threadRef.current?.id;
+      if (busyThreadId && /该会话仍有任务在运行|仍有任务在运行|active turn|still running/i.test(String(error?.message ?? ""))) {
+        try {
+          await window.codex.request("thread/queue/add", {
+            threadId: busyThreadId,
+            input: sendInput,
+            clientUserMessageId: crypto.randomUUID(),
+          });
+          bag.setOptimisticInput(null);
+          bag.setSending(false);
+          bag.setActiveTurnId(null);
+          bag.setInterrupting(false);
+          bag.setPlanRunning(false);
+          bag.setWorkStartedAt(null);
+          bag.markThreadStopped(busyThreadId);
+          void bag.refreshQueue(busyThreadId);
+          bag.scopedNotice("会话仍在运行，消息已放入排队，等当前任务结束自动发送", busyThreadId);
+          return;
+        } catch { /* 入队也失败 ⇒ 走下面正常失败回填 */ }
+      }
       // turn/start RPC 直接以限流失败：安排应用层自动重试（10 次退避，按会话独立）
       if (isRateLimitError(error?.message)) {
         const retryThreadId = createdThreadId ?? bag.optimisticBaselineRef.current.threadId ?? bag.threadRef.current?.id;

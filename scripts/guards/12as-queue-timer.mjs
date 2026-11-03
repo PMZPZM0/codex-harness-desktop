@@ -61,5 +61,12 @@ ok(/if \(!isQueueTimerEnabled\(\)\) \{\s*try \{ localStorage\.removeItem\("queue
 const timerCalls = [...partSrc.matchAll(/setQueuedTimer\([^)]*null[^)]*\)/g)].map((m) => m[0]);
 ok(timerCalls.length > 0 && timerCalls.every((call) => call.includes("silent")), `所有「取消定时」调用都走静默或手动取消语义（${timerCalls.length} 处）`);
 
+/* 11-03 用户截图「排队消息都发不出去了」：running 状态漏记时直发会撞引擎 busy 闸；
+   必须自动降级为 thread/queue/add，不能把消息还给输入框或直接报失败。 */
+const sendSrc = read("src/features/app-state/parts/part08/02-seg/send.tsx");
+ok(/该会话仍有任务在运行/.test(sendSrc) && /thread\/queue\/add/.test(sendSrc)
+  && /消息已放入排队/.test(sendSrc) && /busyThreadId/.test(sendSrc),
+  "引擎 busy 拒收 ⇒ 自动入队并提示「消息已放入排队」，不再直接报发送失败");
+
 console.log(fails ? `\n【queue-timer】失败 ${fails} 项` : `\n【queue-timer】通过 ${checks} 项`);
 process.exit(fails ? 1 : 0);
