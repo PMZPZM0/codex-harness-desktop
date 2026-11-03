@@ -536,6 +536,13 @@ try {
   ok(/aliasRecordOf\(threadId\)/.test(coreSrc) && /supervisorThreadId/.test(coreSrc)
     && /bossStore/.test(coreSrc) && /群成员会话/.test(coreSrc),
     "凡是「有上级」或群成员的会话一律判定为子会话（未走 delegateRegistry 的路径也挡住）");
+  const attentionSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"), "utf8");
+  ok(/const delegatedRow = Boolean\(delegateKind\)/.test(attentionSrc)
+    && /delegatedRow && bag\.delegateRecords\[entry\.id\]/.test(attentionSrc),
+    "被调度行只保留一枚调度徽标（来源「调度」与状态「调度中」不再叠加成两个标签）");
+  const sidebarSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
+  ok(sidebarSrc.includes("子会话 · {children.length}") && !sidebarSrc.includes("调度会话 · {children.length}"),
+    "折叠块标题用「子会话」，与行内的「调度」状态徽标不重复");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

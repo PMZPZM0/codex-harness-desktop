@@ -291,7 +291,11 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
        调度进度徽标 / 额外徽标不再叠加 —— "它被谁派出、跑到哪一步"在缩进的父行与展开块里已经说过。
        顶层行（普通会话 / 簇头）维持原样：笔名 + 身份徽标是两件不同的事，用户没让删。 */
     const oneBadge = variant === "member";
-    const secondaryBadge = oneBadge ? null : (sourceBadge || fallbackTeamBadge);
+    /* ⛔ 11-03 用户截图「两个调度标签」：被调度行同时有来源徽标「调度」与状态徽标
+       DispatchBadge（调度 / 调度中 / 调度失败）⇒ 两枚同义徽标 + 一个「+1」。
+       有调度记录时只保留带状态的那一枚；来源徽标让位（层级与状态仍可见）。 */
+    const delegatedRow = Boolean(delegateKind);
+    const secondaryBadge = oneBadge ? null : ((delegatedRow && bag.delegateRecords[entry.id]) ? null : (sourceBadge || fallbackTeamBadge));
     /* ⛔ 11-01 用户令：「直接改会话名字，而不是在前面加一个什么主管标签」——
        笔名不再做成徽标（它已经是标题本身），徽标位只留给身份 / 状态。 */
     /* 标签集合：**最多只渲染一个**，其余靠点击标签循环（顺序 = 先提醒、再身份、再附加）。 */

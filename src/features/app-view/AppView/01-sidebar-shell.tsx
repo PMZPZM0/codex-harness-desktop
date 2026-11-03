@@ -676,9 +676,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       const collapsed = !expandedDispatchBlocks.has(dispatchKey);
       return (
         <div className={`dispatch-children ${collapsed ? "collapsed" : "expanded"}`}>
-          <button type="button" className="dispatch-children-label" title={collapsed ? `展开 ${children.length} 个被调度会话` : "收起被调度会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
+          <button type="button" className="dispatch-children-label" title={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
             <ChevronDown size={11} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
-            <CornerDownRight size={11} />调度会话 · {children.length}
+            <CornerDownRight size={11} />子会话 · {children.length}
           </button>
           {!collapsed && children.map((child) => {
             const childThread = listThreads.find((t) => t.id === child.threadId);
