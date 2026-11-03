@@ -310,8 +310,18 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/export function syncToolSurfaceAsync\(/.test(poolCode) && /call\("syncTools"/.test(poolCode),
     "rollout-pool 暴露 syncToolSurfaceAsync（传到 worker 的 syncTools op）");
   const ipcCode = codeOnly(read("electron/features/codex-ipc.ts"));
-  /* 10-21 工具面带 `step` 参数后，第三个实参是 withStepParam(resumeTools)；判据盯「resume 之前 await」与「最终工具面」两点。 */
-  ok(/method === "thread\/resume"[\s\S]{0,1200}await syncToolSurfaceAsync\(codexHome, resumeThreadId, (?:withStepParam\(resumeTools\)(?:\s+as\s+[^,)]+)?|resumeTools)\)/.test(ipcCode),
+  /* 11-02 判据更正（不是放松）：工具面现在写成 `const surface = withStepParam([...合并后的 byName.values()])`，
+     第三个实参不再是 withStepParam(resumeTools) —— 原判据把**实参写法**钉死了，加一次合并逻辑就报红，
+     而它真正要守的语义只有一条：**在这条 resume 被转发之前**把首行改好。
+     改成顺序判据：resume 分支出现之后、同一分支的 4000 字符内，必须有一处 await syncToolSurfaceAsync(
+     （那段代码在转发前同步执行）。⛔ 不是"有这行就行"：距离上限挡住"文件别处另有一个调用"的假真。 */
+  const resumePos = ipcCode.indexOf('method === "thread/resume"');
+  const syncPos = resumePos >= 0 ? ipcCode.indexOf("await syncToolSurfaceAsync(", resumePos) : -1;
+  const nextBranchPos = resumePos >= 0 ? ipcCode.indexOf("} else if (method ===", resumePos) : -1;
+  ok(resumePos >= 0
+    && syncPos > resumePos
+    && syncPos - resumePos < 4000
+    && (nextBranchPos < 0 || syncPos < nextBranchPos),
     "⛔ codex-ipc 在 thread/resume **之前** await 工具面同步（引擎就是在这条 resume 上 spawn 会话并读首行；晚一步就白做）");
   ok(/multiple === true \|\| args\.multiple === "true"/.test(codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"))),
     "agent_ask 的 multiple 解析容错字符串 \"true\"（个别模型会传字符串）");
@@ -380,7 +390,7 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   /* 中枢派活的壳里要带「上级：」（模型侧知道谁派的）+ 成员线程登记上级（气泡头部的名字来源，
      中枢改名后子会话跟着变）。⛔ 两处缺一处：气泡只能退回通用「主会话」。 */
   const bossRunner = read("electron/boss-groups/runner.ts");
-  ok(/上级：\$\{supervisor\}/.test(bossRunner) && /memberPrompt\(group, member, task, attempt\.n, bossSupervisor\)/.test(bossRunner),
+  ok(/上级：\$\{supervisor\}/.test(bossRunner) && /memberPrompt\(group, member, task, attempt\.n, bossSupervisor[,)]/   /* 11-03 放宽：7f2928fd3 给 memberPrompt 追加了 userNorms 形参，判据原来精确钉到 bossSupervisor) 不再匹配 —— 意图（bossSupervisor 必须作为第 5 参）不变，兼容带/不带 norms 两种调用 */.test(bossRunner),
     "中枢派活的壳里写「上级：<中枢会话名>」（⛔ 不写 = 子会话不知道上级是谁）");
   ok(/ensureSessionAlias\(threadId, String\(group\.bossThreadId/.test(bossRunner)
     && /ensureSessionAlias\(member\.threadId, String\(group\.bossThreadId/.test(bossRunner),

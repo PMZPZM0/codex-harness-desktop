@@ -62,6 +62,12 @@ assert.ok(
 const imageFunctions = persistFn + "\n" + generateFn;
 let payload;
 const imageDir = await fs.mkdtemp(path.join(os.tmpdir(), 'generate-image-'));
+/* ⛔ 夹具说明（11-02）：抠出来的函数体里现在调 `outboundFetch(...)`（主进程出站请求守卫），
+   而它是**模块级 const** —— 只抠函数体带不过来，vm 里就是 ReferenceError，整条 check 链
+   从这里断掉（不是红条，是脚本异常退出，后面的守卫全不跑，比红条更危险）。
+   这里把它注入成一个「直接交给假 fetch」的转发器：本脚本要验的是生图/落盘的逻辑
+   （b64 → 文件、url 何时为空），**不是**网络守卫，所以不该让守卫参与判定。 */
+const fakeFetch = async () => new Response(JSON.stringify(payload));
 const generate = vm.runInNewContext(ts.transpile(imageFunctions) + '\ngenerateImageWith', {
   AbortSignal,
   Buffer,
@@ -70,7 +76,8 @@ const generate = vm.runInNewContext(ts.transpile(imageFunctions) + '\ngenerateIm
   existsSync,
   app: { getPath: () => imageDir },
   console: { warn: () => {} },
-  fetch: async () => new Response(JSON.stringify(payload)),
+  fetch: fakeFetch,
+  outboundFetch: (input, init) => fakeFetch(input, init),
   describeNetworkError: error => error,
 });
 const input = { baseUrl: 'https://example.com/v1', apiKey: 'test-only', model: 'gpt-image-2', prompt: 'test' };
