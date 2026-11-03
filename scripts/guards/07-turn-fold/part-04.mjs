@@ -675,25 +675,31 @@ export async function run() {
   (verifyPkg.includes("open-computer-use") && verifyPkg.includes("没有执行位") && verifyPkg.includes("别的平台的二进制") ? ok : fail)(
     "【274】产物层三条校验在位（主程序存在 + 执行位 + 不许残留 windows/linux 二进制）"
   );
-  (/shouldRegisterComputerUse\(\{ desktop: desktopAuto, binaryReady: Boolean\(launcher\) \}\)/.test(apply274)
+  (/shouldRegisterComputerUse\(\{ desktop: desktopAuto, binaryReady: Boolean\(launcher\), enabled: computerUseBackend \}\)/.test(apply274)
     && (/COMPUTER_USE_MCP_SERVER,/.test(apply274) && /\.\.\.connectors\.map\(/.test(apply274)) /* 10-13 ownedMcpServers 插入 rea，字面量切片放宽为两端都在 */ ? ok : fail)(
     "【274】注册处真接线（调 shouldRegisterComputerUse + 服务器名进 ownedMcpServers）"
   );
   (/args = \["\$\{escapeToml\(launcher\)\}", "mcp"\]/.test(apply274) ? ok : fail)(
     "【274】args 固定为 [启动脚本绝对路径, \"mcp\"]（上游 MCP 配置就是 command + args:[mcp]，写成裸命令名会静默起不来）"
   );
-  (/fs\.existsSync\(launcher\) && fs\.existsSync\(app\)/.test(toolchain274) ? ok : fail)(
-    "【274】就绪判据同时看启动脚本与 .app（只装上半截 = MCP 起得来但每次调用都失败）"
+  (/fs\.existsSync\(launcher\) && fs\.existsSync\(target\)/.test(toolchain274)
+    && /dist", "windows", process\.arch === "arm64" \? "arm64" : "amd64"/.test(toolchain274) ? ok : fail)(
+    "【274】就绪判据同时看启动脚本与主程序（mac .app / win dist/windows/<arch>/*.exe；只装上半截 = MCP 起得来但每次调用都失败）"
   );
   let policy274 = null;
   try { policy274 = req274(join(ROOT, "dist-electron", "automation-policy.js")); } catch { policy274 = null; }
   // ⛔ 真跑：mac 上 nuphus 桌面组必须整组被掩（否则两条键鼠通道并存），浏览器组不受影响
-  const macMask = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "darwin") : null;
-  const winMask = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "win32") : null;
-  (Array.isArray(macMask) && policy274 && macMask.length === policy274.NUPHUS_DESKTOP_TOOLS.length
-    && macMask.every((tool) => tool.startsWith("desktop_")) && !macMask.some((tool) => tool.startsWith("browser_"))
-    && Array.isArray(winMask) && winMask.length === 0 ? ok : fail)(
-    `【274】mac 掩掉 nuphus 桌面组、Windows 一组都不掩（实测 mac=${macMask ? macMask.length : "取不到"} 条 / win=${winMask ? winMask.length : "取不到"} 条）`
+  /* 11-03 用户令：两个后端开关默认都开 ⇒ 默认一台都不掩；只有用户关掉 nuphus 后端时掩桌面组
+     （browser_* 永远保留，充当默认浏览器回落）。 */
+  const macMaskDefault = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "darwin") : null;
+  const winMaskDefault = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "win32") : null;
+  const macMaskOff = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "darwin", { nuphus: false }) : null;
+  const winMaskOff = policy274 ? policy274.nuphusDisabledTools({ desktop: true, browser: true }, "win32", { nuphus: false }) : null;
+  (Array.isArray(macMaskDefault) && macMaskDefault.length === 0 && Array.isArray(winMaskDefault) && winMaskDefault.length === 0
+    && Array.isArray(macMaskOff) && policy274 && macMaskOff.length === policy274.NUPHUS_DESKTOP_TOOLS.length
+    && macMaskOff.every((tool) => tool.startsWith("desktop_")) && !macMaskOff.some((tool) => tool.startsWith("browser_"))
+    && Array.isArray(winMaskOff) && winMaskOff.length === policy274.NUPHUS_DESKTOP_TOOLS.length ? ok : fail)(
+    `【274】默认两个后端都开 ⇒ 不掩码；关掉 nuphus 后端只掩桌面组（实测 mac=${macMaskOff ? macMaskOff.length : "取不到"} / win=${winMaskOff ? winMaskOff.length : "取不到"} 条，browser_* 保留）`
   );
   let caps274 = null;
   try { caps274 = req274(join(ROOT, "dist-electron", "capability-registry.js")); } catch { caps274 = null; }
@@ -714,26 +720,55 @@ export async function run() {
      三处都要把 mac 的 computer-use 放第一，且明令禁止在 mac 上用 nuphus 的 desktop 通道。 */
   const di274 = codeOnly(readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8"));
   const skill274 = codeOnly(readBuiltinSkillsSource());
-  ((caps274 && Array.isArray(caps274.CAPABILITIES) ? (() => {
-    const desktop = caps274.CAPABILITIES.find((entry) => entry.id === "desktop");
-    return desktop?.backends?.[0]?.id === "computer-use-desktop";
-  })() : false) ? ok : fail)(
-    "【274】桌面后端顺序：computer-use 排第一（mac 首选；Windows 自动落到 nuphus）"
+  /* 11-03 用户令：两个后端都开，按系统排序（Windows nuphus 主 / mac computer-use 主）。 */
+  const order274 = (resolution, platform) => {
+    const item = (resolution ?? []).find((entry) => entry.id === "desktop");
+    return { active: item?.activeId ?? null, second: item?.alternatives?.[0]?.id ?? null };
+  };
+  const macOrder = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "darwin" }), "darwin") : null;
+  const winOrder = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "win32" }), "win32") : null;
+  (macOrder?.active === "computer-use-desktop" && macOrder?.second === "nuphus-desktop"
+    && winOrder?.active === "nuphus-desktop" && winOrder?.second === "computer-use-desktop" ? ok : fail)(
+    `【274】平台优先排序：mac=computer-use→nuphus，win=nuphus→computer-use（实测 mac=${macOrder?.active}/${macOrder?.second}，win=${winOrder?.active}/${winOrder?.second}）`
+  );
+  const macFallback = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "darwin", computerUseAvailable: false }), "darwin") : null;
+  const winFallback = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "win32", nuphusAvailable: false }), "win32") : null;
+  (macFallback?.active === "nuphus-desktop" && winFallback?.active === "computer-use-desktop" ? ok : fail)(
+    `【274】主后端缺失时自动落到辅助后端（mac 无 computer-use ⇒ ${macFallback?.active}；win 无 nuphus ⇒ ${winFallback?.active}）`
   );
   (/const desktopInstructions = \(platform: NodeJS\.Platform = process\.platform\)/.test(di274)
     && /platform === "darwin" \? MAC_DESKTOP_INSTRUCTIONS/.test(di274)
     && /computer-use` MCP server/.test(di274)
-    && /nuphus `desktop_\*` group is NOT registered/.test(di274)
-    && /must NOT be used/.test(di274)
+    && /auxiliary\*\* backend on macOS/.test(di274)
+    && /nuphus-call <tool> key=value/.test(di274)
+    && /AUXILIARY on Windows/.test(di274)
     && !/text \+= DESKTOP_INSTRUCTIONS;/.test(di274) ? ok : fail)(
-    "【274】常驻指令按平台分叉：mac 首选 computer-use 并明确禁止 nuphus desktop 通道（Windows 文案不变）"
+    "【274】常驻指令按平台分叉：mac computer-use 主 / nuphus 辅；Windows nuphus 主 / computer-use 辅"
   );
-  (skill274.includes("macOS：桌面自动化 =") && skill274.includes("computer-use") && /nuphus-call desktop_\*.*禁止/.test(skill274) ? ok : fail)(
-    "【274】桌面技能有 macOS 分支（computer-use 工具与循环 + 禁止 nuphus-call desktop_*）"
+  (skill274.includes("macOS：桌面自动化 =") && skill274.includes("computer-use")
+    && /辅助后端 = nuphus/.test(skill274) && /第二清单通道/.test(skill274) ? ok : fail)(
+    "【274】桌面技能双平台分支：mac computer-use 主 + nuphus 辅；Windows UIA/nuphus 主 + computer-use 辅助"
   );
   (apply274.indexOf("COMPUTER_USE_MCP_SERVER") >= 0
     && apply274.indexOf("COMPUTER_USE_MCP_SERVER") < apply274.indexOf("shouldRegisterNuphus") ? ok : fail)(
-    "【274】config 写出顺序：computer-use 段排在 nuphus 之前（mac 上工具面优先级一致）"
+    "【274】config 写出顺序：computer-use 段排在 nuphus 之前"
+  );
+  /* 开关联动：两个后端都有独立偏好字段（默认 true）+ 控制台两个小选项 + 注册/掩码跟随开关。 */
+  const settings274 = codeOnly(readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8"));
+  const general274 = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx"), "utf8"));
+  (settings274.includes("desktopBackendNuphus?: boolean") && settings274.includes("desktopBackendComputerUse?: boolean")
+    && general274.includes("DesktopBackendOptions") && general274.includes("desktopBackendNuphus")
+    && general274.includes("desktopBackendComputerUse") && general274.includes('label: "Computer Use（控件清单）"')
+    && general274.includes("settings-backend-options") ? ok : fail)(
+    "【274】控制台桌面自动化下有 Nuphus / Computer Use 两个小开关（默认开，按平台排序）"
+  );
+  (/desktopBackendNuphus !== false/.test(apply274) && /desktopBackendComputerUse !== false/.test(apply274)
+    && /\{ nuphus: nuphusBackend \}/.test(apply274) && /enabled: computerUseBackend/.test(apply274) ? ok : fail)(
+    "【274】注册与掩码跟随开关（关 nuphus 只掩桌面组；关 computer-use 不写它的 MCP 段）"
+  );
+  const runtime274 = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
+  (/platforms: \["darwin", "win32"\]/.test(runtime274) ? ok : fail)(
+    "【274】computer-use 在 Windows 也可安装/更新（自动化 → 版本与手动更新）"
   );
 }
 }

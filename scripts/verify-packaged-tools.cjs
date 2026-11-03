@@ -52,6 +52,18 @@ if (process.platform === "darwin") {
       "既省体积也免得杀软/审计问这是什么。");
   }
 }
+if (process.platform === "win32") {
+  /* 11-03 用户令：Windows 也随包带 computer-use（辅助后端）。 */
+  const ocuRoot = path.join(modules, "open-computer-use");
+  const ocuLauncher = path.join(ocuRoot, "bin", "open-computer-use");
+  const ocuExe = path.join(ocuRoot, "dist", "windows", "amd64", "open-computer-use.exe");
+  assert.ok(fs.existsSync(ocuLauncher) && fs.existsSync(ocuExe),
+    "Windows 包缺少 open-computer-use —— 检查 prepare-windows-tools.cjs 的 npm 安装步骤。");
+  for (const foreign of ["Open Computer Use.app", "linux"]) {
+    assert.ok(!fs.existsSync(path.join(ocuRoot, "dist", foreign)),
+      `Windows 包里残留 open-computer-use/dist/${foreign}（别的平台的二进制）—— prepare-windows-tools 应裁掉它。`);
+  }
+}
 const env = {
   ...process.env,
   PATH: [path.dirname(node), path.join(root, "npm-global"), path.join(root, "npm-global", "bin"), process.env.PATH].join(path.delimiter),

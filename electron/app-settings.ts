@@ -29,6 +29,11 @@ export type AppSettings = {
   webSearch?: boolean;
   desktopAutomation?: boolean;
   browserAutomation?: boolean;
+  /** 桌面自动化后端开关（11-03 用户令）：两个都默认开，按平台优先级由常驻指令决定
+   *  （Windows：nuphus 主 / computer-use 辅；macOS：computer-use 主 / nuphus 辅）。
+   *  ⛔ 关掉 nuphus 只掩桌面组（浏览器组保留）；关掉 computer-use 就不注册它的 MCP 段。 */
+  desktopBackendNuphus?: boolean;
+  desktopBackendComputerUse?: boolean;
   engineWatchdog?: boolean;
   /** 功能入口（10-24）：位置 / 顺序 / 更多分组。渲染层 localStorage 只是缓存，
    *  这里才是重启后的回灌源（强制结束进程时 localStorage 最后写入可能丢）。 */

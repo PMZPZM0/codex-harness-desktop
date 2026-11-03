@@ -14,9 +14,9 @@ description: 操控本机桌面：macOS 用 computer-use 的 list_apps/get_app_s
 - **macOS：桌面自动化 = \`computer-use\` MCP（open-computer-use）**，工具：\`list_apps\` / \`get_app_state\` / \`click\` / \`perform_secondary_action\` / \`scroll\` / \`drag\` / \`type_text\` / \`press_key\` / \`set_value\`。它走 Accessibility 控件清单，**按元素/序号操作**，不靠猜坐标。
   - 判存在：工具列表里有 \`list_apps\` / \`get_app_state\` 才走本技能。
   - 循环：\`list_apps\` → \`get_app_state\`（拿控件清单）→ \`click\` / \`perform_secondary_action\` / \`type_text\` … → 再用 \`get_app_state\` 复核。长文本优先 \`set_value\` 或剪贴板 + Cmd+V；一次只发一个自动化调用。
-  - ⛔ mac 上 nuphus 的 \`desktop_*\` 已被硬掩，\`nuphus-call desktop_*\` **不是** mac 通道，禁止使用；nuphus 在 mac 只剩 \`browser_*\`（浏览器仍优先 \`ego-browser\`）。
-  - 工具不可用：让用户检查「系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制」是否已授权，以及桌面总闸是否打开；⛔ 不操作系统授权/提权弹窗。
-- **Windows：** 下面这套 \`desktop_*\` / \`nuphus-call\` / \`desktop_ui_*\` 才是主线。
+  - **辅助后端 = nuphus**（默认也开启）：上面这些 computer-use 工具不可用或调用失败时，才退回 \`nuphus-call desktop_*\`（列窗口 / 截屏 / OCR / 鼠标键盘）；⛔ 同一任务里不要两套后端混用。浏览器仍优先 \`ego-browser\`。
+  - 工具不可用：先让用户检查「系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制」是否已授权，以及桌面总闸是否打开；仍不行再用 nuphus 辅助通道，并说明用的是哪条；⛔ 不操作系统授权/提权弹窗。
+- **Windows：** 主线是 \`desktop_ui_*\`（UIA 控件清单）→ \`nuphus-call desktop_*\`（OCR 坐标兜底）；若工具列表里另有 \`computer-use\` 的 \`list_apps\` / \`get_app_state\`，它只作**第二清单通道**，不要优先于前两者。
 
 本机（Windows）已内置 Nuphus 桌面自动化 MCP（服务器名 \`nuphus\`），工具已直接注册在你的工具列表中（\`desktop_*\` 前缀），**直接调用即可，无需写脚本**。
 

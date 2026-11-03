@@ -175,7 +175,18 @@ async function main() {
     //    与 mac 侧同一处置（那边对 arm64 也显式放行）。
     "--allow-scripts=@nuphus/nuphus-mcp",
     `@nuphus/nuphus-mcp@${NUPHUS_VERSION}`,
+    /* 11-03 用户令：Windows 也带 computer-use 作为辅助桌面后端（nuphus 仍是首选）。
+       13MB 的 npm 包，包里只有 dist/windows 需要；mac/linux 二进制在下面裁掉。 */
+    `open-computer-use@${TOOLS_VERSIONS.computerUse}`,
   ], env);
+
+  // open-computer-use：只留 Windows 主程序（mac 的 .app / linux 二进制裁掉，省体积也免杀软误报）
+  const ocuRoot = path.join(prefix, "node_modules", "open-computer-use");
+  fs.rmSync(path.join(ocuRoot, "dist", "Open Computer Use.app"), { recursive: true, force: true });
+  fs.rmSync(path.join(ocuRoot, "dist", "linux"), { recursive: true, force: true });
+  const ocuExe = path.join(ocuRoot, "dist", "windows", "amd64", "open-computer-use.exe");
+  if (!fs.existsSync(ocuExe)) throw new Error(`open-computer-use 装完找不到 Windows 主程序：${ocuExe}`);
+  console.log(`[open-computer-use] ${TOOLS_VERSIONS.computerUse} → ${ocuExe}`);
 
   // 3) VS Code CLI（latest 口径，已就位就跳过）
   const vscodeCode = path.join(tools, "vscode-cli", "code.exe");

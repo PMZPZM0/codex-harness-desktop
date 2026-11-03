@@ -195,9 +195,10 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   ⇒ 原样写出就不是合法 JSON，坐标一律过 `Round-Geom` 归一。
 - ⛔ `harness-uia.mjs` 拉起 PowerShell 只用**参数数组、不开 shell**（title/text 是外部输入 = 注入面）。
 
-### 🖥 mac 桌面自动化后端 open-computer-use（10-04 用户拍板，守卫【274】8 条）
+### 🖥 桌面自动化后端 open-computer-use（10-04 立；11-03 扩到 Windows、双开关，守卫【274】）
 
-用户决策：**mac 用 computer use 随包内置，Windows 用 nuphus**（+ 上面的 UIA 清单通道）。
+用户决策（11-03 更新）：**两个后端都可用、默认都开** —— macOS computer-use 主 / nuphus 辅；
+Windows nuphus（+ UIA 清单）主 / computer-use 辅。mac 随包、Windows 也随包（`prepare-windows-tools.cjs`）。
 
 - 数据源 = npm 包 `open-computer-use`（MIT，作者 iFurySt，是对 Codex 原生 computer use 的开源复刻）。
   包内**已带四平台二进制**（解包 ~13MB），`postinstall` 只打印安装提示 ⇒ CI 加 `--ignore-scripts` 也装得动。
@@ -206,10 +207,13 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   装完**裁掉 `dist/windows` 与 `dist/linux`**（mac 包里不该躺别的平台的二进制），并补 `Contents/MacOS/*` 执行位。
 - 注册 = `[mcp_servers.computer-use]`，`command` 用**随包 node + 启动脚本绝对路径**、`args = [<launcher>, "mcp"]`。
   ⛔ 不能写裸命令名 `open-computer-use`：装进 `.app` 后 PATH 里没有它，会得到一个静默起不来的服务器。
-- ⛔ **同一时刻只留一条真实键鼠通道**：mac 上把 nuphus 的 15 个 `desktop_*` 整组进 `disabled_tools`
-  （`nuphusDisabledTools(switches, platform)` 的新参数），浏览器组照旧由 nuphus 提供。
-  否则模型会随机挑一个后端，出错也分不清是谁。
-- 「设置 → 开发工具」的**当前能力链路**按平台给唯一后端（mac=`computer-use-desktop`，win=`nuphus-desktop`），
+- ⛔ **两个后端开关（11-03 用户令，覆盖 10-04「mac 永远掩 nuphus 桌面组」）**：「控制台 → 桌面自动化 → 桌面后端」
+  有 Nuphus / Computer Use 两个小开关，**默认都开**；关 Nuphus 只把它的 15 个 `desktop_*` 整组进 `disabled_tools`
+  （浏览器组保留），关 Computer Use 则不写它的 MCP 段。
+- **平台优先级**：Windows = nuphus 主 / computer-use 辅；macOS = computer-use 主 / nuphus 辅。
+  三处必须一致：能力表排序（`resolveCapabilities` 按平台排序）、常驻指令（`desktopInstructions(platform)`）、
+  `desktop-automation` 技能。⛔ Windows 包也随带 computer-use（`prepare-windows-tools.cjs`，只留 `dist/windows`）。
+- 「设置 → 开发工具」的**当前能力链路**按平台排序给首选后端（mac=`computer-use-desktop`，win=`nuphus-desktop`），
   判据与 automation-policy 同源，【274】真跑 `resolveCapabilities` 比对两平台结论。
 - ⚠️ **未经真机验证**：签名/公证与 Gatekeeper 放行、首次「辅助功能 + 屏幕录制」授权体验只能在 mac 上跑出来。
   产物层的三条硬校验（主程序存在 / 执行位 / 不残留别的平台二进制）已写进 `scripts/verify-packaged-tools.cjs`。

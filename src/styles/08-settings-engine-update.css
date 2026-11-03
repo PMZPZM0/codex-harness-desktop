@@ -350,6 +350,31 @@
 .settings-toggle-row:hover {
   background: color-mix(in srgb, var(--text) 4%, transparent);
 }
+/* 桌面后端小选项（11-03）：缩进挂在「桌面自动化」下面，按系统优先级排序。 */
+.settings-backend-options {
+  margin: 0 0 6px 44px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-backend-options-title {
+  margin: 0 0 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.settings-backend-options-title span {
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
+.settings-toggle-row.is-sub { padding: 6px 4px; }
+.settings-toggle-row.is-sub .settings-toggle-icon { width: 24px; height: 24px; }
+.settings-toggle-row.is-sub .settings-toggle-text strong { font-size: 12.5px; }
+.settings-toggle-row.is-sub .settings-toggle-text small { font-size: 11px; line-height: 1.45; }
 .settings-toggle-icon {
   width: 30px;
   height: 30px;

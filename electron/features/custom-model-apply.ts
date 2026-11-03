@@ -54,7 +54,10 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
   // ⛔ 再叠加**总闸掩码**（09-20）：关掉「桌面自动化 / 浏览器自动化」的那一组，整体进 disabled_tools
   //    —— 工具从引擎工具表消失 ⇒ 真阻断（此前浏览器总闸只是提示词级控制）。
-  const mcpToolRules = withNuphusMasksForRules(mcpToolRulesOf(mcpOverrides), { desktop: desktopAuto, browser: browserAuto });
+  /* 11-03 用户令：两个桌面后端开关默认都开；关闭 nuphus 只掩桌面组（browser_* 保留）。 */
+  const nuphusBackend = appSettings.desktopBackendNuphus !== false;
+  const computerUseBackend = appSettings.desktopBackendComputerUse !== false;
+  const mcpToolRules = withNuphusMasksForRules(mcpToolRulesOf(mcpOverrides), { desktop: desktopAuto, browser: browserAuto }, { nuphus: nuphusBackend });
   await writeMcpOverrides(mcpOverrides);
   const connectorEnvValue = connectorEnv(connectors);
   // 官方订阅走 chatgpt.com 后端（区域受限）：引擎也要走用户配置的代理，否则 Cloudflare 403/直连超时
@@ -302,7 +305,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     ...(() => {
       const launcher = computerUseLauncher();
       const node = bundledNode();
-      if (!shouldRegisterComputerUse({ desktop: desktopAuto, binaryReady: Boolean(launcher) })) return [];
+      if (!shouldRegisterComputerUse({ desktop: desktopAuto, binaryReady: Boolean(launcher), enabled: computerUseBackend })) return [];
       if (!node || !mcpOverrideEnabled(mcpOverrides, COMPUTER_USE_MCP_SERVER)) return [];
       return [
         `[mcp_servers.${COMPUTER_USE_MCP_SERVER}]`,

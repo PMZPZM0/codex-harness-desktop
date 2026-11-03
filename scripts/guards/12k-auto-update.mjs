@@ -104,11 +104,11 @@ ok(!/https?:\/\//.test(boardCode),
 ok(/CHINA_NPM_REGISTRY/.test(runtimeIpc) && /NPMMIRROR/.test(read("electron/engine-updater.ts")),
   "两条链路各自持有国内镜像常量（删掉就等于源被换回官方）");
 
-console.log("【④ Mac 电脑操作：按平台过滤 + 包名只写一次】");
-ok(/"computer-use": \{[^}]*open-computer-use[^}]*platforms: \["darwin"\]/.test(runtimeIpc),
-  "UPDATEABLE_TOOLS 里 computer-use 带 platforms:[darwin]");
+console.log("【④ 电脑操作（computer-use）：按平台过滤 + 包名只写一次】");
+ok(/"computer-use": \{[^}]*open-computer-use[^}]*platforms: \["darwin", "win32"\]/.test(runtimeIpc),
+  "UPDATEABLE_TOOLS 里 computer-use 带 platforms:[darwin, win32]（Windows 可装辅助后端）");
 ok(/export function updateableToolIds\(\)[\s\S]{0,300}platforms\.includes\(process\.platform\)/.test(runtimeIpc),
-  "updateableToolIds() 按平台过滤（非 mac 根本不入清单）");
+  "updateableToolIds() 按平台过滤（不支持的系统根本不入清单）");
 ok(/const ids = idValue \? \[idValue\] : updateableToolIds\(\)/.test(runtimeIpc),
   "runtime:update-check 用 updateableToolIds()，不是 Object.keys(UPDATEABLE_TOOLS)");
 // @openai/codex 是**引擎**的包名，不在 UPDATEABLE_TOOLS 里（引擎不走 npm install），写一次是合理的；

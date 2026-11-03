@@ -289,18 +289,23 @@ export function harnessUiaServer() {
 }
 
 /**
- * mac 的桌面自动化后端 `open-computer-use`（Codex 式电脑操作，走 Accessibility 拿控件清单）。
- * 返回它的 CLI 启动脚本路径（Node CJS，内部按自身目录解析 `dist/Open Computer Use.app/...`）；
- * 非 darwin 或包/主程序缺失 ⇒ 空串（不注册，而不是注册一个起不来的服务器）。
- * ⛔ 判就绪要**同时**看启动脚本与 .app：只装上半截时 MCP 起得来但每次调用都失败，最难排查。
+ * 桌面自动化后端 `open-computer-use`（Codex 式电脑操作，走 Accessibility 拿控件清单）。
+ * 返回它的 CLI 启动脚本路径（Node CJS，内部按自身目录解析各平台主程序）；
+ * 不支持的平台或包/主程序缺失 ⇒ 空串（不注册，而不是注册一个起不来的服务器）。
+ * ⛔ 判就绪要**同时**看启动脚本与主程序：只装上半截时 MCP 起得来但每次调用都失败。
+ * 11-03 用户令：Windows 也纳入（nuphus 主、computer-use 辅），主程序在
+ * `dist/windows/<amd64|arm64>/open-computer-use.exe`。
  */
 export function computerUseLauncher() {
-  if (process.platform !== "darwin") return "";
+  if (process.platform !== "darwin" && process.platform !== "win32") return "";
   const launcher = npmPackagePath("open-computer-use", "bin", "open-computer-use");
   if (!launcher) return "";
-  const app = path.join(path.dirname(path.dirname(launcher)), "dist", "Open Computer Use.app");
+  const root = path.dirname(path.dirname(launcher));
+  const target = process.platform === "darwin"
+    ? path.join(root, "dist", "Open Computer Use.app")
+    : path.join(root, "dist", "windows", process.arch === "arm64" ? "arm64" : "amd64", "open-computer-use.exe");
   try {
-    return fs.existsSync(launcher) && fs.existsSync(app) ? launcher : "";
+    return fs.existsSync(launcher) && fs.existsSync(target) ? launcher : "";
   } catch {
     return "";
   }

@@ -93,7 +93,7 @@ export const mcpServersFeature = defineFeature<null>({
       return withNuphusMasks(view as Record<string, Record<string, "deny" | "ask" | "allow">>, {
         desktop: appSettings.desktopAutomation !== false,
         browser: appSettings.browserAutomation !== false,
-      });
+      }, undefined, { nuphus: appSettings.desktopBackendNuphus !== false });
     });
 
     ipcHost.handle("mcp-servers:set-tool-permission", async (_event, input: { server?: unknown; tool?: unknown; mode?: unknown }) => {

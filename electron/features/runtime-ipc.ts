@@ -768,10 +768,10 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
  */
 const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?: NodeJS.Platform[] }> = {
   nuphus: { pkg: "@nuphus/nuphus-mcp", label: "Nuphus 桌面自动化" },
-  // ⛔ mac 专属：open-computer-use 只在 mac 随包工具链里（scripts/prepare-mac-tools.cjs 装进
-  //    <tools>/npm-global），Windows/Linux 上既没装也不该提示 —— 列出来会永远显示「未检测到已装版本」，
-  //    后台自动更新还会为它白跑一次 npm 安装。故带 platforms 约束，由 updateableToolIds() 统一过滤。
-  "computer-use": { pkg: "open-computer-use", label: "Mac 电脑操作（Computer Use）", platforms: ["darwin"] },
+  /* 11-03 用户令：两个桌面后端默认都开、按系统排序（Windows nuphus 主 / mac computer-use 主）
+     ⇒ computer-use 在 Windows 也列为**可安装/可更新**（未装只是「辅助后端不可用」，不影响 nuphus）。
+     ⛔ mac 随包、Windows 需在这里/自动化页装一次（13MB npm 包，不随 Windows 包内置）。 */
+  "computer-use": { pkg: "open-computer-use", label: "电脑操作（Computer Use）", platforms: ["darwin", "win32"] },
   // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
   rea: { pkg: "rea-agents", label: "REA 逆向分析" },
   "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },

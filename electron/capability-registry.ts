@@ -86,9 +86,9 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     backends: [
       /* ⛔ 11-03 用户令「mac 默认优先 computer use」：顺序即优先级 —— mac 上 computer-use 排第一
          （Windows 上它不可用，自动落到 nuphus；UIA 作为补充通道）。 */
-      { id: "computer-use-desktop", label: "mac 电脑操作（computer-use MCP）", why: "macOS 首选：open-computer-use 走 Accessibility 控件清单，与 Codex 原生 computer use 同一类实现；随包内置，需用户授 辅助功能 + 屏幕录制" },
-      { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "截屏 + 本地 OCR + 像素坐标；Windows/Linux 的真实键鼠通道。⛔ mac 上整组被掩（桌面交给 computer-use），同一条规则的唯一来源是 automation-policy.nuphusDisabledTools" },
-      { id: "uia-desktop", label: "Windows 控件清单（desktop_ui_*，UIA）", why: "Windows 专属：读系统无障碍树拿控件清单，按元素序号操作，不依赖坐标；与 nuphus 并存互补（网页内容仍走 browser_*）" },
+      { id: "computer-use-desktop", label: "电脑操作（computer-use MCP）", why: "macOS 首选、Windows 辅助：open-computer-use 走 Accessibility 控件清单，与 Codex 原生 computer use 同一类实现；mac 随包内置（要授 辅助功能 + 屏幕录制），Windows 需在「自动化 → 版本与手动更新」安装" },
+      { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "Windows 首选、macOS 辅助：截屏 + 本地 OCR + 像素坐标。⛔ 被「桌面后端 → Nuphus」开关关掉时整组桌面工具被掩（browser_* 保留）" },
+      { id: "uia-desktop", label: "Windows 控件清单（desktop_ui_*，UIA）", why: "Windows 专属：读系统无障碍树拿控件清单，按元素序号操作，不依赖坐标；与 nuphus / computer-use 并存互补（网页内容仍走 browser_*）" },
     ],
   },
   {
@@ -140,10 +140,13 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
   const availability: Record<string, boolean> = {
     "ego-browser": probe.browserSwitch && probe.egoBrowser,
     "nuphus-cli-browser": probe.browserSwitch && probe.nuphusAvailable,
-    "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable && probe.platform !== "darwin",
+    /* 11-03 用户令：两个桌面后端默认都开（Windows nuphus 主 / mac computer-use 主），
+       ⇒ 两边都不再按平台互斥；具体谁先由下面的平台排序决定。 */
+    "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable,
     // 判据与 automation-policy 的同名函数一致（守卫【274】比对，不许两处各写一套平台判断）
     "uia-desktop": probe.desktopSwitch && probe.uiaAvailable && probe.platform === "win32",
-    "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable && probe.platform === "darwin",
+    "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable
+      && (probe.platform === "darwin" || probe.platform === "win32"),
     "local-ocr": probe.desktopSwitch && probe.nuphusAvailable && localOcrSupported(probe),
     "image-plugin": probe.imagePlugin,
     markitdown: probe.markitdown,
@@ -161,9 +164,17 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
     }
   }
 
+  /* 11-03 用户令「按系统优先排序」：Windows = nuphus 主、computer-use 辅；macOS = computer-use 主、nuphus 辅。
+     UIA 恒作 Windows 的补充通道排在最后。 */
+  const desktopOrder = probe.platform === "darwin"
+    ? ["computer-use-desktop", "nuphus-desktop", "uia-desktop"]
+    : ["nuphus-desktop", "computer-use-desktop", "uia-desktop"];
   return CAPABILITIES.map((capability) => {
-    const first = capability.backends.find((backend) => availability[backend.id]);
-    const alternatives = capability.backends
+    const backends = capability.id === "desktop"
+      ? [...capability.backends].sort((a, b) => desktopOrder.indexOf(a.id) - desktopOrder.indexOf(b.id))
+      : capability.backends;
+    const first = backends.find((backend) => availability[backend.id]);
+    const alternatives = backends
       .filter((backend) => backend.id !== first?.id)
       .map((backend) => ({ id: backend.id, label: backend.label, available: Boolean(availability[backend.id]), why: backend.why }));
 

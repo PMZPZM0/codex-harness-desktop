@@ -138,6 +138,58 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
   );
 }
 
+/**
+ * 桌面自动化后端开关（11-03 用户令：「控制台的桌面自动化下面加两个小选项，按系统优先排序」）。
+ * 两个默认都开；列表顺序 = 系统优先级（Windows：Nuphus 在前；macOS：Computer Use 在前）。
+ * ⛔ 保存走 appSettings:save —— 主进程会用新开关重写 config.toml 并重启引擎（MCP 只在 spawn 时读）。
+ */
+function DesktopBackendOptions() {
+  const isMac = (window.codex as any)?.platform === "darwin";
+  const [pref, setPref] = useState<{ nuphus: boolean; computerUse: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    window.codex.readAppSettings()
+      .then((s) => setPref({ nuphus: s.desktopBackendNuphus !== false, computerUse: s.desktopBackendComputerUse !== false }))
+      .catch(() => setPref({ nuphus: true, computerUse: true }));
+  }, []);
+  const toggle = async (key: "nuphus" | "computerUse", next: boolean) => {
+    if (!pref || busy) return;
+    const previous = pref;
+    setPref({ ...pref, [key]: next });
+    setBusy(true);
+    try {
+      const saved = await window.codex.saveAppSettings(key === "nuphus" ? { desktopBackendNuphus: next } : { desktopBackendComputerUse: next });
+      setPref({ nuphus: saved.desktopBackendNuphus !== false, computerUse: saved.desktopBackendComputerUse !== false });
+    } catch {
+      setPref(previous);
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!pref) return null;
+  const rows = isMac
+    ? [
+        { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "首选：走 Accessibility 控件清单，按元素序号操作；随包内置，需要辅助功能 + 屏幕录制授权。" },
+        { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "辅助：Computer Use 不可用时兜底；关掉只停它的桌面工具，浏览器回落不受影响。" },
+      ]
+    : [
+        { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "首选：真实键鼠 + 截屏 + 本地 OCR；关掉只停它的桌面工具，浏览器回落不受影响。" },
+        { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "辅助：UIA / Nuphus 拿不到控件清单时使用；未安装可在「自动化 → 版本与手动更新」装一次。" },
+      ];
+  return (
+    <div className="settings-backend-options">
+      <p className="settings-backend-options-title">桌面后端<span>两个默认都开 · 按系统优先</span></p>
+      {rows.map((row) => (
+        <div className="settings-toggle-row is-sub" key={row.key}>
+          <span className="settings-toggle-icon">{row.key === "nuphus" ? <Monitor size={15} /> : <Sparkles size={15} />}</span>
+          <span className="settings-toggle-text"><strong>{row.label}</strong><small>{row.desc}</small></span>
+          <ToggleSwitch checked={pref[row.key]} disabled={busy} label={`桌面后端：${row.label}`} onChange={(next) => void toggle(row.key, next)} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource, adaptiveTone, changeAdaptiveTone, thread, readMood } = props;
   const [showAccelHelp, setShowAccelHelp] = useState(false);
@@ -192,6 +244,7 @@ export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
                           <span className="settings-toggle-text"><strong>桌面自动化</strong><small>{capabilityHint("desktop-automation") ?? "加载 nuphus 桌面工具（屏幕、窗口、键鼠、剪贴板、OCR）。关闭后 nuphus MCP 不注册、desktop-automation 技能停用，约 10K 工具 schema 不再进上下文，能减少 token 占用、加快回复"}</small></span>
                           <ToggleSwitch checked={desktopAuto} disabled={groupBusy === "desktop-automation"} label="桌面自动化" onChange={toggleDesktopAuto} />
                         </div>
+                        {desktopAuto ? <DesktopBackendOptions /> : null}
                         <div className="settings-toggle-row">
                           <span className="settings-toggle-icon"><Globe2 size={16} /></span>
                           <span className="settings-toggle-text"><strong>浏览器自动化</strong><small>{capabilityHint("browser-automation") ?? "提供 Ego Lite（首选，每会话独立 Space）/ browse-skills 默认浏览器回落。关闭后移除浏览器调用说明与 browser_use feature、停用 browser-automation 技能，模型不再被引导使用浏览器工具，能减少上下文占用"}</small></span>

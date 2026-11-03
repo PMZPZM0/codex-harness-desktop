@@ -87,16 +87,22 @@ export type AutomationSwitches = { desktop: boolean; browser: boolean };
  * 该被**硬禁用**的 nuphus 工具：关闭的那一组整体摘掉。
  * 返回空数组表示不需要掩码（两个都开着）。
  *
- * ⛔ 第二个参数 `platform`（10-04 加，默认当前平台，老调用点行为不变）：**mac 上永远掩掉桌面组**。
- *   理由不是"nuphus 在 mac 上坏了"（它 mac arm64 有官方二进制），而是 mac 的桌面自动化换了后端
- *   （`open-computer-use`，走 Accessibility 拿控件清单）。两套真实键鼠通道同时挂在工具表里，
- *   模型会随机挑一个、出问题也分不清是谁 —— 所以按平台**只留一条**，浏览器组不受影响。
+ * ⛔ 11-03 用户令（覆盖 10-04「mac 永远掩掉 nuphus 桌面组」）：两个后端默认都开，
+ *   平台优先级交给常驻指令（Windows nuphus 主 / mac computer-use 主），这里只在
+ *   **用户关掉 nuphus 后端**时掩它的桌面组；browser_* 不受影响（仍是 browse-skills 回落通道）。
+ *   `platform` 参数保留（历史调用点 + 守卫），当前策略下不参与掩码判定。
  */
-export function nuphusDisabledTools(switches: AutomationSwitches, platform: NodeJS.Platform = process.platform): string[] {
+export function nuphusDisabledTools(
+  switches: AutomationSwitches,
+  platform: NodeJS.Platform = process.platform,
+  backends: { nuphus?: boolean } = {},
+): string[] {
   const disabled: string[] = [];
-  if (!switches.desktop) disabled.push(...NUPHUS_DESKTOP_TOOLS);
-  // mac 的桌面能力由 computer-use 提供 ⇒ nuphus 只保留浏览器组
-  else if (platform === "darwin") disabled.push(...NUPHUS_DESKTOP_TOOLS);
+  /* 11-03 用户令：nuphus 与 computer-use 两个后端开关默认都开，平台优先级交给常驻指令
+     （Windows nuphus 主 / computer-use 辅；macOS computer-use 主 / nuphus 辅）。
+     ⇒ 不再按平台无条件掩 nuphus 桌面组，只在这个后端被用户关掉时掩。
+     ⛔ 关 nuphus 只掩桌面组：browser_* 仍是 browse-skills 回落通道，不能一起摘。 */
+  if (!switches.desktop || backends.nuphus === false) disabled.push(...NUPHUS_DESKTOP_TOOLS);
   if (!switches.browser) disabled.push(...NUPHUS_BROWSER_TOOLS);
   return disabled;
 }
@@ -163,14 +169,16 @@ export const COMPUTER_USE_TOOLS: readonly string[] = [
   "set_value",
 ];
 
-/** computer use 只在 macOS 随包（Windows 侧走 nuphus + UIA 清单通道）。 */
+/** computer-use 上游支持 macOS / Windows（Linux 二进制有但本仓未纳入）。
+ *  11-03 用户令：两个后端开关默认都开 —— Windows 上 nuphus 主、computer-use 辅；
+ *  macOS 上 computer-use 主、nuphus 辅。 */
 export function computerUseSupported(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === "darwin";
+  return platform === "darwin" || platform === "win32";
 }
 
-/** 注册判据：darwin + 桌面总闸开 + 随包包齐（launcher 与 .app 都在）。 */
-export function shouldRegisterComputerUse(input: { desktop: boolean; binaryReady: boolean; platform?: NodeJS.Platform }): boolean {
-  return computerUseSupported(input.platform) && input.desktop === true && input.binaryReady === true;
+/** 注册判据：darwin/win32 + 桌面总闸开 + 后端开关开 + 随包包齐（launcher 与主程序都在）。 */
+export function shouldRegisterComputerUse(input: { desktop: boolean; binaryReady: boolean; enabled?: boolean; platform?: NodeJS.Platform }): boolean {
+  return computerUseSupported(input.platform) && input.desktop === true && input.enabled !== false && input.binaryReady === true;
 }
 
 /**
@@ -181,8 +189,9 @@ export function effectiveNuphusPermission(
   tool: string,
   explicit: "deny" | "ask" | "allow" | undefined,
   switches: AutomationSwitches,
+  backends: { nuphus?: boolean } = {},
 ): "deny" | "ask" | "allow" | undefined {
-  if (nuphusDisabledTools(switches).includes(tool)) return "deny";
+  if (nuphusDisabledTools(switches, process.platform, backends).includes(tool)) return "deny";
   return explicit;
 }
 
@@ -191,8 +200,9 @@ export function withNuphusMasks<T extends Record<string, Record<string, "deny" |
   byServer: T,
   switches: AutomationSwitches,
   allNuphusTools: readonly string[] = [...NUPHUS_DESKTOP_TOOLS, ...NUPHUS_BROWSER_TOOLS],
+  backends: { nuphus?: boolean } = {},
 ): Record<string, Record<string, "deny" | "ask" | "allow">> {
-  const masked = nuphusDisabledTools(switches);
+  const masked = nuphusDisabledTools(switches, process.platform, backends);
   if (!masked.length) return byServer;
   const current = { ...(byServer[NUPHUS_MCP_SERVER] ?? {}) };
   for (const tool of masked) {
@@ -210,8 +220,9 @@ export function withNuphusMasks<T extends Record<string, Record<string, "deny" |
 export function withNuphusMasksForRules<T extends Record<string, { deny: string[]; ask: string[]; allow: string[] }>>(
   rules: T,
   switches: AutomationSwitches,
+  backends: { nuphus?: boolean } = {},
 ): T {
-  const masked = nuphusDisabledTools(switches);
+  const masked = nuphusDisabledTools(switches, process.platform, backends);
   if (!masked.length) return rules;
   const current = rules[NUPHUS_MCP_SERVER] ?? { deny: [], ask: [], allow: [] };
   const deny = [...new Set([...current.deny, ...masked])];
