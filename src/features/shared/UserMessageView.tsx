@@ -154,10 +154,15 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
      群成员用的是 `[SYSTEM TASK · 群成员会话]`（electron/boss-groups/runner.ts）⇒ 它照旧渲染成
      用户气泡（右对齐 + 用户头像 + 「群成员会话 · 需求已发起」），看着像我在给成员派活。
      ⇒ 加进白名单。⛔ 白名单只放**主进程唯一产出的壳**：
-        `调度会话`（delegation）/ `群成员会话`（中枢群）。`成员会话` / `团队会话` 仍不放 ——
-        它们还兼着"用户自己在成员会话里打字"（send.tsx 会包同款壳），一律左移会把用户的话
-        伪造成上级发言。 */
-  const isParentTask = refs.teamTask?.label === "调度会话" || refs.teamTask?.label === "群成员会话";
+        `调度会话`（delegation）/ `群成员会话`（中枢群）。
+     ⛔⛔ 11-03 用户（截图：「这个他这个专家团显示还是以我的身份调度？」+「统一一下啊，调度会话都这样」）：
+        `成员会话` / `团队会话` 壳**既**可能是用户自己打字（send.tsx 包装），也可能是主理人派发
+        （team-invoke / teams-ipc，body 带 `上级：` / `主理人分配的子任务`）。不能按标签一刀切。
+        ⇒ `user-refs` 解析出 `dispatched`（只有宿主派发的壳才有这些内层标记）；派发的一律按
+        「上级派发」左对齐，用户自己打字的仍走右侧用户气泡。 */
+  const isParentTask = Boolean(refs.teamTask?.dispatched)
+    || refs.teamTask?.label === "调度会话"
+    || refs.teamTask?.label === "群成员会话";
   if (isParentTask) {
     return (
       <div className="parent-task-stack" data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>

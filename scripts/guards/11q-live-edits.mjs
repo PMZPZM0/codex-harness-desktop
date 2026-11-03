@@ -358,11 +358,22 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
      ⛔ 成员/团队会话的壳可能是用户自己打字（send.tsx 那条路），不能左移 —— 会把用户的话伪造成上级发言。 */
   const umv = codeOnly(read("src/features/shared/UserMessageView.tsx"));
   /* ⛔ 11-01 用户（截图：「为啥，他调度会话，还是以我的身份发出去的」）：中枢派活给群成员用的是
-     `[SYSTEM TASK · 群成员会话]`，原先不在白名单 ⇒ 照旧渲染成用户气泡。白名单必须是**两条**。 */
-  ok(/const isParentTask = refs\.teamTask\?\.label === "调度会话" \|\| refs\.teamTask\?\.label === "群成员会话"/.test(umv)
+     `[SYSTEM TASK · 群成员会话]`，原先不在白名单 ⇒ 照旧渲染成用户气泡。
+     ⛔ 11-03 用户（截图：「这个他这个专家团显示还是以我的身份调度？」+「统一一下啊，调度会话都这样」）：
+        成员/团队壳**两种来源共用同款标签**（用户自己打字 vs 主理人派发），不能按标签一刀切 ⇒
+        宿主派发的壳由 user-refs 打 `dispatched`、统一左对齐；用户打字的仍走右侧气泡。 */
+  ok(/const isParentTask = Boolean\(refs\.teamTask\?\.dispatched\)/.test(umv)
+    && /refs\.teamTask\?\.label === "调度会话"/.test(umv)
+    && /refs\.teamTask\?\.label === "群成员会话"/.test(umv)
     && /<div className="parent-task-stack"/.test(umv)
     && /parent-task-name/.test(umv),
-    "调度/群成员任务在子会话里以「上级」身份左对齐渲染（⛔ 只认 调度会话 + 群成员会话；成员/团队壳不动）");
+    "宿主派发任务（调度 / 群成员 / 主理人派给成员·团队）在子会话里以「上级」身份左对齐渲染");
+  /* 判据来源同源：`dispatched` 只由壳内层标记产生（主理人分配的子任务 / 上级行 / 发起方交给你的任务），
+     ⛔ 不能只按标签 —— 用户在成员会话里打字的壳没有这些标记（回归样本见 verify-injection-strip）。 */
+  const refsSrc = codeOnly(read("src/lib/user-refs.ts"));
+  ok(/const dispatched = \/\^\\s\*\(\?:发起方交给你的任务\|主理人分配的子任务\)\/m\.test\(body\)/.test(refsSrc)
+    && /上级\(\?:主管\)\?\\s\*\[：:\]\/m\.test\(body\)/.test(refsSrc),
+    "`dispatched` 由宿主派发内层标记判定（发起方交给你的任务 / 主理人分配的子任务 / 上级行）");
   const msgCss = read("src/styles/03-messages-turns.css");
   ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss),
     "上级任务气泡的样式在位（左对齐 + 左侧强调线；⛔ 只加类不写样式 = 还是贴在右侧）");

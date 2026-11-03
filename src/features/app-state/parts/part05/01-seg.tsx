@@ -682,9 +682,22 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
           bag.setTeamRuns((prev) => ({ ...prev, [run.runId]: { ...run, output: run.output ?? "" } }));
           // 侧栏聚簇索引同步：leadThreadId → teamId（run 里权威携带，不用等 teamThreadsMap 重拉）
           if (run.leadThreadId && run.teamId) bag.setTeamThreadsIndex((prev) => (prev[run.leadThreadId] === run.teamId ? prev : { ...prev, [run.leadThreadId]: run.teamId }));
-          // 成员线程 id 一并登记（新委托产生的成员会话立即按成员层级渲染）
+          /* ⛔⛔ 11-03 用户截图（五个成员会话各自是一个主会话）：成员线程 id 原先只进了
+             teamMemberThreadIds、**没进 teamThreadsIndex** ⇒ 侧栏聚簇按 teamId 找成员时
+             `if (!teamId) continue` 直接跳过这些会话 ⇒ memberIds 不含它们 ⇒ 全部漏成顶层
+             「主会话」行（成员会话被派活时由主进程 team-invoke 新建，本窗口从未登记过索引）。 */
           const memberTid = String(run.memberThreadId ?? "");
-          if (memberTid) bag.setTeamMemberThreadIds((prev) => (prev.has(memberTid) ? prev : new Set(prev).add(memberTid)));
+          if (memberTid) {
+            bag.setTeamMemberThreadIds((prev) => (prev.has(memberTid) ? prev : new Set(prev).add(memberTid)));
+            if (run.teamId) bag.setTeamThreadsIndex((prev) => (prev[memberTid] === run.teamId ? prev : { ...prev, [memberTid]: run.teamId }));
+          }
+          /* 索引可能落后于主进程（另一个窗口建的会话 / 更早的运行）：每次 run 开始顺手回读一次
+             权威映射，让侧栏归类收敛到 team-threads.json，而不是只靠增量补丁。 */
+          void window.codex.teamThreadsMap?.().then((doc) => {
+            if (!doc) return;
+            if (doc.threads) bag.setTeamThreadsIndex(doc.threads);
+            if (doc.members) bag.setTeamMemberThreadIds(new Set(Object.values(doc.members)));
+          }).catch(() => undefined);
           bag.setTeamPopupRunId(run.runId); // 成员开始干活 → 自动打开它的工作弹窗
         } else if (phase === "delta") {
           const runId = String((event as any).runId ?? "");

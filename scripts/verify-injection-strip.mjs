@@ -80,12 +80,23 @@ const CASES = [
     text: `${TEAM_PROMPT}[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n做个落地页，要设计+前端+测试\n=== END ===\n\n请按 SOP 编排团队完成任务，过程中用 team_member_invoke 调度成员。`,
     expect: "做个落地页，要设计+前端+测试",
     forbid: ["[SYSTEM TASK", "系统提示词", "编排团队", "team_member_invoke", "=== END ==="],
+    dispatched: false,
   },
   {
-    name: "成员会话（壳后有角色提示与记忆）",
-    text: `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n主理人分配的子任务：写首页\n=== END ===\n\n[专家团「落地页小组」成员 前端小张（前端）]\n你是资深前端，注重可访问性。${MEMORY}`,
+    name: "成员会话（主理人派发，带上级行）",
+    text: `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n上级：青崖主管\n主理人分配的子任务：写首页\n=== END ===\n\n[专家团「落地页小组」成员 前端小张（前端）]\n你是资深前端，注重可访问性。${MEMORY}`,
     expect: "写首页",
-    forbid: ["[SYSTEM TASK", "资深前端", "[专家团「", "主理人分配的子任务", "可访问性"],
+    forbid: ["[SYSTEM TASK", "资深前端", "[专家团「", "主理人分配的子任务", "可访问性", "上级："],
+    dispatched: true,
+  },
+  {
+    /* ⛔ 11-03：用户自己在成员会话里打字时 send.tsx 也包同款壳，但 body 里没有
+       `上级：` / `主理人分配的子任务` ⇒ 必须**不**判成上级派发（否则把用户的话伪造成上级发言）。 */
+    name: "成员会话（用户自己打字，不得判成上级派发）",
+    text: `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n帮我补一下首页的移动端断点\n=== END ===\n\n[专家团「落地页小组」成员 前端小张（前端）]\n你是资深前端。`,
+    expect: "帮我补一下首页的移动端断点",
+    forbid: ["[SYSTEM TASK", "资深前端"],
+    dispatched: false,
   },
   {
     name: "群成员会话（本次任务格式）",
@@ -98,6 +109,7 @@ const CASES = [
     text: "[SYSTEM TASK · 调度会话]\n=== 用户需求 ===\n发起方交给你的任务：审一下这个方案\n=== END ===\n\n[角色：子智能体 评审]\n你是独立评审员，只判交给你的材料。\n\n直接执行上面的任务并给出最终产出。",
     expect: "审一下这个方案",
     forbid: ["[SYSTEM TASK", "[角色：", "独立评审员", "发起方交给你的任务", "最终产出"],
+    dispatched: true,
   },
   {
     name: "导入的会话记录",
@@ -122,6 +134,7 @@ const CASES = [
     text: "[专家团「落地页小组」成员 前端小张（前端）]\n你是资深前端。\n\n主理人分配的子任务：\n写首页",
     expect: "写首页",
     forbid: ["[专家团「", "资深前端"],
+    dispatched: true,
   },
   {
     name: "会话告知块（调度已开启 · 随下一条消息注入）",
@@ -213,12 +226,16 @@ async function main() {
     const missing = !res.cleanText.includes(item.expect) && !(res.teamTask?.requirement ?? "").includes(item.expect);
     const leaked = item.forbid.filter((token) => res.cleanText.includes(token) || (res.teamTask?.requirement ?? "").includes(token));
     const shownLeaked = item.forbid.filter((token) => shown.includes(token));
-    if (missing || leaked.length || shownLeaked.length) {
+    /* 11-03：派发判定必须与样本一致（成员会话的壳两种来源共用同款标签 ⇒ 只能靠内层标记区分）。
+       `dispatched` 未声明 = 不校验（群成员等格式由其它判据覆盖）。 */
+    const dispatchMismatch = item.dispatched !== undefined && Boolean(res.teamTask?.dispatched) !== Boolean(item.dispatched);
+    if (missing || leaked.length || shownLeaked.length || dispatchMismatch) {
       bad += 1;
       console.log(`✗ ${item.name}`);
       if (missing) console.log(`    期望正文缺失：「${item.expect}」 实际 cleanText=${JSON.stringify(res.cleanText.slice(0, 160))}`);
       if (leaked.length) console.log(`    注入段残留：${leaked.join(" / ")}`);
       if (shownLeaked.length) console.log(`    userDisplayText 残留：${shownLeaked.join(" / ")}`);
+      if (dispatchMismatch) console.log(`    派发判定不符：期望 dispatched=${item.dispatched} 实际 ${Boolean(res.teamTask?.dispatched)}`);
     } else {
       console.log(`✓ ${item.name}`);
     }

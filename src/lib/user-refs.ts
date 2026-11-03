@@ -20,7 +20,10 @@ export type ParsedUserRefs = {
   files: string[];
   skills: { name: string; description: string }[];
   contexts: { role: string; text: string }[];
-  teamTask?: { kind: "team" | "member"; /** 壳上的原始标签（团队会话 / 成员会话 / 群成员会话 / 调度会话…），渲染时原样展示 */ label?: string; requirement: string; /** 10-31：上级主管 ID（`青崖主管（01a1…）`），调度任务里才有 */ supervisor?: string };
+  teamTask?: { kind: "team" | "member"; /** 壳上的原始标签（团队会话 / 成员会话 / 群成员会话 / 调度会话…），渲染时原样展示 */ label?: string; requirement: string; /** 10-31：上级主管 ID（`青崖主管（01a1…）`），调度任务里才有 */ supervisor?: string;
+    /** 11-03：这条是**宿主派发**的任务（壳里带 `上级：` / `主理人分配的子任务：` / `发起方交给你的任务：`），
+     *  不是用户在成员会话里自己打的字。渲染层据此统一按「上级派发」左对齐，不再伪造成用户发言。 */
+    dispatched?: boolean };
   imported?: { note: string; content: string };
   threadReferences: ThreadReferencePayload[];
   /** 群广播（`[群事件] …`）：宿主投进中枢会话的群消息，界面按块渲染成"头像 + 名字 + 内容"。
@@ -120,19 +123,24 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     const body = (needMatch ?? taskMatch ?? [])[1] ?? "";
     /* 需求正文常带来源标签（`发起方交给你的任务：` / `主理人分配的子任务：`），
        气泡里显示标签没意义 ⇒ 去掉标签只留正文。群成员格式的 `标题：` 同理
-       （它会被截成会话标题，留着前缀就变成「标题：首页」）。 */
-    let requirement = body
+       （它会被截成会话标题，留着前缀就变成「标题：首页」）。
+       ⛔ 这三个标签 / `上级：` 行是**宿主派发**的标记（delegation / team-invoke / 群派活）；
+       用户自己在成员会话里打字时 send.tsx 包的壳里没有它们 ⇒ 据此区分，别把用户的话当上级发言。 */
+    const dispatched = /^\s*(?:发起方交给你的任务|主理人分配的子任务)/m.test(body)
+      || /^\s*上级(?:主管)?\s*[：:]/m.test(body);
+    /* ★ 10-31 用户令：被调度会话要知道「上级是谁，哪个主管」——
+       delegation / team-invoke 会在需求体第一行写 `上级：青崖主管（…）`。
+       ⛔ 这行是**宿主元信息**，不属于需求正文：抽出来单独给气泡头部用，正文里要删掉。
+       ⛔ 顺序必须先剥上级行再剥来源标签：team-invoke 的壳是「上级：X \n 主理人分配的子任务：…」，
+          反过来的话来源标签不在行首 ⇒ 剥不掉，气泡里会一直显示「主理人分配的子任务：」（11-03 实测）。 */
+    const supervisorLine = body.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*$/m);
+    let requirement = (supervisorLine ? body.replace(/^\s*上级(?:主管)?\s*[：:].*$/m, "") : body)
       .replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "")
       .trim();
     if (taskMatch) requirement = requirement.replace(/^标题\s*[：:]\s*/, "");
-    /* ★ 10-31 用户令：被调度会话要知道「上级是谁，哪个主管」——
-       delegation 会在需求体第一行写 `上级主管：青崖主管（01a1…）`。
-       ⛔ 这行是**宿主元信息**，不属于需求正文：抽出来单独给气泡头部用，正文里要删掉。 */
-    const supervisorLine = body.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*$/m);
-    if (supervisorLine) requirement = requirement.replace(/^\s*上级(?:主管)?\s*[：:].*$/m, "").trim();
     if (requirement) {
       clean = "";
-      teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement, ...(supervisorLine ? { supervisor: supervisorLine[1].trim() } : {}) };
+      teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement, ...(supervisorLine ? { supervisor: supervisorLine[1].trim() } : {}), ...(dispatched ? { dispatched: true } : {}) };
     } else {
       /* 兜底（壳的格式以后变了，别把整条消息吞成空白）：至少剥掉壳头与尾部指令段。 */
       clean = tail.replace(/^\[SYSTEM TASK · [^\]\n]+\]\s*/, "").replace(/===\s*END\s*===[\s\S]*$/, "").trim();
@@ -147,7 +155,8 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     const legacy = clean.match(/^\[专家团「[^」]+」(主理人|成员)[^\]]*\]\n[\s\S]*?(?:主理人分配的子任务|用户任务)：\s*\n?([\s\S]*$)/);
     if (legacy) {
       clean = "";
-      teamTask = { kind: "member", requirement: legacy[2].trim() };
+      // 无壳旧格式同样是宿主派发（角色提示词 + 「主理人分配的子任务」）
+      teamTask = { kind: "member", requirement: legacy[2].trim(), dispatched: true };
     }
   }
   /* ⛔⛔ 10-26 用户实测截图：老会话（角色说明曾拼进用户正文的那批）打开时，整段

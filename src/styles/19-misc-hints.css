@@ -488,8 +488,15 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+/* ⛔ 11-03：成员块嵌进「↳ 子会话 · N」折叠块（与调度子会话同款外观）——
+   外层已有 20px 缩进 + 虚线，内层再叠 12px 缩进和实线就成了两层阶梯 + 两条竖线。 */
+.dispatch-children > .team-cluster-body {
+  margin-left: 0;
+  padding-left: 8px;
+  border-left: 0;
+}
 /* 展开体内的分节标签更紧凑 */
-.team-cluster-body .team-cluster-label { margin: 4px 0 1px 2px; font-size: 10px; }
+.team-cluster-body .team-cluster-label { margin: 4px 0 0 2px; font-size: 10px; }
 /* 子行紧凑化：行高 46→34，字号与内边距同步收 */
 .team-cluster-body .thread-row { min-height: 34px; border-radius: 6px; }
 .team-cluster-body .thread-row > button:first-child { padding: 4px 4px 4px 4px; gap: 0; }

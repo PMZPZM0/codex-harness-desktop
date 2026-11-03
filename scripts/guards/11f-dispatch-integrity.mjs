@@ -555,6 +555,16 @@ try {
   const sidebarSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
   ok(sidebarSrc.includes("子会话 · {children.length}") && !sidebarSrc.includes("调度会话 · {children.length}"),
     "折叠块标题用「子会话」，与行内的「调度」状态徽标不重复");
+  /* ⛔ 11-03 用户截图（五个成员会话各自是主会话）：成员会话由主进程 team-invoke 新建，
+     原先只登记 teamMemberThreadIds、没登记 teamThreadsIndex ⇒ 侧栏聚簇按 teamId 找不到它们，
+     整批漏成顶层主会话行。现在 run started 同时登记索引，并回读 team-threads.json 收敛。 */
+  const part05Src = readFileSync(join(ROOT, "src/features/app-state/parts/part05/01-seg.tsx"), "utf8");
+  ok(/setTeamThreadsIndex\(\(prev\) => \(prev\[memberTid\] === run\.teamId/.test(part05Src)
+    && /teamThreadsMap\?\.\(\)/.test(part05Src),
+    "成员线程登记 teamId 索引 + 回读权威映射（否则成员会话在侧栏漏成主会话）");
+  ok(attentionSrc.includes("子会话 · {cluster.members.length}")
+    && /className="dispatch-children-label"[\s\S]{0,200}?toggleTeamCluster/.test(attentionSrc),
+    "专家团成员收进「↳ 子会话 · N」折叠块（与调度子会话同款；不再每个成员一行主会话）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
