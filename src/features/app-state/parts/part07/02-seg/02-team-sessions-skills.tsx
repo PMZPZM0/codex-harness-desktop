@@ -7,6 +7,7 @@
  */
 import { enginePersonality } from "../../../../../lib/reply-style.mjs";
 import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "../../../../../lib/enhance-hints.mjs";
+import { dedupeTeamPhaseTasks } from "../../../../../lib/team-phase.mjs";
 import { expertRoleLabel } from "../../../../../lib/expert-role-label";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
@@ -161,7 +162,9 @@ bag.invokeTeamMember = invokeTeamMember as typeof bag.invokeTeamMember;
    *  ⛔ 这是「SOP 写着并行、实际却串行」的正解 —— 并行由宿主保证，不靠模型自觉
    *  （09-14 实测：只改提示词让它「一个回合发多个调用」无效）。 */
   async function invokeTeamPhase(tasks: any[], threadId: string, respondEventId: number | string) {
-    const list = tasks.filter((task) => task && String(task.memberId ?? "").trim());
+    /* ⛔ 同一成员的重复任务只保留第一条：并发逐条执行会在成员线程登记前重复建会话
+       （用户实测：一个指令后多出很多「专家团」会话且同时运行）。 */
+    const list = dedupeTeamPhaseTasks(tasks);
     if (!list.length) {
       await window.codex.respond(respondEventId, { contentItems: [{ type: "inputText", text: "team_phase_invoke 需要至少一个成员任务（tasks 为空）" }], success: false });
       return;

@@ -188,6 +188,11 @@ export const teamsFeature = defineFeature<null>({
       const systemPrefix = `${withPersonalNorms(systemBase, await personalNormsBlock())}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       teamRunStore.setThreadTeam(started.thread.id, team.teamId);
+      /* ⛔ 成员直达会话也必须登记成员映射：只调 setThreadTeam 会让侧栏把它当成「主理人」，
+         多个成员直达会话就看起来像又开了好几个专家团。主理人直达不登记（它就是 lead）。 */
+      if (!isLead) {
+        teamRunStore.rememberMemberThread(`direct:${started.thread.id}`, team.teamId, member.id, started.thread.id);
+      }
       if (input.defer) {
         // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。
         const threadName = `${team.displayName.zh} · ${member.profession.zh || "成员"}`;

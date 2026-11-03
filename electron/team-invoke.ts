@@ -54,6 +54,28 @@ export type InvokeMemberResult = {
 };
 
 export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<InvokeMemberResult> {
+  /* 同一「主理人会话 + 团队 + 成员」串行：并行阶段可能对同一成员重复提交任务，
+     两条并发会在线程登记前各自 thread/start，产生重复会话。锁只按成员，不同成员仍并行。 */
+  const lockKey = `${String(input.leadThreadId ?? "")}|${String(input.teamId ?? "")}|${String(input.memberId ?? "").trim().toLowerCase()}`;
+  return withMemberLock(lockKey, () => invokeTeamMemberCoreUnlocked(input));
+}
+
+const memberLocks = new Map<string, Promise<void>>();
+async function withMemberLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = memberLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const tail = prev.then(() => gate);
+  memberLocks.set(key, tail);
+  await prev;
+  try { return await fn(); }
+  finally {
+    release();
+    if (memberLocks.get(key) === tail) memberLocks.delete(key);
+  }
+}
+
+async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<InvokeMemberResult> {
   const list = await readUsableExpertTeams();
   const team = list.find((entry) => entry.teamId === String(input.teamId ?? ""));
   if (!team) throw new Error(`专家团「${input.teamId}」不存在`);

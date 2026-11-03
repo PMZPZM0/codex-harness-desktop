@@ -20,6 +20,7 @@
  */
 import { teamRunStore, threadCwd } from "./runtime-refs";
 import { invokeTeamMemberCore, type InvokeMemberInput, type InvokeMemberResult } from "./team-invoke";
+import { dedupeTeamPhaseTasks } from "../src/lib/team-phase.mjs";
 
 const TEAM_TOOL_MEMBER = "team_member_invoke";
 const TEAM_TOOL_PHASE = "team_phase_invoke";
@@ -85,7 +86,7 @@ export async function handleTeamToolCall(deps: {
       return true;
     }
     // 并行阶段：宿主并发跑完再一起回（与渲染层 invokeTeamPhase 同语义）
-    const tasks = Array.isArray(args?.tasks) ? args.tasks.filter((task: any) => task && String(task?.memberId ?? "").trim()) : [];
+    const tasks = dedupeTeamPhaseTasks(args?.tasks);
     if (!tasks.length) {
       await respond(id, { contentItems: [{ type: "inputText", text: "team_phase_invoke 需要至少一个成员任务（tasks 为空）" }], success: false });
       return true;

@@ -14,6 +14,7 @@ import { tmpdir, homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { codeOnly } from "./_ctx.mjs";
+import { dedupeTeamPhaseTasks } from "../../src/lib/team-phase.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 let checks = 0, fails = 0;
@@ -486,6 +487,31 @@ try {
   ok(/thread\/resume", \{\s*\n\s*threadId: member\.threadId,\s*\n\s*excludeTurns: true,/.test(runnerSrc)
     && /\.\.\.\(model \? \{ model \} : \{\}\),/.test(runnerSrc),
     "中枢群复用成员线程即重绑到 boss 当前模型（excludeTurns:true + 可选 model）");
+
+  /* 11-03 用户报「一个指令后多出很多专家团会话、同时运行」：
+     并行阶段 tasks 可能对同一成员重复；重复执行会在线程登记前各自建线程。
+     ① 纯函数按 memberId 去重；② 渲染层与主进程兜底都接；③ 同一成员并发串行。
+     ④ 成员直达会话登记为成员（否则侧栏按主理人聚类，看起来像又开了专家团）。 */
+  const deduped = dedupeTeamPhaseTasks([
+    { memberId: "a", query: "1" },
+    { memberId: " A ", query: "1" },
+    { memberId: "a", query: "2" },
+    { memberId: "", query: "3" },
+    { memberId: "b", query: "4" },
+  ]);
+  ok(deduped.length === 3 && deduped[0].query === "1" && deduped[1].query === "2" && deduped[2].memberId === "b",
+    "team_phase 同成员同任务去重、不同任务保留（空白/大小写归一）");
+  const phaseUiSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part07/02-seg/02-team-sessions-skills.tsx"), "utf8");
+  const fallbackSrc = readFileSync(join(ROOT, "electron/team-tool-fallback.ts"), "utf8");
+  ok(phaseUiSrc.includes("dedupeTeamPhaseTasks") && fallbackSrc.includes("dedupeTeamPhaseTasks"),
+    "渲染层与主进程兜底都走去重（只改一边 = 另一半仍会重复建会话）");
+  ok(/withMemberLock/.test(tiSrc) && /memberLocks\.set\(key, tail\)/.test(tiSrc)
+    && /return withMemberLock\(lockKey/.test(tiSrc),
+    "team-invoke 同一成员并发串行（不同成员仍可并行）");
+  const teamsIpcSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  ok(/rememberMemberThread\(`direct:\$\{started\.thread\.id\}`/.test(teamsIpcSrc)
+    && /if \(!isLead\)/.test(teamsIpcSrc),
+    "成员直达会话登记成员映射（侧栏不再把成员会话显示成主理人/专家团）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
