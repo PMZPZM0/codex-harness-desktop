@@ -710,6 +710,31 @@ export async function run() {
   (mac274?.activeId === "computer-use-desktop" && win274?.activeId === "nuphus-desktop" && win274?.uiaAvailable === true && mac274?.uiaAvailable === false ? ok : fail)(
     `【274】能力链路按平台给唯一后端（mac=${mac274?.activeId} / win=${win274?.activeId}；UIA 仅 win 判可用）—— 界面显示的后端必须等于实际会用的那个`
   );
+  /* ⛔ 11-03 用户令「mac 默认优先 computer use」：能力表顺序 + 配置写出顺序 + 模型侧指令
+     三处都要把 mac 的 computer-use 放第一，且明令禁止在 mac 上用 nuphus 的 desktop 通道。 */
+  const di274 = codeOnly(readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8"));
+  const skill274 = codeOnly(readBuiltinSkillsSource());
+  ((caps274 && Array.isArray(caps274.CAPABILITIES) ? (() => {
+    const desktop = caps274.CAPABILITIES.find((entry) => entry.id === "desktop");
+    return desktop?.backends?.[0]?.id === "computer-use-desktop";
+  })() : false) ? ok : fail)(
+    "【274】桌面后端顺序：computer-use 排第一（mac 首选；Windows 自动落到 nuphus）"
+  );
+  (/const desktopInstructions = \(platform: NodeJS\.Platform = process\.platform\)/.test(di274)
+    && /platform === "darwin" \? MAC_DESKTOP_INSTRUCTIONS/.test(di274)
+    && /computer-use` MCP server/.test(di274)
+    && /nuphus `desktop_\*` group is NOT registered/.test(di274)
+    && /must NOT be used/.test(di274)
+    && !/text \+= DESKTOP_INSTRUCTIONS;/.test(di274) ? ok : fail)(
+    "【274】常驻指令按平台分叉：mac 首选 computer-use 并明确禁止 nuphus desktop 通道（Windows 文案不变）"
+  );
+  (skill274.includes("macOS：桌面自动化 =") && skill274.includes("computer-use") && /nuphus-call desktop_\*.*禁止/.test(skill274) ? ok : fail)(
+    "【274】桌面技能有 macOS 分支（computer-use 工具与循环 + 禁止 nuphus-call desktop_*）"
+  );
+  (apply274.indexOf("COMPUTER_USE_MCP_SERVER") >= 0
+    && apply274.indexOf("COMPUTER_USE_MCP_SERVER") < apply274.indexOf("shouldRegisterNuphus") ? ok : fail)(
+    "【274】config 写出顺序：computer-use 段排在 nuphus 之前（mac 上工具面优先级一致）"
+  );
 }
 }
 

@@ -4,16 +4,25 @@
  */
 export const DESKTOP_SKILL = `---
 name: desktop-automation
-description: 用 nuphus-mcp 的 desktop_* 工具操控本机桌面：截屏、列窗口、激活窗口、定位界面元素、鼠标点击、键盘输入。当任务需要操作真实屏幕、窗口或原生应用时使用。
+description: 操控本机桌面：macOS 用 computer-use 的 list_apps/get_app_state/click 等控件清单工具，Windows 用 nuphus 的 desktop_* 系列。当任务需要操作真实屏幕、窗口或原生应用时使用。
 ---
 
 # 桌面自动化
 
-本机已内置 Nuphus 桌面自动化 MCP（服务器名 \`nuphus\`），工具已直接注册在你的工具列表中（\`desktop_*\` 前缀），**直接调用即可，无需写脚本**。
+## 先看平台：macOS 与 Windows 是两套后端（⛔ 别混用）
 
-## 判存在（必做的第一步）
+- **macOS：桌面自动化 = \`computer-use\` MCP（open-computer-use）**，工具：\`list_apps\` / \`get_app_state\` / \`click\` / \`perform_secondary_action\` / \`scroll\` / \`drag\` / \`type_text\` / \`press_key\` / \`set_value\`。它走 Accessibility 控件清单，**按元素/序号操作**，不靠猜坐标。
+  - 判存在：工具列表里有 \`list_apps\` / \`get_app_state\` 才走本技能。
+  - 循环：\`list_apps\` → \`get_app_state\`（拿控件清单）→ \`click\` / \`perform_secondary_action\` / \`type_text\` … → 再用 \`get_app_state\` 复核。长文本优先 \`set_value\` 或剪贴板 + Cmd+V；一次只发一个自动化调用。
+  - ⛔ mac 上 nuphus 的 \`desktop_*\` 已被硬掩，\`nuphus-call desktop_*\` **不是** mac 通道，禁止使用；nuphus 在 mac 只剩 \`browser_*\`（浏览器仍优先 \`ego-browser\`）。
+  - 工具不可用：让用户检查「系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制」是否已授权，以及桌面总闸是否打开；⛔ 不操作系统授权/提权弹窗。
+- **Windows：** 下面这套 \`desktop_*\` / \`nuphus-call\` / \`desktop_ui_*\` 才是主线。
 
-**工具列表里有 \`desktop_windows_list\` 才走本技能**。没有就是「桌面自动化当前不可用」，最常见的原因是用户在
+本机（Windows）已内置 Nuphus 桌面自动化 MCP（服务器名 \`nuphus\`），工具已直接注册在你的工具列表中（\`desktop_*\` 前缀），**直接调用即可，无需写脚本**。
+
+## 判存在（必做的第一步，Windows）
+
+**工具列表里有 \`desktop_windows_list\` 才走本技能**（macOS 看上面那节）。没有就是「桌面自动化当前不可用」，最常见的原因是用户在
 「设置 → 自动化」里关掉了桌面总闸 —— 这时那一组工具是**被硬摘除**的（不是坏掉）。
 - ⛔ 不要硬着头皮调 \`desktop_*\`；
 - ⛔ 也**不要**改用 \`nuphus-call\` 命令行去绕总闸（那等于绕过用户的开关；总闸关闭时该说明已被下发为禁止项）；

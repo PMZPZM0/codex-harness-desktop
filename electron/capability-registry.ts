@@ -84,9 +84,11 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     label: "桌面控制（键鼠 / 窗口 / 截屏）",
     purpose: "操作真实桌面应用、截屏、多窗口",
     backends: [
+      /* ⛔ 11-03 用户令「mac 默认优先 computer use」：顺序即优先级 —— mac 上 computer-use 排第一
+         （Windows 上它不可用，自动落到 nuphus；UIA 作为补充通道）。 */
+      { id: "computer-use-desktop", label: "mac 电脑操作（computer-use MCP）", why: "macOS 首选：open-computer-use 走 Accessibility 控件清单，与 Codex 原生 computer use 同一类实现；随包内置，需用户授 辅助功能 + 屏幕录制" },
       { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "截屏 + 本地 OCR + 像素坐标；Windows/Linux 的真实键鼠通道。⛔ mac 上整组被掩（桌面交给 computer-use），同一条规则的唯一来源是 automation-policy.nuphusDisabledTools" },
       { id: "uia-desktop", label: "Windows 控件清单（desktop_ui_*，UIA）", why: "Windows 专属：读系统无障碍树拿控件清单，按元素序号操作，不依赖坐标；与 nuphus 并存互补（网页内容仍走 browser_*）" },
-      { id: "computer-use-desktop", label: "mac 电脑操作（computer-use MCP）", why: "macOS 专属：open-computer-use 走 Accessibility，与 Codex 原生 computer use 同一类实现；随包内置，需用户授 辅助功能 + 屏幕录制" },
     ],
   },
   {
