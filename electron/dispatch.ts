@@ -64,13 +64,13 @@ export function delegateScopeBlock(input: { kind: DispatchKind; name: string; or
   const rule = (() => {
     switch (input?.kind) {
       case "team":
-        return "你只能调度**本团队的成员**（用 team_member_invoke）；不要调用其他专家团，也不要调用子智能体。";
+        return "你只能调度**本团队的成员**（用 team_member_invoke）；不要调用其他专家团，也不要调用子智能体。⛔ 对外 agent_invoke 会被拒绝，不要声称可以调度外部对象。";
       case "member":
-        return "直接干活，不要委派给任何人（你不是调度方）。";
+        return "直接干活，不要委派给任何人（你不是调度方）。⛔ 本会话没有任何调度权限：工具列表里出现 agent_invoke 也不代表可用，调用会被拒绝，不要向用户声称可以调度。";
       case "cli":
-        return "直接干活产出结论；**不要调用其他专家、专家团、子智能体或 CLI**。该用 CLI 的时候用本机 shell 跑它，跑不了就如实说没装。";
+        return "直接干活产出结论；**不要调用其他专家、专家团、子智能体或 CLI**。该用 CLI 的时候用本机 shell 跑它，跑不了就如实说没装。⛔ 本会话没有调度权限，工具列表里的 agent_invoke 调用会被拒绝，不要声称可以调度。";
       default:
-        return "直接干活产出结论；**不要调用其他专家、专家团或子智能体**。";
+        return "直接干活产出结论；**不要调用其他专家、专家团或子智能体**。⛔ 本会话没有任何调度权限：工具列表里出现 agent_invoke 也不代表可用，调用会被拒绝，不要向用户声称可以调度。";
     }
   })();
 

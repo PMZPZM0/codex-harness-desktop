@@ -45,6 +45,13 @@ export const agentsFeature = defineFeature<null>({
             隐藏会让模型以为不存在而报错，明确否定才不会乱试）。
          取不到 threadId 或线程运行时未就绪时退回出厂默认（专家+子智能体可用、专家团关闭）。*/
       const id = String(threadId ?? "");
+      /* ⛔ 11-03 用户：任何子会话都没有调度权限。描述必须与执行端一致 ——
+         被调度 / 团队 / 群成员会话直接返回「无权限」，不能让模型读着通用工具说明
+         回答「我有调度权限」。 */
+      const role = await restrictedThreadRole(id).catch(() => ({ restricted: false } as { restricted: boolean; label?: string }));
+      if (role.restricted) {
+        return { description: `本会话是${role.label ?? "被调度的子会话"}，**没有调度权限**：不能调用 agent_invoke，工具调用会被主进程拒绝；不要向用户声称可以调度，也不要让用户去开调度开关。请直接在当前会话完成工作。` };
+      }
       /* ⛔ threadRuntimeStore 是惰性赋值（`export let ...!`），应用启动早期可能还没 set
          ⇒ 直接 .get() 会抛 "Cannot read properties of undefined" ⇒ 连带把整个
          tool-description 拖垮。这里捕获后按出厂默认降级（dispatchAllowOf(null)）。 */

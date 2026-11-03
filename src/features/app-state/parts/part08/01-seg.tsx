@@ -33,7 +33,8 @@ import { setAliasSnapshot } from "../../../../lib/alias-store.mjs";
  *     把目录写死进描述，就会出现"告诉模型去派一个本会话没开的类"的假信息。
  *     会话级目录的唯一投递口 = 那条告知（按类逐段列 + 显式否定未开的类）。 */
 const DISPATCH_TOOL_DESC_FALLBACK =
-  "调度专家 / 专家团 / 子智能体 / CLI 智能体 执行一个独立子任务并拿回产出。"
+  "⛔ **只有用户直接创建的主会话可以调度**；被调度会话 / 团队成员 / 群成员 / 子智能体 / CLI 会话没有调度权限，调用会被拒绝 —— 不要在这些会话里声称可以调度，也不要让用户去开开关。"
+  + "调度专家 / 专家团 / 子智能体 / CLI 智能体 执行一个独立子任务并拿回产出。"
   + "⛔ **专家、子智能体、CLI 智能体随时可以直接派，不需要用户开任何开关**（别让用户去调度面板勾选）；"
   + "**专家团默认关闭**，team / member 未开启时会被拒绝 —— 要团请用户打开「专家团」，别反复试。"
   + "本会话当前可派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。";
@@ -532,6 +533,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          ⛔ 这里曾注册过 `subagent_invoke`（subAgentTools）：那条通道与「调度」开关**完全脱钩**、
             还与 agent_invoke 形成两套调度工具 ⇒ 模型只挑名字最直白的它，专家/专家团永远被绕过
             （用户症状：「只能调度子智能体」）。已整体删除，⛔ 不许再加回来。 */
+      ...(bag.threadRole.restricted ? [] : [
       {
         type: "function",
         name: "agent_invoke",
@@ -558,6 +560,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: [],
         },
       },
+      ]),
       /* ⭐ 能力网关（10-05 立 / 10-09 收窄）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，
          模型直接调用一律 `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 /
          专家与子智能体管理 / 连接器注册这些能力对模型**全不可达**。dynamicTools 是唯一可见通道。
@@ -688,7 +691,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          真正的拦截在执行端（主进程 dataaccess:*，被拒文案自带「去哪开授权」）。 */
       ...(DATA_ACCESS_TOOLS as unknown as any[]),
     ];
-  }, [bag.memoryEnabled, bag.memoryBackend]);
+  }, [bag.memoryEnabled, bag.memoryBackend, bag.threadRole.restricted]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
 
   async function createEmptyThread(): Promise<Thread | null> {

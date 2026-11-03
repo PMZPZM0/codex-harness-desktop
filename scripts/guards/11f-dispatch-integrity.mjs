@@ -536,6 +536,18 @@ try {
   ok(/aliasRecordOf\(threadId\)/.test(coreSrc) && /supervisorThreadId/.test(coreSrc)
     && /bossStore/.test(coreSrc) && /群成员会话/.test(coreSrc),
     "凡是「有上级」或群成员的会话一律判定为子会话（未走 delegateRegistry 的路径也挡住）");
+  const agentsIpcSrc = readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8");
+  const seg08Src = readFileSync(join(ROOT, "src/features/app-state/parts/part08/01-seg.tsx"), "utf8");
+  const dispatchSrc = readFileSync(join(ROOT, "electron/dispatch.ts"), "utf8");
+  ok(/role\.restricted/.test(agentsIpcSrc) && /没有调度权限/.test(agentsIpcSrc)
+    && /只有用户直接创建的主会话可以调度/.test(coreSrc)
+    && /只有用户直接创建的主会话可以调度/.test(seg08Src),
+    "工具描述与 MCP 孪生都标明：只有主会话可调度，子会话没有权限");
+  ok(/bag\.threadRole\.restricted \? \[\]/.test(seg08Src),
+    "受限会话不注册 agent_invoke / agent_archive_sessions（不只靠执行端拒绝）");
+  ok(/没有(任何)?调度权限/.test(dispatchSrc) && /没有(任何)?调度权限/.test(tiSrc)
+    && /没有(任何)?调度权限/.test(teamsIpcSrc) && /没有(任何)?调度权限/.test(runnerSrc),
+    "子会话持久提示词 / 团队成员 / 群成员都写明零调度权限");
   const attentionSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"), "utf8");
   ok(/const delegatedRow = Boolean\(delegateKind\)/.test(attentionSrc)
     && /delegatedRow && bag\.delegateRecords\[entry\.id\]/.test(attentionSrc),

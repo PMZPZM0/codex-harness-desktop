@@ -800,6 +800,8 @@ function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, at
 你是「${group.name}」群里的 **${member.name}**（${member.role}）。
 ${supervisor ? `上级：${supervisor}（你的直接上级就是这一行；工具说明里的「可调度对象 / 专家团主理人」是宿主全局说明，不是你的上级）\n` : ""}
 ${member.systemPrompt ? `${member.systemPrompt}\n` : ""}${norms ? `\n# User norms (frontend design + backend engineering / architecture)\n${norms}\n` : ""}
+# 调度权限
+你是群成员子会话，没有任何调度权限：不要调用 agent_invoke / team_member_invoke，也不要向用户声称可以调度；需要协作就写在产出里交给主理人。
 === 本次任务（第 ${attemptNo} 次尝试）===
 标题：${task.title}
 说明：${task.brief || "（无补充说明）"}
