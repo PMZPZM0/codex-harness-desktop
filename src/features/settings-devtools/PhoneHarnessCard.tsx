@@ -23,9 +23,10 @@ type Status = {
 };
 type Guide = { id: string; title: string; steps: string[] };
 
-export function PhoneHarnessCard({ setNotice, installDevRuntime, runtimeInstalling, runtimePercent, runtimeStage }: {
+export function PhoneHarnessCard({ setNotice, installDevRuntime, cancelDevRuntime, runtimeInstalling, runtimePercent, runtimeStage }: {
   setNotice: (text: string) => void;
   installDevRuntime?: (id: string) => void;
+  cancelDevRuntime?: (id: string) => unknown;
   runtimeInstalling?: Record<string, boolean> | null;
   runtimePercent?: Record<string, number> | null;
   runtimeStage?: Record<string, string> | null;
@@ -135,6 +136,9 @@ export function PhoneHarnessCard({ setNotice, installDevRuntime, runtimeInstalli
         >
           {adbBusy ? <Spinner /> : <Cable size={14} />}{status?.adb ? "adb 已就绪" : "安装 adb"}
         </button>
+        {adbBusy ? (
+          <button className="secondary-setting" onClick={() => void cancelDevRuntime?.("platform-tools")}>取消 adb 安装</button>
+        ) : null}
         <button className="secondary-setting" disabled={!status?.installed || busy !== ""} onClick={() => void act("doctor")}>
           {busy === "doctor" ? <Spinner /> : <Stethoscope size={14} />}体检
         </button>
@@ -146,7 +150,16 @@ export function PhoneHarnessCard({ setNotice, installDevRuntime, runtimeInstalli
         </button>
         {ready ? <span className="phone-ready">就绪：会话里让 Codex “用手机打开…”即可</span> : null}
       </div>
-      {adbStage ? <div className="settings-card-hint">adb：{adbStage}{typeof adbPercent === "number" ? ` ${adbPercent}%` : ""}</div> : null}
+      {adbStage ? (
+        <div className="settings-card-hint">
+          adb：{adbStage}{typeof adbPercent === "number" ? ` ${adbPercent}%` : ""}
+          {typeof adbPercent === "number" ? (
+            <span className="runtime-progress-bar" role="progressbar" aria-label="adb 安装进度" aria-valuenow={adbPercent} aria-valuemin={0} aria-valuemax={100}>
+              <i style={{ width: `${Math.max(0, Math.min(100, adbPercent))}%` }} />
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {guides.length > 0 && (
         <div className="phone-guides">
           {guides.map((guide) => (

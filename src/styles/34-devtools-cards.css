@@ -203,7 +203,11 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .skill-pack-actions .secondary-setting { display: inline-flex; align-items: center; gap: 5px; }
 .skill-pack-remove { color: var(--muted); }
 .skill-pack-remove:hover { color: var(--danger, #c0392b); }
-.skill-pack-stage { font-size: 11px; color: var(--accent, var(--green)); }
+/* 11-03 用户：「没有进度条 / 取消」—— 下载阶段显示真实百分比 + 速度，右侧按钮变「取消」。 */
+.skill-pack-stage { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--accent, var(--green)); }
+.skill-pack-stage .runtime-progress-bar { width: 100%; max-width: 420px; }
+.skill-pack-stage .runtime-progress { display: inline-flex; align-items: center; gap: 6px; font-style: normal; color: var(--muted); font-size: 10.5px; }
+.skill-pack-stage .runtime-progress svg { flex: none; }
 .skill-pack-result { font-size: 11px; color: var(--muted); }
 .skill-pack-error { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--danger, #c0392b); }
 /* 10-30：结果行按性质着色（真成功绿 / 中性灰黄 / 失败红）+ 头部「打开技能目录」按钮 */

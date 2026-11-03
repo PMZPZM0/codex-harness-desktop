@@ -41,22 +41,34 @@ if (catalog) {
 const feature = codeOnly(read("electron/features/skill-packs-ipc.ts"));
 ok(/auditSkill\(content, await listFiles\(dir\)\)/.test(feature),
   "每个 SKILL.md 都过 auditSkill（⛔ 不许因来源知名就开旁路）");
-ok(/mirrorCandidates\(/.test(feature) && /codeload\.github\.com\/\$\{pack\.repo\}\/zip\/refs\/heads\/main/.test(feature)
-  && /expandZip\(archive, outDir\)/.test(feature),
-  "下载走 gh-mirror 候选序（zip + 仓库自带解压器；⛔ Windows bsdtar 解 GitHub tar.gz 会 Can't create，实测踩过）");
+const downloader = codeOnly(read("electron/mirror-download.ts"));
+ok(/downloadThroughMirrors\(/.test(feature) && /codeload\.github\.com\/\$\{pack\.repo\}\/zip\/refs\/heads\/main/.test(feature)
+  && /expandZip\(archive, outDir\)/.test(feature)
+  && /mirrorCandidates\(/.test(downloader) && /rankMirrors/.test(downloader),
+  "下载走统一镜像下载器（自动选最快源 + 停滞换源；zip + 仓库自带解压器）");
 ok(/const marker = await readMarker\(id\);\s*\n\s*if \(!marker\) throw new Error\("这个包不是通过本页安装的/.test(feature)
   && /target\.startsWith\(root \+ path\.sep\)/.test(feature),
   "卸载只认自己写的 marker + 目录穿越闸（用户自建技能不会被误删）");
-ok(/if \(installed\.length\) await server\.restart\(\)/.test(feature),
-  "装完重启引擎（不重启模型扫不到新技能）");
+ok(/if \(installed\.length\) \{[\s\S]{0,200}?await server\.restart\(\)/.test(feature),
+  "装完重启引擎（不重启模型扫不到新技能；重启前先推「正在让引擎重新扫描」阶段）");
 ok(/SKILL_SKIP_DIRS = new Set\(\["deprecated", "in-progress"/.test(feature),
   "跳过仓库里标注 deprecated / in-progress 的技能目录");
 /* ★ 10-30 用户实测「安装卸载太快了，要真安装真卸载」——
    三条硬判据：下载要有真实字节进度、落盘要回读校验、卸载要回读确认。 */
-ok(/createWriteStream\(target\)/.test(feature) && /onProgress\?\.\(received, total\)/.test(feature) && /BODY|content-length/i.test(feature),
-  "下载是流式 + 报真实字节进度（⛔ 不许退回一口气 arrayBuffer：界面会像「点了就完成」）");
-ok(/head !== "PK"/.test(feature) && /下载内容不是 zip/.test(feature),
+ok(/createWriteStream\(target\)/.test(downloader) && /onProgress\?\.\(/.test(downloader) && /content-length/i.test(downloader)
+  && /onProgress: \(p\) =>/.test(feature) && /percent: p\.total \? p\.percent : 0/.test(feature),
+  "下载是流式 + 真实百分比/速度进度（⛔ 不许退回一口气 arrayBuffer：界面会像「点了就完成」）");
+ok(/head !== "PK"/.test(downloader) && /expectZipMagic/.test(feature),
   "落盘后校验 zip 魔数（镜像返回 200 + 错误页不算成功）");
+/* ⛔ 11-03 用户：「没有取消 / 下载好慢」—— 取消必须真的中止下载并回滚本次写入的目录。 */
+ok(/skill-packs:cancel/.test(feature) && /activeInstalls\.get\(id\)[\s\S]{0,120}?controller\.abort\(\)/.test(feature)
+  && /new AbortController\(\)[\s\S]{0,160}?installPack\(id, controller\.signal\)/.test(feature),
+  "安装可取消：skill-packs:cancel 中止下载信号（IPC 回执 cancelled）");
+ok(/DownloadCancelledError/.test(feature) && /for \(const folder of installed\) await fs\.rm/.test(feature)
+  && /cancelled: true/.test(feature),
+  "取消后回滚本次已拷贝目录（marker 未写，不能留下半套技能）");
+ok(/stalled = true; controller\.abort\(\)/.test(downloader) && /stallMs/.test(downloader),
+  "下载停滞自动换源（镜像挂起不再无限等待 = 用户说的「装半天装不上」）");
 ok(/写入后校验未通过/.test(feature) && /existsSync\(path\.join\(root, folder, "SKILL\.md"\)\)/.test(feature),
   "每个技能写完立即回读 SKILL.md（拷贝失败/进程被杀不能报成功）");
 ok(/const remaining = owned\.filter/.test(feature) && /return \{ removed, remaining, kept \}/.test(feature),
@@ -72,16 +84,17 @@ ok(/owner === id\) owned\.push\(folder\); else kept\.push\(folder\);/.test(featu
 /* ── ⑤ 接线 ─────────────────────────────────────────────────────────── */
 const manifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
 const channels = (manifest.channels ?? []).map((entry) => entry.channel);
-ok(["skill-packs:list", "skill-packs:install", "skill-packs:uninstall"].every((name) => channels.includes(name))
+ok(["skill-packs:list", "skill-packs:install", "skill-packs:cancel", "skill-packs:uninstall"].every((name) => channels.includes(name))
   && manifest.count === manifest.channels.length,
-  "manifest 三条通道齐全且 count 自洽");
+  "manifest 四条通道齐全（含 cancel）且 count 自洽");
 const registry = read("electron/ipc-registry.ts");
-ok(/\{ prefix: "skill-packs", count: 3,/.test(registry), "ipc-registry 登记了 skill-packs 前缀（count=3）");
+ok(/\{ prefix: "skill-packs", count: 4,/.test(registry), "ipc-registry 登记了 skill-packs 前缀（count=4）");
 ok(/"id": "skill-packs"/.test(read("electron/composition.json")) && /feat_skill_packs/.test(read("electron/composition.gen.ts")),
   "组合表启用该域（生成物里有 feat_skill_packs）");
 const preload = read("electron/preload.ts");
-ok(/"skill-packs:list"/.test(preload) && /"skill-packs:install"/.test(preload) && /"skill-packs:uninstall"/.test(preload),
-  "preload 暴露三条方法（生成物，⛔ 不手改）");
+ok(/"skill-packs:list"/.test(preload) && /"skill-packs:install"/.test(preload)
+  && /"skill-packs:cancel"/.test(preload) && /"skill-packs:uninstall"/.test(preload),
+  "preload 暴露四条方法（生成物，⛔ 不手改）");
 
 const devtools = codeOnly(read("src/features/settings-devtools/DevtoolsSettingsSection.tsx"));
 ok(/key: "skill-packs", icon: <PackageOpen/.test(devtools) && /openCard === "skill-packs"/.test(devtools)
@@ -89,8 +102,14 @@ ok(/key: "skill-packs", icon: <PackageOpen/.test(devtools) && /openCard === "ski
   "开发工具一级卡片 + 二级弹窗都接上（两级 IA：面板不在一级页渲染）");
 
 const panel = codeOnly(read("src/features/skill-packs/SkillPacksPanel.tsx"));
-ok(/window\.codex\.listSkillPacks\(\)/.test(panel) && /window\.codex\.installSkillPack\(/.test(panel) && /window\.codex\.uninstallSkillPack\(/.test(panel),
-  "面板只通过三条通道取数/操作");
+ok(/window\.codex\.listSkillPacks\(\)/.test(panel) && /window\.codex\.installSkillPack\(/.test(panel)
+  && /window\.codex\.cancelSkillPack\(/.test(panel) && /window\.codex\.uninstallSkillPack\(/.test(panel),
+  "面板只通过四条通道取数/操作");
+ok(/runtime-progress-bar/.test(panel) && /event\.percent/.test(panel) && /event\.speed/.test(panel)
+  && /skill-pack-cancel/.test(panel) && /已取消本次安装/.test(panel),
+  "安装中显示百分比 / 速度 / 进度条，右侧按钮变「取消」；取消结果中性展示");
+ok(/const activeInstalls = new Map/.test(feature) && /正在安装中，请稍候或先取消/.test(feature),
+  "同一技能包不允许并发安装（避免两份下载同时写 skills 目录）");
 /* ★ 10-30「要真安装真卸载」：界面结果必须以磁盘回读为准，不能一律绿色糊过去。 */
 ok(/磁盘确认已写入/.test(panel) && /磁盘确认已不存在/.test(panel) && /没有新技能：/.test(panel),
   "界面结果以磁盘回读为准：写入数 / 已删净 / 「同名已存在」不得说成成功");

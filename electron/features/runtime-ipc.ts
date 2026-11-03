@@ -20,7 +20,7 @@
  * ⛔ 待接缝化（阶段 2）：app / shell / spawn 为宿主能力。
  */
 import fs from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync, statSync, createWriteStream } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -28,6 +28,7 @@ import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
+import { downloadThroughMirrors } from "../mirror-download";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -505,62 +506,33 @@ function fileeInstalledVersion(): string {
   try { return readFileSync(fileeVersionFile(), "utf8").trim(); } catch { return ""; }
 }
 
-/** 镜像序流式下载一个 release 资产到 target（进度 + 取消 + SHA 逐块算；失败/取消删半截文件）。 */
-async function fileeDownloadAsset(id: DevRuntimeId, urlPath: string, target: string, expectZipMagic: boolean): Promise<void> {
-  await fs.mkdir(path.dirname(target), { recursive: true });
+/** 下载 Filee release 资产：统一镜像下载器（选最快源 + 停滞换源 + 取消 + 进度/速度 + SHA256）。 */
+async function fileeDownloadAsset(id: DevRuntimeId, urlPath: string, target: string, expectZipMagic: boolean): Promise<string> {
   const url = `https://github.com/${FILEE_REPO}/releases/download/${urlPath}`;
-  const controller = new AbortController();
-  const tried: string[] = [];
-  try {
-    for (const candidate of mirrorCandidates(url)) {
-      let host = candidate;
-      try { host = new URL(candidate).host; } catch { /* 原样显示 */ }
-      try {
-        const res = await fetch(candidate, { redirect: "follow", signal: controller.signal });
-        if (!res.ok || !res.body) { tried.push(`${host}(HTTP ${res.status})`); continue; }
-        const total = Number(res.headers.get("content-length") ?? 0) || 0;
-        const file = createWriteStream(target);
-        const hash = createHash("sha256");
-        let received = 0;
-        let reported = 0;
-        const finished = once(file, "finish");
-        let aborted = false;
-        try {
-          for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-            if (isCancelRequested(id)) { aborted = true; controller.abort(); break; }
-            received += chunk.byteLength;
-            hash.update(chunk);
-            if (!file.write(chunk)) await once(file, "drain");
-            // 首块必报（151MB 大包要让用户立刻看见在下），之后每 5% / 1MB 报一次
-            if ((reported === 0 && received > 0) || received - reported >= Math.max(total ? total / 20 : 0, 1024 * 1024)) {
-              reported = received;
-              const pct = total ? Math.round((received / total) * 100) : 0;
-              emitRuntimeProgress(id, `@@PROGRESS ${pct} 正在下载（${host}）…`);
-            }
-          }
-        } finally { file.end(); }
-        await finished;
-        if (aborted) throw new Error("已取消");
-        if (!received) throw new Error("下载到 0 字节");
-        if (expectZipMagic) {
-          const head = (await fs.readFile(target)).subarray(0, 2).toString("latin1");
-          if (head !== "PK") throw new Error("下载内容不是 zip（镜像可能返回了错误页）");
-        }
-        // 整包 SHA 在下载时逐块算好交给调用方校验（不重读 151MB）
-        fileeLastSha.set(target, hash.digest("hex"));
-        return;
-      } catch (error) {
-        tried.push(`${host}(${String((error as { message?: unknown })?.message ?? error).slice(0, 60)})`);
-        if (isCancelRequested(id)) break;
+  let lastHost = "";
+  const result = await downloadThroughMirrors({
+    url,
+    target,
+    expectZipMagic,
+    isCancelled: () => isCancelRequested(id),
+    onProgress: (p) => {
+      const pct = p.total ? p.percent : 0;
+      emitRuntimeProgress(id, `@@PROGRESS ${pct}`);
+      const mbText = p.total
+        ? `${(p.received / 1048576).toFixed(1)} MB / ${(p.total / 1048576).toFixed(1)} MB`
+        : `${(p.received / 1048576).toFixed(1)} MB`;
+      const speed = p.bytesPerSec >= 1048576
+        ? `${(p.bytesPerSec / 1048576).toFixed(1)} MB/s`
+        : p.bytesPerSec > 0 ? `${Math.max(1, Math.round(p.bytesPerSec / 1024))} KB/s` : "";
+      emitRuntimeProgress(id, `@@SPEED ${speed ? `${speed} · ` : ""}${mbText}`);
+      if (p.host && p.host !== lastHost) {
+        lastHost = p.host;
+        emitRuntimeProgress(id, `正在下载（${p.host}）…`);
       }
-    }
-    throw new Error(`Filee 下载失败：${tried.join(" → ")}`);
-  } finally {
-    // 成功时 target 要留给解压步骤；失败/取消（没返回）时删半截文件 —— staging 目录不许攒垃圾
-    if (!fileeLastSha.has(target)) await fs.rm(target, { force: true }).catch(() => undefined);
-  }
+    },
+  });
+  return result.sha256;
 }
-const fileeLastSha = new Map<string, string>();
 
 /** 安装 / 更新 Filee（version 传具体版本号；更新链传 GitHub 最新 tag）。 */
 async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promise<void> {
@@ -571,10 +543,9 @@ async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promis
   const asset = fileeAssetName(version);
   emitRuntimeProgress(id, `@@STAGE 下载 Filee ${version}`);
   const archive = path.join(staging, asset);
-  fileeLastSha.delete(archive);
-  await fileeDownloadAsset(id, `v${version}/${asset}`, archive, process.platform === "win32");
+  const actualSha = await fileeDownloadAsset(id, `v${version}/${asset}`, archive, process.platform === "win32");
+  if (isCancelRequested(id)) { await fs.rm(archive, { force: true }).catch(() => undefined); throw new Error("已取消"); }
   // SHA256 校验（校验表也走镜像序；拿不到表或表里没这行 = 如实说明并跳过，不装哑巴包也不瞎报错）
-  const actualSha = fileeLastSha.get(archive) ?? "";
   emitRuntimeProgress(id, "校验 SHA256…");
   let expectedSha = "";
   for (const candidate of mirrorCandidates(`https://github.com/${FILEE_REPO}/releases/download/v${version}/Filee-${version}-SHA256SUMS.txt`)) {

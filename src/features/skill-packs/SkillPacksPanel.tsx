@@ -20,7 +20,8 @@ import { Spinner } from "../../components/CardShell";
 
 const errText = (error: unknown) => String((error as { message?: unknown })?.message ?? error);
 
-type PackEvent = { type?: string; packId?: string; message?: string };
+/** 主进程事件：下载阶段带真实字节进度（percent/speed/host），界面不再只有一句「安装中…」。 */
+type PackEvent = { type?: string; packId?: string; stage?: string; message?: string; percent?: number; speed?: string; host?: string };
 
 type SkillPackRow = {
   id: string; name: string; repo: string; license: string; licenseUrl: string; size: string;
@@ -34,6 +35,8 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
   const [error, setError] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [stage, setStage] = useState("");
+  const [percent, setPercent] = useState(0);
+  const [speed, setSpeed] = useState("");
   const [done, setDone] = useState<Record<string, Result>>({});
 
   const refresh = useMemo(() => async () => {
@@ -52,11 +55,15 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     const event = payload as PackEvent;
     if (event?.type !== "skill-pack-install" || event.packId !== busy) return;
     if (typeof event.message === "string") setStage(event.message);
+    if (typeof event.percent === "number") setPercent(Math.max(0, Math.min(100, event.percent)));
+    if (typeof event.speed === "string") setSpeed(event.speed);
   }), [busy]);
 
   const install = async (row: SkillPackRow) => {
     setBusy(row.id);
-    setStage("正在连接下载源…");
+    setStage("正在选择最快的下载源…");
+    setPercent(0);
+    setSpeed("");
     setDone((prev) => {
       const next = { ...prev };
       delete next[row.id];
@@ -66,7 +73,9 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
       const result = await window.codex.installSkillPack({ id: row.id });
       const downloaded = result.bytes ? `${(result.bytes / 1048576).toFixed(1)} MB` : "未知大小";
       let verdict: Result;
-      if (result.installed.length) {
+      if (result.cancelled) {
+        verdict = { tone: "warn", text: "已取消本次安装（临时文件与本次已写入的目录已清理）" };
+      } else if (result.installed.length) {
         verdict = { tone: "ok", text: `磁盘确认已写入 ${result.installed.length} 个技能（下载 ${downloaded}）${result.skipped.length ? `；${result.skipped.length} 个同名已存在，未覆盖` : ""}` };
       } else if (result.skipped.length) {
         verdict = { tone: "warn", text: `没有新技能：${result.skipped.length} 个同名已存在（未覆盖）。要强制重装请先在技能页卸载` };
@@ -86,7 +95,15 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     } finally {
       setBusy(null);
       setStage("");
+      setPercent(0);
+      setSpeed("");
     }
+  };
+
+  /** 取消安装：只发中止信号，界面等 install 的 Promise 回执（返回 cancelled）再收尾，避免双写状态。 */
+  const cancel = async (row: SkillPackRow) => {
+    setStage("正在取消…");
+    try { await window.codex.cancelSkillPack({ id: row.id }); } catch { /* 已在收尾 */ }
   };
 
   const uninstall = async (row: SkillPackRow) => {
@@ -153,7 +170,14 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                       {row.repo}<ExternalLink size={10} />
                     </button>
                   </span>
-                  {isBusy && stage ? <span className="skill-pack-stage"><Spinner />{stage}</span> : null}
+                  {isBusy ? (
+                    <span className="skill-pack-stage">
+                      <span className="runtime-progress-bar" role="progressbar" aria-label={`${row.name} 安装进度`} aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+                        <i style={{ width: `${percent}%` }} />
+                      </span>
+                      <em className="runtime-progress"><Spinner />{stage}{percent ? ` · ${percent}%` : ""}{speed ? ` · ${speed}` : ""}</em>
+                    </span>
+                  ) : null}
                   {result ? <span className={`skill-pack-result ${result.tone}`}>{result.text}</span> : null}
                 </span>
                 <span className="skill-pack-actions">
@@ -161,10 +185,10 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                     <button type="button" className="secondary-setting skill-pack-remove" disabled={isBusy} onClick={() => void uninstall(row)}>
                       <Trash2 size={13} />卸载
                     </button>
+                  ) : isBusy ? (
+                    <button type="button" className="secondary-setting skill-pack-cancel" onClick={() => void cancel(row)}>取消</button>
                   ) : (
-                    <button type="button" className="primary-setting" disabled={isBusy} onClick={() => void install(row)}>
-                      {isBusy ? <Spinner /> : null}{isBusy ? "安装中…" : "安装"}
-                    </button>
+                    <button type="button" className="primary-setting" onClick={() => void install(row)}>安装</button>
                   )}
                 </span>
               </div>

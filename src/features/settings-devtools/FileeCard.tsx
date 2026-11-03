@@ -49,7 +49,7 @@ type Status = {
   attribution: { license: string; home: string; site: string };
 };
 
-export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage }: {
+export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress, cancelDevRuntime, setRuntimeModal }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;
   /** ⛔ 真实类型是「正在安装的工具 id」（单个字符串），不是 map（飞书 CLI 卡同款教训）。 */
@@ -58,6 +58,12 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
   runtimeUninstalling?: string | null;
   /** 安装阶段文案（runtime:progress 的 message，id=filee）；用于下载进度反馈。 */
   runtimeStage?: Record<string, string>;
+  /** 11-03：真实百分比 / 速度 / 最新一行输出 —— 151MB 大包不能再只显示一句「安装中」。 */
+  runtimePercent?: Record<string, number> | null;
+  runtimeSpeed?: Record<string, string> | null;
+  runtimeProgress?: Record<string, string> | null;
+  cancelDevRuntime?: (id: string) => unknown;
+  setRuntimeModal?: (value: any) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   /* 卸载确认放在设置内二级弹窗（⛔ 不用 openAppConfirm：挂在设置遮罩之下看不见，飞书卡 10-30 实测）。 */
@@ -84,6 +90,10 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
   /* 别的工具在装时也不许并发点（与运行时列表同口径：一次只跑一个安装）。 */
   const otherBusy = Boolean(runtimeInstalling) && !installing;
   const uninstalling = runtimeUninstalling === "filee";
+  const percent = Math.round(Number(runtimePercent?.["filee"] ?? 0));
+  const speed = runtimeSpeed?.["filee"] ?? "";
+  const latest = runtimeProgress?.["filee"] ?? "";
+  const installFailed = latest.startsWith("安装失败");
 
   useEffect(() => {
     const off = window.codex.onRuntimeProgress((payload: { id?: string; done?: boolean }) => {
@@ -101,7 +111,29 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
             <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
             <span className="runtime-copy">
               <strong>安装 Filee</strong>
-              <small>{installing ? (runtimeStage?.["filee"] || "正在下载（约 151 MB，国内镜像加速，含 SHA256 校验）…") : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会影响你的任何文件` : "约 151 MB，GitHub release 国内镜像下载 + SHA256 校验；装好后可在这里卸载"}</small>
+              <small>{installing ? "正在准备下载（约 151 MB，自动选最快的国内镜像）…" : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会影响你的任何文件` : "约 151 MB，GitHub release 自动选最快镜像 + SHA256 校验；装好后可在这里卸载"}</small>
+              {installing ? (
+                <span className="runtime-install-state devtools-progress-row">
+                  <span className="runtime-progress-bar" role="progressbar" aria-label="Filee 安装进度" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+                    <i style={{ width: `${percent}%` }} />
+                  </span>
+                  <em className="runtime-progress">
+                    {runtimeStage?.["filee"] || "正在选择最快的下载源…"}
+                    {percent ? ` · ${percent}%` : ""}
+                    {speed ? ` · ${speed}` : ""}
+                    {latest && !installFailed ? ` · ${latest}` : ""}
+                  </em>
+                </span>
+              ) : null}
+              {installFailed ? (
+                <button
+                  type="button"
+                  className="runtime-failed"
+                  onClick={() => setRuntimeModal?.({ id: "filee", name: "Filee 文件转换", mode: "install", done: true, failed: true, error: latest.replace(/^安装失败：/, "") })}
+                >
+                  <AlertTriangle size={12} />安装失败 · 点开完整报错与备用方案
+                </button>
+              ) : null}
             </span>
             <div className="runtime-actions">
               {status?.installed ? <>
@@ -116,8 +148,10 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
                     {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                   </button>
                 </>
-                : <button type="button" className="primary-setting runtime-install" disabled={installing || otherBusy} onClick={() => installDevRuntime?.("filee")}>
-                    {installing ? <><Spinner /> 安装中</> : <><Download size={14} />安装</>}
+                : installing ? (
+                  <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.("filee")}>取消</button>
+                ) : <button type="button" className="primary-setting runtime-install" disabled={otherBusy} onClick={() => installDevRuntime?.("filee")}>
+                    <Download size={14} />安装
                   </button>}
             </div>
           </div>

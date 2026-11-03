@@ -55,7 +55,7 @@ type Status = {
   error: string;
 };
 
-export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage }: {
+export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, cancelDevRuntime }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;
   /** ⛔ 真实类型是「正在安装的工具 id」（单个字符串），不是 map —— 按 map 读会永远 undefined，
@@ -65,6 +65,8 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
   runtimeUninstalling?: string | null;
   /** 安装阶段文案（runtime:progress 的 message，id=feishu-cli）；用于下载进度反馈。 */
   runtimeStage?: Record<string, string>;
+  runtimePercent?: Record<string, number> | null;
+  cancelDevRuntime?: (id: string) => unknown;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState<"" | "setup" | "reconfig" | "login" | "logout">("");
@@ -219,7 +221,15 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
           <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
           <span className="runtime-copy">
             <strong>安装 CLI</strong>
-            <small>{installing ? (runtimeStage?.["feishu-cli"] || "正在安装（下载约 51 MB，国内镜像）…") : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会删除本机已登录的飞书凭据` : "约 51 MB，走国内 npm 镜像；装好后可在这里卸载"}</small>
+            <small>{installing ? "正在安装（约 51 MB，国内 npm 镜像）…" : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载不会删除本机已登录的飞书凭据` : "约 51 MB，走国内 npm 镜像；装好后可在这里卸载"}</small>
+            {installing ? (
+              <span className="runtime-install-state devtools-progress-row">
+                <span className="runtime-progress-bar" role="progressbar" aria-label="飞书 CLI 安装进度" aria-valuenow={Math.round(Number(runtimePercent?.["feishu-cli"] ?? 0))} aria-valuemin={0} aria-valuemax={100}>
+                  <i style={{ width: `${Math.max(0, Math.min(100, Math.round(Number(runtimePercent?.["feishu-cli"] ?? 0))))}%` }} />
+                </span>
+                <em className="runtime-progress">{runtimeStage?.["feishu-cli"] || "正在下载安装…"}</em>
+              </span>
+            ) : null}
           </span>
           <div className="runtime-actions">
             {status?.installed ? <>
@@ -234,8 +244,10 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
                   {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                 </button>
               </>
-              : <button type="button" className="primary-setting runtime-install" disabled={installing || otherBusy} onClick={() => installDevRuntime?.("feishu-cli")}>
-                  {installing ? <><Spinner /> 安装中</> : <><Download size={14} />安装</>}
+              : installing ? (
+                <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.("feishu-cli")}>取消</button>
+              ) : <button type="button" className="primary-setting runtime-install" disabled={otherBusy} onClick={() => installDevRuntime?.("feishu-cli")}>
+                  <Download size={14} />安装
                 </button>}
           </div>
         </div>

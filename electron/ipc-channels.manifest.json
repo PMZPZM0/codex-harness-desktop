@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 604,
+  "count": 605,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -4124,10 +4124,20 @@
       "channel": "skill-packs:install",
       "paramsImpl": "input: { id: string }",
       "paramsDecl": "input: { id: string }",
-      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number }>",
+      "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": "下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖"
+      "note": "下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖；下载/写盘阶段可取消（cancelled=true）"
+    },
+    {
+      "name": "cancelSkillPack",
+      "channel": "skill-packs:cancel",
+      "paramsImpl": "input: { id: string }",
+      "paramsDecl": "input: { id: string }",
+      "returns": "Promise<{ cancelled: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "取消正在安装的技能包（中止下载 / 停止写盘并回滚本次已拷贝目录，不会重启引擎）"
     },
     {
       "name": "uninstallSkillPack",

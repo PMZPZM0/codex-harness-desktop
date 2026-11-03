@@ -46,11 +46,21 @@ const versions = read("scripts/lib/tools-versions.cjs");
   ok(/filee: "2\.2\.0"/.test(versions), "tools-versions 钉了 filee 版本（单一来源）");
   ok(runtimeIpc.includes("async function installFileeFromGitHub") && runtimeIpc.includes("const GITHUB_UPDATEABLE"),
     "runtime-ipc 有 GitHub 直下型安装函数与更新清单");
-  ok(/mirrorCandidates\(/.test(runtimeIpc.split("installFileeFromGitHub")[1]?.split("const GITHUB_UPDATEABLE")[0] ?? "")
+  /* ⛔ 11-03：Filee 下载改走统一镜像下载器（自动选最快源 + 停滞换源 + 取消），
+     镜像序仍只有一份（mirrorCandidates 在 mirror-download.ts 里）。 */
+  const mirrorDownload = codeOnly(read("electron/mirror-download.ts"));
+  ok(/async function fileeDownloadAsset[\s\S]{0,1600}?downloadThroughMirrors\(/.test(runtimeIpc)
+    && /await fileeDownloadAsset\(id/.test(runtimeIpc)
+    && /mirrorCandidates\(/.test(mirrorDownload)
     && !/gh-proxy\.com\/|ghfast\.top\//.test(runtimeIpc.split("async function installFileeFromGitHub")[1]?.split("const GITHUB_UPDATEABLE")[0] ?? ""),
-    "⛔ 安装/更新走 gh-mirror.mirrorCandidates 镜像序（不在 Filee 分支手写第二份镜像前缀）");
-  ok(runtimeIpc.includes("SHA256") && runtimeIpc.includes("createHash(\"sha256\")") && runtimeIpc.includes("Filee-${version}-SHA256SUMS.txt"),
-    "151MB 大包下载后做 SHA256 校验（release 自带校验表，也是镜像序拉取）");
+    "⛔ 安装/更新走统一镜像下载器（镜像前缀只在 gh-mirror 一份）");
+  ok(runtimeIpc.includes("SHA256") && /createHash\("sha256"\)/.test(mirrorDownload)
+    && runtimeIpc.includes("Filee-${version}-SHA256SUMS.txt")
+    && /const actualSha = await fileeDownloadAsset/.test(runtimeIpc),
+    "151MB 大包下载后做 SHA256 校验（release 自带校验表；SHA 由下载器边下边算）");
+  ok(/isCancelled: \(\) => isCancelRequested\(id\)/.test(runtimeIpc)
+    && /@@SPEED/.test(runtimeIpc) && /@@PROGRESS/.test(runtimeIpc),
+    "Filee 下载带取消轮询 + 真实百分比/速度事件");
   ok(runtimeIpc.includes('filee: ["--version"]'), "health 自检让 filee-cli 自报版本");
   ok(runtimeIpc.includes("fileeVersionFile()") && runtimeIpc.includes('writeFile(fileeVersionFile(), version'),
     "安装后落盘 version.txt（更新链的已装版本来源，不靠 spawn 自报）");
@@ -89,6 +99,12 @@ const versions = read("scripts/lib/tools-versions.cjs");
     "开发工具页有 Filee 入口卡 + 二级弹窗挂 FileeCard");
   ok(fileeCard.includes('installDevRuntime?.("filee")') && fileeCard.includes("window.codex.onRuntimeProgress") && fileeCard.includes('payload?.id !== "filee"'),
     "FileeCard 安装走 runtime:install（filee id），done 后重读状态（装完界面不停在未安装）");
+  /* ⛔ 11-03 用户：「下载慢 / 没有进度条 / 没有取消」—— 151MB 安装卡必须真实反馈 + 可取消。 */
+  ok(fileeCard.includes("runtime-progress-bar") && fileeCard.includes("runtimePercent") && fileeCard.includes("runtimeSpeed")
+    && fileeCard.includes('cancelDevRuntime?.("filee")') && fileeCard.includes("runtime-cancel"),
+    "FileeCard 显示百分比/速度进度条 + 取消按钮（不再只有一句「安装中」）");
+  ok(fileeCard.includes("安装失败 · 点开完整报错") && fileeCard.includes("setRuntimeModal"),
+    "FileeCard 安装失败有完整报错入口（不再只在进度行里露半句）");
   ok(fileeCard.includes("setUninstallOpen") && fileeCard.includes("SettingsDialog") && fileeCard.includes('uninstallDevRuntime?.("filee")'),
     "卸载走设置内二级弹窗确认（⛔ 不用原生 confirm / openAppConfirm，飞书卡同款口径）");
   ok(fileeCard.includes("控制台 → 组件更新") && fileeCard.includes("runtime-row"),

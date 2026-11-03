@@ -18,6 +18,7 @@ export function MoeKoeCard({
   stage,
   progress,
   onInstall,
+  onCancel,
   setNotice,
 }: {
   runtime?: any;
@@ -26,6 +27,7 @@ export function MoeKoeCard({
   stage?: string;
   progress?: string;
   onInstall: () => unknown;
+  onCancel?: () => unknown;
   setNotice?: any;
 }) {
   const installed = Boolean(runtime?.installed);
@@ -57,9 +59,13 @@ export function MoeKoeCard({
           ) : <em className="runtime-hint">{installed ? "已安装 · 点击启动；Codex 可直接调用 6521 API" : `系统级安装 · ${runtime?.size ?? "约 133 MB"} · 官方源 · 自动识别系统/架构`}</em>}
         </span>
         <span className="runtime-actions" style={{ flexWrap: "wrap", justifyContent: "flex-end" }}>
-          <button type="button" className="primary-setting runtime-install" disabled={installing} onClick={run}>
-            {installing ? <Spinner /> : <Music2 size={14} />}{installing ? "安装中…" : installed ? "启动 MoeKoe" : "安装 MoeKoe Music"}
-          </button>
+          {installing ? (
+            <button type="button" className="secondary-setting runtime-cancel" onClick={() => void onCancel?.()}>取消</button>
+          ) : (
+            <button type="button" className="primary-setting runtime-install" onClick={run}>
+              <Music2 size={14} />{installed ? "启动 MoeKoe" : "安装 MoeKoe Music"}
+            </button>
+          )}
           <button type="button" className="secondary-setting" title="打开 KuGouMusicApi 文档（6521 API）" onClick={() => void window.codex.openExternal(API_DOCS_URL)}>
             <BookOpen size={13} />API 文档
           </button>

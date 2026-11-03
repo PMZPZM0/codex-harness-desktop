@@ -258,7 +258,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeOtherCard.title} icon={<Smartphone size={15} />} hint="装机 · 关遥测 · 注册技能 · 权限引导" onClose={() => setOpenCard(null)}>
           {/* 手机控制（09-27）：上游 phone-harness 是 Python CLI 不是 MCP 服务，
               所以不做连接器模板，做成工具卡：装机 + 关遥测 + 注册技能 + 权限引导。 */}
-          <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
+          <PhoneHarnessCard setNotice={setNotice} installDevRuntime={installDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeInstalling={runtimeInstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} />
         </SettingsDialog>
       )}
       {openCard === "skill-packs" && activeOtherCard && (
@@ -275,6 +275,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
             stage={runtimeStage?.["moekoe"]}
             progress={runtimeProgress?.["moekoe"]}
             onInstall={() => installDevRuntime("moekoe")}
+            onCancel={() => cancelDevRuntime("moekoe")}
             setNotice={setNotice}
           />
         </SettingsDialog>
@@ -287,13 +288,13 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       )}
       {openCard === "feishu-cli" && activeOtherCard && (
         <SettingsDialog title={activeOtherCard.title} icon={<Bot size={15} />} hint="安装 → 配置应用 → 登录（官方 device flow）" size="md" onClose={() => setOpenCard(null)}>
-          <FeishuCliCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} />
+          <FeishuCliCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} cancelDevRuntime={cancelDevRuntime} />
         </SettingsDialog>
       )}
       {openCard === "filee" && activeOtherCard && (
         <SettingsDialog title={activeOtherCard.title} icon={<Files size={15} />} hint="244 种格式 · 本地离线转换 · 装好就能说人话" size="md" onClose={() => setOpenCard(null)}>
           {/* Filee 文件转换（10-30，KnifeLemon/Filee，MIT）：安装走 runtime:install 的 GitHub 直下型分支。 */}
-          <FileeCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} />
+          <FileeCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
         </SettingsDialog>
       )}
       {openCard === "domains" && activeOtherCard && (

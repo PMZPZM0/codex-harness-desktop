@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { createHash } from "node:crypto";
+import { existingToolPath } from "./toolchain";
 
 const execFileAsync = promisify(execFile);
 const API_BASE = "https://api.cocoloop.cn";
@@ -225,12 +226,29 @@ export function auditSkill(content: string, files: string[]) {
 }
 
 export async function expandZip(zipPath: string, outputDir: string) {
+  /* ⛔ 11-03 用户「安装好慢」：Windows 上原来只用 PowerShell `Expand-Archive`，
+     几十 MB / 上千文件要几十秒。改为与安装脚本同一套三级降级：
+     随包 7-Zip → 系统 tar（Win10+ 自带 bsdtar，解 zip 快一个量级）→ PowerShell 兜底。 */
+  try {
+    const sevenZip = existingToolPath("sevenzip", "7z.exe");
+    if (sevenZip) {
+      await execFileAsync(sevenZip, ["x", zipPath, `-o${outputDir}`, "-y"], { windowsHide: true, maxBuffer: 1024 * 1024 });
+      return;
+    }
+  } catch { /* 落到 tar */ }
+  const tarBins = process.platform === "win32" ? ["C:\\Windows\\System32\\tar.exe", "tar"] : ["tar"];
+  for (const tar of tarBins) {
+    try {
+      await execFileAsync(tar, ["-xf", zipPath, "-C", outputDir], { windowsHide: true, maxBuffer: 1024 * 1024 });
+      return;
+    } catch { /* 下一个 */ }
+  }
   if (process.platform === "win32") {
     const command = `$ErrorActionPreference = 'Stop'; Expand-Archive -LiteralPath '${psLiteral(zipPath)}' -DestinationPath '${psLiteral(outputDir)}' -Force`;
     await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-EncodedCommand", psEncoded(command)], { windowsHide: true, maxBuffer: 1024 * 1024 });
     return;
   }
-  await execFileAsync("tar", ["-xf", zipPath, "-C", outputDir], { maxBuffer: 1024 * 1024 });
+  throw new Error("解压失败：本机没有可用的 7z / tar");
 }
 
 export type InstallProgress = { stage: "download" | "extract" | "audit" | "install" | "register"; message: string };
