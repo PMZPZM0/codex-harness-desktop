@@ -36,6 +36,8 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-03 | mac 桌面自动化默认首选 computer-use | 改动 | `electron/developer-instructions.ts`、`electron/builtin-skills/01-skill-desktop.ts`、`electron/capability-registry.ts`、`electron/features/custom-model-apply.ts`、守卫 07【274】 | 用户令：「mac 版本默认优先使用 computer use」。后端本就指向 computer-use，问题在模型侧口径：常驻指令与桌面技能整段只写 nuphus（desktop_*/nuphus-call），mac 上模型会绕 nuphus CLI。① 常驻指令按平台分叉（darwin：computer-use 九工具/控件清单循环，明确禁止 nuphus desktop_*）；② 桌面技能加「先看平台」，macOS 分支在前；③ 能力表与 config.toml 写出顺序都把 computer-use 排第一（Windows 不可用时自动落 nuphus）；④ 守卫 +4（顺序/指令分叉/技能分支/配置顺序），真跑 mac/win 解析不变。 | 本轮 |
+
 | 2026-11-03 | 开发工具安装提速 + 真实进度 + 取消 | 修复 | `electron/mirror-download.ts`（新）、`skill-packs-ipc.ts`、`runtime-ipc.ts`、`skills-market.ts`、`FileeCard`/`FeishuCliCard`/`MoeKoeCard`/`PhoneHarnessCard`、`SkillPacksPanel`、守卫 12ai/12aj | 用户：「技能包和 Filee 下载慢 / 安装慢 / 没有进度条 / 没有取消，装半天装不上」。① 统一镜像下载器：并行实测各镜像吞吐选最快源（实测直连 2.6MB/s vs gh-proxy 0.76MB/s）、net.fetch 走系统代理、20s 停滞自动换源、流式 + SHA256 + 平均速率/百分比、取消删半截文件；② 技能包新增 `skill-packs:cancel`，取消回滚本次写入目录、不重启引擎，解压改 7z→tar→PowerShell；③ Filee 改走统一下载器（@@PROGRESS/@@SPEED），卡片加进度条/速度/取消/完整报错；④ 飞书 CLI/MoeKoe/手机 adb 同类卡补齐取消与进度。验证：真机探针取消回滚 32→32、完整安装 29 个技能、卸载还原 61→32、Filee 2% 3.6MB/s 后取消；12ai 35/35、12aj 27/27。 | 本轮 |
 
 | 2026-11-03 | 审查修正：派发身份首行判定 + 并发复用闸 | 修复 | `src/lib/user-refs.ts`、`electron/features/delegation.ts`、守卫 11f/11q、`verify-injection-strip` | 审查最近几轮发现两处：① 上级行/来源标签按 /m 匹配正文任意行 —— 用户自己在成员会话里打一行「上级：…」会被左移成上级发言并被剥掉；改为只认正文第一行（宿主派发壳固定写在开头），补回归样本。② 同一目标并行派活可能在 beginReuse 前同时命中旧会话 ⇒ 同线程两次 resume 撞 busy；加 reuseInFlight 闸，锁内完成 beginReuse，其余新建。验证：注入段 45/45；11f 129/129；02/03 守卫绿。 | 本轮 |
