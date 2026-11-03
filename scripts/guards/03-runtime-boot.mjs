@@ -501,6 +501,20 @@ console.log(C.bold("\n【10】滚动与锚定状态：单一 owner + 默认值�
       && /turnWindowTailFor\(id\)/.test(appSrc) ? ok : fail)(
       "★ 滑窗：往上移动窗口、往下本地滑回；全量加载后 DOM 仍只挂 5 个回合（切会话不再变慢）"
     );
+    /* ⛔⛔ 11-03 用户实测「往上滚，自动到某个位置一直卡着回弹，滚不下来」：
+       水合补偿/占位区换真实内容都会让 scrollTop 增大，旧判据把它当「用户下滚」⇒ 下滑
+       取消正在进行的扩窗补偿（cancelHistoryPin）⇒ 窗口 0↔2 来回翻。两条一起钉：
+       ① 方向认**真实滚轮那一刻的基线**，不认 scrollTop 增量；
+       ② pin 进行中绝不下滑（slide 开头也不许）。 */
+    (/const wheelFresh = gesture != null && Date\.now\(\) - gesture\.at < 150/.test(appSrc)
+      && /wheelGestureRef/.test(appSrc)
+      && /wheelGestureRef\.current = \{ at: lastWheelAt, top: scroller\.scrollTop \}/.test(appSrc) ? ok : fail)(
+      "★ 下滑方向以真实滚轮手势基线判定（⛔ 不看 scrollTop 增量 —— 程序补偿会被误判成下滚）"
+    );
+    (/if \(hasHistoryPin\(el0\)\) return;/.test(appSrc)
+      && /tail > 0 && !hasHistoryPin\(el\)/.test(appSrc) ? ok : fail)(
+      "★ 扩窗补偿进行中不做滑窗下滑（取消 pin 会让视口甩回旧几何 = 回弹）"
+    );
     /* 切回“上次在读历史”的缓存会话：必须关上全局自动跳底闸门，否则 rAF jumpToBottom
        会落到文档底 = 底部占位区的空白里。 */
     (/recallScrollOffset[\s\S]{0,520}?setScrollUserDetached\(true\)/.test(appSrc) ? ok : fail)(
@@ -1044,8 +1058,13 @@ const appSrc4 = readAppUi();
   /userScrolledRef\.current/.test(scrollFn)
     ? ok("★ 自动续载只认「真实用户滚动」（滚轮/触摸/翻页键/拖滚动条）")
     : fail("自动续载又只看 scrollTop —— 打开会话的程序化滚动会让「用户没滚也加载」");
-  /selfScrollUntilRef\.current/.test(scrollFn) && /hasHistoryPin\(el\)/.test(scrollFn) === false
-    ? ok("★ 只忽略补偿自己写 scrollTop 的 scroll；用户的新滚动立刻能续下一页")
+  /* ⛔ 11-03：补偿期间只允许挡「下滑」，不许整段挡用户滚动（快滚要能立刻续下一页）。
+     判据：① 仍有 selfScrollUntil 抑制窗；② 函数前半段（movingDown 判定之前）没有
+     基于 hasHistoryPin 的整段早退；③ hasHistoryPin 只出现在下滚/滑窗分支里。 */
+  const scrollBeforeMoving = scrollFn.split("movingDown")[0] ?? "";
+  const blanketPinBlock = /if \([^\n]*hasHistoryPin\(el\)[^\n]*\)\s*return;/.test(scrollBeforeMoving);
+  /selfScrollUntilRef\.current/.test(scrollFn) && !blanketPinBlock && /tail > 0 && !hasHistoryPin\(el\)/.test(scrollFn)
+    ? ok("★ 只忽略补偿自己写 scrollTop 的 scroll；用户的新滚动立刻能续下一页（补偿中只挡下滑，不挡续载）")
     : fail("补偿期间把用户滚动也一起挡了 —— 快滚会越过占位区边界（随后被当成拖到顶跳一下）");
   /movingDown/.test(scrollFn)
     ? ok("★ 下滚不做历史水合（避免反向滚动时反复插内容/锚点补偿）")

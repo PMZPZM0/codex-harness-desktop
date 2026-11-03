@@ -13,7 +13,7 @@ import { mergeTurnListsById } from "../../../../lib/turn-order.mjs";
 import { primeTurnHistory, setTurnWindowTail, turnWindowTailFor } from "../../../../lib/turn-history.mjs";
 import { setFavoriteHandler, type FavoriteRequest } from "../../../../lib/favorite-bridge";
 import { basename } from "../../../../lib/basename";
-import { cancelHistoryPin, clearHistoryPin, clearHistoryPinState, contentOffsetTop, scrollToOffsetInstant, setHistoryPin, setHistoryPinState, type HistoryPinState } from "../../../../components/scroll-utils";
+import { cancelHistoryPin, clearHistoryPin, clearHistoryPinState, contentOffsetTop, hasHistoryPin, scrollToOffsetInstant, setHistoryPin, setHistoryPinState, type HistoryPinState } from "../../../../components/scroll-utils";
 import { Turn } from "../../../../lib/turn";
 import type { Bag } from "../bag-types";
 
@@ -255,7 +255,12 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
       const inSpacer = Boolean(el0) && spacerBeforeH > 0 && beforeTop + (el0?.clientHeight ?? 0) <= spacerBeforeH + 2;
       // 位置补偿用「锚点元素」而不是 scrollHeight 增量：离屏/占位区高度会让 scrollHeight 滞后。
       // 记下「当前视口内第一条回合」在**内容坐标**里的位置，插入后按增量补 scrollTop。
-      const anchorNode = inSpacer ? undefined : [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > 0) as HTMLElement | undefined;
+      /* ⛔⛔ 11-03 用户实测「上滚时视口被弹回」：旧判据 `rect.bottom > 0` 用的是**窗口**坐标，
+         而时间线本身从顶栏下方开始 ⇒ 刚滚出视口上沿的回合 bottom 仍是正数，会被选中当锚点；
+         扩窗后它整条被收进顶部占位区（元素卸载）⇒ pin 报「锚点不在新窗口」⇒ 落到占位区下沿
+         = 一次 1~2 屏的跳变（实测 1768px）。锚点必须相对**滚动容器**的视口判可见。 */
+      const viewTop = el0?.getBoundingClientRect().top ?? 0;
+      const anchorNode = inSpacer ? undefined : [...(el0?.querySelectorAll(".turn-group") ?? [])].find((node) => node.getBoundingClientRect().bottom > viewTop + 1) as HTMLElement | undefined;
       /* 10-20：锚点不能只存 DOM 引用 —— 续载/收起工具回合会让 React 替换节点，
          旧节点 isConnected=false 后代码会误走 scrollHeight 回退，直接跳到上一页顶部。
          `.turn-group` 的 id 是 `turn-<turnId>`，跨重渲染稳定，用它重新解析。 */
@@ -289,7 +294,23 @@ bag.resumeThreadLight = resumeThreadLight as typeof bag.resumeThreadLight;
         } catch { /* 拉取失败不影响当前视口 */ }
       }
       const availableAbove = hiddenAbove + fetched;
-      const grow = availableAbove > 0 ? Math.min(availableAbove, HISTORY_PAGE) : 0;
+      let grow = availableAbove > 0 ? Math.min(availableAbove, HISTORY_PAGE) : 0;
+      /* ⛔⛔ 11-03 用户实测「上滚被弹回」的第二颗雷：上移窗口会把窗口**末尾**的 grow 个回合
+         折进底部占位区；若用户此刻正看着它们，它们会当场从屏幕上消失（实测锚点被折走 ⇒
+         `no-anchor-land` ⇒ 视口跳 1768px）。⇒ grow 只许腾出「视口以外」的回合：
+         视口已经贴到窗口末尾时本次不滑（等再往上滚，可见段回到窗口中部）。 */
+      if (grow > 0 && el0) {
+        const groups = [...el0.querySelectorAll(".turn-group")];
+        const vTop = el0.getBoundingClientRect().top;
+        const vBottom = el0.getBoundingClientRect().bottom;
+        let lastVisible = -1;
+        groups.forEach((node, index) => {
+          const rect = node.getBoundingClientRect();
+          if (rect.bottom > vTop + 1 && rect.top < vBottom - 1) lastVisible = index;
+        });
+        const maxGrow = lastVisible >= 0 ? Math.max(0, groups.length - 1 - lastVisible) : HISTORY_PAGE;
+        grow = Math.min(grow, maxGrow);
+      }
       const newLength = bag.threadRef.current?.id === id ? (bag.threadRef.current.turns.length ?? current.turns.length) : current.turns.length;
       const targetTail = Math.max(0, Math.min(newLength - rendered, tail + grow));
       /* 拉取期间用户已经回到底部 ⇒ 不要上移窗口（否则会把刚贴底的人带回历史）。
@@ -411,6 +432,9 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
     const rendered = bag.turnWindowRef.current[id] ?? bag.TURN_WINDOW;
     const el0 = bag.scrollRef.current;
     if (!el0) return;
+    /* ⛔ 11-03：扩窗补偿正在跑时不许下滑 —— slide 开头会 `cancelHistoryPin(el0)`，
+       取消后视口直接落在旧几何上（实测 tail 0↔2 来回翻 = 用户看到的回弹）。 */
+    if (hasHistoryPin(el0)) return;
     const bottomEdge = el0.getBoundingClientRect().bottom;
     const anchorNode = [...el0.querySelectorAll(".turn-group")].reverse().find((node) => node.getBoundingClientRect().top < bottomEdge) as HTMLElement | undefined;
     if (!anchorNode) return;
@@ -513,10 +537,21 @@ bag.loadEarlierTurns = loadEarlierTurns as typeof bag.loadEarlierTurns;
     /* ⛔ 只在上滚时水合历史。下滚时（尤其是从占位区往最新消息方向滚）如果还按
        「离边界近」触发，会在用户反向滚动期间继续插内容 + 锚点补偿，滚动会一顿一顿的，
        到底时还可能被一次新的水合带离底部。
-       ⇒ 下滚只做**本地滑窗**：接近渲染窗口底边时把底部占位区里的已加载回合换回来。 */
-    const movingDown = previousTop != null && el.scrollTop > previousTop + 2;
+       ⇒ 下滚只做**本地滑窗**：接近渲染窗口底边时把底部占位区里的已加载回合换回来。
+       ⛔⛔ 11-03 用户实测「往上滚，自动到某个位置一直卡着回弹，滚不下来」：
+          方向不能只看 `scrollTop` 增量 —— 水合补偿自己写 scrollTop、上方占位区换真实内容
+          都会让 scrollTop 增大，被误判成「用户下滚」⇒ 下滑取消正在进行的扩窗补偿
+          （`cancelHistoryPin`）⇒ 窗口在 tail=0/2 之间来回翻，视口每 1.5s 弹一次。
+          ⇒ 有真实滚轮手势（150ms 内）时以**滚轮那一刻的 scrollTop** 为基线判方向；
+            其余输入（键盘/拖拽）才退回上一帧位移兜底。 */
+    const gesture = bag.wheelGestureRef.current;
+    const wheelFresh = gesture != null && Date.now() - gesture.at < 150;
+    const movingDown = wheelFresh && gesture
+      ? el.scrollTop > gesture.top + 2
+      : (previousTop != null && el.scrollTop > previousTop + 2);
     if (movingDown) {
-      if (tail > 0) {
+      /* 扩窗补偿还在跑 ⇒ 绝不下滑：slide 会取消那颗 pin，把视口甩回旧几何（见上）。 */
+      if (tail > 0 && !hasHistoryPin(el)) {
         const groups = [...el.querySelectorAll(".turn-group")];
         const last = groups[groups.length - 1] as HTMLElement | undefined;
         const downMargin = Math.max(900, el.clientHeight * 1.5);

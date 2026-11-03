@@ -1135,6 +1135,7 @@ export interface Bag {
   /** 上一次 update() 结束时记下的「内容底部 / 视口位置 / 当时是否贴底」：识别"内容变矮"（折叠）并跟随贴合。
    *  ⛔ 必须登记进 Bag —— 预检【93】要求 parts 里推断出的每个名字都在这里（漏登记 = 守卫红）。 */
   lastBottomRef: React.RefObject<{ cb: number; top: number; atBottom: boolean; } | null>;
+  wheelGestureRef: React.RefObject<{ at: number; top: number; } | null>;
   turnResizeObserverRef: React.RefObject<ResizeObserver | null>;
   releaseToUserRef: React.RefObject<(why: string) => void>;
   chatSearchOpen: boolean;

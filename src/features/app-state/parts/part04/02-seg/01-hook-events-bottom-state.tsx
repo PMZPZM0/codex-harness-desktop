@@ -61,6 +61,16 @@ bag.turnResizeObserverRef = turnResizeObserverRef as typeof bag.turnResizeObserv
   const lastBottomRef = useRef<{ cb: number; top: number; atBottom: boolean } | null>(null);
 bag.lastBottomRef = lastBottomRef as typeof bag.lastBottomRef;
 
+  /** 真实滚轮手势的基线 `{ at, top }`：在**滚轮发生那一刻**记下时间与 scrollTop。
+   *  ⛔ 11-03 用户实测「往上滚，自动到某个位置一直卡着回弹，滚不下来」——
+   *  根因是历史水合的滑窗方向判据 `scrollTop > previousTop + 2` 把**程序滚动**
+   *  （水合补偿自己写 scrollTop / 上方占位区高度变化）误判成「用户在下滚」⇒ 触发
+   *  `slideTurnWindowDown` 取消正在进行的扩窗补偿 ⇒ 几何两个状态来回翻转。
+   *  ⇒ 方向必须以**真实滚轮输入**为准：取滚轮那一刻的 scrollTop 作基线，只有它之后
+   *    实际位移才是用户方向（键盘/拖拽仍按上一帧位移兜底）。 */
+  const wheelGestureRef = useRef<{ at: number; top: number } | null>(null);
+bag.wheelGestureRef = wheelGestureRef as typeof bag.wheelGestureRef;
+
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
@@ -373,6 +383,8 @@ bag.releaseToUserRef = releaseToUserRef as typeof bag.releaseToUserRef;
        任何真实滚轮输入都让自动跟随让位（滚回底部会立刻重新贴底，语义不变）。 */
     const onWheel = () => {
       lastWheelAt = Date.now();
+      /* 方向判据的基线（见 wheelGestureRef 注释）：滚轮这一刻的 scrollTop。 */
+      wheelGestureRef.current = { at: lastWheelAt, top: scroller.scrollTop };
       releaseToUser("wheel");
       /* ⛔ 滚轮本身不加载历史（10-21 虚拟滚动条）：加载由 onTimelineScroll 按
          「占位区边界 + 用户手势」触发。旧实现「到 scrollTop=0 再滚一次才加载」
