@@ -192,6 +192,8 @@ export const teamsFeature = defineFeature<null>({
          多个成员直达会话就看起来像又开了好几个专家团。主理人直达不登记（它就是 lead）。 */
       if (!isLead) {
         teamRunStore.rememberMemberThread(`direct:${started.thread.id}`, team.teamId, member.id, started.thread.id);
+      } else {
+        teamRunStore.setThreadLead(started.thread.id);
       }
       if (input.defer) {
         // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。

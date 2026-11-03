@@ -510,8 +510,28 @@ try {
     "team-invoke 同一成员并发串行（不同成员仍可并行）");
   const teamsIpcSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
   ok(/rememberMemberThread\(`direct:\$\{started\.thread\.id\}`/.test(teamsIpcSrc)
-    && /if \(!isLead\)/.test(teamsIpcSrc),
-    "成员直达会话登记成员映射（侧栏不再把成员会话显示成主理人/专家团）");
+    && /if \(!isLead\)/.test(teamsIpcSrc) && /setThreadLead\(started\.thread\.id\)/.test(teamsIpcSrc),
+    "成员直达会话登记成员映射，主理人直达登记主理人（侧栏不再把成员会话显示成专家团）");
+
+  /* 11-03 用户令「任何子会话都不能有调度权限」：
+     ① 团队内部调度（team_member_invoke / team_phase_invoke）只认主理人；
+     ② 对外 agent_invoke 仍走 canDispatchFrom：被委派/团队/成员一律拒绝；
+     ③ 网关也不向被委派会话暴露 agent_invoke。 */
+  ok(/isLeadThread\(leadThreadId\)/.test(tiSrc) && /isMemberThread\(leadThreadId\)/.test(tiSrc)
+    && /只有专家团主理人会话可以调度成员/.test(tiSrc)
+    && /isMemberThread\(threadId: string\)/.test(readFileSync(join(ROOT, "electron/team-runs.ts"), "utf8")),
+    "团队调度硬闸：只有主理人可以调成员，成员/被委派会话一律拒绝");
+  ok(/setThreadTeam\(threadId, target\.teamId\)/.test(delSrc)
+    && /setThreadLead\(threadId\)/.test(delSrc),
+    "被委派的专家团主理人登记为主理人（内部调度不被误拒，对外仍受 canDispatchFrom 限制）");
+  const rpcSrc = readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8");
+  const harnessSrc = readFileSync(join(ROOT, "electron/delegate-harness-tool.ts"), "utf8");
+  const coreSrc = readFileSync(join(ROOT, "electron/features/dispatch-core.ts"), "utf8");
+  ok(/restrictedThreadRole\(callerThreadId\)/.test(rpcSrc) && /canDispatchFrom\(\{/.test(rpcSrc)
+    && /const GATEWAY_EXCLUDED = new Set\(\["agent_invoke", "agent_archive_sessions"\]\)/.test(harnessSrc),
+    "子会话对外调度硬闸：agent_invoke 查身份/深度，能力网关也不暴露调度工具");
+  ok(/aliasRecordOf\(threadId\)/.test(coreSrc) && /supervisorThreadId/.test(coreSrc),
+    "凡是「有上级」的会话一律判定为子会话（群成员/团队直达等未走 delegateRegistry 的路径也挡住）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

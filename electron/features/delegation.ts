@@ -24,7 +24,7 @@ import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { readSubAgents, type SubAgentConfig } from "../main/09-agents-plugins";
-import { delegateRegistry, server, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { delegateRegistry, server, teamRunStore, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { readPersonalization } from "../personalization";
@@ -204,6 +204,12 @@ export async function runDelegatedTask(input: {
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
+  /* 被委派的专家团主理人也要登记为团队主理人：否则它调用 team_member_invoke 时会被
+     「只有主理人可以调度成员」的硬闸误拒。 */
+  if (target.kind === "team" && target.teamId) {
+    teamRunStore.setThreadTeam(threadId, target.teamId);
+    teamRunStore.setThreadLead(threadId);
+  }
   /* ★ 10-31 用户令：被调度的子会话也要有笔名，并且**知道自己的上级是谁**（哪个主管）。
      ⛔ 必须在建会话之后、下发指令/首任务之前拿到 —— 上级名字要拼进那两处。 */
   await ensureSessionAlias(threadId, origin).catch(() => undefined);

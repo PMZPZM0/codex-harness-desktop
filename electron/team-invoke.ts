@@ -83,6 +83,15 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
   const memberKey = String(input.memberId ?? "").trim().toLowerCase();
   const member = team.members.find((m) => m.id.toLowerCase() === memberKey);
   if (!member) throw new Error(`成员「${input.memberId}」不存在于专家团「${team.displayName.zh}」`);
+  /* ⛔ 任何子会话都不能调度成员：只有团队主理人会话可以。成员/被委派会话即使绕过工具面
+     拿到 team_member_invoke（旧会话、伪造 IPC），在这里也一律拒绝。
+     兼容旧档案：主理人标记缺失时，用「线程属于本团且不是成员线程」兜底。 */
+  const leadThreadId = String(input.leadThreadId ?? "");
+  const leadTeam = leadThreadId ? teamRunStore.teamOfThread(leadThreadId) : "";
+  const isLead = Boolean(leadThreadId)
+    && leadTeam === team.teamId
+    && (teamRunStore.isLeadThread(leadThreadId) || !teamRunStore.isMemberThread(leadThreadId));
+  if (!isLead) throw new Error("只有专家团主理人会话可以调度成员；当前会话是子会话，没有调度权限。");
   const customModel = await readCustomModel();
   const provider = customModel?.provider ?? "openai";
   const baseUrl = customModel?.baseUrl;

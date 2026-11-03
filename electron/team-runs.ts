@@ -222,6 +222,13 @@ export class TeamRunStore {
     return this.threadsDoc.leads[threadId] === true;
   }
 
+  /** 该线程是不是某个成员的常驻/直达会话（用于禁止成员反向调度）。 */
+  isMemberThread(threadId: string): boolean {
+    if (!threadId) return false;
+    this.ensureThreadsLoaded();
+    return Object.values(this.threadsDoc.members ?? {}).includes(threadId);
+  }
+
   rememberMemberThread(ownerThreadId: string, teamId: string, memberId: string, memberThreadId: string) {
     if (!teamId || !memberId || !memberThreadId) return;
     this.ensureThreadsLoaded();

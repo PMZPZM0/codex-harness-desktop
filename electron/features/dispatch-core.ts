@@ -20,6 +20,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
+import { aliasRecordOf } from "../session-alias";
 import { readUsableExpertTeams } from "../expert-teams";
 import type { DispatchTarget } from "../dispatch";
 import { readSubAgents } from "../main/09-agents-plugins";
@@ -38,6 +39,11 @@ async function restrictedThreadRole(threadId: string): Promise<{ restricted: boo
   if (!threadId) return { restricted: false };
   if (await delegateRegistry.infoOf(threadId)) return { restricted: true, label: "被调度的临时会话" };
   if (teamRunStore.teamOfThread(threadId)) return { restricted: true, label: "专家 / 专家团" };
+  /* 11-03 用户令「任何子会话都不能有调度权限」：只要会话有上级（别名表 supervisorThreadId），
+     它就是被派活的子会话 —— 包括群成员、团队直达成员等未走 delegateRegistry 的路径。
+     ⛔ 主会话没有上级，不受影响；团队主理人的内部调度走 team_member_invoke，另有主理人硬闸。 */
+  const alias = await aliasRecordOf(threadId).catch(() => null);
+  if (alias?.supervisorThreadId) return { restricted: true, label: "被调度的子会话" };
   return { restricted: false };
 }
 
