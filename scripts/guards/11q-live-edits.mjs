@@ -371,9 +371,9 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   /* 判据来源同源：`dispatched` 只由壳内层标记产生（主理人分配的子任务 / 上级行 / 发起方交给你的任务），
      ⛔ 不能只按标签 —— 用户在成员会话里打字的壳没有这些标记（回归样本见 verify-injection-strip）。 */
   const refsSrc = codeOnly(read("src/lib/user-refs.ts"));
-  ok(/const dispatched = \/\^\\s\*\(\?:发起方交给你的任务\|主理人分配的子任务\)\/m\.test\(body\)/.test(refsSrc)
-    && /上级\(\?:主管\)\?\\s\*\[：:\]\/m\.test\(body\)/.test(refsSrc),
-    "`dispatched` 由宿主派发内层标记判定（发起方交给你的任务 / 主理人分配的子任务 / 上级行）");
+  ok(/const dispatched = \/\^\\s\*\(\?:发起方交给你的任务\|主理人分配的子任务\)\/\.test\(body\)/.test(refsSrc)
+    && /上级\(\?:主管\)\?\\s\*\[：:\]\/\.test\(body\)/.test(refsSrc),
+    "`dispatched` 由宿主派发内层标记判定（只认正文第一行的上级行 / 来源标签 —— 用户正文中间出现同词不算）");
   const msgCss = read("src/styles/03-messages-turns.css");
   ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss),
     "上级任务气泡的样式在位（左对齐 + 左侧强调线；⛔ 只加类不写样式 = 还是贴在右侧）");

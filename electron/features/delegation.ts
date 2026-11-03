@@ -32,6 +32,12 @@ import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 import type { RoleRef } from "../role-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
+
+/** 复用准备中的目标（`origin|targetKey`）：同一目标被并行派活时只允许一条走 resume。
+ *  ⛔ 没有它：两条并行派活可能在 `beginReuse`（把记录置 running）之前同时命中同一条旧会话
+ *  ⇒ 同一线程两次 resume + turn/start，第二条撞引擎 busy。拿不到锁的那条直接新建
+ *  （宁可多一条会话，也不并发写同一个子会话）。 */
+const reuseInFlight = new Set<string>();
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
@@ -185,24 +191,38 @@ export async function runDelegatedTask(input: {
   const targetKey = `${target.kind}:${target.key}`;
   let threadId = "";
   let reused = false;
-  const reusable = await delegateRegistry.findReusable({ originThreadId: origin, kind: target.kind, targetKey, name: displayName }).catch(() => null);
-  if (reusable) {
-    const resumed: any = await server.request("thread/resume", {
-      threadId: reusable.threadId,
-      excludeTurns: true,
-      model: effectiveModel,
-      modelProvider: shouldBindHarness(customModel) ? HARNESS_PROVIDER_ID : undefined,
-      sandbox: effectiveSandbox,
-      approvalPolicy: effectiveApproval,
-      ...(Object.keys(threadConfig).length ? { config: threadConfig } : {}),
-    }).catch(() => null);
-    if (resumed?.thread?.id) {
-      threadId = String(resumed.thread.id);
-      reused = true;
-    } else {
-      /* resume 失败（会话被删 / 引擎已不认识它）⇒ 记录已失效，继续走新建，别卡死。 */
-      void delegateRegistry.forget([reusable.threadId]).catch(() => undefined);
+  /** 复用/新建统一在这里决定 record（复用要在锁内就把状态置 running，见下）。 */
+  let record: any = null;
+  const reuseKey = `${origin}|${targetKey}`;
+  const canTryReuse = !reuseInFlight.has(reuseKey);
+  if (canTryReuse) reuseInFlight.add(reuseKey);
+  try {
+    const reusable = canTryReuse
+      ? await delegateRegistry.findReusable({ originThreadId: origin, kind: target.kind, targetKey, name: displayName }).catch(() => null)
+      : null;
+    if (reusable) {
+      const resumed: any = await server.request("thread/resume", {
+        threadId: reusable.threadId,
+        excludeTurns: true,
+        model: effectiveModel,
+        modelProvider: shouldBindHarness(customModel) ? HARNESS_PROVIDER_ID : undefined,
+        sandbox: effectiveSandbox,
+        approvalPolicy: effectiveApproval,
+        ...(Object.keys(threadConfig).length ? { config: threadConfig } : {}),
+      }).catch(() => null);
+      if (resumed?.thread?.id) {
+        threadId = String(resumed.thread.id);
+        reused = true;
+        /* ⛔ 在释放锁之前把记录置回 running：否则同一目标的第二条并行派活仍会看到旧状态
+           （done）并再次 resume 同一条线程。 */
+        record = await delegateRegistry.beginReuse(threadId, { name: displayName, targetKey });
+      } else {
+        /* resume 失败（会话被删 / 引擎已不认识它）⇒ 记录已失效，继续走新建，别卡死。 */
+        void delegateRegistry.forget([reusable.threadId]).catch(() => undefined);
+      }
     }
+  } finally {
+    if (canTryReuse) reuseInFlight.delete(reuseKey);
   }
   if (!threadId) {
   const started: any = await server.request("thread/start", {
@@ -266,11 +286,8 @@ export async function runDelegatedTask(input: {
     }).catch(() => undefined);
   } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
 
-  /* 复用：把旧记录重新置为运行中（不新增记录）；新建：照常登记并带 targetKey。 */
-  const record = reused
-    ? (await delegateRegistry.beginReuse(threadId, { name: displayName, targetKey })
-      ?? await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey }))
-    : await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey });
+  /* 复用已在锁内把记录置回运行中（record 非空）；新建走正常登记。 */
+  record = record ?? await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey });
   /* ⛔ cwd 登记（10-10）：网关里的 `knowledge_search` 等能力要靠它定位**项目级**资源。
      团队那条链（teams-ipc）一直有，被委派这条链漏了 ⇒ "网关能查知识库"会栽在
      "无法确定工作目录"上。（delegate-harness-tool 里另有一层角色表兜底。） */

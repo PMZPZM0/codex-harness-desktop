@@ -579,6 +579,10 @@ try {
     && /beginReuse\(threadId, \{ name: displayName, targetKey \}\)/.test(delSrc)
     && /!reused[\s\S]{0,200}?thread\/name\/set/.test(delSrc),
     "复用键 = kind:target.key；复用命中只把旧记录置运行中、不重置用户改过的会话名");
+  ok(/const reuseInFlight = new Set<string>\(\)/.test(delSrc)
+    && /canTryReuse = !reuseInFlight\.has\(reuseKey\)/.test(delSrc)
+    && /finally[\s\S]{0,120}?reuseInFlight\.delete\(reuseKey\)/.test(delSrc),
+    "并发复用闸：同一目标并行派活只允许一条走 resume（其余直接新建，避开同线程 busy）");
   /* 真跑纯函数：复用判据（同源 / 未归档 / 未运行 / 目标匹配 / 旧记录按 kind+name 兜底）。 */
   {
     const { pickReusableDelegate } = req(join(ROOT, "dist-electron/delegate-registry.js"));

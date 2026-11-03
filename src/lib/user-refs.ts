@@ -126,15 +126,18 @@ export function parseUserRefs(text: string): ParsedUserRefs {
        （它会被截成会话标题，留着前缀就变成「标题：首页」）。
        ⛔ 这三个标签 / `上级：` 行是**宿主派发**的标记（delegation / team-invoke / 群派活）；
        用户自己在成员会话里打字时 send.tsx 包的壳里没有它们 ⇒ 据此区分，别把用户的话当上级发言。 */
-    const dispatched = /^\s*(?:发起方交给你的任务|主理人分配的子任务)/m.test(body)
-      || /^\s*上级(?:主管)?\s*[：:]/m.test(body);
+    /* ⛔ 上级行 / 来源标签都只认**正文第一行**：宿主派发的壳固定把它们写在 body 开头。
+       按任意行匹配（/m）会把用户自己在成员会话里打的一行「上级：…」也判成上级派发，
+       从而把用户的话左移伪造成上级发言（11-03 审查收紧）。 */
+    const dispatched = /^\s*(?:发起方交给你的任务|主理人分配的子任务)/.test(body)
+      || /^\s*上级(?:主管)?\s*[：:]/.test(body);
     /* ★ 10-31 用户令：被调度会话要知道「上级是谁，哪个主管」——
        delegation / team-invoke 会在需求体第一行写 `上级：青崖主管（…）`。
        ⛔ 这行是**宿主元信息**，不属于需求正文：抽出来单独给气泡头部用，正文里要删掉。
        ⛔ 顺序必须先剥上级行再剥来源标签：team-invoke 的壳是「上级：X \n 主理人分配的子任务：…」，
           反过来的话来源标签不在行首 ⇒ 剥不掉，气泡里会一直显示「主理人分配的子任务：」（11-03 实测）。 */
-    const supervisorLine = body.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*$/m);
-    let requirement = (supervisorLine ? body.replace(/^\s*上级(?:主管)?\s*[：:].*$/m, "") : body)
+    const supervisorLine = body.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*(?:\r?\n|$)/);
+    let requirement = (supervisorLine ? body.replace(/^\s*上级(?:主管)?\s*[：:].*(?:\r?\n|$)/, "") : body)
       .replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "")
       .trim();
     if (taskMatch) requirement = requirement.replace(/^标题\s*[：:]\s*/, "");
