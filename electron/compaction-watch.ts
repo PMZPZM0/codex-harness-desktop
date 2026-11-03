@@ -6,6 +6,10 @@
  *  `thread/compacted`）。而当前引擎（0.153/0.157 系）对压缩**不发这些事件**：实测整个压缩
  *  过程只收到 `thread/status/changed` + 一条 `turn/started` + `turn/completed`，压缩 item
  *  只落 rollout 文件 ⇒ 渲染层三条信号全断，压缩线永不出现（重启后更没有）。
+ *  ⛔ 11-03 更正：上面是 **0.153/0.157 的历史事实，别拿它当现状**。0.166 实测**会发** ——
+ *    手动 thread/compact/start 之后收到 `item/started` 与 `item/completed` 的
+ *    `contextCompaction`，rollout 里也落了 `item_completed` 记录。
+ *    ⇒ 本模块现在是**兜底**（老引擎 / 事件丢失时用），不是压缩线的唯一来源。
  *
  * ── 判据（10-07 二次修正后只剩一条，见下）────────────────────────────────────
  *  ① **rollout 对账 + 记录本体归因**：turn/completed 时增量扫该线程 rollout 的新增段，找
