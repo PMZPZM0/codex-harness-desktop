@@ -143,6 +143,7 @@
   "src/features/settings-devtools/DomainsPanel.tsx": 6,
   "src/features/settings-devtools/EgoLiteCard.tsx": 3,
   "src/features/settings-devtools/FeishuCliCard.tsx": 6,
+  "src/features/settings-devtools/FileeCard.tsx": 1,
   "src/features/settings-devtools/LayaCard.tsx": 3,
   "src/features/settings-devtools/MoeKoeCard.tsx": 4,
   "src/features/settings-devtools/PhoneHarnessCard.tsx": 1,

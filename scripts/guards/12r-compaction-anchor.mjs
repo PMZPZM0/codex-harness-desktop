@@ -66,8 +66,8 @@ ok(/import \{ resolveCompactionAnchor \}/.test(timeline) && /resolveCompactionAn
   "时间线用 resolveCompactionAnchor(visible, boundaryTurnId, { afterNewest }) 算锚点（已完成 / 宿主记录那条路）");
 ok(/const compactionAt = Number\(hostCompaction\?\.at \?\? 0\);/.test(timeline) && !/isCompactionNewest/.test(timeline),
   "压缩时间取记录的 at（⛔ 组件里不许再写一份时间比较）");
-ok(/resolveCompactionAnchor\(visible, runningCompactionTurnId\)/.test(timeline),
-  "运行中的压缩线也用同一个纯函数（两处不许各写一份）");
+ok(/resolveCompactionAnchor\(visible, "", \{ compactionAt: startedAt \}\)/.test(timeline),
+    "运行中的压缩线也用同一个纯函数（空 turnId + startedAtMs 走时间分支 —— 11-03 用户令：运行线是历史项，钉在产生处、跟着历史往上走，不提前钉回合 / 不贴底）");
 ok(/insertBefore === visible\.length/.test(timeline),
   "末尾插槽在（手动压缩的锚点 = visible.length ⇒ 渲染在最后一回合之后）");
 ok(!/anchorFrom\s*>=\s*0 \? anchorFrom : ordered\.length - 1/.test(timeline),

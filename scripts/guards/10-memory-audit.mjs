@@ -11,6 +11,14 @@ import {
   C, ROOT, existsSync, fail, join, mkdirSync, mkdtempSync, ok, preloadSrc, readFileSync, readdirSync, rmSync, tmpdir, writeFileSync,
 } from "./_ctx.mjs";
 
+/* ⛔ 11-03：数据目录名**带品牌** —— 桌面版 `.codex-harness`、PPcode `.ppcode-harness`。
+   从实现（developer-instructions.ts）取实际值，⛔ 不写死：写死会让另一仓整份守卫恒红
+   （测试写到 A 目录、实现读 B 目录 ⇒ watermarkHint/pickDistill 全 undefined + ENOENT 连锁，
+    还会把 preflight 打断，后面的断言整段不跑）。
+   ⛔ 必须放**模块顶层**：守卫按段包块，放在某个块里其他段就取不到（实测 HARNESS_DIR is not defined）。 */
+const HARNESS_DIR = (readFileSync(join(ROOT, "electron/developer-instructions.ts"), "utf8").match(/\.(?:codex|ppcode)-harness/) || [".codex-harness"])[0];
+const HARNESS_RE = HARNESS_DIR.replace(/\./g, "\\.");
+
 export async function run() {
 
   /* ══ 【102】原 L8396–L8465 ══ */
@@ -149,7 +157,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (PROJECT_SKILLS_SUBDIR === ".codex/skills" ? ok : fail)(`【103】项目级技能落点 = .codex/skills（实际 ${PROJECT_SKILLS_SUBDIR}）`);
     (projectSkillsDir("C:/proj") === join("C:/proj", ".codex", "skills") ? ok : fail)("【103】projectSkillsDir 拼装正确");
     (globalSkillsDir("C:/home") === join("C:/home", "skills") ? ok : fail)("【103】globalSkillsDir 拼装正确");
-    (/codex-harness/.test(PROJECT_SKILLS_SUBDIR) ? fail : ok)("【103】项目级技能**不落** .codex-harness（引擎实测不认该目录）");
+    (PROJECT_SKILLS_SUBDIR.includes("harness") ? fail : ok)("【103】项目级技能**不落** .codex-harness（引擎实测不认该目录）");
 
     /* ④ 元技能真落盘 + 清单可见（ensureBuiltinSkills 跑进临时目录） */
     let listed = [];
@@ -183,14 +191,14 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
       /* ⛔ 断言的是「不许把 .codex-harness/skills 写成落点」，不是「不许出现这个词」——
          指令里那句是**禁止语境**（NEVER `<workspace>/.codex-harness/skills/` —— 引擎不读该目录），
          它出现在指令里恰恰是我们要的（提前堵掉这个误解）。 */
-      (/NEVER `<workspace>\/\.codex-harness\/skills\//.test(instr) ? ok : fail)("【103】引擎指令把 .codex-harness/skills 标为**禁止**落点（引擎实测不认该目录）");
+      (new RegExp("NEVER `<workspace>/" + HARNESS_RE + "/skills/").test(instr) ? ok : fail)("【103】引擎指令把 .codex-harness/skills 标为**禁止**落点（引擎实测不认该目录）");
       (/已沉淀技能/.test(instr) && /LESSONS\.md/.test(instr) ? ok : fail)("【103】指令含沉淀回报行与「坑升级为技能」");
     } catch (error) { fail(`【103】引擎指令产物读不到：${error?.message ?? error}`); }
     try {
       const { buildDisciplineSection } = await import("../../dist-electron/skill-discipline.js");
       const disc = buildDisciplineSection({ skills: [], mcp: [] });
       (disc.includes(PROJECT_SKILLS_SUBDIR) && disc.includes(SKILL_AUTHORING_NAME) ? ok : fail)("【103】AGENTS.md 守则同步项目级落点与元技能名");
-      (/\.codex-harness\/memory/.test(disc) ? ok : fail)("【103】守则写明记忆（是什么）与技能（怎么做）的目录分工");
+      (new RegExp(HARNESS_RE + "/memory").test(disc) ? ok : fail)("【103】守则写明记忆（是什么）与技能（怎么做）的目录分工");
       (/scope=repo/.test(disc) ? ok : fail)("【103】守则说明项目级技能由引擎原生发现（不重复枚举）");
     } catch (error) { fail(`【103】守则产物读不到：${error?.message ?? error}`); }
   }
@@ -257,9 +265,9 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
 
     /* ④ 真跑：临时 workspace 上走完整漏斗 */
     const ws = mkdtempSync(join(ROOT, "node_modules", ".p104-"));
-    const memDir = join(ws, ".codex-harness", "memory");
+    const memDir = join(ws, HARNESS_DIR, "memory");
     mkdirSync(memDir, { recursive: true });
-    const inst = new MemoryLayers(join(ws, ".codex-harness", "userdata"));
+    const inst = new MemoryLayers(join(ws, HARNESS_DIR, "userdata"));
     /* ⛔ 日期必须**相对今天**生成（2026-10-10 修）：原来写死 `2026-09-10..15`，随着真实时间
      * 推移落到 30 天前 ⇒ 走 age 触发而非 watermark ⇒「取最老一半」判据**恒红**
      * （假红把真断言盖住了：实测 `trigger=age / 1 天`）。现在取「今天往前 6 天」⇒ 永远落在
@@ -389,9 +397,9 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
   if (lessonsMod && layersMod2) {
     /* ④ 真跑 MemoryLayers：写入 → 注入顺序 + 快照分类计数 */
     const ws = mkdtempSync(join(ROOT, "node_modules", ".p105-"));
-    const memDir = join(ws, ".codex-harness", "memory");
+    const memDir = join(ws, HARNESS_DIR, "memory");
     mkdirSync(memDir, { recursive: true });
-    const inst = new layersMod2.MemoryLayers(join(ws, ".codex-harness", "userdata"));
+    const inst = new layersMod2.MemoryLayers(join(ws, HARNESS_DIR, "userdata"));
     await inst.appendLesson(ws, "- 2026-09-22 ⚠️ 坑：先写了测试 → 后补实现", "key-pitfall-1", lessonsMod.PITFALL_CATEGORY);
     await inst.appendLesson(ws, "- 2026-09-22 ⚠️ 纠错：别再用 git add . → 只 add 自己的文件", "key-correction-1", lessonsMod.CORRECTION_CATEGORY);
     const corrFile = readFileSync(join(memDir, "lessons", "corrections.md"), "utf8");
@@ -451,13 +459,13 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
 
     /* ① v1 现场 → 迁移 */
     const ws = mkdtempSync(join(ROOT, "node_modules", ".p106-"));
-    const memDir = join(ws, ".codex-harness", "memory");
+    const memDir = join(ws, HARNESS_DIR, "memory");
     mkdirSync(memDir, { recursive: true });
     writeFileSync(join(memDir, "MEMORY.md"), "# 项目记忆\n\n- 旧约定 A\n", "utf8");
     writeFileSync(join(memDir, "BACKGROUND.md"), "# 背景\n\n- 老背景\n", "utf8");
     writeFileSync(join(memDir, "2026-09-01.md"), "# 2026-09-01\n\n- 需求：旧日志\n", "utf8");
     writeFileSync(join(memDir, "LESSONS.md"), "# 纪律与记忆\n\n## 用户纠错\n- 2026-09-01 ⚠️ 纠错：别用 add .\n\n## 任务经验\n- 2026-09-01 ⚠️ 坑：端口写错\n", "utf8");
-    const inst = new MemoryLayers(join(ws, ".codex-harness", "userdata"));
+    const inst = new MemoryLayers(join(ws, HARNESS_DIR, "userdata"));
     const project = await inst.readProject(ws); // 这一读触发迁移
     (String(project).includes("旧约定 A") ? ok : fail)("【106】迁移后仍读得到项目宪法（内容不丢）");
     (existsSync(join(memDir, "project", "MEMORY.md")) ? ok : fail)("【106】MEMORY.md 搬进 project/ 子目录");
@@ -486,11 +494,11 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
 
     /* ③ 不覆盖：新位置有内容时，旧文件只归档、不合并 */
     const ws2 = mkdtempSync(join(ROOT, "node_modules", ".p106b-"));
-    const memDir2 = join(ws2, ".codex-harness", "memory");
+    const memDir2 = join(ws2, HARNESS_DIR, "memory");
     mkdirSync(join(memDir2, "lessons"), { recursive: true });
     writeFileSync(join(memDir2, "lessons", "corrections.md"), "## 用户纠错\n- 新内容（新布局已写）\n", "utf8");
     writeFileSync(join(memDir2, "LESSONS.md"), "# 纪律与记忆\n\n## 用户纠错\n- 旧内容（应只留在 archive）\n", "utf8");
-    const inst2 = new MemoryLayers(join(ws2, ".codex-harness", "userdata"));
+    const inst2 = new MemoryLayers(join(ws2, HARNESS_DIR, "userdata"));
     await inst2.readLessons(ws2);
     const kept = readFileSync(join(memDir2, "lessons", "corrections.md"), "utf8");
     (kept.includes("新内容") && !kept.includes("旧内容") ? ok : fail)("【106】新位置已有内容 ⇒ 不追加不覆盖（新旧不混成一锅）");
@@ -551,10 +559,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     /* ③ 真跑动作 */
     if (memMod3) {
       const ws = mkdtempSync(join(ROOT, "node_modules", ".p107-"));
-      const memDir = join(ws, ".codex-harness", "memory");
+      const memDir = join(ws, HARNESS_DIR, "memory");
       mkdirSync(join(memDir, "lessons"), { recursive: true });
       mkdirSync(join(memDir, "archive"), { recursive: true });
-      const inst = new memMod3.MemoryLayers(join(ws, ".codex-harness", "userdata"));
+      const inst = new memMod3.MemoryLayers(join(ws, HARNESS_DIR, "userdata"));
       /* 脏格式：行尾空格 + 连续空行；内容与条目数必须原样保留 */
       writeFileSync(join(memDir, "lessons", "corrections.md"), "## 用户纠错   \n- 2026-09-22 ⚠️ 纠错：别用 add .   \n\n\n\n- 2026-09-22 ⚠️ 纠错：第二条   \n", "utf8");
       writeFileSync(join(memDir, "archive", "2026-09-01.md"), "# 旧日志\n内容\n", "utf8");
@@ -610,8 +618,8 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     if (mem) {
       const { MemoryLayers, isScratchWorkspace } = mem;
       const ws = mkdtempSync(join(ROOT, "node_modules", ".p108-"));
-      const memDir = join(ws, ".codex-harness", "memory");
-      const inst = new MemoryLayers(join(ws, ".codex-harness", "userdata"));
+      const memDir = join(ws, HARNESS_DIR, "memory");
+      const inst = new MemoryLayers(join(ws, HARNESS_DIR, "userdata"));
 
       /* ④ 截断可见化：L1 超预算 → 注入块里必须有「被截断」标记，引擎不得在盲区里干活
        * ⛔ 夹具按**当前预算**生成（2026-10-10 修）：原来写死 13000 字（配当时 12000 的预算），
@@ -645,7 +653,7 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
       /* scratch 隔离：识别真跑 + projectDir 拦截（appendLog 到 scratch 路径不落盘） */
       (isScratchWorkspace(join(ws, "dist", "scratch", "chat-20260922-mucemlrp")) && !isScratchWorkspace(join(ws, "my-project")) ? ok : fail)("【108】isScratchWorkspace 识别准确（scratch/chat-… 命中、普通项目不误伤）");
       await inst.appendLog(join(ws, "scratch", "chat-20260922-abc12345"), "- 需求：测试\n- 结果：x");
-      (!existsSync(join(ws, "scratch", "chat-20260922-abc12345", ".codex-harness")) ? ok : fail)("【108】scratch 会话不落任何项目记忆（否则构建即清 = 假记忆）");
+      (!existsSync(join(ws, "scratch", "chat-20260922-abc12345", HARNESS_DIR)) ? ok : fail)("【108】scratch 会话不落任何项目记忆（否则构建即清 = 假记忆）");
 
       /* B 组：指令四条（历史检索 / 技能用前查+用后养 / 收尾清单）+ L0 授权 */
       const instrSrc = readFileSync(join(ROOT, "electron", "developer-instructions.ts"), "utf8");
@@ -725,10 +733,10 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     try { mem = await import("../../dist-electron/memory-layers.js"); } catch { /* 下面报 */ }
     if (mem) {
       const ws = mkdtempSync(join(ROOT, "node_modules", ".p110-"));
-      const memDir = join(ws, ".codex-harness", "memory");
+      const memDir = join(ws, HARNESS_DIR, "memory");
       mkdirSync(join(memDir, "lessons"), { recursive: true });
       writeFileSync(join(memDir, "lessons", "pitfalls.md"), "# 纪律与记忆\n\n> 按分类分节\n\n## 任务经验\n- 2026-09-22 ⚠️ 坑：测试\n", "utf8");
-      const ctx = new mem.MemoryLayers(join(ws, ".codex-harness", "ud"));
+      const ctx = new mem.MemoryLayers(join(ws, HARNESS_DIR, "ud"));
       const text = (await ctx.context(ws)).text;
       (/\[Harness 常驻记忆/.test(text) && /\[常驻记忆结束\]/.test(text) ? ok : fail)("【110】注入端 context() 头尾成对（闭合标签不得丢）");
       rmSync(ws, { recursive: true, force: true });
