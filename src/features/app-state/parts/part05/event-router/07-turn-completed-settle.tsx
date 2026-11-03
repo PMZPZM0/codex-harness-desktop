@@ -12,6 +12,7 @@ import { reasoningDuration } from "../../../../../lib/reasoning-duration";
 import { itemText } from "../../../../../lib/item-text";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import { playNotifyTone } from "../../../../../lib/notify-sound";
+import { describeTurnError } from "../../../../../lib/turn-error-text.mjs";
 import type { Bag } from "../../bag-types";
 
 /* ⛔ 11-02 用户「排队消息一下出去两个」：turn 结束事件可能重复/连发，自动启动必须按会话加锁，
@@ -55,7 +56,12 @@ export function handleEventRouter7(bag: Bag, params: any): boolean {
         // 否则保留——清早了而服务端消息又没渲染出来，用户消息就"消失"了
         const takeoverItem = (params.turn?.items ?? []).find((entry: ThreadItem) => entry.type === "userMessage" && userMessageMatchesInput(entry, bag.optimisticInput?.content ?? []));
         if (bag.optimisticInput && takeoverItem) bag.setOptimisticInput(null);
-        if (params.turn.error?.message) bag.showToast("任务失败", params.turn.error.message);
+        /* ⛔ 11-03：原来把上游原文（整段嵌套 JSON）直接当 toast 正文，用户看不懂。
+           超限类错误改成「标题 + 可执行动作」，其它错误挑出人能读的那一句。 */
+        if (params.turn.error?.message) {
+          const described = describeTurnError(params.turn.error.message);
+          bag.showToast(described.title, described.detail);
+        }
         // ⛔ 09-19 用户实测「思考内容过长会被截断，运行状态就断了」（昨天「鹈鹕骑自行车」）。
         //   真机取证（会话 01a0b515 回合 8）：应用配 model_max_output_tokens=393216，但当时的
         //   商汤网关把单次响应**钳到 8192 tokens**；模型思考 16365 字符（≈8000+ tokens）把预算

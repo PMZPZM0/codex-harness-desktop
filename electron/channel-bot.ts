@@ -10,6 +10,7 @@ import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
 import { ensureProjectAgentsMd } from "./project-conventions";
 import { guardedFetch } from "./net-guard";
+import { describeTurnError } from "./turn-error-text";
 
 /* 11-02：出站请求统一走守卫（Electron net 栈 + 自带超时 + 同源串行 + 失败冷却）。
    ⛔ 起因是 Node 的 TLSWrap use-after-free：上游超时后立刻发新 TLS 会踩已释放的流。
@@ -238,7 +239,9 @@ export class ChannelBotService {
     const turnId = String(params?.turn?.id ?? params.turnId ?? params.id ?? "");
     const final = [...(params.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text
       ?? this.turnMessages.get(turnId)
-      ?? (params.turn?.error?.message ? `Codex 处理失败：${params.turn.error.message}` : "");
+      ?? (params.turn?.error?.message
+        ? (() => { const e = describeTurnError(params.turn.error.message); return `Codex ${e.title}：${e.detail}`; })()
+        : "");
     this.turnMessages.delete(turnId);
     /* ⛔ 非 completed 的收尾必须**说明**：被中断 / 失败的回合累积文本只有半截，
        不标注的话用户会把它当成完整回复（跟「回合正常结束」无法区分）。 */

@@ -8,6 +8,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { reasoningItemText } from "./reasoning-text";
+import { describeTurnError } from "./turn-error-text";
 
 export type BotStreamSettings = { enabled: boolean; thinking: boolean; tools: boolean };
 export const BOT_STREAM_DEFAULTS: BotStreamSettings = { enabled: true, thinking: true, tools: true };
@@ -269,7 +270,11 @@ export class BotStreamSession {
     if (this.replaceTimer) { clearTimeout(this.replaceTimer); this.replaceTimer = null; }
     const items = params?.turn?.items ?? [];
     const finalText = [...items].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
-    const errorText = params?.turn?.error?.message ? `⚠️ Codex 处理失败：${params.turn.error.message}` : "";
+    /* ⛔ 11-03：上游把错误原样塞在 turn.error.message 里（一整段嵌套 JSON）。
+       原来直接贴原文，终端用户收到一坨机器串 —— 既读不懂也不知道该做什么。
+       改走 describeTurnError：超限类错误给中文说明 + 可执行动作，其它错误挑出人能读的那句。 */
+    const turnError = params?.turn?.error?.message ? describeTurnError(params.turn.error.message) : null;
+    const errorText = turnError ? `⚠️ Codex ${turnError.title}：${turnError.detail}` : "";
     const text = String(finalText || errorText).trim();
     try {
       if (!this.settings.enabled) {
