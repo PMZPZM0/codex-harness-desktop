@@ -617,7 +617,17 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       const compactionOwnerTurn = visible.find((t: any) => String(t?.id ?? "") === compactionOwnerTurnId);
                       /* ⛔ 只对**已完成**让位：运行中必须由这里画 —— `ItemView` 的 running 分支没有
                          停止按钮，而「压缩要能手动停止」只能由这条提供（09-26 用户要求）。 */
+                      /* ⛔⛔ 11-03 审查修正（两个会让「线消失 / 显示错状态」的时序）：
+                         ① 老引擎或事件丢失时**只有宿主记录**（`lastCompaction` 为空、hostCompaction 有值）——
+                            回合内根本没有压缩项可渲染，一旦让位就是**一条线都没有**；
+                            ⇒ 必须要求「引擎真给了已完成的 item」才让位。
+                         ② 用户点「停止」或压缩失败时，items 里残留的仍是 in-progress 的压缩项，
+                            `ItemView` 会画成「正在压缩」——让位就等于显示错状态，还把真正的
+                            「已取消 / 失败」那条挡掉；⇒ 终态为 cancelled / error 时不让位。 */
+                      const toastAborted = compactToast?.state === "cancelled" || compactToast?.state === "error";
                       const compactionRenderedInTurn = !runningCompactionTurnId
+                        && !toastAborted
+                        && Boolean(lastCompaction)
                         && Boolean(compactionOwnerTurn
                           && (compactionOwnerTurn.items ?? []).some((i: any) => !isCompactionItem(i)));
                       if (compactionRenderedInTurn) {
