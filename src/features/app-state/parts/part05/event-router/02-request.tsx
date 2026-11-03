@@ -398,8 +398,12 @@ ${st.hint}`);
                     query: String(args.query ?? ""),
                     originThreadId: dispatchOrigin,
                   });
+                /* 11-03：复用已有子会话时，把「沿用了哪条」告诉模型（它需要知道自己派过谁、这次没新建）。 */
+                const reusedNote = delegated?.ok && (delegated as any)?.reused && (delegated as any)?.threadId
+                  ? `（沿用已有子会话 ${String((delegated as any).threadId)}，没有新建）\n`
+                  : "";
                 await toolCallRespond.send(event.id!, {
-                  contentItems: [{ type: "inputText", text: delegated?.ok ? String(delegated.output ?? "") : `调度被拒绝：${delegated?.error ?? "未知原因"}` }],
+                  contentItems: [{ type: "inputText", text: delegated?.ok ? `${reusedNote}${String(delegated.output ?? "")}` : `调度被拒绝：${delegated?.error ?? "未知原因"}` }],
                   success: delegated?.ok === true,
                 });
                 }
@@ -414,6 +418,36 @@ ${st.hint}`);
                 await toolCallRespond.send(event.id!, {
                   contentItems: [{ type: "inputText", text: `已归档 ${done} 个调度会话${missed ? `（${missed} 个失败）` : ""}。` }],
                   success: missed === 0,
+                });
+              } else if (event.params?.tool === "agent_list_children") {
+                /* 11-03 用户令：主会话要知道自己派过哪些成员/子会话。
+                   清单 = 调度登记（agents:delegated-of）+ 团队成员运行记录（team-runs:list），
+                   ⛔ 身份取引擎事件里的 threadId，模型伪造不了；只列自己的。 */
+                const childrenOrigin = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                const includeArchived = args.includeArchived === true;
+                const [delegatedList, teamRuns] = await Promise.all([
+                  window.codex.listDelegatesOf(childrenOrigin).catch(() => ({ records: [] as any[] })),
+                  Promise.resolve(window.codex.listTeamRuns?.(childrenOrigin)).catch(() => [] as any[]),
+                ]);
+                const lines: string[] = [];
+                for (const record of ((delegatedList as any)?.records ?? []) as any[]) {
+                  if (!includeArchived && record?.archived) continue;
+                  lines.push(`[调度] kind=${record.kind} 名称=${record.name} threadId=${record.threadId} 状态=${record.status}${record.archived ? "（已归档）" : ""}`);
+                }
+                /* 团队成员的运行记录按成员线程去重，只留最近一次（listRuns 已按时间倒序）。 */
+                const seenMembers = new Set<string>();
+                for (const run of (Array.isArray(teamRuns) ? teamRuns : []) as any[]) {
+                  const tid = String(run?.memberThreadId ?? "");
+                  if (!tid || seenMembers.has(tid)) continue;
+                  seenMembers.add(tid);
+                  lines.push(`[团队成员] ${run?.memberName ?? ""}（${run?.profession ?? ""}）threadId=${tid} 状态=${run?.status ?? ""} 最近任务=${String(run?.query ?? "").slice(0, 60)}`);
+                }
+                const childrenText = lines.length
+                  ? `你派出的子会话（${lines.length} 条）：\n${lines.join("\n")}\n\n⛔ 再次派同一对象会自动复用它的会话（正在运行或已归档的除外），不会每次新建。`
+                  : "你还没有派出任何子会话。";
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: childrenText }],
+                  success: true,
                 });
               } else if (event.params?.tool === "feishu_cli") {
                 /* 飞书官方 CLI（10-29）：参数数组直传，⛔ 不过 shell；未安装/未登录时主进程回可执行的下一步。 */

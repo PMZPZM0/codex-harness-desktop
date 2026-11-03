@@ -24,6 +24,10 @@ export type DelegateRecord = {
   name: string;
   /** 调用链深度：直连会话发起 = 1 */
   depth: number;
+  /** 11-03：稳定目标键 `${kind}:${target.key}`（专家/团队 = teamId、成员 = teamId:memberId、
+   *  子智能体/CLI = 配置 id）。同一发起会话里再次派同一对象时据此**复用已有子会话**，
+   *  而不是每次新建。旧记录没有这个字段 ⇒ 按 kind + name 兜底匹配。 */
+  targetKey?: string;
   status: DelegateStatus;
   startedAt: number;
   endedAt?: number;
@@ -41,6 +45,36 @@ export type DelegateRecord = {
 
 /** 超过这个时间的已完成记录会被清理（避免文件无限增长）；运行中的永不清理。 */
 export const DELEGATE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * 从登记表里挑出「可以复用」的旧子会话（11-03 用户令：同一目标重复派活不要每次新建）。
+ * 规则：
+ *  · 必须是**同一个发起会话**派出的（跨会话复用会把别人的上下文带进来）；
+ *  · 已归档的不复用（用户明确收起了它，再派活把归档会话拉回来会意外）；
+ *  · 正在运行的不复用（同一线程不能并发两个回合，引擎会 busy）；
+ *  · 目标匹配优先用稳定的 targetKey；旧记录没有 targetKey 时按 kind + name 兜底；
+ *  · 有多条时取最近一次结束的那条。
+ */
+export function pickReusableDelegate(
+  records: DelegateRecord[] | null | undefined,
+  input: { originThreadId: string; kind: DispatchKind; targetKey: string; name: string },
+): DelegateRecord | null {
+  const origin = String(input?.originThreadId ?? "");
+  const list = Array.isArray(records) ? records : [];
+  let best: DelegateRecord | null = null;
+  for (const record of list) {
+    if (!record || !record.threadId) continue;
+    if (record.originThreadId !== origin) continue;
+    if (record.archived) continue;
+    if (record.status === "running") continue;
+    const sameTarget = record.targetKey
+      ? record.targetKey === input.targetKey
+      : record.kind === input.kind && record.name === input.name;
+    if (!sameTarget) continue;
+    if (!best || (record.startedAt ?? 0) > (best.startedAt ?? 0)) best = record;
+  }
+  return best;
+}
 
 export class DelegateRegistry {
   private map: Record<string, DelegateRecord> = {};
@@ -77,6 +111,36 @@ export class DelegateRegistry {
     this.activeThreads.add(record.threadId);
     this.scheduleSave();
     return record;
+  }
+
+  /** 复用一条已有子会话：把它重新置为运行中（新任务开始），旧的产出/失败信息清空。
+   *  ⛔ 不覆盖 threadId / originThreadId / depth —— 会话归属与调用深度都不变。 */
+  async beginReuse(threadId: string, patch: { name?: string; targetKey?: string } = {}): Promise<DelegateRecord | null> {
+    await this.load();
+    const key = String(threadId ?? "");
+    const current = this.map[key];
+    if (!current) return null;
+    const next: DelegateRecord = {
+      ...current,
+      ...(patch.name ? { name: patch.name } : {}),
+      ...(patch.targetKey ? { targetKey: patch.targetKey } : {}),
+      status: "running",
+      startedAt: Date.now(),
+      endedAt: undefined,
+      error: undefined,
+      output: "",
+      pendingReport: false,
+    };
+    this.map[key] = next;
+    this.activeThreads.add(key);
+    this.scheduleSave();
+    return next;
+  }
+
+  /** 找一条可复用的旧子会话（判据见模块顶部 `pickReusableDelegate`）。 */
+  async findReusable(input: { originThreadId: string; kind: DispatchKind; targetKey: string; name: string }): Promise<DelegateRecord | null> {
+    await this.load();
+    return pickReusableDelegate(Object.values(this.map), input);
   }
 
   /** 运行中委派会话的流式文本（09-16 用户要求：调度时右侧也要像专家团一样有头像 + 工作内容）。

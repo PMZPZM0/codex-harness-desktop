@@ -152,9 +152,12 @@ try {
   ok(/memberThreadOf\(ownerThreadId, team\.teamId, member\.id\)/.test(ti)
     && /rememberMemberThread\(ownerThreadId, team\.teamId, member\.id, memberThreadId\)/.test(ti),
     "⛔ 团队派活按 owner 取/记成员线程（接线，不是写了没接）");
+  /* ⛔ 11-03 用户令覆盖旧口径（原先「每次新建、不复用」）：同一发起会话重复派同一对象时
+     复用它的已有子会话；跨会话仍各用各的（findReusable 按 origin 过滤）。 */
   ok(/server\.request\("thread\/start"/.test(del)
+    && /delegateRegistry\.findReusable\(/.test(del)
     && !/memberThreadOf|rememberMemberThread/.test(del),
-    "委派（专家/子智能体/团长）每次新建线程，不复用历史会话 ⇒ 上下文不跨会话");
+    "委派先按目标找可复用的已结束子会话，找不到才 thread/start（工具成员线程仍走 team-invoke 的复用键）");
   ok(/record\.originThreadId !== origin/.test(readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8"))
     && /record\.originThreadId !== callerThreadId/.test(readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8")),
     "⛔ 归档/回报按 originThreadId 归属（跨会话归档一律失败）");
@@ -565,6 +568,52 @@ try {
   ok(attentionSrc.includes("子会话 · {cluster.members.length}")
     && /className="dispatch-children-label"[\s\S]{0,200}?toggleTeamCluster/.test(attentionSrc),
     "专家团成员收进「↳ 子会话 · N」折叠块（与调度子会话同款；不再每个成员一行主会话）");
+  /* ⛔ 11-03 用户令：「同一对象不要每次都派新的子会话；主会话要知道自己派过谁」。
+     ① 复用：派活先按 (origin, kind, targetKey) 找已结束的旧子会话 → resume → 记录重置为运行中；
+     ② 知情：主会话有 agent_list_children（调度登记 + 团队成员运行记录）。 */
+  ok(/findReusable\(\{ originThreadId: origin, kind: target\.kind, targetKey/.test(delSrc)
+    && /thread\/resume[\s\S]{0,500}?reused = true/.test(delSrc)
+    && /if \(!threadId\) \{[\s\S]{0,300}?thread\/start/.test(delSrc),
+    "同一目标重复派活先 resume 复用旧子会话；resume 失败/不可用才新建");
+  ok(/const targetKey = `\$\{target\.kind\}:\$\{target\.key\}`/.test(delSrc)
+    && /beginReuse\(threadId, \{ name: displayName, targetKey \}\)/.test(delSrc)
+    && /!reused[\s\S]{0,200}?thread\/name\/set/.test(delSrc),
+    "复用键 = kind:target.key；复用命中只把旧记录置运行中、不重置用户改过的会话名");
+  /* 真跑纯函数：复用判据（同源 / 未归档 / 未运行 / 目标匹配 / 旧记录按 kind+name 兜底）。 */
+  {
+    const { pickReusableDelegate } = req(join(ROOT, "dist-electron/delegate-registry.js"));
+    const ask = { originThreadId: "o", kind: "expert", targetKey: "expert:t", name: "X" };
+    const base = { threadId: "a", originThreadId: "o", kind: "expert", name: "X", targetKey: "expert:t", depth: 1, status: "done", startedAt: 1 };
+    const cases = [
+      [{ ...base }, true, "同源同目标已结束 ⇒ 复用"],
+      [{ ...base, originThreadId: "other" }, false, "别的会话派的不复用"],
+      [{ ...base, status: "running" }, false, "正在运行的不复用（不能并发）"],
+      [{ ...base, archived: true }, false, "已归档的不复用"],
+      [{ ...base, targetKey: "expert:z" }, false, "目标不同不复用"],
+      [{ ...base, targetKey: undefined }, true, "旧记录（无 targetKey）按 kind+name 兜底"],
+    ];
+    const bad = cases.filter(([record, want]) => Boolean(pickReusableDelegate([record], ask)) !== want);
+    ok(bad.length === 0, `复用判据真值表 ${cases.length - bad.length}/${cases.length}${bad.length ? "：" + bad.map((c) => c[2]).join(" / ") : ""}`);
+    /* 真跑登记表：register 落 targetKey → 跑完 findReusable 命中原线程 → beginReuse 置回运行中且不新增记录。 */
+    const { DelegateRegistry } = req(join(ROOT, "dist-electron/delegate-registry.js"));
+    const reg = new DelegateRegistry(join(UD, "delegate-probe.json"));
+    await reg.register({ threadId: "t1", originThreadId: "o", kind: "expert", name: "X", depth: 1, targetKey: "expert:t" });
+    await reg.markStatus("t1", "done");
+    const hit = await reg.findReusable(ask);
+    const before = (await reg.infoOf("t1"))?.startedAt ?? 0;
+    await new Promise((r) => setTimeout(r, 5));
+    await reg.beginReuse("t1", { name: "X", targetKey: "expert:t" });
+    const after = await reg.infoOf("t1");
+    ok(hit?.threadId === "t1" && after?.status === "running" && (after?.startedAt ?? 0) > before
+      && (await reg.listByOrigin("o")).length === 1,
+      "真跑：复用命中旧线程、重新置为运行中、不新增记录");
+  }
+  const routeSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part05/event-router/02-request.tsx"), "utf8");
+  ok(/name: "agent_list_children"/.test(seg08Src) && /agent_list_children/.test(routeSrc)
+    && /listDelegatesOf\(childrenOrigin\)/.test(routeSrc) && /listTeamRuns\?\.\(childrenOrigin\)/.test(routeSrc),
+    "主会话可查自己的子会话清单（调度登记 + 团队成员运行记录，身份取引擎线程 id）");
+  ok(/reused/.test(delSrc) && /沿用已有子会话/.test(routeSrc),
+    "复用结果回报给模型（「沿用已有子会话 …，没有新建」）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

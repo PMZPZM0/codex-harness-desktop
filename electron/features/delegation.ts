@@ -35,7 +35,7 @@ import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
-}): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }> {
+}): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string; reused?: boolean }> {
   const origin = String(input.originThreadId ?? "");
   // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
   const originRecord = origin ? await delegateRegistry.infoOf(origin) : null;
@@ -177,6 +177,34 @@ export async function runDelegatedTask(input: {
   if (cliShellEnv && Object.keys(cliShellEnv).length) {
     threadConfig.shell_environment_policy = { inherit: "all", ignore_default_excludes: true, set: { PATH: augmentedPath(), ...cliShellEnv } };
   }
+  /* ⛔ 11-03 用户令：「同一对象不要每次都派新的子会话，主会话要知道自己派过谁」。
+     复用判据 = 同一发起会话 + 同一目标（targetKey），已结束、未归档、且线程还能 resume。
+     ⛔ 正在运行的（status=running）不复用：同一线程不能并发两个回合，引擎会 busy。
+     ⛔ resume 必须带 model/modelProvider/sandbox/approvalPolicy/config —— 否则线程会掉回
+        创建时的旧供应商/旧权限（与 team-invoke 复用成员线程同款迁移口径）。 */
+  const targetKey = `${target.kind}:${target.key}`;
+  let threadId = "";
+  let reused = false;
+  const reusable = await delegateRegistry.findReusable({ originThreadId: origin, kind: target.kind, targetKey, name: displayName }).catch(() => null);
+  if (reusable) {
+    const resumed: any = await server.request("thread/resume", {
+      threadId: reusable.threadId,
+      excludeTurns: true,
+      model: effectiveModel,
+      modelProvider: shouldBindHarness(customModel) ? HARNESS_PROVIDER_ID : undefined,
+      sandbox: effectiveSandbox,
+      approvalPolicy: effectiveApproval,
+      ...(Object.keys(threadConfig).length ? { config: threadConfig } : {}),
+    }).catch(() => null);
+    if (resumed?.thread?.id) {
+      threadId = String(resumed.thread.id);
+      reused = true;
+    } else {
+      /* resume 失败（会话被删 / 引擎已不认识它）⇒ 记录已失效，继续走新建，别卡死。 */
+      void delegateRegistry.forget([reusable.threadId]).catch(() => undefined);
+    }
+  }
+  if (!threadId) {
   const started: any = await server.request("thread/start", {
     model: effectiveModel,
     cwd: input.cwd || process.cwd(),
@@ -202,7 +230,8 @@ export async function runDelegatedTask(input: {
     // ⛔ 主进程自己发的 thread/start **不经过** codex-ipc 的拦截 ⇒ 这里必须各自包一层。
     dynamicTools: withStepParam([...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])]),
   });
-  const threadId = String(started?.thread?.id ?? "");
+  threadId = String(started?.thread?.id ?? "");
+  }
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
   /* 被委派的专家团主理人也要登记为团队主理人：否则它调用 team_member_invoke 时会被
      「只有主理人可以调度成员」的硬闸误拒。 */
@@ -217,7 +246,10 @@ export async function runDelegatedTask(input: {
   /* 10-05 登记「这个会话就是这个角色」——主进程应答 role_memory_save 时靠它反查归属
      （⛔ 渲染层收不到被委派会话的工具事件，见 role-memory-tool.ts 文件头）。登记失败不阻塞调度。 */
   if (roleRef) await noteRoleThread(app.getPath("userData"), threadId, roleRef, String(input.cwd ?? "")).catch(() => undefined);
-  try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不阻塞 */ }
+  /* 复用的会话保留用户改过的名字（⛔ 不要每次派活把名字重置成「调度·XXX」）。 */
+  if (!reused) {
+    try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不阻塞 */ }
+  }
 
   // ── L1：给被委派会话下发**会话级持久指令**（直接干活、不要转派）。
   //    刻意走持久指令而不是塞在首条消息里：成员会话/被调会话可能被复用、也可能被用户点开继续问，
@@ -234,7 +266,11 @@ export async function runDelegatedTask(input: {
     }).catch(() => undefined);
   } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
 
-  const record = await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1 });
+  /* 复用：把旧记录重新置为运行中（不新增记录）；新建：照常登记并带 targetKey。 */
+  const record = reused
+    ? (await delegateRegistry.beginReuse(threadId, { name: displayName, targetKey })
+      ?? await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey }))
+    : await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey });
   /* ⛔ cwd 登记（10-10）：网关里的 `knowledge_search` 等能力要靠它定位**项目级**资源。
      团队那条链（teams-ipc）一直有，被委派这条链漏了 ⇒ "网关能查知识库"会栽在
      "无法确定工作目录"上。（delegate-harness-tool 里另有一层角色表兜底。） */
@@ -264,7 +300,7 @@ export async function runDelegatedTask(input: {
     workspace: input.cwd,
     query: String(input.query ?? ""),
     originThreadId: origin,
-    threadId: String(started?.thread?.id ?? ""),
+    threadId,
     teamId: roleRef?.kind === "team-lead" ? roleRef.id : undefined,
     // 10-05 统一记忆：注入「项目共享段 + 本会话段 + 上一版角色记忆兼容段」，
     // 与主会话**同一个 buildContext**（分两处拼装会出现"派出去的专家拿不到自己刚写的"）。
@@ -312,7 +348,7 @@ export async function runDelegatedTask(input: {
     broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
     // 头像轨收场：跑完即从右侧消失（用户 09-16：「调用完就不展示头像了」）；广播终态供弹窗收起与兜底渲染
     broadcastHarnessEvent({ type: "delegate-run", phase: "finished", threadId, status: "done", output: text, at: Date.now() } as any);
-    return { ok: true, threadId, name: displayName, output: text };
+    return { ok: true, threadId, name: displayName, output: text, reused };
   } catch (error: any) {
     const message = error?.message ?? String(error);
     /* ★★ 10-10 用户令「超时不判失败，转后台等」：**等待到点 ≠ 任务失败** ——
@@ -326,7 +362,7 @@ export async function runDelegatedTask(input: {
          ⛔ 只对走转后台分支的这次打标 —— 同步跑通的结果已随返回值交回主会话，再投就是两份。 */
       await delegateRegistry.markPendingReport(threadId).catch(() => undefined);
       broadcastHarnessEvent({ type: "delegates-changed", threadId } as any);
-      return { ok: true, threadId, name: displayName, output: TURN_WAIT_BACKGROUND_NOTE };
+      return { ok: true, threadId, name: displayName, output: TURN_WAIT_BACKGROUND_NOTE, reused };
     }
     await delegateRegistry.setOutput(threadId, "").catch(() => undefined);
     await delegateRegistry.markStatus(threadId, "failed", { error: message }).catch(() => undefined);

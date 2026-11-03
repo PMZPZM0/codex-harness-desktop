@@ -560,6 +560,25 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: [],
         },
       },
+      {
+        /* ⛔ 11-03 用户令：「主会话要知道自己调度了哪些成员和子会话」。
+           派活前查一次 = 不会重复新建同一个对象的会话；返回的清单也是"我派过谁"的权威来源
+           （历史被压缩后模型仍能查回来）。⛔ 只列本会话派出的，别的会话看不到。 */
+        type: "function",
+        name: "agent_list_children",
+        description:
+          "列出**你（当前主会话）派出的子会话**：调度产生的专家 / 专家团 / 团队成员 / 子智能体 / CLI 会话，以及团队成员的工作会话。"
+          + "每条包含 threadId、类别、名称、状态、最近任务。派活前先查一次，避免重复派同一个人。"
+          + "⛔ 同一对象再次 agent_invoke 会**自动复用**它的已有会话（正在运行或已归档的除外），不会每次新建。"
+          + "⛔ 只返回你自己派出的，看不到别的会话的子会话。",
+        inputSchema: {
+          type: "object",
+          properties: {
+            includeArchived: { type: "boolean", description: "是否包含已归档的调度会话（默认否）" },
+          },
+          required: [],
+        },
+      },
       ]),
       /* ⭐ 能力网关（10-05 立 / 10-09 收窄）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，
          模型直接调用一律 `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 /
