@@ -36,6 +36,8 @@
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
 
+| 2026-11-03 | 审查修正：派发身份首行判定 + 并发复用闸 | 修复 | `src/lib/user-refs.ts`、`electron/features/delegation.ts`、守卫 11f/11q、`verify-injection-strip` | 审查最近几轮发现两处：① 上级行/来源标签按 /m 匹配正文任意行 —— 用户自己在成员会话里打一行「上级：…」会被左移成上级发言并被剥掉；改为只认正文第一行（宿主派发壳固定写在开头），补回归样本。② 同一目标并行派活可能在 beginReuse 前同时命中旧会话 ⇒ 同线程两次 resume 撞 busy；加 reuseInFlight 闸，锁内完成 beginReuse，其余新建。验证：注入段 45/45；11f 129/129；02/03 守卫绿。 | 本轮 |
+
 | 2026-11-03 | 同一目标复用子会话 + 主会话可查子会话清单 | 新增 | `electron/delegation.ts`、`electron/delegate-registry.ts`、`electron/dispatch.ts`、`part08/01-seg.tsx`、`part05/event-router/02-request.tsx`、守卫 11f | 用户令：「同一对象不要每次都派新的子会话，主会话要知道自己派过谁」。① 普通调度派活前按 (发起会话, kind, targetKey) 找已结束、未归档的旧子会话 → resume 复用（带模型/权限/CLI 环境迁移），失败才新建；运行中的不复用、不重置用户改过的名字；复用键落 `delegate-threads.json`，旧记录按 kind+name 兜底。② 新增 dynamicTool `agent_list_children`：返回本会话派出的调度会话（threadId/类别/名称/状态）+ 团队成员工作会话，只列自己的；复用回报「沿用已有子会话 …，没有新建」。验证：复用判据真值表 6/6 + 登记表真跑不新增记录；11f 128/128；运行时探针 PASS。 | 本轮 |
 
 | 2026-11-03 | 长会话上滚自动回弹 | 修复 | `part07/03-seg.tsx`、`part04/02-seg/01-hook-events-bottom-state.tsx`、`bag-types.ts`、守卫 03 | 用户实测「往上滚，自动到某个位置一直卡着回弹，滚不下来」。现场 pin-jitter 显示窗口 tail 在 0/2 间每 ~1.5s 翻转、几何来回甩。三处根因：① 下滑方向按 scrollTop 增量判断，被水合补偿自己写的 scrollTop 误判成下滚 ⇒ 改认真实滚轮基线；② 扩窗补偿期间不许下滑（slide 会 cancelHistoryPin 甩回旧几何）；③ 上移窗口会把窗口末尾（正被看着的）回合折进底部占位区 ⇒ grow 只腾出视口外回合 + 锚点按滚动容器视口判可见。验证：长会话真滚轮探针上滚 tail 单调、无 >600px 回弹、下滚正常；真实会话（抱一 33 回合）上下滚平滑。 | 本轮 |
