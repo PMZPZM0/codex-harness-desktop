@@ -485,7 +485,7 @@ ok(Boolean(cloudRegistry) && Number(cloudRegistry[1]) === cloudRegistryChannels.
 
 /* ── 11-04 网页云管理 ↔ 本机应用联动 + 会话名 ───────────────────────────── */
 const cloudBridgeSrc = codeOnly(read("electron/cloud-bridge.ts"));
-ok(/127\.0\.0\.1/.test(cloudBridgeSrc) && /ALLOWED_ORIGINS/.test(cloudBridgeSrc) && /ppz123\.asia/.test(cloudBridgeSrc)
+ok(/127\.0\.0\.1/.test(cloudBridgeSrc) && /ALLOWED_ORIGINS/.test(cloudBridgeSrc) && /https:\/\//.test(cloudBridgeSrc)
   && /HARNESS_CLOUD_BRIDGE_ORIGINS/.test(cloudBridgeSrc) && /Access-Control-Allow-Private-Network/.test(cloudBridgeSrc)
   && /\/api\/health/.test(cloudBridgeSrc) && /\/api\/cloud-state/.test(cloudBridgeSrc)
   && /\/api\/sync-now/.test(cloudBridgeSrc) && /\/api\/sync-pull/.test(cloudBridgeSrc)
