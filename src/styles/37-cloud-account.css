@@ -634,20 +634,22 @@
 .cloud-team-uploads li.ok { color: var(--accent); }
 .cloud-team-uploads li.bad { color: var(--red); }
 
-/* ── 云管理（11-03）：云端用量 / 已上传会话 / 同步与下载 ───────────────────── */
-.cloud-sync-manage-section .settings-subhead { flex-wrap: wrap; }
+/* ── 云管理（11-04 重做）：与云账号页其它卡片同一套皮肤（cloud-acct-card）──── */
+.cloud-sync-manage-section { display: flex; flex-direction: column; gap: 14px; }
+.cloud-sync-manage-card { gap: 12px; }
+.cloud-sync-manage-head { flex-wrap: wrap; }
 .cloud-sync-manage-head-actions { margin-left: auto; display: inline-flex; gap: 6px; }
 .cloud-sync-manage-usage {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
+  gap: 7px;
+  padding: 12px 14px;
   border-radius: 10px;
-  background: var(--bg);
+  background: color-mix(in srgb, var(--text) 3.5%, transparent);
 }
-.cloud-sync-manage-usage-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12px; color: var(--muted); }
-.cloud-sync-manage-usage-row b { color: var(--text); font-weight: 600; }
+.cloud-sync-manage-usage-row { display: flex; align-items: baseline; gap: 8px; font-size: 12px; color: var(--muted); }
+.cloud-sync-manage-usage-row b { margin-left: auto; color: var(--text); font-weight: 600; font-size: 13px; }
+.cloud-sync-manage-usage-row em { font-style: normal; color: var(--faint); font-size: 11px; min-width: 34px; text-align: right; }
 .cloud-sync-manage-usage .runtime-progress-bar { width: 100%; }
 .cloud-sync-manage-usage small { font-size: 11px; color: var(--faint); }
 .cloud-sync-manage-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -655,13 +657,18 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 5px 8px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg);
+  border-radius: 9px;
+  background: var(--field);
   color: var(--muted);
+  min-width: 220px;
+  flex: 0 1 280px;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
-.cloud-sync-manage-search input { border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; min-width: 160px; }
+.cloud-sync-manage-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.cloud-sync-manage-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); font-size: 12px; }
 .cloud-sync-manage-toolbar-spacer { flex: 1; }
 .cloud-sync-manage-danger:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
 .cloud-sync-manage-confirm {
@@ -670,29 +677,49 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 8px 12px;
-  border: 1px solid color-mix(in srgb, var(--red) 40%, var(--line));
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line));
+  border-radius: 9px;
   background: color-mix(in srgb, var(--red) 6%, transparent);
   font-size: 12px;
 }
 .cloud-sync-manage-confirm > span { flex: 1; min-width: 160px; }
-.cloud-sync-manage-list { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.cloud-sync-manage-list { display: flex; flex-direction: column; }
 .cloud-sync-manage-row {
   display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) 96px 118px 70px 128px;
+  grid-template-columns: 20px minmax(0, 1fr) 88px 112px 64px 112px;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 9px 2px;
   font-size: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--line-soft);
+  transition: background .12s ease;
 }
-.cloud-sync-manage-row:first-child { border-top: 0; }
-.cloud-sync-manage-row-head { font-size: 11px; color: var(--faint); background: var(--bg); }
+.cloud-sync-manage-row-head { padding: 4px 2px 6px; border-top: 0; font-size: 11px; color: var(--faint); }
+.cloud-sync-manage-row:not(.cloud-sync-manage-row-head):hover { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.cloud-sync-manage-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: var(--accent); }
 .cloud-sync-manage-title { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-.cloud-sync-manage-title strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-sync-manage-title strong { font-weight: 600; font-size: 12.5px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-sync-manage-title small { font-size: 10.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-sync-manage-machine,
 .cloud-sync-manage-time,
 .cloud-sync-manage-size { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cloud-sync-manage-row-actions { display: inline-flex; gap: 6px; justify-content: flex-end; }
-.cloud-sync-manage-row-actions .secondary-setting { padding: 3px 8px; font-size: 11.5px; }
+.cloud-sync-manage-size { text-align: right; }
+.cloud-sync-manage-row-actions { display: inline-flex; gap: 2px; justify-content: flex-end; }
+.cloud-sync-manage-row-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.cloud-sync-manage-row-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 6%, transparent); color: var(--text); }
+.cloud-sync-manage-row-actions .cloud-sync-manage-danger:hover:not(:disabled) { color: var(--red); background: color-mix(in srgb, var(--red) 8%, transparent); }
+.cloud-sync-manage-row-actions button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 640px) {
+  .cloud-sync-manage-row { grid-template-columns: 20px minmax(0, 1fr) 70px 96px; }
+  .cloud-sync-manage-machine,
+  .cloud-sync-manage-time { display: none; }
+}

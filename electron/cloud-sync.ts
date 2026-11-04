@@ -78,20 +78,61 @@ function listRollouts(root: string, limit: number): string[] {
   return out.sort().reverse().slice(0, limit);
 }
 
-/** 从 rollout 头部提取标题与项目（best-effort：首条用户消息 / cwd 目录名）。 */
-function deriveMeta(lines: string[]): { title: string; project: string; sessionId: string } {
-  let title = "";
+/** 引擎的会话名索引（session_index.jsonl）：id → 侧栏显示的那个名字。
+    ⛔ rollout 里首条 user 消息通常是 AGENTS / 常驻记忆注入，不能当标题（11-04 用户实测：
+    云端列表全是 8 位 ID，认不出是哪条会话）。索引里存的是用户看到的名字，优先级最高。 */
+function readThreadNames(codexHome: string): Map<string, string> {
+  const names = new Map<string, string>();
+  let raw = "";
+  try { raw = readFileSync(join(codexHome, "session_index.jsonl"), "utf8"); } catch { return names; }
+  for (const line of raw.split(/\r?\n/)) {
+    if (!line.trim()) continue;
+    try {
+      const row = JSON.parse(line) as { id?: string; thread_name?: string };
+      const id = String(row.id || "");
+      const name = String(row.thread_name || "").trim();
+      if (id && name) names.set(id, name.slice(0, 80));
+    } catch { /* 坏行 */ }
+  }
+  return names;
+}
+
+/** 从一条 rollout 行里取用户输入正文（兼容新旧两种事件形态）。 */
+function userTextOf(row: { type?: string; payload?: Record<string, unknown> }): string {
+  const payload = row.payload || {};
+  if (row.type === "user_message" && typeof payload.text === "string") return payload.text;
+  if (row.type === "response_item" && payload.type === "message" && payload.role === "user" && Array.isArray(payload.content)) {
+    return (payload.content as Array<{ text?: unknown }>).map((part) => (part && typeof part.text === "string" ? part.text : "")).join("");
+  }
+  return "";
+}
+
+/** 剥掉宿主注入块，留下真正的用户输入（没有则返回空串）。 */
+function cleanUserText(raw: string): string {
+  let text = raw;
+  for (const marker of ["\n\n[Harness 常驻记忆", "\n\n<environment_context>", "\n\n[SYSTEM TASK", "\n\n# AGENTS.md"]) {
+    const at = text.indexOf(marker);
+    if (at >= 0) text = text.slice(0, at);
+  }
+  if (/^\s*(?:#\s*AGENTS\.md|<INSTRUCTIONS>|<environment_context>|<user_instructions>|\[Harness 常驻记忆)/i.test(text)) return "";
+  if (/^\s*\[SYSTEM TASK/.test(text)) text = text.replace(/^\s*\[SYSTEM TASK[^\n]*\n?/, "").trim();
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** 从 rollout 头部提取标题与项目（best-effort：会话名索引 / 首条真实用户消息 / cwd 目录名）。 */
+function deriveMeta(lines: string[], nameHint = ""): { title: string; project: string; sessionId: string } {
+  let title = nameHint;
   let project = "";
   let sessionId = "";
-  for (const line of lines.slice(0, 40)) {
+  for (const line of lines.slice(0, 60)) {
     try {
       const row = JSON.parse(line) as { type?: string; payload?: Record<string, unknown> };
       const payload = row.payload || {};
       if (!sessionId && typeof payload.session_id === "string") sessionId = payload.session_id;
       if (!project && typeof payload.cwd === "string" && payload.cwd) project = basename(payload.cwd);
-      if (!title && row.type === "user_message") {
-        const text = typeof payload.text === "string" ? payload.text : "";
-        if (text.trim()) title = text.trim().replace(/\s+/g, " ").slice(0, 80);
+      if (!title) {
+        const text = cleanUserText(userTextOf(row));
+        if (text) title = text.slice(0, 80);
       }
       if (title && project && sessionId) break;
     } catch { /* 跳过坏行 */ }
@@ -107,7 +148,9 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
   if (!existsSync(root)) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
 
   const state = readState(deps.stateFile);
+  const names = readThreadNames(deps.codexHome);
   let budgetUsed = 0;
+  let metaOnly = 0;
   const files = listRollouts(root, MAX_SESSIONS_PER_RUN);
   const payload: { id: string; title: string; project: string; fromOrdinal: number; lines: string[]; }[] = [];
   const meta: { id: string; path: string; lines: number; sizeBytes: number; title: string; project: string }[] = [];
@@ -117,10 +160,22 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
     try { content = readFileSync(file, "utf8"); } catch { continue; }
     const all = content.split("\n").filter((l) => l.trim());
     if (all.length < 2) continue;                                  // 只有 session_meta 的空会话跳过
-    const { title, project, sessionId } = deriveMeta(all);
-    const id = sessionId || basename(file).replace(/^rollout-/, "").replace(/\.jsonl$/, "");
-    const pushed = Number(state.sessions[id]?.pushedLines || 0);
-    if (all.length <= pushed) continue;                            // 没有新行
+    const derived = deriveMeta(all);
+    const id = derived.sessionId || basename(file).replace(/^rollout-/, "").replace(/\.jsonl$/, "");
+    const prev = state.sessions[id];
+    /* 名字优先级：session_index（侧栏显示名）→ rollout 里的真实用户消息 → 已有记录。 */
+    const title = names.get(id) || derived.title || prev?.title || "";
+    const project = derived.project || prev?.project || "";
+    const pushed = Number(prev?.pushedLines || 0);
+    if (all.length <= pushed) {
+      /* 没有新行，但名字变了（用户改名 / 本次才从索引读到）⇒ 只更新云端索引，不重传正文。 */
+      if (title && prev?.title !== title && metaOnly < 200) {
+        metaOnly += 1;
+        payload.push({ id, title, project, fromOrdinal: pushed, lines: [] });
+        meta.push({ id, path: relative(root, file), lines: pushed, sizeBytes: 0, title, project });
+      }
+      continue;
+    }
     /* 按行切片：装进剩余预算的行才发（会话特别大时本轮只发一部分，游标随之前进） */
     const fresh: string[] = [];
     let bytes = 0;
@@ -179,6 +234,7 @@ export function listLocalSessions(
   deps: Pick<SyncDeps, "codexHome">, limit = 500,
 ): Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> {
   const out: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> = [];
+  const names = readThreadNames(deps.codexHome);
   for (const full of listRollouts(deps.codexHome, limit)) {
     let raw = "";
     try { raw = readFileSync(full, "utf8"); } catch { continue; }
@@ -188,7 +244,7 @@ export function listLocalSessions(
     let sizeBytes = 0, updatedAt = 0;
     try { const st = statSync(full); sizeBytes = st.size; updatedAt = st.mtimeMs; } catch { /* 忽略 */ }
     const id = meta.sessionId || basename(full).replace(/^rollout-/, "").replace(/\.jsonl$/, "");
-    out.push({ id, title: meta.title || "(未命名会话)", project: meta.project, lines: lines.length, sizeBytes, updatedAt, path: full });
+    out.push({ id, title: names.get(id) || meta.title || "(未命名会话)", project: meta.project, lines: lines.length, sizeBytes, updatedAt, path: full });
   }
   return out;
 }

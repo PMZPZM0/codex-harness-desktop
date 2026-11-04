@@ -60,6 +60,9 @@ function fmtTime(ms: number | undefined): string {
 /** 服务端错误码 → 人话（⛔ 管理员关总闸不能显示成"网络坏了"）。 */
 function humanError(code: string | undefined, fallback: string | undefined): string {
   if (code === "not-logged-in") return "未登录云账号，请先在上方登录";
+  if (code === "unauthorized") return "云账号登录已失效，请重新登录";
+  if (code === "index-http-401") return "云账号登录已失效，请重新登录";
+  if (code === "index-http-403") return "云端会话同步已关闭或未开通";
   if (code === "session-sync-disabled") return "管理员已关闭云端会话同步";
   if (code === "storage-disabled") return "管理员没有给这个账号开通云存储";
   if (code === "quota-exceeded") return "云端存储配额不足，请先清理云端会话";
@@ -167,107 +170,124 @@ export function CloudManageSection() {
   if (loggedIn === null) return null;
   if (!loggedIn) {
     return (
-      <section className="settings-section stack cloud-sync-manage-section">
-        <div className="settings-subhead"><Cloud size={13} />云管理<span className="settings-subhead-hint">登录云账号后可用</span></div>
-        <p className="settings-card-hint">登录上面的云账号后，这里会显示云端存储用量、已上传会话，并可同步 / 下载 / 删除。</p>
-      </section>
+      <div className="cloud-acct-card cloud-sync-manage-section">
+        <div className="cloud-acct-head">
+          <Cloud size={16} />
+          <strong>云管理</strong>
+          <span className="cloud-acct-tag off">未登录</span>
+        </div>
+        <p className="settings-card-hint" style={{ margin: 0 }}>
+          登录上面的云账号后，这里会显示云端存储用量、已上传会话，并可同步 / 下载 / 删除。
+        </p>
+      </div>
     );
   }
 
   const percent = usage && usage.limitBytes > 0 ? Math.min(100, Math.round((usage.usedBytes / usage.limitBytes) * 100)) : 0;
 
   return (
-    <section className="settings-section stack cloud-sync-manage-section" data-testid="cloud-sync-manage-section">
-      <div className="settings-subhead">
-        <Cloud size={13} />云管理
-        <span className="settings-subhead-hint">云端会话 · 每 5 分钟自动同步</span>
-        <span className="cloud-sync-manage-head-actions">
-          <button type="button" className="secondary-setting" disabled={busy === "load"} onClick={() => { setBusy("load"); void refresh().finally(() => setBusy("")); }}>
-            <RefreshCw size={13} />刷新
-          </button>
-          {webUrl ? (
-            <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(webUrl)}>
-              <ExternalLink size={13} />网页云管理
+    <div className="cloud-sync-manage-section" data-testid="cloud-sync-manage-section">
+      <div className="cloud-acct-card cloud-sync-manage-card">
+        <div className="cloud-acct-head cloud-sync-manage-head">
+          <Cloud size={16} />
+          <strong>云管理</strong>
+          <span className="cloud-acct-sub">云端会话 · 每 5 分钟自动同步</span>
+          <span className="cloud-sync-manage-head-actions">
+            <button type="button" className="secondary-setting" disabled={busy === "load"} onClick={() => { setBusy("load"); void refresh().finally(() => setBusy("")); }}>
+              <RefreshCw size={13} />刷新
             </button>
-          ) : null}
-        </span>
-      </div>
-
-      <div className="cloud-sync-manage-usage">
-        <div className="cloud-sync-manage-usage-row">
-          <span>云端存储</span>
-          <b>{usage ? `${fmtBytes(usage.usedBytes)} / ${usage.limitBytes ? fmtBytes(usage.limitBytes) : "未开通"}` : (busy === "load" ? "读取中…" : "—")}</b>
+            {webUrl ? (
+              <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(webUrl)}>
+                <ExternalLink size={13} />网页云管理
+              </button>
+            ) : null}
+          </span>
         </div>
-        <span className="runtime-progress-bar" role="progressbar" aria-label="云端存储用量" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
-          <i style={{ width: `${percent}%` }} />
-        </span>
-        <small>
-          会话 {usage?.sessions ?? 0} 条
-          {usage && usage.devices > 0 ? ` · 设备 ${usage.devices}/${usage.deviceLimit || "—"}` : ""}
-          {usage && usage.limitBytes === 0 ? " · 管理员未开通云存储，上传会被拒绝" : ""}
-        </small>
-      </div>
 
-      <div className="cloud-sync-manage-toolbar">
-        <button type="button" className="primary-setting" disabled={Boolean(busy)} onClick={() => void push()}>
-          {busy === "push" ? <Spinner /> : <RefreshCw size={13} />}{busy === "push" ? "同步中…" : "立即同步"}
-        </button>
-        <span className="cloud-sync-manage-search">
-          <Search size={13} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索会话 / 项目 / 机器" />
-        </span>
-        <span className="cloud-sync-manage-toolbar-spacer" />
-        <button type="button" className="secondary-setting" disabled={Boolean(busy) || picked.size === 0} onClick={() => void pull([...picked])}>
-          <Download size={13} />下载选中{picked.size ? ` (${picked.size})` : ""}
-        </button>
-        <button type="button" className="secondary-setting cloud-sync-manage-danger" disabled={Boolean(busy) || picked.size === 0} onClick={() => setConfirmDelete([...picked])}>
-          <Trash2 size={13} />删除选中{picked.size ? ` (${picked.size})` : ""}
-        </button>
-      </div>
+        <div className="cloud-sync-manage-usage">
+          <div className="cloud-sync-manage-usage-row">
+            <span>云端存储</span>
+            <b>{usage ? `${fmtBytes(usage.usedBytes)} / ${usage.limitBytes ? fmtBytes(usage.limitBytes) : "未开通"}` : (busy === "load" ? "读取中…" : "—")}</b>
+            {usage && usage.limitBytes > 0 ? <em>{percent}%</em> : null}
+          </div>
+          <span className="runtime-progress-bar" role="progressbar" aria-label="云端存储用量" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
+            <i style={{ width: `${percent}%` }} />
+          </span>
+          <small>
+            会话 {usage?.sessions ?? 0} 条
+            {usage && usage.devices > 0 ? ` · 设备 ${usage.devices}/${usage.deviceLimit || "—"}` : ""}
+            {usage && usage.limitBytes === 0 ? " · 管理员未开通云存储，上传会被拒绝" : ""}
+          </small>
+        </div>
 
-      {msg ? <div className={`cloud-acct-msg ${msg.kind}`}>{msg.text}</div> : null}
-
-      {confirmDelete ? (
-        <div className="cloud-sync-manage-confirm">
-          <span>删除云端 {confirmDelete.length} 条会话？本机文件不会动。</span>
-          <button type="button" className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
-          <button type="button" className="primary-setting danger" disabled={busy === "delete"} onClick={() => void remove(confirmDelete)}>
-            {busy === "delete" ? <Spinner /> : null}确认删除
+        <div className="cloud-sync-manage-toolbar">
+          <button type="button" className="primary-setting" disabled={Boolean(busy)} onClick={() => void push()}>
+            {busy === "push" ? <Spinner /> : <RefreshCw size={13} />}{busy === "push" ? "同步中…" : "立即同步"}
+          </button>
+          <span className="cloud-sync-manage-search">
+            <Search size={13} />
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索会话 / 项目 / 机器" />
+          </span>
+          <span className="cloud-sync-manage-toolbar-spacer" />
+          <button type="button" className="secondary-setting" disabled={Boolean(busy) || picked.size === 0} onClick={() => void pull([...picked])}>
+            <Download size={13} />下载选中{picked.size ? ` (${picked.size})` : ""}
+          </button>
+          <button type="button" className="secondary-setting cloud-sync-manage-danger" disabled={Boolean(busy) || picked.size === 0} onClick={() => setConfirmDelete([...picked])}>
+            <Trash2 size={13} />删除选中{picked.size ? ` (${picked.size})` : ""}
           </button>
         </div>
-      ) : null}
 
-      <div className="cloud-sync-manage-list">
-        {busy === "load" && !rows.length ? <p className="settings-card-hint">正在读取云端会话…</p> : null}
-        {!busy && !rows.length ? <p className="settings-card-hint">云端还没有会话。点「立即同步」把本机会话传上去（之后每 5 分钟自动同步一次）。</p> : null}
-        {rows.length ? (
-          <div className="cloud-sync-manage-row cloud-sync-manage-row-head">
-            <input type="checkbox" aria-label="全选云端会话" checked={allPicked} onChange={toggleAll} />
-            <span>会话 / 项目</span>
-            <span>机器</span>
-            <span>时间</span>
-            <span>大小</span>
-            <span>操作</span>
+        {msg ? <div className={`cloud-acct-msg ${msg.kind}`}>{msg.text}</div> : null}
+
+        {confirmDelete ? (
+          <div className="cloud-sync-manage-confirm">
+            <span>删除云端 {confirmDelete.length} 条会话？本机文件不会动。</span>
+            <button type="button" className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
+            <button type="button" className="primary-setting danger" disabled={busy === "delete"} onClick={() => void remove(confirmDelete)}>
+              {busy === "delete" ? <Spinner /> : null}确认删除
+            </button>
           </div>
         ) : null}
-        {filtered.map((row) => (
-          <div className="cloud-sync-manage-row" key={row.id} data-cloud-session={row.id}>
-            <input type="checkbox" aria-label={`选择会话 ${row.title || row.id}`} checked={picked.has(row.id)} onChange={() => toggleOne(row.id)} />
-            <span className="cloud-sync-manage-title" title={row.id}>
-              <strong>{row.title || "(未命名会话)"}</strong>
-              <small>{row.project || "—"} · {row.lines} 行</small>
-            </span>
-            <span className="cloud-sync-manage-machine">{row.machineName || "—"}</span>
-            <span className="cloud-sync-manage-time">{fmtTime(row.updatedAt || row.uploadedAt)}</span>
-            <span className="cloud-sync-manage-size">{fmtBytes(row.sizeBytes)}</span>
-            <span className="cloud-sync-manage-row-actions">
-              <button type="button" className="secondary-setting" disabled={Boolean(busy)} onClick={() => void pull([row.id])}>下载</button>
-              <button type="button" className="secondary-setting cloud-sync-manage-danger" disabled={Boolean(busy)} onClick={() => setConfirmDelete([row.id])}>删除</button>
-            </span>
-          </div>
-        ))}
-        {rows.length && !filtered.length ? <p className="settings-card-hint">没有匹配「{query}」的云端会话。</p> : null}
       </div>
-    </section>
+
+      <div className="cloud-acct-card cloud-sync-manage-card">
+        <div className="cloud-acct-head cloud-sync-manage-head">
+          <strong>已上传会话</strong>
+          <span className="cloud-acct-tag">{rows.length} 个</span>
+          <span className="cloud-acct-sub">只删云端，本机会话不动</span>
+        </div>
+        <div className="cloud-sync-manage-list">
+          {busy === "load" && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>正在读取云端会话…</p> : null}
+          {!busy && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>云端还没有会话。点「立即同步」把本机会话传上去（之后每 5 分钟自动同步一次）。</p> : null}
+          {rows.length ? (
+            <div className="cloud-sync-manage-row cloud-sync-manage-row-head">
+              <input type="checkbox" aria-label="全选云端会话" checked={allPicked} onChange={toggleAll} />
+              <span>会话 / 项目</span>
+              <span>机器</span>
+              <span>时间</span>
+              <span>大小</span>
+              <span>操作</span>
+            </div>
+          ) : null}
+          {filtered.map((row) => (
+            <div className="cloud-sync-manage-row" key={row.id} data-cloud-session={row.id}>
+              <input type="checkbox" aria-label={`选择会话 ${row.title || row.id}`} checked={picked.has(row.id)} onChange={() => toggleOne(row.id)} />
+              <span className="cloud-sync-manage-title" title={row.title || row.id}>
+                <strong>{row.title || "(未命名会话)"}</strong>
+                <small>{row.project || "—"} · {row.lines} 行</small>
+              </span>
+              <span className="cloud-sync-manage-machine">{row.machineName || "—"}</span>
+              <span className="cloud-sync-manage-time">{fmtTime(row.updatedAt || row.uploadedAt)}</span>
+              <span className="cloud-sync-manage-size">{fmtBytes(row.sizeBytes)}</span>
+              <span className="cloud-sync-manage-row-actions">
+                <button type="button" className="secondary-setting" disabled={Boolean(busy)} onClick={() => void pull([row.id])}>下载</button>
+                <button type="button" className="secondary-setting cloud-sync-manage-danger" disabled={Boolean(busy)} onClick={() => setConfirmDelete([row.id])}>删除</button>
+              </span>
+            </div>
+          ))}
+          {rows.length && !filtered.length ? <p className="settings-card-hint" style={{ margin: 0 }}>没有匹配「{query}」的云端会话。</p> : null}
+        </div>
+      </div>
+    </div>
   );
 }

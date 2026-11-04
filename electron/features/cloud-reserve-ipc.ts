@@ -23,6 +23,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { defineFeature } from "../context";
+import { startCloudBridge } from "../cloud-bridge";
+import type { HostCaps } from "../runtime/seams";
 /* 10-18 接线：会话同步从"预留桩"改为**真实现**。
    ⛔ `deviceToken` 注入的是**云账号 token**（`activeCredential().token`）——
       `cloud-sync.ts` 里它直接当 `Authorization: Bearer` 用；
@@ -84,10 +86,12 @@ const RESERVED = (code: string, error: string) => ({ ok: false, reserved: true, 
 
 export const cloudReserveFeature = defineFeature<null>({
   id: "cloud",
-  inject: ["ipc"],
+  inject: ["ipc", "host"],
   setup: (ctx) => {
     const ipcHost = ctx.get<IpcHost>("ipc");
+    const host = ctx.get<HostCaps>("host");
     if (!ipcHost) throw new Error("cloud-reserve: 缺少 ipc 服务（宿主未提供）");
+    if (!host) throw new Error("cloud-reserve: 缺少 host 接缝（宿主未提供）");
 
     /* ── ① 数据同步（云端存储）—— **10-18 接真实现** ────────────────────────
        ⛔ 原来这 4 个是 `RESERVED("cloud-storage-not-enabled", …)` 的桩：永远返回"尚未开通"、
@@ -149,6 +153,33 @@ export const cloudReserveFeature = defineFeature<null>({
     const firstAutoSync = setTimeout(() => { void syncNow(); }, 30_000);
     const autoSyncTimer = setInterval(() => { void syncNow(); }, 5 * 60_000);
     ctx.effect(() => { clearTimeout(firstAutoSync); clearInterval(autoSyncTimer); });
+
+    /* 本机云同步桥（11-04）：网页云管理（ppz123.asia/account.html#cloud）的
+       「立即上传 / 从云端下载」直接驱动本应用 —— 不再依赖云助手的 8917 服务。
+       ⛔ 端口 8927 起（避开云助手），只绑 127.0.0.1 + Origin 白名单；身份=应用内已登录账号。 */
+    const closeCloudBridge = startCloudBridge({
+      product: "codex-harness",
+      appName: "Codex Harness",
+      ports: [8927, 8928, 8929],
+      machineId: () => { try { return os.hostname(); } catch { return "unknown"; } },
+      account: () => {
+        const cr = activeCredential();
+        return cr ? { name: cr.account.username, baseUrl: cr.baseUrl } : null;
+      },
+      syncNow: async () => {
+        const r = await syncNow();
+        return r ?? { ok: false, reason: "not-logged-in" };
+      },
+      syncPull: (ids) => pullCloudSessions(syncDeps(), ids),
+      focusApp: () => {
+        const win = host.window.getAll().find((item) => !item.isDestroyed());
+        if (!win) return;
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      },
+    });
+    if (closeCloudBridge) ctx.effect(closeCloudBridge);
 
     ipcHost.handle("cloud:sync/status", async () => {
       const cr = activeCredential();

@@ -483,5 +483,27 @@ ok(Boolean(cloudRegistry) && Number(cloudRegistry[1]) === cloudRegistryChannels.
   && ["cloud:sync/usage", "cloud:sync/index", "cloud:sync/delete"].every((name) => cloudRegistryChannels.includes(name)),
   "ipc-registry cloud 前缀 count 与 channels 条数一致，且含三条云管理通道");
 
+/* ── 11-04 网页云管理 ↔ 本机应用联动 + 会话名 ───────────────────────────── */
+const cloudBridgeSrc = codeOnly(read("electron/cloud-bridge.ts"));
+ok(/127\.0\.0\.1/.test(cloudBridgeSrc) && /ALLOWED_ORIGINS/.test(cloudBridgeSrc) && /ppz123\.asia/.test(cloudBridgeSrc)
+  && /HARNESS_CLOUD_BRIDGE_ORIGINS/.test(cloudBridgeSrc) && /Access-Control-Allow-Private-Network/.test(cloudBridgeSrc)
+  && /\/api\/health/.test(cloudBridgeSrc) && /\/api\/cloud-state/.test(cloudBridgeSrc)
+  && /\/api\/sync-now/.test(cloudBridgeSrc) && /\/api\/sync-pull/.test(cloudBridgeSrc)
+  && /kind: "desktop-app"/.test(cloudBridgeSrc),
+  "本机云同步桥：只绑回环 + 账号站点白名单 + health/cloud-state/sync-now/sync-pull");
+const reserveBridgeSrc = codeOnly(read("electron/features/cloud-reserve-ipc.ts"));
+ok(/startCloudBridge\(/.test(reserveBridgeSrc) && /ports: \[8927, 8928, 8929\]/.test(reserveBridgeSrc)
+  && /ctx\.effect\(closeCloudBridge\)/.test(reserveBridgeSrc) && /appName: "/.test(reserveBridgeSrc),
+  "cloud 域启动本机桥（8927 起、随域释放关闭）");
+const syncTitleSrc = codeOnly(read("electron/cloud-sync.ts"));
+ok(/session_index\.jsonl/.test(syncTitleSrc) && /readThreadNames\(/.test(syncTitleSrc)
+  && /response_item/.test(syncTitleSrc) && /role === "user"/.test(syncTitleSrc)
+  && /cleanUserText\(/.test(syncTitleSrc),
+  "同步标题取 session_index 的会话名 + 兼容 response_item 的真实用户消息（不再回落到 8 位 ID）");
+ok(/lines: \[\]/.test(syncTitleSrc) && /prev\?\.title !== title/.test(syncTitleSrc),
+  "名字变化时只更新云端索引（lines: []），不重传正文");
+ok(/cloud-acct-card/.test(manageSrc) && /row\.title \|\| row\.id/.test(manageSrc),
+  "云管理面板与云账号页同卡皮肤，列表标题优先会话名");
+
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);
