@@ -22,6 +22,10 @@ export type WecomWebhookEvents = {
 
 export class WecomWebhookGateway {
   private webhookUrl = "";
+  /** 最近一次推送被企微接受的时间：webhook 是「一次性推送通道」，没有长连接可查，
+   *  所以「已接入」只能凭**真的发出去过**或**刚校验通过**来说（11-04 审查：旧写法只看 URL
+   *  正则过就报已接入 ⇒ key 被撤也常亮绿点） */
+  private lastGoodAt = 0;
   private events: WecomWebhookEvents;
 
   constructor(events: WecomWebhookEvents) {
@@ -37,31 +41,54 @@ export class WecomWebhookGateway {
       throw new Error("Webhook URL 格式不对（应为 https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=xxx，在企微群里「添加机器人」获取）");
     }
     // 用官方「模板卡片」太重，发一条 markdown 测试消息；webhook 无「查询」接口，发成功即有效
-    const res = await fetch(clean, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ msgtype: "markdown", markdown: { content: `**Codex Harness** 已接入本群（${new Date().toLocaleString("zh-CN")}）\n自动化任务结果与通知将推送到这里。` } }),
-      signal: AbortSignal.timeout(10_000),
-    }).then((r) => r.json()) as any;
+    const res = await this.post(clean, { msgtype: "markdown", markdown: { content: `**Codex Harness** 已接入本群（${new Date().toLocaleString("zh-CN")}）\n自动化任务结果与通知将推送到这里。` } });
     if (res.errcode !== 0) throw new Error(`Webhook 无效：${res.errmsg ?? JSON.stringify(res).slice(0, 120)}`);
     this.webhookUrl = clean;
+    this.lastGoodAt = Date.now();
     try { fs.mkdirSync(path.dirname(stateFilePath()), { recursive: true }); fs.writeFileSync(stateFilePath(), JSON.stringify({ webhookUrl: clean }, null, 2), "utf8"); } catch { /* 持久化失败不阻塞 */ }
-    this.log("info", "企业微信群机器人 Webhook 已接入");
+    this.log("info", "企业微信群机器人 Webhook 已接入（测试消息已送达）");
     return { ok: true, name: "企业微信群" };
+  }
+
+  /** 一次 webhook POST：⛔ 不许裸 `.then(r => r.json())` —— 代理返回 HTML 时抛的是英文
+   *  SyntaxError，会被原样贴给用户（11-04 审查，与 QQ/钉钉同族缺陷） */
+  private async post(url: string, payload: Record<string, unknown>): Promise<any> {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15_000),
+    });
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { errcode: response.status, errmsg: `响应不是 JSON（HTTP ${response.status}）：${text.slice(0, 80).replace(/\s+/g, " ") || "空响应"}` };
+    }
+  }
+
+  /** 按 **UTF-8 字节数**截断（企微 markdown 上限 4096 字节）。
+   *  ⛔ 旧写法按字符数算 3800 —— 中文一个字 3 字节，1500 字的答复就 ~4500 字节，
+   *  必被拒（errcode 40058），用户看到「推送失败」且原因不明（11-04 审查抓出）。 */
+  private clipByBytes(content: string, maxBytes: number): string {
+    if (Buffer.byteLength(content, "utf8") <= maxBytes) return content;
+    const suffix = "\n\n…（内容过长已截断）";
+    const budget = maxBytes - Buffer.byteLength(suffix, "utf8");
+    let cut = content;
+    while (Buffer.byteLength(cut, "utf8") > budget) cut = cut.slice(0, Math.max(0, Math.floor(cut.length * 0.9)));
+    return `${cut}${suffix}`;
   }
 
   /** 推送文本/markdown 到群；自动化任务结果通知走这里 */
   async sendMarkdown(content: string): Promise<void> {
     if (!this.webhookUrl) throw new Error("企微 Webhook 未连接");
-    // markdown 上限 4096 字节，超长截断（webhook 无分片消息，截断加省略标记）
-    const safe = content.length > 3800 ? content.slice(0, 3800) + "\n\n…（内容过长已截断）" : content;
-    const res = await fetch(this.webhookUrl, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ msgtype: "markdown", markdown: { content: safe } }),
-      signal: AbortSignal.timeout(15_000),
-    }).then((r) => r.json()) as any;
-    if (res.errcode !== 0) throw new Error(`企微推送失败：${res.errmsg ?? ""}`);
+    const safe = this.clipByBytes(content, 4096);
+    const res = await this.post(this.webhookUrl, { msgtype: "markdown", markdown: { content: safe } });
+    if (res.errcode !== 0) {
+      throw new Error(`企微推送失败（errcode ${res.errcode}）：${res.errmsg ?? "无描述"}（20 条/分钟超限会被限流；markdown 上限 4096 字节）`);
+    }
+    this.lastGoodAt = Date.now();
+    this.log("info", `企微已推送 ${safe.length} 字到群`);
   }
 
   async resume(): Promise<boolean> {
@@ -69,16 +96,20 @@ export class WecomWebhookGateway {
       const raw = JSON.parse(fs.readFileSync(stateFilePath(), "utf8"));
       if (raw.webhookUrl && /^https:\/\/qyapi\.weixin\.qq\.com/i.test(String(raw.webhookUrl))) {
         this.webhookUrl = String(raw.webhookUrl);
+        this.lastGoodAt = 0; // 重启后还没真发过，别拿上一轮的送达当证据
         return true;
       }
     } catch { /* 未配置 */ }
     return false;
   }
 
-  hasSession() { return Boolean(this.webhookUrl); }
+  /** 「已接入」= URL 在 **且** 本次进程里真的推送成功过（webhook 没有长连接可探活，
+   *  只看 URL 会把「key 已被撤」显示成正常接入 —— 11-04 审查） */
+  hasSession() { return Boolean(this.webhookUrl) && this.lastGoodAt > 0; }
 
   logout() {
     this.webhookUrl = "";
+    this.lastGoodAt = 0;
     try { fs.rmSync(stateFilePath(), { force: true }); } catch { /* 忽略 */ }
     this.log("info", "企微 Webhook 已解除绑定");
   }

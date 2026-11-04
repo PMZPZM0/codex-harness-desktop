@@ -10,7 +10,7 @@
 import { plainTextForChannel } from "../channel-text";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { app } from "electron";
-import { botStreamSessions, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qqReplyContexts, telegramBindings, telegramGateway, weixinBindings, weixinGateway, writeBotBindings } from "../features/im-gateways";
+import { botStreamSessions, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qqReplyContexts, telegramBindings, telegramGateway, weixinBindings, weixinGateway, weixinThreadChat, writeBotBindings } from "../features/im-gateways";
 import { readChannelBot } from "../main/04-connector-config";
 import { readCustomModel } from "../main/01-model-catalog";
 import { server } from "../runtime-refs";
@@ -19,13 +19,21 @@ import { ensureProjectAgentsMd } from "../project-conventions";
 import { isTurnEndMethod } from "../turn-end";
 
 /** 渠道入站共用的「回合结束」兜底代理：流式会话缺席时把最终正文投给用户。
- *  ⛔⛔ 四类结束事件都要摘除并投递 —— 只认 turn/completed 时，被中断 / 失败的回合
+ *  ⛔ 四类结束事件都要摘除并投递 —— 只认 turn/completed 时，被中断 / 失败的回合
  *  这个监听器**永远挂着**（泄漏）且渠道用户收不到任何下文（用户反馈截图正是它）。
- *  非正常结束时要**说明**：半截文本不标注会被当成完整回复。 */
-function onTurnDone(threadId: string, send: (text: string) => void) {
+ *  非正常结束时要**说明**：半截文本不标注会被当成完整回复。
+ *  返回 dispose：`turn/start` 抛错时调用方必须摘掉它，否则下一次该会话在**桌面端**跑完，
+ *  答复会被推给渠道用户（11-04 审查抓出的内容外泄路径）。 */
+function onTurnDone(threadId: string, send: (text: string) => void): () => void {
+  let armed = true;
+  const dispose = () => {
+    if (!armed) return;
+    armed = false;
+    server.off("event", proxy);
+  };
   const proxy = (event: any) => {
     if (event.kind !== "notification" || !isTurnEndMethod(event.method) || event.params?.threadId !== threadId) return;
-    server.off("event", proxy);
+    dispose();
     if (botStreamSessions.has(threadId)) return; // 流式会话负责最终回复
     const ok = event.method === "turn/completed";
     const finalText = [...(event.params?.turn?.items ?? [])].reverse().find((item: any) => item.type === "agentMessage")?.text ?? "";
@@ -35,13 +43,27 @@ function onTurnDone(threadId: string, send: (text: string) => void) {
     if (text.trim()) send(text);
   };
   server.on("event", proxy);
+  // TTL 兜底：结束事件形态不对时代理不会自己摘 ⇒ 30 分钟后强制失效（宁可少投一次，
+  // 也不能让「桌面端的答复被推给渠道」这种串台长期存在）
+  const ttl = setTimeout(dispose, 30 * 60_000);
+  ttl.unref?.();
+  return dispose;
 }
 
 export async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
   if (!weixinGateway) return;
+  // ⛔ 四步各留一行（与 QQ/飞书/钉钉同一口径，11-04 补齐）：旧写法全程只有 console.warn，
+  //   打包版 stdout 不可见 ⇒ 用户报「微信发了没反应」时，「事件没到 / 卡在配对 / 回合没跑完 /
+  //   回信失败」四种情况在日志里完全一样。
+  channelLog("info", `wechat 收到消息（聊天 ${String(message.from).slice(0, 8)}…，${message.text.length} 字）`);
   // 配对门卫（09-13）：未批准的聊天只有发对 6 位授权码才放行，其余消息只收到配对引导
   const gate = botPairing.onChannelMessage("wechat", message.from, `微信 ${message.from}`, message.text);
-  if (gate.action !== "allow") { await weixinGateway.sendText(message.from, gate.message).catch(() => undefined); return; }
+  if (gate.action !== "allow") {
+    channelLog("info", `wechat 配对判定 = ${gate.action}（未批准 ⇒ 只回引导，不进会话）`);
+    await weixinGateway.sendText(message.from, gate.message).catch((error: any) => channelLog("error", `wechat 引导语发送失败：${error?.message ?? error}`));
+    return;
+  }
+  let stopTurnWatch: (() => void) | null = null;
   try {
     const model = await readCustomModel();
     if (!model) { await weixinGateway.sendText(message.from, "请先在应用里配置模型再使用微信机器人。"); return; }
@@ -79,20 +101,35 @@ export async function handleWeixinMessage(message: { from: string; text: string;
       await writeBotBindings();
     }
     weixinBindings.set(message.from, threadId); // per-user 缓存：流式回复按 threadId 反查发送目标用
+    // ⛔ 同时记「这条线程是谁发起的」：渠道级绑定让所有微信用户共用同一 thread 时，
+    //    botStreamPlanFor 只按 weixinBindings 反查会拿到**别人的** from ⇒ 甲的问题回给乙
+    //    （11-04 审查抓出的串台）。回合发起处记的那条才是权威。
+    weixinThreadChat.set(threadId, message.from);
     // 微信回复需要 context_token。最终回复优先由 bot-stream 流式会话发出（含思考/工具同步、
     // 流式关闭时的整段发送）；会话未建成功（绑定竞态等）时这里兜底发最终正文。
     const from = message.from;
-    onTurnDone(threadId, (text) => weixinGateway?.sendText(from, text).catch((error) => console.warn("微信回信失败:", error.message)));
+    stopTurnWatch = onTurnDone(threadId, (text) => weixinGateway?.sendText(from, text).catch((error: any) => channelLog("error", `wechat 回信失败：${error?.message ?? error}`)));
+    channelLog("info", `wechat 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
     await server.request("turn/start", { threadId, input: [{ type: "text", text: `[微信用户] ${message.text}`, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
-    console.warn("微信消息处理失败:", error.message);
+    // ⛔ 起回合失败必须把结束监听摘掉：留着它，下次这一会话在**桌面端**跑完，
+    //    答复会被推到微信那个人的聊天框里（内容外泄，11-04 审查）
+    stopTurnWatch?.();
+    channelLog("error", `wechat 处理失败：${error?.message ?? error}`);
     weixinGateway.sendText(message.from, `处理失败：${error.message}`).catch(() => undefined);
   }
 }
 export async function handleTelegramMessage(message: { from: string; chatId: number; text: string }) {
+  // 四步日志（与微信/QQ 同口径，11-04 补齐）：旧写法全程零 channelLog，失败只把错误发回聊天
+  channelLog("info", `telegram 收到消息（聊天 ${String(message.chatId).slice(0, 8)}…，${message.text.length} 字）`);
   // 配对门卫（09-13）：同微信
   const gate = botPairing.onChannelMessage("telegram", String(message.chatId), `Telegram ${message.from}`, message.text);
-  if (gate.action !== "allow") { await telegramGateway.sendText(message.chatId, gate.message).catch(() => undefined); return; }
+  if (gate.action !== "allow") {
+    channelLog("info", `telegram 配对判定 = ${gate.action}（未批准 ⇒ 只回引导，不进会话）`);
+    await telegramGateway.sendText(message.chatId, gate.message).catch((error: any) => channelLog("error", `telegram 引导语发送失败：${error?.message ?? error}`));
+    return;
+  }
+  let stopTurnWatch: (() => void) | null = null;
   try {
     const model = await readCustomModel();
     if (!model) { await telegramGateway.sendText(message.chatId, "请先在应用里配置模型。"); return; }
@@ -125,9 +162,12 @@ export async function handleTelegramMessage(message: { from: string; chatId: num
     weixinBindings.set("tg:" + message.from, threadId); // per-user 缓存：流式回复按 threadId 反查发送目标用
     const chatId = message.chatId;
     telegramBindings.set(threadId, chatId); // bot-stream 会话按 threadId 反查渠道
-    onTurnDone(threadId, (text) => telegramGateway.sendText(chatId, text).catch(() => undefined));
+    stopTurnWatch = onTurnDone(threadId, (text) => telegramGateway.sendText(chatId, text).catch((error: any) => channelLog("error", `telegram 回信失败：${error?.message ?? error}`)));
+    channelLog("info", `telegram 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
     await server.request("turn/start", { threadId, input: [{ type: "text", text: message.text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
+    stopTurnWatch?.(); // ⛔ 起回合失败必须摘掉结束监听（否则下次该会话在桌面端跑完，答复被推到 Telegram）
+    channelLog("error", `telegram 处理失败：${error?.message ?? error}`);
     telegramGateway.sendText(message.chatId, `处理失败：${error.message}`).catch(() => undefined);
   }
 }
@@ -165,6 +205,7 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     await reply(gate.message);
     return;
   }
+  let stopTurnWatch: (() => void) | null = null;
   try {
     const model = await readCustomModel();
     if (!model) { await reply("请先在应用里配置模型。"); return; }
@@ -198,9 +239,12 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     channelThreadChat.set(threadId, chatId);
     // 「进会话了但没有回复」与「没进会话」是两种毛病 ⇒ 交接这一步必须有行可查
     channelLog("info", `${channel} 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
-    onTurnDone(threadId, (text) => void reply(text));
+    stopTurnWatch = onTurnDone(threadId, (text) => void reply(text));
     await server.request("turn/start", { threadId, input: [{ type: "text", text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
+    // ⛔ 起回合失败必须摘掉结束监听：留着它，下次这一会话在**桌面端**跑完，答复会被推给渠道
+    //    （11-04 审查抓出的内容外泄路径；QQ 那次「回合没跑完监听永远挂着」是同族问题）
+    stopTurnWatch?.();
     void reply(`处理失败：${error.message}`);
   }
 }

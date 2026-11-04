@@ -338,6 +338,8 @@ ok(/maxFlushes: 0/.test(gatewaysCode),
   "QQ 关掉中间进度推送（官方每条消息最多被动回复 4 次，且进度会把 Markdown 从中间切成半截气泡）");
 ok((gatewaysCode.match(/withStreamErrorLog\("/g) || []).length >= 5,
   `五个渠道的 sink 都接了失败上报（实测 ${((gatewaysCode.match(/withStreamErrorLog\("/g) || []).length)} 处）`);
+ok(/正文已发送（\$\{fullText\.length\} 字）/.test(gatewaysCode),
+  "⑧走 sink 直发的正文也要留成功行（否则日志停在「已交给会话」，与「没反应」长得一模一样）");
 
 // ---------- 三、扫码接入（qq-qr-connect）：首码必须在返回前落地 ----------
 /* 11-04 审查抓到：注释写着「qqQrStart 返回的快照就带 qr」，但代码是 void 异步任务 + 立刻

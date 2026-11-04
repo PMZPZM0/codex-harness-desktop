@@ -44,11 +44,14 @@ const botStreamSessions = new Map<string, BotStreamSession>();
 //  · Telegram：无配额限制（editMessageText 只改同一条），沿用原节流。
 const WEIXIN_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 5, flushIntervalMs: 3000, minChars: 40 };
 const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalMs: 1600, minChars: 0 };
-//  飞书：可发多条、限速宽松（单应用每分钟量级很高）⇒ 追加 4 条 + 收尾 1 条。
-//  钉钉：群 webhook **只能发新消息（无编辑）**，且限 20 条/分钟 ⇒ 追加 3 条、间隔 ≥5s，保守留余量。
-//  QQ：被动回复（msg_id）官方上限 5 次 ⇒ 追加 3 条 + 收尾 1 条 = 4 次，留 1 次余量。
-const FEISHU_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 4, flushIntervalMs: 4000, minChars: 60 };
-const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 5000, minChars: 60 };
+//  · 飞书 / 钉钉 / QQ（11-04 审查统一口径）：**一轮只发一条干净正文**（maxFlushes 0 + sink 不给
+//    append）。三条理由：① 三家的 append 都是把**未攒行的 delta** 直接发出去（微信有 carry 整行
+//    缓冲，它们没有）⇒ 表格行/代码围栏被切在半行，转换正则匹配不上，半截竖线与未闭合围栏原样上手机；
+//    ② 钉钉群 webhook 只能发新消息且限 20 条/分钟、QQ 被动回复每条消息上限 4 次 ⇒ 进度一开就吃掉
+//    正文的配额；③ 用户 11-04 对照截图点名「桌面整齐、QQ 好乱」——纯文本渠道堆进度气泡本身就是乱源。
+//    过程可见性留在桌面端（那边有完整实时视图）。
+const FEISHU_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs: 4000, minChars: 60 };
+const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs: 5000, minChars: 60 };
 // 官方硬限制：被动消息**每条用户消息最多回复 4 次**（且 msg_seq 必须递增）。
 // ⇒ QQ 关掉中间进度（maxFlushes 0，sink 也不提供 append），一条正文到位；微信/Telegram 没这个配额，不用照抄。
 const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs: 3000, minChars: 80 };
@@ -99,24 +102,17 @@ function stopWeixinTyping(threadId: string) {
   try { stop(); } catch { /* 忽略 */ }
 }
 
-/** 飞书 / 钉钉 / QQ 的追加式流式 sink（09-18 用户：「接上流式（按各渠道限制做）」）。
- *  三家都**不能编辑已发消息**（飞书 SDK 未暴露 message 更新、钉钉 webhook 只发新消息、
- *  QQ 被动回复只能逐条发），所以走与微信同款的「少量多次」追加语义：
- *  append = 发一条进度消息，finalizeAppend = 发收尾（完整正文尾部）；预算按各家频控设（见上）。
+/** 飞书 / 钉钉 / QQ 的 sink（09-18 接流式，11-04 审查统一为「一轮只发一条正文」）。
+ *  三家都**不能编辑已发消息**，而 append 语义发的是未攒行的 delta ⇒ 表格行与代码围栏会被切在
+ *  半行（微信 sink 有 carry 整行缓冲，这三家没有），加上钉钉 20 条/分、QQ 每条消息 4 次回复的
+ *  硬配额 —— 进度一开就把正文的份占掉。所以这里**只暴露 send**：bot-stream 的 finish() 会落到
+ *  `send(最终正文)`，一条干净答复到位（理由与判据见守卫【38】与 12av）。
  *  转换与微信一致：发送前统一过 plainTextForChannel（这三家也是纯文本消息类型）。 */
 function feishuStreamSink(chatId: string): BotStreamSink {
-  return {
-    append: (delta) => feishuGateway.sendMessage(chatId, plainTextForChannel(delta)),
-    finalizeAppend: (tail) => feishuGateway.sendMessage(chatId, plainTextForChannel(tail) || "（已完成）"),
-    send: (full) => feishuGateway.sendMessage(chatId, plainTextForChannel(full)),
-  };
+  return { send: (full) => feishuGateway.sendMessage(chatId, plainTextForChannel(full)) };
 }
 function dingtalkStreamSink(chatId: string): BotStreamSink {
-  return {
-    append: (delta) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(delta)),
-    finalizeAppend: (tail) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(tail) || "（已完成）"),
-    send: (full) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(full)),
-  };
+  return { send: (full) => dingtalkGateway.sendMessage(chatId, plainTextForChannel(full)) };
 }
 function qqStreamSink(chatId: string): BotStreamSink {
   // ctx 逐条现取：QQ 的被动回复凭据随每条入站消息刷新（msg_id 5 分钟内有效），
@@ -166,17 +162,29 @@ function telegramStreamSink(chatId: number): BotStreamSink {
 
 /** 某会话该用哪套流式方案：Telegram 用 replace 语义；微信 iLink 用 append + 严格预算。
  *  返回 null = 该会话不是渠道会话（渲染层自己的会话，不需要回推）。 */
-/** ⛔ 流式会话的发送失败必须回写渠道日志：sink 直接调各网关 sendMessage，绕过了 im-inbound 的
- *  reply()（那条才有日志）。11-04 的「正文永远不到」就是被这里静默吞掉的 —— 官方对重复
- *  msg_id+msg_seq 回的是 HTTP 200，不抛错也不落地，没日志等于查不到。 */
+/** ⛔ 流式会话的发送**成功与失败都要回写渠道日志**：sink 直接调各网关 sendMessage，绕过了
+ *  im-inbound 的 reply()（那边才有日志）。两个盲区都是这周实测踩出来的：
+ *  · 失败被吞 —— 官方对重复 msg_id+msg_seq 回 HTTP 200、不抛错也不落地，日志一片空白，
+ *    用户报「正文永远不到」时无从定性；
+ *  · 成功没行 —— 正文改走 sink 直发后，日志停在「已交给会话（回合开始）」再无下文，
+ *    和「没反应」长得一模一样（11-04 自查抓到自己刚制造的盲区）。 */
 function withStreamErrorLog(channel: string, sink: BotStreamSink): BotStreamSink {
   sink.onError = (where, error) => channelLog("error", `${channel} 流式${where}失败：${String((error as any)?.message ?? error).slice(0, 200)}`);
+  const sendOnce = sink.send;
+  sink.send = async (fullText: string) => {
+    await sendOnce(fullText);
+    channelLog("info", `${channel} 正文已发送（${fullText.length} 字）`);
+  };
   return sink;
 }
 
 function botStreamPlanFor(threadId: string): { sink: BotStreamSink; budget: BotStreamBudget; typingFrom?: string } | null {
   const tgChat = telegramBindings.get(threadId);
   if (tgChat != null) return { sink: withStreamErrorLog("telegram", telegramStreamSink(tgChat)), budget: TELEGRAM_STREAM_BUDGET };
+  // ⛔ 先认「这条线程是谁发起的」：渠道级绑定下所有微信用户共用一个 thread，
+  //    只按 weixinBindings 反查会拿到别人的 from ⇒ 甲的问题回给乙（11-04 审查）
+  const wxInitiator = weixinThreadChat.get(threadId);
+  if (wxInitiator) return { sink: withStreamErrorLog("微信", weixinStreamSink(wxInitiator)), budget: WEIXIN_STREAM_BUDGET, typingFrom: wxInitiator };
   for (const [user, bound] of weixinBindings) {
     if (bound !== threadId) continue;
     // ⛔ 键前缀区分渠道：飞书/钉钉/QQ 也用同一张绑定表（fs:/dd:/qq:），不加这个过滤
@@ -246,12 +254,17 @@ function botsFile(): string {
 
 const telegramGateway = new TelegramGateway({
   onMessage: (message) => void handleTelegramMessage(message),
-  log: (level, message) => {
-    channelLogs.push({ at: Date.now(), level, message });
-    sendToWindow("channel-bot:event", { level, message, at: Date.now(), status: channelBot.status() });
-  },
+  // ⛔ 必须走 channelLog（含 persistChannelLog）：旧写法只推内存与窗口事件，Telegram 的
+  //    「token 被撤 / 409 双实例轮询冲突 / sendMessage 被拒」只活 50 条且窗口没开就丢 ——
+  //    用户报「Telegram 没反应」时无从查起（微信 09-12 事故后统一落盘，这里当时漏了）。
+  log: channelLog,
 });
 const telegramBindings = new Map<string, number>();
+/** 微信：threadId → 发起这条会话的 from。
+ *  ⛔ 光靠 weixinBindings（from→thread）反查会串台：渠道级绑定让所有用户共用同一个 thread 时，
+ *  Map 里第一个匹配的键是谁全看插入顺序 ⇒ 甲的答复发给乙（11-04 审查抓出）。
+ *  发起回合的那条入站消息才是权威，所以在发起处记一份、反查时优先用它。 */
+const weixinThreadChat = new Map<string, string>();
 
 // ── 新增渠道（飞书/钉钉/QQ/企微Webhook）：统一走 handleChannelMessage 管线 ──
 function channelLog(level: "info" | "error", message: string) {
@@ -355,7 +368,7 @@ function recordQqContext(from: string, chatId: string, msgId: string, scene: "gr
 // 飞书官方扫码连接（Device Authorization Flow，复刻 ZCode）：扫码 → 飞书自动建应用并授权 → 凭据回传 → 复用 feishuGateway.connect
 
 // ponytail 技能包开关（写代码模式）：off 时钩子静默跳过，full 时注入精简工程规则
-export { WEIXIN_STREAM_BUDGET, TELEGRAM_STREAM_BUDGET, FEISHU_STREAM_BUDGET, DINGTALK_STREAM_BUDGET, QQ_STREAM_BUDGET, weixinStreamSink, weixinTypingStops, startWeixinTyping, stopWeixinTyping, feishuStreamSink, dingtalkStreamSink, qqStreamSink, telegramStreamSink, botStreamSessions, botStreamPlanFor, weixinBindings, telegramBindings, botBindingsFile, botBindingsLoaded, loadBotBindings, writeBotBindings, botsFile, channelBotBindings, channelLog, persistChannelLog, channelThreadChat, qqReplyContexts, qqLastMsgId, qqLastScene, recordQqContext, handleChannelAudioMessage, transcodeToWav16k, resolveFfmpegPath, weixinGateway, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway };
+export { WEIXIN_STREAM_BUDGET, TELEGRAM_STREAM_BUDGET, FEISHU_STREAM_BUDGET, DINGTALK_STREAM_BUDGET, QQ_STREAM_BUDGET, weixinStreamSink, weixinTypingStops, startWeixinTyping, stopWeixinTyping, feishuStreamSink, dingtalkStreamSink, qqStreamSink, telegramStreamSink, botStreamSessions, botStreamPlanFor, weixinBindings, weixinThreadChat, telegramBindings, botBindingsFile, botBindingsLoaded, loadBotBindings, writeBotBindings, botsFile, channelBotBindings, channelLog, persistChannelLog, channelThreadChat, qqReplyContexts, qqLastMsgId, qqLastScene, recordQqContext, handleChannelAudioMessage, transcodeToWav16k, resolveFfmpegPath, weixinGateway, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway };
 export type { BotChannelBinding };
 
 /** ⛔ weixinGateway 的唯一写入口：main.ts 的 bindBoot 注入 + 退出清理都会用到；

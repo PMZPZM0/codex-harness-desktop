@@ -893,18 +893,23 @@ export async function run() {
         : fail("【38】飞书/钉钉/QQ 回复没走排版转换 —— 表格在这些渠道同样是竖线堆");
       // 三渠道流式（09-18 用户：「接上流式（按各渠道限制做）」）：不能编辑消息 ⇒ 追加语义 + 按频控设预算
       // 11-04 更正两处：① 官方「被动消息每条用户消息最多回复 4 次」（旧注释写 ≤5 次记错了）；
-      // ② QQ 因此**关掉中间进度**（sink 只留一次性发送、预算 maxFlushes 0）——进度按时间切必然把
-      //    Markdown 从中间切断，实测用户截图：独立一条「**今晚」、独立一条「···」、思考稿混进正文。
+      // ② QQ/飞书/钉钉 一律**关掉中间进度**（maxFlushes 0 + sink 不给 append）：它们的 append 发的是
+      //    未攒行的 delta（微信 sink 有 carry 整行缓冲），表格行与代码围栏一定被切在半行 —— 实测用户
+      //    截图：独立一条「**今晚」、独立一条「···」、思考稿混进正文。微信保留追加（整行缓冲 + typing）。
       (/function feishuStreamSink\(/.test(mainSrc) && /function dingtalkStreamSink\(/.test(mainSrc) && /function qqStreamSink\(/.test(mainSrc)
-        && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 4/.test(mainSrc)
-        && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc)
+        && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc)
+        && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc)
         && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc))
-        ? ok("【38】飞书/钉钉有追加式流式 sink + 按频控设的预算；QQ 关掉进度（官方每条消息最多回复 4 次 ⇒ 一条正文到位）")
-        : fail("【38】三渠道流式 sink/预算缺失 —— 这几家仍只发最终汇总");
-      const qqSinkBody = mainSrc.slice(mainSrc.indexOf("function qqStreamSink("), mainSrc.indexOf("function qqStreamSink(") + 1400);
-      (!/append:/.test(qqSinkBody) && !/finalizeAppend:/.test(qqSinkBody) && /return \{ send: \(full\) => send\(full\) \};/.test(qqSinkBody))
-        ? ok("【38】QQ 的 sink 不提供 append/finalizeAppend（有就会被 bot-stream 当流式渠道切多条，排版必乱）")
-        : fail("【38】QQ 的 sink 又长出 append 了 —— 进度会把 Markdown 切成半截粗体多条气泡");
+        ? ok("【38】飞书/钉钉/QQ 都关掉中间进度（一条正文到位；钉钉 webhook 20 条/分、QQ 每条消息上限回复 4 次）")
+        : fail("【38】三渠道流式预算没按官方频控收敛 —— 进度气泡仍会把排版切坏、把配额吃光");
+      for (const sinkFn of ["feishuStreamSink", "dingtalkStreamSink", "qqStreamSink"]) {
+        const at = mainSrc.indexOf(`function ${sinkFn}(`);
+        const body = mainSrc.slice(at, at + 1400);
+        const end = body.indexOf("\n}");
+        const scoped = end > 0 ? body.slice(0, end) : body;
+        (!/append:/.test(scoped) && !/finalizeAppend:/.test(scoped) && /send: \(full\) =>/.test(scoped)
+          ? ok : fail)(`【38】${sinkFn} 只暴露 send（长出 append 就会被 bot-stream 当流式渠道切多条，半截 Markdown 直接上手机）`);
+      }
       (/channelBotBindings\[channel\]\?\.threadId !== threadId/.test(mainSrc)
         && /const chatId = channelThreadChat\.get\(threadId\)/.test(mainSrc)
         && /\^\(tg\|fs\|dd\|qq\|wecom\):/.test(mainSrc))

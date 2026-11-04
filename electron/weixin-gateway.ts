@@ -167,7 +167,13 @@ export class WeixinGateway {
 
   private dispatchInbound(msg: any) {
     const from = String(msg.from_user_id ?? "");
-    if (!from || msg.message_type === 2 /* BOT 自身 */) return;
+    // ⛔ 取不到发送者也要留一行（11-04 审查：旧写法直接 return，用户报「微信发了没反应」时
+    //   分不清是 iLink 没推、还是推了但字段名变了 —— 两种情况的修法完全不同）
+    if (!from) {
+      this.log("error", `微信事件取不到 from_user_id（收到的字段：${Object.keys(msg ?? {}).join("/") || "空"}）⇒ 无法回复`);
+      return;
+    }
+    if (msg.message_type === 2 /* BOT 自身 */) return;
     const text = (msg.item_list ?? []).filter((item: any) => item.type === 1 && item.text_item?.text).map((item: any) => item.text_item.text).join("\n").trim();
     if (msg.context_token) this.contextTokens.set(from, msg.context_token);
     if (!text) {
