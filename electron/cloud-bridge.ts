@@ -31,7 +31,8 @@ export type CloudBridgeOptions = {
 /* 账号站点白名单。自建部署换了域名时用 HARNESS_CLOUD_BRIDGE_ORIGINS 追加（逗号分隔）；
    ⛔ 默认只放官方账号站点 —— 别的网页连 CORS 预检都过不了。 */
 const ALLOWED_ORIGINS = (() => {
-  const list = ["https://ppz123.asia", "https://www.ppz123.asia", "http://ppz123.asia"];
+  /* ⛔ 只放 HTTPS：http 源可被同网段 MITM 冒充，等于把写端点交给攻击者。 */
+  const list = ["https://ppz123.asia", "https://www.ppz123.asia"];
   for (const entry of String(process.env.HARNESS_CLOUD_BRIDGE_ORIGINS || "").split(",")) {
     const origin = entry.trim().replace(/\/+$/, "");
     if (origin && !list.includes(origin)) list.push(origin);
