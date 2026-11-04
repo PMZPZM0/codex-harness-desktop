@@ -144,7 +144,8 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
  * ⛔ 保存走 appSettings:save —— 主进程会用新开关重写 config.toml 并重启引擎（MCP 只在 spawn 时读）。
  */
 function DesktopBackendOptions() {
-  const isMac = (window.codex as any)?.platform === "darwin";
+  // platform 是 preload 手写段直接挂的字段（不是 IPC 通道，不在生成类型面里）⇒ 按形状断言读，不写 any
+  const isMac = (window.codex as { platform?: string }).platform === "darwin";
   const [pref, setPref] = useState<{ nuphus: boolean; computerUse: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {

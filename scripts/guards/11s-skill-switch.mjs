@@ -118,7 +118,11 @@ ok(/outputStyleTargets\(codexHome\)/.test(codeOnly(skillDisciplineSrc)),
   "⛔⛔ devInstructionsInput 把生效风格接进组装输入（漏这行 = 开关只在磁盘上改名，指令永远不动）");
 ok(/if \(input\.outputStyles\?\.length\) text \+= OUTPUT_STYLE_INSTRUCTIONS\(input\.outputStyles\)/.test(codeOnly(devInstSrc)),
   "⛔ buildDevInstructions 真的消费 outputStyles（不是收下就丢）");
-ok(devInstSrc.indexOf("OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles)") < devInstSrc.indexOf("if (desktop) text += DESKTOP_INSTRUCTIONS"),
+/* 锚点跟 11-04 的「桌面后端双开关」改动走：DESKTOP_INSTRUCTIONS 常量改成了 desktopInstructions(平台, 开关)
+   函数调用。⛔ 两个锚点都必须找得到 —— 只比大小写时若一侧变成 -1，比较会静默变成恒真/恒假。 */
+const styleAt = devInstSrc.indexOf("OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles)");
+const desktopAt = devInstSrc.indexOf("text += desktopInstructions(");
+ok(styleAt >= 0 && desktopAt >= 0 && styleAt < desktopAt,
   "⛔ 风格段排在工具箱说明**之前**（排在一长串工具说明后面会被当成又一条可选建议）");
 /* 10-06 追加：风格段必须自证"这不是技能调用"。实测背景：指令只写「读 SKILL.md 并按它写」时，
    模型会把这次读文件当成"用了一个技能"，在回复末尾报出 🧩 技能台账行 —— 用户因此追问了一轮

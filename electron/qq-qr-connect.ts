@@ -118,6 +118,10 @@ export async function qqQrStart(
   snapshot = { state: "waiting" };
   abortController = new AbortController();
   const signal = abortController.signal;
+  /** 首码就绪信号：渲染完（或这一轮直接失败）才让 qqQrStart 返回。
+   *  没有它就要等前端下一次轮询（1.5s）才拿到码 —— 用户看到的是「点开就转圈」。 */
+  let settleFirstQr: () => void = () => {};
+  const firstQr = new Promise<void>((resolve) => { settleFirstQr = resolve; });
 
   const finish = () => {
     stopFn?.();
@@ -127,6 +131,7 @@ export async function qqQrStart(
 
   const fail = (message: string) => {
     if (snapshot.state === "waiting") snapshot = { state: "failed", error: message };
+    settleFirstQr();
     finish();
   };
 
@@ -152,6 +157,7 @@ export async function qqQrStart(
     // 首码等待渲染完成再进入轮询：qqQrStart 返回的快照就能带上 qr，
     // 前端不会卡在无码转圈（此前 emitQr 异步渲染慢于 return snapshot，竞态）。
     await emitQr(buildConnectUrl(task.taskId));
+    settleFirstQr();
     for (;;) {
       if (signal.aborted) return true;
       let json: any;
@@ -198,6 +204,10 @@ export async function qqQrStart(
       if (done) return;
     }
   })();
+  // ⛔ 等首码落地再返回：此前这里直接 return，注释说的「qqQrStart 的快照就带 qr」其实是假的
+  //    ——异步任务刚跑到 createBindTask 就挂起，前端只能空转一轮（1.5s）才看到码。
+  //    兜 8s 上限：q.qq.com 不通时也要立刻把「失败/等待」态交给界面，不许挂死。
+  await Promise.race([firstQr, sleep(8000, signal)]);
   return snapshot;
 }
 
