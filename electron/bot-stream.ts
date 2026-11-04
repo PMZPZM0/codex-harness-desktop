@@ -48,6 +48,9 @@ export type BotStreamSink = {
   finalizeReplace?: (fullText: string) => Promise<void>;
   /** 非流式：整段一次性发送 */
   send: (fullText: string) => Promise<void>;
+  /** ⛔ 发送失败必须能上报（11-04 实测：QQ 正文被官方当「重复 msg_id+msg_seq」丢弃，
+   *  而收尾的 catch 把它吞了 ⇒ 用户只看到进度气泡、日志一个字没有） */
+  onError?: (where: string, error: unknown) => void;
 };
 
 const APPEND_FLUSH_INTERVAL_MS = 1500;
@@ -242,10 +245,13 @@ export class BotStreamSession {
       this.flushedLen = this.composed.length;
       this.flushes += 1;
       this.lastFlushAt = Date.now();
-    } catch {
+    } catch (error) {
       // state=1 追加不被协议支持等：连续失败 2 次停用追加，未发内容收尾时整段补发
       this.appendFailures += 1;
-      if (this.appendFailures >= 2) this.sink.append = undefined;
+      if (this.appendFailures >= 2) {
+        this.sink.append = undefined;
+        this.sink.onError?.("进度推送（已停用，正文改一次性发送）", error);
+      }
     } finally {
       this.flushBusy = false;
     }
@@ -298,6 +304,10 @@ export class BotStreamSession {
         return;
       }
       if (text) await this.sink.send(text);
-    } catch { /* 回复失败不影响主流程 */ }
+    } catch (error) {
+      // ⛔ 不许静默：正文就是在这里被吞掉的（官方对重复 msg_id+msg_seq 回 HTTP 200 但不落地，
+      //    我们这边连一次失败记录都没有 ⇒「有进度气泡、没正文」查不出来）
+      this.sink.onError?.("最终回复", error);
+    }
   }
 }

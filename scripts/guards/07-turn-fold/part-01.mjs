@@ -880,11 +880,13 @@ export async function run() {
         ? ok("【38】飞书/钉钉/QQ 回复漏斗也走排版转换（三渠道都是纯文本消息类型）")
         : fail("【38】飞书/钉钉/QQ 回复没走排版转换 —— 表格在这些渠道同样是竖线堆");
       // 三渠道流式（09-18 用户：「接上流式（按各渠道限制做）」）：不能编辑消息 ⇒ 追加语义 + 按频控设预算
+      // 11-04 更正 QQ 上限：官方「发送单聊/群聊消息」写明**被动消息每条用户消息最多回复 4 次**
+      // （旧注释写 ≤5 次是记错了），而正文收尾必须占一次 ⇒ 进度推送压到 2 次，留一条余量。
       (/function feishuStreamSink\(/.test(mainSrc) && /function dingtalkStreamSink\(/.test(mainSrc) && /function qqStreamSink\(/.test(mainSrc)
         && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 4/.test(mainSrc)
         && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc)
-        && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc))
-        ? ok("【38】飞书/钉钉/QQ 都有追加式流式 sink + 按频控设的预算（钉钉 webhook 20 条/分、QQ 被动回复 ≤5 次）")
+        && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 2/.test(mainSrc))
+        ? ok("【38】飞书/钉钉/QQ 都有追加式流式 sink + 按频控设的预算（钉钉 webhook 20 条/分、QQ 被动回复每条消息上限 4 次 ⇒ 进度只占 2 次）")
         : fail("【38】三渠道流式 sink/预算缺失 —— 这几家仍只发最终汇总");
       (/channelBotBindings\[channel\]\?\.threadId !== threadId/.test(mainSrc)
         && /const chatId = channelThreadChat\.get\(threadId\)/.test(mainSrc)

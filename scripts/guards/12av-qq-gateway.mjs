@@ -116,6 +116,18 @@ if (!existsSync(artifact)) {
   }
   ok(/40034005/.test(failMsg) && /msg_id已过期/.test(failMsg),
     `失败按 err_code 判定并回显官方原文${failMsg ? `（实测：${failMsg.slice(0, 60)}…）` : "（未抛异常）"}`);
+
+  // ①′ msg_seq：官方「相同的 msg_id + msg_seq 重复发送会失败」（不传默认 1）
+  //      ⇒ 不递增就是「进度气泡发得出去、正文永远不到」（11-04 用户实测「没输出正文」的真因）
+  const seqFrom = calls.length;
+  for (let i = 0; i < 5; i++) await httpGateway.sendMessage("SEQID", `第${i + 1}条`, { msgId: "MSG-SAME", scene: "c2c" });
+  const seqBodies = calls.slice(seqFrom).map((c) => c.body);
+  ok(seqBodies[0]?.msg_seq === 1 && seqBodies[1]?.msg_seq === 2 && seqBodies[2]?.msg_seq === 3,
+    `同一条消息的连续回复带递增 msg_seq（实测 ${seqBodies.map((b) => b?.msg_seq).join(",")}；旧写法根本不传 ⇒ 第 2 条起被官方静默丢弃）`);
+  ok(seqBodies.slice(0, 4).every((b) => b?.msg_id === "MSG-SAME"),
+    "前 4 次保持被动回复（官方：每条用户消息最多回复 4 次）");
+  ok(seqBodies[3]?.msg_seq === 4 && seqBodies[4] && !("msg_id" in seqBodies[4]) && !("msg_seq" in seqBodies[4]),
+    `第 5 次起摘掉 msg_id 转主动消息（实测第 5 条请求体：${JSON.stringify(seqBodies[4] ?? {}).slice(0, 90)}）`);
   ok(calls.every((c) => c.url.startsWith("https://api.bot.qq.com/")), "token/gateway/消息同走 api.bot.qq.com");
 
   // ② 鉴权被拒（文档：4014 intent 无权限，不可重试）：当场失败、给原因、不落盘
@@ -222,6 +234,23 @@ if (!existsSync(artifact)) {
   gateway.logout();
   ok(!existsSync(accountFile), "解绑清除落盘账号");
 
+  // ⑧ 流式收尾失败必须上报（11-04 的「正文永远不到」就是被 bot-stream 的 `catch {}` 吞掉的：
+  //     官方对重复 msg_id+msg_seq 回 HTTP 200、不抛错也不落地，没日志等于查不到）
+  const { BotStreamSession } = require_(join(ROOT, "dist-electron", "bot-stream.js"));
+  const streamErrors = [];
+  const streamSession = new BotStreamSession(
+    {
+      send: async () => { throw new Error("模拟官方拒绝：相同 msg_id+msg_seq 重复发送"); },
+      onError: (where, err) => streamErrors.push(`${where}|${String(err?.message ?? err)}`),
+    },
+    { enabled: false, thinking: true, tools: true },
+    { maxFlushes: 2, flushIntervalMs: 3000, minChars: 80 },
+  );
+  streamSession.handle("turn/completed", { threadId: "T1", turn: { items: [{ type: "agentMessage", text: "这是正文" }] } });
+  await sleep(150);
+  ok(streamErrors.length === 1 && /最终回复/.test(streamErrors[0]),
+    `⑧收尾发送失败必须回调 onError（实测 ${JSON.stringify(streamErrors).slice(0, 110)}）`);
+
   globalThis.fetch = realFetch;
   await new Promise((resolve) => server.close(resolve));
 }
@@ -280,6 +309,17 @@ ok(/private isDuplicate\(msgId: string\)/.test(code)
   && code.indexOf("this.isDuplicate(msgId)") < code.indexOf("this.events.onMessage"),
   "⑦重复推送在进入上层之前就被拦掉（官方：相同 msg_id 可能重复推送，不去重 = 回复两遍）");
 ok(/this\.seenMsgIds\.clear\(\);/.test(code), "解绑清空判重表（换机器人不该受上一台的历史影响）");
+
+/* ⑧ 流式回推的失败面（bot-stream + im-gateways）：正文经 sink 直发，绕过 im-inbound 的 reply()，
+   所以这两处必须自己把失败喊出来。 */
+const botStreamCode = stripComments(readFileSync(join(ROOT, "electron", "bot-stream.ts"), "utf8"));
+const gatewaysCode = stripComments(readFileSync(join(ROOT, "electron", "features", "im-gateways.ts"), "utf8"));
+ok(/this\.sink\.onError\?\.\("最终回复", error\);/.test(botStreamCode) && !/catch \{ \/\* 回复失败不影响主流程 \*\/ \}/.test(botStreamCode),
+  "⑧收尾发送失败回调 onError（旧的 `catch {}` 把正文失败吞成静默，用户只看到进度气泡）");
+ok(/进度推送（已停用/.test(botStreamCode), "⑧进度推送连续失败停用时也上报（之后靠收尾补发，要知道发生过）");
+ok(/maxFlushes: 2/.test(gatewaysCode), "QQ 进度推送上限 2 次（官方每条消息最多回复 4 次 ⇒ 必须给正文和余量留位）");
+ok((gatewaysCode.match(/withStreamErrorLog\("/g) || []).length >= 5,
+  `五个渠道的 sink 都接了失败上报（实测 ${((gatewaysCode.match(/withStreamErrorLog\("/g) || []).length)} 处）`);
 
 // ---------- 三、扫码接入（qq-qr-connect）：首码必须在返回前落地 ----------
 /* 11-04 审查抓到：注释写着「qqQrStart 返回的快照就带 qr」，但代码是 void 异步任务 + 立刻

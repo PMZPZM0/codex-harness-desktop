@@ -49,7 +49,9 @@ const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalM
 //  QQ：被动回复（msg_id）官方上限 5 次 ⇒ 追加 3 条 + 收尾 1 条 = 4 次，留 1 次余量。
 const FEISHU_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 4, flushIntervalMs: 4000, minChars: 60 };
 const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 5000, minChars: 60 };
-const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 3000, minChars: 80 };
+// 官方硬限制：被动消息**每条用户消息最多回复 4 次**（且 msg_seq 必须递增）。
+// ⇒ QQ 的进度推送最多 2 次，留够「正文收尾 + 一条余量」；微信/Telegram 没这个配额，不用照抄。
+const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 2, flushIntervalMs: 3000, minChars: 80 };
 
 function weixinStreamSink(from: string): BotStreamSink {
   // 09-18 修正：此前**整体撤掉了微信流式**，依据是 09-12 的结论「iLink 的 context_token 实测一次一发」。
@@ -161,15 +163,23 @@ function telegramStreamSink(chatId: number): BotStreamSink {
 
 /** 某会话该用哪套流式方案：Telegram 用 replace 语义；微信 iLink 用 append + 严格预算。
  *  返回 null = 该会话不是渠道会话（渲染层自己的会话，不需要回推）。 */
+/** ⛔ 流式会话的发送失败必须回写渠道日志：sink 直接调各网关 sendMessage，绕过了 im-inbound 的
+ *  reply()（那条才有日志）。11-04 的「正文永远不到」就是被这里静默吞掉的 —— 官方对重复
+ *  msg_id+msg_seq 回的是 HTTP 200，不抛错也不落地，没日志等于查不到。 */
+function withStreamErrorLog(channel: string, sink: BotStreamSink): BotStreamSink {
+  sink.onError = (where, error) => channelLog("error", `${channel} 流式${where}失败：${String((error as any)?.message ?? error).slice(0, 200)}`);
+  return sink;
+}
+
 function botStreamPlanFor(threadId: string): { sink: BotStreamSink; budget: BotStreamBudget; typingFrom?: string } | null {
   const tgChat = telegramBindings.get(threadId);
-  if (tgChat != null) return { sink: telegramStreamSink(tgChat), budget: TELEGRAM_STREAM_BUDGET };
+  if (tgChat != null) return { sink: withStreamErrorLog("telegram", telegramStreamSink(tgChat)), budget: TELEGRAM_STREAM_BUDGET };
   for (const [user, bound] of weixinBindings) {
     if (bound !== threadId) continue;
     // ⛔ 键前缀区分渠道：飞书/钉钉/QQ 也用同一张绑定表（fs:/dd:/qq:），不加这个过滤
     //    它们会被微信分支截胡 → 用微信网关去发飞书消息（09-18 加三渠道流式时差点踩）。
     if (/^(tg|fs|dd|qq|wecom):/.test(user)) continue;
-    return { sink: weixinStreamSink(user), budget: WEIXIN_STREAM_BUDGET, typingFrom: user };
+    return { sink: withStreamErrorLog("微信", weixinStreamSink(user)), budget: WEIXIN_STREAM_BUDGET, typingFrom: user };
   }
   // 飞书 / 钉钉 / QQ（09-18 用户：接上流式，按各渠道限制做）：绑定表按渠道存 threadId，
   // 聊天 ID 在回合发起时记进 channelThreadChat（回复凭据随之刷新）。
@@ -177,9 +187,9 @@ function botStreamPlanFor(threadId: string): { sink: BotStreamSink; budget: BotS
     if (channelBotBindings[channel]?.threadId !== threadId) continue;
     const chatId = channelThreadChat.get(threadId);
     if (!chatId) continue;
-    if (channel === "feishu") return { sink: feishuStreamSink(chatId), budget: FEISHU_STREAM_BUDGET };
-    if (channel === "dingtalk") return { sink: dingtalkStreamSink(chatId), budget: DINGTALK_STREAM_BUDGET };
-    if (qqReplyContexts.has(chatId)) return { sink: qqStreamSink(chatId), budget: QQ_STREAM_BUDGET };
+    if (channel === "feishu") return { sink: withStreamErrorLog("feishu", feishuStreamSink(chatId)), budget: FEISHU_STREAM_BUDGET };
+    if (channel === "dingtalk") return { sink: withStreamErrorLog("dingtalk", dingtalkStreamSink(chatId)), budget: DINGTALK_STREAM_BUDGET };
+    if (qqReplyContexts.has(chatId)) return { sink: withStreamErrorLog("qq", qqStreamSink(chatId)), budget: QQ_STREAM_BUDGET };
   }
   return null;
 }
