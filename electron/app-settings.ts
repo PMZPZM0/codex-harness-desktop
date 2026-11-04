@@ -34,6 +34,9 @@ export type AppSettings = {
    *  ⛔ 关掉 nuphus 只掩桌面组（浏览器组保留）；关掉 computer-use 就不注册它的 MCP 段。 */
   desktopBackendNuphus?: boolean;
   desktopBackendComputerUse?: boolean;
+  /** 云会话自动同步范围（11-04）：上次手动勾选上传的**会话 id**。
+   *  空/缺省 = **不自动上传** —— 先让用户明确选一次；之后后台只保持这些会话的增量同步。 */
+  cloudSyncIds?: string[];
   engineWatchdog?: boolean;
   /** 功能入口（10-24）：位置 / 顺序 / 更多分组。渲染层 localStorage 只是缓存，
    *  这里才是重启后的回灌源（强制结束进程时 localStorage 最后写入可能丢）。 */

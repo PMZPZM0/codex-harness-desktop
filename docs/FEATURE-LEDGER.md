@@ -604,3 +604,5 @@
 | 2026-11-04 | 审查修正：云管理筛选/批量与桥请求体 | 修复 | `CloudManageSection.tsx`、`electron/cloud-bridge.ts`、守卫 12q | ① 搜索/项目筛选变化时清空已选，避免批量下载/删除作用到被隐藏的会话；② 本机桥 `sync-pull` 请求体超 64KB 返回 413（原先截断后按空 body 拉全部）。验证：build + 12q 93/93；真云账号端到端（Codex Harness 上传 1 会话 / 2 行 → 云端索引标题正确 → 删本地 → 下载回来内容一致 → 清理；PPcode 同流程通过）。 | 本轮 |
 
 | 2026-11-04 | 云同步：先列会话再选传 + 删除确认 + 来源分类 | 改动 | `cloud-sync.ts`、`cloud-reserve-ipc.ts`、`cloud-bridge.ts`、`SessionSyncDialog.tsx`、`CloudManageSection.tsx`、`thread-attention-rows.tsx`、`cloud/web/account.html`、守卫 12q | 用户令「先检测出来会话，弹窗显示，再确定要上传哪些；要考虑专家团/中枢/带调度；删除都要弹窗，云管理和本地都一样」。① 上传前弹窗列本地会话，按 主会话/指挥中枢/专家团主理人/专家团调度/团队成员/专家调度/子智能体/CLI/群成员 分组，默认只勾主会话/中枢/主理人/专家团调度，可搜索/分组勾选；只提交勾选的 ids（主进程按 ids 过滤，不再全量瞎传）；② 每行显示已传/新增行数；③ 云端删除（单条/批量/按项目）改模态确认；④ 侧栏本地删除会话也加确认弹窗。验证：真云账号（2 条合成会话，只勾 1 条 → 云端只有 1 条 → 下载回来 → 清理）；网页 mock 分组/默认勾选/上传 2 条；弹窗截图。 | 本轮 |
+
+| 2026-11-04 | 自动同步改为跟随上次勾选的会话 | 修复 | `electron/app-settings.ts`、`cloud-reserve-ipc.ts`、`SessionSyncDialog.tsx`、`CloudManageSection.tsx`、守卫 12q | 手选上传成功后把勾选的会话 id 写进 app-settings（`cloudSyncIds`），后台 30s/5min 自动同步只保持这些会话的增量；**没选过 = 不上传**。避免「手选了一条，5 分钟后调度/成员会话又被全量传上去」。验证：真云账号（手选 A → 自动同步无 ids → B 未上传，云端只有 A → 清理）。 | 本轮 |

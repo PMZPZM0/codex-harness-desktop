@@ -524,6 +524,9 @@ ok(/openAppConfirm/.test(threadRowsSrc) && /deleteThread\(entry\.id\)/.test(thre
 const bridgeSrc2 = codeOnly(read("electron/cloud-bridge.ts"));
 ok(/\/api\/sync-sessions/.test(bridgeSrc2) && /listSessions/.test(bridgeSrc2) && /syncNow: \(ids\?/.test(bridgeSrc2),
   "本机桥暴露本地会话列表，sync-now 支持只传勾选的 ids");
+const appSettingsSrc = codeOnly(read("electron/app-settings.ts"));
+ok(/cloudSyncIds/.test(appSettingsSrc) && /cloudSyncIds/.test(reserveSrc3) && /readAppSettingsSync/.test(reserveSrc3),
+  "后台自动同步只跑上次勾选的会话（没选过不上传）");
 
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);

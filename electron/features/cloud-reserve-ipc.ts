@@ -33,6 +33,7 @@ import { accountsBase, activeCredential } from "../cloud-api";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, listLocalSessions } from "../cloud-sync";
 import { delegateRegistry, teamRunStore } from "../runtime-refs";
 import { bossStore } from "../boss-groups/store";
+import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import type { IpcHost } from "../ipc-host";
 import { guardedFetch } from "../net-guard";
 
@@ -199,7 +200,15 @@ export const cloudReserveFeature = defineFeature<null>({
         return serialized(() => runCloudSyncOnce(syncDeps(), { onlyIds }).catch(() => null));
       }
       if (syncInFlight) return syncInFlight;
-      syncInFlight = serialized(() => runCloudSyncOnce(syncDeps()).catch(() => null)).finally(() => { syncInFlight = null; });
+      /* 后台自动同步只跑「上次手动勾选过的会话」—— 没选过就一条都不传（用户令：先选再传，不许瞎传）。 */
+      syncInFlight = serialized(async () => {
+        const scope = new Set(readAppSettingsSync(app.getPath("userData")).cloudSyncIds || []);
+        if (!scope.size) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
+        const sessions = await listSessions();
+        const ids = sessions.filter((row) => scope.has(row.id)).map((row) => row.id);
+        if (!ids.length) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
+        return runCloudSyncOnce(syncDeps(), { onlyIds: ids });
+      }).catch(() => null).finally(() => { syncInFlight = null; });
       return syncInFlight;
     };
     const firstAutoSync = setTimeout(() => { void syncNow(); }, 30_000);
@@ -259,6 +268,12 @@ export const cloudReserveFeature = defineFeature<null>({
       try {
         const r = await syncNow(ids);
         if (!r) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
+        if (r.ok) {
+          /* 记住这次勾选的**会话**：后台自动同步以后只保持这些会话的增量同步，不再全量瞎传。 */
+          try {
+            await saveAppSettings(app.getPath("userData"), { cloudSyncIds: ids });
+          } catch { /* 设置写失败不影响本次上传 */ }
+        }
         return r.ok
           ? { ok: true, reserved: false, pushedSessions: r.pushedSessions, pushedLines: r.pushedLines }
           : { ok: false, reserved: false, code: r.reason || "sync-failed", error: r.reason === "not-paired" ? "未登录云账号" : (r.reason || "上传失败") };

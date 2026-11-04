@@ -191,7 +191,7 @@ export function CloudManageSection() {
         <div className="cloud-acct-head cloud-sync-manage-head">
           <Cloud size={16} />
           <strong>云管理</strong>
-          <span className="cloud-acct-sub">云端会话 · 每 5 分钟自动同步</span>
+          <span className="cloud-acct-sub">云端会话 · 自动保持上次勾选的会话</span>
           <span className="cloud-sync-manage-head-actions">
             <button type="button" className="secondary-setting" disabled={busy === "load"} onClick={() => { setBusy("load"); void refresh().finally(() => setBusy("")); }}>
               <RefreshCw size={13} />刷新
@@ -271,7 +271,7 @@ export function CloudManageSection() {
 
         <div className="cloud-sync-manage-list">
           {busy === "load" && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>正在读取云端会话…</p> : null}
-          {!busy && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>云端还没有会话。点「选择会话上传」挑要传的会话（之后每 5 分钟自动同步一次）。</p> : null}
+          {!busy && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>云端还没有会话。点「选择会话上传」挑要传的会话（勾选过一次后，后台自动保持这些会话的增量同步）。</p> : null}
           {rows.length ? (
             <div className="cloud-sync-manage-row cloud-sync-manage-row-head">
               <input type="checkbox" aria-label="全选云端会话" checked={allPicked} onChange={toggleAll} />
