@@ -25,14 +25,15 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const src = readFileSync(join(ROOT, "electron", "qq-gateway.ts"), "utf8");
 /** ⛔ 负向断言必须先剥注释：注释里原样写着旧地址、旧字段名与 `1 << 12`，裸正则必假红 */
-const code = src
+const stripComments = (s) => s
   .replace(/\/\*[\s\S]*?\*\//g, "")
   .split(/\r?\n/)
   .filter((line) => !/^\s*\/\//.test(line))
   .map((line) => line.replace(/\s\/\/[^'"`]*$/, ""))
   .join("\n");
+const src = readFileSync(join(ROOT, "electron", "qq-gateway.ts"), "utf8");
+const code = stripComments(src);
 
 let checks = 0;
 let fails = 0;
@@ -54,6 +55,7 @@ if (!existsSync(artifact)) {
 
   const calls = [];
   const identifyFrames = [];
+  let lastSock = null;
   let wsUrl = "";
   /** 鉴权通过回执（文档「WebSocket 方式」的 Ready Event 形态） */
   const READY_FRAME = JSON.stringify({ op: 0, s: 1, t: "READY", d: { session_id: "s1", user: { id: "1" } } });
@@ -84,6 +86,7 @@ if (!existsSync(artifact)) {
   await new Promise((resolve) => server.once("listening", resolve));
   wsUrl = `ws://127.0.0.1:${server.address().port}/websocket`;
   server.on("connection", (sock) => {
+    lastSock = sock;
     sock.send(JSON.stringify({ op: 10, d: { heartbeat_interval: 45_000 } }));
     sock.on("message", (raw) => {
       let frame;
@@ -133,7 +136,8 @@ if (!existsSync(artifact)) {
   identifyFrames.length = 0;
   identifyReply = "hold";
   const logs = [];
-  const gateway = new QqGateway({ onMessage: () => undefined, log: (_l, m) => logs.push(m) });
+  const inbound = [];
+  const gateway = new QqGateway({ onMessage: (m) => inbound.push(m), log: (_l, m) => logs.push(m) });
   let connectResolved = false;
   let connectError = "";
   const connectPromise = gateway.connect("100000", "secret-ok").then(
@@ -158,6 +162,40 @@ if (!existsSync(artifact)) {
     `收到 READY 后 connect 才成功且 hasSession 为真${connectError ? `（实测：${connectError.slice(0, 70)}）` : ""}`);
   ok(logs.some((m) => /正在建立长连接/.test(m)) && logs.some((m) => /READY/.test(m)) && logs.some((m) => /已连接/.test(m)),
     "日志三段式：正在建立长连接 → READY → 已连接（旧写法在鉴权前就报已连接）");
+  // ⑤ 入站事件真跑一遍（用户报「发消息没反应」——这一段决定能不能分清「平台没推」与「我们没接」）
+  lastSock?.send(JSON.stringify({
+    op: 0, s: 2, t: "GROUP_AT_MESSAGE_CREATE",
+    d: { id: "MSG-1", group_openid: "GROUP-OPENID-ABCDEFG", content: "@测试机器人 今天天气怎么样", author: { member_openid: "USER-1" } },
+  }));
+  for (let i = 0; i < 40 && inbound.length === 0; i++) await sleep(25);
+  ok(inbound.length === 1, `群聊@事件确实交给上层（实测 ${inbound.length} 条）`);
+  const got = inbound[0] ?? {};
+  ok(got.scene === "group" && got.chatId === "GROUP-OPENID-ABCDEFG" && got.msgId === "MSG-1"
+    && got.text === "今天天气怎么样",
+    `解析出的字段对（scene/chatId/msgId + 去掉 @ 后的正文：实测 "${got.text}" / ${got.scene} / ${got.chatId}）`);
+  ok(logs.some((m) => /收到 QQ 群聊@消息/.test(m)),
+    "⑤事件到达必须留一行日志（没这行时「没反应」无法定性：用户 11-04 就撞在这上面）");
+  lastSock?.send(JSON.stringify({
+    op: 0, s: 3, t: "C2C_MESSAGE_CREATE",
+    d: { id: "MSG-2", user_openid: "USER-OPENID-XYZ", content: "@测试机器人", author: { user_openid: "USER-2" } },
+  }));
+  await sleep(200);
+  ok(logs.some((m) => /没有可用文本/.test(m)) && inbound.length === 1,
+    "⑤只有 @ 的事件：明确记「没有可用文本 ⇒ 不回复」，且不进上层（⛔ 不许静默丢弃）");
+  // `<@!openid>` 是 QQ 另一种 @ 写法：旧正则只剥 `@名字`，这种会残留一个 `<` 当正文送进模型
+  lastSock?.send(JSON.stringify({
+    op: 0, s: 4, t: "GROUP_AT_MESSAGE_CREATE",
+    d: { id: "MSG-3", group_openid: "GROUP-OPENID-ABCDEFG", content: "<@!123456>", author: { member_openid: "USER-3" } },
+  }));
+  await sleep(200);
+  ok(inbound.length === 1, `⑤「<@!openid>」形式的纯 @ 也不进上层（实测 ${inbound.length} 条；旧剥法会漏一个 "<" 当正文）`);
+  lastSock?.send(JSON.stringify({
+    op: 0, s: 5, t: "GROUP_AT_MESSAGE_CREATE",
+    d: { id: "MSG-4", group_openid: "GROUP-OPENID-ABCDEFG", content: "<@!123456> 帮我查一下", author: { member_openid: "USER-4" } },
+  }));
+  for (let i = 0; i < 40 && inbound.length < 2; i++) await sleep(25);
+  ok(inbound[1]?.text === "帮我查一下",
+    `⑤带正文的「<@!openid> 正文」剥干净（实测 "${inbound[1]?.text ?? ""}"）`);
   // ⛔ 认「带 AppID 的那次 token 请求」：前面 sendMessage 用例的实例没填凭据，找错对象会读到老请求
   const tokenCall = calls.find((c) => c.url.includes("getAppAccessToken") && c.body?.appId);
   ok(tokenCall?.body?.appId === "100000" && !("appID" in (tokenCall?.body ?? {})),
@@ -230,8 +268,19 @@ ok(runOnceBody.indexOf("settleFirstQr()") > runOnceBody.indexOf("await emitQr(bu
   "首码渲染完成后才放行 firstQr（渲染前就 return 等于没等）");
 ok(/const fail = \(message: string\) => \{[\s\S]{0,200}?settleFirstQr\(\);/.test(startBody),
   "建任务/绑定失败也要放行 firstQr（⛔ 否则失败态把 qqQrStart 卡到 8s 兜底才回）");
-ok(/status === 2/.test(qrCode) && /status === 3/.test(qrCode) && /create_bind_task/.test(qrCode) && /poll_bind_result/.test(qrCode),
+ok(/扫码协议两端仍在/.test("") === false && /status === 2/.test(qrCode) && /status === 3/.test(qrCode) && /create_bind_task/.test(qrCode) && /poll_bind_result/.test(qrCode),
   "扫码协议两端仍在（create_bind_task / poll_bind_result，status 2=完成 3=过期，实测 q.qq.com 两口都通）");
+
+/* 入站管线（im-inbound）：QQ 的回复要带 msg_id 上下文，且「收到 / 被配对拦下 / 已回复」三步都得有行可查。
+   11-04 用户报「能连上但发信息没反应」——原来只有失败会记日志，成功与静默丢弃全是空白。 */
+const inboundCode = stripComments(readFileSync(join(ROOT, "electron", "features", "im-inbound.ts"), "utf8"));
+ok(/qq 回复失败|`\$\{channel\} 回复失败/.test(inboundCode) && /回复已发送/.test(inboundCode),
+  "回复的成功与失败都要留日志（只有失败有日志时，「没反应」分不清是没发到还是发失败了）");
+ok(/`\$\{channel\} 收到消息（聊天/.test(inboundCode), "入站第一步就记一行（在配对判定之前）");
+ok(/配对判定 = \$\{gate\.action\}/.test(inboundCode),
+  "被配对门卫拦下也要记一行（QQ 首次使用必然先走配对，这行是唯一能看出「卡在这里」的证据）");
+ok(/已交给会话 \$\{String\(threadId\)\.slice\(0, 8\)/.test(inboundCode),
+  "「进会话」单独记一行：区分「没进会话」与「进了会话但回合没回」两种毛病");
 
 console.log(fails ? `\n【qq-gateway】失败 ${fails} 项` : `\n【qq-gateway】通过 ${checks} 项`);
 process.exit(fails ? 1 : 0);

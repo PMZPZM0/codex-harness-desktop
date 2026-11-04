@@ -273,11 +273,21 @@ export class QqGateway {
 
   private handleDispatch(d: any, scene: "group" | "c2c") {
     try {
-      const text = String(d?.content ?? "").replace(/@\S+\s*/g, "").trim();
+      // @ 有两种写法：群聊事件里是 `@机器人名`，也有 `<@!openid>` 形式。
+      // ⛔ 只剥前一种时，纯 @ 消息会残留一个 `<` 当正文进模型（守卫 ⑤ 实测抓到的）
+      const text = String(d?.content ?? "").replace(/<@![^>]*>/g, " ").replace(/@\S+/g, " ").trim();
       const chatId = String(d?.group_openid ?? d?.user_openid ?? "");
       const from = String(d?.author?.member_openid ?? d?.author?.user_openid ?? "QQ 用户");
       const msgId = String(d?.id ?? "");
-      if (!text || !chatId) return;
+      // 只有 @机器人 / 纯图片 / 卡片消息会走到这里（官方事件照样推、content 里没有文字）
+      // ⇒ 必须说明为什么不理，否则又是一次「发了没反应、日志一个字没有」
+      if (!text || !chatId) {
+        this.log("info", `QQ ${scene === "group" ? "群聊@" : "单聊"}事件没有可用文本（纯 @、图片或卡片）⇒ 不回复`);
+        return;
+      }
+      // ⛔ 事件到达必须留一行（id 打码）：用户报「发消息没反应」时，这一行决定往哪查——
+      //   有它就是应用侧的问题（配对/发送权限/模型），没有它就是平台侧（事件权限、机器人未上线、群里没 @）
+      this.log("info", `收到 QQ ${scene === "group" ? "群聊@消息" : "单聊消息"}（聊天 ${chatId.slice(0, 8)}…，${text.length} 字）`);
       this.events.onMessage({ from, chatId, text, msgId, scene });
     } catch (error: any) {
       this.log("error", `QQ 消息处理异常：${error?.message ?? error}`);

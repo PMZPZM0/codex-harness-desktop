@@ -150,11 +150,21 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
       }
     } catch (error: any) {
       channelLog("error", `${channel} 回复失败：${error?.message ?? error}`);
+      return;
     }
+    // ⛔ 成功也要留一行：用户报「发消息没反应」时，「有没有走到发送这一步」是唯一能分清
+    //   「平台没推事件」与「我们回不去（发送权限 / msg_id 过期）」的证据（11-04 实测就是靠这条定性）
+    channelLog("info", `${channel} 回复已发送（${content.length} 字）`);
   };
+  // 入站先记一行（配对判定之前）：没有这行 = 事件根本没到应用，问题在平台侧权限/上线/@
+  channelLog("info", `${channel} 收到消息（聊天 ${String(chatId).slice(0, 8)}…，${text.length} 字）`);
   // 配对门卫（09-13）：未批准的聊天先发 6 位授权码配对（等电脑端允许），其余消息只收到配对引导
   const gate = botPairing.onChannelMessage(channel, chatId, `${channel} ${from}`, text);
-  if (gate.action !== "allow") { await reply(gate.message); return; }
+  if (gate.action !== "allow") {
+    channelLog("info", `${channel} 配对判定 = ${gate.action}（未批准 ⇒ 只回引导，不进会话）`);
+    await reply(gate.message);
+    return;
+  }
   try {
     const model = await readCustomModel();
     if (!model) { await reply("请先在应用里配置模型。"); return; }
@@ -186,6 +196,8 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     weixinBindings.set(prefix + from, threadId);
     // 流式回复目标登记（09-18）：飞书/钉钉/QQ 的 sink 需要 chatId 才能发进度消息
     channelThreadChat.set(threadId, chatId);
+    // 「进会话了但没有回复」与「没进会话」是两种毛病 ⇒ 交接这一步必须有行可查
+    channelLog("info", `${channel} 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
     onTurnDone(threadId, (text) => void reply(text));
     await server.request("turn/start", { threadId, input: [{ type: "text", text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
