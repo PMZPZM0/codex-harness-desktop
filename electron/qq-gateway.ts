@@ -21,6 +21,8 @@ import fs from "node:fs";
 import WebSocket from "ws";
 
 const API = "https://api.bot.qq.com";
+/** msg_id 判重窗口：官方「相同 msg_id 可能重复推送」，十分钟内见过就算同一条 */
+const QQ_DEDUP_WINDOW_MS = 10 * 60_000;
 
 /** 账号落盘路径：⛔ 跟随 userData（用户可自定义配置目录），不能写死默认 AppData ——
  *  否则自定义目录用户的「重启自动恢复」永远读不到账号（读的是另一个目录）。 */
@@ -66,6 +68,8 @@ export class QqGateway {
   private lastSeq: number | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnecting = false;
+  /** 已处理过的 msg_id → 最近一次收到的时间（官方是至少一次投递，同一条会重推） */
+  private seenMsgIds = new Map<string, number>();
   private running = false;
   private events: QqEvents;
 
@@ -273,16 +277,31 @@ export class QqGateway {
 
   private handleDispatch(d: any, scene: "group" | "c2c") {
     try {
-      // @ 有两种写法：群聊事件里是 `@机器人名`，也有 `<@!openid>` 形式。
+      // @ 有两种写法：群聊事件里是 `@机器人名`，也有 `<@!openid>` 形式（群聊事件的 content
+      // 官方说「已去除@机器人前缀」，但引用/卡片场景仍可能带，剥干净更稳）。
       // ⛔ 只剥前一种时，纯 @ 消息会残留一个 `<` 当正文进模型（守卫 ⑤ 实测抓到的）
       const text = String(d?.content ?? "").replace(/<@![^>]*>/g, " ").replace(/@\S+/g, " ").trim();
-      const chatId = String(d?.group_openid ?? d?.user_openid ?? "");
+      // ⛔ 官方事件体（autogen/event/c2c_message_create）里**没有顶层 user_openid**，
+      //   单聊的对方标识只在 `author.user_openid`（文档原话：User.user_openid「单聊场景使用」）。
+      //   只读顶层时 chatId 恒空 ⇒ 每条私聊都被丢掉，用户看到的就是「机器人在线、发了没反应」
+      //   （11-04 实测真因）。群聊才有顶层 group_openid。
+      const chatId = String(d?.group_openid ?? d?.user_openid ?? d?.author?.user_openid ?? "");
       const from = String(d?.author?.member_openid ?? d?.author?.user_openid ?? "QQ 用户");
       const msgId = String(d?.id ?? "");
+      const kind = scene === "group" ? "群聊@" : "单聊";
+      if (!chatId) {
+        this.log("error", `QQ ${kind} 事件取不到会话标识（收到的字段：${Object.keys(d ?? {}).join("/") || "空"}）⇒ 无法回复`);
+        return;
+      }
+      // 官方：「为确保消息可达，相同 msg_id 可能重复推送」⇒ 不去重就是同一条消息跑两遍、回复两遍
+      if (msgId && this.isDuplicate(msgId)) {
+        this.log("info", `QQ ${kind} 消息 ${msgId.slice(0, 8)}… 是重复推送 ⇒ 只处理一次`);
+        return;
+      }
       // 只有 @机器人 / 纯图片 / 卡片消息会走到这里（官方事件照样推、content 里没有文字）
       // ⇒ 必须说明为什么不理，否则又是一次「发了没反应、日志一个字没有」
-      if (!text || !chatId) {
-        this.log("info", `QQ ${scene === "group" ? "群聊@" : "单聊"}事件没有可用文本（纯 @、图片或卡片）⇒ 不回复`);
+      if (!text) {
+        this.log("info", `QQ ${kind} 事件没有可用文本（纯 @、图片或卡片；message_type=${d?.message_type ?? "无"}）⇒ 不回复`);
         return;
       }
       // ⛔ 事件到达必须留一行（id 打码）：用户报「发消息没反应」时，这一行决定往哪查——
@@ -292,6 +311,21 @@ export class QqGateway {
     } catch (error: any) {
       this.log("error", `QQ 消息处理异常：${error?.message ?? error}`);
     }
+  }
+
+  /** msg_id 十分钟内见过就算重复（官方至少一次投递）。⚠️ 已知天花板：文档建议再结合
+   *  message_scene.ext 的 msg_idx 判重，这里只按 msg_id —— 同一条消息被改内容重发的场景不覆盖。 */
+  private isDuplicate(msgId: string): boolean {
+    const now = Date.now();
+    if (this.seenMsgIds.size > 400) {
+      for (const [id, at] of this.seenMsgIds) if (now - at > QQ_DEDUP_WINDOW_MS) this.seenMsgIds.delete(id);
+    }
+    if (this.seenMsgIds.has(msgId)) {
+      this.seenMsgIds.set(msgId, now);
+      return true;
+    }
+    this.seenMsgIds.set(msgId, now);
+    return false;
   }
 
   /** 回复：群聊 /v2/groups/{group_openid}/messages；单聊 /v2/users/{user_openid}/messages；msg_type 0=文本；必须带 msg_id（被动回复，5 分钟内有效） */
@@ -329,6 +363,7 @@ export class QqGateway {
     this.detachSocket();
     this.accessToken = "";
     this.tokenExpireAt = 0;
+    this.seenMsgIds.clear();
     try { fs.rmSync(stateFile(), { force: true }); } catch { /* 忽略 */ }
     this.log("info", "QQ 登录态已清除，可重新绑定");
   }

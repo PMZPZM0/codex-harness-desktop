@@ -196,6 +196,23 @@ if (!existsSync(artifact)) {
   for (let i = 0; i < 40 && inbound.length < 2; i++) await sleep(25);
   ok(inbound[1]?.text === "帮我查一下",
     `⑤带正文的「<@!openid> 正文」剥干净（实测 "${inbound[1]?.text ?? ""}"）`);
+  // ⛔ 官方**单聊**事件里对方标识只在 author.user_openid（顶层没有 user_openid）。
+  //   只读顶层时每条私聊都被判成「没有可用文本」丢掉 —— 11-04 用户实测「机器人在线、发了没反应」的真因。
+  lastSock?.send(JSON.stringify({
+    op: 0, s: 6, t: "C2C_MESSAGE_CREATE",
+    d: { id: "MSG-5", content: "哈喽", timestamp: "2026-11-04T15:18:00+08:00", author: { user_openid: "AUTHOR-ONLY-OPENID" } },
+  }));
+  for (let i = 0; i < 40 && inbound.length < 3; i++) await sleep(25);
+  const c2c = inbound[2] ?? {};
+  ok(c2c.scene === "c2c" && c2c.chatId === "AUTHOR-ONLY-OPENID" && c2c.text === "哈喽",
+    `⑥单聊事件只有 author.user_openid 时也要认得出聊天对象（实测 chatId="${c2c.chatId ?? ""}" text="${c2c.text ?? ""}"）`);
+  ok(!logs.some((m) => /取不到会话标识/.test(m)), "⑥不该再出现「取不到会话标识」的错误分支");
+  // 官方：「为确保消息可达，相同 msg_id 可能重复推送」⇒ 不去重就是同一条消息跑两遍、回复两遍
+  const beforeDup = inbound.length;
+  lastSock?.send(JSON.stringify({ op: 0, s: 7, t: "C2C_MESSAGE_CREATE", d: { id: "MSG-5", content: "哈喽", author: { user_openid: "AUTHOR-ONLY-OPENID" } } }));
+  await sleep(250);
+  ok(inbound.length === beforeDup && logs.some((m) => /重复推送/.test(m)),
+    `⑦同一 msg_id 再推一次只处理一遍（实测上层 ${inbound.length - beforeDup} 条新增、日志有「重复推送」=${logs.some((m) => /重复推送/.test(m))}）`);
   // ⛔ 认「带 AppID 的那次 token 请求」：前面 sendMessage 用例的实例没填凭据，找错对象会读到老请求
   const tokenCall = calls.find((c) => c.url.includes("getAppAccessToken") && c.body?.appId);
   ok(tokenCall?.body?.appId === "100000" && !("appID" in (tokenCall?.body ?? {})),
@@ -248,6 +265,21 @@ ok(/if \(error\?\.code === "ENOENT"\) return false;/.test(code),
 ok(/!response\.ok \|\| !Number\.isFinite\(errCode\) \|\| errCode !== 0/.test(code)
   && !/\.then\(\(r\) => r\.json\(\)\)/.test(code),
   "③HTTP 状态 + err_code 双判，且没有裸 r.json()（代理返回 HTML 时抛的是英文 SyntaxError）");
+
+/* ⑥⑦ 事件体字段口径（官方 autogen/event/c2c_message_create：事件体只有 author.user_openid，
+   顶层没有 user_openid）与「至少一次投递」的去重义务 */
+ok(/d\?\.group_openid \?\? d\?\.user_openid \?\? d\?\.author\?\.user_openid/.test(code),
+  "⑥单聊的聊天对象必须能从 author.user_openid 取到（只读顶层 ⇒ 每条私聊都被丢掉）");
+ok(/if \(!chatId\) \{\s*this\.log\("error", `QQ \$\{kind\} 事件取不到会话标识/.test(code),
+  "⑥「没有会话标识」单独一条分支且立刻报 error（合并成 `!chatId && !text` 或 `!text || !chatId` 都会把真因写成「没文本」）");
+ok(/if \(!text\) \{\s*this\.log\("info", `QQ \$\{kind\} 事件没有可用文本/.test(code),
+  "⑥「没有正文」单独一条分支（纯 @/图片/卡片是真没内容，不该和取不到 id 混在一起）");
+ok(/取不到会话标识/.test(code) && /没有可用文本/.test(code),
+  "两种丢弃各有一条明确日志（并带上收到的字段名 / message_type，便于下次定性）");
+ok(/private isDuplicate\(msgId: string\)/.test(code)
+  && code.indexOf("this.isDuplicate(msgId)") < code.indexOf("this.events.onMessage"),
+  "⑦重复推送在进入上层之前就被拦掉（官方：相同 msg_id 可能重复推送，不去重 = 回复两遍）");
+ok(/this\.seenMsgIds\.clear\(\);/.test(code), "解绑清空判重表（换机器人不该受上一台的历史影响）");
 
 // ---------- 三、扫码接入（qq-qr-connect）：首码必须在返回前落地 ----------
 /* 11-04 审查抓到：注释写着「qqQrStart 返回的快照就带 qr」，但代码是 void 异步任务 + 立刻
