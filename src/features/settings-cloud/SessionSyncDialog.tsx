@@ -27,13 +27,33 @@ type SessionRow = {
   sizeBytes: number;
   updatedAt: number;
   path: string;
+  /** 来源分类：main / boss / lead / team / member / expert / subagent / cli / group-member */
+  kind?: string;
+  /** 同步游标：已传行数 / 新增行数 */
+  syncedLines?: number;
+  newLines?: number;
 };
 
 type Phase = "loading" | "idle" | "submitting" | "success" | "error";
 
+const KIND_LABELS: Record<string, string> = {
+  main: "主会话",
+  boss: "指挥中枢",
+  lead: "专家团主理人",
+  team: "专家团调度",
+  member: "团队成员",
+  expert: "专家调度",
+  subagent: "子智能体调度",
+  cli: "CLI 智能体调度",
+  "group-member": "群成员",
+};
+const KIND_ORDER = ["main", "boss", "lead", "team", "member", "expert", "subagent", "cli", "group-member"];
+/* 默认只勾「主会话 / 中枢 / 专家团主理人 / 专家团调度」；调度与成员子会话默认不传（用户按需勾）。 */
+const DEFAULT_PICK_KINDS = new Set(["main", "boss", "lead", "team"]);
+
 type CodexBridge = {
   cloudSyncList?: () => Promise<{ ok: boolean; error?: string; sessions: SessionRow[] }>;
-  cloudSyncPush?: () => Promise<{ ok: boolean; code?: string; error?: string; pushedSessions?: number; pushedLines?: number }>;
+  cloudSyncPush?: (input?: { ids?: string[] }) => Promise<{ ok: boolean; code?: string; error?: string; pushedSessions?: number; pushedLines?: number }>;
   cloudSyncPull?: (input?: { keys?: string[] }) => Promise<{ ok: boolean; code?: string; error?: string; pulled?: number }>;
 };
 
@@ -76,6 +96,7 @@ export function SessionSyncDialog(props: {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState("");
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setPhase("loading");
@@ -95,8 +116,10 @@ export function SessionSyncDialog(props: {
         setMessage(humanError(undefined, r.error, mode));
         return;
       }
-      setRows(r.sessions || []);
-      setPicked(new Set());           // ⛔ 重新拉列表后清空勾选，避免"选了已消失的会话"
+      const list = r.sessions || [];
+      setRows(list);
+      /* 默认只勾主会话 / 中枢 / 专家团主理人 / 专家团调度；调度与成员子会话留空让用户自己选。 */
+      setPicked(new Set(list.filter((row) => DEFAULT_PICK_KINDS.has(String(row.kind || "main"))).map((row) => row.id)));
       setPhase("idle");
     } catch (e) {
       setRows([]);
@@ -114,8 +137,33 @@ export function SessionSyncDialog(props: {
     onClose(phase === "success" ? { kind: "ok", text: message } : null);
   });
 
-  const allPicked = rows.length > 0 && picked.size === rows.length;
-  const toggleAll = () => setPicked(allPicked ? new Set() : new Set(rows.map((r) => r.id)));
+  const visibleRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return q ? rows.filter((row) => `${row.title} ${row.project}`.toLowerCase().includes(q)) : rows;
+  }, [rows, query]);
+  const groups = useMemo(() => {
+    const map = new Map<string, SessionRow[]>();
+    for (const row of visibleRows) {
+      const kind = String(row.kind || "main");
+      const list = map.get(kind) || [];
+      list.push(row);
+      map.set(kind, list);
+    }
+    return KIND_ORDER.filter((kind) => map.has(kind)).map((kind) => ({ kind, label: KIND_LABELS[kind] || kind, items: map.get(kind) as SessionRow[] }));
+  }, [visibleRows]);
+  const allPicked = visibleRows.length > 0 && visibleRows.every((row) => picked.has(row.id));
+  const toggleAll = () => {
+    const next = new Set(picked);
+    if (allPicked) for (const row of visibleRows) next.delete(row.id);
+    else for (const row of visibleRows) next.add(row.id);
+    setPicked(next);
+  };
+  const toggleGroup = (items: SessionRow[]) => {
+    const next = new Set(picked);
+    const all = items.every((row) => next.has(row.id));
+    for (const row of items) { if (all) next.delete(row.id); else next.add(row.id); }
+    setPicked(next);
+  };
   const toggleOne = (id: string) => {
     const next = new Set(picked);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -130,7 +178,7 @@ export function SessionSyncDialog(props: {
     setMessage(mode === "upload" ? "上传中…" : "同步中…");
     try {
       const r = mode === "upload"
-        ? await (api.cloudSyncPush?.() ?? Promise.resolve({ ok: false, error: "缺少 cloudSyncPush" }))
+        ? await (api.cloudSyncPush?.({ ids: [...picked] }) ?? Promise.resolve({ ok: false, error: "缺少 cloudSyncPush" }))
         : await (api.cloudSyncPull?.({ keys: [...picked] }) ?? Promise.resolve({ ok: false, error: "缺少 cloudSyncPull" }));
       if (r.ok) {
         const detail = mode === "upload"
@@ -180,44 +228,77 @@ export function SessionSyncDialog(props: {
             aria-label="关闭">×</button>
         </div>
 
-        {/* 全选条 */}
-        {phase !== "loading" && rows.length > 0 && (
-          <div style={{ padding: "8px 18px", borderBottom: "1px solid var(--line, #e6e6e1)", display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
-            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
-              <input type="checkbox" checked={allPicked} onChange={toggleAll} disabled={phase === "submitting"} />
-              全选
-            </label>
-            <button type="button" onClick={toggleAll} disabled={phase === "submitting"}
-              style={{ fontSize: 12, background: "none", border: "1px solid var(--line,#e6e6e1)", borderRadius: 6, padding: "2px 8px", cursor: "pointer" }}>
-              {allPicked ? "取消全选" : "全选"}
-            </button>
+        {mode === "upload" && (
+          <div style={{ padding: "6px 18px", borderBottom: "1px solid var(--line-soft, #efefeb)", fontSize: 11.5, color: "var(--muted, #6a6a64)", lineHeight: 1.6 }}>
+            默认只勾 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。
           </div>
         )}
 
-        {/* 列表 */}
+        {/* 筛选 + 全选 */}
+        {phase !== "loading" && rows.length > 0 && (
+          <div style={{ padding: "8px 18px", borderBottom: "1px solid var(--line, #e6e6e1)", display: "flex", alignItems: "center", gap: 10, fontSize: 12, flexWrap: "wrap" }}>
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="搜索会话 / 项目"
+              style={{
+                flex: "0 1 240px", minWidth: 160, height: 28, padding: "0 9px", fontSize: 12,
+                border: "1px solid var(--line, #e6e6e1)", borderRadius: 7,
+                background: "var(--field, #fafaf8)", color: "var(--text, #22221f)",
+              }}
+            />
+            <label style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+              <input type="checkbox" checked={allPicked} onChange={toggleAll} disabled={phase === "submitting"} />
+              全选当前筛选
+            </label>
+            <span style={{ color: "var(--muted, #6a6a64)" }}>已选 {picked.size} 个</span>
+          </div>
+        )}
+
+        {/* 列表：按来源分组 */}
         <div style={{ flex: 1, overflowY: "auto", padding: "6px 8px" }}>
           {phase === "loading" && <p style={{ padding: 16, fontSize: 13, color: "var(--muted,#6a6a64)" }}>读取中…</p>}
           {phase !== "loading" && rows.length === 0 && (
             <p style={{ padding: 16, fontSize: 13, color: "var(--muted,#6a6a64)" }}>本地没有可{verb}的会话。</p>
           )}
-          {rows.map((r) => (
-            <label key={r.id} style={{
-              display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 10px", borderRadius: 8,
-              cursor: phase === "submitting" ? "default" : "pointer",
-              background: picked.has(r.id) ? "var(--field, #fafaf8)" : "transparent",
-            }}>
-              <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggleOne(r.id)}
-                disabled={phase === "submitting"} style={{ marginTop: 3 }} />
-              <span style={{ minWidth: 0, flex: 1 }}>
-                <span style={{ display: "block", fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {r.title}
-                </span>
-                <span style={{ display: "block", fontSize: 11.5, color: "var(--muted,#6a6a64)", marginTop: 2 }}>
-                  {r.project ? `${r.project} · ` : ""}{r.lines} 行 · {fmtBytes(r.sizeBytes)} · {fmtTime(r.updatedAt)}
-                </span>
-              </span>
-            </label>
-          ))}
+          {phase !== "loading" && rows.length > 0 && visibleRows.length === 0 && (
+            <p style={{ padding: 16, fontSize: 13, color: "var(--muted,#6a6a64)" }}>没有匹配「{query}」的会话。</p>
+          )}
+          {groups.map((group) => {
+            const groupAll = group.items.every((row) => picked.has(row.id));
+            return (
+              <div key={group.kind} style={{ padding: "2px 0" }}>
+                <label style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "6px 10px",
+                  fontSize: 11.5, fontWeight: 600, color: "var(--muted, #6a6a64)", cursor: "pointer",
+                }}>
+                  <input type="checkbox" checked={groupAll} onChange={() => toggleGroup(group.items)} disabled={phase === "submitting"} />
+                  {group.label}（{group.items.length}）
+                </label>
+                {group.items.map((r) => (
+                  <label key={r.id} style={{
+                    display: "flex", alignItems: "flex-start", gap: 10, padding: "7px 10px 7px 22px", borderRadius: 8,
+                    cursor: phase === "submitting" ? "default" : "pointer",
+                    background: picked.has(r.id) ? "var(--field, #fafaf8)" : "transparent",
+                  }}>
+                    <input type="checkbox" checked={picked.has(r.id)} onChange={() => toggleOne(r.id)}
+                      disabled={phase === "submitting"} style={{ marginTop: 3 }} />
+                    <span style={{ minWidth: 0, flex: 1 }}>
+                      <span style={{ display: "block", fontSize: 13, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {r.title}
+                      </span>
+                      <span style={{ display: "block", fontSize: 11.5, color: "var(--muted,#6a6a64)", marginTop: 2 }}>
+                        {r.project ? `${r.project} · ` : ""}{r.lines} 行
+                        {typeof r.syncedLines === "number" ? (r.syncedLines > 0 ? ` · 已传 ${r.syncedLines} 行` : " · 未上传") : ""}
+                        {typeof r.newLines === "number" && r.newLines > 0 ? ` · 新增 ${r.newLines} 行` : ""}
+                        {` · ${fmtBytes(r.sizeBytes)} · ${fmtTime(r.updatedAt)}`}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            );
+          })}
         </div>
 
         {/* 状态 + 操作 */}

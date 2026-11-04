@@ -12,9 +12,10 @@
  * ⛔ 错误一律翻人话：管理员关总闸（session-sync-disabled）/ 未登录 / 配额不足都不能显示成网络错误。
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Cloud, Download, ExternalLink, RefreshCw, Search, Trash2 } from "lucide-react";
-import { Spinner } from "../../components/CardShell";
+import { Cloud, Download, ExternalLink, RefreshCw, Search, Trash2, Upload } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
+import { SessionSyncDialog } from "./SessionSyncDialog";
+import { ResultDialog } from "./ResultDialog";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 
 type CloudSession = {
@@ -81,10 +82,11 @@ export function CloudManageSection() {
   const [projectFilter, setProjectFilter] = useState("");
   const [sortBy, setSortBy] = useState<"time" | "size" | "lines">("time");
   const [picked, setPicked] = useState<Set<string>>(new Set());
-  const [busy, setBusy] = useState<"" | "load" | "push" | "pull" | "delete">("");
+  const [busy, setBusy] = useState<"" | "load" | "pull" | "delete">("");
   const [syncMsg, setSyncMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [listMsg, setListMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     const cloud = api();
@@ -139,17 +141,6 @@ export function CloudManageSection() {
     const next = new Set(picked);
     if (next.has(id)) next.delete(id); else next.add(id);
     setPicked(next);
-  };
-
-  const push = async () => {
-    if (busy) return;
-    setBusy("push"); setSyncMsg(null);
-    try {
-      const r = await api().cloudSyncPush?.({});
-      if (!r) { setSyncMsg({ kind: "err", text: "当前版本不支持会话同步" }); return; }
-      setSyncMsg(r.ok ? { kind: "ok", text: `已同步：上传 ${r.pushedSessions ?? 0} 个会话 / ${r.pushedLines ?? 0} 行` } : { kind: "err", text: humanError(r.code, r.error) });
-      if (r.ok) await refresh();
-    } finally { setBusy(""); }
   };
 
   const pull = async (ids: string[]) => {
@@ -230,8 +221,8 @@ export function CloudManageSection() {
         </div>
 
         <div className="cloud-sync-manage-toolbar">
-          <button type="button" className="primary-setting" disabled={Boolean(busy)} onClick={() => void push()}>
-            {busy === "push" ? <Spinner /> : <RefreshCw size={13} />}{busy === "push" ? "同步中…" : "立即同步"}
+          <button type="button" className="primary-setting" disabled={Boolean(busy)} onClick={() => setUploadOpen(true)}>
+            <Upload size={13} />选择会话上传
           </button>
         </div>
 
@@ -276,21 +267,11 @@ export function CloudManageSection() {
           </button>
         </div>
 
-        {confirmDelete ? (
-          <div className="cloud-sync-manage-confirm">
-            <span>删除云端 {confirmDelete.length} 条会话？本机文件不会动。</span>
-            <button type="button" className="secondary-setting" onClick={() => setConfirmDelete(null)}>取消</button>
-            <button type="button" className="primary-setting danger" disabled={busy === "delete"} onClick={() => void remove(confirmDelete)}>
-              {busy === "delete" ? <Spinner /> : null}确认删除
-            </button>
-          </div>
-        ) : null}
-
         {listMsg ? <div className={`cloud-acct-msg ${listMsg.kind}`}>{listMsg.text}</div> : null}
 
         <div className="cloud-sync-manage-list">
           {busy === "load" && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>正在读取云端会话…</p> : null}
-          {!busy && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>云端还没有会话。点「立即同步」把本机会话传上去（之后每 5 分钟自动同步一次）。</p> : null}
+          {!busy && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>云端还没有会话。点「选择会话上传」挑要传的会话（之后每 5 分钟自动同步一次）。</p> : null}
           {rows.length ? (
             <div className="cloud-sync-manage-row cloud-sync-manage-row-head">
               <input type="checkbox" aria-label="全选云端会话" checked={allPicked} onChange={toggleAll} />
@@ -320,6 +301,25 @@ export function CloudManageSection() {
           {rows.length && !filtered.length ? <p className="settings-card-hint" style={{ margin: 0 }}>没有匹配当前筛选的云端会话。</p> : null}
         </div>
       </div>
+
+      {uploadOpen ? (
+        <SessionSyncDialog
+          mode="upload"
+          onClose={(result) => { setUploadOpen(false); if (result) { setSyncMsg(result); void refresh(); } }}
+        />
+      ) : null}
+      {confirmDelete ? (
+        <ResultDialog
+          title="删除云端会话"
+          tone="err"
+          message={`删除云端 ${confirmDelete.length} 条会话？\n本机文件不会动。`}
+          actions={[
+            { label: "取消", onClick: () => setConfirmDelete(null) },
+            { label: "确认删除", primary: true, onClick: () => { const ids = confirmDelete; setConfirmDelete(null); void remove(ids); } },
+          ]}
+          onClose={() => setConfirmDelete(null)}
+        />
+      ) : null}
     </div>
   );
 }

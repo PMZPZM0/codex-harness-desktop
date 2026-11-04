@@ -463,7 +463,7 @@ ok(/cloud:sync\/usage/.test(reserveSrc) && /cloud:sync\/index/.test(reserveSrc) 
 ok(/setTimeout\(\(\) => \{ void syncNow\(\); \}, 30_000\)/.test(reserveSrc)
   && /setInterval\(\(\) => \{ void syncNow\(\); \}, 5 \* 60_000\)/.test(reserveSrc)
   && /if \(syncInFlight\) return syncInFlight/.test(reserveSrc)
-  && /const r = await syncNow\(\)/.test(reserveSrc),
+  && /const r = await syncNow\(ids\)/.test(reserveSrc),
   "会话自动同步（启动 30s + 每 5 分钟），手动/自动共用 in-flight 防并发写游标");
 const manageSrc = codeOnly(read("src/features/settings-cloud/CloudManageSection.tsx"));
 ok(/cloudSyncUsage/.test(manageSrc) && /cloudSyncIndex/.test(manageSrc) && /cloudSyncDelete/.test(manageSrc)
@@ -506,6 +506,24 @@ ok(/cloud-acct-card/.test(manageSrc) && /row\.title \|\| row\.id/.test(manageSrc
   "云管理面板与云账号页同卡皮肤，列表标题优先会话名");
 ok(/cloud-sync-manage-list-tools/.test(manageSrc) && /cloud-sync-manage-select/.test(manageSrc),
   "云管理列表工具条（搜索/项目筛选/排序/批量）在会话列表卡内");
+/* 11-04：上传前先列会话（按来源分组）+ 只传勾选；删除走模态确认。 */
+const syncSrc2 = codeOnly(read("electron/cloud-sync.ts"));
+ok(/onlyIds/.test(syncSrc2) && /syncedLines/.test(syncSrc2) && /newLines/.test(syncSrc2),
+  "同步支持按 ids 只传选中会话，列表带已传/新增行数");
+const reserveSrc3 = codeOnly(read("electron/features/cloud-reserve-ipc.ts"));
+ok(/sessionKinds/.test(reserveSrc3) && /listSessions/.test(reserveSrc3) && /input\?\.ids/.test(reserveSrc3),
+  "云域按账本分类会话（中枢/专家团/调度/群成员）并只推勾选的 ids");
+const dialogSrc = codeOnly(read("src/features/settings-cloud/SessionSyncDialog.tsx"));
+ok(/DEFAULT_PICK_KINDS/.test(dialogSrc) && /KIND_ORDER/.test(dialogSrc) && /cloudSyncPush\?\.\(\{ ids:/.test(dialogSrc),
+  "上传弹窗按来源分组、默认只勾主会话/中枢/主理人，只提交勾选的 ids");
+ok(/SessionSyncDialog/.test(manageSrc) && /ResultDialog/.test(manageSrc) && /选择会话上传/.test(manageSrc),
+  "云管理改为弹窗选择上传，删除走模态确认");
+const threadRowsSrc = codeOnly(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"));
+ok(/openAppConfirm/.test(threadRowsSrc) && /deleteThread\(entry\.id\)/.test(threadRowsSrc),
+  "侧栏本地删除会话也走确认弹窗");
+const bridgeSrc2 = codeOnly(read("electron/cloud-bridge.ts"));
+ok(/\/api\/sync-sessions/.test(bridgeSrc2) && /listSessions/.test(bridgeSrc2) && /syncNow: \(ids\?/.test(bridgeSrc2),
+  "本机桥暴露本地会话列表，sync-now 支持只传勾选的 ids");
 
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);

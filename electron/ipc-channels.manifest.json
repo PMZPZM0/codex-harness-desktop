@@ -1131,10 +1131,10 @@
       "channel": "cloud:sync/list",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> }>",
+      "returns": "Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string; kind: string; syncedLines: number; newLines: number }> }>",
       "invokeArgs": "",
       "cast": null,
-      "note": "10-18：列出本地会话供勾选上传（只读，不写游标）"
+      "note": "10-18：列出本地会话供勾选上传（只读）；11-04 加来源分类与同步游标"
     },
     {
       "name": "cloudSyncPull",
@@ -1149,12 +1149,12 @@
     {
       "name": "cloudSyncPush",
       "channel": "cloud:sync/push",
-      "paramsImpl": "input?: { paths: string[] }",
-      "paramsDecl": "input?: { paths: string[] }",
-      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>",
+      "paramsImpl": "input?: { ids?: string[] }",
+      "paramsDecl": "input?: { ids?: string[] }",
+      "returns": "Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string; pushedSessions?: number; pushedLines?: number }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": "云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}）"
+      "note": "11-04：只上传用户勾选的会话（ids）；不带 ids = 全量（自动同步/旧调用）"
     },
     {
       "name": "cloudSyncStatus",

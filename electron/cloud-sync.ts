@@ -141,12 +141,17 @@ function deriveMeta(lines: string[], nameHint = ""): { title: string; project: s
 }
 
 /** 跑一次同步：扫描 → 只推新增行 → 回写游标。失败如实返回，不抛。 */
-export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
+export async function runCloudSyncOnce(
+  deps: SyncDeps,
+  options: { onlyIds?: string[] } = {},
+): Promise<SyncResult> {
   const token = deps.deviceToken();
   if (!token) return { ok: false, reason: "not-paired" };
   const root = join(deps.codexHome, "sessions");
   if (!existsSync(root)) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
 
+  /* 用户勾选的会话（上传弹窗）：只扫这几条，其它一条都不碰。 */
+  const only = new Set((options.onlyIds || []).map(String).filter(Boolean));
   const state = readState(deps.stateFile);
   const names = readThreadNames(deps.codexHome);
   let budgetUsed = 0;
@@ -162,6 +167,7 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
     if (all.length < 2) continue;                                  // 只有 session_meta 的空会话跳过
     const derived = deriveMeta(all);
     const id = derived.sessionId || basename(file).replace(/^rollout-/, "").replace(/\.jsonl$/, "");
+    if (only.size && !only.has(id)) continue;
     const prev = state.sessions[id];
     /* 名字优先级：session_index（侧栏显示名）→ rollout 里的真实用户消息 → 已有记录。 */
     const title = names.get(id) || derived.title || prev?.title || "";
@@ -229,12 +235,26 @@ export async function runCloudSyncOnce(deps: SyncDeps): Promise<SyncResult> {
 
 /** 状态摘要（界面展示用）：上次推送的会话数 / 游标条数。 */
 /** 列出本地会话供 UI 勾选（10-18）。⛔ 纯只读：不写游标、不发请求。
- *  id 优先取 rollout 头部的 session_id，取不到用文件名（与服务端同步的 id 口径一致）。 */
+ *  id 优先取 rollout 头部的 session_id，取不到用文件名（与服务端同步的 id 口径一致）。
+ *  `syncedLines` / `newLines` 来自同步游标：让用户在弹窗里看见「已传多少 / 还剩多少」。 */
+export type LocalSessionRow = {
+  id: string;
+  title: string;
+  project: string;
+  lines: number;
+  sizeBytes: number;
+  updatedAt: number;
+  path: string;
+  syncedLines: number;
+  newLines: number;
+};
+
 export function listLocalSessions(
-  deps: Pick<SyncDeps, "codexHome">, limit = 500,
-): Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> {
-  const out: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> = [];
+  deps: Pick<SyncDeps, "codexHome"> & { stateFile?: string }, limit = 500,
+): LocalSessionRow[] {
+  const out: LocalSessionRow[] = [];
   const names = readThreadNames(deps.codexHome);
+  const state = deps.stateFile ? readState(deps.stateFile) : { sessions: {} as State["sessions"] };
   for (const full of listRollouts(deps.codexHome, limit)) {
     let raw = "";
     try { raw = readFileSync(full, "utf8"); } catch { continue; }
@@ -244,7 +264,18 @@ export function listLocalSessions(
     let sizeBytes = 0, updatedAt = 0;
     try { const st = statSync(full); sizeBytes = st.size; updatedAt = st.mtimeMs; } catch { /* 忽略 */ }
     const id = meta.sessionId || basename(full).replace(/^rollout-/, "").replace(/\.jsonl$/, "");
-    out.push({ id, title: names.get(id) || meta.title || "(未命名会话)", project: meta.project, lines: lines.length, sizeBytes, updatedAt, path: full });
+    const syncedLines = Number(state.sessions[id]?.pushedLines || 0);
+    out.push({
+      id,
+      title: names.get(id) || meta.title || "(未命名会话)",
+      project: meta.project,
+      lines: lines.length,
+      sizeBytes,
+      updatedAt,
+      path: full,
+      syncedLines,
+      newLines: Math.max(0, lines.length - syncedLines),
+    });
   }
   return out;
 }

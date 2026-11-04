@@ -23,7 +23,9 @@ export type CloudBridgeOptions = {
   ports: number[];
   machineId: () => string;
   account: () => { name: string; baseUrl: string } | null;
-  syncNow: () => Promise<Record<string, unknown>>;
+  /** 本地会话列表（上传弹窗用）：含来源分类与同步游标。 */
+  listSessions: () => Promise<Array<Record<string, unknown>>>;
+  syncNow: (ids?: string[]) => Promise<Record<string, unknown>>;
   syncPull: (ids: string[]) => Promise<Record<string, unknown>>;
   focusApp: () => void;
 };
@@ -125,10 +127,26 @@ async function route(req: IncomingMessage, res: ServerResponse, opts: CloudBridg
     }, cors);
     return;
   }
+  if (url.pathname === "/api/sync-sessions" && req.method === "GET") {
+    try {
+      const sessions = await opts.listSessions();
+      send(res, 200, { ok: true, sessions }, cors);
+    } catch (error) {
+      send(res, 500, { ok: false, error: String((error as Error)?.message || error).slice(0, 200), sessions: [] }, cors);
+    }
+    return;
+  }
   if (url.pathname === "/api/sync-now" && req.method === "POST") {
     if (!account) { send(res, 200, { ok: false, result: { ok: false, reason: "not-logged-in" } }, cors); return; }
+    const { raw, tooLarge } = await readBody(req);
+    if (tooLarge) { send(res, 413, { ok: false, error: "body-too-large" }, cors); return; }
+    let ids: string[] = [];
     try {
-      const result = await opts.syncNow();
+      const body = JSON.parse(raw || "{}") as { ids?: unknown };
+      if (Array.isArray(body.ids)) ids = body.ids.map(String).filter(Boolean);
+    } catch { /* 空 body = 兼容旧调用（全量） */ }
+    try {
+      const result = await opts.syncNow(ids.length ? ids : undefined);
       send(res, 200, { ok: true, result: { ...result, reason: humanReason(result.reason) || undefined } }, cors);
     } catch (error) {
       send(res, 200, { ok: false, result: { ok: false, reason: String((error as Error)?.message || error).slice(0, 200) } }, cors);

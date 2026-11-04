@@ -263,12 +263,12 @@ contextBridge.exposeInMainWorld("codex", {
   cloudModelsToken: (input?: { force?: boolean }) => __ipc("cloud-models:token", 0, [input]),
   /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
   cloudSyncConflictResolve: (key: string, resolution: string) => __ipc("cloud:sync/conflict/resolve", 2, [key, resolution]),
-  /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
+  /* 10-18：列出本地会话供勾选上传（只读）；11-04 加来源分类与同步游标 */
   cloudSyncList: () => __ipc("cloud:sync/list", 0, []),
   /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
   cloudSyncPull: (input?: { keys: string[] }) => __ipc("cloud:sync/pull", 0, [input]),
-  /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
-  cloudSyncPush: (input?: { paths: string[] }) => __ipc("cloud:sync/push", 0, [input]),
+  /* 11-04：只上传用户勾选的会话（ids）；不带 ids = 全量（自动同步/旧调用） */
+  cloudSyncPush: (input?: { ids?: string[] }) => __ipc("cloud:sync/push", 0, [input]),
   /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
   cloudSyncStatus: () => __ipc("cloud:sync/status", 0, []),
   /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */

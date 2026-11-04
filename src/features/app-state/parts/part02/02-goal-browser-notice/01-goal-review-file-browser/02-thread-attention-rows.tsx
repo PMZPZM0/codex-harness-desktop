@@ -378,7 +378,15 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             </div>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.copyThreadReferenceId(entry); }}><Copy size={13} /><span>复制会话 ID</span></button>
-            <button className="danger" onClick={() => { bag.setThreadRowMenu(null); void bag.deleteThread(entry.id); }}><Trash2 size={13} /><span>删除</span></button>
+            <button className="danger" onClick={async () => {
+              bag.setThreadRowMenu(null);
+              if (!(await bag.openAppConfirm(
+                "删除会话",
+                `会话「${entry.name || entry.preview || "未命名"}」及其中的消息、工具记录将被永久删除，此操作无法撤销。`,
+                "永久删除",
+              ))) return;
+              void bag.deleteThread(entry.id);
+            }}><Trash2 size={13} /><span>删除</span></button>
           </div>
         </>, document.body)}
       </div>

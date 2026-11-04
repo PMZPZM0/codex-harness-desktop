@@ -31,6 +31,8 @@ import type { HostCaps } from "../runtime/seams";
       服务端 1.1.8 起已允许账号 token 直接 push（device 降为可选标记），所以不再需要配对流程。 */
 import { accountsBase, activeCredential } from "../cloud-api";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, listLocalSessions } from "../cloud-sync";
+import { delegateRegistry, teamRunStore } from "../runtime-refs";
+import { bossStore } from "../boss-groups/store";
 import type { IpcHost } from "../ipc-host";
 import { guardedFetch } from "../net-guard";
 
@@ -105,6 +107,46 @@ export const cloudReserveFeature = defineFeature<null>({
       machineId: () => { try { return os.hostname(); } catch { return "unknown"; } },
     });
 
+    /** 会话来源分类（上传弹窗分组）：专家团 / 中枢 / 调度 / 群成员 —— 与侧栏分类同源账本。 */
+    const sessionKinds = async (): Promise<Map<string, string>> => {
+      const kinds = new Map<string, string>();
+      try {
+        const team = teamRunStore?.listThreads?.();
+        if (team) {
+          for (const id of Object.values(team.members || {})) if (id) kinds.set(String(id), "member");
+          for (const id of Object.keys(team.threads || {})) if (!kinds.has(id)) kinds.set(id, "lead");
+        }
+      } catch { /* 团队账本未就绪 */ }
+      try {
+        const records = (await delegateRegistry?.listAll?.()) || [];
+        for (const rec of records) {
+          const id = String(rec?.threadId || "");
+          if (!id || kinds.has(id)) continue;
+          const kind = rec.kind === "expert" ? "expert"
+            : rec.kind === "subagent" ? "subagent"
+              : rec.kind === "cli" ? "cli"
+                : rec.kind === "team" ? "team" : "";
+          if (kind) kinds.set(id, kind);
+        }
+      } catch { /* 调度账本未就绪 */ }
+      try {
+        const state = await bossStore?.load?.();
+        for (const group of Object.values(state?.groups || {})) {
+          const bossId = String((group as { bossThreadId?: string }).bossThreadId || "");
+          if (bossId && !kinds.has(bossId)) kinds.set(bossId, "boss");
+          for (const member of ((group as { members?: { threadId?: string }[] }).members || [])) {
+            const memberId = String(member?.threadId || "");
+            if (memberId && !kinds.has(memberId)) kinds.set(memberId, "group-member");
+          }
+        }
+      } catch { /* 群账本未就绪 */ }
+      return kinds;
+    };
+    const listSessions = async () => {
+      const kinds = await sessionKinds();
+      return listLocalSessions(syncDeps()).map((row) => ({ ...row, kind: kinds.get(row.id) || "main" }));
+    };
+
     /* ── 云管理（11-03 用户令：把云管理的用量/云端会话搬进应用内）─────────────────
        与网页云管理共用服务端 `/sync/*` 接口；鉴权用云账号 token（服务端 syncAuth 认它）。
        ⛔ 管理员关总闸时 403 session-sync-disabled 原样透传，界面翻成人话而不是网络错误。 */
@@ -144,10 +186,20 @@ export const cloudReserveFeature = defineFeature<null>({
     /* 自动同步（对齐云助手 headless：启动 30s 后一次 + 每 5 分钟一次）。
        ⛔ 未登录直接跳过（零请求）；与手动「上传会话」共用 in-flight，避免两份并发写游标。 */
     let syncInFlight: Promise<Awaited<ReturnType<typeof runCloudSyncOnce>> | null> | null = null;
-    const syncNow = () => {
+    /* 所有上传串行（自动 / 手选）—— 两份并发会各写一次游标，后写的那份会把前一份的行数覆盖掉。 */
+    let syncChain: Promise<unknown> = Promise.resolve();
+    const serialized = <T,>(fn: () => Promise<T>): Promise<T> => {
+      const next = syncChain.then(fn, fn);
+      syncChain = next.catch(() => undefined);
+      return next;
+    };
+    const syncNow = (onlyIds?: string[]) => {
       if (!activeCredential()?.token) return Promise.resolve(null);
+      if (onlyIds?.length) {
+        return serialized(() => runCloudSyncOnce(syncDeps(), { onlyIds }).catch(() => null));
+      }
       if (syncInFlight) return syncInFlight;
-      syncInFlight = runCloudSyncOnce(syncDeps()).catch(() => null).finally(() => { syncInFlight = null; });
+      syncInFlight = serialized(() => runCloudSyncOnce(syncDeps()).catch(() => null)).finally(() => { syncInFlight = null; });
       return syncInFlight;
     };
     const firstAutoSync = setTimeout(() => { void syncNow(); }, 30_000);
@@ -166,8 +218,9 @@ export const cloudReserveFeature = defineFeature<null>({
         const cr = activeCredential();
         return cr ? { name: cr.account.username, baseUrl: cr.baseUrl } : null;
       },
-      syncNow: async () => {
-        const r = await syncNow();
+      listSessions,
+      syncNow: async (ids?: string[]) => {
+        const r = await syncNow(ids);
         return r ?? { ok: false, reason: "not-logged-in" };
       },
       syncPull: (ids) => pullCloudSessions(syncDeps(), ids),
@@ -189,19 +242,22 @@ export const cloudReserveFeature = defineFeature<null>({
       return { enabled: true, reserved: false, quotaBytes: 0, usedBytes: 0, lastSyncAt: 0, sessions: s.sessions, lines: s.lines };
     });
 
-    /* 10-18：给"勾选会话"弹窗用 —— 列出本地会话（只读，不写游标）。 */
+    /* 10-18：给"勾选会话"弹窗用 —— 列出本地会话（只读，不写游标）。
+       11-04：附带来源分类（专家团 / 中枢 / 调度 / 群成员）与同步游标（已传 / 新增行）。 */
     ipcHost.handle("cloud:sync/list", async () => {
       try {
-        return { ok: true, sessions: listLocalSessions({ codexHome: path.join(app.getPath("userData"), "codex-home") }) };
+        return { ok: true, sessions: await listSessions() };
       } catch (error) {
         return { ok: false, error: (error as Error).message.slice(0, 200), sessions: [] };
       }
     });
 
-    ipcHost.handle("cloud:sync/push", async () => {
+    ipcHost.handle("cloud:sync/push", async (_event, input?: { ids?: string[] }) => {
       if (!activeCredential()) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
+      const ids = Array.isArray(input?.ids) ? input.ids.map(String).filter(Boolean) : [];
+      if (!ids.length) return { ok: false, reserved: false, code: "bad-args", error: "没有选择要上传的会话" };
       try {
-        const r = await syncNow();
+        const r = await syncNow(ids);
         if (!r) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
         return r.ok
           ? { ok: true, reserved: false, pushedSessions: r.pushedSessions, pushedLines: r.pushedLines }

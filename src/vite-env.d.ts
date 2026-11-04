@@ -647,12 +647,12 @@ interface Window {
     cloudModelsToken(input?: { force?: boolean }): Promise<{ ok: boolean; token: string; reused: boolean; error?: string }>;
     /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
     cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
-    /* 10-18：列出本地会话供勾选上传（只读，不写游标） */
-    cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string }> }>;
+    /* 10-18：列出本地会话供勾选上传（只读）；11-04 加来源分类与同步游标 */
+    cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string; kind: string; syncedLines: number; newLines: number }> }>;
     /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
     cloudSyncPull(input?: { keys: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
-    /* 云版预留：把指定本地路径推到云端（云端存储未开通时返回预留桩形状 {ok:false,reserved:true,code}） */
-    cloudSyncPush(input?: { paths: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
+    /* 11-04：只上传用户勾选的会话（ids）；不带 ids = 全量（自动同步/旧调用） */
+    cloudSyncPush(input?: { ids?: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string; pushedSessions?: number; pushedLines?: number }>;
     /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
     cloudSyncStatus(): Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>;
     /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */
