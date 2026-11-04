@@ -251,6 +251,23 @@ if (!existsSync(artifact)) {
   ok(streamErrors.length === 1 && /最终回复/.test(streamErrors[0]),
     `⑧收尾发送失败必须回调 onError（实测 ${JSON.stringify(streamErrors).slice(0, 110)}）`);
 
+  // ⑧′ QQ 的排版选择：一轮只发**一条**，内容就是正文（不带思考稿/工具行/半截 Markdown）。
+  //     11-04 用户截图：QQ 上堆了「思考稿」「···」「**今晚」三条，正文反而被切散。
+  const qqSends = [];
+  const qqSession = new BotStreamSession(
+    { send: async (t) => { qqSends.push(t); }, onError: () => {} },
+    { enabled: true, thinking: true, tools: true },
+    { maxFlushes: 0, flushIntervalMs: 1, minChars: 1 },
+  );
+  qqSession.handle("item/reasoning/textDelta", { delta: "先查天气再说" });
+  qqSession.handle("item/started", { item: { type: "commandExecution", command: "curl open-meteo" } });
+  qqSession.handle("item/agentMessage/delta", { itemId: "i1", delta: "今晚有雨，" });
+  qqSession.handle("item/agentMessage/delta", { itemId: "i1", delta: "带伞。" });
+  qqSession.handle("turn/completed", { threadId: "T9", turn: { items: [{ type: "agentMessage", text: "今晚有雨，带伞。" }] } });
+  await sleep(250);
+  ok(qqSends.length === 1 && qqSends[0] === "今晚有雨，带伞。",
+    `⑧′一轮只发一条、内容就是正文（实测 ${qqSends.length} 条：${JSON.stringify(qqSends).slice(0, 120)}）`);
+
   globalThis.fetch = realFetch;
   await new Promise((resolve) => server.close(resolve));
 }
@@ -317,7 +334,8 @@ const gatewaysCode = stripComments(readFileSync(join(ROOT, "electron", "features
 ok(/this\.sink\.onError\?\.\("最终回复", error\);/.test(botStreamCode) && !/catch \{ \/\* 回复失败不影响主流程 \*\/ \}/.test(botStreamCode),
   "⑧收尾发送失败回调 onError（旧的 `catch {}` 把正文失败吞成静默，用户只看到进度气泡）");
 ok(/进度推送（已停用/.test(botStreamCode), "⑧进度推送连续失败停用时也上报（之后靠收尾补发，要知道发生过）");
-ok(/maxFlushes: 2/.test(gatewaysCode), "QQ 进度推送上限 2 次（官方每条消息最多回复 4 次 ⇒ 必须给正文和余量留位）");
+ok(/maxFlushes: 0/.test(gatewaysCode),
+  "QQ 关掉中间进度推送（官方每条消息最多被动回复 4 次，且进度会把 Markdown 从中间切成半截气泡）");
 ok((gatewaysCode.match(/withStreamErrorLog\("/g) || []).length >= 5,
   `五个渠道的 sink 都接了失败上报（实测 ${((gatewaysCode.match(/withStreamErrorLog\("/g) || []).length)} 处）`);
 

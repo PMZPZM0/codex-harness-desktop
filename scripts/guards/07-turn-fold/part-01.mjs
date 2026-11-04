@@ -843,7 +843,10 @@ export async function run() {
         "--experimental-strip-types", "--no-warnings", "--input-type=module", "-e",
         `import { plainTextForChannel as f } from ${JSON.stringify(wtUrl)}; console.log(JSON.stringify({` +
         ` table: f("🔥 最劲爆\\n\\n| 方向 | 新闻 |\\n|---|---|\\n| 国内大模型 | 智谱 GLM 十万卡 |\\n| 融资 | Emulate 7 亿 |"),` +
-        ` head: f("## 行动向"), bold: f("**GPT-5.6** 的自我隐瞒"), link: f("[OpenAI](https://x.com/a) 公告"), bullet: f("- Figure 发 Helix"), hr: f("上文\\n---\\n下文") }));`,
+        ` head: f("## 行动向"), bold: f("**GPT-5.6** 的自我隐瞒"), link: f("[OpenAI](https://x.com/a) 公告"), bullet: f("- Figure 发 Helix"), hr: f("上文\\n---\\n下文"),` +
+        // 11-04 用户截图「QQ 好乱」补两条：播报稿不能当正文；半截粗体必须清干净
+        ` voice: f("结论：带伞。\\n\\n\`\`\`voice\\n今晚这雨加九十八的湿度，老老实实写代码。\\n\`\`\`"),` +
+        ` stray: f("**今晚\\n**明晚** 有雨") }));`,
       ], { encoding: "utf8" });
       wt = JSON.parse(wtProbe.stdout.trim().split("\n").at(-1));
     } catch { /* 下面统一判红 */ }
@@ -858,6 +861,15 @@ export async function run() {
       (wt.bullet === "• Figure 发 Helix" && wt.hr === "上文\n下文")
         ? ok("【38】列表转 • 、水平线丢弃")
         : fail(`【38】列表/水平线转换不对：${JSON.stringify(wt)}`);
+      // 播报稿（```voice … ```）是给 TTS 念的台本，桌面端显示时就剥过；渠道侧以前没剥 ⇒
+      // QQ 收到「```voice + 一段和正文重复的口播」（11-04 用户截图）。真相源仍是 voice-script.mjs。
+      (!wt.voice.includes("voice") && !wt.voice.includes("老老实实") && wt.voice.includes("结论：带伞"))
+        ? ok("【38】播报稿不进渠道正文（复用 src/lib/voice-script.mjs 的剥离，不另抄围栏规则）")
+        : fail(`【38】播报稿漏进正文：${JSON.stringify(wt.voice)}`);
+      // 流式/分段文本里的**未配对** `**` 必须清掉：配对外则吃不到半截粗体，QQ 上就是孤立一条「**今晚」
+      (wt.stray === "今晚\n明晚 有雨")
+        ? ok("【38】残留的半截 `**` 也被清掉（配对外则漏网 ⇒ QQ 出现独立一条「**今晚」）")
+        : fail(`【38】半截粗体没清干净：${JSON.stringify(wt.stray)}`);
       // ⛔ 三个发送点（流式追加 / 收尾补发 / 一次性）各自必须带 plainTextForChannel——
       //    只查 import 或单个锚点会被「摘掉一处用法」的死代码骗绿（反证实测）。
       (/sendChunk = \(text: string, opts: \{ clientId\?: string; state\?: number \}\) =>\s*weixinGateway!\.sendText\(from, plainTextForChannel\(text\), opts\)/.test(mainSrc)
@@ -880,14 +892,19 @@ export async function run() {
         ? ok("【38】飞书/钉钉/QQ 回复漏斗也走排版转换（三渠道都是纯文本消息类型）")
         : fail("【38】飞书/钉钉/QQ 回复没走排版转换 —— 表格在这些渠道同样是竖线堆");
       // 三渠道流式（09-18 用户：「接上流式（按各渠道限制做）」）：不能编辑消息 ⇒ 追加语义 + 按频控设预算
-      // 11-04 更正 QQ 上限：官方「发送单聊/群聊消息」写明**被动消息每条用户消息最多回复 4 次**
-      // （旧注释写 ≤5 次是记错了），而正文收尾必须占一次 ⇒ 进度推送压到 2 次，留一条余量。
+      // 11-04 更正两处：① 官方「被动消息每条用户消息最多回复 4 次」（旧注释写 ≤5 次记错了）；
+      // ② QQ 因此**关掉中间进度**（sink 只留一次性发送、预算 maxFlushes 0）——进度按时间切必然把
+      //    Markdown 从中间切断，实测用户截图：独立一条「**今晚」、独立一条「···」、思考稿混进正文。
       (/function feishuStreamSink\(/.test(mainSrc) && /function dingtalkStreamSink\(/.test(mainSrc) && /function qqStreamSink\(/.test(mainSrc)
         && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 4/.test(mainSrc)
         && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 3/.test(mainSrc)
-        && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 2/.test(mainSrc))
-        ? ok("【38】飞书/钉钉/QQ 都有追加式流式 sink + 按频控设的预算（钉钉 webhook 20 条/分、QQ 被动回复每条消息上限 4 次 ⇒ 进度只占 2 次）")
+        && /QQ_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc))
+        ? ok("【38】飞书/钉钉有追加式流式 sink + 按频控设的预算；QQ 关掉进度（官方每条消息最多回复 4 次 ⇒ 一条正文到位）")
         : fail("【38】三渠道流式 sink/预算缺失 —— 这几家仍只发最终汇总");
+      const qqSinkBody = mainSrc.slice(mainSrc.indexOf("function qqStreamSink("), mainSrc.indexOf("function qqStreamSink(") + 1400);
+      (!/append:/.test(qqSinkBody) && !/finalizeAppend:/.test(qqSinkBody) && /return \{ send: \(full\) => send\(full\) \};/.test(qqSinkBody))
+        ? ok("【38】QQ 的 sink 不提供 append/finalizeAppend（有就会被 bot-stream 当流式渠道切多条，排版必乱）")
+        : fail("【38】QQ 的 sink 又长出 append 了 —— 进度会把 Markdown 切成半截粗体多条气泡");
       (/channelBotBindings\[channel\]\?\.threadId !== threadId/.test(mainSrc)
         && /const chatId = channelThreadChat\.get\(threadId\)/.test(mainSrc)
         && /\^\(tg\|fs\|dd\|qq\|wecom\):/.test(mainSrc))

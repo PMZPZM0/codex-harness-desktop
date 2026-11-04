@@ -304,6 +304,9 @@ export class BotStreamSession {
         return;
       }
       if (text) await this.sink.send(text);
+      // ⛔ 没有 agentMessage 正文时不许静默（QQ 这类「只发一条」的渠道，静默 = 用户以为又坏了）：
+      //     退而发已产生的内容，并标注它不是正式答复。
+      else if (this.composed.trim()) await this.sink.send(`${this.composed.trim()}\n\n（这一轮没有产出正式答复，以上是过程内容。）`);
     } catch (error) {
       // ⛔ 不许静默：正文就是在这里被吞掉的（官方对重复 msg_id+msg_seq 回 HTTP 200 但不落地，
       //    我们这边连一次失败记录都没有 ⇒「有进度气泡、没正文」查不出来）

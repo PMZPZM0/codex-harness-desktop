@@ -50,8 +50,8 @@ const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalM
 const FEISHU_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 4, flushIntervalMs: 4000, minChars: 60 };
 const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 3, flushIntervalMs: 5000, minChars: 60 };
 // 官方硬限制：被动消息**每条用户消息最多回复 4 次**（且 msg_seq 必须递增）。
-// ⇒ QQ 的进度推送最多 2 次，留够「正文收尾 + 一条余量」；微信/Telegram 没这个配额，不用照抄。
-const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 2, flushIntervalMs: 3000, minChars: 80 };
+// ⇒ QQ 关掉中间进度（maxFlushes 0，sink 也不提供 append），一条正文到位；微信/Telegram 没这个配额，不用照抄。
+const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs: 3000, minChars: 80 };
 
 function weixinStreamSink(from: string): BotStreamSink {
   // 09-18 修正：此前**整体撤掉了微信流式**，依据是 09-12 的结论「iLink 的 context_token 实测一次一发」。
@@ -126,11 +126,14 @@ function qqStreamSink(chatId: string): BotStreamSink {
     if (!ctx) throw new Error("缺少被动回复上下文（msg_id 已过期），请重新 @机器人");
     return qqGateway.sendMessage(chatId, plainTextForChannel(text), ctx);
   };
-  return {
-    append: (delta) => send(delta),
-    finalizeAppend: (tail) => send(tail || "（已完成）"),
-    send: (full) => send(full),
-  };
+  // ⛔ QQ 故意**只留一次性发送**（不给 append / finalizeAppend）⇒ bot-stream 的 finish() 落到
+  //    `send(最终正文)`，用户收到一条干净答复。三条理由（11-04 用户截图「QQ 好乱」逐条实测）：
+  //  ① 纯文本消息不能编辑气泡，进度只能堆成多条；
+  //  ② 官方「被动消息每条用户消息最多回复 4 次」，进度占掉就没正文的份；
+  //  ③ 进度是按时间切的，一定会把 Markdown 从中间切断 —— 实测出现单独一条「**今晚」（半截粗体）
+  //     和一条「···」，思考稿也混在正文里一起发了过去。
+  //  进度留在桌面端看（那边有完整实时视图）。
+  return { send: (full) => send(full) };
 }
 
 function telegramStreamSink(chatId: number): BotStreamSink {

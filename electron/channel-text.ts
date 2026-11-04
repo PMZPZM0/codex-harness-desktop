@@ -4,6 +4,7 @@
 // 粗体/行内代码去符号、链接去 URL 留文字、列表转 •。**逐行转换**——配合流式「攒到完整行再发」
 // 的分片策略，表格行跨分片也安全（每行独立转换，不依赖上下文）。
 // 纯函数；预检【38】用 node type-stripping 直跑真实现做行为断言。
+import { stripVoiceScript } from "../src/lib/voice-script.mjs";
 
 /** 单行内联清理：粗体/斜体/行内代码去符号，链接 [t](u) → t */
 function stripInline(md: string): string {
@@ -13,12 +14,18 @@ function stripInline(md: string): string {
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/__([^_]+)__/g, "$1")
     .replace(/\*([^*\n]+)\*/g, "$1")
-    .replace(/`([^`]+)`/g, "$1");
+    .replace(/`([^`]+)`/g, "$1")
+    // ⛔ 收尾再清一次残留的 `**`：配对的正则吃不到「半截粗体」——流式分片把 `**今晚**` 切成
+    //   `**今晚` 时，不去掉就是 QQ 上一条独立的气泡写着「**今晚」（11-04 用户截图）。
+    .replace(/\*\*/g, "");
 }
 
 /** Markdown → 聊天渠道纯文本排版（微信/Telegram/飞书/钉钉/QQ 通用：它们要么是纯文本消息，要么对表格无能为力）*/
 export function plainTextForChannel(md: string): string {
-  const lines = String(md ?? "").split(/\r?\n/);
+  // 先剥播报稿（```voice … ```）：那是给 TTS 念的台本，不是给用户看的正文。
+  // 桌面端显示时本来就剥掉它，渠道侧没剥 ⇒ QQ 收到「```voice + 一段和正文重复的口播」。
+  // 真相源仍是 src/lib/voice-script.mjs（⛔ 不在这里另抄一份围栏规则）。
+  const lines = String(stripVoiceScript(md ?? "")).split(/\r?\n/);
   const out: string[] = [];
   for (const line of lines) {
     // 表格行：| a | b | → 【a】b（分隔行 |---|---| 整行丢弃）
