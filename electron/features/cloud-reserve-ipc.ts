@@ -31,7 +31,7 @@ import type { HostCaps } from "../runtime/seams";
       服务端 1.1.8 起已允许账号 token 直接 push（device 降为可选标记），所以不再需要配对流程。 */
 import { accountsBase, activeCredential } from "../cloud-api";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, listLocalSessions } from "../cloud-sync";
-import { delegateRegistry, teamRunStore } from "../runtime-refs";
+import { delegateRegistry, internalThreads, teamRunStore } from "../runtime-refs";
 import { bossStore } from "../boss-groups/store";
 import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import type { IpcHost } from "../ipc-host";
@@ -111,10 +111,13 @@ export const cloudReserveFeature = defineFeature<null>({
     /** 会话来源分类（上传弹窗分组）：专家团 / 中枢 / 调度 / 群成员 —— 与侧栏分类同源账本。 */
     const sessionKinds = async (): Promise<Map<string, string>> => {
       const kinds = new Map<string, string>();
+      /* 宿主内部会话（内省 / 蒸馏 / 复盘）：侧栏已经隐藏，上传弹窗也要单列且默认不传。
+         ⛔ 优先级最高 —— 它可能同时挂着团队/调度记录。 */
+      for (const id of internalThreads) if (id) kinds.set(String(id), "internal");
       try {
         const team = teamRunStore?.listThreads?.();
         if (team) {
-          for (const id of Object.values(team.members || {})) if (id) kinds.set(String(id), "member");
+          for (const id of Object.values(team.members || {})) if (id && !kinds.has(String(id))) kinds.set(String(id), "member");
           for (const id of Object.keys(team.threads || {})) if (!kinds.has(id)) kinds.set(id, "lead");
         }
       } catch { /* 团队账本未就绪 */ }

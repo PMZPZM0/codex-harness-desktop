@@ -529,6 +529,7 @@ ok(/cloudSyncIds/.test(appSettingsSrc) && /cloudSyncIds/.test(reserveSrc3) && /r
   "后台自动同步只跑上次勾选的会话（没选过不上传）");
 ok(/path: _path/.test(reserveSrc3), "会话列表不回传本机绝对路径");
 ok(/only\.size \? 10000/.test(syncSrc2), "手选上传按文件名定位，不受「最新 40 个」限制");
+ok(/internalThreads/.test(reserveSrc3) && /internal:/.test(dialogSrc), "内部会话（内省/蒸馏）单列且默认不传");
 
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);

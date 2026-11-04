@@ -45,8 +45,9 @@ const KIND_LABELS: Record<string, string> = {
   subagent: "子智能体调度",
   cli: "CLI 智能体调度",
   "group-member": "群成员",
+  internal: "内部会话（内省/蒸馏）",
 };
-const KIND_ORDER = ["main", "boss", "lead", "team", "member", "expert", "subagent", "cli", "group-member"];
+const KIND_ORDER = ["main", "boss", "lead", "team", "member", "expert", "subagent", "cli", "group-member", "internal"];
 /* 默认只勾「主会话 / 中枢 / 专家团主理人 / 专家团调度」；调度与成员子会话默认不传（用户按需勾）。 */
 const DEFAULT_PICK_KINDS = new Set(["main", "boss", "lead", "team"]);
 
@@ -231,7 +232,7 @@ export function SessionSyncDialog(props: {
 
         {mode === "upload" && (
           <div style={{ padding: "6px 18px", borderBottom: "1px solid var(--line-soft, #efefeb)", fontSize: 11.5, color: "var(--muted, #6a6a64)", lineHeight: 1.6 }}>
-            默认只勾 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度与成员子会话请按需勾选。确认上传后，后台会自动保持这些会话的增量同步（新会话需再次选择；没选过不会自动上传）。
+            默认只勾 <b>主会话 / 指挥中枢 / 专家团主理人 / 专家团调度</b>；调度、成员子会话与<b>内部会话（内省/蒸馏）</b>默认不传，请按需勾选。确认上传后，后台会自动保持这些会话的增量同步（新会话需再次选择；没选过不会自动上传）。
           </div>
         )}
 
