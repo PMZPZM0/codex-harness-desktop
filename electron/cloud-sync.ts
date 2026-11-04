@@ -156,11 +156,19 @@ export async function runCloudSyncOnce(
   const names = readThreadNames(deps.codexHome);
   let budgetUsed = 0;
   let metaOnly = 0;
-  const files = listRollouts(root, MAX_SESSIONS_PER_RUN);
+  /* 手选上传：不能只扫最新 40 个（用户可能勾一条很老的会话）⇒ 按文件名里的 id 先筛，
+     只读选中的那几个文件；⛔ 不读全部 rollout 全文。 */
+  const files = listRollouts(root, only.size ? 10000 : MAX_SESSIONS_PER_RUN);
+  const candidates = only.size
+    ? files.filter((file) => {
+        const match = /-([0-9a-f-]{36})\.jsonl$/.exec(basename(file));
+        return match ? only.has(match[1]) : true;
+      })
+    : files;
   const payload: { id: string; title: string; project: string; fromOrdinal: number; lines: string[]; }[] = [];
   const meta: { id: string; path: string; lines: number; sizeBytes: number; title: string; project: string }[] = [];
 
-  for (const file of files) {
+  for (const file of candidates) {
     let content = "";
     try { content = readFileSync(file, "utf8"); } catch { continue; }
     const all = content.split("\n").filter((l) => l.trim());

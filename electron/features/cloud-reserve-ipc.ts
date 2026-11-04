@@ -145,7 +145,8 @@ export const cloudReserveFeature = defineFeature<null>({
     };
     const listSessions = async () => {
       const kinds = await sessionKinds();
-      return listLocalSessions(syncDeps()).map((row) => ({ ...row, kind: kinds.get(row.id) || "main" }));
+      /* ⛔ 不把本机绝对路径发给渲染层/网页：列表只需要标题/项目/行数/分类。 */
+      return listLocalSessions(syncDeps()).map(({ path: _path, ...row }) => ({ ...row, kind: kinds.get(row.id) || "main" }));
     };
 
     /* ── 云管理（11-03 用户令：把云管理的用量/云端会话搬进应用内）─────────────────
@@ -200,14 +201,13 @@ export const cloudReserveFeature = defineFeature<null>({
         return serialized(() => runCloudSyncOnce(syncDeps(), { onlyIds }).catch(() => null));
       }
       if (syncInFlight) return syncInFlight;
-      /* 后台自动同步只跑「上次手动勾选过的会话」—— 没选过就一条都不传（用户令：先选再传，不许瞎传）。 */
+      /* 后台自动同步只跑「上次手动勾选过的会话」—— 没选过就一条都不传（用户令：先选再传，不许瞎传）。
+         ⛔ 不在这里调 listSessions（它会读几百个 rollout 全文）：ids 直接交给 runCloudSyncOnce，
+            后者按文件名定位、只读选中的那几个文件。 */
       syncInFlight = serialized(async () => {
-        const scope = new Set(readAppSettingsSync(app.getPath("userData")).cloudSyncIds || []);
-        if (!scope.size) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
-        const sessions = await listSessions();
-        const ids = sessions.filter((row) => scope.has(row.id)).map((row) => row.id);
-        if (!ids.length) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
-        return runCloudSyncOnce(syncDeps(), { onlyIds: ids });
+        const scope = (readAppSettingsSync(app.getPath("userData")).cloudSyncIds || []).map(String).filter(Boolean);
+        if (!scope.length) return { ok: true, pushedSessions: 0, pushedLines: 0, scanned: 0 };
+        return runCloudSyncOnce(syncDeps(), { onlyIds: scope });
       }).catch(() => null).finally(() => { syncInFlight = null; });
       return syncInFlight;
     };

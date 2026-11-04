@@ -1131,7 +1131,7 @@
       "channel": "cloud:sync/list",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string; kind: string; syncedLines: number; newLines: number }> }>",
+      "returns": "Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; kind: string; syncedLines: number; newLines: number }> }>",
       "invokeArgs": "",
       "cast": null,
       "note": "10-18：列出本地会话供勾选上传（只读）；11-04 加来源分类与同步游标"

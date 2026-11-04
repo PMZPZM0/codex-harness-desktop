@@ -648,7 +648,7 @@ interface Window {
     /* 云版预留：同步冲突解决（resolution = local|cloud|merge；未开通前为预留桩） */
     cloudSyncConflictResolve(key: string, resolution: string): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 10-18：列出本地会话供勾选上传（只读）；11-04 加来源分类与同步游标 */
-    cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; path: string; kind: string; syncedLines: number; newLines: number }> }>;
+    cloudSyncList(): Promise<{ ok: boolean; error?: string; sessions: Array<{ id: string; title: string; project: string; lines: number; sizeBytes: number; updatedAt: number; kind: string; syncedLines: number; newLines: number }> }>;
     /* 云版预留：按 key 从云端拉回数据（未开通前为预留桩） */
     cloudSyncPull(input?: { keys: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 11-04：只上传用户勾选的会话（ids）；不带 ids = 全量（自动同步/旧调用） */

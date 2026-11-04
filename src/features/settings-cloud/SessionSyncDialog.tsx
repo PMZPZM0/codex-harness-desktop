@@ -26,7 +26,6 @@ type SessionRow = {
   lines: number;
   sizeBytes: number;
   updatedAt: number;
-  path: string;
   /** 来源分类：main / boss / lead / team / member / expert / subagent / cli / group-member */
   kind?: string;
   /** 同步游标：已传行数 / 新增行数 */
@@ -149,7 +148,9 @@ export function SessionSyncDialog(props: {
       list.push(row);
       map.set(kind, list);
     }
-    return KIND_ORDER.filter((kind) => map.has(kind)).map((kind) => ({ kind, label: KIND_LABELS[kind] || kind, items: map.get(kind) as SessionRow[] }));
+    /* 未来新增的来源类型也不许从弹窗里消失（未知类型排在已知类型之后）。 */
+    const order = [...KIND_ORDER, ...[...map.keys()].filter((kind) => !KIND_ORDER.includes(kind))];
+    return order.filter((kind) => map.has(kind)).map((kind) => ({ kind, label: KIND_LABELS[kind] || kind, items: map.get(kind) as SessionRow[] }));
   }, [visibleRows]);
   const allPicked = visibleRows.length > 0 && visibleRows.every((row) => picked.has(row.id));
   const toggleAll = () => {
