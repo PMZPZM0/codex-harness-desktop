@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Cloud, Download, ExternalLink, RefreshCw, Search, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
+import { AppSelect } from "../../components/AppSelect";
 import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 
 type CloudSession = {
@@ -77,9 +78,12 @@ export function CloudManageSection() {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [rows, setRows] = useState<CloudSession[]>([]);
   const [query, setQuery] = useState("");
+  const [projectFilter, setProjectFilter] = useState("");
+  const [sortBy, setSortBy] = useState<"time" | "size" | "lines">("time");
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState<"" | "load" | "push" | "pull" | "delete">("");
-  const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [syncMsg, setSyncMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [listMsg, setListMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<string[] | null>(null);
 
   const refresh = useCallback(async () => {
@@ -102,9 +106,9 @@ export function CloudManageSection() {
       setRows([]);
       return;
     }
-    if (u && !u.ok) { setMsg({ kind: "err", text: humanError(u.code, u.error) }); }
+    if (u && !u.ok) { setSyncMsg({ kind: "err", text: humanError(u.code, u.error) }); }
     else if (u) setUsage({ usedBytes: Number(u.usedBytes) || 0, limitBytes: Number(u.limitBytes) || 0, sessions: Number(u.sessions) || 0, devices: Number(u.devices) || 0, deviceLimit: Number(u.deviceLimit) || 0 });
-    if (idx && !idx.ok) { setMsg({ kind: "err", text: humanError(idx.code, idx.error) }); }
+    if (idx && !idx.ok) { setListMsg({ kind: "err", text: humanError(idx.code, idx.error) }); }
     else if (idx) {
       setRows(idx.sessions ?? []);
       setUsage((prev) => prev ?? { usedBytes: Number(idx.usedBytes) || 0, limitBytes: Number(idx.limitBytes) || 0, sessions: (idx.sessions ?? []).length, devices: 0, deviceLimit: 0 });
@@ -113,11 +117,16 @@ export function CloudManageSection() {
 
   useEffect(() => { setBusy("load"); void refresh().finally(() => setBusy("")); }, [refresh]);
 
+  const projects = useMemo(() => [...new Set(rows.map((row) => row.project).filter(Boolean))].sort(), [rows]);
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((row) => `${row.title} ${row.project} ${row.machineName} ${row.id}`.toLowerCase().includes(q));
-  }, [rows, query]);
+    let list = rows;
+    if (projectFilter) list = list.filter((row) => (row.project || "") === projectFilter);
+    if (q) list = list.filter((row) => `${row.title} ${row.project} ${row.machineName} ${row.id}`.toLowerCase().includes(q));
+    return [...list].sort((a, b) => sortBy === "size" ? (b.sizeBytes || 0) - (a.sizeBytes || 0)
+      : sortBy === "lines" ? (b.lines || 0) - (a.lines || 0)
+        : (b.updatedAt || b.uploadedAt || 0) - (a.updatedAt || a.uploadedAt || 0));
+  }, [rows, query, projectFilter, sortBy]);
 
   const allPicked = filtered.length > 0 && filtered.every((row) => picked.has(row.id));
   const toggleAll = () => {
@@ -134,22 +143,22 @@ export function CloudManageSection() {
 
   const push = async () => {
     if (busy) return;
-    setBusy("push"); setMsg(null);
+    setBusy("push"); setSyncMsg(null);
     try {
       const r = await api().cloudSyncPush?.({});
-      if (!r) { setMsg({ kind: "err", text: "当前版本不支持会话同步" }); return; }
-      setMsg(r.ok ? { kind: "ok", text: `已同步：上传 ${r.pushedSessions ?? 0} 个会话 / ${r.pushedLines ?? 0} 行` } : { kind: "err", text: humanError(r.code, r.error) });
+      if (!r) { setSyncMsg({ kind: "err", text: "当前版本不支持会话同步" }); return; }
+      setSyncMsg(r.ok ? { kind: "ok", text: `已同步：上传 ${r.pushedSessions ?? 0} 个会话 / ${r.pushedLines ?? 0} 行` } : { kind: "err", text: humanError(r.code, r.error) });
       if (r.ok) await refresh();
     } finally { setBusy(""); }
   };
 
   const pull = async (ids: string[]) => {
     if (busy || !ids.length) return;
-    setBusy("pull"); setMsg(null);
+    setBusy("pull"); setListMsg(null);
     try {
       const r = await api().cloudSyncPull?.({ keys: ids });
-      if (!r) { setMsg({ kind: "err", text: "当前版本不支持从云端下载" }); return; }
-      setMsg(r.ok
+      if (!r) { setListMsg({ kind: "err", text: "当前版本不支持从云端下载" }); return; }
+      setListMsg(r.ok
         ? { kind: "ok", text: `已下载 ${r.pulled ?? 0} 个会话到本机（已有会话会跳过）——到左侧会话列表查看` }
         : { kind: "err", text: humanError(r.code, r.error) });
       if (r.ok) setPicked(new Set());
@@ -158,11 +167,11 @@ export function CloudManageSection() {
 
   const remove = async (ids: string[]) => {
     if (busy || !ids.length) return;
-    setBusy("delete"); setMsg(null);
+    setBusy("delete"); setListMsg(null);
     try {
       const r = await api().cloudSyncDelete?.({ ids });
-      if (!r) { setMsg({ kind: "err", text: "当前版本不支持删除云端会话" }); return; }
-      setMsg(r.ok ? { kind: "ok", text: `已删除云端 ${r.deleted ?? 0} 条会话（本机文件未动）` } : { kind: "err", text: humanError(r.code, r.error) });
+      if (!r) { setListMsg({ kind: "err", text: "当前版本不支持删除云端会话" }); return; }
+      setListMsg(r.ok ? { kind: "ok", text: `已删除云端 ${r.deleted ?? 0} 条会话（本机文件未动）` } : { kind: "err", text: humanError(r.code, r.error) });
       if (r.ok) { setPicked(new Set()); await refresh(); }
     } finally { setBusy(""); setConfirmDelete(null); }
   };
@@ -224,10 +233,40 @@ export function CloudManageSection() {
           <button type="button" className="primary-setting" disabled={Boolean(busy)} onClick={() => void push()}>
             {busy === "push" ? <Spinner /> : <RefreshCw size={13} />}{busy === "push" ? "同步中…" : "立即同步"}
           </button>
+        </div>
+
+        {syncMsg ? <div className={`cloud-acct-msg ${syncMsg.kind}`}>{syncMsg.text}</div> : null}
+      </div>
+
+      <div className="cloud-acct-card cloud-sync-manage-card">
+        <div className="cloud-acct-head cloud-sync-manage-head">
+          <strong>已上传会话</strong>
+          <span className="cloud-acct-tag">{rows.length} 个</span>
+          <span className="cloud-acct-sub">只删云端，本机会话不动</span>
+        </div>
+        <div className="cloud-sync-manage-list-tools">
           <span className="cloud-sync-manage-search">
             <Search size={13} />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索会话 / 项目 / 机器" />
+            <input value={query} onChange={(event) => { setQuery(event.target.value); setPicked(new Set()); }} placeholder="搜索会话 / 项目 / 机器" />
           </span>
+          <AppSelect
+            className="cloud-sync-manage-select"
+            value={projectFilter}
+            onChange={(next) => { setProjectFilter(next); setPicked(new Set()); }}
+            ariaLabel="按项目筛选"
+            options={[{ value: "", label: "全部项目" }, ...projects.map((project) => ({ value: project, label: project }))]}
+          />
+          <AppSelect
+            className="cloud-sync-manage-select"
+            value={sortBy}
+            onChange={(next) => setSortBy(next as "time" | "size" | "lines")}
+            ariaLabel="排序"
+            options={[
+              { value: "time", label: "最近上传" },
+              { value: "size", label: "体积最大" },
+              { value: "lines", label: "行数最多" },
+            ]}
+          />
           <span className="cloud-sync-manage-toolbar-spacer" />
           <button type="button" className="secondary-setting" disabled={Boolean(busy) || picked.size === 0} onClick={() => void pull([...picked])}>
             <Download size={13} />下载选中{picked.size ? ` (${picked.size})` : ""}
@@ -236,8 +275,6 @@ export function CloudManageSection() {
             <Trash2 size={13} />删除选中{picked.size ? ` (${picked.size})` : ""}
           </button>
         </div>
-
-        {msg ? <div className={`cloud-acct-msg ${msg.kind}`}>{msg.text}</div> : null}
 
         {confirmDelete ? (
           <div className="cloud-sync-manage-confirm">
@@ -248,14 +285,9 @@ export function CloudManageSection() {
             </button>
           </div>
         ) : null}
-      </div>
 
-      <div className="cloud-acct-card cloud-sync-manage-card">
-        <div className="cloud-acct-head cloud-sync-manage-head">
-          <strong>已上传会话</strong>
-          <span className="cloud-acct-tag">{rows.length} 个</span>
-          <span className="cloud-acct-sub">只删云端，本机会话不动</span>
-        </div>
+        {listMsg ? <div className={`cloud-acct-msg ${listMsg.kind}`}>{listMsg.text}</div> : null}
+
         <div className="cloud-sync-manage-list">
           {busy === "load" && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>正在读取云端会话…</p> : null}
           {!busy && !rows.length ? <p className="settings-card-hint" style={{ margin: 0 }}>云端还没有会话。点「立即同步」把本机会话传上去（之后每 5 分钟自动同步一次）。</p> : null}
@@ -285,7 +317,7 @@ export function CloudManageSection() {
               </span>
             </div>
           ))}
-          {rows.length && !filtered.length ? <p className="settings-card-hint" style={{ margin: 0 }}>没有匹配「{query}」的云端会话。</p> : null}
+          {rows.length && !filtered.length ? <p className="settings-card-hint" style={{ margin: 0 }}>没有匹配当前筛选的云端会话。</p> : null}
         </div>
       </div>
     </div>

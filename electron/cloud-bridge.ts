@@ -59,15 +59,16 @@ function send(res: ServerResponse, status: number, body: unknown, cors: Record<s
     .end(JSON.stringify(body));
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage): Promise<{ raw: string; tooLarge: boolean }> {
   return new Promise((done) => {
     let raw = "";
+    let tooLarge = false;
     req.on("data", (chunk) => {
       raw += chunk;
-      if (raw.length > MAX_BODY) req.destroy();
+      if (raw.length > MAX_BODY) { tooLarge = true; req.destroy(); }
     });
-    req.on("end", () => done(raw));
-    req.on("error", () => done(raw));
+    req.on("end", () => done({ raw, tooLarge }));
+    req.on("error", () => done({ raw, tooLarge }));
   });
 }
 
@@ -135,7 +136,8 @@ async function route(req: IncomingMessage, res: ServerResponse, opts: CloudBridg
     return;
   }
   if (url.pathname === "/api/sync-pull" && req.method === "POST") {
-    const raw = await readBody(req);
+    const { raw, tooLarge } = await readBody(req);
+    if (tooLarge) { send(res, 413, { ok: false, error: "body-too-large" }, cors); return; }
     let ids: string[] = [];
     try {
       const body = JSON.parse(raw || "{}") as { ids?: unknown };

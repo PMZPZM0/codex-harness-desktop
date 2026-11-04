@@ -504,6 +504,8 @@ ok(/lines: \[\]/.test(syncTitleSrc) && /prev\?\.title !== title/.test(syncTitleS
   "名字变化时只更新云端索引（lines: []），不重传正文");
 ok(/cloud-acct-card/.test(manageSrc) && /row\.title \|\| row\.id/.test(manageSrc),
   "云管理面板与云账号页同卡皮肤，列表标题优先会话名");
+ok(/cloud-sync-manage-list-tools/.test(manageSrc) && /cloud-sync-manage-select/.test(manageSrc),
+  "云管理列表工具条（搜索/项目筛选/排序/批量）在会话列表卡内");
 
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);
