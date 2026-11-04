@@ -371,6 +371,16 @@
   font-size: 10.5px;
   color: color-mix(in srgb, var(--muted) 80%, transparent);
 }
+.settings-backend-options-warn {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--danger, #c0392b);
+}
+.settings-backend-options-hint {
+  margin: 0;
+  font-size: 10.5px;
+  color: color-mix(in srgb, var(--muted) 80%, transparent);
+}
 .settings-toggle-row.is-sub { padding: 6px 4px; }
 .settings-toggle-row.is-sub .settings-toggle-icon { width: 24px; height: 24px; }
 .settings-toggle-row.is-sub .settings-toggle-text strong { font-size: 12.5px; }

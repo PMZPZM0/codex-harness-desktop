@@ -186,6 +186,10 @@ function DesktopBackendOptions() {
           <ToggleSwitch checked={pref[row.key]} disabled={busy} label={`桌面后端：${row.label}`} onChange={(next) => void toggle(row.key, next)} />
         </div>
       ))}
+      {!pref.nuphus && !pref.computerUse ? (
+        <p className="settings-backend-options-warn">两个后端都关了：桌面自动化没有可用后端（Windows 的 UIA 清单通道不受这两个开关影响）。</p>
+      ) : null}
+      <p className="settings-backend-options-hint">切换会重写配置并重启引擎（约几秒）。</p>
     </div>
   );
 }

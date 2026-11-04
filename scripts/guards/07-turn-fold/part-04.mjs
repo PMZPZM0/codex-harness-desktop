@@ -736,22 +736,32 @@ export async function run() {
   (macFallback?.active === "nuphus-desktop" && winFallback?.active === "computer-use-desktop" ? ok : fail)(
     `【274】主后端缺失时自动落到辅助后端（mac 无 computer-use ⇒ ${macFallback?.active}；win 无 nuphus ⇒ ${winFallback?.active}）`
   );
-  (/const desktopInstructions = \(platform: NodeJS\.Platform = process\.platform\)/.test(di274)
-    && /platform === "darwin" \? MAC_DESKTOP_INSTRUCTIONS/.test(di274)
+  (/const desktopInstructions = \(\s*platform: NodeJS\.Platform = process\.platform,/.test(di274)
+    && /backends: \{ nuphus\?: boolean; computerUse\?: boolean \} = \{\}/.test(di274)
     && /computer-use` MCP server/.test(di274)
     && /auxiliary\*\* backend on macOS/.test(di274)
     && /nuphus-call <tool> key=value/.test(di274)
     && /AUXILIARY on Windows/.test(di274)
+    && /The Nuphus desktop backend is DISABLED/.test(di274)
+    && /The Computer Use backend is DISABLED/.test(di274)
     && !/text \+= DESKTOP_INSTRUCTIONS;/.test(di274) ? ok : fail)(
-    "【274】常驻指令按平台分叉：mac computer-use 主 / nuphus 辅；Windows nuphus 主 / computer-use 辅"
+    "【274】常驻指令按平台+开关分叉：mac computer-use 主 / nuphus 辅；Windows nuphus 主 / computer-use 辅；关掉的后端不再被引导"
+  );
+  (/nuphusBackend\?: boolean/.test(di274) && /computerUseBackend\?: boolean/.test(di274)
+    && /desktopInstructions\(process\.platform, \{ nuphus: input\.nuphusBackend !== false, computerUse: input\.computerUseBackend !== false \}\)/.test(di274) ? ok : fail)(
+    "【274】指令输入带两个后端开关（设置变化后重写 config 时口径一致）"
+  );
+  const discipline274 = codeOnly(readFileSync(join(ROOT, "electron", "main", "12-skill-discipline.ts"), "utf8"));
+  (/nuphusBackend: appSettings\.desktopBackendNuphus !== false/.test(discipline274)
+    && /computerUseBackend: appSettings\.desktopBackendComputerUse !== false/.test(discipline274) ? ok : fail)(
+    "【274】devInstructionsInput 从 app-settings 读两个后端开关"
   );
   (skill274.includes("macOS：桌面自动化 =") && skill274.includes("computer-use")
     && /辅助后端 = nuphus/.test(skill274) && /第二清单通道/.test(skill274) ? ok : fail)(
     "【274】桌面技能双平台分支：mac computer-use 主 + nuphus 辅；Windows UIA/nuphus 主 + computer-use 辅助"
   );
-  (apply274.indexOf("COMPUTER_USE_MCP_SERVER") >= 0
-    && apply274.indexOf("COMPUTER_USE_MCP_SERVER") < apply274.indexOf("shouldRegisterNuphus") ? ok : fail)(
-    "【274】config 写出顺序：computer-use 段排在 nuphus 之前"
+  (/const desktopBackendSections = process\.platform === "darwin"[\s\S]{0,120}?\? \[\.\.\.computerUseMcpSection, \.\.\.nuphusMcpSection\][\s\S]{0,120}?: \[\.\.\.nuphusMcpSection, \.\.\.computerUseMcpSection\]/.test(apply274) ? ok : fail)(
+    "【274】config 写出顺序按平台：mac computer-use 先 / Windows nuphus 先（配置顺序即工具面顺序）"
   );
   /* 开关联动：两个后端都有独立偏好字段（默认 true）+ 控制台两个小选项 + 注册/掩码跟随开关。 */
   const settings274 = codeOnly(readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8"));
@@ -759,8 +769,9 @@ export async function run() {
   (settings274.includes("desktopBackendNuphus?: boolean") && settings274.includes("desktopBackendComputerUse?: boolean")
     && general274.includes("DesktopBackendOptions") && general274.includes("desktopBackendNuphus")
     && general274.includes("desktopBackendComputerUse") && general274.includes('label: "Computer Use（控件清单）"')
-    && general274.includes("settings-backend-options") ? ok : fail)(
-    "【274】控制台桌面自动化下有 Nuphus / Computer Use 两个小开关（默认开，按平台排序）"
+    && general274.includes("settings-backend-options") && general274.includes("两个后端都关了")
+    && general274.includes("切换会重写配置并重启引擎") ? ok : fail)(
+    "【274】控制台桌面自动化下有 Nuphus / Computer Use 两个小开关（默认开、按平台排序、两关有提示、保存重启）"
   );
   (/desktopBackendNuphus !== false/.test(apply274) && /desktopBackendComputerUse !== false/.test(apply274)
     && /\{ nuphus: nuphusBackend \}/.test(apply274) && /enabled: computerUseBackend/.test(apply274) ? ok : fail)(

@@ -92,21 +92,50 @@ const CONTINUITY_INSTRUCTIONS =
  *       AUTOMATION DISABLED NOTE 明确禁止 nuphus-call）⇒ 这里可以放心把 CLI 写成主线。
  *     · `nuphus-call.cmd` 确认在 PATH 上（resources/tools/npm-global，已核对）。
  *  细节留在技能里（渐进披露），这里只给通道与优先级，避免每轮多花几百 token。 */
-const WINDOWS_DESKTOP_INSTRUCTIONS =
-  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation — the nuphus MCP tools (`desktop_*`) are registered as an MCP server, but on current engine builds MCP tools are NOT delivered to you: a direct call such as `desktop_windows_list` fails with `unsupported call`. ⛔ That is NOT \"the switch is off\" — do NOT retry it, and do NOT tell the user the feature is disabled. **Drive desktop automation through the CLI instead: `nuphus-call <tool> key=value …`** (on PATH; run it with no args to list every tool — e.g. `nuphus-call desktop_perceive`, `nuphus-call desktop_windows_list`). The UIA channel (`desktop_ui_*`, from the harness-uia MCP server) has the same limitation: if a direct call fails, use the CLI path rather than reporting it broken.\n   AUXILIARY on Windows: the `computer-use` MCP (open-computer-use; tools `list_apps` / `get_app_state` / `click` / `perform_secondary_action` / `scroll` / `drag` / `type_text` / `press_key` / `set_value`) is also registered when installed. Use it as a second control-list channel only when UIA/nuphus cannot give you a usable list; ⛔ never prefer it over UIA/nuphus on Windows.\n   CHANNEL PRIORITY on Windows: for native apps (Explorer / Office / Win32 / WPF) prefer the control-list channel (UIA) when your skill gives you a working way to it — read the list once, then act by element index (no coordinates, survives window moves and DPI scaling; writes still need confirm=true); use ego-browser (see your browser-skill) for web content and for Electron/Tauri windows (their UIA tree is shallow, often single digits); fall back to OCR coordinates (`desktop_perceive` + `desktop_mouse`) only when neither gives you a usable list, and re-perceive after any window move.\n   Loop: list windows → activate the target window → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform).\n   ⛔ `desktop_perceive` downloads its OCR models ON FIRST USE (tens of seconds to a couple of minutes). That is a one-time cost, not a hang — launch it the way the TURN CONTINUITY rule describes for long commands, then continue. ⛔ Run automation calls ONE AT A TIME: nuphus serializes them, and parallel calls collide with `Automation is busy` — that error means \"wait for the other call\", not \"retry harder\". ⛔ Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
+/* ── 桌面自动化说明（按平台 + 后端开关分叉）──────────────────────────────────
+   ⛔ 11-03 用户令：Nuphus / Computer Use 两个后端默认都开，平台优先（Windows nuphus 主、
+   macOS computer-use 主）。**关闭某个后端后，指令里不能再引导它的 CLI/工具** —— 否则
+   用户关了开关、模型照样走 nuphus-call，等于开关失效（审查发现）。
+   ⛔ MCP 工具可能被引擎延迟暴露：文案要说明「直调失败不是开关关了」，并给可用通道。 */
+const AUTOMATION_HEADER =
+  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):";
 
-/* ── macOS：桌面自动化 = computer-use（11-03 用户令「mac 默认优先 computer use」）──────────
-   ⛔ mac 上 nuphus 的桌面组被硬掩（automation-policy.nuphusDisabledTools），只有 computer-use
-     一条真实键鼠通道。旧文案只写 nuphus/nuphus-call，模型在 mac 上会去绕 CLI = 用了另一套后端。
-   ⛔ 不写「工具不在表里就当关闭」：MCP 延迟暴露时工具可能不可直接调用，要如实说明而不是换通道。 */
-const MAC_DESKTOP_INSTRUCTIONS =
-  "\n\nAUTOMATION TOOLKIT (pre-installed; use ONLY when the task actually needs it — the tools themselves are NOT described in your context by default):\n1) Desktop automation on **macOS** — **PREFERRED backend: the `computer-use` MCP server** (open-computer-use, bundled with the app; it reads the macOS Accessibility control list). Tools: `list_apps` → `get_app_state` → `click` / `perform_secondary_action` / `scroll` / `drag` / `type_text` / `press_key` / `set_value`. Act by element/index from `get_app_state` rather than guessing coordinates; verify with `get_app_state` after acting. Long text: use `set_value` or clipboard + Cmd+V. Run automation calls ONE AT A TIME.\n" +
-  "   ⛔ nuphus is the **auxiliary** backend on macOS (enabled by default): if the `computer-use` tools are absent or a call fails, fall back to `nuphus-call <tool> key=value …` (`desktop_windows_list` / `desktop_screenshot` / `desktop_perceive` / `desktop_mouse` / `desktop_input`), never run both backends in the same task. Browser work should still use ego-browser first (see browser-skill).\n" +
-  "   If `computer-use` fails with `unsupported call`: do NOT retry it — ask the user to check 系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制; if it still fails, switch to the nuphus CLI above and say which backend you are using.\n" +
-  "   ⛔ Never automate a macOS system permission/elevation dialog — stop and ask the user.";
+const WIN_NUPHUS_CORE = "1) Desktop automation — the nuphus MCP tools (`desktop_*`) are registered as an MCP server, but on current engine builds MCP tools are NOT delivered to you: a direct call such as `desktop_windows_list` fails with `unsupported call`. ⛔ That is NOT \"the switch is off\" — do NOT retry it, and do NOT tell the user the feature is disabled. **Drive desktop automation through the CLI instead: `nuphus-call <tool> key=value …`** (on PATH; run it with no args to list every tool — e.g. `nuphus-call desktop_perceive`, `nuphus-call desktop_windows_list`). The UIA channel (`desktop_ui_*`, from the harness-uia MCP server) has the same limitation: if a direct call fails, use the CLI path rather than reporting it broken.";
+const WIN_CU_AUX = "   AUXILIARY on Windows: the `computer-use` MCP (open-computer-use; tools `list_apps` / `get_app_state` / `click` / `perform_secondary_action` / `scroll` / `drag` / `type_text` / `press_key` / `set_value`) is also registered when installed. Use it as a second control-list channel only when UIA/nuphus cannot give you a usable list; ⛔ never prefer it over UIA/nuphus on Windows.";
+const WIN_PRIORITY_LOOP = "   CHANNEL PRIORITY on Windows: for native apps (Explorer / Office / Win32 / WPF) prefer the control-list channel (UIA) when your skill gives you a working way to it — read the list once, then act by element index (no coordinates, survives window moves and DPI scaling; writes still need confirm=true); use ego-browser (see your browser-skill) for web content and for Electron/Tauri windows (their UIA tree is shallow, often single digits); fall back to OCR coordinates (`desktop_perceive` + `desktop_mouse`) only when neither gives you a usable list, and re-perceive after any window move.\n   Loop: list windows → activate the target window → observe (`desktop_screenshot` / `desktop_perceive`) → act (`desktop_mouse` / `desktop_input`, pass confirm=true) → verify with another screenshot. Take click coordinates from `desktop_perceive` (runs locally, free); `desktop_vision` coordinates are explicitly unreliable — never click with them. For long text (>500 chars) write the clipboard first and paste (Ctrl+V on Windows, Cmd+V on macOS — never hardcode one platform).\n   ⛔ `desktop_perceive` downloads its OCR models ON FIRST USE (tens of seconds to a couple of minutes). That is a one-time cost, not a hang — launch it the way the TURN CONTINUITY rule describes for long commands, then continue. ⛔ Run automation calls ONE AT A TIME: nuphus serializes them, and parallel calls collide with `Automation is busy` — that error means \"wait for the other call\", not \"retry harder\". ⛔ Never automate a UAC / privilege-elevation prompt — stop and ask the user.";
+const WINDOWS_DESKTOP_INSTRUCTIONS = AUTOMATION_HEADER + WIN_NUPHUS_CORE + WIN_CU_AUX + WIN_PRIORITY_LOOP;
 
-const desktopInstructions = (platform: NodeJS.Platform = process.platform): string =>
-  platform === "darwin" ? MAC_DESKTOP_INSTRUCTIONS : WINDOWS_DESKTOP_INSTRUCTIONS;
+const MAC_CU_CORE = "1) Desktop automation on **macOS** — **PREFERRED backend: the `computer-use` MCP server** (open-computer-use, bundled with the app; it reads the macOS Accessibility control list). Tools: `list_apps` → `get_app_state` → `click` / `perform_secondary_action` / `scroll` / `drag` / `type_text` / `press_key` / `set_value`. Act by element/index from `get_app_state` rather than guessing coordinates; verify with `get_app_state` after acting. Long text: use `set_value` or clipboard + Cmd+V. Run automation calls ONE AT A TIME.\n";
+const MAC_NUPHUS_AUX = "   ⛔ nuphus is the **auxiliary** backend on macOS (enabled by default): if the `computer-use` tools are absent or a call fails, fall back to `nuphus-call <tool> key=value …` (`desktop_windows_list` / `desktop_screenshot` / `desktop_perceive` / `desktop_mouse` / `desktop_input`), never run both backends in the same task. Browser work should still use ego-browser first (see browser-skill).\n";
+const MAC_CU_FAIL = "   If `computer-use` fails with `unsupported call`: do NOT retry it — ask the user to check 系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制; if it still fails, switch to the nuphus CLI above and say which backend you are using.\n";
+const MAC_TAIL = "   ⛔ Never automate a macOS system permission/elevation dialog — stop and ask the user.";
+const MAC_DESKTOP_INSTRUCTIONS = AUTOMATION_HEADER + MAC_CU_CORE + MAC_NUPHUS_AUX + MAC_CU_FAIL + MAC_TAIL;
+
+/* 关闭某个后端后的替代文案：⛔ 不能继续引导被关掉那套的 CLI / 工具。 */
+const MAC_NUPHUS_OFF_NOTE = "   ⛔ The Nuphus desktop backend is DISABLED in settings — do not use `nuphus-call desktop_*`; if Computer Use is unavailable, tell the user no desktop backend is enabled instead of falling back.\n";
+const MAC_NUPHUS_ONLY = "1) Desktop automation on **macOS** — the Computer Use backend is DISABLED by the user. **Use the nuphus CLI**: `nuphus-call <tool> key=value …` (`desktop_windows_list` / `desktop_screenshot` / `desktop_perceive` / `desktop_mouse` / `desktop_input`); one call at a time, verify with a screenshot. Browser work uses ego-browser first. ⛔ Never automate a macOS permission/elevation dialog.";
+const MAC_BOTH_OFF = "1) Desktop automation is UNAVAILABLE on this Mac: both Nuphus and Computer Use backends are disabled in Settings → 控制台 → 桌面自动化 → 桌面后端. Do not call desktop_* / nuphus-call / computer-use tools; ask the user to enable one.";
+const WIN_CU_OFF_NOTE = "   ⛔ The Computer Use backend is DISABLED in settings — do not call its tools; the Nuphus / UIA paths above are the only desktop channels.";
+const WIN_CU_UIA_ONLY = "1) Desktop automation on Windows — the Nuphus backend is DISABLED (its OCR/coordinate path and `nuphus-call desktop_*` must not be used). Use the UIA control list (`desktop_ui_*`) first; if the `computer-use` tools (`list_apps` / `get_app_state` / `click` …) are in your tool list, use them as the second control-list channel. One automation call at a time.";
+const WIN_UIA_ONLY = "1) Desktop automation on Windows — both Nuphus and Computer Use backends are disabled. The UIA control-list channel (`desktop_ui_*`, harness-uia) is independent of those switches: use it when it is in your tool list; otherwise tell the user no desktop backend is enabled.";
+
+/** 按平台 + 两个后端开关生成桌面自动化说明（默认两个都开）。 */
+const desktopInstructions = (
+  platform: NodeJS.Platform = process.platform,
+  backends: { nuphus?: boolean; computerUse?: boolean } = {},
+): string => {
+  const nuphus = backends.nuphus !== false;
+  const computerUse = backends.computerUse !== false;
+  if (nuphus && computerUse) return platform === "darwin" ? MAC_DESKTOP_INSTRUCTIONS : WINDOWS_DESKTOP_INSTRUCTIONS;
+  if (platform === "darwin") {
+    if (!nuphus && !computerUse) return AUTOMATION_HEADER + MAC_BOTH_OFF;
+    if (!computerUse) return AUTOMATION_HEADER + MAC_NUPHUS_ONLY;
+    return AUTOMATION_HEADER + MAC_CU_CORE + MAC_NUPHUS_OFF_NOTE + MAC_CU_FAIL + MAC_TAIL;
+  }
+  if (!nuphus && !computerUse) return AUTOMATION_HEADER + WIN_UIA_ONLY;
+  if (!nuphus) return AUTOMATION_HEADER + WIN_CU_UIA_ONLY;
+  return AUTOMATION_HEADER + WIN_NUPHUS_CORE + WIN_CU_OFF_NOTE + WIN_PRIORITY_LOOP;
+};
 
 /**
  * 浏览器自动化说明。
@@ -477,6 +506,9 @@ function gateAndReviewInstructions(): string {
 export type DevInstructionsInput = {
   desktop?: boolean;
   browser?: boolean;
+  /** 桌面后端开关（11-03）：指令必须跟着开关走 —— 关掉的后端不许再引导它的 CLI/工具。 */
+  nuphusBackend?: boolean;
+  computerUseBackend?: boolean;
   imagePlugin?: boolean;
   /** Filee 文件转换（10-30）装没装（tools/filee/filee-cli.exe 存在）—— 装了才注入第 5 条用法段 */
   fileeInstalled?: boolean;
@@ -503,7 +535,7 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += STEP_NOTE_INSTRUCTIONS;
   // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
   if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
-  if (desktop) text += desktopInstructions();
+  if (desktop) text += desktopInstructions(process.platform, { nuphus: input.nuphusBackend !== false, computerUse: input.computerUseBackend !== false });
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);

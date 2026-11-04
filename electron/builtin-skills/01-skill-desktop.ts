@@ -17,6 +17,7 @@ description: 操控本机桌面：macOS 用 computer-use 的 list_apps/get_app_s
   - **辅助后端 = nuphus**（默认也开启）：上面这些 computer-use 工具不可用或调用失败时，才退回 \`nuphus-call desktop_*\`（列窗口 / 截屏 / OCR / 鼠标键盘）；⛔ 同一任务里不要两套后端混用。浏览器仍优先 \`ego-browser\`。
   - 工具不可用：先让用户检查「系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制」是否已授权，以及桌面总闸是否打开；仍不行再用 nuphus 辅助通道，并说明用的是哪条；⛔ 不操作系统授权/提权弹窗。
 - **Windows：** 主线是 \`desktop_ui_*\`（UIA 控件清单）→ \`nuphus-call desktop_*\`（OCR 坐标兜底）；若工具列表里另有 \`computer-use\` 的 \`list_apps\` / \`get_app_state\`，它只作**第二清单通道**，不要优先于前两者。
+- **以常驻指令为准**：若常驻指令说某个桌面后端已被关闭，就不要用它的工具或 CLI（含 \`nuphus-call desktop_*\`）；Windows 的 UIA 清单通道（\`desktop_ui_*\`）不受这两个后端开关影响。
 
 本机（Windows）已内置 Nuphus 桌面自动化 MCP（服务器名 \`nuphus\`），工具已直接注册在你的工具列表中（\`desktop_*\` 前缀），**直接调用即可，无需写脚本**。
 

@@ -38,6 +38,9 @@ export async function devInstructionsInput() {
   return {
     desktop: appSettings.desktopAutomation !== false,
     browser: appSettings.browserAutomation !== false,
+    /* 11-03：桌面后端开关也进指令输入 —— 关掉的后端不许再被引导（否则开关形同虚设）。 */
+    nuphusBackend: appSettings.desktopBackendNuphus !== false,
+    computerUseBackend: appSettings.desktopBackendComputerUse !== false,
     // 内置媒体插件（生图）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
     // ⛔ 10-30 撤「视觉插件 / nuphus 视觉」两个探针字段：视觉辅助插件整体移除（识图工具 / 命令行 / 对应 env 同轮拆）。
     // ⛔ 别在这里写出英文标识符原文 —— 守卫【85】按文本判「字段不许复活」，注释里的拼写会误伤（实测假红）。

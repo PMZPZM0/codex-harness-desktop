@@ -181,6 +181,36 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     }
     return out;
   };
+  /* ⛔ 11-03 用户令「按系统优先排序」：**配置顺序即工具面顺序** ——
+     macOS = computer-use → nuphus；Windows = nuphus → computer-use。
+     两段都受各自后端开关控制（关掉就不写那一段）。 */
+  const computerUseMcpSection = (() => {
+    const launcher = computerUseLauncher();
+    const node = bundledNode();
+    if (!shouldRegisterComputerUse({ desktop: desktopAuto, binaryReady: Boolean(launcher), enabled: computerUseBackend })) return [] as string[];
+    if (!node || !mcpOverrideEnabled(mcpOverrides, COMPUTER_USE_MCP_SERVER)) return [] as string[];
+    return [
+      `[mcp_servers.${COMPUTER_USE_MCP_SERVER}]`,
+      `command = "${escapeToml(node)}"`,
+      `args = ["${escapeToml(launcher)}", "mcp"]`,
+      "startup_timeout_sec = 30",
+      "",
+    ];
+  })();
+  const nuphusMcpSection = shouldRegisterNuphus({ desktop: desktopAuto, browser: browserAuto }) && nuphusBinary() && mcpOverrideEnabled(mcpOverrides, "nuphus")
+    ? [
+        "[mcp_servers.nuphus]",
+        `command = "${escapeToml(nuphusBinary())}"`,
+        "args = []",
+        "startup_timeout_sec = 20",
+        // ⛔ 10-30 撤 `[mcp_servers.nuphus.env]` 视觉 env 段：视觉辅助插件整体移除后
+        //    desktop_vision（BYOK）没有配置来源了；老 config.toml 里的残留段由 preserveUserConfig 收敛。
+        "",
+      ]
+    : [];
+  const desktopBackendSections = process.platform === "darwin"
+    ? [...computerUseMcpSection, ...nuphusMcpSection]
+    : [...nuphusMcpSection, ...computerUseMcpSection];
   const configText = [
     `model = "${escapeToml(entry.model)}"`,
     // （顶层 model_context_window 已按 09-16 修正移除：全局单值会压掉 catalog 里每模型的
@@ -300,33 +330,8 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     //    （见 automation-policy.ts 的 nuphusDisabledTools）。
     // 全量注册 nuphus 的**全部 38 个工具**（09-20 实测枚举：桌面 15 + 浏览器 23），
     // schema 约占 ~10k 前缀，但作为 prompt 常量前缀可被上游缓存。
-    /* ⛔ 11-03 用户令「mac 默认优先 computer use」：mac 的 computer-use 段写在 nuphus **之前**
-       （配置顺序即工具面顺序），与 capability-registry 的首选顺序一致。Windows 上这段不写。 */
-    ...(() => {
-      const launcher = computerUseLauncher();
-      const node = bundledNode();
-      if (!shouldRegisterComputerUse({ desktop: desktopAuto, binaryReady: Boolean(launcher), enabled: computerUseBackend })) return [];
-      if (!node || !mcpOverrideEnabled(mcpOverrides, COMPUTER_USE_MCP_SERVER)) return [];
-      return [
-        `[mcp_servers.${COMPUTER_USE_MCP_SERVER}]`,
-        `command = "${escapeToml(node)}"`,
-        `args = ["${escapeToml(launcher)}", "mcp"]`,
-        "startup_timeout_sec = 30",
-        "",
-      ];
-    })(),
-    // mac 的桌面自动化后端（10-04 用户拍板：mac 用 computer use 随包内置，Windows 用 nuphus）。
-    // 它是 npm 随包的第三方 CLI ⇒ command 走**随包 node + 绝对路径启动脚本**，不依赖 PATH
-    // （装进 .app 后 PATH 里没有 open-computer-use，写命令名只会得到一个起不来的服务器）。
-    ...(shouldRegisterNuphus({ desktop: desktopAuto, browser: browserAuto }) && nuphusBinary() && mcpOverrideEnabled(mcpOverrides, "nuphus") ? [
-      "[mcp_servers.nuphus]",
-      `command = "${escapeToml(nuphusBinary())}"`,
-      "args = []",
-      "startup_timeout_sec = 20",
-      // ⛔ 10-30 撤 `[mcp_servers.nuphus.env]` 视觉 env 段：视觉辅助插件整体移除后
-      //    desktop_vision（BYOK）没有配置来源了；老 config.toml 里的残留段由 preserveUserConfig 收敛。
-      "",
-    ] : []),
+    /* 两个桌面后端段：顺序按平台（mac computer-use 先 / Windows nuphus 先），各自受开关控制。 */
+    ...desktopBackendSections,
     // Windows 原生控件清单通道（10-04）：`desktop_ui_*` 四个工具，走系统自带的 UIAutomation，
     // 补 nuphus「只有 OCR 坐标」的短板（窗口挪动 / DPI 缩放 / 自绘界面时按元素序号操作）。
     // ⛔ 判据 = win32 + 桌面总闸开 + 两个随包脚本齐备；不注册就是**整段不写**（工具从引擎表里
