@@ -655,6 +655,12 @@ interface Window {
     cloudSyncPush(input?: { paths: string[] }): Promise<{ ok: boolean; reserved?: boolean; code?: string; error?: string }>;
     /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
     cloudSyncStatus(): Promise<{ enabled: boolean; reserved: boolean; quotaBytes: number; usedBytes: number; lastSyncAt: number }>;
+    /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */
+    cloudSyncUsage(): Promise<{ ok: boolean; code?: string; error?: string; usedBytes?: number; limitBytes?: number; sessions?: number; devices?: number; deviceLimit?: number }>;
+    /* 11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除 */
+    cloudSyncIndex(): Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>;
+    /* 11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动） */
+    cloudSyncDelete(input?: { ids?: string[] }): Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>;
     /* 官方源的 10 个分类（含每类数量）。⛔ 与 Gitee 镜像源的分类各算各的，tab 按源切换 */
     listOfficialMarketCategories(): Promise<{ key: string; displayName: string; count: number }[]>;
     /* 镜像下载 plugins/<slug> 子树 → 写本地市场目录 → 注册 [marketplaces.codex-official-market] → 引擎 plugin/install + 重启 → plugin/list 确认；进度走 harness:event 的 official-plugin-install（⛔ 不与 plugin-install 共用 type，上游 slug 有重名） */

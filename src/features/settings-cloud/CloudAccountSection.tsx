@@ -18,6 +18,7 @@ import { cloudUserCenterUrl } from "../../lib/cloud-links.mjs";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
 
 import { SessionSyncDialog } from "./SessionSyncDialog";
+import { CloudManageSection } from "./CloudManageSection";
 import { TeamModeSection } from "./TeamModeSection";
 import { ResultDialog, type ResultAction } from "./ResultDialog";
 type AccountView = { id: string; username: string; role: string; baseUrl: string; active: boolean; savedAt: number };
@@ -889,6 +890,9 @@ export function CloudAccountSection() {
               )}
             </div>
           </details>
+
+          {/* 11-03 云管理（应用内）：云端用量 / 已上传会话 / 立即同步 / 下载 / 删除。 */}
+          <CloudManageSection />
 
           <TeamModeSection />
         </>

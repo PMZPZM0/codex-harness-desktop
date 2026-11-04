@@ -39,6 +39,8 @@ const outboundFetch = (input: RequestInfo | URL, init?: RequestInit) => guardedF
 
 const CHANNELS = [
   "cloud:sync/status", "cloud:sync/push", "cloud:sync/pull", "cloud:sync/conflict/resolve",
+  /* 11-03：云管理（应用内）—— 云端用量 / 云端会话列表 / 删除云端会话。 */
+  "cloud:sync/usage", "cloud:sync/index", "cloud:sync/delete",
   "cloud:device/list", "cloud:device/unbind",
   "cloud:notify/list", "cloud:notify/mark-read",
   "cloud:update/check", "cloud:update/download", "cloud:update/apply",
@@ -99,6 +101,55 @@ export const cloudReserveFeature = defineFeature<null>({
       machineId: () => { try { return os.hostname(); } catch { return "unknown"; } },
     });
 
+    /* ── 云管理（11-03 用户令：把云管理的用量/云端会话搬进应用内）─────────────────
+       与网页云管理共用服务端 `/sync/*` 接口；鉴权用云账号 token（服务端 syncAuth 认它）。
+       ⛔ 管理员关总闸时 403 session-sync-disabled 原样透传，界面翻成人话而不是网络错误。 */
+    const syncApi = async (pathname: string, init: RequestInit = {}) => {
+      const token = activeCredential()?.token || "";
+      if (!token) return { ok: false as const, code: "not-logged-in", error: "未登录云账号" };
+      try {
+        const res = await outboundFetch(`${accountsBase()}${pathname}`, {
+          ...init,
+          headers: {
+            Authorization: `Bearer ${token}`,
+            ...(init.body ? { "content-type": "application/json" } : {}),
+            ...(init.headers as Record<string, string> | undefined),
+          },
+          signal: AbortSignal.timeout(15000),
+        });
+        const body = (await res.json().catch(() => null)) as Record<string, any> | null;
+        if (!res.ok || !body?.ok) {
+          const code = res.status === 401 ? "not-logged-in"
+            : res.status === 403 && body?.error === "session-sync-disabled" ? "session-sync-disabled"
+              : String(body?.error ?? `http-${res.status}`);
+          return { ok: false as const, code, error: String(body?.message ?? body?.error ?? `请求失败（HTTP ${res.status}）`) };
+        }
+        return { ok: true as const, ...body };
+      } catch (error) {
+        return { ok: false as const, code: "exception", error: String((error as Error)?.message ?? error).slice(0, 200) };
+      }
+    };
+    ipcHost.handle("cloud:sync/usage", async () => syncApi("/sync/usage"));
+    ipcHost.handle("cloud:sync/index", async () => syncApi("/sync/index"));
+    ipcHost.handle("cloud:sync/delete", async (_event, input?: { ids?: string[] }) => {
+      const ids = Array.isArray(input?.ids) ? input.ids.map(String).filter(Boolean) : [];
+      if (!ids.length) return { ok: false, code: "bad-args", error: "没有选择要删除的会话" };
+      return syncApi("/sync/delete", { method: "POST", body: JSON.stringify({ ids }) });
+    });
+
+    /* 自动同步（对齐云助手 headless：启动 30s 后一次 + 每 5 分钟一次）。
+       ⛔ 未登录直接跳过（零请求）；与手动「上传会话」共用 in-flight，避免两份并发写游标。 */
+    let syncInFlight: Promise<Awaited<ReturnType<typeof runCloudSyncOnce>> | null> | null = null;
+    const syncNow = () => {
+      if (!activeCredential()?.token) return Promise.resolve(null);
+      if (syncInFlight) return syncInFlight;
+      syncInFlight = runCloudSyncOnce(syncDeps()).catch(() => null).finally(() => { syncInFlight = null; });
+      return syncInFlight;
+    };
+    const firstAutoSync = setTimeout(() => { void syncNow(); }, 30_000);
+    const autoSyncTimer = setInterval(() => { void syncNow(); }, 5 * 60_000);
+    ctx.effect(() => { clearTimeout(firstAutoSync); clearInterval(autoSyncTimer); });
+
     ipcHost.handle("cloud:sync/status", async () => {
       const cr = activeCredential();
       if (!cr) return { enabled: false, reserved: false, quotaBytes: 0, usedBytes: 0, lastSyncAt: 0, sessions: 0, lines: 0 };
@@ -119,7 +170,8 @@ export const cloudReserveFeature = defineFeature<null>({
     ipcHost.handle("cloud:sync/push", async () => {
       if (!activeCredential()) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
       try {
-        const r = await runCloudSyncOnce(syncDeps());
+        const r = await syncNow();
+        if (!r) return { ok: false, reserved: false, code: "not-logged-in", error: "未登录云账号" };
         return r.ok
           ? { ok: true, reserved: false, pushedSessions: r.pushedSessions, pushedLines: r.pushedLines }
           : { ok: false, reserved: false, code: r.reason || "sync-failed", error: r.reason === "not-paired" ? "未登录云账号" : (r.reason || "上传失败") };

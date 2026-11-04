@@ -452,5 +452,36 @@ ok(!/enabled: models\.length > 0 \? true/.test(providerSrc),
 ok(/const enabled = models\.length > 0 && \(cloudActive \|\| !othersEnabled\)/.test(providerSrc),
   "云端行的 enabled = 「生效中」或「空场」—— 不是「有模型就亮」（否则每 10 分钟把用户的选择顶回来）");
 
+/* ── 11-03 云管理（应用内）+ 自动同步 ───────────────────────────────────────
+   用户令：「把 codex云管理 / ppcode云管理、会话同步功能给 codexharness 和 ppcode 加上」。
+   ⛔ 与网页云管理同一套 /sync/* 接口；鉴权用云账号 token；管理员关总闸要翻人话。 */
+const reserveSrc = codeOnly(read("electron/features/cloud-reserve-ipc.ts"));
+ok(/cloud:sync\/usage/.test(reserveSrc) && /cloud:sync\/index/.test(reserveSrc) && /cloud:sync\/delete/.test(reserveSrc)
+  && /syncApi\("\/sync\/usage"\)/.test(reserveSrc) && /syncApi\("\/sync\/index"\)/.test(reserveSrc)
+  && /syncApi\("\/sync\/delete"/.test(reserveSrc) && /session-sync-disabled/.test(reserveSrc),
+  "云管理三通道（用量 / 云端会话 / 删除）走服务端 /sync/*，管理员关闸码原样透传");
+ok(/setTimeout\(\(\) => \{ void syncNow\(\); \}, 30_000\)/.test(reserveSrc)
+  && /setInterval\(\(\) => \{ void syncNow\(\); \}, 5 \* 60_000\)/.test(reserveSrc)
+  && /if \(syncInFlight\) return syncInFlight/.test(reserveSrc)
+  && /const r = await syncNow\(\)/.test(reserveSrc),
+  "会话自动同步（启动 30s + 每 5 分钟），手动/自动共用 in-flight 防并发写游标");
+const manageSrc = codeOnly(read("src/features/settings-cloud/CloudManageSection.tsx"));
+ok(/cloudSyncUsage/.test(manageSrc) && /cloudSyncIndex/.test(manageSrc) && /cloudSyncDelete/.test(manageSrc)
+  && /cloudSyncPull\?\.\(\{ keys: ids \}\)/.test(manageSrc) && /humanError\(/.test(manageSrc)
+  && /session-sync-disabled/.test(manageSrc) && /storage-disabled/.test(manageSrc),
+  "应用内云管理面板：用量/列表/下载/删除 + 错误翻人话（关闸/未登录/配额）");
+ok(/cloudUserCenterUrl/.test(manageSrc) && /openExternal\(webUrl\)/.test(manageSrc) && /CloudManageSection/.test(pageSrc),
+  "云账号页挂载云管理面板 + 「网页云管理」入口（地址由账号基址派生）");
+const cloudManifest = JSON.parse(read("electron/ipc-channels.manifest.json"));
+ok(["cloud:sync/usage", "cloud:sync/index", "cloud:sync/delete"].every((name) => (cloudManifest.channels ?? []).some((entry) => entry.channel === name)),
+  "manifest 登记三条云管理通道");
+/* ⛔ 不写死 8：云助手的 cloud 域还含 device/notify/update/tools（15+3=18）⇒ 判「count 与
+   channels 条数一致 + 三条新通道在列」，三个仓同一份判据都能过。 */
+const cloudRegistry = read("electron/ipc-registry.ts").match(/\{ prefix: "cloud", count: (\d+),[\s\S]*?channels: \[([\s\S]*?)\]/);
+const cloudRegistryChannels = (cloudRegistry?.[2] || "").match(/cloud:[a-z/-]+/g) || [];
+ok(Boolean(cloudRegistry) && Number(cloudRegistry[1]) === cloudRegistryChannels.length
+  && ["cloud:sync/usage", "cloud:sync/index", "cloud:sync/delete"].every((name) => cloudRegistryChannels.includes(name)),
+  "ipc-registry cloud 前缀 count 与 channels 条数一致，且含三条云管理通道");
+
 console.log(`\n【cloud-account】${checks - fails}/${checks} 通过`);
 if (fails > 0) process.exit(1);

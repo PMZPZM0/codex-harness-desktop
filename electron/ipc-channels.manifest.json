@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 605,
+  "count": 608,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -1165,6 +1165,36 @@
       "invokeArgs": "",
       "cast": null,
       "note": "云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出）"
+    },
+    {
+      "name": "cloudSyncUsage",
+      "channel": "cloud:sync/usage",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; usedBytes?: number; limitBytes?: number; sessions?: number; devices?: number; deviceLimit?: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage"
+    },
+    {
+      "name": "cloudSyncIndex",
+      "channel": "cloud:sync/index",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; sessions?: Array<{ id: string; title: string; project: string; machineName: string; machineId: string; lines: number; sizeBytes: number; uploadedAt: number; updatedAt: number }>; usedBytes?: number; limitBytes?: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除"
+    },
+    {
+      "name": "cloudSyncDelete",
+      "channel": "cloud:sync/delete",
+      "paramsImpl": "input?: { ids?: string[] }",
+      "paramsDecl": "input?: { ids?: string[] }",
+      "returns": "Promise<{ ok: boolean; code?: string; error?: string; deleted?: number; usedBytes?: number; limitBytes?: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动）"
     },
     {
       "name": "listOfficialMarketCategories",

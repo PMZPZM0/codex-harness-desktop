@@ -271,6 +271,12 @@ contextBridge.exposeInMainWorld("codex", {
   cloudSyncPush: (input?: { paths: string[] }) => __ipc("cloud:sync/push", 0, [input]),
   /* 云版预留（10-11）：云端存储开通状态（enabled=false = 未开通，配额/最近同步时间一并给出） */
   cloudSyncStatus: () => __ipc("cloud:sync/status", 0, []),
+  /* 11-03 云管理（应用内）：云端用量（已用/配额/会话数/设备数）。与网页云管理同一套 /sync/usage */
+  cloudSyncUsage: () => __ipc("cloud:sync/usage", 0, []),
+  /* 11-03 云管理（应用内）：云端已上传会话列表（标题/项目/机器/时间/大小），供下载/删除 */
+  cloudSyncIndex: () => __ipc("cloud:sync/index", 0, []),
+  /* 11-03 云管理（应用内）：删除云端会话（只删云端，本机文件不动） */
+  cloudSyncDelete: (input?: { ids?: string[] }) => __ipc("cloud:sync/delete", 0, [input]),
   /* 官方源的 10 个分类（含每类数量）。⛔ 与 Gitee 镜像源的分类各算各的，tab 按源切换 */
   listOfficialMarketCategories: () => __ipc("codex-official-market:categories", 0, []),
   /* 镜像下载 plugins/<slug> 子树 → 写本地市场目录 → 注册 [marketplaces.codex-official-market] → 引擎 plugin/install + 重启 → plugin/list 确认；进度走 harness:event 的 official-plugin-install（⛔ 不与 plugin-install 共用 type，上游 slug 有重名） */
