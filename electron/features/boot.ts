@@ -64,6 +64,7 @@ import { startWalCheckpointWatch, trimEngineLogs } from "../sqlite-wal";
 import { petAssetRoots, readPetSettings } from "./pet-ipc";
 import { feedPetEvent } from "./pet-state";
 import { applyPetSettings } from "./pet-window";
+import { writeTextFileAtomic } from "../config-toml";
 
 // ── 由 main.ts 注入的顶层依赖（同名声明 ⇒ 块体保持逐字不变）──
 let codexHome!: any;
@@ -314,7 +315,7 @@ async function healModelCatalogBeforeStart(custom: any) {
   if (!broken && !referenced) return;
   await fs.rm(catalogPath, { force: true }).catch(() => undefined);
   const cleaned = cfgText.replace(/^\s*model_catalog_json\s*=\s*.*(?:\r?\n)?/gm, "");
-  if (cleaned !== cfgText) await fs.writeFile(path.join(codexHome, "config.toml"), cleaned, "utf8");
+  if (cleaned !== cfgText) await writeTextFileAtomic(path.join(codexHome, "config.toml"), cleaned);
   if (broken || referenced) {
     await noteRepair("config.toml 里的引用已一并摘除");
     console.warn("[boot] model-catalog.json 缺失/损坏且无自定义模型，已摘除 config 引用");
@@ -1210,8 +1211,10 @@ export async function bootApp() {
       const configPath = path.join(codexHome, "config.toml");
       const raw = await fs.readFile(configPath, "utf8").catch(() => "");
       if (/wire_api\s*=\s*"chat"/.test(raw)) {
-        await fs.writeFile(`${configPath}.chat-bak`, raw, "utf8").catch(() => undefined);
-        await fs.writeFile(configPath, raw.replace(/wire_api\s*=\s*"chat"/g, 'wire_api = "responses"'), "utf8");
+        // 备份也走原子写：留半份 .chat-bak 等于留一个"看着能回滚、其实回不去"的假保险
+        await writeTextFileAtomic(`${configPath}.chat-bak`, raw).catch(() => undefined);
+        // ⛔ 原子写（11-05 用户现场：半截 config.toml 让引擎整份拒载）—— 主文件更不许原地覆盖
+        await writeTextFileAtomic(configPath, raw.replace(/wire_api\s*=\s*"chat"/g, 'wire_api = "responses"'));
         console.log('[config] 已把 wire_api="chat" 迁移为 "responses"（原文件备份为 config.toml.chat-bak）');
       }
     } catch (error) { console.warn("wire_api repair failed:", error); }
@@ -1419,7 +1422,7 @@ export async function bootApp() {
       const count = (existing.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
       if (count !== 1 || !existing.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !existing.includes(getDispatchToken())) {
         const cleaned = existing.replace(/\[mcp_servers\.harness-dispatch\][^\[]*/g, "").replace(/\[mcp_servers\.harness-dispatch\.env\][^\[]*/g, "");
-        await fs.writeFile(cfgPath, cleaned.trimEnd() + "\n\n" + block, "utf8");
+        await writeTextFileAtomic(cfgPath, cleaned.trimEnd() + "\n\n" + block);
       }
     } catch (error) {
       console.warn("[dispatch] MCP 段兜底写入失败：", error);

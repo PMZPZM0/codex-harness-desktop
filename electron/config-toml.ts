@@ -318,3 +318,37 @@ export function extractMcpSection(raw: string, name: string): string {
   while (end > start && !lines[end - 1].trim()) end -= 1;
   return lines.slice(start, end).join("\n");
 }
+
+/* ── 写侧纪律（11-05 用户现场）─────────────────────────────────────────────────
+   引擎报 `failed to load configuration: …config.toml:219:8: key with no value, expected `=``，
+   文件尾部躺着一行半截的 `source = "…"` 碎片 —— 这就是**非原子覆盖写**被强杀留下的现场：
+   `fs.writeFile` 直接覆盖目标，新内容比旧内容短时，尾部会残留旧字节；写到一半被杀就得到
+   一份语法都不合法的配置 ⇒ 引擎整份拒载 ⇒ 所有 codex:request 全挂，界面看着就是「坏了」。
+   同型事故 10-24 在 model-catalog.json 上已经吃过一次（那次修了那一处，没成纪律 ⇒ 本次补上）。
+   ⛔ 所以 config.toml 的写入一律走本函数：先写临时文件，再 rename 换上（同目录 rename 是原子的）。 */
+
+/** 原子写文本：临时文件 + rename。rename 撞 EPERM/EBUSY（Windows 上目标被占用）时先删再换。 */
+export async function writeTextFileAtomic(file: string, text: string): Promise<void> {
+  const { mkdir, rename, rm, writeFile } = await import("node:fs/promises");
+  const { dirname } = await import("node:path");
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(tmp, text, "utf8");
+  try {
+    await rename(tmp, file);
+  } catch {
+    await rm(file, { force: true }).catch(() => undefined);
+    await rename(tmp, file);
+  }
+}
+
+/** 读 → 追加一段 → 原子写回。⛔ 不许用 `fs.appendFile`：那正是「写一半被杀留下半截段落」的写法。
+ *  `alreadyThere` 命中就原样不动（幂等，且省掉一次无谓的整份重写）。 */
+export async function appendSectionAtomic(file: string, section: string, alreadyThere: RegExp): Promise<boolean> {
+  const { readFile } = await import("node:fs/promises");
+  const existing = await readFile(file, "utf8").catch(() => "");
+  if (alreadyThere.test(existing)) return false;
+  const next = existing.trim() ? `${existing.trimEnd()}\n\n${section}\n` : `${section}\n`;
+  await writeTextFileAtomic(file, next);
+  return true;
+}

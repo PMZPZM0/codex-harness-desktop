@@ -38,6 +38,7 @@ import { ESSENCE_FIRST_SKILL } from "./builtin-skills/26-skill-essence-first";
 import { effectiveMemoryBackend } from "./memory-backend";
 import { BUILTIN_SKILL_ZH_NOTES } from "./builtin-skills/00-skill-zh-notes";
 import { SKILL_FILE, SKILL_FILE_DISABLED, SKILL_FILE_POOL_DISABLED } from "./skill-pack";
+import { appendSectionAtomic } from "./config-toml";
 
 /** 已退役的内置技能：磁盘上的内容仍是**我们当初写的那份**时，随升级清掉目录 ——
  *  否则引擎会同时加载两套浏览器说明（新的实操手册 + 旧的通道说明），模型读到自相矛盾的指引。
@@ -321,17 +322,17 @@ export async function ensureExpertSkillsMarketplace(codexHome: string): Promise<
   const marketDir = expertSkillsSourceDir();
   const configPath = path.join(codexHome, "config.toml");
   try {
-    const existing = await fs.readFile(configPath, "utf8").catch(() => "");
-    if (!/\[marketplaces\.expert-skills\]/.test(existing)) {
-      const section = [
-        "[marketplaces.expert-skills]",
-        'source_type = "local"',
-        `source = "${marketDir.replaceAll("\\", "/")}"`,
-        "",
-      ].join("\n");
-      const next = existing.trim() ? existing.trimEnd() + "\n\n" + section + "\n" : section + "\n";
-      await fs.writeFile(configPath, next, "utf8");
-    }
+    /* ⛔ 原子写（11-05 用户现场：引擎报 `failed to load configuration: config.toml:219:8:
+       key with no value, expected `=``，文件尾躺着一行半截的 source 碎片）。
+       旧写法 `readFile → writeFile(整份)` 不是原子的：进程被强杀时新内容只写了一半，
+       旧内容更长的那截还留在后面 ⇒ TOML 语法废掉 ⇒ 引擎整份拒载，所有请求全挂。
+       同型事故 10-24 在 model-catalog.json 上吃过一次，这次补成通用纪律（见 config-toml.ts）。 */
+    await appendSectionAtomic(configPath, [
+      "[marketplaces.expert-skills]",
+      'source_type = "local"',
+      `source = "${marketDir.replaceAll("\\", "/")}"`,
+      "",
+    ].join("\n"), /\[marketplaces\.expert-skills\]/);
   } catch (error) {
     console.warn("seed expert-skills marketplace section failed:", error);
   }

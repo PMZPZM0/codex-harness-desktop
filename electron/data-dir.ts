@@ -246,8 +246,20 @@ export function ensureTrustedProject(engineConfigFile: string, appDir: string): 
     });
     if (!missing.length) return;
     const block = missing.map((v) => `\n[projects.'${v}']\ntrust_level = "trusted"\n`).join("");
+    /* ⛔ 不用 appendFileSync（11-05 用户现场：引擎报 config.toml 某行 `key with no value, expected =`，
+       文件尾躺着半截碎片 —— 非原子写被强杀留下的现场）。读全 → 拼好 → 临时文件 + rename 换上。
+       这里**就地展开**而不 import config-toml：本文件是叶子模块（守卫【152】/【91】：不 import 项目内
+       模块，且必须能在 app.setPath 之前安全 require），多一条项目内 import 就会把它拖进依赖环。 */
+    const nextText = `${text}\n# 10-15 自动加固：宿主 cwd 的项目信任门禁（ensureTrustedProject 幂等追加，缺失才写）${block}`;
     fs.mkdirSync(path.dirname(engineConfigFile), { recursive: true });
-    fs.appendFileSync(engineConfigFile, `\n# 10-15 自动加固：宿主 cwd 的项目信任门禁（ensureTrustedProject 幂等追加，缺失才写）${block}`);
+    const tmp = `${engineConfigFile}.tmp-${process.pid}-${Date.now()}`;
+    fs.writeFileSync(tmp, nextText, "utf8");
+    try {
+      fs.renameSync(tmp, engineConfigFile);
+    } catch {
+      try { fs.rmSync(engineConfigFile, { force: true }); } catch { /* 目标本来就不存在 */ }
+      fs.renameSync(tmp, engineConfigFile);
+    }
     console.log(`[trusted-projects] 已补信任条目 ×${missing.length} → ${engineConfigFile}`);
   } catch (error) {
     console.warn("[trusted-projects] 信任表加固失败（不影响启动）：", error instanceof Error ? error.message : String(error));

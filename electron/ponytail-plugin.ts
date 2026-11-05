@@ -13,6 +13,7 @@
 import fs from "node:fs/promises";
 import fsSync from "node:fs";
 import path from "node:path";
+import { appendSectionAtomic } from "./config-toml";
 
 // 随包插件的固定版本目录名（引擎安装落点 = plugins/cache/<市场>/<插件>/<版本>）。
 export const PONYTAIL_VERSION = "5.3.3";
@@ -148,13 +149,10 @@ async function seedMarketplace(codexHome: string, bundledDir: string): Promise<s
 async function seedConfigSections(codexHome: string, marketDir: string): Promise<void> {
   const configPath = path.join(codexHome, "config.toml");
   try {
-    let existing = await fs.readFile(configPath, "utf8").catch(() => "");
-    if (/\[marketplaces\.ponytail\]/.test(existing)) return; // 已有注册段则幂等跳过
     if (!fsSync.existsSync(marketDir)) return;
-    const append = MARKETPLACE_SECTION(marketDir);
-    const next = existing.trim() ? existing.trimEnd() + "\n\n" + append + "\n" : append + "\n";
-    await fs.writeFile(configPath, next, "utf8");
-    console.log("ponytail marketplace sections seeded into config.toml");
+    // ⛔ 原子写（11-05 用户现场：半截 config.toml ⇒ 引擎整份拒载、所有请求全挂；纪律见 config-toml.ts）
+    const added = await appendSectionAtomic(configPath, MARKETPLACE_SECTION(marketDir), /\[marketplaces\.ponytail\]/);
+    if (added) console.log("ponytail marketplace sections seeded into config.toml");
   } catch (error) {
     console.warn("seed ponytail config sections failed:", error);
   }

@@ -14,6 +14,7 @@ import { net } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { compareVersions } from "./updates";
+import { appendSectionAtomic } from "./config-toml";
 
 const GITEE_OWNER = "yuqiaodi";
 const GITEE_REPO = "claude-plugins-official-gitee";
@@ -519,17 +520,14 @@ export async function ensureCodexMarketplaceSection(codexHome: string): Promise<
   const marketDir = codexMarketDir(codexHome);
   const configPath = path.join(codexHome, "config.toml");
   try {
-    let existing = await fs.readFile(configPath, "utf8").catch(() => "");
-    if (!/\[marketplaces\.codex-market\]/.test(existing)) {
-      const section = [
-        "[marketplaces.codex-market]",
-        'source_type = "local"',
-        `source = "${marketDir.replaceAll("\\", "/")}"`,
-        "",
-      ].join("\n");
-      const next = existing.trim() ? existing.trimEnd() + "\n\n" + section + "\n" : section + "\n";
-      await fs.writeFile(configPath, next, "utf8");
-    }
+    // ⛔ 原子写（见 config-toml.ts 的写侧纪律）：直接 writeFile/appendFile 被强杀会留下半截段落，
+    //    整份 config.toml 语法废掉 ⇒ 引擎拒载 ⇒ 所有请求全挂。
+    await appendSectionAtomic(configPath, [
+      "[marketplaces.codex-market]",
+      'source_type = "local"',
+      `source = "${marketDir.replaceAll("\\", "/")}"`,
+      "",
+    ].join("\n"), /\[marketplaces\.codex-market\]/);
   } catch (error) {
     console.warn("seed codex-market marketplace section failed:", error);
   }

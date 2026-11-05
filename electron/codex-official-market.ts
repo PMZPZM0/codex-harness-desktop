@@ -31,6 +31,7 @@ import path from "node:path";
 import { GH_MIRROR_PREFIXES } from "./gh-mirror";
 import { OFFICIAL_CATALOG_GENERATED_AT, OFFICIAL_PLUGIN_CATALOG } from "./codex-official-catalog.gen";
 import { compareVersions } from "./updates";
+import { appendSectionAtomic } from "./config-toml";
 
 const GH_OWNER = "openai";
 const GH_REPO = "plugins";
@@ -535,17 +536,13 @@ export async function ensureOfficialMarketplaceSection(codexHome: string): Promi
   const marketDir = codexOfficialMarketDir(codexHome);
   const configPath = path.join(codexHome, "config.toml");
   try {
-    const existing = await fs.readFile(configPath, "utf8").catch(() => "");
-    if (!/\[marketplaces\.codex-official-market\]/.test(existing)) {
-      const section = [
-        "[marketplaces.codex-official-market]",
-        'source_type = "local"',
-        `source = "${marketDir.replaceAll("\\", "/")}"`,
-        "",
-      ].join("\n");
-      const next = existing.trim() ? `${existing.trimEnd()}\n\n${section}\n` : `${section}\n`;
-      await fs.writeFile(configPath, next, "utf8");
-    }
+    // ⛔ 原子写（见 config-toml.ts 的写侧纪律）：非原子覆盖被强杀会留下半截段落 ⇒ 引擎整份拒载。
+    await appendSectionAtomic(configPath, [
+      "[marketplaces.codex-official-market]",
+      'source_type = "local"',
+      `source = "${marketDir.replaceAll("\\", "/")}"`,
+      "",
+    ].join("\n"), /\[marketplaces\.codex-official-market\]/);
   } catch (error) {
     console.warn("seed codex-official-market marketplace section failed:", error);
   }

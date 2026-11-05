@@ -41,6 +41,7 @@ import { broadcastHarnessEvent } from "./window-bus";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
+import { writeTextFileAtomic } from "../config-toml";
 
 function bridgeRewriteProviderConfig(params: any) {
   const providers = params?.config?.model_providers;
@@ -260,7 +261,9 @@ export const codexFeature = defineFeature<null>({
           if (configText.includes(`[model_providers.${alias}]`)) throw error;
           // ⛔ 恒 responses（09-16 真实引擎探针实证，见 scripts/probe-wire-api.cjs）：引擎对
           // `wire_api = "chat"` 是**整份配置拒载**，所有请求随之失败。别名段的唯一合法值就是 responses。
-          await fs.appendFile(path.join(codexHome, "config.toml"), `\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${bridgeDial(alias, active.baseUrl)}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "responses"\n`);
+          // ⛔ 不用 appendFile（11-05 用户现场：半截 config.toml ⇒ 引擎整份拒载、所有请求全挂）：
+          //    拼好整份再走临时文件 + rename 的原子写。
+          await writeTextFileAtomic(path.join(codexHome, "config.toml"), `${configText}\n[model_providers.${alias}]\nname = "${alias}"\nbase_url = "${bridgeDial(alias, active.baseUrl)}"\nenv_key = "CODEX_HARNESS_API_KEY"\nwire_api = "responses"\n`);
           await server.restart();
           result = await server.request(method, params);
         }
