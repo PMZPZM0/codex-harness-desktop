@@ -121,6 +121,16 @@ if (missing.length) {
   const gwCode = stripComments(read("electron/features/im-gateways.ts"));
   ok(/weixinThreadChat\.get\(threadId\)/.test(gwCode) && /const wxInitiator/.test(gwCode),
     "⑥微信流式先认「这条线程是谁发起的」（渠道级绑定让所有用户共用一个 thread 时，按 weixinBindings 反查会串台）");
+  /* 11-05（用户原话「微信可以控制，QQ 控制不了」）：机器人可以绑定**已有桌面会话**，而那个会话
+     可能建在 workspace-write / read-only 沙箱下 ⇒ 只按线程继承时，渠道发过去的指令能聊不能做。
+     turn/start 支持逐回合覆盖 sandboxPolicy / approvalPolicy（引擎 0.166 schema 实测），
+     三条入站 turn/start 必须全部带上 —— 少一条就有一种渠道「控制不了电脑」。 */
+  const turnStarts = (inbCode.match(/server\.request\("turn\/start"/g) || []).length;
+  const withOverride = (inbCode.match(/turn\/start", \{ threadId, \.\.\.CHANNEL_TURN_OVERRIDE/g) || []).length;
+  ok(turnStarts === 3 && withOverride === 3,
+    `⑦三条渠道回合都带全权限覆盖（实测 ${withOverride}/${turnStarts}）—— 绑到受限会话的机器人会「能聊不能做」`);
+  ok(/sandboxPolicy: \{ type: "dangerFullAccess"/.test(inbCode) && /approvalPolicy: "never"/.test(inbCode),
+    "⑦覆盖值必须是 dangerFullAccess + approval never（渠道是遥控入口，准入由配对门卫把关）");
   globalThis.fetch = realFetch;
 }
 

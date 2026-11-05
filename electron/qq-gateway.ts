@@ -27,6 +27,8 @@ const QQ_DEDUP_WINDOW_MS = 10 * 60_000;
  *  且「相同的 msg_id + msg_seq 重复发送会失败」（msg_seq 不传默认 1）
  *  ⇒ 同一条消息的第 2 次回复必须带递增的 msg_seq，否则被官方静默丢弃（HTTP 200 不报错）。 */
 const QQ_PASSIVE_REPLY_MAX = 4;
+/** 被动回复的 msg_id 有效期 = 5 分钟；留 1 分钟余量（网络/排队）超过就改主动消息 */
+const QQ_PASSIVE_WINDOW_MS = 4 * 60_000;
 
 /** 账号落盘路径：⛔ 跟随 userData（用户可自定义配置目录），不能写死默认 AppData ——
  *  否则自定义目录用户的「重启自动恢复」永远读不到账号（读的是另一个目录）。 */
@@ -335,31 +337,47 @@ export class QqGateway {
   }
 
   /** 回复：群聊 /v2/groups/{group_openid}/messages；单聊 /v2/users/{user_openid}/messages；msg_type 0=文本；必须带 msg_id（被动回复，5 分钟内有效） */
-  async sendMessage(chatId: string, text: string, opts: { msgId: string; scene: "group" | "c2c" }): Promise<void> {
+  async sendMessage(chatId: string, text: string, opts: { msgId: string; scene: "group" | "c2c"; at?: number }): Promise<void> {
     const safe = text.length > 1800 ? text.slice(0, 1800) + "\n\n…（内容过长已截断）" : text;
     const apiPath = opts.scene === "group" ? `/v2/groups/${encodeURIComponent(chatId)}/messages` : `/v2/users/${encodeURIComponent(chatId)}/messages`;
     /* 官方「发送单聊/群聊消息」两条硬规则，少一条就是「进度气泡有、正文永远不到」：
        · 「相同的 msg_id + msg_seq 重复发送会失败」——不传 msg_seq 时默认 1，于是同一条用户消息的
          第二次回复（流式收尾那条）被官方当重复投递静默丢弃（HTTP 200，不报错）。
-       · 「被动消息…每个消息最多回复 4 次」——第 5 次起必须改走主动消息（不带 msg_id），否则整段失败。 */
-    const reply = this.nextReplySeq(chatId, opts.msgId);
+       · 「被动消息…每个消息最多回复 4 次」——第 5 次起必须改走主动消息（不带 msg_id），否则整段失败。
+       · msg_id 只有 5 分钟有效期（11-05 补）：长任务（复盘/跑脚本）收尾时凭据早过期，
+         以前直接抛「msg_id 已过期」⇒ 用户那边一串进度、正文永远不到。现在过窗口就主动发。 */
+    const reply = this.nextReplySeq(chatId, opts.msgId, opts.at);
     const body: Record<string, unknown> = { content: safe, msg_type: 0 };
     if (reply.passive) {
       body.msg_id = opts.msgId;
       body.msg_seq = reply.seq;
+    } else if (opts.at && Date.now() - opts.at >= QQ_PASSIVE_WINDOW_MS) {
+      this.log("info", `QQ 被动回复窗口已过（${Math.round((Date.now() - opts.at) / 1000)}s）⇒ 正文改走主动消息`);
     } else {
       this.log("info", `QQ 这条消息的被动回复已用完（${QQ_PASSIVE_REPLY_MAX} 次）⇒ 正文改走主动消息`);
     }
     try {
       await this.request("POST", apiPath, body, await this.ensureToken());
     } catch (error: any) {
+      if (reply.passive) {
+        // 兜底：凭据被判过期/无效时改走主动消息再发一次（宁可多一条，也不能让正文静默丢失）
+        this.log("info", `QQ 被动回复被拒（${String(error?.message ?? error).slice(0, 120)}）⇒ 改走主动消息重发`);
+        try {
+          await this.request("POST", apiPath, { content: safe, msg_type: 0 }, await this.ensureToken());
+          return;
+        } catch (retryError: any) {
+          throw new Error(`${retryError?.message ?? retryError}（被动回复被拒后主动消息也失败：若提示无权限，请在 q.qq.com 申请「发送消息」权限并上线机器人）`);
+        }
+      }
       // 官方偶发 11253「消息频率超限」/ 40034005「msg_id 已过期」等，抛给调用方记录（附带权限指引）
       throw new Error(`${error?.message ?? error}（若提示无权限，请在 q.qq.com 申请「发送消息」权限并上线机器人；若提示 msg_id 过期，请重新 @机器人）`);
     }
   }
 
-  /** 同一条用户消息的第 N 次回复 → msg_seq 递增；超过官方 4 次上限就转主动消息 */
-  private nextReplySeq(chatId: string, msgId: string): { seq: number; passive: boolean } {
+  /** 同一条用户消息的第 N 次回复 → msg_seq 递增；超过官方 4 次上限或过了 5 分钟窗口就转主动消息 */
+  private nextReplySeq(chatId: string, msgId: string, at?: number): { seq: number; passive: boolean } {
+    const fresh = !at || Date.now() - at < QQ_PASSIVE_WINDOW_MS;
+    if (!fresh) return { seq: 0, passive: false };
     const key = `${chatId}|${msgId}`;
     const seq = (this.replySeqs.get(key) ?? 0) + 1;
     this.replySeqs.set(key, seq);

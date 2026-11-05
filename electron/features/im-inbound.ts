@@ -18,6 +18,13 @@ import { botPairing } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { isTurnEndMethod } from "../turn-end";
 
+/** 渠道回合的权限口径（11-05）：机器人可以绑定**已有桌面会话**，而那个会话可能建在
+ *  workspace-write / read-only 沙箱下 —— 只按线程继承的话，QQ/微信发过去的指令能聊不能做
+ *  （用户原话「微信可以控制，QQ 控制不了」，差别就在绑的是哪个会话）。
+ *  turn/start 支持逐回合覆盖 sandboxPolicy / approvalPolicy（引擎 0.166 schema 实测），
+ *  渠道是「手机遥控电脑」的入口，这里统一给全权限；谁能用由配对门卫把关。 */
+const CHANNEL_TURN_OVERRIDE = { approvalPolicy: "never" as const, sandboxPolicy: { type: "dangerFullAccess" as const } };
+
 /** 渠道入站共用的「回合结束」兜底代理：流式会话缺席时把最终正文投给用户。
  *  ⛔ 四类结束事件都要摘除并投递 —— 只认 turn/completed 时，被中断 / 失败的回合
  *  这个监听器**永远挂着**（泄漏）且渠道用户收不到任何下文（用户反馈截图正是它）。
@@ -110,7 +117,7 @@ export async function handleWeixinMessage(message: { from: string; text: string;
     const from = message.from;
     stopTurnWatch = onTurnDone(threadId, (text) => weixinGateway?.sendText(from, text).catch((error: any) => channelLog("error", `wechat 回信失败：${error?.message ?? error}`)));
     channelLog("info", `wechat 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
-    await server.request("turn/start", { threadId, input: [{ type: "text", text: `[微信用户] ${message.text}`, text_elements: [] }], model: model.model, effort: "high" });
+    await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text: `[微信用户] ${message.text}`, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     // ⛔ 起回合失败必须把结束监听摘掉：留着它，下次这一会话在**桌面端**跑完，
     //    答复会被推到微信那个人的聊天框里（内容外泄，11-04 审查）
@@ -164,7 +171,7 @@ export async function handleTelegramMessage(message: { from: string; chatId: num
     telegramBindings.set(threadId, chatId); // bot-stream 会话按 threadId 反查渠道
     stopTurnWatch = onTurnDone(threadId, (text) => telegramGateway.sendText(chatId, text).catch((error: any) => channelLog("error", `telegram 回信失败：${error?.message ?? error}`)));
     channelLog("info", `telegram 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
-    await server.request("turn/start", { threadId, input: [{ type: "text", text: message.text, text_elements: [] }], model: model.model, effort: "high" });
+    await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text: message.text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     stopTurnWatch?.(); // ⛔ 起回合失败必须摘掉结束监听（否则下次该会话在桌面端跑完，答复被推到 Telegram）
     channelLog("error", `telegram 处理失败：${error?.message ?? error}`);
@@ -240,7 +247,7 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     // 「进会话了但没有回复」与「没进会话」是两种毛病 ⇒ 交接这一步必须有行可查
     channelLog("info", `${channel} 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
     stopTurnWatch = onTurnDone(threadId, (text) => void reply(text));
-    await server.request("turn/start", { threadId, input: [{ type: "text", text, text_elements: [] }], model: model.model, effort: "high" });
+    await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     // ⛔ 起回合失败必须摘掉结束监听：留着它，下次这一会话在**桌面端**跑完，答复会被推给渠道
     //    （11-04 审查抓出的内容外泄路径；QQ 那次「回合没跑完监听永远挂着」是同族问题）

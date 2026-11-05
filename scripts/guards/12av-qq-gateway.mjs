@@ -72,6 +72,13 @@ if (!existsSync(artifact)) {
     }
     if (link.includes("/gateway")) return { ok: true, status: 200, json: async () => ({ url: wsUrl }) };
     if (link.includes("/messages")) {
+      if (link.includes("/RETRY/")) {
+        // 被动回复一律被判过期，主动消息放行：验证「被拒后自动改主动重发」
+        const hasMsgId = Boolean(JSON.parse(String(init?.body ?? "{}")).msg_id);
+        return hasMsgId
+          ? { ok: false, status: 400, json: async () => ({ err_code: 40034005, message: "回复消息msg_id已过期", trace_id: "t" }) }
+          : { ok: true, status: 200, json: async () => ({ id: "ROBOT1.0_retry", timestamp: "2026-11-05T10:00:00+08:00" }) };
+      }
       return link.includes("/FAIL/")
         ? { ok: false, status: 400, json: async () => ({ err_code: 40034005, message: "回复消息msg_id已过期", trace_id: "t" }) }
         : { ok: true, status: 200, json: async () => ({ id: "ROBOT1.0_x", timestamp: "2026-11-04T10:00:00+08:00" }) };
@@ -129,6 +136,22 @@ if (!existsSync(artifact)) {
   ok(seqBodies[3]?.msg_seq === 4 && seqBodies[4] && !("msg_id" in seqBodies[4]) && !("msg_seq" in seqBodies[4]),
     `第 5 次起摘掉 msg_id 转主动消息（实测第 5 条请求体：${JSON.stringify(seqBodies[4] ?? {}).slice(0, 90)}）`);
   ok(calls.every((c) => c.url.startsWith("https://api.bot.qq.com/")), "token/gateway/消息同走 api.bot.qq.com");
+
+  // ①″ 被动窗口（11-05 补）：msg_id 只有 5 分钟有效期。长任务（复盘/跑脚本）收尾时凭据早过期，
+  //     旧写法直接抛「msg_id 已过期」⇒ 用户那边一串进度、正文永远不到。
+  const staleFrom = calls.length;
+  await httpGateway.sendMessage("STALEID", "长任务收尾", { msgId: "m-old", scene: "c2c", at: Date.now() - 6 * 60_000 });
+  const staleBody = calls[staleFrom]?.body;
+  ok(staleBody && !("msg_id" in staleBody) && !("msg_seq" in staleBody),
+    `超过 5 分钟窗口 ⇒ 正文改走主动消息（实测请求体：${JSON.stringify(staleBody ?? {}).slice(0, 80)}）`);
+
+  // ①‴ 被动被拒后自动改主动重发：正文不能因为凭据过期就静默丢
+  const retryFrom = calls.length;
+  let retryErr = "";
+  try { await httpGateway.sendMessage("RETRY", "正文", { msgId: "m-retry", scene: "c2c" }); } catch (error) { retryErr = String(error?.message ?? error); }
+  const retryBodies = calls.slice(retryFrom).map((c) => c.body);
+  ok(!retryErr && retryBodies.length === 2 && retryBodies[0]?.msg_id === "m-retry" && !("msg_id" in (retryBodies[1] ?? {})),
+    `被动回复被拒后自动改主动消息重发（实测 ${retryBodies.length} 次请求${retryErr ? `，抛错：${retryErr.slice(0, 60)}` : ""}）`);
 
   // ② 鉴权被拒（文档：4014 intent 无权限，不可重试）：当场失败、给原因、不落盘
   identifyReply = 4014;

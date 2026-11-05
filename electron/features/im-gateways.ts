@@ -351,7 +351,7 @@ const wecomWebhookGateway = new WecomWebhookGateway({ log: channelLog });
 // 飞书/钉钉/QQ 的流式回复目标：threadId → chatId（回合发起时记录，见 handleChannelMessage）
 const channelThreadChat = new Map<string, string>();
 // QQ 回复需要 msgId + scene（被动回复机制），与 chatId 一起缓存
-const qqReplyContexts = new Map<string, { msgId: string; scene: "group" | "c2c" }>();
+const qqReplyContexts = new Map<string, { msgId: string; scene: "group" | "c2c"; at: number }>();
 
 /** 飞书/钉钉/QQ 通用消息管线（与微信/Telegram 同语义）：绑定会话 > per-user 绑定 > 新建 */
 const qqLastMsgId = new Map<string, string>();
@@ -360,7 +360,7 @@ const qqLastScene = new Map<string, "group" | "c2c">();
 function recordQqContext(from: string, chatId: string, msgId: string, scene: "group" | "c2c") {
   qqLastMsgId.set(from, msgId);
   qqLastScene.set(from, scene);
-  qqReplyContexts.set(chatId, { msgId, scene });
+  qqReplyContexts.set(chatId, { msgId, scene, at: Date.now() });
 }
 
 // QQ 官方扫码连接：桌面出二维码 → 手机 QQ（开放平台管理者账号）扫码确认 → 官方回传凭据 → 复用 qqGateway.connect
