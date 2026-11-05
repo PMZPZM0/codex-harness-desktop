@@ -141,21 +141,39 @@
 .thread-row > button:first-child > .thread-row-title-line {
   flex: 1 1 auto;
   min-width: 0;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: 6px;
 }
 .thread-row-name {
-  /* 11-05：名称按内容宽，长名字先收缩；标签紧跟名称右侧，不占行首列。 */
-  flex: 0 1 auto;
+  /* 11-05：名称左对齐（与项目名同列），标签在中间格；长名字先收缩。 */
   min-width: 0;
+  justify-self: start;
 }
 .thread-row-tags {
-  flex: 0 0 auto;
+  justify-self: center;
   min-width: 0;
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+.thread-tag-switch {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 4px;
+  color: var(--faint);
+  cursor: pointer;
+}
+.thread-tag-switch:hover,
+.thread-tag-switch:focus-visible {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  outline: none;
 }
 /* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
    ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
@@ -1848,17 +1866,8 @@ html[data-ui-font="large"] .action-content pre {
 .entity-tag-save { background: var(--accent); color: #fff; }
 .entity-tag-save:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* ── 11-01 用户令：标签位**最多显示一个**，多于一个时点标签循环切换 ─────────────
-   `+N` 是"还有几个没显示"的角标，点标签本体就翻下一个（见 thread-badge-cycle.mjs）。 */
-.thread-row-tags.is-cyclable { cursor: pointer; }
-.thread-row-tags.is-cyclable:hover > * { filter: brightness(1.08); }
-.thread-tag-cycle {
-  flex: 0 0 auto;
-  font-size: 9.5px;
-  line-height: 1.4;
-  padding: 0 3px;
-  border-radius: 4px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
+/* ── 11-05 用户令：名称左、标签居中；多标签时点标签旁的小刷新图标切换 ───────────── */
+/* 会话名与项目名同列：项目头 = 8(head)+4(toggle)+12(chevron)+6+13(folder)+6；
+   会话行自带 10 左内距 ⇒ 39px。⛔ 15-queued-messages 的 `.project-item-body` 用 shorthand
+   写左内距 0，这里用更高特异度（.project-list ...）覆盖，别去改那份并行在途的文件。 */
+.project-list .project-item-body { padding-left: 39px; }

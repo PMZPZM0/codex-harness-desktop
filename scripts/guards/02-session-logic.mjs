@@ -1647,11 +1647,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     const cssSrc285 = codeOnly(readStyles());
     const tagsRule = /\.thread-row-tags\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
     const nameRule = /\.thread-row-name\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
-    (/flex:\s*0\s+0\s+auto/.test(tagsRule) && !/var\(--tag-col-w/.test(tagsRule) ? ok : fail)(
-      "【285】标签紧跟名称右侧、按内容宽（不再占行首列）"
+    (/justify-self:\s*center/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
+      "【285】标签在会话选项内居中（名称左 / 标签中 / 尾部留白）"
     );
-    (/flex:\s*0\s+1\s+auto/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
-      "【285】名称按内容宽、长名字可收缩（flex:0 1 auto + min-width:0）"
+    (/justify-self:\s*start/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
+      "【285】名称左对齐、长名字可收缩（min-width:0）"
     );
     (rowsSrc285.indexOf("thread-row-name") >= 0 && rowsSrc285.indexOf("thread-row-name") < rowsSrc285.indexOf("thread-row-tags") ? ok : fail)(
       "【285】JSX 里名称在标签之前（标签放会话名字右边）"
@@ -1661,6 +1661,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     );
     (/Math\.min\(badgeSlots, rowBadges\.length\)/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
       "【285】标签最多露两枚（子会话一枚），其余靠点击循环（11-05 用户令）"
+    );
+    (/\.project-list \.project-item-body\s*\{[^}]*padding-left:\s*39px/.test(cssSrc285) && /\.thread-row > button:first-child > \.thread-row-title-line\s*\{[^}]*display:\s*grid/.test(cssSrc285) && /thread-tag-switch/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
+      "【285】会话名与项目名同列（39px）+ 标签在行内居中 + 多标签点图标切换（11-05 用户令）"
     );
     (/has-row-color/.test(rowsSrc285) && /--row-color/.test(rowsSrc285) ? ok : fail)(
       "【285】会话行底色接线（has-row-color 类 + --row-color 内联变量）"
