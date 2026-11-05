@@ -7,6 +7,8 @@ export function pendingSteerIds(threadId: string): string[];
 /** 界面上已作为用户气泡现身的条目 id（armed + sending）⇒ 排队面板要隐藏这些 */
 export function pendingSteerVisibleIds(threadId: string): string[];
 export function pendingSteerEntries(threadId: string): any[];
+/** 订阅版：排队面板要隐藏的 id 名单（armed + sending） */
+export function usePendingSteerVisibleIds(threadId: string): string[];
 export function hasPendingSteers(threadId: string): boolean;
 export function takePendingSteers(threadId: string): any[];
 export function settlePendingSteers(threadId: string, ids: string[]): void;

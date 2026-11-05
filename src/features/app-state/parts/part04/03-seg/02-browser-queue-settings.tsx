@@ -43,29 +43,35 @@ function showQueuedOptimistic(bag: Bag, input: unknown) {
 
 /** 把已登记的插队消息真正交给引擎（由下面的 effect 在**边界**上调用，11-05）：
  *  · 回合还在跑 ⇒ `turn/steer` 并入当前回合（模型下一步就能看到）；
- *  · 回合已结束 ⇒ 按「新回合」启动（与排队消息 auto-start 同语义）。
+ *  · 回合已结束、或 steer 撞上 `no active turn` ⇒ 按「新回合」启动（与排队消息 auto-start 同语义）。
  *  ⛔ 模块级（hook 体顶层函数会被 bag-types 生成器收进 bag）。
  *  ⛔ 两条落点都照搬「立即」原实现的配套动作：钉顶意图、429 重发兜底、**定时一并撤销**
- *    （不撤的话：消息已发出去了，主进程定时器到点还会对着一个不存在的队列条目广播 due）。 */
+ *    （不撤的话：消息已发出去了，主进程定时器到点还会对着一个不存在的队列条目广播 due）。
+ *  ⛔ 交出去之前必须先 `settlePendingSteers` 摘掉「待并入」气泡：引擎的回声会把这条画在**当前回合里**，
+ *    气泡再留着就是同一句话在界面上出现两遍（10-31 定案同款）。 */
 async function deliverPendingSteers(bag: Bag, threadId: string) {
   const entries = takePendingSteers(threadId) as QueueItem[];
   if (!entries.length) return;
+  // 派发期间可能被切走（每个 await 都是一个窗口）：UI 侧动作一律按「还是当前会话」判定
+  const isCurrent = () => bag.threadRef.current?.id === threadId;
   /* 用户已切走：这个会话的运行中回合拿不到（回合数据只存当前会话），此时**不要**盲发 ——
-     重新登记，等切回来看时 effect 会再判一次边界。消息本身还留在引擎队列里，不会丢。 */
-  if (bag.threadRef.current?.id !== threadId) {
+     重新登记（sending 退回 armed），等切回来时 effect 会再判一次边界。消息仍留在引擎队列里，不会丢。 */
+  if (!isCurrent()) {
     for (const entry of entries) armPendingSteer({ threadId, id: entry.id, entry });
     return;
   }
-  const runningTurn = (bag.threadRef.current?.turns ?? []).find((turn) => isTurnRunning(turn)) ?? null;
-  // 派发期间可能被切走（每个 await 都是一个窗口）：UI 侧动作一律按「还是当前会话」判定
-  const isCurrent = () => bag.threadRef.current?.id === threadId;
   for (const entry of entries) {
     try {
       // 已经被用户撤回（条目不在队列里）/ 已被引擎自动启动 ⇒ 不再交付，也不能重复发
       if (isCurrent() && !bag.queue.some((queued) => queued.id === entry.id)) continue;
       bag.armRetryForQueueRelease(threadId, entry.input);
+      /* ⛔ 每条**各自**重看在跑的回合：一批两条时，第一条派发完上一回合可能刚好结束，
+         拿循环外算好的旧值去 steer 第二条 ⇒ 必然 no active turn。 */
+      const runningTurn = (bag.threadRef.current?.turns ?? []).find((turn) => isTurnRunning(turn)) ?? null;
+      let steered = false;
       if (runningTurn) {
         bag.armPinForReleasedQueue(threadId, "steer");
+        settlePendingSteers(threadId, [entry.id]);
         try {
           await window.codex.request("turn/steer", {
             threadId,
@@ -73,33 +79,38 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
             input: entry.input,
             ...(entry.clientUserMessageId ? { clientUserMessageId: entry.clientUserMessageId } : {}),
           });
+          steered = true;
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error ?? "");
           if (!/no active turn/i.test(message)) {
-            /* 撤掉刚建立的钉顶意图（意图悬空会去钉别的消息 / 视口莫名跳回旧消息）。 */
+            /* 撤掉刚建立的钉顶意图（意图悬空会去钉别的消息 / 视口莫名跳回旧消息）。
+               这条没发出去、也**没被删** ⇒ 仍在队列里，排队面板会把它重新列出来，用户可以再点立即。 */
             bag.disarmPinIntent("steer-fail");
             if (isCurrent()) bag.showToast("插队消息发送失败", message, threadId);
             continue;
           }
-          // 陈旧运行态：清掉后按「新回合」发出去（原「立即」同款兜底，不撤钉顶意图）
+          /* 陈旧运行态（429 / 被中断 / 已跑完 —— 09-17 用户实测「插队每次都报错」的同一件事）：
+             引擎那边根本没有活动回合 ⇒ 这条**没有**发出去，⛔ 绝不能删队列条目（删了就是静默丢消息），
+             清掉运行态后落到下面的「新回合」落点。 */
           bag.markThreadStopped(threadId);
           if (isCurrent()) bag.setActiveTurnId(null);
           bag.dbg("steer-stale-fallback", { threadId, message });
         }
-        void bag.setQueuedTimer(threadId, entry.id, null, { silent: true });
-        await window.codex.request("thread/queue/delete", { threadId, queuedSubmissionId: entry.id }).catch(() => undefined);
-        if (isCurrent()) {
-          bag.setQueue((current) => current.filter((queued) => queued.id !== entry.id));
-          void bag.refreshQueue(threadId);
-          bag.showToast("插队消息已并入", "模型下一步就会看到它", threadId);
+        if (steered) {
+          void bag.setQueuedTimer(threadId, entry.id, null, { silent: true });
+          await window.codex.request("thread/queue/delete", { threadId, queuedSubmissionId: entry.id }).catch(() => undefined);
+          if (isCurrent()) {
+            bag.setQueue((current) => current.filter((queued) => queued.id !== entry.id));
+            void bag.refreshQueue(threadId);
+            bag.showToast("插队消息已并入", "模型下一步就会看到它", threadId);
+          }
+          continue;
         }
-        continue;
       }
-      /* 回合已结束 ⇒ 走新回合。与 startQueued 的启动分支逐字同构：钉顶意图 → （建立成功才）
-         重置安全阀 + 上乐观气泡 → 启动；成功后本地摘掉条目 + 撤定时，撞车（引擎已自己启动）按成功处理。 */
+      /* 落点二：按新回合启动（回合已结束，或 steer 撞上 no active turn 的退化）。
+         与 startQueued 的启动分支逐字同构：钉顶意图 → 摘气泡 → （建立成功才）重置安全阀 + 上乐观气泡
+         → 启动；成功后本地摘掉条目 + 撤定时，撞车（引擎已自己启动）按成功处理。 */
       const armedForStart = bag.armPinForReleasedQueue(threadId, "queue-start");
-      /* ⛔ 先摘「待并入」气泡、再上乐观气泡：同一条消息挂两处会显示两遍（乐观气泡那条路径
-         与正常发送同源，接管后位置与观感都一致，所以这里不等 RPC 回来）。 */
       settlePendingSteers(threadId, [entry.id]);
       if (armedForStart) {
         bag.sawRunningTurnRef.current = false;
@@ -119,13 +130,16 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
         if (isQueueAlreadyStartedError(message)) {
           bag.dbg("queue-start-raced-by-engine", { threadId, message });
         } else {
-          if (armedForStart) { bag.disarmPinIntent("queue-start-fail"); bag.setOptimisticInput(null); }
-          if (isCurrent()) bag.showToast("插队消息发送失败", message, threadId);
+          /* ⛔ `optimisticInput` 是**全局一个槽**：切走以后再去清它，会把新会话刚发出的那条气泡一起抹掉。 */
+          if (armedForStart) bag.disarmPinIntent("queue-start-fail");
+          if (isCurrent()) {
+            if (armedForStart) bag.setOptimisticInput(null);
+            bag.showToast("插队消息发送失败", message, threadId);
+          }
         }
       }
     } finally {
-      /* 落定 ⇒ 摘掉「待并入」气泡（引擎的真实回声从这一刻起接管原位渲染）。
-         ⛔ 只能在 RPC 回来之后摘：提前摘会让这条消息在飞行中的几百毫秒里凭空消失。 */
+      // 兜底：任何提前 continue / 意外抛错都不许把条目留在 sending（气泡既不消失也撤不回）
       settlePendingSteers(threadId, [entry.id]);
     }
   }

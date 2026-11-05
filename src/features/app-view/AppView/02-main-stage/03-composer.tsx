@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
 import { contextTriggerOf, filterMentionTargets, mentionDisabledText } from "../../../../lib/dispatch-mention.mjs";
 import { agentAvatarKindOf } from "../../../../lib/agent-avatars.mjs";
-import { pendingSteerVisibleIds } from "../../../../lib/pending-steer.mjs";
+import { usePendingSteerVisibleIds } from "../../../../lib/pending-steer.mjs";
 import { AgentAvatar } from "../../../../components/AgentAvatar";
 import {
   AlertTriangle,
@@ -315,6 +315,9 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
     archiveToast,
     setArchiveToast,
   } = app;
+  /* 插队消息（11-05）：已点「立即」的那些要从排队面板里隐藏（它们在对话里以用户消息现身 + 带撤回图标）。
+     ⛔ 走订阅版 hook：直接读函数会比对话里的气泡慢一拍 ⇒ 同一条消息在面板和对话里各出现一次。 */
+  const pendingSteerHide = usePendingSteerVisibleIds(String(thread?.id ?? ""));
   /* 目标条动作（10-06 夜五轮，用户对照 Qoder 的目标条）。⛔ 暂停/继续走 `thread/goal/set`
      的 status 字段（10-06 隔离引擎实测支持；引擎**没有** thread/goal/pause|resume 两个方法，
      别改回去）；暂停时若回合在跑补一发 interrupt —— 引擎的 paused 只停"下一次自动续跑"。 */
@@ -578,7 +581,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         <TurnStatusCapsule taskList={taskList} turns={thread.turns} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns.at(-1)?.id || null) : null} />
                         <BackgroundTaskCapsule threadId={thread.id} />
                       </div>
-                      <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} pendingIds={pendingSteerVisibleIds(thread.id)} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
+                      <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} pendingIds={pendingSteerHide} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
                     </div>
                   )}
                   <ComposerComposerForm app={app} />

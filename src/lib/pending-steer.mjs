@@ -48,12 +48,13 @@ export function armPendingSteer(payload) {
 /** 撤回：用户删除这条排队消息时一并取消（⛔ 只撤 armed —— sending 已经交给引擎，撤不了；
  *  没登记过也无害）。 */
 export function cancelPendingSteer(threadId, id) {
-  const map = pending.get(String(threadId ?? ""));
+  const key = String(threadId ?? "");
+  const map = pending.get(key);
   if (!map) return false;
   const record = map.get(String(id ?? ""));
   if (!record || record.state !== "armed") return false;
   map.delete(String(id ?? ""));
-  if (!map.size) pending.delete(String(threadId ?? ""));
+  if (!map.size) dropThread(key);
   notify();
   return true;
 }
@@ -112,18 +113,40 @@ export function takePendingSteers(threadId) {
 
 /** 交付落定（成功、失败、或引擎已经自己启动）⇒ 这条从界面上摘掉，交给引擎的真实回声。 */
 export function settlePendingSteers(threadId, ids) {
-  const map = mapOf(threadId);
+  const key = String(threadId ?? "");
+  const map = pending.get(key);
   if (!map) return;
   let changed = false;
   for (const id of ids ?? []) if (map.delete(String(id))) changed = true;
-  if (!map.size) pending.delete(String(threadId ?? ""));
+  if (!map.size) dropThread(key);
   if (changed) notify();
+}
+
+/* 会话空了就把两份表一起摘掉：切走/删掉的会话不许在模块级 Map 里越积越多。 */
+function dropThread(key) {
+  pending.delete(key);
+  snapshots.delete(key);
 }
 
 /** 本会话界面上可见的插队条目（订阅登记表 ⇒ 登记/撤回/派发当场重画）。 */
 export function usePendingSteerEntries(threadId) {
   return useSyncExternalStore(subscribePendingSteers, () => pendingSteerSnapshot(String(threadId ?? "")));
 }
+
+/** 排队面板要隐藏的 id 名单（armed + sending）。⛔ 必须走订阅：不订阅直接读的话，
+ *  面板的隐藏名单会比气泡慢一拍 ⇒ 同一条消息在面板和对话里各出现一次。 */
+export function usePendingSteerVisibleIds(threadId) {
+  const key = String(threadId ?? "");
+  return useSyncExternalStore(subscribePendingSteers, () => {
+    const ids = pendingSteerVisibleIds(key);
+    const signature = ids.join(",");
+    const cached = visibleSnapshots.get(key);
+    if (cached && cached.signature === signature) return cached.value;
+    visibleSnapshots.set(key, { signature, value: ids });
+    return ids;
+  });
+}
+const visibleSnapshots = new Map();
 
 /* useSyncExternalStore 的 getSnapshot 必须返回**同一引用**（每次新数组会让 React 无限重渲染），
    所以按「id:state 序列」做签名，签名没变就交还上次那个数组。 */

@@ -8,12 +8,13 @@
  * ⛔ 为什么必须**延迟派发**：引擎的 `turn/steer` 收到后没有任何撤回接口
  *   （协议里只有 turn/steer / turn/interrupt —— 后者杀整个回合，不是撤这条输入）。
  *   要"能撤"，唯一诚实的做法是点「立即」时**先不交给引擎**：条目留在引擎队列里、
- *   以用户消息的形态挂在对话末尾并带一枚「撤回」图标，等当前这一步跑完再真正 steer；
- *   派发那一刻翻成 sending（气泡留着，图标消失 —— 已经撤不回了），RPC 回来才摘掉，
- *   由引擎回声原位接管（⛔ 提前摘 = 消息在飞行途中凭空消失几百毫秒）。
+ *   以用户消息的形态挂在对话末尾并带一枚「撤回」图标，等当前这一步跑完再真正 steer。
+ *   交出去**之前**就把气泡摘掉（`settlePendingSteers`）：引擎回声会把这条画在当前回合里，
+ *   气泡留着 = 同一句话在界面上出现两遍（10-31 定案的同款缺陷，本轮审查又抓了一次）。
  *
  * 判据两半：纯函数**真跑**（登记表两态语义 + 撤回窗口 + 边界判定真值表 + getSnapshot 引用稳定）
- * 与接线**结构**（steer 分支改成登记、派发 effect、撤回先撤销再删、气泡挂位与图标两态、面板去重）。
+ * 与接线**结构**（steer 分支改成登记、派发 effect、撤回先撤销再删、气泡挂位与图标两态、面板去重、
+ * ⛔ 「steer 撞上 no active turn」这条退化路**不许删队列条目**且必须落到 thread/queue/start）。
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -76,7 +77,7 @@ ok(taken.length === 1 && taken[0].id === "q2" && taken[0].input[0].text === "二
   "take 交还**队列条目本体**（派发要用它的 input / clientUserMessageId）");
 ok(store.hasPendingSteers(T) === false && store.pendingSteerIds(T).length === 0
   && store.pendingSteerVisibleIds(T).join(",") === "q2",
-  "take 后条目转为 sending：不再是「可撤回」，但**仍在可见快照里**（⛔ 立刻摘掉 = steer 在飞的几百毫秒里消息凭空消失）");
+  "take 后条目转为 sending：不再是「可撤回」（撤回图标当场消失），但仍在可见快照里，等调用方 settle 才摘");
 ok(store.cancelPendingSteer(T, "q2") === false && store.pendingSteerVisibleIds(T).includes("q2"),
   "sending 态撤回不动它 —— 已经交给引擎了，界面不给「撤回」入口才是诚实的");
 
@@ -154,21 +155,39 @@ ok(/takePendingSteers\(threadId\)/.test(deliverBlock)
   "派发实现两条落点齐全：回合还在跑 ⇒ steer 并入当前回合；回合已结束 ⇒ 按新回合启动（与排队消息 auto-start 同语义）");
 ok(/armPinForReleasedQueue\(threadId, "steer"\)/.test(deliverBlock)
   && /markThreadStopped\(threadId\)/.test(deliverBlock),
-  "派发沿用既有钉顶意图与「no active turn」陈旧态退化（插队消息照样上屏、不卡回队列）");
+  "派发沿用既有钉顶意图与「no active turn」陈旧态处理（不撤钉顶意图，与原「立即」一致）");
+
+/* ⛔ 审查抓到的静默丢消息：steer 撞上 no active turn 时这条**根本没发出去**，
+   若照旧走 thread/queue/delete 就是"队列删了、模型没收到、界面还说已并入"。
+   判据落在代码形态上：delete 只允许出现在 `if (steered)` 里，且退化路必须能走到 queue/start。 */
+const steeredAt = deliverBlock.indexOf("if (steered) {");
+const deleteAt = deliverBlock.indexOf("thread/queue/delete");
+const startAt = deliverBlock.indexOf("thread/queue/start");
+ok(steeredAt > 0 && deleteAt > steeredAt && startAt > steeredAt
+  && /if \(steered\) \{[\s\S]{0,700}?\bcontinue;\s*\}/.test(deliverBlock)
+  && /steer-stale-fallback/.test(deliverBlock.slice(deliverBlock.indexOf("catch (error)"), steeredAt)),
+  "steer 失败（no active turn）⇒ 不删队列条目、不清定时，退化到 thread/queue/start 按新回合发出去（删了就是静默丢消息）");
+
+/* ⛔ 一批两条时，第一条派发完上一回合可能刚好结束 ⇒ 运行中回合必须**逐条**重算。
+   锚点用带 `{` 的主循环（前面还有一行式的 `for (...) armPendingSteer(...)`，不带花括号）。 */
+ok(deliverBlock.indexOf("for (const entry of entries) {") < deliverBlock.indexOf("const runningTurn = (bag.threadRef.current?.turns ?? [])")
+  && deliverBlock.indexOf("const runningTurn = (bag.threadRef.current?.turns ?? [])") < deliverBlock.indexOf("if (steered) {"),
+  "运行中回合在循环**体内**逐条重算（写在循环外 = 第二条永远拿陈旧回合 id 去 steer，必然 no active turn）");
 
 const timerRevokes = [...deliverBlock.matchAll(/setQueuedTimer\(threadId, entry\.id, null, \{ silent: true \}\)/g)];
 ok(timerRevokes.length === 2,
   `派发两条落点都撤销这条的定时（各 1 处，实测 ${timerRevokes.length}）—— 消息都发出去了还留着主进程定时器，到点会对一个不存在的队列条目广播 due`);
-ok(/const armedForStart = bag\.armPinForReleasedQueue/.test(deliverBlock)
+ok(/armPinForReleasedQueue\(threadId, "steer"\);\s*\r?\n\s*settlePendingSteers\(threadId, \[entry\.id\]\);\s*\r?\n\s*try \{/.test(deliverBlock)
+  && /const armedForStart = bag\.armPinForReleasedQueue/.test(deliverBlock)
   && /settlePendingSteers\(threadId, \[entry\.id\]\);\s*\r?\n\s*if \(armedForStart\)/.test(deliverBlock)
-  && /finally \{[\s\S]{0,160}?settlePendingSteers\(threadId, \[entry\.id\]\)/.test(deliverBlock),
-  "摘气泡的时机两处都对：新回合落点**先摘再上乐观气泡**（同一条不挂两份），steer 落点在 finally 里等 RPC 回来才摘");
+  && /finally \{[\s\S]{0,200}?settlePendingSteers\(threadId, \[entry\.id\]\)/.test(deliverBlock),
+  "交出去之前先摘气泡（两条落点都先 settle）：引擎回声会把这条画在当前回合里，气泡留着就是同一句显示两遍；finally 再兜一次底，任何提前 continue / 抛错都不许把条目卡在 sending");
 ok(/if \(armedForStart\) \{[\s\S]{0,200}?showQueuedOptimistic\(bag, entry\.input\)/.test(deliverBlock)
   && /disarmPinIntent\("queue-start-fail"\)/.test(deliverBlock)
-  && /setOptimisticInput\(null\)/.test(deliverBlock),
-  "新回合落点照搬原「立即」的配套：钉顶意图建立成功才上乐观气泡，失败把意图与气泡一起撤（悬空意图会去钉别的消息）");
+  && /if \(isCurrent\(\)\) \{\s*\r?\n\s*if \(armedForStart\) bag\.setOptimisticInput\(null\);/.test(deliverBlock),
+  "新回合落点照搬原「立即」的配套：意图建立成功才上乐观气泡，失败把意图与气泡一起撤 —— 且清气泡必须在 `isCurrent()` 里（optimisticInput 是全局一个槽，切走后清会把新会话那条一起抹掉）");
 
-ok(/if \(bag\.threadRef\.current\?\.id !== threadId\) \{[\s\S]{0,160}?armPendingSteer\(\{ threadId, id: entry\.id, entry \}\)[\s\S]{0,80}?return;/.test(deliverBlock),
+ok(/if \(!isCurrent\(\)\) \{[\s\S]{0,160}?armPendingSteer\(\{ threadId, id: entry\.id, entry \}\)[\s\S]{0,80}?return;/.test(deliverBlock),
   "派发时用户已切走 ⇒ 不盲发，重新登记等切回来再判边界（回合数据只存当前会话，拿不到活动回合硬发只会撞引擎）");
 
 /* ── ④ 对话里的「待并入」气泡 + 撤回图标 ──────────────────────────────────────── */
@@ -204,9 +223,10 @@ ok(!/queued-badge-pending/.test(queueSrc) && !/\{pending \? "撤回" : "删除"\
   "面板里的「待并入徽标 / 撤回按钮」两态已退役（入口搬到了对话里的气泡下面，留着就是同一功能两个位置）");
 
 const composerSrc = read("src/features/app-view/AppView/02-main-stage/03-composer.tsx");
-ok(/import \{ pendingSteerVisibleIds \} from "\.\.\/\.\.\/\.\.\/\.\.\/lib\/pending-steer\.mjs"/.test(composerSrc)
-  && /pendingIds=\{pendingSteerVisibleIds\(thread\.id\)\}/.test(composerSrc),
-  "面板接的是 armed+sending 的可见名单（只接 armed ⇒ 派发途中那条会在面板里闪回来）");
+ok(/import \{ usePendingSteerVisibleIds \} from "\.\.\/\.\.\/\.\.\/\.\.\/lib\/pending-steer\.mjs"/.test(composerSrc)
+  && /const pendingSteerHide = usePendingSteerVisibleIds\(String\(thread\?\.id \?\? ""\)\);/.test(composerSrc)
+  && /pendingIds=\{pendingSteerHide\}/.test(composerSrc),
+  "面板的隐藏名单走**订阅版** hook（直接调函数会比对话里的bubble慢一拍 ⇒ 同一条消息在面板和对话里各出现一次）");
 
 /* ── ⑤ 样式与负向 ─────────────────────────────────────────────────────────────── */
 const css = read("src/styles/15-queued-messages.css");
@@ -220,6 +240,9 @@ ok(!/pending-steer-item\[data-pending-steer="armed"\][^{]*outline/.test(css),
 const libSrc = stripComments(read("src/lib/pending-steer.mjs"));
 ok(!/localStorage|writeFileSync|readFileSync/.test(libSrc),
   "登记表不落盘（排队消息本身就在引擎内存里，重启后消息没了、登记更不能留着 —— 生命周期必须一致）");
+ok(/function dropThread\(key\) \{[\s\S]{0,120}?pending\.delete\(key\);[\s\S]{0,60}?snapshots\.delete\(key\);/.test(libSrc)
+  && /if \(!map\.size\) dropThread\(/.test(libSrc),
+  "会话空了把两份表一起摘掉（登记表 + 快照缓存）：⛔ 只摘一份的话，切走/删掉的会话会在模块级 Map 里一直攒");
 const bagTypes = stripComments(read("src/features/app-state/parts/bag-types.ts"));
 ok(!/pendingSteer|armPendingSteer|turnStepBusy/.test(bagTypes),
   "辅助函数留在模块级、没被 bag-types 收进 bag（hook 体顶层声明会被生成器当跨段 API）");
