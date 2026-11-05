@@ -141,10 +141,35 @@ bag.runActivityRef = runActivityRef as typeof bag.runActivityRef;
   useEffect(() => { bag.runActivityRef.current = bag.runActivity; }, [bag.runActivity]);
 
 
+  /* 11-05 用户（截图）：「每个状态随机映射不同文字展示」—— 句子**跟着当前状态走**：
+     进入新状态就随机换一句（同状态不重复，见 pickRunPhrase）；跑得久的状态每 12 秒缓慢轮换。
+     ⛔ 别做成每秒跳（09-16 定过的口径：运行期乱跳会闹腾），也别在这里改「收尾等待」那句。 */
+  const phraseActivityRef = useRef("");
+bag.phraseActivityRef = phraseActivityRef as typeof bag.phraseActivityRef;
+
+
   useEffect(() => {
-    if (bag.taskRunning && !bag.runPhrase) bag.setRunPhrase(pickRunPhrase(bag.runActivityRef.current || "等待模型回复"));
-    else if (!bag.taskRunning && bag.runPhrase) bag.setRunPhrase("");
-  }, [bag.taskRunning, bag.runPhrase]);
+    if (!bag.taskRunning) {
+      phraseActivityRef.current = "";
+      if (bag.runPhrase) bag.setRunPhrase("");
+      return;
+    }
+    if (bag.turnFinalizing) return; // 收尾态由下面那条「跨进/跨出」effect 负责
+    const activity = bag.runActivity || "等待模型回复";
+    if (phraseActivityRef.current === activity) return;
+    phraseActivityRef.current = activity;
+    bag.setRunPhrase(pickRunPhrase(activity));
+  }, [bag.taskRunning, bag.turnFinalizing, bag.runActivity]);
+
+
+  useEffect(() => {
+    if (!bag.taskRunning || bag.turnFinalizing) return;
+    const timer = window.setInterval(() => {
+      const activity = bag.runActivityRef.current || "等待模型回复";
+      bag.setRunPhrase(pickRunPhrase(activity));
+    }, 12_000);
+    return () => window.clearInterval(timer);
+  }, [bag.taskRunning, bag.turnFinalizing]);
 
 
   // ⛔ 跨进/跨出「收尾等待」时换一次句子（09-18 用户实测「回复完了还没结束」）：

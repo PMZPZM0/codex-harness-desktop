@@ -1267,6 +1267,7 @@ export interface Bag {
   setRunPhrase: React.Dispatch<React.SetStateAction<string>>;
   runActivityRef: React.RefObject<string>;
   finalizePhraseRef: React.RefObject<boolean>;
+  phraseActivityRef: React.RefObject<string>;
   applyDispatch: (next: { expert: boolean; team: boolean; subagent: boolean; }) => Promise<void>;
   admitThreadRuntime: (id: string, runtime: unknown, opts?: { conflict?: boolean | undefined; fromRemote?: boolean | undefined; } | undefined) => void;
   syncThreadRuntimeWithMain: (id: string) => Promise<void>;

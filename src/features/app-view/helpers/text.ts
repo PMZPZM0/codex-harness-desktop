@@ -175,10 +175,22 @@ function modelBadges(model: Model): { text: string; kind?: "vision" | "video" }[
   return badges;
 }
 
-export /** 取一句：专属池在前、通用池兜底；专属句更少，所以自然以通用句为主。 */
+/** 每个状态上一次取过的句子：同一状态连续轮换时不要撞同一句（11-05 状态联动后每 12 秒会换一次）。 */
+const lastRunPhraseByActivity = new Map<string, string>();
+
+export /** 取一句：**当前状态专属池优先（75%）**，其余走通用池；同状态不连续重复。
+ *  11-05 用户：「每个状态随机映射不同文字展示」—— 专属句更能贴合当下在做的事，
+ *  但不能完全排除通用池（专属句各有 3~7 条，连看几轮会腻）。 */
 function pickRunPhrase(activity: string): string {
-  const pool = [...(RUN_PHRASES_BY_ACTIVITY[activity] ?? []), ...RUN_PHRASES];
-  return pool[Math.floor(Math.random() * pool.length)] ?? "";
+  const specific = RUN_PHRASES_BY_ACTIVITY[activity] ?? [];
+  const pool = specific.length && Math.random() < 0.75 ? specific : RUN_PHRASES;
+  const last = lastRunPhraseByActivity.get(activity) ?? "";
+  let pick = pool[Math.floor(Math.random() * pool.length)] ?? "";
+  if (pool.length > 1 && pick === last) {
+    pick = pool[(Math.max(0, pool.indexOf(pick)) + 1) % pool.length] ?? pick;
+  }
+  if (pick) lastRunPhraseByActivity.set(activity, pick);
+  return pick;
 }
 
 export /** 只从专属池取一句（**不过通用池**）：给语义必须精确的状态用 —— 通用池里有

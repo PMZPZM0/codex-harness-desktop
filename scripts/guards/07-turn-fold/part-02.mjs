@@ -175,6 +175,14 @@ export async function run() {
     const exactWin = exactIdx >= 0 ? appSrc.slice(exactIdx, exactIdx + 260) : "";
     (exactWin && /RUN_PHRASES_BY_ACTIVITY\[activity\]/.test(exactWin) && !/\.\.\.RUN_PHRASES\b/.test(exactWin) ? ok : fail)("【44】收尾态专属句不过通用池（pickRunPhraseExact 只取专属池）");
     (/setRunPhrase\(turnFinalizing \? pickRunPhraseExact\(/.test(appSrc) ? ok : fail)("【44】收尾状态跨进/跨出各换一次句（只在跨界时换，不在「思考→命令」之间乱换）");
+    /* 11-05 用户（截图）：「每个状态随机映射不同文字展示」——
+       句子必须**跟着 runActivity 走**（进新状态换一句），且同状态里缓慢轮换（12s，不是每秒）。
+       ⛔ 收尾态那段由上面那条 effect 负责，这里要确认新 effect 明确让位（turnFinalizing 早退），
+       否则两个 effect 会互相抢着 setRunPhrase，句子闪来闪去。 */
+    const pickWin = /if \(turnFinalizing\) return;[\s\S]{0,220}?if \(phraseActivityRef\.current === activity\) return;[\s\S]{0,120}?pickRunPhrase\(activity\)/.test(appSrc);
+    (pickWin ? ok : fail)("【44】状态一换就换句（phraseActivityRef 去重 + 收尾态让位）");
+    (/window\.setInterval\(\(\) => \{[\s\S]{0,180}?pickRunPhrase\(activity\)[\s\S]{0,80}?\}, 12_000\)/.test(appSrc)
+      ? ok : fail)("【44】同一状态每 12 秒缓慢轮换一句（⛔ 别退回每秒跳，09-16 定过的口径）");
   }
 }
 

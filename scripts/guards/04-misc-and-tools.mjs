@@ -1001,15 +1001,26 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && !/agents:(enabled|off)-notice/.test(mainSrc9) && !!dp.dispatchAllowOf
       ? ok("★ 告知收敛为一条：开团/关团两态都在，且旧的两条通道已删除")
       : fail("告知链路不对 —— 要么语义不全，要么旧通道又长回来了"));
-    // 运行状态行的词库（09-16 扩充）：规模、按活动分、不得照搬竞品原文
+    // 运行状态行的词库（09-16 建、11-05 扩）：规模、按活动分、不得照搬竞品原文
     const phraseBlock = /const RUN_PHRASES = \[([\s\S]*?)\];/.exec(appSrc9)?.[1] ?? "";
     const phraseCount = (phraseBlock.match(/^\s*"/gm) || []).length;
-    phraseCount >= 30
+    phraseCount >= 55
       ? ok(`话语池 ${phraseCount} 条（够丰富，不容易撞句）`)
-      : fail(`话语池只有 ${phraseCount} 条 —— 用户很快就会看到重复`);
+      : fail(`话语池只有 ${phraseCount} 条 —— 用户很快就会看到重复（11-05 要求扩到 55+）`);
     /RUN_PHRASES_BY_ACTIVITY/.test(appSrc9) && /function pickRunPhrase/.test(appSrc9)
       ? ok("按活动类型各有专属话语 + 通用池兜底")
       : fail("话语没有按活动分 —— 全是通用句，不够贴切");
+    /* 11-05（用户：「每个状态随机映射不同文字展示」）：① 每个状态至少 3 句专属，否则轮换两轮就腻；
+       ② 取词必须**专属优先**（写死 75%），不能把专属池和通用池简单拼在一起让通用句淹没；
+       ③ 同状态不许连续取同一句（12 秒轮换时会肉眼可见地"没换"）。 */
+    const actBlock = /const RUN_PHRASES_BY_ACTIVITY: Record<string, string\[\]> = \{([\s\S]*?)\n\};/.exec(appSrc9)?.[1] ?? "";
+    const actPools = [...actBlock.matchAll(/"([^"]+)": \[([\s\S]*?)\],?\r?\n/g)].map((m) => ({ key: m[1], count: (m[2].match(/"/g) || []).length / 2 }));
+    const thinPools = actPools.filter((pool) => pool.count < 3);
+    (actPools.length >= 10 && !thinPools.length
+      ? ok : fail)(`每个状态都有 ≥3 句专属（实测 ${actPools.length} 组${thinPools.length ? `，太薄：${thinPools.map((p) => `${p.key}(${p.count})`).join("/")}` : ""}）`);
+    (/Math\.random\(\) < 0\.75/.test(appSrc9) ? ok : fail)("取词专属优先 75%（拼成一个大池会让通用句淹没专属句，状态联动就形同虚设）");
+    (/lastRunPhraseByActivity/.test(appSrc9) && /pick === last/.test(appSrc9)
+      ? ok : fail)("同一状态不连续取同一句（12 秒轮换时不能肉眼可见地\"没换\"）");
     !/WorkBuddy|Claude|Cursor|Copilot|GPT/.test(phraseBlock)
       ? ok("★ 话语池不含竞品品牌名（自创文案，不照搬）")
       : fail("话语池混进了竞品品牌名 —— 必须自创");
