@@ -784,6 +784,13 @@
       "file": "features/session-alias-ipc.ts",
       "export": "sessionAliasFeature",
       "config": null
+    },
+    {
+      "id": "harness-team",
+      "enabled": true,
+      "file": "features/harness-team-ipc.ts",
+      "export": "harnessTeamFeature",
+      "config": null
     }
   ]
 }

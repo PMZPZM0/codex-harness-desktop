@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 608,
+  "count": 616,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6051,6 +6051,86 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "10-31：新建会话后确保有笔名（幂等；主会话不传上级）"
+    },
+    {
+      "name": "harnessTeamList",
+      "channel": "harness-team:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamCreate",
+      "channel": "harness-team:create",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamRename",
+      "channel": "harness-team:rename",
+      "paramsImpl": "groupId: string, name: string",
+      "paramsDecl": "groupId: string, name: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, name",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamAddPartner",
+      "channel": "harness-team:add-partner",
+      "paramsImpl": "groupId: string, partner: Record<string, unknown>, addedBy: string",
+      "paramsDecl": "groupId: string, partner: Record<string, unknown>, addedBy: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>",
+      "invokeArgs": "groupId, partner, addedBy",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamRemovePartner",
+      "channel": "harness-team:remove-partner",
+      "paramsImpl": "groupId: string, partnerId: string, byId: string",
+      "paramsDecl": "groupId: string, partnerId: string, byId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>",
+      "invokeArgs": "groupId, partnerId, byId",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamMute",
+      "channel": "harness-team:mute",
+      "paramsImpl": "groupId: string, partnerId: string, muted: boolean",
+      "paramsDecl": "groupId: string, partnerId: string, muted: boolean",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[] }>",
+      "invokeArgs": "groupId, partnerId, muted",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamSetGuard",
+      "channel": "harness-team:set-guard",
+      "paramsImpl": "groupId: string, guard: Record<string, unknown>",
+      "paramsDecl": "groupId: string, guard: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[] }>",
+      "invokeArgs": "groupId, guard",
+      "cast": null,
+      "note": "团队模式 P0"
+    },
+    {
+      "name": "harnessTeamProject",
+      "channel": "harness-team:project",
+      "paramsImpl": "sources: unknown",
+      "paramsDecl": "sources: unknown",
+      "returns": "Promise<{ rows: any[] }>",
+      "invokeArgs": "sources",
+      "cast": null,
+      "note": "团队模式 P0"
     }
   ]
 }

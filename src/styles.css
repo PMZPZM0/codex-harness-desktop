@@ -86,4 +86,5 @@
       @import」的不变量（motion 靠后写者胜去覆盖各分节的时长变量）——【motion】① 当场报红。
       新板块要插在 59-motion **之前**，不是"文件末尾"。 */
 @import "./styles/60-event-broadcast" layer(components);
+@import "./styles/61-team-mode" layer(pages);
 @import "./styles/59-motion" layer(components);

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（113 个能力域 / 608 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（114 个能力域 / 616 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -232,6 +232,10 @@ OpenAI 账号鉴权（登录/凭据/额度）
 ### plugin（1 通道）
 插件卸载入口
 通道：plugin:validate
+
+### harness-team（8 通道）
+团队模式：应用内的群（伙伴成员 / 上下级委派白名单 / 群护栏 / 消息投影）,打开一个群就能 @ 伙伴派活
+通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-guard, harness-team:project
 
 ### remote（11 通道）
 远程会话（手机/网页端远程接入宿主）

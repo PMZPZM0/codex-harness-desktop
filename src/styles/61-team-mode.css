@@ -1,0 +1,163 @@
+/* 团队模式（harness-team）· 样式分节（10-05 新建，独立分节，⛔ 不写进别人的域样式） */
+
+.team-mode {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+}
+
+/* ── 左：群列表 ── */
+.team-mode__rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--line-soft);
+  background: var(--panel);
+}
+.team-mode__rail-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 14px 8px;
+  font-size: 13px;
+}
+.team-mode__rail-sub { color: var(--faint); font-size: 12px; }
+.team-mode__groups { flex: 1; overflow: auto; margin: 0; padding: 4px 8px; list-style: none; }
+.team-mode__group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.team-mode__group:hover { background: var(--panel-base); }
+.team-mode__group.is-active { background: var(--panel-base); box-shadow: inset 2px 0 0 var(--accent-text); }
+.team-mode__group-name { font-size: 13px; }
+.team-mode__group-sub { font-size: 11px; color: var(--faint); }
+.team-mode__new { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--line-soft); }
+.team-mode__new input { flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 12px; }
+.team-mode__new button { padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; cursor: pointer; }
+.team-mode__error { margin: 0; padding: 0 12px 10px; color: var(--danger); font-size: 12px; }
+
+/* ── 右：群 ── */
+.team-mode__main { min-width: 0; min-height: 0; display: flex; }
+.team-mode__blank { margin: auto; text-align: center; color: var(--faint); font-size: 13px; line-height: 1.8; }
+
+.team-group { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+.team-group__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-group__title h2 { margin: 0; font-size: 15px; font-weight: 500; }
+.team-group__sub { font-size: 12px; color: var(--faint); }
+.team-group__avatars { display: flex; gap: -6px; margin-left: auto; }
+.team-group__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  background: var(--panel-base);
+  font-size: 11px;
+}
+.team-group__avatar.is-bot { background: var(--accent-soft); color: var(--accent-text); }
+.team-group__avatar.is-muted { opacity: 0.45; }
+.team-group__settings-btn {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* ── 消息流 ── */
+.team-group__stream { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.team-group__empty { margin: auto; text-align: center; color: var(--faint); font-size: 13px; }
+.team-group__empty-hint { font-size: 12px; }
+.team-group__empty-btn { margin-top: 8px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-size: 12px; }
+
+.team-msg { display: flex; gap: 10px; }
+.team-msg__avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--panel-base);
+  font-size: 12px;
+}
+.team-msg.is-bot .team-msg__avatar { background: var(--accent-soft); color: var(--accent-text); }
+.team-msg__body { min-width: 0; }
+.team-msg__meta { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
+.team-msg__meta time { color: var(--faint); font-size: 11px; }
+.team-msg__text { margin: 4px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.team-msg__card { margin: 4px 0 0; padding: 10px; border-radius: 8px; background: var(--panel); font-size: 11px; overflow: auto; }
+
+/* ── 输入区 ── */
+.team-group__composer { border-top: 1px solid var(--line-soft); padding: 10px 14px 12px; }
+.team-group__atbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.team-group__atlabel { font-size: 12px; color: var(--faint); }
+.team-group__atchip {
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 12px;
+  cursor: pointer;
+}
+.team-group__atchip.is-on { background: var(--accent-soft); border-color: var(--accent-text); color: var(--accent-text); }
+.team-group__atchip.is-muted { opacity: 0.55; }
+.team-group__atempty { font-size: 12px; color: var(--faint); }
+.team-group__composer textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+}
+.team-group__send-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.team-group__hint { font-size: 11px; color: var(--faint); }
+.team-group__send-row button { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
+.team-group__send-row button:disabled { opacity: 0.5; cursor: default; }
+
+/* ── 设置 ── */
+.team-settings { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
+.team-settings__block { border: 1px solid var(--line-soft); border-radius: 10px; padding: 14px 16px; }
+.team-settings__block h3 { margin: 0 0 6px; font-size: 13px; font-weight: 500; }
+.team-settings__block--warn { border-color: var(--orange); }
+.team-settings__count { margin-left: 6px; font-size: 12px; color: var(--faint); font-weight: 400; }
+.team-settings__hint { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.team-settings__list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.team-settings__row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.team-settings__row--plain { padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
+.team-settings__row select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
+.team-settings__avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent-text); font-size: 11px; }
+.team-settings__name { flex: 1; min-width: 0; }
+.team-settings__tag { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--panel-base); font-size: 10px; font-style: normal; }
+.team-settings__tag--muted { opacity: 0.7; }
+.team-settings__meta { font-size: 12px; color: var(--faint); }
+.team-settings__mini { padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: transparent; font-size: 11px; cursor: pointer; }
+.team-settings__mini--danger { color: var(--danger); border-color: var(--danger); }
+.team-settings__empty { font-size: 12px; color: var(--faint); }
+.team-settings__add { display: flex; gap: 6px; }
+.team-settings__add input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
+.team-settings__add button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; cursor: pointer; }
+.team-settings__error { margin: 8px 0 0; color: var(--danger); font-size: 12px; }

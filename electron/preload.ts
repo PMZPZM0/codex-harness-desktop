@@ -990,6 +990,22 @@ contextBridge.exposeInMainWorld("codex", {
   sessionAliasSet: (input: unknown) => __ipc("session-alias:set", 1, [input]),
   /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
   sessionAliasEnsure: (input: unknown) => __ipc("session-alias:ensure", 1, [input]),
+  /* 团队模式 P0 */
+  harnessTeamList: () => __ipc("harness-team:list", 0, []),
+  /* 团队模式 P0 */
+  harnessTeamCreate: (input: Record<string, unknown>) => __ipc("harness-team:create", 1, [input]),
+  /* 团队模式 P0 */
+  harnessTeamRename: (groupId: string, name: string) => __ipc("harness-team:rename", 2, [groupId, name]),
+  /* 团队模式 P0 */
+  harnessTeamAddPartner: (groupId: string, partner: Record<string, unknown>, addedBy: string) => __ipc("harness-team:add-partner", 3, [groupId, partner, addedBy]),
+  /* 团队模式 P0 */
+  harnessTeamRemovePartner: (groupId: string, partnerId: string, byId: string) => __ipc("harness-team:remove-partner", 3, [groupId, partnerId, byId]),
+  /* 团队模式 P0 */
+  harnessTeamMute: (groupId: string, partnerId: string, muted: boolean) => __ipc("harness-team:mute", 3, [groupId, partnerId, muted]),
+  /* 团队模式 P0 */
+  harnessTeamSetGuard: (groupId: string, guard: Record<string, unknown>) => __ipc("harness-team:set-guard", 2, [groupId, guard]),
+  /* 团队模式 P0 */
+  harnessTeamProject: (sources: unknown) => __ipc("harness-team:project", 1, [sources]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

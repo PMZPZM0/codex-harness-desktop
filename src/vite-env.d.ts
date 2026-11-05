@@ -1374,6 +1374,22 @@ interface Window {
     sessionAliasSet(input: { threadId?: string; alias?: string; allowDuplicate?: boolean }): Promise<{ ok: boolean; error?: string; record?: any; engineError?: string; snapshot?: any }>;
     /* 10-31：新建会话后确保有笔名（幂等；主会话不传上级） */
     sessionAliasEnsure(input: { threadId?: string; supervisorThreadId?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
+    /* 团队模式 P0 */
+    harnessTeamList(): Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>;
+    /* 团队模式 P0 */
+    harnessTeamCreate(input: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamRename(groupId: string, name: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式 P0 */
+    harnessTeamAddPartner(groupId: string, partner: Record<string, unknown>, addedBy: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>;
+    /* 团队模式 P0 */
+    harnessTeamRemovePartner(groupId: string, partnerId: string, byId: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>;
+    /* 团队模式 P0 */
+    harnessTeamMute(groupId: string, partnerId: string, muted: boolean): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式 P0 */
+    harnessTeamSetGuard(groupId: string, guard: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式 P0 */
+    harnessTeamProject(sources: unknown): Promise<{ rows: any[] }>;
 /* ═══ gen:end ═══ */
 
 

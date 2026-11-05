@@ -123,6 +123,7 @@ const DOMAIN_DESCRIPTIONS = {
   "dataDir": "数据目录自定义（userData 重定向 + 启动期自动迁移；改后重启生效）",
   "updates": "应用自更新（检查/下载/安装，GitHub Release 单源）",
   "remote": "远程会话（手机/网页端远程接入宿主）",
+  "harness-team": "团队模式：应用内的群（伙伴成员 / 上下级委派白名单 / 群护栏 / 消息投影）,打开一个群就能 @ 伙伴派活",
   "relay": "账号库（OpenAI 账号多账号管理：导入/切换/启停/用量概览）",
   "openai": "OpenAI 账号鉴权（登录/凭据/额度）",
   "custom-model": "自定义模型供应商（接入任意 OpenAI 兼容端点：CRUD/探测/测活）",
