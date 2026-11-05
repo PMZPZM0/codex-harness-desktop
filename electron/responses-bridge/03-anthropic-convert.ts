@@ -6,7 +6,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import { randomUUID } from "node:crypto";
 import { URL } from "node:url";
-import { sseLine, finalizeItems, newItem, newToolItem } from "./01-sse-items";
+import { sseLine, finalizeItems, newItem, newToolItem, customInputFromArgs } from "./01-sse-items";
 import type { OutputItem } from "./01-sse-items";
 /** Anthropic Messages 的 max_tokens 上限保护。
  *  ⛔ Anthropic **要求 max_tokens 必填**，且不得超过模型上限（超了直接 400，不是截断）。
@@ -112,12 +112,15 @@ export function toAnthropicRequest(body: any): any {
   }
 
   const tools = (Array.isArray(body?.tools) ? body.tools : [])
-    .filter((tool: any) => tool && (tool.type === "function" || (tool.name && !tool.type)))
+    .filter((tool: any) => tool && (tool.type === "function" || tool.type === "custom" || (tool.name && !tool.type)))
     .map((tool: any) => ({
       name: tool.name,
       description: tool.description ?? "",
       // ⛔ Anthropic 用 `input_schema`（不是 Chat 的 `function.parameters`，也不是 Responses 的 `parameters`）
-      input_schema: tool.parameters ?? { type: "object", properties: {} },
+      // custom（freeform）工具同 chat 口径：整段原样输入塞进一个字符串参数（见 02-chat-convert 注释）
+      input_schema: tool.type === "custom"
+        ? { type: "object", properties: { input: { type: "string", description: "工具输入全文，原样放进来（不要包 JSON、不要转义层）" } }, required: ["input"] }
+        : (tool.parameters ?? { type: "object", properties: {} }),
     }));
 
   const wanted = typeof body?.max_output_tokens === "number" && body.max_output_tokens > 0
@@ -181,13 +184,16 @@ export class AnthropicStreamTranslator {
   private model: string;
   private failed: string | null = null;
   private emitReasoning: boolean;
+  /** 本轮请求里 type="custom" 的工具名（apply_patch 等）：调用要还原成 custom_tool_call */
+  private customTools: Set<string>;
 
-  constructor(model: string, options: { emitReasoning?: boolean } = {}) {
+  constructor(model: string, options: { emitReasoning?: boolean; customTools?: Set<string> } = {}) {
     this.model = model;
     // ⛔ 与 chat 流**默认值相反**：Anthropic 的 thinking 块可能非常长，且引擎对
     //    reasoning 事件是容忍的（能拿到就展示）。chat 路径默认关是因为部分网关把
     //    reasoning 混在正文里，Anthropic 是**独立的块类型**，不会污染正文。
     this.emitReasoning = options.emitReasoning !== false;
+    this.customTools = options.customTools ?? new Set();
   }
 
   private nextIndex(): number {
@@ -231,7 +237,7 @@ export class AnthropicStreamTranslator {
         if (!this.emitReasoning) return out;
         item = newItem("reasoning", this.nextIndex());
       } else if (block.type === "tool_use") {
-        item = newToolItem(this.nextIndex(), String(block.id ?? `toolu_${randomUUID().replace(/-/g, "").slice(0, 20)}`), String(block.name ?? ""));
+        item = newToolItem(this.nextIndex(), String(block.id ?? `toolu_${randomUUID().replace(/-/g, "").slice(0, 20)}`), String(block.name ?? ""), this.customTools.has(String(block.name ?? "")));
       }
       if (!item) return out;   // server_tool_use / 未知块类型：不转发
       this.blocks.set(index, item);
@@ -243,10 +249,13 @@ export class AnthropicStreamTranslator {
       if (initial && typeof initial === "object" && Object.keys(initial).length) {
         const piece = JSON.stringify(initial);
         item.args = piece;
-        out += sseLine({
-          type: "response.function_call_arguments.delta", item_id: item.item.id,
-          output_index: item.index, delta: piece,
-        });
+        // custom 工具不发参数增量（见 02-chat-convert 同款注释）：收尾时统一还原成 input
+        if (item.item.type !== "custom_tool_call") {
+          out += sseLine({
+            type: "response.function_call_arguments.delta", item_id: item.item.id,
+            output_index: item.index, delta: piece,
+          });
+        }
       }
       return out;
     }
@@ -263,10 +272,13 @@ export class AnthropicStreamTranslator {
       } else if (delta.type === "input_json_delta" && typeof delta.partial_json === "string" && delta.partial_json) {
         // ⛔ 字符串累加（见类注释）：片段拼起来才是完整 JSON
         item.args = (item.args ?? "") + delta.partial_json;
-        out += sseLine({
-          type: "response.function_call_arguments.delta", item_id: item.item.id,
-          output_index: item.index, delta: delta.partial_json,
-        });
+        // custom 工具不发参数增量（见 02-chat-convert 同款注释）
+        if (item.item.type !== "custom_tool_call") {
+          out += sseLine({
+            type: "response.function_call_arguments.delta", item_id: item.item.id,
+            output_index: item.index, delta: delta.partial_json,
+          });
+        }
       } else if (delta.type === "thinking_delta" && typeof delta.thinking === "string" && delta.thinking) {
         item.text = (item.text ?? "") + delta.thinking;
         out += sseLine({
@@ -307,7 +319,7 @@ export class AnthropicStreamTranslator {
 }
 
 /** 非流式 Anthropic Messages 响应 → responses 响应对象 */
-export function anthropicJsonToResponses(json: any, model: string): any {
+export function anthropicJsonToResponses(json: any, model: string, customTools: Set<string> = new Set()): any {
   const output: any[] = [];
   for (const block of Array.isArray(json?.content) ? json.content : []) {
     if (!block || typeof block !== "object") continue;
@@ -317,6 +329,15 @@ export function anthropicJsonToResponses(json: any, model: string): any {
         status: "completed", content: [{ type: "output_text", text: block.text, annotations: [] }],
       });
     } else if (block.type === "tool_use") {
+      const name = String(block.name ?? "");
+      if (customTools.has(name)) {
+        output.push({
+          id: `ctc_${randomUUID().replace(/-/g, "").slice(0, 24)}`, type: "custom_tool_call", status: "completed",
+          name, input: customInputFromArgs(JSON.stringify(block.input ?? {})),
+          call_id: block.id ?? `call_${randomUUID().slice(0, 8)}`,
+        });
+        continue;
+      }
       output.push({
         id: `fc_${randomUUID().replace(/-/g, "").slice(0, 24)}`, type: "function_call", status: "completed",
         name: block.name ?? "", arguments: JSON.stringify(block.input ?? {}),

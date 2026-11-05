@@ -3,7 +3,7 @@
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
 import { createHash, randomUUID } from "node:crypto";
-import { sseLine, finalizeItems, newItem, newToolItem } from "./01-sse-items";
+import { sseLine, finalizeItems, newItem, newToolItem, customInputFromArgs } from "./01-sse-items";
 import type { OutputItem } from "./01-sse-items";
 
 /** 最近一次请求的配对修复统计（10-17）：供桥日志打印"这次修掉了多少条不成对"，
@@ -106,13 +106,17 @@ export function toChatRequest(body: any): any {
   }
 
   const tools = (Array.isArray(body?.tools) ? body.tools : [])
-    .filter((tool: any) => tool && (tool.type === "function" || (tool.name && !tool.type)))
+    .filter((tool: any) => tool && (tool.type === "function" || tool.type === "custom" || (tool.name && !tool.type)))
     .map((tool: any) => ({
       type: "function",
       function: {
         name: tool.name,
         description: tool.description ?? "",
-        parameters: tool.parameters ?? { type: "object", properties: {} },
+        // custom（freeform）工具：chat 协议只有 function，把整段原样输入塞进一个字符串参数。
+        // ⛔ 不加这条就会把 apply_patch 静默丢掉 —— 引擎提示里写着有这个工具、请求里却没有。
+        parameters: tool.type === "custom"
+          ? { type: "object", properties: { input: { type: "string", description: "工具输入全文，原样放进来（不要包 JSON、不要转义层）" } }, required: ["input"] }
+          : (tool.parameters ?? { type: "object", properties: {} }),
         ...(tool.strict === undefined ? {} : { strict: tool.strict }),
       },
     }));
@@ -161,10 +165,13 @@ export class ChatStreamTranslator {
   private model: string;
   private failed: string | null = null;
   private emitReasoning: boolean;
+  /** 本轮请求里 type="custom" 的工具名（apply_patch 等）：它们的调用要还原成 custom_tool_call */
+  private customTools: Set<string>;
 
-  constructor(model: string, options: { emitReasoning?: boolean } = {}) {
+  constructor(model: string, options: { emitReasoning?: boolean; customTools?: Set<string> } = {}) {
     this.model = model;
     this.emitReasoning = options.emitReasoning === true;
+    this.customTools = options.customTools ?? new Set();
   }
 
   private sse(event: any): string {
@@ -235,21 +242,30 @@ export class ChatStreamTranslator {
       const key = String(call.index ?? 0);
       let entry = this.toolItems.get(key);
       if (!entry) {
-        entry = newToolItem(this.nextIndex(), call.id ?? `call_${randomUUID().slice(0, 8)}`, call.function?.name ?? "");
+        // custom 工具按名字还原成 custom_tool_call（见 newToolItem 注释）
+        entry = newToolItem(this.nextIndex(), call.id ?? `call_${randomUUID().slice(0, 8)}`, call.function?.name ?? "", this.customTools.has(String(call.function?.name ?? "")));
         this.toolItems.set(key, entry);
         this.items.push(entry);
         out += this.sse({ type: "response.output_item.added", output_index: entry.index, item: entry.item });
       }
       // 部分网关把 id/name 拆在后续分片里补发
       if (call.id && !entry.item.call_id) entry.item.call_id = call.id;
-      if (call.function?.name) entry.item.name = call.function.name;
+      if (call.function?.name) {
+        entry.item.name = call.function.name;
+        // 首块常不带 name（分片下发）：拿到名字后要回头补判是否 custom
+        if (entry.item.type === "function_call" && this.customTools.has(call.function.name)) entry.item.type = "custom_tool_call";
+      }
       const piece = call.function?.arguments;
       if (typeof piece === "string" && piece.length) {
         entry.args = (entry.args ?? "") + piece;
-        out += this.sse({
-          type: "response.function_call_arguments.delta", item_id: entry.item.id,
-          output_index: entry.index, delta: piece,
-        });
+        /* ⛔ custom 工具**不发**参数增量：上游发来的是 `{"input":"…"}` 的 JSON 分片，
+           原样发给引擎会让它把 JSON 片段当 patch 正文收（收尾时已由 finalizeItems 统一还原）。 */
+        if (entry.item.type !== "custom_tool_call") {
+          out += this.sse({
+            type: "response.function_call_arguments.delta", item_id: entry.item.id,
+            output_index: entry.index, delta: piece,
+          });
+        }
       }
     }
     return out;
@@ -278,7 +294,7 @@ export class ChatStreamTranslator {
 }
 
 /** 非流式 chat 响应 → responses 响应对象 */
-export function chatJsonToResponses(json: any, model: string): any {
+export function chatJsonToResponses(json: any, model: string, customTools: Set<string> = new Set()): any {
   const message = json?.choices?.[0]?.message ?? {};
   const output: any[] = [];
   if (typeof message.content === "string" && message.content.length) {
@@ -286,8 +302,15 @@ export function chatJsonToResponses(json: any, model: string): any {
       status: "completed", content: [{ type: "output_text", text: message.content, annotations: [] }] });
   }
   for (const call of Array.isArray(message.tool_calls) ? message.tool_calls : []) {
+    const name = call.function?.name ?? "";
+    if (customTools.has(name)) {
+      output.push({ id: `ctc_${randomUUID().replace(/-/g, "").slice(0, 24)}`, type: "custom_tool_call",
+        status: "completed", name, input: customInputFromArgs(call.function?.arguments),
+        call_id: call.id ?? `call_${randomUUID().slice(0, 8)}` });
+      continue;
+    }
     output.push({ id: `fc_${randomUUID().replace(/-/g, "").slice(0, 24)}`, type: "function_call",
-      status: "completed", name: call.function?.name ?? "", arguments: call.function?.arguments ?? "",
+      status: "completed", name, arguments: call.function?.arguments ?? "",
       call_id: call.id ?? `call_${randomUUID().slice(0, 8)}` });
   }
   return {

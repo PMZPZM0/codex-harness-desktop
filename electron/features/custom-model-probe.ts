@@ -159,6 +159,18 @@ export function buildModelCatalog(entry: CustomModelFile) {
 
       supports_parallel_tool_calls: false,
 
+      /* ⛔⛔ 11-05：必须显式声明 apply_patch，否则**工具面里根本没有 apply_patch**
+         （0.166 隔离引擎探针实测：不写这一行，additional 工具只有 exec_command /
+         write_stdin / request_user_input / view_image / multi_agent_v1 / goal 三件 / web_search）。
+         后果：模型只能拿 shell 命令写文件 —— Windows 命令行有长度上限，写稍大的脚本
+         就会遇到「命令太长」，一个回合反复失败后停在那里等用户说「继续」，用户看到的就是
+         「老是断断」（11-05 用户现场截图：22 天交易复盘写 egg.py 反复中断）。
+         freeform 的 apply_patch 走工具入参，没有命令行长度问题；同一探针验证过引擎能在
+         Windows 上真落盘（Add File → 文件内容逐字一致）。
+         chat / anthropic 上游没有 custom 工具的概念，由 responses-bridge 降级成
+         {input: string} 的 function 调用并在回程还原（见 02-chat-convert 的注释）。 */
+      apply_patch_tool_type: "freeform",
+
       supports_image_detail_original: (m.inputTypes ?? []).includes("image") || (m.outputTypes ?? []).includes("image"),
 
       input_modalities: (m.inputTypes ?? ["text"]).includes("image") ? ["text", "image"] : ["text"],

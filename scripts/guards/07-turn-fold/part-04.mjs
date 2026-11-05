@@ -221,8 +221,10 @@ export async function run() {
   (/max_tokens: Math\.max\(1, Math\.round\(wanted\)\)/.test(bridge73) ? ok : fail)(
     "【73】max_tokens 必填且被压到上限（引擎的上下文级大值原样透传会被拒）"
   );
-  (/input_schema: tool\.parameters/.test(bridge73) ? ok : fail)(
-    "【73】tools 用 input_schema（不是 chat 的 function.parameters）"
+  // 11-05：custom（freeform）工具没有 parameters —— 降级成 {input: string} 的 input_schema；
+  // 普通 function 工具仍必须落到 tool.parameters（两条合起来才证明「用 input_schema 而非 parameters」）。
+  (/input_schema: tool\.type === "custom"/.test(bridge73) && /\(tool\.parameters \?\? \{ type: "object", properties: \{\} \}\)/.test(bridge73) ? ok : fail)(
+    "【73】tools 用 input_schema（不是 chat 的 function.parameters；custom 工具降级成 input 字符串参数）"
   );
   (/anthropic-version": ANTHROPIC_VERSION|x-api-key/.test(bridge73) ? ok : fail)(
     "【73】认证头转换：Bearer → x-api-key + 强制 anthropic-version"

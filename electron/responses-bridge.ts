@@ -5,7 +5,7 @@
 import * as http from "node:http";
 import * as https from "node:https";
 import { URL } from "node:url";
-import { SseParser } from "./responses-bridge/01-sse-items";
+import { SseParser, customToolNames } from "./responses-bridge/01-sse-items";
 import { toChatRequest, lastRepair, ChatStreamTranslator, chatJsonToResponses } from "./responses-bridge/02-chat-convert";
 import { anthropicMessagesUrl, toAnthropicRequest, AnthropicStreamTranslator, anthropicJsonToResponses } from "./responses-bridge/03-anthropic-convert";
 export { SseParser, toChatRequest, ChatStreamTranslator, chatJsonToResponses, anthropicMessagesUrl, toAnthropicRequest, AnthropicStreamTranslator, anthropicJsonToResponses };
@@ -396,13 +396,13 @@ export class ResponsesBridge {
             return res.end(JSON.stringify({ error: { message: `协议桥：上游返回无法解析的响应（${text.slice(0, 200)}）` } }));
           }
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify(chatJsonToResponses(json, body?.model ?? "")));
+          res.end(JSON.stringify(chatJsonToResponses(json, body?.model ?? "", customToolNames(body))));
         });
         return;
       }
 
       // 流式：逐块把 Chat SSE 翻成 Responses SSE
-      const translator = new ChatStreamTranslator(body?.model ?? "", { emitReasoning: this.emitReasoning });
+      const translator = new ChatStreamTranslator(body?.model ?? "", { emitReasoning: this.emitReasoning, customTools: customToolNames(body) });
       const parser = new SseParser();
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       res.write(translator.begin());
@@ -518,12 +518,12 @@ export class ResponsesBridge {
             return res.end(JSON.stringify({ error: { message: `协议桥：上游返回无法解析的响应（${text.slice(0, 200)}）` } }));
           }
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify(anthropicJsonToResponses(json, body?.model ?? "")));
+          res.end(JSON.stringify(anthropicJsonToResponses(json, body?.model ?? "", customToolNames(body))));
         });
         return;
       }
 
-      const translator = new AnthropicStreamTranslator(body?.model ?? "", { emitReasoning: this.emitReasoning });
+      const translator = new AnthropicStreamTranslator(body?.model ?? "", { emitReasoning: this.emitReasoning, customTools: customToolNames(body) });
       const parser = new SseParser();
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       res.write(translator.begin());
