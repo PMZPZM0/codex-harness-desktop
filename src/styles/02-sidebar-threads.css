@@ -139,7 +139,9 @@
    没有标签的行也占同样的列宽（行内 span 为空）⇒ 名称不会忽左忽右。
    ⛔ 时间不设定位宽（各时间文案长短不一），名称起点不受它影响。 */
 .thread-row > button:first-child > .thread-row-title-line {
-  flex: 1 1 auto;
+  /* ⛔ `flex-basis: auto` 会让长名字按 max-content 撑开（尾部时间有 margin-left:auto 抢走
+     剩余空间，标题行拿不到 grow），名字直接跨过标签画到时间上。0% 才能按可用宽度截断。 */
+  flex: 1 1 0%;
   min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
@@ -147,9 +149,14 @@
   gap: 6px;
 }
 .thread-row-name {
-  /* 11-05：名称左对齐（与项目名同列），标签在中间格；长名字先收缩。 */
+  /* 11-05：名称左对齐（与项目名同列），标签在中间格。
+     ⛔ `justify-self:start` 会让网格项按内容宽（max-content）排版、越过自己的列宽 ⇒
+     长名字与标签/时间重叠；这里改成默认 stretch + max-width:100% 才吃得到省略号。 */
   min-width: 0;
-  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .thread-row-tags {
   justify-self: center;

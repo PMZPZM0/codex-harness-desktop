@@ -1650,8 +1650,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/justify-self:\s*center/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
       "【285】标签在会话选项内居中（名称左 / 标签中 / 尾部留白）"
     );
-    (/justify-self:\s*start/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
-      "【285】名称左对齐、长名字可收缩（min-width:0）"
+    (/min-width:\s*0/.test(nameRule) && /max-width:\s*100%/.test(nameRule) && /overflow:\s*hidden/.test(nameRule) && /text-overflow:\s*ellipsis/.test(nameRule) ? ok : fail)(
+      "【285】长名字按列宽截断出省略号（max-width:100% + ellipsis），不跨过标签/时间（11-06 用户截图）"
+    );
+    (/\.thread-row > button:first-child > \.thread-row-title-line\s*\{[^}]*flex:\s*1 1 0%/.test(cssSrc285) ? ok : fail)(
+      "【285】标题行按可用宽度排版（flex-basis 0%）：长名字不会按内容撑开整行"
     );
     (rowsSrc285.indexOf("thread-row-name") >= 0 && rowsSrc285.indexOf("thread-row-name") < rowsSrc285.indexOf("thread-row-tags") ? ok : fail)(
       "【285】JSX 里名称在标签之前（标签放会话名字右边）"
