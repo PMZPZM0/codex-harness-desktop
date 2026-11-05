@@ -7,6 +7,7 @@ import { useEffect } from "react";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../lib/rate-limit-retry";
 import { contextTriggerOf, filterMentionTargets, mentionDisabledText } from "../../../../lib/dispatch-mention.mjs";
 import { agentAvatarKindOf } from "../../../../lib/agent-avatars.mjs";
+import { pendingSteerVisibleIds } from "../../../../lib/pending-steer.mjs";
 import { AgentAvatar } from "../../../../components/AgentAvatar";
 import {
   AlertTriangle,
@@ -577,7 +578,7 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                         <TurnStatusCapsule taskList={taskList} turns={thread.turns} runningTurnId={activeThreadRunning ? (activeTurnId || thread.turns.at(-1)?.id || null) : null} />
                         <BackgroundTaskCapsule threadId={thread.id} />
                       </div>
-                      <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
+                      <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} pendingIds={pendingSteerVisibleIds(thread.id)} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
                     </div>
                   )}
                   <ComposerComposerForm app={app} />

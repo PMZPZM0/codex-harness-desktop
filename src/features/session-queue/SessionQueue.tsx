@@ -26,10 +26,13 @@ import { useDialogFlowMode } from "../../lib/dialog-flow-mode";
 import { dialogFlowStepTitle } from "../../lib/dialog-flow-title";
 import { useQueueTimerEnabled } from "../../lib/queue-timer-mode";
 
-export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
+export function QueuedMessageList({ entries, timers, pendingIds, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entries: QueueItem[];
   /** 定时发送表：`{[queuedSubmissionId]: runAt 毫秒}`（当前会话的；无定时的条目键缺失） */
   timers: Record<string, number>;
+  /** 11-05 插队消息：已点「立即」的条目（待并入 + 正在并入两种状态都在内）⇒ **不在这里显示**，
+   *  改由对话里那条用户消息 + 下面的「撤回」图标承担（同一条消息两处各挂一份就是重复）。 */
+  pendingIds?: string[];
   onSetTimer: (entry: QueueItem, runAt: number | null) => void;
   onOpenFile: (path: string) => void;
   onQuote: (text: string) => void;
@@ -46,14 +49,16 @@ export function QueuedMessageList({ entries, timers, onSetTimer, onOpenFile, onQ
   const [expanded, setExpanded] = useState(false);
   /* 11-02 用户令：定时是可选能力，默认关闭；关闭时排队卡**不显示**定时按钮与徽标。 */
   const timerEnabled = useQueueTimerEnabled();
-  if (!entries.length) return null;
+  /* 11-05：已点「立即」的插队条目不在这里出现（它们在对话里以用户消息现身 + 带撤回图标）。 */
+  const listed = pendingIds && pendingIds.length ? entries.filter((entry) => !pendingIds.includes(entry.id)) : entries;
+  if (!listed.length) return null;
   /* ⛔ 11-03 用户实测：「顺序不对，我发新消息在已排队的上面」。
      数组序 = 引擎队列的发送顺序（FIFO）⇒ **原样渲染**：先排的在上、新发的在最下面。
      折叠时只露**末尾 2 条**（= 最新入队的），不能露前 2 条（新消息会被藏起来）。
      拖拽 index 是显示序 ⇒ 加 offset 映射回原数组序。 */
-  const n = entries.length;
+  const n = listed.length;
   const collapsible = n > 2;
-  const visible = collapsible && !expanded ? entries.slice(-2) : entries;
+  const visible = collapsible && !expanded ? listed.slice(-2) : listed;
   const hiddenCount = n - visible.length;
   const offset = n - visible.length;
   const mapIndex = (displayIndex: number) => offset + displayIndex;
@@ -79,6 +84,7 @@ export function QueuedMessageItem({ entry, index, position, total, timerEnabled,
   entry: QueueItem; index: number; position: number; total: number;
   timerEnabled: boolean;
   timerRunAt?: number;
+
   onSetTimer: (runAt: number | null) => void;
   onOpenFile: (path: string) => void; onQuote: (text: string) => void;
   onDelete: (id: string) => void; onStart: (id?: string) => void; onSave: (entry: QueueItem, text: string) => void;
@@ -134,7 +140,7 @@ export function QueuedMessageItem({ entry, index, position, total, timerEnabled,
     >
       <span className="queued-grip" aria-hidden="true"><GripVertical size={14} /></span>
       <div className="queued-main">
-        <span className="queued-badge"><Clock3 size={11} />排队中{total > 1 ? ` ${position}/${total}` : ""}</span>
+        <span className="queued-badge"><Clock3 size={11} />{`排队中${total > 1 ? ` ${position}/${total}` : ""}`}</span>
         {timerEnabled && timerRunAt != null && (
           <span className="queued-badge queued-timer-badge" title={`到点自动发送：${new Date(timerRunAt).toLocaleString()}`}>
             <AlarmClock size={11} />{new Date(timerRunAt).toLocaleString([], { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 发送

@@ -208,7 +208,7 @@ const fileEditTransport: TextEditorTransport = {
 };
 
 import { Markdown, MdCode, MdBlock, FilePreviewCode } from "../../../markdown";
-import { ItemView } from "../../../session-queue";
+import { ItemView, PendingSteerBubbles } from "../../../session-queue";
 import { TurnView, MemoTurnView, MessageRuler, MemoMessageRuler } from "../../../session-turn";
 import { SelectionActionBar } from "../../../shared/SelectionActionBar";
 import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago, appendDelta, appendIndexedDelta, applyThreadEvent, approvalMenuOptions, armSendAnimationClaim, botChannelName, botOnlineOf, builtinCommandCatalog, categoryLabel, clampRruleNum, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, cronTemplates, deltaMethods, describeRrule, describeSchedule, displayPath, fmtImportTime, formatTimestamp, greetingForHour, groupThreadsByTime, hydrateTurnUserMessage, idleTemplates, imageExts, isActivityItem, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, localFormatDurationMs, locateMatchEl, markBufferedAgentReveal, markBufferedTurnReveal, matchSkillCatalog, mergeItem, mergeLongerStreams, mergeTurn, modelBadges, modelName, normSkillName, noticeTone, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDescription, pluginDisplayName, pluginMarketCategoryTabs, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, revealStepFor, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, settingsNav, shortSkillName, skillHubCategories, skillHubCategoryName, skillHubCategoryTabs, skillZhNote, slashCommands, stableItem, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, toFileUrl, uniqueModelCount, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../helpers";
@@ -711,6 +711,10 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       <span className="turn-head-name">{codexIdentity.name}</span>
                     </div>
                   </>}
+                  {/* 插队消息的「待并入」气泡（11-05 用户令）：已点「立即」但还没交给引擎的那条，
+                      以用户消息的形态挂在**乐观气泡之后、状态条之前**（与真实消息流的顺序一致），
+                      消息**上面**挂一枚「撤回」图标；进入 sending（steer 在飞）图标自己消失。 */}
+                  <PendingSteerBubbles threadId={String(thread?.id ?? "")} handlers={messageHandlers} onWithdraw={(id) => void app.deleteQueued(id)} />
                   {/* 生成过程状态条：**必须排在乐观气泡之后**（09-17 用户实测「这个怎么到这个位置了」）——
                       排在前面时，发送后那段「你的消息已上屏、引擎还没回声」的窗口里状态条会显示在消息**上方**；
                       气泡阶段时间线里只有「你的消息 + 状态条」，顺序应与真实阶段「回合内容 → 状态条」一致。

@@ -526,9 +526,10 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
     "没接线的一次性包装已删（displayNameOf / subordinateLabelOf / resetSessionAliasCache）");
   /* ⛔ 10-31 审查：steer（「立即」把消息并入**当前**回合）**不上乐观气泡** ——
      消息会立刻在回合内原位渲染，再给一个末尾气泡 = 同一条显示两遍；而且那个回合正是
-     armPinForReleasedQueue 记下的 baseline 本身 ⇒ optimisticConfirmed 整个回合都等不到。 */
+     armPinForReleasedQueue 记下的 baseline 本身 ⇒ optimisticConfirmed 整个回合都等不到。
+     11-05 插队改为延迟派发后，steer 落点搬进 deliverPendingSteers（钉顶意图的键是派发时的 threadId）。 */
   const queueSrc = codeOnly(read("src/features/app-state/parts/part04/03-seg/02-browser-queue-settings.tsx"));
-  ok(/armPinForReleasedQueue\(bag\.thread\.id, "steer"\)/.test(queueSrc)
+  ok(/armPinForReleasedQueue\(threadId, "steer"\)/.test(queueSrc)
     && !/armedForSteer\) showQueuedOptimistic/.test(queueSrc),
     "「立即」并入当前回合时不上乐观气泡（⛔ 上 = 同一条消息显示两遍，且整个回合都确认不了）");
   /* ⛔⛔ 10-31 白屏（用户：「这都报错，你咋验收的」）：`renderThreadRow` 是 `usePart02b12` 里的

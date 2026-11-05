@@ -1623,3 +1623,38 @@
 .boot-error-actions button:hover {
   filter: brightness(1.1);
 }
+
+/* ═══ 插队消息「待并入」气泡（11-05 用户令）═══
+   点「立即」后这条先不交给引擎：它以真实用户消息的形态挂在消息流末尾，**前面**（同侧右对齐）
+   挂一枚「撤回」小药丸；当前这一步跑完 ⇒ 药丸消失（那时已经撤不回了），条目由引擎回声原位接管。
+   11-05 用户实测「丑死了，不会放用户消息前面吗」⇒ 图标改到消息上方、消息本体不加虚线框。 */
+.pending-steer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pending-steer-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.pending-steer-withdraw {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.pending-steer-withdraw:hover {
+  color: var(--orange);
+  border-color: color-mix(in srgb, var(--orange) 35%, var(--line));
+  background: color-mix(in srgb, var(--orange) 10%, var(--panel-2));
+}

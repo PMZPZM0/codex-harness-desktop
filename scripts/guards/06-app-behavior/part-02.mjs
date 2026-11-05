@@ -464,15 +464,20 @@ w.postMessage({id:1,op:"list",root});
   // ③ 插队（turn/steer）必须先判定「真的有回合在跑」，并在引擎回 no active turn 时退化
   //   事故（用户实测「插队消息每次都报错」）：原实现只认 activeTurnId，上一轮 429/中断/跑完后
   //   它仍是旧值 → 引擎回 `no active turn to steer`，消息卡在队列里永远发不出去。
+  //   11-05 插队改「延迟派发」后（引擎收到 steer 就没有撤回接口，要能撤就必须先不交）：
+  //   startQueued 只做「有运行中回合 ⇒ 登记待并入」，真正的 steer / 退化启动在 deliverPendingSteers。
   const startIdx = appCode.indexOf("async function startQueued");
   const queuedFn = startIdx < 0 ? "" : appCode.slice(startIdx, startIdx + 3200);
-  // 锚定「运行中回合」判定必须由 isTurnRunning 驱动、且 steer 用的是这个结果（不是裸 activeTurnId）
-  (/const runningTurnId = [^\n]*isTurnRunning\(turn\)/.test(queuedFn) && /expectedTurnId: steerTurnId/.test(queuedFn))
-    ? ok("插队前按 isTurnRunning 判定运行中回合（不再只看陈旧的 activeTurnId）")
-    : fail("插队只看 activeTurnId —— 上一轮结束后插队必报 no active turn（用户实测「每次都报错」）");
-  (/if \(!\/no active turn\/i\.test\(message\)\)/.test(queuedFn) && /thread\/queue\/start/.test(queuedFn))
-    ? ok("引擎回 no active turn 时退化为开始新回合（消息不会卡在队列里）")
-    : fail("no active turn 没有退化路径 —— 排队消息会卡在队列里发不出去");
+  const deliverIdx = appCode.indexOf("async function deliverPendingSteers");
+  const deliverFn = deliverIdx < 0 ? "" : appCode.slice(deliverIdx, deliverIdx + 3000);
+  (/const runningTurnId = [^\n]*isTurnRunning\(turn\)/.test(queuedFn) && /armPendingSteer\(/.test(queuedFn))
+    ? ok("插队前按 isTurnRunning 判定运行中回合，命中才登记待并入（不直接交给引擎 —— 交了就撤不回）")
+    : fail("插队只看 activeTurnId，或又改回直接 steer —— 上一轮结束后插队必报 no active turn（用户实测「每次都报错」），且消息再也撤不回");
+  (/expectedTurnId: runningTurn\.id/.test(deliverFn)
+    && /if \(!\/no active turn\/i\.test\(message\)\)/.test(deliverFn)
+    && /thread\/queue\/start/.test(deliverFn))
+    ? ok("派发仍用运行中回合的 id 去 steer；引擎回 no active turn ⇒ 退化为开始新回合（消息不会卡在队列里）")
+    : fail("派发没有按运行中回合 steer / 没有 no active turn 退化 —— 排队消息会卡在队列里发不出去");
 
   // ④ 相位续播：这是「不再两步」的核心时序判定（纯函数在 src/lib/send-anim.mjs）
   {

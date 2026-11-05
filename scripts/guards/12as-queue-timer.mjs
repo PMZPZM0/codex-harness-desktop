@@ -72,8 +72,10 @@ ok(/该会话仍有任务在运行/.test(sendSrc) && /thread\/queue\/add/.test(s
    数组序 = 引擎队列的发送顺序（FIFO）⇒ 面板必须**原样渲染**（先排的在上、新发的在最下面）。
    ⛔ 曾经用 `[...entries].reverse()` 倒序展示"新消息往上叠加"，正好把发送顺序摆反。
    折叠时露末尾 2 条（最新入队的）；拖拽显示序必须加 offset 映射回原数组序，
-   否则收起态拖最后两条会去改队头。 */
-ok(/const visible = collapsible && !expanded \? entries\.slice\(-2\) : entries;/.test(queueSrc)
+   否则收起态拖最后两条会去改队头。
+   11-05 插队改造：源数组先按 pendingIds 滤掉「已点立即」的那些（listed），
+   序与折叠口径一律落在 listed 上 —— 换了变量名不许把顺序又摆反。 */
+ok(/const visible = collapsible && !expanded \? listed\.slice\(-2\) : listed;/.test(queueSrc)
   && /const offset = n - visible\.length;/.test(queueSrc)
   && /const mapIndex = \(displayIndex: number\) => offset \+ displayIndex;/.test(queueSrc)
   && !/\.reverse\(\)/.test(queueSrc),
