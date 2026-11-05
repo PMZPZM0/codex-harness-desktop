@@ -71,6 +71,12 @@ export async function run() {
     ? ok : fail)("【52】重启被推迟/补做的通知通道三件套齐全");
   (/onEngineRestartDeferred\?\.\(\(event\) => \{/.test(appSrc52) && /改动已保存，将在当前任务结束后生效/.test(appSrc52)
     ? ok : fail)("【52】渲染层明确提示「改动已保存、任务结束后生效」（否则用户以为没保存成功）");
+  /* ⛔ 11-05 用户实测：点输入框左侧「小粗条」也弹这条 —— 根因是 appSettings:save 对**任何**
+     字段都 applyCustomModel → server.restart()，连 composerRailOpen 这种 UI 状态也重启引擎。
+     ⇒ 只有影响 config.toml 的字段才重写配置；UI 状态保存不许重启。 */
+  const appSettingsIpc = codeOnly(readFileSync(join(ROOT, "electron", "features", "app-settings-ipc.ts"), "utf8"));
+  (/CONFIG_KEYS/.test(appSettingsIpc) && /CONFIG_KEYS\.has\(key\)/.test(appSettingsIpc) && /if \(touchesConfig\)/.test(appSettingsIpc)
+    ? ok : fail)("【52】appSettings:save 只对 config 字段重写配置/重启引擎（UI 状态不触发重启）");
 
   // ⑤ 钉顶：留白收缩后的**可达性守卫** + 排队消息的钉顶意图（09-19 用户实测「钉顶也没有」）
   const appSrc53 = readAppUi();

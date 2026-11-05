@@ -19,6 +19,19 @@ import { syncEngineWatchdog } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
+/* 只有这些字段会影响 config.toml / 引擎工具面；保存它们才需要重写配置并重启引擎。
+   ⛔ 11-05 用户实测：点输入框左侧「小粗条」（composerRailOpen）也会弹「改动已保存，
+      将在当前任务结束后生效」—— 因为原来**任何** appSettings:save 都会 applyCustomModel
+      → server.restart()。UI 状态（竖条开合 / 功能入口排序 / 折叠态…）保存时绝不能重启引擎。 */
+const CONFIG_KEYS = new Set([
+  "webSearch",
+  "autoCompactRatio",
+  "desktopAutomation",
+  "browserAutomation",
+  "desktopBackendNuphus",
+  "desktopBackendComputerUse",
+]);
+
 export const appSettingsFeature = defineFeature<null>({
   id: "appSettings",
   inject: ["ipc"],
@@ -29,8 +42,11 @@ export const appSettingsFeature = defineFeature<null>({
     ipcHost.handle("appSettings:read", async (): Promise<AppSettings> => readAppSettings(app.getPath("userData")));
     ipcHost.handle("appSettings:save", async (_event, patch: Partial<AppSettings>): Promise<AppSettings> => {
       const next = await saveAppSettings(app.getPath("userData"), patch);
-      const model = await readCustomModel();
-      if (model) await applyCustomModel(model);
+      const touchesConfig = Object.keys(patch || {}).some((key) => CONFIG_KEYS.has(key));
+      if (touchesConfig) {
+        const model = await readCustomModel();
+        if (model) await applyCustomModel(model);
+      }
       // 引擎健康看门狗开关即时生效（不依赖重启后的 ready 事件）
       await syncEngineWatchdog();
       return next;
