@@ -149,6 +149,7 @@ import {
   Video,
   Bell,
   CheckCheck,
+  MessagesSquare,
 } from "lucide-react";
 import { basename } from "../../../lib/basename";
 import { copyTextToClipboard } from "../../../lib/clipboard";
@@ -164,6 +165,7 @@ import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal"
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
+import { teamChatOpen } from "../../harness-team/00-open-store";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
@@ -748,6 +750,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   onClick={() => openBossSession()}
                 >
                   <Crown size={15} /><span>指挥中枢</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
+                </button>
+                {/* 10-05 用户令：群聊入口放在「指挥中枢」下面（独立板块 src/features/harness-team） */}
+                <button
+                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-violet"
+                  title="群聊：团队成员 + 伙伴，@ 一下就派活"
+                  onClick={() => teamChatOpen.set(true)}
+                >
+                  <MessagesSquare size={15} /><span>群聊</span>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}

@@ -199,6 +199,7 @@ import { Slot } from "../../runtime/registry";
 import { BossGroupPanel, getBossDirDialogState, getBossThreads, isBossSessionContext, openBossDirDialog, subscribeBossDirDialog, subscribeBossThreads } from "../boss-group-view";
 import { activeMembersOf, useGroupMembers } from "../boss-group-view";
 import { DeclaredPluginSlots } from "../../runtime/declared-plugin-slots";
+import { TeamChatOverlay } from "../harness-team";
 
 
 
@@ -699,6 +700,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
         />
       )}
       <AppViewSettingsSheet app={app} />
+      {/* 群聊（10-05）：独立板块的全屏壳，开关在板块自己的 store 里 */}
+      <TeamChatOverlay />
       {/* 登录后的一次性新人配置引导：只有完全没配置过的新 profile 会弹；完成后不再出现。 */}
       <ProfileOnboardingWizard
         onNotice={showToast}

@@ -3,6 +3,7 @@
 .team-mode {
   display: grid;
   grid-template-columns: 232px 1fr;
+  grid-template-rows: auto 1fr;
   height: 100%;
   min-height: 0;
   background: var(--bg);
@@ -161,3 +162,33 @@
 .team-settings__add input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
 .team-settings__add button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; cursor: pointer; }
 .team-settings__error { margin: 8px 0 0; color: var(--danger); font-size: 12px; }
+
+/* 面板头（从侧栏「群聊」打开时才有；嵌在设置页里时不显示） */
+.team-mode__head {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+}
+.team-mode__close {
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+/* 侧栏「群聊」打开的全屏壳（板块自带，⛔ 不复用设置面板） */
+.team-chat-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}

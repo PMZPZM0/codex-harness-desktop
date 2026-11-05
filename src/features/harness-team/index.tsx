@@ -6,9 +6,10 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { TeamGroupView } from "./04-team-group-view";
+import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { LOCAL_ACTOR_ID, useTeamGroups } from "./02-team-store";
 
-export function TeamModePanel() {
+export function TeamModePanel({ onClose }: { onClose?: () => void } = {}) {
   const { groups, issues, limit, loading, error, create, addPartner, removePartner, mute, setGuard } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
   const [name, setName] = useState("");
@@ -41,6 +42,12 @@ export function TeamModePanel() {
 
   return (
     <div className="team-mode">
+      {onClose && (
+        <header className="team-mode__head">
+          <strong>群聊</strong>
+          <button type="button" className="team-mode__close" onClick={onClose} aria-label="关闭群聊">关闭</button>
+        </header>
+      )}
       <aside className="team-mode__rail">
         <div className="team-mode__rail-head">
           <strong>团队</strong>
@@ -103,3 +110,16 @@ export function TeamModePanel() {
 }
 
 export default TeamModePanel;
+
+/** 全屏壳：侧栏「群聊」打开它；关闭走右上角（⛔ 不依赖设置面板）。 */
+export function TeamChatOverlay() {
+  const open = useTeamChatOpen();
+  if (!open) return null;
+  return (
+    <div className="team-chat-overlay" role="dialog" aria-modal="true" aria-label="群聊">
+      <TeamModePanel onClose={() => teamChatOpen.set(false)} />
+    </div>
+  );
+}
+
+export { teamChatOpen };
