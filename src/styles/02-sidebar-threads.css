@@ -158,28 +158,13 @@
   align-items: center;
   gap: 4px;
 }
-.thread-tag-switch {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 13px;
-  height: 13px;
-  flex: none;
-  border-radius: 4px;
-  color: var(--faint);
-  cursor: pointer;
-}
-.thread-tag-switch:hover,
-.thread-tag-switch:focus-visible {
-  color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  outline: none;
-}
+/* 多标签时整枚标签可点：点标签本体即轮换（11-05 用户令）——不加额外提示图标。 */
+.thread-row-tags.is-cyclable { cursor: pointer; }
+.thread-row-tags.is-cyclable:hover > * { filter: brightness(1.08); }
 /* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
    ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
 .thread-row-tags > * { min-width: 0; }
-.thread-tag-slot { display: inline-flex; align-items: center; min-width: 0; }
-/* 自定义标签过长时省略（同一行最多两枚 + 剩余计数）。 */
+/* 自定义标签过长时省略（同一时刻只露一枚，点标签轮换下一枚）。 */
 .thread-custom-tag { max-width: 50px; }
 /* ── 会话行底色（10-31 用户令）：未选中浅色常驻、选中后深一档 ───────────────── */
 .thread-row.has-row-color {

@@ -1656,14 +1656,20 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (rowsSrc285.indexOf("thread-row-name") >= 0 && rowsSrc285.indexOf("thread-row-name") < rowsSrc285.indexOf("thread-row-tags") ? ok : fail)(
       "【285】JSX 里名称在标签之前（标签放会话名字右边）"
     );
-    (/\.thread-row-tags\s*\{[^}]*overflow\s*:\s*(hidden|clip)/.test(cssSrc285) ? fail : ok)(
-      "【285】标签列容器不裁剪（spinner 判据 11c：会话行类祖先不得 overflow:hidden/clip）"
+    (/const shownBadge = rowBadges\[badgeIndex\]/.test(rowsSrc285) ? ok : fail)(
+      "【285】同一时刻只展示一枚标签（11-05 用户令）"
     );
-    (/Math\.min\(badgeSlots, rowBadges\.length\)/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
-      "【285】标签最多露两枚（子会话一枚），其余靠点击循环（11-05 用户令）"
+    (/is-cyclable/.test(rowsSrc285) && /onClick=\{rowBadges\.length > 1 \?/.test(rowsSrc285) && /cycleThreadBadge\(entry\.id, rowBadges\.length\)/.test(rowsSrc285) ? ok : fail)(
+      "【285】点击标签本体轮换下一枚（11-05 用户令）"
     );
-    (/\.project-list \.project-item-body\s*\{[^}]*padding-left:\s*39px/.test(cssSrc285) && /\.thread-row > button:first-child > \.thread-row-title-line\s*\{[^}]*display:\s*grid/.test(cssSrc285) && /thread-tag-switch/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
-      "【285】会话名与项目名同列（39px）+ 标签在行内居中 + 多标签点图标切换（11-05 用户令）"
+    (!/thread-tag-switch/.test(rowsSrc285) && !/\.thread-tag-switch/.test(cssSrc285) ? ok : fail)(
+      "【285】不额外加提示图标（用户令：有点击标签轮换就够了）"
+    );
+    (/\.thread-row-tags\.is-cyclable\s*\{[^}]*cursor:\s*pointer/.test(cssSrc285) ? ok : fail)(
+      "【285】可轮换的标签给 pointer 光标"
+    );
+    (/\.project-list \.project-item-body\s*\{[^}]*padding-left:\s*39px/.test(cssSrc285) && /\.thread-row > button:first-child > \.thread-row-title-line\s*\{[^}]*display:\s*grid/.test(cssSrc285) && /is-cyclable/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
+      "【285】会话名与项目名同列（39px）+ 标签在行内居中 + 点标签切换（11-05 用户令）"
     );
     (/has-row-color/.test(rowsSrc285) && /--row-color/.test(rowsSrc285) ? ok : fail)(
       "【285】会话行底色接线（has-row-color 类 + --row-color 内联变量）"

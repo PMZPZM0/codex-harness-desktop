@@ -69,7 +69,6 @@ import {
   PenLine,
   Play,
   PowerOff,
-  RefreshCw,
   ArrowLeft,
   ArrowRight,
   Download,
@@ -308,12 +307,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     if (!oneBadge && bag.delegateRecords[entry.id]) rowBadges.push(<DispatchBadge record={bag.delegateRecords[entry.id]} />);
     if (!oneBadge && extras?.badge) rowBadges.push(extras.badge);
     const badgeIndex = badgeCycleIndexOf(badgeCycle, entry.id, rowBadges.length);
-    /* 11-05 用户令：「标签放会话名字右边…标签还能展示两个」——顶层行最多同时显示两枚；
-       子会话行沿用「只留一枚」（10-31 用户令），其余仍靠点击循环。 */
-    const badgeSlots = oneBadge ? 1 : 2;
-    const visibleBadges = rowBadges.length
-      ? Array.from({ length: Math.min(badgeSlots, rowBadges.length) }, (_, offset) => rowBadges[(badgeIndex + offset) % rowBadges.length])
-      : [];
+    /* 11-05 用户令：「只展示一个标签，点击标签轮换别的标签」——所有行同一时刻只露一枚，
+       点这枚标签本身循环到下一枚（不额外挂提示图标）。 */
+    const shownBadge = rowBadges[badgeIndex] ?? null;
     /* 10-31 用户令：会话行可自选底色 —— 未选中浅色常驻、选中后稍深一档。 */
     const rowColor = getThreadRowColors().colors[entry.id] ?? "";
     /* ⛔ 11-01 用户令：「会话选项名字…不要跟着用户首个消息内容去会话名字」——
@@ -329,7 +325,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击改名字"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{visibleBadges.length > 0 && (<span className="thread-row-tags">{visibleBadges.map((badge, index) => <span className="thread-tag-slot" key={index}>{badge}</span>)}{rowBadges.length > 1 && (<span className="thread-tag-switch" role="button" tabIndex={0} title={`切换标签（${badgeIndex + 1}/${rowBadges.length}）`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } }}><RefreshCw size={9} /></span>)}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{shownBadge && (<span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined}>{shownBadge}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">
         <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
