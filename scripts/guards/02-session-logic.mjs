@@ -1470,8 +1470,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       /* ⛔ 11-03 用户（截图圈「子会话 · N」）：「放右边放一点，现在展示有点不好看」——
          子会话块缩进必须跟父行标题列走（标签列宽 + 行内左内距），⛔ 不许退回写死的小缩进
          （写死 20px 会停在标签列里、比父行标题更靠左，层级看起来是反的）。 */
-      (/\.dispatch-children \{[^}]*margin:[^;]*var\(--tag-col-w,\s*30px\)/.test(readStyles()) ? ok : fail)(
-        "【156】子会话块缩进对齐父行标题列（--tag-col-w + 行内左内距）"
+      (/\.dispatch-children \{[^}]*margin:\s*2px 0 4px 0;/.test(readStyles()) && /\.dispatch-children \{[^}]*padding-left:\s*10px/.test(readStyles()) ? ok : fail)(
+        "【156】子会话块与父行名称同列（行内左内距 10px）"
       );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
@@ -1647,25 +1647,20 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     const cssSrc285 = codeOnly(readStyles());
     const tagsRule = /\.thread-row-tags\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
     const nameRule = /\.thread-row-name\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
-    (/flex:\s*0\s+0\s+var\(--tag-col-w/.test(tagsRule) && /width:\s*var\(--tag-col-w/.test(tagsRule) ? ok : fail)(
-      "【285】行首标签列宽走 --tag-col-w（自适应最宽标签；⛔ 别退回定宽 —— 用户截图点名中间别留一大截）"
+    (/flex:\s*0\s+0\s+auto/.test(tagsRule) && !/var\(--tag-col-w/.test(tagsRule) ? ok : fail)(
+      "【285】标签紧跟名称右侧、按内容宽（不再占行首列）"
     );
-    (/--tag-col-w/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8")))
-      && /--tag-col-w-nested/.test(codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8")))
-      && /--tag-col-w-nested/.test(cssSrc285) ? ok : fail)(
-      "【285】顶层行与嵌套子行分开量标签列宽（--tag-col-w / --tag-col-w-nested）—— 展开调度会话不再推移父行标题"
+    (/flex:\s*0\s+1\s+auto/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
+      "【285】名称按内容宽、长名字可收缩（flex:0 1 auto + min-width:0）"
     );
-    (/flex:\s*1\s+1\s+auto/.test(nameRule) && /min-width:\s*0/.test(nameRule) ? ok : fail)(
-      "【285】名称列可伸缩（flex:1 1 auto + min-width:0）"
-    );
-    (rowsSrc285.indexOf("thread-row-tags") >= 0 && rowsSrc285.indexOf("thread-row-tags") < rowsSrc285.indexOf("thread-row-name") ? ok : fail)(
-      "【285】JSX 里标签列在名称之前（标签留在行首，一眼看得出有没有标签）"
+    (rowsSrc285.indexOf("thread-row-name") >= 0 && rowsSrc285.indexOf("thread-row-name") < rowsSrc285.indexOf("thread-row-tags") ? ok : fail)(
+      "【285】JSX 里名称在标签之前（标签放会话名字右边）"
     );
     (/\.thread-row-tags\s*\{[^}]*overflow\s*:\s*(hidden|clip)/.test(cssSrc285) ? fail : ok)(
       "【285】标签列容器不裁剪（spinner 判据 11c：会话行类祖先不得 overflow:hidden/clip）"
     );
-    (/const shownBadge = rowBadges\[badgeIndex\]/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
-      "【285】标签最多露一个：超出靠点击标签循环（11-01 用户令；⛔ 不再按身份徽标禁加自定义标签）"
+    (/Math\.min\(badgeSlots, rowBadges\.length\)/.test(rowsSrc285) && /cycleThreadBadge\(/.test(rowsSrc285) ? ok : fail)(
+      "【285】标签最多露两枚（子会话一枚），其余靠点击循环（11-05 用户令）"
     );
     (/has-row-color/.test(rowsSrc285) && /--row-color/.test(rowsSrc285) ? ok : fail)(
       "【285】会话行底色接线（has-row-color 类 + --row-color 内联变量）"
