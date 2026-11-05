@@ -27,8 +27,8 @@ export function PendingSteerBubbles({ threadId, handlers, onWithdraw }: { thread
         const canWithdraw = retractable.includes(id);
         return (
           <div className="pending-steer-item" key={id || `pending-${entries.indexOf(entry)}`} data-pending-steer={canWithdraw ? "armed" : "sending"}>
-            {/* 图标放在**这条用户消息前面**（11-05 用户实测「丑死了，不会放用户消息前面吗」）：
-                与气泡同侧（右对齐）一枚小药丸，消息本体保持原样、不加虚线框。 */}
+            {/* 图标放在**这条用户消息左侧同一行**（11-05「不会放用户消息前面吗」→ 11-06「放顶上多难看」）：
+                一枚小药丸与气泡垂直居中，消息本体保持原样、不加虚线框。 */}
             {canWithdraw && (
               <button type="button" className="pending-steer-withdraw" title="撤回：这条还没交给模型，撤回后它不会看到" onClick={() => onWithdraw(id)}>
                 <Undo2 size={12} />撤回

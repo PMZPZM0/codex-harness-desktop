@@ -1625,19 +1625,30 @@
 }
 
 /* ═══ 插队消息「待并入」气泡（11-05 用户令）═══
-   点「立即」后这条先不交给引擎：它以真实用户消息的形态挂在消息流末尾，**前面**（同侧右对齐）
-   挂一枚「撤回」小药丸；当前这一步跑完 ⇒ 药丸消失（那时已经撤不回了），条目由引擎回声原位接管。
-   11-05 用户实测「丑死了，不会放用户消息前面吗」⇒ 图标改到消息上方、消息本体不加虚线框。 */
+   点「立即」后这条先不交给引擎：它以真实用户消息的形态挂在消息流末尾，**左侧同一行**挂一枚
+   「撤回」小药丸；当前这一步跑完 ⇒ 药丸消失（那时已经撤不回了），条目由引擎回声原位接管。
+   11-05 用户实测「丑死了，不会放用户消息前面吗」⇒ 图标离开气泡下缘；
+   11-06 用户实测「放顶上多难看」⇒ 从气泡上方改到气泡左侧、垂直居中。 */
 .pending-steer-stack {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 .pending-steer-item {
+  /* 11-06 用户令（截图「放顶上多难看」）：撤回键放到这条用户消息**左侧同一行**，
+     不再挂在气泡上方。 */
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+/* 消息栈按内容自适应，给左侧药丸留位置（原先占宽 min(88%,720px) 会把药丸挤出容器）。 */
+.pending-steer-item > .user-message-stack {
+  width: auto;
+  max-width: calc(100% - 76px);
+  margin: 0;
 }
 .pending-steer-withdraw {
   display: inline-flex;

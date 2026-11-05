@@ -200,7 +200,7 @@ ok(/canWithdraw && \(\s*<button[^>]*className="pending-steer-withdraw"/.test(bub
   && /data-pending-steer=\{canWithdraw \? "armed" : "sending"\}/.test(bubbleSrc),
   "「撤回」图标**只在 armed 态渲染** ⇒ sending 起它自己消失（用户要的「不能撤回就不显示」）");
 ok(bubbleSrc.indexOf("pending-steer-withdraw") < bubbleSrc.indexOf("<ItemView"),
-  "图标排在**这条用户消息前面**（11-05 用户实测「丑死了，不会放用户消息前面吗」——挂在气泡下面被否掉）");
+  "图标排在**这条用户消息前面**（11-05「不会放用户消息前面吗」→ 11-06「放顶上多难看」：同一行左侧，不再挂在气泡上方）");
 ok(/onWithdraw\(id\)/.test(bubbleSrc) && !/window\.codex/.test(bubbleSrc),
   "图标只做一件事：回调给宿主走 deleteQueued（气泡自己不许直连 IPC，否则撤回与排队面板两条实现会分岔）");
 
@@ -232,8 +232,10 @@ ok(/import \{ usePendingSteerVisibleIds \} from "\.\.\/\.\.\/\.\.\/\.\.\/lib\/pe
 const css = read("src/styles/15-queued-messages.css");
 ok(/\.pending-steer-stack \{[^}]*flex-direction: column/.test(css)
   && /\.pending-steer-withdraw \{/.test(css)
-  && /\.pending-steer-item \{[^}]*align-items: flex-end/.test(css),
-  "气泡与撤回图标有专属样式且与用户消息同侧右对齐（TSX 用到的类必须在 CSS 里存在，否则【66】覆盖率告警）");
+  && /\.pending-steer-item \{[^}]*flex-direction: row/.test(css)
+  && /\.pending-steer-item \{[^}]*align-items: center/.test(css)
+  && /\.pending-steer-item > \.user-message-stack \{[^}]*max-width: calc\(100% - 76px\)/.test(css),
+  "撤回键在用户消息**左侧同一行**、垂直居中（11-06 用户令「放顶上多难看」；消息栈按内容自适应给药丸留位）");
 ok(!/pending-steer-item\[data-pending-steer="armed"\][^{]*outline/.test(css),
   "⛔ 不给消息本体描虚线框（11-05 用户实测「丑死了」——空荡荡一个大虚线框）");
 
