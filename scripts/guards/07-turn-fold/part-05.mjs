@@ -697,6 +697,21 @@ export async function run() {
       (/^D:\//.test(spaced) && /App\.tsx$/.test(spaced) ? ok : fail)(
         `【118】带空格路径保住盘符并归一为正斜杠（实得 ${JSON.stringify(spaced)}）`
       );
+      /* 11-05 用户实测（截图 + toast）：点文件卡报 `D:\<会话目录>\…/Administrator/Desktop/x.md 不存在`。
+         根因 = 卡片把**展示用截断路径**（`…/a/b.md`）当真实路径去拼会话目录。
+         ⇒ 拆出 commandTargetRaw（完整路径，只归一斜杠）：展示仍用 commandTarget，点击/读取必须用 raw。 */
+      const longCmd = `${LAUNCHER} -Command "Get-Content -LiteralPath 'C:\\Users\\Administrator\\Desktop\\豆包工作伙伴-团队模式-复刻方案.md'"`;
+      const rawLong = cd.commandTargetRaw(longCmd);
+      const dispLong = cd.commandTarget(longCmd);
+      (rawLong === "C:/Users/Administrator/Desktop/豆包工作伙伴-团队模式-复刻方案.md" ? ok : fail)(
+        `【118】commandTargetRaw 给完整路径（实得 ${JSON.stringify(rawLong)}）—— 点击要靠它才读得到`
+      );
+      (dispLong.startsWith("…") && dispLong.endsWith("豆包工作伙伴-团队模式-复刻方案.md") ? ok : fail)(
+        `【118】commandTarget 仍是展示短形态（实得 ${JSON.stringify(dispLong)}）`
+      );
+      (cd.resolveCommandTarget(`cd 'D:\\会话目录'; ${longCmd}`, rawLong) === rawLong ? ok : fail)(
+        "【118】绝对路径不被拼到会话目录（用 raw 解析，结果原样）"
+      );
       (cd.shortenPath("D:\\a\\b\\c\\d\\e\\f\\g\\h\\i\\01-seg.tsx").endsWith("01-seg.tsx") ? ok : fail)(
         "【118】超长路径从左截（保文件名，不许把文件名切掉）"
       );

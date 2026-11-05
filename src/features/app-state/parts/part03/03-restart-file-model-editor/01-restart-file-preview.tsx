@@ -196,12 +196,24 @@ bag.filePreview = filePreview as typeof bag.filePreview; bag.setFilePreview = se
 
   // 包装一层：用户每次点文件卡都顺手把项目树高亮打到对应条目上；
   // 若路径是相对/裸文件名，则尝试拼 workspace 变成绝对路径再读（引擎解析相对路径基准是 cwd，裸文件名会读不到）
-  const openFile = useCallback((path: string) => {
-    let resolved = path;
-    const looksRelative = !/^[A-Za-z]:[\\/]/.test(path) && !path.startsWith("/") && !path.startsWith("~/");
-    if (looksRelative && bag.workspace) {
-      const sep = bag.workspace.includes("\\") ? "\\" : "/";
-      resolved = `${bag.workspace.replace(/[\\/]+$/, "")}${sep}${path.replace(/^[\\/]+/, "")}`;
+  /* ⛔ 11-05 用户实测（截图 toast）：「D:\<会话目录>\…/Administrator/Desktop/x.md 不存在」——
+     卡片传来的可能是**展示用截断路径**（`…/a/b.md`）或拼错的相对路径。这里按三步兜底：
+     ① 去掉 `…` 截断标记；② 相对路径先按 workspace 拼一次，**文件真存在才用**；
+     ③ 不存在就问磁盘（`fs:locate`：同名 + 尾段打分 + 有界预算）——「只要电脑上有的文件都能打开」。 */
+  const openFile = useCallback(async (path: string) => {
+    const input = String(path ?? "").trim().replace(/^…[\\/]?/, "");
+    const absolute = /^[A-Za-z]:[\\/]/.test(input) || input.startsWith("/") || input.startsWith("~/");
+    const sep = String(bag.workspace ?? "").includes("\\") ? "\\" : "/";
+    const joined = !absolute && bag.workspace
+      ? `${bag.workspace.replace(/[\\/]+$/, "")}${sep}${input.replace(/^[\\/]+/, "")}`
+      : "";
+    let resolved = absolute ? input : (joined || input);
+    if (!absolute) {
+      const exists = joined ? await window.codex.fileExists(joined).then((r) => Boolean(r?.exists)).catch(() => false) : false;
+      if (!exists) {
+        const located = await window.codex.locateFile?.(joined || input, bag.thread?.id).catch(() => null);
+        if (located?.path) resolved = located.path;
+      }
     }
     bag.setHighlightedFilePath(resolved);
     // 联动：自动切到项目树面板，展开文件所在目录（树形模式下父目录惰性加载+展开，不动 root）
@@ -213,7 +225,7 @@ bag.filePreview = filePreview as typeof bag.filePreview; bag.setFilePreview = se
     bag.setRightTab("tree");
     bag.setRightOpen(true);
     return bag.rawOpenFile(resolved);
-  }, [bag.rawOpenFile, bag.workspace, bag.treePath]);
+  }, [bag.rawOpenFile, bag.workspace, bag.thread?.id, bag.treePath]);
 bag.openFile = openFile as typeof bag.openFile;
 
   // 档位一律**全集**（09-18 用户：「把模型配置里面思考选择删了，每个独立会话选择那个就生效那个」）：

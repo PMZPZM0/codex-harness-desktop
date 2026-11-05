@@ -4,6 +4,7 @@
 export function stripShellLauncher(command: string): string;
 
 /** 取命令里的文件目标（路径归一为正斜杠、超长保尾截断）；取不到返回空串 */
+export function commandTargetRaw(command: string): string;
 export function commandTarget(command: string, max?: number): string;
 
 /** 路径展示形态：正斜杠 + 超长从左截（保文件名） */

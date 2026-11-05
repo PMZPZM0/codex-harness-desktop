@@ -102,7 +102,7 @@ export function stripShellLauncher(command) {
  * 判据：像文件（带扩展名）且带路径分隔符（或盘符）的第一段。带空格的路径一起收进来
  * （我们的工作区目录名 `Codex Harness Desktop-refactor` 就带空格）。
  */
-export function commandTarget(command, max = 48) {
+export function commandTargetRaw(command) {
   const text = stripShellLauncher(command);
   if (!text) return "";
   // ⛔ 盘符前缀必须**紧跟着分隔符**（`D:\` / `D:/`）：写成 `[A-Za-z]:` 时，URL 里的
@@ -124,9 +124,19 @@ export function commandTarget(command, max = 48) {
     if (!/[\\/]/.test(candidate)) continue;
     // ⛔ URL 不是文件目标（`https://a.b.org/v1/x.json` ⇒ 摘要退回「运行命令」）
     if (/\w+:\/\//.test(candidate)) continue;
-    return shortenPath(candidate, max);
+    // ⛔ 这里返回**完整路径**（只归一斜杠、不截断）：卡片点击要用真路径去读文件。
+    //    展示用短名走下面的 commandTarget（shortenPath 加 `…`）—— 11-05 用户实测：
+    //    把截断后的展示串当路径拼到会话目录上，点开永远是错的（`D:\6…\…/Administrator/Desktop/x.md`）。
+    return candidate.replace(/\\/g, "/").replace(/\/{2,}/g, "/");
   }
   return "";
+}
+
+/** 展示用目标：命令里那段文件路径的**短形态**（超长从左截、保尾）。
+ *  ⛔ 只用于文案；点击/读取一律用 commandTargetRaw。 */
+export function commandTarget(command, max = 48) {
+  const raw = commandTargetRaw(command);
+  return raw ? shortenPath(raw, max) : "";
 }
 
 /**

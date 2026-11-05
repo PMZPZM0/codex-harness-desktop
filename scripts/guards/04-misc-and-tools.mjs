@@ -1024,6 +1024,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     !/WorkBuddy|Claude|Cursor|Copilot|GPT/.test(phraseBlock)
       ? ok("★ 话语池不含竞品品牌名（自创文案，不照搬）")
       : fail("话语池混进了竞品品牌名 —— 必须自创");
+    /* 11-05 用户实测（截图 toast `D:\<会话目录>\…/Administrator/Desktop/x.md 不存在`）：
+       卡片点击把**展示用截断路径**当真实路径拼会话目录 ⇒ 永远打不开。
+       ① 命令卡的点击目标必须用完整路径 commandTargetRaw；② 预览入口对截断/相对路径的兜底：
+          去掉 `…` 标记 → 先按 workspace 拼（存在才用）→ 否则按文件名问磁盘（fs:locate）。 */
+    (/const targetRaw = commandText \? commandTargetRaw\(commandText\)/.test(appSrc9)
+      && /resolveCommandTarget\(commandText, targetRaw\)/.test(appSrc9)
+      ? ok : fail)("【118】命令卡点击用完整路径（⛔ 不许用展示短名拼会话目录 —— 点开必报文件不存在）");
+    (appSrc9.includes("locateFile?.(joined || input") && appSrc9.includes('replace(/^…')
+      ? ok : fail)("【118】预览入口兜底：去截断标记 + 拼不上就问磁盘按文件名找回（只要电脑上有就能打开）");
   }
 }
 

@@ -162,10 +162,13 @@ export async function run() {
       }
     }
     /* 接线：点击必须走 openTarget。⛔ 退回 raw target 就恢复成本次要修的死链。 */
-    (/const openTarget = commandText && target \? resolveCommandTarget\(commandText, target\) : target;/.test(termCode)
+    /* 11-05：openTarget 的**入参**从展示短名 target 换成完整路径 targetRaw ——
+       展示串带 `…` 截断，被当成相对路径拼到会话目录后点开必报「文件不存在」（用户截图 toast 实证）。 */
+    (/const openTarget = commandText && targetRaw \? resolveCommandTarget\(commandText, targetRaw\) : targetRaw;/.test(termCode)
+      && /const targetRaw = commandText \? commandTargetRaw\(commandText\)/.test(termCode)
       && /onOpenFile\(openTarget\)/.test(termCode) && !/onOpenFile\(target\)/.test(termCode)
       ? ok : fail)(
-      "【127】命令卡点击用 openTarget（按命令 cd 解析），⛔ 不再用会话目录拼出来的 raw target"
+      "【127】命令卡点击用 openTarget（按命令 cd 解析 + 完整路径），⛔ 不许用截断展示串或会话目录拼出来的 target"
     );
     /* 10-29 用户实测：「编辑文件 / 运行过程中 / 运行完成后那个都不见了」——
        动作短语一旦命中就只剩「写文件」这种无状态说法，运行中和已完成长得一样。

@@ -11,7 +11,7 @@ import { Fold } from "../shared/Fold";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { formatDuration } from "../../lib/format-duration";
 import { basename } from "../../lib/basename";
-import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget, commandWriteStats, displayCommand, resolveCommandTarget } from "../../lib/command-display.mjs";
+import { INTENT_VERB, commandAction, commandIntentOf, commandPurpose, commandTarget, commandTargetRaw, commandWriteStats, displayCommand, resolveCommandTarget } from "../../lib/command-display.mjs";
 
 function commandCodeLanguage(command: string): { language: string; label: string } {
   if (/\b(?:powershell|pwsh)(?:\.exe)?\b/i.test(command)) return { language: "powershell", label: "PowerShell" };
@@ -88,11 +88,17 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive, onO
      绝不编一个 -0 —— 假数字比没有更糟。 */
   const writeStats = commandText ? commandWriteStats(commandText) : null;
   const target = commandText ? commandTarget(commandText) : "";
+  /* ⛔ 11-05 用户实测（截图 + toast 双证）：「这个文件打开，路径总是错」。
+     根因：点击用的 `openTarget` 是用**展示用的截断路径**（`…/Administrator/Desktop/x.md`）
+     拼出来的 —— 截断串不是绝对路径，`resolveCommandTarget` 会把它当相对路径接到会话目录后，
+     得到 `D:\<会话目录>\…/Administrator/Desktop/x.md`，点开必然「文件不存在」。
+     ⇒ 展示（表头短名）继续用 `target`；**点击/读取一律用完整路径 `targetRaw`**。 */
+  const targetRaw = commandText ? commandTargetRaw(commandText) : "";
   /* ★ 10-30 用户实测（截图 + rollout 双证）：会话 cwd 是 D:/测试，模型却在命令里
      「cd D:/Codex Harness Desktop; … .\src\lib\command-display.mjs」 ⇒ 卡片按**会话目录**拼出
      D:/测试/src/lib/…，点开「文件不存在」。⇒ 点击用的路径以**命令自己的 cd 目录**为基准；
      表头仍显示短名（targetName），看不出区别但点得开。 */
-  const openTarget = commandText && target ? resolveCommandTarget(commandText, target) : target;
+  const openTarget = commandText && targetRaw ? resolveCommandTarget(commandText, targetRaw) : targetRaw;
   const purpose = commandText ? commandPurpose(commandText) : "";
   /* 表头映射串 = 用途 · 目标（有哪个用哪个）：
      「已查看 结构 · …/.codex-harness」「已定位 pin-shrink-follow」「已运行 npm run build」
