@@ -1662,6 +1662,15 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/is-cyclable/.test(rowsSrc285) && /onClick=\{rowBadges\.length > 1 \?/.test(rowsSrc285) && /cycleThreadBadge\(entry\.id, rowBadges\.length\)/.test(rowsSrc285) ? ok : fail)(
       "【285】点击标签本体轮换下一枚（11-05 用户令）"
     );
+    (/className="thread-tag-next"[^>]*>\s*→\s*</.test(rowsSrc285) ? ok : fail)(
+      "【285】标签右侧有小箭头 →（点它也能轮换，11-05 用户令）"
+    );
+    (/\.thread-row-tags > span\.thread-tag-next\s*\{[^}]*font-size:\s*10px/.test(cssSrc285) && /\.thread-row-tags > span\.thread-tag-next\s*\{[^}]*padding:\s*0 1px/.test(cssSrc285) ? ok : fail)(
+      "【285】箭头保持小巧（10px / 无边框底色，只贴标签右边一点点）"
+    );
+    (/\.thread-actions-buttons\s*\{[^}]*position:\s*absolute/.test(cssSrc285) && /\.thread-row:not\(\.is-member-row\):hover > button:first-child > small\s*\{[^}]*visibility:\s*hidden/.test(cssSrc285) ? ok : fail)(
+      "【285】hover 只让右侧动：操作键绝对定位不占布局 + 时间用 visibility 保留占位（标签不位移）"
+    );
     (!/thread-tag-switch/.test(rowsSrc285) && !/\.thread-tag-switch/.test(cssSrc285) ? ok : fail)(
       "【285】不额外加提示图标（用户令：有点击标签轮换就够了）"
     );

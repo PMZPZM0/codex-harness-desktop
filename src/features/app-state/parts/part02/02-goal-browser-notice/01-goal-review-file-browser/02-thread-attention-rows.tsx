@@ -325,17 +325,21 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击改名字"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{shownBadge && (<span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined}>{shownBadge}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
+        <span className="thread-row-title-line" onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{shownBadge && (<span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined}>{shownBadge}{rowBadges.length > 1 && (<span className="thread-tag-next" aria-hidden="true">→</span>)}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">
-        <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
-        {/* ⛔ 10-25 用户令：「指挥中枢不要归档功能，有删除会话功能就行了」⇒ 指挥中枢不挂归档按钮
-            （删除在「⋯」菜单里）。普通会话不受影响。 */}
-        {isBossOwnThread ? null : (
-        <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void bag.archiveThread(entry.id); }}><Archive size={13} /></button>
-        )}
-        <button className="thread-more-button" title="会话操作" aria-expanded={bag.threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
-        {extras?.actions}
+        {/* 11-05 用户令：「鼠标放上来只有右侧动，标签不要跟着动」——
+            操作键浮在行右缘（绝对定位、不占布局），hover 只淡入，标题行宽度恒定。 */}
+        <div className="thread-actions-buttons">
+          <button className={`thread-pin-button ${bag.pinnedThreads.includes(entry.id) ? "pinned" : ""}`} title={bag.pinnedThreads.includes(entry.id) ? "取消置顶" : "置顶会话"} onClick={(event) => { event.stopPropagation(); bag.togglePinThread(entry.id); }}><Pin size={13} /></button>
+          {/* ⛔ 10-25 用户令：「指挥中枢不要归档功能，有删除会话功能就行了」⇒ 指挥中枢不挂归档按钮
+              （删除在「⋯」菜单里）。普通会话不受影响。 */}
+          {isBossOwnThread ? null : (
+          <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void bag.archiveThread(entry.id); }}><Archive size={13} /></button>
+          )}
+          <button className="thread-more-button" title="会话操作" aria-expanded={bag.threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
+          {extras?.actions}
+        </div>
         {/* ⛔⛔ 2026-10-04 用户指定换成 Uiverse「serious-mule-65」8 点旋转 spinner。
             **这里必须只有 1 个 `<i />`** —— 8 个点由 CSS 的 7 层 box-shadow 画出。
             原来这里是 `<i /><i /><i />`（三点弹跳），⛔ 留着三个会让 box-shadow 的点

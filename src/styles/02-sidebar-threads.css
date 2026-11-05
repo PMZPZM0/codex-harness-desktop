@@ -158,9 +158,25 @@
   align-items: center;
   gap: 4px;
 }
-/* 多标签时整枚标签可点：点标签本体即轮换（11-05 用户令）——不加额外提示图标。 */
+/* 多标签时整枚标签可点：点标签本体即轮换（11-05 用户令）。 */
 .thread-row-tags.is-cyclable { cursor: pointer; }
 .thread-row-tags.is-cyclable:hover > * { filter: brightness(1.08); }
+/* 11-05 用户令：「箭头太大了，就标签右边一点点」——
+   只做一枚小箭头贴在标签右侧（不加边框/底色，别抢标签的视觉）。
+   点它或点标签本体都换下一枚。 */
+.thread-row-tags > span.thread-tag-next {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+.thread-row-tags > span.thread-tag-next:hover { color: var(--accent); }
 /* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
    ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
 .thread-row-tags > * { min-width: 0; }
@@ -209,9 +225,11 @@
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-/* 鼠标移到行上：尾部时间换成置顶/归档/更多（运行中的行同样切换，转圈仍常驻在按键之后）。 */
+/* 鼠标移到行上：尾部时间换成置顶/归档/更多（运行中的行同样切换，转圈仍常驻在按键之后）。
+   ⛔ 用 visibility 而不是 display:none —— 保留时间占位，避免 hover 时标题行被撑宽、标签跟着位移
+      （11-05 用户令「鼠标放上来只有右侧动，标签不要跟着动」）。 */
 .thread-row:not(.is-member-row):hover > button:first-child > small {
-  display: none;
+  visibility: hidden;
 }
 .thread-actions {
   justify-content: flex-end;
@@ -220,6 +238,20 @@
   flex: 0 0 auto;
   gap: 1px;
   display: flex;
+  /* 操作键的定位锚（spinner / 完成点仍走正常流） */
+  position: relative;
+}
+/* ⛔ 操作键**浮在行右缘、不占布局**：展开是淡入而不是挤宽标题行
+   ⇒ hover 时标签 / 名称不动，只有右侧在动。 */
+.thread-actions-buttons {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
 }
 .thread-more-button,
 .thread-pin-button,
@@ -229,25 +261,22 @@
   color: var(--faint);
   cursor: pointer;
   opacity: 0;
+  pointer-events: none;
   background: transparent;
   border: 0;
   border-radius: 6px;
   padding: 0;
   place-items: center;
   display: grid;
-  transition: color 0.14s ease, background 0.14s ease, opacity 0.14s ease, width 0.16s ease, margin 0.16s ease;
-  width: 0;
-  margin: 0;
-  overflow: hidden;
+  transition: color 0.14s ease, background 0.14s ease, opacity 0.14s ease;
 }
-/* 运行中指示器常驻，但行内操作按钮（置顶/归档/三点）统一 hover 展开显隐 */
+/* 运行中指示器常驻，但行内操作按钮（置顶/归档/三点）统一 hover 淡入 */
 .thread-row:hover .thread-more-button,
 .thread-more-button[aria-expanded="true"],
 .thread-row:hover .thread-pin-button,
 .thread-row:hover .thread-archive-button {
   opacity: 1;
-  width: 24px;
-  margin: 0 1px;
+  pointer-events: auto;
 }
 .thread-more-button:hover,
 .thread-more-button[aria-expanded="true"],
@@ -261,8 +290,7 @@
 .thread-pin-button.pinned {
   color: var(--accent);
   opacity: 1;
-  width: 24px;
-  margin: 0 1px;
+  pointer-events: auto;
 }
 .thread-row-menu-backdrop {
   z-index: 10020;
