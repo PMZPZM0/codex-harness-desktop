@@ -354,7 +354,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
                 「重命名」和「改笔名」本来是同一个操作（笔名就是会话名），两个选项让人以为分工不同。
                 现在统一叫「改名字」：写别名记录 + 写引擎会话名 + 广播（子会话里的「上级：X」跟着变）。 */}
             <button onClick={() => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText); }}><PenLine size={13} /><span>改名字</span></button>
-            <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span></button>
+            <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span>{rowBadges.length > 1 && <small className="thread-row-menu-hint">点标签可切换</small>}</button>
             {/* 10-31 用户令：会话行底色自选 —— 未选中浅色常驻、选中后颜色稍深一档。 */}
             <div className="thread-row-color-field" role="group" aria-label="会话颜色">
               {/* 10-31 用户令：「恢复默认」放标签行（色板上方），做**淡字按钮**——圆圈 × 太难看。 */}

@@ -1671,6 +1671,12 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (!/thread-tag-next/.test(rowsSrc285) && !/\.thread-tag-next/.test(cssSrc285) ? ok : fail)(
       "【285】不挂切换箭头（11-06 用户令：点标签本体切换就够了）"
     );
+    (/thread-row-menu-hint/.test(rowsSrc285) && /点标签可切换/.test(rowsSrc285) ? ok : fail)(
+      "【285】行菜单「编辑标签」带提示「点标签可切换」（11-06 用户令）"
+    );
+    (/\.thread-row-menu \.thread-row-menu-hint\s*\{[^}]*font-size:\s*10px[^}]*margin-left:\s*auto|\.thread-row-menu \.thread-row-menu-hint\s*\{[^}]*margin-left:\s*auto[^}]*font-size:\s*10px/.test(cssSrc285) ? ok : fail)(
+      "【285】菜单提示小字靠右、10px 淡色"
+    );
     (/\.thread-actions-buttons\s*\{[^}]*position:\s*absolute/.test(cssSrc285) && /\.thread-row:not\(\.is-member-row\):hover > button:first-child > small\s*\{[^}]*visibility:\s*hidden/.test(cssSrc285) ? ok : fail)(
       "【285】hover 只让右侧动：操作键绝对定位不占布局 + 时间用 visibility 保留占位（标签不位移）"
     );

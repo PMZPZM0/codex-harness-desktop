@@ -325,6 +325,15 @@
 .thread-row-menu button:hover { background: var(--panel-2); }
 .thread-row-menu button.danger { color: var(--red); border-top: 1px solid var(--line-soft); margin-top: 2px; padding-top: 7px; }
 .thread-row-menu button svg { flex: none; }
+/* 11-06 用户令：「编辑标签后面加个注释，类似『点击标签可切换』」——
+   多标签行才提示（只有一枚时点了也不会换）。 */
+.thread-row-menu .thread-row-menu-hint {
+  margin-left: auto;
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 400;
+  white-space: nowrap;
+}
 /* ── 会话颜色选择（10-31 用户令）────────────────────────────────────── */
 .thread-row-color-field {
   display: grid;
