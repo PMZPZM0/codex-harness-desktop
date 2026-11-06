@@ -374,8 +374,9 @@
 .settings-exp-shell .fav-item.selected { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 4%, var(--panel)); }
 .settings-exp-shell .fav-empty { margin-top: 10px; padding: 20px; border: 1px dashed var(--line); border-radius: 12px; text-align: center; }
 
-/* 自动化 / 专家团入口：一列长卡，图标为中性灰，不留空格子 */
-.settings-exp-shell .hub-card-grid { grid-template-columns: 1fr; gap: 10px; }
+/* 自动化 / 专家团入口：多列小卡（11-06 用户：「刻意拉长的很丑，都做成小卡片」） */
+.settings-exp-shell .hub-card-grid { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.settings-exp-shell .hub-card-grid.hub-card-grid-3 { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
 .settings-exp-shell .hub-card {
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
@@ -409,8 +410,8 @@
 .settings-exp-shell .template-grid > .template-card:last-child:nth-child(odd) { grid-column: 1 / -1; }
 .settings-exp-shell .template-card { border-radius: 10px; padding: 12px 14px; background: var(--panel); }
 
-/* 记忆页两张内容卡改成一列长卡；网格内的卡不再叠加 margin */
-.settings-exp-shell .memory-center .settings-cards { grid-template-columns: 1fr; }
+/* 记忆页内容卡：多列小卡（11-06 统一）；网格内的卡不再叠加 margin */
+.settings-exp-shell .memory-center .settings-cards { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
 .settings-exp-shell .settings-cards > .settings-card { margin-top: 0; }
 
 /* 收藏夹页脚说明：原来是 flex，文本节点被拆成多个可收缩的列 */
@@ -491,7 +492,7 @@
   border-color: var(--line-soft);
   color: var(--muted);
 }
-.settings-exp-shell .relay-plan-grid { grid-template-columns: 1fr; }
+.settings-exp-shell .relay-plan-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
 .settings-exp-shell .relay-plan-card { border-color: var(--line-soft); border-radius: 12px; background: var(--panel); box-shadow: none; }
 .settings-exp-shell .relay-plan-card.selected { background: var(--panel); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .settings-exp-shell .relay-add-card { grid-column: 1 / -1; min-height: 0; }
@@ -515,14 +516,43 @@
   font-size: 12.5px;
 }
 
-/* ── 开发工具 / 拓展接口 / 会话备份：一列长卡 + 中性图标 ── */
-.settings-exp-shell .devtools-cards { grid-template-columns: 1fr; }
+/* ── 开发工具 / 拓展接口 / 会话备份 ──
+   ⛔ 11-06 用户令（截图）：「开发工具分类卡片做成小卡片，界面好看一点」——
+   开发工具卡从「一列长卡」改回多列小卡（260px 起）；图标恢复主题绿，hover 轻抬 + 同色描边。 */
+.settings-exp-shell .devtools-cards { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
 .settings-exp-shell .devtools-card { border-color: var(--line-soft); border-radius: 12px; background: var(--panel); }
-.settings-exp-shell .devtools-card:hover { border-color: var(--line); background: var(--panel); transform: none; box-shadow: none; }
-.settings-exp-shell .devtools-card-logo { background: var(--panel-2); color: var(--muted); }
+.settings-exp-shell .devtools-card:hover {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--line));
+  background: var(--panel);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--green) 10%, transparent);
+}
+.settings-exp-shell .devtools-card-logo { background: color-mix(in srgb, var(--green) 12%, var(--panel)); color: var(--green); }
+/* 小卡内部收紧：说明两行截断、就绪数改成小胶囊、底部动作行随之变小 */
+.settings-exp-shell .devtools-card-open { padding: 12px 12px 8px; gap: 10px; }
+.settings-exp-shell .devtools-card-copy small {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.settings-exp-shell .devtools-card-stat {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 7px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: var(--bg);
+  font-size: 10.5px;
+  line-height: 1.7;
+}
+.settings-exp-shell .devtools-card-actions { padding: 0 12px 10px; }
+.settings-exp-shell .devtools-card-uninstall { min-height: 26px; padding: 0 10px; font-size: 11px; }
 .settings-exp-shell .ext-page .settings-cards { grid-template-columns: 1fr; }
 .settings-exp-shell .settings-card-logo { background: var(--panel-2); color: var(--muted); }
-.settings-exp-shell .backup-grid { grid-template-columns: 1fr; }
+/* 11-06：会话备份页恢复两列小卡（当前会话 | 导入与恢复；选择器卡独占一行），不再一条条拉满整行 */
+.settings-exp-shell .backup-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.settings-exp-shell .backup-card--picker { grid-column: 1 / -1; }
 .settings-exp-shell .backup-card { border-color: var(--line-soft); border-radius: 12px; background: var(--panel); }
 .settings-exp-shell .backup-card--current { border-color: var(--line-soft); }
 .settings-exp-shell .backup-card-head > span { background: var(--panel-2); color: var(--muted); }

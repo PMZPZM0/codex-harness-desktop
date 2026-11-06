@@ -87,12 +87,12 @@ ok(!/linear-gradient|radial-gradient/.test(css), "⛔ 统一简洁风里不再�
 /* ── ③ 白卡 + 中性图标 + 不留空格子 ── */
 ok(/\.settings-exp-shell \.settings-card\s*\{[^}]*background:\s*var\(--panel\)/s.test(css), "标准卡是平面白卡（无渐变）");
 ok(/\.settings-exp-shell \.settings-card-head > svg\s*\{[^}]*background:\s*var\(--panel-2\)[^}]*color:\s*var\(--muted\)/s.test(css), "卡头图标是中性灰胶囊（不按页面色相上色）");
-ok(/\.settings-exp-shell \.hub-card-grid\s*\{\s*grid-template-columns:\s*1fr/.test(css), "入口卡一列长卡（自动化 / 专家团不再三张方卡）");
+ok(/\.settings-exp-shell \.hub-card-grid\s*\{\s*grid-template-columns:\s*repeat\(auto-fill, minmax\(260px, 1fr\)\)/.test(css), "入口卡多列小卡（11-06 用户：不要刻意拉长）");
 ok(/grid-template-areas:\s*"icon title"\s*"icon desc"\s*"icon version"/.test(css), "入口卡横向排布：图标 + 标题/说明/版本");
 ok(/\.settings-exp-shell \.hub-card-icon\s*\{[^}]*background:\s*var\(--panel-2\)[^}]*color:\s*var\(--muted\)/s.test(css), "入口卡图标也是中性灰");
 ok(/\.settings-exp-shell \.template-grid\s*\{\s*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/.test(css), "模板两列（不再是 auto-fill 三列）");
 ok(/\.template-card:last-child:nth-child\(odd\)\s*\{\s*grid-column:\s*1 \/ -1/.test(css), "落单的最后一张模板占满整行（没有空格子）");
-ok(/\.settings-exp-shell \.memory-center \.settings-cards\s*\{[^}]*grid-template-columns:\s*1fr/s.test(css), "记忆两张内容卡改成一列长卡");
+ok(/\.settings-exp-shell \.memory-center \.settings-cards\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fill, minmax\(280px, 1fr\)\)/s.test(css), "记忆内容卡多列小卡（11-06 统一）");
 
 /* ── ④ 收藏夹：页脚说明单列 ── */
 ok(/\.settings-exp-shell \.favorites-settings \.fav-foot\s*\{[^}]*display:\s*block/s.test(css), "收藏夹页脚改单列（flex 会把文本节点拆成四块）");
@@ -431,6 +431,14 @@ ok(/\.settings-exp-shell \.ext-page \.settings-card \{[\s\S]{0,400}?display: gri
   && /\.ext-page \.settings-card\[data-group="接口与契约"\] \{ --ext-hue: #3b82f6; \}/.test(extCss)
   && /\.settings-exp-shell \.ext-page \.settings-card-stat \{[\s\S]{0,200}?border-radius: 999px;/.test(extCss),
   "拓展接口分类卡：一行式布局 + 分类色相 + 数量胶囊（11-06 美化）");
+ok(/\.settings-exp-shell \.devtools-cards \{ grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/.test(read("src/styles/45-settings-experience.css"))
+  && /devtools-manifest-group/.test(read("src/features/settings-devtools/ToolsHealthPanel.tsx"))
+  && /devtools-health-hero/.test(read("src/features/settings-devtools/ToolsHealthPanel.tsx")),
+  "开发工具分类卡改多列小卡 + 自检面板头部/分组清单（11-06 美化）");
+ok(/\.settings-exp-shell \.hub-card-grid \{ grid-template-columns: repeat\(auto-fill, minmax\(260px, 1fr\)\);/.test(read("src/styles/45-settings-experience.css"))
+  && /\.settings-exp-shell \.backup-grid \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/.test(read("src/styles/45-settings-experience.css"))
+  && /\.settings-exp-shell \.relay-plan-grid \{ grid-template-columns: repeat\(auto-fill, minmax\(280px, 1fr\)\);/.test(read("src/styles/45-settings-experience.css")),
+  "设置页卡片统一小卡网格：专家团/自动化 hub、会话备份、中转站（11-06 用户：不要刻意拉长）");
 
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

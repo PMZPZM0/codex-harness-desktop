@@ -47,11 +47,17 @@ export function ToolsHealthPanel({ devRuntimes, setNotice }: { devRuntimes: Runt
 
   return (
     <div className="settings-section stack">
-      <div className="devtools-health">
-        <button className="secondary-setting runtime-check" disabled={healthBusy} onClick={() => void runHealth()}><Activity size={13} />{healthBusy ? "检查中…" : "检查工具"}</button>
-        {health
-          ? <span className="settings-card-hint">{healthBad.length === 0 ? "已安装的工具全部可运行" : `发现 ${healthBad.length} 项不可用`}（另有 {healthMissing} 项未安装）</span>
-          : <span className="settings-card-hint">点一下，逐个验证已装的工具能不能真跑起来</span>}
+      <div className="devtools-health devtools-health-hero">
+        <span className="devtools-health-icon"><Activity size={17} /></span>
+        <span className="devtools-health-copy">
+          <strong>{health ? (healthBad.length ? `${healthBad.length} 项不可用` : "全部可运行") : "还没检查过"}</strong>
+          <small>
+            {health
+              ? `另有 ${healthMissing} 项未安装；点右侧按钮可重新检查`
+              : "点右侧按钮，逐个真跑版本命令，确认已装的工具真的能跑起来"}
+          </small>
+        </span>
+        <button className="primary-setting runtime-check" disabled={healthBusy} onClick={() => void runHealth()}><Activity size={13} />{healthBusy ? "检查中…" : "检查工具"}</button>
       </div>
       {healthError ? <div className="runtime-loading">{healthError}</div> : null}
       {healthBad.length > 0 && (
@@ -71,7 +77,22 @@ export function ToolsHealthPanel({ devRuntimes, setNotice }: { devRuntimes: Runt
           <button className="secondary-setting" onClick={() => { void copyTextToClipboard(manifest); setNotice("工具清单已复制"); }}><Copy size={13} />复制清单</button>
         </div>
       </details>
-      <p className="settings-card-hint">随应用内置（安装包自带、离线可用）：引擎、Node、VS Code CLI、Nuphus 桌面自动化、ponytail 写代码模式插件，以及下载体积 50MB 以内的小工具 —— Python（完整版，含 pip 与 Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）；按需下载：Git、PowerShell 7（npmmirror / gh 加速，失败自动回落官方源，首次启动检测到缺 Git 会自动补装）、FFmpeg、Miniconda、MinGW、文档转换（markitdown，pip 清华镜像）；Docker Desktop、OpenSSL 需系统级安装（点按钮打开官网）。Ego Lite 浏览器自动化是**首选**通道，在卡片里跳官方安装器（不随包内置 611MB 浏览器）；未安装时回落 browse-skills（nuphus 默认浏览器）。除内置项外都可卸载（卸载是真删）。日常浏览用内置浏览器视图；浏览器自动化由每个会话自己的 Ego Lite Space 执行。安装后自动加入 Codex 环境（不修改系统 PATH 或注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
+      {/* 1 1-06 用户（截图）：「工具自检的界面不好看」——大段说明改成三组带色标的清单卡。 */}
+      <section className="devtools-manifest-note" aria-label="工具清单说明">
+        <div className="devtools-manifest-group">
+          <span className="devtools-manifest-tag is-builtin">随包内置</span>
+          <p>引擎、Node、VS Code CLI、Nuphus 桌面自动化、ponytail 写代码模式插件；下载体积 50MB 以内的小工具：Python（含 pip / Tkinter）、ripgrep、uv、CMake、7-Zip、jq、Ninja、yt-dlp、Android 平台工具（adb）。开箱即用、离线可用。</p>
+        </div>
+        <div className="devtools-manifest-group">
+          <span className="devtools-manifest-tag is-download">按需下载</span>
+          <p>Git（首启缺失自动补装）、PowerShell 7（国内镜像优先，失败回落官方源）、FFmpeg、Miniconda、MinGW、文档转换 markitdown（pip 清华镜像）、Ego Lite 浏览器自动化（首选通道，跳官方安装器，不随包）。</p>
+        </div>
+        <div className="devtools-manifest-group">
+          <span className="devtools-manifest-tag is-system">系统安装</span>
+          <p>Docker Desktop、OpenSSL —— 点按钮打开官网，按系统安装器完成。</p>
+        </div>
+        <p className="devtools-manifest-foot">未装 Ego Lite 时回落 browse-skills（nuphus 默认浏览器）。除内置项外都可卸载（真删）；安装后自动加入 Codex 环境（不改系统 PATH / 注册表）；引擎在会话里自行安装工具时，此页状态也会自动刷新。</p>
+      </section>
 
       {/* 自检弹窗：进度条 + 逐项结果（绿=可用，红=不可用） */}
       {healthRows ? (
