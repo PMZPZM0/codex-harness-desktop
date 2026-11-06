@@ -684,10 +684,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       if (!children.length) return null;
       const dispatchKey = `dispatch:${threadId}`;
       const collapsed = !expandedDispatchBlocks.has(dispatchKey);
+      /* ⛔ 11-06 用户令：「子会话文字不要，就一个展开折叠图标就行了」——
+         长条里只留箭头（数量与状态交给 title/aria-label，不在行内占字）。
+         行外的专家团「子会话 · N」块仍保留文字（那是分组头，带数量有意义）。 */
       const bar = (
-        <button type="button" className="thread-child-bar" title={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
-          <ChevronDown size={10} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
-          <span>子会话 · {children.length}</span>
+        <button type="button" className="thread-child-bar" title={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} aria-label={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
+          <ChevronDown size={11} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
         </button>
       );
       return { children, collapsed, bar };

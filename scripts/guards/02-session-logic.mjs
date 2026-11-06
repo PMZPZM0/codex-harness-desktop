@@ -1485,6 +1485,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (!/\.thread-row\.has-footer > button/.test(readStyles()) ? ok : fail)(
         "【156】有子会话长条的行**不压缩名称行**（用户令：上面不要变动）"
       );
+      (!/<button[^>]*className="thread-child-bar"[\s\S]{0,420}?子会话/.test(dispatchedRendererSrc) ? ok : fail)(
+        "【156】行内长条只留展开/折叠箭头，不带「子会话」文字（11-06 用户令）"
+      );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }
