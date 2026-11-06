@@ -27,7 +27,7 @@ export function TeamModePanel() {
     rowsByGroup, busyByGroup, liveByGroup, dispatchError,
     create, rename, addPartner, removePartner, mute, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
     addNote, removeNote, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
-    ledger, loadLedger, stopPartner,
+    stopPartner,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -65,9 +65,8 @@ export function TeamModePanel() {
     if (activeId) {
       void loadMessages(activeId);
       void loadRunning(activeId);
-      void loadLedger(activeId, 7);
     }
-  }, [activeId, loadMessages, loadRunning, loadLedger]);
+  }, [activeId, loadMessages, loadRunning]);
 
   const active = useMemo(() => groups.find((g) => g.id === activeId) ?? null, [groups, activeId]);
   const visibleGroups = useMemo(
@@ -237,8 +236,6 @@ export function TeamModePanel() {
             onSaveMenuPlacement={(placement) => saveMenuPlacement(active.id, placement)}
             onSaveSchedules={(list) => saveSchedules(active.id, list)}
             onRunSchedule={(scheduleId) => runSchedule(active.id, scheduleId)}
-            ledger={ledger}
-            onLoadLedger={(days) => void loadLedger(active.id, days)}
             onStopPartner={(memberId) => stopPartner(active, memberId)}
             onRename={(name) => rename(active.id, name)}
             onClearMessages={() => clearMessages(active.id)}

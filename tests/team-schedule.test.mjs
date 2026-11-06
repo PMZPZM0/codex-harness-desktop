@@ -117,7 +117,7 @@ test("改个名字不该把这一轮推掉（调度口径没变 ⇒ 沿用旧 ne
 
 const groupWith = (members) => createGroup({ id: "grp", name: "群", members, leadId: "u" });
 
-test("定时任务：没选人 / 静音 / 未绑定 / 需要团队许可，各给一句人话", () => {
+test("定时任务：没选人 / 静音 / 未绑定 各给一句人话；专家团已可直接调度不再阻断", () => {
   const group = groupWith([
     { id: "u", kind: "human", name: "我" },
     { id: "p1", kind: "bot", name: "承枢", targetKind: "expert", targetKey: "e1" },
@@ -130,7 +130,9 @@ test("定时任务：没选人 / 静音 / 未绑定 / 需要团队许可，各�
   const muted = scheduleBlockers(group, { memberIds: ["p2"] });
   assert.match(muted.join(), /静音/);
   assert.match(scheduleBlockers(group, { memberIds: ["p3"] }).join(), /没绑定/);
-  assert.match(scheduleBlockers(group, { memberIds: ["p4"] }).join(), /专家团/);
+  /* 11-06 用户令「专家团直接调度」：群聊界面直派已在执行端合并许可，
+     定时任务体检不再把 team / member 当阻断项（改了会把可用的伙伴误判成派不出去）。 */
+  assert.deepEqual(scheduleBlockers(group, { memberIds: ["p4"] }), [], "专家团成员现在可直接调度");
   assert.match(scheduleBlockers(group, { memberIds: ["p3", "p4"] }).join(), /没绑定/);
 
   assert.deepEqual(scheduleBlockers(group, { memberIds: ["p1"] }), [], "能派的就别报问题");

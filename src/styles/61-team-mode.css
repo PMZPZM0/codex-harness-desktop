@@ -721,49 +721,6 @@
 .team-settings__menu-item .team-settings__mini { flex: none; }
 .team-settings__cmd-label { flex: 0 0 130px; }
 
-.team-settings__stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin: 8px 0;
-  padding: 8px 10px;
-  border-radius: 8px;
-  background: var(--bg);
-  font-size: 12px;
-  color: var(--muted);
-}
-.team-settings__stats strong { color: var(--text); font-weight: 600; }
-.team-settings__stats .is-warn strong { color: var(--danger); }
-
-.team-settings__usage { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
-.team-settings__usage li { display: flex; align-items: center; gap: 8px; }
-.team-settings__usage-name {
-  flex: 0 0 96px;
-  overflow: hidden;
-  font-size: 12px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.team-settings__usage-bar {
-  flex: 1 1 auto;
-  height: 6px;
-  min-width: 40px;
-  border-radius: 999px;
-  background: var(--panel-base);
-  overflow: hidden;
-}
-.team-settings__usage-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
-.team-settings__usage-num { flex: 0 0 auto; color: var(--faint); font-size: 10.5px; white-space: nowrap; }
-.team-settings__sources { display: flex; flex-wrap: wrap; gap: 6px; }
-.team-settings__sources em {
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 10.5px;
-  font-style: normal;
-}
-
 /* 提示条的语气（菜单回显是"信息"，失败才是"警告"） */
 .team-group__notice.is-info { color: var(--muted); }
 .team-group__notice.is-warn { color: var(--orange); }
@@ -1546,3 +1503,75 @@
 }
 .team-composer__skill-head > button:hover { background: var(--panel-2); color: var(--text); }
 .team-composer__skill-list { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* ══════ 伙伴添加三模式（11-06 用户令）════════════════════════════════════════ */
+.team-settings__modes {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 3px;
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.team-settings__mode {
+  flex: 1;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.team-settings__mode:hover { color: var(--accent); }
+.team-settings__mode.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.team-settings__mode-refresh {
+  flex: none;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-settings__mode-refresh:hover { background: var(--accent-soft); color: var(--accent); }
+
+/* 正反向联动：受限模式仍可点开看原因，⛔ 不做点了没反应的死按钮 */
+.team-settings__mode.is-blocked { opacity: 0.5; text-decoration: line-through; text-decoration-color: var(--faint); }
+.team-settings__mode.is-blocked.is-on { opacity: 0.8; }
+.team-settings__mode-block {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--orange) 55%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--orange) 9%, transparent);
+  color: var(--text);
+  font-size: 11.5px;
+  line-height: 1.65;
+}
+.team-settings__mode-block strong { color: var(--orange); font-weight: 600; }
+
+/* ══════ 与主对话同轴（11-06 用户：「对话框及展示区域过宽，与现有对话框一致」）══════
+   主对话是 1360px 上限的**居中列**（两侧留轨）；群聊原来消息流全宽、输入框全宽，
+   窗口越宽右侧空白越大。这里给群一个与主对话同构的居中列（790 = 16*2 padding +
+   28 头像 + 10 gap + 720 正文上限），消息流 / 输入框 / 刻度尺全部对齐这条轴。 */
+.team-group { --team-column: 790px; }
+.team-group__stream {
+  flex: 1 1 auto;
+  width: min(100%, var(--team-column));
+  max-width: var(--team-column);
+  margin-inline: auto;
+}
+.team-group__composer { padding-inline: max(14px, calc((100% - var(--team-column)) / 2)); }
+.team-group__stream-wrap .message-ruler.is-right {
+  right: calc(max(0px, (100% - var(--team-column)) / 2) + 14px);
+}
+/* 正文对齐主对话（14px / 1.72），⛔ 群聊不再比主对话小一档 */
+.team-msg__body-text { font-size: 14px; line-height: 1.72; }
+.team-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }

@@ -551,3 +551,40 @@ export function groupIssues(group) {
   if (!partnersOf(g).length) issues.push("还没有伙伴（只有人）");
   return issues;
 }
+
+
+/**
+ * 伙伴添加模式的正反向联动（11-06 用户令：「专家团，就要纯新群聊才能加，
+ * 已经自定义了，就不能专家团」「正向反向联动不做好」）。
+ *
+ *  · 正向：群里已有**任意**伙伴 ⇒ 不能再加专家团（团会按 SOP 自己拉起成员，
+ *    与已有伙伴重复派活 / 身份串位，这就是用户点名的 BUG）。
+ *  · 反向：群里已有专家团 ⇒ 不能再加单专家 / 自定义角色（成员归团统一编排）。
+ *  · 两种先后顺序都判；移除后由调用方按最新伙伴表重算，自动恢复（纯函数无状态）。
+ *
+ * ⛔ 判据只用「有没有伙伴 / 伙伴是不是团」，⛔ 不去猜 teamId 归属：
+ *    用户要的是「纯新群」这条硬规则，推断归属反而会把已有单专家误判成团成员。
+ *
+ * @param {unknown} partners 群里的伙伴（bot 成员）
+ * @param {string} mode "expert" | "team" | "custom"
+ * @returns {{ blocked: boolean, reason: string }}
+ */
+export function addModeStateOf(partners, mode) {
+  const list = Array.isArray(partners) ? partners : [];
+  const hasTeam = list.some((p) => p && p.targetKind === "team");
+  if (mode === "team") {
+    if (list.length > 0) {
+      return {
+        blocked: true,
+        reason: hasTeam
+          ? "群里已经有专家团了；要换成别的团，先移除它或新建一个群"
+          : `专家团只能在纯新群添加：当前已有 ${list.length} 位伙伴，先移除他们或新建一个群`,
+      };
+    }
+    return { blocked: false, reason: "" };
+  }
+  if (hasTeam) {
+    return { blocked: true, reason: "群里已有专家团，团内成员由它统一编排；要换成自定义伙伴，先移除团或新建一个群" };
+  }
+  return { blocked: false, reason: "" };
+}

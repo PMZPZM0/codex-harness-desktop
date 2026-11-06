@@ -262,9 +262,11 @@ async function dispatchGroupText(
   source: "human" | "automation",
 ): Promise<{ ok: boolean; sent: number; failed: string[] }> {
   const picked = group.members.filter((m) => m.kind === "bot" && memberIds.includes(m.id));
-  const usable = picked.filter((m) => !m.muted && m.targetKind && m.targetKey && m.targetKind !== "member" && m.targetKind !== "team");
+  /* 11-06 用户令：群聊专家团可直接调度 ⇒ 定时任务同样允许 team / member 伙伴
+     （主进程 runDelegatedTask 只对 origin="" 的群直派合并 team 许可，模型自派不受影响）。 */
+  const usable = picked.filter((m) => !m.muted && m.targetKind && m.targetKey);
   if (!usable.length) {
-    return { ok: false, sent: 0, failed: ["没有可派活的伙伴（未绑定 / 已静音 / 需要团队许可）"] };
+    return { ok: false, sent: 0, failed: ["没有可派活的伙伴（未绑定 / 已静音）"] };
   }
   const saved = await appendMessageTo(group.id, {
     authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",

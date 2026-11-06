@@ -15,11 +15,12 @@
  *
  * ⛔ 权限说明写文案，不用 disabled 表达归属（项目纪律：disabled 是准入，不是说明）。
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { AlarmClock, BarChart3, BookOpen, FolderOpen, GitBranch, Play, Puzzle, Trash2, Users } from "lucide-react";
+import { AlarmClock, BookOpen, FolderOpen, GitBranch, Play, Puzzle, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
+import { addModeStateOf } from "../../lib/team-models.mjs";
 import {
   MAX_GROUP_SCHEDULES,
   MAX_SCHEDULE_PROMPT_CHARS,
@@ -31,8 +32,6 @@ import {
   scheduleBlockers,
   toggleSchedule,
 } from "../../lib/team-schedule.mjs";
-import { formatChars, formatMs, formatTokens, LEDGER_SOURCE_LABELS } from "../../lib/team-ledger.mjs";
-import type { LedgerSummary } from "./02-team-store";
 import { AppSelect } from "../../components/AppSelect";
 
 type Props = {
@@ -63,25 +62,34 @@ type Props = {
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 立刻运行一条定时任务 */
   onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
-  /** 用量汇总（为空 = 还没拉过） */
-  ledger?: LedgerSummary | null;
-  onLoadLedger: (days: number) => void;
 };
 
 /** 调度目标的一条（与 `listDispatchCatalog()` 的返回一致；这里只声明用得到的字段）。 */
 type Target = { kind: string; key: string; name: string; profession?: string; teamId?: string; installed?: boolean };
 
-/**
- * 这类目标派活要「专家团」许可（主进程 `dispatchKindAllowed`：team/member 同一把闸）。
- * ⛔⛔ 11-06 实测：全仓**没有任何 UI 会写 `dispatch.team`**（`dispatchAllowOf` 只读会话配置，
- *   而应用里没有那个开关）⇒ 选进来也永远派不出去。所以**不再列为可选项**，
- *   老群里已经存在的这类伙伴标红说明「不可派」，并给出可操作建议（换成「专家」）。
- *   ⛔ 别把「去顶栏打开专家团」写进文案 —— 那个开关不存在，等于让用户找空气。
- */
-const needsTeamGate = (kind: string) => kind === "member" || kind === "team";
-
-/** 能进群当伙伴的类别：只有**默认就允许**的三类（expert / subagent / cli）。 */
-const PICKABLE = new Set(["expert", "subagent", "cli"]);
+/* ⛔└ 11-06 用户令：「新增专家团直接调度功能，三种模式：专家模式 / 专家团模式 /
+   自定义专家模式，同步我们的后台，专家列表和专家团列表」。
+   数据只认 `agents:catalog`（主进程 buildDispatchCatalog 实时读后台 expert-teams.json /
+   sub-agents.json / CLI 配置），⛔ 不另建一套池子。
+   三种模式 = 同一份目录按 kind 切视图；专家团直派的执行端许可已在 delegation.ts 对
+   origin="" 的界面直派合并，⛔ 不再是「选了派不出去」。 */
+type AddMode = "expert" | "team" | "custom";
+const MODE_KINDS: Record<AddMode, Set<string>> = {
+  expert: new Set(["expert"]),
+  team: new Set(["team"]),
+  custom: new Set(["subagent", "cli"]),
+};
+const MODE_LABEL: Record<AddMode, string> = {
+  expert: "专家模式",
+  team: "专家团模式",
+  custom: "自定义专家模式",
+};
+const MODE_HINT: Record<AddMode, string> = {
+  expert: "来自后台「专家中心」的单个专家，点名即派。",
+  team: "来自后台「专家团」列表，整团按 SOP 协作；一次派活会拉起多名成员，注意用量。",
+  custom: "你在后台自定义的子智能体与本机 CLI（可自建、可配模型与提示词）。",
+};
+const ADD_MODES: AddMode[] = ["expert", "team", "custom"];
 
 const KIND_LABEL: Record<string, string> = {
   member: "专家团成员",
@@ -110,10 +118,11 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule, ledger, onLoadLedger }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
+  const [addMode, setAddMode] = useState<AddMode>("expert");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [done, setDone] = useState("");
@@ -130,8 +139,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   /* 快捷指令：新加一条自定义 */
   const [cmdLabel, setCmdLabel] = useState("");
   const [cmdPrompt, setCmdPrompt] = useState("");
-  /* 用量窗口（天） */
-  const [ledgerDays, setLedgerDays] = useState(7);
   /* 定时任务草稿（豆包 §③）：频率/时间/派给谁，提交时整组替换 */
   const [schedName, setSchedName] = useState("");
   const [schedPrompt, setSchedPrompt] = useState("");
@@ -172,21 +179,18 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
 
   /* ⛔ 伙伴**必须**是真实调度目标：手打出来的名字派不了活。
      ⇒ 这里拉一次 `agents:catalog`（与模型自己派活用的是同一份清单，⛔ 不另建一套池子）。 */
-  useEffect(() => {
-    let alive = true;
-    void (async () => {
-      try {
-        const res = await window.codex.listDispatchCatalog();
-        if (!alive) return;
-        const list = Array.isArray(res?.targets) ? (res.targets as Target[]) : [];
-        setTargets(list.filter((t) => t && t.kind && t.name && t.installed !== false));
-        setCatalogError("");
-      } catch (err) {
-        if (alive) setCatalogError(err instanceof Error ? err.message : String(err));
-      }
-    })();
-    return () => { alive = false; };
+  const reloadCatalog = useCallback(async () => {
+    try {
+      const res = await window.codex.listDispatchCatalog();
+      const list = Array.isArray(res?.targets) ? (res.targets as Target[]) : [];
+      setTargets(list.filter((t) => t && t.kind && t.name && t.installed !== false));
+      setCatalogError("");
+    } catch (err) {
+      setCatalogError(err instanceof Error ? err.message : String(err));
+    }
   }, []);
+  /* ⛔ 后台新建专家/团后这里能手动刷新（原来只挂载拉一次，列表会停在旧快照） */
+  useEffect(() => { void reloadCatalog(); }, [reloadCatalog]);
 
   /** 已经在这个群里的目标不重复列（按 目标身份 判，不按显示名） */
   const options = useMemo(() => {
@@ -194,13 +198,23 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
     return targets
       .map((t, index) => ({ index, t }))
       .filter(({ t }) => !taken.has(`${t.kind}:${t.key}`))
-      /* ⛔ 只列默认可派的类别（见 PICKABLE 注释）：列进来却派不出去 = 骗用户 */
-      .filter(({ t }) => PICKABLE.has(t.kind))
+      .filter(({ t }) => MODE_KINDS[addMode].has(t.kind))
       .map(({ index, t }) => ({
         value: String(index),
         label: `${KIND_LABEL[t.kind] ?? t.kind} · ${t.name}${t.profession ? `（${t.profession}）` : ""}`,
+        disabled: partners.length >= limit,
       }));
-  }, [targets, partners]);
+  }, [targets, partners, addMode, limit]);
+
+  /* ⛔└ 11-06 用户令：「专家团，就要纯新群聊才能加，已经自定义了，就不能专家团」
+     正反向联动的唯一真相源在 lib/team-models.mjs（有单测）；这里按最新伙伴表实时重算，
+     移除伙伴后自动恢复，⛔ 不缓存、不在两处各写一套判据。 */
+  const modeStates = useMemo(() => ({
+    expert: addModeStateOf(partners, "expert"),
+    team: addModeStateOf(partners, "team"),
+    custom: addModeStateOf(partners, "custom"),
+  }), [partners]);
+  const activeModeState = modeStates[addMode];
 
   const run = async (fn: () => Promise<{ ok: boolean; error?: string }>, okText = "") => {
     setBusy(true);
@@ -214,6 +228,9 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   };
 
   const addPartner = async () => {
+    if (activeModeState.blocked) return;
+    const chosen = options.find((o) => o.value === pick);
+    if (!chosen || chosen.disabled) return;
     const target = targets[Number(pick)];
     if (!target) return;
     await run(async () => {
@@ -367,15 +384,7 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
                 {p.id === group.leadId && <em className="team-settings__tag">群主</em>}
                 {p.muted && <em className="team-settings__tag team-settings__tag--muted">已静音</em>}
                 {p.targetKind
-                  ? (
-                    <em
-                      className={`team-settings__tag${needsTeamGate(p.targetKind) ? " team-settings__tag--warn" : ""}`}
-                      title={needsTeamGate(p.targetKind) ? "专家团成员/团要「专家团」许可，应用目前没有这个开关 ⇒ 派不出去。建议移除后改加「专家」。" : undefined}
-                    >
-                      {KIND_LABEL[p.targetKind] ?? p.targetKind}
-                      {needsTeamGate(p.targetKind) ? " ·不可派" : ""}
-                    </em>
-                  )
+                  ? <em className="team-settings__tag" title={`后台调度目标：${p.targetKind}`}>{KIND_LABEL[p.targetKind] ?? p.targetKind}</em>
                   : <em className="team-settings__tag team-settings__tag--warn" title="手打的名字没有对应的智能体，派不了活">未绑定</em>}
               </span>
               <button type="button" className="team-settings__mini" onClick={() => void run(() => onMute(p.id, !p.muted))} disabled={busy}>
@@ -388,30 +397,49 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
           ))}
           {!partners.length && <li className="team-settings__empty">还没有伙伴 —— 下面从智能体列表里加一个</li>}
         </ul>
+        <div className="team-settings__modes" role="tablist" aria-label="伙伴添加模式">
+          {ADD_MODES.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="tab"
+              aria-selected={addMode === m}
+              aria-disabled={modeStates[m].blocked}
+              title={modeStates[m].blocked ? modeStates[m].reason : undefined}
+              className={`team-settings__mode${addMode === m ? " is-on" : ""}${modeStates[m].blocked ? " is-blocked" : ""}`}
+              onClick={() => { setAddMode(m); setPick(""); }}
+            >{MODE_LABEL[m]}</button>
+          ))}
+          <button type="button" className="team-settings__mode-refresh" title="重新读取后台专家 / 专家团列表" onClick={() => void reloadCatalog()}>刷新</button>
+        </div>
+        <p className="team-settings__hint">{MODE_HINT[addMode]}</p>
+        {activeModeState.blocked ? (
+          <p className="team-settings__mode-block" role="status">
+            <strong>{MODE_LABEL[addMode]}暂不可用</strong> · {activeModeState.reason}
+          </p>
+        ) : (
         <div className="team-settings__add">
           {options.length ? (
             <AppSelect
               value={pick}
               onChange={setPick}
+              /* ⛔ 满员时不再把整个下拉禁掉：三种模式各有什么对象仍要看得见，
+                 改成逐项置灰 + 下面「已达上限」的提示，用户先移除再加即可。 */
               options={[{ value: "", label: "选一个智能体…" }, ...options]}
               ariaLabel="选择要加入的智能体"
-              disabled={busy || partners.length >= limit}
+              disabled={busy}
             />
           ) : (
             <span className="team-settings__empty">
-              {catalogError ? `读不到智能体清单：${catalogError}` : "没有可加的智能体（先在专家团 / 子智能体里建一个）"}
+              {catalogError ? `读不到智能体清单：${catalogError}` : "这个模式下后台还没有可加的对象，点「刷新」重读，或到设置 → 智能体团队里新建"}
             </span>
           )}
           <button type="button" onClick={() => void addPartner()} disabled={busy || !pick || partners.length >= limit}>
             添加伙伴
           </button>
         </div>
+        )}
         {partners.length >= limit && <p className="team-settings__hint">已达上限（最多 {limit} 个伙伴）</p>}
-        <p className="team-settings__hint">
-          能加的只有<strong>开箱可派</strong>的三类：专家、子智能体、本机 CLI。
-          <strong>专家团成员 / 专家团</strong>需要「专家团」许可，而应用目前还没有提供这个开关，
-          所以先不列出来（选了也派不出去）。
-        </p>
       </section>
 
       {/* ── 上下级（豆包 managerId）：真生效 —— 派活时会把这个伙伴的上级/可派对象写进 prompt ── */}
@@ -855,68 +883,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             加一条
           </button>
         </div>
-      </section>
-
-      {/* ── 用量（豆包 §2.④：维度是 (agent, 触发来源)，不是 (用户)）──────────── */}
-      <section className="team-settings__block">
-        <h3>
-          <BarChart3 size={14} className="ic-blue" />
-          用量
-          <span className="team-settings__count">{ledger ? `${ledger.total.count} 次` : "—"}</span>
-        </h3>
-        <p className="team-settings__hint">
-          按<strong>（伙伴、触发来源）</strong>两个维度拆 —— 这是「一开始就记、事后补不回来」的那张表。
-          <strong>token 是引擎报的真实值</strong>（每轮 `last` 桶）；没拿到时显示「—」，⛔ 不拿字符数冒充。
-        </p>
-        <div className="team-settings__inline-row">
-          <span className="team-settings__select">
-            <AppSelect
-              value={String(ledgerDays)}
-              onChange={(v) => { const d = Number(v) || 7; setLedgerDays(d); onLoadLedger(d); }}
-              options={[{ value: "7", label: "近 7 天" }, { value: "30", label: "近 30 天" }, { value: "0", label: "全部" }]}
-              ariaLabel="统计窗口"
-              disabled={busy}
-            />
-          </span>
-          <button type="button" className="team-settings__mini" onClick={() => onLoadLedger(ledgerDays)} disabled={busy}>
-            刷新
-          </button>
-        </div>
-        {ledger && ledger.total.count > 0 ? (
-          <>
-            <div className="team-settings__stats">
-              <span><strong>{ledger.total.count}</strong> 次派活</span>
-              <span><strong>{formatTokens(ledger.total.totalTokens)}</strong> tok</span>
-              <span>入 <strong>{formatTokens(ledger.total.inputTokens)}</strong> · 出 <strong>{formatTokens(ledger.total.outputTokens)}</strong></span>
-              <span>均 <strong>{formatMs(ledger.total.avgMs)}</strong></span>
-              {ledger.total.failed > 0 && <span className="is-warn"><strong>{ledger.total.failed}</strong> 次失败</span>}
-            </div>
-            <ul className="team-settings__usage">
-              {ledger.byPartner.map((p) => {
-                /* 条形按 token 排（更接近真实成本）；老账本没有 token 时退回字数 */
-                const useTok = ledger.total.totalTokens > 0;
-                const basis = (x: typeof p) => (useTok ? x.totalTokens : x.chars);
-                const max = Math.max(1, basis(ledger.byPartner[0]));
-                return (
-                  <li key={p.memberId}>
-                    <span className="team-settings__usage-name">{p.name}</span>
-                    <span className="team-settings__usage-bar"><i style={{ width: `${Math.max(4, Math.round((basis(p) / max) * 100))}%` }} /></span>
-                    <span className="team-settings__usage-num" title={`${p.count} 次 · ${formatChars(p.chars)} 字 · ${formatMs(p.avgMs)}`}>
-                      {p.count} 次 · {formatTokens(p.totalTokens)} tok · {formatMs(p.avgMs)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-            <div className="team-settings__sources">
-              {ledger.bySource.map((x) => (
-                <em key={x.source}>{LEDGER_SOURCE_LABELS[x.source] ?? x.source} · {x.count}</em>
-              ))}
-            </div>
-          </>
-        ) : (
-          <p className="team-settings__empty">{ledger ? "这段时间还没有派活记录" : "点「刷新」看用量"}</p>
-        )}
       </section>
 
       {/* ── 体检（只在真有问题时出现；"还没有伙伴"这类建议也写在这里，但语气是建议） ── */}

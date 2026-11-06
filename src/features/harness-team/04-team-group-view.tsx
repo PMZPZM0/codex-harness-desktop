@@ -14,13 +14,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
-import type { LedgerSummary, LiveRun } from "./02-team-store";
+import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Markdown } from "../markdown";
 import { TeamMenuButton } from "./06-team-menu";
 import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
+import { TeamCards } from "./11-team-cards";
 import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-composer";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
@@ -59,9 +60,6 @@ type Props = {
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 立刻运行一条定时任务 */
   onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
-  /** 用量汇总 + 拉取 */
-  ledger?: LedgerSummary | null;
-  onLoadLedger: (days: number) => void;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
   onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
@@ -93,7 +91,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  ledger, onLoadLedger, onStopPartner, live,
+  onStopPartner, live,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
@@ -170,6 +168,16 @@ export function TeamGroupView({
   const mentionPartner = (id: string) => {
     setAtTargets((prev) => (prev.includes(id) ? prev : [...prev, id]));
     composerRef.current?.focus();
+  };
+
+  /* ⛔ 11-06 用户：「补充文件引用和对话消息引用」——
+     引用一条群消息 = 以主对话同款 `> 引文` 前缀放进输入框（发送时模型能读到），
+     ⛔ 不新增群日志字段、⛔ 不改投影结构。 */
+  const quoteRow = (row: GroupMessageRow) => {
+    const quoted = String(row.text ?? "").trim().split("\n").map((line) => `> ${line}`).join("\n");
+    if (!quoted) return;
+    setText((prev) => `${prev.trimEnd()}${prev.trim() ? "\n\n" : ""}${quoted}\n\n`);
+    requestAnimationFrame(() => composerRef.current?.focus());
   };
 
   const toggleAt = (id: string) => {
@@ -282,6 +290,26 @@ export function TeamGroupView({
      上一条人类消息可能在被截掉的那一段里，⛔ 不能因此把引用丢成空白。 */
   const quotes = useMemo(() => buildReplyQuotes(rows), [rows]);
 
+  /* ⛔ 11-06 用户：「补充文件引用」——候选只从**群消息正文里真实出现过的本机路径**扫，
+     ⛔ 不猜、不建索引；选中的路径仍走现有 `opts.files` / `[附件文件]` 段（与主对话同口径）。 */
+  const fileCandidates = useMemo(() => {
+    const seen = new Set<string>();
+    const out: Array<{ path: string; source: string }> = [];
+    const re = /[A-Za-z]:[\\/][^\s"'<>|*?\n]+/g;
+    for (const r of rows) {
+      const text = String(r.text ?? "");
+      for (const m of text.matchAll(re)) {
+        const p = m[0].replace(/[.,;:)\]】]+$/, "");
+        if (!p || seen.has(p)) continue;
+        seen.add(p);
+        out.push({ path: p, source: nameOf(r.authorId) });
+        if (out.length >= 40) return out;
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
   /* ⛔ 折叠/展开改变内容高度后必须重算贴底（项目纪律：pin-shrink-follow）。
      群头全局开关删掉后改由折叠组自己的过渡结束事件触发（主对话 Fold 用
      grid-template-rows 过渡），这样**单行**开合也能覆盖；只在用户本来贴底时跟，
@@ -388,8 +416,6 @@ export function TeamGroupView({
           onSaveMenuPlacement={onSaveMenuPlacement}
           onSaveSchedules={onSaveSchedules}
           onRunSchedule={onRunSchedule}
-          ledger={ledger}
-          onLoadLedger={onLoadLedger}
         />
       ) : (
         <div className="team-group__body">
@@ -481,6 +507,7 @@ export function TeamGroupView({
                                 onAskAgain={() => askAgain(row)}
                               />
                             )}
+                            {isBot && <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} />}
                           </>
                         )}
                         {isBot && (
@@ -489,6 +516,7 @@ export function TeamGroupView({
                               {copied === row.key ? "已复制" : "复制"}
                             </button>
                             <button type="button" onClick={() => askAgain(row)}>追问</button>
+                            <button type="button" onClick={() => quoteRow(row)} title="把这条消息引用到输入框（发送时带 > 引文）">引用</button>
                             {mentioned.map((m) => (
                               <button
                                 key={m.id}
@@ -602,6 +630,7 @@ export function TeamGroupView({
                 canSend={Boolean(text.trim() && (atTargets.length || /^\/stop\b/.test(text.trim())))}
                 onSend={() => void send()}
                 targetNames={atTargets.map(nameOf)}
+                fileCandidates={fileCandidates}
               />
               <div className="team-group__send-row">
                 <span className="team-group__hint">

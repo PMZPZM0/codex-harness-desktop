@@ -62,7 +62,22 @@ export async function runDelegatedTask(input: {
      放在 canDispatchFrom **之后**：身份与锁的错更根本，先报那个。
      ⛔ 闸收在 runDelegatedTask（两条入口 agent_invoke MCP 与 agents:invoke IPC 都经过它），
      不在 dispatch-rpc 里各写一份 —— 一处漏了就是同一条 bug 再犯一次。 */
-  const kindGate = dispatchKindAllowed(input.kind, originDispatch);
+  /* ⛔└ 11-06 用户令：「新增专家团直接调度功能」——
+     群聊手动 @ 与群定时任务固定传 originThreadId=""（全仓仅这两处，见
+     harness-team/02-team-store.ts 与 harness-team-ipc.ts 的 dispatchGroupText），
+     是**用户在界面上显式点名**派活，不是模型自派。会话级「专家团」开关是给模型
+     自派用的安全闸（dispatchKindAllowed 的 reason 就是写给模型的）；origin 为空时
+     没有任何会话运行时可读 ⇒ team 恒 false ⇒ 群里选了专家团也永远派不出去。
+     ⇒ 仅当 origin 为空且目标是团/团成员时，合并 team:true 再过闸；
+       ⛔ 带 origin 的委派（主对话、agent_invoke 工具）仍严格按会话配置，不放宽。 */
+  const groupDirectTeam = !origin && (input.kind === "team" || input.kind === "member");
+  /* origin 为空 ⇒ originDispatch 恒为 null，这里给一份完整的显式许可
+     （与 DISPATCH_DEFAULTS 同形，只把 team 打开）。
+     ⛔ 两个分支都走同一个 dispatchKindAllowed，⛔ 不许另写一套判据 ——
+        守卫「勾选硬闸接线到 runDelegatedTask」钉的就是默认分支那一行的字面量。 */
+  const kindGate = groupDirectTeam
+    ? dispatchKindAllowed(input.kind, { expert: true, team: true, subagent: true })
+    : dispatchKindAllowed(input.kind, originDispatch);
   if (!kindGate.ok) return { ok: false, output: "", error: kindGate.reason };
   /* ⛔ 原先这里有一道 L4 并发闸（同时进行的调度任务上限，超限就拒）。09-25 用户要求删除并发限制
      ⇒ 移除；一次 fan-out 派多少成员不再受限（后果：更容易撞上游 429，由引擎默认重试兜底）。

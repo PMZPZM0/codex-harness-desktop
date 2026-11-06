@@ -66,7 +66,11 @@ function turnsOf(threadId: string): Promise<TeamTurn[]> {
   return task;
 }
 
-export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, onAskAgain }: Props) {
+/**
+ * 群消息 → 子会话回合（过程折叠与汇总展示卡共用，⛔ 不各拉一次 IPC）。
+ * 数据源与负缓存口径见 `turnsOf`：拉不到不画空壳，30s 后允许重试。
+ */
+export function useTeamTurn(threadId: string, at: number, bodyText: string): { turn: TeamTurn | null; loading: boolean } {
   const [turns, setTurns] = useState<TeamTurn[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -83,6 +87,11 @@ export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, runni
   }, [threadId]);
 
   const turn = useMemo(() => pickTurnOf(turns, at, bodyText), [turns, at, bodyText]);
+  return { turn, loading };
+}
+
+export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, onAskAgain }: Props) {
+  const { turn, loading } = useTeamTurn(threadId, at, bodyText);
 
   /** 过程项 = 工具/命令/编辑/技能/思考；正文（agentMessage）不进折叠，由父层正常渲染。 */
   const units = useMemo(() => {

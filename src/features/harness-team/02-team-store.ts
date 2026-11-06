@@ -39,15 +39,6 @@ export type LiveRun = {
   error?: string;
 };
 
-/** 与 `src/lib/team-ledger.mjs` 的 summarizeLedger 返回一致（只声明界面用到的字段） */
-type LedgerBucket = { count: number; chars: number; inputTokens: number; outputTokens: number; totalTokens: number; ms: number; failed: number; avgMs: number };
-export type LedgerSummary = {
-  window: { since: number; days: number; groupId: string };
-  total: LedgerBucket & { partners: number };
-  byPartner: Array<LedgerBucket & { memberId: string; name: string }>;
-  bySource: Array<LedgerBucket & { source: string }>;
-};
-
 type RowsResult = { ok: boolean; rows: GroupMessageRow[]; error?: string; entry?: unknown };
 
 /** 派活回执（`agents:invoke`）——字段与主进程 `runDelegatedTask` 的返回一致。 */
@@ -79,8 +70,6 @@ export function useTeamGroups() {
   const [busyByGroup, setBusyByGroup] = useState<Record<string, string[]>>({});
   /** 上次派活的失败说明（⛔ 与群日志分开：那是"没派出去"，不是"它说了什么"） */
   const [dispatchError, setDispatchError] = useState("");
-  /** 当前群的用量汇总（按 (伙伴, 来源) 拆；豆包 §2.④ 口径） */
-  const [ledger, setLedger] = useState<LedgerSummary | null>(null);
   /** 正在流式输出的伙伴（按群 → threadId）—— 卡片原地刷新，⛔ 不新建消息 */
   const [liveByGroup, setLiveByGroup] = useState<Record<string, Record<string, LiveRun>>>({});
   /** ⛔ 卸载后不许再 setState（派活可能跑几分钟） */
@@ -325,15 +314,6 @@ export function useTeamGroups() {
     }
   }, []);
 
-  const loadLedger = useCallback(async (groupId: string, days = 7) => {
-    try {
-      const res = (await window.codex.harnessTeamLedger(groupId, days)) as LedgerSummary & { ok: boolean };
-      setLedger(res?.ok ? res : null);
-    } catch {
-      setLedger(null);
-    }
-  }, []);
-
   /**
    * 派活：@ 了谁就把同一句话交给谁，各自落各自的子会话。
    * ⛔ 并发（不是串行）：两个伙伴同时开工，回复按**各自完成时间**进同一条时间轴。
@@ -348,15 +328,8 @@ export function useTeamGroups() {
       /* 静音 = 不打扰：@ 了也不派（⛔ 但要说清是"被静音"而不是"没选"） */
       const targets = picked.filter((m) => !m.muted);
       if (!targets.length) return { ok: false, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
-      /* ⛔ 专家团成员/团需要「专家团」许可，而应用没有这个开关 ⇒ 提前说清，
-         别让它走到主进程再回一条"去顶栏打开专家团"（那个开关不存在）。 */
-      const gated = targets.filter((m) => m.targetKind === "member" || m.targetKind === "team");
-      if (gated.length) {
-        return {
-          ok: false,
-          error: `「${gated.map((m) => m.name).join("、")}」是专家团成员/团，需要「专家团」许可；应用目前没有这个开关，派不出去。请在群设置里换成「专家」。`,
-        };
-      }
+      /* 11-06 用户令：群聊「专家团直接调度」已放开（主进程只对 origin="" 的界面直派
+         合并 team 许可），这里不再前置拒绝 team / member 伙伴。 */
       const unbound = targets.filter((m) => !m.targetKind || !m.targetKey);
       if (unbound.length) {
         return { ok: false, error: `「${unbound.map((m) => m.name).join("、")}」还没绑定智能体，去群设置里换成列表里的那一个` };
@@ -701,9 +674,9 @@ export function useTeamGroups() {
 
   return {
     groups, issues, blockers, limit, loading, error,
-    rowsByGroup, busyByGroup, liveByGroup, dispatchError, ledger,
+    rowsByGroup, busyByGroup, liveByGroup, dispatchError,
     refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
-    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, loadLedger, stopPartner, clearMessages,
+    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, clearMessages,
   };
 }

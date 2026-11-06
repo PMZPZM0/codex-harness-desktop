@@ -170,8 +170,7 @@ export function scheduleBlockers(group, entry) {
   if (muted.length === picked.length) out.push(`「${muted.map((m) => m.name).join("、")}」已静音，到点也不会跑`);
   const unbound = picked.filter((m) => !m.targetKind || !m.targetKey);
   if (unbound.length) out.push(`「${unbound.map((m) => m.name).join("、")}」没绑定智能体，到点派不出去`);
-  const gated = picked.filter((m) => m.targetKind === "member" || m.targetKind === "team");
-  if (gated.length) out.push(`「${gated.map((m) => m.name).join("、")}」需要「专家团」许可，应用目前没有这个开关`);
+  /* 11-06 用户令：群聊专家团已可直接调度，不再是体检阻断项 */
   if (entry?.kind === "once" && !String(entry?.scheduledAt ?? "").trim()) out.push("一次性任务还没设时间");
   return out;
 }

@@ -191,3 +191,4 @@ export function groupThreadId(groupId: string): string;
 export function normalizeGroupMessage(entry: unknown): GroupLogMessage | null;
 export function appendGroupMessage(list: unknown, entry: unknown, max?: number): GroupLogMessage[];
 export function projectGroupLog(messages: unknown): GroupMessageProjected[];
+export function addModeStateOf(partners: unknown, mode: string): { blocked: boolean; reason: string };

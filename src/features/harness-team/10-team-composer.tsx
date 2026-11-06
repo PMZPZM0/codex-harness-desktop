@@ -21,8 +21,8 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { Bot, ChevronDown, ChevronLeft, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
-import { ComposerMenu } from "../composer";
+import { Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
@@ -106,20 +106,23 @@ type Props = {
   canSend: boolean;
   onSend: () => void;
   targetNames: string[];
+  /** 群里出现过的本机路径（「引用群里的文件」候选，由父层从消息投影里扫出来） */
+  fileCandidates?: Array<{ path: string; source: string }>;
 };
 
 type ModelOption = { value: string; title: string; desc?: string };
 
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
-  opts, onOpts, sending, canSend, onSend, targetNames,
+  opts, onOpts, sending, canSend, onSend, targetNames, fileCandidates = [],
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
      原来是「一级菜单里缩进一小块竖线列表」，既不像主对话也读不清。
      ⇒ 点「引用技能」后整个面板切到主对话同款「搜索 + 图标列表」视图。 */
-  const [plusView, setPlusView] = useState<"main" | "skills">("main");
+  const [plusView, setPlusView] = useState<"main" | "skills" | "files">("main");
   const [skillQuery, setSkillQuery] = useState("");
+  const [fileQuery, setFileQuery] = useState("");
   const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
   const [models, setModels] = useState<ModelOption[]>([{ value: "", title: "跟随全局" }]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -238,6 +241,24 @@ export function TeamComposer({
             {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
           </div>
         </div>
+      ) : plusView === "files" ? (
+        <div className="team-composer__skill-pane">
+          <div className="team-composer__skill-head">
+            <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
+            <span>引用群里的文件</span>
+            <button type="button" aria-label="关闭文件引用面板" onClick={() => setPlusView("main")}><X size={13} /></button>
+          </div>
+          <ThreadFilePicker
+            query={fileQuery}
+            onQuery={setFileQuery}
+            candidates={fileCandidates}
+            onPick={(path) => {
+              onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
+              setPlusView("main");
+            }}
+            onClose={() => setPlusView("main")}
+          />
+        </div>
       ) : (
         <textarea
           ref={textareaRef}
@@ -270,6 +291,9 @@ export function TeamComposer({
                         同一个动作只留一个入口，菜单里不再重复。 */}
                     <button type="button" role="menuitem" onClick={() => { setPlusView("skills"); setPlusOpen(false); setSkillQuery(""); }}>
                       <Sparkles size={16} /><span>引用技能</span><ChevronDown size={14} className="submenu-chevron" />
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { setPlusView("files"); setPlusOpen(false); setFileQuery(""); }}>
+                      <FolderOpen size={16} /><span>引用群里的文件</span><ChevronDown size={14} className="submenu-chevron" />
                     </button>
                     <button type="button" role="menuitem" onClick={() => { onOpts({ ...opts, files: [], skills: [] }); setPlusOpen(false); }}>
                       <X size={16} /><span>清空本轮附件</span>
