@@ -49,6 +49,12 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
   const [previewId, setPreviewId] = useState("");
   /** 一键装卸在跑的条目（busy 期间按钮换 spinner、整行锁操作）。 */
   const [busyId, setBusyId] = useState("");
+  /** 当前在跑的动作类型（安装 / 更新 / 卸载）——进度条文案用。 */
+  const [busyKind, setBusyKind] = useState<"install" | "update" | "uninstall" | "">("");
+  const [busyStart, setBusyStart] = useState(0);
+  const [elapsed, setElapsed] = useState(0);
+  /** 已安装 CLI 的最新版本（11-06：npm/pip 查一次，缓存 10 分钟）。 */
+  const [updates, setUpdates] = useState<Record<string, { current: string; latest: string; hasUpdate: boolean; error?: string }>>({});
   const [logs, setLogs] = useState<{ id: string; text: string }[]>([]);
   /** 卸载确认弹窗（SettingsDialog：设置页里 AppView 的 confirm 会被 sheet 压住看不见）。 */
   const [uninstallId, setUninstallId] = useState("");
@@ -65,19 +71,33 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
     }
   }, []);
 
-  const runDetect = useCallback(async (item: CliAgentEntry) => {
+  const runDetect = useCallback(async (item: CliAgentEntry): Promise<boolean> => {
     setDetect((current) => ({ ...current, [item.id]: { state: "busy" } }));
     try {
       const res = await window.codex.detectCliAgent({ id: item.id });
+      const installed = Boolean(res?.installed);
       setDetect((current) => ({
         ...current,
-        [item.id]: res?.installed
+        [item.id]: installed
           ? { state: "ok", version: String(res.version ?? ""), path: String(res.path ?? "") }
           : { state: "miss" },
       }));
+      return installed;
     } catch {
       setDetect((current) => ({ ...current, [item.id]: { state: "miss" } }));
+      return false;
     }
+  }, []);
+
+  /** 查已安装 CLI 的最新版本（npm view / pip index，主进程缓存 10 分钟）。 */
+  const refreshUpdates = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    try {
+      const res = (await window.codex.checkCliAgentUpdates(ids)) as { items?: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> };
+      const map: Record<string, { current: string; latest: string; hasUpdate: boolean; error?: string }> = {};
+      for (const item of res?.items ?? []) map[item.id] = { current: item.current, latest: item.latest, hasUpdate: item.hasUpdate, error: item.error };
+      setUpdates(map);
+    } catch { /* 网络失败静默：没有更新提示不代表不能升级，预览弹窗仍可手动检测 */ }
   }, []);
 
   /* 10-30 用户令「装没装要实时同步」：打开面板**自动检测一轮**（并行；有子进程，只在本页跑），
@@ -86,14 +106,16 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
     void (async () => {
       try {
         const res = (await window.codex.listCliAgents()) as { items: CliAgentEntry[]; categories: CliCategory[] };
-        setItems(Array.isArray(res?.items) ? res.items : []);
+        const list = Array.isArray(res?.items) ? res.items : [];
+        setItems(list);
         setCategories(Array.isArray(res?.categories) ? res.categories : []);
-        await Promise.all((Array.isArray(res?.items) ? res.items : []).map(runDetect));
+        const installed = (await Promise.all(list.map(async (item) => ((await runDetect(item)) ? item.id : "")))).filter(Boolean);
+        void refreshUpdates(installed);
       } catch (e) {
         setError(`读取 CLI 列表失败：${(e as Error)?.message ?? e}`);
       }
     })();
-  }, [runDetect]);
+  }, [refreshUpdates, runDetect]);
 
   /* 进度与变更事件：cli-agent-install（装卸进度）+ cli-agents-changed（目录变了 → 重拉 + 重检测）。 */
   useEffect(() => window.codex.onHarnessEvent?.((payload: CliAgentEvent) => {
@@ -107,13 +129,15 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
       void (async () => {
         try {
           const res = (await window.codex.listCliAgents()) as { items: CliAgentEntry[]; categories: CliCategory[] };
-          setItems(Array.isArray(res?.items) ? res.items : []);
+          const list = Array.isArray(res?.items) ? res.items : [];
+          setItems(list);
           setCategories(Array.isArray(res?.categories) ? res.categories : []);
-          await Promise.all((Array.isArray(res?.items) ? res.items : []).map(runDetect));
+          const installed = (await Promise.all(list.map(async (item) => ((await runDetect(item)) ? item.id : "")))).filter(Boolean);
+          void refreshUpdates(installed);
         } catch { /* 面板已挂载过一次成功，事件期失败静默 */ }
       })();
     }
-  }), [runDetect]);
+  }), [refreshUpdates, runDetect]);
 
   const groups = useMemo(() => groupCliAgents(items, categories, query), [items, categories, query]);
   const counts = useMemo(() => countCliAgents(items, categories, query), [items, categories, query]);
@@ -122,9 +146,19 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
   const uninstallTarget = items.find((item) => item.id === uninstallId) ?? null;
   const categoryLabelOf = (key: string) => categories.find((cat) => cat.key === key)?.label ?? "未分类";
 
+  /** 进度计时：装卸期间每秒刷新「已用时」，结束后清零。 */
+  useEffect(() => {
+    if (!busyId) { setElapsed(0); return; }
+    const start = Date.now();
+    setElapsed(0);
+    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [busyId]);
+
   const install = useCallback(async (item: CliAgentEntry) => {
     if (busyId) return;
     setBusyId(item.id);
+    setBusyKind("install");
     setLogs([]);
     try {
       const res = await window.codex.installCliAgent(item.id);
@@ -134,13 +168,42 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
       notify(`安装失败：${(e as Error)?.message ?? e}`);
     } finally {
       setBusyId("");
-      await runDetect(item);
+      setBusyKind("");
+      const installed = await runDetect(item);
+      if (installed) void refreshUpdates([item.id]);
     }
-  }, [busyId, notify, runDetect]);
+  }, [busyId, notify, refreshUpdates, runDetect]);
+
+  const update = useCallback(async (item: CliAgentEntry) => {
+    if (busyId) return;
+    setBusyId(item.id);
+    setBusyKind("update");
+    setLogs([]);
+    try {
+      const res = await window.codex.updateCliAgent(item.id);
+      if (!res?.ok) notify(res?.error ?? "更新失败");
+      else notify(res.detail || `已更新「${item.name}」`);
+    } catch (e) {
+      notify(`更新失败：${(e as Error)?.message ?? e}`);
+    } finally {
+      setBusyId("");
+      setBusyKind("");
+      const installed = await runDetect(item);
+      if (installed) void refreshUpdates([item.id]);
+      else setUpdates((current) => { const next = { ...current }; delete next[item.id]; return next; });
+    }
+  }, [busyId, notify, refreshUpdates, runDetect]);
+
+  /** 取消 = 主进程 kill 子进程（真停）。 */
+  const cancelBusy = useCallback(async () => {
+    if (!busyId) return;
+    try { await window.codex.cancelCliAgentInstall(busyId); } catch { /* 已结束时忽略 */ }
+  }, [busyId]);
 
   const uninstall = useCallback(async (item: CliAgentEntry) => {
     if (busyId) return;
     setBusyId(item.id);
+    setBusyKind("uninstall");
     setUninstallId("");
     try {
       const res = await window.codex.uninstallCliAgent(item.id);
@@ -150,7 +213,9 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
       notify(`卸载失败：${(e as Error)?.message ?? e}`);
     } finally {
       setBusyId("");
+      setBusyKind("");
       await runDetect(item);
+      setUpdates((current) => { const next = { ...current }; delete next[item.id]; return next; });
     }
   }, [busyId, notify, runDetect]);
 
@@ -209,6 +274,24 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
     notify("安装命令已复制（也可以直接点「一键安装」）");
   }, [notify]);
 
+  /* 进度卡：面板顶部与预览弹窗里**各放一份**（弹窗盖住面板时也能看到进度 / 取消）。 */
+  const progressNode = busyId ? (() => {
+    const busyItem = items.find((entry) => entry.id === busyId);
+    const lastLog = [...logs].reverse().find((entry) => entry.id === busyId)?.text ?? "";
+    return (
+      <div className="cli-install-progress" role="status" aria-live="polite">
+        <div className="cli-install-progress-head">
+          <LoaderCircle size={14} className="spin" />
+          <strong>{busyKind === "update" ? "正在更新" : busyKind === "uninstall" ? "正在卸载" : "正在安装"}「{busyItem?.name || "CLI"}」</strong>
+          <span className="cli-install-progress-elapsed">{elapsed}s</span>
+          <button type="button" className="secondary-setting cli-install-cancel" onClick={() => void cancelBusy()}>取消</button>
+        </div>
+        <div className="cli-install-progress-track" aria-hidden="true"><i /></div>
+        <small>{lastLog || "准备中…"}</small>
+      </div>
+    );
+  })() : null;
+
   return (
     <div className="cli-agents">
       <div className="cli-agents-toolbar">
@@ -239,6 +322,9 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
           </button>
         ))}
       </div>
+
+      {/* 11-06 用户令：「加一个安装进度条」——装卸期间常驻一条进度卡：已用时 + 不定长滚动条 + 最后一行日志 + 取消（真 kill）。 */}
+      {progressNode}
 
       {draft ? (
         <div className="cli-agent-form">
@@ -308,7 +394,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                     seed={item.id || item.name}
                     name={item.name}
                     tag={item.builtin ? "内置" : undefined}
-                    line={`${categoryLabelOf(item.category)} · ${busyId === item.id ? "安装中…" : installed ? (status?.version || "已安装") : "未安装"}`}
+                    line={`${categoryLabelOf(item.category)} · ${busyId === item.id ? "处理中…" : installed ? (updates[item.id]?.hasUpdate ? `可更新 · ${updates[item.id].current || "?"} → ${updates[item.id].latest}` : (status?.version || "已安装")) : "未安装"}`}
                     disabled={!item.enabled}
                     onClick={() => setPreviewId(item.id)}
                   />
@@ -346,7 +432,16 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                   <p>{preview.description || "这个 CLI 还没有写说明 —— 派活时模型只能靠名字猜。"}</p>
                 </div>
               </div>
+              {progressNode}
               <div className="agent-preview-actions">
+                {installed && updates[preview.id]?.hasUpdate ? (
+                  <button className="primary-setting" disabled={Boolean(busyId)} onClick={() => void update(preview)}>
+                    {busy ? <LoaderCircle size={12} className="spin" /> : <RefreshCw size={12} />}更新到 {updates[preview.id].latest}
+                  </button>
+                ) : null}
+                {busy ? (
+                  <button className="secondary-setting" onClick={() => void cancelBusy()}><X size={12} />取消</button>
+                ) : null}
                 {installed ? (
                   <button className="secondary-setting agent-preview-danger" disabled={busy} onClick={() => setUninstallId(preview.id)}>
                     {busy ? <LoaderCircle size={12} className="spin" /> : <Trash2 size={12} />}卸载
@@ -372,7 +467,8 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                     {installed ? <Check size={11} /> : <Terminal size={11} />}
                     {status?.state === "busy" ? "检测中…" : installed ? `已安装${status?.version ? ` · ${status.version}` : ""}` : "未安装"}
                   </span>
-                  <span>{preview.installCmd ? "支持一键安装" : "按官方文档安装"}</span>
+                  <span>{preview.installCmd ? "支持一键安装 / 更新" : "按官方文档安装"}</span>
+                  {updates[preview.id]?.hasUpdate ? <span className="is-warn">可更新 {updates[preview.id].current || "?"} → {updates[preview.id].latest}</span> : null}
                   {preview.builtin ? <span>内置</span> : null}
                 </div>
                 {status?.path ? <code className="agent-preview-code">{status.path}</code> : null}

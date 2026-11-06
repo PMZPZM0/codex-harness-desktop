@@ -279,3 +279,36 @@
 @media (max-width: 720px) {
   .cli-agent-form-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 11-06 用户令：「加一个安装进度条」────────────────────────────────────────
+   装卸/更新期间常驻一条进度卡：不定长滚动条（npm/pip 不给可靠百分比，⛔ 不编假进度）、
+   已用时、最后一行日志，右侧「取消」真 kill 子进程。 */
+.cli-install-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.cli-install-progress-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cli-install-progress-head strong { font-weight: 600; }
+.cli-install-progress-elapsed { color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cli-install-cancel { margin-left: auto; min-height: 24px; padding: 0 10px; font-size: 11px; }
+.cli-install-progress-track { position: relative; height: 6px; border-radius: 999px; background: var(--line-soft); overflow: hidden; }
+.cli-install-progress-track > i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 35%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--green), transparent);
+  animation: cli-install-sweep 1.1s ease-in-out infinite;
+}
+@keyframes cli-install-sweep {
+  0% { left: -35%; }
+  100% { left: 100%; }
+}
+.cli-install-progress small { color: var(--faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-preview-meta .is-warn { color: var(--orange, #f59e0b); }

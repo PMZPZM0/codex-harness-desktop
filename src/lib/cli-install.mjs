@@ -58,3 +58,40 @@ export function parseInstallCommand(cmd) {
   }
   return { manager: "", packages: [], error: "这条安装命令不是 npm / pip 形式，请复制到终端执行" };
 }
+
+/* ── 版本比较 / 更新包名（11-06「CLI 智能体加更新功能」）──────────────────────
+   纯函数：守卫直接 import 真跑；⛔ 执行端不要自己再写一份比较逻辑。 */
+
+/** 去掉 v 前缀与预发布/构建后缀，只留数字段（`v1.2.3-beta.1` → `1.2.3`）。 */
+export function normalizeVersion(value) {
+  return String(value ?? "").trim().replace(/^v/i, "").split(/[-+]/)[0];
+}
+
+/** 数字段逐段比较：a<b 返回 -1，相等 0，a>b 1；无法解析返回 0（不误报更新）。 */
+export function compareVersions(a, b) {
+  const pa = normalizeVersion(a).split(".").map((x) => Number.parseInt(x, 10));
+  const pb = normalizeVersion(b).split(".").map((x) => Number.parseInt(x, 10));
+  if (!pa.length || !pb.length || pa.some((n) => !Number.isFinite(n)) || pb.some((n) => !Number.isFinite(n))) return 0;
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] ?? 0;
+    const y = pb[i] ?? 0;
+    if (x !== y) return x < y ? -1 : 1;
+  }
+  return 0;
+}
+
+/** 已装版本低于最新版本才算「可更新」；任一版本取不到就不报更新（⛔ 不拿猜测当结论）。 */
+export function hasCliUpdate(current, latest) {
+  const cur = normalizeVersion(current);
+  const next = normalizeVersion(latest);
+  if (!cur || !next) return false;
+  return compareVersions(cur, next) < 0;
+}
+
+/** 更新时把包名补成 `@latest`：`@scope/name` 的 @ 在开头（不是版本），已有版本后缀的保持原样。 */
+export function withLatestPackage(spec) {
+  const raw = String(spec ?? "").trim();
+  if (!raw) return raw;
+  return raw.lastIndexOf("@") > 0 ? raw : `${raw}@latest`;
+}

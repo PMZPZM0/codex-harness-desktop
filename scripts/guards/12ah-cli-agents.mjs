@@ -280,7 +280,7 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "卸载走 SettingsDialog 确认弹窗（设置页里 AppView 的 confirm 会被 sheet 压住看不见）");
   ok(/"cli-agents-changed"/.test(panelSrc) && /"cli-agent-install"/.test(panelSrc),
     "面板订阅 cli-agent-install（进度）与 cli-agents-changed（变更刷新）");
-  ok(/await Promise\.all\(\(Array\.isArray\(res\?\.items\) \? res\.items : \[\]\)\.map\(runDetect\)\)/.test(panelSrc),
+  ok(/await Promise\.all\(list\.map\(async \(item\) => \(\(await runDetect\(item\)\) \? item\.id : ""\)\)\)/.test(panelSrc),
     "打开面板自动并行检测一轮（装没装实时可见，不用先点「全部检测」）");
 }
 
@@ -456,6 +456,31 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "平台替换只在 darwin 生效、且只对「有 mac 变体」的条目生效");
   ok(/const base = withPlatformCmd\(preset\);[\s\S]{0,160}?\.\.\.base, \.\.\.override/.test(mainSrc),
     "⛔ 先换平台命令再盖用户改动（反序 = 用户改过的安装命令被 mac 变体盖回去）");
+}
+
+/* ── 11-06 更新功能 + 安装进度条（用户令：「CLI 智能体加更新功能」「加一个安装进度条」）── */
+{
+  const installSrc = readFileSync(join(ROOT, "electron/cli-install.ts"), "utf8");
+  const ver = await import(new URL("../../src/lib/cli-install.mjs", import.meta.url).href);
+  ok(typeof ver.compareVersions === "function" && typeof ver.hasCliUpdate === "function" && typeof ver.withLatestPackage === "function",
+    "版本比较 / 更新包名是纯函数（守卫直接真跑）");
+  ok(ver.compareVersions("1.2.3", "1.4.0") === -1 && ver.compareVersions("2.0.0", "2.0") === 0 && ver.compareVersions("1.10.0", "1.9.9") === 1,
+    "compareVersions 真值表：小数段按数字比、缺段补 0");
+  ok(ver.hasCliUpdate("1.2.3", "1.2.3") === false && ver.hasCliUpdate("1.2.3", "1.4.0") === true && ver.hasCliUpdate("", "1.0.0") === false,
+    "只有已装版本低于最新才叫「可更新」；版本取不到不报更新");
+  ok(ver.withLatestPackage("@anthropic-ai/claude-code") === "@anthropic-ai/claude-code@latest"
+    && ver.withLatestPackage("@scope/name@1.2") === "@scope/name@1.2",
+    "withLatestPackage：作用域包的 @ 不算版本后缀");
+  ok(/export async function updateCliAgent/.test(installSrc) && /export async function checkCliAgentUpdates/.test(installSrc) && /export function cancelCliInstall/.test(installSrc),
+    "执行端提供 更新 / 检查更新 / 取消 三个实现");
+  ok((ipcSrc.match(/ipcHost\.handle\("cliagents:/g) ?? []).length >= 9
+    && /"cliagents:check-updates"/.test(ipcSrc) && /"cliagents:update"/.test(ipcSrc) && /"cliagents:cancel"/.test(ipcSrc),
+    "三个新通道已注册（manifest / registry 由【2】【153】对账）");
+  ok(/cli-install-progress/.test(panelSrc) && /cancelCliAgentInstall/.test(panelSrc)
+    && /updateCliAgent/.test(panelSrc) && /checkCliAgentUpdates/.test(panelSrc),
+    "面板：进度条 + 取消 + 更新按钮 + 检查更新接线");
+  ok(/child\.kill\(\)/.test(installSrc) && /cancelledIds/.test(installSrc),
+    "取消真 kill 子进程（⛔ 不是只把 UI 的 busy 清掉）");
 }
 
 rmSync(sandbox, { recursive: true, force: true });

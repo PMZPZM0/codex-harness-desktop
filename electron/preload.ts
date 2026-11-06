@@ -227,6 +227,12 @@ contextBridge.exposeInMainWorld("codex", {
   installCliAgent: (id: string) => __ipc("cliagents:install", 1, [id]),
   /* 配套卸载：只动应用自己的工具目录，系统里用户自装的另一份不越界 */
   uninstallCliAgent: (id: string) => __ipc("cliagents:uninstall", 1, [id]),
+  /* 11-06：查最新版本（npm view / pip index），结果缓存 10 分钟 */
+  checkCliAgentUpdates: (ids?: string[]) => __ipc("cliagents:check-updates", 0, [ids]),
+  /* 11-06 一键更新：npm i -g pkg@latest / pip install -U；真跑 + 复核 PATH */
+  updateCliAgent: (id: string) => __ipc("cliagents:update", 1, [id]),
+  /* 11-06 取消安装/更新：kill 子进程（真停，不是只改 UI） */
+  cancelCliAgentInstall: (id: string) => __ipc("cliagents:cancel", 1, [id]),
   /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
   respondCloseConfirm: (action: "tray" | "quit" | "cancel", remember: boolean) => __ipc("close-confirm:respond", 2, [action, remember]),
   /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */

@@ -1,8 +1,8 @@
 /**
  * cli-agents-ipc（10-29 新板块，用户令「开发工具界面新增一个 CLI 智能体模块」）
  *
- * 域：cliagents(6)
- * 通道：cliagents:list / detect / save / remove / install / uninstall
+ * 域：cliagents(9)
+ * 通道：cliagents:list / detect / save / remove / install / uninstall / check-updates / update / cancel
  *
  * ⛔ 这一层只做**管理面**（列出 / 检测是否已装 / 增改 / 删除 / 一键装卸）。
  *   **派活不在这里** —— CLI 作为调度对象走的是唯一那条通道：
@@ -15,11 +15,11 @@
  */
 import { broadcastHarnessEvent } from "./window-bus";
 import { CLI_CATEGORIES, detectCliAgent, invalidateCliInstalledCache, readCliAgents, removeCliAgent, saveCliAgent } from "../cli-agents";
-import { installCliAgent, uninstallCliAgent } from "../cli-install";
+import { cancelCliInstall, checkCliAgentUpdates, installCliAgent, uninstallCliAgent, updateCliAgent } from "../cli-install";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-const CLI_AGENTS_CHANNELS = ["cliagents:list", "cliagents:detect", "cliagents:save", "cliagents:remove", "cliagents:install", "cliagents:uninstall"];
+const CLI_AGENTS_CHANNELS = ["cliagents:list", "cliagents:detect", "cliagents:save", "cliagents:remove", "cliagents:install", "cliagents:uninstall", "cliagents:check-updates", "cliagents:update", "cliagents:cancel"];
 
 export const cliAgentsFeature = defineFeature<null>({
   id: "cliagents",
@@ -43,6 +43,10 @@ export const cliAgentsFeature = defineFeature<null>({
     });
     ipcHost.handle("cliagents:install", async (_event, id: string) => installCliAgent(String(id ?? "")));
     ipcHost.handle("cliagents:uninstall", async (_event, id: string) => uninstallCliAgent(String(id ?? "")));
+    /* 11-06：更新检查 / 一键更新 / 取消（真杀子进程）。 */
+    ipcHost.handle("cliagents:check-updates", async (_event, ids?: string[]) => checkCliAgentUpdates(Array.isArray(ids) ? ids.map(String) : undefined));
+    ipcHost.handle("cliagents:update", async (_event, id: string) => updateCliAgent(String(id ?? "")));
+    ipcHost.handle("cliagents:cancel", async (_event, id: string) => cancelCliInstall(String(id ?? "")));
 
     ctx.effect(() => {
       for (const ch of CLI_AGENTS_CHANNELS) ipcHost.removeHandler(ch);
