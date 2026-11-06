@@ -51,7 +51,6 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
   const [busyId, setBusyId] = useState("");
   /** 当前在跑的动作类型（安装 / 更新 / 卸载）——进度条文案用。 */
   const [busyKind, setBusyKind] = useState<"install" | "update" | "uninstall" | "">("");
-  const [busyStart, setBusyStart] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   /** 已安装 CLI 的最新版本（11-06：npm/pip 查一次，缓存 10 分钟）。 */
   const [updates, setUpdates] = useState<Record<string, { current: string; latest: string; hasUpdate: boolean; error?: string }>>({});

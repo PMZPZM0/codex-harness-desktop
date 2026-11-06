@@ -1476,7 +1476,13 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       /* ⛔ 11-06 用户令（截图）：「把这个子会话展开折叠放到这个会话选项里面，居中小长条展示」
          +「中间空白没那么多，紧凑一点」—— 单会话行的折叠键走 extras.footer **进到行内**，
          收起时只在行内多一行 14px 药丸，不再在行外多占一整行。 */
-      (dispatchedRendererSrc.includes("thread-row-footer") && /footer:\s*block\?\.bar/.test(dispatchedRendererSrc) ? ok : fail)(
+      /* 11-07 精确化：⛔ 原断言要求 01-sidebar-shell.tsx 里同时出现 "thread-row-footer" 与
+         "footer: block?.bar"，但 footer **容器**自始至终在 02-thread-attention-rows.tsx
+         （git show 05e1a1e2d:01-sidebar-shell.tsx 里该字符串计数为 0）⇒ 从引入起就锚错文件。
+         ⇒ 改成跨文件验证真实接线：传值端 + 渲染端各一条，注释用 codeOnly 剥掉。 */
+      const rowsSrcFooter = codeOnly(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8"));
+      (/footer:\s*block\?\.bar/.test(dispatchedRendererSrc)
+        && /extras\?\.footer && <div className="thread-row-footer">\{extras\.footer\}<\/div>/.test(rowsSrcFooter) ? ok : fail)(
         "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
       );
       (/\.thread-row-footer\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*-4px[^}]*height:\s*9px/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/.test(readStyles()) ? ok : fail)(
@@ -1485,7 +1491,16 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (!/\.thread-row\.has-footer > button/.test(readStyles()) ? ok : fail)(
         "【156】有子会话长条的行**不压缩名称行**（用户令：上面不要变动）"
       );
-      (!/<button[^>]*className="thread-child-bar"[\s\S]{0,420}?子会话/.test(dispatchedRendererSrc) ? ok : fail)(
+      /* 11-07 精确化：原负向断言用 [\s\S]{0,420}? 跨过 className 之后的 title / aria-label
+         属性区，把**无障碍文案**里的「子会话」当成可见文字 ⇒ 合规实现被自己同一提交误伤。
+         ⇒ 只取 button 的**可见子节点**（开标签 `>` 之后到 </button>），并正向确认箭头还在。 */
+      const barAt = dispatchedRendererSrc.indexOf('className="thread-child-bar"');
+      const barClose = dispatchedRendererSrc.indexOf("</button>", barAt);
+      const arrowAt = dispatchedRendererSrc.lastIndexOf("=>", barClose);
+      const barGt = dispatchedRendererSrc.indexOf(">", arrowAt + 2);
+      const barInner = barAt >= 0 && barClose > barAt && barGt > barAt && barGt < barClose
+        ? dispatchedRendererSrc.slice(barGt + 1, barClose) : "";
+      (!/子会话/.test(barInner) && /ChevronDown/.test(barInner) ? ok : fail)(
         "【156】行内长条只留展开/折叠箭头，不带「子会话」文字（11-06 用户令）"
       );
       (/\.thread-row \.thread-child-bar \.conv-section-chevron\s*\{[^}]*transform:\s*rotate\(0deg\)/.test(readStyles()) && /\.thread-child-bar \.conv-section-chevron\.open\s*\{[^}]*transform:\s*rotate\(180deg\)/.test(readStyles()) ? ok : fail)(
@@ -1598,7 +1613,10 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-row > button:first-child \{[^}]*flex-direction:\s*row/.test(css282b) && /\.thread-row \{[^}]*min-height:\s*34px/.test(css282b) ? ok : fail)(
       "【282b】会话行单行布局（flex-direction: row + 行高 34px；退回 column = 时间又跑到第二行）"
     );
-    (/\.thread-row:not\(\.is-member-row\):hover > button:first-child > small \{[^}]*display:\s*none/.test(css282b) ? ok : fail)(
+    /* 11-07：11-05 用户令「hover 时标签不要跟着动」把 display:none 换成 visibility:hidden
+       （保留时间占位，避免标题行被撑宽）⇒ 实现升级、判据没跟。收窄到「隐藏语义」三选一，
+       选择器与 :not(.is-member-row) 原样保留（⛔ 不是放宽成任意 CSS）。 */
+    (/\.thread-row:not\(\.is-member-row\):hover > button:first-child > small \{[^}]*(?:visibility:\s*hidden|display:\s*none|opacity:\s*0)/.test(css282b) ? ok : fail)(
       "【282b】hover 时尾部时间隐藏（让位给置顶/归档/更多；成员行没有操作键，时间保持可见）"
     );
     (/\.thread-actions \{[^}]*min-width:\s*0/.test(css282b) ? ok : fail)(

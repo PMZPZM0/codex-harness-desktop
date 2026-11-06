@@ -166,7 +166,10 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(py.manager === "pip" && py.packages[0] === "aider-chat", "`python3 -m pip install` 形式认得（mac 变体）");
   const bad = parser.parseInstallCommand("curl -fsSL https://example.com/install.sh | sh");
   ok(bad.manager === "" && bad.error.length > 0, "⛔ 脚本安装形态一律拒绝（宁可拒绝，不硬猜）");
-  ok(parser.parseInstallCommand("npm install --global-x x").manager === "" || true, "占位（保持条数稳定）");
+  /* 11-07：原来 `... === "" || true` 是恒真占位（永远绿、什么都没守）。改成真判据。 */
+  const unknownFlag = parser.parseInstallCommand("npm install --global-x x");
+  ok(unknownFlag.manager === "" && unknownFlag.packages.length === 0 && /全局/.test(unknownFlag.error),
+    "未知开关不冒充包名；解析结果按「非全局安装」明确拒绝（⛔ 不再用 || true 占位）");
   const noPkg = parser.parseInstallCommand("npm install -g");
   ok(noPkg.manager === "" && /包名/.test(noPkg.error), "npm 命令没带包名 ⇒ 拒绝");
   const notGlobal = parser.parseInstallCommand("npm install left-pad");
@@ -480,9 +483,13 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "compareVersions 真值表：小数段按数字比、缺段补 0");
   ok(ver.hasCliUpdate("1.2.3", "1.2.3") === false && ver.hasCliUpdate("1.2.3", "1.4.0") === true && ver.hasCliUpdate("", "1.0.0") === false,
     "只有已装版本低于最新才叫「可更新」；版本取不到不报更新");
+  /* 11-07：原来「已有版本后缀保持原样」⇒ 安装命令钉了 pkg@1.2.3 的条目点「一键更新」
+     装回旧版，检查更新永远显示「可更新」。现在统一换成 @latest。 */
   ok(ver.withLatestPackage("@anthropic-ai/claude-code") === "@anthropic-ai/claude-code@latest"
-    && ver.withLatestPackage("@scope/name@1.2") === "@scope/name@1.2",
-    "withLatestPackage：作用域包的 @ 不算版本后缀");
+    && ver.withLatestPackage("@scope/name@1.2") === "@scope/name@latest"
+    && ver.withLatestPackage("pkg@1.2.3") === "pkg@latest"
+    && ver.withLatestPackage("pkg") === "pkg@latest",
+    "withLatestPackage 真值表：作用域 @ 不算版本；固定版本一律升 @latest（否则一键更新装回旧版）");
   ok(/export async function updateCliAgent/.test(installSrc) && /export async function checkCliAgentUpdates/.test(installSrc) && /export function cancelCliInstall/.test(installSrc),
     "执行端提供 更新 / 检查更新 / 取消 三个实现");
   ok((ipcSrc.match(/ipcHost\.handle\("cliagents:/g) ?? []).length >= 9
@@ -504,12 +511,30 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "全局只允许一个装卸/更新操作（npm/pip 共用同一 prefix，并发会互抢）");
   ok(/if \(!busyIds\.has\(key\)\) return \{ ok: true, cancelled: false \};[\s\S]{0,160}?cancelledIds\.add\(key\);/.test(installSrc),
     "取消标记在「没有子进程的重试间隙」也生效（下一轮开始前 throw）");
-  ok((installSrc.match(/if \(cancelledIds\.has\(id\)\) throw new Error\("已取消"\);/g) ?? []).length >= 2,
-    "每次尝试前检查取消标记（npm / pip）");
+  /* 11-07：原 >=2 是靠 pipRun 里同一分支写两遍凑出来的假绿。改成「npm/pip 各一处 +
+     复核窗口三处 + 标记不被 runChild 吃掉」，三条都锚在真实代码形态。 */
+  ok((installSrc.match(/if \(cancelledIds\.has\(id\)\) throw new Error\("已取消"\);/g) ?? []).length >= 2
+    && !/if \(cancelledIds\.has\(id\)\) throw new Error\("已取消"\);\s*\n\s*if \(cancelledIds\.has\(id\)\) throw new Error\("已取消"\);/.test(installSrc),
+    "每次尝试前检查取消标记（npm / pip 各一处，⛔ 不许靠同一分支重复行凑数）");
+  ok((installSrc.match(/throwIfCancelled\(entry\.id\);/g) ?? []).length >= 3
+    && !/if \(cancelledIds\.has\(id\)\) \{ cancelledIds\.delete\(id\); reject/.test(installSrc),
+    "子进程退出到复核之间也能取消（装卸/更新三处都查，且标记由 finally 统一清）");
   ok(/const workers = Array\.from\(\{ length: Math\.min\(4, queue\.length\) \}/.test(installSrc),
     "检查更新并行限 4 路（面板打开不必串行等十几条）");
-  ok(/const hasCustomIndex = args\.some/.test(installSrc),
-    "用户命令自带 -i/--index-url 时不再用镜像覆盖（私有源不被顶掉）");
+  /* 11-07：原来只认「代码里有 `const hasCustomIndex = args.some`」就绿，但 args 里
+     **根本没有 -i**（解析器把带值选项整个丢了）⇒ 私有源仍被国内镜像顶掉。
+     ⇒ 改成真跑解析器 + 执行端接线双判据。 */
+  const privatePip = ver.parseInstallCommand("pip install -i https://private/simple mypkg");
+  const privateNpm = ver.parseInstallCommand("npm install -g --registry https://private/npm mypkg");
+  ok(privatePip.options.join(" ") === "-i https://private/simple" && privatePip.packages.join(",") === "mypkg"
+    && privateNpm.options.join(" ") === "--registry https://private/npm" && privateNpm.packages.join(",") === "mypkg",
+    "解析器：私有源选项连值一起保留（⛔ 丢掉它就会被国内镜像顶掉，私有包装不上）");
+  ok((installSrc.match(/\.\.\.spec\.options/g) ?? []).length >= 3
+    && /hasCustomIndex/.test(installSrc) && /customRegistry/.test(installSrc)
+    && /queryLatestVersion\(spec\.manager, pkg, spec\.options\)/.test(installSrc),
+    "执行端：安装 / 更新 / 版本查询都把私有源选项原样拼回参数数组（仍是参数数组、不开 shell）");
+  ok(/function sourceOptionsOf/.test(installSrc) && /\["-m", "pip", \.\.\.srcOpts, "index"/.test(installSrc),
+    "版本查询把 -i 排在 pip 子命令之前（pip 全局选项放错位置会直接报错）");
   ok(/检查更新/.test(panelSrc) && /const checkOne = useCallback/.test(panelSrc) && /const checkAll = useCallback/.test(panelSrc),
     "面板提供「检查更新」入口（工具栏全部 + 预览单条，11-06 用户问按键在哪）");
   /* ⛔ 11-06 审查：带 `@latest` 的安装命令会让 `npm uninstall` 直接 ERMARGS

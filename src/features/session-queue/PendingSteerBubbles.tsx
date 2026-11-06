@@ -11,6 +11,7 @@
  */
 import { Undo2 } from "lucide-react";
 import { pendingSteerIds, usePendingSteerEntries } from "../../lib/pending-steer.mjs";
+import type { QueueItem } from "../../lib/queue-item";
 import { ItemView } from "./ItemView";
 
 type SteerHandlers = { onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onOpenFile?: (path: string) => void };
@@ -39,7 +40,7 @@ export function PendingSteerBubbles({ threadId, handlers, onWithdraw }: { thread
  * 那个补丁在短消息 / 名字宽度变化时会算偏，用户 11-06 实测「中间缝隙太大」。
  */
 function PendingSteerRow({ id, entry, canWithdraw, handlers, onWithdraw }: {
-  id: string; entry: any; canWithdraw: boolean; handlers: SteerHandlers; onWithdraw: (id: string) => void;
+  id: string; entry: QueueItem; canWithdraw: boolean; handlers: SteerHandlers; onWithdraw: (id: string) => void;
 }) {
   return (
     <div className="pending-steer-item" data-pending-steer={canWithdraw ? "armed" : "sending"}>

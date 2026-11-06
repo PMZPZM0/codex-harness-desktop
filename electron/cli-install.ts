@@ -59,10 +59,18 @@ function runChild(file: string, args: string[], env: NodeJS.ProcessEnv, id: stri
     child.on("close", (code) => {
       clearTimeout(timer);
       activeChild.delete(id);
-      if (cancelledIds.has(id)) { cancelledIds.delete(id); reject(new Error("已取消")); return; }
+      /* ⛔ 11-07：这里以前会 `cancelledIds.delete(id)`，把取消标记吃掉 ⇒ 子进程已退出、
+         复核（detectCliAgent）还在跑的那段窗口里按「取消」，主流程仍会 emit done / 返回 ok，
+         用户看到「取消成功」后又「已安装」。标记统一由操作的 finally 清。 */
+      if (cancelledIds.has(id)) { reject(new Error("已取消")); return; }
       resolve({ code: code ?? -1, tail: tail.trim() });
     });
   });
+}
+
+/** 子进程跑完到复核之间也能被取消：三处操作的 finally 之前统一查一次。 */
+function throwIfCancelled(id: string): void {
+  if (cancelledIds.has(id)) throw new Error("已取消");
 }
 
 async function npmGlobal(args: string[], id: string, label: string): Promise<void> {
@@ -72,7 +80,9 @@ async function npmGlobal(args: string[], id: string, label: string): Promise<voi
   if (!npmCli) throw new Error(`内置 Node 缺少 npm（候选中无 npm-cli.js），无法${label}`);
   const prefix = path.join(writeToolsRoot(), "npm-global");
   const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
-  const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];
+  /* 用户命令里自带 --registry（私有源）⇒ 命令行参数优先于 env，别再拿镜像 env 覆盖、也别谎报源。 */
+  const customRegistry = args.some((arg) => arg === "--registry" || arg.startsWith("--registry="));
+  const registries = customRegistry ? [""] : (userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""]);
   let lastError: Error | null = null;
   for (const registry of registries) {
     if (cancelledIds.has(id)) throw new Error("已取消");
@@ -104,11 +114,11 @@ async function pipRun(args: string[], id: string, label: string): Promise<void> 
   if (!ready.ok) throw new Error(ready.reason);
   const userIndex = process.env.PIP_INDEX_URL || process.env.pip_index_url || "";
   /* 用户命令里自己带了 -i / --index-url（私有源）⇒ 不要再用镜像覆盖它。 */
-  const hasCustomIndex = args.some((arg) => arg === "-i" || arg === "--index-url");
+  /* 私有源既可能写成 `-i URL` 也可能写成 `--index-url=URL`；命中就不再追加镜像。 */
+  const hasCustomIndex = args.some((arg) => arg === "-i" || arg === "--index-url" || arg.startsWith("--index-url="));
   const indexes = hasCustomIndex ? [""] : (userIndex ? [userIndex] : [CHINA_PYPI_MIRROR, ""]);
   let lastError: Error | null = null;
   for (const index of indexes) {
-    if (cancelledIds.has(id)) throw new Error("已取消");
     if (cancelledIds.has(id)) throw new Error("已取消");
     const via = index ? (userIndex ? "用户配置的源" : "国内镜像") : "官方源";
     try {
@@ -146,8 +156,9 @@ export async function installCliAgent(id: string): Promise<CliInstallOutcome> {
   cancelledIds.delete(entry.id);
   emit(entry.id, "start", `正在安装 ${entry.name}…`);
   try {
-    if (spec.manager === "npm") await npmGlobal(["install", "--global", ...spec.packages], entry.id, "安装");
-    else await pipRun(["install", ...spec.packages], entry.id, "安装");
+    if (spec.manager === "npm") await npmGlobal(["install", "--global", ...spec.options, ...spec.packages], entry.id, "安装");
+    else await pipRun(["install", ...spec.options, ...spec.packages], entry.id, "安装");
+    throwIfCancelled(entry.id);
     const check = await detectCliAgent({ bin: entry.bin });
     invalidateCliInstalledCache();
     if (!check.installed) {
@@ -192,6 +203,7 @@ export async function uninstallCliAgent(id: string): Promise<CliInstallOutcome> 
     if (!names.length) return { ok: false, error: "这条安装命令里解析不出包名，无法自动卸载" };
     if (spec.manager === "npm") await npmGlobal(["uninstall", "--global", ...names], entry.id, "卸载");
     else await pipRun(["uninstall", "-y", ...names], entry.id, "卸载");
+    throwIfCancelled(entry.id);
     const check = await detectCliAgent({ bin: entry.bin });
     invalidateCliInstalledCache();
     broadcastHarnessEvent({ type: "cli-agents-changed" } as any);
@@ -238,21 +250,39 @@ function execFileText(file: string, args: string[], env: NodeJS.ProcessEnv, time
   });
 }
 
+/** 版本查询只带「源」相关选项：安装命令里的 --upgrade 之类与 npm view / pip index 无关，
+ *  塞进去反而会让查询命令报错。⛔ pip 的 -i 是全局选项，必须排在子命令之前。 */
+function sourceOptionsOf(options: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < options.length; i++) {
+    const t = options[i];
+    if (["-i", "--index-url", "--extra-index-url", "--registry"].includes(t)) {
+      out.push(t);
+      if (options[i + 1] && !options[i + 1].startsWith("-")) out.push(options[++i]);
+    } else if (/^--(index-url|extra-index-url|registry)=/.test(t)) {
+      out.push(t);
+    }
+  }
+  return out;
+}
+
 /** 查某个包的最新版本（npm / pip）。失败返回 error，调用方跳过该条。 */
-async function queryLatestVersion(manager: string, pkg: string): Promise<{ latest: string; error?: string }> {
+async function queryLatestVersion(manager: string, pkg: string, options: string[] = []): Promise<{ latest: string; error?: string }> {
+  const srcOpts = sourceOptionsOf(options);
   try {
     if (manager === "npm") {
       const node = bundledNode();
       const npmCli = bundledNpmCli();
       if (!node || !npmCli) return { latest: "", error: "缺少内置 Node/npm，无法检查更新" };
       const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
-      const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];
+      const customRegistry = srcOpts.some((a) => a === "--registry" || a.startsWith("--registry="));
+      const registries = customRegistry ? [""] : (userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""]);
       let lastError = "";
       for (const registry of registries) {
         try {
           const env = { ...toolchainEnv() };
           if (registry) env.npm_config_registry = registry;
-          const raw = await execFileText(node, [npmCli, "view", pkg, "version", "--json"], env);
+          const raw = await execFileText(node, [npmCli, ...srcOpts, "view", pkg, "version", "--json"], env);
           const parsed: unknown = JSON.parse(raw);
           const latest = normalizeVersion(Array.isArray(parsed) ? parsed[parsed.length - 1] : parsed);
           if (latest) return { latest };
@@ -267,12 +297,13 @@ async function queryLatestVersion(manager: string, pkg: string): Promise<{ lates
       const python = bundledPython();
       const ready = pythonPipReady(python);
       if (!ready.ok) return { latest: "", error: ready.reason };
-      const indexes = process.env.PIP_INDEX_URL ? [process.env.PIP_INDEX_URL] : [CHINA_PYPI_MIRROR, ""];
+      const hasCustomIndex = srcOpts.some((a) => a === "-i" || a === "--index-url" || a.startsWith("--index-url="));
+      const indexes = hasCustomIndex ? [""] : (process.env.PIP_INDEX_URL ? [process.env.PIP_INDEX_URL] : [CHINA_PYPI_MIRROR, ""]);
       let lastError = "";
       for (const index of indexes) {
         try {
           const extra = index ? ["-i", index] : [];
-          const raw = await execFileText(python, ["-m", "pip", "index", "versions", pkg, ...extra, "--disable-pip-version-check"], toolchainEnv());
+          const raw = await execFileText(python, ["-m", "pip", ...srcOpts, "index", "versions", pkg, ...extra, "--disable-pip-version-check"], toolchainEnv());
           const hit = raw.match(/^\S+\s+\(([^)]+)\)/m);
           const latest = normalizeVersion(hit?.[1] ?? "");
           if (latest) return { latest };
@@ -308,7 +339,7 @@ export async function checkCliAgentUpdates(ids?: string[]): Promise<{ items: Cli
     if (!pkg) return null;
     let cached = latestCache.get(entry.id);
     if (!cached || now - cached.at > UPDATE_CACHE_MS) {
-      const res = await queryLatestVersion(spec.manager, pkg);
+      const res = await queryLatestVersion(spec.manager, pkg, spec.options);
       cached = { at: now, latest: res.latest, error: res.error };
       latestCache.set(entry.id, cached);
     }
@@ -346,8 +377,9 @@ export async function updateCliAgent(id: string): Promise<CliInstallOutcome> {
   cancelledIds.delete(entry.id);
   emit(entry.id, "start", `正在更新 ${entry.name}…`);
   try {
-    if (spec.manager === "npm") await npmGlobal(["install", "--global", ...spec.packages.map(withLatestPackage)], entry.id, "更新");
-    else await pipRun(["install", "--upgrade", ...spec.packages], entry.id, "更新");
+    if (spec.manager === "npm") await npmGlobal(["install", "--global", ...spec.options, ...spec.packages.map(withLatestPackage)], entry.id, "更新");
+    else await pipRun(["install", "--upgrade", ...spec.options, ...spec.packages], entry.id, "更新");
+    throwIfCancelled(entry.id);
     const check = await detectCliAgent({ bin: entry.bin });
     invalidateCliInstalledCache();
     latestCache.delete(entry.id);

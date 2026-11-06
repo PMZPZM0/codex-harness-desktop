@@ -76,11 +76,40 @@ if (cssFiles.length) {
   // ⛔ 祖先链不得有 overflow:hidden —— 那会真的裁掉溢出的点（改容器尺寸也没用）
   {
     const src = readFileSync(join(ROOT, "src", "styles", "02-sidebar-threads.css"), "utf8");
-    const family = [...src.matchAll(/^\.(thread-row[a-z-]*|thread-actions)\s*\{([^}]*)\}/gm)];
-    const bad = family
-      .filter((m) => /overflow\s*:\s*(hidden|clip)/.test(m[2]))
-      .map((m) => m[1]);
-    ok(bad.length === 0, `class 型祖先规则无 overflow:hidden（当前 ${family.length} 条）${bad.length ? `—— 有：${bad.join("/")}` : ""}`);
+    /* 11-07 精确化：判据锚在 spinner 的**真实祖先链**，从 JSX 现读，不再扫「所有 .thread-row* 前缀 class」。
+       · 旧 /^\.(thread-row[a-z-]*|thread-actions)\s*\{/gm 把 9 条规则全当祖先，其中
+         .thread-row-name（02-sidebar-threads.css:158，10-31 标题省略号）在 <button> 里，
+         是 spinner 的**兄弟分支** ⇒ 假红。
+       · DOM 真祖先（02-thread-attention-rows.tsx:322/330/347）：
+         div.thread-row > div.thread-actions > span.thread-running-indicator。
+       ⇒ 配平 spinner 之前未闭合的 <div>，栈里剩下的就是它的祖先容器链。 */
+    const spinAt = row.indexOf('className="thread-running-indicator"');
+    const before = row.slice(0, spinAt);
+    const tokens = [...before.matchAll(/<div\b|<\/div>/g)].map((x) => ({ at: x.index, kind: x[0] }));
+    const stack = [];
+    tokens.forEach((tk, i) => {
+      if (tk.kind === "</div>") { stack.pop(); return; }
+      const end = i + 1 < tokens.length ? tokens[i + 1].at : before.length;
+      const cm = /className\s*=\s*(?:\{\s*`|")([a-z][a-z0-9-]*)/.exec(before.slice(tk.at, end));
+      stack.push(cm ? cm[1] : "");
+    });
+    const chain = stack.filter(Boolean);
+    // 接线①：DOM 改成守卫解析不出的形态就红（不许「什么都没守还自洽地绿」）
+    ok(spinAt > 0 && chain.length > 0,
+      `JSX 接线：spinner 祖先链 = ${chain.join(" → ")}（DOM 改了这里必须同步复核守卫）`);
+    const hits = chain.flatMap((cls) =>
+      [...src.matchAll(new RegExp(`^\\.${cls}\\s*\\{([^}]*)\\}`, "gm"))]
+        .map((hit) => [cls, hit[1]]));
+    const parent = chain[chain.length - 1];
+    // 接线②：直接父容器有单 class 规则且本次确实扫到
+    ok(hits.length > 0 && hits.some(([cls]) => cls === parent),
+      `JSX 接线：直接父容器 .${parent} 有单 class 规则，本次共扫到 ${hits.length} 条祖先规则`);
+    // 真判据（强度不变）：祖先链上任一 overflow:hidden/clip 都红
+    const bad = hits
+      .filter(([, body]) => /overflow\s*:\s*(hidden|clip)/.test(body))
+      .map(([cls]) => cls);
+    ok(bad.length === 0,
+      `spinner 真实祖先链无 overflow:hidden（${hits.length} 条祖先规则）${bad.length ? ` —— 有：${bad.join("/")}` : ""}`);
 
     /*⛔⛔ 标签型选择器才是真陷阱（2026-10-04 用户反馈"空间留少了"= 形状缺一角）：
        `.thread-row span { overflow: hidden }` 是**标题省略号**规则，而 spinner 外层

@@ -556,7 +556,12 @@ try {
     && /delegatedRow && bag\.delegateRecords\[entry\.id\]/.test(attentionSrc),
     "被调度行只保留一枚调度徽标（来源「调度」与状态「调度中」不再叠加成两个标签）");
   const sidebarSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
-  ok(sidebarSrc.includes("子会话 · {children.length}") && !sidebarSrc.includes("调度会话 · {children.length}"),
+  /* 11-07 精确化：⛔ 原来只认「子会话 · {children.length}」字面量，重构后插值变量变成
+     info.children.length 就红；而它一度靠行内长条里的同名 span 侥幸保持绿（自洽地错）。
+     ⇒ 判据锚在**折叠块标题按钮的可见内容**，允许插值变量名变化，也不再被别处文字骗。 */
+  const labelAt = sidebarSrc.indexOf('className="dispatch-children-label"');
+  const labelBody = labelAt >= 0 ? sidebarSrc.slice(labelAt, sidebarSrc.indexOf("</button>", labelAt)) : "";
+  ok(/子会话 · \{[^}]*children\.length\}/.test(labelBody) && !/调度会话 · /.test(labelBody),
     "折叠块标题用「子会话」，与行内的「调度」状态徽标不重复");
   /* ⛔ 11-03 用户截图（五个成员会话各自是主会话）：成员会话由主进程 team-invoke 新建，
      原先只登记 teamMemberThreadIds、没登记 teamThreadsIndex ⇒ 侧栏聚簇按 teamId 找不到它们，

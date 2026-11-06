@@ -451,9 +451,12 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
   ok(/const titleText = aliasLabel \|\| displayTitle/.test(rowSrc) && /\{titleText\}<\/span>/.test(rowSrc)
     && !/thread-alias-badge\"/.test(rowSrc),
     "标题 = 笔名（⛔ 不再跟首条用户消息走，也不在名字前挂「主管」徽标）");
+  /* 11-07：原来第三个锚点 /thread-tag-cycle/ 是已删掉的旧「+N」className（8c5bc8454 换成
+     thread-tag-switch、40c71947e 再改成点标签本体轮换），功能在、字面量没了 ⇒ 假红。
+     ⇒ 换成锚在**标签容器到 cycleThreadBadge 的真实接线**，不再依赖任何可改名的 className。 */
   ok(/cycleThreadBadge\(entry\.id, rowBadges\.length\)/.test(rowSrc)
     && /const shownBadge = rowBadges\[badgeIndex\] \?\? null/.test(rowSrc)
-    && /thread-tag-cycle/.test(rowSrc),
+    && /className=\{[^}]*thread-row-tags[^}]*\}[\s\S]{0,240}?onClick=\{rowBadges\.length > 1 \?[\s\S]{0,200}?cycleThreadBadge/.test(rowSrc),
     "标签位最多一个 + 点击循环（11-01 用户令；⛔ 多标签并排又会挤掉标题）");
   ok(/const badgeCycle = useSyncExternalStore\(subscribeBadgeCycle/.test(rowSrc)
     && rowSrc.indexOf("const badgeCycle = useSyncExternalStore") < rowSrc.indexOf("const renderThreadRow"),
