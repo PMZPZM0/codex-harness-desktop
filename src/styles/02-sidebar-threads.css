@@ -181,6 +181,9 @@
 /* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
    ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
 .thread-row-tags > * { min-width: 0; }
+/* ⛔ 11-06 用户实测（截图「跟灰色调度标签对齐，所有标签」）：调度徽标自带 margin-left:6px
+   （旧版排在其它徽标后面时的间距）⇒ 进标签列后比定制标签右移 6px、对不齐。列内清零。 */
+.thread-row-tags .thread-dispatch-badge { margin-left: 0; }
 /* 自定义标签过长时省略（同一时刻只露一枚，点标签轮换下一枚）。 */
 .thread-custom-tag { max-width: 50px; }
 /* ── 会话行底色（10-31 用户令）：未选中浅色常驻、选中后深一档 ───────────────── */

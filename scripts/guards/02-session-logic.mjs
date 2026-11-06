@@ -1671,6 +1671,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 64px 54px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
       "【285】有标签的行用 64px 定宽标签列 + 54px 右侧留白（右边锚定 ⇒ 父行/缩进子行标签同线）"
     );
+    (/\.thread-row-tags \.thread-dispatch-badge\s*\{[^}]*margin-left:\s*0/.test(cssSrc285) ? ok : fail)(
+      "【285】调度徽标进标签列后清零 margin-left（否则比其它标签右移 6px，11-06 用户截图）"
+    );
     (/min-width:\s*0/.test(nameRule) && /max-width:\s*100%/.test(nameRule) && /overflow:\s*hidden/.test(nameRule) && /text-overflow:\s*ellipsis/.test(nameRule) ? ok : fail)(
       "【285】长名字按列宽截断出省略号（max-width:100% + ellipsis），不跨过标签/时间（11-06 用户截图）"
     );
