@@ -168,22 +168,8 @@
 /* 多标签时整枚标签可点：点标签本体即轮换（11-05 用户令）。 */
 .thread-row-tags.is-cyclable { cursor: pointer; }
 .thread-row-tags.is-cyclable:hover > * { filter: brightness(1.08); }
-/* 11-05 用户令：「箭头太大了，就标签右边一点点」——
-   只做一枚小箭头贴在标签右侧（不加边框/底色，别抢标签的视觉）。
-   点它或点标签本体都换下一枚。 */
-.thread-row-tags > span.thread-tag-next {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 1px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-}
-.thread-row-tags > span.thread-tag-next:hover { color: var(--accent); }
+/* 11-06 用户令：「切换箭头不要了，点标签本体切换」——
+   多标签时整枚标签可点（is-cyclable），不加任何额外图标。 */
 /* 空间不够时标签各自收缩（省略号来自 `.thread-row span`）；
    ⛔ 容器**不裁**（overflow:hidden/clip）—— spinner 判据 11c 明令会话行类祖先不得裁剪。 */
 .thread-row-tags > * { min-width: 0; }
@@ -225,10 +211,13 @@
   font-size: 10.5px;
   overflow: hidden;
   /* 10-25 用户令：时间常驻行尾；hover 时让位给操作键（见下一条规则）。
-     10-31：时间列宽随文案长短（不占定宽），右对齐贴住行尾；名称起点由标签列固定，
-     不依赖时间列宽度。 */
-  flex: 0 0 auto;
-  margin-left: auto;
+     11-06 用户令（截图圈出标签列）：「标签放这一列，名字最多展示几个字，多了显示…」——
+     时间改为**浮在行右缘**（不占标题行宽度），标题行铺满整行，标签落在真正的行中点，
+     名称拿到「行宽 − 标签」的一半可用宽度后按列宽截断（此前时间占 45px，名字只剩 1~2 个字）。 */
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
