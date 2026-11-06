@@ -1635,14 +1635,16 @@
   gap: 8px;
 }
 .pending-steer-item {
-  /* 11-06 用户令（截图「放顶上多难看」）：撤回键放到这条用户消息**左侧同一行**，
-     不再挂在气泡上方。 */
+  /* 11-06 用户令（截图「放顶上多难看」→「自适应展示在消息前面，不要空白太多」）：
+     撤回键在这条用户消息**左侧同一行**，整组按内容自适应、贴右 —— 原先整行 flex-end
+     会把「撤回 + 气泡」摆在 800px 宽的一行右端，左侧留一大片空白（实测 505px）。 */
   display: flex;
   flex-direction: row;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-bottom: 8px;
+  gap: 4px;
+  width: fit-content;
+  margin-left: auto;
 }
 /* 消息栈按内容自适应，给左侧药丸留位置（原先占宽 min(88%,720px) 会把药丸挤出容器）。 */
 .pending-steer-item > .user-message-stack {

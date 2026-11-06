@@ -649,7 +649,7 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
          那时气泡还挂着「可撤回」就是假承诺（用户点撤回只会得到"删除失败"）。 */
       void bag.setQueuedTimer(bag.thread.id, entry.id, null, { silent: true });
       void bag.refreshQueue(bag.thread.id);
-      bag.showToast("已插队 · 可撤回", "这一步跑完自动并入；点消息上面的「撤回」可取消");
+      bag.showToast("已插队 · 可撤回", "这一步跑完自动并入；点消息旁的「撤回」可取消");
       return;
     }
     const armedForStart = bag.armPinForReleasedQueue(bag.thread.id, "queue-start");

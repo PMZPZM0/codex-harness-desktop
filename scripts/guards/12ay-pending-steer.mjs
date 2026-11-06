@@ -242,6 +242,12 @@ ok(/\.pending-steer-stack \{[^}]*flex-direction: column/.test(css)
   && /\.pending-steer-item \{[^}]*align-items: center/.test(css)
   && /\.pending-steer-item > \.user-message-stack \{[^}]*max-width: calc\(100% - 76px\)/.test(css),
   "撤回键在用户消息**左侧同一行**、垂直居中（11-06 用户令「放顶上多难看」；消息栈按内容自适应给药丸留位）");
+/* ⛔ 11-06 用户令「自适应展示在消息前面，不要空白太多」：整组必须按内容包紧、贴右。
+   原先整行 flex-end ⇒ 实测「撤回 + 气泡」只占 306px、却摆在一行 807px 的右端，左侧 505px 全空。 */
+ok(/\.pending-steer-item \{[^}]*width: fit-content/.test(css)
+  && /\.pending-steer-item \{[^}]*margin-left: auto/.test(css)
+  && !/\.pending-steer-item \{[^}]*width: 100%/.test(css),
+  "「撤回 + 气泡」整组按内容自适应（fit-content + 贴右），不再整行留白");
 ok(!/pending-steer-item\[data-pending-steer="armed"\][^{]*outline/.test(css),
   "⛔ 不给消息本体描虚线框（11-05 用户实测「丑死了」——空荡荡一个大虚线框）");
 
