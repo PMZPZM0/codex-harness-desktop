@@ -303,7 +303,12 @@ export const appFeature = defineFeature<null>({
          ⇒ 统一用 detached spawn：先释放单实例锁，再起一个**脱离旧进程组**的新实例。
          旧进程随后优雅退出（before-quit 清理照跑），新实例不受影响。 */
       try {
-        spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore" }).unref();
+        /* ⛔⛔ 必须剔除 ELECTRON_RUN_AS_NODE（10-14 云助手实证的另一条「重启后应用彻底消失」成因）：
+           该变量在环境里时 electron.exe 以**纯 Node 模式**启动 ⇒ require("electron") 返回 undefined
+           ⇒ 主进程脚本秒退。用户的启动器 / IDE / agent shell 都可能带上它，显式删掉而不是赌环境干净。 */
+        const env = { ...process.env };
+        delete env.ELECTRON_RUN_AS_NODE;
+        spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore", cwd: process.cwd(), env }).unref();
       } catch {
         // spawn 被环境拒绝时退回 Electron 自带 relaunch（打包版一般走不到这里）
         host.app.relaunch();

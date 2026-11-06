@@ -561,6 +561,11 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts")
         ok("【174】app:relaunch 用 spawn(execPath, argv.slice(1)) 显式重启（无头形态：app.relaunch 起不来）");
         (detached ? ok : fail)("【174】重启子进程必须 detached:true + unref()（否则旧进程退出会带走它）");
         (releaseFirst ? ok : fail)("【174】app:relaunch 先释放单实例锁再起新实例（否则新实例抢不到锁会自杀）");
+        /* ⛔ 11-06：ELECTRON_RUN_AS_NODE 在环境里时新实例以纯 Node 跑 ⇒ require("electron") 空
+           ⇒ 秒退（10-14 云助手实证）。spawn 形态必须显式剔除后再起。 */
+        (/ELECTRON_RUN_AS_NODE/.test(relaunchBlock) ? ok : fail)(
+          "【174】app:relaunch 起新实例前剔除 ELECTRON_RUN_AS_NODE（否则新实例以 Node 模式秒退）"
+        );
       } else {
         (/(?:\bhost\.app|app)\.relaunch\(/.test(relaunchBlock) ? ok : fail)(
           "【174】app:relaunch 走朴素 host.app.relaunch()（窗口形态；无头形态须改 spawn —— 见⑤注释）"
