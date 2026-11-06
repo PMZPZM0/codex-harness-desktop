@@ -14,6 +14,32 @@
  * @returns {{ manager: "" | "npm" | "pip", packages: string[], error: string }}
  *   error 非空 = 不能一键执行（文案直接给用户看）。
  */
+/** 带值的命令行选项：它的**下一个 token 是值**，不是包名（否则 private registry / 本地路径会被当包装上）。 */
+const VALUE_FLAGS = new Set([
+  "-i", "--index-url", "--extra-index-url", "-f", "--find-links", "--registry",
+  "--prefix", "--proxy", "--cert", "--cafile", "--timeout", "--retries",
+  "--target", "--src", "--upgrade-strategy", "--platform", "--python-version",
+  "--implementation", "--abi", "-r", "--requirement", "-e", "--editable",
+  "--cache-dir", "--log", "--user-agent",
+]);
+
+/** 从参数里挑出包名与全局标记；带值选项连它的值一起跳过。 */
+function packagesOf(tokens) {
+  let global = false;
+  const packages = [];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === "-g" || token === "--global") { global = true; continue; }
+    if (token.startsWith("-")) {
+      const next = tokens[i + 1];
+      if (VALUE_FLAGS.has(token) && next && !next.startsWith("-")) i++;
+      continue;
+    }
+    packages.push(token.replace(/^["']|['"]$/g, ""));
+  }
+  return { packages, global };
+}
+
 export function parseInstallCommand(cmd) {
   const raw = String(cmd ?? "").trim();
   if (!raw) return { manager: "", packages: [], error: "这个 CLI 没有可一键安装的命令（按官方文档安装）" };
@@ -28,13 +54,7 @@ export function parseInstallCommand(cmd) {
     if (sub !== "install" && sub !== "i" && sub !== "add") {
       return { manager: "", packages: [], error: `npm 的子命令不是 install（这条是「${sub || "无"}」），请复制到终端执行` };
     }
-    let global = false;
-    const packages = [];
-    for (const token of rest.slice(1)) {
-      if (token === "-g" || token === "--global") global = true;
-      else if (token.startsWith("-")) continue;
-      else packages.push(token);
-    }
+    const { packages, global } = packagesOf(rest.slice(1));
     if (!packages.length) return { manager: "", packages: [], error: "这条命令里没有包名，请复制到终端执行" };
     if (!global) return { manager: "", packages: [], error: "只支持全局安装（npm install -g）：装进应用自己的工具目录，不污染系统" };
     return { manager: "npm", packages };
@@ -42,7 +62,7 @@ export function parseInstallCommand(cmd) {
   if (head === "pip" || head === "pip3") {
     const sub = rest[0] ?? "";
     if (sub !== "install" && sub !== "uninstall") return { manager: "", packages: [], error: `pip 的子命令不是 install/uninstall（这条是「${sub || "无"}」），请复制到终端执行` };
-    const packages = rest.slice(1).filter((token) => !token.startsWith("-"));
+    const { packages } = packagesOf(rest.slice(1));
     if (!packages.length) return { manager: "", packages: [], error: "这条命令里没有包名，请复制到终端执行" };
     return { manager: "pip", packages };
   }
@@ -52,7 +72,7 @@ export function parseInstallCommand(cmd) {
     }
     const sub = rest[2] ?? "";
     if (sub !== "install" && sub !== "uninstall") return { manager: "", packages: [], error: `pip 的子命令不是 install/uninstall（这条是「${sub || "无"}」），请复制到终端执行` };
-    const packages = rest.slice(3).filter((token) => !token.startsWith("-"));
+    const { packages } = packagesOf(rest.slice(3));
     if (!packages.length) return { manager: "", packages: [], error: "这条命令里没有包名，请复制到终端执行" };
     return { manager: "pip", packages };
   }

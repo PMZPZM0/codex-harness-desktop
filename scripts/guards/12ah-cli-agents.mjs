@@ -481,6 +481,23 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "面板：进度条 + 取消 + 更新按钮 + 检查更新接线");
   ok(/child\.kill\(\)/.test(installSrc) && /cancelledIds/.test(installSrc),
     "取消真 kill 子进程（⛔ 不是只把 UI 的 busy 清掉）");
+
+  /* ── 11-06 审查：安装命令解析 / 并发 / 取消 / 检查更新 ── */
+  ok(ver.parseInstallCommand("pip install --index-url https://x/simple pkg").packages.join(",") === "pkg"
+    && ver.parseInstallCommand("npm install -g --registry https://r pkg").packages.join(",") === "pkg",
+    "解析器：带值选项（--index-url / --registry）的值不会被当成包名");
+  ok(ver.parseInstallCommand("pip install \"pkg>=1.0\"").packages.join(",") === "pkg>=1.0",
+    "解析器：去掉包名两侧的引号（否则 pip 会把引号当包名一部分）");
+  ok(/let globalOpId/.test(installSrc) && (installSrc.match(/if \(globalOpId\)/g) ?? []).length >= 3,
+    "全局只允许一个装卸/更新操作（npm/pip 共用同一 prefix，并发会互抢）");
+  ok(/if \(!busyIds\.has\(key\)\) return \{ ok: true, cancelled: false \};[\s\S]{0,160}?cancelledIds\.add\(key\);/.test(installSrc),
+    "取消标记在「没有子进程的重试间隙」也生效（下一轮开始前 throw）");
+  ok((installSrc.match(/if \(cancelledIds\.has\(id\)\) throw new Error\("已取消"\);/g) ?? []).length >= 2,
+    "每次尝试前检查取消标记（npm / pip）");
+  ok(/const workers = Array\.from\(\{ length: Math\.min\(4, queue\.length\) \}/.test(installSrc),
+    "检查更新并行限 4 路（面板打开不必串行等十几条）");
+  ok(/const hasCustomIndex = args\.some/.test(installSrc),
+    "用户命令自带 -i/--index-url 时不再用镜像覆盖（私有源不被顶掉）");
 }
 
 rmSync(sandbox, { recursive: true, force: true });

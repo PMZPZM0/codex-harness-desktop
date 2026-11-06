@@ -28,6 +28,8 @@ const INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 /** 同一时刻只允许一个安装/卸载在跑（并发两条 npm 会互抢目录）。 */
 const busyIds = new Set<string>();
+/** ⛔ 全局只允许一个装卸/更新操作（npm / pip 共用同一个 prefix，并发两条会互抢目录）。 */
+let globalOpId = "";
 /** 正在跑的装卸子进程（11-06：面板「取消」要真杀，不是只改 UI）。 */
 const activeChild = new Map<string, ReturnType<typeof spawn>>();
 const cancelledIds = new Set<string>();
@@ -73,6 +75,7 @@ async function npmGlobal(args: string[], id: string, label: string): Promise<voi
   const registries = userRegistry ? [userRegistry] : [CHINA_NPM_REGISTRY, ""];
   let lastError: Error | null = null;
   for (const registry of registries) {
+    if (cancelledIds.has(id)) throw new Error("已取消");
     const via = registry ? (userRegistry ? "用户配置的源" : "国内镜像") : "官方源";
     try {
       const env = { ...toolchainEnv() };
@@ -100,9 +103,13 @@ async function pipRun(args: string[], id: string, label: string): Promise<void> 
   const ready = pythonPipReady(python);
   if (!ready.ok) throw new Error(ready.reason);
   const userIndex = process.env.PIP_INDEX_URL || process.env.pip_index_url || "";
-  const indexes = userIndex ? [userIndex] : [CHINA_PYPI_MIRROR, ""];
+  /* 用户命令里自己带了 -i / --index-url（私有源）⇒ 不要再用镜像覆盖它。 */
+  const hasCustomIndex = args.some((arg) => arg === "-i" || arg === "--index-url");
+  const indexes = hasCustomIndex ? [""] : (userIndex ? [userIndex] : [CHINA_PYPI_MIRROR, ""]);
   let lastError: Error | null = null;
   for (const index of indexes) {
+    if (cancelledIds.has(id)) throw new Error("已取消");
+    if (cancelledIds.has(id)) throw new Error("已取消");
     const via = index ? (userIndex ? "用户配置的源" : "国内镜像") : "官方源";
     try {
       const extra = index ? ["-i", index] : [];
@@ -133,7 +140,10 @@ export async function installCliAgent(id: string): Promise<CliInstallOutcome> {
   const spec = parseInstallCommand(entry.installCmd);
   if (!spec.manager) return { ok: false, error: spec.error };
   if (busyIds.has(entry.id)) return { ok: false, error: "这个 CLI 正在安装中，请等当前操作结束" };
+  if (globalOpId) return { ok: false, error: globalOpId === entry.id ? "这个 CLI 正在操作中，请等当前操作结束" : "另一个 CLI 正在安装 / 更新，请等它结束" };
   busyIds.add(entry.id);
+  globalOpId = entry.id;
+  cancelledIds.delete(entry.id);
   emit(entry.id, "start", `正在安装 ${entry.name}…`);
   try {
     if (spec.manager === "npm") await npmGlobal(["install", "--global", ...spec.packages], entry.id, "安装");
@@ -158,6 +168,8 @@ export async function installCliAgent(id: string): Promise<CliInstallOutcome> {
     return { ok: false, error: message };
   } finally {
     busyIds.delete(entry.id);
+    if (globalOpId === entry.id) globalOpId = "";
+    cancelledIds.delete(entry.id);
   }
 }
 
@@ -168,7 +180,10 @@ export async function uninstallCliAgent(id: string): Promise<CliInstallOutcome> 
   const spec = parseInstallCommand(entry.installCmd);
   if (!spec.manager) return { ok: false, error: `这个 CLI 不是经 npm / pip 装的，应用不会替你卸载 —— 按它自己的方式管理${spec.error ? `（${spec.error}）` : ""}` };
   if (busyIds.has(entry.id)) return { ok: false, error: "这个 CLI 正在操作中，请等当前操作结束" };
+  if (globalOpId) return { ok: false, error: globalOpId === entry.id ? "这个 CLI 正在操作中，请等当前操作结束" : "另一个 CLI 正在安装 / 更新，请等它结束" };
   busyIds.add(entry.id);
+  globalOpId = entry.id;
+  cancelledIds.delete(entry.id);
   emit(entry.id, "start", `正在卸载 ${entry.name}…`);
   try {
     if (spec.manager === "npm") await npmGlobal(["uninstall", "--global", ...spec.packages], entry.id, "卸载");
@@ -193,6 +208,8 @@ export async function uninstallCliAgent(id: string): Promise<CliInstallOutcome> 
     return { ok: false, error: message };
   } finally {
     busyIds.delete(entry.id);
+    if (globalOpId === entry.id) globalOpId = "";
+    cancelledIds.delete(entry.id);
   }
 }
 
@@ -275,13 +292,16 @@ export async function checkCliAgentUpdates(ids?: string[]): Promise<{ items: Cli
   const targets = all.filter((entry) => (!wanted.size || wanted.has(entry.id)) && entry.bin);
   const items: CliUpdateInfo[] = [];
   const now = Date.now();
-  for (const entry of targets) {
+  /* ⛔ 并行查（限 4 路）：面板打开就查一轮，串行 14 条 × 每次 1~20s 会让「可更新」标记
+     迟到几十秒；4 路以内既快又不至于同时拉一堆 npm/pip 子进程。 */
+  const queue = [...targets];
+  const one = async (entry: (typeof targets)[number]): Promise<CliUpdateInfo | null> => {
     const spec = parseInstallCommand(entry.installCmd);
-    if (!spec.manager) continue;
+    if (!spec.manager) return null;
     const detected = await detectCliAgent({ bin: entry.bin });
-    if (!detected.installed) continue;
+    if (!detected.installed) return null;
     const pkg = spec.packages[0] ?? "";
-    if (!pkg) continue;
+    if (!pkg) return null;
     let cached = latestCache.get(entry.id);
     if (!cached || now - cached.at > UPDATE_CACHE_MS) {
       const res = await queryLatestVersion(spec.manager, pkg);
@@ -289,14 +309,23 @@ export async function checkCliAgentUpdates(ids?: string[]): Promise<{ items: Cli
       latestCache.set(entry.id, cached);
     }
     const current = normalizeVersion(detected.version ?? "");
-    items.push({
+    return {
       id: entry.id,
       current,
       latest: cached.latest,
       hasUpdate: hasCliUpdate(current, cached.latest),
       error: cached.error,
-    });
-  }
+    };
+  };
+  const workers = Array.from({ length: Math.min(4, queue.length) }, async () => {
+    while (queue.length) {
+      const entry = queue.shift();
+      if (!entry) return;
+      const info = await one(entry);
+      if (info) items.push(info);
+    }
+  });
+  await Promise.all(workers);
   return { items };
 }
 
@@ -307,7 +336,9 @@ export async function updateCliAgent(id: string): Promise<CliInstallOutcome> {
   const spec = parseInstallCommand(entry.installCmd);
   if (!spec.manager) return { ok: false, error: spec.error };
   if (busyIds.has(entry.id)) return { ok: false, error: "这个 CLI 正在操作中，请等当前操作结束" };
+  if (globalOpId) return { ok: false, error: globalOpId === entry.id ? "这个 CLI 正在操作中，请等当前操作结束" : "另一个 CLI 正在安装 / 更新，请等它结束" };
   busyIds.add(entry.id);
+  globalOpId = entry.id;
   cancelledIds.delete(entry.id);
   emit(entry.id, "start", `正在更新 ${entry.name}…`);
   try {
@@ -330,15 +361,18 @@ export async function updateCliAgent(id: string): Promise<CliInstallOutcome> {
     return { ok: false, error: message };
   } finally {
     busyIds.delete(entry.id);
+    if (globalOpId === entry.id) globalOpId = "";
+    cancelledIds.delete(entry.id);
   }
 }
 
 /** 取消正在进行的安装 / 更新 / 卸载：真杀子进程（不是只改 UI）。 */
 export function cancelCliInstall(id: string): { ok: boolean; cancelled: boolean } {
   const key = String(id ?? "");
-  const child = activeChild.get(key);
-  if (!child || !busyIds.has(key)) return { ok: true, cancelled: false };
+  if (!busyIds.has(key)) return { ok: true, cancelled: false };
   cancelledIds.add(key);
-  try { child.kill(); } catch { /* 已退出 */ }
+  const child = activeChild.get(key);
+  if (child) { try { child.kill(); } catch { /* 已退出 */ } }
+  /* 可能正处在两次源重试的间隙（没有子进程），标记已置 ⇒ 下一轮开始前 throw「已取消」。 */
   return { ok: true, cancelled: true };
 }
