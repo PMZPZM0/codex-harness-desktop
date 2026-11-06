@@ -25,7 +25,7 @@ export function TeamModePanel() {
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, dispatchError,
-    create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles,
+    create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles, setManagerOf,
     loadMessages, dispatch,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -118,6 +118,7 @@ export function TeamModePanel() {
             onAddPartner={(p) => addPartner(active.id, p)}
             onRemovePartner={(id) => removePartner(active.id, id)}
             onMute={(id, m) => mute(active.id, id, m)}
+            onSetManager={(memberId, managerId) => setManagerOf(active.id, memberId, managerId)}
             onSetMemory={(text) => setMemory(active.id, text)}
             onSetFiles={(files) => saveFiles(active.id, files)}
             onRename={(name) => rename(active.id, name)}

@@ -161,7 +161,7 @@
 .team-group__send-row button:disabled { opacity: 0.5; cursor: default; }
 
 /* ── 设置 ── */
-.team-settings { flex: 1; overflow: auto; padding: 18px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
+.team-settings { flex: 1; overflow: auto; padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
 /* ⛔ 11-06：区块改成"卡片"（panel 底 + 发丝边），原来是全透明的，一整页看过去没有层次 */
 .team-settings__block {
   border: 1px solid var(--line-soft);
@@ -170,22 +170,22 @@
      卡面改用深一档的 --panel-2(#f1f1ef)，卡内输入框仍是 --bg（白）⇒ 两级层次。 */
   background: var(--panel-2);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent);
-  padding: 14px 16px 16px;
+  padding: 12px 14px 13px;
 }
 .team-settings__block h3 {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 13px;
   font-weight: 600;
 }
 .team-settings__block--warn { border-color: var(--orange); }
 .team-settings__block--danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--line-soft)); }
 .team-settings__count { margin-left: 6px; font-size: 12px; color: var(--faint); font-weight: 400; }
-.team-settings__hint { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.7; }
-.team-settings__list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
-.team-settings__row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.team-settings__hint { margin: 0 0 8px; font-size: 12px; color: var(--muted); line-height: 1.6; }
+.team-settings__list { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.team-settings__row { display: flex; align-items: center; gap: 8px; padding: 1px 0; font-size: 13px; }
 /* ⛔ 标签不被控件压成两行（实测「协作范围」被挤成「协作范/围」） */
 .team-settings__row > span:first-child { flex: none; white-space: nowrap; }
 .team-settings__row--plain { padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
@@ -320,7 +320,7 @@
       不能像以前的空壳护栏那样做成一行开关。 */
 .team-settings__memory {
   width: 100%;
-  min-height: 96px;
+  min-height: 84px;
   resize: vertical;
   padding: 10px 12px;
   border: 1px solid var(--line);
@@ -334,8 +334,10 @@
 .team-settings__savebar {
   display: flex;
   align-items: center;
+  /* ⛔ 统一：说明/计数靠左、操作按钮靠右（用户要「删除键右边去」——扩到所有卡片） */
+  justify-content: flex-end;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: 8px;
 }
 .team-settings__savebar .team-settings__meta { margin-right: auto; }
 
@@ -376,3 +378,115 @@
   font-size: 11px;
   font-style: normal;
 }
+
+/* ── 群的两栏（11-06：用户「你这群跟普通会话没区别了」）─────────────────────────
+   普通会话只有一条消息流；群多一条**成员栏**（飞书群右侧成员区 / 豆包伙伴档案）。
+   ⛔ 成员栏不是装饰：它是 @ 的入口（点 @ 就把这个人加进这次派活），也是运行态的位置。 */
+.team-group__body { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.team-group__main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+.team-group__members {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 196px;
+  min-height: 0;
+  border-left: 1px solid var(--line-soft);
+  background: var(--panel);
+}
+.team-group__members-head {
+  padding: 10px 12px 6px;
+  color: var(--faint);
+  font-size: 11px;
+  letter-spacing: 0.03em;
+}
+.team-group__members ul { flex: 1; overflow: auto; margin: 0; padding: 0 6px; list-style: none; }
+.team-group__member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 8px;
+}
+.team-group__member:hover { background: var(--panel-2); }
+.team-group__member.is-muted { opacity: 0.55; }
+.team-group__member-avatar {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  font-size: 11px;
+}
+.team-group__member-avatar.is-bot { background: var(--accent-soft); color: var(--accent); }
+.team-group__member-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.team-group__member-main strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-group__member-main small { overflow: hidden; color: var(--faint); font-size: 10.5px; white-space: nowrap; text-overflow: ellipsis; }
+.team-group__member-at {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.team-group__member-at:hover { border-color: var(--accent); color: var(--accent); }
+.team-group__member-at.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.team-group__members-hint { margin: 0; padding: 8px 12px 10px; color: var(--faint); font-size: 10.5px; line-height: 1.5; }
+
+/* ── 消息卡片（飞书 2.2/2.4 的等价物）─────────────────────────────────────── */
+.team-msg__role {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+}
+.team-msg__role.is-live { background: var(--accent-soft); color: var(--accent); }
+.team-msg__mentions { display: flex; flex-wrap: wrap; gap: 4px; margin: 3px 0 0; }
+.team-msg__mentions em {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-style: normal;
+}
+.team-msg__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 6px;
+  padding-top: 5px;
+  border-top: 1px dashed var(--line-soft);
+}
+.team-msg__actions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-msg__actions button:hover { color: var(--accent); }
+.team-msg__origin { margin-left: auto; color: var(--faint); font-size: 10.5px; cursor: pointer; }
+.team-msg__origin:hover { color: var(--accent); }
+
+/* ── 设置：说明与操作同一行（解散卡那类）─────────────────────────────────── */
+.team-settings__inline-row { display: flex; align-items: center; gap: 8px; }
+.team-settings__hint--inline { flex: 1; min-width: 0; margin: 0; }

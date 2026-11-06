@@ -54,6 +54,9 @@ export function normalizeMember(entry) {
     muted: Boolean(entry?.muted),
     targetKind,
     targetKey: targetKind ? String(entry?.targetKey ?? entry?.name ?? "") : "",
+    /* 角色（专家团成员的 profession / 专家的岗位）：飞书 `isAgentEmployee`、豆包「伙伴档案」都有身份，
+       群里只有名字会分不清谁是谁。⛔ 空串就空着，别编。 */
+    targetProfession: String(entry?.targetProfession ?? "").trim(),
   };
 }
 
@@ -141,6 +144,33 @@ export function removePartner(group, partnerId, byId) {
   return { ok: true, changed: true, group: { ...base, members: base.members.filter((m) => m.id !== target.id) } };
 }
 
+/**
+ * 设置某成员的上级（豆包 `managerId`；空串 = 清掉）。
+ * ⛔ 不许成环（A→B→A 会让"上级"这条路永远走不到头）；⛔ 不能把自己设成自己的上级。
+ */
+export function setManager(group, memberId, managerId) {
+  const base = createGroup(group);
+  const id = String(memberId ?? "");
+  const up = String(managerId ?? "");
+  if (!base.members.some((m) => m.id === id)) return { ok: false, reason: "not_member", group: base };
+  if (up && up === id) return { ok: false, reason: "self", group: base };
+  if (up && !base.members.some((m) => m.id === up)) return { ok: false, reason: "no_manager", group: base };
+  if (up) {
+    /* 顺着 up 往上走一圈，遇到 id 就是环 */
+    const byId = new Map(base.members.map((m) => [m.id, m]));
+    let cursor = up;
+    for (let hop = 0; hop < 32 && cursor; hop += 1) {
+      if (cursor === id) return { ok: false, reason: "cycle", group: base };
+      cursor = String(byId.get(cursor)?.managerId ?? "");
+    }
+  }
+  return {
+    ok: true,
+    changed: String(base.members.find((m) => m.id === id)?.managerId ?? "") !== up,
+    group: { ...base, members: base.members.map((m) => (m.id === id ? { ...m, managerId: up } : m)) },
+  };
+}
+
 /** 伙伴静音（飞书：每个机器人可单独静音）。 */
 export function setPartnerMuted(group, partnerId, muted) {
   const base = createGroup(group);
@@ -182,15 +212,35 @@ export function guardAllows(group, facts = {}) {
  * ⛔ 纯函数，主进程/渲染层/测试共用一份口径 —— ⛔ 别在派活处手拼字符串（两套必然漂）。
  * 返回空串 = 这个群没有任何上下文可注入。
  */
-export function groupContextBlock(group) {
+export function groupContextBlock(group, options = {}) {
   const g = createGroup(group);
   const memory = String(g.memory ?? "").trim();
   const files = Array.isArray(g.files) ? g.files : [];
-  if (!memory && !files.length) return "";
+  /* 上下级（豆包：`managerId` / `canDelegate`）：告诉**这个**伙伴它能把子任务派给谁。
+     ⛔ 只有在配置了关系时才写，否则每段注入都带一句空话。
+     ⛔ 目标写 `kind:name`（与 `agent_invoke` 的参数同形），模型照着就能调，不用猜。 */
+  const me = String(options?.forMemberId ?? "");
+  const self = me ? g.members.find((m) => m.id === me) : null;
+  const manager = self?.managerId ? g.members.find((m) => m.id === self.managerId) : null;
+  const reports = self
+    ? g.members.filter((m) => m.kind === "bot" && m.id !== self.id && canDelegate(self.id, m.id, g))
+    : [];
+  const hasOrg = Boolean(manager || reports.length);
+  if (!memory && !files.length && !hasOrg) return "";
   const lines = [`【群聊上下文 · ${g.name}】`];
   if (memory) lines.push(memory);
+  if (hasOrg) {
+    if (lines.length > 1) lines.push("");
+    lines.push("组织关系（派活用 agent_invoke 的 kind/name）：");
+    if (manager) lines.push(`- 你的上级：${manager.name}${manager.targetProfession ? `（${manager.targetProfession}）` : ""}`);
+    if (reports.length) {
+      lines.push("- 你可以把子任务派给：" + reports.map((m) => `${m.name}（${m.targetKind || "expert"}:${m.targetKey || m.name}）`).join("、"));
+      lines.push("  ⛔ 只在用户明确要求、或确实需要时才派，不要为了显得忙碌而派。");
+    }
+  }
   if (files.length) {
-    lines.push("", "参考文件（本机绝对路径；需要时直接读，⛔ 别凭文件名猜内容）：");
+    if (lines.length > 1) lines.push("");
+    lines.push("参考文件（本机绝对路径；需要时直接读，⛔ 别凭文件名猜内容）：");
     for (const f of files) lines.push(`- ${f.path}${f.note ? `（${f.note}）` : ""}`);
   }
   return lines.join("\n");
@@ -228,6 +278,7 @@ export function projectGroupMessages(sources) {
         kind: msg?.kind === "card" ? "card" : "text",
         text: String(msg?.text ?? ""),
         card: msg?.card ?? null,
+        mentions: Array.isArray(msg?.mentions) ? msg.mentions.map(String) : [],
       });
     }
   }
@@ -262,6 +313,9 @@ export function normalizeGroupMessage(entry) {
     kind: entry?.kind === "card" ? "card" : "text",
     text: String(entry?.text ?? ""),
     card: entry?.card ?? null,
+    /* @ 了谁（成员 id 数组）：飞书消息里 @ 是高亮 mention，不是普通文本。
+       ⛔ 只留群里真实存在的 id，别把已移除的伙伴留在消息里。 */
+    mentions: Array.isArray(entry?.mentions) ? entry.mentions.map(String).filter(Boolean) : [],
   };
 }
 

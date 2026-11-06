@@ -29,6 +29,7 @@ import {
   projectGroupMessages,
   normalizeGroupFile,
   removePartner,
+  setManager,
   setPartnerMuted,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
@@ -50,6 +51,7 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:delete",
   "harness-team:set-memory",
   "harness-team:set-files",
+  "harness-team:set-manager",
 ];
 
 /** 配置文件路径（惰性：每次调用现取，⛔ 不在模块体缓存）。 */
@@ -223,6 +225,24 @@ export const harnessTeamFeature = defineFeature<null>({
       if (list.length > MAX_GROUP_FILES) return { ok: false, error: `最多 ${MAX_GROUP_FILES} 个参考文件` };
       const next = createGroup({ ...g, files: list }) as GroupShape;
       return saveOne(store, next);
+    });
+
+    /* 上下级（豆包 `managerId`）：只改组织关系，⛔ 不动任何会话。
+       ⛔ 成环/自指在纯函数里拦（setManager），这里只负责落盘。 */
+    ipcHost.handle("harness-team:set-manager", (_event, groupId: string, memberId: string, managerId: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const r = setManager(g, memberId, managerId) as { ok: boolean; reason?: string; group: GroupShape; changed?: boolean };
+      if (!r.ok) {
+        const msg =
+          r.reason === "self" ? "不能把自己设成自己的上级"
+            : r.reason === "cycle" ? "这样会绕成环（A 是 B 的上级、B 又是 A 的上级）"
+              : r.reason === "no_manager" ? "这个上级不在群里"
+                : "设置失败";
+        return { ok: false, error: msg, reason: r.reason, group: r.group };
+      }
+      return { ...saveOne(store, r.group), changed: r.changed };
     });
 
     /* 解散群（11-06 补）：只删群与它的**群消息日志**，⛔ 不碰任何子会话 ——

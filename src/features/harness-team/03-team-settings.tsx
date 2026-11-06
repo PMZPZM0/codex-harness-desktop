@@ -18,7 +18,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { BookOpen, FolderOpen, Trash2, Users } from "lucide-react";
+import { BookOpen, FolderOpen, GitBranch, Trash2, Users } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
 
 type Props = {
@@ -29,6 +29,7 @@ type Props = {
   onAddPartner: (partner: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
   onRemovePartner: (partnerId: string) => Promise<{ ok: boolean; error?: string }>;
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
+  onSetManager: (memberId: string, managerId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
   /** 解散群（只删群与群日志；伙伴的子会话不动） */
@@ -38,8 +39,17 @@ type Props = {
 /** 调度目标的一条（与 `listDispatchCatalog()` 的返回一致；这里只声明用得到的字段）。 */
 type Target = { kind: string; key: string; name: string; profession?: string; teamId?: string; installed?: boolean };
 
-/** 这类目标派活要「专家团」许可（主进程 dispatchKindAllowed：team/member 同一把闸） */
+/**
+ * 这类目标派活要「专家团」许可（主进程 `dispatchKindAllowed`：team/member 同一把闸）。
+ * ⛔⛔ 11-06 实测：全仓**没有任何 UI 会写 `dispatch.team`**（`dispatchAllowOf` 只读会话配置，
+ *   而应用里没有那个开关）⇒ 选进来也永远派不出去。所以**不再列为可选项**，
+ *   老群里已经存在的这类伙伴标红说明「不可派」，并给出可操作建议（换成「专家」）。
+ *   ⛔ 别把「去顶栏打开专家团」写进文案 —— 那个开关不存在，等于让用户找空气。
+ */
 const needsTeamGate = (kind: string) => kind === "member" || kind === "team";
+
+/** 能进群当伙伴的类别：只有**默认就允许**的三类（expert / subagent / cli）。 */
+const PICKABLE = new Set(["expert", "subagent", "cli"]);
 
 const KIND_LABEL: Record<string, string> = {
   member: "专家团成员",
@@ -54,7 +64,7 @@ const FILES_MAX = 20;
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetMemory, onSetFiles, onDeleteGroup }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles, onDeleteGroup }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -111,11 +121,11 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
     return targets
       .map((t, index) => ({ index, t }))
       .filter(({ t }) => !taken.has(`${t.kind}:${t.key}`))
+      /* ⛔ 只列默认可派的类别（见 PICKABLE 注释）：列进来却派不出去 = 骗用户 */
+      .filter(({ t }) => PICKABLE.has(t.kind))
       .map(({ index, t }) => ({
         value: String(index),
-        /* ⛔ 需要"专家团"许可的类别（member/team）在**选之前**就标注出来：
-           等用户 @ 完发送失败才告诉他，等于把人当测试机。 */
-        label: `${KIND_LABEL[t.kind] ?? t.kind} · ${t.name}${t.profession ? `（${t.profession}）` : ""}${needsTeamGate(t.kind) ? " · 需开启专家团" : ""}`,
+        label: `${KIND_LABEL[t.kind] ?? t.kind} · ${t.name}${t.profession ? `（${t.profession}）` : ""}`,
       }));
   }, [targets, partners]);
 
@@ -141,6 +151,8 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         name: target.name,
         targetKind: target.kind,
         targetKey: target.key,
+        /* ⛔ 角色（profession）必须一起存：群里只显示名字就分不清谁是谁（飞书/豆包都有身份栏） */
+        targetProfession: target.profession ?? "",
       });
       if (r.ok) setPick("");
       return r;
@@ -186,10 +198,10 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
                   ? (
                     <em
                       className={`team-settings__tag${needsTeamGate(p.targetKind) ? " team-settings__tag--warn" : ""}`}
-                      title={needsTeamGate(p.targetKind) ? "这类目标要先在顶栏「调度」里打开「专家团」，否则派活会被挡下" : undefined}
+                      title={needsTeamGate(p.targetKind) ? "专家团成员/团要「专家团」许可，应用目前没有这个开关 ⇒ 派不出去。建议移除后改加「专家」。" : undefined}
                     >
                       {KIND_LABEL[p.targetKind] ?? p.targetKind}
-                      {needsTeamGate(p.targetKind) ? " ·需开专家团" : ""}
+                      {needsTeamGate(p.targetKind) ? " ·不可派" : ""}
                     </em>
                   )
                   : <em className="team-settings__tag team-settings__tag--warn" title="手打的名字没有对应的智能体，派不了活">未绑定</em>}
@@ -224,8 +236,46 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         </div>
         {partners.length >= limit && <p className="team-settings__hint">已达上限（最多 {limit} 个伙伴）</p>}
         <p className="team-settings__hint">
-          「专家 / 子智能体 / 本机 CLI」开箱可派；<strong>「专家团成员」要先在顶栏调度面板里打开「专家团」</strong>，否则派活会被主进程挡下。
+          能加的只有<strong>开箱可派</strong>的三类：专家、子智能体、本机 CLI。
+          <strong>专家团成员 / 专家团</strong>需要「专家团」许可，而应用目前还没有提供这个开关，
+          所以先不列出来（选了也派不出去）。
         </p>
+      </section>
+
+      {/* ── 上下级（豆包 managerId）：真生效 —— 派活时会把这个伙伴的上级/可派对象写进 prompt ── */}
+      <section className="team-settings__block">
+        <h3>
+          <GitBranch size={14} className="ic-green" />
+          谁向谁汇报
+          <span className="team-settings__count">{partners.filter((p) => p.managerId).length} 已设</span>
+        </h3>
+        <p className="team-settings__hint">
+          给伙伴选一个<strong>上级</strong>。派活时会把这段关系交给它 ——
+          它就能把子任务派给下级（走既有的调度闸），汇报关系写进 prompt，不只是画个图。
+        </p>
+        <ul className="team-settings__list">
+          {partners.map((p) => (
+            <li key={p.id} className="team-settings__row">
+              <span className="team-settings__avatar" aria-hidden>{p.name.slice(0, 1)}</span>
+              <span className="team-settings__name">
+                {p.name}
+                {p.targetProfession && <em className="team-settings__tag">{p.targetProfession}</em>}
+              </span>
+              <span className="team-settings__meta">上级</span>
+              <AppSelect
+                value={p.managerId}
+                onChange={(value) => void run(() => onSetManager(p.id, value), value ? "汇报关系已保存" : "已清掉上级")}
+                options={[
+                  { value: "", label: "（无）" },
+                  ...partners.filter((x) => x.id !== p.id).map((x) => ({ value: x.id, label: x.name })),
+                ]}
+                ariaLabel={`${p.name} 的上级`}
+                disabled={busy}
+              />
+            </li>
+          ))}
+          {!partners.length && <li className="team-settings__empty">先加伙伴，再设汇报关系</li>}
+        </ul>
       </section>
 
       {/* ── 群记忆 ─────────────────────────────────────────────────────── */}
@@ -329,27 +379,31 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
       {onDeleteGroup && (
         <section className="team-settings__block team-settings__block--danger">
           <h3><Trash2 size={14} className="ic-pink" />解散这个群</h3>
-          <p className="team-settings__hint">
-            只删群和群里的消息记录；<strong>伙伴自己的会话一条都不会动</strong>（那些会话还在侧栏里）。
-          </p>
-          {confirmDelete ? (
-            <div className="team-settings__savebar">
-              <span className="team-settings__meta">确定解散「{group.name}」？</span>
-              <button type="button" className="team-settings__mini" onClick={() => setConfirmDelete(false)} disabled={busy}>取消</button>
-              <button
-                type="button"
-                className="team-settings__mini team-settings__mini--danger"
-                onClick={() => void run(() => onDeleteGroup())}
-                disabled={busy}
-              >
-                确认解散
+          {/* ⛔ 说明与按钮**同一行**（用户：「这么大空白干嘛」+「删除键右边去」）：
+              以前说明单独一行、按钮另起一行右对齐，中间留一大块空。 */}
+          <div className="team-settings__inline-row">
+            <span className="team-settings__hint team-settings__hint--inline">
+              只删群和群里的消息记录；<strong>伙伴的会话一条都不会动</strong>。
+            </span>
+            {confirmDelete ? (
+              <>
+                <span className="team-settings__meta">确定解散「{group.name}」？</span>
+                <button type="button" className="team-settings__mini" onClick={() => setConfirmDelete(false)} disabled={busy}>取消</button>
+                <button
+                  type="button"
+                  className="team-settings__mini team-settings__mini--danger"
+                  onClick={() => void run(() => onDeleteGroup())}
+                  disabled={busy}
+                >
+                  确认解散
+                </button>
+              </>
+            ) : (
+              <button type="button" className="team-settings__mini team-settings__mini--danger" onClick={() => setConfirmDelete(true)} disabled={busy}>
+                解散群
               </button>
-            </div>
-          ) : (
-            <button type="button" className="team-settings__mini team-settings__mini--danger" onClick={() => setConfirmDelete(true)} disabled={busy}>
-              解散群
-            </button>
-          )}
+            )}
+          </div>
         </section>
       )}
 

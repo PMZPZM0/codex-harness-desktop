@@ -22,6 +22,7 @@ import {
   projectGroupLog,
   projectGroupMessages,
   removePartner,
+  setManager,
   setPartnerMuted,
 } from "../src/lib/team-models.mjs";
 
@@ -299,4 +300,48 @@ test("注入块：空群不注入；有记忆/文件时按「标题→记忆→�
   assert.ok(b2.includes("D:/data/口径.md"), "没说明也列路径");
   assert.ok(b2.indexOf("只做门店周报。") < b2.indexOf("参考文件"), "记忆在文件之前");
   assert.ok(b2.length < 6000, "注入块要有界（群记忆 4000 + 文件 20 行）");
+});
+
+/* ── 上下级（豆包 managerId）+ @ 高亮（飞书 mention） ── */
+
+test("上下级：能设能清，自指/成环/不在群里一律拒", () => {
+  const g = createGroup({
+    id: "g", name: "n", leadId: "u",
+    members: [human("u"), bot("a", { name: "A", targetKind: "expert" }), bot("b", { name: "B", targetKind: "expert" })],
+  });
+  const r1 = setManager(g, "b", "a");
+  assert.equal(r1.ok, true);
+  assert.equal(r1.group.members.find((m) => m.id === "b").managerId, "a");
+  assert.equal(setManager(r1.group, "a", "a").reason, "self", "不能当自己的上级");
+  assert.equal(setManager(r1.group, "a", "b").reason, "cycle", "A→B→A 成环要拒");
+  assert.equal(setManager(r1.group, "a", "ghost").reason, "no_manager", "上级必须在群里");
+  assert.equal(setManager(r1.group, "b", "").group.members.find((m) => m.id === "b").managerId, "", "能清掉");
+});
+
+test("注入块按人不同：上级/下级各写各的，且下级写成 agent_invoke 的参数形", () => {
+  const g = createGroup({
+    id: "g", name: "智慧厨房", leadId: "u",
+    members: [
+      human("u"),
+      bot("a", { name: "承枢", targetKind: "expert", targetKey: "team:lead", targetProfession: "交付总监" }),
+      bot("b", { name: "生图", targetKind: "expert", targetKey: "img" }),
+    ],
+  });
+  const withOrg = setManager(g, "b", "a").group;
+  const forA = groupContextBlock(withOrg, { forMemberId: "a" });
+  const forB = groupContextBlock(withOrg, { forMemberId: "b" });
+  assert.ok(forA.includes("你可以把子任务派给：生图（expert:img）"), forA);
+  assert.ok(!forA.includes("你的上级"));
+  assert.ok(forB.includes("你的上级：承枢（交付总监）"), forB);
+  assert.ok(!forB.includes("你可以把子任务派给"));
+  assert.equal(groupContextBlock(g, { forMemberId: "a" }), "", "没配上下级也没记忆/文件 ⇒ 不注入");
+});
+
+test("投影带出 mentions（@ 高亮的数据来源）", () => {
+  let list = [];
+  list = appendGroupMessage(list, { id: "h1", threadId: "group:g", authorKind: "human", at: 1, text: "hi", mentions: ["a", "b"] });
+  const rows = projectGroupLog(list);
+  assert.deepEqual(rows[0].mentions, ["a", "b"]);
+  const bare = projectGroupLog(appendGroupMessage([], { id: "h2", threadId: "group:g", at: 2, text: "x" }));
+  assert.deepEqual(bare[0].mentions, [], "没 @ 就是空数组，不是 undefined");
 });

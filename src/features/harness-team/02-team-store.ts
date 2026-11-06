@@ -118,21 +118,33 @@ export function useTeamGroups() {
       /* 静音 = 不打扰：@ 了也不派（⛔ 但要说清是"被静音"而不是"没选"） */
       const targets = picked.filter((m) => !m.muted);
       if (!targets.length) return { ok: false, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
+      /* ⛔ 专家团成员/团需要「专家团」许可，而应用没有这个开关 ⇒ 提前说清，
+         别让它走到主进程再回一条"去顶栏打开专家团"（那个开关不存在）。 */
+      const gated = targets.filter((m) => m.targetKind === "member" || m.targetKind === "team");
+      if (gated.length) {
+        return {
+          ok: false,
+          error: `「${gated.map((m) => m.name).join("、")}」是专家团成员/团，需要「专家团」许可；应用目前没有这个开关，派不出去。请在群设置里换成「专家」。`,
+        };
+      }
       const unbound = targets.filter((m) => !m.targetKind || !m.targetKey);
       if (unbound.length) {
         return { ok: false, error: `「${unbound.map((m) => m.name).join("、")}」还没绑定智能体，去群设置里换成列表里的那一个` };
       }
 
       setDispatchError("");
-      /* 注入块：群记忆 + 参考文件路径（豆包 baseline.md 的群级等价物）。
-         ⛔ 只注入给伙伴，**群日志里只存用户原话** —— 否则群里每条消息都顶着一坨背景。 */
-      const ctx = groupContextBlock(group);
-      const query = ctx ? `${ctx}\n\n---\n\n${body}` : body;
+      /* ⛔ 注入块按**每个伙伴**生成（上下级不同），所以放进循环里；群日志只存用户原话。 */
 
       /* ① 人的那句话先上屏（真身 = 群日志），这样 @ 谁都能看见自己说了什么。
          ⛔ 存不上就**不发**：否则群里会出现"有回答没有提问"的断头记录。 */
       try {
-        const saved = await appendMessage(group.id, { authorId: LOCAL_ACTOR_ID, authorKind: "human", text: body });
+        const saved = await appendMessage(group.id, {
+          authorId: LOCAL_ACTOR_ID,
+          authorKind: "human",
+          text: body,
+          /* @ 了谁（飞书：mention 是单独一类对象，不是普通文本）—— 群视图据此渲染高亮 chip */
+          mentions: targets.map((m) => m.id),
+        });
         if (!saved?.ok) return { ok: false, error: saved?.error || "群消息没存上" };
       } catch (err) {
         return { ok: false, error: `群消息没存上：${err instanceof Error ? err.message : String(err)}` };
@@ -144,6 +156,8 @@ export function useTeamGroups() {
       await Promise.all(
         targets.map(async (partner) => {
           try {
+            const ctx = groupContextBlock(group, { forMemberId: partner.id });
+            const query = ctx ? `${ctx}\n\n---\n\n${body}` : body;
             const res = (await window.codex.invokeAgent({
               kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
               name: partner.targetKey,
@@ -235,6 +249,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 上下级（豆包 managerId；成环/自指由纯函数拦，这里只发） */
+  const setManagerOf = useCallback(
+    async (groupId: string, memberId: string, managerId: string) =>
+      apply((await window.codex.harnessTeamSetManager(groupId, memberId, managerId)) as MutationResult),
+    [apply],
+  );
+
   /** 群文件（整组替换：UI 增删后一次提交，⛔ 不做并发合并的猜测） */
   const saveFiles = useCallback(
     async (groupId: string, files: unknown[]) => apply((await window.codex.harnessTeamSetFiles(groupId, files)) as MutationResult),
@@ -250,7 +271,7 @@ export function useTeamGroups() {
   return {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, dispatchError,
-    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup, setMemory, saveFiles,
+    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup, setMemory, saveFiles, setManagerOf,
     loadMessages, appendMessage, dispatch,
   };
 }

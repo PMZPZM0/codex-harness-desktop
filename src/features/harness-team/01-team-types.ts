@@ -16,6 +16,8 @@ export type TeamMember = {
   /** P0b：绑定的真实调度目标（`listDispatchCatalog()` 那条）；空串 = 未绑定，派活会被明确拒绝 */
   targetKind: "" | "expert" | "team" | "member" | "subagent" | "cli";
   targetKey: string;
+  /** 角色/岗位（专家团成员的 profession）；空串 = 没配 */
+  targetProfession: string;
 };
 
 export type TeamGuard = {
@@ -56,5 +58,7 @@ export type GroupMessageRow = {
   kind: "text" | "card";
   text: string;
   card: unknown;
+  /** @ 了谁（成员 id） */
+  mentions: string[];
   seq: number;
 };

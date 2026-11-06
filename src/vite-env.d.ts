@@ -1400,6 +1400,8 @@ interface Window {
     harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：群记忆 / 群文件 */
     harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：上下级（委派白名单） */
+    harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
 /* ═══ gen:end ═══ */
 
 

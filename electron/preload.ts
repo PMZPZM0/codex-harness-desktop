@@ -1016,6 +1016,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetMemory: (groupId: string, text: string) => __ipc("harness-team:set-memory", 2, [groupId, text]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetFiles: (groupId: string, files: unknown) => __ipc("harness-team:set-files", 2, [groupId, files]),
+  /* 团队模式：上下级（委派白名单） */
+  harnessTeamSetManager: (groupId: string, memberId: string, managerId: string) => __ipc("harness-team:set-manager", 3, [groupId, memberId, managerId]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

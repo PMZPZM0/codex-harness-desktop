@@ -13,6 +13,8 @@ export interface TeamMemberLite {
   /** P0b：伙伴绑定的真实调度目标（`agents:catalog` 的 kind / key）；未绑定为空串 */
   targetKind: string;
   targetKey: string;
+  /** 角色/岗位（专家团成员的 profession）；空串 = 没配，⛔ 不编 */
+  targetProfession: string;
 }
 
 /** 一条群消息日志（P0b）：真身 = threadId（伙伴子会话）或 `group:<群id>`（人自己说的）。 */
@@ -25,6 +27,8 @@ export interface GroupLogMessage {
   kind: "text" | "card";
   text: string;
   card: unknown;
+  /** @ 了谁（成员 id 数组） */
+  mentions: string[];
 }
 
 export interface TeamGuard {
@@ -78,6 +82,7 @@ export interface GroupMessageProjected {
   kind: "text" | "card";
   text: string;
   card: unknown;
+  mentions: string[];
   seq: number;
 }
 
@@ -89,7 +94,12 @@ export const DEFAULT_GROUP_GUARD: Readonly<TeamGuard>;
 
 export function normalizeMember(entry: unknown): TeamMemberLite | null;
 export function normalizeGroupFile(entry: unknown): GroupFileLite | null;
-export function groupContextBlock(group: TeamGroupLite | unknown): string;
+export function groupContextBlock(group: TeamGroupLite | unknown, options?: { forMemberId?: string }): string;
+export function setManager(
+  group: TeamGroupLite,
+  memberId: string,
+  managerId?: string,
+): { ok: boolean; reason?: string; group: TeamGroupLite; changed?: boolean };
 export function createGroup(input: unknown): TeamGroupLite;
 export function memberIdsOf(group: TeamGroupLite | null | undefined): string[];
 export function partnersOf(group: TeamGroupLite | null | undefined): TeamMemberLite[];
