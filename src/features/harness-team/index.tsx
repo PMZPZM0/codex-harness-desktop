@@ -15,7 +15,7 @@
  *     （卡片头 X / ESC / 点背景）。⛔ 不要再把面板做回 inset:0。
  */
 import { useEffect, useMemo, useState } from "react";
-import { MessagesSquare, X } from "lucide-react";
+import { MessagesSquare, X, Plus, Search, MoreHorizontal, Pencil, Eraser, Trash2 } from "lucide-react";
 import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { LOCAL_ACTOR_ID, useTeamGroups } from "./02-team-store";
@@ -34,10 +34,29 @@ export function TeamModePanel() {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState("");
+  /* 左栏（11-06 用户：「群列表功能太少，新建群还在底部」）：新建移到顶部 + 搜索 + 每群操作菜单 */
+  const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [menuId, setMenuId] = useState("");
+  const [renamingId, setRenamingId] = useState("");
+  const [renameText, setRenameText] = useState("");
+  /* 解散群二次确认：⛔ 不用 window.confirm（守卫【191】：原生模态会吞焦点） */
+  const [confirmDeleteId, setConfirmDeleteId] = useState("");
 
   useEffect(() => {
     if (!activeId && groups.length) setActiveId(groups[0].id);
   }, [groups, activeId]);
+
+  /* 点菜单外面就收起（⛔ 不用原生弹窗，也不留一个关不掉的浮层） */
+  useEffect(() => {
+    if (!menuId) return;
+    const onDown = (e: PointerEvent) => {
+      const hit = (e.target as HTMLElement | null)?.closest?.(".team-mode__group-menu, .team-mode__more");
+      if (!hit) { setMenuId(""); setConfirmDeleteId(""); }
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [menuId]);
 
   /* 切群即读这个群的群视图行（⛔ 主进程才是权威：不靠上一屏的残留在内存里拼）。
      同时拉一次「谁正在跑」—— 面板关掉再打开时，正在处理的伙伴要立刻回到屏幕上，
@@ -51,6 +70,15 @@ export function TeamModePanel() {
   }, [activeId, loadMessages, loadRunning, loadLedger]);
 
   const active = useMemo(() => groups.find((g) => g.id === activeId) ?? null, [groups, activeId]);
+  const visibleGroups = useMemo(
+    () => groups.filter((g) => g.name.toLowerCase().includes(query.trim().toLowerCase())),
+    [groups, query],
+  );
+  const saveRename = async (groupId: string) => {
+    const next = renameText.trim();
+    if (next) await rename(groupId, next);
+    setRenamingId("");
+  };
 
   const newGroup = async () => {
     const n = name.trim();
@@ -77,36 +105,108 @@ export function TeamModePanel() {
     <div className="team-mode">
       <aside className="team-mode__rail">
         <div className="team-mode__rail-head">
-          <strong>团队</strong>
-          <span className="team-mode__rail-sub">{groups.length} 个群</span>
+          <div className="team-mode__rail-title">
+            <strong>团队</strong>
+            <span className="team-mode__rail-sub">{groups.length} / {limit} 个群</span>
+          </div>
+          <button
+            type="button"
+            className={`team-mode__add${createOpen ? " is-on" : ""}`}
+            title="新建群"
+            aria-label="新建群"
+            aria-expanded={createOpen}
+            onClick={() => setCreateOpen((v) => !v)}
+          ><Plus size={16} /></button>
+        </div>
+        {createOpen && (
+          <div className="team-mode__create">
+            <input
+              autoFocus
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="新群名字"
+              onKeyDown={(e) => { if (e.key === "Enter") void newGroup(); }}
+            />
+            <button type="button" onClick={() => void newGroup()} disabled={creating || !name.trim()} title="创建"><Plus size={14} /> 创建</button>
+          </div>
+        )}
+        <div className="team-mode__search">
+          <Search size={13} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索群名字" aria-label="搜索群" />
         </div>
         <ul className="team-mode__groups">
-          {groups.map((g) => (
-            <li key={g.id}>
+          {visibleGroups.map((g) => (
+            <li key={g.id} className="team-mode__group-row">
+              {renamingId === g.id ? (
+                <input
+                  className="team-mode__rename"
+                  autoFocus
+                  value={renameText}
+                  onChange={(e) => setRenameText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") setRenameText(g.name);
+                  }}
+                  onBlur={() => { void saveRename(g.id); }}
+                  aria-label="群名"
+                />
+              ) : (
+                <button
+                  type="button"
+                  className={`team-mode__group${g.id === activeId ? " is-active" : ""}`}
+                  onClick={() => { setActiveId(g.id); setMenuId(""); }}
+                >
+                  <i className="team-mode__group-icon"><MessagesSquare size={14} /></i>
+                  <span className="team-mode__group-text">
+                    <span className="team-mode__group-name">{g.name}</span>
+                    <span className="team-mode__group-sub">
+                      {g.members.filter((m) => m.kind === "bot").length} 伙伴
+                      {(rowsByGroup[g.id]?.length ?? 0) > 0 ? ` · ${rowsByGroup[g.id].length} 条` : ""}
+                      {blockers[g.id]?.length ? " · 待处理" : ""}
+                    </span>
+                  </span>
+                </button>
+              )}
               <button
                 type="button"
-                className={`team-mode__group${g.id === activeId ? " is-active" : ""}`}
-                onClick={() => setActiveId(g.id)}
-              >
-                <span className="team-mode__group-name">{g.name}</span>
-                <span className="team-mode__group-sub">
-                  {g.members.filter((m) => m.kind === "bot").length} 伙伴
-                  {(rowsByGroup[g.id]?.length ?? 0) > 0 ? ` · ${rowsByGroup[g.id].length} 条` : ""}
-                  {/* ⛔ 只有**结构性**问题才在侧栏报"待处理"：新群没伙伴是正常的 */}
-                  {blockers[g.id]?.length ? " · 待处理" : ""}
-                </span>
-              </button>
+                className="team-mode__more"
+                title="群操作"
+                aria-label={`${g.name} 的操作`}
+                aria-expanded={menuId === g.id}
+                onClick={() => { setConfirmDeleteId(""); setMenuId((prev) => (prev === g.id ? "" : g.id)); }}
+              ><MoreHorizontal size={14} /></button>
+              {menuId === g.id && (
+                <div className="team-mode__group-menu" role="menu">
+                  <button type="button" role="menuitem" onClick={() => { setRenamingId(g.id); setRenameText(g.name); setMenuId(""); }}>
+                    <Pencil size={13} /> 重命名
+                  </button>
+                  <button type="button" role="menuitem" onClick={() => { void clearMessages(g.id); setMenuId(""); }}>
+                    <Eraser size={13} /> 清空聊天记录
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={`is-danger${confirmDeleteId === g.id ? " is-armed" : ""}`}
+                    title="解散只删群和群记录，伙伴的子会话不动"
+                    onClick={() => {
+                      if (confirmDeleteId !== g.id) { setConfirmDeleteId(g.id); return; }
+                      setConfirmDeleteId("");
+                      setMenuId("");
+                      void removeGroup(g.id);
+                      if (activeId === g.id) setActiveId("");
+                    }}
+                  ><Trash2 size={13} /> {confirmDeleteId === g.id ? "再点一次确认解散" : "解散群"}</button>
+                </div>
+              )}
             </li>
           ))}
+          {!visibleGroups.length && (
+            <li className="team-mode__group-none">{query ? "没有匹配的群" : "还没有群，点右上角 + 新建"}</li>
+          )}
         </ul>
-        <div className="team-mode__new">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="新群名字"
-            onKeyDown={(e) => { if (e.key === "Enter") void newGroup(); }}
-          />
-          <button type="button" onClick={() => void newGroup()} disabled={creating || !name.trim()}>建群</button>
+        <div className="team-mode__rail-foot">
+          <span>最多 {limit} 个群</span>
+          <span>@ 伙伴派活</span>
         </div>
         {notice && <p className="team-mode__error" role="status">{notice}</p>}
         {error && <p className="team-mode__error" role="status">{error}</p>}

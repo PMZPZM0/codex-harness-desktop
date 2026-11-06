@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
-import { groupContextBlock, parseMentions } from "../../lib/team-models.mjs";
+import { groupContextBlock } from "../../lib/team-models.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
 type ListResult = {
@@ -59,10 +59,11 @@ export type DispatchSummary = { sent: number; failed: { name: string; error: str
 /** 当前用户在本地的身份（P0 用固定值：群主 = 第一个人类成员；后续接账号库）。 */
 export const LOCAL_ACTOR_ID = "local-user";
 
-/** 互相 @ 的护栏（⛔ 少了这些上限，两个伙伴互 @ 会无限互相触发）。 */
-const MAX_MENTION_HOPS = 2;    // 用户 → A → B（更深的 @ 不再触发）
-const MAX_MENTION_FANOUT = 2;  // 一条回复最多带 2 个人
-const MAX_MENTION_RUNS = 4;    // 一轮派活最多 4 次额外运行
+/* ⛔⛔ 11-06 用户（截图）：「我艾特一个，另外一个怎也回复了」——
+   原实现会扫描**伙伴回复正文**里的 `@名字` 自动派下一跳；而模型写的是「PPT @星象」这类
+   **举例文本**，不是指令 ⇒ 只 @ 了执起，星象也被拉起来跑（真金白银 + 违背「@ 谁谁回复」）。
+   ⇒ 自动链式派活整体删除；正文里的 @ 在群视图渲染成**可点提及**，用户点一下才加入本轮 @。
+   ⛔ 护栏常量一并删（不留死代码）；要恢复自动链式必须重新设计「显式指令」判据并经用户确认。 */
 
 export function useTeamGroups() {
   const [groups, setGroups] = useState<TeamGroup[]>([]);
@@ -86,6 +87,10 @@ export function useTeamGroups() {
   const alive = useRef(true);
   /** 伙伴 → 它最近一次的子会话 id（停止运行要用；也从群日志兜底，见 threadOf） */
   const threadRef = useRef<Record<string, string>>({});
+  /* ⛔⛔ 11-06 实测：派活还在跑时用户点了「清空聊天记录」，几分钟后旧回复又写回空群，
+     用户看到的就是「我只 @ 了一个，怎么另一个也冒出来了」。⇒ 清空 = 一代，
+     dispatch 开跑时记住代际，写回前发现代际变了就**不再落盘**（运行照跑完、账照记）。 */
+  const clearedEpochRef = useRef<Record<string, number>>({});
 
   /* ── 卡片原地流式（飞书 §2.4 `cardId` 订阅的等价物）──────────────────────────
      真相源是主进程已经广播的 `delegate-run`（started/delta/finished）——它带 threadId，
@@ -358,6 +363,8 @@ export function useTeamGroups() {
       }
 
       setDispatchError("");
+      /* 本轮派活的代际：期间若被清空，晚到的旧回复一律不再写回 */
+      const epoch = clearedEpochRef.current[group.id] ?? 0;
       /* ⛔ 注入块按**每个伙伴**生成（上下级不同），所以放进循环里；群日志只存用户原话。 */
 
       /* ① 人的那句话先上屏（真身 = 群日志），这样 @ 谁都能看见自己说了什么。
@@ -376,11 +383,8 @@ export function useTeamGroups() {
       }
 
       const failed: DispatchSummary["failed"] = [];
-      /* ⛔⛔ 互相 @ 的护栏（用户要"互相 @ 对话"，但两个伙伴互 @ 会无限触发 —— 真金白银）：
-         最多再跳 MAX_MENTION_HOPS 层、每个回复最多带 MAX_MENTION_FANOUT 个人、
-         一轮里最多 MAX_MENTION_RUNS 次额外运行；且同一个人一轮只跑一次（防 A→B→A 回环）。 */
+      /* 一轮里同一个伙伴只跑一次（并发派活时重复 id 去重）。 */
       const ranIds = new Set<string>();
-      let extraBudget = MAX_MENTION_RUNS;
 
       const noteError = (name: string, msg: string) => {
         failed.push({ name, error: msg });
@@ -405,7 +409,6 @@ export function useTeamGroups() {
       const runOne = async (
         partner: TeamGroup["members"][number],
         bodyText: string,
-        hops: number,
         source: "human" | "partner",
       ): Promise<void> => {
         if (ranIds.has(partner.id)) return;
@@ -448,6 +451,16 @@ export function useTeamGroups() {
           threadId = res.threadId;
           threadRef.current[partner.id] = threadId;
           output = String(res.output ?? "").trim();
+          /* ⛔ 用户在这期间清空过记录 ⇒ 这条是上一代的产出，⛔ 不许再往空群里冒。
+             同时撤掉它的流式卡：finished 事件的延迟删除是唯一兜底，面板若已重开就收不到了。 */
+          if ((clearedEpochRef.current[group.id] ?? 0) !== epoch) {
+            setLiveByGroup((prev) => {
+              const bucket = { ...(prev[group.id] ?? {}) };
+              delete bucket[threadId];
+              return { ...prev, [group.id]: bucket };
+            });
+            return;
+          }
           const wrote = await appendMessage(group.id, {
             authorId: partner.id,
             authorKind: "bot",
@@ -479,24 +492,7 @@ export function useTeamGroups() {
           /* 用量口径：输入（注入块 + 原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
           chars = query.length + output.length;
 
-          /* ② 互相 @：回复里点到谁，就让谁接着说话（人能 @ 伙伴，伙伴之间也能）。
-             ⛔ 只认群里真实存在、没静音、绑定了可派目标的人；⛔ 跳数/次数有上限。 */
-          if (okFlag && hops < MAX_MENTION_HOPS) {
-            const hits = parseMentions(output, group, { excludeId: partner.id })
-              .filter((m) => m.kind === "bot")
-              .filter((m) => !ranIds.has(m.id))
-              .slice(0, MAX_MENTION_FANOUT);
-            for (const hit of hits) {
-              if (extraBudget <= 0) break;
-              const next = group.members.find((m) => m.id === hit.id);
-              if (!next || next.muted) continue;
-              if (!next.targetKind || !next.targetKey) continue;
-              if (next.targetKind === "member" || next.targetKind === "team") continue;
-              extraBudget -= 1;
-              /* ⛔ 不 await：主回复先上屏，被 @ 的人稍后自己进来（否则一个人卡住整条链） */
-              void runOne(next, `（${partner.name} 在群里 @ 你）${bodyText}`, hops + 1, "partner");
-            }
-          }
+          /* ② 回复正文里出现的 @ 只在界面上做成「可点提及」，⛔ 不在这里自动派下一轮。 */
         } catch (err) {
           errMsg = err instanceof Error ? err.message : String(err);
           noteError(partner.name, errMsg);
@@ -520,7 +516,7 @@ export function useTeamGroups() {
         }
       };
 
-      await Promise.all(targets.map((partner) => runOne(partner, body, 0, "human")));
+      await Promise.all(targets.map((partner) => runOne(partner, body, "human")));
 
       /* ③ 收尾再读一次权威行：并发写回的中间态可能少一条，这里兜平 */
       await loadMessages(group.id);
@@ -603,7 +599,10 @@ export function useTeamGroups() {
   /** 清空群聊天记录：只清投影日志，⛔ 伙伴的子会话与真实产出一条都不动（与删群同口径） */
   const clearMessages = useCallback(async (groupId: string) => {
     const res = (await window.codex.harnessTeamClearMessages(groupId)) as { ok: boolean; cleared?: number; error?: string };
-    if (res?.ok) setRowsByGroup((prev) => ({ ...prev, [groupId]: [] }));
+    if (res?.ok) {
+      clearedEpochRef.current[groupId] = (clearedEpochRef.current[groupId] ?? 0) + 1;
+      setRowsByGroup((prev) => ({ ...prev, [groupId]: [] }));
+    }
     return { ok: Boolean(res?.ok), cleared: res?.cleared, error: res?.error };
   }, []);
 

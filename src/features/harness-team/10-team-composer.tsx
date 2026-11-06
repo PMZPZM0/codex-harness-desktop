@@ -177,12 +177,12 @@ export function TeamComposer({
         rows={2}
       />
 
-      <div className="team-composer__actions">
-        <div className="team-composer__left">
-          <button type="button" className={`team-composer__icon${plusOpen ? " is-on" : ""}`} title="添加文件 / 引用技能" aria-label="添加" onClick={() => { setPlusOpen((v) => !v); setSkillOpen(false); }}>
+      <div className="team-composer__actions composer-actions">
+        <div className="team-composer__left composer-left">
+          <button type="button" className={`icon-button team-composer__icon${plusOpen ? " is-on" : ""}`} title="添加文件 / 引用技能" aria-label="添加" onClick={() => { setPlusOpen((v) => !v); setSkillOpen(false); }}>
             <Plus size={16} />
           </button>
-          <button type="button" className="team-composer__icon" title="添加文件（本地绝对路径）" aria-label="添加文件" onClick={() => void pickFiles()}>
+          <button type="button" className="icon-button team-composer__icon" title="添加文件（本地绝对路径）" aria-label="添加文件" onClick={() => void pickFiles()}>
             <Paperclip size={15} />
           </button>
           <ComposerMenu
@@ -214,7 +214,7 @@ export function TeamComposer({
           )}
         </div>
 
-        <div className="team-composer__right">
+        <div className="team-composer__right composer-right">
           <span className="team-composer__count" title="本轮输入字符数（不是 token）">{value.length} 字</span>
           <ComposerMenu icon={Bot} label="模型" title="本轮派活使用的模型" value={opts.model} options={models} onChange={(v) => onOpts({ ...opts, model: v })} width={360} disabled={sending} />
           <EffortPicker levels={["low", "medium", "high", "xhigh"]} value={opts.effort || "high"} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />

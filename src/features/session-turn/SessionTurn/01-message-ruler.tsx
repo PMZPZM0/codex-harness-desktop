@@ -32,7 +32,27 @@ export type RulerMark = { id: string; turnId: string; itemId: string; type: "use
 
 const RULER_MAX = 50;
 
-export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd }: { turns: Turn[]; onJump: (id: string) => void; scrollRef: useRefObject; containerRef: useRefObject; /** 压缩线所在回合（green 标记画在该回合用户消息的刻度之前；空串 = 无压缩线） */ compactionTurnId?: string; /** 压缩发生在最后一回合**之后**（手动压缩的空回合被过滤掉）⇒ 绿段画在最后一个刻度之后 */ compactionAtEnd?: boolean }) {
+export function MessageRuler({
+  turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd,
+  /* ── 11-06 群聊复用同一套刻度尺 ────────────────────────────────────────────
+     ⛔ 群消息是日志投影（GroupMessageRow[]），不是 Turn[]。与其再写一份"长得像"的尺子
+       （用户实锤「跟对话框完全不一样」），不如让这里吃外部 marks：**渲染 / 波浪 / 放大镜 /
+       滚轮 / 声音 / 滑窗全部同一份代码 + 同一份 CSS**，群只负责把 rows 映射成 RulerMark。
+     requireScrollable / narrowThreshold：主对话"内容不满一屏不画尺、容器 <720 隐藏"是
+       时间线口径；群消息常常只有几条、面板也可能被压窄 ⇒ 由调用方显式放宽。 */
+  marksOverride, requireScrollable = true, narrowThreshold = 720, side = "left",
+}: {
+  turns: Turn[];
+  onJump: (id: string) => void;
+  scrollRef: useRefObject;
+  containerRef: useRefObject;
+  compactionTurnId?: string;
+  compactionAtEnd?: boolean;
+  marksOverride?: RulerMark[];
+  requireScrollable?: boolean;
+  narrowThreshold?: number;
+  side?: "left" | "right";
+}) {
   /* 放大镜状态：index = 指针下的刻度（面板里滚轮改的就是它），
      top / rowY = 面板在轨道里的落点与「当前行」在面板内的纵向位置（面板贴边时会被钳制，
      所以 rowY 不能恒等于面板半高）。⛔ 刻度本身不做位移（10-31 已删鱼眼），这里只留面板几何。 */
@@ -74,14 +94,14 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     if (!container) return;
     const check = () => {
       // 720px 是消息区可接受的最小宽度：低于此值时刻度尺会让 agent 气泡可读性变差
-      setContainerNarrow(container.clientWidth < 720);
+      setContainerNarrow(container.clientWidth < narrowThreshold);
     };
     check();
     const observer = new ResizeObserver(check);
     observer.observe(container);
     return () => observer.disconnect();
-  }, [containerRef]);
-  const allMarks = useMemo<RulerMark[]>(() => {
+  }, [containerRef, narrowThreshold]);
+  const computedMarks = useMemo<RulerMark[]>(() => {
     const result: RulerMark[] = [];
     for (const turn of turns) {
       for (const item of turn.items) {
@@ -106,6 +126,9 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
     }
     return result;
   }, [turns]);
+
+  /* 外部给了 marks 就完全接管（群聊）；没给就走 Turn[] 解析（主对话，逐字不变）。 */
+  const allMarks = marksOverride ?? computedMarks;
 
   const currentIndex = useMemo(() => {
     if (!currentItemId) return allMarks.length - 1;
@@ -257,7 +280,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
   // 没有用户消息、内容不满一屏、或容器太窄（右侧面板打开压窄 timeline）时自动隐藏刻度尺。
   // 专家/专家团会话常常只有一条任务消息 + 超长执行输出，内容早就可滚了，
   // 若仍要求 ≥2 条用户消息，这类窗口永远没有刻度线 —— 放宽为 ≥1 条即可定位回任务消息。
-  if (allMarks.length < 1 || !scrollable || containerNarrow) return null;
+  if (allMarks.length < 1 || (requireScrollable && !scrollable) || containerNarrow) return null;
   /* 当前阅读位置在**渲染出来的这一段刻度**里的下标。自动波浪以它为中心：
      往上/往下滚动 → currentItemId 变化 → 波浪跟着走（CSS transition 把相邻刻度
      的长度变化错峰，形成用户要的“波浪”；hover 时以鼠标位置为准）。 */
@@ -344,7 +367,7 @@ export function MessageRuler({ turns, onJump, scrollRef, containerRef, compactio
 
 
   return (
-    <div className="message-ruler" role="navigation" aria-label="消息定位">
+    <div className={`message-ruler${side === "right" ? " is-right" : ""}`} role="navigation" aria-label="消息定位">
       <div
         className="ruler-track"
         ref={(node) => {

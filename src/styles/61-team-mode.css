@@ -1007,21 +1007,7 @@
 /* ══════ 消息流 + 刻度尺（11-06 用户：「给刻度线留出来位置」）════════════════════
    ⛔ 刻度尺放在**滚动区外面**（wrap 里与 stream 并排）：放进 stream 会跟着内容滚走，
       用户就永远看不到"我现在在哪一段"。 */
-.team-group__stream-wrap { display: flex; flex: 1; min-height: 0; min-width: 0; }
-.team-ruler { display: flex; flex: none; width: 16px; justify-content: center; padding: 12px 0; }
-.team-ruler__track { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
-.team-ruler__tick {
-  width: 2px;
-  padding: 0;
-  border: 0;
-  border-radius: 1px;
-  background: var(--line);
-  cursor: pointer;
-  transition: width 0.12s ease, background 0.12s ease;
-}
-.team-ruler__tick:hover { width: 7px; background: var(--muted); }
-/* 当前阅读位置：加粗 + 强调色（与主对话刻度尺同一套语义） */
-.team-ruler__tick.is-current { width: 8px; background: var(--accent); }
+.team-group__stream-wrap { display: flex; position: relative; flex: 1; min-height: 0; min-width: 0; }
 .team-group__more {
   align-self: center;
   margin: 0 auto 2px;
@@ -1088,67 +1074,6 @@
 }
 .team-process .wb-fold.open .wb-fold-header::after { content: "收起"; }
 
-/* ══════ 群消息刻度尺 · 放大镜（11-06：与对话框同款交互）═════════════════════
-   刻度槽在消息流右缘与成员栏之间；hover 弹出**可点可选**的放大面板，
-   样式对齐主对话 `.message-ruler .ruler-lens*`（边框/底色/行高 26px/高亮短横）。 */
-.team-ruler { position: relative; }
-.team-ruler__tick.is-lens { width: 10px; background: var(--accent); }
-.team-ruler .ruler-lens {
-  position: absolute;
-  right: 22px;
-  display: flex;
-  flex-direction: column;
-  width: 280px;
-  max-height: 242px;
-  padding: 4px 6px;
-  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
-  border-radius: 14px;
-  background: var(--panel);
-  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
-  box-sizing: border-box;
-  overflow: hidden;
-  pointer-events: auto;
-  z-index: 30;
-}
-.team-ruler .ruler-lens-row {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
-  height: 26px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 8px;
-  /* ⛔ 暗色下原生 button 按浅色 UA 绘制（项目已踩过） */
-  appearance: none;
-  -webkit-appearance: none;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-  box-sizing: border-box;
-}
-.team-ruler .ruler-lens-row:hover { background: var(--accent-soft); color: var(--accent); }
-.team-ruler .ruler-lens-text {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.team-ruler .ruler-lens-dash {
-  flex: none;
-  width: 16px;
-  height: 2px;
-  border-radius: 1px;
-  background: color-mix(in srgb, var(--muted) 70%, transparent);
-}
-.team-ruler .ruler-lens-row.is-active { color: var(--text); font-weight: 600; }
-.team-ruler .ruler-lens-row.is-active .ruler-lens-dash { width: 24px; background: var(--text); }
-
-
 /* ══════ 11-06 收尾：气泡排版细节 + 刻度槽可见性 ══════════════════════════════
    用户：「聊天框样式做好看一点」「这还有这么多长度怎么就换行了」「消息刻度线也没出来」 */
 .team-msg.is-bot .team-msg__body { border-top-left-radius: 4px; }
@@ -1160,27 +1085,6 @@
   border-radius: 6px;
   background: color-mix(in srgb, var(--panel-2) 60%, transparent);
 }
-/* ⛔ 刻度槽以前只有一根 2px / --line 的淡刻度，1 条消息时肉眼几乎看不见。
-   加一条贯穿的轨道线 + 加粗刻度，槽位本身就"在那儿"。 */
-.team-ruler__track { position: relative; }
-.team-ruler__track::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  transform: translateX(-50%);
-  background: var(--line-soft);
-}
-.team-ruler__tick {
-  position: relative;
-  z-index: 1;
-  width: 3px;
-  background: color-mix(in srgb, var(--muted) 62%, transparent);
-}
-.team-ruler__tick.is-current { width: 8px; background: var(--accent); }
-
 /* ══════ 群输入框：与主对话 composer 同形（11-06）════════════════════════════
    16px 大圆角 + 轻阴影 + 框内底部工具行；@ 伙伴那一行留在框外（群自己的提及，
    ⛔ 不引入主对话的 @专家/子智能体/CLI 面板）。 */
@@ -1320,3 +1224,293 @@
   .team-composer__count { display: none; }
   .team-composer__actions { flex-wrap: wrap; }
 }
+
+/* ══════ 刻度尺：群侧只改「位置 / 朝向」，皮肤全部来自主对话 .message-ruler ═══════════
+   11-06 用户：「刻度线太小了，可以放滚轮左边，跟主对话框一样的效果」「刻度线也是共用一套」。
+   ⇒ 群组件直接渲染主对话 `MessageRuler`（同一份 DOM / 波浪 / 放大镜 / 滚轮 / 声音），
+     这里只把 30px 槽从 `left:0` 挪到滚动条**左边** `right:14px`，并让放大镜往左展开。 */
+.team-group__stream-wrap { position: relative; }
+.message-ruler.is-right {
+  left: auto;
+  right: 14px;
+  width: 30px;
+  /* ⛔ 主对话 `@media (width<=1080px)` 会隐藏尺子；群面板本来就窄，不能跟着藏 */
+  display: block;
+  z-index: 6;
+}
+.message-ruler.is-right .ruler-track { align-items: flex-end; }
+/* 右端固定：波浪变长时向左延展（与主对话"朝聊天一侧变长"同一语义） */
+.message-ruler.is-right .ruler-tick,
+.message-ruler.is-right .ruler-tick:hover,
+.message-ruler.is-right .ruler-tick.wave-0,
+.message-ruler.is-right .ruler-tick.wave-1,
+.message-ruler.is-right .ruler-tick.wave-2 {
+  margin-left: 0;
+  margin-right: 12px;
+}
+.message-ruler.is-right .ruler-lens {
+  left: auto;
+  right: 36px;
+  transform-origin: 100% 50%;
+  animation-name: ruler-lens-in-team;
+}
+@keyframes ruler-lens-in-team {
+  from { opacity: 0; scale: 0.9; translate: 8px 0; }
+  to { opacity: 1; scale: 1; translate: 0 0; }
+}
+
+/* ══════ 群头 / @ 条重做（用户：「聊天框上面一排太丑了」）══════════════════════ */
+.team-group__head { padding: 10px 16px; gap: 10px; }
+.team-group__head-actions { display: flex; flex: none; align-items: center; gap: 8px; margin-left: auto; }
+.team-group__avatars { margin-left: 0; }
+.team-group__avatar.is-more { background: var(--bg); color: var(--muted); font-size: 10px; }
+.team-group__head-sep { width: 1px; height: 18px; background: var(--line); }
+.team-group__icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.team-group__icon-btn:hover,
+.team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+.team-group__atbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 45%, transparent);
+}
+.team-group__atbar-label { flex: none; color: var(--faint); font-size: 11px; }
+.team-group__atbar-chips { display: flex; flex: 1; flex-wrap: wrap; gap: 5px; min-width: 0; }
+.team-group__atchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.team-group__atchip-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10px;
+  font-style: normal;
+}
+.team-group__atchip.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.team-group__atchip.is-on .team-group__atchip-avatar { background: var(--accent); color: var(--accent-text); }
+.team-group__atbar-clear {
+  flex: none;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-group__atbar-clear:hover { color: var(--accent); }
+.team-msg__mention-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-msg__mention-btn:hover { text-decoration: underline; }
+
+/* 输入框工具行：主对话 .composer-actions / .icon-button 同款皮肤，群只补圆角与间距 */
+.team-composer__actions { gap: 8px; min-height: 32px; }
+.team-composer__icon {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+}
+.team-composer__icon:hover,
+.team-composer__icon.is-on {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--accent);
+}
+
+/* ══════ 群列表（11-06：用户「功能太少，新建群还在底部」）══════════════════════ */
+.team-mode__rail-head { align-items: center; padding: 12px 12px 8px; }
+.team-mode__rail-title { display: flex; flex-direction: column; gap: 2px; }
+.team-mode__rail-title strong { font-size: 13px; }
+.team-mode__add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+.team-mode__add:hover,
+.team-mode__add.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.team-mode__create { display: flex; gap: 6px; padding: 0 10px 8px; }
+.team-mode__create input,
+.team-mode__rename {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.team-mode__create input:focus,
+.team-mode__rename:focus { border-color: var(--accent); }
+.team-mode__create button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.team-mode__create button:disabled { opacity: 0.5; cursor: default; }
+.team-mode__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 10px 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--faint);
+}
+.team-mode__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.team-mode__group-row { position: relative; display: flex; align-items: center; gap: 2px; }
+.team-mode__group {
+  flex: 1;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 6px;
+  text-align: left;
+}
+.team-mode__group-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.team-mode__group-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.team-mode__group-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 12.5px; }
+.team-mode__group-sub { color: var(--faint); font-size: 10.5px; white-space: nowrap; }
+.team-mode__more {
+  position: absolute;
+  right: 2px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+  opacity: 0;
+}
+.team-mode__group-row:hover .team-mode__more,
+.team-mode__more:focus-visible,
+.team-mode__more[aria-expanded="true"] { opacity: 1; }
+.team-mode__more:hover { background: var(--accent-soft); color: var(--accent); }
+.team-mode__group-menu {
+  position: absolute;
+  right: 2px;
+  top: calc(100% + 2px);
+  z-index: 25;
+  min-width: 154px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent);
+}
+.team-mode__group-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.team-mode__group-menu > button:hover { background: var(--accent-soft); color: var(--accent); }
+.team-mode__group-menu > button.is-danger { color: var(--danger); }
+.team-mode__group-none { padding: 14px 8px; color: var(--faint); font-size: 11.5px; text-align: center; }
+.team-mode__rail-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--faint);
+  font-size: 10.5px;
+}
+.team-mode__group-menu > button.is-danger.is-armed { background: color-mix(in srgb, var(--danger) 14%, transparent); font-weight: 600; }

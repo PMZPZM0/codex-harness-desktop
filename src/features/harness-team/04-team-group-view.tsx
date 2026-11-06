@@ -12,6 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ListTree, Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LedgerSummary, LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -116,6 +117,8 @@ export function TeamGroupView({
   /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
      用户就会觉得"关了之后什么都没了"）。⛔ 只在自己本来就在底部时才跟，别抢用户翻历史的滚动。 */
   const streamRef = useRef<HTMLDivElement | null>(null);
+  /* 刻度尺是 absolute：定位基准 = 消息流 wrap（不是 stream，会跟着内容滚走） */
+  const wrapRef = useRef<HTMLDivElement | null>(null);
   const stickRef = useRef(true);
   const stick = () => { const el = streamRef.current; if (el) scrollToOffsetInstant(el, el.scrollHeight); };
   /* 分页（用户 11-06：「滚轮和聊天记录分页咋做的」）：⛔ 不一次把 400 条全画进 DOM ——
@@ -160,6 +163,13 @@ export function TeamGroupView({
   const nameOf = (id: string) => (id === "automation" ? "定时任务" : group.members.find((m) => m.id === id)?.name ?? id);
   const memberOf = (id: string) => group.members.find((m) => m.id === id) ?? null;
   const roleOf = (id: string) => memberOf(id)?.targetProfession ?? "";
+
+  /* 伙伴回复正文里写了 `@某人` ⇒ 只做成**可点提及**：点一下把它加进本轮 @，
+     ⛔ 不自动发、不自动派活（11-06：模型写「PPT @星象」这种举例文本也会被误读成指令）。 */
+  const mentionPartner = (id: string) => {
+    setAtTargets((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    composerRef.current?.focus();
+  };
 
   const toggleAt = (id: string) => {
     setAtTargets((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -332,27 +342,31 @@ export function TeamGroupView({
             {ctxParts.length > 0 && ` · ${ctxParts.join(" · ")}`}
           </span>
         </div>
-        <div className="team-group__avatars" aria-hidden>
-          {group.members.slice(0, 6).map((m) => (
-            <span key={m.id} className={`team-group__avatar${m.kind === "bot" ? " is-bot" : ""}${m.muted ? " is-muted" : ""}`} title={m.name}>
-              {m.name.slice(0, 1)}
-            </span>
-          ))}
-        </div>
-        {!showSettings && (
-          <button
-            type="button"
-            className={`team-group__fold-btn${expandAll ? " is-on" : ""}`}
-            onClick={() => setExpandAll((v) => !v)}
-            aria-pressed={expandAll}
-            title="长回复默认收成一行，点这里一键展开/收起本群全部过程"
-          >
-            {expandAll ? "收起过程" : "展开过程"}
+        <div className="team-group__head-actions">
+          <div className="team-group__avatars" title={`${group.members.length} 位成员`}>
+            {group.members.slice(0, 4).map((m) => (
+              <span key={m.id} className={`team-group__avatar${m.kind === "bot" ? " is-bot" : ""}${m.muted ? " is-muted" : ""}`} title={m.name}>
+                {m.name.slice(0, 1)}
+              </span>
+            ))}
+            {group.members.length > 4 && <span className="team-group__avatar is-more">+{group.members.length - 4}</span>}
+          </div>
+          <span className="team-group__head-sep" aria-hidden />
+          {!showSettings && (
+            <button
+              type="button"
+              className={`team-group__icon-btn${expandAll ? " is-on" : ""}`}
+              onClick={() => setExpandAll((v) => !v)}
+              aria-pressed={expandAll}
+              title="一键展开 / 收起本群全部运行过程"
+            >
+              <ListTree size={14} /> <span>{expandAll ? "收起过程" : "展开过程"}</span>
+            </button>
+          )}
+          <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回群聊" : "群设置"}>
+            {showSettings ? <X size={14} /> : <Settings2 size={14} />} <span>{showSettings ? "返回" : "设置"}</span>
           </button>
-        )}
-        <button type="button" className="team-group__settings-btn" onClick={() => setShowSettings((v) => !v)}>
-          {showSettings ? "返回群聊" : "群设置"}
-        </button>
+        </div>
       </header>
 
       {showSettings ? (
@@ -381,7 +395,7 @@ export function TeamGroupView({
       ) : (
         <div className="team-group__body">
           <div className="team-group__main">
-            <div className="team-group__stream-wrap">
+            <div className="team-group__stream-wrap" ref={wrapRef}>
             <div className="team-group__stream" role="log" aria-live="polite" ref={streamRef} onScroll={onStreamScroll}>
               {hasMore && (
                 <button type="button" className="team-group__more" onClick={() => loadEarlier()}>
@@ -410,6 +424,9 @@ export function TeamGroupView({
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
                      运行过程另起一个折叠块挂在正文下面，默认收起。 */
                   const quote = isBot ? quotes.get(row.key) : undefined;
+                  const mentioned = isBot
+                    ? parseMentions(row.text, group, { excludeId: row.authorId }).filter((m) => m.kind === "bot")
+                    : [];
                   const atChips = row.mentions.length
                     ? row.mentions.map((id) => <em key={id} className="team-msg__mention">@{nameOf(id)}</em>)
                     : undefined;
@@ -419,6 +436,8 @@ export function TeamGroupView({
                       className={`team-msg${isBot ? " is-bot" : " is-human"}`}
                       data-thread={row.threadId}
                       data-item={row.itemId}
+                      data-item-id={row.itemId}
+                      data-ruler-mark={isBot ? undefined : "user"}
                     >
                       <span className="team-msg__avatar">{nameOf(row.authorId).slice(0, 1)}</span>
                       <div className="team-msg__body">
@@ -472,6 +491,15 @@ export function TeamGroupView({
                               {copied === row.key ? "已复制" : "复制"}
                             </button>
                             <button type="button" onClick={() => askAgain(row)}>追问</button>
+                            {mentioned.map((m) => (
+                              <button
+                                key={m.id}
+                                type="button"
+                                className="team-msg__mention-btn"
+                                title="点一下把它加进本轮 @（不会自动派活）"
+                                onClick={() => mentionPartner(m.id)}
+                              >@{m.name}</button>
+                            ))}
                             <span className="team-msg__origin" title={`来源会话：${row.threadId}（点一下复制）`} onClick={() => void copyText({ ...row, text: row.threadId })}>
                               来源 {shortId(row.threadId)}
                             </span>
@@ -510,7 +538,7 @@ export function TeamGroupView({
               ))}
             </div>
             {/* 刻度尺（右侧，不随滚动移动）：每条人发的消息一个刻度，点一下跳过去 */}
-            <TeamRuler rows={shownRows} scrollRef={streamRef} />
+            <TeamRuler rows={shownRows} scrollRef={streamRef} containerRef={wrapRef} />
             </div>
 
             {(busy?.length ?? 0) > 0 && (
@@ -531,20 +559,27 @@ export function TeamGroupView({
 
             <footer className="team-group__composer">
               <div className="team-group__atbar">
-                <span className="team-group__atlabel">@</span>
-                {partners.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    className={`team-group__atchip${atTargets.includes(p.id) ? " is-on" : ""}${p.muted ? " is-muted" : ""}`}
-                    onClick={() => toggleAt(p.id)}
-                    aria-pressed={atTargets.includes(p.id)}
-                  >
-                    {p.name}
-                    {!p.targetKind && <em className="team-group__atchip-warn" title="这个伙伴没绑定智能体，派不了活">未绑定</em>}
-                  </button>
-                ))}
-                {!partners.length && <span className="team-group__atempty">还没有伙伴可 @</span>}
+                <span className="team-group__atbar-label">本轮 @</span>
+                <div className="team-group__atbar-chips">
+                  {partners.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      className={`team-group__atchip${atTargets.includes(p.id) ? " is-on" : ""}${p.muted ? " is-muted" : ""}`}
+                      onClick={() => toggleAt(p.id)}
+                      aria-pressed={atTargets.includes(p.id)}
+                      title={atTargets.includes(p.id) ? "取消选择" : "把它加进本轮 @"}
+                    >
+                      <i className="team-group__atchip-avatar">{p.name.slice(0, 1)}</i>
+                      {p.name}
+                      {!p.targetKind && <em className="team-group__atchip-warn" title="这个伙伴没绑定智能体，派不了活">未绑定</em>}
+                    </button>
+                  ))}
+                  {!partners.length && <span className="team-group__atempty">还没有伙伴可 @</span>}
+                </div>
+                {atTargets.length > 0 && (
+                  <button type="button" className="team-group__atbar-clear" onClick={() => setAtTargets([])}>清空</button>
+                )}
                 {/* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
                     FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */}
                 {!floatMenu && (
