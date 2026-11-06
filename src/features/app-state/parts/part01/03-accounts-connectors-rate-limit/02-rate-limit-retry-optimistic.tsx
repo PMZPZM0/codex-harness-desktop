@@ -8,6 +8,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { AUTO_CONTINUE_MAX_ATTEMPTS, AUTO_CONTINUE_WINDOW_MS, autoContinuePrompt, isTruncatedEmptyTurn, truncationNotice } from "../../../../../lib/turn-truncation.mjs";
 import { isRateLimitError, rateLimitBackoffMs, RATE_LIMIT_MAX_ATTEMPTS } from "../../../../../lib/rate-limit-retry";
+import { isDelegateThread } from "../../../../../lib/team-runtime.mjs";
 import { effortLabels } from "../../../../../lib/effort-labels";
 import { ThreadItem } from "../../../../../lib/thread-item";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
@@ -155,12 +156,18 @@ bag.cancelRateLimitRetry = cancelRateLimitRetry as typeof bag.cancelRateLimitRet
         if (isFocused()) bag.setActiveTurnId(result.turn.id);
         bag.markThreadRunning(threadId, result.turn.id);
       }
-      bag.showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`, threadId);
+      /* ⛔ 11-06：调度会话（含旧实例残留的重试链）不许再弹全局 toast —— 用户明确说
+         「一直刷那个提醒」很烦。主对话自己的会话照旧提示。 */
+      if (!isDelegateThread(threadId)) {
+        bag.showToast("限流重试已发出", `第 ${attempt}/${RATE_LIMIT_MAX_ATTEMPTS} 次重试已被接受，任务继续运行`, threadId);
+      }
     } catch (error: any) {
       if (isFocused()) { bag.setSending(false); bag.setWorkStartedAt(null); }
       bag.markThreadStopped(threadId);
       if (isRateLimitError(error?.message) && attempt < RATE_LIMIT_MAX_ATTEMPTS) {
-        bag.showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`, threadId);
+        if (!isDelegateThread(threadId)) {
+          bag.showToast("仍被限流", `第 ${attempt} 次重试仍失败，稍后自动继续`, threadId);
+        }
         bag.scheduleRateLimitRetry(threadId, attempt + 1);
       } else {
         bag.scopedNotice(error?.message ?? "限流重试失败", threadId);
@@ -216,6 +223,18 @@ bag.executeEffortFallbackRetry = executeEffortFallbackRetry as typeof bag.execut
 
 
   function scheduleRateLimitRetry(threadId: string, attempt: number) {
+    /* ⛔⛔ 11-06 用户（截图）：「这个啥情况啊，也没有停止的地方」「一直刷那个提醒」。
+       宿主派活起的调度会话（`delegate-run started` 已登记）**不排自动重试**：
+         · `runDelegatedTask` 是同步等回传的，重试出来的产出没有任何接收方 ⇒ 纯烧 token；
+         · 每排一次 / 每发一次都会弹「【调度·X】限流重试已发出」全局 toast ⇒ 一直刷屏；
+         · 主对话那条「限流重试状态条 + 停止」只对当前查看会话显示，群聊弹窗永远够不着。
+       ⛔ 这是**所有调用点的总闸**（事件路由 3 处 / 重试失败续排 / send 兜底都走这里），
+          别在 3 个分支各写一遍。⛔ 用户自己多开的会话不在集合里，后台自动重试保持不变。
+       ⛔ silent=true：清理本身也不许再弹一条「已停止限流重试」。 */
+    if (isDelegateThread(threadId)) {
+      bag.cancelRateLimitRetry(threadId, true);
+      return;
+    }
     const ctx = bag.retryContextsRef.current.get(threadId);
     if (!ctx) return;
     if (attempt > RATE_LIMIT_MAX_ATTEMPTS) {

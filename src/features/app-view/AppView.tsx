@@ -5,9 +5,11 @@
  * · props 类型 = useHarnessApp() 的返回类型（type-only import ⇒ 运行时零依赖）。
  */
 import { createPortal } from "react-dom";
-import { useSyncExternalStore, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useSyncExternalStore, useMemo, useRef, useState, type CSSProperties } from "react";
 import { hk } from "../../lib/hk";
 import { basename } from "../../lib/basename";
+import { setActiveModel } from "../../lib/active-model.mjs";
+import { registerRateLimitCancel } from "../../lib/team-runtime.mjs";
 import { aliasLabelOf, getAliasState, subscribeAliases } from "../../lib/alias-store.mjs";
 import { ShortcutsDialog } from "../shortcuts";
 import { VaultWriteConfirm } from "../data-access";
@@ -514,6 +516,20 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      ⇒中枢上下文里：没地址才给「选择项目地址」；已有地址就收起这一项（地址只读回显仍在）。 */
   const canPickDir = !bossDirContext || !topbarDir;
   const pickDirLabel = bossDirContext ? "选择项目地址" : topbarDir ? "选择其他目录…" : "选择工作区目录";
+
+  /* ⛔⛔ 11-06 用户：「模型也是死的，一点联动性都没有」「没有运行状态停止按钮很烦，
+     一直刷那个提醒」。群聊是独立板块、⛔ 不摸全局 bag，所以由这里把两个渲染层真相
+     **单向注入**纯模块（只写不读，不产生循环依赖）：
+       ① 当前生效模型 = 主对话模型选择器此刻的 modelId ⇒ 群聊「跟随全局」实时联动，
+          且派活时显式下发（覆盖复用子会话里那个旧模型）；
+       ② 取消限流重试的能力 ⇒ 群聊「停止」能真掐断后台重试链，而不是只发引擎中断。 */
+  useEffect(() => {
+    setActiveModel(modelId, modelName(modelId || ""));
+  }, [modelId]);
+  useEffect(() => registerRateLimitCancel(
+    (threadId: string, silent?: boolean) => cancelRateLimitRetry(threadId, silent),
+  ), [cancelRateLimitRetry]);
+
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。

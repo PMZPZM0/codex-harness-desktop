@@ -371,7 +371,15 @@ export async function runDelegatedTask(input: {
       const resumed: any = await server.request("thread/resume", { threadId, excludeTurns: false }).catch(() => null);
       output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
     }
-    const text = clipDispatchOutput(output || `（${displayName} 没有返回文本内容）`, threadId);
+    /* ⛔⛔ 11-06 用户（截图）：「这个啥情况啊」—— 429 限流的回合没有任何产出文本，
+       原来只写「（X 没有返回文本内容）」，用户完全看不出是上游限流，还以为伙伴坏了；
+       同时渲染层在后台自动重试、一遍遍弹「限流重试已发出」，群里却连个停止入口都没有。
+       ⇒ 把 turn/completed 自带的 error **如实写进群消息**（截断，别把整段报文刷进群）。 */
+    const turnError = String(completed?.error?.message ?? "").trim();
+    const emptyNote = turnError
+      ? `（${displayName} 本轮未返回文本：${turnError.slice(0, 160)}${turnError.length > 160 ? "…" : ""}）`
+      : `（${displayName} 没有返回文本内容）`;
+    const text = clipDispatchOutput(output || emptyNote, threadId);
     // 标题在 turn 之后**再设一次**：首条消息会覆盖会话标题（引擎拿首条用户消息当 title），
     // 只在 turn 之前设的话侧栏会显示成 `[SYSTEM TASK · 调度会话]` 那一坨（09-15 验收实测）。
     try { await server.request("thread/name/set", { threadId, name: `调度·${displayName}`.slice(0, 40) }); } catch { /* 命名失败不影响产出回传 */ }

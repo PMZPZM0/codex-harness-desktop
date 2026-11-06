@@ -311,9 +311,12 @@
 }
 .team-modal__close { flex: none; }
 
-/* ── 派活运行态与提示（P0b）─────────────────────────────────────────────────
+/* ── 派活运行态与停止（P0b / 11-06 改常驻）──────────────────────────────────
    ⛔ 运行态**不是消息**（没有子会话就没有 threadId，不许伪造一条"它正在思考"的卡片）；
-      它是消息流之下的状态条，跑完就消失。 */
+      它是消息流之下的状态条。
+   ⛔⛔ 11-06 用户：「没有运行状态停止按钮很烦，一直刷那个提醒」—— 原来只在 busy
+      非空时出现；429 后 `invokeAgent` 已以空产出返回、busy 清空，后台重试链还在跑
+      ⇒ 屏幕上既没有运行态也没有停止入口。改成**常驻**，停止键永远够得着。 */
 .team-group__running {
   position: relative;
   z-index: 1;
@@ -323,7 +326,32 @@
   padding: 6px 16px;
   color: var(--muted);
   font-size: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--muted) 16%, transparent);
 }
+.team-group__running-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-group__running.is-busy { color: var(--text); }
+.team-group__stop {
+  flex: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.team-group__stop:hover { background: color-mix(in srgb, var(--danger) 16%, transparent); }
+.team-group__stop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .team-group__dot {
   width: 6px;
   height: 6px;

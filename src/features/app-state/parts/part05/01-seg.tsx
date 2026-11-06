@@ -7,6 +7,7 @@
  *    改动后请重跑预检【92】与保真脚本（口径见 docs/archive/REFACTOR-PLAN-2026-09-21.md §10.2）。
  */
 import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
+import { markDelegateThread, unmarkDelegateThread } from "../../../../lib/team-runtime.mjs";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 
 /** 引擎警告气泡同文去重（09-28）：initialize 与各 session 恢复会对同一 configWarning 各推一次。 */
@@ -595,6 +596,13 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
       if (event.type === "delegate-run") {
         // 调度头像轨（09-16）：started 点亮头像 + 自动弹工作内容；delta 流式追加；finished 摘掉头像。
         const payload: any = event;
+        /* ⛔⛔ 11-06：登记宿主派活起的调度会话。事件路由据此**不给它排自动重试** ——
+           `runDelegatedTask` 是同步等回传的，重试出来的产出没有任何接收方（纯烧 token），
+           而渲染层每次重试都弹一条「【调度·X】限流重试已发出」，用户看到就是一直刷屏。
+           群聊「停止」也据此取消残留的重试链。⛔ 用户自己多开的会话不受影响（不在集合里）。 */
+        const runThreadId = String(payload.threadId ?? payload.record?.threadId ?? "");
+        if (runThreadId && payload.phase === "started") markDelegateThread(runThreadId);
+        if (runThreadId && payload.phase === "finished") unmarkDelegateThread(runThreadId);
         if (payload.phase === "started" && payload.record?.threadId) {
           const r = payload.record;
           bag.setDelegateLiveRuns((prev) => ({

@@ -19,13 +19,14 @@
  * 已知边界：麦克风不接。主对话语音听写是**全局单 handler**，会同时把字幕写进主
  * `bag.prompt`；群面板接了会污染主输入框草稿（除非先加 owner 标志改造全局链路）。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RefObject } from "react";
 import { Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
+import { getActiveModel, subscribeActiveModel } from "../../lib/active-model.mjs";
 
 export type TeamRunOpts = {
   model: string;
@@ -124,10 +125,27 @@ export function TeamComposer({
   const [skillQuery, setSkillQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
-  const [models, setModels] = useState<ModelOption[]>([{ value: "", title: "跟随全局" }]);
+  /* ⛔⛔ 11-06 用户：「模型也是死的，一点联动性都没有」「跟随模型配置界面，还是旧的」。
+     原来「跟随全局」= 不传 model ⇒ 子会话复用时沿用**首次创建时**那个模型，永远不跟
+     模型配置界面走；下拉也只写「跟随全局」四个字，看不出跟着谁。
+     ⇒ 订阅 AppView 注入的当前生效模型（与主对话模型选择器同源），选项标题实时带出模型名。 */
+  const active = useSyncExternalStore(subscribeActiveModel, getActiveModel);
+  const [baseModels, setBaseModels] = useState<ModelOption[]>([]);
+  const [retired, setRetired] = useState("");
+  const models = useMemo<ModelOption[]>(() => [
+    {
+      value: "",
+      title: active.name ? `跟随全局 · ${active.name}` : "跟随全局",
+      desc: "随模型配置界面实时变化；派活时显式下发该模型",
+    },
+    ...baseModels,
+  ], [active.name, baseModels]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   /* 启动那一刻的模型值（读回的偏好）：目录还没加载完时也要能显示，别闪成空白 */
   const initialModelRef = useRef(opts.model);
+  /* ⛔ 回落要用**最新** opts（目录是异步加载的，期间用户可能已经改过选项），别拿挂载时的旧对象覆盖。 */
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
 
   useEffect(() => {
     let alive = true;
@@ -135,7 +153,7 @@ export function TeamComposer({
       try {
         const { providers } = await window.codex.listCustomModels();
         const seen = new Set<string>([""]);
-        const list: ModelOption[] = [{ value: "", title: "跟随全局", desc: "用应用当前生效的模型" }];
+        const list: ModelOption[] = [];
         for (const p of Array.isArray(providers) ? providers : []) {
           const entries = Array.isArray(p.models) && p.models.length ? p.models : [{ id: p.model }];
           for (const m of entries) {
@@ -147,10 +165,17 @@ export function TeamComposer({
             list.push({ value: id, title: id, desc: p.name || undefined });
           }
         }
-        if (initialModelRef.current && !seen.has(initialModelRef.current)) {
-          list.push({ value: initialModelRef.current, title: initialModelRef.current, desc: "上次选择" });
+        if (alive) {
+          setBaseModels(list);
+          /* ⛔⛔ 11-06：「还是旧的」—— 上次持久化的模型已经不在当前模型目录里，
+             原来会被塞成「上次选择」一直挂在下拉上、派活也一直用那个死值。
+             ⇒ 自动切回「跟随全局」，由当前生效模型接管；同时留一句说明，别让用户莫名被改。 */
+          if (list.length && initialModelRef.current && !seen.has(initialModelRef.current)) {
+            initialModelRef.current = "";
+            setRetired(`上次选择的 ${optsRef.current.model} 已不在当前模型目录，已切回「跟随全局」`);
+            onOpts({ ...optsRef.current, model: "" });
+          }
         }
-        if (alive) setModels(list);
       } catch { /* 目录读不到就保留「跟随全局」，⛔ 不让输入框打不开 */ }
     })();
     void (async () => {
@@ -319,7 +344,7 @@ export function TeamComposer({
 
         <div className="team-composer__right composer-right">
           <span className="team-composer__count" title="本轮输入字符数（不是 token）">{value.length} 字</span>
-          <ComposerMenu icon={Bot} label="模型" title="本轮派活使用的模型" value={opts.model} options={models} onChange={(v) => onOpts({ ...opts, model: v })} width={360} disabled={sending} />
+          <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => onOpts({ ...opts, model: v })} width={360} disabled={sending} />
           <EffortPicker levels={["low", "medium", "high", "xhigh"]} value={opts.effort || "high"} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
           <button type="button" className="team-composer__send" onClick={onSend} disabled={sending || !canSend} title={targetNames.length ? `派给 ${targetNames.join("、")}` : "先点上面的 @ 选伙伴"}>
             <Send size={15} /> 发送

@@ -11,7 +11,7 @@
  *      （复制 / 追问 / 来源会话）的卡片；
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
@@ -27,6 +27,8 @@ import { MemberAvatar } from "./13-team-avatar";
 import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-composer";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
+import { getActiveModel } from "../../lib/active-model.mjs";
+import { cancelDelegateRetries, subscribeTeamRuntime, teamRuntimeSnapshot } from "../../lib/team-runtime.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, resolveManagerId } from "../../lib/team-models.mjs";
 /* ⛔ 贴底走统一原语（守卫禁止在时间线里直接把 scrollTop 赋成 scrollHeight ——
@@ -99,6 +101,10 @@ export function TeamGroupView({
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  const [stopping, setStopping] = useState(false);
+  /* ⛔ 11-06：busy 会在 `invokeAgent` 返回时就清空，但后台调度会话可能还在收尾
+     ⇒ 只看 busy 会显示「没有运行」而后台其实还在跑。订阅共享桥的登记数做补充判据。 */
+  const delegateRunning = useSyncExternalStore(subscribeTeamRuntime, teamRuntimeSnapshot);
   const [sendError, setSendError] = useState("");
   /** 菜单点击的回显（飞书 `showMsg` 的等价物：告诉用户"我往输入框放了什么"） */
   const [menuMsg, setMenuMsg] = useState("");
@@ -270,6 +276,29 @@ export function TeamGroupView({
     return { ok: true };
   };
 
+  /* ⛔⛔ 11-06 用户：「没有运行状态停止按钮很烦，一直刷那个提醒」。
+     原来运行态条只在 busy 非空时出现，而 429 后 `invokeAgent` 已经以空产出返回、
+     busy 清空，后台重试链却还在跑 ⇒ 屏幕上「没有运行、也没有停止」，toast 一直刷。
+     ⇒ 状态条**常驻**，停止键永远够得着；点击做两件缺一不可的事：
+       ① 逐个停掉伙伴当前回合（引擎中断，harnessTeamStop）；
+       ② 掐断渲染层全局的限流重试链（cancelDelegateRetries），否则中断了还会自动重发。
+     ⛔ 空闲也可点：做一次清理并明确回话，不做成点了没反应的死按钮。 */
+  const stopAll = async () => {
+    if (stopping) return;
+    setStopping(true);
+    setSendError("");
+    try {
+      const results = await Promise.all(partners.map((p) => onStopPartner(p.id)));
+      const cancelled = cancelDelegateRetries();
+      const stopped = results.filter((r) => r.ok).length;
+      setMenuMsg(stopped || cancelled
+        ? `已停止本群运行（${stopped} 个伙伴）${cancelled ? `，并取消 ${cancelled} 条限流重试` : ""}`
+        : "已清理：当前没有运行中的任务，也没有排队中的重试");
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const send = async () => {
     const body = text.trim();
     if (!body || sending) return;
@@ -300,8 +329,13 @@ export function TeamGroupView({
       ? `[附件文件]\n${runOpts.files.map((p) => `- ${p}`).join("\n")}\n[附件结束]`
       : "";
     const fullBody = [body, skillBlock, fileBlock].filter(Boolean).join("\n\n");
+    /* ⛔⛔ 11-06 用户：「模型也是死的，一点联动性都没有」「跟随模型配置界面，还是旧的」。
+       「跟随全局」原来 = 不传 model ⇒ 引擎沿用**复用子会话首次创建时**的模型，
+       模型配置界面换了也白换。⇒ 空值就取当前生效模型**显式下发**（turn/start.model
+       会覆盖会话旧模型），指定模型时仍按用户选的走。 */
+    const effectiveModel = runOpts.model || getActiveModel().name || "";
     const params: TeamRunParams = {
-      model: runOpts.model || undefined,
+      model: effectiveModel || undefined,
       effort: runOpts.effort,
       sandbox: runOpts.sandbox,
       approvalPolicy: runOpts.approvalPolicy,
@@ -659,12 +693,25 @@ export function TeamGroupView({
             <TeamRuler rows={shownRows} scrollRef={streamRef} containerRef={wrapRef} />
             </div>
 
-            {(busy?.length ?? 0) > 0 && (
-              <div className="team-group__running" role="status" aria-live="polite">
-                <span className="team-group__dot" aria-hidden />
-                {busy!.map(nameOf).join("、")} 正在处理…
-              </div>
-            )}
+            <div className={`team-group__running${(busy?.length ?? 0) > 0 || delegateRunning > 0 ? " is-busy" : ""}`} role="status" aria-live="polite">
+              <span className="team-group__dot" aria-hidden />
+              <span className="team-group__running-text">
+                {(busy?.length ?? 0) > 0
+                  ? `${busy!.map(nameOf).join("、")} 正在处理…`
+                  : delegateRunning > 0
+                    ? `${delegateRunning} 个后台调度任务正在收尾…`
+                    : "当前没有运行中的任务"}
+              </span>
+              <button
+                type="button"
+                className="team-group__stop"
+                onClick={() => void stopAll()}
+                title="停止本群所有运行中的任务，并取消后台自动重试"
+                aria-label="停止运行"
+              >
+                {stopping ? "正在停止…" : "停止"}
+              </button>
+            </div>
             {menuMsg && (
               <p className={`team-group__notice is-info${menuMsg.includes("不在了") || menuMsg.includes("不可用") ? " is-warn" : ""}`} role="status">
                 {menuMsg}
