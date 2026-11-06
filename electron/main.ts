@@ -504,6 +504,8 @@ const remote = new RemoteControlService({
   onCommand: (command, device) => { try { mainWindow?.webContents.send("remote:command", { command, device }); } catch { /* ignore */ } },
   // 手机提交了正确的 6 位配对码 → 挂起等电脑端在应用里点「允许/拒绝」
   onPairRequest: (request) => { try { mainWindow?.webContents.send("remote:pair-request", request); } catch { /* ignore */ } },
+  /* 11-06 手机看屏：桌面挂/收「正在被查看」提示（渲染层监听 remote:screen） */
+  onScreenView: (state) => { broadcastHarnessEvent({ type: "remote:screen", active: Boolean(state?.active) }); },
   // 手机对话 UI 的引擎桥：选会话 / 新建会话 / 发消息 / 实时收流式回复
   listThreads: async () => {
     const result = await server.request("thread/list", { limit: 30, sortKey: "updated_at", sortDirection: "desc", archived: false }) as any;

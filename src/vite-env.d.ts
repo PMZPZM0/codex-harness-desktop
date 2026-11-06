@@ -1050,6 +1050,8 @@ interface Window {
     remoteApprove(rid: string): Promise<{ ok: boolean }>;
     remoteDeny(rid: string): Promise<{ ok: boolean }>;
     remoteDevices(): Promise<any[]>;
+    /* 11-06 手机看屏：桌面端主动停采（隐私按钮） */
+    remoteScreenStop(): Promise<{ ok: boolean }>;
     remotePairRotate(): Promise<{ code: string }>;
     remotePairState(): Promise<{ code: string; pending: { rid: string; deviceId: string; name: string; createdAt: number }[]; approved: { deviceId: string; name: string; approvedAt: number; lastSeen: number }[] }>;
     remoteQrcode(botId?: string): Promise<string>;

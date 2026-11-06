@@ -133,6 +133,9 @@ html[data-theme="dark"] .run-steps .step-wait{color:#f3c879;background:#3a2f18;b
 #queuebar .qtext{flex:1 1 auto;min-width:0;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #queuebar .qhead{font-size:11.5px;color:var(--muted)}
 #queuebar .qbtn{flex:0 0 auto;height:26px;padding:0 12px;font-size:12px;font-weight:600;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px}
+.screen-wrap{display:flex;flex-direction:column;gap:8px}
+.screen-img{width:100%;height:auto;border-radius:12px;background:#000;border:1px solid var(--line)}
+.screen-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--muted)}
 #queuebar .qbtn.primary{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 35%, #fff)}
 #queue{flex:0 0 auto;width:auto;margin:0;height:44px;padding:0 14px;font-size:13px;font-weight:600;color:var(--muted);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
 html[data-theme="dark"] #queuebar{background:#161b22}
@@ -360,6 +363,7 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
     <div class="menu-group">
       <button type="button" onclick="toggleTopMenu(false);openHome()"><i>🏠</i><span><b>首页</b><small>回到首页，直接开始</small></span></button>
       <button type="button" onclick="toggleTopMenu(false);toggleThreads()"><i>🗂️</i><span><b>选择会话</b><small>最近会话与中枢</small></span></button>
+      <button type="button" onclick="toggleTopMenu(false);openScreen()"><i>🖥️</i><span><b>看屏幕</b><small>只读查看电脑画面</small></span></button>
       <button type="button" onclick="toggleTopMenu(false);toggleTheme()"><i id="menu-theme-icon">🌙</i><span><b id="menu-theme-label">夜间模式</b><small>也可以跟随系统</small></span></button>
     </div>
     <button type="button" class="danger" id="menu-disconnect" hidden onclick="topMenuDisconnect()"><i>⏏️</i><span><b>断开连接</b><small>同时移除电脑端这台设备</small></span></button>
@@ -1458,6 +1462,7 @@ function showPanel(title, node, back) {
   document.getElementById("panel").classList.add("open");
 }
 function closePanel() {
+  if (screenActive) void stopScreen();   // 关面板即停采（租约那头也会在 15 秒没取帧后自动停）
   if (panelBack) { const back = panelBack; panelBack = null; back(); return; }
   document.getElementById("panel").classList.remove("open");
 }
@@ -1557,6 +1562,70 @@ function openTurnDiff(path) {
     pre.textContent = r.diff;
     node.appendChild(pre);
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("读取失败：" + error.message)); });
+}
+/* 手机看屏（11-06 P1，只读）：每 ~900ms 取一帧 JPEG 贴在面板里。
+   ⛔ 只出画面、不收输入；关面板/点停止/断线都会停采，服务端还有 15 秒租约兜底
+      （手机切后台不再取帧 ⇒ 桌面自动停采并收提示）。 */
+let screenActive = false;
+let screenTimer = null;
+let screenObjectUrl = "";
+async function openScreen() {
+  closeSheet();
+  const node = document.createElement("div");
+  node.className = "screen-wrap";
+  const img = document.createElement("img");
+  img.className = "screen-img";
+  img.alt = "电脑屏幕（只读）";
+  const bar = document.createElement("div");
+  bar.className = "screen-bar";
+  const tip = document.createElement("span");
+  tip.textContent = "只读画面，不含操作";
+  const stop = document.createElement("button");
+  stop.type = "button";
+  stop.className = "qbtn primary";
+  stop.textContent = "停止";
+  stop.onclick = () => { void stopScreen(); closePanel(); };
+  bar.appendChild(tip);
+  bar.appendChild(stop);
+  node.appendChild(img);
+  node.appendChild(bar);
+  showPanel("电脑屏幕（只读）", node, null);
+  screenActive = true;
+  try {
+    const res = await fetch(apiUrl("/api/screen/start"), { method: "POST" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+  } catch (error) {
+    screenActive = false;
+    node.innerHTML = "";
+    node.appendChild(panelMessage("无法开始看屏：" + error.message));
+    return;
+  }
+  void screenTick(img, node);
+}
+async function screenTick(img, node) {
+  if (!screenActive) return;
+  try {
+    const res = await fetch(apiUrl("/api/screen/frame"), { cache: "no-store" });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      screenActive = false;
+      node.innerHTML = "";
+      node.appendChild(panelMessage("看屏已结束：" + (data.error || ("HTTP " + res.status))));
+      return;
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    img.src = url;
+    if (screenObjectUrl) URL.revokeObjectURL(screenObjectUrl);
+    screenObjectUrl = url;
+  } catch { /* 网络抖动：下一帧再试（租约没断就还能续上） */ }
+  if (screenActive) screenTimer = setTimeout(() => void screenTick(img, node), 900);
+}
+async function stopScreen() {
+  screenActive = false;
+  if (screenTimer) { clearTimeout(screenTimer); screenTimer = null; }
+  if (screenObjectUrl) { URL.revokeObjectURL(screenObjectUrl); screenObjectUrl = ""; }
+  try { await fetch(apiUrl("/api/screen/stop"), { method: "POST" }); } catch { /* 已断开也无妨 */ }
 }
 function setTaskText(text) {
   const el = document.getElementById("taskbar");

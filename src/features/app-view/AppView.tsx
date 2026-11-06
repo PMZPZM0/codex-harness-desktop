@@ -190,6 +190,7 @@ import { WallpaperLayer } from "../wallpaper";
 /* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。
    ⛔ 只在主窗口挂（独立弹窗没有右栏）；它返回 null，不产生 DOM。 */
 import { HtmlPreviewBridge } from "../html-preview";
+import { RemoteScreenNotice } from "../../components/RemoteScreenNotice";
 import { DevPortBridge } from "../dev-port";
 /* OpenFilm Studio → 右栏内置浏览器（10-27）：主进程 open 完广播 studio 事件，这里接管打开。 */
 import { OpenfilmBridge } from "../openfilm";
@@ -584,6 +585,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           ⛔ 必须挂在壳根（壁纸层旁），不许塞进任何回合卡里 —— .turn-group 上有恒等 transform
           （containing block），fixed 会当场退化（同本轮审查弹窗事故）。 */}
       <div className="reasoning-float-host" aria-hidden />
+      {/* 手机看屏的桌面提示（11-06 P1）：手机开始取帧就常驻一条，带「停止查看」 */}
+      {!popoutThreadId && <RemoteScreenNotice />}
       {!popoutThreadId && sidebarCollapsed && <div className="sidebar-hotzone" aria-hidden onMouseEnter={() => setSidebarFlyout(true)} />}
         <header className="topbar">
         {sidebarCollapsed && !narrow && <button className="icon-button sidebar-reveal ic-blue" title="展开侧边栏" onClick={() => { setSidebarCollapsed(false); setSidebarFlyout(false); localStorage.setItem("sidebar-collapsed", "false"); }}><Menu size={18} /></button>}

@@ -5,13 +5,14 @@ import crypto from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { net } from "electron";
+import { desktopCapturer, net } from "electron";
 import { existingToolPath, toolsRoot } from "./toolchain";
 import { mirrorCandidates } from "./gh-mirror";
 import { buildRemotePageHtml } from "./remote/web-page";
 import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 import { isAllowedRemoteRpc } from "./remote-rpc-types";
 import { createEventBuffer } from "./remote-event-buffer";
+import { createScreenLease } from "./remote-screen-lease";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
@@ -81,6 +82,8 @@ type RemoteEvents = {
   queueAdd?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
   queueStart?: (threadId: string, id: string) => Promise<{ mode?: string }>;
   queueDelete?: (threadId: string, id: string) => Promise<void>;
+  /** 手机看屏（11-06 P1）：状态变化 ⇒ 桌面挂/收「正在被查看」提示（只读，不收输入） */
+  onScreenView?: (state: { active: boolean }) => void;
   /** 手机端回答询问 / 审批（引擎原生请求走 server.respond；agent_ask 转给渲染层 resolve） */
   answer?: (payload: { kind: string; requestId?: string; questionId?: string; choice: string; threadId?: string }) => Promise<void>;
   /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
@@ -680,6 +683,35 @@ export class RemoteControlService {
       this.json(res, 200, { ok: true, revoked: this.revokeDevice(device) });
       return;
     }
+    /* 手机看屏（11-06 P1，只读）：start 起采集并让桌面挂提示；frame 取最新 JPEG（每取一次续租）；
+       stop 主动结束。⛔ 全部要求已配对设备（authorizedDevice），否则任意人打开页面就能看屏。 */
+    if (url.startsWith("/api/screen/start") && req.method === "POST") {
+      if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
+      this.screenLease.start();
+      this.startScreenLoop();
+      this.events.onScreenView?.({ active: true });
+      this.json(res, 200, { ok: true, ttlMs: this.screenLease.ttlMs });
+      return;
+    }
+    if (url.startsWith("/api/screen/frame")) {
+      if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
+      if (this.screenLease.expired()) {
+        this.stopScreenView();
+        this.json(res, 409, { ok: false, error: "屏幕查看已超时（15 秒没取帧）" });
+        return;
+      }
+      if (!this.screenLease.touch()) { this.json(res, 409, { ok: false, error: "没有进行中的屏幕查看" }); return; }
+      if (!this.screenFrame) { this.json(res, 503, { ok: false, error: this.screenError || "还没有画面" }); return; }
+      res.writeHead(200, { "content-type": "image/jpeg", "cache-control": "no-store", "content-length": String(this.screenFrame.length) });
+      res.end(this.screenFrame);
+      return;
+    }
+    if (url.startsWith("/api/screen/stop") && req.method === "POST") {
+      if (!this.authorizedDevice(req)) { this.json(res, 401, { ok: false, error: "unauthorized" }); return; }
+      this.stopScreenView();
+      this.json(res, 200, { ok: true });
+      return;
+    }
     // 图片上传（+ 号）：只收 dataUrl 图片，落盘到 userData/remote-uploads，回本机绝对路径
     if (url === "/api/upload" && req.method === "POST") {
       void this.readBody(req).then((body) => {
@@ -938,6 +970,46 @@ export class RemoteControlService {
     return this.pollBuffer.since(since);
   }
   private pollBuffer = createEventBuffer(400);
+
+  /* ── 手机看屏（11-06 P1，只读）────────────────────────────────────────────
+     ⛔ 只出画面、不收输入。租约语义见 remote-screen-lease.ts：手机每取一帧续租，
+        15 秒没有取帧就自动停采并通知桌面（手机切后台/断网/锁屏时不会一直采集）。 */
+  private screenLease = createScreenLease(15_000);
+  private screenTimer: ReturnType<typeof setInterval> | null = null;
+  private screenFrame: Buffer | null = null;
+  private screenError = "";
+
+  private async captureScreenFrame() {
+    try {
+      const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1280, height: 800 } });
+      const source = sources[0];
+      if (!source) { this.screenError = "没有可采集的屏幕"; return; }
+      this.screenFrame = source.thumbnail.toJPEG(60);
+      this.screenError = "";
+    } catch (error: any) {
+      // macOS 未授权「屏幕录制」会走到这里：把原因带给手机，别只给空白
+      this.screenError = String(error?.message ?? error ?? "采集失败");
+    }
+  }
+
+  private startScreenLoop() {
+    if (this.screenTimer) return;
+    void this.captureScreenFrame();
+    this.screenTimer = setInterval(() => {
+      if (this.screenLease.expired()) { this.stopScreenView(); return; }
+      void this.captureScreenFrame();
+    }, 1000);
+  }
+
+  /** 停采 + 撤租 + 通知桌面收起「正在被查看」提示（幂等） */
+  /** 停采（桌面端也能调：渲染层「停止查看」按钮走 remote:screen-stop） */
+  stopScreenView() {
+    if (this.screenTimer) { clearInterval(this.screenTimer); this.screenTimer = null; }
+    this.screenFrame = null;
+    const was = this.screenLease.state().active;
+    this.screenLease.stop();
+    if (was) this.events.onScreenView?.({ active: false });
+  }
 
   private send(device: Device, text: string) {
     const payload = Buffer.from(text, "utf8");

@@ -666,6 +666,8 @@ contextBridge.exposeInMainWorld("codex", {
   remoteApprove: (rid: string) => __ipc("remote:approve", 1, [rid]),
   remoteDeny: (rid: string) => __ipc("remote:deny", 1, [rid]),
   remoteDevices: () => __ipc("remote:devices", 0, []),
+  /* 11-06 手机看屏：桌面端主动停采（隐私按钮） */
+  remoteScreenStop: () => __ipc("remote:screen-stop", 0, []),
   remotePairRotate: () => __ipc("remote:pair-rotate", 0, []),
   remotePairState: () => __ipc("remote:pair-state", 0, []),
   remoteQrcode: (botId?: string) => __ipc("remote:qrcode", 0, [botId]),

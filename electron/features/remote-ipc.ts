@@ -24,7 +24,7 @@ import type { IpcHost } from "../ipc-host";
 const REMOTE_CHANNELS = [
   "remote:start", "remote:status", "remote:devices", "remote:send", "remote:stop",
   "remote:pair-state", "remote:pair-rotate", "remote:approve", "remote:deny",
-  "remote:revoke", "remote:qrcode",
+  "remote:revoke", "remote:qrcode", "remote:screen-stop",
 ];
 
 export const remoteFeature = defineFeature<null>({
@@ -39,6 +39,8 @@ export const remoteFeature = defineFeature<null>({
     ipcHost.handle("remote:devices", () => remote.listDevices());
     ipcHost.handle("remote:send", (_event, cmd: string) => { mainWindow?.webContents.send("remote:command", { command: String(cmd), device: { id: "local", name: "本机" } }); return { ok: true }; });
     ipcHost.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
+    /* 11-06 手机看屏：桌面端「停止查看」—— 停采后手机下次取帧会拿到 409（不是静默黑屏） */
+    ipcHost.handle("remote:screen-stop", () => { remote.stopScreenView(); return { ok: true }; });
     ipcHost.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices() }));
     ipcHost.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
     ipcHost.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
