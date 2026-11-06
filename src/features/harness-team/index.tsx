@@ -16,9 +16,11 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { MessagesSquare, X, Plus, Search, MoreHorizontal, Pencil, Eraser, Trash2 } from "lucide-react";
+import { TeamCreateDialog } from "./12-team-create";
+import type { TeamCreateInput } from "./12-team-create";
 import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
-import { LOCAL_ACTOR_ID, useTeamGroups } from "./02-team-store";
+import { useTeamGroups } from "./02-team-store";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export function TeamModePanel() {
@@ -31,10 +33,10 @@ export function TeamModePanel() {
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
-  const [name, setName] = useState("");
-  const [creating, setCreating] = useState(false);
   const [notice, setNotice] = useState("");
-  /* 左栏（11-06 用户：「群列表功能太少，新建群还在底部」）：新建移到顶部 + 搜索 + 每群操作菜单 */
+  /* 左栏（11-06 用户：「群列表功能太少，新建群还在底部」）：新建移到顶部 + 搜索 + 每群操作菜单。
+     ⛔ 11-06 二次（用户：「这个新建群里展示也不好看，做成弹窗，功能丰富一点」）：
+       `createOpen` 现在只表示**弹窗开没开**，名字/简介/项目地址/初始伙伴全部搬进弹窗填一次。 */
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [menuId, setMenuId] = useState("");
@@ -79,25 +81,12 @@ export function TeamModePanel() {
     setRenamingId("");
   };
 
-  const newGroup = async () => {
-    const n = name.trim();
-    if (!n) return;
-    setCreating(true);
-    const r = await create({
-      name: n,
-      leadId: LOCAL_ACTOR_ID,
-      members: [{ id: LOCAL_ACTOR_ID, kind: "human", name: "我" }],
-    });
-    setCreating(false);
-    if (r.ok) {
-      setName("");
-      setNotice("");
-      void (async () => {
-        await loadMessages(r.id ?? "");
-      })();
-    } else {
-      setNotice(r.error ?? "建群失败");
-    }
+  /* 弹窗负责收集 input（名字/简介/项目地址/初始伙伴），这里只管落库并回报结果。 */
+  const createFromDialog = async (input: TeamCreateInput) => {
+    const r = await create(input);
+    if (!r.ok) return { ok: false, error: r.error ?? "建群失败" };
+    setNotice("");
+    return { ok: true, id: r.id };
   };
 
   return (
@@ -110,25 +99,14 @@ export function TeamModePanel() {
           </div>
           <button
             type="button"
-            className={`team-mode__add${createOpen ? " is-on" : ""}`}
+            className="team-mode__add"
             title="新建群"
             aria-label="新建群"
+            aria-haspopup="dialog"
             aria-expanded={createOpen}
-            onClick={() => setCreateOpen((v) => !v)}
+            onClick={() => setCreateOpen(true)}
           ><Plus size={16} /></button>
         </div>
-        {createOpen && (
-          <div className="team-mode__create">
-            <input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="新群名字"
-              onKeyDown={(e) => { if (e.key === "Enter") void newGroup(); }}
-            />
-            <button type="button" onClick={() => void newGroup()} disabled={creating || !name.trim()} title="创建"><Plus size={14} /> 创建</button>
-          </div>
-        )}
         <div className="team-mode__search">
           <Search size={13} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索群名字" aria-label="搜索群" />
@@ -254,6 +232,20 @@ export function TeamModePanel() {
           </div>
         )}
       </main>
+
+      {/* 新建群弹窗：覆盖整块面板（不离开群聊上下文），ESC 只关这一层 */}
+      <TeamCreateDialog
+        open={createOpen}
+        count={groups.length}
+        limit={limit}
+        onClose={() => setCreateOpen(false)}
+        onCreate={createFromDialog}
+        onCreated={(id) => {
+          if (!id) return;
+          setActiveId(id);
+          void loadMessages(id);
+        }}
+      />
     </div>
   );
 }

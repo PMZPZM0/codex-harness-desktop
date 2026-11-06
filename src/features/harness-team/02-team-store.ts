@@ -538,7 +538,10 @@ export function useTeamGroups() {
   );
 
   const create = useCallback(
-    async (input: { name: string; members?: unknown[]; leadId?: string }) => {
+    /* ⛔ 建群输入是**整份群结构**（与主进程 createGroup 同字段）：新建群弹窗要一次带
+       memory(群简介) / workspace(项目地址) / members(初始伙伴)。只收 name+members 会
+       把这三项丢掉 —— 弹窗填了却不生效，正是「选了却不生效」那类装饰。 */
+    async (input: { name: string; members?: unknown[]; leadId?: string; memory?: string; workspace?: string }) => {
       const res = (await window.codex.harnessTeamCreate(input)) as MutationResult;
       /* ⛔ 回带 id：建完群要立刻读它的消息（否则用户还得手点一下才看到空态） */
       return { ...apply(res), id: res.group?.id };
