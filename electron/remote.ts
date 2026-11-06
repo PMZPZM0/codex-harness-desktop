@@ -11,6 +11,7 @@ import { mirrorCandidates } from "./gh-mirror";
 import { buildRemotePageHtml } from "./remote/web-page";
 import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 import { isAllowedRemoteRpc } from "./remote-rpc-types";
+import { createEventBuffer } from "./remote-event-buffer";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
@@ -641,8 +642,10 @@ export class RemoteControlService {
     if (url.startsWith("/api/events")) {
       const params = new URL(url, "http://x").searchParams;
       const since = Number(params.get("since") ?? 0);
+      const slice = this.pollEvents(since);
       res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ events: this.pollEvents(since), now: Date.now() }));
+      // lastSeq = 下一次该带的游标；dropped = 断线太久、缓冲里最早的事件都比游标新（有空洞）
+      res.end(JSON.stringify({ events: slice.events, lastSeq: slice.lastSeq, dropped: slice.dropped, now: Date.now() }));
       return;
     }
     // 设备会话记忆：GET 查询某设备上次会话；POST 保存（持久化到 userData，跨扫码恢复）
@@ -925,17 +928,16 @@ export class RemoteControlService {
   /** 把引擎流式事件推给所有已连接手机（对话实时同步）；
    * 同时落到轮询缓冲：Cloudflare 免费隧道对裸 WebSocket 握手兼容差，手机页用 HTTP 轮询兜底 */
   broadcastThreadEvent(event: { threadId: string; kind: string; text: string; data?: any }) {
-    this.pollBuffer.push({ ...event, at: Date.now() });
-    if (this.pollBuffer.length > 400) this.pollBuffer.splice(0, this.pollBuffer.length - 400);
+    this.pollBuffer.push(event);
     const payload = JSON.stringify({ type: "thread-event", ...event });
     for (const device of this.devices.values()) this.send(device, payload);
   }
 
-  /** 轮询增量：since 之后的 thread-event */
+  /** 轮询增量：游标之后的事件 + 最新游标（seq 语义见 remote-event-buffer.ts） */
   pollEvents(since: number) {
-    return this.pollBuffer.filter((entry) => entry.at > since);
+    return this.pollBuffer.since(since);
   }
-  private pollBuffer: { threadId: string; kind: string; text: string; data?: any; at: number }[] = [];
+  private pollBuffer = createEventBuffer(400);
 
   private send(device: Device, text: string) {
     const payload = Buffer.from(text, "utf8");

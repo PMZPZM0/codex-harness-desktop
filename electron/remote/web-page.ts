@@ -1721,7 +1721,10 @@ document.addEventListener("click", (event) => {
   event.preventDefault();
   location.href = link.href;
 });
-let pollSince = Date.now() - 60000;
+/* 事件游标（11-06）：seq 语义 —— 服务端回 lastSeq，客户端只带 since=<seq>。
+   ⛔ 老页面传的是时间戳（> 1e12），服务端仍按 at > since 兼容，刷新不会全空。 */
+let pollSince = 0;
+let pollPrimed = false;
 async function pollLoop() {
   try {
     const res = await fetch(apiUrl("/api/events?since=" + pollSince));
@@ -1734,6 +1737,22 @@ async function pollLoop() {
       return;
     }
     pollSince = data.now || Date.now();
+    /* 首包只对齐游标、不回放：页面加载时 loadMessages 已经拿过全量，再回放会重复铺气泡。
+       之后每次成功都推进游标；服务端说 dropped（断线太久、缓冲里最早的都比游标新）⇒
+       明确告诉用户有空洞，并重新拉一次消息，而不是静默漏一段过程。 */
+    const nextCursor = typeof data.lastSeq === "number" ? data.lastSeq : (data.now || Date.now());
+    if (!pollPrimed) {
+      pollPrimed = true;
+      pollSince = nextCursor;
+      document.getElementById("status").textContent = "● 在线";
+      setTimeout(pollLoop, 800);
+      return;
+    }
+    pollSince = nextCursor;
+    if (data.dropped) {
+      push("system", "断线期间有运行过程没收到，已重新拉取最近消息");
+      void loadMessages();
+    }
     for (const event of data.events || []) {
       if (event.threadId !== currentThreadId) continue;
       if (event.kind === "delta") {
