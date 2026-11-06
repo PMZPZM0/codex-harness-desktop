@@ -1018,6 +1018,16 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetFiles: (groupId: string, files: unknown) => __ipc("harness-team:set-files", 2, [groupId, files]),
   /* 团队模式：上下级（委派白名单） */
   harnessTeamSetManager: (groupId: string, memberId: string, managerId: string) => __ipc("harness-team:set-manager", 3, [groupId, memberId, managerId]),
+  /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+  harnessTeamAddNote: (groupId: string, note: Record<string, unknown>) => __ipc("harness-team:add-note", 2, [groupId, note]),
+  /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+  harnessTeamRemoveNote: (groupId: string, noteId: string) => __ipc("harness-team:remove-note", 2, [groupId, noteId]),
+  /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+  harnessTeamSetMenu: (groupId: string, items: unknown) => __ipc("harness-team:set-menu", 2, [groupId, items]),
+  /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+  harnessTeamLogUsage: (entry: Record<string, unknown>) => __ipc("harness-team:log-usage", 1, [entry]),
+  /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+  harnessTeamLedger: (groupId: string, days: number) => __ipc("harness-team:ledger", 2, [groupId, days]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

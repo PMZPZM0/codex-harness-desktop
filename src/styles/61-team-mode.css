@@ -216,6 +216,8 @@
 
 /* 下拉槽：固定宽度，内部 `.app-select-trigger` 的 100% 就落在槽里 */
 .team-settings__select { flex: 0 0 168px; display: flex; min-width: 0; }
+/* 窄槽：类型/排序这种只有两三个字的选项 */
+.team-settings__select.is-narrow { flex: 0 0 92px; }
 .team-settings__select > .app-select-trigger { width: 100%; min-width: 0; }
 @media (max-width: 620px) {
   /* 窄窗（还有 232px 群列表挤着）：一行塞不下名字+职务+上级+下拉 ⇒ **折两行**，
@@ -283,6 +285,8 @@
    ⛔ 运行态**不是消息**（没有子会话就没有 threadId，不许伪造一条"它正在思考"的卡片）；
       它是消息流之下的状态条，跑完就消失。 */
 .team-group__running {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -519,3 +523,223 @@
 /* ── 设置：说明与操作同一行（解散卡那类）─────────────────────────────────── */
 .team-settings__inline-row { display: flex; align-items: center; gap: 8px; }
 .team-settings__hint--inline { flex: 1; min-width: 0; margin: 0; }
+
+/* ══════ 消息卡片（11-06：飞书 `cardContent` 的本地等价物）══════════════════════
+   伙伴产出的是 Markdown，这里把它渲染成真正的元素（表格/代码/列表）。
+   ⛔ 只用主题令牌（--text/--line/--panel-2…），不写死颜色：暗色主题下才跟着变。 */
+.team-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.team-card__p { margin: 0; line-height: 1.72; }
+.team-card__h {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.6;
+}
+.team-card__h.is-major { font-size: 14px; }
+.team-card__list { margin: 0; padding-left: 18px; line-height: 1.72; }
+.team-card__list li { margin: 1px 0; }
+.team-card__inline-code,
+.team-card__code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.team-card__inline-code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--text);
+}
+.team-card__code {
+  overflow: auto;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--panel-2);
+  line-height: 1.6;
+  white-space: pre;
+}
+.team-card__quote {
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  border-left: 2px solid var(--line);
+  color: var(--muted);
+  line-height: 1.7;
+}
+.team-card__hr { margin: 2px 0; border: 0; border-top: 1px solid var(--line-soft); }
+.team-card__link { color: var(--accent); text-decoration: none; }
+.team-card__link:hover { text-decoration: underline; }
+
+/* 表格：外层可横滚（伙伴给多少列不受控，硬挤会把消息撑出屏幕） */
+.team-card__tablewrap { overflow-x: auto; max-width: 100%; }
+.team-card__table {
+  border-collapse: collapse;
+  font-size: 12px;
+  min-width: 100%;
+}
+.team-card__table th,
+.team-card__table td {
+  padding: 4px 10px;
+  border: 1px solid var(--line-soft);
+  text-align: left;
+  white-space: nowrap;
+}
+.team-card__table th { background: var(--panel-2); font-weight: 600; }
+.team-card__table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
+
+/* ══════ 快捷指令菜单（飞书 §3：输入框旁的菜单树）═════════════════════════════ */
+.team-menu { position: relative; margin-left: auto; }
+.team-menu__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.team-menu__btn:hover,
+.team-menu__btn.is-open { border-color: var(--accent); color: var(--accent); }
+.team-menu__pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  /* ⛔ 必须显著高于消息区与运行态：实测 30 会被下方的"正在处理"圆点压住 */
+  z-index: 240;
+  min-width: 236px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 5px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent);
+}
+.team-menu__group { display: flex; flex-direction: column; }
+.team-menu__sub { padding-left: 6px; border-left: 1px solid var(--line-soft); margin-left: 6px; }
+.team-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.team-menu__item:hover:not(:disabled) { background: var(--accent-soft); }
+.team-menu__item:disabled { opacity: 0.5; cursor: default; }
+.team-menu__item > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.team-menu__item > em { color: var(--faint); font-size: 10.5px; font-style: normal; }
+.team-menu__item--group { color: var(--muted); font-weight: 500; }
+.team-menu__item--group .is-open { transform: rotate(90deg); }
+.team-menu__item--group svg { transition: transform 0.12s ease; }
+.team-menu__hint { margin: 4px 8px 2px; color: var(--faint); font-size: 10.5px; line-height: 1.5; white-space: nowrap; }
+
+/* ══════ 设置页：记忆条目 / 快捷指令 / 用量（11-06）═══════════════════════════ */
+.team-settings__sub { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-soft); }
+.team-settings__subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.team-settings__notes { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 4px; }
+.team-settings__note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg);
+}
+.team-settings__note-type {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
+/* 约束是最硬的一类 ⇒ 视觉上也要能一眼挑出来 */
+.team-settings__note.is-constraint .team-settings__note-type { background: var(--accent-soft); color: var(--accent); }
+.team-settings__note-text { flex: 1 1 auto; min-width: 0; font-size: 12.5px; line-height: 1.55; }
+.team-settings__note-origin { flex: none; color: var(--faint); font-size: 10.5px; white-space: nowrap; }
+.team-settings__note .team-settings__mini { flex: none; }
+
+.team-settings__menu { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.team-settings__menu-group > ul { margin: 3px 0 0; padding: 0 0 0 8px; list-style: none; border-left: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 2px; }
+.team-settings__menu-groupname { display: block; color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.team-settings__menu-item { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.team-settings__menu-label { flex: none; font-size: 12.5px; }
+.team-settings__menu-prompt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-settings__menu-item .team-settings__mini { flex: none; }
+.team-settings__cmd-label { flex: 0 0 130px; }
+
+.team-settings__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 12px;
+  color: var(--muted);
+}
+.team-settings__stats strong { color: var(--text); font-weight: 600; }
+.team-settings__stats .is-warn strong { color: var(--danger); }
+
+.team-settings__usage { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; }
+.team-settings__usage li { display: flex; align-items: center; gap: 8px; }
+.team-settings__usage-name {
+  flex: 0 0 96px;
+  overflow: hidden;
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-settings__usage-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  min-width: 40px;
+  border-radius: 999px;
+  background: var(--panel-base);
+  overflow: hidden;
+}
+.team-settings__usage-bar i { display: block; height: 100%; border-radius: 999px; background: var(--accent); }
+.team-settings__usage-num { flex: 0 0 auto; color: var(--faint); font-size: 10.5px; white-space: nowrap; }
+.team-settings__sources { display: flex; flex-wrap: wrap; gap: 6px; }
+.team-settings__sources em {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+}
+
+/* 提示条的语气（菜单回显是"信息"，失败才是"警告"） */
+.team-group__notice.is-info { color: var(--muted); }
+.team-group__notice.is-warn { color: var(--orange); }

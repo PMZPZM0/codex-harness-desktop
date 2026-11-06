@@ -35,6 +35,27 @@ export type TeamFile = {
   at: number;
 };
 
+/** 群记忆条目（豆包 `type` + `origin` 的同构）：一条一个结论，来源可追 */
+export type MemoryNoteType = "fact" | "constraint" | "runbook";
+
+export type MemoryNote = {
+  id: string;
+  text: string;
+  type: MemoryNoteType;
+  origin: { groupId: string; actorId: string; threadId: string };
+  at: number;
+};
+
+/** 群菜单项（飞书 `menuItems` 的同构）：有 children 是分组，没有则必须带 prompt */
+export type MenuItem = {
+  key: string;
+  label: string;
+  prompt: string;
+  disabled: boolean;
+  tag: string;
+  children: MenuItem[];
+};
+
 export type TeamGroup = {
   id: string;
   name: string;
@@ -42,9 +63,13 @@ export type TeamGroup = {
   members: TeamMember[];
   /** 旧字段：护栏（跨租户/外部群那套）—— 本应用没有租户概念，界面不再展示，仅保留兼容 */
   guard: TeamGuard;
-  /** 群记忆：这个群的共享背景，每次派活注入给伙伴 */
+  /** 群简介：这个群的共享背景（每次派活注入给伙伴） */
   memory: string;
+  /** 群记忆条目：带类型 + 来源的结论/约定（与上面的简介分开，见 `normalizeMemoryNote`） */
+  memoryNotes: MemoryNote[];
   files: TeamFile[];
+  /** 快捷指令菜单（飞书 `ChatBotMenu` 的本地等价物）；空数组 = 不显示菜单按钮 */
+  menu: MenuItem[];
 };
 
 /** 群视图里的一条消息投影（真身在 threadId + itemId）。 */

@@ -10,7 +10,7 @@
  * ⛔ 派活失败**不写假消息**：没有子会话就没有 threadId，群视图里就不该出现"它说了什么"。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { GroupMessageRow, TeamGroup } from "./01-team-types";
+import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
 import { groupContextBlock } from "../../lib/team-models.mjs";
 
 type ListResult = {
@@ -23,6 +23,15 @@ type ListResult = {
 };
 
 type MutationResult = { ok: boolean; group?: TeamGroup; error?: string; changed?: boolean; limit?: number };
+
+/** 与 `src/lib/team-ledger.mjs` 的 summarizeLedger 返回一致（只声明界面用到的字段） */
+type LedgerBucket = { count: number; chars: number; ms: number; failed: number; avgMs: number };
+export type LedgerSummary = {
+  window: { since: number; days: number; groupId: string };
+  total: LedgerBucket & { partners: number };
+  byPartner: Array<LedgerBucket & { memberId: string; name: string }>;
+  bySource: Array<LedgerBucket & { source: string }>;
+};
 
 type RowsResult = { ok: boolean; rows: GroupMessageRow[]; error?: string; entry?: unknown };
 
@@ -49,6 +58,8 @@ export function useTeamGroups() {
   const [busyByGroup, setBusyByGroup] = useState<Record<string, string[]>>({});
   /** 上次派活的失败说明（⛔ 与群日志分开：那是"没派出去"，不是"它说了什么"） */
   const [dispatchError, setDispatchError] = useState("");
+  /** 当前群的用量汇总（按 (伙伴, 来源) 拆；豆包 §2.④ 口径） */
+  const [ledger, setLedger] = useState<LedgerSummary | null>(null);
   /** ⛔ 卸载后不许再 setState（派活可能跑几分钟） */
   const alive = useRef(true);
 
@@ -105,6 +116,27 @@ export function useTeamGroups() {
   }, []);
 
   /**
+   * 记一条用量。⛔ 记账失败**不许影响派活结果**（账本是旁路观测，不是主链路）。
+   * ⛔ 失败也记：失败同样烧了 token，失败率本身是最该看的指标。
+   */
+  const logUsage = useCallback(async (entry: Record<string, unknown>) => {
+    try {
+      await window.codex.harnessTeamLogUsage({ ...entry, at: Date.now() });
+    } catch {
+      /* 静默：账本写不进不该让用户看到"派活失败" */
+    }
+  }, []);
+
+  const loadLedger = useCallback(async (groupId: string, days = 7) => {
+    try {
+      const res = (await window.codex.harnessTeamLedger(groupId, days)) as LedgerSummary & { ok: boolean };
+      setLedger(res?.ok ? res : null);
+    } catch {
+      setLedger(null);
+    }
+  }, []);
+
+  /**
    * 派活：@ 了谁就把同一句话交给谁，各自落各自的子会话。
    * ⛔ 并发（不是串行）：两个伙伴同时开工，回复按**各自完成时间**进同一条时间轴。
    * ⛔ 未绑定调度目标的伙伴直接拒（老群手工加的），⛔ 不静默降级成"发送成功"。
@@ -155,6 +187,11 @@ export function useTeamGroups() {
 
       await Promise.all(
         targets.map(async (partner) => {
+          const startedAt = Date.now();
+          let chars = 0;
+          let threadId = "";
+          let okFlag = false;
+          let errMsg = "";
           try {
             const ctx = groupContextBlock(group, { forMemberId: partner.id });
             const query = ctx ? `${ctx}\n\n---\n\n${body}` : body;
@@ -167,9 +204,11 @@ export function useTeamGroups() {
               originThreadId: "",
             })) as InvokeResult;
             if (!res?.ok || !res?.threadId) {
-              failed.push({ name: partner.name, error: res?.error || "派活失败" });
+              errMsg = res?.error || "派活失败";
+              failed.push({ name: partner.name, error: errMsg });
               return;
             }
+            threadId = res.threadId;
             /* ② 产出落群日志：threadId = 真实子会话，itemId 由主进程补 —— 点开能回到原子会话 */
             const wrote = await appendMessage(group.id, {
               authorId: partner.id,
@@ -178,10 +217,30 @@ export function useTeamGroups() {
               text: String(res.output ?? "").trim() || "（没有返回文本内容）",
             });
             /* ⛔ 落盘失败也要说出来（典型场景：跑的过程中群被解散了），⛔ 不许当成功 */
-            if (!wrote?.ok) failed.push({ name: partner.name, error: wrote?.error || "产出没能写进群聊记录" });
+            if (!wrote?.ok) {
+              errMsg = wrote?.error || "产出没能写进群聊记录";
+              failed.push({ name: partner.name, error: errMsg });
+            } else {
+              okFlag = true;
+            }
+            /* 用量口径：输入（注入块 + 用户原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
+            chars = query.length + String(res.output ?? "").length;
           } catch (err) {
-            failed.push({ name: partner.name, error: err instanceof Error ? err.message : String(err) });
+            errMsg = err instanceof Error ? err.message : String(err);
+            failed.push({ name: partner.name, error: errMsg });
           } finally {
+            void logUsage({
+              groupId: group.id,
+              groupName: group.name,
+              memberId: partner.id,
+              partnerName: partner.name,
+              source: "human",
+              threadId,
+              chars,
+              ms: Date.now() - startedAt,
+              ok: okFlag,
+              error: errMsg,
+            });
             if (alive.current) {
               setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((id) => id !== partner.id) }));
             }
@@ -256,6 +315,26 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 加一条记忆（type + origin 由主进程补；这里只传正文与类型） */
+  const addNote = useCallback(
+    async (groupId: string, note: { text: string; type: MemoryNote["type"]; threadId?: string }) =>
+      apply((await window.codex.harnessTeamAddNote(groupId, note)) as MutationResult),
+    [apply],
+  );
+
+  const removeNote = useCallback(
+    async (groupId: string, noteId: string) =>
+      apply((await window.codex.harnessTeamRemoveNote(groupId, noteId)) as MutationResult),
+    [apply],
+  );
+
+  /** 群菜单（整份替换：菜单是"一屏能看完的树"，增量合并规则只会让人猜） */
+  const saveMenu = useCallback(
+    async (groupId: string, items: MenuItem[]) =>
+      apply((await window.codex.harnessTeamSetMenu(groupId, items)) as MutationResult),
+    [apply],
+  );
+
   /** 群文件（整组替换：UI 增删后一次提交，⛔ 不做并发合并的猜测） */
   const saveFiles = useCallback(
     async (groupId: string, files: unknown[]) => apply((await window.codex.harnessTeamSetFiles(groupId, files)) as MutationResult),
@@ -270,8 +349,9 @@ export function useTeamGroups() {
 
   return {
     groups, issues, blockers, limit, loading, error,
-    rowsByGroup, busyByGroup, dispatchError,
-    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup, setMemory, saveFiles, setManagerOf,
-    loadMessages, appendMessage, dispatch,
+    rowsByGroup, busyByGroup, dispatchError, ledger,
+    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
+    setMemory, addNote, removeNote, saveFiles, saveMenu, setManagerOf,
+    loadMessages, appendMessage, dispatch, loadLedger,
   };
 }

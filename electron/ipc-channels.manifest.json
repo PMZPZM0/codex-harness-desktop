@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 622,
+  "count": 627,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6191,6 +6191,56 @@
       "invokeArgs": "groupId, memberId, managerId",
       "cast": null,
       "note": "团队模式：上下级（委派白名单）"
+    },
+    {
+      "name": "harnessTeamAddNote",
+      "channel": "harness-team:add-note",
+      "paramsImpl": "groupId: string, note: Record<string, unknown>",
+      "paramsDecl": "groupId: string, note: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>",
+      "invokeArgs": "groupId, note",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamRemoveNote",
+      "channel": "harness-team:remove-note",
+      "paramsImpl": "groupId: string, noteId: string",
+      "paramsDecl": "groupId: string, noteId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>",
+      "invokeArgs": "groupId, noteId",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamSetMenu",
+      "channel": "harness-team:set-menu",
+      "paramsImpl": "groupId: string, items: unknown",
+      "paramsDecl": "groupId: string, items: unknown",
+      "returns": "Promise<{ ok: boolean; group?: any; error?: string }>",
+      "invokeArgs": "groupId, items",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamLogUsage",
+      "channel": "harness-team:log-usage",
+      "paramsImpl": "entry: Record<string, unknown>",
+      "paramsDecl": "entry: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; count?: number; error?: string }>",
+      "invokeArgs": "entry",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamLedger",
+      "channel": "harness-team:ledger",
+      "paramsImpl": "groupId: string, days: number",
+      "paramsDecl": "groupId: string, days: number",
+      "returns": "Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>",
+      "invokeArgs": "groupId, days",
+      "cast": null,
+      "note": "团队模式：记忆条目 / 菜单 / 用量账本"
     }
   ]
 }

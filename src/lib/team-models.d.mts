@@ -1,4 +1,5 @@
 /** `team-models.mjs` 的类型声明（与实现一一对应；⛔ 规则只在 .mjs 里，这里只描述形状）。 */
+import type { MenuItem } from "./team-menu.mjs";
 
 export type TeamMemberKind = "human" | "bot";
 
@@ -46,15 +47,30 @@ export interface GroupFileLite {
   at: number;
 }
 
+/** 群记忆条目（豆包 `type` + `origin` 的同构） */
+export type MemoryNoteType = "fact" | "constraint" | "runbook";
+
+export interface MemoryNoteLite {
+  id: string;
+  text: string;
+  type: MemoryNoteType;
+  origin: { groupId: string; actorId: string; threadId: string };
+  at: number;
+}
+
 export interface TeamGroupLite {
   id: string;
   name: string;
   leadId: string;
   members: TeamMemberLite[];
   guard: TeamGuard;
-  /** 群记忆（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
+  /** 群简介（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
   memory: string;
+  /** 群记忆条目：带类型 + 来源的结论 */
+  memoryNotes: MemoryNoteLite[];
   files: GroupFileLite[];
+  /** 快捷指令菜单（飞书 ChatBotMenu 的本地等价物） */
+  menu: MenuItem[];
 }
 
 export interface GroupSourceMessage {
@@ -87,6 +103,10 @@ export interface GroupMessageProjected {
 }
 
 export const GROUP_MAX_PARTNERS: number;
+export const MAX_MEMORY_NOTES: number;
+export const MAX_MEMORY_NOTE_CHARS: number;
+export const MEMORY_TYPES: readonly MemoryNoteType[];
+export const MEMORY_TYPE_LABELS: Readonly<Record<string, string>>;
 export const MAX_GROUP_MESSAGES: number;
 export const MAX_GROUP_MEMORY_CHARS: number;
 export const MAX_GROUP_FILES: number;
@@ -94,6 +114,15 @@ export const DEFAULT_GROUP_GUARD: Readonly<TeamGuard>;
 
 export function normalizeMember(entry: unknown): TeamMemberLite | null;
 export function normalizeGroupFile(entry: unknown): GroupFileLite | null;
+export function normalizeMemoryNote(entry: unknown): MemoryNoteLite | null;
+export function addMemoryNote(
+  group: TeamGroupLite,
+  note: unknown,
+): { ok: boolean; reason?: string; group: TeamGroupLite; dropped?: string[] };
+export function removeMemoryNote(
+  group: TeamGroupLite,
+  noteId: string,
+): { ok: boolean; group: TeamGroupLite; changed?: boolean };
 export function groupContextBlock(group: TeamGroupLite | unknown, options?: { forMemberId?: string }): string;
 export function setManager(
   group: TeamGroupLite,

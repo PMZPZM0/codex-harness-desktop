@@ -5,7 +5,7 @@
  * 判定全部走 `src/lib/team-models.mjs`（纯函数单一真相源），本文件只负责**取路径、读写盘、回 IPC**。
  *
  * 域：harness-team
- * 通道：list / create / rename / add-partner / remove-partner / mute / set-guard / project
+ * 通道：群 CRUD / 伙伴 / 记忆条目 / 群文件 / 菜单 / 用量账本 / 消息日志（完整清单见 HARNESS_TEAM_CHANNELS）
  *
  * ⛔ 三条纪律：
  *   ① `app.getPath("userData")` **必须在 handle 内惰性取**（模块体里取会拿到默认目录 —— 见守卫【91】）。
@@ -28,6 +28,8 @@ import {
   projectGroupLog,
   projectGroupMessages,
   normalizeGroupFile,
+  addMemoryNote,
+  removeMemoryNote,
   removePartner,
   setManager,
   setPartnerMuted,
@@ -36,6 +38,13 @@ import {
   MAX_GROUP_MEMORY_CHARS,
   MAX_GROUP_MESSAGES,
 } from "../../src/lib/team-models.mjs";
+import { normalizeMenu, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
+import {
+  appendLedger,
+  normalizeLedgerEntry,
+  summarizeLedger,
+  MAX_LEDGER_ENTRIES,
+} from "../../src/lib/team-ledger.mjs";
 
 export const HARNESS_TEAM_CHANNELS = [
   "harness-team:list",
@@ -52,6 +61,11 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:set-memory",
   "harness-team:set-files",
   "harness-team:set-manager",
+  "harness-team:add-note",
+  "harness-team:remove-note",
+  "harness-team:set-menu",
+  "harness-team:log-usage",
+  "harness-team:ledger",
 ];
 
 /** 配置文件路径（惰性：每次调用现取，⛔ 不在模块体缓存）。 */
@@ -99,6 +113,37 @@ function writeStore(store: StoreShape): { ok: boolean } {
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify({ version: 2, groups: store.groups, messages: store.messages }, null, 2), "utf8");
+  renameSync(tmp, file);
+  return { ok: true };
+}
+
+/* ── 用量账本（11-06，豆包 §2.④）─────────────────────────────────────────────
+   ⛔ 单独一个文件，**不塞进 harness-teams.json**：账本是 append-only 序列（几千条），
+      群配置是"常常整份改写"的对象 —— 混在一起会让"改一次群名"也重写几千条账本。 */
+function ledgerFile(): string {
+  return join(app.getPath("userData"), "harness-team-ledger.json");
+}
+
+type LedgerEntryShape = ReturnType<typeof normalizeLedgerEntry>;
+
+function readLedger(): NonNullable<LedgerEntryShape>[] {
+  const file = ledgerFile();
+  if (!existsSync(file)) return [];
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    const rows = Array.isArray(parsed?.entries) ? parsed.entries : [];
+    /* ⛔ 过一遍 normalize：坏条目当场丢，别让一条脏数据把汇总算崩 */
+    return rows.map((r: unknown) => normalizeLedgerEntry(r)).filter(Boolean).slice(-MAX_LEDGER_ENTRIES) as NonNullable<LedgerEntryShape>[];
+  } catch {
+    return [];
+  }
+}
+
+function writeLedger(entries: NonNullable<LedgerEntryShape>[]): { ok: boolean } {
+  const file = ledgerFile();
+  mkdirSync(dirname(file), { recursive: true });
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ version: 1, entries }, null, 2), "utf8");
   renameSync(tmp, file);
   return { ok: true };
 }
@@ -243,6 +288,71 @@ export const harnessTeamFeature = defineFeature<null>({
         return { ok: false, error: msg, reason: r.reason, group: r.group };
       }
       return { ...saveOne(store, r.group), changed: r.changed };
+    });
+
+    /* ── 群记忆条目（豆包 §2.②：带 type + origin 的结论，不是一大段随笔）──────────
+       ⛔ id/at/origin 一律在**主进程**补：渲染层各写一套时间/来源口径，多面板时必漂。 */
+    ipcHost.handle("harness-team:add-note", (_event, groupId: string, note: Record<string, unknown>) => {
+      const store = readStore();
+      const gid = String(groupId ?? "");
+      const g = findGroup(store.groups, gid);
+      if (!g) return { ok: false, error: "群不存在" };
+      const at = Date.now();
+      const r = addMemoryNote(g, {
+        ...note,
+        id: String(note?.id ?? "").trim() || `note_${at.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        at,
+        origin: {
+          groupId: gid,
+          actorId: String(note?.actorId ?? "local-user"),
+          threadId: String(note?.threadId ?? ""),
+        },
+      }) as { ok: boolean; reason?: string; group: GroupShape; dropped?: string[] };
+      if (!r.ok) return { ok: false, error: "记忆内容无效（不能为空）" };
+      return { ...saveOne(store, r.group), dropped: r.dropped ?? [] };
+    });
+
+    ipcHost.handle("harness-team:remove-note", (_event, groupId: string, noteId: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const r = removeMemoryNote(g, noteId) as { group: GroupShape; changed?: boolean };
+      return { ...saveOne(store, r.group), changed: r.changed };
+    });
+
+    /* 群菜单（飞书 §3：menuItems 树，`needShowMenuButton = items.length > 0`）。
+       ⛔ 整份替换语义：菜单是"一屏能看完的树"，增量合并的规则只会让人猜。 */
+    ipcHost.handle("harness-team:set-menu", (_event, groupId: string, items: unknown) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      if (items != null && !Array.isArray(items)) return { ok: false, error: "菜单格式不对" };
+      const menu = normalizeMenu(items);
+      if (Array.isArray(items) && items.length > 0 && menu.length === 0) {
+        return { ok: false, error: "菜单项无效（每项要有 key/label，叶子还要有 prompt）" };
+      }
+      if (menu.length > MENU_MAX_ITEMS) return { ok: false, error: `最多 ${MENU_MAX_ITEMS} 个一级菜单` };
+      const next = createGroup({ ...g, menu }) as GroupShape;
+      return saveOne(store, next);
+    });
+
+    /* 记一条用量（渲染层每次派活完成/失败各调一次）。
+       ⛔ 失败也记：失败也烧了 token，且失败率本身是最该看的指标。 */
+    ipcHost.handle("harness-team:log-usage", (_event, entry: Record<string, unknown>) => {
+      const e = normalizeLedgerEntry(entry);
+      if (!e) return { ok: false, error: "用量记录无效（缺伙伴 id）" };
+      const next = appendLedger(readLedger(), { ...e, at: e.at || Date.now() });
+      writeLedger(next as NonNullable<LedgerEntryShape>[]);
+      return { ok: true, count: next.length };
+    });
+
+    /* 用量汇总：按 (agent, 来源) 两个维度拆（豆包实测口径）。 */
+    ipcHost.handle("harness-team:ledger", (_event, groupId: string, days: number) => {
+      const list = readLedger();
+      return {
+        ok: true,
+        ...summarizeLedger(list, { groupId: String(groupId ?? ""), days: Number(days ?? 7) || 7 }),
+      };
     });
 
     /* 解散群（11-06 补）：只删群与它的**群消息日志**，⛔ 不碰任何子会话 ——

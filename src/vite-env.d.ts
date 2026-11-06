@@ -1402,6 +1402,16 @@ interface Window {
     harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：上下级（委派白名单） */
     harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamAddNote(groupId: string, note: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamRemoveNote(groupId: string, noteId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamSetMenu(groupId: string, items: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
+    /* 团队模式：记忆条目 / 菜单 / 用量账本 */
+    harnessTeamLedger(groupId: string, days: number): Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>;
 /* ═══ gen:end ═══ */
 
 

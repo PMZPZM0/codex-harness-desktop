@@ -16,9 +16,12 @@
  * ⛔ 权限说明写文案，不用 disabled 表达归属（项目纪律：disabled 是准入，不是说明）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { TeamFile, TeamGroup } from "./01-team-types";
+import type { MemoryNote, MemoryNoteType, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { BookOpen, FolderOpen, GitBranch, Trash2, Users } from "lucide-react";
+import { BarChart3, BookOpen, FolderOpen, GitBranch, Puzzle, Trash2, Users } from "lucide-react";
+import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
+import { formatChars, formatMs, LEDGER_SOURCE_LABELS } from "../../lib/team-ledger.mjs";
+import type { LedgerSummary } from "./02-team-store";
 import { AppSelect } from "../../components/AppSelect";
 
 type Props = {
@@ -34,6 +37,14 @@ type Props = {
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
   /** 解散群（只删群与群日志；伙伴的子会话不动） */
   onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
+  /** 记忆条目（带 type + origin） */
+  onAddNote: (note: { text: string; type: MemoryNoteType }) => Promise<{ ok: boolean; error?: string }>;
+  onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 快捷指令菜单（整份替换） */
+  onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 用量汇总（为空 = 还没拉过） */
+  ledger?: LedgerSummary | null;
+  onLoadLedger: (days: number) => void;
 };
 
 /** 调度目标的一条（与 `listDispatchCatalog()` 的返回一致；这里只声明用得到的字段）。 */
@@ -61,10 +72,24 @@ const KIND_LABEL: Record<string, string> = {
 
 const MEMORY_MAX = 4000;
 const FILES_MAX = 20;
+const NOTES_MAX = 40;
+
+/** 记忆类型（与 `MEMORY_TYPE_LABELS` 同源，⛔ 别两处各写一套文案） */
+const NOTE_TYPES: Array<{ value: MemoryNoteType; label: string; hint: string }> = [
+  { value: "constraint", label: "约束", hint: "必须遵守的硬规矩（金额含税、只按出库算…）" },
+  { value: "fact", label: "事实", hint: "已确认的结论（口径、数据来源…）" },
+  { value: "runbook", label: "做法", hint: "下次照这个步骤做" },
+];
+const NOTE_TYPE_LABEL: Record<string, string> = { constraint: "约束", fact: "事实", runbook: "做法" };
+const fmtDay = (at: number) => {
+  if (!at) return "";
+  const d = new Date(at);
+  return `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+};
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles, onDeleteGroup }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -77,7 +102,19 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   const [memoryDraft, setMemoryDraft] = useState(group.memory ?? "");
   const [filesDraft, setFilesDraft] = useState<TeamFile[]>(group.files ?? []);
 
+  /* 记忆条目（豆包 §2.②）：一条一个结论 + 类型 + 来源，与上面的"群简介"分开 */
+  const [noteText, setNoteText] = useState("");
+  const [noteType, setNoteType] = useState<MemoryNoteType>("fact");
+  /* 快捷指令：新加一条自定义 */
+  const [cmdLabel, setCmdLabel] = useState("");
+  const [cmdPrompt, setCmdPrompt] = useState("");
+  /* 用量窗口（天） */
+  const [ledgerDays, setLedgerDays] = useState(7);
+
   const partners = group.members.filter((m) => m.kind === "bot");
+  const notes: MemoryNote[] = group.memoryNotes ?? [];
+  /** 菜单摊平（界面里按"分组 → 项"展示；删除按 key） */
+  const menuLeaves = flattenMenu(group.menu ?? []);
 
   /* 只在**切群**时把草稿同步回该群的真实值。
      ⛔⛔ 不能把 group.memory / group.files 放进依赖：群里点一下「静音」也会让 apply() 换掉
@@ -92,6 +129,9 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
     setMsg("");
     setDone("");
     setConfirmDelete(false);
+    setNoteText("");
+    setCmdLabel("");
+    setCmdPrompt("");
   }, [group.id, group.memory, group.files]);
 
   const memoryDirty = memoryDraft.trim() !== String(group.memory ?? "").trim();
@@ -157,6 +197,36 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
       if (r.ok) setPick("");
       return r;
     }, "已加入");
+  };
+
+  /** 记一条记忆（类型 + 正文；来源由主进程补 `origin`） */
+  const addNote = async () => {
+    const t = noteText.trim();
+    if (!t) return;
+    await run(async () => {
+      const r = await onAddNote({ text: t, type: noteType });
+      if (r.ok) setNoteText("");
+      return r;
+    }, "已记住 —— 下次派活就带上它");
+  };
+
+  /** 菜单：加/删都即时落盘（菜单是一屏能看完的树，⛔ 不做草稿再保存） */
+  const addCommand = async () => {
+    if (!cmdLabel.trim() || !cmdPrompt.trim()) return;
+    const next = addMenuLeaf(group.menu ?? [], { label: cmdLabel, prompt: cmdPrompt });
+    await run(async () => {
+      const r = await onSaveMenu(next);
+      if (r.ok) { setCmdLabel(""); setCmdPrompt(""); }
+      return r;
+    }, "指令已加");
+  };
+
+  const dropCommand = async (key: string) => {
+    await run(() => onSaveMenu(removeMenuLeaf(group.menu ?? [], key)), "已删除");
+  };
+
+  const resetCommands = async () => {
+    await run(() => onSaveMenu([...DEFAULT_GROUP_MENU] as unknown[]), "已恢复默认指令");
   };
 
   const chooseFiles = async () => {
@@ -312,6 +382,64 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             保存群记忆
           </button>
         </div>
+
+        {/* ├ 记忆条目：一条一个结论 + 类型 + 来源（豆包 §2.② 的 `type` / `origin`） */}
+        <div className="team-settings__sub">
+          <h4 className="team-settings__subhead">
+            记忆条目
+            <span className="team-settings__count">{notes.length} / {NOTES_MAX}</span>
+          </h4>
+          <p className="team-settings__hint">
+            一条写<strong>一个结论</strong>，带类型和来源。派活时按「约束 → 做法 → 事实」注入，
+            和你自己的推断冲突时，以这里为准（这是硬规矩，不是建议）。
+          </p>
+          <ul className="team-settings__notes">
+            {notes.map((n) => (
+              <li key={n.id} className={`team-settings__note is-${n.type}`}>
+                <em className="team-settings__note-type">{NOTE_TYPE_LABEL[n.type] ?? n.type}</em>
+                <span className="team-settings__note-text">{n.text}</span>
+                <small
+                  className="team-settings__note-origin"
+                  title={`来源：${n.origin?.actorId || "?"}${n.origin?.threadId ? ` · 会话 ${n.origin.threadId}` : ""}`}
+                >
+                  {n.origin?.actorId === LOCAL_ACTOR_ID ? "我" : (n.origin?.actorId || "?")} · {fmtDay(n.at)}
+                </small>
+                <button
+                  type="button"
+                  className="team-settings__mini team-settings__mini--danger"
+                  onClick={() => void run(() => onRemoveNote(n.id), "已删除")}
+                  disabled={busy}
+                >
+                  删
+                </button>
+              </li>
+            ))}
+            {!notes.length && <li className="team-settings__empty">还没有记忆条目 —— 把「这个群认定的结论」记一条</li>}
+          </ul>
+          <div className="team-settings__add">
+            <span className="team-settings__select is-narrow">
+              <AppSelect
+                value={noteType}
+                onChange={(v) => setNoteType(v as MemoryNoteType)}
+                options={NOTE_TYPES.map((t) => ({ value: t.value, label: t.label }))}
+                ariaLabel="记忆类型"
+                disabled={busy || notes.length >= NOTES_MAX}
+              />
+            </span>
+            <input
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="一条结论或约定，如：金额一律含税"
+              onKeyDown={(e) => { if (e.key === "Enter") void addNote(); }}
+              aria-label="记忆内容"
+              disabled={busy || notes.length >= NOTES_MAX}
+            />
+            <button type="button" onClick={() => void addNote()} disabled={busy || !noteText.trim() || notes.length >= NOTES_MAX}>
+              记住
+            </button>
+          </div>
+          {notes.length >= NOTES_MAX && <p className="team-settings__hint">已到上限（{NOTES_MAX} 条）—— 删掉过时的再加</p>}
+        </div>
       </section>
 
       {/* ── 群文件 ─────────────────────────────────────────────────────── */}
@@ -367,6 +495,127 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             保存清单
           </button>
         </div>
+      </section>
+
+      {/* ── 快捷指令（飞书 §3：`ChatBotMenu` 菜单树 + TriggerMenuEvent）────────── */}
+      <section className="team-settings__block">
+        <h3>
+          <Puzzle size={14} className="ic-green" />
+          快捷指令
+          <span className="team-settings__count">{menuLeaves.length} 条</span>
+        </h3>
+        <p className="team-settings__hint">
+          输入框旁那个「指令」按钮里就是这些。<strong>点一项只把指令填进输入框</strong>，
+          你确认后再发 —— 不是替你偷偷派活。
+        </p>
+        <ul className="team-settings__menu">
+          {normalizeMenu(group.menu ?? []).map((g) => (
+            <li key={g.key} className="team-settings__menu-group">
+              <strong className="team-settings__menu-groupname">{g.label}</strong>
+              <ul>
+                {(g.children.length ? g.children : [g]).map((c) => (
+                  <li key={c.key} className="team-settings__menu-item">
+                    <span className="team-settings__menu-label">{c.label}</span>
+                    <small className="team-settings__menu-prompt" title={c.prompt}>{c.prompt}</small>
+                    <button
+                      type="button"
+                      className="team-settings__mini team-settings__mini--danger"
+                      onClick={() => void dropCommand(c.key)}
+                      disabled={busy}
+                    >
+                      删
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+          {!menuLeaves.length && <li className="team-settings__empty">还没有指令 —— 加一条，或恢复默认</li>}
+        </ul>
+        <div className="team-settings__add">
+          <input
+            className="team-settings__cmd-label"
+            value={cmdLabel}
+            onChange={(e) => setCmdLabel(e.target.value)}
+            placeholder="名称（如：查库存）"
+            maxLength={24}
+            aria-label="指令名称"
+            disabled={busy}
+          />
+          <input
+            value={cmdPrompt}
+            onChange={(e) => setCmdPrompt(e.target.value)}
+            placeholder="点下去填进输入框的那句话"
+            aria-label="指令内容"
+            disabled={busy}
+          />
+          <button type="button" onClick={() => void addCommand()} disabled={busy || !cmdLabel.trim() || !cmdPrompt.trim()}>
+            添加
+          </button>
+        </div>
+        <div className="team-settings__savebar">
+          <button type="button" className="team-settings__mini" onClick={() => void resetCommands()} disabled={busy}>
+            恢复默认指令
+          </button>
+        </div>
+      </section>
+
+      {/* ── 用量（豆包 §2.④：维度是 (agent, 触发来源)，不是 (用户)）──────────── */}
+      <section className="team-settings__block">
+        <h3>
+          <BarChart3 size={14} className="ic-blue" />
+          用量
+          <span className="team-settings__count">{ledger ? `${ledger.total.count} 次` : "—"}</span>
+        </h3>
+        <p className="team-settings__hint">
+          按<strong>（伙伴、触发来源）</strong>两个维度拆 —— 这是「一开始就记、事后补不回来」的那张表。
+          记的是<strong>字符数与耗时</strong>（引擎没回 token 用量），别当账单看。
+        </p>
+        <div className="team-settings__inline-row">
+          <span className="team-settings__select">
+            <AppSelect
+              value={String(ledgerDays)}
+              onChange={(v) => { const d = Number(v) || 7; setLedgerDays(d); onLoadLedger(d); }}
+              options={[{ value: "7", label: "近 7 天" }, { value: "30", label: "近 30 天" }, { value: "0", label: "全部" }]}
+              ariaLabel="统计窗口"
+              disabled={busy}
+            />
+          </span>
+          <button type="button" className="team-settings__mini" onClick={() => onLoadLedger(ledgerDays)} disabled={busy}>
+            刷新
+          </button>
+        </div>
+        {ledger && ledger.total.count > 0 ? (
+          <>
+            <div className="team-settings__stats">
+              <span><strong>{ledger.total.count}</strong> 次派活</span>
+              <span><strong>{formatChars(ledger.total.chars)}</strong> 字</span>
+              <span>均 <strong>{formatMs(ledger.total.avgMs)}</strong></span>
+              {ledger.total.failed > 0 && <span className="is-warn"><strong>{ledger.total.failed}</strong> 次失败</span>}
+            </div>
+            <ul className="team-settings__usage">
+              {ledger.byPartner.map((p) => {
+                const max = Math.max(1, ledger.byPartner[0]?.chars ?? 1);
+                return (
+                  <li key={p.memberId}>
+                    <span className="team-settings__usage-name">{p.name}</span>
+                    <span className="team-settings__usage-bar"><i style={{ width: `${Math.max(4, Math.round((p.chars / max) * 100))}%` }} /></span>
+                    <span className="team-settings__usage-num">
+                      {p.count} 次 · {formatChars(p.chars)} 字 · {formatMs(p.avgMs)}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="team-settings__sources">
+              {ledger.bySource.map((x) => (
+                <em key={x.source}>{LEDGER_SOURCE_LABELS[x.source] ?? x.source} · {x.count}</em>
+              ))}
+            </div>
+          </>
+        ) : (
+          <p className="team-settings__empty">{ledger ? "这段时间还没有派活记录" : "点「刷新」看用量"}</p>
+        )}
       </section>
 
       {/* ── 体检（只在真有问题时出现；"还没有伙伴"这类建议也写在这里，但语气是建议） ── */}

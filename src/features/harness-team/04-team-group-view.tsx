@@ -13,8 +13,12 @@
  */
 import { useMemo, useRef, useState } from "react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
+import type { LedgerSummary } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
+import { TeamCard } from "./05-team-card";
+import { TeamMenuButton } from "./06-team-menu";
+import { menuPickResult } from "../../lib/team-menu.mjs";
 
 type Props = {
   group: TeamGroup;
@@ -29,6 +33,14 @@ type Props = {
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
   /** 解散群（只删群与群日志；伙伴的子会话不动） */
   onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
+  /** 记忆条目 */
+  onAddNote: (note: { text: string; type: "fact" | "constraint" | "runbook" }) => Promise<{ ok: boolean; error?: string }>;
+  onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 快捷指令菜单（整份替换） */
+  onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 用量汇总 + 拉取 */
+  ledger?: LedgerSummary | null;
+  onLoadLedger: (days: number) => void;
   /** 重命名（主进程是唯一落点；这里只负责发与显示错误） */
   onRename?: (name: string) => Promise<{ ok: boolean; error?: string }>;
   /** 正在跑活的伙伴（id）：显示「正在处理…」，⛔ 不是消息 */
@@ -51,12 +63,15 @@ export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles,
   onDeleteGroup, onRename, onSend,
+  onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  /** 菜单点击的回显（飞书 `showMsg` 的等价物：告诉用户"我往输入框放了什么"） */
+  const [menuMsg, setMenuMsg] = useState("");
   /** 群名内联编辑（⛔ 不用 window.prompt：原生弹窗在这个壳里体验差且样式不可控） */
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -89,6 +104,7 @@ export function TeamGroupView({
     const body = text.trim();
     if (!body || sending) return;
     setSendError("");
+    setMenuMsg("");
     setSending(true);
     try {
       const r = await onSend?.(atTargets, body);
@@ -190,6 +206,11 @@ export function TeamGroupView({
           onSetMemory={onSetMemory}
           onSetFiles={onSetFiles}
           onDeleteGroup={onDeleteGroup}
+          onAddNote={onAddNote}
+          onRemoveNote={onRemoveNote}
+          onSaveMenu={onSaveMenu}
+          ledger={ledger}
+          onLoadLedger={onLoadLedger}
         />
       ) : (
         <div className="team-group__body">
@@ -238,8 +259,9 @@ export function TeamGroupView({
                           <pre className="team-msg__card">{JSON.stringify(row.card, null, 2)}</pre>
                         ) : (
                           /* ⛔ 播报稿是**给耳朵的**（```voice 围栏块）：对话里由 Markdown 整块剥掉，
-                             群视图也得剥 —— 口径只有一处（src/lib/voice-script.mjs）。 */
-                          <p className="team-msg__text">{stripVoiceScript(row.text)}</p>
+                             群视图也得剥 —— 口径只有一处（src/lib/voice-script.mjs）。
+                             剥完再交给卡片渲染器（表格/代码/列表给真正的元素，⛔ 不拼 HTML）。 */
+                          <TeamCard text={stripVoiceScript(row.text)} />
                         )}
                         {isBot && (
                           <div className="team-msg__actions">
@@ -265,6 +287,11 @@ export function TeamGroupView({
                 {busy!.map(nameOf).join("、")} 正在处理…
               </div>
             )}
+            {menuMsg && (
+              <p className={`team-group__notice is-info${menuMsg.includes("不在了") || menuMsg.includes("不可用") ? " is-warn" : ""}`} role="status">
+                {menuMsg}
+              </p>
+            )}
             {nameError && <p className="team-group__notice" role="status">改名失败：{nameError}</p>}
             {(sendError || notice) && (
               <p className="team-group__notice" role="status">{sendError || notice}</p>
@@ -286,6 +313,19 @@ export function TeamGroupView({
                   </button>
                 ))}
                 {!partners.length && <span className="team-group__atempty">还没有伙伴可 @</span>}
+                {/* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮 */}
+                <TeamMenuButton
+                  items={group.menu ?? []}
+                  disabled={sending}
+                  onPick={(key) => {
+                    const r = menuPickResult(group.menu ?? [], key);
+                    setMenuMsg(r.message);
+                    if (r.ok) {
+                      setText(r.prompt);
+                      composerRef.current?.focus();
+                    }
+                  }}
+                />
               </div>
               <textarea
                 ref={composerRef}

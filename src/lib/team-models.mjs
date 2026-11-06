@@ -11,6 +11,8 @@
  *   ③ 移除伙伴只有**群主**与**添加者**可以（飞书实测文案：「仅群主和添加者可移除该机器人」）。
  */
 
+import { DEFAULT_GROUP_MENU, normalizeMenu } from "./team-menu.mjs";
+
 /** 一个群最多几个伙伴（飞书有 maxBotNum；我们先给一个固定上限，留成数据便于后续改）。 */
 export const GROUP_MAX_PARTNERS = 8;
 
@@ -21,6 +23,24 @@ export const MAX_GROUP_MEMORY_CHARS = 4000;
 
 /** 一个群最多挂多少个参考文件（派活时把路径注入给伙伴）。 */
 export const MAX_GROUP_FILES = 20;
+
+/** 一个群最多存多少条**记忆条目**（豆包 MEMORY.md 索引那种：一条一个结论，不是一大段）。
+ *  ⛔ 与 `memory`（群简介）分开：简介是"这个群是干什么的"，条目是"我们学到的事实/约定"。
+ *    只有后者需要 `origin`（谁写的、哪次对话来的）——报告原话「记忆没有 origin 会烂」。 */
+export const MAX_MEMORY_NOTES = 40;
+
+/** 单条记忆的字符上限（防止有人把整篇文档粘成一条）。 */
+export const MAX_MEMORY_NOTE_CHARS = 500;
+
+/** 记忆类型（豆包 `type` 字段的同构）：事实 / 约束 / 做法。 */
+export const MEMORY_TYPES = Object.freeze(["fact", "constraint", "runbook"]);
+
+/** 类型的中文标签（注入与界面共用一份，⛔ 别两处各写一套）。 */
+export const MEMORY_TYPE_LABELS = Object.freeze({
+  fact: "事实",
+  constraint: "约束",
+  runbook: "做法",
+});
 
 /** 一个群最多保留多少条群消息（P0b）：超了丢最老的 —— 群视图是**投影/索引**，
  *  真身永远在子会话里，截断不会丢任何真实产出。 */
@@ -77,6 +97,29 @@ export function normalizeGroupFile(entry) {
   };
 }
 
+/**
+ * 一条群记忆：`{ id, text, type, origin: { groupId, actorId }, at }`。
+ * ⛔ `origin` 必须落盘（报告：多 agent 往同一份记忆写，没有来源三天后就删都不敢删）。
+ * ⛔ 没 id / 没正文一律判无效（⛔ 不替调用方生成 id —— 纯函数里没有可靠时钟）。
+ */
+export function normalizeMemoryNote(entry) {
+  const id = String(entry?.id ?? "").trim();
+  const text = String(entry?.text ?? "").trim();
+  if (!id || !text) return null;
+  const type = MEMORY_TYPES.includes(entry?.type) ? String(entry.type) : "fact";
+  return {
+    id,
+    text: text.slice(0, MAX_MEMORY_NOTE_CHARS),
+    type,
+    origin: {
+      groupId: String(entry?.origin?.groupId ?? ""),
+      actorId: String(entry?.origin?.actorId ?? ""),
+      threadId: String(entry?.origin?.threadId ?? ""),
+    },
+    at: Number(entry?.at ?? 0) || 0,
+  };
+}
+
 /** 建群：成员表去重、护栏补默认值。`leadId` 必须在成员里（否则群主凭空存在）。 */
 export function createGroup(input) {
   const members = (Array.isArray(input?.members) ? input.members : [])
@@ -89,15 +132,28 @@ export function createGroup(input) {
     .map(normalizeGroupFile)
     .filter(Boolean)
     .slice(0, MAX_GROUP_FILES);
+  /* 菜单：`undefined` = 老数据/新群 ⇒ 用默认那套（否则新群连「指令」按钮都没有）；
+     `[]` = 用户主动清空 ⇒ 保持空（⛔ 别再"帮"他补回来）。 */
+  const menu = normalizeMenu(input?.menu === undefined ? DEFAULT_GROUP_MENU : input.menu);
+  const noteSeen = new Set();
+  const memoryNotes = (Array.isArray(input?.memoryNotes) ? input.memoryNotes : [])
+    .map(normalizeMemoryNote)
+    .filter(Boolean)
+    .filter((n) => (noteSeen.has(n.id) ? false : (noteSeen.add(n.id), true)))
+    .slice(0, MAX_MEMORY_NOTES);
   return {
     id: String(input?.id ?? ""),
     name: String(input?.name ?? "未命名团队"),
     leadId,
     members: deduped,
     guard: { ...DEFAULT_GROUP_GUARD, ...(input?.guard ?? {}) },
-    /* 群记忆：这个群的共享背景（注入每次派活）。⛔ 与人/伙伴的私有记忆分开，别混。 */
+    /* 群简介：这个群的共享背景（注入每次派活）。⛔ 与人/伙伴的私有记忆分开，别混。 */
     memory: String(input?.memory ?? "").slice(0, MAX_GROUP_MEMORY_CHARS),
+    /* 群记忆条目：带 type + origin 的结论/约定（见 normalizeMemoryNote） */
+    memoryNotes,
     files,
+    /* 快捷指令菜单（飞书 ChatBotMenu 的本地等价物） */
+    menu,
   };
 }
 
@@ -171,6 +227,27 @@ export function setManager(group, memberId, managerId) {
   };
 }
 
+/**
+ * 加一条记忆（超上限 ⇒ 丢最老的，返回 dropped 让人知道）。
+ * ⛔ 同 id 覆盖（"先记后改"是正常操作，不该堆两条）。
+ */
+export function addMemoryNote(group, note) {
+  const base = createGroup(group);
+  const n = normalizeMemoryNote(note);
+  if (!n) return { ok: false, reason: "invalid", group: base };
+  const list = [...base.memoryNotes.filter((x) => x.id !== n.id), n];
+  const dropped = list.length > MAX_MEMORY_NOTES ? list.splice(0, list.length - MAX_MEMORY_NOTES) : [];
+  return { ok: true, changed: true, dropped: dropped.map((d) => d.id), group: { ...base, memoryNotes: list } };
+}
+
+/** 删一条记忆（不存在 ⇒ 幂等 ok，⛔ 不报错）。 */
+export function removeMemoryNote(group, noteId) {
+  const base = createGroup(group);
+  const id = String(noteId ?? "");
+  const list = base.memoryNotes.filter((n) => n.id !== id);
+  return { ok: true, changed: list.length !== base.memoryNotes.length, group: { ...base, memoryNotes: list } };
+}
+
 /** 伙伴静音（飞书：每个机器人可单独静音）。 */
 export function setPartnerMuted(group, partnerId, muted) {
   const base = createGroup(group);
@@ -215,6 +292,7 @@ export function guardAllows(group, facts = {}) {
 export function groupContextBlock(group, options = {}) {
   const g = createGroup(group);
   const memory = String(g.memory ?? "").trim();
+  const notes = Array.isArray(g.memoryNotes) ? g.memoryNotes : [];
   const files = Array.isArray(g.files) ? g.files : [];
   /* 上下级（豆包：`managerId` / `canDelegate`）：告诉**这个**伙伴它能把子任务派给谁。
      ⛔ 只有在配置了关系时才写，否则每段注入都带一句空话。
@@ -226,9 +304,21 @@ export function groupContextBlock(group, options = {}) {
     ? g.members.filter((m) => m.kind === "bot" && m.id !== self.id && canDelegate(self.id, m.id, g))
     : [];
   const hasOrg = Boolean(manager || reports.length);
-  if (!memory && !files.length && !hasOrg) return "";
+  if (!memory && !notes.length && !files.length && !hasOrg) return "";
   const lines = [`【群聊上下文 · ${g.name}】`];
   if (memory) lines.push(memory);
+  if (notes.length) {
+    if (lines.length > 1) lines.push("");
+    /* ⛔ 顺序固定：约束在前（硬护栏优先级最高，豆包 SECURITY.md 放最前的同理），
+       做法（runbook）其次，事实最后。 */
+    lines.push("群记忆（本群已确认的结论；⛔ 与你自己的推断冲突时以这里为准）：");
+    for (const type of ["constraint", "runbook", "fact"]) {
+      const list = notes.filter((n) => n.type === type);
+      if (!list.length) continue;
+      lines.push(`· ${MEMORY_TYPE_LABELS[type]}：`);
+      for (const n of list) lines.push(`  - ${n.text}`);
+    }
+  }
   if (hasOrg) {
     if (lines.length > 1) lines.push("");
     lines.push("组织关系（派活用 agent_invoke 的 kind/name）：");

@@ -26,6 +26,7 @@ export function TeamModePanel() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, dispatchError,
     create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles, setManagerOf,
+    addNote, removeNote, saveMenu, ledger, loadLedger,
     loadMessages, dispatch,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -39,8 +40,11 @@ export function TeamModePanel() {
 
   /* 切群即读这个群的群视图行（⛔ 主进程才是权威：不靠上一屏的残留在内存里拼） */
   useEffect(() => {
-    if (activeId) void loadMessages(activeId);
-  }, [activeId, loadMessages]);
+    if (activeId) {
+      void loadMessages(activeId);
+      void loadLedger(activeId, 7);
+    }
+  }, [activeId, loadMessages, loadLedger]);
 
   const active = useMemo(() => groups.find((g) => g.id === activeId) ?? null, [groups, activeId]);
 
@@ -121,6 +125,11 @@ export function TeamModePanel() {
             onSetManager={(memberId, managerId) => setManagerOf(active.id, memberId, managerId)}
             onSetMemory={(text) => setMemory(active.id, text)}
             onSetFiles={(files) => saveFiles(active.id, files)}
+            onAddNote={(note) => addNote(active.id, note)}
+            onRemoveNote={(noteId) => removeNote(active.id, noteId)}
+            onSaveMenu={(items) => saveMenu(active.id, items as never)}
+            ledger={ledger}
+            onLoadLedger={(days) => void loadLedger(active.id, days)}
             onRename={(name) => rename(active.id, name)}
             onDeleteGroup={async () => {
               const r = await removeGroup(active.id);
