@@ -41,7 +41,7 @@
   cursor: pointer;
 }
 .team-mode__group:hover { background: var(--panel-base); }
-.team-mode__group.is-active { background: var(--panel-base); box-shadow: inset 2px 0 0 var(--accent-text); }
+.team-mode__group.is-active { background: var(--panel-base); box-shadow: inset 2px 0 0 var(--accent); }
 .team-mode__group-name { font-size: 13px; }
 .team-mode__group-sub { font-size: 11px; color: var(--faint); }
 .team-mode__new { display: flex; gap: 6px; padding: 10px; border-top: 1px solid var(--line-soft); }
@@ -76,7 +76,7 @@
   background: var(--panel-base);
   font-size: 11px;
 }
-.team-group__avatar.is-bot { background: var(--accent-soft); color: var(--accent-text); }
+.team-group__avatar.is-bot { background: var(--accent-soft); color: var(--accent); }
 .team-group__avatar.is-muted { opacity: 0.45; }
 .team-group__settings-btn {
   padding: 6px 10px;
@@ -105,7 +105,7 @@
   background: var(--panel-base);
   font-size: 12px;
 }
-.team-msg.is-bot .team-msg__avatar { background: var(--accent-soft); color: var(--accent-text); }
+.team-msg.is-bot .team-msg__avatar { background: var(--accent-soft); color: var(--accent); }
 .team-msg__body { min-width: 0; }
 .team-msg__meta { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
 .team-msg__meta time { color: var(--faint); font-size: 11px; }
@@ -124,7 +124,7 @@
   font-size: 12px;
   cursor: pointer;
 }
-.team-group__atchip.is-on { background: var(--accent-soft); border-color: var(--accent-text); color: var(--accent-text); }
+.team-group__atchip.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 .team-group__atchip.is-muted { opacity: 0.55; }
 .team-group__atempty { font-size: 12px; color: var(--faint); }
 .team-group__composer textarea {
@@ -150,9 +150,11 @@
 .team-settings__hint { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.7; }
 .team-settings__list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .team-settings__row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+/* ⛔ 标签不被控件压成两行（实测「协作范围」被挤成「协作范/围」） */
+.team-settings__row > span:first-child { flex: none; white-space: nowrap; }
 .team-settings__row--plain { padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
 .team-settings__row select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
-.team-settings__avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent-text); font-size: 11px; }
+.team-settings__avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
 .team-settings__name { flex: 1; min-width: 0; }
 .team-settings__tag { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--panel-base); font-size: 10px; font-style: normal; }
 .team-settings__tag--muted { opacity: 0.7; }
@@ -162,7 +164,7 @@
 .team-settings__empty { font-size: 12px; color: var(--faint); }
 .team-settings__add { display: flex; gap: 6px; }
 .team-settings__add input { flex: 1; min-width: 0; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
-.team-settings__add button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; cursor: pointer; }
+.team-settings__add button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; cursor: pointer; white-space: nowrap; }
 .team-settings__error { margin: 8px 0 0; color: var(--danger); font-size: 12px; }
 
 /* ── 侧栏「群聊」打开的卡片（复用全局 `.modal-backdrop`，层级 400）───────────────────
@@ -211,3 +213,47 @@
   text-overflow: ellipsis;
 }
 .team-modal__close { flex: none; }
+
+/* ── 派活运行态与提示（P0b）─────────────────────────────────────────────────
+   ⛔ 运行态**不是消息**（没有子会话就没有 threadId，不许伪造一条"它正在思考"的卡片）；
+      它是消息流之下的状态条，跑完就消失。 */
+.team-group__running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.team-group__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: team-dot 1.1s ease-in-out infinite;
+}
+@keyframes team-dot {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-group__dot { animation: none; opacity: 1; }
+}
+.team-group__notice {
+  margin: 0;
+  padding: 6px 16px;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.team-group__atchip-warn {
+  margin-left: 4px;
+  color: var(--orange);
+  font-size: 10px;
+  font-style: normal;
+}
+.team-settings__tag--warn {
+  color: var(--orange);
+  background: transparent;
+  border: 1px solid var(--orange);
+}

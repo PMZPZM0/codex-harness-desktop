@@ -2,12 +2,13 @@
  * 团队模式 · 群视图（P0）
  *
  * 结构照飞书群：群头（成员头像行）→ 消息流 → 输入框（@ 伙伴）。
- * ⛔ P0 阶段消息流只渲染**投影**（threadId + itemId），真身仍在各伙伴的原子会话；
- *    接入真实消息属于 P0b，这里不伪造任何一条假消息。
+ * ⛔ 消息流只渲染**投影**（threadId + itemId），真身仍在各伙伴的原子会话；
+ *    ⛔ 一条假消息都不造 —— 派活失败时这里什么都不加，错误走上面那条提示。
  */
 import { useMemo, useState } from "react";
 import type { GroupMessageRow, TeamGroup } from "./01-team-types";
 import { TeamSettings } from "./03-team-settings";
+import { stripVoiceScript } from "../../lib/voice-script.mjs";
 
 type Props = {
   group: TeamGroup;
@@ -18,8 +19,14 @@ type Props = {
   onRemovePartner: (partnerId: string) => Promise<{ ok: boolean; error?: string }>;
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
   onSetGuard: (guard: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
-  /** 派活：P0 先只把「@了谁 + 说了什么」交给上层，上层接子会话（P0b） */
-  onSend?: (partnerIds: string[], text: string) => void;
+  /** 解散群（只删群与群日志；伙伴的子会话不动） */
+  onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
+  /** 正在跑活的伙伴（id）：显示「正在处理…」，⛔ 不是消息 */
+  busy?: string[];
+  /** 上次派活的失败说明（⛔ 与消息流分开） */
+  notice?: string;
+  /** 派活：@ 了谁就把这句话交给谁，各自落各自子会话（P0b 真链路） */
+  onSend?: (partnerIds: string[], text: string) => Promise<{ ok: boolean; error?: string }> | void;
 };
 
 function fmtTime(at: number): string {
@@ -28,7 +35,7 @@ function fmtTime(at: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemovePartner, onMute, onSetGuard, onSend }: Props) {
+export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddPartner, onRemovePartner, onMute, onSetGuard, onDeleteGroup, onSend }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
@@ -40,11 +47,24 @@ export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemo
     setAtTargets((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const send = () => {
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+
+  const send = async () => {
     const body = text.trim();
-    if (!body) return;
-    onSend?.(atTargets, body);
-    setText("");
+    if (!body || sending) return;
+    setSendError("");
+    setSending(true);
+    try {
+      const r = await onSend?.(atTargets, body);
+      if (r && !r.ok) {
+        setSendError(r.error || "派活失败");
+        return; // ⛔ 失败保留原文，别把用户打的字清掉
+      }
+      setText("");
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -75,6 +95,7 @@ export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemo
           onRemovePartner={onRemovePartner}
           onMute={onMute}
           onSetGuard={onSetGuard}
+          onDeleteGroup={onDeleteGroup}
         />
       ) : (
         <>
@@ -84,6 +105,8 @@ export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemo
                 <p>还没有消息。</p>
                 <p className="team-group__empty-hint">
                   在下面 @ 一个伙伴派活，它的回复会和这里其他伙伴的按时间排在一起。
+                  <br />
+                  每个伙伴都有自己独立的会话，这里只是它们的合影。
                 </p>
                 {partners.length === 0 && (
                   <button type="button" className="team-group__empty-btn" onClick={() => setShowSettings(true)}>
@@ -103,13 +126,26 @@ export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemo
                     {row.kind === "card" ? (
                       <pre className="team-msg__card">{JSON.stringify(row.card, null, 2)}</pre>
                     ) : (
-                      <p className="team-msg__text">{row.text}</p>
+                      /* ⛔ 播报稿是**给耳朵的**（` ```voice ` 围栏块）：对话里由 Markdown 整块剥掉，
+                         群视图也得剥 —— 否则伙伴的回复里会漏出"反引号 voice …"那一坨。
+                         口径只有一处（src/lib/voice-script.mjs），⛔ 不在这里手写正则。 */
+                      <p className="team-msg__text">{stripVoiceScript(row.text)}</p>
                     )}
                   </div>
                 </article>
               ))
             )}
           </div>
+
+          {(busy?.length ?? 0) > 0 && (
+            <div className="team-group__running" role="status" aria-live="polite">
+              <span className="team-group__dot" aria-hidden />
+              {busy!.map(nameOf).join("、")} 正在处理…
+            </div>
+          )}
+          {(sendError || notice) && (
+            <p className="team-group__notice" role="status">{sendError || notice}</p>
+          )}
 
           <footer className="team-group__composer">
             <div className="team-group__atbar">
@@ -123,6 +159,7 @@ export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemo
                   aria-pressed={atTargets.includes(p.id)}
                 >
                   {p.name}
+                  {!p.targetKind && <em className="team-group__atchip-warn" title="这个伙伴没绑定智能体，派不了活">未绑定</em>}
                 </button>
               ))}
               {!partners.length && <span className="team-group__atempty">还没有伙伴可 @</span>}
@@ -130,18 +167,20 @@ export function TeamGroupView({ group, rows, issues, limit, onAddPartner, onRemo
             <textarea
               value={text}
               onChange={(e) => setText(e.target.value)}
-              placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先点上面的 @ 派活）"}
+              placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先点上面的 @ 选伙伴）"}
               rows={2}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
-                  send();
+                  void send();
                 }
               }}
             />
             <div className="team-group__send-row">
-              <span className="team-group__hint">{atTargets.length ? `将派给 ${atTargets.length} 个伙伴` : "未选择伙伴 ⇒ 仅记录在群内"}</span>
-              <button type="button" onClick={send} disabled={!text.trim()}>发送</button>
+              <span className="team-group__hint">
+                {sending ? "正在派活…" : atTargets.length ? `将派给 ${atTargets.map(nameOf).join("、")}` : "先点上面的 @ 选伙伴"}
+              </span>
+              <button type="button" onClick={() => void send()} disabled={sending || !text.trim() || !atTargets.length}>发送</button>
             </div>
           </footer>
         </>

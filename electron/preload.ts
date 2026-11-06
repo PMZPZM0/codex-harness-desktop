@@ -1006,6 +1006,12 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetGuard: (groupId: string, guard: Record<string, unknown>) => __ipc("harness-team:set-guard", 2, [groupId, guard]),
   /* 团队模式 P0 */
   harnessTeamProject: (sources: unknown) => __ipc("harness-team:project", 1, [sources]),
+  /* 团队模式 P0b（群消息日志） */
+  harnessTeamMessages: (groupId: string) => __ipc("harness-team:messages", 1, [groupId]),
+  /* 团队模式 P0b（群消息日志） */
+  harnessTeamAppendMessage: (groupId: string, entry: Record<string, unknown>) => __ipc("harness-team:append-message", 2, [groupId, entry]),
+  /* 团队模式：解散群（只删群与群日志） */
+  harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

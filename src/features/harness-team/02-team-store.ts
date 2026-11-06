@@ -1,11 +1,16 @@
 /**
- * 团队模式 · 状态钩子（P0）
+ * 团队模式 · 状态钩子（P0 / P0b）
  *
  * ⛔ 不引入全局 store（项目纪律）：群状态是**这个面板自己的**，随面板生命周期存在。
  * ⛔ 所有业务判定都走主进程（那里调 `team-models.mjs`）—— 这里只负责调桥、收结果、报错。
+ *
+ * P0b 加的是一条**真实的派活链路**：
+ *   ① 人的那句话先落群日志（主进程），② 每个被 @ 的伙伴调 `invokeAgent`（既有公开桥，
+ *   与模型自己调 agent_invoke 走同一套闸与登记），③ 回来的产出再落群日志并投影。
+ * ⛔ 派活失败**不写假消息**：没有子会话就没有 threadId，群视图里就不该出现"它说了什么"。
  */
-import { useCallback, useEffect, useState } from "react";
-import type { TeamGroup } from "./01-team-types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { GroupMessageRow, TeamGroup } from "./01-team-types";
 
 type ListResult = {
   groups: TeamGroup[];
@@ -14,6 +19,14 @@ type ListResult = {
 };
 
 type MutationResult = { ok: boolean; group?: TeamGroup; error?: string; changed?: boolean; limit?: number };
+
+type RowsResult = { ok: boolean; rows: GroupMessageRow[]; error?: string; entry?: unknown };
+
+/** 派活回执（`agents:invoke`）——字段与主进程 `runDelegatedTask` 的返回一致。 */
+type InvokeResult = { ok: boolean; threadId?: string; name?: string; output?: string; error?: string; reused?: boolean };
+
+/** 一次派活的结果摘要（给面板弹提示用）。 */
+export type DispatchSummary = { sent: number; failed: { name: string; error: string }[] };
 
 /** 当前用户在本地的身份（P0 用固定值：群主 = 第一个人类成员；后续接账号库）。 */
 export const LOCAL_ACTOR_ID = "local-user";
@@ -24,6 +37,14 @@ export function useTeamGroups() {
   const [limit, setLimit] = useState(8);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
+  /** 每个群的群视图行（投影，真身在子会话） */
+  const [rowsByGroup, setRowsByGroup] = useState<Record<string, GroupMessageRow[]>>({});
+  /** 正在跑活的伙伴 id（每个群一份） */
+  const [busyByGroup, setBusyByGroup] = useState<Record<string, string[]>>({});
+  /** 上次派活的失败说明（⛔ 与群日志分开：那是"没派出去"，不是"它说了什么"） */
+  const [dispatchError, setDispatchError] = useState("");
+  /** ⛔ 卸载后不许再 setState（派活可能跑几分钟） */
+  const alive = useRef(true);
 
   const refresh = useCallback(async () => {
     try {
@@ -40,7 +61,9 @@ export function useTeamGroups() {
   }, []);
 
   useEffect(() => {
+    alive.current = true;
     void refresh();
+    return () => { alive.current = false; };
   }, [refresh]);
 
   /** 统一收尾：成功就用返回的群替换本地那份（避免整表重拉），失败把后端的原话带出来。 */
@@ -53,10 +76,106 @@ export function useTeamGroups() {
     return { ok: true };
   }, []);
 
+  /** 读某个群的群视图行（**主进程才是权威**：每次进来都重读，不靠本地拼） */
+  const loadMessages = useCallback(async (groupId: string) => {
+    if (!groupId) return;
+    try {
+      const res = (await window.codex.harnessTeamMessages(groupId)) as RowsResult;
+      if (!alive.current) return;
+      setRowsByGroup((prev) => ({ ...prev, [groupId]: Array.isArray(res?.rows) ? res.rows : [] }));
+    } catch {
+      /* 读失败保持上一次的行：⛔ 不要清空成"什么都没有"，那会让人以为记录丢了 */
+    }
+  }, []);
+
+  /** 落一条消息（主进程补 at/id 并回带整份投影） */
+  const appendMessage = useCallback(async (groupId: string, entry: Record<string, unknown>) => {
+    const res = (await window.codex.harnessTeamAppendMessage(groupId, entry)) as RowsResult;
+    if (alive.current && Array.isArray(res?.rows)) {
+      setRowsByGroup((prev) => ({ ...prev, [groupId]: res.rows }));
+    }
+    return res;
+  }, []);
+
+  /**
+   * 派活：@ 了谁就把同一句话交给谁，各自落各自的子会话。
+   * ⛔ 并发（不是串行）：两个伙伴同时开工，回复按**各自完成时间**进同一条时间轴。
+   * ⛔ 未绑定调度目标的伙伴直接拒（老群手工加的），⛔ 不静默降级成"发送成功"。
+   */
+  const dispatch = useCallback(
+    async (group: TeamGroup, partnerIds: string[], text: string): Promise<{ ok: boolean; error?: string; summary?: DispatchSummary }> => {
+      const body = String(text ?? "").trim();
+      if (!body) return { ok: false, error: "说点什么再发" };
+      const picked = group.members.filter((m) => m.kind === "bot" && partnerIds.includes(m.id));
+      if (!picked.length) return { ok: false, error: "先 @ 至少一个伙伴" };
+      /* 静音 = 不打扰：@ 了也不派（⛔ 但要说清是"被静音"而不是"没选"） */
+      const targets = picked.filter((m) => !m.muted);
+      if (!targets.length) return { ok: false, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
+      const unbound = targets.filter((m) => !m.targetKind || !m.targetKey);
+      if (unbound.length) {
+        return { ok: false, error: `「${unbound.map((m) => m.name).join("、")}」还没绑定智能体，去群设置里换成列表里的那一个` };
+      }
+
+      setDispatchError("");
+      /* ① 人的那句话先上屏（真身 = 群日志），这样 @ 谁都能看见自己说了什么。
+         ⛔ 存不上就**不发**：否则群里会出现"有回答没有提问"的断头记录。 */
+      try {
+        const saved = await appendMessage(group.id, { authorId: LOCAL_ACTOR_ID, authorKind: "human", text: body });
+        if (!saved?.ok) return { ok: false, error: saved?.error || "群消息没存上" };
+      } catch (err) {
+        return { ok: false, error: `群消息没存上：${err instanceof Error ? err.message : String(err)}` };
+      }
+
+      setBusyByGroup((prev) => ({ ...prev, [group.id]: targets.map((m) => m.id) }));
+      const failed: DispatchSummary["failed"] = [];
+
+      await Promise.all(
+        targets.map(async (partner) => {
+          try {
+            const res = (await window.codex.invokeAgent({
+              kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
+              name: partner.targetKey,
+              query: body,
+              /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线（P0b 有意不做），
+                 空 origin 在主进程侧等价于"发起方是本地用户"，闸与复用都按这个口径走。 */
+              originThreadId: "",
+            })) as InvokeResult;
+            if (!res?.ok || !res?.threadId) {
+              failed.push({ name: partner.name, error: res?.error || "派活失败" });
+              return;
+            }
+            /* ② 产出落群日志：threadId = 真实子会话，itemId 由主进程补 —— 点开能回到原子会话 */
+            const wrote = await appendMessage(group.id, {
+              authorId: partner.id,
+              authorKind: "bot",
+              threadId: res.threadId,
+              text: String(res.output ?? "").trim() || "（没有返回文本内容）",
+            });
+            /* ⛔ 落盘失败也要说出来（典型场景：跑的过程中群被解散了），⛔ 不许当成功 */
+            if (!wrote?.ok) failed.push({ name: partner.name, error: wrote?.error || "产出没能写进群聊记录" });
+          } catch (err) {
+            failed.push({ name: partner.name, error: err instanceof Error ? err.message : String(err) });
+          } finally {
+            if (alive.current) {
+              setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((id) => id !== partner.id) }));
+            }
+          }
+        }),
+      );
+
+      /* ③ 收尾再读一次权威行：并发写回的中间态可能少一条，这里兜平 */
+      await loadMessages(group.id);
+      if (failed.length) setDispatchError(failed.map((f) => `${f.name}：${f.error}`).join("；"));
+      return { ok: true, summary: { sent: targets.length - failed.length, failed } };
+    },
+    [appendMessage, loadMessages],
+  );
+
   const create = useCallback(
     async (input: { name: string; members?: unknown[]; leadId?: string }) => {
       const res = (await window.codex.harnessTeamCreate(input)) as MutationResult;
-      return apply(res);
+      /* ⛔ 回带 id：建完群要立刻读它的消息（否则用户还得手点一下才看到空态） */
+      return { ...apply(res), id: res.group?.id };
     },
     [apply],
   );
@@ -84,11 +203,30 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 解散群：只删群与其群消息日志（主进程侧），⛔ 伙伴的子会话一条都不动 */
+  const removeGroup = useCallback(async (groupId: string) => {
+    const res = (await window.codex.harnessTeamDelete(groupId)) as { ok: boolean; id?: string; error?: string };
+    if (res?.ok) {
+      setGroups((prev) => prev.filter((g) => g.id !== groupId));
+      setRowsByGroup((prev) => {
+        const next = { ...prev };
+        delete next[groupId];
+        return next;
+      });
+    }
+    return { ok: Boolean(res?.ok), error: res?.error };
+  }, []);
+
   const setGuard = useCallback(
     async (groupId: string, guard: Record<string, unknown>) =>
       apply((await window.codex.harnessTeamSetGuard(groupId, guard)) as MutationResult),
     [apply],
   );
 
-  return { groups, issues, limit, loading, error, refresh, create, rename, addPartner, removePartner, mute, setGuard };
+  return {
+    groups, issues, limit, loading, error,
+    rowsByGroup, busyByGroup, dispatchError,
+    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
+    loadMessages, appendMessage, dispatch,
+  };
 }

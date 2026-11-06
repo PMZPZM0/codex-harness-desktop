@@ -22,7 +22,12 @@ import { LOCAL_ACTOR_ID, useTeamGroups } from "./02-team-store";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export function TeamModePanel() {
-  const { groups, issues, limit, loading, error, create, addPartner, removePartner, mute, setGuard } = useTeamGroups();
+  const {
+    groups, issues, limit, loading, error,
+    rowsByGroup, busyByGroup, dispatchError,
+    create, addPartner, removePartner, mute, setGuard, removeGroup,
+    loadMessages, dispatch,
+  } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -31,6 +36,11 @@ export function TeamModePanel() {
   useEffect(() => {
     if (!activeId && groups.length) setActiveId(groups[0].id);
   }, [groups, activeId]);
+
+  /* 切群即读这个群的群视图行（⛔ 主进程才是权威：不靠上一屏的残留在内存里拼） */
+  useEffect(() => {
+    if (activeId) void loadMessages(activeId);
+  }, [activeId, loadMessages]);
 
   const active = useMemo(() => groups.find((g) => g.id === activeId) ?? null, [groups, activeId]);
 
@@ -47,6 +57,9 @@ export function TeamModePanel() {
     if (r.ok) {
       setName("");
       setNotice("");
+      void (async () => {
+        await loadMessages(r.id ?? "");
+      })();
     } else {
       setNotice(r.error ?? "建群失败");
     }
@@ -70,6 +83,7 @@ export function TeamModePanel() {
                 <span className="team-mode__group-name">{g.name}</span>
                 <span className="team-mode__group-sub">
                   {g.members.filter((m) => m.kind === "bot").length} 伙伴
+                  {(rowsByGroup[g.id]?.length ?? 0) > 0 ? ` · ${rowsByGroup[g.id].length} 条` : ""}
                   {issues[g.id]?.length ? " · 待处理" : ""}
                 </span>
               </button>
@@ -95,14 +109,22 @@ export function TeamModePanel() {
         ) : active ? (
           <TeamGroupView
             group={active}
-            rows={[]}
+            rows={rowsByGroup[active.id] ?? []}
+            busy={busyByGroup[active.id] ?? []}
+            notice={dispatchError}
             issues={issues[active.id]}
             limit={limit}
             onAddPartner={(p) => addPartner(active.id, p)}
             onRemovePartner={(id) => removePartner(active.id, id)}
             onMute={(id, m) => mute(active.id, id, m)}
             onSetGuard={(g) => setGuard(active.id, g)}
-            onSend={() => setNotice("P0 阶段：派活链路（接子会话）在下一步接入")}
+            onDeleteGroup={async () => {
+              const r = await removeGroup(active.id);
+              if (r.ok) setActiveId("");
+              return r;
+            }}
+            /* 派活：@ 了谁就把这句话交给谁 —— 各自落各自的子会话，产出再投影回来 */
+            onSend={(partnerIds, text) => dispatch(active, partnerIds, text)}
           />
         ) : (
           <div className="team-mode__blank">

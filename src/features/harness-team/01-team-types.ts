@@ -13,6 +13,9 @@ export type TeamMember = {
   canDelegate: string[];
   addedBy: string;
   muted: boolean;
+  /** P0b：绑定的真实调度目标（`listDispatchCatalog()` 那条）；空串 = 未绑定，派活会被明确拒绝 */
+  targetKind: "" | "expert" | "team" | "member" | "subagent" | "cli";
+  targetKey: string;
 };
 
 export type TeamGuard = {
