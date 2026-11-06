@@ -1494,6 +1494,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (/\.thread-row\.has-footer\s*\{[^}]*z-index:\s*2/.test(readStyles()) ? ok : fail)(
         "【156】子会话细条露出的半截抬层（z-index:2）：不被下一行盖住 / 吃掉点击（11-06 审查）"
       );
+      (/\.thread-row-footer\s*\{[^}]*opacity:\s*0[^}]*pointer-events:\s*none/.test(readStyles()) && /\.thread-row:hover \.thread-row-footer/.test(readStyles()) ? ok : fail)(
+        "【156】子会话细条默认隐藏、hover/聚焦才淡入（11-06 用户令）"
+      );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }

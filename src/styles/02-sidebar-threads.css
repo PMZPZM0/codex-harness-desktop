@@ -1670,6 +1670,16 @@ html[data-ui-font="large"] .action-content pre {
   max-width: 164px;
   height: 9px;
   z-index: 1;
+  /* ⛔ 11-06 用户令：「默认隐藏，鼠标放到会话选项上再展示」——
+     收起态不露细条；hover / 键盘聚焦才淡入（隐藏时不吃点击，避免挡下一行）。 */
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.thread-row:hover .thread-row-footer,
+.thread-row:focus-within .thread-row-footer {
+  opacity: 1;
+  pointer-events: auto;
 }
 .thread-child-bar {
   display: flex;
