@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
 import { groupContextBlock, parseMentions } from "../../lib/team-models.mjs";
+import type { TeamRunParams } from "./10-team-composer";
 
 type ListResult = {
   groups: TeamGroup[];
@@ -334,7 +335,7 @@ export function useTeamGroups() {
    * ⛔ 未绑定调度目标的伙伴直接拒（老群手工加的），⛔ 不静默降级成"发送成功"。
    */
   const dispatch = useCallback(
-    async (group: TeamGroup, partnerIds: string[], text: string): Promise<{ ok: boolean; error?: string; summary?: DispatchSummary }> => {
+    async (group: TeamGroup, partnerIds: string[], text: string, params?: TeamRunParams): Promise<{ ok: boolean; error?: string; summary?: DispatchSummary }> => {
       const body = String(text ?? "").trim();
       if (!body) return { ok: false, error: "说点什么再发" };
       const picked = group.members.filter((m) => m.kind === "bot" && partnerIds.includes(m.id));
@@ -431,6 +432,13 @@ export function useTeamGroups() {
             /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，空 origin 等价于"发起方是本地用户"，
                闸与子会话复用都按这个口径走（互相 @ 触发的那次也一样）。 */
             originThreadId: "",
+            /* 输入框选的模型/档位/沙箱/审批在这里**真下发**：agents:invoke 原样透传给
+               runDelegatedTask（turn/start.model|effort、thread/start.sandbox|approvalPolicy）。
+               ⛔ 不传这些字段 = 选项沦为装饰，回落到全局默认值。 */
+            ...(params?.model ? { model: params.model } : {}),
+            ...(params?.effort ? { effort: params.effort } : {}),
+            ...(params?.sandbox ? { sandbox: params.sandbox } : {}),
+            ...(params?.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
           })) as InvokeResult;
           if (!res?.ok || !res?.threadId) {
             errMsg = res?.error || "派活失败";

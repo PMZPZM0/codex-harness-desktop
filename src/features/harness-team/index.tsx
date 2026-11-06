@@ -148,7 +148,7 @@ export function TeamModePanel() {
               return r;
             }}
             /* 派活：@ 了谁就把这句话交给谁 —— 各自落各自的子会话，产出再投影回来 */
-            onSend={(partnerIds, text) => dispatch(active, partnerIds, text)}
+            onSend={(partnerIds, text, params) => dispatch(active, partnerIds, text, params)}
           />
         ) : (
           <div className="team-mode__blank">

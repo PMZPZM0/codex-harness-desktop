@@ -118,8 +118,8 @@ export function TeamRuler({ rows, scrollRef }: { rows: GroupMessageRow[]; scroll
   const panelH = visible * LENS_ROW + 8;
 
   return (
-    <div className="team-ruler" role="navigation" aria-label="消息定位" onMouseLeave={() => { setLens(null); setPick(null); }}>
-      <div className="team-ruler__track" ref={trackRef}>
+    <div className="team-ruler" role="navigation" aria-label="消息定位" ref={trackRef} onMouseLeave={() => { setLens(null); setPick(null); }}>
+      <div className="team-ruler__track">
         {marks.map((m, i) => (
           <button
             key={m.key}

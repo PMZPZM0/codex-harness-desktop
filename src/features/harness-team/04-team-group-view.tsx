@@ -20,6 +20,8 @@ import { Markdown } from "../markdown";
 import { TeamMenuButton } from "./06-team-menu";
 import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
+import { DEFAULT_TEAM_RUN_OPTS, TeamComposer } from "./10-team-composer";
+import type { TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions } from "../../lib/team-models.mjs";
@@ -70,7 +72,8 @@ type Props = {
   /** 上次派活的失败说明（⛔ 与消息流分开） */
   notice?: string;
   /** 派活：@ 了谁就把这句话交给谁，各自落各自子会话 */
-  onSend?: (partnerIds: string[], text: string) => Promise<{ ok: boolean; error?: string }> | void;
+  /** 第三参 = 本轮运行参数（模型/档位/沙箱/审批），⛔ 不传就回落到全局默认 */
+  onSend?: (partnerIds: string[], text: string, params?: TeamRunParams) => Promise<{ ok: boolean; error?: string }> | void;
 };
 
 function fmtTime(at: number): string {
@@ -107,6 +110,8 @@ export function TeamGroupView({
   /* 过程折叠（用户：「这样不会刷屏」）：默认全收；群头一键全展开/全收。
      ⛔ 全局切换时给折叠块换 key 重挂，按新的 defaultOpen 复位（FoldGroup 自带手动开合状态）。 */
   const [expandAll, setExpandAll] = useState(false);
+  /** 输入框工具行的本轮选项（模型/档位/权限是偏好，技能/文件是一次性附件） */
+  const [runOpts, setRunOpts] = useState(DEFAULT_TEAM_RUN_OPTS);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
      用户就会觉得"关了之后什么都没了"）。⛔ 只在自己本来就在底部时才跟，别抢用户翻历史的滚动。 */
@@ -204,14 +209,30 @@ export function TeamGroupView({
     }
     if (cmd) { setSendError(`不认识的命令：/${cmd.name}（目前只支持 /stop）`); return; }
 
+    /* 技能 / 文件是"本轮附件"：照主对话口径拼进 query，⛔ 不落群日志、不当成消息刷屏。 */
+    const skillBlock = runOpts.skills.length
+      ? `[本轮已引用技能]\n${runOpts.skills.map((s) => `- ${s.name}${s.description ? `：${s.description}` : ""}`).join("\n")}\n[请按上述技能工作流执行]`
+      : "";
+    const fileBlock = runOpts.files.length
+      ? `[附件文件]\n${runOpts.files.map((p) => `- ${p}`).join("\n")}\n[附件结束]`
+      : "";
+    const fullBody = [body, skillBlock, fileBlock].filter(Boolean).join("\n\n");
+    const params: TeamRunParams = {
+      model: runOpts.model || undefined,
+      effort: runOpts.effort,
+      sandbox: runOpts.sandbox,
+      approvalPolicy: runOpts.approvalPolicy,
+    };
     setSending(true);
     try {
-      const r = await onSend?.(atTargets, body);
+      const r = await onSend?.(atTargets, fullBody, params);
       if (r && !r.ok) {
         setSendError(r.error || "派活失败");
         return; // ⛔ 失败保留原文，别把用户打的字清掉
       }
       setText("");
+      /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
+      setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
     } finally {
       setSending(false);
     }
@@ -530,18 +551,24 @@ export function TeamGroupView({
                   <TeamMenuButton items={group.menu ?? []} disabled={sending} placement="input" onPick={pickMenu} />
                 )}
               </div>
-              <textarea
-                ref={composerRef}
+              <TeamComposer
                 value={text}
-                onChange={(e) => setText(e.target.value)}
-                placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先 @ 选伙伴；/stop 可停）"}
-                rows={2}
+                onValueChange={setText}
+                textareaRef={composerRef}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     void send();
                   }
                 }}
+                placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先 @ 选伙伴；/stop 可停）"}
+                opts={runOpts}
+                onOpts={setRunOpts}
+                sending={sending}
+                /* ⛔ `/stop` 是本地指令，不需要 @ 任何人 —— 别把发送键锁死 */
+                canSend={Boolean(text.trim() && (atTargets.length || /^\/stop\b/.test(text.trim())))}
+                onSend={() => void send()}
+                targetNames={atTargets.map(nameOf)}
               />
               <div className="team-group__send-row">
                 <span className="team-group__hint">
@@ -550,7 +577,6 @@ export function TeamGroupView({
                     <em className="team-group__ctx"> + {ctxParts.join(" + ")}</em>
                   ) : null}
                 </span>
-                <button type="button" onClick={() => void send()} disabled={sending || !text.trim() || !atTargets.length}>发送</button>
               </div>
             </footer>
           </div>
