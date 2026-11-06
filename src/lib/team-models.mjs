@@ -308,7 +308,14 @@ export function parseAgentMentions(text, group, options = {}) {
     const who = flat(m[1]);
     const ask = m[2].trim();
     if (!who || !ask) continue;
-    const hit = bots.find((b) => flat(b.name) === who || flat(b.targetKey) === who || flat(b.name).endsWith(who));
+    /* ⛔ 后缀模糊只对 ≥2 个字生效：`@明` 这种单字会把「洞明 / 守明」随便挑一个 ⇒ 派错人。
+       单字必须**精确等于**名字才算（`@洞明` 依然可以只写全名）。 */
+    const hit = bots.find(
+      (b) =>
+        flat(b.name) === who
+        || flat(b.targetKey) === who
+        || (who.length >= 2 && flat(b.name).endsWith(who)),
+    );
     if (!hit || seen.has(hit.id)) continue;
     seen.add(hit.id);
     out.push({ memberId: hit.id, name: hit.name, ask });

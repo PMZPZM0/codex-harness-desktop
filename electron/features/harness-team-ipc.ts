@@ -23,6 +23,7 @@ import {
   createBlockers,
   createGroup,
   groupContextBlock,
+  parseAgentMentions,
   groupIssues,
   groupThreadId,
   normalizeGroupMessage,
@@ -277,7 +278,18 @@ async function dispatchGroupText(
   if (!saved.ok) return { ok: false, sent: 0, failed: [saved.error || "群消息没存上"] };
 
   const failed: string[] = [];
-  await Promise.all(usable.map(async (partner) => {
+  /* 11-06 用户令：「他们就可以在群里 @ 沟通」——定时派活也要按同一条判据接话
+     （⛔ 判据只在 `parseAgentMentions` 一处；这里与渲染层 `02-team-store` 同参数）。
+     护栏与渲染层一致：只走一跳 + 一轮最多 4 次。 */
+  const ranIds = new Set<string>();
+  let chainBudget = 4;
+  const runOne = async (
+    partner: GroupShape["members"][number],
+    hop = 0,
+    caller?: { id: string; name: string },
+  ): Promise<void> => {
+    if (ranIds.has(partner.id)) return;
+    ranIds.add(partner.id);
     const startedAt = Date.now();
     let chars = 0;
     let threadId = "";
@@ -308,11 +320,27 @@ async function dispatchGroupText(
         authorKind: "bot",
         threadId,
         text: output || "（没有返回文本内容）",
+        /* 被别的伙伴叫来的 ⇒ 记下来源，界面上标「由 X 叫来」 */
+        via: caller ? { memberId: caller.id, name: caller.name } : null,
       });
       okFlag = Boolean(wrote.ok);
       if (!wrote.ok) {
         errMsg = wrote.error || "产出没能写进群聊记录";
         failed.push(`${partner.name}：${errMsg}`);
+      }
+      /* 行首点名 ⇒ 叫下一个伙伴接手（只跳一层，防互 @ 对烧） */
+      if (hop === 0 && chainBudget > 0 && okFlag && output) {
+        const asks = parseAgentMentions(output, group, {
+          excludeId: partner.id,
+          alreadyRan: [...ranIds],
+          max: chainBudget,
+        });
+        for (const ask of asks) {
+          const next = group.members.find((m) => m.id === ask.memberId);
+          if (!next || ranIds.has(next.id)) continue;
+          chainBudget -= 1;
+          void runOne(next, 1, { id: partner.id, name: partner.name });
+        }
       }
     } catch (err) {
       errMsg = err instanceof Error ? err.message : String(err);
@@ -335,7 +363,8 @@ async function dispatchGroupText(
         error: errMsg,
       });
     }
-  }));
+  };
+  await Promise.all(usable.map((partner) => runOne(partner, 0)));
   return { ok: failed.length < usable.length, sent: usable.length - failed.length, failed };
 }
 

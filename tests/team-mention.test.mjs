@@ -60,6 +60,13 @@ test("名字里有空格 / 间隔号也能匹配", () => {
   assert.equal(hit[0].memberId, "tgt:expert:c");
 });
 
+test("单字不做后缀模糊（@明 不会挑到「洞明」），两字以上才模糊", () => {
+  const g = makeGroup();
+  assert.deepEqual(parseAgentMentions("@明：帮个忙", g, { excludeId: "tgt:expert:a" }), [], "单字必须精确等于名字");
+  const fuzzy = parseAgentMentions("@洞明：帮个忙", g, { excludeId: "tgt:expert:a" });
+  assert.equal(fuzzy.length, 1, "全名照常命中");
+});
+
 test("alreadyRan 跳过（防回环）；max 限流；同一条里同一人只算一次", () => {
   const g = makeGroup();
   const text = ["@洞明：一", "@执舵：二", "@洞明：三"].join("\n");
