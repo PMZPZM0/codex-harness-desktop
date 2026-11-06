@@ -14,7 +14,7 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
-import { binOnPath, cliProcessEnv, readUsableCliAgents } from "../cli-agents";
+import { cliInstalledFlags, cliProcessEnv, readUsableCliAgents } from "../cli-agents";
 import { cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
 import { bridgeDial } from "../main";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
@@ -677,9 +677,9 @@ const LEGACY_CLI_AGENTS: { name: string; role: string; command: string }[] = [
 ];
 
 /** 可拉 CLI 名单 = CLI 智能体目录（已启用）+ 老登记表；同 bin 以目录为准。 */
-async function cliAgentRegistry(): Promise<{ name: string; role: string; command: string; aliases: string[] }[]> {
-  const out = new Map<string, { name: string; role: string; command: string; aliases: string[] }>();
-  for (const entry of LEGACY_CLI_AGENTS) out.set(entry.name, { ...entry, aliases: [] });
+async function cliAgentRegistry(): Promise<{ id: string; name: string; role: string; command: string; aliases: string[] }[]> {
+  const out = new Map<string, { id: string; name: string; role: string; command: string; aliases: string[] }>();
+  for (const entry of LEGACY_CLI_AGENTS) out.set(entry.name, { ...entry, id: entry.name, aliases: [] });
   try {
     for (const cli of await readUsableCliAgents()) {
       const bin = String(cli.bin ?? "").trim().toLowerCase();
@@ -692,6 +692,7 @@ async function cliAgentRegistry(): Promise<{ name: string; role: string; command
       const command = cliPromptCommand(bin);
       if (!command) continue;
       out.set(bin, {
+        id: cli.id,
         name: bin,
         role: `本机 CLI agent（${cli.name || bin}）`,
         command,
@@ -744,12 +745,10 @@ export async function poolForBoss(): Promise<{
     }
   } catch { /* 专家登记表读不到就只给 CLI 名单 */ }
   const registry = await cliAgentRegistry();
-  const cliAgents = await Promise.all(registry.map(async ({ aliases: _aliases, ...a }) => ({
-    ...a,
-    /* ⛔ 探测走 cli-agents 的 binOnPath（那里按平台分叉 where / which）：10-30 审计前这里写死
-       `where`，mac 上恒失败 ⇒ 名单整列「未检测到」。 */
-    detected: await binOnPath(a.name),
-  })));
+  /* ⛔ 走 cliInstalledFlags（并行 + 5s 缓存）：group_status 每查一次就 fork 一批
+     where/which 太浪费，且 10-30 审计前这里写死 `where`，mac 上恒失败。 */
+  const installed = await cliInstalledFlags(registry.map((a) => ({ id: a.id, bin: a.name })));
+  const cliAgents = registry.map(({ aliases: _aliases, id, ...a }) => ({ ...a, detected: Boolean(installed[id]) }));
   return { experts, cliAgents };
 }
 

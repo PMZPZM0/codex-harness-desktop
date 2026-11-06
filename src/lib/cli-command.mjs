@@ -12,20 +12,32 @@
  *        不写假模板，留给模型先跑 `--help`。
  */
 
-/** 可执行名 → 单轮非交互命令模板（`{prompt}` 是任务全文占位符）。 */
+/** 可执行名 → 单轮非交互命令模板（`{prompt}` 是任务全文占位符）。
+ *  每条都对着官方文档 / npm README 核实过（见各条注释）；核实不到的不写假模板。 */
 export const CLI_PROMPT_COMMANDS = {
   claude: 'claude -p "{prompt}"',
   codex: 'codex exec "{prompt}"',
   gemini: 'gemini -p "{prompt}"',
   aider: 'aider --message "{prompt}" --yes',
-  qwen: 'qwen -p "{prompt}"',
+  /* OpenClaw：setup 文档 `-m/--message` 单次请求；agent 子命令要带 --agent 名。
+     ⛔ 加 --json：社区实证不带它 stdout 只回「completed + 状态条」，看不到回答。 */
+  openclaw: 'openclaw agent --agent main -m "{prompt}" --json',
+  /* Qwen Code：官方 headless 文档写的是 `qwen --prompt "<任务>"`。 */
+  qwen: 'qwen --prompt "{prompt}"',
   /* QwenPaw（pip 包同时装出 qwenpaw / copaw 两个入口）：
      `task` 子命令 + `-i/--instruction` 必填；实测 `qwenpaw task --help`。 */
   qwenpaw: 'qwenpaw task -i "{prompt}" --max-iters 20 -t 540',
-  iflow: 'iflow -p "{prompt}"',
+  /* Kimi Code：官方帮助 `kimi -p "<任务>"`（`-c` 是续会话）。 */
   kimi: 'kimi -p "{prompt}"',
+  /* CodeBuddy Code：官方仓 `codebuddy -p "<任务>"`。 */
+  codebuddy: 'codebuddy -p "{prompt}"',
+  /* Comate CLI：npm README 的 headless 形态 `comatecli run -q "<任务>" --display event-stream`。 */
+  comatecli: 'comatecli run -q "{prompt}" --display event-stream',
+  /* Qoder CLI：npm README `qodercli -p`；`qoder` 是同一包的 dispatcher（实测把 argv.slice(2) 原样转发）。 */
+  qoder: 'qoder -p "{prompt}"',
+  /* Trae CLI：官方文档明确「历史 `-p` 任务参数改用 `--print`」。 */
+  traecli: 'traecli --print "{prompt}"',
   zcode: 'zcode -p "{prompt}"',
-  qoder: 'qoder "{prompt}"',
   workbuddy: 'workbuddy "{prompt}"',
   deepseek: 'deepseek "{prompt}"',
   doubao: 'doubao "{prompt}"',

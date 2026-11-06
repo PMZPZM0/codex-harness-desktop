@@ -115,3 +115,21 @@ export function withLatestPackage(spec) {
   if (!raw) return raw;
   return raw.lastIndexOf("@") > 0 ? raw : `${raw}@latest`;
 }
+
+/**
+ * 卸载要用**裸包名**（11-06 实测：`npm uninstall -g @qwen-code/qwen-code@latest` 直接
+ *   `ERMARGS: Remove arguments must only contain package names`）。
+ *   · npm：`@scope/name@1.2` → `@scope/name`（作用域的 @ 保留，版本后缀去掉）
+ *   · pip：`pkg>=1` / `pkg[extra]` → `pkg`
+ */
+export function basePackageName(spec) {
+  const raw = String(spec ?? "").trim().replace(/^["']|["']$/g, "");
+  if (!raw) return "";
+  if (raw.startsWith("@")) {
+    const slash = raw.indexOf("/");
+    if (slash < 0) return raw;
+    const at = raw.indexOf("@", slash);
+    return at < 0 ? raw : raw.slice(0, at);
+  }
+  return raw.split(/[<>=!~;\[]/)[0].trim();
+}

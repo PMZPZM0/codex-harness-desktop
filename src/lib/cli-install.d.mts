@@ -5,3 +5,4 @@ export function normalizeVersion(value: unknown): string;
 export function compareVersions(a: unknown, b: unknown): -1 | 0 | 1;
 export function hasCliUpdate(current: unknown, latest: unknown): boolean;
 export function withLatestPackage(spec: unknown): string;
+export function basePackageName(spec: unknown): string;

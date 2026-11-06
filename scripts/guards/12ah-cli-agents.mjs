@@ -500,6 +500,15 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "用户命令自带 -i/--index-url 时不再用镜像覆盖（私有源不被顶掉）");
   ok(/检查更新/.test(panelSrc) && /const checkOne = useCallback/.test(panelSrc) && /const checkAll = useCallback/.test(panelSrc),
     "面板提供「检查更新」入口（工具栏全部 + 预览单条，11-06 用户问按键在哪）");
+  /* ⛔ 11-06 审查：带 `@latest` 的安装命令会让 `npm uninstall` 直接 ERMARGS
+     （"Remove arguments must only contain package names"）⇒ 卸载/查版本走裸包名。 */
+  ok(ver.basePackageName("@qwen-code/qwen-code@latest") === "@qwen-code/qwen-code"
+    && ver.basePackageName("@iflow-ai/iflow-cli") === "@iflow-ai/iflow-cli"
+    && ver.basePackageName("aider-chat>=0.86") === "aider-chat"
+    && ver.basePackageName("qwenpaw[extra]") === "qwenpaw",
+    "basePackageName 真值表：作用域包保留 @scope/、去掉版本；pip 去掉版本区间与 extras");
+  ok(/spec\.packages\.map\(basePackageName\)/.test(installSrc) && /basePackageName\(spec\.packages\[0\]/.test(installSrc),
+    "卸载与查最新版本都用裸包名（否则带 @latest 的条目卸不掉 / 查不到版本）");
 }
 
 /* ── 11-06 QwenPaw 派活报错（用户真机实证：`No such option '-F'`）──
@@ -559,6 +568,30 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   const toolchainSrc = readFileSync(join(ROOT, "electron/toolchain.ts"), "utf8");
   ok(/applyNoProxyFix\(env\)/.test(toolchainSrc) && /applyNoProxyFix\(env\)/.test(mainSrc),
     "引擎环境（toolchainEnv）与 CLI 子进程环境（cliProcessEnv）都应用了 NO_PROXY 修正");
+  /* ── 11-06 逐条核对单轮参数（npm / PyPI / 官方文档实证）── */
+  const EXPECTED = {
+    claude: /^claude -p "\{prompt\}"$/,
+    codex: /^codex exec "\{prompt\}"$/,
+    gemini: /^gemini -p "\{prompt\}"$/,
+    aider: /^aider --message "\{prompt\}" --yes$/,
+    openclaw: /^openclaw agent --agent main -m "\{prompt\}" --json$/,
+    qwen: /^qwen --prompt "\{prompt\}"$/,
+    qwenpaw: /^qwenpaw task -i "\{prompt\}" --max-iters 20 -t 540$/,
+    kimi: /^kimi -p "\{prompt\}"$/,
+    codebuddy: /^codebuddy -p "\{prompt\}"$/,
+    comatecli: /^comatecli run -q "\{prompt\}" --display event-stream$/,
+    qoder: /^qoder -p "\{prompt\}"$/,
+    traecli: /^traecli --print "\{prompt\}"$/,
+  };
+  const mismatched = Object.entries(EXPECTED)
+    .filter(([bin, re]) => !re.test(cmd.cliPromptCommand(bin)))
+    .map(([bin]) => `${bin}=${cmd.cliPromptCommand(bin) || "缺"}`);
+  ok(mismatched.length === 0, `12 条已核实的 CLI 单轮命令逐字对账（不符：${mismatched.join(" / ") || "无"}）`);
+  const allSpecs = Object.values(cmd.CLI_PROMPT_COMMANDS);
+  ok(allSpecs.every((spec) => spec.includes("{prompt}")) && allSpecs.every((spec) => !/(^|\s)-F(\s|$)/.test(spec)),
+    "所有模板都带 {prompt} 占位符，且没有 `-F` 这种从文件读取的猜法");
+  ok(cmd.cliPromptCommand("iflow") === "",
+    "iFlow 没有文档化的单轮参数 ⇒ 不写假模板（如实走 --help 探测）");
 }
 
 rmSync(sandbox, { recursive: true, force: true });

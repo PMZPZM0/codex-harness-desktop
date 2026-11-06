@@ -19,7 +19,7 @@ import { spawn, execFile } from "node:child_process";
 import path from "node:path";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, bundledPython, pythonPipReady, toolchainEnv, writeToolsRoot } from "./toolchain";
 import { detectCliAgent, invalidateCliInstalledCache, normalizeCliBin, readCliAgents } from "./cli-agents";
-import { parseInstallCommand, hasCliUpdate, withLatestPackage, normalizeVersion } from "../src/lib/cli-install.mjs";
+import { parseInstallCommand, hasCliUpdate, withLatestPackage, normalizeVersion, basePackageName } from "../src/lib/cli-install.mjs";
 import { broadcastHarnessEvent } from "./features/window-bus";
 
 export type CliInstallOutcome = { ok: boolean; error?: string; detail?: string };
@@ -186,8 +186,12 @@ export async function uninstallCliAgent(id: string): Promise<CliInstallOutcome> 
   cancelledIds.delete(entry.id);
   emit(entry.id, "start", `正在卸载 ${entry.name}…`);
   try {
-    if (spec.manager === "npm") await npmGlobal(["uninstall", "--global", ...spec.packages], entry.id, "卸载");
-    else await pipRun(["uninstall", "-y", ...spec.packages], entry.id, "卸载");
+    /* ⛔ 卸载只认裸包名：安装命令里的 `@latest` / pip 版本区间会让 npm/pip 直接报错
+       （npm: ERMARGS "Remove arguments must only contain package names"）。 */
+    const names = spec.packages.map(basePackageName).filter(Boolean);
+    if (!names.length) return { ok: false, error: "这条安装命令里解析不出包名，无法自动卸载" };
+    if (spec.manager === "npm") await npmGlobal(["uninstall", "--global", ...names], entry.id, "卸载");
+    else await pipRun(["uninstall", "-y", ...names], entry.id, "卸载");
     const check = await detectCliAgent({ bin: entry.bin });
     invalidateCliInstalledCache();
     broadcastHarnessEvent({ type: "cli-agents-changed" } as any);
@@ -300,7 +304,7 @@ export async function checkCliAgentUpdates(ids?: string[]): Promise<{ items: Cli
     if (!spec.manager) return null;
     const detected = await detectCliAgent({ bin: entry.bin });
     if (!detected.installed) return null;
-    const pkg = spec.packages[0] ?? "";
+    const pkg = basePackageName(spec.packages[0] ?? "");
     if (!pkg) return null;
     let cached = latestCache.get(entry.id);
     if (!cached || now - cached.at > UPDATE_CACHE_MS) {
