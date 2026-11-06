@@ -1668,8 +1668,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/justify-self:\s*start/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
       "【285】标签列内左对齐（11-06 用户令「标签对齐」：各行标签左缘同一竖线）"
     );
-    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 64px minmax\(0, 1fr\)/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
-      "【285】有标签的行用 64px 定宽标签列（auto 列会让宽标签整体左移，对不齐）"
+    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 64px 54px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
+      "【285】有标签的行用 64px 定宽标签列 + 54px 右侧留白（右边锚定 ⇒ 父行/缩进子行标签同线）"
     );
     (/min-width:\s*0/.test(nameRule) && /max-width:\s*100%/.test(nameRule) && /overflow:\s*hidden/.test(nameRule) && /text-overflow:\s*ellipsis/.test(nameRule) ? ok : fail)(
       "【285】长名字按列宽截断出省略号（max-width:100% + ellipsis），不跨过标签/时间（11-06 用户截图）"

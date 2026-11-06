@@ -148,10 +148,12 @@
   align-items: center;
   gap: 6px;
 }
-/* ⛔ 11-06 用户令（截图竖框）：「标签对齐」——有标签的行把中间列定宽，标签在列内**左对齐**
-   ⇒ 不同宽度的「中枢 / 调度 / 测试…」左缘落在同一竖线上（auto 列会让宽标签整体左移）。 */
+/* ⛔ 11-06 用户令（截图竖框）：「标签对齐」——
+   ① 中间列定宽 64px、标签在列内**左对齐**（不同宽度的「中枢 / 调度 / 测试」左缘同线）；
+   ② 右侧留 54px 给绝对定位的时间 ⇒ 标签列**右边锚定**：被调度的子行左侧缩进 10px、
+      行宽更窄，居中锚定会整体右移 5px；按右边锚定后，父行/子行标签落在同一竖线（用户两张截图）。 */
 .thread-row > button:first-child > .thread-row-title-line.has-tag {
-  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) 64px 54px;
 }
 .thread-row-name {
   /* 11-05：名称左对齐（与项目名同列），标签在中间格。
