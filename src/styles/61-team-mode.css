@@ -134,14 +134,20 @@
 }
 .team-msg.is-bot .team-msg__avatar { background: var(--accent-soft); color: var(--accent); }
 .team-msg__body {
+  /* ⛔⛔ 11-06 用户：「这还有这么多长度，怎么就换行了」——根因是这里没给 flex：
+     body 作为 flex item 默认 `0 1 auto`，宽度按内容 shrink-to-fit ⇒ 明明右边还有一大截，
+     却在 ~300px 处折行。撑到可用宽度（上限 720px）后，长正文按正常宽度排版。 */
+  flex: 1 1 auto;
   min-width: 0;
   max-width: 720px;
   /* ⛔ 11-06：加一层轻气泡（原来是裸文本，一屏十几条读起来分不清谁说到哪）
      ⛔ 用 --panel 而不是白：白底气泡在浅色主题里等于没有边界。 */
-  padding: 7px 12px;
+  padding: 9px 14px;
   border: 1px solid var(--line-soft);
-  border-radius: 10px;
+  border-radius: 12px;
+  border-top-left-radius: 4px;
   background: var(--panel);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent);
 }
 .team-msg.is-bot .team-msg__body { background: color-mix(in srgb, var(--accent-soft) 55%, var(--panel)); }
 .team-msg__meta { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
@@ -1028,3 +1034,149 @@
   cursor: pointer;
 }
 .team-group__more:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ══════ 正文 + 运行过程（11-06：群里复用主对话那套展示）══════════════════════
+   · 正文 = 主对话 `Markdown`（表格/代码/链接/图片灯箱同一个渲染器）；
+   · 运行过程 = 主对话 `FoldGroup` + `ItemView`，默认收起，挂在正文**下面**；
+   · 文件不挂卡片（用户：「文件就留灯箱预览就行」）—— Markdown 里的图片点开走
+     `openImageLightbox`，由主对话时间线已经注册的全局灯箱承接。 */
+.team-msg__body-text { position: relative; }
+/* @ 与第一段同行（用户上一轮令：艾特放消息前面，不要单独占一行）。
+   float 让 Markdown 的第一段文字绕开它；⛔ 末尾清浮动，否则会顶到下面的折叠块。 */
+.team-msg__body-text > .team-card__prefix { float: left; margin-right: 5px; }
+.team-msg__body-text::after { content: ""; display: block; clear: both; }
+
+.team-process { margin-top: 8px; }
+/* 引用行移到正文上面后，与 meta 行之间留一点距离（⛔ 不再夹在正文与过程之间） */
+.team-process__quote--top { margin: 6px 0 4px; }
+.team-process__quote {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.team-process__quote-bar {
+  flex: none;
+  width: 2px;
+  align-self: stretch;
+  border-radius: 2px;
+  background: var(--accent);
+}
+.team-process__quote > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* 折叠组内部就是主对话的工具卡序列，⛔ 不改它们的皮肤，只给竖向间距 */
+.team-process__items > * + * { margin-top: 6px; }
+.team-process .wb-fold { max-width: 100%; }
+/* ⛔ 不覆盖 .wb-fold-body 的 overflow：主对话的 Fold 用 grid 高度过渡，
+   给它加 overflow-x:auto 会把另一轴也算成 auto ⇒ 收起动画被裁、出现双滚动条。 */
+.team-process__items { overflow-x: auto; }
+/* 主对话的折叠箭头默认隐藏、hover 才显形；群里用户找不到收起入口（"下面过程不能折叠啊"）
+   ⇒ 群视图作用域内常显箭头 + 明示「展开 / 收起」，⛔ 不改主对话组件本身。 */
+.team-process .wb-fold-header .wb-fold-caret { opacity: 1; visibility: visible; }
+.team-process .wb-fold-header::after {
+  content: "展开";
+  margin-left: 6px;
+  color: var(--faint);
+  font-size: 11px;
+}
+.team-process .wb-fold.open .wb-fold-header::after { content: "收起"; }
+
+/* ══════ 群消息刻度尺 · 放大镜（11-06：与对话框同款交互）═════════════════════
+   刻度槽在消息流右缘与成员栏之间；hover 弹出**可点可选**的放大面板，
+   样式对齐主对话 `.message-ruler .ruler-lens*`（边框/底色/行高 26px/高亮短横）。 */
+.team-ruler { position: relative; }
+.team-ruler__tick.is-lens { width: 10px; background: var(--accent); }
+.team-ruler .ruler-lens {
+  position: absolute;
+  right: 22px;
+  display: flex;
+  flex-direction: column;
+  width: 280px;
+  max-height: 242px;
+  padding: 4px 6px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow), 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+  box-sizing: border-box;
+  overflow: hidden;
+  pointer-events: auto;
+  z-index: 30;
+}
+.team-ruler .ruler-lens-row {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  /* ⛔ 暗色下原生 button 按浅色 UA 绘制（项目已踩过） */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.team-ruler .ruler-lens-row:hover { background: var(--accent-soft); color: var(--accent); }
+.team-ruler .ruler-lens-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-ruler .ruler-lens-dash {
+  flex: none;
+  width: 16px;
+  height: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+}
+.team-ruler .ruler-lens-row.is-active { color: var(--text); font-weight: 600; }
+.team-ruler .ruler-lens-row.is-active .ruler-lens-dash { width: 24px; background: var(--text); }
+
+
+/* ══════ 11-06 收尾：气泡排版细节 + 刻度槽可见性 ══════════════════════════════
+   用户：「聊天框样式做好看一点」「这还有这么多长度怎么就换行了」「消息刻度线也没出来」 */
+.team-msg.is-bot .team-msg__body { border-top-left-radius: 4px; }
+.team-msg__body-text > :first-child { margin-top: 2px; }
+.team-msg__body-text > :last-child { margin-bottom: 0; }
+/* 引用行做成一块浅底，和截图里「回复 某人：…」的独立引用块同形 */
+.team-process__quote--top {
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel-2) 60%, transparent);
+}
+/* ⛔ 刻度槽以前只有一根 2px / --line 的淡刻度，1 条消息时肉眼几乎看不见。
+   加一条贯穿的轨道线 + 加粗刻度，槽位本身就"在那儿"。 */
+.team-ruler__track { position: relative; }
+.team-ruler__track::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: var(--line-soft);
+}
+.team-ruler__tick {
+  position: relative;
+  z-index: 1;
+  width: 3px;
+  background: color-mix(in srgb, var(--muted) 62%, transparent);
+}
+.team-ruler__tick.is-current { width: 8px; background: var(--accent); }

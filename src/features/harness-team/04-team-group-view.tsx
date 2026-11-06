@@ -16,9 +16,11 @@ import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LedgerSummary, LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
-import { TeamCard } from "./05-team-card";
+import { Markdown } from "../markdown";
 import { TeamMenuButton } from "./06-team-menu";
 import { TeamRuler } from "./07-team-ruler";
+import { TeamProcess } from "./09-team-process";
+import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions } from "../../lib/team-models.mjs";
 /* ⛔ 贴底走统一原语（守卫禁止在时间线里直接把 scrollTop 赋成 scrollHeight ——
@@ -102,6 +104,9 @@ export function TeamGroupView({
   const [nameError, setNameError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [copied, setCopied] = useState("");
+  /* 过程折叠（用户：「这样不会刷屏」）：默认全收；群头一键全展开/全收。
+     ⛔ 全局切换时给折叠块换 key 重挂，按新的 defaultOpen 复位（FoldGroup 自带手动开合状态）。 */
+  const [expandAll, setExpandAll] = useState(false);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
      用户就会觉得"关了之后什么都没了"）。⛔ 只在自己本来就在底部时才跟，别抢用户翻历史的滚动。 */
@@ -241,6 +246,18 @@ export function TeamGroupView({
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
   const displayRows = mergeConsecutive(shownRows);
 
+  /* 引用索引用**全量 rows**（不是分页后的 shownRows）：翻到更早的一页时，
+     上一条人类消息可能在被截掉的那一段里，⛔ 不能因此把引用丢成空白。 */
+  const quotes = useMemo(() => buildReplyQuotes(rows), [rows]);
+
+  /* ⛔ 折叠/展开改变内容高度后必须重算贴底（项目纪律：pin-shrink-follow）。
+     只在用户本来贴底时跟，⛔ 不抢他正在翻的历史位置。 */
+  useEffect(() => {
+    if (!stickRef.current) return;
+    requestAnimationFrame(() => { if (stickRef.current) stick(); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expandAll]);
+
   /* 项目地址显示成短名（全路径放 title）：群头一行塞不下 D://a//b//c */
   const projectName = (group.workspace ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
   const ctxParts = [
@@ -301,6 +318,17 @@ export function TeamGroupView({
             </span>
           ))}
         </div>
+        {!showSettings && (
+          <button
+            type="button"
+            className={`team-group__fold-btn${expandAll ? " is-on" : ""}`}
+            onClick={() => setExpandAll((v) => !v)}
+            aria-pressed={expandAll}
+            title="长回复默认收成一行，点这里一键展开/收起本群全部过程"
+          >
+            {expandAll ? "收起过程" : "展开过程"}
+          </button>
+        )}
         <button type="button" className="team-group__settings-btn" onClick={() => setShowSettings((v) => !v)}>
           {showSettings ? "返回群聊" : "群设置"}
         </button>
@@ -358,6 +386,12 @@ export function TeamGroupView({
                   const isBot = row.authorKind === "bot";
                   const role = roleOf(row.authorId);
                   const running = busy?.includes(row.authorId);
+                  /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
+                     运行过程另起一个折叠块挂在正文下面，默认收起。 */
+                  const quote = isBot ? quotes.get(row.key) : undefined;
+                  const atChips = row.mentions.length
+                    ? row.mentions.map((id) => <em key={id} className="team-msg__mention">@{nameOf(id)}</em>)
+                    : undefined;
                   return (
                     <article
                       key={row.key}
@@ -374,24 +408,41 @@ export function TeamGroupView({
                           <time>{fmtTime(row.at)}</time>
                         </div>
 
+                        {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
+                            ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
+                        {isBot && quote && (
+                          <p className="team-process__quote team-process__quote--top" title={`回复 ${nameOf(quote.authorId)}：${quote.text}`}>
+                            <span className="team-process__quote-bar" aria-hidden />
+                            <span>回复 {nameOf(quote.authorId)}：{quote.text}</span>
+                          </p>
+                        )}
                         {row.kind === "card" ? (
                           <pre className="team-msg__card">{JSON.stringify(row.card, null, 2)}</pre>
                         ) : (
-                          /* ⛔ 播报稿是**给耳朵的**（```voice 围栏块）：对话里由 Markdown 整块剥掉，
-                             群视图也得剥 —— 口径只有一处（src/lib/voice-script.mjs）。
-                             剥完再交给卡片渲染器（表格/代码/列表给真正的元素，⛔ 不拼 HTML）。 */
+                          /* 正文走**主对话同一个 Markdown 组件**（表格/代码/链接/图片灯箱一致）。
+                             ⛔ 播报稿 ```voice 是给耳朵的，渲染前剥掉（口径只有一处）。
+                             @ 用 float 挂在第一段前面（用户：艾特要放消息前面，不要单独一行）。 */
                           <>
-                            <TeamCard
-                              text={stripVoiceScript(row.text)}
-                              prefix={row.mentions.length
-                                ? row.mentions.map((id) => <em key={id} className="team-msg__mention">@{nameOf(id)}</em>)
-                                : undefined}
-                            />
+                            <div className="markdown team-msg__body-text">
+                              {atChips && <span className="team-card__prefix">{atChips}</span>}
+                              <Markdown>{stripVoiceScript(row.text)}</Markdown>
+                            </div>
                             {(row.continued ?? []).map((extra) => (
-                              <div key={extra.key} className="team-msg__more">
-                                <TeamCard text={stripVoiceScript(extra.text)} />
+                              <div key={extra.key} className="team-msg__more markdown">
+                                <Markdown>{stripVoiceScript(extra.text)}</Markdown>
                               </div>
                             ))}
+                            {isBot && (
+                              <TeamProcess
+                                key={`${row.key}:${expandAll}`}
+                                threadId={row.threadId}
+                                at={row.at}
+                                bodyText={row.text}
+                                defaultOpen={expandAll}
+                                running={running}
+                                onAskAgain={() => askAgain(row)}
+                              />
+                            )}
                           </>
                         )}
                         {isBot && (
@@ -429,7 +480,7 @@ export function TeamGroupView({
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
                     {String(run.text ?? "").trim()
-                      ? <TeamCard text={stripVoiceScript(String(run.text).slice(0, 40000))} />
+                      ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
                       : <p className="team-msg__thinking">正在思考…</p>}
                     {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
