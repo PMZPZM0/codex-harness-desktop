@@ -170,9 +170,12 @@ export function TeamComposer({
           /* ⛔⛔ 11-06：「还是旧的」—— 上次持久化的模型已经不在当前模型目录里，
              原来会被塞成「上次选择」一直挂在下拉上、派活也一直用那个死值。
              ⇒ 自动切回「跟随全局」，由当前生效模型接管；同时留一句说明，别让用户莫名被改。 */
-          if (list.length && initialModelRef.current && !seen.has(initialModelRef.current)) {
+          const retired = initialModelRef.current;
+          /* ⛔ 11-06 审查：判据与执行对象必须同一时刻取值 —— 目录异步回来之前用户可能已
+             自己点了「跟随全局」，否则提示会写成「上次选择的  已不在…」（空名字）并重复写空值。 */
+          if (list.length && retired && !seen.has(retired) && optsRef.current.model === retired) {
             initialModelRef.current = "";
-            setRetired(`上次选择的 ${optsRef.current.model} 已不在当前模型目录，已切回「跟随全局」`);
+            setRetired(`上次选择的 ${retired} 已不在当前模型目录，已切回「跟随全局」`);
             onOpts({ ...optsRef.current, model: "" });
           }
         }

@@ -7,6 +7,7 @@
  */
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEcho, legacyMirror, migrateRuntime, normalizeDispatch, normalizeRuntime, patchRuntime, rememberOwnWrite, runtimeKey, runtimeSignature } from "../../../../../lib/thread-runtime.mjs";
+import { markDelegateThread } from "../../../../../lib/team-runtime.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -95,7 +96,14 @@ bag.refreshDispatchInfo = refreshDispatchInfo as typeof bag.refreshDispatchInfo;
     try {
       const res: any = await window.codex.listDelegates();
       const map: Record<string, DelegateRecordEntry> = {};
-      for (const record of (Array.isArray(res?.records) ? res.records : [])) map[String(record.threadId)] = record;
+      for (const record of (Array.isArray(res?.records) ? res.records : [])) {
+        map[String(record.threadId)] = record;
+        /* ⛔ 11-06 审查：限流总闸的身份表在渲染层内存里，刷新窗口后会被清空 ⇒
+           后台仍在跑的调度会话撞 429 时会被当成普通会话排自动重试（刷屏复发）。
+           启动时（以及每次 delegates-changed）用主进程登记表把 running 记录补种回去。
+           重复登记不 emit，不会引起无谓重渲染。 */
+        if (record.status === "running") markDelegateThread(String(record.threadId));
+      }
       bag.delegateRecordsRef.current = map;
       bag.setDelegateRecords(map);
       // 调度头像轨的数据源（窗口中途打开/重开也要能看到正在跑的）：

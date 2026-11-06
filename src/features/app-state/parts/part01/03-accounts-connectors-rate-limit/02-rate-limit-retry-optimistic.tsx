@@ -100,6 +100,14 @@ bag.cancelRateLimitRetry = cancelRateLimitRetry as typeof bag.cancelRateLimitRet
 
 
   async function executeRateLimitRetry(threadId: string) {
+    /* ⛔ 11-06 审查：定时器到点时，`delegate-run finished` 可能已经先到（超时转后台路径），
+       或渲染层重载过 ⇒ 光在 scheduleRateLimitRetry 设总闸不够，这里必须再拦一次，
+       否则会真的 turn/start 重发（toast 抑制挡不住烧 token）。粘性身份见 team-runtime.mjs。 */
+    if (isDelegateThread(threadId)) {
+      bag.cancelRateLimitRetry(threadId, true);
+      bag.setRetryEntry(threadId, null);
+      return;
+    }
     bag.clearRateLimitTimer(threadId);
     const ctx = bag.retryContextsRef.current.get(threadId);
     const attempt = bag.rateLimitAttemptsRef.current.get(threadId) ?? 0;

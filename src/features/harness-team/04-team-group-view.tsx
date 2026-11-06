@@ -280,8 +280,11 @@ export function TeamGroupView({
      原来运行态条只在 busy 非空时出现，而 429 后 `invokeAgent` 已经以空产出返回、
      busy 清空，后台重试链却还在跑 ⇒ 屏幕上「没有运行、也没有停止」，toast 一直刷。
      ⇒ 状态条**常驻**，停止键永远够得着；点击做两件缺一不可的事：
-       ① 逐个停掉伙伴当前回合（引擎中断，harnessTeamStop）；
-       ② 掐断渲染层全局的限流重试链（cancelDelegateRetries），否则中断了还会自动重发。
+       ① 逐个停掉本群伙伴当前回合（引擎中断，harnessTeamStop）；
+       ② 清理后台调度会话残留的限流重试状态（cancelDelegateRetries）。
+     ⛔ 11-06 审查：delegate-run 是**全局**广播（主对话 @ 专家 / 定时任务也算），
+       ⛔ 不许说成「本群」、也不许拿它点亮本群运行态；停止键只承诺「清理重试状态」，
+       不承诺中断这些全局会话的引擎回合（它们由各自的收敛路径结束）。
      ⛔ 空闲也可点：做一次清理并明确回话，不做成点了没反应的死按钮。 */
   const stopAll = async () => {
     if (stopping) return;
@@ -289,11 +292,11 @@ export function TeamGroupView({
     setSendError("");
     try {
       const results = await Promise.all(partners.map((p) => onStopPartner(p.id)));
-      const cancelled = cancelDelegateRetries();
+      const cleared = cancelDelegateRetries();
       const stopped = results.filter((r) => r.ok).length;
-      setMenuMsg(stopped || cancelled
-        ? `已停止本群运行（${stopped} 个伙伴）${cancelled ? `，并取消 ${cancelled} 条限流重试` : ""}`
-        : "已清理：当前没有运行中的任务，也没有排队中的重试");
+      setMenuMsg(stopped || cleared
+        ? `已停止 ${stopped} 个伙伴的运行${cleared ? `，并清理 ${cleared} 个后台调度会话的重试状态` : ""}`
+        : "已清理：当前没有运行中的伙伴，也没有在跑的调度会话");
     } finally {
       setStopping(false);
     }
@@ -693,20 +696,20 @@ export function TeamGroupView({
             <TeamRuler rows={shownRows} scrollRef={streamRef} containerRef={wrapRef} />
             </div>
 
-            <div className={`team-group__running${(busy?.length ?? 0) > 0 || delegateRunning > 0 ? " is-busy" : ""}`} role="status" aria-live="polite">
+            <div className={`team-group__running${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`} role="status" aria-live="polite">
               <span className="team-group__dot" aria-hidden />
               <span className="team-group__running-text">
                 {(busy?.length ?? 0) > 0
                   ? `${busy!.map(nameOf).join("、")} 正在处理…`
                   : delegateRunning > 0
-                    ? `${delegateRunning} 个后台调度任务正在收尾…`
+                    ? `全局另有 ${delegateRunning} 个调度任务在收尾（与本群无关）…`
                     : "当前没有运行中的任务"}
               </span>
               <button
                 type="button"
                 className="team-group__stop"
                 onClick={() => void stopAll()}
-                title="停止本群所有运行中的任务，并取消后台自动重试"
+                title="停止本群伙伴的运行，并清理后台调度会话的重试状态"
                 aria-label="停止运行"
               >
                 {stopping ? "正在停止…" : "停止"}
