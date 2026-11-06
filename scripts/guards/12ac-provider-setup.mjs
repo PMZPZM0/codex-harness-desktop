@@ -142,5 +142,16 @@ ok(/detectSetupModels/.test(dialog) && /applySetupSelection/.test(dialog), "弹�
 ok(!/window\.codex\.(saveCustomModel|cloudModelsSetEnabled)/.test(dialog), "⛔ 弹窗不直接碰落盘通道（落盘统一走编排层）");
 ok(/finishedRef/.test(dialog), "完成回调只允许触发一次（倒计时 + 手动点击不双开）");
 
+/* ── ⑧ 编辑弹窗的保存条必须常驻可见（11-06 用户实测「没有保存功能」）──────────────
+   弹窗在设置面板里，祖先可能有 transform ⇒ fixed 遮罩只占面板高度；高度用 100vh 会顶出可视区、
+   保存条被切掉。高度按遮罩 100%，保存条绝对定位钉在弹窗底部。 */
+ok(/\.provider-editor-modal \{[\s\S]{0,260}?position: relative;[\s\S]{0,420}?height: min\(760px, 100%\)/.test(css)
+  && !/\.provider-editor-modal \{[\s\S]{0,260}?height: min\(760px, calc\(100vh - 40px\)\)/.test(css),
+  "编辑弹窗高度按遮罩可用高度（100%），不再用 100vh 顶出可视区");
+ok(/\.provider-editor-body \.settings-actions \{[\s\S]{0,320}?position: absolute;[\s\S]{0,200}?bottom: 0;[\s\S]{0,200}?z-index: 3;/.test(css),
+  "保存条钉在弹窗底部（absolute + bottom:0 + z-index:3），不随模型列表滚走");
+ok(/\.provider-editor-body \.provider-form \{[\s\S]{0,120}?padding: 16px 20px 72px;/.test(css),
+  "表单底部留出保存条的高度（72px），最后一行内容不被遮住");
+
 console.log(`\n【provider-setup】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

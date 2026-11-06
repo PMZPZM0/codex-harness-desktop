@@ -627,8 +627,13 @@
 /* ── 二级配置弹窗（详细表单原样迁入）── */
 .provider-editor-backdrop { z-index: 900; }
 .provider-editor-modal {
+  position: relative;
   width: min(880px, calc(100vw - 40px));
-  height: min(760px, calc(100vh - 40px));
+  /* ⛔ 11-06：弹窗在设置面板里，祖先可能有 transform ⇒ fixed 遮罩实际只占面板高度，
+     用 100vh 算高度会顶出可视区（实测 bottom 825 > 视口 800，保存条被切掉）。
+     高度按遮罩实际可用高度算（100%），不再按视口。 */
+  height: min(760px, 100%);
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -663,14 +668,24 @@
   overflow: auto;
 }
 .provider-editor-body .provider-form {
-  padding: 16px 20px 20px;
+  /* 底部给固定保存条留位（11-06：保存条不再随模型列表滚走） */
+  padding: 16px 20px 72px;
   overflow: visible;
 }
 .provider-editor-body .settings-actions {
-  position: sticky;
-  bottom: -1px;
-  z-index: 1;
-  padding: 10px 0 2px;
+  /* ⛔ 11-06 用户实测「供应商编辑界面没有保存功能」：保存条原先 sticky 在滚动区里，
+     模型多时被挤到可视区外。改成钉在**弹窗底部**（相对 .provider-editor-modal 绝对定位，
+     不随 body 滚动），任何滚动位置都看得见。 */
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 20px;
   border-top: 1px solid var(--line-soft);
   background: var(--bg);
 }
@@ -679,7 +694,7 @@
 @media (max-width: 900px) {
   .provider-card-grid { grid-template-columns: 1fr; }
   .provider-page-toolbar { align-items: stretch; flex-direction: column; }
-  .provider-editor-modal { width: calc(100vw - 24px); height: calc(100vh - 24px); }
+  .provider-editor-modal { width: calc(100vw - 24px); height: 100%; max-height: 100%; }
 }
 
 /* ── 10-24 三轮：自动压缩并进页头 + 卡片测试/编辑入口 ───────────────────── */

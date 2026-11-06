@@ -672,3 +672,5 @@
 | 2026-11-05 | 子会话细条默认隐藏、hover 才显示 | 改动 | `02-sidebar-threads.css`、守卫 02【156】 | 用户令：「这个条默认隐藏，鼠标放到会话选项上再展示出来」。细条容器默认 opacity:0 + pointer-events:none（不挡下一行点击），行 hover / 键盘 focus-within 时 0.12s 淡入并恢复可点。验证：真 profile 探针（默认 opacity=0/pe=none；hover 后 1/auto；hover 后点击正常展开子会话）+ 02 守卫 exit=0。 | 本轮 |
 
 | 2026-11-05 | 撤回药丸结构性贴近气泡左缘 | 修复 | `UserMessageView.tsx`、`ItemView.tsx`、`PendingSteerBubbles.tsx`、`15-queued-messages.css`、守卫 12ay | 用户截图：「中间缝隙太大了，自适应贴着用户消息左边」。上一版在消息栈外量「气泡左缘 − 栈左缘」再用负 margin 拉，短消息/名字宽度一变就算偏。现在给 UserMessageView 加 leadingAction 插槽：药丸与气泡在**同一弹性行**（药丸靠右 + 8px），气泡 max-width 扣掉药丸宽度，长消息在行内折行、不会把药丸挤到上一行；工具条自动换到下一行。验证：真 profile DOM 量测（短消息 gap=8 / 长消息 gap=8、无横向溢出、工具条在气泡下方）+ 12ay 守卫 52 项。 | 本轮 |
+
+| 2026-11-05 | 供应商编辑弹窗保存条常驻可见 | 修复 | `42-provider-setup.css`、守卫 12ac | 用户实测「已配置的供应商编辑界面没有保存功能」。根因：弹窗在设置面板里、祖先可能有 transform ⇒ fixed 遮罩只占面板高度，弹窗用 100vh 算高度顶出可视区（实测 bottom 825 > 视口 800），sticky 保存条被切掉。改为：弹窗高度按遮罩 100%（min(760px,100%)）、保存条 absolute 钉在弹窗底部（z-index 3）、表单底部留 72px。验证：真 profile 打开已配置供应商（cloud）编辑弹窗（body 可滚 61px），滚动顶/底保存条都在弹窗内且按钮 hit-test 命中 + 截图；12ac 守卫 70/70。 | 本轮 |
