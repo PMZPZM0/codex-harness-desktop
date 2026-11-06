@@ -10,6 +10,7 @@ import { existingToolPath, toolsRoot } from "./toolchain";
 import { mirrorCandidates } from "./gh-mirror";
 import { buildRemotePageHtml } from "./remote/web-page";
 import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
+import { isAllowedRemoteRpc } from "./remote-rpc-types";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
@@ -73,6 +74,12 @@ type RemoteEvents = {
   fileDiff?: (threadId: string, relPath: string) => Promise<{ path?: string; diff?: string; error?: string }>;
   /** 当前目标（引擎 thread/goal/get） */
   goalGet?: (threadId: string) => Promise<{ objective?: string; status?: string }>;
+  /** 排队消息（11-06）：手机在运行中也能发 —— 列表 / 入队 / 立即（插队）/ 撤回。
+   *  ⛔ 立即与撤回都**转给桌面渲染层**执行（pending-steer 那套语义只该有一份实现）。 */
+  queueList?: (threadId: string) => Promise<{ id: string; text: string; createdAt?: number }[]>;
+  queueAdd?: (threadId: string, text: string, images?: string[], effort?: string) => Promise<void>;
+  queueStart?: (threadId: string, id: string) => Promise<{ mode?: string }>;
+  queueDelete?: (threadId: string, id: string) => Promise<void>;
   /** 手机端回答询问 / 审批（引擎原生请求走 server.respond；agent_ask 转给渲染层 resolve） */
   answer?: (payload: { kind: string; requestId?: string; questionId?: string; choice: string; threadId?: string }) => Promise<void>;
   /** 本产品在 GitHub Release 上的 APK 资产文件名（按品牌不同由 main 传入） */
@@ -716,6 +723,14 @@ export class RemoteControlService {
       void this.readBody(req).then(async (body) => {
         try {
           const data = JSON.parse(body);
+          /* ⛔ 手机端能调的 RPC 类型是**显式白名单**（11-06 安全收敛）：不在表里的一律拒，
+             而且拒绝发生在任何 handler 之前。⛔ 表与下面分支的一致性由守卫 12ba 双向核对
+             （加分支忘登记 / 登记了没实现 都会打红）。 */
+          const rpcType = String(data.type ?? "");
+          if (!isAllowedRemoteRpc(rpcType)) {
+            this.json(res, 200, { reqId: data.reqId, error: "unsupported rpc type" });
+            return;
+          }
           let result: any = {};
           if (data.type === "list-threads") result = { threads: await (this.events.listThreads?.() ?? Promise.resolve([])) };
           else if (data.type === "get-messages") result = { messages: await (this.events.getThreadMessages?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
@@ -748,6 +763,20 @@ export class RemoteControlService {
           }
           else if (data.type === "files-list") result = { files: await (this.events.listFiles?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
           else if (data.type === "file-read") result = await (this.events.readFile?.(String(data.threadId ?? ""), String(data.path ?? "")) ?? Promise.resolve({ kind: "other" }));
+          /* 排队消息（11-06）：手机在「运行中」也能发 —— 入队 / 立即（插队）/ 撤回。
+             ⛔ 落点语义与桌面「立即」同源（pending-steer 那套），不在这里另写一份。 */
+          else if (data.type === "queue-list") result = { items: await (this.events.queueList?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
+          else if (data.type === "queue-add") {
+            const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
+            const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
+            await (this.events.queueAdd?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort) ?? Promise.reject(new Error("不支持排队")));
+            result = { ok: true };
+          }
+          else if (data.type === "queue-start") result = await (this.events.queueStart?.(String(data.threadId ?? ""), String(data.id ?? "")) ?? Promise.reject(new Error("不支持立即发送")));
+          else if (data.type === "queue-delete") {
+            await (this.events.queueDelete?.(String(data.threadId ?? ""), String(data.id ?? "")) ?? Promise.reject(new Error("不支持撤回")));
+            result = { ok: true };
+          }
           else result = { error: "unknown rpc type" };
           this.json(res, 200, { reqId: data.reqId, ...result });
         } catch (error: any) {

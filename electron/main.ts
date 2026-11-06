@@ -4,6 +4,7 @@
  */
 import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcMain, nativeTheme, net, powerSaveBlocker, protocol, safeStorage, session, shell, systemPreferences } from "electron";
 import { execSync, spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, unlinkSync, watch as watchFs, writeFileSync, type Dirent } from "node:fs";
 import path from "node:path";
@@ -470,6 +471,32 @@ const remoteBrandIcon = (() => {
   return "";
 })();
 
+/** 排队条目的一行预览：文字部分拼起来，没有文字就说几张图。
+ *  ⛔ 不能 import `src/lib/input-text.ts`：electron/tsconfig 的 rootDir 是 electron/，
+ *     跨进去会把整个 src 拖进主进程产物（TS6059）。这里就地展开三行等价逻辑。 */
+function queuePreviewText(input: any[]) {
+  const text = input.filter((part) => part?.type === "text").map((part) => String(part?.text ?? "")).join("\n");
+  if (text.trim()) return text;
+  const images = input.filter((part) => part?.type === "localImage" || part?.type === "image").length;
+  return images ? `${images} 个图片附件` : "";
+}
+
+/* 手机发来的文字/图片 → 引擎 input（发送与排队共用同一条闸）。
+   ⛔ 图片路径来自手机（外部输入）：只认 /api/upload 刚落进 remote-uploads 的文件，
+      别的路径（..、任意盘符）一律丢弃 —— 这是「手机只能读自己刚上传的图」的唯一闸。 */
+function mobileInputOf(text: string, images: string[] = [], mentions: { kind: string; name: string; key?: string }[] = []) {
+  const uploadsRoot = remote.uploadsDir();
+  const allowed = (uploadsRoot ? images : []).filter((candidate) => {
+    const resolved = path.resolve(String(candidate));
+    return resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && existsSync(resolved);
+  });
+  const input: any[] = [];
+  const composed = mobileMentionBlock(mentions) + String(text ?? "");
+  if (composed.trim()) input.push({ type: "text", text: composed, text_elements: [] });
+  for (const file of allowed) input.push({ type: "localImage", path: file });
+  return input;
+}
+
 const remote = new RemoteControlService({
   getStatus: () => "idle",
   storageFile: path.join(app.getPath("userData"), "remote-sessions.json"),
@@ -566,20 +593,48 @@ const remote = new RemoteControlService({
   sendMessage: async (threadId, text, images = [], effort = "high", mentions = []) => {
     const model = await readCustomModel();
     const validEffort = ["low", "medium", "high", "xhigh"].includes(String(effort ?? "")) ? String(effort) : "high";
-    /* ⛔ 图片路径来自手机（外部输入）：只认 /api/upload 刚落进 remote-uploads 的文件，
-       别的路径（..、任意盘符）一律丢弃 —— 这是「手机只能读自己刚上传的图」的唯一闸。 */
-    const uploadsRoot = remote.uploadsDir();
-    const allowed = (uploadsRoot ? images : []).filter((candidate) => {
-      const resolved = path.resolve(String(candidate));
-      return resolved.startsWith(path.resolve(uploadsRoot) + path.sep) && existsSync(resolved);
-    });
-    const input: any[] = [];
-    const mentionBlock = mobileMentionBlock(mentions);
-    const composed = mentionBlock + String(text ?? "");
-    if (composed.trim()) input.push({ type: "text", text: composed, text_elements: [] });
-    for (const file of allowed) input.push({ type: "localImage", path: file });
+    const input = mobileInputOf(text, images, mentions);
     if (!input.length) return;
     await server.request("turn/start", { threadId, input, model: model?.model, effort: validEffort });
+  },
+  /* ── 排队消息（11-06）─────────────────────────────────────────────────────
+     手机在「运行中」发消息过去只会撞引擎 busy（旧行为：报错 / 丢消息）。这里补四条：
+     列表 / 入队 / 立即（插队）/ 撤回。⛔ 立即与撤回**不在主进程重写语义** ——
+     转给桌面渲染层的 startQueued / cancelPendingSteer（pending-steer 只有一份实现）。 */
+  queueList: async (threadId) => {
+    const raw: any = await server.request("thread/queue/list", { threadId }).catch(() => null);
+    const items: any[] = Array.isArray(raw?.items) ? raw.items : Array.isArray(raw?.data) ? raw.data : [];
+    return items
+      .map((item: any) => ({
+        id: String(item?.id ?? item?.queuedSubmissionId ?? ""),
+        text: queuePreviewText(Array.isArray(item?.input) ? item.input : []).slice(0, 200),
+        createdAt: Number(item?.createdAt ?? 0) || undefined,
+      }))
+      .filter((entry) => entry.id);
+  },
+  queueAdd: async (threadId, text, images = [], effort = "high") => {
+    const model = await readCustomModel();
+    const validEffort = ["low", "medium", "high", "xhigh"].includes(String(effort ?? "")) ? String(effort) : "high";
+    const input = mobileInputOf(text, images, []);
+    if (!input.length) return;
+    // 引擎的排队条目自己不带模型/档位：把选择塞进 text 前缀会让界面显示脏字，所以只在非默认时提示
+    void model; void validEffort;
+    await server.request("thread/queue/add", { threadId, input, clientUserMessageId: randomUUID() });
+  },
+  queueStart: async (threadId, id) => {
+    /* 立即 = 交给桌面渲染层（它才会挂「待并入 · 可撤回」并在步边界派发）。
+       没有窗口（例如只跑主进程）时退回引擎语义：直接启动这条排队消息。 */
+    if (!allBusWindows().length) {
+      await server.request("thread/queue/start", { threadId, queuedSubmissionId: id });
+      return { mode: "start" };
+    }
+    broadcastHarnessEvent({ type: "remote:queue-start", threadId, id });
+    return { mode: "delegated" };
+  },
+  queueDelete: async (threadId, id) => {
+    // 撤回：先让桌面撤销「待并入」登记（否则界面上的气泡还挂着、点撤回会失败），再删引擎队列条目
+    broadcastHarnessEvent({ type: "remote:queue-withdraw", threadId, id });
+    await server.request("thread/queue/delete", { threadId, queuedSubmissionId: id }).catch(() => undefined);
   },
   catalog: async () => {
     const skills: { name: string; description?: string }[] = [];

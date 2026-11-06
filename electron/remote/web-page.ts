@@ -127,6 +127,17 @@ html[data-theme="dark"] .run-steps .step-wait{color:#f3c879;background:#3a2f18;b
 .step-more{align-self:flex-start;margin-top:3px;padding:2px 8px;font-size:11px;color:var(--accent);background:none;border:1px solid #cfdcf7;border-radius:999px}
 #goalbar{padding:6px 12px;background:#fff6f8;border-top:1px solid var(--line);font-size:12px;color:#8a2f4a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #taskbar{padding:6px 12px;background:#fff;border-top:1px solid var(--line);font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* 排队条（11-06）：运行中手机也能发 —— 列队 + 「立即（插队）」「撤回」 */
+#queuebar{padding:8px 12px;background:#f7f9ff;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+#queuebar .qrow{display:flex;align-items:center;gap:8px;min-width:0}
+#queuebar .qtext{flex:1 1 auto;min-width:0;font-size:12.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#queuebar .qhead{font-size:11.5px;color:var(--muted)}
+#queuebar .qbtn{flex:0 0 auto;height:26px;padding:0 12px;font-size:12px;font-weight:600;color:var(--muted);background:#fff;border:1px solid var(--line);border-radius:999px}
+#queuebar .qbtn.primary{color:var(--accent);border-color:color-mix(in srgb, var(--accent) 35%, #fff)}
+#queue{flex:0 0 auto;width:auto;margin:0;height:44px;padding:0 14px;font-size:13px;font-weight:600;color:var(--muted);background:#f2f2ef;border:1px solid var(--line);border-radius:14px}
+html[data-theme="dark"] #queuebar{background:#161b22}
+html[data-theme="dark"] #queuebar .qbtn{background:#1b2029}
+html[data-theme="dark"] #queue{background:#1b2029;color:var(--ink)}
 .run-steps .think{margin-top:5px;padding-top:5px;border-top:1px dashed #ddd9d2;color:#6f6f69;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto}
 .run-steps .step-out-wrap{margin:2px 0 6px}
 .run-steps .step-out-wrap>summary{cursor:pointer;list-style:none;color:var(--muted);font-size:11px}
@@ -363,7 +374,8 @@ html[data-theme="dark"] .thinking-indicator{color:#9aa3ad}
 <div id="goalbar" hidden></div>
 <div id="taskbar" hidden></div>
 <div id="imgs"></div>
-<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="send" onclick="handleSend()">发送</button></div>
+<div id="queuebar" hidden></div>
+<div id="inputbar"><button id="plus" onclick="openSheet()">＋</button><input id="cmd" placeholder="输入消息，发送给 Codex"><button id="queue" onclick="queueSend()" hidden>排队</button><button id="send" onclick="handleSend()">发送</button></div>
 <!-- 占位：构建时替换成 src/lib/mobile-markdown.mjs 的源码 -->
 <script>/*__MOBILE_MARKDOWN__*/</script>
 <input type="file" id="file-pick" accept="image/*" multiple>
@@ -654,6 +666,7 @@ async function newThread(boss) {
 }
 async function loadMessages() {
   if (!currentThreadId) return;
+  void refreshQueue();   // 切会话时排队条跟着换（引擎队列是按会话分的）
   try {
     list.innerHTML = "";
     stepBox = null;
@@ -798,12 +811,94 @@ function setRunning(on) {
     btn.textContent = turnRunning ? "停止" : "发送";
     btn.classList.toggle("stop", turnRunning);
   }
+  /* 运行中才露出「排队」：空闲时发消息就是正常发送，多一个按钮反而让人犹豫 */
+  const queueBtn = document.getElementById("queue");
+  if (queueBtn) queueBtn.hidden = !turnRunning;
   const status = document.getElementById("status");
   if (status) status.textContent = turnRunning ? "● 运行中" : "● 在线";
+  // 运行态切换 = 队列可能刚变（回合结束会自动启动队头 / 新一轮开始）
+  setTimeout(() => void refreshQueue(), 300);
 }
 function handleSend() {
   if (turnRunning) { void stopTurn(); return; }
   void sendCmd();
+}
+/* ── 排队消息（11-06）───────────────────────────────────────────────────────
+   运行中手机也能发：入队 / 立即（插队，桌面上会挂「待并入 · 可撤回」）/ 撤回。
+   ⛔ 语义只在桌面渲染层实现一份（pending-steer），手机只发请求 + 刷新列表。 */
+let queueItems = [];
+async function refreshQueue() {
+  const bar = document.getElementById("queuebar");
+  if (!bar) return;
+  if (!currentThreadId) { queueItems = []; renderQueue(); return; }
+  try {
+    const r = await rpc({ type: "queue-list", threadId: currentThreadId });
+    queueItems = Array.isArray(r.items) ? r.items : [];
+  } catch { queueItems = []; }
+  renderQueue();
+}
+function renderQueue() {
+  const bar = document.getElementById("queuebar");
+  if (!bar) return;
+  bar.innerHTML = "";
+  if (!queueItems.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  const head = document.createElement("div");
+  head.className = "qrow qhead";
+  head.textContent = "排队 " + queueItems.length + " 条（当前任务结束后自动发送）";
+  bar.appendChild(head);
+  for (const item of queueItems) {
+    const row = document.createElement("div");
+    row.className = "qrow";
+    const text = document.createElement("span");
+    text.className = "qtext";
+    text.textContent = item.text || "（非文字消息）";
+    const go = document.createElement("button");
+    go.className = "qbtn primary";
+    go.textContent = "立即";
+    go.onclick = () => void queueStart(item.id);
+    const del = document.createElement("button");
+    del.className = "qbtn";
+    del.textContent = "撤回";
+    del.onclick = () => void queueDelete(item.id);
+    row.appendChild(text);
+    row.appendChild(go);
+    row.appendChild(del);
+    bar.appendChild(row);
+  }
+}
+async function queueSend() {
+  const input = document.getElementById("cmd");
+  const v = input.value.trim();
+  if (!v) return;
+  // 首页/新会话没有「运行中」这回事，直接走正常发送
+  if (!currentThreadId || !turnRunning) { void sendCmd(); return; }
+  try {
+    await rpc({ type: "queue-add", threadId: currentThreadId, text: v, effort: readStore("chm-effort") || "high" });
+    input.value = "";
+    push("system", "已排队：当前任务结束后自动发送");
+    void refreshQueue();
+  } catch (error) {
+    push("system", "排队失败：" + error.message);
+  }
+}
+async function queueStart(id) {
+  try {
+    await rpc({ type: "queue-start", threadId: currentThreadId, id });
+    push("system", "已插入 · 待生效（这一步跑完并入，期间可在桌面撤回）");
+  } catch (error) {
+    push("system", "立即失败：" + error.message);
+  }
+  setTimeout(() => void refreshQueue(), 400);
+}
+async function queueDelete(id) {
+  try {
+    await rpc({ type: "queue-delete", threadId: currentThreadId, id });
+    push("system", "已撤回这条排队消息");
+  } catch (error) {
+    push("system", "撤回失败：" + error.message);
+  }
+  setTimeout(() => void refreshQueue(), 400);
 }
 async function stopTurn() {
   if (!currentThreadId) { setRunning(false); return; }
