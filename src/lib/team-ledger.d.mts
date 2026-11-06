@@ -9,6 +9,10 @@ export interface LedgerEntry {
   source: "human" | "partner" | "automation";
   threadId: string;
   chars: number;
+  /** 真实 token（引擎 last 桶）；0 = 没拿到 */
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
   ms: number;
   ok: boolean;
   error: string;
@@ -47,4 +51,5 @@ export function summarizeLedger(
   options?: { sinceMs?: number; groupId?: string; nowMs?: number; days?: number },
 ): LedgerSummary;
 export function formatChars(n: number): string;
+export function formatTokens(n: number): string;
 export function formatMs(ms: number): string;

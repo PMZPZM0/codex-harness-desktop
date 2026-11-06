@@ -82,12 +82,33 @@ function Block({ block }: { block: CardBlock }) {
   }
 }
 
-/** 一条消息的正文（替代原来的 `<p>{text}</p>`）。 */
-export function TeamCard({ text }: { text: string }) {
+/**
+ * 一条消息的正文（替代原来的 `<p>{text}</p>`）。
+ * `prefix` = 消息前面的行内标记（`@某人` chips）：
+ * ⛔ 与**第一段同行**（用户：「艾特放这个位置多难看，放消息前面啊」）——
+ *   单独占一行的胶囊看起来像贴在消息上的标签，不像"对谁说的"。
+ */
+export function TeamCard({ text, prefix }: { text: string; prefix?: React.ReactNode }) {
   const blocks = parseCard(text);
-  if (!blocks.length) return null;
+  if (!blocks.length && !prefix) return null;
+
+  /* 有 prefix 且首块是段落 ⇒ 并成一行：「@承枢 从 1 数到 40…」 */
+  if (prefix && blocks[0]?.type === "paragraph") {
+    const first = blocks[0];
+    return (
+      <div className="team-card">
+        <p className="team-card__p">
+          <span className="team-card__prefix">{prefix}</span>
+          <Inline text={first.text} />
+        </p>
+        {blocks.slice(1).map((b, i) => <Block key={i} block={b} />)}
+      </div>
+    );
+  }
+
   return (
     <div className="team-card">
+      {prefix && <p className="team-card__p"><span className="team-card__prefix">{prefix}</span></p>}
       {blocks.map((b, i) => <Block key={i} block={b} />)}
     </div>
   );

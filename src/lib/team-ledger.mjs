@@ -36,6 +36,11 @@ export function normalizeLedgerEntry(entry) {
     source,
     threadId: String(entry?.threadId ?? ""),
     chars: Math.max(0, Number(entry?.chars ?? 0) || 0),
+    /* 真实 token（引擎 `thread/tokenUsage/updated` 的 last 桶）；拿不到就是 0 ——
+       ⛔ 与"真的用了 0"要能区分：界面里 token 为 0 时显示「—」而不是「0 tok」。 */
+    inputTokens: Math.max(0, Number(entry?.inputTokens ?? 0) || 0),
+    outputTokens: Math.max(0, Number(entry?.outputTokens ?? 0) || 0),
+    totalTokens: Math.max(0, Number(entry?.totalTokens ?? 0) || 0),
     ms: Math.max(0, Number(entry?.ms ?? 0) || 0),
     ok: entry?.ok !== false,
     /* ⛔ 失败原因要留：只看"失败了 3 次"没法排查，"因为专家团未开"才是信息 */
@@ -71,29 +76,38 @@ export function summarizeLedger(entries, options = {}) {
     .filter((e) => e.at >= since)
     .filter((e) => (groupId ? e.groupId === groupId : true));
 
-  const total = { count: 0, chars: 0, ms: 0, failed: 0, partners: 0 };
+  const total = { count: 0, chars: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, ms: 0, failed: 0, partners: 0 };
   const byPartner = new Map();
   const bySource = new Map();
 
   for (const e of rows) {
     total.count += 1;
     total.chars += e.chars;
+    total.inputTokens += e.inputTokens;
+    total.outputTokens += e.outputTokens;
+    total.totalTokens += e.totalTokens;
     total.ms += e.ms;
     if (!e.ok) total.failed += 1;
 
     const pk = e.memberId;
-    const p = byPartner.get(pk) ?? { memberId: pk, name: e.partnerName || pk, count: 0, chars: 0, ms: 0, failed: 0 };
+    const p = byPartner.get(pk) ?? { memberId: pk, name: e.partnerName || pk, count: 0, chars: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, ms: 0, failed: 0 };
     p.count += 1;
     p.chars += e.chars;
+    p.inputTokens += e.inputTokens;
+    p.outputTokens += e.outputTokens;
+    p.totalTokens += e.totalTokens;
     p.ms += e.ms;
     if (!e.ok) p.failed += 1;
     if (!p.name && e.partnerName) p.name = e.partnerName;
     byPartner.set(pk, p);
 
     const sk = e.source;
-    const s = bySource.get(sk) ?? { source: sk, count: 0, chars: 0, ms: 0, failed: 0 };
+    const s = bySource.get(sk) ?? { source: sk, count: 0, chars: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, ms: 0, failed: 0 };
     s.count += 1;
     s.chars += e.chars;
+    s.inputTokens += e.inputTokens;
+    s.outputTokens += e.outputTokens;
+    s.totalTokens += e.totalTokens;
     s.ms += e.ms;
     if (!e.ok) s.failed += 1;
     bySource.set(sk, s);
@@ -116,6 +130,15 @@ export function summarizeLedger(entries, options = {}) {
 export function formatChars(n) {
   const v = Math.max(0, Number(n) || 0);
   if (v >= 10000) return `${(v / 10000).toFixed(v >= 100000 ? 0 : 1)} 万`;
+  return String(Math.round(v));
+}
+
+/** token 写得像人话（860 / 12.4k / 0.9M）。⛔ 0 显示「—」：那是"没拿到"不是"没用"。 */
+export function formatTokens(n) {
+  const v = Math.max(0, Number(n) || 0);
+  if (v <= 0) return "—";
+  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1000) return `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k`;
   return String(Math.round(v));
 }
 

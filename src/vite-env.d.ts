@@ -1414,6 +1414,8 @@ interface Window {
     harnessTeamLedger(groupId: string, days: number): Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>;
     /* 团队模式：停止某个伙伴当前这一回合 */
     harnessTeamStop(input: Record<string, unknown>): Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>;
+    /* 团队模式：取该会话最近一轮真实 token */
+    harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
 /* ═══ gen:end ═══ */
 
 

@@ -13,7 +13,7 @@
  */
 import { useMemo, useRef, useState } from "react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
-import type { LedgerSummary } from "./02-team-store";
+import type { LedgerSummary, LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { TeamCard } from "./05-team-card";
@@ -44,6 +44,8 @@ type Props = {
   onLoadLedger: (days: number) => void;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
   onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
+  live?: LiveRun[];
   /** 重命名（主进程是唯一落点；这里只负责发与显示错误） */
   onRename?: (name: string) => Promise<{ ok: boolean; error?: string }>;
   /** 正在跑活的伙伴（id）：显示「正在处理…」，⛔ 不是消息 */
@@ -66,7 +68,7 @@ export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles,
   onDeleteGroup, onRename, onSend,
-  onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger, onStopPartner,
+  onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger, onStopPartner, live,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
@@ -285,11 +287,7 @@ export function TeamGroupView({
                           {isBot && running && <em className="team-msg__role is-live">处理中</em>}
                           <time>{fmtTime(row.at)}</time>
                         </div>
-                        {row.mentions.length > 0 && (
-                          <div className="team-msg__mentions">
-                            {row.mentions.map((id) => <em key={id}>@{nameOf(id)}</em>)}
-                          </div>
-                        )}
+
                         {row.kind === "card" ? (
                           <pre className="team-msg__card">{JSON.stringify(row.card, null, 2)}</pre>
                         ) : (
@@ -297,7 +295,12 @@ export function TeamGroupView({
                              群视图也得剥 —— 口径只有一处（src/lib/voice-script.mjs）。
                              剥完再交给卡片渲染器（表格/代码/列表给真正的元素，⛔ 不拼 HTML）。 */
                           <>
-                            <TeamCard text={stripVoiceScript(row.text)} />
+                            <TeamCard
+                              text={stripVoiceScript(row.text)}
+                              prefix={row.mentions.length
+                                ? row.mentions.map((id) => <em key={id} className="team-msg__mention">@{nameOf(id)}</em>)
+                                : undefined}
+                            />
                             {(row.continued ?? []).map((extra) => (
                               <div key={extra.key} className="team-msg__more">
                                 <TeamCard text={stripVoiceScript(extra.text)} />
@@ -321,6 +324,32 @@ export function TeamGroupView({
                   );
                 })
               )}
+
+              {/* 流式卡（飞书 §2.4）：**同一个 threadId 只更新这一张**，不新建消息。
+                  ⛔ 正式消息落盘时这张卡会被撤掉（store 里按 threadId 删），所以不会重复。 */}
+              {(live ?? []).map((run) => (
+                <article
+                  key={`live:${run.threadId}`}
+                  className={`team-msg is-bot is-live${run.status === "failed" ? " is-failed" : ""}`}
+                  data-live={run.threadId}
+                >
+                  <span className="team-msg__avatar">{run.name.slice(0, 1)}</span>
+                  <div className="team-msg__body">
+                    <div className="team-msg__meta">
+                      <strong>{run.name}</strong>
+                      <em className="team-msg__role is-live">
+                        {run.status === "running" ? "正在写" : run.status === "failed" ? "中断" : "完成"}
+                      </em>
+                      <time>{fmtTime(run.startedAt)}</time>
+                    </div>
+                    {String(run.text ?? "").trim()
+                      ? <TeamCard text={stripVoiceScript(String(run.text).slice(0, 40000))} />
+                      : <p className="team-msg__thinking">正在思考…</p>}
+                    {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
+                    {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
+                  </div>
+                </article>
+              ))}
             </div>
 
             {(busy?.length ?? 0) > 0 && (

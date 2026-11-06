@@ -1030,6 +1030,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamLedger: (groupId: string, days: number) => __ipc("harness-team:ledger", 2, [groupId, days]),
   /* 团队模式：停止某个伙伴当前这一回合 */
   harnessTeamStop: (input: Record<string, unknown>) => __ipc("harness-team:stop", 1, [input]),
+  /* 团队模式：取该会话最近一轮真实 token */
+  harnessTeamThreadUsage: (threadId: string) => __ipc("harness-team:thread-usage", 1, [threadId]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

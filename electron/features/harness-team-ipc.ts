@@ -70,6 +70,7 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:log-usage",
   "harness-team:ledger",
   "harness-team:stop",
+  "harness-team:thread-usage",
 ];
 
 /** 配置文件路径（惰性：每次调用现取，⛔ 不在模块体缓存）。 */
@@ -391,6 +392,15 @@ export const harnessTeamFeature = defineFeature<null>({
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err), reason: "engine" };
       }
+    });
+
+    /* 某个委派会话最近一轮的**真实 token**（引擎 `thread/tokenUsage/updated` 的 last 桶）。
+       ⛔ 拿不到就返回 null —— 别返回 0 冒充"用了 0 token"（那是两种完全不同的含义）。 */
+    ipcHost.handle("harness-team:thread-usage", (_event, threadId: string) => {
+      const id = String(threadId ?? "").trim();
+      if (!id) return { ok: false, error: "缺会话 id" };
+      const tokens = delegateRegistry?.tokensOf(id) ?? null;
+      return { ok: Boolean(tokens), tokens };
     });
 
     /* 解散群（11-06 补）：只删群与它的**群消息日志**，⛔ 不碰任何子会话 ——

@@ -82,6 +82,8 @@ export class DelegateRegistry {
   private saveTimer: NodeJS.Timeout | null = null;
   /** 运行中的委派线程 → threadId（流式文本累积用；跑完即清） */
   private activeThreads = new Set<string>();
+  /** 每个委派会话**最近一轮**的真实 token（引擎推的 last 桶）；键=threadId */
+  private tokensByThread: Record<string, { input: number; cached: number; output: number; total: number; at: number }> = {};
 
   constructor(private readonly file: string) {}
 
@@ -173,7 +175,35 @@ export class DelegateRegistry {
    *  与 TeamRunStore.handleEngineEvent 同套路 —— 只认「正在跑的委派线程」，其它会话的增量一律不碰。
    *  返回要广播的增量（广播由调用方做，保持与 team-runs 一致的分工）。 */
   handleEngineEvent(event: any): { threadId: string; text: string; chars: number } | null {
-    if (!event || event.kind !== "notification" || event.method !== "item/agentMessage/delta") return null;
+    if (!event || event.kind !== "notification") return null;
+
+    /* 真实 token：引擎每轮推 `thread/tokenUsage/updated`，`last` 桶就是**本轮增量**。
+       ⛔ 与 `src/lib/usage-bucket.ts` 同一取值顺序（last / lastTokenUsage / last_token_usage）
+       —— 引擎几个版本字段名不同，别只认一个。 */
+    if (event.method === "thread/tokenUsage/updated") {
+      const usageThreadId = String(event.params?.threadId ?? "");
+      if (!usageThreadId || !this.map[usageThreadId]) return null;
+      const raw = event.params?.tokenUsage;
+      const bucket = raw?.last ?? raw?.lastTokenUsage ?? raw?.last_token_usage ?? raw?.info?.last_token_usage ?? null;
+      if (!bucket) return null;
+      const num = (...keys: string[]) => {
+        for (const k of keys) {
+          const v = Number(bucket?.[k]);
+          if (Number.isFinite(v)) return v;
+        }
+        return 0;
+      };
+      this.tokensByThread[usageThreadId] = {
+        input: num("inputTokens", "input_tokens", "input"),
+        cached: num("cachedInputTokens", "cached_input_tokens", "cached"),
+        output: num("outputTokens", "output_tokens", "output"),
+        total: num("totalTokens", "total_tokens", "total"),
+        at: Date.now(),
+      };
+      return null;
+    }
+
+    if (event.method !== "item/agentMessage/delta") return null;
     const threadId = String(event.params?.threadId ?? "");
     if (!threadId || !this.activeThreads.has(threadId)) return null;
     const text = String(event.params?.delta ?? "");
@@ -189,6 +219,11 @@ export class DelegateRegistry {
     await this.load();
     const record = this.map[threadId];
     if (record) record.output = output;
+  }
+
+  /** 某个委派会话最近一轮的真实 token（⛔ 没收到就返回 null，别返回 0 冒充"用了 0"） */
+  tokensOf(threadId: string): { input: number; cached: number; output: number; total: number; at: number } | null {
+    return this.tokensByThread[String(threadId ?? "")] ?? null;
   }
 
   /** 该线程当前是否正在被委派执行（渲染层兜底判定用） */

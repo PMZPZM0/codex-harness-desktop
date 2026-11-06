@@ -20,7 +20,7 @@ import type { MemoryNote, MemoryNoteType, TeamFile, TeamGroup } from "./01-team-
 import { LOCAL_ACTOR_ID } from "./02-team-store";
 import { BarChart3, BookOpen, FolderOpen, GitBranch, Puzzle, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
-import { formatChars, formatMs, LEDGER_SOURCE_LABELS } from "../../lib/team-ledger.mjs";
+import { formatChars, formatMs, formatTokens, LEDGER_SOURCE_LABELS } from "../../lib/team-ledger.mjs";
 import type { LedgerSummary } from "./02-team-store";
 import { AppSelect } from "../../components/AppSelect";
 
@@ -569,7 +569,7 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         </h3>
         <p className="team-settings__hint">
           按<strong>（伙伴、触发来源）</strong>两个维度拆 —— 这是「一开始就记、事后补不回来」的那张表。
-          记的是<strong>字符数与耗时</strong>（引擎没回 token 用量），别当账单看。
+          <strong>token 是引擎报的真实值</strong>（每轮 `last` 桶）；没拿到时显示「—」，⛔ 不拿字符数冒充。
         </p>
         <div className="team-settings__inline-row">
           <span className="team-settings__select">
@@ -589,19 +589,23 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
           <>
             <div className="team-settings__stats">
               <span><strong>{ledger.total.count}</strong> 次派活</span>
-              <span><strong>{formatChars(ledger.total.chars)}</strong> 字</span>
+              <span><strong>{formatTokens(ledger.total.totalTokens)}</strong> tok</span>
+              <span>入 <strong>{formatTokens(ledger.total.inputTokens)}</strong> · 出 <strong>{formatTokens(ledger.total.outputTokens)}</strong></span>
               <span>均 <strong>{formatMs(ledger.total.avgMs)}</strong></span>
               {ledger.total.failed > 0 && <span className="is-warn"><strong>{ledger.total.failed}</strong> 次失败</span>}
             </div>
             <ul className="team-settings__usage">
               {ledger.byPartner.map((p) => {
-                const max = Math.max(1, ledger.byPartner[0]?.chars ?? 1);
+                /* 条形按 token 排（更接近真实成本）；老账本没有 token 时退回字数 */
+                const useTok = ledger.total.totalTokens > 0;
+                const basis = (x: typeof p) => (useTok ? x.totalTokens : x.chars);
+                const max = Math.max(1, basis(ledger.byPartner[0]));
                 return (
                   <li key={p.memberId}>
                     <span className="team-settings__usage-name">{p.name}</span>
-                    <span className="team-settings__usage-bar"><i style={{ width: `${Math.max(4, Math.round((p.chars / max) * 100))}%` }} /></span>
-                    <span className="team-settings__usage-num">
-                      {p.count} 次 · {formatChars(p.chars)} 字 · {formatMs(p.avgMs)}
+                    <span className="team-settings__usage-bar"><i style={{ width: `${Math.max(4, Math.round((basis(p) / max) * 100))}%` }} /></span>
+                    <span className="team-settings__usage-num" title={`${p.count} 次 · ${formatChars(p.chars)} 字 · ${formatMs(p.avgMs)}`}>
+                      {p.count} 次 · {formatTokens(p.totalTokens)} tok · {formatMs(p.avgMs)}
                     </span>
                   </li>
                 );

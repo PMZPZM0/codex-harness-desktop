@@ -24,8 +24,22 @@ type ListResult = {
 
 type MutationResult = { ok: boolean; group?: TeamGroup; error?: string; changed?: boolean; limit?: number };
 
+/**
+ * 一条**流式**的伙伴输出（飞书 §2.4「按 cardId 原地刷新」的等价物）。
+ * ⛔ key = 派活会话的 threadId：同一次运行的所有增量都更新**同一张卡**，不新建消息。
+ */
+export type LiveRun = {
+  threadId: string;
+  memberId: string;
+  name: string;
+  text: string;
+  startedAt: number;
+  status: "running" | "done" | "failed";
+  error?: string;
+};
+
 /** 与 `src/lib/team-ledger.mjs` 的 summarizeLedger 返回一致（只声明界面用到的字段） */
-type LedgerBucket = { count: number; chars: number; ms: number; failed: number; avgMs: number };
+type LedgerBucket = { count: number; chars: number; inputTokens: number; outputTokens: number; totalTokens: number; ms: number; failed: number; avgMs: number };
 export type LedgerSummary = {
   window: { since: number; days: number; groupId: string };
   total: LedgerBucket & { partners: number };
@@ -65,10 +79,123 @@ export function useTeamGroups() {
   const [dispatchError, setDispatchError] = useState("");
   /** 当前群的用量汇总（按 (伙伴, 来源) 拆；豆包 §2.④ 口径） */
   const [ledger, setLedger] = useState<LedgerSummary | null>(null);
+  /** 正在流式输出的伙伴（按群 → threadId）—— 卡片原地刷新，⛔ 不新建消息 */
+  const [liveByGroup, setLiveByGroup] = useState<Record<string, Record<string, LiveRun>>>({});
   /** ⛔ 卸载后不许再 setState（派活可能跑几分钟） */
   const alive = useRef(true);
   /** 伙伴 → 它最近一次的子会话 id（停止运行要用；也从群日志兜底，见 threadOf） */
   const threadRef = useRef<Record<string, string>>({});
+
+  /* ── 卡片原地流式（飞书 §2.4 `cardId` 订阅的等价物）──────────────────────────
+     真相源是主进程已经广播的 `delegate-run`（started/delta/finished）——它带 threadId，
+     ⇒ 同一次运行的所有增量更新**同一张卡**，⛔ 不新建消息。
+     事件是全局的（别的群/主会话的委派也会来）⇒ 只认"本群正在跑的那个名字"。 */
+  const groupsRef = useRef<TeamGroup[]>([]);
+  groupsRef.current = groups;
+  const busyRef = useRef<Record<string, string[]>>({});
+  busyRef.current = busyByGroup;
+  const liveRef = useRef<Record<string, Record<string, LiveRun>>>({});
+  liveRef.current = liveByGroup;
+
+  /**
+   * 委派事件里的 record → 本群哪个成员（+ 哪个群）。
+   * ⛔⛔ 不能只看 record.name：实测它是**目标显示名**（「软件开发专家团」），
+   *   而群成员名是 catalog 里的短名（「承枢」）——按名字比永远不中，流式卡就一直不出现。
+   * 匹配顺序：目标 key（宽松包含）→ 名字 → **该群此刻只有一个人在跑**（单忙兜底）。
+   */
+  const resolveMember = (record: Record<string, unknown>) => {
+    const key = String(record?.targetKey ?? "").trim();
+    const nm = String(record?.name ?? "").trim();
+    const looseKey = (a: string) => {
+      const b = key;
+      if (!a || !b) return false;
+      return a === b || a.includes(b) || b.includes(a);
+    };
+    for (const g of groupsRef.current) {
+      const busyIds = busyRef.current[g.id] ?? [];
+      if (!busyIds.length) continue; // 这个群此刻没人跑 ⇒ 不可能属于它
+      const bots = g.members.filter((m) => m.kind === "bot");
+      const byKey = key ? bots.find((m) => looseKey(m.targetKey)) : undefined;
+      const byName = nm ? bots.find((m) => m.name === nm) : undefined;
+      const single = busyIds.length === 1 ? bots.find((m) => m.id === busyIds[0]) : undefined;
+      const hit = byKey ?? byName ?? single;
+      if (hit && busyIds.includes(hit.id)) return { gid: g.id, memberId: hit.id, memberName: hit.name };
+    }
+    return null;
+  };
+
+  useEffect(() => {
+    const off = window.codex.onHarnessEvent?.((event: Record<string, unknown>) => {
+      if (!event || event.type !== "delegate-run") return;
+      const phase = String(event.phase ?? "");
+      const record = (event.record ?? {}) as Record<string, unknown>;
+      const threadId = String(event.threadId ?? record.threadId ?? "");
+      if (!threadId) return;
+
+      if (phase === "started") {
+        const hit = resolveMember(record);
+        if (!hit) return; // ⛔ 不是本群的人：不在这里画卡（主会话/别的群的委派不该串进来）
+        const { gid, memberId, memberName } = hit;
+        setLiveByGroup((prev) => ({
+          ...prev,
+          [gid]: {
+            ...(prev[gid] ?? {}),
+            [threadId]: {
+              threadId,
+              memberId,
+              name: memberName,
+              text: String(record.output ?? ""),
+              startedAt: Number(record.startedAt ?? 0) || Date.now(),
+              status: "running",
+            },
+          },
+        }));
+        return;
+      }
+
+      const gid = Object.keys(liveRef.current).find((k) => liveRef.current[k]?.[threadId]);
+      if (!gid) return;
+
+      if (phase === "delta") {
+        setLiveByGroup((prev) => {
+          const cur = prev[gid]?.[threadId];
+          if (!cur) return prev;
+          return { ...prev, [gid]: { ...prev[gid], [threadId]: { ...cur, text: cur.text + String(event.text ?? "") } } };
+        });
+        return;
+      }
+
+      if (phase === "finished") {
+        setLiveByGroup((prev) => {
+          const cur = prev[gid]?.[threadId];
+          if (!cur) return prev;
+          return {
+            ...prev,
+            [gid]: {
+              ...prev[gid],
+              [threadId]: {
+                ...cur,
+                status: event.status === "failed" ? "failed" : "done",
+                error: event.error ? String(event.error) : undefined,
+                text: String(event.output ?? cur.text),
+              },
+            },
+          };
+        });
+        /* 完成态留 500ms 再摘：正式消息落盘有几十毫秒延迟，立刻删会闪一下空白 */
+        window.setTimeout(() => {
+          if (!alive.current) return;
+          setLiveByGroup((prev) => {
+            const bucket = { ...(prev[gid] ?? {}) };
+            delete bucket[threadId];
+            return { ...prev, [gid]: bucket };
+          });
+        }, 500);
+      }
+    });
+    return () => { try { off?.(); } catch { /* 老版本桥没有这个订阅 */ } };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -201,13 +328,20 @@ export function useTeamGroups() {
         /* 递归触发的失败可能在 dispatch 返回**之后**才到 ⇒ 直接更新提示条，别丢 */
         setDispatchError(failed.map((f) => `${f.name}：${f.error}`).join("；"));
       };
-      const busyAdd = (id: string) =>
+      /* ⛔ 必须**先改 ref 再 setState**：`delegate-run started` 可能在这个 state 生效前就到达，
+         那时事件处理靠 ref 判断"这个名字属于哪个群"，ref 没更新 ⇒ 这张卡不出现（静默无流式）。 */
+      const busyAdd = (id: string) => {
+        const list = busyRef.current[group.id] ?? [];
+        if (!list.includes(id)) busyRef.current = { ...busyRef.current, [group.id]: [...list, id] };
         setBusyByGroup((prev) => {
-          const list = prev[group.id] ?? [];
-          return list.includes(id) ? prev : { ...prev, [group.id]: [...list, id] };
+          const cur = prev[group.id] ?? [];
+          return cur.includes(id) ? prev : { ...prev, [group.id]: [...cur, id] };
         });
-      const busyRemove = (id: string) =>
+      };
+      const busyRemove = (id: string) => {
+        busyRef.current = { ...busyRef.current, [group.id]: (busyRef.current[group.id] ?? []).filter((x) => x !== id) };
         setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((x) => x !== id) }));
+      };
 
       const runOne = async (
         partner: TeamGroup["members"][number],
@@ -224,6 +358,8 @@ export function useTeamGroups() {
         let okFlag = false;
         let errMsg = "";
         let output = "";
+        /* 真实 token（引擎 last 桶）：拿不到就 0，⛔ 不编造 */
+        let tokens: { input: number; output: number; total: number } | null = null;
         try {
           const ctx = groupContextBlock(group, { forMemberId: partner.id });
           const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
@@ -256,6 +392,21 @@ export function useTeamGroups() {
           } else {
             okFlag = true;
           }
+          /* 取本次运行的**真实 token**（主进程登记表里存着引擎推的 last 桶）。
+             ⛔ 引擎是异步推的，可能还没到 ⇒ 拿不到就先记 0（账本里显示「—」而不是假数字）。 */
+          try {
+            const usage = await window.codex.harnessTeamThreadUsage(res.threadId);
+            if (usage?.ok && usage.tokens) {
+              tokens = { input: usage.tokens.input, output: usage.tokens.output, total: usage.tokens.total };
+            }
+          } catch { /* 取不到不影响派活 */ }
+
+          /* 正式消息已落盘 ⇒ 这张流式卡可以撤了（不留 500ms 的重复） */
+          setLiveByGroup((prev) => {
+            const bucket = { ...(prev[group.id] ?? {}) };
+            delete bucket[threadId];
+            return { ...prev, [group.id]: bucket };
+          });
           /* 用量口径：输入（注入块 + 原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
           chars = query.length + output.length;
 
@@ -289,6 +440,9 @@ export function useTeamGroups() {
             source,
             threadId,
             chars,
+            inputTokens: tokens?.input ?? 0,
+            outputTokens: tokens?.output ?? 0,
+            totalTokens: tokens?.total ?? 0,
             ms: Date.now() - startedAt,
             ok: okFlag,
             error: errMsg,
@@ -438,7 +592,7 @@ export function useTeamGroups() {
 
   return {
     groups, issues, blockers, limit, loading, error,
-    rowsByGroup, busyByGroup, dispatchError, ledger,
+    rowsByGroup, busyByGroup, liveByGroup, dispatchError, ledger,
     refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
     setMemory, addNote, removeNote, saveFiles, saveMenu, setManagerOf,
     loadMessages, appendMessage, dispatch, loadLedger, stopPartner,

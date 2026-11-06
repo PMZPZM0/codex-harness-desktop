@@ -767,3 +767,44 @@
   cursor: pointer;
 }
 .team-group__member-stop:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
+
+/* ── 流式卡（11-06：飞书 §2.4 `cardId` 原地刷新的等价物）───────────────────────
+   同一次运行只更新这一张卡：边框走强调色 + 末尾一个方块光标，能看出"它还在写"。
+   ⛔ 不做骨架屏/假打字机：文本就是引擎真实增量（主进程 delegate-run delta）。 */
+.team-msg.is-live .team-msg__body {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line-soft));
+  background: color-mix(in srgb, var(--accent-soft) 45%, var(--panel));
+}
+.team-msg.is-live.is-failed .team-msg__body {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--line-soft));
+}
+.team-msg__thinking { margin: 0; color: var(--faint); font-size: 12.5px; }
+.team-msg__caret {
+  display: inline-block;
+  width: 7px;
+  height: 13px;
+  margin-top: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: team-caret 1s steps(2, start) infinite;
+}
+@keyframes team-caret {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .team-msg__caret { animation: none; opacity: 0.6; }
+}
+
+/* @ 标记进正文开头（用户：「艾特放这个位置多难看，放消息前面啊」）
+   ⛔ 不再是独立一行的胶囊：与第一段同排，浅底 + 强调色，读完就是"对谁说的 + 说了什么"。 */
+.team-card__prefix { margin-right: 5px; }
+.team-msg__mention {
+  padding: 0 5px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.92em;
+  font-style: normal;
+  white-space: nowrap;
+}

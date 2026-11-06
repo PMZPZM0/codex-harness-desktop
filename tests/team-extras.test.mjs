@@ -10,6 +10,7 @@ import {
   appendLedger,
   formatChars,
   formatMs,
+  formatTokens,
   normalizeLedgerEntry,
   summarizeLedger,
 } from "../src/lib/team-ledger.mjs";
@@ -209,4 +210,36 @@ test("纯文本预览：表格摊平、长度截断", () => {
   assert.ok(plain.includes("a"));
   assert.ok(plain.length <= 21, `截断后长度异常：${plain.length}`);
   assert.ok(cardToPlain("x".repeat(300), 50).endsWith("…"));
+});
+
+/* ── 真实 token（11-06 用户要求「成本账本接真实 token」） ── */
+
+test("账本：token 三个字段能存能汇总；没拿到就是 0（⛔ 不拿字符数冒充）", () => {
+  const e = normalizeLedgerEntry({ memberId: "a", inputTokens: 1200, outputTokens: 340, totalTokens: 1540 });
+  assert.equal(e.inputTokens, 1200);
+  assert.equal(e.outputTokens, 340);
+  assert.equal(e.totalTokens, 1540);
+
+  const bare = normalizeLedgerEntry({ memberId: "a" });
+  assert.equal(bare.totalTokens, 0, "没给就是 0");
+
+  const s = summarizeLedger(
+    [
+      { memberId: "a", at: 100, totalTokens: 1000, inputTokens: 800, outputTokens: 200 },
+      { memberId: "b", at: 100, totalTokens: 500, inputTokens: 400, outputTokens: 100 },
+    ],
+    { days: 0, nowMs: 200 },
+  );
+  assert.equal(s.total.totalTokens, 1500);
+  assert.equal(s.total.inputTokens, 1200);
+  assert.equal(s.total.outputTokens, 300);
+  assert.equal(s.byPartner[0].totalTokens, 1000, "按 token 排（a 在前）");
+});
+
+test("token 显示：0 是「—」不是 0（没拿到 ≠ 没用）", () => {
+  assert.equal(formatTokens(0), "—");
+  assert.equal(formatTokens(-5), "—");
+  assert.equal(formatTokens(860), "860");
+  assert.equal(formatTokens(12400), "12k");
+  assert.equal(formatTokens(1250000), "1.3M");
 });

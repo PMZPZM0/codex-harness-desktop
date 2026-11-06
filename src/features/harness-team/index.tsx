@@ -24,7 +24,7 @@ import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 export function TeamModePanel() {
   const {
     groups, issues, blockers, limit, loading, error,
-    rowsByGroup, busyByGroup, dispatchError,
+    rowsByGroup, busyByGroup, liveByGroup, dispatchError,
     create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles, setManagerOf,
     addNote, removeNote, saveMenu, ledger, loadLedger, stopPartner,
     loadMessages, dispatch,
@@ -116,6 +116,7 @@ export function TeamModePanel() {
             group={active}
             rows={rowsByGroup[active.id] ?? []}
             busy={busyByGroup[active.id] ?? []}
+            live={Object.values(liveByGroup[active.id] ?? {})}
             notice={dispatchError}
             issues={issues[active.id]}
             limit={limit}
