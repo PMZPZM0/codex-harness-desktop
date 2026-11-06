@@ -1640,6 +1640,43 @@ html[data-ui-font="large"] .action-content pre {
 }
 .dispatch-children.collapsed { padding-bottom: 0; border-left-color: transparent; }
 
+/* ── 子会话折叠键搬进会话行内（11-06 用户令，截图圈出位置）──────────────────────
+   「把这个子会话展开折叠放到这个会话选项里面，居中小长条展示」+「中间空白没那么多，紧凑一点」。
+   收起时只占行内第二行（14px 药丸），不再在行外多占一整行；展开体仍落在行下面。 */
+.thread-row.has-footer {
+  flex-wrap: wrap;
+  padding-bottom: 1px;
+}
+.thread-row-footer {
+  flex: 0 0 100%;
+  display: flex;
+  justify-content: center;
+  padding: 0 0 3px;
+}
+.thread-child-bar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 96px;
+  max-width: 70%;
+  height: 14px;
+  padding: 0 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  color: var(--faint);
+  font-size: 9.5px;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.thread-child-bar:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
 /* ─────────────────────────────── 选中态改造（09-29 用户）：
    「初始状态下所有选项都无底色，只有用户点击选中的那一项才显示高亮底色，切换选中时底色同步
    移到新选项，其余项恢复无底色（未选中可用文字颜色或边框做弱区分，避免与 hover 态冲突）」。

@@ -1473,6 +1473,15 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (/\.dispatch-children \{[^}]*margin:\s*2px 0 4px 0;/.test(readStyles()) && /\.dispatch-children \{[^}]*padding-left:\s*10px/.test(readStyles()) ? ok : fail)(
         "【156】子会话块与父行名称同列（行内左内距 10px）"
       );
+      /* ⛔ 11-06 用户令（截图）：「把这个子会话展开折叠放到这个会话选项里面，居中小长条展示」
+         +「中间空白没那么多，紧凑一点」—— 单会话行的折叠键走 extras.footer **进到行内**，
+         收起时只在行内多一行 14px 药丸，不再在行外多占一整行。 */
+      (dispatchedRendererSrc.includes("thread-row-footer") && /footer:\s*block\?\.bar/.test(dispatchedRendererSrc) ? ok : fail)(
+        "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
+      );
+      (/\.thread-row\.has-footer\s*\{[^}]*flex-wrap:\s*wrap/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*min-width:\s*96px[^}]*height:\s*14px/.test(readStyles()) ? ok : fail)(
+        "【156】子会话折叠键是行内居中 96×14 小长条（11-06 用户令）"
+      );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }

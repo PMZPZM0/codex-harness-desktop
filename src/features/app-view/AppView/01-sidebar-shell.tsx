@@ -671,23 +671,37 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⛔ 默认**收起**（用户：「默认被调度和专家团会话都折叠状态」）：只显示「↳ 调度会话 · N」头，点开才展开。 */
   const renderDispatchedList = (entries: typeof listThreads) => {
     const { clusters, singles } = clusterSplit(entries);
-    const childrenAfter = (threadId: string) => {
+    const childRowsOf = (children: Array<{ threadId: string }>) => children.map((child) => {
+      const childThread = listThreads.find((t) => t.id === child.threadId);
+      // ⛔ 子会话用聚类渲染：它本身可能就是某个**专家团的主会话**（成员已被顶层剔除，
+      //    走 renderThreadRow 会把那一批成员会话整块漏掉）。
+      return childThread ? <div className="dispatch-child" key={child.threadId}>{renderClusterList([childThread])}</div> : null;
+    });
+    /** 11-06 用户令（截图）：「子会话展开折叠放到会话选项里面，居中小长条」——
+        单会话行的折叠键搬进行内（extras.footer），收起时不再多占一整行；展开体仍在行下面。 */
+    const dispatchInfoOf = (threadId: string) => {
       const children = threadId ? (sourcedChildrenOf[threadId] ?? []) : [];
       if (!children.length) return null;
       const dispatchKey = `dispatch:${threadId}`;
       const collapsed = !expandedDispatchBlocks.has(dispatchKey);
+      const bar = (
+        <button type="button" className="thread-child-bar" title={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
+          <ChevronDown size={10} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
+          <span>子会话 · {children.length}</span>
+        </button>
+      );
+      return { children, collapsed, bar };
+    };
+    const childrenAfter = (threadId: string) => {
+      const info = dispatchInfoOf(threadId);
+      if (!info) return null;
       return (
-        <div className={`dispatch-children ${collapsed ? "collapsed" : "expanded"}`}>
-          <button type="button" className="dispatch-children-label" title={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
-            <ChevronDown size={11} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
-            <CornerDownRight size={11} />子会话 · {children.length}
+        <div className={`dispatch-children ${info.collapsed ? "collapsed" : "expanded"}`}>
+          <button type="button" className="dispatch-children-label" title={info.collapsed ? `展开 ${info.children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(`dispatch:${threadId}`)}>
+            <ChevronDown size={11} className={`conv-section-chevron ${info.collapsed ? "" : "open"}`} />
+            <CornerDownRight size={11} />子会话 · {info.children.length}
           </button>
-          {!collapsed && children.map((child) => {
-            const childThread = listThreads.find((t) => t.id === child.threadId);
-            // ⛔ 子会话用聚类渲染：它本身可能就是某个**专家团的主会话**（成员已被顶层剔除，
-            //    走 renderThreadRow 会把那一批成员会话整块漏掉）。
-            return childThread ? <div className="dispatch-child" key={child.threadId}>{renderClusterList([childThread])}</div> : null;
-          })}
+          {!info.collapsed && childRowsOf(info.children)}
         </div>
       );
     };
@@ -711,7 +725,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             </div>
           );
         })}
-        {singles.map((entry) => (
+        {singles.map((entry) => {
+          const block = dispatchInfoOf(entry.id);
+          return (
           <div className="dispatch-parent" key={entry.id}>
             {/* 10-04 扩展面：**走会话行自带的 extras.actions 插入点**（02-thread-attention-rows
                 里 {extras?.actions} 就在行内部）—— 不另插兄弟节点，那样内容会落到行外面。
@@ -720,11 +736,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔⛔ variant 必须传 **undefined** 而不是 "lead"：该参数会走
                 `variant === "lead" ? leadBadge` 分支 ⇒ 给**每一行**都加上 lead 徽章
                 （02-thread-attention-rows:213）—— 那是行为变更，不是加个插槽。
-                ⛔ 传 threadId 是必需的：行级插槽必须知道自己在哪一行。*/}
-            {renderThreadRow(entry, undefined, { actions: <Slot id="sidebar.thread-row-actions" props={{ threadId: entry.id, thread: entry }} /> })}
-            {childrenAfter(entry.id)}
+                ⛔ 传 threadId 是必需的：行级插槽必须知道自己在哪一行。
+                11-06：子会话折叠键走 extras.footer 进**行内**（居中小长条）；展开体留在行下面。*/}
+            {renderThreadRow(entry, undefined, {
+              actions: <Slot id="sidebar.thread-row-actions" props={{ threadId: entry.id, thread: entry }} />,
+              footer: block?.bar,
+            })}
+            {block && !block.collapsed ? <div className="dispatch-children expanded">{childRowsOf(block.children)}</div> : null}
           </div>
-        ))}
+          );
+        })}
       </>
     );
   };

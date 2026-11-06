@@ -190,7 +190,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
   /** variant="member"：专家团成员会话行（次要层级）。09-14 用户反馈「会话主次明显不对，
    *  主会话右边才亮图标」——成员会话是程序管理的子会话，不给归档/置顶/更多按钮，
    *  宽度留给标题（否则标题被挤成「交易分析专家团…」分不清谁是谁）。样式差异全在 CSS。 */
-  const renderThreadRow = (entry: Thread, variant?: "member" | "lead", extras?: { actions?: ReactNode; badge?: ReactNode }) => {
+  const renderThreadRow = (entry: Thread, variant?: "member" | "lead", extras?: { actions?: ReactNode; badge?: ReactNode; footer?: ReactNode }) => {
     const running = bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = bag.threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
@@ -319,7 +319,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const showRowTime = !running && bag.openingThread !== entry.id;
     return (
     <div
-      className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}${rowColor ? " has-row-color" : ""}`}
+      className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}${rowColor ? " has-row-color" : ""}${extras?.footer ? " has-footer" : ""}`}
       key={entry.id}
       data-thread-id={entry.id}
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
@@ -395,6 +395,10 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
           </div>
         </>, document.body)}
       </div>
+      {/* 11-06 用户令（截图）：「子会话展开折叠放到会话选项里面，居中小长条」——
+          extras.footer 是行内第二行（子会话折叠键），让收起状态不再多占一整行。
+          ⛔ 必须在 `.thread-actions` **外面**：放里面会被当成操作键排在同一行。 */}
+      {extras?.footer && <div className="thread-row-footer">{extras.footer}</div>}
     </div>
   );
   };
