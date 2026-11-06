@@ -1,12 +1,12 @@
 /**
  * 团队模式 · 群视图（P0）
  *
- * 结构照飞书群：群头（成员头像行）→ 消息流 → 输入框（@ 伙伴）。
+ * 结构照飞书群：群头（群名可改 + 成员头像行）→ 消息流 → 输入框（@ 伙伴）。
  * ⛔ 消息流只渲染**投影**（threadId + itemId），真身仍在各伙伴的原子会话；
  *    ⛔ 一条假消息都不造 —— 派活失败时这里什么都不加，错误走上面那条提示。
  */
 import { useMemo, useState } from "react";
-import type { GroupMessageRow, TeamGroup } from "./01-team-types";
+import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 
@@ -18,9 +18,12 @@ type Props = {
   onAddPartner: (partner: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
   onRemovePartner: (partnerId: string) => Promise<{ ok: boolean; error?: string }>;
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
-  onSetGuard: (guard: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
+  onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
   /** 解散群（只删群与群日志；伙伴的子会话不动） */
   onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
+  /** 重命名（主进程是唯一落点；这里只负责发与显示错误） */
+  onRename?: (name: string) => Promise<{ ok: boolean; error?: string }>;
   /** 正在跑活的伙伴（id）：显示「正在处理…」，⛔ 不是消息 */
   busy?: string[];
   /** 上次派活的失败说明（⛔ 与消息流分开） */
@@ -35,7 +38,7 @@ function fmtTime(at: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddPartner, onRemovePartner, onMute, onSetGuard, onDeleteGroup, onSend }: Props) {
+export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddPartner, onRemovePartner, onMute, onSetMemory, onSetFiles, onDeleteGroup, onRename, onSend }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
@@ -49,6 +52,22 @@ export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddP
 
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
+  /** 群名内联编辑（⛔ 不用 window.prompt：原生弹窗在这个壳里体验差且样式不可控） */
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const [nameError, setNameError] = useState("");
+  const [renaming, setRenaming] = useState(false);
+
+  const saveName = async () => {
+    const next = draftName.trim();
+    if (!next || next === group.name) { setEditingName(false); setNameError(""); return; }
+    setRenaming(true);
+    const r = await onRename?.(next);
+    setRenaming(false);
+    if (r && !r.ok) { setNameError(r.error || "改名失败"); return; }
+    setNameError("");
+    setEditingName(false);
+  };
 
   const send = async () => {
     const body = text.trim();
@@ -71,7 +90,41 @@ export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddP
     <div className="team-group">
       <header className="team-group__head">
         <div className="team-group__title">
-          <h2>{group.name}</h2>
+          <div className="team-group__title-row">
+          {editingName ? (
+            <>
+              <input
+                className="team-group__rename-input"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") { e.preventDefault(); void saveName(); }
+                  if (e.key === "Escape") { e.stopPropagation(); setEditingName(false); setNameError(""); }
+                }}
+                aria-label="群名"
+                maxLength={40}
+                autoFocus
+              />
+              <button type="button" className="team-group__settings-btn" onClick={() => void saveName()} disabled={renaming}>保存</button>
+              <button type="button" className="team-group__settings-btn" onClick={() => { setEditingName(false); setNameError(""); }} disabled={renaming}>取消</button>
+            </>
+          ) : (
+            <>
+              <h2>{group.name}</h2>
+              {onRename && (
+                <button
+                  type="button"
+                  className="team-group__rename-btn"
+                  title="重命名这个群"
+                  aria-label="重命名这个群"
+                  onClick={() => { setDraftName(group.name); setNameError(""); setEditingName(true); }}
+                >
+                  改名
+                </button>
+              )}
+            </>
+          )}
+          </div>
           <span className="team-group__sub">{group.members.length} 位成员 · {partners.length} 个伙伴</span>
         </div>
         <div className="team-group__avatars" aria-hidden>
@@ -94,7 +147,8 @@ export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddP
           onAddPartner={onAddPartner}
           onRemovePartner={onRemovePartner}
           onMute={onMute}
-          onSetGuard={onSetGuard}
+          onSetMemory={onSetMemory}
+          onSetFiles={onSetFiles}
           onDeleteGroup={onDeleteGroup}
         />
       ) : (
@@ -102,7 +156,7 @@ export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddP
           <div className="team-group__stream" role="log" aria-live="polite">
             {rows.length === 0 ? (
               <div className="team-group__empty">
-                <p>还没有消息。</p>
+                <p>这个群还没有说过话。</p>
                 <p className="team-group__empty-hint">
                   在下面 @ 一个伙伴派活，它的回复会和这里其他伙伴的按时间排在一起。
                   <br />
@@ -143,6 +197,7 @@ export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddP
               {busy!.map(nameOf).join("、")} 正在处理…
             </div>
           )}
+          {nameError && <p className="team-group__notice" role="status">改名失败：{nameError}</p>}
           {(sendError || notice) && (
             <p className="team-group__notice" role="status">{sendError || notice}</p>
           )}
@@ -179,6 +234,14 @@ export function TeamGroupView({ group, rows, issues, busy, notice, limit, onAddP
             <div className="team-group__send-row">
               <span className="team-group__hint">
                 {sending ? "正在派活…" : atTargets.length ? `将派给 ${atTargets.map(nameOf).join("、")}` : "先点上面的 @ 选伙伴"}
+                {/* ⛔ 让用户看得见"这次会额外带上什么"：群记忆 / 参考文件是隐式注入的，
+                    不写出来就成了黑箱（用户没法判断伙伴为什么知道那些事）。 */}
+                {(group.memory?.trim() || (group.files?.length ?? 0) > 0) && atTargets.length ? (
+                  <em className="team-group__ctx">
+                    {group.memory?.trim() ? " + 群记忆" : ""}
+                    {(group.files?.length ?? 0) > 0 ? ` + ${group.files.length} 个参考文件` : ""}
+                  </em>
+                ) : null}
               </span>
               <button type="button" onClick={() => void send()} disabled={sending || !text.trim() || !atTargets.length}>发送</button>
             </div>

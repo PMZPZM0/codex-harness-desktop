@@ -61,7 +61,16 @@
   padding: 12px 16px;
   border-bottom: 1px solid var(--line-soft);
 }
-.team-group__title h2 { margin: 0; font-size: 15px; font-weight: 500; }
+.team-group__title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.team-group__title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.team-group__title h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .team-group__sub { font-size: 12px; color: var(--faint); }
 .team-group__avatars { display: flex; gap: -6px; margin-left: auto; }
 .team-group__avatar {
@@ -106,7 +115,17 @@
   font-size: 12px;
 }
 .team-msg.is-bot .team-msg__avatar { background: var(--accent-soft); color: var(--accent); }
-.team-msg__body { min-width: 0; }
+.team-msg__body {
+  min-width: 0;
+  max-width: 720px;
+  /* ⛔ 11-06：加一层轻气泡（原来是裸文本，一屏十几条读起来分不清谁说到哪）
+     ⛔ 用 --panel 而不是白：白底气泡在浅色主题里等于没有边界。 */
+  padding: 7px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.team-msg.is-bot .team-msg__body { background: color-mix(in srgb, var(--accent-soft) 55%, var(--panel)); }
 .team-msg__meta { display: flex; align-items: baseline; gap: 8px; font-size: 12px; }
 .team-msg__meta time { color: var(--faint); font-size: 11px; }
 .team-msg__text { margin: 4px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
@@ -142,10 +161,27 @@
 .team-group__send-row button:disabled { opacity: 0.5; cursor: default; }
 
 /* ── 设置 ── */
-.team-settings { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 18px; }
-.team-settings__block { border: 1px solid var(--line-soft); border-radius: 10px; padding: 14px 16px; }
-.team-settings__block h3 { margin: 0 0 6px; font-size: 13px; font-weight: 500; }
+.team-settings { flex: 1; overflow: auto; padding: 18px 20px 28px; display: flex; flex-direction: column; gap: 14px; }
+/* ⛔ 11-06：区块改成"卡片"（panel 底 + 发丝边），原来是全透明的，一整页看过去没有层次 */
+.team-settings__block {
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  /* ⛔ --panel(#f8f8f7) 与 --bg(#fff) 只差 7 个灰阶，看着像没分区；
+     卡面改用深一档的 --panel-2(#f1f1ef)，卡内输入框仍是 --bg（白）⇒ 两级层次。 */
+  background: var(--panel-2);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent);
+  padding: 14px 16px 16px;
+}
+.team-settings__block h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
 .team-settings__block--warn { border-color: var(--orange); }
+.team-settings__block--danger { border-color: color-mix(in srgb, var(--danger) 45%, var(--line-soft)); }
 .team-settings__count { margin-left: 6px; font-size: 12px; color: var(--faint); font-weight: 400; }
 .team-settings__hint { margin: 0 0 10px; font-size: 12px; color: var(--muted); line-height: 1.7; }
 .team-settings__list { margin: 0 0 10px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
@@ -256,4 +292,87 @@
   color: var(--orange);
   background: transparent;
   border: 1px solid var(--orange);
+}
+
+/* 群名内联编辑（11-06：改名此前只有 store 方法、没有任何入口） */
+.team-group__rename-btn {
+  padding: 2px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 12px;
+  cursor: pointer;
+}
+.team-group__rename-btn:hover { border-color: var(--line); color: var(--text); }
+.team-group__rename-input {
+  width: 200px;
+  max-width: 40vw;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 14px;
+}
+
+/* ── 群记忆 / 群文件（11-06）──────────────────────────────────────────────
+   ⛔ 这两块是**真会生效**的设置（派活时注入），所以视觉上要和"伙伴"同级：
+      不能像以前的空壳护栏那样做成一行开关。 */
+.team-settings__memory {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.team-settings__savebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.team-settings__savebar .team-settings__meta { margin-right: auto; }
+
+.team-settings__file {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--line-soft);
+}
+.team-settings__file:last-child { border-bottom: 0; }
+.team-settings__file-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 0 1 260px; }
+.team-settings__file-main strong { font-size: 13px; font-weight: 500; }
+.team-settings__file-main small {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-settings__file-note {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 12px;
+}
+
+.team-settings__issues { margin: 0; padding-left: 18px; font-size: 12px; line-height: 1.9; color: var(--muted); }
+.team-settings__done { margin: 0; padding: 8px 12px; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-size: 12px; }
+
+/* 发送区：本次会额外带上什么（群记忆 / 参考文件） */
+.team-group__ctx {
+  margin-left: 6px;
+  color: var(--accent);
+  font-size: 11px;
+  font-style: normal;
 }

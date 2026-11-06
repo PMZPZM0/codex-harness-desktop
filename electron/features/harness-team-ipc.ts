@@ -27,9 +27,12 @@ import {
   normalizeGroupMessage,
   projectGroupLog,
   projectGroupMessages,
+  normalizeGroupFile,
   removePartner,
   setPartnerMuted,
   GROUP_MAX_PARTNERS,
+  MAX_GROUP_FILES,
+  MAX_GROUP_MEMORY_CHARS,
   MAX_GROUP_MESSAGES,
 } from "../../src/lib/team-models.mjs";
 
@@ -45,6 +48,8 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:messages",
   "harness-team:append-message",
   "harness-team:delete",
+  "harness-team:set-memory",
+  "harness-team:set-files",
 ];
 
 /** 配置文件路径（惰性：每次调用现取，⛔ 不在模块体缓存）。 */
@@ -116,11 +121,20 @@ export const harnessTeamFeature = defineFeature<null>({
     const ipcHost = ctx.get<IpcHost>("ipc");
     if (!ipcHost) throw new Error("harness-team: 缺少 ipc 服务（宿主未提供）");
 
-    /* 列表：群 + 每个群的一致性问题（设置页直接显示文案，不用自己算） */
+    /* 列表：群 + 两套判据（⛔ 别混用）
+       · issues   = 体检（含"还没有伙伴"这类**建议**）⇒ 设置页里展示给人看
+       · blockers = 结构性硬闸（缺 id / 无成员 / 群主不在表）⇒ 侧栏徽标只认它
+       ⛔ 11-06 修：rail 原来拿 issues.length 判「待处理」，于是**每个新群永久顶着"待处理"**
+         （新群本来就没伙伴），用户看到的是"这功能有问题吧"。 */
     ipcHost.handle("harness-team:list", () => {
       const store = readStore();
       const groups = store.groups;
-      return { groups, issues: groups.map((g) => ({ id: g.id, issues: groupIssues(g) })), limit: GROUP_MAX_PARTNERS };
+      return {
+        groups,
+        issues: groups.map((g) => ({ id: g.id, issues: groupIssues(g) })),
+        blockers: groups.map((g) => ({ id: g.id, issues: createBlockers(g) })),
+        limit: GROUP_MAX_PARTNERS,
+      };
     });
 
     ipcHost.handle("harness-team:create", async (_event, input: Record<string, unknown>) => {
@@ -185,6 +199,29 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, groupId);
       if (!g) return { ok: false, error: "群不存在" };
       const next = createGroup({ ...g, guard: { ...g.guard, ...guard } }) as GroupShape;
+      return saveOne(store, next);
+    });
+
+    /* 群记忆：这个群的共享背景，派活时注入给每个伙伴（豆包 baseline.md 的群级等价物）。
+       ⛔ 上限在主进程截断：渲染层可能传超长文本（粘贴），⛔ 不能靠前端自觉。 */
+    ipcHost.handle("harness-team:set-memory", (_event, groupId: string, text: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const next = createGroup({ ...g, memory: String(text ?? "") }) as GroupShape;
+      return saveOne(store, next);
+    });
+
+    /* 群文件：只存路径 + 说明（⛔ 不搬文件、不读内容）。整组替换语义 —— UI 增删后一次提交，
+       ⛔ 不做 add/remove 两条通道：两条通道会让"并发改同一个群"的合并规则变成猜的。 */
+    ipcHost.handle("harness-team:set-files", (_event, groupId: string, files: unknown) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      if (files != null && !Array.isArray(files)) return { ok: false, error: "文件清单格式不对" };
+      const list = (Array.isArray(files) ? files : []).map(normalizeGroupFile).filter(Boolean);
+      if (list.length > MAX_GROUP_FILES) return { ok: false, error: `最多 ${MAX_GROUP_FILES} 个参考文件` };
+      const next = createGroup({ ...g, files: list }) as GroupShape;
       return saveOne(store, next);
     });
 

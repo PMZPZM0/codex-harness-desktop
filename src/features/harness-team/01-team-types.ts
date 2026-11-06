@@ -24,12 +24,25 @@ export type TeamGuard = {
   respondToEveryone: boolean;
 };
 
+/** 群参考文件：只存路径 + 说明（⛔ 不搬文件：伙伴是真实子会话，自己按路径读） */
+export type TeamFile = {
+  path: string;
+  name: string;
+  note: string;
+  addedBy: string;
+  at: number;
+};
+
 export type TeamGroup = {
   id: string;
   name: string;
   leadId: string;
   members: TeamMember[];
+  /** 旧字段：护栏（跨租户/外部群那套）—— 本应用没有租户概念，界面不再展示，仅保留兼容 */
   guard: TeamGuard;
+  /** 群记忆：这个群的共享背景，每次派活注入给伙伴 */
+  memory: string;
+  files: TeamFile[];
 };
 
 /** 群视图里的一条消息投影（真身在 threadId + itemId）。 */

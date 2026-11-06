@@ -2,12 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   GROUP_MAX_PARTNERS,
+  MAX_GROUP_FILES,
+  MAX_GROUP_MEMORY_CHARS,
   MAX_GROUP_MESSAGES,
   addPartner,
   appendGroupMessage,
   canDelegate,
   createBlockers,
   createGroup,
+  groupContextBlock,
+  normalizeGroupFile,
   displayNameOf,
   groupIssues,
   groupThreadId,
@@ -248,4 +252,51 @@ test("建群闸：只有人的新群必须放行（11-06 修「建群从来没�
   /* ⛔ 成员去重是 createGroup 的职责 ⇒ 这里只剩「群主不在成员表」这一条结构性错误 */
   assert.deepEqual(createBlockers({ id: "grp_x", leadId: "nobody", members: [human("a"), human("a")] }), ["群主不在成员表里"], "结构性错误照拦");
   assert.deepEqual(createBlockers({ id: "", leadId: "a", members: [human("a")] }), ["缺群 id"]);
+});
+
+/* ── 群记忆 / 群文件（11-06 复刻豆包 baseline + 参考资料） ── */
+
+test("群文件：只认路径，名字从路径取，缺 path 一律丢", () => {
+  assert.equal(normalizeGroupFile({}), null);
+  assert.equal(normalizeGroupFile({ path: "  " }), null);
+  const f = normalizeGroupFile({ path: "D:/a/销量.xlsx", note: "  上周  " });
+  assert.equal(f.name, "销量.xlsx");
+  assert.equal(f.note, "上周", "说明要去空白");
+  assert.equal(normalizeGroupFile({ path: "D:/a/b.md", name: "自定义名" }).name, "自定义名");
+});
+
+test("群记忆/群文件：建群时保留，超限截断；老数据没有这两项也不炸", () => {
+  const g = createGroup({
+    id: "g1", name: "n", leadId: "u", members: [human("u")],
+    memory: "x".repeat(MAX_GROUP_MEMORY_CHARS + 50),
+    files: Array.from({ length: MAX_GROUP_FILES + 3 }, (_, i) => ({ path: `D:/f/${i}.md` })),
+  });
+  assert.equal(g.memory.length, MAX_GROUP_MEMORY_CHARS, "群记忆按上限截断");
+  assert.equal(g.files.length, MAX_GROUP_FILES, "文件按上限截断");
+  const legacy = createGroup({ id: "g2", name: "老群", leadId: "u", members: [human("u")] });
+  assert.equal(legacy.memory, "");
+  assert.deepEqual(legacy.files, []);
+});
+
+test("注入块：空群不注入；有记忆/文件时按「标题→记忆→文件」拼，且带路径", () => {
+  const bare = createGroup({ id: "g", name: "空群", leadId: "u", members: [human("u")] });
+  assert.equal(groupContextBlock(bare), "", "没有任何上下文 ⇒ 空串（⛔ 别注入一个空标题）");
+
+  const onlyMemory = createGroup({ id: "g", name: "智慧厨房", leadId: "u", members: [human("u")], memory: "只做门店周报。" });
+  const b1 = groupContextBlock(onlyMemory);
+  assert.ok(b1.startsWith("【群聊上下文 · 智慧厨房】"));
+  assert.ok(b1.includes("只做门店周报。"));
+  assert.ok(!b1.includes("参考文件"));
+
+  const full = createGroup({
+    id: "g", name: "智慧厨房", leadId: "u", members: [human("u")],
+    memory: "只做门店周报。",
+    files: [{ path: "D:/data/销量.xlsx", note: "上周" }, { path: "D:/data/口径.md" }],
+  });
+  const b2 = groupContextBlock(full);
+  assert.ok(b2.includes("参考文件"));
+  assert.ok(b2.includes("D:/data/销量.xlsx（上周）"), "带说明");
+  assert.ok(b2.includes("D:/data/口径.md"), "没说明也列路径");
+  assert.ok(b2.indexOf("只做门店周报。") < b2.indexOf("参考文件"), "记忆在文件之前");
+  assert.ok(b2.length < 6000, "注入块要有界（群记忆 4000 + 文件 20 行）");
 });

@@ -1012,6 +1012,10 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamAppendMessage: (groupId: string, entry: Record<string, unknown>) => __ipc("harness-team:append-message", 2, [groupId, entry]),
   /* 团队模式：解散群（只删群与群日志） */
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
+  /* 团队模式：群记忆 / 群文件 */
+  harnessTeamSetMemory: (groupId: string, text: string) => __ipc("harness-team:set-memory", 2, [groupId, text]),
+  /* 团队模式：群记忆 / 群文件 */
+  harnessTeamSetFiles: (groupId: string, files: unknown) => __ipc("harness-team:set-files", 2, [groupId, files]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

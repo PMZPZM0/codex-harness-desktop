@@ -23,9 +23,9 @@ import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export function TeamModePanel() {
   const {
-    groups, issues, limit, loading, error,
+    groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, dispatchError,
-    create, addPartner, removePartner, mute, setGuard, removeGroup,
+    create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles,
     loadMessages, dispatch,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -84,7 +84,8 @@ export function TeamModePanel() {
                 <span className="team-mode__group-sub">
                   {g.members.filter((m) => m.kind === "bot").length} 伙伴
                   {(rowsByGroup[g.id]?.length ?? 0) > 0 ? ` · ${rowsByGroup[g.id].length} 条` : ""}
-                  {issues[g.id]?.length ? " · 待处理" : ""}
+                  {/* ⛔ 只有**结构性**问题才在侧栏报"待处理"：新群没伙伴是正常的 */}
+                  {blockers[g.id]?.length ? " · 待处理" : ""}
                 </span>
               </button>
             </li>
@@ -117,7 +118,9 @@ export function TeamModePanel() {
             onAddPartner={(p) => addPartner(active.id, p)}
             onRemovePartner={(id) => removePartner(active.id, id)}
             onMute={(id, m) => mute(active.id, id, m)}
-            onSetGuard={(g) => setGuard(active.id, g)}
+            onSetMemory={(text) => setMemory(active.id, text)}
+            onSetFiles={(files) => saveFiles(active.id, files)}
+            onRename={(name) => rename(active.id, name)}
             onDeleteGroup={async () => {
               const r = await removeGroup(active.id);
               if (r.ok) setActiveId("");

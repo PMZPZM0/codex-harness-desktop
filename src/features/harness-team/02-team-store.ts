@@ -11,10 +11,14 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, TeamGroup } from "./01-team-types";
+import { groupContextBlock } from "../../lib/team-models.mjs";
 
 type ListResult = {
   groups: TeamGroup[];
+  /** 体检（含建议类，设置页展示用） */
   issues: { id: string; issues: string[] }[];
+  /** 结构性硬闸（侧栏徽标只认它；缺字段的老主进程 ⇒ 渲染层按"无问题"处理） */
+  blockers?: { id: string; issues: string[] }[];
   limit: number;
 };
 
@@ -34,6 +38,8 @@ export const LOCAL_ACTOR_ID = "local-user";
 export function useTeamGroups() {
   const [groups, setGroups] = useState<TeamGroup[]>([]);
   const [issues, setIssues] = useState<Record<string, string[]>>({});
+  /** 结构性阻断（rail 徽标判据） */
+  const [blockers, setBlockers] = useState<Record<string, string[]>>({});
   const [limit, setLimit] = useState(8);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>("");
@@ -51,6 +57,7 @@ export function useTeamGroups() {
       const res = (await window.codex.harnessTeamList()) as ListResult;
       setGroups(Array.isArray(res?.groups) ? res.groups : []);
       setIssues(Object.fromEntries((res?.issues ?? []).map((i) => [i.id, i.issues])));
+      setBlockers(Object.fromEntries((res?.blockers ?? []).map((i) => [i.id, i.issues])));
       setLimit(Number(res?.limit ?? 8));
       setError("");
     } catch (err) {
@@ -117,6 +124,11 @@ export function useTeamGroups() {
       }
 
       setDispatchError("");
+      /* 注入块：群记忆 + 参考文件路径（豆包 baseline.md 的群级等价物）。
+         ⛔ 只注入给伙伴，**群日志里只存用户原话** —— 否则群里每条消息都顶着一坨背景。 */
+      const ctx = groupContextBlock(group);
+      const query = ctx ? `${ctx}\n\n---\n\n${body}` : body;
+
       /* ① 人的那句话先上屏（真身 = 群日志），这样 @ 谁都能看见自己说了什么。
          ⛔ 存不上就**不发**：否则群里会出现"有回答没有提问"的断头记录。 */
       try {
@@ -135,7 +147,7 @@ export function useTeamGroups() {
             const res = (await window.codex.invokeAgent({
               kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
               name: partner.targetKey,
-              query: body,
+              query,
               /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线（P0b 有意不做），
                  空 origin 在主进程侧等价于"发起方是本地用户"，闸与复用都按这个口径走。 */
               originThreadId: "",
@@ -217,6 +229,18 @@ export function useTeamGroups() {
     return { ok: Boolean(res?.ok), error: res?.error };
   }, []);
 
+  /** 群记忆（落主进程；返回的 group 直接替换本地那份） */
+  const setMemory = useCallback(
+    async (groupId: string, text: string) => apply((await window.codex.harnessTeamSetMemory(groupId, text)) as MutationResult),
+    [apply],
+  );
+
+  /** 群文件（整组替换：UI 增删后一次提交，⛔ 不做并发合并的猜测） */
+  const saveFiles = useCallback(
+    async (groupId: string, files: unknown[]) => apply((await window.codex.harnessTeamSetFiles(groupId, files)) as MutationResult),
+    [apply],
+  );
+
   const setGuard = useCallback(
     async (groupId: string, guard: Record<string, unknown>) =>
       apply((await window.codex.harnessTeamSetGuard(groupId, guard)) as MutationResult),
@@ -224,9 +248,9 @@ export function useTeamGroups() {
   );
 
   return {
-    groups, issues, limit, loading, error,
+    groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, dispatchError,
-    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
+    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup, setMemory, saveFiles,
     loadMessages, appendMessage, dispatch,
   };
 }

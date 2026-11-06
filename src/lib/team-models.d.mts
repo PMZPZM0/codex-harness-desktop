@@ -33,12 +33,24 @@ export interface TeamGuard {
   respondToEveryone: boolean;
 }
 
+/** 群参考文件（只存路径 + 说明，⛔ 不搬文件） */
+export interface GroupFileLite {
+  path: string;
+  name: string;
+  note: string;
+  addedBy: string;
+  at: number;
+}
+
 export interface TeamGroupLite {
   id: string;
   name: string;
   leadId: string;
   members: TeamMemberLite[];
   guard: TeamGuard;
+  /** 群记忆（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
+  memory: string;
+  files: GroupFileLite[];
 }
 
 export interface GroupSourceMessage {
@@ -71,9 +83,13 @@ export interface GroupMessageProjected {
 
 export const GROUP_MAX_PARTNERS: number;
 export const MAX_GROUP_MESSAGES: number;
+export const MAX_GROUP_MEMORY_CHARS: number;
+export const MAX_GROUP_FILES: number;
 export const DEFAULT_GROUP_GUARD: Readonly<TeamGuard>;
 
 export function normalizeMember(entry: unknown): TeamMemberLite | null;
+export function normalizeGroupFile(entry: unknown): GroupFileLite | null;
+export function groupContextBlock(group: TeamGroupLite | unknown): string;
 export function createGroup(input: unknown): TeamGroupLite;
 export function memberIdsOf(group: TeamGroupLite | null | undefined): string[];
 export function partnersOf(group: TeamGroupLite | null | undefined): TeamMemberLite[];

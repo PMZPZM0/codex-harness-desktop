@@ -14,6 +14,14 @@
 /** 一个群最多几个伙伴（飞书有 maxBotNum；我们先给一个固定上限，留成数据便于后续改）。 */
 export const GROUP_MAX_PARTNERS = 8;
 
+/** 群记忆（这个群的共享背景/约定）字符上限。
+ *  ⛔ 有上限不是抠门：这段会**拼进每次派活的 prompt**（豆包 baseline.md 的群级等价物），
+ *    无限长等于每次派活都烧一遍预算。 */
+export const MAX_GROUP_MEMORY_CHARS = 4000;
+
+/** 一个群最多挂多少个参考文件（派活时把路径注入给伙伴）。 */
+export const MAX_GROUP_FILES = 20;
+
 /** 一个群最多保留多少条群消息（P0b）：超了丢最老的 —— 群视图是**投影/索引**，
  *  真身永远在子会话里，截断不会丢任何真实产出。 */
 export const MAX_GROUP_MESSAGES = 400;
@@ -49,6 +57,23 @@ export function normalizeMember(entry) {
   };
 }
 
+/**
+ * 群参考文件：⛔ 只存**路径 + 说明**，不搬文件、不读内容 ——
+ * 伙伴是真实子会话，它们自己能按路径去读盘（⛔ 复制一份会出现"群里的副本早就过期"）。
+ */
+export function normalizeGroupFile(entry) {
+  const path = String(entry?.path ?? "").trim();
+  if (!path) return null;
+  const name = String(entry?.name ?? "").trim() || path.split(/[\\/]/).pop() || path;
+  return {
+    path,
+    name,
+    note: String(entry?.note ?? "").trim(),
+    addedBy: String(entry?.addedBy ?? ""),
+    at: Number(entry?.at ?? 0) || 0,
+  };
+}
+
 /** 建群：成员表去重、护栏补默认值。`leadId` 必须在成员里（否则群主凭空存在）。 */
 export function createGroup(input) {
   const members = (Array.isArray(input?.members) ? input.members : [])
@@ -57,12 +82,19 @@ export function createGroup(input) {
   const seen = new Set();
   const deduped = members.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
   const leadId = String(input?.leadId ?? deduped[0]?.id ?? "");
+  const files = (Array.isArray(input?.files) ? input.files : [])
+    .map(normalizeGroupFile)
+    .filter(Boolean)
+    .slice(0, MAX_GROUP_FILES);
   return {
     id: String(input?.id ?? ""),
     name: String(input?.name ?? "未命名团队"),
     leadId,
     members: deduped,
     guard: { ...DEFAULT_GROUP_GUARD, ...(input?.guard ?? {}) },
+    /* 群记忆：这个群的共享背景（注入每次派活）。⛔ 与人/伙伴的私有记忆分开，别混。 */
+    memory: String(input?.memory ?? "").slice(0, MAX_GROUP_MEMORY_CHARS),
+    files,
   };
 }
 
@@ -142,6 +174,26 @@ export function guardAllows(group, facts = {}) {
   if (!g.allowExternal && facts.isExternal) return { ok: false, reason: "external_blocked" };
   if (!g.respondToEveryone && facts.mentionsEveryone) return { ok: false, reason: "everyone_blocked" };
   return { ok: true };
+}
+
+/**
+ * 群上下文块：派活时拼在用户那句话**前面**注入给伙伴。
+ * ⛔ 这是豆包 `baseline.md (inject: always)` 的群级等价物：群背景 + 参考文件路径。
+ * ⛔ 纯函数，主进程/渲染层/测试共用一份口径 —— ⛔ 别在派活处手拼字符串（两套必然漂）。
+ * 返回空串 = 这个群没有任何上下文可注入。
+ */
+export function groupContextBlock(group) {
+  const g = createGroup(group);
+  const memory = String(g.memory ?? "").trim();
+  const files = Array.isArray(g.files) ? g.files : [];
+  if (!memory && !files.length) return "";
+  const lines = [`【群聊上下文 · ${g.name}】`];
+  if (memory) lines.push(memory);
+  if (files.length) {
+    lines.push("", "参考文件（本机绝对路径；需要时直接读，⛔ 别凭文件名猜内容）：");
+    for (const f of files) lines.push(`- ${f.path}${f.note ? `（${f.note}）` : ""}`);
+  }
+  return lines.join("\n");
 }
 
 /** 成员显示名（找不到就显示 id，⛔ 不编造名字）。 */
