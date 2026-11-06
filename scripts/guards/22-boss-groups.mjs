@@ -753,6 +753,11 @@ if (state) {
   ok(/resolveSelectedGroup\(groups, store\.groupId, threadId\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
     && !/groups\[0\]\?\.id/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
     "⛔ 成员按钮只认**本会话自己的群**，不回落到别的群（回落到 groups[0] 就是串项）");
+  /* ⛔⛔ 11-06 用户实测「群还是切换不了」：弹窗的「点外面关闭」监听在真实鼠标**按下**时
+     把 AppSelect 的 portal 下拉当成外面 ⇒ 先把弹窗关掉、下拉卸载，选项的 click 永远不触发。
+     ⛔ 脚本 `.click()` 不派发 mousedown，这类缺陷在普通探针里是全绿的（本轮实际踩过）。 */
+  ok(/closest\("\.app-select-list"\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
+    "⛔ 群成员弹窗的「点外面关闭」放行 AppSelect 门户下拉（否则真实点击切不了群）");
   /* ⛔⛔ 11-06 用户实测「中枢右上角的切换好像没用，切换了也没有联动变化」：
      原来的判定是 `bossThreadId 命中` **先**、会话里手动选的群**后** ⇒ 在指挥中枢会话里
      下拉怎么选都被绑定的群立刻盖回去（死控件）；refresh 也按同一顺序取 snap，所以内容不联动。 */

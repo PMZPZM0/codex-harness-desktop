@@ -88,6 +88,11 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
       const t = e.target as Node;
       if (btnRef.current?.contains(t)) return;
       if (t instanceof Element && t.closest(".boss-members-pop")) return;
+      /* ⛔⛔ 11-06 用户实测「群还是切换不了」：AppSelect 的下拉列表是 portal 到 body 的，
+         不在 `.boss-members-pop` 里 ⇒ 真实鼠标**按下**时这里先把弹窗关掉、下拉被卸载，
+         选项的 click 永远不触发（脚本 `.click()` 不派发 mousedown，所以探针测不出来）。
+         ⇒ 门户下拉里的按下不算「点外面」。 */
+      if (t instanceof Element && t.closest(".app-select-list")) return;
       setOpen(false);
     };
     window.addEventListener("mousedown", onDown);
