@@ -148,6 +148,11 @@
   align-items: center;
   gap: 6px;
 }
+/* ⛔ 11-06 用户令（截图竖框）：「标签对齐」——有标签的行把中间列定宽，标签在列内**左对齐**
+   ⇒ 不同宽度的「中枢 / 调度 / 测试…」左缘落在同一竖线上（auto 列会让宽标签整体左移）。 */
+.thread-row > button:first-child > .thread-row-title-line.has-tag {
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 1fr);
+}
 .thread-row-name {
   /* 11-05：名称左对齐（与项目名同列），标签在中间格。
      ⛔ `justify-self:start` 会让网格项按内容宽（max-content）排版、越过自己的列宽 ⇒
@@ -159,7 +164,8 @@
   white-space: nowrap;
 }
 .thread-row-tags {
-  justify-self: center;
+  /* 11-06 用户令：「标签对齐」——列内左对齐，各行的标签左缘在同一条竖线上。 */
+  justify-self: start;
   min-width: 0;
   display: inline-flex;
   align-items: center;
@@ -1640,36 +1646,35 @@ html[data-ui-font="large"] .action-content pre {
 }
 .dispatch-children.collapsed { padding-bottom: 0; border-left-color: transparent; }
 
-/* ── 子会话折叠键搬进会话行内（11-06 用户令，截图圈出位置）──────────────────────
-   「把这个子会话展开折叠放到这个会话选项里面，居中小长条展示」+「中间空白没那么多，紧凑一点」。
-   收起时只占行内第二行（14px 药丸），不再在行外多占一整行；展开体仍落在行下面。 */
-.thread-row.has-footer {
-  /* ⛔ 11-06 用户令（截图）：「很细的长条，在这里，**上面不要变动**」——
-     名称那一行保持原样（34px 单行，不压缩、不重新排版），仅在行底部多出一条 12px 细长条。 */
-  flex-wrap: wrap;
-}
+/* ── 子会话折叠键「融入」会话行（11-06 用户令，两轮截图）────────────────────────
+   「这个条还是太粗了，还挤了上面的排版，融入到会话选项里面」——
+   ⛔ 绝对定位在行内底部：**不占布局** ⇒ 行高保持 34px、名称排版完全不动；
+     条只做 9px 高、半透明的细线，hover 才提亮。 */
 .thread-row-footer {
-  flex: 0 0 100%;
+  position: absolute;
+  left: 50%;
+  /* ⛔ 11-06 用户草图：细条**骑在会话选项的下边框上**（一半内、一半外），像输入框的拖拽把手；
+     不再整条塞进行内 —— 行高/上方排版完全不动。 */
+  bottom: -4px;
+  transform: translateX(-50%);
   display: flex;
-  justify-content: center;
-  padding: 0 0 3px;
+  width: 68%;
+  max-width: 164px;
+  height: 9px;
+  z-index: 1;
 }
 .thread-child-bar {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  width: 68%;
-  min-width: 96px;
-  max-width: 164px;
-  height: 12px;
-  padding: 0 8px;
-  border: 1px solid var(--line-soft);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--text) 4%, transparent);
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
   color: var(--faint);
-  font-size: 9px;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
   font-family: inherit;
   transition: color 0.15s ease, background 0.15s ease;

@@ -1479,8 +1479,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (dispatchedRendererSrc.includes("thread-row-footer") && /footer:\s*block\?\.bar/.test(dispatchedRendererSrc) ? ok : fail)(
         "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
       );
-      (/\.thread-row\.has-footer\s*\{[^}]*flex-wrap:\s*wrap/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*68%/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*height:\s*12px/.test(readStyles()) ? ok : fail)(
-        "【156】子会话折叠键是行内居中细长条（68% × 12px，11-06 用户令）"
+      (/\.thread-row-footer\s*\{[^}]*position:\s*absolute[^}]*height:\s*9px/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/.test(readStyles()) ? ok : fail)(
+        "【156】子会话折叠条绝对定位、9px 高（不占布局，名称行不被挤；11-06 用户令「太粗 / 挤排版」）"
       );
       (!/\.thread-row\.has-footer > button/.test(readStyles()) ? ok : fail)(
         "【156】有子会话长条的行**不压缩名称行**（用户令：上面不要变动）"
@@ -1662,8 +1662,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     const cssSrc285 = codeOnly(readStyles());
     const tagsRule = /\.thread-row-tags\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
     const nameRule = /\.thread-row-name\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
-    (/justify-self:\s*center/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
-      "【285】标签在会话选项内居中（名称左 / 标签中 / 尾部留白）"
+    (/justify-self:\s*start/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
+      "【285】标签列内左对齐（11-06 用户令「标签对齐」：各行标签左缘同一竖线）"
+    );
+    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 64px minmax\(0, 1fr\)/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
+      "【285】有标签的行用 64px 定宽标签列（auto 列会让宽标签整体左移，对不齐）"
     );
     (/min-width:\s*0/.test(nameRule) && /max-width:\s*100%/.test(nameRule) && /overflow:\s*hidden/.test(nameRule) && /text-overflow:\s*ellipsis/.test(nameRule) ? ok : fail)(
       "【285】长名字按列宽截断出省略号（max-width:100% + ellipsis），不跨过标签/时间（11-06 用户截图）"

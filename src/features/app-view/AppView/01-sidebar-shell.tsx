@@ -689,7 +689,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
          行外的专家团「子会话 · N」块仍保留文字（那是分组头，带数量有意义）。 */
       const bar = (
         <button type="button" className="thread-child-bar" title={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} aria-label={collapsed ? `展开 ${children.length} 个子会话` : "收起子会话"} onClick={() => toggleDispatchBlock(dispatchKey)}>
-          <ChevronDown size={11} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
+          <ChevronDown size={9} className={`conv-section-chevron ${collapsed ? "" : "open"}`} />
         </button>
       );
       return { children, collapsed, bar };
