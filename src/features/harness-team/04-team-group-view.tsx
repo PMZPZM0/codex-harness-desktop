@@ -39,6 +39,12 @@ type Props = {
   onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
   /** 快捷指令菜单（整份替换） */
   onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
+  onSaveMenuPlacement: (placement: "input" | "float") => Promise<{ ok: boolean; error?: string }>;
+  /** 定时任务（整组替换；nextRunAt 由主进程算） */
+  onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 立刻运行一条定时任务 */
+  onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
   /** 用量汇总 + 拉取 */
   ledger?: LedgerSummary | null;
   onLoadLedger: (days: number) => void;
@@ -68,7 +74,8 @@ export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles,
   onDeleteGroup, onRename, onSend,
-  onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger, onStopPartner, live,
+  onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
+  ledger, onLoadLedger, onStopPartner, live,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
@@ -86,7 +93,20 @@ export function TeamGroupView({
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
   const partners = useMemo(() => group.members.filter((m) => m.kind === "bot"), [group]);
-  const nameOf = (id: string) => group.members.find((m) => m.id === id)?.name ?? id;
+  /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：两种形态共用同一份数据与同一个点击口径 */
+  const menuPlacement = group.menuPlacement ?? "input";
+  const floatMenu = menuPlacement === "float";
+  const pickMenu = (key: string) => {
+    const r = menuPickResult(group.menu ?? [], key);
+    setMenuMsg(r.message);
+    if (r.ok) {
+      setText(r.prompt);
+      composerRef.current?.focus();
+    }
+  };
+  /* 定时任务在群日志里的作者 id 是 `automation`（主进程写入）—— 它不是群成员，
+     但消息不能显示成裸 id「automation」。⛔ 只有这一处映射，别在别处再判断一次。 */
+  const nameOf = (id: string) => (id === "automation" ? "定时任务" : group.members.find((m) => m.id === id)?.name ?? id);
   const memberOf = (id: string) => group.members.find((m) => m.id === id) ?? null;
   const roleOf = (id: string) => memberOf(id)?.targetProfession ?? "";
 
@@ -173,6 +193,7 @@ export function TeamGroupView({
   const ctxParts = [
     group.memory?.trim() ? "群记忆" : "",
     (group.files?.length ?? 0) > 0 ? `${group.files.length} 个参考文件` : "",
+    (group.schedules?.length ?? 0) > 0 ? `${group.schedules.length} 个定时` : "",
   ].filter(Boolean);
 
   return (
@@ -246,6 +267,9 @@ export function TeamGroupView({
           onAddNote={onAddNote}
           onRemoveNote={onRemoveNote}
           onSaveMenu={onSaveMenu}
+          onSaveMenuPlacement={onSaveMenuPlacement}
+          onSaveSchedules={onSaveSchedules}
+          onRunSchedule={onRunSchedule}
           ledger={ledger}
           onLoadLedger={onLoadLedger}
         />
@@ -384,19 +408,11 @@ export function TeamGroupView({
                   </button>
                 ))}
                 {!partners.length && <span className="team-group__atempty">还没有伙伴可 @</span>}
-                {/* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮 */}
-                <TeamMenuButton
-                  items={group.menu ?? []}
-                  disabled={sending}
-                  onPick={(key) => {
-                    const r = menuPickResult(group.menu ?? [], key);
-                    setMenuMsg(r.message);
-                    if (r.ok) {
-                      setText(r.prompt);
-                      composerRef.current?.focus();
-                    }
-                  }}
-                />
+                {/* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
+                    FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */}
+                {!floatMenu && (
+                  <TeamMenuButton items={group.menu ?? []} disabled={sending} placement="input" onPick={pickMenu} />
+                )}
               </div>
               <textarea
                 ref={composerRef}
@@ -471,6 +487,12 @@ export function TeamGroupView({
             <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
           </aside>
         </div>
+      )}
+
+      {/* FLOAT 形态的入口（飞书 `FLOAT`）：浮在群视图右下，⛔ 不进输入区。
+          ⛔ 群设置里不画 —— 那个页面要编辑的正是它，画上去会挡住保存按钮。 */}
+      {floatMenu && !showSettings && (
+        <TeamMenuButton items={group.menu ?? []} disabled={sending} placement="float" onPick={pickMenu} />
       )}
     </div>
   );

@@ -20,6 +20,25 @@ export const MENU_MAX_ITEMS = 12;
 export const MENU_MAX_PROMPT_CHARS = 800;
 
 /**
+ * 菜单的两种展示形态（飞书 `ChatBotMenu` 的 `INPUT_FIRST` / `FLOAT`）：
+ *   · `input` = 贴输入框（默认）：按钮在 `@` 行，面板向上弹；
+ *   · `float` = 悬浮形态：按钮浮在群视图右下，面板是**可滚动浮层**、二级分组横向展开。
+ *       —— 菜单条目多（十几个）时用它：贴输入框的形态会把输入区顶掉一半。
+ */
+export const MENU_PLACEMENTS = Object.freeze(["input", "float"]);
+
+export const MENU_PLACEMENT_LABELS = Object.freeze({
+  input: "贴输入框",
+  float: "悬浮面板",
+});
+
+/** 归一化展示形态：非法/缺省一律 `input`（⛔ 别让坏数据把按钮画到看不见的地方）。 */
+export function normalizeMenuPlacement(value) {
+  const v = String(value ?? "").trim();
+  return MENU_PLACEMENTS.includes(v) ? v : "input";
+}
+
+/**
  * 默认菜单：贴「工作伙伴」场景，不是泛泛的"帮助/关于"。
  * ⛔ 每条 prompt 都写成**可直接派活的完整指令**（含口径要求），
  *    否则点完用户还得自己想怎么说 —— 那就等于没做菜单。

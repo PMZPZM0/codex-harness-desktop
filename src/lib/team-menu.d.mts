@@ -22,6 +22,10 @@ export interface MenuLeaf {
 export const MENU_MAX_DEPTH: number;
 export const MENU_MAX_ITEMS: number;
 export const MENU_MAX_PROMPT_CHARS: number;
+export const MENU_PLACEMENTS: readonly MenuPlacement[];
+export const MENU_PLACEMENT_LABELS: Record<MenuPlacement, string>;
+export type MenuPlacement = "input" | "float";
+export function normalizeMenuPlacement(value: unknown): MenuPlacement;
 export const DEFAULT_GROUP_MENU: readonly MenuItem[];
 export function normalizeMenuItem(entry: unknown, depth?: number): MenuItem | null;
 export function normalizeMenu(items: unknown): MenuItem[];

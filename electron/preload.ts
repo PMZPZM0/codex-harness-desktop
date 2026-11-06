@@ -1024,6 +1024,12 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamRemoveNote: (groupId: string, noteId: string) => __ipc("harness-team:remove-note", 2, [groupId, noteId]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
   harnessTeamSetMenu: (groupId: string, items: unknown) => __ipc("harness-team:set-menu", 2, [groupId, items]),
+  /* 团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
+  harnessTeamSetMenuPlacement: (groupId: string, placement: string) => __ipc("harness-team:set-menu-placement", 2, [groupId, placement]),
+  /* 团队模式：群定时任务（整组替换，nextRunAt 由主进程算） */
+  harnessTeamSetSchedule: (groupId: string, list: unknown) => __ipc("harness-team:set-schedule", 2, [groupId, list]),
+  /* 团队模式：立刻运行一条定时任务 */
+  harnessTeamRunSchedule: (groupId: string, scheduleId: string) => __ipc("harness-team:run-schedule", 2, [groupId, scheduleId]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
   harnessTeamLogUsage: (entry: Record<string, unknown>) => __ipc("harness-team:log-usage", 1, [entry]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */

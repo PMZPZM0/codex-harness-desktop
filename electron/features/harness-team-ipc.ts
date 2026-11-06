@@ -22,6 +22,7 @@ import {
   appendGroupMessage,
   createBlockers,
   createGroup,
+  groupContextBlock,
   groupIssues,
   groupThreadId,
   normalizeGroupMessage,
@@ -38,10 +39,21 @@ import {
   MAX_GROUP_MEMORY_CHARS,
   MAX_GROUP_MESSAGES,
 } from "../../src/lib/team-models.mjs";
-import { normalizeMenu, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
+import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
+import {
+  MAX_GROUP_SCHEDULES,
+  normalizeScheduleEntry,
+  normalizeSchedules,
+  scheduleBlockers,
+} from "../../src/lib/team-schedule.mjs";
 /* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
 import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
+/* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
+   的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
+import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
+import { runDelegatedTask } from "./delegation";
+import { broadcastHarnessEvent } from "./window-bus";
 import {
   appendLedger,
   normalizeLedgerEntry,
@@ -67,6 +79,9 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:add-note",
   "harness-team:remove-note",
   "harness-team:set-menu",
+  "harness-team:set-menu-placement",
+  "harness-team:set-schedule",
+  "harness-team:run-schedule",
   "harness-team:log-usage",
   "harness-team:ledger",
   "harness-team:stop",
@@ -164,6 +179,258 @@ function saveOne(store: StoreShape, next: GroupShape) {
   const merged: StoreShape = { ...store, groups: store.groups.map((g) => (g.id === next.id ? next : g)) };
   writeStore(merged);
   return { ok: true, group: next, issues: groupIssues(next) };
+}
+
+/* ── 读-改-写串行队列（11-06 修的真 bug）──────────────────────────────────────
+   ⛔ 原来的「readStore → 改 → writeStore」在**并发**下会互相覆盖：一次 @ 两个伙伴，
+     两条回复几乎同时回来，各自拿着**同一份旧 store** 整份写回 ⇒ 后写的那次把前一条消息抹掉
+     （群视图里少一条，且看不出来是哪一条）。定时任务一次派给多人时同样会撞。
+   ⇒ 所有"追加消息 / 记账 / 更新任务时刻"都过这条队列：一次只有一个在读写。 */
+let storeChain: Promise<unknown> = Promise.resolve();
+function mutateStore<T>(fn: (store: StoreShape) => { store: StoreShape; out: T }): Promise<T> {
+  const task = storeChain.then(() => {
+    const { store, out } = fn(readStore());
+    writeStore(store);
+    return out;
+  });
+  storeChain = task.catch(() => undefined);
+  return task;
+}
+
+let ledgerChain: Promise<unknown> = Promise.resolve();
+function mutateLedger<T>(fn: (rows: NonNullable<LedgerEntryShape>[]) => { rows: NonNullable<LedgerEntryShape>[]; out: T }): Promise<T> {
+  const task = ledgerChain.then(() => {
+    const { rows, out } = fn(readLedger());
+    writeLedger(rows);
+    return out;
+  });
+  ledgerChain = task.catch(() => undefined);
+  return task;
+}
+
+/** 追加一条群消息（IPC handler 与定时任务**共用这一份**，⛔ 别各写一套时间/归属口径）。 */
+type AppendResult = { ok: boolean; error?: string; rows: ReturnType<typeof projectGroupLog>; entry?: unknown };
+async function appendMessageTo(groupId: string, entry: Record<string, unknown>): Promise<AppendResult> {
+  const gid = String(groupId ?? "");
+  if (!gid) return { ok: false, error: "缺群 id", rows: [] };
+  const at = Number(entry?.at ?? 0) || Date.now();
+  const id = String(entry?.id ?? "").trim() || `msg_${at.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const authorKind = entry?.authorKind === "bot" ? "bot" : "human";
+  /* ⛔ 人的消息挂群自身；伙伴的消息必须带**真实子会话 id**，否则判无效（不造真身） */
+  const threadId = String(entry?.threadId ?? "").trim() || (authorKind === "human" ? groupThreadId(gid) : "");
+  return mutateStore<AppendResult>((store) => {
+    if (!findGroup(store.groups, gid)) return { store, out: { ok: false, error: "群不存在", rows: [] } };
+    const prev = store.messages[gid] ?? [];
+    const next = appendGroupMessage(prev, { ...entry, id, threadId, at, authorKind });
+    const saved = next.find((m) => String(m?.id ?? "") === id) ?? null;
+    if (!saved) return { store, out: { ok: false, error: "消息无效（缺子会话归属）", rows: projectGroupLog(prev) } };
+    return {
+      store: { ...store, messages: { ...store.messages, [gid]: next } },
+      out: { ok: true, entry: saved, rows: projectGroupLog(next) },
+    };
+  });
+}
+
+/** 记一条用量（失败也记：失败同样烧了 token，失败率本身是最该看的指标）。 */
+async function logUsageTo(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }> {
+  const e = normalizeLedgerEntry(entry);
+  if (!e) return { ok: false, error: "用量记录无效（缺伙伴 id）" };
+  const count = await mutateLedger<number>((rows) => {
+    const next = appendLedger(rows, { ...e, at: e.at || Date.now() }) as NonNullable<LedgerEntryShape>[];
+    return { rows: next, out: next.length };
+  });
+  return { ok: true, count };
+}
+
+/** 定时任务在群日志里的作者 id（渲染层据此显示「定时任务」而不是"我"）。 */
+export const AUTOMATION_ACTOR_ID = "automation";
+
+/**
+ * 无人值守派活：把同一句话交给若干个伙伴，各自落子会话 + 群日志 + 账本（`source=automation`）。
+ * ⛔ 与渲染层 `dispatch()` 的差别只在这里刻意不做的三件事（都不是漏了）：
+ *   ① 不做「伙伴之间互相 @」的递归（无人值守再自动互 @ 就是烧钱）；
+ *   ② 不维护渲染层的 busy/流式卡状态（面板没开时也该照跑）；
+ *   ③ 不弹任何提示（失败落 `lastError` + 账本，用户下次打开设置能看到）。
+ */
+async function dispatchGroupText(
+  group: GroupShape,
+  text: string,
+  memberIds: string[],
+  source: "human" | "automation",
+): Promise<{ ok: boolean; sent: number; failed: string[] }> {
+  const picked = group.members.filter((m) => m.kind === "bot" && memberIds.includes(m.id));
+  const usable = picked.filter((m) => !m.muted && m.targetKind && m.targetKey && m.targetKind !== "member" && m.targetKind !== "team");
+  if (!usable.length) {
+    return { ok: false, sent: 0, failed: ["没有可派活的伙伴（未绑定 / 已静音 / 需要团队许可）"] };
+  }
+  const saved = await appendMessageTo(group.id, {
+    authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",
+    authorKind: "human",
+    text,
+    mentions: usable.map((m) => m.id),
+  });
+  if (!saved.ok) return { ok: false, sent: 0, failed: [saved.error || "群消息没存上"] };
+
+  const failed: string[] = [];
+  await Promise.all(usable.map(async (partner) => {
+    const startedAt = Date.now();
+    let chars = 0;
+    let threadId = "";
+    let okFlag = false;
+    let errMsg = "";
+    try {
+      const ctx = groupContextBlock(group, { forMemberId: partner.id });
+      const query = ctx ? `${ctx}\n\n---\n\n${text}` : text;
+      const res = await runDelegatedTask({
+        kind: partner.targetKind as "expert" | "subagent" | "cli",
+        name: partner.targetKey,
+        query,
+        /* ⛔ originThreadId 留空：定时任务没有"发起会话"，空 origin 等价于本地用户发起 */
+        originThreadId: "",
+      });
+      if (!res?.ok || !res?.threadId) {
+        errMsg = res?.error || "派活失败";
+        failed.push(`${partner.name}：${errMsg}`);
+        return;
+      }
+      threadId = res.threadId;
+      const output = String(res.output ?? "").trim();
+      chars = query.length + output.length;
+      const wrote = await appendMessageTo(group.id, {
+        authorId: partner.id,
+        authorKind: "bot",
+        threadId,
+        text: output || "（没有返回文本内容）",
+      });
+      okFlag = Boolean(wrote.ok);
+      if (!wrote.ok) {
+        errMsg = wrote.error || "产出没能写进群聊记录";
+        failed.push(`${partner.name}：${errMsg}`);
+      }
+    } catch (err) {
+      errMsg = err instanceof Error ? err.message : String(err);
+      failed.push(`${partner.name}：${errMsg}`);
+    } finally {
+      const tokens = delegateRegistry?.tokensOf(threadId) ?? null;
+      await logUsageTo({
+        groupId: group.id,
+        groupName: group.name,
+        memberId: partner.id,
+        partnerName: partner.name,
+        source,
+        threadId,
+        chars,
+        inputTokens: tokens?.input ?? 0,
+        outputTokens: tokens?.output ?? 0,
+        totalTokens: tokens?.total ?? 0,
+        ms: Date.now() - startedAt,
+        ok: okFlag,
+        error: errMsg,
+      });
+    }
+  }));
+  return { ok: failed.length < usable.length, sent: usable.length - failed.length, failed };
+}
+
+type ScheduleShape = NonNullable<ReturnType<typeof normalizeScheduleEntry>>;
+
+/** 下一次运行时刻（⛔ 只做"构造入参 + 调引擎"，算术在 scheduler.ts 里）。 */
+function computeScheduleNextRunAt(entry: ScheduleShape, baseMs: number): number | null {
+  const rrule = entry.kind === "once"
+    ? ""
+    : buildRRuleFromInput(entry.kind as "interval" | "daily" | "weekly", entry.timeOfDay, entry.weekdays, 60);
+  const task = {
+    id: entry.id,
+    name: entry.name,
+    prompt: entry.prompt,
+    workspace: "",
+    effort: "",
+    intervalMinutes: entry.kind === "interval" ? 60 : entry.kind === "weekly" ? 10_080 : 1440,
+    enabled: true,
+    nextRunAt: null,
+    kind: entry.kind,
+    timeOfDay: entry.timeOfDay,
+    weekdays: entry.weekdays,
+    rrule: rrule || undefined,
+    scheduleType: entry.scheduleType,
+    scheduledAt: entry.scheduledAt || undefined,
+    createdAt: entry.createdAt || Date.now(),
+  };
+  try {
+    /* ⛔ 取整：引擎的 jitter 会带小数毫秒，落盘里出现 `.9783` 既难看又会让"相等比较"变得脆弱 */
+    const next = computeNextRunAt(task as never, baseMs, entry.lastRunAt);
+    return next === null ? null : Math.round(next);
+  } catch {
+    return null; // 非法 RRULE（老数据）⇒ 不排下次，界面上会显示"下一次 —"
+  }
+}
+
+/** 正在跑的定时任务（`群id:任务id`）：⛔ 同一任务不许叠跑（会同时开两条子会话）。 */
+const runningSchedules = new Set<string>();
+
+/**
+ * 执行一条定时任务：到点 ⇒ 派活 ⇒ 落群日志 ⇒ 记账 ⇒ 推进 `nextRunAt`。
+ * ⛔ 无论成功失败都推进（否则失败任务会每分钟重试一次，把 token 烧光）。
+ */
+async function executeGroupSchedule(groupId: string, scheduleId: string, runKind: "scheduled" | "manual") {
+  const key = `${groupId}:${scheduleId}`;
+  if (runningSchedules.has(key)) return { ok: false, error: "这个任务正在跑" };
+  const snapshot = readStore();
+  const group = findGroup(snapshot.groups, groupId);
+  const entry = group?.schedules.find((s) => s.id === scheduleId);
+  if (!group || !entry) return { ok: false, error: "定时任务已不存在" };
+  const blockers = scheduleBlockers(group, entry);
+  if (blockers.length) return { ok: false, error: blockers.join("；") };
+
+  runningSchedules.add(key);
+  let error = "";
+  try {
+    const r = await dispatchGroupText(group, entry.prompt, entry.memberIds, "automation");
+    error = r.failed.length ? r.failed.join("；") : "";
+    return { ok: r.ok, sent: r.sent, error: error || undefined, runKind };
+  } catch (err) {
+    error = err instanceof Error ? err.message : String(err);
+    return { ok: false, error, runKind };
+  } finally {
+    runningSchedules.delete(key);
+    const finishedAt = Date.now();
+    await mutateStore((store) => {
+      const g = findGroup(store.groups, groupId);
+      if (!g) return { store, out: null };
+      const schedules = g.schedules.map((s) => {
+        if (s.id !== scheduleId) return s;
+        const updated: ScheduleShape = { ...s, lastRunAt: finishedAt, lastError: error || undefined };
+        updated.nextRunAt = computeScheduleNextRunAt(updated, finishedAt);
+        return updated;
+      });
+      return {
+        store: { ...store, groups: store.groups.map((x) => (x.id === groupId ? { ...g, schedules } : x)) },
+        out: null,
+      };
+    });
+    /* 面板开着就立刻能看到新消息与新的"下次运行"（⛔ 不靠 1s 轮询：那是白烧 CPU） */
+    broadcastHarnessEvent({ type: "team-schedule-ran", groupId, scheduleId, ok: !error, error: error || undefined, runKind, at: Date.now() } as never);
+  }
+}
+
+/** 到点扫描（30s 一拍）：跑所有 `enabled && nextRunAt <= now` 的任务。 */
+async function tickGroupSchedules() {
+  let store: StoreShape;
+  try {
+    store = readStore();
+  } catch {
+    return;
+  }
+  const now = Date.now();
+  for (const group of store.groups) {
+    for (const entry of group.schedules ?? []) {
+      if (!entry.enabled) continue;
+      const due = Number(entry.nextRunAt);
+      if (!Number.isFinite(due) || due > now) continue;
+      if (runningSchedules.has(`${group.id}:${entry.id}`)) continue;
+      void executeGroupSchedule(group.id, entry.id, "scheduled").catch(() => undefined);
+    }
+  }
 }
 
 export const harnessTeamFeature = defineFeature<null>({
@@ -341,15 +608,53 @@ export const harnessTeamFeature = defineFeature<null>({
       return saveOne(store, next);
     });
 
+    /* 菜单展示形态（飞书 §3 `INPUT_FIRST` / `FLOAT`）：只改一个枚举值，⛔ 不动菜单内容。 */
+    ipcHost.handle("harness-team:set-menu-placement", (_event, groupId: string, placement: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const next = createGroup({ ...g, menuPlacement: normalizeMenuPlacement(placement) }) as GroupShape;
+      return saveOne(store, next);
+    });
+
+    /* ── 群定时任务（豆包 §③「自动化定时任务」）──────────────────────────────
+       ⛔ 整组替换语义（与菜单/文件一致）：列表是一条条"闹钟"，增量合并的规则只会让人猜。
+       ⛔ `nextRunAt` 在这里算（主进程），⛔ 渲染层不许自己推算调度时刻。 */
+    ipcHost.handle("harness-team:set-schedule", (_event, groupId: string, list: unknown) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      if (list != null && !Array.isArray(list)) return { ok: false, error: "定时任务格式不对" };
+      const rows = Array.isArray(list) ? list : [];
+      const normalized: ScheduleShape[] = [];
+      for (const raw of rows) {
+        const entry = normalizeScheduleEntry(raw);
+        if (!entry) return { ok: false, error: "定时任务无效（缺 id 或指令内容）" };
+        normalized.push(entry);
+      }
+      if (normalized.length > MAX_GROUP_SCHEDULES) return { ok: false, error: `最多 ${MAX_GROUP_SCHEDULES} 个定时任务` };
+      const now = Date.now();
+      const existing = new Map((g.schedules ?? []).map((s) => [s.id, s]));
+      const schedules = normalizeSchedules(normalized.map((entry) => {
+        const old = existing.get(entry.id);
+        /* 调度口径没变 ⇒ 沿用旧的下次时刻（改个名字不该把这一轮推掉）；
+           变了/新任务 ⇒ 以现在为基准重算。 */
+        const keep = old && old.nextRunAt && old.kind === entry.kind && old.timeOfDay === entry.timeOfDay
+          && old.scheduledAt === entry.scheduledAt && JSON.stringify(old.weekdays) === JSON.stringify(entry.weekdays);
+        const nextRunAt = entry.enabled ? (keep ? old!.nextRunAt : computeScheduleNextRunAt(entry, now)) : (entry.nextRunAt ?? null);
+        return { ...entry, createdAt: entry.createdAt || old?.createdAt || now, lastRunAt: old?.lastRunAt, lastError: old?.lastError, nextRunAt };
+      }));
+      const next = createGroup({ ...g, schedules }) as GroupShape;
+      return saveOne(store, next);
+    });
+
+    /* 手动立刻跑一次（用户点「立即运行」）。⛔ 不影响 nextRunAt 的口径 —— 跑完照旧推进一个周期。 */
+    ipcHost.handle("harness-team:run-schedule", async (_event, groupId: string, scheduleId: string) =>
+      executeGroupSchedule(String(groupId ?? ""), String(scheduleId ?? ""), "manual"));
+
     /* 记一条用量（渲染层每次派活完成/失败各调一次）。
        ⛔ 失败也记：失败也烧了 token，且失败率本身是最该看的指标。 */
-    ipcHost.handle("harness-team:log-usage", (_event, entry: Record<string, unknown>) => {
-      const e = normalizeLedgerEntry(entry);
-      if (!e) return { ok: false, error: "用量记录无效（缺伙伴 id）" };
-      const next = appendLedger(readLedger(), { ...e, at: e.at || Date.now() });
-      writeLedger(next as NonNullable<LedgerEntryShape>[]);
-      return { ok: true, count: next.length };
-    });
+    ipcHost.handle("harness-team:log-usage", async (_event, entry: Record<string, unknown>) => logUsageTo(entry ?? {}));
 
     /* 用量汇总：按 (agent, 来源) 两个维度拆（豆包实测口径）。 */
     ipcHost.handle("harness-team:ledger", (_event, groupId: string, days: number) => {
@@ -432,29 +737,15 @@ export const harnessTeamFeature = defineFeature<null>({
       return { ok: true, rows: projectGroupLog(store.messages[gid] ?? []) };
     });
 
-    ipcHost.handle("harness-team:append-message", (_event, groupId: string, entry: Record<string, unknown>) => {
-      const store = readStore();
-      const gid = String(groupId ?? "");
-      if (!gid) return { ok: false, error: "缺群 id", rows: [] };
-      if (!findGroup(store.groups, gid)) return { ok: false, error: "群不存在", rows: [] };
-      const at = Number(entry?.at ?? 0) || Date.now();
-      const id = String(entry?.id ?? "").trim() || `msg_${at.toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
-      const authorKind = entry?.authorKind === "bot" ? "bot" : "human";
-      /* ⛔ 人的消息挂群自身；伙伴的消息必须带**真实子会话 id**，否则判无效（不造真身） */
-      const threadId = String(entry?.threadId ?? "").trim() || (authorKind === "human" ? groupThreadId(gid) : "");
-      const next = appendGroupMessage(store.messages[gid] ?? [], {
-        ...entry,
-        id,
-        threadId,
-        at,
-        authorKind,
-      });
-      const saved = next.find((m) => String(m?.id ?? "") === id) ?? null;
-      if (!saved) return { ok: false, error: "消息无效（缺子会话归属）", rows: projectGroupLog(store.messages[gid] ?? []) };
-      writeStore({ ...store, messages: { ...store.messages, [gid]: next } });
-      return { ok: true, entry: saved, rows: projectGroupLog(next) };
-    });
+    ipcHost.handle("harness-team:append-message", async (_event, groupId: string, entry: Record<string, unknown>) =>
+      appendMessageTo(groupId, entry ?? {}));
 
+    /* 到点扫描：30s 一拍（与「设置 → 自动化」同一个节奏）。
+       ⛔ 不用事件驱动/秒级轮询：这是"群里的闹钟"，精度到分钟就够，白烧 CPU 的轮询是负担。
+       ⛔ 启停跟着 feature 生命周期走（`ctx.effect` 的清理函数里 clearInterval）。 */
+    const timer = setInterval(() => { void tickGroupSchedules().catch(() => undefined); }, 30_000);
+
+    ctx.effect(() => () => clearInterval(timer));
     ctx.effect(() => {
       for (const ch of HARNESS_TEAM_CHANNELS) ipcHost.removeHandler(ch);
     });

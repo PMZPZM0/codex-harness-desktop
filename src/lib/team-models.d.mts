@@ -1,5 +1,6 @@
 /** `team-models.mjs` 的类型声明（与实现一一对应；⛔ 规则只在 .mjs 里，这里只描述形状）。 */
-import type { MenuItem } from "./team-menu.mjs";
+import type { MenuItem, MenuPlacement } from "./team-menu.mjs";
+import type { GroupSchedule } from "./team-schedule.mjs";
 
 export type TeamMemberKind = "human" | "bot";
 
@@ -71,6 +72,10 @@ export interface TeamGroupLite {
   files: GroupFileLite[];
   /** 快捷指令菜单（飞书 ChatBotMenu 的本地等价物） */
   menu: MenuItem[];
+  /** 菜单形态（飞书 INPUT_FIRST / FLOAT） */
+  menuPlacement: MenuPlacement;
+  /** 群定时任务（豆包 §③ 自动化定时） */
+  schedules: GroupSchedule[];
 }
 
 export interface GroupSourceMessage {

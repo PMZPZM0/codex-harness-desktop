@@ -16,10 +16,21 @@
  * ⛔ 权限说明写文案，不用 disabled 表达归属（项目纪律：disabled 是准入，不是说明）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { MemoryNote, MemoryNoteType, TeamFile, TeamGroup } from "./01-team-types";
+import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { BarChart3, BookOpen, FolderOpen, GitBranch, Puzzle, Trash2, Users } from "lucide-react";
+import { AlarmClock, BarChart3, BookOpen, FolderOpen, GitBranch, Play, Puzzle, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
+import {
+  MAX_GROUP_SCHEDULES,
+  MAX_SCHEDULE_PROMPT_CHARS,
+  SCHEDULE_KIND_LABELS,
+  WEEKDAY_LABELS,
+  describeSchedule,
+  formatNextRun,
+  removeSchedule,
+  scheduleBlockers,
+  toggleSchedule,
+} from "../../lib/team-schedule.mjs";
 import { formatChars, formatMs, formatTokens, LEDGER_SOURCE_LABELS } from "../../lib/team-ledger.mjs";
 import type { LedgerSummary } from "./02-team-store";
 import { AppSelect } from "../../components/AppSelect";
@@ -42,6 +53,12 @@ type Props = {
   onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
   /** 快捷指令菜单（整份替换） */
   onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 菜单形态（飞书 INPUT_FIRST / FLOAT） */
+  onSaveMenuPlacement: (placement: MenuPlacement) => Promise<{ ok: boolean; error?: string }>;
+  /** 定时任务（整组替换；nextRunAt 由主进程算） */
+  onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 立刻运行一条定时任务 */
+  onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
   /** 用量汇总（为空 = 还没拉过） */
   ledger?: LedgerSummary | null;
   onLoadLedger: (days: number) => void;
@@ -89,7 +106,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule, ledger, onLoadLedger }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -110,6 +127,14 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   const [cmdPrompt, setCmdPrompt] = useState("");
   /* 用量窗口（天） */
   const [ledgerDays, setLedgerDays] = useState(7);
+  /* 定时任务草稿（豆包 §③）：频率/时间/派给谁，提交时整组替换 */
+  const [schedName, setSchedName] = useState("");
+  const [schedPrompt, setSchedPrompt] = useState("");
+  const [schedTargets, setSchedTargets] = useState<string[]>([]);
+  const [schedKind, setSchedKind] = useState<"interval" | "daily" | "weekly" | "once">("daily");
+  const [schedTime, setSchedTime] = useState("09:00");
+  const [schedDays, setSchedDays] = useState<number[]>([1]);
+  const [schedAt, setSchedAt] = useState("");
 
   const partners = group.members.filter((m) => m.kind === "bot");
   const notes: MemoryNote[] = group.memoryNotes ?? [];
@@ -132,6 +157,9 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
     setNoteText("");
     setCmdLabel("");
     setCmdPrompt("");
+    setSchedName("");
+    setSchedPrompt("");
+    setSchedTargets([]);
   }, [group.id, group.memory, group.files]);
 
   const memoryDirty = memoryDraft.trim() !== String(group.memory ?? "").trim();
@@ -227,6 +255,60 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
 
   const resetCommands = async () => {
     await run(() => onSaveMenu([...DEFAULT_GROUP_MENU] as unknown[]), "已恢复默认指令");
+  };
+
+  /* ── 定时任务（豆包 §③ 自动化定时）────────────────────────────────────────
+     ⛔ 落盘一律走整组替换；`nextRunAt` 由主进程算，这里只负责把"哪天、几点、派给谁"传上去。 */
+  const schedules: GroupSchedule[] = group.schedules ?? [];
+
+  const addSchedule = async () => {
+    const prompt = schedPrompt.trim();
+    if (!prompt || !schedTargets.length) return;
+    if (schedules.length >= MAX_GROUP_SCHEDULES) { setMsg(`最多 ${MAX_GROUP_SCHEDULES} 个定时任务`); return; }
+    const entry: GroupSchedule = {
+      id: `sched_${Date.now().toString(36)}`,
+      name: schedName.trim() || prompt.slice(0, 20),
+      prompt,
+      memberIds: schedTargets,
+      kind: schedKind,
+      timeOfDay: schedTime,
+      weekdays: schedKind === "weekly" ? schedDays : [],
+      scheduleType: schedKind === "once" ? "once" : "recurring",
+      scheduledAt: schedKind === "once" ? schedAt : "",
+      enabled: true,
+      nextRunAt: null,
+      createdAt: Date.now(),
+    };
+    await run(async () => {
+      const r = await onSaveSchedules([...schedules, entry]);
+      if (r.ok) {
+        setSchedName("");
+        setSchedPrompt("");
+        setSchedTargets([]);
+      }
+      return r;
+    }, "定时任务已建 —— 到点它会自己在群里派这一句");
+  };
+
+  const dropSchedule = async (id: string) => {
+    await run(() => onSaveSchedules(removeSchedule(schedules, id)), "已删除定时任务");
+  };
+
+  const flipSchedule = async (id: string, enabled: boolean) => {
+    await run(() => onSaveSchedules(toggleSchedule(schedules, id, enabled)), enabled ? "已启用" : "已停用");
+  };
+
+  const runScheduleNow = async (id: string) => {
+    setBusy(true);
+    setMsg("");
+    setDone("");
+    try {
+      const r = await onRunSchedule(id);
+      if (r.ok) setDone(`已立刻跑一次${typeof r.sent === "number" ? `（派给 ${r.sent} 个伙伴）` : ""} —— 产出会出现在群聊里`);
+      else setMsg(r.error || "运行失败");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const chooseFiles = async () => {
@@ -505,9 +587,29 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
           <span className="team-settings__count">{menuLeaves.length} 条</span>
         </h3>
         <p className="team-settings__hint">
-          输入框旁那个「指令」按钮里就是这些。<strong>点一项只把指令填进输入框</strong>，
+          那个「指令」按钮里就是这些。<strong>点一项只把指令填进输入框</strong>，
           你确认后再发 —— 不是替你偷偷派活。
         </p>
+        {/* 飞书 §3 的两种展示：INPUT_FIRST（贴输入框）/ FLOAT（悬浮面板） */}
+        <div className="team-settings__inline-row">
+          <span className="team-settings__hint team-settings__hint--inline">
+            展示形态{group.menuPlacement === "float" ? "：按钮浮在群视图右下，面板可滚动、分组横向展开" : "：按钮在 @ 行，面板向上弹"}
+          </span>
+          <div className="team-settings__seg" role="group" aria-label="菜单展示形态">
+            {([["input", "贴输入框"], ["float", "悬浮面板"]] as Array<[MenuPlacement, string]>).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`team-settings__seg-btn${(group.menuPlacement ?? "input") === value ? " is-on" : ""}`}
+                aria-pressed={(group.menuPlacement ?? "input") === value}
+                onClick={() => void run(() => onSaveMenuPlacement(value), `已切换为「${label}」`)}
+                disabled={busy}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <ul className="team-settings__menu">
           {normalizeMenu(group.menu ?? []).map((g) => (
             <li key={g.key} className="team-settings__menu-group">
@@ -556,6 +658,148 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         <div className="team-settings__savebar">
           <button type="button" className="team-settings__mini" onClick={() => void resetCommands()} disabled={busy}>
             恢复默认指令
+          </button>
+        </div>
+      </section>
+
+      {/* ── 定时任务（豆包 §③「自动化定时任务」：prompt 里写死收件人）──────────── */}
+      <section className="team-settings__block">
+        <h3>
+          <AlarmClock size={14} className="ic-amber" />
+          定时任务
+          <span className="team-settings__count">{schedules.length}/{MAX_GROUP_SCHEDULES}</span>
+        </h3>
+        <p className="team-settings__hint">
+          到点它<strong>自己把这句话派给选中的伙伴</strong> —— 走的是和 @ 完全同一条链路
+          （真实子会话 + 群消息 + 账本里记「自动化」）。<strong>停用 ≠ 删除</strong>：停用后任务还在，只是不再触发。
+          <br />
+          「下次」与设定时刻可能差几分钟：引擎按任务 id <strong>错峰打散</strong>，避免所有任务同一秒一起打上游。
+        </p>
+        <ul className="team-settings__sched">
+          {schedules.map((s) => {
+            const blockers = scheduleBlockers(group, s);
+            const names = s.memberIds.map((id) => partners.find((p) => p.id === id)?.name ?? id).join("、");
+            return (
+              <li key={s.id} className={`team-settings__sched-row${s.enabled ? "" : " is-off"}`}>
+                <span className="team-settings__sched-main">
+                  <strong>{s.name}</strong>
+                  <small>
+                    {describeSchedule(s)} · 派给 {names || "（没人）"}
+                    {s.enabled ? ` · 下次 ${formatNextRun(s.nextRunAt, Date.now())}` : " · 已停用"}
+                  </small>
+                  {blockers.length > 0 && <em className="team-settings__sched-warn">{blockers.join("；")}</em>}
+                  {s.lastError && <em className="team-settings__sched-warn">上次失败：{s.lastError}</em>}
+                </span>
+                <span className="team-settings__sched-acts">
+                  <button type="button" className="team-settings__mini" onClick={() => void flipSchedule(s.id, !s.enabled)} disabled={busy}>
+                    {s.enabled ? "停用" : "启用"}
+                  </button>
+                  <button type="button" className="team-settings__mini" onClick={() => void runScheduleNow(s.id)} disabled={busy}>
+                    <Play size={11} /> 跑一次
+                  </button>
+                  <button type="button" className="team-settings__mini team-settings__mini--danger" onClick={() => void dropSchedule(s.id)} disabled={busy}>
+                    删
+                  </button>
+                </span>
+              </li>
+            );
+          })}
+          {!schedules.length && <li className="team-settings__empty">还没有定时任务</li>}
+        </ul>
+
+        <div className="team-settings__add">
+          <input
+            className="team-settings__cmd-label"
+            value={schedName}
+            onChange={(e) => setSchedName(e.target.value)}
+            placeholder="名称（如：早间简报）"
+            maxLength={20}
+            aria-label="定时任务名称"
+            disabled={busy}
+          />
+          <input
+            value={schedPrompt}
+            onChange={(e) => setSchedPrompt(e.target.value)}
+            placeholder="到点派给伙伴的那句话"
+            maxLength={MAX_SCHEDULE_PROMPT_CHARS}
+            aria-label="定时任务指令"
+            disabled={busy}
+          />
+        </div>
+        <div className="team-settings__sched-controls">
+          <div className="team-settings__chips" role="group" aria-label="派给谁">
+            {partners.map((p) => {
+              const on = schedTargets.includes(p.id);
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  className={`team-settings__chip${on ? " is-on" : ""}${p.muted ? " is-muted" : ""}`}
+                  aria-pressed={on}
+                  onClick={() => setSchedTargets((prev) => (on ? prev.filter((x) => x !== p.id) : [...prev, p.id]))}
+                  disabled={busy || p.muted}
+                  title={p.muted ? "已静音：到点也不会跑，先在伙伴列表里取消静音" : `派给 ${p.name}`}
+                >
+                  @{p.name}
+                </button>
+              );
+            })}
+            {!partners.length && <span className="team-settings__empty">先加伙伴</span>}
+          </div>
+          <span className="team-settings__select">
+            <AppSelect
+              value={schedKind}
+              onChange={(v) => setSchedKind(v as typeof schedKind)}
+              options={(["interval", "daily", "weekly", "once"] as const).map((k) => ({ value: k, label: SCHEDULE_KIND_LABELS[k] }))}
+              ariaLabel="频率"
+              disabled={busy}
+            />
+          </span>
+          {(schedKind === "daily" || schedKind === "weekly") && (
+            <input
+              type="time"
+              className="team-settings__time"
+              value={schedTime}
+              onChange={(e) => setSchedTime(e.target.value)}
+              aria-label="时间"
+              disabled={busy}
+            />
+          )}
+          {schedKind === "weekly" && (
+            <div className="team-settings__chips" role="group" aria-label="星期几">
+              {WEEKDAY_LABELS.map((label, day) => {
+                const on = schedDays.includes(day);
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    className={`team-settings__chip${on ? " is-on" : ""}`}
+                    aria-pressed={on}
+                    onClick={() => setSchedDays((prev) => (on ? prev.filter((x) => x !== day) : [...prev, day].sort((a, b) => a - b)))}
+                    disabled={busy}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {schedKind === "once" && (
+            <input
+              type="datetime-local"
+              className="team-settings__time"
+              value={schedAt}
+              onChange={(e) => setSchedAt(e.target.value)}
+              aria-label="运行时刻"
+              disabled={busy}
+            />
+          )}
+          <button
+            type="button"
+            onClick={() => void addSchedule()}
+            disabled={busy || !schedPrompt.trim() || !schedTargets.length || (schedKind === "once" && !schedAt)}
+          >
+            加一条
           </button>
         </div>
       </section>

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（114 个能力域 / 629 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（114 个能力域 / 632 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -233,9 +233,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 插件卸载入口
 通道：plugin:validate
 
-### harness-team（21 通道）
+### harness-team（24 通道）
 团队模式：应用内的群（伙伴成员 / 上下级委派白名单 / 群护栏 / 消息投影）,打开一个群就能 @ 伙伴派活
-通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:delete, harness-team:set-memory, harness-team:set-files, harness-team:set-manager, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:thread-usage
+通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:delete, harness-team:set-memory, harness-team:set-files, harness-team:set-manager, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:set-menu-placement, harness-team:set-schedule, harness-team:run-schedule, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:thread-usage
 
 ### remote（11 通道）
 远程会话（手机/网页端远程接入宿主）

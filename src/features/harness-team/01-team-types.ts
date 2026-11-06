@@ -46,6 +46,27 @@ export type MemoryNote = {
   at: number;
 };
 
+/** 菜单展示形态（飞书 `ChatBotMenu` 的 `INPUT_FIRST` / `FLOAT`） */
+export type MenuPlacement = "input" | "float";
+
+/** 群定时任务（豆包 §③ 自动化定时；`nextRunAt` 由主进程算，渲染层只显示） */
+export type GroupSchedule = {
+  id: string;
+  name: string;
+  prompt: string;
+  memberIds: string[];
+  kind: "interval" | "daily" | "weekly" | "once";
+  timeOfDay: string;
+  weekdays: number[];
+  scheduleType: "recurring" | "once";
+  scheduledAt: string;
+  enabled: boolean;
+  nextRunAt: number | null;
+  lastRunAt?: number;
+  lastError?: string;
+  createdAt: number;
+};
+
 /** 群菜单项（飞书 `menuItems` 的同构）：有 children 是分组，没有则必须带 prompt */
 export type MenuItem = {
   key: string;
@@ -70,6 +91,10 @@ export type TeamGroup = {
   files: TeamFile[];
   /** 快捷指令菜单（飞书 `ChatBotMenu` 的本地等价物）；空数组 = 不显示菜单按钮 */
   menu: MenuItem[];
+  /** 菜单形态：贴输入框（默认）/ 悬浮面板 */
+  menuPlacement: MenuPlacement;
+  /** 群定时任务：到点 @ 指定伙伴（走同一条派活链路） */
+  schedules: GroupSchedule[];
 };
 
 /** 群视图里的一条消息投影（真身在 threadId + itemId）。 */

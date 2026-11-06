@@ -26,7 +26,8 @@ export function TeamModePanel() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError,
     create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles, setManagerOf,
-    addNote, removeNote, saveMenu, ledger, loadLedger, stopPartner,
+    addNote, removeNote, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
+    ledger, loadLedger, stopPartner,
     loadMessages, dispatch,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -129,6 +130,9 @@ export function TeamModePanel() {
             onAddNote={(note) => addNote(active.id, note)}
             onRemoveNote={(noteId) => removeNote(active.id, noteId)}
             onSaveMenu={(items) => saveMenu(active.id, items as never)}
+            onSaveMenuPlacement={(placement) => saveMenuPlacement(active.id, placement)}
+            onSaveSchedules={(list) => saveSchedules(active.id, list)}
+            onRunSchedule={(scheduleId) => runSchedule(active.id, scheduleId)}
             ledger={ledger}
             onLoadLedger={(days) => void loadLedger(active.id, days)}
             onStopPartner={(memberId) => stopPartner(active, memberId)}

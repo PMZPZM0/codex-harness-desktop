@@ -96,6 +96,10 @@ export function useTeamGroups() {
   busyRef.current = busyByGroup;
   const liveRef = useRef<Record<string, Record<string, LiveRun>>>({});
   liveRef.current = liveByGroup;
+  /* 定时任务在主进程跑（面板可能没开），跑完广播一条事件 ⇒ 这里跟着刷新。
+     ⛔ 用 ref 转一手：事件 effect 挂在组件挂载时，而 refresh/loadMessages 是后面才 useCallback 出来的。 */
+  const refreshRef = useRef<() => void>(() => undefined);
+  const loadMessagesRef = useRef<(groupId: string) => void>(() => undefined);
 
   /**
    * 委派事件里的 record → 本群哪个成员（+ 哪个群）。
@@ -126,7 +130,16 @@ export function useTeamGroups() {
 
   useEffect(() => {
     const off = window.codex.onHarnessEvent?.((event: Record<string, unknown>) => {
-      if (!event || event.type !== "delegate-run") return;
+      if (!event) return;
+      /* 群定时任务跑完：刷新群（nextRunAt/lastError 变了）+ 重读这个群的消息流。 */
+      if (event.type === "team-schedule-ran") {
+        const gid = String(event.groupId ?? "");
+        if (!gid) return;
+        refreshRef.current();
+        loadMessagesRef.current(gid);
+        return;
+      }
+      if (event.type !== "delegate-run") return;
       const phase = String(event.phase ?? "");
       const record = (event.record ?? {}) as Record<string, unknown>;
       const threadId = String(event.threadId ?? record.threadId ?? "");
@@ -239,6 +252,9 @@ export function useTeamGroups() {
       /* 读失败保持上一次的行：⛔ 不要清空成"什么都没有"，那会让人以为记录丢了 */
     }
   }, []);
+
+  refreshRef.current = () => { void refresh(); };
+  loadMessagesRef.current = (gid: string) => { void loadMessages(gid); };
 
   /** 落一条消息（主进程补 at/id 并回带整份投影） */
   const appendMessage = useCallback(async (groupId: string, entry: Record<string, unknown>) => {
@@ -584,6 +600,33 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 菜单形态（飞书 INPUT_FIRST / FLOAT） */
+  const saveMenuPlacement = useCallback(
+    async (groupId: string, placement: "input" | "float") =>
+      apply((await window.codex.harnessTeamSetMenuPlacement(groupId, placement)) as MutationResult),
+    [apply],
+  );
+
+  /** 定时任务（整组替换；nextRunAt 由主进程算，渲染层不推算调度时刻） */
+  const saveSchedules = useCallback(
+    async (groupId: string, list: unknown[]) =>
+      apply((await window.codex.harnessTeamSetSchedule(groupId, list)) as MutationResult),
+    [apply],
+  );
+
+  /** 立刻跑一次（主进程执行派活，产出落群日志；完成后广播事件让这里刷新） */
+  const runSchedule = useCallback(
+    async (groupId: string, scheduleId: string) => {
+      const res = (await window.codex.harnessTeamRunSchedule(groupId, scheduleId)) as { ok: boolean; sent?: number; error?: string };
+      if (res?.ok) {
+        void loadMessages(groupId);
+        void refresh();
+      }
+      return { ok: Boolean(res?.ok), error: res?.error, sent: res?.sent };
+    },
+    [loadMessages, refresh],
+  );
+
   const setGuard = useCallback(
     async (groupId: string, guard: Record<string, unknown>) =>
       apply((await window.codex.harnessTeamSetGuard(groupId, guard)) as MutationResult),
@@ -594,7 +637,7 @@ export function useTeamGroups() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, ledger,
     refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
-    setMemory, addNote, removeNote, saveFiles, saveMenu, setManagerOf,
+    setMemory, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule, setManagerOf,
     loadMessages, appendMessage, dispatch, loadLedger, stopPartner,
   };
 }

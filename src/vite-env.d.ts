@@ -1408,6 +1408,12 @@ interface Window {
     harnessTeamRemoveNote(groupId: string, noteId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamSetMenu(groupId: string, items: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
+    harnessTeamSetMenuPlacement(groupId: string, placement: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：群定时任务（整组替换，nextRunAt 由主进程算） */
+    harnessTeamSetSchedule(groupId: string, list: unknown): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：立刻运行一条定时任务 */
+    harnessTeamRunSchedule(groupId: string, scheduleId: string): Promise<{ ok: boolean; sent?: number; error?: string; runKind?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */

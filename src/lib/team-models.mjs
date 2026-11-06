@@ -11,7 +11,8 @@
  *   ③ 移除伙伴只有**群主**与**添加者**可以（飞书实测文案：「仅群主和添加者可移除该机器人」）。
  */
 
-import { DEFAULT_GROUP_MENU, normalizeMenu } from "./team-menu.mjs";
+import { DEFAULT_GROUP_MENU, normalizeMenu, normalizeMenuPlacement } from "./team-menu.mjs";
+import { normalizeSchedules } from "./team-schedule.mjs";
 
 /** 一个群最多几个伙伴（飞书有 maxBotNum；我们先给一个固定上限，留成数据便于后续改）。 */
 export const GROUP_MAX_PARTNERS = 8;
@@ -154,6 +155,10 @@ export function createGroup(input) {
     files,
     /* 快捷指令菜单（飞书 ChatBotMenu 的本地等价物） */
     menu,
+    /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：`input` 贴输入框，`float` 悬浮面板 */
+    menuPlacement: normalizeMenuPlacement(input?.menuPlacement),
+    /* 群定时任务（豆包 §③ 自动化定时）：到点 @ 指定伙伴，走同一条派活链路 */
+    schedules: normalizeSchedules(input?.schedules),
   };
 }
 
