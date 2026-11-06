@@ -1435,29 +1435,18 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.message-ruler .ruler-lens-dash {
-  flex: none;
-  background: color-mix(in srgb, var(--muted) 70%, transparent);
-  border-radius: 1px;
-  width: 16px;
-  height: 2px;
-  transition:
-    width 0.2s var(--ease-enter),
-    background-color 0.16s;
-}
+/* ⛔⛔ 11-06 用户（截图）：「放大镜里面不要刻度线」—— 这里原来有一根 `.ruler-lens-dash`
+   （每行末尾的 16px 短横，is-active 时加长到 24px）。它长得就是刻度线，用户看到就认为
+   "放大镜里还有刻度"。放大镜只负责读消息 ⇒ 整条规则删除，⛔ 别再以任何形式加回来。 */
 .message-ruler .ruler-lens-row.is-active {
   color: var(--text);
   font-weight: 600;
 }
-.message-ruler .ruler-lens-row.is-active .ruler-lens-dash {
-  background: var(--text);
-  width: 24px;
-}
+/* 高亮行只靠底色 + 字重，⛔ 不再靠"那根线变长"（11-06 已删短横） */
 /* 无障碍：镜头会跟着指针不停位移，减少动效下直接落位 */
 @media (prefers-reduced-motion: reduce) {
   .message-ruler .ruler-lens,
-  .message-ruler .ruler-lens-row,
-  .message-ruler .ruler-lens-dash {
+  .message-ruler .ruler-lens-row {
     animation-duration: 0.001ms;
     transition-duration: 0.001ms;
   }

@@ -174,11 +174,58 @@ export function TeamGroupView({
       composerRef.current?.focus();
     }
   };
+  /* ── 专家团 = 主理人 + 成员 ──────────────────────────────────────────────────
+     ⛔⛔ 11-06 用户（截图）：「肯定要是主理人➕成员啊，专家团不一直是这样吗」——
+        原来成员栏/@ 条/气泡署名都用群成员名（= 团名「软件开发专家团」），主理人「承枢」
+        只缩在小字「负责人 承枢」里 ⇒ 看起来像"团"在群里说话，而不是一个人带队。
+        现在统一：**团的第一行就是主理人本人**（名字 + 头像 + 职业），团名退到副标题。
+     ⛔ 判据只此一处（成员栏 / @ 条 / 气泡头 / 头像 / @ 提及全部走它），别在三处各写一套。 */
+  const teamLeadOf = (member: TeamGroup["members"][number]) => {
+    if (member.targetKind !== "team") return null;
+    return catalog.find((t) => t.kind === "expert" && t.teamId === member.targetKey) ?? null;
+  };
+
+  /** 某个团伙伴的下属成员（按 teamId 匹配；同一 memberId 只留一条） */
+  const teamKidsOf = (member: TeamGroup["members"][number]) => {
+    if (member.targetKind !== "team") return [];
+    const teamId = String(member.targetKey ?? "");
+    if (!teamId) return [];
+    const seen = new Set<string>();
+    return catalog
+      .filter((t) => t.kind === "member" && t.teamId === teamId)
+      .filter((t) => (seen.has(t.key) ? false : (seen.add(t.key), true)));
+  };
+
+  /** 团伙伴「出面上的人」= 主理人；目录还没回来时退回团名（⛔ 不编名字、不画空壳） */
+  const personNameOf = (m: TeamGroup["members"][number]) => teamLeadOf(m)?.name ?? m.name;
+
+  /** 头像种子同理：团用**主理人**的身份（kind=expert + 主理人 key），画出来才是专家中心那张脸；
+     ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。 */
+  const faceOf = (m: TeamGroup["members"][number]) => {
+    const lead = teamLeadOf(m);
+    return lead ? { ...m, targetKind: "expert", targetKey: lead.key } : m;
+  };
+
   /* 定时任务在群日志里的作者 id 是 `automation`（主进程写入）—— 它不是群成员，
      但消息不能显示成裸 id「automation」。⛔ 只有这一处映射，别在别处再判断一次。 */
-  const nameOf = (id: string) => (id === "automation" ? "定时任务" : group.members.find((m) => m.id === id)?.name ?? id);
+  const nameOf = (id: string) => {
+    if (id === "automation") return "定时任务";
+    const m = group.members.find((x) => x.id === id);
+    return m ? personNameOf(m) : id;
+  };
   const memberOf = (id: string) => group.members.find((m) => m.id === id) ?? null;
-  const roleOf = (id: string) => memberOf(id)?.targetProfession ?? "";
+  /* 团这一行的职业写主理人的（「交付总监」）；目录里 team 条目的 profession 是「4 位成员」，
+     那是人数不是身份（用户要看的是"谁、什么角色"）。 */
+  const roleOf = (id: string) => {
+    const m = memberOf(id);
+    if (!m) return "";
+    return teamLeadOf(m)?.profession || m.targetProfession || "";
+  };
+  /** 按 id 取"画头像用的那个 member"（团 ⇒ 主理人的 key；未知 id ⇒ 只有名字的占位） */
+  const faceOfId = (id: string) => {
+    const m = memberOf(id);
+    return m ? faceOf(m) : { id, name: nameOf(id) };
+  };
 
   /* 伙伴回复正文里写了 `@某人` ⇒ 只做成**可点提及**：点一下把它加进本轮 @，
      ⛔ 不自动发、不自动派活（11-06：模型写「PPT @星象」这种举例文本也会被误读成指令）。 */
@@ -343,23 +390,6 @@ export function TeamGroupView({
     return () => { alive = false; };
   }, []);
 
-  /** 团的主理人（目录里 kind=expert 且 teamId 相同的那条；没有就不编） */
-  const teamLeadOf = (member: TeamGroup["members"][number]) => {
-    if (member.targetKind !== "team") return null;
-    return catalog.find((t) => t.kind === "expert" && t.teamId === member.targetKey) ?? null;
-  };
-
-  /** 某个团伙伴的下属成员（按 teamId 匹配；同一 memberId 只留一条） */
-  const teamKidsOf = (member: TeamGroup["members"][number]) => {
-    if (member.targetKind !== "team") return [];
-    const teamId = String(member.targetKey ?? "");
-    if (!teamId) return [];
-    const seen = new Set<string>();
-    return catalog
-      .filter((t) => t.kind === "member" && t.teamId === teamId)
-      .filter((t) => (seen.has(t.key) ? false : (seen.add(t.key), true)));
-  };
-
   useEffect(() => {
     const el = streamRef.current;
     if (!el) return;
@@ -429,9 +459,9 @@ export function TeamGroupView({
         <div className="team-group__head-actions">
           <div className="team-group__avatars" title={`${group.members.length} 位成员`}>
             {group.members.slice(0, 4).map((m) => (
-              <span key={m.id} className={`team-group__avatar has-agent${m.muted ? " is-muted" : ""}`} title={m.name}>
-                {/* ⛔ 后勤头像走 AgentAvatar（与专家中心同一套图集），⛔ 不再拿名字首字凑 */}
-                <MemberAvatar member={m} size={22} />
+              <span key={m.id} className={`team-group__avatar has-agent${m.muted ? " is-muted" : ""}`} title={personNameOf(m)}>
+                {/* ⛔ 团画主理人的头像（见 faceOf）：群头一排是"人"，不是一个团团徽 */}
+                <MemberAvatar member={faceOf(m)} size={22} />
               </span>
             ))}
             {group.members.length > 4 && <span className="team-group__avatar is-more">+{group.members.length - 4}</span>}
@@ -512,7 +542,7 @@ export function TeamGroupView({
                       data-ruler-mark={isBot ? undefined : "user"}
                     >
                       <MemberAvatar
-                        member={group.members.find((x) => x.id === row.authorId) ?? { id: row.authorId, name: nameOf(row.authorId) }}
+                        member={faceOfId(row.authorId)}
                         size={28}
                         className="team-msg__avatar has-agent"
                       />
@@ -658,10 +688,16 @@ export function TeamGroupView({
                       }`}
                       onClick={() => toggleAt(p.id)}
                       aria-pressed={atTargets.includes(p.id)}
-                      title={atTargets.includes(p.id) ? "取消选择" : "把它加进本轮 @"}
+                      /* ⛔ 团 chip 出面上的是**主理人**（名字/头像），title 里写明"点它 = 叫整团"，
+                         ⛔ 不能让用户以为是只叫了主理人一个人。 */
+                      title={
+                        teamLeadOf(p)
+                          ? `${personNameOf(p)} · ${p.name} 主理人 —— 点它 = 叫整团，团内由主理人分派`
+                          : atTargets.includes(p.id) ? "取消选择" : "把它加进本轮 @"
+                      }
                     >
-                      <span className="team-group__atchip-avatar has-agent"><MemberAvatar member={p} size={16} /></span>
-                      {p.name}
+                      <span className="team-group__atchip-avatar has-agent"><MemberAvatar member={faceOf(p)} size={16} /></span>
+                      {personNameOf(p)}
                       {!p.targetKind && <em className="team-group__atchip-warn" title="这个伙伴没绑定智能体，派不了活">未绑定</em>}
                     </button>
                     {/* ⛔ 11-06 用户：「输入框上面也没有铺开」「专家团跟正常成员展示一样」——
@@ -739,25 +775,26 @@ export function TeamGroupView({
                 return (
                   <Fragment key={m.id}>
                   <li className={`team-group__member${m.muted ? " is-muted" : ""}`}>
-                    <span className="team-group__member-avatar has-agent"><MemberAvatar member={m} size={22} /></span>
+                    <span className="team-group__member-avatar has-agent"><MemberAvatar member={faceOf(m)} size={22} /></span>
                     <span className="team-group__member-main">
-                      <strong>{m.name}</strong>
+                      <strong>{personNameOf(m)}</strong>
                       <small title={`成员 id：${m.id}${m.targetKey ? ` · 目标：${m.targetKind}:${m.targetKey}` : ""}`}>
                         {/* ⛔ 上下级放**最前**：这一行会被省略号截断，放后面就永远看不见（用户要"关系明确"） */}
                         {(() => {
-                          /* ⛔ 团这一行不写「上级」：默认上级是群主、每个伙伴都一样，写上去只是噪音，
-                              还把「负责人」挤出了省略号（用户截图：负责人 承…）。
-                              团要的是「谁负责 + 几个人」。 */
-                          if (teamLeadOf(m)) {
-                            const lead = teamLeadOf(m)!;
-                            return `负责人 ${lead.name} · ${teamKidsOf(m).length || "多"} 位成员`;
-                          }
+                          /* ⛔⛔ 11-06 用户：「肯定要是主理人➕成员」—— 团这一行**就是主理人本人**
+                             （大字已经是承枢），副标题写「团名 · 主理人」+ 人数；
+                             ⛔ 别再写「负责人 承枢」（会变成"承枢 / 负责人 承枢"重复一遍）。 */
+                          if (teamLeadOf(m)) return `${m.name} · 主理人`;
                           /* 生效上级（没显式设过 ⇒ 群主）：成员栏要看得出层级，⛔ 别只认落盘值 */
                           const up = resolveManagerId(group, m.id);
                           const prefix = up ? `上级 ${group.members.find((x) => x.id === up)?.name ?? up} · ` : "";
                           return prefix;
                         })()}
-                        {teamLeadOf(m) ? "" : (m.id === group.leadId ? "群主" : (m.targetProfession || (isBot ? "伙伴" : "成员")))}
+                        {teamLeadOf(m)
+                          /* ⛔ 人数不写在副标题里：成员栏只有 ~200px，「软件开发专家团 · 主理人 4 位成员」
+                             实测截断成「…主理人 4 …」⇒ 关键身份被省略号吃掉。人数在下面一行行看得见。 */
+                          ? ""
+                          : (m.id === group.leadId ? "群主" : (m.targetProfession || (isBot ? "伙伴" : "成员")))}
                         {running ? " · 处理中" : ""}
                         {m.muted ? " · 已静音" : ""}
                       </small>
@@ -766,8 +803,8 @@ export function TeamGroupView({
                       <button
                         type="button"
                         className="team-group__member-stop"
-                        title={`停止 ${m.name} 当前这一回合`}
-                        aria-label={`停止 ${m.name}`}
+                        title={`停止 ${personNameOf(m)} 当前这一回合`}
+                        aria-label={`停止 ${personNameOf(m)}`}
                         onClick={() => void onStopPartner(m.id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
                       >
                         停
@@ -777,7 +814,7 @@ export function TeamGroupView({
                       <button
                         type="button"
                         className={`team-group__member-at${atTargets.includes(m.id) ? " is-on" : ""}`}
-                        title={`@${m.name}`}
+                        title={`@${personNameOf(m)}`}
                         onClick={() => toggleAt(m.id)}
                       >
                         @

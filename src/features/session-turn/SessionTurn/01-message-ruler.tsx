@@ -520,8 +520,11 @@ export function MessageRuler({
                 onMouseEnter={() => setPick(i)}
                 onClick={() => { onJump(marks[i].turnId); setLens(null); setPick(null); lastHoverRef.current = null; setHoverIndex(null); }}
               >
+                {/* ⛔⛔ 11-06 用户第二次（截图）：「放大镜里面不要刻度线」——
+                    上一轮只把面板挪出了刻度槽（刻度不再"画到面板上"），但面板里每行末尾
+                    还挂着一根 `<i class="ruler-lens-dash">` 短横 ⇒ 用户看到的仍是"刻度线在放大镜里"。
+                    放大镜是**读消息**的地方，不是刻度尺 ⇒ 整根删掉，一行只有文字。 */}
                 <span className="ruler-lens-text">{marks[i].label.replace(/\s+/g, " ").trim()}</span>
-                <i className="ruler-lens-dash" />
               </button>
             ))}
           </div>
