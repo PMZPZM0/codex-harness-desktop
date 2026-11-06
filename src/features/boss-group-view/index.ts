@@ -17,6 +17,9 @@ export { BOSS_SHORTCUT_LABEL, bossShortcutLabel } from "./boss-shortcut";
 /* store 动作也走 barrel（域内唯一出口） */
 export { bossDirFor, closeBossDirDialog, getBossDirDialogState, openBossDirDialog, setBossDirChosen, subscribeBossDirDialog } from "./boss-dir-dialog-store.mjs";
 export { bossPanelGroupFor, closeBossPanel, getBossPanelState, openBossPanel, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
+/* 「当前群」的唯一解析（显式选中优先 → 绑定的 boss 群 → 面板回落）——
+   成员弹窗 / 群面板 / 右侧成员轨共用，⛔ 不要各写一份（11-06 切群不联动的根因）。 */
+export { resolveSelectedGroup } from "./resolve-group.mjs";
 /* 群成员实时快照（10-26 立的共享 store）：成员面板 / 右侧成员轨 / 办公室预览**共用一份**。
    ⛔ 10-27：`activeMembersOf` 是「在群成员」的**唯一口径**（已移出的不派工位、不算人数）。 */
 export { activeMembersOf, groupSnapshotOf, invalidateGroupMembers, refreshGroupMembers, useGroupMembers } from "./group-members-store";

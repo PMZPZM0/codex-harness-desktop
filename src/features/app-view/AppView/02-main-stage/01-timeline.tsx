@@ -7,7 +7,7 @@ import { isCompactionItem } from "../../../../lib/compaction-item.mjs";
 import { compactionRecordFor, compactionVersion, subscribeCompactions } from "../../../../lib/compaction-records.mjs";
 import { resolveCompactionAnchor } from "../../../../lib/compaction-anchor.mjs";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
-import { BossThreadIntro, getBossThreads, subscribeBossThreads } from "../../../boss-group-view";
+import { BossThreadIntro, getBossPanelState, getBossThreads, resolveSelectedGroup, subscribeBossPanel, subscribeBossThreads } from "../../../boss-group-view";
 import { avatarToneOf, AVATAR_GRADIENTS, registerThreadTeam, unregisterThreadTeam, resolveTeamMember } from "../../../../lib/entity-avatar";
 import {
   AlertTriangle,
@@ -490,11 +490,14 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
   /* ⛔⛔ 10-26 用户令：指挥中枢会话的**右侧群成员轨**（头像 + 工作中绿灯/光圈）。
      ⛔ 群 id 从 bossThreads.groups 里按 bossThreadId 匹配当前会话（与顶栏成员按钮同一份判定）。
      ⛔ 成员状态走**共享 store**（group-members-store）⇒ 与顶栏成员面板同一份快照 ⇒ 状态联动。 */
+  /* ⛔ 11-06 用户令：「这个（右侧成员轨）要联动变化」—— 群下拉切到哪个群，
+     右侧成员轨就跟哪个群。用弹窗/面板**同一份解析**（explicit 选中优先 → 绑定的 boss 群），
+     并订阅 panel store ⇒ 切群立刻重渲染；成员快照走同一个共享 store。 */
+  const bossPanelState = useSyncExternalStore(subscribeBossPanel, getBossPanelState);
   const bossGroupId = useMemo(() => {
     if (!thread?.id) return "";
-    const hit = (bossThreads.groups ?? []).find((g: any) => String(g?.bossThreadId ?? "") === String(thread?.id));
-    return String(hit?.id ?? "");
-  }, [bossThreads.groups, thread?.id]);
+    return resolveSelectedGroup(bossThreads.groups ?? [], bossPanelState.groupIdByThread?.[String(thread.id)], String(thread.id));
+  }, [bossThreads.groups, bossPanelState, thread?.id]);
   const bossGroupMembers = useGroupMembers(bossGroupId);
 
   return (

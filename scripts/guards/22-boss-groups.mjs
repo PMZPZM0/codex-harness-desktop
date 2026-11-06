@@ -758,6 +758,10 @@ if (state) {
      ⛔ 脚本 `.click()` 不派发 mousedown，这类缺陷在普通探针里是全绿的（本轮实际踩过）。 */
   ok(/closest\("\.app-select-list"\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
     "⛔ 群成员弹窗的「点外面关闭」放行 AppSelect 门户下拉（否则真实点击切不了群）");
+  /* ⛔ 11-06 用户令：「这个（右侧成员轨）要联动变化」—— 群下拉切换后右侧成员轨必须跟着换群。 */
+  ok(/resolveSelectedGroup\(bossThreads\.groups \?\? \[\], bossPanelState\.groupIdByThread/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"))
+    && /useGroupMembers\(bossGroupId\)/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
+    "⛔ 右侧群成员轨跟随群下拉联动（与弹窗同一解析 + 共享成员快照）");
   /* ⛔⛔ 11-06 用户实测「中枢右上角的切换好像没用，切换了也没有联动变化」：
      原来的判定是 `bossThreadId 命中` **先**、会话里手动选的群**后** ⇒ 在指挥中枢会话里
      下拉怎么选都被绑定的群立刻盖回去（死控件）；refresh 也按同一顺序取 snap，所以内容不联动。 */
