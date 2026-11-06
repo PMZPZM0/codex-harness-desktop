@@ -15,7 +15,7 @@
  *
  * ⛔ 权限说明写文案，不用 disabled 表达归属（项目纪律：disabled 是准入，不是说明）。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
 import { BookOpen, FolderOpen, Trash2, Users } from "lucide-react";
@@ -69,8 +69,14 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
 
   const partners = group.members.filter((m) => m.kind === "bot");
 
-  /* 切群时把草稿同步回该群的真实值（⛔ 否则会把上一条群的编辑带过来） */
+  /* 只在**切群**时把草稿同步回该群的真实值。
+     ⛔⛔ 不能把 group.memory / group.files 放进依赖：群里点一下「静音」也会让 apply() 换掉
+       group 对象 ⇒ effect 重跑 ⇒ 正在编辑的群记忆/文件清单被清回旧值（用户打一半的字直接没）。
+       用 id 卡住"是否换了群"，依赖仍写全（eslint 诚实），但只在换群时真正重置。 */
+  const draftGroupRef = useRef(group.id);
   useEffect(() => {
+    if (draftGroupRef.current === group.id) return;
+    draftGroupRef.current = group.id;
     setMemoryDraft(group.memory ?? "");
     setFilesDraft(group.files ?? []);
     setMsg("");
