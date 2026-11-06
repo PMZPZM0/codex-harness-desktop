@@ -448,6 +448,8 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "群聊 CLI 成员的模型优先级与派活一致：boss 会话 → 成员配置 → 全局激活模型");
   ok(!/apiKey/.test(runnerSrc.slice(runnerSrc.indexOf("function memberPrompt"), runnerSrc.indexOf("async function dispatchTask"))),
     "⛔ Key 只进子进程环境，不进成员提示词 / 命令行");
+  ok(/const bossModel = await bossModelOf\(groupOf\(state/.test(runnerSrc) && /model: bossModel \|\| env\.model/.test(runnerSrc),
+    "成员卡上的模型与派活实际使用的模型同源（boss 会话 → 全局默认）");
   ok(/process\.platform === "win32" \? "where" : "which"/.test(mainSrc),
     "平台分叉只发生在一处（win `where` / 其余 `which`，⛔ 不许写死 where）");
 

@@ -1158,12 +1158,15 @@ export async function memberForBoss(input: {
               但宿主这边的配置要完整 —— 换模型/调权限时才有东西可改）。
            ⛔ model 从 providerEnv() 取当前默认（与其它成员同一口径）。 */
         const env = await providerEnv();
+        /* ⛔ 11-06：成员卡上的模型与派活实际使用的模型同源（boss 会话 → 全局默认），
+           否则卡上写着 A、实际跑 B。 */
+        const bossModel = await bossModelOf(groupOf(state, String(input.groupId ?? ""))).catch(() => "");
         const cliName = String(input.cliName ?? reg?.name ?? "");
         addInput = {
           name: String(input.name ?? input.cliName ?? reg?.name ?? "cli-agent"),
           role: String(input.role ?? reg?.role ?? "本机 CLI agent"),
           systemPrompt: `你是从本机命令行 agent（${cliName}）拉进群的成员。你的成品由宿主执行你的命令行得到，回答请直接给结论与依据。`,
-          model: env.model || undefined,
+          model: bossModel || env.model || undefined,
           effort: "high",
           sandbox: "workspace-write",
           approvalPolicy: "on-request",
