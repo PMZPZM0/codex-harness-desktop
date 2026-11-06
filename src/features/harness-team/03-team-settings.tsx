@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { AlarmClock, BookOpen, FolderOpen, GitBranch, Play, Puzzle, Trash2, Users } from "lucide-react";
+import { AlarmClock, BookOpen, FolderOpen, GitBranch, Inbox, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
 import { addModeStateOf } from "../../lib/team-models.mjs";
 import {
@@ -418,8 +418,11 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             <strong>{MODE_LABEL[addMode]}暂不可用</strong> · {activeModeState.reason}
           </p>
         ) : (
-        <div className="team-settings__add">
-          {options.length ? (
+        /* ⛔ 没有可选项时**不渲染**下拉与「添加伙伴」：原来是「两行灰字 + 一个点不动的按钮」
+           挤在一行，既占位又误导（用户截图红框）。空态改用一块带引导的卡片：
+           说明为什么没有 + 下一步去哪 + 就地重新读取。 */
+        options.length ? (
+          <div className="team-settings__add">
             <AppSelect
               value={pick}
               onChange={setPick}
@@ -429,15 +432,26 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
               ariaLabel="选择要加入的智能体"
               disabled={busy}
             />
-          ) : (
-            <span className="team-settings__empty">
-              {catalogError ? `读不到智能体清单：${catalogError}` : "这个模式下后台还没有可加的对象，点「刷新」重读，或到设置 → 智能体团队里新建"}
-            </span>
-          )}
-          <button type="button" onClick={() => void addPartner()} disabled={busy || !pick || partners.length >= limit}>
-            添加伙伴
-          </button>
-        </div>
+            <button type="button" onClick={() => void addPartner()} disabled={busy || !pick || partners.length >= limit}>
+              添加伙伴
+            </button>
+          </div>
+        ) : (
+          <div className="team-settings__empty-card">
+            <Inbox size={20} aria-hidden />
+            <div className="team-settings__empty-text">
+              <strong>{catalogError ? "读不到智能体清单" : `「${MODE_LABEL[addMode]}」下暂无可加对象`}</strong>
+              <span>
+                {catalogError
+                  ? catalogError
+                  : "到「设置 → 智能体团队」新建后再回来，点「重新读取」即可。"}
+              </span>
+            </div>
+            <button type="button" onClick={() => void reloadCatalog()} disabled={busy} title="重新读取后台专家 / 专家团 / 子智能体列表">
+              <RefreshCw size={13} /> 重新读取
+            </button>
+          </div>
+        )
         )}
         {partners.length >= limit && <p className="team-settings__hint">已达上限（最多 {limit} 个伙伴）</p>}
       </section>

@@ -1575,3 +1575,57 @@
 /* 正文对齐主对话（14px / 1.72），⛔ 群聊不再比主对话小一档 */
 .team-msg__body-text { font-size: 14px; line-height: 1.72; }
 .team-cards { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+
+/* ══════ 伙伴添加·空态卡片（11-06 用户截图红框：「这个展示优化一下」）════════════
+   ⛔ 原来空态是「两行灰字 + 一个点不动的『添加伙伴』按钮」挤在一行 ——
+      既占位又误导（按钮永远是 disabled）。现在没有可选项就**不渲染**下拉与按钮，
+      换成一块带图标的引导卡：为什么没有 → 去哪新建 → 就地重新读取。 */
+.team-settings__empty-card {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 38%, transparent);
+}
+.team-settings__empty-card > svg { flex: none; color: var(--faint); }
+.team-settings__empty-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.team-settings__empty-text > strong {
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.team-settings__empty-text > span {
+  color: var(--faint);
+  font-size: 11.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.team-settings__empty-card > button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.team-settings__empty-card > button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.team-settings__empty-card > button:disabled { opacity: 0.55; cursor: default; }
+@media (max-width: 720px) {
+  .team-settings__empty-card { flex-wrap: wrap; }
+  .team-settings__empty-card > button { width: 100%; justify-content: center; }
+}
