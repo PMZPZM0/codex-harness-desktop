@@ -1644,8 +1644,9 @@ html[data-ui-font="large"] .action-content pre {
    「把这个子会话展开折叠放到这个会话选项里面，居中小长条展示」+「中间空白没那么多，紧凑一点」。
    收起时只占行内第二行（14px 药丸），不再在行外多占一整行；展开体仍落在行下面。 */
 .thread-row.has-footer {
+  /* ⛔ 11-06 用户令（截图）：「很细的长条，在这里，**上面不要变动**」——
+     名称那一行保持原样（34px 单行，不压缩、不重新排版），仅在行底部多出一条 12px 细长条。 */
   flex-wrap: wrap;
-  padding-bottom: 1px;
 }
 .thread-row-footer {
   flex: 0 0 100%;
@@ -1658,15 +1659,16 @@ html[data-ui-font="large"] .action-content pre {
   align-items: center;
   justify-content: center;
   gap: 4px;
+  width: 68%;
   min-width: 96px;
-  max-width: 70%;
-  height: 14px;
-  padding: 0 10px;
+  max-width: 164px;
+  height: 12px;
+  padding: 0 8px;
   border: 1px solid var(--line-soft);
-  border-radius: 999px;
+  border-radius: 6px;
   background: color-mix(in srgb, var(--text) 4%, transparent);
   color: var(--faint);
-  font-size: 9.5px;
+  font-size: 9px;
   line-height: 1;
   cursor: pointer;
   font-family: inherit;

@@ -1479,8 +1479,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (dispatchedRendererSrc.includes("thread-row-footer") && /footer:\s*block\?\.bar/.test(dispatchedRendererSrc) ? ok : fail)(
         "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
       );
-      (/\.thread-row\.has-footer\s*\{[^}]*flex-wrap:\s*wrap/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*min-width:\s*96px[^}]*height:\s*14px/.test(readStyles()) ? ok : fail)(
-        "【156】子会话折叠键是行内居中 96×14 小长条（11-06 用户令）"
+      (/\.thread-row\.has-footer\s*\{[^}]*flex-wrap:\s*wrap/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*68%/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*height:\s*12px/.test(readStyles()) ? ok : fail)(
+        "【156】子会话折叠键是行内居中细长条（68% × 12px，11-06 用户令）"
+      );
+      (!/\.thread-row\.has-footer > button/.test(readStyles()) ? ok : fail)(
+        "【156】有子会话长条的行**不压缩名称行**（用户令：上面不要变动）"
       );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
