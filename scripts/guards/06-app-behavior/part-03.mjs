@@ -565,6 +565,18 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts")
         (/(?:\bhost\.app|app)\.relaunch\(/.test(relaunchBlock) ? ok : fail)(
           "【174】app:relaunch 走朴素 host.app.relaunch()（窗口形态；无头形态须改 spawn —— 见⑤注释）"
         );
+        /* ⛔⛔ 11-06 用户实测「保存重启，应用关闭了，就没有自动启动」：
+           桌面版也用了单实例锁（main.ts 的 requestSingleInstanceLock）。relaunch 起的新进程
+           与旧进程并行一小段，旧进程还持锁 ⇒ 新实例拿到 false 直接退出 ⇒ 只剩「关掉」。
+           朴素形态也必须**先释放锁再 relaunch**。 */
+        const mainUsesLock = /requestSingleInstanceLock/.test(readFileSync(join(ROOT, "electron", "main.ts"), "utf8"));
+        if (mainUsesLock) {
+          const releaseAt = relaunchBlock.indexOf("releaseSingleInstanceLock");
+          const relaunchAt = relaunchBlock.search(/(?:\bhost\.app|app)\.relaunch\(/);
+          ((releaseAt >= 0 && relaunchAt > releaseAt) ? ok : fail)(
+            "【174】app:relaunch 先释放单实例锁再 relaunch（否则新实例抢不到锁会自杀）"
+          );
+        }
       }
     }
   }

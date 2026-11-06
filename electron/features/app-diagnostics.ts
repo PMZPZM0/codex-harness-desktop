@@ -292,9 +292,22 @@ export const appFeature = defineFeature<null>({
          摘掉它 ⇒ 新实例走 `loadFile(dist/index.html)`（本地构建产物，一定在）。
          打包版本就没有该变量，此操作对其无影响。窗口侧还有一道加载兜底（见 window-factory）。 */
       if (!host.app.isPackaged()) delete process.env.VITE_DEV_SERVER_URL;
-      // ⚠️ 接缝的 relaunch 收 `{ args?: string[] }`；不传参时内部走 `app.relaunch(undefined)`
-      //    ⇒ 与原来裸 `app.relaunch()` 行为一致（守卫【174】钉住这条）。
-      host.app.relaunch();
+      /* ⛔⛔ 11-06 用户实测「保存重启，应用关闭了，就没有自动启动」：
+         桌面版也用了**单实例锁**（main.ts 的 requestSingleInstanceLock）。relaunch 出来的新进程
+         会和旧进程并行一小段；旧进程这时还持着锁 ⇒ 新进程拿到 false 直接 quit，随后旧进程也退出
+         ⇒ 用户只看到「关掉」。必须先释放锁再 relaunch（与 app-lock 那条 10-14 事故同型修法）。 */
+      try { (host.app as any).releaseSingleInstanceLock?.(); } catch { /* 无此 API 的旧环境保持原行为 */ }
+      /* ⛔⛔ 11-06 用户实测「保存重启，应用关闭了，就没有自动启动」：
+         开发态由 concurrently -k 拉起，旧 electron 一退出就把**整棵进程树**杀掉 ——
+         app.relaunch() 等旧进程退出才起新进程，正好落在被杀的范围里（云助手无头形态踩过同型）。
+         ⇒ 统一用 detached spawn：先释放单实例锁，再起一个**脱离旧进程组**的新实例。
+         旧进程随后优雅退出（before-quit 清理照跑），新实例不受影响。 */
+      try {
+        spawn(process.execPath, process.argv.slice(1), { detached: true, stdio: "ignore" }).unref();
+      } catch {
+        // spawn 被环境拒绝时退回 Electron 自带 relaunch（打包版一般走不到这里）
+        host.app.relaunch();
+      }
       // 优雅退出（quit 而非 exit）：走 before-quit 全套清理（closeConfirmed /
       // destroyAppTray / cleanupAll / ssh / voice），旧进程干净退出后新实例才起，
       // 任务栏图标不会被旧进程的退出态顶成默认。
