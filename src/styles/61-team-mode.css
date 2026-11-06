@@ -2,8 +2,10 @@
 
 .team-mode {
   display: grid;
-  grid-template-columns: 232px 1fr;
-  grid-template-rows: auto 1fr;
+  grid-template-columns: 232px minmax(0, 1fr);
+  /* ⛔ 只有一行（卡片头由 .team-modal__head 承担）：原来写的 `auto 1fr` 是给已删除的面板头留的，
+     留着会让左栏背景只铺第一行的高度。 */
+  grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--bg);
@@ -163,32 +165,49 @@
 .team-settings__add button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); font-size: 12px; cursor: pointer; }
 .team-settings__error { margin: 8px 0 0; color: var(--danger); font-size: 12px; }
 
-/* 面板头（从侧栏「群聊」打开时才有；嵌在设置页里时不显示） */
-.team-mode__head {
-  grid-column: 1 / -1;
+/* ── 侧栏「群聊」打开的卡片（复用全局 `.modal-backdrop`，层级 400）───────────────────
+   ⛔⛔ 11-06 事故：这里原来是 `position: fixed; inset: 0; z-index: 400` 的整窗壳，关闭键放在
+     最右侧 ⇒ 正好落进自绘窗口钮（`fixed; right:14px; z-index:1000`，96×44）的点击区里被盖住，
+     用户「关不掉」；整窗壳还盖掉了顶栏（唯一的窗口拖拽区）。
+   ⇒ 改成既有模态约定：backdrop 上内边距 56px（> 窗口钮底部 50px），卡片整体在窗口钮下方；
+     关闭键在卡片头右侧，永远不会与窗口钮抢位置。 */
+.team-backdrop {
+  /* 撑满而不是居中：群聊要尽量大；上 56 = 让开窗口钮那一行 */
+  place-items: stretch;
+  padding: 56px 14px 14px;
+}
+.team-modal {
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 24px 70px #00000038;
+}
+.team-modal__head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--line-soft);
-  font-size: 13px;
+  gap: 12px;
+  padding: 0 14px 0 18px;
+  border-bottom: 1px solid var(--line);
 }
-.team-mode__close {
-  padding: 5px 12px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-/* 侧栏「群聊」打开的全屏壳（板块自带，⛔ 不复用设置面板） */
-.team-chat-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 400;
-  background: var(--bg);
+.team-modal__title {
   display: flex;
-  flex-direction: column;
-  min-height: 0;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
 }
+.team-modal__title strong { font-size: 14px; }
+.team-modal__sub {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-modal__close { flex: none; }
