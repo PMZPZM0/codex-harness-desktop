@@ -9,7 +9,6 @@
  * ⛔ 排队面板同时要把这条隐藏（`pendingSteerVisibleIds`）：同一条消息在对话和排队面板各挂一份，
  *   就是用户点过无数次的「两处重复」。
  */
-import { useLayoutEffect, useRef, useState } from "react";
 import { Undo2 } from "lucide-react";
 import { pendingSteerIds, usePendingSteerEntries } from "../../lib/pending-steer.mjs";
 import { ItemView } from "./ItemView";
@@ -35,48 +34,21 @@ export function PendingSteerBubbles({ threadId, handlers, onWithdraw }: { thread
 }
 
 /**
- * 一条「待并入」：撤回药丸要贴在**气泡左缘**，而不是「消息栈」左缘。
- * 短消息时栈的宽度由上面那行名字（`.user-head`）决定，气泡在栈里右对齐 ⇒ 药丸贴着栈左缘
- * 就会离气泡一大截（11-06 用户截图「中间还是这么大空白」）。
- * ⇒ 量出「气泡左缘 − 栈左缘」，用负 margin 把药丸往右拉到气泡边上（自适应，不写死像素）。
+ * 一条「待并入」：撤回药丸走 `UserMessageView` 的 `leadingAction`，与气泡在**同一弹性行**里
+ * （药丸靠右、气泡紧跟其后，固定 8px 间距）—— 不再量「气泡左缘 − 栈左缘」再用负 margin 拉，
+ * 那个补丁在短消息 / 名字宽度变化时会算偏，用户 11-06 实测「中间缝隙太大」。
  */
 function PendingSteerRow({ id, entry, canWithdraw, handlers, onWithdraw }: {
   id: string; entry: any; canWithdraw: boolean; handlers: SteerHandlers; onWithdraw: (id: string) => void;
 }) {
-  const itemRef = useRef<HTMLDivElement>(null);
-  const [pull, setPull] = useState(0);
-  useLayoutEffect(() => {
-    const item = itemRef.current;
-    if (!item) return;
-    const measure = () => {
-      const stack = item.querySelector(".user-message-stack");
-      const bubble = item.querySelector(".message.user-message");
-      if (!stack || !bubble) return;
-      const delta = Math.round(bubble.getBoundingClientRect().left - stack.getBoundingClientRect().left);
-      setPull(delta > 0 ? delta : 0);
-    };
-    measure();
-    // 只观察消息栈：它的宽度不依赖药丸，不会自己触发自己（消息重渲染/换行时才需要重量）
-    const stack = item.querySelector(".user-message-stack");
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(measure);
-    if (ro && stack) ro.observe(stack);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, [canWithdraw, entry]);
   return (
-    <div className="pending-steer-item" ref={itemRef} data-pending-steer={canWithdraw ? "armed" : "sending"}>
-      {/* 图标在**这条用户消息左侧同一行**（11-05「不会放用户消息前面吗」→ 11-06「放顶上多难看」），
-          再按量出来的差值贴到气泡左缘（11-06「中间还是这么大空白」）。 */}
-      {canWithdraw && (
-        <button type="button" className="pending-steer-withdraw" style={pull ? { marginRight: -pull } : undefined}
-          title="撤回：这条还没交给模型，撤回后它不会看到" onClick={() => onWithdraw(id)}>
-          <Undo2 size={12} />撤回
-        </button>
-      )}
+    <div className="pending-steer-item" data-pending-steer={canWithdraw ? "armed" : "sending"}>
       <ItemView item={{ id: `pending-steer-${id}`, type: "userMessage", content: Array.isArray(entry?.input) ? entry.input : [] }} pending
+        leadingAction={canWithdraw ? (
+          <button type="button" className="pending-steer-withdraw" title="撤回：这条还没交给模型，撤回后它不会看到" onClick={() => onWithdraw(id)}>
+            <Undo2 size={12} />撤回
+          </button>
+        ) : undefined}
         onCopy={handlers.onCopy} onQuote={handlers.onQuote} onImageCopy={handlers.onImageCopy} onOpenFile={handlers.onOpenFile} />
     </div>
   );

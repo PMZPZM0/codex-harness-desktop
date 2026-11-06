@@ -3,7 +3,7 @@ import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { useUserName, UserAvatar } from "../../components/UserAvatar";
 import { getAliasState, subscribeAliases, supervisorLabelOfAliases } from "../../lib/alias-store.mjs";
-import { useState, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useState, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { justSentIds } from "../../lib/just-sent-ids";
 import { claimSendAnimation } from "../../lib/claim-send-animation";
 import { itemText } from "../../lib/item-text";
@@ -28,7 +28,7 @@ import { hk } from "../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "./COMPOSER_CHIP_ICON";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 
-export function UserMessageView({ item, turn, threadId, fallbackWindow, pending, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; /** 10-31：本会话 id —— 上级气泡用它查「我的上级主管是谁」（笔名快照） */ threadId?: string; fallbackWindow?: number; pending?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
+export function UserMessageView({ item, turn, threadId, fallbackWindow, pending, leadingAction, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; /** 10-31：本会话 id —— 上级气泡用它查「我的上级主管是谁」（笔名快照） */ threadId?: string; fallbackWindow?: number; pending?: boolean; /** 11-06：气泡左侧的行内动作（如插队消息的「撤回」）—— 放在同一弹性行里，紧贴气泡左缘。 */ leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
   // 「你」的名字（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）：走外部 store，
   // 与 Codex 名字同一套机制。⛔ 必须与其它 hook 一起放在 early return 之前（注释见下）。
   const userName = useUserName();
@@ -190,7 +190,7 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
         <UserAvatar size={22} />
       </div>
       <div
-        className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}`}
+        className={`message user-message${pending ? " pending" : ""}${justSent ? " just-sent" : ""}${leadingAction ? " has-leading" : ""}`}
         data-ruler-mark="user"
         data-turn-id={turn?.id}
         data-item-id={item.id}
@@ -199,6 +199,9 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
         style={sendAnimDelay ? { animationDelay: `-${sendAnimDelay}ms` } : undefined}
       >
         <div className="avatar"><User size={15} /></div>
+        {/* 11-06 用户令：「撤回键自适应贴着用户消息左边」——放在气泡同一弹性行里，
+            紧贴气泡左缘（⛔ 不再挂在整条消息栈外面，短消息会出现一大段空隙）。 */}
+        {leadingAction ? <div className="user-message-leading">{leadingAction}</div> : null}
         <div className="message-body">
           <UserRefsRow refs={refs} onOpenFile={onOpenFile} onQuote={onQuote} hideFiles />
           {refs.imported ? <ImportedRecordCard note={refs.imported.note} content={refs.imported.content} /> : null}

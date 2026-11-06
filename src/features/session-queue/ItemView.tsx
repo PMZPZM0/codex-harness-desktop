@@ -6,7 +6,7 @@
 /** ItemView（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
 import { isCompactionItem } from "../../lib/compaction-item.mjs";
 import { ThreadItem } from "../../lib/thread-item";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Turn } from "../../lib/turn";
 import { UserMessageView } from "../shared/UserMessageView";
 import { MessageFooter } from "../shared/MessageFooter";
@@ -34,9 +34,9 @@ import { skillOfItem, argSummary, pluginOfItem } from "../../lib/tool-display.mj
 import { stepOf } from "../../lib/step-note.mjs";
 import { webSearchResultsOf } from "../../lib/web-search-results.mjs";
 
-export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
+export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, leadingAction, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
-    return <UserMessageView item={item} turn={turn} pending={pending} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
+    return <UserMessageView item={item} turn={turn} pending={pending} leadingAction={leadingAction} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
   }
   if (item.type === "agentMessage") {
     // 流式过程中会产生空的 agentMessage 片段，不渲染，避免空 div 把内容撑出滚动条

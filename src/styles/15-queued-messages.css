@@ -1635,22 +1635,34 @@
   gap: 8px;
 }
 .pending-steer-item {
-  /* 11-06 用户令（截图「放顶上多难看」→「自适应展示在消息前面，不要空白太多」）：
-     撤回键在这条用户消息**左侧同一行**，整组按内容自适应、贴右 —— 原先整行 flex-end
-     会把「撤回 + 气泡」摆在 800px 宽的一行右端，左侧留一大片空白（实测 505px）。 */
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px;
-  width: fit-content;
-  margin-left: auto;
+  margin-bottom: 8px;
 }
-/* 消息栈按内容自适应，给左侧药丸留位置（原先占宽 min(88%,720px) 会把药丸挤出容器）。 */
-.pending-steer-item > .user-message-stack {
-  width: auto;
-  max-width: calc(100% - 76px);
-  margin: 0;
+/* ⛔⛔ 11-06 用户令（截图红框「中间缝隙太大了，自适应贴着用户消息左边」）：
+   撤回药丸**放进气泡同一行**（UserMessageView 的 leadingAction），不再挂在消息栈左侧、
+   也不再用「量气泡偏移 + 负 margin」去拉 —— 短消息/名字宽度一变就会留一大截空隙。
+   弹性行：药丸靠右（margin-left:auto），气泡紧跟其后，固定 8px；工具条换行占满下一行。 */
+.user-message.has-leading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.user-message.has-leading > .user-message-leading {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+}
+.user-message.has-leading > .message-body {
+  flex: 0 1 auto;
+  min-width: 0;
+  /* ⛔ 长消息不能把药丸挤到上一行：flex 换行按基准宽判定，auto 基准会超过整行
+     ⇒ 限宽到「100% − 药丸(≈40) − 间距(8)」，短消息仍按内容宽，长消息在行内折行。 */
+  max-width: calc(100% - 48px);
+  justify-self: auto;
+}
+.user-message.has-leading > .user-message-footer {
+  flex: 0 0 100%;
 }
 .pending-steer-withdraw {
   display: inline-flex;

@@ -202,11 +202,11 @@ ok(/usePendingSteerEntries\(threadId\)/.test(bubbleSrc) && /const retractable = 
   "气泡订阅登记表快照 + 顶层读 armed 名单（⛔ hook 写进 map/回调 = React #310 白屏，两条都在组件第一层）");
 ok(/type: "userMessage"/.test(bubbleSrc) && /<ItemView item=\{\{/.test(bubbleSrc),
   "用真实用户消息那套渲染（ItemView 的 userMessage 分支），不是另造一个芯片");
-ok(/canWithdraw && \(\s*<button[^>]*className="pending-steer-withdraw"/.test(bubbleSrc)
+ok(/canWithdraw \? \([\s\S]{0,160}?className="pending-steer-withdraw"/.test(bubbleSrc)
   && /data-pending-steer=\{canWithdraw \? "armed" : "sending"\}/.test(bubbleSrc),
   "「撤回」图标**只在 armed 态渲染** ⇒ sending 起它自己消失（用户要的「不能撤回就不显示」）");
-ok(bubbleSrc.indexOf("pending-steer-withdraw") < bubbleSrc.indexOf("<ItemView"),
-  "图标排在**这条用户消息前面**（11-05「不会放用户消息前面吗」→ 11-06「放顶上多难看」：同一行左侧，不再挂在气泡上方）");
+ok(/leadingAction=\{canWithdraw \? \([\s\S]{0,200}?pending-steer-withdraw/.test(bubbleSrc),
+  "图标走 ItemView 的 leadingAction，与气泡**同一行左侧**（11-05「放前面」→ 11-06「贴气泡左边」）");
 ok(/onWithdraw\(id\)/.test(bubbleSrc) && !/window\.codex/.test(bubbleSrc),
   "图标只做一件事：回调给宿主走 deleteQueued（气泡自己不许直连 IPC，否则撤回与排队面板两条实现会分岔）");
 
@@ -238,22 +238,15 @@ ok(/import \{ usePendingSteerVisibleIds \} from "\.\.\/\.\.\/\.\.\/\.\.\/lib\/pe
 const css = read("src/styles/15-queued-messages.css");
 ok(/\.pending-steer-stack \{[^}]*flex-direction: column/.test(css)
   && /\.pending-steer-withdraw \{/.test(css)
-  && /\.pending-steer-item \{[^}]*flex-direction: row/.test(css)
-  && /\.pending-steer-item \{[^}]*align-items: center/.test(css)
-  && /\.pending-steer-item > \.user-message-stack \{[^}]*max-width: calc\(100% - 76px\)/.test(css),
-  "撤回键在用户消息**左侧同一行**、垂直居中（11-06 用户令「放顶上多难看」；消息栈按内容自适应给药丸留位）");
-/* ⛔ 11-06 用户令「自适应展示在消息前面，不要空白太多」：整组必须按内容包紧、贴右。
-   原先整行 flex-end ⇒ 实测「撤回 + 气泡」只占 306px、却摆在一行 807px 的右端，左侧 505px 全空。 */
-ok(/\.pending-steer-item \{[^}]*width: fit-content/.test(css)
-  && /\.pending-steer-item \{[^}]*margin-left: auto/.test(css)
-  && !/\.pending-steer-item \{[^}]*width: 100%/.test(css),
-  "「撤回 + 气泡」整组按内容自适应（fit-content + 贴右），不再整行留白");
-/* ⛔ 11-06 用户截图「中间还是这么大空白」：短消息时消息栈的宽度由上面那行名字（.user-head）撑出来，
-   气泡在栈里右对齐 ⇒ 药丸贴着栈左缘就会离气泡一大截。必须量「气泡左缘 − 栈左缘」再用负 margin 拉过去。 */
-ok(/bubble\.getBoundingClientRect\(\)\.left - stack\.getBoundingClientRect\(\)\.left/.test(bubbleSrc)
-  && /style=\{pull \? \{ marginRight: -pull \} : undefined\}/.test(bubbleSrc)
-  && /new ResizeObserver\(measure\)/.test(bubbleSrc),
-  "药丸按实测差值贴到**气泡左缘**（ResizeObserver 跟随消息重排；⛔ 写死像素或贴栈左缘都会留空白）");
+  && /\.user-message\.has-leading \{[^}]*display: flex/.test(css)
+  && /\.user-message\.has-leading > \.user-message-leading \{[^}]*margin-left: auto/.test(css)
+  && /\.user-message\.has-leading > \.message-body \{[^}]*flex: 0 1 auto/.test(css)
+  && /\.user-message\.has-leading > \.message-body \{[^}]*max-width: calc\(100% - 48px\)/.test(css),
+  "撤回药丸放进气泡同一弹性行、靠右并紧贴气泡（11-06 用户令「自适应贴着用户消息左边」）");
+/* ⛔⛔ 11-06 用户实测「中间缝隙太大」：上一版量「气泡左缘 − 栈左缘」再用负 margin 拉，
+   短消息 / 名字宽度一变就留一大截。现在结构上把药丸放进气泡同一行，⛔ 不许退回测量补丁。 */
+ok(!/marginRight: -pull/.test(bubbleSrc) && !/ResizeObserver\(measure\)/.test(bubbleSrc) && !/bubble\.getBoundingClientRect\(\)\.left - stack/.test(bubbleSrc),
+  "⛔ 不再用「量气泡偏移 + 负 margin」补位（结构性同行，才不会被短消息/名字宽度带偏）");
 ok(!/pending-steer-item\[data-pending-steer="armed"\][^{]*outline/.test(css),
   "⛔ 不给消息本体描虚线框（11-05 用户实测「丑死了」——空荡荡一个大虚线框）");
 
