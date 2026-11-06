@@ -333,15 +333,24 @@ test("注入块按人不同：上级/下级各写各的，且下级写成 agent_
   const withOrg = setManager(g, "b", "a").group;
   const forA = groupContextBlock(withOrg, { forMemberId: "a" });
   const forB = groupContextBlock(withOrg, { forMemberId: "b" });
-  assert.ok(forA.includes("你可以把子任务派给：生图（expert:img）"), forA);
-  assert.ok(!forA.includes("你的上级"));
+  /* 11-06 用户令「他们可以在群里 @ 沟通」：下级不再是"只作说明"，而是可以叫 ——
+     判据口径写在 parseAgentMentions（行首 @名字）。 */
+  assert.ok(forA.includes("你可以叫下级别伙伴接手") && forA.includes("生图"), forA);
+  assert.ok(forA.includes("另起一行 @名字"), "叫人的格式必须写进提示词，否则模型不知道怎么触发");
+  /* 11-06 需求变更（用户令「默认上级就是主会话那个」）：没显式设过 ⇒ 上级是群主，
+     所以这里**一定**有「你的上级」，且带「默认 · 群主」标记。 */
+  assert.ok(forA.includes("你的上级"), forA);
+  assert.ok(forA.includes("默认 · 群主"), forA);
   assert.ok(forB.includes("你的上级：承枢（交付总监）"), forB);
-  assert.ok(!forB.includes("你可以把子任务派给"));
+  assert.ok(!forB.includes("你可以叫下级别伙伴接手"));
   /* 11-06：成员名录现在**总是**注入（伙伴互相 @ 要靠它认人），所以不再断言"空串"；
      上下级的可观测差异改为"有没有组织关系段"。 */
   const plain = groupContextBlock(g, { forMemberId: "a" });
   assert.ok(plain.includes("群成员（"), "名录总是注入（互相 @ 的前提）");
-  assert.ok(!plain.includes("组织关系"), "没配上下级 ⇒ 不写组织关系段");
+  /* 11-06 起：默认上级（群主）也让组织关系段常在 —— 这一段现在是「你向谁汇报」，
+     不再是「有没有配过上下级」。 */
+  assert.ok(plain.includes("组织关系"), "默认上级 ⇒ 组织关系段总在");
+  assert.ok(!plain.includes("你可以叫下级别伙伴接手"), "没配下级就不写下级段");
 });
 
 test("投影带出 mentions（@ 高亮的数据来源）", () => {

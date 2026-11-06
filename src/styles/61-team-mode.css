@@ -111,11 +111,15 @@
   min-width: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 16px;
+  /* ⛔ 11-06 用户：「滚轮放到右边上去」——Chrome 的滚动条画在 padding 内侧，
+     右 padding 16px 会把滚动条挤到离边 16px 处。⇒ 右 padding 归零，滚动条贴列右缘；
+     内容缩进改由直接子元素承担（下面的 `> *`），视觉与原来一致。 */
+  padding: 16px 0 16px 16px;
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+.team-group__stream > * { margin-right: 16px; }
 .team-group__empty { margin: auto; text-align: center; color: var(--faint); font-size: 13px; }
 .team-group__empty-hint { font-size: 12px; }
 .team-group__empty-btn { margin-top: 8px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-size: 12px; }
@@ -448,7 +452,8 @@
   flex: none;
   display: flex;
   flex-direction: column;
-  width: 196px;
+  /* 196 → 224：团成员展开后要放下「头像 + 名字」，196 会把主行的名字挤成竖排 */
+  width: 224px;
   min-height: 0;
   border-left: 1px solid var(--line-soft);
   background: var(--panel);
@@ -1141,7 +1146,8 @@
 .team-group__stream-wrap { position: relative; }
 .message-ruler.is-right {
   left: auto;
-  right: 14px;
+  /* 滚动条约 10px：贴着它左边 2px，刻度不再悬在中间（用户：「刻度线跟着过去」） */
+  right: 12px;
   width: 30px;
   /* ⛔ 主对话 `@media (width<=1080px)` 会隐藏尺子；群面板本来就窄，不能跟着藏 */
   display: block;
@@ -1155,11 +1161,16 @@
 .message-ruler.is-right .ruler-tick.wave-1,
 .message-ruler.is-right .ruler-tick.wave-2 {
   margin-left: 0;
-  margin-right: 12px;
+  margin-right: 2px;
+  /* 波浪朝聊天一侧（左）变长，右端固定 —— 与主对话"只有靠聊天那边有波浪"同语义 */
+  transform: none;
 }
 .message-ruler.is-right .ruler-lens {
   left: auto;
-  right: 36px;
+  /* ⛔ 面板右缘要在**刻度槽之外**：原来 right:36px 仍与刻度短横重叠，刻度画到了面板上
+     （用户：「放大镜里面不要有刻度线」）。⇒ 贴到刻度槽左缘再退 6px，并把层级抬到刻度之上。 */
+  right: calc(100% + 12px);
+  z-index: 80;
   transform-origin: 100% 50%;
   animation-name: ruler-lens-in-team;
 }
@@ -1550,13 +1561,20 @@
 .team-group { --team-column: 790px; }
 .team-group__stream {
   flex: 1 1 auto;
-  width: min(100%, var(--team-column));
-  max-width: var(--team-column);
-  margin-inline: auto;
+  /* ⛔ 11-06 用户：「滚轮放到右边上去，刻度线跟着过去」
+     ⇒ 消息流**不再**用 790 居中的列（那样滚动条停在列右缘、离成员栏还有一截空白），
+     改成占满容器 + 子项各自居中（气泡仍受 720 上限约束，读起来不会过宽）。 */
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+  padding-right: 0;
+  align-items: center;
 }
+.team-group__stream > * { width: 100%; max-width: 720px; margin-right: 0; }
 .team-group__composer { padding-inline: max(14px, calc((100% - var(--team-column)) / 2)); }
 .team-group__stream-wrap .message-ruler.is-right {
-  right: calc(max(0px, (100% - var(--team-column)) / 2) + 14px);
+  /* 滚动条约 10px：刻度槽贴它左边 2px */
+  right: 12px;
 }
 /* 正文对齐主对话（14px / 1.72），⛔ 群聊不再比主对话小一档 */
 .team-msg__body-text { font-size: 14px; line-height: 1.72; }
@@ -1920,3 +1938,132 @@
   .team-sheet { padding: 8px; }
   .team-sheet__modes { flex-wrap: wrap; }
 }
+
+/* ══════ 群聊统一头像（11-06 用户：「都没有头像诶，我看专家都是有头像啊，还有 cli 智能体」）══════
+   图案一律来自 AgentAvatar（与专家中心/CLI 面板同一套图集 + 同一个 kind 映射），
+   这里的容器只负责布局与尺寸。⛔ 别再拿「名字首字」凑头像 —— 专家/团/子智能体/CLI
+   各不相同，首字全变成一个汉字，群里根本看不出谁是谁。 */
+.team-avatar {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.team-avatar.is-text {
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 600;
+}
+.team-avatar > .agent-avatar { display: block; }
+/* 容器去皮肤：原样式是「圆圈 + 背景 + 字号」，套在真头像外面会多出一圈底色 */
+.team-msg__avatar.has-agent,
+.team-group__member-avatar.has-agent,
+.team-settings__avatar.has-agent,
+.team-group__atchip-avatar.has-agent {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  overflow: visible;
+}
+/* 群头那排是重叠的：保留 2px 背景色描边做分隔，只是不再有内部底色 */
+.team-group__avatar.has-agent {
+  padding: 0;
+  background: transparent;
+  border-color: var(--bg);
+  overflow: visible;
+}
+.team-group__atchip-avatar.has-agent {
+  width: auto;
+  height: auto;
+  background: transparent;
+}
+
+/* ══════ @ 条：正在干活的伙伴亮起来（11-06 用户：「头像+名字这个边框亮起来」）══════════
+   ⛔ 只在**运行中**发光（busy 里有它），停下就恢复常态 —— 常亮会变成装饰，
+      用户就分不清"谁在跑、谁在歇"。 */
+.team-group__atchip.is-running {
+  border-color: var(--accent);
+  color: var(--accent);
+  animation: team-chip-glow 1.7s ease-in-out infinite;
+}
+.team-group__atchip.is-running .agent-avatar {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+@keyframes team-chip-glow {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+      0 0 6px color-mix(in srgb, var(--accent) 28%, transparent);
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px color-mix(in srgb, var(--accent) 78%, transparent),
+      0 0 15px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+/* 无障碍：系统要求减少动画时只留静态描边（⛔ 不整块消失，否则看不出谁在跑） */
+@media (prefers-reduced-motion: reduce) {
+  .team-group__atchip.is-running {
+    animation: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent);
+  }
+}
+/* 成员栏同一语义（名字旁边也标一下，右侧栏也能看出谁在跑） */
+.team-group__member.is-running .team-group__member-avatar {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+/* 「由 X 叫来」：伙伴之间 @ 沟通产生的回复要能一眼看出不是用户派的 */
+.team-msg__via {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
+
+/* ══════ 成员栏：专家团展开成员（11-06 用户：「团成员不展示出来吗」）══════════════
+   团在群里是一行（派活按整团走），但"团里有谁"必须看得见 —— 否则用户不知道
+   这个团到底会拉起几个人、都是什么岗位。
+   ⛔ 独占一行（紧跟成员行的独立 `li`）：塞进成员行里会被 flex 主轴压成小框，
+      横向滚动 + 名字全裁（用户截图就是这个）。 */
+.team-group__member-kids-row { padding: 0 6px 4px 18px; }
+.team-group__member-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 2px 0 2px 10px;
+  list-style: none;
+  border-left: 1px dashed var(--line-soft);
+}
+/* 团成员 = 普通成员行再往里缩一格（⛔ 不另做一套小字行：用户要"展示一样"） */
+.team-group__member.is-kid { padding-left: 6px; }
+.team-group__member.is-kid .team-group__member-main > strong { font-size: 12px; }
+.team-group__member-kids > li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 10.5px;
+}
+.team-group__member-kids > li > span:not([class]) {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+
+/* 团成员 chip：在 @ 条里与伙伴同排铺开（比伙伴小一号，表明它是团内角色） */
+.team-group__atchip.is-kid {
+  padding: 2px 8px 2px 3px;
+  font-size: 10.5px;
+  opacity: 0.85;
+}
+.team-group__atchip.is-kid:hover { opacity: 1; }

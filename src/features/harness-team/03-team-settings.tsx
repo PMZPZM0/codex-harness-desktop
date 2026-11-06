@@ -20,7 +20,7 @@ import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile
 import { LOCAL_ACTOR_ID } from "./02-team-store";
 import { AlarmClock, BookOpen, FolderOpen, GitBranch, Inbox, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
-import { addModeStateOf } from "../../lib/team-models.mjs";
+import { addModeStateOf, resolveManagerId } from "../../lib/team-models.mjs";
 import {
   MAX_GROUP_SCHEDULES,
   MAX_SCHEDULE_PROMPT_CHARS,
@@ -33,6 +33,7 @@ import {
   toggleSchedule,
 } from "../../lib/team-schedule.mjs";
 import { AppSelect } from "../../components/AppSelect";
+import { MemberAvatar } from "./13-team-avatar";
 
 type Props = {
   group: TeamGroup;
@@ -149,6 +150,10 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   const [schedAt, setSchedAt] = useState("");
 
   const partners = group.members.filter((m) => m.kind === "bot");
+  /* 默认上级 = 群主（11-06 用户令：「专家团的时候，默认上级就是主会话那个」）。
+     ⛔ 只有群主自己不该有上级。 */
+  const leadMember = group.members.find((m) => m.id === group.leadId);
+  const leadName = leadMember?.name ?? "群主";
   const notes: MemoryNote[] = group.memoryNotes ?? [];
   /** 菜单摊平（界面里按"分组 → 项"展示；删除按 key） */
   const menuLeaves = flattenMenu(group.menu ?? []);
@@ -378,7 +383,7 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         <ul className="team-settings__list">
           {partners.map((p) => (
             <li key={p.id} className="team-settings__row">
-              <span className="team-settings__avatar" aria-hidden>{p.name.slice(0, 1)}</span>
+              <span className="team-settings__avatar has-agent" aria-hidden><MemberAvatar member={p} size={22} /></span>
               <span className="team-settings__name">
                 <span className="team-settings__name-text" title={p.name}>{p.name}</span>
                 {p.id === group.leadId && <em className="team-settings__tag">群主</em>}
@@ -461,16 +466,21 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         <h3>
           <GitBranch size={14} className="ic-green" />
           谁向谁汇报
-          <span className="team-settings__count">{partners.filter((p) => p.managerId).length} 已设</span>
+          <span className="team-settings__count">
+            {partners.filter((p) => p.managerId).length
+              ? `${partners.filter((p) => p.managerId).length} 已改 · 其余默认向${leadName}`
+              : `默认全部向${leadName}汇报`}
+          </span>
         </h3>
         <p className="team-settings__hint">
-          给伙伴选一个<strong>上级</strong>。派活时会把这段关系交给它 ——
-          它就能把子任务派给下级（走既有的调度闸），汇报关系写进 prompt，不只是画个图。
+          伙伴<strong>默认向{leadName}（群主 · 主会话）汇报</strong>，不用一个个填；
+          要改成别的伙伴当上级在这里选。派活时会把这段关系写进 prompt ——
+          它就能把子任务派给下级（走既有的调度闸），不只是画个图。
         </p>
         <ul className="team-settings__list">
           {partners.map((p) => (
             <li key={p.id} className="team-settings__row">
-              <span className="team-settings__avatar" aria-hidden>{p.name.slice(0, 1)}</span>
+              <span className="team-settings__avatar has-agent" aria-hidden><MemberAvatar member={p} size={22} /></span>
               <span className="team-settings__name">
                 <span className="team-settings__name-text" title={p.name}>{p.name}</span>
                 {p.targetProfession && <em className="team-settings__tag">{p.targetProfession}</em>}
@@ -480,11 +490,23 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
                   直接当 flex 子项会吃光整行 ⇒ 名字被压到 0 宽，中文一字一行（11-06 用户截图）。 */}
               <span className="team-settings__select">
                 <AppSelect
-                  value={p.managerId}
-                  onChange={(value) => void run(() => onSetManager(p.id, value), value ? "汇报关系已保存" : "已清掉上级")}
+                  /* ⛔ 显示的是**生效上级**（显式值 or 默认群主）：只读 `p.managerId` 会让
+                     默认态显示「(无)」，用户以为没生效、又去逐个手填一遍。 */
+                  value={resolveManagerId(group, p.id)}
+                  onChange={(value) => {
+                    /* ⛔ 选「群主」= 回到**默认**，存空串：写一条"等于默认"的显式值会让
+                       「N 已改」计数和落盘数据一起说谎（用户没改任何人的层级）。 */
+                    const back = value === group.leadId;
+                    void run(
+                      () => onSetManager(p.id, back ? "" : value),
+                      back ? `已恢复默认（向${leadName}汇报）` : `上级已改为 ${group.members.find((x) => x.id === value)?.name ?? value}`,
+                    );
+                  }}
                   options={[
-                    { value: "", label: "（无）" },
-                    ...partners.filter((x) => x.id !== p.id).map((x) => ({ value: x.id, label: x.name })),
+                    ...(p.id !== group.leadId ? [{ value: group.leadId, label: `${leadName}（群主 · 默认）` }] : []),
+                    ...partners
+                      .filter((x) => x.id !== p.id && x.id !== group.leadId)
+                      .map((x) => ({ value: x.id, label: x.name })),
                   ]}
                   ariaLabel={`${p.name} 的上级`}
                   disabled={busy}

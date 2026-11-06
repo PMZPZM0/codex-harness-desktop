@@ -266,6 +266,79 @@ export function setPartnerMuted(group, partnerId, muted) {
 }
 
 /**
+ * 解析「伙伴在回复里点名，叫另一个伙伴接手」（11-06 用户令：
+ * 「加了之后，他们就可以在群里 @ 沟通，不用限制啥，配套好工具就行」）。
+ *
+ * ── 为什么是文本协议，而不是给模型一个新工具 ────────────────────────────────
+ * 被委派会话的工具面在 `thread/start` 就定死了，复用会话不会重建 ⇒ 新工具对**已有的**
+ * 群伙伴会话不生效（除非改写 rollout 首行）。而这条判定发生在"产出落盘"这一刻，
+ * 对老会话、老群立刻生效，零迁移。
+ *
+ * ── 判据（能不能触发）──────────────────────────────────────────────────────
+ * **只认行首点名**：一行以 `@名字` 开头，紧跟「：」或空格，然后是要它做的事。
+ *   ✅ `@洞明：帮我复核这段 diff`
+ *   ✅ `@洞明 帮我复核这段 diff`
+ *   ❌ `输出形态（Markdown / 表格 / PPT @星象）` ← 11-06 那次误触发的正是这种举例文本
+ * ⛔ 只认群内**能派活**的伙伴（bot / 有 targetKind+targetKey / 未静音 / 不是自己）；
+ * ⛔ 代码围栏里的不算（示例代码里常有 @）；
+ * ⛔ 同一行只算第一个；同一条回复里同一人只算一次；`alreadyRan` 里的直接跳过（防回环）。
+ *
+ * @returns {{ memberId: string, name: string, ask: string }[]}
+ */
+export function parseAgentMentions(text, group, options = {}) {
+  const g = createGroup(group);
+  const excludeId = String(options?.excludeId ?? "");
+  const max = Number(options?.max) > 0 ? Number(options.max) : 3;
+  const already = new Set(Array.isArray(options?.alreadyRan) ? options.alreadyRan.map(String) : []);
+  const bots = g.members.filter(
+    (m) => m.kind === "bot" && m.id !== excludeId && m.targetKind && m.targetKey && !m.muted && !already.has(m.id),
+  );
+  if (!bots.length) return [];
+  const flat = (v) => String(v ?? "").replace(/\s+/g, "").toLowerCase();
+  const out = [];
+  const seen = new Set();
+  let fenced = false;
+  for (const raw of String(text ?? "").split("\n")) {
+    const line = raw.trim();
+    if (/^```/.test(line)) { fenced = !fenced; continue; }
+    if (fenced || !line.startsWith("@")) continue;
+    /* 行首 `@某名字` + 分隔（冒号优先，也允许直接空格）+ 内容 */
+    const m = line.match(/^@([^：:@]{1,40}?)\s*(?:[：:]\s*|\s+)(\S[\s\S]*)$/);
+    if (!m) continue;
+    const who = flat(m[1]);
+    const ask = m[2].trim();
+    if (!who || !ask) continue;
+    const hit = bots.find((b) => flat(b.name) === who || flat(b.targetKey) === who || flat(b.name).endsWith(who));
+    if (!hit || seen.has(hit.id)) continue;
+    seen.add(hit.id);
+    out.push({ memberId: hit.id, name: hit.name, ask });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/**
+ * 伙伴的**生效上级**（11-06 用户令：「专家团的时候，默认上级就是主会话那个」）。
+ *
+ * · 显式设过 `managerId` ⇒ 就用它；
+ * · 没设过 ⇒ 默认回落到**群主**（`leadId`，也就是这个群的主会话/发起人「我」）——
+ *   群是围绕群主派活组织的，伙伴天然向它汇报，⛔ 不该是一片"(无)"让用户一个个手填；
+ * · 群主自己没有上级（⛔ 不能自己当自己上级）；成员不存在 / 群主缺失 ⇒ 空串。
+ *
+ * ⛔ 这是**读取时兜底**，不往落盘数据里塞默认值：老群不会被偷偷改写，
+ *    用户显式改过谁就是谁（`setManager` 照旧只改他点的那一条）。
+ * ⛔ 判据只此一处 —— 设置页下拉、成员栏、prompt 注入全部走它（否则三处会漂）。
+ */
+export function resolveManagerId(group, memberId) {
+  const g = createGroup(group);
+  const id = String(memberId ?? "");
+  const self = g.members.find((m) => m.id === id);
+  if (!self) return "";
+  if (self.managerId) return self.managerId;
+  return g.leadId && g.leadId !== id ? String(g.leadId) : "";
+}
+
+/**
  * 委派白名单：A 能不能把活派给 B。
  * ⛔ 规则来自豆包实测：上下级是**数据**（managerId / canDelegate），不是进程树；
  *    `canDelegate` 为空表示"没配白名单"⇒ 按上级关系判（B 的 managerId === A 才算）。
@@ -307,11 +380,13 @@ export function groupContextBlock(group, options = {}) {
      ⛔ 目标写 `kind:name`（与 `agent_invoke` 的参数同形），模型照着就能调，不用猜。 */
   const me = String(options?.forMemberId ?? "");
   const self = me ? g.members.find((m) => m.id === me) : null;
-  const manager = self?.managerId ? g.members.find((m) => m.id === self.managerId) : null;
+  /* 上级走 resolveManagerId：没显式设过 ⇒ 群主（主会话那个）。 */
+  const managerId = self ? resolveManagerId(g, self.id) : "";
+  const manager = managerId ? g.members.find((m) => m.id === managerId) : null;
   const reports = self
     ? g.members.filter((m) => m.kind === "bot" && m.id !== self.id && canDelegate(self.id, m.id, g))
     : [];
-  const hasOrg = Boolean(manager || reports.length);
+  const hasOrg = Boolean(self?.managerId || reports.length);
   /* 群成员名录：伙伴要能 **@ 到具体的人**（互相 @ 对话的前提）。
      ⛔ 名字与 id 一起给：只有名字时模型会自己编一个 id 去调 agent_invoke（然后失败）。 */
   const roster = g.members;
@@ -322,7 +397,7 @@ export function groupContextBlock(group, options = {}) {
   if (g.workspace) lines.push(`工作目录：${g.workspace}（相对路径按它算；要读别处的文件请写绝对路径）`);
   if (roster.length) {
     if (lines.length > 1) lines.push("");
-    lines.push("群成员（名字可直接 @；括号里是派活用的 kind:key，调 agent_invoke 就用它）：");
+    lines.push("群成员（名字是显示名；括号里是调度目标 kind:key，用户在界面上点名时用它）：");
     for (const m of roster) {
       const isMe = self && m.id === self.id;
       const role = m.id === g.leadId ? "群主" : m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员");
@@ -331,7 +406,10 @@ export function groupContextBlock(group, options = {}) {
       lines.push(`- ${m.name}（${role}${key}${up}）${isMe ? " ← 就是你" : ""}`);
     }
     if (self) {
-      lines.push("⛔ 直接在回复里写 `@对方名字` 就能和它对话；⛔ 不要空转，没有新信息就别 @ 人。");
+      /* 11-06 用户令：群里允许伙伴之间 @ 沟通。判据是**行首点名**（见 parseAgentMentions），
+         所以提示词必须把这个格式写死 —— 写在句子中间的 @ 不会触发。 */
+      lines.push("要在群里叫某个伙伴接手，**另起一行**写 `@名字：要它做什么`（这一行只放这句，例：@洞明：复核这段 diff）。");
+      lines.push("⛔ 句子中间或举例里的 `@名字` 不会触发，只是给用户看的提及；⛔ 没有新信息就别 @ 人。");
     }
   }
   if (notes.length) {
@@ -346,13 +424,22 @@ export function groupContextBlock(group, options = {}) {
       for (const n of list) lines.push(`  - ${n.text}`);
     }
   }
-  if (hasOrg) {
+  /* 上级**总是**有（没显式设过 ⇒ 群主），所以只要给定了「我是谁」就写这一段；
+     下级白名单才是可选的。⛔ 别再拿 hasOrg 当条件 —— 那会让默认上级写不进去。 */
+  if (self && manager) {
     if (lines.length > 1) lines.push("");
     lines.push("组织关系（派活用 agent_invoke 的 kind/name）：");
-    if (manager) lines.push(`- 你的上级：${manager.name}${manager.targetProfession ? `（${manager.targetProfession}）` : ""}`);
+    lines.push(
+      `- 你的上级：${manager.name}${manager.targetProfession ? `（${manager.targetProfession}）` : ""}${
+        self.managerId ? "" : "（默认 · 群主）"
+      }`,
+    );
     if (reports.length) {
-      lines.push("- 你可以把子任务派给：" + reports.map((m) => `${m.name}（${m.targetKind || "expert"}:${m.targetKey || m.name}）`).join("、"));
-      lines.push("  ⛔ 只在用户明确要求、或确实需要时才派，不要为了显得忙碌而派。");
+      /* ⛔ 原来写「你可以把子任务派给：X」—— 但群伙伴自己是被委派会话，
+         调 agent_invoke 会被 canDispatchFrom 挡下（防套娃）。文案必须如实，
+         否则模型照着派、拿到一句看不懂的拒绝。 */
+      lines.push("- 你可以叫下级别伙伴接手（他们向你汇报）：" + reports.map((m) => m.name).join("、"));
+      lines.push("  ⛔ 用「另起一行 @名字：要它做什么」这种方式叫，⛔ 不要为了显得忙碌而叫。");
     }
   }
   if (files.length) {
@@ -453,6 +540,8 @@ export function projectGroupMessages(sources) {
         text: String(msg?.text ?? ""),
         card: msg?.card ?? null,
         mentions: Array.isArray(msg?.mentions) ? msg.mentions.map(String) : [],
+        /* 「由谁叫来」要跟着投影走：它是消息属性，不是日志本地字段 */
+        via: msg?.via ?? null,
       });
     }
   }
@@ -490,6 +579,11 @@ export function normalizeGroupMessage(entry) {
     /* @ 了谁（成员 id 数组）：飞书消息里 @ 是高亮 mention，不是普通文本。
        ⛔ 只留群里真实存在的 id，别把已移除的伙伴留在消息里。 */
     mentions: Array.isArray(entry?.mentions) ? entry.mentions.map(String).filter(Boolean) : [],
+    /* 这条回复是**被哪个伙伴叫来的**（11-06 伙伴之间 @ 沟通）：null = 用户派的。
+       ⛔ 只存 id + 名字，不存整条消息；渲染层据此标「由 X 叫来」。 */
+    via: entry?.via && typeof entry.via === "object" && String(entry.via.memberId ?? "")
+      ? { memberId: String(entry.via.memberId), name: String(entry.via.name ?? "") }
+      : null,
   };
 }
 

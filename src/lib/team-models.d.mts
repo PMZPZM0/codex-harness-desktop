@@ -192,3 +192,9 @@ export function normalizeGroupMessage(entry: unknown): GroupLogMessage | null;
 export function appendGroupMessage(list: unknown, entry: unknown, max?: number): GroupLogMessage[];
 export function projectGroupLog(messages: unknown): GroupMessageProjected[];
 export function addModeStateOf(partners: unknown, mode: string): { blocked: boolean; reason: string };
+export function resolveManagerId(group: unknown, memberId: string): string;
+export function parseAgentMentions(
+  text: unknown,
+  group: unknown,
+  options?: { excludeId?: string; max?: number; alreadyRan?: string[] },
+): { memberId: string; name: string; ask: string }[];

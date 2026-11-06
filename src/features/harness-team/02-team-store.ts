@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
-import { groupContextBlock } from "../../lib/team-models.mjs";
+import { groupContextBlock, parseAgentMentions } from "../../lib/team-models.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
 type ListResult = {
@@ -379,10 +379,19 @@ export function useTeamGroups() {
         setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((x) => x !== id) }));
       };
 
+      /* 伙伴之间互相 @ 的预算（11-06 用户令：「他们就可以在群里 @ 沟通，不用限制啥」）。
+         ⛔ 只留两条**必须**的护栏，不是"限制沟通"：
+            · 只走**一跳**（A@B 触发 B；B 再 @ 谁不再触发）—— 否则两个伙伴互 @ 会无限对烧；
+            · 一轮总量上限（4）—— 同上。
+         其余（谁是能派活的伙伴、静音、代码围栏、自己 @ 自己）都由纯函数判。 */
+      let chainBudget = 4;
       const runOne = async (
         partner: TeamGroup["members"][number],
         bodyText: string,
         source: "human" | "partner",
+        hop = 0,
+        /* 被谁叫来的（只有 source==="partner" 才有）—— 写进群日志的 `via`，界面上标出来 */
+        caller?: { id: string; name: string },
       ): Promise<void> => {
         if (ranIds.has(partner.id)) return;
         ranIds.add(partner.id);
@@ -439,6 +448,8 @@ export function useTeamGroups() {
             authorKind: "bot",
             threadId: res.threadId,
             text: output || "（没有返回文本内容）",
+            /* 被别的伙伴叫来的 ⇒ 记下"谁叫的"，群视图标出来（⛔ 不是人多点了一下） */
+            via: source === "partner" && caller ? { memberId: caller.id, name: caller.name } : null,
           });
           /* ⛔ 落盘失败也要说出来（典型场景：跑的过程中群被解散了），⛔ 不许当成功 */
           if (!wrote?.ok) {
@@ -465,7 +476,27 @@ export function useTeamGroups() {
           /* 用量口径：输入（注入块 + 原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
           chars = query.length + output.length;
 
-          /* ② 回复正文里出现的 @ 只在界面上做成「可点提及」，⛔ 不在这里自动派下一轮。 */
+          /* ② 伙伴在回复里**行首点名** ⇒ 叫那个伙伴接手（11-06 用户令：「可以 @ 沟通」）。
+             ⛔ 判据只在 parseAgentMentions 一处（行首 `@名字：要做的事`）；句子中间的 @ 不触发
+                —— 上次的 bug 正是把「PPT @星象」这种举例当成了指令。
+             ⛔ 只走一跳：hop === 0 才派下一轮，避免两个伙伴互 @ 无限对烧。 */
+          if (hop === 0 && chainBudget > 0 && okFlag && output) {
+            const asks = parseAgentMentions(output, group, {
+              excludeId: partner.id,
+              alreadyRan: [...ranIds],
+              max: chainBudget,
+            });
+            for (const ask of asks) {
+              const next = group.members.find((m) => m.id === ask.memberId);
+              if (!next || ranIds.has(next.id)) continue;
+              chainBudget -= 1;
+              /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链） */
+              void runOne(next, `（${partner.name} 在群里叫你）${ask.ask}`, "partner", 1, {
+                id: partner.id,
+                name: partner.name,
+              });
+            }
+          }
         } catch (err) {
           errMsg = err instanceof Error ? err.message : String(err);
           noteError(partner.name, errMsg);

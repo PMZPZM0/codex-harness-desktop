@@ -112,5 +112,7 @@ export type GroupMessageRow = {
   card: unknown;
   /** @ 了谁（成员 id） */
   mentions: string[];
+  /** 被哪个伙伴叫来的（伙伴之间 @ 沟通）；null = 用户派的 */
+  via?: { memberId: string; name: string } | null;
   seq: number;
 };
