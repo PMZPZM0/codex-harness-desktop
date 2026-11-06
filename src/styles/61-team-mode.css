@@ -190,11 +190,40 @@
 .team-settings__row > span:first-child { flex: none; white-space: nowrap; }
 .team-settings__row--plain { padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
 .team-settings__row select { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--line); font-size: 12px; }
-.team-settings__avatar { width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
-.team-settings__name { flex: 1; min-width: 0; }
-.team-settings__tag { margin-left: 6px; padding: 1px 6px; border-radius: 999px; background: var(--panel-base); font-size: 10px; font-style: normal; }
+.team-settings__avatar { flex: none; width: 22px; height: 22px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
+
+/* ⛔⛔ 行内三段的收缩规则（11-06 用户截图：名字被压成竖排一字一行）
+   缘由：`.app-select-trigger` 是 `width:100%`，直接当 flex 子项时它会吃光整行；
+   而 `.team-settings__name` 是 `flex:1 + min-width:0`，被压到 0 宽后中文没有空格可断
+   ⇒ 一个汉字一行。现在：名字**能缩但先省略号**、标签/单位**不缩**、下拉进固定槽。 */
+.team-settings__name {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.team-settings__name-text {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-settings__tag { flex: none; padding: 1px 6px; border-radius: 999px; background: var(--panel-base); font-size: 10px; font-style: normal; white-space: nowrap; }
 .team-settings__tag--muted { opacity: 0.7; }
-.team-settings__meta { font-size: 12px; color: var(--faint); }
+.team-settings__meta { flex: none; font-size: 12px; color: var(--faint); white-space: nowrap; }
+
+/* 下拉槽：固定宽度，内部 `.app-select-trigger` 的 100% 就落在槽里 */
+.team-settings__select { flex: 0 0 168px; display: flex; min-width: 0; }
+.team-settings__select > .app-select-trigger { width: 100%; min-width: 0; }
+@media (max-width: 620px) {
+  /* 窄窗（还有 232px 群列表挤着）：一行塞不下名字+职务+上级+下拉 ⇒ **折两行**，
+     ⛔ 不靠把名字压到 10px 硬塞（那样只剩省略号，等于没显示名字）。 */
+  .team-settings__row { flex-wrap: wrap; row-gap: 6px; }
+  .team-settings__name { flex: 1 1 120px; }
+  .team-settings__select { flex: 1 1 100%; }
+}
 .team-settings__mini { padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); background: transparent; font-size: 11px; cursor: pointer; }
 .team-settings__mini--danger { color: var(--danger); border-color: var(--danger); }
 .team-settings__empty { font-size: 12px; color: var(--faint); }

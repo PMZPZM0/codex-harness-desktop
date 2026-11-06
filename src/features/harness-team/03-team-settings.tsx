@@ -191,7 +191,7 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             <li key={p.id} className="team-settings__row">
               <span className="team-settings__avatar" aria-hidden>{p.name.slice(0, 1)}</span>
               <span className="team-settings__name">
-                {p.name}
+                <span className="team-settings__name-text" title={p.name}>{p.name}</span>
                 {p.id === group.leadId && <em className="team-settings__tag">群主</em>}
                 {p.muted && <em className="team-settings__tag team-settings__tag--muted">已静音</em>}
                 {p.targetKind
@@ -258,20 +258,24 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             <li key={p.id} className="team-settings__row">
               <span className="team-settings__avatar" aria-hidden>{p.name.slice(0, 1)}</span>
               <span className="team-settings__name">
-                {p.name}
+                <span className="team-settings__name-text" title={p.name}>{p.name}</span>
                 {p.targetProfession && <em className="team-settings__tag">{p.targetProfession}</em>}
               </span>
               <span className="team-settings__meta">上级</span>
-              <AppSelect
-                value={p.managerId}
-                onChange={(value) => void run(() => onSetManager(p.id, value), value ? "汇报关系已保存" : "已清掉上级")}
-                options={[
-                  { value: "", label: "（无）" },
-                  ...partners.filter((x) => x.id !== p.id).map((x) => ({ value: x.id, label: x.name })),
-                ]}
-                ariaLabel={`${p.name} 的上级`}
-                disabled={busy}
-              />
+              {/* ⛔ 下拉必须放进**固定宽度**的槽里：`.app-select-trigger` 是 `width:100%`，
+                  直接当 flex 子项会吃光整行 ⇒ 名字被压到 0 宽，中文一字一行（11-06 用户截图）。 */}
+              <span className="team-settings__select">
+                <AppSelect
+                  value={p.managerId}
+                  onChange={(value) => void run(() => onSetManager(p.id, value), value ? "汇报关系已保存" : "已清掉上级")}
+                  options={[
+                    { value: "", label: "（无）" },
+                    ...partners.filter((x) => x.id !== p.id).map((x) => ({ value: x.id, label: x.name })),
+                  ]}
+                  ariaLabel={`${p.name} 的上级`}
+                  disabled={busy}
+                />
+              </span>
             </li>
           ))}
           {!partners.length && <li className="team-settings__empty">先加伙伴，再设汇报关系</li>}
