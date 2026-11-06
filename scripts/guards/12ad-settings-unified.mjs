@@ -424,5 +424,13 @@ ok(/40~50 轮/.test(nudgeSrc) && /只问一次/.test(nudgeSrc) && /handoff/.test
 ok(/handoffNudge\(\)/.test(src("src/features/app-state/parts/part06/02-seg/01-turn-runtime-activity.tsx")),
   "交接提醒已拼进 developer instructions（不是写了没接线）");
 
+/* ⛔ 11-06 用户令（截图「界面展示给我美化一下」）：拓展接口的一级分类卡改一行式 ——
+   左 44px 色块图标 / 中标题+说明+数量胶囊 / 右箭头居中，卡高一致。 */
+const extCss = read("src/styles/19-misc-hints.css");
+ok(/\.settings-exp-shell \.ext-page \.settings-card \{[\s\S]{0,400}?display: grid;[\s\S]{0,400}?grid-template-columns: 44px minmax\(0, 1fr\) 16px;/.test(extCss)
+  && /\.ext-page \.settings-card\[data-group="接口与契约"\] \{ --ext-hue: #3b82f6; \}/.test(extCss)
+  && /\.settings-exp-shell \.ext-page \.settings-card-stat \{[\s\S]{0,200}?border-radius: 999px;/.test(extCss),
+  "拓展接口分类卡：一行式布局 + 分类色相 + 数量胶囊（11-06 美化）");
+
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

@@ -678,3 +678,5 @@
 | 2026-11-05 | 保存重启不自动启动（改为 detached 重启） | 修复 | `electron/features/app-diagnostics.ts`、守卫 06【174】 | 用户实测「保存重启，应用关闭了，就没有自动启动」。根因：开发态由 concurrently -k 拉起，旧 electron 一退出就杀整棵进程树，而 app.relaunch() 要等旧进程退出才起新进程 ⇒ 新实例正好落在被杀范围（云助手无头形态踩过同型）。改为：先 releaseSingleInstanceLock，再 spawn(process.execPath, argv.slice(1), {detached:true}).unref()，旧进程随后优雅退出。验证：独立 Electron 探针（释放锁 + detached spawn）旧进程退出后新实例成功拿到锁并二次启动；守卫 06 exit=0。 | 本轮 |
 
 | 2026-11-05 | 重启子进程剔除 ELECTRON_RUN_AS_NODE | 修复 | `electron/features/app-diagnostics.ts`、守卫 06【174】 | 与云助手 10-14 事故同型：环境里带 ELECTRON_RUN_AS_NODE 时，spawn 出的 electron 以**纯 Node 模式**启动、require("electron") 为空 ⇒ 秒退（用户看到的就是「关闭了没有自动启动」）。detached spawn 前显式删除该变量；守卫加判据。 | 本轮 |
+
+| 2026-11-05 | 拓展接口分类卡美化 | 改动 | `19-misc-hints.css`、守卫 12ad | 用户截图：「界面展示给我美化一下」。四张分类卡改成一行式信息卡：左侧 44px 圆角色块图标（接口=蓝 / 界面=紫 / 智能体=橙 / 记忆=绿）、中间标题 + 两行说明 + 数量胶囊、右侧箭头垂直居中；卡高一律 92px、hover 抬 1px + 同色描边阴影。验证：真 profile 打开设置 → 拓展接口（四卡等高等宽、图标在左/箭头在右、数量胶囊 999px）+ 截图；12ad 守卫 164/164。 | 本轮 |
