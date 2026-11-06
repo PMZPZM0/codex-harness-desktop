@@ -14,8 +14,9 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
-import { cliInstalledFlags, cliProcessEnv, readUsableCliAgents } from "../cli-agents";
+import { cliInstalledFlags, readUsableCliAgents } from "../cli-agents";
 import { cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
+import { cliMemberEnv } from "./cli-env";
 import { bridgeDial } from "../main";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -760,9 +761,11 @@ async function personalNormsBlock(): Promise<string> {
 
 /** CLI 成员的派遣：起子进程跑命令模板，stdout 尾部作为成品走同一条审查流水。
  *  ⛔ 命令 = heal(老模板) + 整体加引号的任务全文（11-06 实证：没引号时 `Select-Object -First 20`
- *    里的 `-First` 被 shell 拆成独立参数，QwenPaw 报 `No such option '-F'`，任务一个字都没跑）。 */
+ *    里的 `-First` 被 shell 拆成独立参数，QwenPaw 报 `No such option '-F'`，任务一个字都没跑）。
+ *  ⛔ 环境 = 增强 PATH + 主会话供应商/模型（cli-env.ts，与 @ 调度的 CLI 会话同口径）。 */
 async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
   const norms = await personalNormsBlock();
+  const env = await cliMemberEnv({ bossModel: await bossModelOf(group), memberModel: member.model });
   const command = fillCliPromptTemplate(
     healCliCommand(member.cliCommand ?? ""),
     memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1, "", norms),
@@ -785,8 +788,9 @@ async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTa
         windowsHide: true, ...(isWin ? { windowsVerbatimArguments: true } : {}),
         /* ⛔⛔ mac 适配（10-30 审计）：PATH 必须增强 —— GUI 进程只有 /usr/bin:/bin:/usr/sbin:/sbin，
            而 CLI 基本装在 /opt/homebrew/bin 或 ~/.npm-global/bin ⇒ 不增强时 `sh -c "claude …"`
-           报 command not found，派活 100% 失败（与检测侧的 cliProcessEnv 同一条 PATH）。 */
-        env: cliProcessEnv(),
+           报 command not found，派活 100% 失败（与检测侧的 cliProcessEnv 同一条 PATH）。
+           ⛔ 11-06：环境里还带主会话的 OPENAI_* / ANTHROPIC_*（见 cliMemberEnv）。 */
+        env,
       }, (error, stdout, stderr) => {
         const text = String(stdout ?? "").trim() || String(stderr ?? "").trim();
         if (error && !text) { reject(new Error(`CLI「${member.name}」执行失败：${String(error.message ?? error).slice(0, 200)}`)); return; }

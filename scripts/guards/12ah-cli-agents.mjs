@@ -436,8 +436,18 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "检测（where/which）走增强 PATH —— ⛔ 否则 mac 上装了也永远显示未检测到");
   ok(/probeVersion[\s\S]{0,600}?env: cliProcessEnv\(\)/.test(mainSrc),
     "取版本号的子进程也走增强 PATH（CLI 多是 node/python 脚本，要能再找到自己的 runtime）");
-  ok(/runCliMember[\s\S]{0,2000}?env: cliProcessEnv\(\)/.test(runnerSrc),
-    "派活执行（boss 群 CLI 成员）走同一条增强 PATH —— ⛔ 只修检测不修执行 = 检测得到、跑不起来");
+  const cliEnvSrc = readFileSync(join(ROOT, "electron/boss-groups/cli-env.ts"), "utf8");
+  ok(/runCliMember[\s\S]{0,2600}?\n\s+env,/.test(runnerSrc) && /await cliMemberEnv\(/.test(runnerSrc)
+    && /\.\.\.cliProcessEnv\(\)/.test(cliEnvSrc),
+    "派活执行（boss 群 CLI 成员）走同一条增强 PATH，并在其上叠加主会话模型配置");
+  /* ⛔ 11-06 用户令：「群聊里面 cli 智能体肯定也要自动配置」——
+     与 @ 调度的 CLI 会话同口径：解密宿主 Key → cliModelEnv → 只进子进程 env。 */
+  ok(/safeStorage\.decryptString/.test(cliEnvSrc) && /Object\.assign\(env, cliModelEnv\(/.test(cliEnvSrc),
+    "群聊 CLI 成员自动配置：解密宿主 Key 并交给 cliModelEnv（无需用户再配一遍）");
+  ok(/\|\| String\(input\?\.memberModel \?\? ""\) \|\| String\(custom\?\.model \?\? ""\)/.test(cliEnvSrc),
+    "群聊 CLI 成员的模型优先级与派活一致：boss 会话 → 成员配置 → 全局激活模型");
+  ok(!/apiKey/.test(runnerSrc.slice(runnerSrc.indexOf("function memberPrompt"), runnerSrc.indexOf("async function dispatchTask"))),
+    "⛔ Key 只进子进程环境，不进成员提示词 / 命令行");
   ok(/process\.platform === "win32" \? "where" : "which"/.test(mainSrc),
     "平台分叉只发生在一处（win `where` / 其余 `which`，⛔ 不许写死 where）");
 
