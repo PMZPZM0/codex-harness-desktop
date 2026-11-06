@@ -11,15 +11,20 @@
  *      （复制 / 追问 / 来源会话）的卡片；
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LedgerSummary, LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { TeamCard } from "./05-team-card";
 import { TeamMenuButton } from "./06-team-menu";
+import { TeamRuler } from "./07-team-ruler";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions } from "../../lib/team-models.mjs";
+/* ⛔ 贴底走统一原语（守卫禁止在时间线里直接把 scrollTop 赋成 scrollHeight ——
+   连带注释里出现那个字面量都会被扫到）。群消息流没有主对话那圈「尾部留白」，
+   所以目标就是内容底 —— 但写入路径必须同源。 */
+import { scrollToOffsetInstant } from "../../components/scroll-utils";
 
 type Props = {
   group: TeamGroup;
@@ -31,7 +36,11 @@ type Props = {
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
   onSetManager: (memberId: string, managerId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 项目地址（群的工作目录） */
+  onSetWorkspace: (workspace: string) => Promise<{ ok: boolean; error?: string }>;
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 清空聊天记录（只清群日志；伙伴的子会话不动） */
+  onClearMessages?: () => Promise<{ ok: boolean; error?: string; cleared?: number }>;
   /** 解散群（只删群与群日志；伙伴的子会话不动） */
   onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
   /** 记忆条目 */
@@ -70,10 +79,13 @@ function fmtTime(at: number): string {
 
 const shortId = (id: string) => (id.length > 10 ? `${id.slice(0, 6)}…` : id);
 
+/** 群聊一页多少条（首屏 + 每次向上补的量）。 */
+const PAGE = 30;
+
 export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
-  onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles,
-  onDeleteGroup, onRename, onSend,
+  onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
+  onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
   ledger, onLoadLedger, onStopPartner, live,
 }: Props) {
@@ -91,6 +103,35 @@ export function TeamGroupView({
   const [renaming, setRenaming] = useState(false);
   const [copied, setCopied] = useState("");
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
+     用户就会觉得"关了之后什么都没了"）。⛔ 只在自己本来就在底部时才跟，别抢用户翻历史的滚动。 */
+  const streamRef = useRef<HTMLDivElement | null>(null);
+  const stickRef = useRef(true);
+  const stick = () => { const el = streamRef.current; if (el) scrollToOffsetInstant(el, el.scrollHeight); };
+  /* 分页（用户 11-06：「滚轮和聊天记录分页咋做的」）：⛔ 不一次把 400 条全画进 DOM ——
+     首屏 30 条，滚到顶再往前加载一页，并且**保持滚动位置**（否则一加载就跳到别处）。 */
+  const [visibleCount, setVisibleCount] = useState(PAGE);
+  const hasMore = rows.length > visibleCount;
+  const hasMoreRef = useRef(hasMore);
+  hasMoreRef.current = hasMore;
+  const loadEarlier = () => {
+    const el = streamRef.current;
+    const prevH = el?.scrollHeight ?? 0;
+    const prevTop = el?.scrollTop ?? 0;
+    stickRef.current = false; // 正在翻历史：⛔ 别让贴底 effect 把人拽回底部
+    setVisibleCount((v) => Math.min(rows.length, v + PAGE));
+    requestAnimationFrame(() => {
+      const node = streamRef.current;
+      if (node) scrollToOffsetInstant(node, node.scrollHeight - prevH + prevTop);
+    });
+  };
+  const onStreamScroll = () => {
+    const el = streamRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    /* 滚到顶再往上 = 加载更早一页（主对话的「滚一屏补一页」同口径） */
+    if (el.scrollTop < 36 && hasMoreRef.current) loadEarlier();
+  };
 
   const partners = useMemo(() => group.members.filter((m) => m.kind === "bot"), [group]);
   /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：两种形态共用同一份数据与同一个点击口径 */
@@ -186,11 +227,24 @@ export function TeamGroupView({
     composerRef.current?.focus();
   };
 
+  const shownRows = useMemo(
+    () => (rows.length > visibleCount ? rows.slice(rows.length - visibleCount) : rows),
+    [rows, visibleCount],
+  );
+  const liveLen = (live ?? []).map((r) => `${r.threadId}:${String(r.text ?? "").length}`).join("|");
+
+  /* 换群 ⇒ 无条件贴底；消息或流式有变化 ⇒ 只在原本贴底时跟随 */
+  useEffect(() => { stickRef.current = true; setVisibleCount(PAGE); stick(); }, [group.id]);
+  useEffect(() => { if (stickRef.current) stick(); }, [rows.length, liveLen]);
+
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
-  const displayRows = mergeConsecutive(rows);
+  const displayRows = mergeConsecutive(shownRows);
 
+  /* 项目地址显示成短名（全路径放 title）：群头一行塞不下 D://a//b//c */
+  const projectName = (group.workspace ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
   const ctxParts = [
+    projectName ? `项目 ${projectName}` : "",
     group.memory?.trim() ? "群记忆" : "",
     (group.files?.length ?? 0) > 0 ? `${group.files.length} 个参考文件` : "",
     (group.schedules?.length ?? 0) > 0 ? `${group.schedules.length} 个定时` : "",
@@ -262,7 +316,9 @@ export function TeamGroupView({
           onMute={onMute}
           onSetManager={onSetManager}
           onSetMemory={onSetMemory}
+          onSetWorkspace={onSetWorkspace}
           onSetFiles={onSetFiles}
+          onClearMessages={onClearMessages}
           onDeleteGroup={onDeleteGroup}
           onAddNote={onAddNote}
           onRemoveNote={onRemoveNote}
@@ -276,7 +332,13 @@ export function TeamGroupView({
       ) : (
         <div className="team-group__body">
           <div className="team-group__main">
-            <div className="team-group__stream" role="log" aria-live="polite">
+            <div className="team-group__stream-wrap">
+            <div className="team-group__stream" role="log" aria-live="polite" ref={streamRef} onScroll={onStreamScroll}>
+              {hasMore && (
+                <button type="button" className="team-group__more" onClick={() => loadEarlier()}>
+                  ↑ 加载更早的 {Math.min(PAGE, rows.length - visibleCount)} 条（共 {rows.length} 条）
+                </button>
+              )}
               {rows.length === 0 ? (
                 <div className="team-group__empty">
                   <p>这个群还没有说过话。</p>
@@ -374,6 +436,9 @@ export function TeamGroupView({
                   </div>
                 </article>
               ))}
+            </div>
+            {/* 刻度尺（右侧，不随滚动移动）：每条人发的消息一个刻度，点一下跳过去 */}
+            <TeamRuler rows={shownRows} scrollRef={streamRef} />
             </div>
 
             {(busy?.length ?? 0) > 0 && (

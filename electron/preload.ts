@@ -1004,6 +1004,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamMute: (groupId: string, partnerId: string, muted: boolean) => __ipc("harness-team:mute", 3, [groupId, partnerId, muted]),
   /* 团队模式 P0 */
   harnessTeamSetGuard: (groupId: string, guard: Record<string, unknown>) => __ipc("harness-team:set-guard", 2, [groupId, guard]),
+  /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+  harnessTeamClearMessages: (groupId: string) => __ipc("harness-team:clear-messages", 1, [groupId]),
   /* 团队模式 P0 */
   harnessTeamProject: (sources: unknown) => __ipc("harness-team:project", 1, [sources]),
   /* 团队模式 P0b（群消息日志） */
@@ -1014,6 +1016,10 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetMemory: (groupId: string, text: string) => __ipc("harness-team:set-memory", 2, [groupId, text]),
+  /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+  harnessTeamSetWorkspace: (groupId: string, workspace: string) => __ipc("harness-team:set-workspace", 2, [groupId, workspace]),
+  /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+  harnessTeamRunning: (groupId: string) => __ipc("harness-team:running", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetFiles: (groupId: string, files: unknown) => __ipc("harness-team:set-files", 2, [groupId, files]),
   /* 团队模式：上下级（委派白名单） */

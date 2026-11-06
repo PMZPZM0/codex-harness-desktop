@@ -256,6 +256,48 @@ export function useTeamGroups() {
   refreshRef.current = () => { void refresh(); };
   loadMessagesRef.current = (gid: string) => { void loadMessages(gid); };
 
+  /**
+   * 本群此刻正在跑的伙伴（主进程委派登记表 = 真相源）。
+   * ⛔ 为什么必须有它：用户「群弹窗一关就看不见了，要等回复完才能看见」——
+   *   busy/live 是**这个面板**的临时态，面板一卸载就没了，而主进程一直在跑、一直在累积文本。
+   *   面板重开时先拉一次，就能立刻看到「处理中」+ 已输出的那半截。
+   * ⛔ 合并而不是替换：本地刚发起、登记表还没写进去的那一瞬间不能被清掉。
+   */
+  const loadRunning = useCallback(async (groupId: string) => {
+    if (!groupId) return;
+    try {
+      const res = (await window.codex.harnessTeamRunning(groupId)) as {
+        ok: boolean;
+        runs?: Array<{ memberId: string; name: string; threadId: string; text: string; startedAt: number }>;
+      };
+      if (!alive.current || !res?.ok) return;
+      const runs = Array.isArray(res.runs) ? res.runs : [];
+      if (!runs.length) return;
+      /* ⛔ 先改 ref 再 setState：delegate-run 的增量到达时靠 ref 判断"这个名字属于哪个群" */
+      const merged = [...new Set([...(busyRef.current[groupId] ?? []), ...runs.map((r) => r.memberId)])];
+      busyRef.current = { ...busyRef.current, [groupId]: merged };
+      setBusyByGroup((prev) => ({ ...prev, [groupId]: merged }));
+      setLiveByGroup((prev) => {
+        const bucket = { ...(prev[groupId] ?? {}) };
+        for (const r of runs) {
+          /* 已经在流式里的那张卡不覆盖（它的 text 更新鲜） */
+          if (bucket[r.threadId]) continue;
+          bucket[r.threadId] = {
+            threadId: r.threadId,
+            memberId: r.memberId,
+            name: r.name,
+            text: String(r.text ?? ""),
+            startedAt: Number(r.startedAt ?? 0) || Date.now(),
+            status: "running",
+          };
+        }
+        return { ...prev, [groupId]: bucket };
+      });
+    } catch {
+      /* 拿不到就当"没人在跑"：⛔ 不要让一个旁路查询挡住读消息 */
+    }
+  }, []);
+
   /** 落一条消息（主进程补 at/id 并回带整份投影） */
   const appendMessage = useCallback(async (groupId: string, entry: Record<string, unknown>) => {
     const res = (await window.codex.harnessTeamAppendMessage(groupId, entry)) as RowsResult;
@@ -383,6 +425,9 @@ export function useTeamGroups() {
             kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
             name: partner.targetKey,
             query,
+            /* 群的项目地址 = 子会话的工作目录（空 ⇒ 应用默认目录）。⛔ 不传就是另一回事了：
+               伙伴会在默认目录里找相对路径，然后如实告诉你"没这个文件"。 */
+            cwd: group.workspace || undefined,
             /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，空 origin 等价于"发起方是本地用户"，
                闸与子会话复用都按这个口径走（互相 @ 触发的那次也一样）。 */
             originThreadId: "",
@@ -547,6 +592,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 清空群聊天记录：只清投影日志，⛔ 伙伴的子会话与真实产出一条都不动（与删群同口径） */
+  const clearMessages = useCallback(async (groupId: string) => {
+    const res = (await window.codex.harnessTeamClearMessages(groupId)) as { ok: boolean; cleared?: number; error?: string };
+    if (res?.ok) setRowsByGroup((prev) => ({ ...prev, [groupId]: [] }));
+    return { ok: Boolean(res?.ok), cleared: res?.cleared, error: res?.error };
+  }, []);
+
   /** 解散群：只删群与其群消息日志（主进程侧），⛔ 伙伴的子会话一条都不动 */
   const removeGroup = useCallback(async (groupId: string) => {
     const res = (await window.codex.harnessTeamDelete(groupId)) as { ok: boolean; id?: string; error?: string };
@@ -564,6 +616,13 @@ export function useTeamGroups() {
   /** 群记忆（落主进程；返回的 group 直接替换本地那份） */
   const setMemory = useCallback(
     async (groupId: string, text: string) => apply((await window.codex.harnessTeamSetMemory(groupId, text)) as MutationResult),
+    [apply],
+  );
+
+  /** 项目地址（群的工作目录）：只落路径，派活时作为 cwd */
+  const setWorkspace = useCallback(
+    async (groupId: string, workspace: string) =>
+      apply((await window.codex.harnessTeamSetWorkspace(groupId, workspace)) as MutationResult),
     [apply],
   );
 
@@ -637,7 +696,7 @@ export function useTeamGroups() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, ledger,
     refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
-    setMemory, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule, setManagerOf,
-    loadMessages, appendMessage, dispatch, loadLedger, stopPartner,
+    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
+    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, loadLedger, stopPartner, clearMessages,
   };
 }

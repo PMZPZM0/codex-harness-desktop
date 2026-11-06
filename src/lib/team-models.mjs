@@ -150,6 +150,9 @@ export function createGroup(input) {
     guard: { ...DEFAULT_GROUP_GUARD, ...(input?.guard ?? {}) },
     /* 群简介：这个群的共享背景（注入每次派活）。⛔ 与人/伙伴的私有记忆分开，别混。 */
     memory: String(input?.memory ?? "").slice(0, MAX_GROUP_MEMORY_CHARS),
+    /* 项目地址（群的工作目录）：派活时作为子会话的 cwd —— 决定伙伴在哪个仓库里干活。
+       ⛔ 空串 = 跟随应用默认目录（不编一个路径出来）。 */
+    workspace: String(input?.workspace ?? "").trim(),
     /* 群记忆条目：带 type + origin 的结论/约定（见 normalizeMemoryNote） */
     memoryNotes,
     files,
@@ -315,6 +318,8 @@ export function groupContextBlock(group, options = {}) {
   if (!memory && !notes.length && !files.length && !hasOrg && roster.length < 2) return "";
   const lines = [`【群聊上下文 · ${g.name}】`];
   if (memory) lines.push(memory);
+  /* 项目地址：不说清"在哪干活"，伙伴会在应用默认目录里乱找（相对路径全落空） */
+  if (g.workspace) lines.push(`工作目录：${g.workspace}（相对路径按它算；要读别处的文件请写绝对路径）`);
   if (roster.length) {
     if (lines.length > 1) lines.push("");
     lines.push("群成员（名字可直接 @；括号里是派活用的 kind:key，调 agent_invoke 就用它）：");

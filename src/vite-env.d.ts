@@ -1388,6 +1388,8 @@ interface Window {
     harnessTeamMute(groupId: string, partnerId: string, muted: boolean): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
     /* 团队模式 P0 */
     harnessTeamSetGuard(groupId: string, guard: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
+    harnessTeamClearMessages(groupId: string): Promise<{ ok: boolean; cleared: number; error?: string }>;
     /* 团队模式 P0 */
     harnessTeamProject(sources: unknown): Promise<{ rows: any[] }>;
     /* 团队模式 P0b（群消息日志） */
@@ -1398,6 +1400,10 @@ interface Window {
     harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string }>;
     /* 团队模式：群记忆 / 群文件 */
     harnessTeamSetMemory(groupId: string, text: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群项目地址（派活时作为子会话 cwd） */
+    harnessTeamSetWorkspace(groupId: string, workspace: string): Promise<{ ok: boolean; group?: any; error?: string }>;
+    /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */
+    harnessTeamRunning(groupId: string): Promise<{ ok: boolean; runs: any[]; error?: string }>;
     /* 团队模式：群记忆 / 群文件 */
     harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：上下级（委派白名单） */

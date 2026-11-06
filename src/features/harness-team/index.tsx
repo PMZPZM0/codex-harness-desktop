@@ -25,10 +25,10 @@ export function TeamModePanel() {
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError,
-    create, rename, addPartner, removePartner, mute, removeGroup, setMemory, saveFiles, setManagerOf,
+    create, rename, addPartner, removePartner, mute, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
     addNote, removeNote, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
     ledger, loadLedger, stopPartner,
-    loadMessages, dispatch,
+    loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
   const [name, setName] = useState("");
@@ -39,13 +39,16 @@ export function TeamModePanel() {
     if (!activeId && groups.length) setActiveId(groups[0].id);
   }, [groups, activeId]);
 
-  /* 切群即读这个群的群视图行（⛔ 主进程才是权威：不靠上一屏的残留在内存里拼） */
+  /* 切群即读这个群的群视图行（⛔ 主进程才是权威：不靠上一屏的残留在内存里拼）。
+     同时拉一次「谁正在跑」—— 面板关掉再打开时，正在处理的伙伴要立刻回到屏幕上，
+     ⛔ 不能等它回完才突然冒出整段（用户 11-06 实测的正是这个）。 */
   useEffect(() => {
     if (activeId) {
       void loadMessages(activeId);
+      void loadRunning(activeId);
       void loadLedger(activeId, 7);
     }
-  }, [activeId, loadMessages, loadLedger]);
+  }, [activeId, loadMessages, loadRunning, loadLedger]);
 
   const active = useMemo(() => groups.find((g) => g.id === activeId) ?? null, [groups, activeId]);
 
@@ -126,6 +129,7 @@ export function TeamModePanel() {
             onMute={(id, m) => mute(active.id, id, m)}
             onSetManager={(memberId, managerId) => setManagerOf(active.id, memberId, managerId)}
             onSetMemory={(text) => setMemory(active.id, text)}
+            onSetWorkspace={(workspace) => setWorkspace(active.id, workspace)}
             onSetFiles={(files) => saveFiles(active.id, files)}
             onAddNote={(note) => addNote(active.id, note)}
             onRemoveNote={(noteId) => removeNote(active.id, noteId)}
@@ -137,6 +141,7 @@ export function TeamModePanel() {
             onLoadLedger={(days) => void loadLedger(active.id, days)}
             onStopPartner={(memberId) => stopPartner(active, memberId)}
             onRename={(name) => rename(active.id, name)}
+            onClearMessages={() => clearMessages(active.id)}
             onDeleteGroup={async () => {
               const r = await removeGroup(active.id);
               if (r.ok) setActiveId("");

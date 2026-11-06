@@ -12,8 +12,8 @@
  *   ② 配置文件损坏 ⇒ 返回空列表，⛔ 不抛（一个坏文件不能让设置页打不开）。
  *   ③ 写盘走「临时文件 + rename」原子替换，⛔ 直接覆盖会在被杀时留下半截 JSON。
  */
-import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync, statSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 import { app } from "electron";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -74,6 +74,9 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:append-message",
   "harness-team:delete",
   "harness-team:set-memory",
+  "harness-team:set-workspace",
+  "harness-team:running",
+  "harness-team:clear-messages",
   "harness-team:set-files",
   "harness-team:set-manager",
   "harness-team:add-note",
@@ -285,6 +288,8 @@ async function dispatchGroupText(
         kind: partner.targetKind as "expert" | "subagent" | "cli",
         name: partner.targetKey,
         query,
+        /* 群的项目地址 = 子会话的工作目录（空 ⇒ 用应用默认目录） */
+        cwd: group.workspace || undefined,
         /* ⛔ originThreadId 留空：定时任务没有"发起会话"，空 origin 等价于本地用户发起 */
         originThreadId: "",
       });
@@ -531,6 +536,25 @@ export const harnessTeamFeature = defineFeature<null>({
       return saveOne(store, next);
     });
 
+    /* 项目地址（群的工作目录）：派活时作为子会话 cwd。
+       ⛔ 必须**当场校验**（11-06 实测撞到脏值 `"测试"`）：相对路径交给引擎会变成
+         `<进程 cwd>/测试`，目录不存在 ⇒ thread/start 直接报一个看不懂的错。
+         ⛔ 但不建目录（用户说在哪就在哪，⛔ 不替他在磁盘上造东西）；空串 = 跟随应用默认。 */
+    ipcHost.handle("harness-team:set-workspace", (_event, groupId: string, workspace: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const raw = String(workspace ?? "").trim();
+      if (raw) {
+        if (!isAbsolute(raw)) return { ok: false, error: "项目地址要选一个绝对路径（如 D:////项目////xxx）" };
+        let isDir = false;
+        try { isDir = statSync(raw).isDirectory(); } catch { isDir = false; }
+        if (!isDir) return { ok: false, error: `这个目录不存在：${raw}` };
+      }
+      const next = createGroup({ ...g, workspace: raw }) as GroupShape;
+      return saveOne(store, next);
+    });
+
     /* 群文件：只存路径 + 说明（⛔ 不搬文件、不读内容）。整组替换语义 —— UI 增删后一次提交，
        ⛔ 不做 add/remove 两条通道：两条通道会让"并发改同一个群"的合并规则变成猜的。 */
     ipcHost.handle("harness-team:set-files", (_event, groupId: string, files: unknown) => {
@@ -665,6 +689,38 @@ export const harnessTeamFeature = defineFeature<null>({
       };
     });
 
+    /* 本群此刻**正在跑**的伙伴（面板关掉再打开时恢复"处理中"与已输出的那段文本）。
+       ⛔ 真相源是主进程的委派登记表（delegateRegistry 的 running 记录持续累积 output）；
+         渲染层的 busy/流式卡是**临时态**，面板一卸载就没了 —— 11-06 用户实测：
+         「群弹窗一关就看不见了，要等回复完才能看见」。 */
+    ipcHost.handle("harness-team:running", async (_event, groupId: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在", runs: [] };
+      let records: Awaited<ReturnType<NonNullable<typeof delegateRegistry>["listAll"]>> = [];
+      try {
+        records = (await delegateRegistry?.listAll()) ?? [];
+      } catch { /* 登记表未就绪：当成"没人在跑" */ }
+      const bots = g.members.filter((m) => m.kind === "bot");
+      /* ⛔ targetKey 不同形：成员存的是 `team:member` 那种，登记表存 `${kind}:${key}` ⇒ 双向包含 */
+      const loose = (a: string, b: string) => Boolean(a && b) && (a === b || a.includes(b) || b.includes(a));
+      const runs = [];
+      for (const r of records) {
+        if (!r || r.status !== "running") continue;
+        const hit = (r.targetKey ? bots.find((m) => m.targetKey && loose(m.targetKey, String(r.targetKey))) : undefined)
+          ?? bots.find((m) => m.name === r.name);
+        if (!hit) continue;
+        runs.push({
+          memberId: hit.id,
+          name: hit.name,
+          threadId: r.threadId,
+          text: String(r.output ?? ""),
+          startedAt: Number(r.startedAt ?? 0) || Date.now(),
+        });
+      }
+      return { ok: true, runs };
+    });
+
     /* 停止某个伙伴当前这一次运行（用户：`@成员 /stop`）。
        ⛔ 只中断**这一回合**（turn/interrupt），不删会话、不影响下一次派活；
        ⛔ 拿不到 turnId 就明确说"它现在没在跑"，别假装发了个停止信号。 */
@@ -719,6 +775,18 @@ export const harnessTeamFeature = defineFeature<null>({
       delete messages[gid];
       writeStore({ groups: store.groups.filter((x) => x.id !== gid), messages, version: 2 });
       return { ok: true, id: gid };
+    });
+
+    /* 清空聊天记录（用户 11-06：「没有清空记录功能」）。
+       ⛔ 只清**群日志**（群视图的投影索引），伙伴的子会话与它们的真实产出一条都不动 ——
+         这和「删群」同一个口径：群是视图，子会话是资产。 */
+    ipcHost.handle("harness-team:clear-messages", (_event, groupId: string) => {
+      const store = readStore();
+      const gid = String(groupId ?? "");
+      if (!findGroup(store.groups, gid)) return { ok: false, error: "群不存在", cleared: 0 };
+      const cleared = (store.messages[gid] ?? []).length;
+      writeStore({ ...store, messages: { ...store.messages, [gid]: [] } });
+      return { ok: true, cleared };
     });
 
     /* 消息投影：多个子会话 → 群视图（重排 + 去重，⛔ 不造消息） */

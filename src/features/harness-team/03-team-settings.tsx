@@ -45,7 +45,11 @@ type Props = {
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
   onSetManager: (memberId: string, managerId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 项目地址（群的工作目录；空串 = 跟随应用默认） */
+  onSetWorkspace: (workspace: string) => Promise<{ ok: boolean; error?: string }>;
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
+  /** 清空聊天记录（只清群日志；伙伴的子会话不动） */
+  onClearMessages?: () => Promise<{ ok: boolean; error?: string; cleared?: number }>;
   /** 解散群（只删群与群日志；伙伴的子会话不动） */
   onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
   /** 记忆条目（带 type + origin） */
@@ -106,7 +110,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule, ledger, onLoadLedger }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule, ledger, onLoadLedger }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -114,6 +118,7 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   const [msg, setMsg] = useState("");
   const [done, setDone] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   /* 群记忆 / 群文件：本地草稿 + 脏标记（保存才落盘，避免每敲一个字就写文件） */
   const [memoryDraft, setMemoryDraft] = useState(group.memory ?? "");
@@ -255,6 +260,21 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
 
   const resetCommands = async () => {
     await run(() => onSaveMenu([...DEFAULT_GROUP_MENU] as unknown[]), "已恢复默认指令");
+  };
+
+  /** 选项目地址（选完即落盘：这是一个明确的动作，⛔ 不做"草稿再保存"） */
+  const pickWorkspace = async () => {
+    setMsg("");
+    setDone("");
+    try {
+      const picked = group.workspace
+        ? await window.codex.chooseDirectoryAt(group.workspace)
+        : await window.codex.chooseDirectory();
+      if (!picked) return;
+      await run(() => onSetWorkspace(picked), "项目地址已更新 —— 下次派活就在这个目录里");
+    } catch (err) {
+      setMsg(err instanceof Error ? err.message : String(err));
+    }
   };
 
   /* ── 定时任务（豆包 §③ 自动化定时）────────────────────────────────────────
@@ -432,6 +452,39 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
           ))}
           {!partners.length && <li className="team-settings__empty">先加伙伴，再设汇报关系</li>}
         </ul>
+      </section>
+
+      {/* ── 项目地址（群的工作目录）──────────────────────────────────────────
+          用户 11-06：「然后群项目地址选项」—— 群里派活必须知道"在哪个仓库干活"，
+          否则伙伴在应用默认目录里找相对路径，然后如实回你"没这个文件"。 */}
+      <section className="team-settings__block">
+        <h3>
+          <FolderOpen size={14} className="ic-blue" />
+          项目地址
+          <span className="team-settings__count">{group.workspace ? "已设" : "跟随默认"}</span>
+        </h3>
+        <p className="team-settings__hint">
+          伙伴在这个目录里干活（派活时作为子会话的工作目录）。不设就跟随应用默认目录。
+          <strong>改完只影响之后派出去的活</strong>，已经跑着的子会话不会中途换目录。
+        </p>
+        <div className="team-settings__path">
+          <code className="team-settings__path-text" title={group.workspace || "（跟随应用默认目录）"}>
+            {group.workspace || "（跟随应用默认目录）"}
+          </code>
+          <button type="button" className="team-settings__mini" onClick={() => void pickWorkspace()} disabled={busy}>
+            选择目录…
+          </button>
+          {group.workspace && (
+            <button
+              type="button"
+              className="team-settings__mini"
+              onClick={() => void run(() => onSetWorkspace(""), "已清空项目地址 —— 之后跟随应用默认目录")}
+              disabled={busy}
+            >
+              清空
+            </button>
+          )}
+        </div>
       </section>
 
       {/* ── 群记忆 ─────────────────────────────────────────────────────── */}
@@ -873,6 +926,43 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
           <ul className="team-settings__issues">
             {issues.map((s) => <li key={s}>{s}</li>)}
           </ul>
+        </section>
+      )}
+
+      {/* ── 聊天记录（11-06 用户：「没有清空记录功能」）──────────────────────────
+          ⛔ 只清**群日志**（群视图的投影索引）；伙伴的子会话与它们的真实产出一条都不动，
+             和「解散群」同一个口径 —— 群是视图，子会话是资产。 */}
+      {onClearMessages && (
+        <section className="team-settings__block">
+          <h3><Trash2 size={14} className="ic-amber" />聊天记录</h3>
+          <div className="team-settings__inline-row">
+            <span className="team-settings__hint team-settings__hint--inline">
+              清空群里的消息记录（只是一个索引）。<strong>伙伴的会话和你之前的派活记录一条都不会删</strong>，
+              清完还能重新 @ 派活。
+            </span>
+            {confirmClear ? (
+              <>
+                <span className="team-settings__meta">确定清空？清完不能恢复</span>
+                <button type="button" className="team-settings__mini" onClick={() => setConfirmClear(false)} disabled={busy}>取消</button>
+                <button
+                  type="button"
+                  className="team-settings__mini team-settings__mini--danger"
+                  onClick={() => void run(async () => {
+                    const r = await onClearMessages();
+                    if (r.ok) setConfirmClear(false);
+                    return r;
+                  }, "聊天记录已清空")}
+                  disabled={busy}
+                >
+                  确认清空
+                </button>
+              </>
+            ) : (
+              <button type="button" className="team-settings__mini team-settings__mini--danger" onClick={() => setConfirmClear(true)} disabled={busy}>
+                清空记录
+              </button>
+            )}
+          </div>
         </section>
       )}
 

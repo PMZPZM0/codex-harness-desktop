@@ -67,6 +67,8 @@ export interface TeamGroupLite {
   guard: TeamGuard;
   /** 群简介（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
   memory: string;
+  /** 项目地址（群的工作目录）：派活时作为子会话 cwd；空串 = 跟随应用默认 */
+  workspace: string;
   /** 群记忆条目：带类型 + 来源的结论 */
   memoryNotes: MemoryNoteLite[];
   files: GroupFileLite[];

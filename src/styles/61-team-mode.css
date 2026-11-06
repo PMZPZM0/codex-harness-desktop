@@ -2,7 +2,9 @@
 
 .team-mode {
   display: grid;
-  grid-template-columns: 232px minmax(0, 1fr);
+  /* 11-06 用户（截图红框）：「这里太宽了，空白太多了，给刻度线留出来位置」
+     ⇒ 232 → 176：群名 + 一行小字够放，省下来的宽度全给消息区（右侧还有刻度尺要占 16px）。 */
+  grid-template-columns: 176px minmax(0, 1fr);
   /* ⛔ 只有一行（卡片头由 .team-modal__head 承担）：原来写的 `auto 1fr` 是给已删除的面板头留的，
      留着会让左栏背景只铺第一行的高度。 */
   grid-template-rows: minmax(0, 1fr);
@@ -23,19 +25,19 @@
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  padding: 14px 14px 8px;
-  font-size: 13px;
+  padding: 12px 12px 6px;
+  font-size: 12.5px;
 }
 .team-mode__rail-sub { color: var(--faint); font-size: 12px; }
-.team-mode__groups { flex: 1; overflow: auto; margin: 0; padding: 4px 8px; list-style: none; }
+.team-mode__groups { flex: 1; overflow: auto; margin: 0; padding: 2px 6px; list-style: none; }
 .team-mode__group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 7px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 7px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -99,12 +101,26 @@
 }
 
 /* ── 消息流 ── */
-.team-group__stream { flex: 1; overflow: auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+/* ⛔ 只纵向滚：横向溢出交给卡片自己（表格 wrap / 代码块都是 overflow:auto）。
+   原来 `overflow: auto` 会因为一条超长行长出**水平滚动条** —— 底部那条蓝色横杠就是它，
+   顶部还会多一条横线，白占高度又难看（11-06 截图实锤）。 */
+.team-group__stream {
+  flex: 1;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
 .team-group__empty { margin: auto; text-align: center; color: var(--faint); font-size: 13px; }
 .team-group__empty-hint { font-size: 12px; }
 .team-group__empty-btn { margin-top: 8px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-size: 12px; }
 
 .team-msg { display: flex; gap: 10px; }
+/* 长路径 / 长 URL 不换行会把整条消息撑宽（撑出水平滚动条）；消息体允许任意断行 */
+.team-msg__body { min-width: 0; overflow-wrap: anywhere; }
 .team-msg__avatar {
   flex: none;
   display: inline-flex;
@@ -964,3 +980,51 @@
   color: var(--text);
   font-size: 12px;
 }
+
+/* ══════ 设置页：项目地址（11-06 用户：「然后群项目地址选项」）═══════════════════ */
+.team-settings__path { display: flex; align-items: center; gap: 8px; }
+.team-settings__path-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-settings__path .team-settings__mini { flex: none; }
+
+/* ══════ 消息流 + 刻度尺（11-06 用户：「给刻度线留出来位置」）════════════════════
+   ⛔ 刻度尺放在**滚动区外面**（wrap 里与 stream 并排）：放进 stream 会跟着内容滚走，
+      用户就永远看不到"我现在在哪一段"。 */
+.team-group__stream-wrap { display: flex; flex: 1; min-height: 0; min-width: 0; }
+.team-ruler { display: flex; flex: none; width: 16px; justify-content: center; padding: 12px 0; }
+.team-ruler__track { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+.team-ruler__tick {
+  width: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  background: var(--line);
+  cursor: pointer;
+  transition: width 0.12s ease, background 0.12s ease;
+}
+.team-ruler__tick:hover { width: 7px; background: var(--muted); }
+/* 当前阅读位置：加粗 + 强调色（与主对话刻度尺同一套语义） */
+.team-ruler__tick.is-current { width: 8px; background: var(--accent); }
+.team-group__more {
+  align-self: center;
+  margin: 0 auto 2px;
+  padding: 4px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--faint);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.team-group__more:hover { border-color: var(--accent); color: var(--accent); }
