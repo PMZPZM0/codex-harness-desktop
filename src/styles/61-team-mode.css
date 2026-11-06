@@ -1170,56 +1170,6 @@
 }
 .team-composer__send:disabled { opacity: 0.5; cursor: default; }
 /* `+` 号菜单：向上展开、在输入框卡片内，⛔ 不引入主对话 bag 驱动的二级面板 */
-.team-composer__pop {
-  position: absolute;
-  left: 8px;
-  bottom: calc(100% + 8px);
-  z-index: 35;
-  min-width: 200px;
-  padding: 5px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent);
-}
-.team-composer__pop > button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text);
-  font-size: 12px;
-  text-align: left;
-  cursor: pointer;
-}
-.team-composer__pop > button:hover { background: var(--accent-soft); color: var(--accent); }
-.team-composer__sub {
-  max-height: 210px;
-  overflow-y: auto;
-  padding: 3px 0 5px 8px;
-  border-left: 1px solid var(--line-soft);
-  margin-left: 8px;
-}
-.team-composer__sub > button {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-  padding: 4px 7px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-}
-.team-composer__sub > button:hover { background: var(--accent-soft); }
-.team-composer__sub small { color: var(--faint); font-size: 10px; }
-.team-composer__empty { margin: 4px 8px; color: var(--faint); font-size: 11px; }
 @media (max-width: 760px) {
   .team-composer__count { display: none; }
   .team-composer__actions { flex-wrap: wrap; }
@@ -1513,3 +1463,86 @@
   font-size: 10.5px;
 }
 .team-mode__group-menu > button.is-danger.is-armed { background: color-mix(in srgb, var(--danger) 14%, transparent); font-weight: 600; }
+
+/* ══════ + 号菜单：直接复用主对话 .composer-quick-pop / .submenu-* 皮肤 ══════════
+   11-06 用户：「这个展示不对吧，那个技能展示也丑」。① 旧弹层 `bottom:100%` 是相对
+   **整个输入框卡片** ⇒ 浮到 @ 条上、离 + 号隔了一整个 textarea；现在放进主对话同款
+   `.composer-quick-menu`（相对 + 按钮），`flip-main-up` 贴着按钮向上展开。
+   ② 技能从「缩进竖线小字列表」换成主对话同款「返回 + 搜索框 + 图标列表」。 */
+.team-composer .composer-quick-menu { flex: none; }
+.team-composer .composer-quick-pop {
+  width: 268px;
+  max-height: min(360px, calc(100vh - 140px));
+  overflow-y: auto;
+}
+.team-composer .composer-quick-pop.flip-main-up { top: auto; bottom: calc(100% + 8px); }
+.team-composer__skills { display: flex; flex-direction: column; gap: 2px; }
+.team-composer__pop-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.team-composer__pop-back:hover { background: var(--panel-2); color: var(--text); }
+.team-composer .submenu-list { max-height: 240px; overflow-y: auto; }
+.team-composer .submenu-empty { margin: 6px 8px; color: var(--faint); font-size: 11px; }
+
+/* ⛔ 11-06 二次修正：只贴着按钮还不够 —— 群输入框**上方有 @ 条**，
+   向上弹的菜单会盖住它。⇒ 输入区给足高度，菜单相对**整张卡片**定位、
+   底边落在工具行上方 8px、最大高度夹在卡片内 ⇒ 主菜单完全不越过卡片，
+   @ 条一个 chip 都不遮；技能面板（内容多）才允许向上溢出并靠右，让左侧 chips 仍可见。 */
+.team-composer .composer-quick-menu { position: static; }
+.team-composer .composer-quick-pop,
+.team-composer .composer-quick-pop.flip-main-up {
+  left: 10px;
+  right: auto;
+  top: auto;
+  bottom: 48px;
+  width: 268px;
+  max-height: calc(100% - 56px);
+  overflow-y: auto;
+}
+/* 给菜单留出「卡片内向上展开」的空间；群消息区本来就宽裕，输入区高一点更好写长指令 */
+.team-composer .team-composer__input { min-height: 110px; }
+
+/* ⛔ 11-06 第三轮（用户截图「这是什么情况」）：技能面板做成**浮层**仍会盖住
+   @ 条右侧与输入框右上。⇒ 彻底取消技能浮层：点「引用技能」后，输入框卡片内的
+   textarea 原地换成「返回 + 搜索 + 可滚动技能列表」，零遮挡、位置稳定；
+   选完/返回自动换回 textarea，用户已输入的文字不丢。 */
+.team-composer__skill-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 110px;
+  max-height: 190px;
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 35%, transparent);
+}
+.team-composer__skill-head { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 11.5px; }
+.team-composer__skill-head > span { flex: 1; }
+.team-composer__skill-head > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 7px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.team-composer__skill-head > button:hover { background: var(--panel-2); color: var(--text); }
+.team-composer__skill-list { flex: 1; min-height: 0; overflow-y: auto; }

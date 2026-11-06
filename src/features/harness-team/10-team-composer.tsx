@@ -21,7 +21,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { Bot, ChevronDown, Paperclip, Plus, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { Bot, ChevronDown, ChevronLeft, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu } from "../composer";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
@@ -115,7 +115,11 @@ export function TeamComposer({
   opts, onOpts, sending, canSend, onSend, targetNames,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
-  const [skillOpen, setSkillOpen] = useState(false);
+  /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
+     原来是「一级菜单里缩进一小块竖线列表」，既不像主对话也读不清。
+     ⇒ 点「引用技能」后整个面板切到主对话同款「搜索 + 图标列表」视图。 */
+  const [plusView, setPlusView] = useState<"main" | "skills">("main");
+  const [skillQuery, setSkillQuery] = useState("");
   const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
   const [models, setModels] = useState<ModelOption[]>([{ value: "", title: "跟随全局" }]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -162,7 +166,7 @@ export function TeamComposer({
   useEffect(() => {
     if (!plusOpen) return;
     const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) { setPlusOpen(false); setSkillOpen(false); }
+      if (!wrapRef.current?.contains(e.target as Node)) { setPlusOpen(false); setPlusView("main"); }
     };
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
@@ -180,8 +184,8 @@ export function TeamComposer({
   const addSkill = (s: { name: string; description: string }) => {
     if (opts.skills.some((x) => x.name === s.name)) return;
     onOpts({ ...opts, skills: [...opts.skills, s].slice(0, 8) });
-    setSkillOpen(false);
     setPlusOpen(false);
+    setPlusView("main");
   };
 
   const fullAccess = opts.sandbox === "danger-full-access";
@@ -192,6 +196,8 @@ export function TeamComposer({
   };
 
   const fileName = (p: string) => p.split(/[\\/]/).pop() || p;
+  const q = skillQuery.trim().toLowerCase();
+  const skillMatches = skills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
 
   return (
     <div className="team-composer" ref={wrapRef}>
@@ -212,21 +218,66 @@ export function TeamComposer({
         </div>
       )}
 
-      <textarea
-        ref={textareaRef}
-        className="team-composer__input"
-        value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        rows={2}
-      />
+      {plusView === "skills" ? (
+        <div className="team-composer__skill-pane">
+          <div className="team-composer__skill-head">
+            <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
+            <span>引用技能{skills.length ? `（${skills.length}）` : ""}</span>
+            <button type="button" aria-label="关闭技能面板" onClick={() => setPlusView("main")}><X size={13} /></button>
+          </div>
+          <div className="submenu-search">
+            <Search size={13} />
+            <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
+          </div>
+          <div className="submenu-list team-composer__skill-list">
+            {skillMatches.map((item) => (
+              <button type="button" key={item.name} title={`${item.name}：${item.description}`} onClick={() => addSkill(item)}>
+                <Sparkles size={15} /><span className="expert-menu-name">{item.name}</span><small>{item.description}</small>
+              </button>
+            ))}
+            {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
+          </div>
+        </div>
+      ) : (
+        <textarea
+          ref={textareaRef}
+          className="team-composer__input"
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          rows={2}
+        />
+      )}
 
       <div className="team-composer__actions composer-actions">
         <div className="team-composer__left composer-left">
-          <button type="button" className={`icon-button team-composer__icon${plusOpen ? " is-on" : ""}`} title="添加文件 / 引用技能" aria-label="添加" onClick={() => { setPlusOpen((v) => !v); setSkillOpen(false); }}>
-            <Plus size={16} />
-          </button>
+          <div className="composer-quick-menu">
+            <button
+              type="button"
+              className={`icon-button team-composer__icon plus-spin-button${plusOpen ? " is-on" : ""}`}
+              title="添加文件 / 引用技能"
+              aria-label="添加"
+              aria-expanded={plusOpen}
+              onClick={() => { setPlusOpen((v) => !v); setPlusView("main"); setSkillQuery(""); }}
+            >
+              <Plus key={plusOpen ? "on" : "off"} size={16} className="plus-spin" />
+            </button>
+            {plusOpen && (
+              <div className="composer-quick-pop flip-main-up team-composer__pop" role="menu">
+                <>
+                    {/* ⛔ 11-06 用户：「添加文件，外面有回形针，里面就可以删了」——
+                        同一个动作只留一个入口，菜单里不再重复。 */}
+                    <button type="button" role="menuitem" onClick={() => { setPlusView("skills"); setPlusOpen(false); setSkillQuery(""); }}>
+                      <Sparkles size={16} /><span>引用技能</span><ChevronDown size={14} className="submenu-chevron" />
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => { onOpts({ ...opts, files: [], skills: [] }); setPlusOpen(false); }}>
+                      <X size={16} /><span>清空本轮附件</span>
+                    </button>
+                </>
+              </div>
+            )}
+          </div>
           <button type="button" className="icon-button team-composer__icon" title="添加文件（本地绝对路径）" aria-label="添加文件" onClick={() => void pickFiles()}>
             <Paperclip size={15} />
           </button>
@@ -240,23 +291,6 @@ export function TeamComposer({
             tone={fullAccess ? "danger" : undefined}
             disabled={sending}
           />
-          {plusOpen && (
-            <div className="team-composer__pop" role="menu">
-              <button type="button" role="menuitem" onClick={() => void pickFiles()}><Paperclip size={13} /> 添加文件</button>
-              <button type="button" role="menuitem" onClick={() => setSkillOpen((v) => !v)}><Sparkles size={13} /> 引用技能 <ChevronDown size={11} /></button>
-              {skillOpen && (
-                <div className="team-composer__sub">
-                  {skills.length === 0 && <p className="team-composer__empty">没有本地技能</p>}
-                  {skills.map((s) => (
-                    <button key={s.name} type="button" role="menuitem" title={s.description} onClick={() => addSkill(s)}>
-                      <strong>{s.name}</strong><small>{s.description.slice(0, 42)}</small>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button type="button" role="menuitem" onClick={() => { onOpts({ ...opts, files: [], skills: [] }); setPlusOpen(false); setSkillOpen(false); }}><X size={13} /> 清空本轮附件</button>
-            </div>
-          )}
         </div>
 
         <div className="team-composer__right composer-right">
