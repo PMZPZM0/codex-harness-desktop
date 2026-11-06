@@ -13,7 +13,7 @@ import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { app, safeStorage } from "electron";
 import { COMPUTER_USE_MCP_SERVER, HARNESS_UIA_MCP_SERVER, shouldRegisterComputerUse, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
 import { safeProviderId } from "../provider-id";
-import { injectMcpToolRules, injectSectionExtras, tomlBareKey } from "../config-toml";
+import { injectMcpToolRules, injectSectionExtras, tomlBareKey, writeTextFileAtomic } from "../config-toml";
 import { developerInstructionsLine } from "../developer-instructions";
 import { augmentedPath, bundledNode, bundledPython, computerUseLauncher, harnessUiaServer, nuphusBinary, reaServerScript } from "../toolchain";
 import type { CustomModelFile } from "../features/custom-model-types";
@@ -375,10 +375,11 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // 两处**后置注入**（都在 config-toml.ts，纯函数、可被预检直接测）：
   //  ① injectSectionExtras：把用户在段级共享表里手写的额外子键插回对应段末尾（修 Bug 6）
   //  ② injectMcpToolRules：把 per-tool 权限落到 disabled_tools / approval_mode（修 Bug 1/2）
-  await fs.writeFile(
+  /* ⛔ 原子写（11-05 用户现场：半截 config.toml ⇒ 引擎整份拒载、所有请求全挂）。
+     这是**保存/启用供应商**的主写路径，恰恰是最容易在写的中途被强杀的那条。 */
+  await writeTextFileAtomic(
     path.join(codexHome, "config.toml"),
     injectMcpToolRules(injectSectionExtras(configText, preserved.sectionExtras), mcpToolRules),
-    "utf8",
   );
   // 官方订阅绝不能带 API Key：chatgpt 后端只认 ChatGPT 登录凭据，
   // 带上陈旧 sk- key 会 401 "api_key_not_supported" → 流无限重连（实证）。

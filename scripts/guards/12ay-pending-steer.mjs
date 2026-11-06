@@ -131,14 +131,20 @@ ok(steerBranch.length > 0
   "运行中点「立即」⇒ 只登记待并入，**不直接 turn/steer**（交了引擎就撤不回，这是整条设计的命门）");
 ok(/bag\.refreshQueue\(bag\.thread\.id\)/.test(steerBranch)
   && /showToast\("已插队 · 可撤回"/.test(steerBranch)
+  && /setQueuedTimer\(bag\.thread\.id, entry\.id, null, \{ silent: true \}\)/.test(steerBranch)
   && /return;/.test(steerBranch),
-  "登记后刷新队列 + 提示「已插队 · 可撤回」并 return（不启动回合、不钉顶、不动乐观气泡）");
+  "登记后撤掉这条的定时 + 刷新队列 + 提示「已插队 · 可撤回」并 return（不撤定时 ⇒ 到点会在 armed 窗口里把消息直接发出去，气泡上的「可撤回」就是假承诺）");
 
 ok(/useEffect\(\(\) => \{[^}]*hasPendingSteers\(threadId\)[^}]*isTurnRunning\(turn\)[^}]*turnStepBusy\(running\)[^}]*deliverPendingSteers\(bag, threadId\)[^}]*\}, \[bag\.thread, bag\.queue\]\)/.test(partSrc),
   "派发 effect 齐备：没登记就早退 → 有运行中回合且这一步在忙就再等 → 边界上派发；依赖 [thread, queue]（流式与队列事件都推它重跑）");
 
-ok(/if \(isCurrent\(\) && !bag\.queue\.some\(\(queued\) => queued\.id === entry\.id\)\) continue;/.test(partSrc),
+ok(/if \(!bag\.queue\.some\(\(queued\) => queued\.id === entry\.id\)\) continue;/.test(partSrc),
   "派发前逐条复核「还在队列里」：用户已撤回 / 引擎已自动启动 ⇒ 跳过，绝不重复发");
+/* ⛔ 审查抓到的窗口：一批两条时，第一条的 await 期间用户可能已经切走。
+   此时「运行中回合」取自 bag.threadRef.current = **新会话**的回合 ⇒ 拿 B 的 turn id 去 steer A，
+   必然失败；失败路径还会无条件 disarmPinIntent，把新会话刚建立的钉顶意图一起撤掉。 */
+ok(/for \(const \[index, entry\] of entries\.entries\(\)\) \{[\s\S]{0,260}?if \(!isCurrent\(\)\) \{[\s\S]{0,180}?for \(const rest of entries\.slice\(index\)\) armPendingSteer\(\{ threadId, id: rest\.id, entry: rest \}\)[\s\S]{0,40}?return;/.test(partSrc),
+  "批内被切走 ⇒ 剩下的条目退回 armed 等切回来再派（⛔ 硬发会拿新会话的回合 id 去 steer 老会话，还会顺手撤掉新会话的钉顶意图）");
 
 const deleteFrom = partSrc.indexOf("async function deleteQueued");
 const deleteBlock = deleteFrom < 0 ? "" : partSrc.slice(deleteFrom, partSrc.indexOf("bag.deleteQueued", deleteFrom));
@@ -242,9 +248,9 @@ ok(!/pending-steer-item\[data-pending-steer="armed"\][^{]*outline/.test(css),
 const libSrc = stripComments(read("src/lib/pending-steer.mjs"));
 ok(!/localStorage|writeFileSync|readFileSync/.test(libSrc),
   "登记表不落盘（排队消息本身就在引擎内存里，重启后消息没了、登记更不能留着 —— 生命周期必须一致）");
-ok(/function dropThread\(key\) \{[\s\S]{0,120}?pending\.delete\(key\);[\s\S]{0,60}?snapshots\.delete\(key\);/.test(libSrc)
+ok(/function dropThread\(key\) \{[\s\S]{0,200}?pending\.delete\(key\);[\s\S]{0,80}?snapshots\.delete\(key\);[\s\S]{0,80}?visibleSnapshots\.delete\(key\);/.test(libSrc)
   && /if \(!map\.size\) dropThread\(/.test(libSrc),
-  "会话空了把两份表一起摘掉（登记表 + 快照缓存）：⛔ 只摘一份的话，切走/删掉的会话会在模块级 Map 里一直攒");
+  "会话空了把**三份**表一起摘掉（登记表 + 气泡快照 + 面板隐藏名单快照）：⛔ 漏一份，切走/删掉的会话就在模块级 Map 里一直攒（审查抓到过漏 visibleSnapshots）");
 const bagTypes = stripComments(read("src/features/app-state/parts/bag-types.ts"));
 ok(!/pendingSteer|armPendingSteer|turnStepBusy/.test(bagTypes),
   "辅助函数留在模块级、没被 bag-types 收进 bag（hook 体顶层声明会被生成器当跨段 API）");

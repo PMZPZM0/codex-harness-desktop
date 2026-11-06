@@ -122,10 +122,11 @@ export function settlePendingSteers(threadId, ids) {
   if (changed) notify();
 }
 
-/* 会话空了就把两份表一起摘掉：切走/删掉的会话不许在模块级 Map 里越积越多。 */
+/* 会话空了就把三份表一起摘掉：切走/删掉的会话不许在模块级 Map 里越积越多。 */
 function dropThread(key) {
   pending.delete(key);
   snapshots.delete(key);
+  visibleSnapshots.delete(key);
 }
 
 /** 本会话界面上可见的插队条目（订阅登记表 ⇒ 登记/撤回/派发当场重画）。 */

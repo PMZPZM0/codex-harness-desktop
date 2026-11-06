@@ -337,8 +337,19 @@ export async function writeTextFileAtomic(file: string, text: string): Promise<v
   try {
     await rename(tmp, file);
   } catch {
-    await rm(file, { force: true }).catch(() => undefined);
-    await rename(tmp, file);
+    /* Windows 上目标被占用（引擎正在读）时 rename 会失败。⛔ 不能先删真文件 —— 删掉之后第二次
+       rename 再失败，配置文件就整份消失了（比"留着旧内容"糟得多）。先把真文件挪到旁边，
+       换上成功再删旁路；换不上就把旁路挪回来。 */
+    const aside = `${file}.old-${process.pid}-${Date.now()}`;
+    await rename(file, aside).catch(() => undefined);
+    try {
+      await rename(tmp, file);
+    } catch (error) {
+      await rename(aside, file).catch(() => undefined);
+      await rm(tmp, { force: true }).catch(() => undefined);
+      throw error;
+    }
+    await rm(aside, { force: true }).catch(() => undefined);
   }
 }
 

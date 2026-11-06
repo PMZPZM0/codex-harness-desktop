@@ -60,10 +60,17 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
     for (const entry of entries) armPendingSteer({ threadId, id: entry.id, entry });
     return;
   }
-  for (const entry of entries) {
+  for (const [index, entry] of entries.entries()) {
+    /* ⛔ 每个 await 都是一个窗口：批内被切走时，剩下的这条**必须**退回 armed 等切回来再派 ——
+       硬发会拿**新会话**的运行中回合 id 去 steer 老会话（必然失败），失败路径还会顺手撤掉
+       新会话刚建立的钉顶意图。 */
+    if (!isCurrent()) {
+      for (const rest of entries.slice(index)) armPendingSteer({ threadId, id: rest.id, entry: rest });
+      return;
+    }
     try {
       // 已经被用户撤回（条目不在队列里）/ 已被引擎自动启动 ⇒ 不再交付，也不能重复发
-      if (isCurrent() && !bag.queue.some((queued) => queued.id === entry.id)) continue;
+      if (!bag.queue.some((queued) => queued.id === entry.id)) continue;
       bag.armRetryForQueueRelease(threadId, entry.input);
       /* ⛔ 每条**各自**重看在跑的回合：一批两条时，第一条派发完上一回合可能刚好结束，
          拿循环外算好的旧值去 steer 第二条 ⇒ 必然 no active turn。 */
@@ -638,6 +645,9 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
          等当前这一步跑完（回合内已无进行中的 item）再由下面的 effect 真正 steer。
          ⛔ 这段等待就是可撤回窗口；一旦派发出去，条目离队、撤回入口随之消失。 */
       armPendingSteer({ threadId: bag.thread.id, id: entry.id, entry });
+      /* ⛔ 插队后这条的定时没有意义，且主进程定时器到点会直接把消息发出去 ——
+         那时气泡还挂着「可撤回」就是假承诺（用户点撤回只会得到"删除失败"）。 */
+      void bag.setQueuedTimer(bag.thread.id, entry.id, null, { silent: true });
       void bag.refreshQueue(bag.thread.id);
       bag.showToast("已插队 · 可撤回", "这一步跑完自动并入；点消息上面的「撤回」可取消");
       return;

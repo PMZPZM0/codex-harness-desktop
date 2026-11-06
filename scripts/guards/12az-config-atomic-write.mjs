@@ -74,21 +74,63 @@ if (!existsSync(artifact)) {
     rmSync(dir, { recursive: true, force: true });
   }
 
-  /* ── 写侧纪律：全仓不许再有直接打 config.toml 的非原子写 ── */
-  const writers = ["electron/builtin-skills.ts", "electron/codex-market.ts", "electron/codex-official-market.ts",
-    "electron/ponytail-plugin.ts", "electron/data-dir.ts", "electron/features/boot.ts", "electron/features/codex-ipc.ts",
-    "electron/codex-server.ts", "electron/main.ts", "electron/features/custom-model-ipc.ts", "electron/cloud-provider.ts"];
-  const offenders = writers.filter((rel) => {
-    const src = stripComments(read(rel));
-    return /(writeFile|appendFile|writeFileSync|appendFileSync)\s*\(([^;]{0,220})?(config\.toml|configPath|engineConfigFile|cfgPath)/.test(src);
-  });
+  /* ── 写侧纪律：整个 electron/** 扫一遍，不许再有直接打 config.toml 的非原子写 ──
+     ⛔ 不能用「固定文件清单」：11-05 那轮就是按名单扫的，结果 `custom-model-apply.ts` 里
+     **保存/启用供应商的主写路径**（`fs.writeFile(\n path.join(codexHome,"config.toml")`）
+     因为「跨了行 + 不在名单里」漏了两轮。现在按调用形态扫、跨行取窗口。 */
+  const electronFiles = [];
+  const collect = (dir) => {
+    for (const item of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, item.name);
+      if (item.isDirectory()) { if (!/^(node_modules|dist|dist-electron)$/.test(item.name)) collect(full); continue; }
+      if (!/\.(ts|mts|js|mjs)$/.test(item.name) || item.name.endsWith(".gen.ts")) continue;
+      electronFiles.push(full);
+    }
+  };
+  collect(join(ROOT, "electron"));
+  /* 取「调用括号里的第一个实参」——⛔ 不能只看调用点后面 260 字符的窗口：
+     相邻函数的 configPath / config.toml 会被窗口误伤（实测 4 处假红），跨行的真违规又可能被漏掉。 */
+  const firstArgOf = (src, openIdx) => {
+    let depth = 0;
+    for (let i = openIdx; i < src.length; i += 1) {
+      const ch = src[i];
+      if (ch === "(" || ch === "[" || ch === "{") depth += 1;
+      else if (ch === ")" || ch === "]" || ch === "}") {
+        depth -= 1;
+        if (depth === 0) return src.slice(openIdx + 1, i);
+      } else if (ch === "," && depth === 1) return src.slice(openIdx + 1, i);
+    }
+    return src.slice(openIdx + 1, openIdx + 260);
+  };
+  const offenders = [];
+  for (const file of electronFiles) {
+    const src = stripComments(readFileSync(file, "utf8"));
+    const call = /(writeFileSync|appendFileSync|writeFile|appendFile)\s*\(/g;
+    let hit;
+    while ((hit = call.exec(src))) {
+      const openIdx = hit.index + hit[0].length - 1;
+      /* `configPath` 必须不是一次调用：video-gen / poll-config 里各有一个
+         `configPath()` 返回自己的 JSON 路径（实测两处假红）。 */
+      if (!/config\.toml|engineConfigFile|cfgPath|\bconfigPath\b(?!\s*\()/.test(firstArgOf(src, openIdx))) continue;
+      offenders.push(`${file.replace(ROOT, "").replace(/\\/g, "/")}:${src.slice(0, hit.index).split("\n").length}`);
+      break;
+    }
+  }
+  ok(electronFiles.length > 40,
+    `扫描面覆盖整个 electron/（实测 ${electronFiles.length} 个源文件）—— 固定名单漏过 custom-model-apply 那条主写路径`);
   ok(offenders.length === 0,
-    `没有一处直接 writeFile/appendFile 打 config.toml（违规文件：${offenders.length ? offenders.join("、") : "无"}）—— 一律走 config-toml.ts 的原子写`);
+    `没有一处直接 writeFile/appendFile 打 config.toml（违规：${offenders.length ? offenders.join("、") : "无"}）—— 一律走 config-toml.ts 的原子写`);
 
   const helper = stripComments(read("electron/config-toml.ts"));
   ok(/export async function writeTextFileAtomic[\s\S]{0,700}?writeFile\(tmp, text, "utf8"\)[\s\S]{0,300}?rename\(tmp, file\)/.test(helper)
     && !/async function writeTextFileAtomic[\s\S]{0,900}?writeFile\(file, text/.test(helper),
     "原子写实现正确：先写临时文件再 rename 换上，且函数体内不许出现「直接写目标文件」那条路（少了 rename = 还是原地覆盖，等于没修）");
+  /* ⛔ 回退路径不许删真文件：删掉之后第二次 rename 再失败，配置文件就整份消失（比旧内容糟得多）。
+     正确形态 = 把真文件挪到旁边，成功再删旁路，失败把旁路挪回来。 */
+  const atomicBody = helper.slice(helper.indexOf("export async function writeTextFileAtomic"), helper.indexOf("appendSectionAtomic"));
+  ok(/rename\(file, aside\)/.test(atomicBody) && /rename\(aside, file\)/.test(atomicBody)
+    && !/rm\(file[,)]/.test(atomicBody),
+    "回退路径不删真文件（挪到旁边 + 失败挪回来；⛔ 删了再换 = 两次都失败时配置整份消失）");
   /* `ensureTrustedProject` 是同步的，而且 data-dir.ts 必须保持**叶子模块**（守卫【152】/【91】：
      不 import 项目内模块，否则被拖进依赖环）⇒ 它不能复用上面的 helper，只能就地展开同一条纪律。
      这里钉的是「同一条纪律在这一处也成立」，不是"必须 import helper"。 */
