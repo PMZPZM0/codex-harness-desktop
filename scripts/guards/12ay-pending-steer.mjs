@@ -248,6 +248,12 @@ ok(/\.pending-steer-item \{[^}]*width: fit-content/.test(css)
   && /\.pending-steer-item \{[^}]*margin-left: auto/.test(css)
   && !/\.pending-steer-item \{[^}]*width: 100%/.test(css),
   "「撤回 + 气泡」整组按内容自适应（fit-content + 贴右），不再整行留白");
+/* ⛔ 11-06 用户截图「中间还是这么大空白」：短消息时消息栈的宽度由上面那行名字（.user-head）撑出来，
+   气泡在栈里右对齐 ⇒ 药丸贴着栈左缘就会离气泡一大截。必须量「气泡左缘 − 栈左缘」再用负 margin 拉过去。 */
+ok(/bubble\.getBoundingClientRect\(\)\.left - stack\.getBoundingClientRect\(\)\.left/.test(bubbleSrc)
+  && /style=\{pull \? \{ marginRight: -pull \} : undefined\}/.test(bubbleSrc)
+  && /new ResizeObserver\(measure\)/.test(bubbleSrc),
+  "药丸按实测差值贴到**气泡左缘**（ResizeObserver 跟随消息重排；⛔ 写死像素或贴栈左缘都会留空白）");
 ok(!/pending-steer-item\[data-pending-steer="armed"\][^{]*outline/.test(css),
   "⛔ 不给消息本体描虚线框（11-05 用户实测「丑死了」——空荡荡一个大虚线框）");
 
