@@ -1412,6 +1412,8 @@ interface Window {
     harnessTeamLogUsage(entry: Record<string, unknown>): Promise<{ ok: boolean; count?: number; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamLedger(groupId: string, days: number): Promise<{ ok: boolean; window: any; total: any; byPartner: any[]; bySource: any[] }>;
+    /* 团队模式：停止某个伙伴当前这一回合 */
+    harnessTeamStop(input: Record<string, unknown>): Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>;
 /* ═══ gen:end ═══ */
 
 

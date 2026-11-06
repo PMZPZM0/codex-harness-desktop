@@ -304,9 +304,26 @@ export function groupContextBlock(group, options = {}) {
     ? g.members.filter((m) => m.kind === "bot" && m.id !== self.id && canDelegate(self.id, m.id, g))
     : [];
   const hasOrg = Boolean(manager || reports.length);
-  if (!memory && !notes.length && !files.length && !hasOrg) return "";
+  /* 群成员名录：伙伴要能 **@ 到具体的人**（互相 @ 对话的前提）。
+     ⛔ 名字与 id 一起给：只有名字时模型会自己编一个 id 去调 agent_invoke（然后失败）。 */
+  const roster = g.members;
+  if (!memory && !notes.length && !files.length && !hasOrg && roster.length < 2) return "";
   const lines = [`【群聊上下文 · ${g.name}】`];
   if (memory) lines.push(memory);
+  if (roster.length) {
+    if (lines.length > 1) lines.push("");
+    lines.push("群成员（名字可直接 @；括号里是派活用的 kind:key，调 agent_invoke 就用它）：");
+    for (const m of roster) {
+      const isMe = self && m.id === self.id;
+      const role = m.id === g.leadId ? "群主" : m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员");
+      const key = m.kind === "bot" && m.targetKind ? ` · ${m.targetKind}:${m.targetKey}` : "";
+      const up = m.managerId ? ` · 上级：${g.members.find((x) => x.id === m.managerId)?.name ?? m.managerId}` : "";
+      lines.push(`- ${m.name}（${role}${key}${up}）${isMe ? " ← 就是你" : ""}`);
+    }
+    if (self) {
+      lines.push("⛔ 直接在回复里写 `@对方名字` 就能和它对话；⛔ 不要空转，没有新信息就别 @ 人。");
+    }
+  }
   if (notes.length) {
     if (lines.length > 1) lines.push("");
     /* ⛔ 顺序固定：约束在前（硬护栏优先级最高，豆包 SECURITY.md 放最前的同理），
@@ -334,6 +351,63 @@ export function groupContextBlock(group, options = {}) {
     for (const f of files) lines.push(`- ${f.path}${f.note ? `（${f.note}）` : ""}`);
   }
   return lines.join("\n");
+}
+
+/**
+ * 从一段回复里解析出被 @ 的成员（伙伴之间互相 @ 的入口）。
+ * ⛔ 只认**群里真实存在的成员名**（长名优先，避免 `@承枢` 命中 `@承枢2`）；
+ * ⛔ 不解析 `@所有人`（本应用没有这个动作）。
+ */
+export function parseMentions(text, group, options = {}) {
+  const g = createGroup(group);
+  const exclude = new Set([String(options?.excludeId ?? "")].filter(Boolean));
+  const src = String(text ?? "");
+  const cands = g.members
+    .filter((m) => m.name && !exclude.has(m.id))
+    .sort((a, b) => b.name.length - a.name.length);
+  const out = [];
+  for (const m of cands) {
+    if (!src.includes(`@${m.name}`)) continue;
+    if (out.some((x) => x.id === m.id)) continue;
+    out.push({ id: m.id, name: m.name, kind: m.kind });
+  }
+  return out;
+}
+
+/**
+ * 输入框里的斜杠命令（目前只有 `/stop`）。
+ * ⛔ 只认**开头就是 /** 的整句；普通句子里出现 `/` 不当命令（路径、日期里到处都有）。
+ */
+export function parseCommand(text) {
+  const src = String(text ?? "").trim();
+  if (!src.startsWith("/")) return null;
+  const m = /^\/([A-Za-z-]+)\s*([\s\S]*)$/.exec(src);
+  if (!m) return null;
+  return { name: m[1].toLowerCase(), rest: m[2].trim() };
+}
+
+/**
+ * 把"同一作者、间隔很短"的连续消息并成一条（用户：「别框框刷屏」）。
+ * ⛔ 只做**渲染分组**：`continued` 里仍是独立消息（各自有 itemId，可分别复制/溯源）。
+ * ⛔ 不合并卡片消息（卡片的动作按钮各自独立，合并会让人不知道点的是哪条）。
+ */
+export function mergeConsecutive(rows, gapMs = 90_000) {
+  const list = Array.isArray(rows) ? rows : [];
+  const gap = Number(gapMs) > 0 ? Number(gapMs) : 90_000;
+  const out = [];
+  for (const r of list) {
+    const prev = out[out.length - 1];
+    const canMerge = prev
+      && prev.authorId === r.authorId
+      && prev.kind === "text" && r.kind === "text"
+      && Number(r.at) - Number(prev.lastAt ?? prev.at) <= gap;
+    if (canMerge) {
+      out[out.length - 1] = { ...prev, lastAt: r.at, continued: [...(prev.continued ?? []), r] };
+      continue;
+    }
+    out.push({ ...r, lastAt: r.at, continued: [] });
+  }
+  return out;
 }
 
 /** 成员显示名（找不到就显示 id，⛔ 不编造名字）。 */

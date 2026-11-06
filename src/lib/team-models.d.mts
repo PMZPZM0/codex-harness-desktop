@@ -153,6 +153,28 @@ export function guardAllows(
   facts?: { isExternal?: boolean; mentionsEveryone?: boolean; targetKind?: string },
 ): { ok: boolean; reason?: string };
 
+export interface MentionedMember {
+  id: string;
+  name: string;
+  kind: TeamMemberKind;
+}
+
+/** 从一段回复里解析 @（伙伴互相 @ 的入口）：只认群里真实存在的成员 */
+export function parseMentions(
+  text: string,
+  group: TeamGroupLite | unknown,
+  options?: { excludeId?: string },
+): MentionedMember[];
+
+/** 斜杠命令解析（目前只有 /stop；⛔ 非开头不算命令） */
+export function parseCommand(text: string): { name: string; rest: string } | null;
+
+/** 同一作者短间隔连续消息合并（仅渲染分组；`continued` 里仍是独立消息） */
+export function mergeConsecutive<T extends { authorId: string; kind: string; at: number }>(
+  rows: T[] | null | undefined,
+  gapMs?: number,
+): Array<T & { lastAt: number; continued: T[] }>;
+
 export function displayNameOf(group: TeamGroupLite, id: string): string;
 export function projectGroupMessages(sources: GroupSource[] | null | undefined): GroupMessageProjected[];
 export function groupIssues(group: unknown): string[];

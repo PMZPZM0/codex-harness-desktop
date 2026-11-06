@@ -137,6 +137,32 @@ export class DelegateRegistry {
     return next;
   }
 
+  /**
+   * 正在跑的委派会话 id（可选按目标身份过滤）。
+   * ⛔ 群聊"停止某个成员"要用它：派活在跑的时候 `agents:invoke` **还没返回 threadId**
+   *    （它等整个回合），渲染层拿不到"正在跑的那条会话"；登记表是主进程侧的真相源。
+   */
+  /**
+   * 按**成员名**（+ 目标身份兜底）找正在跑的委派会话。
+   * ⛔ 不能只按 targetKey 比：群成员里的 key 来自 `agents:catalog`（如 `team:xxx-lead`），
+   *   登记表里的 `targetKey` 是调度时另算的（实测不同形，精确比永远空）。
+   *   会话名是 `调度·<displayName>`，而 record.name 就是 displayName —— 名字最可靠。
+   */
+  runningThreadsByMember(name: string, targetKey = ""): string[] {
+    const nm = String(name ?? "").trim();
+    const key = String(targetKey ?? "").trim();
+    const looseKey = (rk: string) => {
+      const a = String(rk ?? "");
+      if (!a || !key) return false;
+      return a === key || a.includes(key) || key.includes(a);
+    };
+    return Object.values(this.map)
+      .filter((r) => r && r.status === "running")
+      .filter((r) => (nm && String(r.name ?? "") === nm) || looseKey(String(r.targetKey ?? "")))
+      .map((r) => String(r.threadId))
+      .filter(Boolean);
+  }
+
   /** 找一条可复用的旧子会话（判据见模块顶部 `pickReusableDelegate`）。 */
   async findReusable(input: { originThreadId: string; kind: DispatchKind; targetKey: string; name: string }): Promise<DelegateRecord | null> {
     await this.load();

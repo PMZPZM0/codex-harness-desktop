@@ -19,6 +19,7 @@ import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { TeamCard } from "./05-team-card";
 import { TeamMenuButton } from "./06-team-menu";
 import { menuPickResult } from "../../lib/team-menu.mjs";
+import { mergeConsecutive, parseCommand, parseMentions } from "../../lib/team-models.mjs";
 
 type Props = {
   group: TeamGroup;
@@ -41,6 +42,8 @@ type Props = {
   /** 用量汇总 + 拉取 */
   ledger?: LedgerSummary | null;
   onLoadLedger: (days: number) => void;
+  /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
+  onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   /** 重命名（主进程是唯一落点；这里只负责发与显示错误） */
   onRename?: (name: string) => Promise<{ ok: boolean; error?: string }>;
   /** 正在跑活的伙伴（id）：显示「正在处理…」，⛔ 不是消息 */
@@ -63,7 +66,7 @@ export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetFiles,
   onDeleteGroup, onRename, onSend,
-  onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger,
+  onAddNote, onRemoveNote, onSaveMenu, ledger, onLoadLedger, onStopPartner,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
@@ -100,11 +103,39 @@ export function TeamGroupView({
     setEditingName(false);
   };
 
+  /** 停止：`/stop`（全部在跑的）或 `/stop @某人`（只停他） */
+  const runStop = async (rest: string) => {
+    const ids = parseMentions(rest, group).map((m) => m.id);
+    const targets = ids.length ? ids : (busy ?? []);
+    if (!targets.length) return { ok: false, error: "现在没有人在跑，不用停" };
+    const results = await Promise.all(targets.map((id) => onStopPartner(id)));
+    const bad = results.find((r) => !r.ok);
+    if (bad) return { ok: false, error: bad.error || "停止失败" };
+    return { ok: true };
+  };
+
   const send = async () => {
     const body = text.trim();
     if (!body || sending) return;
     setSendError("");
     setMenuMsg("");
+
+    /* ⛔ 命令优先：`/stop` 是**本地动作**，不能被当成一句话派给模型 */
+    const cmd = parseCommand(body);
+    if (cmd?.name === "stop") {
+      setSending(true);
+      try {
+        const r = await runStop(cmd.rest);
+        if (!r.ok) { setSendError(r.error ?? "停止失败"); return; }
+        setText("");
+        setMenuMsg("已停止 —— 它这一回合的中断请求已发给引擎");
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+    if (cmd) { setSendError(`不认识的命令：/${cmd.name}（目前只支持 /stop）`); return; }
+
     setSending(true);
     try {
       const r = await onSend?.(atTargets, body);
@@ -132,6 +163,10 @@ export function TeamGroupView({
     setAtTargets([row.authorId]);
     composerRef.current?.focus();
   };
+
+  /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
+     只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
+  const displayRows = mergeConsecutive(rows);
 
   const ctxParts = [
     group.memory?.trim() ? "群记忆" : "",
@@ -231,7 +266,7 @@ export function TeamGroupView({
                   )}
                 </div>
               ) : (
-                rows.map((row) => {
+                displayRows.map((row) => {
                   const isBot = row.authorKind === "bot";
                   const role = roleOf(row.authorId);
                   const running = busy?.includes(row.authorId);
@@ -261,7 +296,14 @@ export function TeamGroupView({
                           /* ⛔ 播报稿是**给耳朵的**（```voice 围栏块）：对话里由 Markdown 整块剥掉，
                              群视图也得剥 —— 口径只有一处（src/lib/voice-script.mjs）。
                              剥完再交给卡片渲染器（表格/代码/列表给真正的元素，⛔ 不拼 HTML）。 */
-                          <TeamCard text={stripVoiceScript(row.text)} />
+                          <>
+                            <TeamCard text={stripVoiceScript(row.text)} />
+                            {(row.continued ?? []).map((extra) => (
+                              <div key={extra.key} className="team-msg__more">
+                                <TeamCard text={stripVoiceScript(extra.text)} />
+                              </div>
+                            ))}
+                          </>
                         )}
                         {isBot && (
                           <div className="team-msg__actions">
@@ -331,7 +373,7 @@ export function TeamGroupView({
                 ref={composerRef}
                 value={text}
                 onChange={(e) => setText(e.target.value)}
-                placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先点上面的 @ 选伙伴）"}
+                placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先 @ 选伙伴；/stop 可停）"}
                 rows={2}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -364,12 +406,25 @@ export function TeamGroupView({
                     <span className={`team-group__member-avatar${isBot ? " is-bot" : ""}`} aria-hidden>{m.name.slice(0, 1)}</span>
                     <span className="team-group__member-main">
                       <strong>{m.name}</strong>
-                      <small>
+                      <small title={`成员 id：${m.id}${m.targetKey ? ` · 目标：${m.targetKind}:${m.targetKey}` : ""}`}>
+                        {/* ⛔ 上下级放**最前**：这一行会被省略号截断，放后面就永远看不见（用户要"关系明确"） */}
+                        {m.managerId ? `上级 ${group.members.find((x) => x.id === m.managerId)?.name ?? m.managerId} · ` : ""}
                         {m.id === group.leadId ? "群主" : (m.targetProfession || (isBot ? "伙伴" : "成员"))}
                         {running ? " · 处理中" : ""}
                         {m.muted ? " · 已静音" : ""}
                       </small>
                     </span>
+                    {isBot && running && (
+                      <button
+                        type="button"
+                        className="team-group__member-stop"
+                        title={`停止 ${m.name} 当前这一回合`}
+                        aria-label={`停止 ${m.name}`}
+                        onClick={() => void onStopPartner(m.id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+                      >
+                        停
+                      </button>
+                    )}
                     {isBot && (
                       <button
                         type="button"

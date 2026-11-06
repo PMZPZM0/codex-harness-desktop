@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 627,
+  "count": 628,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6241,6 +6241,16 @@
       "invokeArgs": "groupId, days",
       "cast": null,
       "note": "团队模式：记忆条目 / 菜单 / 用量账本"
+    },
+    {
+      "name": "harnessTeamStop",
+      "channel": "harness-team:stop",
+      "paramsImpl": "input: Record<string, unknown>",
+      "paramsDecl": "input: Record<string, unknown>",
+      "returns": "Promise<{ ok: boolean; threadId?: string; turnId?: string; error?: string; reason?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "团队模式：停止某个伙伴当前这一回合"
     }
   ]
 }

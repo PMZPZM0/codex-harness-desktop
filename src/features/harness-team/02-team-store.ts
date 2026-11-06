@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
-import { groupContextBlock } from "../../lib/team-models.mjs";
+import { groupContextBlock, parseMentions } from "../../lib/team-models.mjs";
 
 type ListResult = {
   groups: TeamGroup[];
@@ -44,6 +44,11 @@ export type DispatchSummary = { sent: number; failed: { name: string; error: str
 /** 当前用户在本地的身份（P0 用固定值：群主 = 第一个人类成员；后续接账号库）。 */
 export const LOCAL_ACTOR_ID = "local-user";
 
+/** 互相 @ 的护栏（⛔ 少了这些上限，两个伙伴互 @ 会无限互相触发）。 */
+const MAX_MENTION_HOPS = 2;    // 用户 → A → B（更深的 @ 不再触发）
+const MAX_MENTION_FANOUT = 2;  // 一条回复最多带 2 个人
+const MAX_MENTION_RUNS = 4;    // 一轮派活最多 4 次额外运行
+
 export function useTeamGroups() {
   const [groups, setGroups] = useState<TeamGroup[]>([]);
   const [issues, setIssues] = useState<Record<string, string[]>>({});
@@ -62,6 +67,8 @@ export function useTeamGroups() {
   const [ledger, setLedger] = useState<LedgerSummary | null>(null);
   /** ⛔ 卸载后不许再 setState（派活可能跑几分钟） */
   const alive = useRef(true);
+  /** 伙伴 → 它最近一次的子会话 id（停止运行要用；也从群日志兜底，见 threadOf） */
+  const threadRef = useRef<Record<string, string>>({});
 
   const refresh = useCallback(async () => {
     try {
@@ -182,71 +189,115 @@ export function useTeamGroups() {
         return { ok: false, error: `群消息没存上：${err instanceof Error ? err.message : String(err)}` };
       }
 
-      setBusyByGroup((prev) => ({ ...prev, [group.id]: targets.map((m) => m.id) }));
       const failed: DispatchSummary["failed"] = [];
+      /* ⛔⛔ 互相 @ 的护栏（用户要"互相 @ 对话"，但两个伙伴互 @ 会无限触发 —— 真金白银）：
+         最多再跳 MAX_MENTION_HOPS 层、每个回复最多带 MAX_MENTION_FANOUT 个人、
+         一轮里最多 MAX_MENTION_RUNS 次额外运行；且同一个人一轮只跑一次（防 A→B→A 回环）。 */
+      const ranIds = new Set<string>();
+      let extraBudget = MAX_MENTION_RUNS;
 
-      await Promise.all(
-        targets.map(async (partner) => {
-          const startedAt = Date.now();
-          let chars = 0;
-          let threadId = "";
-          let okFlag = false;
-          let errMsg = "";
-          try {
-            const ctx = groupContextBlock(group, { forMemberId: partner.id });
-            const query = ctx ? `${ctx}\n\n---\n\n${body}` : body;
-            const res = (await window.codex.invokeAgent({
-              kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
-              name: partner.targetKey,
-              query,
-              /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线（P0b 有意不做），
-                 空 origin 在主进程侧等价于"发起方是本地用户"，闸与复用都按这个口径走。 */
-              originThreadId: "",
-            })) as InvokeResult;
-            if (!res?.ok || !res?.threadId) {
-              errMsg = res?.error || "派活失败";
-              failed.push({ name: partner.name, error: errMsg });
-              return;
-            }
-            threadId = res.threadId;
-            /* ② 产出落群日志：threadId = 真实子会话，itemId 由主进程补 —— 点开能回到原子会话 */
-            const wrote = await appendMessage(group.id, {
-              authorId: partner.id,
-              authorKind: "bot",
-              threadId: res.threadId,
-              text: String(res.output ?? "").trim() || "（没有返回文本内容）",
-            });
-            /* ⛔ 落盘失败也要说出来（典型场景：跑的过程中群被解散了），⛔ 不许当成功 */
-            if (!wrote?.ok) {
-              errMsg = wrote?.error || "产出没能写进群聊记录";
-              failed.push({ name: partner.name, error: errMsg });
-            } else {
-              okFlag = true;
-            }
-            /* 用量口径：输入（注入块 + 用户原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
-            chars = query.length + String(res.output ?? "").length;
-          } catch (err) {
-            errMsg = err instanceof Error ? err.message : String(err);
-            failed.push({ name: partner.name, error: errMsg });
-          } finally {
-            void logUsage({
-              groupId: group.id,
-              groupName: group.name,
-              memberId: partner.id,
-              partnerName: partner.name,
-              source: "human",
-              threadId,
-              chars,
-              ms: Date.now() - startedAt,
-              ok: okFlag,
-              error: errMsg,
-            });
-            if (alive.current) {
-              setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((id) => id !== partner.id) }));
+      const noteError = (name: string, msg: string) => {
+        failed.push({ name, error: msg });
+        /* 递归触发的失败可能在 dispatch 返回**之后**才到 ⇒ 直接更新提示条，别丢 */
+        setDispatchError(failed.map((f) => `${f.name}：${f.error}`).join("；"));
+      };
+      const busyAdd = (id: string) =>
+        setBusyByGroup((prev) => {
+          const list = prev[group.id] ?? [];
+          return list.includes(id) ? prev : { ...prev, [group.id]: [...list, id] };
+        });
+      const busyRemove = (id: string) =>
+        setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((x) => x !== id) }));
+
+      const runOne = async (
+        partner: TeamGroup["members"][number],
+        bodyText: string,
+        hops: number,
+        source: "human" | "partner",
+      ): Promise<void> => {
+        if (ranIds.has(partner.id)) return;
+        ranIds.add(partner.id);
+        busyAdd(partner.id);
+        const startedAt = Date.now();
+        let chars = 0;
+        let threadId = "";
+        let okFlag = false;
+        let errMsg = "";
+        let output = "";
+        try {
+          const ctx = groupContextBlock(group, { forMemberId: partner.id });
+          const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
+          const res = (await window.codex.invokeAgent({
+            kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
+            name: partner.targetKey,
+            query,
+            /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，空 origin 等价于"发起方是本地用户"，
+               闸与子会话复用都按这个口径走（互相 @ 触发的那次也一样）。 */
+            originThreadId: "",
+          })) as InvokeResult;
+          if (!res?.ok || !res?.threadId) {
+            errMsg = res?.error || "派活失败";
+            noteError(partner.name, errMsg);
+            return;
+          }
+          threadId = res.threadId;
+          threadRef.current[partner.id] = threadId;
+          output = String(res.output ?? "").trim();
+          const wrote = await appendMessage(group.id, {
+            authorId: partner.id,
+            authorKind: "bot",
+            threadId: res.threadId,
+            text: output || "（没有返回文本内容）",
+          });
+          /* ⛔ 落盘失败也要说出来（典型场景：跑的过程中群被解散了），⛔ 不许当成功 */
+          if (!wrote?.ok) {
+            errMsg = wrote?.error || "产出没能写进群聊记录";
+            noteError(partner.name, errMsg);
+          } else {
+            okFlag = true;
+          }
+          /* 用量口径：输入（注入块 + 原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
+          chars = query.length + output.length;
+
+          /* ② 互相 @：回复里点到谁，就让谁接着说话（人能 @ 伙伴，伙伴之间也能）。
+             ⛔ 只认群里真实存在、没静音、绑定了可派目标的人；⛔ 跳数/次数有上限。 */
+          if (okFlag && hops < MAX_MENTION_HOPS) {
+            const hits = parseMentions(output, group, { excludeId: partner.id })
+              .filter((m) => m.kind === "bot")
+              .filter((m) => !ranIds.has(m.id))
+              .slice(0, MAX_MENTION_FANOUT);
+            for (const hit of hits) {
+              if (extraBudget <= 0) break;
+              const next = group.members.find((m) => m.id === hit.id);
+              if (!next || next.muted) continue;
+              if (!next.targetKind || !next.targetKey) continue;
+              if (next.targetKind === "member" || next.targetKind === "team") continue;
+              extraBudget -= 1;
+              /* ⛔ 不 await：主回复先上屏，被 @ 的人稍后自己进来（否则一个人卡住整条链） */
+              void runOne(next, `（${partner.name} 在群里 @ 你）${bodyText}`, hops + 1, "partner");
             }
           }
-        }),
-      );
+        } catch (err) {
+          errMsg = err instanceof Error ? err.message : String(err);
+          noteError(partner.name, errMsg);
+        } finally {
+          void logUsage({
+            groupId: group.id,
+            groupName: group.name,
+            memberId: partner.id,
+            partnerName: partner.name,
+            source,
+            threadId,
+            chars,
+            ms: Date.now() - startedAt,
+            ok: okFlag,
+            error: errMsg,
+          });
+          if (alive.current) busyRemove(partner.id);
+        }
+      };
+
+      await Promise.all(targets.map((partner) => runOne(partner, body, 0, "human")));
 
       /* ③ 收尾再读一次权威行：并发写回的中间态可能少一条，这里兜平 */
       await loadMessages(group.id);
@@ -254,6 +305,44 @@ export function useTeamGroups() {
       return { ok: true, summary: { sent: targets.length - failed.length, failed } };
     },
     [appendMessage, loadMessages],
+  );
+
+  /**
+   * 某个伙伴的**候选会话 id**（新→旧，去重）。
+   * ⛔ 返回列表而不是单个 id：群里可能有历史消息指向别的会话，渲染层判断不了
+   *   "哪个会话正在跑"；主进程拿活动回合表逐个核对，命中才中断。
+   */
+  const threadsOf = useCallback((groupId: string, memberId: string) => {
+    const rows = [...(rowsByGroup[groupId] ?? [])].reverse();
+    const fromRows = rows
+      .filter((r) => r.authorId === memberId && r.threadId && !r.threadId.startsWith("group:"))
+      .map((r) => r.threadId);
+    const ref = threadRef.current[memberId];
+    return [...new Set([ref, ...fromRows].filter(Boolean))].slice(0, 12);
+  }, [rowsByGroup]);
+
+  /**
+   * 停止某个伙伴**当前这一回合**（用户：`@成员 /stop`）。
+   * ⛔ 不删会话、不影响下一次派活；⛔ 拿不到活动回合就明确说"它没在跑"，不假装成功。
+   */
+  const stopPartner = useCallback(
+    async (group: TeamGroup, memberId: string) => {
+      const groupId = group.id;
+      const candidates = threadsOf(groupId, memberId);
+      /* ⛔ 运行中 `agents:invoke` 还没返回 threadId ⇒ 渲染层的候选可能全是旧的。
+         目标身份（targetKey）一定要给：主进程靠它从委派登记表里找"正在跑的那条"。 */
+      const member = group.members.find((m) => m.id === memberId);
+      const targetKey = member?.targetKey ?? "";
+      const memberName = member?.name ?? "";
+      const res = (await window.codex.harnessTeamStop({ threadIds: candidates, targetKey, memberName })) as { ok: boolean; error?: string; reason?: string };
+      if (res?.ok) {
+        /* 立刻把运行态摘掉（不等引擎回 turn/interrupted —— 有些情况会晚到或不回） */
+        setBusyByGroup((prev) => ({ ...prev, [groupId]: (prev[groupId] ?? []).filter((x) => x !== memberId) }));
+        return { ok: true };
+      }
+      return { ok: false, error: res?.error || "停止失败" };
+    },
+    [threadsOf],
   );
 
   const create = useCallback(
@@ -352,6 +441,6 @@ export function useTeamGroups() {
     rowsByGroup, busyByGroup, dispatchError, ledger,
     refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
     setMemory, addNote, removeNote, saveFiles, saveMenu, setManagerOf,
-    loadMessages, appendMessage, dispatch, loadLedger,
+    loadMessages, appendMessage, dispatch, loadLedger, stopPartner,
   };
 }

@@ -10,6 +10,9 @@ import {
   canDelegate,
   createBlockers,
   createGroup,
+  mergeConsecutive,
+  parseCommand,
+  parseMentions,
   groupContextBlock,
   normalizeGroupFile,
   displayNameOf,
@@ -334,7 +337,11 @@ test("注入块按人不同：上级/下级各写各的，且下级写成 agent_
   assert.ok(!forA.includes("你的上级"));
   assert.ok(forB.includes("你的上级：承枢（交付总监）"), forB);
   assert.ok(!forB.includes("你可以把子任务派给"));
-  assert.equal(groupContextBlock(g, { forMemberId: "a" }), "", "没配上下级也没记忆/文件 ⇒ 不注入");
+  /* 11-06：成员名录现在**总是**注入（伙伴互相 @ 要靠它认人），所以不再断言"空串"；
+     上下级的可观测差异改为"有没有组织关系段"。 */
+  const plain = groupContextBlock(g, { forMemberId: "a" });
+  assert.ok(plain.includes("群成员（"), "名录总是注入（互相 @ 的前提）");
+  assert.ok(!plain.includes("组织关系"), "没配上下级 ⇒ 不写组织关系段");
 });
 
 test("投影带出 mentions（@ 高亮的数据来源）", () => {
@@ -344,4 +351,40 @@ test("投影带出 mentions（@ 高亮的数据来源）", () => {
   assert.deepEqual(rows[0].mentions, ["a", "b"]);
   const bare = projectGroupLog(appendGroupMessage([], { id: "h2", threadId: "group:g", at: 2, text: "x" }));
   assert.deepEqual(bare[0].mentions, [], "没 @ 就是空数组，不是 undefined");
+});
+
+/* ── 互相 @ / 合并 / 命令（11-06 用户要求） ── */
+
+test("互相 @：只认群里真实成员名，长名优先，排除自己", () => {
+  const g = createGroup({
+    id: "g", name: "n", leadId: "u",
+    members: [human("u"), bot("a", { name: "承枢", targetKind: "expert" }), bot("b", { name: "承枢二", targetKind: "expert" })],
+  });
+  const hits = parseMentions("@承枢二 你先看，再让 @承枢 复核；@外人 不认", g);
+  assert.deepEqual(hits.map((x) => x.name), ["承枢二", "承枢"], "两个都在，且长名不被短名吃掉");
+  assert.deepEqual(parseMentions("@承枢 自己", g, { excludeId: "a" }).map((x) => x.name), [], "排除自己");
+  assert.deepEqual(parseMentions("@所有人 开会", g), [], "没有 @所有人 这个动作");
+});
+
+test("合并：同作者短间隔并成一条，作者变了/间隔久了/卡片消息都断开", () => {
+  const rows = [
+    { key: "1", authorId: "a", kind: "text", at: 1000, text: "第一句" },
+    { key: "2", authorId: "a", kind: "text", at: 2000, text: "第二句" },
+    { key: "3", authorId: "b", kind: "text", at: 3000, text: "换人" },
+    { key: "4", authorId: "b", kind: "text", at: 3000 + 10 * 60_000, text: "十分钟后" },
+    { key: "5", authorId: "b", kind: "card", at: 3000 + 10 * 60_000 + 1, card: {} },
+  ];
+  const merged = mergeConsecutive(rows, 90_000);
+  assert.equal(merged.length, 4, "前两条并成 1 条 + 换人 1 条 + 超时 1 条 + 卡片 1 条");
+  assert.equal(merged[0].continued.length, 1);
+  assert.equal(merged[0].continued[0].key, "2");
+  assert.equal(merged[3].kind, "card", "卡片消息自成一框（不并入上一条）");
+  assert.deepEqual(mergeConsecutive(null), []);
+});
+
+test("命令：只有开头就是 / 才算；/stop 带不带 @ 都认得出来", () => {
+  assert.deepEqual(parseCommand("/stop"), { name: "stop", rest: "" });
+  assert.deepEqual(parseCommand("  /stop @承枢 "), { name: "stop", rest: "@承枢" });
+  assert.equal(parseCommand("今天的/会议"), null, "句中出现斜杠不是命令");
+  assert.equal(parseCommand("你好"), null);
 });

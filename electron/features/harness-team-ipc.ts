@@ -39,6 +39,9 @@ import {
   MAX_GROUP_MESSAGES,
 } from "../../src/lib/team-models.mjs";
 import { normalizeMenu, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
+/* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
+   别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
+import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
 import {
   appendLedger,
   normalizeLedgerEntry,
@@ -66,6 +69,7 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:set-menu",
   "harness-team:log-usage",
   "harness-team:ledger",
+  "harness-team:stop",
 ];
 
 /** 配置文件路径（惰性：每次调用现取，⛔ 不在模块体缓存）。 */
@@ -353,6 +357,40 @@ export const harnessTeamFeature = defineFeature<null>({
         ok: true,
         ...summarizeLedger(list, { groupId: String(groupId ?? ""), days: Number(days ?? 7) || 7 }),
       };
+    });
+
+    /* 停止某个伙伴当前这一次运行（用户：`@成员 /stop`）。
+       ⛔ 只中断**这一回合**（turn/interrupt），不删会话、不影响下一次派活；
+       ⛔ 拿不到 turnId 就明确说"它现在没在跑"，别假装发了个停止信号。 */
+    ipcHost.handle("harness-team:stop", async (_event, input: Record<string, unknown>) => {
+      /* ⛔ 收的是**候选会话 id** + 目标身份，不是单个 id：
+         · 派活正在跑的时候 `agents:invoke` 还没返回 threadId（它等整个回合）⇒ 渲染层拿不到
+           "正在跑的那条会话"；
+         · 所以候选 = 渲染层给的（历史消息/上次记的）+ **主进程侧登记表里同目标正在跑的**。
+         ⛔ 活动回合表的键是 turnId、值是 threadId（boot.ts `set(id, threadIdOf)`）——
+           按 `get(threadId)` 写会永远拿不到（第一版就是这么错的）。 */
+      const given = Array.isArray(input?.threadIds) ? (input.threadIds as unknown[]) : [];
+      const targetKey = String(input?.targetKey ?? "");
+      const memberName = String(input?.memberName ?? "");
+      const fromRows = given.map((x) => String(x ?? "").trim()).filter(Boolean);
+      let fromRegistry: string[] = [];
+      try {
+        fromRegistry = delegateRegistry?.runningThreadsByMember(memberName, targetKey) ?? [];
+      } catch { /* 登记表未就绪：只用渲染层给的候选 */ }
+      const list = [...new Set([...fromRegistry, ...fromRows])].slice(0, 24);
+      if (!list.length) return { ok: false, error: "还没有它的会话（先派一次活）" };
+      let hitThread = "";
+      let hitTurn = "";
+      for (const [tid, owner] of engineActiveTurnIds) {
+        if (list.includes(owner)) { hitThread = owner; hitTurn = tid; break; }
+      }
+      if (!hitTurn) return { ok: false, error: "这个伙伴当前没有在跑", reason: "idle" };
+      try {
+        await server.request("turn/interrupt", { threadId: hitThread, turnId: hitTurn });
+        return { ok: true, threadId: hitThread, turnId: hitTurn };
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err), reason: "engine" };
+      }
     });
 
     /* 解散群（11-06 补）：只删群与它的**群消息日志**，⛔ 不碰任何子会话 ——

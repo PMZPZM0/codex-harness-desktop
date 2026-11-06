@@ -743,3 +743,27 @@
 /* 提示条的语气（菜单回显是"信息"，失败才是"警告"） */
 .team-group__notice.is-info { color: var(--muted); }
 .team-group__notice.is-warn { color: var(--orange); }
+
+/* ── 合并消息（11-06 用户：「别框框刷屏」）─────────────────────────────────
+   同一作者短间隔的连续消息并进同一个气泡，用一条发丝线隔开。
+   ⛔ 不合并卡片消息：卡片自带动作按钮，合并后分不清点的是哪条。 */
+.team-msg__more {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-soft);
+}
+
+/* 成员栏的停止键：只在它**正在跑**时出现（⛔ 常驻会让人以为随时能停） */
+.team-group__member-stop {
+  flex: none;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--line));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.team-group__member-stop:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
