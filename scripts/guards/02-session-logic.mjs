@@ -1479,14 +1479,17 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (dispatchedRendererSrc.includes("thread-row-footer") && /footer:\s*block\?\.bar/.test(dispatchedRendererSrc) ? ok : fail)(
         "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
       );
-      (/\.thread-row-footer\s*\{[^}]*position:\s*absolute[^}]*height:\s*9px/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/.test(readStyles()) ? ok : fail)(
-        "【156】子会话折叠条绝对定位、9px 高（不占布局，名称行不被挤；11-06 用户令「太粗 / 挤排版」）"
+      (/\.thread-row-footer\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*-4px[^}]*height:\s*9px/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/.test(readStyles()) ? ok : fail)(
+        "【156】子会话折叠条骑在行下边框（bottom:-4px / 9px 高，不占布局；11-06 用户草图）"
       );
       (!/\.thread-row\.has-footer > button/.test(readStyles()) ? ok : fail)(
         "【156】有子会话长条的行**不压缩名称行**（用户令：上面不要变动）"
       );
       (!/<button[^>]*className="thread-child-bar"[\s\S]{0,420}?子会话/.test(dispatchedRendererSrc) ? ok : fail)(
         "【156】行内长条只留展开/折叠箭头，不带「子会话」文字（11-06 用户令）"
+      );
+      (/\.thread-row \.thread-child-bar \.conv-section-chevron\s*\{[^}]*transform:\s*rotate\(0deg\)/.test(readStyles()) && /\.thread-child-bar \.conv-section-chevron\.open\s*\{[^}]*transform:\s*rotate\(180deg\)/.test(readStyles()) ? ok : fail)(
+        "【156】细条箭头是上下方向（收起朝下 / 展开朝上，11-06 用户令「别反了」）"
       );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);

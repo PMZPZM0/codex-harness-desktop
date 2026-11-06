@@ -1683,6 +1683,14 @@ html[data-ui-font="large"] .action-content pre {
   color: var(--text);
   background: var(--panel-2);
 }
+/* ⛔ 11-06 用户令：「展开折叠箭头是上下的，别反了」——
+   通用 .conv-section-chevron 收起时朝右（-90deg）；行内细条改用竖向：收起朝下、展开朝上。 */
+.thread-row .thread-child-bar .conv-section-chevron {
+  transform: rotate(0deg);
+}
+.thread-row .thread-child-bar .conv-section-chevron.open {
+  transform: rotate(180deg);
+}
 
 /* ─────────────────────────────── 选中态改造（09-29 用户）：
    「初始状态下所有选项都无底色，只有用户点击选中的那一项才显示高亮底色，切换选中时底色同步
