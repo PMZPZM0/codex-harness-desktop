@@ -55,6 +55,9 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
   const [elapsed, setElapsed] = useState(0);
   /** 已安装 CLI 的最新版本（11-06：npm/pip 查一次，缓存 10 分钟）。 */
   const [updates, setUpdates] = useState<Record<string, { current: string; latest: string; hasUpdate: boolean; error?: string }>>({});
+  /** 正在检查更新的条目 / 是否在全部检查（11-06 用户：「检测更新按键在哪里」）。 */
+  const [checkingId, setCheckingId] = useState("");
+  const [checkingAll, setCheckingAll] = useState(false);
   const [logs, setLogs] = useState<{ id: string; text: string }[]>([]);
   /** 卸载确认弹窗（SettingsDialog：设置页里 AppView 的 confirm 会被 sheet 压住看不见）。 */
   const [uninstallId, setUninstallId] = useState("");
@@ -145,6 +148,44 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
   const preview = items.find((item) => item.id === previewId) ?? null;
   const uninstallTarget = items.find((item) => item.id === uninstallId) ?? null;
   const categoryLabelOf = (key: string) => categories.find((cat) => cat.key === key)?.label ?? "未分类";
+
+  /** 检查某一个已安装 CLI 的更新（预览弹窗按钮）。 */
+  const checkOne = useCallback(async (item: CliAgentEntry) => {
+    if (checkingId || busyId) return;
+    setCheckingId(item.id);
+    try {
+      const res = (await window.codex.checkCliAgentUpdates([item.id])) as { items?: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> };
+      const info = (res?.items ?? [])[0];
+      if (info) setUpdates((current) => ({ ...current, [info.id]: { current: info.current, latest: info.latest, hasUpdate: info.hasUpdate, error: info.error } }));
+      if (!info) notify(`没查到「${item.name}」的版本信息`, "可能不是 npm/pip 装的，或网络不可用");
+      else if (info.hasUpdate) notify(`发现新版本 ${info.latest}`, `当前 ${info.current || "未知"}，可直接点「更新到 ${info.latest}」`);
+      else notify("已是最新", info.latest ? `${item.name} · ${info.latest}` : undefined);
+    } catch (e) {
+      notify(`检查更新失败：${(e as Error)?.message ?? e}`);
+    } finally {
+      setCheckingId("");
+    }
+  }, [busyId, checkingId, notify]);
+
+  /** 检查所有已安装 CLI 的更新（工具栏按钮）。 */
+  const checkAll = useCallback(async () => {
+    if (checkingAll || busyId) return;
+    const ids = items.filter((item) => detect[item.id]?.state === "ok").map((item) => item.id);
+    if (!ids.length) { notify("还没有已安装的 CLI", "先装一个再检查更新"); return; }
+    setCheckingAll(true);
+    try {
+      const res = (await window.codex.checkCliAgentUpdates(ids)) as { items?: Array<{ id: string; current: string; latest: string; hasUpdate: boolean; error?: string }> };
+      const map: Record<string, { current: string; latest: string; hasUpdate: boolean; error?: string }> = {};
+      for (const info of res?.items ?? []) map[info.id] = { current: info.current, latest: info.latest, hasUpdate: info.hasUpdate, error: info.error };
+      setUpdates(map);
+      const count = (res?.items ?? []).filter((info) => info.hasUpdate).length;
+      notify(count ? `${count} 个 CLI 可更新` : "全部已是最新", `已检查 ${ids.length} 个已安装 CLI`);
+    } catch (e) {
+      notify(`检查更新失败：${(e as Error)?.message ?? e}`);
+    } finally {
+      setCheckingAll(false);
+    }
+  }, [busyId, checkingAll, detect, items, notify]);
 
   /** 进度计时：装卸期间每秒刷新「已用时」，结束后清零。 */
   useEffect(() => {
@@ -307,6 +348,9 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
             <button type="button" className="cli-agents-clear" title="清空搜索" onClick={() => setQuery("")}><X size={12} /></button>
           ) : null}
         </label>
+        <button type="button" className="cli-agents-btn" disabled={checkingAll || Boolean(busyId)} title="检查已安装 CLI 的最新版本" onClick={() => void checkAll()}>
+          {checkingAll ? <LoaderCircle size={13} className="spin" /> : <RefreshCw size={13} />} 检查更新
+        </button>
         <button type="button" className="cli-agents-btn primary" onClick={() => setDraft(EMPTY_DRAFT(categories[0]?.key ?? "custom"))}>
           <Plus size={13} /> 新增 CLI
         </button>
@@ -394,7 +438,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                     seed={item.id || item.name}
                     name={item.name}
                     tag={item.builtin ? "内置" : undefined}
-                    line={`${categoryLabelOf(item.category)} · ${busyId === item.id ? "处理中…" : installed ? (updates[item.id]?.hasUpdate ? `可更新 · ${updates[item.id].current || "?"} → ${updates[item.id].latest}` : (status?.version || "已安装")) : "未安装"}`}
+                    line={`${categoryLabelOf(item.category)} · ${busyId === item.id ? "处理中…" : installed ? (updates[item.id]?.hasUpdate ? `可更新 · ${updates[item.id].current || "?"} → ${updates[item.id].latest}` : (status?.version ? `已安装 · ${status.version}` : "已安装")) : "未安装"}`}
                     disabled={!item.enabled}
                     onClick={() => setPreviewId(item.id)}
                   />
@@ -441,6 +485,11 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                 ) : null}
                 {busy ? (
                   <button className="secondary-setting" onClick={() => void cancelBusy()}><X size={12} />取消</button>
+                ) : null}
+                {installed ? (
+                  <button className="secondary-setting" disabled={busy || checkingId === preview.id} onClick={() => void checkOne(preview)}>
+                    {checkingId === preview.id ? <LoaderCircle size={12} className="spin" /> : <RefreshCw size={12} />}检查更新
+                  </button>
                 ) : null}
                 {installed ? (
                   <button className="secondary-setting agent-preview-danger" disabled={busy} onClick={() => setUninstallId(preview.id)}>

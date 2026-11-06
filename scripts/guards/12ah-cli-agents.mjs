@@ -498,6 +498,8 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "检查更新并行限 4 路（面板打开不必串行等十几条）");
   ok(/const hasCustomIndex = args\.some/.test(installSrc),
     "用户命令自带 -i/--index-url 时不再用镜像覆盖（私有源不被顶掉）");
+  ok(/检查更新/.test(panelSrc) && /const checkOne = useCallback/.test(panelSrc) && /const checkAll = useCallback/.test(panelSrc),
+    "面板提供「检查更新」入口（工具栏全部 + 预览单条，11-06 用户问按键在哪）");
 }
 
 rmSync(sandbox, { recursive: true, force: true });
