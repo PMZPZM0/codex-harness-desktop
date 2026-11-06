@@ -1655,6 +1655,9 @@ html[data-ui-font="large"] .action-content pre {
    「这个条还是太粗了，还挤了上面的排版，融入到会话选项里面」——
    ⛔ 绝对定位在行内底部：**不占布局** ⇒ 行高保持 34px、名称排版完全不动；
      条只做 9px 高、半透明的细线，hover 才提亮。 */
+/* ⛔ 11-06 审查：细条有一半在行外（bottom:-4px），下一行是**后出现的兄弟**、默认会盖住它
+   ⇒ 点在露出的半截上会命中下一行（打开错的会话）。给带 footer 的行抬一层，露出的部分才可点。 */
+.thread-row.has-footer { z-index: 2; }
 .thread-row-footer {
   position: absolute;
   left: 50%;

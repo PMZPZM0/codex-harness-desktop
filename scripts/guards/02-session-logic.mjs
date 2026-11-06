@@ -1491,6 +1491,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       (/\.thread-row \.thread-child-bar \.conv-section-chevron\s*\{[^}]*transform:\s*rotate\(0deg\)/.test(readStyles()) && /\.thread-child-bar \.conv-section-chevron\.open\s*\{[^}]*transform:\s*rotate\(180deg\)/.test(readStyles()) ? ok : fail)(
         "【156】细条箭头是上下方向（收起朝下 / 展开朝上，11-06 用户令「别反了」）"
       );
+      (/\.thread-row\.has-footer\s*\{[^}]*z-index:\s*2/.test(readStyles()) ? ok : fail)(
+        "【156】子会话细条露出的半截抬层（z-index:2）：不被下一行盖住 / 吃掉点击（11-06 审查）"
+      );
     } catch (error) {
       fail("【156】thread-source.mjs 加载失败：" + error.message);
     }
