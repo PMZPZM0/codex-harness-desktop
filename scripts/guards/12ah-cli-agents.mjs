@@ -502,6 +502,65 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "面板提供「检查更新」入口（工具栏全部 + 预览单条，11-06 用户问按键在哪）");
 }
 
+/* ── 11-06 QwenPaw 派活报错（用户真机实证：`No such option '-F'`）──
+   ⛔ 根因不是「宿主没采用自定义 cliCommand」，而是模板 `qwenpaw task {prompt}` 没引号：
+      任务正文里的 `Select-Object -First 20` 被 shell 拆成独立参数，`-First` 被当成短选项 `-F`；
+      同时该 CLI 需要 `-i/--instruction`，旧模板也没给。两条都要钉。 */
+{
+  const cmd = await import(new URL("../../src/lib/cli-command.mjs", import.meta.url).href);
+  const runnerSrc = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
+  const storeSrc = readFileSync(join(ROOT, "electron/boss-groups/store.ts"), "utf8");
+  const bossRoleSrc = readFileSync(join(ROOT, "src/features/boss-group-view/boss-role.ts"), "utf8");
+  const bossToolsSrc = readFileSync(join(ROOT, "src/features/app-view/constants/05-boss-group-tools.tsx"), "utf8");
+  ok(typeof cmd.fillCliPromptTemplate === "function" && typeof cmd.healCliCommand === "function",
+    "CLI 命令模板是纯函数模块（守卫直接真跑）");
+  const dangerous = "标题：探测 D:\\\\6\n命令：Get-ChildItem 'D:\\\\6' | Select-Object -First 20 Name";
+  const filled = cmd.fillCliPromptTemplate("qwenpaw task {prompt}", dangerous);
+  ok(filled.startsWith('qwenpaw task "') && filled.endsWith('"'),
+    "⛔ 不带引号的模板也会把任务全文整体包成一个参数（`-First` 不再掉出去当选项）");
+  ok(/"[^"]*-First 20 Name[^"]*"/.test(filled) && !/\n/.test(filled),
+    "任务正文里的 `-First` 留在引号内，且换行被压成单行（不再截断命令）");
+  ok(!/[&|<>^%$]/.test(filled.slice(filled.indexOf('"') + 1, filled.lastIndexOf('"'))),
+    "提示词里的 shell 元字符被净化（命令注入面）");
+  ok(cmd.fillCliPromptTemplate('aider --message "{prompt}" --yes', "x").split('"').length === 3,
+    "模板自带双引号时不重复加引号");
+  ok(cmd.fillCliPromptTemplate("aider --message '{prompt}' --yes", "x").startsWith('aider --message "x"'),
+    "模板用单引号包占位符时换成安全的双引号（cmd 不认单引号分组）");
+  ok(cmd.fillCliPromptTemplate('bin -p "任务：{prompt} 完"', "a b") === 'bin -p "任务：a b 完"',
+    "占位符夹在更长的引号串里时只在里面填值，不叠第二层引号");
+  const qp = cmd.cliPromptCommand("qwenpaw");
+  ok(/-i "\{prompt\}"/.test(qp) && /--max-iters/.test(qp) && !/-F\b/.test(qp),
+    `QwenPaw 规范模板用 -i/--instruction（实得：${qp}）`);
+  ok(cmd.healCliCommand("qwenpaw task {prompt}") === qp
+    && cmd.healCliCommand('qwenpaw task -i "{prompt}"') === qp,
+    "老档案里的坏模板（缺 -i / 缺超时）会被 heal 成规范模板");
+  ok(cmd.healCliCommand('qwenpaw task -i "{prompt}" --max-iters 5 -t 60') === 'qwenpaw task -i "{prompt}" --max-iters 5 -t 60',
+    "用户写全了开关的模板原样保留（不覆盖自定义参数）");
+  ok(cmd.healCliCommand("mycli {prompt}") === "mycli {prompt}",
+    "没有规范模板的自定义 CLI 不硬改");
+  ok(/fillCliPromptTemplate\(\s*healCliCommand\(member\.cliCommand[^)]*\),[\s\S]{0,240}?memberPrompt\(/.test(runnerSrc)
+    && !/\.replace\("\{prompt\}", promptForCli/.test(runnerSrc),
+    "⛔ 派活执行端走「先 heal 再整体加引号」，不再裸 replace");
+  ok(/readUsableCliAgents\(\)/.test(runnerSrc) && /cliAgentRegistry/.test(runnerSrc) && /if \(!command\) continue;/.test(runnerSrc),
+    "中枢可拉名单合并「CLI 智能体目录」：有规范单轮命令的都能拉，未核实的不进群（宿主没法替它探用法）");
+  ok(/healCliCommand\(member\.cliCommand\)/.test(storeSrc),
+    "老档案在 store.load 时自动修复 CLI 命令模板（用户不用删群重建）");
+  ok(/单轮非交互命令/.test(mainSrc) && /任务全文整体放一个参数/.test(mainSrc),
+    "被委派的 CLI 会话拿到规范单轮命令（模型不用猜开关）");
+  ok(/只传 cliName|只传 cliName 就行/.test(readFileSync(join(ROOT, "electron/features/boss-groups-ipc.ts"), "utf8"))
+    && /不要自己拼 cliCommand|不要自己猜/.test(readFileSync(join(ROOT, "electron/features/boss-groups-ipc.ts"), "utf8")),
+    "⛔ 中枢提示词只让模型传 cliName（模板由宿主配，模型猜开关 = 派活必失败）");
+  ok(/只传 cliName/.test(bossRoleSrc) && /不要自己猜/.test(bossToolsSrc),
+    "中枢角色提示与 group_add_member 工具描述同口径（模型看的是这两处）");
+  /* ⛔ 第二个真机坑（同一次派活）：NO_PROXY 里的 `[::1]` 会让 httpx 拼出 `all://*[::1]`，
+     Python 系 CLI 启动即崩（InvalidURL: Invalid port: ':1]'）。CLI 子进程与引擎环境都要修。 */
+  ok(cmd.normalizeNoProxyList("localhost,[::1],::1") === "localhost,::1,::1",
+    "NO_PROXY 里的方括号 IPv6 被规整成 httpx 能解析的形式（22:51 实测修复后 QwenPaw 跑到 success）");
+  const toolchainSrc = readFileSync(join(ROOT, "electron/toolchain.ts"), "utf8");
+  ok(/applyNoProxyFix\(env\)/.test(toolchainSrc) && /applyNoProxyFix\(env\)/.test(mainSrc),
+    "引擎环境（toolchainEnv）与 CLI 子进程环境（cliProcessEnv）都应用了 NO_PROXY 修正");
+}
+
 rmSync(sandbox, { recursive: true, force: true });
 console.log(`\n【cliagents】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

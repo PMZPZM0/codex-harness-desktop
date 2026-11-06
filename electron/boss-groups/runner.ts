@@ -14,7 +14,8 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
-import { binOnPath, cliProcessEnv } from "../cli-agents";
+import { binOnPath, cliProcessEnv, readUsableCliAgents } from "../cli-agents";
+import { cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
 import { bridgeDial } from "../main";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
@@ -661,14 +662,51 @@ async function ensureMemberThread(group: BossGroup, member: GroupMember): Promis
 }
 
 /* ── 本机外部 CLI agent（10-25 群聊重构：zcode/qoder/WorkBuddy/DeepSeek/豆包…） ── */
-/** 内置登记表：command 模板里 {prompt} 替换任务全文。检测/覆盖都允许 —— 拉人时探测，缺了会明说。 */
-const CLI_AGENT_REGISTRY: { name: string; role: string; command: string }[] = [
+/**
+ * 老登记表：command 模板里 {prompt} 替换任务全文。
+ * ⛔ 11-06 起与「设置 → 开发工具 → CLI 智能体」目录合并 —— 目录里的 14 条内置
+ *   （claude / codex / gemini / aider / openclaw / qwen / qwenpaw / iflow / kimi …）
+ *   也能被中枢直接拉进群，命令模板取 `cli-command.mjs` 的规范模板，不再让模型猜开关。
+ */
+const LEGACY_CLI_AGENTS: { name: string; role: string; command: string }[] = [
   { name: "zcode", role: "本机 CLI agent（zcode）", command: 'zcode -p "{prompt}"' },
   { name: "qoder", role: "本机 CLI agent（qoder）", command: 'qoder "{prompt}"' },
   { name: "workbuddy", role: "本机 CLI agent（WorkBuddy）", command: 'workbuddy "{prompt}"' },
   { name: "deepseek", role: "本机 CLI agent（DeepSeek harness）", command: 'deepseek "{prompt}"' },
   { name: "doubao", role: "本机 CLI agent（豆包）", command: 'doubao "{prompt}"' },
 ];
+
+/** 可拉 CLI 名单 = CLI 智能体目录（已启用）+ 老登记表；同 bin 以目录为准。 */
+async function cliAgentRegistry(): Promise<{ name: string; role: string; command: string; aliases: string[] }[]> {
+  const out = new Map<string, { name: string; role: string; command: string; aliases: string[] }>();
+  for (const entry of LEGACY_CLI_AGENTS) out.set(entry.name, { ...entry, aliases: [] });
+  try {
+    for (const cli of await readUsableCliAgents()) {
+      const bin = String(cli.bin ?? "").trim().toLowerCase();
+      if (!bin) continue;
+      /* aliases：模型可能按显示名拉人（「QwenPaw」而不是 qwenpaw）—— 归一成 bin 再匹配，
+         否则它会以为"拉不到"而自作主张换人。 */
+      const aliases = [String(cli.name ?? "").trim().toLowerCase()].filter((name) => name && name !== bin);
+      /* ⛔ 只收「有核实过的单轮命令」的 CLI：群成员由宿主直接起子进程，没有模型先跑 --help，
+         模板猜错 = 拉得进来、派不出去。未核实的仍可经 @ 调度（那条路径由模型自己查用法）。 */
+      const command = cliPromptCommand(bin);
+      if (!command) continue;
+      out.set(bin, {
+        name: bin,
+        role: `本机 CLI agent（${cli.name || bin}）`,
+        command,
+        aliases,
+      });
+    }
+  } catch { /* 目录读不到就只给老登记表 */ }
+  return [...out.values()];
+}
+
+/** 按可执行名或显示名找一条（模型两种写法都要认）。 */
+function findCliAgent<T extends { name: string; aliases: string[] }>(list: T[], input: string): T | undefined {
+  const key = String(input ?? "").trim().toLowerCase();
+  return list.find((entry) => entry.name === key || entry.aliases.includes(key));
+}
 
 /** 可拉名单：专家（teams 登记表，lead+成员）+ 本机 CLI agent（登记表，附 PATH 探测）。 */
 export async function poolForBoss(): Promise<{
@@ -705,7 +743,8 @@ export async function poolForBoss(): Promise<{
       }
     }
   } catch { /* 专家登记表读不到就只给 CLI 名单 */ }
-  const cliAgents = await Promise.all(CLI_AGENT_REGISTRY.map(async (a) => ({
+  const registry = await cliAgentRegistry();
+  const cliAgents = await Promise.all(registry.map(async ({ aliases: _aliases, ...a }) => ({
     ...a,
     /* ⛔ 探测走 cli-agents 的 binOnPath（那里按平台分叉 where / which）：10-30 审计前这里写死
        `where`，mac 上恒失败 ⇒ 名单整列「未检测到」。 */
@@ -714,32 +753,21 @@ export async function poolForBoss(): Promise<{
   return { experts, cliAgents };
 }
 
-/**
- * 命令模板里 {prompt} 的替换值 —— ⛔ 必须净化为**单行、无 shell 元字符**：
- *  · 命令交给系统 shell 解析，提示词里的 `& | < > ^ %` 会变成命令分隔 / 重定向 / 变量展开
- *    ⇒ 任务说明或验收标准里只要出现 `& del ...` 这类内容，就是一条命令注入（两者都来自外部输入）。
- *  · 换行会把命令截断（运行态压测实测：整条参数被截坏）。
- *  ⇒ 压成单行 + 去掉元字符（提示词本质是自然语言，去掉这些符号不损失语义）。
- */
-function promptForCli(text: string): string {
-  return String(text ?? "")
-    .replace(/[\r\n]+/g, " ")
-    .replace(/["`]/g, "'")
-    .replace(/[&|<>^%]/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-}
-
 /** 群成员会话也带用户的前端设计 / 后端工程 / 架构规范（与专家会话同一份）。 */
 async function personalNormsBlock(): Promise<string> {
   try { return personalNormsPrompt(await readPersonalization()); }
   catch { return ""; }
 }
 
-/** CLI 成员的派遣：起子进程跑命令模板，stdout 尾部作为成品走同一条审查流水。 */
+/** CLI 成员的派遣：起子进程跑命令模板，stdout 尾部作为成品走同一条审查流水。
+ *  ⛔ 命令 = heal(老模板) + 整体加引号的任务全文（11-06 实证：没引号时 `Select-Object -First 20`
+ *    里的 `-First` 被 shell 拆成独立参数，QwenPaw 报 `No such option '-F'`，任务一个字都没跑）。 */
 async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
   const norms = await personalNormsBlock();
-  const command = String(member.cliCommand ?? "").replace("{prompt}", promptForCli(memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1, "", norms)));
+  const command = fillCliPromptTemplate(
+    healCliCommand(member.cliCommand ?? ""),
+    memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1, "", norms),
+  );
   try {
     await new Promise<void>((resolve, reject) => {
       /* ⛔⛔ 运行态压测实测（10-25）：`execFile("cmd", ["/c", command])` 会把整串命令**再包一层引号**
@@ -749,7 +777,8 @@ async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTa
          让参数原样交给 shell，不再二次加引号。
          ⛔ mac 适配（10-30 审计）：`cmd` 是 Windows 专有 —— darwin/linux 上 execFile("cmd") 直接 ENOENT
          ⇒ 派给「本机 CLI agent」的活在这两个平台**全失败**（同样是「拉得进来、派不出去」）。
-         非 Windows 走 `/bin/sh -c`：promptForCli 已把换行与 shell 元字符压掉，且 cliCommand 是
+         非 Windows 走 `/bin/sh -c`：fillCliPromptTemplate 已把换行压掉、元字符净化、任务全文整体
+         加引号（11-06：`-First` 掉出去被当成 `-F` 就是这么来的），且 cliCommand 是
          用户自己配的模板，信任面与 `cmd /c` 一致。 */
       const isWin = process.platform === "win32";
       execFile(isWin ? "cmd" : "/bin/sh", [isWin ? "/c" : "-c", command], {
@@ -1113,8 +1142,11 @@ export async function memberForBoss(input: {
           source: "engine",
         };
       } else if (input.from === "cli") {
-        const reg = CLI_AGENT_REGISTRY.find((a) => a.name === String(input.cliName ?? input.name ?? "").toLowerCase());
-        const command = String(input.cliCommand ?? reg?.command ?? "").trim();
+        const key = String(input.cliName ?? input.name ?? "").trim();
+        const reg = findCliAgent(await cliAgentRegistry(), key);
+        /* ⛔ 11-06：模型给的老模板（如 `qwenpaw task {prompt}`）会被 heal 成规范模板；
+           模板里的 {prompt} 在派活时整体加引号，任务正文不会再被拆成命令行开关。 */
+        const command = healCliCommand(String(input.cliCommand ?? reg?.command ?? "").trim());
         if (!command) return { ok: false, error: `拉 CLI agent 需要命令模板（cliCommand，{prompt} 会替换成任务全文）；登记表里没有「${input.cliName ?? ""}」` };
         /* ⛔⛔ 10-26 用户令：「cli成员就让Codex添加就行，帮cli成员配置好模型等等，最后能干活和派遣」
            ⛔ 原来 CLI 成员的 model / effort / sandbox / approvalPolicy **全空** ⇒

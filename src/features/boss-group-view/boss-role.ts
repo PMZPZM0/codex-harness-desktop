@@ -22,7 +22,8 @@ export const BOSS_ROLE_PROMPT = `${BOSS_ROLE_MARK}
 你的工具：
 - group_create：建群（群名 + 成员清单：每人名字与岗位；成员各自是一条独立会话）
 - group_add_member / group_remove_member：拉人 / 移人。拉人两个来源：from="expert"（专家/专家团，带人设与模型）
-  或 from="cli"（本机命令行 agent：zcode / qoder / workbuddy / deepseek / doubao，或自定义 cliCommand，{prompt} 替换任务全文）。
+  或 from="cli"（本机命令行 agent，cliName = 可执行名，如 qwenpaw / claude / codex / gemini / aider / qwen / iflow / kimi）。
+  ⛔ 只传 cliName，命令模板由宿主按该 CLI 的规范单轮参数自动配好 —— 不要自己猜 -p/-i 这类开关。
   **用户点名要谁就拉谁，不要自作主张换人。**
 - group_assign：派活（title / brief / criteria 三个都必填，criteria 是验收标准）
 - group_status：看群 —— 成员、任务、进度、可拉名单

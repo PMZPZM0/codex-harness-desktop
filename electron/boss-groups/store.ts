@@ -10,6 +10,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { emptyState } from "./state";
 import type { BossState } from "./types";
+import { healCliCommand } from "../../src/lib/cli-command.mjs";
 
 export class BossGroupStore {
   private file = "";
@@ -34,10 +35,23 @@ export class BossGroupStore {
         if (!Array.isArray(this.state.events)) this.state.events = [];
         /* ⛔ 10-26：清洗老档案里的**死配置**（stallMs 是停滞看门狗的阈值，看门狗已整体删除）。
            不清的话：老群里带着一个没人读的配置，UI 上还显示「卡住阈值 90s」⇒ 骗自己。 */
+        let repaired = false;
         for (const group of Object.values(this.state.groups ?? {})) {
           const policy = group?.policy as Record<string, unknown> | undefined;
           if (policy && "stallMs" in policy) delete policy.stallMs;
+          /* ⛔ 11-06：修复老档案里模型"猜"出来的 CLI 命令模板 —— 真机实测
+             `qwenpaw task {prompt}` 派活报 `No such option '-F'`（缺 -i，且 {prompt} 没引号）。
+             规范模板见 src/lib/cli-command.mjs；用户自己写全了开关的模板原样保留。 */
+          for (const member of group?.members ?? []) {
+            if (member?.source !== "cli" || !member.cliCommand) continue;
+            const healed = healCliCommand(member.cliCommand);
+            if (healed !== member.cliCommand) {
+              member.cliCommand = healed;
+              repaired = true;
+            }
+          }
         }
+        if (repaired) this.save();
       }
     } catch { /* 文件不存在 / 损坏：从空账本开始（群丢了比启动不了好） */ }
     this.loaded = true;

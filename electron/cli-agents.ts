@@ -24,7 +24,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
-import { augmentedPath } from "./toolchain";
+import { augmentedPath, applyNoProxyFix } from "./toolchain";
+import { cliPromptCommand } from "../src/lib/cli-command.mjs";
 
 /**
  * 子进程用的 PATH。
@@ -38,7 +39,12 @@ import { augmentedPath } from "./toolchain";
  *   `augmentedPath()` 已带 mac 的 homebrew / 随包 node/bin / npm-global，Windows 侧也兼容。
  */
 export function cliProcessEnv(): NodeJS.ProcessEnv {
-  try { return { ...process.env, PATH: augmentedPath() }; } catch { return process.env; }
+  try {
+    const env: NodeJS.ProcessEnv = { ...process.env, PATH: augmentedPath() };
+    /* ⛔ NO_PROXY 里的 `[::1]` 会让 httpx 系 CLI（Python）启动即崩，见 normalizeNoProxy。 */
+    applyNoProxyFix(env);
+    return env;
+  } catch { return process.env; }
 }
 
 /** 分类（顺序即界面顺序）。⛔ 渲染层不复制这份字面量 —— 经 `cliagents:list` 一起下发。 */
@@ -207,7 +213,7 @@ const BUILTIN_CLI_AGENTS: CliAgentDef[] = [
     installCmdMac: "python3 -m pip install qwenpaw",
     docs: "https://qwenpaw.agentscope.io/docs/quickstart/",
     description: "AgentScope 团队开源的国产个人 AI 助手（原 CoPaw）：带技能 / 插件 / 多渠道，本地或云端都能跑",
-    promptHint: "先 `qwenpaw --help` 摸清子命令；首次 `qwenpaw init --defaults` 初始化，`qwenpaw app` 起控制台。没有能直接跑单轮的子命令时如实回报，不要假装跑过。",
+    promptHint: "非交互用 `qwenpaw task -i \"<任务>\" --max-iters 20 -t 540`（`task` 子命令必须用 -i/--instruction 传任务，位置参数会被拒）；首次 `qwenpaw init --defaults` 初始化。",
     enabled: true,
     builtin: true,
     createdAt: 0,
@@ -583,14 +589,18 @@ export function buildCliRolePrompt(cli: Pick<CliAgentDef, "name" | "bin" | "desc
   const hint = String(cli?.promptHint ?? "").trim();
   const desc = String(cli?.description ?? "").trim();
   const install = String(cli?.installCmd ?? "").trim();
+  const oneShot = cliPromptCommand(bin).replace("{prompt}", "<任务全文>");
   return [
     `你被当作「CLI 智能体 ${name}」派活：用本机命令行工具 \`${bin}\` 完成下面的任务。`,
     desc ? `这个工具是什么：${desc}` : "",
     hint ? `怎么用：${hint}` : "",
+    oneShot
+      ? `单轮非交互命令（照这个传参，⛔ 别自己猜开关）：\`${oneShot}\` —— 任务全文整体放一个参数里，别让它被空格拆开。`
+      : "",
     "",
     "工作方式：",
     `① 先用 \`${bin} --help\`（或该工具自己的查用法命令）确认它在**本机**可用、并看清参数；`,
-    `② 再用合适的参数把任务交给它跑，等它结束；`,
+    `② ${oneShot ? "按上面的单轮非交互命令" : "用合适的参数"}把任务交给它跑，等它结束；`,
     "③ 产出写清：实际执行的命令、它的关键输出（引用原文要点）、以及你的结论。",
     "",
     "⛔ **如果命令找不到 / 报「不是内部或外部命令」「command not found」**：立刻停下，如实回一句" +

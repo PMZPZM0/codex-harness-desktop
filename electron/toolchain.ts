@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { app } from "electron";
+import { normalizeNoProxyList } from "../src/lib/cli-command.mjs";
 
 export function toolsRoot() {
   try {
@@ -330,6 +331,7 @@ export const CHINA_NPM_REGISTRY = "https://registry.npmmirror.com";
 // Codex 子进程的完整环境：PATH + NODE_PATH，让引擎能直接使用已装自动化工具。
 export function toolchainEnv() {
   const env: Record<string, string> = { ...process.env, PATH: augmentedPath(), NO_UPDATE_NOTIFIER: "1" };
+  applyNoProxyFix(env);
   const nodePath = npmGlobalRootCandidates().filter(Boolean).join(path.delimiter);
   if (nodePath) env.NODE_PATH = nodePath;
   /* 10-20：按需工具缓存必须落 userData，否则覆盖安装后要重下。 */
@@ -352,6 +354,17 @@ export function toolchainEnv() {
   const nuphusBin = nuphusBinary();
   if (nuphusBin) env.NUPHUS_BIN = nuphusBin;
   return env;
+}
+
+/** 原地修正 env 里的大小写 NO_PROXY（Windows 环境变量名不区分大小写，两种写法都可能出现）。
+ *  ⛔ 11-06 QwenPaw 真机实测：`NO_PROXY=...,[::1],::1` 让 httpx 拼出 `all://*[::1]`，
+ *    启动即抛 `InvalidURL: Invalid port: ':1]'` —— 所有 Python httpx 系 CLI 都会崩，
+ *    而且报错在第三方栈里，看不出是环境变量的问题。CLI 子进程与引擎环境都要过这一手。 */
+export function applyNoProxyFix(env: Record<string, string | undefined>): void {
+  for (const key of ["NO_PROXY", "no_proxy"]) {
+    const value = env[key];
+    if (value) env[key] = normalizeNoProxyList(value);
+  }
 }
 
 /**
