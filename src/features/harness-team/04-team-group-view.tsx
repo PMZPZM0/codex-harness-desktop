@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ListTree, Settings2, X } from "lucide-react";
+import { Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LedgerSummary, LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -21,8 +21,8 @@ import { Markdown } from "../markdown";
 import { TeamMenuButton } from "./06-team-menu";
 import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
-import { DEFAULT_TEAM_RUN_OPTS, TeamComposer } from "./10-team-composer";
-import type { TeamRunParams } from "./10-team-composer";
+import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-composer";
+import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions } from "../../lib/team-models.mjs";
@@ -108,11 +108,12 @@ export function TeamGroupView({
   const [nameError, setNameError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [copied, setCopied] = useState("");
-  /* 过程折叠（用户：「这样不会刷屏」）：默认全收；群头一键全展开/全收。
-     ⛔ 全局切换时给折叠块换 key 重挂，按新的 defaultOpen 复位（FoldGroup 自带手动开合状态）。 */
-  const [expandAll, setExpandAll] = useState(false);
-  /** 输入框工具行的本轮选项（模型/档位/权限是偏好，技能/文件是一次性附件） */
-  const [runOpts, setRunOpts] = useState(DEFAULT_TEAM_RUN_OPTS);
+  /* 过程折叠（用户：「这样不会刷屏」）：每条消息自带一个折叠块、默认收起。
+     ⛔ 11-06 用户：「群头那个『展开过程』多余，可以不要了」⇒ 全局开关整体删除，
+        只在单条消息上开合；FoldGroup 自己管手动状态，⛔ 不留死 state。 */
+  /** 输入框工具行：模型/档位/权限是**持久化偏好**（重启不丢），技能/文件是一次性附件 */
+  const [runOpts, setRunOpts] = useState<TeamRunOpts>(loadTeamRunOpts);
+  useEffect(() => { saveTeamRunOpts(runOpts); }, [runOpts]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
   /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
      用户就会觉得"关了之后什么都没了"）。⛔ 只在自己本来就在底部时才跟，别抢用户翻历史的滚动。 */
@@ -282,12 +283,21 @@ export function TeamGroupView({
   const quotes = useMemo(() => buildReplyQuotes(rows), [rows]);
 
   /* ⛔ 折叠/展开改变内容高度后必须重算贴底（项目纪律：pin-shrink-follow）。
-     只在用户本来贴底时跟，⛔ 不抢他正在翻的历史位置。 */
+     群头全局开关删掉后改由折叠组自己的过渡结束事件触发（主对话 Fold 用
+     grid-template-rows 过渡），这样**单行**开合也能覆盖；只在用户本来贴底时跟，
+     ⛔ 不抢他正在翻的历史位置。 */
   useEffect(() => {
-    if (!stickRef.current) return;
-    requestAnimationFrame(() => { if (stickRef.current) stick(); });
+    const el = streamRef.current;
+    if (!el) return;
+    const onEnd = (e: TransitionEvent) => {
+      if (e.propertyName !== "grid-template-rows") return;
+      if (!stickRef.current) return;
+      requestAnimationFrame(() => { if (stickRef.current) stick(); });
+    };
+    el.addEventListener("transitionend", onEnd);
+    return () => el.removeEventListener("transitionend", onEnd);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expandAll]);
+  }, []);
 
   /* 项目地址显示成短名（全路径放 title）：群头一行塞不下 D://a//b//c */
   const projectName = (group.workspace ?? "").split(/[\\/]/).filter(Boolean).pop() ?? "";
@@ -352,17 +362,6 @@ export function TeamGroupView({
             {group.members.length > 4 && <span className="team-group__avatar is-more">+{group.members.length - 4}</span>}
           </div>
           <span className="team-group__head-sep" aria-hidden />
-          {!showSettings && (
-            <button
-              type="button"
-              className={`team-group__icon-btn${expandAll ? " is-on" : ""}`}
-              onClick={() => setExpandAll((v) => !v)}
-              aria-pressed={expandAll}
-              title="一键展开 / 收起本群全部运行过程"
-            >
-              <ListTree size={14} /> <span>{expandAll ? "收起过程" : "展开过程"}</span>
-            </button>
-          )}
           <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回群聊" : "群设置"}>
             {showSettings ? <X size={14} /> : <Settings2 size={14} />} <span>{showSettings ? "返回" : "设置"}</span>
           </button>
@@ -474,11 +473,10 @@ export function TeamGroupView({
                             ))}
                             {isBot && (
                               <TeamProcess
-                                key={`${row.key}:${expandAll}`}
+                                key={row.key}
                                 threadId={row.threadId}
                                 at={row.at}
                                 bodyText={row.text}
-                                defaultOpen={expandAll}
                                 running={running}
                                 onAskAgain={() => askAgain(row)}
                               />

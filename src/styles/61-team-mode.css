@@ -1279,8 +1279,7 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.team-group__icon-btn:hover,
-.team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.team-group__icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 .team-group__atbar {
   display: flex;

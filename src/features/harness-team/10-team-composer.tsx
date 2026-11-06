@@ -54,6 +54,46 @@ export const DEFAULT_TEAM_RUN_OPTS: TeamRunOpts = {
   files: [],
 };
 
+/* ⛔⛔ 11-06 用户：「模型我切换了，然后重启又变成跟随全局了」——
+   原来 runOpts 只是面板内的 useState，弹窗卸载/应用重启即丢。
+   ⇒ 四项**偏好**落 localStorage（与主对话 composer-editor-height 同口径），
+     每次改动即写、启动时读回；⛔ 技能/文件是「本轮附件」，⛔ 不持久化。
+   ⛔ 读回必须校验：脏值/旧版本字段不能把输入框塞坏，一律回落默认。 */
+const OPTS_STORAGE_KEY = "harness-team:composer-opts";
+
+export function loadTeamRunOpts(): TeamRunOpts {
+  try {
+    const raw = localStorage.getItem(OPTS_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_TEAM_RUN_OPTS };
+    const saved = JSON.parse(raw) as Partial<TeamRunOpts> | null;
+    if (!saved || typeof saved !== "object") return { ...DEFAULT_TEAM_RUN_OPTS };
+    return {
+      ...DEFAULT_TEAM_RUN_OPTS,
+      model: typeof saved.model === "string" ? saved.model.trim() : "",
+      effort: typeof saved.effort === "string" && saved.effort ? saved.effort : DEFAULT_TEAM_RUN_OPTS.effort,
+      sandbox: saved.sandbox === "danger-full-access" || saved.sandbox === "workspace-write"
+        ? saved.sandbox : DEFAULT_TEAM_RUN_OPTS.sandbox,
+      approvalPolicy: saved.approvalPolicy === "never" || saved.approvalPolicy === "on-request" || saved.approvalPolicy === "untrusted"
+        ? saved.approvalPolicy : DEFAULT_TEAM_RUN_OPTS.approvalPolicy,
+      skills: [],
+      files: [],
+    };
+  } catch {
+    return { ...DEFAULT_TEAM_RUN_OPTS };
+  }
+}
+
+export function saveTeamRunOpts(opts: TeamRunOpts): void {
+  try {
+    localStorage.setItem(OPTS_STORAGE_KEY, JSON.stringify({
+      model: opts.model,
+      effort: opts.effort,
+      sandbox: opts.sandbox,
+      approvalPolicy: opts.approvalPolicy,
+    }));
+  } catch { /* 存储不可用：至少本次会话内有效，⛔ 不让输入框报错 */ }
+}
+
 type Props = {
   value: string;
   onValueChange: (next: string) => void;
@@ -79,6 +119,8 @@ export function TeamComposer({
   const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
   const [models, setModels] = useState<ModelOption[]>([{ value: "", title: "跟随全局" }]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  /* 启动那一刻的模型值（读回的偏好）：目录还没加载完时也要能显示，别闪成空白 */
+  const initialModelRef = useRef(opts.model);
 
   useEffect(() => {
     let alive = true;
@@ -97,6 +139,9 @@ export function TeamComposer({
                传 `custom:<provider>:<model>` 复合串引擎不认。 */
             list.push({ value: id, title: id, desc: p.name || undefined });
           }
+        }
+        if (initialModelRef.current && !seen.has(initialModelRef.current)) {
+          list.push({ value: initialModelRef.current, title: initialModelRef.current, desc: "上次选择" });
         }
         if (alive) setModels(list);
       } catch { /* 目录读不到就保留「跟随全局」，⛔ 不让输入框打不开 */ }
