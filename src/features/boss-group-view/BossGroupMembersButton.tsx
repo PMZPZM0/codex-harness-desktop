@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Network, Plus, UserMinus, X } from "lucide-react";
-import { bossPanelGroupFor, getBossPanelState, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
+import { getBossPanelState, setBossPanelGroup, subscribeBossPanel } from "./panel-store.mjs";
+import { resolveSelectedGroup } from "./resolve-group.mjs";
 import { AppSelect } from "../../components/AppSelect";
 import { BossGroupMemberPicker, type PoolExpert, type PoolCliAgent } from "./BossGroupMemberPicker";
 import { invalidateGroupMembers, useGroupMembers } from "./group-members-store";
@@ -35,11 +36,11 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   const store = useStoreGroupId(threadId);
 
   /* ⛔ 群选择**按会话**解析（10-25 用户令：指挥中枢可以创建多个，各会话互不干扰）：
-     ① 本会话是某群的 boss 线程 ⇒ 选那个群；
-     ② 否则用**本会话自己**上次选的群（groupIdByThread[threadId]）；
+     ① **本会话自己手动选的群优先**（11-06 修：反了会让下拉变死控件）；
+     ② 其次本会话绑定的 boss 群；
      ③ 都没有 ⇒ 空（⛔ **不回落**到别的会话/任意群 —— 那就是成员列表串项）。
    */
-  const groupId = (groups.find((g) => g.bossThreadId === threadId)?.id) || store.groupId || "";
+  const groupId = resolveSelectedGroup(groups, store.groupId, threadId);
 
   /* ⛔⛔ 10-26 用户令：「成员和轨道头像显示的状态，联动起来」
      ⇒ 成员状态**不再由本组件自己轮询**，改用**共享 store**（group-members-store）——
@@ -52,8 +53,8 @@ export function BossGroupMembersButton({ threadId }: { threadId: string }) {
     } catch { setGroups([]); }
   }, [threadId]);
 
-  /* 当前会话对应的群 id（与右侧轨道同一判定：按 bossThreadId 匹配）。 */
-  const ownGroupId = groups.find((g) => g.bossThreadId === threadId)?.id || bossPanelGroupFor(threadId) || "";
+  /* 当前会话对应的群 id（与上面的下拉、右侧轨道同一判定）。 */
+  const ownGroupId = groupId;
   const { snapshot: liveSnap } = useGroupMembers(ownGroupId);
   const snap: SnapLite | null = liveSnap.members.length || liveSnap.name
     ? { group: { id: liveSnap.groupId, name: liveSnap.name, members: liveSnap.members } }

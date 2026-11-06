@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Crown, Pin, PinOff, SendHorizontal, X } from "lucide-react";
 import { closeBossPanel, getBossPanelState, setBossPanelGroup, subscribeBossPanel, type BossPanelState } from "./panel-store.mjs";
+import { resolveSelectedGroup } from "./resolve-group.mjs";
 import { AppSelect } from "../../components/AppSelect";
 
 type GroupSummary = { id: string; name: string; paused: boolean; memberCount: number; taskCount: number; bossThreadId?: string };
@@ -43,9 +44,9 @@ export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   /* ⛔ 群选择**按会话**（10-25 用户令：指挥中枢可以创建多个，各会话互不干扰）：
-     本会话是某群的 boss 线程 ⇒ 选那个群；否则用**本会话自己**上次选的。
+     **本会话自己选过的群优先**，其次才是本会话绑定的 boss 群（11-06 修：反了会让下拉变死控件），
      都没有 ⇒ 回落到「最近活动的群」（面板是全局浮层，允许看别的群）—— 但**不读**别的会话的选中项。 */
-  const ownGroupId = (groups.find((g) => g.bossThreadId === threadId)?.id) || panel.groupIdByThread?.[threadId] || "";
+  const ownGroupId = resolveSelectedGroup(groups, panel.groupIdByThread?.[threadId], threadId);
   const groupId = ownGroupId || groups[0]?.id || "";
   const group = groups.find((g) => g.id === groupId) ?? null;
 
@@ -53,7 +54,8 @@ export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
     try {
       const list = (await window.codex.listBossGroups()) as GroupSummary[];
       setGroups(list ?? []);
-      const id = (list ?? []).find((g) => g.bossThreadId === threadId)?.id || panel.groupIdByThread?.[threadId] || list?.[0]?.id || "";
+      // ⛔ 与渲染的 groupId 同一套解析：这里若写成 boss 群优先，选了别的群也只会刷回原群（无联动变化）
+      const id = resolveSelectedGroup(list, panel.groupIdByThread?.[threadId], threadId, { fallbackToFirst: true });
       if (id) setSnap((await window.codex.bossGroupStatus(id)) as Snapshot);
       else setSnap(null);
     } catch { /* 主进程没起好：下一轮再试 */ }

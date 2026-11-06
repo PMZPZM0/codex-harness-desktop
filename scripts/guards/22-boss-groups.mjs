@@ -750,9 +750,35 @@ if (state) {
   const panelStoreSrc = read("src/features/boss-group-view/panel-store.mjs");
   ok(/groupIdByThread/.test(panelStoreSrc) && !/let state = \{ open: false, groupId: "" \}/.test(panelStoreSrc),
     "⛔ 面板的「选中群」按会话 id 记（groupIdByThread）—— BOSS 会话可创建多个，各会话互不串项");
-  ok(/bossPanelGroupFor\(threadId\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
+  ok(/resolveSelectedGroup\(groups, store\.groupId, threadId\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx"))
     && !/groups\[0\]\?\.id/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
     "⛔ 成员按钮只认**本会话自己的群**，不回落到别的群（回落到 groups[0] 就是串项）");
+  /* ⛔⛔ 11-06 用户实测「中枢右上角的切换好像没用，切换了也没有联动变化」：
+     原来的判定是 `bossThreadId 命中` **先**、会话里手动选的群**后** ⇒ 在指挥中枢会话里
+     下拉怎么选都被绑定的群立刻盖回去（死控件）；refresh 也按同一顺序取 snap，所以内容不联动。 */
+  let resolveSelectedGroup = null;
+  try {
+    ({ resolveSelectedGroup } = await import(new URL("../../src/features/boss-group-view/resolve-group.mjs", import.meta.url).href));
+  } catch { /* 下面按失败报 */ }
+  ok(typeof resolveSelectedGroup === "function", "群选择解析模块 resolve-group.mjs 可加载");
+  if (typeof resolveSelectedGroup === "function") {
+    const groupFixture = [
+      { id: "g-a", bossThreadId: "thread-a", name: "A" },
+      { id: "g-b", bossThreadId: "thread-b", name: "B" },
+    ];
+    ok(resolveSelectedGroup(groupFixture, "g-b", "thread-a") === "g-b",
+      "⛔ 本会话**手动选过的群优先**于 bossThreadId（否则指挥中枢里的群下拉是死控件）");
+    ok(resolveSelectedGroup(groupFixture, "", "thread-a") === "g-a",
+      "没手动选过 ⇒ 默认本会话绑定的 boss 群");
+    ok(resolveSelectedGroup(groupFixture, "gone", "thread-x") === ""
+      && resolveSelectedGroup(groupFixture, "gone", "thread-x", { fallbackToFirst: true }) === "g-a",
+      "选中项失效/无归属：成员弹窗不回落别的群（防串项），面板才回落到最近活动的群");
+  }
+  const bossPanelSrc = read("src/features/boss-group-view/BossGroupPanel.tsx");
+  ok(/resolveSelectedGroup\(groups, panel\.groupIdByThread\?\.\[threadId\], threadId\)/.test(bossPanelSrc)
+    && /resolveSelectedGroup\(list, panel\.groupIdByThread\?\.\[threadId\], threadId, \{ fallbackToFirst: true \}\)/.test(bossPanelSrc)
+    && /resolveSelectedGroup\(groups, store\.groupId, threadId\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
+    "面板渲染 / 面板 refresh / 成员弹窗**共用同一解析**（三处各写一份就是「切换无联动」的温床）");
   ok(/dirByThread/.test(read("src/features/boss-group-view/boss-dir-dialog-store.mjs")),
     "⛔ 已选项目地址按会话 id 记（dirByThread）—— 多个 BOSS 会话各用各的项目目录");
   ok(/const bossDir = isBossSession \? \(app\.thread\?\.cwd \|\| bossDirState\.pendingDir \|\| ""\) : ""/.test(composerForm),
