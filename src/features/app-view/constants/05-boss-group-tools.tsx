@@ -11,6 +11,8 @@ export const GROUP_CREATE_TOOL = {
   name: "group_create",
   description:
     "建一个「群」：你当 boss，成员各自是一条常驻会话（有名字、岗位、模型，能记住自己做过什么）。"
+    + "⛔⛔ 建之前先 `group_status`（不传 groupId）看现有群：老群里有人能接就直接 `group_assign` 派进去，"
+    + "别每来一个需求就新建群（成员是常驻的，连续性比新建强）；只有缺岗位/缺人，或用户明确要新群才建。"
     + "⛔ 岗位（role）和 systemPrompt 要在这一步写清 —— 成员会话的工具面在建会话那一刻定死，之后改不了。"
     + "成员默认 1~6 个；建完返回群 id 与成员 id（后续派活要用）。",
   inputSchema: {

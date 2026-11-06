@@ -624,8 +624,8 @@ if (state) {
     ok(/is-removing/.test(boardSrc) && /onNotice\(/.test(boardSrc)
       && /\.boss-groups-group-item\.is-removing/.test(read("src/styles/46-boss-groups.css")),
       "删群成功有反馈：列表行淡出 → 重排，并 toast 出「已删除群…」");
-    ok(/group_delete/.test(ipcSrc) && /const BOSS_HOME_AGENTS_VERSION = "v5"/.test(ipcSrc),
-      "中枢角色提示词已更新到 v5 并写明 group_delete / 移出即删会话（⛔ 不抬版本老用户读不到）");
+    ok(/group_delete/.test(ipcSrc) && /const BOSS_HOME_AGENTS_VERSION = "v6"/.test(ipcSrc),
+      "中枢角色提示词已更新到 v6（group_delete / 移出即删会话 / 先看再建；⛔ 不抬版本老用户读不到）");
   }
 
   /* ── 10-27 用户实测三条联动缺口（截图实证）——
@@ -758,6 +758,14 @@ if (state) {
      ⛔ 脚本 `.click()` 不派发 mousedown，这类缺陷在普通探针里是全绿的（本轮实际踩过）。 */
   ok(/closest\("\.app-select-list"\)/.test(read("src/features/boss-group-view/BossGroupMembersButton.tsx")),
     "⛔ 群成员弹窗的「点外面关闭」放行 AppSelect 门户下拉（否则真实点击切不了群）");
+  /* ⛔⛔ 11-06 用户实测：「codex 每次都是拉新群，旧的不怎么调用」——
+     中枢提示词原来的第 2 步直接写「group_create 建群」⇒ 模型当然每次新建。
+     现在第 0 步要求先 group_status 看现有群、能接就派进老群（版本 v6，老用户文件会被覆盖升级）。 */
+  const bossIpcSrc = read("electron/features/boss-groups-ipc.ts");
+  ok(/BOSS_HOME_AGENTS_VERSION = "v6"/.test(bossIpcSrc) && /先看再建/.test(bossIpcSrc) && /（不传 groupId）列出现有群/.test(bossIpcSrc),
+    "⛔ 中枢提示词「先看再建」：已有群能接就 group_assign 派进去（v6，别每来一个需求就新建群）");
+  ok(/别每来一个需求就新建群/.test(read("src/features/app-view/constants/05-boss-group-tools.tsx")),
+    "⛔ group_create 工具描述同样写明优先复用老群（模型看的是工具描述）");
   /* ⛔ 11-06 用户令：「这个（右侧成员轨）要联动变化」—— 群下拉切换后右侧成员轨必须跟着换群。 */
   ok(/resolveSelectedGroup\(bossThreads\.groups \?\? \[\], bossPanelState\.groupIdByThread/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"))
     && /useGroupMembers\(bossGroupId\)/.test(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx")),
