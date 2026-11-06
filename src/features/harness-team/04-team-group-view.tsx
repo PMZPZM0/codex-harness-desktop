@@ -66,6 +66,8 @@ type Props = {
   onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
   onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
+  onOpenModelSettings?: () => void;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
   live?: LiveRun[];
   /** 重命名（主进程是唯一落点；这里只负责发与显示错误） */
@@ -95,7 +97,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, live,
+  onStopPartner, live, onOpenModelSettings,
 }: Props) {
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
@@ -802,6 +804,7 @@ export function TeamGroupView({
                 onSend={() => void send()}
                 targetNames={atTargets.map(nameOf)}
                 fileCandidates={fileCandidates}
+                onOpenModelSettings={onOpenModelSettings}
               />
               <div className="team-group__send-row">
                 <span className="team-group__hint">

@@ -23,7 +23,7 @@ import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
-export function TeamModePanel() {
+export function TeamModePanel({ onOpenModelSettings }: { onOpenModelSettings?: () => void } = {}) {
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError,
@@ -224,6 +224,7 @@ export function TeamModePanel() {
             }}
             /* 派活：@ 了谁就把这句话交给谁 —— 各自落各自的子会话，产出再投影回来 */
             onSend={(partnerIds, text, params) => dispatch(active, partnerIds, text, params)}
+            onOpenModelSettings={onOpenModelSettings}
           />
         ) : (
           <div className="team-mode__blank">
@@ -253,7 +254,7 @@ export function TeamModePanel() {
 export default TeamModePanel;
 
 /** 群聊面板（侧栏「群聊」打开）。⛔ 关闭有三条退路：卡片头 X / ESC / 点背景空白。 */
-export function TeamChatOverlay() {
+export function TeamChatOverlay({ onOpenModelSettings }: { onOpenModelSettings?: () => void } = {}) {
   const open = useTeamChatOpen();
   const close = () => teamChatOpen.set(false);
   /* ⛔ 走全局 ESC 栈（只让最上层消费），⛔ 不要自己挂 window keydown —— 那样一次 Esc 会关掉多层 */
@@ -284,7 +285,7 @@ export function TeamChatOverlay() {
             <X size={18} />
           </button>
         </header>
-        <TeamModePanel />
+        <TeamModePanel onOpenModelSettings={onOpenModelSettings ? () => { close(); onOpenModelSettings(); } : undefined} />
       </div>
     </div>
   );

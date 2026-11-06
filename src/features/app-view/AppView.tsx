@@ -720,7 +720,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       )}
       <AppViewSettingsSheet app={app} />
       {/* 群聊（10-05）：独立板块的全屏壳，开关在板块自己的 store 里 */}
-      <TeamChatOverlay />
+      <TeamChatOverlay onOpenModelSettings={() => {
+        /* 与主对话模型下拉末尾的「更多设置…」同款：打开 设置 → 模型，并直接编辑当前模型。 */
+        setSettingsPage("model");
+        setSettingsOpen(true);
+        const live = customModel?.models?.find((m) => m.id === customModel?.model);
+        if (live) openModelEditor(live);
+      }} />
       {/* 登录后的一次性新人配置引导：只有完全没配置过的新 profile 会弹；完成后不再出现。 */}
       <ProfileOnboardingWizard
         onNotice={showToast}

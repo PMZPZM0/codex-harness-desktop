@@ -19,7 +19,7 @@
  * 已知边界：麦克风不接。主对话语音听写是**全局单 handler**，会同时把字幕写进主
  * `bag.prompt`；群面板接了会污染主输入框草稿（除非先加 owner 标志改造全局链路）。
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RefObject } from "react";
 import { Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
@@ -27,6 +27,9 @@ import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
 import { getActiveModel, subscribeActiveModel } from "../../lib/active-model.mjs";
+import { collectModelChoices } from "../../lib/model-menu.mjs";
+import { formatTokenCount, matchModelSpec } from "../../lib/model-specs";
+import { avatarToneOf } from "../../lib/entity-avatar";
 
 export type TeamRunOpts = {
   model: string;
@@ -109,13 +112,33 @@ type Props = {
   targetNames: string[];
   /** 群里出现过的本机路径（「引用群里的文件」候选，由父层从消息投影里扫出来） */
   fileCandidates?: Array<{ path: string; source: string }>;
+  /** 模型下拉末尾的「更多设置…」—— 与主对话下拉同款入口（打开 设置 → 模型）。 */
+  onOpenModelSettings?: () => void;
 };
 
-type ModelOption = { value: string; title: string; desc?: string };
+type ModelOption = {
+  value: string; title: string; desc?: string;
+  badges?: { text: string; kind?: "vision" | "video" }[];
+  credits?: string; monogram?: string; tone?: string;
+};
+
+/** 与主对话模型下拉同一套徽标：图片/视频（能不能看图）+ 上下文 + 输出。 */
+function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow?: number; maxOutputTokens?: number }) {
+  const spec = matchModelSpec(entry.modelId);
+  const inputs = entry.inputTypes ?? spec?.inputTypes ?? [];
+  const ctx = entry.contextWindow ?? spec?.contextWindow;
+  const out = entry.maxOutputTokens ?? spec?.maxOutputTokens;
+  const badges: { text: string; kind?: "vision" | "video" }[] = [];
+  if (inputs.includes("image")) badges.push({ text: "图片", kind: "vision" });
+  if (inputs.includes("video")) badges.push({ text: "视频", kind: "video" });
+  if (ctx) badges.push({ text: `${formatTokenCount(ctx)} 上下文` });
+  if (out) badges.push({ text: `出 ${formatTokenCount(out)}` });
+  return badges;
+}
 
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
-  opts, onOpts, sending, canSend, onSend, targetNames, fileCandidates = [],
+  opts, onOpts, sending, canSend, onSend, targetNames, fileCandidates = [], onOpenModelSettings,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
@@ -139,48 +162,57 @@ export function TeamComposer({
       desc: "随模型配置界面实时变化；派活时显式下发该模型",
     },
     ...baseModels,
-  ], [active.name, baseModels]);
+    ...(onOpenModelSettings ? [{ value: "__model_settings__", title: "更多设置…" }] : []),
+  ], [active.name, baseModels, onOpenModelSettings]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   /* 启动那一刻的模型值（读回的偏好）：目录还没加载完时也要能显示，别闪成空白 */
   const initialModelRef = useRef(opts.model);
   /* ⛔ 回落要用**最新** opts（目录是异步加载的，期间用户可能已经改过选项），别拿挂载时的旧对象覆盖。 */
   const optsRef = useRef(opts);
   optsRef.current = opts;
+  const onOptsRef = useRef(onOpts);
+  onOptsRef.current = onOpts;
+
+  /**
+   * 模型候选 = 与**主对话输入框同一个口径**（`collectModelChoices`）：
+   *   · 只列启用供应商的启用模型 ⇒ 停用旧供应商的模型不会再冒出来（11-07 用户实测）；
+   *   · 生效供应商排最前，按裸模型名去重；
+   *   · 标题 / 供应商说明 / 徽标 / 倍率 / 配色与主下拉一致。
+   * 打开菜单时再拉一次（供应商可能刚改过），避免面板一直用挂载时的旧目录。
+   */
+  const loadModels = useCallback(async () => {
+    try {
+      const { providers, current } = await window.codex.listCustomModels();
+      const choices = collectModelChoices(providers, current);
+      setBaseModels(choices.map((entry) => ({
+        value: entry.modelId,
+        title: entry.modelId,
+        desc: entry.isActive ? "" : entry.providerName,
+        badges: badgesOf(entry),
+        credits: entry.credits,
+        /* 与主下拉同源：主下拉的 tone 取「说明文字 || 标题」，生效行没有说明 ⇒ 用模型名。 */
+        tone: avatarToneOf((entry.isActive ? "" : entry.providerName) || entry.modelId),
+        monogram: entry.modelId.replace(/^[^A-Za-z0-9]+/, "").slice(0, 1).toUpperCase() || "M",
+      })));
+      /* ⛔⛔ 11-06：「还是旧的」—— 上次持久化的模型已经不在当前模型目录里，
+         原来会被塞成「上次选择」一直挂在下拉上、派活也一直用那个死值。
+         ⇒ 自动切回「跟随全局」，由当前生效模型接管；同时留一句说明，别让用户莫名被改。 */
+      const ids = new Set<string>([""]);
+      for (const entry of choices) ids.add(entry.modelId);
+      const retiredModel = initialModelRef.current;
+      /* ⛔ 判据与执行对象必须同一时刻取值 —— 目录异步回来之前用户可能已
+         自己点了「跟随全局」，否则提示会写成「上次选择的  已不在…」（空名字）并重复写空值。 */
+      if (ids.size > 1 && retiredModel && !ids.has(retiredModel) && optsRef.current.model === retiredModel) {
+        initialModelRef.current = "";
+        setRetired(`上次选择的 ${retiredModel} 已不在当前模型目录，已切回「跟随全局」`);
+        onOptsRef.current({ ...optsRef.current, model: "" });
+      }
+    } catch { /* 目录读不到就保留「跟随全局」，⛔ 不让输入框打不开 */ }
+  }, []);
 
   useEffect(() => {
     let alive = true;
-    void (async () => {
-      try {
-        const { providers } = await window.codex.listCustomModels();
-        const seen = new Set<string>([""]);
-        const list: ModelOption[] = [];
-        for (const p of Array.isArray(providers) ? providers : []) {
-          const entries = Array.isArray(p.models) && p.models.length ? p.models : [{ id: p.model }];
-          for (const m of entries) {
-            const id = String(m?.id ?? "").trim();
-            if (!id || seen.has(id)) continue;
-            seen.add(id);
-            /* ⛔ value 必须是**裸模型名**：`runDelegatedTask` 把它直接下发给 turn/start.model，
-               传 `custom:<provider>:<model>` 复合串引擎不认。 */
-            list.push({ value: id, title: id, desc: p.name || undefined });
-          }
-        }
-        if (alive) {
-          setBaseModels(list);
-          /* ⛔⛔ 11-06：「还是旧的」—— 上次持久化的模型已经不在当前模型目录里，
-             原来会被塞成「上次选择」一直挂在下拉上、派活也一直用那个死值。
-             ⇒ 自动切回「跟随全局」，由当前生效模型接管；同时留一句说明，别让用户莫名被改。 */
-          const retired = initialModelRef.current;
-          /* ⛔ 11-06 审查：判据与执行对象必须同一时刻取值 —— 目录异步回来之前用户可能已
-             自己点了「跟随全局」，否则提示会写成「上次选择的  已不在…」（空名字）并重复写空值。 */
-          if (list.length && retired && !seen.has(retired) && optsRef.current.model === retired) {
-            initialModelRef.current = "";
-            setRetired(`上次选择的 ${retired} 已不在当前模型目录，已切回「跟随全局」`);
-            onOpts({ ...optsRef.current, model: "" });
-          }
-        }
-      } catch { /* 目录读不到就保留「跟随全局」，⛔ 不让输入框打不开 */ }
-    })();
+    void loadModels();
     void (async () => {
       try {
         const list = await window.codex.listLocalSkills();
@@ -192,7 +224,7 @@ export function TeamComposer({
       } catch { /* 没有技能就只留文件入口 */ }
     })();
     return () => { alive = false; };
-  }, []);
+  }, [loadModels]);
 
   useEffect(() => {
     if (!plusOpen) return;
@@ -347,7 +379,7 @@ export function TeamComposer({
 
         <div className="team-composer__right composer-right">
           <span className="team-composer__count" title="本轮输入字符数（不是 token）">{value.length} 字</span>
-          <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => onOpts({ ...opts, model: v })} width={360} disabled={sending} />
+          <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => { if (v === "__model_settings__") { onOpenModelSettings?.(); return; } onOpts({ ...opts, model: v }); }} onOpen={() => void loadModels()} width={360} disabled={sending} />
           <EffortPicker levels={["low", "medium", "high", "xhigh"]} value={opts.effort || "high"} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
           <button type="button" className="team-composer__send" onClick={onSend} disabled={sending || !canSend} title={targetNames.length ? `派给 ${targetNames.join("、")}` : "先点上面的 @ 选伙伴"}>
             <Send size={15} /> 发送
