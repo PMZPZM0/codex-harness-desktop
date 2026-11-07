@@ -57,6 +57,8 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { runDelegatedTask } from "./delegation";
 import { buildDispatchCatalog } from "./dispatch-core";
 import { broadcastHarnessEvent } from "./window-bus";
+/* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
+import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
 import {
   appendLedger,
   normalizeLedgerEntry,
@@ -378,9 +380,12 @@ async function runDispatchRounds(
     try {
       /* 团伙伴按 team 写身份块（成员名单 / 互 @ 规则），单人伙伴按自己的角色写。 */
       const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team", catalog });
+      /* ⛔ 11-07：把「这个团在哪个群干活」登记给 bridge —— 成员回合结束时靠它把产出落进群
+         （⛔ 不登记 = 关掉群面板后成员产出无处可去，用户看到的还是「没结果回传」）。 */
+      if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
       const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
       options.onPhase?.("started", partner, {});
-      const res = await runDelegatedTask({
+      const res = await withDispatchTimeout(runDelegatedTask({
         kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
         name: partner.targetKey,
         query,
@@ -399,7 +404,7 @@ async function runDispatchRounds(
         ...(params.effort ? { effort: params.effort } : {}),
         ...(params.sandbox ? { sandbox: params.sandbox } : {}),
         ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-      });
+      }), partner.name);
       if (!res?.ok || !res?.threadId) {
         errMsg = res?.error || "派活失败";
         failed.push(`${partner.name}：${errMsg}`);
@@ -470,10 +475,50 @@ async function runDispatchRounds(
     }
   };
   await Promise.all(targets.map((partner) => runOne(partner, 0)));
+  /* ⛔⛔ 11-07 用户真机：「跑不通、没有结果回传」——派活失败原来只落在 `team-dispatch-done`
+     广播里，而**面板关着时没人接**⇒ 群里一片安静，用户以为任务"莫名其妙结束了"。
+     ⇒ 失败也写成一条群里的系统消息（面板开着关着都看得到，重开也在）。
+     ⛔ 成功不加系统消息（产出本身就是结果）；⛔ 不写多个人的重复原因（按行列出即可）。 */
+  if (failed.length) {
+    await appendMessageTo(group.id, {
+      id: `sys-dispatch-failed:${Date.now()}`,
+      authorId: "system",
+      authorKind: "bot",
+      senderKind: "system",
+      text: `派活失败（${failed.length}/${targets.length}）：\n${failed.map((f) => `· ${f}`).join("\n")}`,
+    }).catch(() => undefined);
+  }
   return { ok: failed.length < targets.length, sent: targets.length - failed.length, failed };
 }
 
 /** 定时任务那条路要"一次调完"：落消息 + 派活 + 等结果（无人值守本来就要等账本）。 */
+/**
+ * 派活超时兜底（11-07 真机）：实测「引擎起不来」时 `runDelegatedTask` 会**无声挂住**
+ * （群日志里只有用户那句话，delegates/账本全空，用户看到的就是「跑不通、没结果回传」）。
+ * ⇒ 15 分钟还没回来就判失败并留痕 —— ⛔ 不假装成功，也不让人一直等。
+ * ⛔ 超时只负责"给用户一个结论"，不保证引擎侧那轮被取消（那属于停止键的职责）。
+ */
+/* ⛔ 可用环境变量压短（只给探针/验收用）：默认 15 分钟；改小只是更快给结论，语义不变。 */
+const DISPATCH_TIMEOUT_MS = Number(process.env.CODEX_DISPATCH_TIMEOUT_MS) > 0
+  ? Number(process.env.CODEX_DISPATCH_TIMEOUT_MS)
+  : 15 * 60 * 1000;
+async function withDispatchTimeout<T>(task: Promise<T>, name: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      task,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${name} 派活超时（${Math.round(DISPATCH_TIMEOUT_MS / 60000)} 分钟）—— 引擎可能没起来，去「设置 → 模型」看凭据/状态`)),
+          DISPATCH_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 async function dispatchGroupText(
   group: GroupShape,
   text: string,
@@ -1040,12 +1085,18 @@ export const harnessTeamFeature = defineFeature<null>({
         },
       })
         .then((r) => broadcastHarnessEvent({ type: "team-dispatch-done", groupId: gid, sent: r.sent, failed: r.failed } as never))
-        .catch((err) => broadcastHarnessEvent({
-          type: "team-dispatch-done",
-          groupId: gid,
-          sent: 0,
-          failed: [err instanceof Error ? err.message : String(err)],
-        } as never));
+        .catch((err) => {
+          /* ⛔ 整段派活炸了（不是单个成员失败）也要留痕：面板关着时这是用户唯一能看到的原因。 */
+          const reason = err instanceof Error ? err.message : String(err);
+          void appendMessageTo(gid, {
+            id: `sys-dispatch-failed:${Date.now()}`,
+            authorId: "system",
+            authorKind: "bot",
+            senderKind: "system",
+            text: `派活中断：${reason}`,
+          }).catch(() => undefined);
+          broadcastHarnessEvent({ type: "team-dispatch-done", groupId: gid, sent: 0, failed: [reason] } as never);
+        });
       return { ok: true, queued: opened.targets.length, rows: opened.rows };
     });
 
@@ -1055,6 +1106,12 @@ export const harnessTeamFeature = defineFeature<null>({
     const timer = setInterval(() => { void tickGroupSchedules().catch(() => undefined); }, 30_000);
 
     ctx.effect(() => () => clearInterval(timer));
+
+    /* ⛔⛔ 11-07「关掉群弹窗就没结果回传」的结构性修复：
+       把「写一条群消息」注入给 `team-group-bridge` —— 团队成员回合结束时（`team-invoke`）
+       用同一个幂等 id（`team-run:<runId>`，与渲染层一致）把产出落进群日志，**不再依赖面板开着**。 */
+    setTeamGroupAppender((gid, entry) => appendMessageTo(gid, entry));
+    ctx.effect(() => () => setTeamGroupAppender(null));
     ctx.effect(() => {
       for (const ch of HARNESS_TEAM_CHANNELS) ipcHost.removeHandler(ch);
     });

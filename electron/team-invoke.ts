@@ -20,7 +20,8 @@ import { personalNormsPrompt } from "../src/lib/engineering-norms.mjs";
 /* 11-07：主理人 → 成员这条链也要写结构化发件人（外层对话框据此判「上级」）。 */
 import { senderLineOf, taskLineOf } from "../src/lib/message-origin.mjs";
 import { MEMBER_TASK_NOTE, humanizeRefs } from "../src/lib/dispatch-voice.mjs";
-import { parseAgentMentions } from "../src/lib/team-models.mjs";
+import { parseAgentMentions, teamAuthorIdOf } from "../src/lib/team-models.mjs";
+import { appendMemberOutputToGroup, groupOfTeam } from "./team-group-bridge";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";
@@ -231,6 +232,23 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     }
     const text = output || `（成员 ${member.name} 未返回文本内容）`;
     teamRunStore.finishRun(run.runId, { status: "done", output: text });
+    /* ⛔⛔ 11-07 用户令「关掉群弹窗任务就结束、没结果回传」：成员产出原来是**渲染层**在
+       `team-run finished` 里写进群的 —— 面板一卸载就没人接。现在主进程直接落群：
+       id 与渲染层同一个（`team-run:<runId>`），两边都写也只会是同一条（按 id 覆盖）。
+       ⛔ 没绑群（主对话里调团 / 不在群里派活）⇒ groupOfTeam 返回空串，这里什么都不做。 */
+    {
+      const boundGroup = groupOfTeam(team.teamId);
+      if (boundGroup) {
+        void appendMemberOutputToGroup(boundGroup, {
+          id: `team-run:${run.runId}`,
+          authorId: teamAuthorIdOf(team.teamId, member.id),
+          authorKind: "bot",
+          senderKind: "member",
+          threadId: memberThreadId,
+          text,
+        });
+      }
+    }
     /* ⛔⛔ 11-07 用户：「成员之间互相也不会艾特」——成员产出以前只是 team_member_invoke
        的返回值（主理人看得到、群里看不到）；现在 team-run 会把产出按成员身份投进群流，
        但**产出里的行首 @ 没人解析** ⇒ 成员之间仍然叫不动人。

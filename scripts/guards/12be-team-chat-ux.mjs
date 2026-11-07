@@ -216,6 +216,27 @@ const catalog = [
     "落盘通道齐（handler + manifest + 域表；少一处 = 预检【2】红 / 点了不生效）");
 }
 
+/* ── ⑩ 成员产出落群**不依赖面板**（11-07 用户令：「关掉群弹窗，任务就莫名其妙结束了、没结果回传」）──
+   旧实现只有渲染层在 `team-run finished` 里写群日志 ⇒ 面板一卸载就没人接；
+   现在主进程（team-invoke）在成员回合结束时直接落群，且 id 与渲染层同一个 ⇒ 双写在盘上只有一条。 */
+{
+  const invoke = codeOnly(read("electron/team-invoke.ts"));
+  const bridge = codeOnly(read("electron/team-group-bridge.ts"));
+  const ipcHost = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/appendMemberOutputToGroup\(boundGroup/.test(invoke) && /groupOfTeam\(team\.teamId\)/.test(invoke),
+    "成员产出由**主进程**落群（面板关掉也照写）");
+  ok(/export function bindTeamGroup/.test(bridge) && /export function groupOfTeam/.test(bridge)
+    && /export function setTeamGroupAppender/.test(bridge),
+    "team → 群 的绑定与写入口在独立桥里（⛔ 不让 harness-team-ipc ↔ team-invoke 成环）");
+  ok(/bindTeamGroup\(partner\.targetKey, group\.id\)/.test(ipcHost)
+    && /setTeamGroupAppender\(\(gid, entry\) => appendMessageTo\(gid, entry\)\)/.test(ipcHost),
+    "派团时登记绑定 + 挂载时注入写入口（⛔ 不登记 = 成员产出无处可去）");
+  ok(/id: `team-run:\$\{run\.runId\}`/.test(invoke)
+    && /id: `team-run:\$\{String\(run\.runId \?\? memberThread\)\}`/.test(store),
+    "⛔ 两个进程用**同一个幂等 id**（`team-run:<runId>`）—— 否则面板开着时同一条产出会写两遍");
+}
+
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
