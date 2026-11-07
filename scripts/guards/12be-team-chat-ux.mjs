@@ -226,6 +226,10 @@ const catalog = [
   ok(/onPaste=\{\(e\) => void onPaste\(e\)\}/.test(composer) && /function pastedFilePaths/.test(composer)
     && /readClipboardImage\(\)/.test(composer),
     "粘贴图片 / 文件真落进本轮附件（主对话输入框同款内在功能，⛔ 不是装饰）");
+  ok(/const cur = optsRef\.current/.test(composer) && /onOpts\(\{ \.\.\.cur, files:/.test(composer),
+    "⛔ 异步落盘后用最新 optsRef（拿闭包旧 opts 会覆盖 await 期间用户加的附件/偏好）");
+  ok(/looksLikePath/.test(composer),
+    "纯文本只有像绝对路径才认成图片附件（⛔ 别把一句以 .png 结尾的话吞掉）");
   const css = read("src/styles/61-team-mode.css");
   ok(/font-size: 14px;[\s\S]{0,120}?line-height: 1\.6;[\s\S]{0,200}?field-sizing: content/.test(css)
     && /max-height: min\(42vh, 360px\)/.test(css),

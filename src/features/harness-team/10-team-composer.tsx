@@ -291,12 +291,19 @@ export function TeamComposer({
     }
     const image = [...cb.files].find((f) => f.type.startsWith("image/"));
     const plain = cb.getData("text/plain").trim();
-    /* 资源管理器复制图片文件：剪贴板只有路径文本、没有位图（主对话的 fallbackPath 同款） */
-    const imagePath = plain && !plain.includes("\n") && !plain.includes("://") && /\.(png|jpe?g|gif|webp|bmp)$/i.test(plain) ? plain : "";
+    /* 资源管理器复制图片文件：剪贴板只有路径文本、没有位图（主对话的 fallbackPath 同款）。
+       ⛔ 必须像绝对路径才认：否则一句以 ".png" 结尾的普通文本会被吞掉、压根不进输入框。 */
+    const looksLikePath = /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(plain);
+    const imagePath = plain && !plain.includes("\n") && !plain.includes("://") && looksLikePath
+      && /\.(png|jpe?g|gif|webp|bmp)$/i.test(plain) ? plain : "";
     if (!image && !imagePath) return;
     e.preventDefault();
     const saved = image ? await window.codex.readClipboardImage().catch(() => "") : imagePath;
-    if (saved) onOpts({ ...opts, files: [...new Set([...opts.files, saved])].slice(0, 20) });
+    /* ⛔ await 期间用户可能已改过偏好 / 加过附件 ⇒ 用最新的 optsRef，别拿闭包里的旧 opts 覆盖。 */
+    if (saved) {
+      const cur = optsRef.current;
+      onOpts({ ...cur, files: [...new Set([...cur.files, saved])].slice(0, 20) });
+    }
   };
 
   const fullAccess = opts.sandbox === "danger-full-access";
