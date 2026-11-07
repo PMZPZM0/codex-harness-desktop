@@ -1,108 +1,296 @@
-# HANDOFF — 交接文档（2026-10-26 21:00）
+# HANDOFF — 交接文档（2026-11-07 09:25）
 
-> 写给**完全没有上下文**的新会话。读完这一份 + 根目录 `AGENTS.md`（怎么建 / 怎么同步）即可接手。
-> 项目：Codex Harness Desktop（Electron 43 + React 19 + Vite 8，主进程 spawn `@openai/codex` app-server）。
-> 配套技能：内置 `handoff`（怎么写这份文档）、`grill-me`（怎么把方案问清）。两者都在 `设置 → 技能` 里。
+> 写给**完全没有上下文**的新会话。读完这一份 + 根目录 `AGENTS.md`（怎么建 / 怎么同步三仓）+ `DESIGN.md`
+> （长什么样）即可接手。项目：Codex Harness Desktop（Electron 43 + React 19 + Vite 8，主进程 spawn
+> `@openai/codex` app-server，stdio JSON-RPC）。
+>
+> 本文件只放**当前轮的主线**。历史（发版、服务器加固、手机远控、Caddy 日志轮转…）在 `logs/`
+> （结论档案，用 `node scripts/logs.mjs search <关键词>` 查）与 `.workbuddy/memory/YYYY-MM-DD.md`
+> （逐日流水）。⛔ 本文件只留在主仓（`D:\Codex Harness Desktop`）：PPcode / 云助手是代码镜像，不带文档。
 
 ---
 
-## 一、我们在做什么
+## 0 三十秒速览
 
-主线是「**收尾发版 + 用户实测反馈的连续修复**」，本轮追加一件工具链改造。按时间顺序五块：
+- **主线**：群聊（团队模式）功能丰富 + **上级协作的消息来源识别**。后者是用户中途插进来的更高优先级任务，已完成并三仓收尾。
+- **最近提交**：主仓 `1d2ee053d`（来源结构化识别）+ `da15dca5a`（结论档案）；PP `33da5258` / `ac732a17`；云 `85f36dae` / `8ae2b99a`（**已部署**）。
+- **当前状态**：三仓干净、已推送、构建通过、主仓 `npm run check` **9137 行 / 0 红**、三仓 `verify:runtime` 全 PASS、electron 残留 0。
+- **下一步**：回到群聊丰富剩下的三块（伙伴资料卡 / @ 候选面板 / 群内搜索），见 §5.1。
 
-1. **发版 → 又撤包**：主仓发 `v0.0.50`（删除未发布的 v0.0.48/0.0.49 的 Release 与 tag，合并重打）；PPcode 发 `v0.1.6`。**两个 Release 已于 10-26 21:30 按用户指令撤包**（Release 连 11 个资产约 5 GB + 本地/远端 tag 全删，详见 §四第 1 条）。
-2. **语音设置页信息架构重做**（用户四轮实测反馈驱动）：状态语义、长卡片、分组、进度反馈、播报开关联动。
-3. **删掉「整群时间预算」**（用户令：正常派活不需要，Codex 自己会安排节奏）。
-4. **消息刻度尺系列修复**（用户五轮反馈）：联动、可见性对齐、声音反馈、连贯性、延迟、方向音。
-5. **内置两个元技能 + 项目级交接文档**：`grill-me`（上游 mattpocock/skills，两份合成一份）、`handoff`（本仓自造），并写这份 `HANDOFF.md`。
+---
 
-贯穿纪律：**每一轮改动必须同轮同步三个仓并各自推送**（见下节）。
+## 1 我们在做什么
 
-## 二、三仓与生效方式（动错仓 = 白干一轮）
+用户最初给了两条诉求，后一条优先级更高、已先做完：
 
-| 仓 | 本地路径 | 远端 | src 改动怎么生效 |
+1. **群聊功能丰富 + 界面优化**，参考桌面上的两份逆向报告：
+   `C:\Users\Administrator\Desktop\飞书机器人群聊-逆向结论.md`（协议 / 表现层）与
+   `C:\Users\Administrator\Desktop\豆包工作伙伴-团队模式-复刻方案.md`（治理 / 运行层）。
+   对照进度表在 `docs/TEAM-MODE-PLAN-2026-11-05.md`。
+2. **承接第 1 条时用户插入的高优先级修复**（原话）：
+   > 「准确区分每条消息是上级发送还是用户发送，并让调度功能在被调度场景中正确识别上级消息，
+   > 修复当前无法判断来源、默认全部按用户消息处理的问题……不仅限群聊里面，外面对话框，专家团，
+   > 中枢会话也是一样」
+
+   这一条已完成（§3.1），是本轮的主体工作量。
+
+---
+
+## 2 三仓与生效方式（动错仓 = 白干一轮）
+
+| 仓 | 本地路径 | 远端 | 改动怎么生效 |
 |---|---|---|---|
-| 主仓（开发主线） | `D:\Codex Harness Desktop` | `PMZPZM0/codex-harness-desktop`（推 `origin main`） | 本地 `npm run build`，**重启应用** |
-| PPcode（副本+发布页） | `D:\PPcode` | `PMZPZM0/PPcode` | 同主仓（本地构建） |
-| 云助手 | `D:\Codex Assistant` | `PMZPZM0/codex-harness-cloud-src`（**推 `cloud main`**，⛔ origin 指向主仓） | ⛔ **必须 `node scripts/deploy-cloud-ui.mjs`**，只 build 用户看不到 |
+| 主仓（开发主线） | `D:\Codex Harness Desktop` | `PMZPZM0/codex-harness-desktop`（推 `origin main`） | 本地 `npm run build`，重启应用 |
+| PPcode（副本 + 发布页） | `D:\PPcode` | `PMZPZM0/PPcode`（推 `origin main`） | 同主仓（本地构建即生效） |
+| 云助手 | `D:\Codex Assistant` | `PMZPZM0/codex-harness-cloud-src`（⛔ 推 `cloud main`，其 `origin` 指向主仓） | ⛔ **必须** `node scripts/deploy-cloud-ui.mjs`；只 build 用户看不到 |
 
-同步手法：主仓改完 → 逐文件补丁到两仓 → 各仓 `npm run build` → `feat(sync)` 提交（注明主仓提交号）→ 各自推送。**品牌面（图标/名称/AUMID）不进同步面**。PPcode 版本线 **0.1.x**，主仓 **0.0.x**，tag 不能混用。
+**每轮固定流程**（10-13 用户令；三仓 `AGENTS.md` 顶部有逐字一致的判定表）：
 
-## 三、已完成（全部已提交、已推送、三仓干净）
+```
+改代码 → 主仓 build / check / 真机验证 → 提交推送
+      → 生成补丁同步另两仓（排除各仓自产文件，见 §6.4 / §7.2）
+      → 每仓各自 npm run build（⛔ 主仓 build 不会替它们出产物）
+      → 云助手 deploy → 各仓提交推送 → 每仓启动校验
+```
 
-| 块 | 内容 | 主仓提交 |
+判据（机械可查，别用"源码 diff 一致"糊弄）：`stat -c %y dist/assets/index-*.css` 必须 ≥ 对应 CSS 源文件
+mtime；产物里要能 grep 到本轮新规则。
+
+---
+
+## 3 已经完成
+
+### 3.1 消息来源结构化识别（主仓 `1d2ee053d`）
+
+**病根**：调度链的输入里**没有「谁发的」**，只有 `originThreadId`，且空串被一律当成「本地用户」。
+六种真实来源——主对话模型自派 / 专家团主理人派成员 / 中枢派群成员 / 定时任务 / 群伙伴互 @ /
+用户亲自打字——全被拼成同一句「发起方交给你的任务」。消费侧只能靠 `[SYSTEM TASK]` 标签白名单 +
+正文正则去猜，猜不到就按用户消息处理。
+
+**解法**：身份作为结构化对象沿链传，并在首任务**需求体第一行**写协议行：
+
+```
+发件人：supervisor · 青崖
+```
+
+五种身份：`user | supervisor | automation | member | system`。真相源 `src/lib/message-origin.mjs`
+（`normalizeSender` / `senderLineOf` / `taskLineOf` / `parseSenderFromText` / `stripSenderMeta` /
+`senderFromDispatch`），类型在 `message-origin.d.mts`。
+
+**生产端 6 处全部写协议行**（漏一处 = 那类来源又变回「用户消息」）：
+
+| 位置 | 场景 | sender |
 |---|---|---|
-| v0.0.50 发版 | 删 0.0.48 Release（先 `DELETE /releases/{id}` 再删 tag）+ 取消 0.0.49 构建；版本 0.0.50；whats-new 8 条；CI 三平台并行 | tag `v0.0.50` → `74e2830e`（**已撤回**：Release 424134808 + tag 均删） |
-| PPcode v0.1.6 | 版本 0.1.5→0.1.6、新写 `docs/releases/v0.1.6.md`（⛔ CI 缺它必 fail）、whats-new 8 条 | `7ecea4f5` + tag（**已撤回**：Release 424114270 + tag 均删） |
-| 语音页 IA | 分 5 组（必需/可选/选声音/可选克隆/日常）+ 高级折叠 12 卡；「使用中」=`选中 && 已装`，缺模型琥珀徽标；引擎卡单列 642px；下载进度+百分比+卡内结果反馈 | `69f65a787` |
-| 播报联动 | 父级派生 `ttsReady`（vits=基础模型齐 / kokoro=ready / emotivoice=ready 且 runnable）；开关显示态=`设置值 AND ttsReady`（**不改存储值**，装好自动恢复） | `f29dfbfae` |
-| 删预算闸 | `checkBudget` / `policy.budgetMinutes` / 工具 schema 字段 / 建群回执文案全删；守卫 22 改**负向断言**；老 state.json 残留不写迁移 | `131dce932` |
-| 刻度尺联动 | 群广播补 `data-ruler-mark`；刻度取舍与群汇报卡**同源**（`src/lib/visible-group-blocks.mjs`）；过滤后空壳**连外壳不渲染**（42→12 刻度） | `131dce932` |
-| 声音反馈 | 滚动跨消息响一声、悬停划动一格一声、停 600ms 收；`playWheelTick(dir,{channel,minGapMs})` 三通道（ruler 30 / hover 24 / scroll 28）互不吞；AudioContext 预解锁 | `f1d6e5a48` |
-| 悬停连贯性 | 轨道 gap 4→0 + 上下 padding 4→6（单槽仍 14px）；悬停搬到整条轨道 `onMouseMove` 取最近刻度 | `32308728f` |
-| 绿线两道闸 | 无压缩证据不画、定不了位置不画 | `32308728f` |
-| 方向音 + 崩溃修复 | 悬停按方向传 frequency（下 1700 / 上 2300）；**React #310 修复**（见坑①） | `f2abed071` |
-| 内置 `grill-me` | 上游 `grill-me`(3 行代理) + `grilling`(方法论) 合成一份，去掉对 `Skill` 工具的委托；MIT 改编，声明见 `THIRD_PARTY_NOTICES.md` | `85b9274c7` |
-| 内置 `handoff` | 五段结构 + 生效方式 + 锚点要求 + 提示词模板 + 判据 | `85b9274c7` |
-| 消息顺序修复 | 用户消息被误判成群广播（原文里的记忆块提到 `[群事件]`）⇒ 渲染到回复**下方**；改判行首标签 + 剥注入段后再判 | `7fa2f686b` |
-| 刻度尺判据同源（审查补） | 刻度尺原读**原文**判群广播 ⇒ 注入块里的行首标签会让普通消息丢刻度；改走 `parseUserRefs(raw).groupEvents`，并加接线断言（12r + 注入剥离回归） | `f0832d0e0` |
-| 设置页页头瘦身（10-26 用户令） | ① 页标题大字 + 副标题整排不再显示（`45-settings-experience.css`；标题走 `font-size:0` 而**不是** `display:none` —— `?` 是 h2 子节点）；② 帮助 `?` 统一收到页头右上角、不占行，同行有按钮/开关时让位 26px（记忆页开关曾把 `?` 整个盖住）；③ 模型页删「自动配置模型」大块（说明句+步骤条），按钮移到页头并加「保存并重启」；④ 云账号页页头加「保存并重启」（复用 `doSaveRestart`）；⑤ 语音页标题改用统一 `.settings-copy` | `614b2c38b` |
+| `electron/features/delegation.ts` | 模型自派 / IPC / 宿主工具 | supervisor（有 origin 时兜底推导） |
+| `electron/team-invoke.ts` | 专家团主理人 → 成员 | supervisor |
+| `electron/features/teams-ipc.ts` | 团队会话首任务 / 成员直达首任务 | user / supervisor（**两处**各一份） |
+| `electron/boss-groups/runner.ts` | 中枢 → 群成员 | supervisor |
+| `electron/features/harness-team-ipc.ts` + `src/features/harness-team/02-team-store.ts` | 群派活 | user / automation / member（伙伴互 @） |
+| `src/features/app-state/parts/part08/02-seg/send.tsx` | 用户亲自在专家/成员会话打字 | user（**显式**，不靠"没标签"猜） |
 
-判据基线（全部当前绿）：守卫 12r **45/45** · 守卫 22 **204/204** · `npm run check` **0 红**（跑前先 `unset NODE_OPTIONS`，收尾看输出末尾确认 bag-types / dead-imports / require-paths 真跑过）。
+辅助入口：`electron/features/dispatch-rpc.ts`（`agent_invoke`）与
+`src/features/app-state/parts/part05/event-router/02-request.tsx` 显式传 `{ kind: "supervisor" }`。
 
-## 四、当前卡在哪
+**消费端**：
+- `src/lib/user-refs.ts`：`parseUserRefs` 统一解析出 `sender`；老会话没有协议行时从旧标记推导
+  （`上级：` / `发起方交给你的任务` / `主理人分配的子任务` / `用户任务`），**推不出才回落 user**。
+- `src/features/shared/UserMessageView.tsx`：`isParentTask` 优先 `refs.sender.isSuperior`；
+  定时任务 / 伙伴转交 / 系统各有专属头部（`定时任务` / `伙伴转交` / `系统消息`）。
+- 群消息：`team-models.mjs` 的 `senderKindOf()` 落库并投影（`GroupLogMessage.senderKind` /
+  `GroupMessageProjected.senderKind`），渲染层 `04-team-group-view.tsx` 按 `data-sender` 出标记。
 
-**无真阻塞。** 三件挂起事项：
+### 3.2 群视图修复与增强（同一提交）
 
-1. **当前没有任何已发布版本**：`v0.0.50` / `v0.1.6` 的 Release 与 tag 已按用户指令撤包（10-26 21:30）⇒ 两仓最新 Release 回落到 `v0.0.47` / `v0.1.5`（10-23）。**已装 0.0.50 的用户不会被降级，但此后收不到更新**。⚠️ 应用内更新检查**不走 `latest.yml` 也不走 `/releases/latest`**（产品线隔离，见 `electron/updates.ts` 顶部注释）：它拉 releases 列表 + tag 前缀过滤 + semver 比较 ⇒ 现在判定 `up_to_date`（`0.0.47 < 0.0.50`）；`latest.yml` 只在手动下载那条路上用来验 sha512。⇒ 需要重新发版，**版本号待用户定**：tag 已删，可复用 `0.0.50`/`0.1.6`（与上次 0.0.48/0.49 同样做法），也可 bump 到 `0.0.51`/`0.1.7`。
-2. ~~v0.0.50 的 CI 资产验收~~ —— 已不必做（资产随 Release 删除，共 11 个约 5 GB：主仓 3 个安装包 + blockmap + `latest.yml`，PPcode 3 个安装包 + 3 份 sha256）。**重新发版后仍需验收一次**。本机无 gh CLI，取令牌手法见坑⑫。
-3. 悬停**方向音的听感**只有用户真机能确认。嫌弃密/吵就调 `src/lib/wheel-tick.mjs` 的 `minGapMs` / `PEAK_GAIN`。
-4. **副本仓的守卫目录落后主仓若干代**（10-26 审查实测：`scripts/guards/` 85 个文件里 **57 个**与主仓不一致；`12r` 差 71 行、`22` 差 219 行且仍在调源码已删的 `checkBudget`）⇒ 两副本仓的 `npm run check` 既红、又覆盖不到 10-18 之后的新规则 —— **「三仓同轮同步」在验证层是失效的**。同步是独立任务：守卫里混着品牌/目录差异（如 `_ctx.mjs` 的 `SKIP_DIRS` 含 `.ppcode-harness`），⛔ 不能整份覆盖。本轮只同步了 `src/**` 与两份回归脚本，没动守卫目录。
+- **合成来源用徽标代替名字**：真机截图先暴露两个缺陷——「定时任务 **定时任务** 08:55」重复、
+  系统消息露英文 id `system`。现在 `automation` / `system` 用 `.team-msg__sender` 徽标占名字位，
+  `supervisor` 才是「名字 + 上级派发」；补了 `nameOf("system") → 系统`。
+- **跨天分隔**：`src/lib/team-view.mjs`（`dayKeyOf` / `dayLabelOf`）+ `.team-msg__day`
+  （两侧细线 + 日期胶囊），只在换天处插一条。
 
-## 五、下一步计划
+### 3.3 判据与验证
 
-1. 用户确认版本号后重新发版（**v0.0.51 / v0.1.7**，或复用 **v0.0.50 / v0.1.6**——tag 已删、可重打）：版本对齐（`package.json` + lock 两处）→ whats-new 加 3~8 条 → **先 `npm run build:electron` 再跑守卫 11r**（探针读 `dist-electron`，不重建出 5 条假红）→ 写 `docs/releases/vX.md`（PPcode CI 缺它直接 fail）→ `npm run check` → commit → push → **tag → push tag 触发 CI**。
-2. 提醒用户验证清单：语音页分组/开关联动（**重启生效**）、悬停方向音听感、绿线在真压缩会话上的位置（本机无压缩记录，无法端到端验证过）。
-3. 若用户继续报刻度尺/语音问题，先读 `.workbuddy/memory/2026-10-26.md` 当日小节（每轮都有根因与判据）。
-4. 新会话开工前先读内置技能 `handoff`（本文件的写作规范）与 `grill-me`（用户提新需求但边界不清时，先把方案问清）。
+| 项 | 结果 |
+|---|---|
+| `npm run build`（类型判据） | 三仓 ✓ |
+| `npm run check` | 主仓 **9137 行 / 0 红**，预检通过，【93】【94】【96】真跑过 |
+| 守卫 11f | **149/149**（本轮新增 16 个断言调用；其中一个遍历 5 个壳生产点 ⇒ 运行时多 20 条。覆盖协议行格式 / 第一行优先级 / 每个生产点 / 群投影与渲染 / 样式在位） |
+| 守卫 11q | 主仓 131/131、云 130/130（两条旧断言从「钉旧正则」改锚「结构化身份 + 老标记兜底」） |
+| 单测 | `message-origin` 7 / `team-view` 2 / `team-models` 29，全绿 |
+| `verify:runtime` | 主仓 / PP / 云三仓 PASS（无 ErrorBoundary、`.app-shell` 在） |
+| 真机渲染 | 隔离 profile + 种子群截图：`data-sender` = user / member / automation / system，日期分隔「昨天 / 今天」正常 |
 
-## 六、踩过的坑（⛔ 真实踩到，别再踩）
+### 3.4 归档
 
-**代码级：**
+`logs/2026/11/2026-11-07-decision-消息来源结构化识别上级-定时任务-伙伴-用户.md`，三仓已同步并各自重建索引；
+主仓跑过 `logs.mjs verify`（索引与磁盘一致）与 `dedupe`（无重复）。
 
-1. ⛔⛔ **hook 声明写在提前 `return null` 之后 = React #310 整页崩溃**（用户白屏截图实锤）。给这种组件加 hook 只许加在顶部 hooks 区。连锁假象：自动化「等待元素超时」可能就是崩溃。
-2. ⛔ **恒定音调 = 听觉适应 = 用户感知「没声音」**。声音反馈必须带方向/变化；判「有没有声」用 `AudioContext.createOscillator` 埋点（无音频设备也能测）；`wheel-tick` 用 `osc.frequency.value=` 直接赋值 ⇒ 埋点要闭包引用 osc 延迟读 value；`h.eval` 模板字符串里的注释**不能含反引号**。
-3. ⛔ **AudioContext 懒创建**：第一次播声才建 ctx ⇒ 第一声迟 50-150ms。已改预解锁（pointerdown/keydown capture），别改回去。
-4. ⛔ **渲染层「空壳」**：群事件过滤后一块不剩必须 `return null`，只留 `data-ruler-mark` 外壳会让刻度尺以为有消息。
-5. ⛔ **纯函数兜底 ≠ 该画**：`resolveCompactionAnchor("", {at:0})` 兜底到 visible 最后一回合，调用方必须先查证据（两道闸已加，守卫钉住）。
-6. ⛔ 每格自己的 `onMouseEnter/Leave` 在缝隙处必然互相打断 ⇒ 悬停一律整条轨道 `onMouseMove` 取最近格。
-7. ⛔⛔ **新增内置技能要改四处，漏一处守卫【229】直接红**：① `electron/builtin-skills/NN-skill-*.ts` 常量；② `electron/builtin-skills.ts` 的 import + `entries`；③ `electron/builtin-skills/00-skill-zh-notes.ts` 导读；④ `src/features/app-view/constants/01-notices-labels.tsx` 的 `SKILL_ZH_NOTES` **和** `BUILTIN_DISTRIBUTED_SKILLS`（两处）。技能正文必须是**字面量**（预检【86】按源文件文本扫描，运行时拼装 = 恒真假绿）。
-8. ⛔ 照抄外部技能要先查它引用的能力**在本应用存不存在**：上游 `grill-me` 正文只有「Call the Skill tool with "grilling"」，本应用没有 `Skill` 工具 —— 直接内置就是一条死指针。
+---
 
-9. ⛔⛔ **「消息属于哪一类」必须判在剥完注入段的文本上**：`isGroupEventText(原文)` 会把用户消息判成群广播 —— 每条原文都带 `[Harness 常驻记忆 …]`，记忆正文里提到过 `[群事件]`（本项目实测 5 处）⇒ 10-26 群汇报卡改版后该消息被渲染到回复**下方**（用户：「倒反天罡」）。判据收口到 `user-refs.isGroupEventMessage`，且 `parseGroupEvents` 只认**行首**标签。**刻度尺是同一类错的第二个现场**（10-26 审查发现）：`01-message-ruler.tsx` 原调 `visibleGroupBlocks(原文)`，注入块里只要出现**行首** `[群事件]`，普通消息就被算成群广播 —— 块被全部过滤时它的刻度直接消失（气泡照常显示）。现改走 `parseUserRefs(raw).groupEvents`，并由 `verify-injection-strip` 的**接线断言**钉死（要求源码含该表达式、且不含 `visibleGroupBlocks(raw)`；⚠️ 连注释里写这串字都会判红 —— 敏感是有意的，别为此放松断言）。
+## 4 当前卡在哪
 
-**流程级：**
+没有"做不下去"的卡点，只有三个**已知遗留**（都不是本轮引入的）：
 
-10. ⛔ **判定「某仓缺功能」前先怀疑自己的命令**：路径拼重（`src/features/src/features/x`）、搜错目录都会静默失败。用绝对路径 + 单文件 `ls` 复核。
-11. ⛔ **改 whats-new 后必须先 `npm run build:electron` 再跑守卫 11r**（探针读 `dist-electron` 产物，不重建 = 5 条假红）。
-12. ⛔ 本机无 gh CLI；GitHub API 令牌从凭据管理器取：`printf 'protocol=https\nhost=github.com\n\n' | GIT_TERMINAL_PROMPT=0 git credential fill` 取 `password=`（⛔ 别把 token 打到终端）。
-13. ⛔ **删 Release 顺序不可反**：先 `DELETE /releases/{id}`，再删 tag；只删 tag ⇒ Release 退草稿态（匿名不可见、更新器收不到）。
-14. ⛔ **heredoc 里写 Python 正则会把 `\s` 写坏成 `/s`** ⇒ 改守卫里正则密集的行，用 Edit 工具直写。
-15. ⛔ 守卫脚本变量名冲突 = 整条链 SyntaxError（不是断言失败），报错看第一行。
-16. ⛔ **未提交改动先查来历再收口**：云助手工作区曾残留他人 hunk（主仓已提交的同步漏网），查清后单独提交、不与本轮混提。
-17. ⛔ 云助手 `src/**` 改完必须 `node scripts/deploy-cloud-ui.mjs`，只 build 用户永远看不到。
-18. ⛔ **副本仓守卫可能比源码更旧**：PPcode 的守卫 22 仍在调 `checkBudget`（源码已删该函数）⇒ 一跑就 TypeError，这不等于本轮改坏了。验证本轮改动先单跑 `node scripts/verify-injection-strip.mjs`，再决定要不要收口那份 219 行的守卫差异。
-19. ⛔ **撤包不是「删了就完」**：删掉最新 Release 后，`latest.yml` / 下载页会**回落到上一个 Release**（本次 v0.0.50→v0.0.47、v0.1.6→v0.1.5）⇒ 已装新版的用户不降级、但从此收不到更新。撤包与重发要连着做；撤完必须核对三处：API Release 列表、`git ls-remote --tags`、本地 `git tag`（⚠️ 本地 tag 名按字典序排，`v0.0.50` 会排在 `v0.0.5` 前面，别用 `tail` 判断有没有）。
-20. ⛔ **`git status` 干净 ≠ 发版资产齐**：撤包前先拉 Release 资产清单（名称/大小/下载量），确认没有用户已下载的版本被无声抹掉（本次 v0.0.50 的 mac-arm64.zip 已有 1 次下载，已如实告知用户）。
-21. ⛔⛔ **想「删掉一行」而这一行里有子组件时，先数子组件**：设置页要删「标题大字 + 副标题」，直觉写 `h2 { display:none }` 会把每页**唯一**的新手说明入口（`?` = `PageInfo`，是 `h2` 的子节点）一起删掉。正确做法是 `font-size:0` 只杀文字、把剩余子节点绝对定位到右上角。删之前先问「这行里除文字还有什么」。
-22. ⛔ **`justify-self: end` 的两个元素会叠在同一格**：记忆页的启用开关和右上角 `?` 都靠右 ⇒ 实测 `?` 被开关整个盖住（截图看不见、点击命中开关）。凡是往右上角塞东西，必须同时给同行其它右对齐元素让位（本轮 `margin-right: 26px`）。
-23. ⛔ **改可见版式后要同步「只查源码文本」的守卫**：12ad 原来断言「页头 `<p>` 存在」——副标题已不显示但源码还在，它会自洽地绿。判据改成「说明收进 `?`」（`<PageInfo>`），断言才算真的在看着行为。
+1. **PP 仓 3 条 cloud 断言红**：`scripts/guards/12q-cloud-account.mjs` 报
+   「首启登录页有 cloud 模式 / 有云账号选项卡 / 登录方式卡选中态」。已在 PP 仓用 `git stash push -u`
+   在 HEAD 上复现——**确认是既有状态**，与本轮改动无关。它会让 `npm run check` 在这一步中断，
+   所以 PP 的尾部判据（preflight / bag-types / dead-imports / require-paths）要**手动补跑**。
+2. **云仓缺 `resources/tools/automation-tools.zip`**：`verify-packaged-tools` 与 `check-preflight`
+   都会停在这一步（缺件，不是断言失败）。要修需先有 `resources/tools/npm-global/node_modules`
+   （本机装好自动化工具）再跑 `node scripts/pack-automation.cjs`。
+3. **项目 `MEMORY.md` 9908 字符 / 上限 10000**（安全线 9500）。宿主会**静默截断尾部**，
+   只剩 92 字符余量 —— 下次往记忆里追加任何东西之前，先外置一条。
 
-## 七、验收手法速查
+---
 
-- 真机（无 GUI）自渲：`scripts/e2e/lib/harness.mjs` 的 `ElectronHarness`（隔离 profile、自动灌真实配置）；定位会话用 `localStorage.setItem("last-thread", <id>)` + reload。
-- 声音：埋点 `createOscillator` 计数/频率；方向音看 frequency 值。
-- 布局：Jimp 截图 + `ViewImage` 人工核对。
-- 刻度尺联动：逐段 `scrollTop` 滚动后数 `.ruler-tick.current` 变化；悬停连贯性 = 每 3px 派发 mousemove 统计 tip 中断次数。
-- 项目日志：`node scripts/logs.mjs new --kind milestone …`（结论档案，⛔ 不重复写）。
-- 记忆：本轮全部细节在 `.workbuddy/memory/2026-10-26.md`（含每轮的根因/判据/提交号）。
+## 5 下一步计划
+
+### 5.1 回到群聊丰富（用户最初那条需求，还剩三块）
+
+逆向报告里**已落地**的是：成员栏、消息卡片（角色条 + 复制 / 追问 / 来源）、@ 高亮 chip、
+团成员展开、运行态与停止键、群菜单、群调度、按天分隔、来源标记。
+
+**还没做**：
+
+1. **伙伴资料卡**（飞书 §2.1「点机器人头像弹资料卡」）
+   建议新建独立组件 `src/features/harness-team/14-team-profile-card.tsx`
+   （⛔ 别往 `04-team-group-view.tsx` 里顺手加块，`ARCHITECTURE-RULES.md` §2.2 要求新功能独立板块）。
+   数据必须真实：`group.members`（`targetKind` / `targetKey` / `targetProfession`）、
+   群台账 `harness-team-ledger.json`（用量 / token）、`team-runtime.mjs`（是否在跑）、
+   `electron/features/harness-team-ipc.ts` 的 `listDispatchCatalog`。
+   ⛔ 不编假数据；拿不到就显示 0 / 空。
+2. **@ 候选面板**（飞书 §4：机器人单独一类）
+   入口在 `src/features/harness-team/10-team-composer.tsx`；文档里明确写过「不搬 mention 面板」，用户现在要了。
+   ⚠️ 纯函数 `mentionTriggerOf` / `matchMentionCandidates` / `applyMention` 曾在工作区里写过并测过，
+   但**提交前**因「没有消费方」被删（§6.9），**git 里没有**（`1d2ee053d^` 不含该文件）——要按飞书 §4 重写。
+   边界要求：前一个字符必须是空白 / 行首 / 中文标点（否则 `a@b`、`C:\x@y` 误触发）；
+   词里不许再有 `@` 或空白；最长 40 字；caret 越界按末尾处理。
+3. **群内搜索**（豆包「群消息天然是 append-only 日志」）
+   `searchGroupRows` 同样被删过，重写后把结果 key 对到消息 DOM 的 `data-item-id` 上做跳转。
+
+### 5.2 收尾杂项
+
+- PP 的 3 条 cloud 红：要么修，要么给 `12q` 加"本仓无 cloud 面"的**显式跳过**（⛔ 别静默放行）。
+- 云仓补齐 `automation-tools.zip` 后重跑完整 `npm run check`。
+- `MEMORY.md` 外置一条，把余量拉回安全线以上。
+
+---
+
+## 6 踩过的坑（别踩第二次）
+
+1. **`npm run check` 前必须 `unset NODE_OPTIONS`**。不清的话链会在中途提前中断，
+   尾部 `bag-types` / `dead-imports` / `require-paths` 全都不跑，看起来"绿"其实是没跑。
+   收尾要**看输出末尾**确认【93】【94】【96】真跑过。
+2. **`npm run check | tail` 的退出码是 `tail` 的**。`EXIT=0` 不代表通过 —— 要看有没有 `✗`，
+   以及后面的守卫有没有真跑到（链断在哪个守卫，就只看到它的总结）。
+3. **守卫会"自洽地错"**：本轮 `11q` 两条断言钉的是**旧实现的字面量**，代码一改就红。
+   正确做法是把锚点改到新不变量（结构化身份 + 老标记兜底），⛔ 不是把断言删掉或放宽成 `/x/.test()`。
+4. **`src/vite-env.d.ts` 是生成物、每仓自产**。补丁打到另两仓会冲突 ⇒ 排除它，
+   在那两仓各跑一次 `npm run gen:ipc`。
+5. **`09-structural.mjs` 的 `GIANT_CAP` 棘轮按实测记账、每仓独立**。
+   口径 = 非空且非 `//`、`/*`、`*` 开头的行；改完量出实测值写进 cap 并注明来历。⛔ 别照抄别的仓的数字。
+6. **`send.tsx` 在三个仓的上下文不完全一致**，补丁会冲突 ⇒ 手工合并（加一行 import + 改一行模板串）。
+7. **`projectGroupLog` 按 `at` 排序**，同刻消息的先后不属于契约 —— 单测别按插入顺序断言，按 id 取再比。
+8. **合成身份不能靠改 `authorKind`**：它还管着过程折叠 / 卡片 / 动作条，动了会连带坏一片。
+   新增来源一律走**独立的 `senderKind`**，`authorKind` 语义保持不动。
+9. **不许留"写了没接"的模块**：本轮 `team-view.mjs` 一开始塞了 8 个派生函数，只有 2 个有消费方，
+   收尾时删掉 6 个。要么同轮接线，要么不写。
+10. **真机截图是必要判据，不是补充**：本轮两个显示缺陷（徽标重复、英文 id）只有截图才看得见，
+    守卫和单测全绿。截图用隔离 profile（§7.3），⛔ 不要动真实 userData。
+11. **老会话兼容必须双向**：新协议行读不到时要能从旧标记推导；反过来，用户自己在成员会话里打的
+    `上级：…` 不能被误判成宿主派发（11-03 的老边界：**只认正文第一行**）。
+12. **怀疑"是我弄红的"之前先 `git stash push -u` 在 HEAD 上复现一次**（PP 那 3 条 cloud 红就是这么排除的）。
+13. **三仓同步不要 `git add -A` 了事**：先看 `git status` 里有没有别人的 hunk（10-31 踩过），
+    有就按 `parallel-hunk-commit` 只提交自己的。
+14. **文档里的数字必须与实测一致**：写"9137 行 / 0 红"之前真的跑过；写"29 条单测"之前真的数过。
+
+---
+
+## 7 常用命令与验证清单
+
+### 7.1 本仓
+
+```bash
+cd "D:/Codex Harness Desktop"
+unset NODE_OPTIONS
+npm run build                      # 唯一可信的类型判据（tsc -b 会假绿）
+npm run check                      # 看末尾【93】【94】【96】
+node --test tests/message-origin.test.mjs tests/team-view.test.mjs tests/team-models.test.mjs
+npm run verify:runtime             # 真机探针：ErrorBoundary / .app-shell / 会话行
+node .workbuddy/memory/check-budget.mjs
+```
+
+### 7.2 三仓同步
+
+```bash
+# 1) 主仓出补丁
+git format-patch -1 --stdout > /tmp/x.patch
+# 2) 另两仓（排除各仓自产 / 易冲突文件）
+git apply --check --stat /tmp/x.patch
+git apply --exclude=scripts/guards/09-structural.mjs \
+          --exclude=src/vite-env.d.ts \
+          --exclude=src/features/app-state/parts/part08/02-seg/send.tsx /tmp/x.patch
+npm run gen:ipc                    # 重生成 vite-env.d.ts
+# 3) 手工合并 send.tsx 与 09-structural 的 cap（按本仓实测）
+npm run build && npm run check
+# 4) 云助手额外：node scripts/deploy-cloud-ui.mjs --skip-build
+# 5) 各自提交推送：主 origin main / PP origin main / 云 cloud main
+```
+
+### 7.3 真机看群视图（本轮实际用过的方式）
+
+用 `scripts/e2e/lib/harness.mjs` 的 `ElectronHarness`，**隔离 profile + 种子数据**：
+
+```js
+const h = new ElectronHarness({
+  name: "sender-badge-" + Date.now(),
+  seedProfile: (dir) => writeFileSync(join(dir, "harness-teams.json"), JSON.stringify(seed)),
+});
+await h.launch();                                  // mkdtemp 一个临时 userData，不碰真实数据
+await h.clickByTitle("群聊");                       // 侧栏入口（title 以「群聊」开头）
+await h.eval(`document.querySelectorAll(".team-mode__group")[0].click()`);
+const shot = await h.screenshot("sender-badge");   // 落到 .e2e-artifacts/shots/
+await h.close();
+```
+
+种子群结构（`harness-teams.json`）：
+`{ version, groups: [{ id, name, leadId, members: [...] }], messages: { <gid>: [{ id, threadId,
+authorId, authorKind, senderKind, at, kind, text, mentions }] } }`。
+伙伴消息的 `threadId` 必须非空（假的用 `thread:seed-1`），否则 `appendGroupMessage` 判无效。
+⚠️ `ElectronHarness({ name })` **不会**建持久 profile（实测走了 `mkdtemp`），
+要复用 profile 得传 `profileName` 并自己灌种子。
+
+### 7.4 收尾四步
+
+① 审查本轮 diff ② `npm run build` ③ 拉起应用跑探针 ④ 关掉应用并确认 `electron.exe` 残留 = 0。
+⛔ 启动与检查要**在同一次 shell 调用**里完成（GUI 进程会被会话 job 回收）。
+
+---
+
+## 8 关键文件地图
+
+| 关注点 | 文件 |
+|---|---|
+| 发送者身份（唯一真相源 + 类型） | `src/lib/message-origin.mjs` / `.d.mts` |
+| 用户消息解析（壳 / 引用 / 群事件） | `src/lib/user-refs.ts` |
+| 用户消息渲染（左对齐上级气泡） | `src/features/shared/UserMessageView.tsx` |
+| 调度主闸（所有派活共用） | `electron/features/delegation.ts` |
+| 专家团主理人 → 成员 | `electron/team-invoke.ts` |
+| 团队会话 / 成员直达会话 | `electron/features/teams-ipc.ts` |
+| 中枢 → 群成员 | `electron/boss-groups/runner.ts` |
+| 群消息落库 / 定时任务派活 | `electron/features/harness-team-ipc.ts` |
+| 群消息模型（投影 + `senderKindOf`） | `src/lib/team-models.mjs` / `.d.mts` |
+| 群视图（消息流 / 成员栏 / 日期分隔） | `src/features/harness-team/04-team-group-view.tsx` |
+| 群输入框（@ 面板要改这里） | `src/features/harness-team/10-team-composer.tsx` |
+| 群样式（`.team-msg__sender` / `.team-msg__day`） | `src/styles/61-team-mode.css` |
+| 日期派生 | `src/lib/team-view.mjs` |
+| 守卫 | `scripts/guards/11f-dispatch-integrity.mjs`（来源协议）/ `11q-live-edits.mjs`（上级气泡）/ `09-structural.mjs`（棘轮） |
+| 结论档案 | `logs/2026/11/2026-11-07-decision-消息来源结构化识别上级-定时任务-伙伴-用户.md` |
+
+---
+
+## 9 接手第一步建议
+
+1. 读 `AGENTS.md` 的「三仓」与「收尾」两节，再读 `docs/ARCHITECTURE-RULES.md` §2.2（新功能独立板块）。
+2. `git log -3 --oneline` + `git status` 确认三仓基点与干净度。
+3. 跑一次 `npm run build && npm run check`（先 `unset NODE_OPTIONS`），确认基线是绿的再动手。
+4. 从 §5.1 的三块里挑一块，按「纯函数 + 单测 → 接线 → 守卫 → 真机截图 → 三仓」的顺序做。
