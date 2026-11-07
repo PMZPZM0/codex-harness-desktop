@@ -355,8 +355,13 @@ export function normalizeCliAgent(input: unknown, opts?: { builtin?: boolean; cr
  * ⛔ 顺序 = 内置表顺序 + 用户自定义（按 createdAt）；面板再按分类分组，不依赖这里的分组。
  */
 export function mergeCliAgents(builtin: CliAgentDef[], saved: unknown): CliAgentDef[] {
-  const stored = (Array.isArray(saved) ? saved : []).map((entry) => normalizeCliAgent(entry));
-  const byId = new Map(stored.map((entry) => [entry.id, entry]));
+  /* ⛔⛔ 11-07：必须**先合并原始差异、再归一**。存档对内置条目只存用户改过的字段
+     （`{ id, permissionTier }` / `{ id, enabled }`），若先把每条差异 normalize，
+     缺省的 name/bin 会被填成「未命名 CLI」并盖掉预置 —— 实测症状：
+     改一次档位/启停后，卡片变成「未命名 CLI」、权限档区块消失、@ 候选里也认不出它。 */
+  const rawStored = (Array.isArray(saved) ? saved : [])
+    .filter((entry) => entry && typeof entry === "object") as Record<string, unknown>[];
+  const byId = new Map(rawStored.map((entry) => [String(entry.id ?? ""), entry]));
   const out: CliAgentDef[] = [];
   for (const preset of builtin) {
     const override = byId.get(preset.id);
@@ -364,9 +369,12 @@ export function mergeCliAgents(builtin: CliAgentDef[], saved: unknown): CliAgent
     /* ⛔ 先把预置按平台换成「本机该跑的那条命令」，再盖上用户改动 ——
        顺序反过来会让用户在面板里改过的安装命令被 mac 变体盖回去。 */
     const base = withPlatformCmd(preset);
-    out.push(override ? { ...base, ...override, builtin: true, id: preset.id } : { ...base });
+    out.push(normalizeCliAgent(override ? { ...base, ...override, id: preset.id } : { ...base }, {
+      builtin: true,
+      createdAt: preset.createdAt,
+    }));
   }
-  for (const extra of byId.values()) out.push({ ...extra, builtin: false });
+  for (const extra of byId.values()) out.push(normalizeCliAgent(extra));
   return out;
 }
 

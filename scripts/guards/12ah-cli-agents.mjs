@@ -717,6 +717,16 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   const viteEnvSrc = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/permissionTier\?: "safe" \| "standard" \| "full"/.test(viteEnvSrc) && /permissionTier\?: string/.test(viteEnvSrc),
     "渲染层类型：条目带 permissionTier，保存入参接受它");
+
+  /* ⛔⛔ 真跑合并：存档只存差异（{id, permissionTier} / {id, enabled}）时，
+     合并后必须仍保留预置的 name/bin（11-07 实测：先归一化再合并会把它们填成「未命名 CLI」）。 */
+  const presetClaude = cli.BUILTIN_CLI_AGENTS.find((entry) => entry.id === "builtin-claude-code");
+  const mergedPartial = cli.mergeCliAgents(cli.BUILTIN_CLI_AGENTS, [
+    { id: "builtin-claude-code", permissionTier: "full", enabled: false },
+  ]).find((entry) => entry.id === "builtin-claude-code");
+  ok(Boolean(presetClaude) && mergedPartial.name === presetClaude.name && mergedPartial.bin === presetClaude.bin
+    && mergedPartial.permissionTier === "full" && mergedPartial.enabled === false,
+    "⛔ 差异存档合并后保留预置 name/bin（先合并再归一），档位与启停照常生效");
 }
 
 rmSync(sandbox, { recursive: true, force: true });
