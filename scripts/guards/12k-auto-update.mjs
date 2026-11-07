@@ -149,7 +149,8 @@ ok(!/ToggleSwitch/.test(page) && !/skillAutoUpdate/.test(skillsPage),
 ok(/控制台/.test(read("src/features/settings-automation/AutomationSettingsSection.tsx"))
   && /控制台/.test(skillsPage),
   "两处都留了指向「控制台」的说明（不是静默消失）");
-ok(/versionOf\("nuphus"\)/.test(page) && !/playwright-cli/.test(page),
+/* 11-07 卡片改版：桌面卡按后端各显示一行「Nuphus / CU + 版本」（toolTag 读同一条 toolStatus）。 */
+ok(/toolTag\("nuphus-mcp"/.test(page) && !/playwright-cli/.test(page),
   "桌面自动化卡片显示版本号（Playwright 卡已移除）");
 ok(!/Object\.keys\(UPDATEABLE_TOOLS\)|nuphus.*@nuphus/.test(page) && !/@nuphus|@playwright/.test(card),
   "⛔ 界面不另抄工具清单与包名");

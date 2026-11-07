@@ -4,11 +4,12 @@
  * 纯搬迁：返回的 JSX / 体内语句与原块逐字一致（仅去掉外层缩进与 IIFE 包装）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
+import { useState } from "react";
 import { ArrowUpRight, Check, CircleStop, KeyRound, Link2, Play, Plus, RefreshCw, Search, Trash2, Wifi, Wrench, Zap } from "lucide-react";
 import { AppSelect } from "../../components/AppSelect";
 import { Spinner } from "../../components/CardShell";
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl } from "../../lib/skillhub-mcp";
-import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
+import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
 import { ConnectorSetupModal, ConnectorTemplateModal } from "../../features/connectors";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
@@ -21,6 +22,7 @@ const BUILTIN_MCP_SERVERS = new Set(["nuphus", "harness-dispatch"]);
 
 export function McpSettingsSection(props: McpSettingsSectionProps) {
   const { openAppConfirm, connectors, connectorsManageOnly, settingsResources, connectorSearch, connectorChecked, setConnectorChecked, mcpOverrides, mcpServerSearch, mcpServerChecked, setMcpServerChecked, setConnectorSecret, setConnectorDraft, setConnectorEditorOpen, refreshSettingsResources, resourceLoading, mcpMarketCategory, setMcpMarketCategory, setMcpMarketSearch, mcpMarketSearch, setMarketPreview, installMcpServer, connectorTemplates, setConnectorTemplateValues, setConnectorTemplateModal, setConnectorOAuth, connectorTemplateModal, connectorTemplateValues, connectorTemplateSaving, connectorOAuth, saveConnectorFromTemplate, startConnectorOAuth, setConnectorsManageOnly, setConnectorSearch, connectorBatchBusy, batchSetConnectorsEnabled, connectorStatusBusy, setConnectorEnabled, removeConnector, connectorEditorOpen, connectorDraft, connectorSecret, connectorSaving, saveConnector, setMcpServerSearch, mcpServerBatchBusy, batchSetMcpServersEnabled, mcpServerStatusBusy, setMcpServerEnabled, mcpToolPermissions, setMcpToolPermission, setNotice } = props;
+  const [mcpView, setMcpView] = useState<"market" | "templates" | "connectors" | "servers">("market");
   const connectorNeedle = String(connectorSearch ?? "").trim().toLowerCase();
   const visibleConnectors = connectors.filter((connector: any) => (!connectorsManageOnly || settingsResources.mcp.some((server: any) => server.name === connector.id)) && (!connectorNeedle || `${connector.name} ${connector.id} ${connector.command ?? ""} ${connector.url ?? ""}`.toLowerCase().includes(connectorNeedle)));
   const selectableConnectorIds = visibleConnectors.map((connector: any) => connector.id);
@@ -68,10 +70,24 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
   const toggleMcpChecked = (id: string) => setMcpServerChecked((current: any) => current.includes(id) ? current.filter((entry: any) => entry !== id) : [...current, id]);
   return (
   <section className="settings-section stack">
+    {/* 11-07 用户：「一个选项对应一个界面」——按插件/技能页拆成四个分页，不再一屏叠四块。 */}
+    <div className="market-source-switch mcp-view-switch">
+      <SegmentedTabs value={mcpView} onChange={(next) => { setMcpView(next as typeof mcpView); setConnectorTemplateModal(null); }} options={[
+        { value: "market", label: "MCP 市场" },
+        { value: "templates", label: `一键接入 ${connectorTemplates.length}` },
+        { value: "connectors", label: `已配置 ${connectors.length}` },
+        { value: "servers", label: `运行状态 ${mcpRows.length}` },
+      ]} />
+      <div className="market-source-actions">
+        <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
+        <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
+      </div>
+    </div>
   {/* 10-27 用户令：「右上角问号删了」—— 页头整块（? + 副标题）撤掉，
       进页直接是「分类 / 搜索 / 添加 MCP / 刷新」工具条与市场卡片。
       ⛔ 新手帮助内容仍在 HelpDialog 的「MCP · 新手帮助」里（帮助库不删），
          只是本页不再挂 ? 入口；守卫 07 的孤儿主题名单按这次用户令开了 mcp 的例外。 */}
+    {mcpView === "market" && (
     <div className="plugin-market-block">
       {/* 10-27 用户令：「那个分类做成筛选形式，几个市场跳转删了」——
           横向分类 tab 收成下拉筛选；SkillHub / AIbase 两个外链跳转删除，只留添加与刷新。
@@ -88,10 +104,6 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
             options={SKILLHUB_MCP_CATEGORIES.map((category) => ({ value: category, label: category }))}
             onChange={(value) => { setMcpMarketCategory(value); setMcpMarketSearch(""); }}
           />
-        </div>
-        <div className="skill-toolbar-actions">
-          <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
-          <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
         </div>
       </div>
       <div className="skill-card-grid">
@@ -122,9 +134,13 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         })}
       </div>
     </div>
+    )}
+    {mcpView === "templates" && (<>
   <div className="settings-subhead connector-template-heading"><Zap size={13} />一键接入模板<span className="settings-subhead-hint">官方/社区 MCP 真实配置 · 填入你的凭据即可</span></div>
   <div className="connector-template-grid">{connectorTemplates.map((template: any) => { const entry = connectors.find((connector: any) => connector.id === template.id); const installed = Boolean(entry); const oauthConnected = entry?.oauth?.status === "connected"; return <article className={`connector-template-card ${installed ? "installed" : ""} ${oauthConnected ? "oauth" : ""}`} key={template.id}><div className="connector-template-top"><span className="connector-card-icon"><Zap size={15} /></span><small>{template.vendor}</small>{oauthConnected ? <span className="connector-template-badge oauth-badge"><KeyRound size={11} />已授权</span> : installed ? <span className="connector-template-badge">已配置</span> : null}</div><strong>{template.name}</strong><p>{template.summary}</p>{oauthConnected && entry.oauth?.accountHint ? <small className="connector-oauth-hint">{entry.oauth.accountHint}</small> : null}<button className={installed ? "secondary-setting" : "primary-setting"} onClick={() => { setConnectorTemplateValues({}); setConnectorTemplateModal(template); setConnectorOAuth(null); }}><RefreshCw size={13} />{installed ? "重新配置" : "配置连接"}</button></article>; })}</div>
   {connectorTemplateModal && <ConnectorTemplateModal template={connectorTemplateModal} values={connectorTemplateValues} saving={connectorTemplateSaving} oauth={connectorOAuth} onChange={setConnectorTemplateValues} onClose={() => { setConnectorTemplateModal(null); setConnectorTemplateValues({}); setConnectorOAuth(null); }} onSave={() => void saveConnectorFromTemplate(connectorTemplateModal)} onOAuth={() => void startConnectorOAuth()} />}
+    </>)}
+    {mcpView === "connectors" && (<>
   <div className="skill-center-toolbar"><div className="skill-tabs"><button className={!connectorsManageOnly ? "active" : ""} onClick={() => setConnectorsManageOnly(false)}>全部配置</button><button className={connectorsManageOnly ? "active" : ""} onClick={() => setConnectorsManageOnly(true)}>已验证 {settingsResources.mcp.filter((server: any) => connectors.some((connector: any) => connector.id === server.name)).length}</button></div><label className="skill-search"><Search size={14} /><input value={connectorSearch} onChange={(event) => setConnectorSearch(event.target.value)} placeholder="搜索 MCP 连接器" /></label></div>
   {visibleConnectors.length > 1 && <div className="resource-toolbar secondary">
     <SelectAllToggle total={selectableConnectorIds.length} selected={checkedConnectorIds.length} unit="个连接器" onSelectAll={() => setConnectorChecked(selectableConnectorIds)} onClear={() => setConnectorChecked([])} />
@@ -157,8 +173,10 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       </div>
     </article>;
   })}{!connectors.length && <p className="muted">还没有自定义连接器 —— 用上面的模板接入，或点「添加 MCP」。</p>}</div>
+    </>)}
   {connectorEditorOpen && <ConnectorSetupModal draft={connectorDraft} secret={connectorSecret} saving={connectorSaving} onDraftChange={setConnectorDraft} onSecretChange={setConnectorSecret} onClose={() => setConnectorEditorOpen(false)} onSave={(draft) => void saveConnector(draft)} />}
   {false && <div className="schedule-editor connector-legacy-editor"><input value={connectorDraft.name} onChange={(event) => setConnectorDraft({ ...connectorDraft, name: event.target.value })} placeholder="连接器名称，例如 GitHub MCP" /><div className="schedule-kind" role="group"><button type="button" className={connectorDraft.transport === "stdio" ? "active" : ""} onClick={() => setConnectorDraft({ ...connectorDraft, transport: "stdio" })}>本地 stdio</button><button type="button" className={connectorDraft.transport === "streamable_http" ? "active" : ""} onClick={() => setConnectorDraft({ ...connectorDraft, transport: "streamable_http" })}>HTTP MCP</button></div>{connectorDraft.transport === "stdio" ? <><input value={connectorDraft.command ?? ""} onChange={(event) => setConnectorDraft({ ...connectorDraft, command: event.target.value })} placeholder="启动命令，例如 npx" /><input value={(connectorDraft.args ?? []).join(" ")} onChange={(event) => setConnectorDraft({ ...connectorDraft, args: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [] })} placeholder="参数，空格分隔，例如 -y @modelcontextprotocol/server-github" /></> : <input value={connectorDraft.url ?? ""} onChange={(event) => setConnectorDraft({ ...connectorDraft, url: event.target.value })} placeholder="https://service.example.com/mcp" />}<input value={connectorSecret} type="password" onChange={(event) => setConnectorSecret(event.target.value)} placeholder="可选：访问令牌（保存时使用 MCP_TOKEN 加密存储）" /><div className="settings-actions"><button className="secondary-setting" onClick={() => setConnectorEditorOpen(false)}>取消</button><button className="primary-setting" disabled={connectorSaving || !connectorDraft.name || (connectorDraft.transport === "stdio" ? !connectorDraft.command : !connectorDraft.url)} onClick={() => { const secrets: Record<string, string> = connectorSecret ? { MCP_TOKEN: connectorSecret } : {}; const draft: ConnectorDraft = { ...connectorDraft, secrets }; setConnectorDraft(draft); void saveConnector(draft); }}>{connectorSaving ? <Spinner /> : <Check size={14} />}保存并验证</button></div></div>}
+    {mcpView === "servers" && (<>
   <div className="settings-subhead"><Wifi size={13} />app-server MCP 状态<span className="settings-subhead-hint">引擎真实加载的服务器 · 可单卡或批量启停</span></div>
   <div className="skill-center-toolbar"><label className="skill-search"><Search size={14} /><input value={mcpServerSearch} onChange={(event) => setMcpServerSearch(event.target.value)} placeholder="搜索 MCP 服务或工具名" /></label></div>
   {mcpRows.length > 1 && <div className="resource-toolbar secondary">
@@ -212,6 +230,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       <div className="mcp-server-foot"><small>{row.enabled ? (row.reported ? "已写入引擎配置，改动后引擎会自动重启" : "已写入引擎配置，等待 app-server 回报状态") : "已停用 · 引擎不会加载，配置保留"}</small></div>
     </article>;
   })}{!mcpRows.length && <div className="mcp-server-empty"><Wifi size={26} /><strong>app-server 还没有发现 MCP 服务</strong><p>在上面添加连接器并保存，引擎重启后这里会出现真实运行状态；内置桌面自动化 MCP 也会列在这里。</p></div>}</div>
+    </>)}
   </section>
   );
 }

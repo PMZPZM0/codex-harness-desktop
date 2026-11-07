@@ -53,7 +53,7 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
     void window.codex.egoStatus()
       .then((s) => { if (alive) setEgo({ installed: Boolean(s?.installed), version: String(s?.version ?? "").replace(/^ego-browser\s*/i, "").trim() }); })
       .catch(() => { if (alive) setEgo({ installed: false, version: "" }); });
-    void window.codex.toolStatus().then((list: any[]) => { if (alive) setTools(Array.isArray(list) ? list : []); }).catch(() => undefined);
+    void window.codex.toolStatus().then((list) => { if (alive) setTools(Array.isArray(list) ? list : []); }).catch(() => undefined);
     void window.codex.readAppSettings()
       .then((s) => { if (alive) setBackends({ nuphus: s.desktopBackendNuphus !== false, computerUse: s.desktopBackendComputerUse !== false }); })
       .catch(() => undefined);

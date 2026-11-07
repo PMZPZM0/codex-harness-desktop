@@ -701,9 +701,10 @@ export async function run() {
       "【274】tools:status 同时列 Computer Use 后端（未安装也返回 —— 页面才画得出「未安装 + 安装入口」）"
     );
     const autoUi274 = readAppUi();
-    (/auto-backends/.test(autoUi274) && /desktopBackendNuphus/.test(autoUi274) && /desktopBackendComputerUse/.test(autoUi274)
-      && /当前生效链路/.test(autoUi274) ? ok : fail)(
-      "【274】自动化页：两个后端开关绑同一份 app-settings + 显示当前生效链路（Windows nuphus 主 / mac computer-use 主）"
+    /* 11-07 用户「把浏览器和电脑操作也做成卡片」：两个后端开关从自动化页搬进「电脑操作」页的后端卡。 */
+    (/auto-backend-cards/.test(autoUi274) && /desktopBackendNuphus/.test(autoUi274) && /desktopBackendComputerUse/.test(autoUi274)
+      && /当前链路/.test(autoUi274) ? ok : fail)(
+      "【274】电脑操作页：两个后端开关绑同一份 app-settings + 显示当前链路（Windows nuphus 主 / mac computer-use 主）"
     );
     (/(?:browser-cap-grid|auto-bullets)/.test(autoUi274) && /ego-browser/.test(autoUi274) && /browse-skills/.test(autoUi274)
       && /当前链路/.test(autoUi274) && /egoStatus/.test(autoUi274) ? ok : fail)(
