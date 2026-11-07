@@ -291,8 +291,13 @@ const catalog = [
      伙伴会话也是子会话 ⇒ 一律没有对外调度权限（agent_invoke 被拒）；群聊机制（group_say 投递 /
      runTalkTurn）不经过 canDispatchFrom，照常可用。 */
   const dispatchCore = codeOnly(read("electron/features/dispatch-core.ts"));
-  ok(/lookupGroupThread\(threadId\)\)\s*return \{ restricted: true, label: "工作伙伴会话" \}/.test(dispatchCore),
+  const dispatchRpc = codeOnly(read("electron/features/dispatch-rpc.ts"));
+  ok(/lookupGroupThread\(threadId\)\)\s*return \{ restricted: true, label: "工作伙伴会话", dispatchOnly: true \}/.test(dispatchCore),
     "工作伙伴的伙伴会话没有对外调度权限（子会话一律不给 agent_invoke；群聊投递不受影响）");
+  /* ⛔ 用户原话「**只关调度权限**」：知识库写入 / 定时任务 / CLI 安装这些非调度能力照旧
+     （三处闸必须显式放过 dispatchOnly —— 漏一处就是把整包专家限制套到伙伴头上）。 */
+  ok((dispatchRpc.match(/restrict\.restricted && !restrict\.dispatchOnly/g) || []).length >= 3,
+    "「只关调度」= 知识库 / 定时任务 / CLI 安装三处闸显式放过 dispatchOnly");
 }
 
 /* ── ⑬ 艾特可见 + 群聊提示词不裸露 + 会话可分辨（11-07 真机两张截图）────────── */
@@ -311,6 +316,18 @@ const catalog = [
     "模型仍读得到发件人与工具说明（壳只影响显示，不影响指令）");
   ok(/thread\/name\/set/.test(chanSrc) && /伙伴·/.test(chanSrc),
     "群聊会话命名「伙伴·成员@群」——⛔ 不再是一堆随机笔名让人看不懂");
+}
+/* ── ⑭ 艾特不吃掉已输入的正文（11-07 真机：「输入了很多内容，再艾特，内容没了」）──── */
+{
+  const mentionLib = read("src/lib/team-mention.mjs");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const mentionTest = read("tests/team-mention-panel.test.mjs");
+  ok(/hasCaret/.test(mentionLib) && /end = clamp\(rawCaret\)/.test(mentionLib),
+    "⛔ applyMention 只替换触发时 caret 之前的查询词，不再吃光 @ 后的连续中文");
+  ok(/caret: trigger\.caret/.test(view) && /caret: mention\.caret/.test(view),
+    "触发位置与光标位置一起存进面板状态，选候选时原样传给纯函数");
+  ok(/长中文里艾特不再吃掉整段正文/.test(mentionTest) && /没有 caret 的老调用仍按扫描兜底/.test(mentionTest),
+    "回归真值表：长中文保全文 + 老调用兜底");
 }
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
@@ -465,7 +482,10 @@ const catalog = [
   ok(/<ComposerRail app=\{app\}/.test(composer),
     "群输入框左侧复用主对话的 ComposerRail（侧边粗条，⛔ 不另造一条装饰条）");
   ok(/team-composer__pane-flyout/.test(composer) && /bottom: calc\(100% \+ 8px\)/.test(read("src/styles/61-team-mode.css")),
-    "技能 / 引用文件是浮在输入卡上方的弹出层（⛔ 不再顶替 textarea 做成内嵌）");
+    "引用文件浮在输入卡上方（⛔ 不顶替 textarea）");
+  ok(/team-skill-dialog/.test(composer) && /createPortal\(/.test(composer) && /toggleSkill/.test(composer)
+    && /\.team-skill-dialog \{[^}]*width: min\(560px/.test(read("src/styles/61-team-mode.css")),
+    "引用技能是居中弹窗（可多选，⛔ 不再是输入框里的内嵌列表）");
   const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
   ok(/<TeamChatOverlay[\s\S]{0,160}?app=\{app\}/.test(appView),
     "宿主把 app 传给群聊浮层（ComposerRail 需要）");

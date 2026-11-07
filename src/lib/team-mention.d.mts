@@ -24,7 +24,7 @@ export function matchMentionCandidates<T extends { name?: string; role?: string 
 
 export function applyMention(
   text: unknown,
-  trigger: { start?: number } | null | undefined,
+  trigger: { start?: number; caret?: number } | null | undefined,
   name: unknown,
 ): { text: string; caret: number };
 

@@ -90,3 +90,19 @@ test("分类：没有可 @ 的伙伴 ⇒ 空数组（面板不画空标题）", 
   assert.deepEqual(mentionSectionsOf({ members: [{ id: "me", kind: "human", name: "我" }] }, []), []);
   assert.deepEqual(mentionSectionsOf({}, []), []);
 });
+
+test("回归：长中文里艾特不再吃掉整段正文（11-07 真机「输入很多内容再艾特，内容没了」）", () => {
+  const long = "这是一段很长的中文内容没有任何空格后面还有很多字";
+  const src = `@${long}`;
+  const t = mentionTriggerOf(src, 1);
+  /* ⛔ 旧实现从 @ 一路吃到空白 ⇒ 整段中文被当成查询词，替换完只剩 "@呈象 " */
+  assert.equal(applyMention(src, t, "呈象").text, `@呈象 ${long}`);
+
+  const mid = "请先 @看一下这段方案再给结论";
+  const t2 = mentionTriggerOf(mid, 4);
+  assert.equal(applyMention(mid, t2, "呈象").text, "请先 @呈象 看一下这段方案再给结论");
+});
+
+test("回归：没有 caret 的老调用仍按扫描兜底", () => {
+  assert.equal(applyMention("请 @洞 看一下", { start: 2 }, "洞明").text, "请 @洞明 看一下");
+});

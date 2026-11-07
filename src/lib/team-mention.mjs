@@ -95,9 +95,21 @@ export function applyMention(text, trigger, name) {
   const src = String(text ?? "");
   const who = String(name ?? "").trim();
   if (!who) return { text: src, caret: src.length };
-  const start = Math.max(0, Math.min(src.length, Math.trunc(Number(trigger?.start ?? src.length))));
-  let end = start + 1;
-  while (end < src.length && !/\s/.test(src[end]) && src[end] !== "@") end += 1;
+  const clamp = (n) => Math.max(0, Math.min(src.length, Math.trunc(Number(n))));
+  const start = clamp(trigger?.start ?? src.length);
+  /* ⛔⛔ 11-07 真机：「输入框输入了很多内容，再艾特，内容直接没了」。
+     旧实现从 `@` 一路吃到下一个空白 —— 中文长文本没有空格 ⇒ 整段正文被当成"查询词"吃掉，
+     替换完只剩 `@名字 `。⇒ 终点改用触发时记录的 caret（用户实际打出的那几个字），
+     ⛔ 没有 caret 的老调用才回退到扫描（保持既有真值表不回归）。 */
+  const rawCaret = trigger?.caret;
+  const hasCaret = rawCaret !== undefined && rawCaret !== null && Number.isFinite(Number(rawCaret));
+  let end;
+  if (hasCaret && clamp(rawCaret) >= start) {
+    end = clamp(rawCaret);
+  } else {
+    end = start + 1;
+    while (end < src.length && !/\s/.test(src[end]) && src[end] !== "@") end += 1;
+  }
   /* ⛔ 只吃掉行内的空格，不动换行 —— 否则会把下一段并到这一行来 */
   const rest = src.slice(end).replace(/^[ \t]+/, "");
   const next = `${src.slice(0, start)}@${who} ${rest}`;

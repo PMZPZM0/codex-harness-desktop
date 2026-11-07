@@ -158,8 +158,8 @@ export function TeamGroupView({
   const [profile, setProfile] = useState<{ memberId: string; x: number; y: number } | null>(null);
   /* @ 候选面板：点 @ 按钮（多选，面板不关）与在输入框打 `@`（选完即替换并关闭）共用一份状态。
      ⛔ `start` 只在 typed 模式用（替换那段 `@查询词`），面板多选模式不碰正文。 */
-  const [mention, setMention] = useState<{ open: boolean; query: string; start: number; typed: boolean }>(
-    { open: false, query: "", start: 0, typed: false },
+  const [mention, setMention] = useState<{ open: boolean; query: string; start: number; caret: number; typed: boolean }>(
+    { open: false, query: "", start: 0, caret: 0, typed: false },
   );
   const [searchOpen, setSearchOpen] = useState(false);
   /** 搜索跳转后的短暂高亮（1.6s 后清掉，⛔ 不留永久 class） */
@@ -341,8 +341,8 @@ export function TeamGroupView({
     const rect = event.currentTarget.getBoundingClientRect();
     setProfile({ memberId, x: rect.left, y: rect.bottom + 6 });
   };
-  const closeMention = () => setMention({ open: false, query: "", start: 0, typed: false });
-  const openMentionPanel = () => setMention({ open: true, query: "", start: 0, typed: false });
+  const closeMention = () => setMention({ open: false, query: "", start: 0, caret: 0, typed: false });
+  const openMentionPanel = () => setMention({ open: true, query: "", start: 0, caret: 0, typed: false });
 
   /* 输入框内容变化：顺手判一次 `@` 触发（⛔ 判据只在纯函数里，别在这里写第二套）。 */
   const updateText = (next: string) => {
@@ -350,11 +350,11 @@ export function TeamGroupView({
     const caret = composerRef.current?.selectionStart ?? next.length;
     const trigger = mentionTriggerOf(next, caret);
     if (trigger) {
-      setMention({ open: true, query: trigger.query, start: trigger.start, typed: true });
+      setMention({ open: true, query: trigger.query, start: trigger.start, caret: trigger.caret, typed: true });
       return;
     }
     /* 只是「打字触发」的会话要跟着关；面板按钮打开的多选不因继续打字而关 */
-    setMention((prev) => (prev.typed ? { open: false, query: "", start: 0, typed: false } : prev));
+    setMention((prev) => (prev.typed ? { open: false, query: "", start: 0, caret: 0, typed: false } : prev));
   };
 
   /** 面板候选（机器人 / 专家团 / 团成员）—— 目录与群成员一变就重算；
@@ -372,7 +372,8 @@ export function TeamGroupView({
     if (mention.typed) {
       /* 打字触发：把 `@查询词` 换成 `@名字 `，并把这个人加进本轮 @（已选中就只换文本） */
       if (!already) setAtTargets((prev) => [...prev, item.selectId]);
-      const applied = applyMention(text, { start: mention.start }, item.name);
+      /* ⛔ 传 caret：只替换用户输入的那几个字，⛔ 不碰后面已经写好的正文。 */
+      const applied = applyMention(text, { start: mention.start, caret: mention.caret }, item.name);
       setText(applied.text);
       closeMention();
       requestAnimationFrame(() => {
