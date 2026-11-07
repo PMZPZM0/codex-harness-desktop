@@ -440,5 +440,18 @@ ok(/\.settings-exp-shell \.hub-card-grid \{ grid-template-columns: repeat\(auto-
   && /\.settings-exp-shell \.relay-plan-grid \{ grid-template-columns: repeat\(auto-fill, minmax\(280px, 1fr\)\);/.test(read("src/styles/45-settings-experience.css")),
   "设置页卡片统一小卡网格：专家团/自动化 hub、会话备份、中转站（11-06 用户：不要刻意拉长）");
 
+/* ⛔ 11-07 用户实测两条导航缺口：
+   ① 进二级页（浏览器 / 电脑操作 / RPA）后左栏「自动化」失去高亮（二级页 id 不在 settingsNav）；
+   ② 从主界面「功能入口」直达某页时，左栏选中项在长列表视口外、看起来没选中/没跳转。
+   ⇒ 二级页统一折算到一级页再比较 + 选中项变化时滚到可见区域。 */
+const settingsNavSrc = src("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/01-settings-nav.tsx");
+const settingsCatalogSrc = src("src/features/app-view/helpers/catalogs.ts");
+ok(/const activePage = settingsRootPage\(settingsPage\)/.test(settingsNavSrc)
+  && /activePage === key \? "active" : ""/.test(settingsNavSrc)
+  && /scrollIntoView\(\{ block: "nearest" \}\)/.test(settingsNavSrc),
+  "设置左栏：二级页折算一级页高亮 + 直达时把选中项滚进视口（11-07 用户实测）");
+ok(/browser:\s*"automation"/.test(settingsCatalogSrc) && /computer:\s*"automation"/.test(settingsCatalogSrc) && /rpa:\s*"automation"/.test(settingsCatalogSrc),
+  "二级设置页 → 一级页的映射覆盖 browser / computer / rpa（⛔ 新增二级页要同步这里）");
+
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

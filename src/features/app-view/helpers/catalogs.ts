@@ -104,6 +104,20 @@ export function settingsTone(page: string): string {
   return "blue";
 }
 
+/** 二级设置页 → 左栏一级页。
+ *  二级页（browser / computer / rpa …）不在 settingsNav 里，直接进二级页时左栏要
+ *  **高亮并滚动到它的父项**，否则看起来「没有选中」。⛔ 新增二级页必须同步这里。 */
+const SETTINGS_SECONDARY_PARENT: Record<string, SettingsPage> = {
+  browser: "automation",
+  computer: "automation",
+  rpa: "automation",
+};
+
+/** 左栏高亮/滚动定位用：二级页返回它的一级页，一级页原样返回。 */
+export function settingsRootPage(page: SettingsPage): SettingsPage {
+  return SETTINGS_SECONDARY_PARENT[page] ?? page;
+}
+
 export const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]);
 
 export const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
