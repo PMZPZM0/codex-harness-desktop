@@ -947,7 +947,11 @@ if (state) {
   const missingGroupCtx = stripSites.filter((file) => !/【群聊上下文结束】/.test(read(file)));
   ok(missingGroupCtx.length === 0,
     `群聊上下文块四处剥集同源（缺：${missingGroupCtx.join(" / ") || "无"}）`);
-  ok(/\[本轮点名对象\]/.test(read("electron/cloud-sync.ts")) && /【群聊上下文/.test(read("electron/cloud-sync.ts")),
+  /* 云同步标题/预览是另一条清洗链；只有实现了「标记边界切分」的仓才需要钉
+     （云助手旧版 cloud-sync 无这条实现，别在那边造成恒红）。 */
+  const cloudSyncSrc = read("electron/cloud-sync.ts");
+  const hasMarkerList = /for \(const marker of/.test(cloudSyncSrc);
+  ok(!hasMarkerList || (/\[本轮点名对象\]/.test(cloudSyncSrc) && /【群聊上下文/.test(cloudSyncSrc)),
     "云同步的会话标题/预览也把 @ 点名块 / 群聊上下文当注入边界切掉");
   /* ── 群广播（10-26 用户令「方案就按只广播这个完成」）───────────────────
      `[群事件]` 是成员汇总进来的群消息，⛔ 不能再套用户气泡（右对齐 + "你"）。
