@@ -393,6 +393,10 @@ w.postMessage({id:1,op:"list",root});
     // 不需要 CI 现造（harness-uia.mjs 是 MCP 门面，desktop-uia.ps1 调系统自带 UIAutomation）。
     "resources/tools/harness-uia.mjs",
     "resources/tools/desktop-uia.ps1",
+    // QwenPaw headless 包装器（11-07）：包装器 + PATH 垫片都是版本控制里的静态文件，
+    // 干净检出就有；它们只在运行时给第三方 qwenpaw 补 workspace（见守卫 12bh）。
+    "resources/tools/harness-qwenpaw.py",
+    "resources/tools/cli-shims",
   ]);
   const uncovered = [];
   for (const entry of pkg29.build?.extraResources ?? []) {

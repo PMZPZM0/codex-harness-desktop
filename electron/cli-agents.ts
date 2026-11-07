@@ -38,9 +38,9 @@ import { cliPromptCommand } from "../src/lib/cli-command.mjs";
  *   症状极隐蔽（不报错，只是"没装"），所以**检测与执行必须用同一条增强 PATH**。
  *   `augmentedPath()` 已带 mac 的 homebrew / 随包 node/bin / npm-global，Windows 侧也兼容。
  */
-export function cliProcessEnv(): NodeJS.ProcessEnv {
+export function cliProcessEnv(options: { includeShims?: boolean } = {}): NodeJS.ProcessEnv {
   try {
-    const env: NodeJS.ProcessEnv = { ...process.env, PATH: augmentedPath() };
+    const env: NodeJS.ProcessEnv = { ...process.env, PATH: augmentedPath(options) };
     /* ⛔ NO_PROXY 里的 `[::1]` 会让 httpx 系 CLI（Python）启动即崩，见 normalizeNoProxy。 */
     applyNoProxyFix(env);
     return env;
@@ -471,8 +471,9 @@ function locateBinary(bin: string): Promise<string> {
   const cmd = process.platform === "win32" ? "where" : "which";
   return new Promise((resolve) => {
     /* ⛔ env 必须走 cliProcessEnv()：⚠️ GUI 进程 PATH 里没有 /opt/homebrew/bin 等目录，
-       不增强的话 mac 上「装了也永远显示未检测到」（见 cliProcessEnv 的说明）。 */
-    execFile(cmd, [bin], { timeout: 4000, windowsHide: true, env: cliProcessEnv() }, (error, stdout) => {
+       不增强的话 mac 上「装了也永远显示未检测到」（见 cliProcessEnv 的说明）。
+       ⛔ 检测要排除 cli-shims：垫片恒存在，带上它会把「没装 qwenpaw」判成已安装。 */
+    execFile(cmd, [bin], { timeout: 4000, windowsHide: true, env: cliProcessEnv({ includeShims: false }) }, (error, stdout) => {
       if (error) return resolve("");
       const first = String(stdout ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean)[0] ?? "";
       resolve(first);

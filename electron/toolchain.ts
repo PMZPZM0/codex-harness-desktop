@@ -144,7 +144,12 @@ export function runEgoUpgrade(): Promise<{ ok: boolean; output: string }> {
 
 // 这台机器的开发工具（node/python 等）不在系统 PATH 上，把常见工具链目录并进去，
 // 否则子进程里 git/node/python 全部"无法识别"。内置 node/pwsh 排最前，优先命中。
-export function augmentedPath() {
+export function augmentedPath(options: { includeShims?: boolean } = {}) {
+  /* ⛔ 11-07：cli-shims 是应用自己的可执行垫片目录（当前只有 qwenpaw/copaw），
+     必须排在 python\Scripts 之前 —— 同名 shim 先命中，把 headless 的 tools=0 修复
+     在运行时补上（见 resources/tools/cli-shims 与 harness-qwenpaw.py）。
+     `includeShims: false` 只给「装没装」检测用：否则 shim 存在就会被判成已安装。 */
+  const includeShims = options.includeShims !== false;
   const bundled: string[] = [];
   const discovered: string[] = [];
   const system = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean);
@@ -153,6 +158,7 @@ export function augmentedPath() {
   const toolRoots = toolRootsRead();
   if (process.platform !== "win32") {
     const directories = toolRoots.flatMap((tools) => [
+      ...(includeShims ? ["cli-shims"] : []),
       "node/bin", "pwsh", "npm-global/bin", "bin", "git/bin", "python/bin",
       "vscode-cli", "rg", "uv", "cmake/bin",
       // ⛔ mac 适配（09-16）：darwin 侧 install-runtimes 会把这些也装进 tools/，
@@ -163,6 +169,11 @@ export function augmentedPath() {
     return [...new Set([...(egoDir ? [egoDir] : []), ...directories, ...system, "/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"])].join(path.delimiter);
   }
   for (const tools of toolRoots) {
+    /* ⛔ 11-07：垫片目录排在本根的最前面（先于下面的 python\Scripts）。 */
+    if (includeShims) {
+      const shims = path.join(tools, "cli-shims");
+      if (fs.existsSync(shims)) bundled.push(shims);
+    }
     // Codex app-server 是 GUI 子进程，直接拉起控制台版 pwsh.exe 会闪黑框。
     // pwsh-headless 是透明 GUI 桥（转发 stdio/退出码）；右侧终端仍通过 bundledPwsh
     // 直接使用真实 pwsh，不受这个 PATH 顺序影响。
