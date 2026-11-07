@@ -221,6 +221,8 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         {sourceTabs}
         {refreshButton}
       </div>
+    {/* ⛔ 11-07：只有内置卡（不可勾选）时不再显示「共 0 个插件可勾选」的批量条 —— 纯噪声。 */}
+    {selectableIds.length > 0 && (
     <div className="resource-toolbar secondary">
       <SelectAllToggle total={selectableIds.length} selected={checkedIds.length} unit="个插件" onSelectAll={() => setPluginChecked(selectableIds)} onClear={() => setPluginChecked([])} />
       <BatchActions
@@ -231,6 +233,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
         ]}
       />
     </div>
+    )}
 
     <div className="plugin-card-grid">
       {/* 10-27 用户令：「做成卡片放已安装里面」⇒ 三张内置卡直接排进这张网格，和已安装插件同列。 */}
@@ -268,7 +271,7 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
           </div>
         </article>;
       })}
-      {!visible.length && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有安装任何插件"}</strong><p>{all.length ? "换个关键词试试。" : "去上面两个市场装一个，或在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
+      {!visible.length && (!builtinSlot || String(pluginSearch ?? "").trim()) && <div className="plugin-empty"><Store size={26} /><strong>{all.length ? "没有匹配的插件" : "还没有安装任何插件"}</strong><p>{all.length ? "换个关键词试试。" : "去上面两个市场装一个，或在 Codex 配置里添加 marketplace 后，插件会出现在这里。"}</p></div>}
     </div>
     </div>
     </> : null}
