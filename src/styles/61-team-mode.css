@@ -1096,7 +1096,24 @@
 
 /* ══════ 11-06 收尾：气泡排版细节 + 刻度槽可见性 ══════════════════════════════
    用户：「聊天框样式做好看一点」「这还有这么多长度怎么就换行了」「消息刻度线也没出来」 */
-.team-msg.is-bot .team-msg__body { background: color-mix(in srgb, var(--accent-soft) 55%, var(--panel)); }
+/* 11-07 用户令「对话框渲染组件跟主对话框同步，往专业的群里靠」——
+   智能体正文与主对话一致：**不套卡片**，标题行 + 正文直接排在流里（卡片只留给引用 / 过程块）；
+   用户自己的发言靠右，用主对话同款气泡色。 */
+.team-msg.is-bot .team-msg__body {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.team-msg.is-human { flex-direction: row-reverse; }
+.team-msg.is-human .team-msg__main { align-items: flex-end; }
+.team-msg.is-human .team-msg__meta { justify-content: flex-end; }
+.team-msg.is-human .team-msg__body {
+  max-width: min(78%, 560px);
+  background: var(--accent-soft);
+  border-color: transparent;
+  box-shadow: none;
+}
 .team-msg__body-text > :first-child { margin-top: 2px; }
 .team-msg__body-text > :last-child { margin-bottom: 0; }
 /* 引用行做成一块浅底，和截图里「回复 某人：…」的独立引用块同形 */
@@ -1134,6 +1151,31 @@
   background: var(--panel);
   box-shadow: 0 2px 10px color-mix(in srgb, var(--text) 6%, transparent);
 }
+.team-composer:focus-within { border-color: var(--faint); }
+/* 11-07 用户令：「输入框上的小粗条和侧边粗条，全部同步」——
+   顶部把手与主对话 `.composer-resize-handle` 同款（96×12 命中面，56×4 胶囊骑在顶边框上）。 */
+.team-composer__resize {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 96px;
+  height: 12px;
+  display: grid;
+  place-items: center;
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+}
+.team-composer__grip {
+  width: 56px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1px var(--line);
+  transition: background 0.12s ease, box-shadow 0.12s ease;
+}
+.team-composer__resize:hover .team-composer__grip { background: var(--muted); box-shadow: 0 0 0 1px var(--muted); }
 /* ⛔ 覆盖旧的 `.team-group__composer textarea` 规则：现在边框在外层卡片上。
    11-07 用户：「同步成跟对话框一样的输入框，外观和输入框内在功能」⇒ 正文排版
    与 `.composer-editor` 同口径：14px / 1.6 / 内容自适应 + 42vh 上限 / 超出滚动。

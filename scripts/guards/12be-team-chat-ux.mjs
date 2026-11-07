@@ -399,5 +399,23 @@ const catalog = [
     "非群成员（团成员）的头像写/清都走覆盖表（空值 = 恢复默认）");
 }
 
+/* ── ⑨ 群聊与主对话同款：输入框把手 / 侧边粗条 / 消息排版（11-07 用户令）── */
+{
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  ok(/team-composer__resize/.test(composer) && /team-composer__grip/.test(composer)
+    && /localStorage\.getItem\("team-composer-height"\)/.test(composer),
+    "群输入框有与主对话同款的顶部把手（拖动改高度 / 双击复位 / 持久化）");
+  ok(/<ComposerRail app=\{app\}/.test(composer),
+    "群输入框左侧复用主对话的 ComposerRail（侧边粗条，⛔ 不另造一条装饰条）");
+  const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
+  ok(/<TeamChatOverlay[\s\S]{0,160}?app=\{app\}/.test(appView),
+    "宿主把 app 传给群聊浮层（ComposerRail 需要）");
+  const teamCss = read("src/styles/61-team-mode.css");
+  ok(/\.team-msg\.is-bot \.team-msg__body \{[^}]*background: transparent/.test(teamCss),
+    "智能体消息不再套卡片（与主对话正文同形态）");
+  ok(/\.team-msg\.is-human \{ flex-direction: row-reverse/.test(teamCss),
+    "用户自己的发言靠右（主对话同款）");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

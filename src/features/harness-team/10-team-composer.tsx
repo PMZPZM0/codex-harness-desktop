@@ -23,6 +23,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { RefObject } from "react";
 import { AtSign, Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
+import { ComposerRail } from "../composer-rail/ComposerRail";
+import type { HarnessAppApi } from "../app-state";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
@@ -141,6 +143,8 @@ type Props = {
   mentionCount?: number;
   /** 工具行右端的「群菜单」按钮（FLOAT 形态下父层不传，按钮画在群视图右下）。 */
   toolsSlot?: React.ReactNode;
+  /** 11-07 用户令「侧边粗条同步」：宿主 app（输入框左侧的 ComposerRail 需要它）。 */
+  app?: HarnessAppApi;
 };
 
 type ModelOption = {
@@ -166,7 +170,7 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
   opts, onOpts, sending, canSend, onSend, targetNames, fileCandidates = [], onOpenModelSettings,
-  onOpenMention, mentionCount = 0, toolsSlot = null,
+  onOpenMention, mentionCount = 0, toolsSlot = null, app,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
@@ -193,6 +197,52 @@ export function TeamComposer({
     ...(onOpenModelSettings ? [{ value: "__model_settings__", title: "更多设置…" }] : []),
   ], [active.name, baseModels, onOpenModelSettings]);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  /* 11-07 用户令：「输入框上的小粗条……全部同步一下」——
+     与主对话输入框同款：顶部把手拖动改高度（下限 62 / 上限 min(55vh,560px)），双击复位，localStorage 持久化。 */
+  const TEAM_COMPOSER_MIN = 62;
+  const teamComposerMax = () => Math.min(Math.round(window.innerHeight * 0.55), 560);
+  const [editorHeight, setEditorHeight] = useState<number | null>(() => {
+    try {
+      const raw = Number(localStorage.getItem("team-composer-height"));
+      return Number.isFinite(raw) && raw >= TEAM_COMPOSER_MIN ? Math.min(raw, teamComposerMax()) : null;
+    } catch { return null; }
+  });
+  const dragRef = useRef<{ startY: number; startH: number; last: number } | null>(null);
+  const [dragging, setDragging] = useState(false);
+  useEffect(() => {
+    if (!dragging) return;
+    const move = (event: PointerEvent) => {
+      const drag = dragRef.current;
+      if (!drag) return;
+      const next = Math.max(TEAM_COMPOSER_MIN, Math.min(drag.startH - (event.clientY - drag.startY), teamComposerMax()));
+      drag.last = next;
+      setEditorHeight(next);
+    };
+    const up = () => {
+      const drag = dragRef.current;
+      dragRef.current = null;
+      setDragging(false);
+      if (drag) { try { localStorage.setItem("team-composer-height", String(drag.last)); } catch { /* 存储不可用：本次会话内有效 */ } }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [dragging]);
+  const onResizeDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const base = editorHeight ?? Math.max(TEAM_COMPOSER_MIN, textareaRef.current?.offsetHeight ?? TEAM_COMPOSER_MIN);
+    dragRef.current = { startY: event.clientY, startH: base, last: base };
+    setDragging(true);
+    event.preventDefault();
+  };
+  const resetEditorHeight = () => {
+    setEditorHeight(null);
+    try { localStorage.removeItem("team-composer-height"); } catch { /* 同上 */ }
+  };
   /* 启动那一刻的模型值（读回的偏好）：目录还没加载完时也要能显示，别闪成空白 */
   const initialModelRef = useRef(opts.model);
   /* ⛔ 回落要用**最新** opts（目录是异步加载的，期间用户可能已经改过选项），别拿挂载时的旧对象覆盖。 */
@@ -319,6 +369,19 @@ export function TeamComposer({
 
   return (
     <div className="team-composer" ref={wrapRef}>
+      {/* 11-07 用户令：「输入框上的小粗条和侧边粗条，全部同步」——
+          顶部把手（拖动改高度 / 双击复位）+ 左侧 ComposerRail 与主对话同一个组件。 */}
+      <div
+        className="team-composer__resize"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="拖动调整输入框高度（双击恢复默认）"
+        onPointerDown={onResizeDown}
+        onDoubleClick={resetEditorHeight}
+      >
+        <span className="team-composer__grip" aria-hidden />
+      </div>
+      {app && <ComposerRail app={app} threadId="" />}
       {(opts.files.length > 0 || opts.skills.length > 0) && (
         <div className="team-composer__chips">
           {opts.files.map((p) => (
@@ -378,6 +441,7 @@ export function TeamComposer({
         <textarea
           ref={textareaRef}
           className="team-composer__input"
+          style={editorHeight ? { height: editorHeight, maxHeight: editorHeight } : undefined}
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
           onKeyDown={onKeyDown}

@@ -721,6 +721,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       <AppViewSettingsSheet app={app} />
       {/* 群聊（10-05）：独立板块的全屏壳，开关在板块自己的 store 里 */}
       <TeamChatOverlay
+        /* 11-07 用户令「输入框侧边粗条同步」：群输入框左侧的 ComposerRail 需要宿主 app。 */
+        app={app}
         /* ⛔ 11-07 用户令「正反向联动做好一点」：群消息的「来源」要真能打开那条会话
            （以前只能复制 id）⇒ 宿主把 openThread 传下去（浮层自己负责关闭）。 */
         onOpenThread={(id) => void openThread(id)}

@@ -51,8 +51,11 @@ import { dayKeyOf, dayLabelOf } from "../../lib/team-view.mjs";
    连带注释里出现那个字面量都会被扫到）。群消息流没有主对话那圈「尾部留白」，
    所以目标就是内容底 —— 但写入路径必须同源。 */
 import { scrollToOffsetInstant } from "../../components/scroll-utils";
+import type { HarnessAppApi } from "../app-state";
 
 type Props = {
+  /** 11-07 用户令「输入框侧边粗条同步」：宿主 app（ComposerRail 需要）。 */
+  app?: HarnessAppApi;
   group: TeamGroup;
   rows: GroupMessageRow[];
   issues?: string[];
@@ -113,7 +116,7 @@ const PAGE = 30;
    两处调用（伙伴行 / 团成员行）不变。 */
 
 export function TeamGroupView({
-  group, rows, issues, busy, notice, limit,
+  app, group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
@@ -1017,6 +1020,7 @@ export function TeamGroupView({
                 /* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
                    FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */
                 toolsSlot={!floatMenu ? <TeamMenuButton items={menuItems} disabled={sending} placement="input" onPick={pickMenu} /> : null}
+                app={app}
               />
             </footer>
           </div>

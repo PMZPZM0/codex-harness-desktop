@@ -22,8 +22,17 @@ import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
+import type { HarnessAppApi } from "../app-state";
 
-export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenModelSettings?: () => void; /** 正向联动（11-07 用户令）：点群消息的「来源」打开那条会话；宿主关掉设置页再打开。 */ onOpenThread?: (threadId: string) => void } = {}) {
+type TeamPanelProps = {
+  onOpenModelSettings?: () => void;
+  /** 正向联动（11-07 用户令）：点群消息的「来源」打开那条会话；宿主关掉设置页再打开。 */
+  onOpenThread?: (threadId: string) => void;
+  /** 11-07 用户令「输入框侧边粗条同步」：群输入框里的 ComposerRail 需要宿主 app。 */
+  app?: HarnessAppApi;
+};
+
+export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPanelProps = {}) {
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
@@ -211,6 +220,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
           <div className="team-mode__blank">正在读取团队…</div>
         ) : active ? (
           <TeamGroupView
+            app={app}
             group={active}
             rows={rowsByGroup[active.id] ?? []}
             busy={busyByGroup[active.id] ?? []}
@@ -308,7 +318,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
 export default TeamModePanel;
 
 /** 群聊面板（侧栏「群聊」打开）。⛔ 关闭有三条退路：卡片头 X / ESC / 点背景空白。 */
-export function TeamChatOverlay({ onOpenModelSettings, onOpenThread }: { onOpenModelSettings?: () => void; onOpenThread?: (threadId: string) => void } = {}) {
+export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app }: TeamPanelProps = {}) {
   const open = useTeamChatOpen();
   const close = () => teamChatOpen.set(false);
   /* ⛔ 走全局 ESC 栈（只让最上层消费），⛔ 不要自己挂 window keydown —— 那样一次 Esc 会关掉多层 */
@@ -340,6 +350,7 @@ export function TeamChatOverlay({ onOpenModelSettings, onOpenThread }: { onOpenM
           </button>
         </header>
         <TeamModePanel
+          app={app}
           onOpenModelSettings={onOpenModelSettings ? () => { close(); onOpenModelSettings(); } : undefined}
           /* ⛔ 开那条会话之前先关群聊浮层，否则新会话被压在浮层后面（用户会以为"点了没反应"）。 */
           onOpenThread={onOpenThread ? (id) => { close(); onOpenThread(id); } : undefined}
