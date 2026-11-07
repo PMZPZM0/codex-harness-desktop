@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Search, Settings2, Square, X } from "lucide-react";
+import { AtSign, Search, Settings2, Square, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -31,9 +31,9 @@ import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-compos
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
-import { cancelDelegateRetries, subscribeTeamRuntime, teamRuntimeSnapshot } from "../../lib/team-runtime.mjs";
+import { cancelDelegateRetries } from "../../lib/team-runtime.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
-import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId } from "../../lib/team-models.mjs";
+import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf } from "../../lib/team-models.mjs";
 /* 11-07：@ 提及与群内搜索的口径全部在纯函数里（可单测），视图只做接线。 */
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../lib/team-mention.mjs";
 /* 11-07 界面优化：消息流按天分隔（飞书群同款）——连续几十条跨天消息只靠时间看不出"这是哪天"。 */
@@ -113,10 +113,16 @@ export function TeamGroupView({
   const [stopping, setStopping] = useState(false);
   /* ⛔ 11-06：busy 会在 `invokeAgent` 返回时就清空，但后台调度会话可能还在收尾
      ⇒ 只看 busy 会显示「没有运行」而后台其实还在跑。订阅共享桥的登记数做补充判据。 */
-  const delegateRunning = useSyncExternalStore(subscribeTeamRuntime, teamRuntimeSnapshot);
   const [sendError, setSendError] = useState("");
   /** 菜单点击的回显（飞书 `showMsg` 的等价物：告诉用户"我往输入框放了什么"） */
   const [menuMsg, setMenuMsg] = useState("");
+  /* ⛔ 11-07 用户：「这一块删了」——一次性回执（已清理 / 已填进输入框）只活 4 秒。 */
+  const menuMsgTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashMenuMsg = (text: string) => {
+    setMenuMsg(text);
+    if (menuMsgTimerRef.current) clearTimeout(menuMsgTimerRef.current);
+    if (text) menuMsgTimerRef.current = setTimeout(() => setMenuMsg(""), 4000);
+  };
   /** 群名内联编辑（⛔ 不用 window.prompt：原生弹窗在这个壳里体验差且样式不可控） */
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -187,7 +193,7 @@ export function TeamGroupView({
 
   const pickMenu = (key: string) => {
     const r = menuPickResult(group.menu ?? [], key);
-    setMenuMsg(r.message);
+    flashMenuMsg(r.message);
     if (r.ok) {
       setText(r.prompt);
       composerRef.current?.focus();
@@ -404,7 +410,7 @@ export function TeamGroupView({
       const results = await Promise.all(partners.map((p) => onStopPartner(p.id)));
       const cleared = cancelDelegateRetries();
       const stopped = results.filter((r) => r.ok).length;
-      setMenuMsg(stopped || cleared
+      flashMenuMsg(stopped || cleared
         ? `已停止 ${stopped} 个伙伴的运行${cleared ? `，并清理 ${cleared} 个后台调度会话的重试状态` : ""}`
         : "已清理：当前没有运行中的伙伴，也没有在跑的调度会话");
     } finally {
@@ -426,7 +432,7 @@ export function TeamGroupView({
         const r = await runStop(cmd.rest);
         if (!r.ok) { setSendError(r.error ?? "停止失败"); return; }
         setText("");
-        setMenuMsg("已停止 —— 它这一回合的中断请求已发给引擎");
+        flashMenuMsg("已停止 —— 它这一回合的中断请求已发给引擎");
       } finally {
         setSending(false);
       }
@@ -877,16 +883,8 @@ export function TeamGroupView({
 
             {/* ⛔ 11-07 用户令：「停止放到群成员列表卡片后面」——状态条只留一行文字，
                 停止键搬到右侧成员栏底部（那里也是"谁在跑"的名单本身）。 */}
-            <div className={`team-group__running${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`} role="status" aria-live="polite">
-              <span className="team-group__dot" aria-hidden />
-              <span className="team-group__running-text">
-                {(busy?.length ?? 0) > 0
-                  ? `${busy!.map(nameOf).join("、")} 正在处理…`
-                  : delegateRunning > 0
-                    ? `全局另有 ${delegateRunning} 个调度任务在收尾（与本群无关）…`
-                    : "当前没有运行中的任务"}
-              </span>
-            </div>
+            {/* ⛔ 11-07 用户截图「这一块删了，不要了」：常驻状态条整块移除 ——
+                谁在跑看成员行（「· 处理中」+ 该行的「停」），不再常驻一行占位文字。 */}
             {menuMsg && (
               <p className={`team-group__notice is-info${menuMsg.includes("不在了") || menuMsg.includes("不可用") ? " is-warn" : ""}`} role="status">
                 {menuMsg}
@@ -964,7 +962,18 @@ export function TeamGroupView({
 
           {/* 成员栏（飞书群右侧成员区 / 豆包伙伴档案）：只有群才有这个东西 —— 普通会话没有。 */}
           <aside className="team-group__members" aria-label="群成员">
-            <div className="team-group__members-head">成员 {group.members.length}</div>
+                        <div className="team-group__members-head">
+              <span>成员 {group.members.length}</span>
+              <button
+                type="button"
+                className={`team-group__members-stop${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`}
+                onClick={() => void stopAll()}
+                disabled={stopping}
+                title="停止本群所有伙伴当前回合，并清理后台调度会话的重试状态"
+              >
+                <Square size={10} /> {stopping ? "停止中…" : "停止运行"}
+              </button>
+            </div>
             <ul>
               {group.members.map((m) => {
                 const running = busy?.includes(m.id);
@@ -997,6 +1006,18 @@ export function TeamGroupView({
                         {m.muted ? " · 已静音" : ""}
                       </small>
                     </span>
+                    {isBot && (
+                      <button
+                        type="button"
+                        className={`team-group__member-at${atTargets.includes(m.id) ? " is-on" : ""}`}
+                        title={`@${personNameOf(m)}`}
+                        onClick={() => toggleAt(m.id)}
+                      >
+                        @
+                      </button>
+                    )}
+                    {/* ⛔ 11-07 用户截图：「有运行状态的，就在这里显示」——单成员的「停」
+                        排在 @ **后面**、只在该成员运行中出现（谁在跑停谁，不误伤别人）。 */}
                     {isBot && running && (
                       <button
                         type="button"
@@ -1008,36 +1029,44 @@ export function TeamGroupView({
                         停
                       </button>
                     )}
-                    {isBot && (
-                      <button
-                        type="button"
-                        className={`team-group__member-at${atTargets.includes(m.id) ? " is-on" : ""}`}
-                        title={`@${personNameOf(m)}`}
-                        onClick={() => toggleAt(m.id)}
-                      >
-                        @
-                      </button>
-                    )}
                   </li>
                   {/* ⛔ 团成员列表放在**成员行之后**独占一行：塞进行内会被 flex 主轴压成
                       一个几十像素的小框（用户截图：横向滚动、名字全被裁）。 */}
                   {kids.length > 0 && (
                     <li className="team-group__member-kids-row">
                       <ul className="team-group__member-kids" aria-label={`${m.name} 的成员`}>
-                        {kids.map((kid) => (
-                          <li key={kid.key} className="team-group__member is-kid" title={`${kid.name}${kid.profession ? ` · ${kid.profession}` : ""}`}>
-                            <span className="team-group__member-avatar has-agent">
-                              <MemberAvatar
-                                member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: kid.key }}
-                                size={22}
-                              />
-                            </span>
-                            <span className="team-group__member-main">
-                              <strong>{kid.name}</strong>
-                              <small>{kid.profession || "团成员"}</small>
-                            </span>
-                          </li>
-                        ))}
+                        {kids.map((kid) => {
+                          /* ⛔ 11-07 用户令：「团成员拆出来，每个成员都可以艾特」「现在只能艾特主代理会话」。
+                             → 每个团成员行都有自己的 @（= 派给这位成员本人，走他自己的会话）。
+                             合成 id 与群流里成员发言的作者 id 同构（`team:<teamId>:<memberId>`），
+                             所以"谁在跑"「谁说了话」用的是同一个 key。 */
+                          const kidId = teamAuthorIdOf(String(m.targetKey ?? ""), kid.key);
+                          const on = atTargets.includes(kidId);
+                          const kidRunning = Boolean(busy?.includes(kidId));
+                          return (
+                            <li key={kid.key} className={`team-group__member is-kid${kidRunning ? " is-running" : ""}`} title={`${kid.name}${kid.profession ? ` · ${kid.profession}` : ""}`}>
+                              <span className="team-group__member-avatar has-agent">
+                                <MemberAvatar
+                                  member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: kid.key }}
+                                  size={22}
+                                />
+                              </span>
+                              <span className="team-group__member-main">
+                                <strong>{kid.name}</strong>
+                                <small>{kid.profession || "团成员"}</small>
+                              </span>
+                              <button
+                                type="button"
+                                className={`team-group__member-at${on ? " is-on" : ""}`}
+                                aria-pressed={on}
+                                title={on ? `把 ${kid.name} 移出本轮` : `@ ${kid.name}（只叫他本人）`}
+                                onClick={() => toggleAt(kidId)}
+                              >
+                                <AtSign size={12} />
+                              </button>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </li>
                   )}
@@ -1045,8 +1074,8 @@ export function TeamGroupView({
                 );
               })}
             </ul>
-            {/* ⛔ 11-07 用户令：「停止运行放到成员列表的 @ 前面去」⇒ 停止键已上移到名单顶部，
-                这里只留一句 @ 提示。 */}
+            {/* ⛔ 11-07：全局「停止运行」在「成员 N」标题行右侧（停全部）；单成员的「停」挂在
+                各自成员行里、@ 之后（仅运行中显示）。这里只留一句 @ 提示。 */}
             <div className="team-group__members-foot">
               <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
             </div>

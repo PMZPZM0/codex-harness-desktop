@@ -1,11 +1,15 @@
 /**
- * 12bd —— 群聊「停止运行」的位置（11-07 用户令）
+ * 12bg —— 群聊「停止」的落点与状态条（11-07 用户三轮修正后的定稿）
  *
- * 用户原话：「停止运行放到成员列表的 @ 前面去」。
- * 背景：这个键原来是**系统追加到「指令」菜单末尾**的（`sys-stop`），但菜单的点击解析
- * （`menuPickResult(group.menu, key)`）只查群自己的菜单 ⇒ 点它只会弹
- * 「这个菜单项已经不在了（可能被改过）」（用户截图正是这一句）。
- * 现在：菜单里不再有系统项；停止键落在成员栏顶部、成员名单（每行就是 @）**之前**。
+ * 用户原话演变：
+ *   ①「这个菜单项已经不在（可能被改过）」→ 菜单里的「停止运行」是系统追加项，
+ *     点击解析只查群自己的菜单 ⇒ 永远解析不到、点了什么也不做；
+ *   ②「停止运行放到成员列表的 @ 前面去」→ ③「我的意思是加这里后面，有运行状态的，就在这里显示」
+ *     ⇒ **单成员的「停」排在 @ 后面、只在该成员运行中出现**；
+ *   ④「这一块删了，不要了」→ 常驻状态条（「当前没有运行中的任务」）整块移除。
+ *
+ * 判据：菜单无系统项 / 成员行「停」在 @ 之后且仅运行中 / 全局「停全部」在「成员 N」标题行 /
+ *       状态条 TSX 与 CSS 都删净 / 一次性回执 4 秒自动消失。
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -17,26 +21,32 @@ let checks = 0;
 let fails = 0;
 const ok = (cond, msg) => { checks += 1; console.log(`  ${cond ? "✓" : "✗"} ${msg}`); if (!cond) fails += 1; };
 
-console.log("【12bd】群聊停止键的位置（成员列表 @ 之前）");
+console.log("【12bg】群聊停止键的落点");
 
 const view = read("src/features/harness-team/04-team-group-view.tsx");
 const menuLib = read("src/lib/team-menu.mjs");
+const css = read("src/styles/61-team-mode.css");
 
-ok(!/STOP_MENU_ITEM/.test(view) && !/sys-stop/.test(menuLib),
-  "「指令」菜单不再追加系统项（sys-stop 常量与引用都已删除 —— 点了只会弹「菜单项已经不在了」）");
+ok(view.includes("STOP_MENU_ITEM") === false && menuLib.includes("sys-stop") === false,
+  "「指令」菜单不再追加系统项（点了只会弹「菜单项已经不在了」，用户截图点名）");
 
-const headAt = view.indexOf("team-group__members-head");
-const rowAt = view.indexOf("team-group__members-stoprow");
-const listAt = view.indexOf("<ul>", headAt);
-ok(headAt > 0 && rowAt > headAt && listAt > rowAt,
-  "停止键在成员栏**顶部**：成员标题之后、成员名单（每行是 @）之前");
+const atIdx = view.indexOf("team-group__member-at${");
+const stopIdx = view.indexOf("team-group__member-stop");
+ok(atIdx > 0 && stopIdx > atIdx,
+  "单成员「停」排在 @ **后面**（用户「加这里后面，有运行状态的，就在这里显示」）");
+ok(/isBot && running && \([\s\S]{0,320}?team-group__member-stop/.test(view),
+  "「停」只在该成员运行中渲染（谁在跑停谁，空闲成员不出现）");
 
-ok(/team-group__members-stoprow[\s\S]{0,400}?onClick=\{\(\) => void stopAll\(\)\}/.test(view),
-  "顶部那颗键接的就是原来的 stopAll（不是另造一条停止逻辑）");
+const headIdx = view.indexOf("team-group__members-head");
+const headBlock = headIdx < 0 ? "" : view.slice(headIdx, headIdx + 900);
+ok(headBlock.includes("team-group__members-stop") && headBlock.includes("stopAll()"),
+  "全局「停全部」在「成员 N」标题行（空闲也可点，做一次清理并回话）");
 
-const footAt = view.indexOf("team-group__members-foot");
-ok(footAt > 0 && !/members-stop/.test(view.slice(footAt, footAt + 400)),
-  "名单底部的 foot 不再放停止键（同一条功能只留一处，避免两个「停止运行」）");
+ok(view.includes("team-group__running") === false && css.includes("team-group__running") === false,
+  "常驻状态条整块删除（TSX 不再渲染、CSS 规则也清掉 —— 用户「这一块删了，不要了」）");
+
+ok(/menuMsgTimerRef/.test(view) && /setTimeout\(\(\) => setMenuMsg\(""\), 4000\)/.test(view),
+  "一次性回执 4 秒自动消失（不再把「已清理…」挂成常驻状态条）");
 
 console.log(fails ? `\n【team-stop】失败 ${fails} 项` : `\n【team-stop】通过 ${checks} 项`);
 process.exit(fails ? 1 : 0);
