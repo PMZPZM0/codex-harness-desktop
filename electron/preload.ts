@@ -1044,6 +1044,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetMenu: (groupId: string, items: unknown) => __ipc("harness-team:set-menu", 2, [groupId, items]),
   /* 团队模式：菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
   harnessTeamSetMenuPlacement: (groupId: string, placement: string) => __ipc("harness-team:set-menu-placement", 2, [groupId, placement]),
+  /* 团队模式：群消息排版（split = 伙伴左/用户右，left = 全部靠左） */
+  harnessTeamSetMessageLayout: (groupId: string, layout: string) => __ipc("harness-team:set-message-layout", 2, [groupId, layout]),
   /* 团队模式：群定时任务（整组替换，nextRunAt 由主进程算） */
   harnessTeamSetSchedule: (groupId: string, list: unknown) => __ipc("harness-team:set-schedule", 2, [groupId, list]),
   /* 团队模式：立刻运行一条定时任务 */

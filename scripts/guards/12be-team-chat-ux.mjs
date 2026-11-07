@@ -287,6 +287,12 @@ const catalog = [
     && /attachGroupTalkEvents\(server\)/.test(dispatch),
     "群派活接线到独立通道，⛔ 不再调 runDelegatedTask");
   ok(/\? \"伙伴\"/.test(badge), "外面会话标签改成「伙伴」");
+  /* ⛔⛔ 11-07 用户令：「把子会话调度权限关了，只关调度权限，不要动工作伙伴里面的群聊机制」——
+     伙伴会话也是子会话 ⇒ 一律没有对外调度权限（agent_invoke 被拒）；群聊机制（group_say 投递 /
+     runTalkTurn）不经过 canDispatchFrom，照常可用。 */
+  const dispatchCore = codeOnly(read("electron/features/dispatch-core.ts"));
+  ok(/lookupGroupThread\(threadId\)\)\s*return \{ restricted: true, label: "工作伙伴会话" \}/.test(dispatchCore),
+    "工作伙伴的伙伴会话没有对外调度权限（子会话一律不给 agent_invoke；群聊投递不受影响）");
 }
 
 /* ── ⑬ 艾特可见 + 群聊提示词不裸露 + 会话可分辨（11-07 真机两张截图）────────── */
@@ -475,6 +481,11 @@ const catalog = [
   const layoutView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/is-layout-left/.test(layoutView) && /\.team-group__stream\.is-layout-left \.team-msg\.is-human/.test(teamCss),
     "视图按选项切换「全部靠左」排版");
+  ok(/group\.messageLayout \?\? "split"/.test(layoutView) && !/team-message-layout::/.test(layoutView)
+    && /onSetMessageLayout/.test(layoutView),
+    "消息排版落群 JSON（⛔ 不再只存 localStorage；换设备也保留）");
+  const storeLayout = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/harnessTeamSetMessageLayout/.test(storeLayout), "store 接线 harnessTeamSetMessageLayout（主进程落盘）");
   ok(/team-group__badge/.test(layoutView) && /team-group__empty-icon/.test(layoutView)
     && /team-group__members-head/.test(teamCss),
     "群头有群徽标、空态有图标、成员栏标题有分隔（11-07 美化）");

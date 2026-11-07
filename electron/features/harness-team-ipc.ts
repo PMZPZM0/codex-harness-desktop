@@ -35,6 +35,7 @@ import {
   setManager,
   setPartnerMuted,
   setMemberAvatar,
+  setMessageLayout,
   withMentionPrefix,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
@@ -762,6 +763,15 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, groupId);
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setMemberAvatar(g, memberId, avatar) as GroupShape);
+    });
+
+    /* 群消息排版（11-07 用户令：进群设置、卡片选择，换机/重装也要保留）——
+       落进群 JSON（⛔ 不再只存在 localStorage）。 */
+    ipcHost.handle("harness-team:set-message-layout", (_event, groupId: string, layout: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      return saveOne(store, setMessageLayout(g, layout) as GroupShape);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {

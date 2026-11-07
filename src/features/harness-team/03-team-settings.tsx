@@ -732,6 +732,9 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
             </button>
           ))}
         </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{messageLayout === "left" ? "全部靠左" : "左右分栏"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
       </section>
 
       {/* ── 快捷指令（飞书 §3：`ChatBotMenu` 菜单树 + TriggerMenuEvent）────────── */}

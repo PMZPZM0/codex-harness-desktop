@@ -398,6 +398,12 @@
   cursor: pointer;
 }
 .team-group__rename-btn:hover { border-color: var(--line); color: var(--text); }
+/* 11-07 优化：标题行悬停 / 键盘聚焦才露出「改名」，平时不抢群名。 */
+@media (hover: hover) {
+  .team-group__title-row .team-group__rename-btn { opacity: 0; transition: opacity 0.12s ease; }
+  .team-group__title-row:hover .team-group__rename-btn,
+  .team-group__title-row:focus-within .team-group__rename-btn { opacity: 1; }
+}
 .team-group__rename-input {
   width: 200px;
   max-width: 40vw;
@@ -611,7 +617,14 @@
   margin-top: 6px;
   padding-top: 5px;
   border-top: 1px dashed var(--line-soft);
+  /* 11-07 优化：操作条默认淡出，悬停 / 键盘聚焦 / 正在运行才显示，减少每轮一条虚线的噪声。 */
+  opacity: 0;
+  transition: opacity 0.12s ease;
 }
+.team-msg:hover .team-msg__actions,
+.team-msg:focus-within .team-msg__actions,
+.team-msg.is-live .team-msg__actions { opacity: 1; }
+@media (hover: none) { .team-msg__actions { opacity: 0.9; } }
 .team-msg__actions button {
   padding: 0;
   border: 0;
@@ -1211,6 +1224,7 @@
 .team-settings__layout-card.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .team-settings__layout-card strong { display: flex; align-items: center; gap: 5px; font-size: 12px; }
 .team-settings__layout-card small { color: var(--faint); font-size: 11px; }
+.team-settings__layout-current strong { color: var(--text); }
 .team-settings__layout-demo {
   display: flex;
   flex-direction: column;
@@ -1696,7 +1710,7 @@
   top: auto;
   bottom: calc(100% + 8px);
   width: 268px;
-  max-height: 320px;
+  max-height: min(320px, 45vh);
   overflow-y: auto;
 }
 .team-composer__pane-flyout {
@@ -1705,7 +1719,7 @@
   bottom: calc(100% + 8px);
   z-index: 50;
   width: min(360px, calc(100vw - 48px));
-  max-height: 320px;
+  max-height: min(320px, 45vh);
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--bg);
@@ -1714,7 +1728,7 @@
 }
 .team-composer__pane-flyout .team-composer__skill-pane {
   min-height: 0;
-  max-height: 320px;
+  max-height: min(320px, 45vh);
   border: 0;
   border-radius: 0;
   background: transparent;

@@ -27,6 +27,11 @@ export async function run() {
     && /\.project-menu\.is-up\s*\{[^}]*bottom:\s*calc\(100% - 2px\)/.test(readFileSync(join(ROOT, "src", "styles", "15-queued-messages.css"), "utf8")) ? ok : fail)(
     "【180】项目菜单自适应：靠近底部向上弹（⛔ 不再被侧栏底边裁掉）"
   );
+  /* 11-07 优化：项目菜单补「点外部关闭 + Esc」——原来只靠 mouseleave，键盘/触屏关不掉。 */
+  (/\.project-menu, \.project-item-menu-btn/.test(side180) && /event\.key === "Escape"/.test(side180)
+    && /document\.addEventListener\("pointerdown"/.test(side180) ? ok : fail)(
+    "【180】项目菜单支持点外部关闭 + Esc（键盘 / 触屏也能关）"
+  );
   // ① 删「会话备份」入口（用户：「会话备份选项删了，前面不需要这个了」）。
   //   ⛔ 只删**侧栏入口**：设置页里的 backup 页保留（用户说的是"主界面左侧侧边栏的"）。
   (!/setSettingsPage\("backup"\)/.test(side180) ? ok : fail)(

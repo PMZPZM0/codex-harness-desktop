@@ -680,6 +680,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 群消息排版（split / left）：与 menuPlacement 同构，落群 JSON（⛔ 不再只存 localStorage）。 */
+  const saveMessageLayout = useCallback(
+    async (groupId: string, layout: "split" | "left") =>
+      apply((await window.codex.harnessTeamSetMessageLayout(groupId, layout)) as MutationResult),
+    [apply],
+  );
+
   /** 定时任务（整组替换；nextRunAt 由主进程算，渲染层不推算调度时刻） */
   const saveSchedules = useCallback(
     async (groupId: string, list: unknown[]) =>
@@ -710,7 +717,7 @@ export function useTeamGroups() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
-    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
+    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, clearMessages,
   };
 }

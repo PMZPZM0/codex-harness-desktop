@@ -392,6 +392,21 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
   /* 项目菜单向上弹（11-07 用户：「选项没有自适应，都到下面了」）：靠近侧栏底部时翻到行上方。 */
   const [projectMenuUp, setProjectMenuUp] = useState(false);
+  /* 11-07 优化：项目菜单补「点外部关闭 + Esc」——原来只靠 mouseleave，键盘/触屏会关不掉。 */
+  useEffect(() => {
+    if (!projectMenu) return;
+    const onDown = (event: PointerEvent) => {
+      const hit = (event.target as HTMLElement | null)?.closest?.(".project-menu, .project-item-menu-btn");
+      if (!hit) setProjectMenu(null);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setProjectMenu(null); };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [projectMenu, setProjectMenu]);
   /* 新手教程（10-21 侧栏重排）：入口挪进底部导航组 ⇒ 打开状态提到这里（受控交给 NewbieGuide）。 */
   const [newbieOpen, setNewbieOpen] = useState(false);
   /* 拓展功能（10-24 立，10-25 更名；原「功能入口」）：可配置排序 / 更多分组 / 两种展示位置（上下移动），动作经总线回到侧栏壳。

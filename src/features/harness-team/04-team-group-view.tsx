@@ -85,6 +85,8 @@ type Props = {
   onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
   /** 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）：只改这个群里的这张脸；空串 = 恢复默认 */
   onSetAvatar?: (memberId: string, avatar: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 群消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左（主进程落盘） */
+  onSetMessageLayout?: (next: "split" | "left") => void;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
   onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
@@ -120,24 +122,15 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar,
+  onStopPartner, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
   const userName = useUserName();
   const [showSettings, setShowSettings] = useState(false);
   /* 11-07 用户令：「群设置里加一个选项，消息左右选项，卡片展示」——
-     每个群一份（localStorage；视图偏好不写进群 JSON）。split = 伙伴靠左/用户靠右；left = 全部靠左。 */
-  const layoutKey = `team-message-layout::${group.id}`;
-  const readLayout = (): "split" | "left" => {
-    try { return localStorage.getItem(layoutKey) === "left" ? "left" : "split"; } catch { return "split"; }
-  };
-  const [messageLayout, setMessageLayoutState] = useState<"split" | "left">(readLayout);
-  useEffect(() => { setMessageLayoutState(readLayout()); }, [group.id]);
-  const setMessageLayout = (next: "split" | "left") => {
-    setMessageLayoutState(next);
-    try { localStorage.setItem(layoutKey, next); } catch { /* 存储不可用：本次会话生效 */ }
-  };
+     存进群 JSON（`messageLayout`，主进程落盘）；split = 伙伴靠左 / 用户靠右，left = 全部靠左。 */
+  const messageLayout = group.messageLayout ?? "split";
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
   const [text, setText] = useState("");
@@ -721,7 +714,7 @@ export function TeamGroupView({
           onSaveMenu={onSaveMenu}
           onSaveMenuPlacement={onSaveMenuPlacement}
           messageLayout={messageLayout}
-          onMessageLayout={setMessageLayout}
+          onMessageLayout={(next) => onSetMessageLayout?.(next)}
           onSaveSchedules={onSaveSchedules}
           onRunSchedule={onRunSchedule}
         />

@@ -71,6 +71,8 @@ export interface TeamGroupLite {
   members: TeamMemberLite[];
   /** 派生成员（团成员，合成 id）的头像覆盖表 */
   avatars?: Record<string, string>;
+  /** 消息排版：split = 伙伴靠左/用户靠右；left = 全部靠左 */
+  messageLayout?: "split" | "left";
   guard: TeamGuard;
   /** 群简介（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
   memory: string;
@@ -173,6 +175,8 @@ export function removePartner(
 export function setPartnerMuted(group: TeamGroupLite, partnerId: string, muted: boolean): TeamGroupLite;
 /** 改某个成员在**这个群**里的头像（空串 = 恢复默认）；⛔ 不动专家中心 / 用户中心 */
 export function setMemberAvatar(group: TeamGroupLite, memberId: string, avatar: string): TeamGroupLite;
+export function setMessageLayout(group: TeamGroupLite, layout: string): TeamGroupLite;
+export function normalizeMessageLayout(value: unknown): "split" | "left";
 export function normalizeMemberAvatar(value: unknown): string;
 export const MAX_MEMBER_AVATAR_CHARS: number;
 export function canDelegate(fromId: string, toId: string, group: TeamGroupLite): boolean;
