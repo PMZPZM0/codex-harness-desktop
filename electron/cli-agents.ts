@@ -26,6 +26,7 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { augmentedPath, applyNoProxyFix } from "./toolchain";
 import { cliPermissionTierOf, cliPromptCommandFor } from "../src/lib/cli-command.mjs";
+import { isLocalBaseUrl, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
 
 /** 派活权限档（11-07）：safe=只读 / standard=可改文件（默认） / full=连命令一起放行。 */
 export type CliPermissionTier = ReturnType<typeof cliPermissionTierOf>;
@@ -584,23 +585,41 @@ export async function cliInstalledFlags(entries: Array<Pick<CliAgentDef, "id" | 
  *   ② 供应商口径对不上（例如 OpenAI 兼容 base_url 配 Claude Code 这种 Anthropic 协议 CLI）时
  *      **不硬凑** —— 没有对应的 env 就不注，CLI 用它自己的账号配置（提示词里如实说）。
  */
-export function cliModelEnv(input: { provider?: string; baseUrl?: string; model?: string }, apiKey: string): Record<string, string> {
+/** Codex CLI 的独立 home（11-07）：不碰用户自己的 `~/.codex`，由供应商同步写入 provider 配置。 */
+export function cliCodexHome(): string {
+  return path.join(app.getPath("userData"), "cli-codex-home");
+}
+
+/** 派活时注入的模型环境（11-07 扩展）：本机中转支持 OpenAI / Responses / Anthropic / Gemini 四种协议，
+ *  所以对 local 端点同时注入三套环境变量 —— Claude / Gemini 也能跟着主会话模型走。
+ *  ⛔ 外部供应商只注入 OpenAI/Anthropic（按 provider 判断），不瞎塞 Gemini 变量。 */
+export function cliModelEnv(input: { provider?: string; baseUrl?: string; model?: string; local?: boolean }, apiKey: string): Record<string, string> {
   const baseUrl = String(input?.baseUrl ?? "").trim();
   const model = String(input?.model ?? "").trim();
   const provider = String(input?.provider ?? "").trim();
-  if (!apiKey || (!baseUrl && !model)) return {};
-  const env: Record<string, string> = { OPENAI_API_KEY: apiKey };
+  const local = Boolean(input?.local);
+  /* 本机中转不校验 Key ⇒ 没有 Key 时用占位符；外部供应商没有 Key 就什么都不注入（退回 CLI 自己的登录态）。 */
+  const key = String(apiKey ?? "").trim() || (local ? "harness-local" : "");
+  if (!key || (!baseUrl && !model)) return {};
+  const env: Record<string, string> = { OPENAI_API_KEY: key };
   if (baseUrl) {
     env.OPENAI_BASE_URL = baseUrl;
     env.OPENAI_API_BASE = baseUrl;
   }
   if (model) env.OPENAI_MODEL = model;
   const looksAnthropic = /anthropic/i.test(`${provider} ${baseUrl}`);
-  if (looksAnthropic) {
-    if (baseUrl) env.ANTHROPIC_BASE_URL = baseUrl;
-    env.ANTHROPIC_AUTH_TOKEN = apiKey;
-    env.ANTHROPIC_API_KEY = apiKey;
+  if (looksAnthropic || local) {
+    const root = stripV1Suffix(baseUrl);
+    if (root) env.ANTHROPIC_BASE_URL = root;
+    env.ANTHROPIC_AUTH_TOKEN = key;
+    env.ANTHROPIC_API_KEY = key;
     if (model) env.ANTHROPIC_MODEL = model;
+  }
+  if (local) {
+    const root = stripV1Suffix(baseUrl);
+    if (root) env.GOOGLE_GEMINI_BASE_URL = root;
+    env.GEMINI_API_KEY = key;
+    if (model) env.GEMINI_MODEL = model;
   }
   return env;
 }

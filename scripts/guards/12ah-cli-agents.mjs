@@ -206,15 +206,18 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/binOnPath\(cli\.bin\)/.test(delegationSrc), "⛔ 派活前现查 PATH（缓存拦不住模型凭参数硬调，执行侧必须重检）");
   ok(/未安装：到 设置 → 开发工具 → CLI 智能体 点「一键安装」/.test(delegationSrc),
     "未装就拒并给可操作指引（不烧一回合让被委派会话自己发现）");
-  ok(/cliModelEnv\(\{ provider, baseUrl: customModel\?\.baseUrl, model: effectiveModel \}, apiKey\)/.test(delegationSrc),
-    "派 CLI 时把主会话的供应商配置交给 cliModelEnv（base_url / key / model）");
+  ok(/cliModelEnv\(\{ provider, baseUrl: customModel\?\.baseUrl, model: effectiveModel, local: isLocalBaseUrl\(customModel\?\.baseUrl\) \}, apiKey\)/.test(delegationSrc),
+    "派 CLI 时把主会话的供应商配置交给 cliModelEnv（base_url / key / model / local）");
   ok(/shell_environment_policy = \{ inherit: "all", ignore_default_excludes: true, set: \{ PATH: augmentedPath\(\), \.\.\.cliShellEnv \} \}/.test(delegationSrc),
     "env 经 thread/start 的 shell_environment_policy 注入（并带上 PATH —— 整表覆盖会顶掉 config.toml 的增强 PATH）");
   const envSrc = mainSrc;
   ok(/export function cliModelEnv/.test(envSrc) && /OPENAI_API_KEY/.test(envSrc) && /OPENAI_BASE_URL/.test(envSrc) && /OPENAI_MODEL/.test(envSrc),
     "cliModelEnv 注 OPENAI_* 惯例变量（OpenAI 兼容系 CLI 免配置）");
-  ok(/ANTHROPIC_BASE_URL/.test(envSrc) && /looksAnthropic/.test(envSrc), "供应商像 Anthropic 时才注 ANTHROPIC_*（协议对不上不硬凑）");
-  ok(/if \(!apiKey \|\| \(!baseUrl && !model\)\) return \{\};/.test(envSrc), "没有 Key 就不注（半套环境只会把 CLI 自己的配置弄坏）");
+  ok(/ANTHROPIC_BASE_URL/.test(envSrc) && /looksAnthropic \|\| local/.test(envSrc),
+    "供应商像 Anthropic、或本机中转（多协议）时才注 ANTHROPIC_*（协议对不上不硬凑）");
+  ok(/if \(!key \|\| \(!baseUrl && !model\)\) return \{\};/.test(envSrc)
+    && /\(local \? "harness-local" : ""\)/.test(envSrc),
+    "没有 Key（且非本机中转）就不注；本机中转不校验 Key，用占位符才跟得上模型");
 }
 
 /* ── ⑦d 模型侧配套工具（10-31 用户令：「看看有没有配套工具，codex 可以新建智体、专家、专家团，
@@ -644,9 +647,9 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
       full: 'claude -p "{prompt}" --permission-mode bypassPermissions',
     },
     codex: {
-      safe: 'codex exec "{prompt}" --sandbox read-only',
-      standard: 'codex exec "{prompt}" --sandbox workspace-write',
-      full: 'codex exec "{prompt}" --sandbox danger-full-access',
+      safe: 'codex exec --sandbox read-only "{prompt}"',
+      standard: 'codex exec --approve-for-me "{prompt}"',
+      full: 'codex exec --dangerously-bypass-approvals-and-sandbox "{prompt}"',
     },
     gemini: {
       safe: 'gemini -p "{prompt}" --approval-mode plan',
@@ -734,6 +737,42 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(Boolean(presetClaude) && mergedPartial.name === presetClaude.name && mergedPartial.bin === presetClaude.bin
     && mergedPartial.permissionTier === "full" && mergedPartial.enabled === false,
     "⛔ 差异存档合并后保留预置 name/bin（先合并再归一），档位与启停照常生效");
+
+  /* ── 11-07 供应商自动跟随（安装即配置 / 切供应商自动更新 / 升级自动补）──────── */
+  const providers = await import(pathToFileURL(join(ROOT, "src/lib/cli-provider-config.mjs")).href);
+  ok(providers.isLocalBaseUrl("http://127.0.0.1:3425/v1") && !providers.isLocalBaseUrl("https://api.openai.com/v1"),
+    "本机中转识别（只有本机/内网才写含占位 Key 的配置）");
+  ok(providers.stripV1Suffix("http://127.0.0.1:3425/v1") === "http://127.0.0.1:3425",
+    "Anthropic/Gemini 的 base 剥掉 /v1（SDK 自己拼）");
+  const kimiToml = providers.kimiConfigToml({ baseUrl: "http://127.0.0.1:3425/v1", model: "m/x", apiKey: "harness-local" });
+  ok(/\[providers\.harness\]/.test(kimiToml) && /default_model = "harness\/m\/x"/.test(kimiToml) && /\[models\."harness\/m\/x"\]/.test(kimiToml),
+    "Kimi config.toml：provider / model / default_model 三处对齐");
+  const codexToml = providers.codexConfigToml({ baseUrl: "http://127.0.0.1:3425/v1", model: "m/x" });
+  ok(/model_provider = "harness"/.test(codexToml) && /env_key = "OPENAI_API_KEY"/.test(codexToml) && !/harness-local/.test(codexToml),
+    "Codex 独立 home 配置：provider 指向当前供应商，文件里不写 Key");
+  const geminiMerged = providers.mergeGeminiSettings({ theme: "dark", security: { auth: { keep: 1 } } }, { model: "m/x" });
+  ok(geminiMerged.theme === "dark" && geminiMerged.security.auth.keep === 1
+    && geminiMerged.security.auth.selectedType === "gemini-api-key" && geminiMerged.model.name === "m/x",
+    "Gemini settings 合并（保留用户设置 + 补 API Key 认证）");
+
+  ok(/local\?: boolean/.test(mainSrc) && /GEMINI_API_KEY/.test(mainSrc) && /ANTHROPIC_AUTH_TOKEN = key/.test(mainSrc)
+    && /export function cliCodexHome/.test(mainSrc),
+    "派活环境：本机中转同时注入 OpenAI / Anthropic / Gemini 三套 + Codex 独立 home");
+  const cliEnvSrc = readFileSync(join(ROOT, "electron/boss-groups/cli-env.ts"), "utf8");
+  ok(/CODEX_HOME = cliCodexHome\(\)/.test(cliEnvSrc) && /isLocalBaseUrl\(custom\?\.baseUrl\)/.test(cliEnvSrc),
+    "群成员 CLI 派活：CODEX_HOME + local 判定");
+  ok(/CODEX_HOME: cliCodexHome\(\)/.test(delegationSrc) && /isLocalBaseUrl\(customModel\?\.baseUrl\)/.test(delegationSrc),
+    "@ 调度的 CLI 会话：shell 环境同样带 CODEX_HOME + local");
+  const syncSrc = readFileSync(join(ROOT, "electron/cli-agent-provider-sync.ts"), "utf8");
+  ok(/codexConfigToml/.test(syncSrc) && /kimiConfigToml/.test(syncSrc) && /mergeGeminiSettings/.test(syncSrc)
+    && /isLocalBaseUrl\(baseUrl\)/.test(syncSrc) && /\.harness\.bak/.test(syncSrc),
+    "同步模块：Codex / Gemini / Kimi 落盘 + 仅本机中转写含 Key 配置 + 首次改动留备份");
+  const rootMainSrc = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
+  ok(/syncCliAgentProviderConfig/.test(rootMainSrc), "启动时同步一次（离线改过供应商也能跟上）");
+  const applySrc = readFileSync(join(ROOT, "electron/features/custom-model-apply.ts"), "utf8");
+  ok(/syncCliAgentProviderConfig/.test(applySrc), "切换供应商后自动重配");
+  const installSrc = readFileSync(join(ROOT, "electron/cli-install.ts"), "utf8");
+  ok((installSrc.match(/syncCliAgentProviderConfig/g) || []).length >= 2, "安装 / 升级完成后自动补配置");
 }
 
 rmSync(sandbox, { recursive: true, force: true });

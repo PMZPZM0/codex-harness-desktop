@@ -268,6 +268,10 @@ installCrashDiagnostics();
 
 initRuntimePaths();
 
+/* 11-07 用户令：「安装 cli 就全部自动配置，跟着供应模型来」——启动时把已装 CLI 的
+   provider 配置同步一次（Codex 独立 home / Gemini / Kimi；旁路，失败不影响启动）。 */
+void import("./cli-agent-provider-sync").then((m) => m.syncCliAgentProviderConfig()).catch(() => undefined);
+
 /* ⛔ 10-15 启动自愈：宿主 cwd 的项目信任门禁（幂等）—— config.toml 缺 [projects] 信任条目时
    引擎每个回合都弹 configWarning「Project-local config … disabled until the project is trusted」。
    在 initRuntimePaths 之后调用（userData/codexHome 已可求值）。 */

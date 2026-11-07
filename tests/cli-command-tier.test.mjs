@@ -18,12 +18,20 @@ test("权限档：缺省与脏值一律回落 standard", () => {
 test("权限档：六个核实过的 CLI 各自追加正确参数", () => {
   assert.equal(cliPromptCommandFor("claude", "standard"), 'claude -p "{prompt}" --permission-mode acceptEdits');
   assert.equal(cliPromptCommandFor("claude", "full"), 'claude -p "{prompt}" --permission-mode bypassPermissions');
-  assert.equal(cliPromptCommandFor("codex", "standard"), 'codex exec "{prompt}" --sandbox workspace-write');
-  assert.equal(cliPromptCommandFor("codex", "safe"), 'codex exec "{prompt}" --sandbox read-only');
+  assert.equal(cliPromptCommandFor("codex", "standard"), 'codex exec --approve-for-me "{prompt}"');
+  assert.equal(cliPromptCommandFor("codex", "safe"), 'codex exec --sandbox read-only "{prompt}"');
   assert.equal(cliPromptCommandFor("gemini", "full"), 'gemini -p "{prompt}" --approval-mode yolo');
   assert.equal(cliPromptCommandFor("qwen", "standard"), 'qwen --prompt "{prompt}" --approval-mode auto-edit');
   assert.equal(cliPromptCommandFor("qoder", "standard"), 'qoder -p "{prompt}" --permission-mode accept_edits');
   assert.equal(cliPromptCommandFor("codebuddy", "full"), 'codebuddy -p "{prompt}" --permission-mode bypassPermissions');
+});
+
+test("权限档：Codex 的参数必须插在提示词之前（放在后面会被当成提示词）", () => {
+  for (const tier of ["safe", "standard", "full"]) {
+    const command = cliPromptCommandFor("codex", tier);
+    const head = command.split('"{prompt}"')[0].trim();
+    assert.ok(head.startsWith("codex exec ") && head.length > "codex exec".length, tier);
+  }
 });
 
 test("权限档：Kimi 2.5.2 的 --auto/--yolo 与 -p 互斥 ⇒ 不加参数", () => {

@@ -18,7 +18,8 @@ import { senderFromDispatch, senderLineOf, taskLineOf, normalizeSender } from ".
 import { SUBCONV_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
-import { binOnPath, buildCliRolePrompt, cliModelEnv, readUsableCliAgents } from "../cli-agents";
+import { binOnPath, buildCliRolePrompt, cliCodexHome, cliModelEnv, readUsableCliAgents } from "../cli-agents";
+import { isLocalBaseUrl } from "../../src/lib/cli-provider-config.mjs";
 import { augmentedPath } from "../toolchain";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
@@ -207,7 +208,11 @@ export async function runDelegatedTask(input: {
      ⛔ Key 只进 shell 环境（引擎请求体），不进提示词 / 不落 rollout；PATH 一起带上 ——
         该 policy 是整表覆盖，不写 PATH 会把 config.toml 里那份增强 PATH 顶掉（等于废掉工具链）。 */
   const cliShellEnv = target.kind === "cli"
-    ? cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel }, apiKey)
+    ? {
+        ...cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel, local: isLocalBaseUrl(customModel?.baseUrl) }, apiKey),
+        /* Codex CLI 用应用自己的独立 home（不碰用户 ~/.codex；provider 由供应商同步写入）。 */
+        CODEX_HOME: cliCodexHome(),
+      }
     : null;
   const threadConfig: Record<string, unknown> = {};
   if (shouldBindHarness(customModel)) {

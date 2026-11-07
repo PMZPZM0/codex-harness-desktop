@@ -58,8 +58,9 @@ export const CLI_PERMISSION_TIERS = ["safe", "standard", "full"];
 const CLI_PERMISSION_FLAGS = {
   /* Claude Code：-p 下权限提示无人可答 ⇒ 默认拒绝；acceptEdits 放行编辑，bypassPermissions 全放行。 */
   claude: { safe: "", standard: "--permission-mode acceptEdits", full: "--permission-mode bypassPermissions" },
-  /* Codex CLI：exec 默认 read-only（不写、不跑、不联网）；显式给沙箱档。 */
-  codex: { safe: "--sandbox read-only", standard: "--sandbox workspace-write", full: "--sandbox danger-full-access" },
+  /* Codex CLI：`-s/--sandbox` 在本版被策略层忽略（实测仍按 read-only 拦写）；可用的是
+     `--approve-for-me`（走 workspace-write + 自动审查）与 `--dangerously-bypass-approvals-and-sandbox`。 */
+  codex: { safe: "--sandbox read-only", standard: "--approve-for-me", full: "--dangerously-bypass-approvals-and-sandbox" },
   /* Gemini CLI：非交互无法授权工具；plan 只读、auto_edit 放行编辑、yolo 全放行。 */
   gemini: { safe: "--approval-mode plan", standard: "--approval-mode auto_edit", full: "--approval-mode yolo" },
   /* Qwen Code：Gemini 同源，审批档取值见其 /approval-mode 文档。 */
@@ -94,10 +95,21 @@ export function cliSupportsPermissionTier(bin) {
 export function applyCliPermissionTier(template, tier) {
   const tpl = String(template ?? "").trim();
   if (!tpl.includes("{prompt}")) return tpl;
-  const bin = cliBinOf(tpl);
+  const bin = cliBINOfSafe(tpl);
   const flags = CLI_PERMISSION_FLAGS[BIN_ALIASES[bin] ?? bin]?.[cliPermissionTierOf(tier)] ?? "";
   if (!flags || tpl.includes(flags)) return tpl;
+  /* ⛔ Codex 的选项必须写在 PROMPT **之前**：`codex exec "{prompt}" --sandbox …` 里的
+     `--sandbox` 会被当成提示词的一部分（实测：工作区写入仍被 read-only 策略拦下）。
+     模板形如 `codex exec "{prompt}"` ⇒ 把参数插到子命令后面。 */
+  if ((BIN_ALIASES[bin] ?? bin) === "codex") {
+    return tpl.replace(/^(\S+\s+\S+)\s+/, `$1 ${flags} `);
+  }
   return `${tpl} ${flags}`;
+}
+
+function cliBINOfSafe(template) {
+  const hit = String(template ?? "").trim().match(/^["']?([^\s"']+)["']?/);
+  return hit ? normalizeBinName(hit[1]) : "";
 }
 
 /** 规范单轮命令 + 权限档参数（空串 = 没有核实过的模板）。 */

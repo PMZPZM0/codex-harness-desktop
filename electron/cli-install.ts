@@ -171,6 +171,8 @@ export async function installCliAgent(id: string): Promise<CliInstallOutcome> {
     }
     broadcastHarnessEvent({ type: "cli-agents-changed" } as any);
     emit(entry.id, "done", `已安装${check.version ? `（${check.version}）` : ""}`);
+    /* 11-07 用户令：「安装 cli 就全部自动配置」——装完立刻把它的 provider 配置跟上。 */
+    void import("./cli-agent-provider-sync").then((m) => m.syncCliAgentProviderConfig()).catch(() => undefined);
     return { ok: true, detail: `已安装 ${entry.name}${check.version ? ` · ${check.version}` : ""}` };
   } catch (error) {
     const message = String((error as Error)?.message ?? error);
@@ -389,6 +391,8 @@ export async function updateCliAgent(id: string): Promise<CliInstallOutcome> {
     }
     broadcastHarnessEvent({ type: "cli-agents-changed" } as any);
     emit(entry.id, "done", `已更新${check.version ? `（${check.version}）` : ""}`);
+    /* 11-07：升级会覆盖 CLI 自己的配置文件（Kimi/Codex/Gemini）——装完立刻重配一遍。 */
+    void import("./cli-agent-provider-sync").then((m) => m.syncCliAgentProviderConfig()).catch(() => undefined);
     return { ok: true, detail: `已更新 ${entry.name}${check.version ? ` · ${check.version}` : ""}` };
   } catch (error) {
     const message = String((error as Error)?.message ?? error);

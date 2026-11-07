@@ -400,4 +400,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // 运行中重写零影响；重启会打断所有在跑回合（「app-server restarted」），只在
   // 真正切换供应商/Key 的流程里才需要。
   if (opts?.restart !== false) await server.restart();
+  /* 11-07 用户令：「用户切换供应商，也自动配置更新」——把已装 CLI 的配置跟着改。
+     ⛔ 旁路：同步失败不影响供应商切换本身。 */
+  void import("../cli-agent-provider-sync").then((m) => m.syncCliAgentProviderConfig()).catch(() => undefined);
 }
