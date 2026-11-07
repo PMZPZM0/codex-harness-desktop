@@ -27,6 +27,7 @@ import type { DispatchTarget } from "../dispatch";
 import { readSubAgents } from "../main/09-agents-plugins";
 import { CLI_CATEGORIES, cliInstalledFlags, readUsableCliAgents } from "../cli-agents";
 import { delegateRegistry, teamRunStore } from "../runtime-refs";
+import { lookupGroupThread } from "./group-talk";
 // ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
 // 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
 // L2（注册侧不给工具）在渲染层，但那一层防不住「线程复用 / 竞态 / 以后有人改错注册点」——
@@ -36,7 +37,7 @@ import { delegateRegistry, teamRunStore } from "../runtime-refs";
  *  覆盖三类：① 被调度产生的临时会话（delegateRegistry）② 专家团会话（主理人 + 成员）
  *  ③ 单人专家的直达会话 —— ③ 走的是同一条 member-session 链路（单人专家 = 只有 lead 的团队），
  *  所以 teamRunStore 里的 thread→team 映射一并覆盖。 */
-async function restrictedThreadRole(threadId: string): Promise<{ restricted: boolean; label?: string }> {
+async function restrictedThreadRole(threadId: string): Promise<{ restricted: boolean; label?: string; dispatchOnly?: boolean }> {
   if (!threadId) return { restricted: false };
   if (await delegateRegistry.infoOf(threadId)) return { restricted: true, label: "被调度的临时会话" };
   if (teamRunStore.teamOfThread(threadId)) return { restricted: true, label: "专家 / 专家团" };
@@ -54,6 +55,13 @@ async function restrictedThreadRole(threadId: string): Promise<{ restricted: boo
       }
     }
   }
+  /* ⛔⛔ 11-07 用户令：「把子会话调度权限关了，只关调度权限，不要动工作伙伴里面的群聊机制」。
+     工作伙伴（群聊）的伙伴会话也是**子会话** —— 它们只有 group_say / group_read 这套沟通工具，
+     不该再对外调度（agent_invoke）。⛔ 群聊机制本身不受影响：群消息投递走宿主侧 runTalkTurn，
+     不经过 canDispatchFrom / 本函数（见 group-talk/01-channel 的文件头）。 */
+  /* `dispatchOnly` = **只关调度**（用户原话「只关调度权限」）：知识库写入 / 定时任务 / CLI 安装
+     这些非调度能力照旧，⛔ 别把整包「专家会话限制」套到伙伴头上。 */
+  if (lookupGroupThread(threadId)) return { restricted: true, label: "工作伙伴会话", dispatchOnly: true };
   return { restricted: false };
 }
 

@@ -47,9 +47,10 @@ bag.clearTeamCwd = clearTeamCwd as typeof bag.clearTeamCwd;
       bag.setTeamThreadsIndex((prev) => (prev[result.thread.id] === team.teamId ? prev : { ...prev, [result.thread.id]: team.teamId }));
       /* 主进程已登记 members；当前窗口也要立刻更新，否则侧栏在 teamThreadsMap 重拉前
          会把这条成员会话按主理人聚类（用户看到的「又开了一个专家团」）。 */
-      if (member.id !== team.lead.id) {
-        bag.setTeamMemberThreadIds((prev) => (prev.has(result.thread.id) ? prev : new Set(prev).add(result.thread.id)));
-      }
+      /* ⛔ 11-07：一对一直达会话（成员 / 主理人都算）记进「直达」名单 —— 侧栏**不把它并进专家团簇**、
+         徽标判「专家」（用户：「开单独专家怎么显示是专家团标签」）。 */
+      bag.setTeamMemberThreadIds((prev) => (prev.has(result.thread.id) ? prev : new Set(prev).add(result.thread.id)));
+      bag.setTeamDirectThreadIds((prev) => (prev.has(result.thread.id) ? prev : new Set(prev).add(result.thread.id)));
       if (result.role) bag.rememberExpertRole(result.thread.id, result.role);
       // 会话名自动同步角色名（10-01 用户令）：专家（单人/主理人直连）会话 = 专家名，
       // 不让首条消息顶掉。member 行显示本就剥团队前缀只留职能名，这里对齐。

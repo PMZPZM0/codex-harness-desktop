@@ -1574,6 +1574,20 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/clusterableTeams\.has\(teamId\)[\s\S]{0,120}?keptClusters\.set\(teamId, cluster\)/.test(part04Src) && /members\?\.length \?\? 0\) > 0/.test(part04Src) ? ok : fail)(
       "【207】只有配置了成员的专家团才聚类（专家/专家包会话平铺——把零成员团队聚成簇 = 用户点名的「专家归类到一起」）"
     );
+    /* ⛔⛔ 11-07 用户报「开单独专家怎么显示是专家团标签，专家是专家，专家团是专家团」：
+       ① 一对一直达会话（members 的 key 以 `direct:` 开头）是**单聊** ⇒ 不进团队簇、徽标判「专家」；
+       ② 主会话不在列表时**不许把成员提拔成簇头**（旧兜底按标题猜，成员改过名就中招 ⇒ 单聊挂「专家团」）。
+       ⛔ 负向断言锚「按标题找 lead」的代码形态：注释里可以提，代码里不许再出现。 */
+    (/const entryIsDirectExpert = bag\.teamDirectThreadIds\.has\(entry\.id\)/.test(rowsSrc)
+      && /entryTeamMemberCount === 0 \|\| entryIsDirectExpert \|\| entryIsMember/.test(rowsSrc) ? ok : fail)(
+      "【207】一对一直达会话的徽标 = 「专家」（⛔ 不许因为团队有成员就判成专家团）"
+    );
+    (/teamDirectThreadIds\.has\(entry\.id\)\) continue;/.test(part04Src) ? ok : fail)(
+      "【207】一对一直达会话不进团队簇（单聊不该被并进「专家团」分组）"
+    );
+    (!/cluster\.members\.find\(\(entry\)[\s\S]{0,200}?name\.startsWith\("\[专家团"\)/.test(part04Src) ? ok : fail)(
+      "【207】⛔ 不许把成员提拔成簇头（用户实测：单独专家会话因此挂上「专家团」徽标）"
+    );
     /* ⛔ 09-29 用户实测：专家团簇行自带 09-14 的淡蓝底+描边+左色条（旧"团队条"装饰），
        与新选中态撞车（看起来像被选中）。身份区分一律用「专家团」徽章，不用底色。 */
     (/thread-source-badge/.test(css207) && /tone-team/.test(css207) && /tone-expert/.test(css207) ? ok : fail)(

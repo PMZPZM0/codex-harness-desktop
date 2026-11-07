@@ -112,6 +112,11 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
     for (const entry of bag.listThreads) {
       const teamId = bag.teamThreadsIndex[entry.id];
       if (!teamId) continue;
+      /* ⛔⛔ 11-07 用户报「开单独专家显示是专家团标签」：**一对一直达会话**（专家中心「打开对话」）
+         只是被登记成成员（为了记忆/权限），它本身是单聊 ⇒ 不进团队簇。
+         否则主会话不在列表时它会被下面的兜底提拔成「簇头」，渲染成专家团。
+         ⛔ 团运行时派出的成员会话（key 不带 `direct:`）不受影响，仍按簇分组。 */
+      if (bag.teamDirectThreadIds.has(entry.id)) continue;
       let cluster = clusters.get(teamId);
       if (!cluster) { cluster = { teamId, lead: null, members: [] }; clusters.set(teamId, cluster); }
       // ★ 权威判定：members 映射里的 = 成员会话；同团队里不在其中的 = **主会话**（团队名那条）
@@ -138,17 +143,11 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
       if (!cluster) { cluster = { teamId: team.teamId, lead: null, members: [] }; clusters.set(team.teamId, cluster); }
       cluster.members.push(entry);
     }
-    for (const cluster of clusters.values()) {
-      cluster.members.sort((a, b) => b.updatedAt - a.updatedAt);
-      if (!cluster.lead) {
-        // 主会话兜底：成员会话名是「团队 · 职能」或以 [专家团 开头；主会话名 = 团队名
-        const lead = cluster.members.find((entry) => {
-          const name = cleanThreadDisplayTitle(entry.name, { preview: entry.preview });
-          return !/\s·\s/.test(name) && !name.startsWith("[专家团");
-        });
-        if (lead) { cluster.lead = lead; cluster.members = cluster.members.filter((m) => m.id !== lead.id); }
-      }
-    }
+    for (const cluster of clusters.values()) cluster.members.sort((a, b) => b.updatedAt - a.updatedAt);
+    /* ⛔⛔ 11-07 用户报「开单独专家显示是专家团标签」：删掉旧的「主会话兜底提拔」——
+       它按标题猜（「不带 · 的就是主会话」）把某个**成员**升成簇头，一旦成员被改过名
+       （笔名不带 ·）就会中招 ⇒ 一个单聊会话挂上「专家团」徽标。
+       ⛔ 专家是专家：主会话不在列表时**不聚类**（成员平铺，徽标按成员判「专家」）。 */
     /* ⛔⛔ 10-01 用户令：「专家不要归类到一起——老子都是单独创建的专家会话」。
        只有**配置了成员**的专家团才聚类；专家（单人/专家包，members 为空）的一对一会话
        一律平铺——它们被 setThreadTeam 挂上 teamId 只是为了继承 cwd/记忆，
@@ -161,6 +160,9 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
     );
     const keptClusters = new Map<string, { teamId: string; lead: Thread | null; members: Thread[] }>();
     for (const [teamId, cluster] of clusters) {
+      /* ⛔ 主会话不在列表（被删/归档）⇒ 不聚类：成员会话回落成平铺行（徽标「专家」），
+         而不是挂一个没有主会话的「专家团」簇条（11-07 用户：专家是专家，专家团是专家团）。 */
+      if (!cluster.lead) continue;
       if (clusterableTeams.has(teamId)) keptClusters.set(teamId, cluster);
     }
     /* memberIds = 「最终会被渲染的簇成员」的**派生量**（不是 add/delete 累加出来的残留）。

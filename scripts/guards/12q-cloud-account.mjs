@@ -513,6 +513,11 @@ ok(/onlyIds/.test(syncSrc2) && /syncedLines/.test(syncSrc2) && /newLines/.test(s
 const reserveSrc3 = codeOnly(read("electron/features/cloud-reserve-ipc.ts"));
 ok(/sessionKinds/.test(reserveSrc3) && /listSessions/.test(reserveSrc3) && /input\?\.ids/.test(reserveSrc3),
   "云域按账本分类会话（中枢/专家团/调度/群成员）并只推勾选的 ids");
+/* ⛔ 11-07 用户报「开单独专家显示是专家团标签」：上传弹窗与侧栏同口径 ——
+   `direct:` 直达会话 = 专家；零成员团队（单人专家）= 专家；只有多成员团队主会话才是 lead。 */
+ok(/startsWith\("direct:"\) \? "expert" : "member"/.test(reserveSrc3)
+  && /teamHasMembers\(String\(teamId\)\) \? "lead" : "expert"/.test(reserveSrc3),
+  "上传分类与侧栏同口径（单聊 / 单人专家不标「专家团主理人」）");
 const dialogSrc = codeOnly(read("src/features/settings-cloud/SessionSyncDialog.tsx"));
 ok(/DEFAULT_PICK_KINDS/.test(dialogSrc) && /KIND_ORDER/.test(dialogSrc) && /cloudSyncPush\?\.\(\{ ids:/.test(dialogSrc),
   "上传弹窗按来源分组、默认只勾主会话/中枢/主理人，只提交勾选的 ids");

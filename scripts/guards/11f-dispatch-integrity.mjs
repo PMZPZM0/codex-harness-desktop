@@ -511,16 +511,21 @@ try {
   const fallbackSrc = readFileSync(join(ROOT, "electron/team-tool-fallback.ts"), "utf8");
   ok(phaseUiSrc.includes("dedupeTeamPhaseTasks") && fallbackSrc.includes("dedupeTeamPhaseTasks"),
     "渲染层与主进程兜底都走去重（只改一边 = 另一半仍会重复建会话）");
+  /* ⛔ 11-07：直达会话（成员 / 主理人）都要即时进「成员 + 直达」两张表 ——
+     只进成员表时主会话缺失会被旧兜底提拔成簇头（用户实测「单独专家显示成专家团」）。 */
   ok(/setTeamThreadsIndex/.test(phaseUiSrc) && /setTeamMemberThreadIds/.test(phaseUiSrc)
-    && /member\.id !== team\.lead\.id/.test(phaseUiSrc),
-    "新开团 / 成员直达会话即时更新侧栏聚簇索引（不等 teamThreadsMap 重拉）");
+    && /setTeamDirectThreadIds/.test(phaseUiSrc),
+    "新开团 / 直达会话即时更新侧栏聚簇索引（不等 teamThreadsMap 重拉）");
   ok(/withMemberLock/.test(tiSrc) && /memberLocks\.set\(key, tail\)/.test(tiSrc)
     && /return withMemberLock\(lockKey/.test(tiSrc),
     "team-invoke 同一成员并发串行（不同成员仍可并行）");
   const teamsIpcSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  /* ⛔ 11-07：直达会话（成员 / 主理人）**都**登记成员映射（`direct:` 前缀 = 单聊），
+     主理人另记 lead（团内调度闸 `isLeadThread || !isMemberThread` 仍放行）。
+     侧栏据此把直达会话判成「专家」、不进团队簇 —— 用户：「专家是专家，专家团是专家团」。 */
   ok(/rememberMemberThread\(`direct:\$\{started\.thread\.id\}`/.test(teamsIpcSrc)
-    && /if \(!isLead\)/.test(teamsIpcSrc) && /setThreadLead\(started\.thread\.id\)/.test(teamsIpcSrc),
-    "成员直达会话登记成员映射，主理人直达登记主理人（侧栏不再把成员会话显示成专家团）");
+    && /if \(isLead\) teamRunStore\.setThreadLead\(started\.thread\.id\)/.test(teamsIpcSrc),
+    "直达会话都登记成员映射，主理人另记 lead（侧栏不再把单聊显示成专家团）");
 
   /* 11-03 用户令「任何子会话都不能有调度权限」：
      ① 团队内部调度（team_member_invoke / team_phase_invoke）只认主理人；

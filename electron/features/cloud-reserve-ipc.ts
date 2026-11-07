@@ -32,6 +32,7 @@ import type { HostCaps } from "../runtime/seams";
 import { accountsBase, activeCredential } from "../cloud-api";
 import { runCloudSyncOnce, pullCloudSessions, readSyncSummary, listLocalSessions } from "../cloud-sync";
 import { delegateRegistry, internalThreads, teamRunStore } from "../runtime-refs";
+import { readUsableExpertTeams } from "../expert-teams";
 import { bossStore } from "../boss-groups/store";
 import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import type { IpcHost } from "../ipc-host";
@@ -117,8 +118,18 @@ export const cloudReserveFeature = defineFeature<null>({
       try {
         const team = teamRunStore?.listThreads?.();
         if (team) {
-          for (const id of Object.values(team.members || {})) if (id && !kinds.has(String(id))) kinds.set(String(id), "member");
-          for (const id of Object.keys(team.threads || {})) if (!kinds.has(id)) kinds.set(id, "lead");
+          /* ⛔⛔ 11-07 用户报「开单独专家显示是专家团标签」：上传弹窗是同一套分类的第二处消费方，
+             判据必须跟侧栏一致 —— `direct:` 前缀 = 一对一直达会话 ⇒「专家」；
+             团队没有成员（单人专家）⇒「专家」；只有真·多成员团队的主会话才是「专家团主理人」。 */
+          const teams = await readUsableExpertTeams().catch(() => []);
+          const teamHasMembers = (teamId: string) => (teams.find((t) => t.teamId === teamId)?.members?.length ?? 0) > 0;
+          for (const [key, id] of Object.entries(team.members || {})) {
+            if (!id || kinds.has(String(id))) continue;
+            kinds.set(String(id), String(key).startsWith("direct:") ? "expert" : "member");
+          }
+          for (const [id, teamId] of Object.entries(team.threads || {})) {
+            if (!kinds.has(id)) kinds.set(id, teamHasMembers(String(teamId)) ? "lead" : "expert");
+          }
         }
       } catch { /* 团队账本未就绪 */ }
       try {

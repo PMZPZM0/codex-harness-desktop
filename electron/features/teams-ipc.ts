@@ -198,13 +198,13 @@ export const teamsFeature = defineFeature<null>({
       const systemPrefix = `${withPersonalNorms(systemBase, await personalNormsBlock())}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       teamRunStore.setThreadTeam(started.thread.id, team.teamId);
-      /* ⛔ 成员直达会话也必须登记成员映射：只调 setThreadTeam 会让侧栏把它当成「主理人」，
-         多个成员直达会话就看起来像又开了好几个专家团。主理人直达不登记（它就是 lead）。 */
-      if (!isLead) {
-        teamRunStore.rememberMemberThread(`direct:${started.thread.id}`, team.teamId, member.id, started.thread.id);
-      } else {
-        teamRunStore.setThreadLead(started.thread.id);
-      }
+      /* ⛔ 直达会话（成员 / 主理人都一样）必须登记成员映射：只调 setThreadTeam 会让侧栏把它当成
+         「主理人」，多个直达会话就看起来像又开了好几个专家团。
+         ⛔⛔ 11-07 用户报「开单独专家显示是专家团标签」：`direct:` 前缀 = **一对一直达会话**，
+         侧栏据此把它当单聊（不并进团队簇、徽标判「专家」）；主理人直达也登记（同时保留 lead 标记，
+         团内调度闸 `isLeadThread || !isMemberThread` 仍放行）。 */
+      teamRunStore.rememberMemberThread(`direct:${started.thread.id}`, team.teamId, member.id, started.thread.id);
+      if (isLead) teamRunStore.setThreadLead(started.thread.id);
       if (input.defer) {
         // 会话标题只展示角色职能，不把成员真实姓名带到用户界面。
         const threadName = `${team.displayName.zh} · ${member.profession.zh || "成员"}`;

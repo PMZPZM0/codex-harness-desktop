@@ -237,7 +237,17 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const entryTeamMemberCount = entryTeamId
       ? (bag.expertTeams.find((team) => team.teamId === entryTeamId)?.members?.length ?? 0)
       : -1;
-    const leadBadge = entryTeamMemberCount === 0 ? { tone: "expert", label: "专家" } : { tone: "team", label: "专家团" };
+    /* ⛔⛔ 11-07 用户令（「开单独专家怎么显示是专家团标签……专家是专家，专家团是专家团」）：
+       「专家团」只属于**真的团队会话**。下面任一条成立 ⇒ 它是「专家」不是「专家团」：
+         ① 一对一直达会话（专家中心「打开对话」，members 的 key 以 `direct:` 开头）；
+         ② 成员会话（含被派活的团成员）—— 它只是团里的一位专家；
+         ③ 团队配置里没有成员（单人专家）——「团」不成立。
+       原先只看「团队有没有成员」，于是单聊会话（尤其被顶成簇头时）全挂成「专家团」。 */
+    const entryIsDirectExpert = bag.teamDirectThreadIds.has(entry.id);
+    const entryIsMember = bag.teamMemberThreadIds.has(entry.id);
+    const leadBadge = (entryTeamMemberCount === 0 || entryIsDirectExpert || entryIsMember)
+      ? { tone: "expert", label: "专家" }
+      : { tone: "team", label: "专家团" };
     /* 角色登记（10-01）：startTeamSession / startMemberDirectSession 建会话当刻就 rememberExpertRole，
        是「新建会话」唯一**同步可得**的身份来源（上面两张表都可能还没跟上）。 */
     const expertRole = bag.readStoredExpertRole?.(entry.id);

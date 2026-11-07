@@ -377,14 +377,27 @@ bag.teamThreadsIndex = teamThreadsIndex as typeof bag.teamThreadsIndex; bag.setT
   const [teamMemberThreadIds, setTeamMemberThreadIds] = useState<Set<string>>(new Set());
 bag.teamMemberThreadIds = teamMemberThreadIds as typeof bag.teamMemberThreadIds; bag.setTeamMemberThreadIds = setTeamMemberThreadIds as typeof bag.setTeamMemberThreadIds;
 
+  /** ⛔ 11-07 用户报「开单独专家显示是专家团标签」：`members` 里有两类成员会话 ——
+   *  ① 团运行时派出去的成员会话（key = `<主理人会话>|团|成员`）；
+   *  ② 用户在专家中心点「打开对话」建的**一对一直达会话**（key = `direct:<会话>|团|成员`）。
+   *  两者都算「成员」（徽标都该是「专家」），但②是**单聊**，不该被并进专家团簇里
+   *  （主会话不在列表时它甚至会被当成簇头 ⇒ 一个单聊会话挂上「专家团」）。
+   *  ⇒ 单独存一份 direct 名单，聚簇时跳过它们（徽标仍按成员判「专家」）。 */
+  const [teamDirectThreadIds, setTeamDirectThreadIds] = useState<Set<string>>(new Set());
+bag.teamDirectThreadIds = teamDirectThreadIds as typeof bag.teamDirectThreadIds; bag.setTeamDirectThreadIds = setTeamDirectThreadIds as typeof bag.setTeamDirectThreadIds;
+
   useEffect(() => {
     let alive = true;
     void window.codex.teamThreadsMap?.().then((doc) => {
       if (!alive) return;
       if (doc?.threads) bag.setTeamThreadsIndex(doc.threads);
-      if (doc?.members) bag.setTeamMemberThreadIds(new Set(Object.values(doc.members)));
+      if (doc?.members) {
+        const entries = Object.entries(doc.members as Record<string, string>);
+        bag.setTeamMemberThreadIds(new Set(entries.map(([, id]) => String(id))));
+        bag.setTeamDirectThreadIds(new Set(entries.filter(([key]) => key.startsWith("direct:")).map(([, id]) => String(id))));
+      }
     }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
-  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, registerKnownProject, unregisterKnownProject, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, threadAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds };
+  return { currentModelId, usingCustomModel, providerConfig, listThreads, dispatchCwdMap, viewTab, setViewTab, expandedProjects, setExpandedProjects, toggleProjectExpanded, cwdOverrides, setCwdOverrides, cwdOverridesRef, rememberThreadCwd, effectiveCwd, withCwdOverride, nameOverrides, setNameOverrides, nameOverridesRef, rememberThreadName, effectiveThreadName, withNameOverride, projectMenu, setProjectMenu, registerKnownProject, unregisterKnownProject, pinnedThreads, setPinnedThreads, togglePinThread, projectGroups, allProjectsCollapsed, toggleAllProjects, projectAutoExpandRef, threadAutoExpandRef, sourcedThreads, sourcedDispatch, sourcedChildrenOf, sourcedChildIds, allSourceGroupsCollapsed, teamThreadsIndex, setTeamThreadsIndex, teamMemberThreadIds, setTeamMemberThreadIds, teamDirectThreadIds, setTeamDirectThreadIds };
 }

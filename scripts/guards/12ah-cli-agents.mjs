@@ -239,9 +239,11 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && /name: "cli_agent_uninstall"[\s\S]{0,700}confirm: \{ type: "boolean"/.test(coreSrc)
     && /if \(args\.confirm !== true\)/.test(rpcSrc),
     "装/卸必须 confirm:true（用户明确同意；缺省一律拒绝）");
+  /* ⛔ 11-07：工作伙伴会话的受限是「只关调度」（dispatchOnly）⇒ 装卸软件这条**显式放过**它；
+     其余受保护会话（专家 / 团队 / 被调度）照旧一律拒绝。 */
   ok(/const restrict = await restrictedThreadRole\(callerThreadId\);\s*\n\s*const delegated = Boolean\(await delegateRegistry\.infoOf\(callerThreadId\)\);/.test(rpcSrc)
-    && /restrict\.restricted \|\| delegated/.test(rpcSrc),
-    "被委派 / 受保护会话无权装卸软件（越权面）");
+    && /\(restrict\.restricted && !restrict\.dispatchOnly\) \|\| delegated/.test(rpcSrc),
+    "被委派 / 受保护会话无权装卸软件（只有「只关调度」的伙伴会话例外）");
   ok(/await installCliAgent\(item\.id\)/.test(rpcSrc) && /await uninstallCliAgent\(item\.id\)/.test(rpcSrc),
     "执行端复用 cli-install.ts（⛔ 不另写 npm/pip 调用）");
   ok(/cli_agent_list \/ cli_agent_detect/.test(part08) && /cli_agent_install \/ cli_agent_uninstall/.test(part08),

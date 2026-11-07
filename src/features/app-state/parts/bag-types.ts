@@ -1094,6 +1094,8 @@ export interface Bag {
   setTeamThreadsIndex: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   teamMemberThreadIds: Set<string>;
   setTeamMemberThreadIds: React.Dispatch<React.SetStateAction<Set<string>>>;
+  teamDirectThreadIds: Set<string>;
+  setTeamDirectThreadIds: React.Dispatch<React.SetStateAction<Set<string>>>;
   expandedTeamClusters: Set<string>;
   expandedDispatchBlocks: Set<string>;
   setExpandedDispatchBlocks: React.Dispatch<React.SetStateAction<Set<string>>>;
