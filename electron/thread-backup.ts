@@ -247,6 +247,12 @@ export function stripHarnessBlocks(text: string): string {
   // 与召回段同属内部上下文 —— 导出/备份的正文里不得出现（09-22 实测气泡侧已泄漏过一轮）。
   out = out.replace(/^\[Harness 常驻记忆[^\]]*\][\s\S]*?^\[常驻记忆结束\][ \t]*\r?\n?/gm, "");
   out = out.replace(/^\[本轮已引用技能\][\s\S]*?^\[请按上述技能工作流执行\][ \t]*\r?\n?/gm, "");
+  /* 11-07：@ 点名块 / 时间块 / 统一记忆段 —— 与 src/lib/harness-block-strip.mjs 同口径。
+     导出与备份是用户可见正文，宿主指令一段都不能留。 */
+  out = out.replace(/^\[本轮点名对象\][\s\S]*?^\[点名结束\][ \t]*\r?\n?/gm, "");
+  out = out.replace(/^【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】|-{3,})[ \t]*\r?\n?/gm, "");
+  out = out.replace(/^\[当前时间\][\s\S]*?^\[时间结束\][ \t]*\r?\n?/gm, "");
+  out = out.replace(/^##\s[^\n]*（本次注入\s*\d+\s*\/\s*命名空间共\s*\d+\s*条）[^\n]*(?:\r?\n(?!\r?\n)[^\n]*)*\r?\n?/gm, "");
   /* 10-26：会话级告知块（调度开关变化）——随下一条消息注入，导出正文里不该出现。 */
   out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
   /* 10-26：旧会话补种的中枢角色说明（send.tsx 的 seedInjection）——同样只在模型侧，导出正文不出现。 */

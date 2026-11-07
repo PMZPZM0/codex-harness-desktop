@@ -932,7 +932,23 @@ if (state) {
 
   const strip = spawnSync(process.execPath, [join(ROOT, "scripts", "verify-injection-strip.mjs")], { cwd: ROOT, encoding: "utf8", timeout: 240_000 });
   ok(strip.status === 0,
-    `注入段剥离 + 群广播 + 告知队列 + 旧会话补种回归：39 项（18 种注入格式 + 6 组群事件 + 3 条告知队列 + 6 条补种记账 + 文案同源）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+    `注入段剥离 + 群广播 + 告知队列 + 旧会话补种回归（全部注入格式真跑）${strip.status === 0 ? "" : `（失败：${String(strip.stdout ?? "").split("\n").filter((l) => l.includes("✗")).slice(0, 3).join(" / ")}）`}`);
+  /* ⛔ 11-07 用户实测「内置注入的系统提示词从用户消息里透出来」：根因是 @ 点名块
+     `[本轮点名对象]…[点名结束]` 根本不在任何剥离链里。四处剥集（显示 / 导出 / 侧栏 / 记忆）
+     + 云同步标题必须同时补上，漏一处就是那处继续漏。 */
+  const stripSites = ["src/lib/harness-block-strip.mjs", "electron/thread-backup.ts", "electron/rollout-worker.cjs", "electron/memory-lessons.ts"];
+  const missingMention = stripSites.filter((file) => {
+    const src = read(file);
+    /* 正则源码里是 `\[本轮点名对象\]`，这里只认标签名（别被反斜杠卡住）。 */
+    return !/本轮点名对象/.test(src) || !/点名结束/.test(src);
+  });
+  ok(missingMention.length === 0,
+    `@ 点名块四处剥集同源（缺：${missingMention.join(" / ") || "无"}）`);
+  const missingGroupCtx = stripSites.filter((file) => !/【群聊上下文结束】/.test(read(file)));
+  ok(missingGroupCtx.length === 0,
+    `群聊上下文块四处剥集同源（缺：${missingGroupCtx.join(" / ") || "无"}）`);
+  ok(/\[本轮点名对象\]/.test(read("electron/cloud-sync.ts")) && /【群聊上下文/.test(read("electron/cloud-sync.ts")),
+    "云同步的会话标题/预览也把 @ 点名块 / 群聊上下文当注入边界切掉");
   /* ── 群广播（10-26 用户令「方案就按只广播这个完成」）───────────────────
      `[群事件]` 是成员汇总进来的群消息，⛔ 不能再套用户气泡（右对齐 + "你"）。
      呈现层只在**气泡这一层**换样式（群事件在引擎里就是一条 userMessage —— 换时间线渲染器会踩

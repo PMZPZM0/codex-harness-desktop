@@ -110,7 +110,7 @@ function userTextOf(row: { type?: string; payload?: Record<string, unknown> }): 
 /** 剥掉宿主注入块，留下真正的用户输入（没有则返回空串）。 */
 function cleanUserText(raw: string): string {
   let text = raw;
-  for (const marker of ["\n\n[Harness 常驻记忆", "\n\n<environment_context>", "\n\n[SYSTEM TASK", "\n\n# AGENTS.md"]) {
+  for (const marker of ["\n\n[Harness 常驻记忆", "\n\n[Harness 相关记忆", "\n\n<environment_context>", "\n\n[SYSTEM TASK", "\n\n[本轮点名对象]", "\n\n[本轮已引用技能]", "\n\n[当前时间]", "\n\n# AGENTS.md", "【群聊上下文 ·"]) {
     const at = text.indexOf(marker);
     if (at >= 0) text = text.slice(0, at);
   }

@@ -36,6 +36,22 @@ type UserMessageLike = { type: string; content?: { type: string; text?: string }
 /** 最小 turn 形态（同上） */
 type TurnWithItems = { items?: UserMessageLike[] };
 
+/** 群聊上下文块（team-models.groupContextBlock：群记忆 / 名录 / 组织关系）。
+ *  ⛔ 它是宿主拼在需求体**前面**的机器文本，不是用户说的话；成员会话气泡里只能留任务本身。
+ *  新格式带 `【群聊上下文结束】`；老会话没有这个标记，只能靠宿主拼的 `---` 分隔线兜底。 */
+function stripGroupContext(text: string): string {
+  const trimmed = String(text ?? "").replace(/^\s+/, "");
+  if (!trimmed.startsWith("【群聊上下文 · ")) return text;
+  const END = "【群聊上下文结束】";
+  const at = trimmed.indexOf(END);
+  if (at >= 0) {
+    return trimmed.slice(at + END.length).replace(/^\s*(?:\r?\n)?-{3,}[ \t]*(?:\r?\n)+/, "").trim();
+  }
+  const sep = trimmed.match(/\r?\n[ \t]*-{3,}[ \t]*(?:\r?\n)+/);
+  return (sep ? trimmed.slice((sep.index ?? 0) + sep[0].length) : trimmed).trim();
+}
+
+
 /** 把用户消息原文解析为结构化引用段。
  *  包含四类约定段：附件文件 / 技能 / 上下文 / SYSTEM TASK，cleanText 是剥完所有引用段后的剩余文本。 */
 export function parseUserRefs(text: string): ParsedUserRefs {
@@ -141,6 +157,8 @@ export function parseUserRefs(text: string): ParsedUserRefs {
       .replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "")
       .trim();
     if (taskMatch) requirement = requirement.replace(/^标题\s*[：:]\s*/, "");
+    /* 11-07：群聊派活把群上下文拼在任务前面 —— 显示侧只留用户真正交给它的任务。 */
+    requirement = stripGroupContext(requirement);
     if (requirement) {
       clean = "";
       teamTask = { kind: kindLabel.includes("团队") ? "team" : "member", label: kindLabel || undefined, requirement, ...(supervisorLine ? { supervisor: supervisorLine[1].trim() } : {}), ...(dispatched ? { dispatched: true } : {}) };
@@ -159,7 +177,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     if (legacy) {
       clean = "";
       // 无壳旧格式同样是宿主派发（角色提示词 + 「主理人分配的子任务」）
-      teamTask = { kind: "member", requirement: legacy[2].trim(), dispatched: true };
+      teamTask = { kind: "member", requirement: stripGroupContext(legacy[2].trim()), dispatched: true };
     }
   }
   /* ⛔⛔ 10-26 用户实测截图：老会话（角色说明曾拼进用户正文的那批）打开时，整段

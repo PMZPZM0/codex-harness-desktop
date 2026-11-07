@@ -454,7 +454,7 @@ export function groupContextBlock(group, options = {}) {
     lines.push("参考文件（本机绝对路径；需要时直接读，⛔ 别凭文件名猜内容）：");
     for (const f of files) lines.push(`- ${f.path}${f.note ? `（${f.note}）` : ""}`);
   }
-  return lines.join("\n");
+  return `${lines.join("\n")}\n【群聊上下文结束】`;
 }
 
 /**

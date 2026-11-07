@@ -291,6 +291,8 @@ test("注入块：空群不注入；有记忆/文件时按「标题→记忆→�
   assert.ok(b1.startsWith("【群聊上下文 · 智慧厨房】"));
   assert.ok(b1.includes("只做门店周报。"));
   assert.ok(!b1.includes("参考文件"));
+  /* 11-07：必须带结束标记 —— 显示侧靠它整段剥掉（老会话没有标记只能靠 `---` 兜底）。 */
+  assert.ok(b1.trimEnd().endsWith("【群聊上下文结束】"), "群上下文块要自带结束标记");
 
   const full = createGroup({
     id: "g", name: "智慧厨房", leadId: "u", members: [human("u")],
