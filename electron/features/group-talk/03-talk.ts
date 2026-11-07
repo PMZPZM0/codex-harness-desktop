@@ -62,21 +62,29 @@ async function withTimeout<T>(task: Promise<T>, name: string): Promise<T> {
  *  导出给接线层：群聊会话与互相投递共用同一份口径，⛔ 不写第二套。 */
 export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string): string {
   const roster = options.roster.map((m) => `${m.name}${m.targetProfession ? `（${m.targetProfession}）` : ""}`).join("、");
-  const lines = [
+  /* ⛔⛔ 11-07 真机：群聊会话是普通 thread，整段输入会被当成 userMessage 画进气泡 ——
+     上一版把【工作伙伴 · X】+ 工具说明 + 指令全裸给用户看（截图）。
+     ⇒ 用项目统一的 `[SYSTEM TASK · …]` 壳：user-refs.ts 只保留「=== 用户需求 ===」中间那段，
+       壳前/壳后一律丢弃 ⇒ 气泡里只剩那句人话；模型仍然读得到完整指令。
+     ⛔ 需求体第一行写发件人协议行（member · 名字），别让模型猜是谁在说话。 */
+  const need = [
+    "[SYSTEM TASK · 工作伙伴消息]",
+    "=== 用户需求 ===",
+    `发件人：member · ${from.name}`,
+    text,
+    "=== END ===",
+    "",
     `【工作伙伴 · ${options.groupName}】`,
-    `你是 ${me.name}${me.targetProfession ? `（${me.targetProfession}）` : ""}。这里是群聊，不是任务派发：下面这句是群里刚有人说的话，按你的身份回一句就行。`,
+    `你是 ${me.name}${me.targetProfession ? `（${me.targetProfession}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
     `群里的人：${roster || "（暂时只有你自己）"}`,
   ];
-  if (options.memory) lines.push(`群里的共享背景：${options.memory}`);
-  lines.push(
-    "你手上有三个群聊工具：group_say（说话；填 to=名字 就是直接说给那个人，他会在群里回你）、group_read（看之前聊了什么）、group_members（看都有谁）。",
-    "",
-    `${from.name} 刚在群里说：`,
-    `「${text}」`,
+  if (options.memory) need.push(`群里的共享背景：${options.memory}`);
+  need.push(
+    "你手上有三个群聊工具：group_say（说话；填 to=名字 就是直接说给那个人，他会在群里回你）、group_read、group_members。",
     "",
     "回一句人话。想让别人接话就另起一行写 `@名字：你要说的话`，或调 group_say 填 to —— 宿主会把这句送进他的会话，他的回复会以他的署名进群。别写任务书、别列要求清单、别调任何调度工具。",
   );
-  return lines.join("\n");
+  return need.join("\n");
 }
 
 /** 启动一轮群聊：先注册这个群的工具 hooks，再把第一句投递给被 @ 的人，之后自动接力。 */

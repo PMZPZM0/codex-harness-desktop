@@ -35,6 +35,7 @@ import {
   setManager,
   setPartnerMuted,
   setMemberAvatar,
+  withMentionPrefix,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -345,7 +346,9 @@ async function prepareGroupDispatch(
     authorKind: "human",
     /* ⛔⛔ 11-07 用户令：定时任务不是「用户发的」⇒ 结构化发送者，群视图据此出徽标。 */
     senderKind: source === "automation" ? "automation" : "user",
-    text,
+    /* ⛔⛔ 11-07 真机「艾特@看不见」：@ 是结构化 memberIds，正文里没有 @名字 ⇒
+       消息里一个提及都渲染不出来。把目标名字补进正文开头（同源、只一份）。 */
+    text: withMentionPrefix(text, targets.map((m) => m.name)),
     mentions: targets.map((m) => m.id),
   });
   if (!saved.ok) return { error: saved.error || "群消息没存上" };
@@ -440,6 +443,7 @@ async function runDispatchRounds(
       options.onPhase?.("started", partner, {});
       const res = await withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
         cwd: group.workspace || undefined,
+        groupName: group.name,
         ...(params.effort ? { effort: params.effort } : {}),
       }), partner.name);
       if (!res?.ok || !res?.threadId) {

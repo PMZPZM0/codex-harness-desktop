@@ -141,6 +141,8 @@ export function removeMemoryNote(
 /** 协作协议行（lead / member / single 三档口径） */
 export function collaborationProtocolLines(role: "lead" | "member" | "single"): string[];
 
+export function withMentionPrefix(text: string, names: readonly string[]): string;
+
 export function groupContextBlock(
   group: TeamGroupLite | unknown,
   options?: { forMemberId?: string; forTeam?: boolean; catalog?: unknown[] },

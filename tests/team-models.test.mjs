@@ -8,6 +8,7 @@ import {
   normalizeMemberAvatar,
   setMemberAvatar,
   collaborationProtocolLines,
+  withMentionPrefix,
   MAX_GROUP_MESSAGES,
   addPartner,
   appendGroupMessage,
@@ -536,4 +537,16 @@ test("群上下文：有团的群注入团队协议，自定义群只给单人�
   assert.ok(!/你是主理人/.test(soloBlock));
   /* ⛔ 自定义群里说"团成员也能这样叫"是误导（那里没有团成员） */
   assert.ok(!/团成员也能这样叫/.test(soloBlock));
+});
+
+/* ── 艾特可见（11-07 真机：「艾特@看不见」）────────────────────────────────
+   根因：@ 只走结构化 memberIds，落盘正文里没有 @名字 ⇒ linkifyMentions 无从解析。 */
+test("withMentionPrefix：把本轮 @ 的人补进正文开头，且正文已写过的名字不重复", () => {
+  assert.equal(withMentionPrefix("让团员自我介绍", []), "让团员自我介绍");
+  assert.equal(withMentionPrefix("让团员自我介绍", ["呈象"]), "@呈象 让团员自我介绍");
+  assert.equal(withMentionPrefix("让团员自我介绍", ["呈象", "洞见"]), "@呈象 @洞见 让团员自我介绍");
+  /* ⛔ 回归「同一条消息两个 @承枢」：用户手打过就不再补 */
+  assert.equal(withMentionPrefix("@承枢 打个招呼", ["承枢"]), "@承枢 打个招呼");
+  assert.equal(withMentionPrefix("@承枢 让 @洞见 也来", ["承枢", "洞见"]), "@承枢 让 @洞见 也来");
+  assert.equal(withMentionPrefix("  ", ["呈象"]), "@呈象");
 });

@@ -289,6 +289,23 @@ const catalog = [
   ok(/\? \"伙伴\"/.test(badge), "外面会话标签改成「伙伴」");
 }
 
+/* ── ⑬ 艾特可见 + 群聊提示词不裸露 + 会话可分辨（11-07 真机两张截图）────────── */
+{
+  const models = read("src/lib/team-models.mjs");
+  const ipcMain = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  const chanSrc = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  ok(/export function withMentionPrefix/.test(models) && /text: withMentionPrefix\(text, targets\.map/.test(ipcMain),
+    "⛔ 艾特补回落盘正文（@ 只走 memberIds 会导致消息里一个艾特都看不见）");
+  ok(/missing = list\.filter/.test(models),
+    "正文里已经写过的名字不再补（防「同一条消息两个 @承枢」回归）");
+  ok(/\[SYSTEM TASK · 工作伙伴消息\]/.test(talkSrc) && /=== 用户需求 ===/.test(talkSrc) && /=== END ===/.test(talkSrc),
+    "群聊输入包 SYSTEM TASK 壳：user-refs 只留需求体，⛔ 提示词不裸露在气泡");
+  ok(/发件人：member · /.test(talkSrc) && /你手上有三个群聊工具/.test(talkSrc),
+    "模型仍读得到发件人与工具说明（壳只影响显示，不影响指令）");
+  ok(/thread\/name\/set/.test(chanSrc) && /伙伴·/.test(chanSrc),
+    "群聊会话命名「伙伴·成员@群」——⛔ 不再是一堆随机笔名让人看不懂");
+}
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));

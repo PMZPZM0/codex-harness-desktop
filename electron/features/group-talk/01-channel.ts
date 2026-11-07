@@ -88,7 +88,7 @@ export function forgetGroupThreads(groupId: string): number {
 export async function ensureTalkThread(
   groupId: string,
   member: TalkMember,
-  options: { cwd?: string; onCreated?: (threadId: string) => void } = {},
+  options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void } = {},
 ): Promise<{ threadId: string; created: boolean }> {
   const key = talkKey(groupId, member.id);
   const all = readLedger();
@@ -108,6 +108,12 @@ export async function ensureTalkThread(
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) throw new Error("群聊会话创建失败（引擎没返回 threadId）");
+  /* ⛔ 11-07 真机「看不懂，一下两个会话」：群聊会话以前是随机笔名，用户分不清谁是谁。
+     统一命名为「伙伴·成员名@群名」，侧栏一眼可辨这是工作伙伴里的哪一位。 */
+  await server.request("thread/name/set", {
+    threadId,
+    name: `伙伴·${member.name}@${options.groupName || "群聊"}`.slice(0, 40),
+  }).catch(() => undefined);
   all[key] = { threadId, name: member.name, at: Date.now() };
   writeLedger(all);
   options.onCreated?.(threadId);
@@ -119,9 +125,9 @@ export async function runTalkTurn(
   groupId: string,
   member: TalkMember,
   inputText: string,
-  options: { cwd?: string; effort?: string } = {},
+  options: { cwd?: string; groupName?: string; effort?: string } = {},
 ): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
-  const { threadId } = await ensureTalkThread(groupId, member, { cwd: options.cwd });
+  const { threadId } = await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName });
   const turn: any = await server.request("turn/start", {
     threadId,
     input: [{ type: "text", text: inputText, text_elements: [] }],

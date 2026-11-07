@@ -547,6 +547,25 @@ export function collaborationProtocolLines(role) {
   ];
 }
 
+/**
+ * 把「本轮 @ 了谁」写回正文（11-07 真机：「艾特@看不见」）。
+ *
+ * 根因：@ 只作为结构化 memberIds 传给主进程，落盘的消息正文里一个 `@名字` 都没有；
+ * 而我们又删掉了旧的前缀 chip（那正是「同一条消息两个 @承枢」的根因），
+ * 于是 linkifyMentions 无从解析 ⇒ 群里完全看不到艾特。
+ * ⛔ 修法不是把 chip 加回来，而是**在正文开头补上 @名字**，让提及与正文同源、只出现一次。
+ * ⛔ 正文里已经写过这个名字就不再补（防用户手打 + 选中重复）。
+ */
+export function withMentionPrefix(text, names) {
+  const body = String(text ?? "").trim();
+  const list = (Array.isArray(names) ? names : [])
+    .map((n) => String(n ?? "").trim())
+    .filter(Boolean);
+  const missing = list.filter((n) => !body.includes(`@${n}`));
+  if (!missing.length) return body;
+  return `${missing.map((n) => `@${n}`).join(" ")} ${body}`.trim();
+}
+
 export function groupContextBlock(group, options = {}) {
   const g = createGroup(group);
   const memory = String(g.memory ?? "").trim();
