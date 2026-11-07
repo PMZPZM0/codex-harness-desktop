@@ -19,7 +19,7 @@ import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Markdown } from "../markdown";
 import { TeamMenuButton } from "./06-team-menu";
-import { normalizeMenuItem, STOP_MENU_ITEM } from "../../lib/team-menu.mjs";
+
 import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
 import { TeamCards } from "./11-team-cards";
@@ -180,16 +180,10 @@ export function TeamGroupView({
   /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：两种形态共用同一份数据与同一个点击口径 */
   const menuPlacement = group.menuPlacement ?? "input";
   const floatMenu = menuPlacement === "float";
-  /* 菜单 = 群自己的（用户可编辑）+ 系统固定的「停止运行」。⛔ 放在末尾：常用指令在前，
-     停止是"救火"用的，但要**永远够得着**（用户 11-06 令）。 */
-  const menuItems = useMemo(() => {
-    const own = group.menu ?? [];
-    if (own.some((item) => item.key === STOP_MENU_ITEM.key)) return own;
-    /* ⛔ 群菜单存的是**归一化后**的形状（disabled/tag/children 都要有），
-       直接塞裸对象会被类型挡下、也会让 normalizeMenu 重算一遍。 */
-    const stop = normalizeMenuItem(STOP_MENU_ITEM);
-    return stop ? [...own, stop] : own;
-  }, [group.menu]);
+  /* 菜单 = 群自己的（用户可编辑）。⛔ 11-07 用户令：「停止运行放到成员列表的 @ 前面去」——
+     系统项「停止运行」已从菜单里撤掉（它本来也解析不到、点了只弹「菜单项已经不在了」），
+     改到成员栏顶部、成员行（每行的 @）**之前**。 */
+  const menuItems = useMemo(() => group.menu ?? [], [group.menu]);
 
   const pickMenu = (key: string) => {
     const r = menuPickResult(group.menu ?? [], key);
@@ -971,6 +965,19 @@ export function TeamGroupView({
           {/* 成员栏（飞书群右侧成员区 / 豆包伙伴档案）：只有群才有这个东西 —— 普通会话没有。 */}
           <aside className="team-group__members" aria-label="群成员">
             <div className="team-group__members-head">成员 {group.members.length}</div>
+            {/* ⛔ 11-07 用户令：「停止运行放到成员列表的 @ 前面去」——成员行里就是 @，
+                所以停止键放在**列表顶部**（名单之前），不再跟在名单后面。 */}
+            <div className="team-group__members-stoprow">
+              <button
+                type="button"
+                className={`team-group__members-stop${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`}
+                onClick={() => void stopAll()}
+                disabled={stopping}
+                title="停止本群所有伙伴当前回合，并清理后台调度会话的重试状态"
+              >
+                <Square size={11} /> {stopping ? "停止中…" : "停止运行"}
+              </button>
+            </div>
             <ul>
               {group.members.map((m) => {
                 const running = busy?.includes(m.id);
@@ -1051,18 +1058,9 @@ export function TeamGroupView({
                 );
               })}
             </ul>
-            {/* ⛔ 11-07 用户令：「停止放到群成员列表卡片后面」——
-                停止键落在这里（名单本身的下方，跟"谁在跑"挨着），⛔ 不再占消息流那一行。 */}
+            {/* ⛔ 11-07 用户令：「停止运行放到成员列表的 @ 前面去」⇒ 停止键已上移到名单顶部，
+                这里只留一句 @ 提示。 */}
             <div className="team-group__members-foot">
-              <button
-                type="button"
-                className={`team-group__members-stop${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`}
-                onClick={() => void stopAll()}
-                disabled={stopping}
-                title="停止本群所有伙伴当前回合，并清理后台调度会话的重试状态"
-              >
-                <Square size={11} /> {stopping ? "停止中…" : "停止运行"}
-              </button>
               <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
             </div>
           </aside>

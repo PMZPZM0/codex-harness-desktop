@@ -35,4 +35,3 @@ export function findMenuLeaf(items: unknown, key: string): MenuLeaf | null;
 export function addMenuLeaf(items: unknown, leaf: { label: string; prompt: string }): MenuItem[];
 export function removeMenuLeaf(items: unknown, key: string): MenuItem[];
 export function menuPickResult(items: unknown, key: string): { ok: boolean; prompt: string; message: string };
-export const STOP_MENU_ITEM: { key: string; label: string; prompt: string };

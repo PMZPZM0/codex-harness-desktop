@@ -2231,6 +2231,11 @@
 .team-group__selected-clear:hover { color: var(--danger); }
 
 /* ── 成员栏：底部停止键（用户：「停止放到群成员列表卡片后面」） ── */
+/* 11-07 用户令：「停止运行放到成员列表的 @ 前面去」——停止键在名单顶部（成员行里是 @） */
+.team-group__members-stoprow {
+  flex: none;
+  padding: 0 10px 8px;
+}
 .team-group__members-foot {
   flex: none;
   display: flex;
