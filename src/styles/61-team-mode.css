@@ -1568,16 +1568,24 @@
 .team-group { --team-column: 790px; }
 .team-group__stream {
   flex: 1 1 auto;
-  /* ⛔ 11-06 用户：「滚轮放到右边上去，刻度线跟着过去」
-     ⇒ 消息流**不再**用 790 居中的列（那样滚动条停在列右缘、离成员栏还有一截空白），
-     改成占满容器 + 子项各自居中（气泡仍受 720 上限约束，读起来不会过宽）。 */
+  /* ⛔ 11-06 用户：「滚轮放到右边上去，刻度线跟着过去」⇒ 滚动区占满容器、
+     右 padding 归零让滚动条贴右缘；内容列的宽度与左轴见下面 11-07 的同轴规则。 */
   width: 100%;
   max-width: none;
   margin-inline: 0;
+  /* ⛔⛔ 11-07 用户：「头像对齐输入框边框」——实测输入框卡片左边框 221px、
+     消息头像左边缘 259px（差 38px）：子项按 720px 居中，composer 却按 790px 列居中，
+     两条轴不同。⇒ stream 的 padding-left 直接取 composer 同一条公式，子项宽度也取
+     同一列宽，右 padding 仍为 0（滚动条贴右缘的既有口径不动）。 */
+  padding-left: max(14px, calc((100% - var(--team-column)) / 2));
   padding-right: 0;
-  align-items: center;
+  align-items: flex-start;
 }
-.team-group__stream > * { width: 100%; max-width: 720px; margin-right: 0; }
+.team-group__stream > * {
+  width: min(100%, var(--team-column));
+  max-width: var(--team-column);
+  margin-right: 0;
+}
 .team-group__composer { padding-inline: max(14px, calc((100% - var(--team-column)) / 2)); }
 .team-group__stream-wrap .message-ruler.is-right {
   /* 滚动条约 10px：刻度槽贴它左边 2px */
