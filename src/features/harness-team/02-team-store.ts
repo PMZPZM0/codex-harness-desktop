@@ -11,27 +11,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
-import { groupContextBlock, parseAgentMentions, parseTeamAuthorId, teamAuthorIdOf } from "../../lib/team-models.mjs";
+import { parseTeamAuthorId, teamAuthorIdOf } from "../../lib/team-models.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
-/**
- * 合成 id → 可派活的虚拟团成员。
- * ⛔ @ 面板选中、群成员递归互 @、team-run 镜像三处必须是**同一个形状**：
- *    以前递归直接拿 `parseAgentMentions` 的候选当伙伴用，候选里少一个 targetKind
- *    就会在 `runOne` 里报 `Cannot read properties of undefined (reading 'targetKind')`
- *    —— 界面表现就是「@ 了四个人、四条报错，全是假艾特」。
- */
-function virtualPartnerOf(id: string): TeamGroup["members"][number] | null {
-  const parsed = parseTeamAuthorId(id);
-  if (!parsed) return null;
-  return {
-    id,
-    kind: "bot",
-    name: parsed.memberId,
-    targetKind: "member",
-    targetKey: `${parsed.teamId}:${parsed.memberId}`,
-  } as TeamGroup["members"][number];
-}
+/* ⛔⛔ 11-07：**合成 id → 可派活目标**只保留主进程一份（`harness-team-ipc.ts` 的
+   `resolveGroupTargets`）。渲染层不再自己拼 target —— 派活已经整体搬去主进程
+   （关面板不中断），这里再留一份"虚拟伙伴"就是第二套口径，必然漂。 */
 
 type ListResult = {
   groups: TeamGroup[];
@@ -173,6 +158,28 @@ export function useTeamGroups() {
   useEffect(() => {
     const off = window.codex.onHarnessEvent?.((event: Record<string, unknown>) => {
       if (!event) return;
+      /* ⛔⛔ 11-07：派活搬到主进程后，「谁在处理中」由主进程广播 ——
+         面板不开/被关掉时这条事件仍在发，重开面板就能看到真实状态。
+         ⛔ 不再靠 dispatch 的 Promise 生命周期维护 busy（那正是"关弹窗就断"的根因）。 */
+      if (event.type === "team-member-run") {
+        const gid = String(event.groupId ?? "");
+        const mid = String(event.memberId ?? "");
+        if (!gid || !mid) return;
+        const running = String(event.phase ?? "") === "started";
+        const list = busyRef.current[gid] ?? [];
+        const next = running ? (list.includes(mid) ? list : [...list, mid]) : list.filter((x) => x !== mid);
+        busyRef.current = { ...busyRef.current, [gid]: next };
+        setBusyByGroup((prev) => ({ ...prev, [gid]: next }));
+        return;
+      }
+      /* 一轮派活收尾：重读权威行（产出是主进程写的），失败原因贴到提示条。 */
+      if (event.type === "team-dispatch-done") {
+        const gid = String(event.groupId ?? "");
+        const failed = Array.isArray(event.failed) ? (event.failed as unknown[]).map(String).filter(Boolean) : [];
+        if (gid) loadMessagesRef.current(gid);
+        if (failed.length) setDispatchError(failed.join("；"));
+        return;
+      }
       /* ⛔⛔ 11-07 用户令「正反向联动做好一点，那边群删除，这边会话跟着删除」——
          反过来的那一半同样要通：**外面**把某条会话删了（侧栏删 / 项目清理 / 另一窗口），
          群里不能还挂着它的流式卡、还能点开一个不存在的会话。
@@ -445,270 +452,50 @@ export function useTeamGroups() {
   }, []);
   appendMessageRef.current = appendMessage;
 
-  /**
-   * 记一条用量。⛔ 记账失败**不许影响派活结果**（账本是旁路观测，不是主链路）。
-   * ⛔ 失败也记：失败同样烧了 token，失败率本身是最该看的指标。
-   */
-  const logUsage = useCallback(async (entry: Record<string, unknown>) => {
-    try {
-      await window.codex.harnessTeamLogUsage({ ...entry, at: Date.now() });
-    } catch {
-      /* 静默：账本写不进不该让用户看到"派活失败" */
-    }
-  }, []);
+  /* ⛔ 11-07：`logUsage`（渲染层记账）随派活一起搬进主进程 —— `dispatchGroupText` 自己
+     在 finally 里写账本。这里再留一份就是两套记账口径（同一轮记两次 = 账本翻倍）。 */
 
   /**
-   * 派活：@ 了谁就把同一句话交给谁，各自落各自的子会话。
-   * ⛔ 并发（不是串行）：两个伙伴同时开工，回复按**各自完成时间**进同一条时间轴。
-   * ⛔ 未绑定调度目标的伙伴直接拒（老群手工加的），⛔ 不静默降级成"发送成功"。
+   * 派活：把「@ 了谁 + 说了什么」交给**主进程**，这里只拿到"已排队"就返回。
+   *
+   * ⛔⛔ 11-07 用户令：「流程跑不通、没有结果回传、我关闭一下群弹窗任务就莫名其妙结束了」——
+   *    旧实现把落群日志 / 循环派活 / 产出回写 / 互 @ 接力全放在**渲染层**这个 Promise 里，
+   *    面板一卸载（关群弹窗、切设置页、换会话）链条就断在半路，用户看到的就是"任务莫名结束、
+   *    没结果回来、主代理也不知道成员干了什么"。
+   *    ⇒ 现在整条链在 `harness-team:dispatch`（主进程）里跑完：面板关掉照跑、产出照进群、
+   *      互 @ 接力照走；这里**不等结果**，只负责发请求 + 把人的那句话读上屏。
+   * ⛔ 进度（处理中/失败）由主进程广播 `team-member-run` / `team-dispatch-done` 驱动。
    */
   const dispatch = useCallback(
     async (group: TeamGroup, partnerIds: string[], text: string, params?: TeamRunParams): Promise<{ ok: boolean; error?: string; summary?: DispatchSummary }> => {
       const body = String(text ?? "").trim();
       if (!body) return { ok: false, error: "说点什么再发" };
-      /* ⛔⛔ 11-07 用户令：「团成员拆出来，每个成员都可以艾特」「现在只能艾特主代理会话」。
-         @ 里的团成员用的是**合成 id** `team:<teamId>:<memberId>`（不是群成员）。
-         主进程调度目录里每位团成员都有 `kind:"member"`、key `<teamId>:<memberId>` 的条目
-         ⇒ 直接按成员派活，走他自己的会话；⛔ 不再退化成"叫整团、主理人替他说话"。
-         解不出两段的 id 一律忽略（⛔ 不猜，也不当成普通伙伴去匹配）。 */
-      const virtuals: TeamGroup["members"] = [];
-      for (const id of partnerIds) {
-        /* 只用 id / name / targetKind / targetKey 四个字段，形状由 virtualPartnerOf 统一。 */
-        const v = virtualPartnerOf(id);
-        if (v && !virtuals.some((x) => x.id === id)) virtuals.push(v);
-      }
-      const picked = group.members.filter((m) => m.kind === "bot" && partnerIds.includes(m.id));
-      if (!picked.length && !virtuals.length) return { ok: false, error: "先 @ 至少一个伙伴" };
-      /* 静音 = 不打扰：@ 了也不派（⛔ 但要说清是"被静音"而不是"没选"） */
-      const targets = [...picked.filter((m) => !m.muted), ...virtuals];
-      if (!targets.length) return { ok: false, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
-      /* 11-06 用户令：群聊「专家团直接调度」已放开（主进程只对 origin="" 的界面直派
-         合并 team 许可），这里不再前置拒绝 team / member 伙伴。 */
-      const unbound = targets.filter((m) => !m.targetKind || !m.targetKey);
-      if (unbound.length) {
-        return { ok: false, error: `「${unbound.map((m) => m.name).join("、")}」还没绑定智能体，去群设置里换成列表里的那一个` };
-      }
-      /* ⛔⛔ 11-07 用户：「成员之间互相也不会艾特」——群账本里只有一个 team 伙伴，
-         团里那几位从不在 group.members 里 ⇒ 名录看不到、@ 也解析不到。
-         拉一次调度目录，群上下文与互 @ 判据共用同一份（口径只在 teamKidsOf）。 */
-      const cat = await window.codex.listDispatchCatalog().catch(() => null);
-      const catalog: unknown[] = Array.isArray(cat?.targets) ? cat.targets : [];
-
       setDispatchError("");
-      /* 本轮派活的代际：期间若被清空，晚到的旧回复一律不再写回 */
-      const epoch = clearedEpochRef.current[group.id] ?? 0;
-      /* ⛔ 注入块按**每个伙伴**生成（上下级不同），所以放进循环里；群日志只存用户原话。 */
-
-      /* ① 人的那句话先上屏（真身 = 群日志），这样 @ 谁都能看见自己说了什么。
-         ⛔ 存不上就**不发**：否则群里会出现"有回答没有提问"的断头记录。 */
-      try {
-        const saved = await appendMessage(group.id, {
-          authorId: LOCAL_ACTOR_ID,
-          authorKind: "human",
-          senderKind: "user",
-          text: body,
-          /* @ 了谁（飞书：mention 是单独一类对象，不是普通文本）—— 群视图据此渲染高亮 chip */
-          mentions: targets.map((m) => m.id),
-        });
-        if (!saved?.ok) return { ok: false, error: saved?.error || "群消息没存上" };
-      } catch (err) {
-        return { ok: false, error: `群消息没存上：${err instanceof Error ? err.message : String(err)}` };
+      const res = (await window.codex.harnessTeamDispatch(group.id, {
+        text: body,
+        /* ⛔ 原样把 @ 的 id 交过去：团成员是合成 id `team:<teamId>:<memberId>`，
+           主进程按目录解析成 target（⛔ 渲染层不再自己拼 target，避免两套口径）。 */
+        memberIds: partnerIds,
+        ...(params
+          ? {
+            params: {
+              ...(params.model ? { model: params.model } : {}),
+              ...(params.effort ? { effort: params.effort } : {}),
+              ...(params.sandbox ? { sandbox: params.sandbox } : {}),
+              ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
+            },
+          }
+          : {}),
+      })) as { ok: boolean; queued?: number; error?: string };
+      if (!res?.ok) {
+        setDispatchError(res?.error || "派活失败");
+        return { ok: false, error: res?.error };
       }
-
-      const failed: DispatchSummary["failed"] = [];
-      /* 一轮里同一个伙伴只跑一次（并发派活时重复 id 去重）。 */
-      const ranIds = new Set<string>();
-
-      const noteError = (name: string, msg: string) => {
-        failed.push({ name, error: msg });
-        /* 递归触发的失败可能在 dispatch 返回**之后**才到 ⇒ 直接更新提示条，别丢 */
-        setDispatchError(failed.map((f) => `${f.name}：${f.error}`).join("；"));
-      };
-      /* ⛔ 必须**先改 ref 再 setState**：`delegate-run started` 可能在这个 state 生效前就到达，
-         那时事件处理靠 ref 判断"这个名字属于哪个群"，ref 没更新 ⇒ 这张卡不出现（静默无流式）。 */
-      const busyAdd = (id: string) => {
-        const list = busyRef.current[group.id] ?? [];
-        if (!list.includes(id)) busyRef.current = { ...busyRef.current, [group.id]: [...list, id] };
-        setBusyByGroup((prev) => {
-          const cur = prev[group.id] ?? [];
-          return cur.includes(id) ? prev : { ...prev, [group.id]: [...cur, id] };
-        });
-      };
-      const busyRemove = (id: string) => {
-        busyRef.current = { ...busyRef.current, [group.id]: (busyRef.current[group.id] ?? []).filter((x) => x !== id) };
-        setBusyByGroup((prev) => ({ ...prev, [group.id]: (prev[group.id] ?? []).filter((x) => x !== id) }));
-      };
-
-      /* 伙伴之间互相 @ 的预算（11-06 用户令：「他们就可以在群里 @ 沟通，不用限制啥」）。
-         ⛔ 只留两条**必须**的护栏，不是"限制沟通"：
-            · 只走**一跳**（A@B 触发 B；B 再 @ 谁不再触发）—— 否则两个伙伴互 @ 会无限对烧；
-            · 一轮总量上限（4）—— 同上。
-         其余（谁是能派活的伙伴、静音、代码围栏、自己 @ 自己）都由纯函数判。 */
-      let chainBudget = 4;
-      const runOne = async (
-        partner: TeamGroup["members"][number],
-        bodyText: string,
-        source: "human" | "partner",
-        hop = 0,
-        /* 被谁叫来的（只有 source==="partner" 才有）—— 写进群日志的 `via`，界面上标出来 */
-        caller?: { id: string; name: string },
-      ): Promise<void> => {
-        if (!partner) return;
-        if (ranIds.has(partner.id)) return;
-        ranIds.add(partner.id);
-        busyAdd(partner.id);
-        const startedAt = Date.now();
-        let chars = 0;
-        let threadId = "";
-        let okFlag = false;
-        let errMsg = "";
-        let output = "";
-        /* 真实 token（引擎 last 桶）：拿不到就 0，⛔ 不编造 */
-        let tokens: { input: number; output: number; total: number } | null = null;
-        try {
-          /* ⛔⛔ 11-07 用户令：「专家团会话总是主代理说话，代其他成员回复，其他成员的会话不会直接到群里」
-             ⇒ 团的成员产出由 `team-run` 事件**以成员自己的署名**直投群流（见本文件 team-run 分支），
-                同时在这里告诉主理人「别转述，只出统筹结论」。⛔ 只对团生效：单个伙伴没有"成员产出"。 */
-          const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team", catalog });
-          const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
-          const res = (await window.codex.invokeAgent({
-            kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
-            name: partner.targetKey,
-            query,
-            /* 群的项目地址 = 子会话的工作目录（空 ⇒ 应用默认目录）。⛔ 不传就是另一回事了：
-               伙伴会在默认目录里找相对路径，然后如实告诉你"没这个文件"。 */
-            cwd: group.workspace || undefined,
-            /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，闸与子会话复用都按这个口径走。 */
-            originThreadId: "",
-            /* ⛔ 11-07 用户令：群聊派出的会话要在侧栏标「群调度」（跟主对话派的区分开）。
-               origin 为空看不出差异 ⇒ 显式打标，主进程登记记录里存 source=group。 */
-            source: "group",
-            /* ⛔⛔ 11-07 用户令：「调度功能在被调度场景中正确识别上级消息」——
-               origin 为空**不再**等价于「用户发的」：伙伴互 @ 触发的这一跳，真实发送者是
-               上一个伙伴（上级/同事），必须结构化传下去，别再默认按用户消息处理。 */
-            sender: source === "partner"
-              ? { kind: "member", name: caller?.name ?? partner.name }
-              : { kind: "user" },
-            /* 输入框选的模型/档位/沙箱/审批在这里**真下发**：agents:invoke 原样透传给
-               runDelegatedTask（turn/start.model|effort、thread/start.sandbox|approvalPolicy）。
-               ⛔ 不传这些字段 = 选项沦为装饰，回落到全局默认值。 */
-            ...(params?.model ? { model: params.model } : {}),
-            ...(params?.effort ? { effort: params.effort } : {}),
-            ...(params?.sandbox ? { sandbox: params.sandbox } : {}),
-            ...(params?.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-          })) as InvokeResult;
-          if (!res?.ok || !res?.threadId) {
-            errMsg = res?.error || "派活失败";
-            noteError(partner.name, errMsg);
-            return;
-          }
-          threadId = res.threadId;
-          threadRef.current[partner.id] = threadId;
-          output = String(res.output ?? "").trim();
-          /* ⛔ 用户在这期间清空过记录 ⇒ 这条是上一代的产出，⛔ 不许再往空群里冒。
-             同时撤掉它的流式卡：finished 事件的延迟删除是唯一兜底，面板若已重开就收不到了。 */
-          if ((clearedEpochRef.current[group.id] ?? 0) !== epoch) {
-            setLiveByGroup((prev) => {
-              const bucket = { ...(prev[group.id] ?? {}) };
-              delete bucket[threadId];
-              return { ...prev, [group.id]: bucket };
-            });
-            return;
-          }
-          const wrote = await appendMessage(group.id, {
-            authorId: partner.id,
-            authorKind: "bot",
-            senderKind: "member",
-            threadId: res.threadId,
-            text: output || "（没有返回文本内容）",
-            /* 被别的伙伴叫来的 ⇒ 记下"谁叫的"，群视图标出来（⛔ 不是人多点了一下） */
-            via: source === "partner" && caller ? { memberId: caller.id, name: caller.name } : null,
-          });
-          /* ⛔ 落盘失败也要说出来（典型场景：跑的过程中群被解散了），⛔ 不许当成功 */
-          if (!wrote?.ok) {
-            errMsg = wrote?.error || "产出没能写进群聊记录";
-            noteError(partner.name, errMsg);
-          } else {
-            okFlag = true;
-          }
-          /* 取本次运行的**真实 token**（主进程登记表里存着引擎推的 last 桶）。
-             ⛔ 引擎是异步推的，可能还没到 ⇒ 拿不到就先记 0（账本里显示「—」而不是假数字）。 */
-          try {
-            const usage = await window.codex.harnessTeamThreadUsage(res.threadId);
-            if (usage?.ok && usage.tokens) {
-              tokens = { input: usage.tokens.input, output: usage.tokens.output, total: usage.tokens.total };
-            }
-          } catch { /* 取不到不影响派活 */ }
-
-          /* 正式消息已落盘 ⇒ 这张流式卡可以撤了（不留 500ms 的重复） */
-          setLiveByGroup((prev) => {
-            const bucket = { ...(prev[group.id] ?? {}) };
-            delete bucket[threadId];
-            return { ...prev, [group.id]: bucket };
-          });
-          /* 用量口径：输入（注入块 + 原话）+ 输出 的**字符数**，⛔ 不是 token（引擎没回 usage） */
-          chars = query.length + output.length;
-
-          /* ② 伙伴在回复里**行首点名** ⇒ 叫那个伙伴接手（11-06 用户令：「可以 @ 沟通」）。
-             ⛔ 判据只在 parseAgentMentions 一处（行首 `@名字：要做的事`）；句子中间的 @ 不触发
-                —— 上次的 bug 正是把「PPT @星象」这种举例当成了指令。
-             ⛔ 只走一跳：hop === 0 才派下一轮，避免两个伙伴互 @ 无限对烧。 */
-          if (hop === 0 && chainBudget > 0 && okFlag && output) {
-            const asks = parseAgentMentions(output, group, {
-              excludeId: partner.id,
-              alreadyRan: [...ranIds],
-              max: chainBudget,
-              catalog,
-            });
-            for (const ask of asks) {
-              /* 团成员是虚拟条目（合成 id），不在 group.members 里 —— 直接用 target 派给本人。 */
-              const next = (ask.target
-                ?? group.members.find((m) => m.id === ask.memberId)
-                ?? virtualPartnerOf(ask.memberId)) as TeamGroup["members"][number] | null;
-              if (!next || ranIds.has(next.id)) continue;
-              chainBudget -= 1;
-              /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链） */
-              void runOne(next, `（${partner.name} 在群里叫你）${ask.ask}`, "partner", 1, {
-                id: partner.id,
-                name: partner.name,
-              });
-            }
-          }
-        } catch (err) {
-          errMsg = err instanceof Error ? err.message : String(err);
-          noteError(partner.name, errMsg);
-        } finally {
-          void logUsage({
-            groupId: group.id,
-            groupName: group.name,
-            memberId: partner.id,
-            partnerName: partner.name,
-            source,
-            threadId,
-            chars,
-            inputTokens: tokens?.input ?? 0,
-            outputTokens: tokens?.output ?? 0,
-            totalTokens: tokens?.total ?? 0,
-            ms: Date.now() - startedAt,
-            ok: okFlag,
-            error: errMsg,
-          });
-          if (alive.current) busyRemove(partner.id);
-        }
-      };
-
-      /* ⛔⛔ 11-07 用户：「我输入的文字，发出去之后，输入框里面还有这个文字」。
-         根因：这里原来 `await` 全部伙伴跑完才 resolve ⇒ 视图里的 `setText("")` 被推迟到
-         整轮派活结束（几十秒~几分钟），看着就像"没清空"。主对话是**消息上屏即清空**，
-         回复异步到达。⇒ 消息已 append 成功就立刻返回，派活留在后台跑：
-         busy 状态由 delegate-run 事件驱动，⛔ 不依赖这个 Promise 的生命周期。 */
-      void Promise.all(targets.map((partner) => runOne(partner, body, "human")))
-        .then(() => loadMessages(group.id)) /* 并发写回的中间态可能少一条，收尾读一次权威行 */
-        .catch((err) => setDispatchError(`派活中断：${err instanceof Error ? err.message : String(err)}`));
-      /* 发起瞬间的快照；后续失败由 noteError 实时写提示条（⛔ 不等到这里） */
-      return { ok: true, summary: { sent: targets.length - failed.length, failed } };
+      /* 主进程已经把「人说的那句」落盘 ⇒ 读一次权威行：消息上屏与输入框清空同帧。 */
+      void loadMessages(group.id);
+      return { ok: true, summary: { sent: Number(res.queued ?? 0), failed: [] } };
     },
-    [appendMessage, loadMessages],
+    [loadMessages],
   );
 
   /**

@@ -703,8 +703,10 @@ try {
   ok(/senderKind: source === "automation" \? "automation" : "user"/.test(ipcSrc),
     "主进程写群消息时区分定时任务 / 用户");
   const storeSrc = readFileSync(join(ROOT, "src/features/harness-team/02-team-store.ts"), "utf8");
-  ok(/sender: source === "partner"/.test(storeSrc) && /senderKind: "member"/.test(storeSrc),
-    "渲染层群派活把「伙伴互 @ 的那一跳」标成 member 发送者（⛔ origin 为空也照样传）");
+  /* ⛔ 11-07：派活搬进主进程 ⇒ 这条判据跟着走（渲染层已经不传 sender 了，再钉它只会假红）。
+     语义没变：伙伴互 @ 的那一跳，真实发送者是上一个伙伴，⛔ origin 为空也照样传。 */
+  ok(/hop > 0[\s\S]{0,120}?kind: "member"/.test(ipcSrc) && /senderKind: "member"/.test(ipcSrc),
+    "群派活把「伙伴互 @ 的那一跳」标成 member 发送者（⛔ origin 为空也照样传）");
   const viewSrc = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   ok(/data-sender=\{row\.senderKind/.test(viewSrc) && /team-msg__sender/.test(viewSrc),
     "群视图按 senderKind 出可见标记（有了数据不渲染 = 用户还是看不出来源）");
@@ -737,15 +739,17 @@ try {
     "名录含团成员、互 @ 结果带可派活的 target");
   const storeSrc2 = readFileSync(join(ROOT, "src/features/harness-team/02-team-store.ts"), "utf8");
   const ipcSrc2 = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
-  ok(/catalog }\)/.test(storeSrc2) && /ask\.target[\s\S]{0,100}?group\.members\.find/.test(storeSrc2),
-    "渲染层群派活传目录、递归用虚拟伙伴（成员之间真能叫动人）");
-  /* 11-07 用户截图：@ 四位成员得到 4 条 `Cannot read properties of undefined (reading 'targetKind')`。
-     根因：递归直接拿 @ 候选当伙伴用，形状与初始 targets 不一致。⇒ 统一由 virtualPartnerOf 生成/兜底。 */
-  ok(/function virtualPartnerOf/.test(storeSrc2)
-    && /virtualPartnerOf\(id\)/.test(storeSrc2)
-    && /virtualPartnerOf\(ask\.memberId\)/.test(storeSrc2)
-    && /if \(!partner\) return;/.test(storeSrc2),
-    "⛔ 虚拟伙伴只有一处构造：@ 面板与递归互 @ 同形状，缺字段不再崩 targetKind");
+  /* ⛔⛔ 11-07 用户令「关个群弹窗任务就结束」：派活整条链搬进主进程 ⇒ 渲染层只剩一条 IPC，
+     合成 id → 可派活目标的构造**只有主进程一处**（`resolveGroupTargets`）。这里反过来钉：
+     渲染层不许再自己拼 target / 自己跑派活循环（那会与主进程再漂一套）。 */
+  ok(/harnessTeamDispatch\(/.test(storeSrc2)
+    && !/targetKey: `\$\{parsed\.teamId\}/.test(storeSrc2)
+    && !/invokeAgent\(/.test(storeSrc2),
+    "⛔ 派活在主进程：渲染层只发一条 dispatch，不再自己拼 target / 自己跑派活循环");
+  ok(/function resolveGroupTargets/.test(ipcSrc2)
+    && /targetKey: `\$\{teamId\}:\$\{memberId\}`/.test(ipcSrc2)
+    && /if \(!partner \|\| ranIds\.has\(partner\.id\)\) return;/.test(ipcSrc2),
+    "⛔ 虚拟伙伴只有一处构造：群成员与团成员同形，递归互 @ 不缺字段（targetKind 崩溃的老根因）");
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),

@@ -43,10 +43,14 @@ ok(!/team-group__members-stop\b/.test(viewCode) && !/const stopAll = /.test(view
 ok(!/team-group__members-stop\b/.test(css) && !/team-group__members-stoprow/.test(css),
   "⛔ 全局停止键的样式也删净（只删 JSX 会留下看起来还在的类）");
 
-/* 每行：运行态点 → ⏹️ → @（⛔ 用户明确「都放成员 @ 前面」「停用 ⏹️ 图标替代，放到 @ 前面」） */
-const cellAt = view.indexOf("function MemberActions");
-const cell = cellAt > 0 ? view.slice(cellAt, view.indexOf("\nexport function TeamGroupView")) : "";
-ok(cell.length > 0, "成员行右端抽成一个组件（伙伴行与团成员行共用，⛔ 两处各写一份必然漂）");
+/* 每行：运行态点 → ⏹️ → @（⛔ 用户明确「都放成员 @ 前面」「停用 ⏹️ 图标替代，放到 @ 前面」）
+   ⛔ 11-07：组件从 `04-team-group-view` 拆到独立板块 `18-team-member-actions.tsx`
+      （守住 >1000 行棘轮，行为逐字未变）⇒ 判据读那个文件，语义不变。
+   ⛔ 两处调用（伙伴行 / 团成员行）仍必须在视图里 —— 所以视图侧另钉一条「引用了该组件两次」。 */
+const cell = read("src/features/harness-team/18-team-member-actions.tsx");
+ok(/export function MemberActions/.test(cell), "成员行右端抽成一个组件（伙伴行与团成员行共用，⛔ 两处各写一份必然漂）");
+ok((view.match(/<MemberActions/g) ?? []).length >= 2,
+  "伙伴行与团成员行**都**在用这个组件（少一处 = 那一行没有运行态/@/停）");
 const liveAt = cell.indexOf("team-group__member-live");
 const atAt = cell.indexOf("team-group__member-at");
 const stopAt = cell.indexOf("team-group__member-stop");

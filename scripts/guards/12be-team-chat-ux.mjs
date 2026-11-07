@@ -13,7 +13,7 @@
  *   ③ 布局压缩是**可验证的**：常驻 chip 整块消失、输入框 min-height 回到 64；
  *   ④ 团成员产出直投群流：事件分支 + 合成作者 id + 提示词不许转述。
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
@@ -151,6 +151,30 @@ const catalog = [
   ok(/\.team-mention \{/.test(css) && /\.team-search \{/.test(css) && /\.team-profile \{/.test(css),
     "三块的样式都在（面板/搜索/资料卡）");
   ok(/\.team-msg\.is-search-hit \{/.test(css), "搜索命中高亮的样式存在");
+  /* ⛔⛔ 11-07 用户令（截图）：「消息开头的一处艾特是真艾特，其余位置的艾特都是假艾特且被重复展示；
+     请把所有艾特统一改为真艾特……多个艾特按出现顺序逐一渲染」。判据三条：
+       ① 正文走 linkifyMentions（唯一口径是纯函数，有单测），⛔ 不再单独渲染 mentions 前缀（那必然重复）；
+       ② `a` 组件把提及链接画成带头像的胶囊（头像 ⇒ 与用户中心同源：MemberAvatar/UserAvatar）；
+       ③ 提及胶囊有样式（⛔ 无样式 = 裸文字，用户看到的就还是"假艾特"）。 */
+  /* ⛔ 渲染拆到独立板块 `17-team-mention-text.tsx`（守住 >1000 行棘轮）⇒ 判据读那个文件。 */
+  const atText = codeOnly(read("src/features/harness-team/17-team-mention-text.tsx"));
+  ok(/linkifyMentions\(/.test(atText)
+    && /<Markdown components=\{components\}>/.test(atText)
+    && !/team-card__prefix/.test(view)
+    && /<TeamMentionText/.test(view),
+    "⛔ 艾特只从正文出：linkify + 自定义 a 组件；不再渲染 mentions 前缀（重复的根因）");
+  ok(/mentionIdOfHref\(href\)/.test(atText)
+    && /<MemberAvatar member=\{faceOfId\(id\)\} size=\{16\}/.test(atText)
+    && /candidates=\{mentionCandidates\}/.test(view),
+    "提及带头像：头像按 id 取真身（用户 ⇒ UserAvatar，成员 ⇒ 智能体头像）");
+  ok(/\.team-at \{[\s\S]{0,240}?display: inline-flex/.test(css)
+    && /\.team-at__avatar/.test(css),
+    "提及胶囊是**行内**元素（⛔ 不许独占一行，否则句子被切断）");
+  const mentionRender = read("src/lib/team-mention-render.mjs");
+  ok(/export function splitMentionSegments/.test(mentionRender)
+    && /export function linkifyMentions/.test(mentionRender)
+    && existsSync(join(ROOT, "tests/team-mention-render.test.mjs")),
+    "艾特解析是纯函数且有真值表单测（顺序 / 分隔符 / 长名优先 / 代码块）");
   /* 11-07 用户对照截图：「名字在消息气泡外面，引用消息在气泡里面并且跟下面消息对齐」。 */
   ok(/className="team-msg__main"/.test(view)
     && /className="team-msg__meta"/.test(view)
@@ -203,25 +227,25 @@ const catalog = [
   ok(/phase === "started"[\s\S]{0,400}appendLive|setLive/.test(store),
     "started 建流式卡（同一个 runId 只更新一张）");
   ok(/appendMessageRef\.current\(hit\.gid/.test(store), "finished 落一条真消息（⛔ 只活在流式卡里就不算进群）");
-  ok(/forTeam: partner\.targetKind === "team"/.test(store),
-    "派活时告诉主理人「成员产出直接进群，别转述」");
   const models = read("src/lib/team-models.mjs");
   ok(/export function teamAuthorIdOf/.test(models) && /export function parseTeamAuthorId/.test(models),
     "合成作者 id 的编解码只有一处（⛔ 别在视图里手拼字符串）");
   ok(/成员做完会自己把结果发进群/.test(models) && /别替他们复述/.test(models),
     "提示词里明说：成员产出自己进群，主理人别复述（11-07 改成口语，语义不变）");
+  /* ⛔ 11-07：派活整体搬到主进程 ⇒ 这条判据跟着去 `harness-team-ipc.ts` 的 `dispatchGroupText`。
+     `forTeam` 决定主理人拿到的身份块是「团」还是「单人」——两处（渲染层/主进程）只剩一处了。 */
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
-  ok(/forTeam: partner\.targetKind === "team"/.test(ipc),
-    "主进程那条派活路径（定时任务 / 团成员调用）同口径");
+  ok(/forTeam: partner\.targetKind === "team"/.test(ipc) && !/forTeam: partner\.targetKind === "team"/.test(store),
+    "派活时告诉主理人「成员产出直接进群，别转述」（口径只在主进程一处）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/parseTeamAuthorId\(id\)/.test(view) && /const nameOf = \(id: string\)/.test(view),
     "视图按合成 id 反查名字（目录没回来就退回 memberId，⛔ 不编名字）");
-  /* ⛔⛔ 光让面板"能 @ 到成员"不够 —— 派活必须真的按成员下发，否则又落回整团让主理人代答。 */
-  const kidStore = codeOnly(read("src/features/harness-team/02-team-store.ts"));
-  ok(/parseTeamAuthorId\(id\)/.test(kidStore) && /targetKind: "member"/.test(kidStore)
-    && /targetKey: `\$\{parsed\.teamId\}:\$\{parsed\.memberId\}`/.test(kidStore),
+  /* ⛔⛔ 光让面板"能 @ 到成员"不够 —— 派活必须真的按成员下发，否则又落回整团让主理人代答。
+     11-07：合成 id → target 的翻译搬到主进程 `resolveGroupTargets`（渲染层不再自己拼）。 */
+  ok(/function resolveGroupTargets/.test(ipc) && /targetKind: "member"/.test(ipc)
+    && /targetKey: `\$\{teamId\}:\$\{memberId\}`/.test(ipc),
     "派活把团成员的合成 id 翻成 kind:member + key <teamId>:<memberId>（⛔ 不翻 = 又派给整团）");
-  ok(/const targets = \[\.\.\.picked\.filter\(\(m\) => !m\.muted\), \.\.\.virtuals\]/.test(kidStore),
+  ok(/const targets = \[\.\.\.picked\.filter\(\(m\) => !m\.muted\), \.\.\.virtuals\]/.test(ipc),
     "团成员与普通伙伴一起进 targets（静音规则同样适用）");
   ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /<MemberActions[\s\S]{0,240}?id=\{kidId\}/.test(view),
     "成员栏的团成员行有自己的 @（与伙伴行共用 MemberActions：运行态点 + ⏹️ + @）");
@@ -233,9 +257,16 @@ const catalog = [
 /* ── ⑥ 输入框对齐主对话（11-07 用户：「发出去之后输入框还有这个文字」+「同步成跟对话框一样的输入框」）── */
 {
   const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
-  ok(/void Promise\.all\(targets\.map\(\(partner\) => runOne\(partner, body, "human"\)\)\)/
-    .test(store) && !/await Promise\.all\(targets\.map\(\(partner\) => runOne/.test(store),
-    "⛔ 消息上屏即返回：派活留在后台跑（原来 await 全部回复 ⇒ 清空被推迟几十秒，看着像没清）");
+  const ipcDispatch = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  /* ⛔⛔ 11-07 用户令：「关闭一下群弹窗，任务就莫名其妙结束了」——
+     派活整条链搬进主进程：渲染层发完 IPC 立即返回（消息上屏 → 输入框清空同帧），
+     主进程 handler 用 `void dispatchGroupText(...)` 在后台跑完（⛔ 不 await，否则又绑回请求生命周期）。 */
+  ok(/const res = \(await window\.codex\.harnessTeamDispatch\(/.test(store)
+    && !/invokeAgent\(/.test(store),
+    "⛔ 消息上屏即返回：渲染层只发一条 dispatch（不再自己 await 全部回复 ⇒ 清空被推迟几十秒）");
+  ok(/void dispatchGroupText\(g, text, memberIds, "human"/.test(ipcDispatch)
+    && !/await dispatchGroupText\(g, text, memberIds, "human"/.test(ipcDispatch),
+    "⛔ 主进程不 await 派活：关面板/切页后任务照跑（产出照进群、互 @ 照接力）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/const r = await onSend\?\.\(atTargets, fullBody, params\)[\s\S]{0,220}?setText\(""\)/.test(view),
     "派活成功即清空输入框（主对话口径；失败保留原文）");

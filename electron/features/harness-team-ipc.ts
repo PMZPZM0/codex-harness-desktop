@@ -74,6 +74,8 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:project",
   "harness-team:messages",
   "harness-team:append-message",
+  /* 11-07：手动派活（渲染层只发这一条就返回，主进程跑完整条链 —— 关弹窗不再断） */
+  "harness-team:dispatch",
   "harness-team:delete",
   "harness-team:set-memory",
   "harness-team:set-workspace",
@@ -251,51 +253,102 @@ async function logUsageTo(entry: Record<string, unknown>): Promise<{ ok: boolean
 export const AUTOMATION_ACTOR_ID = "automation";
 
 /**
- * 无人值守派活：把同一句话交给若干个伙伴，各自落子会话 + 群日志 + 账本（`source=automation`）。
- * ⛔ 与渲染层 `dispatch()` 的差别只在这里刻意不做的三件事（都不是漏了）：
- *   ① 不做「伙伴之间互相 @」的递归（无人值守再自动互 @ 就是烧钱）；
- *   ② 不维护渲染层的 busy/流式卡状态（面板没开时也该照跑）；
- *   ③ 不弹任何提示（失败落 `lastError` + 账本，用户下次打开设置能看到）。
+ * 派活目标（群成员 / 专家团成员）。
+ *
+ * ⛔⛔ 11-07 用户令：「流程跑不通、没有结果回传、我关闭一下群弹窗任务就莫名其妙结束了」——
+ *    派活整体搬到**主进程**：渲染层只发一条请求就返回，落群日志 / 派活 / 产出回写 /
+ *    互 @ 接力 / 账本全在这里跑完。以前这一整套在渲染层 `02-team-store.dispatch()` 里，
+ *    面板一卸载（关群弹窗 / 切设置页）链条就断在半路 —— 用户看到的就是"任务莫名结束"。
+ * ⛔ 定时任务与手动派活共用这一份：两处各写一套必然漂（历史上已经漂过）。
  */
+type GroupTarget = { id: string; kind: string; name: string; targetKind: string; targetKey: string };
+
+/** 群成员 + 合成 id 的团成员（`team:<teamId>:<memberId>`）。⛔ 口径只在主进程这一处。 */
+function resolveGroupTargets(
+  group: GroupShape,
+  memberIds: string[],
+  catalog: unknown[],
+): { targets: GroupTarget[]; error?: string } {
+  const list = Array.isArray(catalog) ? (catalog as Array<Record<string, unknown>>) : [];
+  const bots = group.members.filter((m) => m.kind === "bot");
+  const picked = bots.filter((m) => memberIds.includes(m.id));
+  const virtuals: GroupTarget[] = [];
+  for (const raw of memberIds) {
+    const id = String(raw ?? "");
+    const parsed = /^team:([^:]+):(.+)$/.exec(id);
+    if (!parsed) continue;
+    if (virtuals.some((v) => v.id === id)) continue;
+    const teamId = parsed[1];
+    const memberId = parsed[2];
+    const hit = list.find((t) => t
+      && t.kind === "member"
+      && String(t.teamId ?? "") === teamId
+      && (String(t.memberId ?? "") === memberId || String(t.key ?? "") === `${teamId}:${memberId}`));
+    virtuals.push({
+      id,
+      kind: "bot",
+      name: String(hit?.name ?? "") || memberId,
+      targetKind: "member",
+      targetKey: `${teamId}:${memberId}`,
+    });
+  }
+  if (!picked.length && !virtuals.length) return { targets: [], error: "先 @ 至少一个伙伴" };
+  const targets = [...picked.filter((m) => !m.muted), ...virtuals];
+  if (!targets.length) {
+    return { targets, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
+  }
+  const unbound = targets.filter((t) => !t.targetKind || !t.targetKey);
+  if (unbound.length) {
+    return { targets, error: `「${unbound.map((t) => t.name).join("、")}」还没绑定智能体，去群设置里换成列表里的那一个` };
+  }
+  return { targets };
+}
+
+/** 派活的运行参数（输入框上选的模型/档位/沙箱/审批）。 */
+type DispatchParams = { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string };
+
+/** 每次派活的生命周期回调（主进程用它广播进度，面板据此显示/收起「处理中」）。 */
+type DispatchPhase = (
+  phase: "started" | "finished",
+  target: GroupTarget,
+  info: { ok?: boolean; error?: string; threadId?: string },
+) => void;
+
 async function dispatchGroupText(
   group: GroupShape,
   text: string,
   memberIds: string[],
   source: "human" | "automation",
+  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase } = {},
 ): Promise<{ ok: boolean; sent: number; failed: string[] }> {
-  const picked = group.members.filter((m) => m.kind === "bot" && memberIds.includes(m.id));
-  /* 11-06 用户令：群聊专家团可直接调度 ⇒ 定时任务同样允许 team / member 伙伴
-     （主进程 runDelegatedTask 只对 origin="" 的群直派合并 team 许可，模型自派不受影响）。 */
-  const usable = picked.filter((m) => !m.muted && m.targetKind && m.targetKey);
-  if (!usable.length) {
-    return { ok: false, sent: 0, failed: ["没有可派活的伙伴（未绑定 / 已静音）"] };
-  }
-  /* 团成员名录与互 @ 判据：与渲染层 02-team-store 同一口径（11-07 用户令「成员之间互相艾特」）。 */
+  /* 团成员名录与互 @ 判据：与渲染层共用同一份目录（⛔ 不各自拉一次）。 */
   const catalog = await buildDispatchCatalog().catch(() => []);
+  const resolved = resolveGroupTargets(group, memberIds, catalog);
+  if (resolved.error) return { ok: false, sent: 0, failed: [resolved.error] };
+  const targets = resolved.targets;
   const saved = await appendMessageTo(group.id, {
     authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",
     authorKind: "human",
-    /* ⛔⛔ 11-07 用户令：定时任务不是「用户发的」。以前 authorKind 一律 human，
-       群视图把到点自动触发的消息当成人说的话 ⇒ 这里显式记结构化发送者。 */
+    /* ⛔⛔ 11-07 用户令：定时任务不是「用户发的」⇒ 结构化发送者，群视图据此出徽标。 */
     senderKind: source === "automation" ? "automation" : "user",
     text,
-    mentions: usable.map((m) => m.id),
+    mentions: targets.map((m) => m.id),
   });
   if (!saved.ok) return { ok: false, sent: 0, failed: [saved.error || "群消息没存上"] };
 
   const failed: string[] = [];
-  /* 11-06 用户令：「他们就可以在群里 @ 沟通」——定时派活也要按同一条判据接话
-     （⛔ 判据只在 `parseAgentMentions` 一处；这里与渲染层 `02-team-store` 同参数）。
-     护栏与渲染层一致：只走一跳 + 一轮最多 4 次。 */
   const ranIds = new Set<string>();
-  let chainBudget = 4;
+  /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。
+     ⛔ 两条护栏：只走**一跳** + 一轮总量 4，防两个伙伴互 @ 无限对烧。 */
+  let chainBudget = options.allowChain ? 4 : 0;
+  const params = options.params ?? {};
   const runOne = async (
-    partner: GroupShape["members"][number],
+    partner: GroupTarget,
     hop = 0,
     caller?: { id: string; name: string },
     bodyText = text,
   ): Promise<void> => {
-    if (ranIds.has(partner.id)) return;
+    if (!partner || ranIds.has(partner.id)) return;
     ranIds.add(partner.id);
     const startedAt = Date.now();
     let chars = 0;
@@ -303,28 +356,34 @@ async function dispatchGroupText(
     let okFlag = false;
     let errMsg = "";
     try {
-      /* 与渲染层 `02-team-store` 同口径：团成员产出直投群流，主理人只出统筹结论（别转述） */
+      /* 团伙伴按 team 写身份块（成员名单 / 互 @ 规则），单人伙伴按自己的角色写。 */
       const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team", catalog });
       const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
+      options.onPhase?.("started", partner, {});
       const res = await runDelegatedTask({
-        kind: partner.targetKind as "expert" | "subagent" | "cli",
+        kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
         name: partner.targetKey,
         query,
-        /* 群的项目地址 = 子会话的工作目录（空 ⇒ 用应用默认目录） */
         cwd: group.workspace || undefined,
-        /* ⛔ originThreadId 留空：定时任务没有"发起会话" */
+        /* ⛔ originThreadId 留空：群聊没有"群主会话"，闸与复用都按这个口径走。 */
         originThreadId: "",
-        /* ⛔ 11-07：群定时任务派出的会话同样是"群里的活" ⇒ 侧栏标「群调度」（与渲染层同口径）。 */
+        /* ⛔ 侧栏「群调度」标签的判据（群派活 / 群定时任务同口径）。 */
         source: "group",
-        /* ⛔⛔ 11-07：origin 为空 ≠ 本地用户。定时任务显式带身份下去，
-           被调度方看到的是「定时任务交给你的任务」而不是「用户需求」。 */
+        /* ⛔⛔ 11-07：origin 为空 ≠ 本地用户。定时任务 / 伙伴互 @ 各带真实身份下去。 */
         sender: source === "automation"
           ? { kind: "automation", name: "定时任务" }
-          : { kind: "user" },
+          : hop > 0
+            ? { kind: "member", name: caller?.name ?? partner.name }
+            : { kind: "user" },
+        ...(params.model ? { model: params.model } : {}),
+        ...(params.effort ? { effort: params.effort } : {}),
+        ...(params.sandbox ? { sandbox: params.sandbox } : {}),
+        ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
       });
       if (!res?.ok || !res?.threadId) {
         errMsg = res?.error || "派活失败";
         failed.push(`${partner.name}：${errMsg}`);
+        options.onPhase?.("finished", partner, { ok: false, error: errMsg });
         return;
       }
       threadId = res.threadId;
@@ -333,11 +392,9 @@ async function dispatchGroupText(
       const wrote = await appendMessageTo(group.id, {
         authorId: partner.id,
         authorKind: "bot",
-        /* 11-07：伙伴的回复是「伙伴发的」；被其它伙伴叫来的另由 via 记录因果链 */
         senderKind: "member",
         threadId,
         text: output || "（没有返回文本内容）",
-        /* 被别的伙伴叫来的 ⇒ 记下来源，界面上标「由 X 叫来」 */
         via: caller ? { memberId: caller.id, name: caller.name } : null,
       });
       okFlag = Boolean(wrote.ok);
@@ -345,7 +402,7 @@ async function dispatchGroupText(
         errMsg = wrote.error || "产出没能写进群聊记录";
         failed.push(`${partner.name}：${errMsg}`);
       }
-      /* 行首点名 ⇒ 叫下一个伙伴接手（只跳一层，防互 @ 对烧） */
+      options.onPhase?.("finished", partner, { ok: okFlag, error: errMsg || undefined, threadId });
       if (hop === 0 && chainBudget > 0 && okFlag && output) {
         const asks = parseAgentMentions(output, group, {
           excludeId: partner.id,
@@ -354,17 +411,18 @@ async function dispatchGroupText(
           catalog,
         });
         for (const ask of asks) {
-          /* 团成员是虚拟条目（合成 id），不在 group.members 里 —— 直接用 target 派给本人。 */
-          const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as GroupShape["members"][number] | undefined;
+          const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || ranIds.has(next.id)) continue;
           chainBudget -= 1;
-          /* ⛔ 以前把**整条原消息**又发一遍，被叫的人根本不知道自己被叫去做什么。 */
+          /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
+             ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
           void runOne(next, 1, { id: partner.id, name: partner.name }, `（${partner.name} 在群里叫你）${ask.ask}`);
         }
       }
     } catch (err) {
       errMsg = err instanceof Error ? err.message : String(err);
       failed.push(`${partner.name}：${errMsg}`);
+      options.onPhase?.("finished", partner, { ok: false, error: errMsg });
     } finally {
       const tokens = delegateRegistry?.tokensOf(threadId) ?? null;
       await logUsageTo({
@@ -384,8 +442,8 @@ async function dispatchGroupText(
       });
     }
   };
-  await Promise.all(usable.map((partner) => runOne(partner, 0)));
-  return { ok: failed.length < usable.length, sent: usable.length - failed.length, failed };
+  await Promise.all(targets.map((partner) => runOne(partner, 0)));
+  return { ok: failed.length < targets.length, sent: targets.length - failed.length, failed };
 }
 
 type ScheduleShape = NonNullable<ReturnType<typeof normalizeScheduleEntry>>;
@@ -889,6 +947,55 @@ export const harnessTeamFeature = defineFeature<null>({
 
     ipcHost.handle("harness-team:append-message", async (_event, groupId: string, entry: Record<string, unknown>) =>
       appendMessageTo(groupId, entry ?? {}));
+
+    /* 手动派活（11-07 用户令「流程跑不通 / 关个弹窗任务就结束」）。
+       ⛔⛔ 派活链**整体在主进程**：落用户消息 → 并发派活 → 成员产出回写群 → 互 @ 接力 → 账本。
+          渲染层只发这一条就返回；⛔ 不 await 派活（一轮可能跑几分钟，等它 = 又回到老病）。
+       ⛔ 面板关掉后这里照跑，产出照样进群日志 —— 这是"关弹窗任务不消失"的结构性保证。
+       ⛔ 进度用广播（team-member-run）驱动，不靠渲染层的 Promise 生命周期。 */
+    ipcHost.handle("harness-team:dispatch", async (_event, groupId: string, input: Record<string, unknown>) => {
+      const store = readStore();
+      const gid = String(groupId ?? "");
+      const g = findGroup(store.groups, gid);
+      if (!g) return { ok: false, error: "群不存在" };
+      const text = String(input?.text ?? "").trim();
+      if (!text) return { ok: false, error: "说点什么再发" };
+      const memberIds = Array.isArray(input?.memberIds)
+        ? (input.memberIds as unknown[]).map((x) => String(x ?? "")).filter(Boolean)
+        : [];
+      const params = (input?.params && typeof input.params === "object" ? input.params : {}) as DispatchParams;
+      /* 前置校验在**返回前**做完：@ 了没绑定的伙伴 / 全被静音，用户要立刻看到原因，
+         而不是"发送成功"然后群里毫无动静。 */
+      const catalog = await buildDispatchCatalog().catch(() => []);
+      const resolved = resolveGroupTargets(g, memberIds, catalog);
+      if (resolved.error) return { ok: false, error: resolved.error };
+      void dispatchGroupText(g, text, memberIds, "human", {
+        params,
+        /* 手动派活允许伙伴互相 @（一跳 + 总量 4，护栏在 dispatchGroupText 里）。 */
+        allowChain: true,
+        onPhase: (phase, target, info) => {
+          broadcastHarnessEvent({
+            type: "team-member-run",
+            phase,
+            groupId: gid,
+            memberId: target.id,
+            name: target.name,
+            ok: info.ok,
+            error: info.error,
+            threadId: info.threadId,
+            at: Date.now(),
+          } as never);
+        },
+      })
+        .then((r) => broadcastHarnessEvent({ type: "team-dispatch-done", groupId: gid, sent: r.sent, failed: r.failed } as never))
+        .catch((err) => broadcastHarnessEvent({
+          type: "team-dispatch-done",
+          groupId: gid,
+          sent: 0,
+          failed: [err instanceof Error ? err.message : String(err)],
+        } as never));
+      return { ok: true, queued: resolved.targets.length };
+    });
 
     /* 到点扫描：30s 一拍（与「设置 → 自动化」同一个节奏）。
        ⛔ 不用事件驱动/秒级轮询：这是"群里的闹钟"，精度到分钟就够，白烧 CPU 的轮询是负担。

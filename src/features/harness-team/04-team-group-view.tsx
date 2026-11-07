@@ -12,12 +12,17 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Search, Settings2, Square, X } from "lucide-react";
+import { Search, Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Markdown } from "../markdown";
+/* 11-07 用户令：正文里的 @ 必须渲染成**真艾特**（带头像 + 用户名），多个按出现顺序逐个出。
+   ⛔ 渲染在独立板块 `17-team-mention-text`（口径在纯函数 `team-mention-render.mjs` + 单测）。
+   ⛔ 成员行三件套拆到 `18-team-member-actions`（守住 >1000 行棘轮，行为逐字未变）。 */
+import { TeamMentionText } from "./17-team-mention-text";
+import { MemberActions } from "./18-team-member-actions";
 import { TeamMenuButton } from "./06-team-menu";
 
 import { TeamRuler } from "./07-team-ruler";
@@ -107,53 +112,8 @@ const shortId = (id: string) => (id.length > 10 ? `${id.slice(0, 6)}…` : id);
 /** 群聊一页多少条（首屏 + 每次向上补的量）。 */
 const PAGE = 30;
 
-/**
- * 成员行右端的三件套：**运行态动态点 → @ → 停**。
- *
- * 11-07 用户：「每个成员 @ 的前面有运行 ⏹ 动态展示吗」→ 运行态脉冲点落在 @ 前；
- * 11-07 用户（截图圈掉文字按钮）：「停用 ⏹️ 图标替代，放到 @ 前面」⇒ 停止也挪到 @ 前，
- * 且换成方形停止图标（不再有「停」字）。**运行态与停止都在 @ 前面**，顺序固定：
- * 运行态脉冲点 → ⏹️ 停止图标 → @。⛔ 只在运行中出现，空闲成员一律不画。
- * ⛔ 团成员与普通伙伴共用这一个组件（两处各写一份必然漂：一处加了动态点、另一处忘了）。
- */
-function MemberActions({
-  id, name, running, selected, onToggle, onStop,
-}: {
-  id: string;
-  name: string;
-  running: boolean;
-  selected: boolean;
-  onToggle: (id: string) => void;
-  onStop: (id: string) => void;
-}) {
-  return (
-    <>
-      {running && (
-        <span className="team-group__member-live" title={`${name} 正在运行`} aria-label={`${name} 正在运行`} role="img" />
-      )}
-      {running && (
-        <button
-          type="button"
-          className="team-group__member-stop"
-          title={`停止 ${name} 当前这一回合`}
-          aria-label={`停止 ${name}`}
-          onClick={() => onStop(id)}
-        >
-          <Square size={10} fill="currentColor" strokeWidth={1.5} />
-        </button>
-      )}
-      <button
-        type="button"
-        className={`team-group__member-at${selected ? " is-on" : ""}`}
-        title={`@${name}`}
-        aria-pressed={selected}
-        onClick={() => onToggle(id)}
-      >
-        @
-      </button>
-    </>
-  );
-}
+/* ⛔ 11-07：成员行三件套（运行态点 → ⏹️ → @）已拆到 `18-team-member-actions.tsx`，
+   两处调用（伙伴行 / 团成员行）不变。 */
 
 export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
@@ -339,6 +299,20 @@ export function TeamGroupView({
     const m = memberOf(id);
     return m ? faceOf(m) : { id, name: nameOf(id) };
   };
+
+  /** @ 候选（正文解析用）：群成员（含群主）+ 每个团的成员（合成 id）。
+   *  ⛔ 名字一律走 `personNameOf` / 目录：群主是**用户中心的真名**，团成员取自调度目录 ——
+   *     这里再写一套取名就会与消息署名对不上（用户明说"头像和用户名没跟用户中心同步"）。 */
+  const mentionCandidates = (() => {
+    const out: { id: string; name: string }[] = [];
+    for (const m of group.members) out.push({ id: m.id, name: personNameOf(m) });
+    for (const m of group.members) {
+      const teamId = String(m.targetKey ?? "");
+      if (!teamId || m.targetKind !== "team") continue;
+      for (const kid of teamKidsOf(m)) out.push({ id: teamAuthorIdOf(teamId, teamMemberIdOf(kid)), name: kid.name });
+    }
+    return out;
+  })();
 
   /* 伙伴回复正文里写了 `@某人` ⇒ 只做成**可点提及**：点一下把它加进本轮 @，
      ⛔ 不自动发、不自动派活（11-06：模型写「PPT @星象」这种举例文本也会被误读成指令）。 */
@@ -759,9 +733,8 @@ export function TeamGroupView({
                   const mentioned = isBot
                     ? parseMentions(row.text, group, { excludeId: row.authorId }).filter((m) => m.kind === "bot")
                     : [];
-                  const atChips = row.mentions.length
-                    ? row.mentions.map((id) => <em key={id} className="team-msg__mention">@{nameOf(id)}</em>)
-                    : undefined;
+                  /* ⛔ 11-07：`mentions` 不再渲染成前缀 chip —— 正文里的 `@名字` 会就地变成真提及。
+                     这里再画一遍就是截图上那个「两个 @承枢」，一真一假。 */
                   /* ⛔ 11-07 真机截图修正：定时任务那行曾显示成「定时任务 定时任务」（名字 + 徽标复述）。
                      ⇒ 合成来源（定时任务 / 系统）**用徽标代替名字**：一眼看出「这不是人说的」，
                         也不再重复；有真名的（上级）才名字 + 徽标。 */
@@ -840,16 +813,30 @@ export function TeamGroupView({
                         ) : (
                           /* 正文走**主对话同一个 Markdown 组件**（表格/代码/链接/图片灯箱一致）。
                              ⛔ 播报稿 ```voice 是给耳朵的，渲染前剥掉（口径只有一处）。
-                             @ 用 float 挂在第一段前面（用户：艾特要放消息前面，不要单独一行）。 */
+                             ⛔⛔ 11-07 用户令（截图）：以前这里先渲染一排 `mentions` 前缀 chip、正文里
+                                又原样保留 `@承枢` ⇒ 同一条消息出现两个「@承枢」，一真一假。
+                                ⇒ 现在**只从正文出**（`17-team-mention-text`）：每个 `@名字` 就地变成
+                                  带头像的提及，顺序 = 正文出现顺序。⛔ 不要再加回前缀 chip。 */
                           <>
-                            <div className="markdown team-msg__body-text">
-                              {atChips && <span className="team-card__prefix">{atChips}</span>}
-                              <Markdown>{stripVoiceScript(row.text)}</Markdown>
-                            </div>
+                            <TeamMentionText
+                              text={stripVoiceScript(row.text)}
+                              candidates={mentionCandidates}
+                              faceOfId={faceOfId}
+                              nameOf={nameOf}
+                              onPick={mentionPartner}
+                              excludeId={row.authorId}
+                            />
                             {(row.continued ?? []).map((extra) => (
-                              <div key={extra.key} className="team-msg__more markdown">
-                                <Markdown>{stripVoiceScript(extra.text)}</Markdown>
-                              </div>
+                              <TeamMentionText
+                                key={extra.key}
+                                className="team-msg__more markdown"
+                                text={stripVoiceScript(extra.text)}
+                                candidates={mentionCandidates}
+                                faceOfId={faceOfId}
+                                nameOf={nameOf}
+                                onPick={mentionPartner}
+                                excludeId={row.authorId}
+                              />
                             ))}
                             {isBot && (
                               <TeamProcess

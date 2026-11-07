@@ -433,7 +433,9 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
        · sh -c "claude …" ⇒ command not found，派活 100% 失败
      症状都不报错，所以必须钉住，不能靠人记得。 */
   const runnerSrc = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
-  ok(/export function cliProcessEnv\(\)/.test(mainSrc) && /augmentedPath\(\)/.test(mainSrc),
+  /* ⛔ 11-07：`augmentedPath` 现在带可选参数（`augmentedPath(options)`，用于 CLI 成员是否要 shims）
+     ⇒ 判据只钉「PATH 来自 augmentedPath」，不再钉无参调用形态（那是签名细节，不是语义）。 */
+  ok(/export function cliProcessEnv\(/.test(mainSrc) && /PATH: augmentedPath\(/.test(mainSrc),
     "cli-agents 有统一的增强 PATH（cliProcessEnv = augmentedPath，不是继承 process.env.PATH）");
   ok(/locateBinary[\s\S]{0,700}?env: cliProcessEnv\(\)/.test(mainSrc),
     "检测（where/which）走增强 PATH —— ⛔ 否则 mac 上装了也永远显示未检测到");

@@ -1020,6 +1020,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamMessages: (groupId: string) => __ipc("harness-team:messages", 1, [groupId]),
   /* 团队模式 P0b（群消息日志） */
   harnessTeamAppendMessage: (groupId: string, entry: Record<string, unknown>) => __ipc("harness-team:append-message", 2, [groupId, entry]),
+  /* 团队模式：手动派活（11-07 起整条链在主进程跑：落群日志 / 派活 / 产出回写 / 互 @ 接力 / 账本，关面板不中断） */
+  harnessTeamDispatch: (groupId: string, input: Record<string, unknown>) => __ipc("harness-team:dispatch", 2, [groupId, input]),
   /* 团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed） */
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */

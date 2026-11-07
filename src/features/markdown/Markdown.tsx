@@ -290,11 +290,13 @@ export const MD_COMPONENTS: Components = {
   table: ({ children }) => <MdTable>{children}</MdTable>,
 };
 
-export const MdBlock = memo(function MdBlock({ text }: { text: string }) {
-  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} rehypePlugins={MD_REHYPE_PLUGINS} components={MD_COMPONENTS} urlTransform={markdownUrlTransform}>{text}</ReactMarkdown>;
+/* ⛔ 11-07：`components` 可选覆盖（群聊的「真艾特」要用它把 team-mention: 链接画成带头像的提及）。
+   ⛔ 默认仍是 MD_COMPONENTS —— 不传时行为与以前逐字一致（别为了一个调用方改全局渲染）。 */
+export const MdBlock = memo(function MdBlock({ text, components }: { text: string; components?: Components }) {
+  return <ReactMarkdown remarkPlugins={MD_REMARK_PLUGINS} rehypePlugins={MD_REHYPE_PLUGINS} components={components ?? MD_COMPONENTS} urlTransform={markdownUrlTransform}>{text}</ReactMarkdown>;
 });
 
-export const Markdown = memo(function Markdown({ children }: { children: string }) {
+export const Markdown = memo(function Markdown({ children, components }: { children: string; components?: Components }) {
   /* 10-09：先把**播报稿**整块剥掉再渲染 —— 那段是给耳朵的（`​`voice`​ 围栏，由模型写在回复末尾），
      摊在对话里就是一段重复且莫名其妙的文字（用户只能听到念出来的那一版，看不到任何解释）。
      ⛔ 文本层先行：这比在 markdown AST 里挖 `code` 节点稳 —— 围栏未闭合（流式中）也要整段吞掉，
@@ -316,7 +318,7 @@ export const Markdown = memo(function Markdown({ children }: { children: string 
     return { blocks: bs, widgets: ws };
   }, [children]);
   // 流式出字是纯追加，前面的块只会变多不会重排，用 index 作 key 稳定且足够
-  const rendered = blocks.map((text, index) => <MdBlock text={text} key={`b${index}`} />);
+  const rendered = blocks.map((text, index) => <MdBlock text={text} key={`b${index}`} components={components} />);
   // widget 卡片按流序与文本块交错插入（text/widget 由 segments 顺序保证）
   const dark = isWidgetDark();
   const ordered: React.ReactNode[] = [];

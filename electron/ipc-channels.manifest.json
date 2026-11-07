@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 639,
+  "count": 640,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6201,6 +6201,16 @@
       "invokeArgs": "groupId, entry",
       "cast": null,
       "note": "团队模式 P0b（群消息日志）"
+    },
+    {
+      "name": "harnessTeamDispatch",
+      "channel": "harness-team:dispatch",
+      "paramsImpl": "groupId: string, input: Record<string, unknown>",
+      "paramsDecl": "groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }",
+      "returns": "Promise<{ ok: boolean; queued?: number; error?: string }>",
+      "invokeArgs": "groupId, input",
+      "cast": null,
+      "note": "团队模式：手动派活（11-07 起整条链在主进程跑：落群日志 / 派活 / 产出回写 / 互 @ 接力 / 账本，关面板不中断）"
     },
     {
       "name": "harnessTeamDelete",
