@@ -14,6 +14,8 @@ import { isUnsupportedEffortError, pickEffortFallback, blockedEffortsOf, markEff
 import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, isImagePart, imagePartSrc, normalizeImagePartForSend } from "../../../../../lib/prompt-images";
 import { pickEnhanceHint, shouldShowHintAfterSends, isLongPrompt, HINT_COOLDOWN_MS, HINT_AUTO_HIDE_MS } from "../../../../../lib/enhance-hints.mjs";
 import { nowBlock } from "../../../../../lib/now-block.mjs";
+/* 11-07：专家/成员会话的壳里显式写发件人（用户亲自打字 ⇒ user），⛔ 不靠"没标签"猜。 */
+import { senderLineOf } from "../../../../../lib/message-origin.mjs";
 import { setTurnWindowTail } from "../../../../../lib/turn-history.mjs";
 /* ⛔ 会话重建后要把中枢归属搬过去（见下方 bossGroupRebind 那段注释）。 */
 import { BOSS_ROLE_PROMPT, ensureBossMemoryWorkspace, ensureBossSessionRegistered, getBossThreads, renameBossSessionId, setBossHomeThreadId } from "../../../../boss-group-view";
@@ -434,7 +436,13 @@ export async function send(bag: Bag, event?: FormEvent) {
       const userText = input.filter((part: any) => part.type === "text").map((part: any) => part.text).join("\n").trim();
       if (userText) {
         const kindLabel = expertRole.kind === "team" ? "团队会话" : "成员会话";
-        const text = `${expertRole.prefix}[SYSTEM TASK · ${kindLabel}]\n=== 用户需求 ===\n${userText}\n=== END ===\n\n${expertRole.instruction}`;
+        /* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」——
+           `成员会话` / `团队会话` 这两种壳**既**可能是用户亲自打字（这里），
+           也可能是主理人派发（team-invoke / teams-ipc）。以前靠"壳里有没有上级标签"猜；
+           现在显式写协议行 = 用户，渲染层据此**明确**判成用户气泡（右侧）。
+           ⛔ 不加这行也不会错（parseUserRefs 推不出上级 ⇒ 回落 user），
+              但「推不出来」和「明确是用户」是两件事：以后谁再往壳里加标签就会误判。 */
+        const text = `${expertRole.prefix}[SYSTEM TASK · ${kindLabel}]\n=== 用户需求 ===\n${senderLineOf({ kind: "user" })}\n${userText}\n=== END ===\n\n${expertRole.instruction}`;
         sendInput = [{ type: "text", text, text_elements: [] }, ...inlineImagePaths.map((path) => ({ type: "localImage", path })), ...sendImages.filter((path) => !inlineImagePaths.includes(path)).map((path) => ({ type: "localImage", path }))];
       }
     } else if (pendingImport) {

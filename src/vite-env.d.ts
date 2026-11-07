@@ -471,7 +471,7 @@ interface Window {
     listDelegatesOf(originThreadId: string): Promise<{ records: DelegateRecordEntry[] }>;
     /* 10-05 能力网关：把引擎 0.157 后对模型不可见的内置 MCP 工具面接回来（name=工具名，name="list" 取清单）；10-09 起图像四件套已搬去 image-lab 域自己的通道，本网关只剩其余 25 个能力 */
     callDispatchTool(input: { name: string; args?: Record<string, unknown>; callerThreadId: string }): Promise<{ ok: boolean; output: string; error?: string }>;
-    invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent" | "cli"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
+    invokeAgent(input: { kind: "expert" | "team" | "member" | "subagent" | "cli"; name: string; query: string; originThreadId: string; sender?: { kind?: string; id?: string; name?: string } | null; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>;
     /* 10-29 收敛：总开关删除后只剩「逐类许可变化」一种事件 —— 传 before/next 三类许可，主进程按差集生成**一条**按类分段的通知（新开启的类附对象名单）；未开启的类显式否定 */
     dispatchNotice(before?: { expert?: boolean; team?: boolean; subagent?: boolean }, next?: { expert?: boolean; team?: boolean; subagent?: boolean }): Promise<{ text: string }>;
     threadRole(threadId: string): Promise<{ restricted: boolean; label?: string }>;

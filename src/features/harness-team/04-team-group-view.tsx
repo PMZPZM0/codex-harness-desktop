@@ -31,6 +31,8 @@ import { getActiveModel } from "../../lib/active-model.mjs";
 import { cancelDelegateRetries, subscribeTeamRuntime, teamRuntimeSnapshot } from "../../lib/team-runtime.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, resolveManagerId } from "../../lib/team-models.mjs";
+/* 11-07 界面优化：消息流按天分隔（飞书群同款）——连续几十条跨天消息只靠时间看不出"这是哪天"。 */
+import { dayKeyOf, dayLabelOf } from "../../lib/team-view.mjs";
 /* ⛔ 贴底走统一原语（守卫禁止在时间线里直接把 scrollTop 赋成 scrollHeight ——
    连带注释里出现那个字面量都会被扫到）。群消息流没有主对话那圈「尾部留白」，
    所以目标就是内容底 —— 但写入路径必须同源。 */
@@ -218,6 +220,8 @@ export function TeamGroupView({
      但消息不能显示成裸 id「automation」。⛔ 只有这一处映射，别在别处再判断一次。 */
   const nameOf = (id: string) => {
     if (id === "automation") return "定时任务";
+    /* 11-07：系统播报不是群成员，直接露 id 会显示成英文「system」（真机截图实测）。 */
+    if (id === "system") return "系统";
     const m = group.members.find((x) => x.id === id);
     return m ? personNameOf(m) : id;
   };
@@ -558,7 +562,11 @@ export function TeamGroupView({
                   )}
                 </div>
               ) : (
-                displayRows.map((row) => {
+                displayRows.map((row, index) => {
+                  /* 跨天分隔：只在"这一条与上一条不在同一天"时插一条（⛔ 每天第一条之前才插，
+                     不是每条都算 —— 否则同一天里会到处是日期条）。 */
+                  const prevRow = displayRows[index - 1];
+                  const dayBreak = !prevRow || dayKeyOf(prevRow.at) !== dayKeyOf(row.at);
                   const isBot = row.authorKind === "bot";
                   const role = roleOf(row.authorId);
                   const running = busy?.includes(row.authorId);
@@ -571,10 +579,23 @@ export function TeamGroupView({
                   const atChips = row.mentions.length
                     ? row.mentions.map((id) => <em key={id} className="team-msg__mention">@{nameOf(id)}</em>)
                     : undefined;
+                  /* ⛔ 11-07 真机截图修正：定时任务那行曾显示成「定时任务 定时任务」（名字 + 徽标复述）。
+                     ⇒ 合成来源（定时任务 / 系统）**用徽标代替名字**：一眼看出「这不是人说的」，
+                        也不再重复；有真名的（上级）才名字 + 徽标。 */
+                  const authorName = nameOf(row.authorId);
+                  const synthetic = row.senderKind === "automation" || row.senderKind === "system";
                   return (
+                    <Fragment key={row.key}>
+                      {dayBreak && (
+                        <div className="team-msg__day" role="separator" aria-label={dayLabelOf(row.at)}>
+                          <span>{dayLabelOf(row.at)}</span>
+                        </div>
+                      )}
                     <article
-                      key={row.key}
-                      className={`team-msg${isBot ? " is-bot" : " is-human"}`}
+                      className={`team-msg${isBot ? " is-bot" : " is-human"}${
+                        row.senderKind && row.senderKind !== "user" ? ` is-${row.senderKind}` : ""
+                      }`}
+                      data-sender={row.senderKind || "user"}
                       data-thread={row.threadId}
                       data-item={row.itemId}
                       data-item-id={row.itemId}
@@ -587,7 +608,13 @@ export function TeamGroupView({
                       />
                       <div className="team-msg__body">
                         <div className="team-msg__meta">
-                          <strong>{nameOf(row.authorId)}</strong>
+                          {synthetic ? (
+                            <em className={`team-msg__sender${row.senderKind === "automation" ? " is-automation" : ""}`}>
+                              {authorName}
+                            </em>
+                          ) : (
+                            <strong>{authorName}</strong>
+                          )}
                           {/* ⛔ 伙伴互 @ 的消息要能看出来"不是用户派的"：否则用户会以为
                               自己 @ 了两个人（11-06 那次误触发的第一反应就是这句）。 */}
                           {row.via && (
@@ -597,6 +624,12 @@ export function TeamGroupView({
                           )}
                           {isBot && role && <em className="team-msg__role">{role}</em>}
                           {isBot && running && <em className="team-msg__role is-live">处理中</em>}
+                          {/* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」。
+                              定时任务以前 authorKind=human ⇒ 在群里显示成「我」说的话；
+                              现在按结构化 senderKind 标出真实来源，⛔ 不改 authorKind 的既有语义
+                              （它还管着过程折叠 / 卡片 / 动作条，动了会连带坏一片）。
+                              合成来源的徽标已代替名字（见上），这里只补「上级派发」这一个带真名的角色。 */}
+                          {row.senderKind === "supervisor" && <em className="team-msg__sender">上级派发</em>}
                           <time>{fmtTime(row.at)}</time>
                         </div>
 
@@ -660,6 +693,7 @@ export function TeamGroupView({
                         )}
                       </div>
                     </article>
+                    </Fragment>
                   );
                 })
               )}

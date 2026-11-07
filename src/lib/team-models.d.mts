@@ -1,6 +1,7 @@
 /** `team-models.mjs` 的类型声明（与实现一一对应；⛔ 规则只在 .mjs 里，这里只描述形状）。 */
 import type { MenuItem, MenuPlacement } from "./team-menu.mjs";
 import type { GroupSchedule } from "./team-schedule.mjs";
+import type { SenderKind } from "./message-origin.mjs";
 
 export type TeamMemberKind = "human" | "bot";
 
@@ -25,6 +26,8 @@ export interface GroupLogMessage {
   threadId: string;
   authorId: string;
   authorKind: TeamMemberKind;
+  /** 11-07：真实发送者身份（老日志由 senderKindOf 推导，不落库也有值） */
+  senderKind: SenderKind;
   at: number;
   kind: "text" | "card";
   text: string;
@@ -101,6 +104,7 @@ export interface GroupMessageProjected {
   itemId: string;
   authorId: string;
   authorKind: TeamMemberKind;
+  senderKind: SenderKind;
   at: number;
   kind: "text" | "card";
   text: string;

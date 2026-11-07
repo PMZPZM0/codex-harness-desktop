@@ -13,6 +13,8 @@ import { app, safeStorage } from "electron";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { withStepParam } from "../../src/lib/step-note.mjs";
+/* 11-07 用户令：发送者身份结构化传进来，⛔ 不再让所有派活都伪装成「用户需求」。 */
+import { senderFromDispatch, senderLineOf, taskLineOf, normalizeSender } from "../../src/lib/message-origin.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
 import { binOnPath, buildCliRolePrompt, cliModelEnv, readUsableCliAgents } from "../cli-agents";
@@ -41,6 +43,10 @@ const reuseInFlight = new Set<string>();
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;
+  /** ⛔ 11-07：真实发送者（user / supervisor / automation / member / system）。
+   *  不传时按 originThreadId 推导（有 origin ⇒ 上级，空 ⇒ 本地用户）——
+   *  ⛔ 定时任务 / 伙伴互 @ 这类「origin 为空但不是用户」的场景必须显式传。 */
+  sender?: { kind?: string; id?: string; name?: string } | null;
 }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string; reused?: boolean }> {
   const origin = String(input.originThreadId ?? "");
   // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
@@ -278,6 +284,14 @@ export async function runDelegatedTask(input: {
      ⛔ 必须在建会话之后、下发指令/首任务之前拿到 —— 上级名字要拼进那两处。 */
   await ensureSessionAlias(threadId, origin).catch(() => undefined);
   const supervisorLabel = await supervisorLabelOf(threadId).catch(() => "");
+  /* ⛔⛔ 11-07 用户令：「调度功能在被调度场景中正确识别上级消息」——
+     以前这里没有任何发送者概念：origin 为空一律当「本地用户」，主对话模型自派、
+     专家团、中枢、定时任务、群聊伙伴互 @ 全被拼成同一句「发起方交给你的任务」。
+     ⇒ 显式传的 sender 优先；没传则按上下文推导（有 origin ⇒ 上级，空 ⇒ 用户）。
+     定时任务 / 伙伴转交这类「origin 为空但不是用户」的调用方必须显式传。 */
+  const dispatchSender = normalizeSender(
+    input.sender ?? senderFromDispatch({ originThreadId: origin, name: supervisorLabel, supervisor: supervisorLabel }),
+  );
   /* 10-05 登记「这个会话就是这个角色」——主进程应答 role_memory_save 时靠它反查归属
      （⛔ 渲染层收不到被委派会话的工具事件，见 role-memory-tool.ts 文件头）。登记失败不阻塞调度。 */
   if (roleRef) await noteRoleThread(app.getPath("userData"), threadId, roleRef, String(input.cwd ?? "")).catch(() => undefined);
@@ -344,10 +358,14 @@ export async function runDelegatedTask(input: {
   const finalQuery = [
     "[SYSTEM TASK · 调度会话]",
     "=== 用户需求 ===",
+    /* ⛔⛔ 11-07：需求体**第一行**写结构化发件人。parseUserRefs 统一解析它，
+       外层对话框 / 专家团 / 中枢会话 / 群聊据此判断「上级 or 用户」，不再靠标签猜。
+       ⛔ 老会话没有这行时 user-refs 会从下面的 `上级：` / 任务措辞推导，零回归。 */
+    senderLineOf(dispatchSender),
     /* ⛔ 10-31：把**上级主管**写在第一条任务里（不只是持久指令）—— 子会话的会话视图据此显示
        「主会话 · 青崖主管」而不是伪造成用户发言；渲染层按这行解析（src/lib/user-refs.ts）。 */
-    ...(supervisorLabel ? [`上级：${supervisorLabel}`] : []),
-    `发起方交给你的任务：${String(input.query ?? "").trim()}`,
+    ...(supervisorLabel && dispatchSender.kind === "supervisor" ? [`上级：${supervisorLabel}`] : []),
+    taskLineOf(dispatchSender, String(input.query ?? "").trim()),
     "=== END ===",
     "",
     `[角色：${kindLabel(target.kind)} ${displayName}]`,

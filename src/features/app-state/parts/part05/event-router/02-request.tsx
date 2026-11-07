@@ -397,6 +397,8 @@ ${st.hint}`);
                     name: String(args.name ?? ""),
                     query: String(args.query ?? ""),
                     originThreadId: dispatchOrigin,
+                    /* ⛔ 11-07：宿主工具派活来自上级会话，不是用户打字（origin 为空时也别回落 user） */
+                    sender: { kind: "supervisor", id: dispatchOrigin },
                   });
                 /* 11-03：复用已有子会话时，把「沿用了哪条」告诉模型（它需要知道自己派过谁、这次没新建）。 */
                 const reusedNote = delegated?.ok && (delegated as any)?.reused && (delegated as any)?.threadId

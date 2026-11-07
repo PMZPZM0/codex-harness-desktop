@@ -13,6 +13,19 @@
 
 import { DEFAULT_GROUP_MENU, normalizeMenu, normalizeMenuPlacement } from "./team-menu.mjs";
 import { normalizeSchedules } from "./team-schedule.mjs";
+/* 11-07 用户令：群消息也要带真实发送者身份（用户 / 上级 / 定时任务 / 伙伴 / 系统）。
+   ⛔ 枚举只认 message-origin.mjs 这一份，⛔ 不在群模型里另抄一套。 */
+import { SENDER_KINDS } from "./message-origin.mjs";
+
+/** 老群日志没有 senderKind ⇒ 按已有的 authorKind / authorId 推导，⛔ 不是一律当「用户」。 */
+function senderKindOf(entry) {
+  const raw = entry?.senderKind;
+  const kind = typeof raw === "string" ? raw : (raw && typeof raw === "object" ? String(raw.kind ?? "") : "");
+  if (SENDER_KINDS.includes(kind)) return kind;
+  if (entry?.authorKind === "bot") return "member";
+  if (String(entry?.authorId ?? "") === "automation") return "automation";
+  return "user";
+}
 
 /** 一个群最多几个伙伴（飞书有 maxBotNum；我们先给一个固定上限，留成数据便于后续改）。 */
 export const GROUP_MAX_PARTNERS = 8;
@@ -542,6 +555,8 @@ export function projectGroupMessages(sources) {
         itemId,
         authorId: String(msg?.authorId ?? ""),
         authorKind: msg?.authorKind === "human" ? "human" : "bot",
+        /* 11-07：真实发送者（定时任务 / 伙伴转交不再默认按用户消息处理） */
+        senderKind: senderKindOf(msg),
         at: Number(msg?.at ?? 0),
         kind: msg?.kind === "card" ? "card" : "text",
         text: String(msg?.text ?? ""),
@@ -579,6 +594,8 @@ export function normalizeGroupMessage(entry) {
     threadId,
     authorId: String(entry?.authorId ?? ""),
     authorKind: entry?.authorKind === "bot" ? "bot" : "human",
+    /* 11-07：结构化发送者身份。老日志缺字段 ⇒ senderKindOf 按 authorKind/authorId 推导。 */
+    senderKind: senderKindOf(entry),
     at: Number(entry?.at ?? 0) || 0,
     kind: entry?.kind === "card" ? "card" : "text",
     text: String(entry?.text ?? ""),

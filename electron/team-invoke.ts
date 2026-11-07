@@ -17,6 +17,8 @@ import { bridgeDial } from "./main";
 import { ensureProjectAgentsMd } from "./project-conventions";
 import { readPersonalization } from "./personalization";
 import { personalNormsPrompt } from "../src/lib/engineering-norms.mjs";
+/* 11-07：主理人 → 成员这条链也要写结构化发件人（外层对话框据此判「上级」）。 */
+import { senderLineOf, taskLineOf } from "../src/lib/message-origin.mjs";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";
@@ -199,7 +201,11 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
   //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
   // 09-14：包上 [SYSTEM TASK · 成员会话] 壳——渲染端 userDisplayText 只认这个壳，
   // 不包壳的话用户打开成员会话时整段角色提示词会裸露在首条气泡里（用户实测反馈）。
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${memberSupervisor ? `上级：${memberSupervisor}\n` : ""}主理人分配的子任务：${input.query}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
+  /* ⛔⛔ 11-07 用户令：「专家团也是一样」——主理人派给成员的首任务是**上级发的**，
+     以前只靠「主理人分配的子任务」这串正文标签猜；现在写结构化发件人，
+     parseUserRefs 统一解析，老会话仍由旧标签兼容推导。 */
+  const leadSender = { kind: "supervisor", name: memberSupervisor || `${team.displayName.zh}主理人` };
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${senderLineOf(leadSender)}\n${memberSupervisor ? `上级：${memberSupervisor}\n` : ""}${taskLineOf(leadSender, input.query)}\n=== END ===\n\n${systemPrefix}请直接给出你的专业产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给主理人，无需调用任何回传工具。不要发起破坏性操作。${invokedMemory.text}`;
   let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
   try {
     const turn: any = await server.request("turn/start", {

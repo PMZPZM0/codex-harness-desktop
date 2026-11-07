@@ -2,6 +2,7 @@
  * 团队模式 · 渲染层类型（P0）
  * ⛔ 与 `src/lib/team-models.mjs` 的形状一一对应；⛔ 不在这里再定义一套业务规则（规则只在 lib 里）。
  */
+import type { SenderKind } from "../../lib/message-origin.mjs";
 
 export type MemberKind = "human" | "bot";
 
@@ -106,6 +107,8 @@ export type GroupMessageRow = {
   itemId: string;
   authorId: string;
   authorKind: MemberKind;
+  /** 11-07：真实发送者（用户 / 上级 / 定时任务 / 伙伴 / 系统）；老日志按作者推导 */
+  senderKind: SenderKind;
   at: number;
   kind: "text" | "card";
   text: string;

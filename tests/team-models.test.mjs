@@ -208,6 +208,24 @@ test("群消息：没有 id 或 threadId 一律判无效（不造真身）", () 
   assert.equal(ok.kind, "text");
 });
 
+test("群消息来源：定时任务 / 伙伴 / 用户各有身份，老日志按作者推导（⛔ 不是一律当用户）", () => {
+  /* 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」。
+     定时任务的 authorKind 仍是 human（它还管着过程折叠 / 动作条，⛔ 不改语义），
+     真实来源走独立的 senderKind —— 渲染层据此标「定时任务」而不是当成"我"说的话。 */
+  const auto = normalizeGroupMessage({ id: "a1", threadId: "t1", text: "到点巡检", authorKind: "human", authorId: "automation" });
+  assert.equal(auto.senderKind, "automation");
+  const user = normalizeGroupMessage({ id: "u1", threadId: "t1", text: "我打的", authorKind: "human", authorId: "local-user" });
+  assert.equal(user.senderKind, "user");
+  const bot = normalizeGroupMessage({ id: "b1", threadId: "t1", text: "伙伴回复", authorKind: "bot", authorId: "p1" });
+  assert.equal(bot.senderKind, "member", "伙伴消息（老日志无字段）按 authorKind 推导");
+  const explicit = normalizeGroupMessage({ id: "s1", threadId: "t1", text: "系统提示", authorKind: "human", senderKind: "system" });
+  assert.equal(explicit.senderKind, "system", "显式落库的身份优先（不被 authorKind 覆盖）");
+  const rows = projectGroupLog([auto, user, bot]);
+  /* ⛔ 按 id 取而不是按顺序比：投影按 at 排序（三条 at 都是 0，同刻顺序不属于本用例的判据）。 */
+  const kindById = Object.fromEntries(rows.map((r) => [r.itemId ?? r.key, r.senderKind]));
+  assert.deepEqual(Object.values(kindById).sort(), ["automation", "member", "user"], "投影行也要带（群视图读的是投影）");
+});
+
 test("群消息追加：同 id 覆盖（占位→补正文），并保持时间序由投影负责", () => {
   let list = [];
   list = appendGroupMessage(list, { id: "m1", threadId: "t1", at: 100, text: "占位" });

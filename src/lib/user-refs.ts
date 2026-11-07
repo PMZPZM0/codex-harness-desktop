@@ -6,6 +6,10 @@ import { stripImageTokens } from "./prompt-images";
 import { stripHarnessBlocks } from "./harness-block-strip.mjs";
 import { groupEventPlainText, parseGroupEvents } from "./group-event-text.mjs";
 import type { GroupEventBlock } from "./group-event-text.mjs";
+/* 11-07 用户令：发送者身份不再靠标签白名单 + 正文正则猜 —— 统一走单一真相源。
+   ⛔ 老会话没有协议行时仍从旧标记推导；推不出来回落 user（用户自己打的字）。 */
+import { parseSenderFromText, stripSenderMeta, normalizeSender } from "./message-origin.mjs";
+import type { Sender } from "./message-origin.mjs";
 
 /** 引用会话记录协议块的载荷：id=源会话 ID，note=折叠卡备注行（必须单行），content=记录全文。 */
 export type ThreadReferencePayload = { id: string; note: string; content: string };
@@ -26,6 +30,10 @@ export type ParsedUserRefs = {
     dispatched?: boolean };
   imported?: { note: string; content: string };
   threadReferences: ThreadReferencePayload[];
+  /** ⛔ 11-07：这条 userMessage 的**真实发送者**（用户 / 上级 / 定时任务 / 伙伴 / 系统）。
+   *  由 SYSTEM TASK 需求体第一行的 `发件人：` 协议行解析；老会话从旧标记推导。
+   *  ⛔ undefined = 普通用户消息（不是「判断失败」，是本来就没包壳）。 */
+  sender?: Sender;
   /** 群广播（`[群事件] …`）：宿主投进中枢会话的群消息，界面按块渲染成"头像 + 名字 + 内容"。
    *  ⛔ 它**不是**用户说的话 —— 渲染层不许再套用户气泡（右对齐 + "你"）。 */
   groupEvents?: GroupEventBlock[];
@@ -50,7 +58,6 @@ function stripGroupContext(text: string): string {
   const sep = trimmed.match(/\r?\n[ \t]*-{3,}[ \t]*(?:\r?\n)+/);
   return (sep ? trimmed.slice((sep.index ?? 0) + sep[0].length) : trimmed).trim();
 }
-
 
 /** 把用户消息原文解析为结构化引用段。
  *  包含四类约定段：附件文件 / 技能 / 上下文 / SYSTEM TASK，cleanText 是剥完所有引用段后的剩余文本。 */
@@ -128,6 +135,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
   const SHELL_TAG = "[SYSTEM TASK · ";
   const shellAt = clean.indexOf(SHELL_TAG);
   let teamTask: ParsedUserRefs["teamTask"] | undefined;
+  let sender: ParsedUserRefs["sender"];
   if (shellAt >= 0) {
     const tail = clean.slice(shellAt);
     const kindLabel = (tail.match(/^\[SYSTEM TASK · ([^\]\n]+)\]/) ?? [])[1] ?? "";
@@ -137,25 +145,29 @@ export function parseUserRefs(text: string): ParsedUserRefs {
     const needMatch = tail.match(/===\s*用户需求\s*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
     const taskMatch = needMatch ? null : tail.match(/===\s*本次任务[^=\n]*===\s*\r?\n([\s\S]*?)\r?\n===\s*END\s*===/);
     const body = (needMatch ?? taskMatch ?? [])[1] ?? "";
-    /* 需求正文常带来源标签（`发起方交给你的任务：` / `主理人分配的子任务：`），
-       气泡里显示标签没意义 ⇒ 去掉标签只留正文。群成员格式的 `标题：` 同理
-       （它会被截成会话标题，留着前缀就变成「标题：首页」）。
-       ⛔ 这三个标签 / `上级：` 行是**宿主派发**的标记（delegation / team-invoke / 群派活）；
-       用户自己在成员会话里打字时 send.tsx 包的壳里没有它们 ⇒ 据此区分，别把用户的话当上级发言。 */
-    /* ⛔ 上级行 / 来源标签都只认**正文第一行**：宿主派发的壳固定把它们写在 body 开头。
-       按任意行匹配（/m）会把用户自己在成员会话里打的一行「上级：…」也判成上级派发，
-       从而把用户的话左移伪造成上级发言（11-03 审查收紧）。 */
-    const dispatched = /^\s*(?:发起方交给你的任务|主理人分配的子任务)/.test(body)
-      || /^\s*上级(?:主管)?\s*[：:]/.test(body);
-    /* ★ 10-31 用户令：被调度会话要知道「上级是谁，哪个主管」——
-       delegation / team-invoke 会在需求体第一行写 `上级：青崖主管（…）`。
-       ⛔ 这行是**宿主元信息**，不属于需求正文：抽出来单独给气泡头部用，正文里要删掉。
-       ⛔ 顺序必须先剥上级行再剥来源标签：team-invoke 的壳是「上级：X \n 主理人分配的子任务：…」，
-          反过来的话来源标签不在行首 ⇒ 剥不掉，气泡里会一直显示「主理人分配的子任务：」（11-03 实测）。 */
-    const supervisorLine = body.match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*(?:\r?\n|$)/);
-    let requirement = (supervisorLine ? body.replace(/^\s*上级(?:主管)?\s*[：:].*(?:\r?\n|$)/, "") : body)
-      .replace(/^\s*(?:发起方交给你的任务|主理人分配的子任务|用户任务)\s*[：:]\s*/, "")
-      .trim();
+    /* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」——
+       宿主派发的壳统一在需求体第一行写 `发件人：<kind> · <name>`（见 message-origin.mjs），
+       ⛔ 不再靠标签白名单 + 正文正则猜。老会话没有协议行时 parseSenderFromText 会从
+       `上级：` / `发起方交给你的任务` / `主理人分配的子任务` / `用户任务` 推导。
+       只认**第一行**（11-03 收紧过）：用户正文里随手写的「上级：」不算宿主元信息。 */
+    sender = parseSenderFromText(body) ?? undefined;
+    /* 旧壳兜底：中枢群成员会话把「上级：」写在需求体**之外**，解析不到；这两种壳由主进程
+       唯一产出，维持 11-01 的白名单口径（⛔ 不扩到「成员会话」—— 那里面也有用户自己打的字）。 */
+    const shellDispatched = kindLabel === "调度会话" || kindLabel === "群成员会话";
+    const dispatched = sender ? sender.isSuperior : (
+      /^\s*(?:发起方交给你的任务|主理人分配的子任务)/.test(body)
+      || /^\s*上级(?:主管)?\s*[：:]/.test(body)
+      || shellDispatched
+    );
+    if (shellDispatched && !sender) sender = normalizeSender({ kind: "supervisor" });
+    /* 10-31 用户令：被调度会话要知道「上级是谁」—— `上级：X` 是宿主元信息，单独抽给气泡头部，
+       正文里要删掉；⛔ 顺序由 stripSenderMeta 统一收口（发件人行 → 上级行 → 任务标签）。 */
+    /* 11-07：发件人协议行占第一行 ⇒ `上级：` 顺延到第二行，先剥协议行再抽，
+       ⛔ 别拿未剥的 body 匹配（否则 teamTask.supervisor 会整个丢掉）。 */
+    const supervisorLine = body
+      .replace(/^\s*发件人\s*[：:][^\n]*(?:\r?\n|$)/, "")
+      .match(/^\s*上级(?:主管)?\s*[：:]\s*(.+?)\s*(?:\r?\n|$)/);
+    let requirement = stripSenderMeta(body);
     if (taskMatch) requirement = requirement.replace(/^标题\s*[：:]\s*/, "");
     /* 11-07：群聊派活把群上下文拼在任务前面 —— 显示侧只留用户真正交给它的任务。 */
     requirement = stripGroupContext(requirement);
@@ -178,6 +190,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
       clean = "";
       // 无壳旧格式同样是宿主派发（角色提示词 + 「主理人分配的子任务」）
       teamTask = { kind: "member", requirement: stripGroupContext(legacy[2].trim()), dispatched: true };
+      sender = normalizeSender({ kind: "supervisor" });
     }
   }
   /* ⛔⛔ 10-26 用户实测截图：老会话（角色说明曾拼进用户正文的那批）打开时，整段
@@ -190,7 +203,7 @@ export function parseUserRefs(text: string): ParsedUserRefs {
      结构化后：界面按块渲染气泡（成员头像 + 名字 + 内容），cleanText 只留可读正文给复制/搜索/标题。 */
   const groupEvents = parseGroupEvents(withoutRole) ?? undefined;
   const visible = groupEvents ? groupEventPlainText(groupEvents) : withoutRole.replace(/\n{3,}/g, "\n\n").trim();
-  return { cleanText: visible, files, skills, contexts, teamTask, imported, threadReferences, groupEvents };
+  return { cleanText: visible, files, skills, contexts, teamTask, imported, threadReferences, groupEvents, sender };
 }
 
 /** 用户消息对外可见文本（复制/引用/标题/上下文选择/乐观消息匹配键使用）：

@@ -2054,6 +2054,51 @@
   font-style: normal;
   white-space: nowrap;
 }
+/* 真实发送者标记（11-07 用户令：「准确区分每条消息是上级发送还是用户发送」）。
+   合成来源（定时任务 / 系统）**用它代替名字**（真机截图：名字 + 徽标 = 「定时任务 定时任务」重复），
+   所以它得长得像名字位：字重稍强、行内高度与 <strong> 对齐；⛔ 不改 authorKind
+   （它还管过程折叠 / 卡片 / 动作条），这里只是旁注。
+   定时任务用 orange：时间触发的，别和「系统」「上级派发」混成一种语气。 */
+.team-msg__sender {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--line-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.team-msg__sender.is-automation {
+  background: color-mix(in srgb, var(--orange) 16%, transparent);
+  color: var(--orange);
+}
+/* 跨天分隔（11-07）：只在换天处插一条，两侧细线中间一枚日期胶囊 ——
+   ⛔ 不做 sticky（消息流本身就是滚动容器，sticky 会盖住正文）。 */
+.team-msg__day {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1;
+}
+.team-msg__day::before,
+.team-msg__day::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line-soft);
+}
+.team-msg__day > span {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
 
 /* ══════ 成员栏：专家团展开成员（11-06 用户：「团成员不展示出来吗」）══════════════
    团在群里是一行（派活按整团走），但"团里有谁"必须看得见 —— 否则用户不知道

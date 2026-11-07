@@ -160,10 +160,25 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
         （team-invoke / teams-ipc，body 带 `上级：` / `主理人分配的子任务`）。不能按标签一刀切。
         ⇒ `user-refs` 解析出 `dispatched`（只有宿主派发的壳才有这些内层标记）；派发的一律按
         「上级派发」左对齐，用户自己打字的仍走右侧用户气泡。 */
-  const isParentTask = Boolean(refs.teamTask?.dispatched)
-    || refs.teamTask?.label === "调度会话"
-    || refs.teamTask?.label === "群成员会话";
+  /* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送，外面对话框也一样」——
+     身份优先读结构化 `refs.sender`（宿主在需求体第一行写 `发件人：…`），
+     ⛔ 老会话没有协议行时才回落到 dispatched + 壳标签白名单（11-03 那套），不回归。
+     sender.kind === "user" 时**明确判成用户消息**，不再因为壳标签把它左移。 */
+  const isParentTask = refs.sender
+    ? refs.sender.isSuperior
+    : (Boolean(refs.teamTask?.dispatched)
+      || refs.teamTask?.label === "调度会话"
+      || refs.teamTask?.label === "群成员会话");
   if (isParentTask) {
+    const kind = refs.sender?.kind ?? "supervisor";
+    /* 定时任务 / 伙伴转交 / 系统不显示「主会话」笔名 —— 那不是它们的发送者。
+       上级仍优先用实时的笔名快照（父会话改名后老任务也跟着更新，10-31 令）。 */
+    const parentName = refs.sender && refs.sender.kind !== "supervisor"
+      ? (refs.sender.name || refs.sender.label)
+      : (liveSupervisor || refs.teamTask?.supervisor || refs.sender?.name || "主会话");
+    const parentHint = kind === "automation" ? "定时任务"
+      : kind === "member" ? "伙伴转交"
+        : kind === "system" ? "系统消息" : "派发任务";
     return (
       <div className="parent-task-stack" data-ruler-mark="user" data-turn-id={turn?.id} data-item-id={item.id}>
         <div className="parent-task-head">
@@ -172,8 +187,8 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
               （`上级主管：青崖主管（…）`），这里优先显示；**并优先用笔名快照**：父会话改名后
               广播一到达这里就换成新名字（不然只有新派的任务才更新，老任务还挂旧名）。
               两处都没有才退回通用「主会话」。 */}
-          <span className="parent-task-name">{liveSupervisor || refs.teamTask?.supervisor || "主会话"}</span>
-          <span className="parent-task-hint">派发任务</span>
+          <span className="parent-task-name">{parentName}</span>
+          <span className="parent-task-hint">{parentHint}</span>
         </div>
         <div className="parent-task-body">{refs.teamTask?.requirement}</div>
       </div>

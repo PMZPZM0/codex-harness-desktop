@@ -56,7 +56,7 @@
       "name": "invokeAgent",
       "channel": "agents:invoke",
       "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { kind: \"expert\" | \"team\" | \"member\" | \"subagent\" | \"cli\"; name: string; query: string; originThreadId: string; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
+      "paramsDecl": "input: { kind: \"expert\" | \"team\" | \"member\" | \"subagent\" | \"cli\"; name: string; query: string; originThreadId: string; sender?: { kind?: string; id?: string; name?: string } | null; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
       "returns": "Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,

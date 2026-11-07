@@ -625,5 +625,77 @@ try {
     "复用结果回报给模型（「沿用已有子会话 …，没有新建」）");
 }
 
+/* ══ 11-07 用户令：消息来源必须**结构化**，不许再靠标签猜 ══
+   「准确区分每条消息是上级发送还是用户发送…不仅限群聊，外面对话框、专家团、中枢会话也一样」。
+   病根：调度链输入里没有「谁发的」，只有 originThreadId（空串一律当本地用户）⇒
+   模型自派 / 专家团 / 中枢 / 定时任务 / 群伙伴互 @ 六种来源全被拼成同一句「发起方交给你的任务」，
+   消费侧只能『[SYSTEM TASK] 标签白名单 + 正文正则』猜 ⇒ 猜不到就按用户消息处理。
+   ⇒ 判据钉三层：① 纯函数口径真跑；② 每个壳生产点都写协议行；③ 消费侧优先读结构化身份。 */
+{
+  const origin = await import(pathToFileURL(join(ROOT, "src", "lib", "message-origin.mjs")).href);
+  ok(origin.SENDER_KINDS.join(",") === "user,supervisor,automation,member,system",
+    "发送者枚举只有一份（user/supervisor/automation/member/system）");
+  ok(origin.senderLineOf({ kind: "supervisor", name: "青崖" }) === "发件人：supervisor · 青崖"
+    && origin.senderLineOf({ kind: "user" }) === "发件人：user",
+    "协议行格式稳定（`发件人：<kind> · <name>` / 无名字时只有 kind）");
+  ok(origin.parseSenderFromText("发件人：automation\n标题：巡检")?.kind === "automation"
+    && origin.parseSenderFromText("发件人：member · 洞明\n伙伴 洞明 交给你的任务：看下")?.kind === "member",
+    "解析器读得回协议行（定时任务 / 伙伴转交不再被当成用户）");
+  /* ⛔ 关键边界：第一行**明确是用户**时，第二行写什么都必须是用户 ——
+     「用户自己在成员会话里打一行『上级：…』」不能把他伪造成上级（11-03 审查过的坑）。 */
+  ok(origin.parseSenderFromText("发件人：user\n上级：我是冒充的")?.kind === "user",
+    "⛔ 第一行用户身份优先，正文里的「上级：」不得反向覆盖");
+  ok(origin.parseSenderFromText("我今天想改个东西") === null,
+    "普通用户消息解析结果 = null（⛔ 不是「猜不到当上级」——用户界面据此走右侧气泡）");
+  ok(origin.stripSenderMeta("发件人：supervisor · 青崖\n上级：青崖主管\n发起方交给你的任务：做首页") === "做首页",
+    "剥元信息顺序：协议行 → 上级行 → 任务标签（顺序错会留残字进气泡）");
+  ok(origin.senderFromDispatch({ originThreadId: "" }).kind === "user"
+    && origin.senderFromDispatch({ originThreadId: "t1", name: "青崖" }).kind === "supervisor"
+    && origin.senderFromDispatch({ source: "automation" }).kind === "automation",
+    "兜底推导：有 origin ⇒ 上级；空 origin ⇒ 用户；显式 source 优先（⛔ 空 origin 不再万能当用户）");
+
+  /* ② 每个 SYSTEM TASK 壳生产点都必须写协议行（漏一处 = 那类来源又变回「用户消息」） */
+  const producers = [
+    ["electron/features/delegation.ts", "调度会话（主对话模型自派 / IPC / 宿主工具）"],
+    ["electron/team-invoke.ts", "专家团主理人 → 成员"],
+    ["electron/features/teams-ipc.ts", "团队会话首任务 / 成员直达会话首任务"],
+    ["electron/boss-groups/runner.ts", "中枢 → 群成员"],
+    ["src/features/app-state/parts/part08/02-seg/send.tsx", "用户亲自在专家/成员会话里打字"],
+  ];
+  for (const [file, label] of producers) {
+    const src = readFileSync(join(ROOT, file), "utf8");
+    ok(/senderLineOf\(/.test(src), "壳生产点写协议行：" + label);
+  }
+  /* teams-ipc 有两处（团队 + 成员），漏一处就有一类来源没身份 */
+  const teamsSrc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
+  ok((teamsSrc.match(/senderLineOf\(/g) ?? []).length >= 2,
+    "团队会话与成员会话**两处**都写发件人（只改一处 = 另一半仍按用户消息渲染）");
+
+  /* ③ 消费侧：结构化身份优先，旧标签只作老会话兼容 */
+  const refsSrc = readFileSync(join(ROOT, "src/lib/user-refs.ts"), "utf8");
+  ok(/parseSenderFromText\(body\)/.test(refsSrc) && /stripSenderMeta\(body\)/.test(refsSrc),
+    "user-refs 统一解析 / 剥离协议行（⛔ 不在各处再写正则）");
+  const umvSrc = readFileSync(join(ROOT, "src/features/shared/UserMessageView.tsx"), "utf8");
+  ok(/refs\.sender\s*\?\s*refs\.sender\.isSuperior/.test(umvSrc),
+    "用户消息视图优先读 refs.sender.isSuperior（明确 user 时不再因壳标签左移）");
+
+  /* ④ 群消息：来源也要结构化落库并投影（定时任务不是「我」说的话） */
+  const modelsSrc = readFileSync(join(ROOT, "src/lib/team-models.mjs"), "utf8");
+  ok(/senderKind: senderKindOf\(msg\)/.test(modelsSrc) && /senderKind: senderKindOf\(entry\)/.test(modelsSrc),
+    "群日志投影带 senderKind（投影与归一两条路都在）");
+  const ipcSrc = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
+  ok(/senderKind: source === "automation" \? "automation" : "user"/.test(ipcSrc),
+    "主进程写群消息时区分定时任务 / 用户");
+  const storeSrc = readFileSync(join(ROOT, "src/features/harness-team/02-team-store.ts"), "utf8");
+  ok(/sender: source === "partner"/.test(storeSrc) && /senderKind: "member"/.test(storeSrc),
+    "渲染层群派活把「伙伴互 @ 的那一跳」标成 member 发送者（⛔ origin 为空也照样传）");
+  const viewSrc = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
+  ok(/data-sender=\{row\.senderKind/.test(viewSrc) && /team-msg__sender/.test(viewSrc),
+    "群视图按 senderKind 出可见标记（有了数据不渲染 = 用户还是看不出来源）");
+  const cssSrc = readFileSync(join(ROOT, "src/styles/61-team-mode.css"), "utf8");
+  ok(/\.team-msg__sender\b/.test(cssSrc) && /\.team-msg__sender\.is-automation\b/.test(cssSrc),
+    "来源标记有样式（⛔ 无样式 = 裸文字挤在 meta 行里）");
+}
+
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

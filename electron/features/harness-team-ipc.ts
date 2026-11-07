@@ -272,6 +272,9 @@ async function dispatchGroupText(
   const saved = await appendMessageTo(group.id, {
     authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",
     authorKind: "human",
+    /* ⛔⛔ 11-07 用户令：定时任务不是「用户发的」。以前 authorKind 一律 human，
+       群视图把到点自动触发的消息当成人说的话 ⇒ 这里显式记结构化发送者。 */
+    senderKind: source === "automation" ? "automation" : "user",
     text,
     mentions: usable.map((m) => m.id),
   });
@@ -304,8 +307,13 @@ async function dispatchGroupText(
         query,
         /* 群的项目地址 = 子会话的工作目录（空 ⇒ 用应用默认目录） */
         cwd: group.workspace || undefined,
-        /* ⛔ originThreadId 留空：定时任务没有"发起会话"，空 origin 等价于本地用户发起 */
+        /* ⛔ originThreadId 留空：定时任务没有"发起会话" */
         originThreadId: "",
+        /* ⛔⛔ 11-07：origin 为空 ≠ 本地用户。定时任务显式带身份下去，
+           被调度方看到的是「定时任务交给你的任务」而不是「用户需求」。 */
+        sender: source === "automation"
+          ? { kind: "automation", name: "定时任务" }
+          : { kind: "user" },
       });
       if (!res?.ok || !res?.threadId) {
         errMsg = res?.error || "派活失败";
@@ -318,6 +326,8 @@ async function dispatchGroupText(
       const wrote = await appendMessageTo(group.id, {
         authorId: partner.id,
         authorKind: "bot",
+        /* 11-07：伙伴的回复是「伙伴发的」；被其它伙伴叫来的另由 via 记录因果链 */
+        senderKind: "member",
         threadId,
         text: output || "（没有返回文本内容）",
         /* 被别的伙伴叫来的 ⇒ 记下来源，界面上标「由 X 叫来」 */

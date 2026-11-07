@@ -346,6 +346,7 @@ export function useTeamGroups() {
         const saved = await appendMessage(group.id, {
           authorId: LOCAL_ACTOR_ID,
           authorKind: "human",
+          senderKind: "user",
           text: body,
           /* @ 了谁（飞书：mention 是单独一类对象，不是普通文本）—— 群视图据此渲染高亮 chip */
           mentions: targets.map((m) => m.id),
@@ -414,9 +415,14 @@ export function useTeamGroups() {
             /* 群的项目地址 = 子会话的工作目录（空 ⇒ 应用默认目录）。⛔ 不传就是另一回事了：
                伙伴会在默认目录里找相对路径，然后如实告诉你"没这个文件"。 */
             cwd: group.workspace || undefined,
-            /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，空 origin 等价于"发起方是本地用户"，
-               闸与子会话复用都按这个口径走（互相 @ 触发的那次也一样）。 */
+            /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，闸与子会话复用都按这个口径走。 */
             originThreadId: "",
+            /* ⛔⛔ 11-07 用户令：「调度功能在被调度场景中正确识别上级消息」——
+               origin 为空**不再**等价于「用户发的」：伙伴互 @ 触发的这一跳，真实发送者是
+               上一个伙伴（上级/同事），必须结构化传下去，别再默认按用户消息处理。 */
+            sender: source === "partner"
+              ? { kind: "member", name: caller?.name ?? partner.name }
+              : { kind: "user" },
             /* 输入框选的模型/档位/沙箱/审批在这里**真下发**：agents:invoke 原样透传给
                runDelegatedTask（turn/start.model|effort、thread/start.sandbox|approvalPolicy）。
                ⛔ 不传这些字段 = 选项沦为装饰，回落到全局默认值。 */
@@ -446,6 +452,7 @@ export function useTeamGroups() {
           const wrote = await appendMessage(group.id, {
             authorId: partner.id,
             authorKind: "bot",
+            senderKind: "member",
             threadId: res.threadId,
             text: output || "（没有返回文本内容）",
             /* 被别的伙伴叫来的 ⇒ 记下"谁叫的"，群视图标出来（⛔ 不是人多点了一下） */

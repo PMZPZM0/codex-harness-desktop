@@ -372,18 +372,22 @@ console.log("\n【live-edits】⑲ 提问卡先选中再确认");
      ⛔ 11-03 用户（截图：「这个他这个专家团显示还是以我的身份调度？」+「统一一下啊，调度会话都这样」）：
         成员/团队壳**两种来源共用同款标签**（用户自己打字 vs 主理人派发），不能按标签一刀切 ⇒
         宿主派发的壳由 user-refs 打 `dispatched`、统一左对齐；用户打字的仍走右侧气泡。 */
-  ok(/const isParentTask = Boolean\(refs\.teamTask\?\.dispatched\)/.test(umv)
+  ok(/const isParentTask = refs\.sender\s*\?\s*refs\.sender\.isSuperior\s*:\s*\(Boolean\(refs\.teamTask\?\.dispatched\)/.test(umv)
     && /refs\.teamTask\?\.label === "调度会话"/.test(umv)
     && /refs\.teamTask\?\.label === "群成员会话"/.test(umv)
     && /<div className="parent-task-stack"/.test(umv)
     && /parent-task-name/.test(umv),
-    "宿主派发任务（调度 / 群成员 / 主理人派给成员·团队）在子会话里以「上级」身份左对齐渲染");
-  /* 判据来源同源：`dispatched` 只由壳内层标记产生（主理人分配的子任务 / 上级行 / 发起方交给你的任务），
-     ⛔ 不能只按标签 —— 用户在成员会话里打字的壳没有这些标记（回归样本见 verify-injection-strip）。 */
+    "宿主派发任务（调度 / 群成员 / 主理人派给成员·团队）在子会话里以「上级」身份左对齐渲染（结构化身份优先，壳标签作老会话兜底）");
+  /* 判据来源同源：11-07 起 `dispatched` **首先**看结构化发件人（`发件人：` 协议行 ⇒ sender.isSuperior），
+     协议行缺失时才回落到壳内层标记（主理人分配的子任务 / 上级行 / 发起方交给你的任务）。
+     ⛔ 不能只按标签 —— 用户在成员会话里打字的壳没有这些标记（回归样本见 verify-injection-strip）。
+     ⛔ 也不能只认协议行 —— 老会话（协议行上线前）必须仍能判成上级。 */
   const refsSrc = codeOnly(read("src/lib/user-refs.ts"));
-  ok(/const dispatched = \/\^\\s\*\(\?:发起方交给你的任务\|主理人分配的子任务\)\/\.test\(body\)/.test(refsSrc)
-    && /上级\(\?:主管\)\?\\s\*\[：:\]\/\.test\(body\)/.test(refsSrc),
-    "`dispatched` 由宿主派发内层标记判定（只认正文第一行的上级行 / 来源标签 —— 用户正文中间出现同词不算）");
+  ok(/const dispatched = sender \? sender\.isSuperior : \(/.test(refsSrc)
+    && /parseSenderFromText\(body\)/.test(refsSrc)
+    && refsSrc.includes("^\\s*(?:发起方交给你的任务|主理人分配的子任务)")
+    && refsSrc.includes("^\\s*上级(?:主管)?\\s*[：:]"),
+    "`dispatched` 由结构化发件人判定，老会话回落宿主派发内层标记（只认正文第一行 —— 用户正文中间出现同词不算）");
   const msgCss = read("src/styles/03-messages-turns.css");
   ok(/\.parent-task-stack\s*\{[\s\S]{0,200}?align-items: flex-start/.test(msgCss) && /\.parent-task-body\s*\{/.test(msgCss),
     "上级任务气泡的样式在位（左对齐 + 左侧强调线；⛔ 只加类不写样式 = 还是贴在右侧）");

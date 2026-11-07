@@ -23,6 +23,8 @@ import { app } from "electron";
 import { buildDelegateMemory } from "../delegate-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
+/* 11-07：团队/成员会话首任务显式写发送者（用户启动团队 vs 主理人派成员）。 */
+import { senderLineOf, taskLineOf } from "../../src/lib/message-origin.mjs";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { withStepParam } from "../../src/lib/step-note.mjs";
@@ -144,7 +146,9 @@ export const teamsFeature = defineFeature<null>({
         };
       }
       const systemPrefix = teamSystemPrompt;
-      const finalTask = `${systemPrefix}\n\n[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n${String(input.task ?? "")}\n=== END ===\n\n${TEAM_TASK_INSTRUCTION}`;
+      /* 11-07：团队会话是**用户**直接对主理人下任务 ⇒ 显式 user，⛔ 别靠「没标签」猜。 */
+      const userSender = { kind: "user" };
+      const finalTask = `${systemPrefix}\n\n[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n${senderLineOf(userSender)}\n${taskLineOf(userSender, input.task)}\n=== END ===\n\n${TEAM_TASK_INSTRUCTION}`;
       const turn: any = await server.request("turn/start", {
         threadId: started.thread.id,
         input: [{ type: "text", text: finalTask, text_elements: [] }],
@@ -229,7 +233,10 @@ export const teamsFeature = defineFeature<null>({
         teamId: team.teamId,
       });
       await noteRoleThread(app.getPath("userData"), String(started.thread.id), memberRole, String(input.cwd ?? "")).catch(() => undefined);
-      const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${firstTask}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}${memberMemory.text}`;
+      /* 11-07：成员会话的首任务是**主理人派发**的（不是成员的用户自己打字），
+         以前没有任何来源标记 ⇒ 一律按用户消息渲染。这里写结构化发件人。 */
+      const memberSender = { kind: "supervisor", name: `${team.displayName.zh}主理人` };
+      const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${senderLineOf(memberSender)}\n${taskLineOf(memberSender, firstTask)}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}${memberMemory.text}`;
       const turn: any = await server.request("turn/start", {
         threadId: started.thread.id,
         input: [{ type: "text", text: finalQuery, text_elements: [] }],

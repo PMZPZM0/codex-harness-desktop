@@ -89,6 +89,9 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       name: String(args.name ?? ""),
       query: String(args.query ?? ""),
       originThreadId: callerThreadId,
+      /* ⛔ 11-07：agent_invoke 是**模型/上级会话**发起的调度，不是用户在输入框打的字。
+         显式带身份下去（delegation 的兜底推导也会判 supervisor，这里再钉一次）。 */
+      sender: { kind: "supervisor", id: callerThreadId },
       cwd: args.cwd ? String(args.cwd) : undefined,
       model: args.model ? String(args.model) : undefined,
       effort: args.effort ? String(args.effort) : undefined,

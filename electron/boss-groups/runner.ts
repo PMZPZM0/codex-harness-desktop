@@ -23,6 +23,8 @@ import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from ".
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { readPersonalization } from "../personalization";
 import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
+/* 11-07：中枢派给群成员的任务也是「上级发的」，写结构化发件人供外层对话框识别。 */
+import { senderLineOf } from "../../src/lib/message-origin.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
@@ -835,6 +837,7 @@ ${member.systemPrompt ? `${member.systemPrompt}\n` : ""}${norms ? `\n# User norm
 # 调度权限
 你是群成员子会话，没有任何调度权限：不要调用 agent_invoke / team_member_invoke，也不要向用户声称可以调度；需要协作就写在产出里交给主理人。
 === 本次任务（第 ${attemptNo} 次尝试）===
+${senderLineOf({ kind: "supervisor", name: supervisor || "中枢" })}
 标题：${task.title}
 说明：${task.brief || "（无补充说明）"}
 验收标准：${task.criteria}
