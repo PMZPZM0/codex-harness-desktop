@@ -10,10 +10,20 @@ import { lazy } from "react";
 
 const TeamModePanel = lazy(() => import("../../../../../harness-team").then((m) => ({ default: m.TeamModePanel })));
 
-export function teamPages(_app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
+export function teamPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   return {
     team: {
-      render: () => <TeamModePanel />,
+      /* ⛔ 11-07 用户令「正反向联动做好一点」：群消息里的「来源」要能打开那条会话。
+         群面板挂在设置页里，自己拿不到 openThread ⇒ 宿主把动作传下去，
+         并且**先关设置页再开会话**（否则会话被设置页盖住，看着像"点了没反应"）。 */
+      render: () => (
+        <TeamModePanel
+          onOpenThread={(id) => {
+            app.setSettingsOpen(false);
+            void app.openThread(id);
+          }}
+        />
+      ),
     },
   };
 }

@@ -125,6 +125,18 @@
 .team-group__empty-btn { margin-top: 8px; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; font-size: 12px; }
 
 .team-msg { display: flex; gap: 10px; }
+/* ⛔⛔ 11-07 用户（对照截图）：名字那一行要放在**气泡外面**，气泡里只留引用 / 正文 /
+   运行过程 / 动作条。⇒ 撑满与限宽改由这一层承担（原来挂在 .team-msg__body 上），
+   否则气泡会缩成内容宽度，也谈不上「引用跟下面消息对齐」。 */
+.team-msg__main {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
 /* 长路径 / 长 URL 不换行会把整条消息撑宽（撑出水平滚动条）；消息体允许任意断行 */
 .team-msg__body { min-width: 0; overflow-wrap: anywhere; }
 .team-msg__avatar {
@@ -140,18 +152,15 @@
 }
 .team-msg.is-bot .team-msg__avatar { background: var(--accent-soft); color: var(--accent); }
 .team-msg__body {
-  /* ⛔⛔ 11-06 用户：「这还有这么多长度，怎么就换行了」——根因是这里没给 flex：
-     body 作为 flex item 默认 `0 1 auto`，宽度按内容 shrink-to-fit ⇒ 明明右边还有一大截，
-     却在 ~300px 处折行。撑到可用宽度（上限 720px）后，长正文按正常宽度排版。 */
-  flex: 1 1 auto;
+  /* ⛔ 11-07：撑满与限宽已上移到 .team-msg__main；气泡自己横向占满那一列。 */
+  flex: 0 0 auto;
+  width: 100%;
   min-width: 0;
-  max-width: 720px;
   /* ⛔ 11-06：加一层轻气泡（原来是裸文本，一屏十几条读起来分不清谁说到哪）
      ⛔ 用 --panel 而不是白：白底气泡在浅色主题里等于没有边界。 */
   padding: 9px 14px;
   border: 1px solid var(--line-soft);
   border-radius: 12px;
-  border-top-left-radius: 4px;
   background: var(--panel);
   box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent);
 }
@@ -545,8 +554,16 @@
   cursor: pointer;
 }
 .team-msg__actions button:hover { color: var(--accent); }
-.team-msg__origin { margin-left: auto; color: var(--faint); font-size: 10.5px; cursor: pointer; }
+/* ⛔ 11-07：来源从"复制 id"改成**真打开那条会话**（正反向联动）⇒ 现在可能是 <button>：
+   去掉按钮默认外观，保持原来那行小灰字的观感。 */
+.team-msg__origin {
+  margin-left: auto; color: var(--faint); font-size: 10.5px; cursor: pointer;
+  appearance: none; border: 0; background: none; padding: 0; font-family: inherit; line-height: inherit;
+}
 .team-msg__origin:hover { color: var(--accent); }
+/* 会话已被删：留着这枚标记（群账本是独立的），但明确不可点 —— 点一个不存在的会话比不显示更糟。 */
+.team-msg__origin.is-gone { color: var(--faint); cursor: default; opacity: 0.75; }
+.team-msg__origin.is-gone:hover { color: var(--faint); }
 
 /* ── 设置：说明与操作同一行（解散卡那类）─────────────────────────────────── */
 .team-settings__inline-row { display: flex; align-items: center; gap: 8px; }
@@ -1040,7 +1057,7 @@
 
 /* ══════ 11-06 收尾：气泡排版细节 + 刻度槽可见性 ══════════════════════════════
    用户：「聊天框样式做好看一点」「这还有这么多长度怎么就换行了」「消息刻度线也没出来」 */
-.team-msg.is-bot .team-msg__body { border-top-left-radius: 4px; }
+.team-msg.is-bot .team-msg__body { background: color-mix(in srgb, var(--accent-soft) 55%, var(--panel)); }
 .team-msg__body-text > :first-child { margin-top: 2px; }
 .team-msg__body-text > :last-child { margin-bottom: 0; }
 /* 引用行做成一块浅底，和截图里「回复 某人：…」的独立引用块同形 */
@@ -1048,6 +1065,24 @@
   padding: 4px 8px;
   border-radius: 6px;
   background: color-mix(in srgb, var(--panel-2) 60%, transparent);
+}
+/* ⛔⛔ 11-07 用户：「引用消息在气泡里面并且跟下面消息对齐」——
+   原来引用块自带 8px 左右 padding + 2px 竖线 + 7px gap ⇒ 文字比正文右移约 17px。
+   ⇒ 浅底块向左右各扩 8px 抵消自身 padding，竖线绝对定位不再参与 flex 占位，
+     引用文字起点与正文起点同为气泡内容区的 0，底色块仍盖住气泡内边距。 */
+.team-msg__body .team-process__quote--top {
+  position: relative;
+  display: block;
+  margin: 2px -8px 8px;
+  padding: 5px 8px;
+}
+.team-msg__body .team-process__quote--top .team-process__quote-bar {
+  position: absolute;
+  left: 2px;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  height: auto;
 }
 /* ══════ 群输入框：与主对话 composer 同形（11-06）════════════════════════════
    16px 大圆角 + 轻阴影 + 框内底部工具行；@ 伙伴那一行留在框外（群自己的提及，
@@ -1972,6 +2007,16 @@
   font-size: 11px;
   font-weight: 600;
 }
+/* ⛔⛔ 11-07 用户令「用户头像还有名字同步出来」：群主走 `components/UserAvatar`（真头像）。
+   容器只做圆圆裁切与尺寸，⛔ 不加背景色 —— 那是 11-06 首字圆圈的皮肤，套上去会多一圈底。 */
+.team-avatar.is-user {
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  overflow: hidden;
+}
+.team-avatar.is-user > .user-avatar { display: block; width: 100%; height: 100%; }
+.team-avatar.is-user > .user-avatar > img { width: 100%; height: 100%; object-fit: cover; }
 .team-avatar > .agent-avatar { display: block; }
 /* 容器去皮肤：原样式是「圆圈 + 背景 + 字号」，套在真头像外面会多出一圈底色 */
 .team-msg__avatar.has-agent,

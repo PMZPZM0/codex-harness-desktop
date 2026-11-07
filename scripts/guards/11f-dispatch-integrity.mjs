@@ -595,7 +595,9 @@ try {
     && /if \(!threadId\) \{[\s\S]{0,300}?thread\/start/.test(delSrc),
     "同一目标重复派活先 resume 复用旧子会话；resume 失败/不可用才新建");
   ok(/const targetKey = `\$\{target\.kind\}:\$\{target\.key\}`/.test(delSrc)
-    && /beginReuse\(threadId, \{ name: displayName, targetKey \}\)/.test(delSrc)
+    /* ⛔ 11-07：beginReuse 的 patch 多了 `source: "group"`（群调度标签）⇒ 这里按"名字与目标键
+       都传进去了"判，不再钉死对象字面量的收尾花括号（否则每加一个可选字段就误报红）。 */
+    && /beginReuse\(threadId, \{[\s\S]{0,240}?name: displayName[\s\S]{0,160}?targetKey/.test(delSrc)
     && /!reused[\s\S]{0,200}?thread\/name\/set/.test(delSrc),
     "复用键 = kind:target.key；复用命中只把旧记录置运行中、不重置用户改过的会话名");
   ok(/const reuseInFlight = new Set<string>\(\)/.test(delSrc)

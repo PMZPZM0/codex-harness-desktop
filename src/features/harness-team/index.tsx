@@ -23,10 +23,10 @@ import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
-export function TeamModePanel({ onOpenModelSettings }: { onOpenModelSettings?: () => void } = {}) {
+export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenModelSettings?: () => void; /** 正向联动（11-07 用户令）：点群消息的「来源」打开那条会话；宿主关掉设置页再打开。 */ onOpenThread?: (threadId: string) => void } = {}) {
   const {
     groups, issues, blockers, limit, loading, error,
-    rowsByGroup, busyByGroup, liveByGroup, dispatchError,
+    rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
     addNote, removeNote, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
     stopPartner,
@@ -164,15 +164,24 @@ export function TeamModePanel({ onOpenModelSettings }: { onOpenModelSettings?: (
                     type="button"
                     role="menuitem"
                     className={`is-danger${confirmDeleteId === g.id ? " is-armed" : ""}`}
-                    title="解散只删群和群记录，伙伴的子会话不动"
+                    title="解散会同时删除这个群里派出去的会话（11-07 用户令：删群后外面不该还留着）"
                     onClick={() => {
                       if (confirmDeleteId !== g.id) { setConfirmDeleteId(g.id); return; }
                       setConfirmDeleteId("");
                       setMenuId("");
-                      void removeGroup(g.id);
+                      /* ⛔ 11-07 用户令：删群 ⇒ 群聊派出的那些会话跟着删（否则侧栏里剩一堆无出处的会话）。
+                         主进程返回删了几条，这里如实说出来。 */
+                      void removeGroup(g.id).then((r) => {
+                        if (!r.ok) { setNotice(r.error || "解散失败"); return; }
+                        setNotice(
+                          r.totalThreads
+                            ? `已解散「${g.name}」，连同 ${r.removedThreads}/${r.totalThreads} 条群会话${r.failed.length ? `（${r.failed.length} 条删不掉）` : ""}`
+                            : `已解散「${g.name}」`,
+                        );
+                      });
                       if (activeId === g.id) setActiveId("");
                     }}
-                  ><Trash2 size={13} /> {confirmDeleteId === g.id ? "再点一次确认解散" : "解散群"}</button>
+                  ><Trash2 size={13} /> {confirmDeleteId === g.id ? "再点一次：解散并删除会话" : "解散群"}</button>
                 </div>
               )}
             </li>
@@ -225,6 +234,9 @@ export function TeamModePanel({ onOpenModelSettings }: { onOpenModelSettings?: (
             /* 派活：@ 了谁就把这句话交给谁 —— 各自落各自的子会话，产出再投影回来 */
             onSend={(partnerIds, text, params) => dispatch(active, partnerIds, text, params)}
             onOpenModelSettings={onOpenModelSettings}
+            /* 正反向联动（11-07 用户令）：来源 → 打开会话；已删的会话标「已删除」不可点 */
+            onOpenThread={onOpenThread}
+            goneThreads={goneThreads}
           />
         ) : (
           <div className="team-mode__blank">
@@ -254,7 +266,7 @@ export function TeamModePanel({ onOpenModelSettings }: { onOpenModelSettings?: (
 export default TeamModePanel;
 
 /** 群聊面板（侧栏「群聊」打开）。⛔ 关闭有三条退路：卡片头 X / ESC / 点背景空白。 */
-export function TeamChatOverlay({ onOpenModelSettings }: { onOpenModelSettings?: () => void } = {}) {
+export function TeamChatOverlay({ onOpenModelSettings, onOpenThread }: { onOpenModelSettings?: () => void; onOpenThread?: (threadId: string) => void } = {}) {
   const open = useTeamChatOpen();
   const close = () => teamChatOpen.set(false);
   /* ⛔ 走全局 ESC 栈（只让最上层消费），⛔ 不要自己挂 window keydown —— 那样一次 Esc 会关掉多层 */
@@ -285,7 +297,11 @@ export function TeamChatOverlay({ onOpenModelSettings }: { onOpenModelSettings?:
             <X size={18} />
           </button>
         </header>
-        <TeamModePanel onOpenModelSettings={onOpenModelSettings ? () => { close(); onOpenModelSettings(); } : undefined} />
+        <TeamModePanel
+          onOpenModelSettings={onOpenModelSettings ? () => { close(); onOpenModelSettings(); } : undefined}
+          /* ⛔ 开那条会话之前先关群聊浮层，否则新会话被压在浮层后面（用户会以为"点了没反应"）。 */
+          onOpenThread={onOpenThread ? (id) => { close(); onOpenThread(id); } : undefined}
+        />
       </div>
     </div>
   );

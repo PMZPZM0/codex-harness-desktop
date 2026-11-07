@@ -6,9 +6,13 @@
  * ⛔ 头像图案的判定**只能走 `agentAvatarKindOf`**（`src/lib/agent-avatars.mjs`，纯函数）：
  *   cli ⇒ 机器人图集、member ⇒ 专家图集、team ⇒ 团队图集；渲染交给 `AgentAvatar`。
  *   ⛔ 这里不复制那段 kind 映射，否则专家中心改了风格、群里还是老样子。
- * ⛔ 人类成员（群主「我」）没有智能体身份 ⇒ 保持首字圆圈，不硬套机器头像。
+ * ⛔⛔ 11-07 用户令「用户头像还有名字同步出来」：人类成员（群主）**不能**再退回首字圆圈 ——
+ *   主对话里用户是**真头像**（`components/UserAvatar`：上传的图 / 选的表情 / 兜底首字），
+ *   到了群里却是灰圆圈里一个「我」，和名字并排看就是「我 我」两个同样的字（真机截图）。
+ *   ⇒ 人类一律走 `UserAvatar`（同一个组件、同一个身份 store），名字由调用方取 `useUserName()`。
  */
 import { AgentAvatar } from "../../components/AgentAvatar";
+import { UserAvatar } from "../../components/UserAvatar";
 import { agentAvatarKindOf } from "../../lib/agent-avatars.mjs";
 
 type MemberLike = {
@@ -31,9 +35,11 @@ export function MemberAvatar({
   const isHuman = (member?.kind ?? "bot") === "human";
   const base = `team-avatar${className ? ` ${className}` : ""}`;
   if (isHuman) {
+    /* ⛔ 尺寸交给 UserAvatar（它自己按 size 设宽高与字号）；外层只承担"占位 + 类名"，
+       ⛔ 不要再套 `is-text` 的首字圆圈 —— 那是 11-06 的旧形态，用户已明确要"同步出来"。 */
     return (
-      <span className={`${base} is-text`} style={{ width: size, height: size }} aria-hidden>
-        {String(member.name ?? "?").slice(0, 1)}
+      <span className={`${base} is-user`} style={{ width: size, height: size }} aria-hidden>
+        <UserAvatar size={size} />
       </span>
     );
   }

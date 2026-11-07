@@ -720,13 +720,18 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       )}
       <AppViewSettingsSheet app={app} />
       {/* 群聊（10-05）：独立板块的全屏壳，开关在板块自己的 store 里 */}
-      <TeamChatOverlay onOpenModelSettings={() => {
-        /* 与主对话模型下拉末尾的「更多设置…」同款：打开 设置 → 模型，并直接编辑当前模型。 */
-        setSettingsPage("model");
-        setSettingsOpen(true);
-        const live = customModel?.models?.find((m) => m.id === customModel?.model);
-        if (live) openModelEditor(live);
-      }} />
+      <TeamChatOverlay
+        /* ⛔ 11-07 用户令「正反向联动做好一点」：群消息的「来源」要真能打开那条会话
+           （以前只能复制 id）⇒ 宿主把 openThread 传下去（浮层自己负责关闭）。 */
+        onOpenThread={(id) => void openThread(id)}
+        onOpenModelSettings={() => {
+          /* 与主对话模型下拉末尾的「更多设置…」同款：打开 设置 → 模型，并直接编辑当前模型。 */
+          setSettingsPage("model");
+          setSettingsOpen(true);
+          const live = customModel?.models?.find((m) => m.id === customModel?.model);
+          if (live) openModelEditor(live);
+        }}
+      />
       {/* 登录后的一次性新人配置引导：只有完全没配置过的新 profile 会弹；完成后不再出现。 */}
       <ProfileOnboardingWizard
         onNotice={showToast}

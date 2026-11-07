@@ -1012,6 +1012,12 @@
 .thread-dispatch-badge.tone-run { color: var(--accent-text); background: var(--accent-soft); border: 1px solid var(--line); animation: attention-pulse 1.6s ease-in-out infinite; }
 .thread-dispatch-badge.tone-done { color: var(--muted); background: var(--line-soft); border: 1px solid var(--line-soft); }
 .thread-dispatch-badge.tone-fail { color: var(--red); background: var(--line-soft); border: 1px solid var(--red); }
+/* ⛔ 11-07 用户令「群聊里产生的会话加『群调度』标签，方便区分」：
+   文案已经换成「群调度」，这里再补一层色相 —— 一排会话里带群色的那一颗一眼可辨，
+   ⛔ 不靠"读字"分辨（侧栏字小、扫视时不看字）。 */
+.thread-dispatch-badge.is-group { color: var(--orange, var(--accent-text)); background: color-mix(in srgb, var(--orange, var(--accent)) 14%, transparent); border: 1px solid color-mix(in srgb, var(--orange, var(--accent)) 45%, transparent); }
+.thread-dispatch-badge.is-group.tone-run { animation: attention-pulse 1.6s ease-in-out infinite; }
+.thread-dispatch-badge.is-group.tone-fail { color: var(--red); border-color: var(--red); }
 
 /* ── 运行动态状态行（09-16，学 WorkBuddy）：任务运行中显示「正在干嘛 · 一句话」 ── */
 .run-activity-bar {

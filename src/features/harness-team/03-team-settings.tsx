@@ -976,11 +976,11 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
               以前说明单独一行、按钮另起一行右对齐，中间留一大块空。 */}
           <div className="team-settings__inline-row">
             <span className="team-settings__hint team-settings__hint--inline">
-              只删群和群里的消息记录；<strong>伙伴的会话一条都不会动</strong>。
+              删群会连同<strong>这个群里派出去的会话</strong>一起删除（11-07 用户令：外面不该还留着）。
             </span>
             {confirmDelete ? (
               <>
-                <span className="team-settings__meta">确定解散「{group.name}」？</span>
+                <span className="team-settings__meta">确定解散「{group.name}」？会话也会一起删。</span>
                 <button type="button" className="team-settings__mini" onClick={() => setConfirmDelete(false)} disabled={busy}>取消</button>
                 <button
                   type="button"

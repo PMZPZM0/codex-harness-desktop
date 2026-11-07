@@ -24,6 +24,9 @@ import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
 import { TeamCards } from "./11-team-cards";
 import { MemberAvatar } from "./13-team-avatar";
+/* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主这一行必须和主对话同一个身份源
+   （`components/UserAvatar` 的 subscribeUserIdentity）—— ⛔ 不要再写死「我」或首字圆圈。 */
+import { useUserName } from "../../components/UserAvatar";
 import { TeamProfileCard } from "./14-team-profile-card";
 import { TeamMentionPanel } from "./15-team-mention-panel";
 import { TeamSearchPanel } from "./16-team-search";
@@ -57,7 +60,7 @@ type Props = {
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
   /** 清空聊天记录（只清群日志；伙伴的子会话不动） */
   onClearMessages?: () => Promise<{ ok: boolean; error?: string; cleared?: number }>;
-  /** 解散群（只删群与群日志；伙伴的子会话不动） */
+  /** 解散群（11-07 用户令：群 + 群里派出去的会话一起删） */
   onDeleteGroup?: () => Promise<{ ok: boolean; error?: string }>;
   /** 记忆条目 */
   onAddNote: (note: { text: string; type: "fact" | "constraint" | "runbook" }) => Promise<{ ok: boolean; error?: string }>;
@@ -85,6 +88,12 @@ type Props = {
   /** 派活：@ 了谁就把这句话交给谁，各自落各自子会话 */
   /** 第三参 = 本轮运行参数（模型/档位/沙箱/审批），⛔ 不传就回落到全局默认 */
   onSend?: (partnerIds: string[], text: string, params?: TeamRunParams) => Promise<{ ok: boolean; error?: string }> | void;
+  /** 正向联动（11-07 用户令）：点消息上的「来源」直接打开那条会话。
+   *  ⛔ 由宿主传进来（群面板在设置页里，自己拿不到 openThread）；不传就退回"复制 id"。 */
+  onOpenThread?: (threadId: string) => void;
+  /** 反向联动：这些 threadId 对应的会话**已经被删掉**（主进程 `team-thread-gone` 广播）
+   *  ⇒ 来源标记变成不可点的「已删除」，⛔ 不让按钮点了没反应。 */
+  goneThreads?: Set<string>;
 };
 
 function fmtTime(at: number): string {
@@ -151,8 +160,11 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, live, onOpenModelSettings,
+  onStopPartner, live, onOpenModelSettings, onOpenThread, goneThreads,
 }: Props) {
+  /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
+     （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
+  const userName = useUserName();
   const [showSettings, setShowSettings] = useState(false);
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
@@ -268,7 +280,12 @@ export function TeamGroupView({
   };
 
   /** 团伙伴「出面上的人」= 主理人；目录还没回来时退回团名（⛔ 不编名字、不画空壳） */
-  const personNameOf = (m: TeamGroup["members"][number]) => teamLeadOf(m)?.name ?? m?.name ?? "";
+  const personNameOf = (m: TeamGroup["members"][number]) =>
+    /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主那一行的名字必须与主对话同源
+       （`useUserName()`：设过就用真名，没设过回落「你」）。
+       ⛔ 群记录里 human 成员的 name 是建群时写死的「我」，不能拿它当显示名 ——
+          改了用户名、群里还挂着旧的那个字。 */
+    (m?.kind === "human" ? (userName || m?.name || "") : (teamLeadOf(m)?.name ?? m?.name ?? ""));
 
   /** 头像种子同理：团用**主理人**的身份（kind=expert + 主理人 key），画出来才是专家中心那张脸；
      ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。 */
@@ -780,7 +797,7 @@ export function TeamGroupView({
                       ) : (
                         <MemberAvatar member={faceOfId(row.authorId)} size={28} className="team-msg__avatar has-agent" />
                       )}
-                      <div className="team-msg__body">
+                      <div className="team-msg__main">
                         <div className="team-msg__meta">
                           {synthetic ? (
                             <em className={`team-msg__sender${row.senderKind === "automation" ? " is-automation" : ""}`}>
@@ -806,6 +823,9 @@ export function TeamGroupView({
                           {row.senderKind === "supervisor" && <em className="team-msg__sender">上级派发</em>}
                           <time>{fmtTime(row.at)}</time>
                         </div>
+                        {/* ⛔ 11-07 用户（对照截图）：名字那一行放到**气泡外面**，气泡里只放引用 / 正文 /
+                            运行过程 / 动作条。引用与正文同属这块气泡，左边界才能对齐。 */}
+                        <div className="team-msg__body">
 
                         {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
                             ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
@@ -860,11 +880,23 @@ export function TeamGroupView({
                                 onClick={() => mentionPartner(m.id)}
                               >@{m.name}</button>
                             ))}
-                            <span className="team-msg__origin" title={`来源会话：${row.threadId}（点一下复制）`} onClick={() => void copyText({ ...row, text: row.threadId })}>
-                              来源 {shortId(row.threadId)}
-                            </span>
+                            {/* ⛔⛔ 11-07 用户令「正反向联动做好一点」：
+                                · 正向 —— 点「来源」直接**打开那条会话**（以前只是复制 id，等于给了个没法用的坐标）；
+                                · 反向 —— 那条会话被删掉时由 `goneThreads` 标成不可点的「已删除」
+                                  （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
+                            {goneThreads?.has(row.threadId) ? (
+                              <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
+                            ) : (
+                              <button
+                                type="button"
+                                className="team-msg__origin"
+                                title={onOpenThread ? `打开来源会话：${row.threadId}` : `来源会话：${row.threadId}（点一下复制）`}
+                                onClick={() => { if (onOpenThread) onOpenThread(row.threadId); else void copyText({ ...row, text: row.threadId }); }}
+                              >来源 {shortId(row.threadId)}{onOpenThread ? " ↗" : ""}</button>
+                            )}
                           </div>
                         )}
+                      </div>
                       </div>
                     </article>
                     </Fragment>
@@ -885,7 +917,7 @@ export function TeamGroupView({
                     size={28}
                     className="team-msg__avatar has-agent"
                   />
-                  <div className="team-msg__body">
+                  <div className="team-msg__main">
                     <div className="team-msg__meta">
                       <strong>{run.name}</strong>
                       <em className="team-msg__role is-live">
@@ -893,11 +925,13 @@ export function TeamGroupView({
                       </em>
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
+                    <div className="team-msg__body">
                     {String(run.text ?? "").trim()
                       ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
                       : <p className="team-msg__thinking">正在思考…</p>}
                     {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
+                  </div>
                   </div>
                 </article>
               ))}

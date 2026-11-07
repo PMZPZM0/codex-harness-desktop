@@ -151,6 +151,15 @@ const catalog = [
   ok(/\.team-mention \{/.test(css) && /\.team-search \{/.test(css) && /\.team-profile \{/.test(css),
     "三块的样式都在（面板/搜索/资料卡）");
   ok(/\.team-msg\.is-search-hit \{/.test(css), "搜索命中高亮的样式存在");
+  /* 11-07 用户对照截图：「名字在消息气泡外面，引用消息在气泡里面并且跟下面消息对齐」。 */
+  ok(/className="team-msg__main"/.test(view)
+    && /className="team-msg__meta"/.test(view)
+    && /<div className="team-msg__body">[\s\S]{0,900}?team-process__quote--top/.test(view),
+    "⛔ 名字那一行移出气泡（main 列容器），引用仍留在气泡里");
+  ok(/\.team-msg__main \{[\s\S]{0,220}?flex-direction: column/.test(css)
+    && /\.team-msg__body \.team-process__quote--top \{[\s\S]{0,220}?margin: 2px -8px/.test(css)
+    && /\.team-msg__body \.team-process__quote--top \.team-process__quote-bar \{[\s\S]{0,160}?position: absolute/.test(css),
+    "引用文字与正文左对齐（负 margin 抵消浅底 padding，竖线绝对定位不占位）");
   /* 11-07 用户令「头像对齐输入框边框」：改前实测头像 left 259 / 输入框卡片 left 221（差 38px）。
      根因是子项按 720 居中、composer 按 790 列居中 ⇒ 两条轴不同，必须共用同一条公式。 */
   ok(/padding-left: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\)/.test(css)

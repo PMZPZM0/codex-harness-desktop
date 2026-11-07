@@ -91,6 +91,10 @@ export function useTeamGroups() {
   const [dispatchError, setDispatchError] = useState("");
   /** 正在流式输出的伙伴（按群 → threadId）—— 卡片原地刷新，⛔ 不新建消息 */
   const [liveByGroup, setLiveByGroup] = useState<Record<string, Record<string, LiveRun>>>({});
+  /** 反向联动（11-07 用户令）：这些会话**已经被删掉**（主进程 `team-thread-gone` 广播）。
+   *  群消息记录保留（它是群自己的账本），但「来源」标记要变成不可点的「已删除」，
+   *  ⛔ 不能让用户点一个不存在的会话又什么都没发生。 */
+  const [goneThreads, setGoneThreads] = useState<Set<string>>(() => new Set());
   /** ⛔ 卸载后不许再 setState（派活可能跑几分钟） */
   const alive = useRef(true);
   /** 伙伴 → 它最近一次的子会话 id（停止运行要用；也从群日志兜底，见 threadOf） */
@@ -169,6 +173,29 @@ export function useTeamGroups() {
   useEffect(() => {
     const off = window.codex.onHarnessEvent?.((event: Record<string, unknown>) => {
       if (!event) return;
+      /* ⛔⛔ 11-07 用户令「正反向联动做好一点，那边群删除，这边会话跟着删除」——
+         反过来的那一半同样要通：**外面**把某条会话删了（侧栏删 / 项目清理 / 另一窗口），
+         群里不能还挂着它的流式卡、还能点开一个不存在的会话。
+         事件由主进程 boot.ts 的 `thread/deleted` 分支广播（唯一删除入口都汇到那儿）。 */
+      if (event.type === "team-thread-gone") {
+        const tid = String(event.threadId ?? "");
+        if (!tid) return;
+        setGoneThreads((prev) => (prev.has(tid) ? prev : new Set(prev).add(tid)));
+        /* 流式卡按 threadId 挂 ⇒ 直接摘掉（否则「正在写」永远转下去，finished 不会再来了）。 */
+        setLiveByGroup((prev) => {
+          let touched = false;
+          const next: Record<string, Record<string, LiveRun>> = {};
+          for (const [gid, bucket] of Object.entries(prev)) {
+            if (!bucket?.[tid]) { next[gid] = bucket; continue; }
+            const copy = { ...bucket };
+            delete copy[tid];
+            next[gid] = copy;
+            touched = true;
+          }
+          return touched ? next : prev;
+        });
+        return;
+      }
       /* 群定时任务跑完：刷新群（nextRunAt/lastError 变了）+ 重读这个群的消息流。 */
       if (event.type === "team-schedule-ran") {
         const gid = String(event.groupId ?? "");
@@ -553,6 +580,9 @@ export function useTeamGroups() {
             cwd: group.workspace || undefined,
             /* ⛔ originThreadId 留空：群聊没有"群主会话"这条线，闸与子会话复用都按这个口径走。 */
             originThreadId: "",
+            /* ⛔ 11-07 用户令：群聊派出的会话要在侧栏标「群调度」（跟主对话派的区分开）。
+               origin 为空看不出差异 ⇒ 显式打标，主进程登记记录里存 source=group。 */
+            source: "group",
             /* ⛔⛔ 11-07 用户令：「调度功能在被调度场景中正确识别上级消息」——
                origin 为空**不再**等价于「用户发的」：伙伴互 @ 触发的这一跳，真实发送者是
                上一个伙伴（上级/同事），必须结构化传下去，别再默认按用户消息处理。 */
@@ -770,9 +800,11 @@ export function useTeamGroups() {
     return { ok: Boolean(res?.ok), cleared: res?.cleared, error: res?.error };
   }, []);
 
-  /** 解散群：只删群与其群消息日志（主进程侧），⛔ 伙伴的子会话一条都不动 */
+  /** 解散群：群 + 群消息日志 + **本群派生出来的那些会话**（11-07 用户令：删群后外面还能看见遗留会话） */
   const removeGroup = useCallback(async (groupId: string) => {
-    const res = (await window.codex.harnessTeamDelete(groupId)) as { ok: boolean; id?: string; error?: string };
+    const res = (await window.codex.harnessTeamDelete(groupId)) as {
+      ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[];
+    };
     if (res?.ok) {
       setGroups((prev) => prev.filter((g) => g.id !== groupId));
       setRowsByGroup((prev) => {
@@ -780,8 +812,17 @@ export function useTeamGroups() {
         delete next[groupId];
         return next;
       });
+      /* 这个群的实时态跟着一起清：群都没了，别让"谁在处理中"留在内存里指着一个不存在的群。 */
+      setBusyByGroup((prev) => { const next = { ...prev }; delete next[groupId]; return next; });
+      setLiveByGroup((prev) => { const next = { ...prev }; delete next[groupId]; return next; });
     }
-    return { ok: Boolean(res?.ok), error: res?.error };
+    return {
+      ok: Boolean(res?.ok),
+      error: res?.error,
+      removedThreads: Number(res?.removedThreads ?? 0),
+      totalThreads: Number(res?.totalThreads ?? 0),
+      failed: res?.failed ?? [],
+    };
   }, []);
 
   /** 群记忆（落主进程；返回的 group 直接替换本地那份） */
@@ -865,7 +906,7 @@ export function useTeamGroups() {
 
   return {
     groups, issues, blockers, limit, loading, error,
-    rowsByGroup, busyByGroup, liveByGroup, dispatchError,
+    rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, clearMessages,

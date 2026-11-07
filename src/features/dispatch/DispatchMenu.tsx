@@ -236,7 +236,18 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
 
 export function DispatchBadge({ record }: { record: DelegateRecordEntry }) {
   const tone = record.status === "running" ? "run" : record.status === "failed" ? "fail" : "done";
-  const label = record.status === "running" ? "调度中" : record.status === "failed" ? "调度失败" : "调度";
+  /* ⛔ 11-07 用户令：「群聊里面产生会话和调度的会话加上群调度标签，方便我区分」——
+     群聊派活（含群定时任务）的 origin 恒为空，只看 origin 分不出它来自群还是界面直派
+     ⇒ 主进程登记时打了 `source: "group"`，这里据此换一套文案 + 一枚色。 */
+  const fromGroup = record.source === "group";
+  const label = fromGroup
+    ? (record.status === "running" ? "群调度中" : record.status === "failed" ? "群调度失败" : "群调度")
+    : (record.status === "running" ? "调度中" : record.status === "failed" ? "调度失败" : "调度");
   const note = record.status === "running" ? "执行中" : record.status === "failed" ? "执行失败" : "已完成";
-  return <span className={`thread-dispatch-badge tone-${tone}`} title={`调度会话：${record.name}（${note}）`}>{label}</span>;
+  return (
+    <span
+      className={`thread-dispatch-badge tone-${tone}${fromGroup ? " is-group" : ""}`}
+      title={`${fromGroup ? "群聊派出的会话" : "调度会话"}：${record.name}（${note}）`}
+    >{label}</span>
+  );
 }

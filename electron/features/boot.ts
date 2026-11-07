@@ -881,6 +881,11 @@ export async function bootApp() {
           if (event.method === "thread/deleted") void delegateRegistry.forget([goneId]).then((n: number) => {
             if (n) broadcastHarnessEvent({ type: "delegates-changed", threadId: goneId } as any);
           }).catch(() => undefined);
+          // ⛔⛔ 11-07 用户令「正反向联动做好一点」：会话被删 ⇒ 群聊面板要知道。
+          // 群消息记录不删（那是群自己的账本），但「来源」标记要变成不可点的「已删除」，
+          // 挂着它的流式卡也要摘掉 —— 否则那条「正在写…」永远转下去（finished 不会再来）。
+          // ⛔ 只在 thread/deleted 广播（归档仍可恢复，不算 gone）。
+          if (event.method === "thread/deleted") broadcastHarnessEvent({ type: "team-thread-gone", threadId: goneId } as any);
           // 会话被删 ⇒ 文件变更报告的落盘也跟着走（否则 userData/turn-file-changes 越攒越多）
           if (event.method === "thread/deleted") dropStoredReports(goneId);
           // 压缩侦测记录同理（否则 userData/compaction-records 越攒越多）

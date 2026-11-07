@@ -49,6 +49,9 @@ export async function runDelegatedTask(input: {
    *  不传时按 originThreadId 推导（有 origin ⇒ 上级，空 ⇒ 本地用户）——
    *  ⛔ 定时任务 / 伙伴互 @ 这类「origin 为空但不是用户」的场景必须显式传。 */
   sender?: { kind?: string; id?: string; name?: string } | null;
+  /** 来源面（11-07）：`group` = 群聊派活 ⇒ 登记记录打标，侧栏徽标显示「群调度」。
+   *  ⛔ 只有真正从群聊派出的两条链传它（渲染层 store / 群定时任务），别处一律不传。 */
+  source?: string;
 }): Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string; reused?: boolean }> {
   const origin = String(input.originThreadId ?? "");
   // ── L3 硬闸：发起方本身是被委派产生的会话 → 一律拒绝（防套娃的最后一道，注册侧漏了也拦住）
@@ -262,7 +265,11 @@ export async function runDelegatedTask(input: {
         reused = true;
         /* ⛔ 在释放锁之前把记录置回 running：否则同一目标的第二条并行派活仍会看到旧状态
            （done）并再次 resume 同一条线程。 */
-        record = await delegateRegistry.beginReuse(threadId, { name: displayName, targetKey });
+        record = await delegateRegistry.beginReuse(threadId, {
+          name: displayName,
+          targetKey,
+          ...(input.source === "group" ? { source: "group" as const } : {}),
+        });
       } else {
         /* resume 失败（会话被删 / 引擎已不认识它）⇒ 记录已失效，继续走新建，别卡死。 */
         void delegateRegistry.forget([reusable.threadId]).catch(() => undefined);
@@ -342,7 +349,7 @@ export async function runDelegatedTask(input: {
   } catch { /* 下发失败不阻塞执行：L3 硬闸仍在主进程把关 */ }
 
   /* 复用已在锁内把记录置回运行中（record 非空）；新建走正常登记。 */
-  record = record ?? await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey });
+  record = record ?? await delegateRegistry.register({ threadId, originThreadId: origin, kind: target.kind, name: displayName, depth: (originRecord?.depth ?? 0) + 1, targetKey, ...(input.source === "group" ? { source: "group" as const } : {}) });
   /* ⛔ cwd 登记（10-10）：网关里的 `knowledge_search` 等能力要靠它定位**项目级**资源。
      团队那条链（teams-ipc）一直有，被委派这条链漏了 ⇒ "网关能查知识库"会栽在
      "无法确定工作目录"上。（delegate-harness-tool 里另有一层角色表兜底。） */

@@ -41,6 +41,12 @@ export type DelegateRecord = {
    *  ⛔ 同步跑通的委派**不打**这个标 —— 结果已经通过 agent_invoke 的返回值交回主会话了，
    *  再投一次就是两份（去重）。 */
   pendingReport?: boolean;
+  /** 来源面：`group` = 群聊派活（含群定时任务）。
+   *  ⛔⛔ 11-07 用户令「群聊里面产生会话和调度的会话加上群调度标签，方便我区分」——
+   *     群派活的 originThreadId 恒为空（群没有主会话），光看 origin 分不出「群里派的」
+   *     和「定时任务 / 界面直派」⇒ 由调用方显式打标，侧栏徽标据此显示「群调度」。
+   *  ⛔ 不在渲染层按成员名反查（群改成员后就对不上了）。 */
+  source?: "group";
 };
 
 /** 超过这个时间的已完成记录会被清理（避免文件无限增长）；运行中的永不清理。 */
@@ -117,7 +123,7 @@ export class DelegateRegistry {
 
   /** 复用一条已有子会话：把它重新置为运行中（新任务开始），旧的产出/失败信息清空。
    *  ⛔ 不覆盖 threadId / originThreadId / depth —— 会话归属与调用深度都不变。 */
-  async beginReuse(threadId: string, patch: { name?: string; targetKey?: string } = {}): Promise<DelegateRecord | null> {
+  async beginReuse(threadId: string, patch: { name?: string; targetKey?: string; source?: "group" } = {}): Promise<DelegateRecord | null> {
     await this.load();
     const key = String(threadId ?? "");
     const current = this.map[key];
@@ -126,6 +132,9 @@ export class DelegateRegistry {
       ...current,
       ...(patch.name ? { name: patch.name } : {}),
       ...(patch.targetKey ? { targetKey: patch.targetKey } : {}),
+      /* ⛔ 11-07：老记录没有来源标（群聊派活的 origin 天生为空，事后分辨不出来）⇒
+         这次从群聊复用就当场补上，侧栏徽标立刻改成「群调度」。⛔ 只加不减。 */
+      ...(patch.source ? { source: patch.source } : {}),
       status: "running",
       startedAt: Date.now(),
       endedAt: undefined,

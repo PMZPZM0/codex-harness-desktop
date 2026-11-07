@@ -314,6 +314,8 @@ async function dispatchGroupText(
         cwd: group.workspace || undefined,
         /* ⛔ originThreadId 留空：定时任务没有"发起会话" */
         originThreadId: "",
+        /* ⛔ 11-07：群定时任务派出的会话同样是"群里的活" ⇒ 侧栏标「群调度」（与渲染层同口径）。 */
+        source: "group",
         /* ⛔⛔ 11-07：origin 为空 ≠ 本地用户。定时任务显式带身份下去，
            被调度方看到的是「定时任务交给你的任务」而不是「用户需求」。 */
         sender: source === "automation"
@@ -813,17 +815,48 @@ export const harnessTeamFeature = defineFeature<null>({
       return { ok: Boolean(tokens), tokens };
     });
 
-    /* 解散群（11-06 补）：只删群与它的**群消息日志**，⛔ 不碰任何子会话 ——
-       伙伴的会话是独立资产（它们可能被别的群/主会话复用），删群不该连带删会话。 */
-    ipcHost.handle("harness-team:delete", (_event, groupId: string) => {
+    /* 解散群（11-06 补 / 11-07 用户令「删除群，对应的会话没有删除，外面对话框还能看见，遗留的」）。
+       ⛔⛔ 旧口径是「只删群与群消息日志，一条子会话都不碰（会话是独立资产）」——
+          用户实测的后果就是：群没了，但那些伙伴会话还挂在侧栏里，点开是一段**没有出处**的对话。
+          ⇒ 现在删群**连带删掉本群派生出来的那些会话**。判据不是"按成员扫全部会话"（那会误删
+          用户在主对话里派的活），而是**群日志里出现过的 threadId**：它们才是"这个群说过的那些话"。
+       ⛔ 顺序：群记录先落盘（用户点了确认，不能因为某条会话删不掉就把群留着），会话尽力删；
+          删不掉的降级 archive，别让它们继续出现在"未归档"列表里。
+       ⛔ 磁盘残留 / 墓碑 / 委派登记表由 boot.ts 的 `thread/deleted` 分支统一收拾（另一条入口），
+          这里只管发引擎请求。 */
+    ipcHost.handle("harness-team:delete", async (_event, groupId: string) => {
       const store = readStore();
       const gid = String(groupId ?? "");
       const g = findGroup(store.groups, gid);
       if (!g) return { ok: false, error: "群不存在" };
+      /* 群日志里的人类消息 threadId 是 `group:<群id>`（不是真会话）；只剩伙伴的真实子会话。 */
+      const threads = [...new Set(
+        (store.messages[gid] ?? [])
+          .map((row) => String((row as { threadId?: unknown } | null)?.threadId ?? ""))
+          .filter((id) => id && !id.startsWith("group:")),
+      )];
       const messages = { ...store.messages };
       delete messages[gid];
       writeStore({ groups: store.groups.filter((x) => x.id !== gid), messages, version: 2 });
-      return { ok: true, id: gid };
+
+      let removed = 0;
+      const failed: string[] = [];
+      for (const tid of threads) {
+        try {
+          /* 正在跑的回合不打断，引擎会拒绝删（报 turn in progress）⇒ 先中断这一回合。 */
+          for (const [turnId, owner] of engineActiveTurnIds) {
+            if (owner !== tid) continue;
+            await server.request("turn/interrupt", { threadId: tid, turnId }).catch(() => undefined);
+            break;
+          }
+          await server.request("thread/delete", { threadId: tid });
+          removed += 1;
+        } catch {
+          try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
+          catch { failed.push(tid); }
+        }
+      }
+      return { ok: true, id: gid, removedThreads: removed, totalThreads: threads.length, failed };
     });
 
     /* 清空聊天记录（用户 11-06：「没有清空记录功能」）。

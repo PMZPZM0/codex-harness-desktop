@@ -56,7 +56,7 @@
       "name": "invokeAgent",
       "channel": "agents:invoke",
       "paramsImpl": "input: unknown",
-      "paramsDecl": "input: { kind: \"expert\" | \"team\" | \"member\" | \"subagent\" | \"cli\"; name: string; query: string; originThreadId: string; sender?: { kind?: string; id?: string; name?: string } | null; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string }",
+      "paramsDecl": "input: { kind: \"expert\" | \"team\" | \"member\" | \"subagent\" | \"cli\"; name: string; query: string; originThreadId: string; sender?: { kind?: string; id?: string; name?: string } | null; cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; source?: \"group\" }",
       "returns": "Promise<{ ok: boolean; threadId?: string; name?: string; output: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,
@@ -6207,10 +6207,10 @@
       "channel": "harness-team:delete",
       "paramsImpl": "groupId: string",
       "paramsDecl": "groupId: string",
-      "returns": "Promise<{ ok: boolean; id?: string; error?: string }>",
+      "returns": "Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>",
       "invokeArgs": "groupId",
       "cast": null,
-      "note": "团队模式：解散群（只删群与群日志）"
+      "note": "团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed）"
     },
     {
       "name": "harnessTeamSetMemory",
