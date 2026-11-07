@@ -59,7 +59,9 @@ const ok = (condition, message) => {
 
 /* ── ③ 接线：群聊只能走同一口径，别再自己遍历 providers ── */
 {
-  const composer = read("src/features/harness-team/10-team-composer.tsx");
+  /* ⛔ 负向结构断言必须剥注释（项目纪律）：注释里引用旧实现不能把断言顶红。 */
+  const codeOnly = (source) => String(source).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|\s)\/\/[^\n]*/g, "$1");
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
   ok(/collectModelChoices\(providers, current\)/.test(composer),
     "群聊模型候选走 collectModelChoices（与主对话同一真相源）");
   ok(!/for \(const p of Array\.isArray\(providers\)/.test(composer),
