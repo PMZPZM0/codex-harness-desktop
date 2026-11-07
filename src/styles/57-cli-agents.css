@@ -225,6 +225,50 @@
   border: 0;
   border-radius: 0;
   background: transparent;
+  gap: 14px;
+}
+/* 三级弹窗里的编辑表单（11-07 用户令「做好看一点」）：身份行 + 两组字段 + 右侧动作 */
+.cli-agent-form-hero {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--field);
+}
+.cli-agent-form-hero-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cli-agent-form-hero-text strong {
+  color: var(--text);
+  font-size: 13px;
+}
+.cli-agent-form-hero-text small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cli-agent-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cli-agent-form-section-title {
+  color: var(--faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+.cli-agent-form-grid span em {
+  margin-left: 5px;
+  color: var(--faint);
+  font-style: normal;
+  font-weight: 400;
 }
 .cli-agent-form-title {
   color: var(--text);

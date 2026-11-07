@@ -378,59 +378,6 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
       {/* 11-06 用户令：「加一个安装进度条」——装卸期间常驻一条进度卡：已用时 + 不定长滚动条 + 最后一行日志 + 取消（真 kill）。 */}
       {progressNode}
 
-      {draft ? (
-        /* ⛔ 11-07 用户实测「点编辑没反应」：原来表单内联在列表上方，列表滚动后看不见。
-           改成全局弹窗（与「编辑走弹窗」的既有约定一致），点开即在视口中央。 */
-        <SettingsDialog
-          title={draft.id ? "编辑 CLI" : "接入一个 CLI"}
-          hint={draft.id ? "保存后下一次派活生效" : "填可执行名与用途；装好后可在输入框 @ 它"}
-          onClose={() => { setDraft(null); setError(""); }}
-        >
-        <div className="cli-agent-form cli-agent-form--dialog">
-          <div className="cli-agent-form-grid">
-            <label>
-              <span>名称</span>
-              <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如 Claude Code" />
-            </label>
-            <label>
-              <span>分类</span>
-              {/* ⛔ 原生 <select> 全站禁用（【197】）：下拉一律走 AppSelect（统一样式 + portal 弹层） */}
-              <AppSelect
-                value={draft.category}
-                onChange={(value) => setDraft({ ...draft, category: value })}
-                options={categories.map((cat) => ({ value: cat.key, label: cat.label }))}
-                ariaLabel="CLI 分类"
-                className="cli-agent-select"
-              />
-            </label>
-            <label>
-              <span>可执行名</span>
-              <input value={draft.bin} onChange={(e) => setDraft({ ...draft, bin: e.target.value })} placeholder="PATH 上的命令，例如 claude" spellCheck={false} />
-            </label>
-            <label>
-              <span>安装命令（可空）</span>
-              <input value={draft.installCmd} onChange={(e) => setDraft({ ...draft, installCmd: e.target.value })} placeholder="npm / pip 的全局安装命令（可一键执行）" spellCheck={false} />
-            </label>
-            <label className="wide">
-              <span>一句话用途（会出现在 @ 候选和工具描述里）</span>
-              <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="例如：Anthropic 官方编码 CLI，读仓库、改代码、跑测试" />
-            </label>
-            <label className="wide">
-              <span>文档链接（可空）</span>
-              <input value={draft.docs} onChange={(e) => setDraft({ ...draft, docs: e.target.value })} placeholder="https://…" spellCheck={false} />
-            </label>
-          </div>
-          {error ? <div className="cli-agent-form-error">{error}</div> : null}
-          <div className="cli-agent-form-actions">
-            <button type="button" className="cli-agents-btn" onClick={() => { setDraft(null); setError(""); }}>取消</button>
-            <button type="button" className="cli-agents-btn primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>
-              {saving ? "保存中…" : "保存"}
-            </button>
-          </div>
-        </div>
-        </SettingsDialog>
-      ) : null}
-
       {visible.map((group) => (
         <div className="cli-agent-group" key={group.key}>
           <div className="cli-agent-group-label">
@@ -518,7 +465,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                 ) : null}
                 <button className="secondary-setting" disabled={busy} onClick={() => void runDetect(preview)}><RefreshCw size={12} />检测</button>
                 <button className="secondary-setting" disabled={busy} onClick={() => void copyInstall(preview)}><Copy size={12} />复制命令</button>
-                <button className="secondary-setting" disabled={busy} onClick={() => { setDraft({ id: preview.id, name: preview.name, category: preview.category, bin: preview.bin, installCmd: preview.installCmd, docs: preview.docs, description: preview.description }); setPreviewId(""); }}><PencilLine size={12} />编辑</button>
+                <button className="secondary-setting" disabled={busy} onClick={() => setDraft({ id: preview.id, name: preview.name, category: preview.category, bin: preview.bin, installCmd: preview.installCmd, docs: preview.docs, description: preview.description })}><PencilLine size={12} />编辑</button>
                 {preview.builtin ? null : (
                   <button className={`secondary-setting${confirmId === preview.id ? " agent-preview-danger" : ""}`} disabled={busy} onClick={() => void remove(preview)}>
                     <Trash2 size={12} />{confirmId === preview.id ? "确认删除" : "移除"}
@@ -591,6 +538,77 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
           </div>
         </SettingsDialog>
       )}
+
+      {/* ── 编辑 / 新增 CLI（三级弹窗：设置 → 卡片详情 → 这里）──────────────────
+          ⛔ 11-07 用户令：「去掉界面最上面那个编辑，做成卡片里面的三级弹窗编辑」。
+          编辑时**卡片详情不关**，本弹窗叠在它上面（同为 SettingsDialog，后挂载者在最上层）；
+          保存 / 取消后回到卡片详情。 */}
+      {draft ? (
+        <SettingsDialog
+          title={draft.id ? "编辑 CLI" : "接入一个 CLI"}
+          hint={draft.id ? "保存后下一次派活生效" : "填可执行名与用途；装好后可在输入框 @ 它"}
+          icon={<PencilLine size={16} />}
+          onClose={() => { setDraft(null); setError(""); }}
+        >
+          <div className="cli-agent-form cli-agent-form--dialog">
+            <div className="cli-agent-form-hero">
+              <AgentAvatar kind="subagent" seed={draft.id || draft.bin || draft.name || "cli"} size={44} />
+              <div className="cli-agent-form-hero-text">
+                <strong>{draft.name || "未命名 CLI"}</strong>
+                <small>{draft.bin ? `命令：${draft.bin}` : "还没填可执行名"}</small>
+              </div>
+            </div>
+            <div className="cli-agent-form-section">
+              <span className="cli-agent-form-section-title">基本信息</span>
+              <div className="cli-agent-form-grid">
+                <label>
+                  <span>名称</span>
+                  <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="例如 Claude Code" />
+                </label>
+                <label>
+                  <span>分类</span>
+                  {/* ⛔ 原生 <select> 全站禁用（【197】）：下拉一律走 AppSelect（统一样式 + portal 弹层） */}
+                  <AppSelect
+                    value={draft.category}
+                    onChange={(value) => setDraft({ ...draft, category: value })}
+                    options={categories.map((cat) => ({ value: cat.key, label: cat.label }))}
+                    ariaLabel="CLI 分类"
+                    className="cli-agent-select"
+                  />
+                </label>
+                <label className="wide">
+                  <span>可执行名<em>PATH 上的命令，派活时按它起进程</em></span>
+                  <input value={draft.bin} onChange={(e) => setDraft({ ...draft, bin: e.target.value })} placeholder="例如 claude / qwenpaw" spellCheck={false} />
+                </label>
+              </div>
+            </div>
+            <div className="cli-agent-form-section">
+              <span className="cli-agent-form-section-title">安装与说明</span>
+              <div className="cli-agent-form-grid">
+                <label className="wide">
+                  <span>安装命令（可空）<em>npm / pip 的全局安装命令，面板可一键执行</em></span>
+                  <input value={draft.installCmd} onChange={(e) => setDraft({ ...draft, installCmd: e.target.value })} placeholder="例如 npm install -g @anthropic-ai/claude-code" spellCheck={false} />
+                </label>
+                <label className="wide">
+                  <span>一句话用途<em>会出现在 @ 候选和工具描述里</em></span>
+                  <input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="例如：Anthropic 官方编码 CLI，读仓库、改代码、跑测试" />
+                </label>
+                <label className="wide">
+                  <span>文档链接（可空）</span>
+                  <input value={draft.docs} onChange={(e) => setDraft({ ...draft, docs: e.target.value })} placeholder="https://…" spellCheck={false} />
+                </label>
+              </div>
+            </div>
+            {error ? <div className="cli-agent-form-error">{error}</div> : null}
+            <div className="cli-agent-form-actions">
+              <button type="button" className="cli-agents-btn" onClick={() => { setDraft(null); setError(""); }}>取消</button>
+              <button type="button" className="cli-agents-btn primary" disabled={saving || !draft.name.trim()} onClick={() => void save()}>
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          </div>
+        </SettingsDialog>
+      ) : null}
     </div>
   );
 }

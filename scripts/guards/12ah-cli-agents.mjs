@@ -717,6 +717,13 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
      ② 不支持的 CLI 只留一句小字 ⇒ 控件位置保留「不适用」一行，别让人以为控件丢了。 */
   ok(/<SettingsDialog[\s\S]{0,400}?cli-agent-form--dialog/.test(cliPanelSrc) && /agent-preview-tier-na/.test(cliPanelSrc),
     "面板：编辑/新增走弹窗；无档位的 CLI 保留「不适用」控件行");
+  ok(/onClick=\{\(\) => setDraft\(\{ id: preview\.id[^)]*\}\)\}/.test(cliPanelSrc)
+    && !/setDraft\(\{ id: preview\.id[\s\S]{0,240}?setPreviewId\(""\)/.test(cliPanelSrc)
+    && /cli-agent-form-hero/.test(cliPanelSrc),
+    "⛔ 编辑不关卡片详情（三级弹窗叠在上面；取消后回到详情），表单带身份行分组");
+  /* 同为 SettingsDialog（同 z-index）时**后挂载者在最上层**：编辑弹窗必须排在卡片详情之后渲染。 */
+  ok(cliPanelSrc.indexOf("cli-agent-form--dialog") > cliPanelSrc.indexOf("agent-preview-actions"),
+    "编辑弹窗排在卡片详情之后渲染（三级弹窗的叠层顺序）");
 
   const viteEnvSrc = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/permissionTier\?: "safe" \| "standard" \| "full"/.test(viteEnvSrc) && /permissionTier\?: string/.test(viteEnvSrc),
