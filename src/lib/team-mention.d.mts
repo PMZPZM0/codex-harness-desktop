@@ -30,12 +30,12 @@ export function applyMention(
 
 export interface MentionItem {
   id: string;
-  /** 点它要加进「本轮 @」的成员 id（团成员 = 所属团那一行） */
+  /** 点它要加进「本轮 @」的成员 id（团成员 = 合成 id `team:<teamId>:<memberId>`） */
   selectId: string;
   name: string;
   role: string;
   hint: string;
-  avatar: { id: string; kind?: string; name?: string; targetKind?: string; targetKey?: string };
+  avatar: { id: string; kind?: string; name?: string; targetKind?: string; targetKey?: string; avatar?: string };
   muted: boolean;
   unbound: boolean;
 }

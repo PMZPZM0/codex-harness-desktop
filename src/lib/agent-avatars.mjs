@@ -54,6 +54,26 @@ export function agentAvatarKindOf(kind) {
 }
 
 /**
+ * 指定「第几张图集 + 第几格」——给头像选择器里那些固定面孔用（不按 seed 散列）。
+ * @param {"expert"|"team"|"subagent"} kind
+ * @param {number} sheetIndex 图集序号（越界取模）
+ * @param {number} cell 0..8
+ */
+export function agentAvatarFaceAt(kind, sheetIndex, cell) {
+  const list = SHEETS[kind] ?? SHEETS.expert;
+  const file = list[Math.abs(Math.trunc(sheetIndex)) % list.length];
+  const safeCell = Math.max(0, Math.min(AGENT_AVATAR_CELLS - 1, Math.trunc(cell)));
+  const col = safeCell % AGENT_AVATAR_COLS;
+  const row = Math.floor(safeCell / AGENT_AVATAR_COLS);
+  return {
+    file,
+    cell: safeCell,
+    x: (col / (AGENT_AVATAR_COLS - 1)) * 100,
+    y: (row / (AGENT_AVATAR_COLS - 1)) * 100,
+  };
+}
+
+/**
  * 选头像：同一 seed 恒定；空 seed 回落第一张图集第 0 格（不随机跳）。
  * @param {"expert"|"team"|"subagent"} kind
  * @param {string} seed 成员 id / 团队 id / 子智能体 id

@@ -18,6 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
 import { searchGroupRows } from "../../src/lib/team-search.mjs";
+import { createGroup, setMemberAvatar } from "../../src/lib/team-models.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -208,8 +209,8 @@ const catalog = [
     && /setAvatarTarget\(/.test(view)
     && /<TeamAvatarPicker/.test(view),
     "成员栏头像可点开选择器（⛔ 组件写了不接线 = 功能不存在）");
-  ok(/const custom = memberAvatarSrc\(member\?\.avatar\);[\s\S]{0,120}?if \(custom\)[\s\S]{0,320}?if \(isHuman\)/.test(avatar),
-    "⛔ 自定义头像**优先于**默认（人与智能体都适用；顺序反了改了也看不出来）");
+  ok(/if \(face\)[\s\S]{0,900}?const custom = memberAvatarSrc\(member\?\.avatar\)[\s\S]{0,240}?if \(custom\)/.test(avatar),
+    "智能体成员：自定义头像（图集面孔 / 上传图）优先于默认脸（顺序反了改了也看不出来）；人类成员固定走 UserAvatar");
   ok(/createImageBitmap/.test(picker) && /drawImage\(bitmap/.test(picker) && /toDataURL\("image\/webp"/.test(picker),
     "上传图当场压成 128 方形（⛔ 原图塞 dataURL 一张就几 MB）");
   ok(/harness-team:set-avatar/.test(ipc) && /harness-team:set-avatar/.test(manifest) && /harness-team:set-avatar/.test(registry),
@@ -343,6 +344,36 @@ const catalog = [
   ok(/\.team-sheet__card--confirm \{[^}]*width: min\(420px/.test(css)
     && /\.team-sheet__foot > button\.is-danger \{[^}]*background: var\(--danger\)/.test(css),
     "确认弹窗是窄卡 + 危险色主按钮（删除类操作一眼可辨）");
+}
+
+/* ── ⑧ 成员头像：只给智能体面孔 + 团成员也能改（11-07 用户令）── */
+{
+  const picker = codeOnly(read("src/features/harness-team/19-team-avatar-picker.tsx"));
+  ok(/variant === "user" \?/.test(picker) && /USER_AVATAR_PRESETS\.map/.test(picker)
+    && /variant === "agent" && \(/.test(picker) && /TEAM_AVATAR_PRESETS/.test(picker),
+    "选择器分两种变体：user 只给用户中心 8 张 / agent 才是智能体面孔（⛔ 两套不串）");
+  ok(/variant === "agent" && \([\s\S]{0,200}?上传图片/.test(picker),
+    "上传图片只属于智能体变体（用户头像走用户中心，不在群里另存一份）");
+  ok(/"子智能体", "CLI 智能体", "Codex"/.test(picker),
+    "选择器分三组：子智能体 / CLI 智能体 / Codex");
+  const presets = read("src/lib/avatar-presets.ts");
+  ok(/export const TEAM_AVATAR_PRESETS/.test(presets) && /codex-/.test(presets)
+    && /agentAvatarFaceAt\("subagent"/.test(presets),
+    "预设表含 CLI/子智能体图集面孔与 Codex 配色");
+  const avatarView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/group\.avatars\?\.\[kidId\]/.test(avatarView) && /memberId: kidId/.test(avatarView),
+    "团成员行头像可点改（群级覆盖表 avatars[kidId]）");
+  ok(/isBot \? \([\s\S]{0,700}?variant: "agent"/.test(avatarView)
+    && /variant: "user"/.test(avatarView) && /is-user is-editable/.test(avatarView),
+    "bot 换智能体面孔、人类成员只换用户中心头像（两套头像不串）");
+  const avatarComp = codeOnly(read("src/features/harness-team/13-team-avatar.tsx"));
+  ok(avatarComp.indexOf("if (isHuman)") > 0 && avatarComp.indexOf("if (isHuman)") < avatarComp.indexOf("const rawAvatar"),
+    "人类成员绕过群内头像覆盖，始终走 UserAvatar（用户头像不串智能体那套）");
+  const base = createGroup({ id: "g-avatar", name: "头像群", members: [] });
+  const withKid = setMemberAvatar(base, "team:t1:kid", "preset:subagent-1");
+  const cleared = setMemberAvatar(withKid, "team:t1:kid", "");
+  ok(withKid.avatars?.["team:t1:kid"] === "preset:subagent-1" && cleared.avatars?.["team:t1:kid"] === undefined,
+    "非群成员（团成员）的头像写/清都走覆盖表（空值 = 恢复默认）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

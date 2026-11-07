@@ -2,6 +2,8 @@
  *  ⛔ 文件放 public/avatars/，走 BASE_URL 拼接 —— 打包后 index.html 是 file://，
  *     写死 `/avatars/...` 会解析到盘符根目录（icon.png 同款坑）。
  */
+import { agentAvatarFaceAt } from "./agent-avatars.mjs";
+
 export type UserAvatarPreset = { id: string; label: string; file: string };
 
 export const USER_AVATAR_PRESETS: UserAvatarPreset[] = [
@@ -29,6 +31,46 @@ export const CODEX_AVATAR_PRESETS: UserAvatarPreset[] = [
 ];
 
 export const CODEX_DEFAULT_AVATAR_FILE = "codex-hero.png";
+
+/**
+ * 群成员头像的**智能体面孔**（11-07 用户令：「把 cli 智能体 和子智能体 和 codex 的头像放到这里，
+ * 不要放用户的」）。
+ *  - 子智能体 / CLI 智能体：从机器人图集里各取 4 张固定面孔（CLI 与子智能体同风格，见
+ *    `agentAvatarKindOf`：cli ⇒ subagent 图集）；
+ *  - Codex：用户中心那 6 个黏土机器人配色。
+ * ⛔ 用户那 8 张动物头像只留给用户中心，⛔ 不再出现在群成员选择器里（老群已选的仍能渲染）。
+ */
+export type TeamAvatarPreset =
+  | { id: string; label: string; group: "子智能体" | "CLI 智能体"; face: { file: string; cell: number; x: number; y: number } }
+  | { id: string; label: string; group: "Codex"; file: string };
+
+const SUBAGENT_FACES: Array<[number, number]> = [[0, 0], [1, 2], [2, 4], [3, 6]];
+const CLI_FACES: Array<[number, number]> = [[0, 1], [1, 3], [2, 5], [3, 7]];
+
+export const TEAM_AVATAR_PRESETS: TeamAvatarPreset[] = [
+  ...SUBAGENT_FACES.map(([sheet, cell], index) => ({
+    id: `subagent-${index + 1}`,
+    label: `子智能体 ${index + 1}`,
+    group: "子智能体" as const,
+    face: agentAvatarFaceAt("subagent", sheet, cell),
+  })),
+  ...CLI_FACES.map(([sheet, cell], index) => ({
+    id: `cli-${index + 1}`,
+    label: `CLI 智能体 ${index + 1}`,
+    group: "CLI 智能体" as const,
+    face: agentAvatarFaceAt("subagent", sheet, cell),
+  })),
+  ...CODEX_AVATAR_PRESETS.map((preset) => ({
+    id: `codex-${preset.id}`,
+    label: `Codex · ${preset.label}`,
+    group: "Codex" as const,
+    file: preset.file,
+  })),
+];
+
+export function teamAvatarPresetOf(id: string): TeamAvatarPreset | undefined {
+  return TEAM_AVATAR_PRESETS.find((preset) => preset.id === id);
+}
 
 export function avatarAsset(file: string): string {
   return `${import.meta.env.BASE_URL}avatars/${file}`;

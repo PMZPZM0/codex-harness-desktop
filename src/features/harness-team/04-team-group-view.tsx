@@ -124,7 +124,7 @@ export function TeamGroupView({
   const userName = useUserName();
   const [showSettings, setShowSettings] = useState(false);
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
-  const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement } | null>(null);
+  const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
@@ -293,6 +293,8 @@ export function TeamGroupView({
         name: nameOf(id),
         targetKind: "member",
         targetKey: teamAuthor.memberId,
+        /* 团成员换过的脸（群级覆盖表，key = 合成 id）：消息气泡 / @ 芯片与成员栏同一张。 */
+        avatar: group.avatars?.[id] ?? "",
       };
     }
     const m = memberOf(id);
@@ -347,8 +349,15 @@ export function TeamGroupView({
     setMention((prev) => (prev.typed ? { open: false, query: "", start: 0, typed: false } : prev));
   };
 
-  /** 面板候选（机器人 / 专家团 / 团成员）—— 目录与群成员一变就重算 */
-  const mentionSections = useMemo(() => mentionSectionsOf(group, catalog), [group, catalog]);
+  /** 面板候选（机器人 / 专家团 / 团成员）—— 目录与群成员一变就重算；
+      团成员换过的脸（group.avatars）也在这里叠上去，@ 面板与成员栏才是同一张。 */
+  const mentionSections = useMemo(() => mentionSectionsOf(group, catalog).map((section) => ({
+    ...section,
+    items: section.items.map((item) => ({
+      ...item,
+      avatar: { ...item.avatar, avatar: group.avatars?.[item.selectId] ?? item.avatar.avatar ?? "" },
+    })),
+  })), [group, catalog]);
 
   const pickCandidate = (item: { selectId: string; name: string }) => {
     const already = atTargets.includes(item.selectId);
@@ -584,6 +593,7 @@ export function TeamGroupView({
           anchor={avatarTarget.anchor}
           name={avatarTarget.name}
           current={avatarTarget.value}
+          variant={avatarTarget.variant}
           onPick={(avatar) => {
             void onSetAvatar?.(avatarTarget.memberId, avatar);
             setAvatarTarget(null);
@@ -1031,18 +1041,35 @@ export function TeamGroupView({
                     {/* ⛔ 11-07 用户令「加一个群内的成员头像自定义修改功能」：
                         头像本身是入口（点一下换脸）。⛔ 用 button 包一层而不是给 span 加 onClick ——
                         键盘用户也要能到（可达性是硬要求），并且要能拿到它的 rect 做浮层定位。 */}
-                    <button
-                      type="button"
-                      className="team-group__member-avatar has-agent is-editable"
-                      title={`换 ${personNameOf(m)} 的头像`}
-                      aria-label={`修改 ${personNameOf(m)} 的头像`}
-                      onClick={(event) => {
-                        const el = event.currentTarget as HTMLElement;
-                        setAvatarTarget({ memberId: m.id, name: personNameOf(m), value: String(m.avatar ?? ""), anchor: el });
-                      }}
-                    >
-                      <MemberAvatar member={faceOf(m)} size={22} />
-                    </button>
+                    {isBot ? (
+                      <button
+                        type="button"
+                        className="team-group__member-avatar has-agent is-editable"
+                        title={`换 ${personNameOf(m)} 的头像`}
+                        aria-label={`修改 ${personNameOf(m)} 的头像`}
+                        onClick={(event) => {
+                          const el = event.currentTarget as HTMLElement;
+                          setAvatarTarget({ memberId: m.id, name: personNameOf(m), value: String(m.avatar ?? ""), anchor: el, variant: "agent" });
+                        }}
+                      >
+                        <MemberAvatar member={faceOf(m)} size={22} />
+                      </button>
+                    ) : (
+                      /* ⛔ 11-07 用户：「用户头像就用户中心那几个，不要串其他的」—— 人类成员（群主/用户）
+                         也能换脸，但**只给用户中心那 8 张**（variant="user"），智能体面孔不串进来。 */
+                      <button
+                        type="button"
+                        className="team-group__member-avatar is-user is-editable"
+                        title={`换 ${personNameOf(m)} 的头像`}
+                        aria-label={`修改 ${personNameOf(m)} 的头像`}
+                        onClick={(event) => {
+                          const el = event.currentTarget as HTMLElement;
+                          setAvatarTarget({ memberId: m.id, name: personNameOf(m), value: String(m.avatar ?? ""), anchor: el, variant: "user" });
+                        }}
+                      >
+                        <MemberAvatar member={faceOf(m)} size={22} />
+                      </button>
+                    )}
                     <span className="team-group__member-main">
                       <strong>{personNameOf(m)}</strong>
                       <small title={`成员 id：${m.id}${m.targetKey ? ` · 目标：${m.targetKind}:${m.targetKey}` : ""}`}>
@@ -1094,12 +1121,23 @@ export function TeamGroupView({
                           const kidRunning = Boolean(busy?.includes(kidId));
                           return (
                             <li key={kid.key} className={`team-group__member is-kid${kidRunning ? " is-running" : ""}`} title={`${kid.name}${kid.profession ? ` · ${kid.profession}` : ""}`}>
-                              <span className="team-group__member-avatar has-agent">
+                              {/* 11-07 用户：「专家团下面的成员改不了头像」—— 与伙伴行同一入口：
+                                  团成员不在 group.members 里，头像存在群级覆盖表 `group.avatars[kidId]`。 */}
+                              <button
+                                type="button"
+                                className="team-group__member-avatar has-agent is-editable"
+                                title={`换 ${kid.name} 的头像`}
+                                aria-label={`修改 ${kid.name} 的头像`}
+                                onClick={(event) => {
+                                  const el = event.currentTarget as HTMLElement;
+                                  setAvatarTarget({ memberId: kidId, name: kid.name, value: String(group.avatars?.[kidId] ?? ""), anchor: el, variant: "agent" });
+                                }}
+                              >
                                 <MemberAvatar
-                                  member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: kid.key }}
+                                  member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: kid.key, avatar: group.avatars?.[kidId] ?? "" }}
                                   size={22}
                                 />
-                              </span>
+                              </button>
                               <span className="team-group__member-main">
                                 <strong>{kid.name}</strong>
                                 <small>{kid.profession || "团成员"}</small>

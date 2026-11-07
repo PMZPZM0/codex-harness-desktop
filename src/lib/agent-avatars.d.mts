@@ -14,3 +14,6 @@ export function agentAvatarKindOf(kind: unknown): AgentAvatarKind;
 
 /** 选图集与格子：file = public/avatars 下的文件名；x/y = background-position 百分比（0/50/100）。 */
 export function pickAgentAvatar(kind: AgentAvatarKind, seed: string): { file: string; cell: number; x: number; y: number };
+
+/** 固定图集 + 格子（头像选择器的固定面孔，不按 seed 散列）。 */
+export function agentAvatarFaceAt(kind: AgentAvatarKind, sheetIndex: number, cell: number): { file: string; cell: number; x: number; y: number };

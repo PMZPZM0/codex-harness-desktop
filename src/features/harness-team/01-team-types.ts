@@ -85,6 +85,8 @@ export type TeamGroup = {
   name: string;
   leadId: string;
   members: TeamMember[];
+  /** 派生成员（团成员，合成 id）的头像覆盖表：他们不在 members 里，脸单独记一份 */
+  avatars?: Record<string, string>;
   /** 旧字段：护栏（跨租户/外部群那套）—— 本应用没有租户概念，界面不再展示，仅保留兼容 */
   guard: TeamGuard;
   /** 群简介：这个群的共享背景（每次派活注入给伙伴） */

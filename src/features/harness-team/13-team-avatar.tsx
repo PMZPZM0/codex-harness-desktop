@@ -13,8 +13,8 @@
  */
 import { AgentAvatar } from "../../components/AgentAvatar";
 import { UserAvatar } from "../../components/UserAvatar";
-import { agentAvatarKindOf } from "../../lib/agent-avatars.mjs";
-import { avatarAsset, USER_AVATAR_PRESETS } from "../../lib/avatar-presets";
+import { AGENT_AVATAR_COLS, agentAvatarKindOf } from "../../lib/agent-avatars.mjs";
+import { avatarAsset, teamAvatarPresetOf, USER_AVATAR_PRESETS } from "../../lib/avatar-presets";
 
 type MemberLike = {
   id: string;
@@ -33,11 +33,20 @@ export function avatarPresetSrc(presetId: string): string {
   return preset ? avatarAsset(preset.file) : "";
 }
 
-/** 自定义头像 → 可直接用的 img src（没有自定义 ⇒ 空串）。 */
+/** 智能体面孔预设（图集切片）：返回文件名 + 背景位置；不是这类预设 ⇒ null。 */
+export function avatarPresetFace(presetId: string): { file: string; x: number; y: number } | null {
+  const preset = teamAvatarPresetOf(presetId);
+  return preset && "face" in preset ? preset.face : null;
+}
+
+/** 自定义头像 → 可直接用的 img src（没有自定义 ⇒ 空串；智能体面孔走背景切片，不在这里）。 */
 export function memberAvatarSrc(avatar?: string): string {
   const v = String(avatar ?? "").trim();
   if (!v) return "";
-  if (v.startsWith("preset:")) return avatarPresetSrc(v.slice("preset:".length));
+  if (v.startsWith("preset:")) {
+    const id = v.slice("preset:".length);
+    return teamAvatarPresetOf(id) ? "" : avatarPresetSrc(id);
+  }
   if (/^data:image\//i.test(v)) return v;
   return "";
 }
@@ -53,22 +62,44 @@ export function MemberAvatar({
 }) {
   const isHuman = (member?.kind ?? "bot") === "human";
   const base = `team-avatar${className ? ` ${className}` : ""}`;
-  /* ⛔⛔ 11-07 用户令「加一个群内的成员头像自定义修改功能」：自定义的**永远优先**（人和智能体都适用），
-     否则改了头像看不出来 = 功能等于没做。坏图回落默认（⛔ 不留一片空白）。 */
-  const custom = memberAvatarSrc(member?.avatar);
-  if (custom) {
+  /* ⛔⛔ 11-07 用户：「用户的头像，不要串了那些头像」—— 人类成员（群主/用户）**永远**用用户中心
+     那一份 `UserAvatar`，不读群内智能体头像覆盖；智能体头像只作用于 bot。 */
+  if (isHuman) {
+    /* 只认用户中心那一套（USER presets / 群内选过的同款）：agent 预设在这里取不到 src ⇒ 回落 UserAvatar，
+       ⛔ 智能体面孔不会画到用户身上。 */
+    const custom = memberAvatarSrc(member?.avatar);
     return (
-      <span className={`${base}${isHuman ? " is-user" : ""}`} style={{ width: size, height: size }} aria-hidden>
-        <img className="team-avatar__custom" src={custom} alt="" style={{ width: size, height: size }} />
+      <span className={`${base} is-user`} style={{ width: size, height: size }} aria-hidden>
+        {custom
+          ? <img className="team-avatar__custom" src={custom} alt="" style={{ width: size, height: size }} />
+          : <UserAvatar size={size} />}
       </span>
     );
   }
-  if (isHuman) {
-    /* ⛔ 尺寸交给 UserAvatar（它自己按 size 设宽高与字号）；外层只承担"占位 + 类名"，
-       ⛔ 不要再套 `is-text` 的首字圆圈 —— 那是 11-06 的旧形态，用户已明确要"同步出来"。 */
+  const rawAvatar = String(member?.avatar ?? "").trim();
+  const face = rawAvatar.startsWith("preset:") ? avatarPresetFace(rawAvatar.slice("preset:".length)) : null;
+  if (face) {
+    /* 智能体面孔（图集切片）：与 AgentAvatar 同口径（300% 背景 + 0/50/100 定位）。 */
     return (
-      <span className={`${base} is-user`} style={{ width: size, height: size }} aria-hidden>
-        <UserAvatar size={size} />
+      <span className={base} style={{ width: size, height: size }} aria-hidden>
+        <span
+          className="team-avatar__custom team-avatar__face"
+          style={{
+            width: size,
+            height: size,
+            backgroundImage: `url("${avatarAsset(face.file)}")`,
+            backgroundSize: `${AGENT_AVATAR_COLS * 100}% ${AGENT_AVATAR_COLS * 100}%`,
+            backgroundPosition: `${face.x}% ${face.y}%`,
+          }}
+        />
+      </span>
+    );
+  }
+  const custom = memberAvatarSrc(member?.avatar);
+  if (custom) {
+    return (
+      <span className={base} style={{ width: size, height: size }} aria-hidden>
+        <img className="team-avatar__custom" src={custom} alt="" style={{ width: size, height: size }} />
       </span>
     );
   }

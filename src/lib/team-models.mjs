@@ -112,6 +112,23 @@ export function normalizeMemberAvatar(value) {
 }
 
 /**
+ * 群内的「派生成员」头像覆盖表（11-07 用户：「专家团下面的成员改不了头像」）：
+ * 团成员来自调度目录、**不在 group.members 里**，所以他们的脸只能单独记一份。
+ * key = 界面用的成员 id（团成员是合成 id `team:<teamId>:<memberId>`），value 同 normalizeMemberAvatar。
+ */
+function normalizeAvatarMap(value) {
+  const out = {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return out;
+  for (const [key, raw] of Object.entries(value)) {
+    const id = String(key ?? "").trim();
+    if (!id || id.length > 300) continue;
+    const avatar = normalizeMemberAvatar(raw);
+    if (avatar) out[id] = avatar;
+  }
+  return out;
+}
+
+/**
  * 群参考文件：⛔ 只存**路径 + 说明**，不搬文件、不读内容 ——
  * 伙伴是真实子会话，它们自己能按路径去读盘（⛔ 复制一份会出现"群里的副本早就过期"）。
  */
@@ -177,6 +194,8 @@ export function createGroup(input) {
     name: String(input?.name ?? "未命名团队"),
     leadId,
     members: deduped,
+    /* 派生成员（团成员，不在 members 里）的头像覆盖表 —— 见 normalizeAvatarMap */
+    avatars: normalizeAvatarMap(input?.avatars),
     guard: { ...DEFAULT_GROUP_GUARD, ...(input?.guard ?? {}) },
     /* 群简介：这个群的共享背景（注入每次派活）。⛔ 与人/伙伴的私有记忆分开，别混。 */
     memory: String(input?.memory ?? "").slice(0, MAX_GROUP_MEMORY_CHARS),
@@ -304,9 +323,15 @@ export function setPartnerMuted(group, partnerId, muted) {
 export function setMemberAvatar(group, memberId, avatar) {
   const base = createGroup(group);
   const id = String(memberId ?? "");
+  if (!id) return base;
   const next = normalizeMemberAvatar(avatar);
-  if (!base.members.some((m) => m.id === id)) return base;
-  return { ...base, members: base.members.map((m) => (m.id === id ? { ...m, avatar: next } : m)) };
+  if (base.members.some((m) => m.id === id)) {
+    return { ...base, members: base.members.map((m) => (m.id === id ? { ...m, avatar: next } : m)) };
+  }
+  /* 团成员（调度目录派生）：写群级覆盖表；空值 = 删掉这条（恢复默认脸）。 */
+  const avatars = { ...(base.avatars ?? {}) };
+  if (next) avatars[id] = next; else delete avatars[id];
+  return { ...base, avatars };
 }
 
 /**

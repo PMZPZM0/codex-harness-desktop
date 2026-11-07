@@ -69,6 +69,8 @@ export interface TeamGroupLite {
   name: string;
   leadId: string;
   members: TeamMemberLite[];
+  /** 派生成员（团成员，合成 id）的头像覆盖表 */
+  avatars?: Record<string, string>;
   guard: TeamGuard;
   /** 群简介（注入每次派活），上限 MAX_GROUP_MEMORY_CHARS */
   memory: string;

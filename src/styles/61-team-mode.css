@@ -2672,7 +2672,9 @@
 .team-avatar-picker {
   position: fixed;
   z-index: 950;   /* 高于群面板，低于确认框（950）同级 —— 它自己就是确认级操作 */
-  width: 268px;
+  width: 300px;
+  max-height: calc(100vh - 16px);
+  overflow: auto;
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -2704,6 +2706,12 @@
   overflow: hidden;
 }
 .team-avatar-picker__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 智能体面孔：图集切片（3×3 背景定位），与 AgentAvatar 同口径 */
+.team-avatar-picker__face { display: block; width: 100%; height: 100%; background-repeat: no-repeat; }
+.team-avatar-picker__group { grid-column: 1 / -1; color: var(--faint); font-size: 10.5px; line-height: 1.2; margin-top: 2px; }
+.team-avatar-picker__group:first-child { margin-top: 0; }
+/* 成员头像里的智能体面孔：与自定义图片同尺寸占位 */
+.team-avatar__face { display: block; background-repeat: no-repeat; }
 .team-avatar-picker__item:hover { border-color: var(--accent); }
 .team-avatar-picker__item.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
 .team-avatar-picker__err { margin: 8px 0 0; color: var(--danger); font-size: 11.5px; }
