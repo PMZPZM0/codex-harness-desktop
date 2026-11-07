@@ -14,6 +14,8 @@ import {
   parseCommand,
   parseMentions,
   groupContextBlock,
+  teamKidsOf,
+  parseAgentMentions,
   normalizeGroupFile,
   displayNameOf,
   groupIssues,
@@ -416,4 +418,32 @@ test("命令：只有开头就是 / 才算；/stop 带不带 @ 都认得出来",
   assert.deepEqual(parseCommand("  /stop @承枢 "), { name: "stop", rest: "@承枢" });
   assert.equal(parseCommand("今天的/会议"), null, "句中出现斜杠不是命令");
   assert.equal(parseCommand("你好"), null);
+});
+
+test("团成员进名录与互 @ 候选（11-07：成员之间要能互相艾特）", () => {
+  const group = createGroup({
+    id: "g_team", name: "测试", leadId: "u1",
+    members: [
+      human("u1"),
+      { id: "tgt:team:software-dev-team", kind: "bot", name: "软件开发专家团", targetKind: "team", targetKey: "software-dev-team" },
+    ],
+  });
+  const catalog = [
+    { kind: "team", key: "software-dev-team", name: "软件开发专家团", teamId: "software-dev-team" },
+    { kind: "member", key: "software-dev-team:product-manager", name: "问需", profession: "产品经理", teamId: "software-dev-team", memberId: "product-manager" },
+    { kind: "member", key: "software-dev-team:architect", name: "构梁", teamId: "software-dev-team", memberId: "architect" },
+  ];
+  const kids = teamKidsOf(group, catalog);
+  assert.equal(kids.length, 2, "团里两位成员都展开成可派活的虚拟伙伴");
+  assert.equal(kids[0].id, "team:software-dev-team:product-manager");
+  assert.equal(kids[0].targetKind, "member");
+  assert.equal(kids[0].targetKey, "software-dev-team:product-manager");
+  const ctx = groupContextBlock(group, { forMemberId: "tgt:team:software-dev-team", catalog });
+  assert.ok(ctx.includes("问需") && ctx.includes("构梁"), "名录里要列出团成员，成员才知道能 @ 谁");
+  assert.ok(ctx.includes("另起一行写") && ctx.includes("@名字：要他做什么"));
+  const asks = parseAgentMentions("先给结论。\n@问需：出来说句话", group, { catalog });
+  assert.equal(asks.length, 1);
+  assert.equal(asks[0].name, "问需");
+  assert.equal(asks[0].target?.targetKey, "software-dev-team:product-manager", "互 @ 要带可派活的虚拟伙伴");
+  assert.deepEqual(parseAgentMentions("@问需：出来说句话", group, { catalog, excludeId: kids[0].id }), [], "不能叫自己");
 });

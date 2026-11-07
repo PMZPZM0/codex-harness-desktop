@@ -54,6 +54,7 @@ import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
    的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
 import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { runDelegatedTask } from "./delegation";
+import { buildDispatchCatalog } from "./dispatch-core";
 import { broadcastHarnessEvent } from "./window-bus";
 import {
   appendLedger,
@@ -269,6 +270,8 @@ async function dispatchGroupText(
   if (!usable.length) {
     return { ok: false, sent: 0, failed: ["没有可派活的伙伴（未绑定 / 已静音）"] };
   }
+  /* 团成员名录与互 @ 判据：与渲染层 02-team-store 同一口径（11-07 用户令「成员之间互相艾特」）。 */
+  const catalog = await buildDispatchCatalog().catch(() => []);
   const saved = await appendMessageTo(group.id, {
     authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",
     authorKind: "human",
@@ -290,6 +293,7 @@ async function dispatchGroupText(
     partner: GroupShape["members"][number],
     hop = 0,
     caller?: { id: string; name: string },
+    bodyText = text,
   ): Promise<void> => {
     if (ranIds.has(partner.id)) return;
     ranIds.add(partner.id);
@@ -300,8 +304,8 @@ async function dispatchGroupText(
     let errMsg = "";
     try {
       /* 与渲染层 `02-team-store` 同口径：团成员产出直投群流，主理人只出统筹结论（别转述） */
-      const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team" });
-      const query = ctx ? `${ctx}\n\n---\n\n${text}` : text;
+      const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team", catalog });
+      const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
       const res = await runDelegatedTask({
         kind: partner.targetKind as "expert" | "subagent" | "cli",
         name: partner.targetKey,
@@ -345,12 +349,15 @@ async function dispatchGroupText(
           excludeId: partner.id,
           alreadyRan: [...ranIds],
           max: chainBudget,
+          catalog,
         });
         for (const ask of asks) {
-          const next = group.members.find((m) => m.id === ask.memberId);
+          /* 团成员是虚拟条目（合成 id），不在 group.members 里 —— 直接用 target 派给本人。 */
+          const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as GroupShape["members"][number] | undefined;
           if (!next || ranIds.has(next.id)) continue;
           chainBudget -= 1;
-          void runOne(next, 1, { id: partner.id, name: partner.name });
+          /* ⛔ 以前把**整条原消息**又发一遍，被叫的人根本不知道自己被叫去做什么。 */
+          void runOne(next, 1, { id: partner.id, name: partner.name }, `（${partner.name} 在群里叫你）${ask.ask}`);
         }
       }
     } catch (err) {

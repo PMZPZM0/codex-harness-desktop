@@ -451,6 +451,11 @@ export function useTeamGroups() {
       if (unbound.length) {
         return { ok: false, error: `「${unbound.map((m) => m.name).join("、")}」还没绑定智能体，去群设置里换成列表里的那一个` };
       }
+      /* ⛔⛔ 11-07 用户：「成员之间互相也不会艾特」——群账本里只有一个 team 伙伴，
+         团里那几位从不在 group.members 里 ⇒ 名录看不到、@ 也解析不到。
+         拉一次调度目录，群上下文与互 @ 判据共用同一份（口径只在 teamKidsOf）。 */
+      const cat = await window.codex.listDispatchCatalog().catch(() => null);
+      const catalog: unknown[] = Array.isArray(cat?.targets) ? cat.targets : [];
 
       setDispatchError("");
       /* 本轮派活的代际：期间若被清空，晚到的旧回复一律不再写回 */
@@ -526,7 +531,7 @@ export function useTeamGroups() {
           /* ⛔⛔ 11-07 用户令：「专家团会话总是主代理说话，代其他成员回复，其他成员的会话不会直接到群里」
              ⇒ 团的成员产出由 `team-run` 事件**以成员自己的署名**直投群流（见本文件 team-run 分支），
                 同时在这里告诉主理人「别转述，只出统筹结论」。⛔ 只对团生效：单个伙伴没有"成员产出"。 */
-          const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team" });
+          const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team", catalog });
           const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
           const res = (await window.codex.invokeAgent({
             kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
@@ -612,9 +617,11 @@ export function useTeamGroups() {
               excludeId: partner.id,
               alreadyRan: [...ranIds],
               max: chainBudget,
+              catalog,
             });
             for (const ask of asks) {
-              const next = group.members.find((m) => m.id === ask.memberId);
+              /* 团成员是虚拟条目（合成 id），不在 group.members 里 —— 直接用 target 派给本人。 */
+              const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as TeamGroup["members"][number] | undefined;
               if (!next || ranIds.has(next.id)) continue;
               chainBudget -= 1;
               /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链） */

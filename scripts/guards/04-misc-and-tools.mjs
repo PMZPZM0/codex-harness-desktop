@@ -975,8 +975,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
        —— 所以这里不再有"绝不给 harness_tools"的负向断言；"给了网关 = 越权"是个**假命题**
        （工具可见 ≠ 操作被允许）。 */
     /* 10-21 step 标题落地后，工具面统一过 withStepParam（同一份数组，顺序与成员不变）。 */
-    /dynamicTools: (?:withStepParam\()?\[\.\.\.teamTools, buildDelegateHarnessTool\(\), \.\.\.\(roleRef \? \[buildRoleMemoryTool\(roleRef\)\]/.test(mainSrc9)
-      ? ok("dynamicTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
+    /* ⛔⛔ 11-07：工具面提到 `desiredTools` 单一真相源（新建 + 复用会话 resume 前同步共用）。
+       判据盯组装内容与「新建分支真的用它」，不再盯 `dynamicTools:` 那一行字面量。 */
+    /const desiredTools = withStepParam\(\[[\s\S]{0,200}?\.\.\.teamTools, buildDelegateHarnessTool\(\),[\s\S]{0,160}?buildRoleMemoryTool\(roleRef\)/.test(mainSrc9)
+      && /dynamicTools: desiredTools/.test(mainSrc9)
+      ? ok("desiredTools = 调度工具 + 能力网关（+ 角色记忆写入）；⛔ 权限边界在执行端而非工具面")
       : fail("dynamicTools 的组装变了 —— 确认被委派会话拿得到网关、且调度工具仍只给主理人");
     // ⛔ 回归防线：这些工具必须**合并成一个数组**（写两个 dynamicTools 键会互相覆盖）
     (mainSrc9.match(/dynamicTools:/g) ?? []).length >= 1

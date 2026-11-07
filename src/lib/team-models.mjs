@@ -303,9 +303,17 @@ export function parseAgentMentions(text, group, options = {}) {
   const excludeId = String(options?.excludeId ?? "");
   const max = Number(options?.max) > 0 ? Number(options.max) : 3;
   const already = new Set(Array.isArray(options?.alreadyRan) ? options.alreadyRan.map(String) : []);
-  const bots = g.members.filter(
-    (m) => m.kind === "bot" && m.id !== excludeId && m.targetKind && m.targetKey && !m.muted && !already.has(m.id),
+  /* ⛔ 团成员也要能被 @：它们不在 group.members 里，但宿主能按合成 id 派给本人
+     （kind:member + key <teamId>:<memberId>）。返回的 target 就是派活要用的虚拟伙伴。 */
+  const kids = teamKidsOf(g, options.catalog).filter(
+    (m) => m.id !== excludeId && !already.has(m.id),
   );
+  const bots = [
+    ...g.members.filter(
+      (m) => m.kind === "bot" && m.id !== excludeId && m.targetKind && m.targetKey && !m.muted && !already.has(m.id),
+    ),
+    ...kids,
+  ];
   if (!bots.length) return [];
   const flat = (v) => String(v ?? "").replace(/\s+/g, "").toLowerCase();
   const out = [];
@@ -331,7 +339,7 @@ export function parseAgentMentions(text, group, options = {}) {
     );
     if (!hit || seen.has(hit.id)) continue;
     seen.add(hit.id);
-    out.push({ memberId: hit.id, name: hit.name, ask });
+    out.push({ memberId: hit.id, name: hit.name, ask, target: kids.some((k) => k.id === hit.id) ? hit : null });
     if (out.length >= max) break;
   }
   return out;
@@ -390,6 +398,46 @@ export function guardAllows(group, facts = {}) {
  * ⛔ 纯函数，主进程/渲染层/测试共用一份口径 —— ⛔ 别在派活处手拼字符串（两套必然漂）。
  * 返回空串 = 这个群没有任何上下文可注入。
  */
+/**
+ * 把群里绑定的专家团展开成「可直接派活的团成员」虚拟条目（11-07 用户令：
+ * 「成员之间互相也不会艾特」）。
+ *
+ * ⛔ 群账本里只有一个 `targetKind=team` 的伙伴，团里那几位从来不在 `group.members` 里
+ *    ⇒ 名录看不到他们、`parseAgentMentions` 也解析不到 `@问需` ⇒ 界面表现就是"没法互相 @"。
+ * 合成 id 与 @ 面板 / team-run 镜像 / 派活虚拟伙伴**同一口径**（`teamAuthorIdOf`）。
+ */
+export function teamKidsOf(group, catalog) {
+  const g = createGroup(group);
+  const cat = Array.isArray(catalog) ? catalog : [];
+  const teamIds = new Set(
+    g.members
+      .filter((m) => m && m.kind === "bot" && m.targetKind === "team" && m.targetKey)
+      .map((m) => String(m.targetKey)),
+  );
+  if (!teamIds.size) return [];
+  const out = [];
+  const seen = new Set();
+  for (const entry of cat) {
+    if (!entry || entry.kind !== "member" || !teamIds.has(String(entry.teamId ?? ""))) continue;
+    const memberId = teamMemberIdOf(entry);
+    if (!memberId) continue;
+    const teamId = String(entry.teamId ?? "");
+    const id = teamAuthorIdOf(teamId, memberId);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      kind: "bot",
+      name: String(entry.name ?? memberId),
+      targetKind: "member",
+      targetKey: `${teamId}:${memberId}`,
+      targetProfession: String(entry.profession ?? "团成员"),
+      muted: false,
+    });
+  }
+  return out;
+}
+
 export function groupContextBlock(group, options = {}) {
   const g = createGroup(group);
   const memory = String(g.memory ?? "").trim();
@@ -408,8 +456,10 @@ export function groupContextBlock(group, options = {}) {
     : [];
   const hasOrg = Boolean(self?.managerId || reports.length);
   /* 群成员名录：伙伴要能 **@ 到具体的人**（互相 @ 对话的前提）。
-     ⛔ 名字与 id 一起给：只有名字时模型会自己编一个 id 去调 agent_invoke（然后失败）。 */
-  const roster = g.members;
+     ⛔ 名字与 id 一起给：只有名字时模型会自己编一个 id 去调 agent_invoke（然后失败）。
+     ⛔ 团成员是虚拟条目：群账本里没有它们，但它们在群里发言、也必须能被 @（见 teamKidsOf）。 */
+  const kids = teamKidsOf(g, options.catalog);
+  const roster = [...g.members, ...kids];
   if (!memory && !notes.length && !files.length && !hasOrg && roster.length < 2) return "";
   const lines = [`【群聊上下文 · ${g.name}】`];
   if (memory) lines.push(memory);
@@ -426,15 +476,18 @@ export function groupContextBlock(group, options = {}) {
     lines.push("群里的人（括号里是派活用的目标）：");
     for (const m of roster) {
       const isMe = self && m.id === self.id;
-      const role = m.id === g.leadId ? "群主" : m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员");
-      const key = m.kind === "bot" && m.targetKind ? ` · ${m.targetKind}:${m.targetKey}` : "";
+      const isKid = kids.some((k) => k.id === m.id);
+      const role = isKid ? `团成员 · ${m.targetProfession || "成员"}` : (m.id === g.leadId ? "群主" : m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员"));
+      /* 团成员不塞很长的 member:<teamId>:<memberId>：模型只需要按**名字** @，目标由宿主翻。 */
+      const key = !isKid && m.kind === "bot" && m.targetKind ? ` · ${m.targetKind}:${m.targetKey}` : "";
       const up = m.managerId ? ` · 上级：${g.members.find((x) => x.id === m.managerId)?.name ?? m.managerId}` : "";
       lines.push(`- ${m.name}（${role}${key}${up}）${isMe ? " ← 就是你" : ""}`);
     }
-    if (self) {
+    if (self || kids.length) {
       /* 11-06 用户令：群里允许伙伴之间 @ 沟通。判据是**行首点名**（见 parseAgentMentions），
-         所以提示词必须把这个格式写死 —— 写在句子中间的 @ 不会触发。 */
-      lines.push("要叫某个伙伴接手，另起一行写 `@名字：要他做什么`（这一行只放这句）。句子中间的 @ 不触发，只是给人看的。");
+         所以提示词必须把这个格式写死 —— 写在句子中间的 @ 不会触发。
+         ⛔ 11-07：团成员也在名录里，写清「真派活」而不是文本装饰，否则模型只敢自己代答。 */
+      lines.push("要叫某个伙伴接手，另起一行写 `@名字：要他做什么`（这一行只放这句）。团成员也能这样叫，宿主会真的派给他，他的回复自己发进群。句子中间的 @ 不触发，只是给人看的。");
       /* ⛔⛔ 11-07 用户实测：「专家团会话，总是主代理说话，代替其他成员回复，其他成员会话不会直接到群里」。
          真根因在渲染层：成员产出以前只在 team_member_invoke 的返回值里（只有主理人看得到）。
          现在群聊会把成员产出**按成员自己的身份**投进群流（见 02-team-store 的 team-run 镜像），

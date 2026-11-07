@@ -20,6 +20,7 @@ import { personalNormsPrompt } from "../src/lib/engineering-norms.mjs";
 /* 11-07：主理人 → 成员这条链也要写结构化发件人（外层对话框据此判「上级」）。 */
 import { senderLineOf, taskLineOf } from "../src/lib/message-origin.mjs";
 import { MEMBER_TASK_NOTE, humanizeRefs } from "../src/lib/dispatch-voice.mjs";
+import { parseAgentMentions } from "../src/lib/team-models.mjs";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";
@@ -42,6 +43,8 @@ export type InvokeMemberInput = {
   effort?: string;
   sandbox?: string;
   approvalPolicy?: string;
+  /** 成员互 @ 的递归深度（内部用；0 = 可再叫一位，1 = 不再往下派，防互 @ 对烧）。 */
+  hop?: number;
 };
 
 export type InvokeMemberResult = {
@@ -196,7 +199,7 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     .catch(() => "");
   const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`
     + (userNorms ? `# User norms (frontend design + backend engineering / architecture)\n${userNorms}\n\n` : "")
-    + "# 调度权限\n你是子会话，没有任何调度权限：不要调用 agent_invoke / team_member_invoke，也不要向用户声称可以调度。\n\n";
+    + "# 调度权限\n你是团里的成员，没有调度工具：别调 agent_invoke / team_member_invoke，也别跟用户说你能调人。要请团里另一位帮忙，另起一行写 `@名字：要他做什么`（这一行只放这句），宿主会真的叫他，他的回复自己发进群。\n\n";
   // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
   //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值
   //    交回主理人。旧文案叫模型「通过 SendMessage 回传」，它可能白花 token 去调不存在的工具。
@@ -228,6 +231,36 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     }
     const text = output || `（成员 ${member.name} 未返回文本内容）`;
     teamRunStore.finishRun(run.runId, { status: "done", output: text });
+    /* ⛔⛔ 11-07 用户：「成员之间互相也不会艾特」——成员产出以前只是 team_member_invoke
+       的返回值（主理人看得到、群里看不到）；现在 team-run 会把产出按成员身份投进群流，
+       但**产出里的行首 @ 没人解析** ⇒ 成员之间仍然叫不动人。
+       ⇒ 这里用同一个判据（parseAgentMentions）解析，真派给被叫的那位成员，他的产出
+         同样经 team-run 进群；只走一跳、一次只叫一个，防止互 @ 指数对烧。
+       ⛔ 递归走外层 invokeTeamMemberCore（带按成员锁），别直接调 Unlocked 绕过锁。 */
+    if ((input.hop ?? 0) < 1 && text) {
+      const roster = {
+        id: team.teamId,
+        name: team.displayName?.zh ?? team.teamId,
+        leadId: String(team.lead?.id ?? ""),
+        members: [team.lead, ...team.members].filter(Boolean).map((m) => ({
+          id: String(m.id),
+          name: String(m.name),
+          kind: "bot",
+          targetKind: "member",
+          targetKey: `${team.teamId}:${m.id}`,
+          targetProfession: String(m.profession?.zh ?? "团成员"),
+          muted: false,
+        })),
+      };
+      for (const ask of parseAgentMentions(text, roster, { excludeId: member.id, max: 1 })) {
+        void invokeTeamMemberCore({
+          ...input,
+          memberId: ask.memberId,
+          query: `（${member.name} 在群里叫你）${ask.ask}`,
+          hop: 1,
+        }).catch(() => undefined);
+      }
+    }
     return { threadId: memberThreadId, turnId, teamId: team.teamId, memberId: member.id, name: member.name, profession: member.profession.zh, output: text, runId: run.runId, reused: Boolean(existingThreadId) };
   } catch (error: any) {
     /* ★ 同 delegation：**等待到点 ≠ 失败**（10-10 用户令「超时不判失败，转后台等」）。

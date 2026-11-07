@@ -27,7 +27,8 @@ import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { readSubAgents, type SubAgentConfig } from "../main/09-agents-plugins";
-import { delegateRegistry, server, teamRunStore, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { delegateRegistry, codexHome, server, teamRunStore, threadCwd, threadRuntimeStore } from "../runtime-refs";
+import { syncToolSurfaceAsync } from "../rollout-pool";
 import { bridgeDial } from "../main";
 import { ensureProjectAgentsMd } from "../project-conventions";
 import { readPersonalization } from "../personalization";
@@ -99,6 +100,10 @@ export async function runDelegatedTask(input: {
   let rolePrompt = "";
   let displayName = target.name;
   let teamTools: unknown[] = [];
+  /* ⛔⛔ 11-07 用户实测「专家团主代理喊不动成员」：团主理人不止 `kind:"team"` 一种入口。
+     @ 面板里「主理人本尊」是 catalog 的 expert 条目（memberId === lead.id），以前会落进
+     else 分支当成普通成员 ⇒ 没有团工具、没有主理人 SOP、也没登记 lead 身份。 */
+  let leadOfTeam = false;
   /* 子智能体自带的运行配置（10-27）：模型 / 沙箱 / 审批 / 推理强度以前**只写不读**
      ⇒ 表单里改了也不生效。这里取一次，往下按「跟随主对话」开关决定用不用。 */
   let subAgentConfig: SubAgentConfig | null = null;
@@ -134,7 +139,11 @@ export async function runDelegatedTask(input: {
     const teams = await readUsableExpertTeams();
     const team = teams.find((entry) => entry.teamId === target.teamId);
     if (!team) return { ok: false, output: "", error: `专家「${input.name}」不存在` };
-    if (target.kind === "team") {
+    /* 团主理人 = 整团目标，或目录里"主理人本尊"的 expert 目标（单人专家不算：它没有成员）。 */
+    leadOfTeam = target.kind === "team"
+      || (target.kind === "expert" && team.members.length > 0
+        && String(target.memberId ?? "") === String(team.lead?.id ?? ""));
+    if (leadOfTeam) {
       rolePrompt = buildTeamSystemPrompt(team);
       // 主理人靠这两个工具管**本团成员**（团队内部机制，不是对外委派，故不受 L3 限制）
       teamTools = [buildTeamTools(team), buildTeamPhaseTool(team)];
@@ -210,6 +219,14 @@ export async function runDelegatedTask(input: {
      ⛔ 正在运行的（status=running）不复用：同一线程不能并发两个回合，引擎会 busy。
      ⛔ resume 必须带 model/modelProvider/sandbox/approvalPolicy/config —— 否则线程会掉回
         创建时的旧供应商/旧权限（与 team-invoke 复用成员线程同款迁移口径）。 */
+  /* ⛔⛔ 11-07 实测（rollout 首行取证）：被复用的团主理人会话首行挂着 45 个**主会话**工具，
+     `team_member_invoke` / `team_phase_invoke` 一个都没有 ⇒ 模型调就报 unsupported call、
+     退而调 agent_invoke 又被 L3 闸拒，界面表现就是「主代理喊不动成员」。
+     引擎只在 `thread/start` 定死工具面，resume 传 dynamicTools 整份忽略 ⇒ 复用前必须
+     按附录 Z 改写首行。这份同时供新建分支使用，⛔ 两处不许各写一份。 */
+  const desiredTools = withStepParam([
+    ...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : []),
+  ]);
   const targetKey = `${target.kind}:${target.key}`;
   let threadId = "";
   let reused = false;
@@ -223,6 +240,14 @@ export async function runDelegatedTask(input: {
       ? await delegateRegistry.findReusable({ originThreadId: origin, kind: target.kind, targetKey, name: displayName }).catch(() => null)
       : null;
     if (reusable) {
+      /* 复用 = 老会话，它的工具面是**创建那一刻**的，可能压根没有本目标该有的工具。
+         ⛔ 必须在 thread/resume 之前 await 完（resume 会立刻 spawn 并读首行）。
+         ⛔ 只修团主理人 / 有专属工具的会话：其它目标的复用行为保持原样，别扩大影响面。
+         失败静默（syncToolSurfaceAsync 自己有原子替换与校验），绝不挡住派活。 */
+      if (leadOfTeam) {
+        try { await syncToolSurfaceAsync(codexHome, reusable.threadId, desiredTools as unknown[]); }
+        catch { /* 工具面升级失败：新建分支仍会带全套工具 */ }
+      }
       const resumed: any = await server.request("thread/resume", {
         threadId: reusable.threadId,
         excludeTurns: true,
@@ -270,14 +295,14 @@ export async function runDelegatedTask(input: {
     //    （详见 delegate-harness-tool.ts 文件头）；⛔ 无条件挂（带开关条件 = 中途变化不生效）。
     // 10-21：`withStepParam` 给这批工具注入可选的「这一步在干什么」参数（卡片标题）。
     // ⛔ 主进程自己发的 thread/start **不经过** codex-ipc 的拦截 ⇒ 这里必须各自包一层。
-    dynamicTools: withStepParam([...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : [])]),
+    dynamicTools: desiredTools,
   });
   threadId = String(started?.thread?.id ?? "");
   }
   if (!threadId) return { ok: false, output: "", error: "调度会话创建失败（未返回 threadId）" };
   /* 被委派的专家团主理人也要登记为团队主理人：否则它调用 team_member_invoke 时会被
      「只有主理人可以调度成员」的硬闸误拒。 */
-  if (target.kind === "team" && target.teamId) {
+  if (leadOfTeam && target.teamId) {
     teamRunStore.setThreadTeam(threadId, target.teamId);
     teamRunStore.setThreadLead(threadId);
   }
@@ -307,7 +332,7 @@ export async function runDelegatedTask(input: {
   try {
     const baseRead: any = await server.request("config/read", {}).catch(() => null);
     const baseInstructions = String(baseRead?.config?.developer_instructions ?? "");
-    const block = delegateScopeBlock({ kind: target.kind, name: displayName, origin, supervisor: supervisorLabel });
+    const block = delegateScopeBlock({ kind: leadOfTeam ? "team" : target.kind, name: displayName, origin, supervisor: supervisorLabel });
     // ⛔ 身份块放在 base 前面：后面的全局目录再长，也不能盖过「你的上级是谁」。
     const merged = baseInstructions ? `${block}\n\n---\n\n${baseInstructions}` : block;
     await server.request("thread/settings/update", {

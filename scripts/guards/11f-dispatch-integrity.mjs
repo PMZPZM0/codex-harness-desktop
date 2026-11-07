@@ -711,5 +711,43 @@ try {
     "来源标记有样式（⛔ 无样式 = 裸文字挤在 meta 行里）");
 }
 
+/* ── 11-07 用户实测「假群聊」：主代理喊不动成员 + 成员之间互相艾特无效 ──
+   取证：团主理人会话 rollout 首行 dynamic_tools 有 45 个**主会话**工具，
+   没有 team_member_invoke / team_phase_invoke（复用会话的工具面从没升级过）。 */
+{
+  const delegationSrc = readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8");
+  ok(/leadOfTeam = target\.kind === "team"/.test(delegationSrc)
+    && /target\.kind === "expert" && team\.members\.length > 0/.test(delegationSrc),
+    "团主理人识别覆盖 team 目标与「主理人本尊」expert 目标（⛔ 后者以前退化成普通成员）");
+  ok(/if \(leadOfTeam\) \{\s*try \{ await syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegationSrc),
+    "⛔ 复用会话在 thread/resume **之前**同步工具面（老会话升级唯一路，见附录 Z）");
+  ok(/dynamicTools: desiredTools/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
+    "新建与复用共用同一份工具面，且都登记主理人身份（team_member_invoke 的硬闸认它）");
+  ok(/kind: leadOfTeam \? "team" : target\.kind/.test(delegationSrc),
+    "主理人本尊的会话级指令按 team 写（⛔ 别让「自己干别转派」压过主理人 SOP）");
+
+  const modelsSrc2 = readFileSync(join(ROOT, "src/lib/team-models.mjs"), "utf8");
+  ok(/export function teamKidsOf/.test(modelsSrc2)
+    && /const kids = teamKidsOf\(g, options\.catalog\)/.test(modelsSrc2),
+    "团成员展开成可派活的虚拟条目（⛔ 群账本里没有它们，名录/候选才会全空）");
+  ok(/out\.push\(\{ memberId: hit\.id, name: hit\.name, ask, target:/.test(modelsSrc2)
+    && /roster = \[\.\.\.g\.members, \.\.\.kids\]/.test(modelsSrc2),
+    "名录含团成员、互 @ 结果带可派活的 target");
+  const storeSrc2 = readFileSync(join(ROOT, "src/features/harness-team/02-team-store.ts"), "utf8");
+  const ipcSrc2 = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
+  ok(/catalog }\)/.test(storeSrc2) && /ask\.target \?\? group\.members\.find/.test(storeSrc2),
+    "渲染层群派活传目录、递归用虚拟伙伴（成员之间真能叫动人）");
+  ok(/catalog }\)/.test(ipcSrc2) && /ask\.target \?\? group\.members\.find/.test(ipcSrc2)
+    && /在群里叫你/.test(ipcSrc2),
+    "定时任务同口径，且把被叫人要做的事传下去（⛔ 别又把整条原消息发一遍）");
+  const teamInvokeSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
+  ok(/parseAgentMentions\(text, roster, \{ excludeId: member\.id, max: 1 \}\)/.test(teamInvokeSrc)
+    && /hop: 1/.test(teamInvokeSrc) && /在群里叫你/.test(teamInvokeSrc),
+    "成员产出里的行首 @ 由宿主真派给另一位成员（只跳一跳，防互 @ 对烧）");
+  const sopSrc = readFileSync(join(ROOT, "electron/expert-teams/06-team-tools.ts"), "utf8");
+  ok(!/成员之间仍然互不可见/.test(sopSrc) && /宿主会真的把他叫进来/.test(sopSrc),
+    "主理人 SOP 与成员提示词同步（⛔ 旧文案说成员互不可见，会把新链路掐死）");
+}
+
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));
 process.exit(fails ? 1 : 0);

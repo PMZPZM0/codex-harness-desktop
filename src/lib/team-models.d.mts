@@ -136,8 +136,10 @@ export function removeMemoryNote(
 ): { ok: boolean; group: TeamGroupLite; changed?: boolean };
 export function groupContextBlock(
   group: TeamGroupLite | unknown,
-  options?: { forMemberId?: string; forTeam?: boolean },
+  options?: { forMemberId?: string; forTeam?: boolean; catalog?: unknown[] },
 ): string;
+/** 群里绑定的专家团展开成可直接派活的团成员虚拟条目（11-07：成员之间要能互相 @）。 */
+export function teamKidsOf(group: unknown, catalog: unknown): TeamMemberLite[];
 export function setManager(
   group: TeamGroupLite,
   memberId: string,
@@ -203,8 +205,8 @@ export function resolveManagerId(group: unknown, memberId: string): string;
 export function parseAgentMentions(
   text: unknown,
   group: unknown,
-  options?: { excludeId?: string; max?: number; alreadyRan?: string[] },
-): { memberId: string; name: string; ask: string }[];
+  options?: { excludeId?: string; max?: number; alreadyRan?: string[]; catalog?: unknown[] },
+): { memberId: string; name: string; ask: string; target?: TeamMemberLite | null }[];
 
 /** 团成员在群里的合成作者 id（`team:<teamId>:<memberId>`；非法入参 ⇒ 空串） */
 export function teamAuthorIdOf(teamId: unknown, memberId: unknown): string;

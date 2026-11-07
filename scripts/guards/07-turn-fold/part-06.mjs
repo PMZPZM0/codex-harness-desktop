@@ -330,7 +330,7 @@ export async function run() {
     );
     const delegateSrc = readFileSync(join(ROOT, "electron", "features", "delegation.ts"), "utf8").replace(/\r/g, "");
     const teamsSrc = readFileSync(join(ROOT, "electron", "features", "teams-ipc.ts"), "utf8").replace(/\r/g, "");
-    (/withStepParam\(\[\.\.\.teamTools/.test(delegateSrc) && /withStepParam\(\[teamTool, teamPhaseTool/.test(teamsSrc) ? ok : fail)(
+    (/const desiredTools = withStepParam\(\[[\s\S]{0,120}?\.\.\.teamTools/.test(delegateSrc) && /withStepParam\(\[teamTool, teamPhaseTool/.test(teamsSrc) ? ok : fail)(
       "【127】委派 / 团队会话的工具面也包了（主进程自己发的 thread/start **不经过** codex-ipc 拦截）"
     );
     /* 运行时真跑（⛔ 只断言源码文本会「自洽地错」：正则绿着、函数是坏的也照样过） */
