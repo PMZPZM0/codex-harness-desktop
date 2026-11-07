@@ -15,6 +15,7 @@ import { shouldBindHarness } from "../thread-provider";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 /* 11-07 用户令：发送者身份结构化传进来，⛔ 不再让所有派活都伪装成「用户需求」。 */
 import { senderFromDispatch, senderLineOf, taskLineOf, normalizeSender } from "../../src/lib/message-origin.mjs";
+import { SUBCONV_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
 import { binOnPath, buildCliRolePrompt, cliModelEnv, readUsableCliAgents } from "../cli-agents";
@@ -365,13 +366,16 @@ export async function runDelegatedTask(input: {
     /* ⛔ 10-31：把**上级主管**写在第一条任务里（不只是持久指令）—— 子会话的会话视图据此显示
        「主会话 · 青崖主管」而不是伪造成用户发言；渲染层按这行解析（src/lib/user-refs.ts）。 */
     ...(supervisorLabel && dispatchSender.kind === "supervisor" ? [`上级：${supervisorLabel}`] : []),
-    taskLineOf(dispatchSender, String(input.query ?? "").trim()),
+    /* ⛔ 11-07：图片/附件标记先翻成人话再进提示词（用户：「@image#1:xxx 这种词跟傻逼一样」）。 */
+    taskLineOf(dispatchSender, humanizeRefs(String(input.query ?? "").trim())),
     "=== END ===",
     "",
     `[角色：${kindLabel(target.kind)} ${displayName}]`,
     rolePrompt,
     "",
-    "直接执行上面的任务并给出最终产出（关键结论 + 依据 + 建议）。你的最终回答文本会被完整回传给发起方，无需调用任何回传工具。不要发起破坏性操作。",
+    /* ⛔ 原来是一句规格书（「直接执行上面的任务并给出最终产出（关键结论 + 依据 + 建议）…
+       无需调用任何回传工具。不要发起破坏性操作。」）⇒ 换成两句话的人话。 */
+    SUBCONV_NOTE,
   ].join("\n") + delegateMemory.text;
 
   try {

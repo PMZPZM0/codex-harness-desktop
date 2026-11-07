@@ -965,19 +965,6 @@ export function TeamGroupView({
           {/* 成员栏（飞书群右侧成员区 / 豆包伙伴档案）：只有群才有这个东西 —— 普通会话没有。 */}
           <aside className="team-group__members" aria-label="群成员">
             <div className="team-group__members-head">成员 {group.members.length}</div>
-            {/* ⛔ 11-07 用户令：「停止运行放到成员列表的 @ 前面去」——成员行里就是 @，
-                所以停止键放在**列表顶部**（名单之前），不再跟在名单后面。 */}
-            <div className="team-group__members-stoprow">
-              <button
-                type="button"
-                className={`team-group__members-stop${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`}
-                onClick={() => void stopAll()}
-                disabled={stopping}
-                title="停止本群所有伙伴当前回合，并清理后台调度会话的重试状态"
-              >
-                <Square size={11} /> {stopping ? "停止中…" : "停止运行"}
-              </button>
-            </div>
             <ul>
               {group.members.map((m) => {
                 const running = busy?.includes(m.id);

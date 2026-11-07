@@ -25,6 +25,7 @@ import { readPersonalization } from "../personalization";
 import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 /* 11-07：中枢派给群成员的任务也是「上级发的」，写结构化发件人供外层对话框识别。 */
 import { senderLineOf } from "../../src/lib/message-origin.mjs";
+import { GROUP_MEMBER_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { aliasRecordOf, ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
@@ -821,30 +822,35 @@ export function browserStatus() {
 function browserAppendix(): string {
   const st = browserStatus();
   if (!st.installed) {
-    return "\n\n【浏览器】本机未安装 Ego Lite。需要浏览器时先向主理人说明「需要安装 Ego Lite」，不要假设有浏览器工具。";
+    return "\n\n本机没装 Ego Lite。要浏览器时先跟主理人说一句「需要安装 Ego Lite」，别假设自己有浏览器工具。";
   }
-  return "\n\n【浏览器】网页自动化一律走 `ego-browser`（ego lite）：每个会话**天然一个独立 TaskSpace**（`codex-<你的线程 id>`），"
-    + "同群其它成员各用各的、互不冲突。先跑 `ego-browser skill` 拿当前版本 API，再写 .mjs 用 `ego-browser nodejs` 执行；"
-    + "⛔ 不要用 Playwright / 不要让用户共享你的浏览器窗口。";
+  /* ⛔ 11-07：去掉 `【浏览器】` 标签与 ⛔ 符号 —— 模型会把这套文体照抄进派活消息。 */
+  return "\n\n网页自动化走 ego-browser：每个会话天然一个独立 TaskSpace（codex-<线程 id>），同群成员各用各的，不冲突。"
+    + "先跑 `ego-browser skill` 拿当前 API，再写 .mjs 交给 `ego-browser nodejs` 执行；不要用 Playwright，也别让用户共享浏览器窗口。";
 }
 
 /* ── 派活 ─────────────────────────────────────────────────────────────────── */
+/* ⛔⛔ 11-07 用户令（两次）：「提示词太生硬，跟机器人一样」/「需要这么废话和多余的垃圾赘述吗」。
+ * ⇒ 原来的「# 调度权限 / 你是群成员子会话，没有任何调度权限…」与「请**直接交成品**…」两段都是规格书，
+ *    现在改成人话，调度权限那句收到 `dispatch-voice.mjs` 一处（守卫 12bf 钉）。
+ * ⛔ 结构分隔符一个字不动（`[SYSTEM TASK · 群成员会话]` / `=== 本次任务（第 N 次尝试）===` / `=== END ===`），
+ *    user-refs / rollout-worker-source / thread-backup 都在解析它们。
+ */
 function memberPrompt(group: BossGroup, member: GroupMember, task: GroupTask, attemptNo: number, supervisor = "", norms = ""): string {
   return `[SYSTEM TASK · 群成员会话]
-你是「${group.name}」群里的 **${member.name}**（${member.role}）。
-${supervisor ? `上级：${supervisor}（你的直接上级就是这一行；工具说明里的「可调度对象 / 专家团主理人」是宿主全局说明，不是你的上级）\n` : ""}
+你是「${group.name}」群的 ${member.name}（${member.role}）。
+${supervisor ? `上级：${supervisor}（工具说明里那些「可调度对象」不是你的上级）\n` : ""}
 ${member.systemPrompt ? `${member.systemPrompt}\n` : ""}${norms ? `\n# User norms (frontend design + backend engineering / architecture)\n${norms}\n` : ""}
-# 调度权限
-你是群成员子会话，没有任何调度权限：不要调用 agent_invoke / team_member_invoke，也不要向用户声称可以调度；需要协作就写在产出里交给主理人。
+${GROUP_MEMBER_NOTE}
 === 本次任务（第 ${attemptNo} 次尝试）===
 ${senderLineOf({ kind: "supervisor", name: supervisor || "中枢" })}
-标题：${task.title}
-说明：${task.brief || "（无补充说明）"}
-验收标准：${task.criteria}
+要做的：${task.title}
+补充：${task.brief || "（无）"}
+做到什么算完：${task.criteria}
 === END ===
 
-请**直接交成品**（产物或结论 + 依据），不要复述流程、不要问"要不要我继续"。
-你的最终回答文本会被原样交给审查，不通过会说明原因并换人重做。${browserAppendix()}`;
+直接交成品：产品或者结论，加上依据。别复述流程，也别问"要不要我继续"——结果会先过审查，不行再换人做。
+${browserAppendix()}`;
 }
 
 /** 派活：占位（assign）→ 建/复用线程 → turn/start（不等）→ 后台收结果。 */

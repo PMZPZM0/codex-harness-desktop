@@ -104,19 +104,21 @@ function dispatchMcpTools(): unknown[] {
   return [
     {
       name: "agent_invoke",
+      /* ⛔ 11-07 用户令：工具说明也去掉了 `⛔` / `**` 与「不要让用户去开开关」这类说教 ——
+         语义保留（谁能调、默认开不开、以哪条告知为准），只是不再用公文腔。
+         ⛔ 「只有用户直接创建的主会话可以调度」这句原文保留：守卫 11f 按它判。 */
       description:
-        "⛔ **只有用户直接创建的主会话可以调度**；被调度会话 / 团队成员 / 群成员 / 子智能体 / CLI 会话没有调度权限，调用会被拒绝 —— 不要在这些会话里声称可以调度，也不要让用户去开开关。"
-        + "调度专家 / 专家团 / 子智能体 / CLI 智能体 执行一个独立子任务并拿回产出。"
-        + "⛔ **专家、子智能体、CLI 智能体随时可以直接派，不需要用户开任何开关**（别让用户去调度面板勾选）；"
-        + "**专家团默认关闭**，team / member 未开启时会被拒绝 —— 要团请用户打开「专家团」，别反复试。"
-        + "本会话当前可派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。",
+        "派一个独立子任务给专家 / 专家团 / 子智能体 / CLI，拿回产出。"
+        + "只有用户直接创建的主会话可以调度；被调度会话 / 团队成员 / 群成员 / 子智能体 / CLI 会话没有调度权限，调用会被拒绝。"
+        + "专家、子智能体、CLI 随时可以直接派，不需要用户去勾任何开关；专家团默认关着，team / member 没开启时会被拒绝，请用户打开「专家团」而不是反复重试。"
+        + "本会话现在能派哪几类、各有哪些对象，以会话里那条「调度范围已更新」的告知为准。",
       inputSchema: {
         type: "object",
         properties: {
-          kind: { type: "string", enum: ["expert", "team", "member", "subagent", "cli"], description: "expert=单个专家, team=专家团(主理人按SOP调度), member=专家团某成员, subagent=子智能体, cli=本机命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。⛔ 专家/子智能体/CLI 随时可派；专家团需用户开启" },
+          kind: { type: "string", enum: ["expert", "team", "member", "subagent", "cli"], description: "expert=单个专家；team=专家团（主理人按 SOP 调度）；member=专家团里的某个成员；subagent=子智能体；cli=本机命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。专家、子智能体、CLI 随时可派；专家团要用户先开" },
           name: { type: "string", description: "对象名称（专家名 / 团名 / 子智能体名）" },
           member: { type: "string", description: "kind=member 时的成员名" },
-          query: { type: "string", description: "交给它的任务描述（要自包含：对方看不到本会话上下文）" },
+          query: { type: "string", description: "交给它的任务（要自包含：对方看不到本会话的上下文）" },
         },
         required: ["kind", "name", "query"],
       },

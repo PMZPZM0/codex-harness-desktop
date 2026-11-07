@@ -414,10 +414,16 @@ export function groupContextBlock(group, options = {}) {
   const lines = [`【群聊上下文 · ${g.name}】`];
   if (memory) lines.push(memory);
   /* 项目地址：不说清"在哪干活"，伙伴会在应用默认目录里乱找（相对路径全落空） */
-  if (g.workspace) lines.push(`工作目录：${g.workspace}（相对路径按它算；要读别处的文件请写绝对路径）`);
+  if (g.workspace) lines.push(`工作目录：${g.workspace}（相对路径按它算）`);
   if (roster.length) {
     if (lines.length > 1) lines.push("");
-    lines.push("群成员（名字是显示名；括号里是调度目标 kind:key，用户在界面上点名时用它）：");
+    /* ⛔ 11-07 用户令（两次）：「提示词太生硬、跟机器人一样」/「需要这么废话和多余的垃圾赘述吗」。
+       ⇒ 这一段（以及下面群记忆 / 组织关系 / 参考文件）的措辞一律改成**人对人**的密度：
+         去掉 `⛔` 符号与「（名字是显示名；括号里是调度目标 kind:key，用户在界面上点名时用它）」
+         这类解释性赘述 —— 模型会把这套文体照抄进它写给成员的派活消息。
+       ⛔ 只改措辞，**不改** `【群聊上下文 · X】…【群聊上下文结束】` 这对信封标记：
+          `harness-block-strip.mjs` / `user-refs.ts` / `cloud-sync.ts` 都按它剥离，改一个字就漏进气泡。 */
+    lines.push("群里的人（括号里是派活用的目标）：");
     for (const m of roster) {
       const isMe = self && m.id === self.id;
       const role = m.id === g.leadId ? "群主" : m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员");
@@ -428,15 +434,13 @@ export function groupContextBlock(group, options = {}) {
     if (self) {
       /* 11-06 用户令：群里允许伙伴之间 @ 沟通。判据是**行首点名**（见 parseAgentMentions），
          所以提示词必须把这个格式写死 —— 写在句子中间的 @ 不会触发。 */
-      lines.push("要在群里叫某个伙伴接手，**另起一行**写 `@名字：要它做什么`（这一行只放这句，例：@洞明：复核这段 diff）。");
-      lines.push("⛔ 句子中间或举例里的 `@名字` 不会触发，只是给用户看的提及；⛔ 没有新信息就别 @ 人。");
+      lines.push("要叫某个伙伴接手，另起一行写 `@名字：要他做什么`（这一行只放这句）。句子中间的 @ 不触发，只是给人看的。");
       /* ⛔⛔ 11-07 用户实测：「专家团会话，总是主代理说话，代替其他成员回复，其他成员会话不会直接到群里」。
          真根因在渲染层：成员产出以前只在 team_member_invoke 的返回值里（只有主理人看得到）。
          现在群聊会把成员产出**按成员自己的身份**投进群流（见 02-team-store 的 team-run 镜像），
          所以这里必须把口径写死 —— 否则主理人仍会把成员原文整段复述一遍，群里变成双份。 */
       if (self.targetKind === "team" || options?.forTeam) {
-        lines.push("本群会把被你调度的成员产出**直接显示在群里**（署名是成员自己，不需要你转述）。");
-        lines.push("你的最终回复只给统筹结论 / 分工 / 下一步；⛔ 不要复述成员原文，⛔ 不要写「以下是原话」这类转述。");
+        lines.push("成员做完会自己把结果发进群，你只给统筹结论和下一步，别替他们复述。");
       }
     }
   }
@@ -444,7 +448,7 @@ export function groupContextBlock(group, options = {}) {
     if (lines.length > 1) lines.push("");
     /* ⛔ 顺序固定：约束在前（硬护栏优先级最高，豆包 SECURITY.md 放最前的同理），
        做法（runbook）其次，事实最后。 */
-    lines.push("群记忆（本群已确认的结论；⛔ 与你自己的推断冲突时以这里为准）：");
+    lines.push("群记忆（跟你的推断冲突时以这里为准）：");
     for (const type of ["constraint", "runbook", "fact"]) {
       const list = notes.filter((n) => n.type === type);
       if (!list.length) continue;
@@ -456,7 +460,7 @@ export function groupContextBlock(group, options = {}) {
      下级白名单才是可选的。⛔ 别再拿 hasOrg 当条件 —— 那会让默认上级写不进去。 */
   if (self && manager) {
     if (lines.length > 1) lines.push("");
-    lines.push("组织关系（派活用 agent_invoke 的 kind/name）：");
+    lines.push("组织关系：");
     lines.push(
       `- 你的上级：${manager.name}${manager.targetProfession ? `（${manager.targetProfession}）` : ""}${
         self.managerId ? "" : "（默认 · 群主）"
@@ -466,13 +470,12 @@ export function groupContextBlock(group, options = {}) {
       /* ⛔ 原来写「你可以把子任务派给：X」—— 但群伙伴自己是被委派会话，
          调 agent_invoke 会被 canDispatchFrom 挡下（防套娃）。文案必须如实，
          否则模型照着派、拿到一句看不懂的拒绝。 */
-      lines.push("- 你可以叫下级别伙伴接手（他们向你汇报）：" + reports.map((m) => m.name).join("、"));
-      lines.push("  ⛔ 用「另起一行 @名字：要它做什么」这种方式叫，⛔ 不要为了显得忙碌而叫。");
+      lines.push("- 你可以叫这些伙伴接手（他们向你汇报）：" + reports.map((m) => m.name).join("、") + "。叫法同上，没事不用叫。");
     }
   }
   if (files.length) {
     if (lines.length > 1) lines.push("");
-    lines.push("参考文件（本机绝对路径；需要时直接读，⛔ 别凭文件名猜内容）：");
+    lines.push("参考文件（直接读，别凭文件名猜内容）：");
     for (const f of files) lines.push(`- ${f.path}${f.note ? `（${f.note}）` : ""}`);
   }
   return `${lines.join("\n")}\n【群聊上下文结束】`;

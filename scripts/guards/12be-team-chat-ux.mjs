@@ -192,8 +192,8 @@ const catalog = [
   const models = read("src/lib/team-models.mjs");
   ok(/export function teamAuthorIdOf/.test(models) && /export function parseTeamAuthorId/.test(models),
     "合成作者 id 的编解码只有一处（⛔ 别在视图里手拼字符串）");
-  ok(/本群会把被你调度的成员产出\*\*直接显示在群里\*\*/.test(models) && /不要复述成员原文/.test(models),
-    "提示词里明说：⛔ 不要复述成员原文、不要写「以下是原话」");
+  ok(/成员做完会自己把结果发进群/.test(models) && /别替他们复述/.test(models),
+    "提示词里明说：成员产出自己进群，主理人别复述（11-07 改成口语，语义不变）");
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   ok(/forTeam: partner\.targetKind === "team"/.test(ipc),
     "主进程那条派活路径（定时任务 / 团成员调用）同口径");

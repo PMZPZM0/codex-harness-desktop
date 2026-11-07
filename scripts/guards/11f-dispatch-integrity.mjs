@@ -374,8 +374,11 @@ try {
   ok(/team_phase_invoke/.test(teamTools) && /并行/.test(teamTools),
     "并行阶段走 team_phase_invoke（并行由宿主保证，不靠模型自觉）");
   const teamsIpc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
-  ok(/第一步就把可并行的子任务/.test(teamsIpc),
-    "团队首条任务指令也要求「第一步就派活」（否则主理人容易先自己写一版）");
+  /* ⛔ 11-07：文案搬进 `dispatch-voice.mjs` 并改成人话（「第一步就把可并行的子任务…」→
+     「能并行的就一次派出去」）⇒ 判据锚**接线 + 意图**，不锚旧字面量。 */
+  const leadVoiceSrc = readFileSync(join(ROOT, "src/lib/dispatch-voice.mjs"), "utf8");
+  ok(/一次派出去/.test(leadVoiceSrc) && /LEAD_TASK_NOTE/.test(teamsIpc),
+    "团队首条任务指令也要求「先派活，别自己先写一版」（11-07 改口语，意图不变）");
   /* ⛔ 成员会话**不挂任何 dynamicTools** ⇒ 成员不能再派活，不会指数爆炸（team-invoke.ts 里明写） */
   const teamInvoke = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
   ok(!/dynamicTools/.test(codeOnly(teamInvoke)),
@@ -548,9 +551,14 @@ try {
     "工具描述与 MCP 孪生都标明：只有主会话可调度，子会话没有权限");
   ok(/bag\.threadRole\.restricted \? \[\]/.test(seg08Src),
     "受限会话不注册 agent_invoke / agent_archive_sessions（不只靠执行端拒绝）");
-  ok(/没有(任何)?调度权限/.test(dispatchSrc) && /没有(任何)?调度权限/.test(tiSrc)
-    && /没有(任何)?调度权限/.test(teamsIpcSrc) && /没有(任何)?调度权限/.test(runnerSrc),
-    "子会话持久提示词 / 团队成员 / 群成员都写明零调度权限");
+  /* ⛔ 11-07：零调度权限这句话收进了 `src/lib/dispatch-voice.mjs`（人话版），三处壳改成引用它。
+     ⇒ 断言**改锚接线**：既要有"口径只有一处"，也要有"三处都真用上"。
+     ⛔ 只查字面量的话，改文案就红；只查引用的话，把话删了还绿（自洽地错）。 */
+  const voiceSrc = readFileSync(join(ROOT, "src/lib/dispatch-voice.mjs"), "utf8");
+  ok(/没有调度权限/.test(voiceSrc) && /没有调度权限/.test(dispatchSrc)
+    && /MEMBER_TASK_NOTE/.test(tiSrc) && /(MEMBER_TASK_NOTE|LEAD_TASK_NOTE)/.test(teamsIpcSrc)
+    && /GROUP_MEMBER_NOTE/.test(runnerSrc),
+    "零调度权限的口径只有一处（dispatch-voice）+ 三处壳都引用它");
   const attentionSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"), "utf8");
   ok(/const delegatedRow = Boolean\(delegateKind\)/.test(attentionSrc)
     && /delegatedRow && bag\.delegateRecords\[entry\.id\]/.test(attentionSrc),

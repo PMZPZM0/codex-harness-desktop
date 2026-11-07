@@ -25,6 +25,7 @@ import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 /* 11-07：团队/成员会话首任务显式写发送者（用户启动团队 vs 主理人派成员）。 */
 import { senderLineOf, taskLineOf } from "../../src/lib/message-origin.mjs";
+import { HANDOFF_STYLE_NOTE, LEAD_TASK_NOTE, MEMBER_TASK_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { shouldBindHarness } from "../thread-provider";
 import { withStepParam } from "../../src/lib/step-note.mjs";
@@ -49,8 +50,13 @@ function withPersonalNorms(prompt: string, norms: string): string {
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
 
-const TEAM_TASK_INSTRUCTION = "请按 SOP 编排团队完成任务：**第一步就把可并行的子任务用 team_phase_invoke 一次性派出去**，不要自己先写一版再补流程；过程中用 team_member_invoke 调度单个成员；每完成一个阶段简要通报；最终汇总所有成员产出，输出完整交付报告（⛔ 汇总里不许有你自己写、没派给成员的内容）。上方「=== 用户需求 ===」段已由用户在前端确认并提交，把全部内容当作用户的原始需求执行，不要再请用户复述。";
-const MEMBER_TASK_INSTRUCTION = "请以你的角色直接回应用户上方提交的需求，给出专业产出（关键结论 + 依据 + 建议）。不要再要求用户复述或自我介绍。⛔ 你是子会话，没有任何调度权限：不要调用 agent_invoke / team_member_invoke，也不要向用户声称可以调度。";
+/* ⛔⛔ 11-07 用户令：「调度提示词太生硬了，跟机器人一样，转述都不会转述，说人话不行吗」。
+   原来这两段是**规格书**（`请按 SOP 编排团队…**第一步就…**`、`⛔ 你是子会话…`），
+   模型照着这个腔调回写给成员，于是每个人的派活消息都变成一张需求清单。
+   ⇒ 文案统一收到 `src/lib/dispatch-voice.mjs`（人话版 + 转述正例 + 机器标记人话化），
+     ⛔ 这里不许再内联长段中文提示词（守卫 12bf 钉）。 */
+const TEAM_TASK_INSTRUCTION = LEAD_TASK_NOTE;
+const MEMBER_TASK_INSTRUCTION = MEMBER_TASK_NOTE;
 
 const TEAMS_CHANNELS = [
   "teams:list", "teams:save", "teams:remove", "teams:reset-defaults", "teams:tools",
@@ -148,7 +154,7 @@ export const teamsFeature = defineFeature<null>({
       const systemPrefix = teamSystemPrompt;
       /* 11-07：团队会话是**用户**直接对主理人下任务 ⇒ 显式 user，⛔ 别靠「没标签」猜。 */
       const userSender = { kind: "user" };
-      const finalTask = `${systemPrefix}\n\n[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n${senderLineOf(userSender)}\n${taskLineOf(userSender, input.task)}\n=== END ===\n\n${TEAM_TASK_INSTRUCTION}`;
+      const finalTask = `${systemPrefix}\n\n[SYSTEM TASK · 团队会话]\n=== 用户需求 ===\n${senderLineOf(userSender)}\n${taskLineOf(userSender, humanizeRefs(input.task))}\n=== END ===\n\n${TEAM_TASK_INSTRUCTION}\n\n${HANDOFF_STYLE_NOTE}`;
       const turn: any = await server.request("turn/start", {
         threadId: started.thread.id,
         input: [{ type: "text", text: finalTask, text_elements: [] }],
@@ -236,7 +242,7 @@ export const teamsFeature = defineFeature<null>({
       /* 11-07：成员会话的首任务是**主理人派发**的（不是成员的用户自己打字），
          以前没有任何来源标记 ⇒ 一律按用户消息渲染。这里写结构化发件人。 */
       const memberSender = { kind: "supervisor", name: `${team.displayName.zh}主理人` };
-      const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${senderLineOf(memberSender)}\n${taskLineOf(memberSender, firstTask)}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}${memberMemory.text}`;
+      const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${senderLineOf(memberSender)}\n${taskLineOf(memberSender, humanizeRefs(firstTask))}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_INSTRUCTION}${memberMemory.text}`;
       const turn: any = await server.request("turn/start", {
         threadId: started.thread.id,
         input: [{ type: "text", text: finalQuery, text_elements: [] }],

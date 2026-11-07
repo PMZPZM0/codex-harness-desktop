@@ -852,14 +852,15 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       ? ok("目标不存在时返回可读错误（含当前可用清单）")
       : fail("目标解析对不存在的名字不报错");
     // L1 提示词层（软防护，但必须覆盖三类对象且措辞不能误伤本职能力）
+    // ⛔ 11-07 改口语（用户：「说人话」）：判据锚语义片段，不锚旧公文原句。
     const teamBlock = dp.delegateScopeBlock({ kind: "team", name: "研发交付团" });
-    /只能调度\*\*本团队/.test(teamBlock) && /不要调用其他专家团/.test(teamBlock)
+    /本团队的成员/.test(teamBlock) && /别的专家团/.test(teamBlock)
       ? ok("★ L1 文案：专家团主理人只许调度本团成员、不许跨团/跨类型")
       : fail("专家团约束文案缺失 —— 主理人会跨团或跨类型乱调");
-    /不要调用其他专家、专家团或子智能体/.test(dp.delegateScopeBlock({ kind: "expert", name: "洞明" }))
+    /别去叫别的专家、专家团或子智能体/.test(dp.delegateScopeBlock({ kind: "expert", name: "洞明" }))
       ? ok("★ L1 文案：被委派的专家/子智能体直接干活、不许转派")
       : fail("被委派者没被禁止转派 —— 提示词层防护缺失");
-    /不要委派给任何人/.test(dp.delegateScopeBlock({ kind: "member", name: "承枢" }))
+    /别转派给别人/.test(dp.delegateScopeBlock({ kind: "member", name: "承枢" }))
       ? ok("L1 文案：团队成员直接干活不转派")
       : fail("团队成员约束文案缺失");
     /* ⛔⛔ 10-04 用户拍板「调度开关就要对应生效工具，这个联动必须做好」——
