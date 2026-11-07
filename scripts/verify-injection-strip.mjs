@@ -175,6 +175,7 @@ const CASES = [
     name: "@ 点名块（本条消息的派活规则）",
     text: "把首页派给前端小张\n\n[本轮点名对象]\n用户在本条消息里用 @ 点名了下面这些对象。**必须**用 agent_invoke 把它们派出去，再用它们的产出回答：\n- kind=expert name=前端小张\n规则：\n① 把本条消息的正文（不含本段）当作交给它的 query；\n② 点名多个时按上面顺序逐个派活；\n[点名结束]\n",
     expect: "把首页派给前端小张",
+    exact: "把首页派给前端小张",
     forbid: ["[本轮点名对象]", "[点名结束]", "agent_invoke", "kind=expert", "逐个派活"],
   },
   {
@@ -182,6 +183,7 @@ const CASES = [
     name: "@ 点名块 + 附件 + 时间（组合）",
     text: `把首页派给前端小张\n\n[本轮点名对象]\n必须用 agent_invoke 派出去：\n- kind=expert name=前端小张\n[点名结束]\n\n[附件文件]\n- D:\\测试\\a.png\n[附件结束]\n${NOW}`,
     expect: "把首页派给前端小张",
+    exact: "把首页派给前端小张",
     forbid: ["[本轮点名对象]", "agent_invoke", "kind=expert", "[附件文件]", "[当前时间]"],
   },
   {
@@ -190,20 +192,32 @@ const CASES = [
     name: "群聊上下文（新格式 · 带结束标记）",
     text: "【群聊上下文 · 智慧厨房】\n只做门店周报。\n工作目录：D:\\测试\n\n群成员（名字是显示名）：\n- 问需（产品经理）\n【群聊上下文结束】\n\n---\n\n把上周数据整理一下\n",
     expect: "把上周数据整理一下",
+    exact: "把上周数据整理一下",
     forbid: ["【群聊上下文", "门店周报", "群成员（", "工作目录", "【群聊上下文结束】"],
   },
   {
     name: "群聊上下文（老格式 · 无结束标记，用 --- 兜底）",
     text: "【群聊上下文 · 智慧厨房】\n只做门店周报。\n\n群成员（名字是显示名）：\n- 问需（产品经理）\n\n---\n\n把上周数据整理一下\n",
     expect: "把上周数据整理一下",
+    exact: "把上周数据整理一下",
     forbid: ["【群聊上下文", "门店周报", "群成员（", "工作目录"],
   },
   {
-    /* 包在 SYSTEM TASK 需求体里的真实形态（群聊派活 → 成员会话）。 */
+    /* 群上下文单独占行（老/新宿主都可能这么拼）。 */
     name: "群聊上下文（包在成员派发需求体里）",
     text: "[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n发件人：supervisor · 主理人\n【群聊上下文 · 智慧厨房】\n只做门店周报。\n【群聊上下文结束】\n\n---\n\n把上周数据整理一下\n=== END ===\n\n[角色：成员 问需]\n你是产品经理。",
     expect: "把上周数据整理一下",
+    exact: "把上周数据整理一下",
     forbid: ["【群聊上下文", "门店周报", "[SYSTEM TASK", "[角色：", "产品经理"],
+  },
+  {
+    /* 真实派发形态：任务标签与群上下文在**同一行**（taskLineOf 直接拼 query）——
+       ⛔ 多行锚点匹配不到它，必须由需求体解析后的 stripGroupContext 兜住。 */
+    name: "群聊上下文（真实内联 · 任务标签后直接拼）",
+    text: "[SYSTEM TASK · 调度会话]\n=== 用户需求 ===\n发件人：supervisor · 主理人\n上级交给你的任务：【群聊上下文 · 智慧厨房】\n只做门店周报。\n【群聊上下文结束】\n\n---\n\n把上周数据整理一下\n=== END ===\n\n[角色：专家 问需]\n你是产品经理。",
+    expect: "把上周数据整理一下",
+    exact: "把上周数据整理一下",
+    forbid: ["【群聊上下文", "门店周报", "[SYSTEM TASK", "[角色：", "产品经理", "上级交给你的任务"],
   },
 ];
 
@@ -274,13 +288,18 @@ async function main() {
     /* 11-03：派发判定必须与样本一致（成员会话的壳两种来源共用同款标签 ⇒ 只能靠内层标记区分）。
        `dispatched` 未声明 = 不校验（群成员等格式由其它判据覆盖）。 */
     const dispatchMismatch = item.dispatched !== undefined && Boolean(res.teamTask?.dispatched) !== Boolean(item.dispatched);
-    if (missing || leaked.length || shownLeaked.length || dispatchMismatch) {
+    /* ⛔ 11-07 审查：`includes` 会放过残留的分隔线/空白（群上下文剥完留下 `---` 就假绿）。
+       声明了 exact 的样本必须**逐字相等**（取需求体或正文，trim 后）。 */
+    const exactActual = (res.teamTask?.requirement ?? res.cleanText).trim();
+    const exactMismatch = item.exact !== undefined && exactActual !== item.exact;
+    if (missing || leaked.length || shownLeaked.length || dispatchMismatch || exactMismatch) {
       bad += 1;
       console.log(`✗ ${item.name}`);
       if (missing) console.log(`    期望正文缺失：「${item.expect}」 实际 cleanText=${JSON.stringify(res.cleanText.slice(0, 160))}`);
       if (leaked.length) console.log(`    注入段残留：${leaked.join(" / ")}`);
       if (shownLeaked.length) console.log(`    userDisplayText 残留：${shownLeaked.join(" / ")}`);
       if (dispatchMismatch) console.log(`    派发判定不符：期望 dispatched=${item.dispatched} 实际 ${Boolean(res.teamTask?.dispatched)}`);
+      if (exactMismatch) console.log(`    正文未完全剥净：期望 ${JSON.stringify(item.exact)} 实际 ${JSON.stringify(exactActual.slice(0, 160))}`);
     } else {
       console.log(`✓ ${item.name}`);
     }

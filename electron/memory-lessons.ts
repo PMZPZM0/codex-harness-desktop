@@ -119,7 +119,7 @@ export function stripInjectedBlocks(text: string): string {
        L4「需求」直接来自这里，漏一段就是每轮把宿主指令当"用户需求"写进记忆。 */
     .replace(/^\[本轮点名对象\][\s\S]*?^\[点名结束\][ \t]*\r?\n?/gm, "")
     /* 群聊上下文块（群记忆/名录/组织关系）：不是用户需求，不能喂进 L4/L2。 */
-    .replace(/^【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】|-{3,})[ \t]*\r?\n?/gm, "")
+    .replace(/【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】[ \t]*\r?\n?(?:[ \t]*\r?\n)?(?:-{3,}[ \t]*\r?\n?)?|-{3,}[ \t]*\r?\n?)/gm, "")
     .replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "")
     .replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "")
     .replace(/^##\s[^\n]*（本次注入\s*\d+\s*\/\s*命名空间共\s*\d+\s*条）[^\n]*(?:\r?\n(?!\r?\n)[^\n]*)*\r?\n?/gm, "")

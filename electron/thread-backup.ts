@@ -250,7 +250,7 @@ export function stripHarnessBlocks(text: string): string {
   /* 11-07：@ 点名块 / 时间块 / 统一记忆段 —— 与 src/lib/harness-block-strip.mjs 同口径。
      导出与备份是用户可见正文，宿主指令一段都不能留。 */
   out = out.replace(/^\[本轮点名对象\][\s\S]*?^\[点名结束\][ \t]*\r?\n?/gm, "");
-  out = out.replace(/^【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】|-{3,})[ \t]*\r?\n?/gm, "");
+  out = out.replace(/【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】[ \t]*\r?\n?(?:[ \t]*\r?\n)?(?:-{3,}[ \t]*\r?\n?)?|-{3,}[ \t]*\r?\n?)/gm, "");
   out = out.replace(/^\[当前时间\][\s\S]*?^\[时间结束\][ \t]*\r?\n?/gm, "");
   out = out.replace(/^##\s[^\n]*（本次注入\s*\d+\s*\/\s*命名空间共\s*\d+\s*条）[^\n]*(?:\r?\n(?!\r?\n)[^\n]*)*\r?\n?/gm, "");
   /* 10-26：会话级告知块（调度开关变化）——随下一条消息注入，导出正文里不该出现。 */

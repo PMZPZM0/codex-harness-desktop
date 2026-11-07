@@ -66,7 +66,7 @@ function stripHarnessBlocks(text) {
   /* 11-07：@ 点名块 / 时间块 / 统一记忆段 —— 与 src/lib/harness-block-strip.mjs 同口径。
      它们都是随用户消息注入的宿主指令；侧栏标题与预览是用户可见文本，一处都不能漏。 */
   out = out.replace(/^\[本轮点名对象\][\s\S]*?^\[点名结束\][ \t]*\r?\n?/gm, "");
-  out = out.replace(/^【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】|-{3,})[ \t]*\r?\n?/gm, "");
+  out = out.replace(/【群聊上下文 · [^】\n]*】[\s\S]*?^(?:【群聊上下文结束】[ \t]*\r?\n?(?:[ \t]*\r?\n)?(?:-{3,}[ \t]*\r?\n?)?|-{3,}[ \t]*\r?\n?)/gm, "");
   out = out.replace(/^\[当前时间\][\s\S]*?^\[时间结束\][ \t]*\r?\n?/gm, "");
   out = out.replace(/^##\s[^\n]*（本次注入\s*\d+\s*\/\s*命名空间共\s*\d+\s*条）[^\n]*(?:\r?\n(?!\r?\n)[^\n]*)*\r?\n?/gm, "");
   out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
