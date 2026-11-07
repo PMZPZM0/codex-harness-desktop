@@ -446,4 +446,8 @@ test("团成员进名录与互 @ 候选（11-07：成员之间要能互相艾特
   assert.equal(asks[0].name, "问需");
   assert.equal(asks[0].target?.targetKey, "software-dev-team:product-manager", "互 @ 要带可派活的虚拟伙伴");
   assert.deepEqual(parseAgentMentions("@问需：出来说句话", group, { catalog, excludeId: kids[0].id }), [], "不能叫自己");
+  /* 团成员自己被派活时 forMemberId 是合成 id ⇒ self 在 g.members 里查不到（null），
+     但有 kids 时名录段仍会执行 —— 这里以前会解引用 self.targetKind 直接崩。 */
+  const kidCtx = groupContextBlock(group, { forMemberId: kids[0].id, catalog });
+  assert.ok(kidCtx.includes("问需") && kidCtx.includes("另起一行写"), "团成员拿到群上下文不能崩");
 });

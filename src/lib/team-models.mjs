@@ -492,7 +492,9 @@ export function groupContextBlock(group, options = {}) {
          真根因在渲染层：成员产出以前只在 team_member_invoke 的返回值里（只有主理人看得到）。
          现在群聊会把成员产出**按成员自己的身份**投进群流（见 02-team-store 的 team-run 镜像），
          所以这里必须把口径写死 —— 否则主理人仍会把成员原文整段复述一遍，群里变成双份。 */
-      if (self.targetKind === "team" || options?.forTeam) {
+      /* ⛔ self 可能为空：团成员派活传的是合成 id（team:<teamId>:<memberId>），
+         g.members 里查不到 ⇒ 上面 `if (self || kids.length)` 会进来，这里必须可选链。 */
+      if (self?.targetKind === "team" || options?.forTeam) {
         lines.push("成员做完会自己把结果发进群，你只给统筹结论和下一步，别替他们复述。");
       }
     }
