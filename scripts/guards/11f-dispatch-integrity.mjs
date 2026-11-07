@@ -705,8 +705,10 @@ try {
   const storeSrc = readFileSync(join(ROOT, "src/features/harness-team/02-team-store.ts"), "utf8");
   /* ⛔ 11-07：派活搬进主进程 ⇒ 这条判据跟着走（渲染层已经不传 sender 了，再钉它只会假红）。
      语义没变：伙伴互 @ 的那一跳，真实发送者是上一个伙伴，⛔ origin 为空也照样传。 */
-  ok(/hop > 0[\s\S]{0,120}?kind: "member"/.test(ipcSrc) && /senderKind: "member"/.test(ipcSrc),
-    "群派活把「伙伴互 @ 的那一跳」标成 member 发送者（⛔ origin 为空也照样传）");
+  /* ⛔ 11-07 独立群聊通道：不再有调度 sender；发言归属写在群消息的 via 上。 */
+  ok(/via: caller \? \{ memberId: caller\.id/.test(ipcSrc) && /senderKind: "member"/.test(ipcSrc)
+    && !/hop > 0[\s\S]{0,120}?kind: "member"/.test(ipcSrc),
+    "互 @ 那一跳的发言归属写进 via（⛔ 不再用调度 sender；群聊通道独立）");
   const viewSrc = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   ok(/data-sender=\{row\.senderKind/.test(viewSrc) && /team-msg__sender/.test(viewSrc),
     "群视图按 senderKind 出可见标记（有了数据不渲染 = 用户还是看不出来源）");
@@ -754,9 +756,9 @@ try {
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
     "视图 / 头像对 undefined 成员不再解引用 targetKind（旧 dist 的崩溃点）");
-  ok(/catalog }\)/.test(ipcSrc2) && /ask\.target \?\? group\.members\.find/.test(ipcSrc2)
-    && /在群里叫你/.test(ipcSrc2),
-    "定时任务同口径，且把被叫人要做的事传下去（⛔ 别又把整条原消息发一遍）");
+  ok(/parseAgentMentions\(/.test(ipcSrc2) && /void runOne\(next, 1, \{ id: partner\.id, name: partner\.name \}, ask\.ask\)/.test(ipcSrc2)
+    && !/在群里叫你/.test(ipcSrc2),
+    "互 @ 把原话原样投递给对方会话（⛔ 不再包一层任务口吻）");
   const teamInvokeSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
   ok(/parseAgentMentions\(text, roster, \{ excludeId: member\.id, max: 1 \}\)/.test(teamInvokeSrc)
     && /hop: 1/.test(teamInvokeSrc) && /在群里叫你/.test(teamInvokeSrc),

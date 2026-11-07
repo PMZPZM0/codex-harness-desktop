@@ -22,7 +22,6 @@ import {
   appendGroupMessage,
   createBlockers,
   createGroup,
-  groupContextBlock,
   parseAgentMentions,
   groupIssues,
   groupThreadId,
@@ -40,6 +39,9 @@ import {
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
   MAX_GROUP_MESSAGES,
+  teamKidsOf,
+  teamAuthorIdOf,
+  teamMemberIdOf,
 } from "../../src/lib/team-models.mjs";
 import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
 import {
@@ -54,8 +56,10 @@ import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
 /* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
    的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
 import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
-import { runDelegatedTask } from "./delegation";
 import { buildDispatchCatalog } from "./dispatch-core";
+/* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
+   群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
+import { runTalkTurn, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -363,6 +367,51 @@ async function runDispatchRounds(
      ⛔ 两条护栏：只走**一跳** + 一轮总量 4，防两个伙伴互 @ 无限对烧。 */
   let chainBudget = options.allowChain ? 4 : 0;
   const params = options.params ?? {};
+  /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
+     所以团成员之间也能互相说话，不再需要「主理人代转」。 */
+  const roster: TalkMember[] = [
+    ...group.members.map((m) => ({
+      id: m.id, name: m.name, targetKind: m.targetKind, targetKey: m.targetKey, targetProfession: m.targetProfession,
+    })),
+    ...teamKidsOf(group, catalog).map((kid) => ({
+      id: teamAuthorIdOf(String(group.members.find((m) => m.targetKind === "team")?.targetKey ?? ""), teamMemberIdOf(kid as unknown as Record<string, unknown>)),
+      name: String(kid.name), targetKind: "member", targetKey: teamMemberIdOf(kid as unknown as Record<string, unknown>),
+      targetProfession: String((kid as unknown as Record<string, unknown>).profession ?? ""),
+    })),
+  ];
+  const talkOptions = {
+    groupId: group.id,
+    groupName: group.name,
+    cwd: group.workspace || undefined,
+    memory: String((group as unknown as Record<string, unknown>).memory ?? ""),
+    roster,
+    group: group as unknown as Record<string, unknown>,
+    catalog,
+  };
+  /* 工具 hooks：模型在会话里主动调 group_say(to=名字) ⇒ 这里把话投递进对方会话。 */
+  setGroupTalkHooks(group.id, {
+    append: (gid: string, entry: Record<string, unknown>) => appendMessageTo(gid, entry),
+    relay: (gid: string, fromId: string, toName: string, msg: string) => {
+      const to = roster.find((m) => String(m.name).replace(/\s+/g, "") === String(toName).replace(/\s+/g, ""));
+      if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
+      const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: "群成员" };
+      /* ⛔ 不 await：工具调用立刻返回，被叫的人稍后自己在群里回话。 */
+      void runOne(to as unknown as GroupTarget, 1, { id: from.id, name: from.name }, msg).catch(() => undefined);
+      return Promise.resolve({ ok: true });
+    },
+    readMessages: (limit: number) => {
+      const rows = readStore().messages?.[group.id] ?? [];
+      return Promise.resolve(rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
+        const m = raw as unknown as Record<string, unknown>;
+        const authorId = String(m.authorId ?? "");
+        return {
+          speaker: roster.find((x) => x.id === authorId)?.name ?? (authorId === "local-user" ? "我" : authorId),
+          text: String(m.text ?? ""),
+        };
+      }));
+    },
+    members: () => Promise.resolve(roster.map((m) => ({ id: m.id, name: m.name, profession: m.targetProfession }))),
+  });
   const runOne = async (
     partner: GroupTarget,
     hop = 0,
@@ -378,41 +427,28 @@ async function runDispatchRounds(
     let okFlag = false;
     let errMsg = "";
     try {
-      /* 团伙伴按 team 写身份块（成员名单 / 互 @ 规则），单人伙伴按自己的角色写。 */
-      const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team", catalog });
-      /* ⛔ 11-07：把「这个团在哪个群干活」登记给 bridge —— 成员回合结束时靠它把产出落进群
-         （⛔ 不登记 = 关掉群面板后成员产出无处可去，用户看到的还是「没结果回传」）。 */
+      /* ⛔⛔ 11-07 用户令：群聊走**独立通道**。这里给成员的是「群里有人对你说了一句」，
+         不是任务派发：不注入 groupContextBlock 的协作协议、不调 runDelegatedTask、
+         不产生「被调度会话」和它那套「没有调度权限」的会话级指令。 */
+      const fromTalk: TalkMember = caller
+        ? { id: caller.id, name: caller.name }
+        : (source === "automation" ? { id: AUTOMATION_ACTOR_ID, name: "定时任务" } : { id: "local-user", name: "我" });
+      const query = buildTalkInput(talkOptions as Parameters<typeof buildTalkInput>[0], partner as TalkMember, fromTalk, bodyText);
+      /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
-      const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
       options.onPhase?.("started", partner, {});
-      const res = await withDispatchTimeout(runDelegatedTask({
-        kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",
-        name: partner.targetKey,
-        query,
+      const res = await withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
         cwd: group.workspace || undefined,
-        /* ⛔ originThreadId 留空：群聊没有"群主会话"，闸与复用都按这个口径走。 */
-        originThreadId: "",
-        /* ⛔ 侧栏「群调度」标签的判据（群派活 / 群定时任务同口径）。 */
-        source: "group",
-        /* ⛔⛔ 11-07：origin 为空 ≠ 本地用户。定时任务 / 伙伴互 @ 各带真实身份下去。 */
-        sender: source === "automation"
-          ? { kind: "automation", name: "定时任务" }
-          : hop > 0
-            ? { kind: "member", name: caller?.name ?? partner.name }
-            : { kind: "user" },
-        ...(params.model ? { model: params.model } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
-        ...(params.sandbox ? { sandbox: params.sandbox } : {}),
-        ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
       }), partner.name);
       if (!res?.ok || !res?.threadId) {
-        errMsg = res?.error || "派活失败";
+        errMsg = "群聊会话没起来";
         failed.push(`${partner.name}：${errMsg}`);
         options.onPhase?.("finished", partner, { ok: false, error: errMsg });
         return;
       }
       threadId = res.threadId;
-      const output = String(res.output ?? "").trim();
+      const output = String(res.text ?? "").trim();
       chars = query.length + output.length;
       const wrote = await appendMessageTo(group.id, {
         authorId: partner.id,
@@ -448,7 +484,7 @@ async function runDispatchRounds(
           chainBudget -= 1;
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
-          void runOne(next, 1, { id: partner.id, name: partner.name }, `（${partner.name} 在群里叫你）${ask.ask}`);
+          void runOne(next, 1, { id: partner.id, name: partner.name }, ask.ask);
         }
       }
     } catch (err) {
@@ -1111,6 +1147,8 @@ export const harnessTeamFeature = defineFeature<null>({
        把「写一条群消息」注入给 `team-group-bridge` —— 团队成员回合结束时（`team-invoke`）
        用同一个幂等 id（`team-run:<runId>`，与渲染层一致）把产出落进群日志，**不再依赖面板开着**。 */
     setTeamGroupAppender((gid, entry) => appendMessageTo(gid, entry));
+    /* ⛔ 群聊会话的工具调用由独立板块自己应答（它的事件会被 filterForRenderer 裁掉）。 */
+    ctx.effect(attachGroupTalkEvents(server));
     ctx.effect(() => () => setTeamGroupAppender(null));
     ctx.effect(() => {
       for (const ch of HARNESS_TEAM_CHANNELS) ipcHost.removeHandler(ch);

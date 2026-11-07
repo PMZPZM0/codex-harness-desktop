@@ -23,7 +23,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { RefObject } from "react";
 import { AtSign, Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
-import { ComposerRail } from "../composer-rail/ComposerRail";
+import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
@@ -399,57 +399,62 @@ export function TeamComposer({
         </div>
       )}
 
-      {plusView === "skills" ? (
-        <div className="team-composer__skill-pane">
-          <div className="team-composer__skill-head">
-            <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
-            <span>引用技能{skills.length ? `（${skills.length}）` : ""}</span>
-            <button type="button" aria-label="关闭技能面板" onClick={() => setPlusView("main")}><X size={13} /></button>
-          </div>
-          <div className="submenu-search">
-            <Search size={13} />
-            <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
-          </div>
-          <div className="submenu-list team-composer__skill-list">
-            {skillMatches.map((item) => (
-              <button type="button" key={item.name} title={`${item.name}：${item.description}`} onClick={() => addSkill(item)}>
-                <Sparkles size={15} /><span className="expert-menu-name">{item.name}</span><small>{item.description}</small>
-              </button>
-            ))}
-            {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
-          </div>
+      {/* ⛔ 11-07 用户（截图）：「这他妈你干的，做成内嵌了，丑死了」——
+          技能 / 引用文件面板**不许顶替输入框**（那是内嵌），改成浮在输入卡上方的弹出层。 */}
+      {plusView !== "main" && (
+        <div className="team-composer__pane-flyout" role="dialog" aria-label="引用技能 / 文件">
+          {plusView === "skills" ? (
+            <div className="team-composer__skill-pane">
+              <div className="team-composer__skill-head">
+                <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
+                <span>引用技能{skills.length ? `（${skills.length}）` : ""}</span>
+                <button type="button" aria-label="关闭技能面板" onClick={() => setPlusView("main")}><X size={13} /></button>
+              </div>
+              <div className="submenu-search">
+                <Search size={13} />
+                <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
+              </div>
+              <div className="submenu-list team-composer__skill-list">
+                {skillMatches.map((item) => (
+                  <button type="button" key={item.name} title={`${item.name}：${item.description}`} onClick={() => addSkill(item)}>
+                    <Sparkles size={15} /><span className="expert-menu-name">{item.name}</span><small>{item.description}</small>
+                  </button>
+                ))}
+                {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
+              </div>
+            </div>
+          ) : (
+            <div className="team-composer__skill-pane">
+              <div className="team-composer__skill-head">
+                <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
+                <span>引用群里的文件</span>
+                <button type="button" aria-label="关闭文件引用面板" onClick={() => setPlusView("main")}><X size={13} /></button>
+              </div>
+              <ThreadFilePicker
+                query={fileQuery}
+                onQuery={setFileQuery}
+                candidates={fileCandidates}
+                onPick={(path) => {
+                  onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
+                  setPlusView("main");
+                }}
+                onClose={() => setPlusView("main")}
+              />
+            </div>
+          )}
         </div>
-      ) : plusView === "files" ? (
-        <div className="team-composer__skill-pane">
-          <div className="team-composer__skill-head">
-            <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
-            <span>引用群里的文件</span>
-            <button type="button" aria-label="关闭文件引用面板" onClick={() => setPlusView("main")}><X size={13} /></button>
-          </div>
-          <ThreadFilePicker
-            query={fileQuery}
-            onQuery={setFileQuery}
-            candidates={fileCandidates}
-            onPick={(path) => {
-              onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
-              setPlusView("main");
-            }}
-            onClose={() => setPlusView("main")}
-          />
-        </div>
-      ) : (
-        <textarea
-          ref={textareaRef}
-          className="team-composer__input"
-          style={editorHeight ? { height: editorHeight, maxHeight: editorHeight } : undefined}
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
-          onKeyDown={onKeyDown}
-          onPaste={(e) => void onPaste(e)}
-          placeholder={placeholder}
-          rows={2}
-        />
       )}
+      <textarea
+        ref={textareaRef}
+        className="team-composer__input"
+        style={editorHeight ? { height: editorHeight, maxHeight: editorHeight } : undefined}
+        value={value}
+        onChange={(e) => onValueChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onPaste={(e) => void onPaste(e)}
+        placeholder={placeholder}
+        rows={2}
+      />
 
       <div className="team-composer__actions composer-actions">
         <div className="team-composer__left composer-left">

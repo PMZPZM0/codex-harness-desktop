@@ -259,6 +259,36 @@ const catalog = [
     "主理人 SOP 补了交接标准与汇报口径（派活消息必须写清输入/交付物/交给谁）");
 }
 
+
+/* ── ⑫ 独立群聊通道（11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」）──
+   判据：群聊会话/工具/投递都在 group-talk/ 自己的文件里，⛔ 不碰 runDelegatedTask / delegateRegistry /
+   「没有调度权限」那套会话级指令；工具由主进程应答；外面会话的标签是「伙伴」。 */
+{
+  const chan = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  const tools = codeOnly(read("electron/features/group-talk/02-tools.ts"));
+  const talk = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  const dispatch = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const badge = codeOnly(read("src/features/dispatch/DispatchMenu.tsx"));
+  ok(/export async function ensureTalkThread/.test(chan) && /export async function runTalkTurn/.test(chan)
+    && /dynamicTools: buildGroupTalkTools\(\)/.test(chan),
+    "群聊每人一条长期引擎会话（thread/start 挂自己的工具，resume 复用）");
+  ok(!/runDelegatedTask|delegateRegistry|canDispatchFrom|delegateScopeBlock/.test(chan + tools + talk),
+    "⛔ 独立通道一行都不碰外面的调度链（不是改提示词糊弄）");
+  ok(/group_say/.test(tools) && /group_read/.test(tools) && /group_members/.test(tools)
+    && /export async function handleGroupTalkToolCall/.test(tools)
+    && /export function attachGroupTalkEvents/.test(tools),
+    "工具三件套 + 主进程应答（群聊会话的事件会被 filterForRenderer 裁掉）");
+  ok(/lookupGroupThread\(/.test(tools),
+    "工具身份只认引擎下发的 threadId（⛔ 不许模型自报群 id / 成员 id）");
+  ok(/export function buildTalkInput/.test(talk) && /@名字：你要说的话/.test(talk)
+    && !/结论、依据、建议|交付物|请给结论/.test(talk),
+    "群聊输入是「有人对你说了一句」，⛔ 不是任务派发模板");
+  ok(/runTalkTurn\(group\.id/.test(dispatch) && !/runDelegatedTask\(/.test(dispatch)
+    && /attachGroupTalkEvents\(server\)/.test(dispatch),
+    "群派活接线到独立通道，⛔ 不再调 runDelegatedTask");
+  ok(/\? \"伙伴\"/.test(badge), "外面会话标签改成「伙伴」");
+}
+
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
@@ -301,8 +331,12 @@ const catalog = [
   /* ⛔ 11-07：派活整体搬到主进程 ⇒ 这条判据跟着去 `harness-team-ipc.ts` 的 `dispatchGroupText`。
      `forTeam` 决定主理人拿到的身份块是「团」还是「单人」——两处（渲染层/主进程）只剩一处了。 */
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
-  ok(/forTeam: partner\.targetKind === "team"/.test(ipc) && !/forTeam: partner\.targetKind === "team"/.test(store),
-    "派活时告诉主理人「成员产出直接进群，别转述」（口径只在主进程一处）");
+  /* ⛔ 11-07 独立群聊通道后，`forTeam`（派活身份块）整个退场：不再有"主理人代转成员产出"。
+     口径改成：群聊输入里直接写明「别人的回复会以他的署名进群」，由独立通道投递。 */
+  const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  ok(/buildTalkInput\(talkOptions/.test(ipc) && /他的回复会以他的署名进群/.test(talkSrc)
+    && !/forTeam: partner\.targetKind === "team"/.test(ipc) && !/forTeam: partner\.targetKind === "team"/.test(store),
+    "群聊通道里每个人自己发进群（⛔ 不再有主理人代转 / 派活身份块）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/parseTeamAuthorId\(id\)/.test(view) && /const nameOf = \(id: string\)/.test(view),
     "视图按合成 id 反查名字（目录没回来就退回 memberId，⛔ 不编名字）");
@@ -407,6 +441,8 @@ const catalog = [
     "群输入框有与主对话同款的顶部把手（拖动改高度 / 双击复位 / 持久化）");
   ok(/<ComposerRail app=\{app\}/.test(composer),
     "群输入框左侧复用主对话的 ComposerRail（侧边粗条，⛔ 不另造一条装饰条）");
+  ok(/team-composer__pane-flyout/.test(composer) && /bottom: calc\(100% \+ 8px\)/.test(read("src/styles/61-team-mode.css")),
+    "技能 / 引用文件是浮在输入卡上方的弹出层（⛔ 不再顶替 textarea 做成内嵌）");
   const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
   ok(/<TeamChatOverlay[\s\S]{0,160}?app=\{app\}/.test(appView),
     "宿主把 app 传给群聊浮层（ComposerRail 需要）");
@@ -415,6 +451,16 @@ const catalog = [
     "智能体消息不再套卡片（与主对话正文同形态）");
   ok(/\.team-msg\.is-human \{ flex-direction: row-reverse/.test(teamCss),
     "用户自己的发言靠右（主对话同款）");
+  const teamSettings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
+  ok(/team-settings__layout-cards/.test(teamSettings) && /左右分栏/.test(teamSettings)
+    && /全部靠左/.test(teamSettings) && /onMessageLayout/.test(teamSettings),
+    "群设置里「消息排版」是两张卡片 + 示例演示，点卡片即时生效");
+  const layoutView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/is-layout-left/.test(layoutView) && /\.team-group__stream\.is-layout-left \.team-msg\.is-human/.test(teamCss),
+    "视图按选项切换「全部靠左」排版");
+  const quoteView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/team-process__quote-author/.test(quoteView) && /faceOfId\(quote\.authorId\)/.test(quoteView),
+    "引用行里「回复某人」带头像 + 名字（真实提及，⛔ 不只是纯文字）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

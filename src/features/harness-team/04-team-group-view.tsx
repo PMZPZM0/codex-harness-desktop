@@ -126,6 +126,18 @@ export function TeamGroupView({
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
   const userName = useUserName();
   const [showSettings, setShowSettings] = useState(false);
+  /* 11-07 用户令：「群设置里加一个选项，消息左右选项，卡片展示」——
+     每个群一份（localStorage；视图偏好不写进群 JSON）。split = 伙伴靠左/用户靠右；left = 全部靠左。 */
+  const layoutKey = `team-message-layout::${group.id}`;
+  const readLayout = (): "split" | "left" => {
+    try { return localStorage.getItem(layoutKey) === "left" ? "left" : "split"; } catch { return "split"; }
+  };
+  const [messageLayout, setMessageLayoutState] = useState<"split" | "left">(readLayout);
+  useEffect(() => { setMessageLayoutState(readLayout()); }, [group.id]);
+  const setMessageLayout = (next: "split" | "left") => {
+    setMessageLayoutState(next);
+    try { localStorage.setItem(layoutKey, next); } catch { /* 存储不可用：本次会话生效 */ }
+  };
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
   const [text, setText] = useState("");
@@ -706,6 +718,8 @@ export function TeamGroupView({
           onRemoveNote={onRemoveNote}
           onSaveMenu={onSaveMenu}
           onSaveMenuPlacement={onSaveMenuPlacement}
+          messageLayout={messageLayout}
+          onMessageLayout={setMessageLayout}
           onSaveSchedules={onSaveSchedules}
           onRunSchedule={onRunSchedule}
         />
@@ -713,7 +727,7 @@ export function TeamGroupView({
         <div className="team-group__body">
           <div className="team-group__main">
             <div className="team-group__stream-wrap" ref={wrapRef}>
-            <div className="team-group__stream" role="log" aria-live="polite" ref={streamRef} onScroll={onStreamScroll}>
+            <div className={`team-group__stream${messageLayout === "left" ? " is-layout-left" : ""}`} role="log" aria-live="polite" ref={streamRef} onScroll={onStreamScroll}>
               {hasMore && (
                 <button type="button" className="team-group__more" onClick={() => loadEarlier()}>
                   ↑ 加载更早的 {Math.min(PAGE, rows.length - visibleCount)} 条（共 {rows.length} 条）
@@ -818,10 +832,45 @@ export function TeamGroupView({
                         {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
                             ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
                         {isBot && quote && (
-                          <p className="team-process__quote team-process__quote--top" title={`回复 ${nameOf(quote.authorId)}：${quote.text}`}>
+                          <div className="team-process__quote team-process__quote--top" title={`回复 ${nameOf(quote.authorId)}：${quote.text}`}>
                             <span className="team-process__quote-bar" aria-hidden />
-                            <span>回复 {nameOf(quote.authorId)}：{quote.text}</span>
-                          </p>
+                            <span className="team-process__quote-line">
+                              回复
+                              {/* 11-07 用户：「@的成员头像+名字又没了」——引用里的作者必须是真实提及（头像+名字），
+                                  引用正文里的 @ 也走同一个渲染器。 */}
+                              <button
+                                type="button"
+                                className="team-at team-process__quote-author"
+                                title={`@${nameOf(quote.authorId)} · 点一下加进本轮 @`}
+                                onClick={(event) => { event.preventDefault(); mentionPartner(quote.authorId); }}
+                              >
+                                <MemberAvatar member={faceOfId(quote.authorId)} size={14} className="team-at__avatar" />
+                                <span className="team-at__name">{nameOf(quote.authorId)}</span>
+                              </button>
+                              <span>：</span>
+                              <TeamMentionText
+                                text={quote.text}
+                                candidates={mentionCandidates}
+                                faceOfId={faceOfId}
+                                nameOf={nameOf}
+                                onPick={mentionPartner}
+                                excludeId={row.authorId}
+                                className="team-process__quote-body"
+                              />
+                            </span>
+                          </div>
+                        )}
+                        {/* 11-07 用户：「运行折叠板块放上面，下面就可以展示文件卡片那些了，跟主对话框一样」——
+                            过程折叠在正文**上方**；正文下面是产物卡 / 图片 / 表格（Markdown 灯箱同主对话）。 */}
+                        {isBot && row.kind !== "card" && (
+                          <TeamProcess
+                            key={row.key}
+                            threadId={row.threadId}
+                            at={row.at}
+                            bodyText={row.text}
+                            running={running}
+                            onAskAgain={() => askAgain(row)}
+                          />
                         )}
                         {row.kind === "card" ? (
                           <pre className="team-msg__card">{JSON.stringify(row.card, null, 2)}</pre>
@@ -853,16 +902,7 @@ export function TeamGroupView({
                                 excludeId={row.authorId}
                               />
                             ))}
-                            {isBot && (
-                              <TeamProcess
-                                key={row.key}
-                                threadId={row.threadId}
-                                at={row.at}
-                                bodyText={row.text}
-                                running={running}
-                                onAskAgain={() => askAgain(row)}
-                              />
-                            )}
+                            {/* 运行过程在**正文下方**、文件卡在过程下方（主对话同序：正文 → 过程 → 产物卡）。 */}
                             {isBot && <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} />}
                           </>
                         )}

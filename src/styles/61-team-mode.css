@@ -1077,6 +1077,19 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 引用行里的作者是真实提及（头像+名字），正文里也可能有 @ —— 允许换行，不要省略号截断。 */
+.team-process__quote .team-process__quote-line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  overflow: visible;
+  white-space: normal;
+  text-overflow: clip;
+}
+.team-process__quote-body { display: contents; }
+.team-process__quote-body > * { display: inline; margin: 0; }
 /* 折叠组内部就是主对话的工具卡序列，⛔ 不改它们的皮肤，只给竖向间距 */
 .team-process__items > * + * { margin-top: 6px; }
 .team-process .wb-fold { max-width: 100%; }
@@ -1109,11 +1122,50 @@
 .team-msg.is-human .team-msg__main { align-items: flex-end; }
 .team-msg.is-human .team-msg__meta { justify-content: flex-end; }
 .team-msg.is-human .team-msg__body {
+  /* ⛔ 基础规则是 `width: 100%`（气泡占满那一列）—— 用户发言必须改成 auto，
+     否则一句「在呢」也会被拉成一整条（用户截图：「这是干啥呢，拉这么长」）。 */
+  width: auto;
   max-width: min(78%, 560px);
   background: var(--accent-soft);
   border-color: transparent;
   box-shadow: none;
 }
+/* 「全部靠左」排版（群设置卡片切换）：人也不再靠右，气泡回到中性底色。 */
+.team-group__stream.is-layout-left .team-msg.is-human { flex-direction: row; }
+.team-group__stream.is-layout-left .team-msg.is-human .team-msg__main { align-items: flex-start; }
+.team-group__stream.is-layout-left .team-msg.is-human .team-msg__meta { justify-content: flex-start; }
+.team-group__stream.is-layout-left .team-msg.is-human .team-msg__body {
+  background: var(--panel);
+  border-color: var(--line-soft);
+}
+
+/* 群设置 · 消息排版卡片（11-07 用户：「卡片展示这个选项，做好示例演示」） */
+.team-settings__layout-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.team-settings__layout-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  text-align: left;
+  cursor: pointer;
+}
+.team-settings__layout-card.is-on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.team-settings__layout-card strong { display: flex; align-items: center; gap: 5px; font-size: 12px; }
+.team-settings__layout-card small { color: var(--faint); font-size: 11px; }
+.team-settings__layout-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.team-settings__layout-demo i { display: block; height: 8px; max-width: 62%; border-radius: 999px; background: var(--line); }
+.team-settings__layout-demo i.is-left { align-self: flex-start; }
+.team-settings__layout-demo i.is-right { align-self: flex-end; background: var(--accent-soft); }
 .team-msg__body-text > :first-child { margin-top: 2px; }
 .team-msg__body-text > :last-child { margin-bottom: 0; }
 /* 引用行做成一块浅底，和截图里「回复 某人：…」的独立引用块同形 */
@@ -1577,16 +1629,38 @@
    向上弹的菜单会盖住它。⇒ 输入区给足高度，菜单相对**整张卡片**定位、
    底边落在工具行上方 8px、最大高度夹在卡片内 ⇒ 主菜单完全不越过卡片，
    @ 条一个 chip 都不遮；技能面板（内容多）才允许向上溢出并靠右，让左侧 chips 仍可见。 */
+/* ⛔ 11-07 用户（截图）：「做成内嵌了，丑死了」——加号菜单 / 技能 / 引用文件
+   一律**浮在输入卡上方**（卡片外），不再压在输入区里、也不顶替 textarea。 */
 .team-composer .composer-quick-menu { position: static; }
 .team-composer .composer-quick-pop,
 .team-composer .composer-quick-pop.flip-main-up {
   left: 10px;
   right: auto;
   top: auto;
-  bottom: 48px;
+  bottom: calc(100% + 8px);
   width: 268px;
-  max-height: calc(100% - 56px);
+  max-height: 320px;
   overflow-y: auto;
+}
+.team-composer__pane-flyout {
+  position: absolute;
+  left: 10px;
+  bottom: calc(100% + 8px);
+  z-index: 50;
+  width: min(360px, calc(100vw - 48px));
+  max-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+.team-composer__pane-flyout .team-composer__skill-pane {
+  min-height: 0;
+  max-height: 320px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 /* 给菜单留出「卡片内向上展开」的空间；群消息区本来就宽裕，输入区高一点更好写长指令 */
 .team-composer .team-composer__input { min-height: 110px; }

@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { AlarmClock, BookOpen, FolderOpen, GitBranch, Inbox, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
+import { AlarmClock, AlignLeft, BookOpen, Columns2, FolderOpen, GitBranch, Inbox, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
 import { addModeStateOf, resolveManagerId } from "../../lib/team-models.mjs";
 import {
@@ -59,6 +59,9 @@ type Props = {
   onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 菜单形态（飞书 INPUT_FIRST / FLOAT） */
   onSaveMenuPlacement: (placement: MenuPlacement) => Promise<{ ok: boolean; error?: string }>;
+  /** 消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左 */
+  messageLayout: "split" | "left";
+  onMessageLayout: (next: "split" | "left") => void;
   /** 定时任务（整组替换；nextRunAt 由主进程算） */
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 立刻运行一条定时任务 */
@@ -119,7 +122,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, messageLayout, onMessageLayout, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -693,6 +696,41 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
           >
             保存清单
           </button>
+        </div>
+      </section>
+
+      {/* ── 消息排版（11-07 用户令：消息左右选项，卡片展示 + 示例演示）────────── */}
+      <section className="team-settings__block">
+        <h3>
+          <Columns2 size={14} className="ic-blue" />
+          消息排版
+        </h3>
+        <p className="team-settings__hint">
+          左右分栏 = 伙伴靠左、你自己靠右；全部靠左 = 专业群聊（人和伙伴同一列）。
+          <strong>点卡片立即生效</strong>，只影响这个群的消息列表。
+        </p>
+        <div className="team-settings__layout-cards" role="radiogroup" aria-label="群消息排版">
+          {([
+            { value: "split", label: "左右分栏", desc: "伙伴靠左 · 自己靠右", Icon: Columns2 },
+            { value: "left", label: "全部靠左", desc: "所有人同一列", Icon: AlignLeft },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={messageLayout === opt.value}
+              className={`team-settings__layout-card${messageLayout === opt.value ? " is-on" : ""}`}
+              onClick={() => onMessageLayout(opt.value)}
+            >
+              <span className={`team-settings__layout-demo is-${opt.value}`} aria-hidden>
+                <i className="is-left" />
+                <i className={opt.value === "split" ? "is-right" : "is-left"} />
+                <i className="is-left" />
+              </span>
+              <strong><opt.Icon size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
         </div>
       </section>
 

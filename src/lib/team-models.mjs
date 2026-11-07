@@ -12,6 +12,11 @@
  */
 
 import { DEFAULT_GROUP_MENU, normalizeMenu, normalizeMenuPlacement } from "./team-menu.mjs";
+
+/** 群消息排版：`split` = 智能体靠左、用户靠右（默认）；`left` = 全部靠左（专业群聊）。 */
+export function normalizeMessageLayout(value) {
+  return value === "left" ? "left" : "split";
+}
 import { normalizeSchedules } from "./team-schedule.mjs";
 /* 11-07 用户令：群消息也要带真实发送者身份（用户 / 上级 / 定时任务 / 伙伴 / 系统）。
    ⛔ 枚举只认 message-origin.mjs 这一份，⛔ 不在群模型里另抄一套。 */
@@ -209,6 +214,8 @@ export function createGroup(input) {
     menu,
     /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：`input` 贴输入框，`float` 悬浮面板 */
     menuPlacement: normalizeMenuPlacement(input?.menuPlacement),
+    /* 消息排版（11-07 用户令）：`split` 智能体靠左 / 用户靠右；`left` 全部靠左（专业群聊） */
+    messageLayout: normalizeMessageLayout(input?.messageLayout),
     /* 群定时任务（豆包 §③ 自动化定时）：到点 @ 指定伙伴，走同一条派活链路 */
     schedules: normalizeSchedules(input?.schedules),
   };
@@ -320,6 +327,11 @@ export function setPartnerMuted(group, partnerId, muted) {
  *   （同一个专家在 A 群可以用一张脸、B 群用另一张）。
  * ⛔ `avatar` 传空串 = 恢复默认（回落智能体图集 / 用户中心头像）。
  */
+/** 群消息排版（`split` / `left`）：只改一个枚举值。 */
+export function setMessageLayout(group, layout) {
+  return createGroup({ ...group, messageLayout: normalizeMessageLayout(layout) });
+}
+
 export function setMemberAvatar(group, memberId, avatar) {
   const base = createGroup(group);
   const id = String(memberId ?? "");
