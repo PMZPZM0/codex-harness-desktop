@@ -21,7 +21,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RefObject } from "react";
-import { AtSign, Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { createPortal } from "react-dom";
+import { AtSign, Bot, Check, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
@@ -313,6 +314,18 @@ export function TeamComposer({
     return () => window.removeEventListener("mousedown", onDown);
   }, [plusOpen]);
 
+  /* 技能选择是**居中弹窗**（11-07 用户：「技能选项弹窗，那个」）：Esc 只关这一层。 */
+  useEffect(() => {
+    if (plusView !== "skills") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      setPlusView("main");
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
+  }, [plusView]);
+
   const pickFiles = async () => {
     try {
       const paths = await window.codex.chooseFiles();
@@ -322,11 +335,10 @@ export function TeamComposer({
     setPlusOpen(false);
   };
 
-  const addSkill = (s: { name: string; description: string }) => {
-    if (opts.skills.some((x) => x.name === s.name)) return;
-    onOpts({ ...opts, skills: [...opts.skills, s].slice(0, 8) });
-    setPlusOpen(false);
-    setPlusView("main");
+  /* 技能弹窗里点一行 = 选中 / 取消（⛔ 不再点一下就关窗，方便一次选多个）。 */
+  const toggleSkill = (s: { name: string; description: string }) => {
+    const exists = opts.skills.some((x) => x.name === s.name);
+    onOpts({ ...opts, skills: exists ? opts.skills.filter((x) => x.name !== s.name) : [...opts.skills, s].slice(0, 8) });
   };
 
   /** 粘贴图片 / 文件 = 主对话输入框的「内在功能」：真落到本轮附件（chips 可见 → 拼进 query）。
@@ -399,50 +411,73 @@ export function TeamComposer({
         </div>
       )}
 
-      {/* ⛔ 11-07 用户（截图）：「这他妈你干的，做成内嵌了，丑死了」——
-          技能 / 引用文件面板**不许顶替输入框**（那是内嵌），改成浮在输入卡上方的弹出层。 */}
-      {plusView !== "main" && (
-        <div className="team-composer__pane-flyout" role="dialog" aria-label="引用技能 / 文件">
-          {plusView === "skills" ? (
-            <div className="team-composer__skill-pane">
-              <div className="team-composer__skill-head">
-                <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
-                <span>引用技能{skills.length ? `（${skills.length}）` : ""}</span>
-                <button type="button" aria-label="关闭技能面板" onClick={() => setPlusView("main")}><X size={13} /></button>
-              </div>
-              <div className="submenu-search">
-                <Search size={13} />
-                <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
-              </div>
-              <div className="submenu-list team-composer__skill-list">
-                {skillMatches.map((item) => (
-                  <button type="button" key={item.name} title={`${item.name}：${item.description}`} onClick={() => addSkill(item)}>
-                    <Sparkles size={15} /><span className="expert-menu-name">{item.name}</span><small>{item.description}</small>
-                  </button>
-                ))}
-                {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
-              </div>
+      {/* 引用群里的文件：浮在输入卡上方的弹出层（⛔ 不顶替输入框）。 */}
+      {plusView === "files" && (
+        <div className="team-composer__pane-flyout" role="dialog" aria-label="引用群里的文件">
+          <div className="team-composer__skill-pane">
+            <div className="team-composer__skill-head">
+              <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
+              <span>引用群里的文件</span>
+              <button type="button" aria-label="关闭文件引用面板" onClick={() => setPlusView("main")}><X size={13} /></button>
             </div>
-          ) : (
-            <div className="team-composer__skill-pane">
-              <div className="team-composer__skill-head">
-                <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
-                <span>引用群里的文件</span>
-                <button type="button" aria-label="关闭文件引用面板" onClick={() => setPlusView("main")}><X size={13} /></button>
-              </div>
-              <ThreadFilePicker
-                query={fileQuery}
-                onQuery={setFileQuery}
-                candidates={fileCandidates}
-                onPick={(path) => {
-                  onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
-                  setPlusView("main");
-                }}
-                onClose={() => setPlusView("main")}
-              />
-            </div>
-          )}
+            <ThreadFilePicker
+              query={fileQuery}
+              onQuery={setFileQuery}
+              candidates={fileCandidates}
+              onPick={(path) => {
+                onOpts({ ...opts, files: [...new Set([...opts.files, path])].slice(0, 20) });
+                setPlusView("main");
+              }}
+              onClose={() => setPlusView("main")}
+            />
+          </div>
         </div>
+      )}
+
+      {/* 引用技能 = **居中弹窗**（11-07 用户：「技能选项弹窗，那个」）：
+          可多选（点行切换），完成 / Esc / 点背景关闭，选中的在输入框上方以 chip 显示。 */}
+      {plusView === "skills" && createPortal(
+        <div className="modal-backdrop team-skill-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlusView("main"); }}>
+          <section className="team-skill-dialog" role="dialog" aria-modal="true" aria-label="引用技能">
+            <header className="team-skill-dialog__head">
+              <Sparkles size={15} className="ic-violet" />
+              <strong>引用技能</strong>
+              <span className="team-skill-dialog__count">已选 {opts.skills.length}</span>
+              <button type="button" className="icon-button" title="关闭（Esc）" aria-label="关闭" onClick={() => setPlusView("main")}><X size={15} /></button>
+            </header>
+            <div className="team-skill-dialog__search">
+              <Search size={14} />
+              <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
+            </div>
+            <div className="team-skill-dialog__list" role="listbox" aria-multiselectable="true">
+              {skillMatches.map((item) => {
+                const on = opts.skills.some((x) => x.name === item.name);
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={on}
+                    key={item.name}
+                    className={`team-skill-dialog__item${on ? " is-on" : ""}`}
+                    title={`${item.name}：${item.description}`}
+                    onClick={() => toggleSkill(item)}
+                  >
+                    <Sparkles size={15} />
+                    <span className="team-skill-dialog__name">{item.name}</span>
+                    <small>{item.description}</small>
+                    {on && <Check size={14} className="team-skill-dialog__check" />}
+                  </button>
+                );
+              })}
+              {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
+            </div>
+            <footer className="team-skill-dialog__foot">
+              <span>已选 {opts.skills.length} 个 · 发送时拼进本轮指令</span>
+              <button type="button" className="is-primary" onClick={() => setPlusView("main")}>完成</button>
+            </footer>
+          </section>
+        </div>,
+        document.body,
       )}
       <textarea
         ref={textareaRef}

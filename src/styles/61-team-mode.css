@@ -1726,6 +1726,108 @@
   box-shadow: var(--shadow);
   overflow: hidden;
 }
+/* 引用技能：居中弹窗（11-07 用户：「技能选项弹窗，那个」） */
+.team-skill-backdrop {
+  z-index: 950;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.team-skill-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 92vw);
+  max-height: min(72vh, 640px);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--panel);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--text) 22%, transparent);
+  overflow: hidden;
+}
+.team-skill-dialog__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-skill-dialog__head strong { font-size: 13.5px; }
+.team-skill-dialog__count { margin-left: auto; color: var(--faint); font-size: 11.5px; }
+.team-skill-dialog__search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 16px 8px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--faint);
+}
+.team-skill-dialog__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+}
+.team-skill-dialog__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 10px 10px;
+}
+.team-skill-dialog__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.team-skill-dialog__item:hover { background: var(--panel-2); }
+.team-skill-dialog__item.is-on { border-color: var(--accent); background: var(--accent-soft); }
+.team-skill-dialog__name { font-size: 12.5px; font-weight: 600; flex: none; }
+.team-skill-dialog__item small {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--faint);
+  font-size: 11px;
+}
+.team-skill-dialog__check { margin-left: auto; flex: none; color: var(--accent); }
+.team-skill-dialog__foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.team-skill-dialog__foot > span { flex: 1; color: var(--faint); font-size: 11.5px; }
+.team-skill-dialog__foot > button {
+  padding: 7px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
 .team-composer__pane-flyout .team-composer__skill-pane {
   min-height: 0;
   max-height: min(320px, 45vh);
