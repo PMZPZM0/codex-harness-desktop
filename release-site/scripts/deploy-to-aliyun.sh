@@ -2,7 +2,7 @@
 # 一键把 release-site 同步到生产服务器 /var/www/codex-harness-releases/
 #
 # 生产域名：https://www.jvszzp.ltd / https://jvszzp.ltd （Cloudflare CDN 回源；SSH 别名 ch-release，见 ~/.ssh/config）
-# 服务器：<server-ip>（腾讯云 CVM，Ubuntu，ubuntu 用户）
+# 服务器：腾讯云 CVM（Ubuntu，ubuntu 用户；地址与端口见本机 `~/.ssh/config`，⛔ 不写进仓库）
 # ⚠️ jvsppl.vip / jvspp.vip = 新加坡服务器 + EdgeOne CDN 的 AI API Gateway，严禁触碰。
 # ⚠️ 2026-09-02 实测：jvszzp.ltd/www.jvszzp.ltd 的 DNS 已接入 Cloudflare（橙云代理），https 返回
 #    525 = 源站 443 无该域名可用 TLS 证书（Cloudflare 挡 Caddy 的 ACME HTTP-01 自动签证）。
