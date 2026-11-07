@@ -1821,7 +1821,8 @@
   transform: translateY(-1px);
 }
 .skill-card.installed {
-  border-color: color-mix(in srgb, var(--green) 45%, var(--line));
+  border-color: color-mix(in srgb, var(--ok) 58%, var(--line));
+  background: color-mix(in srgb, var(--ok) 6%, var(--panel));
 }
 .skill-card-head {
   justify-content: space-between;
