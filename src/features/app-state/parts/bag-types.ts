@@ -579,7 +579,7 @@ export interface Bag {
   setCollapsedSections: React.Dispatch<React.SetStateAction<Set<string>>>;
   toggleSection: (key: string) => void;
   threadAttention: Map<string, string>;
-  renderThreadRow: (entry: import("../../app-view/types.ts").Thread, variant?: "member" | "lead" | undefined, extras?: { actions?: any; badge?: any; } | undefined) => React.JSX.Element;
+  renderThreadRow: (entry: import("../../app-view/types.ts").Thread, variant?: "member" | "lead" | undefined, extras?: { actions?: any; badge?: any; footer?: any; } | undefined) => React.JSX.Element;
   clusterSplit: (entries: import("../../app-view/types.ts").Thread[]) => { clusters: { teamId: string; lead: import("../../app-view/types.ts").Thread | null; members: import("../../app-view/types.ts").Thread[]; }[]; singles: import("../../app-view/types.ts").Thread[]; };
   renderClusterRow: (cluster: { teamId: string; lead: import("../../app-view/types.ts").Thread | null; members: import("../../app-view/types.ts").Thread[]; }) => React.JSX.Element | null;
   renderClusterList: (entries: import("../../app-view/types.ts").Thread[]) => React.JSX.Element;

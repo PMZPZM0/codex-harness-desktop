@@ -22,7 +22,6 @@ import {
   Check,
   ChevronDown,
   CircleGauge,
-  CornerDownRight,
   Clock3,
   CircleStop,
   Cloud,
@@ -434,6 +433,15 @@ bag.clusterSplit = clusterSplit as typeof bag.clusterSplit;
     // 团队名优先取专家团配置；取不到则从主会话标题里剥掉「· 职能」后缀
     const rawLeadTitle = cleanThreadDisplayTitle((cluster.lead ?? rep).name, { preview: (cluster.lead ?? rep).preview });
     const teamName = bag.expertTeams.find((t) => t.teamId === cluster.teamId)?.displayName?.zh || rawLeadTitle.replace(/\s*[·・].*$/, "");
+    /* ⛔ 11-07 用户令（截图）：「这个还是旧的展示子会话」——团队簇的成员折叠块
+       原来是一条占整行的「↳ 子会话 · N」，与单会话行的居中细条不一致。
+       ⇒ 统一成同一根 `.thread-child-bar`：挂在主会话行底边（hover 才出现），
+         ⛔ 不再另起一行，也不再带「子会话」文字（数量只在 title/aria-label 里）。 */
+    const memberBar = cluster.members.length > 0 ? (
+      <button type="button" className="thread-child-bar" title={expanded ? "收起子会话" : `展开 ${cluster.members.length} 个子会话`} aria-label={expanded ? "收起子会话" : `展开 ${cluster.members.length} 个子会话`} onClick={() => bag.toggleTeamCluster(cluster.teamId)}>
+        <ChevronDown size={9} className={`conv-section-chevron ${expanded ? "open" : ""}`} />
+      </button>
+    ) : null;
     return (
       <div key={`cluster-${cluster.teamId}`} className={`team-cluster ${expanded ? "expanded" : ""}`}>
         {/* 折叠态显示的就是**主会话行**（用户 09-14：「默认折叠状态，只展示一个专家团的主会话就行」
@@ -443,32 +451,26 @@ bag.clusterSplit = clusterSplit as typeof bag.clusterSplit;
             ⛔ 10-01 用户反馈「专家团怎么还有展开按键」：专家市场包装出来的是**只有主理人的团队**
             （members 空）——展开体里什么都没有，展开键是死的 ⇒ 零成员团队退化为普通主会话行，
             不挂展开键、不做聚簇（徽标由 renderThreadRow 按成员数判成「专家」）。 */}
-        {cluster.lead ? bag.renderThreadRow(cluster.lead, "lead") : (
+        {cluster.lead ? bag.renderThreadRow(cluster.lead, "lead", memberBar ? { footer: memberBar } : undefined) : (
           // 主会话缺失（映射不全/被删）：退化为一枚可展开的分组条
-          <div className={`thread-row team-cluster-head ${anyRunning ? "running" : "ready"}`}>
+          <div className={`thread-row team-cluster-head ${anyRunning ? "running" : "ready"}${memberBar ? " has-footer" : ""}`}>
             <button title={expanded ? "收起子会话" : `展开 ${clusterTotal} 个会话`} onClick={() => bag.toggleTeamCluster(cluster.teamId)}>
               <span className="thread-row-title-line"><span>{teamName}</span></span>
               <small>{timeAgo(rep.updatedAt)}</small>
             </button>
             <div className="thread-actions" />
+            {memberBar && <div className="thread-row-footer">{memberBar}</div>}
           </div>
         )}
         {/* ⛔ 11-03 用户（截图：「专家团跟图二这样显示，不要成员每个成员会话都是主会话」）：
-            成员会话收进和「调度子会话」同款的「↳ 子会话 · N」折叠块，跟主会话行分层展示；
-            ⛔ 不再给主会话行挂圆形展开箭头（一个折叠入口就够，两个按钮是同一件事的两次表达）。
-            零成员（专家/专家包）不渲染折叠块 —— 与既有「不聚类」口径一致。 */}
-        {cluster.members.length > 0 && (
-          <div className={`dispatch-children ${expanded ? "expanded" : "collapsed"}`}>
-            <button type="button" className="dispatch-children-label" title={expanded ? "收起子会话" : `展开 ${cluster.members.length} 个子会话`} onClick={() => bag.toggleTeamCluster(cluster.teamId)}>
-              <ChevronDown size={11} className={`conv-section-chevron ${expanded ? "open" : ""}`} />
-              <CornerDownRight size={11} />子会话 · {cluster.members.length}
-            </button>
-            {expanded && (
-              <div className="team-cluster-body">
-                {/* 主会话不在这里重复渲染（折叠态那一行就是主会话行）；展开体只补成员会话。 */}
-                {cluster.members.map((entry) => bag.renderThreadRow(entry, "member"))}
-              </div>
-            )}
+            成员会话收进折叠块，跟主会话行分层展示；折叠键已在主会话行底边（细条），
+            这里只负责展开体。 */}
+        {expanded && cluster.members.length > 0 && (
+          <div className="dispatch-children expanded">
+            <div className="team-cluster-body">
+              {/* 主会话不在这里重复渲染（折叠态那一行就是主会话行）；展开体只补成员会话。 */}
+              {cluster.members.map((entry) => bag.renderThreadRow(entry, "member"))}
+            </div>
           </div>
         )}
       </div>

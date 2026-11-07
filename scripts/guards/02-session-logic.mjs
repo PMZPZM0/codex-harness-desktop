@@ -1485,6 +1485,12 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
         && /extras\?\.footer && <div className="thread-row-footer">\{extras\.footer\}<\/div>/.test(rowsSrcFooter) ? ok : fail)(
         "【156】单会话行的子会话折叠键走行内 footer（收起时不再多占一整行）"
       );
+      /* ⛔ 11-07 用户（截图圈「↳ 子会话 · 4」）：「这个还是旧的展示子会话」——
+         专家团簇的成员折叠块原来仍是整行文字表头；现与单会话行同一根居中细条
+         （挂在主会话行底边，hover 出现），⛔ 不许退回 dispatch-children-label。 */
+      (!/dispatch-children-label/.test(rowsSrcFooter) && /footer: memberBar/.test(rowsSrcFooter) && /className="thread-child-bar"/.test(rowsSrcFooter) ? ok : fail)(
+        "【156】专家团簇成员折叠也走行内细条（不再是整行「子会话 · N」）"
+      );
       (/\.thread-row-footer\s*\{[^}]*position:\s*absolute[^}]*bottom:\s*-4px[^}]*height:\s*9px/.test(readStyles()) && /\.thread-child-bar\s*\{[^}]*width:\s*100%[^}]*height:\s*100%/.test(readStyles()) ? ok : fail)(
         "【156】子会话折叠条骑在行下边框（bottom:-4px / 9px 高，不占布局；11-06 用户草图）"
       );
