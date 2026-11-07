@@ -26,7 +26,7 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
@@ -812,6 +812,10 @@ function installedVersionOf(id: string): string {
   if (gh) return fileeInstalledVersion();
   const tool = UPDATEABLE_TOOLS[id];
   if (!tool) return "";
+  // ⛔ rea 的「已装版本」必须等于「能用的安装」（11-07 修「启动失败」自愈）：更新中断会掏空 dist、
+  //    只留 package.json —— 若仍按版本号回报，更新链会判「已是最新」永不重装，坏包永久卡死。
+  //    编译产物缺失（reaServerScript() 空）⇒ 当作未装 ⇒ checkRuntimeUpdateRow 报 hasUpdate ⇒ 重装自愈。
+  if (id === "rea" && !reaServerScript()) return "";
   const segments = tool.pkg.split("/");
   for (const root of npmGlobalRootCandidates()) {
     try {

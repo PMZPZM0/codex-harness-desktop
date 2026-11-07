@@ -316,9 +316,16 @@ export function computerUseLauncher() {
  * REA 逆向分析（10-13 内置专家配套）：`rea-agents`（npm，MIT）装在 tools/npm-global，
  * 返回它的 MCP 启动脚本路径（`rea.mjs mcp`）。包缺失 ⇒ 空串（不注册，而不是注册一个起不来的服务器）。
  * ⛔ command 不能写裸 `rea`：装进安装包后 PATH 里没有它（nuphus / computer-use 同款坑）。
+ * ⛔ 判就绪需要**同时**看启动脚本与编译产物（11-07 修「启动失败」）：更新中断会把 dist 掏空、
+ *    只留 package.json + rea.mjs —— 只看脚本就会注册一个一启动即退出的服务器（面板红 failed、0 工具）。
+ *    `dist/mcp/main.js` 是 `rea.mjs mcp` 硬依赖的运行时入口（缺失时启动器报 "compiled runtime is missing"）；
+ *    与 computerUseLauncher「脚本 + 主程序双查」同一条纪律。装坏 ⇒ 空串 ⇒ 不注册、专家队也按 requiresTool 隐藏，
+ *    并由更新链（installedVersionOf 对 rea 同口径）当作「未装」触发重装自愈。
  */
 export function reaServerScript() {
-  return npmPackagePath("rea-agents", "scripts", "rea.mjs");
+  const script = npmPackagePath("rea-agents", "scripts", "rea.mjs");
+  if (!script) return "";
+  return npmPackagePath("rea-agents", "dist", "mcp", "main.js") ? script : "";
 }
 
 /**

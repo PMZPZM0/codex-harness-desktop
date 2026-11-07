@@ -76,6 +76,8 @@ const ok = (condition, message) => {
     "runtime:install 分支：rea → runNpmInstall(rea-agents)（npmmirror 优先 + 官方回落）");
   ok(/rea: \{ pkg: "rea-agents", label: "REA 逆向分析" \}/.test(rt),
     "⛔ UPDATEABLE_TOOLS 登记 rea（在线更新链 = 国内镜像优先，用户点名）");
+  ok(/if \(id === "rea" && !reaServerScript\(\)\) return "";/.test(rt),
+    "⛔ 更新链自愈（11-07）：installedVersionOf 对 rea 以就绪口径回报 —— dist 被掏空时当作未装，hasUpdate=true 触发重装（否则版本号还在就判「已是最新」永久卡死）");
   ok(/rea: \{ dirs: \["node_modules\/rea-agents"\], shims: \["rea", "rea-agents"\] \}/.test(rt),
     "卸载落点登记（包体 + rea / rea-agents 两个 shim —— 不登记就删不干净）");
 }
@@ -89,9 +91,11 @@ const ok = (condition, message) => {
     "注册块：包已装才生成 [mcp_servers.rea]，command = 随包 node + rea.mjs + mcp");
   ok(/reaServerScript\(\);\s*const node = bundledNode\(\);\s*if \(!script \|\| !node/.test(apply),
     "⛔ 双前提：脚本与随包 node 任一缺失就整段不写（不注册起不来的服务器）");
-  const toolchain = read("electron/toolchain.ts");
+  const toolchain = codeOnly(read("electron/toolchain.ts"));
   ok(/export function reaServerScript\(\)/.test(toolchain) && /rea-agents", "scripts", "rea\.mjs/.test(toolchain),
     "toolchain.reaServerScript：定位 npm-global 的 rea.mjs，缺失返回空串");
+  ok(/export function reaServerScript\(\)\s*\{[\s\S]*?npmPackagePath\("rea-agents", "dist", "mcp", "main\.js"\)\s*\?\s*script\s*:\s*""/.test(toolchain),
+    "⛔ 就绪双查（11-07）：rea.mjs 之外还要 dist/mcp/main.js 在才返回脚本 —— 更新掏空 dist 时不注册起不来的服务器（computerUseLauncher 同款纪律）");
 }
 
 ok(/id: "rea",/.test(read("electron/update-registry.ts")) && /REA 逆向分析（洞见专用）/.test(read("electron/update-registry.ts")),
