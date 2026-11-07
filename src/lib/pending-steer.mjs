@@ -3,13 +3,13 @@
  *   「只有在运行过程中，模型还在处理个消息的时候，可以撤，一旦模型开始处理插队消息后，就不能撤回了」
  *   「可以撤回的时候，在用户消息下面加一个可以撤回图标；不能撤回[的时候]自己就不显示了」
  *
- * ⛔ 为什么必须**先不交给引擎**：引擎的 `turn/steer` 一旦收到就没有撤回接口（协议里只有 turn/steer /
- *    turn/interrupt，没有"取消已投递输入"）。要支持撤回，唯一诚实的做法是**用户点「立即」时先留在队列里**，
- *    等当前这一步跑完（回合内已无进行中的 item）再真正 steer —— 那段等待就是可撤回窗口。
+ * ⛔ 11-07 用户改判（原 11-05「留一段可撤回窗口」作废）：「我都点立即了，还要等回合结束，假的插队」
+ *    ⇒ 点「立即」= **马上** `turn/steer`，不再等这一步跑完。引擎没有撤回接口，撤回药丸只在
+ *    交付还没开始的那一瞬间存在；本表仍保留，用于「切走时把没派完的退回 armed，切回来再派」。
  *
  * 两态（决定界面上那条「撤回」图标在不在）：
- *   · `armed`   —— 已登记、还没交给引擎 ⇒ 消息以用户气泡出现在对话里 + 下面挂「撤回」图标；
- *   · `sending` —— 边界到了、steer 正在飞 ⇒ 气泡继续留着（⛔ 不能提前消失，否则 RPC 那几百毫秒
+ *   · `armed`   —— 已登记、还没交给引擎（立即交付前一瞬 / 切走退回）⇒ 气泡 + 「撤回」图标；
+ *   · `sending` —— steer 正在飞 ⇒ 气泡继续留着（⛔ 不能提前消失，否则 RPC 那几百毫秒
  *                  消息凭空没了），但撤回图标消失（引擎已经收到，撤回不了）。
  *   交付落定（成功 / 失败 / 已被引擎启动）⇒ `settlePendingSteers` 摘掉，真实回声接管原位渲染。
  *
@@ -95,6 +95,23 @@ export function pendingSteerEntries(threadId) {
 
 export function hasPendingSteers(threadId) {
   return idsOf(threadId, "armed").length > 0;
+}
+
+/**
+ * armed 最久的那条已经等了多久（毫秒；没有 armed 返回 0）。
+ * 11-07 用户实测「插队消息一直挂着、Codex 不处理」：回合残留 inProgress / 末尾项永远缺状态时，
+ * 只靠 bag.thread / bag.queue 的 effect 推不动 ⇒ 派发侧用这个时长做**硬兜底**，不许永久等。
+ */
+export function pendingSteerArmedAge(threadId) {
+  const map = mapOf(threadId);
+  if (!map) return 0;
+  let oldest = 0;
+  for (const record of map.values()) {
+    if (record.state !== "armed") continue;
+    const age = Date.now() - Number(record.armedAt ?? 0);
+    if (age > oldest) oldest = age;
+  }
+  return oldest;
 }
 
 /** 到边界了：把 armed 翻成 sending（气泡留着、撤回图标消失）并交还条目给调用方真正 steer。 */

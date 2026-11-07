@@ -95,6 +95,13 @@ ok(store.pendingSteerIds(T).length === 0 && store.armPendingSteer({ threadId: T,
 store.cancelPendingSteer(T, "q9");
 ok(store.hasPendingSteers(T) === false, "撤掉最后一条后会话键一并回收（不留空 Map）");
 
+/* 11-07 用户实测「插队一直挂着」：派发侧要靠 armed 时长做硬兜底，时长必须是真数字。 */
+store.armPendingSteer({ threadId: T, id: "q-age", entry: { id: "q-age" } });
+ok(store.pendingSteerArmedAge("thread-none") === 0
+  && typeof store.pendingSteerArmedAge(T) === "number" && store.pendingSteerArmedAge(T) >= 0 && store.pendingSteerArmedAge(T) < 5000,
+  "armed 等待时长可读（没登记 = 0；刚登记 ≈ 0）—— 20s 硬兜底依赖它，返 undefined 会让比较恒假");
+store.cancelPendingSteer(T, "q-age");
+
 ok(Array.isArray(store.takePendingSteers("thread-C")) && store.takePendingSteers("thread-C").length === 0,
   "空会话 take 返回空数组（返回 undefined 会让派发方在 .length 上抛）");
 offListener();
@@ -127,16 +134,20 @@ const steerBranchFrom = partSrc.indexOf('if (steerTurnId && entry) {');
 const steerBranch = steerBranchFrom < 0 ? "" : partSrc.slice(steerBranchFrom, partSrc.indexOf("const armedForStart", steerBranchFrom));
 ok(steerBranch.length > 0
   && /armPendingSteer\(\{ threadId: bag\.thread\.id, id: entry\.id, entry \}\)/.test(steerBranch)
-  && !/turn\/steer/.test(steerBranch),
-  "运行中点「立即」⇒ 只登记待并入，**不直接 turn/steer**（交了引擎就撤不回，这是整条设计的命门）");
-ok(/bag\.refreshQueue\(bag\.thread\.id\)/.test(steerBranch)
-  && /showToast\("已插队 · 可撤回"/.test(steerBranch)
-  && /setQueuedTimer\(bag\.thread\.id, entry\.id, null, \{ silent: true \}\)/.test(steerBranch)
+  && /await deliverPendingSteers\(bag, bag\.thread\.id\)/.test(steerBranch)
+  && !/已插队 · 可撤回/.test(steerBranch),
+  "运行中点「立即」⇒ 登记后**立刻交付**（11-07 用户实测「我都点立即了还要等回合结束，假的插队」——不许再等这一步跑完）");
+ok(/setQueuedTimer\(bag\.thread\.id, entry\.id, null, \{ silent: true \}\)/.test(steerBranch)
   && /return;/.test(steerBranch),
-  "登记后撤掉这条的定时 + 刷新队列 + 提示「已插队 · 可撤回」并 return（不撤定时 ⇒ 到点会在 armed 窗口里把消息直接发出去，气泡上的「可撤回」就是假承诺）");
+  "立即交付前先撤这条的定时并 return（不撤 ⇒ 主进程到点会对已消失的队列条目再发一次）");
 
-ok(/useEffect\(\(\) => \{[^}]*hasPendingSteers\(threadId\)[^}]*isTurnRunning\(turn\)[^}]*turnStepBusy\(running\)[^}]*deliverPendingSteers\(bag, threadId\)[^}]*\}, \[bag\.thread, bag\.queue\]\)/.test(partSrc),
-  "派发 effect 齐备：没登记就早退 → 有运行中回合且这一步在忙就再等 → 边界上派发；依赖 [thread, queue]（流式与队列事件都推它重跑）");
+ok(/if \(!threadId \|\| !hasPendingSteers\(threadId\)\) return;/.test(partSrc)
+  && /const running = turns\.find\(\(turn\) => isTurnRunning\(turn\)\) \?\? null;/.test(partSrc)
+  && /if \(running && turnStepBusy\(running\) && pendingSteerArmedAge\(threadId\) < 20_000\) return;/.test(partSrc)
+  && /void deliverPendingSteers\(bag, threadId\)/.test(partSrc)
+  && /setInterval\(boundary, 2000\)/.test(partSrc)
+  && /\}, \[bag\.thread, bag\.queue\]\)/.test(partSrc),
+  "派发守卫：没登记就早退 → 运行中且这一步在忙就再等 → 边界上派发；2s 轮询 + 20s 硬兜底（残留 inProgress 不许把消息永久挂住）");
 
 ok(/if \(!bag\.queue\.some\(\(queued\) => queued\.id === entry\.id\)\) continue;/.test(partSrc),
   "派发前逐条复核「还在队列里」：用户已撤回 / 引擎已自动启动 ⇒ 跳过，绝不重复发");

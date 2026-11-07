@@ -10,6 +10,8 @@ export function pendingSteerEntries(threadId: string): any[];
 /** 订阅版：排队面板要隐藏的 id 名单（armed + sending） */
 export function usePendingSteerVisibleIds(threadId: string): string[];
 export function hasPendingSteers(threadId: string): boolean;
+/** armed 最久那条已等待的毫秒数（无 armed = 0）—— 派发硬兜底用 */
+export function pendingSteerArmedAge(threadId: string): number;
 export function takePendingSteers(threadId: string): any[];
 export function settlePendingSteers(threadId: string, ids: string[]): void;
 export function usePendingSteerEntries(threadId: string): any[];

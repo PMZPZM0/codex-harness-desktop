@@ -11,7 +11,7 @@ import { imageToken, splitPromptSegments, promptImagePaths, stripImageTokens, is
 import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, computeFoldSummary, topToolGroup, isTurnRunning, normalizeLoadedThread, type FoldUnit } from "../../../../../lib/turn-fold";
 import { QueueItem } from "../../../../../lib/queue-item";
 import { isQueueAlreadyStartedError } from "../../../../../lib/queue-errors.mjs";
-import { armPendingSteer, cancelPendingSteer, hasPendingSteers, settlePendingSteers, takePendingSteers, turnStepBusy } from "../../../../../lib/pending-steer.mjs";
+import { armPendingSteer, cancelPendingSteer, hasPendingSteers, pendingSteerArmedAge, settlePendingSteers, takePendingSteers, turnStepBusy } from "../../../../../lib/pending-steer.mjs";
 import { POLL_AUTO_CONTINUE_MAX_ATTEMPTS, POLL_AUTO_CONTINUE_WINDOW_MS, pollContinuePrompt } from "../../../../../lib/poll-config.mjs";
 import { inputText } from "../../../../../lib/input-text";
 import { notePollAutoContinue } from "../../../../../polling/poll-store";
@@ -334,10 +334,20 @@ export function usePart04c2(bag: Bag) {
   useEffect(() => {
     const threadId = String(bag.thread?.id ?? "");
     if (!threadId || !hasPendingSteers(threadId)) return;
-    const turns = bag.thread?.turns ?? [];
-    const running = turns.find((turn) => isTurnRunning(turn)) ?? null;
-    if (running && turnStepBusy(running)) return;
-    void deliverPendingSteers(bag, threadId);
+    const boundary = () => {
+      if (!hasPendingSteers(threadId)) return;
+      const turns = bag.threadRef.current?.turns ?? [];
+      const running = turns.find((turn) => isTurnRunning(turn)) ?? null;
+      /* 11-07 用户实测「插队消息一直挂着、Codex 不处理」：回合残留 inProgress（丢了 completed）
+         或末尾项永远缺状态时，单次 effect 再也不会被推重跑 ⇒ armed 永久卡住。
+         ⇒ 2s 轮询重判边界；armed 超过 20s 就硬交付（steer 在回合中随时可插入，
+           引擎若已没回合会退回 thread/queue/start 新回合，绝不让消息干等）。 */
+      if (running && turnStepBusy(running) && pendingSteerArmedAge(threadId) < 20_000) return;
+      void deliverPendingSteers(bag, threadId);
+    };
+    boundary();
+    const timer = window.setInterval(boundary, 2000);
+    return () => window.clearInterval(timer);
   }, [bag.thread, bag.queue]);
 
   /* 手机端排队操作（11-06）：主进程只做「引擎队列的增删查」，**立即 / 撤回的语义不重写** ——
@@ -656,17 +666,15 @@ bag.maybeAutoContinueAfterPoll = maybeAutoContinueAfterPoll as typeof bag.maybeA
     const runningTurnId = (bag.thread.turns ?? []).find((turn) => isTurnRunning(turn))?.id ?? null;
     const steerTurnId = bag.activeTurnId && bag.activeTurnId === runningTurnId ? bag.activeTurnId : runningTurnId;
     if (steerTurnId && entry) {
-      /* 11-05 用户令：「只有在运行过程中、模型还在处理上一条消息的时候可以撤，一旦模型开始处理插队
-         消息后，就不能撤回了」。引擎收到 `turn/steer` 后**没有撤回接口** ⇒ 唯一诚实的做法是：
-         点「立即」**先不交给引擎**，把它登记成「待并入」，留在排队面板里（按钮变「撤回」）；
-         等当前这一步跑完（回合内已无进行中的 item）再由下面的 effect 真正 steer。
-         ⛔ 这段等待就是可撤回窗口；一旦派发出去，条目离队、撤回入口随之消失。 */
+      /* ⛔⛔ 11-07 用户实测：「我都点立即了，还要等回合结束才出去，假的插队吗」——
+         立即 = **马上**交给引擎（`turn/steer` 在回合中随时可插入），不再等「这一步跑完」的边界。
+         撤回药丸只在这条还没交付的瞬间存在；引擎没有撤回接口，不再拿延迟派发去换撤回窗口。 */
       armPendingSteer({ threadId: bag.thread.id, id: entry.id, entry });
-      /* ⛔ 插队后这条的定时没有意义，且主进程定时器到点会直接把消息发出去 ——
-         那时气泡还挂着「可撤回」就是假承诺（用户点撤回只会得到"删除失败"）。 */
+      /* 插队后这条的定时没有意义（主进程到点会直接发），先撤掉。 */
       void bag.setQueuedTimer(bag.thread.id, entry.id, null, { silent: true });
-      void bag.refreshQueue(bag.thread.id);
-      bag.showToast("已插队 · 可撤回", "这一步跑完自动并入；点消息旁的「撤回」可取消");
+      /* deliver 内部：steer → 成功则摘气泡/删队列条目并提示「插队消息已并入」；
+         撞上 no active turn 会退化成新回合，不会把消息卡住。 */
+      await deliverPendingSteers(bag, bag.thread.id);
       return;
     }
     const armedForStart = bag.armPinForReleasedQueue(bag.thread.id, "queue-start");
