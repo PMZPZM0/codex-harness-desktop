@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Search, Settings2, X } from "lucide-react";
+import { Search, Settings2, Square, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -101,9 +101,10 @@ const PAGE = 30;
 /**
  * 成员行右端的三件套：**运行态动态点 → @ → 停**。
  *
- * 11-07 用户：「每个成员 @ 的前面有运行 ⏹ 动态展示吗」——原来只有 @ 后面那个纯文字「停」，
- * 谁在跑只能靠一眼扫按钮；现在 @ **前面**放一个脉冲点（运行中才出现），@ 后面才是「停」。
- * ⛔ 顺序是用户口径，别换：运行状态在 @ 前、停止在 @ 后。
+ * 11-07 用户：「每个成员 @ 的前面有运行 ⏹ 动态展示吗」→ 运行态脉冲点落在 @ 前；
+ * 11-07 用户（截图圈掉文字按钮）：「停用 ⏹️ 图标替代，放到 @ 前面」⇒ 停止也挪到 @ 前，
+ * 且换成方形停止图标（不再有「停」字）。**运行态与停止都在 @ 前面**，顺序固定：
+ * 运行态脉冲点 → ⏹️ 停止图标 → @。⛔ 只在运行中出现，空闲成员一律不画。
  * ⛔ 团成员与普通伙伴共用这一个组件（两处各写一份必然漂：一处加了动态点、另一处忘了）。
  */
 function MemberActions({
@@ -121,6 +122,17 @@ function MemberActions({
       {running && (
         <span className="team-group__member-live" title={`${name} 正在运行`} aria-label={`${name} 正在运行`} role="img" />
       )}
+      {running && (
+        <button
+          type="button"
+          className="team-group__member-stop"
+          title={`停止 ${name} 当前这一回合`}
+          aria-label={`停止 ${name}`}
+          onClick={() => onStop(id)}
+        >
+          <Square size={10} fill="currentColor" strokeWidth={1.5} />
+        </button>
+      )}
       <button
         type="button"
         className={`team-group__member-at${selected ? " is-on" : ""}`}
@@ -130,17 +142,6 @@ function MemberActions({
       >
         @
       </button>
-      {running && (
-        <button
-          type="button"
-          className="team-group__member-stop"
-          title={`停止 ${name} 当前这一回合`}
-          aria-label={`停止 ${name}`}
-          onClick={() => onStop(id)}
-        >
-          停
-        </button>
-      )}
     </>
   );
 }
@@ -493,6 +494,9 @@ export function TeamGroupView({
       setText("");
       /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
       setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
+    } catch (err) {
+      /* 派活通道异常：把错误说出来，⛔ 原文留着别丢（用户打的字比一次失败值钱） */
+      setSendError(`派活失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSending(false);
     }
@@ -952,6 +956,9 @@ export function TeamGroupView({
                 onValueChange={updateText}
                 textareaRef={composerRef}
                 onKeyDown={(e) => {
+                  /* ⛔ 中文输入法选字时的 Enter 不是"发送"（主对话同口径）：
+                     组合期内发走半句话、且清空会被 IME 回滚 ⇒ 输入框看着"没清空"。 */
+                  if (e.nativeEvent.isComposing) return;
                   /* 打字触发面板时：Enter / Tab 选第一个候选（⛔ 别把半句话当消息发出去） */
                   if (mention.open && mention.typed) {
                     if (e.key === "Escape") { e.stopPropagation(); closeMention(); return; }

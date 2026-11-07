@@ -30,6 +30,27 @@ import { getActiveModel, subscribeActiveModel } from "../../lib/active-model.mjs
 import { collectModelChoices } from "../../lib/model-menu.mjs";
 import { formatTokenCount, matchModelSpec } from "../../lib/model-specs";
 import { avatarToneOf } from "../../lib/entity-avatar";
+import { isMacPlatform } from "../../lib/is-mac-platform";
+
+/** 从粘贴事件里取附件路径 —— 与主对话 `ComposerEditor` 同一口径（File.path / text/uri-list）。
+    ⛔ 群输入框是 textarea，附件不内联成 chip，统一进 opts.files（发送时拼 `[附件文件]`）。 */
+function pastedFilePaths(cb: DataTransfer): string[] {
+  const fromFiles = [...cb.files]
+    .map((f) => (f as File & { path?: string }).path)
+    .filter((p): p is string => typeof p === "string" && p.length > 0);
+  const fromUris: string[] = [];
+  for (const line of cb.getData("text/uri-list").split(/\r?\n/)) {
+    const raw = line.trim();
+    if (!raw || raw.startsWith("#")) continue;
+    try {
+      if (new URL(raw).protocol !== "file:") continue;
+      /* Windows: file:///C:/foo.png → C:\foo.png；mac/Linux 保持正斜杠（主对话同款） */
+      const decoded = decodeURIComponent(raw.slice("file://".length));
+      fromUris.push(isMacPlatform() ? decoded : decoded.replace(/\//g, "\\").replace(/^\\/, ""));
+    } catch { /* 非 URL 行跳过 */ }
+  }
+  return [...new Set([...fromFiles, ...fromUris])];
+}
 
 export type TeamRunOpts = {
   model: string;
@@ -258,6 +279,26 @@ export function TeamComposer({
     setPlusView("main");
   };
 
+  /** 粘贴图片 / 文件 = 主对话输入框的「内在功能」：真落到本轮附件（chips 可见 → 拼进 query）。
+      ⛔ 普通文字粘贴一律不拦截，preventDefault 只在真有附件时调用。 */
+  const onPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const cb = e.clipboardData;
+    const paths = pastedFilePaths(cb);
+    if (paths.length) {
+      e.preventDefault();
+      onOpts({ ...opts, files: [...new Set([...opts.files, ...paths])].slice(0, 20) });
+      return;
+    }
+    const image = [...cb.files].find((f) => f.type.startsWith("image/"));
+    const plain = cb.getData("text/plain").trim();
+    /* 资源管理器复制图片文件：剪贴板只有路径文本、没有位图（主对话的 fallbackPath 同款） */
+    const imagePath = plain && !plain.includes("\n") && !plain.includes("://") && /\.(png|jpe?g|gif|webp|bmp)$/i.test(plain) ? plain : "";
+    if (!image && !imagePath) return;
+    e.preventDefault();
+    const saved = image ? await window.codex.readClipboardImage().catch(() => "") : imagePath;
+    if (saved) onOpts({ ...opts, files: [...new Set([...opts.files, saved])].slice(0, 20) });
+  };
+
   const fullAccess = opts.sandbox === "danger-full-access";
   const permValue = fullAccess ? "never" : opts.approvalPolicy;
   const onPermission = (next: string) => {
@@ -333,6 +374,7 @@ export function TeamComposer({
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
           onKeyDown={onKeyDown}
+          onPaste={(e) => void onPaste(e)}
           placeholder={placeholder}
           rows={2}
         />

@@ -647,11 +647,15 @@ export function useTeamGroups() {
         }
       };
 
-      await Promise.all(targets.map((partner) => runOne(partner, body, "human")));
-
-      /* ③ 收尾再读一次权威行：并发写回的中间态可能少一条，这里兜平 */
-      await loadMessages(group.id);
-      if (failed.length) setDispatchError(failed.map((f) => `${f.name}：${f.error}`).join("；"));
+      /* ⛔⛔ 11-07 用户：「我输入的文字，发出去之后，输入框里面还有这个文字」。
+         根因：这里原来 `await` 全部伙伴跑完才 resolve ⇒ 视图里的 `setText("")` 被推迟到
+         整轮派活结束（几十秒~几分钟），看着就像"没清空"。主对话是**消息上屏即清空**，
+         回复异步到达。⇒ 消息已 append 成功就立刻返回，派活留在后台跑：
+         busy 状态由 delegate-run 事件驱动，⛔ 不依赖这个 Promise 的生命周期。 */
+      void Promise.all(targets.map((partner) => runOne(partner, body, "human")))
+        .then(() => loadMessages(group.id)) /* 并发写回的中间态可能少一条，收尾读一次权威行 */
+        .catch((err) => setDispatchError(`派活中断：${err instanceof Error ? err.message : String(err)}`));
+      /* 发起瞬间的快照；后续失败由 noteError 实时写提示条（⛔ 不等到这里） */
       return { ok: true, summary: { sent: targets.length - failed.length, failed } };
     },
     [appendMessage, loadMessages],

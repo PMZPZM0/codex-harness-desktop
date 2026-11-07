@@ -208,7 +208,28 @@ const catalog = [
   ok(/const targets = \[\.\.\.picked\.filter\(\(m\) => !m\.muted\), \.\.\.virtuals\]/.test(kidStore),
     "团成员与普通伙伴一起进 targets（静音规则同样适用）");
   ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /<MemberActions[\s\S]{0,240}?id=\{kidId\}/.test(view),
-    "成员栏的团成员行有自己的 @（与伙伴行共用 MemberActions：运行态点 + @ + 停）");
+    "成员栏的团成员行有自己的 @（与伙伴行共用 MemberActions：运行态点 + ⏹️ + @）");
+}
+
+/* ── ⑥ 输入框对齐主对话（11-07 用户：「发出去之后输入框还有这个文字」+「同步成跟对话框一样的输入框」）── */
+{
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/void Promise\.all\(targets\.map\(\(partner\) => runOne\(partner, body, "human"\)\)\)/
+    .test(store) && !/await Promise\.all\(targets\.map\(\(partner\) => runOne/.test(store),
+    "⛔ 消息上屏即返回：派活留在后台跑（原来 await 全部回复 ⇒ 清空被推迟几十秒，看着像没清）");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/const r = await onSend\?\.\(atTargets, fullBody, params\)[\s\S]{0,220}?setText\(""\)/.test(view),
+    "派活成功即清空输入框（主对话口径；失败保留原文）");
+  ok(/e\.nativeEvent\.isComposing/.test(view),
+    "中文输入法选字期间的 Enter 不误发（否则 IME 会把清空回滚，看着像没清）");
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  ok(/onPaste=\{\(e\) => void onPaste\(e\)\}/.test(composer) && /function pastedFilePaths/.test(composer)
+    && /readClipboardImage\(\)/.test(composer),
+    "粘贴图片 / 文件真落进本轮附件（主对话输入框同款内在功能，⛔ 不是装饰）");
+  const css = read("src/styles/61-team-mode.css");
+  ok(/font-size: 14px;[\s\S]{0,120}?line-height: 1\.6;[\s\S]{0,200}?field-sizing: content/.test(css)
+    && /max-height: min\(42vh, 360px\)/.test(css),
+    "正文排版与 .composer-editor 同口径（14px/1.6/内容自适应/42vh 上限）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

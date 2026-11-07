@@ -6,11 +6,13 @@
  *   ②「停止运行放到成员列表的 @ 前面去」；
  *   ③「我的意思是加这里后面，有运行状态的，就在这里显示」→ 单成员的「停」排在 @ 后面；
  *   ④「这个删除按键，怎么还在这里…**都放成员 @ 前面，动态展示，联动调度会话，真停止的**」
- *     ⇒ 全局「停止运行」大按钮**整块删除**；运行态 = 每个成员行里 @ **前面**的脉冲点，
- *        点 @ 后面的「停」是真的停那一个（走 harnessTeamStop，不是装饰）。
+ *     ⇒ 全局「停止运行」大按钮**整块删除**；运行态与停止都收到每个成员行、**都排在 @ 前面**；
+ *   ⑤「停用 ⏹️ 图标替代，放到 @ 前面」⇒ 文字「停」换成方形停止图标，并挪到 @ 前。
+ *     运行态点 + ⏹️ + @ 三件套只在运行中出现后两项，空闲成员只剩 @。
  *
- * 判据：菜单无系统项 / 无全局停止键（含 stopAll） / 每行三件套（状态点→@→停）/
- *       状态点有动画且尊重 prefers-reduced-motion / 停键认合成 id（团成员也能停）。
+ * 判据：菜单无系统项 / 无全局停止键（含 stopAll） / 顺序（状态点→⏹️→@）/
+ *       停键是图标不是文字 / 状态点有动画且尊重 prefers-reduced-motion /
+ *       停键认合成 id（团成员也能停）。
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -41,17 +43,21 @@ ok(!/team-group__members-stop\b/.test(viewCode) && !/const stopAll = /.test(view
 ok(!/team-group__members-stop\b/.test(css) && !/team-group__members-stoprow/.test(css),
   "⛔ 全局停止键的样式也删净（只删 JSX 会留下看起来还在的类）");
 
-/* 每行三件套：状态点（@ 前）→ @ → 停（@ 后） */
+/* 每行：运行态点 → ⏹️ → @（⛔ 用户明确「都放成员 @ 前面」「停用 ⏹️ 图标替代，放到 @ 前面」） */
 const cellAt = view.indexOf("function MemberActions");
 const cell = cellAt > 0 ? view.slice(cellAt, view.indexOf("\nexport function TeamGroupView")) : "";
 ok(cell.length > 0, "成员行右端抽成一个组件（伙伴行与团成员行共用，⛔ 两处各写一份必然漂）");
 const liveAt = cell.indexOf("team-group__member-live");
 const atAt = cell.indexOf("team-group__member-at");
 const stopAt = cell.indexOf("team-group__member-stop");
-ok(liveAt > 0 && atAt > liveAt && stopAt > atAt,
-  "顺序固定：运行态点 → @ → 停（用户：「都放成员 @ 前面，动态展示」）");
+ok(liveAt > 0 && stopAt > liveAt && atAt > stopAt,
+  "顺序固定：运行态点 → ⏹️ 停止图标 → @（运行态与停止**都在 @ 前面**）");
 ok(/running &&[\s\S]{0,160}?team-group__member-live/.test(cell) && /running &&[\s\S]{0,160}?team-group__member-stop/.test(cell),
-  "状态点与停只在运行中出现的条件都在（空闲成员不画，否则成了装饰）");
+  "状态点与 ⏹️ 只在运行中出现的条件都在（空闲成员不画，否则成了装饰）");
+ok(/<Square size=\{10\} fill="currentColor"/.test(cell) && !/>\s*停\s*</.test(cell),
+  "⏹️ 是方形停止图标，⛔ 不再有文字「停」（用户截图圈掉的就是那个文字按钮）");
+ok(/\.team-group__member-stop\s*\{[\s\S]{0,260}?width:\s*22px[\s\S]{0,160}?height:\s*22px/.test(css),
+  "⏹️ 按钮与 @ 同尺寸（22×22），⛔ 不是文字按钮的 padding 外壳");
 ok((view.match(/<MemberActions/g) ?? []).length >= 2,
   "伙伴行 + 团成员行都用同一份（团成员也能看到运行态、也能单独停）");
 

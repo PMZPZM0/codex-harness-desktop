@@ -485,8 +485,8 @@
 .team-group__member-at:hover { border-color: var(--accent); color: var(--accent); }
 .team-group__member-at.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 /* ── 成员行运行态点（11-07 用户：「每个成员 @ 的前面有运行动态展示吗」）──
-   ⛔ 位置在 @ **前面**（用户口径：状态在 @ 前、停止在 @ 后），⛔ 别挪到行首或名字旁：
-   成员行右端才是"这一位现在怎么样"的固定位置，扫一眼就能看出谁在跑。
+   ⛔ 运行态点与 ⏹️ 停止图标**都在 @ 前面**（用户：「都放成员 @ 前面」「停用 ⏹️ 图标替代，
+   放到 @ 前面」），⛔ 别挪到行首或名字旁：成员行右端才是"这一位现在怎么样"的固定位置。
    ⛔ 只在运行中出现（render 条件在 JSX 里），常驻就成了装饰。 */
 .team-group__member-live {
   flex: none;
@@ -738,17 +738,20 @@
   border-top: 1px dashed var(--line-soft);
 }
 
-/* 成员栏的停止键：只在它**正在跑**时出现（⛔ 常驻会让人以为随时能停） */
+/* 成员栏的停止键：⏹️ 方形图标，只在它**正在跑**时出现（⛔ 常驻会让人以为随时能停）。
+   11-07 用户：「停用 ⏹️ 图标替代，放到 @ 前面」⇒ 与 @ 同尺寸的图标按钮，不再有「停」字。 */
 .team-group__member-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: none;
+  width: 22px;
   height: 22px;
-  padding: 0 7px;
+  padding: 0;
   border: 1px solid color-mix(in srgb, var(--danger) 55%, var(--line));
   border-radius: 6px;
   background: transparent;
   color: var(--danger);
-  font-size: 11px;
-  line-height: 1;
   cursor: pointer;
 }
 .team-group__member-stop:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); }
@@ -1057,20 +1060,27 @@
   background: var(--panel);
   box-shadow: 0 2px 10px color-mix(in srgb, var(--text) 6%, transparent);
 }
-/* ⛔ 覆盖旧的 `.team-group__composer textarea` 规则：现在边框在外层卡片上 */
+/* ⛔ 覆盖旧的 `.team-group__composer textarea` 规则：现在边框在外层卡片上。
+   11-07 用户：「同步成跟对话框一样的输入框，外观和输入框内在功能」⇒ 正文排版
+   与 `.composer-editor` 同口径：14px / 1.6 / 内容自适应 + 42vh 上限 / 超出滚动。
+   `field-sizing: content` 是 Chromium 原生自适应（Electron 43 支持），⛔ 不写 JS 量高度。 */
 .team-composer .team-composer__input {
   display: block;
   width: 100%;
   min-height: 62px;
+  max-height: min(42vh, 360px);
   padding: 2px 2px 6px;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--text);
   font: inherit;
-  font-size: 13px;
-  line-height: 1.65;
-  resize: vertical;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-y: auto;
+  field-sizing: content;
+  resize: none;
   outline: none;
 }
 .team-composer__chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
@@ -2201,8 +2211,9 @@
 
 /* ── 成员栏：⛔ 没有全局「停止运行」（11-07 用户截图圈掉那一块：
    「这个删除按键，怎么还在这里…都放成员 @ 前面，动态展示，联动调度会话，真停止的」）
-   ⇒ 运行态点 + @ + 停 全在**每个成员那一行**：状态点在 @ 前（.team-group__member-live）、
-     停止在 @ 后（.team-group__member-stop）。⛔ 别再往标题行或底部塞整行大按钮。 */
+   ⇒ 运行态点 + ⏹️ 停止 + @ 全在**每个成员那一行**，且顺序固定：
+     运行态点（.team-group__member-live）→ ⏹️（.team-group__member-stop）→ @。
+     ⛔ 别再往标题行或底部塞整行大按钮。 */
 .team-group__members-foot {
   flex: none;
   padding: 2px 10px 10px;
