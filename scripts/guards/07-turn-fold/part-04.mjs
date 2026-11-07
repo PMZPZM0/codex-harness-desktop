@@ -688,6 +688,27 @@ export async function run() {
     && /dist", "windows", process\.arch === "arm64" \? "arm64" : "amd64"/.test(toolchain274) ? ok : fail)(
     "【274】就绪判据同时看启动脚本与主程序（mac .app / win dist/windows/<arch>/*.exe；只装上半截 = MCP 起得来但每次调用都失败）"
   );
+  /* 11-06 用户问「这里为啥没有显示出来 computer use」：自动化页的桌面后端卡片是**数据驱动**的
+     （tools:status 里 scope=computer 的条目），而该通道原来只回 Nuphus 一条 ⇒ 页面永远只有一张卡。
+     判据：① 通道必须同时列两个后端（**未安装也列**，否则用户不知道有这个后端）；
+           ② 页面两个开关绑同一份 app-settings（别在页面里另存一份偏好）。 */
+  {
+    const toolsSrc274 = codeOnly(readFileSync(join(ROOT, "electron", "features", "tools-ipc.ts"), "utf8"));
+    /* ⛔ 本文件里的 ok/fail 是**单参**（消息）：断言必须写成 `(cond ? ok : fail)("…")`。
+       写成 ok(cond, "…") 会把条件当消息打印成 `✓ true` —— 恒绿，变异也抓不到。 */
+    (/id: "computer-use"/.test(toolsSrc274) && /computerUseLauncher\(\)/.test(toolsSrc274)
+      && /installed: Boolean\(cuPkg\)/.test(toolsSrc274) && /binaryReady: Boolean\(cuLauncher\)/.test(toolsSrc274) ? ok : fail)(
+      "【274】tools:status 同时列 Computer Use 后端（未安装也返回 —— 页面才画得出「未安装 + 安装入口」）"
+    );
+    const autoUi274 = readAppUi();
+    (/auto-backends/.test(autoUi274) && /desktopBackendNuphus/.test(autoUi274) && /desktopBackendComputerUse/.test(autoUi274)
+      && /当前生效链路/.test(autoUi274) ? ok : fail)(
+      "【274】自动化页：两个后端开关绑同一份 app-settings + 显示当前生效链路（Windows nuphus 主 / mac computer-use 主）"
+    );
+    (/auto-bullets/.test(autoUi274) && /ego-browser/.test(autoUi274) && /browse-skills/.test(autoUi274) ? ok : fail)(
+      "【274】浏览器页：自动化优先级改成要点列表（Ego Lite 优先 / 未装回落 browse-skills），不再是整段长文"
+    );
+  }
   let policy274 = null;
   try { policy274 = req274(join(ROOT, "dist-electron", "automation-policy.js")); } catch { policy274 = null; }
   // ⛔ 真跑：mac 上 nuphus 桌面组必须整组被掩（否则两条键鼠通道并存），浏览器组不受影响

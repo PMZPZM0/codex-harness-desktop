@@ -142,7 +142,7 @@ export function automationAgentsPages(app: HarnessAppApi): Partial<Record<Settin
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
     browser: { back: { to: "automation", label: "返回自动化" }, render: () => <BrowserSettingsSection browserHome={browserHome} setBrowserHome={setBrowserHome} setBrowserDraft={setBrowserDraft} setNotice={setNotice} toolsStatus={toolsStatus} ToolCard={ToolCard} /> },
-    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection approvalPolicy={approvalPolicy} sandbox={sandbox} changeApproval={changeApproval} changeSandbox={changeSandbox} personality={personality} changePersonality={changePersonality} toolsStatus={toolsStatus} ToolCard={ToolCard} /> },
+    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} /> },
     rpa: { back: { to: "automation", label: "返回自动化" }, render: () => <RpaSettingsSection rpaRecipes={rpaRecipes} rpaRunning={rpaRunning} thread={thread} setNotice={setNotice} setRpaRunning={setRpaRunning} selectedModel={selectedModel} modelName={modelName} modelId={modelId} sandboxPolicy={sandboxPolicy} sandbox={sandbox} workspace={workspace} openAppConfirm={openAppConfirm} setRpaRecipes={setRpaRecipes} taskList={taskList} setTaskList={setTaskList} /> },
     /* 10-27 用户令：「把上面三个插件放到已安装里面」⇒ 内置三件不再单独占一段，
    作为 builtinSlot 传进插件页，只在「已安装」视图里出现。 */

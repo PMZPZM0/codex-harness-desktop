@@ -8,7 +8,7 @@
  */
 import { AppSelect } from "../../../components/AppSelect";
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, Globe2, MessageSquarePlus, Monitor, Play, ShieldCheck, Wrench } from "lucide-react";
+import { Check, ChevronDown, Globe2, MessageSquarePlus, Monitor, MousePointerClick, Play, ShieldCheck, Wrench } from "lucide-react";
 import { ToolStatusEntry } from "../../../features/session-cards";
 import { setVoiceCallNoticeHandler, setVoiceOpenSettingsHandler } from "../../../voice/wave-level";
 import { voiceCallNoticeText } from "../../../voice/voice-notice";
@@ -17,7 +17,7 @@ import type { PendingRequest } from "../types";
 
 
 export function ToolCard({ tool }: { tool: ToolStatusEntry }) {
-  const Icon = tool.id === "nuphus-mcp" ? Monitor : Globe2;
+  const Icon = tool.id === "nuphus-mcp" ? Monitor : tool.id === "computer-use" ? MousePointerClick : Globe2;
   const state = !tool.installed ? "missing" : !tool.binaryReady ? "partial" : "ready";
   const stateLabel = state === "ready" ? "就绪" : state === "partial" ? "待下载内核" : "未安装";
   return (

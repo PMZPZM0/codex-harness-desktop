@@ -1,32 +1,64 @@
 /**
- * 设置页 · computer（09-21 从 App.tsx 内联块搬出）。
+ * 设置页 · 自动化 → 桌面自动化（11-06 重排展示）。
  *
- * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
- * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
+ * 用户三问的落点：
+ *  ①「这里为啥没有显示出来 computer use」—— 根因在 `tools:status` 只回了一条 Nuphus；
+ *     现在两个后端都会列（未安装也列，用户才知道有得装）。
+ *  ②「这个界面也优化一下展示」—— 从「三段下拉 + 一行提示 + 一张小卡」改成卡片分区。
+ *  ③「自动化界面这里不需要展示上面卡片」—— 顶部「默认策略」卡已撤掉：审批在「控制台」、
+ *     沙箱在输入框的权限胶囊、风格在「模型/个性化」，这一页只留桌面自动化本身。
  */
-import { AppSelect } from "../../components/AppSelect";
+import { useEffect, useState } from "react";
 import { Monitor } from "lucide-react";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 
-export type ComputerSettingsSectionProps = { approvalPolicy: any; sandbox: any; changeApproval: any; changeSandbox: any; personality: any; changePersonality: any; toolsStatus: any; ToolCard: any };
+export type ComputerSettingsSectionProps = { toolsStatus: any; ToolCard: any; setNotice?: (text: string) => void };
 
 export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
-  const { approvalPolicy, sandbox, changeApproval, changeSandbox, personality, changePersonality, toolsStatus, ToolCard } = props;
+  const { toolsStatus, ToolCard, setNotice } = props;
+  /* 两个桌面后端开关与「控制台 → 桌面自动化」读写同一份 app-settings（单一真相源，别各存一份） */
+  const [backends, setBackends] = useState<{ nuphus: boolean; computerUse: boolean }>({ nuphus: true, computerUse: true });
+  useEffect(() => {
+    void window.codex.readAppSettings()
+      .then((s) => setBackends({ nuphus: s.desktopBackendNuphus !== false, computerUse: s.desktopBackendComputerUse !== false }))
+      .catch(() => undefined);
+  }, []);
+  const toggleBackend = async (key: "nuphus" | "computerUse", next: boolean) => {
+    const saved = await window.codex.saveAppSettings(key === "nuphus" ? { desktopBackendNuphus: next } : { desktopBackendComputerUse: next }).catch(() => null);
+    if (!saved) { setNotice?.("保存失败：主进程未响应"); return; }
+    setBackends({ nuphus: saved.desktopBackendNuphus !== false, computerUse: saved.desktopBackendComputerUse !== false });
+    setNotice?.(`${key === "nuphus" ? "Nuphus" : "Computer Use"} 后端已${next ? "启用" : "停用"}（重启应用后生效）`);
+  };
+  const isMac = /Mac|iPhone|iPad/i.test(String(navigator.platform || navigator.userAgent));
+  const chain = isMac ? "Computer Use 主 · Nuphus 辅" : "Nuphus 主 · Computer Use 辅";
+  const computerTools = (toolsStatus || []).filter((tool: any) => tool.scope === "computer");
+
   return (
-    <>
-      <section className="settings-section stack">
-                    <div className="settings-grid three">
-                      <label><span>审批</span><AppSelect value={approvalPolicy} onChange={(v) => changeApproval(v)} options={[{ value: "on-request", label: "按需询问" }, { value: "untrusted", label: "仅可信命令" }, { value: "never", label: "从不询问" }]} disabled={sandbox === "danger-full-access"} /></label>
-                      <label><span>沙箱</span><AppSelect value={sandbox} onChange={(v) => changeSandbox(v)} options={[{ value: "workspace-write", label: "工作区可写" }, { value: "read-only", label: "只读" }, { value: "danger-full-access", label: "完全访问" }]} /></label>
-                      <label><span>风格</span><AppSelect value={personality} onChange={(v) => changePersonality(v)} options={[{ value: "pragmatic", label: "务实" }, { value: "friendly", label: "友好" }, { value: "none", label: "默认" }]} /></label>
-                    </div>
-                    <div className="settings-actions"><span>任务运行中可随时在输入框上方快捷切换。权限调低不会削弱引擎能力：越界操作会走审批卡，批准后继续执行。</span></div>
-                    <div className="settings-subhead"><Monitor size={13} />桌面自动化工具<span className="settings-subhead-hint">已注册为 Codex MCP 服务器，38 个桌面/浏览器工具</span></div>
-                    <div className="tool-card-grid">
-                      {toolsStatus.filter((tool: any) => tool.scope === "computer").map((tool: any) => <ToolCard tool={tool} key={tool.id} />)}
-                      {!toolsStatus.length && <p className="muted">正在读取工具状态…</p>}
-                    </div>
-                    <p className="muted">引擎通过 <code>nuphus</code> MCP 工具直接操作真实屏幕：截屏看界面、激活窗口、移动鼠标、敲键盘、读写剪贴板、本地 OCR，以及通过 CDP 驱动 Chrome。危险操作带有确认标注。</p>
-                  </section>
-    </>
+    <section className="settings-section stack">
+      <div className="settings-card">
+        <div className="settings-card-head">
+          <Monitor size={14} />桌面自动化
+          <span className="settings-card-head-hint">两个后端可同时启用，按系统排优先级</span>
+        </div>
+        <div className="settings-card-body">
+          <div className="auto-chain">当前生效链路：<b>{chain}</b><span>两者都装时先走主后端，主后端不可用再回落另一个</span></div>
+          <div className="tool-card-grid">
+            {computerTools.map((tool: any) => <ToolCard tool={tool} key={tool.id} />)}
+            {!computerTools.length && <p className="muted">正在读取工具状态…</p>}
+          </div>
+          <div className="auto-backends">
+            <label className="auto-backend">
+              <span>Nuphus 后端<small>35 个桌面/浏览器工具，经 nuphus-call 按需调用</small></span>
+              <ToggleSwitch checked={backends.nuphus} label="Nuphus 后端" onChange={(next) => void toggleBackend("nuphus", next)} />
+            </label>
+            <label className="auto-backend">
+              <span>Computer Use 后端<small>9 个电脑操作工具，走系统无障碍控件清单</small></span>
+              <ToggleSwitch checked={backends.computerUse} label="Computer Use 后端" onChange={(next) => void toggleBackend("computerUse", next)} />
+            </label>
+          </div>
+          <p className="settings-card-hint">关掉一个后端只停用它那一组工具，另一个照常工作；改完重启应用生效。未安装的后端会显示「未安装」和安装入口，不会静默消失。</p>
+        </div>
+      </div>
+    </section>
   );
 }
