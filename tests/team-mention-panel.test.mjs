@@ -80,7 +80,8 @@ test("分类：机器人 / 专家团 / 团成员，团成员归到团那一行",
   assert.equal(sections[1].items[0].name, "承枢", "团这一行出面上的是主理人");
   assert.equal(sections[1].items[0].avatar.targetKind, "expert", "头像种子换成主理人（否则画成团徽）");
   assert.equal(sections[2].items.length, 2, "同名成员按 key 去重");
-  assert.equal(sections[2].items[0].selectId, "m2", "点团成员 = 叫整团");
+  assert.equal(sections[2].items[0].selectId, "team:t1:k1",
+    "⛔ 点团成员 = 派给这位成员本人（合成 id），不再落到团那一行（用户：「每个成员都可以艾特」）");
   assert.equal(sections[0].items[1].unbound, true);
   assert.equal(flattenMentionSections(sections).length, 5);
 });

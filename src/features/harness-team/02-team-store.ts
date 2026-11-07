@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
-import { groupContextBlock, parseAgentMentions, teamAuthorIdOf } from "../../lib/team-models.mjs";
+import { groupContextBlock, parseAgentMentions, parseTeamAuthorId, teamAuthorIdOf } from "../../lib/team-models.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
 type ListResult = {
@@ -420,10 +420,30 @@ export function useTeamGroups() {
     async (group: TeamGroup, partnerIds: string[], text: string, params?: TeamRunParams): Promise<{ ok: boolean; error?: string; summary?: DispatchSummary }> => {
       const body = String(text ?? "").trim();
       if (!body) return { ok: false, error: "说点什么再发" };
+      /* ⛔⛔ 11-07 用户令：「团成员拆出来，每个成员都可以艾特」「现在只能艾特主代理会话」。
+         @ 里的团成员用的是**合成 id** `team:<teamId>:<memberId>`（不是群成员）。
+         主进程调度目录里每位团成员都有 `kind:"member"`、key `<teamId>:<memberId>` 的条目
+         ⇒ 直接按成员派活，走他自己的会话；⛔ 不再退化成"叫整团、主理人替他说话"。
+         解不出两段的 id 一律忽略（⛔ 不猜，也不当成普通伙伴去匹配）。 */
+      const virtuals: TeamGroup["members"] = [];
+      for (const id of partnerIds) {
+        const parsed = parseTeamAuthorId(id);
+        if (!parsed) continue;
+        if (virtuals.some((v) => v.id === id)) continue;
+        virtuals.push({
+          /* 只用这几个字段：id（去重/busy/台账）、name（日志与失败文案）、
+             targetKind/targetKey（真正决定派给谁）。⛔ 其余群成员字段用不到，别编值。 */
+          id,
+          kind: "bot",
+          name: parsed.memberId,
+          targetKind: "member",
+          targetKey: `${parsed.teamId}:${parsed.memberId}`,
+        } as TeamGroup["members"][number]);
+      }
       const picked = group.members.filter((m) => m.kind === "bot" && partnerIds.includes(m.id));
-      if (!picked.length) return { ok: false, error: "先 @ 至少一个伙伴" };
+      if (!picked.length && !virtuals.length) return { ok: false, error: "先 @ 至少一个伙伴" };
       /* 静音 = 不打扰：@ 了也不派（⛔ 但要说清是"被静音"而不是"没选"） */
-      const targets = picked.filter((m) => !m.muted);
+      const targets = [...picked.filter((m) => !m.muted), ...virtuals];
       if (!targets.length) return { ok: false, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
       /* 11-06 用户令：群聊「专家团直接调度」已放开（主进程只对 origin="" 的界面直派
          合并 team 许可），这里不再前置拒绝 team / member 伙伴。 */

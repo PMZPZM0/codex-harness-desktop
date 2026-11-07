@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { AtSign, Search, Settings2, Square, X } from "lucide-react";
+import { Search, Settings2, Square, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -1059,10 +1059,10 @@ export function TeamGroupView({
                                 type="button"
                                 className={`team-group__member-at${on ? " is-on" : ""}`}
                                 aria-pressed={on}
-                                title={on ? `把 ${kid.name} 移出本轮` : `@ ${kid.name}（只叫他本人）`}
+                                title={on ? `把 ${kid.name} 移出本轮` : `@${kid.name}（只叫他本人）`}
                                 onClick={() => toggleAt(kidId)}
                               >
-                                <AtSign size={12} />
+                                @
                               </button>
                             </li>
                           );
