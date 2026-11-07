@@ -20,7 +20,7 @@ import { personalNormsPrompt } from "../src/lib/engineering-norms.mjs";
 /* 11-07：主理人 → 成员这条链也要写结构化发件人（外层对话框据此判「上级」）。 */
 import { senderLineOf, taskLineOf } from "../src/lib/message-origin.mjs";
 import { MEMBER_TASK_NOTE, humanizeRefs } from "../src/lib/dispatch-voice.mjs";
-import { parseAgentMentions, teamAuthorIdOf } from "../src/lib/team-models.mjs";
+import { parseAgentMentions, teamAuthorIdOf, collaborationProtocolLines } from "../src/lib/team-models.mjs";
 import { appendMemberOutputToGroup, groupOfTeam } from "./team-group-bridge";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
@@ -200,6 +200,10 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     .catch(() => "");
   const systemPrefix = `[专家团「${team.displayName.zh}」成员 ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n\n`
     + (userNorms ? `# User norms (frontend design + backend engineering / architecture)\n${userNorms}\n\n` : "")
+    /* ⛔⛔ 11-07 用户令：成员也要知道「怎么沟通 / 配合 / 协调 / 汇报 / 产出」。
+       团成员会话由 team_member_invoke 起，拿不到群派活的 groupContextBlock —— 协议必须在这里再给一份。
+       ⛔ 与 team-models 同一份纯函数，别在提示词里抄第二套文案。 */
+    + "# 协作方式\n" + collaborationProtocolLines("member").slice(1).join("\n") + "\n\n"
     + "# 调度权限\n你是团里的成员，没有调度工具：别调 agent_invoke / team_member_invoke，也别跟用户说你能调人。要请团里另一位帮忙，另起一行写 `@名字：要他做什么`（这一行只放这句），宿主会真的叫他，他的回复自己发进群。\n\n";
   // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
   //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值
