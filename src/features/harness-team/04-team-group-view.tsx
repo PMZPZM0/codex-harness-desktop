@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Search, Settings2, Square, X } from "lucide-react";
+import { Search, Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -31,9 +31,8 @@ import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-compos
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
-import { cancelDelegateRetries } from "../../lib/team-runtime.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
-import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf } from "../../lib/team-models.mjs";
+import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf, teamMemberIdOf } from "../../lib/team-models.mjs";
 /* 11-07：@ 提及与群内搜索的口径全部在纯函数里（可单测），视图只做接线。 */
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../lib/team-mention.mjs";
 /* 11-07 界面优化：消息流按天分隔（飞书群同款）——连续几十条跨天消息只靠时间看不出"这是哪天"。 */
@@ -99,6 +98,53 @@ const shortId = (id: string) => (id.length > 10 ? `${id.slice(0, 6)}…` : id);
 /** 群聊一页多少条（首屏 + 每次向上补的量）。 */
 const PAGE = 30;
 
+/**
+ * 成员行右端的三件套：**运行态动态点 → @ → 停**。
+ *
+ * 11-07 用户：「每个成员 @ 的前面有运行 ⏹ 动态展示吗」——原来只有 @ 后面那个纯文字「停」，
+ * 谁在跑只能靠一眼扫按钮；现在 @ **前面**放一个脉冲点（运行中才出现），@ 后面才是「停」。
+ * ⛔ 顺序是用户口径，别换：运行状态在 @ 前、停止在 @ 后。
+ * ⛔ 团成员与普通伙伴共用这一个组件（两处各写一份必然漂：一处加了动态点、另一处忘了）。
+ */
+function MemberActions({
+  id, name, running, selected, onToggle, onStop,
+}: {
+  id: string;
+  name: string;
+  running: boolean;
+  selected: boolean;
+  onToggle: (id: string) => void;
+  onStop: (id: string) => void;
+}) {
+  return (
+    <>
+      {running && (
+        <span className="team-group__member-live" title={`${name} 正在运行`} aria-label={`${name} 正在运行`} role="img" />
+      )}
+      <button
+        type="button"
+        className={`team-group__member-at${selected ? " is-on" : ""}`}
+        title={`@${name}`}
+        aria-pressed={selected}
+        onClick={() => onToggle(id)}
+      >
+        @
+      </button>
+      {running && (
+        <button
+          type="button"
+          className="team-group__member-stop"
+          title={`停止 ${name} 当前这一回合`}
+          aria-label={`停止 ${name}`}
+          onClick={() => onStop(id)}
+        >
+          停
+        </button>
+      )}
+    </>
+  );
+}
+
 export function TeamGroupView({
   group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
@@ -110,7 +156,6 @@ export function TeamGroupView({
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
-  const [stopping, setStopping] = useState(false);
   /* ⛔ 11-06：busy 会在 `invokeAgent` 返回时就清空，但后台调度会话可能还在收尾
      ⇒ 只看 busy 会显示「没有运行」而后台其实还在跑。订阅共享桥的登记数做补充判据。 */
   const [sendError, setSendError] = useState("");
@@ -242,7 +287,7 @@ export function TeamGroupView({
        就退回 memberId（⛔ 不编名字，也不把整条消息丢掉）。 */
     const teamAuthor = parseTeamAuthorId(id);
     if (teamAuthor) {
-      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && t.key === teamAuthor.memberId);
+      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && (teamMemberIdOf(t) === teamAuthor.memberId || t.key === teamAuthor.memberId));
       return kid?.name || teamAuthor.memberId;
     }
     const m = group.members.find((x) => x.id === id);
@@ -254,7 +299,7 @@ export function TeamGroupView({
   const roleOf = (id: string) => {
     const teamAuthor = parseTeamAuthorId(id);
     if (teamAuthor) {
-      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && t.key === teamAuthor.memberId);
+      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && (teamMemberIdOf(t) === teamAuthor.memberId || t.key === teamAuthor.memberId));
       return kid?.profession || "团成员";
     }
     const m = memberOf(id);
@@ -392,31 +437,10 @@ export function TeamGroupView({
     return { ok: true };
   };
 
-  /* ⛔⛔ 11-06 用户：「没有运行状态停止按钮很烦，一直刷那个提醒」。
-     原来运行态条只在 busy 非空时出现，而 429 后 `invokeAgent` 已经以空产出返回、
-     busy 清空，后台重试链却还在跑 ⇒ 屏幕上「没有运行、也没有停止」，toast 一直刷。
-     ⇒ 状态条**常驻**，停止键永远够得着；点击做两件缺一不可的事：
-       ① 逐个停掉本群伙伴当前回合（引擎中断，harnessTeamStop）；
-       ② 清理后台调度会话残留的限流重试状态（cancelDelegateRetries）。
-     ⛔ 11-06 审查：delegate-run 是**全局**广播（主对话 @ 专家 / 定时任务也算），
-       ⛔ 不许说成「本群」、也不许拿它点亮本群运行态；停止键只承诺「清理重试状态」，
-       不承诺中断这些全局会话的引擎回合（它们由各自的收敛路径结束）。
-     ⛔ 空闲也可点：做一次清理并明确回话，不做成点了没反应的死按钮。 */
-  const stopAll = async () => {
-    if (stopping) return;
-    setStopping(true);
-    setSendError("");
-    try {
-      const results = await Promise.all(partners.map((p) => onStopPartner(p.id)));
-      const cleared = cancelDelegateRetries();
-      const stopped = results.filter((r) => r.ok).length;
-      flashMenuMsg(stopped || cleared
-        ? `已停止 ${stopped} 个伙伴的运行${cleared ? `，并清理 ${cleared} 个后台调度会话的重试状态` : ""}`
-        : "已清理：当前没有运行中的伙伴，也没有在跑的调度会话");
-    } finally {
-      setStopping(false);
-    }
-  };
+  /* ⛔ 11-07 用户（截图圈掉那块）：「这个删除按键，怎么还在这里…都放成员 @ 前面，动态展示，
+     联动调度会话，真停止的」。⇒ 全局「停止运行」整块删除（连同 stopAll / stopping 状态）：
+     运行态与停止都收到**每个成员那一行**（状态点在 @ 前、停在 @ 后，见 MemberActions）。
+     ⛔ 别再以「万一没人在跑怎么办」为理由加回全局键 —— 用户已经否掉两次。 */
 
   const send = async () => {
     const body = text.trim();
@@ -962,17 +986,12 @@ export function TeamGroupView({
 
           {/* 成员栏（飞书群右侧成员区 / 豆包伙伴档案）：只有群才有这个东西 —— 普通会话没有。 */}
           <aside className="team-group__members" aria-label="群成员">
-                        <div className="team-group__members-head">
+            {/* ⛔⛔ 11-07 用户（截图圈掉这一块）：「这个删除按键，怎么还在这里…都放成员 @ 前面，
+                动态展示，联动调度会话，真停止的」。
+                ⇒ 这里**只剩一行「成员 N」**：⛔ 不再有全局「停止运行」大按钮，
+                   ⛔ 不要再加回来（三个位置都试过，用户最终口径是"运行态与停止都在每个成员那一行"）。 */}
+            <div className="team-group__members-head">
               <span>成员 {group.members.length}</span>
-              <button
-                type="button"
-                className={`team-group__members-stop${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`}
-                onClick={() => void stopAll()}
-                disabled={stopping}
-                title="停止本群所有伙伴当前回合，并清理后台调度会话的重试状态"
-              >
-                <Square size={10} /> {stopping ? "停止中…" : "停止运行"}
-              </button>
             </div>
             <ul>
               {group.members.map((m) => {
@@ -1006,28 +1025,17 @@ export function TeamGroupView({
                         {m.muted ? " · 已静音" : ""}
                       </small>
                     </span>
+                    {/* ⛔ 11-07 用户：「每个成员 @ 的前面有运行动态展示吗」⇒ 运行态点 + @ + 停 三件套
+                        （顺序固定：状态在 @ 前、停在 @ 后），团成员与伙伴同一份实现。 */}
                     {isBot && (
-                      <button
-                        type="button"
-                        className={`team-group__member-at${atTargets.includes(m.id) ? " is-on" : ""}`}
-                        title={`@${personNameOf(m)}`}
-                        onClick={() => toggleAt(m.id)}
-                      >
-                        @
-                      </button>
-                    )}
-                    {/* ⛔ 11-07 用户截图：「有运行状态的，就在这里显示」——单成员的「停」
-                        排在 @ **后面**、只在该成员运行中出现（谁在跑停谁，不误伤别人）。 */}
-                    {isBot && running && (
-                      <button
-                        type="button"
-                        className="team-group__member-stop"
-                        title={`停止 ${personNameOf(m)} 当前这一回合`}
-                        aria-label={`停止 ${personNameOf(m)}`}
-                        onClick={() => void onStopPartner(m.id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
-                      >
-                        停
-                      </button>
+                      <MemberActions
+                        id={m.id}
+                        name={personNameOf(m)}
+                        running={Boolean(running)}
+                        selected={atTargets.includes(m.id)}
+                        onToggle={toggleAt}
+                        onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+                      />
                     )}
                   </li>
                   {/* ⛔ 团成员列表放在**成员行之后**独占一行：塞进行内会被 flex 主轴压成
@@ -1040,7 +1048,7 @@ export function TeamGroupView({
                              → 每个团成员行都有自己的 @（= 派给这位成员本人，走他自己的会话）。
                              合成 id 与群流里成员发言的作者 id 同构（`team:<teamId>:<memberId>`），
                              所以"谁在跑"「谁说了话」用的是同一个 key。 */
-                          const kidId = teamAuthorIdOf(String(m.targetKey ?? ""), kid.key);
+                          const kidId = teamAuthorIdOf(String(m.targetKey ?? ""), teamMemberIdOf(kid));
                           const on = atTargets.includes(kidId);
                           const kidRunning = Boolean(busy?.includes(kidId));
                           return (
@@ -1055,15 +1063,17 @@ export function TeamGroupView({
                                 <strong>{kid.name}</strong>
                                 <small>{kid.profession || "团成员"}</small>
                               </span>
-                              <button
-                                type="button"
-                                className={`team-group__member-at${on ? " is-on" : ""}`}
-                                aria-pressed={on}
-                                title={on ? `把 ${kid.name} 移出本轮` : `@${kid.name}（只叫他本人）`}
-                                onClick={() => toggleAt(kidId)}
-                              >
-                                @
-                              </button>
+                              {/* 团成员同样三件套：运行态点 → @ → 停（11-07 用户：「每个成员 @ 的前面
+                                  有运行动态展示吗」）。合成 id 与群流署名一致，所以"谁在跑"和"他说的"
+                                  是同一个 key；停止也走它（store.stopPartner 会翻成调度目标键）。 */}
+                              <MemberActions
+                                id={kidId}
+                                name={kid.name}
+                                running={kidRunning}
+                                selected={on}
+                                onToggle={toggleAt}
+                                onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+                              />
                             </li>
                           );
                         })}

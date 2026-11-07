@@ -210,4 +210,6 @@ export function parseAgentMentions(
 export function teamAuthorIdOf(teamId: unknown, memberId: unknown): string;
 
 /** 反解合成作者 id；不是这个形状 ⇒ null */
+export function teamMemberIdOf(entry: unknown): string;
+
 export function parseTeamAuthorId(id: unknown): { teamId: string; memberId: string } | null;

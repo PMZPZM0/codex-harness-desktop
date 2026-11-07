@@ -12,7 +12,7 @@
  */
 
 /* 团成员的 @ 目标是**成员本人**（合成 id），编解码只认 team-models 一处（⛔ 别在这里手拼字符串）。 */
-import { teamAuthorIdOf } from "./team-models.mjs";
+import { teamAuthorIdOf, teamMemberIdOf } from "./team-models.mjs";
 
 /** 允许出现在 `@` 前面的中文标点（与用户口径一致：中文标点后可以接 @，ASCII 冒号/反斜杠不行）。 */
 const CN_PUNCT = "，。！？；：、（）【】《》“”‘’〈〉「」『』…—·";
@@ -148,6 +148,11 @@ export function mentionSectionsOf(group, catalog) {
         const key = String(k?.key ?? "");
         if (!key || seenKids.has(key)) continue;
         seenKids.add(key);
+        /* ⛔⛔ 目录里 member 的 `key` 是 `<teamId>:<memberId>`（dispatch-core 拼的），
+           ⛔ 不能当 memberId 用 —— 否则合成 id 会变成 `team:t1:t1:问需`，
+           派活时下发的 targetKey 与目录 key 对不上 ⇒ 报「找不到可调度对象」，运行态从不出现
+           （11-07 实测：点了发送、群里毫无反应）。裸 id 取 `memberId`，取不到才按冒号切末段。 */
+        const memberKey = teamMemberIdOf(k) || key;
         kids.push({
           id: `kid:${key}`,
           /* ⛔⛔ 11-07 用户令：「团成员拆出来，每个成员都可以艾特」「现在只能艾特主代理会话」。
@@ -155,7 +160,7 @@ export function mentionSectionsOf(group, catalog) {
              现在指向**成员本人**：合成 id `team:<teamId>:<memberId>`，
              派活时下发 `kind:"member"` + key `<teamId>:<memberId>`（主进程调度目录里
              每位团成员都有这一条，见 dispatch-core 的 member 分支）⇒ 走成员自己的会话。 */
-          selectId: teamAuthorIdOf(teamId, key),
+          selectId: teamAuthorIdOf(teamId, memberKey),
           name: String(k.name ?? key),
           role: String(k.profession || "团成员"),
           hint: `只叫${String(k.name ?? key)}本人（不经过主理人）`,

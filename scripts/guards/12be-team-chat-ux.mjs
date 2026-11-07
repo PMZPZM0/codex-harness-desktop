@@ -157,10 +157,8 @@ const catalog = [
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   const css = read("src/styles/61-team-mode.css");
-  /* 停止键的**位置与存在性**全交给 `12bg-team-stop-placement`（那条线是它的 owner，
-     用户在三个位置之间改过三次）。这里⛔ 不再断言它 —— 两处断言会互相打架（11-07 实践）。 */
-  ok(/\.team-group__members-stop\.is-busy \{/.test(css),
-    "有人在跑才染红（常红会变成装饰，分不清谁在干活）");
+  /* 停止键的**位置、存在性与运行态视觉**全交给 `12bg-team-stop-placement`（那条线是它的 owner，
+     用户在四个位置之间改过）。这里⛔ 不再断言它 —— 两处断言会互相打架（11-07 实践）。 */
   const running = view.slice(view.indexOf("team-group__running"), view.indexOf("team-group__running") + 1400);
   ok(!/team-group__stop/.test(running),
     "⛔ 运行态条里不再画停止按钮（那一行只说明状态）");
@@ -209,8 +207,8 @@ const catalog = [
     "派活把团成员的合成 id 翻成 kind:member + key <teamId>:<memberId>（⛔ 不翻 = 又派给整团）");
   ok(/const targets = \[\.\.\.picked\.filter\(\(m\) => !m\.muted\), \.\.\.virtuals\]/.test(kidStore),
     "团成员与普通伙伴一起进 targets（静音规则同样适用）");
-  ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /onClick=\{\(\) => toggleAt\(kidId\)\}/.test(view),
-    "成员栏的团成员行有自己的 @ 按钮（用户：「团成员拆出来，每个成员都可以艾特」）");
+  ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /<MemberActions[\s\S]{0,240}?id=\{kidId\}/.test(view),
+    "成员栏的团成员行有自己的 @（与伙伴行共用 MemberActions：运行态点 + @ + 停）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

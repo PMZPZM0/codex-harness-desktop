@@ -681,9 +681,15 @@ export function useTeamGroups() {
       const candidates = threadsOf(groupId, memberId);
       /* ⛔ 运行中 `agents:invoke` 还没返回 threadId ⇒ 渲染层的候选可能全是旧的。
          目标身份（targetKey）一定要给：主进程靠它从委派登记表里找"正在跑的那条"。 */
+      /* ⛔ 11-07：团成员用的是合成 id（`team:<teamId>:<memberId>`），群成员表里没有它。
+         不认它 ⇒ targetKey/memberName 都空，主进程只能靠 threadIds 找（而 threadsOf 也用同一个
+         合成 id 查，同样空）⇒ 点「停」什么也停不掉。这里直接翻成调度目录的目标键
+         `<teamId>:<memberId>`（记录里的 targetKey 是 `member:<teamId>:<memberId>`，
+         主进程按 includes 匹配，能命中）。 */
+      const parsedStop = parseTeamAuthorId(memberId);
       const member = group.members.find((m) => m.id === memberId);
-      const targetKey = member?.targetKey ?? "";
-      const memberName = member?.name ?? "";
+      const targetKey = member?.targetKey ?? (parsedStop ? `${parsedStop.teamId}:${parsedStop.memberId}` : "");
+      const memberName = member?.name ?? (parsedStop ? parsedStop.memberId : "");
       const res = (await window.codex.harnessTeamStop({ threadIds: candidates, targetKey, memberName })) as { ok: boolean; error?: string; reason?: string };
       if (res?.ok) {
         /* 立刻把运行态摘掉（不等引擎回 turn/interrupted —— 有些情况会晚到或不回） */

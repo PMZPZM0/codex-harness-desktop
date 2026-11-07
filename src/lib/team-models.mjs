@@ -515,6 +515,24 @@ export function teamAuthorIdOf(teamId, memberId) {
   return `team:${t}:${m}`;
 }
 
+/**
+ * 调度目录里「团成员」项的**裸成员 id**。
+ *
+ * ⛔⛔ 目录项的 `key` 是 `<teamId>:<memberId>`（dispatch-core 拼的，团队内唯一），
+ *    ⛔ 它不是 memberId：直接拿 key 去拼合成 id 会得到 `team:t1:t1:问需`，
+ *    派活下发的 targetKey 与目录 key 对不上 ⇒ 报「找不到可调度对象」，
+ *    群里表现为"点了发送、毫无反应、也没有运行态"（11-07 真机实测踩过）。
+ * 口径：优先 `memberId` 字段，取不到才按冒号切末段（兼容老 fixture / 手写数据）。
+ */
+export function teamMemberIdOf(entry) {
+  const obj = entry && typeof entry === "object" ? entry : {};
+  const explicit = String(obj.memberId ?? "").trim();
+  if (explicit) return explicit;
+  const key = String(obj.key ?? "").trim();
+  const cut = key.indexOf(":");
+  return cut >= 0 ? key.slice(cut + 1) : key;
+}
+
 /** 反解 `teamAuthorIdOf` 的产物；不是这个形状 ⇒ null。 */
 export function parseTeamAuthorId(id) {
   const src = String(id ?? "");
