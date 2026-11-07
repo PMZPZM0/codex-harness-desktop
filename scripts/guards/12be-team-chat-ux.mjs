@@ -1,0 +1,206 @@
+/**
+ * 群聊三块 + 两处布局压缩（11-07 用户令）
+ *
+ * 用户原话：
+ *   「伙伴资料卡（点头像看身份/模型/群内统计）、@ 候选面板（机器人单独一类）、群内搜索三块 这个继续完成一下」
+ *   「然后这个输入框上面这个列表，改成@面板，然后停止放到群成员列表卡片后面，
+ *     上面太宽了，下面输入框也是太宽了，聊天内容看不到多少了」
+ *   「专家团会话，总是主代理说话，代替其他成员回复，其他成员的会话不会直接到群里」
+ *
+ * ⛔ 这个守卫盯的是**因果链**，不是"有没有这个词"：
+ *   ① 口径在纯函数里（`team-mention.mjs` / `team-search.mjs`）—— 面板只是画；
+ *   ② 视图真的接线（面板/资料卡/搜索/已选 chip 都渲染出来，⛔ 不是写了组件没挂）；
+ *   ③ 布局压缩是**可验证的**：常驻 chip 整块消失、输入框 min-height 回到 64；
+ *   ④ 团成员产出直投群流：事件分支 + 合成作者 id + 提示词不许转述。
+ */
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
+import { searchGroupRows } from "../../src/lib/team-search.mjs";
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
+const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
+/* ⛔ 负向结构断言必须剥注释（项目纪律）：注释里引用旧实现不能把断言顶红。 */
+const codeOnly = (source) => String(source)
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+
+let checks = 0;
+let fails = 0;
+const ok = (condition, message) => {
+  checks++;
+  console.log(`  ${condition ? "✓" : "✗"} 【team-chat-ux】${message}`);
+  if (!condition) fails++;
+};
+
+const group = {
+  id: "g1",
+  name: "交付群",
+  leadId: "u1",
+  members: [
+    { id: "u1", kind: "human", name: "我" },
+    { id: "p1", kind: "bot", name: "星象", targetKind: "expert", targetKey: "xingxiang", targetProfession: "视觉设计" },
+    { id: "p2", kind: "bot", name: "软件开发专家团", targetKind: "team", targetKey: "t1" },
+    { id: "p3", kind: "bot", name: "空壳", targetKind: "", targetKey: "" },
+    { id: "p4", kind: "bot", name: "静音的人", targetKind: "expert", targetKey: "muted", muted: true },
+  ],
+};
+const catalog = [
+  { kind: "expert", key: "chengshu", name: "承枢", profession: "交付总监", teamId: "t1" },
+  { kind: "member", key: "m1", name: "洞明", profession: "逆向工程专家", teamId: "t1" },
+  { kind: "member", key: "m2", name: "观澜", profession: "前端工程师", teamId: "t1" },
+];
+
+/* ── ① @ 面板口径：机器人单独一类 + 团成员落到团那一行 ── */
+{
+  const sections = mentionSectionsOf(group, catalog);
+  ok(sections.map((s) => s.key).join(",") === "bot,team,kid",
+    `面板分三段且机器人单独一类（实得 ${sections.map((s) => s.key).join(",") || "空"}）`);
+  const bot = sections.find((s) => s.key === "bot");
+  ok(bot.items.length === 3 && bot.items.every((i) => i.id !== "u1"),
+    `⛔ 机器人单独一类：**只列伙伴**，不列人（群里只有你自己，@ 自己毫无意义；实得 ${bot.items.map((i) => i.name).join("/")}）`);
+  ok(bot.items.every((i) => !String(i.selectId).startsWith("team:")),
+    "⛔ selectId 永远是**群成员 id**（合成 id 不是群成员，派活会被判未绑定）");
+  const team = sections.find((s) => s.key === "team");
+  ok(team && team.items.length === 1 && team.items[0].selectId === "p2",
+    "专家团占一行，点它 = 叫整团（selectId 是团那一行的成员 id）");
+  const kid = sections.find((s) => s.key === "kid");
+  ok(kid && kid.items.length === 2 && kid.items.every((i) => i.selectId === "p2"),
+    "⛔ 团成员也落到**团那一行**（团内分派由主理人决定，不给团成员单独派活）");
+  ok(kid.items[0].avatar.targetKind === "member" && kid.items[0].avatar.targetKey === "m1",
+    "团成员的头像按自己的身份画（不是团徽章）");
+  ok(team.items[0].avatar.targetKind === "expert" && team.items[0].avatar.targetKey === "chengshu",
+    "团那一行画**主理人**的脸（用户：「肯定要是主理人➕成员」）");
+  ok(bot.items.find((i) => i.id === "p3")?.unbound === true,
+    "未绑定的伙伴在面板里标出来（⛔ 不隐藏：隐藏会让人以为「没这个人」）");
+  ok(bot.items.find((i) => i.id === "p4")?.muted === true, "静音的伙伴在面板里标出来");
+}
+
+/* ── ② @ 触发与替换（打字触发 / 半角全角边界） ── */
+{
+  const cases = [
+    ["@", 1, ""],
+    ["请 @洞", 4, "洞"],
+    ["第一行\n@观", 6, "观"],
+    ["邮箱 a@b", 6, null],
+  ];
+  for (const [text, caret, expect] of cases) {
+    const trigger = mentionTriggerOf(text, caret);
+    ok((trigger ? trigger.query : null) === expect,
+      `triggerOf(${JSON.stringify(text)}, ${caret}) ⇒ ${JSON.stringify(expect)}（实得 ${JSON.stringify(trigger ? trigger.query : null)}）`);
+  }
+  const applied = applyMention("请 @洞 帮我看下", { start: 2 }, "洞明");
+  ok(applied.text === "请 @洞明 帮我看下", `替换保留原词尾后的正文（实得 ${JSON.stringify(applied.text)}）`);
+  ok(applied.caret === 2 + 2 + 2, `caret 落在替换后的词尾（实得 ${applied.caret}）`);
+  ok(matchMentionCandidates([{ name: "洞见·逆向", role: "逆向" }, { name: "洞明", role: "逆向" }], "洞", 1)[0].name === "洞明",
+    "同分时名字短的优先（输入 `@洞` 先出「洞明」而不是「洞见·逆向」）");
+  ok(matchMentionCandidates([{ name: "甲" }, { name: "乙" }], "", 1).length === 1, "空查询也有候选（`@` 一打就出列表）");
+}
+
+/* ── ③ 群内搜索口径：多词 AND / 结果可跳转 / 不搜卡片 ── */
+{
+  const rows = [
+    { key: "k1", itemId: "i1", authorId: "p1", at: 1, kind: "text", text: "周报 已经 写好" },
+    { key: "k2", itemId: "i2", authorId: "p2", at: 2, kind: "text", text: "毛利 口径 待确认" },
+    { key: "k3", itemId: "i3", authorId: "p2", at: 3, kind: "card", text: "周报" },
+    { key: "k4", itemId: "i4", authorId: "p1", at: 4, kind: "text", text: "毛利 口径 已对齐" },
+  ];
+  const hit = searchGroupRows(rows, "毛利 口径");
+  ok(hit.map((h) => h.key).join(",") === "k4,k2", `多词 AND + 按时间倒序（实得 ${hit.map((h) => h.key).join(",")}）`);
+  ok(hit.every((h) => h.itemId && h.key), "每条结果都带 key/itemId（跳转要靠它定位 DOM）");
+  ok(!hit.some((h) => h.key === "k3"), "⛔ 卡片行不参与搜索（没有正文可读）");
+  ok(searchGroupRows(rows, "   ").length === 0, "空查询不返回结果（⛔ 不要一打开就刷一屏）");
+  const long = "x".repeat(200) + "命中" + "y".repeat(200);
+  const one = searchGroupRows([{ key: "k9", itemId: "i9", authorId: "p1", at: 5, kind: "text", text: long }], "命中")[0];
+  ok(one && one.snippet.length < 100, `snippet 有长度上限（实得 ${one ? one.snippet.length : "无"}）`);
+}
+
+/* ── ④ 视图接线：三块都真的渲染出来了 ── */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/<TeamMentionPanel/.test(view) && /mention\.open &&/.test(view),
+    "@ 候选面板随 `mention.open` 渲染（不是常驻）");
+  ok(/<TeamProfileCard/.test(view) && /openProfile\(/.test(view) && /setProfile\(\{ memberId/.test(view),
+    "资料卡：点头像拿锚点坐标并渲染浮层");
+  ok(/<TeamSearchPanel/.test(view) && /searchGroupRows|onJump=\{jumpToRow\}/.test(view),
+    "群内搜索面板挂到群头");
+  ok(/data-item-id=\{row\.itemId\}/.test(view) && /getAttribute\("data-item-id"\)/.test(view),
+    "搜索跳转锚点与消息 DOM 对齐（`data-item-id` 一处写、一处读）");
+  ok(/const need = rows\.length - index/.test(view) && /setVisibleCount\(Math\.min\(rows\.length, need \+ 6\)\)/.test(view),
+    "跳转前先补分页窗口（目标不在 DOM 里时滚动会静默失败）");
+  ok(/is-search-hit/.test(view) && /setFlashKey\(""\)/.test(view) || /setFlashKey\(\(cur\) => \(cur === hit\.key \? "" : cur\)\)/.test(view),
+    "命中高亮是**临时**的（1.6s 后摘掉，⛔ 不留永久标记）");
+  ok(/team-group__selected/.test(view) && /atTargets\.length > 0/.test(view),
+    "已选 @ 只在真的选了人时出现一行");
+}
+
+/* ── ⑤ 布局压缩：常驻 chip 整块消失 + 输入框回到 64 ── */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(!/team-group__atbar/.test(view),
+    "⛔ 输入框上方那排常驻 chip 整块删除（用户：「上面太宽了」——根因就是它）");
+  const css = read("src/styles/61-team-mode.css");
+  ok(/\.team-composer \.team-composer__input \{ min-height: 64px; \}/.test(css),
+    "输入框 min-height 压到 64（用户：「下面输入框也是太宽了」；旧值 110 在文件前半段，靠源码顺序覆盖）");
+  const lastMinHeight = [...css.matchAll(/\.team-composer \.team-composer__input \{ min-height: (\d+)px; \}/g)].pop();
+  ok(!lastMinHeight || Number(lastMinHeight[1]) <= 64,
+    `min-height 的**最后一条**规则必须 ≤64（实得 ${lastMinHeight ? lastMinHeight[1] : "无覆盖"}）`);
+  ok(/\.team-mention \{/.test(css) && /\.team-search \{/.test(css) && /\.team-profile \{/.test(css),
+    "三块的样式都在（面板/搜索/资料卡）");
+  ok(/\.team-msg\.is-search-hit \{/.test(css), "搜索命中高亮的样式存在");
+}
+
+/* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const css = read("src/styles/61-team-mode.css");
+  ok(/team-group__members-stop/.test(view) && /team-group__members-foot/.test(view),
+    "停止键落在成员栏底部（用户：「停止放到群成员列表卡片后面」）");
+  ok(/\.team-group__members-stop\.is-busy \{/.test(css),
+    "有人在跑才染红（常红会变成装饰，分不清谁在干活）");
+  const running = view.slice(view.indexOf("team-group__running"), view.indexOf("team-group__running") + 1400);
+  ok(!/team-group__stop/.test(running),
+    "⛔ 运行态条里不再画停止按钮（那一行只说明状态）");
+}
+
+/* ── ⑦ 输入框工具行：@ 入口 + 群菜单不占另一行 ── */
+{
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  ok(/onOpenMention\?: \(\) => void;/.test(composer) && /mentionCount\?: number;/.test(composer)
+    && /toolsSlot\?: React\.ReactNode;/.test(composer),
+    "三个新 prop 都在 Props 里（⛔ 少一个就是「写了不生效」）");
+  ok(/aria-label="选择伙伴（@）"/.test(composer) && /team-composer__at-badge/.test(composer),
+    "@ 按钮带已选人数徽标");
+  ok(/\{toolsSlot\}/.test(composer), "群菜单按钮渲染在工具行（FLOAT 形态由父层不传）");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/onOpenMention=\{openMentionPanel\}/.test(view) && /mentionCount=\{atTargets\.length\}/.test(view)
+    && /toolsSlot=\{!floatMenu \?/.test(view),
+    "群视图把三个 prop 真的传下去了（⛔ 组件加了 prop 不传 = 按钮不存在）");
+}
+
+/* ── ⑧ 专家团成员产出直投群流（用户：「总是主代理说话，代替其他成员回复」） ── */
+{
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/event\.type === "team-run"/.test(store) && /teamAuthorIdOf\(teamId, memberKey\)/.test(store),
+    "团成员的运行事件以**合成作者 id**写进群流（署名是成员自己）");
+  ok(/phase === "started"[\s\S]{0,400}appendLive|setLive/.test(store),
+    "started 建流式卡（同一个 runId 只更新一张）");
+  ok(/appendMessageRef\.current\(hit\.gid/.test(store), "finished 落一条真消息（⛔ 只活在流式卡里就不算进群）");
+  ok(/forTeam: partner\.targetKind === "team"/.test(store),
+    "派活时告诉主理人「成员产出直接进群，别转述」");
+  const models = read("src/lib/team-models.mjs");
+  ok(/export function teamAuthorIdOf/.test(models) && /export function parseTeamAuthorId/.test(models),
+    "合成作者 id 的编解码只有一处（⛔ 别在视图里手拼字符串）");
+  ok(/本群会把被你调度的成员产出\*\*直接显示在群里\*\*/.test(models) && /不要复述成员原文/.test(models),
+    "提示词里明说：⛔ 不要复述成员原文、不要写「以下是原话」");
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  ok(/forTeam: partner\.targetKind === "team"/.test(ipc),
+    "主进程那条派活路径（定时任务 / 团成员调用）同口径");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/parseTeamAuthorId\(id\)/.test(view) && /const nameOf = \(id: string\)/.test(view),
+    "视图按合成 id 反查名字（目录没回来就退回 memberId，⛔ 不编名字）");
+}
+
+console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
+process.exit(fails ? 1 : 0);

@@ -21,7 +21,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RefObject } from "react";
-import { Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AtSign, Bot, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
@@ -114,6 +114,12 @@ type Props = {
   fileCandidates?: Array<{ path: string; source: string }>;
   /** 模型下拉末尾的「更多设置…」—— 与主对话下拉同款入口（打开 设置 → 模型）。 */
   onOpenModelSettings?: () => void;
+  /** 11-07 用户令：输入框上方那排常驻 @ chip 收进面板，改由这个按钮召唤。 */
+  onOpenMention?: () => void;
+  /** 本轮已 @ 的人数（画徽标；0 = 不画） */
+  mentionCount?: number;
+  /** 工具行右端的「群菜单」按钮（FLOAT 形态下父层不传，按钮画在群视图右下）。 */
+  toolsSlot?: React.ReactNode;
 };
 
 type ModelOption = {
@@ -139,6 +145,7 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
   opts, onOpts, sending, canSend, onSend, targetNames, fileCandidates = [], onOpenModelSettings,
+  onOpenMention, mentionCount = 0, toolsSlot = null,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
@@ -365,6 +372,20 @@ export function TeamComposer({
           <button type="button" className="icon-button team-composer__icon" title="添加文件（本地绝对路径）" aria-label="添加文件" onClick={() => void pickFiles()}>
             <Paperclip size={15} />
           </button>
+          {/* 11-07 用户令：「输入框上面这个列表，改成 @ 面板」——
+              原来那块常驻 chip 拆掉了，入口收敛成这一个按钮（打开面板选人，已选的人仍以 chip 显示在框外）。 */}
+          {onOpenMention && (
+            <button
+              type="button"
+              className={`icon-button team-composer__icon team-composer__at${mentionCount > 0 ? " is-on" : ""}`}
+              title="选择伙伴（@）"
+              aria-label="选择伙伴（@）"
+              onClick={onOpenMention}
+            >
+              <AtSign size={15} />
+              {mentionCount > 0 && <span className="team-composer__at-badge">{mentionCount}</span>}
+            </button>
+          )}
           <ComposerMenu
             icon={ShieldCheck}
             label="权限"
@@ -381,7 +402,9 @@ export function TeamComposer({
           <span className="team-composer__count" title="本轮输入字符数（不是 token）">{value.length} 字</span>
           <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => { if (v === "__model_settings__") { onOpenModelSettings?.(); return; } onOpts({ ...opts, model: v }); }} onOpen={() => void loadModels()} width={360} disabled={sending} />
           <EffortPicker levels={["low", "medium", "high", "xhigh"]} value={opts.effort || "high"} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
-          <button type="button" className="team-composer__send" onClick={onSend} disabled={sending || !canSend} title={targetNames.length ? `派给 ${targetNames.join("、")}` : "先点上面的 @ 选伙伴"}>
+          {/* 群菜单按钮（飞书 `needShowMenuButton`）：从输入框上方搬到工具行，输入区少占一行 */}
+          {toolsSlot}
+          <button type="button" className="team-composer__send" onClick={onSend} disabled={sending || !canSend} title={targetNames.length ? `派给 ${targetNames.join("、")}` : "先点 @ 选伙伴"}>
             <Send size={15} /> 发送
           </button>
         </div>

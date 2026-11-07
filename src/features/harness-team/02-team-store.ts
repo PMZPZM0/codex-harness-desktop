@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
-import { groupContextBlock, parseAgentMentions } from "../../lib/team-models.mjs";
+import { groupContextBlock, parseAgentMentions, teamAuthorIdOf } from "../../lib/team-models.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
 type ListResult = {
@@ -95,6 +95,10 @@ export function useTeamGroups() {
      ⛔ 用 ref 转一手：事件 effect 挂在组件挂载时，而 refresh/loadMessages 是后面才 useCallback 出来的。 */
   const refreshRef = useRef<() => void>(() => undefined);
   const loadMessagesRef = useRef<(groupId: string) => void>(() => undefined);
+  /** 追加一条群消息（定义在后面；事件回调要能用到 ⇒ 转一手 ref，⛔ 不靠闭包旧值） */
+  const appendMessageRef = useRef<(groupId: string, entry: Record<string, unknown>) => Promise<RowsResult>>(
+    async () => ({ ok: false, rows: [] }),
+  );
 
   /**
    * 委派事件里的 record → 本群哪个成员（+ 哪个群）。
@@ -123,6 +127,26 @@ export function useTeamGroups() {
     return null;
   };
 
+  /**
+   * `team-run` 事件 → 本群哪个「专家团」伙伴在跑。
+   * ⛔ 只认 busy 里有它的那一行：主对话 / 别的群也可能同时叫同一个团，
+   *    少了这道判据就会把别人的成员产出投进本群。
+   * ⛔ 成员是团内部的事（不在 group.members 里），所以只能按 teamId 反查团伙伴。
+   */
+  const teamDispatchHitOf = (teamId: string) => {
+    const id = String(teamId ?? "");
+    if (!id) return null;
+    for (const g of groupsRef.current) {
+      const busyIds = busyRef.current[g.id] ?? [];
+      if (!busyIds.length) continue;
+      const partner = g.members.find(
+        (m) => m.kind === "bot" && m.targetKind === "team" && String(m.targetKey ?? "") === id && busyIds.includes(m.id),
+      );
+      if (partner) return { gid: g.id, partner };
+    }
+    return null;
+  };
+
   useEffect(() => {
     const off = window.codex.onHarnessEvent?.((event: Record<string, unknown>) => {
       if (!event) return;
@@ -134,6 +158,78 @@ export function useTeamGroups() {
         loadMessagesRef.current(gid);
         return;
       }
+      /* ⛔⛔ 11-07 用户实测：「专家团会话，总是主代理说话，代替其他成员回复，其他成员会话
+         不会直接到群里」。根因：成员产出只是 `team_member_invoke` 的返回值（只有主理人看得到），
+         群流里自然只剩主理人一条「以下是原话」。
+         ⇒ 把 `team-run` 事件按**成员自己的身份**投进群流：开始/增量走流式卡，完成落一条真消息。
+         ⛔ 落盘 id 用 runId（同一次运行重放也只会覆盖同一条，天然幂等）。 */
+      if (event.type === "team-run") {
+        const runPhase = String(event.phase ?? "");
+        const run = (event.run ?? {}) as Record<string, unknown>;
+        const teamId = String(run.teamId ?? "");
+        const memberKey = String(run.memberId ?? "");
+        const memberThread = String(run.memberThreadId ?? event.memberThreadId ?? "");
+        if (!teamId || !memberKey || !memberThread) return;
+
+        if (runPhase === "started") {
+          const hit = teamDispatchHitOf(teamId);
+          if (!hit) return;
+          setLiveByGroup((prev) => ({
+            ...prev,
+            [hit.gid]: {
+              ...(prev[hit.gid] ?? {}),
+              [memberThread]: {
+                threadId: memberThread,
+                memberId: teamAuthorIdOf(teamId, memberKey),
+                name: String(run.memberName ?? memberKey),
+                text: String(run.output ?? ""),
+                startedAt: Number(run.startedAt ?? 0) || Date.now(),
+                status: "running",
+              },
+            },
+          }));
+          return;
+        }
+
+        if (runPhase === "delta") {
+          const gid = Object.keys(liveRef.current).find((k) => liveRef.current[k]?.[memberThread]);
+          if (!gid) return;
+          setLiveByGroup((prev) => {
+            const cur = prev[gid]?.[memberThread];
+            if (!cur) return prev;
+            return { ...prev, [gid]: { ...prev[gid], [memberThread]: { ...cur, text: cur.text + String(event.text ?? "") } } };
+          });
+          return;
+        }
+
+        if (runPhase !== "finished") return;
+        const hit = teamDispatchHitOf(teamId);
+        const liveGid = Object.keys(liveRef.current).find((k) => liveRef.current[k]?.[memberThread]);
+        if (liveGid) {
+          window.setTimeout(() => {
+            if (!alive.current) return;
+            setLiveByGroup((prev) => {
+              const bucket = { ...(prev[liveGid] ?? {}) };
+              delete bucket[memberThread];
+              return { ...prev, [liveGid]: bucket };
+            });
+          }, 300);
+        }
+        if (!hit || run.status !== "done") return;
+        const output = String(run.output ?? "").trim();
+        if (!output) return;
+        void appendMessageRef.current(hit.gid, {
+          id: `team-run:${String(run.runId ?? memberThread)}`,
+          authorId: teamAuthorIdOf(teamId, memberKey),
+          authorKind: "bot",
+          senderKind: "member",
+          threadId: memberThread,
+          text: output,
+          via: { memberId: hit.partner.id, name: hit.partner.name },
+        }).then((res) => { if (res?.ok && alive.current) loadMessagesRef.current(hit.gid); });
+        return;
+      }
+
       if (event.type !== "delegate-run") return;
       const phase = String(event.phase ?? "");
       const record = (event.record ?? {}) as Record<string, unknown>;
@@ -301,6 +397,7 @@ export function useTeamGroups() {
     }
     return res;
   }, []);
+  appendMessageRef.current = appendMessage;
 
   /**
    * 记一条用量。⛔ 记账失败**不许影响派活结果**（账本是旁路观测，不是主链路）。
@@ -406,7 +503,10 @@ export function useTeamGroups() {
         /* 真实 token（引擎 last 桶）：拿不到就 0，⛔ 不编造 */
         let tokens: { input: number; output: number; total: number } | null = null;
         try {
-          const ctx = groupContextBlock(group, { forMemberId: partner.id });
+          /* ⛔⛔ 11-07 用户令：「专家团会话总是主代理说话，代其他成员回复，其他成员的会话不会直接到群里」
+             ⇒ 团的成员产出由 `team-run` 事件**以成员自己的署名**直投群流（见本文件 team-run 分支），
+                同时在这里告诉主理人「别转述，只出统筹结论」。⛔ 只对团生效：单个伙伴没有"成员产出"。 */
+          const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team" });
           const query = ctx ? `${ctx}\n\n---\n\n${bodyText}` : bodyText;
           const res = (await window.codex.invokeAgent({
             kind: partner.targetKind as "expert" | "team" | "member" | "subagent" | "cli",

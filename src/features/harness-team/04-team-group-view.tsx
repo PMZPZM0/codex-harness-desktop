@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Settings2, X } from "lucide-react";
+import { Search, Settings2, Square, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -24,13 +24,18 @@ import { TeamRuler } from "./07-team-ruler";
 import { TeamProcess } from "./09-team-process";
 import { TeamCards } from "./11-team-cards";
 import { MemberAvatar } from "./13-team-avatar";
+import { TeamProfileCard } from "./14-team-profile-card";
+import { TeamMentionPanel } from "./15-team-mention-panel";
+import { TeamSearchPanel } from "./16-team-search";
 import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-composer";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
 import { cancelDelegateRetries, subscribeTeamRuntime, teamRuntimeSnapshot } from "../../lib/team-runtime.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
-import { mergeConsecutive, parseCommand, parseMentions, resolveManagerId } from "../../lib/team-models.mjs";
+import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId } from "../../lib/team-models.mjs";
+/* 11-07：@ 提及与群内搜索的口径全部在纯函数里（可单测），视图只做接线。 */
+import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../lib/team-mention.mjs";
 /* 11-07 界面优化：消息流按天分隔（飞书群同款）——连续几十条跨天消息只靠时间看不出"这是哪天"。 */
 import { dayKeyOf, dayLabelOf } from "../../lib/team-view.mjs";
 /* ⛔ 贴底走统一原语（守卫禁止在时间线里直接把 scrollTop 赋成 scrollHeight ——
@@ -118,6 +123,16 @@ export function TeamGroupView({
   const [nameError, setNameError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [copied, setCopied] = useState("");
+  /* 11-07 用户令：点伙伴头像 → 资料卡（身份 / 模型 / 群内统计）。⛔ 独立组件，别往这里塞内容。 */
+  const [profile, setProfile] = useState<{ memberId: string; x: number; y: number } | null>(null);
+  /* @ 候选面板：点 @ 按钮（多选，面板不关）与在输入框打 `@`（选完即替换并关闭）共用一份状态。
+     ⛔ `start` 只在 typed 模式用（替换那段 `@查询词`），面板多选模式不碰正文。 */
+  const [mention, setMention] = useState<{ open: boolean; query: string; start: number; typed: boolean }>(
+    { open: false, query: "", start: 0, typed: false },
+  );
+  const [searchOpen, setSearchOpen] = useState(false);
+  /** 搜索跳转后的短暂高亮（1.6s 后清掉，⛔ 不留永久 class） */
+  const [flashKey, setFlashKey] = useState("");
   /* 过程折叠（用户：「这样不会刷屏」）：每条消息自带一个折叠块、默认收起。
      ⛔ 11-06 用户：「群头那个『展开过程』多余，可以不要了」⇒ 全局开关整体删除，
         只在单条消息上开合；FoldGroup 自己管手动状态，⛔ 不留死 state。 */
@@ -222,6 +237,14 @@ export function TeamGroupView({
     if (id === "automation") return "定时任务";
     /* 11-07：系统播报不是群成员，直接露 id 会显示成英文「system」（真机截图实测）。 */
     if (id === "system") return "系统";
+    /* 11-07 用户令：专家团成员要「以自己的身份」在群里说话。作者 id 是
+       `team:<teamId>:<memberId>`（主进程/渲染层都用这一个口径），名字从调度目录查 —— 目录还没回来
+       就退回 memberId（⛔ 不编名字，也不把整条消息丢掉）。 */
+    const teamAuthor = parseTeamAuthorId(id);
+    if (teamAuthor) {
+      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && t.key === teamAuthor.memberId);
+      return kid?.name || teamAuthor.memberId;
+    }
     const m = group.members.find((x) => x.id === id);
     return m ? personNameOf(m) : id;
   };
@@ -229,12 +252,27 @@ export function TeamGroupView({
   /* 团这一行的职业写主理人的（「交付总监」）；目录里 team 条目的 profession 是「4 位成员」，
      那是人数不是身份（用户要看的是"谁、什么角色"）。 */
   const roleOf = (id: string) => {
+    const teamAuthor = parseTeamAuthorId(id);
+    if (teamAuthor) {
+      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && t.key === teamAuthor.memberId);
+      return kid?.profession || "团成员";
+    }
     const m = memberOf(id);
     if (!m) return "";
     return teamLeadOf(m)?.profession || m.targetProfession || "";
   };
-  /** 按 id 取"画头像用的那个 member"（团 ⇒ 主理人的 key；未知 id ⇒ 只有名字的占位） */
+  /** 按 id 取"画头像用的那个 member"（团 ⇒ 主理人的 key；团成员 ⇒ 目录里那条；未知 id ⇒ 只有名字的占位） */
   const faceOfId = (id: string) => {
+    const teamAuthor = parseTeamAuthorId(id);
+    if (teamAuthor) {
+      return {
+        id: teamAuthor.memberId,
+        kind: "bot",
+        name: nameOf(id),
+        targetKind: "member",
+        targetKey: teamAuthor.memberId,
+      };
+    }
     const m = memberOf(id);
     return m ? faceOf(m) : { id, name: nameOf(id) };
   };
@@ -258,6 +296,78 @@ export function TeamGroupView({
 
   const toggleAt = (id: string) => {
     setAtTargets((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  /* ── 11-07 三块（资料卡 / @ 面板 / 群内搜索）──────────────────────────────── */
+
+  /** 点头像弹资料卡（锚点取头像的位置，卡片自己夹到视口内） */
+  const openProfile = (event: React.MouseEvent<HTMLElement>, memberId: string) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    setProfile({ memberId, x: rect.left, y: rect.bottom + 6 });
+  };
+  const closeMention = () => setMention({ open: false, query: "", start: 0, typed: false });
+  const openMentionPanel = () => setMention({ open: true, query: "", start: 0, typed: false });
+
+  /* 输入框内容变化：顺手判一次 `@` 触发（⛔ 判据只在纯函数里，别在这里写第二套）。 */
+  const updateText = (next: string) => {
+    setText(next);
+    const caret = composerRef.current?.selectionStart ?? next.length;
+    const trigger = mentionTriggerOf(next, caret);
+    if (trigger) {
+      setMention({ open: true, query: trigger.query, start: trigger.start, typed: true });
+      return;
+    }
+    /* 只是「打字触发」的会话要跟着关；面板按钮打开的多选不因继续打字而关 */
+    setMention((prev) => (prev.typed ? { open: false, query: "", start: 0, typed: false } : prev));
+  };
+
+  /** 面板候选（机器人 / 专家团 / 团成员）—— 目录与群成员一变就重算 */
+  const mentionSections = useMemo(() => mentionSectionsOf(group, catalog), [group, catalog]);
+
+  const pickCandidate = (item: { selectId: string; name: string }) => {
+    const already = atTargets.includes(item.selectId);
+    if (mention.typed) {
+      /* 打字触发：把 `@查询词` 换成 `@名字 `，并把这个人加进本轮 @（已选中就只换文本） */
+      if (!already) setAtTargets((prev) => [...prev, item.selectId]);
+      const applied = applyMention(text, { start: mention.start }, item.name);
+      setText(applied.text);
+      closeMention();
+      requestAnimationFrame(() => {
+        const el = composerRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(applied.caret, applied.caret);
+      });
+      return;
+    }
+    /* 按钮打开 = 多选面板：点一下切换，面板不关（飞书同款） */
+    setAtTargets((prev) => (already ? prev.filter((x) => x !== item.selectId) : [...prev, item.selectId]));
+  };
+
+  /**
+   * 搜索命中 → 跳到那条消息。
+   * ⛔ 分页是「从尾部往前取 visibleCount 条」⇒ 目标在这一页之外时先补足窗口，
+   *    否则 DOM 里根本没有那个节点（滚动会静默失败）。
+   */
+  const jumpToRow = (hit: { key: string; itemId: string }) => {
+    const index = rows.findIndex((r) => r.key === hit.key);
+    if (index < 0) return;
+    const need = rows.length - index;
+    if (need > visibleCount) setVisibleCount(Math.min(rows.length, need + 6));
+    setSearchOpen(false);
+    setFlashKey(hit.key);
+    window.setTimeout(() => setFlashKey((cur) => (cur === hit.key ? "" : cur)), 1600);
+    /* 等 React 把新的一页提交到 DOM 再量位置（两帧够用；单帧在长列表里会量到旧节点） */
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const stream = streamRef.current;
+      if (!stream) return;
+      const target = Array.from(stream.querySelectorAll<HTMLElement>("[data-item-id]"))
+        .find((el) => el.getAttribute("data-item-id") === hit.itemId);
+      if (!target) return;
+      const offset = target.getBoundingClientRect().top - stream.getBoundingClientRect().top + stream.scrollTop - 24;
+      stickRef.current = false; // 正在看历史：⛔ 别被贴底 effect 拽回底部
+      scrollToOffsetInstant(stream, Math.max(0, offset));
+    }));
   };
 
   const saveName = async () => {
@@ -375,7 +485,13 @@ export function TeamGroupView({
   };
 
   const askAgain = (row: GroupMessageRow) => {
-    setAtTargets([row.authorId]);
+    /* 团成员的消息：@ 的是**它所属的团那一行**（团内分派由主理人决定），
+       ⛔ 不能把合成 id 塞进 atTargets（那不是群成员，派活会被判"未绑定"）。 */
+    const teamAuthor = parseTeamAuthorId(row.authorId);
+    const owner = teamAuthor
+      ? group.members.find((m) => m.targetKind === "team" && String(m.targetKey ?? "") === teamAuthor.teamId)
+      : null;
+    setAtTargets([owner?.id ?? row.via?.memberId ?? row.authorId]);
     composerRef.current?.focus();
   };
 
@@ -493,27 +609,52 @@ export function TeamGroupView({
                 )}
               </>
             )}
+            <span className="team-group__sub" title={ctxParts.join(" · ")}>
+              {group.members.length} 位成员 · {partners.length} 个伙伴
+              {ctxParts.length > 0 && ` · ${ctxParts.join(" · ")}`}
+            </span>
           </div>
-          <span className="team-group__sub">
-            {group.members.length} 位成员 · {partners.length} 个伙伴
-            {ctxParts.length > 0 && ` · ${ctxParts.join(" · ")}`}
-          </span>
         </div>
         <div className="team-group__head-actions">
           <div className="team-group__avatars" title={`${group.members.length} 位成员`}>
             {group.members.slice(0, 4).map((m) => (
-              <span key={m.id} className={`team-group__avatar has-agent${m.muted ? " is-muted" : ""}`} title={personNameOf(m)}>
+              <button
+                key={m.id}
+                type="button"
+                className={`team-group__avatar has-agent${m.muted ? " is-muted" : ""}`}
+                title={`${personNameOf(m)} · 点开资料卡`}
+                aria-label={`${personNameOf(m)} 的资料卡`}
+                onClick={(e) => openProfile(e, m.id)}
+              >
                 {/* ⛔ 团画主理人的头像（见 faceOf）：群头一排是"人"，不是一个团团徽 */}
                 <MemberAvatar member={faceOf(m)} size={22} />
-              </span>
+              </button>
             ))}
             {group.members.length > 4 && <span className="team-group__avatar is-more">+{group.members.length - 4}</span>}
           </div>
           <span className="team-group__head-sep" aria-hidden />
+          <button
+            type="button"
+            className={`team-group__icon-btn${searchOpen ? " is-on" : ""}`}
+            onClick={() => setSearchOpen((v) => !v)}
+            title="群内搜索"
+            aria-label="群内搜索"
+            aria-expanded={searchOpen}
+          >
+            <Search size={14} />
+          </button>
           <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回群聊" : "群设置"}>
             {showSettings ? <X size={14} /> : <Settings2 size={14} />} <span>{showSettings ? "返回" : "设置"}</span>
           </button>
         </div>
+        {searchOpen && (
+          <TeamSearchPanel
+            rows={rows}
+            authorName={nameOf}
+            onJump={jumpToRow}
+            onClose={() => setSearchOpen(false)}
+          />
+        )}
       </header>
 
       {showSettings ? (
@@ -594,18 +735,26 @@ export function TeamGroupView({
                     <article
                       className={`team-msg${isBot ? " is-bot" : " is-human"}${
                         row.senderKind && row.senderKind !== "user" ? ` is-${row.senderKind}` : ""
-                      }`}
+                      }${flashKey === row.key ? " is-search-hit" : ""}`}
                       data-sender={row.senderKind || "user"}
                       data-thread={row.threadId}
                       data-item={row.itemId}
                       data-item-id={row.itemId}
                       data-ruler-mark={isBot ? undefined : "user"}
                     >
-                      <MemberAvatar
-                        member={faceOfId(row.authorId)}
-                        size={28}
-                        className="team-msg__avatar has-agent"
-                      />
+                      {memberOf(row.authorId) ? (
+                        <button
+                          type="button"
+                          className="team-msg__avatar-btn"
+                          onClick={(e) => openProfile(e, row.authorId)}
+                          title={`${authorName} · 点开资料卡`}
+                          aria-label={`${authorName} 的资料卡`}
+                        >
+                          <MemberAvatar member={faceOfId(row.authorId)} size={28} className="team-msg__avatar has-agent" />
+                        </button>
+                      ) : (
+                        <MemberAvatar member={faceOfId(row.authorId)} size={28} className="team-msg__avatar has-agent" />
+                      )}
                       <div className="team-msg__body">
                         <div className="team-msg__meta">
                           {synthetic ? (
@@ -707,7 +856,7 @@ export function TeamGroupView({
                   data-live={run.threadId}
                 >
                   <MemberAvatar
-                    member={group.members.find((x) => x.id === run.memberId) ?? { id: run.memberId, name: run.name }}
+                    member={faceOfId(run.memberId)}
                     size={28}
                     className="team-msg__avatar has-agent"
                   />
@@ -732,6 +881,8 @@ export function TeamGroupView({
             <TeamRuler rows={shownRows} scrollRef={streamRef} containerRef={wrapRef} />
             </div>
 
+            {/* ⛔ 11-07 用户令：「停止放到群成员列表卡片后面」——状态条只留一行文字，
+                停止键搬到右侧成员栏底部（那里也是"谁在跑"的名单本身）。 */}
             <div className={`team-group__running${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`} role="status" aria-live="polite">
               <span className="team-group__dot" aria-hidden />
               <span className="team-group__running-text">
@@ -741,15 +892,6 @@ export function TeamGroupView({
                     ? `全局另有 ${delegateRunning} 个调度任务在收尾（与本群无关）…`
                     : "当前没有运行中的任务"}
               </span>
-              <button
-                type="button"
-                className="team-group__stop"
-                onClick={() => void stopAll()}
-                title="停止本群伙伴的运行，并清理后台调度会话的重试状态"
-                aria-label="停止运行"
-              >
-                {stopping ? "正在停止…" : "停止"}
-              </button>
             </div>
             {menuMsg && (
               <p className={`team-group__notice is-info${menuMsg.includes("不在了") || menuMsg.includes("不可用") ? " is-warn" : ""}`} role="status">
@@ -762,74 +904,52 @@ export function TeamGroupView({
             )}
 
             <footer className="team-group__composer">
-              <div className="team-group__atbar">
-                <span className="team-group__atbar-label">本轮 @</span>
-                <div className="team-group__atbar-chips">
-                  {partners.map((p) => (
-                    <Fragment key={p.id}>
-                    <button
-                      type="button"
-                      className={`team-group__atchip${atTargets.includes(p.id) ? " is-on" : ""}${p.muted ? " is-muted" : ""}${
-                        (busy ?? []).includes(p.id) ? " is-running" : ""
-                      }`}
-                      onClick={() => toggleAt(p.id)}
-                      aria-pressed={atTargets.includes(p.id)}
-                      /* ⛔ 团 chip 出面上的是**主理人**（名字/头像），title 里写明"点它 = 叫整团"，
-                         ⛔ 不能让用户以为是只叫了主理人一个人。 */
-                      title={
-                        teamLeadOf(p)
-                          ? `${personNameOf(p)} · ${p.name} 主理人 —— 点它 = 叫整团，团内由主理人分派`
-                          : atTargets.includes(p.id) ? "取消选择" : "把它加进本轮 @"
-                      }
-                    >
-                      <span className="team-group__atchip-avatar has-agent"><MemberAvatar member={faceOf(p)} size={16} /></span>
-                      {personNameOf(p)}
-                      {!p.targetKind && <em className="team-group__atchip-warn" title="这个伙伴没绑定智能体，派不了活">未绑定</em>}
-                    </button>
-                    {/* ⛔ 11-06 用户：「输入框上面也没有铺开」「专家团跟正常成员展示一样」——
-                        团成员也铺在 @ 条里（谁在团里一眼看见）。点它 = 叫**整团**
-                        （团内由主理人编排，单独派成员会和团的 SOP 打架），title 里写明。 */}
-                    {teamKidsOf(p).map((kid) => (
-                      <button
-                        key={`kid:${kid.key}`}
-                        type="button"
-                        className="team-group__atchip is-kid"
-                        title={`${kid.name}${kid.profession ? ` · ${kid.profession}` : ""} —— 点在它等于叫整团，团内由主理人分派`}
-                        onClick={() => toggleAt(p.id)}
-                      >
-                        <span className="team-group__atchip-avatar has-agent">
-                          <MemberAvatar
-                            member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: kid.key }}
-                            size={14}
-                          />
-                        </span>
-                        {kid.name}
-                      </button>
-                    ))}
-                    </Fragment>
+              {/* @ 候选面板（11-07 用户令）：原来那一整排常驻 chip 收进面板，输入区不再被它占掉一行。 */}
+              {mention.open && (
+                <TeamMentionPanel
+                  sections={mentionSections}
+                  selected={atTargets}
+                  query={mention.query}
+                  onQuery={(query) => setMention((prev) => ({ ...prev, query }))}
+                  onPick={pickCandidate}
+                  onClear={() => setAtTargets([])}
+                  onClose={closeMention}
+                  autoFocus={!mention.typed}
+                />
+              )}
+              {/* 已选 chip 只在**有选择时**出现（面板关掉后仍看得见这一轮派给谁） */}
+              {atTargets.length > 0 && (
+                <div className="team-group__selected" aria-label="本轮 @">
+                  <span className="team-group__selected-label">本轮 @</span>
+                  {atTargets.map((id) => (
+                    <span key={id} className="team-group__selected-chip">
+                      <span className="team-group__selected-avatar has-agent"><MemberAvatar member={faceOfId(id)} size={14} /></span>
+                      {nameOf(id)}
+                      <button type="button" aria-label={`移除 ${nameOf(id)}`} onClick={() => toggleAt(id)}><X size={10} /></button>
+                    </span>
                   ))}
-                  {!partners.length && <span className="team-group__atempty">还没有伙伴可 @</span>}
+                  <button type="button" className="team-group__selected-clear" onClick={() => setAtTargets([])}>清空</button>
                 </div>
-                {atTargets.length > 0 && (
-                  <button type="button" className="team-group__atbar-clear" onClick={() => setAtTargets([])}>清空</button>
-                )}
-                {/* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
-                    FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */}
-                {!floatMenu && (
-                  <TeamMenuButton items={menuItems} disabled={sending} placement="input" onPick={pickMenu} />
-                )}
-              </div>
+              )}
               <TeamComposer
                 value={text}
-                onValueChange={setText}
+                onValueChange={updateText}
                 textareaRef={composerRef}
                 onKeyDown={(e) => {
+                  /* 打字触发面板时：Enter / Tab 选第一个候选（⛔ 别把半句话当消息发出去） */
+                  if (mention.open && mention.typed) {
+                    if (e.key === "Escape") { e.stopPropagation(); closeMention(); return; }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      const first = matchMentionCandidates(mentionSections.flatMap((s) => s.items), mention.query, 1)[0];
+                      if (first) { e.preventDefault(); pickCandidate(first); return; }
+                    }
+                  }
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     void send();
                   }
                 }}
-                placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（先 @ 选伙伴；/stop 可停）"}
+                placeholder={atTargets.length ? `对 ${atTargets.map(nameOf).join("、")} 说…` : "说点什么（@ 选伙伴；/stop 可停）"}
                 opts={runOpts}
                 onOpts={setRunOpts}
                 sending={sending}
@@ -839,15 +959,12 @@ export function TeamGroupView({
                 targetNames={atTargets.map(nameOf)}
                 fileCandidates={fileCandidates}
                 onOpenModelSettings={onOpenModelSettings}
+                onOpenMention={openMentionPanel}
+                mentionCount={atTargets.length}
+                /* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
+                   FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */
+                toolsSlot={!floatMenu ? <TeamMenuButton items={menuItems} disabled={sending} placement="input" onPick={pickMenu} /> : null}
               />
-              <div className="team-group__send-row">
-                <span className="team-group__hint">
-                  {sending ? "正在派活…" : atTargets.length ? `将派给 ${atTargets.map(nameOf).join("、")}` : "先点上面的 @ 选伙伴"}
-                  {ctxParts.length > 0 && atTargets.length ? (
-                    <em className="team-group__ctx"> + {ctxParts.join(" + ")}</em>
-                  ) : null}
-                </span>
-              </div>
             </footer>
           </div>
 
@@ -934,9 +1051,40 @@ export function TeamGroupView({
                 );
               })}
             </ul>
-            <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
+            {/* ⛔ 11-07 用户令：「停止放到群成员列表卡片后面」——
+                停止键落在这里（名单本身的下方，跟"谁在跑"挨着），⛔ 不再占消息流那一行。 */}
+            <div className="team-group__members-foot">
+              <button
+                type="button"
+                className={`team-group__members-stop${(busy?.length ?? 0) > 0 ? " is-busy" : ""}`}
+                onClick={() => void stopAll()}
+                disabled={stopping}
+                title="停止本群所有伙伴当前回合，并清理后台调度会话的重试状态"
+              >
+                <Square size={11} /> {stopping ? "停止中…" : "停止运行"}
+              </button>
+              <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
+            </div>
           </aside>
         </div>
+      )}
+
+      {/* 伙伴资料卡（11-07 用户令：点头像看身份 / 模型 / 群内统计）。
+          ⛔ 独立浮层、独立板块：群视图只负责"点谁"和锚点坐标，内容全在 14- 里。
+          ⛔ 成员被移除/换群后 `memberOf` 取空 ⇒ 直接不渲染（别弹一张空卡）。 */}
+      {profile && memberOf(profile.memberId) && (
+        <TeamProfileCard
+          member={memberOf(profile.memberId)!}
+          group={group}
+          rows={rows}
+          catalog={catalog}
+          modelName={runOpts.model || getActiveModel().name}
+          running={(busy ?? []).includes(profile.memberId)}
+          anchor={{ x: profile.x, y: profile.y }}
+          onClose={() => setProfile(null)}
+          onMention={(id) => { mentionPartner(id); }}
+          onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+        />
       )}
 
       {/* FLOAT 形态的入口（飞书 `FLOAT`）：浮在群视图右下，⛔ 不进输入区。

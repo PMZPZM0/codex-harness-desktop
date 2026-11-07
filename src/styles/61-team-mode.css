@@ -2140,3 +2140,471 @@
   opacity: 0.85;
 }
 .team-group__atchip.is-kid:hover { opacity: 1; }
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   11-07 三块（用户令）：伙伴资料卡 / @ 候选面板 / 群内搜索
+   ＋ 同一轮的两处布局压缩（「上面太宽、输入框太宽、聊天内容看不到多少」）
+
+   ⛔ 布局压缩的因果链只有两条，别再加第三条：
+     · @ 候选从「输入框上方常驻一排 chip」改成「按需弹出的面板 + 已选一行」⇒ 常态零占位；
+     · 输入框 min-height 110 → 64（旧规则在上面 1497 行，这里按源码顺序覆盖）。
+   ⛔ 层级（项目纪律【227】）：资料卡/搜索是**面板内浮层**，z-index 60 —— 低于
+      设置内遮罩（80~97）、全局模态（400）、引导（900 系）、确认框（950）。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── 群头：单行化（副标题溢出就省略，全量进 title） ── */
+.team-group__head { position: relative; padding: 8px 14px; }
+.team-group__title { flex: 1 1 auto; min-width: 0; }
+.team-group__title-row { flex-wrap: nowrap; }
+.team-group__sub {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 11.5px;
+}
+.team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+
+/* ── 输入框：压缩高度（用户：「下面输入框也是太宽了」）── */
+.team-composer { padding: 8px 10px 6px; }
+.team-composer .team-composer__input { min-height: 64px; }
+.team-composer__at { position: relative; }
+.team-composer__at.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.team-composer__at-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+}
+
+/* 已选 @（原来那一排常驻 chip 的唯一残留：**只在本轮真的选了人时**出现一行，可移除可清空） */
+.team-group__selected {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 6px;
+  padding-inline: 2px;
+}
+.team-group__selected-label { color: var(--faint); font-size: 11px; }
+.team-group__selected-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 11.5px;
+}
+.team-group__selected-avatar { display: inline-flex; padding: 0; border: 0; background: transparent; }
+.team-group__selected-chip > button {
+  display: inline-flex;
+  padding: 1px;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.team-group__selected-chip > button:hover { background: var(--panel-2); color: var(--danger); }
+.team-group__selected-clear {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-group__selected-clear:hover { color: var(--danger); }
+
+/* ── 成员栏：底部停止键（用户：「停止放到群成员列表卡片后面」） ── */
+.team-group__members-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.team-group__members-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.team-group__members-stop:hover { border-color: var(--danger); color: var(--danger); }
+/* ⛔ 有人在跑才染红：常红会变成装饰，反而看不清"现在有活的在跑" */
+.team-group__members-stop.is-busy {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg));
+  color: var(--danger);
+}
+.team-group__members-stop:disabled { opacity: 0.5; cursor: default; }
+.team-group__members-foot .team-group__members-hint { padding: 0; }
+
+/* ── 群内搜索（挂在群头下方，绝对定位：⛔ 不挤动消息流的高度） ── */
+.team-search {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 14px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, calc(100% - 28px));
+  max-height: 62vh;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 12px 32px color-mix(in srgb, var(--text) 16%, transparent);
+  overflow: hidden;
+}
+.team-search__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--faint);
+}
+.team-search__head input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.team-search__count { flex: none; font-size: 11px; color: var(--faint); }
+.team-search__close {
+  flex: none;
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.team-search__close:hover { background: var(--panel-2); color: var(--text); }
+.team-search__results { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+.team-search__results > button {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-search__results > button:hover { background: var(--accent-soft); }
+.team-search__meta { display: flex; align-items: baseline; gap: 8px; font-size: 11px; color: var(--faint); }
+.team-search__meta strong { color: var(--muted); font-size: 11.5px; font-weight: 600; }
+.team-search__snippet {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.55;
+  /* 两行截断：结果列表要能一眼扫过去，⛔ 别让一条长消息占满整屏 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.team-search__empty { margin: 0; padding: 14px 10px; color: var(--faint); font-size: 12px; text-align: center; }
+
+/* 跳转后短暂高亮（1.6s 由视图侧摘 class，⛔ 不留永久标记） */
+.team-msg.is-search-hit {
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  box-shadow: inset 2px 0 0 var(--accent);
+  animation: team-msg-flash 1.6s ease-out;
+}
+@keyframes team-msg-flash {
+  0% { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  100% { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+}
+
+/* 可点开的头像（按钮化：⛔ 不加边框/底色，形状与原来的圆头像一致） */
+.team-msg__avatar-btn {
+  flex: none;
+  display: inline-flex;
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.team-msg__avatar-btn:hover { box-shadow: 0 0 0 2px var(--accent-soft); }
+
+/* ── @ 候选面板（输入框上方，按需出现） ── */
+.team-mention {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--text) 10%, transparent);
+  overflow: hidden;
+}
+.team-mention__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--faint);
+}
+.team-mention__head input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+.team-mention__clear {
+  flex: none;
+  padding: 2px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-mention__clear:hover { border-color: var(--danger); color: var(--danger); }
+.team-mention__close {
+  flex: none;
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.team-mention__close:hover { background: var(--panel-2); color: var(--text); }
+/* ⛔ 面板高度要"够看但不抢戏"：214px ≈ 4 行候选，再多就滚 */
+.team-mention__body { max-height: 214px; overflow: auto; padding: 4px; }
+.team-mention__group + .team-mention__group { margin-top: 4px; border-top: 1px solid var(--line-soft); padding-top: 4px; }
+.team-mention__group h5 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  padding: 3px 8px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.team-mention__group h5 em {
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  font-style: normal;
+  font-size: 10px;
+}
+.team-mention__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-mention__item:hover { background: var(--panel-2); }
+.team-mention__item.is-on { background: var(--accent-soft); }
+.team-mention__item.is-unbound { opacity: 0.6; }
+.team-mention__item.is-muted { opacity: 0.5; }
+.team-mention__avatar { flex: none; display: inline-flex; }
+.team-mention__text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.team-mention__text strong {
+  overflow: hidden;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-mention__text small {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 10.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-mention__check { flex: none; color: var(--accent); }
+.team-mention__empty { margin: 0; padding: 14px 10px; color: var(--faint); font-size: 12px; text-align: center; }
+
+/* ── 伙伴资料卡（点头像弹出，独立浮层） ── */
+.team-profile-layer { position: fixed; inset: 0; z-index: 60; }
+.team-profile {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72vh, 460px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: 0 16px 40px color-mix(in srgb, var(--text) 22%, transparent);
+  overflow: hidden;
+}
+.team-profile__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-profile__avatar { flex: none; display: inline-flex; }
+.team-profile__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.team-profile__id > strong {
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-profile__id > small {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-profile__badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.team-profile__badges em {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-style: normal;
+  font-size: 10px;
+  line-height: 16px;
+}
+.team-profile__badges em.is-lead { background: var(--accent-soft); color: var(--accent); }
+.team-profile__badges em.is-team { background: var(--accent-soft); color: var(--accent); }
+.team-profile__badges em.is-muted { opacity: 0.7; }
+.team-profile__badges em.is-live { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.team-profile__close {
+  flex: none;
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--faint);
+  cursor: pointer;
+}
+.team-profile__close:hover { background: var(--panel-2); color: var(--text); }
+.team-profile__rows { display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 10px 12px; }
+.team-profile__rows > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.team-profile__rows dt { flex: none; width: 46px; color: var(--faint); font-size: 11px; }
+.team-profile__rows dd {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-profile__stats { padding: 0 12px 10px; }
+.team-profile__stats h4 {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 0 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.team-profile__stats h4 small { color: var(--faint); font-size: 10px; font-weight: 400; }
+/* 6 格 3×2：数字大、标签小（一眼看量级；⛔ 不做柱状图，群内统计量级差异太大） */
+.team-profile__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+.team-profile__grid > span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--faint);
+  font-size: 10px;
+}
+.team-profile__grid > span b {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-profile__warn { margin: 6px 0 0; color: var(--danger); font-size: 11px; }
+.team-profile__actions {
+  display: flex;
+  gap: 6px;
+  margin-top: auto;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line-soft);
+}
+.team-profile__actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.team-profile__actions button:hover { border-color: var(--accent); color: var(--accent); }
+.team-profile__actions button.is-danger:hover { border-color: var(--danger); color: var(--danger); }

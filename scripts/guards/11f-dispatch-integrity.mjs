@@ -570,9 +570,15 @@ try {
   ok(/setTeamThreadsIndex\(\(prev\) => \(prev\[memberTid\] === run\.teamId/.test(part05Src)
     && /teamThreadsMap\?\.\(\)/.test(part05Src),
     "成员线程登记 teamId 索引 + 回读权威映射（否则成员会话在侧栏漏成主会话）");
-  ok(attentionSrc.includes("子会话 · {cluster.members.length}")
-    && /className="dispatch-children-label"[\s\S]{0,200}?toggleTeamCluster/.test(attentionSrc),
-    "专家团成员收进「↳ 子会话 · N」折叠块（与调度子会话同款；不再每个成员一行主会话）");
+  /* ⛔⛔ 11-07：这条断言原来锚在「整行 `子会话 · N` 表头」上，而 HEAD 2e4c0cc17 已按用户
+     截图（「这个还是旧的展示子会话」）把它换成主会话行底边的行内细条 ⇒ 断言变成"要求旧实现"
+     的恒假项（守卫"自洽地错"的又一例：02 守卫【156】正好在断言**不许**有那个表头，两条互相矛盾）。
+     ⇒ 判据改锚**行为**：成员只在簇的展开体里（顶层没有成员行）、折叠键走 `toggleTeamCluster`。
+     形式细节（细条/箭头/数量只在 title）由 02 守卫【156】钉死，这里不重复。 */
+  ok(/expanded && cluster\.members\.length > 0 &&[\s\S]{0,200}?team-cluster-body/.test(attentionSrc)
+    && /className="thread-child-bar"[\s\S]{0,300}?bag\.toggleTeamCluster\(cluster\.teamId\)/.test(attentionSrc)
+    && !/子会话 · \{cluster\.members\.length\}/.test(attentionSrc),
+    "专家团成员只在簇的展开体里（不再每个成员一行主会话）+ 折叠键走 toggleTeamCluster");
   /* ⛔ 11-03 用户令：「同一对象不要每次都派新的子会话；主会话要知道自己派过谁」。
      ① 复用：派活先按 (origin, kind, targetKey) 找已结束的旧子会话 → resume → 记录重置为运行中；
      ② 知情：主会话有 agent_list_children（调度登记 + 团队成员运行记录）。 */

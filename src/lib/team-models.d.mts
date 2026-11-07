@@ -134,7 +134,10 @@ export function removeMemoryNote(
   group: TeamGroupLite,
   noteId: string,
 ): { ok: boolean; group: TeamGroupLite; changed?: boolean };
-export function groupContextBlock(group: TeamGroupLite | unknown, options?: { forMemberId?: string }): string;
+export function groupContextBlock(
+  group: TeamGroupLite | unknown,
+  options?: { forMemberId?: string; forTeam?: boolean },
+): string;
 export function setManager(
   group: TeamGroupLite,
   memberId: string,
@@ -202,3 +205,9 @@ export function parseAgentMentions(
   group: unknown,
   options?: { excludeId?: string; max?: number; alreadyRan?: string[] },
 ): { memberId: string; name: string; ask: string }[];
+
+/** 团成员在群里的合成作者 id（`team:<teamId>:<memberId>`；非法入参 ⇒ 空串） */
+export function teamAuthorIdOf(teamId: unknown, memberId: unknown): string;
+
+/** 反解合成作者 id；不是这个形状 ⇒ null */
+export function parseTeamAuthorId(id: unknown): { teamId: string; memberId: string } | null;

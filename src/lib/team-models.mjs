@@ -430,6 +430,14 @@ export function groupContextBlock(group, options = {}) {
          所以提示词必须把这个格式写死 —— 写在句子中间的 @ 不会触发。 */
       lines.push("要在群里叫某个伙伴接手，**另起一行**写 `@名字：要它做什么`（这一行只放这句，例：@洞明：复核这段 diff）。");
       lines.push("⛔ 句子中间或举例里的 `@名字` 不会触发，只是给用户看的提及；⛔ 没有新信息就别 @ 人。");
+      /* ⛔⛔ 11-07 用户实测：「专家团会话，总是主代理说话，代替其他成员回复，其他成员会话不会直接到群里」。
+         真根因在渲染层：成员产出以前只在 team_member_invoke 的返回值里（只有主理人看得到）。
+         现在群聊会把成员产出**按成员自己的身份**投进群流（见 02-team-store 的 team-run 镜像），
+         所以这里必须把口径写死 —— 否则主理人仍会把成员原文整段复述一遍，群里变成双份。 */
+      if (self.targetKind === "team" || options?.forTeam) {
+        lines.push("本群会把被你调度的成员产出**直接显示在群里**（署名是成员自己，不需要你转述）。");
+        lines.push("你的最终回复只给统筹结论 / 分工 / 下一步；⛔ 不要复述成员原文，⛔ 不要写「以下是原话」这类转述。");
+      }
     }
   }
   if (notes.length) {
@@ -492,7 +500,29 @@ export function parseMentions(text, group, options = {}) {
 }
 
 /**
- * 输入框里的斜杠命令（目前只有 `/stop`）。
+ * 群消息作者 id：专家团**成员**在群里发言时用的合成 id（11-07 用户令：
+ * 「专家团会话总是主代理说话……其他成员会话，不会直接到群里」）。
+ * 形如 `team:<teamId>:<memberId>`；⛔ 不写进群成员表（成员由主理人编排，不是独立伙伴行），
+ * 渲染层按 `parseTeamAuthorId` 从调度目录里查出名字/职业/头像。
+ */
+export function teamAuthorIdOf(teamId, memberId) {
+  const t = String(teamId ?? "").trim();
+  const m = String(memberId ?? "").trim();
+  if (!t || !m) return "";
+  return `team:${t}:${m}`;
+}
+
+/** 反解 `teamAuthorIdOf` 的产物；不是这个形状 ⇒ null。 */
+export function parseTeamAuthorId(id) {
+  const src = String(id ?? "");
+  if (!src.startsWith("team:")) return null;
+  const rest = src.slice(5);
+  const cut = rest.indexOf(":");
+  if (cut <= 0 || cut === rest.length - 1) return null;
+  return { teamId: rest.slice(0, cut), memberId: rest.slice(cut + 1) };
+}
+
+/** 输入框里的斜杠命令（目前只有 `/stop`）。
  * ⛔ 只认**开头就是 /** 的整句；普通句子里出现 `/` 不当命令（路径、日期里到处都有）。
  */
 export function parseCommand(text) {

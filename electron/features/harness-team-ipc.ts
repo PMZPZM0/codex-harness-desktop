@@ -299,7 +299,8 @@ async function dispatchGroupText(
     let okFlag = false;
     let errMsg = "";
     try {
-      const ctx = groupContextBlock(group, { forMemberId: partner.id });
+      /* 与渲染层 `02-team-store` 同口径：团成员产出直投群流，主理人只出统筹结论（别转述） */
+      const ctx = groupContextBlock(group, { forMemberId: partner.id, forTeam: partner.targetKind === "team" });
       const query = ctx ? `${ctx}\n\n---\n\n${text}` : text;
       const res = await runDelegatedTask({
         kind: partner.targetKind as "expert" | "subagent" | "cli",
