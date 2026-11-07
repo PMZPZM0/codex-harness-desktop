@@ -78,10 +78,6 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         { value: "connectors", label: `已配置 ${connectors.length}` },
         { value: "servers", label: `运行状态 ${mcpRows.length}` },
       ]} />
-      <div className="market-source-actions">
-        <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
-        <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
-      </div>
     </div>
   {/* 10-27 用户令：「右上角问号删了」—— 页头整块（? + 副标题）撤掉，
       进页直接是「分类 / 搜索 / 添加 MCP / 刷新」工具条与市场卡片。
@@ -104,6 +100,11 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
             options={SKILLHUB_MCP_CATEGORIES.map((category) => ({ value: category, label: category }))}
             onChange={(value) => { setMcpMarketCategory(value); setMcpMarketSearch(""); }}
           />
+        </div>
+        {/* 11-07 用户：「跟搜索框一排，搜索框可以短一点」—— 添加/刷新回到搜索行右侧，不再悬在分页条上。 */}
+        <div className="skill-toolbar-actions">
+          <button className="secondary-setting" onClick={() => { setConnectorSecret(""); setConnectorDraft({ name: "", transport: "stdio", command: "", args: [], url: "", headers: {}, env: {}, secrets: {} }); setConnectorEditorOpen(true); }}><Plus size={14} />添加 MCP</button>
+          <button className="icon-button" title="刷新 MCP 状态" onClick={() => void refreshWithReceipt(setNotice, "刷新 MCP 状态", () => refreshSettingsResources())}>{resourceLoading ? <Spinner /> : <RefreshCw size={14} />}</button>
         </div>
       </div>
       <div className="skill-card-grid">
