@@ -668,24 +668,20 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
       standard: 'codebuddy -p "{prompt}" --permission-mode acceptEdits',
       full: 'codebuddy -p "{prompt}" --permission-mode bypassPermissions',
     },
-    kimi: {
-      safe: 'kimi -p "{prompt}"',
-      standard: 'kimi -p "{prompt}" --yolo',
-      full: 'kimi -p "{prompt}" --auto',
-    },
   };
   const tierMismatch = Object.entries(TIER_TABLE).flatMap(([bin, tiers]) =>
     Object.entries(tiers)
       .filter(([tier, want]) => cmd.cliPromptCommandFor(bin, tier) !== want)
       .map(([tier]) => `${bin}/${tier}=${cmd.cliPromptCommandFor(bin, tier)}`));
-  ok(tierMismatch.length === 0, `权限档逐字对账（7 个 CLI × 3 档；不符：${tierMismatch.join(" / ") || "无"}）`);
+  ok(tierMismatch.length === 0, `权限档逐字对账（6 个 CLI × 3 档；不符：${tierMismatch.join(" / ") || "无"}）`);
   ok(cmd.cliPermissionTierOf(undefined) === "standard"
     && cmd.cliPermissionTierOf("FULL") === "full"
     && cmd.cliPermissionTierOf("乱写") === "standard",
     "缺省 / 脏值一律回落 standard（⛔ 不能因为坏数据把派活变成全放行）");
   ok(cmd.cliPromptCommandFor("aider", "full") === cmd.cliPromptCommand("aider")
-    && cmd.cliPromptCommandFor("qwenpaw", "full") === cmd.cliPromptCommand("qwenpaw"),
-    "没有核实过权限参数的 CLI 保持原命令（不猜别人的开关）");
+    && cmd.cliPromptCommandFor("qwenpaw", "full") === cmd.cliPromptCommand("qwenpaw")
+    && cmd.cliPromptCommandFor("kimi", "full") === cmd.cliPromptCommand("kimi"),
+    "没有核实过 / 实测不可用的 CLI 保持原命令（Kimi 2.5.2 的 --auto/--yolo 与 -p 互斥）");
   ok(cmd.applyCliPermissionTier(cmd.applyCliPermissionTier('claude -p "{prompt}"', "standard"), "standard")
     === cmd.cliPromptCommandFor("claude", "standard"),
     "权限参数幂等（重复应用不叠加）");

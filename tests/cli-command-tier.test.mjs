@@ -15,7 +15,7 @@ test("权限档：缺省与脏值一律回落 standard", () => {
   assert.equal(cliPermissionTierOf("FULL"), "full");
 });
 
-test("权限档：七个核实过的 CLI 各自追加正确参数", () => {
+test("权限档：六个核实过的 CLI 各自追加正确参数", () => {
   assert.equal(cliPromptCommandFor("claude", "standard"), 'claude -p "{prompt}" --permission-mode acceptEdits');
   assert.equal(cliPromptCommandFor("claude", "full"), 'claude -p "{prompt}" --permission-mode bypassPermissions');
   assert.equal(cliPromptCommandFor("codex", "standard"), 'codex exec "{prompt}" --sandbox workspace-write');
@@ -24,11 +24,16 @@ test("权限档：七个核实过的 CLI 各自追加正确参数", () => {
   assert.equal(cliPromptCommandFor("qwen", "standard"), 'qwen --prompt "{prompt}" --approval-mode auto-edit');
   assert.equal(cliPromptCommandFor("qoder", "standard"), 'qoder -p "{prompt}" --permission-mode accept_edits');
   assert.equal(cliPromptCommandFor("codebuddy", "full"), 'codebuddy -p "{prompt}" --permission-mode bypassPermissions');
-  assert.equal(cliPromptCommandFor("kimi", "full"), 'kimi -p "{prompt}" --auto');
+});
+
+test("权限档：Kimi 2.5.2 的 --auto/--yolo 与 -p 互斥 ⇒ 不加参数", () => {
+  assert.equal(cliPromptCommandFor("kimi", "standard"), 'kimi -p "{prompt}"');
+  assert.equal(cliPromptCommandFor("kimi", "full"), 'kimi -p "{prompt}"');
+  assert.equal(cliSupportsPermissionTier("kimi"), false);
 });
 
 test("权限档：没有核实过参数的 CLI 原样返回", () => {
-  for (const bin of ["aider", "openclaw", "comatecli", "traecli", "iflow", "harness", "qwenpaw"]) {
+  for (const bin of ["aider", "openclaw", "comatecli", "traecli", "iflow", "harness", "qwenpaw", "kimi"]) {
     assert.equal(cliPromptCommandFor(bin, "full"), cliPromptCommandFor(bin, "safe"), bin);
     assert.equal(cliSupportsPermissionTier(bin), false, bin);
   }

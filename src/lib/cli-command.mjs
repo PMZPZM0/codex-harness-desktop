@@ -68,10 +68,11 @@ const CLI_PERMISSION_FLAGS = {
   qoder: { safe: "", standard: "--permission-mode accept_edits", full: "--yolo" },
   /* CodeBuddy：默认严格只读；acceptEdits 放行编辑，bypassPermissions 全放行。 */
   codebuddy: { safe: "", standard: "--permission-mode acceptEdits", full: "--permission-mode bypassPermissions" },
-  /* Kimi Code：--yolo 自动批准工具（仍可能提问），--auto 完全自主不提问（更彻底）。 */
-  kimi: { safe: "", standard: "--yolo", full: "--auto" },
-  /* 其余（aider / openclaw / comatecli / traecli / iflow / harness / qwenpaw）：
-     没有核实过的无头权限开关 —— 不写，保持原命令。 */
+  /* ⛔ Kimi Code 2.5.2 实测：`-p` 与 `--auto` / `--yolo` **不能同用**
+     （报 `Cannot combine --prompt with --auto/--yolo`）⇒ 没有可用的无头权限参数，不写。
+     它的权限模式只能在交互 TUI 里切，或靠它自己的配置文件。 */
+  /* 其余（aider / openclaw / comatecli / traecli / iflow / harness / qwenpaw / kimi）：
+     没有核实过、或实测不可用的无头权限开关 —— 不写，保持原命令。 */
 };
 
 /** 归一权限档：脏值/缺省一律回落 standard（⛔ 不因为一条坏数据把派活变成全放行）。 */
