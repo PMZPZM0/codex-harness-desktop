@@ -396,7 +396,8 @@ async function runDispatchRounds(
       if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
       const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: "群成员" };
       /* ⛔ 不 await：工具调用立刻返回，被叫的人稍后自己在群里回话。 */
-      void runOne(to as unknown as GroupTarget, 1, { id: from.id, name: from.name }, msg).catch(() => undefined);
+      /* ⛔ hop=0：工具发起的对话也要能继续接力（只跳一跳就变成「说一句就断」）。 */
+      void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
       return Promise.resolve({ ok: true });
     },
     readMessages: (limit: number) => {

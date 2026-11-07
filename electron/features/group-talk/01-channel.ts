@@ -18,7 +18,7 @@ import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { server } from "../../runtime-refs";
-import { TURN_WAIT_BACKGROUND_NOTE, turnOutputText, waitForTurnCompletion } from "../../main/03-turn-summary";
+import { turnOutputText, waitForTurnCompletion } from "../../main/03-turn-summary";
 import { buildGroupTalkTools } from "./02-tools";
 
 export type TalkMember = {
@@ -137,7 +137,8 @@ export async function runTalkTurn(
   }
   return {
     ok: true,
-    text: String(text || TURN_WAIT_BACKGROUND_NOTE || "").trim(),
+    /* ⛔ 群聊会话没有「办公室 / 头像轨」那套概念，别把调度链的「转后台」公文腔塞进群。 */
+    text: String(text || "").trim(),
     threadId,
   };
 }
