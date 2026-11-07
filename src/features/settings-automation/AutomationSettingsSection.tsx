@@ -18,7 +18,7 @@ import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 import { ArrowDown, CircleCheck, Globe2, RefreshCw, ShieldCheck, Workflow } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 
-export type AutomationSettingsSectionProps = { setSettingsPage: any; setNotice: any };
+export type AutomationSettingsSectionProps = { setSettingsPage: any; setNotice: any; rpaRecipeCount?: number };
 
 type AutoUpdateRow = {
   id: string;
@@ -33,7 +33,7 @@ type AutoUpdateRow = {
 };
 
 export function AutomationSettingsSection(props: AutomationSettingsSectionProps) {
-  const { setSettingsPage, setNotice } = props;
+  const { setSettingsPage, setNotice, rpaRecipeCount = 0 } = props;
   // 只认本区块关心的工具：id 集合来自主进程返回的行，不硬编码第二份清单。
   const watched = useRef<Set<string>>(new Set());
   const [rows, setRows] = useState<AutoUpdateRow[]>([]);
@@ -43,6 +43,33 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
   const [stage, setStage] = useState<Record<string, string>>({});
   const [message, setMessage] = useState<Record<string, string>>({});
   const [rowError, setRowError] = useState<Record<string, string>>({});
+  /* 11-07 用户令「联动展示，都做好来」：三张入口卡不再只有静态说明 ——
+     浏览器显示 Ego Lite 真实安装态，桌面显示两个后端（含启停/主辅），RPA 显示配方数。 */
+  const [ego, setEgo] = useState<{ installed: boolean; version: string } | null>(null);
+  const [tools, setTools] = useState<any[]>([]);
+  const [backends, setBackends] = useState<{ nuphus: boolean; computerUse: boolean }>({ nuphus: true, computerUse: true });
+  useEffect(() => {
+    let alive = true;
+    void window.codex.egoStatus()
+      .then((s) => { if (alive) setEgo({ installed: Boolean(s?.installed), version: String(s?.version ?? "").replace(/^ego-browser\s*/i, "").trim() }); })
+      .catch(() => { if (alive) setEgo({ installed: false, version: "" }); });
+    void window.codex.toolStatus().then((list: any[]) => { if (alive) setTools(Array.isArray(list) ? list : []); }).catch(() => undefined);
+    void window.codex.readAppSettings()
+      .then((s) => { if (alive) setBackends({ nuphus: s.desktopBackendNuphus !== false, computerUse: s.desktopBackendComputerUse !== false }); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, []);
+  const isMac = /Mac|iPhone|iPad/i.test(String(navigator.platform || navigator.userAgent));
+  const primaryBackend = isMac ? "computerUse" : "nuphus";
+  const toolOf = (id: string) => tools.find((tool) => tool.id === id);
+  const toolTag = (id: string, enabled: boolean) => {
+    if (!enabled) return "已停用";
+    const row = toolOf(id);
+    if (!row) return "读取中";
+    if (!row.installed) return "未安装";
+    return `v${String(row.version ?? "").replace(/^[^\d]*/, "") || "已装"}`;
+  };
+  const toolOk = (id: string, enabled: boolean) => enabled && Boolean(toolOf(id)?.installed);
 
   const checkAll = useCallback(async () => {
     setChecking(true);
@@ -104,30 +131,36 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
     } catch { /* 忽略：取消失败不影响已完成的更新 */ }
   }
 
-  /** 顶部三张自动化卡片上的版本号（桌面 / 浏览器）—— 数据来自同一份主进程状态，不另查。 */
-  function versionOf(id: string): string {
-    return rows.find((row) => row.id === id)?.current ?? "";
-  }
-
   return (
     <>
                     <section className="settings-section stack">
-                      <div className="hub-card-grid">
+                      <div className="hub-card-grid automation-hub-grid">
                         <button className="hub-card" onClick={() => setSettingsPage("browser")}>
                           <span className="hub-card-icon"><Globe2 size={20} /></span>
                           <strong>浏览器自动化</strong>
                           <p>内置浏览器面板与 Ego Lite 浏览器自动化；默认起始页设置在这里。</p>
+                          <em className={`hub-card-status${ego === null ? "" : ego.installed ? " is-ok" : " is-warn"}`} title={ego?.installed ? "Ego Lite 已安装，自动化优先用它" : "Ego Lite 未安装，自动回落 browse-skills"}>
+                            {ego === null ? "检测中" : ego.installed ? `Ego Lite ${ego.version || "已装"}` : "Ego Lite 未安装"}
+                          </em>
                         </button>
                         <button className="hub-card" onClick={() => setSettingsPage("computer")}>
                           <span className="hub-card-icon"><ShieldCheck size={20} /></span>
                           <strong>桌面自动化</strong>
                           <p>审批与沙箱策略，nuphus MCP 桌面工具（截屏、键鼠、窗口、OCR）。</p>
-                          {versionOf("nuphus") ? <em className="hub-card-version">nuphus {versionOf("nuphus")}</em> : null}
+                          <span className="hub-card-status-row">
+                            <em className={`hub-card-status${toolOk("nuphus-mcp", backends.nuphus) ? " is-ok" : " is-warn"}`} title={`Nuphus ${primaryBackend === "nuphus" ? "主后端" : "辅后端"}`}>
+                              Nuphus {toolTag("nuphus-mcp", backends.nuphus)}
+                            </em>
+                            <em className={`hub-card-status${toolOk("computer-use", backends.computerUse) ? " is-ok" : " is-warn"}`} title={`Computer Use ${primaryBackend === "computerUse" ? "主后端" : "辅后端"}`}>
+                              CU {toolTag("computer-use", backends.computerUse)}
+                            </em>
+                          </span>
                         </button>
                         <button className="hub-card" onClick={() => setSettingsPage("rpa")}>
                           <span className="hub-card-icon"><Workflow size={20} /></span>
                           <strong>RPA 自动化</strong>
                           <p>Codex 自主沉淀流程配方，下次一句话直接复现；任务清单自主维护。</p>
+                          <em className="hub-card-status">{rpaRecipeCount > 0 ? `${rpaRecipeCount} 条配方` : "可沉淀流程"}</em>
                         </button>
                       </div>
                     </section>

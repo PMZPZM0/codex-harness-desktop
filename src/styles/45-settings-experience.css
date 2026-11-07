@@ -883,3 +883,28 @@
 @media (max-width: 720px) {
   .settings-exp-shell .browser-cap-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 11-07：自动化入口卡的实时状态胶囊 + 后端卡上的开关 ─────────────────── */
+.settings-exp-shell .hub-card-status {
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.settings-exp-shell .hub-card-status.is-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.settings-exp-shell .hub-card-status.is-warn { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.settings-exp-shell .hub-card-status-row { display: flex; flex-wrap: wrap; gap: 4px; }
+.settings-exp-shell .hub-card-status-row .hub-card-status { margin-top: 0; }
+.settings-exp-shell .browser-cap-head .toggle-switch { margin-left: 4px; flex: none; }
+
+/* 自动化三张入口卡：设置面板 ~680px 时一行放三张（不再 2+1 留半行空白） */
+.settings-exp-shell .automation-hub-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
+.settings-exp-shell .hub-card-status,
+.settings-exp-shell .hub-card-status-row { justify-self: start; }

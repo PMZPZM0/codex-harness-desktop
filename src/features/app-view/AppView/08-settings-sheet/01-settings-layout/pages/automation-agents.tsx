@@ -133,7 +133,7 @@ export function automationAgentsPages(app: HarnessAppApi): Partial<Record<Settin
     workspace,
   } = app;
   return {
-    automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} /> },
+    automation: { render: () => <AutomationSettingsSection setSettingsPage={setSettingsPage} setNotice={setNotice} rpaRecipeCount={(rpaRecipes ?? []).length} /> },
     schedule: { render: () => <ScheduleSettingsSection setScheduleDraft={setScheduleDraft} workspace={workspace} setAutoFormVisible={setAutoFormVisible} scheduledTasks={scheduledTasks} toggleSchedule={toggleSchedule} describeSchedule={describeSchedule} runSchedule={runSchedule} editSchedule={editSchedule} deleteSchedule={deleteSchedule} keepAwake={keepAwake} setKeepAwake={setKeepAwake} idleTemplates={idleTemplates} cronTemplates={cronTemplates} setScheduledTasks={setScheduledTasks} setNotice={setNotice} /> },
     hooks: { render: () => <HooksSettingsSection settingsResources={settingsResources} pluginDisplayName={pluginDisplayName} localSkills={localSkills} hookTrusting={hookTrusting} trustAllHooks={trustAllHooks} refreshSettingsResources={refreshSettingsResources} resourceLoading={resourceLoading} linkedBusy={linkedBusy} setLinkedEnabled={setLinkedEnabled} hookBusy={hookBusy} setHookEnabled={setHookEnabled} setNotice={setNotice} /> },
     /* 10-27 用户令：「返智能体团队按键，跟新建子智能体放一排，靠左」⇒ 不挂壳层的 `back`（那是独立一行），
@@ -142,7 +142,7 @@ export function automationAgentsPages(app: HarnessAppApi): Partial<Record<Settin
     agentteam: { render: () => <AgentTeamSettingsSection setSettingsPage={setSettingsPage} /> },
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
     browser: { back: { to: "automation", label: "返回自动化" }, render: () => <BrowserSettingsSection browserHome={browserHome} setBrowserHome={setBrowserHome} setBrowserDraft={setBrowserDraft} setNotice={setNotice} toolsStatus={toolsStatus} ToolCard={ToolCard} onOpenDevtools={() => setSettingsPage("devtools")} /> },
-    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} /> },
+    computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} onOpenDevtools={() => setSettingsPage("devtools")} /> },
     rpa: { back: { to: "automation", label: "返回自动化" }, render: () => <RpaSettingsSection rpaRecipes={rpaRecipes} rpaRunning={rpaRunning} thread={thread} setNotice={setNotice} setRpaRunning={setRpaRunning} selectedModel={selectedModel} modelName={modelName} modelId={modelId} sandboxPolicy={sandboxPolicy} sandbox={sandbox} workspace={workspace} openAppConfirm={openAppConfirm} setRpaRecipes={setRpaRecipes} taskList={taskList} setTaskList={setTaskList} /> },
     /* 10-27 用户令：「把上面三个插件放到已安装里面」⇒ 内置三件不再单独占一段，
    作为 builtinSlot 传进插件页，只在「已安装」视图里出现。 */

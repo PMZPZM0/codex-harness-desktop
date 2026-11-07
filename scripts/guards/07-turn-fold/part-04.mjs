@@ -709,6 +709,11 @@ export async function run() {
       && /当前链路/.test(autoUi274) && /egoStatus/.test(autoUi274) ? ok : fail)(
       "【274】浏览器页：当前链路 + 能力卡（Ego Lite 已装状态 / 未装回落 browse-skills），不再是整段长文"
     );
+    /* 11-07 用户：「联动展示，都做好来」——入口卡与桌面后端卡都读真实状态（不再是静态说明）。 */
+    (/hub-card-status/.test(autoUi274) && /egoStatus/.test(autoUi274) && /toolStatus/.test(autoUi274)
+      && /auto-backend-cards/.test(autoUi274) && /roleOf\("nuphus"\)/.test(autoUi274) ? ok : fail)(
+      "【274】自动化入口卡/桌面后端卡联动：Ego Lite 安装态、Nuphus/CU 版本与启停主辅（实际状态）"
+    );
   }
   let policy274 = null;
   try { policy274 = req274(join(ROOT, "dist-electron", "automation-policy.js")); } catch { policy274 = null; }
