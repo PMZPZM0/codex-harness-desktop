@@ -233,6 +233,9 @@ const catalog = [
   ok(/bindTeamGroup\(partner\.targetKey, group\.id\)/.test(ipcHost)
     && /setTeamGroupAppender\(\(gid, entry\) => appendMessageTo\(gid, entry\)\)/.test(ipcHost),
     "派团时登记绑定 + 挂载时注入写入口（⛔ 不登记 = 成员产出无处可去）");
+  /* ⛔ 11-07 Code review 发现：团成员会话由 team_member_invoke 起，拿不到群派活的 groupContextBlock。 */
+  ok(/collaborationProtocolLines\("member"\)/.test(invoke),
+    "团成员会话也拿到 member 协议（⛔ 不经 groupContextBlock 的那条链路）");
   ok(/id: `team-run:\$\{run\.runId\}`/.test(invoke)
     && /id: `team-run:\$\{String\(run\.runId \?\? memberThread\)\}`/.test(store),
     "⛔ 两个进程用**同一个幂等 id**（`team-run:<runId>`）—— 否则面板开着时同一条产出会写两遍");
@@ -381,6 +384,8 @@ const catalog = [
   const avatarView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/group\.avatars\?\.\[kidId\]/.test(avatarView) && /memberId: kidId/.test(avatarView),
     "团成员行头像可点改（群级覆盖表 avatars[kidId]）");
+  ok(/team-group__members-hint/.test(avatarView) && /点击头像可以修改/.test(avatarView),
+    "成员栏标题行有「点击头像可以修改」提示（用户要的那排字）");
   ok(/isBot \? \([\s\S]{0,700}?variant: "agent"/.test(avatarView)
     && /variant: "user"/.test(avatarView) && /is-user is-editable/.test(avatarView),
     "bot 换智能体面孔、人类成员只换用户中心头像（两套头像不串）");

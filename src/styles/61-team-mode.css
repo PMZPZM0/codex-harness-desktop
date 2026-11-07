@@ -442,10 +442,21 @@
   background: var(--panel);
 }
 .team-group__members-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   padding: 10px 12px 6px;
   color: var(--faint);
   font-size: 11px;
   letter-spacing: 0.03em;
+}
+/* 11-07 用户：「在这里加一排字，点击头像可以修改」 */
+.team-group__members-head .team-group__members-hint {
+  color: var(--faint);
+  opacity: 0.85;
+  letter-spacing: 0;
+  white-space: nowrap;
 }
 .team-group__members ul { flex: 1; overflow: auto; margin: 0; padding: 0 6px; list-style: none; }
 .team-group__member {

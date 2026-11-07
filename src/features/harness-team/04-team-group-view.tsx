@@ -1029,6 +1029,8 @@ export function TeamGroupView({
                    ⛔ 不要再加回来（三个位置都试过，用户最终口径是"运行态与停止都在每个成员那一行"）。 */}
             <div className="team-group__members-head">
               <span>成员 {group.members.length}</span>
+              {/* 11-07 用户：「在这里加一排字，点击头像可以修改」 */}
+              <span className="team-group__members-hint">点击头像可以修改</span>
             </div>
             <ul>
               {group.members.map((m) => {
