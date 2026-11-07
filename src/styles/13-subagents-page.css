@@ -1653,11 +1653,22 @@
   flex-direction: column;
   gap: 6px;
 }
-.agent-preview-tier small,
-.agent-preview-tier-note {
+.agent-preview-tier small {
   color: var(--muted);
   font-size: 11px;
   line-height: 1.5;
+}
+/* 没有权限档参数的 CLI：控件位置保留一行「不适用」，避免用户以为控件丢了 */
+.agent-preview-tier-na {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px dashed var(--line-soft);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--faint);
+  font-size: 12px;
 }
 .agent-preview-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
 .agent-preview-danger:hover { background: color-mix(in srgb, var(--red) 9%, transparent); }

@@ -713,6 +713,10 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && /cliSupportsPermissionTier\(preview\.bin\)/.test(cliPanelSrc)
     && /saveCliAgent\(\{ id: item\.id, permissionTier: tier \}\)/.test(cliPanelSrc),
     "CLI 面板：预览弹窗可选档位并落盘（不支持的 CLI 显示说明）");
+  /* 11-07 用户实测两条：① 点「编辑」后表单内联在列表上方、滚动后看不见 ⇒ 改成全局弹窗；
+     ② 不支持的 CLI 只留一句小字 ⇒ 控件位置保留「不适用」一行，别让人以为控件丢了。 */
+  ok(/<SettingsDialog[\s\S]{0,400}?cli-agent-form--dialog/.test(cliPanelSrc) && /agent-preview-tier-na/.test(cliPanelSrc),
+    "面板：编辑/新增走弹窗；无档位的 CLI 保留「不适用」控件行");
 
   const viteEnvSrc = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/permissionTier\?: "safe" \| "standard" \| "full"/.test(viteEnvSrc) && /permissionTier\?: string/.test(viteEnvSrc),

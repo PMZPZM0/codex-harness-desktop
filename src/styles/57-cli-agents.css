@@ -219,6 +219,13 @@
   border-radius: 10px;
   background: var(--panel);
 }
+/* 放进弹窗时去掉卡片壳（弹窗本身有留白与底色） */
+.cli-agent-form--dialog {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
 .cli-agent-form-title {
   color: var(--text);
   font-size: 12.5px;

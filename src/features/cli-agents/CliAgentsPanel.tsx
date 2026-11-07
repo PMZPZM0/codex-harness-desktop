@@ -379,8 +379,14 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
       {progressNode}
 
       {draft ? (
-        <div className="cli-agent-form">
-          <div className="cli-agent-form-title">{draft.id ? "编辑 CLI" : "接入一个 CLI"}</div>
+        /* ⛔ 11-07 用户实测「点编辑没反应」：原来表单内联在列表上方，列表滚动后看不见。
+           改成全局弹窗（与「编辑走弹窗」的既有约定一致），点开即在视口中央。 */
+        <SettingsDialog
+          title={draft.id ? "编辑 CLI" : "接入一个 CLI"}
+          hint={draft.id ? "保存后下一次派活生效" : "填可执行名与用途；装好后可在输入框 @ 它"}
+          onClose={() => { setDraft(null); setError(""); }}
+        >
+        <div className="cli-agent-form cli-agent-form--dialog">
           <div className="cli-agent-form-grid">
             <label>
               <span>名称</span>
@@ -422,6 +428,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
             </button>
           </div>
         </div>
+        </SettingsDialog>
       ) : null}
 
       {visible.map((group) => (
@@ -554,7 +561,12 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                     <small>无头模式下没人回答权限询问：安全档只读；标准档允许改文件；完全档连 shell 命令一起放行 —— 群聊 / 手机派活等于远程执行面，慎用。</small>
                   </div>
                 ) : (
-                  <small className="agent-preview-tier-note">这个 CLI 没有核实过的无头权限参数，命令保持原样（不改它的开关）。</small>
+                  /* ⛔ 没有核实过参数的 CLI 也占一行，避免用户以为「档位控件丢了」：
+                     控件位置固定，这里明确写「不适用」并说明命令保持原样。 */
+                  <div className="agent-preview-tier">
+                    <span className="agent-preview-tier-na">不适用 · 该 CLI 没有无头权限参数</span>
+                    <small>这个 CLI 没有核实过的无头权限参数，派活命令保持原样（不改它的开关）。</small>
+                  </div>
                 )}
               </div>
               {previewLogs.length > 0 && (
