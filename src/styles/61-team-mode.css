@@ -2007,6 +2007,10 @@
 }
 .team-sheet__foot > button.is-primary:hover:not(:disabled) { filter: brightness(1.06); color: var(--accent-text); }
 .team-sheet__foot > button:disabled { opacity: 0.5; cursor: default; }
+/* 11-07 解散确认弹窗：窄卡 + 危险色主按钮（删除类操作必须一眼看出不是普通确认） */
+.team-sheet__card--confirm { width: min(420px, 100%); }
+.team-sheet__foot > button.is-danger { border-color: transparent; background: var(--danger); color: #fff; }
+.team-sheet__foot > button.is-danger:hover:not(:disabled) { filter: brightness(1.06); color: #fff; }
 @media (max-width: 820px) {
   /* 窄面板回单栏：列表自己滚，卡片整体仍是「头 + 滚动体 + 底」三段 */
   .team-sheet__body { grid-template-columns: minmax(0, 1fr); }

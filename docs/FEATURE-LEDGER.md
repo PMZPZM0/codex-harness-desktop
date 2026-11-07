@@ -35,6 +35,7 @@
 
 | 日期 | 功能名称 | 类型 | 影响范围 | 简要描述 | 提交 |
 |---|---|---|---|---|---|
+| 2026-11-07 | 解散群改为确认弹窗 | 改动 | 三仓：`src/features/harness-team/index.tsx`、`61-team-mode.css`、守卫 12be | 用户截图：群菜单里的删除是「再点一次：解散并删除会话」的内联二次确认，要求做成弹窗。改为点「解散群」直接开 420px 确认弹窗（标题 + 说明「群内会话会一起删除，无法恢复」+ 取消 / 红色「解散并删除」），三条退路（X / Esc / 点背景）；确认后才调 `removeGroup`，并保留原有「已解散…连同 N 条群会话」回执。验证：真机探针（420px 弹窗、按钮文案、菜单收起、取消即关）+ 12be 77/77、tsc/build 通过。 | 本轮 |
 | 2026-11-07 | 工作规范：敏感信息红线（禁止推送服务器信息） | 流程 | 三仓 `AGENTS.md` | 用户令：服务器公网/内网 IP、SSH 端口与别名映射、本机出口 IP、IPv6 前缀、私钥/口令/令牌一律不许写进仓库或推 GitHub（含文档/注释/脚本/截图/commit message/Release/Issue/PR）。运维文档只用占位符；提交前扫 diff；误提交视为已泄露，须同轮改文件 + 轮换凭据，历史清理需用户确认。 | 本轮 |
 | 2026-11-07 | 插队消息点「立即」立即交付（不再等回合结束） | 修复 | 三仓：`02-browser-queue-settings.tsx`、`pending-steer.mjs/.d.mts`、`PendingSteerBubbles.tsx`、守卫 12ay | 用户实测：「我都点立即了，还要等回合结束才出去，假的插队」。根因是 11-05 为了「可撤回」刻意延迟到这一步跑完才 steer；现在改判：`立即` 登记后**马上** `turn/steer`（引擎允许回合中插入），撤回药丸只在交付前一瞬存在。另加 2s 轮询 + 20s 硬兜底，防残留 inProgress 把已 armed 的消息永久挂住。验证：tsc + 12ay 53 项 / 12as / 12ba 全绿，check 全绿 + 运行时 PASS。 | 本轮 |
 | 2026-11-07 | MCP 读取失败（thread not found）修复 + 市场预览底部折行 | 修复 | 三仓：`02-browser-queue-settings.tsx`、`05-composer-input.css`、守卫 12ad | 用户截图：MCP 页横幅「以下数据读取失败：MCP…thread not found: <id>」，连接器状态全空。① 根因：刷新设置资源时用当前会话 threadId 查 `mcpServerStatus/list`，该会话已被删除/归档 ⇒ 引擎拒绝；改为遇 `thread not found` 自动去掉 threadId 重查一次。② 失败横幅剥掉 `codexrequest: Error invoking remote method…` 的 IPC 包装前缀，只留人话。③ 市场预览底部说明把「查看来源 / 一键接入」挤成两行 ⇒ 说明独占一行、按钮 nowrap 不折行。验证：真机探针按钮单行 99×34、说明两行独立；check 全绿（12ad 172/172）+ 运行时 PASS。 | 本轮 |

@@ -42,19 +42,23 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
   const [menuId, setMenuId] = useState("");
   const [renamingId, setRenamingId] = useState("");
   const [renameText, setRenameText] = useState("");
-  /* 解散群二次确认：⛔ 不用 window.confirm（守卫【191】：原生模态会吞焦点） */
-  const [confirmDeleteId, setConfirmDeleteId] = useState("");
+  /* 解散群确认（11-07 用户：「删除帮我做成弹窗」）：
+     不再在菜单里要求「再点一次」，点解散直接开确认弹窗（⛔ 不用 window.confirm，守卫【191】）。 */
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!activeId && groups.length) setActiveId(groups[0].id);
   }, [groups, activeId]);
 
   /* 点菜单外面就收起（⛔ 不用原生弹窗，也不留一个关不掉的浮层） */
+  /* 解散确认弹窗：Esc 只关这一层（走全局 ESC 栈，⛔ 不自己挂 keydown） */
+  useEscapeLayer(!!deleteTarget, () => setDeleteTarget(null));
+
   useEffect(() => {
     if (!menuId) return;
     const onDown = (e: PointerEvent) => {
       const hit = (e.target as HTMLElement | null)?.closest?.(".team-mode__group-menu, .team-mode__more");
-      if (!hit) { setMenuId(""); setConfirmDeleteId(""); }
+      if (!hit) setMenuId("");
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
@@ -79,6 +83,21 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
     const next = renameText.trim();
     if (next) await rename(groupId, next);
     setRenamingId("");
+  };
+
+  /* 解散群（确认弹窗的回调）：群聊派出的会话跟着删，主进程返回删了几条，这里如实说出来。 */
+  const confirmDelete = async () => {
+    const target = deleteTarget;
+    if (!target) return;
+    setDeleteTarget(null);
+    const r = await removeGroup(target.id);
+    if (!r.ok) { setNotice(r.error || "解散失败"); return; }
+    setNotice(
+      r.totalThreads
+        ? `已解散「${target.name}」，连同 ${r.removedThreads}/${r.totalThreads} 条群会话${r.failed.length ? `（${r.failed.length} 条删不掉）` : ""}`
+        : `已解散「${target.name}」`,
+    );
+    if (activeId === target.id) setActiveId("");
   };
 
   /* 弹窗负责收集 input（名字/简介/项目地址/初始伙伴），这里只管落库并回报结果。 */
@@ -150,7 +169,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
                 title="群操作"
                 aria-label={`${g.name} 的操作`}
                 aria-expanded={menuId === g.id}
-                onClick={() => { setConfirmDeleteId(""); setMenuId((prev) => (prev === g.id ? "" : g.id)); }}
+                onClick={() => setMenuId((prev) => (prev === g.id ? "" : g.id))}
               ><MoreHorizontal size={14} /></button>
               {menuId === g.id && (
                 <div className="team-mode__group-menu" role="menu">
@@ -163,25 +182,14 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
                   <button
                     type="button"
                     role="menuitem"
-                    className={`is-danger${confirmDeleteId === g.id ? " is-armed" : ""}`}
+                    className="is-danger"
                     title="解散会同时删除这个群里派出去的会话（11-07 用户令：删群后外面不该还留着）"
                     onClick={() => {
-                      if (confirmDeleteId !== g.id) { setConfirmDeleteId(g.id); return; }
-                      setConfirmDeleteId("");
+                      /* 11-07 用户：「删除帮我做成弹窗」——不再在菜单里要求二次点击。 */
                       setMenuId("");
-                      /* ⛔ 11-07 用户令：删群 ⇒ 群聊派出的那些会话跟着删（否则侧栏里剩一堆无出处的会话）。
-                         主进程返回删了几条，这里如实说出来。 */
-                      void removeGroup(g.id).then((r) => {
-                        if (!r.ok) { setNotice(r.error || "解散失败"); return; }
-                        setNotice(
-                          r.totalThreads
-                            ? `已解散「${g.name}」，连同 ${r.removedThreads}/${r.totalThreads} 条群会话${r.failed.length ? `（${r.failed.length} 条删不掉）` : ""}`
-                            : `已解散「${g.name}」`,
-                        );
-                      });
-                      if (activeId === g.id) setActiveId("");
+                      setDeleteTarget({ id: g.id, name: g.name });
                     }}
-                  ><Trash2 size={13} /> {confirmDeleteId === g.id ? "再点一次：解散并删除会话" : "解散群"}</button>
+                  ><Trash2 size={13} /> 解散群</button>
                 </div>
               )}
             </li>
@@ -247,6 +255,38 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread }: { onOpenMod
           </div>
         )}
       </main>
+
+      {/* 解散群确认弹窗（11-07 用户：「删除帮我做成弹窗」）——覆盖整块面板，ESC / 点背景 / 取消都能退 */}
+      {deleteTarget && (
+        <div
+          className="team-sheet"
+          role="dialog"
+          aria-modal="true"
+          aria-label="解散群"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}
+        >
+          <div className="team-sheet__card team-sheet__card--confirm">
+            <header className="team-sheet__head">
+              <div className="team-sheet__title">
+                <Trash2 size={15} className="ic-pink" />
+                <strong>解散群</strong>
+                <span className="esc-hint" title="按 ESC 关闭">ESC</span>
+              </div>
+              <button type="button" className="icon-button" title="关闭（Esc）" aria-label="关闭" onClick={() => setDeleteTarget(null)}>
+                <X size={16} />
+              </button>
+            </header>
+            <div className="team-sheet__body">
+              <p className="team-sheet__hint">确定解散「{deleteTarget.name}」？这个群里派出去的会话会一起删除，删除后无法恢复。</p>
+            </div>
+            <footer className="team-sheet__foot">
+              <span className="team-sheet__foot-hint">群消息与群内会话都会删除</span>
+              <button type="button" onClick={() => setDeleteTarget(null)}>取消</button>
+              <button type="button" className="is-primary is-danger" onClick={() => void confirmDelete()}>解散并删除</button>
+            </footer>
+          </div>
+        </div>
+      )}
 
       {/* 新建群弹窗：覆盖整块面板（不离开群聊上下文），ESC 只关这一层 */}
       <TeamCreateDialog

@@ -330,5 +330,20 @@ const catalog = [
     "正文排版与 .composer-editor 同口径（14px/1.6/内容自适应/42vh 上限）");
 }
 
+/* ── ⑦ 解散群确认改弹窗（11-07 用户：「删除帮我做成弹窗」）── */
+{
+  const panel = codeOnly(read("src/features/harness-team/index.tsx"));
+  ok(/setDeleteTarget\(\{ id: g\.id, name: g\.name \}\)/.test(panel)
+    && /team-sheet__card--confirm/.test(panel)
+    && /const confirmDelete = async \(\) =>/.test(panel) && /removeGroup\(target\.id\)/.test(panel),
+    "解散群点菜单直接开确认弹窗（取消 / 解散并删除），确认后才真调 removeGroup");
+  ok(!/confirmDeleteId/.test(panel) && !/再点一次/.test(panel) && !/is-armed/.test(panel),
+    "⛔ 菜单里不再有「再点一次」的内联二次确认（用户要的是弹窗）");
+  const css = read("src/styles/61-team-mode.css");
+  ok(/\.team-sheet__card--confirm \{[^}]*width: min\(420px/.test(css)
+    && /\.team-sheet__foot > button\.is-danger \{[^}]*background: var\(--danger\)/.test(css),
+    "确认弹窗是窄卡 + 危险色主按钮（删除类操作一眼可辨）");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
