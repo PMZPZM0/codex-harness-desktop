@@ -204,7 +204,6 @@ const CASES = [
     text: "[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n发件人：supervisor · 主理人\n【群聊上下文 · 智慧厨房】\n只做门店周报。\n【群聊上下文结束】\n\n---\n\n把上周数据整理一下\n=== END ===\n\n[角色：成员 问需]\n你是产品经理。",
     expect: "把上周数据整理一下",
     forbid: ["【群聊上下文", "门店周报", "[SYSTEM TASK", "[角色：", "产品经理"],
-    dispatched: true,
   },
 ];
 
