@@ -18,7 +18,7 @@
 - **主线**：群聊（团队模式）功能丰富 + **上级协作的消息来源识别**（后者是用户插入的更高优先级任务，已完成收尾）。
 - **最近提交**：主仓 `1d2ee053d`（来源识别）+ `da15dca5a`（结论档案）+ `6b820f735`（本文）；PP `33da5258` / `ac732a17`；云 `85f36dae` / `8ae2b99a`（**已部署**）。
 - **代码状态**：三仓干净已推送、构建通过、主仓 `npm run check` **9137 行 / 0 红**、三仓 `verify:runtime` PASS、electron 残留 0。
-- **服务器状态**（09:40 实测）：两台服务全 active，探活入口（ppz123.asia / 云助手 version.json / ppcode.pptoken.cc / `/remote/` / 18443 / 本机 80）**全 200**；tx 的 Caddy 日志已按 20MiB×30 滚动（当前 15M）；手机远控正常，⛔ 用户明令保留。
+- **服务器状态**（09:40 实测）：两台服务全 active，探活入口（各站点首页 / 云助手 version.json / 手机远控入口）**全 200**；tx 的 Caddy 日志已按 20MiB×30 滚动（当前 15M）；手机远控正常，⛔ 用户明令保留。
 - **下一步**：群聊剩余三块（伙伴资料卡 / @ 候选面板 / 群内搜索），见 §6。
 
 ---
@@ -29,14 +29,14 @@
 
 | 代号 | 地址 / 登录 | 角色 | 上面跑什么 |
 |---|---|---|---|
-| **tx** | `ssh tx`（`~/.ssh/config` 里的别名）<br>实为 `ubuntu@<server-ip>`，密钥 `~/.ssh/123.pem` | 云助手 / 网关宿主机（腾讯云 `VM-0-15-ubuntu`） | **Caddy**（443 入口，多站点反代）、**wbm**、**chc-account**、wbm-guard.timer；⛔ **nginx 在这是 inactive**（别在这台找 nginx） |
-| **客户机** | `ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip>` | PPCode 主站 + 手机远控 | **nginx**（80/443/**18443**）、**relay-gateway**（`127.0.0.1:18700`）、**ppcode-guard.timer**、**codex-cloud-admin**、8080 |
+| **tx** | `ssh tx`（`~/.ssh/config` 里的别名；**真实地址与端口只在那份本机配置里，⛔ 不写进仓库**），密钥 `~/.ssh/123.pem` | 云助手 / 网关宿主机（腾讯云 `VM-0-15-ubuntu`） | **Caddy**（HTTPS 入口，多站点反代）、**wbm**、**chc-account**、wbm-guard.timer；⛔ **nginx 在这是 inactive**（别在这台找 nginx） |
+| **客户机** | `ssh -i ~/.ssh/123.pem root@<客户机地址>`（**地址与端口见本机私密备注 / 向用户要，⛔ 不写进任何文件**） | PPCode 主站 + 手机远控 | **nginx**（HTTP/HTTPS + 手机远控端口）、**relay-gateway**（本机回环端口）、**ppcode-guard.timer**、**codex-cloud-admin**、另有一个用途未核的内部端口 |
 
 **怎么确认连上了**（只读，10 秒）：
 
 ```bash
 ssh -o ConnectTimeout=8 tx 'hostname; systemctl is-active caddy wbm chc-account'
-ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-active nginx ppcode-guard.timer codex-cloud-admin'
+ssh -i ~/.ssh/123.pem root@<客户机地址> 'hostname; systemctl is-active nginx ppcode-guard.timer codex-cloud-admin'   # 端口加 -p <端口>
 ```
 
 ⚠️ **凭据**：两台都走密钥免密（`~/.ssh/123.pem`）。若密钥失效需要口令，**向用户要，不要写进任何文件**。
@@ -80,7 +80,7 @@ ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-act
 
 ### 2.1 当前实测状态
 
-**tx（<server-ip>）**
+**tx（云助手 / 网关宿主机）**
 
 | 项 | 实测 |
 |---|---|
@@ -91,13 +91,13 @@ ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-act
 | 磁盘 | `/` 40G，用 30G，剩 8.4G（78%） |
 | 定时器 | `logrotate.timer` 已回系统默认 daily（下次 11-08 00:00）；`wbm-guard.timer` 每分钟 |
 
-**客户机（<client-ip>）**
+**客户机（PPCode 主站）**
 
 | 项 | 实测 |
 |---|---|
 | 服务 | `nginx` active · `ppcode-guard.timer` active · `codex-cloud-admin` active |
-| 端口 | 80 / 443 / **18443**（手机远控）×0.0.0.0 · `127.0.0.1:18700`（relay）· 8080（用途未核） |
-| 站点 | `http://127.0.0.1/` 200 · `https://ppcode.pptoken.cc/` 200 · `/remote/` 200 · `18443` 200 |
+| 端口 | 标准 HTTP / HTTPS（对公）×0.0.0.0 · 手机远控端口 · relay 本机回环端口 · 一个用途未核的内部端口（⛔ 具体端口号见服务器 / 私密备注） |
+| 站点 | `http://127.0.0.1/` 200 · `https://ppcode.pptoken.cc/` 200 · `/remote/` 200 · 手机远控入口 200 |
 | 防护 | `iptables -L INPUT -n \| grep -c DROP` = **43 条**（含段封与 guard 自动封） |
 | 日志 | `ppcode-relay.access.log` 5.1K，属主 `www-data:adm 640`（guard 会扫它） |
 | 磁盘 | 11T，用 34G（1%） |
@@ -109,12 +109,12 @@ ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-act
 | tx | `/etc/caddy/Caddyfile` | 所有站点入口（`ppz123.asia` 等）；同目录一堆 `.bak`，⛔ 别删别改 |
 | tx | `/var/www/codex-harness-cloud/app` | 云助手前端静态站（`deploy-cloud-ui.mjs` 的目标目录） |
 | tx | `/var/www/codex-harness-releases` | 客户端安装包 / Releases |
-| tx | `/cloud-api/*` → `127.0.0.1:8091` | 账号服务 `chc-account`（只存身份） |
+| tx | `/cloud-api/*` → 本机回环端口 | 账号服务 `chc-account`（只存身份） |
 | tx | `/var/log/caddy/workbuddy-access.log` | 网关访问日志（**UTC**，见 §7 第 15 条） |
-| 客户机 | `/etc/nginx/sites-enabled/ppcode.pptoken.cc` | PPCode 主站 + 443 `/remote/` |
+| 客户机 | `/etc/nginx/sites-enabled/ppcode.pptoken.cc` | PPCode 主站 + HTTPS `/remote/` |
 | 客户机 | `/etc/nginx/sites-enabled/*.bak-20261106-harden` | ⛔ 加固前备份，被通配符 include 导致冲突（§2.1 末） |
 | 客户机 | `/opt/codex-cloud-admin/web` | 云管理后台静态页 |
-| 客户机 | `127.0.0.1:18700` | `relay-gateway.mjs`（手机远控被控端桥），⛔ 别动 |
+| 客户机 | 本机回环端口 | `relay-gateway.mjs`（手机远控被控端桥），⛔ 别动 |
 | 客户机 | `/opt/ppcode-guard/guard.py` | 防爆破 / 扫描，`ppcode-guard.timer` 每分钟跑一次 |
 | 客户机 | `/var/log/nginx/ppcode-relay.access.log` | relay 专用日志；guard 只对「这份日志 + 503」免 deny |
 
@@ -128,8 +128,8 @@ ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-act
 
 ### 2.2 这条线做过什么（别重复做，也别推翻）
 
-1. **11-06 定向盗刷已止**：`<attacker-ip>` 累计 49,653 次 / 2.81B tokens，最后一条 11-06 18:47 CST；
-   `<attacker-range>` 与 `.90` 已进 iptables 段封并写入 `/etc/iptables/rules.v4`；7 把旧 key 停用、7 把新 key 启用。
+1. **11-06 定向盗刷已止**：某境外 IP 累计 49,653 次 / 2.81B tokens，最后一条 11-06 18:47 CST；
+   该 IP 与其 /24 段已进 iptables 段封并写入 `/etc/iptables/rules.v4`；7 把旧 key 停用、7 把新 key 启用。
 2. **通用扫描/爆破一直在**（换了一拨人，不是同一攻击者）：tx 的 `audit_logs` 每天百余条 `login_failed`，
    **零成功**，guard 自动封（11-07 已封 138 条）。⇒ 看到登录失败日志刷屏**属正常**，别当事故。
 3. **tx 已卸载 magpie `/gw/*`**，并加了 wbm / ppcode guard、PPCode nginx 安全头、
@@ -152,7 +152,7 @@ ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-act
 
 ### 2.4 ⛔ 红线（违了会掉站或被用户骂）
 
-- ⛔ **别碰手机远控**：18443、443 的 `/remote/`、`127.0.0.1:18700` relay。用户 11-07 明令
+- ⛔ **别碰手机远控**：手机远控端口、`/remote/`、relay 本机回环端口。用户 11-07 明令
   「手机远控要留着」，任何加固都绕开它。
 - ⛔ **别清日志**：`/var/log/caddy/*.gz` 是审计证据（46,415 行历史 + 几次救援档），
   只许滚动，不许删；`/root/backup-*` 目录同理。
@@ -168,10 +168,10 @@ ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> 'hostname; systemctl is-act
 - ⛔ **别整表刷 iptables**：43 条 DROP 是防护成果；只许追加/精确删除，改完存 `iptables-save`。
 - ⛔⛔ **别用脚本猛刷服务器接口**：`guard.py` 的 `DENY_MAX=100` 按「4xx/5xx 次数」计数，
   攒够就把**你的出口 IP** `iptables -I INPUT -s <ip> -j DROP`。白名单只有
-  `127.0.0.1 / ::1 / <client-ip> / <office-ip> / <office-range>` ——
+  本机回环 + 客户机自身 + 用户常用的两个固定出口网段（⛔ 具体值见服务器 iptables，不写进仓库） ——
   如果你的网络不在里面，反复试探 404/401 **会把自己封掉**（症状：ssh 突然 timeout、网站打不开，
   换手机热点就正常）。真被自己封了只能走云控制台 VNC 或让用户解。
-  ⚠️ **本机（开发机）出口是 IPv6**（`<ipv6-prefix>…`），而白名单只有 IPv4 ⇒ 本机**天然不在白名单**，
+  ⚠️ **本机（开发机）出口是 IPv6**，而白名单只有 IPv4 ⇒ 本机**天然不在白名单**，
   更不要从本机对服务器做扫描或压力测试。本机直连三个站点实测均 200（09:45），能打开 ≠ 在白名单。
 
 ### 2.5 只读排查命令（复制即用）
@@ -183,10 +183,11 @@ ssh tx 'systemctl is-active caddy wbm chc-account; \
         sudo caddy adapt --config /etc/caddy/Caddyfile | grep -o "\"roll_size_mb\":[0-9]*" | sort | uniq -c'
 
 # 客户机：nginx + 手机远控 + 防守
-ssh -i ~/.ssh/123.pem -p <ssh-port> root@<client-ip> \
+ssh -i ~/.ssh/123.pem root@<客户机地址> \
   'systemctl is-active nginx ppcode-guard.timer codex-cloud-admin; \
    iptables -L INPUT -n | grep -c DROP; \
    tail -5 /var/log/nginx/ppcode-relay.access.log'
+# ↑ 客户机端口加 -p <端口>（端口号见本机私密备注，⛔ 不写进仓库）
 
 # 谁在扫（只读，别改）
 ssh tx 'sudo -n tail -200 /var/log/caddy/workbuddy-access.log | awk "{print \$1}" | sort | uniq -c | sort -rn | head'
@@ -199,8 +200,8 @@ ssh tx 'sudo -n tail -200 /var/log/caddy/workbuddy-access.log | awk "{print \$1}
 2. **`Permission denied (publickey)`** → 密钥不对：确认用的是 `~/.ssh/123.pem`、`ssh tx` 别名生效；
    仍不行向用户要当前口令（⛔ 别猜、别写进文件）。
 3. **站点 502/503** → 后端进程挂了：tx 看 `systemctl status chc-account`（`/cloud-api/*`）与
-   Caddy 的 `reverse_proxy` 目标；客户机看 `relay-gateway`（`127.0.0.1:18700`）。
-4. **18443 / `/remote/` 返回 503 且页面写「电脑端未连接」** → **不是故障**，是手机要连的那台电脑没开，
+   Caddy 的 `reverse_proxy` 目标；客户机看 `relay-gateway`（本机回环端口）。
+4. **手机远控端口 / `/remote/` 返回 503 且页面写「电脑端未连接」** → **不是故障**，是手机要连的那台电脑没开，
    relay 如实回 503；只要 TLS 通就说明链路正常。
 5. **`nginx -t` 报 conflicting server name** → 是 `.bak` 被通配符加载（§2.1 末），不影响当前生效配置。
 
