@@ -115,10 +115,14 @@ ok(/function mobileInputOf\([\s\S]{0,900}?uploadsRoot/.test(mainSrc)
   "发送与排队共用同一个入参闸 mobileInputOf（图片只认 remote-uploads）");
 
 /* ── ⑥ 渲染层：两条宿主事件的落点 ──────────────────────────────────────────── */
-ok(/remote:queue-start" && id\) void bag\.startQueued\(id\)/.test(partSrc),
+ok(/remote:queue-start"\) void bag\.startQueued\(id\)/.test(partSrc),
   "渲染层：remote:queue-start → startQueued（运行中会挂「待并入 · 可撤回」）");
-ok(/remote:queue-withdraw" && id\) cancelPendingSteer\(/.test(partSrc),
+ok(/remote:queue-withdraw"\) cancelPendingSteer\(threadId, id\)/.test(partSrc),
   "渲染层：remote:queue-withdraw → cancelPendingSteer（撤销待并入登记）");
+/* ⛔ 11-07 审查：广播送达**每个窗口**（主窗 + 独立会话窗）—— 必须只认本窗当前会话那条，
+   否则别的窗口拿自己的 threadId 去启动这条排队消息（引擎报错 + 桌面假弹「发送失败」）。 */
+ok(/threadId !== String\(bag\.thread\?\.id \?\? ""\)\) return;/.test(partSrc),
+  "渲染层：只处理 threadId == 本窗当前会话的事件（多窗口不重复处理）");
 
 console.log(fails ? `\n【remote-queue】失败 ${fails} 项` : `\n【remote-queue】通过 ${checks} 项`);
 process.exit(fails ? 1 : 0);

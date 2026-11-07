@@ -615,12 +615,11 @@ const remote = new RemoteControlService({
       .filter((entry) => entry.id);
   },
   queueAdd: async (threadId, text, images = [], effort = "high") => {
-    const model = await readCustomModel();
-    const validEffort = ["low", "medium", "high", "xhigh"].includes(String(effort ?? "")) ? String(effort) : "high";
     const input = mobileInputOf(text, images, []);
     if (!input.length) return;
-    // 引擎的排队条目自己不带模型/档位：把选择塞进 text 前缀会让界面显示脏字，所以只在非默认时提示
-    void model; void validEffort;
+    /* ⛔ 引擎 thread/queue/add 不带模型/档位（塞进 text 前缀会让气泡显示脏字）：手机选的
+       effort 在排队路径**没有落点**，条目开始执行时按该会话当时的线程设置跑（发送路径才有 effort）。 */
+    void effort;
     await server.request("thread/queue/add", { threadId, input, clientUserMessageId: randomUUID() });
   },
   queueStart: async (threadId, id) => {

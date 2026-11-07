@@ -343,12 +343,18 @@ export function usePart04c2(bag: Bag) {
   /* 手机端排队操作（11-06）：主进程只做「引擎队列的增删查」，**立即 / 撤回的语义不重写** ——
      它广播这两条宿主事件，由这里调用桌面同一套 startQueued / cancelPendingSteer：
        · remote:queue-start  ⇒ startQueued（运行中会登记「待并入 · 可撤回」，边界到了再并入）
-       · remote:queue-withdraw ⇒ 撤销待并入登记（引擎条目由主进程删，见 queueDelete） */
-  useEffect(() => window.codex.onHarnessEvent((payload: any) => {
-    const type = String(payload?.type ?? "");
-    const id = String(payload?.id ?? "");
-    if (type === "remote:queue-start" && id) void bag.startQueued(id);
-    else if (type === "remote:queue-withdraw" && id) cancelPendingSteer(String(payload?.threadId ?? ""), id);
+       · remote:queue-withdraw ⇒ 撤销待并入登记（引擎条目由主进程删，见 queueDelete）
+     ⛔ 广播会送到**每个窗口**（主窗 + 独立会话窗）：只认「本窗当前会话」那条。
+        不认 threadId 时，别的窗口会拿自己的 threadId 去启动这条排队消息 ⇒ 引擎报错、
+        桌面上假弹「发送失败」（11-07 审查）。 */
+  useEffect(() => window.codex.onHarnessEvent((raw) => {
+    const payload = (raw ?? {}) as { type?: unknown; id?: unknown; threadId?: unknown };
+    const type = String(payload.type ?? "");
+    const id = String(payload.id ?? "");
+    const threadId = String(payload.threadId ?? "");
+    if (!id || !threadId || threadId !== String(bag.thread?.id ?? "")) return;
+    if (type === "remote:queue-start") void bag.startQueued(id);
+    else if (type === "remote:queue-withdraw") cancelPendingSteer(threadId, id);
   }), []);
 
   // localStorage 恢复（窗口 reload 后徽标不丢；主进程定时器由下方 effect 幂等重设）
