@@ -458,6 +458,9 @@ const catalog = [
   const layoutView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/is-layout-left/.test(layoutView) && /\.team-group__stream\.is-layout-left \.team-msg\.is-human/.test(teamCss),
     "视图按选项切换「全部靠左」排版");
+  ok(/team-group__badge/.test(layoutView) && /team-group__empty-icon/.test(layoutView)
+    && /team-group__members-head/.test(teamCss),
+    "群头有群徽标、空态有图标、成员栏标题有分隔（11-07 美化）");
   const quoteView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/team-process__quote-author/.test(quoteView) && /faceOfId\(quote\.authorId\)/.test(quoteView),
     "引用行里「回复某人」带头像 + 名字（真实提及，⛔ 不只是纯文字）");

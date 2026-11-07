@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Search, Settings2, X } from "lucide-react";
+import { MessagesSquare, Search, Settings2, X } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -617,6 +617,8 @@ export function TeamGroupView({
         />
       )}
       <header className="team-group__head">
+        {/* 群徽标：首字小方块（11-07 美化：群头一眼有“这是一个群”的锚点） */}
+        <span className="team-group__badge" aria-hidden>{[...(group.name || "群")][0]}</span>
         <div className="team-group__title">
           <div className="team-group__title-row">
             {editingName ? (
@@ -735,6 +737,7 @@ export function TeamGroupView({
               )}
               {rows.length === 0 ? (
                 <div className="team-group__empty">
+                  <span className="team-group__empty-icon" aria-hidden><MessagesSquare size={22} /></span>
                   <p>这个群还没有说过话。</p>
                   <p className="team-group__empty-hint">
                     在下面 @ 一个伙伴派活，它的回复会和这里其他伙伴的按时间排在一起。
