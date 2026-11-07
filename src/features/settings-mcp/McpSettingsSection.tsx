@@ -117,11 +117,12 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
             description: entry.description,
             meta: [entry.category, ...(entry.config ? [entry.config.transport === "stdio" ? "stdio 本地进程" : "HTTP 远程服务"] : [])],
             installed,
-            installLabel: entry.config ? "一键接入" : "查看接入配置",
-            onInstall: entry.config ? () => installMcpServer(entry) : undefined,
+            /* 已接入的不再给安装动作（预览里重复点「一键接入」会覆盖连接器配置与已有密钥）。 */
+            installLabel: installed ? "已接入" : entry.config ? "一键接入" : "查看接入配置",
+            onInstall: !installed && entry.config ? () => installMcpServer(entry) : undefined,
             externalUrl: skillhubMcpDetailUrl(entry.id),
             note: entry.configNote,
-            note2: entry.config ? "密钥可留空稍后在连接器编辑中补充；保存后引擎重启并验证 MCP 状态" : "该服务暂无内置模板，打开官网复制接入配置",
+            note2: installed ? "已经在「已配置」分页里，可启停、补密钥或移除" : entry.config ? "密钥可留空稍后在连接器编辑中补充；保存后引擎重启并验证 MCP 状态" : "该服务暂无内置模板，打开官网复制接入配置",
           })}>
             <div className="skill-card-head">
               <MarketLogo label={entry.name} size={30} />
@@ -178,7 +179,7 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
         <button className="icon-button" title="移除连接器" onClick={() => { void openAppConfirm(`移除连接器 ${connector.name ?? connector.id}`, "将从配置中删除该 MCP 连接器并重启引擎，Codex 不再加载它提供的工具。", "移除").then((ok) => { if (ok) void removeConnector(connector.id); }); }}><Trash2 size={14} /></button>
       </div>
     </article>;
-  })}{!connectors.length && <p className="muted">还没有自定义连接器 —— 用上面的模板接入，或点「添加 MCP」。</p>}</div>
+  })}{!connectors.length && <p className="muted">还没有自定义连接器 —— 在「一键接入」里选模板，或点「添加 MCP」。</p>}</div>
     </>)}
   {connectorEditorOpen && <ConnectorSetupModal draft={connectorDraft} secret={connectorSecret} saving={connectorSaving} onDraftChange={setConnectorDraft} onSecretChange={setConnectorSecret} onClose={() => setConnectorEditorOpen(false)} onSave={(draft) => void saveConnector(draft)} />}
   {false && <div className="schedule-editor connector-legacy-editor"><input value={connectorDraft.name} onChange={(event) => setConnectorDraft({ ...connectorDraft, name: event.target.value })} placeholder="连接器名称，例如 GitHub MCP" /><div className="schedule-kind" role="group"><button type="button" className={connectorDraft.transport === "stdio" ? "active" : ""} onClick={() => setConnectorDraft({ ...connectorDraft, transport: "stdio" })}>本地 stdio</button><button type="button" className={connectorDraft.transport === "streamable_http" ? "active" : ""} onClick={() => setConnectorDraft({ ...connectorDraft, transport: "streamable_http" })}>HTTP MCP</button></div>{connectorDraft.transport === "stdio" ? <><input value={connectorDraft.command ?? ""} onChange={(event) => setConnectorDraft({ ...connectorDraft, command: event.target.value })} placeholder="启动命令，例如 npx" /><input value={(connectorDraft.args ?? []).join(" ")} onChange={(event) => setConnectorDraft({ ...connectorDraft, args: event.target.value.trim() ? event.target.value.trim().split(/\s+/) : [] })} placeholder="参数，空格分隔，例如 -y @modelcontextprotocol/server-github" /></> : <input value={connectorDraft.url ?? ""} onChange={(event) => setConnectorDraft({ ...connectorDraft, url: event.target.value })} placeholder="https://service.example.com/mcp" />}<input value={connectorSecret} type="password" onChange={(event) => setConnectorSecret(event.target.value)} placeholder="可选：访问令牌（保存时使用 MCP_TOKEN 加密存储）" /><div className="settings-actions"><button className="secondary-setting" onClick={() => setConnectorEditorOpen(false)}>取消</button><button className="primary-setting" disabled={connectorSaving || !connectorDraft.name || (connectorDraft.transport === "stdio" ? !connectorDraft.command : !connectorDraft.url)} onClick={() => { const secrets: Record<string, string> = connectorSecret ? { MCP_TOKEN: connectorSecret } : {}; const draft: ConnectorDraft = { ...connectorDraft, secrets }; setConnectorDraft(draft); void saveConnector(draft); }}>{connectorSaving ? <Spinner /> : <Check size={14} />}保存并验证</button></div></div>}

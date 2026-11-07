@@ -513,13 +513,10 @@ export function TeamGroupView({
   };
 
   const askAgain = (row: GroupMessageRow) => {
-    /* 团成员的消息：@ 的是**它所属的团那一行**（团内分派由主理人决定），
-       ⛔ 不能把合成 id 塞进 atTargets（那不是群成员，派活会被判"未绑定"）。 */
+    /* 团成员的消息：@ 回**他本人**（合成 id），与成员栏那个 @ 同一口径 ——
+       dispatch 会把 `team:<teamId>:<memberId>` 翻成 kind:"member" 派给他自己的会话。 */
     const teamAuthor = parseTeamAuthorId(row.authorId);
-    const owner = teamAuthor
-      ? group.members.find((m) => m.targetKind === "team" && String(m.targetKey ?? "") === teamAuthor.teamId)
-      : null;
-    setAtTargets([owner?.id ?? row.via?.memberId ?? row.authorId]);
+    setAtTargets([teamAuthor ? row.authorId : (row.via?.memberId ?? row.authorId)]);
     composerRef.current?.focus();
   };
 

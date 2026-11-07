@@ -20,6 +20,10 @@
 /* 分页由 .market-inline-tabs 的 margin-left:auto 贴右；操作组紧跟其后，不再各吃一个 auto。 */
 .mcp-market-toolbar .mcp-inline-tabs { margin-right: 0; }
 .mcp-market-toolbar .skill-toolbar-actions { margin-left: 0; flex-wrap: nowrap; }
+/* 窄窗（设置面板内容 < ~620px）时宁可换行，也不许把分页/按钮挤出可视区（本轮实测过一次）。 */
+@media (max-width: 1024px) {
+  .resource-toolbar.mcp-market-toolbar { flex-wrap: wrap; }
+}
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
   gap: 10px;

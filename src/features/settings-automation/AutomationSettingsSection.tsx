@@ -67,7 +67,8 @@ export function AutomationSettingsSection(props: AutomationSettingsSectionProps)
     const row = toolOf(id);
     if (!row) return "读取中";
     if (!row.installed) return "未安装";
-    return `v${String(row.version ?? "").replace(/^[^\d]*/, "") || "已装"}`;
+    const version = String(row.version ?? "").replace(/^[^\d]*/, "").trim();
+    return version ? `v${version}` : "已装";
   };
   const toolOk = (id: string, enabled: boolean) => enabled && Boolean(toolOf(id)?.installed);
 

@@ -249,6 +249,10 @@ const mcpPage = src("src/features/settings-mcp/McpSettingsSection.tsx");
 ok(/<AppSelect[\s\S]{0,200}mcp-category-select/.test(mcpPage) && !/SkillHub MCP 广场|AIbase 广场/.test(mcpPage), "MCP 分类改成筛选下拉，两个市场跳转按钮已删");
 /* 11-07 分页并进工具条后，「分类」文字标签取消（下拉自身即筛选），改钉整条工具条不换行。 */
 ok(/\.resource-toolbar\.mcp-market-toolbar\s*\{[^}]*flex-wrap:\s*nowrap/.test(read("src/styles/07-settings-mcp-connectors.css")), "MCP 工具条一行不换行（搜索 + 分类 + 分页 + 操作）");
+/* 11-07 审查：市场恢复显示已接入卡后，预览里的安装动作必须跟着 installed 关掉 ——
+   否则重复点「一键接入」会把连接器配置与已有密钥覆盖。 */
+ok(/installed \? "已接入" : entry\.config \? "一键接入"/.test(mcpPage) && /onInstall: !installed && entry\.config/.test(mcpPage),
+  "MCP 市场已接入卡：预览不给安装动作（防重复接入覆盖配置/密钥）");
 
 /* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
    改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */

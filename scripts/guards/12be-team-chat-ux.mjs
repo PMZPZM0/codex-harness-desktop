@@ -151,6 +151,13 @@ const catalog = [
   ok(/\.team-mention \{/.test(css) && /\.team-search \{/.test(css) && /\.team-profile \{/.test(css),
     "三块的样式都在（面板/搜索/资料卡）");
   ok(/\.team-msg\.is-search-hit \{/.test(css), "搜索命中高亮的样式存在");
+  /* 11-07 用户令「头像对齐输入框边框」：改前实测头像 left 259 / 输入框卡片 left 221（差 38px）。
+     根因是子项按 720 居中、composer 按 790 列居中 ⇒ 两条轴不同，必须共用同一条公式。 */
+  ok(/padding-left: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\)/.test(css)
+    && /\.team-group__composer \{ padding-inline: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\); \}/.test(css)
+    && /\.team-group__stream > \* \{[\s\S]{0,160}?width: min\(100%, var\(--team-column\)\)/.test(css)
+    && /align-items: flex-start;/.test(css),
+    "⛔ 消息头像与输入框左边框同轴（stream / composer 同一条 padding 公式与列宽）");
 }
 
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
@@ -209,6 +216,9 @@ const catalog = [
     "团成员与普通伙伴一起进 targets（静音规则同样适用）");
   ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /<MemberActions[\s\S]{0,240}?id=\{kidId\}/.test(view),
     "成员栏的团成员行有自己的 @（与伙伴行共用 MemberActions：运行态点 + ⏹️ + @）");
+  /* 11-07 审查：成员级 @ 打通后，「追问」仍退回团那一行 ⇒ 同一成员两条路径派给不同对象。 */
+  ok(/const teamAuthor = parseTeamAuthorId\(row\.authorId\);[\s\S]{0,160}?setAtTargets\(\[teamAuthor \? row\.authorId/.test(view),
+    "「追问」团成员消息时 @ 回他本人（合成 id），⛔ 不退化回整团");
 }
 
 /* ── ⑥ 输入框对齐主对话（11-07 用户：「发出去之后输入框还有这个文字」+「同步成跟对话框一样的输入框」）── */
