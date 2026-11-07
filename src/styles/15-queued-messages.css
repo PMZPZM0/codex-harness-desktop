@@ -960,6 +960,16 @@
   flex-direction: column;
   gap: 1px;
 }
+/* 11-07 用户（截图）：「选项没有自适应展示，都到下面了」——靠近侧栏底部时翻到行上方，
+   并给菜单一个视口内的高度上限（内容再多也不越出窗口）。 */
+.project-menu.is-up {
+  top: auto;
+  bottom: calc(100% - 2px);
+}
+.project-menu {
+  max-height: min(260px, calc(100vh - 24px));
+  overflow-y: auto;
+}
 .project-menu button {
   display: flex;
   align-items: center;

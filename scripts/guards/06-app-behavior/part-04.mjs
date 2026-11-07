@@ -21,6 +21,12 @@ export async function run() {
   //   裸词断言会被自己的注释命中 —— 09-27 变异实测当场栽了两次（`search-box` 命中的是注释里的
   //   「.search-box」）。这是同一个坑的第五次，从此本块的断言一律在**剥掉注释的代码**上做。
   const side180 = codeOnly(readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8"));
+  /* 11-07 用户（截图）：「这个选项没有自适应展示，都到下面了」——项目 ⋯ 菜单靠近侧栏底部时向上弹。 */
+  (/setProjectMenuUp\(/.test(side180) && /window\.innerHeight - rect\.bottom < 170/.test(side180)
+    && /project-menu\$\{projectMenuUp \? " is-up" : ""\}/.test(side180)
+    && /\.project-menu\.is-up\s*\{[^}]*bottom:\s*calc\(100% - 2px\)/.test(readFileSync(join(ROOT, "src", "styles", "15-queued-messages.css"), "utf8")) ? ok : fail)(
+    "【180】项目菜单自适应：靠近底部向上弹（⛔ 不再被侧栏底边裁掉）"
+  );
   // ① 删「会话备份」入口（用户：「会话备份选项删了，前面不需要这个了」）。
   //   ⛔ 只删**侧栏入口**：设置页里的 backup 页保留（用户说的是"主界面左侧侧边栏的"）。
   (!/setSettingsPage\("backup"\)/.test(side180) ? ok : fail)(

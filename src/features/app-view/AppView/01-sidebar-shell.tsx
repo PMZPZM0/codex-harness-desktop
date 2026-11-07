@@ -390,6 +390,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
   /* 登录管理（10-21 用户要求）：三处账户一处直达，纯局部弹窗状态。 */
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
+  /* 项目菜单向上弹（11-07 用户：「选项没有自适应，都到下面了」）：靠近侧栏底部时翻到行上方。 */
+  const [projectMenuUp, setProjectMenuUp] = useState(false);
   /* 新手教程（10-21 侧栏重排）：入口挪进底部导航组 ⇒ 打开状态提到这里（受控交给 NewbieGuide）。 */
   const [newbieOpen, setNewbieOpen] = useState(false);
   /* 拓展功能（10-24 立，10-25 更名；原「功能入口」）：可配置排序 / 更多分组 / 两种展示位置（上下移动），动作经总线回到侧栏壳。
@@ -865,8 +867,17 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           {/* 10-25 用户令（对照 ZCode）：项目行加「新建会话」图标（··· 之前）——
                               点击 = 切 workspace 到该项目 → 开新会话（首条消息发出时 cwd 落到该项目）。 */}
                           <button className="project-item-new-btn" title={"在 " + projectNameOf(cwd) + " 新建任务"} onClick={(event) => { event.stopPropagation(); event.currentTarget.blur(); bagSetWorkspaceForProject(cwd); }}><MessageCirclePlus size={13} /></button>
-                          <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => { event.stopPropagation(); setProjectMenu(projectMenu === cwd ? null : cwd); }}><MoreHorizontal size={14} /></button>
-                          {projectMenu === cwd && <div className="project-menu">
+                          <button className="project-item-menu-btn" title="项目操作" aria-expanded={projectMenu === cwd} onClick={(event) => {
+                            event.stopPropagation();
+                            const open = projectMenu !== cwd;
+                            if (open) {
+                              /* 下方空间不足（约 4 项 × 30 + 内边距）⇒ 向上弹，别被侧栏底部裁掉。 */
+                              const rect = event.currentTarget.getBoundingClientRect();
+                              setProjectMenuUp(window.innerHeight - rect.bottom < 170);
+                            }
+                            setProjectMenu(open ? cwd : null);
+                          }}><MoreHorizontal size={14} /></button>
+                          {projectMenu === cwd && <div className={`project-menu${projectMenuUp ? " is-up" : ""}`}>
                             <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
                             <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                             <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
