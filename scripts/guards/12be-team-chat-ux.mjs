@@ -155,8 +155,8 @@ const catalog = [
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   const css = read("src/styles/61-team-mode.css");
-  ok(/team-group__members-stop/.test(view) && /team-group__members-foot/.test(view),
-    "停止键落在成员栏底部（用户：「停止放到群成员列表卡片后面」）");
+  /* 停止键的**位置与存在性**全交给 `12bg-team-stop-placement`（那条线是它的 owner，
+     用户在三个位置之间改过三次）。这里⛔ 不再断言它 —— 两处断言会互相打架（11-07 实践）。 */
   ok(/\.team-group__members-stop\.is-busy \{/.test(css),
     "有人在跑才染红（常红会变成装饰，分不清谁在干活）");
   const running = view.slice(view.indexOf("team-group__running"), view.indexOf("team-group__running") + 1400);
