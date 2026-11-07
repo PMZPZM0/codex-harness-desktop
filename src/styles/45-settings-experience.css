@@ -774,3 +774,112 @@
 /* 10-30：拓展接口一级卡改成两列（原来被这条规则压成单列长条，用户：「整齐，紧凑一点」）。
    300px 起排：设置面板 ~680px 时两列各 ~335px；更深的结构在下游文件已定，这里只覆盖列数。 */
 .settings-exp-shell .ext-page .settings-cards { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+/* ── 11-07：浏览器自动化 —— 能力链路 + 三张能力卡 ────────────────────────────
+   用户：「这个卡片做好看一点啊，这么杂乱的文字注释，把联动的展示做出来」。
+   ⛔ 链路条只表达「现在走哪条」：装了就点亮 Ego Lite，没装就点亮 browse-skills；
+      三张卡用与其它设置页一致的白卡/细线/状态胶囊，不再是一列「标签 + 长句」。 */
+.settings-exp-shell .browser-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel-2) 55%, transparent);
+}
+.settings-exp-shell .browser-chain-label { font-size: 11px; color: var(--muted); }
+.settings-exp-shell .browser-chain-node {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  font-size: 11.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.settings-exp-shell .browser-chain-node.is-on {
+  border-color: color-mix(in srgb, var(--ok) 45%, var(--line));
+  background: color-mix(in srgb, var(--ok) 12%, var(--panel));
+  color: var(--text);
+  font-weight: 600;
+}
+.settings-exp-shell .browser-chain-tag { font-size: 10px; font-weight: 400; color: var(--muted); }
+.settings-exp-shell .browser-chain-node.is-on .browser-chain-tag { color: color-mix(in srgb, var(--ok) 70%, var(--text)); }
+.settings-exp-shell .browser-chain-arrow { color: var(--faint); flex: none; }
+
+.settings-exp-shell .browser-cap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+.settings-exp-shell .browser-cap-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 118px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+}
+.settings-exp-shell .browser-cap-card.is-on {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 12%, transparent);
+}
+.settings-exp-shell .browser-cap-head { display: flex; align-items: center; gap: 8px; }
+.settings-exp-shell .browser-cap-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  flex: none;
+}
+.settings-exp-shell .browser-cap-icon.is-blue { color: #3b82f6; background: color-mix(in srgb, #3b82f6 14%, transparent); }
+.settings-exp-shell .browser-cap-icon.is-violet { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 14%, transparent); }
+.settings-exp-shell .browser-cap-icon.is-amber { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
+.settings-exp-shell .browser-cap-head strong { font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.settings-exp-shell .browser-cap-tag {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  color: var(--muted);
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
+.settings-exp-shell .browser-cap-tag.is-ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.settings-exp-shell .browser-cap-tag.is-warn { color: var(--amber); background: color-mix(in srgb, var(--amber) 14%, transparent); }
+.settings-exp-shell .browser-cap-card p { margin: 0; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+.settings-exp-shell .browser-cap-ver { color: var(--faint); font-size: 10px; }
+.settings-exp-shell .browser-cap-card code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+  font-size: 10.5px;
+}
+.settings-exp-shell .browser-cap-action {
+  margin-top: auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.settings-exp-shell .browser-cap-action:hover { text-decoration: underline; }
+@media (max-width: 720px) {
+  .settings-exp-shell .browser-cap-grid { grid-template-columns: 1fr; }
+}

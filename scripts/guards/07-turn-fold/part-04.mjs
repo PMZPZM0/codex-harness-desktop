@@ -705,8 +705,9 @@ export async function run() {
       && /当前生效链路/.test(autoUi274) ? ok : fail)(
       "【274】自动化页：两个后端开关绑同一份 app-settings + 显示当前生效链路（Windows nuphus 主 / mac computer-use 主）"
     );
-    (/auto-bullets/.test(autoUi274) && /ego-browser/.test(autoUi274) && /browse-skills/.test(autoUi274) ? ok : fail)(
-      "【274】浏览器页：自动化优先级改成要点列表（Ego Lite 优先 / 未装回落 browse-skills），不再是整段长文"
+    (/(?:browser-cap-grid|auto-bullets)/.test(autoUi274) && /ego-browser/.test(autoUi274) && /browse-skills/.test(autoUi274)
+      && /当前链路/.test(autoUi274) && /egoStatus/.test(autoUi274) ? ok : fail)(
+      "【274】浏览器页：当前链路 + 能力卡（Ego Lite 已装状态 / 未装回落 browse-skills），不再是整段长文"
     );
   }
   let policy274 = null;
