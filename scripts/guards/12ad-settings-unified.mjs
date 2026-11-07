@@ -247,7 +247,8 @@ ok(/<button className="danger-setting" disabled=\{restarting\}[\s\S]{0,160}保�
 /* 10-27 用户：「那个分类做成筛选形式，几个市场跳转删了」 */
 const mcpPage = src("src/features/settings-mcp/McpSettingsSection.tsx");
 ok(/<AppSelect[\s\S]{0,200}mcp-category-select/.test(mcpPage) && !/SkillHub MCP 广场|AIbase 广场/.test(mcpPage), "MCP 分类改成筛选下拉，两个市场跳转按钮已删");
-ok(/\.mcp-category-filter\s*\{[^}]*white-space:\s*nowrap/.test(read("src/styles/07-settings-mcp-connectors.css")), "MCP 分类标签不换行");
+/* 11-07 分页并进工具条后，「分类」文字标签取消（下拉自身即筛选），改钉整条工具条不换行。 */
+ok(/\.resource-toolbar\.mcp-market-toolbar\s*\{[^}]*flex-wrap:\s*nowrap/.test(read("src/styles/07-settings-mcp-connectors.css")), "MCP 工具条一行不换行（搜索 + 分类 + 分页 + 操作）");
 
 /* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
    改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */

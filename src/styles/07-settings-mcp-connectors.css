@@ -7,18 +7,19 @@
 
 
 /* ══ app-server MCP 状态卡（设置 → 连接器中心 → 底部） ══════════════════════ */
-/* MCP 市场分类筛选（10-27 用户：分类做成筛选形式）——横向 tab 收成下拉，和搜索/操作同一行 */
-.mcp-category-filter { display: inline-flex; align-items: center; gap: 8px; flex: none; color: var(--muted); font-size: 12px; white-space: nowrap; }
-.mcp-category-filter > span { flex: none; white-space: nowrap; }
-.mcp-category-select { min-width: 148px; }
-/* 10-27 用户：「搜索框靠左，分类选项放到搜索框后面」——
-   [搜索] [分类▾] 靠左成一组，操作按钮照旧被 .skill-toolbar-actions 的 margin-left:auto 顶到右边。
-   ⛔ 搜索框必须**有固定上限**：继承 .resource-toolbar .search-field 的 flex:1 1 190px 会把它拉满整行，
-      分类被挤到最右、贴着按钮，看起来就不像「跟在搜索后面」了。
-   ⛔ 选择器要写成 `.resource-toolbar.mcp-market-toolbar`（特异度 0,3,0）：12-settings-skills.css
-      里那条 `.resource-toolbar .search-field` 同特异度但**后导入**，只写两个类会被它压回去（实测过）。 */
-/* 11-07 用户：「搜索框可以短一点」—— 与添加/刷新同排后收窄，分类紧跟其后。 */
-.resource-toolbar.mcp-market-toolbar .search-field { flex: 0 1 190px; min-width: 150px; }
+/* MCP 工具条（11-07 用户：「跟搜索框一排，搜索框可以短一点」）——
+   一条行内：搜索（可收缩）+ 分类下拉 + 四个分页（贴右）+ 添加/刷新。
+   ⛔ 搜索框必须有上限并允许收缩：继承 .resource-toolbar .search-field 的 flex:1 1 190px 会拉满整行；
+      flex-wrap 默认 wrap 时浏览器**先换行再收缩**，分页会被顶到第二行 ⇒ 本条 nowrap。
+   ⛔ 选择器写到 `.resource-toolbar.mcp-market-toolbar`（0,3,0）：12-settings-skills.css 的同名规则后导入。 */
+.resource-toolbar.mcp-market-toolbar { flex-wrap: nowrap; gap: 8px; }
+/* ⛔ 一行装得下四个分页 + 操作：只让搜索框收缩（其余 flex:none），上限 150 / 可缩到 100。 */
+.resource-toolbar.mcp-market-toolbar .search-field { flex: 0 1 150px; min-width: 100px; }
+.mcp-category-select { min-width: 88px; max-width: 100px; flex: none; }
+.mcp-inline-tabs .segmented-tabs button { padding: 0 9px; }
+/* 分页由 .market-inline-tabs 的 margin-left:auto 贴右；操作组紧跟其后，不再各吃一个 auto。 */
+.mcp-market-toolbar .mcp-inline-tabs { margin-right: 0; }
+.mcp-market-toolbar .skill-toolbar-actions { margin-left: 0; flex-wrap: nowrap; }
 .mcp-server-grid {
   grid-template-columns: repeat(auto-fill, minmax(288px, 1fr));
   gap: 10px;
