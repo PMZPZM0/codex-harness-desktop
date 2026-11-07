@@ -671,7 +671,7 @@ export function TeamGroupView({
           >
             <Search size={14} />
           </button>
-          <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回群聊" : "群设置"}>
+          <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回工作伙伴" : "群设置"}>
             {showSettings ? <X size={14} /> : <Settings2 size={14} />} <span>{showSettings ? "返回" : "设置"}</span>
           </button>
         </div>

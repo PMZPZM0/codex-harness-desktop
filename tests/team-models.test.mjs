@@ -7,6 +7,7 @@ import {
   MAX_MEMBER_AVATAR_CHARS,
   normalizeMemberAvatar,
   setMemberAvatar,
+  collaborationProtocolLines,
   MAX_GROUP_MESSAGES,
   addPartner,
   appendGroupMessage,
@@ -489,4 +490,50 @@ test("成员头像归一：只认 preset: 与图片 dataURL，其它一律当没
   /* 超长 dataURL 截断到上限（防一张 4K 图把群 JSON 撑爆） */
   const huge = `data:image/png;base64,${"A".repeat(MAX_MEMBER_AVATAR_CHARS + 500)}`;
   assert.equal(normalizeMemberAvatar(huge).length, MAX_MEMBER_AVATAR_CHARS);
+});
+
+/* ── 协作协议（11-07 用户令：明确分工 / 沟通 / 协调 / 汇报 / 产出，团群要明显强于自定义群）── */
+test("协作协议：主理人版含分工/并发/验收/汇报/冲突，成员版含对齐/越界/交付格式", () => {
+  const lead = collaborationProtocolLines("lead").join("\n");
+  assert.match(lead, /分工/);
+  assert.match(lead, /并发/);
+  assert.match(lead, /验收/);
+  assert.match(lead, /结论段/);
+  assert.match(lead, /冲突/);
+  const member = collaborationProtocolLines("member").join("\n");
+  assert.match(member, /输入是什么、产出什么、交给谁/);
+  assert.match(member, /别越界/);
+  assert.match(member, /结论先行/);
+  assert.match(member, /卡在哪/);
+});
+
+test("协作协议：单人版更短、且不出现团的分工/交接话术（⛔ 别让自定义群冒充有团）", () => {
+  const single = collaborationProtocolLines("single").join("\n");
+  assert.ok(single.length < collaborationProtocolLines("lead").join("\n").length);
+  assert.ok(!/主理人|成员|并发|交接/.test(single));
+  assert.match(single, /缺信息就直接问/);
+});
+
+test("群上下文：有团的群注入团队协议，自定义群只给单人精简版", () => {
+  const teamGroup = createGroup({
+    id: "g1", name: "工作伙伴", leadId: "local-user",
+    members: [
+      { id: "local-user", kind: "human", name: "我" },
+      { id: "tgt:team:t1", kind: "bot", name: "视频团", targetKind: "team", targetKey: "t1" },
+    ],
+  });
+  const leadBlock = groupContextBlock(teamGroup, { forMemberId: "tgt:team:t1", forTeam: true });
+  assert.match(leadBlock, /你是主理人/);
+  const soloGroup = createGroup({
+    id: "g2", name: "自定义", leadId: "local-user",
+    members: [
+      { id: "local-user", kind: "human", name: "我" },
+      { id: "b1", kind: "bot", name: "写手", targetKind: "expert", targetKey: "k1" },
+    ],
+  });
+  const soloBlock = groupContextBlock(soloGroup, { forMemberId: "b1" });
+  assert.match(soloBlock, /协作方式：/);
+  assert.ok(!/你是主理人/.test(soloBlock));
+  /* ⛔ 自定义群里说"团成员也能这样叫"是误导（那里没有团成员） */
+  assert.ok(!/团成员也能这样叫/.test(soloBlock));
 });

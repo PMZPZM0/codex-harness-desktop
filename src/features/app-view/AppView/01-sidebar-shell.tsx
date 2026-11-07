@@ -774,13 +774,15 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 >
                   <Crown size={15} /><span>指挥中枢</span><kbd className="quick-kbd">{bossShortcutLabel()}</kbd>
                 </button>
-                {/* 10-05 用户令：群聊入口放在「指挥中枢」下面（独立板块 src/features/harness-team） */}
+                {/* 10-05 用户令：群聊入口放在「指挥中枢」下面（独立板块 src/features/harness-team）
+                    11-07 用户令：「把群组改名为『工作伙伴』，会话标签保持不变」——
+                    只改这个入口的名字；侧栏会话上的「群调度」标记不动（那是"这条会话哪来的"）。 */}
                 <button
                   className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-violet"
-                  title="群聊：团队成员 + 伙伴，@ 一下就派活"
+                  title="工作伙伴：团队成员 + 伙伴，@ 一下就派活"
                   onClick={() => teamChatOpen.set(true)}
                 >
-                  <MessagesSquare size={15} /><span>群聊</span>
+                  <MessagesSquare size={15} /><span>工作伙伴</span>
                 </button>
                 {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
                     搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}

@@ -238,6 +238,24 @@ const catalog = [
     "⛔ 两个进程用**同一个幂等 id**（`team-run:<runId>`）—— 否则面板开着时同一条产出会写两遍");
 }
 
+/* ── ⑪ 入口改名 + 协作协议（11-07 用户令：「把群组改名为『工作伙伴』，会话标签保持不变」；
+      「明确各成员如何沟通 / 配合 / 协调 / 汇报 / 产出，让含专家团的群明显优于自定义群」）── */
+{
+  const sidebar = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+  const models = read("src/lib/team-models.mjs");
+  const sop = read("electron/expert-teams/06-team-tools.ts");
+  ok(/<span>工作伙伴<\/span>/.test(sidebar) && !/<span>群聊<\/span>/.test(sidebar),
+    "侧栏入口叫「工作伙伴」（⛔ 会话上的「群调度」标签不动）");
+  ok(/export function collaborationProtocolLines/.test(models)
+    && /collaborationProtocolLines\(role\)/.test(models)
+    && /const teamLike = kids\.length > 0/.test(models),
+    "群上下文按「有没有团」分档注入协作协议（团版两大档 / 单人精简版）");
+  ok(/你是主理人/.test(models) && /你在团里只管自己这一环/.test(models) && /一次只推进一件事/.test(models),
+    "三档口径都在：主理人（分工/并发/验收/汇报/冲突）、成员（对齐/越界/交付格式）、单人（一件事/缺就问）");
+  ok(/交接标准/.test(sop) && /汇报口径/.test(sop),
+    "主理人 SOP 补了交接标准与汇报口径（派活消息必须写清输入/交付物/交给谁）");
+}
+
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
