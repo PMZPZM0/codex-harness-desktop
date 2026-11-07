@@ -221,7 +221,7 @@ contextBridge.exposeInMainWorld("codex", {
   /* 只在用户点「检测」时调：有子进程（where/which + --version） */
   detectCliAgent: (input?: { id?: string; bin?: string }) => __ipc("cliagents:detect", 0, [input]),
   /* 新增/更新；内置项不可删只能关停 */
-  saveCliAgent: (input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }) => __ipc("cliagents:save", 0, [input]),
+  saveCliAgent: (input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }) => __ipc("cliagents:save", 0, [input]),
   removeCliAgent: (id: string) => __ipc("cliagents:remove", 1, [id]),
   /* 10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH */
   installCliAgent: (id: string) => __ipc("cliagents:install", 1, [id]),

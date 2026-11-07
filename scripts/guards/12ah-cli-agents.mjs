@@ -586,9 +586,11 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "用户写全了开关的模板原样保留（不覆盖自定义参数）");
   ok(cmd.healCliCommand("mycli {prompt}") === "mycli {prompt}",
     "没有规范模板的自定义 CLI 不硬改");
-  ok(/fillCliPromptTemplate\(\s*healCliCommand\(member\.cliCommand[^)]*\),[\s\S]{0,240}?memberPrompt\(/.test(runnerSrc)
+  /* 11-07：模板外面多了一层 applyCliPermissionTier（按目录档位追加参数）——
+     判据仍是「先 heal 再整体加引号」，且**不许**退回裸 replace。 */
+  ok(/fillCliPromptTemplate\(\s*applyCliPermissionTier\(healCliCommand\(member\.cliCommand[^)]*\),[\s\S]{0,240}?memberPrompt\(/.test(runnerSrc)
     && !/\.replace\("\{prompt\}", promptForCli/.test(runnerSrc),
-    "⛔ 派活执行端走「先 heal 再整体加引号」，不再裸 replace");
+    "⛔ 派活执行端走「先 heal → 按档位追加参数 → 整体加引号」，不再裸 replace");
   ok(/readUsableCliAgents\(\)/.test(runnerSrc) && /cliAgentRegistry/.test(runnerSrc) && /if \(!command\) continue;/.test(runnerSrc),
     "中枢可拉名单合并「CLI 智能体目录」：有规范单轮命令的都能拉，未核实的不进群（宿主没法替它探用法）");
   ok(/healCliCommand\(member\.cliCommand\)/.test(storeSrc),
@@ -631,6 +633,90 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "所有模板都带 {prompt} 占位符，且没有 `-F` 这种从文件读取的猜法");
   ok(cmd.cliPromptCommand("iflow") === "",
     "iFlow 没有文档化的单轮参数 ⇒ 不写假模板（如实走 --help 探测）");
+
+  /* ── 11-07 派活权限档（safe / standard / full，默认 standard）─────────────
+     ⛔ 无头模式下没人回答权限询问 ⇒ 各 CLI 默认把「需要确认」的动作拒绝，
+        表现就是「能说话、改不了文件/跑不了命令」。档位决定模板尾部追加哪组参数。 */
+  const TIER_TABLE = {
+    claude: {
+      safe: 'claude -p "{prompt}"',
+      standard: 'claude -p "{prompt}" --permission-mode acceptEdits',
+      full: 'claude -p "{prompt}" --permission-mode bypassPermissions',
+    },
+    codex: {
+      safe: 'codex exec "{prompt}" --sandbox read-only',
+      standard: 'codex exec "{prompt}" --sandbox workspace-write',
+      full: 'codex exec "{prompt}" --sandbox danger-full-access',
+    },
+    gemini: {
+      safe: 'gemini -p "{prompt}" --approval-mode plan',
+      standard: 'gemini -p "{prompt}" --approval-mode auto_edit',
+      full: 'gemini -p "{prompt}" --approval-mode yolo',
+    },
+    qwen: {
+      safe: 'qwen --prompt "{prompt}" --approval-mode plan',
+      standard: 'qwen --prompt "{prompt}" --approval-mode auto-edit',
+      full: 'qwen --prompt "{prompt}" --approval-mode yolo',
+    },
+    qoder: {
+      safe: 'qoder -p "{prompt}"',
+      standard: 'qoder -p "{prompt}" --permission-mode accept_edits',
+      full: 'qoder -p "{prompt}" --yolo',
+    },
+    codebuddy: {
+      safe: 'codebuddy -p "{prompt}"',
+      standard: 'codebuddy -p "{prompt}" --permission-mode acceptEdits',
+      full: 'codebuddy -p "{prompt}" --permission-mode bypassPermissions',
+    },
+    kimi: {
+      safe: 'kimi -p "{prompt}"',
+      standard: 'kimi -p "{prompt}" --yolo',
+      full: 'kimi -p "{prompt}" --auto',
+    },
+  };
+  const tierMismatch = Object.entries(TIER_TABLE).flatMap(([bin, tiers]) =>
+    Object.entries(tiers)
+      .filter(([tier, want]) => cmd.cliPromptCommandFor(bin, tier) !== want)
+      .map(([tier]) => `${bin}/${tier}=${cmd.cliPromptCommandFor(bin, tier)}`));
+  ok(tierMismatch.length === 0, `权限档逐字对账（7 个 CLI × 3 档；不符：${tierMismatch.join(" / ") || "无"}）`);
+  ok(cmd.cliPermissionTierOf(undefined) === "standard"
+    && cmd.cliPermissionTierOf("FULL") === "full"
+    && cmd.cliPermissionTierOf("乱写") === "standard",
+    "缺省 / 脏值一律回落 standard（⛔ 不能因为坏数据把派活变成全放行）");
+  ok(cmd.cliPromptCommandFor("aider", "full") === cmd.cliPromptCommand("aider")
+    && cmd.cliPromptCommandFor("qwenpaw", "full") === cmd.cliPromptCommand("qwenpaw"),
+    "没有核实过权限参数的 CLI 保持原命令（不猜别人的开关）");
+  ok(cmd.applyCliPermissionTier(cmd.applyCliPermissionTier('claude -p "{prompt}"', "standard"), "standard")
+    === cmd.cliPromptCommandFor("claude", "standard"),
+    "权限参数幂等（重复应用不叠加）");
+  ok(cmd.cliSupportsPermissionTier("claude") === true && cmd.cliSupportsPermissionTier("aider") === false,
+    "界面判据：哪些 CLI 有档位参数");
+
+  const agentsSrc = readFileSync(join(ROOT, "electron/cli-agents.ts"), "utf8");
+  ok(/permissionTier: src\.permissionTier === undefined \? undefined : cliPermissionTierOf\(src\.permissionTier\)/.test(agentsSrc)
+    && /"permissionTier"\]/.test(agentsSrc)
+    && /export async function cliPermissionTierFor/.test(agentsSrc),
+    "存储层：只落显式设过的档位（缺省=standard）+ 按 bin 查档");
+  ok(/cliPromptCommandFor\(bin, tier\)/.test(agentsSrc), "派活提示（@ 调度路径）用带档位的命令");
+
+  const bossRunnerSrc = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
+  ok(/cliPermissionTierFor\(member\.name\)/.test(bossRunnerSrc) && /applyCliPermissionTier\(healCliCommand/.test(bossRunnerSrc),
+    "群成员 CLI 派活（子进程路径）按目录里的档位追加参数");
+
+  const ipcManifest = JSON.parse(readFileSync(join(ROOT, "electron/ipc-channels.manifest.json"), "utf8"));
+  const saveChannel = (ipcManifest.channels ?? []).find((entry) => entry.channel === "cliagents:save");
+  ok(Boolean(saveChannel) && /permissionTier/.test(saveChannel.paramsDecl) && /permissionTier/.test(saveChannel.paramsImpl),
+    "IPC 桥登记 permissionTier（生成物才会带上类型）");
+
+  const cliPanelSrc = readFileSync(join(ROOT, "src/features/cli-agents/CliAgentsPanel.tsx"), "utf8");
+  ok(/派活权限档/.test(cliPanelSrc)
+    && /cliSupportsPermissionTier\(preview\.bin\)/.test(cliPanelSrc)
+    && /saveCliAgent\(\{ id: item\.id, permissionTier: tier \}\)/.test(cliPanelSrc),
+    "CLI 面板：预览弹窗可选档位并落盘（不支持的 CLI 显示说明）");
+
+  const viteEnvSrc = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
+  ok(/permissionTier\?: "safe" \| "standard" \| "full"/.test(viteEnvSrc) && /permissionTier\?: string/.test(viteEnvSrc),
+    "渲染层类型：条目带 permissionTier，保存入参接受它");
 }
 
 rmSync(sandbox, { recursive: true, force: true });

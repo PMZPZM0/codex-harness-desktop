@@ -1647,6 +1647,18 @@
   justify-content: flex-end;
   gap: 8px;
 }
+/* 派活权限档（11-07）：下拉 + 一句后果说明（安全 / 标准 / 完全） */
+.agent-preview-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-preview-tier small,
+.agent-preview-tier-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .agent-preview-danger { color: var(--red); border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
 .agent-preview-danger:hover { background: color-mix(in srgb, var(--red) 9%, transparent); }
 

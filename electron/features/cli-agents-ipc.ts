@@ -31,7 +31,7 @@ export const cliAgentsFeature = defineFeature<null>({
     /* 分类表跟着列表一起下发：渲染层不再复制一份字面量（两处各写一套必然漂移）。 */
     ipcHost.handle("cliagents:list", async () => ({ items: await readCliAgents(), categories: CLI_CATEGORIES }));
     ipcHost.handle("cliagents:detect", async (_event, input?: { id?: string; bin?: string }) => detectCliAgent(input ?? {}));
-    ipcHost.handle("cliagents:save", async (_event, input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }) => {
+    ipcHost.handle("cliagents:save", async (_event, input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }) => {
       const result = await saveCliAgent(input ?? {});
       if (result.ok) { invalidateCliInstalledCache(); broadcastHarnessEvent({ type: "cli-agents-changed" } as any); }
       return result;

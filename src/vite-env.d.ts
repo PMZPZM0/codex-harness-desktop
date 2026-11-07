@@ -66,6 +66,8 @@ type CliAgentEntry = {
   description: string;
   promptHint: string;
   enabled: boolean;
+  /** 派活权限档（11-07）：safe 只读 / standard 可改文件（默认） / full 连命令一起放行 */
+  permissionTier?: "safe" | "standard" | "full";
   builtin: boolean;
   createdAt: number;
 };
@@ -607,7 +609,7 @@ interface Window {
     /* 只在用户点「检测」时调：有子进程（where/which + --version） */
     detectCliAgent(input?: { id?: string; bin?: string }): Promise<{ installed: boolean; path: string; version: string; error: string }>;
     /* 新增/更新；内置项不可删只能关停 */
-    saveCliAgent(input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>;
+    saveCliAgent(input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }): Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>;
     removeCliAgent(id: string): Promise<{ ok: boolean; error?: string }>;
     /* 10-30 一键安装：执行端 electron/cli-install.ts（唯一实现，面板只调 IPC）；装完真复核 PATH */
     installCliAgent(id: string): Promise<{ ok: boolean; error?: string; detail?: string }>;

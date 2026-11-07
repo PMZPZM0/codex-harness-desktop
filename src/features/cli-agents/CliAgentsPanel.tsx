@@ -19,6 +19,7 @@ import { AgentAvatar } from "../../components/AgentAvatar";
 import { AgentBadge } from "../../components/AgentBadge";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { countCliAgents, groupCliAgents, type CliCategory } from "../../lib/cli-agents.mjs";
+import { cliPermissionTierOf, cliSupportsPermissionTier } from "../../lib/cli-command.mjs";
 
 type DetectState = { state: "idle" | "busy" | "ok" | "miss"; version?: string; path?: string };
 
@@ -263,6 +264,14 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
     const res = await window.codex.saveCliAgent({ id: item.id, enabled });
     if (!res?.ok) { notify(res?.error ?? "保存失败"); return; }
     setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, enabled } : entry)));
+  }, [notify]);
+
+  /** 派活权限档（11-07）：safe / standard / full，默认 standard。
+   *  ⛔ 这是「无头模式下能不能改文件/跑命令」的开关，落盘后下一次派活生效。 */
+  const setTier = useCallback(async (item: CliAgentEntry, tier: string) => {
+    const res = await window.codex.saveCliAgent({ id: item.id, permissionTier: tier });
+    if (!res?.ok) { notify(res?.error ?? "保存失败"); return; }
+    setItems((current) => current.map((entry) => (entry.id === item.id ? { ...entry, permissionTier: tier as CliAgentEntry["permissionTier"] } : entry)));
   }, [notify]);
 
   const save = useCallback(async () => {
@@ -527,6 +536,27 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                 <span>{preview.enabled ? "已接入 @ 与调度" : "已停用：不出现在 @ 候选里"}</span>
                 <ToggleSwitch checked={preview.enabled} onChange={(next) => void toggle(preview, next)} title={preview.enabled ? "停用后不再出现在 @ 候选" : "启用后可被 @ 点名"} />
               </label>
+              {/* 派活权限档（11-07 用户令）：无头模式下没人回答权限询问 ⇒ 档位决定模板追加哪组参数。 */}
+              <div className="agent-preview-section">
+                <span className="agent-preview-label">派活权限档</span>
+                {cliSupportsPermissionTier(preview.bin) ? (
+                  <div className="agent-preview-tier">
+                    <AppSelect
+                      value={cliPermissionTierOf(preview.permissionTier)}
+                      ariaLabel="派活权限档"
+                      options={[
+                        { value: "safe", label: "安全 · 只读分析" },
+                        { value: "standard", label: "标准 · 可改文件（默认）" },
+                        { value: "full", label: "完全 · 可执行命令" },
+                      ]}
+                      onChange={(value) => void setTier(preview, value)}
+                    />
+                    <small>无头模式下没人回答权限询问：安全档只读；标准档允许改文件；完全档连 shell 命令一起放行 —— 群聊 / 手机派活等于远程执行面，慎用。</small>
+                  </div>
+                ) : (
+                  <small className="agent-preview-tier-note">这个 CLI 没有核实过的无头权限参数，命令保持原样（不改它的开关）。</small>
+                )}
+              </div>
               {previewLogs.length > 0 && (
                 <pre className="cli-agent-install-log">{previewLogs.map((entry, index) => <span key={index}>{entry.text}{"\n"}</span>)}</pre>
               )}

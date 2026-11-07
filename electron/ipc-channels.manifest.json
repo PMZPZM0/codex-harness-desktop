@@ -909,8 +909,8 @@
     {
       "name": "saveCliAgent",
       "channel": "cliagents:save",
-      "paramsImpl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }",
-      "paramsDecl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean }",
+      "paramsImpl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }",
+      "paramsDecl": "input?: { id?: string; name?: string; category?: string; bin?: string; installCmd?: string; docs?: string; description?: string; promptHint?: string; enabled?: boolean; permissionTier?: string }",
       "returns": "Promise<{ ok: boolean; error?: string; item?: CliAgentEntry }>",
       "invokeArgs": "input",
       "cast": null,

@@ -45,6 +45,65 @@ export const CLI_PROMPT_COMMANDS = {
 
 const BIN_ALIASES = { copaw: "qwenpaw" };
 
+/* ── 派活权限档（11-07 用户令：每个 CLI 可选 安全 / 标准 / 完全，默认标准）──────────
+ * 背景：这些 CLI 的单轮非交互模板只保证「能跑起来」，但无头模式下没人回答权限询问，
+ * 大多数会把「需要确认」的动作直接拒绝（只读能过、改文件/跑命令被拒）——表现和 QwenPaw
+ * 的 tools=0 很像：能说话，干不了活。
+ *
+ * ⛔ 只写**官方文档核实过**的参数；没把握的 CLI 一律不写（返回空串 ⇒ 行为不变）。
+ * ⛔ safe = 只读分析；standard = 允许改文件（命令仍按各 CLI 默认）；full = 连命令一起放行。
+ * ⛔ 这些是「本机任意命令执行」的开关，默认必须是 standard，且只在用户显式选择时升级。 */
+export const CLI_PERMISSION_TIERS = ["safe", "standard", "full"];
+
+const CLI_PERMISSION_FLAGS = {
+  /* Claude Code：-p 下权限提示无人可答 ⇒ 默认拒绝；acceptEdits 放行编辑，bypassPermissions 全放行。 */
+  claude: { safe: "", standard: "--permission-mode acceptEdits", full: "--permission-mode bypassPermissions" },
+  /* Codex CLI：exec 默认 read-only（不写、不跑、不联网）；显式给沙箱档。 */
+  codex: { safe: "--sandbox read-only", standard: "--sandbox workspace-write", full: "--sandbox danger-full-access" },
+  /* Gemini CLI：非交互无法授权工具；plan 只读、auto_edit 放行编辑、yolo 全放行。 */
+  gemini: { safe: "--approval-mode plan", standard: "--approval-mode auto_edit", full: "--approval-mode yolo" },
+  /* Qwen Code：Gemini 同源，审批档取值见其 /approval-mode 文档。 */
+  qwen: { safe: "--approval-mode plan", standard: "--approval-mode auto-edit", full: "--approval-mode yolo" },
+  /* Qoder CLI：官方明说 headless 下 ask → deny；accept_edits 放行编辑，--yolo 全放行。 */
+  qoder: { safe: "", standard: "--permission-mode accept_edits", full: "--yolo" },
+  /* CodeBuddy：默认严格只读；acceptEdits 放行编辑，bypassPermissions 全放行。 */
+  codebuddy: { safe: "", standard: "--permission-mode acceptEdits", full: "--permission-mode bypassPermissions" },
+  /* Kimi Code：--yolo 自动批准工具（仍可能提问），--auto 完全自主不提问（更彻底）。 */
+  kimi: { safe: "", standard: "--yolo", full: "--auto" },
+  /* 其余（aider / openclaw / comatecli / traecli / iflow / harness / qwenpaw）：
+     没有核实过的无头权限开关 —— 不写，保持原命令。 */
+};
+
+/** 归一权限档：脏值/缺省一律回落 standard（⛔ 不因为一条坏数据把派活变成全放行）。 */
+export function cliPermissionTierOf(raw) {
+  const value = String(raw ?? "").trim().toLowerCase();
+  return CLI_PERMISSION_TIERS.includes(value) ? value : "standard";
+}
+
+/** 该 CLI 是否有权限档参数（没有的，界面上要说明「此 CLI 无档位参数」）。 */
+export function cliSupportsPermissionTier(bin) {
+  const key = normalizeBinName(bin);
+  return Boolean(CLI_PERMISSION_FLAGS[BIN_ALIASES[key] ?? key]);
+}
+
+/**
+ * 给命令模板追加该档位的参数（幂等：已带同一段参数就不重复加）。
+ * ⛔ 不认识的 bin / 自定义命令原样返回 —— 不猜别人的开关。
+ */
+export function applyCliPermissionTier(template, tier) {
+  const tpl = String(template ?? "").trim();
+  if (!tpl.includes("{prompt}")) return tpl;
+  const bin = cliBinOf(tpl);
+  const flags = CLI_PERMISSION_FLAGS[BIN_ALIASES[bin] ?? bin]?.[cliPermissionTierOf(tier)] ?? "";
+  if (!flags || tpl.includes(flags)) return tpl;
+  return `${tpl} ${flags}`;
+}
+
+/** 规范单轮命令 + 权限档参数（空串 = 没有核实过的模板）。 */
+export function cliPromptCommandFor(bin, tier = "standard") {
+  return applyCliPermissionTier(cliPromptCommand(bin), tier);
+}
+
 function normalizeBinName(bin) {
   return String(bin ?? "").trim().toLowerCase().replace(/\.(exe|cmd|bat|ps1|sh)$/, "");
 }

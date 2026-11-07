@@ -14,8 +14,8 @@ import { app } from "electron";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
-import { cliInstalledFlags, readUsableCliAgents } from "../cli-agents";
-import { cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
+import { cliInstalledFlags, cliPermissionTierFor, readUsableCliAgents } from "../cli-agents";
+import { applyCliPermissionTier, cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
 import { cliMemberEnv } from "./cli-env";
 import { bridgeDial } from "../main";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
@@ -769,8 +769,11 @@ async function personalNormsBlock(): Promise<string> {
 async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
   const norms = await personalNormsBlock();
   const env = await cliMemberEnv({ bossModel: await bossModelOf(group), memberModel: member.model });
+  /* ⛔ 11-07：权限档在 CLI 目录里（不是成员上）—— 群成员只存命令模板。
+     档位决定模板尾部追加哪组无头参数（safe/standard/full，见 cli-command.mjs）。 */
+  const tier = await cliPermissionTierFor(member.name);
   const command = fillCliPromptTemplate(
-    healCliCommand(member.cliCommand ?? ""),
+    applyCliPermissionTier(healCliCommand(member.cliCommand ?? ""), tier),
     memberPrompt(group, member, task, task.attempts[task.attempts.length - 1]?.n ?? 1, "", norms),
   );
   try {
