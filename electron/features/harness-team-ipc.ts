@@ -314,17 +314,23 @@ type DispatchPhase = (
   info: { ok?: boolean; error?: string; threadId?: string },
 ) => void;
 
-async function dispatchGroupText(
+/** 落「说的那句话」+ 解析目标（毫秒级，同步段）。
+ *
+ *  ⛔⛔ 11-07 真机：用户发完消息群里显示「这个群还没有说过话」，过几秒才冒出来 ——
+ *    因为整个 dispatch 是"先排后台再返回"，渲染层拿到 ok 立刻重读，那时消息**还没落盘**。
+ *    ⇒ 拆成两段：`prepareGroupDispatch`（落盘 + 校验，必须在 handler 里 await 完再返回，
+ *       并把权威 rows 一起带回去）+ `runDispatchRounds`（慢的派活，后台跑）。
+ *    ⛔ 只有"派活命中了目标"才落盘（解析失败时不要在群里留一句没回应的话）。 */
+async function prepareGroupDispatch(
   group: GroupShape,
   text: string,
   memberIds: string[],
   source: "human" | "automation",
-  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase } = {},
-): Promise<{ ok: boolean; sent: number; failed: string[] }> {
+): Promise<{ targets: GroupTarget[]; catalog: unknown[]; rows: ReturnType<typeof projectGroupLog> } | { error: string }> {
   /* 团成员名录与互 @ 判据：与渲染层共用同一份目录（⛔ 不各自拉一次）。 */
   const catalog = await buildDispatchCatalog().catch(() => []);
   const resolved = resolveGroupTargets(group, memberIds, catalog);
-  if (resolved.error) return { ok: false, sent: 0, failed: [resolved.error] };
+  if (resolved.error) return { error: resolved.error };
   const targets = resolved.targets;
   const saved = await appendMessageTo(group.id, {
     authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",
@@ -334,8 +340,19 @@ async function dispatchGroupText(
     text,
     mentions: targets.map((m) => m.id),
   });
-  if (!saved.ok) return { ok: false, sent: 0, failed: [saved.error || "群消息没存上"] };
+  if (!saved.ok) return { error: saved.error || "群消息没存上" };
+  return { targets, catalog, rows: saved.rows };
+}
 
+/** 派活轮次（慢：一轮可能跑几分钟）。⛔ 调用方一律 `void` 它，不许 await。 */
+async function runDispatchRounds(
+  group: GroupShape,
+  targets: GroupTarget[],
+  text: string,
+  source: "human" | "automation",
+  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[] } = {},
+): Promise<{ ok: boolean; sent: number; failed: string[] }> {
+  const catalog = Array.isArray(options.catalog) ? options.catalog : await buildDispatchCatalog().catch(() => []);
   const failed: string[] = [];
   const ranIds = new Set<string>();
   /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。
@@ -347,6 +364,7 @@ async function dispatchGroupText(
     hop = 0,
     caller?: { id: string; name: string },
     bodyText = text,
+
   ): Promise<void> => {
     if (!partner || ranIds.has(partner.id)) return;
     ranIds.add(partner.id);
@@ -413,6 +431,13 @@ async function dispatchGroupText(
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || ranIds.has(next.id)) continue;
+          /* ⛔⛔ 11-07 真机：同一位团成员被**派了两次**（群里两条几乎一样的自我介绍，同一会话跑了两轮）。
+             根因：主理人回复里行首 @ 了四位成员 —— 它自己在回合内已经用 `team_member_invoke` 派过一遍，
+             宿主又按"行首点名"重派一遍。
+             ⇒ 主理人（team）@ 的**团成员**交给它自己的工具去编排；宿主只接力"非团成员"目标
+               （别的专家 / 子智能体 / 另一个团）。团成员之间的互 @ 仍由成员那条回合触发（下面照走）。
+             ⛔ 不要把这一条删掉换成"靠主理人自觉"：重复一次就是双倍 token + 群里两条一样的消息。 */
+          if (partner.targetKind === "team" && String(next.targetKind) === "member") continue;
           chainBudget -= 1;
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
@@ -444,6 +469,19 @@ async function dispatchGroupText(
   };
   await Promise.all(targets.map((partner) => runOne(partner, 0)));
   return { ok: failed.length < targets.length, sent: targets.length - failed.length, failed };
+}
+
+/** 定时任务那条路要"一次调完"：落消息 + 派活 + 等结果（无人值守本来就要等账本）。 */
+async function dispatchGroupText(
+  group: GroupShape,
+  text: string,
+  memberIds: string[],
+  source: "human" | "automation",
+  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase } = {},
+): Promise<{ ok: boolean; sent: number; failed: string[] }> {
+  const opened = await prepareGroupDispatch(group, text, memberIds, source);
+  if ("error" in opened) return { ok: false, sent: 0, failed: [opened.error] };
+  return runDispatchRounds(group, opened.targets, text, source, { ...options, catalog: opened.catalog });
 }
 
 type ScheduleShape = NonNullable<ReturnType<typeof normalizeScheduleEntry>>;
@@ -964,14 +1002,15 @@ export const harnessTeamFeature = defineFeature<null>({
         ? (input.memberIds as unknown[]).map((x) => String(x ?? "")).filter(Boolean)
         : [];
       const params = (input?.params && typeof input.params === "object" ? input.params : {}) as DispatchParams;
-      /* 前置校验在**返回前**做完：@ 了没绑定的伙伴 / 全被静音，用户要立刻看到原因，
-         而不是"发送成功"然后群里毫无动静。 */
-      const catalog = await buildDispatchCatalog().catch(() => []);
-      const resolved = resolveGroupTargets(g, memberIds, catalog);
-      if (resolved.error) return { ok: false, error: resolved.error };
-      void dispatchGroupText(g, text, memberIds, "human", {
+      /* ⛔⛔ 11-07 真机：用户发完消息群里显示「这个群还没有说过话」——
+         因为整个 dispatch 是"先排后台再返回"，渲染层拿到 ok 立刻重读时消息还没落盘。
+         ⇒ 落盘 + 校验这段**必须 await 完再返回**，并把权威 rows 一起带回去（一次渲染到位）。 */
+      const opened = await prepareGroupDispatch(g, text, memberIds, "human");
+      if ("error" in opened) return { ok: false, error: opened.error };
+      void runDispatchRounds(g, opened.targets, text, "human", {
         params,
-        /* 手动派活允许伙伴互相 @（一跳 + 总量 4，护栏在 dispatchGroupText 里）。 */
+        catalog: opened.catalog,
+        /* 手动派活允许伙伴互相 @（一跳 + 总量 4，护栏在 runDispatchRounds 里）。 */
         allowChain: true,
         onPhase: (phase, target, info) => {
           broadcastHarnessEvent({
@@ -994,7 +1033,7 @@ export const harnessTeamFeature = defineFeature<null>({
           sent: 0,
           failed: [err instanceof Error ? err.message : String(err)],
         } as never));
-      return { ok: true, queued: resolved.targets.length };
+      return { ok: true, queued: opened.targets.length, rows: opened.rows };
     });
 
     /* 到点扫描：30s 一拍（与「设置 → 自动化」同一个节奏）。

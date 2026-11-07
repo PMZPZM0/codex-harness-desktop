@@ -6207,10 +6207,10 @@
       "channel": "harness-team:dispatch",
       "paramsImpl": "groupId: string, input: Record<string, unknown>",
       "paramsDecl": "groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }",
-      "returns": "Promise<{ ok: boolean; queued?: number; error?: string }>",
+      "returns": "Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>",
       "invokeArgs": "groupId, input",
       "cast": null,
-      "note": "团队模式：手动派活（11-07 起整条链在主进程跑：落群日志 / 派活 / 产出回写 / 互 @ 接力 / 账本，关面板不中断）"
+      "note": "团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行）"
     },
     {
       "name": "harnessTeamDelete",

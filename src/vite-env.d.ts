@@ -1406,8 +1406,8 @@ interface Window {
     harnessTeamMessages(groupId: string): Promise<{ ok: boolean; rows: any[]; error?: string }>;
     /* 团队模式 P0b（群消息日志） */
     harnessTeamAppendMessage(groupId: string, entry: Record<string, unknown>): Promise<{ ok: boolean; entry?: any; rows: any[]; error?: string }>;
-    /* 团队模式：手动派活（11-07 起整条链在主进程跑：落群日志 / 派活 / 产出回写 / 互 @ 接力 / 账本，关面板不中断） */
-    harnessTeamDispatch(groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }): Promise<{ ok: boolean; queued?: number; error?: string }>;
+    /* 团队模式：手动派活（11-07 起整条链在主进程跑；落盘完成才返回，rows = 权威群日志行） */
+    harnessTeamDispatch(groupId: string, input: { text: string; memberIds: string[]; params?: { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string } }): Promise<{ ok: boolean; queued?: number; error?: string; rows?: any[] }>;
     /* 团队模式：解散群（11-07 起连带删除本群派出去的会话：removedThreads/totalThreads/failed） */
     harnessTeamDelete(groupId: string): Promise<{ ok: boolean; id?: string; error?: string; removedThreads?: number; totalThreads?: number; failed?: string[] }>;
     /* 团队模式：群记忆 / 群文件 */

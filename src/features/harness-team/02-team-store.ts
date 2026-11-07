@@ -486,13 +486,20 @@ export function useTeamGroups() {
             },
           }
           : {}),
-      })) as { ok: boolean; queued?: number; error?: string };
+      })) as { ok: boolean; queued?: number; error?: string; rows?: GroupMessageRow[] };
       if (!res?.ok) {
         setDispatchError(res?.error || "派活失败");
         return { ok: false, error: res?.error };
       }
-      /* 主进程已经把「人说的那句」落盘 ⇒ 读一次权威行：消息上屏与输入框清空同帧。 */
-      void loadMessages(group.id);
+      /* ⛔⛔ 11-07 真机：发完消息群里显示「这个群还没有说过话」——
+         以前这里 `void loadMessages(...)` 立刻重读，而主进程那时还没落盘（它把落盘也排在后台了）。
+         ⇒ 主进程现在**落盘后才返回**，并把权威 rows 一起带回来：直接用，不再赌时序。
+         （rows 缺失的老主进程才回落到重读一次。） */
+      if (Array.isArray(res.rows)) {
+        setRowsByGroup((prev) => ({ ...prev, [group.id]: res.rows as GroupMessageRow[] }));
+      } else {
+        void loadMessages(group.id);
+      }
       return { ok: true, summary: { sent: Number(res.queued ?? 0), failed: [] } };
     },
     [loadMessages],
