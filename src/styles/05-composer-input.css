@@ -1910,8 +1910,11 @@
 .market-preview-desc { color: var(--muted); font-size: 12.5px; line-height: 1.7; margin: 0; white-space: pre-wrap; }
 .market-preview-meta { flex-wrap: wrap; gap: 6px; display: flex; }
 .market-preview-meta code { background: var(--panel-2); color: var(--text); border-radius: 5px; padding: 2px 8px; font-size: 11px; }
-.market-preview-foot { justify-content: flex-end; align-items: center; gap: 8px; display: flex; }
-.market-preview-note { color: var(--faint); font-size: 11px; margin-right: auto; }
+/* 11-07 用户实拍：说明文字把两颗按钮挤成两行（「查看来 / 源」「一键接 / 入」）。
+   ⇒ 说明独占一行（basis 260），放不下时整行换行；按钮不缩、不折行。 */
+.market-preview-foot { justify-content: flex-end; align-items: center; gap: 8px; display: flex; flex-wrap: wrap; row-gap: 8px; }
+.market-preview-note { color: var(--faint); font-size: 11px; line-height: 1.5; margin-right: auto; flex: 1 1 260px; min-width: 0; }
+.market-preview-foot > button { flex: none; white-space: nowrap; }
 /* ── 右栏「变更」主题界面（10-25 用户：展开空唠唠的 / 加搜索 / 内容自适应不裁剪）──
    结构：总览卡（范围 + 文件数 + 增删 + 搜索）→ 文件卡片流。
    ⛔ 路径与命中片段必须**换行展示全**：这里禁止 ellipsis / nowrap（用户明确「不要裁剪」）。 */

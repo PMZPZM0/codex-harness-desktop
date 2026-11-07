@@ -709,6 +709,9 @@ bag.startQueued = startQueued as typeof bag.startQueued;
     const safe = async (label: string, run: () => Promise<any>, fallback: any) => {
       try { return await run(); } catch (error: any) {
         let msg = String(error.message ?? error);
+        /* Electron IPC 的包装前缀对用户没有意义（截图实测：整条横幅以
+           `codexrequest: Error invoking remote method 'codexrequest': Error:` 开头）。 */
+        msg = msg.replace(/^codexrequest[：:]\s*Error invoking remote method ['"]codexrequest['"][：:]\s*(?:Error[：:]\s*)?/i, "");
         // 引擎二进制缺失（在线更新落位失败 / 被占用）时，技能/钩子/插件会一起报 spawn ENOENT ——
         // 给一句能照做的提示，别把 spawn 原始文本甩给用户（启动时会自愈，见 electron/engine-install-heal.ts）。
         if (/ENOENT/.test(msg) && /spawn/i.test(msg) && /codex/i.test(msg)) {
@@ -730,7 +733,20 @@ bag.startQueued = startQueued as typeof bag.startQueued;
       safe("记忆", () => window.codex.listMemory(), []),
       safe("定时任务", () => window.codex.listScheduledTasks(), []),
       wantMcpDetail
-        ? safe("MCP", () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(bag.threadRef.current?.id ? { threadId: bag.threadRef.current.id } : {}) }), { data: [] })
+        /* ⛔ 11-07 用户实拍：MCP 整段读取失败，横幅是 `thread not found: <id>`。
+           当前会话可能在别处被删/归档（threadRef 还留着旧 id），引擎对这个 id 直接拒绝。
+           ⇒ 带 id 失败且原因正是 thread not found 时，去掉 threadId 重查一次（引擎按默认取）。 */
+        ? safe("MCP", async () => {
+          const threadId = bag.threadRef.current?.id;
+          const fetchStatus = () => window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly", ...(threadId ? { threadId } : {}) });
+          try {
+            return await fetchStatus();
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            if (!threadId || !/thread not found/i.test(message)) throw error;
+            return await window.codex.request("mcpServerStatus/list", { detail: "toolsAndAuthOnly" });
+          }
+        }, { data: [] })
         : Promise.resolve({ data: bag.settingsResources.mcp }),
     ]);
     // ⛔⛔ 10-03 用户报障「插件装完在『已安装』里看不到」：引擎 plugin/list 有时**不认领**

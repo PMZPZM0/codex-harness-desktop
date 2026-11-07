@@ -254,6 +254,20 @@ ok(/\.resource-toolbar\.mcp-market-toolbar\s*\{[^}]*flex-wrap:\s*nowrap/.test(re
 ok(/installed \? "已接入" : entry\.config \? "一键接入"/.test(mcpPage) && /onInstall: !installed && entry\.config/.test(mcpPage),
   "MCP 市场已接入卡：预览不给安装动作（防重复接入覆盖配置/密钥）");
 
+/* 11-07 用户实拍：MCP 整段读取失败，原因是对已删除会话的 threadId 查 mcpServerStatus/list。
+   ① 遇 `thread not found` 必须去掉 threadId 重查；② IPC 的 codexrequest 包装前缀要剥掉。 */
+const settingsRefresh = src("src/features/app-state/parts/part04/03-seg/02-browser-queue-settings.tsx");
+ok(/thread not found/i.test(settingsRefresh)
+  && /window\.codex\.request\("mcpServerStatus\/list", \{ detail: "toolsAndAuthOnly" \}\)/.test(settingsRefresh),
+  "MCP 状态查询遇 thread not found 自动去掉 threadId 重试");
+ok(/replace\(\/\^codexrequest[\s\S]{0,160}?Error invoking remote method/.test(settingsRefresh),
+  "资源读取失败横幅剥掉 Electron IPC 包装前缀");
+/* 11-07 用户实拍：预览底部说明把按钮挤成两行 ⇒ 说明独占一行，按钮不折行。 */
+const previewCss = read("src/styles/05-composer-input.css");
+ok(/\.market-preview-foot \{[^}]*flex-wrap: wrap/.test(previewCss)
+  && /\.market-preview-foot > button \{[^}]*white-space: nowrap/.test(previewCss),
+  "预览弹窗底部：说明与按钮分行、按钮文字不折行");
+
 /* 10-26 用户（OpenAI 订阅页截图）：「问号删除，小文字注释删除大字就行，账户长卡片
    改成长方形卡片，不要拉这么长」—— ? / 副标题 / 卡片小字全删；添加卡两列并排。 */
 const openaiPage = pageSrc("openai");
