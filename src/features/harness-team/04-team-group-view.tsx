@@ -252,13 +252,13 @@ export function TeamGroupView({
         现在统一：**团的第一行就是主理人本人**（名字 + 头像 + 职业），团名退到副标题。
      ⛔ 判据只此一处（成员栏 / @ 条 / 气泡头 / 头像 / @ 提及全部走它），别在三处各写一套。 */
   const teamLeadOf = (member: TeamGroup["members"][number]) => {
-    if (member.targetKind !== "team") return null;
+    if (member?.targetKind !== "team") return null;
     return catalog.find((t) => t.kind === "expert" && t.teamId === member.targetKey) ?? null;
   };
 
   /** 某个团伙伴的下属成员（按 teamId 匹配；同一 memberId 只留一条） */
   const teamKidsOf = (member: TeamGroup["members"][number]) => {
-    if (member.targetKind !== "team") return [];
+    if (member?.targetKind !== "team") return [];
     const teamId = String(member.targetKey ?? "");
     if (!teamId) return [];
     const seen = new Set<string>();
@@ -268,7 +268,7 @@ export function TeamGroupView({
   };
 
   /** 团伙伴「出面上的人」= 主理人；目录还没回来时退回团名（⛔ 不编名字、不画空壳） */
-  const personNameOf = (m: TeamGroup["members"][number]) => teamLeadOf(m)?.name ?? m.name;
+  const personNameOf = (m: TeamGroup["members"][number]) => teamLeadOf(m)?.name ?? m?.name ?? "";
 
   /** 头像种子同理：团用**主理人**的身份（kind=expert + 主理人 key），画出来才是专家中心那张脸；
      ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。 */

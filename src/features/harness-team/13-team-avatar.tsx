@@ -28,7 +28,7 @@ export function MemberAvatar({
   size?: number;
   className?: string;
 }) {
-  const isHuman = (member.kind ?? "bot") === "human";
+  const isHuman = (member?.kind ?? "bot") === "human";
   const base = `team-avatar${className ? ` ${className}` : ""}`;
   if (isHuman) {
     return (
@@ -40,7 +40,7 @@ export function MemberAvatar({
   return (
     <span className={base} aria-hidden>
       {/* seed 用 targetKey（= 后台那条目标的身份）：换名字也不会换成另一张脸 */}
-      <AgentAvatar kind={agentAvatarKindOf(member.targetKind)} seed={member.targetKey || member.id} size={size} />
+      <AgentAvatar kind={agentAvatarKindOf(member?.targetKind)} seed={member?.targetKey || member?.id} size={size} />
     </span>
   );
 }

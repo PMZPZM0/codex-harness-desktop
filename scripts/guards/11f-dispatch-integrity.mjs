@@ -735,8 +735,19 @@ try {
     "名录含团成员、互 @ 结果带可派活的 target");
   const storeSrc2 = readFileSync(join(ROOT, "src/features/harness-team/02-team-store.ts"), "utf8");
   const ipcSrc2 = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
-  ok(/catalog }\)/.test(storeSrc2) && /ask\.target \?\? group\.members\.find/.test(storeSrc2),
+  ok(/catalog }\)/.test(storeSrc2) && /ask\.target[\s\S]{0,100}?group\.members\.find/.test(storeSrc2),
     "渲染层群派活传目录、递归用虚拟伙伴（成员之间真能叫动人）");
+  /* 11-07 用户截图：@ 四位成员得到 4 条 `Cannot read properties of undefined (reading 'targetKind')`。
+     根因：递归直接拿 @ 候选当伙伴用，形状与初始 targets 不一致。⇒ 统一由 virtualPartnerOf 生成/兜底。 */
+  ok(/function virtualPartnerOf/.test(storeSrc2)
+    && /virtualPartnerOf\(id\)/.test(storeSrc2)
+    && /virtualPartnerOf\(ask\.memberId\)/.test(storeSrc2)
+    && /if \(!partner\) return;/.test(storeSrc2),
+    "⛔ 虚拟伙伴只有一处构造：@ 面板与递归互 @ 同形状，缺字段不再崩 targetKind");
+  const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
+  const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
+  ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
+    "视图 / 头像对 undefined 成员不再解引用 targetKind（旧 dist 的崩溃点）");
   ok(/catalog }\)/.test(ipcSrc2) && /ask\.target \?\? group\.members\.find/.test(ipcSrc2)
     && /在群里叫你/.test(ipcSrc2),
     "定时任务同口径，且把被叫人要做的事传下去（⛔ 别又把整条原消息发一遍）");

@@ -310,7 +310,7 @@ export function parseAgentMentions(text, group, options = {}) {
   );
   const bots = [
     ...g.members.filter(
-      (m) => m.kind === "bot" && m.id !== excludeId && m.targetKind && m.targetKey && !m.muted && !already.has(m.id),
+      (m) => m && m.kind === "bot" && m.id !== excludeId && m.targetKind && m.targetKey && !m.muted && !already.has(m.id),
     ),
     ...kids,
   ];
@@ -475,6 +475,7 @@ export function groupContextBlock(group, options = {}) {
           `harness-block-strip.mjs` / `user-refs.ts` / `cloud-sync.ts` 都按它剥离，改一个字就漏进气泡。 */
     lines.push("群里的人（括号里是派活用的目标）：");
     for (const m of roster) {
+      if (!m) continue;
       const isMe = self && m.id === self.id;
       const isKid = kids.some((k) => k.id === m.id);
       const role = isKid ? `团成员 · ${m.targetProfession || "成员"}` : (m.id === g.leadId ? "群主" : m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员"));

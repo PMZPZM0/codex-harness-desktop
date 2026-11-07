@@ -14,6 +14,25 @@ import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team
 import { groupContextBlock, parseAgentMentions, parseTeamAuthorId, teamAuthorIdOf } from "../../lib/team-models.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
+/**
+ * 合成 id → 可派活的虚拟团成员。
+ * ⛔ @ 面板选中、群成员递归互 @、team-run 镜像三处必须是**同一个形状**：
+ *    以前递归直接拿 `parseAgentMentions` 的候选当伙伴用，候选里少一个 targetKind
+ *    就会在 `runOne` 里报 `Cannot read properties of undefined (reading 'targetKind')`
+ *    —— 界面表现就是「@ 了四个人、四条报错，全是假艾特」。
+ */
+function virtualPartnerOf(id: string): TeamGroup["members"][number] | null {
+  const parsed = parseTeamAuthorId(id);
+  if (!parsed) return null;
+  return {
+    id,
+    kind: "bot",
+    name: parsed.memberId,
+    targetKind: "member",
+    targetKey: `${parsed.teamId}:${parsed.memberId}`,
+  } as TeamGroup["members"][number];
+}
+
 type ListResult = {
   groups: TeamGroup[];
   /** 体检（含建议类，设置页展示用） */
@@ -427,18 +446,9 @@ export function useTeamGroups() {
          解不出两段的 id 一律忽略（⛔ 不猜，也不当成普通伙伴去匹配）。 */
       const virtuals: TeamGroup["members"] = [];
       for (const id of partnerIds) {
-        const parsed = parseTeamAuthorId(id);
-        if (!parsed) continue;
-        if (virtuals.some((v) => v.id === id)) continue;
-        virtuals.push({
-          /* 只用这几个字段：id（去重/busy/台账）、name（日志与失败文案）、
-             targetKind/targetKey（真正决定派给谁）。⛔ 其余群成员字段用不到，别编值。 */
-          id,
-          kind: "bot",
-          name: parsed.memberId,
-          targetKind: "member",
-          targetKey: `${parsed.teamId}:${parsed.memberId}`,
-        } as TeamGroup["members"][number]);
+        /* 只用 id / name / targetKind / targetKey 四个字段，形状由 virtualPartnerOf 统一。 */
+        const v = virtualPartnerOf(id);
+        if (v && !virtuals.some((x) => x.id === id)) virtuals.push(v);
       }
       const picked = group.members.filter((m) => m.kind === "bot" && partnerIds.includes(m.id));
       if (!picked.length && !virtuals.length) return { ok: false, error: "先 @ 至少一个伙伴" };
@@ -516,6 +526,7 @@ export function useTeamGroups() {
         /* 被谁叫来的（只有 source==="partner" 才有）—— 写进群日志的 `via`，界面上标出来 */
         caller?: { id: string; name: string },
       ): Promise<void> => {
+        if (!partner) return;
         if (ranIds.has(partner.id)) return;
         ranIds.add(partner.id);
         busyAdd(partner.id);
@@ -621,7 +632,9 @@ export function useTeamGroups() {
             });
             for (const ask of asks) {
               /* 团成员是虚拟条目（合成 id），不在 group.members 里 —— 直接用 target 派给本人。 */
-              const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as TeamGroup["members"][number] | undefined;
+              const next = (ask.target
+                ?? group.members.find((m) => m.id === ask.memberId)
+                ?? virtualPartnerOf(ask.memberId)) as TeamGroup["members"][number] | null;
               if (!next || ranIds.has(next.id)) continue;
               chainBudget -= 1;
               /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链） */

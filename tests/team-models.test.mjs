@@ -438,6 +438,8 @@ test("团成员进名录与互 @ 候选（11-07：成员之间要能互相艾特
   assert.equal(kids[0].id, "team:software-dev-team:product-manager");
   assert.equal(kids[0].targetKind, "member");
   assert.equal(kids[0].targetKey, "software-dev-team:product-manager");
+  assert.ok(kids.every((k) => k.id && k.name && k.targetKind && k.targetKey),
+    "每个虚拟伙伴都必须带齐派活字段（缺 targetKind 就是「假艾特」那条 targetKind 崩溃）");
   const ctx = groupContextBlock(group, { forMemberId: "tgt:team:software-dev-team", catalog });
   assert.ok(ctx.includes("问需") && ctx.includes("构梁"), "名录里要列出团成员，成员才知道能 @ 谁");
   assert.ok(ctx.includes("另起一行写") && ctx.includes("@名字：要他做什么"));
