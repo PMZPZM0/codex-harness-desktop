@@ -439,6 +439,7 @@ export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detai
                     tag={item.builtin ? "内置" : undefined}
                     line={`${categoryLabelOf(item.category)} · ${busyId === item.id ? "处理中…" : installed ? (updates[item.id]?.hasUpdate ? `可更新 · ${updates[item.id].current || "?"} → ${updates[item.id].latest}` : (status?.version ? `已安装 · ${status.version}` : "已安装")) : "未安装"}`}
                     disabled={!item.enabled}
+                    state={installed ? "ok" : undefined}
                     onClick={() => setPreviewId(item.id)}
                   />
                 );

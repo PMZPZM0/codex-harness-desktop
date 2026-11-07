@@ -1535,6 +1535,16 @@
   background: color-mix(in srgb, var(--accent) 4%, var(--field));
 }
 .agent-badge.is-off { opacity: .62; }
+/* 11-07 用户：「已安装，加一个卡片绿色反馈吧」—— 已装条目给绿边+淡绿底，状态行同色。 */
+.agent-badge.is-ok {
+  border-color: color-mix(in srgb, var(--ok) 38%, var(--line));
+  background: color-mix(in srgb, var(--ok) 7%, var(--field));
+}
+.agent-badge.is-ok:hover {
+  border-color: color-mix(in srgb, var(--ok) 62%, var(--line));
+  background: color-mix(in srgb, var(--ok) 11%, var(--field));
+}
+.agent-badge.is-ok .agent-badge-copy small { color: color-mix(in srgb, var(--ok) 62%, var(--muted)); }
 .agent-badge-copy {
   flex: 1;
   min-width: 0;

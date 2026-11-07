@@ -111,6 +111,12 @@ const SETTINGS_SECONDARY_PARENT: Record<string, SettingsPage> = {
   browser: "automation",
   computer: "automation",
   rpa: "automation",
+  /* 专家/专家团页里的二级入口（子智能体 / 专家团 / 专家中心 / CLI 智能体 / 团队模式） */
+  agents: "agentteam",
+  teams: "agentteam",
+  "expert-center": "agentteam",
+  "cli-agents": "agentteam",
+  team: "agentteam",
 };
 
 /** 左栏高亮/滚动定位用：二级页返回它的一级页，一级页原样返回。 */

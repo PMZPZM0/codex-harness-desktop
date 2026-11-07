@@ -450,8 +450,9 @@ ok(/const activePage = settingsRootPage\(settingsPage\)/.test(settingsNavSrc)
   && /activePage === key \? "active" : ""/.test(settingsNavSrc)
   && /scrollIntoView\(\{ block: "nearest" \}\)/.test(settingsNavSrc),
   "设置左栏：二级页折算一级页高亮 + 直达时把选中项滚进视口（11-07 用户实测）");
-ok(/browser:\s*"automation"/.test(settingsCatalogSrc) && /computer:\s*"automation"/.test(settingsCatalogSrc) && /rpa:\s*"automation"/.test(settingsCatalogSrc),
-  "二级设置页 → 一级页的映射覆盖 browser / computer / rpa（⛔ 新增二级页要同步这里）");
+ok(/browser:\s*"automation"/.test(settingsCatalogSrc) && /computer:\s*"automation"/.test(settingsCatalogSrc) && /rpa:\s*"automation"/.test(settingsCatalogSrc)
+  && /"cli-agents":\s*"agentteam"/.test(settingsCatalogSrc) && /agents:\s*"agentteam"/.test(settingsCatalogSrc) && /teams:\s*"agentteam"/.test(settingsCatalogSrc),
+  "二级设置页 → 一级页的映射覆盖 自动化系 + 专家/专家团系（⛔ 新增二级页要同步这里）");
 
 console.log(`\n【shell】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

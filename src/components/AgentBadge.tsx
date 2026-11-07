@@ -21,11 +21,13 @@ export function AgentBadge(props: {
   /** 领导/主理人头像金圈 */
   lead?: boolean;
   disabled?: boolean;
+  /** 卡片状态反馈：ok = 已安装/就绪（绿边+淡绿底）；warn = 需注意（橙边）。 */
+  state?: "ok" | "warn";
   onClick: () => void;
 }) {
-  const { kind, seed, name, tag, line, lead, disabled, onClick } = props;
+  const { kind, seed, name, tag, line, lead, disabled, state, onClick } = props;
   return (
-    <button type="button" className={`agent-badge${disabled ? " is-off" : ""}`} onClick={onClick}>
+    <button type="button" className={`agent-badge${disabled ? " is-off" : ""}${state ? ` is-${state}` : ""}`} onClick={onClick}>
       <AgentAvatar kind={kind} seed={seed} size={42} lead={lead} className="agent-badge-avatar" />
       <span className="agent-badge-copy">
         <strong>{name}{tag ? <em className="agent-badge-tag">{tag}</em> : null}</strong>
