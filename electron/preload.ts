@@ -923,6 +923,10 @@ contextBridge.exposeInMainWorld("codex", {
   popoutThreadId: () => __ipc("window:popout-id", 0, []),
   popoutList: () => __ipc("window:popout-list", 0, []),
   popoutThread: (threadId: string) => __ipc("window:popout-thread", 1, [threadId]),
+  /* 工作伙伴独立窗口的关闭键（只关本窗口，不影响主应用） */
+  popoutTeamClose: () => __ipc("window:popout-team-close", 0, []),
+  /* 11-08 用户令：工作伙伴独立窗口（打开/聚焦单例；主应用真关闭时一起关闭） */
+  popoutTeam: () => __ipc("window:popout-team", 0, []),
   /* 删工作日志文件（销毁性，不会重建）：只删 .codex-harness/memory 之下的普通文件；目录、越界路径一律拒绝 */
   workLogsDelete: (input: { paths: string[] }) => __ipc("work-logs:delete", 1, [input]),
   /* 读一份工作日志/记忆文件的正文（UI 内查看）。路径必须落在某个项目的 .codex-harness/memory 之下；>512KB 拒绝（提示去文件管理器打开） */

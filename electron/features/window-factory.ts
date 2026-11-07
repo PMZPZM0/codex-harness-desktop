@@ -305,3 +305,85 @@ export function createPopoutWindow(threadId: string) {
   installContextMenu(win);
   return win;
 }
+
+
+/**
+ * 工作伙伴独立窗口（11-08 用户令：「群聊弹窗做成独立窗口，可以缩小放大挂后台运行，
+ * 主应用关闭就跟着一起关闭」）。
+ *
+ * ⛔ 与「独立会话弹窗」分开：不写 popoutThreadIds（那代表"锁定某会话"），
+ *    URL 用 `?teamPopout=1`，渲染层据此只渲染群聊板块。
+ * ⛔ 单例：重复点侧栏入口只聚焦，不会开一堆窗口。
+ * ⛔ 主窗口 **closed**（真销毁，不是最小化到托盘）时带走它；hide/minimize 不动 ⇒ 可挂后台。
+ * ⛔ 窗口自由缩放：minWidth/minHeight 只保底，不锁死尺寸。
+ */
+let teamPopoutWin: BrowserWindow | null = null;
+
+export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
+  if (teamPopoutWin && !teamPopoutWin.isDestroyed()) {
+    const hit = teamPopoutWin;
+    if (hit.isMinimized()) hit.restore();
+    if (!hit.isVisible()) hit.show();
+    hit.focus();
+    return { ok: true, focused: true };
+  }
+  const windowIcon = path.join(
+    app.getAppPath(),
+    "build",
+    process.platform === "win32" ? "icon.ico" : "icon.png",
+  );
+  const win = new BrowserWindow({
+    width: 980,
+    height: 720,
+    minWidth: 560,
+    minHeight: 460,
+    resizable: true,
+    backgroundColor: "#ffffff",
+    title: "工作伙伴",
+    icon: existsSync(windowIcon) ? windowIcon : undefined,
+    autoHideMenuBar: true,
+    /* ⛔ 独立窗口只渲染群聊板块（不渲染主界面的自绘窗口钮）⇒ 用原生标题栏，
+       最小化 / 最大化 / 关闭直接由系统提供；frame:false 会让它没有窗口按钮。 */
+    webPreferences: {
+      preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
+  });
+  teamPopoutWin = win;
+  applyRoundedCorners(win);
+  win.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
+  win.on("closed", () => {
+    unregisterBusWindow(win);
+    if (teamPopoutWin === win) teamPopoutWin = null;
+  });
+  registerBusWindow(win);
+  applyThemeToWindow(win);
+  win.once("show", () => applyThemeToWindow(win));
+  /* ⛔ 主应用真关闭时一起关闭；托盘最小化（hide）不算关闭。 */
+  const mainWin = mutableState.mainWindow;
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.once("closed", () => { if (!win.isDestroyed()) win.close(); });
+  }
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    const sep = devUrl.includes("?") ? "&" : "?";
+    void win.loadURL(devUrl + sep + "teamPopout=1");
+  } else {
+    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { teamPopout: "1" } });
+  }
+  installContextMenu(win);
+  return { ok: true, focused: false };
+}

@@ -165,7 +165,6 @@ import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal"
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
-import { teamChatOpen } from "../../harness-team/00-open-store";
 
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
@@ -797,7 +796,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <button
                   className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-violet"
                   title="工作伙伴：团队成员 + 伙伴，@ 一下就派活"
-                  onClick={() => teamChatOpen.set(true)}
+                  onClick={() => { void window.codex.popoutTeam(); }}
                 >
                   <MessagesSquare size={15} /><span>工作伙伴</span>
                 </button>

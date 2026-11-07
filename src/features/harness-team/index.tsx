@@ -30,6 +30,8 @@ type TeamPanelProps = {
   onOpenThread?: (threadId: string) => void;
   /** 11-07 用户令「输入框侧边粗条同步」：群输入框里的 ComposerRail 需要宿主 app。 */
   app?: HarnessAppApi;
+  /** 11-08 独立窗口：关闭键改为关本窗口（不是把浮层收起来变成空白）。 */
+  onCloseWindow?: () => void;
 };
 
 export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPanelProps = {}) {
@@ -319,22 +321,23 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
 export default TeamModePanel;
 
 /** 群聊面板（侧栏「群聊」打开）。⛔ 关闭有三条退路：卡片头 X / ESC / 点背景空白。 */
-export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app }: TeamPanelProps = {}) {
+export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app, onCloseWindow }: TeamPanelProps = {}) {
   const open = useTeamChatOpen();
-  const close = () => teamChatOpen.set(false);
+  const close = () => (onCloseWindow ? onCloseWindow() : teamChatOpen.set(false));
   /* ⛔ 走全局 ESC 栈（只让最上层消费），⛔ 不要自己挂 window keydown —— 那样一次 Esc 会关掉多层 */
-  useEscapeLayer(open, close);
+  /* ⛔ 独立窗口里按 ESC 不该把窗口关掉（用户要挂后台），只留头部关闭键。 */
+  useEscapeLayer(!onCloseWindow && open, close);
   if (!open) return null;
   return (
     <div
       className="modal-backdrop team-backdrop"
-      onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}
+      onMouseDown={(event) => { if (!onCloseWindow && event.target === event.currentTarget) close(); }}
     >
       <div className="team-modal" role="dialog" aria-modal="true" aria-label="群聊">
         <header className="team-modal__head">
           <div className="team-modal__title">
             <MessagesSquare size={16} className="ic-violet" />
-            <strong>群聊</strong>
+            <strong>工作伙伴</strong>
             <span className="team-modal__sub">把伙伴拉进一个群，@ 它就派活</span>
             <span className="esc-hint" title="按 ESC 关闭弹窗">ESC</span>
           </div>

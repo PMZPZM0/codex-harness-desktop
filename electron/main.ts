@@ -74,7 +74,7 @@ import { engineDebugLogPath } from "./user-data-paths";
 import { createAppTray, destroyAppTray, trayIconPath } from "./tray";
 import { showMainWindow } from "./features/window-factory";
 import { runDelegatedTask } from "./features/delegation";
-import { createPopoutWindow, createWindow } from "./features/window-factory";
+import { createPopoutWindow, createTeamPopoutWindow, createWindow } from "./features/window-factory";
 import { dispatchRpcCall, ensureDispatchHttp } from "./features/dispatch-rpc";
 import { handleChannelMessage, handleTelegramMessage, handleWeixinMessage } from "./features/im-inbound";
 import { collectSessionProviderIds } from "./features/provider-sessions";
@@ -1117,6 +1117,15 @@ ipcMain.handle("window:popout-thread", (_event, threadId: unknown) => {  const t
 });
 
 /** 弹窗「返回主应用」：关闭该弹窗，并把主窗口带到指定会话（渲染层据此恢复视角）。 */
+/* 工作伙伴独立窗口（11-08）：侧栏入口点一下打开/聚焦；窗口里的关闭键调 close。
+   ⛔ 只处理 window 域，不碰会话弹窗的 popoutThreadIds。 */
+ipcMain.handle("window:popout-team", () => createTeamPopoutWindow());
+ipcMain.handle("window:popout-team-close", (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win && !win.isDestroyed() && isPopoutWindow(win)) win.close();
+  return { ok: true };
+});
+
 ipcMain.handle("window:popout-close", (event, threadId: unknown) => {
   const tid = threadId == null ? "" : String(threadId);
   const win = BrowserWindow.fromWebContents(event.sender);

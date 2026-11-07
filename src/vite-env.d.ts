@@ -1311,6 +1311,10 @@ interface Window {
     popoutThreadId(): Promise<string | null>;
     popoutList(): Promise<string[]>;
     popoutThread(threadId: string): Promise<{ ok: boolean; focused?: boolean }>;
+    /* 工作伙伴独立窗口的关闭键（只关本窗口，不影响主应用） */
+    popoutTeamClose(): Promise<{ ok: boolean }>;
+    /* 11-08 用户令：工作伙伴独立窗口（打开/聚焦单例；主应用真关闭时一起关闭） */
+    popoutTeam(): Promise<{ ok: boolean; focused?: boolean }>;
     /* 删工作日志文件（销毁性，不会重建）：只删 .codex-harness/memory 之下的普通文件；目录、越界路径一律拒绝 */
     workLogsDelete(input: { paths: string[] }): Promise<{ deleted: number; bytes: number; failed: string[] }>;
     /* 读一份工作日志/记忆文件的正文（UI 内查看）。路径必须落在某个项目的 .codex-harness/memory 之下；>512KB 拒绝（提示去文件管理器打开） */

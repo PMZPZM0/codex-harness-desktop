@@ -3032,3 +3032,10 @@
 }
 .team-avatar-picker__foot button:hover { border-color: var(--accent); color: var(--accent); }
 .team-avatar-picker__foot button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+/* ══════ 工作伙伴独立窗口（11-08）══════════════════════════════
+   独立窗口有原生标题栏，不需要给自绘窗口钮留 56px；群聊板块直接铺满整个窗口，
+   随窗口放大缩小自适应（grid 的 minmax(0,1fr) 已负责内部滚动）。 */
+.is-team-popout .team-backdrop { padding: 0; background: transparent; }
+.is-team-popout .team-modal { border: 0; border-radius: 0; box-shadow: none; }
+.is-team-popout .team-popout-root { width: 100%; height: 100%; }

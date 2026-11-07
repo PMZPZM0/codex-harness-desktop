@@ -329,6 +329,27 @@ const catalog = [
   ok(/长中文里艾特不再吃掉整段正文/.test(mentionTest) && /没有 caret 的老调用仍按扫描兜底/.test(mentionTest),
     "回归真值表：长中文保全文 + 老调用兜底");
 }
+/* ── ⑮ 工作伙伴独立窗口（11-08 用户令：可缩放、挂后台、主应用真关闭时一起关）────── */
+{
+  const winFactory = codeOnly(read("electron/features/window-factory.ts"));
+  const mainSrc = codeOnly(read("electron/main.ts"));
+  const appSrc = codeOnly(read("src/App.tsx"));
+  const popoutRoot = codeOnly(read("src/features/harness-team/21-team-popout-root.tsx"));
+  const sidebar = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+  const popoutCss = read("src/styles/61-team-mode.css");
+  ok(/export function createTeamPopoutWindow/.test(winFactory) && /minWidth: 560/.test(winFactory)
+    && /resizable: true/.test(winFactory) && /teamPopout: "1"/.test(winFactory),
+    "独立窗口可缩放、有最小尺寸、URL 带 teamPopout=1");
+  ok(/mainWin\.once\("closed"/.test(winFactory) && /win\.close\(\)/.test(winFactory),
+    "主应用真关闭时一起关闭（hide / 最小化到托盘不算）");
+  ok(/window:popout-team/.test(mainSrc) && /window:popout-team-close/.test(mainSrc),
+    "打开/聚焦与关闭两条 IPC 都登记在主进程 window 域");
+  ok(/isTeamPopoutWindow\(\)/.test(appSrc) && /TeamPopoutRoot/.test(appSrc)
+    && /onCloseWindow/.test(popoutRoot) && /is-team-popout/.test(popoutRoot),
+    "独立窗口首帧分流到群聊根组件，关闭键走关窗通道");
+  ok(/popoutTeam\(\)/.test(sidebar) && /\.is-team-popout \.team-backdrop/.test(popoutCss),
+    "侧栏入口改为打开独立窗口；窗口内铺满、不留模态遮罩");
+}
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（114 个能力域 / 642 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（114 个能力域 / 644 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -187,9 +187,9 @@ QQ 通道
 宿主能力快照（当前环境支持什么，一次性拉取）
 通道：capabilities:snapshot
 
-### window（4 通道）
+### window（6 通道）
 窗口控制（最小化/关闭/置顶/弹出一个独立小窗）
-通道：window:popout-thread, window:popout-close, window:popout-id, window:popout-list
+通道：window:popout-thread, window:popout-team, window:popout-team-close, window:popout-close, window:popout-id, window:popout-list
 
 ### engine（4 通道）
 引擎生命周期（重启 / 换模型档位 / 状态查询）

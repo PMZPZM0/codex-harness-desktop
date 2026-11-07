@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 642,
+  "count": 644,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5711,6 +5711,26 @@
       "invokeArgs": "threadId",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "popoutTeamClose",
+      "channel": "window:popout-team-close",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "工作伙伴独立窗口的关闭键（只关本窗口，不影响主应用）"
+    },
+    {
+      "name": "popoutTeam",
+      "channel": "window:popout-team",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; focused?: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-08 用户令：工作伙伴独立窗口（打开/聚焦单例；主应用真关闭时一起关闭）"
     },
     {
       "name": "workLogsDelete",
