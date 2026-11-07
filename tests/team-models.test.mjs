@@ -4,6 +4,9 @@ import {
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
+  MAX_MEMBER_AVATAR_CHARS,
+  normalizeMemberAvatar,
+  setMemberAvatar,
   MAX_GROUP_MESSAGES,
   addPartner,
   appendGroupMessage,
@@ -452,4 +455,38 @@ test("团成员进名录与互 @ 候选（11-07：成员之间要能互相艾特
      但有 kids 时名录段仍会执行 —— 这里以前会解引用 self.targetKind 直接崩。 */
   const kidCtx = groupContextBlock(group, { forMemberId: kids[0].id, catalog });
   assert.ok(kidCtx.includes("问需") && kidCtx.includes("另起一行写"), "团成员拿到群上下文不能崩");
+});
+
+/* ── 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）──────────── */
+test("setMemberAvatar：只改指定成员，其它成员不受影响", () => {
+  const g = createGroup({
+    id: "g1",
+    members: [
+      { id: "local-user", kind: "human", name: "我" },
+      { id: "b1", kind: "bot", name: "承枢", targetKind: "team", targetKey: "t1" },
+    ],
+    leadId: "local-user",
+  });
+  const next = setMemberAvatar(g, "b1", "preset:panda");
+  assert.equal(next.members.find((m) => m.id === "b1").avatar, "preset:panda");
+  assert.equal(next.members.find((m) => m.id === "local-user").avatar, "");
+});
+
+test("setMemberAvatar：空串 = 恢复默认；不存在的成员不改任何东西", () => {
+  const g = createGroup({ id: "g1", members: [{ id: "b1", kind: "bot", name: "A", targetKind: "expert", targetKey: "k" }] });
+  assert.equal(setMemberAvatar(g, "b1", "preset:fox").members[0].avatar, "preset:fox");
+  assert.equal(setMemberAvatar(setMemberAvatar(g, "b1", "preset:fox"), "b1", "").members[0].avatar, "");
+  assert.equal(setMemberAvatar(g, "nope", "preset:fox").members[0].avatar, "");
+});
+
+test("成员头像归一：只认 preset: 与图片 dataURL，其它一律当没设", () => {
+  assert.equal(normalizeMemberAvatar("preset:fox"), "preset:fox");
+  assert.equal(normalizeMemberAvatar("data:image/webp;base64,AAAA"), "data:image/webp;base64,AAAA");
+  /* ⛔ 本地绝对路径不收（群 JSON 会被同步/备份，换台机器必然失效） */
+  assert.equal(normalizeMemberAvatar("C://Users//a//pic.png"), "");
+  assert.equal(normalizeMemberAvatar("javascript:alert(1)"), "");
+  assert.equal(normalizeMemberAvatar(""), "");
+  /* 超长 dataURL 截断到上限（防一张 4K 图把群 JSON 撑爆） */
+  const huge = `data:image/png;base64,${"A".repeat(MAX_MEMBER_AVATAR_CHARS + 500)}`;
+  assert.equal(normalizeMemberAvatar(huge).length, MAX_MEMBER_AVATAR_CHARS);
 });

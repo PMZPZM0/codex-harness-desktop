@@ -14,6 +14,7 @@
 import { AgentAvatar } from "../../components/AgentAvatar";
 import { UserAvatar } from "../../components/UserAvatar";
 import { agentAvatarKindOf } from "../../lib/agent-avatars.mjs";
+import { avatarAsset, USER_AVATAR_PRESETS } from "../../lib/avatar-presets";
 
 type MemberLike = {
   id: string;
@@ -21,7 +22,25 @@ type MemberLike = {
   name?: string;
   targetKind?: string;
   targetKey?: string;
+  /** 群内自定义头像（11-07）：`preset:<id>` 或 `data:image/...`；空 = 跟随默认 */
+  avatar?: string;
 };
+
+/** 内置头像（复用用户中心那 8 张，`public/avatars/`）：⛔ 不另开一套图、也不自己拼路径
+ *  （`avatarAsset` 才是 BASE_URL 的唯一口径 —— 打包后写死 `/avatars/...` 会解析到盘符根目录）。 */
+export function avatarPresetSrc(presetId: string): string {
+  const preset = USER_AVATAR_PRESETS.find((p) => p.id === presetId);
+  return preset ? avatarAsset(preset.file) : "";
+}
+
+/** 自定义头像 → 可直接用的 img src（没有自定义 ⇒ 空串）。 */
+export function memberAvatarSrc(avatar?: string): string {
+  const v = String(avatar ?? "").trim();
+  if (!v) return "";
+  if (v.startsWith("preset:")) return avatarPresetSrc(v.slice("preset:".length));
+  if (/^data:image\//i.test(v)) return v;
+  return "";
+}
 
 export function MemberAvatar({
   member,
@@ -34,6 +53,16 @@ export function MemberAvatar({
 }) {
   const isHuman = (member?.kind ?? "bot") === "human";
   const base = `team-avatar${className ? ` ${className}` : ""}`;
+  /* ⛔⛔ 11-07 用户令「加一个群内的成员头像自定义修改功能」：自定义的**永远优先**（人和智能体都适用），
+     否则改了头像看不出来 = 功能等于没做。坏图回落默认（⛔ 不留一片空白）。 */
+  const custom = memberAvatarSrc(member?.avatar);
+  if (custom) {
+    return (
+      <span className={`${base}${isHuman ? " is-user" : ""}`} style={{ width: size, height: size }} aria-hidden>
+        <img className="team-avatar__custom" src={custom} alt="" style={{ width: size, height: size }} />
+      </span>
+    );
+  }
   if (isHuman) {
     /* ⛔ 尺寸交给 UserAvatar（它自己按 size 设宽高与字号）；外层只承担"占位 + 类名"，
        ⛔ 不要再套 `is-text` 的首字圆圈 —— 那是 11-06 的旧形态，用户已明确要"同步出来"。 */

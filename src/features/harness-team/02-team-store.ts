@@ -584,6 +584,14 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 群内成员头像（11-07 用户令）：只改这个群里的这张脸；空串 = 恢复默认。
+   *  ⛔ 走主进程落盘（群 JSON 是真相源），渲染层不做本地覆盖 —— 否则重开面板会跳回旧脸。 */
+  const setAvatar = useCallback(
+    async (groupId: string, memberId: string, avatar: string) =>
+      apply((await window.codex.harnessTeamSetAvatar(groupId, memberId, avatar)) as MutationResult),
+    [apply],
+  );
+
   /** 清空群聊天记录：只清投影日志，⛔ 伙伴的子会话与真实产出一条都不动（与删群同口径） */
   const clearMessages = useCallback(async (groupId: string) => {
     const res = (await window.codex.harnessTeamClearMessages(groupId)) as { ok: boolean; cleared?: number; error?: string };
@@ -701,7 +709,7 @@ export function useTeamGroups() {
   return {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
-    refresh, create, rename, addPartner, removePartner, mute, setGuard, removeGroup,
+    refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, clearMessages,
   };

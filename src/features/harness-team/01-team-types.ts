@@ -19,6 +19,8 @@ export type TeamMember = {
   targetKey: string;
   /** 角色/岗位（专家团成员的 profession）；空串 = 没配 */
   targetProfession: string;
+  /** 群内自定义头像（11-07）：空串 = 跟随默认；`preset:<id>` / `data:image/...` */
+  avatar: string;
 };
 
 export type TeamGuard = {

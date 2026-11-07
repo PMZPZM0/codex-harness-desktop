@@ -35,6 +35,7 @@ import {
   removePartner,
   setManager,
   setPartnerMuted,
+  setMemberAvatar,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -70,6 +71,7 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:add-partner",
   "harness-team:remove-partner",
   "harness-team:mute",
+  "harness-team:set-avatar",
   "harness-team:set-guard",
   "harness-team:project",
   "harness-team:messages",
@@ -663,6 +665,17 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, groupId);
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setPartnerMuted(g, partnerId, muted) as GroupShape);
+    });
+
+    /* 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）。
+       ⛔ 只改**这个群**的成员表：同一个专家在 A 群可以一张脸、B 群另一张；
+         专家中心 / 用户中心的形象不受影响（那是另一个作用域）。
+       ⛔ 空串 = 恢复默认；非法值由 `normalizeMemberAvatar` 清成空（⛔ 不把奇怪字符串写进盘）。 */
+    ipcHost.handle("harness-team:set-avatar", (_event, groupId: string, memberId: string, avatar: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, groupId);
+      if (!g) return { ok: false, error: "群不存在" };
+      return saveOne(store, setMemberAvatar(g, memberId, avatar) as GroupShape);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {

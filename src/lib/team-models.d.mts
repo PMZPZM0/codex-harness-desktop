@@ -18,6 +18,8 @@ export interface TeamMemberLite {
   targetKey: string;
   /** 角色/岗位（专家团成员的 profession）；空串 = 没配，⛔ 不编 */
   targetProfession: string;
+  /** 群内自定义头像（11-07）：空串 = 跟随默认；`preset:<id>` = 内置头像；`data:image/...` = 上传的图 */
+  avatar: string;
 }
 
 /** 一条群消息日志（P0b）：真身 = threadId（伙伴子会话）或 `group:<群id>`（人自己说的）。 */
@@ -162,6 +164,10 @@ export function removePartner(
 ): { ok: boolean; reason?: string; group: TeamGroupLite; changed?: boolean };
 
 export function setPartnerMuted(group: TeamGroupLite, partnerId: string, muted: boolean): TeamGroupLite;
+/** 改某个成员在**这个群**里的头像（空串 = 恢复默认）；⛔ 不动专家中心 / 用户中心 */
+export function setMemberAvatar(group: TeamGroupLite, memberId: string, avatar: string): TeamGroupLite;
+export function normalizeMemberAvatar(value: unknown): string;
+export const MAX_MEMBER_AVATAR_CHARS: number;
 export function canDelegate(fromId: string, toId: string, group: TeamGroupLite): boolean;
 
 export function guardAllows(

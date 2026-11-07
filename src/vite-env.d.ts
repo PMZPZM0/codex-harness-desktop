@@ -1396,6 +1396,8 @@ interface Window {
     harnessTeamRemovePartner(groupId: string, partnerId: string, byId: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; changed?: boolean }>;
     /* 团队模式 P0 */
     harnessTeamMute(groupId: string, partnerId: string, muted: boolean): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
+    /* 团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心） */
+    harnessTeamSetAvatar(groupId: string, memberId: string, avatar: string): Promise<{ ok: boolean; group?: any; error?: string }>;
     /* 团队模式 P0 */
     harnessTeamSetGuard(groupId: string, guard: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[] }>;
     /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */

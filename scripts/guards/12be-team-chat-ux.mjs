@@ -193,6 +193,29 @@ const catalog = [
     "⛔ 消息头像与输入框左边框同轴（stream / composer 同一条 padding 公式与列宽）");
 }
 
+/* ── ⑨ 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）──
+   判据四条：能点开（视图接线）、自定义优先（⛔ 顺序反了就等于没做）、上传当场压缩、
+   落盘通道齐（主进程 handler + manifest + registry）。 */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const avatar = codeOnly(read("src/features/harness-team/13-team-avatar.tsx"));
+  const picker = codeOnly(read("src/features/harness-team/19-team-avatar-picker.tsx"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const manifest = read("electron/ipc-channels.manifest.json");
+  /* ⛔ 这里读原文：registry 的注释里含 `/*` 片段，过 codeOnly 会把 channels 整行一起吞掉（实测）。 */
+  const registry = read("electron/ipc-registry.ts");
+  ok(/team-group__member-avatar has-agent is-editable/.test(view)
+    && /setAvatarTarget\(/.test(view)
+    && /<TeamAvatarPicker/.test(view),
+    "成员栏头像可点开选择器（⛔ 组件写了不接线 = 功能不存在）");
+  ok(/const custom = memberAvatarSrc\(member\?\.avatar\);[\s\S]{0,120}?if \(custom\)[\s\S]{0,320}?if \(isHuman\)/.test(avatar),
+    "⛔ 自定义头像**优先于**默认（人与智能体都适用；顺序反了改了也看不出来）");
+  ok(/createImageBitmap/.test(picker) && /drawImage\(bitmap/.test(picker) && /toDataURL\("image\/webp"/.test(picker),
+    "上传图当场压成 128 方形（⛔ 原图塞 dataURL 一张就几 MB）");
+  ok(/harness-team:set-avatar/.test(ipc) && /harness-team:set-avatar/.test(manifest) && /harness-team:set-avatar/.test(registry),
+    "落盘通道齐（handler + manifest + 域表；少一处 = 预检【2】红 / 点了不生效）");
+}
+
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
@@ -264,8 +287,8 @@ const catalog = [
   ok(/const res = \(await window\.codex\.harnessTeamDispatch\(/.test(store)
     && !/invokeAgent\(/.test(store),
     "⛔ 消息上屏即返回：渲染层只发一条 dispatch（不再自己 await 全部回复 ⇒ 清空被推迟几十秒）");
-  ok(/void dispatchGroupText\(g, text, memberIds, "human"/.test(ipcDispatch)
-    && !/await dispatchGroupText\(g, text, memberIds, "human"/.test(ipcDispatch),
+  ok(/void runDispatchRounds\(g, opened\.targets, text, "human"/.test(ipcDispatch)
+    && !/await runDispatchRounds\(/.test(ipcDispatch),
     "⛔ 主进程不 await 派活：关面板/切页后任务照跑（产出照进群、互 @ 照接力）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/const r = await onSend\?\.\(atTargets, fullBody, params\)[\s\S]{0,220}?setText\(""\)/.test(view),

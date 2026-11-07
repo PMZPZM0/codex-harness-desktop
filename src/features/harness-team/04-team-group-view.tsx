@@ -22,6 +22,8 @@ import { Markdown } from "../markdown";
    ⛔ 渲染在独立板块 `17-team-mention-text`（口径在纯函数 `team-mention-render.mjs` + 单测）。
    ⛔ 成员行三件套拆到 `18-team-member-actions`（守住 >1000 行棘轮，行为逐字未变）。 */
 import { TeamMentionText } from "./17-team-mention-text";
+import { TeamAvatarPicker } from "./19-team-avatar-picker";
+import { buildMentionCandidates, fmtTime, shortId } from "./20-team-view-utils";
 import { MemberActions } from "./18-team-member-actions";
 import { TeamMenuButton } from "./06-team-menu";
 
@@ -78,6 +80,8 @@ type Props = {
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 立刻运行一条定时任务 */
   onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
+  /** 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）：只改这个群里的这张脸；空串 = 恢复默认 */
+  onSetAvatar?: (memberId: string, avatar: string) => Promise<{ ok: boolean; error?: string }>;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
   onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
@@ -101,13 +105,6 @@ type Props = {
   goneThreads?: Set<string>;
 };
 
-function fmtTime(at: number): string {
-  if (!at) return "";
-  const d = new Date(at);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-}
-
-const shortId = (id: string) => (id.length > 10 ? `${id.slice(0, 6)}…` : id);
 
 /** 群聊一页多少条（首屏 + 每次向上补的量）。 */
 const PAGE = 30;
@@ -120,12 +117,14 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, live, onOpenModelSettings, onOpenThread, goneThreads,
+  onStopPartner, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
   const userName = useUserName();
   const [showSettings, setShowSettings] = useState(false);
+  /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
+  const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement } | null>(null);
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
@@ -300,19 +299,9 @@ export function TeamGroupView({
     return m ? faceOf(m) : { id, name: nameOf(id) };
   };
 
-  /** @ 候选（正文解析用）：群成员（含群主）+ 每个团的成员（合成 id）。
-   *  ⛔ 名字一律走 `personNameOf` / 目录：群主是**用户中心的真名**，团成员取自调度目录 ——
-   *     这里再写一套取名就会与消息署名对不上（用户明说"头像和用户名没跟用户中心同步"）。 */
-  const mentionCandidates = (() => {
-    const out: { id: string; name: string }[] = [];
-    for (const m of group.members) out.push({ id: m.id, name: personNameOf(m) });
-    for (const m of group.members) {
-      const teamId = String(m.targetKey ?? "");
-      if (!teamId || m.targetKind !== "team") continue;
-      for (const kid of teamKidsOf(m)) out.push({ id: teamAuthorIdOf(teamId, teamMemberIdOf(kid)), name: kid.name });
-    }
-    return out;
-  })();
+  /* @ 候选（正文解析用）：群成员 + 团成员，名字统一走 personNameOf（群主 = 用户中心真名）。 */
+  const mentionCandidates = buildMentionCandidates(group.members, personNameOf, teamKidsOf, teamAuthorIdOf, teamMemberIdOf);
+
 
   /* 伙伴回复正文里写了 `@某人` ⇒ 只做成**可点提及**：点一下把它加进本轮 @，
      ⛔ 不自动发、不自动派活（11-06：模型写「PPT @星象」这种举例文本也会被误读成指令）。 */
@@ -589,6 +578,19 @@ export function TeamGroupView({
 
   return (
     <div className="team-group">
+      {/* 群内成员头像（11-07）：点成员栏的头像打开；选完只改这个群的这张脸。 */}
+      {avatarTarget && (
+        <TeamAvatarPicker
+          anchor={avatarTarget.anchor}
+          name={avatarTarget.name}
+          current={avatarTarget.value}
+          onPick={(avatar) => {
+            void onSetAvatar?.(avatarTarget.memberId, avatar);
+            setAvatarTarget(null);
+          }}
+          onClose={() => setAvatarTarget(null)}
+        />
+      )}
       <header className="team-group__head">
         <div className="team-group__title">
           <div className="team-group__title-row">
@@ -1026,7 +1028,21 @@ export function TeamGroupView({
                 return (
                   <Fragment key={m.id}>
                   <li className={`team-group__member${m.muted ? " is-muted" : ""}`}>
-                    <span className="team-group__member-avatar has-agent"><MemberAvatar member={faceOf(m)} size={22} /></span>
+                    {/* ⛔ 11-07 用户令「加一个群内的成员头像自定义修改功能」：
+                        头像本身是入口（点一下换脸）。⛔ 用 button 包一层而不是给 span 加 onClick ——
+                        键盘用户也要能到（可达性是硬要求），并且要能拿到它的 rect 做浮层定位。 */}
+                    <button
+                      type="button"
+                      className="team-group__member-avatar has-agent is-editable"
+                      title={`换 ${personNameOf(m)} 的头像`}
+                      aria-label={`修改 ${personNameOf(m)} 的头像`}
+                      onClick={(event) => {
+                        const el = event.currentTarget as HTMLElement;
+                        setAvatarTarget({ memberId: m.id, name: personNameOf(m), value: String(m.avatar ?? ""), anchor: el });
+                      }}
+                    >
+                      <MemberAvatar member={faceOf(m)} size={22} />
+                    </button>
                     <span className="team-group__member-main">
                       <strong>{personNameOf(m)}</strong>
                       <small title={`成员 id：${m.id}${m.targetKey ? ` · 目标：${m.targetKind}:${m.targetKey}` : ""}`}>

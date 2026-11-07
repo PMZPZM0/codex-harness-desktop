@@ -2644,3 +2644,79 @@
 }
 .team-profile__actions button:hover { border-color: var(--accent); color: var(--accent); }
 .team-profile__actions button.is-danger:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ══════ 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）══════════
+   ⛔ 头像本身是按钮（点一下换脸）：必须重置成透明、不能有默认按钮边框，
+      否则成员栏那排小圆点会变成一排小方块（真机一眼就毁）。
+   ⛔ hover 只加一圈强调色光环，不放大 —— 成员栏很窄，放大会顶到名字。 */
+.team-group__member-avatar.is-editable {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+.team-group__member-avatar.is-editable:hover { box-shadow: 0 0 0 2px var(--accent-soft); }
+.team-group__member-avatar.is-editable:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* 自定义头像（上传的图 / 内置头像）：与既有头像同尺寸、同圆角，⛔ 不拉伸 */
+.team-avatar__custom { display: block; object-fit: cover; border-radius: inherit; }
+
+/* 选择浮层（portal 到 body，定位由 JS 按锚点算） */
+.team-avatar-picker {
+  position: fixed;
+  z-index: 950;   /* 高于群面板，低于确认框（950）同级 —— 它自己就是确认级操作 */
+  width: 268px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--text) 16%, transparent);
+}
+.team-avatar-picker__head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.team-avatar-picker__head strong { flex: 1; min-width: 0; color: var(--text); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-avatar-picker__grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.team-avatar-picker__item {
+  appearance: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2, var(--line-soft));
+  aspect-ratio: 1 / 1;
+  cursor: pointer;
+  overflow: hidden;
+}
+.team-avatar-picker__item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.team-avatar-picker__item:hover { border-color: var(--accent); }
+.team-avatar-picker__item.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+.team-avatar-picker__err { margin: 8px 0 0; color: var(--danger); font-size: 11.5px; }
+.team-avatar-picker__foot { display: flex; gap: 8px; margin-top: 10px; }
+.team-avatar-picker__foot button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.team-avatar-picker__foot button:hover { border-color: var(--accent); color: var(--accent); }
+.team-avatar-picker__foot button:disabled { opacity: 0.45; cursor: not-allowed; }

@@ -91,7 +91,24 @@ export function normalizeMember(entry) {
     /* 角色（专家团成员的 profession / 专家的岗位）：飞书 `isAgentEmployee`、豆包「伙伴档案」都有身份，
        群里只有名字会分不清谁是谁。⛔ 空串就空着，别编。 */
     targetProfession: String(entry?.targetProfession ?? "").trim(),
+    /* 11-07 用户令「加一个群内的成员头像自定义修改功能」：
+       群里的脸**可以被改**，且只影响这个群（不动专家中心/用户中心那边的形象）。
+       值三态：空串 = 跟随默认（智能体图集 / 用户中心头像）；`preset:<id>` = 内置头像；
+       `data:image/...` = 用户上传的图（渲染层已压到 128px，见 `19-team-avatar-picker`）。 */
+    avatar: normalizeMemberAvatar(entry?.avatar),
   };
+}
+
+/** 群成员自定义头像的长度上限（≈ 128px webp 的 3 倍余量）：⛔ 不设上限 = 一张 4K 图能把群 JSON 撑爆。 */
+export const MAX_MEMBER_AVATAR_CHARS = 200_000;
+
+/** 成员头像取值归一：只认清白的两类，别的一律当"没设"（⛔ 不猜是不是图片）。 */
+export function normalizeMemberAvatar(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("preset:") && raw.length <= 64) return raw;
+  if (/^data:image\/(?:png|jpeg|webp);base64,[a-z\d+/=\s]+$/i.test(raw)) return raw.slice(0, MAX_MEMBER_AVATAR_CHARS);
+  return "";
 }
 
 /**
@@ -276,6 +293,20 @@ export function setPartnerMuted(group, partnerId, muted) {
     ...base,
     members: base.members.map((m) => (m.id === String(partnerId) ? { ...m, muted: Boolean(muted) } : m)),
   };
+}
+
+/**
+ * 改某个成员在**这个群**里的头像（11-07 用户令：「加一个群内的成员头像自定义修改功能」）。
+ * ⛔ 只改群成员表里的那一项，不碰专家中心 / 用户中心的形象 —— 那是另一个作用域
+ *   （同一个专家在 A 群可以用一张脸、B 群用另一张）。
+ * ⛔ `avatar` 传空串 = 恢复默认（回落智能体图集 / 用户中心头像）。
+ */
+export function setMemberAvatar(group, memberId, avatar) {
+  const base = createGroup(group);
+  const id = String(memberId ?? "");
+  const next = normalizeMemberAvatar(avatar);
+  if (!base.members.some((m) => m.id === id)) return base;
+  return { ...base, members: base.members.map((m) => (m.id === id ? { ...m, avatar: next } : m)) };
 }
 
 /**

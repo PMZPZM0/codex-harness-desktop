@@ -1010,6 +1010,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamRemovePartner: (groupId: string, partnerId: string, byId: string) => __ipc("harness-team:remove-partner", 3, [groupId, partnerId, byId]),
   /* 团队模式 P0 */
   harnessTeamMute: (groupId: string, partnerId: string, muted: boolean) => __ipc("harness-team:mute", 3, [groupId, partnerId, muted]),
+  /* 团队模式：群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」；空串 = 恢复默认，不影响专家中心/用户中心） */
+  harnessTeamSetAvatar: (groupId: string, memberId: string, avatar: string) => __ipc("harness-team:set-avatar", 3, [groupId, memberId, avatar]),
   /* 团队模式 P0 */
   harnessTeamSetGuard: (groupId: string, guard: Record<string, unknown>) => __ipc("harness-team:set-guard", 2, [groupId, guard]),
   /* 团队模式：清空群聊天记录（只清投影日志，子会话不动） */
