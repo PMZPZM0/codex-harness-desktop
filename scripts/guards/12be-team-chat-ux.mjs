@@ -706,6 +706,14 @@ const catalog = [
   ok(/const byThread = useMemo/.test(queue) && /team-queue__who/.test(queue),
     "按成员分组展示（同一条队列卡里混着两个伙伴 = 分不清谁的消息）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  /* 11-08 用户实测：「前面怎么还自动多一个 @软件开发专家团」——
+     根因是 `atTargets` 发完没清：上一轮 @ 的伙伴一直挂着，下一轮只 @ 了承枢，
+     实际把整团也一起派了，正文还被 `withMentionPrefix` 补了一句 `@软件开发专家团`。
+     ⛔ 判据：派活成功 / 全部进队列这两条路径都要清，换群也要清。 */
+  ok((view.match(/setAtTargets\(\[\]\)/g) || []).length >= 4,
+    "本轮 @ 必须在发完（派活 + 队列两条路径）与换群时清空 —— ⛔ 否则下一轮会偷偷带上上一轮的目标，正文还会被补 `@名字`");
+  ok(/setText\(""\);[\s\S]{0,160}?setAtTargets\(\[\]\);/.test(view),
+    "清 @ 与清正文在同一处（用户看到的就是「发出去、输入区归零」）");
   ok(/<TeamQueueStack/.test(view) && /queueTeamMessage\(entry\.run\.threadId, fullBody\)/.test(view)
     && /const idleTargets = atTargets\.filter/.test(view),
     "运行中的伙伴走**队列**、空闲的仍走派活（⛔ 对运行中的会话 turn/start 会被主进程拒，等于消息发不出去）");

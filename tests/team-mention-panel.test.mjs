@@ -77,7 +77,12 @@ test("分类：机器人 / 专家团 / 团成员，团成员归到团那一行",
   const sections = mentionSectionsOf(group, catalog);
   assert.deepEqual(sections.map((s) => s.key), ["bot", "team", "kid"]);
   assert.deepEqual(sections[0].items.map((i) => i.name), ["执舵", "没绑定"]);
-  assert.equal(sections[1].items[0].name, "承枢", "团这一行出面上的是主理人");
+  /* ⛔ 11-08 用户实测「正文前面莫名其妙多一个 @软件开发专家团」——
+     这一条的 selectId 是**团**，名字必须也是团名。以前取主理人名（承枢）⇒ 用户以为在 @ 承枢、
+     实际派给整团，主进程再把目标名补进正文，就成了"前面自动多一个 @"。
+     主理人改由 hint 交代（谁替你分派）。 */
+  assert.equal(sections[1].items[0].name, "星篆小队", "团这一行出的是团名（与 selectId = 整团 一致）");
+  assert.match(sections[1].items[0].hint, /承枢 主理/, "主理人在 hint 里交代（团内由他分派）");
   assert.equal(sections[1].items[0].avatar.targetKind, "expert", "头像种子换成主理人（否则画成团徽）");
   assert.equal(sections[2].items.length, 2, "同名成员按 key 去重");
   assert.equal(sections[2].items[0].selectId, "team:t1:k1",

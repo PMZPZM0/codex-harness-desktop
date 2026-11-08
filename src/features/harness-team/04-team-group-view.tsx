@@ -286,7 +286,13 @@ export function TeamGroupView({
        （`useUserName()`：设过就用真名，没设过回落「你」）。
        ⛔ 群记录里 human 成员的 name 是建群时写死的「我」，不能拿它当显示名 ——
           改了用户名、群里还挂着旧的那个字。 */
-    (m?.kind === "human" ? (userName || m?.name || "") : (teamLeadOf(m)?.name ?? m?.name ?? ""));
+    (m?.kind === "human" ? (userName || m?.name || "") : (m?.name || teamLeadOf(m)?.name || ""));
+  /* ⛔⛔ 11-08 用户实测「前面怎么还自动多一个 @软件开发专家团」的**真根因**：
+     这一行代表的是**整个专家团**（它的 id 是 `tgt:team:<团队>`，点 @ = 叫整团），
+     但显示名却取了主理人的名字（`teamLeadOf(m).name` = 承枢）⇒ 用户以为在 @ 承枢，
+     选中 chip 也写着「承枢」，派下去却是整团，主进程再把目标名补进正文 ⇒ `@软件开发专家团`。
+     ⇒ 名字必须与"这一行到底代表谁"一致：团行 = 团队名。主理人单独 @ 走团成员列表那一行。
+     ⛔ 头像仍用主理人的脸（`faceOf`），那是"团队的招牌"，与名字是两件事。 */
 
   /** 头像种子同理：团用**主理人**的身份（kind=expert + 主理人 key），画出来才是专家中心那张脸；
      ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。 */
@@ -559,6 +565,11 @@ export function TeamGroupView({
       if (!idleTargets.length) {
         if (queued.length) {
           setText("");
+          /* ⛔⛔ 11-08 用户实测：「前面怎么还自动多一个 @软件开发专家团」——
+             根因是 `atTargets` **发完没清**：上一轮 @ 的伙伴一直挂在那儿，
+             下一轮只 @ 了承枢，实际却把整团也一起派了，正文还被补了一句 `@软件开发专家团`。
+             ⇒ 与正文同一时刻清掉（两条路径都要清）。 */
+          setAtTargets([]);
           setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
           flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它跑完这一轮就接着做；点「立即」可插队）`);
         }
@@ -571,6 +582,8 @@ export function TeamGroupView({
       }
       if (queued.length) flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它们还在跑）`);
       setText("");
+      /* 同上：派活成功即清 @（⛔ 别让这一轮的目标活到下一轮） */
+      setAtTargets([]);
       /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
       setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
     } catch (err) {
@@ -649,7 +662,13 @@ export function TeamGroupView({
   };
 
   /* 换群 ⇒ 无条件贴底；消息或流式有变化 ⇒ 只在原本贴底时跟随 */
-  useEffect(() => { stickRef.current = true; setVisibleCount(PAGE); stick(); }, [group.id]);
+  useEffect(() => {
+    stickRef.current = true;
+    setVisibleCount(PAGE);
+    stick();
+    /* 换群：本轮 @ 与草稿都属于**上一个群**，⛔ 不许带过来（否则一点发送就发给另一个群的人） */
+    setAtTargets([]);
+  }, [group.id]);
   useEffect(() => { if (stickRef.current) stick(); }, [rows.length, liveLen]);
 
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
