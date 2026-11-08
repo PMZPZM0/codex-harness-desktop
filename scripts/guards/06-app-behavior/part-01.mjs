@@ -331,11 +331,11 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         ` db21: m.matchModelSpec("doubao-seed-2-1-pro-260915").contextWindow, db21Out: m.matchModelSpec("doubao-seed-2-1-pro-260915").maxOutputTokens, db21Vis: V("doubao-seed-2.1-pro"),` +
         ` sugGpt61: m.suggestModelIds("gpt-6.1").slice(0, 2).map((e) => e.id),` +
         ` eLevelsGpt61: m.effortLevelsForModel("gpt-6.1-sol").join("/"), eLevelsDs: m.effortLevelsForModel("deepseek-flash").join("/"),` +
-        ` eLevelsGemini4: m.effortLevelsForModel("gemini-4-argon").join("/"), eLevelsClaude: m.effortLevelsForModel("claude-opus-5-5").length,` +
+        ` eLevelsGemini4: m.effortLevelsForModel("gemini-4-argon").join("/"), eLevelsClaude: m.effortLevelsForModel("claude-opus-5-5").join("/"),` +
         ` eLevelsUnknown: m.effortLevelsForModel("totally-unknown-xyz").join("/"), eLevelsEmpty: m.effortLevelsForModel("").join("/"),` +
         ` eClampX: m.clampEffortToLevels("xhigh", ["low", "high", "max"]), eClampMin: m.clampEffortToLevels("minimal", ["low", "high", "max"]),` +
         ` eClampBogus: m.clampEffortToLevels("bogus", ["low", "high", "max"]),` +
-        ` eOrderMatch: m.EFFORT_ORDER.join("/") === e.ALL_EFFORTS.join("/") && m.DEFAULT_EFFORT_LEVELS.join("/") === e.CUSTOM_MODEL_EFFORTS.join("/"),` +
+        ` eOrderMatch: m.EFFORT_ORDER.join("/") === e.ALL_EFFORTS.join("/"),` +
         ` glm53: m.matchModelSpec("glm-5.3").contextWindow, glm53Vis: V("glm-5.3"), glm53fVis: V("glm-5.3-flash"),` +
         ` qwen38: m.matchModelSpec("qwen3.8-max").contextWindow, qwen38Video: (m.matchModelSpec("qwen3.8-max").inputTypes || []).includes("video"),` +
         ` nova: m.matchModelSpec("sensenova-v6.5-pro").contextWindow, novaVis: V("sensenova-v6.5-pro"),` +
@@ -381,11 +381,11 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         "补全：打 gpt-6.1 先出 6.1 家族（Sol / Terra），不混进 GPT-6 Astra");
       /* ⛔⛔ 11-08 用户令：「选那个模型，有几个档位，就显示那几个档位」「保证选到的档位都是有用的」。 */
       (sp.eLevelsGpt61 === "low/medium/high/xhigh/max" && sp.eLevelsDs === "low/high/max" && sp.eLevelsGemini4 === "low/medium/high"
-        && sp.eLevelsClaude === 0 && sp.eLevelsUnknown === "low/medium/high/xhigh" && sp.eLevelsEmpty === "low/medium/high/xhigh" ? ok : fail)(
-        "思考档位按官方规格联动：GPT-6.1 五档 / DeepSeek 三档 / Gemini 4 三档 / Claude 无离散档（隐藏）/ 未收录回落四档");
+        && sp.eLevelsClaude === "low/medium/high" && sp.eLevelsUnknown === "low/medium/high" && sp.eLevelsEmpty === "low/medium/high" ? ok : fail)(
+        "思考档位按官方规格联动：GPT-6.1 五档 / DeepSeek 三档 / Gemini 4 三档；查不到档位（Claude / GLM / Qwen / 豆包 / M3 等）与未收录模型一律回落**低中高三档**（⛔ 不隐藏、不再四档）");
       (sp.eClampX === "high" && sp.eClampMin === "low" && sp.eClampBogus === "low" ? ok : fail)(
         "切模型后旧档位夹到最近可用档（xhigh→high、minimal→low、未知→最低档）");
-      (sp.eOrderMatch ? ok : fail)("EFFORT_ORDER / DEFAULT_EFFORT_LEVELS 与 effort.ts 的 ALL_EFFORTS / CUSTOM_MODEL_EFFORTS 逐字同序同值");
+      (sp.eOrderMatch ? ok : fail)("EFFORT_ORDER 与 effort.ts 的 ALL_EFFORTS 逐字同序同值");
       const composerFormSrc = codeOnly(readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/03-composer/02-composer-form.tsx"), "utf8"));
       const teamComposerSrc = codeOnly(readFileSync(join(ROOT, "src/features/harness-team/10-team-composer.tsx"), "utf8"));
       (/levels=\{effortLevels\}/.test(composerFormSrc) && /effortLevelsForModel\(currentModelId\)/.test(composerFormSrc)

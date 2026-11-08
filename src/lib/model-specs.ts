@@ -267,24 +267,27 @@ export function suggestModelIds(input: string, limit = 8): ModelCatalogEntry[] {
  */
 export const EFFORT_ORDER = ["minimal", "low", "medium", "high", "ultra", "xhigh", "max"] as const;
 
-/** 未收录模型的回落档位（与 effort.ts 的 CUSTOM_MODEL_EFFORTS 同值；守卫对账）。 */
-export const DEFAULT_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+/** 查不到官方档位时的兜底（11-08 用户：「找不到就低中高三挡就行」）。
+ *  Claude / GLM / Qwen / 豆包 / MiniMax M3 这类官方没有离散档位的模型也走这三档。 */
+export const FALLBACK_EFFORT_LEVELS = ["low", "medium", "high"] as const;
 
 /**
  * 按官方规格表给出该模型**实际支持的思考档位**（11-08 用户：「选那个模型，有几个档位，
  * 就显示那几个档位」「保证选到的档位都是有用的」）。
  *  · 表里有且声明了档位 ⇒ 只返回这些（顺序按 EFFORT_ORDER，与 UI 一致）；
- *  · 表里有但声明为空数组 ⇒ 该模型没有离散思考档位（按官方数据）⇒ 返回空，UI 隐藏思考菜单；
- *  · 表里没有（自定义 / 刚发布还没收录）⇒ 回落默认四档（保持旧行为，⛔ 别一刀切隐藏）。
+ *  · 表里有但声明为空数组（Claude / GLM / Qwen / 豆包 / MiniMax M3 这类官方没有离散档位）
+ *    ⇒ 回落**低 / 中 / 高三档**（11-08 用户定）；
+ *  · 表里没有（自定义 / 刚发布还没收录）⇒ 同样回落低/中/高（⛔ 不再出四档，也不隐藏）。
  */
 export function effortLevelsForModel(modelId: string | undefined | null): string[] {
   const id = String(modelId ?? "").trim();
-  const fallback = [...DEFAULT_EFFORT_LEVELS];
+  const fallback = [...FALLBACK_EFFORT_LEVELS];
   if (!id) return fallback;
   const spec = matchModelSpec(id);
   if (!spec) return fallback;
   const declared = spec.efforts ?? [];
-  return EFFORT_ORDER.filter((level) => declared.includes(level));
+  const matched = EFFORT_ORDER.filter((level) => declared.includes(level));
+  return matched.length ? matched : fallback;
 }
 
 /**
