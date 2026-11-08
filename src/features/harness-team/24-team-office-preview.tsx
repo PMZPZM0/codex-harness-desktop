@@ -6,9 +6,14 @@
  *   · 预览 = `TeamOfficePreview`（像素办公室 + 缩放 + 点角色开会话，全在主对话那一条链上）。
  *   各写一份的话图标/位置/交互马上会漂开 —— 10-05 用户就是为此报的「两处不一致」。
  *
- * 数据边界（与中枢会话同口径）：群里的人 = 办公室里的工位。
+ * 数据边界（与中枢会话同口径）：**群里干活的人** = 办公室里的工位。
  *   正在跑（本群 live 里 status=running）→ busy（坐下敲键盘 + 气泡）；
  *   其余 → idle（待机屏保）。⛔ 不按 members 的静态角色编状态。
+ * ⛔⛔ 11-08 用户：「办公室预览是把用户也算进去了」—— 群里那条 `{ kind: "human", name: "我" }`
+ *   是**群主本人**（建群时由 `12-team-create` 写死加进去的，用于发言身份），
+ *   他不是员工、不产出、也不该坐进像素办公室 ⇒ 这里按 `kind === "bot"` 过滤。
+ *   ⛔ 别改成"按名字叫『我』过滤"（改个名就漏）；⛔ 也别在 `TeamOfficePreview` 里过滤
+ *     —— 那个组件对专家团 / 委托两种来源同样复用，它不认识"人/伙伴"这套语义。
  *
  * 落点：群头操作区、**收起/展开成员栏键的左边**（11-08 用户截图令：
  * 「把办公室预览图标放到设置按键这一排的展开折叠左边」；群头操作区才是"对这个群的操作"）。
@@ -28,11 +33,12 @@ export function TeamOfficeEntry({ group, live, busy, onOpenThread }: {
 }) {
   const [open, setOpen] = useState(false);
 
-  /* 工位 = 群里的人（含群主）。状态只认运行态：live 里有正在跑的回合 / busy 名单里。 */
+  /* 工位 = 群里**干活的人**（伙伴/员工）。⛔ 群主本人（kind=human，名字「我」）不派工位：
+     用户 11-08 明确「别把用户算进去」。状态只认运行态：live 里有正在跑的回合 / busy 名单里。 */
   const groupMembers = useMemo(() => {
     const running = new Set((live ?? []).filter((run) => run.status === "running").map((run) => run.memberId));
     for (const id of busy ?? []) running.add(id);
-    return group.members.map((member) => {
+    return group.members.filter((member) => member.kind !== "human").map((member) => {
       const liveRun = (live ?? []).find((run) => run.memberId === member.id && run.status === "running");
       return {
         id: member.id,
