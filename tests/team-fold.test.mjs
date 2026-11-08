@@ -3,8 +3,9 @@
  * ⛔ 只测"选数据"：不碰 React、不碰引擎请求。
  */
 import test from "node:test";
+import { mergeConsecutive } from "../src/lib/team-models.mjs";
 import assert from "node:assert/strict";
-import { FOLD_QUOTE_CHARS, buildReplyQuotes, buildTopicThreads, epochMsOf, pickTurnOf, turnBodyOf } from "../src/lib/team-fold.mjs";
+import { FOLD_QUOTE_CHARS, buildReplyQuotes, buildTopicThreads, topicThreadOf, epochMsOf, pickTurnOf, turnBodyOf } from "../src/lib/team-fold.mjs";
 
 const turn = (id, body, extra = {}) => ({
   id,
@@ -146,4 +147,21 @@ test("buildTopicThreads：没有回复的用户消息也是空话题（不丢消
   const t = buildTopicThreads([{ key: "u", authorKind: "human", authorId: "u", text: "你好" }]);
   assert.equal(t.size, 1);
   assert.deepEqual(t.get("u").replies, []);
+});
+
+/* ⛔ 11-08 Code review 真缺陷：连续用户消息被 mergeConsecutive 合并后，
+   第二条的伙伴回复挂在 u2，渲染只查 u1 ⇒ 话题条为空。topicThreadOf 必须把 continued 一并合并。 */
+test("topicThreadOf：合并行的 continued 子话题不丢", () => {
+  const rows = [
+    { key: "u1", authorKind: "human", authorId: "u", at: 1000, kind: "text", text: "连发第一条" },
+    { key: "u2", authorKind: "human", authorId: "u", at: 2000, kind: "text", text: "连发第二条" },
+    { key: "b2", authorKind: "bot", authorId: "p", at: 2100, kind: "text", text: "回第二条" },
+  ];
+  const merged = mergeConsecutive(rows);
+  const threads = buildTopicThreads(rows);
+  assert.equal(merged.length, 2, "两条用户消息合并成一行");
+  assert.deepEqual(merged[0].continued.map((r) => r.key), ["u2"]);
+  const thread = topicThreadOf(threads, merged[0]);
+  assert.deepEqual(thread.replies.map((r) => r.key), ["b2"], "u2 的回复必须出现在主行的话题条里");
+  assert.match(thread.root.text, /连发第二条/, "root 文本带上 continued 的内容");
 });

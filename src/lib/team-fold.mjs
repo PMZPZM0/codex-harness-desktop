@@ -100,6 +100,36 @@ export function buildTopicThreads(rows) {
   return out;
 }
 
+/**
+ * 话题条按**渲染行**取数据（11-08 Code review 发现的真缺陷）。
+ *
+ * ⛔ 群视图用 `mergeConsecutive()` 把 90 秒内同一作者的连续消息并成一行：
+ *    合并后的行只保留第一条的 `key`，其余进 `continued`。而 `buildTopicThreads(rows)`
+ *    按全量 rows 分组，每条非 bot 消息都是独立根 ⇒ 连发两条用户消息时，
+ *    第二条的伙伴回复挂在 `u2` 上，渲染却只查 `u1` ⇒ 话题条为空、弹窗里也看不到回复。
+ * ⇒ 这里把主行 + continued 子行的话题 replies 合并成一份（root 用渲染行的完整文本）。
+ * @returns { root, replies } | undefined
+ */
+export function topicThreadOf(threads, displayRow) {
+  const keys = [displayRow?.key, ...(displayRow?.continued ?? []).map((r) => r?.key)].filter(Boolean);
+  const seen = new Set();
+  const replies = [];
+  for (const key of keys) {
+    const thread = threads.get(key);
+    if (!thread || seen.has(thread)) continue;
+    seen.add(thread);
+    replies.push(...thread.replies);
+  }
+  if (!seen.size) return undefined;
+  const extra = (displayRow?.continued ?? []).map((r) => String(r?.text ?? "")).filter(Boolean);
+  return {
+    root: extra.length
+      ? { ...displayRow, text: [String(displayRow?.text ?? ""), ...extra].join("\n") }
+      : displayRow,
+    replies,
+  };
+}
+
 export function buildReplyQuotes(rows) {
   const out = new Map();
   let lastHuman = null;

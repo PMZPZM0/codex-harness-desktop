@@ -50,7 +50,7 @@ import { TeamTopicBadge, TeamTopicPreview } from "./25-team-topic";
 /* 11-08 用户令「发出去消息就要出效果」：运行反馈挂在用户气泡下面，由 busy 驱动。 */
 import { TeamRunFeedback, runningPartnersOf } from "./26-team-run-feedback";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
-import { buildReplyQuotes, buildTopicThreads } from "../../lib/team-fold.mjs";
+import { buildReplyQuotes, buildTopicThreads, topicThreadOf } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf, teamMemberIdOf } from "../../lib/team-models.mjs";
@@ -708,8 +708,9 @@ export function TeamGroupView({
     return null;
   }, [displayRows]);
   const runningPartners = useMemo(
-    () => (effectiveMessageForm === "topic" ? [] : runningPartnersOf(busy ?? [], nameOf, live ?? [])),
-    [busy, live, nameOf, effectiveMessageForm],
+    () => runningPartnersOf(busy ?? [], nameOf, live ?? []),
+    /* ⛔ 群消息形式与回复模式正交：话题模式下也要有运行反馈，别把用户晾着 */
+    [busy, live, nameOf],
   );
 
   /* 引用索引用**全量 rows**（不是分页后的 shownRows）：翻到更早的一页时，
@@ -720,7 +721,8 @@ export function TeamGroupView({
      ⛔ 纯函数分组，不在这里写循环（口径在 team-fold.mjs + 单测）。 */
   const topicThreads = useMemo(() => buildTopicThreads(rows), [rows]);
   const [topicOpenKey, setTopicOpenKey] = useState<string | null>(null);
-  const openTopic = topicOpenKey ? topicThreads.get(topicOpenKey) : undefined;
+  const openTopicRow = topicOpenKey ? displayRows.find((r) => r.key === topicOpenKey) : undefined;
+  const openTopic = openTopicRow ? topicThreadOf(topicThreads, openTopicRow) : undefined;
 
   /* ⛔ 11-06 用户：「补充文件引用」——候选只从**群消息正文里真实出现过的本机路径**扫，
      ⛔ 不猜、不建索引；选中的路径仍走现有 `opts.files` / `[附件文件]` 段（与主对话同口径）。 */
@@ -1122,13 +1124,13 @@ export function TeamGroupView({
                                 话题条就挂在用户自己的气泡里，⛔ 不是另起一条消息、也不在主流里平铺。 */}
                             {effectiveMessageForm === "topic" && !isBot && (
                               <TeamTopicBadge
-                                thread={topicThreads.get(row.key)}
+                                thread={topicThreadOf(topicThreads, row)}
                                 faceOfId={faceOfId}
                                 nameOf={nameOf}
                                 onOpen={() => setTopicOpenKey(row.key)}
                               />
                             )}
-                            {!isBot && row.key === lastHumanKey && effectiveMessageForm !== "topic" && (
+                            {!isBot && row.key === lastHumanKey && (
                               <TeamRunFeedback
                                 mode={effectiveReplyMode}
                                 partners={runningPartners}

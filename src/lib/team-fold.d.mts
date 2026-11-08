@@ -28,3 +28,4 @@ export type TopicRow = {
 };
 export type TopicThread = { root: TopicRow; replies: TopicRow[] };
 export function buildTopicThreads(rows: unknown): Map<string, TopicThread>;
+export function topicThreadOf(threads: Map<string, TopicThread>, displayRow: Partial<TopicRow> | null | undefined): TopicThread | undefined;

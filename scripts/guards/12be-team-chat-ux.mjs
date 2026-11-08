@@ -293,7 +293,7 @@ const catalog = [
     && /export function setTeamGroupAppender/.test(bridge),
     "team → 群 的绑定与写入口在独立桥里（⛔ 不让 harness-team-ipc ↔ team-invoke 成环）");
   ok(/bindTeamGroup\(partner\.targetKey, group\.id\)/.test(ipcHost)
-    && /setTeamGroupAppender\(\(gid, entry\) => appendMessageTo\(gid, entry\)\)/.test(ipcHost),
+    && /setTeamGroupAppender\(\(gid, entry, since\) =>[\s\S]{0,220}?appendMessageTo\(gid, entry\)/.test(ipcHost),
     "派团时登记绑定 + 挂载时注入写入口（⛔ 不登记 = 成员产出无处可去）");
   /* ⛔ 11-07 Code review 发现：团成员会话由 team_member_invoke 起，拿不到群派活的 groupContextBlock。 */
   ok(/collaborationProtocolLines\("member"\)/.test(invoke),
@@ -788,8 +788,9 @@ const catalog = [
       "群输入框的模型 / 沙箱 / 审批档真下发到成员会话（⛔ 不再是只接 effort 的死控件，11-08 审查）");
     ok(/groupClearedAt\.set\(gid, Date\.now\(\)\)/.test(ipcSrc)
       && /const clearedMark = groupClearedAt\.get\(group\.id\)/.test(ipcSrc)
-      && /clearedDuringRun \? \{ ok: true \}/.test(ipcSrc),
-      "清空聊天记录后，在飞回合的回复不再写回空群（主进程代际判定，11-08 审查）");
+      && /clearedDuringRun \? \{ ok: true \}/.test(ipcSrc)
+      && /cleared > since/.test(ipcSrc),
+      "清空聊天记录后，在飞回合（群聊 + 主理人工具派活）的回复都不再写回空群（主进程代际判定，11-08 审查）");
   }
 }
 
@@ -820,9 +821,11 @@ const catalog = [
     "本轮这句已在需求体里，历史里不再重复贴一遍（⛔ 否则模型以为要回两次）");
   ok(/buildTalkInput\(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow\[\] = \[\]\)/.test(talk),
     "注入是 buildTalkInput 的第 5 个参数（两条投递链共用同一份口径）");
-  ok(/const history = await options\.readMessages\(TALK_HISTORY_LIMIT\)/.test(talk)
-    && /buildTalkInput\(options, target, from, text, history\)/.test(talk),
-    "runGroupTalk 每一跳都重读群日志（接力到第 2 个人时前一位的话已落群）");
+  /* ⛔ 11-08 审查：runGroupTalk 整段死代码（派活搬进主进程后无调用方）已删 ——
+     投递主链只剩 harness-team-ipc 一条，⛔ 不许再长出第二套口径。 */
+  ok(!/runGroupTalk/.test(talk) && !/runGroupTalk/.test(outlet)
+    && /runTalkTurn/.test(ipc) && /readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc),
+    "runGroupTalk 死代码已删（接力主链只在 harness-team-ipc；⛔ 不再并存两套投递口径）");
   ok(/readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc)
     && /readMessages: \(limit: number\) => Promise\.resolve\(readGroupHistory\(limit\)\)/.test(ipc),
     "派活主链每轮也注入；默认注入与 group_read 工具**同一份** readGroupHistory（⛔ 两处口径分叉会读到不同历史）");
@@ -890,6 +893,20 @@ const catalog = [
     "占位模式不显示流式正文（流式卡跟着回复模式分叉）");
   ok(/res\?\.ok \|\| res\?\.reason === "idle"/.test(storeSrc),
     "停止返回 idle 也复位 busy/live（⛔ 原来只在 ok 时清，停止键会卡死）");
+}
+
+/* ── ⑰ Code review 回归（11-08）─────────────────────────────────────────── */
+{
+  const fold = codeOnly(read("src/lib/team-fold.mjs"));
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/export function topicThreadOf/.test(fold) && /displayRow\?\.continued/.test(fold)
+    && /topicThreadOf\(topicThreads, row\)/.test(view) && /openTopicRow/.test(view) && /topicThreadOf\(topicThreads, openTopicRow\)/.test(view),
+    "⛔ 话题条按渲染行取数：`mergeConsecutive` 合并连发消息后，continued 子行的回复不许丢（Code review 实测复现）");
+  ok(!/effectiveMessageForm === "topic" \? \[\] : runningPartnersOf/.test(view)
+    && !/effectiveMessageForm !== "topic" && \(/.test(view),
+    "群消息形式与回复模式正交：话题模式下照样有运行反馈（⛔ 不要把用户晾着）");
+  ok(/test\("topicThreadOf：合并行/.test(read("tests/team-fold.test.mjs")),
+    "合并行话题不丢有单测真值表");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
