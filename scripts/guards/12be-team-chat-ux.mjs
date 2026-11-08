@@ -386,21 +386,23 @@ const catalog = [
   ok(!/team-msg__mentioned/.test(read("src/features/harness-team/04-team-group-view.tsx"))
     && !/team-msg__mentioned/.test(read("src/styles/61-team-mode.css")),
     "⛔ 气泡底部不再有「补出来」的 @ chip 行（@ 只在正文里）");
-  /* ⛔⛔ 11-08 用户（截图 1）：「输入框里面没有自动变成图二这种」——
-     输入框里的 `@名字` 由**镜像层**就地染色成 chip（textarea 文字透明、光标保留）。 */
+  /* ⛔⛔ 11-08 用户（截图）：「加上头像」「输入框里面自动变成图二这种」——
+     输入框改成与主对话同模型的 **contenteditable + 真 chip 节点**（头像 + @名字），
+     ⛔ 不再用 textarea + 覆盖层（头像会加宽，覆盖层与光标必然错位）。 */
   {
     const composerSrc2 = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
     const teamCss2 = read("src/styles/61-team-mode.css");
-    ok(/mentionSegments\(value, mentionNames\)/.test(composerSrc2) && /team-composer__mirror/.test(composerSrc2)
-      && /team-composer__at-chip/.test(composerSrc2)
-      && /className=\{`team-composer__input\$\{value \? " is-mirrored" : ""\}`\}/.test(composerSrc2)
-      && /onScroll=\{\(e\) => \{ if \(mirrorRef\.current\) mirrorRef\.current\.scrollTop = e\.currentTarget\.scrollTop; \}\}/.test(composerSrc2),
-      "输入框里的 @名字 就地染色成 chip（镜像层跟随滚动，光标位置不漂）");
-    const chipRule = /\.team-composer__at-chip \{([^}]*)\}/.exec(teamCss2)?.[1] ?? "";
-    ok(/background:/.test(chipRule) && !/padding:/.test(chipRule) && !/font-weight:/.test(chipRule) && !/letter-spacing:/.test(chipRule),
-      "⛔ chip 只许加底色/圆角/外阴影：加 padding / 字重 / 字距会让光标与镜像错位");
-    ok(/\.team-composer \.team-composer__input\.is-mirrored \{ color: transparent; caret-color: var\(--text\); \}/.test(teamCss2),
-      "镜像态：textarea 文字透明、光标保留（否则文字会叠两层）");
+    const editorSrc = codeOnly(read("src/lib/team-composer-editor.ts"));
+    ok(/contentEditable/.test(composerSrc2) && /renderEditor\(el, text, mentionNames, mentionAvatars/.test(composerSrc2)
+      && /team-composer__at-chip/.test(editorSrc) && /data-mention/.test(editorSrc)
+      && /contenteditable", "false"/.test(editorSrc)
+      && !/team-composer__mirror/.test(composerSrc2),
+      "输入框 = contenteditable + 原子 chip 节点（头像 + @名字），序列化回 `@名字`（⛔ 不再用覆盖层）");
+    ok(/team-composer__at-avatar/.test(editorSrc) && /team-composer__at-avatar/.test(teamCss2)
+      && /\.team-composer__at-avatar\s*\{[^}]*border-radius:\s*50%/.test(teamCss2),
+      "chip 里画真头像（与成员栏同一套判定，16px 圆形）");
+    ok(/editorCaret\(el\)/.test(composerSrc2) && /setEditorCaret\(el, caret\)/.test(composerSrc2) && /insertMentionAtCaret/.test(composerSrc2),
+      "光标按纯文本偏移读写（contenteditable 没有 selectionStart；插人也走同一套偏移）");
   }
   ok(/\[SYSTEM TASK · 工作伙伴消息\]/.test(talkSrc) && /=== 用户需求 ===/.test(talkSrc) && /=== END ===/.test(talkSrc),
     "群聊输入包 SYSTEM TASK 壳：user-refs 只留需求体，⛔ 提示词不裸露在气泡");
@@ -466,19 +468,48 @@ const catalog = [
     "⛔ 运行态条里不再画停止按钮（那一行只说明状态）");
 }
 
-/* ── ⑦ 输入框工具行：@ 入口 + 群菜单不占另一行 ── */
+/* ── ⑦ 输入框工具行：@ 入口 + 行内提及（⛔ 「指令」按钮已下线） ── */
 {
   const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
   ok(/onOpenMention\?: \(anchor: HTMLElement\) => void;/.test(composer) && /mentionCount\?: number;/.test(composer)
-    && /toolsSlot\?: React\.ReactNode;/.test(composer) && /mentionAnchorRef\?: RefObject<HTMLButtonElement \| null>;/.test(composer),
-    "新 prop 都在 Props 里（@ 入口带锚点、人数徽标、工具行、@ 面板锚点 ref；⛔ 少一个就是「写了不生效」）");
+    && /mentionAnchorRef\?: RefObject<HTMLButtonElement \| null>;/.test(composer)
+    && /mentionNames\?: string\[\];/.test(composer) && /mentionAvatars\?: Record<string, MentionAvatar>;/.test(composer)
+    && /editorApiRef\?: RefObject<TeamEditorApi \| null>;/.test(composer),
+    "新 prop 都在 Props 里（@ 入口带锚点、人数徽标、提及名字/头像、编辑器命令面；⛔ 少一个就是「写了不生效」）");
   ok(/aria-label="选择伙伴（@）"/.test(composer) && /team-composer__at-badge/.test(composer),
     "@ 按钮带已选人数徽标");
-  ok(/\{toolsSlot\}/.test(composer), "群菜单按钮渲染在工具行（FLOAT 形态由父层不传）");
+  /* ⛔⛔ 11-08 用户：「然后那个指令按键可以不要了，配套群设置里面也可以删了」——
+     「指令」按钮 = 群菜单（TeamMenuButton）整体下线 ⇒ 输入框不再收 toolsSlot 槽。 */
+  ok(!/toolsSlot/.test(composer) && !/TeamMenuButton/.test(composer),
+    "⛔ 输入框工具行不再收群菜单槽（指令按钮已下线）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/onOpenMention=\{\(\) => \(mention\.open \? closeMention\(\) : openMentionPanel\(\)\)\}/.test(view) && /mentionCount=\{atTargets\.length\}/.test(view)
-    && /toolsSlot=\{!floatMenu \?/.test(view),
-    "群视图把 prop 真的传下去了（@ 入口带开关、人数徽标、工具行；⛔ 组件加了 prop 不传 = 按钮不存在）");
+    && /mentionNames=\{mentionNames\}/.test(view) && /mentionAvatars=\{mentionAvatars\}/.test(view)
+    && /editorApiRef=\{editorApiRef\}/.test(view),
+    "群视图把 prop 真的传下去了（@ 入口带开关、人数徽标、提及名字/头像、编辑器命令面；⛔ 组件加了 prop 不传 = 按钮不存在）");
+  ok(!/TeamMenuButton/.test(view) && !/onSaveMenu/.test(view) && !/floatMenu/.test(view),
+    "⛔ 群头不再有「指令」菜单按钮（指令体系整体下线，含 FLOAT 形态与保存菜单回调）");
+  const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
+  ok(!/data-section="menu"/.test(settings) && !/快捷指令/.test(settings) && !/onSaveMenu/.test(settings),
+    "⛔ 群设置里「快捷指令」整段也删了（⛔ 只删按钮留设置页 = 用户点名的那半没做）");
+}
+
+/* ── ⑦b 群头去赘述 + 办公室入口挪到操作区（11-08 用户截图「把我框住的文字赘述删了…办公室预览图标放到展开折叠左边」）── */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const css = read("src/styles/61-team-mode.css");
+  ok(!/team-group__sub/.test(view) && !/\.team-group__sub\s*\{/.test(css)
+    && !/位成员 · \$\{.*\} 个伙伴/.test(view),
+    "⛔ 群头副标题「N 位成员 · M 个伙伴 · 项目 …」整条删除（人数/项目名在别处已有，用户点名赘述）");
+  ok(!/members-foot/.test(view) && !/\.team-group__members-foot\s*\{/.test(css)
+    && !/点 @ 把这个人加进这次派活/.test(view),
+    "⛔ 成员栏底部那句「点 @ 把这个人加进这次派活」也删了（同一张截图框住的赘述）");
+  const headActions = view.slice(view.indexOf("team-group__head-actions"), view.indexOf("team-group__head-actions") + 2600);
+  ok(/<TeamOfficeEntry/.test(headActions)
+    && headActions.indexOf("<TeamOfficeEntry") < headActions.indexOf("aria-label={membersOpen ? \"收起成员栏\" : \"展开成员栏\"}"),
+    "办公室预览入口落在群头操作区，且在「收起/展开成员栏」键的**左边**（用户点名位置）");
+  ok(!/\.team-group__office \{[\s\S]{0,120}?margin-top: auto;/.test(css),
+    "⛔ 办公室入口不再靠 margin-top:auto 钉在成员栏底部（那只对右侧栏成立，挪到群头会撑歪）");
 }
 
 /* ── ⑧ 专家团成员产出直投群流（用户：「总是主代理说话，代替其他成员回复」） ── */
@@ -542,7 +573,7 @@ const catalog = [
   ok(/e\.nativeEvent\.isComposing/.test(view),
     "中文输入法选字期间的 Enter 不误发（否则 IME 会把清空回滚，看着像没清）");
   const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
-  ok(/onPaste=\{\(e\) => void onPaste\(e\)\}/.test(composer) && /function pastedFilePaths/.test(composer)
+  ok(/onPaste=\{\(e\) => void onPaste\(/.test(composer) && /function pastedFilePaths/.test(composer)
     && /readClipboardImage\(\)/.test(composer),
     "粘贴图片 / 文件真落进本轮附件（主对话输入框同款内在功能，⛔ 不是装饰）");
   ok(/const cur = optsRef\.current/.test(composer) && /onOpts\(\{ \.\.\.cur, files:/.test(composer),
@@ -770,8 +801,8 @@ const catalog = [
   ok(/status: running\.has\(member\.id\) \? "busy" : "idle"/.test(office),
     "工位状态只认运行态（live/busy），⛔ 不按静态角色编状态");
   ok(/<TeamOfficeEntry group=\{group\} live=\{live\} busy=\{busy\} onOpenThread=\{onOpenThread\} \/>/.test(view)
-    && /\.team-group__office \{[\s\S]{0,160}?margin-top: auto;/.test(read("src/styles/61-team-mode.css")),
-    "入口钉在成员栏**末位**（与中枢群成员轨同一位置语义；⛔ 不跟着成员列表往下挤）");
+    && /\.team-group__office \{/.test(read("src/styles/61-team-mode.css")),
+    "入口节点仍复用同一份（位置见 ⑦b：群头操作区、展开折叠键左边）");
 }
 
 /* ── ⑬ 两种回复模式（11-08 用户令：「做出来两种回复模式」+「在群设置里加上这个选项」）────
@@ -805,6 +836,30 @@ const catalog = [
       && /getThreadLiveFileChanges/.test(fileStore) && /liveByThread/.test(fileStore)
       && /<TeamLiveFiles threadId=\{run\.threadId\} \/>/.test(viewProc),
       "群聊过程与主对话一致：事件驱动重拉（group-talk-tick，⛔ 不再 2.5s 轮询）+ 流式卡实时编辑行（按线程）");
+  }
+  /* ⛔ 11-08 用户令「三样都补上，跟主对话完全一致」：用量页脚 / 推理浮窗 / 网页来源条。 */
+  {
+    const viewEq = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+    const cardsEq = codeOnly(read("src/features/harness-team/11-team-cards.tsx"));
+    const procEq = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+    const ipcEq = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    const modelsEq = codeOnly(read("src/lib/team-models.mjs"));
+    const rcEq = codeOnly(read("src/features/shared/ReasoningCard.tsx"));
+    const overlayEq = codeOnly(read("src/features/harness-team/index.tsx"));
+    ok(/team-msg__usage/.test(viewEq) && /usageInputTokens/.test(viewEq) && /row\.usage/.test(viewEq)
+      && /\.\.\.\(liveUsage \? \{ usage: liveUsage \}/.test(ipcEq)
+      && /usage: msg\?\.usage \?\? null/.test(modelsEq),
+      "群消息页脚展示 token 用量（与主对话同口径；主进程落消息时带 usage，老日志为空）");
+    ok(/turnActive=\{running\}/.test(procEq) && /reasoningFloatHost=/.test(procEq)
+      && /floatHostSelector/.test(rcEq)
+      /* ⛔ 推理两种展示（自适应浮窗 / 长条 strip）都在 ReasoningCard 里分叉 —— 群聊直接复用，
+         ⛔ 不许在群板块里另写一套（出现 ReasoningStrip / reasoning-card 就是分叉）。 */
+      && /ReasoningStrip/.test(rcEq) && /displayMode === "strip"/.test(rcEq)
+      && !/ReasoningStrip/.test(procEq) && !/reasoning-card/.test(procEq)
+      && /team-reasoning-float-host/.test(overlayEq),
+      "推理两种展示（浮窗 / 长条）都复用主对话 ReasoningCard（运行中 turnActive + 群内 portal 宿主，⛔ 不自造渲染）");
+    ok(/<TurnWebSources sources=\{collectTurnWebSources\(turn as never\)\} inline \/>/.test(cardsEq),
+      "网页来源条与主对话同组件（TeamCards 里渲染）");
   }
   ok(/team-run-feedback__chip/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx")))
     && /team-run-feedback__chip/.test(read("src/styles/61-team-mode.css")),
@@ -915,8 +970,8 @@ const catalog = [
     "⛔ 回复模式必须同时传读值（只传写入回调 ⇒ 点占位模式写进盘但界面不动，用户「选不了，点不过来」）");
   /* ⛔ 用**顺序**判定而不是"相隔多少字符"：板块长度会随文案变化，写死窗口会假红。 */
   const sectionOrder = [...settings.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]).join(">");
-  ok(/^layout>message-form>partners>quick-menu>memory>/.test(sectionOrder),
-    "群设置常用置顶：消息排版 → 群消息形式 → 伙伴 → 快捷指令 → 群记忆…（低频项下沉）");
+  ok(/^layout>message-form>partners>memory>/.test(sectionOrder),
+    "群设置常用置顶：消息排版 → 群消息形式 → 伙伴 → 群记忆…（低频项下沉；快捷指令段已删）");
   ok(/export function normalizeMessageForm/.test(read("src/lib/team-models.mjs"))
     && /harness-team:set-message-form/.test(read("electron/features/harness-team-ipc.ts"))
     && /harnessTeamSetMessageForm/.test(read("electron/preload.ts")),

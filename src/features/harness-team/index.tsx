@@ -39,7 +39,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, setAvatar, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
-    addNote, removeNote, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
+    addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
@@ -281,8 +281,6 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             onSetFiles={(files) => saveFiles(active.id, files)}
             onAddNote={(note) => addNote(active.id, note)}
             onRemoveNote={(noteId) => removeNote(active.id, noteId)}
-            onSaveMenu={(items) => saveMenu(active.id, items as never)}
-            onSaveMenuPlacement={(placement) => saveMenuPlacement(active.id, placement)}
             onSetMessageLayout={(next) => void saveMessageLayout(active.id, next)}
             /* 回复模式（11-08 用户令：群设置里加选项）
                ⛔⛔ 必须同时传**读值**：只传写入回调时视图永远用默认 process
@@ -389,6 +387,8 @@ export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app, onClos
       onMouseDown={(event) => { if (!onCloseWindow && event.target === event.currentTarget) close(); }}
     >
       <div className="team-modal" role="dialog" aria-modal="true" aria-label="群聊">
+        {/* ⛔ 11-08：推理浮窗的群内宿主（ReasoningCard 经 reasoningFloatHost 选择器 portal 到这里）。 */}
+        <div className="reasoning-float-host team-reasoning-float-host" aria-hidden />
         <header className="team-modal__head">
           <div className="team-modal__title">
             <MessagesSquare size={16} className="ic-violet" />

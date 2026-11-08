@@ -748,27 +748,13 @@ export function useTeamGroups() {
     [apply],
   );
 
-  /** 群菜单（整份替换：菜单是"一屏能看完的树"，增量合并规则只会让人猜） */
-  const saveMenu = useCallback(
-    async (groupId: string, items: MenuItem[]) =>
-      apply((await window.codex.harnessTeamSetMenu(groupId, items)) as MutationResult),
-    [apply],
-  );
-
-  /** 群文件（整组替换：UI 增删后一次提交，⛔ 不做并发合并的猜测） */
+  /** 群文件引用清单（整份替换） */
   const saveFiles = useCallback(
     async (groupId: string, files: unknown[]) => apply((await window.codex.harnessTeamSetFiles(groupId, files)) as MutationResult),
     [apply],
   );
 
-  /** 菜单形态（飞书 INPUT_FIRST / FLOAT） */
-  const saveMenuPlacement = useCallback(
-    async (groupId: string, placement: "input" | "float") =>
-      apply((await window.codex.harnessTeamSetMenuPlacement(groupId, placement)) as MutationResult),
-    [apply],
-  );
-
-  /** 群消息排版（split / left）：与 menuPlacement 同构，落群 JSON（⛔ 不再只存 localStorage）。 */
+  /** 群消息排版（整份替换） */
   const saveMessageLayout = useCallback(
     async (groupId: string, layout: "split" | "left") =>
       apply((await window.codex.harnessTeamSetMessageLayout(groupId, layout)) as MutationResult),
@@ -819,7 +805,7 @@ export function useTeamGroups() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
-    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
+    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm,
   };
 }

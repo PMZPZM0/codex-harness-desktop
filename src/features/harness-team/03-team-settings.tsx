@@ -16,10 +16,9 @@
  * ⛔ 权限说明写文案，不用 disabled 表达归属（项目纪律：disabled 是准入，不是说明）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile, TeamGroup } from "./01-team-types";
+import type { GroupSchedule, MemoryNote, MemoryNoteType, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { AlarmClock, AlignLeft, BookOpen, Columns2, FolderOpen, GitBranch, Inbox, ListChecks, MessagesSquare, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
-import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
+import { AlarmClock, AlignLeft, BookOpen, Columns2, FolderOpen, GitBranch, Inbox, ListChecks, MessagesSquare, Play, RefreshCw, Trash2, Users } from "lucide-react";
 import { addModeStateOf, resolveManagerId } from "../../lib/team-models.mjs";
 import {
   MAX_GROUP_SCHEDULES,
@@ -55,10 +54,6 @@ type Props = {
   /** 记忆条目（带 type + origin） */
   onAddNote: (note: { text: string; type: MemoryNoteType }) => Promise<{ ok: boolean; error?: string }>;
   onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
-  /** 快捷指令菜单（整份替换） */
-  onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
-  /** 菜单形态（飞书 INPUT_FIRST / FLOAT） */
-  onSaveMenuPlacement: (placement: MenuPlacement) => Promise<{ ok: boolean; error?: string }>;
   /** 消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左 */
   messageLayout: "split" | "left";
   /** 回复模式（11-08 用户令）：process 运行中展示过程 / placeholder 只显示占位 */
@@ -128,7 +123,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm, onSaveSchedules, onRunSchedule }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -146,9 +141,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   /* 记忆条目（豆包 §2.②）：一条一个结论 + 类型 + 来源，与上面的"群简介"分开 */
   const [noteText, setNoteText] = useState("");
   const [noteType, setNoteType] = useState<MemoryNoteType>("fact");
-  /* 快捷指令：新加一条自定义 */
-  const [cmdLabel, setCmdLabel] = useState("");
-  const [cmdPrompt, setCmdPrompt] = useState("");
   /* 定时任务草稿（豆包 §③）：频率/时间/派给谁，提交时整组替换 */
   const [schedName, setSchedName] = useState("");
   const [schedPrompt, setSchedPrompt] = useState("");
@@ -164,8 +156,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   const leadMember = group.members.find((m) => m.id === group.leadId);
   const leadName = leadMember?.name ?? "群主";
   const notes: MemoryNote[] = group.memoryNotes ?? [];
-  /** 菜单摊平（界面里按"分组 → 项"展示；删除按 key） */
-  const menuLeaves = flattenMenu(group.menu ?? []);
 
   /* 只在**切群**时把草稿同步回该群的真实值。
      ⛔⛔ 不能把 group.memory / group.files 放进依赖：群里点一下「静音」也会让 apply() 换掉
@@ -181,8 +171,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
     setDone("");
     setConfirmDelete(false);
     setNoteText("");
-    setCmdLabel("");
-    setCmdPrompt("");
     setSchedName("");
     setSchedPrompt("");
     setSchedTargets([]);
@@ -272,25 +260,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
       if (r.ok) setNoteText("");
       return r;
     }, "已记住 —— 下次派活就带上它");
-  };
-
-  /** 菜单：加/删都即时落盘（菜单是一屏能看完的树，⛔ 不做草稿再保存） */
-  const addCommand = async () => {
-    if (!cmdLabel.trim() || !cmdPrompt.trim()) return;
-    const next = addMenuLeaf(group.menu ?? [], { label: cmdLabel, prompt: cmdPrompt });
-    await run(async () => {
-      const r = await onSaveMenu(next);
-      if (r.ok) { setCmdLabel(""); setCmdPrompt(""); }
-      return r;
-    }, "指令已加");
-  };
-
-  const dropCommand = async (key: string) => {
-    await run(() => onSaveMenu(removeMenuLeaf(group.menu ?? [], key)), "已删除");
-  };
-
-  const resetCommands = async () => {
-    await run(() => onSaveMenu([...DEFAULT_GROUP_MENU] as unknown[]), "已恢复默认指令");
   };
 
   /** 选项目地址（选完即落盘：这是一个明确的动作，⛔ 不做"草稿再保存"） */
@@ -582,90 +551,6 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         )
         )}
         {partners.length >= limit && <p className="team-settings__hint">已达上限（最多 {limit} 个伙伴）</p>}
-      </section>
-
-      {/* ── 常用置顶 3/8：quick-menu ─────────────────────────── */}
-      {/* ── 快捷指令（飞书 §3：`ChatBotMenu` 菜单树 + TriggerMenuEvent）────────── */}
-      <section className="team-settings__block" data-section="quick-menu">
-        <h3>
-          <Puzzle size={14} className="ic-green" />
-          快捷指令
-          <span className="team-settings__count">{menuLeaves.length} 条</span>
-        </h3>
-        <p className="team-settings__hint">
-          那个「指令」按钮里就是这些。<strong>点一项只把指令填进输入框</strong>，
-          你确认后再发 —— 不是替你偷偷派活。
-        </p>
-        {/* 飞书 §3 的两种展示：INPUT_FIRST（贴输入框）/ FLOAT（悬浮面板） */}
-        <div className="team-settings__inline-row">
-          <span className="team-settings__hint team-settings__hint--inline">
-            展示形态{group.menuPlacement === "float" ? "：按钮浮在群视图右下，面板可滚动、分组横向展开" : "：按钮在 @ 行，面板向上弹"}
-          </span>
-          <div className="team-settings__seg" role="group" aria-label="菜单展示形态">
-            {([["input", "贴输入框"], ["float", "悬浮面板"]] as Array<[MenuPlacement, string]>).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={`team-settings__seg-btn${(group.menuPlacement ?? "input") === value ? " is-on" : ""}`}
-                aria-pressed={(group.menuPlacement ?? "input") === value}
-                onClick={() => void run(() => onSaveMenuPlacement(value), `已切换为「${label}」`)}
-                disabled={busy}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <ul className="team-settings__menu">
-          {normalizeMenu(group.menu ?? []).map((g) => (
-            <li key={g.key} className="team-settings__menu-group">
-              <strong className="team-settings__menu-groupname">{g.label}</strong>
-              <ul>
-                {(g.children.length ? g.children : [g]).map((c) => (
-                  <li key={c.key} className="team-settings__menu-item">
-                    <span className="team-settings__menu-label">{c.label}</span>
-                    <small className="team-settings__menu-prompt" title={c.prompt}>{c.prompt}</small>
-                    <button
-                      type="button"
-                      className="team-settings__mini team-settings__mini--danger"
-                      onClick={() => void dropCommand(c.key)}
-                      disabled={busy}
-                    >
-                      删
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </li>
-          ))}
-          {!menuLeaves.length && <li className="team-settings__empty">还没有指令 —— 加一条，或恢复默认</li>}
-        </ul>
-        <div className="team-settings__add">
-          <input
-            className="team-settings__cmd-label"
-            value={cmdLabel}
-            onChange={(e) => setCmdLabel(e.target.value)}
-            placeholder="名称（如：查库存）"
-            maxLength={24}
-            aria-label="指令名称"
-            disabled={busy}
-          />
-          <input
-            value={cmdPrompt}
-            onChange={(e) => setCmdPrompt(e.target.value)}
-            placeholder="点下去填进输入框的那句话"
-            aria-label="指令内容"
-            disabled={busy}
-          />
-          <button type="button" onClick={() => void addCommand()} disabled={busy || !cmdLabel.trim() || !cmdPrompt.trim()}>
-            添加
-          </button>
-        </div>
-        <div className="team-settings__savebar">
-          <button type="button" className="team-settings__mini" onClick={() => void resetCommands()} disabled={busy}>
-            恢复默认指令
-          </button>
-        </div>
       </section>
 
       {/* ── 常用置顶 4/8：memory ─────────────────────────── */}

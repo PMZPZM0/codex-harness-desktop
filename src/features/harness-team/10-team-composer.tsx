@@ -32,6 +32,7 @@ import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
 import { mentionSegments } from "../../lib/team-mention.mjs";
+import { editorCaret, editorValue, insertMentionAtCaret, renderEditor, setEditorCaret, type MentionAvatar, type TeamEditorApi } from "../../lib/team-composer-editor";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
 import { getActiveModel, subscribeActiveModel } from "../../lib/active-model.mjs";
 import { collectModelChoices } from "../../lib/model-menu.mjs";
@@ -128,9 +129,10 @@ export function saveTeamRunOpts(opts: TeamRunOpts): void {
 
 type Props = {
   value: string;
-  onValueChange: (next: string) => void;
-  textareaRef: RefObject<HTMLTextAreaElement | null>;
-  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  /** 11-08：带出光标偏移 —— 输入框换成 contenteditable 后，`@` 触发判定不能再读 textarea.selectionStart。 */
+  onValueChange: (next: string, caret?: number) => void;
+  textareaRef: RefObject<HTMLDivElement | null>;
+  onKeyDown: (e: React.KeyboardEvent<HTMLDivElement>) => void;
   placeholder: string;
   opts: TeamRunOpts;
   onOpts: (next: TeamRunOpts) => void;
@@ -156,10 +158,12 @@ type Props = {
   mentionAnchorRef?: RefObject<HTMLButtonElement | null>;
   /** 输入框行内提及 chip 用：群里的成员/伙伴名字（长名优先匹配，与发消息口径同源）。 */
   mentionNames?: string[];
+  /** 名字 → 头像样式（view 侧用现有头像纯函数算好；chip 里画真头像）。 */
+  mentionAvatars?: Record<string, MentionAvatar>;
+  /** 行内编辑器的命令面（插人 / 外部改值 + 光标），由父层持有。 */
+  editorApiRef?: RefObject<TeamEditorApi | null>;
   /** 本轮已 @ 的人数（画徽标；0 = 不画） */
   mentionCount?: number;
-  /** 工具行右端的「群菜单」按钮（FLOAT 形态下父层不传，按钮画在群视图右下）。 */
-  toolsSlot?: React.ReactNode;
   /** 11-07 用户令「侧边粗条同步」：宿主 app（输入框左侧的 ComposerRail 需要它）。 */
   app?: HarnessAppApi;
 };
@@ -187,7 +191,7 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
   opts, onOpts, sending, canSend, onSend, running, stopping, onStop, targetNames, fileCandidates = [], onOpenModelSettings,
-  onOpenMention, mentionCount = 0, mentionAnchorRef, mentionNames = [], toolsSlot = null, app,
+  onOpenMention, mentionCount = 0, mentionAnchorRef, mentionNames = [], mentionAvatars = {}, editorApiRef, app,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
@@ -200,8 +204,73 @@ export function TeamComposer({
   const plusPopRef = useRef<HTMLDivElement | null>(null);
   const filesPopRef = useRef<HTMLDivElement | null>(null);
   const skillsPopRef = useRef<HTMLDivElement | null>(null);
-  /* 行内提及 chip 的镜像层（与 textarea 同排版、只负责给 @名字 染色）。 */
-  const mirrorRef = useRef<HTMLDivElement | null>(null);
+  /* 行内提及编辑器（contenteditable + chip）：最后渲染的值 + 命令面。 */
+  const renderedRef = useRef("");
+  /* 工具行自适应（11-08 用户：「看看下面的自适应展示，看看主对话框咋做的自适应」）——
+     与主对话同一套判据：按**输入框自身宽度**分两档（<640 紧、<480 极窄），
+     ⛔ 不用 viewport 媒体查询（窗口比例 / 右栏开合不同步）。 */
+  const composerRootRef = useRef<HTMLDivElement | null>(null);
+  const [composerWidth, setComposerWidth] = useState(0);
+  useEffect(() => {
+    const el = composerRootRef.current;
+    if (!el) return;
+    setComposerWidth(el.clientWidth);
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => setComposerWidth(el.clientWidth)) : null;
+    observer?.observe(el);
+    return () => observer?.disconnect();
+  }, []);
+  const composerSizeClass = composerWidth > 0 && composerWidth < 480
+    ? " is-micro"
+    : composerWidth > 0 && composerWidth < 640
+      ? " is-narrow"
+      : "";
+  const repaintEditor = (text: string, caret?: number) => {
+    const el = textareaRef.current;
+    if (!el) return;
+    renderEditor(el, text, mentionNames, mentionAvatars, mentionSegments(text, mentionNames));
+    renderedRef.current = text;
+    if (caret != null) {
+      requestAnimationFrame(() => {
+        el.focus();
+        setEditorCaret(el, caret);
+      });
+    }
+  };
+  /* 外部改值（发送清空 / 面板插人 / 引用）：重建 DOM；打字路径不会走到这里（renderedRef 已同步）。 */
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    /* 名字/头像表晚到（调度目录异步加载）也会触发这里 —— 正文里既没 chip、也没有可染色的
+       提及时不重建 DOM（否则会把用户正在打的光标拽到末尾）。 */
+    if (renderedRef.current === value) {
+      const hasChip = Boolean(el.querySelector("[data-mention]"));
+      const hasMention = mentionSegments(value, mentionNames).some((seg) => seg.mention);
+      if (!hasChip && !hasMention) return;
+    }
+    repaintEditor(value);
+    requestAnimationFrame(() => {
+      el.focus();
+      setEditorCaret(el, editorValue(el).length);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, mentionNames, mentionAvatars]);
+  useEffect(() => {
+    if (!editorApiRef) return;
+    editorApiRef.current = {
+      focus: () => textareaRef.current?.focus(),
+      insertMention: (name: string) => {
+        const el = textareaRef.current;
+        if (!el) return;
+        const { text, caret } = insertMentionAtCaret(el, name, mentionAvatars[name]);
+        repaintEditor(text, caret);
+        onValueChange(text, caret);
+      },
+      setTextAndCaret: (text: string, caret: number) => {
+        repaintEditor(text, caret);
+        onValueChange(text, caret);
+      },
+    };
+  });
   const plusPos = useAnchoredPopover(plusOpen, plusBtnRef, plusPopRef);
   const filesPos = useAnchoredPopover(plusView === "files", plusBtnRef, filesPopRef);
   const skillsPos = useAnchoredPopover(plusView === "skills", plusBtnRef, skillsPopRef);
@@ -381,7 +450,7 @@ export function TeamComposer({
 
   /** 粘贴图片 / 文件 = 主对话输入框的「内在功能」：真落到本轮附件（chips 可见 → 拼进 query）。
       ⛔ 普通文字粘贴一律不拦截，preventDefault 只在真有附件时调用。 */
-  const onPaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+  const onPaste = async (e: React.ClipboardEvent<HTMLElement>) => {
     const cb = e.clipboardData;
     const paths = pastedFilePaths(cb);
     if (paths.length) {
@@ -422,7 +491,7 @@ export function TeamComposer({
   const shownEffort = clampEffortToLevels(opts.effort || "high", effortLevels);
 
   return (
-    <div className="team-composer">
+    <div className={`team-composer${composerSizeClass}`} ref={composerRootRef}>
       {/* 11-07 用户令：「输入框上的小粗条和侧边粗条，全部同步」——
           顶部把手（拖动改高度 / 双击复位）+ 左侧 ComposerRail 与主对话同一个组件。 */}
       <div
@@ -536,26 +605,30 @@ export function TeamComposer({
           输入框里的 `@名字` 就地染色成 chip：**覆盖层**（镜像同样的文字排版、把提及段染底），
           textarea 文字透明、光标可见 ⇒ 字形与光标位置**一个字都不差**（⛔ 不用 contenteditable
           换掉输入框，那样会把中文输入法/粘贴/拖高全赔进去）。 */}
+      {/* ⛔⛔ 11-08 用户：「加上头像」「输入框里面自动变成图二这种」——
+          输入框改成与主对话同模型的 **contenteditable + 真 chip 节点**：
+          chip = 头像 + `@名字`（contenteditable=false 的原子节点），序列化回 `@名字`；
+          ⛔ 不再用 textarea + 覆盖层（头像会加宽，覆盖层与光标必然错位）。 */}
       <div className="team-composer__editor">
-        <div className="team-composer__mirror" aria-hidden ref={mirrorRef}>
-          {mentionSegments(value, mentionNames).map((seg, index) =>
-            seg.mention
-              ? <span key={index} className="team-composer__at-chip">{seg.text}</span>
-              : <span key={index}>{seg.text}</span>
-          )}
-          {"\u200b"}
-        </div>
-        <textarea
+        {!value && <div className="team-composer__placeholder" aria-hidden>{placeholder}</div>}
+        <div
           ref={textareaRef}
-          className={`team-composer__input${value ? " is-mirrored" : ""}`}
+          className="team-composer__input"
           style={editorHeight ? { height: editorHeight, maxHeight: editorHeight } : undefined}
-          value={value}
-          onChange={(e) => onValueChange(e.target.value)}
+          contentEditable
+          suppressContentEditableWarning
+          role="textbox"
+          aria-multiline="true"
+          aria-label={placeholder}
+          data-placeholder={placeholder}
+          onInput={(event) => {
+            const el = event.currentTarget;
+            const next = editorValue(el);
+            renderedRef.current = next;
+            onValueChange(next, editorCaret(el));
+          }}
           onKeyDown={onKeyDown}
           onPaste={(e) => void onPaste(e)}
-          onScroll={(e) => { if (mirrorRef.current) mirrorRef.current.scrollTop = e.currentTarget.scrollTop; }}
-          placeholder={placeholder}
-          rows={2}
         />
       </div>
 
@@ -628,8 +701,6 @@ export function TeamComposer({
         <div className="team-composer__right composer-right">
           <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => { if (v === "__model_settings__") { onOpenModelSettings?.(); return; } onOpts({ ...opts, model: v }); }} onOpen={() => void loadModels()} width={360} disabled={sending} />
           <EffortPicker levels={effortLevels} value={shownEffort} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
-          {/* 群菜单按钮（飞书 `needShowMenuButton`）：从输入框上方搬到工具行，输入区少占一行 */}
-          {toolsSlot}
           {/* ⛔ 11-08 用户：「跟对话框一样，不要搞特殊」⇒ 发送键换成主对话那个
               `.send-button.morph-action`（32×32 圆形 / --green），⛔ 不再自造蓝色药丸；
               字数计数主对话没有，一并去掉。

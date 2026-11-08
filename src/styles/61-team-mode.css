@@ -105,7 +105,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.team-group__sub { font-size: 12px; color: var(--muted); opacity: 0.85; }
 .team-group__avatars { display: flex; gap: -6px; margin-left: auto; }
 .team-group__avatar {
   display: inline-flex;
@@ -257,32 +256,6 @@
   background-clip: padding-box;
 }
 .team-group__stream::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--accent) 55%, transparent); background-clip: padding-box; }
-.team-group__atbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
-.team-group__atlabel { font-size: 12px; color: var(--faint); }
-.team-group__atchip {
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  font-size: 12px;
-  cursor: pointer;
-}
-.team-group__atchip.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.team-group__atchip.is-muted { opacity: 0.55; }
-.team-group__atempty { font-size: 12px; color: var(--faint); }
-.team-group__composer textarea {
-  width: 100%;
-  resize: vertical;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  font: inherit;
-  font-size: 13px;
-}
-.team-group__send-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
-.team-group__hint { font-size: 11px; color: var(--faint); }
-.team-group__send-row button { padding: 6px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); cursor: pointer; }
-.team-group__send-row button:disabled { opacity: 0.5; cursor: default; }
 
 /* ── 设置 ── */
 .team-settings { flex: 1; overflow: auto; padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
@@ -416,12 +389,6 @@
   color: var(--danger);
   font-size: 12px;
   line-height: 1.6;
-}
-.team-group__atchip-warn {
-  margin-left: 4px;
-  color: var(--orange);
-  font-size: 10px;
-  font-style: normal;
 }
 .team-settings__tag--warn {
   color: var(--orange);
@@ -756,62 +723,6 @@
 .team-card__table th { background: var(--panel-2); font-weight: 600; }
 .team-card__table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--panel-2) 55%, transparent); }
 
-/* ══════ 快捷指令菜单（飞书 §3：输入框旁的菜单树）═════════════════════════════ */
-.team-menu { position: relative; margin-left: auto; }
-.team-menu__btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 9px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.team-menu__btn:hover,
-.team-menu__btn.is-open { border-color: var(--accent); color: var(--accent); }
-.team-menu__pop {
-  position: absolute;
-  right: 0;
-  bottom: calc(100% + 6px);
-  /* ⛔ 必须显著高于消息区与运行态：实测 30 会被下方的"正在处理"圆点压住 */
-  z-index: 240;
-  min-width: 236px;
-  max-height: 320px;
-  overflow: auto;
-  padding: 5px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent);
-}
-.team-menu__group { display: flex; flex-direction: column; }
-.team-menu__sub { padding-left: 6px; border-left: 1px solid var(--line-soft); margin-left: 6px; }
-.team-menu__item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 6px 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text);
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-}
-.team-menu__item:hover:not(:disabled) { background: var(--accent-soft); }
-.team-menu__item:disabled { opacity: 0.5; cursor: default; }
-.team-menu__item > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.team-menu__item > em { color: var(--faint); font-size: 10.5px; font-style: normal; }
-.team-menu__item--group { color: var(--muted); font-weight: 500; }
-.team-menu__item--group .is-open { transform: rotate(90deg); }
-.team-menu__item--group svg { transition: transform 0.12s ease; }
-.team-menu__hint { margin: 4px 8px 2px; color: var(--faint); font-size: 10.5px; line-height: 1.5; white-space: nowrap; }
-
 /* ══════ 设置页：记忆条目 / 快捷指令 / 用量（11-06）═══════════════════════════ */
 .team-settings__sub { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line-soft); }
 .team-settings__subhead {
@@ -849,21 +760,6 @@
 .team-settings__note-origin { flex: none; color: var(--faint); font-size: 10.5px; white-space: nowrap; }
 .team-settings__note .team-settings__mini { flex: none; }
 
-.team-settings__menu { margin: 0 0 8px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
-.team-settings__menu-group > ul { margin: 3px 0 0; padding: 0 0 0 8px; list-style: none; border-left: 1px solid var(--line-soft); display: flex; flex-direction: column; gap: 2px; }
-.team-settings__menu-groupname { display: block; color: var(--muted); font-size: 11.5px; font-weight: 600; }
-.team-settings__menu-item { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
-.team-settings__menu-label { flex: none; font-size: 12.5px; }
-.team-settings__menu-prompt {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--faint);
-  font-size: 11px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-.team-settings__menu-item .team-settings__mini { flex: none; }
 .team-settings__cmd-label { flex: 0 0 130px; }
 
 /* 提示条的语气（菜单回显是"信息"，失败才是"警告"） */
@@ -1155,112 +1051,7 @@
 .team-at__avatar .team-avatar { border-radius: 50%; }
 .team-at__name { overflow: hidden; text-overflow: ellipsis; }
 
-/* ══════ FLOAT 形态的菜单（飞书 `ChatBotMenu` 的 INPUT_FIRST / FLOAT，11-06）═════════
-   菜单条目一多（十几个），贴输入框的形态会把输入区顶掉一半 ⇒ 换成"按钮浮在群视图右下、
-   面板是带标题与滚动条的浮层、二级分组横向展开"。
-   ⛔ 用相对 `.team-group` 的 absolute，不用 `position: fixed`：fixed 在切到群设置/换群之后
-      仍悬在原处，会盖住别的界面（11-06「关不掉的界面」就是这么来的）。
-   ⛔ 位置让开输入区：压在 textarea 上 = 把人正在打的字挡掉。 */
-.team-menu--float {
-  position: absolute;
-  right: 18px;
-  bottom: 132px;
-  margin-left: 0;
-  z-index: 70;
-}
-.team-menu__btn--float {
-  padding: 7px 13px;
-  border-color: transparent;
-  /* ⛔ `--accent-text` 是**强调底上的前景色**（浅色主题 = #fff）—— 用在这里是对的；
-     拿它当普通文字色才是坑（11-06 已栽过一次）。 */
-  background: var(--accent);
-  color: var(--accent-text);
-  box-shadow: 0 6px 18px color-mix(in srgb, var(--accent) 26%, transparent);
-}
-.team-menu__btn--float:hover,
-.team-menu__btn--float.is-open {
-  border-color: transparent;
-  color: var(--accent-text);
-  filter: brightness(1.06);
-}
-.team-menu__pop--float {
-  right: 0;
-  bottom: calc(100% + 8px);
-  display: flex;
-  flex-direction: column;
-  width: 268px;
-  min-width: 0;
-  max-height: min(56vh, 440px);
-  padding: 0;
-  border-radius: 12px;
-  /* ⛔ 二级分组要横向弹出到面板外，所以不能裁 */
-  overflow: visible;
-}
-.team-menu__head {
-  display: flex;
-  flex: none;
-  align-items: center;
-  justify-content: space-between;
-  padding: 7px 8px 6px 11px;
-  border-bottom: 1px solid var(--line-soft);
-  color: var(--muted);
-  font-size: 11.5px;
-}
-.team-menu__close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--faint);
-  cursor: pointer;
-}
-.team-menu__close:hover { background: var(--accent-soft); color: var(--accent); }
-.team-menu__list { display: flex; flex-direction: column; gap: 1px; }
-.team-menu__pop--float .team-menu__list {
-  flex: 1 1 auto;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 5px;
-}
-.team-menu__pop--float .team-menu__hint {
-  flex: none;
-  margin: 0;
-  padding: 6px 11px 7px;
-  border-top: 1px solid var(--line-soft);
-  white-space: normal;
-}
-/* 分组「整屏切换」的返回行（FLOAT 形态）：与普通项同高，箭头在左。
-   ⛔ 不要做成横向弹出的子面板 —— 列表是滚动容器，子面板会被裁掉（11-06 实测）。 */
-.team-menu__item--back { color: var(--muted); font-weight: 600; }
-.team-menu__item--back > span { flex: none; }
-.team-menu__item--back svg { flex: none; }
-
-/* ══════ 设置页：菜单形态 / 定时任务（11-06）═══════════════════════════════════ */
-/* 两选一的分段控件。⛔ 不用原生 <select>（守卫【197】+ 暗色下原生控件按浅色 UA 绘制）。 */
-.team-settings__seg {
-  display: inline-flex;
-  flex: none;
-  gap: 2px;
-  padding: 2px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-}
-.team-settings__seg-btn {
-  padding: 3px 11px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.team-settings__seg-btn.is-on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-
+/* ══════ 设置页：定时任务（11-06；菜单形态已随「指令」按钮下线）═════════════════ */
 .team-settings__sched { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
 .team-settings__sched-row {
   display: flex;
@@ -1691,58 +1482,6 @@
 .team-group__icon-btn.is-icon-only { padding: 6px 7px; }
 .team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
-.team-group__atbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  margin-bottom: 8px;
-  border: 1px solid var(--line-soft);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--panel-2) 45%, transparent);
-}
-.team-group__atbar-label { flex: none; color: var(--faint); font-size: 11px; }
-.team-group__atbar-chips { display: flex; flex: 1; flex-wrap: wrap; gap: 5px; min-width: 0; }
-.team-group__atchip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 9px 3px 4px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--muted);
-  font: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.team-group__atchip-avatar {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  width: 17px;
-  height: 17px;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 10px;
-  font-style: normal;
-}
-.team-group__atchip.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
-.team-group__atchip.is-on .team-group__atchip-avatar { background: var(--accent); color: var(--accent-text); }
-.team-group__atbar-clear {
-  flex: none;
-  padding: 3px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--faint);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.team-group__atbar-clear:hover { color: var(--accent); }
 .team-msg__mention-btn {
   padding: 0;
   border: 0;
@@ -2615,8 +2354,7 @@
 /* 容器去皮肤：原样式是「圆圈 + 背景 + 字号」，套在真头像外面会多出一圈底色 */
 .team-msg__avatar.has-agent,
 .team-group__member-avatar.has-agent,
-.team-settings__avatar.has-agent,
-.team-group__atchip-avatar.has-agent {
+.team-settings__avatar.has-agent {
   padding: 0;
   border: 0;
   background: transparent;
@@ -2630,42 +2368,7 @@
   border-color: var(--bg);
   overflow: visible;
 }
-.team-group__atchip-avatar.has-agent {
-  width: auto;
-  height: auto;
-  background: transparent;
-}
 
-/* ══════ @ 条：正在干活的伙伴亮起来（11-06 用户：「头像+名字这个边框亮起来」）══════════
-   ⛔ 只在**运行中**发光（busy 里有它），停下就恢复常态 —— 常亮会变成装饰，
-      用户就分不清"谁在跑、谁在歇"。 */
-.team-group__atchip.is-running {
-  border-color: var(--accent);
-  color: var(--accent);
-  animation: team-chip-glow 1.7s ease-in-out infinite;
-}
-.team-group__atchip.is-running .agent-avatar {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
-}
-@keyframes team-chip-glow {
-  0%, 100% {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
-      0 0 6px color-mix(in srgb, var(--accent) 28%, transparent);
-  }
-  50% {
-    box-shadow:
-      0 0 0 2px color-mix(in srgb, var(--accent) 78%, transparent),
-      0 0 15px color-mix(in srgb, var(--accent) 55%, transparent);
-  }
-}
-/* 无障碍：系统要求减少动画时只留静态描边（⛔ 不整块消失，否则看不出谁在跑） */
-@media (prefers-reduced-motion: reduce) {
-  .team-group__atchip.is-running {
-    animation: none;
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent);
-  }
-}
 /* 成员栏同一语义（名字旁边也标一下，右侧栏也能看出谁在跑） */
 .team-group__member.is-running .team-group__member-avatar {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 50%, transparent);
@@ -2759,15 +2462,6 @@
 }
 
 
-/* 团成员 chip：在 @ 条里与伙伴同排铺开（比伙伴小一号，表明它是团内角色） */
-.team-group__atchip.is-kid {
-  padding: 2px 8px 2px 3px;
-  font-size: 10.5px;
-  opacity: 0.85;
-}
-.team-group__atchip.is-kid:hover { opacity: 1; }
-
-
 /* ══════════════════════════════════════════════════════════════════════════
    11-07 三块（用户令）：伙伴资料卡 / @ 候选面板 / 群内搜索
    ＋ 同一轮的两处布局压缩（「上面太宽、输入框太宽、聊天内容看不到多少」）
@@ -2779,17 +2473,10 @@
       设置内遮罩（80~97）、全局模态（400）、引导（900 系）、确认框（950）。
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── 群头：单行化（副标题溢出就省略，全量进 title） ── */
+/* ── 群头：单行化（副标题已删：人数看右侧成员栏、项目名看顶栏，⛔ 别再补回来） ── */
 .team-group__head { position: relative; padding: 8px 14px; }
 .team-group__title { flex: 1 1 auto; min-width: 0; }
 .team-group__title-row { flex-wrap: nowrap; }
-.team-group__sub {
-  min-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 11.5px;
-}
 .team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 /* ── 输入框：几何以主对话为准（11-08 用户：「跟对话框一样，不要搞特殊」）──
@@ -2818,10 +2505,6 @@
    ⇒ 运行态点 + ⏹️ 停止 + @ 全在**每个成员那一行**，且顺序固定：
      运行态点（.team-group__member-live）→ ⏹️（.team-group__member-stop）→ @。
      ⛔ 别再往标题行或底部塞整行大按钮。 */
-.team-group__members-foot {
-  flex: none;
-  padding: 2px 10px 10px;
-}
 
 /* ── 群内搜索（挂在群头下方，绝对定位：⛔ 不挤动消息流的高度） ── */
 .team-search {
@@ -3294,15 +2977,23 @@
 .team-group__head { border-bottom-color: color-mix(in srgb, var(--line) 55%, transparent); }
 .team-group__members { border-left-color: color-mix(in srgb, var(--line) 50%, transparent); }
 
-/* 办公室预览入口（11-08 用户令「还有办公室预览接进来」）：
-   钉在成员栏**最底部**（margin-top:auto）—— 与中枢那条群成员轨同一个位置语义，
-   ⛔ 不要跟着成员列表往下挤（成员少时下面那片空白正好被它占住）。
-   ⛔ 节点本体不重写：`.team-rail-node.team-rail-office` 的图标/分隔线全走共用样式。 */
-.team-group__office {
-  margin-top: auto;
-  padding: 0 8px 4px;
-  display: flex;
-  justify-content: center;
+/* 办公室预览入口（11-08 用户令「还有办公室预览接进来」→ 随即改到群头：
+   「把办公室预览图标放到设置按键这一排的展开折叠左边」）。
+   ⇒ 套用同排图标键的形态：横排、纯图标、无分隔线；⛔ 节点本体仍是 `OfficeRailNode`
+     （四处共用一件），这里只把「轨」的竖排/带标题形态收成一个小方键。 */
+.team-group__office { display: flex; flex: none; align-items: center; }
+.team-group__office .team-rail-node.team-rail-office {
+  flex-direction: row;
+  width: auto;
+  margin-top: 0;
+  padding: 0;
+}
+.team-group__office .team-rail-node.team-rail-office::before { display: none; }
+.team-group__office .team-rail-name { display: none; }
+.team-group__office .team-rail-office-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
 }
 .team-group__members-head { border-bottom-color: color-mix(in srgb, var(--line) 45%, transparent); }
 .team-mode__rail { border-right-color: color-mix(in srgb, var(--line) 50%, transparent); }
@@ -3337,36 +3028,97 @@
 .team-modal__title strong,
 .team-modal__sub { line-height: 1; }
 
-/* ⛔⛔ 11-08 用户（截图）：「输入框里面没有自动变成图二这种」——
-   输入框行内提及 chip = **镜像覆盖层**：镜像与 textarea 共用同一套排版，只把 `@名字` 段染底；
-   textarea 文字透明、光标保留 ⇒ 字形/换行/光标位置与输入完全一致。
-   ⛔ 镜像的 font / padding / line-height / white-space 必须与 `.team-composer__input` 逐项相同；
-   ⛔ chip 只许改颜色/底色/圆角/外阴影 —— 加 padding / 字重 / 字距都会让光标错位。 */
+/* ⛔⛔ 11-08 用户：「加上头像」「输入框里面自动变成图二这种」——
+   输入框 = contenteditable + 真 chip 节点（头像 + @名字），与主对话同一个编辑模型。
+   ⛔ chip 是 contenteditable=false 的原子节点：光标只会落在它两侧，前后文字不会被吃掉。 */
 .team-composer__editor { position: relative; }
-.team-composer__mirror {
+.team-composer__placeholder {
   position: absolute;
-  inset: 0;
-  padding: 2px 10px 6px 2px;
-  overflow: hidden;
+  inset: 2px 2px auto 2px;
   pointer-events: none;
-  color: var(--text);
-  font: inherit;
+  color: var(--faint);
   font-size: 14px;
   line-height: 1.6;
+}
+.team-composer .team-composer__input[contenteditable] {
+  min-height: 62px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
   white-space: pre-wrap;
-  overflow-wrap: break-word;
+  word-break: break-word;
+  outline: none;
 }
 .team-composer__at-chip {
-  color: var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px 1px 2px;
+  margin: 0 1px;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--accent) 13%, transparent);
-  border-radius: 6px;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--accent);
+  font-size: 13px;
+  line-height: 1.5;
+  vertical-align: -2px;
+  user-select: none;
 }
-.team-composer .team-composer__input.is-mirrored { color: transparent; caret-color: var(--text); }
-.team-composer .team-composer__input::placeholder { color: var(--faint); opacity: 1; }
-.team-composer .team-composer__input { scrollbar-gutter: stable; }
+.team-composer__at-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: var(--panel-2);
+  background-size: 300% 300%;
+  background-position: 0% 0%;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 16px;
+  text-align: center;
+}
+.team-composer__at-avatar > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* ⛔⛔ 11-08 用户（截图）：「看看下面的自适应展示，看看主对话框咋做的自适应」——
+   群输入框工具行按**自身宽度**自适应（与主对话 04-cards-tools.css 的 composer-narrow/micro 同一口径）：
+   · <640（is-narrow）：间距收紧、权限/模型文字限宽省略、强度文字限宽；
+   · <480（is-micro）：权限/模型/强度只剩图标（⛔ 不隐藏控件本身，图标仍在原位）；
+   · 发送键 / 图标键永不压缩（flex:0 0 auto），先被压的是可省略的文字。 */
+.team-composer.is-narrow .team-composer__actions { gap: 3px; }
+.team-composer.is-narrow .team-composer__left,
+.team-composer.is-narrow .team-composer__right { flex: 0 1 auto; min-width: 0; gap: 1px; }
+.team-composer.is-narrow .team-composer__right > * { min-width: 0; }
+.team-composer.is-narrow .composer-setting { flex: 0 0 auto; padding: 0 5px; }
+.team-composer.is-narrow .composer-setting > span {
+  display: inline-block;
+  max-width: 58px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-composer.is-micro .composer-setting > span { display: none; }
+.team-composer.is-narrow .effort-trigger { flex: 0 0 auto; }
+.team-composer.is-narrow .effort-trigger-label {
+  max-width: 44px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-composer.is-micro .effort-trigger-label { display: none; }
+.team-composer.is-narrow .send-button,
+.team-composer.is-narrow .team-composer__icon { flex: 0 0 auto; }
+.team-composer.is-narrow .composer-menu { min-width: 0; }
+.team-composer.is-narrow .composer-menu .composer-setting { max-width: 140px; }
 
 /* 群聊流式卡里的实时编辑行（11-08 用户令「补实时编辑行，跟主对话一致」）：复用主对话 LiveFileRows，仅留间距 */
 .team-msg__live-files {
   margin-top: 6px;
+}
+
+/* 群消息页脚的 token 用量（11-08 用户令「跟主对话完全一致」） */
+.team-msg__usage {
+  color: var(--faint);
+  font-size: 10.5px;
+  white-space: nowrap;
 }

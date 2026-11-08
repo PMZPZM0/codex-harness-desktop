@@ -25,12 +25,17 @@ import { TeamMentionText } from "./17-team-mention-text";
 import { TeamAvatarPicker } from "./19-team-avatar-picker";
 import { buildMentionCandidates, fmtTime, shortId } from "./20-team-view-utils";
 import { MemberActions } from "./18-team-member-actions";
-import { TeamMenuButton } from "./06-team-menu";
 
 import { TeamRuler } from "./07-team-ruler";
-import { TeamProcess } from "./09-team-process";
+import type { MentionAvatar, TeamEditorApi } from "../../lib/team-composer-editor";
+import { avatarAsset } from "../../lib/avatar-presets";
+import { AGENT_AVATAR_COLS, agentAvatarKindOf, pickAgentAvatar } from "../../lib/agent-avatars.mjs";
+import { avatarPresetFace, memberAvatarSrc } from "./13-team-avatar";
 import { LiveFileRows } from "../status";
 import { getThreadLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
+import { usageInputTokens } from "../../lib/usage-input-tokens";
+import { usageNumber } from "../../lib/usage-number";
+import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { TeamCards } from "./11-team-cards";
 import { MemberAvatar } from "./13-team-avatar";
 /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主这一行必须和主对话同一个身份源
@@ -54,7 +59,6 @@ import { TeamRunFeedback, runningPartnersOf } from "./26-team-run-feedback";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes, buildTopicThreads, topicThreadOf } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
-import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf, teamMemberIdOf } from "../../lib/team-models.mjs";
 /* 11-07：@ 提及与群内搜索的口径全部在纯函数里（可单测），视图只做接线。 */
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargetsInText, mentionTriggerOf, removeMentionsFromText } from "../../lib/team-mention.mjs";
@@ -89,10 +93,6 @@ type Props = {
   /** 记忆条目 */
   onAddNote: (note: { text: string; type: "fact" | "constraint" | "runbook" }) => Promise<{ ok: boolean; error?: string }>;
   onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
-  /** 快捷指令菜单（整份替换） */
-  onSaveMenu: (items: unknown[]) => Promise<{ ok: boolean; error?: string }>;
-  /** 菜单展示形态（飞书 INPUT_FIRST / FLOAT） */
-  onSaveMenuPlacement: (placement: "input" | "float") => Promise<{ ok: boolean; error?: string }>;
   /** 定时任务（整组替换；nextRunAt 由主进程算） */
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 立刻运行一条定时任务 */
@@ -144,6 +144,21 @@ const PAGE = 30;
 /* ⛔ 11-07：成员行三件套（运行态点 → ⏹️ → @）已拆到 `18-team-member-actions.tsx`，
    两处调用（伙伴行 / 团成员行）不变。 */
 
+/** 群消息页脚的 token 用量（11-08 用户令「跟主对话完全一致」）：
+ *  与 MessageFooter 同一套取值与文案（入 / 出 / 缓存 + 命中率）。 */
+function TeamUsage({ usage }: { usage: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } }) {
+  const input = usageInputTokens(usage);
+  const output = usageNumber(usage, "outputTokens", "output_tokens");
+  const cached = Math.min(input, usageCachedTokens(usage));
+  if (!input && !output) return null;
+  const rate = input > 0 ? Math.round((cached / input) * 100) : null;
+  return (
+    <span className="team-msg__usage" title="本回合 token 用量（与主对话页脚同口径）">
+      {input.toLocaleString()} 入 / {output.toLocaleString()} 出 / 缓存 {cached.toLocaleString()}{rate != null ? ` · 命中 ${rate}%` : ""}
+    </span>
+  );
+}
+
 /** 流式卡里的实时编辑行（11-08 用户令「补实时编辑行，跟主对话一致」）：
  *  与主对话同款 LiveFileRows，按**线程**取（群视图不知道回合 id）。 */
 function TeamLiveFiles({ threadId }: { threadId: string }) {
@@ -159,7 +174,7 @@ export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
-  onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
+  onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
   onStopPartner, onStopAll, threadsOfMember, live, replyMode = "process", messageForm = "chat", onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
@@ -231,7 +246,9 @@ export function TeamGroupView({
   /** 输入框工具行：模型/档位/权限是**持久化偏好**（重启不丢），技能/文件是一次性附件 */
   const [runOpts, setRunOpts] = useState<TeamRunOpts>(loadTeamRunOpts);
   useEffect(() => { saveTeamRunOpts(runOpts); }, [runOpts]);
-  const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  const composerRef = useRef<HTMLDivElement | null>(null);
+  /* 行内提及编辑器的命令面（插人 / 外部改值 + 光标；11-08 输入框改为 contenteditable）。 */
+  const editorApiRef = useRef<TeamEditorApi | null>(null);
   /* 11-08 用户令「@ 弹窗放到 @ 图标上面自适应展示」：面板锚在 @ 按钮上（composer 侧挂 ref）。 */
   const mentionAnchorRef = useRef<HTMLButtonElement | null>(null);
   /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
@@ -344,22 +361,9 @@ export function TeamGroupView({
   }, []);
 
   const partners = useMemo(() => group.members.filter((m) => m.kind === "bot"), [group]);
-  /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：两种形态共用同一份数据与同一个点击口径 */
-  const menuPlacement = group.menuPlacement ?? "input";
-  const floatMenu = menuPlacement === "float";
-  /* 菜单 = 群自己的（用户可编辑）。⛔ 11-07 用户令：「停止运行放到成员列表的 @ 前面去」——
-     系统项「停止运行」已从菜单里撤掉（它本来也解析不到、点了只弹「菜单项已经不在了」），
-     改到成员栏顶部、成员行（每行的 @）**之前**。 */
-  const menuItems = useMemo(() => group.menu ?? [], [group.menu]);
-
-  const pickMenu = (key: string) => {
-    const r = menuPickResult(group.menu ?? [], key);
-    flashMenuMsg(r.message);
-    if (r.ok) {
-      setText(r.prompt);
-      composerRef.current?.focus();
-    }
-  };
+  /* ⛔ 11-08 用户：「指令按键可以不要了，配套群设置里面也可以删了」——
+     「指令」按钮 / 菜单 / 展示形态设置整体下线（群消息直接 @ 伙伴即可）。
+     `group.menu` / `menuPlacement` 字段保留在数据层（老档案不迁移、不报错），只是没有入口。 */
   /* ── 专家团 = 主理人 + 成员 ──────────────────────────────────────────────────
      ⛔⛔ 11-06 用户（截图）：「肯定要是主理人➕成员啊，专家团不一直是这样吗」——
         原来成员栏/@ 条/气泡署名都用群成员名（= 团名「软件开发专家团」），主理人「承枢」
@@ -486,10 +490,11 @@ export function TeamGroupView({
   const closeMention = () => setMention({ open: false, query: "", start: 0, caret: 0, typed: false });
   const openMentionPanel = () => setMention({ open: true, query: "", start: 0, caret: 0, typed: false });
 
-  /* 输入框内容变化：顺手判一次 `@` 触发（⛔ 判据只在纯函数里，别在这里写第二套）。 */
-  const updateText = (next: string) => {
+  /* 输入框内容变化：顺手判一次 `@` 触发（⛔ 判据只在纯函数里，别在这里写第二套）。
+     caret 由编辑器带出（contenteditable 没有 selectionStart）。 */
+  const updateText = (next: string, caretText?: number) => {
     setText(next);
-    const caret = composerRef.current?.selectionStart ?? next.length;
+    const caret = typeof caretText === "number" ? caretText : next.length;
     const trigger = mentionTriggerOf(next, caret);
     if (trigger) {
       setMention({ open: true, query: trigger.query, start: trigger.start, caret: trigger.caret, typed: true });
@@ -509,6 +514,38 @@ export function TeamGroupView({
     })),
   })), [group, catalog]);
 
+  /* 输入框 chip 的头像：与成员栏 / 消息头**同一套判定**
+     （群内预设切片 > 自定义图 > 智能体图集（seed = targetKey）> 人类首字）。
+     ⛔ 头像判定只用现有纯函数，别在编辑器里另写一套 kind 映射。 */
+  const mentionAvatars = useMemo(() => {
+    const map: Record<string, MentionAvatar> = {};
+    for (const section of mentionSections) {
+      for (const item of section.items) {
+        const member = item.avatar as { id?: string; kind?: string; targetKind?: string; targetKey?: string; avatar?: string };
+        const raw = String(member?.avatar ?? "");
+        const face = raw.startsWith("preset:") ? avatarPresetFace(raw.slice("preset:".length)) : null;
+        if (face) {
+          map[item.name] = {
+            backgroundImage: `url("${avatarAsset(face.file)}")`,
+            backgroundSize: `${AGENT_AVATAR_COLS * 100}% ${AGENT_AVATAR_COLS * 100}%`,
+            backgroundPosition: `${face.x}% ${face.y}%`,
+          };
+          continue;
+        }
+        const custom = memberAvatarSrc(raw);
+        if (custom) { map[item.name] = { imgSrc: custom }; continue; }
+        if ((member?.kind ?? "bot") === "human") { map[item.name] = { initial: item.name }; continue; }
+        const pick = pickAgentAvatar(agentAvatarKindOf(member?.targetKind), member?.targetKey || member?.id || item.selectId);
+        map[item.name] = {
+          backgroundImage: `url("${avatarAsset(pick.file)}")`,
+          backgroundSize: `${AGENT_AVATAR_COLS * 100}% ${AGENT_AVATAR_COLS * 100}%`,
+          backgroundPosition: `${pick.x}% ${pick.y}%`,
+        };
+      }
+    }
+    return map;
+  }, [mentionSections]);
+
   /* ⛔⛔ 11-08 用户（截图）：「手动输入 @ 选中后，输入框里也有 @、输入框上面也有 @」——
      要求全部收进输入框（发出后就是正文里的行内提及），框上不再展示。
      ⇒ **@ 的唯一真相源 = 正文**：选人只往正文插 `@名字 `，发消息时从正文反查目标，
@@ -522,20 +559,7 @@ export function TeamGroupView({
 
   /** 把 `@名字 ` 插到当前光标处（面板多选 / 成员行 @ 共用；⛔ 不再维护框外 chip）。 */
   const insertMentionText = (name: string) => {
-    const el = composerRef.current;
-    const caret = Math.max(0, Math.min(text.length, el?.selectionStart ?? text.length));
-    const before = text.slice(0, caret);
-    const after = text.slice(caret);
-    const lead = before && !/\s$/.test(before) ? " " : "";
-    const inserted = `${lead}@${name} `;
-    setText(`${before}${inserted}${after}`);
-    const pos = before.length + inserted.length;
-    requestAnimationFrame(() => {
-      const node = composerRef.current;
-      if (!node) return;
-      node.focus();
-      node.setSelectionRange(pos, pos);
-    });
+    editorApiRef.current?.insertMention(name);
   };
 
   /** 成员行 / 面板再点一次 = 取消这个人的 @（从正文里摘掉完整提及）。 */
@@ -551,14 +575,8 @@ export function TeamGroupView({
       /* 打字触发：把 `@查询词` 换成 `@名字 `（目标身份稍后从正文反查） */
       /* ⛔ 传 caret：只替换用户输入的那几个字，⛔ 不碰后面已经写好的正文。 */
       const applied = applyMention(text, { start: mention.start, caret: mention.caret }, item.name);
-      setText(applied.text);
       closeMention();
-      requestAnimationFrame(() => {
-        const el = composerRef.current;
-        if (!el) return;
-        el.focus();
-        el.setSelectionRange(applied.caret, applied.caret);
-      });
+      editorApiRef.current?.setTextAndCaret(applied.text, applied.caret);
       return;
     }
     /* 按钮打开 = 多选面板：点一下切换「插 / 摘正文里的 @名字」，面板不关（飞书同款） */
@@ -950,10 +968,9 @@ export function TeamGroupView({
                 )}
               </>
             )}
-            <span className="team-group__sub" title={ctxParts.join(" · ")}>
-              {group.members.length} 位成员 · {partners.length} 个伙伴
-              {ctxParts.length > 0 && ` · ${ctxParts.join(" · ")}`}
-            </span>
+            {/* ⛔ 11-08 用户（截图）：「把我框住的文字赘述删了」——
+                群头副标题「N 位成员 · M 个伙伴 · 项目 …」整条删除
+                （人数看右侧成员栏、项目名看顶栏，这里重复三遍）。 */}
           </div>
         </div>
         <div className="team-group__head-actions">
@@ -984,6 +1001,9 @@ export function TeamGroupView({
           >
             <Search size={14} />
           </button>
+          {/* ⛔ 11-08 用户（截图）：「把办公室预览图标放到设置按键这一排的展开折叠左边」——
+              从成员栏末位挪到群头操作区，落在「收起/展开成员栏」键的左边。 */}
+          <TeamOfficeEntry group={group} live={live} busy={busy} onOpenThread={onOpenThread} />
           {/* ⛔ 11-08 用户：「右边在 🔍 图标右边加一个下面展开折叠的按键图标」
               —— 收起 / 展开右侧成员栏（键位紧跟搜索键，⛔ 别挪到最右，用户点名了位置） */}
           <button
@@ -1026,8 +1046,6 @@ export function TeamGroupView({
           onDeleteGroup={onDeleteGroup}
           onAddNote={onAddNote}
           onRemoveNote={onRemoveNote}
-          onSaveMenu={onSaveMenu}
-          onSaveMenuPlacement={onSaveMenuPlacement}
           messageLayout={messageLayout}
           onMessageLayout={(next) => onSetMessageLayout?.(next)}
           replyMode={effectiveReplyMode}
@@ -1265,6 +1283,8 @@ export function TeamGroupView({
                                 · 正向 —— 点「来源」直接**打开那条会话**（以前只是复制 id，等于给了个没法用的坐标）；
                                 · 反向 —— 那条会话被删掉时由 `goneThreads` 标成不可点的「已删除」
                                   （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
+                            {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
+                            {row.usage && <TeamUsage usage={row.usage} />}
                             {goneThreads?.has(row.threadId) ? (
                               <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
                             ) : (
@@ -1380,6 +1400,8 @@ export function TeamGroupView({
                 value={text}
                 onValueChange={updateText}
                 textareaRef={composerRef}
+                editorApiRef={editorApiRef}
+                mentionAvatars={mentionAvatars}
                 onKeyDown={(e) => {
                   /* ⛔ 中文输入法选字时的 Enter 不是"发送"（主对话同口径）：
                      组合期内发走半句话、且清空会被 IME 回滚 ⇒ 输入框看着"没清空"。 */
@@ -1415,9 +1437,6 @@ export function TeamGroupView({
                 mentionAnchorRef={mentionAnchorRef}
                 mentionNames={mentionNames}
                 mentionCount={atTargets.length}
-                /* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
-                   FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */
-                toolsSlot={!floatMenu ? <TeamMenuButton items={menuItems} disabled={sending} placement="input" onPick={pickMenu} /> : null}
                 app={app}
               />
             </footer>
@@ -1567,13 +1586,10 @@ export function TeamGroupView({
                 );
               })}
             </ul>
-            {/* ⛔ 11-07：全局「停止运行」在「成员 N」标题行右侧（停全部）；单成员的「停」挂在
-                各自成员行里、@ 之后（仅运行中显示）。这里只留一句 @ 提示。 */}
-            <div className="team-group__members-foot">
-              <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
-            </div>
-            {/* 办公室预览：成员栏**末位**（与中枢那条群成员轨同一个节点、同一个位置语义）。 */}
-            <TeamOfficeEntry group={group} live={live} busy={busy} onOpenThread={onOpenThread} />
+            {/* ⛔ 11-08：全局「停止运行」在「成员 N」标题行右侧（停全部）；单成员的「停」挂在
+                各自成员行里、@ 之后（仅运行中显示）。
+                ⛔ 11-08 用户（截图）：「把我框住的文字赘述删了」——底部「点 @ 把这个人加进这次派活」
+                提示删除。 */}
           </aside>
         </div>
       )}
@@ -1606,11 +1622,6 @@ export function TeamGroupView({
         />
       )}
 
-      {/* FLOAT 形态的入口（飞书 `FLOAT`）：浮在群视图右下，⛔ 不进输入区。
-          ⛔ 群设置里不画 —— 那个页面要编辑的正是它，画上去会挡住保存按钮。 */}
-      {floatMenu && !showSettings && (
-        <TeamMenuButton items={menuItems} disabled={sending} placement="float" onPick={pickMenu} />
-      )}
     </div>
   );
 }
