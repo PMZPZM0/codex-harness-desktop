@@ -17,6 +17,8 @@ export function isLocalBaseUrl(raw) {
   catch { host = (value.replace(/^[a-z]+:\/\//i, "").split("/")[0] ?? "").split(":")[0].toLowerCase(); }
   if (!host) return false;
   if (host === "localhost" || host === "::1" || host === "0.0.0.0" || host.endsWith(".localhost")) return true;
+  /* ⛔ 先验 IPv4 形态再判网段 —— 不然 `10.evil.com` 这种公网域会被前缀误判成本机中转。 */
+  if (!/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host)) return false;
   return /^(127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(host);
 }
 

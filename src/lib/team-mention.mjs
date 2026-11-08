@@ -87,7 +87,7 @@ export function matchMentionCandidates(items, query, limit = 8) {
  * ⛔ 结束位置**现算**（从 start 往后扫到空白 / 下一个 @），不吃调用方传进来的旧 caret ——
  *    面板打开期间用户可能继续打字，用旧 caret 会吃掉半句话。
  * @param text 当前整段输入
- * @param trigger `mentionTriggerOf` 的返回值（只用到 start）
+ * @param trigger `mentionTriggerOf` 的返回值（start + caret；没有 caret 的老调用按空白扫描兜底）
  * @param name 选中的人名
  * @returns { text, caret }
  */

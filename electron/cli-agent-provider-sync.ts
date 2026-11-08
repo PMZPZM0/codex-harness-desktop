@@ -40,35 +40,44 @@ async function writeManaged(file: string, content: string, backup = false): Prom
   return true;
 }
 
-/** 同步一次。失败一律吞掉（同步是旁路，不许影响启动 / 派活）。 */
+/** 同步一次。失败一律吞掉（同步是旁路，不许影响启动 / 派活）；
+ *  ⛔ 每个 CLI 独立 catch —— Gemini 写挂（EACCES 等）不许连累后面的 Kimi。 */
 export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResult> {
   const updated: string[] = [];
   const skipped: string[] = [];
+  let custom: Awaited<ReturnType<typeof readCustomModel>>;
   try {
-    const custom = await readCustomModel();
-    const baseUrl = String(custom?.baseUrl ?? "").trim();
-    const model = String(custom?.model ?? "").trim();
-    if (!baseUrl || !model) return { updated, skipped: ["未配置供应商"] };
+    custom = await readCustomModel();
+  } catch { return { updated, skipped: ["未配置供应商"] }; }
+  const baseUrl = String(custom?.baseUrl ?? "").trim();
+  const model = String(custom?.model ?? "").trim();
+  if (!baseUrl || !model) return { updated, skipped: ["未配置供应商"] };
 
-    if (await binOnPath("codex")) {
-      if (await writeManaged(path.join(cliCodexHome(), "config.toml"), codexConfigToml({ baseUrl, model }))) updated.push("codex");
-    } else skipped.push("codex");
+  const attempt = async (name: string, fn: () => Promise<void>) => {
+    try { await fn(); } catch { skipped.push(name); }
+  };
 
-    if (isLocalBaseUrl(baseUrl)) {
-      if (await binOnPath("gemini")) {
-        const file = path.join(os.homedir(), ".gemini", "settings.json");
-        const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
-        const merged = `${JSON.stringify(mergeGeminiSettings(raw, { model }), null, 2)}\n`;
-        if (await writeManaged(file, merged, true)) updated.push("gemini");
-      } else skipped.push("gemini");
-      if (await binOnPath("kimi")) {
-        const file = path.join(os.homedir(), ".kimi-code", "config.toml");
-        if (await writeManaged(file, kimiConfigToml({ baseUrl, model, apiKey: "harness-local" }), true)) updated.push("kimi");
-      } else skipped.push("kimi");
-    } else {
-      /* 外部供应商：Gemini/Kimi 的配置需要写真实 Key —— 不落盘（只在派活子进程环境里出现）。 */
-      skipped.push("gemini(非本机中转)", "kimi(非本机中转)");
-    }
-  } catch { /* 同步失败不影响主流程 */ }
+  await attempt("codex", async () => {
+    if (!(await binOnPath("codex"))) { skipped.push("codex"); return; }
+    if (await writeManaged(path.join(cliCodexHome(), "config.toml"), codexConfigToml({ baseUrl, model }))) updated.push("codex");
+  });
+
+  if (isLocalBaseUrl(baseUrl)) {
+    await attempt("gemini", async () => {
+      if (!(await binOnPath("gemini"))) { skipped.push("gemini"); return; }
+      const file = path.join(os.homedir(), ".gemini", "settings.json");
+      const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
+      const merged = `${JSON.stringify(mergeGeminiSettings(raw, { model }), null, 2)}\n`;
+      if (await writeManaged(file, merged, true)) updated.push("gemini");
+    });
+    await attempt("kimi", async () => {
+      if (!(await binOnPath("kimi"))) { skipped.push("kimi"); return; }
+      const file = path.join(os.homedir(), ".kimi-code", "config.toml");
+      if (await writeManaged(file, kimiConfigToml({ baseUrl, model, apiKey: "harness-local" }), true)) updated.push("kimi");
+    });
+  } else {
+    /* 外部供应商：Gemini/Kimi 的配置需要写真实 Key —— 不落盘（只在派活子进程环境里出现）。 */
+    skipped.push("gemini(非本机中转)", "kimi(非本机中转)");
+  }
   return { updated, skipped };
 }

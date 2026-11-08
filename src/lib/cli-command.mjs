@@ -95,7 +95,7 @@ export function cliSupportsPermissionTier(bin) {
 export function applyCliPermissionTier(template, tier) {
   const tpl = String(template ?? "").trim();
   if (!tpl.includes("{prompt}")) return tpl;
-  const bin = cliBINOfSafe(tpl);
+  const bin = cliBinOf(tpl);
   const flags = CLI_PERMISSION_FLAGS[BIN_ALIASES[bin] ?? bin]?.[cliPermissionTierOf(tier)] ?? "";
   if (!flags || tpl.includes(flags)) return tpl;
   /* ⛔ Codex 的选项必须写在 PROMPT **之前**：`codex exec "{prompt}" --sandbox …` 里的
@@ -105,11 +105,6 @@ export function applyCliPermissionTier(template, tier) {
     return tpl.replace(/^(\S+\s+\S+)\s+/, `$1 ${flags} `);
   }
   return `${tpl} ${flags}`;
-}
-
-function cliBINOfSafe(template) {
-  const hit = String(template ?? "").trim().match(/^["']?([^\s"']+)["']?/);
-  return hit ? normalizeBinName(hit[1]) : "";
 }
 
 /** 规范单轮命令 + 权限档参数（空串 = 没有核实过的模板）。 */

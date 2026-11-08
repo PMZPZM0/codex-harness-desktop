@@ -7,13 +7,14 @@
  */
 import { safeStorage } from "electron";
 import { readCustomModel } from "../main/01-model-catalog";
-import { cliCodexHome, cliModelEnv, cliProcessEnv } from "../cli-agents";
+import { cliCodexHome, cliCodexHomeReady, cliModelEnv, cliProcessEnv } from "../cli-agents";
 import { isLocalBaseUrl } from "../../src/lib/cli-provider-config.mjs";
 
 export async function cliMemberEnv(input: { bossModel?: string; memberModel?: string }): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = { ...cliProcessEnv() };
-  /* ⛔ Codex CLI 用应用自己的独立 home（供应商同步写入的 provider），不碰用户 ~/.codex。 */
-  env.CODEX_HOME = cliCodexHome();
+  /* ⛔ Codex CLI 用应用自己的独立 home（供应商同步写入的 provider），不碰用户 ~/.codex；
+     配置没写就不设 —— 空 home 会顶掉用户自己的登录态。 */
+  if (cliCodexHomeReady()) env.CODEX_HOME = cliCodexHome();
   try {
     const custom = await readCustomModel();
     const apiKey = custom?.encryptedKey && safeStorage.isEncryptionAvailable()

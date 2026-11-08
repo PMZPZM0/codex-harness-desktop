@@ -16,6 +16,12 @@ test("isLocalBaseUrl：只认本机/内网", () => {
   assert.equal(isLocalBaseUrl("http://192.168.1.9/v1"), true);
   assert.equal(isLocalBaseUrl("https://api.openai.com/v1"), false);
   assert.equal(isLocalBaseUrl(""), false);
+  /* 前缀像内网、实际是公网域 ⇒ 不是本机（先验 IPv4 形态再判网段）。 */
+  assert.equal(isLocalBaseUrl("http://10.evil.com/v1"), false);
+  assert.equal(isLocalBaseUrl("http://127.evil.com/v1"), false);
+  assert.equal(isLocalBaseUrl("http://192.168.evil.com/v1"), false);
+  assert.equal(isLocalBaseUrl("http://172.16.0.1/v1"), true);
+  assert.equal(isLocalBaseUrl("http://172.32.0.1/v1"), false);
 });
 
 test("stripV1Suffix：Anthropic/Gemini SDK 自己拼 /v1", () => {

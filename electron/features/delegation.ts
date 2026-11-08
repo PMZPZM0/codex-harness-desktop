@@ -18,7 +18,7 @@ import { senderFromDispatch, senderLineOf, taskLineOf, normalizeSender } from ".
 import { SUBCONV_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
-import { binOnPath, buildCliRolePrompt, cliCodexHome, cliModelEnv, readUsableCliAgents } from "../cli-agents";
+import { binOnPath, buildCliRolePrompt, cliCodexHome, cliCodexHomeReady, cliModelEnv, readUsableCliAgents } from "../cli-agents";
 import { isLocalBaseUrl } from "../../src/lib/cli-provider-config.mjs";
 import { augmentedPath } from "../toolchain";
 import { broadcastHarnessEvent } from "../features/window-bus";
@@ -210,8 +210,8 @@ export async function runDelegatedTask(input: {
   const cliShellEnv = target.kind === "cli"
     ? {
         ...cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel, local: isLocalBaseUrl(customModel?.baseUrl) }, apiKey),
-        /* Codex CLI 用应用自己的独立 home（不碰用户 ~/.codex；provider 由供应商同步写入）。 */
-        CODEX_HOME: cliCodexHome(),
+        /* Codex CLI 用应用自己的独立 home（不碰用户 ~/.codex；配置没写就不设，退回用户登录态）。 */
+        ...(cliCodexHomeReady() ? { CODEX_HOME: cliCodexHome() } : {}),
       }
     : null;
   const threadConfig: Record<string, unknown> = {};

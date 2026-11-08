@@ -21,6 +21,7 @@
  */
 import { app } from "electron";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { execFile } from "node:child_process";
@@ -588,6 +589,12 @@ export async function cliInstalledFlags(entries: Array<Pick<CliAgentDef, "id" | 
 /** Codex CLI 的独立 home（11-07）：不碰用户自己的 `~/.codex`，由供应商同步写入 provider 配置。 */
 export function cliCodexHome(): string {
   return path.join(app.getPath("userData"), "cli-codex-home");
+}
+
+/** 独立 home 里真写着配置才准设 CODEX_HOME —— 没配供应商时同步没写，空 home 会把
+ *  用户自己的 `~/.codex` 登录态顶掉（CLI 无认证必败）。 */
+export function cliCodexHomeReady(): boolean {
+  return existsSync(path.join(cliCodexHome(), "config.toml"));
 }
 
 /** 派活时注入的模型环境（11-07 扩展）：本机中转支持 OpenAI / Responses / Anthropic / Gemini 四种协议，

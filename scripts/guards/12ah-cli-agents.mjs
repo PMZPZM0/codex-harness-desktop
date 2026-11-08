@@ -21,6 +21,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const req = createRequire(import.meta.url);
 let checks = 0, fails = 0;
 const ok = (c, m) => { checks++; console.log("  " + (c ? "✓" : "✗") + " 【cliagents】" + m); if (!c) fails++; };
+/* ⛔ 负向结构断言必须剥注释（项目纪律，与 12be 同款）：注释里引用旧实现不能把断言顶红。 */
+const codeOnly = (source) => String(source)
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 
 /* ⛔ 真跑要用 userData —— 给它一个空临时目录（模块顶层不取路径，只有落盘时才取）。 */
 const sandbox = mkdtempSync(join(tmpdir(), "cliagents-guard-"));
@@ -761,14 +765,27 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && /export function cliCodexHome/.test(mainSrc),
     "派活环境：本机中转同时注入 OpenAI / Anthropic / Gemini 三套 + Codex 独立 home");
   const cliEnvSrc = readFileSync(join(ROOT, "electron/boss-groups/cli-env.ts"), "utf8");
-  ok(/CODEX_HOME = cliCodexHome\(\)/.test(cliEnvSrc) && /isLocalBaseUrl\(custom\?\.baseUrl\)/.test(cliEnvSrc),
-    "群成员 CLI 派活：CODEX_HOME + local 判定");
-  ok(/CODEX_HOME: cliCodexHome\(\)/.test(delegationSrc) && /isLocalBaseUrl\(customModel\?\.baseUrl\)/.test(delegationSrc),
-    "@ 调度的 CLI 会话：shell 环境同样带 CODEX_HOME + local");
+  ok(/if \(cliCodexHomeReady\(\)\) env\.CODEX_HOME = cliCodexHome\(\)/.test(cliEnvSrc) && /isLocalBaseUrl\(custom\?\.baseUrl\)/.test(cliEnvSrc),
+    "群成员 CLI 派活：CODEX_HOME 有配置才设 + local 判定");
+  ok(/\.\.\.\(cliCodexHomeReady\(\) \? \{ CODEX_HOME: cliCodexHome\(\) \} : \{\}\)/.test(delegationSrc) && /isLocalBaseUrl\(customModel\?\.baseUrl\)/.test(delegationSrc),
+    "@ 调度的 CLI 会话：shell 环境同样带 CODEX_HOME（有配置才设）+ local");
+  /* 11-08 审查：空 home 会顶掉用户 ~/.codex 登录态 ⇒ 闸必须是「配置文件真存在」，两处共用同一个 helper。 */
+  ok(/export function cliCodexHomeReady\(\): boolean \{\s*return existsSync\(path\.join\(cliCodexHome\(\), "config\.toml"\)\);\s*\}/.test(mainSrc),
+    "cliCodexHomeReady：以 config.toml 存在为闸（⛔ 不许退回无条件设 CODEX_HOME）");
   const syncSrc = readFileSync(join(ROOT, "electron/cli-agent-provider-sync.ts"), "utf8");
   ok(/codexConfigToml/.test(syncSrc) && /kimiConfigToml/.test(syncSrc) && /mergeGeminiSettings/.test(syncSrc)
     && /isLocalBaseUrl\(baseUrl\)/.test(syncSrc) && /\.harness\.bak/.test(syncSrc),
     "同步模块：Codex / Gemini / Kimi 落盘 + 仅本机中转写含 Key 配置 + 首次改动留备份");
+  /* 11-08 审查：单 try 包全部 CLI ⇒ Gemini 写挂连累 Kimi 静默跳过；每个 CLI 独立 catch。 */
+  ok(/const attempt = async \(name: string, fn: \(\) => Promise<void>\) => \{\s*try \{ await fn\(\); \} catch \{ skipped\.push\(name\); \}\s*\};/.test(syncSrc)
+    && (syncSrc.match(/await attempt\("/g) || []).length === 3,
+    "同步模块：每个 CLI 独立 catch（一个写挂不连累其余）");
+  ok(!providers.isLocalBaseUrl("http://10.evil.com/v1") && !providers.isLocalBaseUrl("http://192.168.evil.com/v1")
+    && providers.isLocalBaseUrl("http://172.16.0.1/v1") && !providers.isLocalBaseUrl("http://172.32.0.1/v1"),
+    "本机中转识别：先验 IPv4 形态再判网段（10.evil.com 这类公网域不算本机）");
+  const cliCommandSrc = codeOnly(readFileSync(join(ROOT, "src/lib/cli-command.mjs"), "utf8"));
+  ok(!/cliBINOfSafe/.test(cliCommandSrc) && /const bin = cliBinOf\(tpl\)/.test(cliCommandSrc),
+    "权限档模板取 bin 复用 cliBinOf（⛔ 不许再长一份逐字副本）");
   const rootMainSrc = readFileSync(join(ROOT, "electron/main.ts"), "utf8");
   ok(/syncCliAgentProviderConfig/.test(rootMainSrc), "启动时同步一次（离线改过供应商也能跟上）");
   const applySrc = readFileSync(join(ROOT, "electron/features/custom-model-apply.ts"), "utf8");
