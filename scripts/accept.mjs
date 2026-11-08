@@ -13,6 +13,7 @@
 //      明细只在二级弹窗里（⛔ 一级不许出现工具行）
 //   ⑨ queue-timer：排队消息定时总开关（11-02）—— 默认关闭、开启落盘、关闭即清
 //   ⑩ project-menu-flyout：项目 ⋯ / 会话 ⋯ 菜单向侧栏右侧弹出（portal）+ 视口钳制自适应往上（11-08）
+//   ⑪ thread-tag-column：会话行标签固定成一列（贴置顶键左边）+ 标签最多 3 个字（11-08）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -1893,6 +1894,59 @@ const CHECKS = [
       await wait(200);
       await h._send("Emulation.clearDeviceMetricsOverride");
       await wait(400);
+    },
+  },
+  {
+    id: "thread-tag-column",
+    name: "会话行标签固定成一列、右对齐、贴置顶键左边 + 标签最多 3 个字（11-08 用户定稿）",
+    run: async (h) => {
+      /* 11-08 用户（截图红框）：「标签整体再往右边来一点，在置顶图标左边……都固定在这样一列」
+         定稿：「三个字，右对齐」+「编辑和新增标签限制输入内容」。 */
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("任务")); if(b){b.click(); return true;} return false; })()`);
+      await h.waitFor(`!!document.querySelector(".thread-row-tags")`, { label: "带标签的会话行", timeoutMs: 10000 });
+      await wait(400);
+      const geo = () => h.eval(`(function(){
+        const rect=(e)=>{ if(!e) return null; const r=e.getBoundingClientRect(); return {l:+r.left.toFixed(1),r:+r.right.toFixed(1),w:+r.width.toFixed(1)}; };
+        const out=[];
+        for (const row of document.querySelectorAll(".thread-row")) {
+          const tags=row.querySelector(".thread-row-tags");
+          if(!tags) continue;
+          const pin=rect(row.querySelector(".thread-pin-button"));
+          if(!pin || pin.l <= 0) continue; // 成员行在簇里隐藏操作键，不参与
+          out.push({ tags:rect(tags), text:(tags.textContent||"").trim(), pin, more:rect(row.querySelector(".thread-more-button")) });
+        }
+        return out;
+      })()`);
+      const rows1 = (await geo()) ?? [];
+      h.check("① 前提：任务视图里有多行带标签的会话（可对比列对齐）", rows1.length >= 2, String(rows1.length));
+      const rights = rows1.map((r) => r.tags.r);
+      h.check("② 各行标签右缘在同一条竖线上（±1px = 用户定稿「三个字，右对齐」）",
+        rights.length >= 2 && Math.max(...rights) - Math.min(...rights) <= 1, JSON.stringify(rights));
+      h.check("③ 标签整体在置顶键左边（⛔ 不压住操作键）",
+        rows1.length >= 2 && rows1.every((r) => r.tags.r <= r.pin.l - 4),
+        JSON.stringify(rows1.map((r) => ({ tagRight: r.tags.r, pinLeft: r.pin.l, gap: +(r.pin.l - r.tags.r).toFixed(1) }))));
+      h.check("④ 标签列紧贴操作键区（有归档键的行间隙 ≤8px = 「再往右边来一点」）",
+        rows1.some((r) => r.pin.l - r.tags.r <= 8),
+        JSON.stringify(rows1.map((r) => +(r.pin.l - r.tags.r).toFixed(1))));
+
+      /* 标签最多 3 个字：行菜单 → 添加/编辑标签 → 输入 4 个字必须被截成 3（只验输入，不落盘）。 */
+      await h.eval(`(function(){ const list=document.querySelector(".thread-list"); if(list) list.scrollTop=0; return 1; })()`);
+      await wait(200);
+      await h.eval(`(function(){ const b=document.querySelector(".thread-more-button"); if(b){b.click(); return true;} return false; })()`);
+      await h.waitFor(`!!document.querySelector(".thread-row-menu")`, { label: "会话行菜单", timeoutMs: 5000 });
+      await wait(350);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".thread-row-menu button")].find((x)=>/标签/.test(x.textContent||"")); if(b){b.click(); return true;} return false; })()`);
+      await h.waitFor(`!!document.querySelector(".entity-tag-input")`, { label: "标签编辑弹窗", timeoutMs: 5000 });
+      await wait(200);
+      const maxLen = await h.eval(`document.querySelector(".entity-tag-input").maxLength`);
+      await h.typeInto(".entity-tag-input", "测试三字");
+      await wait(250);
+      const typed = await h.eval(`document.querySelector(".entity-tag-input").value`);
+      h.check("⑤ 标签输入最多 3 个字（maxLength=3，输入 4 个字被截成 3）",
+        maxLen === 3 && [...String(typed ?? "")].length === 3, JSON.stringify({ maxLen, typed }));
+      await h.pressKey("Escape");
+      await wait(250);
+      h.check("⑥ Esc 关闭标签弹窗（不落盘）", !(await h.eval(`!!document.querySelector(".entity-tag-input")`)), "");
     },
   },
 ];

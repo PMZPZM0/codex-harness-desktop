@@ -1714,11 +1714,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     const cssSrc285 = codeOnly(readStyles());
     const tagsRule = /\.thread-row-tags\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
     const nameRule = /\.thread-row-name\s*\{([^}]*)\}/.exec(cssSrc285)?.[1] ?? "";
-    (/justify-self:\s*start/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
-      "【285】标签列内左对齐（11-06 用户令「标签对齐」：各行标签左缘同一竖线）"
+    (/justify-self:\s*end/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
+      "【285】标签列内右对齐（11-08 用户定稿「三个字，右对齐」：各行标签右缘同一条竖线）"
     );
-    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 64px 54px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
-      "【285】有标签的行用 64px 定宽标签列 + 54px 右侧留白（右边锚定 ⇒ 父行/缩进子行标签同线）"
+    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 52px 70px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
+      "【285】有标签的行用「名称 + 52px 标签列 + 70px 操作键让位」：标签列右缘恒在置顶键左边 6px、列内右对齐（11-08 用户定稿）"
     );
     (/\.thread-row-tags \.thread-dispatch-badge\s*\{[^}]*margin-left:\s*0/.test(cssSrc285) ? ok : fail)(
       "【285】调度徽标进标签列后清零 margin-left（否则比其它标签右移 6px，11-06 用户截图）"
@@ -1766,6 +1766,23 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       && /bag\.setThreadRowMenu\(null\)/.test(rowsSrc285) ? ok : fail)(
       "【285】会话菜单 Esc 关闭（与项目菜单同款；11-08）"
     );
+    /* 11-08 用户令：「标签字最多两个吧，编辑和新增标签限制输入内容」——
+       输入框 maxLength + 存储层按码点截断（读/写同一条 clampTagText，脏值也收口）。 */
+    {
+      const tagsSrc = codeOnly(readFileSync(join(ROOT, "src", "lib", "entity-tags.mjs"), "utf8"));
+      const editorSrc = codeOnly(readFileSync(join(ROOT, "src", "components", "EntityTagEditor.tsx"), "utf8"));
+      (/export const MAX_TAG_CHARS = 3;/.test(tagsSrc)
+        && /export function clampTagText[\s\S]{0,220}?\[\.\.\.String\(value \?\? ""\)\.trim\(\)\]\.slice\(0, MAX_TAG_CHARS\)/.test(tagsSrc)
+        && (tagsSrc.match(/clampTagText\(/g) ?? []).length >= 3   // 定义 + readMap + setEntityTag
+        && !/slice\(0, 20\)/.test(tagsSrc) ? ok : fail)(
+        "【285】标签文字最多 3 个（11-08 用户令）：存储层按码点截断（⛔ 不劈 emoji），读/写同一口径"
+      );
+      (/maxLength=\{MAX_TAG_CHARS\}/.test(editorSrc)
+        && /onChange=\{\(event\) => setText\(clampTagText\(event\.target\.value\)\)\}/.test(editorSrc)
+        && /const next = clampTagText\(text\);/.test(editorSrc) ? ok : fail)(
+        "【285】标签编辑弹窗：输入框 maxLength 跟随上限 + 输入/保存都过 clampTagText（新增与编辑同一入口）"
+      );
+    }
     (/\.thread-actions-buttons\s*\{[^}]*position:\s*absolute/.test(cssSrc285) && /\.thread-row:not\(\.is-member-row\):hover > button:first-child > small\s*\{[^}]*visibility:\s*hidden/.test(cssSrc285) ? ok : fail)(
       "【285】hover 只让右侧动：操作键绝对定位不占布局 + 时间用 visibility 保留占位（标签不位移）"
     );

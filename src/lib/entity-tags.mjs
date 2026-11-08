@@ -15,6 +15,13 @@ export const TAG_COLORS = [
   { id: "slate", label: "灰", value: "#64748b" },
 ];
 
+/** 标签文字上限（11-08 用户令：「标签字最多两个吧，编辑和新增标签限制输入内容」）。
+ *  ⛔ 按**码点**截断（`[...str]`），别用 slice —— 会把 emoji 代理对劈成半个字符。 */
+export const MAX_TAG_CHARS = 3;
+export function clampTagText(value) {
+  return [...String(value ?? "").trim()].slice(0, MAX_TAG_CHARS).join("");
+}
+
 /** { [id]: { text, color } }；localStorage 里的脏值在这里收口。 */
 function readMap(key) {
   try {
@@ -23,7 +30,7 @@ function readMap(key) {
     const out = {};
     for (const [id, value] of Object.entries(raw)) {
       if (!id || !value || typeof value !== "object") continue;
-      const text = String(value.text ?? "").trim().slice(0, 20);
+      const text = clampTagText(value.text);
       const color = String(value.color ?? "").trim();
       if (!text) continue;
       out[id] = { text, color: /^#[0-9a-f]{6}$/i.test(color) ? color : TAG_COLORS[0].value };
@@ -92,7 +99,7 @@ export function closeTagEditor() {
 
 export function setEntityTag(kind, id, tag) {
   ensureLoaded();
-  const text = String(tag?.text ?? "").trim().slice(0, 20);
+  const text = clampTagText(tag?.text);
   if (!id || !text) return;
   const color = /^#[0-9a-f]{6}$/i.test(String(tag?.color ?? "")) ? String(tag.color) : TAG_COLORS[0].value;
   if (kind === "project") {

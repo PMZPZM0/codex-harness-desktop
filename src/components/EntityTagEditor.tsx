@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { Tag, X } from "lucide-react";
-import { closeTagEditor, getEntityTagState, removeEntityTag, setEntityTag, subscribeEntityTags, TAG_COLORS } from "../lib/entity-tags.mjs";
+import { closeTagEditor, clampTagText, getEntityTagState, MAX_TAG_CHARS, removeEntityTag, setEntityTag, subscribeEntityTags, TAG_COLORS } from "../lib/entity-tags.mjs";
 import { useEscapeLayer } from "../hooks/useEscapeLayer";
 
 /** 会话 / 项目标签编辑器（10-25）：文字 + 8 色可选，默认无标签。 */
@@ -26,7 +26,7 @@ export function EntityTagEditorHost() {
   const kindLabel = editor.kind === "project" ? "项目标签" : "会话标签";
   const title = String(editor.title ?? "").trim();
   const save = () => {
-    const next = text.trim();
+    const next = clampTagText(text);
     if (!next) return;
     setEntityTag(editor.kind, editor.id, { text: next, color });
   };
@@ -46,9 +46,9 @@ export function EntityTagEditorHost() {
           ref={inputRef}
           className="entity-tag-input"
           value={text}
-          maxLength={20}
-          placeholder="输入标签内容，例如：客户 A / 重要"
-          onChange={(event) => setText(event.target.value)}
+          maxLength={MAX_TAG_CHARS}
+          placeholder={`最多 ${MAX_TAG_CHARS} 个字，例如：专家团 / 客户`}
+          onChange={(event) => setText(clampTagText(event.target.value))}
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); save(); } }}
         />
         <div className="entity-tag-colors" role="radiogroup" aria-label="标签颜色">
