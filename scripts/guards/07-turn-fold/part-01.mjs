@@ -622,9 +622,16 @@ export async function run() {
     (!/勾选思考档位/.test(appNC))
       ? ok("【32】没有指向已删除勾选区的过时文案（模型下拉的「更多设置…」）")
       : fail("【32】有文案还让用户去模型配置「勾选思考档位」—— 入口已经不存在了");
-    (/levels=\{\["low", "medium", "high", "xhigh"\]\}/.test(appNC))
-      ? ok("【32】思考强度固定四档（低/中/高/极高，10-24 用户定稿）")
-      : fail("【32】思考强度档位不是四档 —— 用户明确要「低中高极高这几个档位就行」");
+    /* ⛔⛔ 11-08 并线收口：3d2fa23fd 把档位改成**按模型声明动态给**（官方规格联动），
+       写死的四档字面量已不存在 ⇒ 这条旧断言在 HEAD 上恒红（不是本轮群聊改动）。
+       ⇒ 判据改成「动态联动 + 官方全序唯一真相源」，⛔ 不许简单删掉或恒真。 */
+    const specsSrc = readFileSync(join(ROOT, "src", "lib", "model-specs.ts"), "utf8");
+    (/effortLevelsForModel\(currentModelId\)/.test(appNC)
+      && /levels=\{effortLevels\}/.test(appNC)
+      && /export const EFFORT_ORDER = \["minimal", "low", "medium", "high", "ultra", "xhigh", "max"\]/.test(specsSrc)
+      && /export const FALLBACK_EFFORT_LEVELS = \["low", "medium", "high"\]/.test(specsSrc))
+      ? ok("【32】思考档位按模型声明动态给，全序与兜底三档都在 model-specs（并线后的官方口径）")
+      : fail("【32】档位联动或全序常量缺失 —— 官方规格回归");
 
     // 10-24 用户参考图定稿：一条绿→蓝渐变厚滑杆 + 常显白色圆点，四档标签。
     ok(/linear-gradient(90deg, #16a34a 0%, #0ea5e9 100%)/.test(effortPickerC), "【32】思考强度是绿→蓝连续渐变条");

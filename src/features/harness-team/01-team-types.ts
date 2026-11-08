@@ -89,6 +89,10 @@ export type TeamGroup = {
   avatars?: Record<string, string>;
   /** 消息排版：split = 伙伴靠左/用户靠右（默认）；left = 全部靠左 */
   messageLayout?: "split" | "left";
+  /** 回复模式：process / placeholder（只决定运行时露什么） */
+  replyMode?: "process" | "placeholder";
+  /** 群消息形式（独立选项）：chat = 对话消息平铺；topic = 话题消息收进气泡 */
+  messageForm?: "chat" | "topic";
   /** 旧字段：护栏（跨租户/外部群那套）—— 本应用没有租户概念，界面不再展示，仅保留兼容 */
   guard: TeamGuard;
   /** 群简介：这个群的共享背景（每次派活注入给伙伴） */

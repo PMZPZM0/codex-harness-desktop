@@ -146,13 +146,13 @@ export function mentionSectionsOf(group, catalog) {
       teams.push({
         id: String(m.id),
         selectId: String(m.id),
-        /* ⛔⛔ 11-08 真机「正文前面莫名其妙多一个 @软件开发专家团」的同一个根因：
-           这一条的 selectId 是**团**（点它 = 叫整团），名字却取主理人（承枢）
-           ⇒ 用户以为在 @ 承枢、实际派给整团，主进程再把目标名补进正文。
-           ⇒ 名字 = 团名；主理人写进 hint（谁替你分派），⛔ 别再拿主理人名当团名。 */
-        name: String(m.name || lead?.name || ""),
+        /* ⛔⛔ 11-08 用户令「专家团的主代理人还是显示他名字吧」：@ 面板里这一条显示
+           主理人的名字（出面说话的人），不再是团名。
+           ⛔ 但 selectId 仍指向**整团** ⇒ hint 必须写清「点它 = 叫整团」，别让人以为只叫了他。
+           ⛔ 上一轮「正文多一个 @团名」是正文注入造成的，已彻底删除；显示名与此无关。 */
+        name: String(lead?.name || m.name || ""),
         role: String(lead?.profession || m.targetProfession || "专家团"),
-        hint: `${lead?.name ? `${lead.name} 主理 · ` : ""}${children.length} 位成员 · 点它 = 叫整团`,
+        hint: `${children.length} 位成员 · 点它 = 叫整团（${String(m.name || "专家团")}）`,
         /* 头像种子用主理人（与成员栏/群头同一口径），否则会画成团队徽章 */
         avatar: lead
           ? { ...m, targetKind: "expert", targetKey: lead.key, name: lead.name }

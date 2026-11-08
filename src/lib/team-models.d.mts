@@ -180,6 +180,8 @@ export function normalizeMessageLayout(value: unknown): "split" | "left";
 /* 11-08：群回复模式（process = 运行中展示过程 / placeholder = 只显示占位） */
 export function setReplyMode(group: TeamGroupLite, mode: string): TeamGroupLite;
 export function normalizeReplyMode(value: unknown): "process" | "placeholder";
+export function setMessageForm(group: TeamGroupLite, form: string): TeamGroupLite;
+export function normalizeMessageForm(value: unknown): "chat" | "topic";
 export function normalizeMemberAvatar(value: unknown): string;
 export const MAX_MEMBER_AVATAR_CHARS: number;
 export function canDelegate(fromId: string, toId: string, group: TeamGroupLite): boolean;

@@ -29,6 +29,14 @@ export function normalizeMessageLayout(value) {
 export function normalizeReplyMode(value) {
   return value === "placeholder" ? "placeholder" : "process";
 }
+
+/** 群消息形式（11-08 用户令：话题模式要**单独选项**，不要挤在回复模式一排）：
+ *  · `chat` = 对话消息：所有消息按时间平铺（默认）；
+ *  · `topic` = 话题消息：伙伴回复收进用户气泡，点开弹窗预览。
+ * ⛔ 与 replyMode 正交：形式决定"消息怎么摆"，回复模式决定"运行时露什么"。 */
+export function normalizeMessageForm(value) {
+  return value === "topic" ? "topic" : "chat";
+}
 import { normalizeSchedules } from "./team-schedule.mjs";
 /* 11-07 用户令：群消息也要带真实发送者身份（用户 / 上级 / 定时任务 / 伙伴 / 系统）。
    ⛔ 枚举只认 message-origin.mjs 这一份，⛔ 不在群模型里另抄一套。 */
@@ -230,6 +238,8 @@ export function createGroup(input) {
     messageLayout: normalizeMessageLayout(input?.messageLayout),
     /* 回复模式（11-08 用户令）：`process` 运行时展示过程（默认折叠）；`placeholder` 只显示占位 */
     replyMode: normalizeReplyMode(input?.replyMode),
+    /* 群消息形式（11-08 用户令：独立选项） */
+    messageForm: normalizeMessageForm(input?.messageForm),
     /* 群定时任务（豆包 §③ 自动化定时）：到点 @ 指定伙伴，走同一条派活链路 */
     schedules: normalizeSchedules(input?.schedules),
   };
@@ -349,6 +359,11 @@ export function setMessageLayout(group, layout) {
 /** 群回复模式（`process` / `placeholder`）：同样只改一个枚举值。 */
 export function setReplyMode(group, mode) {
   return createGroup({ ...group, replyMode: normalizeReplyMode(mode) });
+}
+
+/** 群消息形式：只改一个枚举值（与回复模式互不影响）。 */
+export function setMessageForm(group, form) {
+  return createGroup({ ...group, messageForm: normalizeMessageForm(form) });
 }
 
 export function setMemberAvatar(group, memberId, avatar) {

@@ -65,24 +65,60 @@ export function pickTurnOf(turns, at = 0, bodyText = "") {
 }
 
 /**
- * 引用索引：每条伙伴消息 → 它之前**最近一条人类消息**（作者 id + 原文截断）。
+ * 引用索引：每条伙伴消息 → **它实际回复的那条消息**（作者 id + 原文截断）。
+ *
+ * ⛔⛔ 11-08 用户实测：「他是回复主代理的，不是回复我的，而且都写了『由 软件开发专家团 叫来』，
+ *     怎么引用了我的消息？」——旧版一律引用「最近一条人类消息」，把主代理叫来的那条回复
+ *     也算到用户头上。⇒ **回复谁就引谁**：
+ *       · 带 `via`（被某位伙伴叫来）⇒ 引群里 `via.memberId` 在这条之前最近说的那句；
+ *       · 找不到（那条还没落盘 / 被裁剪）⇒ 才回退到最近一条人类消息；
+ *       · 无 `via`（用户直接派活）⇒ 仍是最近一条人类消息（含定时任务，authorId=automation）。
  * ⛔ 只按已排序的 rows 走一遍，⛔ 不按 threadId / 会话猜"回复了谁"。
- * 定时任务发的那句也是 human（authorId = automation），一并作为引用来源。
  * @returns Map<row.key, { authorId, text }>
  */
-export function buildReplyQuotes(rows) {
+/**
+ * 话题消息（11-08 用户令）：把伙伴回复**收进用户消息气泡**，主流只留用户消息。
+ *
+ * 规则（⛔ 与截图的「话题消息」同口径，不按 threadId / 会话猜）：
+ *   · 每条非 bot 消息 = 一个话题根（用户 / 定时任务 / 系统都算）；
+ *   · 其后所有 bot 回复（含伙伴之间互 @ 的）都归到这个根，直到下一条非 bot 消息；
+ *   · 话题条显示 N 条回复 + 头像栈 + 最后一条缩略，点击弹窗预览完整话题串。
+ * ⛔ 纯函数：只分组，不渲染、不改行。返回 Map<root.key, { root, replies }>。
+ */
+export function buildTopicThreads(rows) {
   const out = new Map();
-  let last = null;
+  let rootKey = null;
   for (const r of Array.isArray(rows) ? rows : []) {
     if (!r || !r.key) continue;
     if (r.authorKind !== "bot") {
-      last = {
-        authorId: String(r.authorId ?? ""),
-        text: String(r.text ?? "").replace(/\s+/g, " ").trim().slice(0, FOLD_QUOTE_CHARS),
-      };
+      rootKey = r.key;
+      out.set(rootKey, { root: r, replies: [] });
       continue;
     }
-    if (last && last.text) out.set(r.key, last);
+    if (rootKey && out.has(rootKey)) out.get(rootKey).replies.push(r);
+  }
+  return out;
+}
+
+export function buildReplyQuotes(rows) {
+  const out = new Map();
+  let lastHuman = null;
+  const lastByAuthor = new Map();
+  const snippet = (row) => String(row?.text ?? "").replace(/\s+/g, " ").trim().slice(0, FOLD_QUOTE_CHARS);
+  for (const r of Array.isArray(rows) ? rows : []) {
+    if (!r || !r.key) continue;
+    const text = snippet(r);
+    const authorId = String(r.authorId ?? "");
+    if (r.authorKind !== "bot") {
+      if (text) lastHuman = { authorId, text };
+    } else {
+      const viaId = String(r?.via?.memberId ?? "");
+      const caller = viaId ? lastByAuthor.get(viaId) : null;
+      const source = (caller && caller.text) ? caller : (lastHuman && lastHuman.text ? lastHuman : null);
+      if (source) out.set(r.key, source);
+    }
+    /* ⛔ 每条消息都要登记（包括 human）：后面被它叫来的伙伴才能引到它。 */
+    if (text && authorId) lastByAuthor.set(authorId, { authorId, text });
   }
   return out;
 }

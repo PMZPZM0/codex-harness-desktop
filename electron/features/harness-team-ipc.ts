@@ -37,6 +37,7 @@ import {
   setMemberAvatar,
   setMessageLayout,
   setReplyMode,
+  setMessageForm,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -811,6 +812,14 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, String(groupId ?? ""));
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setReplyMode(g, mode) as GroupShape);
+    });
+
+    /* 群消息形式（11-08 用户令：话题模式单独成项，不挤在回复模式一排）。 */
+    ipcHost.handle("harness-team:set-message-form", (_event, groupId: string, form: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      return saveOne(store, setMessageForm(g, form) as GroupShape);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {

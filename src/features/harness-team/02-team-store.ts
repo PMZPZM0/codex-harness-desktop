@@ -571,7 +571,7 @@ export function useTeamGroups() {
           return next;
         });
         threadRef.current = {};
-        return { ok: true, stopped: Number(res.stopped ?? 0) };
+        return { ok: true, stopped: Number(res?.stopped ?? 0) };
       }
       return { ok: false, error: res?.error || "停止失败" };
     },
@@ -723,6 +723,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 群消息形式（11-08 用户令：独立选项，与回复模式互不干扰）。 */
+  const saveMessageForm = useCallback(
+    async (groupId: string, form: "chat" | "topic") =>
+      apply((await window.codex.harnessTeamSetMessageForm(groupId, form)) as MutationResult),
+    [apply],
+  );
+
   /** 定时任务（整组替换；nextRunAt 由主进程算，渲染层不推算调度时刻） */
   const saveSchedules = useCallback(
     async (groupId: string, list: unknown[]) =>
@@ -754,6 +761,6 @@ export function useTeamGroups() {
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
-    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf,
+    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm,
   };
 }

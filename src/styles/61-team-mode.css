@@ -947,6 +947,135 @@
 }
 .team-msg__mentioned-chip:hover { border-color: var(--accent); color: var(--accent); }
 
+/* ══════ 话题消息（11-08 用户令：「弹窗预览，在用户消息气泡里面更新」）══════
+   · 话题条挂在**用户气泡内部**，不是另起一条消息；头像栈叠 3 个，最后一句做缩略。
+   · 弹窗用整屏遮罩 + 居中卡片，层级低于确认框(950)、高于画布(90)，与设置内浮层同档。 */
+.team-msg__topic {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--panel) 65%, transparent);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.team-msg__topic:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent-soft) 35%, var(--panel)); }
+.team-msg__topic:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.team-msg__topic-faces { display: flex; flex: none; padding-left: 4px; }
+.team-msg__topic-face { margin-left: -4px; border: 1.5px solid var(--bg); border-radius: 50%; }
+.team-msg__topic-main { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.team-msg__topic-main strong { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--accent); font-weight: 600; }
+.team-msg__topic-main small { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.team-msg__topic-arrow { flex: none; color: var(--faint); font-size: 18px; line-height: 1; }
+
+/* ══════ 用户气泡下的运行反馈（11-08 用户令「发出去消息 codex 就要出来效果」）══════
+   ⛔ 挂在**用户消息气泡下面**，不是另起一条 bot 消息；跑完 busy 清空即消失。
+   · 占位模式 = 飞书式小图标（头像 + 名字 + 处理中 + 呼吸点），横向排开；
+   · 过程模式 = 复用主对话的折叠块，默认折叠可展开。 */
+.team-run-feedback { margin-top: 8px; }
+.team-run-feedback.is-placeholder { display: flex; flex-wrap: wrap; gap: 6px; }
+.team-run-feedback__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px 3px 4px;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 70%, transparent);
+  font-size: 11.5px;
+}
+.team-run-feedback__chip strong { font-weight: 600; color: var(--text); }
+.team-run-feedback__chip em { font-style: normal; color: var(--faint); }
+.team-run-feedback__avatar { flex: none; border-radius: 50%; }
+.team-run-feedback__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green, #16a34a);
+  animation: team-run-breathe 1.3s ease-in-out infinite;
+}
+@keyframes team-run-breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.team-run-feedback.is-process { display: flex; flex-direction: column; gap: 8px; }
+.team-run-feedback__row {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+}
+.team-run-feedback__who { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; font-size: 11.5px; }
+.team-run-feedback__who strong { font-weight: 600; }
+.team-run-feedback__who em { font-style: normal; color: var(--faint); }
+.team-run-feedback__waiting { margin: 2px 0 0; color: var(--faint); font-size: 11.5px; }
+
+.team-topic-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--text) 28%, transparent);
+}
+.team-topic {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, calc(100% - 32px));
+  max-height: min(74vh, 620px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 18px 48px color-mix(in srgb, var(--text) 26%, transparent);
+  overflow: hidden;
+}
+.team-topic__head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.team-topic__head strong { font-size: 13px; }
+.team-topic__head small { color: var(--faint); font-size: 11.5px; }
+.team-topic__close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.team-topic__close:hover { background: var(--panel-2); color: var(--text); }
+.team-topic__list { display: flex; flex-direction: column; gap: 2px; padding: 12px 14px 16px; overflow: auto; }
+.team-topic__row { display: flex; gap: 9px; padding: 8px 10px; border-radius: 10px; }
+.team-topic__row.is-root { background: color-mix(in srgb, var(--accent-soft) 32%, transparent); }
+.team-topic__row:not(.is-root) { border-left: 2px solid color-mix(in srgb, var(--line) 70%, transparent); margin-left: 12px; }
+.team-topic__avatar { flex: none; }
+.team-topic__body { min-width: 0; flex: 1; }
+.team-topic__meta { display: flex; align-items: baseline; gap: 7px; margin-bottom: 2px; }
+.team-topic__meta strong { font-size: 12.5px; }
+.team-topic__meta em { color: var(--faint); font-size: 11px; font-style: normal; }
+.team-topic__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* ⛔ 一条伙伴回复可能上千字（实测「数到 300」把弹窗撑到满屏）。
+     每条最多 8 行，超出内部滚动；完整内容仍可读，⛔ 不截断丢数据。 */
+  max-height: calc(1.7em * 8);
+  overflow: auto;
+}
+
 /* 设置页那张卡的示意条（两张回复模式卡共用排版卡皮肤，只换示意条的疏密） */
 .team-settings__sub-title {
   display: flex;
@@ -958,6 +1087,35 @@
   color: var(--text);
 }
 .team-settings__layout-demo.is-reply-placeholder i { width: 26% !important; }
+/* 三态卡片：回复模式那组改成 3 列（消息排版仍是 2 列），⛔ 别用两列把第三张挤到下一行。 */
+.team-settings__layout-cards[data-group="reply"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.team-settings__layout-demo.is-reply-topic i { width: 38% !important; }
+.team-settings__layout-demo.is-reply-topic i:nth-child(2) { width: 30% !important; margin-left: 12%; }
+.team-settings__layout-cards[data-group="reply"] .team-settings__layout-card { padding: 9px; }
+.team-settings__layout-cards[data-group="reply"] .team-settings__layout-card small { font-size: 10.5px; }
+/* 群消息形式的示意卡（截图 2 同款：左=平铺，右=回复缩进挂在原消息下） */
+.team-settings__form-demo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 62px;
+  padding: 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+}
+.team-settings__form-demo i { display: block; height: 7px; width: 62%; border-radius: 999px; background: var(--line); }
+.team-settings__form-demo i:nth-child(2) { width: 44%; }
+.team-settings__form-demo .is-nested {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-left: 16%;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.team-settings__form-demo .is-nested i { width: 70%; height: 5px; }
+.team-settings__form-demo .is-nested i + i { width: 52%; }
 .team-settings__layout-demo.is-reply-process i { width: 46% !important; }
 .team-msg__caret {
   display: inline-block;
@@ -1320,6 +1478,43 @@
 .team-settings__layout-card strong { display: flex; align-items: center; gap: 5px; font-size: 12px; }
 .team-settings__layout-card small { color: var(--faint); font-size: 11px; }
 .team-settings__layout-current strong { color: var(--text); }
+
+/* ══════ 群设置：常用置顶后的版面（11-08 用户令「优化一下排版，常用放上面」）══════
+   ① 两组 radio 卡片（消息排版 / 回复模式）物理分区：子标题带上分隔线，
+      ⛔ 不再挤在同一块里让人分不清哪两张卡属于哪个选项；
+   ② 卡片本体加 hover / focus-visible 反馈，选中态给勾标：
+      「点不过来」除了读值缺失，还因为静态卡片看不出可点；
+   ③ 显式 position:relative + z-index，⛔ 防止滚动时下方文字压到卡片上。 */
+.team-settings__block[data-section="layout"] .team-settings__sub-title {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+.team-settings__layout-cards { position: relative; z-index: 1; }
+.team-settings__layout-card { position: relative; transition: border-color .15s, box-shadow .15s, transform .15s; }
+.team-settings__layout-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.team-settings__layout-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.team-settings__layout-card.is-on::after {
+  content: "✓";
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+/* 常用置顶的板块加一条左侧强调线，一眼能看出「这一区是天天用的」 */
+.team-settings__block[data-section="layout"],
+.team-settings__block[data-section="partners"],
+.team-settings__block[data-section="quick-menu"] {
+  border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+}
 .team-settings__layout-demo {
   display: flex;
   flex-direction: column;

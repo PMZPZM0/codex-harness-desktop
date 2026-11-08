@@ -45,8 +45,12 @@ import { TeamPendingCards } from "./22-team-pending-cards";
 import { TeamQueueStack, queueTeamMessage } from "./23-team-queue";
 /* 11-08 用户令「还有办公室预览接进来」：节点与预览都复用主对话那套（见 24- 文件头注释）。 */
 import { TeamOfficeEntry } from "./24-team-office-preview";
+/* 11-08 用户令「加一个话题回复模式」：话题条 + 弹窗预览都在独立板块，视图只接线。 */
+import { TeamTopicBadge, TeamTopicPreview } from "./25-team-topic";
+/* 11-08 用户令「发出去消息就要出效果」：运行反馈挂在用户气泡下面，由 busy 驱动。 */
+import { TeamRunFeedback, runningPartnersOf } from "./26-team-run-feedback";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
-import { buildReplyQuotes } from "../../lib/team-fold.mjs";
+import { buildReplyQuotes, buildTopicThreads } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf, teamMemberIdOf } from "../../lib/team-models.mjs";
@@ -107,6 +111,9 @@ type Props = {
    *  · `placeholder` = 不展示过程，只挂「图标+名字」占位，产出后消息上屏。 */
   replyMode?: "process" | "placeholder";
   onSetReplyMode?: (next: "process" | "placeholder") => void;
+  /** 群消息形式（独立选项）：chat 平铺 / topic 收进气泡 */
+  messageForm?: "chat" | "topic";
+  onSetMessageForm?: (next: "chat" | "topic") => void;
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
   onOpenModelSettings?: () => void;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
@@ -140,7 +147,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, onStopAll, threadsOfMember, live, replyMode = "process", onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode,
+  onStopPartner, onStopAll, threadsOfMember, live, replyMode = "process", messageForm = "chat", onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -149,6 +156,10 @@ export function TeamGroupView({
   /* 11-07 用户令：「群设置里加一个选项，消息左右选项，卡片展示」——
      存进群 JSON（`messageLayout`，主进程落盘）；split = 伙伴靠左 / 用户靠右，left = 全部靠左。 */
   const messageLayout = group.messageLayout ?? "split";
+  /* ⛔ 11-08 真机「占位模式选不了」：光靠 props 默认值会永远停在 process。
+     群对象才是唯一真相源（落盘），props 只是接线层透传 ⇒ 这里再兜一层。 */
+  const effectiveReplyMode = replyMode ?? (group.replyMode === "placeholder" ? "placeholder" : "process");
+  const effectiveMessageForm = messageForm ?? (group.messageForm === "topic" ? "topic" : "chat");
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
   const [text, setText] = useState("");
@@ -292,13 +303,15 @@ export function TeamGroupView({
        （`useUserName()`：设过就用真名，没设过回落「你」）。
        ⛔ 群记录里 human 成员的 name 是建群时写死的「我」，不能拿它当显示名 ——
           改了用户名、群里还挂着旧的那个字。 */
-    (m?.kind === "human" ? (userName || m?.name || "") : (m?.name || teamLeadOf(m)?.name || ""));
-  /* ⛔⛔ 11-08 用户实测「前面怎么还自动多一个 @软件开发专家团」的**真根因**：
-     这一行代表的是**整个专家团**（它的 id 是 `tgt:team:<团队>`，点 @ = 叫整团），
-     但显示名却取了主理人的名字（`teamLeadOf(m).name` = 承枢）⇒ 用户以为在 @ 承枢，
-     选中 chip 也写着「承枢」，派下去却是整团，主进程再把目标名补进正文 ⇒ `@软件开发专家团`。
-     ⇒ 名字必须与"这一行到底代表谁"一致：团行 = 团队名。主理人单独 @ 走团成员列表那一行。
-     ⛔ 头像仍用主理人的脸（`faceOf`），那是"团队的招牌"，与名字是两件事。 */
+    (m?.kind === "human" ? (userName || m?.name || "") : (teamLeadOf(m)?.name || m?.name || ""));
+  /* ⛔⛔ 11-08 用户令：「专家团的主代理人还是显示他名字吧，显示软件开发专家团看着别扭」——
+     团在群里**出面说话的是主理人**（承枢 + 交付总监），显示团名像"一个组织在聊天"。
+     ⇒ 显示名回退到主理人名（与 11-06 用户令「肯定要是主理人➕成员」一致）。
+     ⛔ 上一轮「正文前面多一个 @软件开发专家团」的**真根因是正文被注入 @名字**，
+        已由「正文原样落盘 + 气泡里用提及 chip + 发完清 atTargets」三处彻底修掉；
+        与显示名无关 ⇒ 这次改显示名不会让那个 bug 回归（守卫 12be 负向断言钉死）。
+     ⛔ 但"这一行到底代表谁"仍要说清：@ 面板 hint 明确写「点它 = 叫整团」，selectId 不变。
+     ⛔ 头像仍用主理人的脸（`faceOf`），那是同一个人的招牌。 */
 
   /** 头像种子同理：团用**主理人**的身份（kind=expert + 主理人 key），画出来才是专家中心那张脸；
      ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。 */
@@ -676,16 +689,38 @@ export function TeamGroupView({
     stick();
     /* 换群：本轮 @ 与草稿都属于**上一个群**，⛔ 不许带过来（否则一点发送就发给另一个群的人） */
     setAtTargets([]);
+    /* 换群：上一个群的话题弹窗不能留着（否则内容会串到新群） */
+    setTopicOpenKey(null);
   }, [group.id]);
   useEffect(() => { if (stickRef.current) stick(); }, [rows.length, liveLen]);
 
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
   const displayRows = mergeConsecutive(shownRows);
+  /* ⛔⛔ 11-08 真机「过程模式和占位模式完全一样没有区别」：两种模式的 JSX 原先都挂在
+     `live` 流式卡里，而独立窗口里 live 常年为空 ⇒ 发完消息什么都不出现。
+     ⇒ 反馈改挂到**最后一条用户消息气泡下面**（用户要的位置），由 busy 名单驱动。
+     ⛔ 只挂最后一条：历史消息不该跟着显示"处理中"。跑完 busy 清空 ⇒ 自动消失。 */
+  const lastHumanKey = useMemo(() => {
+    for (let i = displayRows.length - 1; i >= 0; i -= 1) {
+      if (displayRows[i].authorKind !== "bot") return displayRows[i].key;
+    }
+    return null;
+  }, [displayRows]);
+  const runningPartners = useMemo(
+    () => (effectiveMessageForm === "topic" ? [] : runningPartnersOf(busy ?? [], nameOf, live ?? [])),
+    [busy, live, nameOf, effectiveMessageForm],
+  );
 
   /* 引用索引用**全量 rows**（不是分页后的 shownRows）：翻到更早的一页时，
      上一条人类消息可能在被截掉的那一段里，⛔ 不能因此把引用丢成空白。 */
   const quotes = useMemo(() => buildReplyQuotes(rows), [rows]);
+  /* ⛔ 11-08 用户令：话题消息模式 —— 伙伴回复收进用户气泡，点开弹窗预览。
+     ⛔ 用**全量 rows** 分组（同 quotes）：分页翻页后话题内容不能跟着少一半。
+     ⛔ 纯函数分组，不在这里写循环（口径在 team-fold.mjs + 单测）。 */
+  const topicThreads = useMemo(() => buildTopicThreads(rows), [rows]);
+  const [topicOpenKey, setTopicOpenKey] = useState<string | null>(null);
+  const openTopic = topicOpenKey ? topicThreads.get(topicOpenKey) : undefined;
 
   /* ⛔ 11-06 用户：「补充文件引用」——候选只从**群消息正文里真实出现过的本机路径**扫，
      ⛔ 不猜、不建索引；选中的路径仍走现有 `opts.files` / `[附件文件]` 段（与主对话同口径）。 */
@@ -879,8 +914,10 @@ export function TeamGroupView({
           onSaveMenuPlacement={onSaveMenuPlacement}
           messageLayout={messageLayout}
           onMessageLayout={(next) => onSetMessageLayout?.(next)}
-          replyMode={replyMode}
+          replyMode={effectiveReplyMode}
           onReplyMode={(next) => onSetReplyMode?.(next)}
+          messageForm={effectiveMessageForm}
+          onMessageForm={(next) => onSetMessageForm?.(next)}
           onSaveSchedules={onSaveSchedules}
           onRunSchedule={onRunSchedule}
         />
@@ -916,6 +953,9 @@ export function TeamGroupView({
                   const prevRow = displayRows[index - 1];
                   const dayBreak = !prevRow || dayKeyOf(prevRow.at) !== dayKeyOf(row.at);
                   const isBot = row.authorKind === "bot";
+                  /* ⛔ 话题消息模式：主流只留用户消息，伙伴回复收进气泡的话题条里。
+                     ⛔ 不删数据、不挡写入 —— 只是这一行不渲染（切回别的模式立刻全回来）。 */
+                  if (effectiveMessageForm === "topic" && isBot) return null;
                   const role = roleOf(row.authorId);
                   const running = busy?.includes(row.authorId);
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
@@ -972,11 +1012,18 @@ export function TeamGroupView({
                           )}
                           {/* ⛔ 伙伴互 @ 的消息要能看出来"不是用户派的"：否则用户会以为
                               自己 @ 了两个人（11-06 那次误触发的第一反应就是这句）。 */}
-                          {row.via && (
-                            <em className="team-msg__via" title={`${row.via.name} 在群里叫它做这件事`}>
-                              由 {row.via.name} 叫来
-                            </em>
-                          )}
+                          {row.via && (() => {
+                            /* ⛔ 11-08 用户令「主代理人显示他名字」：via 落盘的是团名，
+                               显示时统一走 nameOf（团 id → 主理人名）；查不到才回退落盘名。 */
+                            const viaId = String(row.via.memberId ?? "");
+                            const resolved = viaId ? nameOf(viaId) : "";
+                            const viaName = resolved && resolved !== viaId ? resolved : row.via.name;
+                            return (
+                              <em className="team-msg__via" title={`${viaName} 在群里叫它做这件事`}>
+                                由 {viaName} 叫来
+                              </em>
+                            );
+                          })()}
                           {isBot && role && <em className="team-msg__role">{role}</em>}
                           {isBot && running && <em className="team-msg__role is-live">处理中</em>}
                           {/* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」。
@@ -1071,6 +1118,24 @@ export function TeamGroupView({
                                 </div>
                               );
                             })()}
+                            {/* ⛔ 11-08 用户令「在用户消息气泡里面更新，点击可以弹窗预览」：
+                                话题条就挂在用户自己的气泡里，⛔ 不是另起一条消息、也不在主流里平铺。 */}
+                            {effectiveMessageForm === "topic" && !isBot && (
+                              <TeamTopicBadge
+                                thread={topicThreads.get(row.key)}
+                                faceOfId={faceOfId}
+                                nameOf={nameOf}
+                                onOpen={() => setTopicOpenKey(row.key)}
+                              />
+                            )}
+                            {!isBot && row.key === lastHumanKey && effectiveMessageForm !== "topic" && (
+                              <TeamRunFeedback
+                                mode={effectiveReplyMode}
+                                partners={runningPartners}
+                                faceOfId={faceOfId}
+                                live={live ?? []}
+                              />
+                            )}
                             {(row.continued ?? []).map((extra) => (
                               <TeamMentionText
                                 key={extra.key}
@@ -1149,35 +1214,15 @@ export function TeamGroupView({
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
                     <div className="team-msg__body">
-                    {/* ⛔⛔ 11-08 用户令（两种回复模式）：
-                        · `process`（默认）= 运行中展示**运行过程**（与主对话同一套折叠块，
-                          默认折叠、点开可看每一步），跑完这张卡连同过程一起消失，只留成品汇报；
-                        · `placeholder` = 不展示过程与流式正文，只挂「图标 + 名字 + 处理中」占位，
-                          产出后消息上屏（用户原话：「用户消息下面这种图标+名字，等消息出来后，再上屏」）。 */}
-                    {replyMode === "process" && run.status === "running" && String(run.threadId ?? "") && (
-                      <TeamProcess
-                        threadId={run.threadId}
-                        at={run.startedAt}
-                        bodyText=""
-                        running
-                        live
-                      />
-                    )}
-                    {replyMode === "placeholder" ? (
-                      <p className="team-msg__placeholder">
-                        <MemberAvatar member={faceOfId(run.memberId)} size={16} className="team-msg__placeholder-avatar has-agent" />
-                        <span className="team-msg__placeholder-name">{run.name}</span>
-                        <em>{run.status === "running" ? "处理中…" : run.status === "failed" ? "已中断" : "完成"}</em>
-                      </p>
-                    ) : (
-                      <>
-                        {/* ⛔ 11-08 审查：占位模式不展示流式正文（两种回复模式必须分叉） */}
-                        {effectiveReplyMode === "process" && String(run.text ?? "").trim()
-                          ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
-                          : <p className="team-msg__thinking">正在思考…</p>}
-                        {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
-                      </>
-                    )}
+                    {/* ⛔⛔ 11-08：两种回复模式的反馈已统一搬到**用户消息气泡下面**（26-team-run-feedback）。
+                        这里只保留流式正文；⛔ 不再在这里画第二套占位/过程（那套挂在 live 卡里，
+                        独立窗口 live 常年为空 ⇒ 用户看不到，两种模式"完全一样"）。 */}
+                    {/* ⛔⛔ 11-08 审查：占位模式承诺「不展示过程与流式正文」——
+                        流式卡也必须跟着分叉，否则主窗口里照样能看到流式正文。 */}
+                    {effectiveReplyMode === "process" && String(run.text ?? "").trim()
+                      ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
+                      : <p className="team-msg__thinking">正在思考…</p>}
+                    {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
                   </div>
                   </div>
@@ -1458,6 +1503,16 @@ export function TeamGroupView({
           onClose={() => setProfile(null)}
           onMention={(id) => { mentionPartner(id); }}
           onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+        />
+      )}
+
+      {/* 话题预览弹窗：⌨ Esc / 点遮罩关闭（板块内用全局 ESC 栈），⛔ 只在话题模式且有回复时出现。 */}
+      {effectiveMessageForm === "topic" && openTopic && (
+        <TeamTopicPreview
+          thread={openTopic as Parameters<typeof TeamTopicPreview>[0]["thread"]}
+          faceOfId={faceOfId}
+          nameOf={nameOf}
+          onClose={() => setTopicOpenKey(null)}
         />
       )}
 

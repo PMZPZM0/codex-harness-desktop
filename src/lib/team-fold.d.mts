@@ -16,3 +16,15 @@ export function epochMsOf(value: unknown): number;
 export function turnBodyOf(turn: unknown): string;
 export function pickTurnOf(turns: unknown, at?: number, bodyText?: string): TeamTurn | null;
 export function buildReplyQuotes(rows: unknown): Map<string, ReplyQuote>;
+/** 话题消息：每条非 bot 消息 = 一个话题根，其后 bot 回复归到它（11-08 用户令）。 */
+export type TopicRow = {
+  key: string;
+  authorId: string;
+  authorKind: string;
+  text: string;
+  at?: number;
+  via?: { memberId: string; name: string } | null;
+  [key: string]: unknown;
+};
+export type TopicThread = { root: TopicRow; replies: TopicRow[] };
+export function buildTopicThreads(rows: unknown): Map<string, TopicThread>;

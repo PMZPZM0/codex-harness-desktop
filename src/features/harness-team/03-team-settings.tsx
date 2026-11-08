@@ -64,6 +64,9 @@ type Props = {
   /** 回复模式（11-08 用户令）：process 运行中展示过程 / placeholder 只显示占位 */
   replyMode: "process" | "placeholder";
   onReplyMode: (next: "process" | "placeholder") => void;
+  /** 群消息形式（独立选项）：chat 对话消息 / topic 话题消息 */
+  messageForm: "chat" | "topic";
+  onMessageForm: (next: "chat" | "topic") => void;
   onMessageLayout: (next: "split" | "left") => void;
   /** 定时任务（整组替换；nextRunAt 由主进程算） */
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
@@ -125,7 +128,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, messageLayout, onMessageLayout, replyMode, onReplyMode, onSaveSchedules, onRunSchedule }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -377,8 +380,122 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
 
   return (
     <div className="team-settings">
+      {/* ── 常用置顶 1/8：layout ─────────────────────────── */}
+      {/* ── 消息排版（11-07 用户令：消息左右选项，卡片展示 + 示例演示）────────── */}
+      <section className="team-settings__block" data-section="layout">
+        <h3>
+          <Columns2 size={14} className="ic-blue" />
+          消息排版
+        </h3>
+        <p className="team-settings__hint">
+          左右分栏 = 伙伴靠左、你自己靠右；全部靠左 = 专业群聊（人和伙伴同一列）。
+          <strong>点卡片立即生效</strong>，只影响这个群的消息列表。
+        </p>
+        <div className="team-settings__layout-cards" data-group="layout" role="radiogroup" aria-label="群消息排版">
+          {([
+            { value: "split", label: "左右分栏", desc: "伙伴靠左 · 自己靠右", Icon: Columns2 },
+            { value: "left", label: "全部靠左", desc: "所有人同一列", Icon: AlignLeft },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={messageLayout === opt.value}
+              className={`team-settings__layout-card${messageLayout === opt.value ? " is-on" : ""}`}
+              onClick={() => onMessageLayout(opt.value)}
+            >
+              <span className={`team-settings__layout-demo is-${opt.value}`} aria-hidden>
+                <i className="is-left" />
+                <i className={opt.value === "split" ? "is-right" : "is-left"} />
+                <i className="is-left" />
+              </span>
+              <strong><opt.Icon size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{messageLayout === "left" ? "全部靠左" : "左右分栏"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+
+        {/* ⛔⛔ 11-08 用户令：「做出来两种回复模式」+「在群设置里面加上这个选项」——
+            两种模式**只影响"运行过程显不显示"**，产出在两种模式下都会正常上屏。 */}
+        <h4 className="team-settings__sub-title">
+          <MessagesSquare size={14} className="ic-violet" />
+          回复模式
+        </h4>
+        <p className="team-settings__hint">
+          过程模式：运行时展示运行过程（默认折叠，可展开）；占位模式：用户消息下面只挂「头像 + 名字 + 处理中」的小图标，产出出来再上屏。
+          <strong>点卡片立即生效</strong>。
+        </p>
+        <div className="team-settings__layout-cards" data-group="reply" role="radiogroup" aria-label="群回复模式">
+          {([
+            { value: "process", label: "过程模式", desc: "运行中可展开看步骤", Icon: ListChecks },
+            { value: "placeholder", label: "占位模式", desc: "只显示「头像+名字」", Icon: MessagesSquare },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={replyMode === opt.value}
+              className={`team-settings__layout-card${replyMode === opt.value ? " is-on" : ""}`}
+              onClick={() => onReplyMode(opt.value)}
+            >
+              <span className={`team-settings__layout-demo is-reply-${opt.value}`} aria-hidden>
+                <i className="is-left" />
+                <i className="is-left" />
+                <i className="is-left" />
+              </span>
+              <strong><opt.Icon size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{replyMode === "placeholder" ? "占位模式" : "过程模式"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+      </section>
+
+      {/* ⛔⛔ 11-08 用户令：「话题模式要单独选项，不要放在回复模式这样一排，新开一个选项，群消息形式」。
+          ⇒ 独立板块 + 独立枚举 messageForm，与 replyMode 正交（形式管"怎么摆"，回复模式管"运行时露什么"）。 */}
+      <section className="team-settings__block" data-section="message-form">
+        <h3>
+          <MessagesSquare size={14} className="ic-violet" />
+          群消息形式
+        </h3>
+        <p className="team-settings__hint">
+          对话消息：所有消息按时间平铺；话题消息：伙伴回复收进你的气泡，点开弹窗预览完整话题。<strong>点卡片立即生效</strong>。
+        </p>
+        <div className="team-settings__layout-cards" data-group="message-form" role="radiogroup" aria-label="群消息形式">
+          {([
+            { value: "chat", label: "对话消息", desc: "所有消息按时间平铺" },
+            { value: "topic", label: "话题消息", desc: "回复收进气泡 · 点开预览" },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={messageForm === opt.value}
+              className={`team-settings__layout-card${messageForm === opt.value ? " is-on" : ""}`}
+              onClick={() => onMessageForm(opt.value)}
+            >
+              <span className={`team-settings__form-demo is-${opt.value}`} aria-hidden>
+                <i className="is-left" /><i className="is-left" />
+                {opt.value === "topic" && <b className="is-nested"><i /><i /></b>}
+              </span>
+              <strong>{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{messageForm === "topic" ? "话题消息" : "对话消息"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+      </section>
+
+      {/* ── 常用置顶 2/8：partners ─────────────────────────── */}
       {/* ── 伙伴 ───────────────────────────────────────────────────────── */}
-      <section className="team-settings__block">
+      <section className="team-settings__block" data-section="partners">
         <h3>
           <Users size={14} className="ic-blue" />
           伙伴 <span className="team-settings__count">{partners.length} / {limit}</span>
@@ -467,98 +584,93 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         {partners.length >= limit && <p className="team-settings__hint">已达上限（最多 {limit} 个伙伴）</p>}
       </section>
 
-      {/* ── 上下级（豆包 managerId）：真生效 —— 派活时会把这个伙伴的上级/可派对象写进 prompt ── */}
-      <section className="team-settings__block">
+      {/* ── 常用置顶 3/8：quick-menu ─────────────────────────── */}
+      {/* ── 快捷指令（飞书 §3：`ChatBotMenu` 菜单树 + TriggerMenuEvent）────────── */}
+      <section className="team-settings__block" data-section="quick-menu">
         <h3>
-          <GitBranch size={14} className="ic-green" />
-          谁向谁汇报
-          <span className="team-settings__count">
-            {partners.filter((p) => p.managerId).length
-              ? `${partners.filter((p) => p.managerId).length} 已改 · 其余默认向${leadName}`
-              : `默认全部向${leadName}汇报`}
-          </span>
+          <Puzzle size={14} className="ic-green" />
+          快捷指令
+          <span className="team-settings__count">{menuLeaves.length} 条</span>
         </h3>
         <p className="team-settings__hint">
-          伙伴<strong>默认向{leadName}（群主 · 主会话）汇报</strong>，不用一个个填；
-          要改成别的伙伴当上级在这里选。派活时会把这段关系写进 prompt ——
-          它就能把子任务派给下级（走既有的调度闸），不只是画个图。
+          那个「指令」按钮里就是这些。<strong>点一项只把指令填进输入框</strong>，
+          你确认后再发 —— 不是替你偷偷派活。
         </p>
-        <ul className="team-settings__list">
-          {partners.map((p) => (
-            <li key={p.id} className="team-settings__row">
-              <span className="team-settings__avatar has-agent" aria-hidden><MemberAvatar member={p} size={22} /></span>
-              <span className="team-settings__name">
-                <span className="team-settings__name-text" title={p.name}>{p.name}</span>
-                {p.targetProfession && <em className="team-settings__tag">{p.targetProfession}</em>}
-              </span>
-              <span className="team-settings__meta">上级</span>
-              {/* ⛔ 下拉必须放进**固定宽度**的槽里：`.app-select-trigger` 是 `width:100%`，
-                  直接当 flex 子项会吃光整行 ⇒ 名字被压到 0 宽，中文一字一行（11-06 用户截图）。 */}
-              <span className="team-settings__select">
-                <AppSelect
-                  /* ⛔ 显示的是**生效上级**（显式值 or 默认群主）：只读 `p.managerId` 会让
-                     默认态显示「(无)」，用户以为没生效、又去逐个手填一遍。 */
-                  value={resolveManagerId(group, p.id)}
-                  onChange={(value) => {
-                    /* ⛔ 选「群主」= 回到**默认**，存空串：写一条"等于默认"的显式值会让
-                       「N 已改」计数和落盘数据一起说谎（用户没改任何人的层级）。 */
-                    const back = value === group.leadId;
-                    void run(
-                      () => onSetManager(p.id, back ? "" : value),
-                      back ? `已恢复默认（向${leadName}汇报）` : `上级已改为 ${group.members.find((x) => x.id === value)?.name ?? value}`,
-                    );
-                  }}
-                  options={[
-                    ...(p.id !== group.leadId ? [{ value: group.leadId, label: `${leadName}（群主 · 默认）` }] : []),
-                    ...partners
-                      .filter((x) => x.id !== p.id && x.id !== group.leadId)
-                      .map((x) => ({ value: x.id, label: x.name })),
-                  ]}
-                  ariaLabel={`${p.name} 的上级`}
-                  disabled={busy}
-                />
-              </span>
+        {/* 飞书 §3 的两种展示：INPUT_FIRST（贴输入框）/ FLOAT（悬浮面板） */}
+        <div className="team-settings__inline-row">
+          <span className="team-settings__hint team-settings__hint--inline">
+            展示形态{group.menuPlacement === "float" ? "：按钮浮在群视图右下，面板可滚动、分组横向展开" : "：按钮在 @ 行，面板向上弹"}
+          </span>
+          <div className="team-settings__seg" role="group" aria-label="菜单展示形态">
+            {([["input", "贴输入框"], ["float", "悬浮面板"]] as Array<[MenuPlacement, string]>).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`team-settings__seg-btn${(group.menuPlacement ?? "input") === value ? " is-on" : ""}`}
+                aria-pressed={(group.menuPlacement ?? "input") === value}
+                onClick={() => void run(() => onSaveMenuPlacement(value), `已切换为「${label}」`)}
+                disabled={busy}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <ul className="team-settings__menu">
+          {normalizeMenu(group.menu ?? []).map((g) => (
+            <li key={g.key} className="team-settings__menu-group">
+              <strong className="team-settings__menu-groupname">{g.label}</strong>
+              <ul>
+                {(g.children.length ? g.children : [g]).map((c) => (
+                  <li key={c.key} className="team-settings__menu-item">
+                    <span className="team-settings__menu-label">{c.label}</span>
+                    <small className="team-settings__menu-prompt" title={c.prompt}>{c.prompt}</small>
+                    <button
+                      type="button"
+                      className="team-settings__mini team-settings__mini--danger"
+                      onClick={() => void dropCommand(c.key)}
+                      disabled={busy}
+                    >
+                      删
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
-          {!partners.length && <li className="team-settings__empty">先加伙伴，再设汇报关系</li>}
+          {!menuLeaves.length && <li className="team-settings__empty">还没有指令 —— 加一条，或恢复默认</li>}
         </ul>
-      </section>
-
-      {/* ── 项目地址（群的工作目录）──────────────────────────────────────────
-          用户 11-06：「然后群项目地址选项」—— 群里派活必须知道"在哪个仓库干活"，
-          否则伙伴在应用默认目录里找相对路径，然后如实回你"没这个文件"。 */}
-      <section className="team-settings__block">
-        <h3>
-          <FolderOpen size={14} className="ic-blue" />
-          项目地址
-          <span className="team-settings__count">{group.workspace ? "已设" : "跟随默认"}</span>
-        </h3>
-        <p className="team-settings__hint">
-          伙伴在这个目录里干活（派活时作为子会话的工作目录）。不设就跟随应用默认目录。
-          <strong>改完只影响之后派出去的活</strong>，已经跑着的子会话不会中途换目录。
-        </p>
-        <div className="team-settings__path">
-          <code className="team-settings__path-text" title={group.workspace || "（跟随应用默认目录）"}>
-            {group.workspace || "（跟随应用默认目录）"}
-          </code>
-          <button type="button" className="team-settings__mini" onClick={() => void pickWorkspace()} disabled={busy}>
-            选择目录…
+        <div className="team-settings__add">
+          <input
+            className="team-settings__cmd-label"
+            value={cmdLabel}
+            onChange={(e) => setCmdLabel(e.target.value)}
+            placeholder="名称（如：查库存）"
+            maxLength={24}
+            aria-label="指令名称"
+            disabled={busy}
+          />
+          <input
+            value={cmdPrompt}
+            onChange={(e) => setCmdPrompt(e.target.value)}
+            placeholder="点下去填进输入框的那句话"
+            aria-label="指令内容"
+            disabled={busy}
+          />
+          <button type="button" onClick={() => void addCommand()} disabled={busy || !cmdLabel.trim() || !cmdPrompt.trim()}>
+            添加
           </button>
-          {group.workspace && (
-            <button
-              type="button"
-              className="team-settings__mini"
-              onClick={() => void run(() => onSetWorkspace(""), "已清空项目地址 —— 之后跟随应用默认目录")}
-              disabled={busy}
-            >
-              清空
-            </button>
-          )}
+        </div>
+        <div className="team-settings__savebar">
+          <button type="button" className="team-settings__mini" onClick={() => void resetCommands()} disabled={busy}>
+            恢复默认指令
+          </button>
         </div>
       </section>
 
+      {/* ── 常用置顶 4/8：memory ─────────────────────────── */}
       {/* ── 群记忆 ─────────────────────────────────────────────────────── */}
-      <section className="team-settings__block">
+      <section className="team-settings__block" data-section="memory">
         <h3>
           <BookOpen size={14} className="ic-violet" />
           群记忆
@@ -647,8 +759,43 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         </div>
       </section>
 
+      {/* ── 常用置顶 5/8：workspace ─────────────────────────── */}
+      {/* ── 项目地址（群的工作目录）──────────────────────────────────────────
+          用户 11-06：「然后群项目地址选项」—— 群里派活必须知道"在哪个仓库干活"，
+          否则伙伴在应用默认目录里找相对路径，然后如实回你"没这个文件"。 */}
+      <section className="team-settings__block" data-section="workspace">
+        <h3>
+          <FolderOpen size={14} className="ic-blue" />
+          项目地址
+          <span className="team-settings__count">{group.workspace ? "已设" : "跟随默认"}</span>
+        </h3>
+        <p className="team-settings__hint">
+          伙伴在这个目录里干活（派活时作为子会话的工作目录）。不设就跟随应用默认目录。
+          <strong>改完只影响之后派出去的活</strong>，已经跑着的子会话不会中途换目录。
+        </p>
+        <div className="team-settings__path">
+          <code className="team-settings__path-text" title={group.workspace || "（跟随应用默认目录）"}>
+            {group.workspace || "（跟随应用默认目录）"}
+          </code>
+          <button type="button" className="team-settings__mini" onClick={() => void pickWorkspace()} disabled={busy}>
+            选择目录…
+          </button>
+          {group.workspace && (
+            <button
+              type="button"
+              className="team-settings__mini"
+              onClick={() => void run(() => onSetWorkspace(""), "已清空项目地址 —— 之后跟随应用默认目录")}
+              disabled={busy}
+            >
+              清空
+            </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── 常用置顶 6/8：files ─────────────────────────── */}
       {/* ── 群文件 ─────────────────────────────────────────────────────── */}
-      <section className="team-settings__block">
+      <section className="team-settings__block" data-section="files">
         <h3>
           <FolderOpen size={14} className="ic-amber" />
           群文件
@@ -702,166 +849,67 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         </div>
       </section>
 
-      {/* ── 消息排版（11-07 用户令：消息左右选项，卡片展示 + 示例演示）────────── */}
-      <section className="team-settings__block">
+      {/* ── 常用置顶 7/8：hierarchy ─────────────────────────── */}
+      {/* ── 上下级（豆包 managerId）：真生效 —— 派活时会把这个伙伴的上级/可派对象写进 prompt ── */}
+      <section className="team-settings__block" data-section="hierarchy">
         <h3>
-          <Columns2 size={14} className="ic-blue" />
-          消息排版
-        </h3>
-        <p className="team-settings__hint">
-          左右分栏 = 伙伴靠左、你自己靠右；全部靠左 = 专业群聊（人和伙伴同一列）。
-          <strong>点卡片立即生效</strong>，只影响这个群的消息列表。
-        </p>
-        <div className="team-settings__layout-cards" role="radiogroup" aria-label="群消息排版">
-          {([
-            { value: "split", label: "左右分栏", desc: "伙伴靠左 · 自己靠右", Icon: Columns2 },
-            { value: "left", label: "全部靠左", desc: "所有人同一列", Icon: AlignLeft },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={messageLayout === opt.value}
-              className={`team-settings__layout-card${messageLayout === opt.value ? " is-on" : ""}`}
-              onClick={() => onMessageLayout(opt.value)}
-            >
-              <span className={`team-settings__layout-demo is-${opt.value}`} aria-hidden>
-                <i className="is-left" />
-                <i className={opt.value === "split" ? "is-right" : "is-left"} />
-                <i className="is-left" />
-              </span>
-              <strong><opt.Icon size={12} />{opt.label}</strong>
-              <small>{opt.desc}</small>
-            </button>
-          ))}
-        </div>
-        <p className="team-settings__hint team-settings__layout-current">
-          当前：<strong>{messageLayout === "left" ? "全部靠左" : "左右分栏"}</strong> · 已保存到这个群（换设备也保留）
-        </p>
-
-        {/* ⛔⛔ 11-08 用户令：「做出来两种回复模式」+「在群设置里面加上这个选项」——
-            两种模式**只影响"运行过程显不显示"**，产出在两种模式下都会正常上屏。 */}
-        <h4 className="team-settings__sub-title">
-          <MessagesSquare size={14} className="ic-violet" />
-          回复模式
-        </h4>
-        <p className="team-settings__hint">
-          过程模式：运行时展示运行过程（默认折叠，点开看每一步），跑完过程自动消失，只留最后那份汇报；
-          占位模式：不展示过程，只在消息里挂「图标 + 名字 + 处理中」，产出出来再上屏。
-        </p>
-        <div className="team-settings__layout-cards" role="radiogroup" aria-label="群回复模式">
-          {([
-            { value: "process", label: "过程模式", desc: "运行中可展开看步骤", Icon: ListChecks },
-            { value: "placeholder", label: "占位模式", desc: "只显示「图标+名字」", Icon: MessagesSquare },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={replyMode === opt.value}
-              className={`team-settings__layout-card${replyMode === opt.value ? " is-on" : ""}`}
-              onClick={() => onReplyMode(opt.value)}
-            >
-              <span className={`team-settings__layout-demo is-reply-${opt.value}`} aria-hidden>
-                <i className="is-left" />
-                <i className="is-left" />
-                <i className="is-left" />
-              </span>
-              <strong><opt.Icon size={12} />{opt.label}</strong>
-              <small>{opt.desc}</small>
-            </button>
-          ))}
-        </div>
-        <p className="team-settings__hint team-settings__layout-current">
-          当前：<strong>{replyMode === "placeholder" ? "占位模式" : "过程模式"}</strong> · 已保存到这个群（换设备也保留）
-        </p>
-      </section>
-
-      {/* ── 快捷指令（飞书 §3：`ChatBotMenu` 菜单树 + TriggerMenuEvent）────────── */}
-      <section className="team-settings__block">
-        <h3>
-          <Puzzle size={14} className="ic-green" />
-          快捷指令
-          <span className="team-settings__count">{menuLeaves.length} 条</span>
-        </h3>
-        <p className="team-settings__hint">
-          那个「指令」按钮里就是这些。<strong>点一项只把指令填进输入框</strong>，
-          你确认后再发 —— 不是替你偷偷派活。
-        </p>
-        {/* 飞书 §3 的两种展示：INPUT_FIRST（贴输入框）/ FLOAT（悬浮面板） */}
-        <div className="team-settings__inline-row">
-          <span className="team-settings__hint team-settings__hint--inline">
-            展示形态{group.menuPlacement === "float" ? "：按钮浮在群视图右下，面板可滚动、分组横向展开" : "：按钮在 @ 行，面板向上弹"}
+          <GitBranch size={14} className="ic-green" />
+          谁向谁汇报
+          <span className="team-settings__count">
+            {partners.filter((p) => p.managerId).length
+              ? `${partners.filter((p) => p.managerId).length} 已改 · 其余默认向${leadName}`
+              : `默认全部向${leadName}汇报`}
           </span>
-          <div className="team-settings__seg" role="group" aria-label="菜单展示形态">
-            {([["input", "贴输入框"], ["float", "悬浮面板"]] as Array<[MenuPlacement, string]>).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={`team-settings__seg-btn${(group.menuPlacement ?? "input") === value ? " is-on" : ""}`}
-                aria-pressed={(group.menuPlacement ?? "input") === value}
-                onClick={() => void run(() => onSaveMenuPlacement(value), `已切换为「${label}」`)}
-                disabled={busy}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <ul className="team-settings__menu">
-          {normalizeMenu(group.menu ?? []).map((g) => (
-            <li key={g.key} className="team-settings__menu-group">
-              <strong className="team-settings__menu-groupname">{g.label}</strong>
-              <ul>
-                {(g.children.length ? g.children : [g]).map((c) => (
-                  <li key={c.key} className="team-settings__menu-item">
-                    <span className="team-settings__menu-label">{c.label}</span>
-                    <small className="team-settings__menu-prompt" title={c.prompt}>{c.prompt}</small>
-                    <button
-                      type="button"
-                      className="team-settings__mini team-settings__mini--danger"
-                      onClick={() => void dropCommand(c.key)}
-                      disabled={busy}
-                    >
-                      删
-                    </button>
-                  </li>
-                ))}
-              </ul>
+        </h3>
+        <p className="team-settings__hint">
+          伙伴<strong>默认向{leadName}（群主 · 主会话）汇报</strong>，不用一个个填；
+          要改成别的伙伴当上级在这里选。派活时会把这段关系写进 prompt ——
+          它就能把子任务派给下级（走既有的调度闸），不只是画个图。
+        </p>
+        <ul className="team-settings__list">
+          {partners.map((p) => (
+            <li key={p.id} className="team-settings__row">
+              <span className="team-settings__avatar has-agent" aria-hidden><MemberAvatar member={p} size={22} /></span>
+              <span className="team-settings__name">
+                <span className="team-settings__name-text" title={p.name}>{p.name}</span>
+                {p.targetProfession && <em className="team-settings__tag">{p.targetProfession}</em>}
+              </span>
+              <span className="team-settings__meta">上级</span>
+              {/* ⛔ 下拉必须放进**固定宽度**的槽里：`.app-select-trigger` 是 `width:100%`，
+                  直接当 flex 子项会吃光整行 ⇒ 名字被压到 0 宽，中文一字一行（11-06 用户截图）。 */}
+              <span className="team-settings__select">
+                <AppSelect
+                  /* ⛔ 显示的是**生效上级**（显式值 or 默认群主）：只读 `p.managerId` 会让
+                     默认态显示「(无)」，用户以为没生效、又去逐个手填一遍。 */
+                  value={resolveManagerId(group, p.id)}
+                  onChange={(value) => {
+                    /* ⛔ 选「群主」= 回到**默认**，存空串：写一条"等于默认"的显式值会让
+                       「N 已改」计数和落盘数据一起说谎（用户没改任何人的层级）。 */
+                    const back = value === group.leadId;
+                    void run(
+                      () => onSetManager(p.id, back ? "" : value),
+                      back ? `已恢复默认（向${leadName}汇报）` : `上级已改为 ${group.members.find((x) => x.id === value)?.name ?? value}`,
+                    );
+                  }}
+                  options={[
+                    ...(p.id !== group.leadId ? [{ value: group.leadId, label: `${leadName}（群主 · 默认）` }] : []),
+                    ...partners
+                      .filter((x) => x.id !== p.id && x.id !== group.leadId)
+                      .map((x) => ({ value: x.id, label: x.name })),
+                  ]}
+                  ariaLabel={`${p.name} 的上级`}
+                  disabled={busy}
+                />
+              </span>
             </li>
           ))}
-          {!menuLeaves.length && <li className="team-settings__empty">还没有指令 —— 加一条，或恢复默认</li>}
+          {!partners.length && <li className="team-settings__empty">先加伙伴，再设汇报关系</li>}
         </ul>
-        <div className="team-settings__add">
-          <input
-            className="team-settings__cmd-label"
-            value={cmdLabel}
-            onChange={(e) => setCmdLabel(e.target.value)}
-            placeholder="名称（如：查库存）"
-            maxLength={24}
-            aria-label="指令名称"
-            disabled={busy}
-          />
-          <input
-            value={cmdPrompt}
-            onChange={(e) => setCmdPrompt(e.target.value)}
-            placeholder="点下去填进输入框的那句话"
-            aria-label="指令内容"
-            disabled={busy}
-          />
-          <button type="button" onClick={() => void addCommand()} disabled={busy || !cmdLabel.trim() || !cmdPrompt.trim()}>
-            添加
-          </button>
-        </div>
-        <div className="team-settings__savebar">
-          <button type="button" className="team-settings__mini" onClick={() => void resetCommands()} disabled={busy}>
-            恢复默认指令
-          </button>
-        </div>
       </section>
 
+      {/* ── 常用置顶 8/8：schedules ─────────────────────────── */}
       {/* ── 定时任务（豆包 §③「自动化定时任务」：prompt 里写死收件人）──────────── */}
-      <section className="team-settings__block">
+      <section className="team-settings__block" data-section="schedules">
         <h3>
           <AlarmClock size={14} className="ic-amber" />
           定时任务

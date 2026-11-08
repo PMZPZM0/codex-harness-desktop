@@ -39,7 +39,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, setAvatar, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
-    addNote, removeNote, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
+    addNote, removeNote, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
@@ -284,8 +284,14 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             onSaveMenu={(items) => saveMenu(active.id, items as never)}
             onSaveMenuPlacement={(placement) => saveMenuPlacement(active.id, placement)}
             onSetMessageLayout={(next) => void saveMessageLayout(active.id, next)}
-            /* 回复模式（11-08 用户令：群设置里加选项） */
+            /* 回复模式（11-08 用户令：群设置里加选项）
+               ⛔⛔ 必须同时传**读值**：只传写入回调时视图永远用默认 process
+               ⇒ 点「占位模式」写进了群 JSON，界面却纹丝不动（用户：「选不了，点不过来」）。 */
+            replyMode={active.replyMode === "placeholder" ? "placeholder" : "process"}
             onSetReplyMode={(next) => void saveReplyMode(active.id, next)}
+            /* 群消息形式：独立选项（用户「话题模式不要放在回复模式一排」） */
+            messageForm={active.messageForm === "topic" ? "topic" : "chat"}
+            onSetMessageForm={(next) => void saveMessageForm(active.id, next)}
             onSaveSchedules={(list) => saveSchedules(active.id, list)}
             onRunSchedule={(scheduleId) => runSchedule(active.id, scheduleId)}
             onStopPartner={(memberId) => stopPartner(active, memberId)}

@@ -1052,6 +1052,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetMessageLayout: (groupId: string, layout: string) => __ipc("harness-team:set-message-layout", 2, [groupId, layout]),
   /* 团队模式：群回复模式（process 运行中显示过程 / placeholder 只显示占位） */
   harnessTeamSetReplyMode: (groupId: string, mode: string) => __ipc("harness-team:set-reply-mode", 2, [groupId, mode]),
+  /* 团队模式：群消息形式（chat 对话消息 / topic 话题消息） */
+  harnessTeamSetMessageForm: (groupId: string, form: string) => __ipc("harness-team:set-message-form", 2, [groupId, form]),
   /* 团队模式：群定时任务（整组替换，nextRunAt 由主进程算） */
   harnessTeamSetSchedule: (groupId: string, list: unknown) => __ipc("harness-team:set-schedule", 2, [groupId, list]),
   /* 团队模式：立刻运行一条定时任务 */

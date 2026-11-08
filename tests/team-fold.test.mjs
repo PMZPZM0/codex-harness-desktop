@@ -4,7 +4,7 @@
  */
 import test from "node:test";
 import assert from "node:assert/strict";
-import { FOLD_QUOTE_CHARS, buildReplyQuotes, epochMsOf, pickTurnOf, turnBodyOf } from "../src/lib/team-fold.mjs";
+import { FOLD_QUOTE_CHARS, buildReplyQuotes, buildTopicThreads, epochMsOf, pickTurnOf, turnBodyOf } from "../src/lib/team-fold.mjs";
 
 const turn = (id, body, extra = {}) => ({
   id,
@@ -81,6 +81,37 @@ test("buildReplyQuotes：伙伴消息引用它之前最近一条人类消息（�
   assert.equal(q.has("h1"), false, "人类消息自己不进引用表");
 });
 
+/* ⛔⛔ 11-08 用户实测：「他是回复主代理的，不是回复我的，而且都写了『由 软件开发专家团 叫来』，
+   怎么引用了我的消息？」——旧版一律引最近一条人类消息。⇒ 回复谁就引谁。 */
+test("buildReplyQuotes：带 via 时引用叫它来的那个人，不是用户", () => {
+  const rows = [
+    { key: "h1", authorKind: "human", authorId: "local-user", text: "叫构梁说句话，随便一句" },
+    { key: "lead", authorKind: "bot", authorId: "team-lead", text: "构梁：潘总点你名了，随便说一句吧" },
+    { key: "kid", authorKind: "bot", authorId: "team:kid", text: "在。架构这块我一句话立场……", via: { memberId: "team-lead", name: "软件开发专家团" } },
+  ];
+  const q = buildReplyQuotes(rows);
+  assert.deepEqual(q.get("lead"), { authorId: "local-user", text: "叫构梁说句话，随便一句" }, "主代理直接回用户 ⇒ 引用户");
+  assert.deepEqual(q.get("kid"), { authorId: "team-lead", text: "构梁：潘总点你名了，随便说一句吧" }, "构梁被主代理叫来 ⇒ 引主代理那条");
+});
+
+test("buildReplyQuotes：via 指向的人还没落盘时回退到最近一条人类消息", () => {
+  const q = buildReplyQuotes([
+    { key: "h", authorKind: "human", authorId: "u", text: "你好" },
+    { key: "b", authorKind: "bot", authorId: "p", text: "在", via: { memberId: "还没出现的人", name: "X" } },
+  ]);
+  assert.deepEqual(q.get("b"), { authorId: "u", text: "你好" });
+});
+
+test("buildReplyQuotes：via 取该人**最近**一条消息（多轮时不引旧的）", () => {
+  const q = buildReplyQuotes([
+    { key: "h", authorKind: "human", authorId: "u", text: "开场" },
+    { key: "a1", authorKind: "bot", authorId: "lead", text: "第一句" },
+    { key: "a2", authorKind: "bot", authorId: "lead", text: "第二句（最新）" },
+    { key: "b", authorKind: "bot", authorId: "kid", text: "收到", via: { memberId: "lead", name: "lead" } },
+  ]);
+  assert.equal(q.get("b").text, "第二句（最新）");
+});
+
 test("buildReplyQuotes：原文截断、空提问不建引用", () => {
   const long = "字".repeat(FOLD_QUOTE_CHARS + 40);
   const q = buildReplyQuotes([
@@ -93,4 +124,26 @@ test("buildReplyQuotes：原文截断、空提问不建引用", () => {
     { key: "b", authorKind: "bot", authorId: "p", text: "ok" },
   ]);
   assert.equal(empty.has("b"), false);
+});
+
+/* ⛔ 11-08 用户令「加一个话题回复模式」：伙伴回复收进用户气泡，主流只留用户消息。 */
+test("buildTopicThreads：伙伴回复归到最近的用户消息，互 @ 的也归同一话题", () => {
+  const rows = [
+    { key: "u1", authorKind: "human", authorId: "local-user", text: "叫构梁说句话" },
+    { key: "b1", authorKind: "bot", authorId: "lead", text: "收到" },
+    { key: "b2", authorKind: "bot", authorId: "kid", text: "在", via: { memberId: "lead", name: "lead" } },
+    { key: "u2", authorKind: "human", authorId: "local-user", text: "第二个话题" },
+    { key: "b3", authorKind: "bot", authorId: "lead", text: "好" },
+  ];
+  const t = buildTopicThreads(rows);
+  assert.deepEqual([...t.keys()], ["u1", "u2"]);
+  assert.deepEqual(t.get("u1").replies.map((r) => r.key), ["b1", "b2"], "主代理与构梁都归第一个话题");
+  assert.equal(t.get("u1").root.text, "叫构梁说句话");
+  assert.deepEqual(t.get("u2").replies.map((r) => r.key), ["b3"]);
+});
+
+test("buildTopicThreads：没有回复的用户消息也是空话题（不丢消息）", () => {
+  const t = buildTopicThreads([{ key: "u", authorKind: "human", authorId: "u", text: "你好" }]);
+  assert.equal(t.size, 1);
+  assert.deepEqual(t.get("u").replies, []);
 });
