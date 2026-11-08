@@ -966,7 +966,7 @@ const catalog = [
       && raceGuard.length >= 2 && /const finishedAt = Date\.now\(\);/g.test(storeLive),
       "⛔ 流式卡按显式 runId 认代次（主进程发 / 渲染层比；老事件回退 startedAt）—— 否则接力新卡被上一轮 finished 删掉、迟到 delta 糊进新一轮");
     const chanLive = codeOnly(read("electron/features/group-talk/01-channel.ts"));
-    ok(/const threadId = options\.threadId\s*\|\| \(await ensureTalkThread/.test(chanLive)
+    ok(/let threadId = options\.threadId\s*\|\| \(await ensureTalkThread/.test(chanLive)
       && /\.\.\.\(liveThreadId \? \{ threadId: liveThreadId \}/.test(ipcLive),
       "已 ensure 的会话 id 直接交给 runTalkTurn（每回合不再多一次 thread/resume）");
     /* ⛔ 11-08 Optional 收口：用量页脚不能「事件来晚就没有」 —— 常驻监听 + 落盘前缓存 + 收尾/迟到补写。 */
@@ -1088,8 +1088,9 @@ const catalog = [
   ok(!/runGroupTalk/.test(talk) && !/runGroupTalk/.test(outlet)
     && /runTalkTurn/.test(ipc) && /readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc),
     "runGroupTalk 死代码已删（接力主链只在 harness-team-ipc；⛔ 不再并存两套投递口径）");
+  /* ⛔ 11-08：group_read 现在在 hook 里做单条/总量截断，但仍必须直读**同一份** readGroupHistory。 */
   ok(/readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc)
-    && /readMessages: \(limit: number\) => Promise\.resolve\(readGroupHistory\(limit\)\)/.test(ipc),
+    && /readMessages: \(limit: number\) => Promise\.resolve\(\(\(\) => \{[\s\S]{0,80}?const rows = readGroupHistory\(limit\);/.test(ipc),
     "派活主链每轮也注入；默认注入与 group_read 工具**同一份** readGroupHistory（⛔ 两处口径分叉会读到不同历史）");
   ok(/TALK_HISTORY_LIMIT/.test(outlet) && /groupHistoryBlock/.test(outlet),
     "板块出口显式暴露共享上下文（守卫可钉唯一真相源）");
@@ -1263,6 +1264,20 @@ const catalog = [
     && /sanitizeForEnvelope\(options\.groupName\)/.test(talk)
     && /sanitizeForEnvelope\(String\(options\.memory\)\)/.test(talk),
     "成员名 / 群名 / 共享背景与正文同口径过信封消毒（⛔ 只有正文消毒时，名字能截断信封）");
+  /* ⛔ 11-08 用户问「群里超长上下文怎么办」：三层防护各一条判据。 */
+  const chan2 = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  ok(/const turnError = completed\?\.error \?\? null;/.test(chan2)
+    && /code = stop\.kind === "contextWindowExceeded" \? "TALK_CONTEXT_EXCEEDED"/.test(chan2),
+    "群聊回合「completed 但带 error」按失败抛中文原因（⛔ 旧实现只显示一条空白回复）");
+  ok(/if \(!isContextExceeded\(error\)\) throw error;/.test(chan2)
+    && /forgetTalkThreads\(\[threadId\]\)/.test(chan2)
+    && /thread\/delete", \{ threadId \}/.test(chan2)
+    && /await ensureTalkThread\(groupId, member/.test(chan2),
+    "上下文超限自愈：清台账 + 删旧会话 + 新建后重试一次（群历史/身份每轮重新注入，不会失忆）");
+  ok(/slice\(0, 1200\)/.test(ipc) && /12_000/.test(ipc),
+    "group_read 单条 1200 字 / 总量 12000 字封顶（⛔ 否则 limit=50 一条工具结果就能撑爆会话）");
+  ok(/clean\.length > 8000/.test(talk),
+    "单条群消息进会话前 8000 字封顶（成员互相投递的是长输出，不封顶单条就能撑爆）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

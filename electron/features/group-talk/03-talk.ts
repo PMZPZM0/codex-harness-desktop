@@ -113,11 +113,18 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
      ⇒ 用项目统一的 `[SYSTEM TASK · …]` 壳：user-refs.ts 只保留「=== 用户需求 ===」中间那段，
        壳前/壳后一律丢弃 ⇒ 气泡里只剩那句人话；模型仍然读得到完整指令。
      ⛔ 需求体第一行写发件人协议行（member · 名字），别让模型猜是谁在说话。 */
+  /* ⛔ 11-08 用户问「群里超长上下文怎么办」：这条消息本身也要封顶 ——
+     成员之间投递的是对方模型的长输出，不截断时单条就能把接收方会话撑爆。
+     （历史注入另有 400 字/条 + 8000 字总预算，见 groupHistoryBlock。） */
+  const body = (() => {
+    const clean = sanitizeForEnvelope(text);
+    return clean.length > 8000 ? `${clean.slice(0, 8000)}\n…（消息过长，已截断；需要全文让对方重发）` : clean;
+  })();
   const need = [
     "[SYSTEM TASK · 工作伙伴消息]",
     "=== 用户需求 ===",
     `发件人：member · ${sanitizeForEnvelope(from.name)}`,
-    sanitizeForEnvelope(text),
+    body,
     "=== END ===",
     "",
     /* ⛔ 群历史放**壳后**：气泡只显示上面那段需求体，模型却能读到整段共享上下文。 */

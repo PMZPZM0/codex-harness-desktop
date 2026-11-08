@@ -536,7 +536,21 @@ async function runDispatchRounds(
       void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
       return Promise.resolve({ ok: true });
     },
-    readMessages: (limit: number) => Promise.resolve(readGroupHistory(limit)),
+    /* ⛔ 11-08 用户问「群里超长上下文怎么办」：`group_read` 原来把整段原文塞进工具结果，
+       limit=50 碰上长消息时一条回复就能把成员会话撑爆。⇒ 单条截断 + 总量封顶
+       （注入口径本来就有 400 字/条，这里对齐工具口径；要看全文让对方重发）。 */
+    readMessages: (limit: number) => Promise.resolve((() => {
+      const rows = readGroupHistory(limit);
+      const out: { speaker: string; text: string }[] = [];
+      let used = 0;
+      for (const row of rows) {
+        const text = row.text.length > 1200 ? `${row.text.slice(0, 1200)}…（已截断，需要全文请让对方重发）` : row.text;
+        if (used + text.length > 12_000) break;
+        used += text.length;
+        out.push({ ...row, text });
+      }
+      return out;
+    })()),
     members: () => Promise.resolve(roster.map((m) => ({ id: m.id, name: m.name, profession: m.targetProfession }))),
   });
   const runOne = async (

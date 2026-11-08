@@ -21,6 +21,8 @@ import { server } from "../../runtime-refs";
 import { turnOutputText, waitForTurnCompletion } from "../../main/03-turn-summary";
 import { buildGroupTalkTools } from "./02-tools";
 import { classifyTalkResumeFailure } from "../../../src/lib/team-talk-resume.mjs";
+/* ⛔ 群聊回合失败按主对话同一套分类给中文原因（上下文超限 / 沙箱拒绝 / 限流…）。 */
+import { describeTurnStop } from "../../../src/lib/turn-stop-reason.mjs";
 
 export type TalkMember = {
   id: string;
@@ -285,19 +287,22 @@ export function queueTalkDelivery<T>(groupId: string, memberId: string, task: ()
   return run;
 }
 
-/** 一轮群聊：把一条消息送进成员会话，等它说完，把最终文本还回来。 */
-export async function runTalkTurn(
-  groupId: string,
-  member: TalkMember,
+/** 上下文超限的统一判定（引擎有几种写法：codexErrorInfo 枚举 / 中英文文案）。 */
+function isContextExceeded(error: unknown): boolean {
+  const anyErr = error as { code?: string; message?: string } | null;
+  if (anyErr?.code === "TALK_CONTEXT_EXCEEDED") return true;
+  const text = `${anyErr?.message ?? ""} ${String(error ?? "")}`;
+  return /contextWindowExceeded|context window|上下文.{0,6}(超限|超长|超出)/i.test(text);
+}
+
+/** 跑一轮并等结果。⛔ 回合「completed 但带 error」同样按失败抛 ——
+ *  旧实现只看有没有正文，引擎把「上下文超限 / 沙箱拒绝」写在 `turn.error` 里时，
+ *  群里只会出现「（没有返回文本内容）」，用户完全不知道发生了什么。 */
+async function runTalkTurnOnce(
+  threadId: string,
   inputText: string,
-  options: {
-    cwd?: string; groupName?: string; effort?: string; model?: string; sandbox?: string; approvalPolicy?: string;
-    /** 调用方已解析好的会话（先用 `ensureTalkThread` 拿到再过进来）⇒ ⛔ 不再重复 resume 一次。 */
-    threadId?: string;
-  } = {},
-): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
-  const threadId = options.threadId
-    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy })).threadId;
+  options: { model?: string; effort?: string; approvalPolicy?: string },
+): Promise<string> {
   const turn: any = await server.request("turn/start", {
     threadId,
     input: [{ type: "text", text: inputText, text_elements: [] }],
@@ -309,15 +314,50 @@ export async function runTalkTurn(
   const turnId = String(turn?.turn?.id ?? "");
   if (!turnId) throw new Error("群聊回合启动失败（没返回 turnId）");
   const completed = await waitForTurnCompletion(threadId, turnId);
+  const turnError = completed?.error ?? null;
+  if (turnError) {
+    const stop = describeTurnStop({ status: "failed", error: turnError });
+    const err = new Error(stop.detail || stop.label || "引擎没给失败原因");
+    (err as Error & { code?: string }).code = stop.kind === "contextWindowExceeded" ? "TALK_CONTEXT_EXCEEDED" : "TALK_TURN_FAILED";
+    throw err;
+  }
   let text = turnOutputText(completed);
   if (!text) {
     const resumed: any = await server.request("thread/resume", { threadId, excludeTurns: false }).catch(() => null);
     text = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
   }
-  return {
-    ok: true,
-    /* ⛔ 群聊会话没有「办公室 / 头像轨」那套概念，别把调度链的「转后台」公文腔塞进群。 */
-    text: String(text || "").trim(),
-    threadId,
-  };
+  /* ⛔ 群聊会话没有「办公室 / 头像轨」那套概念，别把调度链的「转后台」公文腔塞进群。 */
+  return String(text || "").trim();
+}
+
+/** 一轮群聊：把一条消息送进成员会话，等它说完，把最终文本还回来。
+ *  ⛔ 11-08 用户问「群里超长上下文怎么办」：正常长对话由引擎按全局阈值**自动压缩**；
+ *     自愈只兜「压缩后仍装不下 / 单轮请求本身超窗」这种残余情况 ——
+ *     清台账 + 删旧会话 + 新建一条再试一次。群历史与身份是**每轮重新注入**的
+ *     （buildTalkInput），重建不会失忆，成员照样接得上话。 */
+export async function runTalkTurn(
+  groupId: string,
+  member: TalkMember,
+  inputText: string,
+  options: {
+    cwd?: string; groupName?: string; effort?: string; model?: string; sandbox?: string; approvalPolicy?: string;
+    /** 调用方已解析好的会话（先用 `ensureTalkThread` 拿到再过进来）⇒ ⛔ 不再重复 resume 一次。 */
+    threadId?: string;
+  } = {},
+): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
+  let threadId = options.threadId
+    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy })).threadId;
+  try {
+    return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
+  } catch (error) {
+    if (!isContextExceeded(error)) throw error;
+    forgetTalkThreads([threadId]);
+    try {
+      await server.request("thread/delete", { threadId });
+    } catch {
+      await server.request("thread/archive", { threadId }).catch(() => undefined);
+    }
+    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy })).threadId;
+    return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
+  }
 }
