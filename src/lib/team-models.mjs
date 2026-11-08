@@ -848,6 +848,9 @@ export function projectGroupMessages(sources) {
         /* 「由谁叫来」要跟着投影走：它是消息属性，不是日志本地字段 */
         via: msg?.via ?? null,
         usage: msg?.usage ?? null,
+        runId: String(msg?.runId ?? "") || undefined,
+        runFirst: msg?.runFirst === true,
+        summary: msg?.summary === true,
       });
     }
   }
@@ -893,6 +896,11 @@ export function normalizeGroupMessage(entry) {
       ? { memberId: String(entry.via.memberId), name: String(entry.via.name ?? "") }
       : null,
     /* 11-08 用户令「用量页脚也要一致」：这一回合的 token 用量（主进程在落消息时带上；老日志没有 ⇒ null）。 */
+    /* 11-08 用户令「正文输出一次就发一次新消息 / 最早那条继续挂运行流程」：
+       这一条属于哪一轮（runId）· 是否该轮**第一条**（大折叠挂在它上面）· 是否收尾汇总（文件卡挂在它上面）。 */
+    runId: String(entry?.runId ?? "") || undefined,
+    runFirst: entry?.runFirst === true,
+    summary: entry?.summary === true,
     usage: entry?.usage && typeof entry.usage === "object"
       ? {
         inputTokens: Number(entry.usage.inputTokens ?? entry.usage.input_tokens ?? 0) || 0,

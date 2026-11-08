@@ -325,6 +325,17 @@ export function useTeamGroups() {
           }));
           return;
         }
+        if (phase === "item-start" || phase === "item-done") {
+          /* ⛔ 11-08 用户令「跟主对话框实时同步」：一条正文开始/完成 ⇒ 流式卡清空，
+             下一条从空白重新逐字上屏（完成的那条已经作为独立群消息落盘，不再叠在卡里）。 */
+          setLiveByGroup((prev) => {
+            const cur = prev[gid]?.[tid];
+            if (!cur) return prev;
+            if (runId && cur.runId && runId !== cur.runId) return prev;
+            return { ...prev, [gid]: { ...prev[gid], [tid]: { ...cur, text: "" } } };
+          });
+          return;
+        }
         if (phase === "delta") {
           setLiveByGroup((prev) => {
             const cur = prev[gid]?.[tid];

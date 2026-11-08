@@ -823,8 +823,9 @@ const catalog = [
     "反馈组件只收 mode/partners/faceOfId（⛔ 不再把 live 传进去 —— 占位图标不依赖流式正文）");
   ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
-  ok(/effectiveReplyMode === "process" && run\.status === "running"[\s\S]{0,240}?<TeamProcess threadId=\{run\.threadId\} at=\{run\.startedAt\}/.test(view),
-    "过程模式：过程折叠块在**成员自己的流式卡**里（正在写 + 可展开步骤），⛔ 不挂在用户气泡下");
+  ok(/isBot && row\.runFirst && row\.runId/.test(view) && /<TeamProcess threadId=\{row\.threadId\} at=\{liveRun\.startedAt\}/.test(view)
+    && !/<TeamProcess threadId=\{run\.threadId\}/.test(view),
+    "11-08 用户令：运行过程大折叠挂在**该轮第一条消息**上（跑完随 live 卡消失）；⛔ 不再挂在流式卡里（会与第一条重复）");
   /* ⛔ 11-08 用户实测（群聊页脚「缓存 0 · 命中 0%」一直不变）：群聊用量是归一化对象
      （字段 `cachedTokens`），取值函数只认引擎原始字段名 ⇒ 归一化值被漏掉、恒 0。 */
   ok(/cachedTokens", "cached_tokens"/.test(read("src/lib/usage-cached-tokens.ts")),
@@ -844,7 +845,7 @@ const catalog = [
       && /subscribeTeamProcessTicks/.test(procComp)
       && !/setInterval\(\(\) => setTick\(\(n\) => n \+ 1\), 2500\)/.test(procComp)
       && /getThreadLiveFileChanges/.test(fileStore) && /liveByThread/.test(fileStore)
-      && /<TeamLiveFiles threadId=\{run\.threadId\} \/>/.test(viewProc),
+      && /<TeamLiveFiles threadId=\{row\.threadId\} \/>/.test(viewProc),
       "群聊过程与主对话一致：事件驱动重拉（group-talk-tick，⛔ 不再 2.5s 轮询）+ 流式卡实时编辑行（按线程）");
   }
   /* ⛔ 11-08 用户令「三样都补上，跟主对话完全一致」：用量页脚 / 推理浮窗 / 网页来源条。 */
@@ -923,7 +924,8 @@ const catalog = [
       "群输入框的模型 / 沙箱 / 审批档真下发到成员会话（⛔ 不再是只接 effort 的死控件，11-08 审查）");
     ok(/groupClearedAt\.set\(gid, Date\.now\(\)\)/.test(ipcSrc)
       && /const clearedMark = groupClearedAt\.get\(group\.id\)/.test(ipcSrc)
-      && /clearedDuringRun \|\| duplicated \? \{ ok: true \}/.test(ipcSrc)
+      && /await streamChain;/.test(ipcSrc) && /if \(clearedDuringRun\) \{/.test(ipcSrc)
+      && /patchTalkMessageRow\(group\.id, last\.id/.test(ipcSrc)
       && /cleared > since/.test(ipcSrc),
       "清空聊天记录后，在飞回合（群聊 + 主理人工具派活）的回复都不再写回空群（主进程代际判定，11-08 审查）");
   }
@@ -1023,8 +1025,9 @@ const catalog = [
     && (channel.match(/await mutateLedger\(/g) ?? []).length >= 2,
     "台账写操作串行 + 链内重新读盘合并（⛔ 旧快照整份写回会把并发开跑的其他成员整条抹掉）");
   ok(/export async function peekTalkThread/.test(channel) && /peekTalkThread\(group\.id, partner as TalkMember/.test(ipc)
-    && !/ensureTalkThread\(group\.id/.test(ipc),
-    "流式监听前只做**只读探测**（⛔ 绝不在探测里新建会话）；探到忙就先不挂流式");
+    && /if \(liveThread && !liveThread\.busy\) attachLive\(liveThread\.threadId\)/.test(ipc)
+    && /queueTalkDelivery\(group\.id, partner\.id, async \(\) => \{[\s\S]{0,900}?ensureTalkThread\(group\.id/.test(ipc),
+    "流式监听前只做**只读探测**（探到空闲才挂）；新建会话（首条消息）在**串行队列内** ensure 后再挂（否则整轮没有流式事件）");
   ok(/export function queueTalkDelivery/.test(channel) && /queueTalkDelivery\(group\.id, partner\.id/.test(ipc)
     && /withDispatchTimeout\(runTalkTurn/.test(ipc),
     "同一成员的消息串行投递（引擎不允许 resume/并行回合正在跑的会话；超时从真正开跑时算）");
@@ -1056,6 +1059,22 @@ const catalog = [
     "「添加伙伴 → 专家模式」与「创建群初始伙伴」都列出团成员（⛔ 两个入口各写一份筛选，必须同口径）");
   ok(/专家库：/.test(pickTest),
     "专家库分组有单测（在群的团 / 已加过的专家不重复列）");
+}
+
+/* ── ⑬e 群聊正文流式多消息（11-08 用户令：「正文输出一次就发一次新消息，跟主对话框实时同步」）── */
+{
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/method === "item\/completed"[\s\S]{0,900}?appendMessageTo\(group\.id/.test(ipc)
+    && /const streamedRows/.test(ipc) && /runFirst: true/.test(ipc) && /summary: true/.test(ipc),
+    "每条 agentMessage 完成即落一条群消息（⛔ 不再等整回合）；该轮第一条带 runFirst、收尾那条带 summary");
+  ok(/if \(duplicated\) \{[\s\S]{0,500}?patchTalkMessageRow\(group\.id, last\.id, \{[\s\S]{0,160}?summary: true/.test(ipc),
+    "最终回复已作为流式消息落过 ⇒ 不再发第二条，把它标成 summary 并回填用量");
+  ok(/\(isBot && row\.summary\) \|\| \(isBot && !row\.runId\)/.test(view),
+    "文件卡 / 用量只挂**收尾汇总**那条（老日志没有 runId ⇒ 保持每条都有，向后兼容）");
+  ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
+    "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
 }
 
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────
@@ -1256,7 +1275,7 @@ const catalog = [
     "group_say(to=) 送到本轮已跑过的成员时回失败（⛔ 不再假报「已经说给他了」而群里毫无反应）");
   /* ⛔ 判据锚「两处具体清除点」—— 不能数 `finishedTalkRuns.delete(` 总数：
      淘汰最旧条目那行也是 delete，会把「本轮不清」掩盖成绿。 */
-  ok(/if \(liveThreadId\) finishedTalkRuns\.delete\(liveThreadId\);/.test(ipc)
+  ok(/finishedTalkRuns\.delete\(tid\);/.test(ipc)
     && /finishedTalkRuns\.delete\(threadId\);/.test(ipc),
     "新一轮开跑/排队拿到 threadId 时摘掉上一轮用量收尾标记（⛔ 否则同一成员 10 分钟内再跑，页脚会挂两遍）");
   ok((ipc.match(/groups\.some\(\(g\) => String\(g\.id\) === String\(group\.id\)\)/g) || []).length >= 2,

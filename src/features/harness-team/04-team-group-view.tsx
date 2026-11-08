@@ -1233,6 +1233,20 @@ export function TeamGroupView({
                             运行过程 / 动作条。引用与正文同属这块气泡，左边界才能对齐。 */}
                         <div className="team-msg__body">
 
+                        {/* ⛔ 11-08 用户令「正文输出一次就发一次新消息 / 最早那条继续挂运行流程」：
+                            运行过程大折叠挂在**该轮第一条**消息上（与主对话同一个 TeamProcess），
+                            流式编辑行也挂这里；该轮跑完（live 卡消失）后整块自动隐藏。
+                            ⛔ 按 runId 精确匹配，否则同一位成员下一次运行会把旧的「第一条」也点亮。 */}
+                        {isBot && row.runFirst && row.runId && (() => {
+                          const liveRun = (live ?? []).find((run) => run.threadId === row.threadId && run.runId === row.runId && run.status === "running");
+                          if (!liveRun) return null;
+                          return (
+                            <>
+                              <TeamProcess threadId={row.threadId} at={liveRun.startedAt} bodyText="" running live />
+                              <TeamLiveFiles threadId={row.threadId} />
+                            </>
+                          );
+                        })()}
                         {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
                             ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
                         {isBot && quote && (
@@ -1323,7 +1337,7 @@ export function TeamGroupView({
                               />
                             ))}
                             {/* 运行过程在**正文下方**、文件卡在过程下方（主对话同序：正文 → 过程 → 产物卡）。 */}
-                            {isBot && <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} />}
+                            {(isBot && row.summary) || (isBot && !row.runId) ? <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} /> : null}
                           </>
                         )}
                         {isBot && (
@@ -1390,20 +1404,15 @@ export function TeamGroupView({
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
                     <div className="team-msg__body">
-                    {/* ⛔⛔ 11-08 三改（用户截图圈住用户气泡里的「剪承 运行中」）：
-                        「这个过程模式下，就不用在用户消息下面展示这个了，只有占位模式才显示这个」——
-                        过程块回到**成员自己的流式卡**里（它原本就在这里；bf6d487e4 一度搬到用户气泡下，
-                        那正是用户要删的重复项）。用户气泡下只在占位模式画一粒很窄的小图标。 */}
-                    {effectiveReplyMode === "process" && run.status === "running" && String(run.threadId ?? "") && (
-                      <TeamProcess threadId={run.threadId} at={run.startedAt} bodyText="" running live />
-                    )}
+                    {/* ⛔ 11-08 用户令「最早那条继续挂运行流程」：过程大折叠与流式编辑行已挂到
+                        该轮**第一条正文消息**上（见上面 row.runFirst 分支）—— 流式卡只负责"正在写"的逐字预览，
+                        ⛔ 不再在这里画第二份（否则同一条过程会出现两个折叠块）。 */}
                     {/* ⛔⛔ 11-08 审查：占位模式承诺「不展示过程与流式正文」——
                         流式卡也必须跟着分叉，否则主窗口里照样能看到流式正文。 */}
                     {effectiveReplyMode === "process" && String(run.text ?? "").trim()
                       ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
                       : <p className="team-msg__thinking">正在思考…</p>}
                     {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
-                    {run.status === "running" && <TeamLiveFiles threadId={run.threadId} />}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
                   </div>
                   </div>

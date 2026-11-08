@@ -129,5 +129,9 @@ export type GroupMessageRow = {
   via?: { memberId: string; name: string } | null;
   /** 这一回合的 token 用量（11-08：与主对话页脚一致；老日志为 null） */
   usage?: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } | null;
+  /** 11-08 流式：所属派活轮次 / 该轮第一条（挂运行过程大折叠）/ 收尾汇总（挂文件卡） */
+  runId?: string;
+  runFirst?: boolean;
+  summary?: boolean;
   seq: number;
 };

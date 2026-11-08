@@ -46,6 +46,10 @@ export interface GroupLogMessage {
   mentions: string[];
   /** 11-08：这一回合的 token 用量（用户消息 / 老日志为空） */
   usage?: GroupMessageUsage | null;
+  /** 11-08 流式：所属派活轮次 / 该轮第一条（挂运行过程大折叠）/ 收尾汇总（挂文件卡） */
+  runId?: string;
+  runFirst?: boolean;
+  summary?: boolean;
 }
 
 export interface TeamGuard {
@@ -130,6 +134,10 @@ export interface GroupMessageProjected {
   seq: number;
   /** 这一回合的 token 用量（老日志/用户消息为 null） */
   usage?: GroupMessageUsage | null;
+  /** 11-08 流式：所属派活轮次 / 该轮第一条（挂运行过程大折叠）/ 收尾汇总（挂文件卡） */
+  runId?: string;
+  runFirst?: boolean;
+  summary?: boolean;
 }
 
 export const GROUP_MAX_PARTNERS: number;
