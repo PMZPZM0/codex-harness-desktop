@@ -14,8 +14,10 @@ import { lookupGroupThread } from "./01-channel";
 export type GroupTalkHooks = {
   /** 往群里写一条消息（作者由板块自己给，⛔ 不信任模型） */
   append: (groupId: string, entry: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
-  /** 把一句话投递进另一位成员的会话（他会回话，回复以他的署名进群） */
-  relay: (groupId: string, fromId: string, toName: string, text: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 把一句话投递进另一位成员的会话（他会回话，回复以他的署名进群）。
+   *  `fromName` = 台账里记的发送者名字：调用方名册里查不到 id 时用它兜底，
+   *  ⛔ 别退化成「群成员」——被叫的人（和界面）要能看出到底是谁在说话。 */
+  relay: (groupId: string, fromId: string, fromName: string, toName: string, text: string) => Promise<{ ok: boolean; error?: string }>;
   /** 读群里最近的消息 */
   readMessages: (limit: number) => Promise<{ speaker: string; text: string }[]>;
   /** 成员名册 */
@@ -143,7 +145,7 @@ export async function handleGroupTalkToolCall(input: {
     return true;
   }
   if (to) {
-    const relayed = await hooks.relay(groupId, who.memberId, to, text)
+    const relayed = await hooks.relay(groupId, who.memberId, who.name, to, text)
       .catch((err: unknown) => ({ ok: false, error: err instanceof Error ? err.message : String(err) }));
     reply(respond, id, relayed.ok
       ? `已经把这句说给 ${to} 了，他会在群里回你。`

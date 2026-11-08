@@ -1001,6 +1001,8 @@ contextBridge.exposeInMainWorld("codex", {
   sessionAliasEnsure: (input: unknown) => __ipc("session-alias:ensure", 1, [input]),
   /* 团队模式 P0 */
   harnessTeamList: () => __ipc("harness-team:list", 0, []),
+  /* 群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签 */
+  harnessTeamTalkThreads: () => __ipc("harness-team:talk-threads", 0, []),
   /* 团队模式 P0 */
   harnessTeamCreate: (input: Record<string, unknown>) => __ipc("harness-team:create", 1, [input]),
   /* 团队模式 P0 */

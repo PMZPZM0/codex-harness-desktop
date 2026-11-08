@@ -806,17 +806,21 @@ const catalog = [
 }
 
 /* ── ⑬ 两种回复模式（11-08 用户令：「做出来两种回复模式」+「在群设置里加上这个选项」）────
-   过程模式：运行中展示运行过程（默认折叠、可展开，与主对话同一套折叠块），跑完过程消失只留汇报；
-   占位模式：不展示过程/流式正文，只挂「图标 + 名字 + 处理中」，产出后再上屏。 */
+   过程模式：过程在**成员自己的流式卡**里（正在写 + 主对话同款折叠块），跑完只留汇报；
+   占位模式：不展示过程/流式正文，用户气泡下只挂「小头像 + 名字 + 呼吸点」一粒小图标，产出后再上屏。 */
 {
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   const proc = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
   const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
-  /* 11-08 二改：过程/占位反馈统一搬到用户气泡下面（26-team-run-feedback），
-     ⛔ 不再挂在 live 流式卡里（独立窗口 live 常年为空 ⇒ 两种模式"完全一样"）。 */
+  /* ⛔⛔ 11-08 三改（用户截图圈住用户气泡里的「剪承 运行中」）：「这个过程模式下，就不用在
+     用户消息下面展示这个了，只有占位模式才显示这个」—— 过程模式返回 null，反馈只在占位模式画；
+     ⛔ 反馈组件里不许再出现 TeamProcess（那是过程模式重复展示的来源）。 */
+  const feedback = codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx"));
   ok(/<TeamRunFeedback/.test(view) && /row\.key === lastHumanKey/.test(view)
-    && /<TeamProcess/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx"))),
-    "过程块只在**运行中的最后一条用户消息下面**渲（跑完 busy 清空即消失，⛔ 成品消息不挂过程）");
+    && /if \(mode !== "placeholder"\) return null;/.test(feedback) && !/<TeamProcess/.test(feedback),
+    "⛔ 过程模式不在用户气泡下挂运行反馈（过程在成员流式卡里）；只有占位模式画小图标");
+  ok(!/live=\{live \?\? \[\]\}/.test(view) && /<TeamRunFeedback[\s\S]{0,160}?faceOfId=\{faceOfId\}\s*\/>/.test(view),
+    "反馈组件只收 mode/partners/faceOfId（⛔ 不再把 live 传进去 —— 占位图标不依赖流式正文）");
   ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
   ok(/live?: boolean/.test(proc) || /live = false/.test(proc),
@@ -875,9 +879,20 @@ const catalog = [
       && /onPhase\?\.\("started", partner, \{\}\)/.test(ipcLive),
       "群聊首屏：快照稳定（空列表同一常量，⛔ 防 useSyncExternalStore 死循环）+ 运行中只拉最新 1 回合 + 建会话前先报运行中（11-08 用户实测）");
   }
-  ok(/team-run-feedback__chip/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx")))
-    && /team-run-feedback__chip/.test(read("src/styles/61-team-mode.css")),
-    "占位模式画飞书式「头像 + 名字 + 处理中」小图标（挂在用户气泡下面）");
+  /* ⛔ 11-08 三改（用户：「这个显示不好看，上下太宽了，我要是那种很窄的，很小的头像+名字提醒」）：
+     小图标收成 20px 高的窄粒（小头像 14 + 名字 + 呼吸点），⛔ 不再带「处理中…」长文案。 */
+  {
+    const feedbackSrc = codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx"));
+    const css = read("src/styles/61-team-mode.css");
+    ok(/team-run-feedback__chip/.test(feedbackSrc) && /team-run-feedback__chip/.test(css)
+      && /size=\{14\}/.test(feedbackSrc) && !/处理中…/.test(feedbackSrc)
+      && /\.team-run-feedback__chip\s*\{[^}]*height:\s*20px/.test(css)
+      && /\.team-run-feedback__chip\s*\{[^}]*padding:\s*0 7px 0 3px/.test(css)
+      && /\.team-run-feedback__dot\s*\{[^}]*width:\s*5px/.test(css),
+      "占位模式 = 很窄的一粒（20px 高 / 小头像 14 / 名字 / 5px 呼吸点），⛔ 无「处理中…」长文案");
+    ok(!/is-process/.test(feedbackSrc) && !/team-run-feedback__row|team-run-feedback__who|team-run-feedback__waiting/.test(css),
+      "⛔ 过程模式那套反馈样式已删净（带边框/内边距的宽行就是用户说「上下太宽」的那个）");
+  }
   ok(/replyMode: "process" \| "placeholder";/.test(settings) && /回复模式/.test(settings)
     && /onReplyMode\(opt\.value\)/.test(settings),
     "群设置里有「回复模式」两张卡（过程 / 占位），点卡片立即生效");
@@ -957,6 +972,29 @@ const catalog = [
       && /usageWritten === false && liveUsage/.test(ipcLive),
       "用量页脚兜底：常驻 tokenUsage 监听 + 落盘前缓存 + 收尾/迟到补写（⛔ 事件晚到也补得上，且运行中不挂到中间消息上）");
   }
+}
+
+/* ── ⑬b 伙伴转交写真实发送者 + 侧栏「伙伴」标签（11-08 用户截图：
+   「群里会话的伙伴标签没出来，群成员 伙伴转交 明确出来谁给他发的消息」）────── */
+{
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const tools = codeOnly(read("electron/features/group-talk/02-tools.ts"));
+  const channel = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  const store = codeOnly(read("src/lib/team-talk-threads.mjs"));
+  const rows = codeOnly(read("src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"));
+  ok(/hooks\.relay\(groupId, who\.memberId, who\.name, to, text\)/.test(tools)
+    && /relay: \(gid: string, fromId: string, fromName: string/.test(ipc)
+    && /String\(fromName \?\? ""\)\.trim\(\) \|\| "群成员"/.test(ipc),
+    "伙伴转交必须写真实发送者：台账名字随 relay 传进来，⛔ 名册查不到也不能退化成「群成员」（截图里的那个标签）");
+  ok(/export function listTalkThreads/.test(channel) && /listTalkThreads\(\)/.test(ipc)
+    && /harness-team:talk-threads/.test(ipc),
+    "群聊伙伴会话台账经只读通道暴露（会话是普通 thread，⛔ 只能由台账认，不能按标题猜）");
+  ok(/harnessTeamTalkThreads/.test(store) && /subscribeTeamTalkThreads/.test(store)
+    && /useSyncExternalStore\(subscribeTeamTalkThreads, getTeamTalkThreads\)/.test(rows)
+    && /talkThreads\.byId\[entry\.id\]/.test(rows)
+    && /if \(talkInfo\) rowBadges\.push\(<span className="thread-source-badge tone-dispatch"/.test(rows)
+    && /群聊伙伴会话/.test(rows),
+    "侧栏给群聊伙伴会话打「伙伴」标签（单例 store 订阅；⛔ 不在 renderThreadRow 里订阅，行数一变就 hook 错位）");
 }
 
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────

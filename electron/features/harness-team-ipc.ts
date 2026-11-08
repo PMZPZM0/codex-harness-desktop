@@ -66,7 +66,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -497,10 +497,12 @@ async function runDispatchRounds(
   /* 工具 hooks：模型在会话里主动调 group_say(to=名字) ⇒ 这里把话投递进对方会话。 */
   setGroupTalkHooks(group.id, {
     append: (gid: string, entry: Record<string, unknown>) => appendMessageTo(gid, entry),
-    relay: (gid: string, fromId: string, toName: string, msg: string) => {
+    relay: (gid: string, fromId: string, fromName: string, toName: string, msg: string) => {
       const to = roster.find((m) => String(m.name).replace(/\s+/g, "") === String(toName).replace(/\s+/g, ""));
       if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
-      const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: "群成员" };
+      /* ⛔ 11-08 用户（截图：「群成员 伙伴转交」看不出是谁发的）：名册里查不到 id 时用**台账里的名字**兜底，
+         ⛔ 不再退化成通用的「群成员」—— 被叫的会话头部与模型都要看到真实发送者。 */
+      const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: String(fromName ?? "").trim() || "群成员" };
       /* ⛔ 不 await：工具调用立刻返回，被叫的人稍后自己在群里回话。 */
       /* ⛔ hop=0：工具发起的对话也要能继续接力（只跳一跳就变成「说一句就断」）。 */
       void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
@@ -1214,6 +1216,11 @@ export const harnessTeamFeature = defineFeature<null>({
       const tokens = delegateRegistry?.tokensOf(id) ?? null;
       return { ok: Boolean(tokens), tokens };
     });
+
+    /* 群聊伙伴会话台账（只读）：侧栏据此给这些**普通会话**打「伙伴」标签。
+       ⛔ 它们在侧栏既没有 delegate 记录、也不属于中枢群 ⇒ 只能由群聊台账认；
+          ⛔ 不许按标题前缀「伙伴·」猜（用户改名后就不成立了）。 */
+    ipcHost.handle("harness-team:talk-threads", () => ({ ok: true, threads: listTalkThreads() }));
 
     /* 解散群（11-06 补 / 11-07 用户令「删除群，对应的会话没有删除，外面对话框还能看见，遗留的」）。
        ⛔⛔ 旧口径是「只删群与群消息日志，一条子会话都不碰（会话是独立资产）」——

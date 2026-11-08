@@ -9,6 +9,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { createPortal } from "react-dom";
 import { DispatchMenu, DispatchBadge } from "../../../../../../features/dispatch";
 import { getBossThreads } from "../../../../../../features/boss-group-view";
+import { getTeamTalkThreads, subscribeTeamTalkThreads } from "../../../../../../lib/team-talk-threads.mjs";
 import {
   AlertTriangle,
   Archive,
@@ -162,6 +163,9 @@ export function usePart02b12(bag: Bag) {
      ⇒ 整个界面被 ErrorBoundary 兜成「界面发生错误」。
      ⇒ 订阅在 hook 顶层做一次，`renderThreadRow` 只读闭包里的快照（快照变 ⇒ 本 hook 重渲染 ⇒ 闭包更新）。 */
   const aliasState = useSyncExternalStore(subscribeAliases, getAliasState);
+  /* 群聊伙伴会话台账（11-08 用户令「群里会话的伙伴标签没出来」）：单例 store，订阅一次即可 ——
+     ⛔ 同样不许在 renderThreadRow 里订阅（行数一变 hook 链就错位，React #310）。 */
+  const talkThreads = useSyncExternalStore(subscribeTeamTalkThreads, getTeamTalkThreads);
   /* ⛔ 11-01 用户令：「标签最多只能显示一个，多了在标签上加一个切换功能」——
      下标走独立 store，订阅**只能在这里做一次**（renderThreadRow 是普通函数，不是组件）。 */
   const badgeCycle = useSyncExternalStore(subscribeBadgeCycle, getBadgeCycleState);
@@ -324,6 +328,11 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     if (attentionLabel) rowBadges.push(<span className={`thread-attention-badge tone-${attentionTone}`}>{attentionLabel}</span>);
     if (entry.rolloutMissing) rowBadges.push(<span className="thread-attention-badge tone-confirm" title="会话的历史记录文件已丢失，点开只能看到提示">记录丢失</span>);
     if (secondaryBadge) rowBadges.push(<span className={`thread-source-badge tone-${secondaryBadge.tone}`} title={`来源：${secondaryBadge.label}`}>{secondaryBadge.label}</span>);
+    /* ⛔ 11-08 用户（截图红框：群里会话这一列是空的）：「群里会话的伙伴标签没出来」——
+       群聊伙伴会话是普通 thread，没有 delegate/中枢身份 ⇒ 必须由群聊台账（主进程写入）认。
+       ⛔ 不许按标题「伙伴·」猜（改名后就失效）。 */
+    const talkInfo = talkThreads.byId[entry.id] ?? null;
+    if (talkInfo) rowBadges.push(<span className="thread-source-badge tone-dispatch" title={`群聊伙伴会话${talkInfo.name ? `：${talkInfo.name}` : ""}`}>伙伴</span>);
     if (customTag) rowBadges.push(<span className="entity-tag thread-custom-tag" style={{ "--tag-color": customTag.color } as any} title={`标签：${customTag.text}`}>{customTag.text}</span>);
     if (!oneBadge && bag.delegateRecords[entry.id]) rowBadges.push(<DispatchBadge record={bag.delegateRecords[entry.id]} />);
     if (!oneBadge && extras?.badge) rowBadges.push(extras.badge);

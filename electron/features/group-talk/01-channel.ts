@@ -76,6 +76,26 @@ export function lookupGroupThread(threadId: string): { groupId: string; memberId
   return null;
 }
 
+/** 全部群聊伙伴会话的台账（只读）：侧栏据此给这些**普通会话**打「伙伴」标签。
+ *  ⛔ 会话是 `thread/start` 新建的，不走 delegate 登记、也不是中枢群成员 ⇒ 没有别的权威来源；
+ *     按标题前缀猜（「伙伴·」）会在用户改名后失效，所以必须暴露台账。
+ *  返回按最近活动倒序；`memberId` 是台账键的成员段（团成员为合成 id `team:<团队>:<成员>`）。 */
+export function listTalkThreads(): Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number }> {
+  return Object.entries(readLedger())
+    .map(([key, entry]) => {
+      const [groupId, memberId] = key.split("::");
+      return {
+        threadId: String(entry?.threadId ?? ""),
+        groupId: String(groupId ?? ""),
+        memberId: String(memberId ?? ""),
+        name: String(entry?.name ?? ""),
+        at: Number(entry?.at ?? 0) || 0,
+      };
+    })
+    .filter((row) => row.threadId && row.memberId)
+    .sort((a, b) => b.at - a.at);
+}
+
 /** 清掉某个群的会话台账（解散群时调用；⛔ 不删引擎里的 rollout，那是用户自己的记录）。 */
 export function forgetGroupThreads(groupId: string): number {
   const all = readLedger();

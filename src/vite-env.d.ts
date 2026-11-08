@@ -1389,6 +1389,8 @@ interface Window {
     sessionAliasEnsure(input: { threadId?: string; supervisorThreadId?: string }): Promise<{ ok: boolean; error?: string; record?: any; snapshot?: any }>;
     /* 团队模式 P0 */
     harnessTeamList(): Promise<{ groups: any[]; issues: { id: string; issues: string[] }[]; limit: number }>;
+    /* 群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签 */
+    harnessTeamTalkThreads(): Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number }> }>;
     /* 团队模式 P0 */
     harnessTeamCreate(input: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式 P0 */
