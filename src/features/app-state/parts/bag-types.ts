@@ -573,8 +573,8 @@ export interface Bag {
   setMobileNav: React.Dispatch<React.SetStateAction<boolean>>;
   sidebarFlyout: boolean;
   setSidebarFlyout: React.Dispatch<React.SetStateAction<boolean>>;
-  threadRowMenu: { id: string; top: number; right: number; } | null;
-  setThreadRowMenu: React.Dispatch<React.SetStateAction<{ id: string; top: number; right: number; } | null>>;
+  threadRowMenu: { id: string; top: number; left: number; } | null;
+  setThreadRowMenu: React.Dispatch<React.SetStateAction<{ id: string; top: number; left: number; } | null>>;
   collapsedSections: Set<string>;
   setCollapsedSections: React.Dispatch<React.SetStateAction<Set<string>>>;
   toggleSection: (key: string) => void;

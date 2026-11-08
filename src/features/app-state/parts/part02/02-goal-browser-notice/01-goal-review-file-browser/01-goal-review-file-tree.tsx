@@ -122,7 +122,7 @@ bag.mobileNav = mobileNav as typeof bag.mobileNav; bag.setMobileNav = setMobileN
   const [sidebarFlyout, setSidebarFlyout] = useState(false);
 bag.sidebarFlyout = sidebarFlyout as typeof bag.sidebarFlyout; bag.setSidebarFlyout = setSidebarFlyout as typeof bag.setSidebarFlyout;
 
-  const [threadRowMenu, setThreadRowMenu] = useState<{ id: string; top: number; right: number } | null>(null);
+  const [threadRowMenu, setThreadRowMenu] = useState<{ id: string; top: number; left: number } | null>(null);
 bag.threadRowMenu = threadRowMenu as typeof bag.threadRowMenu; bag.setThreadRowMenu = setThreadRowMenu as typeof bag.setThreadRowMenu;
 
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(() => {

@@ -185,6 +185,17 @@ export function usePart02b12(bag: Bag) {
   }, [bag.pending, bag.agentAsk]);
 bag.threadAttention = threadAttention as typeof bag.threadAttention;
 
+  /* 11-08：会话行 ⋯ 菜单 portal 到 body 后缺「Esc 关」（项目菜单有，用户预期一致）。
+     ⛔ 必须写在这里（hook 顶层）：renderThreadRow 是普通函数不是组件，里面调 hook = React #310（见上）。 */
+  useEffect(() => {
+    if (!bag.threadRowMenu) return;
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") bag.setThreadRowMenu(null);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [bag.threadRowMenu, bag.setThreadRowMenu]);
+
   // 侧栏「长按拖出为独立窗口」已删（09-13 用户定稿：入口只留顶栏的独立/返回按钮）。
   /** variant="member"：专家团成员会话行（次要层级）。09-14 用户反馈「会话主次明显不对，
    *  主会话右边才亮图标」——成员会话是程序管理的子会话，不给归档/置顶/更多按钮，
@@ -346,7 +357,16 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
           {isBossOwnThread ? null : (
           <button className="thread-archive-button" title="归档会话" onClick={(event) => { event.stopPropagation(); void bag.archiveThread(entry.id); }}><Archive size={13} /></button>
           )}
-          <button className="thread-more-button" title="会话操作" aria-expanded={bag.threadRowMenu?.id === entry.id} onClick={(event) => { event.stopPropagation(); const rect = event.currentTarget.getBoundingClientRect(); const menuHeight = 250; bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.bottom + 4, window.innerHeight - menuHeight - 8)), right: Math.max(8, window.innerWidth - rect.right) }); }}><MoreHorizontal size={14} /></button>
+          <button className="thread-more-button" title="会话操作" aria-expanded={bag.threadRowMenu?.id === entry.id} onClick={(event) => {
+            event.stopPropagation();
+            /* 11-08 用户令（与项目菜单同款）：「往右边展示，不要放侧边栏里面」——
+               原 right 锚让菜单向左展开压进侧栏；改横锚**侧栏右缘**向右弹，下边不够整体上移。 */
+            const rect = event.currentTarget.getBoundingClientRect();
+            const side = document.querySelector(".sidebar")?.getBoundingClientRect();
+            const menuWidth = 170;
+            const menuHeight = 300;
+            bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.top - 4, window.innerHeight - menuHeight - 8)), left: Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - menuWidth - 8)) });
+          }}><MoreHorizontal size={14} /></button>
           {extras?.actions}
         </div>
         {/* ⛔⛔ 2026-10-04 用户指定换成 Uiverse「serious-mule-65」8 点旋转 spinner。
@@ -356,7 +376,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
         {bag.openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /></span> : bag.unreadDoneIds.has(entry.id) ? <span className="thread-done-dot" title="任务已完成，点击进入查看" /> : null}
         {bag.threadRowMenu?.id === entry.id && createPortal(<>
           <button className="thread-row-menu-backdrop" aria-label="关闭会话菜单" onClick={() => bag.setThreadRowMenu(null)} />
-          <div className="thread-row-menu" role="menu" style={{ top: bag.threadRowMenu.top, right: bag.threadRowMenu.right }}>
+          <div className="thread-row-menu" role="menu" style={{ top: bag.threadRowMenu.top, left: bag.threadRowMenu.left }}>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsMarkdown([entry.id]); }}><FileText size={13} /><span>导出会话</span><small>.md</small></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsBackup([entry.id]); }}><Download size={13} /><span>完整备份</span><small>.json</small></button>
             {/* ⛔ 11-01 用户令：**只留一个改名入口**。

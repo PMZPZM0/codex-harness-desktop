@@ -389,8 +389,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [guideKey, setGuideKey] = useState<SidebarGuideKey | null>(null);
   /* 登录管理（10-21 用户要求）：三处账户一处直达，纯局部弹窗状态。 */
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
-  /* 项目菜单向上弹（11-07 用户：「选项没有自适应，都到下面了」）：靠近侧栏底部时翻到行上方。 */
-  const [projectMenuUp, setProjectMenuUp] = useState(false);
+  /* 项目菜单定位（11-08 用户：「往右边展示，不要放侧边栏里面」+「不会自适应往上吗」）：
+     portal 到 body 向行右侧弹出；空间不够按视口钳制（整体上移/左收），⛔ 不再嵌在滚动容器里。 */
+  const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
   /* 11-07 优化：项目菜单补「点外部关闭 + Esc」——原来只靠 mouseleave，键盘/触屏会关不掉。 */
   useEffect(() => {
     if (!projectMenu) return;
@@ -399,11 +400,18 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       if (!hit) setProjectMenu(null);
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setProjectMenu(null); };
+    /* 菜单是 body 级 fixed：侧栏滚动时锚点行会跑、菜单不跟着 ⇒ 滚动即收（菜单自己滚除外）。 */
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest(".project-menu")) return;
+      setProjectMenu(null);
+    };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
+    document.addEventListener("scroll", onScroll, true);
     return () => {
       document.removeEventListener("pointerdown", onDown, true);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", onScroll, true);
     };
   }, [projectMenu, setProjectMenu]);
   /* 新手教程（10-21 侧栏重排）：入口挪进底部导航组 ⇒ 打开状态提到这里（受控交给 NewbieGuide）。 */
@@ -869,7 +877,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     const hasBossThread = items.some((entry) => bossThreads.bossIds.includes(entry.id) || (bossThreads.sessionIds ?? []).includes(entry.id));
                     return (
                       <div key={cwd} className={`project-item ${expanded ? "expanded" : "collapsed"} ${projectMenu === cwd ? "menu-open" : ""} ${items.length ? "" : "is-empty"}`}>
-                        <div className="project-item-head" onMouseLeave={() => setProjectMenu((current) => current === cwd ? null : current)}>
+                        <div className="project-item-head">
                           <button className="project-item-toggle" title={expanded ? "折叠项目" : "展开项目"} onClick={() => toggleProjectExpanded(cwd)}>
                             <ChevronDown size={12} className={`project-item-chevron ${expanded ? "open" : ""}`} />
                             {/* 色相只给文件夹；箭头保持中性（它是展开/折叠的**状态**指示，染色会跟文件夹抢注意力）。
@@ -885,18 +893,29 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                             event.stopPropagation();
                             const open = projectMenu !== cwd;
                             if (open) {
-                              /* 下方空间不足（约 4 项 × 30 + 内边距）⇒ 向上弹，别被侧栏底部裁掉。 */
+                              /* 11-08 用户令：向侧栏右边弹出（portal 到 body）；右边/下边空间不够 ⇒ 按视口钳制
+                                 （整体上移 = 「自适应往上」），⛔ 别嵌回 .thread-list（overflow 会裁掉）。
+                                 ⛔ 横锚取**侧栏右缘**而不是按钮右缘：.sidebar 有 10px 右内边距 + 滚动条，
+                                 锚按钮会让菜单左缘落进侧栏里（实测 240 < 256，看着还是"内嵌"）。 */
                               const rect = event.currentTarget.getBoundingClientRect();
-                              setProjectMenuUp(window.innerHeight - rect.bottom < 170);
+                              const side = document.querySelector(".sidebar")?.getBoundingClientRect();
+                              const width = 216;
+                              const height = 148;
+                              const left = Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - width - 8));
+                              const top = Math.max(8, Math.min(rect.top - 4, window.innerHeight - height - 8));
+                              setProjectMenuPos({ top, left });
                             }
                             setProjectMenu(open ? cwd : null);
                           }}><MoreHorizontal size={14} /></button>
-                          {projectMenu === cwd && <div className={`project-menu${projectMenuUp ? " is-up" : ""}`}>
-                            <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
-                            <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
-                            <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
-                            <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
-                          </div>}
+                          {projectMenu === cwd && createPortal(
+                            <div className="project-menu" style={projectMenuPos ? { top: projectMenuPos.top, left: projectMenuPos.left } : undefined}>
+                              <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                              <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
+                              <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
+                              <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
+                            </div>,
+                            document.body,
+                          )}
                         </div>
                         {expanded && <div className="project-item-body">{items.length ? renderDispatchedList(
                           [...items]

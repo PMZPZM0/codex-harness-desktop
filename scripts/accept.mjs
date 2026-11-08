@@ -12,6 +12,7 @@
 //   ⑧ devtools-categories：开发工具页工具分类（11-01）—— 外面只有分类卡 + 一键安装，
 //      明细只在二级弹窗里（⛔ 一级不许出现工具行）
 //   ⑨ queue-timer：排队消息定时总开关（11-02）—— 默认关闭、开启落盘、关闭即清
+//   ⑩ project-menu-flyout：项目 ⋯ / 会话 ⋯ 菜单向侧栏右侧弹出（portal）+ 视口钳制自适应往上（11-08）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -1766,6 +1767,132 @@ const CHECKS = [
       h.check("③ 关闭后偏好为 false 且本地定时被清空", off.checked === "false" && off.pref === "false" && !off.timers, JSON.stringify(off));
       await h.eval(`document.querySelector(".settings-modal header .relay-modal-close")?.click(); true`);
       await wait(300);
+    },
+  },
+  {
+    id: "project-menu-flyout",
+    name: "项目 ⋯ / 会话 ⋯ 菜单向侧栏右侧弹出（portal）+ 视口钳制自适应往上，不再被裁（11-08）",
+    run: async (h) => {
+      /* 11-08 用户实测（截图）：项目菜单嵌在侧栏滚动容器里，「删除项目」被裁掉；
+         旧 is-up 翻转参照 window 底边而不是滚动容器底边 ⇒ 靠近侧栏底时永远不翻。
+         修法 = portal 到 body + fixed + 视口钳制。这里真点**最后一个项目行**的 ⋯（用户截图同场景）。 */
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("项目")); if(b){b.click(); return true;} return false; })()`);
+      await h.waitFor(`!!document.querySelector(".project-item-menu-btn")`, { label: "项目视图 ⋯ 按钮", timeoutMs: 10000 });
+      /* 全部折叠：保证最后一个项目行就是列表最底行（展开态的 body 会把头行顶离底部）。 */
+      /* ⛔ harness 的 eval 把表达式包成 `return (expr)` —— 多语句必须自己包 IIFE，否则整条是语法错误、静默不执行。 */
+      await h.eval(`(function(){ document.querySelector('.view-toolbar-btn[title="折叠全部项目"]')?.click(); return true; })()`);
+      await wait(300);
+      const geo = () => h.eval(`(function(){
+        const r=(e)=>{ if(!e) return null; const b=e.getBoundingClientRect(); return {left:b.left,right:b.right,top:b.top,bottom:b.bottom,w:b.width,h:b.height}; };
+        const menu=document.querySelector(".project-menu");
+        const btns=[...document.querySelectorAll(".project-item-menu-btn")];
+        const btn=btns[btns.length-1];
+        return { win:{w:innerWidth,h:innerHeight}, sidebar:r(document.querySelector(".sidebar")), menu:r(menu), btn:r(btn),
+          btnCount:btns.length, onBody: !!menu && menu.parentElement===document.body,
+          items: menu ? menu.querySelectorAll("button").length : 0 };
+      })()`);
+      const openLast = async () => {
+        await h.eval(`(function(){ const list=document.querySelector(".thread-list"); if(list) list.scrollTop=list.scrollHeight; return 1; })()`);
+        await wait(300);
+        await h.eval(`(function(){ const btns=[...document.querySelectorAll(".project-item-menu-btn")]; const b=btns[btns.length-1]; if(b){b.click(); return true;} return false; })()`);
+        await h.waitFor(`!!document.querySelector(".project-menu")`, { label: "项目菜单浮层", timeoutMs: 5000 });
+        /* motion-menu-in 入场动画 140ms（scale 0.98→1）：量几何前等它落定，否则量到的是动画中间帧。 */
+        await wait(450);
+      };
+
+      await openLast();
+      const g1 = await geo();
+      h.check("① 前提：有项目 ⋯ 按钮，菜单 portal 到 body（⛔ 不再嵌在侧栏滚动容器里）",
+        Boolean(g1 && g1.btnCount > 0 && g1.menu && g1.onBody),
+        JSON.stringify({ btnCount: g1?.btnCount, onBody: g1?.onBody }));
+      h.check("② 菜单在侧栏右边弹出（左缘 ≥ 侧栏右缘 - 2px）",
+        Boolean(g1?.menu && g1.sidebar && g1.menu.left >= g1.sidebar.right - 2),
+        JSON.stringify({ left: g1?.menu?.left, sidebarRight: g1?.sidebar?.right }));
+      h.check("③ 四项齐全（编辑名称 / 标签 / 打开文件 / 删除），删除项不再被裁",
+        g1?.items === 4, String(g1?.items));
+      h.check("④ 完整落在视口内（靠底的项目行也不越界）",
+        Boolean(g1?.menu && g1.menu.top >= 7 && g1.menu.bottom <= g1.win.h - 7 && g1.menu.right <= g1.win.w - 7),
+        JSON.stringify({ menu: g1?.menu, win: g1?.win }));
+      await h.pressKey("Escape");
+      await wait(250);
+      h.check("⑤ Esc 关闭", !(await geo())?.menu, "");
+
+      /* 矮窗口：最后一个项目行贴近视口底 ⇒ 钳制必须把菜单整体上移（「自适应往上」）。 */
+      await h._send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 500, deviceScaleFactor: 1, mobile: false });
+      await wait(600);
+      await openLast();
+      const g2 = await geo();
+      h.check("⑥ 500 高窗口：菜单被钳制上移（top < 按钮 top）且整体在视口内",
+        Boolean(g2?.menu && g2.btn && g2.menu.top < g2.btn.top && g2.menu.top >= 7 && g2.menu.bottom <= g2.win.h - 7),
+        JSON.stringify({ menuTop: g2?.menu?.top, btnTop: g2?.btn?.top, bottom: g2?.menu?.bottom, winH: g2?.win?.h }));
+      await h.pressKey("Escape");
+      await wait(200);
+      await h._send("Emulation.clearDeviceMetricsOverride");
+      await wait(400);
+
+      /* 点外部关闭（portal 后 DOM 层级 mouseleave 失效，靠 pointerdown 捕获判外部）。
+         ⛔ 多语句一律包 IIFE：harness 的 eval 是 `return (${expr})`，`a(); true` 会整条语法错误、静默不执行。 */
+      await openLast();
+      await h.eval(`(function(){ document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true })); return true; })()`);
+      await wait(250);
+      h.check("⑦ 点菜单外部即关", !(await geo())?.menu, "");
+      /* 滚动列表即关（菜单不跟着滚走留在原地）。 */
+      await openLast();
+      await h.eval(`(function(){ const list=document.querySelector(".thread-list"); if(list) list.dispatchEvent(new Event("scroll")); return true; })()`);
+      await wait(250);
+      h.check("⑧ 滚动会话列表即关", !(await geo())?.menu, "");
+
+      /* ── 会话行 ⋯ 菜单同款（11-08 用户令：「会话的那个选项也是一样的」）──
+         切到「任务」平铺视图（项目视图折叠时没有会话行），滚到最底再点最后一行的 ⋯：
+         这正是用户截图里「菜单被侧栏裁掉」的场景。 */
+      const threadGeo = () => h.eval(`(function(){
+        const r=(e)=>{ if(!e) return null; const b=e.getBoundingClientRect(); return {left:b.left,right:b.right,top:b.top,bottom:b.bottom,w:b.width,h:b.height}; };
+        const menu=document.querySelector(".thread-row-menu");
+        const btns=[...document.querySelectorAll(".thread-more-button")];
+        const btn=btns[btns.length-1];
+        const labels=menu ? [...menu.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()) : [];
+        return { win:{w:innerWidth,h:innerHeight}, sidebar:r(document.querySelector(".sidebar")), menu:r(menu), btn:r(btn),
+          btnCount:btns.length, onBody: !!menu && menu.parentElement===document.body, labels };
+      })()`);
+      const openLastThread = async () => {
+        await h.eval(`(function(){ const list=document.querySelector(".thread-list"); if(list) list.scrollTop=list.scrollHeight; return 1; })()`);
+        await wait(300);
+        await h.eval(`(function(){ const btns=[...document.querySelectorAll(".thread-more-button")]; const b=btns[btns.length-1]; if(b){b.click(); return true;} return false; })()`);
+        await h.waitFor(`!!document.querySelector(".thread-row-menu")`, { label: "会话行菜单浮层", timeoutMs: 5000 });
+        await wait(450); // 入场动画 140ms，量几何前等落定
+      };
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".view-tab")].find((x)=>(x.textContent||"").includes("任务")); if(b){b.click(); return true;} return false; })()`);
+      await h.waitFor(`!!document.querySelector(".thread-more-button")`, { label: "任务视图会话行 ⋯", timeoutMs: 10000 });
+
+      await openLastThread();
+      const t1 = await threadGeo();
+      h.check("⑨ 会话 ⋯ 菜单也 portal 到 body（⛔ 不再嵌在侧栏滚动容器里）",
+        Boolean(t1 && t1.btnCount > 0 && t1.menu && t1.onBody),
+        JSON.stringify({ btnCount: t1?.btnCount, onBody: t1?.onBody }));
+      h.check("⑩ 会话菜单在侧栏右边弹出（左缘 ≥ 侧栏右缘 - 2px）",
+        Boolean(t1?.menu && t1?.sidebar && t1.menu.left >= t1.sidebar.right - 2),
+        JSON.stringify({ left: t1?.menu?.left, sidebarRight: t1?.sidebar?.right }));
+      h.check("⑪ 关键项齐全（导出会话 / 改名字 / 删除），靠底的会话行也不越界",
+        Boolean(t1?.labels?.some((l) => l.startsWith("导出会话")) && t1?.labels?.some((l) => l.startsWith("完整备份"))
+          && t1?.labels?.includes("改名字") && t1?.labels?.includes("删除")
+          && t1.menu.top >= 7 && t1.menu.bottom <= t1.win.h - 7 && t1.menu.right <= t1.win.w - 7),
+        JSON.stringify({ labels: t1?.labels, menu: t1?.menu, win: t1?.win }));
+      await h.pressKey("Escape");
+      await wait(250);
+      h.check("⑫ 会话菜单 Esc 关闭", !(await threadGeo())?.menu, "");
+
+      /* 矮窗口：最后一行贴近视口底 ⇒ 会话菜单同样必须整体上移（用户原话「不会自适应往上吗」）。 */
+      await h._send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 500, deviceScaleFactor: 1, mobile: false });
+      await wait(600);
+      await openLastThread();
+      const t2 = await threadGeo();
+      h.check("⑬ 500 高窗口：会话菜单被钳制上移（top < 按钮 top）且整体在视口内",
+        Boolean(t2?.menu && t2.btn && t2.menu.top < t2.btn.top && t2.menu.top >= 7 && t2.menu.bottom <= t2.win.h - 7),
+        JSON.stringify({ menuTop: t2?.menu?.top, btnTop: t2?.btn?.top, bottom: t2?.menu?.bottom, winH: t2?.win?.h }));
+      await h.pressKey("Escape");
+      await wait(200);
+      await h._send("Emulation.clearDeviceMetricsOverride");
+      await wait(400);
     },
   },
 ];

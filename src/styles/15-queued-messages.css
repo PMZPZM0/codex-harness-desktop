@@ -942,15 +942,15 @@
   font-size: 11.5px;
   line-height: 1.4;
 }
+/* 11-08 用户（截图）：「往右边展示，不要放侧边栏里面」+「不会自适应往上吗」——
+   菜单 portal 到 body（fixed），top/left 由渲染层按按钮 rect 算并向视口钳制；
+   ⛔ 不再 absolute 挂在 .project-item-head 里（被 .thread-list 的 overflow 裁掉，
+   且旧 is-up 翻转参照的是 window 而不是滚动容器底边，靠近侧栏底时永远不翻）。 */
 .project-menu {
-  position: absolute;
-  top: calc(100% - 2px);
-  right: 4px;
-  left: 32px;
-  z-index: 20;
-  min-width: 0;
-  width: auto;
-  max-width: calc(100% - 36px);
+  position: fixed;
+  z-index: 10021;
+  width: 216px;
+  max-width: calc(100vw - 16px);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -959,12 +959,6 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-/* 11-07 用户（截图）：「选项没有自适应展示，都到下面了」——靠近侧栏底部时翻到行上方，
-   并给菜单一个视口内的高度上限（内容再多也不越出窗口）。 */
-.project-menu.is-up {
-  top: auto;
-  bottom: calc(100% - 2px);
 }
 .project-menu {
   max-height: min(260px, calc(100vh - 24px));

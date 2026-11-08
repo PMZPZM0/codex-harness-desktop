@@ -1750,6 +1750,22 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-row-menu \.thread-row-menu-hint\s*\{[^}]*font-size:\s*10px[^}]*margin-left:\s*auto|\.thread-row-menu \.thread-row-menu-hint\s*\{[^}]*margin-left:\s*auto[^}]*font-size:\s*10px/.test(cssSrc285) ? ok : fail)(
       "【285】菜单提示小字靠右、10px 淡色"
     );
+    /* 11-08 用户令（与项目菜单同款）：「往右边展示，不要放侧边栏里面」——
+       会话 ⋯ 菜单原用 right 锚（右缘贴按钮 ⇒ 菜单向左展开压进侧栏），改 left 锚 = 侧栏右缘 + 视口钳制。 */
+    (/const side = document\.querySelector\("\.sidebar"\)\?\.getBoundingClientRect\(\)/.test(rowsSrc285)
+      && /left: Math\.max\(8, Math\.min\(\(side \? side\.right : rect\.right\) \+ 6, window\.innerWidth - menuWidth - 8\)\)/.test(rowsSrc285)
+      && /style=\{\{ top: bag\.threadRowMenu\.top, left: bag\.threadRowMenu\.left \}\}/.test(rowsSrc285) ? ok : fail)(
+      "【285】会话 ⋯ 菜单向侧栏右边弹出（left 锚 + 视口钳制，与项目菜单同款；11-08 用户令）"
+    );
+    (!/right: Math\.max\(8, window\.innerWidth - rect\.right\)/.test(rowsSrc285) && !/right: bag\.threadRowMenu\.right/.test(rowsSrc285) ? ok : fail)(
+      "【285】⛔ 会话菜单旧 right 锚不许复活（向左展开压进侧栏 = 用户点名的旧形态）"
+    );
+    /* portal 到 body 后没有「按 Esc 关」——与项目菜单对齐；⛔ 必须写在 hook 顶层（renderThreadRow 是普通函数）。 */
+    (/if \(!bag\.threadRowMenu\) return;/.test(rowsSrc285)
+      && /document\.addEventListener\("keydown", onKey\)/.test(rowsSrc285)
+      && /bag\.setThreadRowMenu\(null\)/.test(rowsSrc285) ? ok : fail)(
+      "【285】会话菜单 Esc 关闭（与项目菜单同款；11-08）"
+    );
     (/\.thread-actions-buttons\s*\{[^}]*position:\s*absolute/.test(cssSrc285) && /\.thread-row:not\(\.is-member-row\):hover > button:first-child > small\s*\{[^}]*visibility:\s*hidden/.test(cssSrc285) ? ok : fail)(
       "【285】hover 只让右侧动：操作键绝对定位不占布局 + 时间用 visibility 保留占位（标签不位移）"
     );
