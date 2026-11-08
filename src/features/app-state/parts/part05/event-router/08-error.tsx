@@ -93,6 +93,10 @@ export function handleEventRouter8(bag: Bag, params: any): boolean {
           else errorMessage = `第 ${no}/${total} 次自动重试：连接中断，引擎正在自动恢复……`;
         } else if (details.includes("401") && /API key format is incorrect/i.test(details)) {
           errorMessage = "供应商认证失败（API Key 与服务商不匹配）：当前供应商的 Key 被发到了另一个服务商。请停止后重发（会自动迁移会话），或检查供应商配置";
+        } else if (/402|payment\s*required|insufficient[_\s-]*(balance|quota|funds)|余额不足|欠费/i.test(`${rawError}\n${details}`)) {
+          /* 11-08 用户截图：「unexpected status 402 Payment Required: Insufficient Balance … url: 127.0.0.1:47121」
+             —— 上游余额不足的原文直接甩给用户看不懂；翻译成可执行的处置（充值 / 换模型），并说明重试无用。 */
+          errorMessage = "供应商账户余额不足（上游返回 402 Insufficient Balance）：请到该供应商后台充值，或切换模型 / 供应商后重发。重试不会成功";
         }
         // ⛔ 429 的**排重试**在跨会话区（engine error 通知也覆盖后台会话）；这里只在
         //   非限流的错误上清上下文（限流错误留给重试链，清了就没人重发了）。

@@ -237,3 +237,105 @@ test("anthropic 上游：custom 工具（apply_patch）双向翻译", { skip: !e
     await new Promise((r) => upstream.close(r));
   }
 });
+
+/**
+ * 11-08 用户实测（bridge.log 实证）：1.8MB 长会话请求，上游 54~69 秒才回响应头；
+ * 旧实现 30s 连接超时 + 18/30s 探活把它掐掉 ⇒ 引擎判流断开 ⇒ 自动重连 1/5。
+ * 这里钉住新口径：
+ *   ① 默认值：连接 180s / 空闲 300s / 小请求探活 18s（应用侧永不做第一个掐流的人）；
+ *   ② 大请求（>64KB）的探活窗口 = 连接超时（不是 18s）⇒ 慢但正常的 responses 上游不再被降级成 chat。
+ */
+test("bridge 超时口径：大请求不误杀、不降级", { skip: !enabled, timeout: 30_000 }, async () => {
+  const require = createRequire(import.meta.url);
+  // 先按默认值断言（清缓存 + 清 env，避免被其它用例的覆盖值污染）
+  delete process.env.HARNESS_BRIDGE_PROBE_IDLE_MS;
+  delete process.env.HARNESS_BRIDGE_CONNECT_MS;
+  delete process.env.HARNESS_BRIDGE_IDLE_MS;
+  delete require.cache[require.resolve(compiled)];
+  const fresh = require(compiled);
+  assert.ok(fresh.BRIDGE_TIMEOUTS, "必须导出 BRIDGE_TIMEOUTS 供守卫/单测断言");
+  assert.ok(fresh.BRIDGE_TIMEOUTS.connectMs >= 120_000, `连接超时太短：${fresh.BRIDGE_TIMEOUTS.connectMs}`);
+  assert.ok(fresh.BRIDGE_TIMEOUTS.idleMs >= 300_000, `空闲超时太短：${fresh.BRIDGE_TIMEOUTS.idleMs}`);
+  assert.equal(fresh.BRIDGE_TIMEOUTS.probeSmallMs, 18_000);
+
+  // 大请求：探活 300ms、连接 15s（env 下限）⇒ 上游 800ms 才回头也**不许**改走 chat
+  process.env.HARNESS_BRIDGE_PROBE_IDLE_MS = "300";
+  process.env.HARNESS_BRIDGE_CONNECT_MS = "15000";
+  delete require.cache[require.resolve(compiled)];
+  const { ResponsesBridge } = require(compiled);
+
+  let chatHits = 0;
+  const upstream = http.createServer((req, res) => {
+    if (req.url.includes("/chat/completions")) { chatHits += 1; req.resume(); res.writeHead(500); res.end("should-not-fallback"); return; }
+    if (req.url.includes("/responses")) {
+      req.resume();
+      req.on("end", () => {
+        setTimeout(() => {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          res.write('data: {"type":"response.output_text.delta","delta":"ok-big"}\n\n');
+          res.end();
+        }, 800);
+      });
+      return;
+    }
+    res.writeHead(404); res.end();
+  });
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  const upstreamPort = upstream.address().port;
+  const logs = [];
+  const bridge = new ResponsesBridge({ log: (line) => logs.push(line) });
+  const port = await bridge.start();
+  bridge.register("big", { baseUrl: `http://127.0.0.1:${upstreamPort}`, mode: "auto", label: "big" });
+  try {
+    const bigInput = "x".repeat(70_000); // >64KB ⇒ 走大请求分支
+    const response = await fetch(`http://127.0.0.1:${port}/p/big/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "m", input: bigInput, stream: true }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    const text = await response.text();
+    assert.equal(response.status, 200);
+    assert.match(text, /ok-big/);
+    assert.equal(chatHits, 0, "大请求被误判成 chat 重放了");
+    assert.equal(logs.some((l) => /改用 chat/.test(l)), false, "大请求被误判成不支持 responses");
+  } finally {
+    await bridge.stop();
+    await new Promise((r) => upstream.close(r));
+    delete process.env.HARNESS_BRIDGE_PROBE_IDLE_MS;
+    delete process.env.HARNESS_BRIDGE_CONNECT_MS;
+  }
+});
+
+/** 11-08：上游 402（余额不足）必须**原样透传**给引擎（界面据此翻中文），桥不许吞成 5xx/空流。 */
+test("bridge 透传 402 余额不足（原样返回，不吞成流错误）", { skip: !enabled, timeout: 30_000 }, async () => {
+  const require = createRequire(import.meta.url);
+  delete process.env.HARNESS_BRIDGE_PROBE_IDLE_MS;
+  delete process.env.HARNESS_BRIDGE_CONNECT_MS;
+  delete require.cache[require.resolve(compiled)];
+  const { ResponsesBridge } = require(compiled);
+  const upstream = http.createServer((req, res) => {
+    req.resume();
+    req.on("end", () => {
+      res.writeHead(402, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: { message: "Insufficient Balance", type: "payment_required" } }));
+    });
+  });
+  await new Promise((r) => upstream.listen(0, "127.0.0.1", r));
+  const bridge = new ResponsesBridge({ log: () => {} });
+  const port = await bridge.start();
+  bridge.register("bal", { baseUrl: `http://127.0.0.1:${upstream.address().port}`, mode: "responses", label: "bal" });
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/p/bal/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ model: "m", input: "hi", stream: true }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    assert.equal(response.status, 402);
+    assert.match(await response.text(), /Insufficient Balance/);
+  } finally {
+    await bridge.stop();
+    await new Promise((r) => upstream.close(r));
+  }
+});

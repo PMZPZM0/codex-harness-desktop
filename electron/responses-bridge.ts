@@ -13,19 +13,31 @@ export { SseParser, toChatRequest, ChatStreamTranslator, chatJsonToResponses, an
 
 export type BridgeMode = "auto" | "responses" | "chat" | "anthropic";
 
-/* ⛔⛔ 上游**空闲看门狗**（10-17 实测事故定的值）：
+/* ⛔⛔ 上游**空闲看门狗**（10-17 实测事故定的值；11-08 用户口径再放宽）：
    旧会话（56 次工具调用 / 约 6.7 万 tokens）发给网关后，**59 秒零字节**，界面只有"生成中"，
    桥没有任何日志、引擎也收不到错误 —— 因为流是"正常结束但无内容"。
    ⇒ ① 超时必须**主动报错**（SSE error 事件），别让用户干等；
-      ② 阈值给到 120s：长上下文首字本来就可能 60~90s，⛔ 别把"慢"误杀成"错"；
+      ② 阈值给到 300s：与引擎自己的 stream_idle_timeout（默认 5 分钟）对齐 ——
+         **应用侧永远不做第一个掐流的人**（11-08 用户令：「不管多大请求，应用侧都不能有断流」）；
       ③ 可用 `HARNESS_BRIDGE_IDLE_MS` 覆盖（调试用）。 */
-const BRIDGE_IDLE_MS = Math.max(30_000, Number(process.env.HARNESS_BRIDGE_IDLE_MS) || 120_000);
+const BRIDGE_IDLE_MS = Math.max(30_000, Number(process.env.HARNESS_BRIDGE_IDLE_MS) || 300_000);
 /* auto 探活等待第一段数据的时间：超时 = 上游吊着不吐字 ⇒ 改走 chat 重放。
-   ⛔ 18s 要短于模型探活的 35s（否则用户点「检测」先被外层超时打断，看不到 chat 兜底结果）。 */
+   ⛔ 小请求（模型检测 ~200B）保持 18s：要短于模型探活的 35s（否则用户点「检测」先被外层超时打断，
+      看不到 chat 兜底结果）。大请求（真实对话，>64KB）用 BRIDGE_CONNECT_MS 同档 —— 见 probeResponses。 */
 const BRIDGE_PROBE_IDLE_MS = Math.max(5_000, Number(process.env.HARNESS_BRIDGE_PROBE_IDLE_MS) || 18_000);
 /* 连上游后**连响应头都没有**的超时：10-21 实测 grok-4.7 就是这种（0 字节、无状态行）。
+   ⛔⛔ 11-08 用户实测（bridge.log 实证）：1.8MB 的长会话请求，上游要 **54~69 秒**才回响应头，
+      旧值 30s 会把**还在正常处理**的请求直接掐掉 ⇒ 引擎判流断开 ⇒ 自动重连 1/5
+      （日志时间戳毫秒级对上）。30s → 180s：大请求（含大工具输出）也在窗口内。
    ⛔ 旧看门狗只在 response 事件之后才启动，这种情况一个都不会触发。 */
-const BRIDGE_CONNECT_MS = Math.max(15_000, Number(process.env.HARNESS_BRIDGE_CONNECT_MS) || 30_000);
+const BRIDGE_CONNECT_MS = Math.max(15_000, Number(process.env.HARNESS_BRIDGE_CONNECT_MS) || 180_000);
+
+/** 对外暴露当前生效的超时（守卫 / 单测按它断言；改值必须同步改断言）。 */
+export const BRIDGE_TIMEOUTS = {
+  connectMs: BRIDGE_CONNECT_MS,
+  idleMs: BRIDGE_IDLE_MS,
+  probeSmallMs: BRIDGE_PROBE_IDLE_MS,
+} as const;
 
 /** Responses 流的错误事件（引擎侧会把它当成本轮失败并显示原因，而不是静默空回复）。 */
 function sseError(message: string): string {
@@ -210,7 +222,11 @@ export class ResponsesBridge {
         if (probeTimer) { clearTimeout(probeTimer); probeTimer = null; }
         resolve(verdict);
       };
-      const idleMs = raw.byteLength < 64_000 ? BRIDGE_PROBE_IDLE_MS : Math.max(BRIDGE_PROBE_IDLE_MS, 30_000);
+      /* ⛔ 11-08：大请求（真实对话，>64KB）与连接超时同档（180s）——
+         长会话请求体到 MB 级时上游本来就要 50~70 秒才吐第一段，18/30s 会把正常请求误判成
+         「不支持 responses」并改走 chat（既多打一路请求、又永久降级）。
+         小请求（模型检测 ~200B）保持 18s，见 BRIDGE_PROBE_IDLE_MS 注释。 */
+      const idleMs = raw.byteLength < 64_000 ? BRIDGE_PROBE_IDLE_MS : Math.max(BRIDGE_PROBE_IDLE_MS, BRIDGE_CONNECT_MS);
       upstream.once("response", (up) => {
         const status = up.statusCode ?? 502;
         if (status === 404 || status === 405 || status === 501) {
@@ -330,7 +346,19 @@ export class ResponsesBridge {
     upstream.once("response", (up) => {
       clearConnect();
       this.counters.forwarded += 1;
-      res.writeHead(up.statusCode ?? 502, this.responseHeaders(up.headers));
+      const status = up.statusCode ?? 502;
+      /* 11-08：透传路径过去**不记非 2xx** ⇒ 客户报「402 Insufficient Balance」时 bridge.log 一行证据都没有
+         （只能靠界面截图猜）。这里对 >=400 收集最多 2KB 正文，收尾时落一行日志（⛔ 不打 Authorization）。 */
+      if (status >= 400) {
+        const parts: Buffer[] = [];
+        let size = 0;
+        up.on("data", (chunk: Buffer) => { if (size < 2048) { parts.push(chunk); size += chunk.length; } });
+        up.once("end", () => {
+          this.counters.failures += 1;
+          this.log(`[bridge] ${target.label ?? ""} 上游 ${status} · 透传 ${rest} · 请求体 ${raw.byteLength}B · ${Buffer.concat(parts).toString("utf8").slice(0, 300).replace(/\s+/g, " ")}`);
+        });
+      }
+      res.writeHead(status, this.responseHeaders(up.headers));
       up.pipe(res);
       if (rest.endsWith("/responses")) this.watchForwardIdle(res, up, target.label ?? "");
     });

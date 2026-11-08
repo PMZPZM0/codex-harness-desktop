@@ -34,6 +34,30 @@ const ERROR_KINDS = {
 
 const RUNNING_STATUS = new Set(["inProgress", "running"]);
 
+/** 引擎把很多上游错误归到 other / badRequest，只把原文塞在 message 里 —— 这里按原文再分一次类。
+ *  ⛔ 11-08 用户实测（截图）：「任务失败: unexpected status 402 Payment Required: Insufficient Balance
+ *     ... url: http://127.0.0.1:47121/p/custom906/responses」——原文直接甩给用户，既看不懂也不知道怎么办。
+ *  ⛔ 顺序有意义：402/余额 必须在 401/鉴权 之前（部分网关把余额不足写成 401）。 */
+const MESSAGE_RULES = [
+  {
+    test: /402|payment\s*required|insufficient[_\s-]*(balance|quota|funds)|余额不足|欠费|额度不足/i,
+    label: "供应商余额不足",
+    hint: "该供应商账户余额不足（上游返回 402）：请到供应商后台充值，或切换模型 / 供应商后重发。重试不会成功。",
+  },
+  {
+    test: /401|unauthorized|invalid[_\s-]*api[_\s-]*key|API key format is incorrect/i,
+    label: "鉴权失败",
+    hint: "模型供应商鉴权失败：检查该供应商的 API Key，或停止后重发让会话迁移到当前供应商。",
+  },
+];
+
+function matchMessageRule(message) {
+  for (const rule of MESSAGE_RULES) {
+    if (rule.test.test(message)) return rule;
+  }
+  return null;
+}
+
 /**
  * 解析一个回合的结束原因。
  * @returns {{kind:string, label:string, detail:string, continueText:string}}
@@ -56,9 +80,12 @@ export function describeTurnStop(turn) {
   const continueText = String((steer && (steer.message ?? steer.input)) ?? "").trim();
 
   if (err || status === "failed") {
-    const info = ERROR_KINDS[code] ?? ERROR_KINDS.other;
     const engineMessage = String(err?.message ?? "").trim();
     const extra = String(err?.additionalDetails ?? "").trim();
+    /* 引擎分类优先；分类是 other/badRequest（或干脆没给）时，按原文再分一次（402 余额不足等）。 */
+    const info = ERROR_KINDS[code] && code !== "other" && code !== "badRequest"
+      ? ERROR_KINDS[code]
+      : matchMessageRule(`${engineMessage}\n${extra}`) ?? ERROR_KINDS[code] ?? ERROR_KINDS.other;
     const detail = [info.hint, engineMessage, extra].filter(Boolean).join("\n");
     return {
       kind: code || "error",
