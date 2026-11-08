@@ -511,7 +511,7 @@ export const KNOWN_GATEWAY_MODELS: { match: RegExp; wire: "responses" | "chat"; 
 
   // 火山方舟标准端点
 
-  { match: /volces\.com/, wire: "chat", models: ["doubao-seed-1.8", "doubao-seed-1.6", "doubao-1.5-pro-32k", "deepseek-v3"] },
+  { match: /volces\.com/, wire: "chat", models: ["doubao-seed-2-1-pro-260915", "doubao-seed-1.8", "doubao-seed-1.6", "doubao-1.5-pro-32k", "deepseek-v3"] },
 
   // 智谱 Coding Plan：https://open.bigmodel.cn/api/coding/paas/v4
 
@@ -521,11 +521,11 @@ export const KNOWN_GATEWAY_MODELS: { match: RegExp; wire: "responses" | "chat"; 
 
   // Kimi For Coding：https://api.kimi.com/coding/v1
 
-  { match: /api\.kimi\.com|kimi\.com/, wire: "chat", models: ["kimi-k3", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
+  { match: /api\.kimi\.com|kimi\.com/, wire: "chat", models: ["kimi-k3.1-pro", "kimi-k3", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
 
   // MiniMax
 
-  { match: /minimaxi\.com|minimax\.io|minimax/, wire: "responses", models: ["MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2"] },
+  { match: /minimaxi\.com|minimax\.io|minimax/, wire: "responses", models: ["MiniMax-M3.1-Flash", "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2"] },
 
 ];
 

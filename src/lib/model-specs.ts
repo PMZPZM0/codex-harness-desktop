@@ -10,16 +10,22 @@
  *    `supports_image_detail_original`（electron/main.ts）。标错两个方向都有害：
  *    漏标 → 视觉模型发图被引擎当不支持；虚标 → 纯文本模型被允许发图、请求被供应商拒。
  *
- * 数据来源（2026-09-18 更新，逐条按官方文档 / 官方模型页；第三方只用于交叉印证）：
+ * 数据来源（2026-11-08 增量更新，逐条按官方文档 / 官方模型页；第三方只用于交叉印证）：
  *  · GPT-6 Astra / GPT-5.6 Sol·Terra·Luna：OpenAI 模型页（1.05M 上下文 / 128K 输出 / 文本+图像输入）
+ *  · GPT-6.1 Sol（09-29）/ Terra（10-26）：OpenAI API 模型页（1.05M / 128K / 视觉；档位 low~max，Terra 另含 none）
  *  · Claude Fable 5 / Opus 4.8：Anthropic 文档（1M / 128K / 文本+图像）
+ *  · Claude Opus 5.5（09-22）：Anthropic 官方（1M / 128K / 文本·图像·PDF）
  *  · Gemini 3.1 Pro / 3.5 Flash / 3.1 Flash-Lite：Google Cloud 模型指南（1,048,576 / 65,536 / 文本·图·音·视频）
+ *  · Gemini 4 Argon（10-13）：Google 模型页（1,048,576 / 输出上限 100 万 / 思考 low·medium·high）
  *  · DeepSeek V4 Pro 0813 / Flash 0731：官方（1M / 384K；**纯文本，无视觉**）
  *  · Kimi K3 / K3-256K：官方（1M / 256K；**K3 首次支持原生视觉**）
+ *  · Kimi K3.1 Pro（10-24）：Kimi API 文档（1M / 输出上限 1M / low·high·max / 图片·视频）
  *  · GLM-5.3 / 5.3-Flash：Z.ai（约 1M / 128K；**5.3 纯文本，只有 5.3-Flash 是原生多模态**）
  *  · Qwen3.8-Max：阿里（约 1M / 131K；文本+图像+视频）
  *  · 豆包 Seed 2.0：字节（256K；视觉为国内第一梯队）
+ *  · 豆包 Seed 2.1 Pro：火山方舟模型列表（1,048,576 / 256K / 文本+图像）
  *  · 日日新 SenseNova 6.5 Pro / Turbo：商汤大装置文档（128K(131072)；图文视频输入）
+ *  · MiniMax M3.1 Flash（10-19）：官方模型卡（1M / 文本·图像·视频 / 五档思考；输出上限未公布 ⇒ 不填）
  *  · 小米 MiMo-V2.5 / Meta Muse Spark：官方发布信息（1M；全模态）
  *
  * 维护约定：**只收录有据可查的**。拿不准就不加 —— 漏加只是用户手填一次，错加会把
@@ -53,6 +59,11 @@ type SpecRule = {
 
 const RULES: SpecRule[] = [
   // ── OpenAI ─────────────────────────────────────────────────────────────
+  /* 11-08 补充：GPT-6.1 家族（⛔ 必须排在 /gpt-6/ 之前，否则被旧规则抢走）。
+     Sol 09-29 发布、Terra 10-26；两者 1.05M / 128K / 视觉。 */
+  { match: /gpt-6\.1/, vendor: "OpenAI", family: "GPT-6.1（Sol / Terra）",
+    ids: ["gpt-6.1-sol", "gpt-6.1-terra"],
+    spec: { contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ["low", "medium", "high", "xhigh", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
   { match: /gpt-6/, vendor: "OpenAI", family: "GPT-6（Astra）",
     ids: ["gpt-6-astra", "gpt-6"],
     spec: { contextWindow: 1_050_000, maxOutputTokens: 128_000, efforts: ["low", "medium", "high", "xhigh", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
@@ -82,14 +93,20 @@ const RULES: SpecRule[] = [
   // ⛔ 只把**有据可查是新世代 1M** 的型号划进这条（fable / mythos / opus 4.8 / opus 5）：
   //   早期 claude 仍是 200K/64K，划错会把 200K 的模型填成 1M，长任务请求直接被拒。
   { match: /claude-(fable|mythos)|claude-opus-4[-._]?8|claude-opus-5|claude-sonnet-5/,
-    vendor: "Anthropic", family: "Claude 新旗舰（Fable 5 / Opus 4.8 / Opus 5）",
-    ids: ["claude-fable-5", "claude-opus-4-8", "claude-mythos-5", "claude-opus-5"],
+    vendor: "Anthropic", family: "Claude 新旗舰（Fable 5 / Opus 4.8 / Opus 5 / Opus 5.5）",
+    ids: ["claude-opus-5-5", "claude-fable-5", "claude-opus-4-8", "claude-mythos-5", "claude-opus-5"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 128_000, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
   { match: /claude/, vendor: "Anthropic", family: "Claude（早期版本）",
     ids: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
     spec: { contextWindow: 200_000, maxOutputTokens: 64_000, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
 
   // ── Google（官方：1,048,576 / 65,536；文本·图像·音频·视频；四档思考）─────
+  /* 11-08 补充：Gemini 4 Argon（10-13，Gemini 4 系列首款）——
+     1M 上下文 + 长解码（单次输出上限 100 万）、思考 low/medium/high；⛔ 排在 /gemini/ 通用规则前。 */
+  { match: /gemini-4/,
+    vendor: "Google", family: "Gemini 4（Argon）",
+    ids: ["gemini-4-argon"],
+    spec: { contextWindow: 1_048_576, maxOutputTokens: 1_000_000, efforts: ["low", "medium", "high"], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
   { match: /gemini/, vendor: "Google", family: "Gemini 3",
     ids: ["gemini-3.5-flash", "gemini-3.1-pro-preview", "gemini-3.1-flash-lite", "gemini-3-pro-preview"],
     spec: { contextWindow: 1_048_576, maxOutputTokens: 65_536, efforts: ["minimal", "low", "medium", "high"], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
@@ -109,6 +126,11 @@ const RULES: SpecRule[] = [
     spec: { contextWindow: 1_000_000, maxOutputTokens: 393_216, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
 
   // ── 月之暗面 Kimi（K3 = 1M 且**首次原生视觉**；K3-256k 省额度）──────────
+  /* 11-08 补充：Kimi K3.1 Pro（10-24）—— 1M / 输出上限 1M / low·high·max / 图片·视频；
+     ⛔ 必须排在 /kimi-k3/ 之前（K3.1 会被旧规则抢先命中）。 */
+  { match: /kimi-k3\.1/, vendor: "月之暗面", family: "Kimi K3.1 Pro",
+    ids: ["kimi-k3.1-pro", "kimi-k3.1-pro-highspeed"],
+    spec: { contextWindow: 1_000_000, maxOutputTokens: 1_048_576, efforts: ["low", "high", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
   { match: /kimi-k3[-_.]?256k|k3[-_.]256k/, vendor: "月之暗面", family: "Kimi K3（256K 档）",
     ids: ["kimi-k3-256k"],
     spec: { contextWindow: 262_144, maxOutputTokens: 131_072, efforts: ["low", "high", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
@@ -151,6 +173,11 @@ const RULES: SpecRule[] = [
     spec: { contextWindow: 131_072, maxOutputTokens: 32_768, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
 
   // ── 豆包 / 火山方舟（视觉为国内第一梯队；Seed 2.0）─────────────────────
+  /* 11-08 补充：Seed 2.1 Pro（火山方舟模型列表：1,048,576 / 256K / 文本+图像）；
+     ⛔ 排在旧规则前面（/doubao[-_.]?2/ 会先命中 2.1）。 */
+  { match: /doubao-seed-2[.-]1|seed-2[.-]1/, vendor: "字节跳动", family: "豆包 Seed 2.1 Pro（视觉）",
+    ids: ["doubao-seed-2.1-pro", "doubao-seed-2-1-pro-260915"],
+    spec: { contextWindow: 1_048_576, maxOutputTokens: 262_144, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
   { match: /doubao-seed|doubao[-_.]?2|seed-2/, vendor: "字节跳动", family: "豆包 Seed 2.0（视觉）",
     ids: ["doubao-seed-2.0-pro", "doubao-seed-2.0", "doubao-seed-code"],
     spec: { contextWindow: 262_144, maxOutputTokens: 32_768, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
@@ -164,6 +191,11 @@ const RULES: SpecRule[] = [
     spec: { contextWindow: 131_072, maxOutputTokens: 32_768, efforts: [], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
 
   // ── MiniMax（M3 原生图像+视频；H 系为视频生成线）────────────────────────
+  /* 11-08 补充：M3.1 Flash（10-19，多模态编程 / 1M / 文本·图像·视频 / 五档思考）。
+     官方未公布输出上限 ⇒ ⛔ 不填 maxOutputTokens（拿不准不编）。排在 /minimax-m3|m3/ 前。 */
+  { match: /minimax-m3\.1|m3\.1/, vendor: "MiniMax", family: "MiniMax M3.1 Flash（多模态）",
+    ids: ["minimax-m3.1-flash"],
+    spec: { contextWindow: 1_048_576, efforts: ["low", "medium", "high", "xhigh", "max"], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
   { match: /minimax-m3|(^|[^a-z0-9])m3(-|$)/, vendor: "MiniMax", family: "MiniMax M3",
     ids: ["minimax-m3"],
     spec: { contextWindow: 1_048_576, maxOutputTokens: 131_072, efforts: [], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },

@@ -295,6 +295,17 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
         ` dsFlashCtx: m.matchModelSpec("deepseek-flash").contextWindow, dsFlashVis: V("deepseek-flash"), dsFlashEff: m.matchModelSpec("deepseek-flash").efforts.join("/"),` +
         ` dsV4FlashRouted: m.matchModelSpec("deepseek-v4-flash-ga-260731").contextWindow,` +
         ` k3: m.matchModelSpec("kimi-k3").contextWindow, k3Vis: V("kimi-k3"), k3256: m.matchModelSpec("kimi-k3-256k").contextWindow,` +
+        ` gpt61Sol: m.matchModelSpec("gpt-6.1-sol").contextWindow, gpt61Terra: m.matchModelSpec("gpt-6.1-terra").contextWindow,` +
+        ` gpt61Out: m.matchModelSpec("gpt-6.1-sol").maxOutputTokens, gpt61Eff: m.matchModelSpec("gpt-6.1-sol").efforts.join("/"), gpt61Vis: V("gpt-6.1-sol"),` +
+        ` claude55: m.matchModelSpec("claude-opus-5-5").contextWindow, claude55Out: m.matchModelSpec("claude-opus-5-5").maxOutputTokens, claude55Vis: V("claude-opus-5-5"),` +
+        ` gemini4: m.matchModelSpec("gemini-4-argon").contextWindow, gemini4Out: m.matchModelSpec("gemini-4-argon").maxOutputTokens,` +
+        ` gemini4Eff: m.matchModelSpec("gemini-4-argon").efforts.join("/"), gemini4Video: (m.matchModelSpec("gemini-4-argon").inputTypes || []).includes("video"),` +
+        ` k31: m.matchModelSpec("kimi-k3.1-pro").contextWindow, k31Out: m.matchModelSpec("kimi-k3.1-pro").maxOutputTokens,` +
+        ` k31Eff: m.matchModelSpec("kimi-k3.1-pro").efforts.join("/"), k31Vis: V("kimi-k3.1-pro"),` +
+        ` mm31: m.matchModelSpec("minimax-m3.1-flash").contextWindow, mm31Video: (m.matchModelSpec("minimax-m3.1-flash").inputTypes || []).includes("video"),` +
+        ` mm31Eff: m.matchModelSpec("minimax-m3.1-flash").efforts.join("/"), mm31Out: m.matchModelSpec("minimax-m3.1-flash").maxOutputTokens,` +
+        ` db21: m.matchModelSpec("doubao-seed-2-1-pro-260915").contextWindow, db21Out: m.matchModelSpec("doubao-seed-2-1-pro-260915").maxOutputTokens, db21Vis: V("doubao-seed-2.1-pro"),` +
+        ` sugGpt61: m.suggestModelIds("gpt-6.1").slice(0, 2).map((e) => e.id),` +
         ` glm53: m.matchModelSpec("glm-5.3").contextWindow, glm53Vis: V("glm-5.3"), glm53fVis: V("glm-5.3-flash"),` +
         ` qwen38: m.matchModelSpec("qwen3.8-max").contextWindow, qwen38Video: (m.matchModelSpec("qwen3.8-max").inputTypes || []).includes("video"),` +
         ` nova: m.matchModelSpec("sensenova-v6.5-pro").contextWindow, novaVis: V("sensenova-v6.5-pro"),` +
@@ -319,6 +330,20 @@ console.log(C.bold("\n【25】思考等级：展示 低/中/高/最高/极高，
       (sp.dsFlashCtx === 1048576 && sp.dsFlashVis === true && sp.dsFlashEff === "low/high/max" ? ok : fail)("官方主 id deepseek-flash 与别名同规格；思考强度 low/high/max（默认 high，官方模型&价格页）");
       (sp.dsV4FlashRouted === 1048576 ? ok : fail)("旧名 deepseek-v4-flash 官方声明路由到 V4.1 Flash —— 规格必须按 V4.1（1M/视觉）算，不能留在旧纯文本规则里");
       (sp.k3 === 1000000 && sp.k3Vis === true && sp.k3256 === 262144 ? ok : fail)("Kimi K3：1M + **原生视觉**（K3 首次支持）；K3-256k 省额度档 262K");
+      /* 11-08 增量：09-10 月发布的新一代（GPT-6.1 / Claude Opus 5.5 / Gemini 4 / K3.1 Pro / M3.1 / Seed 2.1）。 */
+      (sp.gpt61Sol === 1050000 && sp.gpt61Terra === 1050000 && sp.gpt61Out === 128000 && sp.gpt61Vis === true && sp.gpt61Eff === "low/medium/high/xhigh/max" ? ok : fail)(
+        "GPT-6.1 Sol / Terra：1.05M / 128K / 视觉（09-29、10-26 发布；⛔ 必须排在 gpt-6 旧规则前）");
+      (sp.claude55 === 1000000 && sp.claude55Out === 128000 && sp.claude55Vis === true ? ok : fail)("Claude Opus 5.5（09-22）：1M / 128K / 文本·图像（走新旗舰规则，⛔ 不能落回 200K 旧家族）");
+      (sp.gemini4 === 1048576 && sp.gemini4Out === 1000000 && sp.gemini4Eff === "low/medium/high" && sp.gemini4Video === true ? ok : fail)(
+        "Gemini 4 Argon（10-13）：1,048,576 / 输出上限 100 万 / low·medium·high / 视频输入（⛔ 不能被 Gemini 3 规则抢走）");
+      (sp.k31 === 1000000 && sp.k31Out === 1048576 && sp.k31Eff === "low/high/max" && sp.k31Vis === true ? ok : fail)(
+        "Kimi K3.1 Pro（10-24）：1M / 输出上限 1M / low·high·max / 视觉（⛔ 规则排在 kimi-k3 前）");
+      (sp.mm31 === 1048576 && sp.mm31Video === true && sp.mm31Eff === "low/medium/high/xhigh/max" && sp.mm31Out === undefined ? ok : fail)(
+        "MiniMax M3.1 Flash（10-19）：1M / 文图视频 / 五档思考；输出上限未公布 ⇒ **不填**（拿不准不编）");
+      (sp.db21 === 1048576 && sp.db21Out === 262144 && sp.db21Vis === true ? ok : fail)(
+        "豆包 Seed 2.1 Pro：1,048,576 / 256K / 视觉（官方 id 是短横线 doubao-seed-2-1-pro-260915，⛔ 不能只匹配点号）");
+      (Array.isArray(sp.sugGpt61) && sp.sugGpt61[0] === "gpt-6.1-sol" && sp.sugGpt61[1] === "gpt-6.1-terra" ? ok : fail)(
+        "补全：打 gpt-6.1 先出 6.1 家族（Sol / Terra），不混进 GPT-6 Astra");
       (sp.glm53Vis === false && sp.glm53fVis === true ? ok : fail)("GLM-5.3 纯文本、只有 GLM-5.3-Flash 是原生多模态（别把整个家族标成视觉）");
       (sp.qwen38 === 1000000 && sp.qwen38Video === true ? ok : fail)("Qwen3.8-Max：约 1M / 文本+图像+视频");
       (sp.nova === 131072 && sp.novaVis === true ? ok : fail)("日日新 SenseNova 6.5：128K / 图文视频输入（用户自己的供应商也在表里）");
