@@ -1283,27 +1283,25 @@
 .team-msg__body-text { font-size: 13.5px; line-height: 1.75; }
 .team-msg__body-text > :first-child { margin-top: 2px; }
 .team-msg__body-text > :last-child { margin-bottom: 0; }
-/* 引用行做成一块浅底，和截图里「回复 某人：…」的独立引用块同形 */
+/* ⛔⛔ 11-08 用户令（截图）：「这个不要底色，也不要拉到对面了，很丑」——
+   引用行不再整行铺底：去掉底色/圆角，宽度收成**内容宽**（不打满气泡、不拉到对面）。
+   竖线仍绝对定位在气泡左内边距里，引用文字起点与正文对齐（11-07 的口径不变）。 */
 .team-process__quote--top {
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--panel-2) 60%, transparent);
+  margin: 6px 0 4px;
 }
-/* ⛔⛔ 11-07 用户：「引用消息在气泡里面并且跟下面消息对齐」——
-   原来引用块自带 8px 左右 padding + 2px 竖线 + 7px gap ⇒ 文字比正文右移约 17px。
-   ⇒ 浅底块向左右各扩 8px 抵消自身 padding，竖线绝对定位不再参与 flex 占位，
-     引用文字起点与正文起点同为气泡内容区的 0，底色块仍盖住气泡内边距。 */
 .team-msg__body .team-process__quote--top {
   position: relative;
-  display: block;
-  margin: 2px -8px 8px;
-  padding: 5px 8px;
+  display: inline-flex;
+  max-width: 100%;
+  margin: 2px 0 8px -8px;
+  padding: 0 0 0 8px;
+  background: none;
 }
 .team-msg__body .team-process__quote--top .team-process__quote-bar {
   position: absolute;
-  left: 2px;
-  top: 5px;
-  bottom: 5px;
+  left: 0;
+  top: 1px;
+  bottom: 1px;
   width: 2px;
   height: auto;
 }
@@ -1752,18 +1750,19 @@
   max-height: min(320px, 45vh);
   overflow-y: auto;
 }
-.team-composer__pane-flyout {
-  position: absolute;
-  left: 10px;
-  bottom: calc(100% + 8px);
-  z-index: 50;
-  width: min(360px, calc(100vw - 48px));
-  max-height: min(320px, 45vh);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--bg);
-  box-shadow: var(--shadow);
-  overflow: hidden;
+/* 引用群里的文件：贴着 + 图标弹出的浮层（11-08 用户令「放到 + 号图标上面自适应展示」）。
+   ⛔ 不再以输入卡为锚（旧 .team-composer__pane-flyout 已删）：定位由 useAnchoredPopover
+   写成 fixed 内联坐标，这里只管尺寸与外观。
+   ⛔⛔ z-index 必须与 @ 面板同档（1000）——它们是 portal 到 body 的，40 会被输入卡的
+   层叠上下文压住（实测：菜单完全看不见）。 */
+.team-composer__pop,
+.team-composer__files-pop {
+  z-index: 1000;
+}
+.team-composer__files-pop {
+  width: min(360px, calc(100vw - 16px));
+  max-height: min(360px, calc(100vh - 24px));
+  overflow: auto;
 }
 /* 引用技能：居中弹窗（11-07 用户：「技能选项弹窗，那个」） */
 .team-skill-backdrop {
@@ -1867,9 +1866,9 @@
   font-size: 12px;
   cursor: pointer;
 }
-.team-composer__pane-flyout .team-composer__skill-pane {
+.team-composer__files-pop .team-composer__skill-pane {
   min-height: 0;
-  max-height: min(320px, 45vh);
+  max-height: none;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -2760,6 +2759,16 @@
   box-shadow: 0 8px 22px color-mix(in srgb, var(--text) 10%, transparent);
   overflow: hidden;
 }
+/* ⛔ 11-08 用户令：「@ 弹窗放到 @ 图标上面自适应展示」—— 面板改成贴 @ 图标的浮层
+   （portal 到 body + fixed），坐标由 useAnchoredPopover 算（上方不够翻下方、左右钳制）。 */
+.team-mention--pop {
+  position: fixed;
+  z-index: 1000;
+  width: min(340px, calc(100vw - 16px));
+  margin: 0;
+  box-shadow: 0 14px 34px color-mix(in srgb, var(--text) 18%, transparent);
+}
+.team-mention--pop .team-mention__body { max-height: min(300px, calc(100vh - 120px)); }
 .team-mention__head {
   flex: none;
   display: flex;

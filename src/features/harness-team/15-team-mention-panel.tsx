@@ -11,12 +11,17 @@
  * ⛔ 面板不自己管 open（父层持有），因为它有两种打开方式：点 @ 按钮、在输入框打 `@`。
  */
 import { useEffect, useMemo, useRef } from "react";
+import type { RefObject } from "react";
+import { createPortal } from "react-dom";
 import { AtSign, Check, X } from "lucide-react";
 import type { MentionSection } from "../../lib/team-mention.mjs";
 import { matchMentionCandidates } from "../../lib/team-mention.mjs";
+import { useAnchoredPopover } from "../../lib/use-centered-popover";
 import { MemberAvatar } from "./13-team-avatar";
 
 type Props = {
+  /** 11-08 用户令：「@ 弹窗放到 @ 图标上面自适应展示」—— 锚点是输入框里的 @ 按钮。 */
+  anchorRef: RefObject<HTMLElement | null>;
   sections: MentionSection[];
   selected: string[];
   query: string;
@@ -30,10 +35,11 @@ type Props = {
 };
 
 export function TeamMentionPanel({
-  sections, selected, query, onQuery, onPick, onClear, onClose, autoFocus = false,
+  anchorRef, sections, selected, query, onQuery, onPick, onClear, onClose, autoFocus = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const pos = useAnchoredPopover(true, anchorRef, rootRef);
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
@@ -59,8 +65,14 @@ export function TeamMentionPanel({
   );
   const total = filtered.reduce((sum, section) => sum + section.items.length, 0);
 
-  return (
-    <div className="team-mention" role="dialog" aria-label="@ 候选面板" ref={rootRef}>
+  return createPortal(
+    <div
+      className="team-mention team-mention--pop"
+      role="dialog"
+      aria-label="@ 候选面板"
+      ref={rootRef}
+      style={pos ? { position: "fixed", left: pos.left, top: pos.top } : { visibility: "hidden", position: "fixed", left: 0, top: 0 }}
+    >
       <div className="team-mention__head">
         <AtSign size={13} aria-hidden />
         <input
@@ -111,6 +123,5 @@ export function TeamMentionPanel({
         ))}
         {!total && <p className="team-mention__empty">没有匹配的伙伴</p>}
       </div>
-    </div>
-  );
+    </div>, document.body);
 }

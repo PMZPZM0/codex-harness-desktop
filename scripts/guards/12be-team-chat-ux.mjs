@@ -182,9 +182,12 @@ const catalog = [
     && /<div className="team-msg__body">[\s\S]{0,900}?team-process__quote--top/.test(view),
     "⛔ 名字那一行移出气泡（main 列容器），引用仍留在气泡里");
   ok(/\.team-msg__main \{[\s\S]{0,220}?flex-direction: column/.test(css)
-    && /\.team-msg__body \.team-process__quote--top \{[\s\S]{0,220}?margin: 2px -8px/.test(css)
-    && /\.team-msg__body \.team-process__quote--top \.team-process__quote-bar \{[\s\S]{0,160}?position: absolute/.test(css),
-    "引用文字与正文左对齐（负 margin 抵消浅底 padding，竖线绝对定位不占位）");
+    && /\.team-msg__body \.team-process__quote--top \{[^}]*display: inline-flex/.test(css)
+    && /\.team-msg__body \.team-process__quote--top \{[^}]*margin: 2px 0 8px -8px/.test(css)
+    && /\.team-msg__body \.team-process__quote--top \{[^}]*background: none/.test(css)
+    && !/\.team-msg__body \.team-process__quote--top \{[^}]*background: color-mix/.test(css)
+    && /\.team-msg__body \.team-process__quote--top \.team-process__quote-bar \{[^}]*position: absolute/.test(css),
+    "引用行无底色、宽度收成内容宽（⛔ 不拉到对面，11-08 用户截图）；文字仍与正文左对齐（竖线绝对定位不占位）");
   /* 11-07 用户令「头像对齐输入框边框」：改前实测头像 left 259 / 输入框卡片 left 221（差 38px）。
      根因是子项按 720 居中、composer 按 790 列居中 ⇒ 两条轴不同，必须共用同一条公式。 */
   ok(/\.team-group__composer \{ padding-inline: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\); \}/.test(css)
@@ -436,9 +439,9 @@ const catalog = [
 /* ── ⑦ 输入框工具行：@ 入口 + 群菜单不占另一行 ── */
 {
   const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
-  ok(/onOpenMention\?: \(\) => void;/.test(composer) && /mentionCount\?: number;/.test(composer)
-    && /toolsSlot\?: React\.ReactNode;/.test(composer),
-    "三个新 prop 都在 Props 里（⛔ 少一个就是「写了不生效」）");
+  ok(/onOpenMention\?: \(anchor: HTMLElement\) => void;/.test(composer) && /mentionCount\?: number;/.test(composer)
+    && /toolsSlot\?: React\.ReactNode;/.test(composer) && /mentionAnchorRef\?: RefObject<HTMLButtonElement \| null>;/.test(composer),
+    "新 prop 都在 Props 里（@ 入口带锚点、人数徽标、工具行、@ 面板锚点 ref；⛔ 少一个就是「写了不生效」）");
   ok(/aria-label="选择伙伴（@）"/.test(composer) && /team-composer__at-badge/.test(composer),
     "@ 按钮带已选人数徽标");
   ok(/\{toolsSlot\}/.test(composer), "群菜单按钮渲染在工具行（FLOAT 形态由父层不传）");
@@ -575,11 +578,24 @@ const catalog = [
     "群输入框的顶部把手**复用主对话的类名与皮肤**（⛔ 不再自己写一套 96×12/56×4 胶囊 —— 那样描边不连边框线）");
   ok(/<ComposerRail app=\{app\}/.test(composer),
     "群输入框左侧复用主对话的 ComposerRail（侧边粗条，⛔ 不另造一条装饰条）");
-  ok(/team-composer__pane-flyout/.test(composer) && /bottom: calc\(100% \+ 8px\)/.test(read("src/styles/61-team-mode.css")),
-    "引用文件浮在输入卡上方（⛔ 不顶替 textarea）");
+  ok(/useAnchoredPopover\(/.test(composer) && /team-composer__files-pop/.test(composer) && /ThreadFilePicker/.test(composer)
+    && !/team-composer__pane-flyout/.test(codeOnly(composer))
+    && /\.team-composer__files-pop \{[^}]*width: min\(360px/.test(read("src/styles/61-team-mode.css")),
+    "引用文件面板贴着 + 图标弹（自适应翻上/翻下 + 视口钳制，⛔ 不再以输入卡为锚）");
   ok(/team-skill-dialog/.test(composer) && /createPortal\(/.test(composer) && /toggleSkill/.test(composer)
     && /\.team-skill-dialog \{[^}]*width: min\(560px/.test(read("src/styles/61-team-mode.css")),
     "引用技能是居中弹窗（可多选，⛔ 不再是输入框里的内嵌列表）");
+  /* ⛔⛔ 11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」——
+     加号菜单贴着 + 图标弹（portal + useAnchoredPopover），⛔ 不再是居中弹窗 / 输入卡上的浮层。 */
+  ok(/composer-quick-pop/.test(composer) && /useAnchoredPopover\(plusOpen/.test(composer)
+    && /style=\{plusPos \? \{ position: "fixed"/.test(composer)
+    && !/team-plus-dialog/.test(codeOnly(composer)),
+    "加号菜单贴着 + 图标向上弹（自适应，11-08 用户令）");
+  const mentionPanelSrc = codeOnly(read("src/features/harness-team/15-team-mention-panel.tsx"));
+  ok(/useAnchoredPopover\(true, anchorRef, rootRef\)/.test(mentionPanelSrc) && /createPortal\(/.test(mentionPanelSrc)
+    && /team-mention--pop/.test(mentionPanelSrc)
+    && /\.team-mention--pop \{[^}]*position: fixed/.test(read("src/styles/61-team-mode.css")),
+    "@ 面板贴着 @ 图标弹（自适应翻上/翻下 + 视口钳制，11-08 用户令）");
   const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
   ok(/<TeamChatOverlay[\s\S]{0,160}?app=\{app\}/.test(appView),
     "宿主把 app 传给群聊浮层（ComposerRail 需要）");

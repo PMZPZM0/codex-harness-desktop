@@ -27,6 +27,7 @@ import { Spinner } from "../../components/CardShell";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
+import { useAnchoredPopover } from "../../lib/use-centered-popover";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
@@ -147,7 +148,10 @@ type Props = {
   /** 模型下拉末尾的「更多设置…」—— 与主对话下拉同款入口（打开 设置 → 模型）。 */
   onOpenModelSettings?: () => void;
   /** 11-07 用户令：输入框上方那排常驻 @ chip 收进面板，改由这个按钮召唤。 */
-  onOpenMention?: () => void;
+  /** 打开 @ 面板（11-08 起把按钮元素带出去：面板要贴着 @ 图标弹）。 */
+  onOpenMention?: (anchor: HTMLElement) => void;
+  /** @ 面板的锚点（group view 持有，输入框里打 @ 时也要用它定位）。 */
+  mentionAnchorRef?: RefObject<HTMLButtonElement | null>;
   /** 本轮已 @ 的人数（画徽标；0 = 不画） */
   mentionCount?: number;
   /** 工具行右端的「群菜单」按钮（FLOAT 形态下父层不传，按钮画在群视图右下）。 */
@@ -179,13 +183,20 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
   opts, onOpts, sending, canSend, onSend, running, stopping, onStop, targetNames, fileCandidates = [], onOpenModelSettings,
-  onOpenMention, mentionCount = 0, toolsSlot = null, app,
+  onOpenMention, mentionCount = 0, mentionAnchorRef, toolsSlot = null, app,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
      原来是「一级菜单里缩进一小块竖线列表」，既不像主对话也读不清。
      ⇒ 点「引用技能」后整个面板切到主对话同款「搜索 + 图标列表」视图。 */
   const [plusView, setPlusView] = useState<"main" | "skills" | "files">("main");
+  /* ⛔ 11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」——
+     菜单 / 文件面板都贴着 + 图标弹（portal + fixed），这里持有锚点与浮层。 */
+  const plusBtnRef = useRef<HTMLButtonElement | null>(null);
+  const plusPopRef = useRef<HTMLDivElement | null>(null);
+  const filesPopRef = useRef<HTMLDivElement | null>(null);
+  const plusPos = useAnchoredPopover(plusOpen, plusBtnRef, plusPopRef);
+  const filesPos = useAnchoredPopover(plusView === "files", plusBtnRef, filesPopRef);
   const [skillQuery, setSkillQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
@@ -205,7 +216,6 @@ export function TeamComposer({
     ...baseModels,
     ...(onOpenModelSettings ? [{ value: "__model_settings__", title: "更多设置…" }] : []),
   ], [active.name, baseModels, onOpenModelSettings]);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
   /* 11-07 用户令：「输入框上的小粗条……全部同步一下」——
      与主对话输入框同款：顶部把手拖动改高度（下限 62 / 上限 min(55vh,560px)），双击复位，localStorage 持久化。 */
   const TEAM_COMPOSER_MIN = 62;
@@ -313,26 +323,34 @@ export function TeamComposer({
     return () => { alive = false; };
   }, [loadModels]);
 
+  /* 技能 / 文件 / 加号菜单（11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」）——
+     浮层都 portal 到 body，点外部即关（按钮本身除外，交给它自己 toggle）。 */
   useEffect(() => {
-    if (!plusOpen) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) { setPlusOpen(false); setPlusView("main"); }
+    if (!plusOpen && plusView === "main") return;
+    const onDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (plusBtnRef.current?.contains(target)) return;
+      if (plusPopRef.current?.contains(target)) return;
+      if (filesPopRef.current?.contains(target)) return;
+      setPlusOpen(false);
+      setPlusView("main");
     };
     window.addEventListener("mousedown", onDown);
     return () => window.removeEventListener("mousedown", onDown);
-  }, [plusOpen]);
+  }, [plusOpen, plusView]);
 
-  /* 技能选择是**居中弹窗**（11-07 用户：「技能选项弹窗，那个」）：Esc 只关这一层。 */
+  /* 加号菜单（贴 + 图标弹出）与技能 / 文件弹层：Esc 只关这一层。 */
   useEffect(() => {
-    if (plusView !== "skills") return;
+    if (!plusOpen && plusView === "main") return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.stopPropagation();
+      setPlusOpen(false);
       setPlusView("main");
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
-  }, [plusView]);
+  }, [plusOpen, plusView]);
 
   const pickFiles = async () => {
     try {
@@ -388,7 +406,7 @@ export function TeamComposer({
   const skillMatches = skills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
 
   return (
-    <div className="team-composer" ref={wrapRef}>
+    <div className="team-composer">
       {/* 11-07 用户令：「输入框上的小粗条和侧边粗条，全部同步」——
           顶部把手（拖动改高度 / 双击复位）+ 左侧 ComposerRail 与主对话同一个组件。 */}
       <div
@@ -419,9 +437,16 @@ export function TeamComposer({
         </div>
       )}
 
-      {/* 引用群里的文件：浮在输入卡上方的弹出层（⛔ 不顶替输入框）。 */}
-      {plusView === "files" && (
-        <div className="team-composer__pane-flyout" role="dialog" aria-label="引用群里的文件">
+      {/* 引用群里的文件：同样贴着 + 图标弹（11-08 用户令「放到 + 号图标上面自适应展示」），
+          ⛔ 不再是以输入卡为锚的 flyout、也⛔ 不顶替输入框。 */}
+      {plusView === "files" && createPortal(
+        <div
+          ref={filesPopRef}
+          className="composer-quick-pop team-composer__files-pop"
+          role="dialog"
+          aria-label="引用群里的文件"
+          style={filesPos ? { position: "fixed", left: filesPos.left, top: filesPos.top, bottom: "auto" } : { visibility: "hidden" }}
+        >
           <div className="team-composer__skill-pane">
             <div className="team-composer__skill-head">
               <button type="button" onClick={() => setPlusView("main")}><ChevronLeft size={14} /> 返回</button>
@@ -439,8 +464,7 @@ export function TeamComposer({
               onClose={() => setPlusView("main")}
             />
           </div>
-        </div>
-      )}
+        </div>, document.body)}
 
       {/* 引用技能 = **居中弹窗**（11-07 用户：「技能选项弹窗，那个」）：
           可多选（点行切换），完成 / Esc / 点背景关闭，选中的在输入框上方以 chip 显示。 */}
@@ -503,8 +527,9 @@ export function TeamComposer({
         <div className="team-composer__left composer-left">
           <div className="composer-quick-menu">
             <button
+              ref={plusBtnRef}
               type="button"
-              className={`icon-button team-composer__icon plus-spin-button${plusOpen ? " is-on" : ""}`}
+              className={`icon-button team-composer__icon plus-spin-button${plusOpen || plusView === "files" ? " is-on" : ""}`}
               title="添加文件 / 引用技能"
               aria-label="添加"
               aria-expanded={plusOpen}
@@ -512,23 +537,27 @@ export function TeamComposer({
             >
               <Plus key={plusOpen ? "on" : "off"} size={16} className="plus-spin" />
             </button>
-            {plusOpen && (
-              <div className="composer-quick-pop flip-main-up team-composer__pop" role="menu">
-                <>
-                    {/* ⛔ 11-06 用户：「添加文件，外面有回形针，里面就可以删了」——
-                        同一个动作只留一个入口，菜单里不再重复。 */}
-                    <button type="button" role="menuitem" onClick={() => { setPlusView("skills"); setPlusOpen(false); setSkillQuery(""); }}>
-                      <Sparkles size={16} /><span>引用技能</span><ChevronDown size={14} className="submenu-chevron" />
-                    </button>
-                    <button type="button" role="menuitem" onClick={() => { setPlusView("files"); setPlusOpen(false); setFileQuery(""); }}>
-                      <FolderOpen size={16} /><span>引用群里的文件</span><ChevronDown size={14} className="submenu-chevron" />
-                    </button>
-                    <button type="button" role="menuitem" onClick={() => { onOpts({ ...opts, files: [], skills: [] }); setPlusOpen(false); }}>
-                      <X size={16} /><span>清空本轮附件</span>
-                    </button>
-                </>
-              </div>
-            )}
+            {/* ⛔⛔ 11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」——
+                菜单贴着 + 图标**向上**弹（上方放不下自动翻到下方），水平居中 + 视口钳制。 */}
+            {plusOpen && createPortal(
+              <div
+                ref={plusPopRef}
+                className="composer-quick-pop team-composer__pop"
+                role="menu"
+                style={plusPos ? { position: "fixed", left: plusPos.left, top: plusPos.top, bottom: "auto" } : { visibility: "hidden" }}
+              >
+                {/* ⛔ 11-06 用户：「添加文件，外面有回形针，里面就可以删了」——
+                    同一个动作只留一个入口，菜单里不再重复。 */}
+                <button type="button" role="menuitem" onClick={() => { setPlusView("skills"); setPlusOpen(false); setSkillQuery(""); }}>
+                  <Sparkles size={16} /><span>引用技能</span><ChevronDown size={14} className="submenu-chevron" />
+                </button>
+                <button type="button" role="menuitem" onClick={() => { setPlusView("files"); setPlusOpen(false); setFileQuery(""); }}>
+                  <FolderOpen size={16} /><span>引用群里的文件</span><ChevronDown size={14} className="submenu-chevron" />
+                </button>
+                <button type="button" role="menuitem" onClick={() => { onOpts({ ...opts, files: [], skills: [] }); setPlusOpen(false); }}>
+                  <X size={16} /><span>清空本轮附件</span>
+                </button>
+              </div>, document.body)}
           </div>
           <button type="button" className="icon-button team-composer__icon" title="添加文件（本地绝对路径）" aria-label="添加文件" onClick={() => void pickFiles()}>
             <Paperclip size={15} />
@@ -537,11 +566,12 @@ export function TeamComposer({
               原来那块常驻 chip 拆掉了，入口收敛成这一个按钮（打开面板选人，已选的人仍以 chip 显示在框外）。 */}
           {onOpenMention && (
             <button
+              ref={mentionAnchorRef}
               type="button"
               className={`icon-button team-composer__icon team-composer__at${mentionCount > 0 ? " is-on" : ""}`}
               title="选择伙伴（@）"
               aria-label="选择伙伴（@）"
-              onClick={onOpenMention}
+              onClick={(event) => onOpenMention(event.currentTarget)}
             >
               <AtSign size={15} />
               {mentionCount > 0 && <span className="team-composer__at-badge">{mentionCount}</span>}

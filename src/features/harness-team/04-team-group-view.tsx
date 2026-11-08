@@ -194,6 +194,8 @@ export function TeamGroupView({
   const [runOpts, setRunOpts] = useState<TeamRunOpts>(loadTeamRunOpts);
   useEffect(() => { saveTeamRunOpts(runOpts); }, [runOpts]);
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
+  /* 11-08 用户令「@ 弹窗放到 @ 图标上面自适应展示」：面板锚在 @ 按钮上（composer 侧挂 ref）。 */
+  const mentionAnchorRef = useRef<HTMLButtonElement | null>(null);
   /* 消息区贴底（11-06 实测：面板关掉再打开时停在最上面，看不到底部"正在写"那张卡，
      用户就会觉得"关了之后什么都没了"）。⛔ 只在自己本来就在底部时才跟，别抢用户翻历史的滚动。 */
   const streamRef = useRef<HTMLDivElement | null>(null);
@@ -1063,6 +1065,7 @@ export function TeamGroupView({
               {/* @ 候选面板（11-07 用户令）：原来那一整排常驻 chip 收进面板，输入区不再被它占掉一行。 */}
               {mention.open && (
                 <TeamMentionPanel
+                  anchorRef={mentionAnchorRef}
                   sections={mentionSections}
                   selected={atTargets}
                   query={mention.query}
@@ -1123,6 +1126,7 @@ export function TeamGroupView({
                 fileCandidates={fileCandidates}
                 onOpenModelSettings={onOpenModelSettings}
                 onOpenMention={openMentionPanel}
+                mentionAnchorRef={mentionAnchorRef}
                 mentionCount={atTargets.length}
                 /* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
                    FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */
