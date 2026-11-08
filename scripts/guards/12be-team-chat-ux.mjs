@@ -1048,6 +1048,8 @@ const catalog = [
     && /if \(item\.library\)/.test(view) && /targetKind: "expert"[\s\S]{0,80}?targetKey: item\.selectId/.test(view)
     && /onAddPartner\(/.test(view),
     "群 @ 面板列出专家库（没入群的专家），点选先加入本群再点名（⛔ 不再只能 @ 已加过的几个人）");
+  ok(/filter\(\(item\) => !\(item as \{ library\?: boolean \}\)\.library\)/.test(view),
+    "⛔ 专家库条目不进候选目标表（否则手打库里的名字会让发送键亮起、主进程却找不到这个群成员）");
   ok(/expert: new Set\(\["expert", "member"\]\)/.test(settings),
     "「添加伙伴 → 专家模式」也能单独加团成员（⛔ 不必为一个人把整团拉进群）");
   ok(/专家库：/.test(pickTest),
@@ -1241,6 +1243,26 @@ const catalog = [
   ok(/if \(event\.method === "thread\/deleted" && forgetTalkThreads\(\[goneId\]\)\)/.test(codeOnly(read("electron/features/boot.ts")))
     && /type: "team-thread-gone"/.test(codeOnly(read("electron/features/boot.ts"))),
     "反向联动：会话在侧栏被删 ⇒ 群聊台账清条目 + 群消息标「已删除」（⛔ 不白跑 resume、不丢群记录）");
+}
+
+/* ── ㉑ 11-08 审查确认修复（派活假成功 / 用量页脚重复 / 删群竞态 / 信封消毒）────── */
+{
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const talk = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  ok(/if \(ranIds\.has\(String\(to\.id\)\)\)/.test(ipc) && /本轮已经说过话/.test(ipc),
+    "group_say(to=) 送到本轮已跑过的成员时回失败（⛔ 不再假报「已经说给他了」而群里毫无反应）");
+  /* ⛔ 判据锚「两处具体清除点」—— 不能数 `finishedTalkRuns.delete(` 总数：
+     淘汰最旧条目那行也是 delete，会把「本轮不清」掩盖成绿。 */
+  ok(/if \(liveThreadId\) finishedTalkRuns\.delete\(liveThreadId\);/.test(ipc)
+    && /finishedTalkRuns\.delete\(threadId\);/.test(ipc),
+    "新一轮开跑/排队拿到 threadId 时摘掉上一轮用量收尾标记（⛔ 否则同一成员 10 分钟内再跑，页脚会挂两遍）");
+  ok((ipc.match(/groups\.some\(\(g\) => String\(g\.id\) === String\(group\.id\)\)/g) || []).length >= 2,
+    "迟到/排队中的派活在群被删后放弃，并把刚建出来的会话删掉（⛔ 不留孤儿「伙伴」会话）");
+  ok(/sanitizeForEnvelope\(String\(row\.speaker/.test(talk)
+    && /sanitizeForEnvelope\(`\$\{m\.name\}/.test(talk)
+    && /sanitizeForEnvelope\(options\.groupName\)/.test(talk)
+    && /sanitizeForEnvelope\(String\(options\.memory\)\)/.test(talk),
+    "成员名 / 群名 / 共享背景与正文同口径过信封消毒（⛔ 只有正文消毒时，名字能截断信封）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

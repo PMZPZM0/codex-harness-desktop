@@ -157,6 +157,13 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
     {mcpView === "templates" && (<>
   <div className="settings-subhead connector-template-heading"><Zap size={13} />一键接入模板<span className="settings-subhead-hint">官方/社区 MCP 真实配置 · 填入你的凭据即可</span></div>
   <div className="connector-template-grid">{connectorTemplates.filter((template: any) => !String(templateSearch || "").trim() || `${template.name} ${template.vendor} ${template.summary}`.toLowerCase().includes(String(templateSearch).trim().toLowerCase())).map((template: any) => { const entry = connectors.find((connector: any) => connector.id === template.id); const installed = Boolean(entry); const oauthConnected = entry?.oauth?.status === "connected"; return <article className={`connector-template-card ${installed ? "installed" : ""} ${oauthConnected ? "oauth" : ""}`} key={template.id}><div className="connector-template-top"><span className="connector-card-icon"><Zap size={15} /></span><small>{template.vendor}</small>{oauthConnected ? <span className="connector-template-badge oauth-badge"><KeyRound size={11} />已授权</span> : installed ? <span className="connector-template-badge">已配置</span> : null}</div><strong>{template.name}</strong><p>{template.summary}</p>{oauthConnected && entry.oauth?.accountHint ? <small className="connector-oauth-hint">{entry.oauth.accountHint}</small> : null}<button className={installed ? "secondary-setting" : "primary-setting"} onClick={() => { setConnectorTemplateValues({}); setConnectorTemplateModal(template); setConnectorOAuth(null); }}><RefreshCw size={13} />{installed ? "重新配置" : "配置连接"}</button></article>; })}</div>
+  {/* ⛔ 11-08 审查确认：模板搜索 0 命中时整块是纯空白（项目纪律：列表面板不许一片白）——
+      这里补可见空态；判据与上面那张网格的过滤表达式同口径。 */}
+  {(() => {
+    const q = String(templateSearch || "").trim().toLowerCase();
+    const shown = connectorTemplates.filter((template: any) => !q || `${template.name} ${template.vendor} ${template.summary}`.toLowerCase().includes(q));
+    return shown.length ? null : <p className="muted">没有匹配的模板 —— 换个关键词，或检查网络后点右上角刷新。</p>;
+  })()}
   {connectorTemplateModal && <ConnectorTemplateModal template={connectorTemplateModal} values={connectorTemplateValues} saving={connectorTemplateSaving} oauth={connectorOAuth} onChange={setConnectorTemplateValues} onClose={() => { setConnectorTemplateModal(null); setConnectorTemplateValues({}); setConnectorOAuth(null); }} onSave={() => void saveConnectorFromTemplate(connectorTemplateModal)} onOAuth={() => void startConnectorOAuth()} />}
     </>)}
     {mcpView === "connectors" && (<>

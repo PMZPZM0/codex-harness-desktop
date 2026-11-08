@@ -726,7 +726,7 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
          多成员团队此前只进 `team` 一类，**主理人与成员都不在单人专家目录里** ⇒ @ 的「专家」
          只有 5 个单人专家。现在把团队角色也并进来（每个角色一条，可被 @ 直接点名）：
            · 主理人 = kind "expert"（与「单人专家 = 只有 lead 的团队」同一口径，独立会话产出）
-           · 成员   = kind "member"（团内角色；许可跟随「专家团」开关，执行端走 member 分支）
+           · 成员   = kind "member"（团内角色；许可跟随 expert 恒放行，只有整团看「专家团」开关）
          ⛔ key 用 `teamId:memberId`（团队内唯一；单键 teamId 会被主理人与团队撞车）。 */
       if (team.lead?.id) {
         targets.push({

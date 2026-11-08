@@ -771,6 +771,16 @@ try {
   const sopSrc = readFileSync(join(ROOT, "electron/expert-teams/06-team-tools.ts"), "utf8");
   ok(!/成员之间仍然互不可见/.test(sopSrc) && /宿主会真的把他叫进来/.test(sopSrc),
     "主理人 SOP 与成员提示词同步（⛔ 旧文案说成员互不可见，会把新链路掐死）");
+  /* ⛔ 11-08 审查确认：member（单个专家）已恒放行，但模型可见文案还写着「team/member 会被拒」
+     「团队开关没开时这一组不可派」⇒ 模型会替用户拒绝本来能派的活。 */
+  {
+    const dispatchSrc = readFileSync(join(ROOT, "electron/dispatch.ts"), "utf8");
+    ok(!/team\/member 会被拒/.test(dispatchSrc)
+      && !/团队开关没开时这一组不可派/.test(dispatchSrc)
+      && /只有 team（整团）会被拒/.test(dispatchSrc)
+      && /随时可派、不需要用户开任何开关/.test(dispatchSrc),
+      "⛔ 模型可见文案与「专家随时可调」一致（member 不再被说成会被拒）");
+  }
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

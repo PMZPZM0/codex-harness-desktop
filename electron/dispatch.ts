@@ -224,7 +224,8 @@ export function dispatchKindAllowed(
             ? allow.cli !== false
             : false;
   if (ok) return { ok: true };
-  if (key === "team" || key === "member") {
+  /* ⛔ 11-08：`member` = 单个专家，跟着 expert 恒放行 ⇒ 只有 `team`（整团）会走到这里。 */
+  if (key === "team") {
     return {
       ok: false,
       reason:
@@ -293,8 +294,9 @@ export function dispatchToolDescription(
   const sections = [
     ...section("expert", "专家（单人）", "一个独立的专业角色，适合评审/创作/调研这类**要专业判断、产出自己就是最终答案**的活。"),
     /* ★ 10-31：多成员团队的主理人 / 成员也进单人目录（用户「专家只显示 5 个」）。
-       成员派活用 kind=member（团队内部角色，许可跟随「专家团」开关）。 */
-    ...section("member", "团队成员（专家团里的角色）", "某个专家团里的具体角色（如「架构师」「测试工程师」）。想指定团内某个人干活时用它；团队开关没开时这一组不可派。"),
+       成员派活用 kind=member（团队内部角色；11-08 用户令「专家随时可调」⇒ 跟随 expert 恒放行，
+       只有整团 team 才看「专家团」开关）。 */
+    ...section("member", "团队成员（专家团里的角色）", "某个专家团里的具体角色（如「架构师」「测试工程师」）。想指定团内某个人干活时用它，随时可派、不需要用户开任何开关。"),
     ...section("team", "专家团（多人协作）", "一个团队按 SOP 分工协作，适合**要多个角色配合、产出需要汇总**的活（如软件开发：设计+前端+后端+测试）。"),
     ...section("subagent", "子智能体（你自定义的角色）", "你在设置里配置的自定义角色，适合**固定流程、专精某一类活**（如只做评审、只做翻译）。"),
     ...section("cli", "CLI 智能体（本机命令行工具）", "用户在本机装好的命令行 AI（Claude Code / Codex CLI / OpenClaw 等）。适合**它比你在行、或要把活交给一个独立进程跑**的场景；它会在自己的会话里调 shell 跑那个 CLI，**没装就会如实回「没装」，不要当它跑过**。"),
@@ -304,7 +306,7 @@ export function dispatchToolDescription(
   const scope = allow
     ? (allow.team
       ? "⛔ **本会话：专家、子智能体、CLI 智能体、专家团都可直接派（不要再让用户去开任何开关）。**"
-      : "⛔ **本会话：专家、子智能体、CLI 智能体可直接派（不需要任何开关）；专家团未开启 —— team/member 会被拒，要团请用户在顶栏「调度」面板打开，别硬试。**")
+      : "⛔ **本会话：专家、团队成员（单个专家）、子智能体、CLI 智能体可直接派（不需要任何开关）；专家团未开启 —— 只有 team（整团）会被拒，要团请用户在顶栏「调度」面板打开，别硬试。**")
     : "";
   return [
     scope,

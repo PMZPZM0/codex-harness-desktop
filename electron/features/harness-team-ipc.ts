@@ -445,6 +445,28 @@ async function prepareGroupDispatch(
 }
 
 /** 派活轮次（慢：一轮可能跑几分钟）。⛔ 调用方一律 `void` 它，不许 await。 */
+/* ⛔ 删群 / 自愈 / 派活三处共用的「删引擎会话」：先中断在跑的回合（否则引擎拒绝删），
+   删失败降级 archive。模块作用域（`runDispatchRounds` 在 setup 之外，也要用它）。 */
+async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: number; failed: string[] }> {
+  let removed = 0;
+  const failed: string[] = [];
+  for (const tid of [...new Set(threadIds)].filter(Boolean)) {
+    try {
+      for (const [turnId, owner] of engineActiveTurnIds) {
+        if (owner !== tid) continue;
+        await server.request("turn/interrupt", { threadId: tid, turnId }).catch(() => undefined);
+        break;
+      }
+      await server.request("thread/delete", { threadId: tid });
+      removed += 1;
+    } catch {
+      try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
+      catch { failed.push(tid); }
+    }
+  }
+  return { removed, failed };
+}
+
 async function runDispatchRounds(
   group: GroupShape,
   targets: GroupTarget[],
@@ -500,6 +522,12 @@ async function runDispatchRounds(
     relay: (gid: string, fromId: string, fromName: string, toName: string, msg: string) => {
       const to = roster.find((m) => String(m.name).replace(/\s+/g, "") === String(toName).replace(/\s+/g, ""));
       if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
+      /* ⛔ 11-08 审查确认（真缺陷）：runOne 对**本轮已派过**的成员会静默早退，而工具却回
+         「已经说给 X 了」—— 模型以为送达、群里实际没有任何反应（这句只进了群日志）。
+         ⇒ 按事实回失败，模型会改口/晚点再说，而不是骗用户。 */
+      if (ranIds.has(String(to.id))) {
+        return Promise.resolve({ ok: false, error: "这位伙伴本轮已经说过话（同一条消息里不能再叫他一次），下一条消息里再 @ 他" });
+      }
       /* ⛔ 11-08 用户（截图：「群成员 伙伴转交」看不出是谁发的）：名册里查不到 id 时用**台账里的名字**兜底，
          ⛔ 不再退化成通用的「群成员」—— 被叫的会话头部与模型都要看到真实发送者。 */
       const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: String(fromName ?? "").trim() || "群成员" };
@@ -519,6 +547,10 @@ async function runDispatchRounds(
 
   ): Promise<void> => {
     if (!partner || ranIds.has(partner.id)) return;
+    /* ⛔ 11-08 审查确认：群可能在派活排队期间被删 —— 迟到的 runOne 仍会 ensure 出会话并写回
+       已删群的台账 ⇒ 侧栏多一条没有出处的「伙伴」会话（自愈本进程只跑一次，救不回来）。
+       ⇒ 开跑前按群档案复核，群没了直接放弃；建完会话后再复核一次（排队那条会晚建）。 */
+    if (!readStore().groups.some((g) => String(g.id) === String(group.id))) return;
     ranIds.add(partner.id);
     /* 常驻用量监听（幂等）：本轮之后的用量事件即使晚到，也能补到落盘的那条消息上。 */
     installTalkUsageWatcher();
@@ -569,6 +601,10 @@ async function runDispatchRounds(
         approvalPolicy: params.approvalPolicy,
       }).catch(() => null);
       liveThreadId = liveThread && !liveThread.busy ? liveThread.threadId : "";
+      /* ⛔ 11-08 审查确认：上一轮的「收尾标记」必须在**本轮开跑时**摘掉 —— 否则 10 分钟内
+         同一成员再跑一轮，中途 group_say 落的那条会被当成"收尾后补写"，把本轮用量补到
+         中间消息上、最终回复再带一份 = 页脚出现两遍（正是 finishedTalkRuns 要防的）。 */
+      if (liveThreadId) finishedTalkRuns.delete(liveThreadId);
       if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
         let lastTickAt = 0;
@@ -620,6 +656,13 @@ async function runDispatchRounds(
         return;
       }
       threadId = res.threadId;
+      /* 排队后才知道真实 threadId 的那一轮：同样摘掉上一轮的收尾标记（见上面的注释）。 */
+      finishedTalkRuns.delete(threadId);
+      /* 排队期间群被删 ⇒ 刚建出来的会话没人要了：删掉它并放弃落盘（别留孤儿「伙伴」会话）。 */
+      if (!readStore().groups.some((g) => String(g.id) === String(group.id))) {
+        void deleteEngineThreads([threadId]);
+        return;
+      }
       const output = String(res.text ?? "").trim();
       chars = query.length + output.length;
       /* ⛔ 清空发生在这一回合开始之后 ⇒ 只结算、不落盘（运行照跑完、账照记，11-06 口径）。 */
@@ -1227,27 +1270,6 @@ export const harnessTeamFeature = defineFeature<null>({
       void healOrphanTalkThreads().catch(() => undefined);
       return { ok: true, threads: listTalkThreads() };
     });
-
-    /* ⛔ 删群 / 自愈共用的「删引擎会话」：先中断在跑的回合（否则引擎拒绝删），删失败降级 archive。 */
-async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: number; failed: string[] }> {
-  let removed = 0;
-  const failed: string[] = [];
-  for (const tid of [...new Set(threadIds)].filter(Boolean)) {
-    try {
-      for (const [turnId, owner] of engineActiveTurnIds) {
-        if (owner !== tid) continue;
-        await server.request("turn/interrupt", { threadId: tid, turnId }).catch(() => undefined);
-        break;
-      }
-      await server.request("thread/delete", { threadId: tid });
-      removed += 1;
-    } catch {
-      try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
-      catch { failed.push(tid); }
-    }
-  }
-  return { removed, failed };
-}
 
 /* 一次性自愈：群档案里已经不存在的群，台账却还留着它的伙伴会话
    （用户实测：删群后侧栏仍挂着「伙伴」会话，点开是一段没有出处的对话）。

@@ -83,7 +83,9 @@ export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): str
     if (!text) continue;
     /* 本轮这句已在需求体里给过一次，别在历史里再贴一遍（模型会以为要回两次）。 */
     if (text === current) continue;
-    const speaker = String(row.speaker ?? "").trim() || "群成员";
+    /* ⛔ 11-08 审查确认：说话人名字是用户可改的，同样能带信封结束标记 ⇒ 一起消毒
+       （否则一条名叫「【群聊上下文结束】」的成员会让剥离器提前截断、后面的系统指令漏掉）。 */
+    const speaker = sanitizeForEnvelope(String(row.speaker ?? "").trim()) || "群成员";
     const line = `${speaker}：${text.slice(0, TALK_HISTORY_CHAR_MAX)}`;
     if (used + line.length > TALK_HISTORY_TOTAL_MAX) break;
     picked.push(line);
@@ -103,7 +105,9 @@ export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): str
 /** 群聊专属输入（⛔ 不复用 groupContextBlock —— 那是派活/协作协议的口径）。
  *  导出给接线层：群聊会话与互相投递共用同一份口径，⛔ 不写第二套。 */
 export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow[] = []): string {
-  const roster = options.roster.map((m) => `${m.name}${m.targetProfession ? `（${m.targetProfession}）` : ""}`).join("、");
+  /* ⛔ 11-08 审查确认：成员名 / 群名 / 共享背景同样是外部可改文本，进信封前一律消毒
+     （与正文同口径 —— 名字里塞结束标记同样能让剥离器提前截断）。 */
+  const roster = options.roster.map((m) => sanitizeForEnvelope(`${m.name}${m.targetProfession ? `（${m.targetProfession}）` : ""}`)).join("、");
   /* ⛔⛔ 11-07 真机：群聊会话是普通 thread，整段输入会被当成 userMessage 画进气泡 ——
      上一版把【工作伙伴 · X】+ 工具说明 + 指令全裸给用户看（截图）。
      ⇒ 用项目统一的 `[SYSTEM TASK · …]` 壳：user-refs.ts 只保留「=== 用户需求 ===」中间那段，
@@ -118,11 +122,11 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
     "",
     /* ⛔ 群历史放**壳后**：气泡只显示上面那段需求体，模型却能读到整段共享上下文。 */
     groupHistoryBlock(history, text),
-    `【工作伙伴 · ${options.groupName}】`,
-    `你是 ${me.name}${me.targetProfession ? `（${me.targetProfession}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
+    `【工作伙伴 · ${sanitizeForEnvelope(options.groupName)}】`,
+    `你是 ${sanitizeForEnvelope(me.name)}${me.targetProfession ? `（${sanitizeForEnvelope(me.targetProfession)}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
     `群里的人：${roster || "（暂时只有你自己）"}`,
   ];
-  if (options.memory) need.push(`群里的共享背景：${options.memory}`);
+  if (options.memory) need.push(`群里的共享背景：${sanitizeForEnvelope(String(options.memory))}`);
   need.push(
     /* ⛔⛔ 11-08 用户实测（截图：成员回「生图专家 哈喽~」但没 @，对方一直不吭声）：
        「好家伙，他们都不知道沟通要互相 @ 才行」——协议原来只写在最后一句里，模型写名字

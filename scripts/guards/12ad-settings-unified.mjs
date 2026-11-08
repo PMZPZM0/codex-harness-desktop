@@ -253,6 +253,9 @@ ok(/\.resource-toolbar\.mcp-market-toolbar\s*\{[^}]*flex-wrap:\s*nowrap/.test(re
    否则重复点「一键接入」会把连接器配置与已有密钥覆盖。 */
 ok(/installed \? "已接入" : entry\.config \? "一键接入"/.test(mcpPage) && /onInstall: !installed && entry\.config/.test(mcpPage),
   "MCP 市场已接入卡：预览不给安装动作（防重复接入覆盖配置/密钥）");
+/* ⛔ 11-08 审查确认：模板搜索 0 命中时整块纯空白（项目纪律：列表面板不许一片白）。 */
+ok(/没有匹配的模板/.test(mcpPage),
+  "「一键接入」模板搜索 0 命中时有可见空态（⛔ 不再是空白块）");
 
 /* 11-07 用户实拍：MCP 整段读取失败，原因是对已删除会话的 threadId 查 mcpServerStatus/list。
    ① 遇 `thread not found` 必须去掉 threadId 重查；② IPC 的 codexrequest 包装前缀要剥掉。 */
