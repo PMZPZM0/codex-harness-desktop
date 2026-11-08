@@ -1060,6 +1060,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamLedger: (groupId: string, days: number) => __ipc("harness-team:ledger", 2, [groupId, days]),
   /* 团队模式：停止某个伙伴当前这一回合 */
   harnessTeamStop: (input: Record<string, unknown>) => __ipc("harness-team:stop", 1, [input]),
+  /* 团队模式：排队消息「立即」——能插队就 steer 进正在跑的回合，插不了按新回合启动 */
+  harnessTeamQueueStart: (input: Record<string, unknown>) => __ipc("harness-team:queue-start", 1, [input]),
   /* 团队模式：取该会话最近一轮真实 token */
   harnessTeamThreadUsage: (threadId: string) => __ipc("harness-team:thread-usage", 1, [threadId]),
   /* ═══ gen:end ═══ */

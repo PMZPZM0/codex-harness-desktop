@@ -609,7 +609,9 @@ export function TeamComposer({
                 type="button"
                 className={`send-button morph-action ${showStop ? "is-pause" : "is-send"}`}
                 onClick={showStop ? onStop : onSend}
-                disabled={showStop ? Boolean(stopping) || !onStop : (sending || !canSend)}
+                /* ⛔ 11-08：运行中**不能**禁用发送键 —— 派活要等整个回合才返回（sending 全程为 true），
+                   按主对话口径这时有草稿就该能发（进队列 / 插队）。重复点击由 send() 里的守卫挡。 */
+                disabled={showStop ? Boolean(stopping) || !onStop : !canSend}
                 title={showStop ? "停止群里所有正在跑的伙伴" : targetNames.length ? `派给 ${targetNames.join("、")}` : "先点 @ 选伙伴"}
                 aria-label={showStop ? "停止群里所有正在跑的伙伴" : "发送"}
               >

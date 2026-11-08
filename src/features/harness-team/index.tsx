@@ -40,7 +40,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, setAvatar, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
     addNote, removeNote, saveMenu, saveMenuPlacement, saveMessageLayout, saveSchedules, runSchedule,
-    stopPartner, stopAll,
+    stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -290,6 +290,8 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             /* 11-08 用户令「点停止是群里所有运行状态都停止掉」：候选由视图数（群内会话 id），
                store 负责发通道 + 立刻清 busy/live。 */
             onStopAll={(threadIds) => stopAll(active.id, threadIds)}
+            /* 运行中的伙伴要拿会话 id 才能把消息塞进它的引擎队列（见 23-team-queue） */
+            threadsOfMember={(memberId) => threadsOf(active.id, memberId)}
             /* 群内成员头像（11-07）：点成员栏那些小头像就能换，只影响这个群 */
             onSetAvatar={(memberId: string, avatar: string) => setAvatar(active.id, memberId, avatar)}
             onRename={(name) => rename(active.id, name)}

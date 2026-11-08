@@ -387,14 +387,20 @@
    ⇒ 要的是**线条质感**：本体与输入框同色（浅 #fff / 深 #1b1b1a），只有 1px 轮廓随边框走。
    ⛔ 所以原来那三条"浅色强制 #fff"的特例不再需要（`--bg` 浅色就是 #fff），一并删掉。
    ⛔ 悬停才允许实心填充（`--muted`），那是"可拖 / 可点"的即时反馈，不是常态。 */
-.composer:focus-within .composer-resize-grip,
-.composer:focus-within .composer-rail-grip,
-.composer:focus-within .composer-rail.is-open .composer-rail-grip {
+/* ⛔⛔ 11-08 用户（群聊截图圈住两个小粗条）：「这两个小粗条，要做成跟主对话框那样，
+   边框线要跟着边框线亮」——根因**不是配色**，是**作用域**：这三条只管 `.composer`，
+   而群聊输入卡的类是 `.team-composer`，于是群里边框一聚焦变 `--faint`、两根粗条还停在
+   `--line`（浅），看着就像"挂着两个死条"。
+   ⇒ 用 `:is(.composer, .team-composer)` 把两张卡圈进同一套规则：谁能聚焦，谁的粗条就跟着亮。
+   ⛔ 以后再加同类卡片（任务输入框等）只需往 :is() 里补一个类名，别再复制一份规则。 */
+:is(.composer, .team-composer):focus-within .composer-resize-grip,
+:is(.composer, .team-composer):focus-within .composer-rail-grip,
+:is(.composer, .team-composer):focus-within .composer-rail.is-open .composer-rail-grip {
   background: var(--bg);
   box-shadow: 0 0 0 1px var(--faint);
 }
-.composer:focus-within .composer-resize-handle:hover .composer-resize-grip,
-.composer:focus-within .composer-rail-toggle:hover .composer-rail-grip {
+:is(.composer, .team-composer):focus-within .composer-resize-handle:hover .composer-resize-grip,
+:is(.composer, .team-composer):focus-within .composer-rail-toggle:hover .composer-rail-grip {
   background: var(--muted);
   box-shadow: 0 0 0 1px var(--muted);
 }

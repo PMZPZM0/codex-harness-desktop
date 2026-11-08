@@ -44,6 +44,16 @@ ok(/className="composer-rail-grip"/.test(rail) && /\.composer-rail\s*\{[^}]*righ
   && /\.composer-rail-toggle\s*\{[^}]*transform:\s*translateX\(50%\)/s.test(railCss)
   && /\.composer-rail\s*\{[^}]*top:\s*-?\d+px[^}]*bottom:\s*-?\d+px/s.test(railCss),
   "宽屏：竖条骑在输入框左边框线上（right:100% + translateX(50%)），上下各探出 ⇒ 比输入框高一些（10-28 用户：「可以比输入框高一些，现在太小了」）");
+/* ⛔⛔ 11-08 用户（群聊截图圈住两个小粗条）：「这两个小粗条，要做成跟主对话框那样，边框线要跟着边框线亮」。
+   根因**不是配色而是作用域**：聚焦变亮那条规则原先只写 `.composer:focus-within`，而群聊输入卡的类叫
+   `.team-composer` ⇒ 群里边框聚焦变 --faint 了，两根粗条还留在 --line（浅），看着像"挂着两个死条"。
+   判据：两条粗条（顶部把手 + 左侧竖条）的聚焦态必须由**同一组** `:is(...)` 选择器覆盖两张卡。 */
+ok(/\:is\(\.composer,\s*\.team-composer\):focus-within \.composer-resize-grip/.test(railCss)
+  && /\:is\(\.composer,\s*\.team-composer\):focus-within \.composer-rail-grip/.test(railCss)
+  && /\:is\(\.composer,\s*\.team-composer\):focus-within \.composer-rail\.is-open \.composer-rail-grip/.test(railCss)
+  && !/^\.composer:focus-within \.composer-(resize|rail)-grip/m.test(railCss),
+  "⛔ 聚焦变亮必须覆盖**群聊输入卡**（`:is(.composer, .team-composer):focus-within`）：只写 .composer 会让群里的两根粗条停在浅色，看着像挂着的死条");
+
 /* 10-29 三态定稿（用户原话：「三种状态，两排，一排长条，跟输入最下面对齐，最小屏就在输入框上面展示」）：
    ① 两排（默认，基础规则）② 一列到底且贴输入框底边 ③ 最小屏整列抬到输入框**上方**。
    ⛔ 10-28 那版「塞进输入框内部 + padding-top 让位」已被用户否掉（实测被裁），不许回头。 */

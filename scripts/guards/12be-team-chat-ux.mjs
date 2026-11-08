@@ -504,8 +504,10 @@ const catalog = [
     && !/await runDispatchRounds\(/.test(ipcDispatch),
     "⛔ 主进程不 await 派活：关面板/切页后任务照跑（产出照进群、互 @ 照接力）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
-  ok(/const r = await onSend\?\.\(atTargets, fullBody, params\)[\s\S]{0,220}?setText\(""\)/.test(view),
-    "派活成功即清空输入框（主对话口径；失败保留原文）");
+  /* 11-08：派活前多了「运行中的伙伴先进队列」这一跳（idleTargets），清空仍只在**成功之后**。 */
+  ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\)[\s\S]{0,260}?setText\(""\)/.test(view)
+    && !/onSend\?\.\(idleTargets, fullBody, params\)[\s\S]{0,80}?setText\(""\)[\s\S]{0,200}?if \(r && !r\.ok\)/.test(view),
+    "派活成功即清空输入框（主对话口径；失败保留原文 —— ⛔ 清空必须排在校验失败之后）");
   ok(/e\.nativeEvent\.isComposing/.test(view),
     "中文输入法选字期间的 Enter 不误发（否则 IME 会把清空回滚，看着像没清）");
   const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
@@ -687,6 +689,41 @@ const catalog = [
   ok(/stopTeamRuns\(input as TeamStopInput\)/.test(read("electron/features/harness-team-ipc.ts"))
     && /export async function stopTeamRuns/.test(stopSvc),
     "通道实现抽到 `harness-team-stop.ts`（ipc 注册宿主已到巨型文件棘轮上限，⛔ 别再往里塞逻辑）");
+}
+
+/* ── ⑫ 排队消息 / 插队消息 / 办公室预览（11-08 用户令）─────────────────────────
+   「排队消息，插队消息，看看跟主对话框还差哪些，没同步过来，都完成一下」
+   「还有办公室预览接进来」 */
+{
+  const queue = codeOnly(read("src/features/harness-team/23-team-queue.tsx"));
+  ok(/from "\.\.\/session-queue"/.test(queue) && /<QueuedMessageList/.test(queue),
+    "排队消息卡片**复用主对话那一张**（QueuedMessageList：折叠/拖排序/定时/编辑/立即/删除全同一套，⛔ 不另造）");
+  ok(/thread\/queue\/add/.test(queue) && /thread\/queue\/list/.test(queue) && /thread\/queue\/delete/.test(queue)
+    && /thread\/queue\/reorder/.test(queue),
+    "载体是**引擎队列**（thread/queue/*）：每个伙伴各跑各的子会话，队列天然按 threadId 分开");
+  ok(/harnessTeamQueueStart\(\{ threadId: target, queuedSubmissionId: id \}\)/.test(queue),
+    "「立即」走主进程 `harness-team:queue-start`（⛔ 渲染层拼不出 expectedTurnId，猜错就是 no active turn to steer）");
+  ok(/const byThread = useMemo/.test(queue) && /team-queue__who/.test(queue),
+    "按成员分组展示（同一条队列卡里混着两个伙伴 = 分不清谁的消息）");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/<TeamQueueStack/.test(view) && /queueTeamMessage\(entry\.run\.threadId, fullBody\)/.test(view)
+    && /const idleTargets = atTargets\.filter/.test(view),
+    "运行中的伙伴走**队列**、空闲的仍走派活（⛔ 对运行中的会话 turn/start 会被主进程拒，等于消息发不出去）");
+  const mainQueue = codeOnly(read("electron/features/harness-team-queue.ts"));
+  ok(/turn\/steer/.test(mainQueue) && /thread\/queue\/delete/.test(mainQueue) && /thread\/queue\/start/.test(mainQueue),
+    "插队 = steer 进正在跑的回合，**并入后删掉队列那条**（不删的话回合结束会再执行一遍）；插不了退回按新回合启动");
+  ok(/engineActiveTurnIds/.test(mainQueue), "expectedTurnId 取自主进程活动回合表（唯一真相，⛔ 不让渲染层猜）");
+
+  const office = codeOnly(read("src/features/harness-team/24-team-office-preview.tsx"));
+  ok(/OfficeRailNode/.test(office) && /TeamOfficePreview/.test(office),
+    "办公室预览**入口节点与整屏预览都复用**主对话那两件（⛔ 不另画一个办公室）");
+  ok(/teamId=\{group\.id\}/.test(office) && !/teamId=\{null\}/.test(office),
+    "预览必须拿到**真 id**：TeamOfficePreview 开头是 `if (!teamId) return null`（⛔ 传 null 就是什么都画不出来 —— 本轮真踩过）");
+  ok(/status: running\.has\(member\.id\) \? "busy" : "idle"/.test(office),
+    "工位状态只认运行态（live/busy），⛔ 不按静态角色编状态");
+  ok(/<TeamOfficeEntry group=\{group\} live=\{live\} busy=\{busy\} onOpenThread=\{onOpenThread\} \/>/.test(view)
+    && /\.team-group__office \{[\s\S]{0,160}?margin-top: auto;/.test(read("src/styles/61-team-mode.css")),
+    "入口钉在成员栏**末位**（与中枢群成员轨同一位置语义；⛔ 不跟着成员列表往下挤）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

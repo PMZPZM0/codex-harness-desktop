@@ -744,6 +744,6 @@ export function useTeamGroups() {
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveSchedules, runSchedule,
-    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages,
+    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf,
   };
 }

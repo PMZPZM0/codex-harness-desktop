@@ -56,6 +56,7 @@ import {
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
 import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
 import { stopTeamRuns, type TeamStopInput } from "./harness-team-stop";
+import { startTeamQueued, type TeamQueueStartInput } from "./harness-team-queue";
 /* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
    的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
 import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
@@ -103,6 +104,7 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:log-usage",
   "harness-team:ledger",
   "harness-team:stop",
+  "harness-team:queue-start",
   "harness-team:thread-usage",
 ];
 
@@ -983,6 +985,12 @@ export const harnessTeamFeature = defineFeature<null>({
           两种用法共用同一套候选口径与引擎校验，详见该文件头注释。 */
     ipcHost.handle("harness-team:stop", async (_event, input: Record<string, unknown>) =>
       stopTeamRuns(input as TeamStopInput));
+
+    /* 排队消息的「立即」（11-08 用户令「插队消息」）：
+       能插队就 steer 进正在跑的那个回合（并把队列里那条删掉），插不了就按新回合启动。
+       ⛔ 活动回合表的唯一真相在主进程，所以这个动作不能留给渲染层自己拼 expectedTurnId。 */
+    ipcHost.handle("harness-team:queue-start", async (_event, input: Record<string, unknown>) =>
+      startTeamQueued(input as TeamQueueStartInput));
 
     /* 某个委派会话最近一轮的**真实 token**（引擎 `thread/tokenUsage/updated` 的 last 桶）。
        ⛔ 拿不到就返回 null —— 别返回 0 冒充"用了 0 token"（那是两种完全不同的含义）。 */

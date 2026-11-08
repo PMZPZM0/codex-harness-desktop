@@ -41,6 +41,10 @@ import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-compos
 /* 11-08 用户令「询问/审批跟对话框一样，不要重复造轮子」：卡片本体复用主对话那两件，
    本域只做归属过滤（独立板块，⛔ 不往群视图里再写一套卡片 JSX）。 */
 import { TeamPendingCards } from "./22-team-pending-cards";
+/* 11-08 用户令「排队消息 / 插队消息补齐」：卡片复用主对话的 QueuedMessageList，本域只做按成员分组。 */
+import { TeamQueueStack, queueTeamMessage } from "./23-team-queue";
+/* 11-08 用户令「还有办公室预览接进来」：节点与预览都复用主对话那套（见 24- 文件头注释）。 */
+import { TeamOfficeEntry } from "./24-team-office-preview";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
@@ -95,6 +99,8 @@ type Props = {
   /** 11-08 用户令「点停止是群里所有运行状态都停止掉」：输入框发送键在运行中变成停止键，
       一点全群停（候选 id 由本视图数出来，通道在 store）。 */
   onStopAll?: (threadIds: string[]) => Promise<{ ok: boolean; error?: string; stopped?: number }>;
+  /** 某个成员的候选会话 id（新→旧）：运行中发消息要靠它找到"往哪个会话排队"。 */
+  threadsOfMember?: (memberId: string) => string[];
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
   onOpenModelSettings?: () => void;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
@@ -128,7 +134,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, onStopAll, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout,
+  onStopPartner, onStopAll, threadsOfMember, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -147,6 +153,9 @@ export function TeamGroupView({
      ⛔ 停止候选 = `agentThreadIds`（群内出现过的子会话），store 再让主进程按活动回合表核对。
      （处理函数在 agentThreadIds 之后定义，见下方的 stopEverything。） */
   const [stopping, setStopping] = useState(false);
+  /* 11-08：刚塞过排队消息的会话（threadId → 成员名）。⛔ 不能只靠 live/rows 推 threadId ——
+     派活刚发出去时 live 还是空的、群日志里也还没这条消息，排队卡就会"明明排了却不显示"。 */
+  const [queuedThreads, setQueuedThreads] = useState<Record<string, string>>({});
   /* ⛔ 11-06：busy 会在 `invokeAgent` 返回时就清空，但后台调度会话可能还在收尾
      ⇒ 只看 busy 会显示「没有运行」而后台其实还在跑。订阅共享桥的登记数做补充判据。 */
   const [sendError, setSendError] = useState("");
@@ -468,7 +477,10 @@ export function TeamGroupView({
 
   const send = async () => {
     const body = text.trim();
-    if (!body || sending) return;
+    if (!body) return;
+    /* ⛔ 11-08：派活是**等整个回合**才返回的（sending 会一直为 true），所以群里有伙伴在跑时
+       不能拿 sending 把输入挡死 —— 那条路是"进队列"，不是重复派活。 */
+    if (sending && !groupRunning) return;
     setSendError("");
     setMenuMsg("");
 
@@ -509,11 +521,55 @@ export function TeamGroupView({
     };
     setSending(true);
     try {
-      const r = await onSend?.(atTargets, fullBody, params);
+      /* 11-08 用户令「排队消息 / 插队消息补齐」：
+         正在跑的伙伴**不能**再走派活（那是 turn/start，会打断它正在跑的回合，主进程直接拒）
+         ⇒ 这类目标的正文塞进它自己的引擎队列，回合结束由引擎接着做；空闲的仍走派活。 */
+      /* ⛔ 运行态以**主进程登记表**为准（`harness-team:running`）：派活刚发出去时渲染层的
+         live 还是空的（那要等 `delegate-run started`），拿 live 判会把"正在跑"的伙伴放去派活，
+         然后被主进程以「该会话仍有任务在运行」拒掉。live 只作为取不到时的兜底。 */
+      /* ⛔ 运行判定用 store 的 busy 名单（派活一发出就有，且跨窗口可靠）+
+         `threadsOfMember` 拿"往哪个会话排"；主进程登记表只当补充（它按目标键匹配，名字对不上时会空）。
+         ⛔ 不要只看 live：在独立窗口里 live 要等 `delegate-run` 事件，往往迟迟是空的。 */
+      const busyIds = new Set(busy ?? []);
+      const runningRuns: Array<{ memberId: string; name: string; threadId: string }> = [];
+      const pushRun = (memberId: string, name: string, threadId: string) => {
+        if (!memberId || !threadId) return;
+        if (runningRuns.some((run) => run.memberId === memberId)) return;
+        runningRuns.push({ memberId, name, threadId });
+      };
+      if (groupRunning) {
+        const res = (await window.codex.harnessTeamRunning(group.id)) as { runs?: Array<{ memberId?: unknown; name?: unknown; threadId?: unknown }> } | null;
+        for (const run of res?.runs ?? []) pushRun(String(run?.memberId ?? ""), String(run?.name ?? ""), String(run?.threadId ?? ""));
+        for (const run of live ?? []) if (run.status === "running") pushRun(run.memberId, run.name, run.threadId);
+        for (const memberId of busyIds) pushRun(memberId, nameOf(memberId), threadsOfMember?.(memberId)?.[0] ?? "");
+      }
+      const runningTargets = atTargets
+        .map((id) => ({ id, run: runningRuns.find((run) => run.memberId === id) }))
+        .filter((entry): entry is { id: string; run: { memberId: string; name: string; threadId: string } } => Boolean(entry.run?.threadId));
+      const idleTargets = atTargets.filter((id) => !runningTargets.some((entry) => entry.id === id));
+      const queued: string[] = [];
+      for (const entry of runningTargets) {
+        const res = await queueTeamMessage(entry.run.threadId, fullBody);
+        if (res.ok) {
+          queued.push(entry.run.name);
+          setQueuedThreads((prev) => (prev[entry.run.threadId] ? prev : { ...prev, [entry.run.threadId]: entry.run.name }));
+        }
+        else setSendError(res.error || "排队失败");
+      }
+      if (!idleTargets.length) {
+        if (queued.length) {
+          setText("");
+          setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
+          flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它跑完这一轮就接着做；点「立即」可插队）`);
+        }
+        return;
+      }
+      const r = await onSend?.(idleTargets, fullBody, params);
       if (r && !r.ok) {
         setSendError(r.error || "派活失败");
         return; // ⛔ 失败保留原文，别把用户打的字清掉
       }
+      if (queued.length) flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它们还在跑）`);
       setText("");
       /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
       setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
@@ -559,6 +615,22 @@ export function TeamGroupView({
     for (const row of rows) if (row.threadId) ids.add(row.threadId);
     return [...ids];
   }, [live, liveLen, rows]);
+
+  /* 排队消息按成员分组：threadId → 成员名（正在跑的 ∪ 群消息来源；与卡片归属同一口径）。 */
+  const queueThreads = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const run of live ?? []) if (run.threadId && run.status === "running") map.set(run.threadId, run.name);
+    for (const row of rows) {
+      if (!row.threadId || row.threadId.startsWith("group:") || map.has(row.threadId)) continue;
+      map.set(row.threadId, nameOf(row.authorId));
+    }
+    for (const memberId of busy ?? []) {
+      const threadId = threadsOfMember?.(memberId)?.[0];
+      if (threadId && !map.has(threadId)) map.set(threadId, nameOf(memberId));
+    }
+    for (const [threadId, name] of Object.entries(queuedThreads)) if (!map.has(threadId)) map.set(threadId, name);
+    return [...map].map(([threadId, name]) => ({ threadId, name }));
+  }, [live, liveLen, rows, nameOf, queuedThreads, busy, threadsOfMember]);
 
   /* 输入框那个「停止」键：一次停掉群里所有正在跑的伙伴（主对话 interrupt 的群版）。
      ⛔ 与成员行的单人停止共用同一条通道（harness-team:stop），只是带 stopAll。 */
@@ -1062,6 +1134,13 @@ export function TeamGroupView({
                   询问卡 / 审批卡**就地弹在输入卡上方**（与主对话 composer-overlay-stack 同定位，
                   盖住状态区而不挤走消息流），能直接回答/拒绝，⛔ 不再只能干等。 */}
               <TeamPendingCards app={app} threadIds={agentThreadIds} />
+              {/* 排队消息：与主对话同一张卡片（QueuedMessageList），按成员分组；点在「立即」= 插队 */}
+              <TeamQueueStack
+                app={app}
+                threads={queueThreads}
+                reloadKey={`${liveLen}|${rows.length}`}
+                onNotice={(text) => flashMenuMsg(text)}
+              />
               {/* @ 候选面板（11-07 用户令）：原来那一整排常驻 chip 收进面板，输入区不再被它占掉一行。 */}
               {mention.open && (
                 <TeamMentionPanel
@@ -1285,6 +1364,8 @@ export function TeamGroupView({
             <div className="team-group__members-foot">
               <p className="team-group__members-hint">点 @ 把这个人加进这次派活</p>
             </div>
+            {/* 办公室预览：成员栏**末位**（与中枢那条群成员轨同一个节点、同一个位置语义）。 */}
+            <TeamOfficeEntry group={group} live={live} busy={busy} onOpenThread={onOpenThread} />
           </aside>
         </div>
       )}

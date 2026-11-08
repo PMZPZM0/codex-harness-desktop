@@ -3117,6 +3117,17 @@
    ⛔ 别把这几条改成 border-width: 0 —— 群头/成员栏/输入区之间的分界是**结构性**的，删了就糊成一片。 */
 .team-group__head { border-bottom-color: color-mix(in srgb, var(--line) 55%, transparent); }
 .team-group__members { border-left-color: color-mix(in srgb, var(--line) 50%, transparent); }
+
+/* 办公室预览入口（11-08 用户令「还有办公室预览接进来」）：
+   钉在成员栏**最底部**（margin-top:auto）—— 与中枢那条群成员轨同一个位置语义，
+   ⛔ 不要跟着成员列表往下挤（成员少时下面那片空白正好被它占住）。
+   ⛔ 节点本体不重写：`.team-rail-node.team-rail-office` 的图标/分隔线全走共用样式。 */
+.team-group__office {
+  margin-top: auto;
+  padding: 0 8px 4px;
+  display: flex;
+  justify-content: center;
+}
 .team-group__members-head { border-bottom-color: color-mix(in srgb, var(--line) 45%, transparent); }
 .team-mode__rail { border-right-color: color-mix(in srgb, var(--line) 50%, transparent); }
 /* 群头那几枚按键（搜索 / 折叠 / 设置）的描边同步收细，⛔ 不改变尺寸与圆角 */
