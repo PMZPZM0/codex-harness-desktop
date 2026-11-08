@@ -14,6 +14,7 @@ import { normalizeVoiceBallStyle } from "../../lib/voice-ball-styles.mjs";
 import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
 import { createVoiceScriptStripper, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
 import { describeMicError } from "../../lib/mic-error.mjs";
+import { trimTtsSamples } from "../../lib/voice-audio-trim.mjs";
 import { VoicePhase, VoiceState, ModelsStatus, POS_KEY, CAPTURE_RATE, BARGUE_COOLDOWN_MS, REF_RING_SECONDS, AEC_MAX_DELAY_SAMPLES, AEC_DEFAULT_DELAY_SAMPLES, PREBUFFER_MAX_SAMPLES, ENDPOINT_QUIET_RMS, ENDPOINT_QUIET_MS, pickHint, readPos } from "../VoiceCallFloat";
 import type { TaskMood } from "./use-voice-task-mood";
 
@@ -441,10 +442,22 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     }
     const ctx = playCtxRef.current;
     if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
+    /* ⛔ 11-08 用户实测（只开播报就能复现）：合成样本尾部挂一段低电平噪声，
+       整段播 ⇒ 「话念完了、电流声还响几秒」。播放前统一裁尾（纯函数 voice-audio-trim.mjs）；
+       ⛔ 必须**先裁再写 AEC 参考**（下面 pushRef 用同一份 trimmed），否则参考与出声失步。 */
+    const trimmed = trimTtsSamples(samples, sampleRate);
+    if (!trimmed.length) {
+      if (playingCountRef.current === 0) {
+        speakingRef.current = false;
+        gateRef.current?.reset();
+        void window.codex.voicePlaybackDone().catch(() => undefined);
+      }
+      return;
+    }
 
-    const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+    const buffer = ctx.createBuffer(1, trimmed.length, sampleRate);
     // copyToChannel 要求底层是 ArrayBuffer（跨 IPC 过来的可能是 ArrayBufferLike），拷一份最稳
-    buffer.copyToChannel(new Float32Array(samples), 0);
+    buffer.copyToChannel(new Float32Array(trimmed), 0);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     // 音量：设置里的 tts.volume（1.0 = 原音量）；走 GainNode 便于随时改且不影响 AEC 参考
@@ -486,7 +499,7 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
       );
       aecRef.current.setDelay?.(delaySamples);
       const leadSamples = Math.max(0, (startAt - ctx.currentTime) * CAPTURE_RATE);
-      pushRef(sampleRate === CAPTURE_RATE ? samples : resampleLinear(samples, sampleRate, CAPTURE_RATE), leadSamples);
+      pushRef(sampleRate === CAPTURE_RATE ? trimmed : resampleLinear(trimmed, sampleRate, CAPTURE_RATE), leadSamples);
     }
 
     source.onended = () => {

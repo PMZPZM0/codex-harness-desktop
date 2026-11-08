@@ -61,6 +61,9 @@ import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { createVoiceScriptStripper, dedupeSpokenSentences, resolveAnnounceSummary } from "../../lib/voice-script.mjs";
 import { splitSentences } from "../../lib/voice-summary.mjs";
 import { createAutoSpeakTracker } from "../../lib/voice-auto-speak.mjs";
+/* ⛔ 11-08 用户实测：只开播报也能听到「播报结束、电流声还响几秒」——
+   合成样本尾部的低电平噪声被整段播出来了；播放前统一裁掉（见该文件头注释）。 */
+import { trimTtsSamples } from "../../lib/voice-audio-trim.mjs";
 import {
   publishAnnounceEvent,
   publishAnnounceStatus,
@@ -439,9 +442,14 @@ export function useVoiceAnnounce(threadId: string = ""): void {
       publishStatus();
       return;
     }
-    const buffer = ctx.createBuffer(1, samples.length, sampleRate);
+    /* ⛔ 11-08 用户实测：播报念完，扬声器还「电流/嗡嗡」几秒 ——
+       合成样本尾部挂着的低电平噪声被整段播出去了。播放前按窗口能量裁掉尾巴
+       （保留 120ms 轻声余量 + 两端淡入淡出），纯函数见 voice-audio-trim.mjs。 */
+    const trimmed = trimTtsSamples(samples, sampleRate);
+    if (!trimmed.length) { publishStatus(); return; }
+    const buffer = ctx.createBuffer(1, trimmed.length, sampleRate);
     // copyToChannel 要求底层是 ArrayBuffer（跨 IPC 回来的可能是 ArrayBufferLike），拷一份最稳
-    buffer.copyToChannel(new Float32Array(samples), 0);
+    buffer.copyToChannel(new Float32Array(trimmed), 0);
     const source = ctx.createBufferSource();
     source.buffer = buffer;
     const gain = ctx.createGain();

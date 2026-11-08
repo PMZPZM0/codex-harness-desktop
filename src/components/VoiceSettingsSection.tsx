@@ -6,6 +6,7 @@ import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sp
 import { AppSelect } from "./AppSelect";
 import { PageInfo } from "./SettingsHead";
 import { hotkeyLabel } from "../lib/hotkey.mjs";
+import { trimTtsSamples } from "../lib/voice-audio-trim.mjs";
 import { useVoiceSettingsSectionState } from "./VoiceSettingsSection/use-voice-settings-section-state";
 import { VoiceSettingsSectionVoicePicker } from "./VoiceSettingsSection/01-voice-picker";
 import { VoiceSettingsSectionTtsEngines } from "./VoiceSettingsSection/02-tts-engines";
@@ -56,13 +57,19 @@ export type Meta = {
   ttsVoices: Record<number, string>;
   modelHosts: Record<string, string>;
 };
-/** 试听播放：播放中可停止；done 在自然播完或手动停止时 resolve。 */
+/** 试听播放：播放中可停止；done 在自然播完或手动停止时 resolve。
+ *  ⛔ 11-08：与播报/通话共用同一道裁尾（合成样本尾部有低电平噪声，整段播会「话停了还有电流声」）。 */
 export async function playSamples(samples: Float32Array | undefined, sampleRate: number | undefined): Promise<{ stop: () => void; done: Promise<void> }> {
   if (!samples || !sampleRate) throw new Error("没有音频数据");
   const ctx = new AudioContext();
   if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
-  const buffer = ctx.createBuffer(1, samples.length, sampleRate);
-  buffer.copyToChannel(new Float32Array(samples), 0);
+  const trimmed = trimTtsSamples(samples, sampleRate);
+  if (!trimmed.length) {
+    void ctx.close().catch(() => undefined);
+    return { stop: () => undefined, done: Promise.resolve() };
+  }
+  const buffer = ctx.createBuffer(1, trimmed.length, sampleRate);
+  buffer.copyToChannel(new Float32Array(trimmed), 0);
   const src = ctx.createBufferSource();
   src.buffer = buffer;
   src.connect(ctx.destination);

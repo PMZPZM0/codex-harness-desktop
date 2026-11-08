@@ -1215,4 +1215,27 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/presets\.filter\(\(preset(?:: any)?\) => !preset\.builtIn\)/.test(cloneUi),
     "「内置音色（一键启用）」列表排除已内置的预设（它们已自动落成档案）");}
 
+/* ── 11-08：播报结束后「电流/嗡嗡」几秒 —— TTS 尾部噪声必须裁掉 ──────────────
+   用户实测：只开「语音播报」（没在通话）也能复现。合成样本尾部挂一段低电平噪声，
+   播放端整段播 ⇒ 话念完，电流声还要响到 buffer 结束（几秒）。 */
+{
+  const announceSrc = read("src/features/voice-announce/use-voice-announce.ts");
+  const callSrc = read("src/components/VoiceCallFloat/use-voice-call-float-state.tsx");
+  ok(/voice-audio-trim\.mjs/.test(announceSrc) && /trimTtsSamples\(samples, sampleRate\)/.test(announceSrc)
+    && /const buffer = ctx\.createBuffer\(1, trimmed\.length, sampleRate\)/.test(announceSrc),
+    "播报播放前裁掉 TTS 尾部噪声（⛔ 不再整段播「语音 + 电流尾巴」）");
+  ok(/voice-audio-trim\.mjs/.test(callSrc) && /trimTtsSamples\(samples, sampleRate\)/.test(callSrc)
+    && /const buffer = ctx\.createBuffer\(1, trimmed\.length, sampleRate\)/.test(callSrc),
+    "通话播放同样裁尾（同一份合成样本，两条播放链不许只修一条）");
+  ok(/resampleLinear\(trimmed, sampleRate, CAPTURE_RATE\)/.test(callSrc),
+    "⛔ AEC 参考必须用裁剪后的样本（参考与真正出声的内容不一致 = 消回声失步）");
+  const settingsSrc = read("src/components/VoiceSettingsSection.tsx");
+  ok(/voice-audio-trim\.mjs/.test(settingsSrc) && /trimTtsSamples\(samples, sampleRate\)/.test(settingsSrc)
+    && /const buffer = ctx\.createBuffer\(1, trimmed\.length, sampleRate\)/.test(settingsSrc),
+    "音色试听同样裁尾（试听与播报共用一份合成音频，尾部噪声同一处来源）");
+  ok(existsSync(join(ROOT, "src/lib/voice-audio-trim.mjs")) && existsSync(join(ROOT, "src/lib/voice-audio-trim.d.mts"))
+    && existsSync(join(ROOT, "tests/voice-audio-trim.test.mjs")),
+    "裁尾是纯函数且有真值表单测（尾巴砍掉 / 轻声尾音保留 / 全噪声返回空）");
+}
+
 process.exit(fails ? 1 : 0);
