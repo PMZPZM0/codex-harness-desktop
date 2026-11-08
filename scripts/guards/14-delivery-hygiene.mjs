@@ -27,6 +27,12 @@ import { readFileSync, readdirSync, existsSync, statSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { ROOT, ok, fail } from "./_ctx.mjs";
 
+/* ⛔ 11-08 审查确认：消费者判定必须用**剥过注释**的源码 —— 注释里写一句 `.foo` 会让死路由
+   变「已接线」，再从名单删掉即永久绿。 */
+const codeOnly = (source) => String(source ?? "")
+  .replace(/\/\*[\s\S]*?\*\//g, "")
+  .replace(/^[ \t]*\/\/[^\n]*/gm, "");
+
 /* ══ ② 已确认「接线未做」的通道（棘轮：只许缩，不许长）══════════════════════
    11-08 首次实测 61 条。它们都是「主进程 + 渲染层桥都齐了、但界面还没接」的功能口，
    ⛔ 不是"可以随便留"：每加一条新通道，要么当场接上消费者，要么进来登记 —— 进名单本身

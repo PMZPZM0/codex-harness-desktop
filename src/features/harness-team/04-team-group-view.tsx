@@ -176,7 +176,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
-  onStopPartner, onStopAll, threadsOfMember, live, replyMode = "process", messageForm = "chat", onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
+  onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -556,7 +556,13 @@ export function TeamGroupView({
     [mentionSections],
   );
   const mentionNames = useMemo(() => mentionCandidatesFlat.map((c) => c.name), [mentionCandidatesFlat]);
-  const atTargets = useMemo(() => mentionTargetsInText(text, mentionCandidatesFlat), [text, mentionCandidatesFlat]);
+  /* ⛔ 11-08 审查确认：quoteRow 会把被引用消息写成  行塞进正文，而 mentionTargetsInText
+     扫全文 ⇒ 引用一条写着「@构梁」的消息再发送，会**静默派活给构梁**。
+     ⇒ 派活目标只从「非引用行」里取（引用是上下文，不是指令）。 */
+  const atTargets = useMemo(
+    () => mentionTargetsInText(text.replace(/^[ 	]*>.*$/gm, ""), mentionCandidatesFlat),
+    [text, mentionCandidatesFlat],
+  );
 
   /** 把 `@名字 ` 插到当前光标处（面板多选 / 成员行 @ 共用；⛔ 不再维护框外 chip）。 */
   const insertMentionText = (name: string) => {
@@ -917,6 +923,10 @@ export function TeamGroupView({
 
   return (
     <div className="team-group">
+      {/* ⛔ 11-08 审查确认：推理浮窗宿主必须挂在这里（TeamGroupView 根）——
+          设置→团队 的 TeamModePanel 直接渲染本组件、没有 TeamChatOverlay，宿主原来只在 overlay 里，
+          那种场景浮窗会回落 body（层级被设置弹窗压住）。 */}
+      <div className="reasoning-float-host team-reasoning-float-host" aria-hidden />
       {/* 群内成员头像（11-07）：点成员栏的头像打开；选完只改这个群的这张脸。 */}
       {avatarTarget && (
         <TeamAvatarPicker

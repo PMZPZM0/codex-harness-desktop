@@ -209,6 +209,10 @@ export function TeamComposer({
   const skillsPopRef = useRef<HTMLDivElement | null>(null);
   /* 行内提及编辑器（contenteditable + chip）：最后渲染的值 + 命令面。 */
   const renderedRef = useRef("");
+  /* ⛔ 11-08 审查确认（用户实测「打字光标乱跳 / 中文被打断」）：输入法组合期间禁止重建 DOM。 */
+  const composingRef = useRef(false);
+  /* 名字/头像表的签名：只有它**变了**才需要为重绘 chip 重建一次（打字路径绝不重建）。 */
+  const mentionSigRef = useRef("");
   /* 工具行自适应（11-08 用户：「看看下面的自适应展示，看看主对话框咋做的自适应」）——
      与主对话同一套判据：按**输入框自身宽度**分两档（<640 紧、<480 极窄），
      ⛔ 不用 viewport 媒体查询（窗口比例 / 右栏开合不同步）。 */
@@ -239,21 +243,29 @@ export function TeamComposer({
       });
     }
   };
-  /* 外部改值（发送清空 / 面板插人 / 引用）：重建 DOM；打字路径不会走到这里（renderedRef 已同步）。 */
+  /* 外部改值（发送清空 / 面板插人 / 引用）才重建 DOM。
+     ⛔⛔ 11-08 审查确认的真缺陷：原实现只要正文里有 chip / 可识别的 @，**每次按键**都会重绘并把光标
+     扔到末尾（中文输入法组合期也被打断）。现在：
+       · 打字路径（renderedRef === value）一律不动 DOM；
+       · 输入法组合期（composingRef）一律不重建；
+       · 只有「名字/头像表晚到」才允许为 chip 重绘一次，且**保留原光标**。 */
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    /* 名字/头像表晚到（调度目录异步加载）也会触发这里 —— 正文里既没 chip、也没有可染色的
-       提及时不重建 DOM（否则会把用户正在打的光标拽到末尾）。 */
+    if (composingRef.current) return;
+    const sig = Object.keys(mentionAvatars).join(",") + "|" + mentionNames.join(",");
+    const sigChanged = mentionSigRef.current !== sig;
     if (renderedRef.current === value) {
-      const hasChip = Boolean(el.querySelector("[data-mention]"));
-      const hasMention = mentionSegments(value, mentionNames).some((seg) => seg.mention);
-      if (!hasChip && !hasMention) return;
+      if (!sigChanged) return;
+      /* 表变了但没有 chip 要重画 ⇒ 只更新签名，不碰 DOM（光标保持）。 */
+      if (!el.querySelector("[data-mention]")) { mentionSigRef.current = sig; return; }
     }
+    const caret = editorCaret(el);
     repaintEditor(value);
+    mentionSigRef.current = sig;
     requestAnimationFrame(() => {
       el.focus();
-      setEditorCaret(el, editorValue(el).length);
+      setEditorCaret(el, Math.min(caret, editorValue(el).length));
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, mentionNames, mentionAvatars]);
@@ -468,7 +480,15 @@ export function TeamComposer({
     const looksLikePath = /^(?:[A-Za-z]:[\\/]|\/|\\\\)/.test(plain);
     const imagePath = plain && !plain.includes("\n") && !plain.includes("://") && looksLikePath
       && /\.(png|jpe?g|gif|webp|bmp)$/i.test(plain) ? plain : "";
-    if (!image && !imagePath) return;
+    if (!image && !imagePath) {
+      /* ⛔ 11-08 审查确认：普通文字粘贴原来不拦截 ⇒ 浏览器把剪贴板 **HTML** 直接塞进 contenteditable
+         （图片/表格内容丢失，别处复制的 data-mention 还会变成真 chip 被序列化成 @名字、误触发派活）。
+         ⇒ 一律只取 text/plain 用纯文本插入。 */
+      e.preventDefault();
+      const text = cb.getData("text/plain");
+      if (text) document.execCommand("insertText", false, text);
+      return;
+    }
     e.preventDefault();
     const saved = image ? await window.codex.readClipboardImage().catch(() => "") : imagePath;
     /* ⛔ await 期间用户可能已改过偏好 / 加过附件 ⇒ 用最新的 optsRef，别拿闭包里的旧 opts 覆盖。 */
@@ -631,6 +651,8 @@ export function TeamComposer({
             onValueChange(next, editorCaret(el));
           }}
           onKeyDown={onKeyDown}
+          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionEnd={(event) => { composingRef.current = false; renderedRef.current = editorValue(event.currentTarget); }}
           onPaste={(e) => void onPaste(e)}
         />
       </div>

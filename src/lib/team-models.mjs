@@ -794,8 +794,11 @@ export function mergeConsecutive(rows, gapMs = 90_000) {
   const out = [];
   for (const r of list) {
     const prev = out[out.length - 1];
+    /* ⛔ 11-08 审查确认：bot 行不能合并 —— 合并后第二条只渲染正文，
+       引用行 / 文件卡 / 来源 / 用量 / 追问引用全丢（用户实测「成员消息重复/缺块」）。 */
     const canMerge = prev
       && prev.authorId === r.authorId
+      && prev.authorKind !== "bot" && r.authorKind !== "bot"
       && prev.kind === "text" && r.kind === "text"
       && Number(r.at) - Number(prev.lastAt ?? prev.at) <= gap;
     if (canMerge) {

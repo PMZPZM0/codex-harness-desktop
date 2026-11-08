@@ -136,12 +136,12 @@ const catalog = [
     "命中高亮是**临时**的（1.6s 后摘掉，⛔ 不留永久标记）");
   /* ⛔⛔ 11-08 用户（截图）：「手动输入 @ 选中后，输入框里也有 @、输入框上面也有 @」——
      要求全部收进输入框、框上不再展示 ⇒ 删掉「本轮 @」chip 行，@ 的唯一真相源改成正文。 */
-  (/mentionTargetsInText\(text, mentionCandidatesFlat\)/.test(view)
+  ok(/mentionTargetsInText\(text\.replace\([\s\S]{0,80}?\), mentionCandidatesFlat\)/.test(view)
     && /removeMentionsFromText\(prev, \[item\.name\]\)/.test(view)
-    && !/team-group__selected/.test(view) && !/setAtTargets\(/.test(view) ? ok : fail)(
+    && !/team-group__selected/.test(view) && !/setAtTargets\(/.test(view),
     "⛔ 「本轮 @」chip 行已删：选人只往正文插 `@名字 `，发消息时从正文反查目标（单一真相源）"
   );
-  (!/team-group__selected/.test(read("src/styles/61-team-mode.css")) ? ok : fail)(
+  ok(!/team-group__selected/.test(read("src/styles/61-team-mode.css")),
     "已选 @ chip 的样式也删净（只删 JSX 会留下看起来还在的类）"
   );
 }
@@ -781,7 +781,7 @@ const catalog = [
      根因是上一轮 @ 的目标挂到了下一轮。⛔ 11-08 起目标身份**从正文反查**
      ⇒ 发完清正文 = 清本轮 @（不再有独立的 atTargets 需要清），换群由组件重挂载重置。 */
   ok(!/setAtTargets\(/.test(view) && (view.match(/setText\(""\)/g) || []).length >= 2
-    && /const atTargets = useMemo\(\(\) => mentionTargetsInText\(text, mentionCandidatesFlat\)/.test(view),
+    && /const atTargets = useMemo\([\s\S]{0,60}?mentionTargetsInText\(text\.replace\([\s\S]{0,80}?\), mentionCandidatesFlat\)/.test(view),
     "本轮 @ 随正文一起清（派活 + 队列两条路径都清正文）—— ⛔ 不再有会偷偷带到下一轮的第二份目标状态");
   ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\);[\s\S]{0,260}?setText\(""\);/.test(view),
     "清 @ 与清正文在同一处（用户看到的就是「发出去、输入区归零」）");
@@ -856,8 +856,10 @@ const catalog = [
          ⛔ 不许在群板块里另写一套（出现 ReasoningStrip / reasoning-card 就是分叉）。 */
       && /ReasoningStrip/.test(rcEq) && /displayMode === "strip"/.test(rcEq)
       && !/ReasoningStrip/.test(procEq) && !/reasoning-card/.test(procEq)
-      && /team-reasoning-float-host/.test(overlayEq),
-      "推理两种展示（浮窗 / 长条）都复用主对话 ReasoningCard（运行中 turnActive + 群内 portal 宿主，⛔ 不自造渲染）");
+      /* ⛔ 11-08 审查确认：宿主必须挂在 TeamGroupView 根（设置→团队 的 TeamModePanel 没有 overlay，
+         只挂 overlay 那种场景浮窗会回落 body、被设置弹窗压住）。overlay 里不许再放第二份。 */
+      && /team-reasoning-float-host/.test(viewEq) && !/team-reasoning-float-host/.test(overlayEq),
+      "推理两种展示（浮窗 / 长条）都复用主对话 ReasoningCard（运行中 turnActive + 群内 portal 宿主挂在群视图根，⛔ 不自造渲染）");
     ok(/<TurnWebSources sources=\{collectTurnWebSources\(turn as never\)\} inline \/>/.test(cardsEq),
       "网页来源条与主对话同组件（TeamCards 里渲染）");
   }
@@ -1069,6 +1071,31 @@ const catalog = [
     "群消息形式与回复模式正交：话题模式下照样有运行反馈（⛔ 不要把用户晾着）");
   ok(/test\("topicThreadOf：合并行/.test(read("tests/team-fold.test.mjs")),
     "合并行话题不丢有单测真值表");
+}
+
+/* ── ⑱ 11-08 Code review 确认修复（输入法 / 光标 / 粘贴 / 序列化 / 引用派活 / bot 合并）── */
+{
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  const editor = codeOnly(read("src/lib/team-composer-editor.ts"));
+  const models = codeOnly(read("src/lib/team-models.mjs"));
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/composingRef\.current = true/.test(composer) && /onCompositionStart=/.test(composer)
+    && /onCompositionEnd=/.test(composer) && /if \(composingRef\.current\) return;/.test(composer),
+    "输入法组合期不重建 DOM（⛔ 组合期重绘 = 候选词丢失、中文被打断）");
+  ok(/const caret = editorCaret\(el\)/.test(composer)
+    && /setEditorCaret\(el, Math\.min\(caret, editorValue\(el\)\.length\)\)/.test(composer)
+    && !/setEditorCaret\(el, editorValue\(el\)\.length\)/.test(composer),
+    "重绘后恢复原光标（⛔ 原来一律扔到末尾 = 用户「打字光标乱跳」）");
+  ok(/const sigChanged = mentionSigRef\.current !== sig/.test(composer) && /if \(!sigChanged\) return;/.test(composer),
+    "打字路径不重建 DOM：只有名字/头像表变了才为重绘 chip 动一次");
+  ok(/e\.preventDefault\(\);[\s\S]{0,260}?getData\("text\/plain"\)[\s\S]{0,160}?execCommand\("insertText"/.test(composer),
+    "普通文字粘贴只取 text/plain（⛔ 浏览器默认塞 HTML：图片丢失、别处的 chip 变真 @ 误派活）");
+  ok(/lastIsBr/.test(editor) && /if \(!lastIsBr\) out \+= "\\n"/.test(editor),
+    "序列化不重复计换行（`<div><br></div>` 空行翻倍的根因）");
+  ok(/prev\.authorKind !== "bot" && r\.authorKind !== "bot"/.test(models),
+    "⛔ bot 行不参与连发合并（合并会吞掉引用行 / 文件卡 / 来源 / 用量）");
+  ok(/mentionTargetsInText\(text\.replace\([\s\S]{0,80}?\), mentionCandidatesFlat\)/.test(view),
+    "⛔ 引用行（`> …`）不参与 @ 派活：引用一条写着 @某人 的消息不会静默派活");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

@@ -15,6 +15,7 @@
 //   ⑩ project-menu-flyout：项目 ⋯ / 会话 ⋯ 菜单向侧栏右侧弹出（portal）+ 视口钳制自适应往上（11-08）
 //   ⑪ thread-tag-column：会话行标签固定成一列（贴置顶键左边）+ 标签最多 3 个字（11-08）
 //   ⑫ team-skill-picker：工作伙伴「引用技能」贴 + 图标弹、可多选有反馈、点一下不关（11-08）
+//   ⑬ team-composer-input：群聊输入框插 @ 后打字光标不跳 / 输入法组合不重建 / 粘贴只进纯文本（11-08 审查）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -2012,6 +2013,93 @@ const CHECKS = [
       await wait(300);
       const g4 = await geo();
       h.check("⑤ Esc 关闭技能面板（选择已复原为 0）", !g4?.pop && g4?.on === -1, JSON.stringify({ open: Boolean(g4?.pop) }));
+    },
+  },
+  {
+    id: "team-composer-input",
+    name: "群聊输入框：插 @ 后打字光标不跳到末尾 / 输入法组合期不重建 DOM / 粘贴只进纯文本（11-08 审查）",
+    run: async (h) => {
+      /* 11-08 审查确认的三处真缺陷（用户实测「打字光标乱跳 / 中文被打断」）：
+         ① 正文里有 chip 时**每次按键**都重建 DOM 并把光标扔到末尾；
+         ② 输入法组合期同样被重建 ⇒ 候选词丢失；
+         ③ 普通文字粘贴不拦截 ⇒ 浏览器把剪贴板 HTML 直接塞进 contenteditable。
+         判据全部取**真实行为**：chip 节点身份（重建 = 换节点）+ 光标位置 + 插入的文本形态。 */
+      await h.eval(`(function(){ const b=document.querySelector('[title^="工作伙伴"]'); if(b){b.click(); return true;} return window.codex.popoutTeam().then(()=>true); })()`);
+      const flow = await h.evalInTarget("teamPopout=1", `(async function(){
+        const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+        const until=async(fn,ms=10000)=>{ const t0=Date.now(); while(Date.now()-t0<ms){ const v=fn(); if(v) return v; await sleep(120);} return null; };
+        const group=await until(()=>document.querySelector(".team-mode__group"));
+        if(!group) return {err:"no-group"};
+        group.click();
+        const ed=await until(()=>document.querySelector('.team-composer__input[contenteditable="true"]'));
+        if(!ed) return {err:"no-editor"};
+        const atBtn=await until(()=>document.querySelector(".team-group__member-at"));
+        if(!atBtn) return {err:"no-member"};
+        const sel=document.getSelection();
+        const caretPos=()=>{ const r=sel.getRangeAt(0).cloneRange(); r.selectNodeContents(ed); r.setEnd(sel.getRangeAt(0).endContainer, sel.getRangeAt(0).endOffset); return r.toString().length; };
+        ed.focus();
+        const all=document.createRange(); all.selectNodeContents(ed); sel.removeAllRanges(); sel.addRange(all);
+        document.execCommand("delete");
+        await sleep(80);
+        atBtn.click();                       /* 真实路径：成员行 @ → 插 chip（头像 + @名字） */
+        await sleep(250);
+        const chip1=ed.querySelector("[data-mention]");
+        if(!chip1) return {err:"no-chip", text:ed.textContent};
+        document.execCommand("insertText", false, "abc");
+        await sleep(150);
+        /* 退两格再插 X：正确光标停在 X 之后（⛔ 旧实现重绘后扔到末尾） */
+        sel.modify("move","backward","character");
+        sel.modify("move","backward","character");
+        document.execCommand("insertText", false, "X");
+        await sleep(150);
+        const typedText=ed.textContent||"";
+        const caretAfterType=caretPos();
+        const chip2=ed.querySelector("[data-mention]");
+        /* 输入法组合：compositionstart 期间打字，DOM 不许被重建 */
+        ed.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+        document.execCommand("insertText", false, "中");
+        await sleep(150);
+        const chip3=ed.querySelector("[data-mention]");
+        const imeText=ed.textContent||"";
+        ed.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中" }));
+        await sleep(120);
+        /* 粘贴：剪贴板里同时有 HTML 和纯文本 ⇒ 只许进纯文本 */
+        const dt=new DataTransfer();
+        dt.setData("text/html","<b>粗体HTML</b>");
+        dt.setData("text/plain","纯文本粘贴");
+        ed.dispatchEvent(new ClipboardEvent("paste", { clipboardData: dt, bubbles: true, cancelable: true }));
+        await sleep(250);
+        const pastedText=ed.textContent||"";
+        const pastedHtml=ed.innerHTML||"";
+        /* 收尾：清空输入框，别把测试文本留在用户群里 */
+        const all2=document.createRange(); all2.selectNodeContents(ed); sel.removeAllRanges(); sel.addRange(all2);
+        document.execCommand("delete");
+        await sleep(80);
+        return {
+          chip1: Boolean(chip1), chip2Same: chip2 === chip1, chip3Same: chip3 === chip1,
+          typedText, typedLen: typedText.length, caretAfterType,
+          imeText, pastedText, hasBoldTag: /<b>|粗体HTML/i.test(pastedHtml),
+          cleared: !(ed.textContent||"").trim(),
+        };
+      })()`);
+      h.check("⓪ 前置：群聊窗口已开、输入框与成员 @ 键都在、chip 已插入",
+        Boolean(flow && !flow.err), JSON.stringify(flow?.err ?? "ok"));
+      if (!flow || flow.err) return;
+      h.check("① 插 @ 后继续打字：chip 节点**没被重建**（旧实现每次按键重绘）",
+        flow.chip2Same === true, JSON.stringify({ same: flow.chip2Same }));
+      /* 编辑器末尾有一个零宽字符（renderEditor 补的，editorValue 会剥掉）——
+         判据取「光标前一个字是刚输入的 X，且光标后仍有正文」= 光标留在插入点，⛔ 没被扔到末尾。 */
+      h.check("② 光标停在 X 之后（⛔ 不是被扔到末尾）",
+        flow.typedText.slice(0, flow.caretAfterType).endsWith("X")
+        && flow.typedText.slice(flow.caretAfterType).replace(/[\s\u200b]/g, "").length > 0,
+        JSON.stringify({ text: flow.typedText, caret: flow.caretAfterType, len: flow.typedLen }));
+      h.check("③ 输入法组合期不重建 DOM（候选词不丢）",
+        flow.chip3Same === true && flow.imeText.includes("中"),
+        JSON.stringify({ same: flow.chip3Same, text: flow.imeText }));
+      h.check("④ 粘贴只进纯文本（HTML 标签不进编辑器）",
+        flow.pastedText.includes("纯文本粘贴") && !flow.hasBoldTag,
+        JSON.stringify({ text: flow.pastedText, html: flow.hasBoldTag }));
+      h.check("⑤ 收尾：输入框已清空（不把测试文本留在用户群里）", flow.cleared === true, String(flow.cleared));
     },
   },
 ];

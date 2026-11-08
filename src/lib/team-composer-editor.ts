@@ -92,7 +92,13 @@ export function editorValue(root: HTMLElement): string {
     if (mention) { out += `@${mention}`; return; }
     if (el.tagName === "BR") { out += "\n"; return; }
     for (const child of Array.from(el.childNodes)) walk(child);
-    if (el.tagName === "DIV" || el.tagName === "P") out += "\n";
+    /* ⛔ 11-08 审查确认：浏览器回车产生的空行是 `<div><br></div>`，BR 已经贡献了一个换行，
+       DIV 再补一个 ⇒ 空行翻倍、连续回车越打越长。末子是 BR 时不再补。 */
+    if (el.tagName === "DIV" || el.tagName === "P") {
+      const last = el.lastChild;
+      const lastIsBr = Boolean(last && last.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR");
+      if (!lastIsBr) out += "\n";
+    }
   };
   for (const child of Array.from(root.childNodes)) walk(child);
   return out.replace(/\n$/, "");

@@ -388,8 +388,6 @@ export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app, onClos
       onMouseDown={(event) => { if (!onCloseWindow && event.target === event.currentTarget) close(); }}
     >
       <div className="team-modal" role="dialog" aria-modal="true" aria-label="群聊">
-        {/* ⛔ 11-08：推理浮窗的群内宿主（ReasoningCard 经 reasoningFloatHost 选择器 portal 到这里）。 */}
-        <div className="reasoning-float-host team-reasoning-float-host" aria-hidden />
         <header className="team-modal__head">
           <div className="team-modal__title">
             <MessagesSquare size={16} className="ic-violet" />
