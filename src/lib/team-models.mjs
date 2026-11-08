@@ -986,3 +986,37 @@ export function addModeStateOf(partners, mode) {
   }
   return { blocked: false, reason: "" };
 }
+
+/**
+ * 两段文本是否「几乎同一句」（11-08 用户实测「成员消息重复」）。
+ *
+ * 现场：成员一回合里既调了 `group_say`（把回复发进群），又写了最终回复
+ * （宿主再把最终回复发进群）⇒ 同一件事出现两条。
+ * 宿主侧的兜底：这一回合已经通过工具说过话时，最终回复若与工具那句高度重合就不再落盘。
+ *
+ * 判据（保守，宁可不合并也别吞正文）：
+ *   · 去掉空白与标点后完全相等 ⇒ true；
+ *   · 否则按**字符二元组**算重合率：交集 / 较短文本的二元组数 ≥ 0.5 ⇒ true。
+ *     「问需，在。管数据分析这条线：接口口径、表结构、指标定义。」vs
+ *     「问需已经报到过了：数据分析这条线，接口口径、表结构、指标定义归我。」≈ 0.6 ⇒ 判重。
+ */
+export function textsAreNearDuplicate(a, b) {
+  const norm = (value) => String(value ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[，。！？、：；,.!?:;"'“”‘’()（）\[\]【】《》<>—\-…·]/g, "");
+  const x = norm(a);
+  const y = norm(b);
+  if (!x || !y) return false;
+  if (x === y) return true;
+  const bigrams = (text) => {
+    const set = new Set();
+    for (let i = 0; i < text.length - 1; i += 1) set.add(text.slice(i, i + 2));
+    return set;
+  };
+  const A = bigrams(x);
+  const B = bigrams(y);
+  if (!A.size || !B.size) return false;
+  let hit = 0;
+  for (const gram of A) if (B.has(gram)) hit += 1;
+  return hit / Math.min(A.size, B.size) >= 0.5;
+}

@@ -45,6 +45,7 @@ import {
   teamKidsOf,
   teamAuthorIdOf,
   teamMemberIdOf,
+  textsAreNearDuplicate,
 } from "../../src/lib/team-models.mjs";
 import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
 import {
@@ -64,7 +65,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -246,7 +247,10 @@ async function appendMessageTo(groupId: string, entry: Record<string, unknown>):
   const authorKind = entry?.authorKind === "bot" ? "bot" : "human";
   /* ⛔ 人的消息挂群自身；伙伴的消息必须带**真实子会话 id**，否则判无效（不造真身） */
   const threadId = String(entry?.threadId ?? "").trim() || (authorKind === "human" ? groupThreadId(gid) : "");
-  return mutateStore<AppendResult>((store) => {
+  /* ⛔⛔ 11-08 用户实测（「成员消息不处理完压根不上屏」）：写库原来**不广播** ——
+     主进程里 append 后渲染层只有等自己那次 IPC 返回才重读；而接力成员（第 2 跳起）
+     根本没人 await ⇒ 消息永远不出现。⇒ 每次成功落盘都把权威 rows 广播给所有窗口。 */
+  const result = await mutateStore<AppendResult>((store) => {
     if (!findGroup(store.groups, gid)) return { store, out: { ok: false, error: "群不存在", rows: [] } };
     const prev = store.messages[gid] ?? [];
     const next = appendGroupMessage(prev, { ...entry, id, threadId, at, authorKind });
@@ -257,6 +261,8 @@ async function appendMessageTo(groupId: string, entry: Record<string, unknown>):
       out: { ok: true, entry: saved, rows: projectGroupLog(next) },
     };
   });
+  if (result.ok) broadcastHarnessEvent({ type: "harness-team-messages", groupId: gid, rows: result.rows } as never);
+  return result;
 }
 
 /** 记一条用量（失败也记：失败同样烧了 token，失败率本身是最该看的指标）。 */
@@ -449,6 +455,9 @@ async function runDispatchRounds(
     let threadId = "";
     let okFlag = false;
     let errMsg = "";
+    /* 群聊流式广播（见下）：回合结束后必须摘监听 + 发 finished。 */
+    let liveThreadId = "";
+    let talkDelta: ((event: any) => void) | null = null;
     try {
       /* ⛔⛔ 11-07 用户令：群聊走**独立通道**。这里给成员的是「群里有人对你说了一句」，
          不是任务派发：不注入 groupContextBlock 的协作协议、不调 runDelegatedTask、
@@ -467,7 +476,28 @@ async function runDispatchRounds(
       );
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
-      options.onPhase?.("started", partner, {});
+      /* ⛔⛔ 11-08 用户实测（「谁在运行一点反馈都没有」「回复了就要立刻看到」）：
+         群聊回合也要像主对话一样**逐字上屏**。先解析出这位成员的会话（runTalkTurn 会命中同一本台账复用），
+         再订阅它的 agentMessage 增量，广播给渲染层（流式卡 + 过程块）。 */
+      const liveThread = await ensureTalkThread(group.id, partner as TalkMember, {
+        cwd: group.workspace || undefined,
+        groupName: group.name,
+        sandbox: params.sandbox,
+        approvalPolicy: params.approvalPolicy,
+      }).catch(() => null);
+      liveThreadId = liveThread?.threadId ?? "";
+      if (liveThreadId) {
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, at: Date.now() } as never);
+        talkDelta = (event: any) => {
+          if (event?.kind !== "notification" || event?.method !== "item/agentMessage/delta") return;
+          const p = event.params ?? {};
+          if (String(p.threadId ?? "") !== liveThreadId) return;
+          const delta = String(p.delta ?? "");
+          if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, text: delta, at: Date.now() } as never);
+        };
+        server.on("event", talkDelta);
+      }
+      options.onPhase?.("started", partner, { threadId: liveThreadId || undefined });
       /* ⛔ 11-08 审查：模型 / 沙箱 / 审批档原来在这里被丢掉（只传了 effort）⇒ 群输入框三个控件全是死的。
          群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
       const clearedMark = groupClearedAt.get(group.id) ?? 0;
@@ -490,7 +520,13 @@ async function runDispatchRounds(
       chars = query.length + output.length;
       /* ⛔ 清空发生在这一回合开始之后 ⇒ 只结算、不落盘（运行照跑完、账照记，11-06 口径）。 */
       const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
-      const wrote = clearedDuringRun ? { ok: true } as { ok: boolean; error?: string } : await appendMessageTo(group.id, {
+      /* ⛔ 11-08 用户实测（「成员消息为啥重复」）：成员一回合里既调了 group_say（已把回复发进群）、
+         又写了最终回复 —— 两条都落盘就是群里两份。这一回合已通过工具说过话、且最终回复与它高度重合 ⇒ 不再重复落盘。 */
+      const spokenDuringRun = (readStore().messages?.[group.id] ?? [])
+        .filter((row) => String((row as { authorId?: unknown })?.authorId ?? "") === partner.id && Number((row as { at?: unknown })?.at ?? 0) >= startedAt)
+        .map((row) => String((row as { text?: unknown })?.text ?? ""));
+      const duplicated = spokenDuringRun.some((text) => textsAreNearDuplicate(text, output));
+      const wrote = clearedDuringRun || duplicated ? { ok: true } as { ok: boolean; error?: string } : await appendMessageTo(group.id, {
         authorId: partner.id,
         authorKind: "bot",
         senderKind: "member",
@@ -544,6 +580,8 @@ async function runDispatchRounds(
       failed.push(`${partner.name}：${errMsg}`);
       options.onPhase?.("finished", partner, { ok: false, error: errMsg });
     } finally {
+      if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
+      if (liveThreadId) broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, at: Date.now() } as never);
       const tokens = delegateRegistry?.tokensOf(threadId) ?? null;
       await logUsageTo({
         groupId: group.id,

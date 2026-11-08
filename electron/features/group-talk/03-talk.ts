@@ -126,7 +126,7 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
   need.push(
     "你手上有三个群聊工具：group_say（说话；填 to=名字 就是直接说给那个人，他会在群里回你）、group_read、group_members。",
     "",
-    "回一句人话。想让别人接话就另起一行写 `@名字：你要说的话`，或调 group_say 填 to —— 宿主会把这句送进他的会话，他的回复会以他的署名进群。别写任务书、别列要求清单、别调任何调度工具。",
+    "回一句人话。想让别人接话就另起一行写 `@名字：你要说的话`，或调 group_say 填 to —— 宿主会把这句送进他的会话，他的回复会以他的署名进群。⛔ 说话方式二选一：要么直接写进这条回复（宿主会把它发进群），要么调 group_say；不要两样都做——群里会出现两条一样的。别写任务书、别列要求清单、别调任何调度工具。",
   );
   return need.join("\n");
 }

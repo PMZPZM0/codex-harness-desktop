@@ -237,3 +237,6 @@ export function teamAuthorIdOf(teamId: unknown, memberId: unknown): string;
 export function teamMemberIdOf(entry: unknown): string;
 
 export function parseTeamAuthorId(id: unknown): { teamId: string; memberId: string } | null;
+
+/** 两段文本是否「几乎同一句」（成员 group_say 与最终回复重复时的宿主兜底判据） */
+export function textsAreNearDuplicate(a: unknown, b: unknown): boolean;

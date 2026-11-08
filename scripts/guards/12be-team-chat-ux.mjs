@@ -815,9 +815,27 @@ const catalog = [
       "群输入框的模型 / 沙箱 / 审批档真下发到成员会话（⛔ 不再是只接 effort 的死控件，11-08 审查）");
     ok(/groupClearedAt\.set\(gid, Date\.now\(\)\)/.test(ipcSrc)
       && /const clearedMark = groupClearedAt\.get\(group\.id\)/.test(ipcSrc)
-      && /clearedDuringRun \? \{ ok: true \}/.test(ipcSrc)
+      && /clearedDuringRun \|\| duplicated \? \{ ok: true \}/.test(ipcSrc)
       && /cleared > since/.test(ipcSrc),
       "清空聊天记录后，在飞回合（群聊 + 主理人工具派活）的回复都不再写回空群（主进程代际判定，11-08 审查）");
+  }
+  /* ⛔⛔ 11-08 用户实测（「成员消息不处理完压根不上屏」「谁在运行一点反馈都没有」「为啥重复」）：
+     ① 写库必须广播（否则接力成员的消息没人 await ⇒ 永远不出现）；
+     ② 回合进行中必须广播 agentMessage 增量（与主聊天同一条 delta 方法）⇒ 流式卡/过程块实时；
+     ③ 成员一回合里 group_say + 最终回复会落两条 ⇒ 宿主按「近乎同一句」去重；
+     ④ 提示词明确「二选一」，别让模型两样都做。 */
+  {
+    const ipcLive = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    const storeLive = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+    const talkLive = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+    ok(/type: "harness-team-messages", groupId: gid, rows: result\.rows/.test(ipcLive)
+      && /type: "group-talk-live", phase: "started"/.test(ipcLive)
+      && /item\/agentMessage\/delta/.test(ipcLive)
+      && /event\.type === "group-talk-live"/.test(storeLive)
+      && /event\.type === "harness-team-messages"/.test(storeLive)
+      && /textsAreNearDuplicate\(text, output\)/.test(ipcLive)
+      && /不要两样都做/.test(talkLive),
+      "群聊回复实时上屏：写库广播 + 回合内增量广播（渲染层两个 handler）+ 工具/最终回复去重 + 提示词二选一（11-08 用户实测）");
   }
 }
 

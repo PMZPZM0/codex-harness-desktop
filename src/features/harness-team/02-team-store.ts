@@ -283,6 +283,59 @@ export function useTeamGroups() {
         return;
       }
 
+      /* ⛔⛔ 11-08 用户实测（「成员消息不处理完压根不上屏」「谁在运行一点反馈没有」）：
+         群聊回合的写库与流式都要实时到渲染层 —— 主进程 append 后广播权威 rows；
+         回合进行中广播 agentMessage 增量（与主聊天同一条 delta 方法）。 */
+      if (event.type === "harness-team-messages") {
+        const gid = String(event.groupId ?? "");
+        const rows = Array.isArray(event.rows) ? (event.rows as GroupMessageRow[]) : null;
+        if (!gid || !rows) return;
+        setRowsByGroup((prev) => ({ ...prev, [gid]: rows }));
+        return;
+      }
+      if (event.type === "group-talk-live") {
+        const gid = String(event.groupId ?? "");
+        const tid = String(event.threadId ?? "");
+        const phase = String(event.phase ?? "");
+        if (!gid || !tid) return;
+        if (phase === "started") {
+          setLiveByGroup((prev) => ({
+            ...prev,
+            [gid]: {
+              ...(prev[gid] ?? {}),
+              [tid]: {
+                threadId: tid,
+                memberId: String(event.memberId ?? ""),
+                name: String(event.name ?? ""),
+                text: "",
+                startedAt: Date.now(),
+                status: "running",
+              },
+            },
+          }));
+          return;
+        }
+        if (phase === "delta") {
+          setLiveByGroup((prev) => {
+            const cur = prev[gid]?.[tid];
+            if (!cur) return prev;
+            return { ...prev, [gid]: { ...prev[gid], [tid]: { ...cur, text: cur.text + String(event.text ?? "") } } };
+          });
+          return;
+        }
+        if (phase === "finished") {
+          window.setTimeout(() => {
+            if (!alive.current) return;
+            setLiveByGroup((prev) => {
+              const bucket = { ...(prev[gid] ?? {}) };
+              delete bucket[tid];
+              return { ...prev, [gid]: bucket };
+            });
+          }, 300);
+          return;
+        }
+        return;
+      }
       if (event.type !== "delegate-run") return;
       const phase = String(event.phase ?? "");
       const record = (event.record ?? {}) as Record<string, unknown>;
