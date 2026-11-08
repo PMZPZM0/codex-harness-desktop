@@ -233,6 +233,20 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 .settings-dialog[data-size="sm"] .settings-dialog-head { flex: none; min-height: 56px; }
 .settings-dialog[data-size="sm"] .settings-dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
 
+/* ⛔ 11-08 用户：「这三个界面都美化一下展示」—— 用户中心那三张表单（我的身份 / 关于我 / 人格）
+   内容偏短，却被 md 的固定 720 高撑出一大片空白，看着像没做完。
+   ⇒ 新增 md-auto：宽度仍 720（两列表单要宽），高度随内容，超过上限才在 body 内滚动。
+   ⛔ 只影响显式写了 size="md-auto" 的弹窗，其它弹窗行为零变化。 */
+.settings-dialog[data-size="md-auto"] {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  height: auto;
+  max-height: min(720px, 100%);
+}
+.settings-dialog[data-size="md-auto"] .settings-dialog-head { flex: none; min-height: 60px; }
+.settings-dialog[data-size="md-auto"] .settings-dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; }
+
 /* ⛔ 11-01 用户令「鼠标在右边，按键放右边」：一键按钮靠右对齐，不再与左对齐标题撞在一起。
    （旧 .devtools-group 大卡随一级页分类卡改版退役 —— 分类内容现在只在二级弹窗里，
      弹窗内由 .runtime-list + .devtools-batch 承载。） */

@@ -25,6 +25,7 @@ import { USER_PERSONAS, userPersonaFields } from "../../lib/user-personas.mjs";
 import { BUILT_IN_SOULS } from "../../lib/builtin-souls.mjs";
 import { setCodexIdentity, storeCodexAvatar } from "../../lib/codex-identity.mjs";
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../../lib/avatar-presets";
+import { REPLY_STYLES as REPLY_STYLE_PRESETS, replyStyleTitleOf, replyStyleIdOf } from "../../lib/reply-styles.mjs";
 
 /** 本向导用到的档案字段子集（不依赖生成 d.ts 的窄口径；saveIdentity 仍按 Record 透传）。 */
 type Config = {
@@ -43,7 +44,7 @@ type Config = {
   profileGuideSeen?: boolean;
   greeted?: boolean;
 };
-type ReplyStyle = "pragmatic" | "friendly" | "none";
+
 type Tone = "casual" | "professional" | "none";
 
 const STEPS = [
@@ -78,11 +79,10 @@ const INTERESTS = [
   { label: "音乐", icon: Music },
 ];
 
-const REPLY_STYLES: { id: ReplyStyle; title: string; desc: string }[] = [
-  { id: "pragmatic", title: "务实", desc: "结论先行，直接给做法" },
-  { id: "friendly", title: "友好", desc: "多解释思路与取舍" },
-  { id: "none", title: "默认", desc: "不额外注入语气" },
-];
+/* ⛔ 11-08 用户：「回复风格不止三个吧」—— 原来这里只写死 3 档，引导里根本选不到
+   需求询问 / 敢于反驳 / 直击本质。清单改为共用 `lib/reply-styles.mjs`（个性化页 / 用户中心同源）。
+   ⛔ 落档仍存**中文名**（历史档案就是中文），⛔ 别改成存 id。 */
+const REPLY_STYLES = REPLY_STYLE_PRESETS.map((item) => ({ id: item.value, title: item.title, desc: item.desc }));
 
 const TONES: { id: Tone; label: string; desc: string }[] = [
   { id: "casual", label: "轻松幽默", desc: "可以开玩笑，别太端着" },
@@ -101,8 +101,8 @@ function inferPersona(config: Config): string {
   return hit?.id ?? "";
 }
 
-function inferReplyStyle(value?: string): ReplyStyle {
-  return value === "友好" ? "friendly" : value === "务实" ? "pragmatic" : "none";
+function inferReplyStyle(value?: string): string {
+  return replyStyleIdOf(value) || "none";
 }
 
 function inferTone(value?: string): Tone {
@@ -147,7 +147,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   const [occupation, setOccupation] = useState("");
   const [customInterest, setCustomInterest] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
-  const [replyStyle, setReplyStyle] = useState<ReplyStyle>("pragmatic");
+  const [replyStyle, setReplyStyle] = useState<string>("pragmatic");
   const [tone, setTone] = useState<Tone>("none");
   const [habits, setHabits] = useState<string[]>([]);
   const [customInstructions, setCustomInstructions] = useState("");
@@ -242,7 +242,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
         ...(finalOccupation ? { occupation: finalOccupation } : {}),
         ...(fields?.userContext ? { userContext: fields.userContext } : {}),
         ...(interestText ? { interests: interestText } : {}),
-        ...(replyStyle !== "none" ? { replyStyle: replyStyle === "pragmatic" ? "务实" : "友好" } : {}),
+        ...(replyStyle !== "none" ? { replyStyle: replyStyleTitleOf(replyStyle) } : {}),
         ...(tone !== "none" ? { tone: tone === "casual" ? "轻松幽默" : "专业中性" } : {}),
         ...(habitText ? { habits: habitText } : {}),
         ...(customInstructions.trim() ? { customInstructions: customInstructions.trim() } : {}),
@@ -262,7 +262,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
           field: selected ? "" : (profile.field && profile.field !== finalOccupation ? profile.field : ""),
           hobby: interestText || profile.hobby || "",
           habit: habitText || profile.habit || "",
-          style: replyStyle === "pragmatic" ? "pragmatic" : replyStyle === "friendly" ? "friendly" : "none",
+          style: replyStyle || "none",
         }));
       } catch { /* localStorage 写失败不影响落盘 */ }
       if (nickname.trim()) localStorage.setItem("username", nickname.trim());
@@ -301,7 +301,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   const active = STEPS[step];
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
   const effectiveInterests = [...interests, customInterest.trim()].filter(Boolean).join("、");
-  const effectiveReply = REPLY_STYLES.find((item) => item.id === replyStyle)?.title ?? "默认";
+  const effectiveReply = replyStyleTitleOf(replyStyle);
   const effectiveTone = TONES.find((item) => item.id === tone)?.label ?? "不指定";
 
   return createPortal(
@@ -309,8 +309,10 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
       <div className="profile-guide-card">
         <aside className="profile-guide-rail">
           <div className="profile-guide-brand"><Sparkles size={16} /><strong>Codex Harness</strong></div>
-          <h2>用一分钟，把 Codex 调成你的样子</h2>
-          <p>只保存在本机；随时能在「设置 → 个性化」里改。</p>
+          {/* ⛔ 11-08 用户：「左边上面的字不要换行」——轨宽 236px，原来那句 14 个字必然折成两行。
+              ⇒ 标题压成 5 个汉字 + 品牌名（19px 下一行约 150px），细节移到下面那行小字。 */}
+          <h2>一分钟调好 Codex</h2>
+          <p>只存在本机 · 设置里随时能改</p>
           <ol className="profile-guide-steps">
             {STEPS.map((item, index) => {
               const Icon = item.icon;
@@ -324,7 +326,6 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
             })}
           </ol>
           <div className="profile-guide-progress"><span style={{ width: `${progress}%` }} /></div>
-          <button type="button" className="profile-guide-skip" disabled={saving} onClick={() => void finish(true)}>稍后配置</button>
         </aside>
 
         <section className="profile-guide-main">
@@ -417,8 +418,10 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
                       const on = interests.includes(label);
                       return <button type="button" key={label} className={`profile-guide-chip ${on ? "on" : ""}`} onClick={() => setInterests((current) => on ? current.filter((item) => item !== label) : [...current, label])}><Icon size={13} />{label}{on && <Check size={11} />}</button>;
                     })}
+                    {/* ⛔ 自定义兴趣做成"跟着 chip 走"的一格输入：原来它单独占一整行虚线框，
+                        与上下两排 chip 不是一套视觉语言，第 4 步看起来就散（用户：「排版有点乱」）。 */}
+                    <input className="profile-guide-inline-input" maxLength={80} value={customInterest} onChange={(event) => setCustomInterest(event.target.value)} placeholder="其他兴趣（顿号隔开）" />
                   </div>
-                  <input className="profile-guide-inline-input" maxLength={80} value={customInterest} onChange={(event) => setCustomInterest(event.target.value)} placeholder="还有别的兴趣？用顿号隔开" />
                 </div>
                 <div className="profile-guide-group">
                   <div className="profile-guide-label">回复风格</div>
@@ -435,7 +438,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
                 <div className="profile-guide-group">
                   <div className="profile-guide-label">长期习惯 <em>可多选</em></div>
                   <div className="profile-guide-habits">
-                    {HABITS.map((habit) => { const on = habits.includes(habit); return <button type="button" key={habit} className={`profile-guide-habit ${on ? "on" : ""}`} onClick={() => setHabits((current) => on ? current.filter((item) => item !== habit) : [...current, habit])}><span className="profile-guide-habit-box">{on && <Check size={11} />}</span>{habit}</button>; })}
+                    {HABITS.map((habit) => { const on = habits.includes(habit); return <button type="button" key={habit} className={`profile-guide-chip ${on ? "on" : ""}`} onClick={() => setHabits((current) => on ? current.filter((item) => item !== habit) : [...current, habit])}>{habit}{on && <Check size={11} />}</button>; })}
                   </div>
                 </div>
               </div>
@@ -462,6 +465,10 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
           <footer className="profile-guide-footer">
             <button type="button" className="profile-guide-back" disabled={step === 0 || saving} onClick={() => setStep((current) => Math.max(0, current - 1))}><ArrowLeft size={14} />上一步</button>
             <div className="profile-guide-footer-right">
+              {/* ⛔ 11-08 用户：「几个引导界面，都要加上暂时不设置的选项」——
+                  原来只有轨道底部那行灰字（像脚注，基本发现不了）。现在每一步的页脚都有：
+                  点它 = 整份引导先不设置（⛔ 不写任何值，只记"看过了"，下次不再打扰）。 */}
+              <button type="button" className="profile-guide-skip" disabled={saving} onClick={() => void finish(true)}>暂时不设置</button>
               {step < STEPS.length - 1 ? (
                 <button type="button" className="profile-guide-next" disabled={saving} onClick={() => setStep((current) => Math.min(STEPS.length - 1, current + 1))}>下一步<ArrowRight size={14} /></button>
               ) : (

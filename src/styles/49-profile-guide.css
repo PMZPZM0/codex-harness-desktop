@@ -45,7 +45,9 @@
 }
 .profile-guide-brand { display: flex; align-items: center; gap: 7px; color: var(--text); font-size: 13px; }
 .profile-guide-brand svg { color: var(--accent); }
-.profile-guide-rail h2 { margin: 2px 0 0; font-size: 20px; line-height: 1.35; color: var(--text); }
+/* ⛔ 11-08 用户：「左边上面的字不要换行」——轨内容宽 236px，20px 的 14 字标题必然折两行。
+   标题已压成「一分钟调好 Codex」，这里再锁 nowrap；真遇到更长的文案就省略，⛔ 不许换行。 */
+.profile-guide-rail h2 { margin: 2px 0 0; font-size: 19px; line-height: 1.4; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .profile-guide-rail > p { margin: 0; color: var(--muted); font-size: 11.5px; line-height: 1.65; }
 .profile-guide-steps { display: grid; gap: 5px; margin: 8px 0 0; padding: 0; list-style: none; }
 .profile-guide-steps li {
@@ -76,16 +78,20 @@
 .profile-guide-steps li.current .profile-guide-step-icon { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel-2)); }
 .profile-guide-progress { height: 3px; margin-top: auto; overflow: hidden; border-radius: 999px; background: var(--line); }
 .profile-guide-progress > span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--purple, #8b5cf6)); transition: width 0.3s ease; }
+/* 11-08：从轨道底部那行灰字（像脚注）搬进页脚，做成正经的次按钮 —— 每一步都在同一位置。 */
 .profile-guide-skip {
-  align-self: flex-start;
-  padding: 6px 2px;
-  border: 0;
+  flex: none;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
   background: transparent;
-  color: var(--faint);
-  font-size: 11.5px;
+  color: var(--muted);
+  font-size: 12px;
   cursor: pointer;
 }
-.profile-guide-skip:hover { color: var(--text); }
+.profile-guide-skip:hover:not(:disabled) { color: var(--text); border-color: var(--faint); }
+.profile-guide-skip:disabled { opacity: 0.5; cursor: default; }
 
 /* 右侧内容 */
 /* ⛔ min-height:0 必须写在主列上：只在 body 上写时，主列会被内容撑高，
@@ -247,18 +253,24 @@
 }
 .profile-guide-chip:hover { color: var(--text); border-color: var(--faint); }
 .profile-guide-chip.on { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); }
+/* ⛔ 11-08：原来它是整行虚线框，与上下两排 chip 不是一套语言（第 4 步"乱"的一半原因）。
+   现在按 chip 的规格做（30px 高、圆角 999、panel-2 底），跟在最后一枚 chip 后面自然换行。 */
 .profile-guide-inline-input {
-  height: 34px;
-  padding: 0 10px;
-  border: 1px dashed var(--line);
-  border-radius: 9px;
-  background: transparent;
+  flex: 0 1 200px;
+  height: 30px;
+  min-width: 132px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
   color: var(--text);
-  font-size: 12px;
+  font-size: 11.5px;
   outline: none;
 }
 .profile-guide-inline-input:focus { border-color: var(--accent); }
-.profile-guide-cards.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.profile-guide-cards.three { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; align-items: stretch; }
+/* ⛔ 三张卡等高（grid 默认 stretch，但卡内是 grid 且内容行数不同 ⇒ 内容顶对齐才不会看着参差） */
+.profile-guide-cards.three .profile-guide-choice { align-content: start; min-height: 62px; }
 .profile-guide-choice {
   display: grid;
   gap: 2px;
@@ -273,22 +285,9 @@
 .profile-guide-choice.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 7%, var(--panel-2)); }
 .profile-guide-choice strong { color: var(--text); font-size: 12px; }
 .profile-guide-choice small { color: var(--faint); font-size: 10.5px; line-height: 1.45; }
+/* ⛔ 11-08：长期习惯原先自成一派（白底 + 方形勾选框），和上两组 chip 摆在一起就显得零散
+   ⇒ 统一用 `.profile-guide-chip`（勾选态显示 ✓），这里只留容器。 */
 .profile-guide-habits { display: flex; flex-wrap: wrap; gap: 6px; }
-.profile-guide-habit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 9px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--panel-2);
-  color: var(--muted);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.profile-guide-habit.on { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, var(--panel-2)); }
-.profile-guide-habit-box { display: grid; place-items: center; width: 15px; height: 15px; border: 1px solid var(--line); border-radius: 4px; color: #fff; background: transparent; }
-.profile-guide-habit.on .profile-guide-habit-box { background: var(--accent); border-color: var(--accent); }
 
 /* 第 4 步 · 确认 */
 .profile-guide-confirm { display: grid; gap: 13px; }
@@ -337,7 +336,7 @@
 .profile-guide-next:hover:not(:disabled) { filter: brightness(1.07); }
 .profile-guide-back:disabled,
 .profile-guide-next:disabled { opacity: 0.45; cursor: not-allowed; filter: none; }
-.profile-guide-footer-right { margin-left: auto; }
+.profile-guide-footer-right { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 
 @media (max-width: 820px) {
   .profile-guide-card { grid-template-columns: minmax(0, 1fr); height: min(88vh, 720px); }

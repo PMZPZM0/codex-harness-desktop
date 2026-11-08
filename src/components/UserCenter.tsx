@@ -5,6 +5,7 @@ import { CODEX_DEFAULT_NAME, type CodexAvatarSpec } from "../lib/codex-identity.
 import { avatarAsset, CODEX_AVATAR_PRESETS, CODEX_DEFAULT_AVATAR_FILE, USER_AVATAR_PRESETS } from "../lib/avatar-presets";
 import { USER_PERSONAS, COMBO_PACKS, userPersonaFields } from "../lib/user-personas.mjs";
 import { SettingsDialog } from "./SettingsDialog";
+import { REPLY_STYLES as REPLY_STYLE_PRESETS } from "../lib/reply-styles.mjs";
 
 export type UserProfile = {
   nickname: string;
@@ -27,14 +28,9 @@ export function defaultProfile(): UserProfile {
   return { nickname: "", avatarType: "image", avatar: avatarAsset("user-panda.png"), occupation: "", field: "", hobby: "", habit: "", style: "pragmatic", language: "中文", timezone: "Asia/Shanghai", bio: "" };
 }
 
-const STYLE_OPTIONS = [
-  { value: "inquiry", label: "需求询问", desc: "先问清需求再动手（个性化页可选）" },
-  { value: "challenge", label: "敢于反驳", desc: "需求有错先指出，给依据与更优方案" },
-  { value: "essence", label: "直击本质", desc: "点名的手段若绕路，先给更上游的做法" },
-  { value: "pragmatic", label: "务实", desc: "直接给结论和代码" },
-  { value: "friendly", label: "友好", desc: "多解释思路与取舍" },
-  { value: "none", label: "默认", desc: "不额外注入语气" },
-];
+/* ⛔ 11-08：回复风格清单收敛到 `lib/reply-styles.mjs`（画像引导 / 个性化页 / 这里同源），
+   原来三处各写一份，档位数还不一样（引导只有 3 档）。 */
+const STYLE_OPTIONS = REPLY_STYLE_PRESETS.map((item) => ({ value: item.value, label: item.title, desc: item.desc }));
 
 /** 用户中心：昵称、头像、职业与画像，改动即时保存并回写宿主。 */
 export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout, assistantName = CODEX_DEFAULT_NAME, onAssistantNameChange, codexAvatar, onCodexAvatarChange, onOpenPersonaMarket }: {
@@ -272,6 +268,9 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
   /* 11-01 人格卡：当前生效人格（persona 字段被两类人格共用 —— 值 ∈ USER_PERSONAS = 用户人格 id；
      否则 soulSlug 非空 = Codex 人格（内置 slug 本地可显名）。读 currentSoulMarket 一处拿全。 */
   const [personaInfo, setPersonaInfo] = useState<{ soulSlug: string; persona: string; displayName: string } | null>(null);
+  /* 人格「恢复默认」的两步确认：点一次变成「确认恢复？」，4 秒没再点就自动复原
+     （⛔ 不用原生 confirm：全仓交互统一走应用内控件）。 */
+  const [confirmPersonaReset, setConfirmPersonaReset] = useState(false);
   const refreshPersona = useCallback(() => {
     window.codex.currentSoulMarket?.().then((info: any) => setPersonaInfo(info ?? null)).catch(() => undefined);
   }, []);
@@ -375,18 +374,21 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
 
       {/* ── 二级弹窗：我的身份 ── */}
       {openCard === "identity" && (
-        <SettingsDialog title="我的身份" icon={<UserRound size={15} />} hint="Codex 怎么称呼你、你做什么" onClose={close}>
+        <SettingsDialog title="我的身份" icon={<UserRound size={15} />} hint="Codex 怎么称呼你、你做什么" size="md-auto" onClose={close}>
+          {/* ⛔ 11-08 用户：「三个界面，一张卡里展示就好了，不要切好几个卡片」——
+              原来「字段卡 + 保存栏卡」是两块独立圆角卡，看着像两个东西。
+              现在保存栏并进同一张卡（`.uc-savebar.in-card` 去掉独立边框，只留一条细线分隔）。 */}
           <section className="uc-panel">
             <div className="uc-grid uc-grid-2">
               <label className="se-field"><span>昵称（Codex 怎么称呼你）</span><input value={profile.nickname} onChange={(e) => setField("nickname", e.target.value)} placeholder="保存后同步到界面与引擎称呼" /></label>
               <label className="se-field"><span><Briefcase size={12} />职业</span><input value={profile.occupation} onChange={(e) => setField("occupation", e.target.value)} placeholder="如：后端工程师 / 产品经理" /></label>
-              <label className="se-field"><span><GraduationCap size={12} />专业领域</span><input value={profile.field} onChange={(e) => setField("field", e.target.value)} placeholder="如：Web 开发 / 数据分析" /></label>
+              <label className="se-field uc-field-full"><span><GraduationCap size={12} />专业领域</span><input value={profile.field} onChange={(e) => setField("field", e.target.value)} placeholder="如：Web 开发 / 数据分析" /></label>
+            </div>
+            <div className="uc-savebar in-card">
+              <button type="button" className="uc-chip uc-chip-button" title="重新走一遍称呼/头像/职业/Codex 人格/兴趣配置" onClick={() => { try { window.dispatchEvent(new Event("codex-open-profile-guide")); } catch { /* 忽略 */ } }}><Wand2 size={12} />重新配置引导</button>
+              <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
             </div>
           </section>
-          <div className="uc-savebar">
-            <button type="button" className="uc-chip uc-chip-button" title="重新走一遍称呼/头像/职业/Codex 人格/兴趣配置" onClick={() => { try { window.dispatchEvent(new Event("codex-open-profile-guide")); } catch { /* 忽略 */ } }}><Wand2 size={12} />重新配置引导</button>
-            <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
-          </div>
         </SettingsDialog>
       )}
 
@@ -412,7 +414,7 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
 
       {/* ── 二级弹窗：关于我 ── */}
       {openCard === "about" && (
-        <SettingsDialog title="关于我" icon={<Heart size={15} />} hint="让回答更贴近你的生活" onClose={close}>
+        <SettingsDialog title="关于我" icon={<Heart size={15} />} hint="让回答更贴近你的生活" size="md-auto" onClose={close}>
           <section className="uc-panel">
             <div className="uc-grid uc-grid-2">
               <label className="se-field"><span><Heart size={12} />兴趣爱好</span><input value={profile.hobby} onChange={(e) => setField("hobby", e.target.value)} placeholder="如：摄影 / 跑步 / 游戏" /></label>
@@ -420,10 +422,11 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
               <label className="se-field"><span><Languages size={12} />常用语言</span><input value={profile.language} onChange={(e) => setField("language", e.target.value)} placeholder="中文" /></label>
               <label className="se-field uc-field-full"><span><Lightbulb size={12} />自我介绍</span><textarea rows={2} value={profile.bio} onChange={(e) => setField("bio", e.target.value)} placeholder="一句话介绍自己，Codex 会记住" /></label>
             </div>
+            <div className="uc-savebar in-card">
+              <span className="uc-savebar-note"><Lightbulb size={13} />这些会作为长期背景写进个性化档案</span>
+              <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
+            </div>
           </section>
-          <div className="uc-savebar">
-            <button type="button" className="primary-setting" onClick={save}><Save size={14} />保存资料</button>
-          </div>
         </SettingsDialog>
       )}
 
@@ -523,11 +526,20 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
           } finally { busyPackRef.current = ""; setBusyPack(""); }
         };
         return (
-          <SettingsDialog title="人格" icon={<Wand2 size={15} />} hint="用户人格 × Codex 人格，成套搭配" onClose={close}>
+          <SettingsDialog title="人格" icon={<Wand2 size={15} />} hint="用户人格 × Codex 人格，成套搭配" size="md-auto" onClose={close}>
             <section className="uc-panel">
-              <div className="uc-hero-kicker" style={{ marginBottom: 6 }}>当前生效</div>
-              <p className="settings-card-hint">{personaSummary}{personaInfo?.persona ? "（已写入档案，下一新会话生效）" : ""}</p>
-              <div className="uc-hero-kicker" style={{ margin: "10px 0 6px" }}>联动套餐（点卡片立即生效：用户人格 + Codex 人格 同套）</div>
+              {/* ⛔ 11-08 用户：「一张卡里展示就好了，不要切好几个卡片」+「第三个界面要加一个恢复默认」。
+                  原来这里是两个灰字 kicker + 一块独立保存栏卡，读起来散；现在：
+                  当前生效做成一行（标签 + 值），联动套餐给一条分区头，动作全部收进这张卡。 */}
+              <div className="uc-persona-now">
+                <span className="uc-persona-now-label">当前生效</span>
+                <span className="uc-persona-now-value">{personaSummary}</span>
+                {personaInfo?.persona ? <span className="uc-persona-now-tag">下一新会话起用</span> : null}
+              </div>
+              <div className="uc-persona-sec">
+                <strong>联动套餐</strong>
+                <small>点卡片立即生效：用户人格 + Codex 人格 同套搭配</small>
+              </div>
               <div className="uc-combo-grid">
                 {COMBO_PACKS.map((pack: any) => {
                   const on = personaInfo?.soulSlug === pack.soulSlug;
@@ -551,11 +563,40 @@ export function UserCenterSection({ username, onUsernameChange, personality, onP
                   );
                 })}
               </div>
+              <div className="uc-savebar in-card">
+                <span className="uc-savebar-note"><Sparkles size={13} />想自由搭配（16 种用户人格 / 22 种 Codex 人格）？</span>
+                <div className="uc-savebar-actions">
+                  {/* 恢复默认：把两份身份一起回到内置默认（清 persona / soulSlug 两个字段，⛔ 不动职业、兴趣等其它档案字段）。 */}
+                  <button
+                    type="button"
+                    className={confirmPersonaReset ? "secondary-setting is-confirming" : "secondary-setting"}
+                    title="把用户人格与 Codex 人格都恢复成内置默认（不影响职业、兴趣等其它资料）"
+                    disabled={Boolean(busyPack)}
+                    onClick={() => {
+                      if (!confirmPersonaReset) {
+                        setConfirmPersonaReset(true);
+                        window.setTimeout(() => setConfirmPersonaReset(false), 4000);
+                        return;
+                      }
+                      setConfirmPersonaReset(false);
+                      void (async () => {
+                        try {
+                          await window.codex.saveIdentity({ persona: "", soulSlug: "", onboarded: true, profileGuideSeen: true });
+                          try { window.dispatchEvent(new Event("codex-profile-updated")); } catch { /* 忽略 */ }
+                          refreshPersona();
+                          onNotice?.("人格已恢复默认：用户人格与 Codex 人格都回到内置默认");
+                        } catch (error: any) {
+                          onNotice?.("恢复默认失败：" + (error?.message ?? error));
+                        }
+                      })();
+                    }}
+                  >
+                    <RotateCcw size={13} />{confirmPersonaReset ? "确认恢复？" : "恢复默认"}
+                  </button>
+                  <button type="button" className="primary-setting" onClick={() => { close(); onOpenPersonaMarket?.(); }}>打开人格市场</button>
+                </div>
+              </div>
             </section>
-            <div className="uc-savebar">
-              <span className="uc-savebar-note"><Sparkles size={13} />想自由搭配（16 种用户人格 / 22 种 Codex 人格）？</span>
-              <button type="button" className="primary-setting" onClick={() => { close(); onOpenPersonaMarket?.(); }}>打开人格市场</button>
-            </div>
           </SettingsDialog>
         );
       })()}

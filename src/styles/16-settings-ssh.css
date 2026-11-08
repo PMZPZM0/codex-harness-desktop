@@ -1066,6 +1066,35 @@
   border-radius: 14px;
   background: var(--panel);
 }
+/* ⛔ 11-08 用户：「三个界面，一张卡里展示就好了，不要切好几个卡片」——
+   并进 `.uc-panel` 之后保存栏不再自成一张卡（去掉边框/圆角/底色），只留一条细线做分隔。 */
+.uc-savebar.in-card {
+  padding: 12px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+}
+/* 人格页「当前生效」：一行读完（标签 + 值 + 生效时机），不再是两段灰字 */
+.uc-persona-now {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel-2));
+}
+.uc-persona-now-label { flex: none; color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; }
+.uc-persona-now-value { min-width: 0; color: var(--text); font-size: 12.5px; overflow-wrap: anywhere; }
+.uc-persona-now-tag { margin-left: auto; flex: none; padding: 1px 7px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-size: 10.5px; }
+/* 分区头：标题 + 一句说明同一行，替代原来那句又长又灰的 kicker */
+.uc-persona-sec { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.uc-persona-sec strong { color: var(--text); font-size: 12.5px; }
+.uc-persona-sec small { color: var(--muted); font-size: 11.5px; }
+/* 恢复默认的二次确认态：边框转红，让人一眼看出「这一下真的会改」 */
+.secondary-setting.is-confirming { border-color: color-mix(in srgb, var(--red) 55%, var(--line)); color: var(--red); }
 .uc-savebar-note { display: flex; align-items: center; gap: 5px; color: var(--muted); font-size: 12px; }
 .uc-savebar-note svg { color: var(--accent); }
 .uc-savebar-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }

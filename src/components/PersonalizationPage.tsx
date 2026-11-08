@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, Code2, Info, MessageSquare, Network, Palette, RefreshCw, ShieldCheck, Sparkles, TriangleAlert, Wrench } from "lucide-react";
 import { SettingsPageHero } from "./SettingsPageHero";
+import { REPLY_STYLES as REPLY_STYLE_PRESETS } from "../lib/reply-styles.mjs";
 import { ToggleSwitch } from "./SettingsWidgets";
 import {
   DEFAULT_FRONTEND_DESIGN_STYLE,
@@ -44,16 +45,9 @@ type VerifyResult = {
   agentsPath: string;
 };
 
-const stylePresets = [
-  /* 10-27 用户令：「四个正方形卡片太丑了，Codex 回复风格尾部选项里面加上这四个选项，不需要过多文字赘述」
-     ⇒ 大卡片整块去掉，改成标题行右侧的胶囊分段控件；说明只留在 title 悬停里，界面上只有档位名。 */
-  { value: "inquiry", title: "需求询问", desc: "动手前先按 grill-me 技能问清目标 / 边界 / 验收，问完再做" },
-  { value: "challenge", title: "敢于反驳", desc: "按 challenge-requirements 技能审需求：有错先指出并给依据与更优方案；你坚持就照做并写清风险" },
-  { value: "essence", title: "直击本质", desc: "按 essence-first 技能先看本质目标：点名的手段若绕路，先给更上游的做法与代价对照；你坚持就照做" },
-  { value: "pragmatic", title: "务实", desc: "直接给结论和代码，少铺垫" },
-  { value: "friendly", title: "友好", desc: "解释更详细，主动交代思路与取舍" },
-  { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令" },
-];
+/* ⛔ 11-08：清单收敛到 `lib/reply-styles.mjs`（画像引导 / 用户中心 / 这里同源），
+   此处不再维护第三份。10-27 用户令保留：不做大卡片，档位只在标题行右侧做胶囊分段控件。 */
+const stylePresets = REPLY_STYLE_PRESETS.map((item) => ({ value: item.value, title: item.title, desc: item.desc }));
 
 /** 软件开发规范 / 应用架构规范共用的规范卡（胶囊预设 + 参考文档 + 规范全文 + 自定义内容）。
  *  ⛔ 与设计风格卡同一套交互与样式，但内容来自 engineering-norms；⛔ 不另造第二套设计语言。 */
