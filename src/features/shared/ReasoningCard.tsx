@@ -28,7 +28,7 @@ import { useCardOpen } from "../../components/CardShell";
 import { useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { ReasoningStrip } from "./ReasoningStrip";
 
-export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActive?: boolean }) {
+export function ReasoningCard({ item, turnActive, floatHostSelector }: { item: ThreadItem; turnActive?: boolean; /** 浮窗 portal 宿主（默认主对话的 .reasoning-float-host；群聊传自己的宿主） */ floatHostSelector?: string }) {
   const displayMode = useReasoningDisplayMode();
   const bodyRef = useRef<HTMLDivElement>(null);
   // 思考卡一旦「现场出现过」（本会话流式期间渲染过），完成后永不整体消失：
@@ -372,7 +372,7 @@ export function ReasoningCard({ item, turnActive }: { item: ThreadItem; turnActi
         /* ⛔ portal 到**壳内宿主**（不是 body，10-06 夜）：body 级 z-index 会压住壳内所有
            z（办公室 400 / 设置 80~97 / 画布 90 —— 壳是 isolation 层，只跟壳内比）。
            宿主缺失（理论不该发生）才回落 body。 */
-        document.querySelector(".reasoning-float-host") ?? document.body,
+        document.querySelector(floatHostSelector ?? ".reasoning-float-host") ?? document.body,
       )}
     </div>
   );

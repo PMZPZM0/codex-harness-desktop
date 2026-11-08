@@ -458,6 +458,8 @@ async function runDispatchRounds(
     /* 群聊流式广播（见下）：回合结束后必须摘监听 + 发 finished。 */
     let liveThreadId = "";
     let talkDelta: ((event: any) => void) | null = null;
+    /* 11-08：本回合 token 用量（与主对话页脚一致；引擎 thread/tokenUsage/updated 的 last 桶）。 */
+    let liveUsage: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } | null = null;
     try {
       /* ⛔⛔ 11-07 用户令：群聊走**独立通道**。这里给成员的是「群里有人对你说了一句」，
          不是任务派发：不注入 groupContextBlock 的协作协议、不调 runDelegatedTask、
@@ -494,6 +496,23 @@ async function runDispatchRounds(
           const p = event.params ?? {};
           if (String(p.threadId ?? "") !== liveThreadId) return;
           const method = String(event.method ?? "");
+          if (method === "thread/tokenUsage/updated") {
+            const raw = (p as { tokenUsage?: any }).tokenUsage;
+            const bucket = raw?.last ?? raw?.lastTokenUsage ?? raw?.last_token_usage ?? raw?.info?.last_token_usage ?? null;
+            if (bucket) {
+              const num = (...keys: string[]) => {
+                for (const key of keys) { const value = Number(bucket?.[key]); if (Number.isFinite(value)) return value; }
+                return 0;
+              };
+              liveUsage = {
+                inputTokens: num("inputTokens", "input_tokens", "input"),
+                outputTokens: num("outputTokens", "output_tokens", "output"),
+                cachedTokens: num("cachedInputTokens", "cached_input_tokens", "cached"),
+                totalTokens: num("totalTokens", "total_tokens", "total"),
+              };
+            }
+            return;
+          }
           if (method === "item/agentMessage/delta") {
             const delta = String(p.delta ?? "");
             if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, text: delta, at: Date.now() } as never);
@@ -545,6 +564,7 @@ async function runDispatchRounds(
         threadId,
         text: output || "（没有返回文本内容）",
         via: caller ? { memberId: caller.id, name: caller.name } : null,
+        ...(liveUsage ? { usage: liveUsage } : {}),
       });
       okFlag = Boolean(wrote.ok);
       if (!wrote.ok) {

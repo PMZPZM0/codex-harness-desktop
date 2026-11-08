@@ -844,6 +844,7 @@ export function projectGroupMessages(sources) {
         mentions: Array.isArray(msg?.mentions) ? msg.mentions.map(String) : [],
         /* 「由谁叫来」要跟着投影走：它是消息属性，不是日志本地字段 */
         via: msg?.via ?? null,
+        usage: msg?.usage ?? null,
       });
     }
   }
@@ -887,6 +888,15 @@ export function normalizeGroupMessage(entry) {
        ⛔ 只存 id + 名字，不存整条消息；渲染层据此标「由 X 叫来」。 */
     via: entry?.via && typeof entry.via === "object" && String(entry.via.memberId ?? "")
       ? { memberId: String(entry.via.memberId), name: String(entry.via.name ?? "") }
+      : null,
+    /* 11-08 用户令「用量页脚也要一致」：这一回合的 token 用量（主进程在落消息时带上；老日志没有 ⇒ null）。 */
+    usage: entry?.usage && typeof entry.usage === "object"
+      ? {
+        inputTokens: Number(entry.usage.inputTokens ?? entry.usage.input_tokens ?? 0) || 0,
+        outputTokens: Number(entry.usage.outputTokens ?? entry.usage.output_tokens ?? 0) || 0,
+        cachedTokens: Number(entry.usage.cachedTokens ?? entry.usage.cached_tokens ?? 0) || 0,
+        totalTokens: Number(entry.usage.totalTokens ?? entry.usage.total_tokens ?? 0) || 0,
+      }
       : null,
   };
 }

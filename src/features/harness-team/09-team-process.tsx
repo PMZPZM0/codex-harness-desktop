@@ -156,6 +156,9 @@ export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, runni
             <ItemView
               key={String(u.item.id ?? i)}
               item={u.item}
+              /* ⛔ 11-08 用户令「推理浮窗也要一致」：运行中按主对话同一套 ReasoningCard（浮窗宿主走群内）。 */
+              turnActive={running}
+              reasoningFloatHost=".team-reasoning-float-host"
               hideFooter
               onCopy={copy}
               onQuote={quoteText}

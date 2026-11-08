@@ -34,7 +34,7 @@ import { skillOfItem, argSummary, pluginOfItem } from "../../lib/tool-display.mj
 import { stepOf } from "../../lib/step-note.mjs";
 import { webSearchResultsOf } from "../../lib/web-search-results.mjs";
 
-export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, leadingAction, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
+export function ItemView({ item, turn, turnActive, reasoningFloatHost, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, leadingAction, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; reasoningFloatHost?: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
     return <UserMessageView item={item} turn={turn} pending={pending} leadingAction={leadingAction} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
   }
@@ -67,7 +67,7 @@ export function ItemView({ item, turn, turnActive, usage, tokenUsage, fallbackWi
     );
   }
   if (item.type === "reasoning") {
-    return <ReasoningCard item={item} turnActive={turnActive} />;
+    return <ReasoningCard item={item} turnActive={turnActive} floatHostSelector={reasoningFloatHost} />;
   }
   if (item.type === "commandExecution") {
     /* ★ 10-29 用户令：「为啥使用技能是运行命令呢…给我做一个使用技能展示，不要展示运行命令」。

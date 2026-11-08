@@ -30,7 +30,7 @@ import { shouldBindHarness } from "./thread-provider";
 import { readCustomModel, originSessionModel } from "./main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "./main/03-turn-summary";
 import { noteRoleThread } from "./role-memory-tool";
-import { server, teamRunStore, threadCwd, threadRuntimeStore } from "./runtime-refs";
+import { server, teamRunStore, threadCwd, threadRuntimeStore, delegateRegistry } from "./runtime-refs";
 import { readUsableExpertTeams } from "./expert-teams";
 
 /** 成员调度入参（渲染层与主进程兜底共用）。 */
@@ -252,6 +252,9 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
           senderKind: "member",
           threadId: memberThreadId,
           text,
+          ...(delegateRegistry?.tokensOf(memberThreadId)
+            ? { usage: (() => { const t = delegateRegistry!.tokensOf(memberThreadId)!; return { inputTokens: t.input, outputTokens: t.output, cachedTokens: t.cached, totalTokens: t.total }; })() }
+            : {}),
         }, memberRunStartedAt);
       }
     }

@@ -90,6 +90,7 @@ export interface TeamGroupLite {
 }
 
 export interface GroupSourceMessage {
+  usage?: GroupMessageUsage | null;
   itemId: string;
   authorId?: string;
   authorKind?: TeamMemberKind;
@@ -117,6 +118,8 @@ export interface GroupMessageProjected {
   card: unknown;
   mentions: string[];
   seq: number;
+  /** 这一回合的 token 用量（老日志/用户消息为 null） */
+  usage?: GroupMessageUsage | null;
 }
 
 export const GROUP_MAX_PARTNERS: number;

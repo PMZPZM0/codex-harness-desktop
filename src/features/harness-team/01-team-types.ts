@@ -127,5 +127,7 @@ export type GroupMessageRow = {
   mentions: string[];
   /** 被哪个伙伴叫来的（伙伴之间 @ 沟通）；null = 用户派的 */
   via?: { memberId: string; name: string } | null;
+  /** 这一回合的 token 用量（11-08：与主对话页脚一致；老日志为 null） */
+  usage?: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } | null;
   seq: number;
 };

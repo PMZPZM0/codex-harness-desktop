@@ -12,6 +12,8 @@
  * ⛔ 拿不到回合就不画空壳 —— 与过程折叠同一口径。
  */
 import { CompletedChanges } from "../status";
+import { collectTurnWebSources } from "../../lib/turn-web-sources.mjs";
+import { TurnWebSources } from "../shared/TurnWebSources";
 import { TurnMediaCard } from "../media";
 import type { Turn } from "../../lib/turn";
 import { useTeamTurn } from "./09-team-process";
@@ -23,6 +25,8 @@ export function TeamCards({ threadId, at, bodyText }: { threadId: string; at: nu
   return (
     <div className="team-cards">
       <CompletedChanges turn={turn as unknown as Turn} isLastTurn={false} />
+      {/* ⛔ 11-08 用户令「网页来源条也要一致」：与主对话 MessageFooter 同一个组件与提取函数。 */}
+      <TurnWebSources sources={collectTurnWebSources(turn as never)} inline />
       {turnId && <TurnMediaCard threadId={threadId} turnId={turnId} />}
     </div>
   );
