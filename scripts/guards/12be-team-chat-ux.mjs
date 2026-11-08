@@ -349,6 +349,19 @@ const catalog = [
     "独立窗口首帧分流到群聊根组件，关闭键走关窗通道");
   ok(/popoutTeam\(\)/.test(sidebar) && /\.is-team-popout \.team-backdrop/.test(popoutCss),
     "侧栏入口改为打开独立窗口；窗口内铺满、不留模态遮罩");
+  /* ⛔⛔ 11-08 用户截图「你这都三层系统按键」：原生标题栏 + 自绘窗口钮 + 卡片头 X 三层叠一起。
+     ⇒ 与会话独立弹窗同一套窗框（frame:false），系统钮只由 `.window-controls` 画一次。 */
+  const at = winFactory.indexOf("export function createTeamPopoutWindow");
+  const teamWin = at < 0 ? "" : winFactory.slice(at, at + 3200);
+  ok(/process\.platform === "win32" \? \{ frame: false \}/.test(teamWin)
+    && /titleBarStyle: "hiddenInset"/.test(teamWin),
+    "⛔ 独立窗口走无边框窗框（与 ?popout= 会话弹窗同款）；留原生标题栏就是三层按键");
+  ok(/\.is-team-popout \.team-modal__head \{[^}]*-webkit-app-region: drag/.test(popoutCss)
+    && /\.is-team-popout \.team-modal__head \{[^}]*padding-right: 112px/.test(popoutCss),
+    "卡片头兼任标题栏：整条可拖 + 给自绘窗口钮让 112px（⛔ 少了标题会压到钮底下）");
+  ok(/\.is-team-popout \.team-modal__close \{ display: none; \}/.test(popoutCss)
+    && /\.is-team-popout \.esc-hint \{ display: none; \}/.test(popoutCss),
+    "⛔ 独立窗口不再重复一个关闭 X / 一个按了没反应的 ESC 提示（关闭交给窗口钮）");
 }
 /* ── ⑥ 停止键位置：成员栏底部，⛔ 不再占消息流那一行 ── */
 {

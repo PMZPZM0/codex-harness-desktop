@@ -342,8 +342,12 @@ export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
     title: "工作伙伴",
     icon: existsSync(windowIcon) ? windowIcon : undefined,
     autoHideMenuBar: true,
-    /* ⛔ 独立窗口只渲染群聊板块（不渲染主界面的自绘窗口钮）⇒ 用原生标题栏，
-       最小化 / 最大化 / 关闭直接由系统提供；frame:false 会让它没有窗口按钮。 */
+    /* ⛔⛔ 11-08 用户截图（「你这都三层系统按键，要求跟会话独立弹窗一样」）：
+       这里原来以为「独立窗口不渲染主界面 ⇒ 需要原生标题栏」，实际上 `src/main.tsx` 的
+       `.window-controls` 是**所有非宠物窗口都挂**的 ⇒ 原生三钮 + 自绘三钮 + 卡片头关闭键
+       三层叠在右上角。⇒ 与 `?popout=` 会话独立窗口**同一套窗框**（win32 `frame: false`，
+       mac `hiddenInset`）：系统钮只由渲染层画一次，标题栏由群聊卡片头兼任（可拖拽）。 */
+    ...(process.platform === "win32" ? { frame: false } : { titleBarStyle: "hiddenInset" as const }),
     webPreferences: {
       preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
       contextIsolation: true,
