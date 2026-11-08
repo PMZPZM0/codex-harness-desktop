@@ -155,6 +155,7 @@ import { contextTriggerOf, filterMentionTargets, mentionEnterPlan, mentionKeyOf,
 import { agentAvatarKindOf } from "../../../../../lib/agent-avatars.mjs";
 import { AgentAvatar } from "../../../../../components/AgentAvatar";
 import { effortLabels } from "../../../../../lib/effort-labels";
+import { clampEffortToLevels, effortLevelsForModel } from "../../../../../lib/model-specs";
 import { expertRoleLabel } from "../../../../../lib/expert-role-label";
 import { ComposerStatusLights, RunningProcessTime, CompletedChanges, ContextRing, UsageCounterSnapshot, ContextUsageBadge } from "../../../../status";
 import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettingsHandler, subscribeVoiceStage } from "../../../../../voice/wave-level";
@@ -386,6 +387,11 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
     setComposerEditorHeight(null);
     try { localStorage.removeItem("composer-editor-height"); } catch { /* 同上 */ }
   };
+  /* 11-08 用户令「选那个模型，有几个档位，就显示那几个档位」「保证选到的档位都是有用的」：
+     档位按官方规格表（model-specs）联动；切模型后旧档位夹到最近可用档，
+     界面显示与实际提交都用夹后的值（⛔ 不再出现菜单里没有、实际却按旧档发）。 */
+  const effortLevels = effortLevelsForModel(currentModelId);
+  const shownEffort = clampEffortToLevels(effort, effortLevels);
   return (
     <form ref={attachComposerForm} className={`composer${composerSizeClass}`} onSubmit={send}
       style={composerEditorHeight ? ({ "--composer-editor-h": `${composerEditorHeight}px`, "--composer-editor-max": `${composerEditorHeight}px` } as CSSProperties) : undefined}>
@@ -642,8 +648,8 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                   声明过滤 —— 档位是会话级选择），不支持的档位由发送失败自动降档兜底
                                   （effort-support.ts）。拖动中只跟手、释放才提交，原因见 EffortPicker 注释。 */}
                               <EffortPicker
-                                levels={["low", "medium", "high", "xhigh"]}
-                                value={effort === "minimal" ? "low" : effort === "ultra" || effort === "max" ? "xhigh" : effort}
+                                levels={effortLevels}
+                                value={shownEffort}
                                 labels={effortLabels}
                                 modelId={currentModelId}
                                 autoMode={effortAuto}

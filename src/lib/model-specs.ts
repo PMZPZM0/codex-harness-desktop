@@ -260,6 +260,52 @@ export function suggestModelIds(input: string, limit = 8): ModelCatalogEntry[] {
   return [...exact, ...prefix, ...sub].slice(0, limit);
 }
 
+/**
+ * 思考档位从低到高的展示顺序。
+ * ⚠️ 与 `src/lib/effort.ts` 的 `ALL_EFFORTS` **必须同序同值**（守卫 06 逐字对账）——
+ *   单独成表是为了本模块零依赖、能被 node 直接加载（守卫真跑它）。
+ */
+export const EFFORT_ORDER = ["minimal", "low", "medium", "high", "ultra", "xhigh", "max"] as const;
+
+/** 未收录模型的回落档位（与 effort.ts 的 CUSTOM_MODEL_EFFORTS 同值；守卫对账）。 */
+export const DEFAULT_EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
+
+/**
+ * 按官方规格表给出该模型**实际支持的思考档位**（11-08 用户：「选那个模型，有几个档位，
+ * 就显示那几个档位」「保证选到的档位都是有用的」）。
+ *  · 表里有且声明了档位 ⇒ 只返回这些（顺序按 EFFORT_ORDER，与 UI 一致）；
+ *  · 表里有但声明为空数组 ⇒ 该模型没有离散思考档位（按官方数据）⇒ 返回空，UI 隐藏思考菜单；
+ *  · 表里没有（自定义 / 刚发布还没收录）⇒ 回落默认四档（保持旧行为，⛔ 别一刀切隐藏）。
+ */
+export function effortLevelsForModel(modelId: string | undefined | null): string[] {
+  const id = String(modelId ?? "").trim();
+  const fallback = [...DEFAULT_EFFORT_LEVELS];
+  if (!id) return fallback;
+  const spec = matchModelSpec(id);
+  if (!spec) return fallback;
+  const declared = spec.efforts ?? [];
+  return EFFORT_ORDER.filter((level) => declared.includes(level));
+}
+
+/**
+ * 把当前档位夹进给定档位集合：命中直接用；否则取「不高于它的最近一档」，再不行取最低档。
+ * 用途：切模型后会话里存的档位（如 xhigh）在新模型上不存在 ⇒ 界面显示与实际发送都用夹后的值，
+ * ⛔ 不再出现「菜单里没这档、实际却按这档发」。
+ */
+export function clampEffortToLevels(effort: string | undefined | null, levels: string[]): string {
+  const value = String(effort ?? "").trim();
+  if (!levels.length) return value;
+  if (levels.includes(value)) return value;
+  const order = EFFORT_ORDER.filter((level) => levels.includes(level));
+  const rank = (EFFORT_ORDER as readonly string[]).indexOf(value);
+  if (rank < 0) return order[0] ?? levels[0];
+  let best = "";
+  for (const level of order) {
+    if ((EFFORT_ORDER as readonly string[]).indexOf(level) <= rank) best = level;
+  }
+  return best || order[0] || levels[0];
+}
+
 // ── 外部规则加载口子 ──────────────────────────────────────────
 // 文件：userData/model-specs.json，格式：
 // [ { "match": "gpt-6", "contextWindow": 1000000, "maxOutputTokens": 200000,
