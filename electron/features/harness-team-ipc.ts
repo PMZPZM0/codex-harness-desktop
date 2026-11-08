@@ -458,6 +458,10 @@ async function runDispatchRounds(
     /* 群聊流式广播（见下）：回合结束后必须摘监听 + 发 finished。 */
     let liveThreadId = "";
     let talkDelta: ((event: any) => void) | null = null;
+    /* ⛔ 11-08 审查优化：每一轮派活有**显式代次**（成员 + 起跑时刻）。
+       渲染层按它认卡：finished 只摘自己那一轮，接力/排队的新卡不会被误删
+       （⛔ 不再只看时间戳先后，两个窗口的时钟/迟到事件都不参与判定）。 */
+    const runId = `${partner?.id ?? ""}:${startedAt}`;
     /* 11-08：本回合 token 用量（与主对话页脚一致；引擎 thread/tokenUsage/updated 的 last 桶）。 */
     let liveUsage: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } | null = null;
     try {
@@ -492,7 +496,7 @@ async function runDispatchRounds(
       }).catch(() => null);
       liveThreadId = liveThread?.threadId ?? "";
       if (liveThreadId) {
-        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, at: Date.now() } as never);
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
         let lastTickAt = 0;
         talkDelta = (event: any) => {
           if (event?.kind !== "notification") return;
@@ -518,7 +522,7 @@ async function runDispatchRounds(
           }
           if (method === "item/agentMessage/delta") {
             const delta = String(p.delta ?? "");
-            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, text: delta, at: Date.now() } as never);
+            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, text: delta, at: Date.now() } as never);
             return;
           }
           /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块不再 2.5s 轮询 ——
@@ -537,6 +541,8 @@ async function runDispatchRounds(
       const res = await withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
         cwd: group.workspace || undefined,
         groupName: group.name,
+        /* ⛔ 上面已 ensure 过（为流式监听）⇒ 把 threadId 交下去，runTalkTurn 不再 resume 第二遍。 */
+        ...(liveThreadId ? { threadId: liveThreadId } : {}),
         ...(params.model ? { model: params.model } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
         ...(params.sandbox ? { sandbox: params.sandbox } : {}),
@@ -615,7 +621,7 @@ async function runDispatchRounds(
       options.onPhase?.("finished", partner, { ok: false, error: errMsg });
     } finally {
       if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
-      if (liveThreadId) broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, at: Date.now() } as never);
+      if (liveThreadId) broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
       const tokens = delegateRegistry?.tokensOf(threadId) ?? null;
       await logUsageTo({
         groupId: group.id,

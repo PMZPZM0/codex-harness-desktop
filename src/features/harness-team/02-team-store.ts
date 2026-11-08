@@ -40,6 +40,8 @@ export type LiveRun = {
   name: string;
   text: string;
   startedAt: number;
+  /** 这一轮派活的显式代次（主进程给；缺省的老事件走 startedAt 兜底）。 */
+  runId?: string;
   status: "running" | "done" | "failed";
   error?: string;
 };
@@ -304,6 +306,7 @@ export function useTeamGroups() {
         const tid = String(event.threadId ?? "");
         const phase = String(event.phase ?? "");
         if (!gid || !tid) return;
+        const runId = String(event.runId ?? "");
         if (phase === "started") {
           setLiveByGroup((prev) => ({
             ...prev,
@@ -315,6 +318,7 @@ export function useTeamGroups() {
                 name: String(event.name ?? ""),
                 text: "",
                 startedAt: Date.now(),
+                ...(runId ? { runId } : {}),
                 status: "running",
               },
             },
@@ -325,21 +329,25 @@ export function useTeamGroups() {
           setLiveByGroup((prev) => {
             const cur = prev[gid]?.[tid];
             if (!cur) return prev;
+            /* 迟到的上一轮增量不许糊进这一轮的卡。 */
+            if (runId && cur.runId && runId !== cur.runId) return prev;
             return { ...prev, [gid]: { ...prev[gid], [tid]: { ...cur, text: cur.text + String(event.text ?? "") } } };
           });
           return;
         }
         if (phase === "finished") {
           /* ⛔ finished 之后延迟摘卡；期间同一人可能被接力/排队又开了一轮（新卡已建）——
-             按 startedAt 认代次，只摘**自己那一轮**的卡，否则新一轮的卡会被这一刀删掉、
-             后续 delta 因为没有卡而被丢弃（消息整张消失）。 */
+             只摘**自己那一轮**：优先比显式 runId；老事件没有 runId 时退回 startedAt 先后兜底。
+             否则新一轮的卡会被这一刀删掉、后续 delta 因为没有卡而被丢弃（消息整张消失）。 */
           const finishedAt = Date.now();
           window.setTimeout(() => {
             if (!alive.current) return;
             setLiveByGroup((prev) => {
               const bucket = { ...(prev[gid] ?? {}) };
               const cur = bucket[tid];
-              if (!cur || cur.startedAt > finishedAt) return prev;
+              if (!cur) return prev;
+              if (runId && cur.runId) { if (cur.runId !== runId) return prev; }
+              else if (cur.startedAt > finishedAt) return prev;
               delete bucket[tid];
               return { ...prev, [gid]: bucket };
             });
@@ -358,6 +366,8 @@ export function useTeamGroups() {
         const hit = resolveMember(record);
         if (!hit) return; // ⛔ 不是本群的人：不在这里画卡（主会话/别的群的委派不该串进来）
         const { gid, memberId, memberName } = hit;
+        /* 代次优先用主进程给的显式 runId（= 本轮 record.startedAt）；老事件用 record.startedAt。 */
+        const runId = String(event.runId ?? record.startedAt ?? "");
         setLiveByGroup((prev) => ({
           ...prev,
           [gid]: {
@@ -368,6 +378,7 @@ export function useTeamGroups() {
               name: memberName,
               text: String(record.output ?? ""),
               startedAt: Number(record.startedAt ?? 0) || Date.now(),
+              ...(runId ? { runId } : {}),
               status: "running",
             },
           },
@@ -377,11 +388,13 @@ export function useTeamGroups() {
 
       const gid = Object.keys(liveRef.current).find((k) => liveRef.current[k]?.[threadId]);
       if (!gid) return;
+      const runId = String(event.runId ?? "");
 
       if (phase === "delta") {
         setLiveByGroup((prev) => {
           const cur = prev[gid]?.[threadId];
           if (!cur) return prev;
+          if (runId && cur.runId && runId !== cur.runId) return prev;
           return { ...prev, [gid]: { ...prev[gid], [threadId]: { ...cur, text: cur.text + String(event.text ?? "") } } };
         });
         return;
@@ -391,6 +404,7 @@ export function useTeamGroups() {
         setLiveByGroup((prev) => {
           const cur = prev[gid]?.[threadId];
           if (!cur) return prev;
+          if (runId && cur.runId && runId !== cur.runId) return prev;
           return {
             ...prev,
             [gid]: {
@@ -405,14 +419,16 @@ export function useTeamGroups() {
           };
         });
         /* 完成态留 500ms 再摘：正式消息落盘有几十毫秒延迟，立刻删会闪一下空白。
-           ⛔ 同样按 startedAt 认代次：期间同一人新开的一轮不能被这一刀删掉。 */
+           ⛔ 代次优先 runId；老事件没有时退回 startedAt。期间同一人新开的一轮不能被这一刀删掉。 */
         const finishedAt = Date.now();
         window.setTimeout(() => {
           if (!alive.current) return;
           setLiveByGroup((prev) => {
             const bucket = { ...(prev[gid] ?? {}) };
             const cur = bucket[threadId];
-            if (!cur || cur.startedAt > finishedAt) return prev;
+            if (!cur) return prev;
+            if (runId && cur.runId) { if (cur.runId !== runId) return prev; }
+            else if (cur.startedAt > finishedAt) return prev;
             delete bucket[threadId];
             return { ...prev, [gid]: bucket };
           });

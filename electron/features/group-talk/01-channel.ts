@@ -169,9 +169,14 @@ export async function runTalkTurn(
   groupId: string,
   member: TalkMember,
   inputText: string,
-  options: { cwd?: string; groupName?: string; effort?: string; model?: string; sandbox?: string; approvalPolicy?: string } = {},
+  options: {
+    cwd?: string; groupName?: string; effort?: string; model?: string; sandbox?: string; approvalPolicy?: string;
+    /** 调用方已解析好的会话（先用 `ensureTalkThread` 拿到再过进来）⇒ ⛔ 不再重复 resume 一次。 */
+    threadId?: string;
+  } = {},
 ): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
-  const { threadId } = await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy });
+  const threadId = options.threadId
+    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy })).threadId;
   const turn: any = await server.request("turn/start", {
     threadId,
     input: [{ type: "text", text: inputText, text_elements: [] }],
