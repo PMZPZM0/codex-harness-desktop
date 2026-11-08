@@ -80,7 +80,9 @@ type Target = { kind: string; key: string; name: string; profession?: string; te
    origin="" 的界面直派合并，⛔ 不再是「选了派不出去」。 */
 type AddMode = "expert" | "team" | "custom";
 const MODE_KINDS: Record<AddMode, Set<string>> = {
-  expert: new Set(["expert"]),
+  /* ⛔ 11-08 用户令「专家不管什么时候都要能直接调用」：团成员也是**单个专家**，
+     专家模式里一并列出（可只加这一位，不必把整团拉进群）。 */
+  expert: new Set(["expert", "member"]),
   team: new Set(["team"]),
   custom: new Set(["subagent", "cli"]),
 };

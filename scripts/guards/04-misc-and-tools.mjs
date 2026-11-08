@@ -915,9 +915,11 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && dp.dispatchKindAllowed("subagent", { expert: false, team: false, subagent: false }).ok === true
       && dp.dispatchKindAllowed("team", { expert: true, team: true, subagent: true }).ok === true
       && dp.dispatchKindAllowed("member", { expert: true, team: true, subagent: true }).ok === true
-      && dp.dispatchKindAllowed("member", { expert: true, team: false, subagent: true }).ok === false
+      /* ⛔ 11-08 用户令「专家不管什么时候都要能直接调用」：团成员 = 单个专家，**不跟专家团开关**。 */
+      && dp.dispatchKindAllowed("member", { expert: true, team: false, subagent: true }).ok === true
+      && dp.filterTargetsBySwitch([...targets9, { kind: "member", key: "d", name: "丁" }], { enabled: true, team: false }).some((t) => t.kind === "member") === true
       && dp.dispatchKindAllowed("team", null).ok === false
-      ? ok("★ 类别闸：专家/子智能体恒放行（连手改的 false 也不生效）、专家团默认拒绝（member 随 team）")
+      ? ok("★ 类别闸：专家/子智能体/团成员恒放行（成员是单个专家，连手改的 false 也不生效）、只有整团默认拒绝")
       : fail("dispatchKindAllowed 判据不对 —— 默认许可不是「专家/子智能体可用、专家团关闭」"));
     /dispatchKindAllowed\(input\.kind, originDispatch\)/.test(readFileSync(join(ROOT, "electron/features/delegation.ts"), "utf8"))
       ? ok("★ 勾选硬闸接线到 runDelegatedTask（agent_invoke 与 agents:invoke 两条入口共用一处闸）")

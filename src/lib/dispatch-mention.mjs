@@ -34,8 +34,8 @@ export function mentionKindLabel(kind) {
 /**
  * 这一类在本会话能不能派（10-30 用户令：候选列表要**按调度开通状态联动**）。
  *
- * ⛔ 与 `electron/dispatch.ts` 的 `dispatchAllowOf` **同口径**：专家 / 子智能体 / CLI 恒可用，
- *    专家团跟随用户开关（缺键按关处理 —— `dispatchAllowOf` 也是 `team === true`）。
+ * ⛔ 与 `electron/dispatch.ts` 的 `dispatchKindAllowed` **同口径**：专家 / 子智能体 / CLI 恒可用；
+ *    团成员（member）= 单个专家，同样恒可用；只有**整团**（team）跟随用户开关。
  * ⛔ 这里只回答"能不能选"，**不负责隐藏**：未开通的类别仍要出现在列表里（置灰不可选），
  *    否则用户会以为"团队丢了"，而真因是没开开关（10-30 用户原话：置灰不可选，开通后恢复）。
  * @param {{ team?: boolean } | null | undefined} allow 会话调度许可（`bag.activeDispatch`）
@@ -43,8 +43,9 @@ export function mentionKindLabel(kind) {
  * @returns {boolean}
  */
 export function mentionKindAllowed(allow, kind) {
+  /* ⛔ 11-08 用户令「专家不管什么时候都要能直接调用」：member 是团里的单个专家，不再跟专家团开关。 */
   if (!allow || typeof allow !== "object") return true;
-  if (kind === "team" || kind === "member") return allow.team === true;
+  if (kind === "team") return allow.team === true;
   return true;
 }
 
@@ -147,7 +148,7 @@ export function filterMentionTargets(targets, query, allow = null) {
     const items = hits.slice(0, MENTION_PER_GROUP).map((entry) => {
       const target = entry.target;
       const missing = target?.kind === "cli" && target?.installed === false;
-      // 行级许可：成员（member）跟随「专家团」开关；专家团整组未开通时组头已经说明，这里只管逐行
+      // 行级许可：成员（member）= 单个专家，恒可用；只有整团（team）跟随「专家团」开关。
       const kindOff = !mentionKindAllowed(allow, target?.kind);
       if (!off && !kindOff && !missing) return target;
       return { ...target, disabled: true, disabledReason: missing ? "cli-missing" : "kind-off" };

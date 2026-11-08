@@ -186,7 +186,9 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
     switch (target?.kind) {
       case "expert": return allow.expert;
       case "team": return allow.team;
-      case "member": return allow.team;
+      /* ⛔ 11-08 用户令「专家不管什么时候都要能直接调用」：团成员是**单个专家**，
+         不再跟随「专家团」开关（那个开关只决定能不能整团调度）。 */
+      case "member": return allow.expert;
       case "subagent": return allow.subagent;
       case "cli": return allow.cli !== false;
       default: return false;
@@ -200,7 +202,7 @@ export function filterTargetsBySwitch(targets: DispatchTarget[], dispatch?: Disp
  *   此前只有**提示词**在说「只开启了 X」，执行端（canDispatchFrom）只查身份 / 深度 / 独占锁，
  *   **完全不看 kind** ⇒ 用户取消勾选「专家 / 专家团」之后，模型仍能凭 MCP 工具的参数
  *   （kind=expert）把活派出去 —— 勾选等于装饰。
- * ⛔ 判据与 filterTargetsBySwitch **同源**（member 跟随 team），绝不许两处各写一套。
+ * ⛔ 判据与 filterTargetsBySwitch **同源**（member 跟随 expert），绝不许两处各写一套。
  * 返回值带 reason：调用被拒时模型要能读到「哪一类没开」，才能自己改派或如实回报用户。 */
 export function dispatchKindAllowed(
   kind: DispatchKind | string,
@@ -208,15 +210,19 @@ export function dispatchKindAllowed(
 ): { ok: boolean; reason?: string } {
   const allow = dispatchAllowOf(dispatch);
   const key = String(kind);
-  const ok = key === "team" || key === "member"
+  /* ⛔ 11-08 用户令「专家不管什么时候都要能直接调用」：`member` = 团里的**单个专家**，跟着 expert（恒放行）；
+     只有 `team`（整团调度）才看「专家团」开关。 */
+  const ok = key === "team"
     ? allow.team
-    : key === "expert"
+    : key === "member"
       ? allow.expert
-      : key === "subagent"
-        ? allow.subagent
-        : key === "cli"
-          ? allow.cli !== false
-          : false;
+      : key === "expert"
+        ? allow.expert
+        : key === "subagent"
+          ? allow.subagent
+          : key === "cli"
+            ? allow.cli !== false
+            : false;
   if (ok) return { ok: true };
   if (key === "team" || key === "member") {
     return {

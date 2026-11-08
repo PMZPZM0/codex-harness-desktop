@@ -579,7 +579,33 @@ export function TeamGroupView({
     else insertMentionText(name);
   };
 
-  const pickCandidate = (item: { selectId: string; name: string }) => {
+  const pickCandidate = async (item: { selectId: string; name: string; role?: string; library?: boolean }) => {
+    /* ⛔ 11-08 用户（截图）：「内置的专家都不显示；不管什么时候都要能直接调用」——
+       专家库里没加过群的专家：点选时**先加入本群**（与设置页「添加伙伴」同一份载荷），
+       成功后再把 `@名字 ` 写进正文。⛔ 加入失败（例如已满员）就说清原因，不静默。 */
+    if (item.library) {
+      const added = await onAddPartner({
+        id: `tgt:expert:${item.selectId}`,
+        kind: "bot",
+        name: item.name,
+        targetKind: "expert",
+        targetKey: item.selectId,
+        targetProfession: item.role ?? "",
+      }).catch((err) => ({ ok: false, error: String(err) }));
+      if (!added?.ok) {
+        flashMenuMsg(added?.error || `没法把 ${item.name} 加入本群`);
+        return;
+      }
+      flashMenuMsg(`已把 ${item.name} 加入本群`);
+      if (mention.typed) {
+        const applied = applyMention(text, { start: mention.start, caret: mention.caret }, item.name);
+        closeMention();
+        editorApiRef.current?.setTextAndCaret(applied.text, applied.caret);
+      } else {
+        insertMentionText(item.name);
+      }
+      return;
+    }
     if (mention.typed) {
       /* 打字触发：把 `@查询词` 换成 `@名字 `（目标身份稍后从正文反查） */
       /* ⛔ 传 caret：只替换用户输入的那几个字，⛔ 不碰后面已经写好的正文。 */

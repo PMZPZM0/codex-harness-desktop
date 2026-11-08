@@ -199,10 +199,45 @@ export function mentionSectionsOf(group, catalog) {
     });
   }
 
+  /* ⛔ 11-08 用户（截图）：「内置的专家，都不显示出来，就显示几个以前用过的」——
+     群 @ 面板原来**只列群成员**（+ 团展开），专家库里没加过群的专家一个都看不到。
+     ⇒ 增补「专家库」分组：调度目录里所有**单人专家 / 其他团的主理人**，点选即加入本群再点名。
+     ⛔ 已经随团进来的主理人（那个团已在群里）不重复列；已经加进群的专家也不列。 */
+  const groupTeamIds = new Set(members
+    .filter((m) => m && m.kind === "bot" && m.targetKind === "team")
+    .map((m) => String(m.targetKey ?? ""))
+    .filter(Boolean));
+  const addedExpertKeys = new Set(members
+    .filter((m) => m && m.kind === "bot" && m.targetKind === "expert")
+    .map((m) => String(m.targetKey ?? ""))
+    .filter(Boolean));
+  const library = [];
+  const seenLib = new Set();
+  for (const t of cat) {
+    if (!t || t.kind !== "expert") continue;
+    const key = String(t.key ?? "");
+    if (!key || seenLib.has(key)) continue;
+    if (String(t.teamId ?? "") && groupTeamIds.has(String(t.teamId ?? ""))) continue;
+    if (addedExpertKeys.has(key)) continue;
+    seenLib.add(key);
+    library.push({
+      id: `lib:${key}`,
+      selectId: key,
+      name: String(t.name ?? ""),
+      role: String(t.profession || "专家"),
+      hint: "点它 = 加入本群并点名",
+      avatar: { id: key, kind: "bot", name: String(t.name ?? ""), targetKind: "expert", targetKey: key },
+      muted: false,
+      unbound: false,
+      library: true,
+    });
+  }
+
   return [
     { key: "bot", title: "机器人", items: bots },
     { key: "team", title: "专家团", items: teams },
     { key: "kid", title: "团成员", items: kids },
+    { key: "library", title: "专家库", items: library },
   ].filter((section) => section.items.length > 0);
 }
 

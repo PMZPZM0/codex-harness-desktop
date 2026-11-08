@@ -1030,6 +1030,30 @@ const catalog = [
     "同一成员的消息串行投递（引擎不允许 resume/并行回合正在跑的会话；超时从真正开跑时算）");
 }
 
+/* ── ⑬d 专家随时可调 + 群 @ 专家库（11-08 用户截图：
+   「内置的专家都不显示，就显示几个以前用过的；这个专家不管什么时候都要能直接调用」）── */
+{
+  const mentionLib = read("src/lib/dispatch-mention.mjs");
+  const dispatchSrc = read("electron/dispatch.ts");
+  const teamMention = read("src/lib/team-mention.mjs");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const settings = read("src/features/harness-team/03-team-settings.tsx");
+  const pickTest = read("tests/team-mention-panel.test.mjs");
+  ok(/if \(kind === "team"\) return allow\.team === true;/.test(mentionLib)
+    && !/kind === "team" \|\| kind === "member"/.test(mentionLib)
+    && /case "member": return allow\.expert;/.test(dispatchSrc)
+    && /key === "member"[\s\S]{0,40}\? allow\.expert/.test(dispatchSrc),
+    "⛔ 团成员（单个专家）不再跟「专家团」开关：渲染层置灰与执行端硬闸同口径（只有整团看开关）");
+  ok(/key: "library", title: "专家库"/.test(teamMention) && /library: true/.test(teamMention)
+    && /if \(item\.library\)/.test(view) && /targetKind: "expert"[\s\S]{0,80}?targetKey: item\.selectId/.test(view)
+    && /onAddPartner\(/.test(view),
+    "群 @ 面板列出专家库（没入群的专家），点选先加入本群再点名（⛔ 不再只能 @ 已加过的几个人）");
+  ok(/expert: new Set\(\["expert", "member"\]\)/.test(settings),
+    "「添加伙伴 → 专家模式」也能单独加团成员（⛔ 不必为一个人把整团拉进群）");
+  ok(/专家库：/.test(pickTest),
+    "专家库分组有单测（在群的团 / 已加过的专家不重复列）");
+}
+
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────
    改之前：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史**不注入**，
    只有模型主动调 group_read 才能读 12 条 ⇒ 别人之间没 @ 它的对话它一概看不见，接不上话。
@@ -1212,6 +1236,11 @@ const catalog = [
   ok((ipc.match(/team-talk-threads-changed/g) || []).length >= 2
     && /team-talk-threads-changed/.test(read("src/lib/team-talk-threads.mjs")),
     "删群/自愈后广播 team-talk-threads-changed，侧栏「伙伴」标签即时刷新");
+  /* ⛔ 11-08 反向联动（用户问「伙伴会话在外面删了，群里还在吗」）：删会话 ⇒ 台账条目也要清，
+     否则下次 @ 会先 resume 一条已删除的会话（白跑一次）；群消息保留并标「来源 · 已删除」。 */
+  ok(/if \(event\.method === "thread\/deleted" && forgetTalkThreads\(\[goneId\]\)\)/.test(codeOnly(read("electron/features/boot.ts")))
+    && /type: "team-thread-gone"/.test(codeOnly(read("electron/features/boot.ts"))),
+    "反向联动：会话在侧栏被删 ⇒ 群聊台账清条目 + 群消息标「已删除」（⛔ 不白跑 resume、不丢群记录）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

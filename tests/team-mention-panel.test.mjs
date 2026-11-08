@@ -142,3 +142,21 @@ test("正文分段：提及段带标记、普通段原样，长名优先不重�
   assert.deepEqual(segs.filter((s) => s.mention).map((s) => s.text), ["@阿团子", "@承枢"]);
   assert.deepEqual(mentionSegments("没有提及", names), [{ text: "没有提及" }]);
 });
+
+test("专家库：没入群的单专家 / 其他团主理人列出；团已在群、已加过的专家不重复", () => {
+  const group = {
+    members: [
+      { id: "me", kind: "human", name: "我" },
+      { id: "m2", kind: "bot", name: "星篆小队", targetKind: "team", targetKey: "t1" },
+    ],
+  };
+  const catalog = [
+    { kind: "expert", key: "lead1", name: "承枢", teamId: "t1" },
+    { kind: "expert", key: "solo1", name: "呈象", teamId: "solo1" },
+    { kind: "expert", key: "lead2", name: "执舵", teamId: "t2" },
+    { kind: "member", key: "k1", name: "甲", teamId: "t2" },
+  ];
+  const lib = mentionSectionsOf(group, catalog).find((s) => s.key === "library");
+  assert.deepEqual(lib.items.map((i) => i.name), ["呈象", "执舵"]);
+  assert.ok(lib.items.every((i) => i.library === true && i.selectId));
+});
