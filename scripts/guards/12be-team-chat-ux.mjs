@@ -368,10 +368,14 @@ const catalog = [
   const ipcMain = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
   const chanSrc = codeOnly(read("electron/features/group-talk/01-channel.ts"));
-  ok(/export function withMentionPrefix/.test(models) && /text: withMentionPrefix\(text, targets\.map/.test(ipcMain),
-    "⛔ 艾特补回落盘正文（@ 只走 memberIds 会导致消息里一个艾特都看不见）");
-  ok(/missing = list\.filter/.test(models),
-    "正文里已经写过的名字不再补（防「同一条消息两个 @承枢」回归）");
+  /* ⛔⛔ 11-08 用户令：「前面怎么还自动多一个 @」+「我消息气泡里面以透出来这种效果」
+     ⇒ 正文**不再注入 `@名字`**（群日志 = 用户原话），"@ 了谁"改由气泡里的提及 chip 表达。
+     判据两条：① 派活落盘不再调 withMentionPrefix；② 用户消息渲染出 `team-msg__mentioned` chip。 */
+  ok(!/withMentionPrefix\(text/.test(ipcMain) && /^\s*text,$/m.test(ipcMain),
+    "⛔ 派活落盘正文不再注入 @ 名字（用户原话原样入库；补一次就多一个 @，还看不出是系统加的）");
+  ok(/team-msg__mentioned/.test(read("src/features/harness-team/04-team-group-view.tsx"))
+    && /team-msg__mentioned-chip/.test(read("src/styles/61-team-mode.css")),
+    "用户消息气泡里以「头像 + 名字」chip 透出这条 @ 了谁（截图 2 的效果）");
   ok(/\[SYSTEM TASK · 工作伙伴消息\]/.test(talkSrc) && /=== 用户需求 ===/.test(talkSrc) && /=== END ===/.test(talkSrc),
     "群聊输入包 SYSTEM TASK 壳：user-refs 只留需求体，⛔ 提示词不裸露在气泡");
   ok(/发件人：member · /.test(talkSrc) && /你手上有三个群聊工具/.test(talkSrc),
@@ -732,6 +736,30 @@ const catalog = [
   ok(/<TeamOfficeEntry group=\{group\} live=\{live\} busy=\{busy\} onOpenThread=\{onOpenThread\} \/>/.test(view)
     && /\.team-group__office \{[\s\S]{0,160}?margin-top: auto;/.test(read("src/styles/61-team-mode.css")),
     "入口钉在成员栏**末位**（与中枢群成员轨同一位置语义；⛔ 不跟着成员列表往下挤）");
+}
+
+/* ── ⑬ 两种回复模式（11-08 用户令：「做出来两种回复模式」+「在群设置里加上这个选项」）────
+   过程模式：运行中展示运行过程（默认折叠、可展开，与主对话同一套折叠块），跑完过程消失只留汇报；
+   占位模式：不展示过程/流式正文，只挂「图标 + 名字 + 处理中」，产出后再上屏。 */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const proc = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+  const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
+  ok(/replyMode[^\n]*<TeamProcess/.test(view) === false && /replyMode === "process" && run\.status === "running"/.test(view),
+    "过程块**只在运行中**渲（跑完随流式卡一起消失，⛔ 成品消息不再挂 TeamProcess）");
+  ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
+    "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
+  ok(/live?: boolean/.test(proc) || /live = false/.test(proc),
+    "过程块支持运行中实时（回合还没落盘 ⇒ 取最新回合 + 2.5s 重拉，⛔ 缓存会把新步骤挡在外面）");
+  ok(/replyMode === "placeholder" \?/.test(view) && /team-msg__placeholder/.test(view),
+    "占位模式只画「图标 + 名字 + 处理中」，不显示过程与流式正文");
+  ok(/replyMode: "process" \| "placeholder";/.test(settings) && /回复模式/.test(settings)
+    && /onReplyMode\(opt\.value\)/.test(settings),
+    "群设置里有「回复模式」两张卡（过程 / 占位），点卡片立即生效");
+  ok(/normalizeReplyMode/.test(read("src/lib/team-models.mjs"))
+    && /harness-team:set-reply-mode/.test(read("electron/features/harness-team-ipc.ts"))
+    && /harnessTeamSetReplyMode/.test(read("electron/preload.ts")),
+    "回复模式落群 JSON（通道 + 归一化齐；⛔ 不存 localStorage）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

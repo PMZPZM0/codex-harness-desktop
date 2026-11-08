@@ -18,7 +18,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GroupSchedule, MemoryNote, MemoryNoteType, MenuPlacement, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
-import { AlarmClock, AlignLeft, BookOpen, Columns2, FolderOpen, GitBranch, Inbox, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
+import { AlarmClock, AlignLeft, BookOpen, Columns2, FolderOpen, GitBranch, Inbox, ListChecks, MessagesSquare, Play, Puzzle, RefreshCw, Trash2, Users } from "lucide-react";
 import { addMenuLeaf, flattenMenu, normalizeMenu, removeMenuLeaf, DEFAULT_GROUP_MENU } from "../../lib/team-menu.mjs";
 import { addModeStateOf, resolveManagerId } from "../../lib/team-models.mjs";
 import {
@@ -61,6 +61,9 @@ type Props = {
   onSaveMenuPlacement: (placement: MenuPlacement) => Promise<{ ok: boolean; error?: string }>;
   /** 消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左 */
   messageLayout: "split" | "left";
+  /** 回复模式（11-08 用户令）：process 运行中展示过程 / placeholder 只显示占位 */
+  replyMode: "process" | "placeholder";
+  onReplyMode: (next: "process" | "placeholder") => void;
   onMessageLayout: (next: "split" | "left") => void;
   /** 定时任务（整组替换；nextRunAt 由主进程算） */
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
@@ -122,7 +125,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, messageLayout, onMessageLayout, onSaveSchedules, onRunSchedule }: Props) {
+export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, messageLayout, onMessageLayout, replyMode, onReplyMode, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -734,6 +737,43 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
         </div>
         <p className="team-settings__hint team-settings__layout-current">
           当前：<strong>{messageLayout === "left" ? "全部靠左" : "左右分栏"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+
+        {/* ⛔⛔ 11-08 用户令：「做出来两种回复模式」+「在群设置里面加上这个选项」——
+            两种模式**只影响"运行过程显不显示"**，产出在两种模式下都会正常上屏。 */}
+        <h4 className="team-settings__sub-title">
+          <MessagesSquare size={14} className="ic-violet" />
+          回复模式
+        </h4>
+        <p className="team-settings__hint">
+          过程模式：运行时展示运行过程（默认折叠，点开看每一步），跑完过程自动消失，只留最后那份汇报；
+          占位模式：不展示过程，只在消息里挂「图标 + 名字 + 处理中」，产出出来再上屏。
+        </p>
+        <div className="team-settings__layout-cards" role="radiogroup" aria-label="群回复模式">
+          {([
+            { value: "process", label: "过程模式", desc: "运行中可展开看步骤", Icon: ListChecks },
+            { value: "placeholder", label: "占位模式", desc: "只显示「图标+名字」", Icon: MessagesSquare },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={replyMode === opt.value}
+              className={`team-settings__layout-card${replyMode === opt.value ? " is-on" : ""}`}
+              onClick={() => onReplyMode(opt.value)}
+            >
+              <span className={`team-settings__layout-demo is-reply-${opt.value}`} aria-hidden>
+                <i className="is-left" />
+                <i className="is-left" />
+                <i className="is-left" />
+              </span>
+              <strong><opt.Icon size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{replyMode === "placeholder" ? "占位模式" : "过程模式"}</strong> · 已保存到这个群（换设备也保留）
         </p>
       </section>
 

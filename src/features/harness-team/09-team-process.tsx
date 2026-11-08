@@ -33,6 +33,10 @@ type Props = {
   defaultOpen?: boolean;
   /** 运行中：折叠头加"正在…" */
   running?: boolean;
+  /** 运行中实时模式（11-08 用户令「运行时展示运行过程，默认折叠可展开」）：
+   *  · 这时回合**还没落盘成成品消息**，按 `at/bodyText` 挑不准 ⇒ 直接取最新的那个回合；
+   *  · 并且每 2.5s 重拉一次（过程是边走边长的，缓存会把新步骤挡在外面）。 */
+  live?: boolean;
   /** 追问：把该伙伴 @ 上（父层已有动作） */
   onAskAgain?: () => void;
 };
@@ -70,28 +74,39 @@ function turnsOf(threadId: string): Promise<TeamTurn[]> {
  * 群消息 → 子会话回合（过程折叠与汇总展示卡共用，⛔ 不各拉一次 IPC）。
  * 数据源与负缓存口径见 `turnsOf`：拉不到不画空壳，30s 后允许重试。
  */
-export function useTeamTurn(threadId: string, at: number, bodyText: string): { turn: TeamTurn | null; loading: boolean } {
+export function useTeamTurn(threadId: string, at: number, bodyText: string, live = false): { turn: TeamTurn | null; loading: boolean } {
   const [turns, setTurns] = useState<TeamTurn[]>([]);
   const [loading, setLoading] = useState(true);
+  /** 运行中：每拉一次自增，把 effect 推着重跑（⛔ 过程在长，不能只拉一次）。 */
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     let alive = true;
     if (!threadId || threadId.startsWith("group:")) { setLoading(false); return; }
     setLoading(true);
+    /* 运行中必须**绕过缓存**：turnsCache 是给"成品消息只拉一次"设计的，
+       拿它渲染进行中的过程会永远停在第一次快照上。 */
+    if (live) turnsCache.delete(threadId);
     void turnsOf(threadId).then((list) => {
       if (!alive) return;
       setTurns(list);
       setLoading(false);
     });
     return () => { alive = false; };
-  }, [threadId]);
+  }, [threadId, live, tick]);
+
+  useEffect(() => {
+    if (!live || !threadId || threadId.startsWith("group:")) return;
+    const timer = setInterval(() => setTick((n) => n + 1), 2500);
+    return () => clearInterval(timer);
+  }, [live, threadId]);
 
   const turn = useMemo(() => pickTurnOf(turns, at, bodyText), [turns, at, bodyText]);
   return { turn, loading };
 }
 
-export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, onAskAgain }: Props) {
-  const { turn, loading } = useTeamTurn(threadId, at, bodyText);
+export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, live = false, onAskAgain }: Props) {
+  const { turn, loading } = useTeamTurn(threadId, at, bodyText, live);
 
   /** 过程项 = 工具/命令/编辑/技能/思考；正文（agentMessage）不进折叠，由父层正常渲染。 */
   const units = useMemo(() => {

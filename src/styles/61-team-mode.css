@@ -908,6 +908,57 @@
   border-color: color-mix(in srgb, var(--danger) 45%, var(--line-soft));
 }
 .team-msg__thinking { margin: 0; color: var(--faint); font-size: 12.5px; }
+
+/* ══════ 两种回复模式（11-08 用户令：「做出来两种回复模式」+ 群设置里加选项）══════
+   · 过程模式：运行中在流式卡里塞 `TeamProcess`（同一套主对话折叠块，默认折叠可展开）；
+   · 占位模式：不展示过程，只挂「图标 + 名字 + 处理中」这一行，产出后消息上屏。
+   ⛔ 两种模式下产出都正常上屏；这里只决定"过程与流式正文露不露"。 */
+.team-msg__placeholder {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.team-msg__placeholder-avatar { flex: none; }
+.team-msg__placeholder-name { color: var(--text); font-weight: 600; }
+.team-msg__placeholder em { font-style: normal; color: var(--faint); }
+
+/* 用户消息气泡里「透出来」的 @ 对象（截图 2 的效果：头像 + 名字的小 chip）。
+   ⛔ 只渲染正文里没写到的那些（正文里已有的由 TeamMentionText 就地渲染），避免一条消息两个 @。 */
+.team-msg__mentioned {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.team-msg__mentioned-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px 1px 3px;
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel) 60%, transparent);
+  font-size: 11.5px;
+  color: var(--text);
+  cursor: pointer;
+}
+.team-msg__mentioned-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 设置页那张卡的示意条（两张回复模式卡共用排版卡皮肤，只换示意条的疏密） */
+.team-settings__sub-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 14px 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.team-settings__layout-demo.is-reply-placeholder i { width: 26% !important; }
+.team-settings__layout-demo.is-reply-process i { width: 46% !important; }
 .team-msg__caret {
   display: inline-block;
   width: 7px;

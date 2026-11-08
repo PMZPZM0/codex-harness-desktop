@@ -713,6 +713,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 回复模式（11-08）：`process` 运行中展示过程（默认折叠）/ `placeholder` 只显示占位。 */
+  const saveReplyMode = useCallback(
+    async (groupId: string, mode: "process" | "placeholder") =>
+      apply((await window.codex.harnessTeamSetReplyMode(groupId, mode)) as MutationResult),
+    [apply],
+  );
+
   /** 定时任务（整组替换；nextRunAt 由主进程算，渲染层不推算调度时刻） */
   const saveSchedules = useCallback(
     async (groupId: string, list: unknown[]) =>
@@ -743,7 +750,7 @@ export function useTeamGroups() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
-    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveSchedules, runSchedule,
+    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf,
   };
 }

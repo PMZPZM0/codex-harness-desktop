@@ -17,6 +17,18 @@ import { DEFAULT_GROUP_MENU, normalizeMenu, normalizeMenuPlacement } from "./tea
 export function normalizeMessageLayout(value) {
   return value === "left" ? "left" : "split";
 }
+
+/**
+ * 成员回复的展示模式（11-08 用户令，群设置里可切）：
+ * · `process`（默认）= **过程模式**：运行时展示运行过程（默认折叠、可展开，内容与主对话框同一套
+ *   工具/思考/命令卡），跑完过程整块消失，只留最后那份汇报；
+ * · `placeholder` = **占位模式**：不展示过程，用户消息下面只挂「图标 + 名字」的处理中占位，
+ *   产出出来再把消息上屏。
+ * ⛔ 只是"过程显不显示"，两种模式下**产出都照常上屏**（⛔ 不要做成"要不要回复"）。
+ */
+export function normalizeReplyMode(value) {
+  return value === "placeholder" ? "placeholder" : "process";
+}
 import { normalizeSchedules } from "./team-schedule.mjs";
 /* 11-07 用户令：群消息也要带真实发送者身份（用户 / 上级 / 定时任务 / 伙伴 / 系统）。
    ⛔ 枚举只认 message-origin.mjs 这一份，⛔ 不在群模型里另抄一套。 */
@@ -216,6 +228,8 @@ export function createGroup(input) {
     menuPlacement: normalizeMenuPlacement(input?.menuPlacement),
     /* 消息排版（11-07 用户令）：`split` 智能体靠左 / 用户靠右；`left` 全部靠左（专业群聊） */
     messageLayout: normalizeMessageLayout(input?.messageLayout),
+    /* 回复模式（11-08 用户令）：`process` 运行时展示过程（默认折叠）；`placeholder` 只显示占位 */
+    replyMode: normalizeReplyMode(input?.replyMode),
     /* 群定时任务（豆包 §③ 自动化定时）：到点 @ 指定伙伴，走同一条派活链路 */
     schedules: normalizeSchedules(input?.schedules),
   };
@@ -330,6 +344,11 @@ export function setPartnerMuted(group, partnerId, muted) {
 /** 群消息排版（`split` / `left`）：只改一个枚举值。 */
 export function setMessageLayout(group, layout) {
   return createGroup({ ...group, messageLayout: normalizeMessageLayout(layout) });
+}
+
+/** 群回复模式（`process` / `placeholder`）：同样只改一个枚举值。 */
+export function setReplyMode(group, mode) {
+  return createGroup({ ...group, replyMode: normalizeReplyMode(mode) });
 }
 
 export function setMemberAvatar(group, memberId, avatar) {

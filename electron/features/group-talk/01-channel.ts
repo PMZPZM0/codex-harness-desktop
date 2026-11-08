@@ -65,6 +65,11 @@ export function lookupGroupThread(threadId: string): { groupId: string; memberId
   for (const [key, entry] of Object.entries(readLedger())) {
     if (entry?.threadId !== tid) continue;
     const [groupId, memberId] = key.split("::");
+    /* ⛔⛔ 11-08 真机「成员之间艾特不回复」的**真根因**：台账里有一条 `群id::`（成员 id 为空）的脏记录
+       ⇒ 反查拿到的 memberId 是空串 ⇒ `group_say` 写群消息时 authorId 为空
+       ⇒ 群里出现**没有署名的消息**（用户看到的就是"回了我没看见/没回"）。
+       ⇒ 没有 memberId 的台账条目**不当作身份**（宁可让工具报"找不到这个人"）。 */
+    if (!String(memberId ?? "").trim()) continue;
     return { groupId, memberId, name: entry.name };
   }
   return null;
@@ -90,13 +95,45 @@ export async function ensureTalkThread(
   member: TalkMember,
   options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void } = {},
 ): Promise<{ threadId: string; created: boolean }> {
+  /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
+  if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
   const key = talkKey(groupId, member.id);
   const all = readLedger();
   const hit = all[key];
   if (hit?.threadId) {
+    /* 自愈：同一个 threadId 若还挂在 `群id::`（成员 id 为空）这种脏键上，搬到正确的键上
+       （旧版本留下的，不搬的话它永远反查成空身份）。 */
+    let healed = false;
+    for (const [k, v] of Object.entries(all)) {
+      if (k === key) continue;
+      if (String(k.split("::")[1] ?? "").trim()) continue;   // 只清"成员 id 为空"的脏键
+      /* 脏键可能挂在**另一个** threadId 上（同一个人被错开了第二条会话）——
+         同名一起清掉：否则那位成员还会继续用没身份的那条会话说话。 */
+      if (v?.threadId === hit.threadId || String(v?.name ?? "") === String(member.name ?? "")) {
+        delete all[k];
+        healed = true;
+      }
+    }
+    if (healed) { all[key] = { threadId: hit.threadId, name: member.name, at: hit.at ?? Date.now() }; writeLedger(all); }
+
     /* 台账说有，但引擎可能已经不认（会话被删）⇒ resume 失败就重建成新会话。 */
     const resumed: any = await server.request("thread/resume", { threadId: hit.threadId, excludeTurns: false }).catch(() => null);
     if (resumed?.thread?.id) return { threadId: hit.threadId, created: false };
+  }
+  /* 没有正键但有**同名脏键**（成员 id 为空、旧版本留下的）：认领它，别给同一个人再开一个会话。
+     ⛔ 认领后必须搬到正键，否则下次反查还是空身份（就是"群里一条没有署名的消息"那个 bug）。 */
+  const orphan = Object.entries(all).find(
+    ([k, v]) => !String(k.split("::")[1] ?? "").trim()
+      && String(v?.name ?? "") === String(member.name ?? "")
+      && String(v?.threadId ?? ""),
+  );
+  if (orphan) {
+    const [orphanKey, orphanEntry] = orphan;
+    delete all[orphanKey];
+    all[key] = { threadId: String(orphanEntry.threadId), name: member.name, at: orphanEntry.at ?? Date.now() };
+    writeLedger(all);
+    const resumed: any = await server.request("thread/resume", { threadId: String(orphanEntry.threadId), excludeTurns: false }).catch(() => null);
+    if (resumed?.thread?.id) return { threadId: String(orphanEntry.threadId), created: false };
   }
   /* ⛔ 守卫【171】：所有 thread/start 调用点都要接 ensureProjectAgentsMd（项目约定文件随会话落地）。 */
   ensureProjectAgentsMd(String(options.cwd ?? "").trim() || process.cwd());

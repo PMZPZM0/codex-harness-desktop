@@ -101,6 +101,11 @@ type Props = {
   onStopAll?: (threadIds: string[]) => Promise<{ ok: boolean; error?: string; stopped?: number }>;
   /** 某个成员的候选会话 id（新→旧）：运行中发消息要靠它找到"往哪个会话排队"。 */
   threadsOfMember?: (memberId: string) => string[];
+  /** 回复模式（11-08 用户令，群设置里可切）：
+   *  · `process`（默认）= 运行时展示运行过程（默认折叠可展开），跑完过程消失只留汇报；
+   *  · `placeholder` = 不展示过程，只挂「图标+名字」占位，产出后消息上屏。 */
+  replyMode?: "process" | "placeholder";
+  onSetReplyMode?: (next: "process" | "placeholder") => void;
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
   onOpenModelSettings?: () => void;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
@@ -134,7 +139,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, onStopAll, threadsOfMember, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout,
+  onStopPartner, onStopAll, threadsOfMember, live, replyMode = "process", onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -871,6 +876,8 @@ export function TeamGroupView({
           onSaveMenuPlacement={onSaveMenuPlacement}
           messageLayout={messageLayout}
           onMessageLayout={(next) => onSetMessageLayout?.(next)}
+          replyMode={replyMode}
+          onReplyMode={(next) => onSetReplyMode?.(next)}
           onSaveSchedules={onSaveSchedules}
           onRunSchedule={onRunSchedule}
         />
@@ -1014,16 +1021,9 @@ export function TeamGroupView({
                         )}
                         {/* 11-07 用户：「运行折叠板块放上面，下面就可以展示文件卡片那些了，跟主对话框一样」——
                             过程折叠在正文**上方**；正文下面是产物卡 / 图片 / 表格（Markdown 灯箱同主对话）。 */}
-                        {isBot && row.kind !== "card" && (
-                          <TeamProcess
-                            key={row.key}
-                            threadId={row.threadId}
-                            at={row.at}
-                            bodyText={row.text}
-                            running={running}
-                            onAskAgain={() => askAgain(row)}
-                          />
-                        )}
+                        {/* ⛔⛔ 11-08 用户令：「运行结束后，运行过程隐藏掉，不显示，只有最后汇报」——
+                            过程块**只在运行中**出现（挂在下面的流式卡里）。成品消息一律不再挂
+                            TeamProcess：跑完还留着那一行「用插件…」正是用户要删掉的东西。 */}
                         {row.kind === "card" ? (
                           <pre className="team-msg__card">{JSON.stringify(row.card, null, 2)}</pre>
                         ) : (
@@ -1042,6 +1042,32 @@ export function TeamGroupView({
                               onPick={mentionPartner}
                               excludeId={row.authorId}
                             />
+                            {/* ⛔⛔ 11-08 用户令（截图 2）：「我消息气泡里面以透出来这种效果」——
+                                用户消息里 @ 了谁，要在气泡里**透出来**（头像 + 名字的小 chip）。
+                                ⛔ 只补正文里没写到的那些：主进程派活时会把 `@名字` 补进正文，
+                                  已写在正文里的再由 `TeamMentionText` 就地渲染 —— 两处都画就是重复
+                                  （11-07 用户明确否过「同一条消息出现两个 @承枢」）。 */}
+                            {!isBot && (row.mentions?.length ?? 0) > 0 && (() => {
+                              const body = stripVoiceScript(row.text);
+                              const rest = row.mentions.filter((id) => !body.includes(`@${nameOf(id)}`));
+                              if (!rest.length) return null;
+                              return (
+                                <div className="team-msg__mentioned" aria-label="这条消息 @ 了">
+                                  {rest.map((id) => (
+                                    <button
+                                      key={id}
+                                      type="button"
+                                      className="team-at team-msg__mentioned-chip"
+                                      title={`@${nameOf(id)} · 点一下加进本轮 @`}
+                                      onClick={() => mentionPartner(id)}
+                                    >
+                                      <MemberAvatar member={faceOfId(id)} size={14} className="team-at__avatar" />
+                                      <span className="team-at__name">{nameOf(id)}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             {(row.continued ?? []).map((extra) => (
                               <TeamMentionText
                                 key={extra.key}
@@ -1120,10 +1146,34 @@ export function TeamGroupView({
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
                     <div className="team-msg__body">
-                    {String(run.text ?? "").trim()
-                      ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
-                      : <p className="team-msg__thinking">正在思考…</p>}
-                    {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
+                    {/* ⛔⛔ 11-08 用户令（两种回复模式）：
+                        · `process`（默认）= 运行中展示**运行过程**（与主对话同一套折叠块，
+                          默认折叠、点开可看每一步），跑完这张卡连同过程一起消失，只留成品汇报；
+                        · `placeholder` = 不展示过程与流式正文，只挂「图标 + 名字 + 处理中」占位，
+                          产出后消息上屏（用户原话：「用户消息下面这种图标+名字，等消息出来后，再上屏」）。 */}
+                    {replyMode === "process" && run.status === "running" && String(run.threadId ?? "") && (
+                      <TeamProcess
+                        threadId={run.threadId}
+                        at={run.startedAt}
+                        bodyText=""
+                        running
+                        live
+                      />
+                    )}
+                    {replyMode === "placeholder" ? (
+                      <p className="team-msg__placeholder">
+                        <MemberAvatar member={faceOfId(run.memberId)} size={16} className="team-msg__placeholder-avatar has-agent" />
+                        <span className="team-msg__placeholder-name">{run.name}</span>
+                        <em>{run.status === "running" ? "处理中…" : run.status === "failed" ? "已中断" : "完成"}</em>
+                      </p>
+                    ) : (
+                      <>
+                        {String(run.text ?? "").trim()
+                          ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
+                          : <p className="team-msg__thinking">正在思考…</p>}
+                        {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
+                      </>
+                    )}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
                   </div>
                   </div>

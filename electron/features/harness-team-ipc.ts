@@ -36,7 +36,7 @@ import {
   setPartnerMuted,
   setMemberAvatar,
   setMessageLayout,
-  withMentionPrefix,
+  setReplyMode,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -350,9 +350,12 @@ async function prepareGroupDispatch(
     authorKind: "human",
     /* ⛔⛔ 11-07 用户令：定时任务不是「用户发的」⇒ 结构化发送者，群视图据此出徽标。 */
     senderKind: source === "automation" ? "automation" : "user",
-    /* ⛔⛔ 11-07 真机「艾特@看不见」：@ 是结构化 memberIds，正文里没有 @名字 ⇒
-       消息里一个提及都渲染不出来。把目标名字补进正文开头（同源、只一份）。 */
-    text: withMentionPrefix(text, targets.map((m) => m.name)),
+    /* ⛔⛔ 11-08 用户令：「前面怎么还自动多一个 @」+「我消息气泡里面以透出来这种效果」——
+       正文**不再注入 `@名字`**：群日志里就是用户自己敲的那句话（⛔ 不替他改字），
+       "这条 @ 了谁"改由气泡里的**提及 chip**（头像 + 名字）表达，与飞书一致。
+       ⛔ 别再补回来：补一次就多一个 @，而且用户完全看不出那是系统加的。
+       （结构化目标仍在 `mentions` 里 —— 派活、渲染 chip、运行态都靠它。） */
+    text,
     mentions: targets.map((m) => m.id),
   });
   if (!saved.ok) return { error: saved.error || "群消息没存上" };
@@ -489,7 +492,17 @@ async function runDispatchRounds(
              ⇒ 主理人（team）@ 的**团成员**交给它自己的工具去编排；宿主只接力"非团成员"目标
                （别的专家 / 子智能体 / 另一个团）。团成员之间的互 @ 仍由成员那条回合触发（下面照走）。
              ⛔ 不要把这一条删掉换成"靠主理人自觉"：重复一次就是双倍 token + 群里两条一样的消息。 */
-          if (partner.targetKind === "team" && String(next.targetKind) === "member") continue;
+          /* ⛔⛔ 11-08 真机「成员之间艾特不回复」的**第二个根因**：这里原本直接跳过
+             「团队 @ 团成员」，理由是"主理人回合内已用 team_member_invoke 派过一遍"。
+             但群聊这条链走的是 `runTalkTurn` —— 那个会话的工具面里**没有** team_member_invoke
+             （只有 group_say / group_read 那套）⇒ 主理人在群里 `@构梁：…` 永远没人接。
+             ⇒ 改成**按事实判重**：这一轮里如果那位成员已经自己发过话（60s 内），才跳过；
+               否则照常把他的这半句投递过去（这才是"成员之间互相沟通"）。 */
+          const spokeRecently = (readStore().messages?.[group.id] ?? []).some(
+            (row) => String((row as { authorId?: unknown })?.authorId ?? "") === next.id
+              && Number((row as { at?: unknown })?.at ?? 0) > startedAt - 60_000,
+          );
+          if (spokeRecently) continue;
           chainBudget -= 1;
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
@@ -775,6 +788,15 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, String(groupId ?? ""));
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setMessageLayout(g, layout) as GroupShape);
+    });
+
+    /* 群回复模式（11-08 用户令：群设置里加选项）—— 落群 JSON，与消息排版同一条写法。
+       `process` = 运行时展示过程（默认折叠，可展开）；`placeholder` = 只显示「图标+名字」占位。 */
+    ipcHost.handle("harness-team:set-reply-mode", (_event, groupId: string, mode: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      return saveOne(store, setReplyMode(g, mode) as GroupShape);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {
