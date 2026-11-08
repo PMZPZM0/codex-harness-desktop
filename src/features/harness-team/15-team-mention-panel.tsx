@@ -43,18 +43,28 @@ export function TeamMentionPanel({
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
-  /* ⛔ 11-08 用户：「这弹窗，也没有鼠标点外部关掉」——原来只能再点一次 @ 键或用 ESC。
-     ⇒ 点面板外面就收（输入区那一块算同一个上下文，点文本域 / 工具行不关，
-       否则「点输入框继续打字」会把面板关了）。 */
+  /* ⛔ 11-08 用户令：「鼠标点外面要能关掉这个弹窗，还有 Esc」——
+     面板是 portal 到 body 的浮层，点面板外任意位置都收（@ 按钮本身除外：它自己 toggle，
+     否则 pointerdown 先关、click 又开，闪一下）；输入框里打 `@` 时继续打字不算点击，不受影响。 */
   useEffect(() => {
     const onDown = (event: PointerEvent) => {
-      const target = event.target as HTMLElement | null;
+      const target = event.target as Node | null;
       if (!target || rootRef.current?.contains(target)) return;
-      if (target.closest(".team-group__composer")) return;
+      if (anchorRef.current?.contains(target)) return;
       onClose();
     };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
+    document.addEventListener("pointerdown", onDown, true);
+    return () => document.removeEventListener("pointerdown", onDown, true);
+  }, [onClose, anchorRef]);
+  /* Esc 只关这一层：⛔ 不能只挂在搜索框上 —— 打字触发的面板焦点在文本域，搜不到那个 keydown。 */
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      onClose();
+    };
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
   const filtered = useMemo(

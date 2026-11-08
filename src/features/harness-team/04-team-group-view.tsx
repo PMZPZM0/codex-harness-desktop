@@ -1125,7 +1125,7 @@ export function TeamGroupView({
                 targetNames={atTargets.map(nameOf)}
                 fileCandidates={fileCandidates}
                 onOpenModelSettings={onOpenModelSettings}
-                onOpenMention={openMentionPanel}
+                onOpenMention={() => (mention.open ? closeMention() : openMentionPanel())}
                 mentionAnchorRef={mentionAnchorRef}
                 mentionCount={atTargets.length}
                 /* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。

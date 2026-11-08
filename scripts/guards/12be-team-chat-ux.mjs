@@ -446,9 +446,9 @@ const catalog = [
     "@ 按钮带已选人数徽标");
   ok(/\{toolsSlot\}/.test(composer), "群菜单按钮渲染在工具行（FLOAT 形态由父层不传）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
-  ok(/onOpenMention=\{openMentionPanel\}/.test(view) && /mentionCount=\{atTargets\.length\}/.test(view)
+  ok(/onOpenMention=\{\(\) => \(mention\.open \? closeMention\(\) : openMentionPanel\(\)\)\}/.test(view) && /mentionCount=\{atTargets\.length\}/.test(view)
     && /toolsSlot=\{!floatMenu \?/.test(view),
-    "群视图把三个 prop 真的传下去了（⛔ 组件加了 prop 不传 = 按钮不存在）");
+    "群视图把 prop 真的传下去了（@ 入口带开关、人数徽标、工具行；⛔ 组件加了 prop 不传 = 按钮不存在）");
 }
 
 /* ── ⑧ 专家团成员产出直投群流（用户：「总是主代理说话，代替其他成员回复」） ── */
@@ -596,6 +596,19 @@ const catalog = [
     && /team-mention--pop/.test(mentionPanelSrc)
     && /\.team-mention--pop \{[^}]*position: fixed/.test(read("src/styles/61-team-mode.css")),
     "@ 面板贴着 @ 图标弹（自适应翻上/翻下 + 视口钳制，11-08 用户令）");
+  /* ⛔⛔ 11-08 用户令（截图）：「我鼠标点外面要能关掉这个弹窗，还有 Esc，另外一个技能的和 + 号弹窗也是一样的」。 */
+  ok(/document\.addEventListener\("pointerdown", onDown, true\)/.test(mentionPanelSrc)
+    && /anchorRef\.current\?\.contains\(target\)/.test(mentionPanelSrc)
+    && /document\.addEventListener\("keydown", onKey, true\)/.test(mentionPanelSrc),
+    "@ 面板：点外部（含输入区）/ Esc 都能关（⛔ 不再只挂搜索框 keydown）");
+  ok(/window\.addEventListener\("mousedown", onDown\)/.test(composer)
+    && /plusBtnRef\.current\?\.contains\(target\)/.test(composer)
+    && /filesPopRef\.current\?\.contains\(target\)/.test(composer),
+    "加号菜单 / 文件浮层：点外部即关（触发按钮本身除外，交给它自己 toggle）");
+  ok(/if \(!plusOpen && plusView === "main"\) return;[\s\S]{0,420}?document\.addEventListener\("keydown", onKey, true\)/.test(composer),
+    "加号菜单 / 技能 / 文件弹层：Esc 只关这一层");
+  ok(/onOpenMention=\{\(\) => \(mention\.open \? closeMention\(\) : openMentionPanel\(\)\)\}/.test(codeOnly(read("src/features/harness-team/04-team-group-view.tsx"))),
+    "@ 按钮再点一次即收（锚点豁免 + 自身 toggle，不闪）");
   const appView = codeOnly(read("src/features/app-view/AppView.tsx"));
   ok(/<TeamChatOverlay[\s\S]{0,160}?app=\{app\}/.test(appView),
     "宿主把 app 传给群聊浮层（ComposerRail 需要）");
