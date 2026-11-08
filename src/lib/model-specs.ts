@@ -11,13 +11,17 @@
  *    漏标 → 视觉模型发图被引擎当不支持；虚标 → 纯文本模型被允许发图、请求被供应商拒。
  *
  * 数据来源（2026-11-08 增量更新，逐条按官方文档 / 官方模型页；第三方只用于交叉印证）：
+ *  · ⛔ 11-08 下架清理：GPT-4 / 4o / 4.1、o3 / o4-mini、GPT-5 / 5-mini（官方退役名单）、
+ *    Claude 4.5 及更早、Kimi K2 与 moonshot-v1、GLM-4.x、豆包 1.x、MiniMax M2.7 / abab
+ *    已从本表删除（旧配置创建时已把参数落库，不依赖本表；补全也不再推荐死 id）。
  *  · GPT-6 Astra / GPT-5.6 Sol·Terra·Luna：OpenAI 模型页（1.05M 上下文 / 128K 输出 / 文本+图像输入）
  *  · GPT-6.1 Sol（09-29）/ Terra（10-26）：OpenAI API 模型页（1.05M / 128K / 视觉；档位 low~max，Terra 另含 none）
  *  · Claude Fable 5 / Opus 4.8：Anthropic 文档（1M / 128K / 文本+图像）
  *  · Claude Opus 5.5（09-22）：Anthropic 官方（1M / 128K / 文本·图像·PDF）
  *  · Gemini 3.1 Pro / 3.5 Flash / 3.1 Flash-Lite：Google Cloud 模型指南（1,048,576 / 65,536 / 文本·图·音·视频）
  *  · Gemini 4 Argon（10-13）：Google 模型页（1,048,576 / 输出上限 100 万 / 思考 low·medium·high）
- *  · DeepSeek V4 Pro 0813 / Flash 0731：官方（1M / 384K；**纯文本，无视觉**）
+ *  · DeepSeek V4.1 Flash-1017（10-17 更新）/ V4-Pro-0813：官方（1M / 384K；Flash 原生视觉，Pro 纯文本；
+ *    deepseek-chat / reasoner 老名 2026-07-24 已下线）
  *  · Kimi K3 / K3-256K：官方（1M / 256K；**K3 首次支持原生视觉**）
  *  · Kimi K3.1 Pro（10-24）：Kimi API 文档（1M / 输出上限 1M / low·high·max / 图片·视频）
  *  · GLM-5.3 / 5.3-Flash：Z.ai（约 1M / 128K；**5.3 纯文本，只有 5.3-Flash 是原生多模态**）
@@ -73,32 +77,17 @@ const RULES: SpecRule[] = [
   { match: /gpt-5[.-](4|5)/, vendor: "OpenAI", family: "GPT-5.4 / 5.5",
     ids: ["gpt-5.5", "gpt-5.5-instant", "gpt-5.4", "gpt-5.4-mini"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 128_000, efforts: ["minimal", "low", "medium", "high", "xhigh"], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /(^|[^a-z0-9])o[34](-|$|mini|pro)/, vendor: "OpenAI", family: "o 系推理",
-    ids: ["o3", "o3-pro", "o4-mini"],
-    spec: { contextWindow: 200_000, maxOutputTokens: 100_000, efforts: ["low", "medium", "high"], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /gpt-5/, vendor: "OpenAI", family: "GPT-5（早期版本）",
-    ids: ["gpt-5", "gpt-5-mini", "gpt-5.1"],
-    spec: { contextWindow: 400_000, maxOutputTokens: 128_000, efforts: ["minimal", "low", "medium", "high"], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /gpt-4\.1/, vendor: "OpenAI", family: "GPT-4.1",
-    ids: ["gpt-4.1", "gpt-4.1-mini"],
-    spec: { contextWindow: 1_000_000, maxOutputTokens: 32_768, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /gpt-4o/, vendor: "OpenAI", family: "GPT-4o",
-    ids: ["gpt-4o", "gpt-4o-mini"],
-    spec: { contextWindow: 128_000, maxOutputTokens: 16_384, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /gpt-4/, vendor: "OpenAI", family: "GPT-4",
-    ids: ["gpt-4-turbo", "gpt-4"],
-    spec: { contextWindow: 128_000, maxOutputTokens: 8_192, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
+  /* ⛔⛔ 11-08 下架清理（用户：「该删的删了，旧的模型参数」）：
+     GPT-4 / 4o / 4.1 与 o 系已在官方退役名单（ChatGPT 侧 2026-02-13 停用；
+     API 侧 GPT-4 系 2027-01-14 关停、o3 2026-12-11 关停），GPT-5 / 5-mini 同批关停。
+     这些规则已删除 —— 旧配置创建时就把参数落库了，不依赖本表；补全也不再推荐死 id。 */
 
   // ── Anthropic（1M / 128K；Fable 5 与 Opus 4.8 起视觉）────────────────────
-  // ⛔ 只把**有据可查是新世代 1M** 的型号划进这条（fable / mythos / opus 4.8 / opus 5）：
-  //   早期 claude 仍是 200K/64K，划错会把 200K 的模型填成 1M，长任务请求直接被拒。
+  // ⛔ 11-08：claude-sonnet-4-5（官方 2026-11-30 停用）及 Claude 4 更早家族已移除。
   { match: /claude-(fable|mythos)|claude-opus-4[-._]?8|claude-opus-5|claude-sonnet-5/,
-    vendor: "Anthropic", family: "Claude 新旗舰（Fable 5 / Opus 4.8 / Opus 5 / Opus 5.5）",
-    ids: ["claude-opus-5-5", "claude-fable-5", "claude-opus-4-8", "claude-mythos-5", "claude-opus-5"],
+    vendor: "Anthropic", family: "Claude 新旗舰（Fable 5 / Opus 4.8 / Opus 5 / Opus 5.5 / Sonnet 5.5）",
+    ids: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5", "claude-opus-4-8", "claude-mythos-5", "claude-opus-5"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 128_000, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /claude/, vendor: "Anthropic", family: "Claude（早期版本）",
-    ids: ["claude-sonnet-4-5", "claude-opus-4-1", "claude-3-7-sonnet-latest", "claude-3-5-haiku-latest"],
-    spec: { contextWindow: 200_000, maxOutputTokens: 64_000, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
 
   // ── Google（官方：1,048,576 / 65,536；文本·图像·音频·视频；四档思考）─────
   /* 11-08 补充：Gemini 4 Argon（10-13，Gemini 4 系列首款）——
@@ -112,17 +101,17 @@ const RULES: SpecRule[] = [
     spec: { contextWindow: 1_048_576, maxOutputTokens: 65_536, efforts: ["minimal", "low", "medium", "high"], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
 
   // ── DeepSeek（1M / 384K）──────────────────────────────────────────────
-  // V4.1 Flash（09-10 发布）：**原生多模态**（文本+图像，官方特性表 Vision 支持）、
-  // 思考默认开启且强度可选 low/high/max（默认 high）、上下文 1M（1,048,576）/ 输出最大 384K。
-  // 官方 API 主 id = deepseek-flash；deepseek-v4.1-flash 为通用叫法；
-  // 旧名 deepseek-v4-flash(-vision-exp) 官方声明路由到 V4.1 Flash（按 V4.1 计价与规格）——
-  // 因此这几个 id 必须落在本条而不是下面的旧一代规则（规则按顺序匹配，本条在前）。
-  { match: /deepseek-(v4\.1|flash|v4-flash)/, vendor: "DeepSeek", family: "DeepSeek V4.1 Flash（多模态）",
-    ids: ["deepseek-flash", "deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-flash"],
+  // V4.1 Flash（09-10 发布；**10-17 更新为 V4.1-Flash-1017**，官方 API 名仍是 `deepseek-flash`）：
+  // 原生多模态（文本+图像）、思考默认开启且强度可选 low/high/max（默认 high）、上下文 1M / 输出最大 384K。
+  // ⛔ 官方 2026-09-10 起停用 deepseek-v4-flash-0731 / vision-exp，暂路由到 V4.1（按 V4.1 计价与规格）；
+  //   2026-07-24 起 deepseek-chat / deepseek-reasoner 两个老名已下线 —— 下面 ids 只留现行官方名，
+  //   旧名仍能被 match 命中（老配置在升级前就已落库，不影响）。
+  { match: /deepseek-(v4\.1|flash|v4-flash|chat|reasoner)/, vendor: "DeepSeek", family: "DeepSeek V4.1 Flash（1017，多模态）",
+    ids: ["deepseek-flash", "deepseek-v4.1-flash"],
     spec: { contextWindow: 1_048_576, maxOutputTokens: 393_216, efforts: ["low", "high", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
-  // 旧一代（V4-Pro 官方仍在售、独立计费，且官方明确**无视觉**；chat/reasoner 为更早命名）：
-  { match: /deepseek/, vendor: "DeepSeek", family: "DeepSeek V4（早期，纯文本）",
-    ids: ["deepseek-v4-pro", "deepseek-chat", "deepseek-reasoner"],
+  // V4-Pro-0813：官方仍在售、独立计费，且官方明确**无视觉**。
+  { match: /deepseek/, vendor: "DeepSeek", family: "DeepSeek V4 Pro（纯文本）",
+    ids: ["deepseek-v4-pro"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 393_216, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
 
   // ── 月之暗面 Kimi（K3 = 1M 且**首次原生视觉**；K3-256k 省额度）──────────
@@ -137,26 +126,19 @@ const RULES: SpecRule[] = [
   { match: /kimi-k3|(^|[^a-z0-9])k3(-|$)/, vendor: "月之暗面", family: "Kimi K3",
     ids: ["kimi-k3", "kimi-k3-max"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 131_072, efforts: ["low", "high", "max"], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /kimi-k2-0905|k2-turbo|kimi-k2\.5/, vendor: "月之暗面", family: "Kimi K2",
-    ids: ["kimi-k2-0905-preview", "kimi-k2-turbo-preview"],
-    spec: { contextWindow: 262_144, maxOutputTokens: 32_768, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
-  { match: /kimi|moonshot/, vendor: "月之暗面", family: "Kimi（早期版本）",
-    ids: ["kimi-latest", "moonshot-v1-128k"],
-    spec: { contextWindow: 131_072, maxOutputTokens: 16_384, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
+  /* ⛔ 11-08：Kimi K2 与更早的 moonshot-v1 系列已下架（K3 起接替）⇒ 旧规则删除。 */
 
   // ── 智谱 GLM（5.3 纯文本；**只有 5.3-Flash 是原生多模态**）──────────────
   { match: /glm-5\.3[-_.]?flash/, vendor: "智谱 AI", family: "GLM-5.3-Flash（多模态）",
     ids: ["glm-5.3-flash"],
     spec: { contextWindow: 1_048_576, maxOutputTokens: 131_072, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
   { match: /glm-5v|glm-4v|glm-5\.\dv/, vendor: "智谱 AI", family: "GLM 视觉版",
-    ids: ["glm-5v-turbo", "glm-4v-plus", "glm-4v-flash"],
+    ids: ["glm-5v-turbo"],
     spec: { contextWindow: 131_072, maxOutputTokens: 32_768, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
   { match: /glm-5\.[23]|glm-5\b/, vendor: "智谱 AI", family: "GLM-5.3 / 5.2",
     ids: ["glm-5.3", "glm-5.2", "glm-5-turbo"],
     spec: { contextWindow: 1_000_000, maxOutputTokens: 131_072, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
-  { match: /glm/, vendor: "智谱 AI", family: "GLM（早期版本）",
-    ids: ["glm-4.7", "glm-4.6", "glm-4-plus"],
-    spec: { contextWindow: 204_800, maxOutputTokens: 131_072, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
+  /* ⛔ 11-08：GLM-4.x（4.7 / 4.6 / 4-Plus）已下架，旧规则删除。 */
 
   // ── 通义千问（Qwen3.8-Max 图+视频；长文 qwen-long 10M）──────────────────
   { match: /qwen3?[.\-]?(vl|omni)/, vendor: "阿里", family: "Qwen 视觉 / 全模态",
@@ -181,13 +163,11 @@ const RULES: SpecRule[] = [
   { match: /doubao-seed|doubao[-_.]?2|seed-2/, vendor: "字节跳动", family: "豆包 Seed 2.0（视觉）",
     ids: ["doubao-seed-2.0-pro", "doubao-seed-2.0", "doubao-seed-code"],
     spec: { contextWindow: 262_144, maxOutputTokens: 32_768, efforts: [], inputTypes: VIS, outputTypes: OUT_TXT } },
-  { match: /doubao/, vendor: "字节跳动", family: "豆包（早期版本）",
-    ids: ["doubao-1.8", "doubao-1.6", "doubao-pro-256k"],
-    spec: { contextWindow: 262_144, maxOutputTokens: 32_768, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
+  /* ⛔ 11-08：豆包 1.x（1.8 / 1.6 / pro-256k）已下架，旧规则删除。 */
 
   // ── 商汤日日新（128K；图文视频输入；思考模式为 on/off 而非离散档位）─────
   { match: /sensenova|日日新|sensechat/, vendor: "商汤", family: "日日新 SenseNova 6.5",
-    ids: ["sensenova-v6.5-pro", "sensenova-v6.5-turbo", "sensenova-v6-pro"],
+    ids: ["sensenova-v6.5-pro", "sensenova-v6.5-turbo"],
     spec: { contextWindow: 131_072, maxOutputTokens: 32_768, efforts: [], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
 
   // ── MiniMax（M3 原生图像+视频；H 系为视频生成线）────────────────────────
@@ -199,9 +179,7 @@ const RULES: SpecRule[] = [
   { match: /minimax-m3|(^|[^a-z0-9])m3(-|$)/, vendor: "MiniMax", family: "MiniMax M3",
     ids: ["minimax-m3"],
     spec: { contextWindow: 1_048_576, maxOutputTokens: 131_072, efforts: [], inputTypes: VISVIDEO, outputTypes: OUT_TXT } },
-  { match: /minimax|abab/, vendor: "MiniMax", family: "MiniMax（早期版本）",
-    ids: ["minimax-m2.7", "abab6.5s-chat"],
-    spec: { contextWindow: 204_800, maxOutputTokens: 131_072, efforts: [], inputTypes: TXT, outputTypes: OUT_TXT } },
+  /* ⛔ 11-08：M2.7 / abab 已下架（M3 起接替）—— 规则整条删除，不再兜底匹配。 */
 
   // ── 小米 MiMo / Meta Muse（1M；全模态）─────────────────────────────────
   { match: /mimo/, vendor: "小米", family: "MiMo-V2.5（全模态）",
