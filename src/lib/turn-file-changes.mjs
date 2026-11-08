@@ -5,6 +5,10 @@
 // ⛔ turnId 是**回合 id**（渲染层按 `turn.id` / DOM `#turn-<uuid>` 取报告），不是线程 id。
 // ⛔ 收件通道 = `window.codex.onHarnessEvent`；不走 `window.addEventListener("message")`
 //   （全仓没有任何地方向 window 派发带 channel 的 MessageEvent，10-06 实证是死信道）。
+/* ⛔⛔ 11-08 用户实测（「一发消息就界面报渲染错误」）：这三个 getter 被 useSyncExternalStore 当快照用，
+   空的时候每次 new [] ⇒ React 判定快照不稳定 ⇒ 无限重渲染（Maximum update depth / getSnapshot should be cached）。
+   ⇒ 空列表返回**同一个**冻结常量。 */
+const EMPTY_FILES = Object.freeze([]);
 const reports = new Map();
 const liveReports = new Map();
 /* ⛔ 11-08：群聊流式卡按**线程**取实时编辑明细（群视图不知道回合 id）——
@@ -39,17 +43,17 @@ if (typeof window !== "undefined" && typeof window.codex?.onHarnessEvent === "fu
 
 /** 某回合的宿主追踪文件变更**最终报告**（没有 = 空数组） */
 export function getTurnFileChanges(turnId) {
-  return reports.get(String(turnId ?? "")) ?? [];
+  return reports.get(String(turnId ?? "")) ?? EMPTY_FILES;
 }
 
 /** 某回合**运行中**的实时累计改动（没有 = 空数组；回合收尾会被最终报告清场） */
 export function getTurnLiveFileChanges(turnId) {
-  return liveReports.get(String(turnId ?? "")) ?? [];
+  return liveReports.get(String(turnId ?? "")) ?? EMPTY_FILES;
 }
 
 /** 某线程**运行中**的实时累计改动（群聊流式卡用；收尾报告到达即清场） */
 export function getThreadLiveFileChanges(threadId) {
-  return liveByThread.get(String(threadId ?? "")) ?? [];
+  return liveByThread.get(String(threadId ?? "")) ?? EMPTY_FILES;
 }
 
 /** 两类事件任一到达都会通知（订阅方自己决定读哪个 getter） */

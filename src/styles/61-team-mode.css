@@ -3122,3 +3122,15 @@
   font-size: 10.5px;
   white-space: nowrap;
 }
+
+/* ⛔⛔ 11-08 用户实测（「codex 消息跟主会话完全不一样」）：bot 消息去掉气泡，走主对话同一套平铺排版
+   （气泡只留给用户消息；正文 Markdown / 过程块 / 页脚与主对话逐项一致）。
+   流式卡同样平铺 ⇒ 收尾时正文无缝变成正式消息，不再"先一个气泡、后换另一个"。 */
+.team-msg.is-bot .team-msg__body,
+.team-msg.is-live .team-msg__body {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
