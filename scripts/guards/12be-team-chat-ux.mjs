@@ -773,6 +773,24 @@ const catalog = [
     && /harness-team:set-reply-mode/.test(read("electron/features/harness-team-ipc.ts"))
     && /harnessTeamSetReplyMode/.test(read("electron/preload.ts")),
     "回复模式落群 JSON（通道 + 归一化齐；⛔ 不存 localStorage）");
+  /* ⛔⛔ 11-08 审查：群输入框的「模型 / 完全访问 / 审批档」原来在 IPC 只接了 effort、其余直接丢弃，
+     而建会话又恒写 workspace-write / never ⇒ 三个控件全是死的（选了也不生效）。
+     同轮审查还发现：派活中「清空聊天记录」，跑完的回复会照写回空群（11-06 修过，派活搬进主进程后回归）。 */
+  {
+    const ipcSrc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    const channelSrc = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+    ok(/params\.model \? \{ model: params\.model \}/.test(ipcSrc)
+      && /params\.sandbox \? \{ sandbox: params\.sandbox \}/.test(ipcSrc)
+      && /params\.approvalPolicy \? \{ approvalPolicy: params\.approvalPolicy \}/.test(ipcSrc)
+      && /sandbox: options\.sandbox \|\| "workspace-write"/.test(channelSrc)
+      && /options\.model \? \{ model: options\.model \}/.test(channelSrc)
+      && /options\.approvalPolicy \? \{ approvalPolicy: options\.approvalPolicy \}/.test(channelSrc),
+      "群输入框的模型 / 沙箱 / 审批档真下发到成员会话（⛔ 不再是只接 effort 的死控件，11-08 审查）");
+    ok(/groupClearedAt\.set\(gid, Date\.now\(\)\)/.test(ipcSrc)
+      && /const clearedMark = groupClearedAt\.get\(group\.id\)/.test(ipcSrc)
+      && /clearedDuringRun \? \{ ok: true \}/.test(ipcSrc),
+      "清空聊天记录后，在飞回合的回复不再写回空群（主进程代际判定，11-08 审查）");
+  }
 }
 
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────

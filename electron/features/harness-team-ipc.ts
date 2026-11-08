@@ -218,6 +218,13 @@ function mutateStore<T>(fn: (store: StoreShape) => { store: StoreShape; out: T }
   return task;
 }
 
+/* ── 清空记录的「代际」（11-08 审查）────────────────────────────────────────
+   派活还在跑时用户点了「清空聊天记录」：跑完那次回复原来会**照写回空群**
+   （用户看到「我只 @ 了一个，怎么另一个也冒出来了」——11-06 修过一次，
+   派活搬进主进程后渲染层的代际守卫成了死代码 ⇒ 回归）。
+   ⇒ 清空时记一个时间戳；群聊回合开跑时记下它，写回前发现变新了就只结算、不落盘。 */
+const groupClearedAt = new Map<string, number>();
+
 let ledgerChain: Promise<unknown> = Promise.resolve();
 function mutateLedger<T>(fn: (rows: NonNullable<LedgerEntryShape>[]) => { rows: NonNullable<LedgerEntryShape>[]; out: T }): Promise<T> {
   const task = ledgerChain.then(() => {
@@ -461,10 +468,16 @@ async function runDispatchRounds(
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
       options.onPhase?.("started", partner, {});
+      /* ⛔ 11-08 审查：模型 / 沙箱 / 审批档原来在这里被丢掉（只传了 effort）⇒ 群输入框三个控件全是死的。
+         群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
+      const clearedMark = groupClearedAt.get(group.id) ?? 0;
       const res = await withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
         cwd: group.workspace || undefined,
         groupName: group.name,
+        ...(params.model ? { model: params.model } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
+        ...(params.sandbox ? { sandbox: params.sandbox } : {}),
+        ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
       }), partner.name);
       if (!res?.ok || !res?.threadId) {
         errMsg = "群聊会话没起来";
@@ -475,7 +488,9 @@ async function runDispatchRounds(
       threadId = res.threadId;
       const output = String(res.text ?? "").trim();
       chars = query.length + output.length;
-      const wrote = await appendMessageTo(group.id, {
+      /* ⛔ 清空发生在这一回合开始之后 ⇒ 只结算、不落盘（运行照跑完、账照记，11-06 口径）。 */
+      const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
+      const wrote = clearedDuringRun ? { ok: true } as { ok: boolean; error?: string } : await appendMessageTo(group.id, {
         authorId: partner.id,
         authorKind: "bot",
         senderKind: "member",
@@ -1099,6 +1114,7 @@ export const harnessTeamFeature = defineFeature<null>({
       if (!findGroup(store.groups, gid)) return { ok: false, error: "群不存在", cleared: 0 };
       const cleared = (store.messages[gid] ?? []).length;
       writeStore({ ...store, messages: { ...store.messages, [gid]: [] } });
+      groupClearedAt.set(gid, Date.now());
       return { ok: true, cleared };
     });
 

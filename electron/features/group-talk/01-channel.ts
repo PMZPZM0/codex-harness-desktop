@@ -93,7 +93,7 @@ export function forgetGroupThreads(groupId: string): number {
 export async function ensureTalkThread(
   groupId: string,
   member: TalkMember,
-  options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void } = {},
+  options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void; sandbox?: string; approvalPolicy?: string } = {},
 ): Promise<{ threadId: string; created: boolean }> {
   /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
   if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
@@ -120,7 +120,7 @@ export async function ensureTalkThread(
     if (healed) { all[key] = { threadId: hit.threadId, name: member.name, at: hit.at ?? Date.now() }; writeLedger(all); }
 
     /* 台账说有，但引擎可能已经不认（会话被删）⇒ resume 失败就重建成新会话。 */
-    const resumed: any = await server.request("thread/resume", { threadId: hit.threadId, excludeTurns: false }).catch(() => null);
+    const resumed: any = await server.request("thread/resume", { threadId: hit.threadId, excludeTurns: false, ...(options.sandbox ? { sandbox: options.sandbox } : {}), ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}) }).catch(() => null);
     if (resumed?.thread?.id) return { threadId: hit.threadId, created: false };
   }
   /* 没有正键但有**同名脏键**（成员 id 为空、旧版本留下的）：认领它，别给同一个人再开一个会话。
@@ -136,15 +136,17 @@ export async function ensureTalkThread(
     delete all[orphanKey];
     all[key] = { threadId: String(orphanEntry.threadId), name: member.name, at: orphanEntry.at ?? Date.now() };
     writeLedger(all);
-    const resumed: any = await server.request("thread/resume", { threadId: String(orphanEntry.threadId), excludeTurns: false }).catch(() => null);
+    const resumed: any = await server.request("thread/resume", { threadId: String(orphanEntry.threadId), excludeTurns: false, ...(options.sandbox ? { sandbox: options.sandbox } : {}), ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}) }).catch(() => null);
     if (resumed?.thread?.id) return { threadId: String(orphanEntry.threadId), created: false };
   }
   /* ⛔ 守卫【171】：所有 thread/start 调用点都要接 ensureProjectAgentsMd（项目约定文件随会话落地）。 */
   ensureProjectAgentsMd(String(options.cwd ?? "").trim() || process.cwd());
   const started: any = await server.request("thread/start", {
     cwd: String(options.cwd ?? "").trim() || process.cwd(),
-    sandbox: "workspace-write",
-    approvalPolicy: "never",
+    /* ⛔ 11-08 审查：群输入框的「完全访问 / 审批档」原来是死控件 —— 这里恒写 workspace-write / never。
+       改成按调用方传入（缺省保持旧值，不影响既有行为）。 */
+    sandbox: options.sandbox || "workspace-write",
+    approvalPolicy: options.approvalPolicy || "never",
     dynamicTools: buildGroupTalkTools(),
   });
   const threadId = String(started?.thread?.id ?? "");
@@ -166,13 +168,16 @@ export async function runTalkTurn(
   groupId: string,
   member: TalkMember,
   inputText: string,
-  options: { cwd?: string; groupName?: string; effort?: string } = {},
+  options: { cwd?: string; groupName?: string; effort?: string; model?: string; sandbox?: string; approvalPolicy?: string } = {},
 ): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
-  const { threadId } = await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName });
+  const { threadId } = await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy });
   const turn: any = await server.request("turn/start", {
     threadId,
     input: [{ type: "text", text: inputText, text_elements: [] }],
+    ...(options.model ? { model: options.model } : {}),
     ...(options.effort ? { effort: options.effort } : {}),
+    /* ⛔ 逐回合下发审批档（与主对话同口径）：resume 的 sandbox/approval 可能没及时生效。 */
+    ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}),
   });
   const turnId = String(turn?.turn?.id ?? "");
   if (!turnId) throw new Error("群聊回合启动失败（没返回 turnId）");
