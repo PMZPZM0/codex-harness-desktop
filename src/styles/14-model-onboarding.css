@@ -747,51 +747,6 @@
   from { opacity: 0; }
   to { opacity: 1; }
 }
-/* WorkBuddy 式项目列表展开/折叠（CollapsibleProjectList） */
-.collapsible-project-list {
-  display: flex;
-  flex-direction: column;
-}
-.project-list-rows {
-  display: flex;
-  flex-direction: column;
-}
-.project-list-rows--collapsed {
-  /* 折叠态直接裁剪为视觉 3 行（.project-row min-height 46px），与 WorkBuddy 的
-     .project-grid__cards--collapsed 同一思路：不靠 JS 算行数，缩放不抖动。 */
-  max-height: calc(46px * 3);
-  overflow: hidden;
-}
-.project-list-sentinel {
-  height: 1px;
-  flex: none;
-}
-.project-expand-toggle {
-  width: 100%;
-  height: 26px;
-  color: var(--muted);
-  cursor: pointer;
-  background: 0 0;
-  border: 0;
-  border-radius: 8px;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  margin-top: 2px;
-  font-size: 12px;
-  display: inline-flex;
-}
-.project-expand-toggle:hover {
-  color: var(--text);
-  background: var(--panel-2);
-}
-.project-expand-chevron {
-  transition: transform 0.18s ease;
-}
-.project-expand-chevron.is-expanded {
-  transform: rotate(180deg);
-}
-
 /* ═══ 用户消息引用卡片（WorkBuddy 式：文件/技能/上下文引用卡片化） ═══ */
 .msg-refs {
   display: flex;
