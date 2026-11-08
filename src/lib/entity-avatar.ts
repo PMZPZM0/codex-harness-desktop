@@ -34,14 +34,17 @@ export type TeamMemberInfo = { id: string; name: string; label: string; isLead: 
 
 const threadMemberResolver = new Map<string, (memberId: string) => TeamMemberInfo | null>();
 
+/** 给某个会话登记「成员 id → 成员信息」的解析器（群聊头像与署名靠它取）。 */
 export function registerThreadTeam(threadId: string, resolve: (memberId: string) => TeamMemberInfo | null) {
   threadMemberResolver.set(threadId, resolve);
 }
 
+/** 注销该会话的解析器（会话关闭/删除时调，⛔ 不注销会一直持有闭包）。 */
 export function unregisterThreadTeam(threadId: string) {
   threadMemberResolver.delete(threadId);
 }
 
+/** 按会话 + 成员 id 取成员信息；解析器缺失或抛错一律按 null 处理（头像回落默认脸）。 */
 export function resolveTeamMember(threadId: string, memberId: string): TeamMemberInfo | null {
   try {
     return threadMemberResolver.get(threadId)?.(memberId) ?? null;

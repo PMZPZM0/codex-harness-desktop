@@ -19,11 +19,13 @@ export type StoredChannelBot = Omit<ChannelBotConfig, "appSecret" | "verificatio
 
 export type StoredMemoryGateway = Omit<MemoryRemoteConfig, "apiKey"> & { encryptedApiKey?: string };
 
+/** 读频道机器人的持久化配置；文件不存在返回 null（首次使用），其它读失败照实抛。 */
 export async function readStoredChannelBot(): Promise<StoredChannelBot | null> {
   try { return JSON.parse(await fs.readFile(channelBotFile, "utf8")); }
   catch (error: any) { if (error.code === "ENOENT") return null; throw error; }
 }
 
+/** 读记忆网关配置（端点 / 会话键 / 用户 / 解密后的 apiKey）。 */
 export async function readMemoryGateway(): Promise<MemoryRemoteConfig | null> {
   try {
     const stored = JSON.parse(await fs.readFile(memoryGatewayFile, "utf8")) as StoredMemoryGateway;

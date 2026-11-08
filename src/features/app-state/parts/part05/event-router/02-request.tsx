@@ -47,6 +47,7 @@ function applyIdentityToUi(bag: Bag, next: { assistantName?: string; userName?: 
   }
 }
 
+/** 事件路由第 2 段：引擎向宿主要求的调用（读当前时间、工具调用等），带去重后回包。 */
 export function handleEventRouter2(bag: Bag, event: any): boolean {
         if (event.method === "currentTime/read") {
           void toolCallRespond.send(event.id, { currentTimeAt: Math.floor(Date.now() / 1000) });

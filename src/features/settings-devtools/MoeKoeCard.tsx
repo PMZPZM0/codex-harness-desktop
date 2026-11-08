@@ -11,6 +11,7 @@ import { copyTextToClipboard } from "../../lib/clipboard";
 /** KuGouMusicApi 文档（MoeKoe 的 6521 本地 API 就是这套）；放在卡片上方便人/Codex 后续查。 */
 const API_DOCS_URL = "https://kugoumusicapi-docs.4everland.app/#/?id=kugoumusic-api";
 
+/** MoeKoe 音乐卡片：安装进度与启动入口。 */
 export function MoeKoeCard({
   runtime,
   installing,

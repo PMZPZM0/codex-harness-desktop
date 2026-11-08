@@ -9,6 +9,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../../components/scroll-utils";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 03a2：钉顶/贴底锚点；解除接管时把锚点留白归零（否则残留一屏空白）。 */
 export function usePart03a2(bag: Bag) {
   /** 解除锚顶/贴底接管时的收尾：把锚顶留白归零，否则会残留一屏空白。 */
   const clearAnchorPad = useCallback(() => {

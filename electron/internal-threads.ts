@@ -25,6 +25,7 @@ const LEGACY_MARKER = "你是这个桌面助手的内省模块";
 let file = "";
 let loading: Promise<void> | null = null;
 
+/** 初始化「内部会话」清单文件路径（幂等；已有就跳过）。 */
 export function initInternalThreads(userData: string): void {
   if (file) return;
   file = path.join(userData, "internal-threads.json");

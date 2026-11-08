@@ -18,6 +18,7 @@ import { provisionCloud } from "../../lib/cloud-provision.mjs";
 import { useRef, useState, useLayoutEffect, useEffect, KeyboardEvent } from "react";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
+/** 表单字段的帮助气泡：点问号弹出，自动选上下方并夹在视口内。 */
 export function FieldHelp({ text }: { text: string }) {
   const anchorRef = useRef<HTMLElement | null>(null);
   const popRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +92,7 @@ export function FieldHelp({ text }: { text: string }) {
   );
 }
 
+/** 登录页：默认只列几种登录方式（小卡），点一张才展开表单。 */
 export function LoginScreen({ onSkip, onLogin }: { onSkip: () => void; onLogin: (info: { provider: string; name: string; baseUrl: string; apiKey: string; model: string; username?: string; saved?: any; models?: string[] }) => Promise<boolean> }) {
   const [mode, setMode] = useState<"custom" | "pptoken" | "relay" | "openai" | "cloud">("pptoken");
   /* 10-31 用户：「默认小选项，点击后放大登录界面」—— 默认只列选项（小卡），

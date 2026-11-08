@@ -8,6 +8,7 @@
 import type { Bag } from "../../bag-types";
 import { normalizeSubagentEffort } from "../../../../../lib/effort";
 
+/** bag 分片 07b1：连接器单卡启停（停用即从 config.toml 摘除，配置与密钥仍保留）。 */
 export function usePart07b1(bag: Bag) {
   // 单卡开关：停用后该 MCP 整段从引擎 config.toml 移除，启用时写回，配置与密钥始终保留
   async function setConnectorEnabled(connector: ConnectorEntry, enabled: boolean) {

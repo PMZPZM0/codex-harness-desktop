@@ -9,6 +9,7 @@ import { X, TerminalSquare, Play } from "lucide-react";
 import { hk } from "../../lib/hk";
 import { useRef, useState, useEffect } from "react";
 
+/** SSH 终端弹窗：连接、自适应尺寸与状态显示（关闭时释放会话）。 */
 export function SshTerminalModal({ server, onClose }: { server: SshServer; onClose: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const sessionRef = useRef<string | null>(null);

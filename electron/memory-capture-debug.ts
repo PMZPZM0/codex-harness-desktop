@@ -12,6 +12,7 @@ import path from "node:path";
 
 const MAX_BYTES = 512 * 1024;
 
+/** 把一条记忆捕获诊断追加到日志（超过上限先清空）。 */
 export function debugMemoryCapture(entry: Record<string, unknown>) {
   try {
     const file = path.join(app.getPath("userData"), "memory-capture-debug.log");

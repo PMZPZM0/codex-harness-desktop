@@ -12,6 +12,7 @@ import { setWidgetDark, isWidgetDark } from "../../../../../lib/widget-dark";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 02c2：更新流程的 UI 状态与下载进度（听主进程的 download-progress 推送）。 */
 export function usePart02c2(bag: Bag) {
   // 下载进度：主进程通过 updates:download-progress 推送
   useEffect(() => {

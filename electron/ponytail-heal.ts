@@ -24,6 +24,7 @@ import { trustUntrustedHooks } from "./hooks-trust";
 
 let healing: Promise<{ ok: boolean; message: string }> | null = null;
 
+/** 自愈 ponytail 插件安装：把随包副本铺进 codexHome；并发调用复用同一次修复（⛔ 不重复装）。 */
 export function healPonytailInstall(options: { restart?: boolean } = {}): Promise<{ ok: boolean; message: string }> {
   if (healing) return healing;
   healing = (async () => {

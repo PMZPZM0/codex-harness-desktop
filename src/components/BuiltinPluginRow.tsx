@@ -11,6 +11,7 @@
  */
 import type { LucideIcon } from "lucide-react";
 
+/** 内置插件的一行：图标 + 标题 + 说明 + 状态灯 + 操作按钮。 */
 export function BuiltinPluginRow({
   icon: Icon,
   title,

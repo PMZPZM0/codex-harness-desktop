@@ -28,6 +28,7 @@ export const FABRIC_WRITE_TOOL = "memory_write";
 /** 旧工具名 → 新名（⛔ 保留一个别名期：老会话里模型记着旧名，调不到会以为坏了）。 */
 export const FABRIC_WRITE_ALIASES = ["memory_save", "role_memory_save"] as const;
 
+/** 判断某个工具名是否「记忆写入」工具（含历史别名）。 */
 export function isFabricWriteTool(name: unknown): boolean {
   const n = String(name ?? "");
   return n === FABRIC_WRITE_TOOL || (FABRIC_WRITE_ALIASES as readonly string[]).includes(n);

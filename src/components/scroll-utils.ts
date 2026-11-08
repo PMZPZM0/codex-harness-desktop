@@ -21,6 +21,7 @@ export function contentOffsetTop(el: HTMLElement, scroller: HTMLElement) {
    留白，不是「内容块底部」—— 长会话上方还有未加载占位区）自动解除。
    ⛔ 只拦"自动跳底"，不拦用户自己点「回到底部」（那个走 scrollToOffsetInstant）。 */
 let userDetached = false;
+/** 标记用户是否主动脱离了贴底（脱离后新消息不再强制拉到底）。 */
 export function setScrollUserDetached(detached: boolean) { userDetached = detached; }
 
 /* ── 历史水合的锚点钉住（10-21 虚拟滚动条）──────────────────────────────
@@ -44,21 +45,27 @@ export type HistoryPinState = {
   applied: boolean;
 };
 const historyPinStates = new WeakMap<HTMLElement, HistoryPinState>();
+/** 记录某个滚动容器的「历史水合锚点」状态（续载时靠它只补偿一次高度差）。 */
 export function setHistoryPinState(scroller: HTMLElement, state: HistoryPinState) { historyPinStates.set(scroller, state); }
+/** 读某个滚动容器的锚点状态；没登记返回 null。 */
 export function historyPinStateFor(scroller: HTMLElement): HistoryPinState | null { return historyPinStates.get(scroller) ?? null; }
+/** 清锚点状态；传了 state 就只在仍是那一份时才清（防止清掉别人新装的那份）。 */
 export function clearHistoryPinState(scroller: HTMLElement, state?: HistoryPinState) {
   if (state && historyPinStates.get(scroller) !== state) return;
   historyPinStates.delete(scroller);
 }
 
 const historyPins = new WeakMap<HTMLElement, () => void>();
+/** 登记某个滚动容器的「取消锚定」回调（新的水合开始时覆盖旧的）。 */
 export function setHistoryPin(scroller: HTMLElement, cancel: () => void) { historyPins.set(scroller, cancel); }
+/** 该滚动容器当前是否挂着锚定。 */
 export function hasHistoryPin(scroller: HTMLElement) { return historyPins.has(scroller); }
 /** 只清自己那一轮：连续翻页时旧循环的收尾不能把新一轮的钉住标记删掉。 */
 export function clearHistoryPin(scroller: HTMLElement, cancel?: () => void) {
   if (cancel && historyPins.get(scroller) !== cancel) return;
   historyPins.delete(scroller);
 }
+/** 取消该容器的锚定：先摘登记再执行取消回调（⛔ 顺序反了会重入）。 */
 export function cancelHistoryPin(scroller: HTMLElement) {
   const cancel = historyPins.get(scroller);
   historyPins.delete(scroller);

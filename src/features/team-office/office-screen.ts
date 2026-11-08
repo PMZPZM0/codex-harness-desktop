@@ -872,6 +872,7 @@ function drawSaScene(b: SaBox, scene: SaScene) {
   }
 }
 
+/** 在办公室墙上画一块屏幕（按模式与时间做内容动画，seed 决定画面差异）。 */
 export function drawScreen(
   ctx: CanvasRenderingContext2D,
   t: number,

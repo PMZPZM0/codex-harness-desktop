@@ -49,6 +49,7 @@ type Status = {
   attribution: { license: string; home: string; site: string };
 };
 
+/** filee 工具卡片：安装状态与安装/卸载（同样注意 `runtimeInstalling` 是单个 id）。 */
 export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress, cancelDevRuntime, setRuntimeModal }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;

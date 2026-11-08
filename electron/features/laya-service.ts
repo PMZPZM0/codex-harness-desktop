@@ -153,6 +153,7 @@ function pipShow(): { installed: boolean; version: string } {
   return result;
 }
 
+/** laya 判档服务状态：装没装、版本、进程是否在跑、是否已就绪。 */
 export function layaStatus(): LayaServiceState {
   const { installed, version } = pipShow();
   return {
@@ -473,6 +474,7 @@ function ruleEscalate(text: string): string | null {
 
 const DECIDE_EFFORT_TIMEOUT_MS = 3_000;
 
+/** 决定本轮思考档位：先走 0ms 的规则锚点；服务未就绪就**弃权**并后台预热（⛔ 不为挑档拉起 1.7GB 服务）。 */
 export async function layaDecideEffort(text: string): Promise<{ effort: string; confidence: number } | null> {
   // ① 规则锚点先行（0ms；命中即连模型都不调）
   const rule = ruleEscalate(text);

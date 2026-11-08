@@ -11,6 +11,7 @@
  */
 export type ScreenLeaseState = { active: boolean; startedAt: number; lastTouch: number };
 
+/** 屏幕共享租约：带 TTL，重复开始只刷新起点不叠加，超时自动失效。 */
 export function createScreenLease(ttlMs = 15_000, now: () => number = () => Date.now()) {
   let active = false;
   let startedAt = 0;

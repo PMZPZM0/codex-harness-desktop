@@ -28,6 +28,7 @@ type Props = {
   working: string;
 };
 
+/** 中转页顶部订阅横幅：显示当前生效订阅，付款后自动更新、手动切换也跟得上。 */
 export function RelayCenterPageSubscriptionBanner({ account, accounts, busy, load, onNotice, openManage, openPlans, overview, progress, refreshing, setAuthTab, setLoginModalOpen, stopWatch, subs, switchTarget, verifyPayment, watching, working }: Props) {
   return (
     (() => {

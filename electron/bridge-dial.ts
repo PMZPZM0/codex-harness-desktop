@@ -79,6 +79,7 @@ const isBridgeUrl = (url: string) => /^https?:\/\/(?:127\.0\.0\.1|localhost):\d+
  * ⇒ 用记住的 raw **重新登记**：raw 记下来，拨号时一律用它注册。 */
 const rawUpstreams = new Map<string, string>();
 
+/** 把供应商上游地址改写成**本地桥**地址；已拨号的地址绝不当上游（自环），但仍要用已知 raw 刷新注册表，否则切供应商后会继续打旧上游。 */
 export function bridgeDial(id: string, upstreamBaseUrl: string | undefined): string | undefined {
   if (!upstreamBaseUrl) return upstreamBaseUrl;
   const dialed = responsesBridge.urlFor(id);

@@ -53,6 +53,7 @@ function CardBody({ card, onOpen }: { card: CardSpec; onOpen: () => void }) {
   );
 }
 
+/** 开发工具设置：运行时安装/卸载、进度与能力探测入口。 */
 export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   const { capabilityRows, capabilityError, setNotice, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, runtimeModal, setRuntimeModal } = props;
   const [openCard, setOpenCard] = useState<DevtoolsCardKey | null>(null);

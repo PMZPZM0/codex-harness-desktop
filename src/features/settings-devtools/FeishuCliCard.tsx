@@ -55,6 +55,7 @@ type Status = {
   error: string;
 };
 
+/** 飞书 CLI 卡片：安装状态与安装/卸载（`runtimeInstalling` 是**单个工具 id**，不是 map）。 */
 export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, cancelDevRuntime }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;

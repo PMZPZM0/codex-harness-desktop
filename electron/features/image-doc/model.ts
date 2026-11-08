@@ -104,6 +104,7 @@ export type CompDocument = { dir: string; manifest: CompManifest };
       结尾只是约定，用 `images/` + `manifest.json` 的存在来判定才是真的。 */
 const MAX_LAYER_IMAGE_BYTES = 128 * 1024 * 1024;
 
+/** 把传入路径解析成绝对路径并校验在可信根内（会话工作目录 / 应用数据目录），不在就直接拒。 */
 export async function resolveCompDir(rawPath: string, opts: { mustExist?: boolean } = {}): Promise<string> {
   const candidate = path.resolve(String(rawPath ?? "").trim());
   if (!isInsideTrustedRoots(candidate)) {
@@ -245,7 +246,9 @@ export { newLayerId };
  *     唯一真相源」，它的正则会命中"把该目录名当字面量拼进去"的写法并误判（10-10 实测误报，
  *     连注释里出现同样字样也会被命中 —— 所以本注释才不把那个写法原样抄一遍）。 */
 const IMAGES_DIRNAME = "images";
+/** 画布工程的图层图目录：`<dir>/images`。 */
 export const imagesDirOf = (dir: string): string => path.join(dir, IMAGES_DIRNAME);
+/** 某个图层图的绝对路径（只取文件名，⛔ 不跟随外部相对路径）。 */
 export const layerImagePath = (dir: string, file: string): string => path.join(imagesDirOf(dir), path.basename(file));
 
 /** 打开（或新建）一个 `.comp` 项目。目录不存在且给了 width/height ⇒ 建一个新的空项目。 */
@@ -297,6 +300,7 @@ export async function openCompDocument(input: {
   return doc;
 }
 
+/** 新建图层的默认变换：原点左上、尺寸取原图、不旋转不翻转。 */
 export function defaultTransform(width: number, height: number): LayerTransform {
   return {
     origin: [0, 0],
@@ -386,6 +390,7 @@ export function hexToRgba(input: unknown): [number, number, number, number] {
 /** jimp 惰性加载（三个模块共用一份 promise，别各写一遍）。
  *  ⛔ 不在模块顶层 import：jimp 解析要百毫秒级，会拖慢引擎启动。 */
 let jimpPromise: Promise<any> | null = null;
+/** 惰性加载 jimp 并共用一份 Promise（解析要百毫秒级，⛔ 别在模块顶层 import 拖慢启动）。 */
 export async function loadJimp(): Promise<any> {
   jimpPromise ??= import("jimp").then((m) => (m as any).Jimp ?? m);
   return jimpPromise;

@@ -198,6 +198,7 @@ const MAX_SUMMARY_CHARS = 400;
 /** 播报来源：正文实时 / 结尾播报稿 / 模型主动插播。⛔ 预算按来源分开计数，互不挤占。 */
 type SpeakScope = "live" | "summary" | "tool";
 
+/** 语音播报 hook：按设置决定念什么、何时念（配置放 ref，避免每次变化重建订阅）。 */
 export function useVoiceAnnounce(threadId: string = ""): void {
   /** 开关/音量（从设置读、经 voice:event 广播刷新；放 ref 里避免每次变化重建订阅） */
   const cfgRef = useRef<AnnounceCfg>({ enabled: true, volume: 1, numSteps: ANNOUNCE_NUM_STEPS });

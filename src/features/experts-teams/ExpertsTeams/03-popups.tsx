@@ -8,6 +8,7 @@ import { AVATAR_GRADIENTS, avatarToneOf } from "../../../lib/entity-avatar";
 import { expertIconOf } from "../../../lib/expert-icon-of";
 import { expertRoleLabel } from "../../../lib/expert-role-label";
 import { useAvatarAnchor } from "./04-avatar-anchor";
+/** 团成员运行弹窗：贴头像弹出，显示本次产出与「查看历史」出口。 */
 export function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
   team: ExpertTeamConfig;
   run: TeamMemberRunRecord;
@@ -70,6 +71,7 @@ export function TeamRunPopup({ team, run, onClose, onOpenHistory }: {
   );
 }
 
+/** 委派运行弹窗：显示委托会话的产出/错误，贴对应头像定位。 */
 export function DelegatedRunPopup({ run, onClose }: {
   run: { threadId: string; kind: string; name: string; status: "running" | "done" | "failed"; output?: string; error?: string };
   onClose: () => void;

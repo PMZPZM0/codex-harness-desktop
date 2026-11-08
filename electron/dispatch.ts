@@ -142,6 +142,7 @@ export function canDispatchFrom(input: { isDelegated?: boolean; depth?: number; 
 /** 单次回传给调用方的输出上限（字符）。超出部分截断并指向完整会话。 */
 export const MAX_OUTPUT_CHARS = 12000;
 
+/** 截断派活输出到上限；被截时补一句「完整结果见会话 x」（有 threadId 才带）。 */
 export function clipDispatchOutput(text: unknown, threadId?: string): string {
   const raw = String(text ?? "").trim();
   if (raw.length <= MAX_OUTPUT_CHARS) return raw;
@@ -153,6 +154,7 @@ export function clipDispatchOutput(text: unknown, threadId?: string): string {
 
 const KIND_LABEL: Record<DispatchKind, string> = { expert: "专家", team: "专家团", member: "团队成员", subagent: "子智能体", cli: "CLI 智能体" };
 
+/** 派活类型的中文标签（未知类型原样返回，⛔ 不吞掉信息）。 */
 export function kindLabel(kind: DispatchKind): string {
   return KIND_LABEL[kind] ?? String(kind ?? "");
 }

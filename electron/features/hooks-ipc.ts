@@ -17,10 +17,12 @@ import { trustUntrustedHooks } from "../hooks-trust";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
+/** 把 hook key 里的反斜杠与引号转义，供 TOML 的 keyPath 使用（⛔ 不转义会写坏 config.toml）。 */
 export function escapeHookKey(key: string) {
   return String(key).split("\\").join("\\\\").split('"').join('\\"');
 }
 
+/** 把某个 hook 的 enabled 写进 config.toml（走引擎的 config/value/write，mergeStrategy=replace）。 */
 export async function writeHookEnabled(key: string, enabled: boolean) {
   await server.request("config/value/write", {
     filePath: path.join(codexHome, "config.toml"),

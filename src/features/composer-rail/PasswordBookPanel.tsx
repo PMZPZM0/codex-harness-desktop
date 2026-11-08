@@ -25,6 +25,7 @@ function strongPassword(len = 20): string {
   return Array.from(bytes, (n) => alphabet[n % alphabet.length]).join("");
 }
 
+/** 密码本面板：脱敏列表、搜索、复制与新增（明文不出主进程）。 */
 export function PasswordBookPanel({ onToast, onNotice }: { onToast: OnToast; onNotice: OnNotice }) {
   const [items, setItems] = useState<VaultItem[]>([]);
   const [encrypted, setEncrypted] = useState(true);

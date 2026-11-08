@@ -28,6 +28,7 @@ import { bootIntroSchemeAttr } from "../../../lib/boot-intro.mjs";
 /** 跳过时 sleep()/later() 的 reject 哨兵：只做身份比较，不落地、不展示。 */
 const CANCELLED = Symbol("boot550c-cancelled");
 
+/** 启动动画（550C 版）：simple/full 两种时长，播完回调。 */
 export function BootIntro550c({
   mode,
   scheme = "amber",

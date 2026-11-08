@@ -9,6 +9,7 @@ import { usePart02a2 } from "./01-mcp-teams-plan/02-team-roles-import";
 import type { Bag } from "../bag-types";
 
 
+/** bag 分片 02a：合并 MCP（a1）与团队（a2）。 */
 export function usePart02a(bag: Bag) {
   const a = usePart02a1(bag);
   const b = usePart02a2(bag);

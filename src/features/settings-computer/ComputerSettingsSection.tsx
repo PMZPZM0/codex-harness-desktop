@@ -21,6 +21,7 @@ export type ComputerSettingsSectionProps = {
   onOpenDevtools?: () => void;
 };
 
+/** 电脑操作设置：两个桌面后端开关，与控制台读写**同一份**设置（⛔ 不各存一份）。 */
 export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
   const { toolsStatus, setNotice, onOpenDevtools } = props;
   /* 两个桌面后端开关与「控制台 → 桌面自动化」读写同一份 app-settings（单一真相源，别各存一份） */

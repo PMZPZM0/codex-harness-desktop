@@ -322,6 +322,7 @@ async function healModelCatalogBeforeStart(custom: any) {
   }
 }
 
+/** 注入启动链依赖（网关 setter、固定端口、MCP 覆盖、applyCustomModel 等）：用注入而不是直接 import，避免模块体执行顺序与循环依赖踩坑。 */
 export function bindBoot(deps: Record<string, any>) {
   setWeixinGateway = deps.setWeixinGateway;
   DISPATCH_FIXED_PORT = deps.DISPATCH_FIXED_PORT;
@@ -408,6 +409,7 @@ setTurnFileWatchBroadcast((payload: any) => {
   }
 });
 
+/** 启动链主体：增强 PATH → 建数据目录 → 恢复状态与登记表 → 拉起引擎 → 挂通道与定时器。⛔ 顺序有依赖，别随意调换。 */
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
   /* ⛔ 第一件事：把增强 PATH 写回本进程（mac GUI 只有系统目录，继承环境的子进程找不到工具）。

@@ -11,6 +11,7 @@ export type ReasoningDisplayMode = "auto" | "strip";
 const KEY = "reasoning-display-mode";
 const EVENT = "codex:reasoning-display-mode";
 
+/** 读思考展示模式：`strip` = 细条，`auto` = 自适应浮窗。 */
 export function getReasoningDisplayMode(): ReasoningDisplayMode {
   try {
     return localStorage.getItem(KEY) === "strip" ? "strip" : "auto";
@@ -19,6 +20,7 @@ export function getReasoningDisplayMode(): ReasoningDisplayMode {
   }
 }
 
+/** 写思考展示模式 → 落盘 → 派发自定义事件（跨组件即时生效；隐私模式下靠事件仍生效）。 */
 export function setReasoningDisplayMode(mode: ReasoningDisplayMode): void {
   try {
     localStorage.setItem(KEY, mode);
@@ -28,6 +30,7 @@ export function setReasoningDisplayMode(mode: ReasoningDisplayMode): void {
   } catch { /* 非浏览器环境（测试）忽略 */ }
 }
 
+/** React 侧读思考展示模式：同时听本地自定义事件与跨标签 storage 事件。 */
 export function useReasoningDisplayMode(): ReasoningDisplayMode {
   const [mode, setMode] = useState<ReasoningDisplayMode>(getReasoningDisplayMode);
   useEffect(() => {

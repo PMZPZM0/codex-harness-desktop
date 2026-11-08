@@ -10,6 +10,7 @@ import { Check, ChevronLeft, NotebookPen, Plus, Search, Trash2 } from "lucide-re
 
 type Day = JournalDay;
 
+/** 开发日志面板：按天列日志、支持搜索命中定位与插入。 */
 export function DevJournalPanel({ onInsert }: { onInsert: (text: string) => void }) {
   const [days, setDays] = useState<Day[]>([]);
   const [today, setToday] = useState("");

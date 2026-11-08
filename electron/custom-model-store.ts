@@ -12,6 +12,7 @@
 import { normalizeProvider } from "./main";
 import type { CustomModelFile } from "./features/custom-model-types";
 
+/** 把某个模型 id 并进供应商档案的模型列表（已存在就不重复加）。 */
 export function withModels(entry: CustomModelFile, extra?: string): CustomModelFile {
   const normalized = normalizeProvider(entry);
   let result = normalized;
@@ -37,6 +38,7 @@ export function withModels(entry: CustomModelFile, extra?: string): CustomModelF
   return effectiveWindow ? { ...result, contextWindow: effectiveWindow } : result;
 }
 
+/** 判断 baseUrl 是否本机/内网地址（决定「没填密钥也算可用」这条例外）。 */
 export function isLocalEndpoint(baseUrl: unknown): boolean {
   const raw = String(baseUrl ?? "").trim();
   if (!raw) return false;
@@ -56,6 +58,7 @@ export function isLocalEndpoint(baseUrl: unknown): boolean {
   return false;
 }
 
+/** 供应商对外视图：抹掉加密 key，只给 hasKey；⛔ 未配密钥的第三方供应商不视为已启用。 */
 export function publicCustomModel(value: CustomModelFile | null) {
   if (!value) return null;
   const { encryptedKey, ...config } = value;

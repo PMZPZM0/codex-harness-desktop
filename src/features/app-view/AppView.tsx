@@ -235,6 +235,7 @@ function truncateThreadTitle(text: string, max = 6): string {
   return chars.length > max ? chars.slice(0, max).join("") + "…" : value;
 }
 
+/** 应用主视图：装配侧栏 / 主舞台 / 右栏 / 设置 / 浮层，并处理侧栏宽度拖动（只改 `--side-w`，⛔ 不换模板）。 */
 export function AppView({ app }: { app: HarnessAppApi }) {
 
   /* ★ 10-31 用户令：「左侧栏也加一个拖动功能」——拖侧栏右缘改宽度（200–420px），

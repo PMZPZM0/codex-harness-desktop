@@ -2,6 +2,7 @@
 import { Link2, X, TerminalSquare, Globe2, Info, Check, Zap, KeyRound, CircleCheck, AlertTriangle } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 
+/** 连接器配置弹窗：stdio / http 两种传输，按必填项校验后才能保存。 */
 export function ConnectorSetupModal({ draft, secret, saving, onDraftChange, onSecretChange, onClose, onSave }: { draft: ConnectorDraft; secret: string; saving: boolean; onDraftChange: (draft: ConnectorDraft) => void; onSecretChange: (value: string) => void; onClose: () => void; onSave: (draft: ConnectorDraft) => void }) {
   const valid = Boolean(draft.name.trim() && (draft.transport === "stdio" ? draft.command?.trim() : draft.url?.trim()));
   const changeTransport = (transport: ConnectorDraft["transport"]) => onDraftChange({ ...draft, transport });
@@ -15,6 +16,7 @@ export function ConnectorSetupModal({ draft, secret, saving, onDraftChange, onSe
   </section></div>;
 }
 
+/** 连接器模板填写弹窗：按模板字段校验必填，支持 OAuth 授权流程。 */
 export function ConnectorTemplateModal({ template, values, saving, oauth, onChange, onClose, onSave, onOAuth }: { template: ConnectorTemplate; values: Record<string, string>; saving: boolean; oauth: ConnectorOAuthEvent | null; onChange: (values: Record<string, string>) => void; onClose: () => void; onSave: () => void; onOAuth: () => void }) {
   const invalid = template.fields.filter((field) => !field.optional && !values[field.key]?.trim());
   const oauthBusy = oauth?.phase === "waiting";

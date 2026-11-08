@@ -18,6 +18,7 @@ function proxyTokenFile(): string {
   return path.join(cloudHome(), "proxy-token");
 }
 
+/** 读加密保存的代理令牌；解不开返回空串（⛔ 不回落明文）。 */
 export function readProxyToken(): string {
   try {
     return decrypt(fs.readFileSync(proxyTokenFile(), "utf8").trim());
@@ -26,6 +27,7 @@ export function readProxyToken(): string {
   }
 }
 
+/** 加密写代理令牌（目录 0700、文件 0600）；加密不可用时返回 false —— ⛔ 宁可不写，也不落明文凭据。 */
 export function writeProxyToken(token: string): boolean {
   const encrypted = encrypt(token);
   if (!encrypted) return false;

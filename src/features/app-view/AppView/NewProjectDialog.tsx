@@ -18,6 +18,7 @@ const OPTIONS: Option[] = [
   { id: "path", title: "输入路径", desc: "直接粘贴项目文件夹的绝对路径", Icon: Keyboard },
 ];
 
+/** 新建项目弹窗：选已有目录 / 新建 / 手填路径三种方式。 */
 export function NewProjectDialog({ open, onClose, onCreate }: {
   open: boolean;
   onClose: () => void;

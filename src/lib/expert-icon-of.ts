@@ -1,6 +1,7 @@
 /** expertIconOf（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
 import { ClipboardList, DraftingCompass, FlaskConical, Code2, Crown, TrendingUp, Microscope, Calculator, Shield, Telescope, Bot } from "lucide-react";
 
+/** 按专家「职业 + 名字」挑一个图标（产品/架构/测试/开发/交付各一枚），都不命中给默认图标。 */
 export function expertIconOf(member: ExpertTeamMember) {
   const p = `${member.profession.zh}${member.name}`;
   if (/产品/.test(p)) return ClipboardList;

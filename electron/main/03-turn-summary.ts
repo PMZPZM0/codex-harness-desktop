@@ -56,6 +56,7 @@ export function waitForTurnCompletion(threadId: string, turnId: string, timeoutM
   });
 }
 
+/** 取一个回合的产出文本：只收 agentMessage，逐条 trim 后拼起来。 */
 export function turnOutputText(turn: any) {
   const items = Array.isArray(turn?.items) ? turn.items : [];
   const text = items

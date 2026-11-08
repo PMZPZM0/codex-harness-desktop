@@ -30,6 +30,7 @@ type Props = {
   zipReady: boolean;
 };
 
+/** 「我的音色」（音色克隆）卡：导入/录制参考音频、命名、试听、删除；依赖未装时给出安装引导。 */
 export function VoiceSettingsSectionVoiceCloneProfile({ applyPreset, draft, draftName, importProfile, uploadProfile, presets, previewProfile, profileBusy, profilePreview, profileRecording, profiles, recordingRef, removeProfile, saveDraft, selectProfile, setDraft, setDraftName, setProfileBusy, settings, startProfileRecord, zipReady }: Props) {
   return (
     <div className="voice-card">

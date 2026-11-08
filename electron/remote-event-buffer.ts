@@ -16,6 +16,7 @@ export type EventSlice = { events: BufferedEvent[]; lastSeq: number; dropped: bo
 
 const TIMESTAMP_FLOOR = 1e12;
 
+/** 建一个有上限的事件缓冲（带自增序号，满了丢最旧），供手机端重连补发。 */
 export function createEventBuffer(limit = 400) {
   const items: BufferedEvent[] = [];
   let seq = 0;

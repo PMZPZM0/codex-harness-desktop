@@ -60,6 +60,7 @@ export type ApplyCloudResult = {
   promoted: boolean;
 };
 
+/** 读「云端供应商」那一行档案；没有返回 null。 */
 export async function readCloudProviderRow(): Promise<CustomModelFile | null> {
   const list = await readCustomModels();
   return list.find((row) => row.provider === CLOUD_PROVIDER_ID) ?? null;
@@ -276,6 +277,7 @@ export async function refreshMemoryUpstreamFromIntegrations(): Promise<{ memory:
   }
 }
 
+/** 把云端模型目录写成供应商档案（含加密后的 key，以及 baseUrl），供引擎侧生效。 */
 export async function applyCloudProvider(
   rows: CloudCatalogModel[],
   opts: { baseUrl: string; encryptedKey?: string },
@@ -366,6 +368,7 @@ export async function repairCloudProviderProtocol(): Promise<boolean> {
   } catch { return false; }
 }
 
+/** 当前生效的供应商是不是云端那一个。 */
 export async function isCloudActive(): Promise<boolean> {
   const active = await readCustomModel();
   return active?.provider === CLOUD_PROVIDER_ID;

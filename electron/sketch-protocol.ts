@@ -80,6 +80,7 @@ export function resolveSketchFile(rawUrl: string, root: string): SketchResolutio
   return { ok: true, file: candidate, mime };
 }
 
+/** sketch:// 协议的响应：限根目录、拒绝越界路径；随包只读资源整份读进内存返回。 */
 export function sketchResponse(rawUrl: string, root = sketchRoot()): Response {
   const found = resolveSketchFile(rawUrl, root);
   if (!found.ok) return new Response(found.reason, { status: found.status });

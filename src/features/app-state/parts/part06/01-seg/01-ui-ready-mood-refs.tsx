@@ -11,6 +11,7 @@ import { classifyUnit, buildSegments, buildOrderedToolRuns, foldItemStatus, comp
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 06a1：UI 就绪标记与情绪 refs（首启体检弹窗已按用户令删除，启动不再有任何引导弹窗）。 */
 export function usePart06a1(bag: Bag) {
   /* ⛔ 首启「环境体检」自动弹出（09-17）已删（10-07 用户令）——启动不再有任何引导弹窗；
      新手引导 = 侧栏底部常驻入口（点开才出现）。诊断埋点 __envCheckDbg 一并下线。 */

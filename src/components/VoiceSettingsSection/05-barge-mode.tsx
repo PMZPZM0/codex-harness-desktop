@@ -10,6 +10,7 @@ type Props = {
   settings: Settings;
 };
 
+/** 打断方式卡：自动 / 手动两态单选，决定说话时能否被用户声音打断。 */
 export function VoiceSettingsSectionBargeMode({ apply, saving, settings }: Props) {
   return (
     <div className="voice-card">

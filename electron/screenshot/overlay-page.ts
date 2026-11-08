@@ -7,6 +7,7 @@
  */
 import type { OverlayRect } from "../screenshot";
 
+/** 生成截图覆盖层的 HTML（含引导图与初始选区，整页禁滚动禁选中）。 */
 export function buildOverlayHtml(guideDataUri: string, initialRect: OverlayRect | null): string {
   const initial = initialRect ? JSON.stringify(initialRect) : "null";
   return `<!doctype html><html><head><meta charset="utf-8"><style>

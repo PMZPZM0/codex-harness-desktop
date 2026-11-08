@@ -8,6 +8,7 @@ import { usePart01c1 } from "./03-accounts-connectors-rate-limit/01-accounts-con
 import { usePart01c2 } from "./03-accounts-connectors-rate-limit/02-rate-limit-retry-optimistic";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 01c：合并账号/连接器（c1）与限流重试（c2）。 */
 export function usePart01c(bag: Bag) {
   const a = usePart01c1(bag);
   const b = usePart01c2(bag);

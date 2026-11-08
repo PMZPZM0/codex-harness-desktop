@@ -11,6 +11,7 @@ import { Spinner } from "../../components/CardShell";
 
 export type SshSettingsSectionProps = { setSshEditorTest: any; setSshDraft: any; emptySshDraft: any; sshQuery: any; setSshQuery: any; sshFilter: any; setSshFilter: any; sshServers: any; exportSshEntries: any; sshBatchBusy: any; importSshEntries: any; sshVisible: any; sshChecked: any; setSshChecked: any; toggleSshBatch: any; testSshBatch: any; removeSshEntries: any; sshBusyId: any; sshTestingId: any; sshCheckedSet: any; sshToggleChecked: any; toggleSshFavorite: any; toggleSshEntry: any; setSshTerminal: any; testSshEntry: any; setSshExecTarget: any; duplicateSshEntry: any };
 
+/** SSH 设置：服务器列表、搜索筛选、导入导出与批量操作。 */
 export function SshSettingsSection(props: SshSettingsSectionProps) {
   const { setSshEditorTest, setSshDraft, emptySshDraft, sshQuery, setSshQuery, sshFilter, setSshFilter, sshServers, exportSshEntries, sshBatchBusy, importSshEntries, sshVisible, sshChecked, setSshChecked, toggleSshBatch, testSshBatch, removeSshEntries, sshBusyId, sshTestingId, sshCheckedSet, sshToggleChecked, toggleSshFavorite, toggleSshEntry, setSshTerminal, testSshEntry, setSshExecTarget, duplicateSshEntry } = props;
   return (

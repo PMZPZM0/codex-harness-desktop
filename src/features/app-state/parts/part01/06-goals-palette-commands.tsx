@@ -9,6 +9,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 01f：目标栏收纳、命令面板开合。 */
 export function usePart01f(bag: Bag) {
   // 收纳到右侧边（仅持久化用户点击行为；hover 由 CSS 处理，无需 React hover state）
   const [goalsDocked, setGoalsDocked] = useState(false);

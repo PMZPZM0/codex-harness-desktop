@@ -14,6 +14,7 @@ import type { TurnCreditRecord } from "../../lib/cloud-credit-store";
 import { FeedbackIconButton } from "./FeedbackIconButton";
 import { TurnWebSources } from "./TurnWebSources";
 
+/** 消息底部操作条：复制 / 引用 / 分叉 / 编辑与用量；用户消息的对外文本会剥掉内部标记段。 */
 export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, onCopy, onQuote, onFork, onEdit, extraIcon, webSources }: { item: ThreadItem; turn?: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onEdit?: () => void; extraIcon?: any; webSources?: Array<{ url: string; host: string }> }) {
   const rawText = itemText(item);
   const isAgent = item.type === "agentMessage";

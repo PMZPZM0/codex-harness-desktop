@@ -9,6 +9,7 @@ import { loadThreadModel, modelName } from "../../../../app-view/helpers";
 import { recordTurnCredit } from "../../../../../lib/cloud-credit-store";
 import type { Bag } from "../../bag-types";
 
+/** 事件路由第 5 段：回合完成时的用量结算与通知（⛔ 用本回合增量累加，不能取 max）。 */
 export function handleEventRouter5(bag: Bag, params: any): boolean {
         // 用本回合新增量累加（旧实现取的是 max，累计 Token 一直是错的）；拿不到增量时按上下文总量兜底
         try {

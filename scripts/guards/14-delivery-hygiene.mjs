@@ -278,11 +278,11 @@ export async function run() {
     };
     walkTs(join(ROOT, "src"));
     walkTs(join(ROOT, "electron"));
-    /* 11-08 首次实测：2096 个导出函数 / 950 个缺注释；本轮已补 function-menu/store.ts 的 26 条。 */
-    const BASELINE = 924;
+    /* 11-08：首次实测 2,079 个导出函数 / 923 个缺注释，本轮**全部补齐**（逐条按实现写）。
+       ⛔ 棘轮现在归零：任何新导出函数没有中文注释都会直接红。 */
+    const BASELINE = 0;
     (gaps.length <= BASELINE ? ok : fail)(
-      `【295】导出函数的中文文档注释只许补不许缺（上限 ${BASELINE}，实测缺 ${gaps.length} / 共 ${total}`
-        + `；新增的：${gaps.filter((g) => !g.includes("function-menu/store.ts")).slice(0, 4).join("、") || "无"}）`
+      `【295】导出函数都带中文文档注释（实测缺 ${gaps.length} / 共 ${total}；缺的：${gaps.slice(0, 4).join("、") || "无"}）`
     );
   }
 

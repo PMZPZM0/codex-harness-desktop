@@ -11,6 +11,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { parseOpenaiUsagePanel, openaiResetText, extractQuotaBars } from "./OpenaiSubscriptionPage/01-usage-parsers";
 export { OpenaiBalanceBadge } from "./OpenaiSubscriptionPage/02-official-cards";
 
+/** OpenAI 订阅页：账号列表、登录/换号与用量刷新。 */
 export function OpenaiSubscriptionPage({ activeProvider, onActivate, onNotice, onActiveChange, onRefreshActive, openAppConfirm }: { activeProvider?: string; onActivate: (models: string[]) => Promise<void> | void; onNotice: (m: string) => void; onActiveChange?: (email: string) => void; onRefreshActive?: () => unknown; openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
   const [accounts, setAccounts] = useState<any[]>([]);
   const [device, setDevice] = useState<{ url: string; code: string; raw?: string } | null>(null);

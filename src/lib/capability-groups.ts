@@ -172,6 +172,7 @@ export function isEmptyAction(action: GroupAction): boolean {
     && action.browserSkills === undefined;
 }
 
+/** 算「能力组一键开/关」要下发的**差异动作**：只带需要变的成员（ponytail 插件本体与子技能分别对齐），⛔ 不做全量重写。 */
 export function planAction(snapshot: SubToggleSnapshot, groupId: CapabilityGroupId, target: boolean): GroupAction {
   if (groupId === "writing-code") {
     const action: GroupAction = { ponytailMode: target ? "full" : "off" };
@@ -248,6 +249,7 @@ export interface ApplyResult {
   applied: { ponytailMode?: boolean; ponytailLinked?: boolean; desktop?: boolean; browser?: boolean; nuphus?: boolean; desktopSkill?: boolean; browserSkill?: boolean };
 }
 
+/** 按 planAction 的结果逐项调 IPC，收集成功与失败；⛔ 单项失败不中断其余，失败原因照实回传给界面。 */
 export async function applyAction(action: GroupAction, ipc: GroupIpc): Promise<ApplyResult> {
   const failures: string[] = [];
   const applied: ApplyResult["applied"] = {};
@@ -352,6 +354,7 @@ export interface PartialHint {
   pendingLabels: string[];
 }
 
+/** 组处于「部分开启」时给出缺哪几项的提示；不是 partial 就返回 null（界面据此决定要不要挂提示条）。 */
 export function describePartial(
   snapshot: SubToggleSnapshot,
   groupId: CapabilityGroupId,

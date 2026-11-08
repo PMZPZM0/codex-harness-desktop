@@ -36,6 +36,7 @@ function iconOfCommand(command: string, intent: string) {
   return TerminalSquare;
 }
 
+/** 命令执行卡：显示命令、状态（运行/失败/退出码）与输出入口。 */
 export function CommandExecutionCard({ item, waitingForApproval, turnActive, onOpenFile }: { item: ThreadItem; waitingForApproval?: boolean; turnActive?: boolean; onOpenFile?: (path: string) => void }) {
   const running = item.status === "inProgress" || item.status === "running";
   const failed = !running && item.exitCode != null && item.exitCode !== 0;
@@ -238,6 +239,7 @@ export function CommandExecutionCard({ item, waitingForApproval, turnActive, onO
   );
 }
 
+/** 终端面板：xterm 实例 + 自适应尺寸 + 失败重试。 */
 export function TerminalPanel({ id, workspace, active }: { id: string; workspace: string; active: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const fitRef = useRef<any>(null);

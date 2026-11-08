@@ -163,6 +163,7 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
 import { Slot } from "../../../../../runtime/Slot";
 
+/** 输入框表单：文本/附件/提及/模型与档位；中枢会话的项目地址读**会话自己的目录**（⛔ 不读全局 workspace，会串项目）。 */
 export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
   /*指挥中枢上下文：指挥中枢的「项目地址」**不读全局 workspace**（那是别的会话的目录，会串项），
      改读会话自己的目录。控件位置与普通会话完全一致（输入框左上角那枚 chip），

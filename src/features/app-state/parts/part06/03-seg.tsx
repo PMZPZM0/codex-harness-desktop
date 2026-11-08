@@ -9,6 +9,7 @@ import { usePart06c2 } from "./03-seg/02-context-fork-backup";
 import type { Bag } from "../bag-types";
 
 
+/** bag 分片 06c：合并权限/档位（c1）与上下文/分叉/备份（c2）。 */
 export function usePart06c(bag: Bag) {
   const a = usePart06c1(bag);
   const b = usePart06c2(bag);

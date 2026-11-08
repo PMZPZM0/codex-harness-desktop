@@ -61,6 +61,7 @@ function matches(entry: Entry, q: string) {
     .join(" ").toLowerCase().includes(q);
 }
 
+/** 扩展性设置：按分组浏览可扩展点与接口清单，支持搜索与复制标识。 */
 export function ExtensibilitySettingsSection(props: ExtensibilitySettingsSectionProps) {
   const { onNotice } = props;
   const [query, setQuery] = useState("");

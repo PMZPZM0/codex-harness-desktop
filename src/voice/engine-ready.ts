@@ -28,10 +28,12 @@ let ready = true;               // 未探测前按"就绪"处理：⛔ 不要用
 let started = false;
 const listeners = new Set<() => void>();
 
+/** 读「引擎是否已就绪」（播报要等引擎起来才排队）。 */
 export function getAnnounceEngineReady(): boolean {
   return ready;
 }
 
+/** 订阅引擎就绪事件，返回退订函数。 */
 export function subscribeAnnounceEngineReady(fn: () => void): () => void {
   listeners.add(fn);
   return () => { listeners.delete(fn); };

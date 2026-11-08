@@ -30,6 +30,7 @@ export const codeThemes: CodeThemeEntry[] = [
 
 const themeMap = new Map(codeThemes.map((entry) => [entry.id, entry]));
 
+/** 取代码高亮主题的样式表；id 不认识时回退 fallback，保证永远有样式可用。 */
 export function codeThemeStyle(id: string | undefined, fallback: CodeThemeId = "one-dark") {
   return (themeMap.get(id as CodeThemeId) ?? themeMap.get(fallback)!).style;
 }
@@ -44,6 +45,7 @@ export const codeFonts: { id: CodeFontId; label: string; stack: string; sample: 
   { id: "source", label: "Source Code Pro", stack: '"Source Code Pro", ui-monospace, Menlo, monospace', sample: "Aa" },
 ];
 
+/** 取代码字体栈；id 不认识时回退第一项。 */
 export function codeFontStack(id: string | undefined) {
   return (codeFonts.find((entry) => entry.id === id) ?? codeFonts[0]).stack;
 }

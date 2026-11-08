@@ -34,6 +34,7 @@ const extraWindows: BusWindow[] = [];
  */
 const windowListWatchers = new Set<() => void>();
 
+/** 订阅窗口表变化（有窗口开/关时回调），返回退订函数。 */
 export function onBusWindowListChanged(fn: () => void): () => void {
   windowListWatchers.add(fn);
   return () => { windowListWatchers.delete(fn); };
@@ -45,6 +46,7 @@ function notifyWindowListChanged() {
   }
 }
 
+/** 登记一个窗口：`primary:true` 进主窗组，否则进附加窗组（已登记则跳过）。 */
 export function registerBusWindow(win: BusWindow, opts?: { primary?: boolean }) {
   const list = opts?.primary ? primaryWindows : extraWindows;
   if (!list.includes(win)) {
@@ -53,6 +55,7 @@ export function registerBusWindow(win: BusWindow, opts?: { primary?: boolean }) 
   }
 }
 
+/** 注销窗口并通知窗口表变化（销毁时调，⛔ 不注销会给已销毁的窗口发消息）。 */
 export function unregisterBusWindow(win: BusWindow) {
   let changed = false;
   for (const list of [primaryWindows, extraWindows]) {
@@ -67,6 +70,7 @@ export function allBusWindows(): BusWindow[] {
   return [...primaryWindows, ...extraWindows];
 }
 
+/** 判断某窗口是否已登记（主窗或附加窗）。 */
 export function hasBusWindow(win: BusWindow): boolean {
   return primaryWindows.includes(win) || extraWindows.includes(win);
 }
@@ -77,6 +81,7 @@ export function popoutBusWindows(): BusWindow[] {
   return [...extraWindows];
 }
 
+/** 判断某窗口是否是独立弹窗（附加窗），广播时据此决定要不要推送。 */
 export function isPopoutWindow(win: BusWindow): boolean {
   return extraWindows.includes(win);
 }

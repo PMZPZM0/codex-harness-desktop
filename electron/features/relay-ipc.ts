@@ -51,10 +51,12 @@ let relayStoreApi: {
   write: (store: any) => Promise<void>;
 } | null = null;
 
+/** 读中转账号库；⛔ 必须先注册 relay 域（否则抛错，避免静默读到空）。 */
 export async function readRelayStore(): Promise<any> {
   if (!relayStoreApi) throw new Error("relay 域尚未注册：readRelayStore() 必须在 main.ts 的 registerRelayIpc(...) 之后调用");
   return relayStoreApi.read();
 }
+/** 写中转账号库；同样要求 relay 域已注册。 */
 export async function writeRelayStore(store: any): Promise<void> {
   if (!relayStoreApi) throw new Error("relay 域尚未注册：writeRelayStore() 必须在 main.ts 的 registerRelayIpc(...) 之后调用");
   return relayStoreApi.write(store);

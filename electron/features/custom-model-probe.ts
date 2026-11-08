@@ -35,6 +35,7 @@ let fetchOpenaiModels!: any;
 
 let classifyProbeError!: any;
 
+/** 注入探活需要的依赖（归一化、读 auth、读当前档案），避免本模块直接 import 主链。 */
 export function bindCustomModelProbe(deps: Record<string, any>) {
 
   normalizeProvider = deps.normalizeProvider;
@@ -53,6 +54,7 @@ export function bindCustomModelProbe(deps: Record<string, any>) {
 
 
 
+/** 由供应商档案生成模型目录：只收有明确 contextWindow 的模型（其余交给引擎默认），并把当前生效 model 排最前。 */
 export function buildModelCatalog(entry: CustomModelFile) {
 
   const models = (normalizeProvider(entry).models ?? []).filter((model: any) => model.enabled !== false);
@@ -211,6 +213,7 @@ export function buildModelCatalog(entry: CustomModelFile) {
 
 
 
+/** 探活供应商：走**引擎实际用的那条路**（本地桥），⛔ 不直连上游 —— 直连测的是上游通不通，不是引擎链路通不通。 */
 export async function probeCustomModel(input: { provider?: string; baseUrl: string; apiKey?: string; model?: string; wireApi?: "responses" | "chat" | "auto" }) {
 
   /* ⛔⛔ 探活必须走**引擎实际用的那条路**：引擎发送 = 本地桥（Responses）→ 桥翻译成上游协议。
@@ -531,6 +534,7 @@ export const KNOWN_GATEWAY_MODELS: { match: RegExp; wire: "responses" | "chat"; 
 
 
 
+/** 把 HTTP 响应体截断成可展示的一段（探活失败时给人看原因，⛔ 不整段回传）。 */
 export function describeHttpBody(body: string): string {
 
   const raw = String(body ?? "").trim();

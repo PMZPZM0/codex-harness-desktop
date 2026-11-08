@@ -77,6 +77,7 @@ function nameOf(path: string): string {
   return String(path || "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path;
 }
 
+/** 工作区文件预览：按扩展名分流（文本/图片/PDF…），失败可重试。 */
 export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExpanded }: { path: string; onOpenEditor: (path: string) => void; expanded?: boolean; onToggleExpanded?: () => void }) {
   const [state, setState] = useState<PreviewState>(IDLE);
   const [retry, setRetry] = useState(0);

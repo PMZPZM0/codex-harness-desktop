@@ -14,6 +14,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { userSkillsDir } from "./main";
 
+/** 静默启用/停用某个技能（改 `SKILL.md` 文件名后缀），返回是否改动；⛔ 先做路径穿越校验。 */
 export async function setSkillEnabledSilent(folder: string, enabled: boolean) {
   const resolved = path.resolve(userSkillsDir, String(folder ?? ""));
   if (!resolved.startsWith(path.resolve(userSkillsDir) + path.sep)) throw new Error("非法技能路径");

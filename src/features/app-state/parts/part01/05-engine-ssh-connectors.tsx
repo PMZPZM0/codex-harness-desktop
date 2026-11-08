@@ -9,6 +9,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 01e：引擎版本与更新、SSH 服务器、连接器状态。 */
 export function usePart01e(bag: Bag) {
   // —— Codex 引擎更新（设置 → 控制台底部） ——
   const [engineVersion, setEngineVersion] = useState("");

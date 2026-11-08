@@ -13,6 +13,7 @@ type Props = {
   settings: Settings;
 };
 
+/** 「长按语音输入」卡：录制/清除听写热键。 */
 export function VoiceSettingsSectionDictationHotkey({ apply, captureHotkey, capturing, saving, settings }: Props) {
   return (
     <div className="voice-card">

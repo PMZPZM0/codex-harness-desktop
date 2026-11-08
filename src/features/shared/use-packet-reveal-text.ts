@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { revealProgressStore } from "../../lib/reveal-progress-store";
 
+/** 分帧揭示文本：按包逐步吐出长文本，返回当前已显示部分与是否仍在揭示。 */
 export function usePacketRevealText(
   key: string,
   text: string,

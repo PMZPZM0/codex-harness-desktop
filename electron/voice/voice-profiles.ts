@@ -29,10 +29,12 @@ export type VoiceProfile = {
 const INDEX_FILE = "profiles.json";
 const MAX_SECONDS = 60;
 
+/** 音色档案根目录：`<userData>/voice-profiles`。 */
 export function profilesRoot(userDataDir: string): string {
   return path.join(userDataDir, "voice-profiles");
 }
 
+/** 某个音色档案的参考音频绝对路径。 */
 export function profileAudioPath(userDataDir: string, profile: VoiceProfile): string {
   return path.join(profilesRoot(userDataDir), profile.audioFile);
 }
@@ -107,6 +109,7 @@ export function encodeWav16(samples: Float32Array, sampleRate: number): Buffer {
   return buf;
 }
 
+/** 列音色档案；索引文件缺失或坏了返回空，并顺手校验音频文件是否还在。 */
 export async function listProfiles(userDataDir: string): Promise<VoiceProfile[]> {
   try {
     const raw = JSON.parse(await fs.readFile(path.join(profilesRoot(userDataDir), INDEX_FILE), "utf8"));
@@ -154,6 +157,7 @@ export async function createProfile(
   return profile;
 }
 
+/** 改某个音色档案的名称 / 参考文本，返回更新后的档案。 */
 export async function updateProfile(
   userDataDir: string,
   id: string,
@@ -168,6 +172,7 @@ export async function updateProfile(
   return hit;
 }
 
+/** 删一个音色档案（索引 + 音频文件一起删），返回是否真删了。 */
 export async function deleteProfile(userDataDir: string, id: string): Promise<boolean> {
   const list = await listProfiles(userDataDir);
   const hit = list.find((p) => p.id === id);

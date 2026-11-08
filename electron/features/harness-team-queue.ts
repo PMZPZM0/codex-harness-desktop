@@ -43,6 +43,7 @@ function activeTurnOf(threadId: string): string {
   return "";
 }
 
+/** 启动一条团聊排队条目：先把队列里的正文原样读出来（steer 只送文本），再交给引擎。 */
 export async function startTeamQueued(input: TeamQueueStartInput): Promise<TeamQueueStartResult> {
   const threadId = String(input?.threadId ?? "").trim();
   const queuedId = String(input?.queuedSubmissionId ?? "").trim();

@@ -206,6 +206,7 @@ function platformPackage() {
   return target;
 }
 
+/** 解析随包 codex 可执行文件路径（按平台取对应的 npm 平台包）。 */
 export function codexBinaryPath() {
   const [packageName, target] = platformPackage();
   const packageJson = require.resolve(`${packageName}/package.json`);

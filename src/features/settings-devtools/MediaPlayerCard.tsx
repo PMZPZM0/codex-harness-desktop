@@ -23,6 +23,7 @@ const SOURCE_APIS: Array<[string, string]> = [
   ["暴风资源", "https://bfzyapi.com/api.php/provide/vod"],
 ];
 
+/** 影视播放器卡片：说明与入口（当前无需安装项）。 */
 export function MediaPlayerCard({ onNotice }: { onNotice?: (message: string) => void }) {
   return (
     <div className="voice-devtools-card">

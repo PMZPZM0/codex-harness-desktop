@@ -9,6 +9,7 @@ import { usePart07b2 } from "./02-seg/02-team-sessions-skills";
 import type { Bag } from "../bag-types";
 
 
+/** bag 分片 07b：合并连接器（b1）与团队/技能（b2）。 */
 export function usePart07b(bag: Bag) {
   const a = usePart07b1(bag);
   const b = usePart07b2(bag);

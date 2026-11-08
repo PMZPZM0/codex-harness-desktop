@@ -46,6 +46,7 @@ const recordsByThread = new Map<string, CompactionRecord[]>();
 
 const MAX_RECORDS_PER_THREAD = 30;
 
+/** 设置压缩监听要看的目录（会话数据目录 + codexHome）；空值表示关闭。 */
 export function setCompactionWatchDirs(dir: string, home: string): void {
   storeDir = dir ? String(dir) : null;
   codexHomeDir = home ? String(home) : "";

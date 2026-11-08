@@ -9,6 +9,7 @@ import { usePart08b } from "./part08/02-seg";
 import { usePart08c } from "./part08/03-seg";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 08：合并会话切换（a）、发送（b）与方案执行（c）。 */
 export function usePart08(bag: Bag) {
   const a = usePart08a(bag);
   const b = usePart08b(bag);

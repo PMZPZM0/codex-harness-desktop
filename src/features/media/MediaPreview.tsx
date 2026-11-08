@@ -398,6 +398,7 @@ function ModelStage({ source, title }: { source: string; title: string }) {
 
 const RATE_OPTIONS = [0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => ({ value: String(value), label: `${value}×` }));
 
+/** 媒体预览弹窗：图片/视频/音频统一播放，本地与远程来源都接。 */
 export function MediaPreviewModal({ target, onClose }: { target: MediaPreviewTarget; onClose: () => void }) {
   const source = target.source;
   const kind = (target.kind || mediaKindOf(source)) as Kind | "";
@@ -496,6 +497,7 @@ type MediaBridgeApi = {
   onMediaPreviewOpen?: (listener: (event: MediaPreviewTarget) => void) => (() => void) | undefined;
 };
 
+/** 媒体预览桥：⛔ 只有**引擎**发起的预览才记成卡片（用户自己点附件不算）。 */
 export function MediaPreviewBridge({ threadId = "", runningTurnIdsRef }: { threadId?: string; runningTurnIdsRef?: { current: Map<string, string> | null } }) {
   const [target, setTarget] = useState<MediaPreviewTarget | null>(null);
 

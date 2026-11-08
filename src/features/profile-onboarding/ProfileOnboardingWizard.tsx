@@ -111,6 +111,7 @@ function inferTone(value?: string): Tone {
   return "none";
 }
 
+/** 画像引导向导：逐项问清身份与偏好，应用后写回个性化配置。 */
 export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   onApplied?: (config: Config) => void;
   onNotice?: (text: string) => void;

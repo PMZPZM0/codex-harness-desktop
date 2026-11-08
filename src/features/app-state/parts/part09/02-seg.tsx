@@ -146,6 +146,7 @@ import { useAnchoredPopover } from "../../../app-view/hooks/useAnchoredPopover";
 import type { Bag } from "../bag-types";
 import { useEscapeLayer } from "../../../../hooks/useEscapeLayer";
 
+/** bag 分片 09b：团队会话里正在被调度的成员（点亮其头像）。 */
 export function usePart09b(bag: Bag) {
   // 团队会话里正在被调度的成员（主理人通过 team_member_invoke 分发子任务时点亮其头像）
   const activeThreadMemberRunning = bag.expertTeamMemberRunning && bag.thread && bag.expertTeamMemberRunning.teamId === (bag.teamThreadMapRef.current.get(bag.thread.id) || bag.teamThreadConfigRef.current.get(bag.thread.id)?.teamId) ? bag.expertTeamMemberRunning : null;

@@ -138,6 +138,7 @@ function ReviewFileSection({
   );
 }
 
+/** 回合审查面板：按目录树列本回合改动，可搜索、可折叠目录、可打开文件。 */
 export function TurnReviewPanel({ workspace, active = true, onOpenFile }: { workspace?: string; active?: boolean; onOpenFile?: (path: string) => void }) {
   const state = useSyncExternalStore(subscribeTurnReview, getTurnReview, () => null);
   const [query, setQuery] = useState("");

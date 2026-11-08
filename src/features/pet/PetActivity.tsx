@@ -34,6 +34,7 @@ const STATUS_LABEL: Record<ActivityStatus, string> = {
 
 const EMPTY_SIGNAL: PetSignalLike = { activities: [], attention: "" };
 
+/** 宠物活动面板：列当前在跑的会话，可停止、可回话。 */
 export function PetActivity() {
   const [signal, setSignal] = useState<PetSignalLike>(EMPTY_SIGNAL);
   const [busyId, setBusyId] = useState("");

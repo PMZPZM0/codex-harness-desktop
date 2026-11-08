@@ -121,6 +121,7 @@ async function declaredSkillName(dir: string, fallback: string): Promise<string>
   return fallback;
 }
 
+/** 扫本地技能目录，算出哪些技能可更新（拿不到目录就返回空，⛔ 不抛错）。 */
 export async function checkSkillUpdateRows(): Promise<SkillUpdateRow[]> {
   const rows: SkillUpdateRow[] = [];
   let entries: any[] = [];
@@ -165,6 +166,7 @@ function withSkillWriteLock<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
+/** 更新单个技能目录：先做目录穿越校验，再走安装/覆盖流程。 */
 export async function updateSkillFolder(key: string) {
   const folder = String(key ?? "").trim();
   if (!folder) throw new Error("缺少技能目录名");

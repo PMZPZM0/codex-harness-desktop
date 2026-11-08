@@ -9,6 +9,7 @@
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
 
+/** 中转页统一弹窗外壳：portal 到 body，只有点遮罩本身才关（冒泡上来的内容点击不关）。 */
 export function RelayModal({ onClose, children, backdropClassName }: { onClose: () => void; children: ReactNode; backdropClassName?: string }) {
   return createPortal(
     <div

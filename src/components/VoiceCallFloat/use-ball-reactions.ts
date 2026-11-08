@@ -12,6 +12,7 @@ import { gazeOffsets, isTypingKey, isTypingTarget, pupilScale } from "../../lib/
 const TYPING_HOLD_MS = 1100;
 const PUPIL_HOLD_MS = 140;
 
+/** 语音悬浮球的情绪反应：按通话状态给球体加动画/表情，`enabled` 为 false 时完全不动（省电）。 */
 export function useBallReactions({
   enabled,
   ballRef,

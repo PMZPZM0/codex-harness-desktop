@@ -145,6 +145,7 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
+/** 远控控制台：机器人绑定、通道选择与流式开关。 */
 export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
   const {
     activeBotId,

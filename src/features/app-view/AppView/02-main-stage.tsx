@@ -6,6 +6,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { MainStageTimeline } from "./02-main-stage/01-timeline";
 import { MainStageComposer } from "./02-main-stage/03-composer";
 
+/** 主舞台：只有「正常对话框」一种形态（中枢群聊覆盖层已按用户令整块删除）。 */
 export function AppViewMainStage({ app }: { app: HarnessAppApi }) {
   /* ⛔ 10-25 用户令：主舞台只有「正常对话框」这一种形态。曾经做过中枢群聊覆盖层
      （visibility 隐藏原会话 + 群聊气泡），用户实测「一片空白 / 太丑」并明确要求

@@ -7,6 +7,7 @@ import { CircleStop, AlertTriangle, FileText, Brain, ChevronDown } from "lucide-
 import { hk } from "../../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "../../shared/COMPOSER_CHIP_ICON";
 import { imageDisplaySrc } from "../../../lib/image-src.mjs";
+/** 就地编辑用户消息：Esc 取消，提交后重发。 */
 export function UserMessageEditor({ initial, onCancel, onSubmit }: { initial: string; onCancel: () => void; onSubmit: (text: string) => void }) {
   const [draft, setDraft] = useState(initial);
   return (
@@ -21,6 +22,7 @@ export function UserMessageEditor({ initial, onCancel, onSubmit }: { initial: st
   );
 }
 
+/** 消息里的附件 chip：图片可点开预览，文件可点开。 */
 export function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
   name: string;
   source: string;

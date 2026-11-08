@@ -26,6 +26,7 @@ function basenameOf(path: string): string {
 
 type CardItem = { source: string; title: string; kind: "video" | "audio"; generated: boolean };
 
+/** 回合媒体卡：列出本回合产出的媒体文件，可预览与定位。 */
 export function TurnMediaCard({ threadId, turnId }: { threadId: string; turnId: string }) {
   const recorded = useSyncExternalStore(
     subscribeMediaPlayback,

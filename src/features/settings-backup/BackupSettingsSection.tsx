@@ -14,6 +14,7 @@ import { Spinner } from "../../components/CardShell";
 
 export type BackupSettingsSectionProps = { thread: any; backupBusy: any; exportThreadsMarkdown: any; exportThreadsBackup: any; threads: any; importThreadsBackup: any; importConversationMarkdown: any };
 
+/** 备份设置：导出/导入会话（可多选），Markdown 与 JSON 两种格式。 */
 export function BackupSettingsSection(props: BackupSettingsSectionProps) {
   const { thread, backupBusy, exportThreadsMarkdown, exportThreadsBackup, threads, importThreadsBackup, importConversationMarkdown } = props;
   /* 选择会话导出（09-27）：勾选任意多条 → 一次导出。按更新时间新→旧排，勾选状态跨搜索保留 */

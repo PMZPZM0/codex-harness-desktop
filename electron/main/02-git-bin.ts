@@ -10,6 +10,7 @@ import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGIST
 import { appSourceRoot } from "../runtime-refs";
 /** git 可执行文件路径缓存（09-24 从 main.ts 迁入本模块：全仓仅此处使用）。 */
 let gitBinCache = "";
+/** 解析 git 可执行文件：应用自带便携版 → 常见安装位置 → 最后才赌 PATH（GUI 进程的 PATH 里通常没有 git）。 */
 export function gitBin(): string {
   if (gitBinCache) return gitBinCache;
   // 系统 PATH 里通常没有 git（GUI 进程继承的注册表 PATH 无 Git Bash 注入）——
@@ -34,6 +35,7 @@ export function gitBin(): string {
   return gitBinCache;
 }
 
+/** 在本仓根目录执行一条 git 命令并返回 stdout；⛔ 必带 `core.quotepath=off`（默认会把中文/特殊字符路径输出成八进制转义，按行解析就拿到坏路径）。 */
 export function gitExec(root: string, args: string): string {
   const bin = `"${gitBin()}"`;
   try {

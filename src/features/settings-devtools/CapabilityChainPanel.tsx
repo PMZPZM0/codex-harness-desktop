@@ -11,6 +11,7 @@ import { CircleCheck } from "lucide-react";
 
 export type CapabilityChainPanelProps = { capabilityRows: any; capabilityError: any };
 
+/** 能力链面板：列出当前可用能力与缺失环节（数据来自主进程探测）。 */
 export function CapabilityChainPanel({ capabilityRows, capabilityError }: CapabilityChainPanelProps) {
   return (
     <div className="settings-section stack">

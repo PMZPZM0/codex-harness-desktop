@@ -55,6 +55,7 @@ function titleOfItem(item: any): string {
   return "工具调用";
 }
 
+/** 轮询桥：把引擎的长任务事件转成后台任务记录，并把「中止」交回去。 */
 export function PollBridge({ threadId = "", turnId = "", onAbortTool, onPollSettled }: {
   threadId?: string; turnId?: string; onAbortTool?: () => void; onPollSettled?: (task: PollTask) => void;
 }): null {

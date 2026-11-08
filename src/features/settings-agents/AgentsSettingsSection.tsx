@@ -21,6 +21,7 @@ import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type AgentsSettingsSectionProps = { openNewSubAgent: any; refreshSubAgents: any; resourceLoading: any; subAgents: any; toggleSubAgentEnabled: any; openEditSubAgent: any; deleteSubAgent: any; subAgentEditorOpen: any; subAgentDraft: any; setSubAgentDraft: any; setSubAgentEditorOpen: any; saveSubAgent: any; setNotice: any; onBack?: any };
 
+/** 子智能体设置：列表、启停、新建/编辑/删除，走统一的编辑器草稿。 */
 export function AgentsSettingsSection(props: AgentsSettingsSectionProps) {
   const { openNewSubAgent, refreshSubAgents, resourceLoading, subAgents, toggleSubAgentEnabled, openEditSubAgent, deleteSubAgent, subAgentEditorOpen, subAgentDraft, setSubAgentDraft, setSubAgentEditorOpen, saveSubAgent, setNotice, onBack } = props;
   const [previewId, setPreviewId] = useState("");

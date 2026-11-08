@@ -31,6 +31,7 @@ async function fileToAvatarDataUrl(file: File, size = 128): Promise<string> {
   return canvas.toDataURL("image/webp", 0.86);
 }
 
+/** 头像选择器：贴锚点弹出，给成员或团换头像。 */
 export function TeamAvatarPicker({
   anchor,
   name,

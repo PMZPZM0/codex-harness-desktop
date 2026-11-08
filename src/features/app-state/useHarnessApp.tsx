@@ -18,6 +18,7 @@ import type { Bag } from "./parts/bag-types";
 /* 本 hook 的对外返回类型（供视图层标注 props；type-only）*/
 export type HarnessAppApi = ReturnType<typeof useHarnessApp>;
 
+/** App 的总装配 hook：按 part01–09 依次挂状态到同一个 bag（渲染层唯一的大状态容器）。 */
 export function useHarnessApp() {
   // ctx 跨 part 共享：新声明写进去，延迟求值的引用（含前向引用）读出来。
   const ctxRef = useRef<any>(null);

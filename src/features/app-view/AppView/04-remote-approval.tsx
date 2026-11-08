@@ -142,6 +142,7 @@ import { useEffect, useRef, useState } from "react";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
 
+/** 远控审批与配对弹窗：显示中转隧道状态与配对码（码 5 分钟轮换，弹窗要跟着换）。 */
 export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
   /* 中转状态（10-29）：装完即用的内置隧道是否在线 —— 只看二维码猜不出「为什么连不上」 */
   const [relay, setRelay] = useState<{ state: string; id: string; error: string } | null>(null);

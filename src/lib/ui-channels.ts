@@ -39,32 +39,48 @@ let lookupFile: LookupFileFn | null = null;
 let fileMissing: FileMissingFn | null = null;
 let mediaPreview: MediaPreviewFn | null = null;
 
+/** 登记「打开大图浮层」的实现（宿主启动时注入；传 null 解绑）。 */
 export function registerImageLightbox(fn: LightboxFn | null): void { lightbox = fn; }
+/** 请求打开大图浮层；没人登记时静默（⛔ 不抛错，别让预览链断掉）。 */
 export function openImageLightbox(path: string, alt: string): void { lightbox?.(path, alt); }
 
+/** 登记「打开粘贴文本编辑器」的实现（宿主注入；null 解绑）。 */
 export function registerOpenPastedTextEditor(fn: OpenPastedTextFn | null): void { openPastedText = fn; }
+/** 请求打开粘贴文本编辑器；未登记时静默。 */
 export function openPastedTextEditor(path: string, name: string): void { openPastedText?.(path, name); }
 
 /** 会话工作区文件的弹窗编辑（09-26 文件卡片右键「编辑」）：同一 pastedText 槽位渲染，kind 区分读写通道 */
 export function registerOpenFileTextEditor(fn: OpenPastedTextFn | null): void { openFileText = fn; }
+/** 请求用文本编辑器打开某个文件；未登记时静默。 */
 export function openFileTextEditor(path: string, name: string): void { openFileText?.(path, name); }
 
+/** 登记全局 toast 的实现（宿主注入；null 解绑）。 */
 export function registerToast(fn: ToastFn | null): void { toast = fn; }
+/** 弹一条 toast（标题 + 可选正文）；未登记时静默。 */
 export function notifyToast(title: string, text?: string): void { toast?.(title, text); }
 
+/** 登记「关闭粘贴文本编辑器」的实现（宿主注入；null 解绑）。 */
 export function registerClosePastedText(fn: ClosePastedTextFn | null): void { closePastedText = fn; }
+/** 请求关闭粘贴文本编辑器；未登记时什么都不做。 */
 export function requestClosePastedText(): void { closePastedText?.(); }
 
+/** 登记「把相对路径解析成绝对路径」的实现（宿主注入；null 解绑）。 */
 export function registerResolveFilePath(fn: ResolvePathFn | null): void { resolvePath = fn; }
+/** 解析路径为绝对路径；没登记时原样返回（⛔ 不猜目录）。 */
 export function resolveFilePath(path: string): string { return resolvePath ? resolvePath(path) : path; }
 
+/** 登记「按文件名查已知路径」的实现（宿主注入；null 解绑）。 */
 export function registerLookupKnownFile(fn: LookupFileFn | null): void { lookupFile = fn; }
+/** 按文件名查已知路径；没登记或查不到返回 null。 */
 export function lookupKnownFile(name: string): string | null { return lookupFile ? lookupFile(name) : null; }
 
+/** 登记「文件缺失提示」的实现（宿主注入；null 解绑）。 */
 export function registerFileMissing(fn: FileMissingFn | null): void { fileMissing = fn; }
+/** 上报一次「文件不存在 / 打不开」；未登记时静默。 */
 export function notifyFileMissing(message: string): void { fileMissing?.(message); }
 
 /** 视频 / 音频 / 3D 预览（10-20）：基座组件（文件卡、附件 chip）只发请求，
  *  真正的弹窗由 MediaPreviewBridge 在 feature 层挂载 —— 避免 shared → features 反向依赖。 */
 export function registerMediaPreview(fn: MediaPreviewFn | null): void { mediaPreview = fn; }
+/** 请求打开媒体预览浮层；未登记时静默。 */
 export function openMediaPreview(target: MediaPreviewTarget): void { mediaPreview?.(target); }

@@ -99,6 +99,7 @@ export function isThreadDelivered(threadId: string) {
   return watched.has(tid);
 }
 
+/** 给渲染层过滤引擎事件：只放行本窗口在看的会话事件（跨会话的一律丢弃）。 */
 export function filterForRenderer(event: any) {  if (!EVENT_FILTER_ENABLED) return event;
   if (event?.kind !== "notification") return event;
   const method = String(event?.method ?? "");

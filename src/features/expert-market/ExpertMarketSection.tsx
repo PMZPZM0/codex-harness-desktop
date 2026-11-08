@@ -14,6 +14,7 @@ export type ExpertMarketSectionProps = { onBack: () => void; onInstalled: () => 
 
 type SkillsetEntry = { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] };
 
+/** 专家市场板块：列表 / 搜索 / 分页与安装进度。 */
 export function ExpertMarketSection({ onBack, onInstalled, onNotice, localSkills }: ExpertMarketSectionProps) {
   const [items, setItems] = useState<SkillsetEntry[]>([]);
   const [total, setTotal] = useState(0);

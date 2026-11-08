@@ -4,6 +4,7 @@ import { Search, X } from "lucide-react";
 /** 设置页通用控件：插件页与技能页共用，保证两页的筛选、批量操作、开关观感一致。 */
 
 type SegmentedTabsOption = { value: string; label: string; count?: number };
+/** 分段标签切换（role=tablist，选中态由 value 决定）。 */
 export function SegmentedTabs({ value, onChange, options }: { value: string; onChange: (value: string) => void; options: SegmentedTabsOption[] }) {
   return (
     <div className="segmented-tabs" role="tablist">
@@ -153,6 +154,7 @@ type BatchAction = {
   title?: string;
   onClick: () => void;
 };
+/** 批量操作条：左侧一句提示 + 右侧一组按钮。 */
 export function BatchActions({ hint, actions }: { hint?: string; actions: BatchAction[] }) {
   return (
     <div className="batch-actions">

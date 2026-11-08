@@ -8,6 +8,7 @@ import { usePart06b1 } from "./02-seg/01-turn-runtime-activity";
 import { usePart06b2 } from "./02-seg/02-model-thread-settings";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 06b：合并运行动态（b1）与模型/会话设置（b2）。 */
 export function usePart06b(bag: Bag) {
   const a = usePart06b1(bag);
   const b = usePart06b2(bag);

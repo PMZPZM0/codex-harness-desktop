@@ -14,6 +14,7 @@ import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type CommandsSettingsSectionProps = { settingsResources: any; customCommands: any; commandSearch: any; builtinCommandCatalog: any; commandFilter: any; setNotice: any; setCommandEditor: any; workspace: any; refreshCommands: any; commandBusy: any; setCommandSearch: any; setCommandFilter: any; setCommandDelete: any; useCommand: any; commandEditor: any; commandBusyKey: any; persistCommand: any; commandDelete: any; confirmDeleteCommand: any };
 
+/** 命令设置：内置命令目录 + 自定义命令的搜索、启停与编辑。 */
 export function CommandsSettingsSection(props: CommandsSettingsSectionProps) {
   const { settingsResources, customCommands, commandSearch, builtinCommandCatalog, commandFilter, setNotice, setCommandEditor, workspace, refreshCommands, commandBusy, setCommandSearch, setCommandFilter, setCommandDelete, useCommand, commandEditor, commandBusyKey, persistCommand, commandDelete, confirmDeleteCommand } = props;
   // 技能命令：已启用技能即 WorkBuddy 语义里的 slash-command 包

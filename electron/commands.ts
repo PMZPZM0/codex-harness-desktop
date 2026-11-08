@@ -177,6 +177,7 @@ export async function listCustomCommands(codexHome: string, cwd?: string): Promi
   return results;
 }
 
+/** 读一条自定义命令：判定它属于全局还是项目级（按所在目录），返回内容与来源。 */
 export async function readCustomCommand(filePath: string, codexHome: string, cwd?: string): Promise<CustomCommandEntry | null> {
   const norm = path.normalize(filePath);
   let baseDir: string | null = null;
@@ -243,6 +244,7 @@ export async function saveCustomCommand(input: SaveCommandInput): Promise<Custom
   return entry;
 }
 
+/** 删除一条自定义命令文件（文件不存在也不报错）。 */
 export async function deleteCustomCommand(filePath: string): Promise<void> {
   await fs.rm(filePath, { force: true });
 }

@@ -39,6 +39,7 @@ const RULES: Array<{ match: RegExp; zh: (m: RegExpMatchArray) => string }> = [
   },
 ];
 
+/** 把引擎的英文提示按规则表翻成中文；没命中规则**原样返回**（⛔ 不硬造文案、不吞原文）。 */
 export function translateEngineNotice(text: string): string {
   const raw = String(text ?? "").trim();
   if (!raw) return raw;

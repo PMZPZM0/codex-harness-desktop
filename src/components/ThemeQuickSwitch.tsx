@@ -49,6 +49,7 @@ function MoonGlyph() {
   );
 }
 
+/** 明暗主题快速切换开关（两态，当前态高亮）。 */
 export function ThemeQuickSwitch({ theme, onLight, onDark }: Props) {
   const dark = theme === "dark";
   return (

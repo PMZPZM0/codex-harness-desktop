@@ -26,6 +26,7 @@ type Props = {
   onGoModels: () => void;
 };
 
+/** 播报卡：开关播报与播报范围。⛔ 没有可用 TTS 引擎时不许打开（打开就等于承诺会出声），点了给可照做的说明 + 直达下载。 */
 export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady, onGoModels }: Props) {
   /* ⛔ 没有可用引擎时不许把开关打开（打开=承诺会出声）。点了给一句能照做的说明 + 直达下载。 */
   const [blocked, setBlocked] = useState(false);

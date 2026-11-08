@@ -9,6 +9,7 @@
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 05b：独立窗探测。⛔ 先同步读 URL 的 `?popout=`（首帧即定），IPC 只作兜底 —— 否则弹窗会先按主界面布局闪一帧。 */
 export function usePart05b(bag: Bag) {
   // 独立会话弹窗探测：**同步读 URL query**（弹窗 URL 固定带 ?popout=<id>，首帧即可确定，
   // 不必等 IPC 往返——异步探测会让弹窗先按主界面布局渲染一帧：timeline 820 居中 + 侧栏

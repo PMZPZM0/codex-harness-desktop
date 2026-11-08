@@ -20,6 +20,7 @@ import { Crown, Trash2, FolderOpen } from "lucide-react";
 type BossSessionRow = { id: string; createdAt?: number; memoryDir?: string };
 type ThreadRow = { id?: string; name?: string; cwd?: string };
 
+/** 指挥中枢记忆：每个中枢一份独立记忆目录，按中枢列会话与条目。 */
 export function BossMemoryPanel({ threads, onOpenThread, onNotice }: {
   threads?: ThreadRow[];
   onOpenThread?: (id: string) => void;

@@ -99,6 +99,7 @@ export function runningPartnersOf(
   });
 }
 
+/** 用户气泡下的运行反馈：`process` 走过程折叠块，`placeholder` 走飞书式小图标。 */
 export function TeamRunFeedback({ mode, partners, faceOfId }: RunFeedbackProps) {
   if (!partners.length) return null;
   return mode === "process"

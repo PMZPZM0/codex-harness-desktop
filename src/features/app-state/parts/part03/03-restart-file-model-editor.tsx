@@ -10,6 +10,7 @@ import type { Bag } from "../bag-types";
 
 import type { usePart03b } from "./02-composer-memory-models";
 
+/** bag 分片 03c：合并预览/编辑器（c1）与并发/模型兜底（c2）。 */
 export function usePart03c(bag: Bag, ibB: ReturnType<typeof usePart03b>) {
   const a = usePart03c1(bag, ibB);
   const b = usePart03c2(bag);

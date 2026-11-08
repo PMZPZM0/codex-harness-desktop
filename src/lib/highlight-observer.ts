@@ -6,6 +6,7 @@
 // 用户看不到"从灰变彩"的过程。
 export const highlightObserveCallbacks = new WeakMap<Element, () => void>();
 let sharedHighlightObserver: IntersectionObserver | null = null;
+/** 取共享的 IntersectionObserver（代码块进视口才高亮）；环境不支持时返回 null，调用方按「立即高亮」兜底。 */
 export function getHighlightObserver(): IntersectionObserver | null {
   if (sharedHighlightObserver) return sharedHighlightObserver;
   if (typeof IntersectionObserver !== "function") return null;

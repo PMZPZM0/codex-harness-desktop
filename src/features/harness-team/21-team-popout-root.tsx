@@ -10,6 +10,7 @@ import type { HarnessAppApi } from "../app-state";
 import { teamChatOpen } from "./00-open-store";
 import { TeamChatOverlay } from "./index";
 
+/** 团队独立窗的根组件：置团队开启态、加 body 类名与窗口标题「工作伙伴」。 */
 export function TeamPopoutRoot({ app }: { app: HarnessAppApi }) {
   useEffect(() => {
     teamChatOpen.set(true);

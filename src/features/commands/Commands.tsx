@@ -8,6 +8,7 @@ export type BuiltinCommandDef = { name: string; description: string; hint?: stri
 
 export type CommandEditorDraft = { mode: "new" | "edit"; name: string; source: CommandSource; description: string; argumentHint: string; allowedTools: string; model: string; body: string; prevFilePath?: string };
 
+/** 自定义命令编辑弹窗：名称、描述、正文与保存校验。 */
 export function CommandEditorModal({ draft, saving, onChange, onClose, onSave }: {
   draft: CommandEditorDraft;
   saving: boolean;

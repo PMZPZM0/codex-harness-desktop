@@ -11,6 +11,7 @@ export { UserMessageEditor, MessageAttachChip } from "./SessionTurn/04-message-c
 
 const workItemTypes = new Set(["commandExecution", "fileChange", "mcpToolCall", "dynamicToolCall", "webSearch", "collabAgentToolCall", "subAgentActivity", "imageGeneration"]);
 
+/** 判断一个回合是否是「有活干」的回合（含工作类 item），用于汇总卡等处。 */
 export function isTaskTurn(turn: Turn) {
   return turn.items.some((item) => workItemTypes.has(item.type));
 }

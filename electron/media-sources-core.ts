@@ -81,6 +81,7 @@ export function normalizeSourceConfig(raw: unknown): MediaSourceConfig[] {
   return out.slice(0, 50);
 }
 
+/** 在接口地址上拼 query 参数；空值/undefined 一律跳过（⛔ 不拼出 `?a=` 这种空参数）。 */
 export function buildApiUrl(api: string, params: Record<string, string | number | undefined>): string {
   const url = new URL(api);
   for (const [key, value] of Object.entries(params)) {
@@ -115,6 +116,7 @@ export function parsePlayGroups(from: unknown, playUrl: unknown): PlayGroup[] {
   return groups;
 }
 
+/** 把源站返回的一条搜索结果归一化成内部形状（含播放分组解析）。 */
 export function normalizeSearchItem(item: unknown, source: MediaSourceConfig): MediaSearchItem {
   const raw = (item && typeof item === "object" ? item : {}) as Record<string, unknown>;
   const playGroups = parsePlayGroups(raw.vod_play_from, raw.vod_play_url);
@@ -137,6 +139,7 @@ export function normalizeSearchItem(item: unknown, source: MediaSourceConfig): M
   };
 }
 
+/** 归一化搜索回包：取 list、限流到 1~20 条、逐条走 normalizeSearchItem。 */
 export function normalizeSearchPayload(payload: unknown, source: MediaSourceConfig, limit = 8): MediaSearchItem[] {
   const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   const list = Array.isArray(root.list) ? root.list : [];
@@ -147,6 +150,7 @@ export function normalizeSearchPayload(payload: unknown, source: MediaSourceConf
     .slice(0, capped);
 }
 
+/** 归一化详情回包：取第一条，没有就返回 null。 */
 export function normalizeDetailPayload(payload: unknown, source: MediaSourceConfig): MediaDetailItem | null {
   const root = payload && typeof payload === "object" ? payload as Record<string, unknown> : {};
   const list = Array.isArray(root.list) ? root.list : [];
@@ -192,10 +196,12 @@ export function mediaKindOfPath(value: string): MediaPreviewKind | "" {
   return "";
 }
 
+/** 判断 URL 是否直接可播的视频（m3u8 / mp4 / webm / mov / m4v / ogv）。 */
 export function isDirectVideoUrl(url: string): boolean {
   return /\.(m3u8|mp4|webm|mov|m4v|ogv)(?:[?#]|$)/i.test(String(url ?? ""));
 }
 
+/** 判断 URL 是否 HLS（.m3u8，需要专用播放器而非 <video> 直放）。 */
 export function isHlsUrl(url: string): boolean {
   return /\.m3u8(?:[?#]|$)/i.test(String(url ?? ""));
 }

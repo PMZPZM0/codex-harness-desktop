@@ -74,6 +74,7 @@ function safeStringify(node: any): string {
   }
 }
 
+/** 把回合错误翻成可读文案；⛔ 兼容对象入参（直接 String(obj) 只会得到 `[object Object]`），判超限要用序列化后的全文。 */
 export function describeTurnError(raw: unknown): TurnErrorText {
   /* ⛔ 审查补充：raw 可能是**对象**（调用方把整个 error 传进来，而不是 error.message）。
      直接 String(obj) 只会得到 "[object Object]" —— 等于把一句能读的话变成噪声。

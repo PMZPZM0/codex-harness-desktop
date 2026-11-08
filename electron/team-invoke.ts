@@ -60,6 +60,7 @@ export type InvokeMemberResult = {
   reused: boolean;
 };
 
+/** 调一个团成员：按「主理人会话 + 团队 + 成员」加锁串行（并行阶段对同一成员重复提交会各起一个会话）；不同成员仍并行。 */
 export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<InvokeMemberResult> {
   /* 同一「主理人会话 + 团队 + 成员」串行：并行阶段可能对同一成员重复提交任务，
      两条并发会在线程登记前各自 thread/start，产生重复会话。锁只按成员，不同成员仍并行。 */

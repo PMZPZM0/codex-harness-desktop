@@ -137,6 +137,7 @@ export type CloudMemoryActivationView = {
   reasonText: string;
 };
 
+/** 记忆后端状态快照：选择的后端、实际生效的后端、MCP 安装情况、云端开通三态与原因文案（界面据此置灰与提示）。 */
 export function memoryBackendStatus(): MemoryBackendStatus {
   const backend = memoryBackend();
   const installed = localMemoryMcpInstalled();

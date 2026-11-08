@@ -34,6 +34,7 @@ type TeamPanelProps = {
   onCloseWindow?: () => void;
 };
 
+/** 团队模式面板：群列表 + 群视图 + 设置，所有群级操作从这里下发。 */
 export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPanelProps = {}) {
   const {
     groups, issues, blockers, limit, loading, error,

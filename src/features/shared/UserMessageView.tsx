@@ -28,6 +28,7 @@ import { hk } from "../../lib/hk";
 import { COMPOSER_CHIP_ICON } from "./COMPOSER_CHIP_ICON";
 import { imageDisplaySrc } from "../../lib/image-src.mjs";
 
+/** 用户消息视图：头像、名字、正文与附件，支持就地编辑（名字与 Codex 走同一套 store）。 */
 export function UserMessageView({ item, turn, threadId, fallbackWindow, pending, leadingAction, onCopy, onQuote, onImageCopy, onEditSubmit, onOpenFile, onOpenThread }: { item: ThreadItem; turn?: Turn; /** 10-31：本会话 id —— 上级气泡用它查「我的上级主管是谁」（笔名快照） */ threadId?: string; fallbackWindow?: number; pending?: boolean; /** 11-06：气泡左侧的行内动作（如插队消息的「撤回」）—— 放在同一弹性行里，紧贴气泡左缘。 */ leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void }) {
   // 「你」的名字（09-17 用户「人也要有名字和头像，位置跟 Codex 一样」）：走外部 store，
   // 与 Codex 名字同一套机制。⛔ 必须与其它 hook 一起放在 early return 之前（注释见下）。

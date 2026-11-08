@@ -26,6 +26,7 @@ import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
 import { SessionAnnounceToggle } from "../../voice-announce";
 import { TurnMediaCard } from "../../media";
+/** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。 */
 export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。

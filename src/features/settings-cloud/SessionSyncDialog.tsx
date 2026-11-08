@@ -85,6 +85,7 @@ function humanError(code: string | undefined, fallback: string | undefined, mode
   return fallback || (mode === "upload" ? "上传失败" : "同步失败");
 }
 
+/** 会话同步弹窗：上传或拉取本机会话，结束时把结果（成功/失败文案）交回调用方。 */
 export function SessionSyncDialog(props: {
   mode: "upload" | "pull";
   onClose: (result: { kind: "ok" | "err"; text: string } | null) => void;

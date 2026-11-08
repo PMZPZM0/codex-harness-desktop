@@ -60,6 +60,7 @@ function readDock(): DockState {
   }
 }
 
+/** 悬浮播报宿主：右下角图标 + 展开面板；语音播报时图标带绿点与呼吸，面板里给当前句与停止出口。 */
 export function BroadcastHost({ threadId }: { threadId?: string }) {
   const snap = useSyncExternalStore(subscribeBroadcast, getBroadcastSnapshot, getBroadcastSnapshot);
   /* 语音播报的实时态：图标上给一个绿点 + 呼吸，面板里给当前句与停止出口（「统一播报」）。 */

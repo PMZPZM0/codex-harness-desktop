@@ -108,6 +108,7 @@ function PetThumb({ pkg, height = PREVIEW_H }: { pkg: PetPackage; height?: numbe
   );
 }
 
+/** 宠物设置：宠物包列表、根目录与显示选项。 */
 export function PetSettingsSection({ onNotice }: PetSettingsSectionProps) {
   const [status, setStatus] = useState<PetStatus | null>(null);
   const [pets, setPets] = useState<PetPackage[]>([]);

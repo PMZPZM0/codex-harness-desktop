@@ -63,6 +63,7 @@ type Options = {
   onNotice: (message: string, tone?: "success" | "error" | "warning" | "info") => void;
 };
 
+/** 文件预览域 hook：维护当前预览、多文件标签、编辑草稿与保存，标签切回时走缓存不重读。 */
 export function useFilePreview({ workspace, onNotice }: Options) {
   const [filePreview, setFilePreview] = useState<FilePreview | null>(null);
   // WorkBuddy 式多文件标签：按打开顺序记录路径，切标签走缓存免重读

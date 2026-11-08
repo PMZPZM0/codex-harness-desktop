@@ -35,6 +35,7 @@ export type RuntimeToolsPanelProps = {
   runBatch: (kind: "install" | "uninstall", list: RuntimeRow[], cardKey: string) => void;
 };
 
+/** 运行时工具面板：按分组列出工具与安装/卸载/取消操作。 */
 export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
   const { group, devRuntimes, runtimeInstalling, runtimeUninstalling, runtimePercent, runtimeStage, runtimeSpeed, runtimeProgress, installDevRuntime, uninstallDevRuntime, cancelDevRuntime, setNotice, setRuntimeModal, batch, runBatch } = props;
   // 卸载二次确认（真删本地文件，不可恢复）：行内两步确认，不用原生 confirm。

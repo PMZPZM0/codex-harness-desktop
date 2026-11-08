@@ -1,6 +1,7 @@
 /** serializeComposerDom（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
 import { attachmentToken } from "./composer-attachments.mjs";
 
+/** 把输入框 DOM 序列化回字符串：文本原样、附件 chip 还原成 `[图片:path]` / `[文件:path]`（与 rebuildComposerDom 互逆）。 */
 export function serializeComposerDom(root: HTMLElement): string {
   let out = "";
   const walk = (node: Node) => {

@@ -32,6 +32,7 @@ type AutoUpdateRow = {
   error: string;
 };
 
+/** 自动化设置：RPA 配方与相关工具入口；⛔ 监听的工具 id 取自主进程返回的行，不硬编码第二份清单。 */
 export function AutomationSettingsSection(props: AutomationSettingsSectionProps) {
   const { setSettingsPage, setNotice, rpaRecipeCount = 0 } = props;
   // 只认本区块关心的工具：id 集合来自主进程返回的行，不硬编码第二份清单。

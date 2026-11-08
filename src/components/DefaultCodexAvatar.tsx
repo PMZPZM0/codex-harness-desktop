@@ -23,6 +23,7 @@
  */
 import { avatarAsset, CODEX_DEFAULT_AVATAR_FILE } from "../lib/avatar-presets";
 
+/** Codex 的默认头像占位（没有具体成员时用），尺寸可调。 */
 export function DefaultCodexAvatar({ size = 24 }: { size?: number }) {
   return (
     <span

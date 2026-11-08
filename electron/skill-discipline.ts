@@ -44,6 +44,7 @@ export async function buildCapabilityInventory(codexHome: string, mcp: { name: s
   return { skills: entries.map((s) => ({ name: s.name, desc: s.desc })), mcp };
 }
 
+/** 生成注入给模型的「技能与 MCP 运用守则」段落（开工先匹配能力、按技能手册办、别乱装）。 */
 export function buildDisciplineSection(inv: CapabilityInventory): string {
   const lines: string[] = [DISCIPLINE_START, "", "## 技能与 MCP 运用守则（必须遵守）", ""];
   lines.push("你有一批已安装的技能和 MCP 连接器，用它们办事比手工操作更快更稳。遵守以下纪律：");

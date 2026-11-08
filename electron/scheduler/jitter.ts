@@ -24,10 +24,12 @@ function getBeijingHour(timestampMs: number): number {
   return new Date(beijingMs).getHours();
 }
 
+/** 判断某时刻是否落在「高峰时段」（调度加抖动，避免整点齐发）。 */
 export function isPeakHour(timestampMs: number, config = DEFAULT_JITTER_CONFIG): boolean {
   return config.peakHours.includes(getBeijingHour(timestampMs));
 }
 
+/** 给定时时刻加**稳定抖动**：偏移量由 automationId 哈希决定（同一条任务每次抖同样多），高峰时段抖幅更大。 */
 export function applyJitter(scheduledTimeMs: number, automationId: string, _periodMs: number, config = DEFAULT_JITTER_CONFIG): number {
   const fraction = stableFractionFromString(automationId);
   const signed = (fraction - 0.5) * 2;

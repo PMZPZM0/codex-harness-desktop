@@ -136,6 +136,7 @@ export function normalizePetSettings(raw: unknown): PetSettings {
   };
 }
 
+/** 读宠物设置并归一化；老档案里还是旧默认宠物时做一次性迁移（用户自己选过的保持不动）。 */
 export function readPetSettings(): PetSettings {
   try {
     const raw = fs.readFileSync(settingsFile(), "utf8");

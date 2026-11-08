@@ -26,6 +26,7 @@ function readWorkspace(): string {
   try { return localStorage.getItem("workspace") ?? ""; } catch { return ""; }
 }
 
+/** 内置技能开关：按技能目录名（= SKILL.md 的 name）启停。 */
 export function BuiltinSkillSwitch({ skill, title, desc, onNotice }: {
   /** 技能目录名（= SKILL.md frontmatter 的 name），如 `i-have-adhd` */
   skill: string;

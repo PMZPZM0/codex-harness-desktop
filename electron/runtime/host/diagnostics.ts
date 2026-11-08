@@ -56,6 +56,7 @@ export function logCrash(scope: string, detail: unknown): void {
  */
 let installed = false;
 
+/** 装崩溃诊断（只装一次）。⛔ 不再无条件 reload —— 确定性崩溃会被 reload 变成无限重启。 */
 export function installCrashDiagnostics(): void {
   if (installed) return;
   installed = true;

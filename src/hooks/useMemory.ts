@@ -28,6 +28,7 @@ export type MemoryRecord = {
 /** 漏斗优先级：核心分类与 pinned 决定保留价值 */
 export type MemoryPriority = "P0" | "P1" | "P2" | "P3";
 
+/** 按分类与置顶标记给记忆排优先级（P0 置顶 / P1 背景与 SOP / P2 任务经验 / P3 临时）。 */
 export function memoryPriorityOf(entry: { category: string; pinned?: boolean }): MemoryPriority {
   if (entry.pinned) return "P0";
   if (entry.category === "项目背景" || entry.category === "工作流/SOP") return "P1";
@@ -48,6 +49,7 @@ export type MemoryGroup = {
   categories: string[];
 };
 
+/** 把记忆条目按来源会话分组（手工条目归到 `__manual`），供记忆页按会话折叠展示。 */
 export function groupMemoriesByThread(
   records: MemoryRecord[],
   threadTitleById: (threadId: string) => string | undefined,
@@ -106,6 +108,7 @@ type Options = {
 const MODE_KEY = "memory-mode";
 const WORKSPACE_KEY = "workspace-memory";
 
+/** 记忆域的 hook：拉条目、切分类、开关记忆、写入/删除，并把「后端是谁」还原成三态（cloud/mcp/builtin）。 */
 export function useMemory({ threadId, activeTurnId, workspace }: Options = {}) {
   const managementWorkspace = workspace;
   const [memoryEnabled, setMemoryEnabledState] = useState(() => localStorage.getItem("memory-enabled") !== "false");

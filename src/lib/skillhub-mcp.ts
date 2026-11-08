@@ -49,6 +49,7 @@ export const SKILLHUB_MCP_CATALOG: SkillHubMcpEntry[] = [
 
 export const SKILLHUB_MCP_CATEGORIES = ["全部", "腾讯产品MCP", "搜索与信息检索", "开发者工具", "文档工具", "支付与交易", "数据库与文件", "位置服务", "内容抓取", "浏览器自动化", "社交媒体", "设计与创意"];
 
+/** 拼 SkillHub 上某个 MCP 的详情页 URL（id 做 encodeURIComponent，⛔ 别手拼）。 */
 export function skillhubMcpDetailUrl(id: string): string {
   return `https://skillhub.cn/mcp/${encodeURIComponent(id)}`;
 }

@@ -51,6 +51,7 @@ type Props = {
   working: string;
 };
 
+/** 账号管理弹窗：密钥分组、新建密钥与两段式删除确认（⛔ 不再叠第四层确认框）。 */
 export function RelayCenterPageManageModal({ account, accounts, active, busy, changeKeyGroup, createKey, creatingKey, deleteKey, keyManage, currentKey, groupNameOf, isActiveProvider, isLiveRow, keyGroups, keyVisible, keysCollapsed, load, manageOpen, maskKey, newKey, onNotice, onOpenModelSettings, overview, progress, refreshing, removeAccount, setKeyVisible, setKeysCollapsed, setManageOpen, setKeyManage, setNewKey, setShowKeyForm, showKeyForm, subs, switchTarget, useKeyFromGroup, working }: Props) {
   /* 第三级弹窗的本地态：分组草稿 + 两段式删除确认（⛔ 不再叠第四层 confirm 弹窗） */
   const [draftGroup, setDraftGroup] = useState("");

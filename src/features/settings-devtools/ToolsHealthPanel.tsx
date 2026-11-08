@@ -12,6 +12,7 @@ import type { RuntimeRow } from "./runtime-groups";
 
 type HealthRow = { id: string; name: string; installed: boolean; ok: boolean; detail: string };
 
+/** 工具健康检查面板：一键体检并列出每项的状态与修复建议。 */
 export function ToolsHealthPanel({ devRuntimes, setNotice }: { devRuntimes: RuntimeRow[]; setNotice: (text: string) => void }) {
   const [health, setHealth] = useState<HealthRow[] | null>(null);
   const [healthBusy, setHealthBusy] = useState(false);

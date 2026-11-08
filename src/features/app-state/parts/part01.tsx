@@ -12,6 +12,7 @@ import { usePart01e } from "./part01/05-engine-ssh-connectors";
 import { usePart01f } from "./part01/06-goals-palette-commands";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 01：把 01a–01f 的状态与操作合并挂到 bag（App 单组件按域拆分用）。 */
 export function usePart01(bag: Bag) {
   const a = usePart01a(bag);
   const b = usePart01b(bag);

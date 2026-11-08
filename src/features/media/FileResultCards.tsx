@@ -17,6 +17,7 @@ function basenameOf(path: string): string {
   return String(path ?? "").split(/[\\/]/).pop() || String(path ?? "");
 }
 
+/** 从回复文本里挑出文件路径渲染成卡片（限条数），点开预览或打开编辑器。 */
 export function FileResultCards({ text, limit = 6 }: { text: string; limit?: number }) {
   const candidates = useMemo(() => collectDocumentPaths(text, limit), [text, limit]);
   const [confirmed, setConfirmed] = useState<Array<{ path: string; kind: string; remote: boolean }>>([]);

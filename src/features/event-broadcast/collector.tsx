@@ -29,6 +29,7 @@ import { markBroadcastSeen, pushBroadcast, type BroadcastItem } from "./store";
 /** 只扫最近几个回合：群事件总是紧邻当前（更早的已经播过，且历史里也有）。 */
 const GROUP_SCAN_TURNS = 3;
 
+/** 播报采集器：把群事件、系统事件与当前活动状态转成播报条目（去重后推给 store）。 */
 export function BroadcastCollector({ thread, systemEvents, activityLabel }: {
   thread?: { id?: string; turns?: Turn[] } | null;
   systemEvents?: SystemEvent[];

@@ -57,6 +57,7 @@ function toLocalDatetimeString(ms: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 生成一份「新建定时任务」的空白草稿（默认 60 分钟一次、工作日、下次触发在 6 小时后）。 */
 export function emptyScheduleDraft(workspace = ""): ScheduleDraft {
   return { name: "", prompt: "", workspace, model: "", effort: DEFAULT_EFFORT, intervalMinutes: "60", kind: "interval", timeOfDay: "09:00", weekdays: [1, 2, 3, 4, 5], monthDay: "1", month: "1", biweekly: false, scheduledAt: toLocalDatetimeString(Date.now() + 3600_000), validUntil: "", threadId: "" };
 }
@@ -64,6 +65,7 @@ export function emptyScheduleDraft(workspace = ""): ScheduleDraft {
 /** 定时任务启停的结果（给调用方出回执用；失败带原因，绝不吞错 —— 见 toggleSchedule 上方说明）。 */
 export type ToggleScheduleResult = { ok: true; task: ScheduledTask } | { ok: false; error: string };
 
+/** 定时任务域 hook：拉任务列表、维护新建/编辑草稿、保存与立即执行，并跟随主进程的调度状态。 */
 export function useScheduler() {
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
   const [scheduleDraft, setScheduleDraft] = useState<ScheduleDraft>(() => emptyScheduleDraft(localStorage.getItem("workspace") ?? ""));

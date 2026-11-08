@@ -31,6 +31,7 @@ export type SettingsDialogProps = {
   children: ReactNode;
 };
 
+/** 统一设置弹窗：Esc 走全局 ESC 栈（只关最上层），只有点遮罩本身才关（冒泡上来的内容点击不关）。 */
 export function SettingsDialog({ title, icon, hint, size = "md", onClose, children }: SettingsDialogProps) {
   /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）—— 不再自己监听 window keydown。 */
   useEscapeLayer(true, () => onClose());

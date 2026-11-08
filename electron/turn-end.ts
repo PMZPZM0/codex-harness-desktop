@@ -14,6 +14,7 @@
  */
 export const TURN_END_METHODS = ["turn/completed", "turn/aborted", "turn/failed", "turn/interrupted"] as const;
 
+/** 判断某个引擎事件方法名是否「回合结束」类（completed / aborted / failed 等）。 */
 export function isTurnEndMethod(method: string): boolean {
   return (TURN_END_METHODS as readonly string[]).includes(method);
 }

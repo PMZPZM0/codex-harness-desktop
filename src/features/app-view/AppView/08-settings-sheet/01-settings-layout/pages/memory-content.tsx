@@ -12,6 +12,7 @@ const MemoryCenterSection = lazy(() => import("../../../../../settings-memory/Me
 const SoulMarketSection = lazy(() => import("../../../../../soul-market/SoulMarketSection").then((m) => ({ default: m.SoulMarketSection })));
 const KnowledgeBaseSection = lazy(() => import("../../../../../knowledge-base/KnowledgeBaseSection").then((m) => ({ default: m.KnowledgeBaseSection })));
 
+/** 设置页分组：记忆与内容（记忆库、知识库、命令、钩子）。 */
 export function memoryContentPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     localSkills,

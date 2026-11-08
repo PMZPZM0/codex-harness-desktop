@@ -14,6 +14,7 @@ import { ThreadItem } from "../../../../../lib/thread-item";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 01c2：429 限流重试上下文。⛔ 按会话独立重试；现场恢复不出来就退「续接指令」重发，别直接放弃。 */
 export function usePart01c2(bag: Bag) {
   /** 确保该会话有重试上下文：已登记则沿用（保持重试链的计数），否则现场恢复并登记。
    *  ⛔⛔ 09-19 用户严令「429 就该自动重试、每个会话独立，不要直接中止」：

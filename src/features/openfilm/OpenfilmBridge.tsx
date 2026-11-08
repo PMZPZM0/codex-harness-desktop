@@ -21,6 +21,7 @@ export type OpenfilmHost = {
   rightTab?: string;
 };
 
+/** OpenFilm 桥：把「打开 Studio」转成右栏请求；⛔ 去重不能只看 URL（用户关掉右栏后再点同一个 URL 要能重开）。 */
 export function OpenfilmBridge({ app }: { app: OpenfilmHost }) {
   /* 同一 URL 连续广播只开一次，避免右栏反复重载。
      ⛔ 但"去重"不能只看 URL：用户把右栏关掉（或切到别的页签）后再点「打开 Studio」，

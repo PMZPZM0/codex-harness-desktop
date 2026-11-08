@@ -14,6 +14,7 @@ import { Spinner } from "../../components/CardShell";
 
 export type ExpertCenterSectionProps = { expertTeams: any; EXPERT_CATEGORY_DEFS: any; expertTeamMemberDirect: any; startMemberDirectSession: any; onOpenMarket?: () => void; onBack?: () => void };
 
+/** 专家中心：按类别列专家团与专家，可预览、可直连成员。 */
 export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   const { expertTeams, EXPERT_CATEGORY_DEFS, expertTeamMemberDirect, startMemberDirectSession, onOpenMarket, onBack } = props;
   const [previewKey, setPreviewKey] = useState("");

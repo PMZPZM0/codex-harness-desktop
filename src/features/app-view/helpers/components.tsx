@@ -16,6 +16,7 @@ import type { PendingRequest } from "../types";
 
 
 
+/** 工具状态卡：图标 + 名称 + 就绪/缺失/半可用状态。 */
 export function ToolCard({ tool }: { tool: ToolStatusEntry }) {
   const Icon = tool.id === "nuphus-mcp" ? Monitor : tool.id === "computer-use" ? MousePointerClick : Globe2;
   const state = !tool.installed ? "missing" : !tool.binaryReady ? "partial" : "ready";

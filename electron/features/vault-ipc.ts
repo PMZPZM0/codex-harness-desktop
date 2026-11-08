@@ -54,6 +54,7 @@ const newId = () => `pw_${Date.now().toString(36)}_${Math.random().toString(36).
       返回值类型里都没有 secret 字段，只有 `hasSecret`（类型层面就堵死，不靠调用方自觉）。 */
 type Secure = HostCaps["secure"];
 
+/** 列密码本条目（对外只给脱敏字段）+ 是否已启用加密。 */
 export async function listVault(userData: string, secure: Secure): Promise<{ items: VaultItem[]; encrypted: boolean }> {
   const items = await readAll(userData);
   return { items: items.map(toPublic), encrypted: secure.isEncryptionAvailable() };

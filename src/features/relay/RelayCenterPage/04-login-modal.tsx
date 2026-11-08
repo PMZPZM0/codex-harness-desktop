@@ -21,6 +21,7 @@ type Props = {
   working: string;
 };
 
+/** 中转站登录/注册弹窗（同一外壳切两个 tab）。 */
 export function RelayCenterPageLoginModal({ authTab, draft, login, loginModalOpen, regDraft, register, setAuthTab, setDraft, setErr, setLoginModalOpen, setRegDraft, working }: Props) {
   return (
     loginModalOpen && (

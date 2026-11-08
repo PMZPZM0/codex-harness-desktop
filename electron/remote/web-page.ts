@@ -27,6 +27,7 @@ function escapeHtmlText(value: unknown): string {
   return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" } as Record<string, string>)[ch] ?? ch);
 }
 
+/** 生成手机端页面的 HTML：绑定模式先确认登录，成功后跳到不带 `?bot=` 的对话页。 */
 export function buildRemotePageHtml(code: string, botId?: string, botName?: string, brandName = "Codex Harness", brandIcon = ""): string {
     const bindingMode = Boolean(botId);
     if (bindingMode) {

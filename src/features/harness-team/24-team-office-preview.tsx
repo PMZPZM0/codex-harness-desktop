@@ -19,6 +19,7 @@ import { TeamOfficePreview } from "../team-office";
 import type { TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 
+/** 办公室预览入口：点开看群成员在办公室里的位置与状态。 */
 export function TeamOfficeEntry({ group, live, busy, onOpenThread }: {
   group: TeamGroup;
   live?: LiveRun[];

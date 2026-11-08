@@ -25,6 +25,7 @@ const GAP = 12;
 const MIN_W = 320;
 const MAX_W = 640;
 
+/** 播报面板：贴图标弹出，纵向以图标中心对齐，列出待读条目。 */
 export function BroadcastPanel({ items, edge, stage, icon, paused, threadId }: {
   items: BroadcastItem[];
   edge: DockEdge;

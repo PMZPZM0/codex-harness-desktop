@@ -228,6 +228,7 @@ function textOfResult(result: any): { ok: boolean; text: string } {
 let cache: { at: number; tools: McpToolSpec[] } | null = null;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
+/** 清 MCP 桥的缓存（连接器配置变了之后调，否则还是旧清单）。 */
 export function invalidateMcpBridgeCache(): void { cache = null; }
 
 /** 聚合所有已启用连接器的工具（失败项静默跳过，只留日志） */

@@ -11,6 +11,7 @@ import type { Bag } from "../../bag-types";
    直接塞进弹窗就是「[ERR_INVOKE_FAILED] …」那坨噪音（用户截图）。统一去壳。 */
 import { ipcErrorMessageOf } from "../../../../../lib/ipc-error.mjs";
 
+/** bag 分片 02d1：开发运行时安装状态与下载速度（主进程算好速率后原样显示，不做二次加工）。 */
 export function usePart02d1(bag: Bag) {
   // 下载速度（09-20 用户要求「把下载速度显示」）：主进程按 500ms 采样输出文件大小算好速率后下发，
   // 形如 "1.2 MB/s · 45.3 MB / 350 MB" —— 这里原样显示，不做二次加工。

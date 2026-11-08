@@ -40,6 +40,7 @@ async function pathExists(target: string): Promise<boolean> {
   try { await fs.access(target); return true; } catch { return false; }
 }
 
+/** 递归统计目录的字节数与文件数（用来判断更新包/缓存大小）。 */
 export async function dirSize(dir: string): Promise<{ bytes: number; files: number }> {
   let bytes = 0;
   let files = 0;

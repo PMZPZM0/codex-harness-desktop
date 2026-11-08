@@ -9,6 +9,7 @@ import { buildRelayCandidates } from "../../../lib/relay-targets.mjs";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { shortGroupName } from "../RelayCenterPage/01-balance-badge";
 
+/** 中转中心页的状态与动作：账号草稿、概览拉取、购买与切换生效供应商。 */
 export function useRelayCenterPageState({ busy, activeProvider, onActivate, onNotice, onOpenModelSettings, openAppConfirm }: { busy: boolean; activeProvider?: string; onActivate: (mode: "balance" | "plan", group?: { group_id: number; group_name: string }, explicitKey?: { id: any; name: any; key: string; group_id: number | null }) => Promise<void> | void; onNotice: (m: string) => void; onOpenModelSettings: () => void; openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
   const [account, setAccount] = useState<{ id?: string; baseUrl: string; email: string } | null>(null);
   const [draft, setDraft] = useState({ baseUrl: "https://api.pptoken.cc", email: "", password: "" });

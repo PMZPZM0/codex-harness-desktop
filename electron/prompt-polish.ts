@@ -23,6 +23,7 @@ const SYSTEM = [
   "3. 只输出一行可直接使用的中文提示词 —— 不要解释、不要分点、不要用引号包裹。",
 ].join("");
 
+/** 用当前供应商把一段提示词润色一次；没配模型 / 没 Key 时给可照做的错误，⛔ 不静默返回原文。 */
 export async function polishPromptOnce(text: string, context?: string): Promise<string> {
   const cfg = await readCustomModel();
   if (!cfg?.baseUrl || !cfg?.model) {
@@ -112,6 +113,7 @@ async function toVisionSource(ref: string): Promise<string> {
   return `data:${mime};base64,` + (await readFile(candidate)).toString("base64");
 }
 
+/** 用商品参考图生成一次描述；缺参考图或缺模型配置时给可照做的错误。 */
 export async function describeProductOnce(imageRef: string, context?: string): Promise<string> {
   const ref = String(imageRef || "").trim();
   if (!ref) throw new Error("这张卡还没有参考图 —— 先在「商品参考图」卡上上传一张，再点「锁定主体」");

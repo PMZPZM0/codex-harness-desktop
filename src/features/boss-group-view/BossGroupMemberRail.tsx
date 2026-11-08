@@ -23,6 +23,7 @@ import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { OfficeRailNode } from "../experts-teams";
 import type { GroupMemberLive } from "./group-members-store";
 
+/** 群成员轨：成员头像 + 状态；末位固定是办公室预览入口（与专家团共用同一个入口组件）。 */
 export function BossGroupMemberRail({ members, onOpen, onOpenOffice }: {
   members: GroupMemberLive[];
   onOpen?: (memberId: string) => void;

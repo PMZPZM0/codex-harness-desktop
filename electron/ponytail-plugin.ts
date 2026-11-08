@@ -109,6 +109,7 @@ export function ponytailMarketDir(codexHome: string): string {
   return path.join(codexHome, "plugins", "ponytail-market");
 }
 
+/** ponytail 插件市场清单的路径（`.agents/plugins/marketplace.json`）。 */
 export function ponytailMarketManifestPath(codexHome: string): string {
   return path.join(ponytailMarketDir(codexHome), ".agents", "plugins", "marketplace.json");
 }

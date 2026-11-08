@@ -34,6 +34,7 @@ import { ActionCard } from "../session-cards";
 import { formatDuration } from "../../lib/format-duration";
 import { skillActionOf, skillFilePathOf, skillOfItem } from "../../lib/tool-display.mjs";
 
+/** 技能使用卡：显示命中的技能与本轮调用；识别不出技能就不渲染（调用方判错了）。 */
 export function SkillUsageCard({ item, waitingForApproval, onOpenFile }: {
   item: ThreadItem;
   waitingForApproval?: boolean;

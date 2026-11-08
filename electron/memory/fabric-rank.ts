@@ -10,6 +10,7 @@ import type { MemoryEntry, RecallOptions } from "../memory-fabric";
 /** 衰减半衰期（天）：记忆权重的指数衰减基准（原在 memory-fabric.ts，随 decayOf 一起搬来）。 */
 export const FABRIC_HALF_LIFE_DAYS = 14;
 
+/** 把数值钳进 0~1；非数字给 0.5（评分链路上不能出现 NaN）。 */
 export function clamp01(n: number): number {
   const v = Number(n);
   if (!Number.isFinite(v)) return 0.5;
@@ -55,6 +56,7 @@ export function isRelevant(content: string, tokens: string[]): boolean {
   return shortTotal <= 2 ? shortHits >= 1 : shortHits / shortTotal >= 0.34;
 }
 
+/** 按创建时间算衰减权重（半衰期线性倒数），越旧越低。 */
 export function decayOf(entry: MemoryEntry, now: number): number {
   const days = Math.max(0, now - entry.createdAt) / 86_400_000;
   return 1 / (1 + days / FABRIC_HALF_LIFE_DAYS);

@@ -10,6 +10,7 @@ import type { ComponentType } from "react";
 
 export type PluginGuideCapability = { icon: ComponentType<{ size?: number | string }>; title: string; desc: string };
 
+/** 插件安装指引：能力清单 + 步骤 + 注意事项（照做即可装好）。 */
 export function PluginGuide({ capabilities, steps, notes }: {
   capabilities: PluginGuideCapability[];
   steps: { b: string; s: string }[];

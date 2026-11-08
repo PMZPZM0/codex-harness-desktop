@@ -34,10 +34,12 @@ export function openfilmRoot(): string {
   return path.join(writeToolsRoot() || app.getPath("userData"), "openfilm");
 }
 
+/** OpenFilm 运行时目录：`<openfilmRoot>/runtime`。 */
 export function runtimeDir(): string {
   return path.join(openfilmRoot(), "runtime");
 }
 
+/** OpenFilm CLI 包目录：`runtime/node_modules/<PKG>`。 */
 export function pkgDir(): string {
   return path.join(runtimeDir(), "node_modules", PKG);
 }
@@ -66,6 +68,7 @@ export function settingsFile(): string {
   return path.join(app.getPath("userData"), "openfilm", "settings.json");
 }
 
+/** 读 OpenFilm 设置；枚举字段非法就回默认值（⛔ 不把脏值往下传）。 */
 export function readSettings(): Settings {
   try {
     const raw = JSON.parse(fs.readFileSync(settingsFile(), "utf8"));
@@ -77,6 +80,7 @@ export function readSettings(): Settings {
   } catch { return { ...DEFAULT_SETTINGS }; }
 }
 
+/** 局部更新 OpenFilm 设置并落盘，返回更新后的完整设置。 */
 export function writeSettings(patch: Partial<Settings>): Settings {
   const next: Settings = { ...readSettings(), ...patch };
   if (!["off", "startup", "auto"].includes(next.autoUpdate)) next.autoUpdate = DEFAULT_SETTINGS.autoUpdate;

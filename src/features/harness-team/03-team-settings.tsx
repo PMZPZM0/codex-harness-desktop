@@ -123,6 +123,7 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
+/** 群设置页：伙伴、消息排版、群记忆、文件、定时任务与解散群等分区。 */
 export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");

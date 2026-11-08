@@ -114,6 +114,7 @@ export function MemoryBadge({ tone = "neutral", children, title }: {
   return <span className={`mui-badge tone-${tone}`} title={title}>{children}</span>;
 }
 
+/** 记忆标签（小圆角标签，可带 title 提示）。 */
 export function MemoryTag({ children, title }: { children: ReactNode; title?: string }) {
   return <span className="mui-tag" title={title}>{children}</span>;
 }

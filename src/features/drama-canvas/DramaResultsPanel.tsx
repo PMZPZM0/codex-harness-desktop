@@ -41,6 +41,7 @@ function collectAssets(nodes: Array<{ id: string; data?: any }>): Asset[] {
 
 const fileOf = (p: string) => p.split(/[\\/]/).pop() || p;
 
+/** 画布结果面板：按类型筛选产出资产，可定位回产生它的节点。 */
 export function DramaResultsPanel({ onClose, onLocate }: {
   onClose: () => void;
   /** 定位到产生这条结果的卡片（视口飞过去 + 选中） */

@@ -52,6 +52,7 @@ function installedPaths(): string[] {
   return [];
 }
 
+/** 探测 OpenFilm 桌面端是否已安装（按候选路径找），返回命中的可执行文件路径或空串。 */
 export function desktopInstalled(): DesktopInstalled {
   const candidates = installedPaths();
   const found = candidates.find((candidate) => {
@@ -177,6 +178,7 @@ export type DesktopInfo = {
   notes: string[];
 };
 
+/** OpenFilm 桌面端信息：平台、安装路径、Studio 健康探测结果。 */
 export async function desktopInfo(): Promise<DesktopInfo> {
   const platform = process.platform === "darwin" ? "darwin" : process.platform === "win32" ? "win32" : "linux";
   const installed = desktopInstalled();

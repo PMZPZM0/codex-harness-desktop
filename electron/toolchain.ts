@@ -8,6 +8,7 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { app } from "electron";
 import { normalizeNoProxyList } from "../src/lib/cli-command.mjs";
 
+/** 随包工具根目录：打包后取 `resources/tools`，开发态取仓库里的那份。 */
 export function toolsRoot() {
   try {
     // electron-builder 的 extraResources 会把工具放到 resources/tools；开发态仍从仓库读取。
@@ -398,6 +399,7 @@ export function applyNoProxyFix(env: Record<string, string | undefined>): void {
  * ⛔ 必须在 app ready 之后调（augmentedPath 依赖 app.getPath），所以放 bootApp 开头而不是模块顶层。
  */
 let processPathApplied = false;
+/** 把增强后的 PATH 写回本进程（只做一次）：mac GUI 进程只有系统目录，子进程靠它才找得到随包工具。 */
 export function applyProcessPath(): void {
   if (processPathApplied) return;
   processPathApplied = true;

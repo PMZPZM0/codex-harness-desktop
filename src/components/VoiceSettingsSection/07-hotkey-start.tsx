@@ -14,6 +14,7 @@ type Props = {
   settings: Settings;
 };
 
+/** 「按键启动」卡：录制/清除开始通话的全局热键。 */
 export function VoiceSettingsSectionHotkeyStart({ apply, captureHotkey, capturing, onNotice, saving, settings }: Props) {
   return (
     <div className="voice-card">

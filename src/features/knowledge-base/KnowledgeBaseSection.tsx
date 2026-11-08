@@ -28,6 +28,7 @@ type KbHit = { docId: string; title: string; chunkIndex: number; score: number; 
 
 export type KnowledgeBaseSectionProps = { workspace: string; setNotice: (m: string) => void };
 
+/** 知识库设置板块：本地库与云端库两种后端，各自的文档列表与导入入口。 */
 export function KnowledgeBaseSection({ workspace, setNotice }: KnowledgeBaseSectionProps) {
   /* 10-20：知识库后端 —— local=项目本地库（kb:*）/ cloud=云端 weknora（MCP 工具检索） */
   const [kbBackend, setKbBackend] = useState<"local" | "cloud">("local");

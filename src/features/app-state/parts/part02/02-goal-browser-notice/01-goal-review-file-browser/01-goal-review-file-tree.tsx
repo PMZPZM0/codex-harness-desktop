@@ -11,6 +11,7 @@ import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOAR
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
 import type { Bag } from "../../../bag-types";
 
+/** bag 分片 02b11：方案审阅卡的提意见输入 + `/goal` 目标模式状态。 */
 export function usePart02b11(bag: Bag) {
  // 方案审阅卡的提意见输入框
   // ── /goal 目标模式（引擎原生 thread goal：自动 continuation，模型用 update_goal 判定达成）──

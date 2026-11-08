@@ -26,6 +26,7 @@ import { useDialogFlowMode } from "../../lib/dialog-flow-mode";
 import { dialogFlowStepTitle } from "../../lib/dialog-flow-title";
 import { useQueueTimerEnabled } from "../../lib/queue-timer-mode";
 
+/** 排队消息列表：显示待发消息与定时发送时间，可设置/取消定时。 */
 export function QueuedMessageList({ entries, timers, pendingIds, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entries: QueueItem[];
   /** 定时发送表：`{[queuedSubmissionId]: runAt 毫秒}`（当前会话的；无定时的条目键缺失） */
@@ -80,6 +81,7 @@ export function QueuedMessageList({ entries, timers, pendingIds, onSetTimer, onO
 /** 定时选项（分钟）：相对延迟 + 自定义。与「立即」并列的动作入口。 */
 const TIMER_PRESET_MINUTES = [5, 15, 30, 60];
 
+/** 排队消息的一项：序号、位置、定时与立即/删除操作。 */
 export function QueuedMessageItem({ entry, index, position, total, timerEnabled, timerRunAt, onSetTimer, onOpenFile, onQuote, onDelete, onStart, onSave, onReorder, dragIndex, setDragIndex }: {
   entry: QueueItem; index: number; position: number; total: number;
   timerEnabled: boolean;
@@ -266,6 +268,7 @@ const FOLD_GROUP_ICONS: Record<string, typeof Wrench> = {
   other: Wrench,
 };
 
+/** 折叠组：把一段过程/总结收进可展开的组里，可自动折叠。 */
 export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = false, autoFold, animateTitle, children }: {
   title: string;
   leadGroup?: string | null;
@@ -325,6 +328,7 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
   );
 }
 
+/** 回合折叠流：按折叠策略把 item 分成 thinking / body / keepVisible 并渲染。 */
 export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage, keepProcessOpen, completedSkin = true }: {
   items: ThreadItem[];
   turn: Turn;

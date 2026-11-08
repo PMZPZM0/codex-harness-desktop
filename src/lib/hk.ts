@@ -6,6 +6,7 @@
 import { isMacPlatform } from "./is-mac-platform";
 import { macHotkeyLabel } from "./hotkey.mjs";
 
+/** 快捷键文案按平台渲染（mac 显示 ⌘/⌥ 等符号，其它平台原样）。 */
 export function hk(label: string): string {
   return isMacPlatform() ? macHotkeyLabel(label) : String(label ?? "");
 }

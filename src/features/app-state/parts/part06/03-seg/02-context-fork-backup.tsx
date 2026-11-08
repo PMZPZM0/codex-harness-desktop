@@ -19,6 +19,7 @@ import type { Bag } from "../../bag-types";
    `pending` 是「下一条会话是中枢」的标记，只有中枢入口该置它 ⇒ 这里统一清掉。 */
 import { setBossPending } from "../../../../boss-group-view";
 
+/** bag 分片 06c2：上下文/分叉/备份。复制图片时本地图走主进程写剪贴板（渲染层 fetch 自定义协议拿不到 blob），http 图才用 fetch + ClipboardItem。 */
 export function usePart06c2(bag: Bag) {
   async function copyImage(path: string) {
     try {

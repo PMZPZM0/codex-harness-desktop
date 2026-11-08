@@ -35,6 +35,7 @@ function currentThreadHasTurn(thread: HtmlPreviewHost["thread"], turnId: string)
   return turns.some((turn) => String(turn?.id ?? "") === turnId);
 }
 
+/** HTML 预览桥：把「某个回合产出了 html」转成打开右栏预览的请求（按回合去重，避免重放历史时反复打开）。 */
 export function HtmlPreviewBridge({ app }: { app: HtmlPreviewHost }) {
   const lastPathRef = useRef("");
   const seenRef = useRef<Set<string>>(new Set());

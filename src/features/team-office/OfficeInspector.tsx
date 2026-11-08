@@ -40,6 +40,7 @@ function DiffLines({ lines }: { lines: string[] }) {
   );
 }
 
+/** 办公室成员检查器：显示该成员在做什么、已跑多久与可用的浏览器截图。 */
 export function OfficeInspector({
   member,
   activity,

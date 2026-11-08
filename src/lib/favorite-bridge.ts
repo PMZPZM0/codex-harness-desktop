@@ -30,6 +30,7 @@ type FavoriteHandler = (request: FavoriteRequest) => void;
 
 let handler: FavoriteHandler | null = null;
 
+/** 注册「发起收藏」的执行器（宿主注入；传 null = 解绑）。 */
 export function setFavoriteHandler(fn: FavoriteHandler | null): void {
   handler = fn;
 }

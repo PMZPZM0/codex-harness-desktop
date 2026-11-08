@@ -170,6 +170,7 @@ function TeamLiveFiles({ threadId }: { threadId: string }) {
   ) : null;
 }
 
+/** 团队群视图：消息流 + 输入区 + 设置入口，按群消息形式（对话/话题）渲染。 */
 export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,

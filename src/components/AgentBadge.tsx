@@ -10,6 +10,7 @@ import { ChevronRight } from "lucide-react";
 import { AgentAvatar } from "./AgentAvatar";
 import type { AgentAvatarKind } from "../lib/agent-avatars.mjs";
 
+/** 一行身份徽标：头像 + 名字 + 可选标签 + 一行身份说明（职业 / 主理人+N 成员）。 */
 export function AgentBadge(props: {
   kind: AgentAvatarKind;
   seed: string;

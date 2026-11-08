@@ -18,6 +18,7 @@ import { TurnMediaCard } from "../media";
 import type { Turn } from "../../lib/turn";
 import { useTeamTurn } from "./09-team-process";
 
+/** 群里的结果卡（改动汇总 / 媒体卡等），按回合取数据。 */
 export function TeamCards({ threadId, at, bodyText }: { threadId: string; at: number; bodyText: string }) {
   const { turn } = useTeamTurn(threadId, at, bodyText);
   if (!turn) return null;

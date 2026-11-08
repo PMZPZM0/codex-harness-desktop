@@ -27,6 +27,7 @@ function fmtAt(at: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 群内搜索：按关键词在群消息里找，点结果跳转。 */
 export function TeamSearchPanel({ rows, authorName, onJump, onClose }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [query, setQuery] = useState("");

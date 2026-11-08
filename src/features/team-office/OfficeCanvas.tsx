@@ -167,6 +167,7 @@ function statusOf(a: Agent, nowMs: number): { text: string; color: string } {
   return { text: "待机", color: "#8ea3b8" };
 }
 
+/** 办公室画布：渲染成员站位与动效，支持点击成员、缩放与外部控制句柄。 */
 export function OfficeCanvas({ members, simKey, onOpenMember, onInspect, eventStateOf, controlsRef, onZoomChange }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const membersRef = useRef(members);

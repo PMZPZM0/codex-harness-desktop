@@ -32,16 +32,19 @@ type ModelConfig = { provider: string; name: string; model: string; baseUrl: str
 type Binding = { threadId: string; chatId: string; updatedAt: number };
 type Bindings = Record<string, Binding>;
 
+/** 算飞书事件签名：sha1(timestamp + nonce + verificationToken + body)。 */
 export function larkSignature(timestamp: string, nonce: string, verificationToken: string, body: string) {
   return createHash("sha1").update(timestamp + nonce + verificationToken + body).digest("hex");
 }
 
+/** 用**常量时间比较**校验飞书签名（⛔ 普通 === 会被时序攻击）。 */
 export function verifyLarkSignature(timestamp: string, nonce: string, verificationToken: string, body: string, signature: string) {
   const expected = Buffer.from(larkSignature(timestamp, nonce, verificationToken, body));
   const actual = Buffer.from(signature);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
 
+/** 解密飞书的加密事件体（aes-256-cbc，密钥 = sha256(encryptKey)，前 16 字节当 IV）。 */
 export function decryptLarkPayload(encryptKey: string, encrypted: string) {
   const payload = Buffer.from(encrypted, "base64");
   const key = createHash("sha256").update(encryptKey).digest();

@@ -9,6 +9,7 @@
 import { avatarAsset } from "../lib/avatar-presets";
 import { AGENT_AVATAR_COLS, pickAgentAvatar, type AgentAvatarKind } from "../lib/agent-avatars.mjs";
 
+/** 成员 / 团队 / 子智能体头像：按 kind + seed 稳定取图（同名同图），`lead` 时加金色描边。 */
 export function AgentAvatar(props: {
   kind: AgentAvatarKind;
   /** 稳定标识：成员 id / 团队 id / 子智能体 id（缺省回落名字）。 */

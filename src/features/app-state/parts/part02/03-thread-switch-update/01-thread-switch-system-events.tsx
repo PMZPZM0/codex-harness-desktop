@@ -11,6 +11,7 @@ import { noteCompactionRecord } from "../../../../../lib/compaction-records.mjs"
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 02c1：切会话时刷新技能/连接器/子智能体等系统清单。⛔ 通知由每条自带倒计时，这里不再统一清空（会误伤别的会话）。 */
 export function usePart02c1(bag: Bag) {
   // ⛔ 旧的「内容变化就重置一个 2.6s 定时器去清空单条 notice」已删除（09-20）：
   //    现在每条通知自带独立倒计时（见 setNotice），这里再统一清空会把**别的会话**的通知一起干掉。

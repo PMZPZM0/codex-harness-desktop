@@ -98,6 +98,7 @@ export type VoiceSettings = {
 export const VOICE_RESOURCE_KINDS = ["base", "zipvoice", "kws", "kokoro", "emotivoice"] as const;
 export type VoiceResourceKind = (typeof VOICE_RESOURCE_KINDS)[number];
 
+/** 判断某个值是否合法语音资源类型（白名单）。 */
 export function isVoiceResourceKind(v: unknown): v is VoiceResourceKind {
   return typeof v === "string" && (VOICE_RESOURCE_KINDS as readonly string[]).includes(v);
 }
@@ -321,6 +322,7 @@ export const MODEL_HOST_LABELS: Record<ModelHost, string> = {
   "hf-mirror": "仅 hf-mirror.com（国内直连最快）",
 };
 
+/** 语音设置文件路径：`<userData>/voice-settings.json`。 */
 export function voiceSettingsFile(userDataDir: string): string {
   return join(userDataDir, "voice-settings.json");
 }

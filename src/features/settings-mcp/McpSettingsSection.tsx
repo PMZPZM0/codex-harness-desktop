@@ -20,6 +20,7 @@ export type McpSettingsSectionProps = { openAppConfirm: (title: string, text: st
  *  ⛔ 名单是**功能事实**（这些服务器由宿主注册），改动必须同步 — 与 automation-policy 的内置项同源。 */
 const BUILTIN_MCP_SERVERS = new Set(["nuphus", "harness-dispatch"]);
 
+/** MCP 设置：连接器与服务端两张表，支持搜索、批量启停与单项覆盖。 */
 export function McpSettingsSection(props: McpSettingsSectionProps) {
   const { openAppConfirm, connectors, connectorsManageOnly, settingsResources, connectorSearch, connectorChecked, setConnectorChecked, mcpOverrides, mcpServerSearch, mcpServerChecked, setMcpServerChecked, setConnectorSecret, setConnectorDraft, setConnectorEditorOpen, refreshSettingsResources, resourceLoading, mcpMarketCategory, setMcpMarketCategory, setMcpMarketSearch, mcpMarketSearch, setMarketPreview, installMcpServer, connectorTemplates, setConnectorTemplateValues, setConnectorTemplateModal, setConnectorOAuth, connectorTemplateModal, connectorTemplateValues, connectorTemplateSaving, connectorOAuth, saveConnectorFromTemplate, startConnectorOAuth, setConnectorsManageOnly, setConnectorSearch, connectorBatchBusy, batchSetConnectorsEnabled, connectorStatusBusy, setConnectorEnabled, removeConnector, connectorEditorOpen, connectorDraft, connectorSecret, connectorSaving, saveConnector, setMcpServerSearch, mcpServerBatchBusy, batchSetMcpServersEnabled, mcpServerStatusBusy, setMcpServerEnabled, mcpToolPermissions, setMcpToolPermission, setNotice } = props;
   const [mcpView, setMcpView] = useState<"market" | "templates" | "connectors" | "servers">("market");

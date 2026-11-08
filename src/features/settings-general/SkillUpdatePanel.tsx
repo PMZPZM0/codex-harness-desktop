@@ -27,6 +27,7 @@ type HarnessPayload = { type?: string; skillId?: string; stage?: string; message
 const STAGE_TEXT: Record<string, string> = { download: "下载中", extract: "解压中", audit: "安全检查", install: "写入技能目录", register: "登记来源" };
 const STATE_TEXT: Record<Row["state"], string> = { update: "有更新", current: "已最新", unresolved: "无法比对" };
 
+/** 技能更新面板：检查更新并逐项更新已装技能。 */
 export function SkillUpdatePanel({
   setNotice,
   openAppConfirm,

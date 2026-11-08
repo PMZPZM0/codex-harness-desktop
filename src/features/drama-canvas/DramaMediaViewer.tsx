@@ -20,6 +20,7 @@ export type { ViewerTarget };
 
 const fileOf = (p: string) => p.split(/[\\/]/).pop() || p;
 
+/** 画布媒体预览：图片/音频/视频（⛔ hook 无条件调用；音频先读成 blob URL，本地绝对路径直喂会被 CSP 拦）。 */
 export function DramaMediaViewer({ target, onClose }: { target: ViewerTarget; onClose: () => void }) {
   const { board, story } = useDramaActions();
   const [busy, setBusy] = useState(false);

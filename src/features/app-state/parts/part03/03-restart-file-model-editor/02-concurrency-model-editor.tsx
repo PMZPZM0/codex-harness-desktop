@@ -11,6 +11,7 @@ import { matchModelSpec, loadExternalSpecs, formatTokenCount } from "../../../..
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 03c2：并发设置与模型兜底（当前模型不在可用列表时只回落到内存选择，⛔ 不落盘 —— 落盘会冲掉用户刚改的默认）。 */
 export function usePart03c2(bag: Bag) {
   // 模型兜底：当前选择不在可用列表里时（如曾选中探测出来的无效模型），自动回落到
   // 已配置的默认模型，避免 turn/start 带上无效模型导致引擎不回复。

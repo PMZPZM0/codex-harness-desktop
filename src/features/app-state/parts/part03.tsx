@@ -13,6 +13,7 @@ import { usePart03c } from "./part03/03-restart-file-model-editor";
 import { usePart03d } from "./part03/04-project-groups-cwd-names";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 03：把 03a–03d 合并挂到 bag。 */
 export function usePart03(bag: Bag) {
   const a = usePart03a(bag);
   const b = usePart03b(bag);

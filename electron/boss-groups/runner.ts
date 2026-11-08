@@ -39,6 +39,7 @@ import type { BossGroup, BossState, GroupMember, GroupTask } from "./types";
 /** 事件出口（域层注入：本模块在 features/ 之外，不许反向 import 域）。 */
 type Sink = (payload: unknown) => void;
 let sink: Sink | null = null;
+/** 登记群事件出口（把群内事件推给窗口；null 解绑）。 */
 export function setBossEventSink(fn: Sink | null) { sink = fn; }
 function emit(payload: unknown) { try { sink?.(payload); } catch { /* 广播失败不影响编排 */ } }
 
@@ -960,6 +961,7 @@ async function failTask(taskId: string, reason: string, quiet = false) {
 function submitTaskSafe(state: BossState, taskId: string, output: string): boolean {
   try { submitTask(state, taskId, output); return true; } catch { return false; }
 }
+/** 任务回合结束后落定：写结果、改状态、必要时改派或收尾（群或任务已不存在则静默返回）。 */
 export async function settleSubmission(taskId: string, output: string): Promise<void> {
   const state = await bossStore.load();
   const task = state.tasks[taskId];
@@ -1108,6 +1110,7 @@ export async function createGroupForBoss(input: { name: string; workspace: strin
   return { ok: true, group: snapshot(state, group.id) };
 }
 
+/** 给群加一条任务并按需自动派活，返回新任务（状态落盘）。 */
 export async function addTaskForBoss(input: { groupId: string; title: string; brief: string; criteria: string; assignee?: string; autoDispatch?: boolean }) {
   const state = await bossStore.load();
   const task = addTask(state, { groupId: input.groupId, title: input.title, brief: input.brief, criteria: input.criteria, assignee: input.assignee });
@@ -1244,6 +1247,7 @@ export async function pinForBoss(input: { groupId: string; eventId: string; pinn
   }
 }
 
+/** 取某个群的运行状态快照（成员在办什么、任务到哪一步）。 */
 export function statusForBoss(groupId: string) {
   return snapshot(bossStore.get(), groupId);
 }

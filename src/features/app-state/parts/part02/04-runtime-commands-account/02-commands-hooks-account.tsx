@@ -12,6 +12,7 @@ import { readStoredCodexAvatar, storeCodexAvatar, setCodexIdentity, getCodexIden
 import type { RateLimitCtx, BotEntry } from "../../types";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 02d2：自定义命令的编辑/保存、钩子与账号。 */
 export function usePart02d2(bag: Bag) {
   // 保存命令（新建或更新）后刷新列表
   async function persistCommand() {

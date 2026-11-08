@@ -17,6 +17,7 @@ export const REMOTE_RPC_TYPES: ReadonlySet<string> = new Set([
   "efforts",
 ]);
 
+/** 判断某个 RPC 类型是否在白名单里（⛔ 未登记一律拒）。 */
 export function isAllowedRemoteRpc(type: unknown): boolean {
   return REMOTE_RPC_TYPES.has(String(type ?? ""));
 }

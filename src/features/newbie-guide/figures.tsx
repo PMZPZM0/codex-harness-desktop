@@ -87,6 +87,7 @@ function WindowMap() {
   );
 }
 
+/** 引导插图：按 figure.kind 渲染窗口示意图或普通图并附图注。 */
 export function GuideFigureView({ figure }: { figure?: GuideFigure }) {
   if (!figure) return null;
   if (figure.kind === "window") {

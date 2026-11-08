@@ -187,6 +187,7 @@ function rememberRoot(registry: Registry, projectRoot: string): void {
   if (registry.knownRoots.length > 200) registry.knownRoots.splice(0, registry.knownRoots.length - 200);
 }
 
+/** 列会话工作区记录（按创建时间倒序，整个过程串行化避免并发读写打架）。 */
 export async function listSessionWorkspaces(userData: string): Promise<SessionWorkspaceRecord[]> {
   return serialize(async () => {
     const registry = await readRegistry(userData);

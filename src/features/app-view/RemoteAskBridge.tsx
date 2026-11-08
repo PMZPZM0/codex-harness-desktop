@@ -15,6 +15,7 @@ type Props = {
   setAgentAsk: (value: null) => void;
 };
 
+/** 远控回答桥：把手机端回的选择交回当前询问卡并关闭它（会话不匹配就忽略）。 */
 export function RemoteAskBridge({ agentAsk, setAgentAsk }: Props) {
   useEffect(() => {
     const off = window.codex.onHarnessEvent((payload) => {

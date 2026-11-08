@@ -98,6 +98,7 @@ function normalizeItem(raw: any): FavoriteItem | null {
   };
 }
 
+/** 读收藏夹：兼容「纯数组」与「{items:[]}」两种历史形状，逐条归一化并丢掉坏条目。 */
 export async function readFavorites(userData: string): Promise<FavoriteItem[]> {
   try {
     const parsed = JSON.parse(await fs.readFile(favoritesFile(userData), "utf8"));
@@ -130,6 +131,7 @@ export function favoriteTitleOf(input: { title?: string; content?: string; kind?
   return first ? first : kindLabel;
 }
 
+/** 新增一条收藏：正文按上限截断，返回新列表与刚加的那条。 */
 export async function addFavorite(
   userData: string,
   input: Partial<FavoriteItem>,
@@ -156,6 +158,7 @@ export async function addFavorite(
   return { items: next, item };
 }
 
+/** 按 id 改一条收藏的标题/备注/标签/正文/类型，返回更新后的列表。 */
 export async function updateFavorite(
   userData: string,
   id: string,
@@ -192,6 +195,7 @@ export async function deleteFavorites(userData: string, ids: string[]): Promise<
   return { items: next, removed: items.length - next.length };
 }
 
+/** 清空全部收藏并返回删掉的条数。⛔ 这是**数据层**能力；IPC 层不暴露「不带 id 一把清空」的通道（守卫【129】）。 */
 export async function clearFavorites(userData: string): Promise<{ items: FavoriteItem[]; removed: number }> {
   const items = await readFavorites(userData);
   await writeFavorites(userData, []);

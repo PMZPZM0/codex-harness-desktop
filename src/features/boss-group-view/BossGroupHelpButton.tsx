@@ -35,6 +35,7 @@ const ROWS: Array<{ title: string; body: string }> = [
 /** 底部示例：告诉用户「一句话就能开工」，比再写一段说明有用。 */
 const EXAMPLES = ["做个落地页，要设计、前端、测试", "把这份文档整理成 PPT", "查一下这个报错的根因"];
 
+/** 群聊帮助按钮：点开在按钮旁弹说明浮层。 */
 export function BossGroupHelpButton() {
   const [open, setOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement | null>(null);

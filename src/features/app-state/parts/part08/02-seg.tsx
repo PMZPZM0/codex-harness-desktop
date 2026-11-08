@@ -15,6 +15,7 @@ import { requestVoiceDictation, setVoiceDictationSendHandler, setVoiceOpenSettin
 import type { Bag } from "../bag-types";
 import { send as sendImpl, sendPrefilled as sendPrefilledImpl } from "./02-seg/send";
 
+/** bag 分片 08b：把 `send` 挂到 bag，并让「长按语音输入」松手后复用同一条发送链路。 */
 export function usePart08b(bag: Bag) {
   // 让「长按语音输入」在松手后走现有 send()（发送/排队/权限全部复用）。
   useEffect(() => {

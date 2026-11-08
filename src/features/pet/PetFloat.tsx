@@ -69,6 +69,7 @@ const RIG_CONTENT_TOP: Record<string, number> = {
   review: 0.14,
 };
 
+/** 宠物浮窗：加载动画包、播状态与气泡问候，按舞台比例缩放。 */
 export function PetFloat({ stageRatio = 0.66 }: PetFloatProps) {
   const [pkg, setPkg] = useState<PetPackage | null>(null);
   const [signal, setSignal] = useState<PetSignalLike>(EMPTY_SIGNAL);

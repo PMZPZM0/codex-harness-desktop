@@ -19,6 +19,7 @@ import { ItemView } from "./ItemView";
 
 type SteerHandlers = { onCopy: (text: string) => void; onQuote: (text: string) => void; onImageCopy?: (path: string) => void; onOpenFile?: (path: string) => void };
 
+/** 待生效的插队消息气泡：显示在流末尾，可撤回。⛔ 两个读取都必须在组件顶层（写进回调会 React #310 白屏）。 */
 export function PendingSteerBubbles({ threadId, handlers, onWithdraw }: { threadId: string; handlers: SteerHandlers; onWithdraw: (id: string) => void }) {
   // ⛔ 两个读取都必须在组件顶层：usePendingSteerEntries 是 hook，写进 map/回调就是 React #310 白屏
   const entries = usePendingSteerEntries(threadId);

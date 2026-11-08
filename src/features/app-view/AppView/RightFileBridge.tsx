@@ -17,6 +17,7 @@ import { registerRightFileResolver, subscribeRightFile } from "../../../lib/righ
 import { joinWorkspacePath, resolveForOpen } from "../../../lib/path-fallback.mjs";
 import { lookupKnownFile } from "../../../lib/ui-channels";
 
+/** 右栏文件解析桥：把「打开这个文件」的请求转成可定位的真实路径（走 resolveForOpen）。 */
 export function RightFileBridge({ app }: { app: HarnessAppApi }) {
   const ref = useRef(app);
   ref.current = app;

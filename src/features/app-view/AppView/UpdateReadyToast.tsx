@@ -18,6 +18,7 @@
 import { createPortal } from "react-dom";
 import { Sparkles } from "lucide-react";
 
+/** 「更新已就绪」提示条：显示版本，可延后或立即重启安装。 */
 export function UpdateReadyToast({
   version,
   restarting,

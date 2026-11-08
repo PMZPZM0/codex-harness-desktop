@@ -60,6 +60,7 @@ function fmtCtx(n: number | undefined): string {
   return n >= 1_000_000 ? `${Math.round(n / 1_000_000 * 10) / 10}M` : `${Math.round(n / 1000)}K`;
 }
 
+/** 供应商配置向导：按意图（首次配置/补充/修错）走不同步骤，完成后回调宿主。 */
 export function ProviderSetupDialog({
   intent,
   onClose,

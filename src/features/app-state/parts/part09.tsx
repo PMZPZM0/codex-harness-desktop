@@ -8,6 +8,7 @@ import { usePart09a } from "./part09/01-seg";
 import { usePart09b } from "./part09/02-seg";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 09：合并键盘语义（a）与团队调度高亮（b）。 */
 export function usePart09(bag: Bag) {
   const a = usePart09a(bag);
   const b = usePart09b(bag);

@@ -68,6 +68,7 @@ function agoLabel(iso: string): string {
   return new Date(time).toLocaleDateString("zh-CN");
 }
 
+/** 收藏夹设置：搜索/筛选、批量删除（二次确认）、插入到输入框或加入记忆。 */
 export function FavoritesSettingsSection(props: FavoritesSettingsSectionProps) {
   const { favorites, busy, workspace, onInsert, onSend, onAdd, onUpdate, onRemove, onRefresh, onToMemory, onNotice } = props;
   const [query, setQuery] = useState("");

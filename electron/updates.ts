@@ -245,6 +245,7 @@ export type DownloadProgress = (info: {
   percent: number;
 }) => void;
 
+/** 下载更新包到目标路径，边下边回报进度；给了 sha256 就必须校验通过。 */
 export async function downloadUpdate(
   releaseUrl: string,
   destPath: string,

@@ -11,6 +11,7 @@ import { Turn } from "../../../../lib/turn";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror, releaseTurnOverlays } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 08c：`/plan` 确认执行（把「按方案执行」以默认协作模式发进同一会话）。 */
 export function usePart08c(bag: Bag) {
   // /plan 确认执行：以默认协作模式把「按方案执行」发进同一会话
   function confirmPlanExecution() {

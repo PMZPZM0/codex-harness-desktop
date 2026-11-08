@@ -44,6 +44,7 @@ function writeJson(file: string, disabled: string[]): void {
   fs.writeFileSync(file, JSON.stringify({ version: 1, disabled } satisfies PoolFile, null, 2) + "\n", "utf8");
 }
 
+/** 技能池文件路径（`<cwd>/.codex-harness/skills-pool.json`）。 */
 export function skillPoolFile(cwd: string): string {
   return path.join(cwd, SKILL_POOL_FILE);
 }
@@ -125,6 +126,7 @@ function healMisnamedSkillDirs(root: string): void {
    ⛔ 与联动技能（`MEMORY_MCP_BACKEND_SKILL`）的区别：那个是"看后端二选一"（**会**被停用），
    这个是"永远启用"（**不许**被停用）—— 所以这里不只是跳过投影，还要**强制恢复**。 */
 export const PROTECTED_SKILLS: readonly string[] = ["memory-classify", "memory-hygiene", "memory-distill"];
+/** 判断某技能是否受保护（内置 / 不可被用户删除的那些）。 */
 export function isProtectedSkill(name: string): boolean {
   return PROTECTED_SKILLS.includes(name);
 }

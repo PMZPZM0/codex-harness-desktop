@@ -40,6 +40,7 @@ function splitPath(path: string): { name: string; dir: string } {
   return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
 }
 
+/** 产出文件卡：列出本回合产出的文件，可切换打开方式或打开编辑器。 */
 export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; onOpenEditor?: (path: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const [mode, setMode] = useState<OpenMode>(readMode);

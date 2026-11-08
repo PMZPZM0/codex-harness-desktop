@@ -20,6 +20,7 @@ export type ChannelDraft = {
   encryptKey: string;
 };
 
+/** 频道机器人域 hook：维护开关/端口/工作区/沙箱草稿，读写主进程侧的机器人状态。 */
 export function useChannelBot() {
   const [channelBot, setChannelBot] = useState<ChannelBot | null>(null);
   const [channelDraft, setChannelDraft] = useState<ChannelDraft>({ enabled: false, host: "127.0.0.1", port: "8787", workspace: localStorage.getItem("workspace") ?? "", sandbox: "workspace-write", appId: "", appSecret: "", verificationToken: "", encryptKey: "" });

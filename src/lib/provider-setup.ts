@@ -49,6 +49,7 @@ export function pickDefaultModel(models: SetupModel[]): string {
     || "";
 }
 
+/** 把模型 id 列表清洗成配置页的模型行（去空、去重、带默认上下文窗口），顺序保持传入顺序。 */
 export function buildSetupModels(ids: string[], fallbackContext = 256000): SetupModel[] {
   const seen = new Set<string>();
   const out: SetupModel[] = [];

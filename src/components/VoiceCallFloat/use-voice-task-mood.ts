@@ -37,6 +37,7 @@ const threadIdOf = (params: Record<string, unknown>): string => {
   return String(params.threadId ?? thread.id ?? "");
 };
 
+/** 跟随当前会话的任务情绪（idle/working/…），供悬浮球换表情；换会话时重置。 */
 export function useVoiceTaskMood(threadId?: string): TaskMood {
   const [mood, setMood] = useState<TaskMood>("idle");
   const moodRef = useRef<TaskMood>("idle");

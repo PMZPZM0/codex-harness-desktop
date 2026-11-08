@@ -46,6 +46,7 @@ function fmtWhen(at: number): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 成员资料卡：身份、在本群的产出统计、可 @ / 可停止。 */
 export function TeamProfileCard({
   member, group, rows, catalog, modelName, running, anchor, onClose, onMention, onStop,
 }: {

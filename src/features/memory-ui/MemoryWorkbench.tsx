@@ -50,6 +50,7 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+/** 拉记忆来源数据（条目/分层/统计）并给出加载态、错误与重载入口。 */
 export function useMemorySources(workspace: string, enabled: boolean): {
   data: MemorySources; state: LoadState; error: string; reload: () => Promise<string>;
 } {
@@ -257,6 +258,7 @@ const TABS: { kind: ScopeTabKind; label: string }[] = [
        而不再是并列分类。⛔ MemoryKind 类型层的七类数据源**不变**（它们仍是独立数据源）。 */
 ];
 
+/** 记忆工作台：按类别切页展示记忆，可跳回来源会话。 */
 export function MemoryWorkbench({ workspace, onOpenThread, onNotice }: {
   workspace: string;
   onOpenThread?: (id: string) => void;

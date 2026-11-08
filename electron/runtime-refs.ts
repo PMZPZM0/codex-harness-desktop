@@ -42,6 +42,7 @@ export { readCustomModels };
 
 /* ── 主窗口句柄（window-factory 经 mutableState.mainWindow = 写入）──────── */
 export let mainWindow: BrowserWindow | null = null;
+/** 注入主窗口实例（供运行期取用；null 表示已关闭）。 */
 export function setMainWindow(win: BrowserWindow | null) { mainWindow = win; }
 
 /* ── 路径组：已下沉到**叶子模块** runtime-paths.ts（2026-09-24 断环，见该文件头注释）。
@@ -70,9 +71,11 @@ export const channelLogs: { at: number; level: "info" | "error"; message: string
 
 /* ── 类单例（构造在 main.ts 启动链，setter 注入）────────────────── */
 export let server!: CodexServer;
+/** 注入引擎服务实例（所有 IPC 域共用同一份）。 */
 export function setServer(instance: CodexServer) { server = instance; }
 
 export let delegateRegistry!: DelegateRegistry;
+/** 注入委派登记表实例。 */
 export function setDelegateRegistry(instance: DelegateRegistry) { delegateRegistry = instance; }
 
 /* ── 语音服务单例（10-03：voice 域改插件形态后要经门面取）────────────────────
@@ -83,23 +86,30 @@ export function setDelegateRegistry(instance: DelegateRegistry) { delegateRegist
    ⛔ 模型根目录同理：它是 `path.join(app.getPath("userData"), …)`，模块体求值会拿到
    错的 userData（【91】），必须等 app.setPath 之后再算。 */
 export let voiceService: import("./voice/voice-service").VoiceService | null = null;
+/** 注入语音服务实例。 */
 export function setVoiceService(instance: import("./voice/voice-service").VoiceService) { voiceService = instance; }
 export let voiceModelsRoot = "";
+/** 注入语音模型根目录。 */
 export function setVoiceModelsRoot(dir: string) { voiceModelsRoot = dir; }
 
 export let teamRunStore!: TeamRunStore;
+/** 注入团队运行记录实例。 */
 export function setTeamRunStore(instance: TeamRunStore) { teamRunStore = instance; }
 
 export let threadRuntimeStore!: ThreadRuntimeStore;
+/** 注入会话运行时存储实例。 */
 export function setThreadRuntimeStore(instance: ThreadRuntimeStore) { threadRuntimeStore = instance; }
 
 export let memoryLayers!: MemoryLayers;
+/** 注入记忆分层实例。 */
 export function setMemoryLayers(instance: MemoryLayers) { memoryLayers = instance; }
 
 export let memoryStore!: MemoryStore;
+/** 注入记忆库实例。 */
 export function setMemoryStore(instance: MemoryStore) { memoryStore = instance; }
 
 export let rpaStore!: RpaStore;
+/** 注入 RPA 存储实例。 */
 export function setRpaStore(instance: RpaStore) { rpaStore = instance; }
 
 /* ── 函数（自包含或仅依赖上面已承载的符号，连体迁入）──────────────── */
@@ -149,6 +159,7 @@ const trustedRoots = () => {
   return roots.filter(Boolean).map((root) => path.resolve(root));
 };
 
+/** 判断目标路径是否落在可信根之内（⛔ 精确比较相对路径，不靠字符串前缀，防 `..` 绕过）。 */
 export const isInsideTrustedRoots = (target: string) => {
   const resolved = path.resolve(target);
   return trustedRoots().some((root) => {
@@ -166,6 +177,7 @@ export const isInsideOrEqualTrustedRoots = (target: string) => {
   });
 };
 
+/** 按 provider 新增或替换一行供应商档案（读全量 → 改 → 写回）。 */
 export async function upsertCustomModel(value: CustomModelFile) {
   const list = await readCustomModels();
   const index = list.findIndex((entry) => entry.provider === value.provider);
@@ -242,6 +254,7 @@ export { memoryBackend, type MemoryBackend } from "./memory-backend";
 
 /** 当前主题是否深色（main.ts 的 applyWindowChrome 维护；未设置时回退系统）。 */
 let appThemeDark: boolean | null = null;
+/** 记录当前应用主题是否深色（供主进程侧渲染/图标选择）。 */
 export function setAppThemeDark(v: boolean | null) { appThemeDark = v; }
 
 /* ⛔⛔ 10-31 删掉 `titleBarOverlayOptions()`（连同 main.ts 的 CHROME_SYMBOL_* 与

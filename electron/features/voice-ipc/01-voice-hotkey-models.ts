@@ -53,6 +53,7 @@ function requireVoiceModelsRoot(): string {
   return voiceModelsRoot;
 }
 
+/** 语音域 IPC 第一批（模型与热键）。⛔ `svc()` / `modelsRoot()` 必须使用时现取：挂载时实例还没建，提前解构会永久拿到 null（症状是「语音一点反应都没有」且不报错）。 */
 export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   const { ipcHost, host } = deps;
   /**

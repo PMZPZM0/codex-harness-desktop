@@ -64,6 +64,7 @@ function scopeText(st: TeamStatus | null): string {
   return "对话走纯模型端点（没有记忆）";
 }
 
+/** 云端团队模式设置区：团队列表、状态与切换。 */
 export function TeamModeSection() {
   const [teams, setTeams] = useState<TeamRow[] | null>(null);
   const [status, setStatus] = useState<TeamStatus | null>(null);

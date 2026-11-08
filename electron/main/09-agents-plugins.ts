@@ -53,6 +53,7 @@ function toMemoryEntry(entry: unknown): BuiltinPluginEntry | undefined {
   return { ...(rest as Omit<BuiltinPluginEntry, "apiKey">), apiKey: encryptedKey ? decryptKey(encryptedKey) : String(apiKey ?? "") };
 }
 
+/** 读内置插件配置（当前只有图像一项）；文件坏了返回空对象。 */
 export async function readBuiltinPlugins(): Promise<BuiltinPluginConfig> {
   try {
     const stored = JSON.parse(await fs.readFile(builtinPluginsFile, "utf8"));
@@ -143,6 +144,7 @@ export type SubAgentConfig = {
   updatedAt: string;
 };
 
+/** 读子智能体配置列表；读不到或形状不对返回空数组。 */
 export async function readSubAgents(): Promise<SubAgentConfig[]> {
   try {
     const list = JSON.parse(await fs.readFile(subAgentsFile, "utf8")) as SubAgentConfig[];
@@ -150,4 +152,5 @@ export async function readSubAgents(): Promise<SubAgentConfig[]> {
   } catch { return []; }
 }
 
+/** 整份写回子智能体配置。 */
 export async function writeSubAgents(list: SubAgentConfig[]) { await fs.writeFile(subAgentsFile, JSON.stringify(list, null, 2), "utf8"); }

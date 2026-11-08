@@ -11,6 +11,7 @@
  */
 import { useVoiceAnnounce } from "./use-voice-announce";
 
+/** 语音播报桥：只挂 hook，不渲染任何 UI。 */
 export function VoiceAnnounceBridge({ threadId = "" }: { threadId?: string }): null {
   useVoiceAnnounce(threadId);
   return null;

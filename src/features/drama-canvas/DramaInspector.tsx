@@ -162,6 +162,7 @@ export function fieldsFor(kind: string, payload: Record<string, any>): FieldSpec
 /** 「写回分镜表」只对这些 kind 有意义（分镜表里有它们的位置）。 */
 const WRITEBACK_KINDS = ["script", "character", "location", "storyboard", "scene", "shot"];
 
+/** 画布右侧检查器：展示并编辑当前选中节点的属性。 */
 export function DramaInspector({ onClose }: { onClose: () => void }) {
   const actions = useDramaActions();
   const id = actions.board.anchor || actions.board.selectedIds[0] || "";

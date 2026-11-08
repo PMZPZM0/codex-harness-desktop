@@ -27,6 +27,7 @@ type Status = {
   startProgress: Progress;
 };
 
+/** laya 判档服务卡片：安装状态与日志，失败时自动展开日志。 */
 export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);

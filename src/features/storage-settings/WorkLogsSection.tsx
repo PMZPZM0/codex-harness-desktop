@@ -30,6 +30,7 @@ function timeText(ms: number): string {
   return new Date(ms).toLocaleString("zh-CN", { hour12: false, month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
+/** 工作日志面板：扫各项目 memory 下的日志，可读、可删（删除需确认）。 */
 export function WorkLogsSection({ onNotice, openAppConfirm }: {
   onNotice: (message: string) => void;
   openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;

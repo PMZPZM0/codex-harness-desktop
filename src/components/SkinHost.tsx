@@ -70,6 +70,7 @@ function fitToBox(host: HTMLElement, mount: HTMLElement) {
   } catch { /* 老内核没有 ResizeObserver：只做首帧适配 */ }
 }
 
+/** 组件皮肤宿主：按 elementId（`类目/id`）载入打包好的组件并挂到这个位置，卸载时清空。 */
 export function SkinHost({ elementId, className }: SkinHostProps) {
   const hostRef = useRef<HTMLSpanElement>(null);
 

@@ -157,6 +157,7 @@ import { ArchiveToast } from "../../../../components/ArchiveToast";
 import { UpdateProgressBar } from "../../../../components/UpdateProgressBar";
 import { ComposerComposerForm } from "./03-composer/02-composer-form";
 
+/** 主舞台输入区容器：调度状态、运行态、上下文项与发送链路都从这里接。 */
 export function MainStageComposer({ app }: { app: HarnessAppApi }) {
   const {
 

@@ -150,6 +150,7 @@ async function apiJson(pathname: string, timeoutMs = 20_000): Promise<any> {
   catch { throw new Error(`MoeKoe API 没有返回 JSON（HTTP ${response.status}）：${raw.slice(0, 120)}`); }
 }
 
+/** 音乐客户端状态：装没装、API 是否可用、设备指纹。 */
 export async function moekoeStatus() {
   const exe = findMoeKoeExe();
   const probe = await apiProbe();
@@ -165,6 +166,7 @@ export async function moekoeStatus() {
 
 export type MoeKoeSearchInput = { query?: unknown; limit?: unknown; type?: unknown };
 
+/** 搜索歌曲/专辑/歌手/MV（限流 1~50 条）；空关键词返回空结果而不发请求。 */
 export async function searchMoeKoe(input: MoeKoeSearchInput = {}) {
   const query = String(input.query ?? "").trim();
   const type = normalizeMoeKoeSearchType(input.type);
@@ -204,6 +206,7 @@ export async function searchMoeKoe(input: MoeKoeSearchInput = {}) {
 
 export type MoeKoeLyricInput = { hash?: unknown; title?: unknown; artist?: unknown };
 
+/** 取某首歌的歌词（可用缓存里的标题/歌手补参数）。 */
 export async function moeKoeLyric(input: MoeKoeLyricInput) {
   const hash = String(input.hash ?? "").trim();
   const cached = hash ? songCache.get(hash) : undefined;
@@ -222,6 +225,7 @@ export async function moeKoeLyric(input: MoeKoeLyricInput) {
   return { hash, title: title || candidate.song, singer: artist || candidate.singer, source: candidate.source || "MoeKoe 歌词", format: "lrc", lyric };
 }
 
+/** 取某首歌的可用音质（⛔ 缺 hash 直接报错并提示先用搜索拿）。 */
 export async function moeKoeQualities(input: { hash?: unknown }) {
   const hash = String(input.hash ?? "").trim();
   if (!hash) throw new Error("缺少 hash（用 moekoe_search 拿）");
@@ -233,6 +237,7 @@ export async function moeKoeQualities(input: { hash?: unknown }) {
 
 export type MoeKoePlayInput = { hash?: unknown; albumId?: unknown; audioId?: unknown; quality?: unknown; title?: unknown; artist?: unknown; artwork?: unknown };
 
+/** 播放某首歌（先确保本地 API 服务起来）。 */
 export async function playMoeKoe(input: MoeKoePlayInput) {
   const hash = String(input.hash ?? "").trim();
   if (!hash) throw new Error("缺少 hash（用 moekoe_search 结果里的 hash）");
@@ -264,6 +269,7 @@ export async function playMoeKoe(input: MoeKoePlayInput) {
   return { playing: true, title: displayTitle, source: "MoeKoe Music / 酷狗", quality: qualityKey, url: normalized.url };
 }
 
+/** 播放控制：toggle / next / prev（其它动作直接拒）。 */
 export async function controlMoeKoe(action: string) {
   const command = String(action ?? "").trim();
   if (!["toggle", "next", "prev"].includes(command)) throw new Error("action 只支持 toggle / next / prev");
@@ -340,6 +346,7 @@ function launchDownloadedInstaller(target: string) {
   return { action: "installer-launched" as const, installer: target, message: "安装包已启动；请完成安装后调用 moekoe_status。" };
 }
 
+/** 安装或启动 MoeKoe Music：已在跑就返回 none，已装就直接启动，未装需 `confirm:true` 才下载安装。 */
 export async function installMoeKoe(input: { confirm?: unknown } = {}) {
   const status = await moekoeStatus();
   if (status.running) return { ...status, action: "none", message: "MoeKoe Music 已安装并正在运行，无需安装。" };

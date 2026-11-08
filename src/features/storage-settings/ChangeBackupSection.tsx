@@ -32,6 +32,7 @@ function formatBytes(bytes: number): string {
   return `${(b / 1024 ** 3).toFixed(2)} GB`;
 }
 
+/** 变更备份设置：开关与保留策略（删除需二次确认）。 */
 export function ChangeBackupSection({ onNotice, openAppConfirm }: {
   onNotice: (message: string) => void;
   openAppConfirm: (title: string, text: string, confirmLabel?: string) => Promise<boolean>;

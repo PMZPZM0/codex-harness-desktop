@@ -22,6 +22,7 @@ export type BrowserSettingsSectionProps = {
   onOpenDevtools?: () => void;
 };
 
+/** 浏览器设置：主页与浏览器类工具的安装状态（真实安装态，不猜）。 */
 export function BrowserSettingsSection(props: BrowserSettingsSectionProps) {
   const { browserHome, setBrowserHome, setBrowserDraft, setNotice, toolsStatus, ToolCard, onOpenDevtools } = props;
   const browserTools = (toolsStatus || []).filter((tool: any) => tool.scope === "browser");

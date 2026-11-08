@@ -36,6 +36,7 @@ export function repoDir(modelsRoot: string, repo: string): string {
   return join(modelsRoot, ...repo.split("/"));
 }
 
+/** 语音模型里某个文件的绝对路径（按 repo + 相对路径拼）。 */
 export function modelFilePath(modelsRoot: string, repo: string, file: string): string {
   return join(repoDir(modelsRoot, repo), ...file.split("/"));
 }
@@ -547,6 +548,7 @@ export type VoiceModelsStatus = {
   totalFiles: number;
 };
 
+/** 语音模型整体状态：哪些 repo 缺文件、已就绪文件数。 */
 export async function voiceModelsStatus(
   modelsRoot: string,
   repos: VoiceModelRepo[]

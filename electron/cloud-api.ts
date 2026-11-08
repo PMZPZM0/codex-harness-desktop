@@ -32,10 +32,12 @@ export const DEFAULT_ACCOUNTS_BASE = "https://ppz123.asia/cloud-api";
  *  ⛔⛔ **不参与地址解析**：accountsBase() 仍按「环境变量 → 账号记录 → 常量」，
  *     否则一次自报就能把连接地址悄悄改掉（安全与可排障性都会崩）。换地址请显式重登。 */
 let serverReportedBase = "";
+/** 记住服务端上报的 baseUrl（只收 http/https，去掉末尾斜杠）。 */
 export function rememberServerBase(input: unknown): void {
   const v = String((input as { baseUrl?: unknown })?.baseUrl ?? "").trim();
   if (/^https?:\/\//i.test(v)) serverReportedBase = v.replace(/\/+$/, "");
 }
+/** 读记住的服务端 baseUrl（还没上报过就是空串）。 */
 export function serverBaseUrl(): string {
   return serverReportedBase;
 }
@@ -122,10 +124,12 @@ function decryptSecret(value: string | undefined): string {
   }
 }
 
+/** 加密云账号凭据（转发统一实现，⛔ 别在这里另写一套算法）。 */
 export function encrypt(value: string): string {
   return encryptSecret(value);
 }
 
+/** 解密云账号凭据（同上，统一实现）。 */
 export function decrypt(value: string | undefined): string {
   return decryptSecret(value);
 }
@@ -140,6 +144,7 @@ export function activeCredential(): CloudCredential | null {
   return { account, token, baseUrl: account.baseUrl };
 }
 
+/** 云账号视图列表（对外字段，不含任何凭据）。 */
 export function accountViews(): CloudAccountView[] {
   const state = readAuthState();
   return state.accounts.map((a) => ({
@@ -152,6 +157,7 @@ export function accountViews(): CloudAccountView[] {
   }));
 }
 
+/** 当前登录态：是否已登录、服务地址、当前生效账号。 */
 export function loginState(): { loggedIn: boolean; baseUrl: string; active: CloudAccountView | null } {
   const views = accountViews();
   const active = views.find((v) => v.active) || null;
@@ -267,6 +273,7 @@ export type CloudIntegration = {
   memory?: { ok?: boolean; baseUrl?: string; userKey?: string; instanceId?: string; apiKeyHeader?: string; error?: string };
 };
 
+/** 拉服务端的集成信息（记忆 / 知识库等是否开通的权威来源之一）。 */
 export async function fetchIntegrations(): Promise<CloudResponse<CloudIntegration>> {
   return cloudFetch<CloudIntegration>("/integrations");
 }

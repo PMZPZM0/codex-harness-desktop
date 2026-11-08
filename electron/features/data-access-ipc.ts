@@ -56,11 +56,13 @@ function threadOf(value: unknown): string {
   return String(value ?? "").trim().slice(0, 200);
 }
 
+/** 取某个会话的数据访问授权快照（收藏 / 日记 / 密码本 × 读 / 写）；没登记过返回全关。 */
 export function grantSnapshot(threadId: string): GrantSnapshot {
   const found = GRANTS.get(threadId);
   return found ? { favorites: { ...found.favorites }, journal: { ...found.journal }, vault: { ...found.vault } } : emptyGrants();
 }
 
+/** 设置某个会话对某模块某级别的授权，返回新的快照；⛔ 必须带会话 id（授权绑定到会话）。 */
 export function setGrant(threadId: string, module: DataModule, level: DataLevel, on: boolean): GrantSnapshot {
   if (!threadId) throw new Error("缺少会话 id：授权必须绑定到具体会话");
   const current = grantSnapshot(threadId);
@@ -69,10 +71,12 @@ export function setGrant(threadId: string, module: DataModule, level: DataLevel,
   return current;
 }
 
+/** 清掉某个会话的全部授权（会话结束/删除时调，空 id 什么都不做）。 */
 export function clearGrants(threadId: string): void {
   if (threadId) GRANTS.delete(threadId);
 }
 
+/** 判断某会话对某模块是否有某级授权；空 id 一律 false（⛔ 不做「默认放行」）。 */
 export function isGranted(threadId: string, module: DataModule, level: DataLevel): boolean {
   if (!threadId) return false;
   return GRANTS.get(threadId)?.[module]?.[level] === true;

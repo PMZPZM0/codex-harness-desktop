@@ -13,6 +13,7 @@ import { describeTurnError } from "./turn-error-text";
 export type BotStreamSettings = { enabled: boolean; thinking: boolean; tools: boolean };
 export const BOT_STREAM_DEFAULTS: BotStreamSettings = { enabled: true, thinking: true, tools: true };
 
+/** 读机器人流式输出设置（是否流式 / 是否露思考 / 是否露工具）；文件坏了回默认。 */
 export async function readBotStreamSettings(file: string): Promise<BotStreamSettings> {
   try {
     const raw = JSON.parse(await fs.readFile(file, "utf8"));
@@ -29,6 +30,7 @@ function normalizeBotStreamSettings(raw: any): BotStreamSettings {
   return { enabled: raw?.enabled !== false, thinking: raw?.thinking !== false, tools: raw?.tools !== false };
 }
 
+/** 写机器人流式设置（只落这三个开关，其它字段不写）。 */
 export function writeBotStreamSettings(file: string, settings: BotStreamSettings) {
   return fs.writeFile(file, JSON.stringify({
     enabled: Boolean(settings.enabled),

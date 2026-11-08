@@ -47,6 +47,7 @@ function sessionFile(): string {
   return path.join(app.getPath("userData"), "openfilm", "session.json");
 }
 
+/** 读 Studio 会话信息（访问地址与来源）；没有或坏了返回 null。 */
 export function readSession(): StudioSession | null {
   try {
     const raw = JSON.parse(fs.readFileSync(sessionFile(), "utf8"));

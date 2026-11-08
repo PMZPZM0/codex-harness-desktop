@@ -17,6 +17,7 @@ import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntr
 import type { Bag } from "../../bag-types";
 import type { usePart03b } from "../02-composer-memory-models";
 
+/** bag 分片 03c1：重启提示、文件预览与模型编辑器（进页面自动展开当前生效供应商，用 ref 记账防被「添加供应商」盖掉）。 */
 export function usePart03c1(bag: Bag, ibB: ReturnType<typeof usePart03b>) {
   const { providerModels } = ibB;
   // 进入模型配置页直接展开「已配置好的（当前生效）供应商」，不再停在空白表单

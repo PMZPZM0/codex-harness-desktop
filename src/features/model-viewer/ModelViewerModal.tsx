@@ -36,6 +36,7 @@ declare module "react" {
   }
 }
 
+/** 3D 模型查看器桥：接打开指令，把模型文件转成可加载的 blob URL 再渲染。 */
 export function ModelViewerBridge() {
   const [target, setTarget] = useState<ModelViewerTarget | null>(null);
   const [src, setSrc] = useState("");

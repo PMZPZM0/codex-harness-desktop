@@ -39,6 +39,7 @@ let snapshot: QqQrSnapshot = { state: "idle" };
 /** 二维码刷新序号：防止旧 URL 的 SVG 异步生成完覆盖新码 */
 let qrSeq = 0;
 
+/** QQ 扫码连接的当前快照（二维码状态 / 是否已连上）。 */
 export function qqQrSnapshot(): QqQrSnapshot {
   return snapshot;
 }

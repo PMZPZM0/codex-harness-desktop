@@ -13,6 +13,7 @@ import { isDarkTheme } from "../../../../../lib/themes";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 04b2：聊天搜索与历史水合。⛔ 别在这里加「会话一变就清留白」的 effect —— 它跑在 useLayoutEffect 之后，会把刚撑起来的锚点留白清掉。 */
 export function usePart04b2(bag: Bag) {
   // ⛔ 09-18 删掉了一个「thread?.id 一变就清留白」的 useEffect —— 它是「切回来钉顶掉下来」的
   //   直接原因：`pinSentMessage` 跑在 **useLayoutEffect** 里（按真实消息元素重算留白并落位），

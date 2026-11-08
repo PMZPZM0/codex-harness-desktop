@@ -27,18 +27,21 @@ export const FILE_TYPE_TABLE: TypeRow[] = [
   { exts: ["zip", "tar", "gz", "7z", "rar"], color: "#8a8a84", Icon: FileArchive },
 ];
 
+/** 取文件扩展名（小写）；无扩展名返回空串，⛔ 不把 `.gitignore` 这类点开头的当扩展名。 */
 export function fileExtOf(path: string): string {
   const name = String(path ?? "").replace(/[\\/]+$/, "").split(/[\\/]/).pop() ?? "";
   const cut = name.lastIndexOf(".");
   return cut > 0 ? name.slice(cut + 1).toLowerCase() : "";
 }
 
+/** 按扩展名查图标与颜色；未收录的按普通文本文件给默认图标。 */
 export function fileTypeVisual(path: string): { Icon: typeof FileCode; color: string; ext: string } {
   const ext = fileExtOf(path);
   for (const row of FILE_TYPE_TABLE) if (row.exts.includes(ext)) return { Icon: row.Icon, color: row.color, ext };
   return { Icon: FileText, color: "#8a8a84", ext };
 }
 
+/** 文件类型图标（带 hover 提示扩展名），纯装饰不进可达性树。 */
 export function FileTypeIcon({ path, size = 14, className }: { path: string; size?: number; className?: string }) {
   const { Icon, color, ext } = fileTypeVisual(path);
   return (

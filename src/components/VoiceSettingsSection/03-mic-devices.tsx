@@ -16,6 +16,7 @@ type Props = {
   toggleMicTest: () => Promise<void>;
 };
 
+/** 麦克风卡：选输入设备、试音看电平、刷新设备列表。 */
 export function VoiceSettingsSectionMicDevices({ apply, micLevel, micTesting, mics, saving, settings, toggleMicTest }: Props) {
   return (
     <div className="voice-card">

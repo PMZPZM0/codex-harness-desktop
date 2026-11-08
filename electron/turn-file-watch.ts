@@ -37,6 +37,7 @@ type Entry = { size: number; mtime: number; content?: string };
 const snaps = new Map<string, { turnId: string; cwd: string; snap: Map<string, Entry> }>();
 let broadcastFn: ((payload: unknown) => void) | null = null;
 
+/** 注入文件变更的广播函数（把变更推给渲染层）。 */
 export function setTurnFileWatchBroadcast(fn: (payload: unknown) => void): void {
   broadcastFn = fn;
 }
@@ -45,6 +46,7 @@ export function setTurnFileWatchBroadcast(fn: (payload: unknown) => void): void 
    落在几个**静默跳过点**上；打包版 mac 应用 stdout 不可见 ⇒ 关键事实必须落盘（boot 注入
    debugTurnFiles → userData/turn-files-diag.log）。⛔ 诊断写失败绝不影响主流程。 */
 let diagFn: ((entry: Record<string, unknown>) => void) | null = null;
+/** 注入诊断函数（排查「文件变更没上报」时二分主进程/渲染层）。 */
 export function setTurnFileWatchDiag(fn: (entry: Record<string, unknown>) => void): void {
   diagFn = fn;
 }
@@ -62,6 +64,7 @@ type StoredTurn = { at: number; files: unknown[] };
 let storeDir: string | null = null;
 const storeCache = new Map<string, Record<string, StoredTurn>>();
 
+/** 设置快照存储目录（空值 = 关闭快照）。 */
 export function setTurnFileWatchStore(dir: string): void {
   storeDir = dir ? String(dir) : null;
 }
@@ -327,6 +330,7 @@ async function pollLiveOnce(): Promise<void> {
   }
 }
 
+/** 回合开始时对工作区做一次快照（记文件清单与时间），后面靠它算本轮改了哪些文件。 */
 export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: string): void {
   const id = String(threadId ?? "");
   const dir = String(cwd ?? "").trim();
@@ -350,6 +354,7 @@ export function snapshotTurnWorkspace(threadId: string, turnId: string, cwd: str
   ensureLiveTimer();
 }
 
+/** 回合结束时发文件变更；连快照都没有时**也记一条诊断**（能直接回答「链路跑没跑」）。 */
 export function emitTurnFileChanges(threadId: string): void {
   const id = String(threadId ?? "");
   const entry = snaps.get(id);

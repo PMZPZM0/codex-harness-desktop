@@ -8,10 +8,12 @@ import type { ExpertTeamConfig } from "./01-team-types";
 import { reaServerScript } from "../toolchain";
 let teamsFile = "";
 
+/** 设置专家团档案文件路径（启动链按 userData 注入）。 */
 export function setExpertTeamsFile(file: string) {
   teamsFile = file;
 }
 
+/** 读当前专家团档案文件路径。 */
 export function getExpertTeamsFile() {
   return teamsFile;
 }
@@ -41,6 +43,7 @@ export async function readUsableExpertTeams(): Promise<ExpertTeamConfig[]> {
   return list.filter((entry) => !entry.requiresTool || toolAvailable(entry.requiresTool));
 }
 
+/** 整份写回专家团档案（先建目录，保持缩进）。 */
 export async function writeExpertTeams(list: ExpertTeamConfig[]) {
   await mkdir(path.dirname(teamsFile), { recursive: true });
   await writeFile(teamsFile, JSON.stringify(list, null, 2), "utf8");

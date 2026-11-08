@@ -4,6 +4,7 @@ import { Link2, FileUp, ChevronUp } from "lucide-react";
 import { readPendingImportStore } from "../../lib/read-pending-import-store";
 import { fmtImportNote } from "../../lib/fmt-import-note";
 
+/** 导入记录卡：显示导入内容与字数，可展开、可打开来源会话、可丢弃。 */
 export function ImportedRecordCard({ note, content, pending, onDiscard, kind = "imported", sourceId, onOpenSource }: { note: string; content: string; pending?: boolean; onDiscard?: () => void; kind?: "imported" | "thread"; sourceId?: string; onOpenSource?: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false);
   const charCount = content.length;
@@ -44,6 +45,7 @@ export function ImportedRecordCard({ note, content, pending, onDiscard, kind = "
   );
 }
 
+/** 待导入预览槽：这个会话有待导入内容时显示预览卡，否则不渲染。 */
 export function PendingImportSlot({ threadId, onDiscard }: { threadId: string; onDiscard: () => void }) {
   const [payload] = useState<PendingImportPayload | null>(() => readPendingImportStore()[threadId] ?? null);
   if (!payload) return null;

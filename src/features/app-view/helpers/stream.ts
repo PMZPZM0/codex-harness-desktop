@@ -41,8 +41,10 @@ const reasoningStart = new Map<string, number>();
 
 export const deltaMethods = new Set(["item/agentMessage/delta", "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded", "item/reasoning/textDelta", "item/commandExecution/outputDelta"]);
 
+/** 判断某个事件方法是否是流式增量（走 appendDelta 而不是整条替换）。 */
 export const isDeltaMethod = (method: string) => deltaMethods.has(method);
 
+/** 把一条 item 并进指定回合（按 id 去重合并）。⛔ 未知回合的 userMessage 必须用它把回合**建出来**，不能静默丢弃 —— 否则排队消息发出后对话框里没有那条消息。 */
 export function mergeItem(thread: Thread | null, turnId: string, item: ThreadItem) {
   if (!thread) return thread;
   // ⛔⛔ 未知回合的 userMessage 必须用它把回合**建出来**，不能静默丢弃（09-23 用户实测：
@@ -65,6 +67,7 @@ export function mergeItem(thread: Thread | null, turnId: string, item: ThreadIte
   };
 }
 
+/** 粗判线程内容有没有变（回合数 / 末回合 id / updatedAt），给「要不要重渲」用。 */
 export function threadContentChanged(a: Thread | null, b: Thread | null): boolean {
   if (!a || !b) return true;
   if (a.turns.length !== b.turns.length) return true;
@@ -119,6 +122,7 @@ function mergeLongerStreams(cached: Thread, loaded: Thread): Thread {
   return { ...loaded, turns: mergeTurnListsById(mergedTurns, extraTurns) };
 }
 
+/** 整回合合并：已有的话按 item id 逐条更新，没有就追加。 */
 export function mergeTurn(thread: Thread | null, nextTurn: Turn) {
   if (!thread) return thread;
   const current = thread.turns.find((turn) => turn.id === nextTurn.id);
@@ -170,6 +174,7 @@ function collapseOrphanToolTurns(thread: Thread | null): Thread | null {
   return changed ? { ...thread, turns: out } : thread;
 }
 
+/** 给「一次性交付的长文本」打起点标记，让渲染层渐进揭示而不是整段蹦出来。 */
 export function markBufferedAgentReveal(thread: Thread | null, turnId: string, item: ThreadItem) {
   // reasoning 完成快照一次性交付思考全文：同样标记起点，渲染层渐进揭示
   if (item.type === "reasoning") {
@@ -218,6 +223,7 @@ export function markBufferedAgentReveal(thread: Thread | null, turnId: string, i
   if (jump >= 40 && nextText.startsWith(currentText)) bufferedAgentRevealStarts.set(item.id, currentText);
 }
 
+/** 对整个回合里的 item 逐个打揭示起点标记。 */
 export function markBufferedTurnReveal(thread: Thread | null, turn: Turn) {
   for (const item of turn.items ?? []) markBufferedAgentReveal(thread, turn.id, item);
 }
@@ -274,6 +280,7 @@ function hydrateTurnUserMessage(turn: Turn, input: any[]): Turn {
   return hydrated ? { ...turn, items } : turn;
 }
 
+/** 把一段文本增量追加到某条 item 的某个字段上。 */
 export function appendDelta(thread: Thread | null, turnId: string, itemId: string, type: string, field: string, delta: string) {
   if (!thread) return thread;
   const turn = thread.turns.find((entry) => entry.id === turnId);
@@ -281,6 +288,7 @@ export function appendDelta(thread: Thread | null, turnId: string, itemId: strin
   return mergeItem(thread, turnId, { ...current, [field]: `${current[field] ?? ""}${delta}` });
 }
 
+/** 追加索引型增量（summary / content 这类数组字段），按索引合并。 */
 export function appendIndexedDelta(thread: Thread | null, turnId: string, itemId: string, field: "summary" | "content", index: number, delta: string) {
   if (!thread) return thread;
   const turn = thread.turns.find((entry) => entry.id === turnId);
@@ -316,6 +324,7 @@ export const threadStreamMethods = new Set([
   "thread/name/updated", "thread/status/changed",
 ]);
 
+/** 按引擎事件方法把变更归约进线程（回合开始/完成/增量…），是流式归约的总入口。 */
 export function applyThreadEvent(thread: Thread | null, method: string, params: any): Thread | null {
   switch (method) {
     case "turn/started":

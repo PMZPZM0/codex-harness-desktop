@@ -24,6 +24,7 @@ try {
   localStorage.removeItem("ui-skin-bindings-v1");
 } catch { /* 无 localStorage 环境忽略 */ }
 
+/** 组件库页：按类目浏览打包好的组件，可搜索与看详情。 */
 export function ComponentLibraryPage() {
   const [cat, setCat] = useState<string>(UI_SKIN_CATS[0]?.cat ?? "Buttons");
   const [query, setQuery] = useState("");

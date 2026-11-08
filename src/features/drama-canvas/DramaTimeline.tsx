@@ -8,6 +8,7 @@ import { Clock3, Film } from "lucide-react";
 import { storyboardDuration } from "../../lib/drama-storyboard.mjs";
 import { useDramaActions } from "./drama-actions";
 
+/** 分镜时间线：按镜头列出节点，点一下把视口飞到对应画布节点。 */
 export function DramaTimeline({ onFocusNode }: { onFocusNode: (id: string) => void }) {
   const actions = useDramaActions();
   const story = actions.story.story;

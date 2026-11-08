@@ -57,6 +57,7 @@ function onTurnDone(threadId: string, send: (text: string) => void): () => void 
   return dispose;
 }
 
+/** 处理一条微信入站消息：四步各留一行日志（收到 / 配对门卫 / 建回合 / 回信），打包版 stdout 不可见时靠它定位卡在哪一步。 */
 export async function handleWeixinMessage(message: { from: string; text: string; contextToken: string }) {
   if (!weixinGateway) return;
   // ⛔ 四步各留一行（与 QQ/飞书/钉钉同一口径，11-04 补齐）：旧写法全程只有 console.warn，
@@ -126,6 +127,7 @@ export async function handleWeixinMessage(message: { from: string; text: string;
     weixinGateway.sendText(message.from, `处理失败：${error.message}`).catch(() => undefined);
   }
 }
+/** 处理一条 Telegram 入站消息：与微信同口径的四步日志 + 配对门卫。 */
 export async function handleTelegramMessage(message: { from: string; chatId: number; text: string }) {
   // 四步日志（与微信/QQ 同口径，11-04 补齐）：旧写法全程零 channelLog，失败只把错误发回聊天
   channelLog("info", `telegram 收到消息（聊天 ${String(message.chatId).slice(0, 8)}…，${message.text.length} 字）`);
@@ -178,6 +180,7 @@ export async function handleTelegramMessage(message: { from: string; chatId: num
     telegramGateway.sendText(message.chatId, `处理失败：${error.message}`).catch(() => undefined);
   }
 }
+/** 处理飞书/钉钉/QQ 的入站消息：按渠道取网关、统一纯文本排版后回信（三个渠道共用一套流程）。 */
 export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq", from: string, chatId: string, text: string) {
   const prefix = { feishu: "fs:", dingtalk: "dd:", qq: "qq:" }[channel];
   const gateway = { feishu: feishuGateway, dingtalk: dingtalkGateway, qq: qqGateway }[channel];

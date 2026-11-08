@@ -13,6 +13,7 @@ type Props = {
   settings: Settings;
 };
 
+/** 悬浮球卡：开关、显示位置与相关选项。 */
 export function VoiceSettingsSectionFloatingBall({ apply, saving, settings }: Props) {
   return (
     <div className="voice-card">

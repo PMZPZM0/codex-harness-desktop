@@ -9,6 +9,7 @@
 import { useSyncExternalStore } from "react";
 import { getPollSnapshot, subscribePollStore, type PollTask } from "../../polling/poll-store";
 
+/** 读后台任务快照（`useSyncExternalStore`，变化即重渲）。 */
 export function usePollTasks(): PollTask[] {
   return useSyncExternalStore(subscribePollStore, getPollSnapshot, getPollSnapshot);
 }

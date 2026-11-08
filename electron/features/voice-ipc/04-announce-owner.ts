@@ -129,6 +129,7 @@ function broadcastMuted(threadId: string, muted: boolean) {
   broadcastToAll("voice:announce-muted", { muted, threadId });
 }
 
+/** 语音域 IPC 第四批：播报归属（只回本窗口的答案；取不到窗口信息时按 owner=true 保底，宁可多念一次也不能永久静音）。 */
 export function registerVoiceIpc4(a: ReturnType<typeof registerVoiceIpc1>) {
   const { ipcHost } = a;
 

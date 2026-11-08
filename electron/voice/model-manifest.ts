@@ -164,6 +164,7 @@ export const KOKORO_ARCHIVE = {
   extra: { espeakDir: "espeak-ng-data", espeakMinFiles: 100 },
 } as const;
 
+/** 判断 Kokoro 语音包是否就绪（关键文件都在且体积达标）。 */
 export function kokoroReady(modelsRoot: string): boolean {
   const dir = path.join(modelsRoot, KOKORO_DIR);
   const minOf = KOKORO_ARCHIVE.readyFileMinBytes;
@@ -228,6 +229,7 @@ export const EMOTIVOICE_FILES: VoiceModelFile[] = [
   { name: "emotivoice_generator_dyn.onnx.data", sha256: "0e1610a0e744f51047d460a430bdb0051da706c67f7ec8d762cf6a3d7154e922", bytes: 223_357_120 },
 ];
 
+/** 判断 EmotiVoice 语音包是否就绪（按每个文件体积下限的 30% 卡一次，防半包）。 */
 export function emotivoiceReady(modelsRoot: string): boolean {
   const dir = path.join(modelsRoot, EMOTIVOICE_DIR);
   return EMOTIVOICE_FILES.every((f) => {

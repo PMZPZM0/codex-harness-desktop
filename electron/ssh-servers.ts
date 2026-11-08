@@ -98,6 +98,7 @@ function normalize(server: SshServer): SshServer {
   };
 }
 
+/** 读 SSH 服务器档案并逐条归一化；文件不存在或坏了返回空数组。 */
 export async function readSshServers(userData: string): Promise<SshServer[]> {
   try {
     const raw = await fs.readFile(serversFile(userData), "utf8");
@@ -108,6 +109,7 @@ export async function readSshServers(userData: string): Promise<SshServer[]> {
   }
 }
 
+/** 整份写回 SSH 服务器档案（先建目录，保持缩进）。 */
 export async function writeSshServers(userData: string, servers: SshServer[]): Promise<void> {
   await fs.mkdir(userData, { recursive: true });
   await fs.writeFile(serversFile(userData), JSON.stringify(servers, null, 2), "utf8");
@@ -123,6 +125,7 @@ export async function saveSshServer(userData: string, input: SshServer): Promise
   return servers;
 }
 
+/** 按 id 列表删除 SSH 服务器，返回删除后的列表（⛔ 只认显式 id）。 */
 export async function deleteSshServer(userData: string, ids: string[]): Promise<SshServer[]> {
   const set = new Set(ids);
   const servers = (await readSshServers(userData)).filter((server) => !set.has(server.id));
@@ -130,6 +133,7 @@ export async function deleteSshServer(userData: string, ids: string[]): Promise<
   return servers;
 }
 
+/** 批量启用/停用 SSH 服务器，返回更新后的列表。 */
 export async function setSshServerEnabled(userData: string, ids: string[], enabled: boolean): Promise<SshServer[]> {
   const set = new Set(ids);
   const servers = await readSshServers(userData);

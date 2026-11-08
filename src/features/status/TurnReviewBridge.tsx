@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 import { subscribeTurnReview } from "../../lib/turn-review-store.mjs";
 
+/** 回合审查请求桥：收到「打开审查」事件就调宿主回调，无 UI。 */
 export function TurnReviewBridge({ onOpen }: { onOpen: () => void }) {
   const openRef = useRef(onOpen);
   openRef.current = onOpen;

@@ -36,6 +36,7 @@ export function shouldBindHarness(model: { provider?: string; baseUrl?: string }
   return Boolean(String(model.baseUrl ?? "").trim());
 }
 
+/** 生成引擎侧的供应商配置；过桥后的名字必须体现「已拨号」，⛔ 叫 baseUrl 会被守卫误判成直连。 */
 export function harnessProviderConfig(model: { name?: string; baseUrl?: string; provider?: string } | null | undefined) {
   if (!model || model.provider === "openai-official") return {} as Record<string, unknown>;
   const providerId = String(model.provider ?? "");

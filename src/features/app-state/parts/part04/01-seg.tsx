@@ -19,6 +19,7 @@ import { BUILTIN_DISTRIBUTED_SKILLS } from "../../../app-view/constants";
 import type { Bag } from "../bag-types";
 import { setAliasSnapshot } from "../../../../lib/alias-store.mjs";
 
+/** bag 分片 04a：会话笔名快照（走 `alias-store`，⛔ 不往 bag 加字段）。 */
 export function usePart04a(bag: Bag) {
   /* ★ 10-31 会话笔名快照：进应用先拉一次，之后靠主进程广播 `aliases-changed` 整份替换。
      ⛔ 笔名是跨板块共享的只读快照 ⇒ 走 store（src/lib/alias-store.mjs），

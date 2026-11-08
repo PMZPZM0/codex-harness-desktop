@@ -34,6 +34,7 @@ export function OfficeRailNode({ onOpen, title }: { onOpen: () => void; title: s
   );
 }
 
+/** 团成员轨：每个成员的头像、运行态与最近产出，可点开资料。 */
 export function TeamMemberRail({ team, containerRef, runningByMember, lastByMember, activeMemberId, onOpenMember, onOpenOffice }: {
   team: ExpertTeamConfig;
   containerRef: useRefObject;
@@ -93,6 +94,7 @@ export function TeamMemberRail({ team, containerRef, runningByMember, lastByMemb
   );
 }
 
+/** 某个成员的历史运行列表（点开看每次产出）。 */
 export function TeamMemberHistory({ team, memberId, runs, onClose }: {
   team: ExpertTeamConfig;
   memberId: string;
@@ -135,6 +137,7 @@ export function TeamMemberHistory({ team, memberId, runs, onClose }: {
   );
 }
 
+/** 委派轨道：普通会话里的调度记录 + 末位办公室预览入口（与专家团共用同一个入口组件）。 */
 export function DelegatedRail({ containerRef, runs, onOpen, activeId, onOpenOffice }: {
   containerRef: useRefObject;
   runs: { threadId: string; kind: string; name: string; status: "running" | "done" | "failed" }[];

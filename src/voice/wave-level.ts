@@ -60,12 +60,14 @@ export function setVoiceLevel(level: number, mode: VoiceWaveMode): void {
   emit();
 }
 
+/** 订阅语音阶段状态；订阅时立即回调一次当前值（界面不用再手动取一遍）。 */
 export function subscribeVoiceStage(fn: Listener): () => void {
   listeners.add(fn);
   fn(current);
   return () => { listeners.delete(fn); };
 }
 
+/** 读当前语音阶段状态快照（待机 / 收音 / 思考 / 播报）。 */
 export function getVoiceStage(): VoiceStageState {
   return current;
 }
@@ -79,10 +81,12 @@ export function resetVoiceStage(): void {
 // ── 「结束通话」回调：VoiceCallFloat 注册，舞台上的按钮调用（两处不在同一子树）
 let stopHandler: (() => void) | null = null;
 
+/** 登记「结束通话」的执行器（null 解绑）。 */
 export function setVoiceStopHandler(fn: (() => void) | null): void {
   stopHandler = fn;
 }
 
+/** 请求结束通话；执行器缺失或抛错都不冒泡到界面。 */
 export function requestVoiceStop(): void {
   try { stopHandler?.(); } catch { /* 结束通话失败不冒泡到 UI */ }
 }
@@ -91,10 +95,12 @@ export function requestVoiceStop(): void {
 //    （跳过当前排队的播报，后续内容接着说）。与「结束通话」同一套广播范式 —— 两处不在同一子树。
 let skipHandler: (() => void) | null = null;
 
+/** 登记「打断当前播报」的执行器（null 解绑）。 */
 export function setVoiceSkipHandler(fn: (() => void) | null): void {
   skipHandler = fn;
 }
 
+/** 请求打断播报；失败不冒泡。 */
 export function requestVoiceSkip(): void {
   try { skipHandler?.(); } catch { /* 打断失败不冒泡到 UI */ }
 }
@@ -106,10 +112,12 @@ export function requestVoiceSkip(): void {
 //      把 A 会话的告知发进 B 是明确禁止的（与调度告知同款闸门）。
 let callNoticeHandler: ((active: boolean, threadId: string) => void) | null = null;
 
+/** 登记「通话开关通知」的执行器（把 active + 会话 id 交给宿主）。 */
 export function setVoiceCallNoticeHandler(fn: ((active: boolean, threadId: string) => void) | null): void {
   callNoticeHandler = fn;
 }
 
+/** 上报一次通话开关变化；执行器缺失或抛错不影响通话本身。 */
 export function requestVoiceCallNotice(active: boolean, threadId: string): void {
   try { callNoticeHandler?.(active, threadId); } catch { /* 告知失败不影响通话本身 */ }
 }
@@ -118,10 +126,12 @@ export function requestVoiceCallNotice(active: boolean, threadId: string): void 
 //    拿不到 App 里的 setSettingsPage，所以由 App 注册一个打开设置页的钩子）
 let openSettingsHandler: (() => void) | null = null;
 
+/** 登记「打开语音设置页」的执行器（null 解绑）。 */
 export function setVoiceOpenSettingsHandler(fn: (() => void) | null): void {
   openSettingsHandler = fn;
 }
 
+/** 请求打开语音设置页；失败不冒泡。 */
 export function requestVoiceOpenSettings(): void {
   try { openSettingsHandler?.(); } catch { /* 打开设置失败不冒泡到 UI */ }
 }
@@ -130,10 +140,12 @@ export function requestVoiceOpenSettings(): void {
 type DictationRequest = { action?: "toggle" | "start" | "stop"; send?: boolean };
 let dictationHandler: ((request?: DictationRequest) => void) | null = null;
 
+/** 登记「开始听写」的执行器（带上可选的听写请求）。 */
 export function setVoiceDictationHandler(fn: ((request?: DictationRequest) => void) | null): void {
   dictationHandler = fn;
 }
 
+/** 请求开始听写；错误交给 VoiceCallFloat 的 notice 呈现，这里不抛。 */
 export function requestVoiceDictation(request?: DictationRequest): void {
   try { dictationHandler?.(request); } catch { /* 听写启动失败由 VoiceCallFloat 的 notice 呈现 */ }
 }
@@ -141,10 +153,12 @@ export function requestVoiceDictation(request?: DictationRequest): void {
 // ── 听写 final 后「松手即发送」回调：App 注册 send()，VoiceCallFloat 在停止前请求 ──
 let dictationSendHandler: (() => void) | null = null;
 
+/** 登记「听写结果发送」的执行器（null 解绑）。 */
 export function setVoiceDictationSendHandler(fn: (() => void) | null): void {
   dictationSendHandler = fn;
 }
 
+/** 请求把听写结果发出去；错误由既有 send 链路呈现。 */
 export function requestVoiceDictationSend(): void {
   try { dictationSendHandler?.(); } catch { /* 发送错误由现有 send 链路呈现 */ }
 }

@@ -37,6 +37,7 @@ const MODE_DESC: Record<ShotMode, string> = {
   region: "隐藏窗口后拖框选择区域，只截选中的部分",
 };
 
+/** 截图设置：两种截图模式的热键与选项，可当场试拍。 */
 export function ScreenshotSettingsSection({ onNotice }: ScreenshotSettingsSectionProps) {
   const [snapshot, setSnapshot] = useState<ScreenshotSettingsSnapshot | null>(null);
   const [capturing, setCapturing] = useState<ShotMode | null>(null);

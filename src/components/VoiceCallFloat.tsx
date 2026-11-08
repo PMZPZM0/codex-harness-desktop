@@ -119,6 +119,7 @@ function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
   return `${(bytes / 1048576).toFixed(0)} MB`;
 }
+/** 读悬浮球上次的位置（localStorage）；没有或坏了用默认位置。 */
 export function readPos(): { right: number; bottom: number } {
   try {
     const raw = localStorage.getItem(POS_KEY);

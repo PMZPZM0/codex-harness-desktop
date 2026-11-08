@@ -16,6 +16,7 @@ const CommandsSettingsSection = lazy(() => import("../../../../../settings-comma
 const BuiltinPluginCards = lazy(() => import("../../../../../../components/BuiltinPlugins").then((m) => ({ default: m.BuiltinPluginCards })));
 const ComponentLibrarySection = lazy(() => import("../../../../../component-library").then((m) => ({ default: m.ComponentLibraryPage })));
 
+/** 设置页分组：能力（MCP 服务、插件、技能、连接器）。 */
 export function capabilitiesPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     batchSetConnectorsEnabled,

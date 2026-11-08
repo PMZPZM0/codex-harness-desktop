@@ -10,6 +10,7 @@
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 
+/** 思考细条：一行摘要，可展开看全文。 */
 export function ReasoningStrip({ head, text, running, revealing }: {
   head: ReactNode;
   text: string;

@@ -36,6 +36,7 @@ export function WebFavicon({ host, size = 20 }: { host: string; size?: number })
   );
 }
 
+/** 回合的网页来源：列出来源域名，多的折进「更多」弹层（⛔ hooks 必须在 early return 之前）。 */
 export function TurnWebSources({ sources, inline = false }: { sources: Array<{ url: string; host: string }>; inline?: boolean }) {
   const [openAll, setOpenAll] = useState(false);
   const moreRef = useRef<HTMLButtonElement>(null);

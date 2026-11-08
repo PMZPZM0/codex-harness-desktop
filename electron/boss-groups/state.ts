@@ -19,10 +19,12 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}${seq.toString(36).padStart(2, "0")}`;
 }
 
+/** 群状态的空骨架（无群、无任务、无事件）。 */
 export function emptyState(): BossState {
   return { version: 1, groups: {}, tasks: {}, events: [] };
 }
 
+/** 往状态里追加一条群事件，并按上限裁掉最旧的（防文件无限膨胀）。 */
 export function pushEvent(state: BossState, event: Omit<GroupEvent, "id" | "at"> & { at?: number }): GroupEvent {
   const entry: GroupEvent = { id: makeId("e"), at: event.at ?? Date.now(), ...event } as GroupEvent;
   state.events.push(entry);
@@ -30,18 +32,21 @@ export function pushEvent(state: BossState, event: Omit<GroupEvent, "id" | "at">
   return entry;
 }
 
+/** 按 id 取群；不存在直接抛错（⛔ 别返回 undefined 让调用方自己判空）。 */
 export function groupOf(state: BossState, groupId: string): BossGroup {
   const group = state.groups[String(groupId ?? "")];
   if (!group) throw new Error(`群「${groupId}」不存在`);
   return group;
 }
 
+/** 按 id 取任务；不存在抛错。 */
 export function taskOf(state: BossState, taskId: string): GroupTask {
   const task = state.tasks[String(taskId ?? "")];
   if (!task) throw new Error(`任务「${taskId}」不存在`);
   return task;
 }
 
+/** 按 id 取群成员；不在群里抛错。 */
 export function memberOf(group: BossGroup, memberId: string): GroupMember {
   const member = group.members.find((entry) => entry.id === String(memberId ?? ""));
   if (!member) throw new Error(`成员「${memberId}」不在群「${group.name}」里`);
@@ -94,6 +99,7 @@ export function createGroup(state: BossState, input: {
   return group;
 }
 
+/** 往群加一条任务：校验标题与验收标准非空，返回新任务。 */
 export function addTask(state: BossState, input: {
   groupId: string; title: string; brief: string; criteria: string; assignee?: string;
 }): GroupTask {
@@ -365,6 +371,7 @@ function setMemberStatus(group: BossGroup, memberId: string, next: GroupMemberSt
   return member;
 }
 
+/** 挑一个可改派的成员：⛔ 必须有**手上有在办任务的人一律跳过**（否则并发派 40 条会对同一人连派，全被并发闸拒掉，用户看到的是「派活失败」）。 */
 export function pickReassignee(state: BossState, task: GroupTask): GroupMember | null {
   const group = groupOf(state, task.groupId);
   /* ⛔⛔ 手上已有在办任务的成员不能被选中。运行态压测实测：不筛这一条时，一次并发派 40 条活

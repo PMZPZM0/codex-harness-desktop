@@ -23,6 +23,7 @@ type Status = {
 };
 type Guide = { id: string; title: string; steps: string[] };
 
+/** 手机远控依赖卡片：安装状态、进度与取消。 */
 export function PhoneHarnessCard({ setNotice, installDevRuntime, cancelDevRuntime, runtimeInstalling, runtimePercent, runtimeStage }: {
   setNotice: (text: string) => void;
   installDevRuntime?: (id: string) => void;

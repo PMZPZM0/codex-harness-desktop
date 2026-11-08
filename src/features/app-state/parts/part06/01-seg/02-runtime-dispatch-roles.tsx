@@ -11,6 +11,7 @@ import { markDelegateThread } from "../../../../../lib/team-runtime.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 06a2：多窗口运行态一致性（主进程权威值 → 镜像 → React 状态）。⛔ 当前值必须走 ref，闭包捕获 state 会拿到首帧旧值。 */
 export function usePart06a2(bag: Bag) {
   // ── 多窗口一致性（09-14）：主进程回来的权威运行时 → 镜像 + React 状态 ─────────────────
   /** 当前 React 状态里的四项会话级取值。**必须走 ref**：onHarnessEvent 的监听是在挂载时

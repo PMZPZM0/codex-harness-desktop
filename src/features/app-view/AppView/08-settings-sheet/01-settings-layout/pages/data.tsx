@@ -19,6 +19,7 @@ const ChangeBackupSection = lazy(() => import("../../../../../storage-settings")
 const FavoritesSettingsSection = lazy(() => import("../../../../../settings-favorites").then((m) => ({ default: m.FavoritesSettingsSection })));
 const AppLockSettingsSection = lazy(() => import("../../../../../settings-app-lock/AppLockSettingsSection").then((m) => ({ default: m.AppLockSettingsSection })));
 
+/** 设置页分组：数据（备份、导入导出、存储占用）。 */
 export function dataPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     backupBusy,

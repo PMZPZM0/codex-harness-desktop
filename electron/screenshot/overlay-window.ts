@@ -10,6 +10,7 @@ import { BrowserWindow, ipcMain, type Display } from "electron";
 import { buildOverlayHtml as overlayHtml } from "./overlay-page";
 import type { OverlayRect, OverlayResult } from "../screenshot";
 
+/** 弹覆盖层让用户框选/标注，返回最终结果（优先用带编辑的合成图，缺失才按选区裁原帧）。 */
 export function pickEdited(
   display: Display,
   frame: Electron.NativeImage,

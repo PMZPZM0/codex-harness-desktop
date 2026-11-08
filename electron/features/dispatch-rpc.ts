@@ -54,6 +54,7 @@ async function sleepUntilPolled(taskId: string, ms: number): Promise<void> {
   }
 }
 
+/** 执行一次调度 RPC（能力网关）：调用者身份只认引擎侧事实（旁证的事件指纹 / 显式传入的 threadId），⛔ 不信模型自报。 */
 export async function dispatchRpcCall(name: unknown, args: Record<string, unknown>, explicitCallerThreadId?: string): Promise<{ ok: boolean; output?: string; error?: string }> {
   /* ── 调用者身份有两条来源，**都要**是引擎侧的事实，模型伪造不了：
      · 旁证路径（内置 MCP，`explicitCallerThreadId` 不传）：引擎把调用转发给 MCP 服务器的同一时刻
@@ -907,6 +908,7 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   }
   return { ok: false, error: `未知工具：${String(name)}` };
 }
+/** 确保本地 dispatch HTTP 服务起来（先备好令牌再起服务）；重复调用复用同一个 Promise。 */
 export async function ensureDispatchHttp(): Promise<void> {
   if (mutableState.dispatchHttpReady) return mutableState.dispatchHttpReady;
   await ensureDispatchToken(); // 令牌先就绪：/mcp 端点与 config.toml 都要用它

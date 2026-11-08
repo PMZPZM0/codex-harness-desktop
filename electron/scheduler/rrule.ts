@@ -45,6 +45,7 @@ function clampNumber(value: string | undefined, min: number, max: number): numbe
   return Math.max(min, Math.min(max, parsed));
 }
 
+/** 把 RRULE 串解析成键值表（大写键 / 大写值），不认识的部分原样保留。 */
 export function parseRRule(rrule: string): ParsedRRule {
   const map = new Map<string, string>();
   for (const pair of (rrule || "").split(";")) {

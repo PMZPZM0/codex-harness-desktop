@@ -46,6 +46,7 @@ const RESOURCE_INSTALLED: Record<VoiceResourceKind, (modelsRoot: string) => bool
   emotivoice: (root) => emotivoiceReady(root),
 };
 
+/** 语音域 IPC 第三批：音色试听与杂项（预览走 `voiceAudioForIpc` 统一转成可播放载荷）。 */
 export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
   const { voiceAudioForIpc, modelsRoot, svc, ipcHost } = ibA;
   ipcHost.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>

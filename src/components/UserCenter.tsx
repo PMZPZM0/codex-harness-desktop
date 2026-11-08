@@ -20,6 +20,7 @@ export type UserProfile = {
   bio: string;
 };
 
+/** 用户资料的默认值：默认熊猫插画头像（旧档案里 avatarType=none 也补成同一份，避免看起来没生效）。 */
 export function defaultProfile(): UserProfile {
   /* 10-21：没有头像时不再只显示名字首字母 —— 默认发一只熊猫插画头像（用户可选其它或上传）。
      旧档案里 avatarType=none 的也在下面初始化时补成同一个默认，避免「看起来还是 A」。 */
@@ -35,6 +36,7 @@ const STYLE_OPTIONS = [
   { value: "none", label: "默认", desc: "不额外注入语气" },
 ];
 
+/** 用户中心：昵称、头像、职业与画像，改动即时保存并回写宿主。 */
 export function UserCenterSection({ username, onUsernameChange, personality, onPersonalityChange, onNotice, onProfileChange, onLogout, assistantName = CODEX_DEFAULT_NAME, onAssistantNameChange, codexAvatar, onCodexAvatarChange, onOpenPersonaMarket }: {
   username: string;
   onUsernameChange: (name: string) => void;

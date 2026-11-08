@@ -31,12 +31,14 @@ type Listener = (event: AnnounceEvent) => void;
 
 const listeners = new Set<Listener>();
 
+/** 把一条播报事件发给所有订阅者；⛔ 单个订阅者抛错只吞掉自己那条，不影响其余订阅者与事件路由。 */
 export function publishAnnounceEvent(event: AnnounceEvent): void {
   for (const fn of listeners) {
     try { fn(event); } catch { /* 单个订阅者出错不影响其他订阅者，更不能反过来影响事件路由 */ }
   }
 }
 
+/** 订阅播报事件，返回退订函数。 */
 export function subscribeAnnounce(fn: Listener): () => void {
   listeners.add(fn);
   return () => { listeners.delete(fn); };
@@ -54,10 +56,12 @@ export function announceListenerCount(): number {
 let stopHandler: ((threadId?: string) => void) | null = null;
 let resumeHandler: ((threadId?: string) => void) | null = null;
 
+/** 登记「停止播报」的执行器（通话层注入；null 解绑）。 */
 export function setAnnounceStopHandler(fn: ((threadId?: string) => void) | null): void {
   stopHandler = fn;
 }
 
+/** 请求停止当前播报（可按会话）；执行器缺失或抛错都静默，⛔ 不连累其它功能。 */
 export function requestAnnounceStop(threadId?: string): void {
   try { stopHandler?.(threadId); } catch { /* 停止失败不影响别的功能 */ }
 }
@@ -71,6 +75,7 @@ export function setAnnounceResumeHandler(fn: ((threadId?: string) => void) | nul
   resumeHandler = fn;
 }
 
+/** 请求恢复播报（可按会话）；执行器缺失或抛错都静默。 */
 export function requestAnnounceResume(threadId?: string): void {
   try { resumeHandler?.(threadId); } catch { /* 恢复失败不影响别的功能 */ }
 }
@@ -92,15 +97,18 @@ function readMutedThreads(): Set<string> {
 const mutedThreads = readMutedThreads();
 const threadMuteListeners = new Set<() => void>();
 
+/** 判断某个会话是否被单独静音（空 id 一律 false）。 */
 export function isAnnounceMutedForThread(threadId: string): boolean {
   return Boolean(threadId) && mutedThreads.has(threadId);
 }
 
+/** 订阅「会话静音表」变化，返回退订函数。 */
 export function subscribeAnnounceThreadMuted(listener: () => void): () => void {
   threadMuteListeners.add(listener);
   return () => { threadMuteListeners.delete(listener); };
 }
 
+/** 设置某个会话的播报静音；同值重复调用不触发通知（⛔ 空 id 直接忽略）。 */
 export function setAnnounceMutedForThread(threadId: string, muted: boolean): void {
   const id = String(threadId ?? "");
   if (!id) return;
@@ -147,6 +155,7 @@ const statusListeners = new Set<StatusListener>();
 /** 最新一帧状态（新订阅者立刻拿到当前值，不用等下一次更新 —— 与 wave-level 的 stage 一致）。 */
 let announceStatus: AnnounceStatus = IDLE_ANNOUNCE_STATUS;
 
+/** 更新并广播播报状态（idle/playing/…）；单个订阅者抛错不影响执行端。 */
 export function publishAnnounceStatus(next: AnnounceStatus): void {
   announceStatus = next;
   for (const fn of statusListeners) {
@@ -154,10 +163,12 @@ export function publishAnnounceStatus(next: AnnounceStatus): void {
   }
 }
 
+/** 读当前播报状态的快照。 */
 export function getAnnounceStatus(): AnnounceStatus {
   return announceStatus;
 }
 
+/** 订阅播报状态变化，返回退订函数。 */
 export function subscribeAnnounceStatus(fn: StatusListener): () => void {
   statusListeners.add(fn);
   return () => { statusListeners.delete(fn); };
@@ -171,6 +182,7 @@ export function subscribeAnnounceStatus(fn: StatusListener): () => void {
 let announceGlobalEnabled: boolean | null = null;
 const globalEnabledListeners = new Set<(enabled: boolean | null) => void>();
 
+/** 设置播报总开关；值没变就不广播（避免无意义重渲）。 */
 export function setAnnounceGlobalEnabled(enabled: boolean): void {
   if (announceGlobalEnabled === enabled) return;
   announceGlobalEnabled = enabled;
@@ -179,6 +191,7 @@ export function setAnnounceGlobalEnabled(enabled: boolean): void {
   }
 }
 
+/** 读播报总开关；未知（还没读回来）时返回 null，⛔ 别用 false 冒充「用户关掉了」。 */
 export function getAnnounceGlobalEnabled(): boolean | null {
   return announceGlobalEnabled;
 }

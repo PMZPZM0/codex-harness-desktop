@@ -40,6 +40,7 @@ const fmtTime = (ts: number) => {
 };
 const baseName = (p: string) => String(p || "").replaceAll("\\", "/").split("/").pop() || p;
 
+/** 任务监控面板：按会话列回合与进行中的任务，可跳转。 */
 export function TaskMonitorPanel({ app, active = true }: { app: HarnessAppApi; active?: boolean }) {
   const threadId = app.thread?.id ?? "";
   const [turns, setTurns] = useState<Turn[]>([]);

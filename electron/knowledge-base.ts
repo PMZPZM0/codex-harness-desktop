@@ -21,6 +21,7 @@ const CHUNK_SIZE = 700;      // 每块约 700 字符（按段落切，块间不�
 const MAX_DOCS = 500;
 const MAX_FILE_BYTES = 20 * 1024 * 1024;
 
+/** 知识库根目录：`<workspace>/.codex-harness/kb`。 */
 export function kbRoot(workspace: string): string {
   return path.join(String(workspace ?? "").trim(), KB_DIR);
 }
@@ -38,6 +39,7 @@ function readMeta(workspace: string, docId: string): KbDocMeta | null {
   try { return JSON.parse(fs.readFileSync(path.join(docsDir(workspace), docId, "meta.json"), "utf8")) as KbDocMeta; } catch { return null; }
 }
 
+/** 列知识库里的文档（读目录元信息，读不到返回空，⛔ 不抛错）。 */
 export function listDocs(workspace: string): KbDocMeta[] {
   const dir = docsDir(workspace);
   let entries: fs.Dirent[] = [];
@@ -119,6 +121,7 @@ export function addDocument(workspace: string, input: { title: string; text: str
   return meta;
 }
 
+/** 删除一篇知识库文档：先校验 docId（⛔ 含斜杠一律拒，防目录穿越），不存在则报错。 */
 export function removeDocument(workspace: string, docId: string): void {
   const id = String(docId ?? "").trim();
   if (!id || /[\\/]/.test(id)) throw new Error("非法文档 ID");

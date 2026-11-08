@@ -90,6 +90,7 @@ export type AnchorPopoverProps = {
   children: ReactNode;
 };
 
+/** 贴着锚点元素弹的浮层：自动选边（上/下）与对齐、夹在视口内、支持 Esc 与点外部关闭。 */
 export function AnchorPopover({
   open, anchor, onClose, axis, prefer = "auto", align = "start", width, height = 200, gap, ignoreRef, className, role = "dialog", ariaLabel, children,
 }: AnchorPopoverProps) {

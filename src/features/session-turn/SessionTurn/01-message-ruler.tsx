@@ -32,6 +32,7 @@ export type RulerMark = { id: string; turnId: string; itemId: string; type: "use
 
 const RULER_MAX = 50;
 
+/** 回合刻度尺：按回合出刻度，点击跳转；群聊复用同一套。 */
 export function MessageRuler({
   turns, onJump, scrollRef, containerRef, compactionTurnId, compactionAtEnd,
   /* ── 11-06 群聊复用同一套刻度尺 ────────────────────────────────────────────

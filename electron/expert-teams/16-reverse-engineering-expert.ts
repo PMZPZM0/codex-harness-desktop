@@ -7,6 +7,7 @@
    ⛔ 合规边界：只分析用户拥有或获授权的软件（学习/互操作/安全研究），不碰他人版权保护目标。 */
 import type { ExpertTeamConfig } from "./01-team-types";
 
+/** 「洞见 · 逆向工程专家」的内置定义（逆向分析与功能复刻）。 */
 export const reverseEngineeringExpert = (mk: (partial: any) => ExpertTeamConfig): ExpertTeamConfig =>
   mk({
     teamId: "reverse-engineering-expert",

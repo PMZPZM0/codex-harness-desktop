@@ -16,6 +16,7 @@ export const KIND_META: Record<BroadcastKind, { label: string; icon: LucideIcon;
   approval: { label: "等待确认", icon: ShieldQuestion, tone: "warn" },
 };
 
+/** 播报类型 → 图标/色调/文案；未知类型归到「系统提示」（⛔ 不让历史条目变空白行）。 */
 export function kindMetaOf(kind: BroadcastKind) {
   /* 未知 kind（旧历史/新类型先上线后补映射）走系统提示，不让历史条目变成空白行 */
   return KIND_META[kind] ?? KIND_META.system;

@@ -51,6 +51,7 @@ export function memberAvatarSrc(avatar?: string): string {
   return "";
 }
 
+/** 成员头像：按成员信息取图并叠状态环，尺寸可调。 */
 export function MemberAvatar({
   member,
   size = 26,

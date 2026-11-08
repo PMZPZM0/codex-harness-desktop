@@ -150,6 +150,7 @@ import { CommandExecutionCard, TerminalPanel } from "../../terminal";
 import { StorageSection, ReviewPanel } from "../../storage-settings";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 
+/** 右侧审阅面板：内置浏览器、差异视图、文件树与高亮联动。 */
 export function AppViewReviewPanel({ app }: { app: HarnessAppApi }) {
   const {
     browserOpenReq,

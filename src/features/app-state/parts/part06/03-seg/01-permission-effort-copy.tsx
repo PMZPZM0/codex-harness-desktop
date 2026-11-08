@@ -20,6 +20,7 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../app-view/types";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 06c1：全局审批权限与思考档位的展示值、复制操作。 */
 export function usePart06c1(bag: Bag) {
   // 设置页全局审批权限的展示值（与 localStorage 双写，进页面读一次）
   const [globalPermApproval, setGlobalPermApproval] = useState(() => localStorage.getItem("default-approval") ?? "on-request");

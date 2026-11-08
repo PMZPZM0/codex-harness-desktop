@@ -174,6 +174,7 @@ const CONNECTORS_CHANNELS = [
  * ⛔ 未注入时明确抛错，不静默返回 undefined。
  */
 let secureRef: HostCaps["secure"] | null = null;
+/** 注入 secure 接缝（连接器凭据加密用）：域不许直接取 safeStorage。 */
 export function bindConnectorsSecure(host: HostCaps): void {
   secureRef = host.secure;
 }

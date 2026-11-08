@@ -45,6 +45,7 @@ function candidatesOf(input: TeamStopInput): string[] {
   return [...new Set([...fromRegistry, ...fromRows])].slice(0, 24);
 }
 
+/** 停掉团聊在跑的回合：入参是**候选会话 id 列表 + 目标身份**（派活未返回 threadId 时渲染层拿不到那条），并与主进程登记表里同目标的在跑会话合并。 */
 export async function stopTeamRuns(input: TeamStopInput): Promise<TeamStopResult> {
   /* ⛔ 收的是**候选会话 id** + 目标身份，不是单个 id：
      · 派活正在跑的时候 `agents:invoke` 还没返回 threadId（它等整个回合）⇒ 渲染层拿不到

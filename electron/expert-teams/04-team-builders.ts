@@ -54,6 +54,7 @@ export function buildChengxiangExpertTeam(): ExpertTeamConfig {
   });
 }
 
+/** 「知微」（内容流量预测）专家团的内置定义。 */
 export function buildZhiweiExpertTeam(): ExpertTeamConfig {  const now = new Date().toISOString();
   return normalizeTeamConfig({
     teamId: "zhiwei-content-oracle",

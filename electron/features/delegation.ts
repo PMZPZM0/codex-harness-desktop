@@ -43,6 +43,7 @@ import { buildDelegateHarnessTool } from "../delegate-harness-tool";
  *  ⇒ 同一线程两次 resume + turn/start，第二条撞引擎 busy。拿不到锁的那条直接新建
  *  （宁可多一条会话，也不并发写同一个子会话）。 */
 const reuseInFlight = new Set<string>();
+/** 派活：以子智能体 / 专家 / 团成员身份跑一个真实回合，回传产出与用量；`sender` 缺省按来源会话推导。 */
 export async function runDelegatedTask(input: {
   kind: DispatchKind; name: string; query: string; originThreadId: string;
   cwd?: string; model?: string; effort?: string; sandbox?: string; approvalPolicy?: string;

@@ -44,6 +44,7 @@ function basename(cwd: string): string {
   return cwd.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || cwd;
 }
 
+/** 共享技能池：项目间共享的技能集合（开合可由父级控制）。 */
 export function SkillPoolSection(props: { projects?: [string, unknown][]; onNotice?: (message: string) => void; open?: boolean; onOpenChange?: (open: boolean) => void; hideTrigger?: boolean }) {
   const { projects, onNotice } = props;
   /* 10-30：open 可由父级（技能页工具栏那颗按钮）控制；hideTrigger = 不再自带「共享技能池」触发条。 */

@@ -24,6 +24,7 @@ export function mcpToolRulesOf(overrides: McpOverrides): Record<string, McpToolR
   return rules;
 }
 
+/** 由连接器配置生成要注入引擎的环境变量；⛔ 停用的连接器一律不注入（与「不写进 config.toml」同一口径）。 */
 export function connectorEnv(list: ConnectorConfig[]) {
   const result: Record<string, string> = {};
   for (const connector of list) {
@@ -37,6 +38,7 @@ export function connectorEnv(list: ConnectorConfig[]) {
   return result;
 }
 
+/** 由连接器配置生成 MCP 的 TOML 段；停用的整段跳过（引擎侧根本没有这个 MCP，而不是加载后靠 enabled 生效）。 */
 export function connectorToml(list: ConnectorConfig[]) {
   const lines: string[] = [];
   for (const connector of list) {
@@ -66,6 +68,7 @@ export function connectorToml(list: ConnectorConfig[]) {
   return lines;
 }
 
+/** 读频道机器人配置（开关 / 监听地址 / 端口等）；从没配过返回 null。 */
 export async function readChannelBot(): Promise<ChannelBotConfig | null> {
   const stored = await readStoredChannelBot();
   if (!stored) return null;

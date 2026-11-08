@@ -90,6 +90,7 @@ export function getPollSnapshot(): PollTask[] {
   return snapshot;
 }
 
+/** 订阅排队板变化；订阅/退订都会顺手校准看门狗（没人看就停表）。 */
 export function subscribePollStore(fn: () => void): () => void {
   listeners.add(fn);
   ensureWatchdog();
@@ -99,10 +100,12 @@ export function subscribePollStore(fn: () => void): () => void {
   };
 }
 
+/** 读轮询配置快照。 */
 export function getPollConfig(): PollConfig {
   return config;
 }
 
+/** 局部更新轮询配置（null = 回默认）→ 落盘 → 通知订阅者，返回新配置。 */
 export function setPollConfig(patch: Partial<PollConfig> | null): PollConfig {
   config = normalizePollConfig(patch, config);
   persistConfig();
@@ -114,6 +117,7 @@ function persistConfig() {
   try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* 隐私模式/存储满：内存里照样生效 */ }
 }
 
+/** 从 localStorage 回灌轮询配置；存的是脏数据就回默认值，⛔ 不弹错。 */
 export function hydratePollConfig(): PollConfig {
   try {
     const raw = localStorage.getItem(CONFIG_KEY);
@@ -239,6 +243,7 @@ export function abortPollTask(id: string): void {
   settlePollTask(id, { status: "aborted", error: "已被你中止" });
 }
 
+/** 按 id 取一条后台任务；不存在返回 null。 */
 export function getPollTask(id: string): PollTask | null {
   const idx = indexOfTask(String(id ?? ""));
   return idx < 0 ? null : tasks[idx];
@@ -352,10 +357,12 @@ export function endToolWatchesOfTurn(turnId: string, threadId?: string): void {
    ⛔ 轮询任务（视频）不走这里：它有自己的 `poll:abort` 通道，能真正停掉厂商那边在等的循环。 */
 let toolAbortHandler: ((taskId: string) => void) | null = null;
 
+/** 登记「中止工具调用」的执行器（null 解绑）。 */
 export function setToolAbortHandler(fn: ((taskId: string) => void) | null): void {
   toolAbortHandler = fn;
 }
 
+/** 请求中止某条后台任务；失败不影响别的功能。 */
 export function requestToolAbort(taskId: string): void {
   try { toolAbortHandler?.(String(taskId ?? "")); } catch { /* 中止失败不影响别的功能 */ }
 }
@@ -368,6 +375,7 @@ export function requestToolAbort(taskId: string): void {
    返回 false = 本会话在窗口内已达上限，调用方**静默停手**（不弹错、不打扰）。 */
 const pollContinueLog = new Map<string, { count: number; firstAt: number }>();
 
+/** 记一次「自动续跑」尝试并判断是否还在窗口内；超出窗口或次数上限返回 false ⇒ 调用方停止续跑。 */
 export function notePollAutoContinue(threadId: string, windowMs: number, maxAttempts: number): boolean {
   const key = String(threadId ?? "");
   if (!key) return false;

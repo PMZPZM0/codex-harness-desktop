@@ -7,6 +7,7 @@
  */
 import { useEffect } from "react";
 
+/** 把当前会话 id 告诉宠物（宠物据此显示这个会话的进度），无 UI。 */
 export function PetFocusBridge({ threadId }: { threadId: string }) {
   useEffect(() => {
     void window.codex.petFocusThread?.(threadId).catch(() => undefined);

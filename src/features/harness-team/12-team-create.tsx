@@ -60,6 +60,7 @@ type Props = {
   onCreated?: (id: string) => void;
 };
 
+/** 建群弹窗：群名、记忆、工作区与初始成员（受成员数上限约束）。 */
 export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCreated }: Props) {
   const [name, setName] = useState("");
   const [memory, setMemory] = useState("");

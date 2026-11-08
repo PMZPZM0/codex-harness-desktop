@@ -14,6 +14,7 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 03d：项目分组、工作目录与模型显示名（档位支持情况由 EffortPicker 自己读）。 */
 export function usePart03d(bag: Bag) {
   // 该模型/网关**已知不支持**的档位由 EffortPicker 每次打开时自己读
   // （src/lib/effort-support.ts）—— 这里只把模型 id 给它。

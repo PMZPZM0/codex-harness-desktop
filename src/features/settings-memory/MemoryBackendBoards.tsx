@@ -45,6 +45,7 @@ const BOARDS: {
   { id: "cloud", name: "云端记忆", icon: Cloud, tone: "ic-violet", desc: "memapi 跨设备；对话自动注入与回写，按云账号隔离。" },
 ];
 
+/** 记忆后端三块板：本地金字塔 / MCP / 云端各一块，开关决定哪个生效。 */
 export function MemoryBackendBoards({ memoryEnabled, fallbackBackend, onManage, onNotice }: {
   memoryEnabled: boolean;
   fallbackBackend: MemoryBackendId;

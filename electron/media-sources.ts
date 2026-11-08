@@ -83,6 +83,7 @@ async function fetchJson(url: string, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<u
 
 export type MediaSearchInput = { query?: unknown; sources?: unknown; limit?: unknown; timeoutMs?: unknown };
 
+/** 在已配置的媒体源里搜片（可按源筛选），汇总各源结果。 */
 export async function searchMediaSources(input: MediaSearchInput = {}) {
   const state = await readMediaSources();
   const query = String(input.query ?? "").trim();
@@ -126,6 +127,7 @@ export async function searchMediaSources(input: MediaSearchInput = {}) {
 
 export type MediaDetailInput = { source?: unknown; id?: unknown; timeoutMs?: unknown };
 
+/** 取某部片在某个源上的详情与播放分组；源不存在或没结果时抛错。 */
 export async function getMediaSourceDetail(input: MediaDetailInput) {
   const state = await readMediaSources();
   const key = String(input.source ?? "").trim();
@@ -149,6 +151,7 @@ export async function getMediaSourceDetail(input: MediaDetailInput) {
 
 export type MediaOpenInput = { source?: unknown; id?: unknown; episode?: unknown; mode?: unknown; timeoutMs?: unknown };
 
+/** 打开播放：取详情 → 挑剧集 → 交给播放器；没有可播地址时给出可读错误。 */
 export async function openMediaSource(input: MediaOpenInput) {
   const detail = await getMediaSourceDetail(input);
   const groups = detail.item.playGroups;

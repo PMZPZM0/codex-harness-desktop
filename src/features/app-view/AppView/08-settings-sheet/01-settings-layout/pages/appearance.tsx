@@ -18,6 +18,7 @@ const AppearanceSettingsSection = lazy(() => import("../../../../../settings-app
 const ScreenshotSettingsSection = lazy(() => import("../../../../../settings-screenshot").then((m) => ({ default: m.ScreenshotSettingsSection })));
 const PetSettingsSection = lazy(() => import("../../../../../settings-pet/PetSettingsSection").then((m) => ({ default: m.PetSettingsSection })));
 
+/** 设置页分组：外观（主题、字体、壁纸、提示风格）。 */
 export function appearancePages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     adaptiveTone,

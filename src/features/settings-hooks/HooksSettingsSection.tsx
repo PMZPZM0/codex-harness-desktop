@@ -24,6 +24,7 @@ const STATUS_OPTIONS: { value: StatusFilter; label: string }[] = [
   { value: "untrusted", label: "未信任" },
 ];
 
+/** 钩子设置：插件钩子与本地钩子的信任、启停。 */
 export function HooksSettingsSection(props: HooksSettingsSectionProps) {
   const { settingsResources, pluginDisplayName, localSkills, hookTrusting, trustAllHooks, refreshSettingsResources, resourceLoading, linkedBusy, setLinkedEnabled, hookBusy, setHookEnabled, setNotice } = props;
   const hooks = settingsResources.hooks as Record<string, unknown>[];

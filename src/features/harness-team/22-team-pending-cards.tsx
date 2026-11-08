@@ -21,6 +21,7 @@ import { AgentAskCard } from "../app-view/AppView/02-main-stage/03-composer/03-a
 import { RequestCard } from "../app-view/helpers";
 import type { HarnessAppApi } from "../app-state";
 
+/** 待处理卡片：按会话 id 过滤出属于这些群的询问/审批请求。 */
 export function TeamPendingCards({ app, threadIds }: { app?: HarnessAppApi; threadIds: string[] }) {
   if (!app) return null;
   const ids = new Set(threadIds.filter(Boolean));

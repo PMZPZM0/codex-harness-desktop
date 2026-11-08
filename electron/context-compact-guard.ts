@@ -122,6 +122,7 @@ export type CompactDecision =
   | { compact: true; used: number; limit: number }
   | { compact: false; reason: "no-thread" | "cooldown" | "no-limit" | "no-rollout" | "no-usage" | "below"; used?: number; limit?: number };
 
+/** 判断该不该自动压缩：无会话 / 冷却中 / 没到阈值都返回 false 并给出原因。 */
 export function shouldCompact(codexHome: string, threadId: string, now = Date.now()): CompactDecision {
   if (!threadId) return { compact: false, reason: "no-thread" };
   if (now - (lastAttempt.get(threadId) ?? 0) < RETRY_COOLDOWN_MS) return { compact: false, reason: "cooldown" };

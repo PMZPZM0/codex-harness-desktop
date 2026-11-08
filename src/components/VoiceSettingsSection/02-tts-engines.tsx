@@ -107,6 +107,7 @@ const ENGINES: EngineInfo[] = [
   },
 ];
 
+/** TTS 引擎与音色包管理卡：显示安装状态、下载进度、切换引擎，失败在卡内给反馈条。 */
 export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings }: Props) {
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
   const [busy, setBusy] = useState<PackId | null>(null);

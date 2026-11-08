@@ -118,6 +118,7 @@ export async function wireAdb(): Promise<string> {
   return bundled;
 }
 
+/** 手机远控依赖状态：本机 python 可用性与 pip 包安装情况。 */
 export async function phoneHarnessStatus(): Promise<PhoneHarnessStatus> {
   const bin = pythonBin();
   const pyOk = await run(bin, ["-c", "import sys; print(sys.version.split()[0])"]).then((r) => r.code === 0);

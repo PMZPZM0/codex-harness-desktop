@@ -76,6 +76,7 @@ export function backoffMs(intervalMs: number, failures: number): number {
   return Math.min(POLL_LIMITS.intervalMs.max, base * Math.pow(2, Math.max(0, Math.floor(Number(failures) || 0))));
 }
 
+/** 读轮询配置并归一化；文件坏了回默认。 */
 export function readPollConfig(): PollConfig {
   try {
     const raw = JSON.parse(fs.readFileSync(configPath(), "utf8")) as Partial<PollConfig>;
@@ -85,6 +86,7 @@ export function readPollConfig(): PollConfig {
   }
 }
 
+/** 局部更新轮询配置并落盘，返回归一化后的结果。 */
 export async function writePollConfig(patch: Partial<PollConfig> | null): Promise<PollConfig> {
   const next = normalizePollConfig(patch, readPollConfig());
   await fsp.mkdir(path.dirname(configPath()), { recursive: true });
@@ -95,11 +97,13 @@ export async function writePollConfig(patch: Partial<PollConfig> | null): Promis
 /** 被用户中止的任务 id（wait 循环每轮开头查一次）。 */
 const aborted = new Set<string>();
 
+/** 把某个后台任务标记为「已请求中止」（⛔ 只是标记，真正停由执行侧轮询判断）。 */
 export function requestPollAbort(taskId: string): void {
   const id = String(taskId ?? "").trim();
   if (id) aborted.add(id);
 }
 
+/** 查询某个后台任务是否已被请求中止。 */
 export function isPollAborted(taskId: string): boolean {
   return aborted.has(String(taskId ?? "").trim());
 }

@@ -22,6 +22,7 @@ const queueAutoStartLocks = new Set<string>();
    直接跳过，而不是靠「锁刚好还在」碰运气。 */
 const queueAutoStartSettledTurns = new Set<string>();
 
+/** 事件路由第 7 段：回合收尾——清发送态/中断态/活动回合，并统一结算本回合各段思考耗时。 */
 export function handleEventRouter7(bag: Bag, params: any): boolean {
         bag.setSending(false);
         bag.setInterrupting(false);

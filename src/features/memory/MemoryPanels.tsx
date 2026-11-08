@@ -41,6 +41,7 @@ function formatRelativeTime(ts: number, now: number = Date.now()): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/** 记忆漏斗：按来源分组列条目，支持置顶、删一条、删整组与批量操作。 */
 export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onTogglePin, onDeleteOne, onDeleteGroup, onOpenThread, readOnly }: {
   groups: MemoryGroup[];
   /** 空列表时的解释（09-23 加）：区分「真的没记忆」与「当前项目下没有、别处还有」—— 后者原先只显示"暂无记忆"，把用户带偏。 */
@@ -191,6 +192,7 @@ export function MemoryFunnel({ groups, emptyHint, onShowAll, onPreview, onToggle
   );
 }
 
+/** 记忆分层编辑器：按作用域（user/background/project）编辑某一层，含脏标记与蒸馏入口。 */
 export function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, hasWorkspace, savedAt, onScope, onDraft, onSave, onDistill }: {
   snapshot: MemoryLayersSnapshot | null;
   scope: "user" | "background" | "project";
@@ -277,6 +279,7 @@ export function MemoryLayersEditor({ snapshot, scope, draft, dirty, distilling, 
   );
 }
 
+/** 记忆网关配置弹窗：填端点/密钥，可测试连通性再保存。 */
 export function MemoryConfigModal({ gateway, setGateway, action, onClose, onTest, onSave }: {
   gateway: MemoryGatewayState;
   setGateway: (g: MemoryGatewayState) => void;

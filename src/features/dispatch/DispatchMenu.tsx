@@ -26,6 +26,7 @@ import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 /** 三类许可（与 `src/lib/thread-runtime.mjs` 的 DispatchConfig 同形：无总开关）。 */
 export type DispatchDraft = { expert: boolean; team: boolean; subagent: boolean };
 
+/** 调度菜单：选派发目标（专家 / 子智能体 / CLI / 团）；顶栏形态是纯图标 + 向下弹层。 */
 export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topbar, restrictedLabel }: {
   dispatch: DispatchDraft;
   targets: DispatchTargetEntry[];
@@ -234,6 +235,7 @@ export function DispatchMenu({ dispatch, targets, onChange, disabled, busy, topb
   );
 }
 
+/** 调度记录徽标：运行 / 失败 / 完成三态；群聊产生的会话单独标「伙伴」。 */
 export function DispatchBadge({ record }: { record: DelegateRecordEntry }) {
   const tone = record.status === "running" ? "run" : record.status === "failed" ? "fail" : "done";
   /* ⛔ 11-07 用户令：「群聊标签改成伙伴」——

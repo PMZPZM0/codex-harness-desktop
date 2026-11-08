@@ -99,6 +99,7 @@ const CLOUD_KB_TOOLS = {
 export const memoryToolNames = MEMORY_MCP_TOOLS;
 export const knowledgeToolNames = CLOUD_KB_TOOLS;
 
+/** 记忆后端 → 路由（后端名、该带的连接器、提示层用的技能名）；路由只认**实际生效**的后端。 */
 export function memoryRoute(): MemoryRoute {
   const backend = memoryBackendNow();
   if (backend === "mcp") {
@@ -134,6 +135,7 @@ export function memoryRoute(): MemoryRoute {
   };
 }
 
+/** 知识库后端 → 路由（后端名 + 连接器）；与记忆分开判，⛔ 别混用同一份判定。 */
 export function knowledgeRoute(): KnowledgeRoute {
   const backend = knowledgeBackendNow();
   if (backend === "cloud") {

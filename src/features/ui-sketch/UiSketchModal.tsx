@@ -30,6 +30,7 @@ import type { SketchDiag, SketchDoc } from "./sketch-doc.mjs";
 /** 桥没应答多久算"没就绪"：8 秒足够本地协议加载 4MB 产物，又不至于让用户干等。 */
 const BRIDGE_TIMEOUT_MS = 8000;
 
+/** 前端开发画布弹窗：iframe 里跑画布，桥接消息与「交给 agent」的动作。 */
 export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; onAskAgent: (text: string) => void }) {
   const iframeRef = useRef<HTMLIFrameElement | null>(null);
   const readyRef = useRef(false);

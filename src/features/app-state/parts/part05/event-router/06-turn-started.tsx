@@ -5,6 +5,7 @@
  */
 import type { Bag } from "../../bag-types";
 
+/** 事件路由第 6 段：回合开始。⛔ 已结束的回合不能被迟到的 turn/started 重新点亮。 */
 export function handleEventRouter6(bag: Bag, params: any): boolean {
         // ⛔ 已结束的回合不得被迟到的 turn/started 重新点亮（否则收尾之后被置回「运行中」，
         //   而该回合的结束事件已消费完 ⇒ 停止键永久亮着——见跨会话区的同名判定与注释）。

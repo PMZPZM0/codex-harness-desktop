@@ -25,6 +25,7 @@ import { BootIntro550c } from "./BootIntro550c";
 
 const storage = () => (typeof localStorage === "undefined" ? null : localStorage);
 
+/** 启动动画设置行：选模式与配色，可当场预览。 */
 export function BootIntroSettingsRow({ onNotice }: { onNotice?: (text: string) => void }) {
   const [mode, setMode] = useState(() => normalizeBootIntroMode(readBootIntroMode(storage())));
   const [scheme, setScheme] = useState(() => normalizeBootIntroScheme(readBootIntroScheme(storage())));

@@ -9,6 +9,7 @@ import { usePart07a2 } from "./01-seg/02-files-market-connectors";
 import type { Bag } from "../bag-types";
 
 
+/** bag 分片 07a：合并命令执行（a1）与文件/市场动作（a2）。 */
 export function usePart07a(bag: Bag) {
   const a = usePart07a1(bag);
   const b = usePart07a2(bag);

@@ -34,6 +34,7 @@ import { skillOfItem, argSummary, pluginOfItem } from "../../lib/tool-display.mj
 import { stepOf } from "../../lib/step-note.mjs";
 import { webSearchResultsOf } from "../../lib/web-search-results.mjs";
 
+/** 单条 item 的分发渲染：用户消息、回复、思考、工具卡各走各自的视图。 */
 export function ItemView({ item, turn, turnActive, reasoningFloatHost, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, leadingAction, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; reasoningFloatHost?: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
     return <UserMessageView item={item} turn={turn} pending={pending} leadingAction={leadingAction} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
@@ -241,6 +242,7 @@ function payloadLanguage(text: string): string {
   return "text";
 }
 
+/** 正文渐进揭示：长文按包逐步显示，避免整段蹦出（揭示中带 CSS 类）。 */
 export function ProgressiveAgentBody({ itemId, text, active, footer, onOpenFile }: { itemId: string; text: string; active?: boolean; footer?: React.ReactNode; onOpenFile?: (path: string) => void }) {
   const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedAgentRevealStarts, 24);
   return <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}><Markdown>{displayed}</Markdown>{!revealing ? <InlineFileCards text={text} onOpenFile={onOpenFile} /> : null}{!revealing ? footer : null}</div>;
@@ -293,6 +295,7 @@ function FileChangeCard({ item, turnActive }: { item: ThreadItem; turnActive?: b
   );
 }
 
+/** 工具载荷渐进揭示：同上，节奏略快。 */
 export function ProgressiveToolPayload({ itemId, text, active, className, language }: { itemId: string; text: string; active?: boolean; className?: string; language?: string }) {
   const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedToolRevealStarts, 48);
   return <ToolCodeBlock language={language ?? payloadLanguage(text)} text={displayed} revealing={revealing} className={className} />;

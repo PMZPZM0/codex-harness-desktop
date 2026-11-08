@@ -20,6 +20,7 @@ type Props = {
   working: string;
 };
 
+/** 套餐弹窗：列套餐与价格，点选进购买流程。 */
 export function RelayCenterPagePlansModal({ account, openPurchase, overview, plans, plansErr, plansLoading, plansOpen, setPlansOpen, subs, working }: Props) {
   return (
     plansOpen && (

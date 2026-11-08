@@ -6,5 +6,7 @@
  * 收敛为「setter + getter」，外部只准通过 setWidgetDark 改。
  */
 let dark = false;
+/** 标记「当前挂件是否处于深色」（由主题侧写入，渲染侧只读）。 */
 export function setWidgetDark(value: boolean): void { dark = value; }
+/** 读「当前挂件是否处于深色」。 */
 export function isWidgetDark(): boolean { return dark; }

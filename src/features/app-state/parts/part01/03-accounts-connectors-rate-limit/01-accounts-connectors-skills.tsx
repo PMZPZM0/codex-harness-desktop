@@ -14,6 +14,7 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { RateLimitCtx, BotEntry } from "../../types";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 01c1：中转站账号（余额/套餐同步、一键生成供应商）与连接器、技能列表状态。 */
 export function usePart01c1(bag: Bag) {
   // 中转站账户（sub2api）：余额/套餐同步与一键生成供应商
   const [relayBusy, setRelayBusy] = useState(false);

@@ -20,6 +20,7 @@ function SubAgentToggle({ checked, label, onChange }: { checked: boolean; label:
   );
 }
 
+/** 子智能体编辑弹窗：名称 + 系统提示词必填，保存走主进程。 */
 export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draft: SubAgentEntry; onChange: (draft: SubAgentEntry) => void; onClose: () => void; onSave: (draft: SubAgentEntry) => void }) {
   const valid = Boolean(draft.name.trim() && draft.systemPrompt.trim());
   return createPortal(
@@ -81,6 +82,7 @@ export function SubAgentEditorModal({ draft, onChange, onClose, onSave }: { draf
   );
 }
 
+/** 专家团编辑弹窗：团名、主理人、成员与协作说明。 */
 export function ExpertTeamEditorModal({ draft, onChange, onClose, onSave }: { draft: ExpertTeamConfig; onChange: (draft: ExpertTeamConfig) => void; onClose: () => void; onSave: (draft: ExpertTeamConfig) => void }) {
   const valid = Boolean(draft.displayName.zh.trim() && draft.lead.name.trim() && draft.lead.systemPrompt.trim());
   const setLead = (patch: Partial<ExpertTeamMember>) => onChange({ ...draft, lead: { ...draft.lead, ...patch } });

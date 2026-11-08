@@ -27,6 +27,7 @@ const TOKEN_SNAPSHOT_MAX = 60;
    这里的两处用途：① 启动读回失败/未配置时的兜底；② settings 里没有该字段时的初值。 */
 const AUTO_COMPACT_RATIO_DEFAULT = 0.6;
 
+/** bag 分片 01d：乐观气泡安全阀（本轮是否真出现过运行中回合）与审批、端到端标记。 */
 export function usePart01d(bag: Bag) {
   // 09-17：本轮是否**确实出现过**运行中的回合 —— 乐观气泡安全阀的判据（见下方 effect 注释）。
   const sawRunningTurnRef = useRef(false);

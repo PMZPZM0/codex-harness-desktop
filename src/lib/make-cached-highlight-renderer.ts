@@ -2,6 +2,7 @@
 import { HIGHLIGHT_CACHE } from "./highlight-cache";
 import createHighlightElement from "react-syntax-highlighter/dist/esm/create-element";
 
+/** 生成「带缓存的高亮渲染器」：同一 cacheKey 直接回放上次的 rows，省掉重复高亮开销。 */
 export function makeCachedHighlightRenderer(cacheKey: string) {
   return function cachedHighlightRenderer({ rows, stylesheet, useInlineStyles }: {
     rows: unknown[];

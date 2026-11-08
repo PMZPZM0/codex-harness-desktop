@@ -6,6 +6,7 @@ import type { HarnessAppApi } from "../../../app-state/useHarnessApp";
 import { SettingsLayoutSettingsNav } from "./01-settings-layout/01-settings-nav";
 import { SettingsLayoutSettingsContent } from "./01-settings-layout/02-settings-content";
 
+/** 设置页整体布局：左导航 + 右内容，按注册表渲染。 */
 export function SettingsSheetSettingsLayout({ app }: { app: HarnessAppApi }) {
   const {
     activateOfficialProvider,

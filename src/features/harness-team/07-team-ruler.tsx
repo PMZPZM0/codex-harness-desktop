@@ -33,6 +33,7 @@ function toMarks(rows: GroupMessageRow[]): RulerMark[] {
     }));
 }
 
+/** 消息流右侧标尺：按回合分段，点一下跳到对应位置。 */
 export function TeamRuler({
   rows,
   scrollRef,

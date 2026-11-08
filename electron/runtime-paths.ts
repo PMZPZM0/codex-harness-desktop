@@ -30,6 +30,7 @@ export let builtinPluginsFile = "";
 export let subAgentsFile = "";
 
 let ready = false;
+/** 初始化运行时路径（userData / codexHome / 各档案文件），幂等；⛔ 必须在 setPath 之后调。 */
 export function initRuntimePaths() {
   if (ready) return;
   ready = true;

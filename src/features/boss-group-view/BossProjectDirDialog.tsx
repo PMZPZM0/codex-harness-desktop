@@ -22,6 +22,7 @@ import { isMacPlatform } from "../../lib/is-mac-platform";
 
 export type BossProjectDirChoice = "pick" | "auto" | "cancel";
 
+/** 群项目目录选择弹窗：选目录或取消，忙碌/错误状态外置传入。 */
 export function BossProjectDirDialog({
   open,
   busy,

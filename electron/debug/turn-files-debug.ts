@@ -18,6 +18,7 @@ import path from "node:path";
 
 const MAX_BYTES = 512 * 1024;
 
+/** 把一条回合文件诊断追加到日志（超过上限先清空，⛔ 不让日志无限长）。 */
 export function debugTurnFiles(entry: Record<string, unknown>) {
   try {
     const file = path.join(app.getPath("userData"), "turn-files-diag.log");

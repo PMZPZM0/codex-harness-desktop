@@ -41,6 +41,7 @@ function renderGuideRich(text?: string) {
     : <span key={index}>{part}</span>);
 }
 
+/** 新手指南：可受控/不受控打开，列出上手步骤并给设置页跳转。 */
 export function NewbieGuide({ onOpenSettings, open: openProp, onOpenChange }: {
   onOpenSettings?: (page: string) => void;
   open?: boolean;

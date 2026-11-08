@@ -143,6 +143,7 @@ function CloudTutorial() {
   );
 }
 
+/** 云账号页：登录态、模型目录、积分与知识库权益，以及记忆凭据的获取/刷新。 */
 export function CloudAccountSection() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [models, setModels] = useState<ModelStatus | null>(null);

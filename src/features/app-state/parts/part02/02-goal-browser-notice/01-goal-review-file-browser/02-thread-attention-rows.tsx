@@ -153,6 +153,7 @@ import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtin
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
 import type { Bag } from "../../../bag-types";
 
+/** bag 分片 02b12：会话列表的 attention 行。⛔ 笔名快照必须在这个 hook 里订阅一次 —— 在 renderThreadRow 这类普通函数里调 useSyncExternalStore 会让行数一变就 hook 数错位（React #310 白屏）。 */
 export function usePart02b12(bag: Bag) {
   /* ⛔⛔ 笔名快照**必须在这里订阅一次**（10-31 白屏实证：`Minified React error #310`）——
      `renderThreadRow` 只是本 hook 里的一个**普通函数**（由侧栏组件 `map` 调用，不是组件），

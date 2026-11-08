@@ -63,6 +63,7 @@ export function listBoards(): BoardMeta[] {
   return Array.isArray(list) ? list.filter((b) => b && b.name) : [];
 }
 
+/** 新增或覆盖一张画布（同名覆盖），并保持按更新时间倒序。 */
 export function upsertBoard(meta: BoardMeta): BoardMeta[] {
   const list = listBoards().filter((b) => b.name !== meta.name);
   list.push(meta);
@@ -71,6 +72,7 @@ export function upsertBoard(meta: BoardMeta): BoardMeta[] {
   return list;
 }
 
+/** 删除一张画布（索引 + 画布数据一起删），返回剩余列表。 */
 export function removeBoard(name: string): BoardMeta[] {
   const list = listBoards().filter((b) => b.name !== name);
   safeSet(BOARD_INDEX_KEY, JSON.stringify(list));
@@ -78,11 +80,13 @@ export function removeBoard(name: string): BoardMeta[] {
   return list;
 }
 
+/** 列分镜表索引（丢掉没有名字的坏条目）。 */
 export function listStoryboards(): StoryboardMeta[] {
   const list = readJSON<StoryboardMeta[]>(STORY_INDEX_KEY, []);
   return Array.isArray(list) ? list.filter((b) => b && b.name) : [];
 }
 
+/** 新增或覆盖一张分镜表（同名覆盖），按更新时间倒序。 */
 export function upsertStoryboard(meta: StoryboardMeta): StoryboardMeta[] {
   const list = listStoryboards().filter((b) => b.name !== meta.name);
   list.push(meta);
@@ -111,6 +115,7 @@ export function readBoard(name: string): { snapshot: DramaSnapshot; repaired: st
   return { snapshot: norm as unknown as DramaSnapshot, repaired: norm.repaired, existed: true };
 }
 
+/** 把画布快照写进本地存储（带版本号与更新时间）。 */
 export function writeBoard(name: string, snapshot: DramaSnapshot): void {
   safeSet(boardKey(name), JSON.stringify({ ...snapshot, version: DRAMA_SNAPSHOT_VERSION, updatedAt: Date.now() }));
 }
@@ -132,6 +137,7 @@ export function decodeBase64Text(b64: string): string {
   return new TextDecoder("utf-8").decode(bytes);
 }
 
+/** 分镜表在项目里的文件路径：`<workspace>/.drama-canvas/storyboards/<name>.json`（文件名做非法字符替换）。 */
 export function storyboardFilePath(workspace: string, name: string): string {
   const safe = String(name || "main").replace(/[\\/:*?"<>|]/g, "_").replace(/\.json$/i, "") || "main";
   const root = String(workspace || "").replace(/[\\/]+$/, "");
@@ -167,12 +173,14 @@ export async function writeStoryboardFile(workspace: string, name: string, data:
   }
 }
 
+/** 读本地分镜表并归一化；没有或坏了返回 null。 */
 export function readStoryboardLocal(name: string): Storyboard | null {
   const raw = readJSON<unknown>(storyKey(name), null);
   if (!raw) return null;
   return storyboardNormalize(raw).data;
 }
 
+/** 把分镜表写进本地存储。 */
 export function writeStoryboardLocal(name: string, data: Storyboard): void {
   safeSet(storyKey(name), JSON.stringify(data));
 }

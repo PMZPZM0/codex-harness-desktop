@@ -38,6 +38,7 @@ export type OrderedToolRun =
   | { kind: "unit"; key: string; units: [FoldUnit] }
   | { kind: "toolRun"; key: string; toolKey: string; label: string; units: FoldUnit[] };
 
+/** 把一条 item 归类到折叠策略：thinking / body / keepVisible / …（回合折叠按这个决定哪段收进灰线）。 */
 export function classifyUnit(item: ThreadItem): FoldKind {
   if (item.type === "reasoning") return "thinking";
   if (item.type === "agentMessage") return "body";
@@ -95,6 +96,7 @@ export function isLiveThinking(item: ThreadItem) {
   return !item.durationMs && (item.status === "inProgress" || item.status === "running");
 }
 
+/** 取「正文」文本（只有 agentMessage 算正文，其它类型返回空串）。 */
 export function bodyTextOf(item: ThreadItem) {
   return item.type === "agentMessage" ? String(item.text ?? "").trim() : "";
 }
@@ -150,6 +152,7 @@ export function buildSegments(units: FoldUnit[], turnFinished: boolean): FoldSeg
 
 export type FoldStatus = "running" | "waiting" | "done" | "failed";
 
+/** 把 item 状态映射成折叠块的状态（running / waiting / failed / done）；命令类在等审批时单独给 waiting。 */
 export function foldItemStatus(item: ThreadItem, waitingForApproval?: boolean): FoldStatus {
   const s = item.status;
   if (s === "inProgress" || s === "running") {
@@ -160,6 +163,7 @@ export function foldItemStatus(item: ThreadItem, waitingForApproval?: boolean): 
   return "done";
 }
 
+/** 压成单行并截断到 max 字，超出补省略号（折叠标题用）。 */
 export function truncText(value: string, max = 36) {
   const text = value.replace(/\s+/g, " ").trim();
   return text.length > max ? `${text.slice(0, max)}…` : text;
@@ -330,6 +334,7 @@ export function topToolGroup(units: FoldUnit[]): string | null {
   return best ?? (units.some((u) => u.item.type === "reasoning") ? "reasoning" : null);
 }
 
+/** 判断回合是否还在跑（inProgress / running 两种状态都算）。 */
 export function isTurnRunning(turn: Turn) {
   return turn.status === "inProgress" || turn.status === "running";
 }

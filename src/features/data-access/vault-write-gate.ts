@@ -32,15 +32,18 @@ const listeners = new Set<() => void>();
 
 const emit = () => { for (const fn of listeners) fn(); };
 
+/** 订阅「密码写入待确认」状态，返回退订函数。 */
 export function subscribeVaultWrite(listener: () => void): () => void {
   listeners.add(listener);
   return () => { listeners.delete(listener); };
 }
 
+/** 取当前等待确认的密码写入请求；没有返回 null。 */
 export function currentVaultWrite(): Pending | null {
   return current;
 }
 
+/** 请求写入密码：弹确认浮层并等结果；⛔ 前一个还没答就按「拒绝」结算，避免调用方永远挂着。 */
 export function requestVaultWrite(draft: VaultWriteDraft): Promise<boolean> {
   /* 前一个还没答就来了新的 ⇒ 老的按"拒绝"结算，避免调用方永远挂着 */
   if (current) {
@@ -54,6 +57,7 @@ export function requestVaultWrite(draft: VaultWriteDraft): Promise<boolean> {
   });
 }
 
+/** 结算密码写入确认（允许 / 拒绝），并唤醒等待的调用方。 */
 export function settleVaultWrite(allow: boolean): void {
   const pending = current;
   current = null;

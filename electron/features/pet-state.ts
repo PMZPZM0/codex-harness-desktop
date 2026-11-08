@@ -220,10 +220,12 @@ export function petSignal(): PetSignal {
   return store.signal;
 }
 
+/** 按当前时间算出宠物此刻的状态名（用于挑动画）。 */
 export function petStateName(): PetStateName {
   return currentPhase(Date.now());
 }
 
+/** 读「宠物活动面板是否收起」。 */
 export function petActivityCollapsed(): boolean {
   return activityCollapsed;
 }
@@ -237,12 +239,14 @@ export function setPetFocusThread(threadId: string): boolean {
   return true;
 }
 
+/** 切换活动面板收起状态，返回切换后的值（false = 展开）。 */
 export function togglePetActivity(): boolean {
   activityCollapsed = !activityCollapsed;
   publish(true);
   return !activityCollapsed;
 }
 
+/** 取某个会话的宠物活动记录，并派生出 canStop / canReply（只有 running 且有 turnId 才可操作）。 */
 export function petActivityRecord(threadId: string): PetActivity | null {
   const item = activities.get(String(threadId ?? ""));
   if (!item) return null;

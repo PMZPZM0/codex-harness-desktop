@@ -5,6 +5,7 @@
 import { FileText, Presentation, Table2 } from "lucide-react";
 import type { OfficePreviewData } from "../../lib/office-preview.mjs";
 
+/** Office 文档预览：按 kind（doc/sheet/slide）分别渲染段落、表格或页。 */
 export function OfficePreview({ data }: { data: OfficePreviewData }) {
   if (data.kind === "doc") {
     return (

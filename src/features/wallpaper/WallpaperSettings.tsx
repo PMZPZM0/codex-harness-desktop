@@ -48,6 +48,7 @@ const GUIDE_PROMPTS: { id: string; title: string; prompt: string }[] = [
   },
 ];
 
+/** 壁纸设置：选图/纯色/动效，可当场预览。 */
 export function WallpaperSettingsSection() {
   const [cfg, setCfg] = useState(() => readWallpaper());
   useEffect(() => subscribeWallpaper(setCfg as (c: ReturnType<typeof readWallpaper>) => void), []);

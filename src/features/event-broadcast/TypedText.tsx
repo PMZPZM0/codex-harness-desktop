@@ -23,6 +23,7 @@ export type TypedVariant = "group" | "voice";
  */
 const playedKeys = new Set<string>();
 
+/** 打字机式文本：同一条播报的同一处文字只动一次（`playKey` 相同即静止）。 */
 export function TypedText({ text, variant, className, playKey }: {
   text: string;
   variant: TypedVariant;

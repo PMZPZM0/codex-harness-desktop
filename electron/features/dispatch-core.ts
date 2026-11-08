@@ -776,6 +776,7 @@ async function buildDispatchCatalog(): Promise<DispatchTarget[]> {
 
 /** ⛔ 被 features/dispatch-rpc.ts 经 main.mutableState 写入的两个 let（见文件头说明）。 */
 export function setDispatchHttpPort(v: number): void { dispatchHttpPort = v; }
+/** 登记「dispatch HTTP 服务就绪」的 Promise（由 ensureDispatchHttp 写入，别处只读）。 */
 export function setDispatchHttpReady(v: Promise<void> | null): void { dispatchHttpReady = v; }
 
 export {

@@ -96,6 +96,7 @@ function describeComponent(row: ComponentRow): string {
 
 const SOURCE_LABEL: Record<string, string> = { auto: "国内镜像优先", mirror: "国内镜像", direct: "官方源直连", proxy: "代理隧道", ghproxy: "国内镜像优先", ghfast: "国内镜像优先" };
 
+/** 自动更新卡：桌面与技能两条更新入口（技能更新面板 / 技能页）。 */
 export function AutoUpdateCard({ onNotice, downloadSource, onOpenSkills, openAppConfirm }: { onNotice?: (text: string) => void; downloadSource?: string; onOpenSkills?: (manage: boolean) => void; openAppConfirm?: (title: string, text: string, confirmLabel?: string) => Promise<boolean> }) {
   /* 10-30：技能行多两个出口 —— 「技能更新」打开本面板（检查/逐项更新/卸载），
      「技能页」跳到技能设置页（安装与批量管理在那）。⛔ 不在控制台再造一个市场。 */

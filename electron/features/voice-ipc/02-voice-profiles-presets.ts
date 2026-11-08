@@ -14,6 +14,7 @@ import { sendToWindow } from "../window-bus";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import type { registerVoiceIpc1 } from "./01-voice-hotkey-models";
 
+/** 语音域 IPC 第二批：音色档案与音色克隆（导入/录制参考音频 → 本机 ASR 转写参考文本 → 存为专属音色）。 */
 export function registerVoiceIpc2(ibA: ReturnType<typeof registerVoiceIpc1>) {
   const { svc, modelsRoot, ipcHost } = ibA;
   // ── 音色档案（音色克隆 ZipVoice）：导入/录制参考音频 → 本机 ASR 转写参考文本 → 保存为专属音色 ──

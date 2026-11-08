@@ -56,6 +56,7 @@ const FILE_GROUPS: { key: keyof FileActions; label: string }[] = [
 
 const normPath = (path: string) => String(path ?? "").replaceAll("\\", "/").toLowerCase();
 
+/** 回合状态胶囊：显示当前步骤与改动文件数，点开看步骤/文件两栏浮层。 */
 export function TurnStatusCapsule({ runningTurnId, taskList, turns, fileActions }: { runningTurnId: string | null; taskList: any[]; turns?: any[]; fileActions?: FileActions }) {
   const [, setTick] = useState(0);
   const [zone, setZone] = useState<"steps" | "files" | null>(null);

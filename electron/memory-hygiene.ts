@@ -98,6 +98,7 @@ export const CLEANUP_RULES: readonly CleanupRule[] = [
 export const HYGIENE_ACTIONS = ["purge-archive", "prune-pool", "tidy-lessons"] as const;
 export type HygieneAction = (typeof HYGIENE_ACTIONS)[number];
 
+/** 判断某个值是否合法清理动作（白名单，⛔ 未知动作一律拒）。 */
 export function isHygieneAction(value: unknown): value is HygieneAction {
   return typeof value === "string" && (HYGIENE_ACTIONS as readonly string[]).includes(value);
 }

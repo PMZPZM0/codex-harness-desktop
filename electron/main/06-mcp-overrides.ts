@@ -36,6 +36,7 @@ type McpOverrideEntry = {
 
 export type McpOverrides = Record<string, McpOverrideEntry>;
 
+/** 读 MCP 覆盖表（用户在界面上对内置 MCP 的改动）；没有或坏了返回空对象。 */
 export async function readMcpOverrides(): Promise<McpOverrides> {
   try {
     const raw = JSON.parse(await fs.readFile(mcpOverridesFile, "utf8"));
@@ -43,6 +44,7 @@ export async function readMcpOverrides(): Promise<McpOverrides> {
   } catch (error: any) { if (error.code === "ENOENT") return {}; throw error; }
 }
 
+/** 写 MCP 覆盖表。 */
 export async function writeMcpOverrides(value: McpOverrides) { await fs.writeFile(mcpOverridesFile, JSON.stringify(value, null, 2), "utf8"); }
 
 /** 没记过的一律视为启用，只有显式写了 false 才算停用 */

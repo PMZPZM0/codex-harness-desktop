@@ -27,6 +27,7 @@ const HF_MIRROR = "https://hf-mirror.com";
 /** npm 依赖树解压后的估计体积（10-04 实测 463MB）——安装进度用它当分母，版本漂移只影响百分比平滑度 */
 const NPM_TREE_ESTIMATE = 463 * 1024 * 1024;
 
+/** 知识库向量后端目录：正常是 `<userData>/kb-backend/`；旧的随包实验路径若还在就继续认它（⛔ 不作废老用户）。 */
 export function kbBackendDir(): string {
   // 旧的随包实验（5e09b57）在 app 路径下留过一份的话继续认它，不作废；
   // 正常路径 = <userData>/kb-backend/（runtime:install 与知识库页的下载入口都装这里）。
@@ -50,6 +51,7 @@ export function kbEmbeddingInstalled(): boolean {
     && existsSync(path.join(modelDir(), "onnx", "model_quantized.onnx"));
 }
 
+/** 知识库向量后端的安装状态与目录（界面据此显示「未安装 / 已就绪」）。 */
 export function kbEmbedStatus(): { installed: boolean; dir: string } {
   return { installed: kbEmbeddingInstalled(), dir: kbBackendDir() };
 }
@@ -344,6 +346,7 @@ function ensureWorker(): ChildProcess {
   return child;
 }
 
+/** 释放向量后端子进程：杀掉 worker、标记未就绪、把所有挂起请求按失败收尾（⛔ 不留下永远 pending 的 Promise）。 */
 export function disposeKbEmbedWorker(): void {
   if (worker) { try { worker.kill(); } catch { /* 已退出 */ } worker = null; }
   workerReady = false;

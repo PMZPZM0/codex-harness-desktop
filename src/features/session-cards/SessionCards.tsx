@@ -9,6 +9,7 @@ import { DIFF_OVERSCAN } from "../../lib/diff-overscan";
 import { buildOrderedToolRuns } from "../../lib/turn-fold";
 import type { FoldUnit } from "../../lib/turn-fold";
 
+/** Hook 徽标：悬停展开看各个 hook 是否完成（全完成给成功色）。 */
 export function HookBadge({ hooks }: { hooks: { name: string; label?: string; done: boolean }[] }) {
   const [open, setOpen] = useState(false);
   return (
@@ -25,6 +26,7 @@ export function HookBadge({ hooks }: { hooks: { name: string; label?: string; do
 
 export type ToolStatusEntry = { id: string; name: string; scope: "computer" | "browser"; version: string; installed: boolean; binaryReady: boolean; detail: string; command: string };
 
+/** 动作卡：折叠行给「动词 + 短目标」（文件名/查询词），完整路径与入参只进展开区。 */
 export function ActionCard({ icon, verb, target, subtitle, info, status, statusText, autoOpen, defaultExpanded, children }: {
   icon: React.ReactNode;
   verb: React.ReactNode;
@@ -121,6 +123,7 @@ export const VirtualDiffLines = memo(function VirtualDiffLines({ text, maxHeight
   );
 });
 
+/** 限量渲染的工具运行列表：默认只显示前几条，其余折叠（可带每项之后的追加行）。 */
 export function CappedToolRun({ label, units, renderUnit, renderAfter, limit = 3 }: {
   label: string;
   units: FoldUnit[];

@@ -195,6 +195,7 @@ function DesktopBackendOptions() {
   );
 }
 
+/** 通用设置：全局审批权限、工作区、右栏开关与桌面自动化等基础项。 */
 export function GeneralSettingsSection(props: GeneralSettingsSectionProps) {
   const { globalPermApproval, applyGlobalPermissionMode, workspace, chooseWorkspace, userDataPath, setNotice, rightOpen, setRightOpen, capabilityHint, desktopAuto, groupBusy, toggleDesktopAuto, browserAuto, toggleBrowserAuto, ponytailOn, applyGroup, hardwareAccel, changeHardwareAccel, restartPending, SHORTCUT_GROUPS, setShortcutsOpen, engineVersion, engineCheck, engineUpdating, checkEngineUpdateNow, performEngineUpdateNow, engineUpdatePercent, engineUpdateStageText, engineUpdateLog, engineUpdateResult, relaunchCountdown, downloadSource, adaptiveTone, changeAdaptiveTone, thread, readMood } = props;
   const [showAccelHelp, setShowAccelHelp] = useState(false);

@@ -8,6 +8,7 @@ import { usePart04c1 } from "./03-seg/01-chat-search-file-tree";
 import { usePart04c2 } from "./03-seg/02-browser-queue-settings";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 04c：合并搜索高亮（c1）与排队定时（c2）。 */
 export function usePart04c(bag: Bag) {
   const a = usePart04c1(bag);
   const b = usePart04c2(bag);

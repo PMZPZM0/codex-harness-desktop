@@ -26,6 +26,7 @@ export type ConnectorConfig = {
   updatedAt: string;
 };
 
+/** 解密连接器凭据；加密不可用或值为空时返回空串（⛔ 不回落明文）。 */
 export function decryptSecret(value?: string) {
   return value && safeStorage.isEncryptionAvailable() ? safeStorage.decryptString(Buffer.from(value, "base64")) : "";
 }
@@ -38,6 +39,7 @@ export const escapeToml = escapeTomlString;
 /** 表头里的键名：TOML 裸键只允许 `A-Za-z0-9_-`，别的字符一律剔除（写进去只会让整份配置非法）。 */
 export function safeConnectorId(value: string) { return value.replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64); }
 
+/** 读连接器清单：丢掉形状不对的条目（缺 id / 缺 name），文件坏了返回空数组。 */
 export async function readConnectors(): Promise<ConnectorConfig[]> {
   try {
     const list = JSON.parse(await fs.readFile(connectorsFile, "utf8"));

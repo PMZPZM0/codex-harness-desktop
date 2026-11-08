@@ -35,6 +35,7 @@ export type MemoryCenterSectionProps = {
   openThread?: (threadId: string) => void;
   memoryEnabled: any; setMemoryEnabled: any; memories: any; memoryGroups: any; memoryLayers: any; memoryMode: any; workspaceMemoryEnabled: any; threads: any; scheduledTasks: any; localSkills: any; memoryStatus: any; memoryConfigOpen: any; memoryGateway: any; setMemoryGateway: any; memoryGatewayAction: any; setMemoryConfigOpen: any; testMemoryGateway: any; saveMemoryGateway: any };
 
+/** 记忆中心：内容入口（项目库/金字塔/后端/中枢记忆）+ 各类弹窗。 */
 export function MemoryCenterSection(props: MemoryCenterSectionProps) {
   const { app, memoryEnabled, setMemoryEnabled, memories, memoryGroups, memoryLayers, memoryMode, workspaceMemoryEnabled, threads, scheduledTasks, localSkills, memoryStatus, memoryConfigOpen, memoryGateway, setMemoryGateway, memoryGatewayAction, setMemoryConfigOpen, testMemoryGateway, saveMemoryGateway, setMemoryPreview, openThread } = props;
     /* ── 两级信息架构（10-10 用户要求，与开发工具页 / 拓展接口页 / 记忆中心同一套规范）──

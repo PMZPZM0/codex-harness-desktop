@@ -346,6 +346,7 @@ export async function findOfficialMarketPlugin(slug: string): Promise<OfficialMa
   return items.find((item) => item.slug === key) ?? null;
 }
 
+/** Codex 官方插件市场列表：分页 + 过滤，并标注这批数据是不是实时拉到的。 */
 export async function listOfficialMarketPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number; installedDir?: string } = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const pageSize = Math.min(30, Math.max(1, Math.floor(Number(input.pageSize) || 18)));

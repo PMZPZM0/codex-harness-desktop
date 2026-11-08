@@ -84,6 +84,7 @@ export function lessonSectionTitle(category: string): string {
   return `## ${category}`;
 }
 
+/** 分类在固定顺序表里的序号；未登记的分类排最后。 */
 export function categoryRank(category: string): number {
   const i = MEMORY_CATEGORY_ORDER.indexOf(category);
   return i < 0 ? MEMORY_CATEGORY_ORDER.length : i;

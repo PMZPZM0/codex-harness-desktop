@@ -11,6 +11,7 @@ import { lazy } from "react";
 const DevtoolsSettingsSection = lazy(() => import("../../../../../settings-devtools/DevtoolsSettingsSection").then((m) => ({ default: m.DevtoolsSettingsSection })));
 const ExtensibilitySettingsSection = lazy(() => import("../../../../../settings-extensibility").then((m) => ({ default: m.ExtensibilitySettingsSection })));
 
+/** 设置页分组：开发工具（运行时安装、能力探测、控制台）。 */
 export function devPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     capabilityError,

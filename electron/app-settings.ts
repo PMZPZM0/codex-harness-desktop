@@ -185,6 +185,7 @@ export type AppSettings = {
       阈值对已有 32 万上下文的会话压不出来；0.1 仍远高于「0 = 每轮都压」的危险区）。 */
 export const DEFAULT_AUTO_COMPACT_RATIO = 0.6;
 
+/** 把自动压缩比例钳进 0.1~0.95；非法值/越界回默认（⛔ 允许 0 会让上下文永不压缩）。 */
 export function normalizeAutoCompactRatio(value: unknown): number {
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0.1 || n > 0.95) return DEFAULT_AUTO_COMPACT_RATIO;
@@ -203,6 +204,7 @@ function settingsFile(userData: string) {
   return path.join(userData, "app-settings.json");
 }
 
+/** 读应用设置（按文件路径缓存，同一路径只解析一次）；文件坏了回默认值。 */
 export async function readAppSettings(userData: string): Promise<AppSettings> {
   const file = settingsFile(userData);
   if (cached && cachedFor === file) return cached;
@@ -216,6 +218,7 @@ export async function readAppSettings(userData: string): Promise<AppSettings> {
   return cached;
 }
 
+/** 同步版读设置（同样吃缓存），给不能 await 的启动早期路径用。 */
 export function readAppSettingsSync(userData: string): AppSettings {
   const file = settingsFile(userData);
   if (cached && cachedFor === file) return cached;
@@ -228,6 +231,7 @@ export function readAppSettingsSync(userData: string): AppSettings {
   return cached;
 }
 
+/** 局部合并保存设置：先取当前值 → 覆盖补丁 → 写盘 → 更新缓存；返回保存后的完整设置。 */
 export async function saveAppSettings(userData: string, patch: Partial<AppSettings>): Promise<AppSettings> {
   const file = settingsFile(userData);
   const current = cached && cachedFor === file ? cached : await readAppSettings(userData);
@@ -238,6 +242,7 @@ export async function saveAppSettings(userData: string, patch: Partial<AppSettin
   return cached;
 }
 
+/** 丢弃设置缓存（外部改动文件后强制重读）。 */
 export function invalidateAppSettings() {
   cached = null;
   cachedFor = "";

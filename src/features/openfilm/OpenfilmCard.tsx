@@ -49,6 +49,7 @@ const AUTO_UPDATE_OPTIONS: { value: Status["settings"]["autoUpdate"]; label: str
   { value: "auto", label: "自动安装", hint: "发现新版直接后台更新运行时（推荐）" },
 ];
 
+/** OpenFilm 卡片：显示安装/运行状态、安装进度与错误提示。 */
 export function OpenfilmCard() {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);

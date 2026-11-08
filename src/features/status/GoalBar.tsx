@@ -13,6 +13,7 @@ import { useEffect, useState } from "react";
 import { Pause, PenLine, Play, Target, Trash2 } from "lucide-react";
 import { formatGoalTime } from "../../lib/goal-time.mjs";
 
+/** 目标栏：显示当前目标与状态，可编辑、暂停与删除。 */
 export function GoalBar({ threadId, goalText, goalStatus, running, onEdit, onTogglePause, onDelete }: {
   threadId: string;
   goalText: string;

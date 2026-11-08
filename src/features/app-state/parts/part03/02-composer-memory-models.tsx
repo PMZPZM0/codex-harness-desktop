@@ -21,6 +21,7 @@ import { QueuedMessageList, FoldHandlers, TurnFoldStream } from "../../../../fea
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../app-view/helpers";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 03b：输入区与滚动引用、记忆与模型选择。⛔ 不再挂每秒 tick（会让 App 全量重渲）。 */
 export function usePart03b(bag: Bag) {
   // 注意：这里曾有一个 `nowTick` 每秒 setState（原意给「已工作 X 秒」计时），但那个指示
   // 已删除、App 层再无任何读取点 → 唯一效果是**每秒强制 App 全量重渲染一次**

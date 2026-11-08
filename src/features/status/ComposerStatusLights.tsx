@@ -26,6 +26,7 @@ type StatusLight = {
   pulse?: boolean;
 };
 
+/** 输入区状态灯：目标 / 询问 / 排队 / 定时 / RPA 各亮一盏，点开对应面板。 */
 export function ComposerStatusLights({ goalText, goalStatus, agentAskThreadId, queuedCount, scheduledCount, rpaRunning, subAgentRunning, expertTeamRunning }: {
   goalText: string;
   goalStatus: string | null;

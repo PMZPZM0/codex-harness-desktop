@@ -54,6 +54,7 @@ const ACTION_LABEL: Record<ActionKey, string> = { install: "安装", uninstall: 
 /** 主进程进度事件的 id 前缀（与 electron/features/memory-ipc.ts 的 MCP_PROGRESS 同源）。 */
 const PROGRESS_PREFIX = "memory-mcp";
 
+/** 记忆后端控制台：设备卡（内置/MCP/云端）、安装/卸载/连通性检查，云端未开通时给引导出口。 */
 export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onOpenCloudAccount, focus }: {
   workspace: string;
   workspaceEnabled: boolean;

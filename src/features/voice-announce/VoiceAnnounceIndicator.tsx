@@ -38,6 +38,7 @@ const SOURCE_LABEL: Record<string, string> = {
   tool: "插播",
 };
 
+/** 语音播报指示器：显示当前播报状态与停止按钮。 */
 export function VoiceAnnounceIndicator() {
   const [status, setStatus] = useState<AnnounceStatus>(getAnnounceStatus());
   const rootRef = useRef<HTMLDivElement | null>(null);

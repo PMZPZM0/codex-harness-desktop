@@ -33,6 +33,7 @@ function releaseOverlaysOf(bag: Bag, threadId: string) {
   });
 }
 
+/** 事件路由第 3 段：按会话 id 归约事件。⛔ 已结束回合的迟到事件不得把「运行中」重新点亮（否则停止键永久亮着）。 */
 export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
         const method0 = event.method ?? "";
         // ⛔⛔ 09-19 用户实测「消息回完了，右下角停止键还亮着」（截图）：引擎/桥可能把

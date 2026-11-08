@@ -89,6 +89,7 @@ async function saveChannelBot(input: any) {
  *    且报错信息（读 undefined 的属性）完全指不到真凶。
  */
 let secureRef: HostCaps["secure"] | null = null;
+/** 注入 secure 接缝（密钥加密能力）：域不许直接取 safeStorage。 */
 export function bindChannelBotSecure(host: HostCaps): void {
   secureRef = host.secure;
 }

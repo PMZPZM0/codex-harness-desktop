@@ -8,6 +8,7 @@ import { Bot, LayoutGrid, SquareTerminal, Users } from "lucide-react";
 
 export type AgentTeamSettingsSectionProps = { setSettingsPage: any };
 
+/** 智能体团队设置入口：三张卡跳到子智能体 / 专家团 / CLI 智能体。 */
 export function AgentTeamSettingsSection(props: AgentTeamSettingsSectionProps) {
   const { setSettingsPage } = props;
   return (

@@ -160,6 +160,7 @@ function shuffledIndices(n: number): number[] {
   return arr;
 }
 
+/** 中枢会话的引导块：⛔ 进会话不自动弹，点「项目地址」那个选项才弹（位置贴输入框左上角，与普通会话一致）。 */
 export function BossThreadIntro() {
   /* ⛔⛔ 10-25 用户令：「这个弹窗逻辑改一下吧，不要进指挥中枢就弹，改成点击那个选项再弹，
      然后把那个项目选项位置改一下，贴着输入框左上角，跟普通会话欢迎界面的位置和逻辑」

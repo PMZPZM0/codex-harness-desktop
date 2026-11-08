@@ -44,6 +44,7 @@ export function browserInstalled(): boolean {
   return false;
 }
 
+/** 取某个二进制的版本串（带超时；取不到返回空串，⛔ 不抛错阻塞状态页）。 */
 export function binaryVersion(exe: string, args = ["-version"]): Promise<string> {
   if (!exe) return Promise.resolve("");
   return new Promise((resolve) => {
@@ -81,6 +82,7 @@ export type OpenfilmStatus = {
   attribution: OpenfilmAttribution;
 };
 
+/** OpenFilm 整体状态：node / CLI / 浏览器 / ffmpeg 各自是否就绪。 */
 export async function openfilmStatus(): Promise<OpenfilmStatus> {
   const node = nodeExe();
   const nodeVersion = await binaryVersion(node.exe, ["-v"]);

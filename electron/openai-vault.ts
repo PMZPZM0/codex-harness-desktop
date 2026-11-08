@@ -16,6 +16,7 @@ export type OpenaiVaultAccount = {
   savedAt: number;
 };
 
+/** 读 OpenAI 账号库；文件不存在或坏了返回空数组。 */
 export async function readOpenaiVault(): Promise<OpenaiVaultAccount[]> {
   try {
     const vault = JSON.parse(await fs.readFile(openaiVaultFile(), "utf8"));
@@ -23,10 +24,12 @@ export async function readOpenaiVault(): Promise<OpenaiVaultAccount[]> {
   } catch { return []; }
 }
 
+/** 整份写回 OpenAI 账号库。 */
 export async function writeOpenaiVault(accounts: OpenaiVaultAccount[]) {
   await fs.writeFile(openaiVaultFile(), JSON.stringify({ accounts }, null, 2), "utf8");
 }
 
+/** 解析 id_token 的 JWT 载荷取声明；⛔ **不验签**（只用来读邮箱/过期时间这类展示字段）。 */
 export function openaiJwtClaims(idToken?: string): Record<string, any> {
   try {
     const part = String(idToken ?? "").split(".")[1];

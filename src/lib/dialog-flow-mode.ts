@@ -21,21 +21,25 @@ let mode: DialogFlowMode = (() => {
 })();
 const listeners = new Set<() => void>();
 
+/** 读「对话流展示模式」（detailed = 展开每步，simple = 只留结论）。 */
 export function getDialogFlowMode(): DialogFlowMode {
   return mode;
 }
 
+/** 写展示模式（非法值归一成 simple）→ 落 localStorage → 通知订阅者。 */
 export function setDialogFlowMode(next: DialogFlowMode): void {
   mode = next === "detailed" ? "detailed" : "simple";
   try { localStorage.setItem(KEY, mode); } catch { /* 隐私模式忽略 */ }
   for (const listener of listeners) listener();
 }
 
+/** 订阅展示模式变化，返回退订函数。 */
 export function subscribeDialogFlowMode(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
+/** React 侧读展示模式（`useSyncExternalStore`，同值不重渲）。 */
 export function useDialogFlowMode(): DialogFlowMode {
   return useSyncExternalStore(subscribeDialogFlowMode, getDialogFlowMode, getDialogFlowMode);
 }

@@ -36,6 +36,7 @@ function bootstrapFile(): string {
   return path.join(defaultUserDataDir(), "data-dir.json");
 }
 
+/** 读「数据目录引导」文件（记录用户把数据目录挪到了哪）；没有或坏了返回 null。 */
 export function readDataDirBootstrap(): DataDirBootstrap | null {
   try {
     const raw = JSON.parse(fs.readFileSync(bootstrapFile(), "utf8")) as DataDirBootstrap;
@@ -46,6 +47,7 @@ export function readDataDirBootstrap(): DataDirBootstrap | null {
   }
 }
 
+/** 写「数据目录引导」文件（先建目录）。 */
 export function writeDataDirBootstrap(next: DataDirBootstrap): void {
   const file = bootstrapFile();
   fs.mkdirSync(path.dirname(file), { recursive: true });

@@ -9,6 +9,7 @@ import { usePart06a2 } from "./01-seg/02-runtime-dispatch-roles";
 import type { Bag } from "../bag-types";
 
 
+/** bag 分片 06a：合并 UI 就绪（a1）与运行态同步（a2）。 */
 export function usePart06a(bag: Bag) {
   const a = usePart06a1(bag);
   const b = usePart06a2(bag);

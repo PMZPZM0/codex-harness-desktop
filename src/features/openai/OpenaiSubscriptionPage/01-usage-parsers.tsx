@@ -19,6 +19,7 @@ export function parseOpenaiUsagePanel(data: any): { planType: string; windows: {
   return { planType: String(data?.plan_type ?? "plus").toUpperCase(), windows, limitReached: Boolean(rate?.limit_reached) };
 }
 
+/** 额度重置文案：算还有多久重置，已过则显示「已重置」。 */
 export function openaiResetText(resetAt: number | undefined, now: number): string {
   if (!resetAt) return "";
   const diff = resetAt * 1000 - now;
@@ -29,6 +30,7 @@ export function openaiResetText(resetAt: number | undefined, now: number): strin
   return h > 0 ? `${h} 小时 ${m} 分后重置（${clock}）` : `${m} 分后重置（${clock}）`;
 }
 
+/** 从订阅回包里递归抽额度条（最多 5 条，限制递归深度防爆栈）。 */
 export function extractQuotaBars(data: any): { label: string; value: number }[] {
   const bars: { label: string; value: number }[] = [];
   const walk = (node: any, context: string, depth: number) => {

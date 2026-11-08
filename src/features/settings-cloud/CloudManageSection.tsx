@@ -73,6 +73,7 @@ function humanError(code: string | undefined, fallback: string | undefined): str
   return fallback || "请求失败，请稍后重试";
 }
 
+/** 云端管理页：会话同步列表、用量与打开的网页入口。 */
 export function CloudManageSection() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [webUrl, setWebUrl] = useState("");

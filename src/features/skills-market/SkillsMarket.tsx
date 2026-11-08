@@ -19,6 +19,7 @@ function toCdnLogo(url: string): string {
   return `https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${path.join("/")}`;
 }
 
+/** 市场条目 logo：图挂了回退成首字母方块。 */
 export function MarketLogo({ url, label, size = 30 }: { url?: string; label: string; size?: number }) {
   const initial = (label || "?").charAt(0).toUpperCase();
   const [src, setSrc] = useState(url ?? "");
@@ -33,6 +34,7 @@ export function MarketLogo({ url, label, size = 30 }: { url?: string; label: str
   </span>;
 }
 
+/** 市场条目预览弹窗（点遮罩关闭）。 */
 export function MarketPreviewModal({ state, onClose }: { state: MarketPreviewState; onClose: () => void }) {
   return <div className="modal-backdrop market-preview-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="market-preview" role="dialog" aria-modal="true" aria-label={state.title}>
     <div className="market-preview-head">
@@ -54,6 +56,7 @@ export function MarketPreviewModal({ state, onClose }: { state: MarketPreviewSta
   </section></div>;
 }
 
+/** 技能头像：有真实图标 URL 就用图，否则走 emoji/图标映射。 */
 export function SkillAvatar({ skill, size = 15 }: { skill: { name: string; description?: string; category?: string; icon?: string }; size?: number }) {
   // 市场数据带真实图标 URL（SkillHub iconUrl / 插件 logo）时优先显示图片，其余走 emoji/图标映射
   if (skill.icon?.startsWith("http")) {
@@ -64,6 +67,7 @@ export function SkillAvatar({ skill, size = 15 }: { skill: { name: string; descr
   return <span className={`skill-avatar ${visual.iconClass}`}>{visual.emoji || (visual.Icon ? <visual.Icon size={size} /> : null)}</span>;
 }
 
+/** 技能头像图：加载失败先换 CDN 再回退占位（⛔ 不让破图占着位置）。 */
 export function SkillAvatarImg({ name, url }: { name: string; url: string }) {
   const [src, setSrc] = useState(url);
   const [failed, setFailed] = useState(false);
@@ -78,6 +82,7 @@ export function SkillAvatarImg({ name, url }: { name: string; url: string }) {
   return <span className="skill-avatar skill-avatar-img" title={name}><img src={src} alt="" loading="lazy" onError={handleError} /></span>;
 }
 
+/** 技能安装进度弹窗：七步阶段（下载→校验→安全检查→写入→登记→重启引擎→确认发现）。 */
 export function SkillInstallModal({ state, onClose, onUse }: { state: SkillInstallState; onClose: () => void; onUse: () => void }) {
   const steps = ["下载技能包", "检查文件结构", "安全检查", "写入技能目录", "登记市场来源", "重启 Codex 引擎", "确认引擎发现"];
   const done = state.current >= steps.length;
@@ -90,6 +95,7 @@ export function SkillInstallModal({ state, onClose, onUse }: { state: SkillInsta
   </section></div>;
 }
 
+/** 技能卸载进度弹窗：五步阶段（校验目录→删文件→清登记→重启→确认移除）。 */
 export function SkillRemoveModal({ state, onClose }: { state: SkillRemoveState; onClose: () => void }) {
   const steps = ["校验技能目录", "删除技能文件", "清理来源登记", "重启 Codex 引擎", "确认引擎已移除"];
   // 进度口径：事件把 current 推到 steps.length 时最后一步仍是「处理中」，收到 complete/pending
@@ -104,6 +110,7 @@ export function SkillRemoveModal({ state, onClose }: { state: SkillRemoveState; 
   </section></div>;
 }
 
+/** 插件安装进度弹窗：六步阶段，与技能安装同一套 DOM/CSS。 */
 export function PluginInstallModal({ state, onClose }: { state: PluginInstallState; onClose: () => void }) {
   const steps = ["解析插件仓库", "下载插件文件", "写入插件目录", "登记市场来源", "重启 Codex 引擎", "确认引擎发现"];
   const done = state.current >= steps.length;

@@ -47,6 +47,7 @@ function titleOf(item: Record<string, unknown>): string {
   return dash >= 0 ? fileName.slice(dash + 3).trim() : fileName;
 }
 
+/** 归一化音乐搜索回包（兼容 data.lists 与 data 两种形状）。 */
 export function normalizeMoeKoeSearch(payload: unknown, limit = 20): MoeKoeSong[] {
   const root = payload && typeof payload === "object" ? payload as Record<string, any> : {};
   const list: unknown[] = Array.isArray(root?.data?.lists) ? root.data.lists : Array.isArray(root?.data) ? root.data : [];
@@ -148,6 +149,7 @@ export function pickMoeKoeInstaller(assets: unknown, platform: string = "win32",
     ?? null;
 }
 
+/** 把资源路径拼到镜像地址上（处理末尾斜杠）。 */
 export function buildMirrorUrl(mirror: string, url: string): string {
   const base = text(mirror);
   if (!base) return url;
@@ -167,6 +169,7 @@ export type MoeKoeBrowseItem = {
   details: Record<string, string | number>;
 };
 
+/** 归一化搜索类型：不认识的一律当单曲。 */
 export function normalizeMoeKoeSearchType(value: unknown): MoeKoeSearchType {
   const type = text(value).toLowerCase();
   if (type === "special" || type === "playlist") return "special";
@@ -174,6 +177,7 @@ export function normalizeMoeKoeSearchType(value: unknown): MoeKoeSearchType {
   return "song";
 }
 
+/** 归一化专辑/歌手/MV 的浏览列表。 */
 export function normalizeMoeKoeBrowse(type: Exclude<MoeKoeSearchType, "song">, payload: unknown, limit = 20): MoeKoeBrowseItem[] {
   const root = payload && typeof payload === "object" ? payload as Record<string, any> : {};
   const list: unknown[] = Array.isArray(root?.data?.lists) ? root.data.lists : Array.isArray(root?.data) ? root.data : [];
@@ -228,6 +232,7 @@ export function normalizeMoeKoeBrowse(type: Exclude<MoeKoeSearchType, "song">, p
 
 export type MoeKoeLyricCandidate = { id: string; accesskey: string; song: string; singer: string; source: string };
 
+/** 从歌词回包里挑一条可用候选（含翻译/罗马音）。 */
 export function pickLyricCandidate(payload: unknown): MoeKoeLyricCandidate | null {
   const root = payload && typeof payload === "object" ? payload as Record<string, any> : {};
   const list = Array.isArray(root.candidates) ? root.candidates : Array.isArray(root?.data?.candidates) ? root.data.candidates : [];
@@ -267,6 +272,7 @@ export type MoeKoeQualitySummary = {
   note: string;
 };
 
+/** 归一化音质权限（能否无损/高码率），供播放前选档。 */
 export function normalizeMoeKoePrivilege(payload: unknown, song?: Pick<MoeKoeSong, "hasHigh" | "hasLossless"> | null): MoeKoeQualitySummary {
   const root = payload && typeof payload === "object" ? payload as Record<string, any> : {};
   const item = Array.isArray(root.data) ? root.data[0] : root;

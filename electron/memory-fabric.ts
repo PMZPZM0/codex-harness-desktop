@@ -207,6 +207,7 @@ const CATEGORY_WEIGHT: Record<MemoryCategory, number> = {
   "临时上下文": 0.3,
 };
 
+/** 某记忆分类的默认权重（未登记的分类给 0.5）。 */
 export function defaultWeightOf(category: MemoryCategory): number {
   return CATEGORY_WEIGHT[category] ?? 0.5;
 }
@@ -442,6 +443,7 @@ function createHandle(init: HandleInit): MemoryHandle {
   };
 }
 
+/** 取记忆库句柄：按调度作用域裁剪可见性 —— 被派出去的实例**读不到主会话的 private 层**。 */
 export async function getMemoryHandles(input: {
   sessionId: string;
   workspace: string | undefined;

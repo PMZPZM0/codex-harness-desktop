@@ -268,12 +268,14 @@ export const DISTILL_PROMPT = `你是记忆蒸馏器。下面是某个项目过�
 - 不要写开场白、不要写总结、不要有任何客套话
 - 直接输出提炼结果`;
 
+/** 取今天的日期串 `YYYY-MM-DD`（本地时区，记忆按天归档的键）。 */
 export function today(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
+/** 算两个日期相差多少天；任一日期解析失败返回 0。 */
 export function daysBetween(date: string, base: string): number {
   const a = Date.parse(`${date}T00:00:00`);
   const b = Date.parse(`${base}T00:00:00`);

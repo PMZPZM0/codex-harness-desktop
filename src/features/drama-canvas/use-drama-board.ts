@@ -41,6 +41,7 @@ const HISTORY_LIMIT = 60;
 const HISTORY_DEBOUNCE_MS = 260;
 const SAVE_DEBOUNCE_MS = 800;
 
+/** 连线的稳定 id：`e:<source>-><target>`。 */
 export function dramaEdgeId(source: string, target: string): string {
   return `e:${source}->${target}`;
 }

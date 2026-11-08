@@ -11,6 +11,7 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { codexHome, server } from "../runtime-refs";
 import { mutableState } from "../main";
+/** 收集「哪些供应商正在被会话实际使用」（引擎线程索引为权威源，60 秒缓存）。 */
 export async function collectSessionProviderIds(): Promise<Set<string>> {
   const now = Date.now();
   if (mutableState.sessionProviderIdsCache && now - mutableState.sessionProviderIdsCache.at < 60_000) return mutableState.sessionProviderIdsCache.ids;

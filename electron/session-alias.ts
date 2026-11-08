@@ -80,6 +80,7 @@ function migrateLegacyAliases(map: Record<string, SessionAliasRecord>): boolean 
   return changed;
 }
 
+/** 把会话别名缓存刷回磁盘；写失败只影响落盘，不动内存态。 */
 export async function flushSessionAliases(): Promise<void> {
   if (!cache) return;
   try { await fs.writeFile(fileOf(), JSON.stringify(cache, null, 2), "utf8"); } catch { /* 写失败不影响内存态 */ }
@@ -243,7 +244,9 @@ let emitPending = false;
 /** 11-03：用户改名后，群编排成员会话的权威身份块要跟着重写（上级笔名变了，模型不能还记旧名）。
  *  ⛔ 由 boss 域注册；本模块不 import 引擎/编排，避免成环。 */
 let aliasChangeHook: ((threadId: string) => void) | null = null;
+/** 登记「某个会话别名被改」的回调（null 解绑）。 */
 export function setSessionAliasChangeHook(fn: ((threadId: string) => void) | null) { aliasChangeHook = fn; }
+/** 登记别名变化的广播函数；登记时把挂起的那次 emit 补发出去。 */
 export function setSessionAliasEmitter(fn: (payload: unknown) => void) {
   emitFn = fn;
   if (emitPending) { emitPending = false; scheduledEmit(); }

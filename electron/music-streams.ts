@@ -27,6 +27,7 @@ function prune(now: number): void {
   }
 }
 
+/** 为一组音频 URL 建短期可播流（去重 + 带过期时间），返回 token。 */
 export function createMusicStream(urls: string | string[], headers: Record<string, string> = {}): string {
   const now = Date.now();
   prune(now);
@@ -38,6 +39,7 @@ export function createMusicStream(urls: string | string[], headers: Record<strin
   return token;
 }
 
+/** 按 token 取流信息；过期即删并返回 null。 */
 export function getMusicStream(token: string): MusicStreamEntry | null {
   const now = Date.now();
   prune(now);

@@ -15,6 +15,7 @@ import { matchesVoiceAccelerator } from "../../../../voice/hotkey-match";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../app-view/types";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 01a：服务状态、独立窗会话锁定、草稿与语音的开关状态。 */
 export function usePart01a(bag: Bag) {
   const [serverStatus, setServerStatus] = useState("starting");
 bag.serverStatus = serverStatus as typeof bag.serverStatus; bag.setServerStatus = setServerStatus as typeof bag.setServerStatus;

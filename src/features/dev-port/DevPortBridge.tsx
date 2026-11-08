@@ -25,6 +25,7 @@ const PANEL_RATIO = 0.45;
 const PANEL_MIN = 360;
 const PANEL_MAX = 560;
 
+/** 开发端口桥：监听本地端口/预览地址的变化，去重后转给宿主（打开浏览器面板等）。 */
 export function DevPortBridge({ app, threadId }: { app: DevPortHost; threadId?: string }) {
   const seenRef = useRef<Set<string>>(new Set());
   const runningRef = useRef(false);

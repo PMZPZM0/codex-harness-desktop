@@ -165,6 +165,7 @@ function withRoleFileLock<T>(file: string, run: () => Promise<T>): Promise<T> {
   return next;
 }
 
+/** 往某个角色的记忆里追加一行：校验角色归属、空内容与行长度上限，返回是否写入。 */
 export async function appendRoleMemory(workspace: string | undefined, ref: RoleRef, line: string): Promise<{ written: boolean; reason?: string }> {
   const key = roleKey(ref);
   const text = String(line ?? "").trim();

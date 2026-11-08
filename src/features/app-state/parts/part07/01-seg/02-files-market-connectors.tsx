@@ -8,6 +8,7 @@
 import { SKILLHUB_MCP_CATALOG, SKILLHUB_MCP_CATEGORIES, skillhubMcpDetailUrl, type SkillHubMcpEntry } from "../../../../../lib/skillhub-mcp";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 07a2：选图/选文件、市场与连接器的入口动作。 */
 export function usePart07a2(bag: Bag) {
   async function chooseImages() {
     const value = await window.codex.chooseImages();

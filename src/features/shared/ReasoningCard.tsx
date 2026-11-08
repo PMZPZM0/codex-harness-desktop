@@ -28,6 +28,7 @@ import { useCardOpen } from "../../components/CardShell";
 import { useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { ReasoningStrip } from "./ReasoningStrip";
 
+/** 思考卡：按展示模式走自适应浮窗或细条；本会话流式出现过就保留（不因完成而消失）。 */
 export function ReasoningCard({ item, turnActive, floatHostSelector }: { item: ThreadItem; turnActive?: boolean; /** 浮窗 portal 宿主（默认主对话的 .reasoning-float-host；群聊传自己的宿主） */ floatHostSelector?: string }) {
   const displayMode = useReasoningDisplayMode();
   const bodyRef = useRef<HTMLDivElement>(null);

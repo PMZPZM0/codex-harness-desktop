@@ -41,6 +41,7 @@ function fileChangeActivity(item: { changes?: FileChangeLike[] } | null | undefi
   return allNew ? "正在生成文件" : "正在编辑文件";
 }
 
+/** bag 分片 06b1：消息底部的「运行动态」行（进行中 item 类型 + 本轮锁定的一句话）。 */
 export function usePart06b1(bag: Bag) {
   // ── 运行动态状态行（09-16，学 WorkBuddy 消息底部那个）─────────────────────────
   // 状态 = 当前会话**最后一个进行中的 item** 的类型（执行命令/编辑文件/思考…），

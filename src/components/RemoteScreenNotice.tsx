@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import { Monitor } from "lucide-react";
 
+/** 「正在被远程查看屏幕」提示条：听主进程的 remote:screen 事件显示/隐藏。 */
 export function RemoteScreenNotice() {
   const [active, setActive] = useState(false);
   useEffect(() => window.codex.onHarnessEvent((payload) => {

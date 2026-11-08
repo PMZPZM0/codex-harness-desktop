@@ -45,10 +45,12 @@ export const SKILL_FILE_POOL_DISABLED = "SKILL.md.pool-disabled";
 export type SkillScope = "user" | "repo";
 export type SkillEntry = { name: string; desc: string; file: string; scope: SkillScope; enabled: boolean };
 
+/** 全局技能目录：`<codexHome>/skills`。 */
 export function globalSkillsDir(codexHome: string): string {
   return path.join(codexHome, GLOBAL_SKILLS_SUBDIR);
 }
 
+/** 项目级技能目录：`<cwd>/.codex/skills`。 */
 export function projectSkillsDir(cwd: string): string {
   return path.join(cwd, ...PROJECT_SKILLS_SUBDIR.split("/"));
 }

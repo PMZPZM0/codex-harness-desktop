@@ -36,6 +36,7 @@ function canFocus(value: unknown, body: unknown): value is FocusableLike {
   return !!value && value !== body && typeof (value as FocusableLike).focus === "function";
 }
 
+/** 装「浮层关闭后把焦点还给原来那个元素」：在 focusin 时记录焦点是否进过遮罩（关闭后再查节点已不在文档里了），返回卸载函数。 */
 export function installFocusReturn(env: FocusReturnEnv): () => void {
   const { doc, schedule, getFallback, win } = env;
   let saved: FocusableLike | null = null;

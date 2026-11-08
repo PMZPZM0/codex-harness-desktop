@@ -275,6 +275,7 @@ export async function currentEngineVersion(): Promise<string> {
   } catch { return ""; }
 }
 
+/** 查引擎是否有新版本（当前版本 vs 镜像源最新版）。 */
 export async function checkEngineUpdate(proxyUrl?: string): Promise<EngineVersionInfo> {
   const current = await currentEngineVersion();
   const latest = await fetchLatestVersion(await registryEndpoints(proxyUrl || undefined));
@@ -290,6 +291,7 @@ function platformPackageDir(): { pkgDir: string; vendorDir: string; exeName: str
   return { pkgDir, vendorDir, exeName };
 }
 
+/** 执行引擎更新：先停引擎再换二进制，进度逐段回报，失败把引擎拉回来保证应用可用。 */
 export async function performEngineUpdate(
   proxyUrl: string | undefined,
   report: (progress: EngineUpdateProgress) => void,

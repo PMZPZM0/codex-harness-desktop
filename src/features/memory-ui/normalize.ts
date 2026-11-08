@@ -115,6 +115,7 @@ export function normalizePyramid(raw: unknown, archive?: { files?: unknown; byte
 
 export const LOCAL_MEMORY_CONNECTOR = "local-memory";
 
+/** 归一化 MCP 后端状态。⛔ 用 `effective` 而非 `backend`：选了 MCP 但没装时会回退内置，界面必须显示实际生效的那个。 */
 export function normalizeMcpBackend(raw: unknown): import("./types").McpBackendMemory {
   const r = obj(raw);
   /* ⛔ 用 effective 而不是 backend：用户选了 MCP 但服务没装时会回退内置，
@@ -172,6 +173,7 @@ export function normalizeEntry(raw: unknown): import("./types").MemoryEntry {
   };
 }
 
+/** 把原始数组逐条归一化成记忆条目。 */
 export function normalizeEntries(raw: unknown): import("./types").MemoryEntry[] {
   return arr(raw).map(normalizeEntry);
 }

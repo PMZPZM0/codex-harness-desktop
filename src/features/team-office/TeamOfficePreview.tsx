@@ -131,6 +131,7 @@ export function phaseOfRun(run: RunFacts | null | undefined, now: number): {
   };
 }
 
+/** 团队办公室预览：多个团的办公室切换，运行态由成员映射驱动。 */
 export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, lastByMember, openThread, delegatedRuns, self, groupMembers }: TeamOfficePreviewProps) {
   /* ⛔ 11-01 用户实测「播报悬浮窗压在办公室预览上面」：那个播报窗是**独立置顶窗口**
      （electron/features/pet-window.ts 里 setAlwaysOnTop(true)），CSS z-index 管不到它。

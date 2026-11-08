@@ -18,6 +18,7 @@ import type { Bag } from "../../bag-types";
    清掉那个过渡标记，否则普通新会话的欢迎页会被中枢引导卡顶掉（用户 10-25 点名）。 */
 import { setBossPending } from "../../../../boss-group-view";
 
+/** 切到一个会话：重置滚动与懒加载锁、载入历史、恢复会话级设置；`freshThread` 用于刚建好的会话直接注入。 */
 export async function openThread(bag: Bag, id: string, freshThread?: Thread | null) {
     setBossPending(false);
     bag.switchStartRef.current = performance.now();

@@ -10,6 +10,7 @@ type Props = {
   settings: Settings;
 };
 
+/** 断句等待卡：调「说完多久算一句」的秒数（两侧时长同屏可见）。 */
 export function VoiceSettingsSectionEndpointWait({ apply, saving, settings }: Props) {
   return (
     <div className="voice-card">

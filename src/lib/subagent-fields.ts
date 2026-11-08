@@ -12,6 +12,7 @@ export const SUBAGENT_APPROVAL_OPTIONS = [
   { value: "untrusted", label: "不可信" },
 ];
 
+/** 把字段值翻成显示名；查不到时回退原始值，空值显示「未指定」。 */
 export function subagentFieldLabel(options: { value: string; label: string }[], value: string | undefined) {
   return options.find((option) => option.value === value)?.label ?? (value || "未指定");
 }

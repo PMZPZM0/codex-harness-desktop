@@ -7,10 +7,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 
+/** 画布看板数据文件路径：`<userData>/drama-canvas/boards.json`。 */
 export function boardsFileOf(): string {
   return path.join(app.getPath("userData"), "drama-canvas", "boards.json");
 }
 
+/** 读画布看板集合；文件不存在或坏了返回空对象（⛔ 不抛错，首次使用就是空）。 */
 export async function readWorkflowBoards(): Promise<Record<string, unknown>> {
   try {
     const parsed = JSON.parse(await fs.readFile(boardsFileOf(), "utf8"));
@@ -20,6 +22,7 @@ export async function readWorkflowBoards(): Promise<Record<string, unknown>> {
   }
 }
 
+/** 整份写回画布看板（先建目录再写，保持缩进方便人工看）。 */
 export async function writeWorkflowBoards(all: Record<string, unknown>): Promise<void> {
   const file = boardsFileOf();
   await fs.mkdir(path.dirname(file), { recursive: true });

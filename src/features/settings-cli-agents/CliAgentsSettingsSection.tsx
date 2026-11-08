@@ -13,6 +13,7 @@ export type CliAgentsSettingsSectionProps = {
   onBack?: () => void;
 };
 
+/** CLI 智能体设置页（含返回上一级）。 */
 export function CliAgentsSettingsSection({ setNotice, onBack }: CliAgentsSettingsSectionProps) {
   return (
     <section className="settings-section stack cli-agents-page">

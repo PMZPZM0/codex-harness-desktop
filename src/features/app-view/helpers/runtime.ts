@@ -13,6 +13,7 @@ import { APPROVAL_MODES, SANDBOX_MODES } from "../constants";
 
 
 
+/** 读某个会话的运行时原始记录；首次读取时从旧的三键族迁移过来（旧键唯一还能说话的时机）。 */
 export function loadThreadRuntimeRaw(id: string): ReturnType<typeof emptyRuntime> {
   if (!id) return emptyRuntime();
   try {
@@ -88,29 +89,35 @@ export /** 本窗口最近写出去的会话运行时（回声表）。判定规
  *  「另一个窗口更新了…」（09-14 用户实测的误报）。 */
 const ownRuntimeWrites = new Map<string, { signature: string; at: number }>();
 
+/** 读会话级权限（沙箱 + 审批）原始值。 */
 export function loadThreadPermissions(id: string): { sandbox?: string; approval?: string } {
   const r = loadThreadRuntime(id);
   return { sandbox: r.sandbox, approval: r.approval };
 }
 
+/** 取会话沙箱模式；不在合法集合里就当没设（⛔ 不把脏值传给引擎）。 */
 export function threadSandboxOf(id: string): string | undefined {
   const value = loadThreadPermissions(id).sandbox;
   return (SANDBOX_MODES as readonly string[]).includes(String(value)) ? value : undefined;
 }
 
+/** 取会话审批策略；同样只认合法值。 */
 export function threadApprovalOf(id: string): string | undefined {
   const value = loadThreadPermissions(id).approval;
   return (APPROVAL_MODES as readonly string[]).includes(String(value)) ? value : undefined;
 }
 
+/** 保存会话级权限（沙箱 + 审批一起写）。 */
 export function saveThreadPermissions(id: string, sandbox: string, approval: string) {
   saveThreadRuntime(id, { sandbox, approval });
 }
 
+/** 读某个会话记住的模型 id。 */
 export function loadThreadModel(id: string): string {
   return loadThreadRuntime(id).model;
 }
 
+/** 写会话级模型选择（只影响这个会话）。 */
 export function saveThreadModel(id: string, modelId: string) {
   saveThreadRuntime(id, { model: modelId });
 }
@@ -128,10 +135,12 @@ function loadThreadEffort(id: string): string {
   return loadThreadRuntime(id).effort;
 }
 
+/** 写会话级思考档位。 */
 export function saveThreadEffort(id: string, effort: string) {
   saveThreadRuntime(id, { effort });
 }
 
+/** 把界面上的沙箱模式翻成引擎要的策略对象（默认只允许当前项目根可写 + 常规联网）。 */
 export function sandboxPolicy(mode: string, cwd: string) {
   if (mode === "danger-full-access") return { type: "dangerFullAccess" };
   if (mode === "read-only") return { type: "readOnly", networkAccess: false };
@@ -140,6 +149,7 @@ export function sandboxPolicy(mode: string, cwd: string) {
   return { type: "workspaceWrite", writableRoots: cwd ? [cwd] : [], networkAccess: true, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
 }
 
+/** 把引擎策略对象翻回界面模式名；不认识的类型返回 null（⛔ 不猜成完全访问）。 */
 export function sandboxMode(policy: any): "danger-full-access" | "read-only" | "workspace-write" | null {
   if (!policy?.type) return null;
   if (policy.type === "dangerFullAccess") return "danger-full-access";

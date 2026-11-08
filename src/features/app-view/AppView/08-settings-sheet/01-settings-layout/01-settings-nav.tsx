@@ -6,6 +6,7 @@ import { RequestCard, ToolCard, VoiceSettingsBridge, admitThreadRuntimeRef, ago,
 import type { HarnessAppApi } from "../../../../app-state/useHarnessApp";
 import { useEffect, useRef } from "react";
 
+/** 设置左栏导航：高亮当前页；⛔ 二级页（浏览器/电脑操作/RPA）要归到它的父分组才算高亮对。 */
 export function SettingsLayoutSettingsNav({ app }: { app: HarnessAppApi }) {
   const {
     setSettingsPage,

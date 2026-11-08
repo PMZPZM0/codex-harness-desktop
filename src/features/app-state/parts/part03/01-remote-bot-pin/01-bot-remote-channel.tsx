@@ -9,6 +9,7 @@ import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import type { RateLimitCtx, BotEntry } from "../../types";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 03a1：机器人远控通道（含把旧 localStorage 里的机器人迁到主进程）。 */
 export function usePart03a1(bag: Bag) {
   useEffect(() => {
     let alive = true;

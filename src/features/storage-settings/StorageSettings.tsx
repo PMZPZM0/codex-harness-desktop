@@ -18,6 +18,7 @@ function formatBytes(bytes: number): string {
   return `${v.toFixed(v >= 100 ? 0 : v >= 10 ? 1 : 2)} ${units[i]}`;
 }
 
+/** 存储占用页：分类统计占用并提供清理（危险项走二次确认）。 */
 export function StorageSection({ onNotice, onClearMemoryCache, openAppConfirm }: {
   onNotice: (message: string) => void;
   onClearMemoryCache: () => void;
@@ -87,6 +88,7 @@ const reviewEmptyCopy: Record<ReviewScope, { title: string; hint: string }> = {
   last: { title: "还没有上一轮改动", hint: "先在会话里发一条消息，回合结束后再回来看。" },
 };
 
+/** 代码审查面板：按 git 范围（未暂存/暂存）跑审查并展示输出，git 缺失时给指引。 */
 export function ReviewPanel({ workspace, lastDiff, disabled, busy, report, onReview, onNotice }: { workspace: string; lastDiff: string; disabled: boolean; busy: boolean; report: string; onReview: (instructions: string) => void; onNotice?: (message: string) => void }) {
   const [scope, setScope] = useState<ReviewScope>("unstaged");
   const [menuOpen, setMenuOpen] = useState(false);

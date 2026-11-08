@@ -11,6 +11,7 @@ export type BridgeMode = "auto" | "chat" | "responses" | "anthropic";
 
 export const upstreamProtocols = new Map<string, BridgeMode>();
 
+/** 归一化上游协议（chat / responses / anthropic），其余一律 auto。 */
 export function normalizeUpstreamProtocol(value: unknown): BridgeMode {
   return value === "chat" || value === "responses" || value === "anthropic" ? value : "auto";
 }

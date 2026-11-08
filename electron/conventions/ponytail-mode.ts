@@ -11,6 +11,7 @@ function configPath() {
   return path.join(xdg || path.join(os.homedir(), ".config"), "ponytail", "config.json");
 }
 
+/** 读 ponytail 档位（off / lite / full / ultra）；没有配置或读失败回 off。 */
 export async function getPonytailMode(): Promise<string> {
   try {
     const raw = JSON.parse(await fs.readFile(configPath(), "utf8"));
@@ -20,6 +21,7 @@ export async function getPonytailMode(): Promise<string> {
   }
 }
 
+/** 写 ponytail 档位（首次会自动建目录与文件，不动其它字段）。 */
 export async function setPonytailMode(mode: "off" | "lite" | "full" | "ultra"): Promise<void> {
   const file = configPath();
   let raw: any = {};

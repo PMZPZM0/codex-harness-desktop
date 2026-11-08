@@ -126,6 +126,7 @@ export function settingsRootPage(page: SettingsPage): SettingsPage {
 
 export const imageExts = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg", ".ico"]);
 
+/** 审批策略的下拉选项（完全访问时只给「无需确认」等受限集合）。 */
 export const approvalMenuOptions = (fullAccess: boolean) => fullAccess ? [
   { value: "on-request", title: "变更前确认", desc: "改文件前先问我。" },
   { value: "untrusted", title: "自动编辑", desc: "自动编辑文件。" },
@@ -147,6 +148,7 @@ export const skillHubCategoryTabs: [string, string][] = [
   ["设计与媒体", "design-media"], ["IT 运维与安全", "it-ops-security"], ["开发编程", "dev-programming"],
 ];
 
+/** 技能市场分类 key → 中文显示名；查不到回退原 key。 */
 export const skillHubCategoryName = (key: string) => skillHubCategoryTabs.find(([, value]) => value === key)?.[0] ?? key;
 
 export /** GitHub raw logo → jsDelivr CDN 镜像（raw.githubusercontent.com 在国内不可达，渲染层图片走镜像）；

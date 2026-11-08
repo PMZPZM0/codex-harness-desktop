@@ -75,6 +75,7 @@ function getPersonalizationFile(): string {
   return path.join(app.getPath("userData"), "personalization.json");
 }
 
+/** 读个性化配置（昵称 / 画像等），逐字段 trim；读不到返回默认骨架。 */
 export async function readPersonalization(): Promise<PersonalizationConfig> {
   try {
     const stored = JSON.parse(await fs.readFile(getPersonalizationFile(), "utf8"));

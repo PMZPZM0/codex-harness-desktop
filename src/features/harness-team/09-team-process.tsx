@@ -119,6 +119,7 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
   return { turn, loading };
 }
 
+/** 过程折叠块：只收工具/命令/编辑/技能/思考，正文（agentMessage）不进折叠由父层正常渲染。 */
 export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, live = false, onAskAgain }: Props) {
   const { turn, loading } = useTeamTurn(threadId, at, bodyText, live);
 

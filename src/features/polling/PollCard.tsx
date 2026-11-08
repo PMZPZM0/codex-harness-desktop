@@ -37,6 +37,7 @@ function conclusionOf(task: PollTask): { icon: ReactNode; text: string } | null 
   return null;
 }
 
+/** 轮询卡：运行中自动展开、结束自动收起（用户手动点过就以用户为准）。 */
 export function PollCard({ task }: { task: PollTask }) {
   const tone = pollStatusTone(task.status);
   const polling = task.status === "polling";

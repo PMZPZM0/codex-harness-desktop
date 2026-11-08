@@ -142,6 +142,7 @@ import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { settingsTone } from "../helpers";
 import { SettingsSheetSettingsLayout } from "./08-settings-sheet/01-settings-layout";
 
+/** 设置面板入口：承载全部设置页与二级弹窗。 */
 export function AppViewSettingsSheet({ app }: { app: HarnessAppApi }) {
   const {
     activateOfficialProvider,

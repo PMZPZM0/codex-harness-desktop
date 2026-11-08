@@ -13,6 +13,7 @@ import { defaultBindings } from "../../lib/shortcut-catalog.mjs";
 export type ShortcutBindings = Record<string, string[]>;
 export type ShortcutConflict = [string, string];
 
+/** 快捷键状态：默认键 + 用户覆盖合并，检测冲突并提供刷新。 */
 export function useShortcuts() {
   const [bindings, setBindings] = useState<ShortcutBindings>(() => defaultBindings() as ShortcutBindings);
   const [overrides, setOverrides] = useState<ShortcutBindings>({});

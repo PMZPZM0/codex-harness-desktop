@@ -8,6 +8,7 @@ import { usePart03a1 } from "./01-remote-bot-pin/01-bot-remote-channel";
 import { usePart03a2 } from "./01-remote-bot-pin/02-pin-scroll-anchor";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 03a：合并远控通道（a1）与锚点（a2）。 */
 export function usePart03a(bag: Bag) {
   const a = usePart03a1(bag);
   const b = usePart03a2(bag);

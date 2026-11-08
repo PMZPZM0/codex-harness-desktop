@@ -37,6 +37,7 @@ function keyToBinding(event: KeyboardEvent): string {
   return [...mods, key].join("+");
 }
 
+/** 快捷键设置弹窗：按分组展示、搜索、改键与冲突提示。 */
 export function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { bindings, refresh } = useShortcuts();
   const [draft, setDraft] = useState<ShortcutBindings>(() => ({ ...bindings }));

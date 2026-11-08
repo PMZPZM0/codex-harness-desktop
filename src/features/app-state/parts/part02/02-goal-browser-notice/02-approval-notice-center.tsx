@@ -11,6 +11,7 @@ import { DELEGATE_RAIL_LINGER_MS, IDENTITY_ONBOARD_INSTRUCTIONS, IDENTITY_ONBOAR
 import type { Bag } from "../../bag-types";
 import type { NoticeTone } from "../../../../app-view/helpers/text";
 
+/** bag 分片 02b2：审批策略（含完全自主模式的版本化迁移）与通知中心。 */
 export function usePart02b2(bag: Bag) {
   // 完全自主模式：所有新任务默认拥有完整本机访问与无需审批的执行权限。
   // 使用版本化迁移，覆盖此前 workspace-write 的历史偏好。

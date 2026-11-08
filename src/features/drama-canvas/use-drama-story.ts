@@ -104,6 +104,7 @@ export interface DramaStoryApi {
 
 const STORYBOARD_SAVE_MS = 900;
 
+/** 分镜表的状态与操作：加载/切换/保存分镜，与画布节点联动。 */
 export function useDramaStory(
   workspace: string,
   board: DramaBoardApi,

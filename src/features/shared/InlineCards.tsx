@@ -26,6 +26,7 @@ function isEditableTextFile(path: string): boolean {
  *  `features/status` 的用法一起想（那边只是挂 onContextMenu，不复制第二份菜单）。 */
 type FileCardMenuState = { x: number; y: number; path: string; name: string };
 
+/** 文件卡的更多菜单：点外面或按 Esc 关闭，菜单项按类型给出。 */
 export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuState; onOpen: () => void; onClose: () => void }) {
   useEffect(() => {
     const onDown = (event: MouseEvent) => {
@@ -147,6 +148,7 @@ function extractFilePathsFromMarkdown(text: string): { path: string; prefix: str
   return out;
 }
 
+/** 正文里的内联文件卡：从 markdown 抽路径，解析成真实位置后渲染可点卡片。 */
 export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile?: (path: string) => void }) {
   const matches = useMemo(() => extractFilePathsFromMarkdown(text), [text]);
   const [resolvedPaths, setResolvedPaths] = useState<Record<string, string>>({});
@@ -244,6 +246,7 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
   );
 }
 
+/** 用户消息的引用行：文件 / 技能 / 上下文三类 chip，文件可点开。 */
 export function UserRefsRow({ refs, onOpenFile, onQuote, extraThumbs, hideFiles }: { refs: ParsedUserRefs; onOpenFile?: (path: string) => void; onQuote?: (text: string) => void; extraThumbs?: ReactNode; hideFiles?: boolean }) {
   const { files, skills, contexts } = refs;
   const visibleFiles = hideFiles ? [] : files;

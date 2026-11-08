@@ -10,6 +10,7 @@ import { lazy } from "react";
 
 const TeamModePanel = lazy(() => import("../../../../../harness-team").then((m) => ({ default: m.TeamModePanel })));
 
+/** 设置页分组：团队。⛔ 群消息的「来源」要能开会话：宿主把 openThread 传进来，且**先关设置页再开**（否则会话被盖住像没反应）。 */
 export function teamPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   return {
     team: {

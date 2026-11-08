@@ -257,6 +257,7 @@ export type LocalSessionRow = {
   newLines: number;
 };
 
+/** 列本机可同步的会话（读 rollout 文件，默认最多 500 条）。 */
 export function listLocalSessions(
   deps: Pick<SyncDeps, "codexHome"> & { stateFile?: string }, limit = 500,
 ): LocalSessionRow[] {
@@ -288,6 +289,7 @@ export function listLocalSessions(
   return out;
 }
 
+/** 读同步摘要：已同步会话数与累计推送行数。 */
 export function readSyncSummary(stateFile: string): { sessions: number; lines: number } {
   const state = readState(stateFile);
   const rows = Object.values(state.sessions);
@@ -300,6 +302,7 @@ export function readSyncSummary(stateFile: string): { sessions: number; lines: n
  *  ⛔ 幂等：本地已存在同名会话就跳过（不覆盖本地更新的那份）。 */
 export type PullResult = { ok: boolean; reason?: string; pulled: number; skipped: number; failed: number; ids?: string[] };
 
+/** 从云端拉会话回本地（可按 id 指定）；未配对设备直接返回 not-paired，⛔ 不发起请求。 */
 export async function pullCloudSessions(deps: SyncDeps, ids: string[] = []): Promise<PullResult> {
   const token = deps.deviceToken();
   if (!token) return { ok: false, reason: "not-paired", pulled: 0, skipped: 0, failed: 0 };

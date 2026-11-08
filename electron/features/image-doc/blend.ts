@@ -134,6 +134,7 @@ function setSat(c: [number, number, number], s: number): void {
 }
 
 const NON_SEPARABLE = new Set<BlendMode>(["Hue", "Saturation", "Color", "Luminosity"]);
+/** 判断混合模式是否属于「不可分离」类（Color Burn / Saturation 这类需要先转 HSL 的）。 */
 export const isNonSeparable = (mode: BlendMode): boolean => NON_SEPARABLE.has(mode);
 
 /**

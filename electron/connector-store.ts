@@ -20,9 +20,11 @@ export type PublicConnectorConfig = Omit<ConnectorConfig, "headers" | "envHttpHe
   envHttpHeaderKeys: string[];
 };
 
+/** 连接器对外视图：抹掉 headers / env / 加密凭据，只给「有没有密钥」「有哪些键名」。 */
 export function publicConnector(value: ConnectorConfig): PublicConnectorConfig {
   const { headers, env, encryptedSecrets, ...rest } = value;
   return { ...rest, hasSecrets: Boolean(Object.keys(encryptedSecrets ?? {}).length), headerKeys: Object.keys(headers ?? {}), envKeys: Object.keys(env ?? {}), envHttpHeaderKeys: Object.keys(value.envHttpHeaders ?? {}) };
 }
 
+/** 整份写回连接器清单。 */
 export async function writeConnectors(list: ConnectorConfig[]) { await fs.writeFile(connectorsFile, JSON.stringify(list, null, 2), "utf8"); }

@@ -19,6 +19,7 @@ function readCachedEnabled(): boolean {
   try { return localStorage.getItem(ENABLED_CACHE_KEY) === "1"; } catch { return false; }
 }
 
+/** 应用锁闸门：首帧用缓存的开关判断（关着就直接渲染 App，状态查询后台核对），只有开着或还没确认时才显示检查页。 */
 export function AppLockGate({ children }: { children: ReactNode }) {
   /* 10-26 用户：没开应用锁时不要每次启动都停在「正在检查应用锁」。
      用上次的开关缓存做首帧判断：缓存=关 ⇒ 直接渲染 App，状态查询在后台静默核对；

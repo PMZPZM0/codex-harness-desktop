@@ -7,6 +7,7 @@ import { ALIGN_RESULT, CONTINUITY_TEXT, HARNESS_PROVIDER_ID, shouldAlignProvider
 import { isRateLimitError } from "../../../../../lib/rate-limit-retry";
 import type { Bag } from "../../bag-types";
 
+/** 事件路由第 8 段：错误与限流。限流同样进自动重试；引擎原始英文报错翻成能照做的中文提示。 */
 export function handleEventRouter8(bag: Bag, params: any): boolean {
         // error 通知也可能是限流（引擎 RPC 直接报错）：同样进入自动重试
         const rawError = params.error?.message ?? params.message ?? "";

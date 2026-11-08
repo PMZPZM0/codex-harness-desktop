@@ -65,12 +65,14 @@ function matchSkillCatalog<T extends { name: string; description: string; note: 
     .slice(0, limit);
 }
 
+/** 专家分类 id → 中文名；空值显示「未分类」。 */
 export function categoryLabel(id: string) { return EXPERT_CATEGORY_LABELS[id] ?? (id || "未分类"); }
 
 /** # 面板技能清单的重拉节流（09-30「列表不实时」）：30 秒内只放行一次，放行即记时间戳。
  *  ⛔ 放本模块而不是 part 文件：【93】按 parts 的顶层声明清单比对 Bag 成员，
  *     纯局部节流变量放 part 会报「推断有、Bag 没有」（实测踩到）。 */
 let lastSkillListRefreshAt = 0;
+/** 技能列表刷新节流：30 秒内只刷一次，返回这次要不要刷。 */
 export function shouldRefreshSkillList(): boolean {
   if (Date.now() - lastSkillListRefreshAt < 30_000) return false;
   lastSkillListRefreshAt = Date.now();

@@ -34,6 +34,7 @@ export function runNode(args: string[], opts: RunOptions = {}): Promise<RunResul
   return runExe(node.exe, args, opts, node.env);
 }
 
+/** 跑一个外部命令并收集输出（统一注入工具链环境、关掉更新提示与颜色）；失败按退出码拒绝。 */
 export function runExe(exe: string, args: string[], opts: RunOptions, extraEnv: Record<string, string> = {}): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(exe, args, {
@@ -112,6 +113,7 @@ export type CliVerb = typeof CLI_VERBS[number];
 /** 每个动词的超时（look 要抓帧，render 要整片重绘）。 */
 const VERB_TIMEOUT: Record<CliVerb, number> = { open: 120_000, look: 180_000, render: 900_000, get: 180_000, skills: 30_000, skill: 30_000 };
 
+/** 取某个 CLI 动词的超时毫秒数。 */
 export function verbTimeout(verb: CliVerb): number {
   return VERB_TIMEOUT[verb];
 }

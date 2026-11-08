@@ -18,6 +18,7 @@ export type TextEditorTransport = {
   save: (path: string, content: string) => Promise<void>;
 };
 
+/** 粘贴文本编辑器：载入粘贴内容，可编辑并保存（只读源则只预览）。 */
 export function PastedTextEditor({ path, name, onClose, transport }: { path: string; name: string; onClose: () => void; transport?: TextEditorTransport }) {
   const [state, setState] = useState<{ loading: boolean; editable: boolean; content: string; error?: string }>({ loading: true, editable: false, content: "" });
   const [reloadKey, setReloadKey] = useState(0);
@@ -165,10 +166,12 @@ function showToastEverywhere(title: string, text?: string) {
   notifyToast(title, text);
 }
 
+/** 消息内图片：点开灯箱，右键可复制。 */
 export function ImagePreview({ path, alt, onCopy }: { path: string; alt: string; onCopy?: () => void }) {
   return <img className="message-image" src={imageDisplaySrc(path)} alt={alt} onClick={() => openImageLightbox(path, alt)} onContextMenu={(event) => { if (!onCopy) return; event.preventDefault(); onCopy(); }} />;
 }
 
+/** 大图灯箱：缩放与拖拽平移，Esc / 点遮罩关闭。 */
 export function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; alt: string; onClose: () => void; onCopy?: () => void }) {
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -210,6 +213,7 @@ export function ImageLightbox({ path, alt, onClose, onCopy }: { path: string; al
   );
 }
 
+/** 搜索结果的预览弹窗：显示命中片段，可跳会话 / 跳设置 / 复制会话 id。 */
 export function SearchPreviewModal({ target, onClose, onOpenThread, onOpenSettings, onCopyThreadId }: {
   target: SearchPreviewTarget;
   onClose: () => void;

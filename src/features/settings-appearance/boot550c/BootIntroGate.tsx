@@ -15,6 +15,7 @@ import { bootIntroPlayMode, readBootIntroMode, readBootIntroScheme, shouldPlayBo
 import { readMotionReduced } from "../../../lib/motion-policy.mjs";
 import { BootIntro550c } from "./BootIntro550c";
 
+/** 启动动画闸门：按用户设置与系统偏好决定这次播不播（⛔ 不能只读 prefers-reduced-motion）。 */
 export function BootIntroGate({ stage, done }: { stage: BootStage; done: boolean }) {
   const [decision] = useState(() => {
     const storage = typeof localStorage === "undefined" ? null : localStorage;

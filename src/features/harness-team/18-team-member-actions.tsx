@@ -10,6 +10,7 @@
  */
 import { Square } from "lucide-react";
 
+/** 成员操作行：选中 / 停止该成员（运行中才可停）。 */
 export function MemberActions({
   id, name, running, selected, onToggle, onStop,
 }: {

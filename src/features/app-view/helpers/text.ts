@@ -13,6 +13,7 @@ import type { Model } from "../types";
 
 
 
+/** 把导入时间格式化成 `YYYY-MM-DD HH:mm`；解析失败原样返回。 */
 export function fmtImportTime(iso: string): string {
   try {
     const d = new Date(iso);
@@ -21,6 +22,7 @@ export function fmtImportTime(iso: string): string {
   } catch { return iso; }
 }
 
+/** 把 hook 名美化成可展示文案（剥掉尾部盘符路径，再拆出中文名 + 序号）。 */
 export function prettifyHookLabel(raw: string): string {
   // 剥掉事件名/序号后面跟的盘符路径（C:\... 或 D:/...，可能含空格直到串尾）
   const stripped = (raw || "").replace(/\s*[A-Za-z]:[\\/].*$/, "").trim() || raw;
@@ -36,6 +38,7 @@ export function prettifyHookLabel(raw: string): string {
     （普通新建任务 = 蓝 info；指挥中枢 = 琥珀 warning）。 */
 export type NoticeTone = "success" | "error" | "warning" | "info";
 
+/** 按文案猜通知语气（失败/错误 → error，已保存/成功 → ok，其余 info）。 */
 export function noticeTone(text: string): NoticeTone {
   if (/失败|错误|无效|无法|不存在|请先|剪贴板中没有|不能为空/i.test(text)) return "error";
   if (/已复制|已保存|已安装|已卸载|已切换|已生效|成功|已发送|已提供|已开启|已关闭|已更新|已重命名|已创建|已启动/i.test(text)) return "success";
@@ -43,6 +46,7 @@ export function noticeTone(text: string): NoticeTone {
   return "info";
 }
 
+/** 从 `custom:<provider>:<model>` 取出模型名；其它形式原样返回。 */
 export function modelName(value: string) {
   return value.startsWith("custom:") ? value.split(":").slice(2).join(":") : value;
 }
@@ -52,11 +56,13 @@ function botChannelName(channel: string) {
   return channel === "wechat" ? "微信" : channel === "feishu" ? "飞书" : channel === "telegram" ? "Telegram" : channel === "dingtalk" ? "钉钉" : channel === "wecom-webhook" ? "企微推送" : channel === "qq" ? "QQ 机器人" : "";
 }
 
+/** 机器人是否在线：按通道状态表查（通道为空一律 false）。 */
 export function botOnlineOf(bot: { channel: string; enabled: boolean }, channelOnline: Record<string, boolean | undefined>) {
   if (!bot.channel) return false;
   return Boolean(channelOnline[CHANNEL_STATUS_KEY[bot.channel] ?? bot.channel]);
 }
 
+/** 毫秒格式化成本地化时长（毫秒 / 秒 / 分秒 / 时分）；非法值返回空串。 */
 export function localFormatDurationMs(milliseconds: number) {
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return "";
   if (milliseconds < 1000) return `${Math.max(1, Math.round(milliseconds))} 毫秒`;
@@ -68,10 +74,12 @@ export function localFormatDurationMs(milliseconds: number) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
 }
 
+/** 判断是否「活动类」item（不是用户消息、不是回复、不是思考）。 */
 export function isActivityItem(item: ThreadItem) {
   return item.type !== "userMessage" && item.type !== "agentMessage" && item.type !== "reasoning";
 }
 
+/** 秒级时间戳 → 本地 `HH:mm`；非法值返回空串。 */
 export function formatTimestamp(value: unknown) {
   const timestamp = typeof value === "number" ? value : Number(value);
   return Number.isFinite(timestamp) ? new Date(timestamp * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -88,6 +96,7 @@ function timeAgo(timestamp: number) {
   return new Date(timestamp * 1000).toLocaleDateString("zh-CN", { month: "short", day: "numeric" });
 }
 
+/** 相对时间文案：刚刚 / N 分钟前 / N 小时前。 */
 export function ago(ts: number) {
   const seconds = Math.max(0, Math.floor(Date.now() / 1000 - ts / 1000));
   if (seconds < 60) return "刚刚";
@@ -95,6 +104,7 @@ export function ago(ts: number) {
   return `${Math.floor(seconds / 3600)} 小时前`;
 }
 
+/** 模型列表去重后计数（按 id）。 */
 export function uniqueModelCount(models: { id: string }[] | undefined) {
   if (!models?.length) return 0;
   const seen = new Set<string>();
@@ -102,12 +112,14 @@ export function uniqueModelCount(models: { id: string }[] | undefined) {
   return seen.size;
 }
 
+/** 解析 RRULE 里的数字参数并钳进 [min, max]；解析不出来用 fallback。 */
 export function clampRruleNum(value: string | undefined, min: number, max: number, fallback: number) {
   const parsed = Number.parseInt(value || "", 10);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, parsed));
 }
 
+/** 把 RRULE 串翻成人话（每天/每周几/每月几号 + 时间）。 */
 export function describeRrule(rrule: string) {
   const map = new Map<string, string>();
   for (const pair of (rrule || "").split(";")) {
@@ -132,6 +144,7 @@ export function describeRrule(rrule: string) {
   return freq.toLowerCase();
 }
 
+/** 把一条定时任务翻成人话（优先用 rrule；一次性任务直接给时间）。 */
 export function describeSchedule(task: { kind?: string; timeOfDay?: string; weekdays?: number[]; intervalMinutes: number; rrule?: string; scheduleType?: string; scheduledAt?: string; monthDay?: number; month?: number }) {
   if (task.rrule) return describeRrule(task.rrule);
   if (task.scheduleType === "once" || task.kind === "once") {
@@ -214,6 +227,7 @@ function pluginDisplayName(plugin: any): string {
   return String(plugin?.interface?.displayName || plugin?.name || plugin?.id || "未命名插件");
 }
 
+/** 取插件描述：短描述 → 长描述 → 普通 description 依次兜底，都没有给一句占位。 */
 export function pluginDescription(plugin: any): string {
   return String(plugin?.interface?.shortDescription || plugin?.interface?.longDescription || plugin?.description || "这个插件没有提供描述。");
 }

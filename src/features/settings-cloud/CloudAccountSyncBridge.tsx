@@ -23,6 +23,7 @@ type CloudBridgeApi = {
 
 const REFRESH_MS = 10 * 60_000;
 
+/** 云账号同步桥：定时把账号状态同步给主进程（节流，避免每次渲染都打）。 */
 export function CloudAccountSyncBridge() {
   useEffect(() => {
     const api = window.codex as unknown as CloudBridgeApi;

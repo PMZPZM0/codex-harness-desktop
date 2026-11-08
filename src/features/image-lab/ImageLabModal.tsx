@@ -30,6 +30,7 @@ type LabState = {
 /** close 之后停留多久再卸载（让用户看清最后一帧）。 */
 const LINGER_MS = 900;
 
+/** 图像工坊浮层桥：接主进程的开/关指令，把生成或编辑结果挂成可预览的 URL。 */
 export function ImageLabBridge() {
   const [state, setState] = useState<LabState | null>(null);
   const [urls, setUrls] = useState<string[]>([]);

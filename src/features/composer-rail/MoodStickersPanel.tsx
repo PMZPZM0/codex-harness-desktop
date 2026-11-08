@@ -65,6 +65,7 @@ const STICKERS: Sticker[] = [
   { emoji: "🗂️", label: "归档", gloss: "这条先归档，不做了", group: "中性" },
 ];
 
+/** 心情贴纸面板：点一下只插 emoji（含义靠悬停提示与引擎侧图例）。 */
 export function MoodStickersPanel({ onInsert, onDone }: { onInsert: (text: string) => void; onDone?: () => void }) {
   const groups: Sticker["group"][] = ["正向", "负向", "中性"];
 

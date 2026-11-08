@@ -21,6 +21,7 @@ import { usageBucket } from "../../lib/usage-bucket";
 import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 
+/** 连接状态点：ready 已连接 / error 连接失败 / 其它表示启动中。 */
 export function StatusDot({ status }: { status: string }) {
   return <span className={`status-dot ${status}`} title={status === "ready" ? "Codex 已连接" : status === "error" ? "Codex 连接失败" : "Codex 正在启动"} />;
 }
@@ -43,6 +44,7 @@ function segments(full: string): { name: string; dir: string } {
   return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
 }
 
+/** 本回合改动汇总卡：按文件列改动，可看差异、可打开文件。 */
 export function CompletedChanges({ turn, onOpenFile, isLastTurn }: { turn: Turn; onOpenFile?: (path: string) => void; isLastTurn?: boolean }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; name: string } | null>(null);
@@ -318,6 +320,7 @@ function LiveFileFloat({ file, anchorRef, onClose }: { file: LiveFileChange; anc
   );
 }
 
+/** 实时文件改动行：运行中滚动显示正在改的文件，`process` 模式下才展示。 */
 export function LiveFileRows({ files }: { files: LiveFileChange[] }) {
   const runProcessMode = useRunProcessMode();
   const [tick, setTick] = useState(0);
@@ -376,6 +379,7 @@ export function LiveFileRows({ files }: { files: LiveFileChange[] }) {
   );
 }
 
+/** 运行计时：每秒刷新一次，显示本轮已跑多久。 */
 export function RunningProcessTime({ turnId }: { turnId: string }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -388,6 +392,7 @@ export function RunningProcessTime({ turnId }: { turnId: string }) {
   return <div className="running-process-time">正在处理 {minutes > 0 ? `${minutes} 分 ${seconds} 秒` : `${seconds} 秒`}</div>;
 }
 
+/** 上下文环：⛔ 分子只认「本轮 last」（当前上下文规模），`total` 是累计计费量，用了会显示成永远快满。 */
 export function ContextRing({ tokenUsage, fallbackWindow }: { tokenUsage?: any; fallbackWindow?: number }) {
   const contextWindow = tokenUsage?.modelContextWindow ?? tokenUsage?.model_context_window ?? fallbackWindow;
   // ⛔ 分子只用「本轮 last」= **当前上下文规模**。`total` 是会话**累计计费量**（多轮累加，
@@ -414,6 +419,7 @@ function usageCacheRate(usage: any): number | null {
 
 export type UsageCounterSnapshot = { input: number; cached: number; output: number; total: number };
 
+/** 上下文用量徽标：点开看明细与最近一次压缩，可手动压缩。 */
 export function ContextUsageBadge({ tokenUsage, fallbackWindow, recentCompaction, onCompact }: { tokenUsage?: any; fallbackWindow?: number; recentCompaction?: boolean; onCompact?: () => void }) {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);

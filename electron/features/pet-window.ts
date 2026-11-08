@@ -36,6 +36,7 @@ let moveTimer: NodeJS.Timeout | null = null;
  *  ⛔ 用回调而不是让本模块 import pet-ipc：那会形成 pet-ipc ↔ pet-window 的运行时循环。 */
 let onMoved: ((pos: { x: number; y: number }) => void) | null = null;
 
+/** 登记「宠物被拖动后」的回调（把新坐标交给宿主持久化；null 解绑）。 */
 export function setPetMoveHandler(fn: ((pos: { x: number; y: number }) => void) | null) {
   onMoved = fn;
 }
@@ -159,6 +160,7 @@ function defaultPosition(width: number, height: number) {
   return { x: area.x + area.width - width - EDGE, y: area.y + area.height - height - EDGE };
 }
 
+/** 宠物窗是否已创建且没被销毁。 */
 export function isPetWindowOpen(): boolean {
   return Boolean(petWindow && !petWindow.isDestroyed());
 }
@@ -174,6 +176,7 @@ export function isPetVisible(): boolean {
   try { return petWindow!.isVisible(); } catch { return false; }
 }
 
+/** 宠物窗的当前位置与尺寸；窗没开返回 null。 */
 export function petWindowBounds() {
   if (!isPetWindowOpen()) return null;
   return petWindow!.getBounds();
@@ -244,10 +247,12 @@ function activityWindowSize(signal: PetSignal) {
   };
 }
 
+/** 宠物活动面板窗是否已创建且没被销毁。 */
 export function isPetActivityWindowOpen(): boolean {
   return Boolean(activityWindow && !activityWindow.isDestroyed());
 }
 
+/** 宠物活动面板窗的位置与尺寸；没开返回 null。 */
 export function petActivityWindowBounds() {
   if (!isPetActivityWindowOpen()) return null;
   return activityWindow!.getBounds();
@@ -377,11 +382,13 @@ export function syncPetActivityWindow(signal: PetSignal) {
   sendActivitySignal(signal);
 }
 
+/** 隐藏宠物活动面板窗（不销毁，下次直接 show）。 */
 export function hidePetActivityWindow() {
   if (!isPetActivityWindowOpen()) return;
   try { activityWindow!.hide(); } catch { /* 忽略 */ }
 }
 
+/** 销毁宠物活动面板窗并清引用。 */
 export function closePetActivityWindow() {
   if (!isPetActivityWindowOpen()) return;
   try { activityWindow!.destroy(); } catch { /* 忽略 */ }
@@ -404,6 +411,7 @@ export function startPetDrag(screenX: number, screenY: number): boolean {
   } catch { return false; }
 }
 
+/** 按屏幕坐标移动宠物窗（拖拽中调用）；没有拖拽起点或坐标非法就返回 false。 */
 export function movePet(screenX: number, screenY: number): boolean {
   if (!petDragOrigin || !isPetWindowOpen() || !Number.isFinite(screenX) || !Number.isFinite(screenY)) return false;
   const win = petWindow!;
@@ -422,6 +430,7 @@ export function movePet(screenX: number, screenY: number): boolean {
   } catch { return false; }
 }
 
+/** 结束拖拽：清拖拽态、把窗口夹回工作区内并回调新位置。 */
 export function endPetDrag(): boolean {
   petDragOrigin = null;
   petDragging = false;
@@ -565,6 +574,7 @@ export function showPetWindow(settings: PetSettings) {
   return win;
 }
 
+/** 隐藏宠物窗：顺带收起活动面板、停掉鼠标轮询并恢复点击穿透（否则下次出现会挡住桌面）。 */
 export function hidePetWindow() {
   if (!isPetWindowOpen()) return;
   try { petWindow!.hide(); } catch { /* 忽略 */ }
@@ -576,6 +586,7 @@ export function hidePetWindow() {
   applyPetMouseState();
 }
 
+/** 关闭并销毁宠物窗：清拖拽态、收活动窗、停轮询、重置穿透记录。 */
 export function closePetWindow() {
   petDragOrigin = null;
   petDragging = false;

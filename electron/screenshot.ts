@@ -59,6 +59,7 @@ function settingsFile(userData: string): string {
   return path.join(userData, "screenshot-settings.json");
 }
 
+/** 归一化截图设置：⛔ 只有显式 false 才算关，缺字段一律用默认（老档案升级不会把开关全关掉）。 */
 export function normalizeScreenshotSettings(raw: any): ScreenshotSettings {
   const d = DEFAULT_SCREENSHOT_SETTINGS;
   const readToggle = (key: ShotMode): ShotHotkey => {
@@ -77,6 +78,7 @@ export function normalizeScreenshotSettings(raw: any): ScreenshotSettings {
   };
 }
 
+/** 读截图设置；文件不存在用默认，其它读失败只记日志不抛（截图功能不能因设置读坏而不可用）。 */
 export async function readScreenshotSettings(userData: string): Promise<ScreenshotSettings> {
   try {
     return normalizeScreenshotSettings(JSON.parse(await fs.readFile(settingsFile(userData), "utf8")));
@@ -86,6 +88,7 @@ export async function readScreenshotSettings(userData: string): Promise<Screensh
   }
 }
 
+/** 局部更新截图设置并以临时文件 + rename 原子写入。 */
 export async function writeScreenshotSettings(userData: string, patch: Partial<ScreenshotSettings>): Promise<ScreenshotSettings> {
   const current = await readScreenshotSettings(userData);
   const next = normalizeScreenshotSettings({ ...current, ...patch });
@@ -254,6 +257,7 @@ export type HotkeyRegistry = {
   reset: () => void;
 };
 
+/** 截图热键注册表：⛔ 新键注册成功后才注销旧键（先注销会让新键被占用时两头空），并记录失败原因。 */
 export function createHotkeyRegistry(globalShortcut: { register: (a: string, cb: () => void) => boolean; unregister: (a: string) => void }): HotkeyRegistry {
   const registered: Record<ShotMode, string> = { full: "", region: "" };
   return {

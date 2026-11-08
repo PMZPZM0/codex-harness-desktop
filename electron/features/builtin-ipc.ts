@@ -73,6 +73,7 @@ async function persistGeneratedImage(url: string, dirOverride?: string): Promise
   }
 }
 
+/** 调上游生图接口（兼容 base 已带 `/images/generations` 与只有 `/v1` 两种写法），返回图片字节。 */
 export async function generateImageWith(input: { baseUrl: string; apiKey: string; model: string; prompt: string; size?: string; negative?: string; outputDir?: string }) {
   const base = input.baseUrl.trim().replace(/\/$/, "");
   // 兼容 /images/generations（OpenAI 兼容）与 /v1/images/generations

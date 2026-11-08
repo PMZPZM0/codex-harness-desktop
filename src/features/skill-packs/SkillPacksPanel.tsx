@@ -30,6 +30,7 @@ type SkillPackRow = {
 
 type Result = { tone: "ok" | "warn" | "error"; text: string };
 
+/** 技能包面板：列出技能包与安装状态，可安装/更新（带阶段进度）。 */
 export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, detail?: string) => void }) {
   const [rows, setRows] = useState<SkillPackRow[] | null>(null);
   const [error, setError] = useState("");

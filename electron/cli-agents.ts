@@ -559,6 +559,7 @@ export async function detectCliAgent(input: { id?: string; bin?: string }): Prom
      下一次拉目录必然重检 —— 这是"实时同步"的另一半（轮询只兜"别处装的"那种场景）。 */
 let installedCache: { at: number; key: string; flags: Record<string, boolean> } | null = null;
 
+/** 清掉「哪些 CLI 已安装」的探测缓存（装/卸之后调，否则界面还是旧状态）。 */
 export function invalidateCliInstalledCache(): void {
   installedCache = null;
 }

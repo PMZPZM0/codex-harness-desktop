@@ -9,6 +9,7 @@ import { usePart04b2 } from "./02-seg/02-chat-search-history";
 import type { Bag } from "../bag-types";
 
 
+/** bag 分片 04b：合并 Hook 事件（b1）与搜索/历史（b2）。 */
 export function usePart04b(bag: Bag) {
   const a = usePart04b1(bag);
   const b = usePart04b2(bag);

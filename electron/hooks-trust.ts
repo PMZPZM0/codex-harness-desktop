@@ -11,6 +11,7 @@ import { server } from "./runtime-refs";
 
 export type HookTrustResult = { total: number; trusted: number; alreadyTrusted: number; failures: string[] };
 
+/** 把未受信的 hook 一次性标记为信任（走引擎 hooks/list 查真实清单，⛔ 不按本地猜测）。 */
 export async function trustUntrustedHooks(codexHome: string, cwds: string[] = []): Promise<HookTrustResult> {
   const result: any = await server.request("hooks/list", { cwds });
   const hooks = (result?.data ?? []).flatMap((entry: any) => entry.hooks ?? []);

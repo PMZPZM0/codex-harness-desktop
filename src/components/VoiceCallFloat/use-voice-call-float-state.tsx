@@ -23,6 +23,7 @@ const HINT_IGNORE_LIMIT = 3;
 const HINT_MUTE_KEY = "voice-ball-hint-muted-date";
 const todayKey = () => new Date().toISOString().slice(0, 10);
 
+/** 通话浮窗的状态机：阶段（idle/listening/thinking/speaking）、电平、展开态；电平走 ref + CSS 变量，⛔ 不进 state（每帧 setState 会打断音频链路）。 */
 export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { threadId?: string; taskMood?: TaskMood }) {
   const [phase, setPhase] = useState<VoicePhase>("idle");
   const [state, setState] = useState<VoiceState>("listening");

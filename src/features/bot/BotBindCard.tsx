@@ -2,6 +2,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Bot, QrCode, RefreshCw } from "lucide-react";
 
+/** 机器人绑定卡：扫码/配对码绑定，按渠道给不同输入（微信状态、TG token、企业微信 webhook）。 */
 export function BotBindCard({ bot, onBound }: { bot: { id: string; name: string; channel: string }; onBound: (deviceName: string) => void }) {
   const [phase, setPhase] = useState<"idle" | "waiting" | "bound" | "expired">("idle");
   const [qr, setQr] = useState("");

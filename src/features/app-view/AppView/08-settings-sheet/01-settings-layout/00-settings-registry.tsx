@@ -28,6 +28,7 @@ import { teamPages } from "./pages/team";
 
 export type { SettingsPageEntry } from "./types";
 
+/** 设置页注册表：把各分组的页拼成一张 `页面 id → 页定义` 表（一行一页，守卫【101】）。 */
 export function settingsPagesOf(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   return {
     ...accountModelPages(app),

@@ -17,6 +17,7 @@ const RelayCenterPage = lazy(() => import("../../../../../relay").then((m) => ({
 const CloudAccountSection = lazy(() => import("../../../../../settings-cloud/CloudAccountSection").then((m) => ({ default: m.CloudAccountSection })));
 const OpenaiSubscriptionPage = lazy(() => import("../../../../../openai").then((m) => ({ default: m.OpenaiSubscriptionPage })));
 
+/** 设置页分组：账号与模型（供应商、官方登录、个性化）。 */
 export function accountModelPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     activateOfficialProvider,

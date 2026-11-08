@@ -49,6 +49,7 @@ async function gunzip(buf: ArrayBuffer): Promise<string> {
   return new Response(stream).text();
 }
 
+/** 按类目加载打包好的组件库数据（首次解析后按类目缓存 Promise，⛔ 重复进页面不重复解析）。 */
 export function loadCategory(cat: string): Promise<{ items: { id: string; author: string; name: string; html: string }[]; error?: string }> {
   const hit = cache.get(cat);
   if (hit) return hit;

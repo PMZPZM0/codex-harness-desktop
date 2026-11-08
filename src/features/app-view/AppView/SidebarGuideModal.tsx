@@ -158,6 +158,7 @@ const GUIDES: Record<SidebarGuideKey, Guide> = {
   },
 };
 
+/** 侧栏引导弹窗：按 guideKey 展示对应引导、可跳转或复制命令。 */
 export function SidebarGuideModal({ guideKey, onNavigate, onClose }: { guideKey: SidebarGuideKey; onNavigate: (target: SidebarGuideTarget) => void; onClose: () => void }) {
   const guide = GUIDES[guideKey];
   const Icon = guide.icon;

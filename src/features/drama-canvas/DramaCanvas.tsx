@@ -149,6 +149,7 @@ function detectFlowType(nodes: Array<{ data?: any; kind?: string }>): "drama" | 
   return "image";
 }
 
+/** AI 画布主组件：节点/连线编辑、视口取景、面板与浮层宿主。 */
 export function DramaCanvas({ onClose, workspace, onAskAgent, onSummonTeam, threads, initialBoard, onOpenPluginSettings }: DramaCanvasProps) {
   const shellRef = useRef<HTMLElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);

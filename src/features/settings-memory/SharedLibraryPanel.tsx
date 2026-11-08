@@ -24,6 +24,7 @@ const SHELVES: { title: string; hint: string; ids: string[] }[] = [
   { title: "工作纪律", hint: "注入时排最前 · 用户纠错单独一类", ids: ["L2"] },
 ];
 
+/** 项目共享记忆库：切项目看常驻记忆与条目。 */
 export function SharedLibraryPanel({ workspace, projects, onOpenCenter }: {
   workspace: string;
   projects: string[];

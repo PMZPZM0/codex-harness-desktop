@@ -10,6 +10,7 @@ import { readCustomModel } from "../main/01-model-catalog";
 import { cliCodexHome, cliCodexHomeReady, cliModelEnv, cliProcessEnv } from "../cli-agents";
 import { isLocalBaseUrl } from "../../src/lib/cli-provider-config.mjs";
 
+/** CLI 成员进程的环境变量：用应用自己的 CODEX_HOME（不碰用户 ~/.codex）；配置没就绪就不设，避免顶掉用户登录态。 */
 export async function cliMemberEnv(input: { bossModel?: string; memberModel?: string }): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = { ...cliProcessEnv() };
   /* ⛔ Codex CLI 用应用自己的独立 home（供应商同步写入的 provider），不碰用户 ~/.codex；

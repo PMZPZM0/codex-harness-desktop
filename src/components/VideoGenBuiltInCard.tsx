@@ -35,6 +35,7 @@ const OPTIONAL_META: Record<string, { label: string; hint: string }> = {
   model: { label: "模型（可选）", hint: "覆盖内置模型；留空用默认模型。" },
 };
 
+/** 内置视频生成卡片：列供应商、填凭据、保存（配置走主进程，不在渲染层落明文）。 */
 export function VideoGenBuiltInCard() {
   const [open, setOpen] = useState(false);
   const [providers, setProviders] = useState<Array<any>>([]);

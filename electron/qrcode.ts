@@ -43,6 +43,7 @@ function rsEncode(data: number[], ecLen: number): number[] {
   return res;
 }
 
+/** 生成二维码 SVG（按字节数选最小版本）；文本过长直接报错（⛔ 不生成扫不出来的码）。 */
 export function qrSvg(text: string, size = 220): string {
   const bytes = Buffer.from(text, "utf8");
   let version = 1;

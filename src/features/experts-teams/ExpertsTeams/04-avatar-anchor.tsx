@@ -3,6 +3,7 @@
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
 import { useState, useEffect, useRef, useLayoutEffect } from "react";
+/** 算某个成员头像在时间线里的纵向位置（浮层用它对齐锚点）。 */
 export function useAvatarAnchor(memberId: string): number | null {
   const [top, setTop] = useState<number | null>(null);
   useLayoutEffect(() => {

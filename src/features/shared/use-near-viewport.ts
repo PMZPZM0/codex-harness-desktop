@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { getHighlightObserver, highlightObserveCallbacks } from "../../lib/highlight-observer";
 
+/** 判断元素是否接近视口（延迟渲染/延迟高亮用，`enabled` 为 false 时恒 true）。 */
 export function useNearViewport(ref: React.RefObject<HTMLElement | null>, enabled: boolean): boolean {
   const [near, setNear] = useState(!enabled);
   useEffect(() => {

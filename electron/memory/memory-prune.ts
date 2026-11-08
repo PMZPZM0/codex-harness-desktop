@@ -25,6 +25,7 @@ export const MEMORY_CATEGORY_WEIGHT: Record<string, number> = { "用户纠错": 
 /** 任何自动淘汰都不许碰的分类（与 pinned 同级的保护；用户纠错一旦丢了就等着再犯同一个错） */
 export const NEVER_PRUNE_CATEGORIES: readonly string[] = ["用户纠错"];
 
+/** 该记忆条目是否受保护不被清理（置顶，或属于永不清理的分类）。 */
 export function isProtected(entry: PrunableRecord): boolean {
   return Boolean(entry.pinned) || NEVER_PRUNE_CATEGORIES.includes(entry.category);
 }

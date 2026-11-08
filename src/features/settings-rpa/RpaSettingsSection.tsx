@@ -10,6 +10,7 @@ import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 export type RpaSettingsSectionProps = { rpaRecipes: any; rpaRunning: any; thread: any; setNotice: any; setRpaRunning: any; selectedModel: any; modelName: any; modelId: any; sandboxPolicy: any; sandbox: any; workspace: any; openAppConfirm: any; setRpaRecipes: any; taskList: any; setTaskList: any };
 
+/** RPA 设置：配方列表、运行态与任务队列。 */
 export function RpaSettingsSection(props: RpaSettingsSectionProps) {
   const { rpaRecipes, rpaRunning, thread, setNotice, setRpaRunning, selectedModel, modelName, modelId, sandboxPolicy, sandbox, workspace, openAppConfirm, setRpaRecipes, taskList, setTaskList } = props;
   return (

@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 export const ACTION_FEEDBACK_MS = 1100;
 const DONE_MS = ACTION_FEEDBACK_MS;
 
+/** 反馈图标按钮：点一下换成完成态图标并给文案（一次性动作，不重复触发）。 */
 export function FeedbackIconButton({ className, title, doneTitle, icon, doneIcon, label, doneLabel, onFire }: {
   className?: string;
   title: string;

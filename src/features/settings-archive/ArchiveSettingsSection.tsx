@@ -7,6 +7,7 @@
 
 export type ArchiveSettingsSectionProps = { ArchivePage: any; setNotice: any; setSettingsOpen: any; openThread: any; openAppConfirm: any; refreshThreads: any };
 
+/** 归档管理页：列已归档会话，可恢复或打开（先关设置再开会话）。 */
 export function ArchiveSettingsSection(props: ArchiveSettingsSectionProps) {
   const { ArchivePage, setNotice, setSettingsOpen, openThread, openAppConfirm, refreshThreads } = props;
   return (

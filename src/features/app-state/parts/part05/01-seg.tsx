@@ -40,6 +40,7 @@ import { handleEventRouter7 } from "./event-router/07-turn-completed-settle";
 import { handleEventRouter8 } from "./event-router/08-error";
 import { handleEventRouter9 } from "./event-router/09-thread-settings-updated";
 
+/** bag 分片 05a：插件启停与卸载。⛔ 本地已装但引擎没认领的插件走本地卸载（引擎侧会报 unknown plugin）。 */
 export function usePart05a(bag: Bag) {
   async function changePlugin(plugin: any) {
     const key = String(plugin.name ?? plugin.id ?? "");

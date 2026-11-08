@@ -193,6 +193,7 @@ function deliverAutoContinue(bag: Bag, threadId: string, prompt: string, opts: {
   }, opts.delayMs);
 }
 
+/** bag 分片 04c2：排队消息的定时发送（定时器在主进程，渲染层只记 runAt 徽标）。 */
 export function usePart04c2(bag: Bag) {
   /* ── 排队消息定时发送（09-28） ─────────────────────────────────────────────
    * queueTimers：`{[threadId]: {[queuedSubmissionId]: runAt 毫秒}}`。UI 徽标与持久化都认它。

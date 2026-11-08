@@ -266,6 +266,7 @@ function DepthField({ reduced }: { reduced: boolean }) {
   return <canvas ref={ref} className="wallpaper-depth" aria-hidden />;
 }
 
+/** 壁纸层：按配置渲染背景并订阅变化（在壳根、位于内容之后）。 */
 export function WallpaperLayer() {
   const [cfg, setCfg] = useState<WallpaperConfig>(() => readWallpaper());
   useEffect(() => subscribeWallpaper(setCfg as (c: ReturnType<typeof readWallpaper>) => void), []);

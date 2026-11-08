@@ -52,6 +52,7 @@ const DramaActionsContext = createContext<DramaActions | null>(null);
 
 export const DramaActionsProvider = DramaActionsContext.Provider;
 
+/** 取画布的动作上下文；⛔ 必须在 `DramaActionsProvider` 内使用（外面用直接抛错，别静默返回空）。 */
 export function useDramaActions(): DramaActions {
   const value = useContext(DramaActionsContext);
   if (!value) throw new Error("useDramaActions 必须在 DramaActionsProvider 内使用");

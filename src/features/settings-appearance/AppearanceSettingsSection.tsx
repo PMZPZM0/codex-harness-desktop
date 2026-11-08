@@ -20,6 +20,7 @@ import { SettingsPageHero } from "../../components/SettingsPageHero";
 
 export type AppearanceSettingsSectionProps = { theme: any; setTheme: any; uiFont: any; setUiFont: any; onNotice?: (text: string) => void };
 
+/** 外观设置：主题、界面字体、思考展示模式、运行过程模式与对话流模式。 */
 export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps) {
   const { theme, setTheme, uiFont, setUiFont, onNotice } = props;
   const reasoningDisplay = useReasoningDisplayMode();

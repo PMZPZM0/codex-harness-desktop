@@ -32,6 +32,7 @@ function clock(ms: number): string {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 群面板：群列表、任务快照、成员与输入区（状态走 boss-panel store）。 */
 export function BossGroupPanel({ threadId = "" }: { threadId?: string }) {
   const panel = useSyncExternalStore(subscribeBossPanel, getBossPanelState) as BossPanelState;
   const [groups, setGroups] = useState<GroupSummary[]>([]);

@@ -63,6 +63,7 @@ function groupByTeam(experts: PoolExpert[]) {
   return [...map.values()];
 }
 
+/** 群成员选择器：按专家团分组列候选（团队列表变化时自动回落到有效团）。 */
 export function BossGroupMemberPicker({ experts, cliAgents, inGroupNames, busy, onPick, onClose }: Props) {
   const teams = useMemo(() => groupByTeam(experts), [experts]);
   const [teamId, setTeamId] = useState<string>(teams[0]?.teamId ?? "");

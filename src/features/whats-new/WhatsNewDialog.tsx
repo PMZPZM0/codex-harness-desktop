@@ -34,6 +34,7 @@ type WhatsNewState = {
 /** 启动后等一拍再弹：主进程此刻还在起窗口/引擎，弹窗跟启动动画抢同一帧会看着"闪"一下。 */
 const SHOW_DELAY_MS = 900;
 
+/** 「更新内容」弹窗：有未读版本说明时自动弹出一次，读过后不再打扰。 */
 export function WhatsNewDialog() {
   const [state, setState] = useState<WhatsNewState | null>(null);
   const [open, setOpen] = useState(false);

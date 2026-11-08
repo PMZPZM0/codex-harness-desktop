@@ -22,6 +22,7 @@ function displayPassword(password: string, kind: "random" | "custom"): string {
   return kind === "random" ? password.replace(/(.{4})/g, "$1 ").trim() : password;
 }
 
+/** 应用锁设置：生成/自设密码、开启与关闭（关闭需验密）。 */
 export function AppLockSettingsSection({ onNotice }: { onNotice?: (text: string) => void }) {
   const [status, setStatus] = useState<LockStatus | null>(null);
   const [loadError, setLoadError] = useState("");

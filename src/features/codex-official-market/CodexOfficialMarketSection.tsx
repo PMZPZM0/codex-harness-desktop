@@ -35,6 +35,7 @@ type Category = { key: string; displayName: string; count: number };
 const STAGE_POSITIONS: Record<string, number> = { resolve: 1, download: 2, install: 3, register: 4, engine: 5, verify: 6, complete: 7, pending: 7 };
 const PAGE_SIZE = 18;
 
+/** Codex 官方插件市场板块：分类/搜索/分页/一键安装与进度（数据来自主进程）。 */
 export function CodexOfficialMarketSection({ onResourcesChanged, refreshSlot, tabsSlot }: Props) {
   const [categories, setCategories] = useState<Category[]>([]);
   const [category, setCategory] = useState("全部");

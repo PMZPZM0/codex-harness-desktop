@@ -17,6 +17,7 @@ import { useShortcuts } from "../../../../shortcuts";
 import { bindingMatches } from "../../../../../lib/shortcut-catalog.mjs";
 import { useEscapeLayer } from "../../../../../hooks/useEscapeLayer";
 
+/** bag 分片 04c1：搜索结果的消息高亮打标；命中项在渲染窗口外时跳过，挂载后补标。 */
 export function usePart04c1(bag: Bag) {
   // 搜索结果消息高亮打标（DOM 级，随结果/当前项变化重打）
   // ⛔ 懒加载：命中的回合若还在渲染窗口之外（更早、未挂载的页），下面 locateMatchEl 拿不到元素

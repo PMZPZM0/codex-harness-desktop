@@ -36,6 +36,7 @@ function splitPath(path: string): { name: string; dir: string } {
   return { name: cut >= 0 ? norm.slice(cut + 1) : norm, dir: cut >= 0 ? norm.slice(0, cut) : "" };
 }
 
+/** 文件引用卡：显示文件名/路径，点开预览、切编辑器、右键菜单；`added` 表示刚生成。 */
 export function FileRefCard({
   path,
   leading,

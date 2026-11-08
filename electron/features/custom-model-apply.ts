@@ -30,6 +30,7 @@ import { writeMcpOverrides } from "../main/06-mcp-overrides";
 import { codexHome, server, upsertCustomModel } from "../runtime-refs";
 import { bridgeDial } from "../main";
 import { resolveLiveProxy } from "./openai-auth";
+/** 把供应商档案写成引擎配置：算自动压缩阈值、拼 model_provider 段并落 config.toml；`restart:false` 时不打断在跑的回合。 */
 export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?: boolean }) {
   const connectors = await readConnectors();
   const mcpOverrides = await readMcpOverrides();

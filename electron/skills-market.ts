@@ -117,6 +117,7 @@ export function skillFolderSlug(value: string) {
 function psLiteral(value: string) { return value.replaceAll("'", "''"); }
 function psEncoded(command: string) { return Buffer.from(command, "utf16le").toString("base64"); }
 
+/** CocoLoop 技能市场列表：分类（不认识的回 overall）+ 分页 + 关键词过滤。 */
 export async function listCocoLoopSkills(input: { category?: string; page?: number; pageSize?: number; query?: string }) {
   const category = (Object.prototype.hasOwnProperty.call(categories, input.category ?? "") ? input.category : "overall") as MarketCategory;
   const preset = categories[category];
@@ -225,6 +226,7 @@ export function auditSkill(content: string, files: string[]) {
   return findings;
 }
 
+/** 解压技能包：三级降级 —— 随包 7-Zip → 系统自带 tar（Win10+ 的 bsdtar，快一个量级）→ 系统解压命令兜底。 */
 export async function expandZip(zipPath: string, outputDir: string) {
   /* ⛔ 11-03 用户「安装好慢」：Windows 上原来只用 PowerShell `Expand-Archive`，
      几十 MB / 上千文件要几十秒。改为与安装脚本同一套三级降级：
@@ -329,6 +331,7 @@ export async function resolveMarketSkill(input: { marketId: string; name: string
   } catch { return null; }
 }
 
+/** 安装一个市场技能：下载 → 解压 → 落技能目录，全程回调进度阶段。 */
 export async function installCocoLoopSkill(input: { skill: MarketSkill; destinationRoot: string; onProgress?: (progress: InstallProgress) => void }) {
   const skill = input.skill;
   const progress = (stage: InstallProgress["stage"], message: string) => input.onProgress?.({ stage, message });

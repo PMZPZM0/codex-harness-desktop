@@ -24,6 +24,7 @@ import type { CSSProperties, RefObject } from "react";
 
 export type AnchorPlacement = "bottom-right" | "bottom-left" | "bottom-center";
 
+/** 算浮层相对锚点的位置与尺寸（初始放视口外，避免没量到坐标前闪一下再跳位）。 */
 export function useAnchoredPopover(
   open: boolean,
   anchorRef: RefObject<HTMLElement | null>,

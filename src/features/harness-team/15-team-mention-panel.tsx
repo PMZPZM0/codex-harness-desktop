@@ -34,6 +34,7 @@ type Props = {
   autoFocus?: boolean;
 };
 
+/** @ 候选面板：贴输入框弹出，可按关键词过滤并键盘选择。 */
 export function TeamMentionPanel({
   anchorRef, sections, selected, query, onQuery, onPick, onClear, onClose, autoFocus = false,
 }: Props) {

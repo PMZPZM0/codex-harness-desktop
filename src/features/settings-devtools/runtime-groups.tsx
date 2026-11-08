@@ -75,6 +75,7 @@ export function isRemovable(runtime: RuntimeRow): boolean {
     && runtime.kind !== "guide" && runtime.installed && !runtime.installedBySystem;
 }
 
+/** 运行时是否已就绪（已安装 / 系统已有 / 内置都算）。 */
 export function isReady(runtime: RuntimeRow): boolean {
   return Boolean(runtime.installed || runtime.installedBySystem || runtime.builtIn);
 }
@@ -85,6 +86,7 @@ export function readyLabel(items: RuntimeRow[]): string {
   return `已就绪 ${items.filter(isReady).length} / ${items.length} 项`;
 }
 
+/** 卡片 key（`tools-xxx`）→ 对应的运行时分组；不是工具卡片返回 undefined。 */
 export const groupOfCardKey = (cardKey: string): RuntimeGroup | undefined =>
   cardKey.startsWith("tools-") ? RUNTIME_GROUPS.find((group) => `tools-${group.key}` === cardKey) : undefined;
 

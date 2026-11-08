@@ -94,6 +94,7 @@ export async function ensureEgoBrowserSkill(skillsDir: string): Promise<void> {
   }
 }
 
+/** 把随包的内置技能写进技能目录（缺就补），返回写入了哪些。 */
 export async function ensureBuiltinSkills(skillsDir: string) {
   const entries: [string, string][] = [
     ["desktop-automation", DESKTOP_SKILL],

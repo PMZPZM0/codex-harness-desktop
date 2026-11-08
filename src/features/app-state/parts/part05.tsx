@@ -8,6 +8,7 @@ import { usePart05a } from "./part05/01-seg";
 import { usePart05b } from "./part05/02-seg";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 05：合并插件/独立窗（a、b）与引擎事件路由。 */
 export function usePart05(bag: Bag) {
   const a = usePart05a(bag);
   const b = usePart05b(bag);

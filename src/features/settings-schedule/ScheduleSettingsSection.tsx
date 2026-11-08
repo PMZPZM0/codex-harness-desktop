@@ -11,6 +11,7 @@ import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 export type ScheduleSettingsSectionProps = { setScheduleDraft: any; workspace: any; setAutoFormVisible: any; scheduledTasks: any; toggleSchedule: any; describeSchedule: any; runSchedule: any; editSchedule: any; deleteSchedule: any; keepAwake: any; setKeepAwake: any; idleTemplates: any; cronTemplates: any; setScheduledTasks: any; setNotice: any };
 
+/** 定时任务设置：任务列表、启停、立即执行与草稿编辑，含保持唤醒。 */
 export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
   const { setScheduleDraft, workspace, setAutoFormVisible, scheduledTasks, toggleSchedule, describeSchedule, runSchedule, editSchedule, deleteSchedule, keepAwake, setKeepAwake, idleTemplates, cronTemplates, setScheduledTasks, setNotice } = props;
   return (

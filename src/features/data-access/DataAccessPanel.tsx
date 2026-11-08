@@ -59,6 +59,7 @@ const ROWS: Array<{
   },
 ];
 
+/** 数据访问授权面板：按会话给出收藏/日记/密码本的读/写开关。 */
 export function DataAccessPanel({ threadId, onClose }: { threadId: string; onClose: () => void }) {
   const [grants, setGrants] = useState<Grants>(EMPTY);
   const [busy, setBusy] = useState(false);

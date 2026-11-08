@@ -21,6 +21,7 @@ import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBr
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 import { isInsideTrustedRoots } from "../runtime-refs";
+/** 建主窗口（带**防重入**：已有未销毁的主窗口就复用并聚焦，⛔ 否则 second-instance 链路会造出两个一模一样的主窗）。 */
 export function createWindow() {
   /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
      `second-instance` 可能在 boot 的 `createWindow()` **之前**到达（连点两次图标 / 启动过程中再点一次），
@@ -241,6 +242,7 @@ export function showMainWindow() {
   win.focus();
 }
 
+/** 为某个会话建独立窗口（可缩放、挂后台，主应用关闭时一起关）。 */
 export function createPopoutWindow(threadId: string) {
   const windowIcon = path.join(
     app.getAppPath(),
@@ -319,6 +321,7 @@ export function createPopoutWindow(threadId: string) {
  */
 let teamPopoutWin: BrowserWindow | null = null;
 
+/** 建团队独立窗口；已存在就还原/显示/聚焦，返回是否聚焦成功。 */
 export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
   if (teamPopoutWin && !teamPopoutWin.isDestroyed()) {
     const hit = teamPopoutWin;

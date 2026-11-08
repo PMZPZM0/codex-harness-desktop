@@ -65,6 +65,7 @@ async function writeConnectors(list: ConnectorConfig[]): Promise<void> {
   await fs.writeFile(connectorsFile, JSON.stringify(list, null, 2), "utf8");
 }
 
+/** 读某个云 MCP 连接器的状态（在不在、开没开、有没有 token）。 */
 export async function readCloudMcpConnector(id: string): Promise<CloudMcpState> {
   const list = await readConnectors();
   const row = list.find((entry) => entry?.id === id);

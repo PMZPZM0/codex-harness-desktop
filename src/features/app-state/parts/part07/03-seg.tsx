@@ -26,6 +26,7 @@ let lastWindowSlideAt = 0;
    2 条一页仍保持「按页」，但把单次提交的正文量砍掉一半以上。 */
 const HISTORY_PAGE = 2;
 
+/** bag 分片 07c：增强提示的定时器与去重（卸载时清定时器，避免在已卸载组件上 setState）。 */
 export function usePart07c(bag: Bag) {
   // 卸载时清定时器，避免在已卸载组件上 setState
   useEffect(() => () => { if (bag.enhanceHintTimerRef.current != null) window.clearTimeout(bag.enhanceHintTimerRef.current); }, []);

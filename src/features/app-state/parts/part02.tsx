@@ -9,6 +9,7 @@ import { usePart02c } from "./part02/03-thread-switch-update";
 import { usePart02d } from "./part02/04-runtime-commands-account";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 02：把 02a–02d 合并挂到 bag。 */
 export function usePart02(bag: Bag) {
   const a = usePart02a(bag);
   const b = usePart02b(bag);

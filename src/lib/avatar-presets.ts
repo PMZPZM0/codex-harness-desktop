@@ -68,10 +68,12 @@ export const TEAM_AVATAR_PRESETS: TeamAvatarPreset[] = [
   })),
 ];
 
+/** 按 id 取团队头像预设；没有就返回 undefined，⛔ 回退交给调用方决定。 */
 export function teamAvatarPresetOf(id: string): TeamAvatarPreset | undefined {
   return TEAM_AVATAR_PRESETS.find((preset) => preset.id === id);
 }
 
+/** 把头像文件名拼成可加载的静态资源 URL（走 `BASE_URL`，dev 与打包后都对）。 */
 export function avatarAsset(file: string): string {
   return `${import.meta.env.BASE_URL}avatars/${file}`;
 }

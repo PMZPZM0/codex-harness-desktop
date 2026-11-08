@@ -149,6 +149,7 @@ import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextI
 import { basename } from "../../../../lib/basename";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 09a：输入框的键盘语义 —— Enter 发送、Shift/Ctrl/Cmd+Enter 换行（与快捷键一览一致）。 */
 export function usePart09a(bag: Bag) {
   /** 输入框回车语义（09-23 按 WorkBuddy 口径对齐）：
    *   · `Enter` → 发送；

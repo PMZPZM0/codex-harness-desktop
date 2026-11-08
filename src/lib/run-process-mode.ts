@@ -11,21 +11,25 @@ let mode: RunProcessMode = (() => {
 })();
 const listeners = new Set<() => void>();
 
+/** 读「运行过程展示模式」（detailed = 展开步骤，simple = 只留结论）。 */
 export function getRunProcessMode(): RunProcessMode {
   return mode;
 }
 
+/** 写运行过程模式（非法值归一成 simple）→ 落 localStorage → 通知订阅者。 */
 export function setRunProcessMode(next: RunProcessMode): void {
   mode = next === "detailed" ? "detailed" : "simple";
   try { localStorage.setItem(KEY, mode); } catch { /* 隐私模式忽略 */ }
   for (const listener of listeners) listener();
 }
 
+/** 订阅运行过程模式变化，返回退订函数。 */
 export function subscribeRunProcessMode(listener: () => void): () => void {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
 
+/** React 侧读运行过程模式（`useSyncExternalStore`）。 */
 export function useRunProcessMode(): RunProcessMode {
   return useSyncExternalStore(subscribeRunProcessMode, getRunProcessMode, getRunProcessMode);
 }

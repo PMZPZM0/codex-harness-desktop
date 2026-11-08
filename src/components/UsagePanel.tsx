@@ -149,6 +149,7 @@ function AccountUsageBlock() {
   );
 }
 
+/** 用量面板：今日/累计 token、热力图、最近趋势与峰值，可一键重置统计。 */
 export function UsagePanel({ stats, currentInput, currentOutput, contextWindow, onReset }: Props) {
   const streak = useMemo(() => currentStreak(stats), [stats]);
   const { cells, max } = useMemo(() => buildHeatmap(stats, HEATMAP_WEEKS), [stats]);

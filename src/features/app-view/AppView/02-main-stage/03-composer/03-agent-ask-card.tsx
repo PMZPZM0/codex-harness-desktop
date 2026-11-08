@@ -18,6 +18,7 @@ export type AgentAskPayload = {
   resolve: (answer: string) => void;
 };
 
+/** 询问卡：单选/多选 + 推荐项预选 + 自由输入，确认后把选择回给引擎。 */
 export function AgentAskCard({ ask, onClose }: { ask: AgentAskPayload; onClose: () => void }) {
   const multi = ask.multiple === true;
   // 单选时预选推荐项：老流程「点推荐 = 一步完成」，预选后推荐路径仍是点一次「确认」

@@ -19,6 +19,7 @@ type Props = {
   zipReady: boolean;
 };
 
+/** 音色选择卡：按当前引擎列音色（Kokoro / 基础音色分前缀标注），可试听、可切到克隆音色。 */
 export function VoiceSettingsSectionVoicePicker({ apply, audition, auditionPhase, saving, settings, voiceOptions, activeProfileName, zipReady }: Props) {
   const usingProfile = Boolean(settings.tts.profileId);
   /* ⛔ 音色下拉的前缀要**跟着引擎走**：Kokoro 的 103 个音色不是"基础音色"，

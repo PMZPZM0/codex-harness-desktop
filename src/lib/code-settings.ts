@@ -38,10 +38,12 @@ function load(): CodeSettings {
 let current = load();
 const listeners = new Set<() => void>();
 
+/** 读代码块设置快照（内存单例；setCodeSettings 之后即刻可见）。 */
 export function getCodeSettings(): CodeSettings {
   return current;
 }
 
+/** 局部更新代码块设置并落 localStorage；隐私模式写失败也保证本次会话内生效。 */
 export function setCodeSettings(next: Partial<CodeSettings>) {
   current = { ...current, ...next };
   try {
@@ -62,6 +64,7 @@ export function useCodeSettings(): CodeSettings {
   return useSyncExternalStore(subscribe, getCodeSettings, getCodeSettings);
 }
 
+/** 字号档位换算成像素值；未知档位回退 default（⛔ 不抛错，样式链不能因此断）。 */
 export function codeFontSize(scale: CodeFontScale) {
   return SCALES[scale] ?? SCALES.default;
 }

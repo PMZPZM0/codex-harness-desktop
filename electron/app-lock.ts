@@ -52,10 +52,12 @@ type PendingSetup = { id: string; kind: AppLockKind; salt: string; hash: string;
 /** 同时只保留一个待确认的开启流程；未确认前不落盘（应用中途退出 = 锁不会半开）。 */
 let pendingSetup: PendingSetup | null = null;
 
+/** 应用锁数据文件路径（`<userData>/app-lock.json`）。 */
 export function lockFilePath(userDataDir: string): string {
   return path.join(userDataDir, APP_LOCK_FILE);
 }
 
+/** 「重置锁」标记文件路径：存在即表示用户走过「忘记密码 → 重来」流程。 */
 export function resetMarkerPath(anchorDir: string): string {
   return path.join(anchorDir, RESET_MARKER_FILE);
 }
@@ -107,6 +109,7 @@ export function generateRandomPassword(): string {
   return out;
 }
 
+/** 把随机密码按每 4 位加空格排版便于抄写；非随机（用户自设）密码原样返回。 */
 export function formatPasswordForDisplay(password: string, kind: AppLockKind): string {
   if (kind !== "random") return password;
   return password.replace(/(.{4})/g, "$1 ").trim();
@@ -135,6 +138,7 @@ function validateCustomPassword(password: string): string | null {
   return null;
 }
 
+/** 读应用锁状态：未启用时给 0 次尝试 + 满额剩余；启用时带已失败次数与是否必须重置。 */
 export function getAppLockStatus(userDataDir: string): AppLockStatus {
   const state = readState(userDataDir);
   if (!state) return { enabled: false, attempts: 0, remaining: MAX_ATTEMPTS, resetRequired: false };
@@ -175,6 +179,7 @@ export function prepareAppLockSetup(userDataDir: string, input: { mode?: string;
   return { ok: true, setupId: pendingSetup.id, password, kind };
 }
 
+/** 收尾「开启应用锁」流程：校验 setupId 与 TTL（超时/换过一次就失效），通过后落盘。 */
 export function enableAppLockSetup(userDataDir: string, setupId: string): { ok: boolean; error?: string } {
   const pending = pendingSetup;
   if (!pending || pending.id !== String(setupId ?? "")) return { ok: false, error: "开启流程已失效，请重新生成密码" };
@@ -197,6 +202,7 @@ export function enableAppLockSetup(userDataDir: string, setupId: string): { ok: 
   return { ok: true };
 }
 
+/** 取消「开启应用锁」流程（setupId 对不上就忽略）。 */
 export function cancelAppLockSetup(setupId: string): { ok: boolean } {
   if (!pendingSetup || pendingSetup.id !== String(setupId ?? "")) return { ok: false };
   pendingSetup = null;
@@ -219,6 +225,7 @@ export function verifyAppLockPassword(userDataDir: string, password: string): Ve
   return { ok: false, remaining: MAX_ATTEMPTS - attempts, reset: attempts >= MAX_ATTEMPTS };
 }
 
+/** 用密码关掉应用锁：先验密，通过才删锁文件（⛔ 不验密直接删等于没有锁）。 */
 export function disableAppLock(userDataDir: string, password: string): VerifyResult {
   const result = verifyAppLockPassword(userDataDir, password);
   if (!result.ok) return result;

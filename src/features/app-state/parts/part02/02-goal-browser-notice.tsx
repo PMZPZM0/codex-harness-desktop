@@ -8,6 +8,7 @@ import { usePart02b1 } from "./02-goal-browser-notice/01-goal-review-file-browse
 import { usePart02b2 } from "./02-goal-browser-notice/02-approval-notice-center";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 02b：合并审阅/会话行（b1）与审批/通知（b2）。 */
 export function usePart02b(bag: Bag) {
   const a = usePart02b1(bag);
   const b = usePart02b2(bag);

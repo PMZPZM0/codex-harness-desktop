@@ -12,6 +12,7 @@
 import { usePollTasks } from "./use-poll-tasks";
 import { PollCard } from "./PollCard";
 
+/** 轮询任务板：⛔ 只画 `kind === "poll"` 的任务（长命令/长工具调用在流里已有自己的卡，不重复画）。 */
 export function PollTaskBoard({ turnId }: { turnId: string }) {
   const tasks = usePollTasks();
   /* ⛔ 只取 `kind === "poll"`：长命令 / 长工具调用那种后台任务**不在流里画卡**

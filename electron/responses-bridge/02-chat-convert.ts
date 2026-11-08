@@ -39,6 +39,7 @@ function conversationKeyOf(body: any, messages: Array<{ role: string; content: a
   return `harness-${digest}`;
 }
 
+/** 把 Responses 请求体翻译成 Chat Completions 请求体（instructions → system 消息等）。 */
 export function toChatRequest(body: any): any {
   const messages: any[] = [];
   if (typeof body?.instructions === "string" && body.instructions.trim()) {

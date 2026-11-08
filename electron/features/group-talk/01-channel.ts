@@ -56,6 +56,7 @@ function writeLedger(all: Ledger): void {
   renameSync(tmp, file);
 }
 
+/** 群聊通道的键：`<群 id>::<成员 id>`（同一成员在不同群互不干扰）。 */
 export const talkKey = (groupId: string, memberId: string) => `${groupId}::${memberId}`;
 
 /** 反查：这条引擎会话属于哪个群 / 哪位成员（工具应答的身份硬闸，⛔ 不许模型自报）。 */

@@ -19,6 +19,7 @@ import { placePopover } from "./AnchorPopover";
  */
 export type AppSelectOption = { value: string; label: string; disabled?: boolean };
 
+/** 统一下拉框（弹层 portal 到 body）：键盘可导航、点外面关闭、样式跟随主题。 */
 export function AppSelect({ value, onChange, options, ariaLabel, className, disabled, title }: {
   value: string;
   onChange: (value: string) => void;

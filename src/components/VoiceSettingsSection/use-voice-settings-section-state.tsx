@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { IS_MAC_UI, Settings, Meta, playSamples } from "../VoiceSettingsSection";
 
+/** 语音设置页的数据与保存：拉设置与元信息、逐项保存、暴露保存中态；回包缺字段时按显式映射兜底。 */
 export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: string) => void }) {
   const [settings, setSettings] = useState<Settings | null>(null);
 

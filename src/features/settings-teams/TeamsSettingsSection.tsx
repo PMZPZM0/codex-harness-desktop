@@ -18,6 +18,7 @@ import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type TeamsSettingsSectionProps = { openNewExpertTeam: any; resetExpertTeams: any; refreshExpertTeams: any; resourceLoading: any; expertTeams: any; toggleExpertTeamEnabled: any; categoryLabel: any; expertTeamMemberRunning: any; expertTeamMemberDirect: any; startMemberDirectSession: any; teamCwdMap: any; workspace: any; chooseTeamCwd: any; clearTeamCwd: any; startTeamSession: any; expertTeamRunning: any; openEditExpertTeam: any; deleteExpertTeam: any; expertTeamEditorOpen: any; expertTeamDraft: any; setExpertTeamDraft: any; setExpertTeamEditorOpen: any; saveExpertTeam: any; setNotice: any; onBack?: () => void };
 
+/** 专家团设置：团队列表、启停、新建与重置。 */
 export function TeamsSettingsSection(props: TeamsSettingsSectionProps) {
   const { openNewExpertTeam, resetExpertTeams, refreshExpertTeams, resourceLoading, expertTeams, toggleExpertTeamEnabled, categoryLabel, expertTeamMemberRunning, expertTeamMemberDirect, startMemberDirectSession, teamCwdMap, workspace, chooseTeamCwd, clearTeamCwd, startTeamSession, expertTeamRunning, openEditExpertTeam, deleteExpertTeam, expertTeamEditorOpen, expertTeamDraft, setExpertTeamDraft, setExpertTeamEditorOpen, saveExpertTeam, setNotice, onBack } = props;
   const [previewId, setPreviewId] = useState("");

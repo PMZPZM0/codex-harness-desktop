@@ -13,6 +13,7 @@ import { PENDING_IMPORT_STORE_KEY } from "../../../../../lib/pending-import-stor
 import { setTeamLeadThreads } from "../../../../../lib/prompt-seeds.mjs";
 import type { Bag } from "../../bag-types";
 
+/** bag 分片 02a2：团队角色与「这个会话属于哪个团」的映射（独立窗映射表是空的，必须回读主进程那份）。 */
 export function usePart02a2(bag: Bag) {
   // 打开会话时把主进程的 threadId→teamId 映射读回来：popout 独立窗口的团队映射表是空的，
   // 只有主进程那份落盘映射才知道「这个会话属于哪个团」。

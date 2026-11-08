@@ -2,6 +2,7 @@
    元素文本与源文件逐字节相同，只是外层套了一个工厂函数；调用顺序由宿主的数组决定。 */
 import type { ExpertTeamConfig } from "./01-team-types";
 
+/** 「软件开发专家团」的内置定义（成员、职业、协作方式）。 */
 export const softwareDevTeam = (mk: (partial: any) => ExpertTeamConfig): ExpertTeamConfig =>
 mk({
       teamId: "software-dev-team",

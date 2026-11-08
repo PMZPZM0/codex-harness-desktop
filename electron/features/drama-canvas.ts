@@ -139,6 +139,7 @@ function outputDirFile(): string {
   return path.join(app.getPath("userData"), "canvas-output.json");
 }
 
+/** 画布默认输出目录：`<userData>/outputs`。 */
 export function defaultOutputDir(): string {
   return path.join(app.getPath("userData"), "outputs");
 }

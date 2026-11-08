@@ -9,6 +9,7 @@ import { usePart02b12 } from "./01-goal-review-file-browser/02-thread-attention-
 import type { Bag } from "../../bag-types";
 
 
+/** bag 分片 02b1：合并审阅输入（b11）与会话行（b12）。 */
 export function usePart02b1(bag: Bag) {
   const a = usePart02b11(bag);
   const b = usePart02b12(bag);

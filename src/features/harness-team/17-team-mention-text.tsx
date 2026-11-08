@@ -28,6 +28,7 @@ export type MentionFace = {
   targetKey?: string;
 };
 
+/** 把正文里的 @ 名字渲染成 chip（可点开资料），不是简单字符串。 */
 export function TeamMentionText({
   text,
   candidates,

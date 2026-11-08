@@ -6,11 +6,13 @@ import { AlertTriangle, ArrowUpRight, Bot, Check, ChevronDown, Clock3, Copy, Eye
 import { resolveRelayTarget, writeRelayActive, readRelayActive, RelayActive } from "../../../lib/relay";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCenteredPopoverLeft } from "../../../lib/use-centered-popover";
+/** 套餐名截断显示：先剥掉 emoji 再压空白，超长补省略号。 */
 export function shortGroupName(name: unknown, max: number) {
   const cleaned = String(name ?? "套餐").replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, "").replace(/\s+/g, " ").trim() || "套餐";
   return cleaned.length > max ? cleaned.slice(0, max) + "…" : cleaned;
 }
 
+/** 中转站余额徽标：点开拉套餐与余额，失败在浮层里给原因。 */
 export function RelayBalanceBadge({ active }: { active: RelayActive | null }) {
   const [open, setOpen] = useState(false);
   const [overview, setOverview] = useState<any>(null);

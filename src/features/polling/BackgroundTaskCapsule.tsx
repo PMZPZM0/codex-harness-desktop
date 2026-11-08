@@ -24,6 +24,7 @@ import { usePollTasks } from "./use-poll-tasks";
 /** 面板里同时可见的行数（超出滚动 —— 需求「最多展示 3 条、超出滚动」）。 */
 const VISIBLE_ROWS = 3;
 
+/** 后台任务胶囊：输入框旁的小胶囊，显示在跑的任务数与展开列表。 */
 export function BackgroundTaskCapsule({ threadId = "" }: { threadId?: string }) {
   const tasks = usePollTasks();
   const [open, setOpen] = useState(false);

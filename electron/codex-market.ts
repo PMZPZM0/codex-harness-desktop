@@ -252,6 +252,7 @@ export async function listInstalledMarketPlugins(marketDir: string): Promise<Map
   return out;
 }
 
+/** Gitee 插件市场列表：分页（每页最多 30）+ 分类/关键词过滤。 */
 export async function listMarketPlugins(input: { category?: string; query?: string; page?: number; pageSize?: number; installedDir?: string } = {}) {
   const page = Math.max(1, Math.floor(Number(input.page) || 1));
   const pageSize = Math.min(30, Math.max(1, Math.floor(Number(input.pageSize) || 18)));

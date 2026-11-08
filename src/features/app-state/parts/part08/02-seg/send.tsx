@@ -64,6 +64,7 @@ export async function sendPrefilled(bag: Bag, input: { text: string; skill?: { n
   await send(bag);
 }
 
+/** 发送一条消息的主链路：处理自定义命令展开、`#技能` 提及、附件、排队与权限，再交给引擎。 */
 export async function send(bag: Bag, event?: FormEvent) {
     event?.preventDefault();
     // 自定义命令展开文本优先消费（跳过 / 前缀解析，避免展开结果被二次当命令处理）

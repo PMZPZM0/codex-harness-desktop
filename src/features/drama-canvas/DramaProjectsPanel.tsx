@@ -63,6 +63,7 @@ function RowActions({ name, title, deletable, onRename, onDelete }: {
   );
 }
 
+/** 画布项目面板：画布与分镜表的切换、重命名、删除。 */
 export function DramaProjectsPanel({ boards, current, stories, currentStory, workspace, onClose, onSwitch, onRename, onDelete, onNew, onStorySwitch, onStoryRename, onStoryDelete, onStoryNew }: {
   boards: BoardMeta[];
   /** 当前画布名 */

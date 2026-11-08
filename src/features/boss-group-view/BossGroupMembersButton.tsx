@@ -23,6 +23,7 @@ type SnapLite = { group: { id: string; name: string; members: MemberLite[] } };
 
 const MEMBER_TEXT: Record<string, string> = { idle: "空闲", busy: "正在做", reviewing: "交活待审", locked: "被锁", removed: "已移出" };
 
+/** 「成员」按钮：拉人进群，候选来自**真实专家团登记表**（⛔ 不是手打名字）。 */
 export function BossGroupMembersButton({ threadId }: { threadId: string }) {
   const [groups, setGroups] = useState<GroupLite[]>([]);
   const [open, setOpen] = useState(false);

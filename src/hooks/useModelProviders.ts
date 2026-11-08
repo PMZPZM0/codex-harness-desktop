@@ -92,6 +92,7 @@ function dedupModels(models: ProviderModel[] | undefined): ProviderModel[] {
   return out;
 }
 
+/** 模型供应商域 hook：维护供应商草稿、探测、应用，并在应用成功后交给引擎侧回调。 */
 export function useModelProviders({ onAutoSelect, onSelect, onNotice, onProbeSuccess, onEngineApplied }: Options) {
   const [customModel, setCustomModel] = useState<CustomModel | null>(null);
   const [customDraft, setCustomDraft] = useState<ProviderDraft>({ provider: "custom", name: "Custom Provider", model: "", baseUrl: "", contextWindow: "128000", wireApi: "auto", apiKey: "", models: [], enabled: true });

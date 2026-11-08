@@ -115,6 +115,7 @@ function wholeMessageRange(host: HTMLElement | null): Range | null {
   return range;
 }
 
+/** 选中文字后的浮动操作条：复制或追加到输入框，自动夹在视口内。 */
 export function SelectionActionBar({ containerRef, onCopy, onAppend }: {
   containerRef: { current: HTMLElement | null };
   onCopy: (text: string) => void;

@@ -21,6 +21,7 @@ import { useEscapeLayer } from "../hooks/useEscapeLayer";
 type AskPayload = { busy: number; appName: string };
 type CloseAction = "tray" | "quit" | "cancel";
 
+/** 关窗确认弹窗（询问卡）：可记住「不再问」，提交时把选择回给主进程。 */
 export function CloseConfirmDialog() {
   const [ask, setAsk] = useState<AskPayload | null>(null);
   const [remember, setRemember] = useState(false);

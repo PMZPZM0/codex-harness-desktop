@@ -14,6 +14,7 @@ export type ResultTone = "ok" | "err" | "info";
 /** 弹窗底部动作（10-19）：云端模型连通测试需要「保存并重启应用 / 重签密钥并重试」两个出口。 */
 export type ResultAction = { label: string; onClick: () => void | Promise<void>; primary?: boolean };
 
+/** 结果弹窗：标题 + 语气（成功/警告/失败）+ 正文 + 可选明细与动作按钮。 */
 export function ResultDialog(props: {
   title: string;
   tone: ResultTone;

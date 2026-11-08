@@ -94,6 +94,7 @@ export const DEFAULT_TEAM_RUN_OPTS: TeamRunOpts = {
    ⛔ 读回必须校验：脏值/旧版本字段不能把输入框塞坏，一律回落默认。 */
 const OPTS_STORAGE_KEY = "harness-team:composer-opts";
 
+/** 读群聊的默认运行选项（模型/档位/沙箱/审批）；没有就用默认值。 */
 export function loadTeamRunOpts(): TeamRunOpts {
   try {
     const raw = localStorage.getItem(OPTS_STORAGE_KEY);
@@ -116,6 +117,7 @@ export function loadTeamRunOpts(): TeamRunOpts {
   }
 }
 
+/** 保存群聊默认运行选项（只落这四个字段）。 */
 export function saveTeamRunOpts(opts: TeamRunOpts): void {
   try {
     localStorage.setItem(OPTS_STORAGE_KEY, JSON.stringify({
@@ -188,6 +190,7 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
   return badges;
 }
 
+/** 群聊输入区：文本、@ 提及、附件、运行选项与发送/停止。 */
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
   opts, onOpts, sending, canSend, onSend, running, stopping, onStop, targetNames, fileCandidates = [], onOpenModelSettings,

@@ -149,6 +149,7 @@ export function getBroadcastSnapshot(): Snapshot {
   return snapshot();
 }
 
+/** 订阅播报快照变化，返回退订函数。 */
 export function subscribeBroadcast(fn: (snap: Snapshot) => void): () => void {
   listeners.add(fn);
   return () => { listeners.delete(fn); };
@@ -243,6 +244,7 @@ export function dismissBroadcast(): void {
   else emit();
 }
 
+/** 清空播报历史、队列与去重集合（界面「清空」用）。 */
 export function clearBroadcastHistory(): void {
   history = [];
   queue.length = 0;

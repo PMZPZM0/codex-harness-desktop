@@ -14,6 +14,7 @@ import { KeyRound, ShieldAlert, X } from "lucide-react";
 import { currentVaultWrite, settleVaultWrite, subscribeVaultWrite } from "./vault-write-gate";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
+/** 密码写入确认浮层：Esc 走全局 ESC 栈（只关自己，不连带关背后的面板）。 */
 export function VaultWriteConfirm() {
   const pending = useSyncExternalStore(subscribeVaultWrite, currentVaultWrite, () => null);
 

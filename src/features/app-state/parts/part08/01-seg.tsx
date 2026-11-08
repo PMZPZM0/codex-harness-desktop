@@ -167,6 +167,7 @@ function imageToolDefs(): any[] {
   ];
 }
 
+/** bag 分片 08a：会话切换（openThread）与团队簇的级联归档/删除。 */
 export function usePart08a(bag: Bag) {function openThread(id: string, freshThread?: Thread | null) {
   return openThreadImpl(bag, id, freshThread);
 }

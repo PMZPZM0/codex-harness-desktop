@@ -35,6 +35,7 @@ type Draft = { id: string; name: string; category: string; bin: string; installC
 
 const EMPTY_DRAFT = (category: string): Draft => ({ id: "", name: "", category, bin: "", installCmd: "", docs: "", description: "" });
 
+/** CLI 智能体面板：列表 + 分类 + 搜索 + 安装检测状态。 */
 export function CliAgentsPanel({ setNotice }: { setNotice?: (text: string, detail?: string) => void }) {
   const [items, setItems] = useState<CliAgentEntry[]>([]);
   const [categories, setCategories] = useState<CliCategory[]>([]);

@@ -8,6 +8,7 @@ import { usePart02d1 } from "./04-runtime-commands-account/01-dev-runtimes-capab
 import { usePart02d2 } from "./04-runtime-commands-account/02-commands-hooks-account";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 02d：合并运行时（d1）与命令/钩子/账号（d2）。 */
 export function usePart02d(bag: Bag) {
   const a = usePart02d1(bag);
   const b = usePart02d2(bag);

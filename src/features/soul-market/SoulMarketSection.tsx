@@ -20,6 +20,7 @@ type SoulDetail = SoulEntry & { content: string };
 
 export type SoulMarketSectionProps = { onNotice: (message: string) => void };
 
+/** 人格市场板块：列表、详情与安装（装完写进个性化配置）。 */
 export function SoulMarketSection({ onNotice }: SoulMarketSectionProps) {
   const [items, setItems] = useState<SoulEntry[]>([]);
   const [loading, setLoading] = useState(true);

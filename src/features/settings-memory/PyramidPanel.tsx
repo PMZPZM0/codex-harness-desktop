@@ -33,6 +33,7 @@ type ThreadRow = { id?: string; name?: string; cwd?: string; updatedAt?: number;
 const TOP_WIDTH = 44;
 const WIDTH_STEP = 7;
 
+/** 金字塔面板：按项目与会话展示共享层/独立层的记忆结构（数据取自页面已有清单，⛔ 不新增 IPC）。 */
 export function PyramidPanel({ workspace, threads, onOpenThread }: {
   workspace: string;
   /** 真实会话清单（页面上已有的数据，⛔ 不新增 IPC） */

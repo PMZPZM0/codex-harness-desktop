@@ -64,6 +64,7 @@ async function cleanupUpdateDirs(vendorDir: string, log: Log): Promise<void> {
   }
 }
 
+/** 自愈引擎安装：解析不到可执行文件时尝试修复（重装/改指向），返回是否修好与原因。 */
 export async function healEngineInstall(log: Log = (message) => console.log(`[engine-heal] ${message}`)): Promise<EngineHealResult> {
   let bin: string;
   try {

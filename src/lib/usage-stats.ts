@@ -21,6 +21,7 @@ export type UsageStats = {
 
 const EMPTY: UsageStats = { turns: 0, inputTokens: 0, outputTokens: 0, peakTokens: 0, longestTurnMs: 0, days: {}, models: {} };
 
+/** 把时间戳格式化成 `YYYY-MM-DD`（本地时区；用量按天聚合的键）。 */
 export function dayKey(at: number | Date = Date.now()) {
   const date = at instanceof Date ? at : new Date(at);
   const month = `${date.getMonth() + 1}`.padStart(2, "0");
@@ -40,6 +41,7 @@ function normalize(value: any): UsageStats {
   };
 }
 
+/** 读本机用量统计（localStorage JSON）；没有或解析失败返回空结构，⛔ 不抛错。 */
 export function readUsageStats(): UsageStats {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -50,6 +52,7 @@ export function readUsageStats(): UsageStats {
   }
 }
 
+/** 写用量统计到 localStorage；存储不可用时静默降级（⛔ 不影响对话）。 */
 export function writeUsageStats(stats: UsageStats) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(stats)); } catch { /* 存储不可用时静默降级 */ }
 }
@@ -85,6 +88,7 @@ export function recordTurnUsage(input: TurnUsageInput): UsageStats {
   return stats;
 }
 
+/** 清空用量统计（写回空结构，⛔ 不删存储键）。 */
 export function resetUsageStats() {
   writeUsageStats({ ...EMPTY, days: {}, models: {} });
 }
@@ -104,6 +108,7 @@ export function currentStreak(stats: UsageStats, today = dayKey()) {
   return streak;
 }
 
+/** 输入 + 输出，得到总 token 数。 */
 export function totalTokens(stats: UsageStats) {
   return stats.inputTokens + stats.outputTokens;
 }
@@ -123,6 +128,7 @@ export function lastDays(stats: UsageStats, count: number): { key: string; date:
   return out;
 }
 
+/** 把毫秒格式化成人读的时长（秒 / 分秒 / 时分）；0 显示「—」。 */
 export function formatDuration(ms: number) {
   if (!ms) return "—";
   const seconds = Math.round(ms / 1000);
@@ -133,6 +139,7 @@ export function formatDuration(ms: number) {
   return `${hours} 小时 ${minutes % 60} 分`;
 }
 
+/** 把 token 数缩写成 K/M 两位小数（界面统计口径，⛔ 不四舍五入成整数）。 */
 export function formatTokens(value: number) {
   if (!value) return "0";
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`;

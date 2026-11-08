@@ -38,6 +38,7 @@ export const FILM_RULES = [
   "⛔ 不动 `overrides`（用户在 Studio 里的手改）与 `locked` 轨；字幕一律 `.vtt` 与素材同名，不要在页面里画字幕。",
 ].join("\n");
 
+/** 生成 OpenFilm 的工具清单（给模型看的 function 定义）。 */
 export function buildOpenfilmTools(): any[] {
   return [
     {

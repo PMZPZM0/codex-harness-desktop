@@ -12,6 +12,7 @@ import { MarketPreviewState } from "../../../../lib/market-preview-state";
 import { PluginInstallState } from "../../../../lib/plugin-install-state";
 import type { Bag } from "../bag-types";
 
+/** bag 分片 01b：输入区附件菜单的子面板与市场入口状态。 */
 export function usePart01b(bag: Bag) {
   // WorkBuddy 式附件菜单子面板：本地文件/引用对话文件/专家（技能、连接器已有独立面板）
   const [attachSubmenu, setAttachSubmenu] = useState<"none" | "files" | "thread-files" | "experts" | "skills" | "connectors" | "favorites">("none");

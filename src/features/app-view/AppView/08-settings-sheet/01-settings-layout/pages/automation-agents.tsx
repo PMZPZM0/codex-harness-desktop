@@ -25,6 +25,7 @@ const ComputerSettingsSection = lazy(() => import("../../../../../settings-compu
 const BossGroupsSection = lazy(() => import("../../../../../settings-boss-groups/BossGroupsSection").then((m) => ({ default: m.BossGroupsSection })));
 const ExpertMarketSection = lazy(() => import("../../../../../expert-market/ExpertMarketSection").then((m) => ({ default: m.ExpertMarketSection })));
 
+/** 设置页分组：自动化与智能体（审批/沙箱、浏览器自动化、子智能体、专家团）。 */
 export function automationAgentsPages(app: HarnessAppApi): Partial<Record<SettingsPage, SettingsPageEntry>> {
   const {
     approvalPolicy,

@@ -19,6 +19,7 @@ type Props = {
   working: string;
 };
 
+/** 中转账号网格：每个账号一张卡，标出已用 / 可用密钥数与当前生效态。 */
 export function RelayCenterPageAccountGrid({ accounts, activeProvider, isActiveProvider, keyGroups, openManage, removeAccount, setLoginModalOpen, switchAccount, toggleAccount, working }: Props) {
   return (
     <div className="relay-plan-grid relay-home-grid">

@@ -9,6 +9,7 @@ import { usePart07b } from "./part07/02-seg";
 import { usePart07c } from "./part07/03-seg";
 import type { Bag } from "./bag-types";
 
+/** bag 分片 07：把 07a–07c 合并挂到 bag。 */
 export function usePart07(bag: Bag) {
   const a = usePart07a(bag);
   const b = usePart07b(bag);

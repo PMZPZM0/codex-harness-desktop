@@ -44,6 +44,7 @@ import {
  * ⚠️ 未注入时回落 cwd —— 保留原实现"取不到就兜底"的宽容口径（单测/脚本会用到）。
  */
 let hostApp: { getPath: (n: "userData") => string } | null = null;
+/** 注入 app（本模块只用到 `getPath("userData")`），避免直接 import electron。 */
 export function bindVideoHost(app: { getPath: (n: "userData") => string }): void {
   hostApp = app;
 }
@@ -161,6 +162,7 @@ export function updateVideoJob(jobId: string, patch: Partial<VideoJob>): VideoJo
   return hit;
 }
 
+/** 按 jobId 找视频任务；没有返回 null。 */
 export function findVideoJob(jobId: string): VideoJob | null {
   return listVideoJobs().find((j) => j.jobId === jobId) ?? null;
 }
@@ -169,6 +171,7 @@ export function findVideoJob(jobId: string): VideoJob | null {
 
 export type VideoProviderView = { id: string; name: string; configured: boolean; imageInput?: string; defaultModel?: string; note?: string };
 
+/** 视频供应商视图：每个供应商是否已配凭据、是否支持图片输入、默认模型。 */
 export function videoProviderViews(): VideoProviderView[] {
   const config = readConfig();
   return VIDEO_PROVIDERS.map((p) => ({

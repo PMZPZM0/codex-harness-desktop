@@ -13,6 +13,7 @@ import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 type PageItem = { page: string; label: string; group: string };
 
+/** 「把设置页加进功能菜单」弹窗：已在内置项里的不可选，且受主进程条数上限约束。 */
 export function AddPagesDialog({ targets, taken, remaining, onClose, onAdd }: {
   targets: FunctionMenuSettingsTarget[];
   /** 已经在内置默认项或自定义入口里的页面 —— 不再可选 */
