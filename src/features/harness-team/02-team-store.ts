@@ -549,6 +549,32 @@ export function useTeamGroups() {
     [threadsOf],
   );
 
+  /**
+   * 停掉**本群所有正在跑的伙伴**（11-08 用户令：「这里点停止是群里所有运行状态都停止掉」）。
+   * ⛔ 候选 = 渲染层数出来的群内会话 id（群日志来源 ∪ 正在跑的）—— 主进程再用活动回合表核对，
+   *    不在表里的不碰，所以不会顺带停掉主对话或别的群的运行。
+   * ⛔ 成功后立刻清掉本群的 busy + live（不等引擎回 turn/interrupted —— 有的情况会晚到或不回，
+   *    那样按钮会一直停在「停止」上，用户以为没停掉）。
+   */
+  const stopAll = useCallback(
+    async (groupId: string, threadIds: string[]) => {
+      const candidates = [...new Set(threadIds.filter((id) => id && !id.startsWith("group:")))].slice(0, 24);
+      const res = (await window.codex.harnessTeamStop({ threadIds: candidates, stopAll: true })) as { ok: boolean; error?: string; reason?: string; stopped?: number };
+      if (res?.ok) {
+        setBusyByGroup((prev) => ({ ...prev, [groupId]: [] }));
+        setLiveByGroup((prev) => {
+          const next = { ...prev };
+          delete next[groupId];
+          return next;
+        });
+        threadRef.current = {};
+        return { ok: true, stopped: Number(res.stopped ?? 0) };
+      }
+      return { ok: false, error: res?.error || "停止失败" };
+    },
+    [],
+  );
+
   const create = useCallback(
     /* ⛔ 建群输入是**整份群结构**（与主进程 createGroup 同字段）：新建群弹窗要一次带
        memory(群简介) / workspace(项目地址) / members(初始伙伴)。只收 name+members 会
@@ -718,6 +744,6 @@ export function useTeamGroups() {
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMenu, saveMenuPlacement, saveMessageLayout, saveSchedules, runSchedule,
-    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, clearMessages,
+    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages,
   };
 }

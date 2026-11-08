@@ -22,7 +22,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RefObject } from "react";
 import { createPortal } from "react-dom";
-import { AtSign, Bot, Check, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, X } from "lucide-react";
+import { AtSign, Bot, Check, ChevronDown, ChevronLeft, FolderOpen, Paperclip, Plus, Search, Send, ShieldCheck, Sparkles, Square, X } from "lucide-react";
+import { Spinner } from "../../components/CardShell";
 import { ComposerMenu, ThreadFilePicker } from "../composer";
 import { ComposerRail } from "../composer-rail";
 import type { HarnessAppApi } from "../app-state";
@@ -133,6 +134,13 @@ type Props = {
   sending: boolean;
   canSend: boolean;
   onSend: () => void;
+  /** 11-08 用户令：群里有人在跑 ⇒ 发送键过渡成停止键（主对话同一套 morph 形态）。
+   *  ⛔ 这里只收「有没有人在跑」，「运行中且有草稿 = 发送 / 空 = 停止」的判断在按钮上。 */
+  running?: boolean;
+  /** 正在停止中（按钮锁住 + 转圈，⛔ 别让用户连点） */
+  stopping?: boolean;
+  /** 点停止：把群里**所有**正在跑的伙伴一起停掉（不是某一个） */
+  onStop?: () => void;
   targetNames: string[];
   /** 群里出现过的本机路径（「引用群里的文件」候选，由父层从消息投影里扫出来） */
   fileCandidates?: Array<{ path: string; source: string }>;
@@ -170,7 +178,7 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
 
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
-  opts, onOpts, sending, canSend, onSend, targetNames, fileCandidates = [], onOpenModelSettings,
+  opts, onOpts, sending, canSend, onSend, running, stopping, onStop, targetNames, fileCandidates = [], onOpenModelSettings,
   onOpenMention, mentionCount = 0, toolsSlot = null, app,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
@@ -384,14 +392,14 @@ export function TeamComposer({
       {/* 11-07 用户令：「输入框上的小粗条和侧边粗条，全部同步」——
           顶部把手（拖动改高度 / 双击复位）+ 左侧 ComposerRail 与主对话同一个组件。 */}
       <div
-        className="team-composer__resize"
+        className="composer-resize-handle"
         role="separator"
         aria-orientation="horizontal"
         aria-label="拖动调整输入框高度（双击恢复默认）"
         onPointerDown={onResizeDown}
         onDoubleClick={resetEditorHeight}
       >
-        <span className="team-composer__grip" aria-hidden />
+        <span className="composer-resize-grip" aria-hidden />
       </div>
       {app && <ComposerRail app={app} threadId="" />}
       {(opts.files.length > 0 || opts.skills.length > 0) && (
@@ -552,14 +560,35 @@ export function TeamComposer({
         </div>
 
         <div className="team-composer__right composer-right">
-          <span className="team-composer__count" title="本轮输入字符数（不是 token）">{value.length} 字</span>
           <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => { if (v === "__model_settings__") { onOpenModelSettings?.(); return; } onOpts({ ...opts, model: v }); }} onOpen={() => void loadModels()} width={360} disabled={sending} />
           <EffortPicker levels={["low", "medium", "high", "xhigh"]} value={opts.effort || "high"} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
           {/* 群菜单按钮（飞书 `needShowMenuButton`）：从输入框上方搬到工具行，输入区少占一行 */}
           {toolsSlot}
-          <button type="button" className="team-composer__send" onClick={onSend} disabled={sending || !canSend} title={targetNames.length ? `派给 ${targetNames.join("、")}` : "先点 @ 选伙伴"}>
-            <Send size={15} /> 发送
-          </button>
+          {/* ⛔ 11-08 用户：「跟对话框一样，不要搞特殊」⇒ 发送键换成主对话那个
+              `.send-button.morph-action`（32×32 圆形 / --green），⛔ 不再自造蓝色药丸；
+              字数计数主对话没有，一并去掉。
+              ⛔⛔ 11-08 二改（用户：「群运行中的，发送按键过渡成⏹️，这里点停止是群里所有
+              运行状态都停止掉」）：**同一个 DOM 节点**在发送/停止之间 morph（主对话逐字同款：
+              运行中 + 空草稿 = 停止；运行中 + 有草稿 = 发送，把它发出去/排队）。
+              ⛔ 别用两个按钮切换 —— 那会宽度抖动、图标并排（主对话 09-21 就为此改成单体）。 */}
+          {(() => {
+            const hasDraft = Boolean(value.trim());
+            const showStop = Boolean(running) && !hasDraft;
+            return (
+              <button
+                type="button"
+                className={`send-button morph-action ${showStop ? "is-pause" : "is-send"}`}
+                onClick={showStop ? onStop : onSend}
+                disabled={showStop ? Boolean(stopping) || !onStop : (sending || !canSend)}
+                title={showStop ? "停止群里所有正在跑的伙伴" : targetNames.length ? `派给 ${targetNames.join("、")}` : "先点 @ 选伙伴"}
+                aria-label={showStop ? "停止群里所有正在跑的伙伴" : "发送"}
+              >
+                <span className="morph-action-icon">
+                  {showStop && stopping ? <Spinner /> : showStop ? <Square size={15} fill="currentColor" /> : <Send size={18} />}
+                </span>
+              </button>
+            );
+          })()}
         </div>
       </div>
     </div>

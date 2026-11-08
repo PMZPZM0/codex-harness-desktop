@@ -1132,6 +1132,8 @@
 }
 .composer-wrap {
   z-index: 3;
+  /* ⛔ 11-08 用户两次圈图「输入框太长了」⇒ 整列收到 1000（--chat-column-max，见 01-base 的注释）。
+     输入框与消息列**必须同一条列**：只收窄输入框会变成"窄卡吊在中间"，11-08 已否过一次。 */
   width: min(var(--chat-column-max), calc(100% - var(--chat-side-reserve) * 2));
   margin: 0 auto 22px;
   position: relative;

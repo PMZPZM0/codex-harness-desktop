@@ -5,14 +5,26 @@
   position: relative;
   display: grid;
   /* 11-06 用户（截图红框）：「这里太宽了，空白太多了，给刻度线留出来位置」
-     ⇒ 232 → 176：群名 + 一行小字够放，省下来的宽度全给消息区（右侧还有刻度尺要占 16px）。 */
-  grid-template-columns: 176px minmax(0, 1fr);
+     ⇒ 232 → 176：群名 + 一行小字够放，省下来的宽度全给消息区（右侧还有刻度尺要占 16px）。
+     11-08 用户：「两边侧边栏都没有展开折叠按键」⇒ 轨道宽度做成变量，收起态只留 48px 迷你条。 */
+  --team-rail: 176px;
+  grid-template-columns: var(--team-rail) minmax(0, 1fr);
   /* ⛔ 只有一行（卡片头由 .team-modal__head 承担）：原来写的 `auto 1fr` 是给已删除的面板头留的，
      留着会让左栏背景只铺第一行的高度。 */
   grid-template-rows: minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   background: var(--bg);
+}
+/* 11-08：左栏收起 —— 只剩一条 48px 迷你条（展开 + 新建两个图标），群列表整块不渲染。 */
+.team-mode.is-rail-collapsed { --team-rail: 48px; }
+.team-mode__rail-mini {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  min-height: 0;
 }
 
 /* ── 左：群列表 ── */
@@ -165,7 +177,9 @@
 .team-msg__main {
   flex: 1 1 auto;
   min-width: 0;
-  max-width: 760px;
+  /* ⛔ 11-08：原来钉死 760px，全屏时消息只占列的一半、右边一片空（用户：「不自适应」）。
+     现在跟着列宽走（列本身有 1080 上限与 28px 内缩兜底）。 */
+  max-width: 100%;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -206,10 +220,34 @@
 
 /* ── 输入区 ── */
 .team-group__composer {
-  border-top: 1px solid var(--line-soft);
+  /* ⛔ 11-08 用户（截图红框圈住输入卡两侧的空白 + 一条贯穿全宽的分隔线）：「这是干嘛，丑死了」
+     ⇒ ① 去掉贯穿全宽的分隔线（卡片自己就有边框 + 阴影，不需要再画一条横杠）；
+        ② 输入卡与消息列**同一个 --team-column**（= 主对话 --chat-column-max 那套钳制），
+           ⛔ 既不在中间吊窄卡，也不铺到窗口两头（用户二改：「自适应过头了，太宽了」）。 */
+  border-top: 0;
   padding: 14px 16px 16px;
-  background: color-mix(in srgb, var(--panel) 35%, transparent);
+  background: transparent;
+  /* 11-08：询问/审批卡的绝对定位锚点（等价主对话 .composer-wrap 的 position: relative） */
+  position: relative;
 }
+
+/* 伙伴的询问 / 审批卡：**主对话 composer-overlay-stack 同款**定位 —— 贴在输入卡正上方，
+   不参与流内布局（⛔ 不挤走消息流、不把输入卡往下推），关掉即露出底下内容。
+   左右内缩与输入卡同一条轴（复用 --team-column），⛔ 别用 left/right:0 铺满整条底栏。 */
+.team-group__overlay-stack {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - 6px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* 与底栏 padding-inline 同一算法（同一列变量、14px 兜底）⇒ 卡片左右边缘与输入卡严格对齐 */
+  padding-inline: max(14px, calc((100% - var(--team-column)) / 2));
+  z-index: 30;
+  pointer-events: none;
+}
+.team-group__overlay-stack > * { pointer-events: auto; }
 .team-group__stream::-webkit-scrollbar { width: 8px; }
 .team-group__stream::-webkit-scrollbar-track { background: transparent; }
 .team-group__stream::-webkit-scrollbar-thumb {
@@ -348,7 +386,11 @@
   justify-content: space-between;
   gap: 12px;
   padding: 0 14px 0 18px;
-  border-bottom: 1px solid var(--line);
+  /* ⛔ 11-08 用户「上面这个还是没对齐，偏下，放到这个框上下居中」的**真根因**：
+     `border-bottom: 1px` 会把 content box 从 40 压成 39 ⇒ flex 居中落在 19.5，
+     整排字看着比中线低半像素（再叠上字体行盒，肉眼就是"偏下"）。
+     ⇒ 分隔线改成**内阴影**（不占盒子）：content box 回到 40，字与钮的中线都是 20.0。 */
+  box-shadow: inset 0 -1px 0 var(--line);
 }
 .team-modal__title {
   display: flex;
@@ -482,6 +524,8 @@
    普通会话只有一条消息流；群多一条**成员栏**（飞书群右侧成员区 / 豆包伙伴档案）。
    ⛔ 成员栏不是装饰：它是 @ 的入口（点 @ 就把这个人加进这次派活），也是运行态的位置。 */
 .team-group__body { flex: 1; display: flex; min-height: 0; min-width: 0; }
+/* 11-08：成员栏收起（🔍 右边那枚键）—— 整栏不渲染，主列自然变宽，消息列仍然居中 */
+.team-group__body.is-members-hidden .team-group__members { display: none; }
 .team-group__main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 .team-group__members {
@@ -1268,37 +1312,24 @@
    ⛔ 不引入主对话的 @专家/子智能体/CLI 面板）。 */
 .team-composer {
   position: relative;
-  padding: 10px 12px 8px;
+  /* ⛔ 11-08 用户：「跟对话框一样，不要搞特殊」⇒ 几何/底色/阴影全部对齐主对话 `.composer`
+     （16px 圆角 + var(--bg) + var(--shadow) + 16/14/10 内边距 + 108 最小高）。 */
+  padding: 16px 14px 10px;
+  min-height: 108px;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: var(--panel);
-  box-shadow: 0 2px 10px color-mix(in srgb, var(--text) 6%, transparent);
+  background: var(--bg);
+  box-shadow: var(--shadow);
 }
 .team-composer:focus-within { border-color: var(--faint); }
 /* 11-07 用户令：「输入框上的小粗条和侧边粗条，全部同步」——
    顶部把手与主对话 `.composer-resize-handle` 同款（96×12 命中面，56×4 胶囊骑在顶边框上）。 */
-.team-composer__resize {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 96px;
-  height: 12px;
-  display: grid;
-  place-items: center;
-  cursor: ns-resize;
-  touch-action: none;
-  user-select: none;
-}
-.team-composer__grip {
-  width: 56px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--bg);
-  box-shadow: 0 0 0 1px var(--line);
-  transition: background 0.12s ease, box-shadow 0.12s ease;
-}
-.team-composer__resize:hover .team-composer__grip { background: var(--muted); box-shadow: 0 0 0 1px var(--muted); }
+/* ⛔ 11-08 用户：「这两个小粗条没有主对话框那样联动边框线」——
+   根因是群这里**重写了一份**把手样式（自己一套 96×12 / 56×4 胶囊），
+   描边与主对话不是同一处来源，观感就挂着而不是边框线加粗成一小节。
+   ⇒ 组件直接改用主对话的 `.composer-resize-handle` / `.composer-resize-grip`
+     （皮肤在 04-cards-tools.css，含悬停与浅色主题那两条），这里不再重复定义。 */
+
 /* ⛔ 覆盖旧的 `.team-group__composer textarea` 规则：现在边框在外层卡片上。
    11-07 用户：「同步成跟对话框一样的输入框，外观和输入框内在功能」⇒ 正文排版
    与 `.composer-editor` 同口径：14px / 1.6 / 内容自适应 + 42vh 上限 / 超出滚动。
@@ -1364,24 +1395,10 @@
 }
 .team-composer__icon:hover,
 .team-composer__icon.is-on { border-color: var(--accent); color: var(--accent); }
-.team-composer__count { color: var(--faint); font-size: 10.5px; white-space: nowrap; }
-.team-composer__send {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 6px 14px;
-  border: 1px solid var(--accent);
-  border-radius: 10px;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 12px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.team-composer__send:disabled { opacity: 0.5; cursor: default; }
-/* `+` 号菜单：向上展开、在输入框卡片内，⛔ 不引入主对话 bag 驱动的二级面板 */
+/* ⛔ 11-08 用户令：「跟对话框一样，不要搞特殊」⇒ 群里不再有自造的蓝色「➤ 发送」药丸与
+   「N 字」计数（主对话没有这两样），发送键直接用 `.send-button.morph-action`。
+   这里只留窄档工具行的换行兜底。 */
 @media (max-width: 760px) {
-  .team-composer__count { display: none; }
   .team-composer__actions { flex-wrap: wrap; }
 }
 
@@ -1446,6 +1463,9 @@
   white-space: nowrap;
 }
 .team-group__icon-btn:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+/* 11-08：成员栏收起键（🔍 右边那枚）—— 纯图标，跟搜索键同高同宽 */
+.team-group__icon-btn.is-icon-only { padding: 6px 7px; }
+.team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
 .team-group__atbar {
   display: flex;
@@ -1527,9 +1547,28 @@
 }
 
 /* ══════ 群列表（11-06：用户「功能太少，新建群还在底部」）══════════════════════ */
-.team-mode__rail-head { align-items: center; padding: 12px 12px 8px; }
-.team-mode__rail-title { display: flex; flex-direction: column; gap: 2px; }
-.team-mode__rail-title strong { font-size: 13px; }
+/* ⛔ 11-08 用户（截图红框圈住「团队 / 1-8 个群 + 加号」）：「左上角展示优化一下，这样排不好用」
+   ⇒ 原来标题竖排两行、加号单独浮在右边，既挤又对不齐。现在一行：标题 + 计数胶囊 + 两个图标键
+     （新建 / 收起），基线对齐、高度统一 28px。 */
+/* ⛔ 11-08 用户（截图：「团」/「队」被挤成两行）—— 标题**永不换行**，计数只许省略：
+   轨道只有 176px，两个图标键占 60px，标题必须 flex:none + nowrap，否则一挤压就竖排成两个字。
+   ⛔ 11-08 二改（用户：「对齐左边文字一排，现在还是有点靠下了」）：上下内边距改成 6/6 ——
+      实测群头文字 55~67、左栏「团队」60~71 差 4px，根因就是这里 11 + 28(键) + 8 = 47
+      对上群头的 6 + 28(徽标) + 6 = 40。两栏头同高之后首行文字自然落在一条线上，
+      ⛔ 别再加回 11px 上边距（唯一 owner 就是这一行，后面不许再写覆盖块）。 */
+.team-mode__rail-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px 6px 12px; }
+.team-mode__rail-title { display: flex; flex: 1 1 auto; align-items: baseline; gap: 6px; min-width: 0; }
+.team-mode__rail-title strong { flex: none; font-size: 13px; white-space: nowrap; }
+.team-mode__rail-sub {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-mode__rail-actions { display: flex; flex: none; align-items: center; gap: 4px; }
 .team-mode__add {
   display: inline-flex;
   align-items: center;
@@ -1924,30 +1963,34 @@
 }
 .team-settings__mode-block strong { color: var(--orange); font-weight: 600; }
 
-/* ══════ 与主对话同轴（11-06 用户：「对话框及展示区域过宽，与现有对话框一致」）══════
-   主对话是 1360px 上限的**居中列**（两侧留轨）；群聊原来消息流全宽、输入框全宽，
-   窗口越宽右侧空白越大。这里给群一个与主对话同构的居中列（790 = 16*2 padding +
-   28 头像 + 10 gap + 720 正文上限），消息流 / 输入框 / 刻度尺全部对齐这条轴。 */
-.team-group { --team-column: 790px; }
+/* ══════ 与主对话同轴 + 全屏自适应居中（11-08 用户：「全屏时中间这个不自适应居中，输入框也不自适应变长」）══════
+   ① 列宽**不再是死数 790**，也**不是「放到最宽」**：11-08 二改用户指着截图红框说
+      「你这自适应过头了，太宽了」—— 上一版写 `min(100%, 1800px)`，等于把列宽交给窗口，
+      1080 宽时输入卡横跨 900+，跟主对话那种「两侧留白、中间一条栏」的观感不同。
+      ⇒ 现在**直接用主对话那两个变量**：`min(--chat-column-max, 100% - --chat-side-reserve * 2)`
+      （1360 封顶 / 两侧按窗口比例让位），群聊与主对话的栏宽从此是同一个数，改一处两处一起变；
+   ② 子项一律 `margin-inline: auto` —— 原来这里写 `margin-right: 0`，把空态那条
+      `.team-group__empty { margin: auto }` 的右半边打成 0 ⇒ 整块被推到右边（截图红框就是它）；
+   ③ 消息流 / 输入框仍然共用同一个 --team-column，两条轴不会分家。 */
+/* 群里的列宽 = 主对话那条列（1000 封顶 + 两侧让位）。⛔ 消息流与输入区**共用这一条**：
+   只收窄输入区会变成"窄卡吊在中间"（11-08 用户已否过一次：「这是干嘛，丑死了」），
+   而且头像与输入框左边框会错开（11-07 用户令「头像对齐输入框边框」）。 */
+.team-group { --team-column: min(var(--chat-column-max), calc(100% - var(--chat-side-reserve) * 2)); }
 .team-group__stream {
   flex: 1 1 auto;
-  /* ⛔ 11-06 用户：「滚轮放到右边上去，刻度线跟着过去」⇒ 滚动区占满容器、
-     右 padding 归零让滚动条贴右缘；内容列的宽度与左轴见下面 11-07 的同轴规则。 */
   width: 100%;
   max-width: none;
   margin-inline: 0;
-  /* ⛔⛔ 11-07 用户：「头像对齐输入框边框」——实测输入框卡片左边框 221px、
-     消息头像左边缘 259px（差 38px）：子项按 720px 居中，composer 却按 790px 列居中，
-     两条轴不同。⇒ stream 的 padding-left 直接取 composer 同一条公式，子项宽度也取
-     同一列宽，右 padding 仍为 0（滚动条贴右缘的既有口径不动）。 */
-  padding-left: max(14px, calc((100% - var(--team-column)) / 2));
+  /* ⛔ 滚动条仍贴列右缘（用户 11-06：「滚轮放到右边上去」）⇒ 左右 padding 归零，
+     内缩与居中全部交给子项的 margin-inline。 */
+  padding-left: 0;
   padding-right: 0;
   align-items: flex-start;
 }
 .team-group__stream > * {
-  width: min(100%, var(--team-column));
+  width: min(calc(100% - 28px), var(--team-column));
   max-width: var(--team-column);
-  margin-right: 0;
+  margin-inline: auto;
 }
 .team-group__composer { padding-inline: max(14px, calc((100% - var(--team-column)) / 2)); }
 .team-group__stream-wrap .message-ruler.is-right {
@@ -2530,8 +2573,9 @@
 }
 .team-group__icon-btn.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 
-/* ── 输入框：压缩高度（用户：「下面输入框也是太宽了」）── */
-.team-composer { padding: 8px 10px 6px; }
+/* ── 输入框：几何以主对话为准（11-08 用户：「跟对话框一样，不要搞特殊」）──
+   ⛔ 原来这里把内边距压成 8/10/6（当时为「太宽了」），与主对话 16/14/10 不一致 ⇒ 工具行整体偏高。
+   现在统一回主对话的几何，只保留正文区最小高 64。 */
 .team-composer .team-composer__input { min-height: 64px; }
 .team-composer__at { position: relative; }
 .team-composer__at.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
@@ -3057,3 +3101,42 @@
 /* mac 红绿灯在左上角且只有三颗（`.window-controls` 在 mac 不渲染）⇒ 改让左边、
    右缘只留呼吸（与 `.popout-shell .topbar` 的 80px 让位同一口径）。 */
 [data-os="darwin"] .is-team-popout .team-modal__head { padding-left: 80px; padding-right: 16px; }
+
+/* ══════ 分隔线/描边收细（11-08 用户：「上面的边框都窄一点，现在都太粗了」）══════
+   ⛔ 1px 已经是下限，所以「变窄」只能靠**降低对比度**：实心 --line 在浅色底上像一条粗灰杠，
+     换成同一族色的半透明细线，观感立刻轻下来（结构与几何不动，只改颜色）。
+   ⛔ 别把这几条改成 border-width: 0 —— 群头/成员栏/输入区之间的分界是**结构性**的，删了就糊成一片。 */
+.team-group__head { border-bottom-color: color-mix(in srgb, var(--line) 55%, transparent); }
+.team-group__members { border-left-color: color-mix(in srgb, var(--line) 50%, transparent); }
+.team-group__members-head { border-bottom-color: color-mix(in srgb, var(--line) 45%, transparent); }
+.team-mode__rail { border-right-color: color-mix(in srgb, var(--line) 50%, transparent); }
+/* 群头那几枚按键（搜索 / 折叠 / 设置）的描边同步收细，⛔ 不改变尺寸与圆角 */
+.team-group__icon-btn { border-color: color-mix(in srgb, var(--line) 60%, transparent); }
+
+/* ══════ 顶部两条杠收窄（11-08 用户：「这上面上下还是太宽了」，截图圈住窗口标题栏 + 群头）══════
+   ① 卡片头 52 → 44（独立窗口里它就是标题栏，窗口三钮本身 44 高，再高就是白留白）；
+   ② 群头 8 → 6 的上下内边距 + 群徽标 34 → 28（徽标是这一行最高的东西，它决定整行高度：
+      34 + 16 = 50 → 28 + 12 = 40）。 */
+.team-modal { grid-template-rows: 44px minmax(0, 1fr); }
+.team-group__head { padding: 6px 14px; }
+.team-group__badge { width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+
+/* ⛔ 11-08 用户（截图又圈住标题栏）：「对齐哦。再窄一点」
+   ⇒ 标题栏 44 → 40（两枚窗口钮 28 高、top 6 ⇒ 底边 34 < 40，不会切到），
+     左右内边距统一 14，标题图标与左栏「团队」同一条竖线。群头也正好是 40 ⇒ 两条杠等高。 */
+.team-modal { grid-template-rows: 40px minmax(0, 1fr); }
+.team-modal__head { padding: 0 14px; }
+
+/* ⛔ 11-08 用户（截图圈住窗口三钮）：「修不好是吗」→ 先上提到 top:2，用户又指出
+   「上面这个还是没对齐，偏下，放到这个框上下居中的位置」。
+   根因：三钮那一族是 44 高（全局口径：主窗口标题栏 52 ⇒ 44 族正好居中），
+   而群聊窗的标题栏是 **40** ⇒ 族中心落在 y=2+22=24，比 40px 的中线（20）低 4px，
+   而且底边 46 越过分隔线 6px。⇒ 独立窗口里把**族高改成行高 40**、top 归 0：
+   三颗 28px 钮由 flex 居中在 y 6~34（中心正好 20），与左边标题文字同一条中线。 */
+.is-team-popout .window-controls { top: 0; height: 40px; }
+
+/* ⛔ 同一条令的另一半：标题文字「偏下」。文字盒原先用 font 默认 line-height（14px 字 → 19px 行盒，
+   行盒里 CJK 的字面偏上、下沿留 descender 空间），flex 居中的是**行盒**不是字面 ⇒ 看着低 1~2px。
+   ⇒ 标题/副标题一律 line-height: 1（行盒 = 字号），图标 16px 同高，整排字面与图标落在 y=20 中线。 */
+.team-modal__title strong,
+.team-modal__sub { line-height: 1; }

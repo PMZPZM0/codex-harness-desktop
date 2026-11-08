@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { MessagesSquare, Search, Settings2, X } from "lucide-react";
+import { MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -38,6 +38,9 @@ import { TeamProfileCard } from "./14-team-profile-card";
 import { TeamMentionPanel } from "./15-team-mention-panel";
 import { TeamSearchPanel } from "./16-team-search";
 import { TeamComposer, loadTeamRunOpts, saveTeamRunOpts } from "./10-team-composer";
+/* 11-08 用户令「询问/审批跟对话框一样，不要重复造轮子」：卡片本体复用主对话那两件，
+   本域只做归属过滤（独立板块，⛔ 不往群视图里再写一套卡片 JSX）。 */
+import { TeamPendingCards } from "./22-team-pending-cards";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
@@ -89,6 +92,9 @@ type Props = {
   onSetMessageLayout?: (next: "split" | "left") => void;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
   onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 11-08 用户令「点停止是群里所有运行状态都停止掉」：输入框发送键在运行中变成停止键，
+      一点全群停（候选 id 由本视图数出来，通道在 store）。 */
+  onStopAll?: (threadIds: string[]) => Promise<{ ok: boolean; error?: string; stopped?: number }>;
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
   onOpenModelSettings?: () => void;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
@@ -122,7 +128,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
-  onStopPartner, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout,
+  onStopPartner, onStopAll, live, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -136,6 +142,11 @@ export function TeamGroupView({
   const [text, setText] = useState("");
   const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
+  /* 11-08 用户令「点停止是群里所有运行状态都停止掉」：输入框发送键在运行中变成一个停止键，
+     一点全群停。`stopping` 只用来锁住那一下（主对话同款：interrupting 期间按钮转圈）。
+     ⛔ 停止候选 = `agentThreadIds`（群内出现过的子会话），store 再让主进程按活动回合表核对。
+     （处理函数在 agentThreadIds 之后定义，见下方的 stopEverything。） */
+  const [stopping, setStopping] = useState(false);
   /* ⛔ 11-06：busy 会在 `invokeAgent` 返回时就清空，但后台调度会话可能还在收尾
      ⇒ 只看 busy 会显示「没有运行」而后台其实还在跑。订阅共享桥的登记数做补充判据。 */
   const [sendError, setSendError] = useState("");
@@ -162,6 +173,18 @@ export function TeamGroupView({
     { open: false, query: "", start: 0, caret: 0, typed: false },
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  /* ⛔ 11-08 用户（截图）：「两边侧边栏都没有展开折叠按键，右边在 🔍 图标右边加一个下面展开折叠的按键」
+     ⇒ 成员栏可收起，键位就在搜索键右边。落 localStorage：关掉面板再开、重启应用都保持。 */
+  const [membersOpen, setMembersOpen] = useState(() => {
+    try { return localStorage.getItem("harness-team:members-open") !== "0"; } catch { return true; }
+  });
+  const toggleMembers = () => {
+    setMembersOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("harness-team:members-open", next ? "1" : "0"); } catch { /* 存储不可用：本次会话内有效 */ }
+      return next;
+    });
+  };
   /** 搜索跳转后的短暂高亮（1.6s 后清掉，⛔ 不留永久 class） */
   const [flashKey, setFlashKey] = useState("");
   /* 过程折叠（用户：「这样不会刷屏」）：每条消息自带一个折叠块、默认收起。
@@ -524,6 +547,33 @@ export function TeamGroupView({
   );
   const liveLen = (live ?? []).map((r) => `${r.threadId}:${String(r.text ?? "").length}`).join("|");
 
+  /* 11-08 用户令「询问/审批跟对话框一样」：伙伴的询问卡/审批卡要就地弹在群里。
+     归属判据 = **本群出现过的子会话 id**（正在跑的 ∪ 群消息里的来源会话）——
+     ⛔ 只用 live 会在回合刚结束、卡还没关掉的那一瞬间把卡"闪掉"；
+     也⛔ 不用全局 pending（那是所有会话的，会把别的群/主对话的询问一起弹上来）。 */
+  const agentThreadIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const run of live ?? []) if (run.threadId) ids.add(run.threadId);
+    for (const row of rows) if (row.threadId) ids.add(row.threadId);
+    return [...ids];
+  }, [live, liveLen, rows]);
+
+  /* 输入框那个「停止」键：一次停掉群里所有正在跑的伙伴（主对话 interrupt 的群版）。
+     ⛔ 与成员行的单人停止共用同一条通道（harness-team:stop），只是带 stopAll。 */
+  const groupRunning = (live ?? []).some((run) => run.status === "running") || (busy ?? []).length > 0;
+  const stopEverything = async () => {
+    if (stopping || !onStopAll) return;
+    setStopping(true);
+    setSendError("");
+    try {
+      const res = await onStopAll(agentThreadIds);
+      if (!res?.ok) setSendError(res?.error || "停止失败");
+      else flashMenuMsg(`已停止群里 ${res.stopped ?? 0} 个正在跑的伙伴`);
+    } finally {
+      setStopping(false);
+    }
+  };
+
   /* 换群 ⇒ 无条件贴底；消息或流式有变化 ⇒ 只在原本贴底时跟随 */
   useEffect(() => { stickRef.current = true; setVisibleCount(PAGE); stick(); }, [group.id]);
   useEffect(() => { if (stickRef.current) stick(); }, [rows.length, liveLen]);
@@ -682,6 +732,18 @@ export function TeamGroupView({
           >
             <Search size={14} />
           </button>
+          {/* ⛔ 11-08 用户：「右边在 🔍 图标右边加一个下面展开折叠的按键图标」
+              —— 收起 / 展开右侧成员栏（键位紧跟搜索键，⛔ 别挪到最右，用户点名了位置） */}
+          <button
+            type="button"
+            className={`team-group__icon-btn is-icon-only${membersOpen ? "" : " is-on"}`}
+            onClick={toggleMembers}
+            title={membersOpen ? "收起成员栏" : "展开成员栏"}
+            aria-label={membersOpen ? "收起成员栏" : "展开成员栏"}
+            aria-expanded={membersOpen}
+          >
+            {membersOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+          </button>
           <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回工作伙伴" : "群设置"}>
             {showSettings ? <X size={14} /> : <Settings2 size={14} />} <span>{showSettings ? "返回" : "设置"}</span>
           </button>
@@ -720,7 +782,7 @@ export function TeamGroupView({
           onRunSchedule={onRunSchedule}
         />
       ) : (
-        <div className="team-group__body">
+        <div className={`team-group__body${membersOpen ? "" : " is-members-hidden"}`}>
           <div className="team-group__main">
             <div className="team-group__stream-wrap" ref={wrapRef}>
             <div className={`team-group__stream${messageLayout === "left" ? " is-layout-left" : ""}`} role="log" aria-live="polite" ref={streamRef} onScroll={onStreamScroll}>
@@ -994,6 +1056,10 @@ export function TeamGroupView({
             )}
 
             <footer className="team-group__composer">
+              {/* 11-08 用户令「询问，审批，计划，等等全部跟对话框一样」：伙伴跑起来后的
+                  询问卡 / 审批卡**就地弹在输入卡上方**（与主对话 composer-overlay-stack 同定位，
+                  盖住状态区而不挤走消息流），能直接回答/拒绝，⛔ 不再只能干等。 */}
+              <TeamPendingCards app={app} threadIds={agentThreadIds} />
               {/* @ 候选面板（11-07 用户令）：原来那一整排常驻 chip 收进面板，输入区不再被它占掉一行。 */}
               {mention.open && (
                 <TeamMentionPanel
@@ -1046,6 +1112,10 @@ export function TeamGroupView({
                 opts={runOpts}
                 onOpts={setRunOpts}
                 sending={sending}
+                /* 11-08 用户令：运行中发送键过渡成停止键（⏹），点一下把群里所有运行状态停掉。 */
+                running={groupRunning}
+                stopping={stopping}
+                onStop={() => void stopEverything()}
                 /* ⛔ `/stop` 是本地指令，不需要 @ 任何人 —— 别把发送键锁死 */
                 canSend={Boolean(text.trim() && (atTargets.length || /^\/stop\b/.test(text.trim())))}
                 onSend={() => void send()}

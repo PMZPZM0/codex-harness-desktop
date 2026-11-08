@@ -15,7 +15,7 @@
  *     （卡片头 X / ESC / 点背景）。⛔ 不要再把面板做回 inset:0。
  */
 import { useEffect, useMemo, useState } from "react";
-import { MessagesSquare, X, Plus, Search, MoreHorizontal, Pencil, Eraser, Trash2 } from "lucide-react";
+import { MessagesSquare, X, Plus, Search, MoreHorizontal, Pencil, Eraser, Trash2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { TeamCreateDialog } from "./12-team-create";
 import type { TeamCreateInput } from "./12-team-create";
 import { TeamGroupView } from "./04-team-group-view";
@@ -40,7 +40,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, setAvatar, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
     addNote, removeNote, saveMenu, saveMenuPlacement, saveMessageLayout, saveSchedules, runSchedule,
-    stopPartner,
+    stopPartner, stopAll,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
   const [activeId, setActiveId] = useState("");
@@ -56,6 +56,15 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
   /* 解散群确认（11-07 用户：「删除帮我做成弹窗」）：
      不再在菜单里要求「再点一次」，点解散直接开确认弹窗（⛔ 不用 window.confirm，守卫【191】）。 */
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  /* ⛔ 11-08 用户：「两边侧边栏都没有展开折叠按键」⇒ 左栏可收起成 48px 迷你条。
+     落 localStorage（与输入框高度同口径）：关掉面板再开、重启应用都保持上次的状态。 */
+  const [railCollapsed, setRailCollapsed] = useState(() => {
+    try { return localStorage.getItem("harness-team:rail-collapsed") === "1"; } catch { return false; }
+  });
+  const toggleRail = (next: boolean) => {
+    setRailCollapsed(next);
+    try { localStorage.setItem("harness-team:rail-collapsed", next ? "1" : "0"); } catch { /* 存储不可用：本次会话内有效 */ }
+  };
 
   useEffect(() => {
     if (!activeId && groups.length) setActiveId(groups[0].id);
@@ -120,22 +129,53 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
   };
 
   return (
-    <div className="team-mode">
+    <div className={`team-mode${railCollapsed ? " is-rail-collapsed" : ""}`}>
       <aside className="team-mode__rail">
+        {railCollapsed ? (
+          /* 收起态：只留两个图标（展开 / 新建），群列表整块不渲染 —— 主列因此多出 128px */
+          <div className="team-mode__rail-mini">
+            <button
+              type="button"
+              className="team-mode__add"
+              title="展开群列表"
+              aria-label="展开群列表"
+              onClick={() => toggleRail(false)}
+            ><PanelLeftOpen size={15} /></button>
+            <button
+              type="button"
+              className="team-mode__add"
+              title="新建群"
+              aria-label="新建群"
+              aria-haspopup="dialog"
+              aria-expanded={createOpen}
+              onClick={() => setCreateOpen(true)}
+            ><Plus size={15} /></button>
+          </div>
+        ) : (
+        <>
         <div className="team-mode__rail-head">
           <div className="team-mode__rail-title">
             <strong>团队</strong>
-            <span className="team-mode__rail-sub">{groups.length} / {limit} 个群</span>
+            <span className="team-mode__rail-sub" title={`${groups.length} / ${limit} 个群`}>{groups.length}/{limit}</span>
           </div>
-          <button
-            type="button"
-            className="team-mode__add"
-            title="新建群"
-            aria-label="新建群"
-            aria-haspopup="dialog"
-            aria-expanded={createOpen}
-            onClick={() => setCreateOpen(true)}
-          ><Plus size={16} /></button>
+          <div className="team-mode__rail-actions">
+            <button
+              type="button"
+              className="team-mode__add"
+              title="新建群"
+              aria-label="新建群"
+              aria-haspopup="dialog"
+              aria-expanded={createOpen}
+              onClick={() => setCreateOpen(true)}
+            ><Plus size={15} /></button>
+            <button
+              type="button"
+              className="team-mode__add"
+              title="收起群列表"
+              aria-label="收起群列表"
+              onClick={() => toggleRail(true)}
+            ><PanelLeftClose size={15} /></button>
+          </div>
         </div>
         <div className="team-mode__search">
           <Search size={13} />
@@ -215,6 +255,8 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
         </div>
         {notice && <p className="team-mode__error" role="status">{notice}</p>}
         {error && <p className="team-mode__error" role="status">{error}</p>}
+        </>
+        )}
       </aside>
 
       <main className="team-mode__main">
@@ -245,6 +287,9 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             onSaveSchedules={(list) => saveSchedules(active.id, list)}
             onRunSchedule={(scheduleId) => runSchedule(active.id, scheduleId)}
             onStopPartner={(memberId) => stopPartner(active, memberId)}
+            /* 11-08 用户令「点停止是群里所有运行状态都停止掉」：候选由视图数（群内会话 id），
+               store 负责发通道 + 立刻清 busy/live。 */
+            onStopAll={(threadIds) => stopAll(active.id, threadIds)}
             /* 群内成员头像（11-07）：点成员栏那些小头像就能换，只影响这个群 */
             onSetAvatar={(memberId: string, avatar: string) => setAvatar(active.id, memberId, avatar)}
             onRename={(name) => rename(active.id, name)}

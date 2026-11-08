@@ -33,9 +33,23 @@ export function TeamMentionPanel({
   sections, selected, query, onQuery, onPick, onClear, onClose, autoFocus = false,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
+  /* ⛔ 11-08 用户：「这弹窗，也没有鼠标点外部关掉」——原来只能再点一次 @ 键或用 ESC。
+     ⇒ 点面板外面就收（输入区那一块算同一个上下文，点文本域 / 工具行不关，
+       否则「点输入框继续打字」会把面板关了）。 */
+  useEffect(() => {
+    const onDown = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target || rootRef.current?.contains(target)) return;
+      if (target.closest(".team-group__composer")) return;
+      onClose();
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [onClose]);
 
   const filtered = useMemo(
     () => sections
@@ -46,7 +60,7 @@ export function TeamMentionPanel({
   const total = filtered.reduce((sum, section) => sum + section.items.length, 0);
 
   return (
-    <div className="team-mention" role="dialog" aria-label="@ 候选面板">
+    <div className="team-mention" role="dialog" aria-label="@ 候选面板" ref={rootRef}>
       <div className="team-mention__head">
         <AtSign size={13} aria-hidden />
         <input

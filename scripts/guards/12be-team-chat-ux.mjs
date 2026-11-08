@@ -187,11 +187,70 @@ const catalog = [
     "引用文字与正文左对齐（负 margin 抵消浅底 padding，竖线绝对定位不占位）");
   /* 11-07 用户令「头像对齐输入框边框」：改前实测头像 left 259 / 输入框卡片 left 221（差 38px）。
      根因是子项按 720 居中、composer 按 790 列居中 ⇒ 两条轴不同，必须共用同一条公式。 */
-  ok(/padding-left: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\)/.test(css)
-    && /\.team-group__composer \{ padding-inline: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\); \}/.test(css)
-    && /\.team-group__stream > \* \{[\s\S]{0,160}?width: min\(100%, var\(--team-column\)\)/.test(css)
+  ok(/\.team-group__composer \{ padding-inline: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\); \}/.test(css)
+    && /\.team-group__stream > \* \{[\s\S]{0,200}?max-width: var\(--team-column\)/.test(css)
+    && /\.team-group__stream > \* \{[\s\S]{0,200}?margin-inline: auto/.test(css)
     && /align-items: flex-start;/.test(css),
-    "⛔ 消息头像与输入框左边框同轴（stream / composer 同一条 padding 公式与列宽）");
+    "⛔ 消息头像与输入框左边框同轴（stream / composer 共用 --team-column 与同一居中口径）");
+}
+
+/* ── ⑩ 全屏自适应 + 两侧折叠键 + 输入区不铺底（11-08 用户截图）──────────────
+   ① 「中间这个都不自适应居中」：根因是 11-07 那版 `.team-group__stream > * { margin-right: 0 }`
+     把空态 `.team-group__empty { margin: auto }` 的右半边打成 0 ⇒ 整块被推到右边。
+   ② 「输入框也不会自适边长」：列宽钉死 790，全屏时只占中间一小条。
+   ③ 「两边侧边栏都没有展开折叠按键」／「🔍 右边加一个下面展开折叠的按键」。
+   ④ 「输入框这一排怎么都弄了底色，不要铺满底色」。 */
+{
+  const css = read("src/styles/61-team-mode.css");
+  ok(/\.team-group__stream > \* \{[\s\S]{0,200}?width: min\(calc\(100% - 28px\), var\(--team-column\)\)/.test(css)
+    && /--team-column: min\(var\(--chat-column-max\), calc\(100% - var\(--chat-side-reserve\) \* 2\)\)/.test(css)
+    && !/--team-column: min\(100%, 1800px\)/.test(css),
+    "群列宽与主对话**同一个数**（--chat-column-max 1000 + 让位；⛔ 既不钉死 790，也不放到 1800）");
+  ok(!/\.team-group__stream > \* \{[^}]*margin-right: 0/.test(css),
+    "⛔ 子项的 margin-right 不得写 0（会把空态的 margin:auto 打残 ⇒ 空态整块右漂）");
+  ok(/\.team-group__empty \{ margin: auto;/.test(css) === false || /\.team-group__empty \{[^}]*margin: auto/.test(css),
+    "空态仍靠 margin:auto 双向居中（左右由子项 margin-inline:auto 兜住）");
+  const panel = codeOnly(read("src/features/harness-team/index.tsx"));
+  ok(/is-rail-collapsed/.test(panel) && /team-mode__rail-mini/.test(panel) && /PanelLeftClose/.test(panel)
+    && /harness-team:rail-collapsed/.test(panel) && /--team-rail: 48px/.test(css),
+    "左栏可收成 48px 迷你条（折叠键 + 落 localStorage，⛔ 关掉面板再开不该忘）");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/PanelRightClose/.test(view) && /is-members-hidden/.test(view) && /harness-team:members-open/.test(view)
+    && /\.team-group__body\.is-members-hidden \.team-group__members \{ display: none; \}/.test(css),
+    "成员栏可收起（收起 = 整栏不渲染，主列自然变宽）");
+  ok(view.indexOf('aria-label="群内搜索"') > 0
+    && view.indexOf('aria-label="群内搜索"') < view.indexOf("<PanelRightClose size={14} />")
+    && view.indexOf("<PanelRightClose size={14} />") < view.indexOf("群设置"),
+    "⛔ 折叠键位在 🔍 右边（用户点名了位置）");
+  ok(/\.team-group__composer \{[\s\S]{0,600}?background: transparent;/.test(css),
+    "⛔ 输入区那一排不再整条铺底（用户：「不要铺满底色」）");
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  ok(/send-button morph-action/.test(composer) && /<span className="morph-action-icon">/.test(composer)
+    && !/team-composer__send/.test(composer) && !/team-composer__count/.test(composer)
+    && !/is-send"\s*>\s*<span/.test(composer),
+    "发送键与主对话同源（.send-button.morph-action），⛔ 不再自造蓝色药丸 / 字数计数");
+  ok(/\.team-composer \{[\s\S]{0,600}?min-height: 108px;/.test(css)
+    && /\.team-composer \{[\s\S]{0,600}?padding: 16px 14px 10px;/.test(css)
+    && /\.team-composer \{[\s\S]{0,600}?box-shadow: var\(--shadow\);/.test(css)
+    && !/\n\.team-composer \{ padding: 8px 10px 6px; \}/.test(css),
+    "输入卡几何对齐主对话 .composer（108 最小高 / 16-14-10 内边距 / 同一阴影，⛔ 后面不许再压回 8-10-6）");
+  /* 11-08 用户：「对齐左边文字一排，现在还是有点靠下了」——实测群头文字 55~67、左栏「团队」60~71，
+     差 4px。根因两块头部内边距不同（群头 6+28+6=40，左栏头 11+28+8=47）⇒ 左栏头必须也收成 6/6。 */
+  /* 11-08 用户（圈住独立窗标题栏）：「上面这个还是没对齐，偏下，放到这个框上下居中的位置」。
+     ⛔ 真根因是**盒子被 1px 边框吃掉**：`.team-modal__head` 的 border-bottom 把 content box
+        从 40 压到 39 ⇒ flex 居中的字/钮全落在 19.5；再加上字体默认行盒，肉眼就是"偏下"。
+     ⇒ 分隔线改内阴影（不占盒子）+ 标题行高归 1 + 窗口钮族高改 40（原来 44 高、中心 24）。 */
+  const cssBare = codeOnly(css);   // ⛔ 负向判断要剥注释：说明文字里就写着 `border-bottom: 1px`
+  ok(/\.team-modal__head \{[\s\S]{0,400}?box-shadow: inset 0 -1px 0 var\(--line\);/.test(cssBare)
+    && !/\.team-modal__head \{[^}]*border-bottom/.test(cssBare),
+    "标题栏用**内阴影**画分隔线（border-bottom 会把 40 的盒子压成 39 ⇒ 整排字/钮偏下 0.5~1px）");
+  ok(/\.team-modal__title strong,[\s\S]{0,80}?\.team-modal__sub \{ line-height: 1; \}/.test(css),
+    "标题/副标题 line-height: 1（flex 居中的是行盒，默认行盒里 CJK 字面偏低）");
+  ok(/\.is-team-popout \.window-controls \{ top: 0; height: 40px; \}/.test(css),
+    "独立窗三钮族高 = 标题行高 40（全局 44 族是给 52 标题栏的；沿用它 ⇒ 钮中心 24、比中线低 4px，底边还会越线）");
+  ok(/\.team-mode__rail-head \{[\s\S]{0,160}?padding: 6px 10px 6px 12px;/.test(css)
+    && !/\.team-mode__rail-head \{[^}]*padding: 11px /.test(css),
+    "左栏「团队」与群头同高（两块头部内边距都是 6/6 ⇒ 首行文字落在一条线上，⛔ 别再给左栏头加 11px 上边距）");
 }
 
 /* ── ⑨ 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）──
@@ -510,9 +569,10 @@ const catalog = [
 /* ── ⑨ 群聊与主对话同款：输入框把手 / 侧边粗条 / 消息排版（11-07 用户令）── */
 {
   const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
-  ok(/team-composer__resize/.test(composer) && /team-composer__grip/.test(composer)
+  ok(/className="composer-resize-handle/.test(composer) && /className="composer-resize-grip/.test(composer)
+    && !/team-composer__resize/.test(composer) && !/team-composer__grip/.test(composer)
     && /localStorage\.getItem\("team-composer-height"\)/.test(composer),
-    "群输入框有与主对话同款的顶部把手（拖动改高度 / 双击复位 / 持久化）");
+    "群输入框的顶部把手**复用主对话的类名与皮肤**（⛔ 不再自己写一套 96×12/56×4 胶囊 —— 那样描边不连边框线）");
   ok(/<ComposerRail app=\{app\}/.test(composer),
     "群输入框左侧复用主对话的 ComposerRail（侧边粗条，⛔ 不另造一条装饰条）");
   ok(/team-composer__pane-flyout/.test(composer) && /bottom: calc\(100% \+ 8px\)/.test(read("src/styles/61-team-mode.css")),
@@ -546,6 +606,58 @@ const catalog = [
   const quoteView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/team-process__quote-author/.test(quoteView) && /faceOfId\(quote\.authorId\)/.test(quoteView),
     "引用行里「回复某人」带头像 + 名字（真实提及，⛔ 不只是纯文字）");
+}
+
+/* ── ⑪ 群里就地弹「询问 / 审批」+ 发送键 morph 成停止键（11-08 用户两条令）──────
+   ① 「询问，审批，计划，等等全部跟对话框一样就行，不要重复造轮子」+「要完全一样」
+      ⇒ 群里必须能回答伙伴的询问/审批（以前只能干等）；卡片本体**复用**主对话那两件。
+   ② 「群运行中的，发送按键过渡成⏹️，这里点停止是群里所有运行状态都停止掉」
+      ⇒ 一个按钮 morph（⛔ 不是两个按钮切换）、点一下全群停。 */
+{
+  const cards = codeOnly(read("src/features/harness-team/22-team-pending-cards.tsx"));
+  ok(/from "\.\.\/app-view\/helpers"/.test(cards) && /RequestCard/.test(cards)
+    && /03-agent-ask-card/.test(cards) && /AgentAskCard/.test(cards),
+    "群里的询问/审批卡**复用主对话的 RequestCard / AgentAskCard**（⛔ 不另写一套卡）");
+  ok(/app\.pending \?\? \[\]/.test(cards) && /ids\.has\(String\(request\.params\?\.threadId/.test(cards)
+    && /app\.agentAsk && ids\.has\(app\.agentAsk\.threadId\)/.test(cards),
+    "归属按会话 id 过滤（伙伴的询问只落在群里；⛔ 拿全局 pending 会把别的会话的卡一起弹上来）");
+  ok(/window\.codex\.respond|onDone=/.test(cards) && /\.\.\.\/app-state/.test(cards) === false || /import type \{ HarnessAppApi \}/.test(cards),
+    "回包仍走卡片自己那条通道（window.codex.respond），app 只用来读写 pending/agentAsk");
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  ok(/<TeamPendingCards app=\{app\} threadIds=\{agentThreadIds\} \/>/.test(view)
+    && /const agentThreadIds = useMemo\(/.test(view)
+    && /for \(const run of live \?\? \[\]\) if \(run\.threadId\) ids\.add/.test(view)
+    && /for \(const row of rows\) if \(row\.threadId\) ids\.add/.test(view),
+    "群视图把「本群出现过的会话 id」交给卡片区（正在跑的 ∪ 群消息来源；⛔ 只用 live 会让卡在回合结束时闪掉）");
+  const css = read("src/styles/61-team-mode.css");
+  ok(/\.team-group__overlay-stack \{[\s\S]{0,220}?position: absolute;/.test(css)
+    && /\.team-group__overlay-stack \{[\s\S]{0,260}?bottom: calc\(100% - 6px\);/.test(css)
+    && /\.team-group__overlay-stack \{[\s\S]{0,360}?padding-inline: max\(14px, calc\(\(100% - var\(--team-column\)\) \/ 2\)\);/.test(css)
+    && /\.team-group__composer \{[\s\S]{0,400}?position: relative;/.test(css),
+    "卡片区绝对定位在输入卡**正上方**、与输入卡同一条轴（主对话 composer-overlay-stack 同定位；⛔ 不挤走消息流）");
+
+  const composer = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  ok(/const showStop = Boolean\(running\) && !hasDraft;/.test(composer)
+    && /className=\{`send-button morph-action \$\{showStop \? "is-pause" : "is-send"\}`\}/.test(composer)
+    && /onClick=\{showStop \? onStop : onSend\}/.test(composer),
+    "运行中发送键**同一个节点** morph 成停止键（主对话同口径：空草稿=停止 / 有草稿=发送；⛔ 别用两个按钮切换）");
+  ok(/<Square size=\{15\} fill="currentColor" \/>/.test(composer) && /<Spinner \/>/.test(composer),
+    "停止图腾 ⏹（实心方块）+ 停止中转圈（用户点名的那个样子）");
+  ok(/running=\{groupRunning\}/.test(view) && /onStop=\{\(\) => void stopEverything\(\)\}/.test(view)
+    && /onStopAll\(agentThreadIds\)/.test(view),
+    "视图把「有人在跑」与「停全部」接到输入框（候选 = 群内会话 id）");
+  ok(/const stopAll = useCallback\(/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
+    && /harnessTeamStop\(\{ threadIds: candidates, stopAll: true \}\)/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
+    && /onStopAll=\{\(threadIds\) => stopAll\(active\.id, threadIds\)\}/.test(codeOnly(read("src/features/harness-team/index.tsx"))),
+    "store 发 `stopAll: true` 并接线到面板（成功即清 busy/live，⛔ 不等引擎回包 —— 否则按钮一直停在停止上）");
+  const stopSvc = codeOnly(read("electron/features/harness-team-stop.ts"));
+  ok(/if \(input\?\.stopAll === true\)/.test(stopSvc)
+    && /const hits = \[\.\.\.engineActiveTurnIds\]\.filter\(\(\[, owner\]\) => list\.includes\(owner\)\)/.test(stopSvc)
+    && /for \(const \[turnId, owner\] of hits\)/.test(stopSvc),
+    "主进程全群停：遍历活动回合表，只中断**候选列表里**那些会话（⛔ 不碰主对话/别的群）");
+  ok(/stopTeamRuns\(input as TeamStopInput\)/.test(read("electron/features/harness-team-ipc.ts"))
+    && /export async function stopTeamRuns/.test(stopSvc),
+    "通道实现抽到 `harness-team-stop.ts`（ipc 注册宿主已到巨型文件棘轮上限，⛔ 别再往里塞逻辑）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

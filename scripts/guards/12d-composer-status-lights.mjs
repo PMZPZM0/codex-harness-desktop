@@ -69,11 +69,21 @@ ok(!/\.composer\s*\{[^}]*container-type/.test(css) && !/\.composer-wrap\s*\{[^}]
 /* ── 会话主列自适应（10-20 用户：「全屏中间还是一样大」+「两边要留好刻度尺和专家团轨道」）──
    失效方式：只改 .timeline 不改 composer-wrap ⇒ 消息与输入框错位；两侧让位写死 23px ⇒
    正文压到左侧刻度尺/右侧办公室轨道下面（用户截图报障）。两处必须引用同一组变量。 */
-ok(rootCss.includes("--chat-column-max: 1360px") && rootCss.includes("--chat-side-reserve: clamp(23px, 10%, 104px)"),
-  "会话主列变量在：宽窗封顶 1360px + 两侧按 10% 让位（上限 104px = 右侧轨道 92 + 呼吸）");
+/* 11-08 用户：「主对话框的这个自适应长度也改一下，现在太长了」（截图圈住输入卡右缘）
+   ⇒ 封顶值 1360 → 1260（按用户框住的宽度 / 卡片宽 = 0.928 换算）。断言只认「有个像素封顶
+   且落在合理区间」，不做等值钉死 —— 这是**审美参数**，用户每次提都能改；结构与区间才是不变量。 */
+{
+  const cap = Number((rootCss.match(/--chat-column-max:\s*(\d+)px/) ?? [])[1] ?? 0);
+  ok(cap >= 1000 && cap <= 1360
+    && rootCss.includes("--chat-side-reserve: clamp(23px, 10%, 104px)"),
+    `会话主列变量在：宽窗封顶 ${cap}px（合理区间 1000~1360；11-08 由 1360 收到 1260）+ 两侧按 10% 让位（上限 104px = 右侧轨道 92 + 呼吸）`);
+}
+/* 11-08 用户两次圈图「输入框太长了」⇒ 整列封顶收到 1000，但**仍然同一条列**
+   （输入框与消息列共用 --chat-column-max 与 --chat-side-reserve）：单收输入框会变成
+   "窄卡吊在中间"，11-08 已否过一次；头像/正文/输入框左缘必须继续对齐。 */
 ok(timelineCss.includes("max(var(--chat-side-reserve), calc((100% - var(--chat-column-max)) / 2))")
   && css.includes("min(var(--chat-column-max), calc(100% - var(--chat-side-reserve) * 2))"),
-  "消息列与输入框同宽自适应：两边同一组变量（⛔ 单边改宽会让中间内容歪掉）");
+  "消息列与输入框同一条列（同一封顶 + 同一让位：⛔ 单边改宽会让中间内容歪掉）");
 ok(!timelineCss.includes("50% - 410px") && !css.includes("min(820px, 100% - 46px)"),
   "旧的 820px 死宽已拆除（窗口变大时正文能真正铺开）");
 
