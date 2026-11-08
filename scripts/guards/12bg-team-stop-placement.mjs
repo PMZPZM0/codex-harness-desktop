@@ -9,9 +9,11 @@
  *     ⇒ 全局「停止运行」大按钮**整块删除**；运行态与停止都收到每个成员行、**都排在 @ 前面**；
  *   ⑤「停用 ⏹️ 图标替代，放到 @ 前面」⇒ 文字「停」换成方形停止图标，并挪到 @ 前。
  *     运行态点 + ⏹️ + @ 三件套只在运行中出现后两项，空闲成员只剩 @。
+ *   ⑥ 11-08 用户改版：「群运行中的，发送按键过渡成 ⏹️，这里点停止是群里所有运行状态都停止掉」
+ *     ⇒ 全局停止从**成员栏大按钮**改成**输入框发送键 morph**；成员栏那块保持删除。
  *
- * 判据：菜单无系统项 / 无全局停止键（含 stopAll） / 顺序（状态点→⏹️→@）/
- *       停键是图标不是文字 / 状态点有动画且尊重 prefers-reduced-motion /
+ * 判据：菜单无系统项 / 成员栏无全局停止键（输入框 morph 停止键在位且走全群停）/
+ *       顺序（状态点→⏹️→@）/ 停键是图标不是文字 / 状态点有动画且尊重 prefers-reduced-motion /
  *       停键认合成 id（团成员也能停）。
  */
 import { readFileSync } from "node:fs";
@@ -34,12 +36,21 @@ const menuLib = read("src/lib/team-menu.mjs");
 ok(!/STOP_MENU_ITEM/.test(view) && !/sys-stop/.test(menuLib),
   "「指令」菜单不再追加系统项（点了只会弹「菜单项已经不在了」）");
 
-/* ④ 的硬要求：全局那块整块删掉，⛔ 留一个都算没改。
-   ⛔ 必须剥注释：文件里写明「全局停止键已删（连同 stopAll / stopping）」的说明本身就含这些词。 */
+/* ④ 的硬要求：**成员栏**那块全局停止键整块删掉，⛔ 留一个都算没改。
+   ⛔ 必须剥注释：文件里写明「全局停止键已删」的说明本身就含这些词。
+   ⑥ 11-08：全局停止改到输入框发送键 morph（用户：「发送按键过渡成 ⏹️ … 全群停」），
+   `stopping` / `stopAll` 是那条新链路的正常状态，不再作为「旧按钮残留」的判据。 */
 const codeOnly = (src) => String(src).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 const viewCode = codeOnly(view);
-ok(!/team-group__members-stop\b/.test(viewCode) && !/const stopAll = /.test(viewCode) && !/stopping/.test(viewCode),
-  "⛔ 没有全局「停止运行」：按钮、stopAll、stopping 状态全部删除（用户截图圈掉的那一块）");
+ok(!/team-group__members-stop\b/.test(viewCode) && !/const stopAll = /.test(viewCode),
+  "⛔ 成员栏不再有全局「停止运行」按钮/行（用户截图圈掉的那一块保持删除）");
+const composerCode = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+ok(/const showStop = Boolean\(running\) && !hasDraft;/.test(composerCode)
+  && /onClick=\{showStop \? onStop : onSend\}/.test(composerCode)
+  && /disabled=\{showStop \? Boolean\(stopping\) \|\| !onStop : !canSend\}/.test(composerCode),
+  "发送键 morph 成停止键（运行中 + 空草稿 = ⏹️；stopping 期间禁用防连点）");
+ok(/const stopEverything = async \(\) => \{[\s\S]{0,320}?await onStopAll\(agentThreadIds\)/.test(viewCode),
+  "输入框停止键走全群停通道（onStopAll(agentThreadIds)，与成员行单人停止同一条 IPC）");
 ok(!/team-group__members-stop\b/.test(css) && !/team-group__members-stoprow/.test(css),
   "⛔ 全局停止键的样式也删净（只删 JSX 会留下看起来还在的类）");
 

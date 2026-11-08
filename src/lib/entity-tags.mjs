@@ -16,10 +16,29 @@ export const TAG_COLORS = [
 ];
 
 /** 标签文字上限（11-08 用户令：「标签字最多两个吧，编辑和新增标签限制输入内容」）。
- *  ⛔ 按**码点**截断（`[...str]`），别用 slice —— 会把 emoji 代理对劈成半个字符。 */
+ *  ⛔ 按**字素簇**截断（Intl.Segmenter）：`[...str]` 按码点切会把 ZWJ 组合 emoji / 旗帜
+ *    劈成半个序列（如 👨‍👩‍👧 → 👨‍👩 + 悬挂 ZWJ）。没有 Segmenter 的老运行时才回落码点。 */
 export const MAX_TAG_CHARS = 3;
+/** 存储原文上限：只防脏值/滥用。⛔ 绝不按展示上限（3）截断存量 —— 那会在用户改任意
+ *  一个标签时，把其它存量长标签静默截掉（整份读改写）。 */
+const STORAGE_TAG_CAP = 80;
+
+const graphemeSegmenter = typeof Intl !== "undefined" && typeof Intl.Segmenter === "function"
+  ? new Intl.Segmenter("zh", { granularity: "grapheme" })
+  : null;
+
 export function clampTagText(value) {
-  return [...String(value ?? "").trim()].slice(0, MAX_TAG_CHARS).join("");
+  const text = String(value ?? "").trim();
+  if (!text) return "";
+  if (!graphemeSegmenter) return [...text].slice(0, MAX_TAG_CHARS).join("");
+  let out = "";
+  let count = 0;
+  for (const { segment } of graphemeSegmenter.segment(text)) {
+    if (count >= MAX_TAG_CHARS) break;
+    out += segment;
+    count += 1;
+  }
+  return out;
 }
 
 /** { [id]: { text, color } }；localStorage 里的脏值在这里收口。 */
@@ -30,7 +49,8 @@ function readMap(key) {
     const out = {};
     for (const [id, value] of Object.entries(raw)) {
       if (!id || !value || typeof value !== "object") continue;
-      const text = clampTagText(value.text);
+      /* ⛔ 读时只做类型清洗与防滥用上限，**不再按 3 字截断**（见 STORAGE_TAG_CAP 注释）。 */
+      const text = String(value.text ?? "").trim().slice(0, STORAGE_TAG_CAP);
       const color = String(value.color ?? "").trim();
       if (!text) continue;
       out[id] = { text, color: /^#[0-9a-f]{6}$/i.test(color) ? color : TAG_COLORS[0].value };

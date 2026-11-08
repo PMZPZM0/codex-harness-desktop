@@ -70,3 +70,11 @@ test("空输入 / 非 Float32Array 安全返回", () => {
   assert.equal(trimTtsSamples(null, RATE).length, 0);
   assert.equal(trimTtsSamples(new Float32Array(0), RATE).length, 0);
 });
+
+test("整体低于能量地板（只有零星毛刺）⇒ 原样返回，不砍成最后 10ms", () => {
+  const RATE2 = 22050;
+  const quiet = new Float32Array(RATE2);
+  for (let i = 0; i < quiet.length; i += 1) quiet[i] = i % 500 === 0 ? 0.01 : 0; // 稀疏毛刺，窗口 RMS 仍低于地板
+  const out = trimTtsSamples(quiet, RATE2);
+  assert.equal(out.length, quiet.length, "找不到语音窗时应保留整段（否则轻声音频被砍成 30ms）");
+});

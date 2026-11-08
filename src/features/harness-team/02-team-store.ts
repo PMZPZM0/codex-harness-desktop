@@ -560,7 +560,10 @@ export function useTeamGroups() {
     async (groupId: string, threadIds: string[]) => {
       const candidates = [...new Set(threadIds.filter((id) => id && !id.startsWith("group:")))].slice(0, 24);
       const res = (await window.codex.harnessTeamStop({ threadIds: candidates, stopAll: true })) as { ok: boolean; error?: string; reason?: string; stopped?: number };
-      if (res?.ok) {
+      /* ⛔⛔ 11-08 审查：主进程报 `idle`（live 还没到的那 1~2 秒里点停止）也算**停到位** ——
+         原来只在 ok 时清 busy/live ⇒ 停止键卡死、再点永远回「没有在跑的」。
+         界面状态以「用户按了停止」为准，主进程的 idle 是事实描述，不是失败。 */
+      if (res?.ok || res?.reason === "idle") {
         setBusyByGroup((prev) => ({ ...prev, [groupId]: [] }));
         setLiveByGroup((prev) => {
           const next = { ...prev };

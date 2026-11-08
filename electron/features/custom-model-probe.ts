@@ -507,25 +507,25 @@ export const KNOWN_GATEWAY_MODELS: { match: RegExp; wire: "responses" | "chat"; 
 
   // 火山方舟 Coding Plan：https://ark.cn-beijing.volces.com/api/coding/v3（仅 Chat 协议）
 
-  { match: /volces\.com\/api\/coding/, wire: "chat", models: ["doubao-seed-2.0-code", "doubao-seed-code", "glm-4.7", "deepseek-v3.2", "kimi-k2.5"] },
+  { match: /volces\.com\/api\/coding/, wire: "chat", models: ["doubao-seed-2.0-code", "glm-5.3", "deepseek-flash", "kimi-k3.1-pro"] },
 
   // 火山方舟标准端点
 
-  { match: /volces\.com/, wire: "chat", models: ["doubao-seed-2-1-pro-260915", "doubao-seed-1.8", "doubao-seed-1.6", "doubao-1.5-pro-32k", "deepseek-v3"] },
+  { match: /volces\.com/, wire: "chat", models: ["doubao-seed-2-1-pro-260915", "doubao-seed-2.0-pro", "deepseek-flash"] },
 
   // 智谱 Coding Plan：https://open.bigmodel.cn/api/coding/paas/v4
 
   { match: /bigmodel\.cn\/api\/coding/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5"] },
 
-  { match: /bigmodel\.cn/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5", "glm-4.6"] },
+  { match: /bigmodel\.cn/, wire: "responses", models: ["glm-5.3", "glm-5.2", "glm-5.1", "glm-5"] },
 
   // Kimi For Coding：https://api.kimi.com/coding/v1
 
-  { match: /api\.kimi\.com|kimi\.com/, wire: "chat", models: ["kimi-k3.1-pro", "kimi-k3", "kimi-k2-0905-preview", "kimi-k2-turbo-preview"] },
+  { match: /api\.kimi\.com|kimi\.com/, wire: "chat", models: ["kimi-k3.1-pro", "kimi-k3"] },
 
   // MiniMax
 
-  { match: /minimaxi\.com|minimax\.io|minimax/, wire: "responses", models: ["MiniMax-M3.1-Flash", "MiniMax-M3", "MiniMax-M2.7", "MiniMax-M2"] },
+  { match: /minimaxi\.com|minimax\.io|minimax/, wire: "responses", models: ["MiniMax-M3.1-Flash", "MiniMax-M3"] },
 
 ];
 

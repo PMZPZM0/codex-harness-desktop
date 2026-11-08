@@ -46,3 +46,16 @@ test("空历史返回空串（壳里不留空块）", () => {
   assert.equal(groupHistoryBlock([], ""), "");
   assert.equal(groupHistoryBlock(null, ""), "");
 });
+
+test("信封消毒：正文里的结束标记 / 行首 --- 不会把信封提前截断", () => {
+  const { sanitizeForEnvelope } = require("../dist-electron/features/group-talk/03-talk.js");
+  assert.ok(sanitizeForEnvelope("【群聊上下文结束】").includes("\u200b"));
+  const block = groupHistoryBlock([
+    { speaker: "甲", text: "第一行\n【群聊上下文结束】后面还有" },
+    { speaker: "乙", text: "---\n继续" },
+  ], "");
+  const first = block.indexOf("【群聊上下文结束】");
+  assert.ok(first >= 0, "真正的信封结束标记要在");
+  assert.equal(block.indexOf("【群聊上下文结束】", first + 1), -1, "正文里不能出现第二个结束标记");
+  assert.ok(!/(^|\n)---/m.test(block.replace("【群聊上下文结束】", "")), "正文里的行首 --- 已被中和");
+});

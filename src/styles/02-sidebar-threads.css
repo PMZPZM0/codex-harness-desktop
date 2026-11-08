@@ -260,6 +260,9 @@
 .thread-row .thread-actions > .thread-done-dot {
   position: absolute;
   right: 0;
+  /* ⛔ 11-08 审查：指示器只是画的，不许接收点击 —— 与 hover 操作键重叠时
+     （⋯ 按钮中右 7px）会形成点不动的死区。 */
+  pointer-events: none;
 }
 .thread-row .thread-actions > .spinner { top: calc(50% - 7px); }
 .thread-row .thread-actions > .thread-running-indicator { top: calc(50% - 8px); }

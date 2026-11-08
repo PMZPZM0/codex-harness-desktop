@@ -813,5 +813,26 @@ const catalog = [
     "group_read 保留：默认给最近 20 条，更早的由模型自己调工具取");
 }
 
+/* ── 11-08 审查修正：跨群自愈隔离 / 艾特判重窗口 / 信封消毒 / 占位模式流式正文 / 停止复位 ── */
+{
+  const channelSrc = read("electron/features/group-talk/01-channel.ts");
+  const ipcSrc = read("electron/features/harness-team-ipc.ts");
+  const talkSrc = read("electron/features/group-talk/03-talk.ts");
+  const viewSrc = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const storeSrc = read("src/features/harness-team/02-team-store.ts");
+  (channelSrc.match(/String\(k\.split\("::"\)\[0\] \?\? ""\) (!==|===) String\(groupId\)/g) ?? []).length >= 2
+    ? ok(true, "群聊会话台账自愈/认领只在本群内进行（⛔ 跨群同名成员会互删台账、串话）")
+    : ok(false, "群聊会话台账自愈/认领只在本群内进行（⛔ 跨群同名成员会互删台账、串话）");
+  ok(/Number\(\(row as \{ at\?: unknown \}\)\?\.at \?\? 0\) >= startedAt/.test(ipcSrc),
+    "群内艾特判重只看**本轮开始之后**（⛔ 旧窗口含本轮前 60s = 上一轮说过话的成员被静默跳过）");
+  ok(/export function sanitizeForEnvelope/.test(talkSrc) && /群聊上下文\\u200b/.test(talkSrc)
+    && /sanitizeForEnvelope\(text\)/.test(talkSrc),
+    "群消息原文进信封前消毒（⛔ 正文带【群聊上下文结束】/ 行首 --- 会把信封提前截断、指令漏进云同步/记忆）");
+  ok(/effectiveReplyMode === "process" && String\(run\.text \?\? ""\)\.trim\(\)/.test(viewSrc),
+    "占位模式不显示流式正文（流式卡跟着回复模式分叉）");
+  ok(/res\?\.ok \|\| res\?\.reason === "idle"/.test(storeSrc),
+    "停止返回 idle 也复位 busy/live（⛔ 原来只在 ok 时清，停止键会卡死）");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

@@ -46,10 +46,12 @@ export function EntityTagEditorHost() {
           ref={inputRef}
           className="entity-tag-input"
           value={text}
-          maxLength={MAX_TAG_CHARS}
           placeholder={`最多 ${MAX_TAG_CHARS} 个字，例如：专家团 / 客户`}
-          onChange={(event) => setText(clampTagText(event.target.value))}
-          onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); save(); } }}
+          /* ⛔⛔ 11-08 审查：不能 `maxLength={MAX_TAG_CHARS}` + 每次 onChange 截断 ——
+             中文输入法的拼音中间态（zhuan，5 个字符）会被当场截掉、受控值回写打断合成，
+             中文标签基本打不出来。⇒ 组合期原样接收，保存时再 clamp 到 3 个字素。 */
+          onChange={(event) => setText(event.target.value.slice(0, 80))}
+          onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); save(); } }}
         />
         <div className="entity-tag-colors" role="radiogroup" aria-label="标签颜色">
           {TAG_COLORS.map((option) => (

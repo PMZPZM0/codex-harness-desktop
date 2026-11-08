@@ -52,6 +52,7 @@ import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf, teamMemberIdOf } from "../../lib/team-models.mjs";
 /* 11-07：@ 提及与群内搜索的口径全部在纯函数里（可单测），视图只做接线。 */
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../lib/team-mention.mjs";
+import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
 /* 11-07 界面优化：消息流按天分隔（飞书群同款）——连续几十条跨天消息只靠时间看不出"这是哪天"。 */
 import { dayKeyOf, dayLabelOf } from "../../lib/team-view.mjs";
 /* ⛔ 贴底走统一原语（守卫禁止在时间线里直接把 scrollTop 赋成 scrollHeight ——
@@ -526,7 +527,9 @@ export function TeamGroupView({
     const effectiveModel = runOpts.model || getActiveModel().name || "";
     const params: TeamRunParams = {
       model: effectiveModel || undefined,
-      effort: runOpts.effort,
+      /* ⛔ 与主对话同一条口径（11-08 审查）：按**实际要跑的模型**把旧档夹到可用档，
+         否则界面显示三档、背后仍按切模型前的旧档发。 */
+      effort: clampEffortToLevels(runOpts.effort, effortLevelsForModel(effectiveModel)),
       sandbox: runOpts.sandbox,
       approvalPolicy: runOpts.approvalPolicy,
     };
@@ -660,7 +663,7 @@ export function TeamGroupView({
     try {
       const res = await onStopAll(agentThreadIds);
       if (!res?.ok) setSendError(res?.error || "停止失败");
-      else flashMenuMsg(`已停止群里 ${res.stopped ?? 0} 个正在跑的伙伴`);
+      else flashMenuMsg(res.stopped ? `已停止群里 ${res.stopped} 个正在跑的伙伴` : "当前没有在跑的伙伴（状态已复位）");
     } finally {
       setStopping(false);
     }
@@ -1168,7 +1171,8 @@ export function TeamGroupView({
                       </p>
                     ) : (
                       <>
-                        {String(run.text ?? "").trim()
+                        {/* ⛔ 11-08 审查：占位模式不展示流式正文（两种回复模式必须分叉） */}
+                        {effectiveReplyMode === "process" && String(run.text ?? "").trim()
                           ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
                           : <p className="team-msg__thinking">正在思考…</p>}
                         {run.status === "running" && <span className="team-msg__caret" aria-hidden />}

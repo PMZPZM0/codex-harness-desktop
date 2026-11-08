@@ -106,6 +106,9 @@ export async function ensureTalkThread(
     let healed = false;
     for (const [k, v] of Object.entries(all)) {
       if (k === key) continue;
+      /* ⛔⛔ 11-08 审查（Critical）：脏键清理**必须限定本群** —— 只看「成员 id 为空」的话，
+         A 群的自愈会把 B 群同名成员的台账键删掉（跨群串话 / B 群成员被迫重开会话）。 */
+      if (String(k.split("::")[0] ?? "") !== String(groupId)) continue;
       if (String(k.split("::")[1] ?? "").trim()) continue;   // 只清"成员 id 为空"的脏键
       /* 脏键可能挂在**另一个** threadId 上（同一个人被错开了第二条会话）——
          同名一起清掉：否则那位成员还会继续用没身份的那条会话说话。 */
@@ -123,7 +126,8 @@ export async function ensureTalkThread(
   /* 没有正键但有**同名脏键**（成员 id 为空、旧版本留下的）：认领它，别给同一个人再开一个会话。
      ⛔ 认领后必须搬到正键，否则下次反查还是空身份（就是"群里一条没有署名的消息"那个 bug）。 */
   const orphan = Object.entries(all).find(
-    ([k, v]) => !String(k.split("::")[1] ?? "").trim()
+    ([k, v]) => String(k.split("::")[0] ?? "") === String(groupId)   // ⛔ 只在**本群**里认领
+      && !String(k.split("::")[1] ?? "").trim()
       && String(v?.name ?? "") === String(member.name ?? "")
       && String(v?.threadId ?? ""),
   );

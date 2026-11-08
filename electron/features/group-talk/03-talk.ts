@@ -63,11 +63,25 @@ const TALK_HISTORY_TOTAL_MAX = 8000;
 
 export type TalkHistoryRow = { speaker: string; text: string };
 
+/**
+ * 群消息原文进入宿主信封前的消毒（11-08 审查）。
+ * ⛔ 四处剥离器（harness-block-strip / cloud-sync / memory-lessons / thread-backup）按
+ *   `【群聊上下文结束】`、行首 `---`、`=== END ===` 截断 —— 消息正文里带上这些标记，
+ *   信封会被**提前截断**：后半段（含宿主指令）漏进云同步/记忆/备份，还能被伪造成系统指令。
+ * 中和方式：插零宽空格 / 把标记等号换成全角 —— 用户看到的字面几乎不变。
+ */
+export function sanitizeForEnvelope(text: string): string {
+  return String(text ?? "")
+    .replace(/【群聊上下文/g, "【群聊上下文\u200b")
+    .replace(/^([ \t]*)(-{3,})/gm, "$1\u200b$2")
+    .replace(/(={3,})(\s*(?:用户需求|END|本次任务[^\n=]*)\s*)(={3,})/g, "＝$2＝");
+}
+
 /** 纯函数：群日志 → 共享上下文块。⛔ 只做格式化与裁剪，不读盘（谁都能复用）。 */
 export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): string {
   const picked: string[] = [];
   let used = 0;
-  const current = String(currentLine ?? "").replace(/\s+/g, " ").trim();
+  const current = sanitizeForEnvelope(String(currentLine ?? "").replace(/\s+/g, " ").trim());
   const recent = (rows ?? []).slice(-TALK_HISTORY_LIMIT);
   /* ⛔⛔ 11-08 Code review 抓到真缺陷：原先按时间**正序**累加、超预算就 break，
      丢掉的永远是**最新**那几条（实测 20 条各 400 字时第 19 条被丢、第 0 条保留）——
@@ -75,7 +89,7 @@ export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): str
   for (let i = recent.length - 1; i >= 0; i -= 1) {
     const row = recent[i];
     if (!row) continue;
-    const text = String(row.text ?? "").replace(/\s+/g, " ").trim();
+    const text = sanitizeForEnvelope(String(row.text ?? "").replace(/\s+/g, " ").trim());
     if (!text) continue;
     /* 本轮这句已在需求体里给过一次，别在历史里再贴一遍（模型会以为要回两次）。 */
     if (text === current) continue;
@@ -122,8 +136,8 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
   const need = [
     "[SYSTEM TASK · 工作伙伴消息]",
     "=== 用户需求 ===",
-    `发件人：member · ${from.name}`,
-    text,
+    `发件人：member · ${sanitizeForEnvelope(from.name)}`,
+    sanitizeForEnvelope(text),
     "=== END ===",
     "",
     /* ⛔ 群历史放**壳后**：气泡只显示上面那段需求体，模型却能读到整段共享上下文。 */

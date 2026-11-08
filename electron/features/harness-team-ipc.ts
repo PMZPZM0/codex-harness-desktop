@@ -510,9 +510,11 @@ async function runDispatchRounds(
              （只有 group_say / group_read 那套）⇒ 主理人在群里 `@构梁：…` 永远没人接。
              ⇒ 改成**按事实判重**：这一轮里如果那位成员已经自己发过话（60s 内），才跳过；
                否则照常把他的这半句投递过去（这才是"成员之间互相沟通"）。 */
+          /* ⛔⛔ 11-08 审查：判重窗口必须是**本轮开始之后**（之前一分钟也算 = 上一轮刚说过话的
+             成员会被静默跳过，正是"艾特不回"的复发点）。 */
           const spokeRecently = (readStore().messages?.[group.id] ?? []).some(
             (row) => String((row as { authorId?: unknown })?.authorId ?? "") === next.id
-              && Number((row as { at?: unknown })?.at ?? 0) > startedAt - 60_000,
+              && Number((row as { at?: unknown })?.at ?? 0) >= startedAt,
           );
           if (spokeRecently) continue;
           chainBudget -= 1;

@@ -1767,20 +1767,27 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
       "【285】会话菜单 Esc 关闭（与项目菜单同款；11-08）"
     );
     /* 11-08 用户令：「标签字最多两个吧，编辑和新增标签限制输入内容」——
-       输入框 maxLength + 存储层按码点截断（读/写同一条 clampTagText，脏值也收口）。 */
+       ⛔ 11-08 审查修正两处：① 按**字素簇**截断（Intl.Segmenter），别劈 ZWJ emoji；
+       ② 存储层读时**不按 3 截断**（只防滥用上限），否则改任意一个标签会把其它存量长标签静默截掉。 */
     {
       const tagsSrc = codeOnly(readFileSync(join(ROOT, "src", "lib", "entity-tags.mjs"), "utf8"));
       const editorSrc = codeOnly(readFileSync(join(ROOT, "src", "components", "EntityTagEditor.tsx"), "utf8"));
       (/export const MAX_TAG_CHARS = 3;/.test(tagsSrc)
-        && /export function clampTagText[\s\S]{0,220}?\[\.\.\.String\(value \?\? ""\)\.trim\(\)\]\.slice\(0, MAX_TAG_CHARS\)/.test(tagsSrc)
-        && (tagsSrc.match(/clampTagText\(/g) ?? []).length >= 3   // 定义 + readMap + setEntityTag
-        && !/slice\(0, 20\)/.test(tagsSrc) ? ok : fail)(
-        "【285】标签文字最多 3 个（11-08 用户令）：存储层按码点截断（⛔ 不劈 emoji），读/写同一口径"
+        && /new Intl\.Segmenter\("zh", \{ granularity: "grapheme" \}\)/.test(tagsSrc)
+        && /for \(const \{ segment \} of graphemeSegmenter\.segment\(text\)\)/.test(tagsSrc)
+        && /export function clampTagText/.test(tagsSrc) ? ok : fail)(
+        "【285】标签最多 3 个字素（Intl.Segmenter —— ⛔ 按码点切会把 👨‍👩‍👧 / 旗帜劈成半个序列）"
       );
-      (/maxLength=\{MAX_TAG_CHARS\}/.test(editorSrc)
-        && /onChange=\{\(event\) => setText\(clampTagText\(event\.target\.value\)\)\}/.test(editorSrc)
-        && /const next = clampTagText\(text\);/.test(editorSrc) ? ok : fail)(
-        "【285】标签编辑弹窗：输入框 maxLength 跟随上限 + 输入/保存都过 clampTagText（新增与编辑同一入口）"
+      (/const STORAGE_TAG_CAP = 80;/.test(tagsSrc)
+        && /const text = String\(value\.text \?\? ""\)\.trim\(\)\.slice\(0, STORAGE_TAG_CAP\);/.test(tagsSrc)
+        && !/const text = clampTagText\(value\.text\)/.test(tagsSrc) ? ok : fail)(
+        "【285】读存档不按展示上限截断（⛔ 否则用户改一条标签就把其它存量长标签永久截成 3 字）"
+      );
+      (!/maxLength=\{MAX_TAG_CHARS\}/.test(editorSrc)
+        && /onChange=\{\(event\) => setText\(event\.target\.value\.slice\(0, 80\)\)\}/.test(editorSrc)
+        && /const next = clampTagText\(text\);/.test(editorSrc)
+        && /!event\.nativeEvent\.isComposing/.test(editorSrc) ? ok : fail)(
+        "【285】标签弹窗：输入期不截断（中文输入法合成不被打断）、保存时才 clamp 到 3 字素"
       );
     }
     (/\.thread-actions-buttons\s*\{[^}]*position:\s*absolute/.test(cssSrc285) && /\.thread-row:not\(\.is-member-row\):hover > button:first-child > small\s*\{[^}]*visibility:\s*hidden/.test(cssSrc285) ? ok : fail)(
@@ -1788,11 +1795,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     );
     /* ⛔⛔ 11-08 用户令（截图）：「加载的时候标签会变动位置，靠左一下…标签不要动」——
        右侧状态指示（spinner / 运行转圈 / 完成点）必须绝对定位，不许再占标题行宽度。 */
-    (/\.thread-row \.thread-actions > \.spinner,[^{]*\.thread-row \.thread-actions > \.thread-running-indicator,[^{]*\.thread-row \.thread-actions > \.thread-done-dot\s*\{[^}]*position:\s*absolute[^}]*right:\s*0/.test(cssSrc285)
+    (/\.thread-row \.thread-actions > \.spinner,[^{]*\.thread-row \.thread-actions > \.thread-running-indicator,[^{]*\.thread-row \.thread-actions > \.thread-done-dot\s*\{[^}]*position:\s*absolute[^}]*right:\s*0[^}]*pointer-events:\s*none/.test(cssSrc285)
       && /\.thread-row \.thread-actions > \.spinner\s*\{\s*top:\s*calc\(50% - 7px\)/.test(cssSrc285)
       && /\.thread-row \.thread-actions > \.thread-running-indicator\s*\{\s*top:\s*calc\(50% - 8px\)/.test(cssSrc285)
       && /\.thread-row \.thread-actions > \.thread-done-dot\s*\{\s*top:\s*calc\(50% - 3\.5px\)/.test(cssSrc285) ? ok : fail)(
-      "【285】右侧状态指示绝对定位、不占标题行宽度（否则加载/运行中整列标签左跳，11-08 用户截图）"
+      "【285】右侧状态指示绝对定位、不占标题行宽度且 pointer-events:none（⛔ 不许在 ⋯ 按键上留死区）"
     );
     (!/thread-tag-switch/.test(rowsSrc285) && !/\.thread-tag-switch/.test(cssSrc285) ? ok : fail)(
       "【285】不额外加提示图标（用户令：有点击标签轮换就够了）"

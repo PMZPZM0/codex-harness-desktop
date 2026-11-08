@@ -24,6 +24,7 @@ import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextI
 import { formatInlineNotice, takeInlineNotices } from "../../../../../lib/inline-notices.mjs";
 import { BOSS_SEED_VERSION, TEAM_DISPATCH_SUPPLEMENT, TEAM_SEED_VERSION, isTeamLeadThread, markSeeded, needsSeed } from "../../../../../lib/prompt-seeds.mjs";
 import { effortLabels } from "../../../../../lib/effort-labels";
+import { clampEffortToLevels, effortLevelsForModel } from "../../../../../lib/model-specs";
 import { fmtImportNote } from "../../../../../lib/fmt-import-note";
 import { justSentIds } from "../../../../../lib/just-sent-ids";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
@@ -501,6 +502,10 @@ export async function send(bag: Bag, event?: FormEvent) {
       /* ⛔ 模型迁移提示：**只在发送入口弹一次**（resolveStartModel 是纯函数，被多处调用）。 */
       const wantedModelNow = bag.selectedModel?.model ?? modelName(bag.modelId);
       const startModelNow = resolveStartModel(bag);
+      /* ⛔⛔ 11-08 审查：档位必须按「实际要跑的模型」再夹一次 —— 界面已按规格表只显示可用档，
+         但存储里的旧档（如切模型前选的 xhigh）不会被点选覆盖 ⇒ 显示三档、背后仍发旧档。
+         ⛔ 只在有值时才夹（null = 交给模型默认，别硬塞成 low）。 */
+      if (effectiveEffort) effectiveEffort = clampEffortToLevels(effectiveEffort, effortLevelsForModel(startModelNow));
       if (startModelNow !== wantedModelNow) {
         bag.showToast?.("模型已迁移", `「${wantedModelNow}」不在当前供应商的可用清单里，本会话已改用「${startModelNow}」`);
       }
@@ -626,7 +631,8 @@ export async function send(bag: Bag, event?: FormEvent) {
         bag.armRateLimitRetry(active.id, {
           input: sendInput,
           model: resolveStartModel(bag),
-          effort: bag.effort || null,
+          /* 与原回合同档（已按模型规格夹过；⛔ 别再用未夹的 bag.effort）。 */
+          effort: effectiveEffort || null,
           personality: bag.selectedModel?.supportsPersonality ? enginePersonality(bag.personality) : null,
         });
         const hydratedTurn = hydrateTurnUserMessage(result.turn, sendInput);

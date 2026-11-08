@@ -54,9 +54,14 @@ export function trimTtsSamples(samples, sampleRate = 22050) {
   const floor = Math.max(TTS_TRIM_ABS_FLOOR, globalRms * TTS_TRIM_REL_FLOOR);
   const win = Math.max(1, Math.round((rate * TTS_TRIM_WINDOW_MS) / 1000));
 
-  /* 从头找第一块「有能量」的窗口；整段都没有就保底从头开始（不吞整句）。 */
-  let headWin = 0;
-  while ((headWin + 1) * win <= n && rmsOfWindow(src, headWin * win, (headWin + 1) * win) < floor) headWin += 1;
+  /* 从头找第一块「有能量」的窗口。⛔ 一块都没有（整体极轻、只有零星毛刺）：原样返回，
+     绝不因为「找不到语音」就只留最后 10ms + 余量（那会把一段轻声音乐/气声砍成 30ms）。 */
+  let firstEnergetic = -1;
+  for (let w = 0; (w + 1) * win <= n; w += 1) {
+    if (rmsOfWindow(src, w * win, (w + 1) * win) >= floor) { firstEnergetic = w; break; }
+  }
+  if (firstEnergetic < 0) return src;
+  const headWin = firstEnergetic;
   /* 从尾找最后一块「有能量」的窗口。 */
   let tailWin = Math.floor((n - 1) / win);
   while (tailWin > headWin && rmsOfWindow(src, tailWin * win, Math.min(n, (tailWin + 1) * win)) < floor) tailWin -= 1;
