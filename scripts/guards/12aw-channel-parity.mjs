@@ -131,6 +131,13 @@ if (missing.length) {
     `⑦三条渠道回合都带全权限覆盖（实测 ${withOverride}/${turnStarts}）—— 绑到受限会话的机器人会「能聊不能做」`);
   ok(/sandboxPolicy: \{ type: "dangerFullAccess"/.test(inbCode) && /approvalPolicy: "never"/.test(inbCode),
     "⑦覆盖值必须是 dangerFullAccess + approval never（渠道是遥控入口，准入由配对门卫把关）");
+  /* ⛔ 11-08 用户反馈「⚠️ Codex 内容超出模型上限」：渠道会话是**长期复用**的（一句一拍），
+     超限后每轮都被上游拒。⇒ 回合结束看到超限错误就解除该渠道绑定（下一条自动开新会话）。 */
+  ok(/rotateChannelThreadOnOverflow/.test(inbCode)
+    && /rotateChannelThreadOnOverflow/.test(stripComments(read("electron/features/im-gateways.ts")))
+    && /maybeRotateOnOverflow\(threadId, event\.params\?\.turn\?\.error\?\.message\)/.test(inbCode)
+    && /内容超出模型上限/.test(inbCode),
+    "⑧渠道会话上下文超限 ⇒ 自动解除绑定（下一条消息自动开新会话；⛔ 别让用户卡死在爆掉的会话里）");
   globalThis.fetch = realFetch;
 }
 

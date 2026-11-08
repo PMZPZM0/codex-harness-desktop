@@ -368,7 +368,32 @@ function recordQqContext(from: string, chatId: string, msgId: string, scene: "gr
 // 飞书官方扫码连接（Device Authorization Flow，复刻 ZCode）：扫码 → 飞书自动建应用并授权 → 凭据回传 → 复用 feishuGateway.connect
 
 // ponytail 技能包开关（写代码模式）：off 时钩子静默跳过，full 时注入精简工程规则
-export { WEIXIN_STREAM_BUDGET, TELEGRAM_STREAM_BUDGET, FEISHU_STREAM_BUDGET, DINGTALK_STREAM_BUDGET, QQ_STREAM_BUDGET, weixinStreamSink, weixinTypingStops, startWeixinTyping, stopWeixinTyping, feishuStreamSink, dingtalkStreamSink, qqStreamSink, telegramStreamSink, botStreamSessions, botStreamPlanFor, weixinBindings, weixinThreadChat, telegramBindings, botBindingsFile, botBindingsLoaded, loadBotBindings, writeBotBindings, botsFile, channelBotBindings, channelLog, persistChannelLog, channelThreadChat, qqReplyContexts, qqLastMsgId, qqLastScene, recordQqContext, handleChannelAudioMessage, transcodeToWav16k, resolveFfmpegPath, weixinGateway, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway };
+/** 渠道会话上下文超限 ⇒ 解除该渠道的会话绑定（下一条消息自动开新会话）。
+ *  ⛔ 只清「绑定 + 本线程的按用户缓存」，**不删会话本身**（用户可能还想在桌面端翻记录）。
+ *  ⛔ 这是渠道侧唯一能做的自救：会话是长期复用的，超限后每轮都会被上游拒；
+ *     换一条新会话立刻恢复（引擎的自动压缩按标称窗口算，供应商实际限得更小时来不及压）。
+ *  返回被解除的渠道名（空串 = 这个 thread 不属于任何渠道绑定）。 */
+function rotateChannelThreadOnOverflow(threadId: string): string {
+  const tid = String(threadId ?? "");
+  if (!tid) return "";
+  let hit = "";
+  for (const key of Object.keys(channelBotBindings)) {
+    if (String(channelBotBindings[key]?.threadId ?? "") === tid) {
+      channelBotBindings[key] = null;
+      hit = key;
+    }
+  }
+  if (!hit) return "";
+  for (const [from, id] of [...weixinBindings]) if (id === tid) weixinBindings.delete(from);
+  for (const [id] of [...weixinThreadChat]) if (id === tid) weixinThreadChat.delete(id);
+  for (const [id] of [...telegramBindings]) if (id === tid) telegramBindings.delete(id);
+  for (const [id] of [...channelThreadChat]) if (id === tid) channelThreadChat.delete(id);
+  void writeBotBindings();
+  channelLog("info", `${hit} 会话上下文超限 ⇒ 已解除绑定，下一条消息自动开新会话`);
+  return hit;
+}
+
+export { WEIXIN_STREAM_BUDGET, TELEGRAM_STREAM_BUDGET, FEISHU_STREAM_BUDGET, DINGTALK_STREAM_BUDGET, QQ_STREAM_BUDGET, weixinStreamSink, weixinTypingStops, startWeixinTyping, stopWeixinTyping, feishuStreamSink, dingtalkStreamSink, qqStreamSink, telegramStreamSink, botStreamSessions, botStreamPlanFor, weixinBindings, weixinThreadChat, telegramBindings, botBindingsFile, botBindingsLoaded, loadBotBindings, writeBotBindings, botsFile, channelBotBindings, rotateChannelThreadOnOverflow, channelLog, persistChannelLog, channelThreadChat, qqReplyContexts, qqLastMsgId, qqLastScene, recordQqContext, handleChannelAudioMessage, transcodeToWav16k, resolveFfmpegPath, weixinGateway, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway };
 export type { BotChannelBinding };
 
 /** ⛔ weixinGateway 的唯一写入口：main.ts 的 bindBoot 注入 + 退出清理都会用到；

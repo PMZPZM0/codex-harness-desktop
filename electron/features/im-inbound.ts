@@ -10,7 +10,8 @@
 import { plainTextForChannel } from "../channel-text";
 import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { app } from "electron";
-import { botStreamSessions, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qqReplyContexts, telegramBindings, telegramGateway, weixinBindings, weixinGateway, weixinThreadChat, writeBotBindings } from "../features/im-gateways";
+import { botStreamSessions, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qqReplyContexts, rotateChannelThreadOnOverflow, telegramBindings, telegramGateway, weixinBindings, weixinGateway, weixinThreadChat, writeBotBindings } from "../features/im-gateways";
+import { describeTurnError } from "../turn-error-text";
 import { readChannelBot } from "../main/04-connector-config";
 import { readCustomModel } from "../main/01-model-catalog";
 import { server } from "../runtime-refs";
@@ -31,6 +32,16 @@ const CHANNEL_TURN_OVERRIDE = { approvalPolicy: "never" as const, sandboxPolicy:
  *  非正常结束时要**说明**：半截文本不标注会被当成完整回复。
  *  返回 dispose：`turn/start` 抛错时调用方必须摘掉它，否则下一次该会话在**桌面端**跑完，
  *  答复会被推给渠道用户（11-04 审查抓出的内容外泄路径）。 */
+/** 渠道会话上下文超限 ⇒ 解除该渠道绑定（下一条消息自动开新会话）。
+ *  ⛔ 只在确认是「超限」时动手：别把普通错误也当成换会话的理由（丢上下文）。 */
+function maybeRotateOnOverflow(threadId: string, raw: unknown): void {
+  const msg = typeof raw === "string" ? raw : String((raw as { message?: unknown } | null)?.message ?? "");
+  if (!msg || !threadId) return;
+  try {
+    if (describeTurnError(msg).title === "内容超出模型上限") rotateChannelThreadOnOverflow(threadId);
+  } catch { /* 文案归一出错不影响主流程 */ }
+}
+
 function onTurnDone(threadId: string, send: (text: string) => void): () => void {
   let armed = true;
   const dispose = () => {
@@ -40,6 +51,7 @@ function onTurnDone(threadId: string, send: (text: string) => void): () => void 
   };
   const proxy = (event: any) => {
     if (event.kind !== "notification" || !isTurnEndMethod(event.method) || event.params?.threadId !== threadId) return;
+    maybeRotateOnOverflow(threadId, event.params?.turn?.error?.message);
     dispose();
     if (botStreamSessions.has(threadId)) return; // 流式会话负责最终回复
     const ok = event.method === "turn/completed";
