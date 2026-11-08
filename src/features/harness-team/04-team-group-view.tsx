@@ -104,7 +104,7 @@ type Props = {
   /** 群消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左（主进程落盘） */
   onSetMessageLayout?: (next: "split" | "left") => void;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
-  onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
+  onStopPartner: (memberId: string) => Promise<{ ok: boolean; error?: string; reason?: string }>;
   /** 11-08 用户令「点停止是群里所有运行状态都停止掉」：输入框发送键在运行中变成停止键，
       一点全群停（候选 id 由本视图数出来，通道在 store）。 */
   onStopAll?: (threadIds: string[]) => Promise<{ ok: boolean; error?: string; stopped?: number }>;
@@ -195,6 +195,10 @@ export function TeamGroupView({
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  /* ⛔⛔ 11-08 用户实测（截图：连按回车出去好几条一模一样的消息）：`sending` 是 React state，
+     同一帧内连按两次时它还没翻转 ⇒ 两个 send 并行、各自拿同一段正文发一遍。
+     ⇒ 同步 ref 闸门（同一次按键/连按只允许一个 send 在飞），state 只管按钮视觉。 */
+  const sendingRef = useRef(false);
   /* 11-08 用户令「点停止是群里所有运行状态都停止掉」：输入框发送键在运行中变成一个停止键，
      一点全群停。`stopping` 只用来锁住那一下（主对话同款：interrupting 期间按钮转圈）。
      ⛔ 停止候选 = `agentThreadIds`（群内出现过的子会话），store 再让主进程按活动回合表核对。
@@ -670,7 +674,7 @@ export function TeamGroupView({
     const targets = ids.length ? ids : (busy ?? []);
     if (!targets.length) return { ok: false, error: "现在没有人在跑，不用停" };
     const results = await Promise.all(targets.map((id) => onStopPartner(id)));
-    const bad = results.find((r) => !r.ok);
+    const bad = results.find((r) => !r.ok && r.reason !== "idle" && r.reason !== "starting");
     if (bad) return { ok: false, error: bad.error || "停止失败" };
     return { ok: true };
   };
@@ -686,6 +690,9 @@ export function TeamGroupView({
     /* ⛔ 11-08：派活是**等整个回合**才返回的（sending 会一直为 true），所以群里有伙伴在跑时
        不能拿 sending 把输入挡死 —— 那条路是"进队列"，不是重复派活。 */
     if (sending && !groupRunning) return;
+    /* ⛔ 同步闸门：连按回车时第二个 send 在第一个 await 之前就进来了（state 还没翻转）。 */
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSendError("");
     setMenuMsg("");
 
@@ -700,10 +707,11 @@ export function TeamGroupView({
         flashMenuMsg("已停止 —— 它这一回合的中断请求已发给引擎");
       } finally {
         setSending(false);
+        sendingRef.current = false;
       }
       return;
     }
-    if (cmd) { setSendError(`不认识的命令：/${cmd.name}（目前只支持 /stop）`); return; }
+    if (cmd) { setSendError(`不认识的命令：/${cmd.name}（目前只支持 /stop）`); sendingRef.current = false; return; }
 
     /* 技能 / 文件是"本轮附件"：照主对话口径拼进 query，⛔ 不落群日志、不当成消息刷屏。 */
     const skillBlock = runOpts.skills.length
@@ -786,6 +794,7 @@ export function TeamGroupView({
       setSendError(`派活失败：${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSending(false);
+      sendingRef.current = false;
     }
   };
 
@@ -1458,6 +1467,8 @@ export function TeamGroupView({
                   /* ⛔ 中文输入法选字时的 Enter 不是"发送"（主对话同口径）：
                      组合期内发走半句话、且清空会被 IME 回滚 ⇒ 输入框看着"没清空"。 */
                   if (e.nativeEvent.isComposing) return;
+                  /* ⛔ 11-08 用户实测（按住回车/连按出去好几条）：键盘的自动重复不算"再发一条"。 */
+                  if (e.repeat) return;
                   /* 打字触发面板时：Enter / Tab 选第一个候选（⛔ 别把半句话当消息发出去） */
                   if (mention.open && mention.typed) {
                     if (e.key === "Escape") { e.stopPropagation(); closeMention(); return; }
@@ -1577,7 +1588,12 @@ export function TeamGroupView({
                         running={Boolean(running)}
                         selected={atTargets.includes(m.id)}
                         onToggle={toggleAt}
-                        onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+                        onStop={(id) => void onStopPartner(id).then((r) => {
+                                  /* ⛔ 11-08：会话还在建 / 本来就没在跑 —— 这是状态说明，不是错误（别弹红字）。 */
+                                  if (r.ok) return;
+                                  if (r.reason === "starting" || r.reason === "idle") flashMenuMsg(r.error || "它当前没有在跑");
+                                  else setSendError(r.error || "停止失败");
+                                })}
                       />
                     )}
                   </li>
@@ -1626,7 +1642,12 @@ export function TeamGroupView({
                                 running={kidRunning}
                                 selected={on}
                                 onToggle={toggleAt}
-                                onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+                                onStop={(id) => void onStopPartner(id).then((r) => {
+                                  /* ⛔ 11-08：会话还在建 / 本来就没在跑 —— 这是状态说明，不是错误（别弹红字）。 */
+                                  if (r.ok) return;
+                                  if (r.reason === "starting" || r.reason === "idle") flashMenuMsg(r.error || "它当前没有在跑");
+                                  else setSendError(r.error || "停止失败");
+                                })}
                               />
                             </li>
                           );
@@ -1660,7 +1681,12 @@ export function TeamGroupView({
           anchor={{ x: profile.x, y: profile.y }}
           onClose={() => setProfile(null)}
           onMention={(id) => { mentionPartner(id); }}
-          onStop={(id) => void onStopPartner(id).then((r) => { if (!r.ok) setSendError(r.error || "停止失败"); })}
+          onStop={(id) => void onStopPartner(id).then((r) => {
+                                  /* ⛔ 11-08：会话还在建 / 本来就没在跑 —— 这是状态说明，不是错误（别弹红字）。 */
+                                  if (r.ok) return;
+                                  if (r.reason === "starting" || r.reason === "idle") flashMenuMsg(r.error || "它当前没有在跑");
+                                  else setSendError(r.error || "停止失败");
+                                })}
         />
       )}
 

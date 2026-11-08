@@ -58,7 +58,7 @@ import {
 /* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
 import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
-import { stopTeamRuns, type TeamStopInput } from "./harness-team-stop";
+import { stopTeamRuns, consumeTalkCancel, type TeamStopInput } from "./harness-team-stop";
 import { startTeamQueued, type TeamQueueStartInput } from "./harness-team-queue";
 /* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
    的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
@@ -653,16 +653,27 @@ async function runDispatchRounds(
       /* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」：同一成员的消息**串行投递** ——
          引擎不允许 resume/并行回合正在跑的会话，旧代码撞上就新建一条（重复会话）或直接失败。
          排队后第二条会等第一条跑完再 ensure + turn；超时也从**真正开跑**时算（⛔ 不含排队等待）。 */
-      const res = await queueTalkDelivery(group.id, partner.id, () => withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
-        cwd: group.workspace || undefined,
-        groupName: group.name,
-        /* ⛔ 探测到空闲会话就交给它，runTalkTurn 不再 resume 第二遍。 */
-        ...(liveThreadId ? { threadId: liveThreadId } : {}),
-        ...(params.model ? { model: params.model } : {}),
-        ...(params.effort ? { effort: params.effort } : {}),
-        ...(params.sandbox ? { sandbox: params.sandbox } : {}),
-        ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-      }), partner.name));
+      const res = await queueTalkDelivery(group.id, partner.id, async () => {
+        /* ⛔ 11-08 用户实测（点停止报「还没有它的会话」）：排队期间用户点了停止 ⇒
+           建会话/开跑之前就放弃（别发出那条不该存在的消息）。 */
+        if (consumeTalkCancel(group.id, partner.name)) {
+          return { ok: false, cancelled: true, text: "", threadId: "" } as never;
+        }
+        return withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
+          cwd: group.workspace || undefined,
+          groupName: group.name,
+          /* ⛔ 探测到空闲会话就交给它，runTalkTurn 不再 resume 第二遍。 */
+          ...(liveThreadId ? { threadId: liveThreadId } : {}),
+          ...(params.model ? { model: params.model } : {}),
+          ...(params.effort ? { effort: params.effort } : {}),
+          ...(params.sandbox ? { sandbox: params.sandbox } : {}),
+          ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
+        }), partner.name);
+      });
+      if ((res as { cancelled?: boolean } | null)?.cancelled) {
+        options.onPhase?.("finished", partner, { ok: true });
+        return;
+      }
       if (!res?.ok || !res?.threadId) {
         errMsg = "群聊会话没起来";
         failed.push(`${partner.name}：${errMsg}`);
