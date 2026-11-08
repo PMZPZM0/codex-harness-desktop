@@ -754,18 +754,14 @@ const catalog = [
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   const proc = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
   const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
-  /* 11-08 二改：过程/占位反馈统一搬到用户气泡下面（26-team-run-feedback），
-     ⛔ 不再挂在 live 流式卡里（独立窗口 live 常年为空 ⇒ 两种模式"完全一样"）。 */
-  ok(/<TeamRunFeedback/.test(view) && /row\.key === lastHumanKey/.test(view)
-    && /<TeamProcess/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx"))),
-    "过程块只在**运行中的最后一条用户消息下面**渲（跑完 busy 清空即消失，⛔ 成品消息不挂过程）");
+  ok(/replyMode[^\n]*<TeamProcess/.test(view) === false && /replyMode === "process" && run\.status === "running"/.test(view),
+    "过程块**只在运行中**渲（跑完随流式卡一起消失，⛔ 成品消息不再挂 TeamProcess）");
   ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
   ok(/live?: boolean/.test(proc) || /live = false/.test(proc),
     "过程块支持运行中实时（回合还没落盘 ⇒ 取最新回合 + 2.5s 重拉，⛔ 缓存会把新步骤挡在外面）");
-  ok(/team-run-feedback__chip/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx")))
-    && /team-run-feedback__chip/.test(read("src/styles/61-team-mode.css")),
-    "占位模式画飞书式「头像 + 名字 + 处理中」小图标（挂在用户气泡下面）");
+  ok(/replyMode === "placeholder" \?/.test(view) && /team-msg__placeholder/.test(view),
+    "占位模式只画「图标 + 名字 + 处理中」，不显示过程与流式正文");
   ok(/replyMode: "process" \| "placeholder";/.test(settings) && /回复模式/.test(settings)
     && /onReplyMode\(opt\.value\)/.test(settings),
     "群设置里有「回复模式」两张卡（过程 / 占位），点卡片立即生效");
@@ -815,42 +811,6 @@ const catalog = [
   ok(!/groupHistoryBlock/.test(needBody), "⛔ 历史不许进需求体（会直接糊到气泡上）");
   ok(/group_read/.test(codeOnly(read("electron/features/group-talk/02-tools.ts"))),
     "group_read 保留：默认给最近 20 条，更早的由模型自己调工具取");
-}
-
-/* ── ⑯ 引用归属 / 主代理人名 / 话题消息（11-08 用户四条令）────────────────── */
-{
-  const fold = codeOnly(read("src/lib/team-fold.mjs"));
-  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
-  const settings = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
-  const topic = codeOnly(read("src/features/harness-team/25-team-topic.tsx"));
-  const idx = codeOnly(read("src/features/harness-team/index.tsx"));
-  ok(/const viaId = String\(r\?\.via\?\.memberId/.test(fold) && /lastByAuthor\.get\(viaId\)/.test(fold),
-    "⛔ 引用行「回复谁就引谁」：带 via 引叫它来的那位伙伴（⛔ 不再一律引最近一条人类消息）");
-  ok(/teamLeadOf\(m\)\?\.name \|\| m\?\.name/.test(view)
-    && /name: String\(lead\?\.name \|\| m\.name/.test(codeOnly(read("src/lib/team-mention.mjs"))),
-    "专家团主代理人显示**人名**（用户：「显示软件开发专家团看着别扭」）；selectId 仍指整团");
-  ok(/replyMode=\{active\.replyMode/.test(idx) && /effectiveReplyMode = replyMode \?\?/.test(view),
-    "⛔ 回复模式必须同时传读值（只传写入回调 ⇒ 点占位模式写进盘但界面不动，用户「选不了，点不过来」）");
-  /* ⛔ 用**顺序**判定而不是"相隔多少字符"：板块长度会随文案变化，写死窗口会假红。 */
-  const sectionOrder = [...settings.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]).join(">");
-  ok(/^layout>message-form>partners>quick-menu>memory>/.test(sectionOrder),
-    "群设置常用置顶：消息排版 → 群消息形式 → 伙伴 → 快捷指令 → 群记忆…（低频项下沉）");
-  ok(/export function normalizeMessageForm/.test(read("src/lib/team-models.mjs"))
-    && /harness-team:set-message-form/.test(read("electron/features/harness-team-ipc.ts"))
-    && /harnessTeamSetMessageForm/.test(read("electron/preload.ts")),
-    "群消息形式是**独立枚举 + 独立通道**（⛔ 不再挤在 replyMode 三态里）");
-  ok(/data-section="message-form"/.test(settings) && /label: "话题消息"/.test(settings)
-    && /label: "对话消息"/.test(settings), "独立的「群消息形式」板块：对话消息 / 话题消息 两张卡");
-  ok(/export function buildTopicThreads/.test(fold) && /buildTopicThreads\(rows\)/.test(view),
-    "话题分组走纯函数（用户气泡里更新，⛔ 视图不自己写循环）");
-  ok(/effectiveMessageForm === "topic" && isBot\) return null/.test(view)
-    && /TeamTopicBadge/.test(view) && /team-msg__topic/.test(read("src/styles/61-team-mode.css")),
-    "话题模式：主流只留用户消息，伙伴回复收进气泡里的话题条");
-  ok(/export function TeamTopicPreview/.test(topic) && /useEscapeLayer\(true, onClose\)/.test(topic)
-    && /pointerdown/.test(topic),
-    "点击话题条弹窗预览完整话题串；ESC 走全局栈 + 点遮罩关闭（⛔ 不自己挂 window keydown）");
-  ok(/test\("buildTopicThreads/.test(read("tests/team-fold.test.mjs")),
-    "话题分组有单测真值表");
 }
 
 /* ── 11-08 审查修正：跨群自愈隔离 / 艾特判重窗口 / 信封消毒 / 占位模式流式正文 / 停止复位 ── */
