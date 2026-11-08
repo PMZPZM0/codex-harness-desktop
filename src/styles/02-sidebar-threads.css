@@ -245,9 +245,23 @@
   flex: 0 0 auto;
   gap: 1px;
   display: flex;
-  /* 操作键的定位锚（spinner / 完成点仍走正常流） */
+  /* 操作键与状态指示的定位锚（11-08 起 spinner / 完成点也绝对定位，见下一条） */
   position: relative;
 }
+/* ⛔⛔ 11-08 用户令（截图圈住「调度」标签）：「加载的时候标签会变动位置，靠左一下……标签不要动」——
+   行右状态指示（恢复中的 spinner / 运行转圈 / 完成绿点）改为**绝对定位**，不再占标题行宽度。
+   它们原先走正常流：出现时标题行被挤窄 14~20px ⇒ 整列标签左跳，消失再弹回。
+   ⛔ 居中用 top 偏移、⛔ 不用 transform —— spinner / 完成点自带 transform 动画，会覆盖 translate。
+   ⛔ 保留各自 margin-right：绝对定位下它决定离右缘的距离（与改动前的视觉位置一致）。 */
+.thread-row .thread-actions > .spinner,
+.thread-row .thread-actions > .thread-running-indicator,
+.thread-row .thread-actions > .thread-done-dot {
+  position: absolute;
+  right: 0;
+}
+.thread-row .thread-actions > .spinner { top: calc(50% - 7px); }
+.thread-row .thread-actions > .thread-running-indicator { top: calc(50% - 8px); }
+.thread-row .thread-actions > .thread-done-dot { top: calc(50% - 3.5px); }
 /* ⛔ 操作键**浮在行右缘、不占布局**：展开是淡入而不是挤宽标题行
    ⇒ hover 时标签 / 名称不动，只有右侧在动。 */
 .thread-actions-buttons {

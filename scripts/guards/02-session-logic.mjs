@@ -1753,6 +1753,14 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/\.thread-actions-buttons\s*\{[^}]*position:\s*absolute/.test(cssSrc285) && /\.thread-row:not\(\.is-member-row\):hover > button:first-child > small\s*\{[^}]*visibility:\s*hidden/.test(cssSrc285) ? ok : fail)(
       "【285】hover 只让右侧动：操作键绝对定位不占布局 + 时间用 visibility 保留占位（标签不位移）"
     );
+    /* ⛔⛔ 11-08 用户令（截图）：「加载的时候标签会变动位置，靠左一下…标签不要动」——
+       右侧状态指示（spinner / 运行转圈 / 完成点）必须绝对定位，不许再占标题行宽度。 */
+    (/\.thread-row \.thread-actions > \.spinner,[^{]*\.thread-row \.thread-actions > \.thread-running-indicator,[^{]*\.thread-row \.thread-actions > \.thread-done-dot\s*\{[^}]*position:\s*absolute[^}]*right:\s*0/.test(cssSrc285)
+      && /\.thread-row \.thread-actions > \.spinner\s*\{\s*top:\s*calc\(50% - 7px\)/.test(cssSrc285)
+      && /\.thread-row \.thread-actions > \.thread-running-indicator\s*\{\s*top:\s*calc\(50% - 8px\)/.test(cssSrc285)
+      && /\.thread-row \.thread-actions > \.thread-done-dot\s*\{\s*top:\s*calc\(50% - 3\.5px\)/.test(cssSrc285) ? ok : fail)(
+      "【285】右侧状态指示绝对定位、不占标题行宽度（否则加载/运行中整列标签左跳，11-08 用户截图）"
+    );
     (!/thread-tag-switch/.test(rowsSrc285) && !/\.thread-tag-switch/.test(cssSrc285) ? ok : fail)(
       "【285】不额外加提示图标（用户令：有点击标签轮换就够了）"
     );
