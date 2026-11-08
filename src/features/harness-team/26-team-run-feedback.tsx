@@ -9,17 +9,17 @@
  *    ⇒ 反馈改挂到**用户自己的消息气泡下面**（用户明确要的位置），由 `busy` 名单驱动
  *      （派活一发出就有，跨窗口可靠）；`live` 只作为 threadId 的补充来源。
  *
- * 两种模式：
- *   · process —— 复用主对话同一套 `TeamProcess` 折叠块（默认折叠、可展开看每一步），
- *     ⛔ 不另写一套过程渲染；每位在跑的伙伴一张，跑完整块消失，只留上屏的汇报。
- *   · placeholder —— 飞书式「头像 + 名字 + 处理中」小图标，一行一个/横向排开，
- *     产出上屏后消失。
+ * ⛔⛔ 11-08 三改（用户截图，红框圈住用户气泡里的「剪承 运行中」）：
+ *   「这个过程模式下，就不用在用户消息下面展示这个了，只有占位模式才显示这个，
+ *     而这个显示不好看，上下太宽了，我要是那种很窄的，很小的头像+名字提醒」
+ *   ⇒ **过程模式一律不画**（过程已经在成员自己的流式卡里：正在写 / 正在思考 + 折叠块，
+ *     再在用户气泡下挂一份就是重复，而且那行带边框带内边距、上下很宽）；
+ *   ⇒ **只有占位模式画**，且收成很窄的一粒：小头像 + 名字 + 呼吸点，⛔ 不再带「处理中…」长文案。
  *
  * 独立板块：视图只接线（谁在跑 / 名字 / 头像 / threadId 都由调用方给）。
  */
 import type { LiveRun } from "./02-team-store";
 import { MemberAvatar } from "./13-team-avatar";
-import { TeamProcess } from "./09-team-process";
 
 export type RunningPartner = {
   memberId: string;
@@ -34,41 +34,17 @@ export type RunFeedbackProps = {
   mode: "process" | "placeholder";
   partners: RunningPartner[];
   faceOfId: (id: string) => Face;
-  live?: LiveRun[];
 };
 
-/** 过程模式：每位在跑的伙伴一张主对话同款折叠块（有 threadId 才画，没拿到就只显示名字）。 */
-function ProcessFeedback({ partners, faceOfId }: Pick<RunFeedbackProps, "partners" | "faceOfId">) {
-  return (
-    <div className="team-run-feedback is-process" aria-live="polite">
-      {partners.map((p) => (
-        <div className="team-run-feedback__row" key={p.memberId}>
-          <div className="team-run-feedback__who">
-            <MemberAvatar member={faceOfId(p.memberId)} size={16} className="team-run-feedback__avatar" />
-            <strong>{p.name}</strong>
-            <em>运行中</em>
-          </div>
-          {p.threadId ? (
-            <TeamProcess threadId={p.threadId} at={p.startedAt ?? 0} bodyText="" running live />
-          ) : (
-            <p className="team-run-feedback__waiting">正在建立会话…</p>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/** 占位模式：飞书式小图标（头像 + 名字 + 处理中）。⛔ 不铺底、不占整行高度。 */
+/** 占位模式：飞书式小图标（小头像 + 名字 + 呼吸点）。⛔ 不铺底、不占整行高度、不带长文案。 */
 function PlaceholderFeedback({ partners, faceOfId }: Pick<RunFeedbackProps, "partners" | "faceOfId">) {
   if (!partners.length) return null;
   return (
     <div className="team-run-feedback is-placeholder" aria-live="polite" aria-label="伙伴正在处理">
       {partners.map((p) => (
         <span className="team-run-feedback__chip" key={p.memberId} title={`${p.name} 正在处理`}>
-          <MemberAvatar member={faceOfId(p.memberId)} size={16} className="team-run-feedback__avatar" />
+          <MemberAvatar member={faceOfId(p.memberId)} size={14} className="team-run-feedback__avatar" />
           <strong>{p.name}</strong>
-          <em>处理中…</em>
           <i className="team-run-feedback__dot" aria-hidden />
         </span>
       ))}
@@ -99,10 +75,8 @@ export function runningPartnersOf(
   });
 }
 
-/** 用户气泡下的运行反馈：`process` 走过程折叠块，`placeholder` 走飞书式小图标。 */
+/** 用户气泡下的运行反馈：**只有占位模式**画小图标；过程模式返回 null（过程在成员流式卡里）。 */
 export function TeamRunFeedback({ mode, partners, faceOfId }: RunFeedbackProps) {
-  if (!partners.length) return null;
-  return mode === "process"
-    ? <ProcessFeedback partners={partners} faceOfId={faceOfId} />
-    : <PlaceholderFeedback partners={partners} faceOfId={faceOfId} />;
+  if (mode !== "placeholder") return null;
+  return <PlaceholderFeedback partners={partners} faceOfId={faceOfId} />;
 }

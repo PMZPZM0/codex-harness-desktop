@@ -158,7 +158,9 @@ export async function run() {
       for (const e of readdirSync(d, { withFileTypes: true })) {
         const p = join(d, e.name);
         if (e.isDirectory()) walkSrc(p);
-        else if (/\.(ts|tsx|mts)$/.test(e.name)) srcFiles.push(p);
+        /* ⛔ 11-08 实测：消费者也常在 `src/lib/*.mjs` 纯模块里（如 team-talk-threads.mjs
+           调 `window.codex.harnessTeamTalkThreads?.()`）—— 只扫 ts/tsx/mts 会把它们判成死路由。 */
+        else if (/\.(ts|tsx|mts|mjs)$/.test(e.name)) srcFiles.push(p);
       }
     };
     walkSrc(join(ROOT, "src"));

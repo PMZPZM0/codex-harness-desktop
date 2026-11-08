@@ -1,7 +1,6 @@
 {
   "note": "已接线未做的 IPC 通道名单（守卫【292】棘轮）。⛔ 只许缩不许长：每接线一条就删一条；新增通道必须当场接消费者，否则预检红。⛔ 这是**每仓独立**的数据文件（三仓通道数不同），不随守卫一起覆盖。",
   "channels": [
-    "app:home-dir",
     "app:perf-counters",
     "autoUpdate:run-all",
     "backup:list",

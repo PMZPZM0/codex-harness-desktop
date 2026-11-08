@@ -56,6 +56,8 @@ import { TeamOfficeEntry } from "./24-team-office-preview";
 import { TeamTopicBadge, TeamTopicPreview } from "./25-team-topic";
 /* 11-08 用户令「发出去消息就要出效果」：运行反馈挂在用户气泡下面，由 busy 驱动。 */
 import { TeamRunFeedback, runningPartnersOf } from "./26-team-run-feedback";
+/* ⛔ 11-08 三改：过程折叠块回到成员流式卡里（用户气泡下只在占位模式画窄条）。 */
+import { TeamProcess } from "./09-team-process";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes, buildTopicThreads, topicThreadOf } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
@@ -1250,12 +1252,14 @@ export function TeamGroupView({
                                 onOpen={() => setTopicOpenKey(row.key)}
                               />
                             )}
+                            {/* ⛔ 11-08 三改（用户截图）：「这个过程模式下，就不用在用户消息下面展示这个了，
+                                只有占位模式才显示这个」—— 过程模式由成员自己的流式卡承担（正在写 + 折叠块），
+                                这里只在占位模式画很窄的小图标。 */}
                             {!isBot && row.key === lastHumanKey && (
                               <TeamRunFeedback
                                 mode={effectiveReplyMode}
                                 partners={runningPartners}
                                 faceOfId={faceOfId}
-                                live={live ?? []}
                               />
                             )}
                             {(row.continued ?? []).map((extra) => (
@@ -1338,9 +1342,13 @@ export function TeamGroupView({
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
                     <div className="team-msg__body">
-                    {/* ⛔⛔ 11-08：两种回复模式的反馈已统一搬到**用户消息气泡下面**（26-team-run-feedback）。
-                        这里只保留流式正文；⛔ 不再在这里画第二套占位/过程（那套挂在 live 卡里，
-                        独立窗口 live 常年为空 ⇒ 用户看不到，两种模式"完全一样"）。 */}
+                    {/* ⛔⛔ 11-08 三改（用户截图圈住用户气泡里的「剪承 运行中」）：
+                        「这个过程模式下，就不用在用户消息下面展示这个了，只有占位模式才显示这个」——
+                        过程块回到**成员自己的流式卡**里（它原本就在这里；bf6d487e4 一度搬到用户气泡下，
+                        那正是用户要删的重复项）。用户气泡下只在占位模式画一粒很窄的小图标。 */}
+                    {effectiveReplyMode === "process" && run.status === "running" && String(run.threadId ?? "") && (
+                      <TeamProcess threadId={run.threadId} at={run.startedAt} bodyText="" running live />
+                    )}
                     {/* ⛔⛔ 11-08 审查：占位模式承诺「不展示过程与流式正文」——
                         流式卡也必须跟着分叉，否则主窗口里照样能看到流式正文。 */}
                     {effectiveReplyMode === "process" && String(run.text ?? "").trim()
