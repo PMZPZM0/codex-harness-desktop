@@ -1169,5 +1169,25 @@ const catalog = [
     "group_say 工具描述写清「不填 to = 其他成员不会回你」");
 }
 
+/* ── ⑳ 删群联动（11-08 用户实测：群删了、伙伴会话还挂在侧栏，「联动性太差了」）──────
+   旧实现只按「群消息里出现过的 threadId」删会话 —— 聊天记录清空过就一条都删不到；
+   归属的权威来源是群聊台账 `group-talk-threads.json`。 */
+{
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  ok(/listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\)/.test(ipc)
+    && /forgetGroupThreads\(gid\)/.test(ipc)
+    && /await deleteEngineThreads\(threads\)/.test(ipc),
+    "删群：会话清单 = 群消息里的 threadId ∪ 台账里本群的会话；删完清台账（⛔ 只按消息删会留下孤儿会话）");
+  ok(/async function healOrphanTalkThreads/.test(ipc)
+    && /if \(!existsSync\(file\)\) return;/.test(ipc)
+    && /catch \{ return; \}/.test(ipc)
+    && /void healOrphanTalkThreads\(\)\.catch/.test(ipc),
+    "一次性自愈：群档案缺失/损坏时**不动手**（防误删），有效档案下清掉孤儿台账并删会话");
+  /* ⛔ 两处都要广播（删群 + 自愈）—— 只留一处时另一条路径的标签要等 8s 轮询才掉。 */
+  ok((ipc.match(/team-talk-threads-changed/g) || []).length >= 2
+    && /team-talk-threads-changed/.test(read("src/lib/team-talk-threads.mjs")),
+    "删群/自愈后广播 team-talk-threads-changed，侧栏「伙伴」标签即时刷新");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

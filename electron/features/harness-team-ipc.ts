@@ -66,7 +66,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetGroupThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -1220,9 +1220,53 @@ export const harnessTeamFeature = defineFeature<null>({
     /* 群聊伙伴会话台账（只读）：侧栏据此给这些**普通会话**打「伙伴」标签。
        ⛔ 它们在侧栏既没有 delegate 记录、也不属于中枢群 ⇒ 只能由群聊台账认；
           ⛔ 不许按标题前缀「伙伴·」猜（用户改名后就不成立了）。 */
-    ipcHost.handle("harness-team:talk-threads", () => ({ ok: true, threads: listTalkThreads() }));
+    ipcHost.handle("harness-team:talk-threads", () => {
+      /* 侧栏每次拉台账顺带自愈一次（幂等）：群已删、台账还留着的伙伴会话会被删掉并清账。 */
+      void healOrphanTalkThreads().catch(() => undefined);
+      return { ok: true, threads: listTalkThreads() };
+    });
 
-    /* 解散群（11-06 补 / 11-07 用户令「删除群，对应的会话没有删除，外面对话框还能看见，遗留的」）。
+    /* ⛔ 删群 / 自愈共用的「删引擎会话」：先中断在跑的回合（否则引擎拒绝删），删失败降级 archive。 */
+async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: number; failed: string[] }> {
+  let removed = 0;
+  const failed: string[] = [];
+  for (const tid of [...new Set(threadIds)].filter(Boolean)) {
+    try {
+      for (const [turnId, owner] of engineActiveTurnIds) {
+        if (owner !== tid) continue;
+        await server.request("turn/interrupt", { threadId: tid, turnId }).catch(() => undefined);
+        break;
+      }
+      await server.request("thread/delete", { threadId: tid });
+      removed += 1;
+    } catch {
+      try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
+      catch { failed.push(tid); }
+    }
+  }
+  return { removed, failed };
+}
+
+/* 一次性自愈：群档案里已经不存在的群，台账却还留着它的伙伴会话
+   （用户实测：删群后侧栏仍挂着「伙伴」会话，点开是一段没有出处的对话）。
+   ⛔ 只在群档案**存在且能解析**时动手 —— 文件缺失/损坏时 readStore() 会返回空群列表，
+      拿它当依据会把所有伙伴会话误删。删不掉的下次启动会再试（台账留着即重试依据）。 */
+let orphanTalkHealed = false;
+async function healOrphanTalkThreads(): Promise<void> {
+  if (orphanTalkHealed) return;
+  const file = teamsFile();
+  if (!existsSync(file)) return;
+  try { JSON.parse(readFileSync(file, "utf8")); } catch { return; }
+  const live = new Set(readStore().groups.map((g) => String(g.id)));
+  const orphans = listTalkThreads().filter((row) => row.groupId && !live.has(row.groupId));
+  orphanTalkHealed = true;
+  if (!orphans.length) return;
+  await deleteEngineThreads(orphans.map((row) => row.threadId));
+  for (const gid of new Set(orphans.map((row) => row.groupId))) forgetGroupThreads(gid);
+  broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
+}
+
+/* 解散群（11-06 补 / 11-07 用户令「删除群，对应的会话没有删除，外面对话框还能看见，遗留的」）。
        ⛔⛔ 旧口径是「只删群与群消息日志，一条子会话都不碰（会话是独立资产）」——
           用户实测的后果就是：群没了，但那些伙伴会话还挂在侧栏里，点开是一段**没有出处**的对话。
           ⇒ 现在删群**连带删掉本群派生出来的那些会话**。判据不是"按成员扫全部会话"（那会误删
@@ -1236,33 +1280,24 @@ export const harnessTeamFeature = defineFeature<null>({
       const gid = String(groupId ?? "");
       const g = findGroup(store.groups, gid);
       if (!g) return { ok: false, error: "群不存在" };
-      /* 群日志里的人类消息 threadId 是 `group:<群id>`（不是真会话）；只剩伙伴的真实子会话。 */
-      const threads = [...new Set(
-        (store.messages[gid] ?? [])
+      /* 群日志里的人类消息 threadId 是 `group:<群id>`（不是真会话）；只剩伙伴的真实子会话。
+         ⛔⛔ 11-08 用户实测（删群后伙伴会话全留在侧栏：「联动性太差了」）：
+            只按「群消息里出现过哪些 threadId」删会话是不够的 —— 聊天记录清空过 / 消息被去重掉时
+            那里一条都没有。**群聊台账才是归属的权威来源**（`group-talk-threads.json`）⇒ 并上。 */
+      const ledgerThreads = listTalkThreads().filter((row) => row.groupId === gid).map((row) => row.threadId);
+      const threads = [...new Set([
+        ...(store.messages[gid] ?? [])
           .map((row) => String((row as { threadId?: unknown } | null)?.threadId ?? ""))
           .filter((id) => id && !id.startsWith("group:")),
-      )];
+        ...ledgerThreads,
+      ])];
       const messages = { ...store.messages };
       delete messages[gid];
       writeStore({ groups: store.groups.filter((x) => x.id !== gid), messages, version: 2 });
-
-      let removed = 0;
-      const failed: string[] = [];
-      for (const tid of threads) {
-        try {
-          /* 正在跑的回合不打断，引擎会拒绝删（报 turn in progress）⇒ 先中断这一回合。 */
-          for (const [turnId, owner] of engineActiveTurnIds) {
-            if (owner !== tid) continue;
-            await server.request("turn/interrupt", { threadId: tid, turnId }).catch(() => undefined);
-            break;
-          }
-          await server.request("thread/delete", { threadId: tid });
-          removed += 1;
-        } catch {
-          try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
-          catch { failed.push(tid); }
-        }
-      }
+      /* 台账先清：渲染层的「伙伴」标签靠它，留着就永远摘不掉（另广播一次即时刷新）。 */
+      forgetGroupThreads(gid);
+      broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
+      const { removed, failed } = await deleteEngineThreads(threads);
       return { ok: true, id: gid, removedThreads: removed, totalThreads: threads.length, failed };
     });
 

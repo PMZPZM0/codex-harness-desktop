@@ -50,7 +50,7 @@ export function subscribeTeamTalkThreads(fn) {
     timer = setInterval(() => { void load(); }, 8000);
     off = window.codex?.onEvent?.((event) => {
       const type = String(event?.type ?? "");
-      if (type === "harness-team-messages" || type === "team-member-run" || type === "team-dispatch-done") void load();
+      if (type === "harness-team-messages" || type === "team-member-run" || type === "team-dispatch-done" || type === "team-talk-threads-changed") void load();
     }) ?? null;
   }
   return () => {
