@@ -10,6 +10,5 @@ export interface ReplyStylePreset {
 }
 
 export declare const REPLY_STYLES: ReplyStylePreset[];
-export declare const REPLY_STYLE_VALUES: string[];
 export declare function replyStyleTitleOf(value: unknown): string;
 export declare function replyStyleIdOf(title: unknown): string;

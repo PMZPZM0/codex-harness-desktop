@@ -46,8 +46,9 @@ type VerifyResult = {
 };
 
 /* ⛔ 11-08：清单收敛到 `lib/reply-styles.mjs`（画像引导 / 用户中心 / 这里同源），
-   此处不再维护第三份。10-27 用户令保留：不做大卡片，档位只在标题行右侧做胶囊分段控件。 */
-const stylePresets = REPLY_STYLE_PRESETS.map((item) => ({ value: item.value, title: item.title, desc: item.desc }));
+   此处不再维护第三份。10-27 用户令保留：不做大卡片，档位只在标题行右侧做胶囊分段控件。
+   ⛔ 直接引用共享数组（字段名就是 value/title/desc，别再加一层原样搬运的 map）。 */
+const stylePresets = REPLY_STYLE_PRESETS;
 
 /** 软件开发规范 / 应用架构规范共用的规范卡（胶囊预设 + 参考文档 + 规范全文 + 自定义内容）。
  *  ⛔ 与设计风格卡同一套交互与样式，但内容来自 engineering-norms；⛔ 不另造第二套设计语言。 */

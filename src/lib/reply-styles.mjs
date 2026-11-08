@@ -17,9 +17,6 @@ export const REPLY_STYLES = [
   { value: "none", title: "默认", desc: "跟随模型默认风格，不额外注入语气指令" },
 ];
 
-/** 全部的合法 id（⛔ 写档案前用它校验，别把任意字符串塞进 style 字段）。 */
-export const REPLY_STYLE_VALUES = REPLY_STYLES.map((item) => item.value);
-
 /** 按 id 取中文名；不认识的一律回「默认」（界面上永远有字可显示）。 */
 export function replyStyleTitleOf(value) {
   return REPLY_STYLES.find((item) => item.value === String(value ?? ""))?.title ?? "默认";
