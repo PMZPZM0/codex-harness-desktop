@@ -554,7 +554,13 @@ export function TeamGroupView({
      ⇒ **@ 的唯一真相源 = 正文**：选人只往正文插 `@名字 `，发消息时从正文反查目标，
        框外的「本轮 @」chip 行整块删除（⛔ 不再维护第二份 atTargets 状态）。 */
   const mentionCandidatesFlat = useMemo(
-    () => mentionSections.flatMap((section) => section.items.map((item) => ({ selectId: item.selectId, name: item.name }))),
+    /* ⛔ 11-08 审查（Required）：专家库条目（`library: true`，还没加入本群）**不能**进候选目标表 ——
+       否则手打 `@呈象` 会把它当成已入群目标（`atTargets` 非空、发送键亮起），
+       但主进程按群成员解析时找不到它 ⇒ 消息发不出去，还看不出原因。
+       库条目只负责「点选时先入群」，入群后自然出现在 bot 分组里。 */
+    () => mentionSections.flatMap((section) => section.items
+      .filter((item) => !(item as { library?: boolean }).library)
+      .map((item) => ({ selectId: item.selectId, name: item.name }))),
     [mentionSections],
   );
   const mentionNames = useMemo(() => mentionCandidatesFlat.map((c) => c.name), [mentionCandidatesFlat]);
@@ -584,6 +590,12 @@ export function TeamGroupView({
        专家库里没加过群的专家：点选时**先加入本群**（与设置页「添加伙伴」同一份载荷），
        成功后再把 `@名字 ` 写进正文。⛔ 加入失败（例如已满员）就说清原因，不静默。 */
     if (item.library) {
+      /* ⛔ 先按**点击时**的正文算出替换结果并关面板，再 await 入群 ——
+         否则 IPC 往返期间用户继续打字 / 连点，会拿旧正文覆盖新输入、或重复加同一个人。 */
+      const applied = mention.typed
+        ? applyMention(text, { start: mention.start, caret: mention.caret }, item.name)
+        : null;
+      closeMention();
       const added = await onAddPartner({
         id: `tgt:expert:${item.selectId}`,
         kind: "bot",
@@ -597,13 +609,8 @@ export function TeamGroupView({
         return;
       }
       flashMenuMsg(`已把 ${item.name} 加入本群`);
-      if (mention.typed) {
-        const applied = applyMention(text, { start: mention.start, caret: mention.caret }, item.name);
-        closeMention();
-        editorApiRef.current?.setTextAndCaret(applied.text, applied.caret);
-      } else {
-        insertMentionText(item.name);
-      }
+      if (applied) editorApiRef.current?.setTextAndCaret(applied.text, applied.caret);
+      else insertMentionText(item.name);
       return;
     }
     if (mention.typed) {

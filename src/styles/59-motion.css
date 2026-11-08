@@ -128,7 +128,6 @@
 .voice-ball-menu,
 .memory-project-picker-menu,
 .poll-bg-panel,
-.demo-modal-backdrop,
 .browser-drawer {
   animation-duration: var(--dur-menu);
   animation-timing-function: var(--ease-enter);
