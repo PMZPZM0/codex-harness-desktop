@@ -32,29 +32,13 @@ import { ROOT, ok, fail } from "./_ctx.mjs";
    ⛔ 不是"可以随便留"：每加一条新通道，要么当场接上消费者，要么进来登记 —— 进名单本身
       就该是一次有意识的决定（并在提交信息里说明为什么先不接线）。
    ⛔ 修好一条就从这里删一条（后半段断言会抓「已接线却没删」）。 */
-const UNWIRED = [
-  "app:home-dir", "app:perf-counters", "autoUpdate:run-all",
-  "backup:list", "backup:list-all", "backup:prune", "backup:read-change", "backup:restore-file",
-  "browser:ego-upgrade",
-  "cloud:sync/conflict/resolve", "cloud:sync/status",
-  "codex-official-market:installed", "commands:read", "connectors:oauth-cancel",
-  "dingtalk:logout", "engine:restart-log", "feishu:logout",
-  "harness-team:log-usage", "harness-team:project", "harness-team:set-menu",
-  "harness-team:set-menu-placement", "harness-team:thread-usage",
-  "history:search", "html-video:render",
-  "kb:embed-uninstall",
-  "memory:search",
-  "openfilm:retry", "openfilm:settings-get", "openfilm:studio-status",
-  "pet:toggle", "plugin:validate", "qq:logout", "relay:key-billing", "remote:send",
-  "runtime:update-check", "session-alias:ensure",
-  "sessionspace:ensure", "sessionspace:gc", "sessionspace:list", "sessionspace:remove", "sessionspace:state",
-  "skill-discipline:get",
-  "teams:session-config", "teams:tools", "telegram:status",
-  "terminal:list", "terminal:ready", "thread-runtime:list",
-  "voice:hotkey-get", "voice:kws-cancel", "voice:kws-install", "voice:kws-status",
-  "voice:resource-status", "voice:wake-audio", "voice:wake-reset", "voice:wake-start", "voice:wake-stop",
-  "wecom-webhook:logout", "wecom-webhook:test", "weixin:send", "weixin:status",
-];
+/* ⛔⛔ 名单是**每仓独立的数据文件**（`scripts/guards/data/unwired-ipc.json`）：
+   三仓的通道数本来就不同（主仓 645 / PP 648 / 云仓 647），名单如果写死在守卫里，
+   同步守卫就会把别的仓的名单覆盖过来 —— 11-08 实测过一次（PP 的 3 条独有死路由被抹掉）。 */
+const UNWIRED_FILE = join(ROOT, "scripts", "guards", "data", "unwired-ipc.json");
+const UNWIRED = (() => {
+  try { return JSON.parse(readFileSync(UNWIRED_FILE, "utf8")).channels ?? []; } catch { return []; }
+})();
 
 /* ══ ③ 允许出现在 font-family 里的族名 ══════════════════════════════════════
    ⛔ 只收「系统自带」与「通用族」：本项目不分发任何字体文件（见下方断言）。
