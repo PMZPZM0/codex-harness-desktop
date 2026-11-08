@@ -789,7 +789,12 @@ const catalog = [
   ok(/groupHistoryBlock\(history, text\)/.test(talk)
     && talk.indexOf('"=== END ==="') < talk.indexOf("groupHistoryBlock(history, text)"),
     "历史放在 `=== END ===` **之后**（壳后）：user-refs 只保留需求体 ⇒ 气泡仍只有那一句人话");
-  ok(/text === String\(currentLine/.test(talk),
+  /* ⛔⛔ 11-08 Code review 抓到的真缺陷：原先按时间正序累加、超预算 break ⇒ 丢掉的是
+     **最新**那几条（与"接上话"目标相反）。判据：必须从最新往旧累加 + 末尾反转回正序。 */
+  ok(/for \(let i = recent\.length - 1; i >= 0; i -= 1\)/.test(talk) && /picked\.reverse\(\);/.test(talk)
+    && /if \(used \+ line\.length > TALK_HISTORY_TOTAL_MAX\) break;/.test(talk),
+    "共享上下文超预算时**丢最旧、留最新**（⛔ 正序累加会丢掉最新那几句，成员更接不上话）");
+  ok(/text === current/.test(talk),
     "本轮这句已在需求体里，历史里不再重复贴一遍（⛔ 否则模型以为要回两次）");
   ok(/buildTalkInput\(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow\[\] = \[\]\)/.test(talk),
     "注入是 buildTalkInput 的第 5 个参数（两条投递链共用同一份口径）");

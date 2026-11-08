@@ -67,12 +67,18 @@ export type TalkHistoryRow = { speaker: string; text: string };
 export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): string {
   const picked: string[] = [];
   let used = 0;
-  for (const row of (rows ?? []).slice(-TALK_HISTORY_LIMIT)) {
+  const current = String(currentLine ?? "").replace(/\s+/g, " ").trim();
+  const recent = (rows ?? []).slice(-TALK_HISTORY_LIMIT);
+  /* ⛔⛔ 11-08 Code review 抓到真缺陷：原先按时间**正序**累加、超预算就 break，
+     丢掉的永远是**最新**那几条（实测 20 条各 400 字时第 19 条被丢、第 0 条保留）——
+     与「让成员接上话」的目标正好相反。⇒ 从最新往旧累加，预算不够时丢最旧的，最后反转回正序。 */
+  for (let i = recent.length - 1; i >= 0; i -= 1) {
+    const row = recent[i];
     if (!row) continue;
     const text = String(row.text ?? "").replace(/\s+/g, " ").trim();
     if (!text) continue;
     /* 本轮这句已在需求体里给过一次，别在历史里再贴一遍（模型会以为要回两次）。 */
-    if (text === String(currentLine ?? "").replace(/\s+/g, " ").trim()) continue;
+    if (text === current) continue;
     const speaker = String(row.speaker ?? "").trim() || "群成员";
     const line = `${speaker}：${text.slice(0, TALK_HISTORY_CHAR_MAX)}`;
     if (used + line.length > TALK_HISTORY_TOTAL_MAX) break;
@@ -80,6 +86,7 @@ export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): str
     used += line.length;
   }
   if (!picked.length) return "";
+  picked.reverse();
   return [
     "【群聊上下文 · 群里最近的消息】",
     `下面是群里最近 ${picked.length} 条对话，所有成员都能看到。别把别人的话当成对你说的，只接跟你有关的那句；想看更早的用 group_read。`,
