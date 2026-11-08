@@ -215,7 +215,7 @@ export const customModelFeature = defineFeature<null>({
       const model = input.model.trim();
       const effort = String(input.effort ?? "").trim();
       if (!model) throw new Error("模型 ID 不能为空");
-      if (effort && !["minimal", "low", "medium", "high", "ultra", "xhigh"].includes(effort)) throw new Error(`未知思考档位: ${effort}`);
+      if (effort && !["minimal", "low", "medium", "high", "ultra", "xhigh", "max"].includes(effort)) throw new Error(`未知思考档位: ${effort}`);
       const list = await readCustomModels();
       const target = list.find((entry) => entry.provider === input.provider);
       if (!target) throw new Error("未找到该供应商");

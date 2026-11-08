@@ -9,19 +9,11 @@
  *     投递进对方的会话，对方回话，形成对话链。
  *   ⛔ 全程没有 `runDelegatedTask` / `delegateRegistry` / 上级-下级 / 交付物模板 / 结论-依据-建议。
  *
- * 护栏（防两个人互相 @ 到烧穿 token）：一轮总量 12 次投递、同一成员最多 3 次、
- * 同一 (发送者 → 接收者 + 内容) 只投一次、转手深度 ≤ 6。
+ * ⛔⛔ 11-08 审查：这里原来还放着 runGroupTalk（整段投递/接力链），但派活搬进主进程后
+ *   已经**没有任何调用方**（真链是 harness-team-ipc 的 talk 处理器）—— 两套投递口径并存只会漂。
+ *   已删除；本文件只保留**共享上下文纯函数**（buildTalkInput / groupHistoryBlock / sanitizeForEnvelope）。
  */
-import { parseAgentMentions } from "../../../src/lib/team-models.mjs";
-import { runTalkTurn, type TalkMember } from "./01-channel";
-import { setGroupTalkHooks } from "./02-tools";
-
-const MAX_DELIVERIES = 12;
-const MAX_PER_MEMBER = 3;
-const MAX_HOPS = 6;
-const TURN_TIMEOUT_MS = Number(process.env.CODEX_GROUP_TALK_TIMEOUT_MS) > 0
-  ? Number(process.env.CODEX_GROUP_TALK_TIMEOUT_MS)
-  : 15 * 60 * 1000;
+import { type TalkMember } from "./01-channel";
 
 type AppendEntry = Record<string, unknown>;
 type Append = (entry: AppendEntry) => Promise<{ ok: boolean; error?: string }>;
@@ -41,8 +33,6 @@ export type GroupTalkOptions = {
   readMessages: (limit: number) => Promise<{ speaker: string; text: string }[]>;
   onMessage?: (member: TalkMember, text: string, ok: boolean) => void;
 };
-
-export type GroupTalkResult = { ok: boolean; sent: number; failed: string[]; hops: number };
 
 /* ══════ 群会话共享上下文（11-08 用户问「群成员，都能看到群会话内容吗」）══════
    现状：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史消息**不注入**，只能靠模型
@@ -110,20 +100,6 @@ export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): str
   ].join("\n");
 }
 
-async function withTimeout<T>(task: Promise<T>, name: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      task,
-      new Promise<T>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error(`${name} 这一轮超过 ${Math.round(TURN_TIMEOUT_MS / 60000)} 分钟没回话`)), TURN_TIMEOUT_MS);
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 /** 群聊专属输入（⛔ 不复用 groupContextBlock —— 那是派活/协作协议的口径）。
  *  导出给接线层：群聊会话与互相投递共用同一份口径，⛔ 不写第二套。 */
 export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow[] = []): string {
@@ -153,111 +129,4 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
     "回一句人话。想让别人接话就另起一行写 `@名字：你要说的话`，或调 group_say 填 to —— 宿主会把这句送进他的会话，他的回复会以他的署名进群。别写任务书、别列要求清单、别调任何调度工具。",
   );
   return need.join("\n");
-}
-
-/** 启动一轮群聊：先注册这个群的工具 hooks，再把第一句投递给被 @ 的人，之后自动接力。 */
-export async function runGroupTalk(
-  options: GroupTalkOptions,
-  firstTargets: TalkMember[],
-  firstText: string,
-  firstFrom: TalkMember = { id: "local-user", name: "我" },
-): Promise<GroupTalkResult> {
-  const failed: string[] = [];
-  const sentByMember = new Map<string, number>();
-  const seen = new Set<string>();
-  let deliveries = 0;
-  let maxHop = 0;
-
-  const rosterById = new Map(options.roster.map((m) => [m.id, m]));
-  const rosterByName = new Map(options.roster.map((m) => [String(m.name).replace(/\s+/g, "").toLowerCase(), m]));
-
-  const deliver = async (from: TalkMember, targets: TalkMember[], text: string, hop: number): Promise<void> => {
-    if (hop > MAX_HOPS || deliveries >= MAX_DELIVERIES || !String(text ?? "").trim()) return;
-    maxHop = Math.max(maxHop, hop);
-    for (const target of targets) {
-      if (deliveries >= MAX_DELIVERIES) break;
-      const count = sentByMember.get(target.id) ?? 0;
-      if (count >= MAX_PER_MEMBER) continue;
-      const dedupe = `${from.id}>${target.id}:${String(text).slice(0, 80)}`;
-      if (seen.has(dedupe)) continue;
-      seen.add(dedupe);
-      deliveries += 1;
-      sentByMember.set(target.id, count + 1);
-      try {
-        /* ⛔ 每一跳都重读群日志：接力到第 2 个人时，前一位刚说的话已经落群了。 */
-        const history = await options.readMessages(TALK_HISTORY_LIMIT).catch(() => [] as TalkHistoryRow[]);
-        const res = await withTimeout(
-          runTalkTurn(options.groupId, target, buildTalkInput(options, target, from, text, history), {
-            cwd: options.cwd,
-            effort: options.params?.effort,
-          }),
-          target.name,
-        );
-        const replyText = String(res.text ?? "").trim();
-        if (replyText) {
-          const wrote = await options.append({
-            authorId: target.id,
-            authorKind: "bot",
-            senderKind: "member",
-            threadId: res.threadId,
-            text: replyText,
-            via: { memberId: from.id, name: from.name },
-          });
-          if (!wrote.ok) failed.push(`${target.name}：${wrote.error || "回复没写进群"}`);
-        }
-        options.onMessage?.(target, replyText, true);
-        if (!replyText) continue;
-        /* 行首 @ ⇒ 把那句话原样送进对方会话（不是派任务）。 */
-        const asks = parseAgentMentions(replyText, options.group, {
-          excludeId: target.id,
-          max: 3,
-          catalog: Array.isArray(options.catalog) ? options.catalog : [],
-        });
-        const next: TalkMember[] = [];
-        const nextText: string[] = [];
-        for (const ask of asks) {
-          const found = ask.target
-            ? (rosterById.get(ask.memberId) ?? rosterByName.get(String(ask.name).replace(/\s+/g, "").toLowerCase()))
-            : (rosterById.get(ask.memberId) ?? null);
-          if (!found || found.id === target.id) continue;
-          next.push(found);
-          nextText.push(ask.ask);
-        }
-        /* ⛔ 不 await：先让这一句上屏，后面的人各自接着说（串行会让一个人卡住整条对话）。 */
-        for (let i = 0; i < next.length; i += 1) {
-          void deliver(target, [next[i]], nextText[i], hop + 1).catch((err: unknown) => {
-            failed.push(`${next[i].name}：${err instanceof Error ? err.message : String(err)}`);
-          });
-        }
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : String(err);
-        failed.push(`${target.name}：${reason}`);
-        options.onMessage?.(target, "", false);
-      }
-    }
-  };
-
-  /* 工具 hooks：模型在会话里主动 `group_say(to=...)` 也从这里进同一条投递链。 */
-  setGroupTalkHooks(options.groupId, {
-    append: (gid, entry) => (String(gid) === options.groupId
-      ? options.append(entry)
-      : Promise.resolve({ ok: false, error: "群 id 不匹配" })),
-    relay: (gid, fromId, toName, text) => {
-      const to = rosterByName.get(String(toName).replace(/\s+/g, "").toLowerCase());
-      if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
-      const from = rosterById.get(fromId) ?? { id: fromId, name: "群成员" };
-      void deliver(from, [to], text, 1).catch(() => undefined);
-      return Promise.resolve({ ok: true });
-    },
-    readMessages: (limit) => options.readMessages(limit),
-    members: () => Promise.resolve(options.roster.map((m) => ({ id: m.id, name: m.name, profession: m.targetProfession }))),
-  });
-
-  try {
-    await deliver(firstFrom, firstTargets, firstText, 0);
-  } finally {
-    /* ⛔ 一轮结束就摘 hook：不留一个指向旧 roster / 旧 append 的闭包。 */
-    setGroupTalkHooks(options.groupId, null);
-  }
-  return { ok: failed.length < deliveries, sent: deliveries, failed, hops: maxHop };
 }

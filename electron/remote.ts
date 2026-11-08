@@ -17,6 +17,14 @@ import { createScreenLease } from "./remote-screen-lease";
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
 
+/* ⛔ 11-08 审查：手机端的档位白名单不能写死四档 —— 模型规格表已有 minimal/low/medium/high/xhigh/ultra/max，
+   写死会把手机选的 max/ultra 直接丢掉（引擎本来会按模型自己夹）。这里只挡未知值。 */
+const REMOTE_EFFORTS = new Set(["minimal", "low", "medium", "high", "xhigh", "ultra", "max"]);
+const remoteEffortOf = (value: unknown): string | undefined => {
+  const effort = String(value ?? "");
+  return REMOTE_EFFORTS.has(effort) ? effort : undefined;
+};
+
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
@@ -60,6 +68,8 @@ type RemoteEvents = {
   sendMessage?: (threadId: string, text: string, images?: string[], effort?: string, mentions?: { kind: string; name: string; key?: string }[]) => Promise<void>;
   /** 手机端能力目录：可执行指令 + 技能清单（# 引用用） */
   catalog?: () => Promise<{ commands: { id: string; label: string }[]; skills: { name: string; description?: string }[] }>;
+  /** 11-08 审查：手机端思考档位跟模型规格联动（当前模型支持的档位；空数组 ⇒ 手机回退四档） */
+  getEfforts?: () => Promise<string[]>;
   interruptThread?: (threadId: string) => Promise<void>;
   compactThread?: (threadId: string) => Promise<void>;
   /** 列当前会话工作区文件（相对路径，最多两层） */
@@ -773,11 +783,12 @@ export class RemoteControlService {
           else if (data.type === "boss-groups") result = { groups: await (this.events.listBossGroups?.() ?? Promise.resolve([])) };
           else if (data.type === "send-message") {
             const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
-            const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
+            const effort = remoteEffortOf(data.effort);
             await (this.events.sendMessage?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort) ?? Promise.resolve());
             result = { ok: true };
           }
           else if (data.type === "catalog") result = await (this.events.catalog?.() ?? Promise.resolve({ commands: [], skills: [] }));
+          else if (data.type === "efforts") result = { efforts: await (this.events.getEfforts?.() ?? Promise.resolve([])) };
           else if (data.type === "interrupt") { await (this.events.interruptThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
           else if (data.type === "compact") { await (this.events.compactThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
           else if (data.type === "archive") { await (this.events.archiveThread?.(String(data.threadId ?? "")) ?? Promise.resolve()); result = { ok: true }; }
@@ -803,7 +814,7 @@ export class RemoteControlService {
           else if (data.type === "queue-list") result = { items: await (this.events.queueList?.(String(data.threadId ?? "")) ?? Promise.resolve([])) };
           else if (data.type === "queue-add") {
             const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
-            const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
+            const effort = remoteEffortOf(data.effort);
             await (this.events.queueAdd?.(String(data.threadId ?? ""), String(data.text ?? ""), images, effort) ?? Promise.reject(new Error("不支持排队")));
             result = { ok: true };
           }
@@ -942,9 +953,13 @@ export class RemoteControlService {
         void (this.events.listBossGroups?.() ?? Promise.resolve([])).then((groups) => reply({ groups })).catch((e) => reply({ error: e.message }));
         return;
       }
+      if (data.type === "efforts") {
+        void (this.events.getEfforts?.() ?? Promise.resolve([])).then((efforts) => reply({ efforts })).catch((e) => reply({ error: e.message }));
+        return;
+      }
       if (data.type === "send-message") {
         const images = Array.isArray(data.images) ? data.images.map((p: any) => String(p ?? "")).filter(Boolean) : [];
-        const effort = ["low", "medium", "high", "xhigh"].includes(String(data.effort ?? "")) ? String(data.effort) : undefined;
+        const effort = remoteEffortOf(data.effort);
         /* @ 点名：只收允许的 kind + 限长，避免手机侧塞任意字符串进系统提示 */
         const allowedKinds = ["expert", "member", "team", "subagent", "cli"];
         const mentions = (Array.isArray(data.mentions) ? data.mentions : [])

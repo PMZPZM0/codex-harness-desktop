@@ -3,5 +3,5 @@ export { ensureTalkThread, lookupGroupThread, forgetGroupThreads, runTalkTurn, t
 export type { TalkMember } from "./01-channel";
 export { buildGroupTalkTools, attachGroupTalkEvents, setGroupTalkHooks, handleGroupTalkToolCall } from "./02-tools";
 export type { GroupTalkHooks } from "./02-tools";
-export { runGroupTalk, buildTalkInput, groupHistoryBlock, TALK_HISTORY_LIMIT } from "./03-talk";
-export type { GroupTalkOptions, GroupTalkResult, TalkHistoryRow } from "./03-talk";
+export { buildTalkInput, groupHistoryBlock, TALK_HISTORY_LIMIT } from "./03-talk";
+export type { GroupTalkOptions, TalkHistoryRow } from "./03-talk";

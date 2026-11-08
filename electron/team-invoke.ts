@@ -219,6 +219,8 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
      模型会照抄去写给别人的派活消息（用户：「转述都不会转述」）。 */
   const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${senderLineOf(leadSender)}\n${memberSupervisor ? `上级：${memberSupervisor}\n` : ""}${taskLineOf(leadSender, humanizeRefs(input.query))}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_NOTE}${invokedMemory.text}`;
   let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
+  /* ⛔ 11-08 审查：清空记录代际的基准 —— 这一轮成员派活是什么时候开跑的。 */
+  const memberRunStartedAt = Date.now();
   try {
     const turn: any = await server.request("turn/start", {
       threadId: memberThreadId,
@@ -250,7 +252,7 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
           senderKind: "member",
           threadId: memberThreadId,
           text,
-        });
+        }, memberRunStartedAt);
       }
     }
     /* ⛔⛔ 11-07 用户：「成员之间互相也不会艾特」——成员产出以前只是 team_member_invoke

@@ -1203,7 +1203,12 @@ export const harnessTeamFeature = defineFeature<null>({
     /* ⛔⛔ 11-07「关掉群弹窗就没结果回传」的结构性修复：
        把「写一条群消息」注入给 `team-group-bridge` —— 团队成员回合结束时（`team-invoke`）
        用同一个幂等 id（`team-run:<runId>`，与渲染层一致）把产出落进群日志，**不再依赖面板开着**。 */
-    setTeamGroupAppender((gid, entry) => appendMessageTo(gid, entry));
+    /* ⛔ 11-08 审查：主理人工具派活的产出也过清空代际 —— 开跑后用户清空过记录就只结算、不落盘。 */
+    setTeamGroupAppender((gid, entry, since) => {
+      const cleared = groupClearedAt.get(gid) ?? 0;
+      if (since && cleared > since) return Promise.resolve({ ok: true });
+      return appendMessageTo(gid, entry);
+    });
     /* ⛔ 群聊会话的工具调用由独立板块自己应答（它的事件会被 filterForRenderer 裁掉）。 */
     ctx.effect(attachGroupTalkEvents(server));
     ctx.effect(() => () => setTeamGroupAppender(null));

@@ -13,6 +13,8 @@ export const REMOTE_RPC_TYPES: ReadonlySet<string> = new Set([
   "turn-files", "file-diff", "goal-get", "answer", "files-list", "file-read",
   // 11-06 排队消息：运行中也能发 —— 入队 / 立即（插队）/ 撤回
   "queue-list", "queue-add", "queue-start", "queue-delete",
+  // 11-08 审查：手机端思考档位跟模型规格联动（返回当前模型支持的档位）
+  "efforts",
 ]);
 
 export function isAllowedRemoteRpc(type: unknown): boolean {

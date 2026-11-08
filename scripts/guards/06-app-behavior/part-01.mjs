@@ -156,6 +156,16 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
     );
   }
   {
+    /* ⛔ 11-08 审查：模型库加了 gpt-6.1-sol/terra，订阅登录的启用清单没跟（选不到）；
+       自定义供应商的档位白名单也漏了 max（存 max 档直接报「未知思考档位」）。 */
+    const officialSrc = readFileSync(join(ROOT, "src/lib/official-models.ts"), "utf8");
+    const cmIpcSrc = readFileSync(join(ROOT, "electron/features/custom-model-ipc.ts"), "utf8");
+    (officialSrc.includes('"gpt-6.1-sol"') && officialSrc.includes('"gpt-6.1-terra"')
+      && /"ultra", "xhigh", "max"\]/.test(cmIpcSrc) ? ok : fail)(
+      "官方订阅模型清单含 gpt-6.1-sol/terra + 自定义供应商档位白名单接受 max（11-08 审查）"
+    );
+  }
+  {
     const probeSrc = readFileSync(join(ROOT, "electron/features/custom-model-probe.ts"), "utf8");
     (probeSrc.includes("if (models && !model)") && probeSrc.includes("实际推理失败") && probeSrc.includes("35_000") ? ok : fail)(
       "模型检测：指定模型必须真发一次推理（/models 里有 ≠ 能用；grok-4.7 实测列表有、推理挂起）"

@@ -13,7 +13,8 @@
  *    不会出现"面板开着时写一条、主进程又写一条"的双份。
  */
 
-type AppendFn = (groupId: string, entry: Record<string, unknown>) => Promise<{ ok: boolean; error?: string }>;
+/* ⛔ 11-08 审查：第三个参数 = 这次派活的**开跑时刻**。群存储按它判「开跑后用户清空过记录」⇒ 只结算不落盘。 */
+type AppendFn = (groupId: string, entry: Record<string, unknown>, since?: number) => Promise<{ ok: boolean; error?: string }>;
 
 let appendFn: AppendFn | null = null;
 
@@ -53,12 +54,13 @@ export function groupOfTeam(teamId: string): string {
 export async function appendMemberOutputToGroup(
   groupId: string,
   entry: Record<string, unknown>,
+  since?: number,
 ): Promise<{ ok: boolean; error?: string }> {
   const gid = String(groupId ?? "");
   if (!gid) return { ok: false, error: "没有绑定的群" };
   if (!appendFn) return { ok: false, error: "群存储没接线" };
   try {
-    const res = await appendFn(gid, entry);
+    const res = await appendFn(gid, entry, since);
     return { ok: Boolean(res?.ok), error: res?.error };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };

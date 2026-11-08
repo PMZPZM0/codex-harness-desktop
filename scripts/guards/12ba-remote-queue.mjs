@@ -76,6 +76,13 @@ ok(/<div id="queuebar" hidden><\/div>/.test(pageSrc) && /id="queue" onclick="que
   "手机页有排队条与「排队」按钮");
 ok(["queue-list", "queue-add", "queue-start", "queue-delete"].every((t) => pageSrc.includes(`type: "${t}"`)),
   "手机页四个动作都接了（列表 / 入队 / 立即 / 撤回）");
+/* ⛔ 11-08 审查：手机端思考档位不能写死四档（模型规格已有 minimal…max）——
+   主进程给「当前模型支持的档位」，手机页据此渲染；取不到才回退四档。 */
+ok(/getEfforts\?: \(\) => Promise<string\[\]>/.test(remoteSrc)
+  && /remoteEffortOf\(data\.effort\)/.test(remoteSrc)
+  && /type: "efforts"/.test(pageSrc) && /appendEfforts/.test(pageSrc)
+  && !/\[\["low", "低"\], \["medium", "中"\]/.test(pageSrc),
+  "手机端思考档位跟模型规格联动（⛔ 不再写死四档；取不到才回退，11-08 审查）");
 ok(/queueBtn\.hidden = !turnRunning/.test(pageSrc),
   "「排队」按钮只在运行中出现（空闲时发消息就是正常发送）");
 ok(/void refreshQueue\(\);/.test(pageSrc) && /function renderQueue\(\)/.test(pageSrc),

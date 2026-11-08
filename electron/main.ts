@@ -641,6 +641,18 @@ const remote = new RemoteControlService({
     broadcastHarnessEvent({ type: "remote:queue-withdraw", threadId, id });
     await server.request("thread/queue/delete", { threadId, queuedSubmissionId: id }).catch(() => undefined);
   },
+  /* 11-08 审查：手机端思考档位跟模型规格联动 —— 返回当前生效模型支持的档位；
+     没配置自定义模型（官方订阅）时返回空数组，手机页回退四档。 */
+  getEfforts: async () => {
+    try {
+      const model = await readCustomModel();
+      const active = (model?.models ?? []).find((entry: any) => entry?.id === model?.model);
+      const efforts = Array.isArray(active?.efforts) ? active.efforts.filter((value: unknown) => typeof value === "string") : [];
+      return efforts as string[];
+    } catch {
+      return [];
+    }
+  },
   catalog: async () => {
     const skills: { name: string; description?: string }[] = [];
     try {

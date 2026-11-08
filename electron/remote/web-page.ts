@@ -1712,14 +1712,22 @@ function openCommands() {
     effHead.textContent = "思考强度（对后面的消息生效）";
     node.appendChild(effHead);
     const currentEffort = readStore("chm-effort") || "high";
-    const efforts = [["low", "低"], ["medium", "中"], ["high", "高"], ["xhigh", "极高"]];
-    for (const pair of efforts) {
-      const row = document.createElement("div");
-      row.className = "cmd-row";
-      row.textContent = pair[1] + (pair[0] === currentEffort ? " ✓" : "");
-      row.onclick = () => { writeStore("chm-effort", pair[0]); openCommands(); };
-      node.appendChild(row);
-    }
+    /* ⛔ 11-08 审查：档位不再写死四档 —— 问主进程要「当前模型支持的档位」；
+       取不到（未配置自定义模型 / 请求失败）才回退四档。 */
+    const EFFORT_LABELS = { none: "关闭", minimal: "极简", low: "低", medium: "中", high: "高", xhigh: "极高", ultra: "最高", max: "最大" };
+    const appendEfforts = (values) => {
+      for (const value of values) {
+        const row = document.createElement("div");
+        row.className = "cmd-row";
+        row.textContent = (EFFORT_LABELS[value] || value) + (value === currentEffort ? " ✓" : "");
+        row.onclick = () => { writeStore("chm-effort", value); openCommands(); };
+        node.appendChild(row);
+      }
+    };
+    rpc({ type: "efforts" }).then((r) => {
+      const values = Array.isArray(r && r.efforts) && r.efforts.length ? r.efforts : ["low", "medium", "high", "xhigh"];
+      appendEfforts(values);
+    }).catch(() => { appendEfforts(["low", "medium", "high", "xhigh"]); });
   }).catch((error) => { node.innerHTML = ""; node.appendChild(panelMessage("加载失败：" + error.message)); });
 }
 function openApk() {
