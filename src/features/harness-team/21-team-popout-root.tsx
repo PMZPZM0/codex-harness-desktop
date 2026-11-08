@@ -24,6 +24,9 @@ export function TeamPopoutRoot({ app }: { app: HarnessAppApi }) {
     <div className="team-popout-root">
       <TeamChatOverlay
         app={app}
+        /* ⛔ 11-08 审查：独立窗原来没传 onOpenThread ⇒ 办公室预览里点角色是**死按钮**
+           （面板先关、然后静默无事发生）。独立窗没有主聊天区可切，这里改为打开该会话的独立窗口。 */
+        onOpenThread={(threadId) => { void window.codex.popoutThread(threadId); }}
         onCloseWindow={() => { void window.codex.popoutTeamClose(); }}
       />
     </div>

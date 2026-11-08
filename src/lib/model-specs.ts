@@ -199,7 +199,22 @@ const RULES: SpecRule[] = [
 export function matchModelSpec(modelId: string): ModelSpec | null {
   const id = (modelId || "").toLowerCase();
   // 外部规则优先：userData/model-specs.json（数据与代码分离，更新模型数据无需改代码重新构建）
-  for (const rule of externalRules) if (rule.match.test(id)) return rule.spec;
+  for (const rule of externalRules) {
+    if (!rule.match.test(id)) continue;
+    /* ⛔⛔ 11-08 审查：外部规则只覆盖它**明确给出**的字段，缺省字段沿用内置 ——
+       原来直接 return rule.spec，用户只想改 contextWindow 的一条外部规则会把 efforts 变成 []
+       ⇒ effortLevelsForModel 回落到「低中高」三档，该模型的真实档位被静默砍掉。 */
+    const builtin = RULES.find((entry) => entry.match.test(id))?.spec;
+    if (!builtin) return rule.spec;
+    return {
+      ...builtin,
+      ...(rule.spec.contextWindow ? { contextWindow: rule.spec.contextWindow } : {}),
+      ...(rule.spec.maxOutputTokens ? { maxOutputTokens: rule.spec.maxOutputTokens } : {}),
+      ...(rule.spec.efforts?.length ? { efforts: rule.spec.efforts } : {}),
+      ...(rule.spec.inputTypes?.length ? { inputTypes: rule.spec.inputTypes } : {}),
+      ...(rule.spec.outputTypes?.length ? { outputTypes: rule.spec.outputTypes } : {}),
+    };
+  }
   for (const rule of RULES) if (rule.match.test(id)) return rule.spec;
   return null;
 }

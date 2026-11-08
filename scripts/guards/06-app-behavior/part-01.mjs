@@ -144,6 +144,18 @@ console.log(C.bold("\n【24】协议桥：引擎只发 Responses，chat-only 网
     );
   }
   {
+    /* ⛔ 11-08 审查：规格表里的档位（含 max）必须有中文标签，否则菜单显示英文；
+       外部 model-specs.json 只覆盖 contextWindow 时不许把 efforts 清空（否则档位静默砍成三档）。 */
+    const labelsSrc = readFileSync(join(ROOT, "src/lib/effort-labels.ts"), "utf8");
+    const specsSrc = readFileSync(join(ROOT, "src/lib/model-specs.ts"), "utf8");
+    const order = (specsSrc.match(/EFFORT_ORDER = \[([^\]]+)\]/)?.[1] ?? "").match(/"([a-z]+)"/g)?.map((s) => s.replace(/"/g, "")) ?? [];
+    const missing = order.filter((level) => !new RegExp(`(^|[\\s{])${level}:`).test(labelsSrc));
+    (order.length >= 5 && missing.length === 0
+      && /rule\.spec\.efforts\?\.length \? \{ efforts: rule\.spec\.efforts \}/.test(specsSrc) ? ok : fail)(
+      `档位标签覆盖 EFFORT_ORDER（缺：${missing.join("/") || "无"}）+ 外部模型规则缺 efforts 时沿用内置（11-08 审查）`
+    );
+  }
+  {
     const probeSrc = readFileSync(join(ROOT, "electron/features/custom-model-probe.ts"), "utf8");
     (probeSrc.includes("if (models && !model)") && probeSrc.includes("实际推理失败") && probeSrc.includes("35_000") ? ok : fail)(
       "模型检测：指定模型必须真发一次推理（/models 里有 ≠ 能用；grok-4.7 实测列表有、推理挂起）"

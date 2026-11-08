@@ -143,26 +143,23 @@ export function TeamQueueStack({ app, threads, reloadKey, onNotice }: {
     void refresh();
   }, [refresh, threadOf, onNotice]);
 
-  const reorder = useCallback(async (from: number, to: number) => {
-    if (from === to) return;
-    const moved = entries[from];
-    if (!moved) return;
-    const ids = byThread.get(moved.threadId)?.map((item) => item.id) ?? [];
-    const fromInThread = ids.indexOf(moved.item.id);
-    if (fromInThread < 0) return;
-    const target = entries[to];
-    const toInThread = target && target.threadId === moved.threadId ? ids.indexOf(target.item.id) : ids.length - 1;
-    if (toInThread < 0) return;
+  /* ⛔⛔ 11-08 审查：`QueuedMessageList` 是按成员分组渲染的（entries=该成员的 items），
+     它回传的 from/to 是**组内下标**；原来这里拿组内下标去索引扁平的 `entries` ⇒
+     多个成员同时有排队消息时，拖动会排到别人那条（或静默无效）。
+     ⇒ 由调用方带上 threadId，直接按该成员的队列 id 列表重排。 */
+  const reorder = useCallback(async (threadId: string, from: number, to: number) => {
+    const ids = (byThread.get(threadId) ?? []).map((item) => item.id);
+    if (from === to || from < 0 || to < 0 || from >= ids.length || to >= ids.length) return;
     const next = [...ids];
-    next.splice(fromInThread, 1);
-    next.splice(toInThread, 0, moved.item.id);
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
     try {
-      await window.codex.request("thread/queue/reorder", { threadId: moved.threadId, queuedSubmissionIds: next });
+      await window.codex.request("thread/queue/reorder", { threadId, queuedSubmissionIds: next });
     } catch (error) {
       onNotice?.(error instanceof Error ? error.message : "排序失败");
     }
     void refresh();
-  }, [entries, byThread, refresh, onNotice]);
+  }, [byThread, refresh, onNotice]);
 
   const setTimer = useCallback(async (entry: QueueItem, runAt: number | null) => {
     const threadId = threadOf(entry.id);
@@ -206,7 +203,7 @@ export function TeamQueueStack({ app, threads, reloadKey, onNotice }: {
               onDelete={(id) => void remove(id)}
               onStart={(id) => void start(id)}
               onSave={(entry, text) => void save(entry, text)}
-              onReorder={(from, to) => void reorder(from, to)}
+              onReorder={(from, to) => void reorder(thread.threadId, from, to)}
               dragIndex={dragIndex}
               setDragIndex={setDragIndex}
             />
