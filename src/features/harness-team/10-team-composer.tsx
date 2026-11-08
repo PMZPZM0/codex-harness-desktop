@@ -31,6 +31,7 @@ import { useAnchoredPopover } from "../../lib/use-centered-popover";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
+import { mentionSegments } from "../../lib/team-mention.mjs";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
 import { getActiveModel, subscribeActiveModel } from "../../lib/active-model.mjs";
 import { collectModelChoices } from "../../lib/model-menu.mjs";
@@ -153,6 +154,8 @@ type Props = {
   onOpenMention?: (anchor: HTMLElement) => void;
   /** @ 面板的锚点（group view 持有，输入框里打 @ 时也要用它定位）。 */
   mentionAnchorRef?: RefObject<HTMLButtonElement | null>;
+  /** 输入框行内提及 chip 用：群里的成员/伙伴名字（长名优先匹配，与发消息口径同源）。 */
+  mentionNames?: string[];
   /** 本轮已 @ 的人数（画徽标；0 = 不画） */
   mentionCount?: number;
   /** 工具行右端的「群菜单」按钮（FLOAT 形态下父层不传，按钮画在群视图右下）。 */
@@ -184,7 +187,7 @@ function badgesOf(entry: { modelId: string; inputTypes?: string[]; contextWindow
 export function TeamComposer({
   value, onValueChange, textareaRef, onKeyDown, placeholder,
   opts, onOpts, sending, canSend, onSend, running, stopping, onStop, targetNames, fileCandidates = [], onOpenModelSettings,
-  onOpenMention, mentionCount = 0, mentionAnchorRef, toolsSlot = null, app,
+  onOpenMention, mentionCount = 0, mentionAnchorRef, mentionNames = [], toolsSlot = null, app,
 }: Props) {
   const [plusOpen, setPlusOpen] = useState(false);
   /* ⛔ 11-06 用户：「这个展示不对吧，那个技能展示也丑」——
@@ -197,6 +200,8 @@ export function TeamComposer({
   const plusPopRef = useRef<HTMLDivElement | null>(null);
   const filesPopRef = useRef<HTMLDivElement | null>(null);
   const skillsPopRef = useRef<HTMLDivElement | null>(null);
+  /* 行内提及 chip 的镜像层（与 textarea 同排版、只负责给 @名字 染色）。 */
+  const mirrorRef = useRef<HTMLDivElement | null>(null);
   const plusPos = useAnchoredPopover(plusOpen, plusBtnRef, plusPopRef);
   const filesPos = useAnchoredPopover(plusView === "files", plusBtnRef, filesPopRef);
   const skillsPos = useAnchoredPopover(plusView === "skills", plusBtnRef, skillsPopRef);
@@ -527,17 +532,32 @@ export function TeamComposer({
         </div>,
         document.body,
       )}
-      <textarea
-        ref={textareaRef}
-        className="team-composer__input"
-        style={editorHeight ? { height: editorHeight, maxHeight: editorHeight } : undefined}
-        value={value}
-        onChange={(e) => onValueChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        onPaste={(e) => void onPaste(e)}
-        placeholder={placeholder}
-        rows={2}
-      />
+      {/* ⛔⛔ 11-08 用户：「输入框里面没有自动变成图二这种」——
+          输入框里的 `@名字` 就地染色成 chip：**覆盖层**（镜像同样的文字排版、把提及段染底），
+          textarea 文字透明、光标可见 ⇒ 字形与光标位置**一个字都不差**（⛔ 不用 contenteditable
+          换掉输入框，那样会把中文输入法/粘贴/拖高全赔进去）。 */}
+      <div className="team-composer__editor">
+        <div className="team-composer__mirror" aria-hidden ref={mirrorRef}>
+          {mentionSegments(value, mentionNames).map((seg, index) =>
+            seg.mention
+              ? <span key={index} className="team-composer__at-chip">{seg.text}</span>
+              : <span key={index}>{seg.text}</span>
+          )}
+          {"\u200b"}
+        </div>
+        <textarea
+          ref={textareaRef}
+          className={`team-composer__input${value ? " is-mirrored" : ""}`}
+          style={editorHeight ? { height: editorHeight, maxHeight: editorHeight } : undefined}
+          value={value}
+          onChange={(e) => onValueChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          onPaste={(e) => void onPaste(e)}
+          onScroll={(e) => { if (mirrorRef.current) mirrorRef.current.scrollTop = e.currentTarget.scrollTop; }}
+          placeholder={placeholder}
+          rows={2}
+        />
+      </div>
 
       <div className="team-composer__actions composer-actions">
         <div className="team-composer__left composer-left">

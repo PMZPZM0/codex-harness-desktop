@@ -1195,32 +1195,9 @@ export function TeamGroupView({
                               onPick={mentionPartner}
                               excludeId={row.authorId}
                             />
-                            {/* ⛔⛔ 11-08 用户令（截图 2）：「我消息气泡里面以透出来这种效果」——
-                                用户消息里 @ 了谁，要在气泡里**透出来**（头像 + 名字的小 chip）。
-                                ⛔ 只补正文里没写到的那些：主进程派活时会把 `@名字` 补进正文，
-                                  已写在正文里的再由 `TeamMentionText` 就地渲染 —— 两处都画就是重复
-                                  （11-07 用户明确否过「同一条消息出现两个 @承枢」）。 */}
-                            {!isBot && (row.mentions?.length ?? 0) > 0 && (() => {
-                              const body = stripVoiceScript(row.text);
-                              const rest = row.mentions.filter((id) => !body.includes(`@${nameOf(id)}`));
-                              if (!rest.length) return null;
-                              return (
-                                <div className="team-msg__mentioned" aria-label="这条消息 @ 了">
-                                  {rest.map((id) => (
-                                    <button
-                                      key={id}
-                                      type="button"
-                                      className="team-at team-msg__mentioned-chip"
-                                      title={`@${nameOf(id)} · 点一下加进本轮 @`}
-                                      onClick={() => mentionPartner(id)}
-                                    >
-                                      <MemberAvatar member={faceOfId(id)} size={14} className="team-at__avatar" />
-                                      <span className="team-at__name">{nameOf(id)}</span>
-                                    </button>
-                                  ))}
-                                </div>
-                              );
-                            })()}
+                            {/* ⛔⛔ 11-08 用户（截图 3）：「我点出来的那个 @ 总是固定在消息下面，很不好看」——
+                                气泡底部那排「补正文没写到的 @」整块删除：@ 只认正文（行内提及），
+                                ⛔ 不再在消息下面另起一排 chip。 */}
                             {/* ⛔ 11-08 用户令「在用户消息气泡里面更新，点击可以弹窗预览」：
                                 话题条就挂在用户自己的气泡里，⛔ 不是另起一条消息、也不在主流里平铺。 */}
                             {effectiveMessageForm === "topic" && !isBot && (
@@ -1422,6 +1399,7 @@ export function TeamGroupView({
                 onOpenModelSettings={onOpenModelSettings}
                 onOpenMention={() => (mention.open ? closeMention() : openMentionPanel())}
                 mentionAnchorRef={mentionAnchorRef}
+                mentionNames={mentionNames}
                 mentionCount={atTargets.length}
                 /* 飞书 §3：`needShowMenuButton = items.length > 0` —— 空菜单不画按钮。
                    FLOAT 形态下按钮在群视图右下（见文件末尾），这里不重复画。 */

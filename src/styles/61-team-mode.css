@@ -927,26 +927,6 @@
 
 /* 用户消息气泡里「透出来」的 @ 对象（截图 2 的效果：头像 + 名字的小 chip）。
    ⛔ 只渲染正文里没写到的那些（正文里已有的由 TeamMentionText 就地渲染），避免一条消息两个 @。 */
-.team-msg__mentioned {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-.team-msg__mentioned-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 1px 7px 1px 3px;
-  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel) 60%, transparent);
-  font-size: 11.5px;
-  color: var(--text);
-  cursor: pointer;
-}
-.team-msg__mentioned-chip:hover { border-color: var(--accent); color: var(--accent); }
-
 /* ══════ 话题消息（11-08 用户令：「弹窗预览，在用户消息气泡里面更新」）══════
    · 话题条挂在**用户气泡内部**，不是另起一条消息；头像栈叠 3 个，最后一句做缩略。
    · 弹窗用整屏遮罩 + 居中卡片，层级低于确认框(950)、高于画布(90)，与设置内浮层同档。 */
@@ -3356,3 +3336,32 @@
    ⇒ 标题/副标题一律 line-height: 1（行盒 = 字号），图标 16px 同高，整排字面与图标落在 y=20 中线。 */
 .team-modal__title strong,
 .team-modal__sub { line-height: 1; }
+
+/* ⛔⛔ 11-08 用户（截图）：「输入框里面没有自动变成图二这种」——
+   输入框行内提及 chip = **镜像覆盖层**：镜像与 textarea 共用同一套排版，只把 `@名字` 段染底；
+   textarea 文字透明、光标保留 ⇒ 字形/换行/光标位置与输入完全一致。
+   ⛔ 镜像的 font / padding / line-height / white-space 必须与 `.team-composer__input` 逐项相同；
+   ⛔ chip 只许改颜色/底色/圆角/外阴影 —— 加 padding / 字重 / 字距都会让光标错位。 */
+.team-composer__editor { position: relative; }
+.team-composer__mirror {
+  position: absolute;
+  inset: 0;
+  padding: 2px 10px 6px 2px;
+  overflow: hidden;
+  pointer-events: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.team-composer__at-chip {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.team-composer .team-composer__input.is-mirrored { color: transparent; caret-color: var(--text); }
+.team-composer .team-composer__input::placeholder { color: var(--faint); opacity: 1; }
+.team-composer .team-composer__input { scrollbar-gutter: stable; }

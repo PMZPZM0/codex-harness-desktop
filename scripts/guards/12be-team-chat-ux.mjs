@@ -381,9 +381,27 @@ const catalog = [
      判据两条：① 派活落盘不再调 withMentionPrefix；② 用户消息渲染出 `team-msg__mentioned` chip。 */
   ok(!/withMentionPrefix\(text/.test(ipcMain) && /^\s*text,$/m.test(ipcMain),
     "⛔ 派活落盘正文不再注入 @ 名字（用户原话原样入库；补一次就多一个 @，还看不出是系统加的）");
-  ok(/team-msg__mentioned/.test(read("src/features/harness-team/04-team-group-view.tsx"))
-    && /team-msg__mentioned-chip/.test(read("src/styles/61-team-mode.css")),
-    "用户消息气泡里以「头像 + 名字」chip 透出这条 @ 了谁（截图 2 的效果）");
+  /* ⛔⛔ 11-08 用户（截图 3）：「我点出来的那个 @ 总是固定在消息下面，很不好看」——
+     气泡底部那排「补出来」的 chip 删除；@ 只在正文里（行内提及）。 */
+  ok(!/team-msg__mentioned/.test(read("src/features/harness-team/04-team-group-view.tsx"))
+    && !/team-msg__mentioned/.test(read("src/styles/61-team-mode.css")),
+    "⛔ 气泡底部不再有「补出来」的 @ chip 行（@ 只在正文里）");
+  /* ⛔⛔ 11-08 用户（截图 1）：「输入框里面没有自动变成图二这种」——
+     输入框里的 `@名字` 由**镜像层**就地染色成 chip（textarea 文字透明、光标保留）。 */
+  {
+    const composerSrc2 = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+    const teamCss2 = read("src/styles/61-team-mode.css");
+    ok(/mentionSegments\(value, mentionNames\)/.test(composerSrc2) && /team-composer__mirror/.test(composerSrc2)
+      && /team-composer__at-chip/.test(composerSrc2)
+      && /className=\{`team-composer__input\$\{value \? " is-mirrored" : ""\}`\}/.test(composerSrc2)
+      && /onScroll=\{\(e\) => \{ if \(mirrorRef\.current\) mirrorRef\.current\.scrollTop = e\.currentTarget\.scrollTop; \}\}/.test(composerSrc2),
+      "输入框里的 @名字 就地染色成 chip（镜像层跟随滚动，光标位置不漂）");
+    const chipRule = /\.team-composer__at-chip \{([^}]*)\}/.exec(teamCss2)?.[1] ?? "";
+    ok(/background:/.test(chipRule) && !/padding:/.test(chipRule) && !/font-weight:/.test(chipRule) && !/letter-spacing:/.test(chipRule),
+      "⛔ chip 只许加底色/圆角/外阴影：加 padding / 字重 / 字距会让光标与镜像错位");
+    ok(/\.team-composer \.team-composer__input\.is-mirrored \{ color: transparent; caret-color: var\(--text\); \}/.test(teamCss2),
+      "镜像态：textarea 文字透明、光标保留（否则文字会叠两层）");
+  }
   ok(/\[SYSTEM TASK · 工作伙伴消息\]/.test(talkSrc) && /=== 用户需求 ===/.test(talkSrc) && /=== END ===/.test(talkSrc),
     "群聊输入包 SYSTEM TASK 壳：user-refs 只留需求体，⛔ 提示词不裸露在气泡");
   ok(/发件人：member · /.test(talkSrc) && /你手上有三个群聊工具/.test(talkSrc),

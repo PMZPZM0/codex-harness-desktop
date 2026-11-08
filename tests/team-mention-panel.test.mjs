@@ -8,6 +8,7 @@ import {
   applyMention,
   mentionSectionsOf,
   flattenMentionSections,
+  mentionSegments,
 } from "../src/lib/team-mention.mjs";
 
 test("触发：行首 / 空白后的 @ 都算，且带出查询词", () => {
@@ -131,4 +132,13 @@ test("摘除提及：不劈更长名字、收掉多余空白", () => {
   assert.equal(removeMentionsFromText("你好 @阿团子 在吗", ["阿团"]), "你好 @阿团子 在吗");
   assert.equal(removeMentionsFromText("你好 @阿团子 在吗", ["阿团子"]), "你好 在吗");
   assert.equal(removeMentionsFromText("@构梁 哈喽", ["构梁"]), "哈喽");
+});
+
+test("正文分段：提及段带标记、普通段原样，长名优先不重叠", () => {
+  const names = ["阿团", "阿团子", "承枢"];
+  const segs = mentionSegments("你好 @阿团子 和 @承枢 在吗", names);
+  const joined = segs.map((s) => s.text).join("");
+  assert.equal(joined, "你好 @阿团子 和 @承枢 在吗");
+  assert.deepEqual(segs.filter((s) => s.mention).map((s) => s.text), ["@阿团子", "@承枢"]);
+  assert.deepEqual(mentionSegments("没有提及", names), [{ text: "没有提及" }]);
 });

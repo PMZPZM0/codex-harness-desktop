@@ -261,3 +261,37 @@ export function removeMentionsFromText(text, names) {
   }
   return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
 }
+
+/**
+ * 正文切成「普通文本 / 提及」段（输入框行内 chip 用；11-08 用户：「输入框里面没有自动变成图二这种」）。
+ * ⛔ 与 `mentionTargetsInText` 同一套匹配规则（长名优先、不重叠）——只多回位置，别再写第二套正则。
+ */
+export function mentionSegments(text, names) {
+  const body = String(text ?? "");
+  const list = [...new Set((Array.isArray(names) ? names : []).map((n) => String(n ?? "").trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  const hits = [];
+  const taken = [];
+  for (const name of list) {
+    const token = `@${name}`;
+    let from = 0;
+    while (from <= body.length) {
+      const at = body.indexOf(token, from);
+      if (at < 0) break;
+      const end = at + token.length;
+      const overlap = taken.some((r) => at < r.end && end > r.start);
+      if (!overlap) { taken.push({ start: at, end, name }); break; }
+      from = at + 1;
+    }
+  }
+  taken.sort((a, b) => a.start - b.start);
+  const out = [];
+  let cursor = 0;
+  for (const hit of taken) {
+    if (hit.start > cursor) out.push({ text: body.slice(cursor, hit.start) });
+    out.push({ text: body.slice(hit.start, hit.end), mention: true });
+    cursor = hit.end;
+  }
+  if (cursor < body.length) out.push({ text: body.slice(cursor) });
+  return out;
+}

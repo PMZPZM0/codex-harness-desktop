@@ -57,3 +57,6 @@ export declare function mentionTargetsInText(
 ): string[];
 /** 从正文里摘掉完整提及（⛔ 不会劈开更长的名字）。 */
 export declare function removeMentionsFromText(text: string, names: string[]): string;
+
+/** 正文切成普通 / 提及段（输入框行内 chip 覆盖层用）。 */
+export declare function mentionSegments(text: string, names: string[]): Array<{ text: string; mention?: boolean }>;
