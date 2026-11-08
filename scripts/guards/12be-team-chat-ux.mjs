@@ -749,7 +749,7 @@ const catalog = [
     && /onStopAll\(agentThreadIds\)/.test(view),
     "视图把「有人在跑」与「停全部」接到输入框（候选 = 群内会话 id）");
   ok(/const stopAll = useCallback\(/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
-    && /harnessTeamStop\(\{ threadIds: candidates, stopAll: true \}\)/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
+    && /harnessTeamStop\(\{ threadIds: candidates, stopAll: true, groupId \}\)/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
     && /onStopAll=\{\(threadIds\) => stopAll\(active\.id, threadIds\)\}/.test(codeOnly(read("src/features/harness-team/index.tsx"))),
     "store 发 `stopAll: true` 并接线到面板（成功即清 busy/live，⛔ 不等引擎回包 —— 否则按钮一直停在停止上）");
   const stopSvc = codeOnly(read("electron/features/harness-team-stop.ts"));
@@ -1050,8 +1050,10 @@ const catalog = [
     "群 @ 面板列出专家库（没入群的专家），点选先加入本群再点名（⛔ 不再只能 @ 已加过的几个人）");
   ok(/filter\(\(item\) => !\(item as \{ library\?: boolean \}\)\.library\)/.test(view),
     "⛔ 专家库条目不进候选目标表（否则手打库里的名字会让发送键亮起、主进程却找不到这个群成员）");
-  ok(/expert: new Set\(\["expert", "member"\]\)/.test(settings),
-    "「添加伙伴 → 专家模式」也能单独加团成员（⛔ 不必为一个人把整团拉进群）");
+  const createSrc = read("src/features/harness-team/12-team-create.tsx");
+  ok(/expert: new Set\(\["expert", "member"\]\)/.test(settings)
+    && /expert: new Set\(\["expert", "member"\]\)/.test(createSrc),
+    "「添加伙伴 → 专家模式」与「创建群初始伙伴」都列出团成员（⛔ 两个入口各写一份筛选，必须同口径）");
   ok(/专家库：/.test(pickTest),
     "专家库分组有单测（在群的团 / 已加过的专家不重复列）");
 }
@@ -1278,6 +1280,27 @@ const catalog = [
     "group_read 单条 1200 字 / 总量 12000 字封顶（⛔ 否则 limit=50 一条工具结果就能撑爆会话）");
   ok(/clean\.length > 8000/.test(talk),
     "单条群消息进会话前 8000 字封顶（成员互相投递的是长输出，不封顶单条就能撑爆）");
+}
+
+/* ── ㉒ 11-08 用户实测：连按回车发出多条 / 停止报「还没有它的会话」 ───────────── */
+{
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const stopSrc = codeOnly(read("electron/features/harness-team-stop.ts"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  ok(/if \(sendingRef\.current\) return;/.test(view) && /sendingRef\.current = true;/.test(view)
+    && (view.match(/sendingRef\.current = false;/g) || []).length >= 3
+    && /if \(e\.repeat\) return;/.test(view),
+    "发送：同步 ref 闸门（三条返回路径都释放）+ 忽略键盘自动重复（⛔ 连按回车不再发多条一样的）");
+  ok(/if \(gid\) \{\n    const rows = listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\);/.test(stopSrc)
+    && /memberName, groupId }/.test(store) && /stopAll: true, groupId/.test(store),
+    "停止候选并上**群聊台账**（⛔ 第一条消息落盘前也能停；不再报「还没有它的会话」）");
+  ok(/requestTalkCancel\(String\(input\.groupId\), String\(input\.memberName\)\)/.test(stopSrc)
+    && /if \(consumeTalkCancel\(group\.id, partner\.name\)\)/.test(ipc)
+    && /reason: "starting"/.test(stopSrc),
+    "会话还在建时点停止 = 登记取消请求，runOne 开跑前整轮放弃（中性状态，不弹红字）");
+  ok(!/还没有它的会话（先派一次活）/.test(stopSrc),
+    "⛔ 「还没有它的会话（先派一次活）」不再作为错误返回（用户点的是停止，不是派活）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

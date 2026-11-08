@@ -24,13 +24,16 @@ type Target = { kind: string; key: string; name: string; profession?: string; in
 
 type AddMode = "expert" | "team" | "custom";
 const MODE_KINDS: Record<AddMode, Set<string>> = {
-  expert: new Set(["expert"]),
+  /* ⛔ 11-08 用户（截图）：「创建群里…专家还是很少」—— 专家模式原来只筛 kind=expert，
+     专家团里的成员（问需/构梁/键客…）全被挡掉 ⇒ 只剩十来个「主理人 + 单人专家」。
+     ⇒ 团成员也是**单个专家**，一并列出（与群设置页「添加伙伴」同口径）。 */
+  expert: new Set(["expert", "member"]),
   team: new Set(["team"]),
   custom: new Set(["subagent", "cli"]),
 };
 const MODE_LABEL: Record<AddMode, string> = { expert: "专家模式", team: "专家团模式", custom: "自定义专家模式" };
 const MODE_HINT: Record<AddMode, string> = {
-  expert: "后台「专家中心」里的单个专家，点名即派。",
+  expert: "后台「专家中心」里的单个专家（含专家团里的角色），点名即派。",
   team: "后台「专家团」列表，整团按 SOP 协作；只能在纯新群加。",
   custom: "你自己建的子智能体，或本机 CLI。",
 };
