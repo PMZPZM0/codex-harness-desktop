@@ -118,35 +118,89 @@ export function lastInputTokens(file: string): number | null {
   }
 }
 
-/* ⛔ 11-08 用户反馈「内容超出模型上限」：供应商实际限额常常**小于**模型标称窗口
-   （中转站常见）。超限报错里通常带「N tokens > M」，M 就是真实上限 ⇒ 记下来，
-   下一轮按 min(配置阈值, M) 触发压缩，别再等标称阈值。 */
-const realLimit = new Map<string, { limit: number; at: number }>();
-const REAL_LIMIT_TTL = 2 * 60 * 60 * 1000;
+/* ⛔ 11-08 用户令「把真实限额按模型持久化，全局生效」：供应商实际限额常常**小于**
+   模型标称窗口（中转站常见，标 1M 实际只给 128K）。超限报错里通常带「N tokens > M」，
+   M 就是真实上限 ⇒ 按**模型**记到 <userData>/model-real-limits.json（30 天有效），
+   同一模型的所有会话（桌面 / 渠道 / 委派）都按 min(配置阈值, M) 提前压。
+   ⛔ 键只用模型名（用户口径「按模型」）：同名模型换供应商会共享限额，但那只会让它
+      更早压，不会把数据压坏。 */
+type ModelLimit = { limit: number; at: number };
+const MODEL_LIMIT_TTL = 30 * 24 * 60 * 60 * 1000;
+const modelLimits = new Map<string, ModelLimit>();
+let limitsLoadedFor = "";
+let limitsSaveTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** 记下供应商实际限额（超限报错解析出来的 M）；有界 + 2 小时过期。 */
-export function noteRealLimit(threadId: string, limitTokens: number, now = Date.now()): void {
-  const id = String(threadId ?? "");
+/** 真实限额的落盘文件（与 codex-home 同级 = userData）。 */
+function modelLimitFile(codexHome: string): string {
+  return path.join(path.dirname(codexHome), "model-real-limits.json");
+}
+
+function loadModelLimits(codexHome: string): void {
+  const file = modelLimitFile(codexHome);
+  if (limitsLoadedFor === file) return;
+  limitsLoadedFor = file;
+  modelLimits.clear();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+    for (const [key, value] of Object.entries(parsed && typeof parsed === "object" ? parsed : {})) {
+      const limit = Number((value as ModelLimit)?.limit);
+      const at = Number((value as ModelLimit)?.at ?? 0) || 0;
+      if (key && Number.isFinite(limit) && limit > 0) modelLimits.set(key, { limit: Math.floor(limit), at });
+    }
+  } catch { /* 没有 / 损坏：从空开始 */ }
+}
+
+function saveModelLimits(codexHome: string): void {
+  if (limitsSaveTimer) return;
+  limitsSaveTimer = setTimeout(() => {
+    limitsSaveTimer = null;
+    try {
+      const file = modelLimitFile(codexHome);
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      const out: Record<string, ModelLimit> = {};
+      for (const [key, value] of modelLimits) out[key] = value;
+      const tmp = file + ".tmp";
+      fs.writeFileSync(tmp, JSON.stringify(out, null, 2), "utf8");
+      fs.renameSync(tmp, file);
+    } catch { /* 持久化失败只影响下次启动的提前量 */ }
+  }, 500);
+  limitsSaveTimer.unref?.();
+}
+
+/** 记下某模型的供应商真实限额（超限报错里的 M）：同模型所有会话共享，持久化。 */
+export function noteRealLimit(codexHome: string, modelKey: string, limitTokens: number, now = Date.now()): void {
+  const key = String(modelKey ?? "").trim();
   const limit = Number(limitTokens);
-  if (!id || !Number.isFinite(limit) || limit <= 0) return;
-  for (const [key, value] of realLimit) if (now - value.at > REAL_LIMIT_TTL) realLimit.delete(key);
-  if (realLimit.size > 300) realLimit.delete(realLimit.keys().next().value as string);
-  realLimit.set(id, { limit: Math.floor(limit), at: now });
+  if (!key || !Number.isFinite(limit) || limit <= 0) return;
+  loadModelLimits(codexHome);
+  modelLimits.set(key, { limit: Math.floor(limit), at: now });
+  saveModelLimits(codexHome);
+}
+
+/** 引擎 config.toml 的默认模型名（turn/start 没带 model 时用它当键）。 */
+export function readConfigModel(codexHome: string): string {
+  try {
+    const text = fs.readFileSync(path.join(codexHome, "config.toml"), "utf8");
+    const m = text.match(/^\s*model\s*=\s*"([^"]+)"/m);
+    return m ? String(m[1]).trim() : "";
+  } catch { return ""; }
 }
 
 export type CompactDecision =
   | { compact: true; used: number; limit: number }
   | { compact: false; reason: "no-thread" | "cooldown" | "no-limit" | "no-rollout" | "no-usage" | "below"; used?: number; limit?: number };
 
-/** 判断该不该自动压缩：无会话 / 冷却中 / 没到阈值都返回 false 并给出原因。 */
-export function shouldCompact(codexHome: string, threadId: string, now = Date.now()): CompactDecision {
+/** 判断该不该自动压缩：无会话 / 冷却中 / 没到阈值都返回 false 并给出原因。
+ *  `modelKey` 用于套用**按模型持久化**的真实限额（见 noteRealLimit）。 */
+export function shouldCompact(codexHome: string, threadId: string, modelKey = "", now = Date.now()): CompactDecision {
   if (!threadId) return { compact: false, reason: "no-thread" };
   if (now - (lastAttempt.get(threadId) ?? 0) < RETRY_COOLDOWN_MS) return { compact: false, reason: "cooldown" };
   const limit = readAutoCompactLimit(codexHome);
   if (!limit) return { compact: false, reason: "no-limit" };
-  /* 供应商实际限额比标称窗口小时，按更小的那个触发（见 noteRealLimit）。 */
-  const real = realLimit.get(threadId);
-  const effective = real && now - real.at <= REAL_LIMIT_TTL ? Math.min(limit, real.limit) : limit;
+  loadModelLimits(codexHome);
+  const key = String(modelKey ?? "").trim();
+  const hit = key ? modelLimits.get(key) : undefined;
+  const effective = hit && now - hit.at <= MODEL_LIMIT_TTL ? Math.min(limit, hit.limit) : limit;
   const file = findRollout(codexHome, threadId, now);
   if (!file) return { compact: false, reason: "no-rollout" };
   const used = lastInputTokens(file);
@@ -163,5 +217,6 @@ export function markAttempt(threadId: string, now = Date.now()): void {
 /** 测试用：清空内部状态。 */
 export function __resetCompactGuardState(): void {
   lastAttempt.clear();
-  realLimit.clear();
+  modelLimits.clear();
+  limitsLoadedFor = "";
 }

@@ -12,7 +12,6 @@ import { HARNESS_PROVIDER_ID } from "../provider-id";
 import { app } from "electron";
 import { botStreamSessions, channelBotBindings, channelLog, channelThreadChat, dingtalkGateway, feishuGateway, loadBotBindings, qqGateway, qqReplyContexts, rotateChannelThreadOnOverflow, setChannelHandoff, takeChannelHandoff, telegramBindings, telegramGateway, weixinBindings, weixinGateway, weixinThreadChat, writeBotBindings } from "../features/im-gateways";
 import { describeTurnError } from "../turn-error-text";
-import { noteRealLimit } from "../context-compact-guard";
 import { readChannelBot } from "../main/04-connector-config";
 import { readCustomModel } from "../main/01-model-catalog";
 import { server } from "../runtime-refs";
@@ -88,10 +87,6 @@ async function recentDigest(threadId: string): Promise<string> {
  *  并把最近几轮摘要带过去（⛔ 不让用户从零开始解释）。 */
 async function recoverOverflow(threadId: string, raw: unknown): Promise<void> {
   if (!threadId || overflowRecovering.has(threadId)) return;
-  const errText = typeof raw === "string" ? raw : String((raw as { message?: unknown } | null)?.message ?? "");
-  /* 供应商实际限额（「N tokens > M」里的 M）：记下来让下一轮提前压（标称窗口可能偏大）。 */
-  const nums = errText.match(/(\d[\d,]{3,})\s*tokens?\s*>\s*(\d[\d,]{3,})/i);
-  if (nums) noteRealLimit(threadId, Number(String(nums[2]).replace(/,/g, "")));
   const last = lastChannelTurn.get(threadId);
   overflowRecovering.add(threadId);
   try {
