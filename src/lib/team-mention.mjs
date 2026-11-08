@@ -210,3 +210,54 @@ export function mentionSectionsOf(group, catalog) {
 export function flattenMentionSections(sections) {
   return (Array.isArray(sections) ? sections : []).flatMap((s) => (Array.isArray(s?.items) ? s.items : []));
 }
+
+/**
+ * 正文里真实写到的 @名字 → 目标 id（11-08 用户：「都在输入框里面」，框外不再有 chip 行）。
+ * ⛔ @ 的唯一真相源 = 正文：选伙伴 / 点成员行的 @ 都只往正文里插 `@名字 `，发消息时再从这里反查。
+ * ⛔ 长名优先匹配（阿团子 > 阿团），按「首次出现位置」排序（与正文顺序一致）。
+ */
+export function mentionTargetsInText(text, candidates) {
+  const body = String(text ?? "");
+  const list = (Array.isArray(candidates) ? candidates : [])
+    .map((c) => ({ name: String(c?.name ?? "").trim(), id: String(c?.selectId ?? "") }))
+    .filter((c) => c.name && c.id)
+    .sort((a, b) => b.name.length - a.name.length);
+  const hits = [];
+  const taken = [];
+  /* ⛔ 长名先占位、短名不许在同一段里再命中：否则「@阿团子」会被「阿团」也认一次
+     （两个目标都被派活）。占位后短名仍可匹配正文里**别处**的独立 @阿团。 */
+  for (const c of list) {
+    if (hits.some((h) => h.id === c.id)) continue;
+    const token = `@${c.name}`;
+    let from = 0;
+    while (from <= body.length) {
+      const at = body.indexOf(token, from);
+      if (at < 0) break;
+      const end = at + token.length;
+      const overlap = taken.some((r) => at < r.end && end > r.start);
+      if (!overlap) {
+        taken.push({ start: at, end });
+        hits.push({ id: c.id, at });
+        break;
+      }
+      from = at + 1;
+    }
+  }
+  return hits.sort((a, b) => a.at - b.at).map((h) => h.id);
+}
+
+/**
+ * 从正文里摘掉指定名字的 @（面板「清空」/ 再点一次取消）。
+ * ⛔ 只认完整提及（后面是空白 / 标点 / 结尾）：否则删「阿团」会把「@阿团子」劈成「子」。
+ */
+export function removeMentionsFromText(text, names) {
+  let out = String(text ?? "");
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const list = [...new Set((Array.isArray(names) ? names : []).map((n) => String(n ?? "").trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  for (const name of list) {
+    const re = new RegExp(`@${escapeRe(name)}(?=\\s|$|[，。！？、,.!?；;：:])`, "g");
+    out = out.replace(re, "");
+  }
+  return out.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n").trim();
+}

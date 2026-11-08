@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings } from "./03-team-settings";
@@ -55,7 +55,7 @@ import { getActiveModel } from "../../lib/active-model.mjs";
 import { menuPickResult } from "../../lib/team-menu.mjs";
 import { mergeConsecutive, parseCommand, parseMentions, parseTeamAuthorId, resolveManagerId, teamAuthorIdOf, teamMemberIdOf } from "../../lib/team-models.mjs";
 /* 11-07：@ 提及与群内搜索的口径全部在纯函数里（可单测），视图只做接线。 */
-import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../lib/team-mention.mjs";
+import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargetsInText, mentionTriggerOf, removeMentionsFromText } from "../../lib/team-mention.mjs";
 import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
 /* 11-07 界面优化：消息流按天分隔（飞书群同款）——连续几十条跨天消息只靠时间看不出"这是哪天"。 */
 import { dayKeyOf, dayLabelOf } from "../../lib/team-view.mjs";
@@ -163,7 +163,6 @@ export function TeamGroupView({
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
   const [text, setText] = useState("");
-  const [atTargets, setAtTargets] = useState<string[]>([]);
   const [sending, setSending] = useState(false);
   /* 11-08 用户令「点停止是群里所有运行状态都停止掉」：输入框发送键在运行中变成一个停止键，
      一点全群停。`stopping` 只用来锁住那一下（主对话同款：interrupting 期间按钮转圈）。
@@ -231,10 +230,31 @@ export function TeamGroupView({
      看不到团里那 4 个人。⇒ 拉一次调度目录，把 member 条目按 teamId 挂到团下面。
      ⛔ 只读展示：团内成员由主理人编排，群视图不给它们单独派活（那是另一套语义）。 */
   const [catalog, setCatalog] = useState<Array<{ kind: string; key: string; name: string; profession?: string; teamId?: string }>>([]);
-  const stickRef = useRef(true);
-  const stick = () => { const el = streamRef.current; if (el) scrollToOffsetInstant(el, el.scrollHeight); };
+  /* ⛔⛔ 11-08 用户：「复用一套主对话框的滚轮和自动滚轮最新消息」——
+     与主对话同语义：**只有真实用户输入**（滚轮 / 触摸 / 键盘）能解除跟随；
+     滚回底部（或点「回到底部」）立刻恢复跟随；流式增长时跟着最新消息走。
+     ⛔ 不用 scroll 事件的阈值当唯一判据 —— 内容变高/浏览器 clamp 都会让 scrollTop 自己动。 */
+  const followRef = useRef(true);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const distanceFromBottom = () => {
+    const el = streamRef.current;
+    return el ? Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight) : 0;
+  };
+  const syncFollow = () => {
+    const away = distanceFromBottom() > 90;
+    followRef.current = !away;
+    setAwayFromBottom(away);
+  };
+  const stick = () => {
+    const el = streamRef.current;
+    if (!el) return;
+    followRef.current = true;
+    setAwayFromBottom(false);
+    scrollToOffsetInstant(el, el.scrollHeight);
+  };
   /* 分页（用户 11-06：「滚轮和聊天记录分页咋做的」）：⛔ 不一次把 400 条全画进 DOM ——
-     首屏 30 条，滚到顶再往前加载一页，并且**保持滚动位置**（否则一加载就跳到别处）。 */
+     首屏 30 条，滚到顶再往前加载一页，并且**保持滚动位置**（否则一加载就跳到别处）。
+     11-08：继续沿用，滚轮向上接近顶部会自动补页（与主对话同口径，⛔ 不靠点按钮）。 */
   const [visibleCount, setVisibleCount] = useState(PAGE);
   const hasMore = rows.length > visibleCount;
   const hasMoreRef = useRef(hasMore);
@@ -243,20 +263,72 @@ export function TeamGroupView({
     const el = streamRef.current;
     const prevH = el?.scrollHeight ?? 0;
     const prevTop = el?.scrollTop ?? 0;
-    stickRef.current = false; // 正在翻历史：⛔ 别让贴底 effect 把人拽回底部
+    followRef.current = false; // 正在翻历史：⛔ 别让贴底 effect 把人拽回底部
+    setAwayFromBottom(true);
     setVisibleCount((v) => Math.min(rows.length, v + PAGE));
     requestAnimationFrame(() => {
       const node = streamRef.current;
       if (node) scrollToOffsetInstant(node, node.scrollHeight - prevH + prevTop);
+      syncFollow();
     });
   };
   const onStreamScroll = () => {
     const el = streamRef.current;
     if (!el) return;
-    stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    syncFollow();
     /* 滚到顶再往上 = 加载更早一页（主对话的「滚一屏补一页」同口径） */
     if (el.scrollTop < 36 && hasMoreRef.current) loadEarlier();
   };
+  /* 真实用户输入 → 重新评估跟随（滚回底部自动恢复；滚上去就停住）。capture 在 window：
+     刻度尺 / 浮层的 wheel 会 stopPropagation，挂 scroller 上收不到（主对话同款教训）。 */
+  useEffect(() => {
+    const el = streamRef.current;
+    if (!el) return;
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { raf = 0; syncFollow(); });
+    };
+    const onWheel = () => schedule();
+    const onKey = (event: KeyboardEvent) => {
+      if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(event.key)) schedule();
+    };
+    window.addEventListener("wheel", onWheel, { passive: true, capture: true });
+    el.addEventListener("touchmove", onWheel, { passive: true });
+    el.addEventListener("keydown", onKey);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener("wheel", onWheel, { capture: true } as EventListenerOptions);
+      el.removeEventListener("touchmove", onWheel);
+      el.removeEventListener("keydown", onKey);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  /* 自动滚轮最新消息（主对话同口径）：内容长高（流式出字 / 折叠展开）时，
+     跟随态就贴回底部；非跟随态只更新「离底部多远」用于按钮。
+     ⛔ 用 ResizeObserver 而不是依赖 rows 变化 —— 流式正文不在 rows 长度里。 */
+  useEffect(() => {
+    const el = streamRef.current;
+    if (!el) return;
+    let raf = 0;
+    const schedule = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        if (followRef.current) stick();
+        else syncFollow();
+      });
+    };
+    const observer = new ResizeObserver(schedule);
+    observer.observe(el);
+    el.addEventListener("transitionend", schedule);
+    return () => {
+      if (raf) cancelAnimationFrame(raf);
+      observer.disconnect();
+      el.removeEventListener("transitionend", schedule);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const partners = useMemo(() => group.members.filter((m) => m.kind === "bot"), [group]);
   /* 菜单形态（飞书 INPUT_FIRST / FLOAT）：两种形态共用同一份数据与同一个点击口径 */
@@ -372,10 +444,12 @@ export function TeamGroupView({
   const mentionCandidates = buildMentionCandidates(group.members, personNameOf, teamKidsOf, teamAuthorIdOf, teamMemberIdOf);
 
 
-  /* 伙伴回复正文里写了 `@某人` ⇒ 只做成**可点提及**：点一下把它加进本轮 @，
+  /* 伙伴回复正文里写了 `@某人` ⇒ 只做成**可点提及**：点一下把它写进输入框的 @，
      ⛔ 不自动发、不自动派活（11-06：模型写「PPT @星象」这种举例文本也会被误读成指令）。 */
   const mentionPartner = (id: string) => {
-    setAtTargets((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    const name = nameOf(id);
+    if (!name) return;
+    if (!atTargets.includes(id)) insertMentionText(name);
     composerRef.current?.focus();
   };
 
@@ -387,10 +461,6 @@ export function TeamGroupView({
     if (!quoted) return;
     setText((prev) => `${prev.trimEnd()}${prev.trim() ? "\n\n" : ""}${quoted}\n\n`);
     requestAnimationFrame(() => composerRef.current?.focus());
-  };
-
-  const toggleAt = (id: string) => {
-    setAtTargets((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   /* ── 11-07 三块（资料卡 / @ 面板 / 群内搜索）──────────────────────────────── */
@@ -426,11 +496,46 @@ export function TeamGroupView({
     })),
   })), [group, catalog]);
 
+  /* ⛔⛔ 11-08 用户（截图）：「手动输入 @ 选中后，输入框里也有 @、输入框上面也有 @」——
+     要求全部收进输入框（发出后就是正文里的行内提及），框上不再展示。
+     ⇒ **@ 的唯一真相源 = 正文**：选人只往正文插 `@名字 `，发消息时从正文反查目标，
+       框外的「本轮 @」chip 行整块删除（⛔ 不再维护第二份 atTargets 状态）。 */
+  const mentionCandidatesFlat = useMemo(
+    () => mentionSections.flatMap((section) => section.items.map((item) => ({ selectId: item.selectId, name: item.name }))),
+    [mentionSections],
+  );
+  const mentionNames = useMemo(() => mentionCandidatesFlat.map((c) => c.name), [mentionCandidatesFlat]);
+  const atTargets = useMemo(() => mentionTargetsInText(text, mentionCandidatesFlat), [text, mentionCandidatesFlat]);
+
+  /** 把 `@名字 ` 插到当前光标处（面板多选 / 成员行 @ 共用；⛔ 不再维护框外 chip）。 */
+  const insertMentionText = (name: string) => {
+    const el = composerRef.current;
+    const caret = Math.max(0, Math.min(text.length, el?.selectionStart ?? text.length));
+    const before = text.slice(0, caret);
+    const after = text.slice(caret);
+    const lead = before && !/\s$/.test(before) ? " " : "";
+    const inserted = `${lead}@${name} `;
+    setText(`${before}${inserted}${after}`);
+    const pos = before.length + inserted.length;
+    requestAnimationFrame(() => {
+      const node = composerRef.current;
+      if (!node) return;
+      node.focus();
+      node.setSelectionRange(pos, pos);
+    });
+  };
+
+  /** 成员行 / 面板再点一次 = 取消这个人的 @（从正文里摘掉完整提及）。 */
+  const toggleAt = (id: string) => {
+    const name = nameOf(id);
+    if (!name) return;
+    if (atTargets.includes(id)) setText((prev) => removeMentionsFromText(prev, [name]));
+    else insertMentionText(name);
+  };
+
   const pickCandidate = (item: { selectId: string; name: string }) => {
-    const already = atTargets.includes(item.selectId);
     if (mention.typed) {
-      /* 打字触发：把 `@查询词` 换成 `@名字 `，并把这个人加进本轮 @（已选中就只换文本） */
-      if (!already) setAtTargets((prev) => [...prev, item.selectId]);
+      /* 打字触发：把 `@查询词` 换成 `@名字 `（目标身份稍后从正文反查） */
       /* ⛔ 传 caret：只替换用户输入的那几个字，⛔ 不碰后面已经写好的正文。 */
       const applied = applyMention(text, { start: mention.start, caret: mention.caret }, item.name);
       setText(applied.text);
@@ -443,8 +548,9 @@ export function TeamGroupView({
       });
       return;
     }
-    /* 按钮打开 = 多选面板：点一下切换，面板不关（飞书同款） */
-    setAtTargets((prev) => (already ? prev.filter((x) => x !== item.selectId) : [...prev, item.selectId]));
+    /* 按钮打开 = 多选面板：点一下切换「插 / 摘正文里的 @名字」，面板不关（飞书同款） */
+    if (atTargets.includes(item.selectId)) setText((prev) => removeMentionsFromText(prev, [item.name]));
+    else insertMentionText(item.name);
   };
 
   /**
@@ -468,7 +574,8 @@ export function TeamGroupView({
         .find((el) => el.getAttribute("data-item-id") === hit.itemId);
       if (!target) return;
       const offset = target.getBoundingClientRect().top - stream.getBoundingClientRect().top + stream.scrollTop - 24;
-      stickRef.current = false; // 正在看历史：⛔ 别被贴底 effect 拽回底部
+      followRef.current = false; // 正在看历史：⛔ 别被贴底 effect 拽回底部
+      setAwayFromBottom(true);
       scrollToOffsetInstant(stream, Math.max(0, offset));
     }));
   };
@@ -586,11 +693,7 @@ export function TeamGroupView({
       if (!idleTargets.length) {
         if (queued.length) {
           setText("");
-          /* ⛔⛔ 11-08 用户实测：「前面怎么还自动多一个 @软件开发专家团」——
-             根因是 `atTargets` **发完没清**：上一轮 @ 的伙伴一直挂在那儿，
-             下一轮只 @ 了承枢，实际却把整团也一起派了，正文还被补了一句 `@软件开发专家团`。
-             ⇒ 与正文同一时刻清掉（两条路径都要清）。 */
-          setAtTargets([]);
+          /* ⛔ 目标身份从正文反查，清空正文 = 清空本轮 @（11-08 不再有独立的 atTargets 状态）。 */
           setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
           flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它跑完这一轮就接着做；点「立即」可插队）`);
         }
@@ -603,8 +706,6 @@ export function TeamGroupView({
       }
       if (queued.length) flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它们还在跑）`);
       setText("");
-      /* 同上：派活成功即清 @（⛔ 别让这一轮的目标活到下一轮） */
-      setAtTargets([]);
       /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
       setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
     } catch (err) {
@@ -629,7 +730,9 @@ export function TeamGroupView({
     /* 团成员的消息：@ 回**他本人**（合成 id），与成员栏那个 @ 同一口径 ——
        dispatch 会把 `team:<teamId>:<memberId>` 翻成 kind:"member" 派给他自己的会话。 */
     const teamAuthor = parseTeamAuthorId(row.authorId);
-    setAtTargets([teamAuthor ? row.authorId : (row.via?.memberId ?? row.authorId)]);
+    const targetId = teamAuthor ? row.authorId : (row.via?.memberId ?? row.authorId);
+    const name = nameOf(targetId);
+    if (name && !atTargets.includes(targetId)) insertMentionText(name);
     composerRef.current?.focus();
   };
 
@@ -682,17 +785,15 @@ export function TeamGroupView({
     }
   };
 
-  /* 换群 ⇒ 无条件贴底；消息或流式有变化 ⇒ 只在原本贴底时跟随 */
+  /* 换群 ⇒ 无条件贴底；消息或流式有变化 ⇒ 只在原本跟随最新时贴底 */
   useEffect(() => {
-    stickRef.current = true;
+    followRef.current = true;
     setVisibleCount(PAGE);
     stick();
-    /* 换群：本轮 @ 与草稿都属于**上一个群**，⛔ 不许带过来（否则一点发送就发给另一个群的人） */
-    setAtTargets([]);
     /* 换群：上一个群的话题弹窗不能留着（否则内容会串到新群） */
     setTopicOpenKey(null);
   }, [group.id]);
-  useEffect(() => { if (stickRef.current) stick(); }, [rows.length, liveLen]);
+  useEffect(() => { if (followRef.current) stick(); }, [rows.length, liveLen]);
 
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
@@ -765,8 +866,8 @@ export function TeamGroupView({
     if (!el) return;
     const onEnd = (e: TransitionEvent) => {
       if (e.propertyName !== "grid-template-rows") return;
-      if (!stickRef.current) return;
-      requestAnimationFrame(() => { if (stickRef.current) stick(); });
+      if (!followRef.current) return;
+      requestAnimationFrame(() => { if (followRef.current) stick(); });
     };
     el.addEventListener("transitionend", onEnd);
     return () => el.removeEventListener("transitionend", onEnd);
@@ -1233,6 +1334,14 @@ export function TeamGroupView({
             </div>
             {/* 刻度尺（右侧，不随滚动移动）：每条人发的消息一个刻度，点一下跳过去 */}
             <TeamRuler rows={shownRows} scrollRef={streamRef} containerRef={wrapRef} />
+            {/* ⛔ 11-08 用户：「复用一套主对话框的滚轮和自动滚轮最新消息」——
+                离底部时浮出「回到底部」（与主对话同一个 `.jump-bottom` 皮肤 + 同语义），
+                点一下恢复跟随并贴底。 */}
+            {awayFromBottom && (
+              <button type="button" className="jump-bottom" title="回到底部" onClick={() => stick()}>
+                <ArrowDown size={16} />
+              </button>
+            )}
             </div>
 
             {/* ⛔ 11-07 用户令：「停止放到群成员列表卡片后面」——状态条只留一行文字，
@@ -1270,25 +1379,12 @@ export function TeamGroupView({
                   query={mention.query}
                   onQuery={(query) => setMention((prev) => ({ ...prev, query }))}
                   onPick={pickCandidate}
-                  onClear={() => setAtTargets([])}
+                  onClear={() => setText((prev) => removeMentionsFromText(prev, mentionNames))}
                   onClose={closeMention}
                   autoFocus={!mention.typed}
                 />
               )}
-              {/* 已选 chip 只在**有选择时**出现（面板关掉后仍看得见这一轮派给谁） */}
-              {atTargets.length > 0 && (
-                <div className="team-group__selected" aria-label="本轮 @">
-                  <span className="team-group__selected-label">本轮 @</span>
-                  {atTargets.map((id) => (
-                    <span key={id} className="team-group__selected-chip">
-                      <span className="team-group__selected-avatar has-agent"><MemberAvatar member={faceOfId(id)} size={14} /></span>
-                      {nameOf(id)}
-                      <button type="button" aria-label={`移除 ${nameOf(id)}`} onClick={() => toggleAt(id)}><X size={10} /></button>
-                    </span>
-                  ))}
-                  <button type="button" className="team-group__selected-clear" onClick={() => setAtTargets([])}>清空</button>
-                </div>
-              )}
+              {/* ⛔ 11-08 用户（截图）：框上的「本轮 @」chip 行整块删除 —— 提及只在正文里（发出即行内 chip）。 */}
               <TeamComposer
                 value={text}
                 onValueChange={updateText}

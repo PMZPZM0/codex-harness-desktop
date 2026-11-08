@@ -49,3 +49,11 @@ export interface MentionSection {
 export function mentionSectionsOf(group: unknown, catalog: unknown): MentionSection[];
 
 export function flattenMentionSections(sections: unknown): MentionItem[];
+
+/** 正文里的 @ 提及 → 目标 id（按出现顺序、去重；长名优先匹配）。 */
+export declare function mentionTargetsInText(
+  text: string,
+  candidates: Array<{ selectId?: string; name?: string }>,
+): string[];
+/** 从正文里摘掉完整提及（⛔ 不会劈开更长的名字）。 */
+export declare function removeMentionsFromText(text: string, names: string[]): string;

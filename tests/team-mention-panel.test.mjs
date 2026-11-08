@@ -111,3 +111,24 @@ test("回归：长中文里艾特不再吃掉整段正文（11-07 真机「输�
 test("回归：没有 caret 的老调用仍按扫描兜底", () => {
   assert.equal(applyMention("请 @洞 看一下", { start: 2 }, "洞明").text, "请 @洞明 看一下");
 });
+
+/* ── 11-08：@ 的唯一真相源改成正文（框上不再有 chip 行） ── */
+import { mentionTargetsInText, removeMentionsFromText } from "../src/lib/team-mention.mjs";
+
+test("正文反查 @ 目标：长名优先 / 去重 / 按出现顺序", () => {
+  const cands = [
+    { selectId: "a", name: "阿团" },
+    { selectId: "b", name: "阿团子" },
+    { selectId: "c", name: "构梁" },
+  ];
+  assert.deepEqual(mentionTargetsInText("你好 @构梁 和 @阿团子", cands), ["c", "b"]);
+  assert.deepEqual(mentionTargetsInText("@阿团子@构梁", cands), ["b", "c"]);
+  assert.deepEqual(mentionTargetsInText("@阿团", cands), ["a"]);
+  assert.deepEqual(mentionTargetsInText("没有提及", cands), []);
+});
+
+test("摘除提及：不劈更长名字、收掉多余空白", () => {
+  assert.equal(removeMentionsFromText("你好 @阿团子 在吗", ["阿团"]), "你好 @阿团子 在吗");
+  assert.equal(removeMentionsFromText("你好 @阿团子 在吗", ["阿团子"]), "你好 在吗");
+  assert.equal(removeMentionsFromText("@构梁 哈喽", ["构梁"]), "哈喽");
+});

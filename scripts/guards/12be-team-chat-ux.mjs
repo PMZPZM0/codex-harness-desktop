@@ -134,8 +134,16 @@ const catalog = [
     "跳转前先补分页窗口（目标不在 DOM 里时滚动会静默失败）");
   ok(/is-search-hit/.test(view) && /setFlashKey\(""\)/.test(view) || /setFlashKey\(\(cur\) => \(cur === hit\.key \? "" : cur\)\)/.test(view),
     "命中高亮是**临时**的（1.6s 后摘掉，⛔ 不留永久标记）");
-  ok(/team-group__selected/.test(view) && /atTargets\.length > 0/.test(view),
-    "已选 @ 只在真的选了人时出现一行");
+  /* ⛔⛔ 11-08 用户（截图）：「手动输入 @ 选中后，输入框里也有 @、输入框上面也有 @」——
+     要求全部收进输入框、框上不再展示 ⇒ 删掉「本轮 @」chip 行，@ 的唯一真相源改成正文。 */
+  (/mentionTargetsInText\(text, mentionCandidatesFlat\)/.test(view)
+    && /removeMentionsFromText\(prev, \[item\.name\]\)/.test(view)
+    && !/team-group__selected/.test(view) && !/setAtTargets\(/.test(view) ? ok : fail)(
+    "⛔ 「本轮 @」chip 行已删：选人只往正文插 `@名字 `，发消息时从正文反查目标（单一真相源）"
+  );
+  (!/team-group__selected/.test(read("src/styles/61-team-mode.css")) ? ok : fail)(
+    "已选 @ chip 的样式也删净（只删 JSX 会留下看起来还在的类）"
+  );
 }
 
 /* ── ⑤ 布局压缩：常驻 chip 整块消失 + 输入框回到 64 ── */
@@ -489,9 +497,10 @@ const catalog = [
     "团成员与普通伙伴一起进 targets（静音规则同样适用）");
   ok(/<li key=\{kid\.key\} className=\{`team-group__member is-kid/.test(view) && /<MemberActions[\s\S]{0,240}?id=\{kidId\}/.test(view),
     "成员栏的团成员行有自己的 @（与伙伴行共用 MemberActions：运行态点 + ⏹️ + @）");
-  /* 11-07 审查：成员级 @ 打通后，「追问」仍退回团那一行 ⇒ 同一成员两条路径派给不同对象。 */
-  ok(/const teamAuthor = parseTeamAuthorId\(row\.authorId\);[\s\S]{0,160}?setAtTargets\(\[teamAuthor \? row\.authorId/.test(view),
-    "「追问」团成员消息时 @ 回他本人（合成 id），⛔ 不退化回整团");
+  /* 11-07 审查：成员级 @ 打通后，「追问」仍退回团那一行 ⇒ 同一成员两条路径派给不同对象。
+     ⛔ 11-08：目标身份改成从正文反查 ⇒ 追问 = 把 `@他本人` 写进输入框。 */
+  ok(/const teamAuthor = parseTeamAuthorId\(row\.authorId\);[\s\S]{0,200}?insertMentionText\(name\)/.test(view),
+    "「追问」团成员消息时 @ 回他本人（合成 id 写进正文），⛔ 不退化回整团");
 }
 
 /* ── ⑥ 输入框对齐主对话（11-07 用户：「发出去之后输入框还有这个文字」+「同步成跟对话框一样的输入框」）── */
@@ -720,12 +729,12 @@ const catalog = [
     "按成员分组展示（同一条队列卡里混着两个伙伴 = 分不清谁的消息）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   /* 11-08 用户实测：「前面怎么还自动多一个 @软件开发专家团」——
-     根因是 `atTargets` 发完没清：上一轮 @ 的伙伴一直挂着，下一轮只 @ 了承枢，
-     实际把整团也一起派了，正文还被 `withMentionPrefix` 补了一句 `@软件开发专家团`。
-     ⛔ 判据：派活成功 / 全部进队列这两条路径都要清，换群也要清。 */
-  ok((view.match(/setAtTargets\(\[\]\)/g) || []).length >= 4,
-    "本轮 @ 必须在发完（派活 + 队列两条路径）与换群时清空 —— ⛔ 否则下一轮会偷偷带上上一轮的目标，正文还会被补 `@名字`");
-  ok(/setText\(""\);[\s\S]{0,160}?setAtTargets\(\[\]\);/.test(view),
+     根因是上一轮 @ 的目标挂到了下一轮。⛔ 11-08 起目标身份**从正文反查**
+     ⇒ 发完清正文 = 清本轮 @（不再有独立的 atTargets 需要清），换群由组件重挂载重置。 */
+  ok(!/setAtTargets\(/.test(view) && (view.match(/setText\(""\)/g) || []).length >= 2
+    && /const atTargets = useMemo\(\(\) => mentionTargetsInText\(text, mentionCandidatesFlat\)/.test(view),
+    "本轮 @ 随正文一起清（派活 + 队列两条路径都清正文）—— ⛔ 不再有会偷偷带到下一轮的第二份目标状态");
+  ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\);[\s\S]{0,260}?setText\(""\);/.test(view),
     "清 @ 与清正文在同一处（用户看到的就是「发出去、输入区归零」）");
   ok(/<TeamQueueStack/.test(view) && /queueTeamMessage\(entry\.run\.threadId, fullBody\)/.test(view)
     && /const idleTargets = atTargets\.filter/.test(view),
@@ -893,6 +902,15 @@ const catalog = [
     "占位模式不显示流式正文（流式卡跟着回复模式分叉）");
   ok(/res\?\.ok \|\| res\?\.reason === "idle"/.test(storeSrc),
     "停止返回 idle 也复位 busy/live（⛔ 原来只在 ok 时清，停止键会卡死）");
+  /* ⛔ 11-08 用户：「复用一套主对话框的滚轮和自动滚轮最新消息」「群记录懒加载」。 */
+  ok(/const followRef = useRef\(true\)/.test(viewSrc) && /awayFromBottom && \(/.test(viewSrc)
+    && /className="jump-bottom"/.test(viewSrc) && !/stickRef\.current/.test(viewSrc),
+    "群聊复用主对话滚轮语义：滚上去不拽回、点 .jump-bottom 恢复跟随（同一套皮肤与判据）");
+  ok(/new ResizeObserver\(schedule\)/.test(viewSrc) && /if \(followRef\.current\) stick\(\)/.test(viewSrc),
+    "流式内容长高时自动滚到最新（主对话同口径，⛔ 不再只等 rows 变长）");
+  ok(/setVisibleCount\(\(v\) => Math\.min\(rows\.length, v \+ PAGE\)\)/.test(viewSrc)
+    && /scrollToOffsetInstant\(node, node\.scrollHeight - prevH \+ prevTop\)/.test(viewSrc),
+    "群记录懒加载：首屏 PAGE 条 + 滚到顶补一页，且加载后保持滚动位置（⛔ 不留跳变）");
 }
 
 /* ── ⑰ Code review 回归（11-08）─────────────────────────────────────────── */

@@ -2833,50 +2833,6 @@
   text-align: center;
 }
 
-/* 已选 @（原来那一排常驻 chip 的唯一残留：**只在本轮真的选了人时**出现一行，可移除可清空） */
-.team-group__selected {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-bottom: 6px;
-  padding-inline: 2px;
-}
-.team-group__selected-label { color: var(--faint); font-size: 11px; }
-.team-group__selected-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 4px 2px 2px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--bg);
-  color: var(--text);
-  font-size: 11.5px;
-}
-.team-group__selected-avatar { display: inline-flex; padding: 0; border: 0; background: transparent; }
-.team-group__selected-chip > button {
-  display: inline-flex;
-  padding: 1px;
-  border: 0;
-  border-radius: 50%;
-  background: transparent;
-  color: var(--faint);
-  cursor: pointer;
-}
-.team-group__selected-chip > button:hover { background: var(--panel-2); color: var(--danger); }
-.team-group__selected-clear {
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--faint);
-  font: inherit;
-  font-size: 11px;
-  cursor: pointer;
-}
-.team-group__selected-clear:hover { color: var(--danger); }
-
 /* ── 成员栏：⛔ 没有全局「停止运行」（11-07 用户截图圈掉那一块：
    「这个删除按键，怎么还在这里…都放成员 @ 前面，动态展示，联动调度会话，真停止的」）
    ⇒ 运行态点 + ⏹️ 停止 + @ 全在**每个成员那一行**，且顺序固定：
