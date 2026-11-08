@@ -41,35 +41,43 @@ export const dialogFeature = defineFeature<null>({
     const host = ctx.get<HostCaps>("host");
     if (!ipcHost) throw new Error("dialog: 缺少 ipc 服务（宿主未提供）");
     if (!host) throw new Error("dialog: 缺少 host 接缝（宿主未提供）");
+    /* ⛔⛔ 11-08 用户截图（「选项目地址的时候，这弹窗会掉下去」）：
+       系统对话框的 **owner 窗口**决定谁被压到后面 —— 原来六个通道一律以 `mainWindow` 作父窗，
+       于是从「工作伙伴」独立窗口（`?teamPopout=1`）里点「选择」时，Windows 把 owner（主窗口）
+       顶到最前、独立窗口连同刚填了一半的新建群弹窗沉下去。
+       ⇒ owner 一律取**发起请求的那个窗口**（`event.sender` 反查），查不到才回落主窗口
+       （主窗口在模块体里可能还是 null，handler 运行时已就绪，语义不变）。 */
+    const ownerOf = (event: unknown) =>
+      host.window.fromWebContents((event as { sender?: unknown } | null)?.sender) ?? mainWindow;
 
-    ipcHost.handle("dialog:directory", async () => {
-      const result = await host.dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
+    ipcHost.handle("dialog:directory", async (event) => {
+      const result = await host.dialog.showOpenDialog(ownerOf(event), { properties: ["openDirectory", "createDirectory"] });
       if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
     });
     // /add-dir：从指定起始目录打开选择器（目录不存在时回落到默认行为）
-    ipcHost.handle("dialog:directory-at", async (_event, startPath: string) => {
+    ipcHost.handle("dialog:directory-at", async (event, startPath: string) => {
       const start = startPath && existsSync(startPath) ? startPath : undefined;
-      const result = await host.dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"], defaultPath: start });
+      const result = await host.dialog.showOpenDialog(ownerOf(event), { properties: ["openDirectory", "createDirectory"], defaultPath: start });
       if (result.canceled) return null; trustPicked(result.filePaths); return result.filePaths[0];
     });
-    ipcHost.handle("dialog:images", async () => {
-      const result = await host.dialog.showOpenDialog(mainWindow, {
+    ipcHost.handle("dialog:images", async (event) => {
+      const result = await host.dialog.showOpenDialog(ownerOf(event), {
         properties: ["openFile", "multiSelections"],
         filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
       });
       if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
     });
-    ipcHost.handle("dialog:files", async () => {
-      const result = await host.dialog.showOpenDialog(mainWindow, {
+    ipcHost.handle("dialog:files", async (event) => {
+      const result = await host.dialog.showOpenDialog(ownerOf(event), {
         properties: ["openFile", "multiSelections"],
         filters: [{ name: "All files", extensions: ["*"] }],
       });
       if (result.canceled) return []; trustPicked(result.filePaths); return result.filePaths;
     });
     // 私钥文件选择器：设置页「浏览…」按钮
-    ipcHost.handle("dialog:ssh-key", async (_event, startPath?: string) => {
+    ipcHost.handle("dialog:ssh-key", async (event, startPath?: string) => {
       const start = startPath && existsSync(path.dirname(startPath)) ? path.dirname(startPath) : undefined;
-      const result = await host.dialog.showOpenDialog(mainWindow, {
+      const result = await host.dialog.showOpenDialog(ownerOf(event), {
         title: "选择 SSH 私钥文件",
         properties: ["openFile"],
         defaultPath: start,
@@ -81,12 +89,12 @@ export const dialogFeature = defineFeature<null>({
     // 另存为：文件卡片右键「另存为…」（09-26）。⛔ 源文件必须落在可信根内（与 fs:read 预览同口径，
     // 防渲染层被注入后把盘上任意文件拷走）；目标路径由用户亲自经系统对话框选定——「另存为」的语义
     // 就是写到用户指定的任意位置，目标不设可信根限制。
-    ipcHost.handle("dialog:save-as", async (_event, sourcePath: string) => {
+    ipcHost.handle("dialog:save-as", async (event, sourcePath: string) => {
       const src = path.resolve(typeof sourcePath === "string" ? sourcePath : "");
       if (!src || !isInsideTrustedRoots(src)) throw new Error("仅允许保存会话工作区与应用数据目录内的文件");
       const stat = await fsP.stat(src).catch(() => null);
       if (!stat?.isFile()) throw new Error(`文件不存在：${sourcePath}`);
-      const result = await host.dialog.showSaveDialog(mainWindow, { defaultPath: path.basename(src) });
+      const result = await host.dialog.showSaveDialog(ownerOf(event), { defaultPath: path.basename(src) });
       if (result.canceled || !result.filePath) return { ok: false };
       await fsP.copyFile(src, result.filePath);
       return { ok: true, savedTo: result.filePath };

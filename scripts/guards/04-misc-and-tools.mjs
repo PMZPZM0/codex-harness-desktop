@@ -1533,6 +1533,12 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (/dialog:save-as[\s\S]{0,600}isInsideTrustedRoots\(src\)/.test(dlg) ? ok : fail)(
       "【164】dialog:save-as 源文件必须落在可信根内（否则渲染层被注入即可把盘上任意文件拷走）"
     );
+    /* ⛔ 11-08 用户：「选项目地址的时候，这弹窗会掉下去」—— 系统对话框的 owner 窗口决定谁被
+       压到后面；一律以主窗口作父窗 ⇒ 从「工作伙伴」独立窗口打开的选择器会把主窗口顶到最前。 */
+    ((dlg.match(/show(?:Open|Save)Dialog\(ownerOf\(event\)/g) || []).length >= 6
+      && !/show(?:Open|Save)Dialog\(mainWindow/.test(dlg) ? ok : fail)(
+      "【164】目录/文件选择器以**发起窗口**为父窗（⛔ 用 mainWindow 当父窗会把独立窗口压到后面）"
+    );
     const timeline = readFileSync(join(ROOT, "src/features/app-view/AppView/02-main-stage/01-timeline.tsx"), "utf8");
     (timeline.includes('pastedText.kind === "file" ? fileEditTransport : undefined') ? ok : fail)(
       "【164】kind=file 时编辑窗必须挂 fs 通道 transport（不挂 = 工作区文件写进粘贴文本目录）"
