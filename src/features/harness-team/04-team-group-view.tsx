@@ -25,12 +25,9 @@ import { TeamMentionText } from "./17-team-mention-text";
 import { TeamAvatarPicker } from "./19-team-avatar-picker";
 import { buildMentionCandidates, fmtTime, shortId } from "./20-team-view-utils";
 import { MemberActions } from "./18-team-member-actions";
+import { TeamMenuButton } from "./06-team-menu";
 
 import { TeamRuler } from "./07-team-ruler";
-import type { MentionAvatar, TeamEditorApi } from "../../lib/team-composer-editor";
-import { avatarAsset } from "../../lib/avatar-presets";
-import { AGENT_AVATAR_COLS, agentAvatarKindOf, pickAgentAvatar } from "../../lib/agent-avatars.mjs";
-import { avatarPresetFace, memberAvatarSrc } from "./13-team-avatar";
 import { TeamProcess } from "./09-team-process";
 import { LiveFileRows } from "../status";
 import { getThreadLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
@@ -162,7 +159,7 @@ export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
-  onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
+  onAddNote, onRemoveNote, onSaveMenu, onSaveMenuPlacement, onSaveSchedules, onRunSchedule,
   onStopPartner, onStopAll, threadsOfMember, live, replyMode = "process", messageForm = "chat", onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
