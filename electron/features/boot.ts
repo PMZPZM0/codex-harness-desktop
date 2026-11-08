@@ -64,6 +64,8 @@ import { startWalCheckpointWatch, trimEngineLogs } from "../sqlite-wal";
 import { petAssetRoots, readPetSettings } from "./pet-ipc";
 import { feedPetEvent } from "./pet-state";
 import { applyPetSettings } from "./pet-window";
+/* ⛔ 11-08：伙伴会话在外面被删时清台账（反向联动，见 thread/deleted 分支）。 */
+import { forgetTalkThreads } from "./group-talk";
 import { writeTextFileAtomic } from "../config-toml";
 
 // ── 由 main.ts 注入的顶层依赖（同名声明 ⇒ 块体保持逐字不变）──
@@ -888,6 +890,13 @@ export async function bootApp() {
           // 挂着它的流式卡也要摘掉 —— 否则那条「正在写…」永远转下去（finished 不会再来）。
           // ⛔ 只在 thread/deleted 广播（归档仍可恢复，不算 gone）。
           if (event.method === "thread/deleted") broadcastHarnessEvent({ type: "team-thread-gone", threadId: goneId } as any);
+          /* ⛔ 11-08 反向联动补齐（用户问「伙伴会话在外面删了，群里还在吗」）：
+             会话被删 ⇒ **群聊台账条目也清掉**。否则下次 @ 这位成员会先 resume 一条已删除的会话
+             （白跑一次、日志报错），侧栏「伙伴」标签也继续挂在一条不存在的历史上。
+             群消息本身**保留**（那是群自己的账本，见上一段注释）—— 行上会标「来源 · 已删除」。 */
+          if (event.method === "thread/deleted" && forgetTalkThreads([goneId])) {
+            broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as any);
+          }
           // 会话被删 ⇒ 文件变更报告的落盘也跟着走（否则 userData/turn-file-changes 越攒越多）
           if (event.method === "thread/deleted") dropStoredReports(goneId);
           // 压缩侦测记录同理（否则 userData/compaction-records 越攒越多）
