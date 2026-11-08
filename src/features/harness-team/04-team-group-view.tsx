@@ -15,7 +15,7 @@ import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } 
 import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
-import { TeamSettings } from "./03-team-settings";
+import { TeamSettings, TeamViewModeSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
 import { Markdown } from "../markdown";
 /* 11-07 用户令：正文里的 @ 必须渲染成**真艾特**（带头像 + 用户名），多个按出现顺序逐个出。
@@ -879,7 +879,7 @@ export function TeamGroupView({
 
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
-  const displayRows = mergeConsecutive(shownRows);
+  const displayRows = useMemo(() => mergeConsecutive(shownRows), [shownRows]);
   /* ⛔⛔ 11-08 真机「过程模式和占位模式完全一样没有区别」：两种模式的 JSX 原先都挂在
      `live` 流式卡里，而独立窗口里 live 常年为空 ⇒ 发完消息什么都不出现。
      ⇒ 反馈改挂到**最后一条用户消息气泡下面**（用户要的位置），由 busy 名单驱动。
@@ -1086,30 +1086,36 @@ export function TeamGroupView({
       </header>
 
       {showSettings ? (
-        <TeamSettings
-          group={group}
-          issues={issues}
-          limit={limit}
-          onAddPartner={onAddPartner}
-          onRemovePartner={onRemovePartner}
-          onMute={onMute}
-          onSetManager={onSetManager}
-          onSetMemory={onSetMemory}
-          onSetWorkspace={onSetWorkspace}
-          onSetFiles={onSetFiles}
-          onClearMessages={onClearMessages}
-          onDeleteGroup={onDeleteGroup}
-          onAddNote={onAddNote}
-          onRemoveNote={onRemoveNote}
-          messageLayout={messageLayout}
-          onMessageLayout={(next) => onSetMessageLayout?.(next)}
-          replyMode={effectiveReplyMode}
-          onReplyMode={(next) => onSetReplyMode?.(next)}
-          messageForm={effectiveMessageForm}
-          onMessageForm={(next) => onSetMessageForm?.(next)}
-          onSaveSchedules={onSaveSchedules}
-          onRunSchedule={onRunSchedule}
-        />
+        /* ⛔ 11-08 用户实测「群设置几个切换切起来很卡」：三个视图开关放在**外层**（点一次只
+           重渲染这一小块），其余 6 个区块走 memo（属性没变就不重排）。滚动容器仍在这一层。 */
+        <div className="team-settings">
+          <TeamViewModeSettings
+            messageLayout={messageLayout}
+            onMessageLayout={(next) => onSetMessageLayout?.(next)}
+            replyMode={effectiveReplyMode}
+            onReplyMode={(next) => onSetReplyMode?.(next)}
+            messageForm={effectiveMessageForm}
+            onMessageForm={(next) => onSetMessageForm?.(next)}
+          />
+          <TeamSettings
+            group={group}
+            issues={issues}
+            limit={limit}
+            onAddPartner={onAddPartner}
+            onRemovePartner={onRemovePartner}
+            onMute={onMute}
+            onSetManager={onSetManager}
+            onSetMemory={onSetMemory}
+            onSetWorkspace={onSetWorkspace}
+            onSetFiles={onSetFiles}
+            onClearMessages={onClearMessages}
+            onDeleteGroup={onDeleteGroup}
+            onAddNote={onAddNote}
+            onRemoveNote={onRemoveNote}
+            onSaveSchedules={onSaveSchedules}
+            onRunSchedule={onRunSchedule}
+          />
+        </div>
       ) : (
         <div className={`team-group__body${membersOpen ? "" : " is-members-hidden"}`}>
           <div className="team-group__main">

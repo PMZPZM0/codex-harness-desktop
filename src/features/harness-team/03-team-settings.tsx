@@ -15,7 +15,7 @@
  *
  * ⛔ 权限说明写文案，不用 disabled 表达归属（项目纪律：disabled 是准入，不是说明）。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { GroupSchedule, MemoryNote, MemoryNoteType, TeamFile, TeamGroup } from "./01-team-types";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
 import { AlarmClock, AlignLeft, BookOpen, Columns2, FolderOpen, GitBranch, Inbox, ListChecks, MessagesSquare, Play, RefreshCw, Trash2, Users } from "lucide-react";
@@ -54,15 +54,6 @@ type Props = {
   /** 记忆条目（带 type + origin） */
   onAddNote: (note: { text: string; type: MemoryNoteType }) => Promise<{ ok: boolean; error?: string }>;
   onRemoveNote: (noteId: string) => Promise<{ ok: boolean; error?: string }>;
-  /** 消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左 */
-  messageLayout: "split" | "left";
-  /** 回复模式（11-08 用户令）：process 运行中展示过程 / placeholder 只显示占位 */
-  replyMode: "process" | "placeholder";
-  onReplyMode: (next: "process" | "placeholder") => void;
-  /** 群消息形式（独立选项）：chat 对话消息 / topic 话题消息 */
-  messageForm: "chat" | "topic";
-  onMessageForm: (next: "chat" | "topic") => void;
-  onMessageLayout: (next: "split" | "left") => void;
   /** 定时任务（整组替换；nextRunAt 由主进程算） */
   onSaveSchedules: (list: unknown[]) => Promise<{ ok: boolean; error?: string }>;
   /** 立刻运行一条定时任务 */
@@ -125,8 +116,138 @@ const fmtDay = (at: number) => {
 
 const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 
-/** 群设置页：伙伴、消息排版、群记忆、文件、定时任务与解散群等分区。 */
-export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm, onSaveSchedules, onRunSchedule }: Props) {
+
+/** 群设置 · 三个视图开关卡片（消息排版 / 回复模式 / 群消息形式）。
+ *  ⛔ 11-08 用户实测「切起来很卡」：这三块原来和其余 6 个区块在同一个组件里 —— 点一次卡片
+ *  就把整页（伙伴/记忆/文件/层级/定时/备注…）重渲染一遍。拆出来后其余区块用 memo 跳过。 */
+export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm }: {
+  messageLayout: "split" | "left";
+  onMessageLayout: (next: "split" | "left") => void;
+  replyMode: "process" | "placeholder";
+  onReplyMode: (next: "process" | "placeholder") => void;
+  messageForm: "chat" | "topic";
+  onMessageForm: (next: "chat" | "topic") => void;
+}) {
+  return (
+    <>
+      {/* ── 常用置顶 1/8：layout ─────────────────────────── */}
+      {/* ── 消息排版（11-07 用户令：消息左右选项，卡片展示 + 示例演示）────────── */}
+      <section className="team-settings__block" data-section="layout">
+        <h3>
+          <Columns2 size={14} className="ic-blue" />
+          消息排版
+        </h3>
+        <p className="team-settings__hint">
+          左右分栏 = 伙伴靠左、你自己靠右；全部靠左 = 专业群聊（人和伙伴同一列）。
+          <strong>点卡片立即生效</strong>，只影响这个群的消息列表。
+        </p>
+        <div className="team-settings__layout-cards" data-group="layout" role="radiogroup" aria-label="群消息排版">
+          {([
+            { value: "split", label: "左右分栏", desc: "伙伴靠左 · 自己靠右", Icon: Columns2 },
+            { value: "left", label: "全部靠左", desc: "所有人同一列", Icon: AlignLeft },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={messageLayout === opt.value}
+              className={`team-settings__layout-card${messageLayout === opt.value ? " is-on" : ""}`}
+              onClick={() => onMessageLayout(opt.value)}
+            >
+              <span className={`team-settings__layout-demo is-${opt.value}`} aria-hidden>
+                <i className="is-left" />
+                <i className={opt.value === "split" ? "is-right" : "is-left"} />
+                <i className="is-left" />
+              </span>
+              <strong><opt.Icon size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{messageLayout === "left" ? "全部靠左" : "左右分栏"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+
+        {/* ⛔⛔ 11-08 用户令：「做出来两种回复模式」+「在群设置里面加上这个选项」——
+            两种模式**只影响"运行过程显不显示"**，产出在两种模式下都会正常上屏。 */}
+        <h4 className="team-settings__sub-title">
+          <MessagesSquare size={14} className="ic-violet" />
+          回复模式
+        </h4>
+        <p className="team-settings__hint">
+          过程模式：运行时展示运行过程（默认折叠，可展开）；占位模式：用户消息下面只挂「头像 + 名字 + 处理中」的小图标，产出出来再上屏。
+          <strong>点卡片立即生效</strong>。
+        </p>
+        <div className="team-settings__layout-cards" data-group="reply" role="radiogroup" aria-label="群回复模式">
+          {([
+            { value: "process", label: "过程模式", desc: "运行中可展开看步骤", Icon: ListChecks },
+            { value: "placeholder", label: "占位模式", desc: "只显示「头像+名字」", Icon: MessagesSquare },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={replyMode === opt.value}
+              className={`team-settings__layout-card${replyMode === opt.value ? " is-on" : ""}`}
+              onClick={() => onReplyMode(opt.value)}
+            >
+              <span className={`team-settings__layout-demo is-reply-${opt.value}`} aria-hidden>
+                <i className="is-left" />
+                <i className="is-left" />
+                <i className="is-left" />
+              </span>
+              <strong><opt.Icon size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{replyMode === "placeholder" ? "占位模式" : "过程模式"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+      </section>
+
+      {/* ⛔⛔ 11-08 用户令：「话题模式要单独选项，不要放在回复模式这样一排，新开一个选项，群消息形式」。
+          ⇒ 独立板块 + 独立枚举 messageForm，与 replyMode 正交（形式管"怎么摆"，回复模式管"运行时露什么"）。 */}
+      <section className="team-settings__block" data-section="message-form">
+        <h3>
+          <MessagesSquare size={14} className="ic-violet" />
+          群消息形式
+        </h3>
+        <p className="team-settings__hint">
+          对话消息：所有消息按时间平铺；话题消息：伙伴回复收进你的气泡，点开弹窗预览完整话题。<strong>点卡片立即生效</strong>。
+        </p>
+        <div className="team-settings__layout-cards" data-group="message-form" role="radiogroup" aria-label="群消息形式">
+          {([
+            { value: "chat", label: "对话消息", desc: "所有消息按时间平铺" },
+            { value: "topic", label: "话题消息", desc: "回复收进气泡 · 点开预览" },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={messageForm === opt.value}
+              className={`team-settings__layout-card${messageForm === opt.value ? " is-on" : ""}`}
+              onClick={() => onMessageForm(opt.value)}
+            >
+              <span className={`team-settings__form-demo is-${opt.value}`} aria-hidden>
+                <i className="is-left" /><i className="is-left" />
+                {opt.value === "topic" && <b className="is-nested"><i /><i /></b>}
+              </span>
+              <strong>{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
+        </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{messageForm === "topic" ? "话题消息" : "对话消息"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
+      </section>
+    </>
+  );
+}
+
+/** 群设置页：伙伴、群记忆、文件、定时任务与解散群等分区（视图开关已拆到 TeamViewModeSettings）。 */
+function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -351,120 +472,7 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
   };
 
   return (
-    <div className="team-settings">
-      {/* ── 常用置顶 1/8：layout ─────────────────────────── */}
-      {/* ── 消息排版（11-07 用户令：消息左右选项，卡片展示 + 示例演示）────────── */}
-      <section className="team-settings__block" data-section="layout">
-        <h3>
-          <Columns2 size={14} className="ic-blue" />
-          消息排版
-        </h3>
-        <p className="team-settings__hint">
-          左右分栏 = 伙伴靠左、你自己靠右；全部靠左 = 专业群聊（人和伙伴同一列）。
-          <strong>点卡片立即生效</strong>，只影响这个群的消息列表。
-        </p>
-        <div className="team-settings__layout-cards" data-group="layout" role="radiogroup" aria-label="群消息排版">
-          {([
-            { value: "split", label: "左右分栏", desc: "伙伴靠左 · 自己靠右", Icon: Columns2 },
-            { value: "left", label: "全部靠左", desc: "所有人同一列", Icon: AlignLeft },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={messageLayout === opt.value}
-              className={`team-settings__layout-card${messageLayout === opt.value ? " is-on" : ""}`}
-              onClick={() => onMessageLayout(opt.value)}
-            >
-              <span className={`team-settings__layout-demo is-${opt.value}`} aria-hidden>
-                <i className="is-left" />
-                <i className={opt.value === "split" ? "is-right" : "is-left"} />
-                <i className="is-left" />
-              </span>
-              <strong><opt.Icon size={12} />{opt.label}</strong>
-              <small>{opt.desc}</small>
-            </button>
-          ))}
-        </div>
-        <p className="team-settings__hint team-settings__layout-current">
-          当前：<strong>{messageLayout === "left" ? "全部靠左" : "左右分栏"}</strong> · 已保存到这个群（换设备也保留）
-        </p>
-
-        {/* ⛔⛔ 11-08 用户令：「做出来两种回复模式」+「在群设置里面加上这个选项」——
-            两种模式**只影响"运行过程显不显示"**，产出在两种模式下都会正常上屏。 */}
-        <h4 className="team-settings__sub-title">
-          <MessagesSquare size={14} className="ic-violet" />
-          回复模式
-        </h4>
-        <p className="team-settings__hint">
-          过程模式：运行时展示运行过程（默认折叠，可展开）；占位模式：用户消息下面只挂「头像 + 名字 + 处理中」的小图标，产出出来再上屏。
-          <strong>点卡片立即生效</strong>。
-        </p>
-        <div className="team-settings__layout-cards" data-group="reply" role="radiogroup" aria-label="群回复模式">
-          {([
-            { value: "process", label: "过程模式", desc: "运行中可展开看步骤", Icon: ListChecks },
-            { value: "placeholder", label: "占位模式", desc: "只显示「头像+名字」", Icon: MessagesSquare },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={replyMode === opt.value}
-              className={`team-settings__layout-card${replyMode === opt.value ? " is-on" : ""}`}
-              onClick={() => onReplyMode(opt.value)}
-            >
-              <span className={`team-settings__layout-demo is-reply-${opt.value}`} aria-hidden>
-                <i className="is-left" />
-                <i className="is-left" />
-                <i className="is-left" />
-              </span>
-              <strong><opt.Icon size={12} />{opt.label}</strong>
-              <small>{opt.desc}</small>
-            </button>
-          ))}
-        </div>
-        <p className="team-settings__hint team-settings__layout-current">
-          当前：<strong>{replyMode === "placeholder" ? "占位模式" : "过程模式"}</strong> · 已保存到这个群（换设备也保留）
-        </p>
-      </section>
-
-      {/* ⛔⛔ 11-08 用户令：「话题模式要单独选项，不要放在回复模式这样一排，新开一个选项，群消息形式」。
-          ⇒ 独立板块 + 独立枚举 messageForm，与 replyMode 正交（形式管"怎么摆"，回复模式管"运行时露什么"）。 */}
-      <section className="team-settings__block" data-section="message-form">
-        <h3>
-          <MessagesSquare size={14} className="ic-violet" />
-          群消息形式
-        </h3>
-        <p className="team-settings__hint">
-          对话消息：所有消息按时间平铺；话题消息：伙伴回复收进你的气泡，点开弹窗预览完整话题。<strong>点卡片立即生效</strong>。
-        </p>
-        <div className="team-settings__layout-cards" data-group="message-form" role="radiogroup" aria-label="群消息形式">
-          {([
-            { value: "chat", label: "对话消息", desc: "所有消息按时间平铺" },
-            { value: "topic", label: "话题消息", desc: "回复收进气泡 · 点开预览" },
-          ] as const).map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              role="radio"
-              aria-checked={messageForm === opt.value}
-              className={`team-settings__layout-card${messageForm === opt.value ? " is-on" : ""}`}
-              onClick={() => onMessageForm(opt.value)}
-            >
-              <span className={`team-settings__form-demo is-${opt.value}`} aria-hidden>
-                <i className="is-left" /><i className="is-left" />
-                {opt.value === "topic" && <b className="is-nested"><i /><i /></b>}
-              </span>
-              <strong>{opt.label}</strong>
-              <small>{opt.desc}</small>
-            </button>
-          ))}
-        </div>
-        <p className="team-settings__hint team-settings__layout-current">
-          当前：<strong>{messageForm === "topic" ? "话题消息" : "对话消息"}</strong> · 已保存到这个群（换设备也保留）
-        </p>
-      </section>
-
+    <>
       {/* ── 常用置顶 2/8：partners ─────────────────────────── */}
       {/* ── 伙伴 ───────────────────────────────────────────────────────── */}
       <section className="team-settings__block" data-section="partners">
@@ -1019,6 +1027,16 @@ export function TeamSettings({ group, issues, limit, onAddPartner, onRemovePartn
 
       {done && <p className="team-settings__done" role="status">{done}</p>}
       {msg && <p className="team-settings__error" role="status">{msg}</p>}
-    </div>
+    </>
   );
 }
+
+/* ⛔ memo 比较：只比**真正显示的字段**。三个视图开关已移到 TeamViewModeSettings，
+   切它们时这些字段一个都没变 ⇒ 不再重渲染伙伴/记忆/文件/层级/定时/备注 6 个区块。 */
+export const TeamSettings = memo(TeamSettingsImpl, (a, b) => (
+  a.issues === b.issues && a.limit === b.limit
+  && a.group.id === b.group.id && a.group.name === b.group.name && a.group.leadId === b.group.leadId
+  && a.group.members === b.group.members && a.group.files === b.group.files
+  && a.group.memory === b.group.memory && a.group.memoryNotes === b.group.memoryNotes
+  && a.group.schedules === b.group.schedules && a.group.workspace === b.group.workspace
+));

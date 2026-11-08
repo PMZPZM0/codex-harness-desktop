@@ -261,6 +261,11 @@
 .team-settings { flex: 1; overflow: auto; padding: 14px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
 /* ⛔ 11-06：区块改成"卡片"（panel 底 + 发丝边），原来是全透明的，一整页看过去没有层次 */
 .team-settings__block {
+  /* ⛔ 11-08 用户实测「群设置几个切换切起来很卡」：面板一次挂 8+ 个区块（成员/记忆/
+     文件/层级/定时/备注…），打开和每次切换都要整页重排重绘。屏外区块跳过 layout/paint，
+     打开与切换只处理可视区（滚到哪算到哪；contain-intrinsic-size:auto 记上次高度防跳动）。 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 280px;
   border: 1px solid var(--line-soft);
   border-radius: 12px;
   /* ⛔ --panel(#f8f8f7) 与 --bg(#fff) 只差 7 个灰阶，看着像没分区；
