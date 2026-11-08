@@ -8,3 +8,5 @@ export declare function openTagEditor(editor: TagEditorState): void;
 export declare function closeTagEditor(): void;
 export declare function setEntityTag(kind: "thread" | "project", id: string, tag: EntityTag): void;
 export declare function removeEntityTag(kind: "thread" | "project", id: string): void;
+export declare const MAX_TAG_CHARS: number;
+export declare function clampTagText(value: unknown): string;
