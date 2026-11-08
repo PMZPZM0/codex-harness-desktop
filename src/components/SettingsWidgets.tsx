@@ -18,6 +18,29 @@ export function SegmentedTabs({ value, onChange, options }: { value: string; onC
   );
 }
 
+/**
+ * 工具条里的「视图切换」—— 设置页所有分页切换的**唯一**入口（MCP / 插件 / 专家市场共用）。
+ *
+ * ⛔⛔ 11-08 用户：「这上面一排按键，展示方式怎么总是变动，能不能统一一下」。根因是同一套分页
+ *   在四个页面各写了一遍容器，尺寸各覆盖一次（实测同时存在 26/10px/11.5px、28/11px/12px、
+ *   28/9px/12px 三种），`margin-left:auto` 也有两处各自生效 ⇒ 切分页时按钮会换位置、换大小。
+ *   ⇒ 一律用本组件：容器类 `.settings-view-tabs`（尺寸只写在 `.settings-view-tabs .segmented-tabs button` 一处），
+ *     位置只由它吃 `margin-left:auto`（同一行的操作组 ⛔ 不许再写 auto）。
+ * ⛔ 想让某个页面特殊一点，改 `className` 传语义类，**别在页面里另写一套 SegmentedTabs**。
+ */
+export function ViewTabs({ value, onChange, options, className }: {
+  value: string;
+  onChange: (value: string) => void;
+  options: SegmentedTabsOption[];
+  className?: string;
+}) {
+  return (
+    <div className={className ? `settings-view-tabs ${className}` : "settings-view-tabs"}>
+      <SegmentedTabs value={value} onChange={onChange} options={options} />
+    </div>
+  );
+}
+
 /** 搜索框：带图标与一键清除，Esc 也能清空；空态不显示清除按钮，避免占位跳动 */
 export function SearchField({
   value,

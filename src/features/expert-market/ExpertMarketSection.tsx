@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeft, Check, Package, Plus, RefreshCw, Search } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
-import { SegmentedTabs } from "../../components/SettingsWidgets";
+import { ViewTabs } from "../../components/SettingsWidgets";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
 export type ExpertMarketSectionProps = { onBack: () => void; onInstalled: () => void; onNotice: (message: string) => void; localSkills: any[] };
@@ -62,7 +62,7 @@ export function ExpertMarketSection({ onBack, onInstalled, onNotice, localSkills
       <div className="settings-copy channel-heading"><div><h2>专家市场包</h2></div><div className="settings-heading-actions"><button className="secondary-setting" onClick={onBack}><ArrowLeft size={14} />返回专家列表</button><button className="icon-button" title="刷新技能包列表" onClick={() => void refreshWithReceipt(onNotice, "刷新技能包列表", () => load())}>{loading ? <Spinner /> : <RefreshCw size={14} />}</button></div></div>
 
       <div className="resource-toolbar">
-        <SegmentedTabs value={view} onChange={(next) => setView(next as "browse" | "installed")} options={[{ value: "browse", label: "市场浏览" }, { value: "installed", label: "我的技能包", count: installedPackages.length }]} />
+        <ViewTabs value={view} onChange={(next) => setView(next as "browse" | "installed")} options={[{ value: "browse", label: "市场浏览" }, { value: "installed", label: "我的技能包", count: installedPackages.length }]} />
         {view === "browse" && <div className="expert-market-search"><Search size={13} /><input value={query} placeholder="搜索技能包" onChange={(event) => setQuery(event.target.value)} /></div>}
       </div>
 

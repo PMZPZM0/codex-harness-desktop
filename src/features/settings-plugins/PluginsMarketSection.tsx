@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleStop, Play, Plus, RefreshCw, Store, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { AppSelect } from "../../components/AppSelect";
-import { BatchActions, CheckCard, SearchField, SegmentedTabs, SelectAllToggle, ToggleSwitch } from "../../components/SettingsWidgets";
+import { BatchActions, CheckCard, SearchField, SelectAllToggle, ToggleSwitch, ViewTabs } from "../../components/SettingsWidgets";
 import { MarketLogo } from "../../features/skills-market";
 import { CodexOfficialMarketSection } from "../codex-official-market";
 import { avatarToneOf } from "../../lib/entity-avatar";
@@ -118,18 +118,17 @@ export function PluginsMarketSection(props: PluginsMarketSectionProps) {
      ⇒ 来源 tab 不再是卡片外面的一行，而是每张卡的第一行；按钮尺寸收小一号（.market-shell 里调）。 */
   /* 10-27 用户令：「那三个按键放到刷新旁边，搜索框靠左，分类按键在搜索框后面」
      ⇒ 来源 tab 不再是单独一行，而是塞进**同一行工具条**的右端（紧挨刷新）。 */
+  /* 来源切换与 MCP / 专家市场用同一个 `ViewTabs`（11-08 统一：尺寸与位置只有一处定义）。 */
   const sourceTabs = (
-    <div className="market-inline-tabs">
-      <SegmentedTabs
-        value={marketSource}
-        onChange={(next) => setMarketSource(next === "official" ? "official" : next === "installed" ? "installed" : "gitee")}
-        options={[
-          { value: "gitee", label: "Claude 插件镜像" },
-          { value: "official", label: "Codex 官方插件" },
-          { value: "installed", label: "已安装" },
-        ]}
-      />
-    </div>
+    <ViewTabs
+      value={marketSource}
+      onChange={(next) => setMarketSource(next === "official" ? "official" : next === "installed" ? "installed" : "gitee")}
+      options={[
+        { value: "gitee", label: "Claude 插件镜像" },
+        { value: "official", label: "Codex 官方插件" },
+        { value: "installed", label: "已安装" },
+      ]}
+    />
   );
 
   return <section className="settings-section stack plugin-center">

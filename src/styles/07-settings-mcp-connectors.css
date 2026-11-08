@@ -16,10 +16,11 @@
 /* ⛔ 一行装得下四个分页 + 操作：只让搜索框收缩（其余 flex:none），上限 150 / 可缩到 100。 */
 .resource-toolbar.mcp-market-toolbar .search-field { flex: 0 1 150px; min-width: 100px; }
 .mcp-category-select { min-width: 88px; max-width: 100px; flex: none; }
-.mcp-inline-tabs .segmented-tabs button { padding: 0 9px; }
-/* 分页由 .market-inline-tabs 的 margin-left:auto 贴右；操作组紧跟其后，不再各吃一个 auto。 */
-.mcp-market-toolbar .mcp-inline-tabs { margin-right: 0; }
+/* 分页由 `.settings-view-tabs` 的 margin-left:auto 贴右；操作组紧跟其后，⛔ 不再各吃一个 auto。
+   11-08 统一：尺寸只在 `.settings-view-tabs .segmented-tabs button` 一处，本文件只调间距/换行。 */
+.mcp-market-toolbar .settings-view-tabs { margin-right: 0; }
 .mcp-market-toolbar .skill-toolbar-actions { margin-left: 0; flex-wrap: nowrap; }
+.mcp-category-filter { display: inline-flex; align-items: center; flex: none; }
 /* 窄窗（设置面板内容 < ~620px）时宁可换行，也不许把分页/按钮挤出可视区（本轮实测过一次）。 */
 @media (max-width: 1024px) {
   .resource-toolbar.mcp-market-toolbar { flex-wrap: wrap; }
@@ -1053,6 +1054,11 @@
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
+  /* ⛔⛔ 11-08：**必须给滚动条留固定槽位**。设置页各分页内容高度不同 ⇒ 切分页时滚动条
+     出现/消失，内容宽度就 682↔672 跳一下，所有「贴右」的按钮（分页 / 添加 / 刷新）跟着横跳
+     10px —— 用户看到的就是「这排按键展示方式老是变」的一大半原因（实测 934→924）。
+     ⛔ 别改成 `overflow-y: scroll`（永远显示滚动条，同样难看）。 */
+  scrollbar-gutter: stable;
 }
 /* 骨架先行：设置弹窗分区内容延后挂载时的占位状态（软件渲染机器避免点击后冻结感） */
 .settings-boot {
