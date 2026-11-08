@@ -393,7 +393,25 @@ function rotateChannelThreadOnOverflow(threadId: string): string {
   return hit;
 }
 
-export { WEIXIN_STREAM_BUDGET, TELEGRAM_STREAM_BUDGET, FEISHU_STREAM_BUDGET, DINGTALK_STREAM_BUDGET, QQ_STREAM_BUDGET, weixinStreamSink, weixinTypingStops, startWeixinTyping, stopWeixinTyping, feishuStreamSink, dingtalkStreamSink, qqStreamSink, telegramStreamSink, botStreamSessions, botStreamPlanFor, weixinBindings, weixinThreadChat, telegramBindings, botBindingsFile, botBindingsLoaded, loadBotBindings, writeBotBindings, botsFile, channelBotBindings, rotateChannelThreadOnOverflow, channelLog, persistChannelLog, channelThreadChat, qqReplyContexts, qqLastMsgId, qqLastScene, recordQqContext, handleChannelAudioMessage, transcodeToWav16k, resolveFfmpegPath, weixinGateway, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway };
+/* 换会话时的「上一段上下文」交接（11-08）：压缩救不回来时才换会话，换之前把最近几轮
+   摘要带进新会话，用户不用从头解释（历史原件仍在旧会话里，桌面端可查）。 */
+const channelHandoff: Record<string, string> = {};
+/** 记下某渠道的交接摘要（换会话前调用；下一条消息建新会话时消费一次）。 */
+function setChannelHandoff(channel: string, text: string): void {
+  const key = String(channel ?? "");
+  const body = String(text ?? "").trim();
+  if (!key || !body) return;
+  channelHandoff[key] = body.slice(0, 6000);
+}
+/** 取走某渠道的交接摘要（一次性）：建新会话后的第一条消息用它。 */
+function takeChannelHandoff(channel: string): string {
+  const key = String(channel ?? "");
+  const body = channelHandoff[key] ?? "";
+  if (key) delete channelHandoff[key];
+  return body;
+}
+
+export { WEIXIN_STREAM_BUDGET, TELEGRAM_STREAM_BUDGET, FEISHU_STREAM_BUDGET, DINGTALK_STREAM_BUDGET, QQ_STREAM_BUDGET, weixinStreamSink, weixinTypingStops, startWeixinTyping, stopWeixinTyping, feishuStreamSink, dingtalkStreamSink, qqStreamSink, telegramStreamSink, botStreamSessions, botStreamPlanFor, weixinBindings, weixinThreadChat, telegramBindings, botBindingsFile, botBindingsLoaded, loadBotBindings, writeBotBindings, botsFile, channelBotBindings, rotateChannelThreadOnOverflow, setChannelHandoff, takeChannelHandoff, channelLog, persistChannelLog, channelThreadChat, qqReplyContexts, qqLastMsgId, qqLastScene, recordQqContext, handleChannelAudioMessage, transcodeToWav16k, resolveFfmpegPath, weixinGateway, telegramGateway, feishuGateway, dingtalkGateway, qqGateway, wecomWebhookGateway };
 export type { BotChannelBinding };
 
 /** ⛔ weixinGateway 的唯一写入口：main.ts 的 bindBoot 注入 + 退出清理都会用到；

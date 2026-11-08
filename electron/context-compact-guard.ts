@@ -118,6 +118,22 @@ export function lastInputTokens(file: string): number | null {
   }
 }
 
+/* ⛔ 11-08 用户反馈「内容超出模型上限」：供应商实际限额常常**小于**模型标称窗口
+   （中转站常见）。超限报错里通常带「N tokens > M」，M 就是真实上限 ⇒ 记下来，
+   下一轮按 min(配置阈值, M) 触发压缩，别再等标称阈值。 */
+const realLimit = new Map<string, { limit: number; at: number }>();
+const REAL_LIMIT_TTL = 2 * 60 * 60 * 1000;
+
+/** 记下供应商实际限额（超限报错解析出来的 M）；有界 + 2 小时过期。 */
+export function noteRealLimit(threadId: string, limitTokens: number, now = Date.now()): void {
+  const id = String(threadId ?? "");
+  const limit = Number(limitTokens);
+  if (!id || !Number.isFinite(limit) || limit <= 0) return;
+  for (const [key, value] of realLimit) if (now - value.at > REAL_LIMIT_TTL) realLimit.delete(key);
+  if (realLimit.size > 300) realLimit.delete(realLimit.keys().next().value as string);
+  realLimit.set(id, { limit: Math.floor(limit), at: now });
+}
+
 export type CompactDecision =
   | { compact: true; used: number; limit: number }
   | { compact: false; reason: "no-thread" | "cooldown" | "no-limit" | "no-rollout" | "no-usage" | "below"; used?: number; limit?: number };
@@ -128,12 +144,15 @@ export function shouldCompact(codexHome: string, threadId: string, now = Date.no
   if (now - (lastAttempt.get(threadId) ?? 0) < RETRY_COOLDOWN_MS) return { compact: false, reason: "cooldown" };
   const limit = readAutoCompactLimit(codexHome);
   if (!limit) return { compact: false, reason: "no-limit" };
+  /* 供应商实际限额比标称窗口小时，按更小的那个触发（见 noteRealLimit）。 */
+  const real = realLimit.get(threadId);
+  const effective = real && now - real.at <= REAL_LIMIT_TTL ? Math.min(limit, real.limit) : limit;
   const file = findRollout(codexHome, threadId, now);
   if (!file) return { compact: false, reason: "no-rollout" };
   const used = lastInputTokens(file);
   if (!used) return { compact: false, reason: "no-usage" };
-  if (used < limit * TRIGGER_RATIO) return { compact: false, reason: "below", used, limit };
-  return { compact: true, used, limit };
+  if (used < effective * TRIGGER_RATIO) return { compact: false, reason: "below", used, limit: effective };
+  return { compact: true, used, limit: effective };
 }
 
 /** 记一次尝试（成功失败都记）：失败时靠它把重试压到 10 分钟一次，别每轮都卡。 */
@@ -144,4 +163,5 @@ export function markAttempt(threadId: string, now = Date.now()): void {
 /** 测试用：清空内部状态。 */
 export function __resetCompactGuardState(): void {
   lastAttempt.clear();
+  realLimit.clear();
 }

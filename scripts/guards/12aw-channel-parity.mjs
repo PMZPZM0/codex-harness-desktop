@@ -127,17 +127,20 @@ if (missing.length) {
      三条入站 turn/start 必须全部带上 —— 少一条就有一种渠道「控制不了电脑」。 */
   const turnStarts = (inbCode.match(/server\.request\("turn\/start"/g) || []).length;
   const withOverride = (inbCode.match(/turn\/start", \{ threadId, \.\.\.CHANNEL_TURN_OVERRIDE/g) || []).length;
-  ok(turnStarts === 3 && withOverride === 3,
-    `⑦三条渠道回合都带全权限覆盖（实测 ${withOverride}/${turnStarts}）—— 绑到受限会话的机器人会「能聊不能做」`);
+  /* 11-08：多了「超限压缩后重试」那一条 turn/start（同样带覆盖）⇒ 判据改成「每一条都带」。 */
+  ok(turnStarts >= 3 && withOverride === turnStarts,
+    `⑦渠道回合（含超限重试）都带全权限覆盖（实测 ${withOverride}/${turnStarts}）—— 绑到受限会话的机器人会「能聊不能做」`);
   ok(/sandboxPolicy: \{ type: "dangerFullAccess"/.test(inbCode) && /approvalPolicy: "never"/.test(inbCode),
     "⑦覆盖值必须是 dangerFullAccess + approval never（渠道是遥控入口，准入由配对门卫把关）");
   /* ⛔ 11-08 用户反馈「⚠️ Codex 内容超出模型上限」：渠道会话是**长期复用**的（一句一拍），
      超限后每轮都被上游拒。⇒ 回合结束看到超限错误就解除该渠道绑定（下一条自动开新会话）。 */
-  ok(/rotateChannelThreadOnOverflow/.test(inbCode)
-    && /rotateChannelThreadOnOverflow/.test(stripComments(read("electron/features/im-gateways.ts")))
-    && /maybeRotateOnOverflow\(threadId, event\.params\?\.turn\?\.error\?\.message\)/.test(inbCode)
-    && /内容超出模型上限/.test(inbCode),
-    "⑧渠道会话上下文超限 ⇒ 自动解除绑定（下一条消息自动开新会话；⛔ 别让用户卡死在爆掉的会话里）");
+  ok(/recoverOverflow/.test(inbCode)
+    && /thread\/compact\/start/.test(inbCode)
+    && /if \(opts\.retried\) rotateChannelThreadOnOverflow\(threadId\)/.test(inbCode)
+    && /noteRealLimit\(threadId/.test(inbCode)
+    && /setChannelHandoff\(channel, digest\)/.test(inbCode)
+    && /takeChannelHandoff\("wechat"\)/.test(inbCode),
+    "⑧渠道上下文超限 ⇒ 先压缩并重试原消息（保留历史）；压缩失败才换会话并带上最近几轮摘要；同时记下供应商实际限额");
   globalThis.fetch = realFetch;
 }
 
