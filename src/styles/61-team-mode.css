@@ -1807,7 +1807,8 @@
    ⛔⛔ z-index 必须与 @ 面板同档（1000）——它们是 portal 到 body 的，40 会被输入卡的
    层叠上下文压住（实测：菜单完全看不见）。 */
 .team-composer__pop,
-.team-composer__files-pop {
+.team-composer__files-pop,
+.team-composer__skill-pop {
   z-index: 1000;
 }
 .team-composer__files-pop {
@@ -1815,23 +1816,16 @@
   max-height: min(360px, calc(100vh - 24px));
   overflow: auto;
 }
-/* 引用技能：居中弹窗（11-07 用户：「技能选项弹窗，那个」） */
-.team-skill-backdrop {
-  z-index: 950;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-}
-.team-skill-dialog {
+/* 引用技能：贴着 + 图标向上弹的浮层（11-08 用户：「技能弹窗搞这么远干什么」）——
+   ⛔ 不再是居中弹窗（modal-backdrop / team-skill-backdrop 已删）：定位由 useAnchoredPopover
+   写成 fixed 内联坐标，这里只管尺寸与皮肤；z-index 与 + 菜单同档 1000
+   （portal 到 body，40 会被输入卡的层叠上下文压住）。 */
+.team-composer__skill-pop {
+  z-index: 1000;
   display: flex;
   flex-direction: column;
-  width: min(560px, 92vw);
-  max-height: min(72vh, 640px);
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: var(--panel);
-  box-shadow: 0 18px 48px color-mix(in srgb, var(--text) 22%, transparent);
+  width: min(420px, calc(100vw - 16px));
+  max-height: min(440px, calc(100vh - 24px));
   overflow: hidden;
 }
 .team-skill-dialog__head {

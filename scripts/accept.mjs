@@ -14,6 +14,7 @@
 //   ⑨ queue-timer：排队消息定时总开关（11-02）—— 默认关闭、开启落盘、关闭即清
 //   ⑩ project-menu-flyout：项目 ⋯ / 会话 ⋯ 菜单向侧栏右侧弹出（portal）+ 视口钳制自适应往上（11-08）
 //   ⑪ thread-tag-column：会话行标签固定成一列（贴置顶键左边）+ 标签最多 3 个字（11-08）
+//   ⑫ team-skill-picker：工作伙伴「引用技能」贴 + 图标弹、可多选有反馈、点一下不关（11-08）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -1947,6 +1948,70 @@ const CHECKS = [
       await h.pressKey("Escape");
       await wait(250);
       h.check("⑥ Esc 关闭标签弹窗（不落盘）", !(await h.eval(`!!document.querySelector(".entity-tag-input")`)), "");
+    },
+  },
+  {
+    id: "team-skill-picker",
+    name: "工作伙伴 · 引用技能：贴着 + 图标弹、可多选有反馈、点一下不关窗（11-08 用户实测）",
+    run: async (h) => {
+      /* 11-08 用户（截图）：「选中一个技能弹窗就关了、没有反馈」+「技能弹窗搞这么远干什么」。
+         根因：技能面板漏登记进「点外部才关」的豁免名单 ⇒ 点行的 mousedown 被当外部点击、
+         click 前就被卸载。这里在**工作伙伴独立窗口**里真点：开面板 → 选 → 再选 → 取消 → Esc。 */
+      /* ⛔ 侧栏两个按钮共用 sidebar-quick-boss 类（指挥中枢 / 工作伙伴）⇒ 按 title 精确点「工作伙伴」。 */
+      await h.eval(`(function(){ const b=document.querySelector('[title^="工作伙伴"]'); if(b){b.click(); return true;} return window.codex.popoutTeam().then(()=>true); })()`);
+      /* 独立窗口刚起来时 App 还在初始化 ⇒ 整段用**页内轮询**（evalInTarget 单次往返内 await），
+         避免「点得太早 ⇒ 菜单没开 ⇒ 后面全空」的假红。 */
+      const flow = await h.evalInTarget("teamPopout=1", `(async function(){
+        const sleep=(ms)=>new Promise(r=>setTimeout(r,ms));
+        const until=async(fn,ms=8000)=>{ const t0=Date.now(); while(Date.now()-t0<ms){ const v=fn(); if(v) return v; await sleep(120);} return null; };
+        const group=await until(()=>document.querySelector(".team-mode__group"));
+        if(group) group.click();
+        const plus=await until(()=>document.querySelector(".team-composer .plus-spin-button"));
+        if(!plus) return "no-plus";
+        plus.click();
+        const menuItem=await until(()=>[...document.querySelectorAll(".team-composer__pop button")].find(x=>/引用技能/.test(x.textContent||"")));
+        if(!menuItem) return "no-menu-item";
+        menuItem.click();
+        const pop=await until(()=>document.querySelector(".team-composer__skill-pop"));
+        return pop ? "ok" : "no-pop";
+      })()`);
+      h.check("⓪ 前置：工作伙伴窗口已起、+ 菜单 →「引用技能」面板打开", flow === "ok", String(flow));
+      await wait(300);
+      const geo = () => h.evalInTarget("teamPopout=1", `(function(){
+        const r=(e)=>{ if(!e) return null; const b=e.getBoundingClientRect(); return {l:+b.left.toFixed(1),r:+b.right.toFixed(1),t:+b.top.toFixed(1),b:+b.bottom.toFixed(1),w:+b.width.toFixed(1)}; };
+        const pop=document.querySelector(".team-composer__skill-pop");
+        const btn=document.querySelector(".team-composer .plus-spin-button");
+        return { pop:r(pop), btn:r(btn), win:{w:innerWidth,h:innerHeight},
+          count:(pop?.querySelector(".team-skill-dialog__count")?.textContent||"").trim(),
+          on: pop ? pop.querySelectorAll(".team-skill-dialog__item.is-on").length : -1 };
+      })()`);
+      const g0 = await geo();
+      h.check("① 技能面板贴着 + 图标弹（⛔ 不是屏幕居中的远弹窗）",
+        Boolean(g0?.pop && g0?.btn && (g0.pop.b <= g0.btn.t + 2 || g0.pop.t >= g0.btn.b - 2) && Math.abs((g0.pop.l + g0.pop.w / 2) - g0.win.w / 2) > 80),
+        JSON.stringify({ pop: g0?.pop, btn: g0?.btn, win: g0?.win }));
+      /* 先把上次运行可能留下的选中清掉，保证起点确定。 */
+      await h.evalInTarget("teamPopout=1", `(function(){ for (const b of document.querySelectorAll(".team-skill-dialog__item.is-on")) b.click(); return true; })()`);
+      await wait(250);
+      await h.evalInTarget("teamPopout=1", `(function(){ const b=document.querySelectorAll(".team-skill-dialog__item")[0]; if(b){b.click(); return true;} return false; })()`);
+      await wait(250);
+      const g1 = await geo();
+      h.check("② 点第一个技能：面板**不关**、该行出现选中反馈（is-on + 已选 1）",
+        Boolean(g1?.pop) && g1.on === 1 && g1.count.includes("1"), JSON.stringify({ open: Boolean(g1?.pop), on: g1?.on, count: g1?.count }));
+      await h.evalInTarget("teamPopout=1", `(function(){ const b=document.querySelectorAll(".team-skill-dialog__item")[1]; if(b){b.click(); return true;} return false; })()`);
+      await wait(250);
+      const g2 = await geo();
+      h.check("③ 再点第二个：可多选（已选 2）", Boolean(g2?.pop) && g2.on === 2 && g2.count.includes("2"), JSON.stringify({ on: g2?.on, count: g2?.count }));
+      await h.evalInTarget("teamPopout=1", `(function(){ const b=document.querySelectorAll(".team-skill-dialog__item")[0]; if(b){b.click(); return true;} return false; })()`);
+      await wait(250);
+      const g3 = await geo();
+      h.check("④ 再点第一个 = 取消选中（已选 1，多选开关正常）", Boolean(g3?.pop) && g3.on === 1, JSON.stringify({ on: g3?.on, count: g3?.count }));
+      /* 复原：把剩下的选中也取消，别把测试选择留在用户群里。 */
+      await h.evalInTarget("teamPopout=1", `(function(){ for (const b of document.querySelectorAll(".team-skill-dialog__item.is-on")) b.click(); return true; })()`);
+      await wait(200);
+      await h.evalInTarget("teamPopout=1", `(function(){ document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); return true; })()`);
+      await wait(300);
+      const g4 = await geo();
+      h.check("⑤ Esc 关闭技能面板（选择已复原为 0）", !g4?.pop && g4?.on === -1, JSON.stringify({ open: Boolean(g4?.pop) }));
     },
   },
 ];

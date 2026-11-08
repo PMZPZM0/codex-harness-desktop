@@ -474,7 +474,7 @@ const catalog = [
   /* ⛔ 11-07 独立群聊通道后，`forTeam`（派活身份块）整个退场：不再有"主理人代转成员产出"。
      口径改成：群聊输入里直接写明「别人的回复会以他的署名进群」，由独立通道投递。 */
   const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
-  ok(/buildTalkInput\(talkOptions/.test(ipc) && /他的回复会以他的署名进群/.test(talkSrc)
+  ok(/buildTalkInput\(\s*talkOptions/.test(ipc) && /他的回复会以他的署名进群/.test(talkSrc)
     && !/forTeam: partner\.targetKind === "team"/.test(ipc) && !/forTeam: partner\.targetKind === "team"/.test(store),
     "群聊通道里每个人自己发进群（⛔ 不再有主理人代转 / 派活身份块）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));

@@ -195,8 +195,10 @@ export function TeamComposer({
   const plusBtnRef = useRef<HTMLButtonElement | null>(null);
   const plusPopRef = useRef<HTMLDivElement | null>(null);
   const filesPopRef = useRef<HTMLDivElement | null>(null);
+  const skillsPopRef = useRef<HTMLDivElement | null>(null);
   const plusPos = useAnchoredPopover(plusOpen, plusBtnRef, plusPopRef);
   const filesPos = useAnchoredPopover(plusView === "files", plusBtnRef, filesPopRef);
+  const skillsPos = useAnchoredPopover(plusView === "skills", plusBtnRef, skillsPopRef);
   const [skillQuery, setSkillQuery] = useState("");
   const [fileQuery, setFileQuery] = useState("");
   const [skills, setSkills] = useState<Array<{ name: string; description: string }>>([]);
@@ -324,7 +326,10 @@ export function TeamComposer({
   }, [loadModels]);
 
   /* 技能 / 文件 / 加号菜单（11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」）——
-     浮层都 portal 到 body，点外部即关（按钮本身除外，交给它自己 toggle）。 */
+     浮层都 portal 到 body，点外部即关（按钮本身除外，交给它自己 toggle）。
+     ⛔⛔ 11-08 用户实测（「选中一个技能弹窗就关了、没有选中反馈」）：
+        技能面板漏登记在豁免名单里 ⇒ 点技能行的 mousedown 被当成「点外部」，
+        面板在 click 之前就被卸载（选中回调根本没跑）。三个浮层都必须登记。 */
   useEffect(() => {
     if (!plusOpen && plusView === "main") return;
     const onDown = (event: MouseEvent) => {
@@ -332,6 +337,7 @@ export function TeamComposer({
       if (plusBtnRef.current?.contains(target)) return;
       if (plusPopRef.current?.contains(target)) return;
       if (filesPopRef.current?.contains(target)) return;
+      if (skillsPopRef.current?.contains(target)) return;
       setPlusOpen(false);
       setPlusView("main");
     };
@@ -466,48 +472,53 @@ export function TeamComposer({
           </div>
         </div>, document.body)}
 
-      {/* 引用技能 = **居中弹窗**（11-07 用户：「技能选项弹窗，那个」）：
-          可多选（点行切换），完成 / Esc / 点背景关闭，选中的在输入框上方以 chip 显示。 */}
+      {/* 引用技能 = **贴着 + 图标向上弹的浮层**（11-08 用户：「技能弹窗搞这么远干什么」）：
+          与文件面板同一套定位（useAnchoredPopover + portal + fixed）；可多选（点行只切换、
+          ⛔ 不关窗），完成 / Esc / 点外部关闭，选中的在输入框上方以 chip 显示。 */}
       {plusView === "skills" && createPortal(
-        <div className="modal-backdrop team-skill-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPlusView("main"); }}>
-          <section className="team-skill-dialog" role="dialog" aria-modal="true" aria-label="引用技能">
-            <header className="team-skill-dialog__head">
-              <Sparkles size={15} className="ic-violet" />
-              <strong>引用技能</strong>
-              <span className="team-skill-dialog__count">已选 {opts.skills.length}</span>
-              <button type="button" className="icon-button" title="关闭（Esc）" aria-label="关闭" onClick={() => setPlusView("main")}><X size={15} /></button>
-            </header>
-            <div className="team-skill-dialog__search">
-              <Search size={14} />
-              <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
-            </div>
-            <div className="team-skill-dialog__list" role="listbox" aria-multiselectable="true">
-              {skillMatches.map((item) => {
-                const on = opts.skills.some((x) => x.name === item.name);
-                return (
-                  <button
-                    type="button"
-                    role="option"
-                    aria-selected={on}
-                    key={item.name}
-                    className={`team-skill-dialog__item${on ? " is-on" : ""}`}
-                    title={`${item.name}：${item.description}`}
-                    onClick={() => toggleSkill(item)}
-                  >
-                    <Sparkles size={15} />
-                    <span className="team-skill-dialog__name">{item.name}</span>
-                    <small>{item.description}</small>
-                    {on && <Check size={14} className="team-skill-dialog__check" />}
-                  </button>
-                );
-              })}
-              {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
-            </div>
-            <footer className="team-skill-dialog__foot">
-              <span>已选 {opts.skills.length} 个 · 发送时拼进本轮指令</span>
-              <button type="button" className="is-primary" onClick={() => setPlusView("main")}>完成</button>
-            </footer>
-          </section>
+        <div
+          ref={skillsPopRef}
+          className="composer-quick-pop team-composer__skill-pop"
+          role="dialog"
+          aria-label="引用技能"
+          style={skillsPos ? { position: "fixed", left: skillsPos.left, top: skillsPos.top, bottom: "auto" } : { visibility: "hidden" }}
+        >
+          <header className="team-skill-dialog__head">
+            <Sparkles size={15} className="ic-violet" />
+            <strong>引用技能</strong>
+            <span className="team-skill-dialog__count">已选 {opts.skills.length}</span>
+            <button type="button" className="icon-button" title="关闭（Esc）" aria-label="关闭" onClick={() => setPlusView("main")}><X size={15} /></button>
+          </header>
+          <div className="team-skill-dialog__search">
+            <Search size={14} />
+            <input autoFocus value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} placeholder="搜索已安装技能" aria-label="搜索技能" />
+          </div>
+          <div className="team-skill-dialog__list" role="listbox" aria-multiselectable="true">
+            {skillMatches.map((item) => {
+              const on = opts.skills.some((x) => x.name === item.name);
+              return (
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  key={item.name}
+                  className={`team-skill-dialog__item${on ? " is-on" : ""}`}
+                  title={`${item.name}：${item.description}`}
+                  onClick={() => toggleSkill(item)}
+                >
+                  <Sparkles size={15} />
+                  <span className="team-skill-dialog__name">{item.name}</span>
+                  <small>{item.description}</small>
+                  {on && <Check size={14} className="team-skill-dialog__check" />}
+                </button>
+              );
+            })}
+            {!skillMatches.length && <p className="submenu-empty">没有匹配的技能</p>}
+          </div>
+          <footer className="team-skill-dialog__foot">
+            <span>已选 {opts.skills.length} 个 · 发送时拼进本轮指令</span>
+            <button type="button" className="is-primary" onClick={() => setPlusView("main")}>完成</button>
+          </footer>
         </div>,
         document.body,
       )}
