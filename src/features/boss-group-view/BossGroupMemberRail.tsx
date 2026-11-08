@@ -23,9 +23,6 @@ import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { OfficeRailNode } from "../experts-teams";
 import type { GroupMemberLive } from "./group-members-store";
 
-/** 轨道最多同时展示几个（超出走滚动）。 */
-export const BOSS_RAIL_MAX = 6;
-
 export function BossGroupMemberRail({ members, onOpen, onOpenOffice }: {
   members: GroupMemberLive[];
   onOpen?: (memberId: string) => void;

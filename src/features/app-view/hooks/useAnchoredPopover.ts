@@ -62,6 +62,3 @@ export function useAnchoredPopover(
 
   return style;
 }
-
-/** 顶栏浮层统一 z-index：必须高于 `.topbar`（z-index:30）与设置内遮罩（80~97）。 */
-export const TOPBAR_POPOVER_Z = 10100;

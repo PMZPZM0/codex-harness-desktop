@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（114 个能力域 / 647 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（114 个能力域 / 645 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -465,9 +465,9 @@ RPA 配方（录制好的桌面自动化流程）
 语音通话全链路（呼叫/音频流/转写/打断/挂断，39 通道）
 通道：voice:status, voice:settings-get, voice:settings-set, voice:start, voice:dictation-finish, voice:endpoint-now, voice:stop, voice:audio, voice:speak, voice:preview-voice, voice:hotkey-set, voice:hotkey-get, voice:wake-start, voice:wake-audio, voice:wake-reset, voice:wake-stop, voice:barge, voice:playback-done, voice:models-status, voice:zipvoice-install, voice:zipvoice-cancel, voice:kws-install, voice:kws-cancel, voice:kws-status, voice:profiles-list, voice:preset-list, voice:preset-apply, voice:profiles-import, voice:profiles-record, voice:profiles-save, voice:profiles-delete, voice:profiles-select, voice:profiles-preview, voice:profile-upload, voice:models-install, voice:models-cancel, voice:models-import, voice:models-reveal, voice:models-uninstall, voice:mic-permission, voice:resource-set-enabled, voice:resource-delete, voice:resource-status, voice:tts-pack-install, voice:tts-pack-cancel, voice:announce-owner, voice:announce-set-muted
 
-### domains（3 通道）
+### domains（2 通道）
 **宿主功能域**的清单与启停（设置 → 开发工具 → 功能域）——停用支持**真热插拔**（通道立即消失、无需重启），但持有跨域共享单例的域（server / codexHome / mainWindow / toolsRoot 的主人）只能重启生效。承载应用自身能力的域（身份/对话主链路/基础对话框）不可停用
-通道：domains:list, domains:set-enabled, domains:reload-hint
+通道：domains:list, domains:set-enabled
 
 ### declared-plugins（3 通道）
 **声明式插件**清单与启停（设置 → 开发工具 → 声明式插件）——插件是一份 JSON（用户目录 codex-home/harness-plugins 或内置 declared-plugins），只描述往哪个插槽挂什么内容、调哪条**已有**通道，不含任何代码。插槽即时生效、无需重启。⛔ 不加载第三方 JS：主进程是特权域（密钥库/开窗/全盘 fs），进代码即提权
@@ -477,9 +477,9 @@ RPA 配方（录制好的桌面自动化流程）
 截图（冻结帧框选/保存/历史）
 通道：screenshot:settings-get, screenshot:settings-set, screenshot:hotkey-set, screenshot:capture, screenshot:pick-dir, screenshot:reveal
 
-### favorites（7 通道）
+### favorites（6 通道）
 收藏夹（收藏消息/片段，一键再发送）
-通道：favorites:list, favorites:add, favorites:update, favorites:delete, favorites:clear, favorites:touch, favorites:to-memory
+通道：favorites:list, favorites:add, favorites:update, favorites:delete, favorites:touch, favorites:to-memory
 
 ### history（1 通道）
 跨会话历史搜索（全文检索会话与消息，命中按会话分组）

@@ -67,6 +67,14 @@ export const CODEX_MARKET_CATEGORY_ZH: Record<string, string> = {
   "Development": "开发",
 };
 
+/**
+ * 把市场接口返回的**英文分类**翻成中文；没收录的原样返回。
+ *
+ * ⛔ 为什么要这一层：官方市场接口只回英文 `category`（`categoryZh` 只有部分条目带），
+ *    直接上屏就是中英混排。⛔ 别在组件里内联 `??` 链再写一遍 —— 翻法只在这个文件里有一份。
+ * @param category 接口原文（如 "Coding"）
+ * @returns 中文分类名；未收录时返回原文，保证永远有字可显示
+ */
 export function zhCategory(category: string): string {
   return CODEX_MARKET_CATEGORY_ZH[category] ?? category;
 }

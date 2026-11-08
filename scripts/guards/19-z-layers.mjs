@@ -86,8 +86,11 @@ export async function run() {
     "【198】浮窗宿主挂在 app-shell 壳根（AppView，壁纸层旁）—— ⛔ 不许塞进回合卡（.turn-group 有恒等 transform，fixed 会退化）"
   );
   const reasoning198 = readFileSync(join(ROOT, "src", "features", "shared", "ReasoningCard.tsx"), "utf8");
-  (/document\.querySelector\("\.reasoning-float-host"\) \?\? document\.body/.test(reasoning198) ? ok : fail)(
-    "【198】思考浮窗 portal 到壳内宿主（body 只是宿主缺失的兜底）"
+  /* ⛔ 11-08 并线收口：f2021a492 给 ReasoningCard 加了 `floatHostSelector`（群聊传自己的宿主），
+     写法变成 `document.querySelector(floatHostSelector ?? ".reasoning-float-host") ?? document.body`。
+     判据改成「宿主选择器可覆盖 + 仍回落 body」，⛔ 别再写死无参形态（那会假红）。 */
+  (/document\.querySelector\(floatHostSelector \?\? "\.reasoning-float-host"\) \?\? document\.body/.test(reasoning198) ? ok : fail)(
+    "【198】思考浮窗 portal 到壳内宿主（群聊可传自己的宿主；body 只是宿主缺失的兜底）"
   );
   (/(\.reasoning-float-host \{[\s\S]{0,240}?pointer-events: none;)/.test(skills198) && /\.reasoning-float \{[\s\S]{0,200}?pointer-events: auto;/.test(skills198) ? ok : fail)(
     "【198】宿主是穿透层（pointer-events:none）+ 浮窗自身恢复可交互（auto）—— 少一条浮窗点不动"

@@ -143,11 +143,6 @@ export function findCapabilitySkill(
   return { folder: String(hit.folder ?? hit.name ?? id), enabled: hit.enabled !== false };
 }
 
-/** 一个组的「期望状态」对应的主开关目标值：on→true，off→false。 */
-export function masterStateToBool(state: MasterState): boolean {
-  return state === "on";
-}
-
 /** 联动动作计划：差异最小化，只发需要变化的子项。 */
 export interface GroupAction {
   /** 是否要写 ponytail 注入开关（只要目标组是 writing-code 就下发，幂等 cheap）。 */

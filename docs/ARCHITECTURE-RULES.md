@@ -409,3 +409,120 @@
 **整洁检查（只报告、不自动改）**：`lintLessonLines()` 抓「缺日期 / 缺分类标记 / 超 320 字 / 超 120 行」；`planHygiene()` 汇总「哪层满了 + 格式问题 + 归档过大 + 过期碎片」并由 `suggestedActions()` 映射成可点动作。守卫【107】用真实临时工作区验规则表、纯函数与三个动作。
 
 **加一层 / 加一个动作的 checklist**：改 `CLEANUP_RULES`（层）或 `HYGIENE_ACTIONS` + `HYGIENE_ACTION_LABEL`（动作）→ 执行逻辑落 `memory-layers`/`MemoryStore` → IPC 白名单分支 → UI 按钮（复用二次确认条）→ 同步本表 → 【107】断言。
+
+---
+
+## 12. 交付卫生三条（2026-11-08 用户令，硬性，守卫组 14）
+
+> 用户原话：「有没有前端无效代码，清理；项目里这些字体是不是完全免费可商用的；后端有没有没清理掉的
+> 路由接口，有的话清理一下 —— 以上三点检查一下，而且要写进项目开发规范」；
+> 追加：「给所有函数补好中文注释，AI 很容易漏掉这些，一定要记得人工复核」「记得扫描开源组件的 license」
+> 「还有做漏洞扫描」。
+> 机械判据在 `scripts/guards/14-delivery-hygiene.mjs`（【291】–【295】），**改这三块必先跑它**。
+
+### 12.1 前端死代码：孤儿模块 = 0（【291】）
+
+**判据**：从 `src/main.tsx`（+ `index.html` 的 `<script src>`）沿
+`import` / `export … from` / `import()` / `require()` / CSS `@import` 走可达性，
+`src/` 下任何 `.ts/.tsx/.mts/.css` 都必须可达。
+
+- `.d.mts` / `.d.ts` 是类型声明的伴生文件（类型擦除后没有运行时实体），**不算孤儿**；
+- 新增文件必须**同轮**接进入口（组件被某个板块 import、纯函数被消费方 import），否则预检直接红；
+- ⛔ **不留 demo / playground / 复刻示例**：11-08 实测清掉 5 个零引用文件
+  （`CollapsibleProjectList` / `StreamDemo` / `FlowDiagram` 三个"复刻 WorkBuddy"的样例、
+  被 `11-team-cards` 取代的旧卡片渲染器、一个注释说"多处共用"但根本没人引的状态文案模块）；
+- ⛔ **板块对外出口也是代码**：`features/xxx/index.ts` 若没人从它 import，要么让外部改从出口导入，
+  要么删掉出口 —— 11-08 的 `event-broadcast/index.ts` 就是 AppView 绕过出口直接进子文件而变成孤儿的。
+- 顺手判据（人工）：导出了但**文件内零引用 + 其它文件零引用**的运行时函数 = 真死函数。
+  11-08 实测 23 个，删了 12 个；保留的是「图集坐标表」（同一张表里被守卫钉住的值）与
+  「守卫直接调用的 store API」—— 后两类**不是**死代码，别机械删。
+
+### 12.2 后端死路由：每条通道都要有消费者（【292】）
+
+**四方对账**：`manifest`（契约）→ `preload`（桥）→ 渲染层调用 / 主进程推送（消费者）。
+
+| 情况 | 判定 |
+|---|---|
+| 渲染层调用（`codex.xxx(` 或 `codex["xxx"]` 计算属性） | ✅ 有消费者 |
+| 主进程推送（`sendToWindow("同通道")`） | ✅ 推送类，本来就没有调用方 |
+| 两者都没有 | ❌ **死路由**：删，或登记进 `UNWIRED` 棘轮名单 |
+
+- 名单是**棘轮**：新出现的死路由 → 红；已接线却没从名单删 → 也红（防名单腐烂成永久豁免）；
+- 删除一条通道 = **四处一起删**：handler（含 `ctx.effect` 里的 `removeHandler`）→
+  `ipc-channels.manifest.json`（含 `count`）→ `ipc-registry.ts`（该域 `channels` + `count`）→
+  `npm run gen:ipc` 重生成 `preload.ts` / `vite-env.d.ts` / `harness-api` 技能；
+- ⛔⛔ **危险动词的通道优先查**：`clear` / `delete` / `install` / `uninstall` / `exec` / `write`。
+  11-08 实测删掉 `favorites:clear`（不带 id、无确认、一把清空全部收藏）——
+  它与【129】「删除只认显式 id 列表 + 清空要二次确认」直接冲突，是**后门级**的死路由；
+  渲染层真正的清空走 `deleteFavorites(全部 id)` + 二次确认，所以这条从来没人用。
+- 已知 61 条「桥齐了但界面没接」的功能口登记在 `UNWIRED`（voice 唤醒 / sessionspace / IM 登出 /
+  backup / openfilm / harness-team 用量…）。它们不是"可以随便留"：**要么接上界面，要么删**
+  —— 只允许在名单里**减少**。
+
+### 12.3 字体：只许系统字体族（【293】）
+
+**现状（11-08 实测）**：本项目**不分发任何字体文件** —— `src/` 下 0 个 `.woff/.woff2/.ttf/.otf`，
+没有 `@font-face`，`index.html` 的 CSP 也是 `font-src 'self' data:`。全部走系统字体栈：
+
+```
+"Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif   /* 正文 */
+"Cascadia Code", Consolas, ui-monospace, monospace         /* 等宽（--mono） */
+```
+
+**规则**：
+
+1. `font-family` 只许**系统字体 + 通用族**（白名单在守卫里，`FONT_ALLOW`）。
+   ⛔ 11-08 删掉了 `Inter`：它不是 Windows 系统字体、也没随包、更没 `@font-face`
+   ⇒ 这条永远落空，只留"我们好像用了 Inter"的错觉。
+2. ⛔ **不许远程字体**（`@font-face { src: url(https://…) }`）：离线应用 + CSP 下根本不会被加载，
+   还平白引入第三方请求与授权问题。
+3. 要用品牌字体 = **随包带授权明确的文件**（OFL-1.1 / Apache-2.0 优先），并**同轮**做三件事：
+   - 文件放 `src/assets/fonts/`，`@font-face` 用相对路径；
+   - 加进 `FONT_ALLOW` 白名单；
+   - `THIRD_PARTY_NOTICES.md` 写清名称 / 版本 / 许可 / 来源。
+   ⛔ 商用字体（方正、汉仪、苹方商用版等）**一律不许**进仓。
+
+### 12.4 第三方许可：copyleft 零容忍（【294】）
+
+- **直接依赖**必须是 MIT / Apache-2.0 / ISC / BSD / 0BSD / Unlicense / OFL 这类可商用许可；
+  出现 **GPL / AGPL / SSPL / CC-BY-NC / CPAL / OSL / EUPL / Commons Clause** 直接红。
+- **每个直接依赖都必须能读到 `license` 字段** —— 读不到不等于免费（11-08 全量实测：
+  直接依赖 49 个 = MIT 43 + Apache-2.0 5 + ISC 1；含传递依赖 873 个包、copyleft **0**）。
+- **捆绑的运行时**（`resources/tools/`，不进 node_modules）：11-08 实测 python 包 545 个里有
+  3 个 **LGPL**（`rope` / `pytoolconfig` / `docstring_to_markdown`）—— LGPL 允许商业分发，
+  但**必须**：① 不修改源码；② 随包保留许可证文本；③ 保持可替换（独立目录/进程，不静态链接进本仓产物）。
+  `npm-global` 7 个包 0 copyleft；`ponytail` MIT；7-Zip / ffmpeg 等二进制按各自许可在
+  `THIRD_PARTY_NOTICES.md` 登记。
+- 新增依赖前先看 `license` 字段；升级把 license 换成 copyleft 的，**不许合**。
+
+### 12.5 漏洞扫描（每轮发版前跑一次）
+
+```bash
+npm audit --omit=dev          # 生产依赖（这才是打包进用户的）
+npm audit                     # 含 dev（一般只影响本机开发）
+```
+
+- 有补丁的（`fixAvailable: true`）：加 `overrides` 升到补丁版 —— 11-08 用
+  `follow-redirects ^1.16.2` / `qs ^6.17.1` 收掉 4 条 high/moderate（都来自飞书 SDK 的传递依赖）；
+- **无补丁**的（如 jimp 内嵌的 zod 3，advisory 要求 zod ≥4.6.6 而 jimp 锁 ^3）：
+  写明「为什么可以接受」（本地生成/校验自己产出的图片元数据，不接受网络输入）**而不是**默默放着；
+- Electron 主版本升级单独立项（`compareVersions` 在 `electron/updates.ts`，⛔ 别手写第二份）。
+
+### 12.6 函数中文注释（【295】，只许补不许缺）
+
+**口径**：**导出**函数上方必须有一段含中文的注释 —— 一句「干什么 / 边界在哪 / 什么时候别用」就够。
+⛔ 不是要求写长，⛔ 更不许写和代码不符的套话（错的注释比没有更糟）。
+内部函数不强制（很多就是三行 if），但**领域规则、坑、⛔ 禁忌**必须写在该函数或该段上方。
+
+**现状**：11-08 实测 2,079 个导出函数 / 923 个缺注释。守卫用**棘轮**（`BASELINE`）压住：
+新写的导出函数没注释 → 红；补了一批就把 `BASELINE` 改小（改大 = 回退，直接红）。
+⚠️ 收尾时**人工复核**：扫一遍 `git diff` 的新增注释，确认与实现一致（AI 很容易写出"看起来对"的废话）。
+
+### 12.7 三项检查什么时候做
+
+| 时机 | 做什么 |
+|---|---|
+| 每轮改动本身 | 新增文件必须接进入口；新增通道必须有消费者；新增依赖先看 license |
+| 每轮收尾（预检） | `node scripts/check-preflight.mjs`（组 14 自动跑） |
+| 发版前 | 上面 + `npm audit --omit=dev` + `THIRD_PARTY_NOTICES.md` 与新依赖对账 |
+| 每季度 | 全量复扫一次（死代码 / 死路由 / 许可 / 漏洞 / 导出注释缺口），把棘轮数字往下推 |

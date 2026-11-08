@@ -337,10 +337,14 @@
      ⛔ 出场不用它：本项目的浮层是条件渲染（关闭即卸载），没有退场画面可播。 */
   --ease-enter: cubic-bezier(0.22, 0.61, 0.36, 1);
   background: #fff;
+  /* ⛔ 11-08（用户令「删掉没用的字体」）：**不写 Inter** —— 本项目不打包任何字体，
+     Inter 既不是 Windows 系统字体、也没有 @font-face 声明 ⇒ 这条永远落空，只是噪音。
+     字体栈一律「系统字体 + 通用族」：不下载、不分发 ⇒ 零授权风险，也不占包体。 */
   font-family:
-    Inter,
-    Segoe UI,
+    "Segoe UI",
+    "Microsoft YaHei UI",
     system-ui,
+    -webkit-system-ui,
     sans-serif;
 }
 /* 手机/极窄窗：右侧调度轨在容器 <900px 时已隐藏，两侧不必再让 10%。 */

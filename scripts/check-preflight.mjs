@@ -80,6 +80,7 @@ const MODULES = [
   "11-config-keys",
   "12-ui-dialogs",
   "13-drama-gen",
+  "14-delivery-hygiene",   // 11-08：交付卫生（死代码 / 死路由 / 字体与许可）
   "15-ipc-loader",
   "16-settings-plugins",
   "17-scheduled-tasks",

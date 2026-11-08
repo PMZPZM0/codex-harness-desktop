@@ -305,6 +305,27 @@ Windows nuphus（+ UIA 清单）主 / computer-use 辅。mac 随包、Windows �
 - ⛔ **个性化皮肤已整体删除**（10-01 用户令；09-30 首版单品散绑 → 10-01 套装化 → 当天删）。守卫【234】是负向断言防复活（皮肤文件 / 换肤分支不许回来）；其中「胶囊开关全仓统一走共享 ToggleSwitch」一条与皮肤无关，**独立有效**（新开关不许写散装实现）。localStorage 旧状态由组件库页模块体清理（`ui-skin-state-v2` / `ui-skin-bindings-v1`）。
 - 守卫【235】7 条钉住组件库全部接线。
 
+## 🧹 交付卫生（2026-11-08 用户令，硬性，守卫组 14）
+
+> 全文在 `docs/ARCHITECTURE-RULES.md` §12；这里只放**改代码时当场要守**的部分。
+> ⛔ 用户原话：「AI 很容易漏掉这些，一定要记得人工复核」。
+
+- **前端不许有孤儿**：新增 `src/` 文件必须**同轮**接进入口（从 `src/main.tsx` 沿 import 可达）。
+  ⛔ 不留 demo / playground / 「复刻某某」的示例组件；板块对外出口 `features/xxx/index.ts`
+  没人 import 就说明外部绕过了出口 —— 让外部改走出口，或删掉它。【291】
+- **后端每条通道都要有消费者**：manifest ↔ preload ↔ 渲染层调用/主进程推送**四方对账**；
+  没消费者的算死路由，删或登记进守卫的 `UNWIRED` 棘轮名单（只许缩）。删一条 = handler +
+  manifest(`count`) + registry(`channels`/`count`) + `npm run gen:ipc`**四处一起删**。
+  ⛔ 危险动词（clear/delete/install/uninstall/exec/write）的通道优先查 —— 11-08 就删掉过
+  `favorites:clear`（不带 id、无确认、一把清空收藏，与【129】冲突）。【292】
+- **字体只许系统栈**：本仓**不分发任何字体文件**、不许远程 `@font-face`。`font-family` 只能写
+  系统字体 + 通用族（白名单在守卫里）。要带品牌字体 ⇒ 随包带 OFL/Apache 授权的 woff2 +
+  加白名单 + 写 `THIRD_PARTY_NOTICES.md`，三件一起做。⛔ 商用字体进仓 = 侵权。【293】
+- **许可与漏洞**：直接依赖必须可商用（MIT/Apache/ISC/BSD/OFL…），GPL/AGPL/SSPL/CC-BY-NC 零容忍；
+  发版前跑 `npm audit --omit=dev`，有补丁的用 `overrides` 收掉，无补丁的写明为什么可接受。【294】
+- **导出函数要有中文注释**：一句「干什么 / 边界 / 什么时候别用」即可，⛔ 不写与代码不符的套话。
+  守卫按棘轮压缺口（11-08 基准 923），补一批就把 `BASELINE` 改小。⚠️ 收尾**人工复核** diff。【295】
+
 ## 🎨 视觉规范（2026-09-26 立，守卫【170】）
 
 > **改 UI 前先读根目录 `DESIGN.md`**（色板 / 字体 / 组件约定 / 主题机制，全部实测自 `src/styles/`）。

@@ -13,7 +13,6 @@
 import { app } from "electron";
 import {
   addFavorite,
-  clearFavorites,
   deleteFavorites,
   favoriteMemoryLine,
   readFavorites,
@@ -107,17 +106,15 @@ export const favoritesFeature = defineFeature<null>({
     ipcHost.handle("favorites:update", (_event, input: { id: string; patch: Partial<FavoriteItem> }) =>
       updateFavorite(userDataDir(), String(input?.id ?? ""), input?.patch ?? {}));
     ipcHost.handle("favorites:delete", (_event, ids: string[]) => deleteFavorites(userDataDir(), Array.isArray(ids) ? ids : []));
-    ipcHost.handle("favorites:clear", () => clearFavorites(userDataDir()));
     ipcHost.handle("favorites:touch", (_event, id: string) => favoritesTouch(id));
     ipcHost.handle("favorites:to-memory", (_event, input: { ids: string[]; scope?: MemoryScope; workspace?: string }) => favoritesToMemory(input));
 
-    // 生命期：卸载时摘掉本域七条通道（收藏数据在磁盘上，不随卸载销毁 —— 那是用户数据）
+    // 生命期：卸载时摘掉本域六条通道（收藏数据在磁盘上，不随卸载销毁 —— 那是用户数据）
     ctx.effect(() => {
       ipcHost.removeHandler("favorites:list");
       ipcHost.removeHandler("favorites:add");
       ipcHost.removeHandler("favorites:update");
       ipcHost.removeHandler("favorites:delete");
-      ipcHost.removeHandler("favorites:clear");
       ipcHost.removeHandler("favorites:touch");
       ipcHost.removeHandler("favorites:to-memory");
     });

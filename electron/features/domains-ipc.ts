@@ -2,7 +2,7 @@
  * domains-ipc —— **宿主域清单与启停**（10-04 阶段 6）。
  *
  * 域：domains(3)
- * 通道：domains:list / domains:set-enabled / domains:reload-hint
+ * 通道：domains:list / domains:set-enabled
  *
  * ⛔ **为什么单独成一个域而不是塞进 `runtime`**：runtime 管的是"外部工具链的下载安装"
  *   （ffmpeg / python / git），本域管的是**宿主自己的插件域**。两者生命周期与风险都不同：
@@ -58,7 +58,7 @@ function registry(): RegistryApi {
 }
 import type { IpcHost } from "../ipc-host";
 
-const DOMAINS_CHANNELS = ["domains:list", "domains:set-enabled", "domains:reload-hint"];
+const DOMAINS_CHANNELS = ["domains:list", "domains:set-enabled"];
 
 export type DomainRow = {
   id: string;
@@ -216,22 +216,11 @@ export const domainsFeature = defineFeature<null>({
       };
     });
 
-    // 单独一条：让 UI 能把"要重启"这句话取自主进程，而不是硬编码在前端。
-    // ⛔ 文本必须讲清**为什么**（共享单例不能热卸载），否则用户会以为这是个 bug。
-    ipcHost.handle("domains:reload-hint", (_event, input: { id?: string }) => {
-      const id = String(input?.id ?? "");
-      const mounted = id ? registry().mountedDomainIds().includes(id) : false;
-      const blocked = id ? DOMAINS_NOT_HOT_UNLOADABLE.includes(id) : false;
-      return {
-        requiresRestart: blocked || !id,
-        text: !id
-          ? "指定一个域才能给出是否需要重启的判断"
-          : blocked
-            ? `「${id}」与其他功能共享内部单例（或持有子进程），卸载它会影响它们 —— 需重启后生效`
-            : "该域可在运行时卸载/挂载，通道立即生效（界面可能需要重载一次）",
-        domain: id,
-      };
-    });
+    /* ⛔⛔ 11-08 已删除 `domains:reload-hint`（曾经在这里）：全仓零调用 ——
+       渲染层 / 主进程 / 测试 / 脚本都没人取它，DomainsPanel 自己写死了「需重启才生效」的文案。
+       留着只是多一条可从渲染层触发的只读通道 ⇒ 按「后端死路由必须清」的规范删掉。
+       ⛔ 要恢复判断逻辑就**重写**（判断依据 = `DOMAINS_NOT_HOT_UNLOADABLE` + 当前挂载表，
+          两者都还在，`hotUnloadBlocked` 已经在上面的 set-enabled 回执里带出去了）。 */
 
     ctx.effect(() => {
       for (const ch of DOMAINS_CHANNELS) ipcHost.removeHandler(ch);

@@ -297,20 +297,6 @@ export type BroadcastPushDetail = {
   tags?: string[];
 };
 
-/** 从任意位置推一条播报（派发事件，由 `BroadcastHost` 统一消费）。 */
-export function pushBroadcastViaChannel(detail: BroadcastPushDetail): void {
-  try {
-    window.dispatchEvent(new CustomEvent<BroadcastPushDetail>(BROADCAST_CHANNEL, { detail }));
-  } catch {
-    /* 非浏览器环境（单测 / 纯逻辑导入）：静默忽略，不因为"没有 window"就抛 */
-  }
-}
-
-/** 仅诊断/守卫用：当前入库条数与去重集合大小。 */
-export function broadcastStats(): { history: number; seen: number; queued: number } {
-  return { history: history.length, seen: seen.size, queued: queue.length };
-}
-
 /* ── 面板开合的对外出口（供键盘/全局入口调用；⛔ 不给外部直接改 open） ── */
 export function toggleBroadcastPanel(threadId = ""): void {
   setBroadcastOpen(!open, threadId);

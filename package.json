@@ -291,6 +291,8 @@
     }
   },
   "overrides": {
-    "dompurify": "^3.4.17"
+    "dompurify": "^3.4.17",
+    "follow-redirects": "^1.16.2",
+    "qs": "^6.17.1"
   }
 }

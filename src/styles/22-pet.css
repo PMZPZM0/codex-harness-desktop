@@ -26,7 +26,8 @@ html[data-pet-window="activity"] #root {
   height: 100%;
   user-select: none;
   cursor: default;
-  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  /* ⛔ 11-08：不写未随包的 Inter（见 01-base-and-chrome.css 同段说明）。 */
+  font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
 }
 
 /* 宠物舞台：占满余下空间，精灵**贴底居中**（脚踩窗口底边，缩放时向上长） */
@@ -282,7 +283,8 @@ html[data-pet-window="activity"] #root {
   padding: 12px;
   box-sizing: border-box;
   overflow: hidden;
-  font-family: Inter, "Segoe UI", system-ui, sans-serif;
+  /* ⛔ 11-08：不写未随包的 Inter（见 01-base-and-chrome.css 同段说明）。 */
+  font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
   user-select: none;
 }
 .pet-activity-card {

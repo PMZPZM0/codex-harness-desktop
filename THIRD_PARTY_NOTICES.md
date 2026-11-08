@@ -116,3 +116,65 @@
 | 本应用关系 | **不打包、不分发浏览器本体**。仅检测本机 `ego-browser` CLI、打开官方下载页、调用 `ego-browser nodejs` / `ego-browser upgrade`，并把官方 `ego-browser` 技能镜像到 Codex 技能目录。 |
 | 更新源 | Ego 官方更新器（`ego-browser upgrade`）从官方 CDN 检查/下载；截至 2026-10-22 **没有公开的国内镜像或换源参数**，本应用不代理大文件。 |
 | 数据 | 用户的浏览数据、Cookie 等由 Ego Lite 保存在本机；本应用不读取其浏览器数据。 |
+
+---
+
+## 附：依赖许可与字体盘点（2026-11-08 全量实测，守卫【293】【294】）
+
+> 口径：`package.json` 的直接依赖读各自 `package.json` 的 `license` 字段；传递依赖递归
+> `node_modules` 去重；捆绑运行时扫 `resources/tools/`（不进 npm）。命令与判据见
+> `docs/ARCHITECTURE-RULES.md` §12.3–12.4。
+
+### A. 字体
+
+**本应用不分发任何字体文件**：`src/` 下 0 个 `.woff/.woff2/.ttf/.otf`，无 `@font-face`，
+`index.html` 的 CSP 为 `font-src 'self' data:`。界面全部使用**系统字体栈**：
+
+| 用途 | 字体栈 | 说明 |
+|---|---|---|
+| 正文 | `"Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif` | Windows 自带 / 系统通用族 |
+| 等宽 | `"Cascadia Code", Consolas, ui-monospace, monospace` | Windows Terminal 自带 / 系统通用族 |
+
+⇒ 不下载、不分发、不嵌入 ⇒ **无字体授权风险**，也不占包体。
+（11-08 已删掉原先写的 `Inter`：未随包、无 `@font-face`、Windows 也没有 ⇒ 永远不会命中。）
+
+### B. npm 依赖（直接 49 个 / 含传递 873 个包）
+
+| 许可 | 直接依赖数 |
+|---|---|
+| MIT | 43 |
+| Apache-2.0 | 5 |
+| ISC | 1 |
+| **GPL / AGPL / SSPL / CC-BY-NC** | **0** |
+
+含传递依赖全量扫描：873 个去重包中 **copyleft 0 个**。无 `license` 字段但实际有许可文件的两个包
+已逐个核对：`exif-parser@0.1.12`（MIT）、`khroma@2.1.0`（MIT）。
+
+### C. 捆绑运行时（`resources/tools/`）
+
+| 组件 | 许可 | 备注 |
+|---|---|---|
+| Node.js / Python | MIT / PSF-2.0 | 官方发行版 |
+| `npm-global` 下 7 个包 | 均 MIT/Apache/ISC | copyleft 0 |
+| `ponytail-plugin`（@dietrichgebert/ponytail 5.3.3） | MIT | 技能插件 |
+| Python 站点包（545 个） | 绝大多数 MIT/BSD/Apache/PSF | 见下方 LGPL 说明 |
+| `rope` 1.15.2 / `pytoolconfig` 1.3.1 / `docstring_to_markdown` 0.17 | **LGPL-3.0-or-later / LGPL-3.0 / LGPL-2.1-or-later** | 见下方 LGPL 说明 |
+| 7-Zip（`sevenzip/`） | **LGPL-2.1-or-later**（含 unRAR 限制条款） | 见下方 LGPL 说明 |
+| 其余命令行工具（ripgrep / yt-dlp / jq / cmake / ninja / uv / cloudflared / vscode-cli / platform-tools / 脚本运行时） | MIT / Unlicense / MIT / BSD-3 / Apache-2.0 / Apache-2.0 / Apache-2.0 / MIT / Apache-2.0 / MIT | 各自保留上游 LICENSE |
+
+**LGPL 组件说明（可商业分发的前提，缺一不可）**：
+
+1. **未修改源码**：本仓只做调用/打包，不改上述 LGPL 组件；
+2. **随包保留许可证文本**：各组件目录内自带 LICENSE/COPYING，安装包原样携带；
+3. **保持可替换**：它们都是**独立可执行文件或独立目录**（`resources/tools/<name>`），
+   不静态链接进本仓产物，用户可用同版本文件替换 —— 符合 LGPL 的"可替换"要求。
+
+### D. 漏洞扫描（2026-11-08）
+
+`npm audit --omit=dev` 实测：修复前 36 条（high 30 / moderate 1 / low 5），修复后 **34 条**：
+- ✅ 已用 `overrides` 收掉：`follow-redirects ^1.16.2`、`qs ^6.17.1`（都经飞书 SDK 传递进来）；
+- ⚠️ 仍存在且**经评估可接受**：`jimp` 内嵌 `zod@3.25.76`（advisory 要求 zod ≥4.6.6，jimp 锁 ^3）。
+  影响面 = 校验「超大受限集合」时内存耗尽；本应用的图片处理输入是**本机图片**（扩展名白名单 + ≤128MB），
+  不接受网络输入，且 jimp 只在用户主动编辑图片时加载。等 jimp 升级 zod 4 后随之消失。
+- ⚠️ `katex <0.18.2`（low，原型污染绕过 trust 限制）：修复需 mermaid 12.3.0 大版本，
+  渲染的是**我们自己生成的 markdown**（不渲染用户提交的不可信 KaTeX），暂缓跟随。

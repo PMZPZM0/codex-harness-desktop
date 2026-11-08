@@ -278,13 +278,6 @@ export function runningPollTasksOfThread(threadId: string): PollTask[] {
   return snapshot.filter((task) => task.threadId === id && task.status === "polling");
 }
 
-/** 切会话/清场用（不主动调；留作拓展接口）。 */
-export function clearPollTasks(threadId?: string): void {
-  tasks = threadId ? tasks.filter((task) => task.threadId !== threadId) : [];
-  emit();
-  ensureWatchdog();
-}
-
 /* ── 长命令 / 长工具调用 → 后台任务（10-09 用户追加：「长命令、长工具调用也算一条后台任务」）────
    ⛔ 为什么要**阈值**（不是每个工具调用都弹）：一次 `read` / `ls` 也就几十毫秒，全弹进胶囊
       等于给每个工具调用挂个转圈 —— 用户要的是"哪些活儿还在跑"，不是"刚刚跑了什么"。

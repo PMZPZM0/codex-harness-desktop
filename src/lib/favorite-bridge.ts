@@ -34,11 +34,6 @@ export function setFavoriteHandler(fn: FavoriteHandler | null): void {
   handler = fn;
 }
 
-/** 是否已有处理器（设置页/菜单用来判断「能不能收藏」）。 */
-export function hasFavoriteHandler(): boolean {
-  return handler !== null;
-}
-
 /** 发起一次收藏。返回 false = 状态层还没就绪（调用方应给出可见提示）。 */
 export function requestFavorite(request: FavoriteRequest): boolean {
   if (!handler) return false;

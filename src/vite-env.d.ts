@@ -735,8 +735,6 @@ interface Window {
     dingtalkLogout(): Promise<{ ok: boolean }>;
     /* 10-04 阶段 6 宿主域清单（启用/停用状态 + 是否 essential） */
     domainsList(): Promise<{ domains: Array<{ id: string; mounted: boolean; disabled: boolean; essential: boolean }>; essentialDomains: string[]; requiresRestart: boolean }>;
-    /* 10-04 「重启才生效」的话术由主进程出，禁在前端硬编码 */
-    domainsReloadHint(): Promise<{ requiresRestart: boolean; text: string }>;
     /* 10-04 阶段 6 停用/启用宿主域（下次启动生效，essential 域拒绝） */
     domainsSetEnabled(input: { id: string; enabled: boolean }): Promise<{ ok: boolean; error?: string; id?: string; enabled?: boolean; requiresRestart?: boolean }>;
     /* 把二进制素材（配音 WAV / 生成图）按字节写进工作区 .drama-canvas/assets/；工作区掉出可信根（会话已关/重启）时回退应用数据目录并置 fallback=true（09-29 修「参考图传不了」）。⛔ 渲染层唯一的写入通道 fs:write 是 utf8 字符串写，写不了二进制，WAV 必须走这里 */
@@ -763,7 +761,6 @@ interface Window {
     listExpertMarketPackages(input?: { page?: number; pageSize?: number; query?: string }): Promise<{ items: { slug: string; displayName: string; summary: string; scene: string; subScene: string; children: string[] }[]; total: number; page: number; pageSize: number }>;
     openExternal(url: string): Promise<void>;
     addFavorite(input: Partial<FavoriteItem>): Promise<{ items: FavoriteItem[]; item: FavoriteItem }>;
-    clearFavorites(): Promise<{ items: FavoriteItem[]; removed: number }>;
     /* 批量删除只认显式 id 列表（不提供隐式删全部） */
     deleteFavorites(ids: string[]): Promise<{ items: FavoriteItem[]; removed: number }>;
     listFavorites(): Promise<FavoriteItem[]>;

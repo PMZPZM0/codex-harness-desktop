@@ -213,6 +213,3 @@ export function TeamQueueStack({ app, threads, reloadKey, onNotice }: {
     </div>
   );
 }
-
-/** 给视图用的口径：这条排队消息的正文（主对话同一函数，⛔ 别自己拼 part 数组）。 */
-export const queueTextOf = (item: QueueItem) => inputText(item.input);

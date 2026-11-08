@@ -43,11 +43,6 @@ export function themeLabelOf(id: string): string {
   return hit?.label ?? id;
 }
 
-/** 代码高亮主题的显示名 */
-export function codeThemeLabelOf(id: string): string {
-  return codeThemes.find((entry) => entry.id === id)?.label ?? id;
-}
-
 /* ── 涟漪圆心 = 最近一次按下指针的位置（点哪从哪扩散） ─────────────────────
    ⛔ 用 capture 阶段监听：调用方的按钮常带 stopPropagation，冒泡阶段可能收不到。
    ⛔⛔ **必须在模块加载时就挂上**，不能等到点击时才挂：`pointerdown` 早于 `click`，

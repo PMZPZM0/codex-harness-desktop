@@ -26,6 +26,8 @@ import { Plus, ShieldCheck } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SearchField } from "../../components/SettingsWidgets";
 import { MarketLogo, PluginInstallModal } from "../skills-market";
+/* 官方市场简介是英文的（接口只回原文）⇒ 用人工整理的中文表兜一层；未收录的 slug 回退原文。 */
+import { CODEX_MARKET_ZH, zhCategory } from "../../lib/codex-market-zh";
 
 type Props = { onResourcesChanged?: () => void; /** 工具条最右格（10-27：插件页把「刷新」放进卡里，三个视图同一位置） */ refreshSlot?: ReactNode; /** 来源 tab 行（10-27：挪进卡片顶部，三个视图同一位置） */ tabsSlot?: ReactNode };
 type Category = { key: string; displayName: string; count: number };
@@ -156,11 +158,13 @@ export function CodexOfficialMarketSection({ onResourcesChanged, refreshSlot, ta
             >{busy ? <Spinner /> : <Plus size={14} />}</button>
           </div>
           <strong title={plugin.slug}>{plugin.displayName}</strong>
-          <p>{plugin.description}</p>
+          {/* ⛔ 11-08：中文表此前一直没接线（72 行人工整理的简介没有任何消费者）。
+             口径：**按 slug 查，查不到回退接口原文** —— 别拿 categoryZh 那套反推。 */}
+          <p>{CODEX_MARKET_ZH[plugin.slug] ?? plugin.description}</p>
           {/* ⛔ 鉴权提示不许省：官方 65 条全部要配凭据，只报「已安装」等于骗人 */}
           <em className="codex-official-market-auth"><ShieldCheck size={12} />{plugin.authNote}</em>
           <footer>
-            <span>{plugin.categoryZh ?? plugin.category}</span>
+            <span>{plugin.categoryZh ?? zhCategory(plugin.category)}</span>
             {plugin.version && <span title="上游版本">v{plugin.version}</span>}
             {!plugin.installable && <span className="codex-official-market-external">外部源</span>}
             <a href={plugin.homepage} onClick={(event) => { event.preventDefault(); void window.codex.openExternal(plugin.homepage); }}>查看来源</a>

@@ -22,7 +22,6 @@ export function contentOffsetTop(el: HTMLElement, scroller: HTMLElement) {
    ⛔ 只拦"自动跳底"，不拦用户自己点「回到底部」（那个走 scrollToOffsetInstant）。 */
 let userDetached = false;
 export function setScrollUserDetached(detached: boolean) { userDetached = detached; }
-export function isScrollUserDetached() { return userDetached; }
 
 /* ── 历史水合的锚点钉住（10-21 虚拟滚动条）──────────────────────────────
    续载会在上方插入内容，同时顶部的「未加载历史占位区」变矮；两个改动都要靠

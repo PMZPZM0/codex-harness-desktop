@@ -183,8 +183,9 @@ import { ImageLabBridge } from "../image-lab";
    （它订阅模块级总线，挂两次会念两遍）；通话中由 VoiceCallFloat 接管，它自己避让。 */
 import { VoiceAnnounceBridge } from "../voice-announce";
 /* 悬浮播报（10-31）：群事件 / 语音播报 / 系统提示 / 回合异常 / 等待确认 统一播报中心 */
-import { BroadcastHost } from "../event-broadcast/BroadcastHost";
-import { BroadcastCollector } from "../event-broadcast/collector";
+/* ⛔ 11-08：改从板块**对外出口**导入（此前直接进子文件 ⇒ `event-broadcast/index.ts` 这个
+   公共出入口成了孤儿，而它正是「别处要推一条播报」的唯一入口）。⛔ 别再加回子路径。 */
+import { BroadcastCollector, BroadcastHost } from "../event-broadcast";
 import { PollBridge } from "../polling";
 import { WallpaperLayer } from "../wallpaper";
 /* HTML 实时预览（10-18 独立板块）：写 .html ⇒ 自动开右栏浏览器 + 加宽 + 文件变更实时重载。

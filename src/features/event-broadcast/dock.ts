@@ -198,11 +198,3 @@ export function clampIntoStage(
   const maxY = Math.max(minY, stage.bottom - half - 2);
   return { x: Math.max(minX, Math.min(maxX, point.x)), y: Math.max(minY, Math.min(maxY, point.y)) };
 }
-
-/** 面板展开方向（依吸附边决定，永远朝聊天区内侧长）。 */
-export function panelSideOf(edge: DockEdge): "left" | "right" | "top" | "bottom" {
-  if (edge === "left") return "right";
-  if (edge === "right") return "left";
-  if (edge === "top") return "bottom";
-  return "top";
-}
