@@ -22,6 +22,14 @@ export interface TeamMemberLite {
   avatar: string;
 }
 
+/** 11-08：一回合的 token 用量（引擎 `thread/tokenUsage/updated` 的 last 桶；老日志为空）。 */
+export interface GroupMessageUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  totalTokens: number;
+}
+
 /** 一条群消息日志（P0b）：真身 = threadId（伙伴子会话）或 `group:<群id>`（人自己说的）。 */
 export interface GroupLogMessage {
   id: string;
@@ -36,6 +44,8 @@ export interface GroupLogMessage {
   card: unknown;
   /** @ 了谁（成员 id 数组） */
   mentions: string[];
+  /** 11-08：这一回合的 token 用量（用户消息 / 老日志为空） */
+  usage?: GroupMessageUsage | null;
 }
 
 export interface TeamGuard {

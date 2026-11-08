@@ -47,6 +47,7 @@ import {
   teamMemberIdOf,
   textsAreNearDuplicate,
 } from "../../src/lib/team-models.mjs";
+import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsableFor, type GroupUsage } from "../../src/lib/team-usage.mjs";
 import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
 import {
   MAX_GROUP_SCHEDULES,
@@ -279,6 +280,73 @@ async function logUsageTo(entry: Record<string, unknown>): Promise<{ ok: boolean
 /** 定时任务在群日志里的作者 id（渲染层据此显示「定时任务」而不是"我"）。 */
 export const AUTOMATION_ACTOR_ID = "automation";
 
+/* ── 群消息的 token 用量（11-08 Optional 收口）────────────────────────────────
+   主对话的用量来自引擎 `thread/tokenUsage/updated` 的 **last 桶**；群聊同一份口径。
+   ⛔⛔ 只在回合内挂监听有两个漏口：① 事件若排在 `turn/completed` 之后，`finally` 已摘监听；
+   ② 消息已落盘、界面却永远没有页脚。⇒ 用一个**常驻**监听（首次派活时安装）：
+     · 运行中：仍走本轮的 liveUsage（最快）；
+     · 落盘前：用量已到就带上（`talkUsageFor`，限本轮之后，避免拿上一轮的）；
+     · 落盘后：用量才到 ⇒ `patchLatestTalkMessageUsage` 把最后一条同会话的伙伴消息补上并广播 rows。
+   纯判定（事件解析 / 该补哪条）在 `src/lib/team-usage.mjs`（可单测），这里只做 IO 与广播。 */
+const TALK_USAGE_TTL = GROUP_USAGE_TTL_MS;
+const talkUsageByThread = new Map<string, { usage: GroupUsage; at: number }>();
+/* 刚收尾的回合（threadId → 群 + 收尾时刻）：用量只在**收尾之后**才补写消息，
+   ⛔ 运行中不补 —— 否则会把本轮用量挂到中间那条 group_say 上（最终回复自己也带一份 = 显示两遍）。 */
+const finishedTalkRuns = new Map<string, { groupId: string; at: number }>();
+
+function rememberTalkUsage(threadId: string, usage: GroupUsage): void {
+  talkUsageByThread.set(threadId, { usage, at: Date.now() });
+  if (talkUsageByThread.size <= 300) return;
+  /* 有界：超了就丢最旧的一条（只是补写用量用的缓存，不是账本）。 */
+  let oldestKey = "";
+  let oldestAt = Number.POSITIVE_INFINITY;
+  for (const [key, value] of talkUsageByThread) {
+    if (value.at < oldestAt) { oldestAt = value.at; oldestKey = key; }
+  }
+  if (oldestKey) talkUsageByThread.delete(oldestKey);
+}
+
+/** 收尾落盘时取用量：优先本轮 live 捕获，其次常驻缓存（⛔ 早于本轮开跑的缓存一律不算）。 */
+function talkUsageFor(threadId: string, since: number): GroupUsage | null {
+  return usageUsableFor(talkUsageByThread.get(threadId), since);
+}
+
+let usageWatcherInstalled = false;
+/** 常驻监听（幂等）：用量事件无论早于还是晚于消息落盘，都能落到那条群消息上。 */
+function installTalkUsageWatcher(): void {
+  if (usageWatcherInstalled) return;
+  usageWatcherInstalled = true;
+  server.on("event", (event: any) => {
+    const hit = usageFromTokenEvent(event);
+    if (!hit) return;
+    rememberTalkUsage(hit.threadId, hit.usage);
+    const run = finishedTalkRuns.get(hit.threadId);
+    if (run && Date.now() - run.at <= TALK_USAGE_TTL) {
+      void patchLatestTalkMessageUsage(run.groupId, hit.threadId, hit.usage).catch(() => undefined);
+    }
+  });
+}
+
+/** 用量事件晚于消息落盘（引擎时序可能排在本轮收尾之后）：补到最后一条同会话的伙伴消息上。 */
+async function patchLatestTalkMessageUsage(groupId: string, threadId: string, usage: GroupUsage): Promise<void> {
+  const now = Date.now();
+  const store = readStore();
+  const list = store.messages[groupId] ?? [];
+  const target = pickUsagePatchIndex(list, threadId, now, TALK_USAGE_TTL);
+  if (target < 0) return;
+  const row = list[target];
+  const rows = await mutateStore<ReturnType<typeof projectGroupLog> | null>((s) => {
+    const cur = s.messages[groupId] ?? [];
+    const idx = cur.findIndex((m) => String((m as { id?: unknown })?.id ?? "") === String((row as { id?: unknown })?.id ?? ""));
+    const base = idx >= 0 ? cur[idx] : null;
+    if (!base || base.usage) return { store: s, out: null };
+    const next = cur.slice();
+    next[idx] = { ...base, usage };
+    return { store: { ...s, messages: { ...s.messages, [groupId]: next } }, out: projectGroupLog(next) };
+  });
+  if (rows) broadcastHarnessEvent({ type: "harness-team-messages", groupId, rows } as never);
+}
+
 /**
  * 派活目标（群成员 / 专家团成员）。
  *
@@ -450,6 +518,8 @@ async function runDispatchRounds(
   ): Promise<void> => {
     if (!partner || ranIds.has(partner.id)) return;
     ranIds.add(partner.id);
+    /* 常驻用量监听（幂等）：本轮之后的用量事件即使晚到，也能补到落盘的那条消息上。 */
+    installTalkUsageWatcher();
     const startedAt = Date.now();
     let chars = 0;
     let threadId = "";
@@ -464,6 +534,9 @@ async function runDispatchRounds(
     const runId = `${partner?.id ?? ""}:${startedAt}`;
     /* 11-08：本回合 token 用量（与主对话页脚一致；引擎 thread/tokenUsage/updated 的 last 桶）。 */
     let liveUsage: { inputTokens: number; outputTokens: number; cachedTokens: number; totalTokens: number } | null = null;
+    /* 落盘那一刻是否已把用量写进消息（false ⇒ 收尾再补一次，防事件卡在 append 与 finally 之间）。 */
+    let usageWritten: boolean | null = null;
+    let wroteMessage = false;
     try {
       /* ⛔⛔ 11-07 用户令：群聊走**独立通道**。这里给成员的是「群里有人对你说了一句」，
          不是任务派发：不注入 groupContextBlock 的协作协议、不调 runDelegatedTask、
@@ -504,20 +577,8 @@ async function runDispatchRounds(
           if (String(p.threadId ?? "") !== liveThreadId) return;
           const method = String(event.method ?? "");
           if (method === "thread/tokenUsage/updated") {
-            const raw = (p as { tokenUsage?: any }).tokenUsage;
-            const bucket = raw?.last ?? raw?.lastTokenUsage ?? raw?.last_token_usage ?? raw?.info?.last_token_usage ?? null;
-            if (bucket) {
-              const num = (...keys: string[]) => {
-                for (const key of keys) { const value = Number(bucket?.[key]); if (Number.isFinite(value)) return value; }
-                return 0;
-              };
-              liveUsage = {
-                inputTokens: num("inputTokens", "input_tokens", "input"),
-                outputTokens: num("outputTokens", "output_tokens", "output"),
-                cachedTokens: num("cachedInputTokens", "cached_input_tokens", "cached"),
-                totalTokens: num("totalTokens", "total_tokens", "total"),
-              };
-            }
+            const hit = usageFromTokenEvent(event);
+            if (hit) liveUsage = hit.usage;
             return;
           }
           if (method === "item/agentMessage/delta") {
@@ -565,6 +626,8 @@ async function runDispatchRounds(
         .filter((row) => String((row as { authorId?: unknown })?.authorId ?? "") === partner.id && Number((row as { at?: unknown })?.at ?? 0) >= startedAt)
         .map((row) => String((row as { text?: unknown })?.text ?? ""));
       const duplicated = spokenDuringRun.some((text) => textsAreNearDuplicate(text, output));
+      /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
+      const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
       const wrote = clearedDuringRun || duplicated ? { ok: true } as { ok: boolean; error?: string } : await appendMessageTo(group.id, {
         authorId: partner.id,
         authorKind: "bot",
@@ -572,8 +635,10 @@ async function runDispatchRounds(
         threadId,
         text: output || "（没有返回文本内容）",
         via: caller ? { memberId: caller.id, name: caller.name } : null,
-        ...(liveUsage ? { usage: liveUsage } : {}),
+        ...(usageForMessage ? { usage: usageForMessage } : {}),
       });
+      usageWritten = Boolean(usageForMessage);
+      wroteMessage = !clearedDuringRun && !duplicated && Boolean(wrote.ok);
       okFlag = Boolean(wrote.ok);
       if (!wrote.ok) {
         errMsg = wrote.error || "产出没能写进群聊记录";
@@ -621,7 +686,18 @@ async function runDispatchRounds(
       options.onPhase?.("finished", partner, { ok: false, error: errMsg });
     } finally {
       if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
-      if (liveThreadId) broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
+      if (liveThreadId) {
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
+        finishedTalkRuns.set(liveThreadId, { groupId: group.id, at: Date.now() });
+        if (finishedTalkRuns.size > 200) {
+          const oldest = [...finishedTalkRuns.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+          if (oldest) finishedTalkRuns.delete(oldest[0]);
+        }
+        /* 卡在 append 与 finally 之间的用量：消息已落盘但从没带上 ⇒ 补到最后那条上。 */
+        if (wroteMessage && usageWritten === false && liveUsage) {
+          void patchLatestTalkMessageUsage(group.id, liveThreadId, liveUsage).catch(() => undefined);
+        }
+      }
       const tokens = delegateRegistry?.tokensOf(threadId) ?? null;
       await logUsageTo({
         groupId: group.id,

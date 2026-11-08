@@ -847,7 +847,7 @@ const catalog = [
     const rcEq = codeOnly(read("src/features/shared/ReasoningCard.tsx"));
     const overlayEq = codeOnly(read("src/features/harness-team/index.tsx"));
     ok(/team-msg__usage/.test(viewEq) && /usageInputTokens/.test(viewEq) && /row\.usage/.test(viewEq)
-      && /\.\.\.\(liveUsage \? \{ usage: liveUsage \}/.test(ipcEq)
+      && /\.\.\.\((?:liveUsage|usageForMessage) \? \{ usage: (?:liveUsage|usageForMessage) \}/.test(ipcEq)
       && /usage: msg\?\.usage \?\? null/.test(modelsEq),
       "群消息页脚展示 token 用量（与主对话同口径；主进程落消息时带 usage，老日志为空）");
     ok(/turnActive=\{running\}/.test(procEq) && /reasoningFloatHost=/.test(procEq)
@@ -946,6 +946,16 @@ const catalog = [
     ok(/const threadId = options\.threadId\s*\|\| \(await ensureTalkThread/.test(chanLive)
       && /\.\.\.\(liveThreadId \? \{ threadId: liveThreadId \}/.test(ipcLive),
       "已 ensure 的会话 id 直接交给 runTalkTurn（每回合不再多一次 thread/resume）");
+    /* ⛔ 11-08 Optional 收口：用量页脚不能「事件来晚就没有」 —— 常驻监听 + 落盘前缓存 + 收尾/迟到补写。 */
+    ok(/usageFromTokenEvent/.test(ipcLive)
+      && /installTalkUsageWatcher\(\);/.test(ipcLive)
+      && /const usageForMessage = liveUsage \?\? talkUsageFor\(threadId, startedAt\)/.test(ipcLive)
+      && /finishedTalkRuns\.set\(liveThreadId/.test(ipcLive)
+      && /async function patchLatestTalkMessageUsage\(groupId: string, threadId: string, usage: GroupUsage\)/.test(ipcLive)
+      && /pickUsagePatchIndex\(list, threadId, now, TALK_USAGE_TTL\)/.test(ipcLive)
+      && /patchLatestTalkMessageUsage\(run\.groupId, hit\.threadId, hit\.usage\)/.test(ipcLive)
+      && /usageWritten === false && liveUsage/.test(ipcLive),
+      "用量页脚兜底：常驻 tokenUsage 监听 + 落盘前缓存 + 收尾/迟到补写（⛔ 事件晚到也补得上，且运行中不挂到中间消息上）");
   }
 }
 
