@@ -23,6 +23,7 @@ export function shortId(id: string): string {
  */
 type MemberLike = { id: string; kind?: string; name?: string; targetKind?: string; targetKey?: string };
 
+/** 生成 @ 候选表：先列群成员本人，再按团展开其成员（id 走 `authorIdOf` 合成）；名字一律由调用方的 `nameOf` 给。 */
 export function buildMentionCandidates<M extends MemberLike>(
   members: ReadonlyArray<M>,
   nameOf: (member: M) => string,
