@@ -63,7 +63,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, type TalkMember } from "./group-talk";
+import { runTalkTurn, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -398,6 +398,20 @@ async function runDispatchRounds(
     group: group as unknown as Record<string, unknown>,
     catalog,
   };
+  /* ⛔ 11-08 用户问「群成员，都能看到群会话内容吗」：群里最近的消息由**这一份**读出，
+     既给每轮注入的共享上下文、也给 group_read 工具 —— 两处口径必须同一份，否则模型
+     主动读到的与默认看到的会对不上。纯读盘、不写、不联网。 */
+  const readGroupHistory = (limit: number): { speaker: string; text: string }[] => {
+    const rows = readStore().messages?.[group.id] ?? [];
+    return rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
+      const m = raw as unknown as Record<string, unknown>;
+      const authorId = String(m.authorId ?? "");
+      return {
+        speaker: roster.find((x) => x.id === authorId)?.name ?? (authorId === "local-user" ? "我" : authorId),
+        text: String(m.text ?? ""),
+      };
+    });
+  };
   /* 工具 hooks：模型在会话里主动调 group_say(to=名字) ⇒ 这里把话投递进对方会话。 */
   setGroupTalkHooks(group.id, {
     append: (gid: string, entry: Record<string, unknown>) => appendMessageTo(gid, entry),
@@ -410,17 +424,7 @@ async function runDispatchRounds(
       void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
       return Promise.resolve({ ok: true });
     },
-    readMessages: (limit: number) => {
-      const rows = readStore().messages?.[group.id] ?? [];
-      return Promise.resolve(rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
-        const m = raw as unknown as Record<string, unknown>;
-        const authorId = String(m.authorId ?? "");
-        return {
-          speaker: roster.find((x) => x.id === authorId)?.name ?? (authorId === "local-user" ? "我" : authorId),
-          text: String(m.text ?? ""),
-        };
-      }));
-    },
+    readMessages: (limit: number) => Promise.resolve(readGroupHistory(limit)),
     members: () => Promise.resolve(roster.map((m) => ({ id: m.id, name: m.name, profession: m.targetProfession }))),
   });
   const runOne = async (
@@ -444,7 +448,15 @@ async function runDispatchRounds(
       const fromTalk: TalkMember = caller
         ? { id: caller.id, name: caller.name }
         : (source === "automation" ? { id: AUTOMATION_ACTOR_ID, name: "定时任务" } : { id: "local-user", name: "我" });
-      const query = buildTalkInput(talkOptions as Parameters<typeof buildTalkInput>[0], partner as TalkMember, fromTalk, bodyText);
+      /* ⛔ 每轮都重读群日志：接力到第 2 跳时，前面那位刚说的话已经在群里了，
+         不重读就等于「后来的人看不到前面人说了什么」——正是成员之间接不上话的根因。 */
+      const query = buildTalkInput(
+        talkOptions as Parameters<typeof buildTalkInput>[0],
+        partner as TalkMember,
+        fromTalk,
+        bodyText,
+        readGroupHistory(TALK_HISTORY_LIMIT),
+      );
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
       options.onPhase?.("started", partner, {});

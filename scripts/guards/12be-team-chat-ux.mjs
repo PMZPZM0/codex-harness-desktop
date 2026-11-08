@@ -588,9 +588,18 @@ const catalog = [
     && !/team-composer__pane-flyout/.test(codeOnly(composer))
     && /\.team-composer__files-pop \{[^}]*width: min\(360px/.test(read("src/styles/61-team-mode.css")),
     "引用文件面板贴着 + 图标弹（自适应翻上/翻下 + 视口钳制，⛔ 不再以输入卡为锚）");
-  ok(/team-skill-dialog/.test(composer) && /createPortal\(/.test(composer) && /toggleSkill/.test(composer)
-    && /\.team-skill-dialog \{[^}]*width: min\(560px/.test(read("src/styles/61-team-mode.css")),
-    "引用技能是居中弹窗（可多选，⛔ 不再是输入框里的内嵌列表）");
+  /* ⛔⛔ 11-08 用户实测（截图）：「选中一个技能弹窗就关了、没有选中反馈」+「技能弹窗搞这么远干什么」——
+     ① 面板必须登记进「点外部才关」的豁免名单（漏登记 ⇒ 点行的 mousedown 被当成外部点击、
+        click 之前就被卸载 ⇒ 选中回调根本没跑）；
+     ② 位置贴着 + 图标弹（useAnchoredPopover），⛔ 不再是居中弹窗。 */
+  ok(/team-skill-dialog__item/.test(composer) && /createPortal\(/.test(composer) && /toggleSkill\(item\)/.test(composer)
+    && /skillsPopRef\.current\?\.contains\(target\)/.test(composer)
+    && /useAnchoredPopover\(plusView === "skills"/.test(composer)
+    && /team-composer__skill-pop/.test(composer)
+    && /\.team-composer__skill-pop \{[^}]*width: min\(420px/.test(read("src/styles/61-team-mode.css"))
+    && !/team-skill-backdrop/.test(codeOnly(composer))
+    && !/team-skill-dialog \{[^}]*width: min\(560px/.test(read("src/styles/61-team-mode.css")),
+    "引用技能贴着 + 图标弹、可多选（点行只切换不关窗；面板在点外部豁免名单里，11-08 用户实测）");
   /* ⛔⛔ 11-08 用户令：「弹窗放到 + 号和 @ 图标上面自适应展示」——
      加号菜单贴着 + 图标弹（portal + useAnchoredPopover），⛔ 不再是居中弹窗 / 输入卡上的浮层。 */
   ok(/composer-quick-pop/.test(composer) && /useAnchoredPopover\(plusOpen/.test(composer)
@@ -760,6 +769,43 @@ const catalog = [
     && /harness-team:set-reply-mode/.test(read("electron/features/harness-team-ipc.ts"))
     && /harnessTeamSetReplyMode/.test(read("electron/preload.ts")),
     "回复模式落群 JSON（通道 + 归一化齐；⛔ 不存 localStorage）");
+}
+
+/* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────
+   改之前：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史**不注入**，
+   只有模型主动调 group_read 才能读 12 条 ⇒ 别人之间没 @ 它的对话它一概看不见，接不上话。
+   改之后：最近 20 条默认注入**每一轮**（每一跳重读），所有成员拿到同一份共享上下文。
+   ⛔ 两条硬约束：历史必须在 SYSTEM TASK 壳的 `=== END ===` **之后**（否则会糊进气泡），
+      且必须用 `【群聊上下文 · …】…【群聊上下文结束】` 信封（四处剥离器按它剥）。 */
+{
+  const talk = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const outlet = codeOnly(read("electron/features/group-talk/index.ts"));
+  ok(/export const TALK_HISTORY_LIMIT = 20;/.test(talk) && /export function groupHistoryBlock/.test(talk)
+    && /TALK_HISTORY_CHAR_MAX = 400/.test(talk) && /TALK_HISTORY_TOTAL_MAX = 8000/.test(talk),
+    "共享上下文是**有界**的：最近 20 条 / 每条 400 字 / 总量 8000 字（⛔ 不裁剪会把整本群日志每轮重复喂进去）");
+  ok(/【群聊上下文 · 群里最近的消息】/.test(talk) && /【群聊上下文结束】/.test(talk),
+    "用项目统一的 `【群聊上下文 · …】` 信封：harness-block-strip / cloud-sync / memory-lessons / thread-backup 四处按它剥离");
+  ok(/groupHistoryBlock\(history, text\)/.test(talk)
+    && talk.indexOf('"=== END ==="') < talk.indexOf("groupHistoryBlock(history, text)"),
+    "历史放在 `=== END ===` **之后**（壳后）：user-refs 只保留需求体 ⇒ 气泡仍只有那一句人话");
+  ok(/text === String\(currentLine/.test(talk),
+    "本轮这句已在需求体里，历史里不再重复贴一遍（⛔ 否则模型以为要回两次）");
+  ok(/buildTalkInput\(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow\[\] = \[\]\)/.test(talk),
+    "注入是 buildTalkInput 的第 5 个参数（两条投递链共用同一份口径）");
+  ok(/const history = await options\.readMessages\(TALK_HISTORY_LIMIT\)/.test(talk)
+    && /buildTalkInput\(options, target, from, text, history\)/.test(talk),
+    "runGroupTalk 每一跳都重读群日志（接力到第 2 个人时前一位的话已落群）");
+  ok(/readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc)
+    && /readMessages: \(limit: number\) => Promise\.resolve\(readGroupHistory\(limit\)\)/.test(ipc),
+    "派活主链每轮也注入；默认注入与 group_read 工具**同一份** readGroupHistory（⛔ 两处口径分叉会读到不同历史）");
+  ok(/TALK_HISTORY_LIMIT/.test(outlet) && /groupHistoryBlock/.test(outlet),
+    "板块出口显式暴露共享上下文（守卫可钉唯一真相源）");
+  /* ⛔ 负向：不许把历史塞进需求体、不许删掉 group_read */
+  const needBody = (talk.match(/=== 用户需求 ===[\s\S]*?"=== END ==="/) ?? [])[0] ?? "";
+  ok(!/groupHistoryBlock/.test(needBody), "⛔ 历史不许进需求体（会直接糊到气泡上）");
+  ok(/group_read/.test(codeOnly(read("electron/features/group-talk/02-tools.ts"))),
+    "group_read 保留：默认给最近 20 条，更早的由模型自己调工具取");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

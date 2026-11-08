@@ -44,6 +44,51 @@ export type GroupTalkOptions = {
 
 export type GroupTalkResult = { ok: boolean; sent: number; failed: string[]; hops: number };
 
+/* ══════ 群会话共享上下文（11-08 用户问「群成员，都能看到群会话内容吗」）══════
+   现状：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史消息**不注入**，只能靠模型
+   主动调 group_read 读 12 条 ⇒ 别人之间没 @ 它的对话它一概看不见，接不上话。
+   ⇒ 默认把群里最近 N 条注入**每一轮**（不是只给第一个人）：每位成员拿到同一份共享上下文。
+
+   ⛔ 放置位置有两条硬约束（改动前先读这两处）：
+     ① 必须在 `[SYSTEM TASK · …]` 壳的 `=== END ===` **之后**：user-refs.ts 解析时只保留
+        「=== 用户需求 === … === END ===」中间那段 ⇒ 气泡里仍只有那一句人话，历史不会糊到界面上；
+        而模型读的是整段输入，照样看得到。
+     ② 必须用 `【群聊上下文 · …】…【群聊上下文结束】` 信封：harness-block-strip.mjs /
+        cloud-sync.ts / memory-lessons.ts / thread-backup.ts 四处都按它剥离
+        ⇒ 历史不会漏进会话标题、云同步正文、记忆归档与备份。⛔ 改一个字就四处全漏。
+   ⛔ 同时保留 group_read：默认给最近 20 条，更早的由模型自己调工具取（不重复造轮子）。 */
+export const TALK_HISTORY_LIMIT = 20;
+const TALK_HISTORY_CHAR_MAX = 400;
+const TALK_HISTORY_TOTAL_MAX = 8000;
+
+export type TalkHistoryRow = { speaker: string; text: string };
+
+/** 纯函数：群日志 → 共享上下文块。⛔ 只做格式化与裁剪，不读盘（谁都能复用）。 */
+export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): string {
+  const picked: string[] = [];
+  let used = 0;
+  for (const row of (rows ?? []).slice(-TALK_HISTORY_LIMIT)) {
+    if (!row) continue;
+    const text = String(row.text ?? "").replace(/\s+/g, " ").trim();
+    if (!text) continue;
+    /* 本轮这句已在需求体里给过一次，别在历史里再贴一遍（模型会以为要回两次）。 */
+    if (text === String(currentLine ?? "").replace(/\s+/g, " ").trim()) continue;
+    const speaker = String(row.speaker ?? "").trim() || "群成员";
+    const line = `${speaker}：${text.slice(0, TALK_HISTORY_CHAR_MAX)}`;
+    if (used + line.length > TALK_HISTORY_TOTAL_MAX) break;
+    picked.push(line);
+    used += line.length;
+  }
+  if (!picked.length) return "";
+  return [
+    "【群聊上下文 · 群里最近的消息】",
+    `下面是群里最近 ${picked.length} 条对话，所有成员都能看到。别把别人的话当成对你说的，只接跟你有关的那句；想看更早的用 group_read。`,
+    ...picked,
+    "【群聊上下文结束】",
+    "",
+  ].join("\n");
+}
+
 async function withTimeout<T>(task: Promise<T>, name: string): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
@@ -60,7 +105,7 @@ async function withTimeout<T>(task: Promise<T>, name: string): Promise<T> {
 
 /** 群聊专属输入（⛔ 不复用 groupContextBlock —— 那是派活/协作协议的口径）。
  *  导出给接线层：群聊会话与互相投递共用同一份口径，⛔ 不写第二套。 */
-export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string): string {
+export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow[] = []): string {
   const roster = options.roster.map((m) => `${m.name}${m.targetProfession ? `（${m.targetProfession}）` : ""}`).join("、");
   /* ⛔⛔ 11-07 真机：群聊会话是普通 thread，整段输入会被当成 userMessage 画进气泡 ——
      上一版把【工作伙伴 · X】+ 工具说明 + 指令全裸给用户看（截图）。
@@ -74,6 +119,8 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
     text,
     "=== END ===",
     "",
+    /* ⛔ 群历史放**壳后**：气泡只显示上面那段需求体，模型却能读到整段共享上下文。 */
+    groupHistoryBlock(history, text),
     `【工作伙伴 · ${options.groupName}】`,
     `你是 ${me.name}${me.targetProfession ? `（${me.targetProfession}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
     `群里的人：${roster || "（暂时只有你自己）"}`,
@@ -116,8 +163,10 @@ export async function runGroupTalk(
       deliveries += 1;
       sentByMember.set(target.id, count + 1);
       try {
+        /* ⛔ 每一跳都重读群日志：接力到第 2 个人时，前一位刚说的话已经落群了。 */
+        const history = await options.readMessages(TALK_HISTORY_LIMIT).catch(() => [] as TalkHistoryRow[]);
         const res = await withTimeout(
-          runTalkTurn(options.groupId, target, buildTalkInput(options, target, from, text), {
+          runTalkTurn(options.groupId, target, buildTalkInput(options, target, from, text, history), {
             cwd: options.cwd,
             effort: options.params?.effort,
           }),

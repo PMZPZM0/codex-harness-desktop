@@ -714,6 +714,15 @@ export async function run() {
     (/require\.main === module/.test(automation))
       ? ok("【34】install-automation 主流程只在直接执行时跑（require 无副作用，可被探针复用）")
       : fail("【34】install-automation 缺 require.main 守卫 —— 被 require 时会真的去解压");
+    /* ⛔⛔ 11-08 并线收口：上面那条只查 `require.main` 文本，**顶层的 process.exit 照样能过**
+       （守卫「自洽地错」）。实测云助手仓预检就是被顶层那段重复的 zip 检查掐断的：
+       它 require 时先检查 automation-tools.zip（该仓不自带）⇒ process.exit(1) ⇒ 整条预检链
+       连结论行都跑不到。⇒ 真断言：主流程之前不许出现任何 process.exit。 */
+    const mainAt = automation.indexOf("function main()");
+    const topLevel = mainAt > 0 ? automation.slice(0, mainAt).replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1") : automation;
+    (!/process\.exit\(/.test(topLevel) && !/spawnSync\(/.test(topLevel))
+      ? ok("【34】真断言：main() 之前顶层零副作用（不许查 zip / 不许 process.exit —— require 必须能安全复用）")
+      : fail("【34】顶层仍有 process.exit/spawnSync ⇒ require 会掐断预检（并线曾留下重复 zip 检查）");
     // ⛔ 行为断言，不是文本匹配（第一版只查文本里有没有 "/usr/bin/ditto" 字样，把 `darwin`
     //    改成任意字符串它照样绿 —— 反证 F 当场抓到）。这里 require 真模块跑 pickExtractor。
     try {

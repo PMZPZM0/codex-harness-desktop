@@ -23,15 +23,11 @@ const arg = (name) => {
 const zipPath = arg("zip") || bundledZip;
 const url = arg("url");
 
-if (!fs.existsSync(zipPath) && url) {
-  console.log("[0/3] 下载 automation-tools.zip …");
-  const curl = spawnSync("curl", ["-sL", "--fail", "--noproxy", "*", "-o", zipPath, url], { windowsHide: true, stdio: ["ignore", "pipe", "pipe"], encoding: "utf8", timeout: 900000 });
-  if (curl.status !== 0) { console.error("下载失败"); process.exit(1); }
-}
-if (!fs.existsSync(zipPath)) {
-  console.error(`缺少 ${zipPath}。请先构建随包 zip（node scripts/pack-automation.cjs），或加 --url 在线下载。`);
-  process.exit(1);
-}
+/* ⛔⛔ 11-08 并线收口：这里原先**重复**了一份 zip 存在性检查（main() 里还有一份完全相同的），
+   且它在模块顶层 ⇒ 被 require 时立刻执行；云助手仓按 AGENTS 不自带 automation-tools.zip
+   （各仓本地自产、被 gitignore）⇒ 预检的【34】探针一 require 就被 process.exit(1) 掐断，
+   整条预检链连结论行都跑不到。`main()` 里那份才是唯一真相源。
+   ⛔ 顶层一律不许再有「检查产物 + process.exit」这类副作用：require 必须零副作用。 */
 
 // 解压工具：按平台挑**实际存在**的解压器。
 // ⛔ 09-18 修：此前只有 Windows 的 `python.exe` / `7z.exe` 两个候选，而
