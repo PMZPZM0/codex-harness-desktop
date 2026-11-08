@@ -700,8 +700,9 @@ export class CodexServer extends EventEmitter {
     if (!this.child && method !== "initialize") await this.start();
     if (!this.child) throw new Error("Codex app-server is not running");
     /* ⛔ 11-03 上下文压缩兜底（完整理由在 context-compact-guard.ts 文件头）：
-       引擎 0.166 在自定义 provider 下**不再自动压缩**（隔离实测：超阈 50 倍、超窗 15 倍都不压），
-       而手动 thread/compact/start 有效。回合开始前压最安全（运行中调会打断当前回合）。
+       ⚠️ 11-08 复测：0.167 引擎自己会压（隔离探针实测有 CHECKPOINT COMPACTION 请求）；
+       本兜底仍保留 —— 供应商实际限额小于标称窗口时**提前压** + 引擎没压时的保底。
+       手动 thread/compact/start 有效；回合开始前压最安全（运行中调会打断当前回合）。
        ⛔ 钩子只放这一个出口：turn/start 有 8+ 个调用点（渲染层 IPC、通道机器人、委派专家、
          专家团成员、boss 群成员…），放别处必漏 —— 同 thread/start 工作区钩子的教训。
        ⛔ 任何失败只记日志、照常发：兜底不能变成新的故障点。 */
