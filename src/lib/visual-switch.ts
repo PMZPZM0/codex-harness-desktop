@@ -28,7 +28,6 @@
  * 拓展接口：新增一类"全站颜色切换"（比如将来加主题色/强调色）⇒ 只调 `runVisualSwitch()`。
  */
 import { THEMES, normalizeThemeId } from "./themes";
-import { codeThemes } from "./code-themes";
 
 /** 回落路径的过渡类名（CSS 里 `html.fx-theme` 那条规则靠它生效）。⛔ 改名必须同步 CSS 与守卫【11w】。 */
 export const VISUAL_FX_CLASS = "fx-theme";

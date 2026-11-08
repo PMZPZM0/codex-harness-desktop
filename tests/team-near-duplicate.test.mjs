@@ -30,6 +30,16 @@ test("内容不同的两句不判重（别把正文吞掉）", () => {
   );
 });
 
+test("短句 acknowledging + 长文最终回复 ⇒ 不判重（⛔ 不能吞掉更详细的那条）", () => {
+  assert.equal(
+    textsAreNearDuplicate(
+      "好的，我马上开始处理数据分析这条线。",
+      "好的，我马上开始处理数据分析这条线。具体方案：①接口口径先和问需对齐，②表结构用 sku_master 13 个字段，③指标定义按日报粒度落到宽表，今天下班前给第一版。",
+    ),
+    false,
+  );
+});
+
 test("空串 / 单字不判重", () => {
   assert.equal(textsAreNearDuplicate("", "abc"), false);
   assert.equal(textsAreNearDuplicate("abc", ""), false);

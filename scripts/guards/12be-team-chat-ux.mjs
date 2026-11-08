@@ -919,6 +919,21 @@ const catalog = [
       && /textsAreNearDuplicate\(text, output\)/.test(ipcLive)
       && /不要两样都做/.test(talkLive),
       "群聊回复实时上屏：写库广播 + 回合内增量广播（渲染层两个 handler）+ 工具/最终回复去重 + 提示词二选一（11-08 用户实测）");
+    /* ⛔⛔ 11-08 审查（Required）：去重只看"重合率"不看长度 ⇒ 短句「收到，我马上开始」的二元组
+       会被长文全覆盖（≈1.0），更详细的**最终回复**会被当重复吞掉 = 丢真正文。
+       判据：长度差超过 1.3×+12 一律不判重；单测覆盖这个反例。 */
+    const modelsLive = codeOnly(read("src/lib/team-models.mjs"));
+    const dupTest = read("tests/team-near-duplicate.test.mjs");
+    ok(/const shortLen = Math\.min\(x\.length, y\.length\)/.test(modelsLive)
+      && /longLen > shortLen \* 1\.3 \+ 12/.test(modelsLive)
+      && /长文最终回复 ⇒ 不判重/.test(dupTest),
+      "⛔ 去重不能吞掉更详细的最终回复：长度差过大不判重（短句 + 长方案 ≈1.0 重合率，旧实现会丢正文）");
+    /* ⛔⛔ 11-08 审查（Required）：finished 后延迟摘卡（300/500ms）里，同一人可能被接力/排队
+       又开了一轮 —— 旧实现无条件 delete，会把**新一轮**的卡删掉，后续 delta 无卡可写 ⇒ 消息整张消失。
+       判据：两条 finished 路径都按 startedAt 认代次。 */
+    const raceGuard = storeLive.match(/cur\.startedAt > finishedAt/g) ?? [];
+    ok(raceGuard.length >= 2 && /const finishedAt = Date\.now\(\);/g.test(storeLive),
+      "⛔ 延迟摘流式卡按 startedAt 认代次（group-talk-live / delegate-run 两条路径）—— 否则接力新卡被上一轮的 finished 删掉");
   }
 }
 

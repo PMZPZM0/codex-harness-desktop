@@ -1018,6 +1018,12 @@ export function textsAreNearDuplicate(a, b) {
   const y = norm(b);
   if (!x || !y) return false;
   if (x === y) return true;
+  /* ⛔⛔ 长度差太大 ⇒ 不算重复：短句（「收到，我马上开始」）的二元组会被长文全覆盖
+     （重合率≈1），照着判重就会把**更详细的那条最终回复**吞掉 —— 用户丢的是真正文。
+     现场判重只针对"同一句话的两种说法"，长度必须可比。 */
+  const shortLen = Math.min(x.length, y.length);
+  const longLen = Math.max(x.length, y.length);
+  if (longLen > shortLen * 1.3 + 12) return false;
   const bigrams = (text) => {
     const set = new Set();
     for (let i = 0; i < text.length - 1; i += 1) set.add(text.slice(i, i + 2));

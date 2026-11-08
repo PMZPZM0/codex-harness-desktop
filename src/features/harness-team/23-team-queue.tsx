@@ -13,7 +13,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { QueuedMessageList } from "../session-queue";
-import { inputText } from "../../lib/input-text";
 import type { QueueItem } from "../../lib/queue-item";
 import type { HarnessAppApi } from "../app-state";
 
@@ -42,6 +41,7 @@ export async function queueTeamMessage(threadId: string, text: string): Promise<
   }
 }
 
+/** 群聊排队栈：列各群的排队消息，可启动/取消（reloadKey 变化即重拉）。 */
 export function TeamQueueStack({ app, threads, reloadKey, onNotice }: {
   app?: HarnessAppApi;
   threads: TeamQueueThread[];

@@ -330,10 +330,16 @@ export function useTeamGroups() {
           return;
         }
         if (phase === "finished") {
+          /* ⛔ finished 之后延迟摘卡；期间同一人可能被接力/排队又开了一轮（新卡已建）——
+             按 startedAt 认代次，只摘**自己那一轮**的卡，否则新一轮的卡会被这一刀删掉、
+             后续 delta 因为没有卡而被丢弃（消息整张消失）。 */
+          const finishedAt = Date.now();
           window.setTimeout(() => {
             if (!alive.current) return;
             setLiveByGroup((prev) => {
               const bucket = { ...(prev[gid] ?? {}) };
+              const cur = bucket[tid];
+              if (!cur || cur.startedAt > finishedAt) return prev;
               delete bucket[tid];
               return { ...prev, [gid]: bucket };
             });
@@ -398,11 +404,15 @@ export function useTeamGroups() {
             },
           };
         });
-        /* 完成态留 500ms 再摘：正式消息落盘有几十毫秒延迟，立刻删会闪一下空白 */
+        /* 完成态留 500ms 再摘：正式消息落盘有几十毫秒延迟，立刻删会闪一下空白。
+           ⛔ 同样按 startedAt 认代次：期间同一人新开的一轮不能被这一刀删掉。 */
+        const finishedAt = Date.now();
         window.setTimeout(() => {
           if (!alive.current) return;
           setLiveByGroup((prev) => {
             const bucket = { ...(prev[gid] ?? {}) };
+            const cur = bucket[threadId];
+            if (!cur || cur.startedAt > finishedAt) return prev;
             delete bucket[threadId];
             return { ...prev, [gid]: bucket };
           });
