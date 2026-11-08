@@ -658,9 +658,11 @@ async function runDispatchRounds(
       threadId = res.threadId;
       /* 排队后才知道真实 threadId 的那一轮：同样摘掉上一轮的收尾标记（见上面的注释）。 */
       finishedTalkRuns.delete(threadId);
-      /* 排队期间群被删 ⇒ 刚建出来的会话没人要了：删掉它并放弃落盘（别留孤儿「伙伴」会话）。 */
+      /* 排队期间群被删 ⇒ 刚建出来的会话没人要了：删掉它、清台账并放弃落盘
+         （⛔ 只删引擎会话会留下一条指向死会话的台账 ⇒ 侧栏还挂「伙伴」标签）。 */
       if (!readStore().groups.some((g) => String(g.id) === String(group.id))) {
         void deleteEngineThreads([threadId]);
+        if (forgetTalkThreads([threadId])) broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
         return;
       }
       const output = String(res.text ?? "").trim();
@@ -735,14 +737,20 @@ async function runDispatchRounds(
       if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
       if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
-        finishedTalkRuns.set(liveThreadId, { groupId: group.id, at: Date.now() });
+      }
+      /* ⛔ 11-08 审查：收尾标记按**真实会话 id**记（`liveThreadId || threadId`）——
+         会话在开跑时正忙 / 走排队分支时 liveThreadId 是空的，只记 liveThreadId 会让这一轮
+         的迟到用量永远补不上（页脚缺失）；开跑前已 `finishedTalkRuns.delete` 过，不会串轮。 */
+      const finishedThreadId = liveThreadId || threadId;
+      if (finishedThreadId) {
+        finishedTalkRuns.set(finishedThreadId, { groupId: group.id, at: Date.now() });
         if (finishedTalkRuns.size > 200) {
           const oldest = [...finishedTalkRuns.entries()].sort((a, b) => a[1].at - b[1].at)[0];
           if (oldest) finishedTalkRuns.delete(oldest[0]);
         }
         /* 卡在 append 与 finally 之间的用量：消息已落盘但从没带上 ⇒ 补到最后那条上。 */
         if (wroteMessage && usageWritten === false && liveUsage) {
-          void patchLatestTalkMessageUsage(group.id, liveThreadId, liveUsage).catch(() => undefined);
+          void patchLatestTalkMessageUsage(group.id, finishedThreadId, liveUsage).catch(() => undefined);
         }
       }
       const tokens = delegateRegistry?.tokensOf(threadId) ?? null;

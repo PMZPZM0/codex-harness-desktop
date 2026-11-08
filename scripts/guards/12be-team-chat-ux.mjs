@@ -973,7 +973,7 @@ const catalog = [
     ok(/usageFromTokenEvent/.test(ipcLive)
       && /installTalkUsageWatcher\(\);/.test(ipcLive)
       && /const usageForMessage = liveUsage \?\? talkUsageFor\(threadId, startedAt\)/.test(ipcLive)
-      && /finishedTalkRuns\.set\(liveThreadId/.test(ipcLive)
+      && /finishedTalkRuns\.set\(finishedThreadId/.test(ipcLive)
       && /async function patchLatestTalkMessageUsage\(groupId: string, threadId: string, usage: GroupUsage\)/.test(ipcLive)
       && /pickUsagePatchIndex\(list, threadId, now, TALK_USAGE_TTL\)/.test(ipcLive)
       && /patchLatestTalkMessageUsage\(run\.groupId, hit\.threadId, hit\.usage\)/.test(ipcLive)
