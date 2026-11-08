@@ -488,12 +488,24 @@ async function runDispatchRounds(
       liveThreadId = liveThread?.threadId ?? "";
       if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, at: Date.now() } as never);
+        let lastTickAt = 0;
         talkDelta = (event: any) => {
-          if (event?.kind !== "notification" || event?.method !== "item/agentMessage/delta") return;
+          if (event?.kind !== "notification") return;
           const p = event.params ?? {};
           if (String(p.threadId ?? "") !== liveThreadId) return;
-          const delta = String(p.delta ?? "");
-          if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, text: delta, at: Date.now() } as never);
+          const method = String(event.method ?? "");
+          if (method === "item/agentMessage/delta") {
+            const delta = String(p.delta ?? "");
+            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, text: delta, at: Date.now() } as never);
+            return;
+          }
+          /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块不再 2.5s 轮询 ——
+             成员回合里任何 item/turn 事件都通知渲染层重拉（200ms 合并，防工具输出高频刷屏）。 */
+          if (!/^item\//.test(method) && !/^turn\//.test(method)) return;
+          const now = Date.now();
+          if (now - lastTickAt < 200) return;
+          lastTickAt = now;
+          broadcastHarnessEvent({ type: "group-talk-tick", groupId: group.id, memberId: partner.id, threadId: liveThreadId, method, at: now } as never);
         };
         server.on("event", talkDelta);
       }

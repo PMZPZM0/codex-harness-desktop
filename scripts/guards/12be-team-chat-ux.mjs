@@ -789,7 +789,23 @@ const catalog = [
   ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
   ok(/live?: boolean/.test(proc) || /live = false/.test(proc),
-    "过程块支持运行中实时（回合还没落盘 ⇒ 取最新回合 + 2.5s 重拉，⛔ 缓存会把新步骤挡在外面）");
+    "过程块支持运行中实时（回合还没落盘 ⇒ 取最新回合；运行中**事件驱动**重拉，⛔ 不再 2.5s 轮询）");
+  /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块事件驱动（不再 2.5s 轮询）+ 流式卡里补实时编辑行。 */
+  {
+    const ipcProc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    const storeProc = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+    const procComp = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+    const viewProc = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+    const fileStore = codeOnly(read("src/lib/turn-file-changes.mjs"));
+    ok(/type: "group-talk-tick"/.test(ipcProc)
+      && /event.type === "group-talk-tick"/.test(storeProc)
+      && /bumpTeamProcessTick/.test(storeProc)
+      && /subscribeTeamProcessTicks/.test(procComp)
+      && !/setInterval\(\(\) => setTick\(\(n\) => n \+ 1\), 2500\)/.test(procComp)
+      && /getThreadLiveFileChanges/.test(fileStore) && /liveByThread/.test(fileStore)
+      && /<TeamLiveFiles threadId=\{run\.threadId\} \/>/.test(viewProc),
+      "群聊过程与主对话一致：事件驱动重拉（group-talk-tick，⛔ 不再 2.5s 轮询）+ 流式卡实时编辑行（按线程）");
+  }
   ok(/team-run-feedback__chip/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx")))
     && /team-run-feedback__chip/.test(read("src/styles/61-team-mode.css")),
     "占位模式画飞书式「头像 + 名字 + 处理中」小图标（挂在用户气泡下面）");

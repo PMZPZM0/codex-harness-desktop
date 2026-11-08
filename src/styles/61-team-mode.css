@@ -3365,3 +3365,8 @@
 .team-composer .team-composer__input.is-mirrored { color: transparent; caret-color: var(--text); }
 .team-composer .team-composer__input::placeholder { color: var(--faint); opacity: 1; }
 .team-composer .team-composer__input { scrollbar-gutter: stable; }
+
+/* 群聊流式卡里的实时编辑行（11-08 用户令「补实时编辑行，跟主对话一致」）：复用主对话 LiveFileRows，仅留间距 */
+.team-msg__live-files {
+  margin-top: 6px;
+}

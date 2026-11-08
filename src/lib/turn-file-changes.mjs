@@ -7,6 +7,9 @@
 //   （全仓没有任何地方向 window 派发带 channel 的 MessageEvent，10-06 实证是死信道）。
 const reports = new Map();
 const liveReports = new Map();
+/* ⛔ 11-08：群聊流式卡按**线程**取实时编辑明细（群视图不知道回合 id）——
+   同一条 turn-file-changes-live 同时记两份，收尾报告到达时按线程清场。 */
+const liveByThread = new Map();
 const listeners = new Set();
 
 function notify(turnId) {
@@ -18,12 +21,15 @@ if (typeof window !== "undefined" && typeof window.codex?.onHarnessEvent === "fu
     const type = payload?.type;
     if (type !== "turn-file-changes" && type !== "turn-file-changes-live") return;
     const turnId = String(payload.turnId ?? "");
+    const threadId = String(payload.threadId ?? "");
     const files = Array.isArray(payload.files) ? payload.files : [];
     if (type === "turn-file-changes") {
       reports.set(turnId, files);
       liveReports.delete(turnId); // 最终报告落地 = 收尾，live 清场（避免两卡并存）
+      if (threadId) liveByThread.delete(threadId);
     } else if (files.length) {
       liveReports.set(turnId, files);
+      if (threadId) liveByThread.set(threadId, files);
     } else {
       liveReports.delete(turnId);
     }
@@ -39,6 +45,11 @@ export function getTurnFileChanges(turnId) {
 /** 某回合**运行中**的实时累计改动（没有 = 空数组；回合收尾会被最终报告清场） */
 export function getTurnLiveFileChanges(turnId) {
   return liveReports.get(String(turnId ?? "")) ?? [];
+}
+
+/** 某线程**运行中**的实时累计改动（群聊流式卡用；收尾报告到达即清场） */
+export function getThreadLiveFileChanges(threadId) {
+  return liveByThread.get(String(threadId ?? "")) ?? [];
 }
 
 /** 两类事件任一到达都会通知（订阅方自己决定读哪个 getter） */

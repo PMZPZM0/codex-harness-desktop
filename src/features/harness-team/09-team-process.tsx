@@ -16,12 +16,13 @@
  *   `codex:request("thread/turns/list", { itemsView:"full" })` 从**真身子会话**按需回读，
  *   ⛔ 不把过程塞进群日志、⛔ 不造 turnId/itemId。拉不到就干脆不画折叠块（不留空壳）。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { FoldGroup, ItemView } from "../session-queue";
 import { classifyUnit, topToolGroup } from "../../lib/turn-fold";
 import { dialogFlowStepTitle } from "../../lib/dialog-flow-title";
 import { pickTurnOf } from "../../lib/team-fold.mjs";
 import type { TeamTurn } from "../../lib/team-fold.mjs";
+import { getTeamProcessTick, subscribeTeamProcessTicks } from "../../lib/team-process-ticks.mjs";
 
 type Props = {
   threadId: string;
@@ -79,6 +80,10 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
   const [loading, setLoading] = useState(true);
   /** 运行中：每拉一次自增，把 effect 推着重跑（⛔ 过程在长，不能只拉一次）。 */
   const [tick, setTick] = useState(0);
+  /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块改为**事件驱动** —— 主进程在成员回合里广播
+     `group-talk-tick`（任何 item/turn 事件，200ms 合并），这里 150ms 防抖后重拉一次；
+     另留 10s 兜底（事件万一丢了也不至于永远停住）。⛔ 不再 2.5s 定时轮询。 */
+  const externalTick = useSyncExternalStore(subscribeTeamProcessTicks, () => getTeamProcessTick(threadId));
 
   useEffect(() => {
     let alive = true;
@@ -97,8 +102,14 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
 
   useEffect(() => {
     if (!live || !threadId || threadId.startsWith("group:")) return;
-    const timer = setInterval(() => setTick((n) => n + 1), 2500);
-    return () => clearInterval(timer);
+    const timer = window.setTimeout(() => setTick((n) => n + 1), 150);
+    return () => window.clearTimeout(timer);
+  }, [externalTick, live, threadId]);
+
+  useEffect(() => {
+    if (!live || !threadId || threadId.startsWith("group:")) return;
+    const timer = window.setInterval(() => setTick((n) => n + 1), 10_000);
+    return () => window.clearInterval(timer);
   }, [live, threadId]);
 
   const turn = useMemo(() => pickTurnOf(turns, at, bodyText), [turns, at, bodyText]);

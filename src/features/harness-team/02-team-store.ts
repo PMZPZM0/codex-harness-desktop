@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
 import { parseTeamAuthorId, teamAuthorIdOf } from "../../lib/team-models.mjs";
+import { bumpTeamProcessTick } from "../../lib/team-process-ticks.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
 /* ⛔⛔ 11-07：**合成 id → 可派活目标**只保留主进程一份（`harness-team-ipc.ts` 的
@@ -291,6 +292,11 @@ export function useTeamGroups() {
         const rows = Array.isArray(event.rows) ? (event.rows as GroupMessageRow[]) : null;
         if (!gid || !rows) return;
         setRowsByGroup((prev) => ({ ...prev, [gid]: rows }));
+        return;
+      }
+      /* ⛔ 11-08：成员回合里有新的 item/turn 事件 ⇒ 通知过程块重拉（事件驱动，替代 2.5s 轮询）。 */
+      if (event.type === "group-talk-tick") {
+        bumpTeamProcessTick(String(event.threadId ?? ""));
         return;
       }
       if (event.type === "group-talk-live") {
