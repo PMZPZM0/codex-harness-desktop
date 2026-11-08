@@ -30,6 +30,7 @@ import type { HarnessAppApi } from "../app-state";
 import { useAnchoredPopover } from "../../lib/use-centered-popover";
 import { EffortPicker } from "../../components/EffortPicker";
 import { effortLabels } from "../../lib/effort-labels";
+import { clampEffortToLevels, effortLevelsForModel } from "../../lib/model-specs";
 import { approvalMenuOptions } from "../app-view/helpers/catalogs";
 import { getActiveModel, subscribeActiveModel } from "../../lib/active-model.mjs";
 import { collectModelChoices } from "../../lib/model-menu.mjs";
@@ -410,6 +411,10 @@ export function TeamComposer({
   const fileName = (p: string) => p.split(/[\\/]/).pop() || p;
   const q = skillQuery.trim().toLowerCase();
   const skillMatches = skills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q));
+  /* 11-08 用户令「选那个模型，有几个档位，就显示那几个档位」：群输入框与主对话同一套联动
+     （跟随全局时用当前生效模型；不支持的档位不显示，旧档位夹到最近可用档）。 */
+  const effortLevels = effortLevelsForModel(opts.model || active.name || "");
+  const shownEffort = clampEffortToLevels(opts.effort || "high", effortLevels);
 
   return (
     <div className="team-composer">
@@ -602,7 +607,7 @@ export function TeamComposer({
 
         <div className="team-composer__right composer-right">
           <ComposerMenu icon={Bot} label="模型" title={retired ? `本轮派活使用的模型 · ${retired}` : "本轮派活使用的模型（空 = 跟随全局当前模型）"} value={opts.model} options={models} onChange={(v) => { if (v === "__model_settings__") { onOpenModelSettings?.(); return; } onOpts({ ...opts, model: v }); }} onOpen={() => void loadModels()} width={360} disabled={sending} />
-          <EffortPicker levels={["low", "medium", "high", "xhigh"]} value={opts.effort || "high"} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
+          <EffortPicker levels={effortLevels} value={shownEffort} labels={effortLabels} modelId={opts.model || undefined} disabled={sending} onCommit={(v) => onOpts({ ...opts, effort: v })} />
           {/* 群菜单按钮（飞书 `needShowMenuButton`）：从输入框上方搬到工具行，输入区少占一行 */}
           {toolsSlot}
           {/* ⛔ 11-08 用户：「跟对话框一样，不要搞特殊」⇒ 发送键换成主对话那个
