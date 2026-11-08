@@ -478,6 +478,9 @@ async function runDispatchRounds(
       );
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);
+      /* ⛔ 11-08 用户实测「过程半天才出来」：成员会话建立（thread/start+改名）本身要 1~3 秒，
+         这段时间界面原来什么都不显示。⇒ 「运行中」先报（busy 立刻亮），threadId 由 group-talk-live 补。 */
+      options.onPhase?.("started", partner, {});
       /* ⛔⛔ 11-08 用户实测（「谁在运行一点反馈都没有」「回复了就要立刻看到」）：
          群聊回合也要像主对话一样**逐字上屏**。先解析出这位成员的会话（runTalkTurn 会命中同一本台账复用），
          再订阅它的 agentMessage 增量，广播给渲染层（流式卡 + 过程块）。 */
@@ -528,7 +531,6 @@ async function runDispatchRounds(
         };
         server.on("event", talkDelta);
       }
-      options.onPhase?.("started", partner, { threadId: liveThreadId || undefined });
       /* ⛔ 11-08 审查：模型 / 沙箱 / 审批档原来在这里被丢掉（只传了 effort）⇒ 群输入框三个控件全是死的。
          群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
       const clearedMark = groupClearedAt.get(group.id) ?? 0;

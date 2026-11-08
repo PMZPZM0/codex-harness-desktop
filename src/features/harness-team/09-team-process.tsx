@@ -45,19 +45,22 @@ type Props = {
 /** 同一个子会话的多条群消息只拉一次；失败的删掉缓存，下次还能重试。 */
 const turnsCache = new Map<string, Promise<TeamTurn[]>>();
 
-function turnsOf(threadId: string): Promise<TeamTurn[]> {
-  const hit = turnsCache.get(threadId);
+function turnsOf(threadId: string, limit = 8): Promise<TeamTurn[]> {
+  /* ⛔ 11-08 用户实测「过程半天才出来」：运行中只需要**最新一个**回合（limit 1），
+     原来固定 limit 8 + itemsView full，长会话一次拉几百 KB，首屏要等好几秒。 */
+  const cacheKey = threadId + ":" + limit;
+  const hit = turnsCache.get(cacheKey);
   if (hit) return hit;
   /* ⛔ 空结果/失败不能永久缓存：引擎刚落盘时可能还没索引到该回合，
      永久缓存 [] 会让过程块**永远不出现**（直到重启应用）。
      ⇒ 负结果保留 30s 再失效：既不会每次重挂都打一次 IPC，也留了重试机会。 */
   const invalidate = () => {
-    const timer = setTimeout(() => turnsCache.delete(threadId), 30_000);
+    const timer = setTimeout(() => turnsCache.delete(cacheKey), 30_000);
     // 浏览器渲染层没有 unref，用可选链兼容
     (timer as unknown as { unref?: () => void }).unref?.();
   };
   const task = window.codex
-    .request("thread/turns/list", { threadId, itemsView: "full", limit: 8, sortDirection: "desc" })
+    .request("thread/turns/list", { threadId, itemsView: "full", limit, sortDirection: "desc" })
     .then((res: { data?: unknown }) => {
       const list = Array.isArray(res?.data) ? (res.data as TeamTurn[]) : [];
       if (!list.length) invalidate();
@@ -67,7 +70,7 @@ function turnsOf(threadId: string): Promise<TeamTurn[]> {
       invalidate();
       return [] as TeamTurn[];
     });
-  turnsCache.set(threadId, task);
+  turnsCache.set(cacheKey, task);
   return task;
 }
 
@@ -91,8 +94,8 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
     setLoading(true);
     /* 运行中必须**绕过缓存**：turnsCache 是给"成品消息只拉一次"设计的，
        拿它渲染进行中的过程会永远停在第一次快照上。 */
-    if (live) turnsCache.delete(threadId);
-    void turnsOf(threadId).then((list) => {
+    if (live) turnsCache.delete(threadId + ":1");
+    void turnsOf(threadId, live ? 1 : 8).then((list) => {
       if (!alive) return;
       setTurns(list);
       setLoading(false);

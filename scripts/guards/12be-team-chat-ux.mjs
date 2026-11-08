@@ -861,6 +861,18 @@ const catalog = [
     ok(/<TurnWebSources sources=\{collectTurnWebSources\(turn as never\)\} inline \/>/.test(cardsEq),
       "网页来源条与主对话同组件（TeamCards 里渲染）");
   }
+  /* ⛔ 11-08 用户实测「一发消息就渲染报错」+「过程半天才出来」。 */
+  {
+    const filesStore = codeOnly(read("src/lib/turn-file-changes.mjs"));
+    const procLive = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+    const ipcLive = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(/const EMPTY_FILES = Object\.freeze\(\[\]\)/.test(filesStore)
+      && /getThreadLiveFileChanges[\s\S]{0,160}?\?\? EMPTY_FILES/.test(filesStore)
+      && /turnsOf\(threadId, live \? 1 : 8\)/.test(procLive)
+      && /limit, sortDirection/.test(procLive)
+      && /onPhase\?\.\("started", partner, \{\}\)/.test(ipcLive),
+      "群聊首屏：快照稳定（空列表同一常量，⛔ 防 useSyncExternalStore 死循环）+ 运行中只拉最新 1 回合 + 建会话前先报运行中（11-08 用户实测）");
+  }
   ok(/team-run-feedback__chip/.test(codeOnly(read("src/features/harness-team/26-team-run-feedback.tsx")))
     && /team-run-feedback__chip/.test(read("src/styles/61-team-mode.css")),
     "占位模式画飞书式「头像 + 名字 + 处理中」小图标（挂在用户气泡下面）");
