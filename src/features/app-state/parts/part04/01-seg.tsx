@@ -100,8 +100,8 @@ bag.toggleDispatchBlock = toggleDispatchBlock as typeof bag.toggleDispatchBlock;
 bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
 
   /** 聚簇后的侧栏结构：成员会话行从原分组抽走，作为 cluster 子项渲染。
-   *  主会话识别：threads 表里同 teamId 的会话中，标题**不带**成员会话特征（「 · 」分隔或
-   *  [专家团 前缀）的那条；主会话不在列表（被删/归档）时用最新成员会话当代表行。 */
+   *  主会话识别：members 映射里的 = 成员会话，同 teamId 里不在其中的 = 主会话（权威判定，不按标题猜）；
+   *  主会话不在列表（被删/归档）⇒ 不聚类，成员平铺（徽标「专家」）；一对一直达会话不进簇。 */
   const clusteredSidebar = useMemo(() => {
     /* ⛔⛔ 10-04：这里**不再**维护可累加的 memberIds —— 它必须是「最终会被渲染的簇成员」的派生量
        （见函数末尾 visibleMemberIds）。旧写法靠 add/delete 累加：任何一步漏同步（例如 lead 兜底
@@ -172,7 +172,7 @@ bag.dispatchBlockKeys = dispatchBlockKeys as typeof bag.dispatchBlockKeys;
     const visibleMemberIds = new Set<string>();
     for (const cluster of keptClusters.values()) for (const member of cluster.members) visibleMemberIds.add(member.id);
     return { memberIds: visibleMemberIds, clusters: [...keptClusters.values()] };
-  }, [bag.listThreads, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.expertTeams]);
+  }, [bag.listThreads, bag.teamThreadsIndex, bag.teamMemberThreadIds, bag.teamDirectThreadIds, bag.expertTeams]);
 bag.clusteredSidebar = clusteredSidebar as typeof bag.clusteredSidebar;
 
   /* 「分类」视图（09-25）：全部折叠/展开。键带 `source:` 前缀 ⇒ 与项目视图的折叠状态互不干扰，

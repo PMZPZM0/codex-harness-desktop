@@ -1588,6 +1588,11 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (!/cluster\.members\.find\(\(entry\)[\s\S]{0,200}?name\.startsWith\("\[专家团"\)/.test(part04Src) ? ok : fail)(
       "【207】⛔ 不许把成员提拔成簇头（用户实测：单独专家会话因此挂上「专家团」徽标）"
     );
+    /* ⛔ 11-08 审查：聚簇 memo 读了 teamDirectThreadIds ⇒ 依赖数组必须有它
+       （漏依赖 = 直达名单更新后聚簇静默用旧值，stale closure）。锚完整数组字面量。 */
+    (/\}, \[bag\.listThreads, bag\.teamThreadsIndex, bag\.teamMemberThreadIds, bag\.teamDirectThreadIds, bag\.expertTeams\]\);/.test(part04Src) ? ok : fail)(
+      "【207】聚簇 memo 依赖数组含 teamDirectThreadIds（读值必须在 deps 里）"
+    );
     /* ⛔ 09-29 用户实测：专家团簇行自带 09-14 的淡蓝底+描边+左色条（旧"团队条"装饰），
        与新选中态撞车（看起来像被选中）。身份区分一律用「专家团」徽章，不用底色。 */
     (/thread-source-badge/.test(css207) && /tone-team/.test(css207) && /tone-expert/.test(css207) ? ok : fail)(
