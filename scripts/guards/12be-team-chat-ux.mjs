@@ -1005,6 +1005,31 @@ const catalog = [
     "侧栏给群聊伙伴会话打「伙伴」标签（单例 store 订阅；⛔ 不在 renderThreadRow 里订阅，行数一变就 hook 错位）");
 }
 
+/* ── ⑬c resume 失败不再开重复会话（11-08 用户令「查一下 resume 失败后重复会话的问题」）────
+   引擎原话 `cannot resume running thread`：会话活着、只是正在跑。旧代码把所有 resume 失败
+   都当"会话没了"⇒ 新建一条 + 覆盖台账 ⇒ 同一位成员两条会话。判据：只有 missing 才重建；
+   忙/暂时性一律抛可识别错误；台账写操作串行（链内重读，⛔ 不拿旧快照整份覆盖）；同一成员投递串行。 */
+{
+  const channel = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const resumeClass = codeOnly(read("src/lib/team-talk-resume.mjs"));
+  const resumeTest = read("tests/team-talk-resume.test.mjs");
+  ok(/classifyTalkResumeFailure/.test(channel) && /if \(resumed\.kind !== "missing"\) throw talkUnavailable/.test(channel)
+    && /cannot resume \(\?:a \)\?running thread/.test(resumeClass)
+    && /thread not found/.test(resumeClass)
+    && /会话正在运行 ⇒ busy/.test(resumeTest),
+    "⛔ resume 失败只有引擎明确说「会话不存在」才重建；忙 / 引擎重启 / 超时一律不新建（重复会话的根因）");
+  ok(/let ledgerChain: Promise<unknown>/.test(channel) && /function mutateLedger</.test(channel)
+    && (channel.match(/await mutateLedger\(/g) ?? []).length >= 2,
+    "台账写操作串行 + 链内重新读盘合并（⛔ 旧快照整份写回会把并发开跑的其他成员整条抹掉）");
+  ok(/export async function peekTalkThread/.test(channel) && /peekTalkThread\(group\.id, partner as TalkMember/.test(ipc)
+    && !/ensureTalkThread\(group\.id/.test(ipc),
+    "流式监听前只做**只读探测**（⛔ 绝不在探测里新建会话）；探到忙就先不挂流式");
+  ok(/export function queueTalkDelivery/.test(channel) && /queueTalkDelivery\(group\.id, partner\.id/.test(ipc)
+    && /withDispatchTimeout\(runTalkTurn/.test(ipc),
+    "同一成员的消息串行投递（引擎不允许 resume/并行回合正在跑的会话；超时从真正开跑时算）");
+}
+
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────
    改之前：每位成员只拿到「当前这一句 + 名册 + 群简介」，历史**不注入**，
    只有模型主动调 group_read 才能读 12 条 ⇒ 别人之间没 @ 它的对话它一概看不见，接不上话。
@@ -1175,9 +1200,9 @@ const catalog = [
 {
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   ok(/listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\)/.test(ipc)
-    && /forgetGroupThreads\(gid\)/.test(ipc)
-    && /await deleteEngineThreads\(threads\)/.test(ipc),
-    "删群：会话清单 = 群消息里的 threadId ∪ 台账里本群的会话；删完清台账（⛔ 只按消息删会留下孤儿会话）");
+    && /const \{ removed, failed \} = await deleteEngineThreads\(threads\)/.test(ipc)
+    && /forgetTalkThreads\(threads\.filter\(\(tid\) => !failedSet\.has\(tid\)\)\)/.test(ipc),
+    "删群：会话清单 = 群消息里的 threadId ∪ 台账里本群的会话；只清**删成功**的台账（删失败的留着下次自愈重试）");
   ok(/async function healOrphanTalkThreads/.test(ipc)
     && /if \(!existsSync\(file\)\) return;/.test(ipc)
     && /catch \{ return; \}/.test(ipc)

@@ -20,6 +20,7 @@ import { dirname, join } from "node:path";
 import { server } from "../../runtime-refs";
 import { turnOutputText, waitForTurnCompletion } from "../../main/03-turn-summary";
 import { buildGroupTalkTools } from "./02-tools";
+import { classifyTalkResumeFailure } from "../../../src/lib/team-talk-resume.mjs";
 
 export type TalkMember = {
   id: string;
@@ -54,6 +55,50 @@ function writeLedger(all: Ledger): void {
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify(all, null, 2), "utf8");
   renameSync(tmp, file);
+}
+
+/* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」——
+   台账原来是「读快照 → 改 → 整份写回」，两个成员同时开跑时后写的那次会把先写的成员**整条抹掉**
+   （实测：一轮里 4 位成员同时开会话，台账最后只剩 1 条，其余下次又要重开一条 ⇒ 侧栏重复会话）。
+   ⇒ 所有写操作串行 + **在链内重新读盘**再合并，⛔ 不许拿旧快照整份覆盖。 */
+let ledgerChain: Promise<unknown> = Promise.resolve();
+function mutateLedger<T>(fn: (all: Ledger) => { all: Ledger; out: T }): Promise<T> {
+  const task = ledgerChain.then(() => {
+    const { all, out } = fn(readLedger());
+    writeLedger(all);
+    return out;
+  });
+  ledgerChain = task.catch(() => undefined);
+  return task;
+}
+
+/** resume 失败的分类；`busy` / `transient` 抛可识别错误（⛔ 调用方据此**不重建**会话）。 */
+async function resumeTalkThread(
+  threadId: string,
+  options: { sandbox?: string; approvalPolicy?: string },
+): Promise<{ ok: true } | { ok: false; kind: "busy" | "missing" | "transient"; message: string }> {
+  try {
+    const resumed: unknown = await server.request("thread/resume", {
+      threadId,
+      excludeTurns: false,
+      ...(options.sandbox ? { sandbox: options.sandbox } : {}),
+      ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}),
+    });
+    const id = String((resumed as { thread?: { id?: unknown } } | null)?.thread?.id ?? "");
+    return id ? { ok: true } : { ok: false, kind: "transient", message: "thread/resume 没返回 threadId" };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { ok: false, kind: classifyTalkResumeFailure(message), message };
+  }
+}
+
+/** 群聊会话忙/暂时不可用的错误（调用方据此提示"稍后再试"，⛔ 不重建会话）。 */
+function talkUnavailable(kind: "busy" | "transient", message: string): Error {
+  const error = new Error(kind === "busy"
+    ? `这位伙伴正在回复上一条消息，稍后再 @ 他（会话没有重建）`
+    : `群聊会话暂时不可用，稍后再试（会话没有重建）：${message || "引擎未就绪"}`);
+  (error as Error & { code?: string }).code = kind === "busy" ? "TALK_BUSY" : "TALK_UNAVAILABLE";
+  return error;
 }
 
 /** 群聊通道的键：`<群 id>::<成员 id>`（同一成员在不同群互不干扰）。 */
@@ -96,14 +141,20 @@ export function listTalkThreads(): Array<{ threadId: string; groupId: string; me
     .sort((a, b) => b.at - a.at);
 }
 
-/** 清掉某个群的会话台账（解散群时调用；⛔ 不删引擎里的 rollout，那是用户自己的记录）。 */
-export function forgetGroupThreads(groupId: string): number {
+/** 清掉指定的会话台账（解散群 / 自愈时调用；⛔ 只清**删成功**的那些 —— 删失败的留着下次重试）。
+ *  ⛔ 不删引擎里的 rollout，那是用户自己的记录（删会话走 thread/delete，另一条链）。 */
+export function forgetTalkThreads(threadIds: string[]): number {
+  const drop = new Set((Array.isArray(threadIds) ? threadIds : []).map((id) => String(id ?? "")).filter(Boolean));
+  if (!drop.size) return 0;
   const all = readLedger();
-  const before = Object.keys(all).length;
   const next: Ledger = {};
-  for (const [key, entry] of Object.entries(all)) if (!key.startsWith(`${groupId}::`)) next[key] = entry;
-  if (Object.keys(next).length !== before) writeLedger(next);
-  return before - Object.keys(next).length;
+  let removed = 0;
+  for (const [key, entry] of Object.entries(all)) {
+    if (drop.has(String(entry?.threadId ?? ""))) { removed += 1; continue; }
+    next[key] = entry;
+  }
+  if (removed) writeLedger(next);
+  return removed;
 }
 
 /**
@@ -119,47 +170,61 @@ export async function ensureTalkThread(
   /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
   if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
   const key = talkKey(groupId, member.id);
-  const all = readLedger();
-  const hit = all[key];
+  const hit = readLedger()[key];
   if (hit?.threadId) {
-    /* 自愈：同一个 threadId 若还挂在 `群id::`（成员 id 为空）这种脏键上，搬到正确的键上
-       （旧版本留下的，不搬的话它永远反查成空身份）。 */
-    let healed = false;
-    for (const [k, v] of Object.entries(all)) {
-      if (k === key) continue;
-      /* ⛔⛔ 11-08 审查（Critical）：脏键清理**必须限定本群** —— 只看「成员 id 为空」的话，
-         A 群的自愈会把 B 群同名成员的台账键删掉（跨群串话 / B 群成员被迫重开会话）。 */
-      if (String(k.split("::")[0] ?? "") !== String(groupId)) continue;
-      if (String(k.split("::")[1] ?? "").trim()) continue;   // 只清"成员 id 为空"的脏键
-      /* 脏键可能挂在**另一个** threadId 上（同一个人被错开了第二条会话）——
-         同名一起清掉：否则那位成员还会继续用没身份的那条会话说话。 */
-      if (v?.threadId === hit.threadId || String(v?.name ?? "") === String(member.name ?? "")) {
-        delete all[k];
-        healed = true;
+    /* 自愈：同一个 threadId 若还挂在 `群id::`（成员 id 为空）这种脏键上，搬到正确的键上；
+       ⛔ 写台账必须走 mutateLedger（链内重新读盘），否则并发开跑时会把别的成员**整条抹掉**。 */
+    await mutateLedger((all) => {
+      const cur = all[key];
+      if (!cur?.threadId) return { all, out: null };
+      let healed = false;
+      for (const [k, v] of Object.entries(all)) {
+        if (k === key) continue;
+        /* ⛔⛔ 11-08 审查（Critical）：脏键清理**必须限定本群** —— 只看「成员 id 为空」的话，
+           A 群的自愈会把 B 群同名成员的台账键删掉（跨群串话 / B 群成员被迫重开会话）。 */
+        if (String(k.split("::")[0] ?? "") !== String(groupId)) continue;
+        if (String(k.split("::")[1] ?? "").trim()) continue;   // 只清"成员 id 为空"的脏键
+        if (v?.threadId === cur.threadId || String(v?.name ?? "") === String(member.name ?? "")) {
+          delete all[k];
+          healed = true;
+        }
       }
-    }
-    if (healed) { all[key] = { threadId: hit.threadId, name: member.name, at: hit.at ?? Date.now() }; writeLedger(all); }
+      if (healed) all[key] = { threadId: cur.threadId, name: member.name, at: cur.at ?? Date.now() };
+      return { all, out: null };
+    });
 
-    /* 台账说有，但引擎可能已经不认（会话被删）⇒ resume 失败就重建成新会话。 */
-    const resumed: any = await server.request("thread/resume", { threadId: hit.threadId, excludeTurns: false, ...(options.sandbox ? { sandbox: options.sandbox } : {}), ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}) }).catch(() => null);
-    if (resumed?.thread?.id) return { threadId: hit.threadId, created: false };
+    /* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」：
+       引擎原话 `cannot resume running thread` —— 会话活着、只是正在跑。旧代码把所有 resume 失败
+       都当"会话没了" ⇒ thread/start 新开一条 + 覆盖台账 ⇒ 同一位成员两条会话（侧栏重复）。
+       ⇒ 只有引擎**明确说会话不存在**才重建；忙 / 引擎重启 / 超时一律抛可识别错误，绝不新建。 */
+    const resumed = await resumeTalkThread(hit.threadId, options);
+    if (resumed.ok) return { threadId: hit.threadId, created: false };
+    if (resumed.kind !== "missing") throw talkUnavailable(resumed.kind, resumed.message);
   }
   /* 没有正键但有**同名脏键**（成员 id 为空、旧版本留下的）：认领它，别给同一个人再开一个会话。
      ⛔ 认领后必须搬到正键，否则下次反查还是空身份（就是"群里一条没有署名的消息"那个 bug）。 */
-  const orphan = Object.entries(all).find(
-    ([k, v]) => String(k.split("::")[0] ?? "") === String(groupId)   // ⛔ 只在**本群**里认领
-      && !String(k.split("::")[1] ?? "").trim()
-      && String(v?.name ?? "") === String(member.name ?? "")
-      && String(v?.threadId ?? ""),
-  );
-  if (orphan) {
+  const claimed = await mutateLedger<{ threadId: string } | null>((all) => {
+    const orphan = Object.entries(all).find(
+      ([k, v]) => String(k.split("::")[0] ?? "") === String(groupId)   // ⛔ 只在**本群**里认领
+        && !String(k.split("::")[1] ?? "").trim()
+        && String(v?.name ?? "") === String(member.name ?? "")
+        && String(v?.threadId ?? ""),
+    );
+    if (!orphan) return { all, out: null };
     const [orphanKey, orphanEntry] = orphan;
     delete all[orphanKey];
     all[key] = { threadId: String(orphanEntry.threadId), name: member.name, at: orphanEntry.at ?? Date.now() };
-    writeLedger(all);
-    const resumed: any = await server.request("thread/resume", { threadId: String(orphanEntry.threadId), excludeTurns: false, ...(options.sandbox ? { sandbox: options.sandbox } : {}), ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}) }).catch(() => null);
-    if (resumed?.thread?.id) return { threadId: String(orphanEntry.threadId), created: false };
+    return { all, out: { threadId: String(orphanEntry.threadId) } };
+  });
+  if (claimed) {
+    const resumed = await resumeTalkThread(claimed.threadId, options);
+    if (resumed.ok) return { threadId: claimed.threadId, created: false };
+    if (resumed.kind !== "missing") throw talkUnavailable(resumed.kind, resumed.message);
   }
+  /* 并发兜底：另一位调用方可能刚在链内写好了这条（本函数也在按成员串行的队列里跑，
+     这里只是防探活/旧版本留下的竞态）。已有就复用，⛔ 不再新建第二条。 */
+  const fresh = readLedger()[key]?.threadId;
+  if (fresh && fresh !== hit?.threadId) return { threadId: fresh, created: false };
   /* ⛔ 守卫【171】：所有 thread/start 调用点都要接 ensureProjectAgentsMd（项目约定文件随会话落地）。 */
   ensureProjectAgentsMd(String(options.cwd ?? "").trim() || process.cwd());
   const started: any = await server.request("thread/start", {
@@ -178,10 +243,46 @@ export async function ensureTalkThread(
     threadId,
     name: `伙伴·${member.name}@${options.groupName || "群聊"}`.slice(0, 40),
   }).catch(() => undefined);
-  all[key] = { threadId, name: member.name, at: Date.now() };
-  writeLedger(all);
+  await mutateLedger((all) => {
+    all[key] = { threadId, name: member.name, at: Date.now() };
+    return { all, out: null };
+  });
   options.onCreated?.(threadId);
   return { threadId, created: true };
+}
+
+/**
+ * 只读探测某位成员的群聊会话（给「先挂流式监听」用）。
+ * ⛔ **绝不新建会话** —— 并发探测 / 会话正忙时新建，正是"同一位成员两条会话"的来源。
+ * 返回 null = 还没有会话或暂时不可用（让排队后的 runTalkTurn 去建）；
+ * `busy` = 会话活着但正在跑（此时先不挂流式，否则增量会串到上一轮的内容上）。
+ */
+export async function peekTalkThread(
+  groupId: string,
+  member: TalkMember,
+  options: { sandbox?: string; approvalPolicy?: string } = {},
+): Promise<{ threadId: string; busy: boolean } | null> {
+  const hit = readLedger()[talkKey(groupId, member.id)];
+  if (!hit?.threadId) return null;
+  const resumed = await resumeTalkThread(hit.threadId, options);
+  if (resumed.ok) return { threadId: hit.threadId, busy: false };
+  if (resumed.kind === "busy") return { threadId: hit.threadId, busy: true };
+  return null;
+}
+
+/* 同一成员的群聊投递串行：引擎不允许 resume / 并行回合**正在跑**的会话。
+   串行后第二条会等第一条跑完再 ensure + turn ⇒ 既不新建重复会话，也不会"回了句已送到、其实没送"。 */
+const talkChains = new Map<string, Promise<unknown>>();
+
+/** 把一次群聊投递排进该成员的串行队列（键 = 群 + 成员，不同群互不阻塞；前一条失败不阻塞后一条）。 */
+export function queueTalkDelivery<T>(groupId: string, memberId: string, task: () => Promise<T>): Promise<T> {
+  const key = talkKey(groupId, memberId);
+  const prev = talkChains.get(key) ?? Promise.resolve();
+  const run = prev.then(task, task);
+  const settled = run.catch(() => undefined);
+  talkChains.set(key, settled);
+  void settled.then(() => { if (talkChains.get(key) === settled) talkChains.delete(key); });
+  return run;
 }
 
 /** 一轮群聊：把一条消息送进成员会话，等它说完，把最终文本还回来。 */

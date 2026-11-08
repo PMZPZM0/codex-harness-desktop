@@ -66,7 +66,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetGroupThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -561,15 +561,14 @@ async function runDispatchRounds(
          这段时间界面原来什么都不显示。⇒ 「运行中」先报（busy 立刻亮），threadId 由 group-talk-live 补。 */
       options.onPhase?.("started", partner, {});
       /* ⛔⛔ 11-08 用户实测（「谁在运行一点反馈都没有」「回复了就要立刻看到」）：
-         群聊回合也要像主对话一样**逐字上屏**。先解析出这位成员的会话（runTalkTurn 会命中同一本台账复用），
-         再订阅它的 agentMessage 增量，广播给渲染层（流式卡 + 过程块）。 */
-      const liveThread = await ensureTalkThread(group.id, partner as TalkMember, {
-        cwd: group.workspace || undefined,
-        groupName: group.name,
+         群聊回合也要像主对话一样**逐字上屏**。先**只读探测**这位成员的会话（⛔ 绝不在这里新建 ——
+         探测式新建正是"同一位成员两条会话"的来源），再订阅它的 agentMessage 增量。
+         会话正忙（上一轮还没跑完）时先不挂：排队后的那一轮会自己把内容发进群。 */
+      const liveThread = await peekTalkThread(group.id, partner as TalkMember, {
         sandbox: params.sandbox,
         approvalPolicy: params.approvalPolicy,
       }).catch(() => null);
-      liveThreadId = liveThread?.threadId ?? "";
+      liveThreadId = liveThread && !liveThread.busy ? liveThread.threadId : "";
       if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
         let lastTickAt = 0;
@@ -601,16 +600,19 @@ async function runDispatchRounds(
       /* ⛔ 11-08 审查：模型 / 沙箱 / 审批档原来在这里被丢掉（只传了 effort）⇒ 群输入框三个控件全是死的。
          群聊会话与主对话同口径：模型逐回合下发、沙箱与审批档建/复会话时落、审批档再逐回合兜一次。 */
       const clearedMark = groupClearedAt.get(group.id) ?? 0;
-      const res = await withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
+      /* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」：同一成员的消息**串行投递** ——
+         引擎不允许 resume/并行回合正在跑的会话，旧代码撞上就新建一条（重复会话）或直接失败。
+         排队后第二条会等第一条跑完再 ensure + turn；超时也从**真正开跑**时算（⛔ 不含排队等待）。 */
+      const res = await queueTalkDelivery(group.id, partner.id, () => withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
         cwd: group.workspace || undefined,
         groupName: group.name,
-        /* ⛔ 上面已 ensure 过（为流式监听）⇒ 把 threadId 交下去，runTalkTurn 不再 resume 第二遍。 */
+        /* ⛔ 探测到空闲会话就交给它，runTalkTurn 不再 resume 第二遍。 */
         ...(liveThreadId ? { threadId: liveThreadId } : {}),
         ...(params.model ? { model: params.model } : {}),
         ...(params.effort ? { effort: params.effort } : {}),
         ...(params.sandbox ? { sandbox: params.sandbox } : {}),
         ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-      }), partner.name);
+      }), partner.name));
       if (!res?.ok || !res?.threadId) {
         errMsg = "群聊会话没起来";
         failed.push(`${partner.name}：${errMsg}`);
@@ -1261,8 +1263,10 @@ async function healOrphanTalkThreads(): Promise<void> {
   const orphans = listTalkThreads().filter((row) => row.groupId && !live.has(row.groupId));
   orphanTalkHealed = true;
   if (!orphans.length) return;
-  await deleteEngineThreads(orphans.map((row) => row.threadId));
-  for (const gid of new Set(orphans.map((row) => row.groupId))) forgetGroupThreads(gid);
+  const { failed } = await deleteEngineThreads(orphans.map((row) => row.threadId));
+  /* 只清删成功的；失败的留台账，下次启动再试（删成功但台账没清 = 标签永远摘不掉）。 */
+  const failedSet = new Set(failed);
+  forgetTalkThreads(orphans.map((row) => row.threadId).filter((tid) => !failedSet.has(tid)));
   broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
 }
 
@@ -1294,10 +1298,12 @@ async function healOrphanTalkThreads(): Promise<void> {
       const messages = { ...store.messages };
       delete messages[gid];
       writeStore({ groups: store.groups.filter((x) => x.id !== gid), messages, version: 2 });
-      /* 台账先清：渲染层的「伙伴」标签靠它，留着就永远摘不掉（另广播一次即时刷新）。 */
-      forgetGroupThreads(gid);
-      broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
       const { removed, failed } = await deleteEngineThreads(threads);
+      /* 只清**删成功**的台账：删失败的留着，渲染层的「伙伴」标签会一直挂着 —— 这正是提醒
+         （下次启动自愈会再试），⛔ 不能一把清光让它们变成永远没人管的孤儿会话。 */
+      const failedSet = new Set(failed);
+      forgetTalkThreads(threads.filter((tid) => !failedSet.has(tid)));
+      broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
       return { ok: true, id: gid, removedThreads: removed, totalThreads: threads.length, failed };
     });
 
