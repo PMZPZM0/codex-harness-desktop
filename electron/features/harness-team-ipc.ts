@@ -1560,7 +1560,8 @@ async function healOrphanTalkThreads(): Promise<void> {
       const threads = [...new Set([
         ...(store.messages[gid] ?? [])
           .map((row) => String((row as { threadId?: unknown } | null)?.threadId ?? ""))
-          .filter((id) => id && !id.startsWith("group:")),
+          /* `group:` 是群投影、`cli:` 是本地 CLI 直跑的合成 id —— 都不是引擎会话，⛔ 不去删引擎。 */
+          .filter((id) => id && !id.startsWith("group:") && !id.startsWith("cli:")),
         ...ledgerThreads,
       ])];
       const messages = { ...store.messages };
