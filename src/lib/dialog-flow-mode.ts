@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { createContext, useContext, useSyncExternalStore } from "react";
 
 /**
  * 对话流展示（10-31 用户令）：
@@ -39,7 +39,16 @@ export function subscribeDialogFlowMode(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
-/** React 侧读展示模式（`useSyncExternalStore`，同值不重渲）。 */
+/* ⛔⛔ 11-09 用户（群设置截图）：「对话流」现在是**默认折叠**，可群里跑起来照样把详细步骤铺开了。
+   根因：群聊有**自己的**「对话流」设置（`dialogFlow: simple | detail`），而 `TurnView` 里的过程折叠
+   读的是**全局**这个偏好（默认 detailed）⇒ 群的设置根本没被消费。
+   ⇒ 加一个**作用域覆盖**：谁在自己的子树里提供 `DialogFlowScope`，子树内所有 TurnView 都跟它走。
+   ⛔ 只覆盖、不改全局值：主对话与设置页照旧读 localStorage，⛔ 别用 setDialogFlowMode 去改（会污染用户偏好）。 */
+export const DialogFlowScope = createContext<DialogFlowMode | null>(null);
+
+/** React 侧读展示模式（`useSyncExternalStore`，同值不重渲）；有作用域覆盖时以覆盖为准。 */
 export function useDialogFlowMode(): DialogFlowMode {
-  return useSyncExternalStore(subscribeDialogFlowMode, getDialogFlowMode, getDialogFlowMode);
+  const scoped = useContext(DialogFlowScope);
+  const global = useSyncExternalStore(subscribeDialogFlowMode, getDialogFlowMode, getDialogFlowMode);
+  return scoped ?? global;
 }

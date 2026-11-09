@@ -15,7 +15,7 @@ import { useTeamTurn } from "./09-team-process";
 import { copyTextToClipboard } from "../../lib/clipboard";
 
 /** 群里的一个回合 = 主对话一整轮（正文逐条上屏 → 收尾后整轮折叠可展开 + 文件卡 + 页脚）。 */
-export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpenReview, onQuote, onOpenThread, fallback, extraFooter }: {
+export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpenReview, onQuote, onOpenThread, fallback, extraFooter, running = false, live = false }: {
   threadId: string;
   at: number;
   bodyText: string;
@@ -28,9 +28,13 @@ export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpen
   fallback?: ReactNode;
   /** 群特有的页脚项（追问 / 来源会话）：接在主对话页脚**同一行**（⛔ 不另起一行留白）。 */
   extraFooter?: ReactNode;
+  /** 运行中：与主对话同一套（⛔ 不再走 TeamProcess 那套自绘过程块）。 */
+  running?: boolean;
+  /** 运行中要按事件重拉（收尾态用一次性拉取）。 */
+  live?: boolean;
 }) {
   const fresh = Date.now() - Number(at) < 120_000;
-  const { turn } = useTeamTurn(threadId, at, bodyText, false, fresh);
+  const { turn } = useTeamTurn(threadId, at, bodyText, live, fresh);
   const handlers = useMemo<FoldHandlers>(() => ({
     onCopy: (text) => { void copyTextToClipboard(text).catch(() => undefined); },
     onQuote: (text) => onQuote(text),
@@ -40,10 +44,22 @@ export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpen
     onOpenFile: (path) => onOpenFile(path),
     ...(onOpenThread ? { onOpenThread } : {}),
   }), [onOpenFile, onQuote, onOpenThread]);
-  const view = useMemo(
-    () => (turn ? ({ ...turn, items: (turn.items ?? []).filter((item) => item && item.type !== "userMessage") } as Turn) : null),
-    [turn],
-  );
+  /* ⛔⛔ 11-09 用户（两张截图对照）：「运行结束效果是对的，运行中就不对」「给我做到跟主对话框一模一样，
+     不管运行中还是运行结束都复用过来」。
+     ⇒ 运行中同样走主对话 TurnView。但有个数据差异必须先补：**回合快照里的 item 不带 status**
+     （electron 建回合时只写 id/type/text），而 TurnView 里 ReasoningCard 的判据是
+     `turnActive && (itemRunning || (!status && !durationMs))` —— 没有 status 就永远落进兜底分支，
+     整轮的 turnActive 会复制给每一张思考卡 ⇒ 思考完了还一直亮。
+     这里按顺序补齐：**只有最后一项可能是进行中**，它前面的一定已经结束（后面还有东西）。
+     ⛔ 不要把这层补丁挪进 ReasoningCard —— 主对话靠引擎事件给 status，那边不需要也不该背这个兜底。 */
+  const view = useMemo(() => {
+    if (!turn) return null;
+    const items = (turn.items ?? []).filter((item) => item && item.type !== "userMessage");
+    const normalized = running
+      ? items.map((item, index) => (index === items.length - 1 || item.status ? item : { ...item, status: "completed" }))
+      : items;
+    return { ...turn, items: normalized } as Turn;
+  }, [turn, running]);
   if (!view) return <>{fallback ?? null}</>;
   return (
     <TurnView
@@ -51,7 +67,11 @@ export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpen
       threadId={threadId}
       usage={usage}
       handlers={handlers}
-      isLastTurn={false}
+      /* ⛔⛔ 11-09 回归修复（审查抓到）：运行中改走 TurnView 后，推理浮窗的 host 选择器丢了 ——
+         原来由 `TeamProcess` 传给 ItemView。不显式传会回落到主对话的 `.reasoning-float-host`，
+         浮窗被群窗/设置弹层压住（正是 11-08 审查修过的那条）。⇒ 沿 TurnView → TurnFoldStream 透传。 */
+      reasoningFloatHost=".team-reasoning-float-host"
+      isLastTurn={running}
       onOpenReview={onOpenReview}
       extraFooter={extraFooter}
     />

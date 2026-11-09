@@ -422,7 +422,7 @@ function resolveGroupTargets(
 }
 
 /** 派活的运行参数（输入框上选的模型/档位/沙箱/审批）。 */
-type DispatchParams = { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string };
+type DispatchParams = { model?: string; effort?: string; sandbox?: string; approvalPolicy?: string; /** 话题内派活：话题起点的原文（只进 prompt，⛔ 不落群消息）。 */ topicRoot?: string };
 
 /** 每次派活的生命周期回调（主进程用它广播进度，面板据此显示/收起「处理中」）。 */
 type DispatchPhase = (
@@ -489,6 +489,27 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
       try { await server.request("thread/archive", { threadId: tid }); removed += 1; }
       catch { failed.push(tid); }
     }
+  }
+  /* ⛔⛔ 11-09 用户令：「删群时必须跟着删群里产生的子会话，这个联动必须加强」。
+     `thread/delete` 返回成功 ≠ 真的没了（引擎侧正被占用 / 墓碑延迟 / 刚 rename 过的竞态，
+     都会出现"调用没抛错，但列表里还挂着"）。⇒ 删完**统一复核一次**：
+       仍在 `thread/list`（含归档）里出现的，一律记进 failed —— 台账因此保留，
+       下次启动的 `healOrphanTalkThreads` 会再试，而不是让它们变成找不到出处的孤儿会话说。
+     ⛔ 复核本身失败**不改变结论**（宁可留台账下次再试，也不要谎报已删干净）。 */
+  if (failed.length < threadIds.length) {
+    try {
+      const alive = new Set<string>();
+      for (const archived of [false, true]) {
+        const res = (await server.request("thread/list", { limit: 500, archived })) as { data?: Array<{ id?: unknown }> } | null;
+        for (const row of res?.data ?? []) {
+          const id = String((row as { id?: unknown } | null)?.id ?? "");
+          if (id) alive.add(id);
+        }
+      }
+      for (const tid of [...new Set(threadIds)].filter(Boolean)) {
+        if (alive.has(tid) && !failed.includes(tid)) failed.push(tid);
+      }
+    } catch { /* 复核失败：保持原结论 */ }
   }
   return { removed, failed };
 }
@@ -632,6 +653,9 @@ async function runDispatchRounds(
         fromTalk,
         bodyText,
         readGroupHistory(TALK_HISTORY_LIMIT),
+        /* ⛔ 11-09 用户令：「里面的 agent 必须知道自己在话题里面」——
+           话题内派活带 root 原文，prompt 里就会有一段「你在话题里 + 重要内容怎么汇报到群主流」。 */
+        params.topicRoot ? { rootText: String(params.topicRoot) } : null,
       );
       /* ⛔ 保留团 → 群的绑定（团成员若仍由 team_member_invoke 起，产出照样落群）。 */
       if (partner.targetKind === "team") bindTeamGroup(partner.targetKey, group.id);

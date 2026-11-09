@@ -32,8 +32,8 @@ import {
   toggleSchedule,
 } from "../../lib/team-schedule.mjs";
 import { AppSelect } from "../../components/AppSelect";
-import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { MemberAvatar } from "./13-team-avatar";
+import { FlowPreview, FormPreview, LayoutPreview, ReplyPreview } from "./26-team-settings-preview";
 
 type Props = {
   group: TeamGroup;
@@ -157,11 +157,7 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
               className={`team-settings__layout-card${messageLayout === opt.value ? " is-on" : ""}`}
               onClick={() => onMessageLayout(opt.value)}
             >
-              <span className={`team-settings__layout-demo is-${opt.value}`} aria-hidden>
-                <i className="is-left" />
-                <i className={opt.value === "split" ? "is-right" : "is-left"} />
-                <i className="is-left" />
-              </span>
+              <LayoutPreview mode={opt.value} />
               <strong><opt.Icon size={12} />{opt.label}</strong>
               <small>{opt.desc}</small>
             </button>
@@ -194,11 +190,7 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
               className={`team-settings__layout-card${replyMode === opt.value ? " is-on" : ""}`}
               onClick={() => onReplyMode(opt.value)}
             >
-              <span className={`team-settings__layout-demo is-reply-${opt.value}`} aria-hidden>
-                <i className="is-left" />
-                <i className="is-left" />
-                <i className="is-left" />
-              </span>
+              <ReplyPreview mode={opt.value} />
               <strong><opt.Icon size={12} />{opt.label}</strong>
               <small>{opt.desc}</small>
             </button>
@@ -232,10 +224,7 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
               className={`team-settings__layout-card${messageForm === opt.value ? " is-on" : ""}`}
               onClick={() => onMessageForm(opt.value)}
             >
-              <span className={`team-settings__form-demo is-${opt.value}`} aria-hidden>
-                <i className="is-left" /><i className="is-left" />
-                {opt.value === "topic" && <b className="is-nested"><i /><i /></b>}
-              </span>
+              <FormPreview mode={opt.value} />
               <strong>{opt.label}</strong>
               <small>{opt.desc}</small>
             </button>
@@ -258,15 +247,30 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
           打开：运行中直接把过程步骤铺开（主对话框「详细对话流」的手感）。
           <strong>只影响运行中</strong>，跑完仍按一轮折叠展示。
         </p>
-        <div className="team-settings__inline-row">
-          <span>运行中展开过程</span>
-          <ToggleSwitch
-            checked={dialogFlow === "detail"}
-            label="运行中展开过程"
-            className="team-settings__switch"
-            onChange={(next) => onDialogFlow(next ? "detail" : "simple")}
-          />
+        {/* ⛔ 11-09 用户：「把对话流也改成上面一样卡片展示，切换」——原来是单个胶囊开关，
+            和上面三组不是一套语言。这里换成同样的双卡片（示意也走真实内容）。 */}
+        <div className="team-settings__layout-cards" data-group="dialog-flow" role="radiogroup" aria-label="群对话流">
+          {([
+            { value: "simple", label: "收在折叠块", desc: "运行中点标题才展开" },
+            { value: "detail", label: "直接铺开", desc: "运行中平铺每一步" },
+          ] as const).map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              role="radio"
+              aria-checked={dialogFlow === opt.value}
+              className={`team-settings__layout-card${dialogFlow === opt.value ? " is-on" : ""}`}
+              onClick={() => onDialogFlow(opt.value)}
+            >
+              <FlowPreview mode={opt.value} />
+              <strong><ListChecks size={12} />{opt.label}</strong>
+              <small>{opt.desc}</small>
+            </button>
+          ))}
         </div>
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{dialogFlow === "detail" ? "直接铺开" : "收在折叠块"}</strong> · 已保存到这个群（换设备也保留）
+        </p>
       </section>
     </>
   );

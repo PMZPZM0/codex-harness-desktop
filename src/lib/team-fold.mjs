@@ -93,16 +93,57 @@ export function pickTurnOf(turns, at = 0, bodyText = "", opts = {}) {
  *   · 话题条显示 N 条回复 + 头像栈 + 最后一条缩略，点击弹窗预览完整话题串。
  * ⛔ 纯函数：只分组，不渲染、不改行。返回 Map<root.key, { root, replies }>。
  */
+/** 话题里的「汇报到群主流」标记（⛔ 与 buildTalkInput 里的写法必须逐字一致）。 */
+const ANNOUNCE_RE = /^[ \t]*【群里汇报】/m;
+
 export function buildTopicThreads(rows) {
   const out = new Map();
   let rootKey = null;
+  /* ⛔⛔ 11-09 用户（飞书对照截图）：「话题就是迷你群聊……后续的消息都在话题里面更新，
+     而不是在群里更新」。⇒ 原来的口径「每条非 bot 消息都开新话题」是错的：
+     在话题里接着说一句，就变成了**另一个话题**，看着像消息跑去群里了。
+     ⇒ 新口径：非 bot 消息若**带着引用**（`> …` 开头，且引的就是某个已有话题的根），
+        就并进那个话题（它自己也成为该话题的一条），其后的伙伴回复继续归这个话题。
+        ⛔ 判据只用正文（落盘就带 `>` 前缀，刷新后仍成立），⛔ 不新加字段、⛔ 不改落盘结构。 */
+  const norm = (text) => String(text ?? "").replace(/\s+/g, " ").trim();
+  /** 取正文开头的引用段（连续 `>` 行），返回规范化后的文本；没有引用返回 ""。 */
+  const quoteOf = (text) => {
+    const quoted = [];
+    for (const line of String(text ?? "").split("\n")) {
+      if (/^[ \t]*>/.test(line)) quoted.push(line.replace(/^[ \t]*>\s?/, ""));
+      else if (quoted.length) break;
+    }
+    return quoted.length ? norm(quoted.join(" ")) : "";
+  };
+  /** 引用 → 已有话题根。⛔ 用前缀比对（引用可能被截断 / 根消息很长），不做全文相等。 */
+  const ownerOf = (quote) => {
+    if (!quote) return null;
+    const head = quote.slice(0, 80);
+    let hit = null;
+    for (const [key, thread] of out) {
+      const root = norm(thread?.root?.text);
+      if (!root) continue;
+      const rootHead = root.slice(0, 80);
+      if (quote.startsWith(rootHead) || root.startsWith(head) || (head.length >= 8 && rootHead.startsWith(head))) {
+        hit = key; // 取**最近一个**匹配（后面的更可能是它要接的那条）
+      }
+    }
+    return hit;
+  };
   for (const r of Array.isArray(rows) ? rows : []) {
     if (!r || !r.key) continue;
     if (r.authorKind !== "bot") {
+      const owner = ownerOf(quoteOf(r.text));
+      if (owner) { out.get(owner).replies.push(r); rootKey = owner; continue; }
       rootKey = r.key;
       out.set(rootKey, { root: r, replies: [] });
       continue;
     }
+    /* ⛔⛔ 11-09 用户：「在话题里面，重要的消息也可以在外面汇报」。
+       伙伴在话题里回复时，只要**单独一行**写 `【群里汇报】…`，这一条就**不进话题** ——
+       它留在群主流当一条独立消息（其余内容照旧留在话题里）。prompt 侧已写明这个写法。
+       ⛔ rootKey 保持不变：汇报完之后的回复仍然属于原话题。 */
+    if (ANNOUNCE_RE.test(String(r.text ?? ""))) continue;
     if (rootKey && out.has(rootKey)) out.get(rootKey).replies.push(r);
   }
   return out;

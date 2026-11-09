@@ -104,7 +104,17 @@ export function groupHistoryBlock(rows: TalkHistoryRow[], currentLine = ""): str
 
 /** 群聊专属输入（⛔ 不复用 groupContextBlock —— 那是派活/协作协议的口径）。
  *  导出给接线层：群聊会话与互相投递共用同一份口径，⛔ 不写第二套。 */
-export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow[] = []): string {
+export function buildTalkInput(
+  options: GroupTalkOptions,
+  me: TalkMember,
+  from: TalkMember,
+  text: string,
+  history: TalkHistoryRow[] = [],
+  /* ⛔⛔ 11-09 用户：「里面的 agent 必须知道自己在话题里面」「在话题里面，重要的消息也可以在外面汇报」。
+     ⇒ 话题内派活时把话题起点带进来，并在 prompt 里明说「你在话题里」+ 一条跳出话题的约定写法。
+     ⛔ 只加在**壳后**（模型读得到、气泡不显示）；⛔ 不改正文、不改落盘结构。 */
+  topic?: { rootText?: string } | null,
+): string {
   /* ⛔ 11-08 审查确认：成员名 / 群名 / 共享背景同样是外部可改文本，进信封前一律消毒
      （与正文同口径 —— 名字里塞结束标记同样能让剥离器提前截断）。 */
   const roster = options.roster.map((m) => sanitizeForEnvelope(`${m.name}${m.targetProfession ? `（${m.targetProfession}）` : ""}`)).join("、");
@@ -134,6 +144,18 @@ export function buildTalkInput(options: GroupTalkOptions, me: TalkMember, from: 
     `群里的人：${roster || "（暂时只有你自己）"}`,
   ];
   if (options.memory) need.push(`群里的共享背景：${sanitizeForEnvelope(String(options.memory))}`);
+  if (topic) {
+    /* ⛔ 话题 = 迷你群聊（11-09 用户定稿）：一句一句接着聊，**默认留在话题里**（不铺到群主流）；
+       只有「对全群都重要」的内容才额外汇报出去 —— 否则主流会被话题里的碎话刷满。 */
+    const root = sanitizeForEnvelope(String(topic.rootText ?? "")).replace(/\s+/g, " ").trim().slice(0, 240);
+    need.push(
+      "【你正在一个话题里回复】",
+      "这是群里的一个**话题**（一段围绕同一件事的连续对话），不是群主流。你这条回复会留在话题里，群里的人点开话题才看到 —— 这是正确的、不要因此重复发。",
+      root ? `话题起点：${root}` : "",
+      "如果这条内容对**全群**都重要（结论 / 决定 / 状态变了 / 需要所有人都知道的进展），在回复里**单独一行**写 `【群里汇报】你要说的那句`，宿主会把这一行额外发到群主流；其余内容照旧留在话题里。",
+      "⛔ 不要为了「让更多人看到」而把整段回复复制两份。",
+    );
+  }
   need.push(
     /* ⛔⛔ 11-08 用户实测（截图：成员回「生图专家 哈喽~」但没 @，对方一直不吭声）：
        「好家伙，他们都不知道沟通要互相 @ 才行」——协议原来只写在最后一句里，模型写名字

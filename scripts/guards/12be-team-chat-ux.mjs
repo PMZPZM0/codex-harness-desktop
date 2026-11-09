@@ -187,7 +187,8 @@ const catalog = [
   /* 11-07 用户对照截图：「名字在消息气泡外面，引用消息在气泡里面并且跟下面消息对齐」。 */
   ok(/className="team-msg__main"/.test(view)
     && /className="team-msg__meta"/.test(view)
-    && /<div className="team-msg__body">[\s\S]{0,900}?team-process__quote--top/.test(view),
+    /* ⛔ 11-09：引用抽成 `TeamQuoteBlock`（类名搬进组件内）⇒ 判据看**组件调用在气泡里**。 */
+    && /<div className="team-msg__body">[\s\S]{0,1600}?<TeamQuoteBlock/.test(view),
     "⛔ 名字那一行移出气泡（main 列容器），引用仍留在气泡里");
   ok(/\.team-msg__main \{[\s\S]{0,220}?flex-direction: column/.test(css)
     && /\.team-msg__body \.team-process__quote--top \{[^}]*display: inline-flex/.test(css)
@@ -567,8 +568,9 @@ const catalog = [
     "⛔ 主进程不 await 派活：关面板/切页后任务照跑（产出照进群、互 @ 照接力）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   /* 11-08：派活前多了「运行中的伙伴先进队列」这一跳（idleTargets），清空仍只在**成功之后**。 */
-  ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\)[\s\S]{0,260}?setText\(""\)/.test(view)
-    && !/onSend\?\.\(idleTargets, fullBody, params\)[\s\S]{0,80}?setText\(""\)[\s\S]{0,200}?if \(r && !r\.ok\)/.test(view),
+  /* ⛔ 11-09：清空收敛成 `clearComposer(isOverride)`（话题弹窗复用 send 时不许动主输入框草稿）。 */
+  ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\)[\s\S]{0,320}?clearComposer\(Boolean\(override\)\)/.test(view)
+    && !/onSend\?\.\(idleTargets, fullBody, params\)[\s\S]{0,80}?clearComposer\([\s\S]{0,200}?if \(r && !r\.ok\)/.test(view),
     "派活成功即清空输入框（主对话口径；失败保留原文 —— ⛔ 清空必须排在校验失败之后）");
   ok(/e\.nativeEvent\.isComposing/.test(view),
     "中文输入法选字期间的 Enter 不误发（否则 IME 会把清空回滚，看着像没清）");
@@ -781,13 +783,13 @@ const catalog = [
   /* 11-08 用户实测：「前面怎么还自动多一个 @软件开发专家团」——
      根因是上一轮 @ 的目标挂到了下一轮。⛔ 11-08 起目标身份**从正文反查**
      ⇒ 发完清正文 = 清本轮 @（不再有独立的 atTargets 需要清），换群由组件重挂载重置。 */
-  ok(!/setAtTargets\(/.test(view) && (view.match(/setText\(""\)/g) || []).length >= 2
+  ok(!/setAtTargets\(/.test(view) && (view.match(/clearComposer\(Boolean\(override\)\)/g) || []).length >= 2
     && /const atTargets = useMemo\([\s\S]{0,60}?mentionTargetsInText\(text\.replace\([\s\S]{0,80}?\), mentionCandidatesFlat\)/.test(view),
     "本轮 @ 随正文一起清（派活 + 队列两条路径都清正文）—— ⛔ 不再有会偷偷带到下一轮的第二份目标状态");
-  ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\);[\s\S]{0,260}?setText\(""\);/.test(view),
+  ok(/const r = await onSend\?\.\(idleTargets, fullBody, params\);[\s\S]{0,320}?clearComposer\(Boolean\(override\)\);/.test(view),
     "清 @ 与清正文在同一处（用户看到的就是「发出去、输入区归零」）");
   ok(/<TeamQueueStack/.test(view) && /queueTeamMessage\(entry\.run\.threadId, fullBody\)/.test(view)
-    && /const idleTargets = atTargets\.filter/.test(view),
+    && /const idleTargets = targets\.filter/.test(view),
     "运行中的伙伴走**队列**、空闲的仍走派活（⛔ 对运行中的会话 turn/start 会被主进程拒，等于消息发不出去）");
   const mainQueue = codeOnly(read("electron/features/harness-team-queue.ts"));
   ok(/turn\/steer/.test(mainQueue) && /thread\/queue\/delete/.test(mainQueue) && /thread\/queue\/start/.test(mainQueue),
@@ -824,12 +826,16 @@ const catalog = [
     "反馈组件只收 mode/partners/faceOfId（⛔ 不再把 live 传进去 —— 占位图标不依赖流式正文）");
   ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
-  /* ⛔ 11-09：「一回合一条成品消息」后没有"该轮第一条消息"可挂 ⇒ 运行中的过程折叠归**流式卡**，
-     跑完整轮由 TurnView 呈现；占位模式照旧不画过程。 */
-  ok(/<TeamProcess[\s\S]{0,240}?threadId=\{run\.threadId\}[\s\S]{0,160}?at=\{run\.startedAt\}/.test(view)
-    && /effectiveReplyMode === "process" && \([\s\S]{0,260}?<TeamProcess/.test(view)
+  /* ⛔⛔ 11-09 用户（两张截图对照）：「运行结束效果是对的，运行中就不对」「给我做到跟主对话框一模一样，
+     不管运行中还是运行结束，都复用过来」⇒ 运行中**不再走 TeamProcess 那套自绘过程块**，
+     整轮交给 `TeamTurnView`（= 主对话 TurnView），只多传 `running` / `live`。
+     ⛔ 判据随之改口径（意图不变：运行中要有过程、占位模式不画）：流式卡必须是 TeamTurnView + running，
+        且**不许**再出现 `<TeamProcess`（第二套实现正是本次报障的根因）。 */
+  ok(/<TeamTurnView[\s\S]{0,320}?threadId=\{run\.threadId\}[\s\S]{0,260}?running[\s\S]{0,60}?live/.test(view)
+    && /effectiveReplyMode === "process" \? \(/.test(view)
+    && !/<TeamProcess/.test(view)
     && !/row\.runFirst/.test(view),
-    "运行中的过程折叠挂在**流式卡**里（与主对话同序：过程在上、正文在下）；占位模式不画");
+    "运行中整轮交给 TeamTurnView（= 主对话 TurnView，用户「做到跟主对话框一模一样」）；⛔ 不许再有第二套过程块");
   /* ⛔ 11-08 用户实测（群聊页脚「缓存 0 · 命中 0%」一直不变）：群聊用量是归一化对象
      （字段 `cachedTokens`），取值函数只认引擎原始字段名 ⇒ 归一化值被漏掉、恒 0。 */
   ok(/cachedTokens", "cached_tokens"/.test(read("src/lib/usage-cached-tokens.ts")),
@@ -865,12 +871,17 @@ const catalog = [
       && /\.\.\.\((?:liveUsage|usageForMessage) \? \{ usage: (?:liveUsage|usageForMessage) \}/.test(ipcEq)
       && /usage: msg\?\.usage \?\? null/.test(modelsEq),
       "群消息页脚展示 token 用量（与主对话同口径；主进程落消息时带 usage，老日志为空）");
-    ok(/turnActive=\{running\}/.test(procEq) && /reasoningFloatHost=/.test(procEq)
+    /* ⛔ 11-09：运行中整轮改由 `29-team-turn-view`（= 主对话 TurnView）承担，
+       `09-team-process` 退役 ⇒ 判据改看新实现（⛔ 仍不许在群板块里另写一套推理渲染）。 */
+    const turnEq = codeOnly(read("src/features/harness-team/29-team-turn-view.tsx"));
+    ok(/reasoningFloatHost="\.team-reasoning-float-host"/.test(turnEq)
+      && /reasoningFloatHost=\{reasoningFloatHost\}/.test(codeOnly(read("src/features/session-turn/SessionTurn/03-turn-view.tsx")))
+      && /reasoningFloatHost=\{reasoningFloatHost\}/.test(codeOnly(read("src/features/session-queue/SessionQueue.tsx")))
       && /floatHostSelector/.test(rcEq)
       /* ⛔ 推理两种展示（自适应浮窗 / 长条 strip）都在 ReasoningCard 里分叉 —— 群聊直接复用，
          ⛔ 不许在群板块里另写一套（出现 ReasoningStrip / reasoning-card 就是分叉）。 */
       && /ReasoningStrip/.test(rcEq) && /displayMode === "strip"/.test(rcEq)
-      && !/ReasoningStrip/.test(procEq) && !/reasoning-card/.test(procEq)
+      && !/ReasoningStrip/.test(turnEq) && !/reasoning-card/.test(turnEq)
       /* ⛔ 11-08 审查确认：宿主必须挂在 TeamGroupView 根（设置→团队 的 TeamModePanel 没有 overlay，
          只挂 overlay 那种场景浮窗会回落 body、被设置弹窗压住）。overlay 里不许再放第二份。 */
       && /team-reasoning-float-host/.test(viewEq) && !/team-reasoning-float-host/.test(overlayEq),
@@ -1083,9 +1094,10 @@ const catalog = [
   /* ⛔ 11-09 用户令：「群设置加一个对话流开关，默认折叠，点击展开后运行中就展开流程」：
      默认 simple（运行中过程折叠、点标题展开）；detail 才铺开。⛔ 收尾后的整轮折叠不变。 */
   const settingsUi = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
-  ok(/data-section="dialog-flow"/.test(settingsUi) && /ToggleSwitch/.test(settingsUi)
+  ok(/data-section="dialog-flow"/.test(settingsUi) && /data-group="dialog-flow"/.test(settingsUi)
+    && /onDialogFlow\(opt\.value\)/.test(settingsUi)
     && /set-dialog-flow/.test(ipc) && /saveDialogFlow/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
-    && /defaultOpen=\{effectiveDialogFlow === "detail"\}/.test(view)
+    && /effectiveDialogFlow === "detail" \? "detailed" : "simple"/.test(view)
     && /defaultOpen=\{defaultOpen\}/.test(codeOnly(read("src/features/harness-team/09-team-process.tsx"))),
     "对话流开关（默认折叠）：detail 时运行中过程才默认展开；simple 走折叠、点标题展开");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
@@ -1120,8 +1132,9 @@ const catalog = [
     "共享上下文超预算时**丢最旧、留最新**（⛔ 正序累加会丢掉最新那几句，成员更接不上话）");
   ok(/text === current/.test(talk),
     "本轮这句已在需求体里，历史里不再重复贴一遍（⛔ 否则模型以为要回两次）");
-  ok(/buildTalkInput\(options: GroupTalkOptions, me: TalkMember, from: TalkMember, text: string, history: TalkHistoryRow\[\] = \[\]\)/.test(talk),
-    "注入是 buildTalkInput 的第 5 个参数（两条投递链共用同一份口径）");
+  /* ⛔ 11-09：签名改成多行（新增第 6 个 `topic`），判据改为「history 仍是第 5 个 + topic 可选」。 */
+  ok(/history: TalkHistoryRow\[\] = \[\],/.test(talk) && /topic\?: \{ rootText\?: string \} \| null,/.test(talk),
+    "注入是 buildTalkInput 的第 5 个参数、话题上下文是第 6 个（两条投递链共用同一份口径）");
   /* ⛔ 11-08 审查：runGroupTalk 整段死代码（派活搬进主进程后无调用方）已删 ——
      投递主链只剩 harness-team-ipc 一条，⛔ 不许再长出第二套口径。 */
   ok(!/runGroupTalk/.test(talk) && !/runGroupTalk/.test(outlet)
@@ -1191,7 +1204,11 @@ const catalog = [
   ok(/export function sanitizeForEnvelope/.test(talkSrc) && /群聊上下文\\u200b/.test(talkSrc)
     && /sanitizeForEnvelope\(text\)/.test(talkSrc),
     "群消息原文进信封前消毒（⛔ 正文带【群聊上下文结束】/ 行首 --- 会把信封提前截断、指令漏进云同步/记忆）");
-  ok(/(?:effectiveReplyMode|replyMode) === "process" && String\(run\.text \?\? ""\)\.trim\(\)/.test(viewSrc),
+  /* ⛔ 11-09：运行中卡改成三元（process ? 整轮 TurnView : 只挂「正在思考…」）——
+     占位分支**不许**再渲染 run.text。 */
+  ok(/effectiveReplyMode === "process" \? \(/.test(viewSrc)
+    && /<p className="team-msg__thinking">正在思考…<\/p>/.test(viewSrc)
+    && !/\} : \([\s\S]{0,160}?run\.text/.test(viewSrc),
     "占位模式不显示流式正文（流式卡跟着回复模式分叉）");
   ok(/res\?\.ok \|\| res\?\.reason === "idle"/.test(storeSrc),
     "停止返回 idle 也复位 busy/live（⛔ 原来只在 ok 时清，停止键会卡死）");
@@ -1325,7 +1342,7 @@ const catalog = [
   const stopSrc = codeOnly(read("electron/features/harness-team-stop.ts"));
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
-  ok(/if \(sendingRef\.current\) return;/.test(view) && /sendingRef\.current = true;/.test(view)
+  ok(/if \(sendingRef\.current\) return/.test(view) && /sendingRef\.current = true;/.test(view)
     && (view.match(/sendingRef\.current = false;/g) || []).length >= 3
     && /if \(e\.repeat\) return;/.test(view),
     "发送：同步 ref 闸门（三条返回路径都释放）+ 忽略键盘自动重复（⛔ 连按回车不再发多条一样的）");

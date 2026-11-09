@@ -193,7 +193,25 @@
 /* ⛔ 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：复用 MessageFooter，
    但它自带的 hover 显隐规则挂在 `.message:hover` 上（群消息是 `.team-msg`）⇒ 这里补同款三条。
    伙伴消息同样适用（TurnView 的页脚 + 群里追加的「追问 / 来源」都在这一行）。 */
-.team-msg.is-human .team-msg__footer { display: flex; justify-content: flex-end; margin-top: 2px; }
+/* ⛔⛔ 11-09 用户（截图红框）：「放到消息气泡外面，然后根据靠左靠右自适应展示在靠用户头像这边」。
+   ⇒ 动作条已从 `.team-msg__body` 里移出，变成 `.team-msg__main` 的最后一个子项。
+   **贴哪边不写死**，由 main 的 `align-items` 决定（这也是排版设置的唯一真相源）：
+     · is-human + split        → main align-items:flex-end   ⇒ 贴右（头像在右）
+     · is-human + is-layout-left→ main align-items:flex-start ⇒ 贴左（头像在左）
+     · 伙伴消息                → main align-items:flex-start ⇒ 贴左
+   ⛔ 所以这里**只允许**设 display / margin，禁止再写 justify-content:flex-end（那会与「全部靠左」打架）。 */
+.team-msg__footer { display: flex; margin-top: 2px; }
+/* ⛔⛔ 11-09 用户（两张对照截图）：「图标顺序没重新排」「只改群里的，跟外面对话框没关系」。
+   MessageFooter 的 DOM 顺序（引用/编辑/收藏/复制）是给主对话写的 —— 那边气泡恒靠右，
+   所以「复制」排在最后刚好贴着右端。群里「全部靠左」时气泡翻到左边，
+   复制就跑到离头像最远的那头，看着像顺序没跟着排版走。
+   ⇒ 靠左布局下只把**常驻的「复制」提到最前**（`order:-1`），其余三个保持原相对顺序 ——
+     ⛔ 不要用 row-reverse：那会把「编辑 / 收藏」也一起翻过来（变成 复制·收藏·编辑·引用），
+       看着像 bug；这里要的只是「复制挨着头像」。
+   ⛔ 只作用于 `.is-human`（伙伴消息没有这排）；⛔ 主对话的 `.user-message-footer` 不受影响。 */
+.team-group__stream.is-layout-left .team-msg.is-human .message-footer button[title="复制消息"] {
+  order: -1;
+}
 .team-msg:hover .message-footer,
 .team-msg .message-footer:focus-within { opacity: 1; }
 .team-msg:hover .message-footer .message-action-extra,
@@ -202,7 +220,10 @@
 .team-msg .message-footer:focus-within .message-action-default { opacity: 1; }
 /* 群里追加的页脚项（追问 / @名字 / 来源）：外观跟随 `.message-footer button`，只补一点字距。 */
 .message-footer .team-msg__extra { font-size: 10.5px; }
-.message-footer .team-msg__origin { margin-left: auto; }
+/* ⛔ 11-09 用户（截图）：「把这个来源会话标签靠左一点，这样就不用卡片这么长了」——
+   原来 `margin-left:auto` 把它顶到页脚最右端，把整行拉满（卡片也跟着变长）。
+   ⇒ 紧跟「追问」排即可；它只是个短标记，不该单独霸占一行右端。 */
+.message-footer .team-msg__origin { margin-left: 0; }
 .team-msg__avatar {
   flex: none;
   display: inline-flex;
@@ -973,37 +994,10 @@
   font-weight: 600;
   color: var(--text);
 }
-.team-settings__layout-demo.is-reply-placeholder i { width: 26% !important; }
 /* 三态卡片：回复模式那组改成 3 列（消息排版仍是 2 列），⛔ 别用两列把第三张挤到下一行。 */
 .team-settings__layout-cards[data-group="reply"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.team-settings__layout-demo.is-reply-topic i { width: 38% !important; }
-.team-settings__layout-demo.is-reply-topic i:nth-child(2) { width: 30% !important; margin-left: 12%; }
 .team-settings__layout-cards[data-group="reply"] .team-settings__layout-card { padding: 9px; }
 .team-settings__layout-cards[data-group="reply"] .team-settings__layout-card small { font-size: 10.5px; }
-/* 群消息形式的示意卡（截图 2 同款：左=平铺，右=回复缩进挂在原消息下） */
-.team-settings__form-demo {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-height: 62px;
-  padding: 7px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-}
-.team-settings__form-demo i { display: block; height: 7px; width: 62%; border-radius: 999px; background: var(--line); }
-.team-settings__form-demo i:nth-child(2) { width: 44%; }
-.team-settings__form-demo .is-nested {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  margin-left: 16%;
-  padding: 4px 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-.team-settings__form-demo .is-nested i { width: 70%; height: 5px; }
-.team-settings__form-demo .is-nested i + i { width: 52%; }
-.team-settings__layout-demo.is-reply-process i { width: 46% !important; }
 .team-msg__caret {
   display: inline-block;
   width: 7px;
@@ -1297,17 +1291,6 @@
 .team-settings__block[data-section="quick-menu"] {
   border-left: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
 }
-.team-settings__layout-demo {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-}
-.team-settings__layout-demo i { display: block; height: 8px; max-width: 62%; border-radius: 999px; background: var(--line); }
-.team-settings__layout-demo i.is-left { align-self: flex-start; }
-.team-settings__layout-demo i.is-right { align-self: flex-end; background: var(--accent-soft); }
 .team-msg__body-text { font-size: 13.5px; line-height: 1.75; }
 .team-msg__body-text > :first-child { margin-top: 2px; }
 .team-msg__body-text > :last-child { margin-bottom: 0; }
@@ -3240,3 +3223,139 @@
   transform: none;
 }
 .team-side-panel__body .context-panel .panel-page { height: 100%; }
+
+/* ── 群设置卡片的「真实内容示意」（11-09 用户：灰条看不出来，要真会话内容）──────────
+   ⛔ 只做示意、不接数据；尺寸锁死（卡片高度必须稳定，点一下不能跳）。
+   ⛔ 别再退回「灰圆角条」那套：四个选项长得一样 = 没有示意价值。 */
+.tsd-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 74px;
+  padding: 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  font-size: 10px;
+  line-height: 1.35;
+  overflow: hidden;
+}
+.tsd-row { display: flex; align-items: flex-start; gap: 5px; max-width: 100%; }
+.tsd-row.is-right { flex-direction: row-reverse; }
+.tsd-face {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 8px;
+}
+.tsd-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.tsd-row.is-right .tsd-body { align-items: flex-end; }
+.tsd-who { font-size: 8.5px; font-weight: 600; color: var(--faint); }
+.tsd-bubble {
+  display: block;
+  max-width: 100%;
+  padding: 2px 6px;
+  border-radius: 7px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tsd-row.is-right .tsd-bubble { background: var(--accent-soft); border-color: transparent; }
+/* 过程折叠条：一行箭头 + 标题（与群里真实折叠块同一视觉语言） */
+.tsd-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  align-self: flex-start;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px dashed var(--line);
+  color: var(--faint);
+}
+/* 占位模式：「头像 + 名字 + 处理中」 */
+.tsd-pending { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; color: var(--faint); }
+/* 话题卡：回复收进气泡后的那一条 */
+.tsd-topic {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-end;
+  max-width: 92%;
+  padding: 2px 6px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--faint);
+  min-width: 0;
+}
+.tsd-topic strong { color: var(--accent); font-size: 9px; }
+.tsd-topic small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tsd-topic-arrow { margin-left: auto; }
+/* 对话流「铺开」：三条步骤（截断到三条，不撑高卡片） */
+.tsd-steps { display: flex; flex-direction: column; gap: 2px; align-self: flex-start; color: var(--faint); }
+.tsd-steps i { font-style: normal; }
+.tsd-steps i::before { content: "· "; }
+
+/* ── 话题弹窗的「接着说」输入区（11-09 用户：没有在话题中沟通的功能）────────────
+   ⛔ 与群输入框同一套语言（圆角输入 + 主色发送键），但更紧凑：它是弹窗底部的一条。
+   ⛔ 没有可派活对象时不是禁用按钮装哑巴，而是把原因写出来（`.team-topic__blocked`）。 */
+.team-topic__composer {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--line);
+}
+.team-topic__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+}
+.team-topic__input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.team-topic__send {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.team-topic__send:disabled { opacity: 0.45; cursor: default; }
+.team-topic__blocked { margin: 0; color: var(--faint); font-size: 11.5px; }
+.team-topic__error { flex: 0 0 100%; margin: 0; color: var(--danger, #d9534f); font-size: 11.5px; }
+
+/* ── 话题弹窗里的「自己那条」（11-09 用户：话题就是迷你群聊，后续消息都在话题里更新）────
+   ⛔ 话题内发言必须和伙伴回复**分得清**：自己靠右、带气泡底色；伙伴靠左（沿用原样式）。
+   ⛔ 别把它做成"群里的一条"：话题模式就是靠这个话题条 + 弹窗承载后续对话。 */
+.team-topic__row.is-self { flex-direction: row-reverse; }
+.team-topic__row.is-self .team-topic__body { flex: 0 1 auto; max-width: 86%; }
+.team-topic__row.is-self .team-topic__meta { justify-content: flex-end; }
+.team-topic__row.is-self .team-topic__text {
+  display: inline-block;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  text-align: left;
+}

@@ -376,21 +376,6 @@
 .popout-return-btn:hover {
   filter: brightness(1.15);
 }
-/* 侧栏会话行被弹窗锁定：置灰不可点（行保留原位，弹窗关闭自动恢复；用户 09-13 定稿
-   「隐藏改为置灰」）。标题/摘要降透明度，hover 不变色，光标 not-allowed。 */
-.thread-row.popped-out {
-  opacity: 0.45;
-  pointer-events: auto;
-}
-.thread-row.popped-out .thread-row-title-line {
-  color: var(--muted);
-}
-.thread-row.popped-out button {
-  cursor: not-allowed;
-}
-.thread-row.popped-out:hover {
-  background: transparent;
-}
 /* 弹窗窗口本体：与主窗口同构（同款顶栏/侧栏），无需额外布局类；
    顶栏右侧的操作簇按钮在弹窗里同样可用（右栏开关等）。 */
 /* ── 独立会话弹窗布局（09-13 用户定稿：弹窗只带对话区，不要左侧会话列表侧栏）──

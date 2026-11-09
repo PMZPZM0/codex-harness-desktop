@@ -76,6 +76,8 @@ export type TeamRunParams = {
   effort: string;
   sandbox: TeamRunOpts["sandbox"];
   approvalPolicy: TeamRunOpts["approvalPolicy"];
+  /** ⛔ 话题内派活：带上话题起点文本 ⇒ 主进程在 prompt 里明说「你在话题里」（⛔ 不落群消息）。 */
+  topicRoot?: string;
 };
 
 export const DEFAULT_TEAM_RUN_OPTS: TeamRunOpts = {

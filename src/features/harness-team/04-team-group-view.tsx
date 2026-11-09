@@ -39,6 +39,7 @@ import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { TeamCards } from "./11-team-cards";
 /* ⛔ 11-09 用户令「图二效果一模一样，直接把主对话那一套接过来」：伙伴回复整轮复用 TurnView。 */
 import { TeamTurnView } from "./29-team-turn-view";
+import { DialogFlowScope } from "../../lib/dialog-flow-mode";
 import { TeamSidePanel, type TeamSideTab } from "./28-team-side-panel";
 import { openRightFile, subscribeRightFile } from "../../lib/right-file.mjs";
 import { MemberAvatar } from "./13-team-avatar";
@@ -61,7 +62,6 @@ import { TeamTopicBadge, TeamTopicPreview } from "./25-team-topic";
 /* 11-08 用户令「发出去消息就要出效果」：运行反馈挂在用户气泡下面，由 busy 驱动。 */
 import { TeamRunFeedback, runningPartnersOf } from "./26-team-run-feedback";
 /* ⛔ 11-08 三改：过程折叠块回到成员流式卡里（用户气泡下只在占位模式画窄条）。 */
-import { TeamProcess } from "./09-team-process";
 /* ⛔ 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：直接用主对话的 MessageFooter
    （引用 / 编辑 / 收藏 / 复制），⛔ 不在群里另写一套按钮。 */
 import { MessageFooter } from "../shared/MessageFooter";
@@ -187,6 +187,51 @@ function TeamLiveFiles({ threadId }: { threadId: string }) {
 }
 
 /** 团队群视图：消息流 + 输入区 + 设置入口，按群消息形式（对话/话题）渲染。 */
+
+/** 「回复 xxx：…」引用块（11-09 用户令：「运行中也要出现信息引用，跟结束一样」）。
+ *  ⛔ 消息行与运行中的流式卡**共用这一个部件** —— 之前引用只在"已落盘的行"上算，
+ *   运行中那张卡（流式卡不在 rows 里）就看不到引用，用户对照截图一眼看出不一致。 */
+function TeamQuoteBlock({ quote, nameOf, faceOfId, mentionCandidates, mentionPartner, excludeId }: {
+  quote: { authorId: string; text: string };
+  nameOf: (id: string) => string;
+  faceOfId: (id: string) => any;
+  mentionCandidates: any;
+  mentionPartner: (id: string) => void;
+  excludeId: string;
+}) {
+  return (
+    <div className="team-process__quote team-process__quote--top" title={`回复 ${nameOf(quote.authorId)}：${quote.text}`}>
+      <span className="team-process__quote-bar" aria-hidden />
+      <span className="team-process__quote-line">
+        回复
+        {/* 11-07 用户：「@的成员头像+名字又没了」——引用里的作者必须是真实提及（头像+名字），
+            引用正文里的 @ 也走同一个渲染器。 */}
+        <button
+          type="button"
+          className="team-at team-process__quote-author"
+          title={`@${nameOf(quote.authorId)} · 点一下加进本轮 @`}
+          onClick={(event) => { event.preventDefault(); mentionPartner(quote.authorId); }}
+        >
+          <MemberAvatar member={faceOfId(quote.authorId)} size={14} className="team-at__avatar" />
+          <span className="team-at__name">{nameOf(quote.authorId)}</span>
+        </button>
+        <span>：</span>
+        <TeamMentionText
+          text={quote.text}
+          candidates={mentionCandidates}
+          faceOfId={faceOfId}
+          nameOf={nameOf}
+          onPick={mentionPartner}
+          excludeId={excludeId}
+          className="team-process__quote-body"
+        />
+      </span>
+    </div>
+  );
+}
+
+/** 工作伙伴 · 群聊视图：消息流 / 运行中的流式卡 / 群设置都在这里（引用块走 TeamQuoteBlock）。
+ *  ⛔ 11-09 加部件时把原来的注释挤开了，守卫【295】会盯「导出函数必须有中文文档注释」，别再挪。 */
 export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
@@ -782,14 +827,26 @@ export function TeamGroupView({
      运行态与停止都收到**每个成员那一行**（状态点在 @ 前、停在 @ 后，见 MemberActions）。
      ⛔ 别再以「万一没人在跑怎么办」为理由加回全局键 —— 用户已经否掉两次。 */
 
-  const send = async () => {
-    const body = text.trim();
+  /** 发完清空草稿。⛔ override（话题弹窗）不发话时**不许动**主输入框 —— 那里面是用户自己的草稿。 */
+  const clearComposer = (isOverride: boolean) => {
+    if (isOverride) return;
+    setText("");
+    /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
+    setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
+  };
+
+  /** 派活。`override` 由**话题弹窗**使用（11-09 用户：「话题展示那个，没有在话题中沟通的功能啊」）——
+   *  它自带正文与目标，⛔ 不读也不清主输入框（否则用户在弹窗里发一句，草稿区被打字内容洗掉）。 */
+  const send = async (override?: { body: string; targets: string[]; /** 话题内派活：话题起点原文（只进 prompt）。 */ topicRoot?: string }) => {
+    const body = (override?.body ?? text).trim();
     if (!body) return;
+    /* 目标：正常发送 = 正文里 @ 到的人；话题弹窗 = 调用方给的（话题发起人 / 最后回复的伙伴）。 */
+    const targets = override?.targets ?? atTargets;
     /* ⛔ 11-08：派活是**等整个回合**才返回的（sending 会一直为 true），所以群里有伙伴在跑时
        不能拿 sending 把输入挡死 —— 那条路是"进队列"，不是重复派活。 */
-    if (sending && !groupRunning) return;
+    if (sending && !groupRunning) return { ok: false, error: "上一条还在发送中，稍等一下" };
     /* ⛔ 同步闸门：连按回车时第二个 send 在第一个 await 之前就进来了（state 还没翻转）。 */
-    if (sendingRef.current) return;
+    if (sendingRef.current) return { ok: false, error: "上一条还在发送中，稍等一下" };
     sendingRef.current = true;
     setSendError("");
     setMenuMsg("");
@@ -800,16 +857,17 @@ export function TeamGroupView({
       setSending(true);
       try {
         const r = await runStop(cmd.rest);
-        if (!r.ok) { setSendError(r.error ?? "停止失败"); return; }
-        setText("");
+        if (!r.ok) { setSendError(r.error ?? "停止失败"); return { ok: false, error: r.error ?? "停止失败" }; }
+        clearComposer(Boolean(override));
         flashMenuMsg("已停止 —— 它这一回合的中断请求已发给引擎");
+        return { ok: true };
       } finally {
         setSending(false);
         sendingRef.current = false;
       }
-      return;
+      return { ok: false, error: "停止失败" };
     }
-    if (cmd) { setSendError(`不认识的命令：/${cmd.name}（目前只支持 /stop）`); sendingRef.current = false; return; }
+    if (cmd) { setSendError(`不认识的命令：/${cmd.name}（目前只支持 /stop）`); sendingRef.current = false; return { ok: false, error: `不认识的命令：/${cmd.name}` }; }
 
     /* 技能 / 文件是"本轮附件"：照主对话口径拼进 query，⛔ 不落群日志、不当成消息刷屏。 */
     const skillBlock = runOpts.skills.length
@@ -831,6 +889,8 @@ export function TeamGroupView({
       effort: clampEffortToLevels(runOpts.effort, effortLevelsForModel(effectiveModel)),
       sandbox: runOpts.sandbox,
       approvalPolicy: runOpts.approvalPolicy,
+      /* ⛔ 话题内派活：告诉主进程这条来自某个话题 ⇒ prompt 里会明说「你在话题里」。 */
+      ...(override?.topicRoot ? { topicRoot: override.topicRoot } : {}),
     };
     setSending(true);
     try {
@@ -856,10 +916,10 @@ export function TeamGroupView({
         for (const run of live ?? []) if (run.status === "running") pushRun(run.memberId, run.name, run.threadId);
         for (const memberId of busyIds) pushRun(memberId, nameOf(memberId), threadsOfMember?.(memberId)?.[0] ?? "");
       }
-      const runningTargets = atTargets
+      const runningTargets = targets
         .map((id) => ({ id, run: runningRuns.find((run) => run.memberId === id) }))
         .filter((entry): entry is { id: string; run: { memberId: string; name: string; threadId: string } } => Boolean(entry.run?.threadId));
-      const idleTargets = atTargets.filter((id) => !runningTargets.some((entry) => entry.id === id));
+      const idleTargets = targets.filter((id) => !runningTargets.some((entry) => entry.id === id));
       const queued: string[] = [];
       for (const entry of runningTargets) {
         const res = await queueTeamMessage(entry.run.threadId, fullBody);
@@ -871,29 +931,27 @@ export function TeamGroupView({
       }
       if (!idleTargets.length) {
         if (queued.length) {
-          setText("");
-          /* ⛔ 目标身份从正文反查，清空正文 = 清空本轮 @（11-08 不再有独立的 atTargets 状态）。 */
-          setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
+          clearComposer(Boolean(override));
           flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它跑完这一轮就接着做；点「立即」可插队）`);
         }
-        return;
+        return { ok: true };
       }
       const r = await onSend?.(idleTargets, fullBody, params);
       if (r && !r.ok) {
         setSendError(r.error || "派活失败");
-        return; // ⛔ 失败保留原文，别把用户打的字清掉
+        return { ok: false, error: r.error || "派活失败" }; // ⛔ 失败保留原文，别把用户打的字清掉
       }
       if (queued.length) flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它们还在跑）`);
-      setText("");
-      /* 偏好保留，一次性附件发完即清（与主对话"本轮附件"同语义） */
-      setRunOpts((prev) => ({ ...prev, skills: [], files: [] }));
+      clearComposer(Boolean(override));
     } catch (err) {
       /* 派活通道异常：把错误说出来，⛔ 原文留着别丢（用户打的字比一次失败值钱） */
       setSendError(`派活失败：${err instanceof Error ? err.message : String(err)}`);
+      return { ok: false, error: err instanceof Error ? err.message : String(err) };
     } finally {
       setSending(false);
       sendingRef.current = false;
     }
+    return { ok: true };
   };
 
   /* 卡片的三个动作（飞书 ActionType 的等价物，⛔ 都是真动作，没有装饰按钮）：
@@ -978,6 +1036,17 @@ export function TeamGroupView({
   }, [group.id]);
   useEffect(() => { if (followRef.current) stick(); }, [rows.length, liveLen]);
 
+  /* ⛔⛔ 11-09 用户：「每次从群设置返回，这个滚轮都在最上面」。
+     因为设置页与消息流是**互斥渲染**（`showSettings ? 设置 : 消息流`）⇒ 返回时消息流是**重新挂载**的，
+     滚动位置从 0 开始；而下面那条贴底 effect 只在 `followRef.current` 为真时才动，
+     首挂载时它还没被置真 ⇒ 停在了顶部。
+     ⇒ 从设置返回后主动贴底一次（用户此刻一定是在看最新几条）。 */
+  useEffect(() => {
+    if (showSettings) return;
+    followRef.current = true;
+    requestAnimationFrame(() => stick());
+  }, [showSettings]);
+
   /* ⛔⛔ 11-09 用户令「一个回合只出一条消息，跟主对话一样」：老群记录里同一位成员一轮会留下
      好几条"步骤"消息（11-08 的逐条落盘）。渲染时按**回合**收口：同一 threadId + 同一 runId
      （或两边都没有 runId、同作者且间隔 ≤5 分钟）只渲染最后一条 —— 只动渲染，⛔ 不删群记录。 */
@@ -998,6 +1067,24 @@ export function TeamGroupView({
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
   const displayRows = useMemo(() => mergeConsecutive(runCollapsedRows), [runCollapsedRows]);
+  /* ⛔⛔ 11-09 用户（飞书对照）：「话题就是迷你群聊……后续的消息都在话题里面更新，
+     而不是在群里更新」。⇒ 在话题里接着说了一句，那条**不能再在群里显示成一条独立消息**
+     （否则主列表多一条孤零零的用户气泡、话题条也不在它下面，看着就像跑到群里去了）。
+     判据与分组同源：`buildTopicThreads` 把它并进了某个话题的 replies ⇒ 主列表就收起它。
+     ⛔ 只在话题模式生效；聊天模式一行不受影响。 */
+  const topicHiddenKeys = useMemo(() => {
+    if (effectiveMessageForm !== "topic") return new Set<string>();
+    const hidden = new Set<string>();
+    for (const thread of buildTopicThreads(displayRows).values()) {
+      for (const reply of thread.replies) if (reply.authorKind !== "bot") hidden.add(reply.key);
+    }
+    return hidden;
+  }, [displayRows, effectiveMessageForm]);
+  /** 主列表真正渲染的行（话题内追问已收起）。⛔ 其余派生量（运行态、贴底）仍用 displayRows。 */
+  const listRows = useMemo(
+    () => (topicHiddenKeys.size ? displayRows.filter((r) => !topicHiddenKeys.has(r.key)) : displayRows),
+    [displayRows, topicHiddenKeys],
+  );
   /* ⛔ 11-09 用户截图（两枚「处理中」）：同一位成员的历史正文也被标成处理中，看着像两轮一起跑。
      只标**当前轮最后一条**（同一 threadId+runId 的末条），历史正文不再挂状态。 */
   const activeRunKeys = useMemo(() => {
@@ -1057,7 +1144,7 @@ export function TeamGroupView({
      ⛔ 纯函数分组，不在这里写循环（口径在 team-fold.mjs + 单测）。 */
   const topicThreads = useMemo(() => buildTopicThreads(rows), [rows]);
   const [topicOpenKey, setTopicOpenKey] = useState<string | null>(null);
-  const openTopicRow = topicOpenKey ? displayRows.find((r) => r.key === topicOpenKey) : undefined;
+  const openTopicRow = topicOpenKey ? listRows.find((r) => r.key === topicOpenKey) : undefined;
   const openTopic = openTopicRow ? topicThreadOf(topicThreads, openTopicRow) : undefined;
 
   /* ⛔ 11-06 用户：「补充文件引用」——候选只从**群消息正文里真实出现过的本机路径**扫，
@@ -1303,7 +1390,7 @@ export function TeamGroupView({
                   )}
                 </div>
               ) : (
-                displayRows.map((row, index) => {
+                listRows.map((row, index) => {
                   /* 跨天分隔：只在"这一条与上一条不在同一天"时插一条（⛔ 每天第一条之前才插，
                      不是每条都算 —— 否则同一天里会到处是日期条）。 */
                   const prevRow = displayRows[index - 1];
@@ -1338,7 +1425,7 @@ export function TeamGroupView({
                           onClick={() => mentionPartner(m.id)}
                         >@{m.name}</button>
                       ))}
-                      {goneThreads?.has(row.threadId) ? (
+                      {row.threadId && !row.threadId.startsWith("cli:") ? (goneThreads?.has(row.threadId) ? (
                         <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
                       ) : (
                         <button
@@ -1347,7 +1434,7 @@ export function TeamGroupView({
                           title={onOpenThread ? `打开来源会话：${row.threadId}` : `来源会话：${row.threadId}（点一下复制）`}
                           onClick={() => { if (onOpenThread) onOpenThread(row.threadId); else void copyText({ ...row, text: row.threadId }); }}
                         >来源 {shortId(row.threadId)}{onOpenThread ? " ↗" : ""}</button>
-                      )}
+                      )) : null}
                     </>
                   ) : null;
                   /* ⛔ 11-07：`mentions` 不再渲染成前缀 chip —— 正文里的 `@名字` 会就地变成真提及。
@@ -1430,33 +1517,14 @@ export function TeamGroupView({
                         {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
                             ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
                         {isBot && quote && (
-                          <div className="team-process__quote team-process__quote--top" title={`回复 ${nameOf(quote.authorId)}：${quote.text}`}>
-                            <span className="team-process__quote-bar" aria-hidden />
-                            <span className="team-process__quote-line">
-                              回复
-                              {/* 11-07 用户：「@的成员头像+名字又没了」——引用里的作者必须是真实提及（头像+名字），
-                                  引用正文里的 @ 也走同一个渲染器。 */}
-                              <button
-                                type="button"
-                                className="team-at team-process__quote-author"
-                                title={`@${nameOf(quote.authorId)} · 点一下加进本轮 @`}
-                                onClick={(event) => { event.preventDefault(); mentionPartner(quote.authorId); }}
-                              >
-                                <MemberAvatar member={faceOfId(quote.authorId)} size={14} className="team-at__avatar" />
-                                <span className="team-at__name">{nameOf(quote.authorId)}</span>
-                              </button>
-                              <span>：</span>
-                              <TeamMentionText
-                                text={quote.text}
-                                candidates={mentionCandidates}
-                                faceOfId={faceOfId}
-                                nameOf={nameOf}
-                                onPick={mentionPartner}
-                                excludeId={row.authorId}
-                                className="team-process__quote-body"
-                              />
-                            </span>
-                          </div>
+                          <TeamQuoteBlock
+                            quote={quote}
+                            nameOf={nameOf}
+                            faceOfId={faceOfId}
+                            mentionCandidates={mentionCandidates}
+                            mentionPartner={mentionPartner}
+                            excludeId={row.authorId}
+                          />
                         )}
                         {/* 11-07 用户：「运行折叠板块放上面，下面就可以展示文件卡片那些了，跟主对话框一样」——
                             过程折叠在正文**上方**；正文下面是产物卡 / 图片 / 表格（Markdown 灯箱同主对话）。 */}
@@ -1543,18 +1611,6 @@ export function TeamGroupView({
                                 excludeId={row.authorId}
                               />
                             ))}
-                            {/* 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：
-                                引用 / 编辑 / 收藏 / 复制 —— 直接用主对话的 MessageFooter（同一套反馈动画）。 */}
-                            {!isBot && (
-                              <div className="team-msg__footer">
-                                <MessageFooter
-                                  item={{ id: row.itemId, type: "userMessage", content: [{ type: "text", text: String(row.text ?? "") }] } as unknown as ThreadItem}
-                                  onCopy={() => void copyText(row)}
-                                  onQuote={() => quoteRow(row)}
-                                  onEdit={() => editRow(row)}
-                                />
-                              </div>
-                            )}
                             {/* 占位模式（不展示过程）：仍只挂这一轮的文件卡；过程模式下卡由 TurnView 自己渲染。 */}
                             {isBot && !useTurnView && runTailKeys.has(row.key) && !running ? (
                               <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} onReview={openReviewPanel} />
@@ -1583,7 +1639,7 @@ export function TeamGroupView({
                                   （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
                             {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
                             {row.usage && <TeamUsage usage={row.usage} />}
-                            {goneThreads?.has(row.threadId) ? (
+                            {row.threadId && !row.threadId.startsWith("cli:") ? (goneThreads?.has(row.threadId) ? (
                               <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
                             ) : (
                               <button
@@ -1596,6 +1652,22 @@ export function TeamGroupView({
                           </div>
                         )}
                       </div>
+                      {/* ⛔⛔ 11-09 用户（截图红框）：那排「复制/编辑/收藏/引用」原本在**气泡里面**，
+                          要放到气泡**外面**，并且按群设置的「消息排版」自适应贴到**用户头像那一侧** ——
+                          split（伙伴靠左·自己靠右）⇒ 贴右；全部靠左 ⇒ 贴左。
+                          实现上**不写死 left/right**：这里只把它放在 `.team-msg__main` 的最后一个子项，
+                          由 main 的 `align-items`（is-human 时 flex-end / is-layout-left 时 flex-start）
+                          自动决定贴哪边 —— 少一个状态，就不会与排版设置不同步（CSS 见 61-team-mode.css）。 */}
+                      {!isBot && (
+                        <div className="team-msg__footer">
+                          <MessageFooter
+                            item={{ id: row.itemId, type: "userMessage", content: [{ type: "text", text: String(row.text ?? "") }] } as unknown as ThreadItem}
+                            onCopy={() => void copyText(row)}
+                            onQuote={() => quoteRow(row)}
+                            onEdit={() => editRow(row)}
+                          />
+                        </div>
+                      )}
                       </div>
                     </article>
                     </Fragment>
@@ -1627,26 +1699,50 @@ export function TeamGroupView({
                     <div className="team-msg__body">
                     {/* ⛔ 11-09：一个回合只落一条成品消息（正文不再逐条落盘）⇒ 运行中的
                         过程折叠与实时编辑行**回到流式卡里**（与主对话同序：过程在上、正文在下）。 */}
-                    {effectiveReplyMode === "process" && (
+                    {/* ⛔⛔ 11-09 用户令（两张截图对照）：「运行结束效果是对的，运行中就不对」
+                        「给我做到跟主对话框一模一样，不管运行中还是运行结束，都复用过来」。
+                        ⇒ 运行中**不再走 TeamProcess 那套自绘过程块**（那是第二套实现，所以长得不一样），
+                        改成和收尾态同一个 `TeamTurnView`（= 主对话 TurnView），只是多传 `running`。
+                        ⛔ 正文也交给 TurnView 渲染（它自己画 agentMessage）—— 这里**不能再单独渲染
+                          `run.text`**，否则同一段正文出现两遍。`run.text` 只当 TurnView 还没拉到
+                          回合时的兜底（引擎刚落盘的头一两百毫秒）。 */}
+                    {effectiveReplyMode === "process" ? (
                       <>
-                        <TeamProcess
-                          key={`proc:${effectiveDialogFlow}`}
-                          threadId={run.threadId}
-                          at={run.startedAt}
-                          bodyText=""
-                          running
-                          live
-                          defaultOpen={effectiveDialogFlow === "detail"}
-                          onOpenFile={openFilePreview}
-                        />
+                        {/* ⛔⛔ 11-09 用户（群设置截图）：「对话流」明明默认折叠（关闭），群里跑起来却把
+                            详细步骤全铺开了。根因是 TurnView 读**全局**对话流偏好（默认 detailed），
+                            群自己的 `effectiveDialogFlow` 没人消费 ⇒ 这里用作用域覆盖喂给它。
+                            ⛔ 只覆盖这一个子树，不改全局偏好（主对话照旧）。 */}
+                        {/* ⛔ 11-09 用户：「运行中也要出现信息引用，跟结束一样」。
+                            引用取**这次派活之前最近一条人类消息**（流式卡不在 rows 里，所以在这里单独取）。 */}
+                        {(() => {
+                          const before = rows.filter((r) => r.at <= run.startedAt
+                            && String(r.authorKind ?? "") === "human"
+                            && String(r.text ?? "").trim());
+                          const last = before[before.length - 1];
+                          return last
+                            ? <TeamQuoteBlock quote={{ authorId: last.authorId, text: last.text }} nameOf={nameOf} faceOfId={faceOfId} mentionCandidates={mentionCandidates} mentionPartner={mentionPartner} excludeId={run.memberId} />
+                            : null;
+                        })()}
+                        <DialogFlowScope.Provider value={effectiveDialogFlow === "detail" ? "detailed" : "simple"}>
+                          <TeamTurnView
+                            threadId={run.threadId}
+                            at={run.startedAt}
+                            bodyText=""
+                            running
+                            live
+                            onOpenFile={openFilePreview}
+                            onQuote={() => undefined}
+                            fallback={String(run.text ?? "").trim()
+                              ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
+                              : <p className="team-msg__thinking">正在思考…</p>}
+                          />
+                        </DialogFlowScope.Provider>
                         <TeamLiveFiles threadId={run.threadId} />
                       </>
+                    ) : (
+                      /* ⛔⛔ 11-08 审查：占位模式承诺「不展示过程与流式正文」—— 流式卡也必须跟着分叉。 */
+                      <p className="team-msg__thinking">正在思考…</p>
                     )}
-                    {/* ⛔⛔ 11-08 审查：占位模式承诺「不展示过程与流式正文」——
-                        流式卡也必须跟着分叉，否则主窗口里照样能看到流式正文。 */}
-                    {effectiveReplyMode === "process" && String(run.text ?? "").trim()
-                      ? <div className="markdown"><Markdown>{stripVoiceScript(String(run.text).slice(0, 40000))}</Markdown></div>
-                      : <p className="team-msg__thinking">正在思考…</p>}
                     {run.status === "running" && <span className="team-msg__caret" aria-hidden />}
                     {run.error && <p className="team-group__notice is-warn">{run.error}</p>}
                   </div>
@@ -1934,14 +2030,31 @@ export function TeamGroupView({
       )}
 
       {/* 话题预览弹窗：⌨ Esc / 点遮罩关闭（板块内用全局 ESC 栈），⛔ 只在话题模式且有回复时出现。 */}
-      {effectiveMessageForm === "topic" && openTopic && (
-        <TeamTopicPreview
-          thread={openTopic as Parameters<typeof TeamTopicPreview>[0]["thread"]}
-          faceOfId={faceOfId}
-          nameOf={nameOf}
-          onClose={() => setTopicOpenKey(null)}
-        />
-      )}
+      {/* 话题预览弹窗：⌨ Esc / 点遮罩关闭（板块内用全局 ESC 栈），⛔ 只在话题模式且有回复时出现。
+          ⛔⛔ 11-09 用户：「话题展示那个，没有在话题中沟通的功能啊」——
+          ⇒ 弹窗底部接一个输入框，发出去 = **带话题引用的新消息**，走群同一条派活通道（send 的 override）。 */}
+      {effectiveMessageForm === "topic" && openTopic && (() => {
+        const rootText = String((openTopic as { root?: { text?: unknown } }).root?.text ?? "");
+        /* 目标：先看话题原消息里 @ 了谁；没 @ 就回给**这个话题最后回复的那个伙伴**（顺着聊下去）。 */
+        const partners = mentionTargetsInText(rootText.replace(/^[ \t]*>.*$/gm, ""), mentionCandidatesFlat);
+        /* ⛔ 11-09：话题里也有**用户自己的追问**，取最后一个回复者时必须跳过自己，否则把活派给自己。 */
+        const replyRows = (openTopic as { replies?: Array<{ authorId?: string; authorKind?: string }> }).replies ?? [];
+        const lastReply = replyRows.filter((r) => r.authorKind === "bot").slice(-1)[0];
+        const targets = partners.length ? partners : (lastReply?.authorId ? [lastReply.authorId] : []);
+        return (
+          <TeamTopicPreview
+            thread={openTopic as Parameters<typeof TeamTopicPreview>[0]["thread"]}
+            faceOfId={faceOfId}
+            nameOf={nameOf}
+            onClose={() => setTopicOpenKey(null)}
+            replyHint={targets.length ? undefined : "这个话题里没有可派活的伙伴（话题里 @ 一个就能接着聊）"}
+            onReply={async (text) => {
+              const quoted = rootText.trim().split("\n").map((line) => `> ${line}`).join("\n");
+              return await send({ body: `${quoted}\n\n${text}`, targets, topicRoot: rootText });
+            }}
+          />
+        );
+      })()}
 
     </div>
   );

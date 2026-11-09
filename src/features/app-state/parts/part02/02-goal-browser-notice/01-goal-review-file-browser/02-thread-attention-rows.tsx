@@ -209,9 +209,19 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const running = bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running";
     const attentionLabel = bag.threadAttention.get(entry.id);
     const attentionTone = attentionLabel === "需审批" ? "approval" : attentionLabel === "需选择" ? "choice" : "confirm";
-    // 被弹窗锁定的会话：侧栏置灰不可点（会话已在独立窗口里渲染，点击会造成双窗口重复渲染），
-    // 行仍保留在原位置（用户 09-13 定稿：隐藏改为置灰）。弹窗关闭后自动恢复可点。
+    /* 被独立窗锁定的会话：**这一行不渲染**（11-09 用户令「外面的伙伴会话隐藏，不展示」——
+       09-13 那版是"置灰留在原位置"，用户这次明确要"隐藏掉、不展示出来"）。
+       ⛔ 不是删数据：只是本窗口不画它；独立窗关闭时 notifyPopoutClosed 会广播，
+         本行随之重新出现（可点、可继续聊）。
+       ⛔ 原来的「置灰 + 点了弹 toast」分支已一并删除（行都不画了，那些分支不可达）。 */
+    /* ⛔⛔ 11-09 用户（截图）：「我让主界面不展示伙伴会话，这显示着呢」——
+       群聊产生的**伙伴会话**（权威判据 = 主进程群聊台账 `talkThreads.byId`，⛔ 别按标题「伙伴」猜）
+       在主界面侧栏**不展示**：它们属于那个群，在群窗口里看；要看全文从群的「来源会话」打开。
+       ⛔ 只是不画这一行，数据与打开路径都在（搜索/群内跳转仍可用）。 */
+    if (talkThreads.byId[entry.id]) return null;
+    /* 被独立窗锁定的会话同样不画（关闭独立窗后自动回到列表）。 */
     const poppedOut = bag.poppedOutThreadIds.has(entry.id);
+    if (poppedOut) return null;
     /** 成员会话标题：剥掉重复的「团队名 · 」前缀，只留职能名（用户反馈「为啥都要重复前缀」）。
      *  仅成员行生效；重命名弹窗仍用完整名（那里需要全名）。 */
     const rawTitle = cleanThreadDisplayTitle(entry.name, { preview: entry.preview });
@@ -349,12 +359,12 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
     const showRowTime = !running && bag.openingThread !== entry.id;
     return (
     <div
-      className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${poppedOut ? "popped-out" : ""}${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}${rowColor ? " has-row-color" : ""}${extras?.footer ? " has-footer" : ""}`}
+      className={`thread-row ${bag.thread?.id === entry.id ? "active" : ""} ${running ? "running" : "ready"} ${bag.threadRowMenu?.id === entry.id ? "menu-open" : ""} ${variant === "member" ? " is-member-row" : ""}${bag.delegateRecords[entry.id] ? " is-delegated-row" : ""}${rowColor ? " has-row-color" : ""}${extras?.footer ? " has-footer" : ""}`}
       key={entry.id}
       data-thread-id={entry.id}
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
-      <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : poppedOut ? "该会话已在独立窗口中打开（关闭独立窗口后恢复）" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击改名字"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (poppedOut) { bag.showToast("会话在独立窗口中", "已打开为独立窗口，关闭该窗口后会话自动回到主应用"); return; } if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
+      <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击改名字"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
         <span className={`thread-row-title-line${shownBadge ? " has-tag" : ""}`} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{shownBadge && (<span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined}>{shownBadge}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">

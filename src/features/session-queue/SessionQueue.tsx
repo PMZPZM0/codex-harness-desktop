@@ -329,7 +329,7 @@ export function FoldGroup({ title, leadGroup, variant, running, defaultOpen = fa
 }
 
 /** 回合折叠流：按折叠策略把 item 分成 thinking / body / keepVisible 并渲染。 */
-export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage, keepProcessOpen, completedSkin = true }: {
+export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingForApproval, handlers, finalAgentId, usage, tokenUsage, keepProcessOpen, completedSkin = true, reasoningFloatHost }: {
   items: ThreadItem[];
   turn: Turn;
   running: boolean;
@@ -346,6 +346,9 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
   /** 「耗时 X · 停止原因」回合收尾皮肤（10-31）：插队分段渲染时**只有最后一段**带它 ——
    *  耗时属于整个回合，每段各挂一个就是同屏多个「耗时」（与 09-15 修过的重复头同型）。 */
   completedSkin?: boolean;
+  /** ⛔ 推理浮窗宿主选择器（默认主对话 `.reasoning-float-host`）。群聊运行中走 TurnView 时必须显式传
+   *  `.team-reasoning-float-host`，否则浮窗会挂到主对话那个宿主上、被群窗/设置弹层压住（11-09 回归）。 */
+  reasoningFloatHost?: string;
 }) {
   /* ── 对话流：简洁（默认）────────────────────────────────────────────────────
      用户 10-31：「两个正文中间只展示一个把控，里面一直播放最新工具内容，也支持展开查看」。
@@ -402,6 +405,7 @@ export function TurnFoldStream({ items, turn, running, fallbackWindow, waitingFo
       usage={unit.item.id === finalAgentId ? usage : null}
       tokenUsage={unit.item.id === finalAgentId ? tokenUsage : null}
       fallbackWindow={fallbackWindow}
+      reasoningFloatHost={reasoningFloatHost}
       hideFooter={unit.item.type === "agentMessage" ? hideFooter || undefined : undefined}
       waitingForApproval={waitingForApproval}
       onCopy={handlers.onCopy}

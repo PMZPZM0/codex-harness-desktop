@@ -335,9 +335,14 @@ export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
     "build",
     process.platform === "win32" ? "icon.ico" : "icon.png",
   );
+  /* ⛔ 11-09 用户：「工作伙伴的群聊弹窗默认太小了，做成跟主界面尺寸一样大」。
+     ⇒ 以**主窗口当前尺寸**为默认（不是写死一个数）：主窗口最大化时开出来也是最大化那档；
+     主窗口不可用（已销毁）才退回 1280×800（= 主窗口的默认尺寸）。⛔ minWidth/minHeight 保持保底语义。 */
+  const mainNow = mutableState.mainWindow;
+  const baseSize = mainNow && !mainNow.isDestroyed() ? mainNow.getBounds() : { width: 1280, height: 800 };
   const win = new BrowserWindow({
-    width: 980,
-    height: 720,
+    width: baseSize.width,
+    height: baseSize.height,
     minWidth: 560,
     minHeight: 460,
     resizable: true,

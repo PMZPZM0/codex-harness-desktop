@@ -58,7 +58,7 @@ const loadingThreads = new Map<string, Promise<void>>();
 
 /** 确保群子会话已被引擎加载（每线程每进程一次；失败不记，留待下次重试）。 */
 function ensureThreadLoaded(threadId: string): Promise<void> {
-  if (!threadId || threadId.startsWith("group:") || loadedThreads.has(threadId)) return Promise.resolve();
+  if (!threadId || threadId.startsWith("group:") || threadId.startsWith("cli:") || loadedThreads.has(threadId)) return Promise.resolve();
   const inflight = loadingThreads.get(threadId);
   if (inflight) return inflight;
   const task = window.codex
@@ -137,7 +137,7 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
   const [retryTick, setRetryTick] = useState(0);
   useEffect(() => {
     if (live || !refresh || turn || retryTick >= 8) return;
-    if (!threadId || threadId.startsWith("group:")) return;
+    if (!threadId || threadId.startsWith("group:") || threadId.startsWith("cli:")) return;
     const timer = window.setTimeout(() => {
       turnsCache.delete(threadId + ":8");
       turnsCache.delete(threadId + ":1");
@@ -148,7 +148,7 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
 
   useEffect(() => {
     let alive = true;
-    if (!threadId || threadId.startsWith("group:")) {
+    if (!threadId || threadId.startsWith("group:") || threadId.startsWith("cli:")) {
       turnsRef.current = [];
       loadedForRef.current = "";
       setTurns([]);
@@ -184,13 +184,13 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
   }, [threadId, live, tick, settledTick, refresh, retryTick]);
 
   useEffect(() => {
-    if (!live || !threadId || threadId.startsWith("group:")) return;
+    if (!live || !threadId || threadId.startsWith("group:") || threadId.startsWith("cli:")) return;
     const timer = window.setTimeout(() => setTick((n) => n + 1), 150);
     return () => window.clearTimeout(timer);
   }, [externalTick, live, threadId]);
 
   useEffect(() => {
-    if (!live || !threadId || threadId.startsWith("group:")) return;
+    if (!live || !threadId || threadId.startsWith("group:") || threadId.startsWith("cli:")) return;
     const timer = window.setInterval(() => setTick((n) => n + 1), 10_000);
     return () => window.clearInterval(timer);
   }, [live, threadId]);
@@ -239,8 +239,16 @@ export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, runni
             <ItemView
               key={String(u.item.id ?? i)}
               item={u.item}
-              /* ⛔ 11-08 用户令「推理浮窗也要一致」：运行中按主对话同一套 ReasoningCard（浮窗宿主走群内）。 */
-              turnActive={running}
+              /* ⛔⛔ 11-09 用户（两张截图对照）：「运行结束效果是对的，运行中就不对 —— 思考板块思考完了
+                 还一直亮着特效」。
+                 根因不在 ReasoningCard：回合快照（turns IPC）里的 item **不带 status / durationMs**
+                 （electron 侧建回合时没写这两个字段），于是它只能退回
+                 `running = turnActive && (itemRunning || (!status && !durationMs))` 里那个兜底分支
+                 ⇒ **整轮的 turnActive 被复制给了每一张卡**，一跑起来所有历史思考块都算"还在思考"。
+                 主对话没这问题，是因为它运行中走**实时事件**（item 带状态），群里走的是**快照**。
+                 ⇒ 只有**最后一项**可能是进行中：它后面还有东西，说明前面那些一定已经结束了。
+                 ⛔ 别改回 `turnActive={running}`（那正是本次报障的写法）。 */
+              turnActive={running && i === units.length - 1}
               reasoningFloatHost=".team-reasoning-float-host"
               hideFooter
               onCopy={copy}

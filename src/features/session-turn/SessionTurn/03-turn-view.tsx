@@ -29,7 +29,7 @@ import { TurnMediaCard } from "../../media";
 /** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。
  *  `assistantName` / `assistantAvatar`：群聊伙伴会话在外面显示**伙伴本人**的名字与头像
  *  （11-09 用户令：与群聊里看到的一致，历史回合也实时跟随）；缺省 = 全局 Codex 身份。 */
-export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview, extraFooter }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void; /** 群聊：群特有的页脚项（追问 / 来源会话）接在**同一行**（⛔ 不另起一行留空白）。 */ extraFooter?: ReactNode }) {
+export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview, extraFooter, reasoningFloatHost }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void; /** 群聊：群特有的页脚项（追问 / 来源会话）接在**同一行**（⛔ 不另起一行留空白）。 */ extraFooter?: ReactNode; /** ⛔ 推理浮窗宿主（群聊传 `.team-reasoning-float-host`；缺省 = 主对话宿主）。 */ reasoningFloatHost?: string }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
   const codexName = useCodexName();
@@ -192,7 +192,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
                           </div>
                         </div>
                       )}
-                      <TurnFoldStream items={segFold} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={last ? finalAgent?.id : undefined} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} completedSkin={last} />
+                      <TurnFoldStream items={segFold} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} reasoningFloatHost={reasoningFloatHost} finalAgentId={last ? finalAgent?.id : undefined} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} completedSkin={last} />
                       {last && turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} onReview={onOpenReview} />}
                       {turnFinished && <TurnMediaCard threadId={threadId} turnId={turn.id} />}
                       {last && userStopped && (
@@ -268,7 +268,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
             </div>
           )}
           {/* inner 永远不渲染 finalAgent 的 footer（避免 running 时每个新 body 短暂成为 finalAgent 挂按钮 + 避免与外层 2129 行双排）。外层 turnFinished 决定最终是否独占渲染一份。CompletedChanges 仍需 completedTask（聊天回合没文件改动可显）。 */}
-          <TurnFoldStream items={foldItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
+          <TurnFoldStream items={foldItems} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} reasoningFloatHost={reasoningFloatHost} finalAgentId={finalAgent?.id} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} />
           {/* 文件更改汇报（汇总）：**任何收尾的回合**只要有文件改动就汇报（10-01 用户：「底部汇报改成跟 ZCode 一样」），不再限定 task 回合。
               10-06：把 onOpenFile 递进去 —— 汇报行点击 = 直接打开文件预览（用户对照 Qoder 效果图点名）。
               ⛔ 运行中的实时「编辑」行**不在这里**（用户 10-06 二次纠正：「在哪个地方就展示在哪个地方，

@@ -21,6 +21,7 @@ import type { TeamCreateInput } from "./12-team-create";
 import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
+import { isTeamPopoutWindow } from "../../lib/team-popout";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import type { HarnessAppApi } from "../app-state";
 
@@ -415,7 +416,12 @@ export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app, onClos
           app={app}
           onOpenModelSettings={onOpenModelSettings ? () => { close(); onOpenModelSettings(); } : undefined}
           /* ⛔ 开那条会话之前先关群聊浮层，否则新会话被压在浮层后面（用户会以为"点了没反应"）。 */
-          onOpenThread={onOpenThread ? (id) => { close(); onOpenThread(id); } : undefined}
+          /* ⛔⛔ 11-09 用户（截图）：「来源会话打开后就是一个独立会话弹窗，**群聊弹窗不关**；
+             我看现在打开，会把群聊弹窗窗口关闭掉」。
+             根因就是这里的 `close()`：它在**浮层**里是对的（浮层挡着会话页，点来源要切走），
+             但在**独立窗**里执行就是"把群聊窗口关掉" —— 独立窗没有别的页面可切，关了就是关了。
+             ⇒ 只在非独立窗时 close（判据用 URL，与窗口形态同源）。 */
+          onOpenThread={onOpenThread ? (id) => { if (!isTeamPopoutWindow()) close(); onOpenThread(id); } : undefined}
         />
       </div>
     </div>

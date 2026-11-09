@@ -32,8 +32,12 @@ if (existsSync(join(ROOT, "src", "features", "team-office"))) {
     const viewPath = join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx");
     const viewSrc = existsSync(viewPath) ? readFileSync(viewPath, "utf8") : "";
     /* ⛔ 新判据：**组件不许自己拉数据 / 订阅引擎**（这才是域组件的规矩）。
-       11-01：允许 petHide/petShow（预览期间隐藏置顶播报浮窗）—— 先摘掉再看还剩什么。 */
-    const viewNoPet = codeOnly(viewSrc).replace(/window\.codex\.pet(?:Hide|Show)\?\.\(\)/g, "");
+       11-01：允许 petHide/petShow（预览期间隐藏置顶播报浮窗）—— 先摘掉再看还剩什么。
+       11-09：`bce379041`（关闭预览不再重开用户关着的宠物）新增 `petSettingsGet` ——
+       它是**纯读**（只为判断"原本是否开着"，读的还是 pet 家族自己的设置），
+       与上面两条同属「预览期隐藏/恢复置顶浮窗」这一件事，⇒ 一并豁免。
+       ⛔ 放宽的只有 pet 家族；业务数据（teamThreadsMap / runningThreadIds）仍然不许拉。 */
+    const viewNoPet = codeOnly(viewSrc).replace(/window\.codex\.pet(?:Hide|Show|SettingsGet)\?\.\(\)/g, "");
     (!/window\.codex|teamThreadsMap\(|runningThreadIds/.test(viewNoPet) ? ok : fail)(
       "【154】⛔⛔ 预览是**纯 props 驱动**：不自己拉 IPC（成员状态由宿主归约后传入）"
     );
