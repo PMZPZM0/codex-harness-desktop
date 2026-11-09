@@ -1072,10 +1072,16 @@ const catalog = [
     "每条 agentMessage 完成即落一条群消息（⛔ 不再等整回合）；该轮第一条带 runFirst、收尾那条带 summary");
   ok(/if \(duplicated\) \{[\s\S]{0,500}?patchTalkMessageRow\(group\.id, last\.id, \{[\s\S]{0,160}?summary: true/.test(ipc),
     "最终回复已作为流式消息落过 ⇒ 不再发第二条，把它标成 summary 并回填用量");
-  ok(/\(isBot && row\.summary\) \|\| \(isBot && !row\.runId\)/.test(view),
-    "文件卡 / 用量只挂**收尾汇总**那条（老日志没有 runId ⇒ 保持每条都有，向后兼容）");
+  ok(/const runTailKeys = useMemo/.test(view)
+    && /isBot && runTailKeys\.has\(row\.key\) && !running/.test(view)
+    && /<TeamProcess threadId=\{row\.threadId\} at=\{row\.at\} bodyText=\{row\.text\}/.test(view)
+    && !/\(isBot && row\.summary\) \|\| \(isBot && !row\.runId\)/.test(view),
+    "过程折叠 + 文件卡只挂**这一轮的末条**（汇总消息位）；⛔ 每一步都挂一张卡（CLI 消息没有 runId 曾导致每条都画）");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
     "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
+  ok(/!isBot && \([\s\S]{0,400}?<MessageFooter/.test(view) && /team-msg__footer/.test(view)
+    && /onQuote=\{\(\) => quoteRow\(row\)\}/.test(view) && /onEdit=\{\(\) => editRow\(row\)\}/.test(view),
+    "用户消息下面复用主对话 MessageFooter（引用 / 编辑 / 收藏 / 复制，⛔ 不在群里另写一套按钮）");
 }
 
 /* ── ⑭ 群成员共享群会话内容（11-08 用户问：「群成员，都能看到群会话内容吗」）────────

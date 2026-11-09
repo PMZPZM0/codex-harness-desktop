@@ -186,6 +186,15 @@
 }
 /* 长路径 / 长 URL 不换行会把整条消息撑宽（撑出水平滚动条）；消息体允许任意断行 */
 .team-msg__body { min-width: 0; overflow-wrap: anywhere; }
+/* ⛔ 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：复用 MessageFooter，
+   但它自带的 hover 显隐规则挂在 `.message:hover` 上（群消息是 `.team-msg`）⇒ 这里补同款三条。 */
+.team-msg.is-human .team-msg__footer { display: flex; justify-content: flex-end; margin-top: 2px; }
+.team-msg.is-human:hover .team-msg__footer .message-footer,
+.team-msg.is-human .team-msg__footer .message-footer:focus-within { opacity: 1; }
+.team-msg.is-human:hover .team-msg__footer .message-footer .message-action-extra,
+.team-msg.is-human .team-msg__footer .message-footer:focus-within .message-action-extra { opacity: 1; pointer-events: auto; }
+.team-msg.is-human:hover .team-msg__footer .message-footer .message-action-default,
+.team-msg.is-human .team-msg__footer .message-footer:focus-within .message-action-default { opacity: 1; }
 .team-msg__avatar {
   flex: none;
   display: inline-flex;

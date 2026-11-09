@@ -60,6 +60,10 @@ import { TeamTopicBadge, TeamTopicPreview } from "./25-team-topic";
 import { TeamRunFeedback, runningPartnersOf } from "./26-team-run-feedback";
 /* ⛔ 11-08 三改：过程折叠块回到成员流式卡里（用户气泡下只在占位模式画窄条）。 */
 import { TeamProcess } from "./09-team-process";
+/* ⛔ 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：直接用主对话的 MessageFooter
+   （引用 / 编辑 / 收藏 / 复制），⛔ 不在群里另写一套按钮。 */
+import { MessageFooter } from "../shared/MessageFooter";
+import type { ThreadItem } from "../../lib/thread-item";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes, buildTopicThreads, topicThreadOf } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
@@ -561,6 +565,15 @@ export function TeamGroupView({
     requestAnimationFrame(() => composerRef.current?.focus());
   };
 
+  /* 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：编辑 = 把这条原文放回输入框
+     （群记录不可改写，改完再发就是一条新消息）；⛔ 不覆盖用户已经写了一半的草稿。 */
+  const editRow = (row: GroupMessageRow) => {
+    const original = String(row.text ?? "").trim();
+    if (!original) return;
+    setText((prev) => `${prev.trimEnd()}${prev.trim() ? "\n\n" : ""}${original}`);
+    requestAnimationFrame(() => composerRef.current?.focus());
+  };
+
   /* ── 11-07 三块（资料卡 / @ 面板 / 群内搜索）──────────────────────────────── */
 
   /** 点头像弹资料卡（锚点取头像的位置，卡片自己夹到视口内） */
@@ -978,6 +991,26 @@ export function TeamGroupView({
       if (displayRows[i].authorKind !== "bot") return displayRows[i].key;
     }
     return null;
+  }, [displayRows]);
+  /* ⛔⛔ 11-09 用户实测（截图：一次派活的**每一步**下面都挂着「已更改 2 个文件」）：
+     收尾卡原判据是 `summary || !runId` —— CLI 伙伴的消息常常没有 runId ⇒ 每条都画。
+     用户口径：「汇总消息下面展示这个卡片就行」。⇒ 只认**一轮的末条**：
+     同一作者、相邻、且（同一 runId，或双方都没 runId 且间隔 ≤5 分钟）的连续 bot 行算一轮。
+     ⛔ 折叠与汇总卡都挂这条（同一条消息 = 这一轮的收尾位）。 */
+  const runTailKeys = useMemo(() => {
+    const tails = new Set<string>();
+    for (let i = 0; i < displayRows.length; i += 1) {
+      const row = displayRows[i];
+      if (row.authorKind !== "bot") continue;
+      const next = displayRows[i + 1];
+      const sameRun = Boolean(next)
+        && next.authorKind === "bot"
+        && next.authorId === row.authorId
+        && (!row.runId || !next.runId || row.runId === next.runId)
+        && Number(next.at) - Number(row.at) <= 5 * 60_000;
+      if (!sameRun) tails.add(row.key);
+    }
+    return tails;
   }, [displayRows]);
   const runningPartners = useMemo(
     () => runningPartnersOf(busy ?? [], nameOf, live ?? []),
@@ -1431,8 +1464,27 @@ export function TeamGroupView({
                                 excludeId={row.authorId}
                               />
                             ))}
-                            {/* 运行过程在**正文下方**、文件卡在过程下方（主对话同序：正文 → 过程 → 产物卡）。 */}
-                            {(isBot && row.summary) || (isBot && !row.runId) ? <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} onReview={openReviewPanel} /> : null}
+                            {/* 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：
+                                引用 / 编辑 / 收藏 / 复制 —— 直接用主对话的 MessageFooter（同一套反馈动画）。 */}
+                            {!isBot && (
+                              <div className="team-msg__footer">
+                                <MessageFooter
+                                  item={{ id: row.itemId, type: "userMessage", content: [{ type: "text", text: String(row.text ?? "") }] } as unknown as ThreadItem}
+                                  onCopy={() => void copyText(row)}
+                                  onQuote={() => quoteRow(row)}
+                                  onEdit={() => editRow(row)}
+                                />
+                              </div>
+                            )}
+                            {/* 11-09 用户实测（截图：每一步都挂一张「已更改 N 个文件」）：
+                                **只在这一轮的末条**（汇总消息位）展示「运行过程折叠（默认收起）+ 文件卡」。
+                                运行中该行由 live 卡负责，这里让位（`running` 为真时不画，避免两个折叠）。 */}
+                            {isBot && runTailKeys.has(row.key) && !running ? (
+                              <>
+                                <TeamProcess threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} />
+                                <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} onReview={openReviewPanel} />
+                              </>
+                            ) : null}
                           </>
                         )}
                         {isBot && (
