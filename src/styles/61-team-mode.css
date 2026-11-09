@@ -3222,14 +3222,26 @@
   transform: none;
 }
 .team-side-panel__body .context-panel .panel-page { height: 100%; }
-/* 右侧栏左缘拖拽把手（11-09：浮窗可以拖动调宽） */
+/* 右侧栏左缘拖拽把手（11-09：浮窗可以拖动调宽）——把手在面板内侧，⛔ 不能伸出 overflow。 */
 .team-side-panel__resize {
   position: absolute;
-  left: -3px;
-  top: 0;
+  left: 0;
+  top: 44px;
   bottom: 0;
-  width: 6px;
-  z-index: 2;
+  width: 10px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: col-resize;
+  touch-action: none;
 }
-.team-side-panel__resize:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.team-side-panel__resize > i {
+  width: 3px;
+  height: 44px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 120ms ease, height 120ms ease;
+}
+.team-side-panel__resize:hover > i,
+.team-side-panel__resize:active > i { background: var(--accent); height: 64px; }

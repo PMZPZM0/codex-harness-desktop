@@ -129,8 +129,10 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
     }
     void turnsOf(threadId, live ? 1 : 8).then((list) => {
       if (!alive) return;
-      /* 运行中拉到空表 = 引擎索引的瞬时窗口（回合还在写）⇒ 保留上一份，⛔ 不清空。 */
-      const next = live && !list.length ? turnsRef.current : list;
+      /* 拉到空表 = 引擎索引的瞬时窗口（回合还在写/刚落盘）⇒ 保留上一份，⛔ 不清空。
+         ⛔ 11-09 用户实测「汇总消息下面的文件卡不见了」：收尾 bump 触发重拉时正好撞上这个窗口，
+         非 live 的汇总卡被清空后不会自己再拉 ⇒ 卡片整块消失。现在所有重拉都保留上一份。 */
+      const next = !list.length ? turnsRef.current : list;
       turnsRef.current = next;
       setTurns(next);
       setLoading(false);

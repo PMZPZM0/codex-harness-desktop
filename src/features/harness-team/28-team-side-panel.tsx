@@ -37,8 +37,12 @@ export function TeamSidePanel({ app, workspace, tab, onTab, onClose }: {
   }, [width]);
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
+    event.stopPropagation();
+    try { event.currentTarget.setPointerCapture(event.pointerId); } catch { /* 合成事件可能不支持 */ }
     const startX = event.clientX;
     const startW = width;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
     const move = (moveEvent: PointerEvent) => {
       const max = Math.min(760, Math.max(320, window.innerWidth - 320));
       setWidth(Math.max(320, Math.min(max, startW + (startX - moveEvent.clientX))));
@@ -46,6 +50,8 @@ export function TeamSidePanel({ app, workspace, tab, onTab, onClose }: {
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     };
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
@@ -68,7 +74,9 @@ export function TeamSidePanel({ app, workspace, tab, onTab, onClose }: {
   );
   return (
     <aside ref={rootRef} className="team-side-panel" style={{ width }} role="complementary" aria-label="右侧栏">
-      <div className="team-side-panel__resize" title="拖动调整侧栏宽度" onPointerDown={startResize} aria-hidden />
+      <div className="team-side-panel__resize" title="拖动调整侧栏宽度" onPointerDown={startResize}>
+        <i aria-hidden />
+      </div>
       <header className="team-side-panel__head">
         <PanelRight size={14} className="ic-blue" />
         <strong>右侧栏</strong>

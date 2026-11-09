@@ -1401,8 +1401,8 @@ const catalog = [
   const ticks = codeOnly(read("src/lib/team-process-ticks.mjs"));
   ok(/const first = loadedForRef\.current !== threadId;/.test(proc)
     && /if \(first\) \{/.test(proc)
-    && /live && !list\.length \? turnsRef\.current : list/.test(proc),
-    "运行过程重拉不卸载：只有首次/换会话进 loading，运行中保留上一份回合（⛔ 每 tick 闪一下的根因）");
+    && /!list\.length \? turnsRef\.current : list/.test(proc),
+    "过程/汇总重拉不卸载：只有首次/换会话进 loading，拉到空表保留上一份（⛔ 每 tick 闪、收尾文件卡消失的根因）");
   ok(/bumpTeamTurnsSettled\(tid\)/.test(store)
     && /const fresh = Date\.now\(\) - Number\(at\) < 120_000;/.test(cards)
     && /turnsCache\.delete\(threadId \+ ":8"\)/.test(proc)
