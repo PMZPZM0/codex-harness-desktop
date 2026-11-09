@@ -49,6 +49,21 @@ export async function planTalkCli(member: TalkMember): Promise<TalkCliPlan | nul
   return { installed: true, cli, shellEnv };
 }
 
+/** CLI 的机器可读输出要把正文剥出来（11-09 用户截图：QwenPaw 直接回了一坨
+ *  `{status, elapsed_seconds, response, usage}` JSON）。⛔ 只认明确的文本字段，别把整段 JSON 丢掉。 */
+function unwrapCliStdout(raw: string): string {
+  const text = String(raw ?? "").trim();
+  if (!text.startsWith("{") && !text.startsWith("[")) return text;
+  try {
+    const obj = JSON.parse(text) as Record<string, unknown>;
+    for (const key of ["response", "text", "output", "result", "message", "content"]) {
+      const value = obj?.[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  } catch { /* 不是合法 JSON：原样返回 */ }
+  return text;
+}
+
 /** 直接起本地 CLI 子进程跑单轮命令，stdout 即回复；onDelta 逐块上屏。 */
 export async function runTalkCliDirect(
   cli: CliAgentDef,
@@ -64,6 +79,9 @@ export async function runTalkCliDirect(
     let out = "";
     let errOut = "";
     let settled = false;
+    /* JSON 信封（QwenPaw 这类）在流式阶段看着就是一坨代码 —— 先攒住判断，是 JSON 就不上屏。 */
+    let head = "";
+    let streaming = false;
     const child = spawn(isWin ? "cmd" : "/bin/sh", [isWin ? "/c" : "-c", command], {
       cwd: String(options.cwd ?? "").trim() || process.cwd(),
       env,
@@ -74,6 +92,15 @@ export async function runTalkCliDirect(
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
       out += text;
+      if (!streaming) {
+        head += text;
+        const trimmed = head.trimStart();
+        if (!trimmed) return;
+        if (trimmed.startsWith("{") || trimmed.startsWith("[")) return;   // JSON 信封：等收尾解析
+        streaming = true;
+        options.onDelta?.(head);
+        return;
+      }
       options.onDelta?.(text);
     });
     child.stderr?.on("data", (chunk: Buffer) => { errOut += chunk.toString("utf8"); });
@@ -81,7 +108,7 @@ export async function runTalkCliDirect(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      const text = out.trim() || errOut.trim();
+      const text = unwrapCliStdout(out.trim() || errOut.trim());
       resolve({ ok: ok || Boolean(text), text: text || "（CLI 没有输出）" });
     };
     child.on("error", (error) => { errOut += String(error?.message ?? error); finish(false); });

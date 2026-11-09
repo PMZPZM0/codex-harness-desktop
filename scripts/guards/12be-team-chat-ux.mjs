@@ -1100,6 +1100,13 @@ const catalog = [
     && /effectiveDialogFlow === "detail" \? "detailed" : "simple"/.test(view)
     && /defaultOpen=\{defaultOpen\}/.test(codeOnly(read("src/features/harness-team/09-team-process.tsx"))),
     "对话流开关（默认折叠）：detail 时运行中过程才默认展开；simple 走折叠、点标题展开");
+  /* ⛔ 11-09 用户截图：QwenPaw 的回复是一坨 `{status, elapsed_seconds, response, usage}` JSON
+     ⇒ 本地 CLI 直跑的 stdout 必须先把文本字段剥出来再当群回复（JSON 也不上屏流式）。 */
+  const cliDirect = codeOnly(read("electron/features/group-talk/04-cli.ts"));
+  ok(/function unwrapCliStdout/.test(cliDirect) && /"response"/.test(cliDirect)
+    && /unwrapCliStdout\(out\.trim\(\) \|\| errOut\.trim\(\)\)/.test(cliDirect)
+    && /startsWith\("\{"\)/.test(cliDirect),
+    "本地 CLI 输出先剥 JSON 信封（QwenPaw 的 {status,…,response} 不能原样当回复）");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
     "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
   ok(/!isBot && \([\s\S]{0,400}?<MessageFooter/.test(view) && /team-msg__footer/.test(view)
