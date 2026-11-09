@@ -34,6 +34,17 @@ const CHANNEL_TURN_OVERRIDE = { approvalPolicy: "never" as const, sandboxPolicy:
  *  答复会被推给渠道用户（11-04 审查抓出的内容外泄路径）。 */
 /* 渠道回合的原消息（超限后压缩+重试要用它；只留最近一条，有界）。 */
 const lastChannelTurn = new Map<string, { text: string; model: string }>();
+/** 记本轮原消息（超限重试用）。⛔ 有上限：渠道会话会不断换新，Map 不封顶就是长期内存泄漏
+ *  （每条还存着完整入站正文）。 */
+function rememberChannelTurn(threadId: string, text: string, model: string): void {
+  const tid = String(threadId ?? "");
+  if (!tid) return;
+  if (!lastChannelTurn.has(tid) && lastChannelTurn.size >= 200) {
+    const oldest = lastChannelTurn.keys().next().value;
+    if (oldest) lastChannelTurn.delete(oldest);
+  }
+  lastChannelTurn.set(tid, { text, model });
+}
 /* 正在做超限恢复的线程：同一线程只跑一次（压缩/重试都可能耗几十秒）。 */
 const overflowRecovering = new Set<string>();
 
@@ -84,8 +95,10 @@ async function recentDigest(threadId: string): Promise<string> {
 }
 
 /** 上下文超限的恢复：先压缩并重试同一句（保留历史）；压缩救不回来才换会话，
- *  并把最近几轮摘要带过去（⛔ 不让用户从零开始解释）。 */
-async function recoverOverflow(threadId: string, raw: unknown): Promise<void> {
+ *  并把最近几轮摘要带过去（⛔ 不让用户从零开始解释）。
+ *  ⛔ `send` 必须透传：重试那一轮的**最终回复也要发给用户**（11-09 审查确认：
+ *     原来重试监听器挂的是空 send，压完重试出来的答复只留在会话里，渠道用户永远等不到）。 */
+async function recoverOverflow(threadId: string, raw: unknown, send: (text: string) => void): Promise<void> {
   if (!threadId || overflowRecovering.has(threadId)) return;
   const last = lastChannelTurn.get(threadId);
   overflowRecovering.add(threadId);
@@ -94,7 +107,7 @@ async function recoverOverflow(threadId: string, raw: unknown): Promise<void> {
     await server.request("thread/compact/start", { threadId }, 90_000);
     await waitCompactDone(threadId, 120_000);
     if (!last) throw new Error("没有可重试的原消息");
-    const stop = onTurnDone(threadId, () => {}, { retried: true });
+    const stop = onTurnDone(threadId, send, { retried: true });
     try {
       channelLog("info", "会话上下文超限：已压缩，正在重试原消息");
       await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text: last.text, text_elements: [] }], model: last.model, effort: "high" });
@@ -126,7 +139,7 @@ function onTurnDone(threadId: string, send: (text: string) => void, opts: { retr
       const overLimit = (() => { try { return describeTurnError(rawErr).title === "内容超出模型上限"; } catch { return false; } })();
       if (overLimit) {
         if (opts.retried) rotateChannelThreadOnOverflow(threadId);
-        else void recoverOverflow(threadId, rawErr);
+        else void recoverOverflow(threadId, rawErr, send);
       }
     }
     dispose();
@@ -211,7 +224,7 @@ export async function handleWeixinMessage(message: { from: string; text: string;
         /* 换会话后的第一条消息：带上上一段的最近摘要（⛔ 只消费一次，之后不再注入）。 */
     const handoff = createdNew ? takeChannelHandoff("wechat") : "";
     const inputText = handoff ? `${handoff}\n\n[微信用户] ${message.text}` : `[微信用户] ${message.text}`;
-    lastChannelTurn.set(threadId, { text: inputText, model: model.model });
+    rememberChannelTurn(threadId, inputText, model.model);
     await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text: inputText, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     // ⛔ 起回合失败必须把结束监听摘掉：留着它，下次这一会话在**桌面端**跑完，
@@ -270,7 +283,7 @@ export async function handleTelegramMessage(message: { from: string; chatId: num
     channelLog("info", `telegram 已交给会话 ${String(threadId).slice(0, 8)}…（回合开始）`);
         const handoffTg = createdNewTg ? takeChannelHandoff("telegram") : "";
     const inputTg = handoffTg ? `${handoffTg}\n\n${message.text}` : message.text;
-    lastChannelTurn.set(threadId, { text: inputTg, model: model.model });
+    rememberChannelTurn(threadId, inputTg, model.model);
     await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text: inputTg, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     stopTurnWatch?.(); // ⛔ 起回合失败必须摘掉结束监听（否则下次该会话在桌面端跑完，答复被推到 Telegram）
@@ -351,7 +364,7 @@ export async function handleChannelMessage(channel: "feishu" | "dingtalk" | "qq"
     stopTurnWatch = onTurnDone(threadId, (text) => void reply(text));
         const handoffCh = createdNewCh ? takeChannelHandoff(channel) : "";
     const inputCh = handoffCh ? `${handoffCh}\n\n${text}` : text;
-    lastChannelTurn.set(threadId, { text: inputCh, model: model.model });
+    rememberChannelTurn(threadId, inputCh, model.model);
     await server.request("turn/start", { threadId, ...CHANNEL_TURN_OVERRIDE, input: [{ type: "text", text: inputCh, text_elements: [] }], model: model.model, effort: "high" });
   } catch (error: any) {
     // ⛔ 起回合失败必须摘掉结束监听：留着它，下次这一会话在**桌面端**跑完，答复会被推给渠道

@@ -159,6 +159,16 @@ if (missing.length) {
       && /\/compact/.test(textRender) && /\/compact/.test(textMain),
       "超限文案 = 手动压缩提醒（点上下文环 / 输入 /compact），渲染层与主进程两份逐字一致");
   }
+  /* ⑩ 11-09 审查确认：超限「压缩+重试」那一轮的最终回复必须真的发回渠道；
+        渠道原消息缓存必须有上限（渠道会不断换会话，Map 不封顶 = 长期内存泄漏）。 */
+  {
+    const inb = stripComments(read("electron/features/im-inbound.ts"));
+    ok(/recoverOverflow\(threadId, rawErr, send\)/.test(inb)
+      && /onTurnDone\(threadId, send, \{ retried: true \}\)/.test(inb),
+      "超限重试的回合把最终回复发回渠道（⛔ 原来挂空 send ⇒ 压完重试出来的答复只留在会话里，用户永远等不到）");
+    ok(/function rememberChannelTurn/.test(inb) && /lastChannelTurn\.size >= 200/.test(inb),
+      "渠道原消息缓存有上限 200（⛔ 每条存完整入站正文，不封顶就是长期内存泄漏）");
+  }
   globalThis.fetch = realFetch;
 }
 

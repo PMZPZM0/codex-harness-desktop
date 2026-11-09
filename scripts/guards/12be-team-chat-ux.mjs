@@ -1391,5 +1391,16 @@ const catalog = [
     "manifest 返回类型与实现同步（⛔ 手改生成物）");
 }
 
+/* ── ㉖ 11-09 审查确认：停止请求残留会静默吞掉下一条消息（60 秒窗口）────────────── */
+{
+  const stopSrc = codeOnly(read("electron/features/harness-team-stop.ts"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  ok(/export function clearTalkCancel/.test(stopSrc)
+    && /for \(const target of targets\) clearTalkCancel\(group\.id, target\.name\);/.test(ipc),
+    "新消息落盘即作废该成员的停止请求（⛔ 残留请求会把新消息在队列里静默吞掉：有气泡、没人回）");
+  ok((ipc.match(/consumeTalkCancel\(group\.id, partner\.name\)/g) || []).length >= 2,
+    "建会话后再补一次消费（ensure 那 1~3 秒里点的停止也真放弃，而不是「已停止」却照发）");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

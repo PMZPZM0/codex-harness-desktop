@@ -59,7 +59,7 @@ import {
 /* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
 import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
-import { stopTeamRuns, consumeTalkCancel, type TeamStopInput } from "./harness-team-stop";
+import { stopTeamRuns, consumeTalkCancel, clearTalkCancel, type TeamStopInput } from "./harness-team-stop";
 import { startTeamQueued, type TeamQueueStartInput } from "./harness-team-queue";
 /* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
    的唯一真相源是 electron/scheduler.ts（与「设置 → 自动化」同一个引擎）。 */
@@ -446,6 +446,10 @@ async function prepareGroupDispatch(
   const resolved = resolveGroupTargets(group, memberIds, catalog);
   if (resolved.error) return { error: resolved.error };
   const targets = resolved.targets;
+  /* ⛔ 11-09 审查：用户发了新消息 = 「不再想停」⇒ 清掉这个群里这些成员残留的停止请求。
+     不清的话，上一条停止请求（会话还在建时登记的，60 秒有效）会把**这条新消息**在队列里
+     静默吞掉 —— 表现是「我发了话，没人回，也没有任何提示」。 */
+  for (const target of targets) clearTalkCancel(group.id, target.name);
   const saved = await appendMessageTo(group.id, {
     authorId: source === "automation" ? AUTOMATION_ACTOR_ID : "local-user",
     authorKind: "human",
@@ -733,6 +737,11 @@ async function runDispatchRounds(
             approvalPolicy: params.approvalPolicy,
           }).catch(() => null);
           if (ensured?.threadId) attachLive(ensured.threadId);
+          /* ⛔ 11-09 审查：建会话要 1~3 秒 —— 排队入口那次消费之后、会话建好之前用户点了停止，
+             到这里才看得到。补这一次消费，真正放弃这一轮（否则「已停止」但消息照样发出）。 */
+          if (consumeTalkCancel(group.id, partner.name)) {
+            return { ok: false, cancelled: true, text: "", threadId: "" } as never;
+          }
         }
         return withDispatchTimeout(runTalkTurn(group.id, partner as TalkMember, query, {
           cwd: group.workspace || undefined,

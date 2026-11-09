@@ -51,6 +51,22 @@ export function consumeTalkCancel(groupId: string, memberName: string): boolean 
   return Date.now() - at <= TALK_CANCEL_TTL;
 }
 
+/** 作废待生效的停止请求（11-09 审查）。
+ *  ⛔ 为什么必须有：停止请求只在「会话还没建出来」那 1~3 秒里登记，60 秒内有效；
+ *     若用户按完停止又发了一条新消息，那条请求会把**新消息**在队列里静默吞掉
+ *     （第一道 `runOne` 开跑前就命中 ⇒ 整轮放弃、用户只看到自己的气泡没人回）。
+ *     ⇒ 新消息落盘时按成员清掉这个群里残留的请求（不带 memberName 则整群清）。 */
+export function clearTalkCancel(groupId: string, memberName?: string): void {
+  const gid = String(groupId ?? "");
+  if (!gid) return;
+  if (memberName === undefined) {
+    const prefix = `${gid}::`;
+    for (const key of [...talkCancelRequests.keys()]) if (key.startsWith(prefix)) talkCancelRequests.delete(key);
+    return;
+  }
+  talkCancelRequests.delete(talkCancelKey(gid, String(memberName ?? "")));
+}
+
 export type TeamStopResult = {
   ok: boolean;
   error?: string;
