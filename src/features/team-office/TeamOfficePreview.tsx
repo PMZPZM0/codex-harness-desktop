@@ -135,10 +135,21 @@ export function phaseOfRun(run: RunFacts | null | undefined, now: number): {
 export function TeamOfficePreview({ teamId, onClose, teams, runningByMember, lastByMember, openThread, delegatedRuns, self, groupMembers }: TeamOfficePreviewProps) {
   /* ⛔ 11-01 用户实测「播报悬浮窗压在办公室预览上面」：那个播报窗是**独立置顶窗口**
      （electron/features/pet-window.ts 里 setAlwaysOnTop(true)），CSS z-index 管不到它。
-     ⇒ 办公室预览存活期间把它藏起来，关闭时恢复，而不是去调层级。 */
+     ⇒ 办公室预览存活期间把它藏起来，关闭时恢复，而不是去调层级。
+     ⛔ 11-09 用户实测「关掉办公室预览，宠物又出来了」：petHide/petShow 会**写盘改 enabled**，
+        原来无条件 petShow 会把用户本来关着的宠物重新打开。⇒ 先记下打开前的 enabled，
+        关闭时只有「原本就开着」才恢复；原本关着的保持关。 */
   useEffect(() => {
-    window.codex.petHide?.();
-    return () => { window.codex.petShow?.(); };
+    let restore = false;
+    let cancelled = false;
+    const hide = () => { if (!cancelled) window.codex.petHide?.(); };
+    void window.codex.petSettingsGet?.()
+      .then((settings) => { restore = Boolean((settings as { enabled?: boolean } | null)?.enabled); hide(); })
+      .catch(() => { restore = true; hide(); });
+    return () => {
+      cancelled = true;
+      if (restore) window.codex.petShow?.();
+    };
   }, []);
 
   const team = useMemo(() => teams.find((t) => t.teamId === teamId) ?? null, [teams, teamId]);

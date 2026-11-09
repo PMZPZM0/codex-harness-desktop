@@ -627,5 +627,16 @@ console.log(bad === 0 ? "OK 事件分类全部符合" : "NO " + bad + " 条分�
     "⛔ 早退之后不许再有 hook（否则 office 从 null 打开时 React #310 直接报错）");
 }
 
+/* ── 11-09 用户实测「关掉办公室预览，宠物又出来了」：petHide/petShow 会写盘改 enabled，
+      原来无条件 petShow 会把用户本来关着的宠物重新打开。⇒ 关闭时只有「原本就开着」才恢复。 */
+{
+  const previewSrc = readFileSync(join(ROOT, "src", "features", "team-office", "TeamOfficePreview.tsx"), "utf8");
+  ok(/petSettingsGet/.test(previewSrc)
+    && /restore = Boolean\(/.test(previewSrc)
+    && /if \(restore\) window\.codex\.petShow/.test(previewSrc)
+    && !/return \(\) => \{ window\.codex\.petShow/.test(previewSrc),
+    "办公室预览关闭只恢复「原本开着」的宠物（⛔ 不再把用户关着的宠物重新打开）");
+}
+
 console.log(`\n【screen】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
