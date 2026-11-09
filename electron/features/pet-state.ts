@@ -529,3 +529,22 @@ export function resetPetState() {
   activityCollapsed = false;
   publish(true);
 }
+
+/** 把某条线程从宠物活动里彻底忘掉（11-09 用户实测：群聊伙伴会话弹出了内部信封气泡）。
+ *  群聊有自己的群窗口反馈，宠物不该跟它；已经建出来的活动/等待映射/中断计时一并清掉。 */
+export function forgetPetThread(threadId: string): void {
+  const id = String(threadId ?? "");
+  if (!id) return;
+  let changed = false;
+  if (activities.delete(id)) changed = true;
+  for (const [key, value] of pendingRequests) {
+    if (value === id) { pendingRequests.delete(key); changed = true; }
+  }
+  const timer = interruptedTimers.get(id);
+  if (timer) {
+    clearTimeout(timer);
+    interruptedTimers.delete(id);
+    changed = true;
+  }
+  if (changed) publish(true);
+}

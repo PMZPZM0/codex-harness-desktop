@@ -51,12 +51,20 @@ function readLedger(): Ledger {
   }
 }
 
+let ledgerChangedHook: (() => void) | null = null;
+/* 台账变动旁听（11-09）：桌面宠物据此把「群聊伙伴会话」排除在外（不弹 `[SYSTEM TASK · 工作伙伴消息]`
+   那种内部信封气泡）。⛔ 只是通知，回调里**同步**刷新一个 Set 即可，不许在回调里 await 写盘。 */
+export function onTalkLedgerChanged(cb: () => void): void {
+  ledgerChangedHook = cb;
+}
+
 function writeLedger(all: Ledger): void {
   const file = ledgerFile();
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
   writeFileSync(tmp, JSON.stringify(all, null, 2), "utf8");
   renameSync(tmp, file);
+  try { ledgerChangedHook?.(); } catch { /* 旁路失败不影响台账 */ }
 }
 
 /* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」——
@@ -73,6 +81,7 @@ function mutateLedger<T>(fn: (all: Ledger) => { all: Ledger; out: T }): Promise<
   ledgerChain = task.catch(() => undefined);
   return task;
 }
+
 
 /** resume 失败的分类；`busy` / `transient` 抛可识别错误（⛔ 调用方据此**不重建**会话）。 */
 async function resumeTalkThread(

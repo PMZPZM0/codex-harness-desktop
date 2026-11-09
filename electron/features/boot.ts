@@ -62,10 +62,11 @@ import { net, safeStorage, session } from "electron";
 import { pathToFileURL } from "node:url";
 import { startWalCheckpointWatch, trimEngineLogs } from "../sqlite-wal";
 import { petAssetRoots, readPetSettings } from "./pet-ipc";
-import { feedPetEvent } from "./pet-state";
+import { feedPetEvent, forgetPetThread } from "./pet-state";
 import { applyPetSettings } from "./pet-window";
-/* ⛔ 11-08：伙伴会话在外面被删时清台账（反向联动，见 thread/deleted 分支）。 */
-import { forgetTalkThreads } from "./group-talk";
+/* ⛔ 11-08：伙伴会话在外面被删时清台账（反向联动，见 thread/deleted 分支）。
+   11-09：宠物要排除群聊伙伴会话 ⇒ 还要用台账 id 集合 + 变更通知。 */
+import { forgetTalkThreads, listTalkThreads, onTalkLedgerChanged } from "./group-talk";
 import { writeTextFileAtomic } from "../config-toml";
 
 // ── 由 main.ts 注入的顶层依赖（同名声明 ⇒ 块体保持逐字不变）──
@@ -417,6 +418,17 @@ setTurnFileWatchBroadcast((payload: any) => {
   }
 });
 
+/* 桌面宠物不跟「群聊伙伴会话」（11-09 用户实测：群里点开消息时宠物弹出
+   `[SYSTEM TASK · 工作伙伴消息]` 这种内部信封气泡 —— 那是伙伴会话收到群消息的壳）。
+   ⛔ 台账一变就同步刷新 id 集合（台账很小、写盘本来就在主进程），引擎事件热路径只查 Set。 */
+const talkThreadIds = new Set<string>();
+function refreshTalkThreadIds(): void {
+  try {
+    talkThreadIds.clear();
+    for (const row of listTalkThreads()) if (row.threadId) talkThreadIds.add(String(row.threadId));
+  } catch { /* 台账读失败：保留旧集合（宁可多跟一条，也不误伤普通会话） */ }
+}
+
 /** 启动链主体：增强 PATH → 建数据目录 → 恢复状态与登记表 → 拉起引擎 → 挂通道与定时器。⛔ 顺序有依赖，别随意调换。 */
 export async function bootApp() {
   markBoot("app-ready");   // 启动耗时测量（见 electron/boot-timing.ts）
@@ -432,6 +444,9 @@ export async function bootApp() {
   // 压缩侦测的落盘目录 + rollout 根（10-07）——同一条"启动后求值"纪律（见上一行注释）。
   setCompactionWatchDirs(path.join(app.getPath("userData"), "compaction-records"), codexHome);
   loadCompactionStore();
+  /* 群聊伙伴会话不进桌面宠物：先按台账补水一次，之后台账每次写盘都会刷新（见 refreshTalkThreadIds）。 */
+  onTalkLedgerChanged(refreshTalkThreadIds);
+  refreshTalkThreadIds();
   /* 启动自报（10-01，排查「改了没生效」）：把本次启动加载的产物路径 + 渲染层 bundle 文件名 +
      时间写进 userData/startup-report.json。排查脚本读它即可确定用户启动的是哪份产物，不必互相猜。
      ⛔ 只写自己的报告文件、只读 dist/index.html，不碰任何业务状态；失败不影响启动。 */
@@ -823,7 +838,12 @@ export async function bootApp() {
     // 桌面宠物：旁听同一份事件流归约成九态（不改事件流向、也不消费正文内容）。
     // ⛔ 无条件喂：状态要一直维护着，用户中途打开宠物时才能立刻是对的状态（窗口关着时
     //    归约只写一个对象、不产生任何推送，成本可忽略）。
-    feedPetEvent(event);
+    // ⛔ 群聊伙伴会话除外（11-09 用户实测「群里点开消息，宠物弹内部信封气泡」）：它们有自己的
+    //    群窗口反馈，喂进来只会让宠物显示 `[SYSTEM TASK · 工作伙伴消息]` 这种内部壳；
+    //    顺手把它已经建出来的活动清掉（事件先于台账写入的极小窗口也不会留下脏活动）。
+    const petThread = eventThreadId((event as { params?: unknown } | null)?.params);
+    if (petThread && talkThreadIds.has(petThread)) forgetPetThread(petThread);
+    else feedPetEvent(event);
     // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
     // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
     const forwarded = filterForRenderer(event);

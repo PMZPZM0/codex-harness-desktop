@@ -424,5 +424,22 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     "确认后的第一条新 item 恢复 running（不再死等 serverRequest/resolved）；delta 不单独清等待");
 }
 
+/* ── 11-09 用户实测：群里点开消息，宠物弹出 `[SYSTEM TASK · 工作伙伴消息]` 内部信封气泡 ──
+   群聊伙伴会话有自己的群窗口反馈，不许驱动宠物；台账一变就刷新排除集合。 */
+{
+  const boot = codeOnly(read("electron/features/boot.ts"));
+  const channel = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  const state = codeOnly(read("electron/features/pet-state.ts"));
+  ok(/const talkThreadIds = new Set<string>\(\)/.test(boot)
+    && /onTalkLedgerChanged\(refreshTalkThreadIds\)/.test(boot)
+    && /talkThreadIds\.has\(petThread\)\) forgetPetThread\(petThread\)/.test(boot)
+    && /else feedPetEvent\(event\)/.test(boot),
+    "群聊伙伴会话不喂宠物（台账 id 集合；事件命中则跳过并清掉它的活动）");
+  ok(/export function onTalkLedgerChanged/.test(channel) && /ledgerChangedHook\?\.\(\)/.test(channel),
+    "台账写盘后通知排除集合刷新（新建/删除伙伴会话都跟得上）");
+  ok(/export function forgetPetThread/.test(state) && /activities\.delete\(id\)/.test(state),
+    "宠物侧有「忘掉这条线程」的出口（活动 / 等待映射 / 中断计时一起清）");
+}
+
 console.log(`\n【pet-activity】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
