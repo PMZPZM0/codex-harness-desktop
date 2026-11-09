@@ -1384,7 +1384,7 @@ const catalog = [
     && (view.match(/sendingRef\.current = false;/g) || []).length >= 3
     && /if \(e\.repeat\) return;/.test(view),
     "发送：同步 ref 闸门（三条返回路径都释放）+ 忽略键盘自动重复（⛔ 连按回车不再发多条一样的）");
-  ok(/if \(gid\) \{\n    const rows = listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\);/.test(stopSrc)
+  ok(/if \(gid\) \{\s+const rows = listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\);/.test(stopSrc)
     && /memberName, groupId }/.test(store) && /stopAll: true, groupId/.test(store),
     "停止候选并上**群聊台账**（⛔ 第一条消息落盘前也能停；不再报「还没有它的会话」）");
   ok(/requestTalkCancel\(String\(input\.groupId\), String\(input\.memberName\)\)/.test(stopSrc)
