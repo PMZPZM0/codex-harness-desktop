@@ -1525,6 +1525,14 @@ const catalog = [
   ok(/copyTextToClipboard/.test(view) && /copyTextToClipboard/.test(proc)
     && !/navigator\.clipboard/.test(view) && !/navigator\.clipboard/.test(proc),
     "群聊复制走三级兜底（主进程 IPC 优先）；⛔ 直接 navigator.clipboard（file:// 弹窗静默失败）");
+  /* ⛔ 11-09 用户截图「页脚和追问/来源之间一大片空白」：群特有项接在主对话页脚同一行。 */
+  const footerSrc = codeOnly(read("src/features/shared/MessageFooter.tsx"));
+  const turnViewSrc = codeOnly(read("src/features/session-turn/SessionTurn/03-turn-view.tsx"));
+  ok(/extraFooter\?: ReactNode/.test(footerSrc) && /\{extraFooter\}/.test(footerSrc)
+    && /extraFooter=\{extraFooter\}/.test(turnViewSrc)
+    && /extraFooter=\{footerExtras\}/.test(view)
+    && /isBot && !useTurnView && \(/.test(view),
+    "群特有页脚项（追问 / 来源）接在主对话页脚**同一行**（⛔ 另起一行 = 页脚下方一大片空白）");
   ok(/setDiffHover\(null\); openReview\(file\.path\)/.test(status)
     && /\.turn-diff-modal-mask \{[\s\S]{0,160}?z-index: 1002/.test(cssCards),
     "「审查」不再被悬停预览压住：打开前收起 hover；弹窗层级 1002 > 悬停 1000");

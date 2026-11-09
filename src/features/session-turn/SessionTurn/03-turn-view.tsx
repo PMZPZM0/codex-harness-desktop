@@ -29,7 +29,7 @@ import { TurnMediaCard } from "../../media";
 /** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。
  *  `assistantName` / `assistantAvatar`：群聊伙伴会话在外面显示**伙伴本人**的名字与头像
  *  （11-09 用户令：与群聊里看到的一致，历史回合也实时跟随）；缺省 = 全局 Codex 身份。 */
-export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void }) {
+export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview, extraFooter }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void; /** 群聊：群特有的页脚项（追问 / 来源会话）接在**同一行**（⛔ 不另起一行留空白）。 */ extraFooter?: ReactNode }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
   const codexName = useCodexName();
@@ -288,7 +288,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
               </div>
             </div>
           )}
-          {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} />}
+          {turnFinished && finalAgent && <MessageFooter item={finalAgent} turn={turn} usage={usage} tokenUsage={tokenUsage} fallbackWindow={fallbackWindow} onCopy={handlers.onCopy} onQuote={handlers.onQuote} onFork={() => handlers.onFork(turn.id)} extraIcon={hookBadge} webSources={collectTurnWebSources(turn)} extraFooter={extraFooter} />}
           {/* ⛔⛔ 10-31 用户令：「群事件当前的展示方式太丑，重构为悬浮播报组件」——
               群广播从**对话流里彻底撤出**（不再占消息位、也不夹在消息与状态行之间），
               改由 `features/event-broadcast` 的悬浮窗统一播报：

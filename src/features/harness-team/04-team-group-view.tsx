@@ -1316,6 +1316,32 @@ export function TeamGroupView({
                   const mentioned = isBot
                     ? parseMentions(row.text, group, { excludeId: row.authorId }).filter((m) => m.kind === "bot")
                     : [];
+                  /* ⛔ 11-09 用户截图「页脚和追问/来源之间一大片空白」：群特有的追问 / 来源
+                     不再另起一行，直接接在**主对话页脚的同一行**（TurnView 的 extraFooter）。 */
+                  const footerExtras = isBot && useTurnView ? (
+                    <>
+                      <button type="button" className="message-action-extra team-msg__extra" onClick={() => askAgain(row)}>追问</button>
+                      {mentioned.map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          className="message-action-extra team-msg__extra"
+                          title="点一下把它加进本轮 @（不会自动派活）"
+                          onClick={() => mentionPartner(m.id)}
+                        >@{m.name}</button>
+                      ))}
+                      {goneThreads?.has(row.threadId) ? (
+                        <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
+                      ) : (
+                        <button
+                          type="button"
+                          className="team-msg__origin"
+                          title={onOpenThread ? `打开来源会话：${row.threadId}` : `来源会话：${row.threadId}（点一下复制）`}
+                          onClick={() => { if (onOpenThread) onOpenThread(row.threadId); else void copyText({ ...row, text: row.threadId }); }}
+                        >来源 {shortId(row.threadId)}{onOpenThread ? " ↗" : ""}</button>
+                      )}
+                    </>
+                  ) : null;
                   /* ⛔ 11-07：`mentions` 不再渲染成前缀 chip —— 正文里的 `@名字` 会就地变成真提及。
                      这里再画一遍就是截图上那个「两个 @承枢」，一真一假。 */
                   /* ⛔ 11-07 真机截图修正：定时任务那行曾显示成「定时任务 定时任务」（名字 + 徽标复述）。
@@ -1452,6 +1478,7 @@ export function TeamGroupView({
                                 onOpenReview={openReviewPanel}
                                 onQuote={quoteText}
                                 onOpenThread={onOpenThread}
+                                extraFooter={footerExtras}
                                 fallback={(
                                   <TeamMentionText
                                     text={stripVoiceScript(row.text)}
@@ -1526,19 +1553,13 @@ export function TeamGroupView({
                             ) : null}
                           </>
                         )}
-                        {isBot && (
+                        {isBot && !useTurnView && (
                           <div className="team-msg__actions">
-                            {/* 过程模式整轮交给 TurnView：复制 / 引用 / 用量都在它的页脚里（⛔ 不再重复一排）。
-                                这里只留群特有的「追问（再 @ 它一轮）」与「来源会话」。 */}
-                            {!useTurnView && (
-                              <button type="button" onClick={() => void copyText(row)}>
-                                {copied === row.key ? "已复制" : "复制"}
-                              </button>
-                            )}
+                            <button type="button" onClick={() => void copyText(row)}>
+                              {copied === row.key ? "已复制" : "复制"}
+                            </button>
                             <button type="button" onClick={() => askAgain(row)}>追问</button>
-                            {!useTurnView && (
-                              <button type="button" onClick={() => quoteRow(row)} title="把这条消息引用到输入框（发送时带 > 引文）">引用</button>
-                            )}
+                            <button type="button" onClick={() => quoteRow(row)} title="把这条消息引用到输入框（发送时带 > 引文）">引用</button>
                             {mentioned.map((m) => (
                               <button
                                 key={m.id}
@@ -1553,7 +1574,7 @@ export function TeamGroupView({
                                 · 反向 —— 那条会话被删掉时由 `goneThreads` 标成不可点的「已删除」
                                   （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
                             {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
-                            {!useTurnView && row.usage && <TeamUsage usage={row.usage} />}
+                            {row.usage && <TeamUsage usage={row.usage} />}
                             {goneThreads?.has(row.threadId) ? (
                               <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
                             ) : (

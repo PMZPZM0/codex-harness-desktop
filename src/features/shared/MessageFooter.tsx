@@ -1,4 +1,5 @@
 /** MessageFooter（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
+import type { ReactNode } from "react";
 import { ThreadItem } from "../../lib/thread-item";
 import { Turn } from "../../lib/turn";
 import { itemText } from "../../lib/item-text";
@@ -15,7 +16,7 @@ import { FeedbackIconButton } from "./FeedbackIconButton";
 import { TurnWebSources } from "./TurnWebSources";
 
 /** 消息底部操作条：复制 / 引用 / 分叉 / 编辑与用量；用户消息的对外文本会剥掉内部标记段。 */
-export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, onCopy, onQuote, onFork, onEdit, extraIcon, webSources }: { item: ThreadItem; turn?: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onEdit?: () => void; extraIcon?: any; webSources?: Array<{ url: string; host: string }> }) {
+export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, onCopy, onQuote, onFork, onEdit, extraIcon, webSources, extraFooter }: { item: ThreadItem; turn?: Turn; usage?: any; tokenUsage?: any; fallbackWindow?: number; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onEdit?: () => void; extraIcon?: any; webSources?: Array<{ url: string; host: string }>; /** 宿主追加的页脚项（群聊的「追问 / 来源会话」）：接在同一行，⛔ 不另起一行留白。 */ extraFooter?: ReactNode }) {
   const rawText = itemText(item);
   const isAgent = item.type === "agentMessage";
   // 用户消息对外文本：团队/成员会话首条的 SYSTEM TASK 段会被折叠，引用与复制只暴露用户原文
@@ -92,6 +93,7 @@ export function MessageFooter({ item, turn, usage, tokenUsage, fallbackWindow, o
       {/* 回合网页来源（10-12 用户令「放到下面吧，跟下面这个在一行」）：贴操作条最右端。
           ⛔ TurnWebSources 空数组自己返回 null —— 无来源的消息 footer 形态不变。 */}
       {isAgent && webSources && webSources.length > 0 && <TurnWebSources sources={webSources} inline />}
+      {extraFooter}
     </div>
   );
 }

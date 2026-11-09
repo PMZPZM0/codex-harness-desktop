@@ -15,7 +15,7 @@ import { useTeamTurn } from "./09-team-process";
 import { copyTextToClipboard } from "../../lib/clipboard";
 
 /** 群里的一个回合 = 主对话一整轮（正文逐条上屏 → 收尾后整轮折叠可展开 + 文件卡 + 页脚）。 */
-export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpenReview, onQuote, onOpenThread, fallback }: {
+export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpenReview, onQuote, onOpenThread, fallback, extraFooter }: {
   threadId: string;
   at: number;
   bodyText: string;
@@ -26,6 +26,8 @@ export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpen
   onOpenThread?: (id: string) => void;
   /** 回合还没拉回来时先显示群自己的正文（@ 可点），拉到后无缝换成 TurnView。 */
   fallback?: ReactNode;
+  /** 群特有的页脚项（追问 / 来源会话）：接在主对话页脚**同一行**（⛔ 不另起一行留白）。 */
+  extraFooter?: ReactNode;
 }) {
   const fresh = Date.now() - Number(at) < 120_000;
   const { turn } = useTeamTurn(threadId, at, bodyText, false, fresh);
@@ -51,6 +53,7 @@ export function TeamTurnView({ threadId, at, bodyText, usage, onOpenFile, onOpen
       handlers={handlers}
       isLastTurn={false}
       onOpenReview={onOpenReview}
+      extraFooter={extraFooter}
     />
   );
 }

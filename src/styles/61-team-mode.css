@@ -186,15 +186,23 @@
 }
 /* 长路径 / 长 URL 不换行会把整条消息撑宽（撑出水平滚动条）；消息体允许任意断行 */
 .team-msg__body { min-width: 0; overflow-wrap: anywhere; }
+/* ⛔ 11-09 用户实测（截图：主对话页脚与「追问/来源」之间一大片空白）：
+   群消息里嵌的是主对话的 `.turn-group`，它自带「回合之间 32px」的下边距 ——
+   在气泡里就变成一块空白。⇒ 群内清零（间距由 `.team-msg__actions` 自己的 6px 承担）。 */
+.team-msg__body .turn-group { margin-bottom: 0; }
 /* ⛔ 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：复用 MessageFooter，
-   但它自带的 hover 显隐规则挂在 `.message:hover` 上（群消息是 `.team-msg`）⇒ 这里补同款三条。 */
+   但它自带的 hover 显隐规则挂在 `.message:hover` 上（群消息是 `.team-msg`）⇒ 这里补同款三条。
+   伙伴消息同样适用（TurnView 的页脚 + 群里追加的「追问 / 来源」都在这一行）。 */
 .team-msg.is-human .team-msg__footer { display: flex; justify-content: flex-end; margin-top: 2px; }
-.team-msg.is-human:hover .team-msg__footer .message-footer,
-.team-msg.is-human .team-msg__footer .message-footer:focus-within { opacity: 1; }
-.team-msg.is-human:hover .team-msg__footer .message-footer .message-action-extra,
-.team-msg.is-human .team-msg__footer .message-footer:focus-within .message-action-extra { opacity: 1; pointer-events: auto; }
-.team-msg.is-human:hover .team-msg__footer .message-footer .message-action-default,
-.team-msg.is-human .team-msg__footer .message-footer:focus-within .message-action-default { opacity: 1; }
+.team-msg:hover .message-footer,
+.team-msg .message-footer:focus-within { opacity: 1; }
+.team-msg:hover .message-footer .message-action-extra,
+.team-msg .message-footer:focus-within .message-action-extra { opacity: 1; pointer-events: auto; }
+.team-msg:hover .message-footer .message-action-default,
+.team-msg .message-footer:focus-within .message-action-default { opacity: 1; }
+/* 群里追加的页脚项（追问 / @名字 / 来源）：外观跟随 `.message-footer button`，只补一点字距。 */
+.message-footer .team-msg__extra { font-size: 10.5px; }
+.message-footer .team-msg__origin { margin-left: auto; }
 .team-msg__avatar {
   flex: none;
   display: inline-flex;
