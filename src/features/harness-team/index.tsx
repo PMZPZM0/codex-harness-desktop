@@ -21,6 +21,7 @@ import type { TeamCreateInput } from "./12-team-create";
 import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
+import { TeamCloseGuard } from "./30-team-close-guard";
 import { isTeamPopoutWindow } from "../../lib/team-popout";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import type { HarnessAppApi } from "../app-state";
@@ -373,6 +374,8 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
           void loadMessages(id);
         }}
       />
+      {/* ⛔ 11-09 用户令：有群任务在跑时，关工作伙伴窗口先确认；没在跑直接放行。 */}
+      <TeamCloseGuard busyByGroup={busyByGroup} liveByGroup={liveByGroup} />
     </div>
   );
 }

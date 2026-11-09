@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { Copy, Minus, Square, X } from "lucide-react";
+import { runWindowCloseGuard } from "../lib/window-close-guard.mjs";
 
 /** 窗口控制钮（Windows 独占；mac 的红绿灯是系统画的，这里直接不渲染）。
  *
@@ -82,7 +83,7 @@ export function WindowControls() {
       >
         {maximized ? <Copy size={14} strokeWidth={2} /> : <Square size={13} strokeWidth={2} />}
       </button>
-      <button type="button" className="window-close" title="关闭" aria-label="关闭" onClick={() => void window.codex.windowClose?.()}>
+      <button type="button" className="window-close" title="关闭" aria-label="关闭" onClick={() => { if (runWindowCloseGuard()) return; void window.codex.windowClose?.(); }}>
         <X size={15} strokeWidth={2} />
       </button>
     </div>,

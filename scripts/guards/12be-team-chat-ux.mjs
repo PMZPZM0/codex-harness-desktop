@@ -1100,6 +1100,13 @@ const catalog = [
     && /effectiveDialogFlow === "detail" \? "detailed" : "simple"/.test(view)
     && /defaultOpen=\{defaultOpen\}/.test(codeOnly(read("src/features/harness-team/09-team-process.tsx"))),
     "对话流开关（默认折叠）：detail 时运行中过程才默认展开；simple 走折叠、点标题展开");
+  /* ⛔ 11-09 用户令：「群聊有任务在跑时，关工作伙伴窗口要弹确认；没在跑不提示」。 */
+  const wc = codeOnly(read("src/components/WindowControls.tsx"));
+  const closeGuard = codeOnly(read("src/features/harness-team/30-team-close-guard.tsx"));
+  ok(/runWindowCloseGuard\(\)/.test(wc) && /registerWindowCloseGuard/.test(closeGuard)
+    && /isTeamPopoutWindow\(\)/.test(closeGuard) && /activeGroupIds\(busyByGroup, liveByGroup\)/.test(closeGuard)
+    && /<TeamCloseGuard busyByGroup=\{busyByGroup\} liveByGroup=\{liveByGroup\} \/>/.test(codeOnly(read("src/features/harness-team/index.tsx"))),
+    "群有任务在跑 ⇒ 关工作伙伴窗口先弹确认；没在跑直接关（守卫只拦窗口钮这一次点击）");
   /* ⛔ 11-09 用户截图：QwenPaw 的回复是一坨 `{status, elapsed_seconds, response, usage}` JSON
      ⇒ 本地 CLI 直跑的 stdout 必须先把文本字段剥出来再当群回复（JSON 也不上屏流式）。 */
   const cliDirect = codeOnly(read("electron/features/group-talk/04-cli.ts"));
