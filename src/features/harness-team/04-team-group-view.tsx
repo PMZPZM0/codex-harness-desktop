@@ -1648,7 +1648,7 @@ export function TeamGroupView({
                                 title={onOpenThread ? `打开来源会话：${row.threadId}` : `来源会话：${row.threadId}（点一下复制）`}
                                 onClick={() => { if (onOpenThread) onOpenThread(row.threadId); else void copyText({ ...row, text: row.threadId }); }}
                               >来源 {shortId(row.threadId)}{onOpenThread ? " ↗" : ""}</button>
-                            )}
+                            )) : null}
                           </div>
                         )}
                       </div>
