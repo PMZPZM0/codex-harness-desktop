@@ -27,6 +27,12 @@ function norm(rows) {
       groupId: String(row?.groupId ?? ""),
       memberId: String(row?.memberId ?? ""),
       name: String(row?.name ?? ""),
+      /* 11-09：会话里显示伙伴身份要用的字段（主进程按群成员表现算，群内改名/换头像即时变）。 */
+      avatar: String(row?.avatar ?? ""),
+      kind: String(row?.kind ?? "bot"),
+      targetKind: String(row?.targetKind ?? ""),
+      targetKey: String(row?.targetKey ?? ""),
+      groupName: String(row?.groupName ?? ""),
     };
   }
   return byId;
@@ -71,4 +77,19 @@ export function getTeamTalkThreads() {
 /** 这个会话是不是群聊伙伴会话（是 ⇒ 返回台账行，否则 null）。 */
 export function teamTalkThreadOf(threadId) {
   return state.byId[String(threadId ?? "")] ?? null;
+}
+
+/** 伙伴会话在界面上要显示的身份（可直接喂 `MemberAvatar`）；不是伙伴会话 ⇒ null。
+ *  ⛔ 只读快照，别在外面另拼一份 kind/targetKey 映射（群视图与外面会话必须同一套口径）。 */
+export function teamTalkIdentityOf(threadId) {
+  const row = teamTalkThreadOf(threadId);
+  if (!row) return null;
+  return {
+    id: row.memberId,
+    name: row.name,
+    avatar: row.avatar,
+    kind: row.kind,
+    targetKind: row.targetKind,
+    targetKey: row.targetKey,
+  };
 }

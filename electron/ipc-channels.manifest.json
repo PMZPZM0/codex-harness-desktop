@@ -6107,7 +6107,7 @@
       "channel": "harness-team:talk-threads",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number }> }>",
+      "returns": "Promise<{ ok: boolean; threads: Array<{ threadId: string; groupId: string; memberId: string; name: string; at: number; avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string; id: string }> }>",
       "invokeArgs": "",
       "cast": null,
       "note": "群聊伙伴会话台账（只读）：侧栏给这些普通会话打「伙伴」标签"

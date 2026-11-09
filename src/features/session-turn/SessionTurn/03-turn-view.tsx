@@ -8,7 +8,7 @@ import { Turn } from "../../../lib/turn";
 import { FoldHandlers, TurnFoldStream } from "../../session-queue";
 import { useCodexName, CodexAvatar } from "../../../components/CodexAvatar";
 import { isTurnRunning } from "../../../lib/turn-fold";
-import { useEffect, useMemo, memo, useState, useRef, Fragment } from "react";
+import { useEffect, useMemo, memo, useState, useRef, Fragment, type ReactNode } from "react";
 import { RUN_CLOCK } from "../../../lib/run-clock-2";
 import { describeTurnStop } from "../../../lib/turn-stop-reason.mjs";
 import { formatDuration } from "../../../lib/format-duration";
@@ -26,8 +26,10 @@ import { Slot } from "../../../runtime/Slot";
 import { PollTaskBoard } from "../../polling";
 import { SessionAnnounceToggle } from "../../voice-announce";
 import { TurnMediaCard } from "../../media";
-/** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。 */
-export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean }) {
+/** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。
+ *  `assistantName` / `assistantAvatar`：群聊伙伴会话在外面显示**伙伴本人**的名字与头像
+ *  （11-09 用户令：与群聊里看到的一致，历史回合也实时跟随）；缺省 = 全局 Codex 身份。 */
+export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
   const codexName = useCodexName();
@@ -173,8 +175,8 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
                 <div className="turn-card">
                   {index === headSegIndex && userItems.length > 0 && (running || responseItems.length > 0) && (
                     <div className="turn-head">
-                      <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
-                      <span className="turn-head-name">{codexName}</span>
+                      <span className="turn-head-avatar">{assistantAvatar ?? <CodexAvatar size={22} />}</span>
+                      <span className="turn-head-name">{assistantName || codexName}</span>
                       <SessionAnnounceToggle threadId={threadId} />
                     </div>
                   )}
@@ -227,8 +229,8 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
             条件与下面的占位头一致（userItems 已上屏）；回合结束后只有真产出过内容才留头。 */}
         {userItems.length > 0 && (running || responseItems.length > 0) && (
           <div className="turn-head">
-            <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
-            <span className="turn-head-name">{codexName}</span>
+            <span className="turn-head-avatar">{assistantAvatar ?? <CodexAvatar size={22} />}</span>
+            <span className="turn-head-name">{assistantName || codexName}</span>
             <SessionAnnounceToggle threadId={threadId} />
           </div>
         )}
@@ -325,7 +327,9 @@ export const MemoTurnView = memo(TurnView, (prev, next) =>
   && prev.interruptedAt === next.interruptedAt
   && prev.elapsedSeconds === next.elapsedSeconds
   && prev.handlers === next.handlers
-  && prev.hooks === next.hooks,
+  && prev.hooks === next.hooks
+  && prev.assistantName === next.assistantName
+  && prev.assistantAvatar === next.assistantAvatar,
 );
 
 /** memo 用户消息：只有消息内容/回合变化才重渲染 */

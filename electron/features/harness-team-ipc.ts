@@ -46,6 +46,7 @@ import {
   teamAuthorIdOf,
   teamMemberIdOf,
   textsAreNearDuplicate,
+  talkPartnerIdentity,
 } from "../../src/lib/team-models.mjs";
 import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsableFor, type GroupUsage } from "../../src/lib/team-usage.mjs";
 import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
@@ -70,6 +71,8 @@ import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, build
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
+/* ⛔ 误登记成指挥中枢的伙伴会话要能静默摘掉身份（保留记忆目录）——见 talk-threads 通道。 */
+import { unregisterBossSessionQuiet } from "../boss-groups/session-registry";
 import {
   appendLedger,
   normalizeLedgerEntry,
@@ -1137,7 +1140,11 @@ export const harnessTeamFeature = defineFeature<null>({
       const store = readStore();
       const g = findGroup(store.groups, groupId);
       if (!g) return { ok: false, error: "群不存在" };
-      return saveOne(store, setMemberAvatar(g, memberId, avatar) as GroupShape);
+      const saved = saveOne(store, setMemberAvatar(g, memberId, avatar) as GroupShape);
+      /* ⛔ 11-09：群内换头像要**当场**同步到外面那条伙伴会话（它订阅 team-talk-threads-changed 重拉身份），
+         不用等 8s 轮询、更不用重启应用。 */
+      broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
+      return saved;
     });
 
     /* 群消息排版（11-07 用户令：进群设置、卡片选择，换机/重装也要保留）——
@@ -1396,7 +1403,32 @@ export const harnessTeamFeature = defineFeature<null>({
     ipcHost.handle("harness-team:talk-threads", () => {
       /* 侧栏每次拉台账顺带自愈一次（幂等）：群已删、台账还留着的伙伴会话会被删掉并清账。 */
       void healOrphanTalkThreads().catch(() => undefined);
-      return { ok: true, threads: listTalkThreads() };
+      /* ⛔ 11-09 用户令「群聊名字/头像实时同步给外面会话的伙伴会话」：
+         名字/头像**不存快照**，每次按群成员表现算（群里改名/换头像 ⇒ 外面会话当场跟上）；
+         群已删 ⇒ 回退台账名字，不至于把会话显示成空名。 */
+      const store = readStore();
+      const groups = new Map(store.groups.map((g) => [String(g.id), g]));
+      const threads = listTalkThreads().map((row) => {
+        const group = groups.get(String(row.groupId)) ?? null;
+        return {
+          ...row,
+          ...talkPartnerIdentity(row, group),
+          groupName: String(group?.name ?? ""),
+        };
+      });
+      /* ⛔⛔ 11-09 用户截图「还被识别成中枢会话」：10-25 的中枢登记标记是全局 ref，
+         点了「指挥中枢」后**改点已有会话**时它仍然为真 ⇒ 下一条出现的会话（这里正是伙伴会话）
+         被登记进 BOSS 名单，侧栏徽标、中枢欢迎页、记忆路由全跟着串。
+         现在：① 登记守卫在渲染层（pending + 伙伴台账双判据）；② 这里把**已经**误登记的历史条目静默摘掉。
+         ⛔ 只摘身份、不删记忆目录 —— 误登记期间写进去的正是这位伙伴的记忆。 */
+      void (async () => {
+        let changed = false;
+        for (const row of threads) {
+          if (await unregisterBossSessionQuiet(row.threadId)) changed = true;
+        }
+        if (changed) broadcastHarnessEvent({ type: "boss-group", at: Date.now() } as never);
+      })().catch(() => undefined);
+      return { ok: true, threads };
     });
 
 /* 一次性自愈：群档案里已经不存在的群，台账却还留着它的伙伴会话

@@ -4,6 +4,13 @@ export type TeamTalkThreadInfo = {
   groupId: string;
   memberId: string;
   name: string;
+  /** 群内自定义头像（`preset:<id>` / `data:image/...`；空串 = 默认） */
+  avatar: string;
+  /** 成员类型（human / bot），决定头像走用户中心还是智能体图集 */
+  kind: string;
+  targetKind: string;
+  targetKey: string;
+  groupName: string;
 };
 
 export type TeamTalkThreadsState = {
@@ -14,3 +21,11 @@ export type TeamTalkThreadsState = {
 export function subscribeTeamTalkThreads(fn: () => void): () => void;
 export function getTeamTalkThreads(): TeamTalkThreadsState;
 export function teamTalkThreadOf(threadId: string): TeamTalkThreadInfo | null;
+export function teamTalkIdentityOf(threadId: string): {
+  id: string;
+  name: string;
+  avatar: string;
+  kind: string;
+  targetKind: string;
+  targetKey: string;
+} | null;

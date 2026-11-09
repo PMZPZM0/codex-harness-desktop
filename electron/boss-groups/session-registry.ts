@@ -126,6 +126,19 @@ export async function unregisterBossSession(id: string): Promise<{ ok: boolean; 
   return { ok: true, removedDir };
 }
 
+/** 从 BOSS 名单里摘掉一条身份，但**保留**它的记忆目录（误登记成中枢的伙伴会话用）。
+ *  ⛔ 不能走 `unregisterBossSession`：那会把 `boss-home/memories/<id>` 删掉，
+ *     而误登记期间捕获的正是这位伙伴的记忆 —— 摘身份不能连带删数据。 */
+export async function unregisterBossSessionQuiet(id: string): Promise<boolean> {
+  const key = String(id ?? "").trim();
+  if (!key) return false;
+  const reg = await readRegistry();
+  const next = reg.sessions.filter((s) => s.id !== key);
+  if (next.length === reg.sessions.length) return false;
+  await writeRegistry({ version: 1, sessions: next });
+  return true;
+}
+
 /** 会话重建（rollout 丢失自愈）时把身份登记从旧 id 换成新 id。 */
 export async function renameBossSession(previousId: string, nextId: string): Promise<boolean> {
   const prev = String(previousId ?? "").trim();

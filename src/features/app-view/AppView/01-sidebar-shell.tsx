@@ -6,6 +6,8 @@ import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, us
 import { createPortal, flushSync } from "react-dom";
 import { ThemeQuickSwitch } from "../../../components/ThemeQuickSwitch";
 import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
+/* ⛔ 中枢登记守卫要认「这是不是群聊伙伴会话」（伙伴永远不是中枢）。 */
+import { getTeamTalkThreads } from "../../../lib/team-talk-threads.mjs";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, setFunctionMenuSettingsOpener, setFunctionMenuSettingsTargets, useFunctionMenuConfig } from "../../function-menu";
 import { settingsNav } from "../helpers";
 import { hk } from "../../../lib/hk";
@@ -281,10 +283,19 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   /* 点「指挥中枢」新建的那个会话，等它拿到 id 后记成 home（首条消息发出后引擎才分配）。 */
   const bossHomePending = useRef(false);
   useEffect(() => {
-    if (bossHomePending.current && currentThreadId) {
-      setBossHomeThreadId(currentThreadId);
+    if (!bossHomePending.current || !currentThreadId) return;
+    /* ⛔⛔ 11-09 用户截图「伙伴会话还被识别成中枢会话」：这个 ref 是**全局意图**，
+       点了中枢后改点别的已有会话时它仍为真 ⇒ 把那条会话误登记成中枢。
+       ⇒ 登记前两道闸：① 中枢过渡态已经被清掉（切过别的会话）⇒ 作废；
+                          ② 目标会话是群聊伙伴会话 ⇒ 永远不是中枢，作废。 */
+    const boss = getBossThreads();
+    const isPartner = Boolean(getTeamTalkThreads().byId[currentThreadId]);
+    if (!boss.pending || isPartner) {
       bossHomePending.current = false;
+      return;
     }
+    setBossHomeThreadId(currentThreadId);
+    bossHomePending.current = false;
   }, [currentThreadId]);
   const {
     setWorkspace,

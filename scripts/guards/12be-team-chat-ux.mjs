@@ -1337,5 +1337,59 @@ const catalog = [
     "消息投影按依赖记忆（切设置等无关重渲染不再重算）");
 }
 
+/* ── ㉔ 11-09 用户截图：伙伴会话在外面仍显示 Codex / 被识别成中枢会话 ─────────────
+   两条要求：① 群聊里的名字/头像实时同步给外面的伙伴会话（历史回合也跟随，不用刷新）；
+             ② 伙伴会话永远不是中枢会话（误登记要能自愈）。 */
+{
+  const models = codeOnly(read("src/lib/team-models.mjs"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const registry = codeOnly(read("electron/boss-groups/session-registry.ts"));
+  const talkStore = codeOnly(read("src/lib/team-talk-threads.mjs"));
+  const bossStore = codeOnly(read("src/features/boss-group-view/boss-threads-store.mjs"));
+  const sidebar = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+  const timeline = codeOnly(read("src/features/app-view/AppView/02-main-stage/01-timeline.tsx"));
+  const turnView = codeOnly(read("src/features/session-turn/SessionTurn/03-turn-view.tsx"));
+  const barrel = codeOnly(read("src/features/harness-team/index.tsx"));
+  const manifest = read("electron/ipc-channels.manifest.json");
+
+  ok(/export function talkPartnerIdentity\(row, group\)/.test(models)
+    && /name: String\(member\?\.name \?\? row\?\.name \?\? ""\)/.test(models)
+    && /avatar: String\(member\?\.avatar \?\? group\?\.avatars\?\.\[memberId\] \?\? ""\)/.test(models),
+    "伙伴身份按**群成员当前名字/头像**解析（⛔ 不用台账里的建会话快照）");
+  ok(/\.\.\.talkPartnerIdentity\(row, group\)/.test(ipc)
+    && /groupName: String\(group\?\.name \?\? ""\)/.test(ipc)
+    && /unregisterBossSessionQuiet\(row\.threadId\)/.test(ipc),
+    "talk-threads 下发伙伴身份 + 顺手摘掉误登记的中枢身份");
+  ok(/broadcastHarnessEvent\(\{ type: "team-talk-threads-changed"/.test(
+      ipc.slice(ipc.indexOf('ipcHost.handle("harness-team:set-avatar"'), ipc.indexOf('ipcHost.handle("harness-team:set-avatar"') + 900)),
+    "群内换头像后广播身份刷新（⛔ 等 8s 轮询 = 用户眼里的「不同步」）");
+  const quiet = registry.match(/export async function unregisterBossSessionQuiet[\s\S]*?\n\}/)?.[0] ?? "";
+  ok(Boolean(quiet) && !/fs\.rm|bossMemoryWorkspace/.test(quiet),
+    "静默摘身份不删记忆目录（误登记期间存的正是这位伙伴的记忆）");
+  ok(/harnessTeamTalkThreads\?\./.test(bossStore)
+    && /const notTalk = \(id\) => Boolean\(id\) && !talkIds\.has\(id\)/.test(bossStore)
+    && /cachedIds = cachedAll\.filter\(notTalk\)/.test(bossStore)
+    && /sessionMemoryDirs\[id\] = dir/.test(bossStore),
+    "中枢 store 在**渲染期**过滤伙伴会话（名单 / boss 线程 / 成员会话 / 记忆目录 / localStorage 缓存）");
+  ok(/if \(!boss\.pending \|\| isPartner\)/.test(sidebar)
+    && /getTeamTalkThreads\(\)\.byId\[currentThreadId\]/.test(sidebar),
+    "中枢登记守卫：过渡态已清 / 目标是伙伴会话 ⇒ 不登记（⛔ 点中枢后改点会话会把对方登记成中枢）");
+  ok(/const partnerRow = thread\?\.id \? \(talkThreads\.byId\[thread\.id\] \?\? null\) : null/.test(timeline)
+    && /assistantName=\{partnerRow\?\.name \|\| undefined\} assistantAvatar=\{partnerAvatar \?\? undefined\}/.test(timeline)
+    && /partnerRow\?\.name \|\| codexIdentity\.name/.test(timeline),
+    "主时间线按伙伴台账传回合头身份（含乐观头）；历史回合渲染期解析 = 不刷新也跟随");
+  ok(/assistantAvatar \?\? <CodexAvatar size=\{22\} \/>/.test(turnView)
+    && /assistantName \|\| codexName/.test(turnView)
+    && /prev\.assistantName === next\.assistantName/.test(turnView)
+    && /prev\.assistantAvatar === next\.assistantAvatar/.test(turnView),
+    "TurnView 用伙伴名字/头像（两处回合头 + memo 比较器跟着比）");
+  ok(/export \{ MemberAvatar \} from "\.\/13-team-avatar";/.test(barrel)
+    && /import \{ MemberAvatar \} from "\.\.\/\.\.\/\.\.\/harness-team";/.test(timeline),
+    "头像组件走群板块 barrel 复用（⛔ 外面另写一套 preset/图集映射）");
+  ok(manifest.includes('"name": "harnessTeamTalkThreads"')
+    && manifest.includes("avatar: string; kind: string; targetKind: string; targetKey: string; groupName: string"),
+    "manifest 返回类型与实现同步（⛔ 手改生成物）");
+}
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

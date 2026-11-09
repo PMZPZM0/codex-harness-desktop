@@ -806,9 +806,11 @@ ok(/const THREAD_MUTE_KEY = "announce-muted-threads"/.test(announceBusSrc)
   "会话级喇叭状态落 localStorage（同一会话重开仍保持；各会话互不影响）");
 const turnHeadIdx = turnViewTsx.indexOf('<span className="turn-head-name">');
 const turnToggleIdx = turnViewTsx.indexOf("<SessionAnnounceToggle");
-ok(/<span className="turn-head-name">\{codexName\}<\/span>\s*<SessionAnnounceToggle threadId=\{threadId\} \/>/.test(turnViewTsx)
+/* 11-09：名字表达式可以是 Codex 全局名，也可以是群聊伙伴会话的伙伴名（`assistantName || codexName`）；
+ * 这条只钉**顺序**：名字后面紧跟播报开关。 */
+ok(/<span className="turn-head-name">\{(?:assistantName \|\| )?codexName\}<\/span>\s*<SessionAnnounceToggle threadId=\{threadId\} \/>/.test(turnViewTsx)
   && turnToggleIdx > turnHeadIdx,
-  "📢 开关就渲染在回合头的 Codex 名字**后面**（不是别处；顺序错了用户找不到）");
+  "📢 开关就渲染在回合头的名字**后面**（不是别处；顺序错了用户找不到）");
 ok(/const muted = useSyncExternalStore\(/.test(announceToggleTsx)
   && /const globalOn = useSyncExternalStore\(/.test(announceToggleTsx)
   /* 10-31：enabled 还要叠加引擎就绪（没装模型时不能看着是开的），

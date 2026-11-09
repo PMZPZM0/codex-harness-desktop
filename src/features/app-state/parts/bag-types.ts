@@ -1404,6 +1404,8 @@ export interface Bag {
   aliasState: import("../../../lib/alias-store.mjs").AliasState;
   aliasRefreshKey: string;
   badgeCycle: { index: Record<string, number> };
+  /** 群聊伙伴会话台账快照（threadId → 群/成员/身份）：侧栏「伙伴」徽标 + 外面会话的回合头共用。 */
+  talkThreads: import("../../../lib/team-talk-threads.mjs").TeamTalkThreadsState;
   delegateDescendantsOf: (rootId: string) => string[];
   buildDynamicTools: () => Promise<any[]>;
   createEmptyThread: () => Promise<import("../../app-view/types.ts").Thread | null>;

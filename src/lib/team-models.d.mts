@@ -261,3 +261,17 @@ export function parseTeamAuthorId(id: unknown): { teamId: string; memberId: stri
 
 /** 两段文本是否「几乎同一句」（成员 group_say 与最终回复重复时的宿主兜底判据） */
 export function textsAreNearDuplicate(a: unknown, b: unknown): boolean;
+
+/** 伙伴会话在外面显示的身份（名字取群成员当前名，头像取群内自定义 / 覆盖表） */
+export interface TalkPartnerIdentity {
+  id: string;
+  name: string;
+  avatar: string;
+  kind: TeamMemberKind;
+  targetKind: string;
+  targetKey: string;
+}
+export function talkPartnerIdentity(
+  row: { memberId?: string; name?: string } | null | undefined,
+  group: TeamGroupLite | null | undefined,
+): TalkPartnerIdentity;

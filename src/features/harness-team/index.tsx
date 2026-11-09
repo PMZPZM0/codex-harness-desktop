@@ -417,3 +417,7 @@ export function TeamChatOverlay({ onOpenModelSettings, onOpenThread, app, onClos
     </div>
   );
 }
+
+/* 11-09：伙伴会话在**外面会话的回合头**也要用群里那张脸 —— 头像组件的唯一实现留给群板块，
+ * 外面经 barrel 取用（⛔ 不许深链 `13-team-avatar`，也不许另写一套 preset/图集映射）。 */
+export { MemberAvatar } from "./13-team-avatar";

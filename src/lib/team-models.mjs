@@ -1009,6 +1009,34 @@ export function addModeStateOf(partners, mode) {
 }
 
 /**
+ * 群聊伙伴会话在「外面那条普通会话」里要显示的身份（11-09 用户令：
+ * 「群聊名字/头像要实时同步给外面会话的伙伴会话」）。
+ *
+ * ⛔ 名字取**群成员当前名字**：群里看到的是哪个名字，外面会话就显示哪个
+ *   （台账里的是建会话那一刻的快照，成员改名后不能再用它）。
+ * ⛔ 团成员是合成 id（`team:<团队>:<成员>`），不在 `group.members` 里 ⇒
+ *   名字回落台账、头像取群级覆盖表（与群视图 `faceOfId` 同一口径）。
+ * @param row   群聊台账行（`{ memberId, name }`）
+ * @param group 群档案；群已删 / 读不到时传 null，退回台账名字
+ * @returns 可直接喂 `MemberAvatar` 的成员形状（id/name/avatar/kind/targetKind/targetKey）
+ */
+export function talkPartnerIdentity(row, group) {
+  const memberId = String(row?.memberId ?? "");
+  const members = Array.isArray(group?.members) ? group.members : [];
+  const member = members.find((m) => String(m?.id ?? "") === memberId) ?? null;
+  const teamKid = memberId.startsWith("team:");
+  const kidId = teamKid ? memberId.split(":").slice(2).join(":") : "";
+  return {
+    id: memberId,
+    name: String(member?.name ?? row?.name ?? ""),
+    avatar: String(member?.avatar ?? group?.avatars?.[memberId] ?? ""),
+    kind: String(member?.kind ?? "bot"),
+    targetKind: String(member?.targetKind ?? (teamKid ? "member" : "")),
+    targetKey: String(member?.targetKey ?? kidId),
+  };
+}
+
+/**
  * 两段文本是否「几乎同一句」（11-08 用户实测「成员消息重复」）。
  *
  * 现场：成员一回合里既调了 `group_say`（把回复发进群），又写了最终回复

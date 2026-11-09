@@ -185,6 +185,9 @@ import { visibleTurnWindow, mergeTurnListsById, turnHistoryPlan } from "../../..
 import { setTurnHeightEstimate, setTurnWindowTail, subscribeTurnHistory, turnHistoryFor, turnHistoryVersion } from "../../../../lib/turn-history.mjs";
 import { ExpertTeamEditorModal, SubAgentEditorModal, TeamMemberRail, TeamMemberHistory, DelegatedRail, DelegatedRunPopup, TeamRunPopup } from "../../../experts-teams";
 import { BossGroupMemberRail } from "../../../boss-group-view/BossGroupMemberRail";
+/* 11-09：群聊伙伴会话在外面显示**伙伴本人**的名字/头像（与群聊一致；历史回合也实时跟随）。 */
+import { MemberAvatar } from "../../../harness-team";
+import { getTeamTalkThreads, subscribeTeamTalkThreads } from "../../../../lib/team-talk-threads.mjs";
 import { activeMembersOf, useGroupMembers } from "../../../boss-group-view/group-members-store";
 /* ⭐ 10-05：普通会话的办公室入口迁到本文件的右侧轨道上 ⇒ 需要那个哨兵 teamId
    （从 team-office 域的 barrel 取，域间只许走 barrel）。 */
@@ -296,6 +299,27 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
     waitingForApproval,
     waitingForInput,
   } = app;
+  /* ⛔ 11-09 用户令「伙伴会话跟其他会话区分开」：群聊伙伴会话的回合头显示伙伴的名字/头像，
+     ⛔ 不是全局 Codex 身份。身份来自主进程台账（按群成员表现算）⇒ 群内改名/换头像即时跟上，
+     历史回合也一样（渲染期解析，⛔ 不存快照、不用刷新）。 */
+  const talkThreads = useSyncExternalStore(subscribeTeamTalkThreads, getTeamTalkThreads);
+  const partnerRow = thread?.id ? (talkThreads.byId[thread.id] ?? null) : null;
+  const partnerAvatar = useMemo(
+    () => (partnerRow
+      ? <MemberAvatar
+          member={{
+            id: partnerRow.memberId,
+            name: partnerRow.name,
+            avatar: partnerRow.avatar,
+            kind: partnerRow.kind,
+            targetKind: partnerRow.targetKind,
+            targetKey: partnerRow.targetKey,
+          }}
+          size={22}
+        />
+      : null),
+    [partnerRow?.memberId, partnerRow?.name, partnerRow?.avatar, partnerRow?.kind, partnerRow?.targetKind, partnerRow?.targetKey],
+  );
   /* ⛔⛔ 10-31 用户令：「调度得专家，显示那个弹窗输出内容，输出完成，弹窗不会自动隐藏」——
      两个调度弹窗（专家团成员 TeamRunPopup / 普通调度 DelegatedRunPopup）**跑完自动收起**。
      口径：
@@ -684,7 +708,7 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                       ...visible.map((turn, i) => (
                       <Fragment key={turn.id}>
                         {compactionLine && i === insertBefore && compactionLine}
-                        <MemoTurnView turn={turn} threadId={thread?.id ?? ""} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} />
+                        <MemoTurnView turn={turn} threadId={thread?.id ?? ""} isLastTurn={String(turn.id) === lastId} usage={turn.usage ?? (turn.id === latestCompletedTurn?.id ? lastUsage : null)} tokenUsage={turn.id === latestCompletedTurn?.id || turn.id === activeTurnId ? tokenUsage : null} fallbackWindow={customModel?.contextWindow} waitingForApproval={waitingForApproval && turn.id === activeTurnId} interruptedAt={interruptedTurns[turn.id]} elapsedSeconds={stoppedElapsed[turn.id]} handlers={messageHandlers} hooks={hookPulse.hooks.length > 0 && turn.id === latestCompletedTurn?.id ? hookPulse.hooks : null} assistantName={partnerRow?.name || undefined} assistantAvatar={partnerAvatar ?? undefined} />
                       </Fragment>
                     )),
                       /* ⛔ 末尾插槽：手动压缩的锚点 = 压缩发生处（最后一回合之后） */
@@ -711,8 +735,8 @@ export function MainStageTimeline({ app }: { app: HarnessAppApi }) {
                         ⛔ 这里**不放**「正在处理 N 秒」：那段计时归真实回合的 .running-process-time，
                         两处都挂会各自从 0 计时、接管时数字跳回去。 */}
                     <div className="turn-head">
-                      <span className="turn-head-avatar"><CodexAvatar size={22} /></span>
-                      <span className="turn-head-name">{codexIdentity.name}</span>
+                      <span className="turn-head-avatar">{partnerAvatar ?? <CodexAvatar size={22} />}</span>
+                      <span className="turn-head-name">{partnerRow?.name || codexIdentity.name}</span>
                     </div>
                   </>}
                   {/* 插队消息的「待并入」气泡（11-05 用户令）：已点「立即」但还没交给引擎的那条，

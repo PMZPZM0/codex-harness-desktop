@@ -108,19 +108,26 @@ async function resolveHomeDir() {
 
 async function load() {
   try {
-    const [list, homeDir, sessionList] = await Promise.all([
+    const [list, homeDir, sessionList, talkList] = await Promise.all([
       window.codex.listBossGroups(),
       resolveHomeDir(),
       /* ⛔ 指挥中枢身份名单（主进程是唯一真相源）：顺带拿各自的**记忆目录**，
          渲染层注入记忆时要按它取（⇒中枢记忆与普通会话完全拆开）。 */
       Promise.resolve(window.codex.bossGroupSession?.({ action: "list" })?.catch?.(() => null) ?? null),
+      /* ⛔⛔ 11-09 用户截图「伙伴会话还被识别成中枢会话」：群聊伙伴会话是普通会话，
+         永远不可能是中枢。误登记来自 10-25 的全局 pending 标记（点了中枢又改点已有会话）。
+         主进程会静默摘掉历史误登记；这里再做一道**渲染期过滤**（localStorage 缓存也要滤），
+         保证徽标 / 中枢欢迎页 / 记忆路由在任何时序下都不串。 */
+      Promise.resolve(window.codex.harnessTeamTalkThreads?.()?.catch?.(() => null) ?? null),
     ]);
+    const talkIds = new Set((Array.isArray(talkList?.threads) ? talkList.threads : []).map((row) => String(row?.threadId ?? "")).filter(Boolean));
+    const notTalk = (id) => Boolean(id) && !talkIds.has(id);
     const sessions = Array.isArray(sessionList?.sessions) ? sessionList.sessions : [];
     const sessionMemoryDirs = {};
     for (const entry of sessions) {
       const id = String(entry?.id ?? "");
       const dir = String(entry?.memoryDir ?? "");
-      if (id && dir) sessionMemoryDirs[id] = dir;
+      if (id && dir && notTalk(id)) sessionMemoryDirs[id] = dir;
     }
     const groups = Array.isArray(list) ? list : [];
     /* ⛔⛔ 10-26 用户现场：「中枢会话也会变成普通会话」。
@@ -132,15 +139,22 @@ async function load() {
        ⇒ 这里改成：**主进程登记表为准，localStorage 做并集兜底**（两边任一在就算中枢）。
        ⛔ 家目录锚点（homeId）同理：localStorage 读不到时用登记表里最后一个当 home，
           保住「点指挥中枢回到同一个会话」的行为。 */
-    const registryIds = sessions.map((entry) => String(entry?.id ?? "")).filter(Boolean);
-    const cachedIds = readSessionIds();
+    const registryIds = sessions.map((entry) => String(entry?.id ?? "")).filter(notTalk);
+    const cachedAll = readSessionIds();
+    const cachedIds = cachedAll.filter(notTalk);
+    /* ⛔ localStorage 是缓存，发现伙伴会话混进来就**就地清掉**（不调主进程 remove：
+       那条会连记忆目录一起删）。 */
+    if (cachedIds.length !== cachedAll.length) {
+      try { localStorage.setItem("boss-session-ids", JSON.stringify(cachedIds)); } catch { /* 隐私模式 */ }
+    }
     const sessionIds = [...new Set([...registryIds, ...cachedIds])];
-    const homeId = readHome() || (sessionIds.length ? sessionIds[sessionIds.length - 1] : "");
+    const cachedHome = readHome();
+    const homeId = (notTalk(cachedHome) ? cachedHome : "") || (sessionIds.length ? sessionIds[sessionIds.length - 1] : "");
     state = {
       groups,
-      bossIds: groups.map((g) => String(g.bossThreadId ?? "")).filter(Boolean),
+      bossIds: groups.map((g) => String(g.bossThreadId ?? "")).filter(notTalk),
       /* 群成员会话 id：侧栏据此打「中枢调度」标签（成员会话由派活时新建，不走 delegate 通道） */
-      memberIds: groups.flatMap((g) => (Array.isArray(g.memberThreadIds) ? g.memberThreadIds : []).map(String)),
+      memberIds: groups.flatMap((g) => (Array.isArray(g.memberThreadIds) ? g.memberThreadIds : []).map(String)).filter(notTalk),
       homeId,
       sessionIds,
       sessionMemoryDirs,
