@@ -49,19 +49,51 @@ export async function planTalkCli(member: TalkMember): Promise<TalkCliPlan | nul
   return { installed: true, cli, shellEnv };
 }
 
+/** CLI 输出里的 ANSI 颜色/光标控制（kimi / iflow 这类会带）——不剥掉会在群里显示乱码方块。 */
+const ANSI_RE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
+const stripAnsi = (value: string) => value.replace(ANSI_RE, "");
+/** 可能承载"正文"的字段（各 CLI 的 JSON 包裹形状不一：QwenPaw=response、OpenClaw=result/text、事件流=delta…）。 */
+const TEXT_KEYS = ["response", "text", "output", "result", "message", "content", "answer", "reply", "delta", "completion", "final", "summary"];
+
+/** 深度取第一段文本（先 known keys，再递归对象/数组；⛔ 不把 usage/status 这类 meta 当正文）。 */
+function pickText(node: unknown, depth = 0): string {
+  if (depth > 4 || node == null) return "";
+  if (typeof node === "string") return node;
+  if (Array.isArray(node)) {
+    for (const value of node) { const hit = pickText(value, depth + 1); if (hit.trim()) return hit; }
+    return "";
+  }
+  if (typeof node !== "object") return "";
+  const obj = node as Record<string, unknown>;
+  for (const key of TEXT_KEYS) if (key in obj) { const hit = pickText(obj[key], depth + 1); if (hit.trim()) return hit; }
+  return "";
+}
+
+function tryJson(text: string): unknown {
+  const t = text.trim();
+  if (!t || (t[0] !== "{" && t[0] !== "[")) return undefined;
+  try { return JSON.parse(t); } catch { return undefined; }
+}
+
 /** CLI 的机器可读输出要把正文剥出来（11-09 用户截图：QwenPaw 直接回了一坨
- *  `{status, elapsed_seconds, response, usage}` JSON）。⛔ 只认明确的文本字段，别把整段 JSON 丢掉。 */
+ *  `{status, elapsed_seconds, response, usage}` JSON）。⛔ 覆盖同类：OpenClaw `--json`、
+ *  Comate `--display event-stream`（NDJSON 事件流）等，最后再退回原始文本。 */
 function unwrapCliStdout(raw: string): string {
-  const text = String(raw ?? "").trim();
-  if (!text.startsWith("{") && !text.startsWith("[")) return text;
-  try {
-    const obj = JSON.parse(text) as Record<string, unknown>;
-    for (const key of ["response", "text", "output", "result", "message", "content"]) {
-      const value = obj?.[key];
-      if (typeof value === "string" && value.trim()) return value.trim();
+  const clean = stripAnsi(String(raw ?? "")).trim();
+  if (!clean) return "";
+  const whole = tryJson(clean);
+  if (whole !== undefined) return pickText(whole).trim() || clean;
+  /* NDJSON / 事件流：逐行解析，汇总文本字段（兼容"累计重复"与"增量 delta"两种事件形态）。 */
+  const objects = clean.split(/\r?\n/).map((line) => tryJson(line)).filter((value) => value !== undefined);
+  if (objects.length) {
+    const parts = objects.map((value) => pickText(value).trim()).filter(Boolean);
+    if (parts.length) {
+      let merged = "";
+      for (const part of parts) merged = part.includes(merged) ? part : merged + part;
+      if (merged.trim()) return merged.trim();
     }
-  } catch { /* 不是合法 JSON：原样返回 */ }
-  return text;
+  }
+  return clean;
 }
 
 /** 直接起本地 CLI 子进程跑单轮命令，stdout 即回复；onDelta 逐块上屏。 */

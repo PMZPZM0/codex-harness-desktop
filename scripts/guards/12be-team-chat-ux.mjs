@@ -1104,9 +1104,10 @@ const catalog = [
      ⇒ 本地 CLI 直跑的 stdout 必须先把文本字段剥出来再当群回复（JSON 也不上屏流式）。 */
   const cliDirect = codeOnly(read("electron/features/group-talk/04-cli.ts"));
   ok(/function unwrapCliStdout/.test(cliDirect) && /"response"/.test(cliDirect)
+    && /function pickText/.test(cliDirect) && /stripAnsi/.test(cliDirect) && /function tryJson/.test(cliDirect)
     && /unwrapCliStdout\(out\.trim\(\) \|\| errOut\.trim\(\)\)/.test(cliDirect)
     && /startsWith\("\{"\)/.test(cliDirect),
-    "本地 CLI 输出先剥 JSON 信封（QwenPaw 的 {status,…,response} 不能原样当回复）");
+    "本地 CLI 输出先剥机器可读信封（QwenPaw 的 {status,…,response} / OpenClaw --json / Comate 事件流 NDJSON + ANSI），再当回复");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
     "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
   ok(/!isBot && \([\s\S]{0,400}?<MessageFooter/.test(view) && /team-msg__footer/.test(view)
