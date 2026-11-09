@@ -624,9 +624,13 @@ async function runDispatchRounds(
   const params = options.params ?? {};
   /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
      所以团成员之间也能互相说话，不再需要「主理人代转」。 */
+  /* ⛔ 11-10：管理员身份只有一个真相源（群档案），团群不启用 ⇒ 一律不标。 */
+  const isTeamGroup = group.members.some((m) => m.targetKind === "team");
+  const adminId = isTeamGroup ? "" : String(group.adminId ?? "");
   const roster: TalkMember[] = [
     ...group.members.map((m) => ({
       id: m.id, name: m.name, targetKind: m.targetKind, targetKey: m.targetKey, targetProfession: m.targetProfession,
+      ...(adminId && m.id === adminId ? { isAdmin: true } : {}),
       /* ⛔ 11-09：团成员/主理人要拿到"我在团队里的位置"，否则群里只能凭职业名瞎猜分工。 */
       ...(teamSeatOf(catalog, m.id, m.targetKind, m.targetKey) ?? {}),
     })),
@@ -668,7 +672,12 @@ async function runDispatchRounds(
   setGroupTalkHooks(group.id, {
     append: (gid: string, entry: Record<string, unknown>) => appendMessageTo(gid, entry),
     relay: (gid: string, fromId: string, fromName: string, toName: string, msg: string) => {
-      const to = roster.find((m) => String(m.name).replace(/\s+/g, "") === String(toName).replace(/\s+/g, ""));
+      /* ⛔ 11-10 用户「配套好群聊工具」：group_say(to="管理员") 直接找到管理员，
+         不用先查名册再写名字；⛔ 团群不启用管理员 ⇒ 别名查不到，如实回失败。 */
+      const aliasAdmin = /^@?\s*(管理员|admin)\s*$/i.test(String(toName));
+      const to = aliasAdmin
+        ? roster.find((m) => m.isAdmin)
+        : roster.find((m) => String(m.name).replace(/\s+/g, "") === String(toName).replace(/\s+/g, ""));
       if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
       /* ⛔ 11-08 审查确认（真缺陷）：runOne 对**本轮已派过**的成员会静默早退，而工具却回
          「已经说给 X 了」—— 模型以为送达、群里实际没有任何反应（这句只进了群日志）。
@@ -707,7 +716,12 @@ async function runDispatchRounds(
       }
       return out;
     })()),
-    members: () => Promise.resolve(roster.map((m) => ({ id: m.id, name: m.name, profession: m.targetProfession }))),
+    /* ⛔ 11-10：group_members 要能回答「谁是管理员 / 谁负责什么」。 */
+    members: () => Promise.resolve(roster.map((m) => ({
+      id: m.id, name: m.name, profession: m.targetProfession,
+      admin: m.isAdmin === true,
+      role: m.teamRole === "lead" ? "团主理人" : m.teamRole === "member" ? "团成员" : "",
+    }))),
   });
   const runOne = async (
     partner: GroupTarget,

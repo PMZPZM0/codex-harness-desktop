@@ -20,8 +20,8 @@ export type GroupTalkHooks = {
   relay: (groupId: string, fromId: string, fromName: string, toName: string, text: string) => Promise<{ ok: boolean; error?: string }>;
   /** 读群里最近的消息 */
   readMessages: (limit: number) => Promise<{ speaker: string; text: string }[]>;
-  /** 成员名册 */
-  members: () => Promise<{ id: string; name: string; profession?: string }[]>;
+  /** 成员名册（含管理员 / 团内位置，11-10 让成员互相认识） */
+  members: () => Promise<{ id: string; name: string; profession?: string; admin?: boolean; role?: string }[]>;
 };
 
 /* ⛔ 按群隔离：多个群可以同时聊天，一个群的 hooks 不能覆盖另一个群。 */
@@ -49,7 +49,7 @@ export function buildGroupTalkTools(): unknown[] {
         type: "object",
         properties: {
           text: { type: "string", description: "你要说的话（一句话或几句话，别写成报告）" },
-          to: { type: "string", description: "可选：直接说给哪位成员听，写他的名字" },
+          to: { type: "string", description: "可选：直接说给哪位成员听，写他的名字；写「管理员」就是找这个群的管理员" },
         },
         required: ["text"],
       },
@@ -66,7 +66,7 @@ export function buildGroupTalkTools(): unknown[] {
     {
       type: "function",
       name: "group_members",
-      description: "看这个群里都有谁、各自负责什么（写 @ / to 之前先确认名字）。",
+      description: "看这个群里都有谁、谁是管理员、各自负责什么、谁属于哪个专家团（写 @ / to 之前先确认名字）。", 
       inputSchema: { type: "object", properties: {} },
     },
   ];
@@ -111,7 +111,7 @@ export async function handleGroupTalkToolCall(input: {
   if (tool === "group_members") {
     const list = await hooks.members().catch(() => []);
     reply(respond, id, list.length
-      ? `群里的人：${list.map((m) => `${m.name}${m.profession ? `（${m.profession}）` : ""}`).join("、")}`
+      ? `群里的人：${list.map((m) => [m.name, m.role, m.profession, m.admin ? "管理员" : ""].filter(Boolean).map((x, i) => i === 0 ? x : `（${x}）`).join("")).join("、")}`
       : "这个群暂时只有你自己。", true);
     return true;
   }

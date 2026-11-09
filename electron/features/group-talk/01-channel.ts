@@ -40,6 +40,10 @@ export type TalkMember = {
   teamName?: string;
   /** 同团其他人（`名字（职业）`），主理人与成员都看得到。 */
   teamPeers?: string[];
+  /* ⛔⛔ 11-10 用户：「成员都不知道哪个是管理员，成员都互相不认识」。
+     ⇒ 身份随名册一起下发：prompt 的「群里的人」、group_members 工具、
+       group_say 的「管理员」别名，全都读这一份。⛔ 专家团群恒 false（不启用管理员）。 */
+  isAdmin?: boolean;
 };
 
 type Entry = { threadId: string; name: string; at: number };

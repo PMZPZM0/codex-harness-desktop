@@ -119,7 +119,14 @@ export function buildTalkInput(
 ): string {
   /* ⛔ 11-08 审查确认：成员名 / 群名 / 共享背景同样是外部可改文本，进信封前一律消毒
      （与正文同口径 —— 名字里塞结束标记同样能让剥离器提前截断）。 */
-  const roster = options.roster.map((m) => sanitizeForEnvelope(`${m.name}${m.targetProfession ? `（${m.targetProfession}）` : ""}`)).join("、");
+  /* ⛔⛔ 11-10 用户：「成员都不知道哪个是管理员，成员都互相不认识」。
+     原来名册只有「名字（职业）」⇒ 成员看不出谁负责推进进度、谁属于哪个团。
+     ⇒ 把管理员 / 团内位置一起拼进名册（与 UI 标签、group_members 同一份下发数据）。 */
+  const roster = options.roster.map((m) => {
+    const tags = [m.targetProfession, m.teamRole === "lead" ? "团主理人" : m.teamRole === "member" ? "团成员" : "", m.isAdmin ? "管理员" : ""]
+      .filter(Boolean).map((t) => `（${sanitizeForEnvelope(String(t))}）`).join("");
+    return sanitizeForEnvelope(m.name) + tags;
+  }).join("、");
   /* ⛔⛔ 11-07 真机：群聊会话是普通 thread，整段输入会被当成 userMessage 画进气泡 ——
      上一版把【工作伙伴 · X】+ 工具说明 + 指令全裸给用户看（截图）。
      ⇒ 用项目统一的 `[SYSTEM TASK · …]` 壳：user-refs.ts 只保留「=== 用户需求 ===」中间那段，
@@ -144,6 +151,11 @@ export function buildTalkInput(
     `【工作伙伴 · ${sanitizeForEnvelope(options.groupName)}】`,
     `你是 ${sanitizeForEnvelope(me.name)}${me.targetProfession ? `（${sanitizeForEnvelope(me.targetProfession)}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
     `群里的人：${roster || "（暂时只有你自己）"}`,
+    /* ⛔ 11-10：把「谁推进进度」写死，别让成员凭名字猜。 */
+    ...(() => {
+      const admin = options.roster.find((m) => m.isAdmin);
+      return admin ? [`【群里的分工】${sanitizeForEnvelope(admin.name)} 是这个群的管理员：用户没 @ 任何人时由它接话推进进度。想找它就直接另起一行写 @${sanitizeForEnvelope(admin.name)}：…，或调 group_say 填 to="管理员"。不确定谁负责什么，先调 group_members 看名册。`] : [];
+    })(),
   ];
   /* ⛔⛔ 11-09 用户：「让团队真正运作起来，更像一个开箱即用的成熟团队，不需要用户再调教」。
      被 @ 到的若是专家团，它得知道**自己站哪一环**，否则只能凭职业名瞎猜：
@@ -190,7 +202,7 @@ export function buildTalkInput(
     "  · 一行最多 @ 一个人；要同时找几个人，就分别另起一行写（`@甲：…` 换行 `@乙：…`），别堆在一句里。",
     "  · 别重复别人的结论；你已经说过的不再说第二遍。",
     "",
-    "你手上有三个群聊工具：group_say（说话；填 to=名字 就是直接说给那个人，他会在群里回你；不填 to 只有用户看得到、其他成员不会因此回你）、group_read、group_members。",
+    "你手上有三个群聊工具：group_say（说话；填 to=名字 就是直接说给那个人，他会在群里回你；写 to=「管理员」就是找管理员；不填 to 只有用户看得到、其他成员不会因此回你）、group_read（读最近消息）、group_members（看名册：谁是管理员、各自负责什么、谁属于哪个团）。",
     "",
     "回一句人话。⛔ 说话方式二选一：要么直接写进这条回复（宿主会把它发进群），要么调 group_say；不要两样都做——群里会出现两条一样的。别写任务书、别列要求清单、别调任何调度工具。",
   );

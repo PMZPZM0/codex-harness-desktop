@@ -1345,10 +1345,19 @@ const catalog = [
   ok((ipc.match(/groups\.some\(\(g\) => String\(g\.id\) === String\(group\.id\)\)/g) || []).length >= 2,
     "迟到/排队中的派活在群被删后放弃，并把刚建出来的会话删掉（⛔ 不留孤儿「伙伴」会话）");
   ok(/sanitizeForEnvelope\(String\(row\.speaker/.test(talk)
-    && /sanitizeForEnvelope\(`\$\{m\.name\}/.test(talk)
+    /* ⛔ 11-10：名册改成逐字段拼装（名字/职业/团内位置/管理员各消毒一次），判据跟着换写法。 */
+    && /sanitizeForEnvelope\(m\.name\)/.test(talk)
+    && /sanitizeForEnvelope\(String\(t\)\)/.test(talk)
     && /sanitizeForEnvelope\(options\.groupName\)/.test(talk)
     && /sanitizeForEnvelope\(String\(options\.memory\)\)/.test(talk),
     "成员名 / 群名 / 共享背景与正文同口径过信封消毒（⛔ 只有正文消毒时，名字能截断信封）");
+  /* ⛔⛔ 11-10 用户「成员都不知道哪个是管理员，成员都互相不认识」：身份必须随名册下发，
+     prompt 名册 / group_members / 群设置标签 / group_say 别名共用同一份，⛔ 不许只改 UI。 */
+  ok(/m\.isAdmin/.test(talk) && /isAdmin/.test(ipc)
+    && /isAdmin/.test(codeOnly(read("electron/features/group-talk/01-channel.ts")))
+    && /管理员/.test(read("src/features/harness-team/03-team-settings.tsx"))
+    && /别名|aliasAdmin/.test(ipc),
+    "管理员身份随名册下发（prompt / group_members / UI 标签 / group_say 别名同一份）");
   /* ⛔ 11-08 用户问「群里超长上下文怎么办」：三层防护各一条判据。 */
   const chan2 = codeOnly(read("electron/features/group-talk/01-channel.ts"));
   ok(/const turnError = completed\?\.error \?\? null;/.test(chan2)

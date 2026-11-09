@@ -1961,6 +1961,10 @@ export function TeamGroupView({
                       onClick={(event) => openProfile(event, m.id)}
                     >
                       <strong>{personNameOf(m)}</strong>
+                      {/* ⛔ 11-10 用户：成员列表里管理员要有标签。团群不启用管理员 ⇒ 同样不显示。 */}
+                      {m.id === group.adminId && !group.members.some((x) => x.targetKind === "team") && (
+                        <em className="team-group__member-tag">管理员</em>
+                      )}
                     </button>
                     {/* ⛔ 11-07 用户：「每个成员 @ 的前面有运行动态展示吗」⇒ 运行态点 + @ + 停 三件套
                         （顺序固定：状态在 @ 前、停在 @ 后），团成员与伙伴同一份实现。 */}

@@ -352,6 +352,25 @@
 }
 .team-settings__tag { flex: none; padding: 1px 6px; border-radius: 999px; background: var(--panel-base); font-size: 10px; font-style: normal; white-space: nowrap; }
 .team-settings__tag--muted { opacity: 0.7; }
+/* 11-10 用户：成员列表里标出管理员（与「群主/已静音」同一套标签语言，但用主色区分）。 */
+.team-settings__tag--admin {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+/* 群聊右侧成员栏：名字下方的一枚小标签（member-main 是 column 布局，⛔ 不塞进 strong 里）。 */
+.team-group__member-tag {
+  align-self: flex-start;
+  margin-top: 1px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 1.5;
+  white-space: nowrap;
+}
 .team-settings__meta { flex: none; font-size: 12px; color: var(--faint); white-space: nowrap; }
 
 /* 下拉槽：固定宽度，内部 `.app-select-trigger` 的 100% 就落在槽里 */

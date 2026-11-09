@@ -307,6 +307,10 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
   const [schedAt, setSchedAt] = useState("");
 
   const partners = group.members.filter((m) => m.kind === "bot");
+  /* ⛔ 11-10 用户：「给成员列表里面管理员加一个管理员标签」。
+     判据与 `defaultRouteCandidates` 同口径：专家团群不启用管理员 ⇒ 也不显示这个标签，
+     免得挂着一个实际不生效的身份。 */
+  const adminId = group.members.some((m) => m.targetKind === "team") ? "" : String(group.adminId ?? "");
   /* 默认上级 = 群主（11-06 用户令：「专家团的时候，默认上级就是主会话那个」）。
      ⛔ 只有群主自己不该有上级。 */
   const leadMember = group.members.find((m) => m.id === group.leadId);
@@ -553,6 +557,7 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
               <span className="team-settings__name">
                 <span className="team-settings__name-text" title={p.name}>{p.name}</span>
                 {p.id === group.leadId && <em className="team-settings__tag">群主</em>}
+                {p.id === adminId && <em className="team-settings__tag team-settings__tag--admin" title="没 @ 时由它接话推进进度">管理员</em>}
                 {p.muted && <em className="team-settings__tag team-settings__tag--muted">已静音</em>}
                 {p.targetKind
                   ? <em className="team-settings__tag" title={`后台调度目标：${p.targetKind}`}>{KIND_LABEL[p.targetKind] ?? p.targetKind}</em>
