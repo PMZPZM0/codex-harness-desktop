@@ -850,6 +850,11 @@ export function TeamGroupView({
     sendingRef.current = true;
     setSendError("");
     setMenuMsg("");
+    /* ⛔ 11-09 用户令：「发消息不管滚轮在哪/在看历史，都要第一时间回到最新」——
+       发送即强制恢复跟随并贴底（不等 rows effect，避免用户正翻历史时新消息上屏却停在上面）。 */
+    cancelFollowRaf();
+    followRef.current = true;
+    stick();
 
     /* ⛔ 命令优先：`/stop` 是**本地动作**，不能被当成一句话派给模型 */
     const cmd = parseCommand(body);
@@ -1031,8 +1036,13 @@ export function TeamGroupView({
     followRef.current = true;
     setVisibleCount(PAGE);
     stick();
+    /* ⛔ 11-09 用户：「进来没在最下面、留了一点空间」——首帧 stick 时图片/卡片/Markdown 还没
+       撑高，scrollHeight 偏小 ⇒ 布局完成后再补两次贴底，确保滚轮真正到底。 */
+    const raf = requestAnimationFrame(() => stick());
+    const t = window.setTimeout(() => stick(), 120);
     /* 换群：上一个群的话题弹窗不能留着（否则内容会串到新群） */
     setTopicOpenKey(null);
+    return () => { cancelAnimationFrame(raf); window.clearTimeout(t); };
   }, [group.id]);
   useEffect(() => { if (followRef.current) stick(); }, [rows.length, liveLen]);
 
