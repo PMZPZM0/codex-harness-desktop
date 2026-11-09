@@ -41,11 +41,14 @@ export function turnBodyOf(turn) {
  * 从 `thread/turns/list` 的返回里挑出这条群消息所属的回合。
  * 判定顺序（⛔ 不靠"最新一条"猜：同一个伙伴的子会话会被复用，里面有多轮）：
  *   ① 正文前缀一致（最硬：群日志存的正是 turnOutputText）；
- *   ② 完成时刻离群消息 at 最近（±10 分钟内）；
- *   ③ 兜底最新一条（老会话没有时间字段时）。
+ *   ② 完成时刻离群消息 at 最近（默认 ±10 分钟内）；
+ *   ③ 兜底：**只有整份列表都没有时间字段**（老数据）才退回最新一条 ——
+ *      有时间但全部对不上 ⇒ 返回 null（⛔ 宁可不出卡，也不把上一轮的文件挂到这条消息下面）。
  * @param turns `thread/turns/list` 的 data 数组（desc 或 asc 都行）
+ * @param opts  `maxGapMs` 收紧时间窗（刚结束的消息用，防止挑到跑之前的旧回合）；
+ *              `allowNewestFallback: false` 禁止超窗兜底最新一条。
  */
-export function pickTurnOf(turns, at = 0, bodyText = "") {
+export function pickTurnOf(turns, at = 0, bodyText = "", opts = {}) {
   const list = Array.isArray(turns) ? turns.filter(Boolean) : [];
   if (!list.length) return null;
   const body = String(bodyText ?? "").trim().slice(0, BODY_MATCH_CHARS);
@@ -54,13 +57,18 @@ export function pickTurnOf(turns, at = 0, bodyText = "") {
     if (hit) return hit;
   }
   const stamp = Number(at) || 0;
+  const maxGap = Number(opts?.maxGapMs) > 0 ? Number(opts.maxGapMs) : 10 * 60_000;
+  const allowNewest = opts?.allowNewestFallback !== false;
   if (stamp) {
     const timed = list
       .map((t) => ({ t, ms: epochMsOf(t?.completedAt ?? t?.startedAt) }))
       .filter((x) => x.ms > 0)
       .sort((a, b) => Math.abs(a.ms - stamp) - Math.abs(b.ms - stamp));
-    if (timed.length && Math.abs(timed[0].ms - stamp) <= 10 * 60_000) return timed[0].t;
+    if (timed.length && Math.abs(timed[0].ms - stamp) <= maxGap) return timed[0].t;
+    /* 有时间字段但都对不上：⛔ 不许拿"最新一条"凑数（那会把上一轮的文件卡挂到这条消息下）。 */
+    if (timed.length) return null;
   }
+  if (!allowNewest) return null;
   return list[0] ?? null;
 }
 

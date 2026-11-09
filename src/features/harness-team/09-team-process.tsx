@@ -46,6 +46,28 @@ type Props = {
 
 /** 同一个子会话的多条群消息只拉一次；失败的删掉缓存，下次还能重试。 */
 const turnsCache = new Map<string, Promise<TeamTurn[]>>();
+/** 刚结束的消息：时间窗收紧到 3 分钟、禁止"最新一条"兜底（见 useTeamTurn 的注释）。 */
+const FRESH_TURN_OPTS = { maxGapMs: 3 * 60_000, allowNewestFallback: false };
+/* ⛔⛔ 11-09 根因（真机探针实测）：群子会话不是当前打开的会话，**引擎没加载它时
+   `thread/turns/list` 直接返回空表**（同一线程 resume 前 count=0、resume 后 count=4）。
+   旧代码只拉 turns ⇒ 群里所有汇总卡（与历史过程）永远挑不到回合 ⇒ 文件卡整块不见，
+   重开应用也照样不见（重开不会 resume 子会话）。⇒ 拉之前先按需 resume 一次。 */
+const loadedThreads = new Set<string>();
+const loadingThreads = new Map<string, Promise<void>>();
+
+/** 确保群子会话已被引擎加载（每线程每进程一次；失败不记，留待下次重试）。 */
+function ensureThreadLoaded(threadId: string): Promise<void> {
+  if (!threadId || threadId.startsWith("group:") || loadedThreads.has(threadId)) return Promise.resolve();
+  const inflight = loadingThreads.get(threadId);
+  if (inflight) return inflight;
+  const task = window.codex
+    .request("thread/resume", { threadId, excludeTurns: false })
+    .then(() => { loadedThreads.add(threadId); })
+    .catch(() => undefined)
+    .finally(() => { loadingThreads.delete(threadId); });
+  loadingThreads.set(threadId, task);
+  return task;
+}
 
 function turnsOf(threadId: string, limit = 8): Promise<TeamTurn[]> {
   /* ⛔ 11-08 用户实测「过程半天才出来」：运行中只需要**最新一个**回合（limit 1），
@@ -61,8 +83,8 @@ function turnsOf(threadId: string, limit = 8): Promise<TeamTurn[]> {
     // 浏览器渲染层没有 unref，用可选链兼容
     (timer as unknown as { unref?: () => void }).unref?.();
   };
-  const task = window.codex
-    .request("thread/turns/list", { threadId, itemsView: "full", limit, sortDirection: "desc" })
+  const task = ensureThreadLoaded(threadId)
+    .then(() => window.codex.request("thread/turns/list", { threadId, itemsView: "full", limit, sortDirection: "desc" }))
     .then((res: { data?: unknown }) => {
       const list = Array.isArray(res?.data) ? (res.data as TeamTurn[]) : [];
       if (!list.length) invalidate();
@@ -102,6 +124,26 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
      晚于 bump 才挂载的卡片用 `refresh`（消息时间很近）绕过缓存。 */
   const settledTick = useSyncExternalStore(subscribeTeamTurnsSettled, () => getTeamTurnsSettled(threadId));
   const lastSettledRef = useRef(settledTick);
+  /* 刚结束的消息用**收紧**的匹配：时间窗 3 分钟、且不许退回"最新一条" ——
+     ⛔ 退回去就会把上一轮的文件卡挂到这条新消息下面（用户看到的就是"卡片没出来/出来了但不对"）。 */
+  const turn = useMemo(
+    () => pickTurnOf(turns, at, bodyText, refresh ? FRESH_TURN_OPTS : undefined),
+    [turns, at, bodyText, refresh],
+  );
+  /* ⛔ 11-09：刚结束的消息第一拉偶尔仍撞上"回合还没进索引"（引擎刚写完 rollout）。
+     旧代码只拉一次，空表就永远空着 ⇒ 文件卡要重开窗口才出来。
+     ⇒ 近 2 分钟的消息在挑不到回合时**自动重拉几次**（1.2s 间隔，最多 8 次 ≈ 10s）。 */
+  const [retryTick, setRetryTick] = useState(0);
+  useEffect(() => {
+    if (live || !refresh || turn || retryTick >= 8) return;
+    if (!threadId || threadId.startsWith("group:")) return;
+    const timer = window.setTimeout(() => {
+      turnsCache.delete(threadId + ":8");
+      turnsCache.delete(threadId + ":1");
+      setRetryTick((n) => n + 1);
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [live, refresh, turn, retryTick, threadId]);
 
   useEffect(() => {
     let alive = true;
@@ -138,7 +180,7 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
       setLoading(false);
     });
     return () => { alive = false; };
-  }, [threadId, live, tick, settledTick, refresh]);
+  }, [threadId, live, tick, settledTick, refresh, retryTick]);
 
   useEffect(() => {
     if (!live || !threadId || threadId.startsWith("group:")) return;
@@ -152,7 +194,6 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
     return () => window.clearInterval(timer);
   }, [live, threadId]);
 
-  const turn = useMemo(() => pickTurnOf(turns, at, bodyText), [turns, at, bodyText]);
   return { turn, loading };
 }
 

@@ -3160,22 +3160,19 @@
   box-shadow: none;
 }
 
-/* ══════ 群右侧栏（贴边抽屉，11-09 用户令）══════════════════════════════════
-   ⛔ 不是居中模态：绝对定位在 `.team-group`（已有 position:relative）内，贴右缘、可随时收起。
-   层级 30：在群内容之上、资料卡/折叠浮层之下（窗口自绘钮 1000 永远可点）。 */
+/* ══════ 群右侧栏（浮动面板，11-09 用户令）══════════════════════════════════
+   ⛔ 不是居中模态、也不是贴边抽屉：绝对定位在 `.team-group`（已有 position:relative）内，
+   **整块可上下左右拖动**（left/top/width/height 由组件按拖动结果写入），初始贴右缘。 */
 .team-side-panel {
   position: absolute;
-  top: 44px;                 /* 群头高度 */
-  right: 0;
-  bottom: 0;
   z-index: 30;
-  width: min(400px, 46%);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-left: 1px solid var(--line);
+  border: 1px solid var(--line);
+  border-radius: 12px;
   background: var(--panel);
-  box-shadow: -14px 0 32px color-mix(in srgb, #000 22%, transparent);
+  box-shadow: 0 20px 52px color-mix(in srgb, #000 30%, transparent), 0 2px 10px color-mix(in srgb, #000 16%, transparent);
 }
 .team-side-panel__head {
   flex: none;
@@ -3184,6 +3181,10 @@
   gap: 8px;
   padding: 9px 12px;
   border-bottom: 1px solid var(--line);
+  /* ⛔ 标题栏 = 拖动把手（用户 11-09：「整个右侧边栏可以浮动展示，所以上下左右拖动」）。 */
+  cursor: move;
+  user-select: none;
+  touch-action: none;
 }
 .team-side-panel__head strong { font-size: 13px; font-weight: 600; white-space: nowrap; }
 .team-side-panel__head small {
@@ -3222,26 +3223,3 @@
   transform: none;
 }
 .team-side-panel__body .context-panel .panel-page { height: 100%; }
-/* 右侧栏左缘拖拽把手（11-09：浮窗可以拖动调宽）——把手在面板内侧，⛔ 不能伸出 overflow。 */
-.team-side-panel__resize {
-  position: absolute;
-  left: 0;
-  top: 44px;
-  bottom: 0;
-  width: 10px;
-  z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: col-resize;
-  touch-action: none;
-}
-.team-side-panel__resize > i {
-  width: 3px;
-  height: 44px;
-  border-radius: 2px;
-  background: var(--line);
-  transition: background 120ms ease, height 120ms ease;
-}
-.team-side-panel__resize:hover > i,
-.team-side-panel__resize:active > i { background: var(--accent); height: 64px; }

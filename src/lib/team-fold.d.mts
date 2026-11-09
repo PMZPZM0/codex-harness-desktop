@@ -14,7 +14,12 @@ export type ReplyQuote = { authorId: string; text: string };
 export const FOLD_QUOTE_CHARS: number;
 export function epochMsOf(value: unknown): number;
 export function turnBodyOf(turn: unknown): string;
-export function pickTurnOf(turns: unknown, at?: number, bodyText?: string): TeamTurn | null;
+export function pickTurnOf(
+  turns: unknown,
+  at?: number,
+  bodyText?: string,
+  opts?: { maxGapMs?: number; allowNewestFallback?: boolean },
+): TeamTurn | null;
 export function buildReplyQuotes(rows: unknown): Map<string, ReplyQuote>;
 /** 话题消息：每条非 bot 消息 = 一个话题根，其后 bot 回复归到它（11-08 用户令）。 */
 export type TopicRow = {

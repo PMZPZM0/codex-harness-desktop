@@ -42,7 +42,26 @@ test("pickTurnOf：正文对不上时按完成时刻就近（10 分钟窗口内�
   const a = turn("a", "x", { completedAt: 1793948643 });
   const b = turn("b", "y", { completedAt: 1793948663 });
   assert.equal(pickTurnOf([a, b], 1793948663000, "被截断过的正文").id, "b");
-  assert.equal(pickTurnOf([a, b], 1793948643000 + 60 * 60 * 1000, "完全对不上").id, "a", "超出窗口 ⇒ 兜底最新一条（data 是 desc）");
+  assert.equal(
+    pickTurnOf([a, b], 1793948643000 + 60 * 60 * 1000, "完全对不上"),
+    null,
+    "有时间但全对不上 ⇒ 返回 null（⛔ 不许拿最新一条凑数，会把上一轮文件挂到这条消息下）",
+  );
+});
+
+test("pickTurnOf：整份列表都没有时间字段时仍兜底最新一条（老数据）", () => {
+  const a = turn("a", "x");
+  const b = turn("b", "y");
+  assert.equal(pickTurnOf([a, b], 1793948663000, "正文也对不上").id, "a", "data 是 desc，最新在前");
+});
+
+test("pickTurnOf：刚结束的消息可收紧时间窗且禁止最新兜底", () => {
+  const old = turn("old", "上一轮", { completedAt: 1793948000 });
+  const fresh = turn("fresh", "这一轮", { completedAt: 1793948660 });
+  const opts = { maxGapMs: 3 * 60_000, allowNewestFallback: false };
+  assert.equal(pickTurnOf([old], 1793948660000, "正文对不上", opts), null, "旧回合超窗 ⇒ 宁可不画");
+  assert.equal(pickTurnOf([old, fresh], 1793948660000, "正文对不上", opts).id, "fresh");
+  assert.equal(pickTurnOf([old, fresh], 1793948660000, "这一轮", opts).id, "fresh", "正文命中优先");
 });
 
 test("epochMsOf：引擎秒级时间戳 → 毫秒，群消息毫秒保持原值", () => {

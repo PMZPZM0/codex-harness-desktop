@@ -1446,6 +1446,8 @@ const catalog = [
   const barrel = codeOnly(read("src/features/app-view/components.ts"));
   const status = codeOnly(read("src/features/status/Status.tsx"));
   const cssCards = read("src/styles/04-cards-tools.css");
+  const cssTeam = read("src/styles/61-team-mode.css");
+  const proc = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
   ok(/export function renameMember\(group, memberId, name\)/.test(models)
     && /reason: "duplicate"/.test(models),
     "成员改名纯函数：空名/重名拒绝（⛔ 重名会让 @名字 解析歧义）");
@@ -1473,12 +1475,34 @@ const catalog = [
     && /onClick=\{\(\) => setSideOpen\(\(v\) => !v\)\}/.test(view)
     && view.indexOf("PanelRight size={14}") > view.indexOf("PanelRightOpen size={14}")
     && view.indexOf("PanelRight size={14}") < view.indexOf("Settings2 size={14}"),
-    "右侧栏=贴边抽屉（复用主面板）；开关紧跟成员栏开合键、在设置键左边（⛔ 居中大浮动弹窗）");
+    "右侧栏复用主面板；开关紧跟成员栏开合键、在设置键左边（⛔ 居中大浮动弹窗）");
   ok(/export \{ AppViewReviewPanel \}/.test(barrel),
     "跨板块复用走 app-view 组件出口（⛔ 深链内部文件）");
-  ok(/team-side-panel__resize/.test(sideDlg) && /startResize/.test(sideDlg) && /WIDTH_KEY/.test(sideDlg)
-    && /style=\{\{ width \}\}/.test(sideDlg),
-    "右侧栏可拖动调宽（左缘把手，按窗口记住）");
+  /* 11-09 用户纠正：「拖动是整个右侧边栏浮动展示，所以上下左右拖动」——
+     ⛔ 不是贴边抽屉、也不是左缘拉宽：hold 标题栏整块平移，位置记住、双击归位。 */
+  ok(/const startDrag = \(event: ReactPointerEvent<HTMLElement>\)/.test(sideDlg)
+    && /onPointerDown=\{startDrag\}/.test(sideDlg)
+    && /onDoubleClick=\{resetPos\}/.test(sideDlg)
+    && /style=\{box \? \{ left: box\.x, top: box\.y, width: box\.w, height: box\.h \}/.test(sideDlg)
+    && /POS_KEY/.test(sideDlg) && /localStorage\.setItem\(POS_KEY/.test(sideDlg)
+    && /ResizeObserver/.test(sideDlg)
+    && !/team-side-panel__resize/.test(sideDlg) && !/startResize/.test(sideDlg),
+    "右侧栏 = 可上下左右拖动的浮动面板（标题栏拖动、位置记住、双击归位；⛔ 退回左缘调宽）");
+  ok(/\.team-side-panel \{[\s\S]{0,220}?position: absolute;[\s\S]{0,220}?border-radius: 12px/.test(cssTeam)
+    && /\.team-side-panel__head \{[\s\S]{0,220}?cursor: move/.test(cssTeam)
+    && !/\.team-side-panel__resize/.test(cssTeam),
+    "浮动窗样式：绝对定位 + 圆角浮层 + 标题栏 move 光标（⛔ 贴边抽屉的 right/bottom 写法）");
+  /* ⛔⛔ 11-09 真机探针根因：引擎没加载群子会话时 thread/turns/list 返回空表
+     （同一线程 resume 前 0 条、resume 后 4 条）⇒ 汇总卡永远挑不到回合、文件卡整块不见。 */
+  ok(/function ensureThreadLoaded\(threadId: string\)/.test(proc)
+    && /request\("thread\/resume", \{ threadId, excludeTurns: false \}\)/.test(proc)
+    && /const task = ensureThreadLoaded\(threadId\)[\s\S]{0,160}?thread\/turns\/list/.test(proc),
+    "群子会话先按需 resume 再拉回合（引擎未加载时 turns/list 恒为空）");
+  ok(/const FRESH_TURN_OPTS = \{ maxGapMs: 3 \* 60_000, allowNewestFallback: false \}/.test(proc)
+    && /refresh \? FRESH_TURN_OPTS : undefined/.test(proc)
+    && /setRetryTick\(\(n\) => n \+ 1\)/.test(proc)
+    && /retryTick >= 8/.test(proc),
+    "刚结束的消息：收紧匹配 + 挑不到回合时限次重拉（⛔ 只拉一次就永远空着）");
   ok(/setDiffHover\(null\); openReview\(file\.path\)/.test(status)
     && /\.turn-diff-modal-mask \{[\s\S]{0,160}?z-index: 1002/.test(cssCards),
     "「审查」不再被悬停预览压住：打开前收起 hover；弹窗层级 1002 > 悬停 1000");
