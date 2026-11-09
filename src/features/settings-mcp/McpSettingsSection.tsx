@@ -161,7 +161,8 @@ export function McpSettingsSection(props: McpSettingsSectionProps) {
       这里补可见空态；判据与上面那张网格的过滤表达式同口径。 */}
   {(() => {
     const q = String(templateSearch || "").trim().toLowerCase();
-    const shown = connectorTemplates.filter((template: any) => !q || `${template.name} ${template.vendor} ${template.summary}`.toLowerCase().includes(q));
+    const shown = (connectorTemplates as Array<{ name?: string; vendor?: string; summary?: string }>)
+      .filter((template) => !q || `${template.name ?? ""} ${template.vendor ?? ""} ${template.summary ?? ""}`.toLowerCase().includes(q));
     return shown.length ? null : <p className="muted">没有匹配的模板 —— 换个关键词，或检查网络后点右上角刷新。</p>;
   })()}
   {connectorTemplateModal && <ConnectorTemplateModal template={connectorTemplateModal} values={connectorTemplateValues} saving={connectorTemplateSaving} oauth={connectorOAuth} onChange={setConnectorTemplateValues} onClose={() => { setConnectorTemplateModal(null); setConnectorTemplateValues({}); setConnectorOAuth(null); }} onSave={() => void saveConnectorFromTemplate(connectorTemplateModal)} onOAuth={() => void startConnectorOAuth()} />}

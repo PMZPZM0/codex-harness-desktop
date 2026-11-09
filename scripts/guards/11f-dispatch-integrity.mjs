@@ -95,8 +95,9 @@ try {
      并且必须写明"别让用户去开开关"（否则模型会让用户去点一个不存在的开关）。 */
   {
     const teamOff = dispatchToolDescription(probeTargets, { expert: true, team: false, subagent: true });
-    ok(/专家、子智能体、CLI 智能体可直接派（不需要任何开关）/.test(teamOff),
-      "团关时首句写明「专家、子智能体、CLI 智能体可直接派、不需要任何开关」");
+    /* 11-08：member（单个专家）已恒放行 ⇒ 首句把「团队成员（单个专家）」也列进可直接派的一侧。 */
+    ok(/专家、团队成员（单个专家）、子智能体、CLI 智能体可直接派（不需要任何开关）/.test(teamOff),
+      "团关时首句写明「专家、团队成员（单个专家）、子智能体、CLI 智能体可直接派、不需要任何开关」");
     ok(teamOff.includes('kind="cli"'), "团关时 CLI 智能体**仍列出**（它与专家 / 子智能体同待遇，不受专家团开关影响）");
     ok(teamOff.includes('kind="expert"') && teamOff.includes('kind="subagent"'),
       "团关时专家与子智能体**仍列出**（它们不该被开关误伤）");

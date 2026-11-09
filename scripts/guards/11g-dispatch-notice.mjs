@@ -57,11 +57,12 @@ const targets = [
   const teamDenied = dispatchKindAllowed("team", null);
   ok(teamDenied.ok === false && /不要重复调用/.test(teamDenied.reason) && /专家或子智能体/.test(teamDenied.reason),
     "默认派专家团被拒：文案给出「别再试 + 可改用专家/子智能体」（模型据此收敛）");
-  ok(dispatchKindAllowed("member", null).ok === false, "团队成员随专家团（团没开 ⇒ 成员也不能派）");
+  /* 11-08：member（单个专家）跟 expert 恒放行 —— 只有整团 team 看开关。 */
+  ok(dispatchKindAllowed("member", null).ok === true, "团队成员（单个专家）随 expert 恒放行（只有整团 team 看开关）");
   ok(dispatchKindAllowed("team", { expert: true, team: true, subagent: true }).ok === true, "显式开启专家团后放行");
 
-  ok(filterTargetsBySwitch(targets, null).map((t) => t.kind).join(",") === "expert,subagent",
-    "目录过滤同口径：默认只列专家与子智能体");
+  ok(filterTargetsBySwitch(targets, null).map((t) => t.kind).join(",") === "expert,member,subagent",
+    "目录过滤同口径：默认列专家、团队成员（单个专家）与子智能体");
   ok(filterTargetsBySwitch(targets, { expert: true, team: true, subagent: true }).length === 4,
     "开启专家团后目录含团与成员（4 条）");
 }
@@ -69,7 +70,7 @@ const targets = [
 /* ── ② 工具描述：必须消掉"让用户去开开关"这个错觉 ───────────────────────── */
 {
   const def = dispatchToolDescription(targets, dispatchAllowOf(null));
-  ok(/专家、子智能体、CLI 智能体可直接派（不需要任何开关）/.test(def), "默认描述首句：专家/子智能体/CLI 可直接派、无需开关");
+  ok(/专家、团队成员（单个专家）、子智能体、CLI 智能体可直接派（不需要任何开关）/.test(def), "默认描述首句：专家/团队成员/子智能体/CLI 可直接派、无需开关");
   ok(/专家团未开启/.test(def) && /别硬试/.test(def), "默认描述点明专家团未开启、别硬试");
   ok(/不要把「先去调度面板开启」当成前置条件/.test(def), "⛔ 明确禁止把「去开开关」当前置条件（10-29 实测错觉）");
   ok(/【专家团】本会话\*\*未开启\*\*/.test(def), "专家团那一节显式否定（不是隐藏 —— 隐藏会让模型反复试）");
@@ -90,12 +91,12 @@ const targets = [
   ok(/打开了「专家团」/.test(on), "开团告知：说清是「专家团」被打开");
   ok(/【专家团】一个团队按 SOP/.test(on), "开团告知：带该类职责说明（模型知道该怎么用）");
   ok(/可派对象：施工队/.test(on), "开团告知：附该团名单（中途开团时模型立刻知道有谁）");
-  ok(/专家与子智能体一直可派，不受这次变化影响/.test(on), "开团告知：明确专家/子智能体不受影响");
+  ok(/专家、团队成员（单个专家）与子智能体一直可派，不受这次变化影响/.test(on), "开团告知：明确专家/团队成员/子智能体不受影响");
 
   const off = dispatchSelectionChangeNotice([], ["team"], allow(true, false, true), targets);
   ok(/关掉了「专家团」/.test(off), "关团告知：说清是「专家团」被关掉");
-  ok(/team" \/ "member" 的调用会被拒绝/.test(off) && /别再试/.test(off), "关团告知：明确会被拒、别重试");
-  ok(/专家与子智能体仍然可以直接派/.test(off), "关团告知：明确其余两类照旧可用");
+  ok(/team" 的调用会被拒绝/.test(off) && /别再试/.test(off) && /member = 单个专家/.test(off), "关团告知：只有 team 会被拒、别重试（member 不受影响）");
+  ok(/专家、团队成员（单个专家）与子智能体仍然可以直接派/.test(off), "关团告知：明确专家/团队成员/子智能体照旧可用");
 
   const empty = dispatchSelectionChangeNotice(["team"], [], allow(true, true, true), []);
   ok(!empty.includes("可派对象"), "没传目录时不硬编「可派对象」（不撒谎）");

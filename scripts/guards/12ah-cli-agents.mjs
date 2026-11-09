@@ -373,8 +373,14 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     const off = mentionMod.filterMentionTargets(sample, "", { team: false });
     const offGroup = off.groups.find((g) => g.kind === "expert");
     const memberRow = offGroup?.items.find((item) => item.key === "t2:m1");
-    ok(memberRow?.disabled === true && offGroup?.items.find((item) => item.key === "t1")?.disabled !== true,
-      "专家团关闭时：成员行单独置灰、单人专家仍可选（许可按行自己的 kind 判）");
+    /* 11-08 用户令「专家随时可调」：member（单个专家）不再跟团开关 ⇒ 团关时成员行**仍可选**。 */
+    ok(memberRow?.disabled !== true && offGroup?.items.find((item) => item.key === "t1")?.disabled !== true,
+      "专家团关闭时：成员（单个专家）与单人专家都仍可选（member 许可跟 expert 恒放行）");
+    ok(typeof mentionMod.mentionKindAllowed === "function"
+      && mentionMod.mentionKindAllowed({ team: false }, "team") === false
+      && mentionMod.mentionKindAllowed({ team: false }, "member") === true
+      && mentionMod.mentionKindAllowed({ team: true }, "team") === true,
+      "许可按行自己的 kind 判：只有 team（整团）看开关，member 恒放行");
   }
   ok(/kind: "member",\s*\n\s*key: `\$\{team\.teamId\}:\$\{member\.id\}`/.test(coreSrc)
     && /kind: "expert",\s*\n\s*key: `\$\{team\.teamId\}:\$\{team\.lead\.id\}`/.test(coreSrc),

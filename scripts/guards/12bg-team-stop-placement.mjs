@@ -86,8 +86,8 @@ ok(/prefers-reduced-motion:\s*reduce[\s\S]{0,240}?\.team-group__member-live/.tes
 /* 真停止：团成员的合成 id 必须翻成调度目标键，否则点了什么也停不掉 */
 ok(/parseTeamAuthorId\(memberId\)/.test(store) && /targetKey = member\?\.targetKey \?\?/.test(store),
   "停止认团成员的合成 id（翻成 <teamId>:<memberId> 去委派登记表里找运行中的那条）");
-ok(/harnessTeamStop\(\{ threadIds: candidates, targetKey, memberName \}\)/.test(store),
-  "停键真的调 harnessTeamStop（引擎中断），不是只改本地 busy");
+ok(/harnessTeamStop\(\{ threadIds: candidates, targetKey, memberName, groupId \}\)/.test(store),
+  "停键真的调 harnessTeamStop（引擎中断），不是只改本地 busy（11-08 带 groupId：主进程据此补台账候选）");
 ok(/setBusyByGroup[\s\S]{0,220}?filter\(\(x\) => x !== memberId\)/.test(store),
   "停止成功后立刻摘运行态（不等引擎回 interrupted —— 有些情况不回）");
 

@@ -322,13 +322,17 @@ ok(!existsSync(join(ROOT, "src/features/settings-personalization/Personalization
 /* 10-27 用户令：「回复风格跟用户中心重复了，那边前端删除这个选项，但不能影响新手引导生效；
    搭配 Grill-me 技能加一个需求询问选项，启用就默认用这个技能」 */
 const replyStyleSrc = src("src/lib/reply-style.mjs");
-ok(/value: "inquiry"/.test(personalPage) && /需求询问/.test(personalPage)
-  && /value: "challenge"/.test(personalPage) && /敢于反驳/.test(personalPage)
-  && /value: "essence"/.test(personalPage) && /直击本质/.test(personalPage)
+/* ⛔ 11-08：选项清单已收口到单一真相源 `src/lib/reply-styles.mjs`（页面/用户中心/新手引导共用）。
+   判据跟着搬到真相源，并额外钉「页面用的是共享表」——否则页面可以自己再抄一份、悄悄漂。 */
+const replyStylesSrc = src("src/lib/reply-styles.mjs");
+ok(/value: "inquiry"/.test(replyStylesSrc) && /需求询问/.test(replyStylesSrc)
+  && /value: "challenge"/.test(replyStylesSrc) && /敢于反驳/.test(replyStylesSrc)
+  && /value: "essence"/.test(replyStylesSrc) && /直击本质/.test(replyStylesSrc)
+  && /REPLY_STYLE_PRESETS/.test(personalPage)
   && /export function challengeInstruction/.test(replyStyleSrc)
   && /export function essenceInstruction/.test(replyStyleSrc)
   && /仍坚持|坚持原方案/.test(replyStyleSrc),
-  "回复风格含「需求询问」「敢于反驳」「直击本质」三档（后两档：先给更优做法/错在哪，用户坚持则照做并写清风险）");
+  "回复风格含「需求询问」「敢于反驳」「直击本质」三档（单一真相源 reply-styles.mjs；后两档：先给更优做法/错在哪，用户坚持则照做并写清风险）");
 /* ⛔ 10-31「直击本质」配套技能必须三处同轮登记（entries / 中文导读 / 已知清单）——少一处就是「选了风格但技能不存在」。 */
 const builtinSkillsSrc = src("electron/builtin-skills.ts");
 ok(/\["essence-first", ESSENCE_FIRST_SKILL\]/.test(builtinSkillsSrc)

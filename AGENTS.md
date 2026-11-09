@@ -478,6 +478,13 @@ npm run verify     # 等价于 npm run check && npm run e2e
 | ① 离线预检 | `npm run check` | 构建 + **产物新鲜度** + IPC 三件套一致性（main.ts handler ↔ preload 桥接 ↔ vite-env.d.ts 方法面）+ CSS 类覆盖告警 + **纯函数行为断言**（`src/lib/*.mjs`，node 直接 import 跑真实现）+ 结构守卫（零阻塞宿主 / 验收入口唯一化） | 改了没重建 / 桥接漏了类型 / 有死链 / 判定逻辑跑偏 / 架构约束被破 |
 | ② 验收（**只有一条脚本**） | `npm run accept` | `scripts/accept.mjs`：拉起**已构建**应用，在**跨轮次复用的持久 profile**（`.e2e-profile/main`，首次把真实会话历史搬进来）上跑本轮验收项，失败自动截图到 `.e2e-artifacts/shots/` | 界面/行为真破了（看截图与逐项输出即知） |
 
+> 🖱 **前端 / 交互改动的「人眼验收」用 computer-use（真键鼠）**（11-08 用户令「以后可以用这个 computeruse 验收前端改动」）：
+> MCP `open-computer-use`（Qoder 侧已接；应用内 Codex 侧是随包的 `computer-use`，工具前缀各随客户端）。
+> 流程：`npm run build` → **关掉重开**保证窗口在前台 → `get_app_state` 看截图 / AX 树 → `click` / `press_key` 实点 →
+> 每步回读状态 → 收尾关掉。⛔ 坑：`app` 写**进程名**（`electron`）不写窗口标题；截图是屏幕区域、窗口必须在前台；
+> `type_text` 被拒改用 `press_key`；多窗口时 key window 可能跳到宠物窗。⛔ `npm run accept` / `verify:runtime` **保留**做自动化回归 ——
+> computer-use 证明「人能点、能看到」，CDP 证明「逻辑没回归」，两者不互相替代。
+
 纪律清单：
 
 1. **⛔ 验收范围由流程保证：默认只跑「最新一轮」**（用户严令，不靠自觉加 `--only`）—— `scripts/accept.mjs` **按轮次分区**：
