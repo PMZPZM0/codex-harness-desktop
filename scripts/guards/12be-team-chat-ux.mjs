@@ -172,8 +172,12 @@ const catalog = [
     && !/team-card__prefix/.test(view)
     && /<TeamMentionText/.test(view),
     "⛔ 艾特只从正文出：linkify + 自定义 a 组件；不再渲染 mentions 前缀（重复的根因）");
+  /* ⛔ 11-09：胶囊抽成 `TeamMentionChip`（Markdown 作用域与正文共用同一枚），
+     尺寸变成 props（默认 16）⇒ 判据看组件本体，不再找写死的 `size={16}` 字面量。 */
   ok(/mentionIdOfHref\(href\)/.test(atText)
-    && /<MemberAvatar member=\{faceOfId\(id\)\} size=\{16\}/.test(atText)
+    && /export function TeamMentionChip/.test(atText)
+    && /<MemberAvatar member=\{faceOfId\(id\)\} size=\{size\}/.test(atText)
+    && /size = 16/.test(atText)
     && /candidates=\{mentionCandidates\}/.test(view),
     "提及带头像：头像按 id 取真身（用户 ⇒ UserAvatar，成员 ⇒ 智能体头像）");
   ok(/\.team-at \{[\s\S]{0,240}?display: inline-flex/.test(css)
@@ -190,12 +194,15 @@ const catalog = [
     /* ⛔ 11-09：引用抽成 `TeamQuoteBlock`（类名搬进组件内）⇒ 判据看**组件调用在气泡里**。 */
     && /<div className="team-msg__body">[\s\S]{0,1600}?<TeamQuoteBlock/.test(view),
     "⛔ 名字那一行移出气泡（main 列容器），引用仍留在气泡里");
+  /* ⛔⛔ 11-09 用户截图「竖条位置一会这里一会正常」：几何规则**不再挂在 .team-msg__body 作用域**
+     （换宿主就退回基础样式，正是位置跳变的根因）⇒ 判据同步改成全局一套 + flex/fit-content。 */
   ok(/\.team-msg__main \{[\s\S]{0,220}?flex-direction: column/.test(css)
-    && /\.team-msg__body \.team-process__quote--top \{[^}]*display: inline-flex/.test(css)
-    && /\.team-msg__body \.team-process__quote--top \{[^}]*margin: 2px 0 8px -8px/.test(css)
-    && /\.team-msg__body \.team-process__quote--top \{[^}]*background: none/.test(css)
-    && !/\.team-msg__body \.team-process__quote--top \{[^}]*background: color-mix/.test(css)
-    && /\.team-msg__body \.team-process__quote--top \.team-process__quote-bar \{[^}]*position: absolute/.test(css),
+    && /\.team-process__quote--top \{[\s\S]{0,400}?display: flex/.test(css)
+    && /\.team-process__quote--top \{[\s\S]{0,400}?width: fit-content/.test(css)
+    && /\.team-process__quote--top \{[^}]*margin: 2px 0 8px -8px/.test(css)
+    && /\.team-process__quote--top \{[^}]*background: none/.test(css)
+    && !/\.team-msg__body \.team-process__quote--top/.test(css)
+    && /\.team-process__quote--top > \.team-process__quote-bar \{[^}]*position: absolute/.test(css),
     "引用行无底色、宽度收成内容宽（⛔ 不拉到对面，11-08 用户截图）；文字仍与正文左对齐（竖线绝对定位不占位）");
   /* 11-07 用户令「头像对齐输入框边框」：改前实测头像 left 259 / 输入框卡片 left 221（差 38px）。
      根因是子项按 720 居中、composer 按 790 列居中 ⇒ 两条轴不同，必须共用同一条公式。 */
