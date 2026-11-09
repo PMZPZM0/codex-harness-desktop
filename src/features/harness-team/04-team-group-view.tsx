@@ -129,6 +129,9 @@ type Props = {
   /** 群消息形式（独立选项）：chat 平铺 / topic 收进气泡 */
   messageForm?: "chat" | "topic";
   onSetMessageForm?: (next: "chat" | "topic") => void;
+  /** 群对话流（11-09 用户令）：`simple` 运行中过程折叠（默认）/ `detail` 运行中铺开过程。 */
+  dialogFlow?: "simple" | "detail";
+  onSetDialogFlow?: (next: "simple" | "detail") => void;
   /** 模型下拉「更多设置…」：与主对话同款入口（打开 设置 → 模型） */
   onOpenModelSettings?: () => void;
   /** 正在流式输出的伙伴（飞书 `cardId` 原地刷新的等价物）：同一次运行只更新一张卡 */
@@ -189,7 +192,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
-  onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onRenameMember, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
+  onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onRenameMember, onSetMessageLayout, onSetReplyMode, onSetMessageForm, dialogFlow, onSetDialogFlow,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -201,6 +204,9 @@ export function TeamGroupView({
   /* ⛔ 11-08 真机「占位模式选不了」：光靠 props 默认值会永远停在 process。
      群对象才是唯一真相源（落盘），props 只是接线层透传 ⇒ 这里再兜一层。 */
   const effectiveReplyMode = replyMode ?? (group.replyMode === "placeholder" ? "placeholder" : "process");
+  /* 群对话流（11-09 用户令）：默认 simple = 运行中过程折叠（点标题展开）；
+     detail = 运行中直接把步骤铺开。⛔ 只影响运行中，收尾后的整轮折叠不变。 */
+  const effectiveDialogFlow = dialogFlow ?? (group.dialogFlow === "detail" ? "detail" : "simple");
   const effectiveMessageForm = messageForm ?? (group.messageForm === "topic" ? "topic" : "chat");
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
@@ -1249,6 +1255,8 @@ export function TeamGroupView({
             onReplyMode={(next) => onSetReplyMode?.(next)}
             messageForm={effectiveMessageForm}
             onMessageForm={(next) => onSetMessageForm?.(next)}
+            dialogFlow={effectiveDialogFlow}
+            onDialogFlow={(next) => onSetDialogFlow?.(next)}
           />
           <TeamSettings
             group={group}
@@ -1621,7 +1629,16 @@ export function TeamGroupView({
                         过程折叠与实时编辑行**回到流式卡里**（与主对话同序：过程在上、正文在下）。 */}
                     {effectiveReplyMode === "process" && (
                       <>
-                        <TeamProcess threadId={run.threadId} at={run.startedAt} bodyText="" running live onOpenFile={openFilePreview} />
+                        <TeamProcess
+                          key={`proc:${effectiveDialogFlow}`}
+                          threadId={run.threadId}
+                          at={run.startedAt}
+                          bodyText=""
+                          running
+                          live
+                          defaultOpen={effectiveDialogFlow === "detail"}
+                          onOpenFile={openFilePreview}
+                        />
                         <TeamLiveFiles threadId={run.threadId} />
                       </>
                     )}

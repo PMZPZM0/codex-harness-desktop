@@ -40,7 +40,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     create, rename, addPartner, removePartner, mute, setAvatar, renameMember, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
-    addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
+    addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm, saveDialogFlow,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
   } = useTeamGroups();
@@ -291,6 +291,9 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             /* 群消息形式：独立选项（用户「话题模式不要放在回复模式一排」） */
             messageForm={active.messageForm === "topic" ? "topic" : "chat"}
             onSetMessageForm={(next) => void saveMessageForm(active.id, next)}
+            /* 群对话流（11-09 用户令）：默认折叠；打开后运行中铺开过程 */
+            dialogFlow={active.dialogFlow === "detail" ? "detail" : "simple"}
+            onSetDialogFlow={(next) => void saveDialogFlow(active.id, next)}
             onSaveSchedules={(list) => saveSchedules(active.id, list)}
             onRunSchedule={(scheduleId) => runSchedule(active.id, scheduleId)}
             onStopPartner={(memberId) => stopPartner(active, memberId)}

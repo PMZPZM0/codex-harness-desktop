@@ -30,6 +30,14 @@ export function normalizeReplyMode(value) {
   return value === "placeholder" ? "placeholder" : "process";
 }
 
+/** 群对话流（11-09 用户令）：
+ *  · `simple` = 默认折叠：运行中过程收在一个折叠块里（与主对话默认一致），点标题展开；
+ *  · `detail` = 展开：运行中直接把过程步骤铺开（主对话「详细对话流」的手感）。
+ *  ⛔ 只影响**运行中**的过程呈现；收尾后的整轮折叠不变。 */
+export function normalizeDialogFlow(value) {
+  return value === "detail" ? "detail" : "simple";
+}
+
 /** 群消息形式（11-08 用户令：话题模式要**单独选项**，不要挤在回复模式一排）：
  *  · `chat` = 对话消息：所有消息按时间平铺（默认）；
  *  · `topic` = 话题消息：伙伴回复收进用户气泡，点开弹窗预览。
@@ -240,6 +248,8 @@ export function createGroup(input) {
     replyMode: normalizeReplyMode(input?.replyMode),
     /* 群消息形式（11-08 用户令：独立选项） */
     messageForm: normalizeMessageForm(input?.messageForm),
+    /* 群对话流（11-09 用户令）：默认 `simple`（运行中过程折叠，点开看）；`detail` 运行中直接铺开。 */
+    dialogFlow: normalizeDialogFlow(input?.dialogFlow),
     /* 群定时任务（豆包 §③ 自动化定时）：到点 @ 指定伙伴，走同一条派活链路 */
     schedules: normalizeSchedules(input?.schedules),
   };
@@ -364,6 +374,11 @@ export function setReplyMode(group, mode) {
 /** 群消息形式：只改一个枚举值（与回复模式互不影响）。 */
 export function setMessageForm(group, form) {
   return createGroup({ ...group, messageForm: normalizeMessageForm(form) });
+}
+
+/** 群对话流（`simple` / `detail`）：只改一个枚举值。 */
+export function setDialogFlow(group, mode) {
+  return createGroup({ ...group, dialogFlow: normalizeDialogFlow(mode) });
 }
 
 export function setMemberAvatar(group, memberId, avatar) {

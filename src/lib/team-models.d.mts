@@ -203,6 +203,9 @@ export function setReplyMode(group: TeamGroupLite, mode: string): TeamGroupLite;
 export function normalizeReplyMode(value: unknown): "process" | "placeholder";
 export function setMessageForm(group: TeamGroupLite, form: string): TeamGroupLite;
 export function normalizeMessageForm(value: unknown): "chat" | "topic";
+/* 11-09：群对话流（simple = 运行中过程折叠 / detail = 运行中铺开过程） */
+export function setDialogFlow(group: TeamGroupLite, mode: string): TeamGroupLite;
+export function normalizeDialogFlow(value: unknown): "simple" | "detail";
 export function normalizeMemberAvatar(value: unknown): string;
 export const MAX_MEMBER_AVATAR_CHARS: number;
 export function canDelegate(fromId: string, toId: string, group: TeamGroupLite): boolean;

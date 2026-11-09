@@ -827,6 +827,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 群对话流（11-09 用户令）：运行中过程折叠 / 铺开。 */
+  const saveDialogFlow = useCallback(
+    async (groupId: string, mode: "simple" | "detail") =>
+      apply((await window.codex.harnessTeamSetDialogFlow(groupId, mode)) as MutationResult),
+    [apply],
+  );
+
   /** 定时任务（整组替换；nextRunAt 由主进程算，渲染层不推算调度时刻） */
   const saveSchedules = useCallback(
     async (groupId: string, list: unknown[]) =>
@@ -859,6 +866,6 @@ export function useTeamGroups() {
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     renameMember,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
-    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm,
+    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm, saveDialogFlow,
   };
 }

@@ -93,6 +93,8 @@ export type TeamGroup = {
   replyMode?: "process" | "placeholder";
   /** 群消息形式（独立选项）：chat = 对话消息平铺；topic = 话题消息收进气泡 */
   messageForm?: "chat" | "topic";
+  /** 群对话流：simple = 运行中过程折叠（默认，点开看）；detail = 运行中直接铺开过程 */
+  dialogFlow?: "simple" | "detail";
   /** 旧字段：护栏（跨租户/外部群那套）—— 本应用没有租户概念，界面不再展示，仅保留兼容 */
   guard: TeamGuard;
   /** 群简介：这个群的共享背景（每次派活注入给伙伴） */

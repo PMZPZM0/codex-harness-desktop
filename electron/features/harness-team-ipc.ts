@@ -38,6 +38,7 @@ import {
   setMessageLayout,
   setReplyMode,
   setMessageForm,
+  setDialogFlow,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -1179,6 +1180,15 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, String(groupId ?? ""));
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setMessageForm(g, form) as GroupShape);
+    });
+
+    /* 群对话流（11-09 用户令）：`simple` = 运行中过程折叠（默认，点开看）；
+       `detail` = 运行中直接把过程步骤铺开。只影响运行中的呈现，收尾后的整轮折叠不变。 */
+    ipcHost.handle("harness-team:set-dialog-flow", (_event, groupId: string, mode: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      return saveOne(store, setDialogFlow(g, mode) as GroupShape);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {

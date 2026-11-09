@@ -32,6 +32,7 @@ import {
   toggleSchedule,
 } from "../../lib/team-schedule.mjs";
 import { AppSelect } from "../../components/AppSelect";
+import { ToggleSwitch } from "../../components/SettingsWidgets";
 import { MemberAvatar } from "./13-team-avatar";
 
 type Props = {
@@ -120,13 +121,15 @@ const fileNameOf = (path: string) => path.split(/[\\/]/).pop() || path;
 /** 群设置 · 三个视图开关卡片（消息排版 / 回复模式 / 群消息形式）。
  *  ⛔ 11-08 用户实测「切起来很卡」：这三块原来和其余 6 个区块在同一个组件里 —— 点一次卡片
  *  就把整页（伙伴/记忆/文件/层级/定时/备注…）重渲染一遍。拆出来后其余区块用 memo 跳过。 */
-export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm }: {
+export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode, onReplyMode, messageForm, onMessageForm, dialogFlow, onDialogFlow }: {
   messageLayout: "split" | "left";
   onMessageLayout: (next: "split" | "left") => void;
   replyMode: "process" | "placeholder";
   onReplyMode: (next: "process" | "placeholder") => void;
   messageForm: "chat" | "topic";
   onMessageForm: (next: "chat" | "topic") => void;
+  dialogFlow: "simple" | "detail";
+  onDialogFlow: (next: "simple" | "detail") => void;
 }) {
   return (
     <>
@@ -241,6 +244,29 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
         <p className="team-settings__hint team-settings__layout-current">
           当前：<strong>{messageForm === "topic" ? "话题消息" : "对话消息"}</strong> · 已保存到这个群（换设备也保留）
         </p>
+      </section>
+
+      {/* ⛔ 11-09 用户令：「群设置加一个对话流开关，默认折叠，展开后运行过程中就展开流程」。
+          与主对话「对话流」同一语义：只影响**运行中**的呈现，收尾后的整轮折叠不变。 */}
+      <section className="team-settings__block" data-section="dialog-flow">
+        <h3>
+          <ListChecks size={14} className="ic-violet" />
+          对话流
+        </h3>
+        <p className="team-settings__hint">
+          关闭（默认）：运行中过程收在折叠块里，点标题展开；
+          打开：运行中直接把过程步骤铺开（主对话框「详细对话流」的手感）。
+          <strong>只影响运行中</strong>，跑完仍按一轮折叠展示。
+        </p>
+        <div className="team-settings__inline-row">
+          <span>运行中展开过程</span>
+          <ToggleSwitch
+            checked={dialogFlow === "detail"}
+            label="运行中展开过程"
+            className="team-settings__switch"
+            onChange={(next) => onDialogFlow(next ? "detail" : "simple")}
+          />
+        </div>
       </section>
     </>
   );

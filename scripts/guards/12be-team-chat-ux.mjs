@@ -826,7 +826,7 @@ const catalog = [
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
   /* ⛔ 11-09：「一回合一条成品消息」后没有"该轮第一条消息"可挂 ⇒ 运行中的过程折叠归**流式卡**，
      跑完整轮由 TurnView 呈现；占位模式照旧不画过程。 */
-  ok(/<TeamProcess threadId=\{run\.threadId\} at=\{run\.startedAt\}/.test(view)
+  ok(/<TeamProcess[\s\S]{0,240}?threadId=\{run\.threadId\}[\s\S]{0,160}?at=\{run\.startedAt\}/.test(view)
     && /effectiveReplyMode === "process" && \([\s\S]{0,260}?<TeamProcess/.test(view)
     && !/row\.runFirst/.test(view),
     "运行中的过程折叠挂在**流式卡**里（与主对话同序：过程在上、正文在下）；占位模式不画");
@@ -1080,6 +1080,14 @@ const catalog = [
     && /const useTurnView = isBot && effectiveReplyMode !== "placeholder"/.test(view)
     && /<TeamTurnView/.test(view) && /onOpenReview=\{openReviewPanel\}/.test(view),
     "伙伴回复整轮复用主对话 TurnView（深度思考/步骤/正文/文件卡/页脚）；老群记录按回合收口只渲染末条");
+  /* ⛔ 11-09 用户令：「群设置加一个对话流开关，默认折叠，点击展开后运行中就展开流程」：
+     默认 simple（运行中过程折叠、点标题展开）；detail 才铺开。⛔ 收尾后的整轮折叠不变。 */
+  const settingsUi = codeOnly(read("src/features/harness-team/03-team-settings.tsx"));
+  ok(/data-section="dialog-flow"/.test(settingsUi) && /ToggleSwitch/.test(settingsUi)
+    && /set-dialog-flow/.test(ipc) && /saveDialogFlow/.test(codeOnly(read("src/features/harness-team/02-team-store.ts")))
+    && /defaultOpen=\{effectiveDialogFlow === "detail"\}/.test(view)
+    && /defaultOpen=\{defaultOpen\}/.test(codeOnly(read("src/features/harness-team/09-team-process.tsx"))),
+    "对话流开关（默认折叠）：detail 时运行中过程才默认展开；simple 走折叠、点标题展开");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
     "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
   ok(/!isBot && \([\s\S]{0,400}?<MessageFooter/.test(view) && /team-msg__footer/.test(view)
@@ -1148,8 +1156,8 @@ const catalog = [
     "⛔ 回复模式必须同时传读值（只传写入回调 ⇒ 点占位模式写进盘但界面不动，用户「选不了，点不过来」）");
   /* ⛔ 用**顺序**判定而不是"相隔多少字符"：板块长度会随文案变化，写死窗口会假红。 */
   const sectionOrder = [...settings.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]).join(">");
-  ok(/^layout>message-form>partners>memory>/.test(sectionOrder),
-    "群设置常用置顶：消息排版 → 群消息形式 → 伙伴 → 群记忆…（低频项下沉；快捷指令段已删）");
+  ok(/^layout>message-form>dialog-flow>partners>memory>/.test(sectionOrder),
+    "群设置常用置顶：消息排版 → 群消息形式 → 对话流 → 伙伴 → 群记忆…（低频项下沉；快捷指令段已删）");
   ok(/export function normalizeMessageForm/.test(read("src/lib/team-models.mjs"))
     && /harness-team:set-message-form/.test(read("electron/features/harness-team-ipc.ts"))
     && /harnessTeamSetMessageForm/.test(read("electron/preload.ts")),
