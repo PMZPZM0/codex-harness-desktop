@@ -1503,6 +1503,14 @@ const catalog = [
     && /setRetryTick\(\(n\) => n \+ 1\)/.test(proc)
     && /retryTick >= 8/.test(proc),
     "刚结束的消息：收紧匹配 + 挑不到回合时限次重拉（⛔ 只拉一次就永远空着）");
+  /* ⛔ 11-09 用户令「已编辑卡片里面的审查、上面的文件卡片点击都要接线右侧栏浮窗，现在联动性0」：
+     审查 → 浮动侧栏「审阅」页（数据走同一份 turnReview store）；产物卡/文件行 → 「文件」页预览。 */
+  const teamCards = codeOnly(read("src/features/harness-team/11-team-cards.tsx"));
+  ok(/onReview=\{onReview\}/.test(teamCards)
+    && /onReview=\{openReviewPanel\}/.test(view)
+    && /const openReviewPanel = \(\) => \{[\s\S]{0,160}?setSideTab\("turn-review"\);[\s\S]{0,80}?setSideOpen\(true\)/.test(view)
+    && /subscribeRightFile\(\(\{ path \}: \{ path: string \}\) => \{[\s\S]{0,160}?setSideTab\("tree"\)/.test(view),
+    "汇总卡「审查」/ 文件行 → 浮动侧栏「审阅」；产物卡与正文文件引用 → 「文件」页（同一个浮动面板）");
   ok(/setDiffHover\(null\); openReview\(file\.path\)/.test(status)
     && /\.turn-diff-modal-mask \{[\s\S]{0,160}?z-index: 1002/.test(cssCards),
     "「审查」不再被悬停预览压住：打开前收起 hover；弹窗层级 1002 > 悬停 1000");

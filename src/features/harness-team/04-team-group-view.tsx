@@ -212,6 +212,12 @@ export function TeamGroupView({
     setSideTab("tree");
     setSideOpen(true);
   }), []);
+  /* 汇总卡的「审查」：审阅数据已写进同一份 store（CompletedChanges 里 setTurnReview），
+     这里负责把浮动侧栏开到「审阅」页（⛔ 群里没有 AppView 的常驻右栏）。 */
+  const openReviewPanel = () => {
+    setSideTab("turn-review");
+    setSideOpen(true);
+  };
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   /* ⛔⛔ 11-08 用户实测（截图：连按回车出去好几条一模一样的消息）：`sending` 是 React state，
@@ -1426,7 +1432,7 @@ export function TeamGroupView({
                               />
                             ))}
                             {/* 运行过程在**正文下方**、文件卡在过程下方（主对话同序：正文 → 过程 → 产物卡）。 */}
-                            {(isBot && row.summary) || (isBot && !row.runId) ? <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} /> : null}
+                            {(isBot && row.summary) || (isBot && !row.runId) ? <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} onReview={openReviewPanel} /> : null}
                           </>
                         )}
                         {isBot && (

@@ -396,7 +396,13 @@ export function bindBoot(deps: Record<string, any>) {
 }
 
 setTurnFileWatchBroadcast((payload: any) => {
-  sendToWindow("harness:event", payload);
+  /* ⛔⛔ 11-09 真机根因（用户报「运行结束文件卡没出来、关窗口重进才出来」）：
+     这里原来是 `sendToWindow`（**只发主窗口**）—— 群聊/独立会话都在弹窗里跑，
+     收不到 `turn-file-changes` / `turn-file-changes-live` ⇒ 收尾文件卡与实时编辑行永远缺数据；
+     重开窗口时靠 `thread/resume` 的重播（走 broadcastHarnessEvent，全窗口）才看得到。
+     ⇒ 改成全窗口广播。报告只有几十 KB、每个窗口各存一份，代价可忽略；
+     独立会话弹窗自己的回合报告同样需要它（原来也是缺的）。 */
+  broadcastHarnessEvent(payload);
   // 手机端「运行步骤」里的文件变更：引擎的 fileChange 不带行数，只有宿主追踪器有 ±N
   if (payload?.type === "turn-file-changes-live" && payload.threadId && Array.isArray(payload.files)) {
     const text = remoteFilesText(payload.files);

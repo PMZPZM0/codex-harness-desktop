@@ -45,7 +45,7 @@ function segments(full: string): { name: string; dir: string } {
 }
 
 /** 本回合改动汇总卡：按文件列改动，可看差异、可打开文件。 */
-export function CompletedChanges({ turn, onOpenFile, isLastTurn }: { turn: Turn; onOpenFile?: (path: string) => void; isLastTurn?: boolean }) {
+export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { turn: Turn; onOpenFile?: (path: string) => void; isLastTurn?: boolean; onReview?: () => void }) {
   const [review, setReview] = useState<{ path: string; diff: string } | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; path: string; name: string } | null>(null);
   /* 行悬停 → diff 预览（10-06 夜，用户对照图一：「鼠标放到汇总的修改的文件名上，出来这种预览效果」）。
@@ -163,6 +163,9 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn }: { turn: Turn;
       selectedPath: path,
       files: reviewFiles,
     });
+    /* ⛔ 11-09 用户令「已编辑卡片里面的审查…要接线右侧栏浮窗」：群里没有 AppView 的右栏，
+       审阅数据先写进同一份 store，再由群视图把**浮动侧栏**开到「审阅」页。 */
+    onReview?.();
   };
   const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
   /* 10-22 Qoder 式「本轮产物」：只给**新建文件**出卡片（编辑已有文件仍走下面的汇总卡），

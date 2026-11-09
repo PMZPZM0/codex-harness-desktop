@@ -32,7 +32,10 @@ const css = read("src/styles/04-cards-tools.css");
 
 /* ── 一、汇报卡本体：点行预览 / 右键菜单 / 折叠 ───────────────────────────── */
 
-ok(status.includes("export function CompletedChanges({ turn, onOpenFile, isLastTurn }"), "汇报卡收 onOpenFile + isLastTurn（前者给预览入口，后者决定最新回合是否自动带出审阅）");
+ok(status.includes("export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }"), "汇报卡收 onOpenFile + isLastTurn + onReview（预览入口 / 最新回合自动审阅 / 群聊把审查接到浮动侧栏）");
+/* ⛔ 11-09 用户令「已编辑卡片里面的审查…要接线右侧栏浮窗」：审阅数据写入同一份 store 之后，
+   必须通知宿主（群里由群视图把浮动侧栏开到「审阅」页）。 */
+ok(/setTurnReview\(\{[\s\S]{0,220}?onReview\?\.\(\)/.test(status), "审查入口先写 store 再通知宿主（群聊浮动侧栏据此打开审阅页）");
 ok(/onClick=\{\(\) => openReview\(file\.path\)\}/.test(statusCode) && statusCode.includes("setTurnReview"),
   "行点击 → 右栏「审阅」（10-18 用户对照 Qoder：「已修改的文件加一个可以点击，然后右边展示」；⛔ 不再开居中小弹窗）");
 ok(statusCode.includes("onOpen={() => openPath(menu.path, menu.name)}"),
