@@ -23,6 +23,7 @@ import { dialogFlowStepTitle } from "../../lib/dialog-flow-title";
 import { pickTurnOf } from "../../lib/team-fold.mjs";
 import type { TeamTurn } from "../../lib/team-fold.mjs";
 import { getTeamProcessTick, getTeamTurnsSettled, subscribeTeamProcessTicks, subscribeTeamTurnsSettled } from "../../lib/team-process-ticks.mjs";
+import { copyTextToClipboard } from "../../lib/clipboard";
 
 type Props = {
   threadId: string;
@@ -218,7 +219,7 @@ export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, runni
 
   /* 折叠头随内容更新：主对话「简洁对话流」同款（跟随最新一步 + 共 N 步）。 */
   const title = dialogFlowStepTitle(units) || "运行过程";
-  const copy = (text: string) => { void navigator.clipboard?.writeText(text).catch(() => undefined); };
+  const copy = (text: string) => { void copyTextToClipboard(text).catch(() => undefined); };
   /* 群里的"引用"= 把这个伙伴 @ 上再问一轮；⛔ 不写系统剪贴板（用户没预期这个副作用） */
   const quoteText = () => { onAskAgain?.(); };
 

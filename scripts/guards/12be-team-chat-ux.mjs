@@ -1517,6 +1517,11 @@ const catalog = [
     && /const openReviewPanel = \(\) => \{[\s\S]{0,160}?setSideTab\("turn-review"\);[\s\S]{0,80}?setSideOpen\(true\)/.test(view)
     && /subscribeRightFile\(\(\{ path \}: \{ path: string \}\) => \{[\s\S]{0,160}?setSideTab\("tree"\)/.test(view),
     "汇总卡「审查」/ 文件行 → 浮动侧栏「审阅」；产物卡与正文文件引用 → 「文件」页（同一个浮动面板）");
+  /* ⛔⛔ 11-09 用户实测「复制功能没用」：群里直接调 navigator.clipboard 在 file:// 独立窗口会被静默拒绝
+     （还被 catch 吞掉）⇒ 必须走 lib/clipboard 的三级兜底（主进程 IPC 优先）。 */
+  ok(/copyTextToClipboard/.test(view) && /copyTextToClipboard/.test(proc)
+    && !/navigator\.clipboard/.test(view) && !/navigator\.clipboard/.test(proc),
+    "群聊复制走三级兜底（主进程 IPC 优先）；⛔ 直接 navigator.clipboard（file:// 弹窗静默失败）");
   ok(/setDiffHover\(null\); openReview\(file\.path\)/.test(status)
     && /\.turn-diff-modal-mask \{[\s\S]{0,160}?z-index: 1002/.test(cssCards),
     "「审查」不再被悬停预览压住：打开前收起 hover；弹窗层级 1002 > 悬停 1000");

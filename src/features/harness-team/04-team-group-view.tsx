@@ -64,6 +64,7 @@ import { TeamProcess } from "./09-team-process";
    （引用 / 编辑 / 收藏 / 复制），⛔ 不在群里另写一套按钮。 */
 import { MessageFooter } from "../shared/MessageFooter";
 import type { ThreadItem } from "../../lib/thread-item";
+import { copyTextToClipboard } from "../../lib/clipboard";
 import type { TeamRunOpts, TeamRunParams } from "./10-team-composer";
 import { buildReplyQuotes, buildTopicThreads, topicThreadOf } from "../../lib/team-fold.mjs";
 import { getActiveModel } from "../../lib/active-model.mjs";
@@ -886,10 +887,13 @@ export function TeamGroupView({
   };
 
   /* 卡片的三个动作（飞书 ActionType 的等价物，⛔ 都是真动作，没有装饰按钮）：
-     复制 = client_message（纯本地）｜追问 = action_request（把它 @ 上再发一轮）｜来源 = open_url（回原子会话） */
+     复制 = client_message（纯本地）｜追问 = action_request（把它 @ 上再发一轮）｜来源 = open_url（回原子会话）
+     ⛔⛔ 11-09 用户实测「复制功能没用」：这里原来直接调 `navigator.clipboard.writeText` ——
+     file:// 下的独立窗口会静默拒绝（还被我 `.catch` 吞掉）⇒ 必须走主对话同一个三级兜底
+     （主进程 IPC → navigator.clipboard → execCommand），口径在 lib/clipboard。 */
   const copyText = async (row: GroupMessageRow) => {
     try {
-      await navigator.clipboard.writeText(row.text);
+      await copyTextToClipboard(String(row.text ?? ""));
       setCopied(row.key);
       window.setTimeout(() => setCopied((cur) => (cur === row.key ? "" : cur)), 1200);
     } catch { /* 剪贴板被拒：静默（不让一个复制失败打断阅读） */ }
