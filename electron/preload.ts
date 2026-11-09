@@ -1007,6 +1007,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamCreate: (input: Record<string, unknown>) => __ipc("harness-team:create", 1, [input]),
   /* 团队模式 P0 */
   harnessTeamRename: (groupId: string, name: string) => __ipc("harness-team:rename", 2, [groupId, name]),
+  /* 群成员改名（联动伙伴会话标题与群内识别） */
+  harnessTeamRenameMember: (groupId: string, memberId: string, name: string) => __ipc("harness-team:rename-member", 3, [groupId, memberId, name]),
   /* 团队模式 P0 */
   harnessTeamAddPartner: (groupId: string, partner: Record<string, unknown>, addedBy: string) => __ipc("harness-team:add-partner", 3, [groupId, partner, addedBy]),
   /* 团队模式 P0 */

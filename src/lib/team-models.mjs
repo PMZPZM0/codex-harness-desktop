@@ -1037,6 +1037,25 @@ export function talkPartnerIdentity(row, group) {
 }
 
 /**
+ * 群成员改名（11-09 用户令：「群里的成员都加上支持改名字，联动会话改名/成员识别同步」）。
+ * ⛔ 名字是群里一切展示的唯一来源（消息署名 / @ / 队列 / 资料卡）——
+ *   改这里就够了，各视图按 authorId 现算，⛔ 不存消息级快照。
+ * ⛔ 拒绝空名与重名（重名会让正文里的 `@名字` 解析歧义）；超过 24 字截断。
+ * @returns `{ ok, changed, reason?, group }`；入参非法时 group 仍是规范化后的副本（⛔ 不写脏盘）。
+ */
+export function renameMember(group, memberId, name) {
+  const base = createGroup(group);
+  const id = String(memberId ?? "");
+  const next = String(name ?? "").trim().slice(0, 24);
+  const target = base.members.find((m) => m.id === id);
+  if (!target) return { ok: false, changed: false, reason: "not_member", group: base };
+  if (!next) return { ok: false, changed: false, reason: "empty", group: base };
+  if (target.name === next) return { ok: true, changed: false, group: base };
+  if (base.members.some((m) => m.id !== id && m.name === next)) return { ok: false, changed: false, reason: "duplicate", group: base };
+  return { ok: true, changed: true, group: { ...base, members: base.members.map((m) => (m.id === id ? { ...m, name: next } : m)) } };
+}
+
+/**
  * 两段文本是否「几乎同一句」（11-08 用户实测「成员消息重复」）。
  *
  * 现场：成员一回合里既调了 `group_say`（把回复发进群），又写了最终回复

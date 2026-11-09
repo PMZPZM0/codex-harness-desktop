@@ -12,7 +12,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GroupMessageRow, MenuItem, MemoryNote, TeamGroup } from "./01-team-types";
 import { parseTeamAuthorId, teamAuthorIdOf } from "../../lib/team-models.mjs";
-import { bumpTeamProcessTick } from "../../lib/team-process-ticks.mjs";
+import { bumpTeamProcessTick, bumpTeamTurnsSettled } from "../../lib/team-process-ticks.mjs";
 import type { TeamRunParams } from "./10-team-composer";
 
 /* ⛔⛔ 11-07：**合成 id → 可派活目标**只保留主进程一份（`harness-team-ipc.ts` 的
@@ -289,6 +289,11 @@ export function useTeamGroups() {
       /* ⛔⛔ 11-08 用户实测（「成员消息不处理完压根不上屏」「谁在运行一点反馈没有」）：
          群聊回合的写库与流式都要实时到渲染层 —— 主进程 append 后广播权威 rows；
          回合进行中广播 agentMessage 增量（与主聊天同一条 delta 方法）。 */
+      if (event.type === "harness-team-groups") {
+        /* 成员改名等群档案级变更：重拉群列表（消息署名 / @ 候选 / 资料卡都按新数据重算）。 */
+        refreshRef.current();
+        return;
+      }
       if (event.type === "harness-team-messages") {
         const gid = String(event.groupId ?? "");
         const rows = Array.isArray(event.rows) ? (event.rows as GroupMessageRow[]) : null;
@@ -347,6 +352,9 @@ export function useTeamGroups() {
           return;
         }
         if (phase === "finished") {
+          /* ⛔ 11-09 用户实测「收尾文件卡要关窗重进才出来」：过程块/汇总卡共用的回合列表缓存
+             还停在跑之前的旧快照 ⇒ 收尾时作废一次，已挂载的块立刻重拉、晚挂载的卡片绕缓存。 */
+          bumpTeamTurnsSettled(tid);
           /* ⛔ finished 之后延迟摘卡；期间同一人可能被接力/排队又开了一轮（新卡已建）——
              只摘**自己那一轮**：优先比显式 runId；老事件没有 runId 时退回 startedAt 先后兜底。
              否则新一轮的卡会被这一刀删掉、后续 delta 因为没有卡而被丢弃（消息整张消失）。 */
@@ -717,6 +725,13 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 群成员改名（11-09）：主进程同步改群档案 + 伙伴会话标题；这里只发与显示错误。 */
+  const renameMember = useCallback(
+    async (groupId: string, memberId: string, name: string) =>
+      apply((await window.codex.harnessTeamRenameMember(groupId, memberId, name)) as MutationResult),
+    [apply],
+  );
+
   /** 清空群聊天记录：只清投影日志，⛔ 伙伴的子会话与真实产出一条都不动（与删群同口径） */
   const clearMessages = useCallback(async (groupId: string) => {
     const res = (await window.codex.harnessTeamClearMessages(groupId)) as { ok: boolean; cleared?: number; error?: string };
@@ -842,6 +857,7 @@ export function useTeamGroups() {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
+    renameMember,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
     setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm,
   };

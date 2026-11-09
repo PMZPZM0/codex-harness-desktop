@@ -47,6 +47,7 @@ import {
   teamMemberIdOf,
   textsAreNearDuplicate,
   talkPartnerIdentity,
+  renameMember,
 } from "../../src/lib/team-models.mjs";
 import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsableFor, type GroupUsage } from "../../src/lib/team-usage.mjs";
 import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
@@ -67,7 +68,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -84,6 +85,7 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:list",
   "harness-team:create",
   "harness-team:rename",
+  "harness-team:rename-member",
   "harness-team:add-partner",
   "harness-team:remove-partner",
   "harness-team:mute",
@@ -1103,6 +1105,30 @@ export const harnessTeamFeature = defineFeature<null>({
       if (!g) return { ok: false, error: "群不存在" };
       const next = createGroup({ ...g, name: String(name ?? "").trim() || g.name }) as GroupShape;
       return saveOne(store, next);
+    });
+
+    /* 群成员改名（11-09 用户令「群里的成员都加上支持改名字，联动会话改名 / 成员识别同步」）。
+       ⛔ 名字只有这一个真相源：群消息署名 / @ / 队列 / 资料卡 / 外面伙伴会话的身份都按 id 现算；
+       ⛔ 同时把该成员在本群的伙伴会话标题改成「伙伴·新名@群名」（引擎 title 会广播给侧栏）。
+       团成员（targetKind=team）的显示名来自专家目录，群内改名不影响展示 ⇒ 不支持（返回原因）。 */
+    ipcHost.handle("harness-team:rename-member", async (_event, groupId: string, memberId: string, name: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, groupId);
+      if (!g) return { ok: false, error: "群不存在" };
+      const r = renameMember(g, memberId, name) as { ok: boolean; changed?: boolean; reason?: string; group: GroupShape };
+      if (!r.ok) {
+        const msg = r.reason === "empty" ? "名字不能为空" : r.reason === "duplicate" ? "这个名字已经有人用了" : r.reason === "not_member" ? "成员不存在" : "改名失败";
+        return { ok: false, error: msg, reason: r.reason, group: r.group };
+      }
+      const saved = saveOne(store, r.group);
+      const member = r.group.members.find((m) => String(m.id) === String(memberId));
+      if (member?.kind === "bot" && member?.targetKind !== "team" && r.changed) {
+        const threads = await renameTalkMember(String(groupId), String(memberId), member.name, String(r.group.name ?? ""));
+        if (threads.length) broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
+      }
+      /* 其他窗口 / 群面板同步：成员名变了 ⇒ 消息署名、@ 候选、排队卡按新名重算。 */
+      broadcastHarnessEvent({ type: "harness-team-groups", groupId: String(groupId), at: Date.now() } as never);
+      return { ...saved, changed: Boolean(r.changed) };
     });
 
     /* 加伙伴：上限/去重判定在纯函数里，这里只负责持久化 */

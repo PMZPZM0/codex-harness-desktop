@@ -143,6 +143,24 @@ export function listTalkThreads(): Array<{ threadId: string; groupId: string; me
     .sort((a, b) => b.at - a.at);
 }
 
+/** 群成员改名：台账名字跟上，并把该成员在本群的伙伴会话标题改成「伙伴·新名@群名」。
+ *  ⛔ 只动**本群+本成员**这一条台账键（链内重读，别整份覆盖）；没有会话 ⇒ 什么都不做。
+ *  @returns 实际改名了的 threadId（调用方据此广播身份刷新） */
+export async function renameTalkMember(groupId: string, memberId: string, name: string, groupName: string): Promise<string[]> {
+  const key = talkKey(groupId, memberId);
+  const threadId = await mutateLedger((all) => {
+    const cur = all[key];
+    if (!cur?.threadId) return { all, out: "" };
+    if (String(cur.name ?? "") === name) return { all, out: cur.threadId };
+    all[key] = { ...cur, name };
+    return { all, out: cur.threadId };
+  });
+  if (!threadId) return [];
+  /* 会话标题跟随（引擎会发 thread/name/updated，侧栏即时改）；⛔ 不用用户笔名覆盖。 */
+  await server.request("thread/name/set", { threadId, name: `伙伴·${name}@${groupName || "群聊"}`.slice(0, 40) }).catch(() => undefined);
+  return [threadId];
+}
+
 /** 清掉指定的会话台账（解散群 / 自愈时调用；⛔ 只清**删成功**的那些 —— 删失败的留着下次重试）。
  *  ⛔ 不删引擎里的 rollout，那是用户自己的记录（删会话走 thread/delete，另一条链）。 */
 export function forgetTalkThreads(threadIds: string[]): number {

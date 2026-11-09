@@ -1391,6 +1391,37 @@ const catalog = [
     "manifest 返回类型与实现同步（⛔ 手改生成物）");
 }
 
+/* ── ㉕ 11-09 用户实测：运行过程会闪 / 收尾文件卡不出现 / 群里没复用滚轮自动跟随 ── */
+{
+  const proc = codeOnly(read("src/features/harness-team/09-team-process.tsx"));
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  const cards = codeOnly(read("src/features/harness-team/11-team-cards.tsx"));
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const ticks = codeOnly(read("src/lib/team-process-ticks.mjs"));
+  ok(/const first = loadedForRef\.current !== threadId;/.test(proc)
+    && /if \(first\) \{/.test(proc)
+    && /live && !list\.length \? turnsRef\.current : list/.test(proc),
+    "运行过程重拉不卸载：只有首次/换会话进 loading，运行中保留上一份回合（⛔ 每 tick 闪一下的根因）");
+  ok(/bumpTeamTurnsSettled\(tid\)/.test(store)
+    && /const fresh = Date\.now\(\) - Number\(at\) < 120_000;/.test(cards)
+    && /turnsCache\.delete\(threadId \+ ":8"\)/.test(proc)
+    && /settledChanged \|\| refresh/.test(proc),
+    "收尾文件卡即时出现：finished 结算 bump 回合缓存 + 刚结束的消息绕缓存（⛔ 关窗重进才出来）");
+  ok(/selfScrollUntilRef/.test(view)
+    && /lastUserInputAtRef/.test(view)
+    && /followRafRef/.test(view)
+    && /event\.deltaY < 0/.test(view)
+    && /dist > el\.clientHeight \* 0\.25/.test(view)
+    && /new MutationObserver\(schedule\)/.test(view)
+    && !/syncFollow/.test(view),
+    "群聊复用主对话滚动语义：程序滚动抑制窗 + 上滚先解除并取消待贴底 + 25% 迟滞 + 观察内容增长（⛔ 旧版观察的是滚动容器）");
+  ok(/const activeRunKeys = useMemo/.test(view)
+    && /const running = activeRunKeys\.has\(row\.key\);/.test(view),
+    "「处理中」只标当前轮最后一条（⛔ 历史正文不再跟着亮处理中）");
+  ok(/bumpTeamTurnsSettled/.test(ticks) && /getTeamTurnsSettled/.test(ticks) && /subscribeTeamTurnsSettled/.test(ticks),
+    "回合结算计数 store 独立于过程 tick（历史卡不会被运行中的高频 tick 吵醒）");
+}
+
 /* ── ㉖ 11-09 审查确认：停止请求残留会静默吞掉下一条消息（60 秒窗口）────────────── */
 {
   const stopSrc = codeOnly(read("electron/features/harness-team-stop.ts"));
@@ -1400,6 +1431,48 @@ const catalog = [
     "新消息落盘即作废该成员的停止请求（⛔ 残留请求会把新消息在队列里静默吞掉：有气泡、没人回）");
   ok((ipc.match(/consumeTalkCancel\(group\.id, partner\.name\)/g) || []).length >= 2,
     "建会话后再补一次消费（ensure 那 1~3 秒里点的停止也真放弃，而不是「已停止」却照发）");
+}
+
+/* ── ㉖ 11-09 用户令：成员改名联动 / 文件灯箱 / 主侧边栏弹窗 ───────────────── */
+{
+  const models = codeOnly(read("src/lib/team-models.mjs"));
+  const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const chan = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+  const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const card = codeOnly(read("src/features/harness-team/14-team-profile-card.tsx"));
+  const sideDlg = codeOnly(read("src/features/harness-team/28-team-side-panel.tsx"));
+  const barrel = codeOnly(read("src/features/app-view/components.ts"));
+  ok(/export function renameMember\(group, memberId, name\)/.test(models)
+    && /reason: "duplicate"/.test(models),
+    "成员改名纯函数：空名/重名拒绝（⛔ 重名会让 @名字 解析歧义）");
+  ok(/harness-team:rename-member/.test(ipc)
+    && /renameTalkMember\(String\(groupId\), String\(memberId\)/.test(ipc)
+    && /type: "harness-team-groups"/.test(ipc),
+    "改名落群档案 + 联动伙伴会话标题 + 广播群档案刷新（其它窗口同步）");
+  ok(/export async function renameTalkMember\(/.test(chan)
+    && /thread\/name\/set/.test(chan),
+    "伙伴会话标题跟随新名字（引擎通知侧栏即时改）");
+  ok(/const renameMember = useCallback/.test(store)
+    && /event.type === "harness-team-groups"/.test(store),
+    "store 接线改名 + 其它窗口收到群档案刷新（消息署名/@ 候选重算）");
+  ok(/改名字/.test(card) && /onRename/.test(card) && /onRenameMember/.test(view),
+    "资料卡就地改名（团成员/人类不提供：显示名另有来源）");
+  ok(/onOpenFile=\{openFilePreview\}/.test(view)
+    && /subscribeRightFile/.test(view)
+    && /openRightFile\(path\)/.test(view)
+    && !/TeamFilePreviewDialog/.test(view),
+    "文件卡/产物卡/过程文件卡/正文引用统一进右侧栏「文件」页（⛔ 不再用居中大弹窗）");
+  ok(/AppViewReviewPanel/.test(sideDlg) && /rightOpen: true/.test(sideDlg)
+    && /workspace: resolvedWorkspace/.test(sideDlg)
+    && /export function TeamSidePanel\(/.test(sideDlg)
+    && /<TeamSidePanel /.test(view)
+    && /onClick=\{\(\) => setSideOpen\(\(v\) => !v\)\}/.test(view)
+    && view.indexOf("PanelRight size={14}") > view.indexOf("PanelRightOpen size={14}")
+    && view.indexOf("PanelRight size={14}") < view.indexOf("Settings2 size={14}"),
+    "右侧栏=贴边抽屉（复用主面板）；开关紧跟成员栏开合键、在设置键左边（⛔ 居中大浮动弹窗）");
+  ok(/export \{ AppViewReviewPanel \}/.test(barrel),
+    "跨板块复用走 app-view 组件出口（⛔ 深链内部文件）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

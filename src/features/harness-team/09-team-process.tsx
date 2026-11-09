@@ -16,13 +16,13 @@
  *   `codex:request("thread/turns/list", { itemsView:"full" })` 从**真身子会话**按需回读，
  *   ⛔ 不把过程塞进群日志、⛔ 不造 turnId/itemId。拉不到就干脆不画折叠块（不留空壳）。
  */
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { FoldGroup, ItemView } from "../session-queue";
 import { classifyUnit, topToolGroup } from "../../lib/turn-fold";
 import { dialogFlowStepTitle } from "../../lib/dialog-flow-title";
 import { pickTurnOf } from "../../lib/team-fold.mjs";
 import type { TeamTurn } from "../../lib/team-fold.mjs";
-import { getTeamProcessTick, subscribeTeamProcessTicks } from "../../lib/team-process-ticks.mjs";
+import { getTeamProcessTick, getTeamTurnsSettled, subscribeTeamProcessTicks, subscribeTeamTurnsSettled } from "../../lib/team-process-ticks.mjs";
 
 type Props = {
   threadId: string;
@@ -40,6 +40,8 @@ type Props = {
   live?: boolean;
   /** 追问：把该伙伴 @ 上（父层已有动作） */
   onAskAgain?: () => void;
+  /** 打开文件预览（11-09 用户令「文件都打不开」）：过程里的文件工具卡点击走群内灯箱。 */
+  onOpenFile?: (path: string) => void;
 };
 
 /** 同一个子会话的多条群消息只拉一次；失败的删掉缓存，下次还能重试。 */
@@ -78,30 +80,63 @@ function turnsOf(threadId: string, limit = 8): Promise<TeamTurn[]> {
  * 群消息 → 子会话回合（过程折叠与汇总展示卡共用，⛔ 不各拉一次 IPC）。
  * 数据源与负缓存口径见 `turnsOf`：拉不到不画空壳，30s 后允许重试。
  */
-export function useTeamTurn(threadId: string, at: number, bodyText: string, live = false): { turn: TeamTurn | null; loading: boolean } {
+export function useTeamTurn(threadId: string, at: number, bodyText: string, live = false, refresh = false): { turn: TeamTurn | null; loading: boolean } {
   const [turns, setTurns] = useState<TeamTurn[]>([]);
   const [loading, setLoading] = useState(true);
   /** 运行中：每拉一次自增，把 effect 推着重跑（⛔ 过程在长，不能只拉一次）。 */
   const [tick, setTick] = useState(0);
+  /* ⛔⛔ 11-09 用户实测「运行流程跑的时候会闪」：每次 tick 都把 loading 置回 true，
+     折叠块 `if (loading) return null` 就先卸载、数据回来再挂上 ⇒ 每 150ms 闪一下。
+     ⇒ 只有**首次/换会话**才进 loading；运行中的重拉一律**保留上一份回合**，等新数据到了再替换
+       （拉回空表也不清空 —— 引擎刚落盘时出现过瞬时空，清了就是一次白屏）。
+     登记：守卫 12be「运行过程重拉不卸载」两条。 */
+  const turnsRef = useRef<TeamTurn[]>([]);
+  const loadedForRef = useRef("");
   /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块改为**事件驱动** —— 主进程在成员回合里广播
      `group-talk-tick`（任何 item/turn 事件，200ms 合并），这里 150ms 防抖后重拉一次；
      另留 10s 兜底（事件万一丢了也不至于永远停住）。⛔ 不再 2.5s 定时轮询。 */
   const externalTick = useSyncExternalStore(subscribeTeamProcessTicks, () => getTeamProcessTick(threadId));
+  /* ⛔ 11-09 用户实测「收尾文件卡要关窗重进才出来」：汇总卡与过程块共用 `threadId:8` 缓存，
+     运行开始前就把"跑之前的旧回合"缓存住了 ⇒ 收尾挂载汇总卡时挑不到刚完成的回合。
+     收尾时主进程广播 finished ⇒ store bump 这里 ⇒ 缓存失效并重拉；
+     晚于 bump 才挂载的卡片用 `refresh`（消息时间很近）绕过缓存。 */
+  const settledTick = useSyncExternalStore(subscribeTeamTurnsSettled, () => getTeamTurnsSettled(threadId));
+  const lastSettledRef = useRef(settledTick);
 
   useEffect(() => {
     let alive = true;
-    if (!threadId || threadId.startsWith("group:")) { setLoading(false); return; }
-    setLoading(true);
+    if (!threadId || threadId.startsWith("group:")) {
+      turnsRef.current = [];
+      loadedForRef.current = "";
+      setTurns([]);
+      setLoading(false);
+      return;
+    }
+    const first = loadedForRef.current !== threadId;
+    if (first) {
+      loadedForRef.current = threadId;
+      turnsRef.current = [];
+      setLoading(true);
+    }
+    const settledChanged = settledTick !== lastSettledRef.current;
+    if (settledChanged) lastSettledRef.current = settledTick;
     /* 运行中必须**绕过缓存**：turnsCache 是给"成品消息只拉一次"设计的，
-       拿它渲染进行中的过程会永远停在第一次快照上。 */
+       拿它渲染进行中的过程会永远停在第一次快照上。收尾/新近消息同理（见上）。 */
     if (live) turnsCache.delete(threadId + ":1");
+    else if (settledChanged || refresh) {
+      turnsCache.delete(threadId + ":8");
+      turnsCache.delete(threadId + ":1");
+    }
     void turnsOf(threadId, live ? 1 : 8).then((list) => {
       if (!alive) return;
-      setTurns(list);
+      /* 运行中拉到空表 = 引擎索引的瞬时窗口（回合还在写）⇒ 保留上一份，⛔ 不清空。 */
+      const next = live && !list.length ? turnsRef.current : list;
+      turnsRef.current = next;
+      setTurns(next);
       setLoading(false);
     });
     return () => { alive = false; };
-  }, [threadId, live, tick]);
+  }, [threadId, live, tick, settledTick, refresh]);
 
   useEffect(() => {
     if (!live || !threadId || threadId.startsWith("group:")) return;
@@ -120,7 +155,7 @@ export function useTeamTurn(threadId: string, at: number, bodyText: string, live
 }
 
 /** 过程折叠块：只收工具/命令/编辑/技能/思考，正文（agentMessage）不进折叠由父层正常渲染。 */
-export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, live = false, onAskAgain }: Props) {
+export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, running = false, live = false, onAskAgain, onOpenFile }: Props) {
   const { turn, loading } = useTeamTurn(threadId, at, bodyText, live);
 
   /** 过程项 = 工具/命令/编辑/技能/思考；正文（agentMessage）不进折叠，由父层正常渲染。 */
@@ -169,7 +204,7 @@ export function TeamProcess({ threadId, at, bodyText, defaultOpen = false, runni
               onFork={undefined}
               onImageCopy={copy}
               onEditSubmit={undefined}
-              onOpenFile={undefined}
+              onOpenFile={onOpenFile}
               onOpenThread={undefined}
               onApplyPlan={undefined}
             />

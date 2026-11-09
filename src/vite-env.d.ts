@@ -1395,6 +1395,8 @@ interface Window {
     harnessTeamCreate(input: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式 P0 */
     harnessTeamRename(groupId: string, name: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 群成员改名（联动伙伴会话标题与群内识别） */
+    harnessTeamRenameMember(groupId: string, memberId: string, name: string): Promise<{ ok: boolean; changed?: boolean; error?: string; reason?: string; group?: any; issues?: string[] }>;
     /* 团队模式 P0 */
     harnessTeamAddPartner(groupId: string, partner: Record<string, unknown>, addedBy: string): Promise<{ ok: boolean; group?: any; error?: string; reason?: string; limit?: number; changed?: boolean }>;
     /* 团队模式 P0 */

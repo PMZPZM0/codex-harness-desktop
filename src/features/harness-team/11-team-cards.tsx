@@ -19,13 +19,16 @@ import type { Turn } from "../../lib/turn";
 import { useTeamTurn } from "./09-team-process";
 
 /** 群里的结果卡（改动汇总 / 媒体卡等），按回合取数据。 */
-export function TeamCards({ threadId, at, bodyText }: { threadId: string; at: number; bodyText: string }) {
-  const { turn } = useTeamTurn(threadId, at, bodyText);
+export function TeamCards({ threadId, at, bodyText, onOpenFile }: { threadId: string; at: number; bodyText: string; onOpenFile?: (path: string) => void }) {
+  /* ⛔ 11-09 用户实测「收尾文件卡要关窗重进才出来」：刚结束的消息（2 分钟内）绕过回合缓存，
+     否则拿到的是运行开始前缓存住的旧列表，挑不到刚完成的那一轮。 */
+  const fresh = Date.now() - Number(at) < 120_000;
+  const { turn } = useTeamTurn(threadId, at, bodyText, false, fresh);
   if (!turn) return null;
   const turnId = String(turn.id ?? "");
   return (
     <div className="team-cards">
-      <CompletedChanges turn={turn as unknown as Turn} isLastTurn={false} />
+      <CompletedChanges turn={turn as unknown as Turn} isLastTurn={false} onOpenFile={onOpenFile} />
       {/* ⛔ 11-08 用户令「网页来源条也要一致」：与主对话 MessageFooter 同一个组件与提取函数。 */}
       <TurnWebSources sources={collectTurnWebSources(turn as never)} inline />
       {turnId && <TurnMediaCard threadId={threadId} turnId={turnId} />}

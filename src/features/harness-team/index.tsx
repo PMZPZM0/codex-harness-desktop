@@ -39,7 +39,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
-    create, rename, addPartner, removePartner, mute, setAvatar, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
+    create, rename, addPartner, removePartner, mute, setAvatar, renameMember, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
     addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
@@ -301,6 +301,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             threadsOfMember={(memberId) => threadsOf(active.id, memberId)}
             /* 群内成员头像（11-07）：点成员栏那些小头像就能换，只影响这个群 */
             onSetAvatar={(memberId: string, avatar: string) => setAvatar(active.id, memberId, avatar)}
+            onRenameMember={(memberId: string, name: string) => renameMember(active.id, memberId, name)}
             onRename={(name) => rename(active.id, name)}
             onClearMessages={() => clearMessages(active.id)}
             onDeleteGroup={async () => {

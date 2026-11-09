@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen } from "lucide-react";
+import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen, PanelRight } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings, TeamViewModeSettings } from "./03-team-settings";
@@ -37,6 +37,8 @@ import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageNumber } from "../../lib/usage-number";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { TeamCards } from "./11-team-cards";
+import { TeamSidePanel, type TeamSideTab } from "./28-team-side-panel";
+import { openRightFile, subscribeRightFile } from "../../lib/right-file.mjs";
 import { MemberAvatar } from "./13-team-avatar";
 /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主这一行必须和主对话同一个身份源
    （`components/UserAvatar` 的 subscribeUserIdentity）—— ⛔ 不要再写死「我」或首字圆圈。 */
@@ -101,6 +103,8 @@ type Props = {
   onRunSchedule: (scheduleId: string) => Promise<{ ok: boolean; error?: string; sent?: number }>;
   /** 群内成员头像（11-07 用户令「加一个群内的成员头像自定义修改功能」）：只改这个群里的这张脸；空串 = 恢复默认 */
   onSetAvatar?: (memberId: string, avatar: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 成员改名（11-09）：主进程落群档案 + 伙伴会话标题，成功后本窗口与其它窗口同步刷新。 */
+  onRenameMember?: (memberId: string, name: string) => Promise<{ ok: boolean; error?: string }>;
   /** 群消息排版（11-07）：split = 伙伴靠左 / 用户靠右；left = 全部靠左（主进程落盘） */
   onSetMessageLayout?: (next: "split" | "left") => void;
   /** 停止某个伙伴当前这一回合（`@成员 /stop`、成员栏的停止键） */
@@ -178,7 +182,7 @@ export function TeamGroupView({
   onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
-  onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
+  onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onRenameMember, onSetMessageLayout, onSetReplyMode, onSetMessageForm,
 }: Props) {
   /* ⛔ 11-07 用户令「用户头像还有名字同步出来」：群主 = 当前用户，名字取**同一个**身份 store
      （主对话 `UserMessageView` 也是它）。⛔ 不读群记录里写死的「我」。 */
@@ -193,6 +197,21 @@ export function TeamGroupView({
   const effectiveMessageForm = messageForm ?? (group.messageForm === "topic" ? "topic" : "chat");
   /* 正在换头像的成员（11-07）：{ 成员、当前值、点的那个头像元素 } —— 元素用于浮层定位。 */
   const [avatarTarget, setAvatarTarget] = useState<{ memberId: string; name: string; value: string; anchor: HTMLElement; variant: "agent" | "user" } | null>(null);
+  /* ⛔ 11-09 用户令「这些文件都打不开 / 侧边栏放右边」：群内统一文件入口 = 右侧栏的文件页。
+     汇总卡 / 产物卡 / 过程文件卡 / 正文文件引用都走它（⛔ 不再用居中大弹窗）。 */
+  const [sideOpen, setSideOpen] = useState(false);
+  const [sideTab, setSideTab] = useState<TeamSideTab>("tree");
+  const openFilePreview = (path: string) => {
+    if (!path) return;
+    setSideTab("tree");
+    setSideOpen(true);
+    openRightFile(path);
+  };
+  useEffect(() => subscribeRightFile(({ path }: { path: string }) => {
+    if (!path) return;
+    setSideTab("tree");
+    setSideOpen(true);
+  }), []);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   /* ⛔⛔ 11-08 用户实测（截图：连按回车出去好几条一模一样的消息）：`sending` 是 React state，
@@ -272,22 +291,31 @@ export function TeamGroupView({
      滚回底部（或点「回到底部」）立刻恢复跟随；流式增长时跟着最新消息走。
      ⛔ 不用 scroll 事件的阈值当唯一判据 —— 内容变高/浏览器 clamp 都会让 scrollTop 自己动。 */
   const followRef = useRef(true);
+  /* ⛔ 11-09 用户令「复用主对话那一套滚轮自动跟随」：与主对话同一套语义 ——
+     · 程序滚动（贴底/跟随）有 80ms 抑制窗，不会被自己的 scroll 事件当成"用户滚走了"；
+     · 只有**真实用户输入**（滚轮/触摸/键盘）造成的上移才解除跟随；
+     · 迟滞：距底 ≤4px 重新跟随，>25% 视口才解除（中间地带保持原状，避免流式增长时反复翻转）。 */
+  const selfScrollUntilRef = useRef(0);
+  const lastTopRef = useRef(0);
+  const lastUserInputAtRef = useRef(0);
+  /** 排队中的「贴底」rAF（用户上滚时必须取消，否则滚轮会被这一帧顶回底部）。 */
+  const followRafRef = useRef(0);
+  const cancelFollowRaf = () => {
+    if (followRafRef.current) { cancelAnimationFrame(followRafRef.current); followRafRef.current = 0; }
+  };
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const distanceFromBottom = () => {
     const el = streamRef.current;
     return el ? Math.max(0, el.scrollHeight - el.scrollTop - el.clientHeight) : 0;
-  };
-  const syncFollow = () => {
-    const away = distanceFromBottom() > 90;
-    followRef.current = !away;
-    setAwayFromBottom(away);
   };
   const stick = () => {
     const el = streamRef.current;
     if (!el) return;
     followRef.current = true;
     setAwayFromBottom(false);
+    selfScrollUntilRef.current = Date.now() + 80;
     scrollToOffsetInstant(el, el.scrollHeight);
+    lastTopRef.current = el.scrollTop;
   };
   /* 分页（用户 11-06：「滚轮和聊天记录分页咋做的」）：⛔ 不一次把 400 条全画进 DOM ——
      首屏 30 条，滚到顶再往前加载一页，并且**保持滚动位置**（否则一加载就跳到别处）。
@@ -305,63 +333,103 @@ export function TeamGroupView({
     setVisibleCount((v) => Math.min(rows.length, v + PAGE));
     requestAnimationFrame(() => {
       const node = streamRef.current;
-      if (node) scrollToOffsetInstant(node, node.scrollHeight - prevH + prevTop);
-      syncFollow();
+      if (node) {
+        scrollToOffsetInstant(node, node.scrollHeight - prevH + prevTop);
+        lastTopRef.current = node.scrollTop;
+      }
+      setAwayFromBottom(true);
     });
   };
   const onStreamScroll = () => {
     const el = streamRef.current;
     if (!el) return;
-    syncFollow();
+    const dist = distanceFromBottom();
+    /* 程序滚动抑制窗：只刷新基线，不做方向判定（否则贴底/跟随会被当成用户滚动）。 */
+    if (Date.now() < selfScrollUntilRef.current) { lastTopRef.current = el.scrollTop; return; }
+    /* 只有真实用户输入（300ms 内有滚轮/触摸/键盘）造成的**上移**才解除跟随；
+       ⛔ 不靠 scrollTop 方向猜意图（主对话 09-12 已证那套不可靠）。 */
+    const userRecently = Date.now() - lastUserInputAtRef.current < 300;
+    if (userRecently && el.scrollTop < lastTopRef.current - 2) followRef.current = false;
+    else if (dist <= 4) followRef.current = true;
+    else if (dist > el.clientHeight * 0.25) followRef.current = false;
+    setAwayFromBottom(!followRef.current && dist > 8);
     /* 滚到顶再往上 = 加载更早一页（主对话的「滚一屏补一页」同口径） */
     if (el.scrollTop < 36 && hasMoreRef.current) loadEarlier();
+    lastTopRef.current = el.scrollTop;
   };
-  /* 真实用户输入 → 重新评估跟随（滚回底部自动恢复；滚上去就停住）。capture 在 window：
-     刻度尺 / 浮层的 wheel 会 stopPropagation，挂 scroller 上收不到（主对话同款教训）。 */
+  /* 真实用户输入打点（capture 在 window：刻度尺 / 浮层的 wheel 会 stopPropagation，
+     挂 scroller 上收不到；主对话同款教训）。
+     ⛔⛔ 11-09 用户实测「滚轮滚不上去了」：只在 onScroll 里按位移解除不够 ——
+       上滚那一帧排队中的贴底会把视口顶回底部，下一次位移就"看不出来"。
+       ⇒ 滚轮/按键**先解除跟随 + 取消待执行的贴底**，再让 onScroll 做迟滞恢复。 */
   useEffect(() => {
     const el = streamRef.current;
     if (!el) return;
-    let raf = 0;
-    const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => { raf = 0; syncFollow(); });
+    const detach = () => {
+      followRef.current = false;
+      setAwayFromBottom(true);
+      cancelFollowRaf();
     };
-    const onWheel = () => schedule();
+    const onWheel = (event: WheelEvent) => {
+      lastUserInputAtRef.current = Date.now();
+      if (event.deltaY < 0) detach();
+      const before = el.scrollTop;
+      requestAnimationFrame(() => {
+        const node = streamRef.current;
+        if (node && node.scrollTop < before - 2) { selfScrollUntilRef.current = 0; detach(); }
+      });
+    };
     const onKey = (event: KeyboardEvent) => {
-      if (["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(event.key)) schedule();
+      if (!["PageUp", "PageDown", "Home", "End", "ArrowUp", "ArrowDown", " "].includes(event.key)) return;
+      lastUserInputAtRef.current = Date.now();
+      if (["PageUp", "Home", "ArrowUp"].includes(event.key)) detach();
+    };
+    const onTouch = () => {
+      lastUserInputAtRef.current = Date.now();
+      /* 触摸上滑 = 看历史：直接解除跟随（手指方向在 scroll 事件里已经晚了一拍）。 */
+      const before = el.scrollTop;
+      requestAnimationFrame(() => {
+        const node = streamRef.current;
+        if (node && node.scrollTop < before - 2) { selfScrollUntilRef.current = 0; detach(); }
+      });
     };
     window.addEventListener("wheel", onWheel, { passive: true, capture: true });
-    el.addEventListener("touchmove", onWheel, { passive: true });
+    el.addEventListener("touchmove", onTouch, { passive: true });
     el.addEventListener("keydown", onKey);
     return () => {
-      if (raf) cancelAnimationFrame(raf);
       window.removeEventListener("wheel", onWheel, { capture: true } as EventListenerOptions);
-      el.removeEventListener("touchmove", onWheel);
+      el.removeEventListener("touchmove", onTouch);
       el.removeEventListener("keydown", onKey);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  /* 自动滚轮最新消息（主对话同口径）：内容长高（流式出字 / 折叠展开）时，
-     跟随态就贴回底部；非跟随态只更新「离底部多远」用于按钮。
-     ⛔ 用 ResizeObserver 而不是依赖 rows 变化 —— 流式正文不在 rows 长度里。 */
+  /* 自动跟随最新消息（主对话同口径）：**内容真的长高**（流式出字 / 过程折叠新增步骤 /
+     折叠展开）时，跟随态就贴回底部；非跟随态只更新「离底部多远」用于按钮。
+     ⛔ 11-09 用户实测「群聊没有复用自动跟随」：原来 ResizeObserver 观察的是**滚动容器**
+       —— 容器自身尺寸不变，内容再长也不会触发。改为观察容器子树（MutationObserver 覆盖
+       正文文字增长与新增节点），外加容器尺寸（窗口/分栏变化）。 */
   useEffect(() => {
     const el = streamRef.current;
     if (!el) return;
-    let raf = 0;
     const schedule = () => {
-      if (raf) return;
-      raf = requestAnimationFrame(() => {
-        raf = 0;
+      if (followRafRef.current) return;
+      followRafRef.current = requestAnimationFrame(() => {
+        followRafRef.current = 0;
         if (followRef.current) stick();
-        else syncFollow();
+        else setAwayFromBottom(distanceFromBottom() > 8);
       });
     };
-    const observer = new ResizeObserver(schedule);
-    observer.observe(el);
+    const observer = new MutationObserver(schedule);
+    /* ⛔ 只观察**内容**（新增节点 / 文字增长）。不观察 class/style：
+       悬停与过渡会高频触发，等于每隔几帧就抢一次滚动位置（用户滚轮会被顶回去）。 */
+    observer.observe(el, { childList: true, subtree: true, characterData: true });
+    const ro = new ResizeObserver(schedule);
+    ro.observe(el);
     el.addEventListener("transitionend", schedule);
     return () => {
-      if (raf) cancelAnimationFrame(raf);
+      cancelFollowRaf();
       observer.disconnect();
+      ro.disconnect();
       el.removeEventListener("transitionend", schedule);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -880,6 +948,21 @@ export function TeamGroupView({
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
   const displayRows = useMemo(() => mergeConsecutive(shownRows), [shownRows]);
+  /* ⛔ 11-09 用户截图（两枚「处理中」）：同一位成员的历史正文也被标成处理中，看着像两轮一起跑。
+     只标**当前轮最后一条**（同一 threadId+runId 的末条），历史正文不再挂状态。 */
+  const activeRunKeys = useMemo(() => {
+    const keys = new Set<string>();
+    const seen = new Set<string>();
+    for (let i = displayRows.length - 1; i >= 0; i -= 1) {
+      const r = displayRows[i];
+      if (r.authorKind !== "bot" || !r.runId) continue;
+      const runKey = `${r.threadId}|${r.runId}`;
+      if (seen.has(runKey)) continue;
+      seen.add(runKey);
+      if ((live ?? []).some((run) => run.threadId === r.threadId && run.status === "running" && run.runId === r.runId)) keys.add(r.key);
+    }
+    return keys;
+  }, [displayRows, live]);
   /* ⛔⛔ 11-08 真机「过程模式和占位模式完全一样没有区别」：两种模式的 JSX 原先都挂在
      `live` 流式卡里，而独立窗口里 live 常年为空 ⇒ 发完消息什么都不出现。
      ⇒ 反馈改挂到**最后一条用户消息气泡下面**（用户要的位置），由 busy 名单驱动。
@@ -1071,6 +1154,12 @@ export function TeamGroupView({
           >
             {membersOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
           </button>
+          {/* ⛔ 11-09 用户令：「在展开折叠右边加一个侧栏浮窗按键」——右侧栏开关紧跟成员栏开合键。 */}
+          {app && (
+            <button type="button" className={`team-group__icon-btn${sideOpen ? " is-on" : ""}`} onClick={() => setSideOpen((v) => !v)} title="右侧栏：变更 / 审阅 / 浏览器 / 文件" aria-expanded={sideOpen}>
+              <PanelRight size={14} /> <span>侧栏</span>
+            </button>
+          )}
           <button type="button" className="team-group__icon-btn" onClick={() => setShowSettings((v) => !v)} title={showSettings ? "返回工作伙伴" : "群设置"}>
             {showSettings ? <X size={14} /> : <Settings2 size={14} />} <span>{showSettings ? "返回" : "设置"}</span>
           </button>
@@ -1152,7 +1241,7 @@ export function TeamGroupView({
                      ⛔ 不删数据、不挡写入 —— 只是这一行不渲染（切回别的模式立刻全回来）。 */
                   if (effectiveMessageForm === "topic" && isBot) return null;
                   const role = roleOf(row.authorId);
-                  const running = busy?.includes(row.authorId);
+                  const running = activeRunKeys.has(row.key);
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
                      运行过程另起一个折叠块挂在正文下面，默认收起。 */
                   const quote = isBot ? quotes.get(row.key) : undefined;
@@ -1242,7 +1331,7 @@ export function TeamGroupView({
                           if (!liveRun) return null;
                           return (
                             <>
-                              <TeamProcess threadId={row.threadId} at={liveRun.startedAt} bodyText="" running live />
+                              <TeamProcess threadId={row.threadId} at={liveRun.startedAt} bodyText="" running live onOpenFile={openFilePreview} />
                               <TeamLiveFiles threadId={row.threadId} />
                             </>
                           );
@@ -1337,7 +1426,7 @@ export function TeamGroupView({
                               />
                             ))}
                             {/* 运行过程在**正文下方**、文件卡在过程下方（主对话同序：正文 → 过程 → 产物卡）。 */}
-                            {(isBot && row.summary) || (isBot && !row.runId) ? <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} /> : null}
+                            {(isBot && row.summary) || (isBot && !row.runId) ? <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} /> : null}
                           </>
                         )}
                         {isBot && (
@@ -1696,6 +1785,7 @@ export function TeamGroupView({
           anchor={{ x: profile.x, y: profile.y }}
           onClose={() => setProfile(null)}
           onMention={(id) => { mentionPartner(id); }}
+          onRename={onRenameMember ? (name) => onRenameMember(profile.memberId, name) : undefined}
           onStop={(id) => void onStopPartner(id).then((r) => {
                                   /* ⛔ 11-08：会话还在建 / 本来就没在跑 —— 这是状态说明，不是错误（别弹红字）。 */
                                   if (r.ok) return;
@@ -1703,6 +1793,11 @@ export function TeamGroupView({
                                   else setSendError(r.error || "停止失败");
                                 })}
         />
+      )}
+
+      {/* 11-09：群右侧栏（贴边抽屉）。文件卡 / 正文文件引用点击都切到它的「文件」页。 */}
+      {sideOpen && app && (
+        <TeamSidePanel app={app} workspace={group.workspace} tab={sideTab} onTab={setSideTab} onClose={() => setSideOpen(false)} />
       )}
 
       {/* 话题预览弹窗：⌨ Esc / 点遮罩关闭（板块内用全局 ESC 栈），⛔ 只在话题模式且有回复时出现。 */}

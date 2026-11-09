@@ -12,7 +12,7 @@
  *    —— 成员档案里没有模型，写一个假值比不写更糟。
  */
 import { useEffect, useMemo, useState } from "react";
-import { AtSign, Square, X } from "lucide-react";
+import { AtSign, Square, X, Pencil, Check } from "lucide-react";
 import type { GroupMessageRow, TeamGroup, TeamMember } from "./01-team-types";
 import { MemberAvatar } from "./13-team-avatar";
 import { resolveManagerId } from "../../lib/team-models.mjs";
@@ -48,7 +48,7 @@ function fmtWhen(at: number): string {
 
 /** 成员资料卡：身份、在本群的产出统计、可 @ / 可停止。 */
 export function TeamProfileCard({
-  member, group, rows, catalog, modelName, running, anchor, onClose, onMention, onStop,
+  member, group, rows, catalog, modelName, running, anchor, onClose, onMention, onStop, onRename,
 }: {
   member: TeamMember;
   group: TeamGroup;
@@ -61,10 +61,19 @@ export function TeamProfileCard({
   onClose: () => void;
   onMention: (memberId: string) => void;
   onStop: (memberId: string) => void;
+  /** 成员改名（11-09）：主进程改群档案 + 伙伴会话标题；成功后关卡片。 */
+  onRename?: (name: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   useEscapeLayer(true, onClose);
   const [stat, setStat] = useState<LedgerStat | null>(null);
   const [statReady, setStatReady] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(String(member.name ?? ""));
+  const [renameBusy, setRenameBusy] = useState(false);
+  const [renameError, setRenameError] = useState("");
+  /* ⛔ 团成员的显示名来自专家目录（资料卡显示主理人名），群内改名不会改变展示 ⇒ 不提供入口；
+     人类成员跟随用户中心。只有绑定到专家/子智能体/CLI 的伙伴可以群内改名。 */
+  const canRename = Boolean(onRename) && member.kind === "bot" && member.targetKind !== "team";
 
   /* 台账按「成员 id」聚合（主进程 `summarizeLedger` 的 byPartner）。
      ⛔ 人类成员没有台账，直接跳过；⛔ 读失败也不弹错（旁路观测不影响资料卡）。 */
@@ -113,6 +122,23 @@ export function TeamProfileCard({
   const lastAt = mine.reduce((max, r) => Math.max(max, Number(r.at) || 0), 0);
   const face = lead ? { ...member, targetKind: "expert", targetKey: lead.key, name: lead.name } : member;
 
+  const saveRename = async () => {
+    if (!onRename || renameBusy) return;
+    const next = draft.trim();
+    if (!next) { setRenameError("名字不能为空"); return; }
+    setRenameBusy(true);
+    setRenameError("");
+    try {
+      const res = await onRename(next);
+      if (res?.ok) { setRenaming(false); onClose(); return; }
+      setRenameError(res?.error || "改名失败");
+    } catch (error) {
+      setRenameError(String((error as { message?: string } | null)?.message ?? error) || "改名失败");
+    } finally {
+      setRenameBusy(false);
+    }
+  };
+
   const left = Math.min(Math.max(10, anchor.x), Math.max(10, window.innerWidth - CARD_W - 12));
   const top = Math.min(Math.max(10, anchor.y), Math.max(10, window.innerHeight - 120));
 
@@ -131,7 +157,30 @@ export function TeamProfileCard({
         <header className="team-profile__head">
           <span className="team-profile__avatar"><MemberAvatar member={face} size={38} /></span>
           <div className="team-profile__id">
-            <strong>{personName}</strong>
+            {renaming ? (
+              <div className="team-profile__rename">
+                <input
+                  className="team-profile__rename-input"
+                  value={draft}
+                  autoFocus
+                  maxLength={24}
+                  aria-label="成员新名字"
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") { e.preventDefault(); void saveRename(); }
+                    if (e.key === "Escape") { e.preventDefault(); setRenaming(false); setRenameError(""); }
+                  }}
+                />
+                <button type="button" className="team-profile__rename-save" title="保存" disabled={renameBusy} onClick={() => void saveRename()}>
+                  <Check size={12} />
+                </button>
+                <button type="button" className="team-profile__rename-cancel" title="取消" onClick={() => { setRenaming(false); setRenameError(""); }}>
+                  <X size={12} />
+                </button>
+              </div>
+            ) : (
+              <strong>{personName}</strong>
+            )}
             <small>{personRole}</small>
             <span className="team-profile__badges">
               {member.id === group.leadId && <em className="is-lead">群主</em>}
@@ -139,6 +188,7 @@ export function TeamProfileCard({
               {member.muted && <em className="is-muted">已静音</em>}
               {running && <em className="is-live">处理中</em>}
             </span>
+            {renameError && <em className="team-profile__rename-error" role="alert">{renameError}</em>}
           </div>
           <button type="button" className="team-profile__close" aria-label="关闭资料卡" onClick={onClose}>
             <X size={13} />
@@ -184,6 +234,11 @@ export function TeamProfileCard({
         </section>
 
         <footer className="team-profile__actions">
+          {canRename && !renaming && (
+            <button type="button" onClick={() => { setDraft(String(member.name ?? "")); setRenaming(true); setRenameError(""); }}>
+              <Pencil size={12} /> 改名字
+            </button>
+          )}
           <button type="button" onClick={() => { onMention(member.id); onClose(); }}>
             <AtSign size={13} /> 加进本轮 @
           </button>

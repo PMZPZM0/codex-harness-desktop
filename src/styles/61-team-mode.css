@@ -2752,6 +2752,37 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* 11-09 成员改名：资料卡内的就地编辑（与卡片同一套圆角/边框/主题色）。 */
+.team-profile__rename { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.team-profile__rename-input {
+  flex: 1;
+  min-width: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.team-profile__rename-save,
+.team-profile__rename-cancel {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.team-profile__rename-save:hover { border-color: var(--accent); color: var(--accent); }
+.team-profile__rename-cancel:hover { border-color: var(--danger); color: var(--danger); }
+.team-profile__rename-error { color: var(--danger); font-size: 11px; }
 .team-profile__badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
 .team-profile__badges em {
   padding: 0 6px;
@@ -3122,3 +3153,66 @@
   background: transparent;
   box-shadow: none;
 }
+
+/* ══════ 群右侧栏（贴边抽屉，11-09 用户令）══════════════════════════════════
+   ⛔ 不是居中模态：绝对定位在 `.team-group`（已有 position:relative）内，贴右缘、可随时收起。
+   层级 30：在群内容之上、资料卡/折叠浮层之下（窗口自绘钮 1000 永远可点）。 */
+.team-side-panel {
+  position: absolute;
+  top: 44px;                 /* 群头高度 */
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  width: min(400px, 46%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: -14px 0 32px color-mix(in srgb, #000 22%, transparent);
+}
+.team-side-panel__head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.team-side-panel__head strong { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.team-side-panel__head small {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.team-side-panel__close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+.team-side-panel__close:hover { border-color: var(--accent); color: var(--accent); }
+.team-side-panel__body { flex: 1; min-height: 0; display: flex; }
+/* 右栏是“贴边抽屉”的样式：放进群内抽屉时抹掉定位/宽度/位移。 */
+.team-side-panel__body .context-panel {
+  position: static;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+  border-left: 0;
+  border-radius: 0;
+  box-shadow: none;
+  transform: none;
+}
+.team-side-panel__body .context-panel .panel-page { height: 100%; }

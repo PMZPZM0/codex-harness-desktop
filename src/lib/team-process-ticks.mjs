@@ -28,3 +28,28 @@ export function subscribeTeamProcessTicks(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
+
+/** 「这一轮跑完了」计数器（11-09 用户实测：收尾文件卡要关窗重进才出来）。
+ *  过程块与汇总卡共用 `thread/turns/list` 的缓存（8 条/线程）——运行结束后缓存里还是
+ *  跑之前的旧快照 ⇒ 汇总卡挑不到刚完成的回合，卡片不出现。收尾时 bump 一次：
+ *  已挂载的块立刻重拉；晚挂载的卡片用 `refresh`（消息时间很近）绕过缓存。 */
+const settled = new Map();
+const settledListeners = new Set();
+
+export function bumpTeamTurnsSettled(threadId) {
+  const id = String(threadId ?? "");
+  if (!id) return;
+  settled.set(id, (settled.get(id) ?? 0) + 1);
+  for (const fn of settledListeners) {
+    try { fn(); } catch { /* 单个订阅者异常不影响其它 */ }
+  }
+}
+
+export function getTeamTurnsSettled(threadId) {
+  return settled.get(String(threadId ?? "")) ?? 0;
+}
+
+export function subscribeTeamTurnsSettled(fn) {
+  settledListeners.add(fn);
+  return () => settledListeners.delete(fn);
+}
