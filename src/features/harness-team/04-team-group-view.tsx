@@ -17,11 +17,13 @@ import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings, TeamViewModeSettings } from "./03-team-settings";
 import { stripVoiceScript } from "../../lib/voice-script.mjs";
-import { Markdown } from "../markdown";
+import { Markdown, MentionScopeContext } from "../markdown";
+import type { MentionScope } from "../markdown";
 /* 11-07 用户令：正文里的 @ 必须渲染成**真艾特**（带头像 + 用户名），多个按出现顺序逐个出。
    ⛔ 渲染在独立板块 `17-team-mention-text`（口径在纯函数 `team-mention-render.mjs` + 单测）。
    ⛔ 成员行三件套拆到 `18-team-member-actions`（守住 >1000 行棘轮，行为逐字未变）。 */
-import { TeamMentionText } from "./17-team-mention-text";
+import { TeamMentionChip, TeamMentionText } from "./17-team-mention-text";
+import { linkifyMentions } from "../../lib/team-mention-render.mjs";
 import { TeamAvatarPicker } from "./19-team-avatar-picker";
 import { buildMentionCandidates, fmtTime, shortId } from "./20-team-view-utils";
 import { MemberActions } from "./18-team-member-actions";
@@ -1095,6 +1097,34 @@ export function TeamGroupView({
     () => (topicHiddenKeys.size ? displayRows.filter((r) => !topicHiddenKeys.has(r.key)) : displayRows),
     [displayRows, topicHiddenKeys],
   );
+  /* ⛔⛔ 11-09 用户：「成员之间相互艾特也要有我艾特他们一样得效果」。
+     伙伴正文由**主对话 TurnView 的 Markdown** 画，那里不认识群成员 ⇒ `@观澜：收到…` 只是纯文字。
+     ⇒ 在这里给整条消息流提供「提及渲染作用域」，TurnView / ItemView 一行都不用改。
+     ⛔ 依赖用**成员签名串**（而不是回调引用）：回调每次 render 都会新建，用它当依赖会让
+        作用域每帧都换、Markdown 的 memo 全部失效（长会话/流式会卡）。
+     ⛔ 真正的回调从 ref 里取最新值，签名串只在成员改名/增删时才变。 */
+  const mentionKey = useMemo(
+    () => mentionCandidates.map((c) => `${c.id}:${c.name}`).join("|"),
+    [mentionCandidates],
+  );
+  const mentionCtxRef = useRef({ candidates: mentionCandidates, nameOf, faceOfId, mentionPartner });
+  mentionCtxRef.current = { candidates: mentionCandidates, nameOf, faceOfId, mentionPartner };
+  const mentionScope = useMemo<MentionScope>(() => ({
+    linkify: (text: string) => linkifyMentions(text, mentionCtxRef.current.candidates, {}),
+    render: (id: string, fallbackName: string) => {
+      const ctx = mentionCtxRef.current;
+      return (
+        <TeamMentionChip
+          id={id}
+          name={ctx.nameOf(id) || fallbackName}
+          faceOfId={ctx.faceOfId}
+          onPick={ctx.mentionPartner}
+        />
+      );
+    },
+    // ⛔ 不把回调列进依赖：见上（它们每次 render 都是新引用）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [mentionKey]);
   /* ⛔ 11-09 用户截图（两枚「处理中」）：同一位成员的历史正文也被标成处理中，看着像两轮一起跑。
      只标**当前轮最后一条**（同一 threadId+runId 的末条），历史正文不再挂状态。 */
   const activeRunKeys = useMemo(() => {
@@ -1378,6 +1408,9 @@ export function TeamGroupView({
         <div className={`team-group__body${membersOpen ? "" : " is-members-hidden"}`}>
           <div className="team-group__main">
             <div className="team-group__stream-wrap" ref={wrapRef}>
+            {/* ⛔ 提及作用域：包住整条消息流（含运行中的流式卡）⇒ 伙伴正文里的 `@名字`
+                也画成带头像的提及，与「我 @ 他们」完全一致。见本组件上方 mentionScope。 */}
+            <MentionScopeContext.Provider value={mentionScope}>
             <div className={`team-group__stream${messageLayout === "left" ? " is-layout-left" : ""}`} role="log" aria-live="polite" ref={streamRef} onScroll={onStreamScroll}>
               {hasMore && (
                 <button type="button" className="team-group__more" onClick={() => loadEarlier()}>
@@ -1414,7 +1447,10 @@ export function TeamGroupView({
                   /* ⛔ 11-09 用户令「图二效果一模一样，直接把主对话那一套接过来」：
                      一个回合只落一条群消息 ⇒ 正文 / 过程 / 文件卡 / 页脚**整体**交给主对话的 TurnView。
                      占位模式仍只给正文（该模式承诺不展示过程）。 */
-                  const useTurnView = isBot && effectiveReplyMode !== "placeholder" && row.kind !== "card";
+                  /* ⛔ 11-09：CLI 直跑消息没有引擎回合（`cli:` 合成 id）⇒ 不能走 TurnView
+                     （它拉不到回合 → 只剩正文、页脚/追问全空）。走普通正文 + 群操作条。 */
+                  const useTurnView = isBot && effectiveReplyMode !== "placeholder" && row.kind !== "card"
+                    && !String(row.threadId ?? "").startsWith("cli:");
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
                      运行过程另起一个折叠块挂在正文下面，默认收起。 */
                   const quote = isBot ? quotes.get(row.key) : undefined;
@@ -1760,6 +1796,7 @@ export function TeamGroupView({
                 </article>
               ))}
             </div>
+            </MentionScopeContext.Provider>
             {/* 刻度尺（右侧，不随滚动移动）：每条人发的消息一个刻度，点一下跳过去 */}
             <TeamRuler rows={shownRows} scrollRef={streamRef} containerRef={wrapRef} />
             {/* ⛔ 11-08 用户：「复用一套主对话框的滚轮和自动滚轮最新消息」——
