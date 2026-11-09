@@ -441,5 +441,15 @@ const settingsPetSrc = codeOnly(read("src/features/settings-pet/PetSettingsSecti
     "宠物侧有「忘掉这条线程」的出口（活动 / 等待映射 / 中断计时一起清）");
 }
 
+/* ── 11-09 用户实测「除小C外，两个图标都在宠物后面」：动画包淡化层 z-index:1/2 盖住工具条。
+      工具条必须高于淡化层，所有宠物一致置顶。 */
+{
+  const css = read("src/styles/22-pet.css");
+  const tb = /\.pet-toolbar\s*{[^}]*z-index:\s*(\d+)/.exec(css);
+  const fade = /\.pet-fade-layer\.is-back\s*{\s*z-index:\s*(\d+)/.exec(css);
+  ok(tb && fade && Number(tb[1]) > Number(fade[1]),
+    "工具条 z-index 高于淡化层（打开/关闭图标在所有宠物前面，不再被动画图层盖住）");
+}
+
 console.log(`\n【pet-activity】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -169,6 +169,10 @@ html[data-pet-window="activity"] #root {
   position: absolute;
   left: 50%;
   bottom: 2px;
+  /* ⛔ 11-09 用户实测「除小C外，两个图标都在宠物后面」：动画/动图包的交叉淡化图层
+     `.pet-fade-layer` 带 z-index:1/2，工具条不带 z-index 就被盖住。小C（关节包）的淡化层
+     嵌套在自己的堆叠上下文里才显得正常。⇒ 工具条必须高于淡化层，所有宠物一致置顶。 */
+  z-index: 3;
   display: flex;
   gap: 3px;
   padding: 3px;
