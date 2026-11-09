@@ -11,7 +11,7 @@
  *    不在活动回合表里的一律不碰 —— 不会误伤主对话或别的群。
  */
 import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
-import { listTalkThreads } from "./group-talk";
+import { killTalkCliRuns, listTalkThreads } from "./group-talk";
 
 export type TeamStopInput = {
   /** 候选会话 id（渲染层：群日志里出现过的成员会话） */
@@ -71,7 +71,7 @@ export type TeamStopResult = {
   ok: boolean;
   error?: string;
   /** `starting` = 会话还在建、已登记取消请求（不是失败，UI 给中性提示）。 */
-  reason?: "idle" | "starting" | "engine";
+  reason?: "idle" | "starting" | "engine" | "cli";
   threadId?: string;
   turnId?: string;
   stopped?: number;
@@ -112,10 +112,13 @@ export async function stopTeamRuns(input: TeamStopInput): Promise<TeamStopResult
      ⛔ 活动回合表的键是 turnId、值是 threadId（boot.ts `set(id, threadIdOf)`）——
        按 `get(threadId)` 写会永远拿不到（第一版就是这么错的）。 */
   const list = candidatesOf(input);
+  /* ⛔ CLI 直跑是**本机子进程**、没有引擎回合 —— turn/interrupt 停不掉，必须单独杀。 */
+  const cliKilled = killTalkCliRuns(String(input?.groupId ?? ""));
   if (!list.length) {
     /* ⛔ 11-08 用户实测（截图红字「还没有它的会话（先派一次活）」）：点停止时会话还在建（1~3 秒），
        既没有台账条目也没有活动回合。⇒ 记一条取消请求，`runOne` 开跑前命中就整轮放弃；
        对用户来说就是「停住了」，⛔ 不再弹一句像是让他去派活的错误。 */
+    if (cliKilled > 0) return { ok: true, reason: "cli", stopped: cliKilled };
     if (String(input?.groupId ?? "") && String(input?.memberName ?? "") && input?.stopAll !== true) {
       requestTalkCancel(String(input.groupId), String(input.memberName));
       return { ok: true, reason: "starting" };
@@ -125,7 +128,10 @@ export async function stopTeamRuns(input: TeamStopInput): Promise<TeamStopResult
 
   if (input?.stopAll === true) {
     const hits = [...engineActiveTurnIds].filter(([, owner]) => list.includes(owner));
-    if (!hits.length) return { ok: false, error: "群里当前没有在跑的伙伴", reason: "idle" };
+    if (!hits.length) {
+      if (cliKilled > 0) return { ok: true, reason: "cli", stopped: cliKilled };
+      return { ok: false, error: "群里当前没有在跑的伙伴", reason: "idle" };
+    }
     const stopped: string[] = [];
     const failed: string[] = [];
     for (const [turnId, owner] of hits) {
@@ -137,8 +143,9 @@ export async function stopTeamRuns(input: TeamStopInput): Promise<TeamStopResult
         failed.push(`${owner}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-    return stopped.length
-      ? { ok: true, stopped: stopped.length, threads: stopped, failed }
+    const total = stopped.length + cliKilled;
+    return total
+      ? { ok: true, stopped: total, threads: stopped, failed }
       : { ok: false, error: failed[0] ?? "停止失败", reason: "engine" };
   }
 
@@ -147,7 +154,10 @@ export async function stopTeamRuns(input: TeamStopInput): Promise<TeamStopResult
   for (const [tid, owner] of engineActiveTurnIds) {
     if (list.includes(owner)) { hitThread = owner; hitTurn = tid; break; }
   }
-  if (!hitTurn) return { ok: false, error: "这个伙伴当前没有在跑", reason: "idle" };
+  if (!hitTurn) {
+    if (cliKilled > 0) return { ok: true, reason: "cli", stopped: cliKilled };
+    return { ok: false, error: "这个伙伴当前没有在跑", reason: "idle" };
+  }
   try {
     await server.request("turn/interrupt", { threadId: hitThread, turnId: hitTurn });
     return { ok: true, threadId: hitThread, turnId: hitTurn };

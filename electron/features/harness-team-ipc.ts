@@ -39,6 +39,9 @@ import {
   setReplyMode,
   setMessageForm,
   setDialogFlow,
+  /* 11-09 用户令（两条消息路由）：管理员 + 没 @ 时的默认投递目标。⛔ 规则全在 team-models 里，这里只接线。 */
+  setAdmin,
+  defaultRouteCandidates,
   GROUP_MAX_PARTNERS,
   MAX_GROUP_FILES,
   MAX_GROUP_MEMORY_CHARS,
@@ -104,6 +107,8 @@ export const HARNESS_TEAM_CHANNELS = [
   "harness-team:clear-messages",
   "harness-team:set-files",
   "harness-team:set-manager",
+  /* 11-09：群管理员（普通群「用户没 @ 时由谁接话」；专家团群不用） */
+  "harness-team:set-admin",
   "harness-team:add-note",
   "harness-team:remove-note",
   "harness-team:set-menu",
@@ -409,7 +414,11 @@ function resolveGroupTargets(
       targetKey: `${teamId}:${memberId}`,
     });
   }
-  if (!picked.length && !virtuals.length) return { targets: [], error: "先 @ 至少一个伙伴" };
+  if (!picked.length && !virtuals.length) {
+    /* ⛔ 11-09：没 @ 时**不再一律报错** —— 默认路由的候选在 `prepareGroupDispatch` 里已经试过了
+       （上下文 / 团主理人 / 管理员），走到这里说明一个都没成。文案要把两条出路都说清。 */
+    return { targets: [], error: "先 @ 一个伙伴；或者在群设置里设个管理员（没 @ 时由它接话）" };
+  }
   const targets = [...picked.filter((m) => !m.muted), ...virtuals];
   if (!targets.length) {
     return { targets, error: `「${picked.map((m) => m.name).join("、")}」已静音，先在群设置里取消静音` };
@@ -446,9 +455,38 @@ async function prepareGroupDispatch(
 ): Promise<{ targets: GroupTarget[]; catalog: unknown[]; rows: ReturnType<typeof projectGroupLog> } | { error: string }> {
   /* 团成员名录与互 @ 判据：与渲染层共用同一份目录（⛔ 不各自拉一次）。 */
   const catalog = await buildDispatchCatalog().catch(() => []);
-  const resolved = resolveGroupTargets(group, memberIds, catalog);
+  /* ⛔⛔ 11-09 用户令（两条路由需求）：「无需 @ 成员时可直接发消息」。
+     ⇒ 没 @ 任何人时按**同一套优先级**挑一个收件人：
+        ① 上下文（上一回合是谁回的）→ ② 专家团群的主理人 / 普通群的管理员。
+     ⛔ 只对**用户手发**生效：定时任务（automation）必须显式 @ —— 否则到点会莫名叫起一个人。
+     ⛔ 候选逐个试而不是直接取第一个：那个人可能已被移出 / 静音 / 未绑定，退到下一个才符合预期。 */
+  let effectiveIds = memberIds;
+  let routedBy: "context" | "team-lead" | "admin" | "" = "";
+  let routeError = "";
+  if (!memberIds.length && source === "human") {
+    const rows = projectGroupLog(readStore().messages[group.id] ?? []);
+    for (const candidate of defaultRouteCandidates({ group, catalog, rows })) {
+      const probe = resolveGroupTargets(group, [candidate.id], catalog);
+      if (!probe.error && probe.targets.length) {
+        effectiveIds = [candidate.id];
+        routedBy = candidate.reason;
+        break;
+      }
+      /* 记住**具体**原因（"已静音""还没绑定"比笼统的"先 @ 一个伙伴"有用） */
+      if (!routeError && probe.error) routeError = probe.error;
+    }
+    if (!routedBy && routeError) {
+      return { error: routeError };
+    }
+  }
+  const resolved = resolveGroupTargets(group, effectiveIds, catalog);
   if (resolved.error) return { error: resolved.error };
   const targets = resolved.targets;
+  /* 路由到的人要让用户看得见（他并没打 @）：靠 `mentions` 让气泡上出现"投给了谁"的 chip；
+     同时给主进程日志留一行，排查"为什么它会回"时有据可查。 */
+  if (routedBy) {
+    console.log(`[harness-team] 无 @ 默认路由 ⇒ ${routedBy === "context" ? "上下文" : routedBy === "team-lead" ? "团主理人" : "管理员"}：${targets.map((t) => t.name).join("、")}`);
+  }
   /* ⛔ 11-09 审查：用户发了新消息 = 「不再想停」⇒ 清掉这个群里这些成员残留的停止请求。
      不清的话，上一条停止请求（会话还在建时登记的，60 秒有效）会把**这条新消息**在队列里
      静默吞掉 —— 表现是「我发了话，没人回，也没有任何提示」。 */
@@ -743,6 +781,7 @@ async function runDispatchRounds(
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, at: Date.now() } as never);
         const res = cliPlan.installed
           ? await queueTalkDelivery(group.id, partner.id, () => runTalkCliDirect(cliPlan.cli, String(bodyText ?? "").trim() || query, {
+            scopeId: `${group.id}::${partner.id}`,
             cwd: group.workspace || undefined,
             shellEnv: cliPlan.shellEnv,
             onDelta: (text) => broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, text, at: Date.now() } as never),
@@ -751,7 +790,9 @@ async function runDispatchRounds(
         chars = query.length + res.text.length;
         const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
         let wrote: { ok: boolean; error?: string } = { ok: true };
-        if (!clearedDuringRun) {
+        /* ⛔ 跑到一半群被解散：不再往已删除的群写孤儿消息（群日志键会留下来）。 */
+        const groupGone = !readStore().groups.some((g) => String(g.id) === String(group.id));
+        if (!clearedDuringRun && !groupGone) {
           wrote = await appendMessageTo(group.id, {
             authorId: partner.id,
             authorKind: "bot",
@@ -1330,6 +1371,21 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, String(groupId ?? ""));
       if (!g) return { ok: false, error: "群不存在" };
       return saveOne(store, setDialogFlow(g, mode) as GroupShape);
+    });
+
+    /* ⛔ 11-09 用户令：「为普通群聊增加设置管理员功能，管理员 agent 负责推动工作进度」。
+       ⛔ 专家团群不启用：`setAdmin` 只落数据，是否**用它**由 `defaultRouteCandidates` 决定
+         （团群有主理人就走主理人，不读 adminId）；界面也不给团群这个入口。
+       ⛔ 成环/自指那些约束不适用于这里（只是"谁先接话"，没有链）。 */
+    ipcHost.handle("harness-team:set-admin", (_event, groupId: string, memberId: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const r = setAdmin(g, String(memberId ?? "")) as { ok: boolean; reason?: string; group: GroupShape; changed?: boolean };
+      if (!r.ok) {
+        return { ok: false, error: r.reason === "not_member" ? "管理员只能是这个群里的伙伴" : "设置失败" };
+      }
+      return saveOne(store, r.group);
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {

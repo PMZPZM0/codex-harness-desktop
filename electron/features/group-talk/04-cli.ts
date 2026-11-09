@@ -96,11 +96,32 @@ function unwrapCliStdout(raw: string): string {
   return clean;
 }
 
+/** 正在跑的 CLI 子进程（按 `群id::成员id` 登记）：群里点「停止」要能真的把它们杀掉
+ *  （⛔ 引擎的 turn/interrupt 管不到本机进程）。 */
+const activeChildren = new Map<string, Set<import("node:child_process").ChildProcess>>();
+
+/** 停掉 CLI 直跑进程：给 memberId 只杀那位成员，不给就杀该群全部；返回杀掉的个数。 */
+export function killTalkCliRuns(groupId: string, memberId?: string): number {
+  const gid = String(groupId ?? "");
+  if (!gid) return 0;
+  const prefix = `${gid}::`;
+  const exact = memberId ? `${prefix}${memberId}` : "";
+  let n = 0;
+  for (const [key, set] of [...activeChildren]) {
+    if (exact ? key !== exact : !key.startsWith(prefix)) continue;
+    activeChildren.delete(key);
+    for (const child of set) {
+      try { child.kill("SIGKILL"); n += 1; } catch { /* 已退出 */ }
+    }
+  }
+  return n;
+}
+
 /** 直接起本地 CLI 子进程跑单轮命令，stdout 即回复；onDelta 逐块上屏。 */
 export async function runTalkCliDirect(
   cli: CliAgentDef,
   input: string,
-  options: { cwd?: string; shellEnv?: Record<string, string>; onDelta?: (text: string) => void; timeoutMs?: number },
+  options: { scopeId?: string; cwd?: string; shellEnv?: Record<string, string>; onDelta?: (text: string) => void; timeoutMs?: number },
 ): Promise<{ ok: boolean; text: string }> {
   const tier = cliPermissionTierOf(cli.permissionTier);
   const template = cliPromptCommandFor(cli.bin, tier) || `${cli.bin} -p "{prompt}"`;
@@ -120,10 +141,24 @@ export async function runTalkCliDirect(
       windowsHide: true,
       ...(isWin ? { windowsVerbatimArguments: true } : {}),
     });
-    const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* 已退出 */ } }, options.timeoutMs ?? 300_000);
+    /* 按 `群id::成员id` 登记，供「停止」杀掉；⛔ 不登记就没有任何办法中断本机 CLI。 */
+    const groupKey = String(options.scopeId ?? "");
+    if (groupKey) {
+      const set = activeChildren.get(groupKey) ?? new Set();
+      set.add(child);
+      activeChildren.set(groupKey, set);
+    }
+    const untrack = () => {
+      if (!groupKey) return;
+      const set = activeChildren.get(groupKey);
+      if (set) { set.delete(child); if (!set.size) activeChildren.delete(groupKey); }
+    };
+    const timer = setTimeout(() => { try { child.kill("SIGKILL"); } catch { /* 已退出 */ } }, options.timeoutMs ?? 600_000);
+    /* ⛔ stdout/stderr 上限：CLI 刷屏（-v / 事件流）时不能无限吃内存。 */
+    const MAX_OUT = 8 * 1024 * 1024;
     child.stdout?.on("data", (chunk: Buffer) => {
       const text = chunk.toString("utf8");
-      out += text;
+      if (out.length < MAX_OUT) out += text;
       if (!streaming) {
         head += text;
         const trimmed = head.trimStart();
@@ -135,11 +170,12 @@ export async function runTalkCliDirect(
       }
       options.onDelta?.(text);
     });
-    child.stderr?.on("data", (chunk: Buffer) => { errOut += chunk.toString("utf8"); });
+    child.stderr?.on("data", (chunk: Buffer) => { if (errOut.length < MAX_OUT) errOut += chunk.toString("utf8"); });
     const finish = (ok: boolean) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      untrack();
       const text = unwrapCliStdout(out.trim() || errOut.trim());
       resolve({ ok: ok || Boolean(text), text: text || "（CLI 没有输出）" });
     };

@@ -1122,6 +1122,13 @@ const catalog = [
     && /unwrapCliStdout\(out\.trim\(\) \|\| errOut\.trim\(\)\)/.test(cliDirect)
     && /startsWith\("\{"\)/.test(cliDirect),
     "本地 CLI 输出先剥机器可读信封（QwenPaw 的 {status,…,response} / OpenClaw --json / Comate 事件流 NDJSON + ANSI），再当回复");
+  /* ⛔ 11-09 审查（Required）：① CLI 直跑是本机子进程 ⇒ 「停止」必须能真杀（引擎 turn/interrupt 管不到）；
+     ② stdout 要有上限（事件流刷屏会吃内存）；③ 群中途被删不许写孤儿消息。 */
+  ok(/function killTalkCliRuns/.test(cliDirect) && /activeChildren/.test(cliDirect)
+    && /MAX_OUT/.test(cliDirect) && /scopeId/.test(cliDirect)
+    && /killTalkCliRuns\(String\(input\?\.groupId/.test(codeOnly(read("electron/features/harness-team-stop.ts")))
+    && /groupGone/.test(ipc),
+    "CLI 直跑可被「停止」真杀 + stdout 有上限 + 群被删不写孤儿消息");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
     "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
   ok(/!isBot && \([\s\S]{0,400}?<MessageFooter/.test(view) && /team-msg__footer/.test(view)

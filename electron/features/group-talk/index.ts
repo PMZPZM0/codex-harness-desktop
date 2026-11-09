@@ -5,5 +5,5 @@ export { buildGroupTalkTools, attachGroupTalkEvents, setGroupTalkHooks, handleGr
 export type { GroupTalkHooks } from "./02-tools";
 export { buildTalkInput, groupHistoryBlock, TALK_HISTORY_LIMIT } from "./03-talk";
 export type { GroupTalkOptions, TalkHistoryRow } from "./03-talk";
-export { planTalkCli, runTalkCliDirect } from "./04-cli";
+export { planTalkCli, runTalkCliDirect, killTalkCliRuns } from "./04-cli";
 export type { TalkCliPlan } from "./04-cli";
