@@ -1617,8 +1617,6 @@ export function TeamGroupView({
                    ⛔ 不要再加回来（三个位置都试过，用户最终口径是"运行态与停止都在每个成员那一行"）。 */}
             <div className="team-group__members-head">
               <span>成员 {group.members.length}</span>
-              {/* 11-07 用户：「在这里加一排字，点击头像可以修改」 */}
-              <span className="team-group__members-hint">点击头像可以修改</span>
             </div>
             <ul>
               {group.members.map((m) => {
@@ -1660,29 +1658,14 @@ export function TeamGroupView({
                         <MemberAvatar member={faceOf(m)} size={22} />
                       </button>
                     )}
-                    <span className="team-group__member-main">
+                    <button
+                      type="button"
+                      className="team-group__member-main"
+                      title={`${personNameOf(m)} · 打开资料卡（可改名 / 换头像）`}
+                      onClick={(event) => openProfile(event, m.id)}
+                    >
                       <strong>{personNameOf(m)}</strong>
-                      <small title={`成员 id：${m.id}${m.targetKey ? ` · 目标：${m.targetKind}:${m.targetKey}` : ""}`}>
-                        {/* ⛔ 上下级放**最前**：这一行会被省略号截断，放后面就永远看不见（用户要"关系明确"） */}
-                        {(() => {
-                          /* ⛔⛔ 11-06 用户：「肯定要是主理人➕成员」—— 团这一行**就是主理人本人**
-                             （大字已经是承枢），副标题写「团名 · 主理人」+ 人数；
-                             ⛔ 别再写「负责人 承枢」（会变成"承枢 / 负责人 承枢"重复一遍）。 */
-                          if (teamLeadOf(m)) return `${m.name} · 主理人`;
-                          /* 生效上级（没显式设过 ⇒ 群主）：成员栏要看得出层级，⛔ 别只认落盘值 */
-                          const up = resolveManagerId(group, m.id);
-                          const prefix = up ? `上级 ${group.members.find((x) => x.id === up)?.name ?? up} · ` : "";
-                          return prefix;
-                        })()}
-                        {teamLeadOf(m)
-                          /* ⛔ 人数不写在副标题里：成员栏只有 ~200px，「软件开发专家团 · 主理人 4 位成员」
-                             实测截断成「…主理人 4 …」⇒ 关键身份被省略号吃掉。人数在下面一行行看得见。 */
-                          ? ""
-                          : (m.id === group.leadId ? "群主" : (m.targetProfession || (isBot ? "伙伴" : "成员")))}
-                        {running ? " · 处理中" : ""}
-                        {m.muted ? " · 已静音" : ""}
-                      </small>
-                    </span>
+                    </button>
                     {/* ⛔ 11-07 用户：「每个成员 @ 的前面有运行动态展示吗」⇒ 运行态点 + @ + 停 三件套
                         （顺序固定：状态在 @ 前、停在 @ 后），团成员与伙伴同一份实现。 */}
                     {isBot && (
@@ -1733,10 +1716,14 @@ export function TeamGroupView({
                                   size={22}
                                 />
                               </button>
-                              <span className="team-group__member-main">
+                              <button
+                                type="button"
+                                className="team-group__member-main is-kid"
+                                title={`${kid.name} · 打开${m.name}的资料卡`}
+                                onClick={(event) => openProfile(event, m.id)}
+                              >
                                 <strong>{kid.name}</strong>
-                                <small>{kid.profession || "团成员"}</small>
-                              </span>
+                              </button>
                               {/* 团成员同样三件套：运行态点 → @ → 停（11-07 用户：「每个成员 @ 的前面
                                   有运行动态展示吗」）。合成 id 与群流署名一致，所以"谁在跑"和"他说的"
                                   是同一个 key；停止也走它（store.stopPartner 会翻成调度目标键）。 */}

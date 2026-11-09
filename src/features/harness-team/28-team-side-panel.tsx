@@ -6,7 +6,7 @@
  * ⛔ 用**克隆的 app** 只覆盖 `rightOpen / rightTab / workspace`，不改本窗全局状态。
  * ⛔ 文件树按**群工作目录**加载；文件卡/正文文件引用的点击都切到「文件」页并选中该文件。
  */
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { PanelRight, X } from "lucide-react";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import type { HarnessAppApi } from "../app-state";
@@ -24,6 +24,32 @@ export function TeamSidePanel({ app, workspace, tab, onTab, onClose }: {
 }) {
   useEscapeLayer(true, onClose);
   const rootRef = useRef<HTMLElement | null>(null);
+  /* 11-09 用户令「浮窗改成可以拖动的」：左边缘拖拽调整宽度，按窗口记住（与主对话右栏同习惯）。 */
+  const WIDTH_KEY = "team-side-panel-width";
+  const [width, setWidth] = useState(() => {
+    try {
+      const n = Number(localStorage.getItem(WIDTH_KEY));
+      return Number.isFinite(n) && n >= 320 ? Math.min(760, n) : 400;
+    } catch { return 400; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(WIDTH_KEY, String(Math.round(width))); } catch { /* 隐私模式 */ }
+  }, [width]);
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startW = width;
+    const move = (moveEvent: PointerEvent) => {
+      const max = Math.min(760, Math.max(320, window.innerWidth - 320));
+      setWidth(Math.max(320, Math.min(max, startW + (startX - moveEvent.clientX))));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
   const resolvedWorkspace = String(workspace ?? "").trim() || String(app.workspace ?? "");
   /* 打开即按**群的**工作目录读一层树（右栏的文件页原本靠主界面 effect 触发，这里不跑主界面）。 */
   useEffect(() => {
@@ -41,7 +67,8 @@ export function TeamSidePanel({ app, workspace, tab, onTab, onClose }: {
     [app, tab, onTab, resolvedWorkspace],
   );
   return (
-    <aside ref={rootRef} className="team-side-panel" role="complementary" aria-label="右侧栏">
+    <aside ref={rootRef} className="team-side-panel" style={{ width }} role="complementary" aria-label="右侧栏">
+      <div className="team-side-panel__resize" title="拖动调整侧栏宽度" onPointerDown={startResize} aria-hidden />
       <header className="team-side-panel__head">
         <PanelRight size={14} className="ic-blue" />
         <strong>右侧栏</strong>

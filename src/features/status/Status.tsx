@@ -205,7 +205,7 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn }: { turn: Turn;
                   : <FileTypeIcon path={file.path} size={15} className="completed-file-icon" />}
                 <span className="completed-file-meta"><code title={file.path}>{name}</code><small title={file.path}>{dir}</small></span>
                 <span className="completed-file-stats">{file.deletedFile ? <i className="completed-file-gone">已删除</i> : file.newFile ? <b className="completed-file-new">新增</b> : <><b>+{file.added}</b> <i>-{file.deleted}</i></>}</span>
-                <button type="button" className="completed-file-btn" title="在右栏审阅这个文件的完整 diff" onClick={(event) => { event.stopPropagation(); openReview(file.path); }}>审查</button>
+                <button type="button" className="completed-file-btn" title="在右栏审阅这个文件的完整 diff" onClick={(event) => { event.stopPropagation(); setDiffHover(null); openReview(file.path); }}>审查</button>
                 <button type="button" className="completed-file-btn" title="在资源管理器里定位该文件" onClick={(event) => { event.stopPropagation(); try { void window.codex.revealInFolder(file.path); } catch { /* 目录可能已删 */ } }}>打开</button>
               </div>
             );

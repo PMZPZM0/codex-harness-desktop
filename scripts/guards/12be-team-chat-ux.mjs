@@ -618,8 +618,9 @@ const catalog = [
   const avatarView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   ok(/group\.avatars\?\.\[kidId\]/.test(avatarView) && /memberId: kidId/.test(avatarView),
     "团成员行头像可点改（群级覆盖表 avatars[kidId]）");
-  ok(/team-group__members-hint/.test(avatarView) && /点击头像可以修改/.test(avatarView),
-    "成员栏标题行有「点击头像可以修改」提示（用户要的那排字）");
+  ok(!/team-group__members-hint/.test(avatarView)
+    && /className="team-group__member-main"[\s\S]{0,400}?onClick=\{\(event\) => openProfile\(event, m\.id\)\}/.test(avatarView),
+    "成员栏不再堆提示文字；整行名字可点开资料卡（改名/换头像在卡内）");
   ok(/isBot \? \([\s\S]{0,700}?variant: "agent"/.test(avatarView)
     && /variant: "user"/.test(avatarView) && /is-user is-editable/.test(avatarView),
     "bot 换智能体面孔、人类成员只换用户中心头像（两套头像不串）");
@@ -1443,6 +1444,8 @@ const catalog = [
   const card = codeOnly(read("src/features/harness-team/14-team-profile-card.tsx"));
   const sideDlg = codeOnly(read("src/features/harness-team/28-team-side-panel.tsx"));
   const barrel = codeOnly(read("src/features/app-view/components.ts"));
+  const status = codeOnly(read("src/features/status/Status.tsx"));
+  const cssCards = read("src/styles/04-cards-tools.css");
   ok(/export function renameMember\(group, memberId, name\)/.test(models)
     && /reason: "duplicate"/.test(models),
     "成员改名纯函数：空名/重名拒绝（⛔ 重名会让 @名字 解析歧义）");
@@ -1473,6 +1476,12 @@ const catalog = [
     "右侧栏=贴边抽屉（复用主面板）；开关紧跟成员栏开合键、在设置键左边（⛔ 居中大浮动弹窗）");
   ok(/export \{ AppViewReviewPanel \}/.test(barrel),
     "跨板块复用走 app-view 组件出口（⛔ 深链内部文件）");
+  ok(/team-side-panel__resize/.test(sideDlg) && /startResize/.test(sideDlg) && /WIDTH_KEY/.test(sideDlg)
+    && /style=\{\{ width \}\}/.test(sideDlg),
+    "右侧栏可拖动调宽（左缘把手，按窗口记住）");
+  ok(/setDiffHover\(null\); openReview\(file\.path\)/.test(status)
+    && /\.turn-diff-modal-mask \{[\s\S]{0,160}?z-index: 1002/.test(cssCards),
+    "「审查」不再被悬停预览压住：打开前收起 hover；弹窗层级 1002 > 悬停 1000");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

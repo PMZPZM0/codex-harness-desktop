@@ -522,13 +522,7 @@
   font-weight: 600;
   letter-spacing: 0.03em;
 }
-/* 11-07 用户：「在这里加一排字，点击头像可以修改」 */
-.team-group__members-head .team-group__members-hint {
-  color: var(--faint);
-  opacity: 0.85;
-  letter-spacing: 0;
-  white-space: nowrap;
-}
+/* 11-07 用户：「在这里加一排字，点击头像可以修改」→ 11-09 用户：「注释过多」整条删除。 */
 .team-group__members ul { flex: 1; overflow: auto; margin: 0; padding: 6px 8px 10px; list-style: none; }
 .team-group__member {
   display: flex;
@@ -552,7 +546,21 @@
   font-size: 11px;
 }
 .team-group__member-avatar.is-bot { background: var(--accent-soft); color: var(--accent); }
-.team-group__member-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+/* 成员主区是按钮：整行名字可点开资料卡（⛔ 不再只认头像）。 */
+.team-group__member-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.team-group__member-main:hover strong { color: var(--accent); }
 .team-group__member-main strong {
   overflow: hidden;
   font-size: 12px;
@@ -560,7 +568,6 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.team-group__member-main small { overflow: hidden; color: var(--faint); font-size: 10.5px; white-space: nowrap; text-overflow: ellipsis; }
 .team-group__member-at {
   flex: none;
   width: 22px;
@@ -605,7 +612,6 @@
 @media (prefers-reduced-motion: reduce) {
   .team-group__member-live { animation: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
 }
-.team-group__members-hint { margin: 0; padding: 8px 12px 10px; color: var(--faint); font-size: 10.5px; line-height: 1.5; }
 
 /* ── 消息卡片（飞书 2.2/2.4 的等价物）─────────────────────────────────────── */
 .team-msg__role {
@@ -3216,3 +3222,14 @@
   transform: none;
 }
 .team-side-panel__body .context-panel .panel-page { height: 100%; }
+/* 右侧栏左缘拖拽把手（11-09：浮窗可以拖动调宽） */
+.team-side-panel__resize {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+}
+.team-side-panel__resize:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
