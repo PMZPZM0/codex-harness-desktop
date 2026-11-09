@@ -35,10 +35,9 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   const connectors = await readConnectors();
   const mcpOverrides = await readMcpOverrides();
   const appSettings = await readAppSettings(app.getPath("userData"));
-  /* 自动压缩阈值 = 当前模型窗口 × 本比例（09-25 用户要求默认 80% → 60%）。
-     ⛔ 只算一次、三处 provider 段（当前 / 历史别名 / harness 统一通道）共用同一份 —— 分头各算
-        就会「改了设置但某一段还是老值」，而引擎按**会话实际用的那个 provider 段**取阈值，
-        症状是「切了模型压缩行为却没跟着变」。归一化见 normalizeAutoCompactRatio。 */
+  /* 自动压缩比例（09-25 用户要求默认 80% → 60%；11-09 起阈值随模型进 catalog）。
+     ⛔ 只归一一次、传给写 catalog 的那一处 —— 归一化见 normalizeAutoCompactRatio；
+        catalog 里每个模型各写 `窗口 × 本比例`，引擎按会话当前模型的阈值自己压。 */
   const compactRatio = normalizeAutoCompactRatio(appSettings.autoCompactRatio);
   // developer_instructions 的组装输入与下面的「写出」同源（见 devInstructionsInput 上方说明）；
   // 两个自动化开关也从这里取，避免同一组开关在两处各算一遍而漂移。
@@ -70,7 +69,7 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // 自定义模型目录：让引擎认识非内置模型，用 catalog 里的 context_window（否则 fallback ~121K，
   // 用户设置的 1M 上下文不生效）。无模型时返回空串不写该行。官方订阅走引擎内置模型目录，不需要。
   const isOfficialProvider = entry.provider === "openai-official";
-  const catalogToml = isOfficialProvider ? "" : await writeModelCatalogToml(entry);
+  const catalogToml = isOfficialProvider ? "" : await writeModelCatalogToml(entry, compactRatio);
   // 当前生效模型（catalog 里那条）：下面的 effort 兜底默认要用它。
   // ⛔ 上下文上限**不在这里算、也不写顶层** —— 顶层单值会覆盖每模型上下文，
   //    改为只靠 catalog 的每模型 context_window（见上方 09-16 修正说明）。
@@ -97,7 +96,6 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // → 应用所有 codex:request 全部报错，09-14 用户实测截图）。历史上这里会透传用户档案里的
   // chat（旧版本可写入），一旦档案里有 chat 就写坏配置把应用打死。
   const activeWireApi = "responses" as const;
-  const activeContext = activeNormalized.models?.find((model) => model.id === activeNormalized.model)?.contextWindow ?? activeNormalized.contextWindow ?? 128000;
   // 历史会话引用过、但已从供应商列表删除的 id（如重装供应商后 id 变化）→ 补成别名段，
   // 否则引擎解析不到会报 "Model provider not found"，会话同样打不开。
   const knownIds = new Set(providerEntries.map((provider) => normalizeProvider(provider).provider));
@@ -238,12 +236,13 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     //    键，引擎根本读不到（实测 `approval_policy = "never"` 变成 `mcp_servers.nuphus.approval_policy`，
     //    顶层设置静默失效）。放在这里（developer_instructions 块字符串之后、第一个段头之前）才安全：
     //    再往前会被多行字符串吞掉，往后会被段落吞掉。
-    // ⛔⛔ 09-28 键位迁移（0.157.1 实测零警告）：自动压缩阈值 / scope / 最大输出上限从
-    //    model_providers.<id> 段**上移到顶层**——0.157.1 的 provider 段已不认这三个键，
-    //    段内残留 = 每次启动报 N 条「unrecognized configuration settings」（用户截图实证）。
-    //    顶层全局一份，值取当前生效供应商/模型；切供应商时 applyCustomModel 按新激活项重算。
-    //    ⛔ 位置约束：必须在**第一个段头之前**（TOML 顶层键语义，同下方 preserved.topLevel）。
-    `model_auto_compact_token_limit = ${Math.round(activeContext * compactRatio)}`,
+    // ⛔⛔ 11-09（用户令「自动压缩用引擎原生的、改 config 阈值」）：**顶层不再写自动压缩阈值**。
+    //    11-09 隔离探针（0.167.0）实测两条：① catalog 每个模型的 `auto_compact_token_limit`
+    //    引擎认、会照它自己压；② 顶层一旦存在就**盖掉**逐模型值（顶层 9000000 + 目录 2000 ⇒ 不压）。
+    //    ⇒ 阈值随模型进 model-catalog.json（该模型窗口 × 设置页比例），这里只写占位注释不写键。
+    //    ⛔ 别把 `model_auto_compact_token_limit` 加回顶层：那会让所有模型共用一个数（小窗口
+    //    模型永远等不到它、大窗口模型压得太晚），且「自动压缩比例」对小模型形同虚设。
+    //    ⛔ 旧版本写下的顶层值由 preserveUserConfig（HARNESS_CONFIG_KEYS 仍登记着它）+ boot 自愈清掉。
     // ⛔ 不写顶层 _scope：该键在 0.157.1 是枚举（total / body_after_prefix），写 "model"
     //    会让**整份配置**解析失败（「Invalid configuration; using defaults」⇒ 供应商全丢，
     //    10:34 用户现场实证）。不写 = 引擎用默认口径，压缩功能照常。

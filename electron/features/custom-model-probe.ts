@@ -54,8 +54,12 @@ export function bindCustomModelProbe(deps: Record<string, any>) {
 
 
 
-/** 由供应商档案生成模型目录：只收有明确 contextWindow 的模型（其余交给引擎默认），并把当前生效 model 排最前。 */
-export function buildModelCatalog(entry: CustomModelFile) {
+/** 由供应商档案生成模型目录：只收有明确 contextWindow 的模型（其余交给引擎默认），并把当前生效 model 排最前。
+ *  ⛔ `compactRatio` 必传：自动压缩阈值写在**每个模型条目**的 `auto_compact_token_limit`
+ *  （= 该模型自己的窗口 × 比例）。11-09 隔离探针实测（0.167.0）：catalog 里这个字段引擎**认**，
+ *  且**只要 config.toml 顶层还写着 `model_auto_compact_token_limit`，顶层就盖掉逐模型值**
+ *  ⇒ 顶层那份已不再写（见 custom-model-apply 的说明）。 */
+export function buildModelCatalog(entry: CustomModelFile, compactRatio: number) {
 
   const models = (normalizeProvider(entry).models ?? []).filter((model: any) => model.enabled !== false);
 
@@ -154,6 +158,12 @@ export function buildModelCatalog(entry: CustomModelFile) {
       supported_reasoning_levels: efforts.map((effort: any) => ({ effort, description: effortDescriptions[effort] ?? effort })),
 
       context_window: contextWindow,
+
+      /* ⛔ 11-09 用户令「自动压缩用引擎原生的、改 config 阈值」：阈值随模型走（各用各的窗口），
+         写在这里引擎才会按**当前会话那个模型**自己的水位自己压。顶层全局阈值一旦存在就会盖掉
+         本字段（探针实测），所以 config.toml 那边已不再写顶层。
+         取整口径与设置页比例同源（normalizeAutoCompactRatio 在调用方做归一）。 */
+      auto_compact_token_limit: Math.round(contextWindow * compactRatio),
 
       max_context_window: contextWindow,
 

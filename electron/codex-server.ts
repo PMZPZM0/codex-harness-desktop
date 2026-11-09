@@ -7,7 +7,6 @@ import { app } from "electron";
 import { toolchainEnv } from "./toolchain";
 import { ensureSessionWorkspace } from "./features/session-workspace";
 import { threadCwd } from "./thread-cwd";
-import { markAttempt, shouldCompact } from "./context-compact-guard";
 import { describeTurnError } from "../src/lib/turn-error-text.mjs";
 
 type RpcId = number | string;
@@ -647,33 +646,6 @@ export class CodexServer extends EventEmitter {
     // 但什么都不做。真实崩溃恢复不依赖心跳（走 fail() 的进程退出分支无条件拉起一次）。
   }
 
-  /**
-   * 回合开始前的上下文兜底压缩。⛔ 本方法**不抛错**：任何异常都吞掉并记日志 ——
-   * 它的职责是"顺手救一下"，不是发送路径上的新闸门。
-   */
-  private async compactBeforeTurn(params: unknown): Promise<void> {
-    try {
-      const threadId = String((params as any)?.threadId ?? "");
-      const decision = shouldCompact(this.codexHome, threadId);
-      if (!decision.compact) {
-        /* 只在水位过半时记一行，避免每发一条消息都往 engine-debug.log 写。 */
-        if (decision.reason === "below" && (decision.used ?? 0) > (decision.limit ?? 0) * 0.5) {
-          this.debugLog("[compact-guard] 水位 " + decision.used + "/" + decision.limit + "（未到触发线）");
-        }
-        return;
-      }
-      markAttempt(threadId);
-      this.debugLog("[compact-guard] 触发 thread=" + threadId.slice(0, 8) + " used=" + decision.used + " limit=" + decision.limit);
-      const startedAt = Date.now();
-      /* ⛔ 45s 上限：摘要请求正常几秒到 20 秒；真卡住时宁可放弃压缩（下一轮 10 分钟后才重试），
-         也不能让用户发一条消息等三分钟。 */
-      await this.request("thread/compact/start", { threadId }, 45_000);
-      this.debugLog("[compact-guard] 完成 " + String(Date.now() - startedAt) + "ms");
-    } catch (error: any) {
-      this.debugLog("[compact-guard] 失败（已忽略，照常发）：" + String(error?.message ?? error).slice(0, 160));
-    }
-  }
-
   /** 引擎子进程是否存活（/doctor、/debug 等诊断命令用） */
   get running() {
     return Boolean(this.child && !this.child.killed && this.child.exitCode == null);
@@ -693,14 +665,12 @@ export class CodexServer extends EventEmitter {
   async request(method: string, params: unknown, timeoutMs = 60_000) {
     if (!this.child && method !== "initialize") await this.start();
     if (!this.child) throw new Error("Codex app-server is not running");
-    /* ⛔ 11-03 上下文压缩兜底（完整理由在 context-compact-guard.ts 文件头）：
-       ⚠️ 11-08 复测：0.167 引擎自己会压（隔离探针实测有 CHECKPOINT COMPACTION 请求）；
-       本兜底仍保留 —— 供应商实际限额小于标称窗口时**提前压** + 引擎没压时的保底。
-       手动 thread/compact/start 有效；回合开始前压最安全（运行中调会打断当前回合）。
-       ⛔ 钩子只放这一个出口：turn/start 有 8+ 个调用点（渲染层 IPC、通道机器人、委派专家、
-         专家团成员、boss 群成员…），放别处必漏 —— 同 thread/start 工作区钩子的教训。
-       ⛔ 任何失败只记日志、照常发：兜底不能变成新的故障点。 */
-    if (method === "turn/start") await this.compactBeforeTurn(params);
+    /* ⛔ 11-09 用户令「自动压缩用引擎原生的」：**宿主不再在 turn/start 前自己压**。
+       0.167 引擎按 model-catalog.json 每个模型的 `auto_compact_token_limit`（= 该模型窗口 ×
+       设置页比例）自己压（11-09 隔离探针实测会发 CHECKPOINT COMPACTION 请求）；宿主那一层
+       与它读同一个数、触发线更早，等于把一个引擎原生能力旁路掉，还多出「10 分钟冷却 / 每轮读
+       rollout 1MB」这些热路径开销。手动压缩（输入框上下文环 / `/compact`）与渠道超限后的
+       「压缩+重试」仍走 thread/compact/start，不受影响。 */
     const id = this.nextId++;
     const pending = new Promise<unknown>((resolve, reject) => {
       const timer = setTimeout(() => {

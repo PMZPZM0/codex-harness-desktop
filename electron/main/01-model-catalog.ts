@@ -9,6 +9,7 @@ import { RESERVED_PROVIDER_IDS, safeProviderId, stripReservedProviderTables } fr
 import { collectMcpServerNames, escapeTomlString, extractMcpSection, injectMcpToolRules, injectSectionExtras, preserveUserConfig, tomlBareKey, type McpToolRules } from "../config-toml";
 import type { CustomModelFile, ProviderModel } from "../features/custom-model-types";
 import { buildModelCatalog, probeCustomModel } from "../features/custom-model-probe";
+import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 // ⛔ 09-24 断环收尾：此处原先还 import { createPopoutWindow, createWindow } from "../features/window-factory"，
 //    但两者在本文件**只出现在注释里**（死导入）—— 而 window-factory 反过来 import runtime-refs，
 //    与 runtime-refs → 本文件 → window-factory 构成 require 环。删死导入即断环（保留本注释作证据）。
@@ -171,12 +172,15 @@ export async function readUserConfigSplit(ownedMcpServers: Set<string>, override
   return { preserved, mcpExtra: Object.values(found) };
 }
 
-/** 把供应商与模型写成引擎能读的 model catalog TOML（当前供应商排最前、按 provider 去重）。 */
-export async function writeModelCatalogToml(entry: CustomModelFile): Promise<string> {
+/** 把供应商与模型写成引擎能读的 model catalog（当前供应商排最前、按 provider 去重）。
+ *  `compactRatio` 省略时当场读设置（启动自愈那条路没有调用方的现成值）；两条路都用
+ *  normalizeAutoCompactRatio 归一，保证与设置页同一个口径。 */
+export async function writeModelCatalogToml(entry: CustomModelFile, compactRatio?: number): Promise<string> {
+  const ratio = normalizeAutoCompactRatio(compactRatio ?? (await readAppSettings(app.getPath("userData"))).autoCompactRatio);
   const savedProviders = await readCustomModels();
   const providers = [entry, ...savedProviders.filter((candidate) => candidate.provider !== entry.provider)];
   const seen = new Set<string>();
-  const models = providers.flatMap((candidate) => buildModelCatalog(candidate).models).filter((m) => !seen.has(m.slug) && seen.add(m.slug));
+  const models = providers.flatMap((candidate) => buildModelCatalog(candidate, ratio).models).filter((m) => !seen.has(m.slug) && seen.add(m.slug));
   if (!models.length) return "";
   // ⛔ 原子写（10-24 用户报「启动不了：model-catalog.json EOF」）：旧写法直接覆盖目标文件，
   //    进程被强杀时可能留下 0 字节文件 → 引擎启动整份拒载。先写临时文件再 rename。

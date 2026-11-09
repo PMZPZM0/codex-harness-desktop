@@ -8,7 +8,7 @@
  *
  * 共享面由 ./_ctx.mjs 注入。
  */
-import { C, ROOT, join, ok, fail, readFileSync } from "./_ctx.mjs";
+import { C, ROOT, codeOnly, join, ok, fail, readFileSync } from "./_ctx.mjs";
 
 export async function run() {
   console.log(C.bold("\n【190】config.toml 顶层键所有权闭环"));
@@ -44,22 +44,40 @@ export async function run() {
     '【190】写入器不在顶层写 _scope = "model"（非法枚举 ⇒ Invalid configuration 整份弃用）'
   );
 
-  /* ③ 压缩阈值只写一处 —— provider 段已不受（0.157.1），全文件应只有顶层那一处写入。
-        出现第二处 = 又写回段里的旧键 ⇒ 引擎报 unrecognized settings。 */
-  (applySrc.split("model_auto_compact_token_limit = ${Math.round(activeContext").length === 2 ? ok : fail)(
-    "【190】压缩阈值全文件只写一处（顶层）；第二处 = 又写回 provider 段旧键"
+  /* ③ 压缩阈值只能进 catalog，不许回顶层 —— 11-09 用户令「自动压缩用引擎原生的、改 config 阈值」。
+        11-09 隔离探针（0.167.0）实测：catalog 每个模型的 `auto_compact_token_limit` 引擎认；
+        **顶层一旦存在就盖掉逐模型值**（顶层 9000000 + 目录 2000 ⇒ 不压）。⇒ 顶层必须为空，
+        阈值由 buildModelCatalog 按「该模型窗口 × 比例」写进每个条目。 */
+  const applyCode = codeOnly(applySrc);
+  (!/model_auto_compact_token_limit\s*=/.test(applyCode) ? ok : fail)(
+    "【190】config.toml 顶层不再写自动压缩阈值（顶层会盖掉 catalog 的逐模型值 ⇒ 小窗口模型永远不压）"
+  );
+  const probeCode = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-probe.ts"), "utf8"));
+  (/auto_compact_token_limit:\s*Math\.round\(contextWindow \* compactRatio\)/.test(probeCode) ? ok : fail)(
+    "【190】压缩阈值写进 catalog 每个模型（= 该模型 context_window × 设置页比例）"
+  );
+  const catalogSrc = readFileSync(join(ROOT, "electron", "main", "01-model-catalog.ts"), "utf8");
+  (/writeModelCatalogToml\(entry: CustomModelFile, compactRatio\?: number\)/.test(catalogSrc)
+    && /buildModelCatalog\(candidate, ratio\)/.test(catalogSrc) ? ok : fail)(
+    "【190】catalog 写入器把归一后的比例传进构建器（启动自愈那条路省略时当场读设置）"
   );
 
-  /* ④ 启动自愈必须能把存量坏配置收敛 —— 判据要锚「逐行扫 TOML 段位置」的实现形态，
-        而不是缩进（⛔ 首版用缩进判定，TOML 段内键本就不缩进 ⇒ 误判 0 残留，已实测踩过）。 */
-  (/inTable\s*=\s*true/.test(bootSrc) && /topLevelCompactSeen/.test(bootSrc) ? ok : fail)(
+  /* ④ 启动自愈必须能把存量坏配置收敛 —— 11-09 起判据反过来：顶层**出现**这些键即残留
+        （老版本写过；preserveUserConfig 会丢弃，整份重写一次即收敛）。判据锚「逐行扫 TOML 段位置」，
+        不用缩进（⛔ 首版用缩进判定，TOML 段内键本就不缩进 ⇒ 误判 0 残留，已实测踩过）。 */
+  (/inTable\s*=\s*true/.test(bootSrc) && /compactKeyResidue = \(\(\) =>/.test(bootSrc) ? ok : fail)(
     "【190】自愈判据按 TOML 段位置逐行扫描（不用缩进区分 —— 段内键不缩进，会误判）"
+  );
+  (!/topLevelCompactSeen/.test(bootSrc) ? ok : fail)(
+    "【190】自愈判据不再要求「顶层必须有阈值」（11-09 起恰好相反：出现即残留）"
   );
   (/\|\| compactKeyResidue\)/.test(bootSrc) || /compactKeyResidue\s*\)/.test(bootSrc) ? ok : fail)(
     "【190】残留判据真的接进了重写条件（只算不接 = 恒不做）"
   );
-  (/^[ \t]*\/\/.*scope.*model/m.test(bootSrc) || /scope\\s\*=\\s\*"model"/.test(bootSrc) ? ok : fail)(
-    "【190】自愈覆盖已知坏形态之一：顶层 scope=model"
+  /* ⛔ 坏形态的覆盖面要锚在**判定正则本身**（不是注释）：11-09 起 scope / 顶层阈值都归「残留」，
+     判定式是 `model_auto_compact_token_limit(_scope)?\s*=` —— 少掉 `(_scope)?` 就漏掉 scope 坏形态。 */
+  (/model_auto_compact_token_limit\(_scope\)\?/.test(bootSrc) ? ok : fail)(
+    "【190】自愈覆盖已知坏形态之一：顶层 scope=model（判定正则带 (_scope)?）"
   );
   (/model_max_output_tokens/.test(bootSrc) ? ok : fail)(
     "【190】自愈覆盖已知坏形态之二：顶层 max_output（0.157.1 已忽略该键）"

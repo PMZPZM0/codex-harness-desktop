@@ -955,15 +955,15 @@ export async function run() {
   (keyedReads159 === 2 && keyedSave159 ? ok : fail)(
     `【159】app-settings 缓存按文件路径归属（读取 ${keyedReads159}/2 处、保存 ${keyedSave159 ? "已" : "未"}接 —— ⛔ 退回裸 if(cached) 会把重定向前的空读短路到整个进程）`
   );
-  /* ⛔ 压缩阈值必须纳入**启动自愈的漂移判据**（09-25 code review 抓到）：
-     config.toml 里的阈值是**写下来就不再变**的（除非有人重写整份配置）。只改设置 / 只改默认值
-     都不会触发上面任何一条既有判据 ⇒ 旧阈值一直生效 = 用户看到的「改了没生效」。
-     判据要同时锚「算期望值」与「接进 if 条件」两处 —— 只验前者会漏掉"算出来了但没接"。 */
-  (/const expectedCompact = Math\.round\(compactWindow \* normalizeAutoCompactRatio\(/.test(mainSrc69) ? ok : fail)(
-    "【159】启动自愈会算「期望压缩阈值」（与 applyCustomModel 同源算法）"
+  /* ⛔ 11-09 用户令「自动压缩用引擎原生的、改 config 阈值」：阈值随模型进 model-catalog.json，
+     启动自愈**不再**算「顶层期望值」（顶层那份已不写）——它只负责「顶层出现阈值 / scope /
+     max_output 即当残留整份重写清掉」（老版本写下的要能收敛）。
+     判据仍要同时锚「阈值真的按比例算」与「残留判据接进 if 条件」两处 —— 只验前者 = 算了没接。 */
+  (/auto_compact_token_limit:\s*Math\.round\(contextWindow \* compactRatio\)/.test(mainSrc69) ? ok : fail)(
+    "【159】压缩阈值写进 catalog 每个模型（= 该模型自己的 context_window × 归一后的比例）"
   );
-  (/\|\| dispatchMcpBad \|\| compactStale \|\| compactKeyResidue\)/.test(mainSrc69) ? ok : fail)(
-    "【159】压缩阈值漂移**接进了重写条件**（只算不接 = 恒不做，等于没有这条判据；09-28 追加 provider 段旧键残留判据 compactKeyResidue 一并挂链）"
+  (/\|\| dispatchMcpBad \|\| compactKeyResidue\)/.test(mainSrc69) ? ok : fail)(
+    "【159】顶层阈值残留判据**接进了重写条件**（只算不接 = 恒不做；顶层出现阈值/scope/max_output 即整份重写清掉）"
   );
 }
 }

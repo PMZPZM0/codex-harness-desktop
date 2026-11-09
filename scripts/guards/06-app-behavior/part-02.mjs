@@ -50,16 +50,23 @@ export async function run() {
 
   // ── Bug 10：数值键强校验（裸插值 = 本地配置文件到任意命令执行） ──
   // 09-28 更新：`model_max_output_tokens` 已确认在 0.157.1 无落点（顶层也忽略）⇒ 写入器不再写它，
-  // 原来的「经 Number.isFinite 校验」锚点随之消失。判据改成两条仍成立的：① 写入器彻底不写该键；
-  // ② 仍在写的数值键（自动压缩阈值）必须经数值化处理，不许裸插值。
+  // 原来的「经 Number.isFinite 校验」锚点随之消失。判据改成三条：① 写入器彻底不写该键；
+  // ② 顶层也不再写自动压缩阈值（11-09 起随模型进 catalog，那个数值键同样必须经 Math.round）；
+  // ③ 阈值出现在 catalog 构建器里、按每个模型自己的窗口算。
   // ⛔ 判据必须**限定在写入器文件**：config-toml 的白名单与 boot 的自愈判据**必须**保留该键名
   //    （存量坏配置要靠它剥掉），全仓扫键名会把这两处正确代码打红（09-28 实测）。
   const applyCode28 = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-apply.ts"), "utf8"));
   (!/model_max_output_tokens\s*=/.test(applyCode28) ? ok : fail)(
     "【28】写入器不再写 model_max_output_tokens（0.157.1 已无落点；白名单/自愈判据保留不算违规）"
   );
-  (/model_auto_compact_token_limit = \$\{Math\.round\(/.test(applyCode28) ? ok : fail)(
-    "【28】自动压缩阈值经 Math.round 数值化（数值键不许裸插值）"
+  /* ⛔ 11-09 用户令「自动压缩用引擎原生的、改 config 阈值」：阈值随模型进 catalog（窗口 × 比例），
+     config.toml 顶层**不许**再写 —— 11-09 隔离探针实测顶层会盖掉 catalog 里的逐模型值。 */
+  (!/model_auto_compact_token_limit\s*=/.test(applyCode28) ? ok : fail)(
+    "【28】写入器不再写顶层自动压缩阈值（会盖掉 catalog 的逐模型阈值 ⇒ 小窗口模型永远不压）"
+  );
+  const probeCode28 = codeOnly(readFileSync(join(ROOT, "electron", "features", "custom-model-probe.ts"), "utf8"));
+  (/auto_compact_token_limit:\s*Math\.round\(contextWindow \* compactRatio\)/.test(probeCode28) ? ok : fail)(
+    "【28】自动压缩阈值经 Math.round 写进 catalog 每个模型（数值键不许裸插值；按各自窗口算）"
   );
 
   // ── Bug 7：设置页「会话记录」占用量的必须是真实 rollout 目录 ──

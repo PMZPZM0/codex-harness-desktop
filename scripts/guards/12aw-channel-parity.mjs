@@ -140,17 +140,21 @@ if (missing.length) {
     && /setChannelHandoff\(channel, digest\)/.test(inbCode)
     && /takeChannelHandoff\("wechat"\)/.test(inbCode),
     "⑧渠道上下文超限 ⇒ 先压缩并重试原消息（保留历史）；压缩失败才换会话并带上最近几轮摘要");
-  /* ⛔ 11-08 用户追加评估后撤回「按模型持久化真实限额」：担心重复压与全局副作用；
-     撞到超限只**提醒手动压缩**（/compact 或上下文环），渠道没有界面才自动压缩+重试。 */
+  /* ⛔ 11-09 用户令「自动压缩用引擎原生的、改 config 阈值」：宿主**不再**在 turn/start 前自压，
+     阈值随模型进 model-catalog.json（引擎原生按会话当前模型压）；也仍不做按模型持久化真实限额。
+     撞到超限只**提醒手动压缩**（/compact 或上下文环），渠道没有界面才自动压缩+重试（⑧）。 */
   {
     const srvSrc = stripComments(read("electron/codex-server.ts"));
-    const guardSrc = stripComments(read("electron/context-compact-guard.ts"));
+    const probeSrc = stripComments(read("electron/features/custom-model-probe.ts"));
+    const catalogSrc = stripComments(read("electron/main/01-model-catalog.ts"));
     const textRender = read("src/lib/turn-error-text.mjs");
     const textMain = read("electron/turn-error-text.ts");
-    ok(!/model-real-limits|noteRealLimit|modelLimits|readConfigModel/.test(guardSrc)
-      && /shouldCompact\(this\.codexHome, threadId\)/.test(srvSrc)
-      && !/noteOverflowLimit/.test(srvSrc),
-      "⛔ 不搞「按模型持久化真实限额」（只按 config 阈值；不静默改全局口径）");
+    ok(!/compactBeforeTurn|context-compact-guard|shouldCompact/.test(srvSrc)
+      && !/model-real-limits|noteRealLimit|modelLimits|readConfigModel|noteOverflowLimit/.test(srvSrc),
+      "⛔ 自动压缩 = 引擎原生（宿主不在 turn/start 前自压；不搞按模型持久化真实限额）");
+    ok(/auto_compact_token_limit:\s*Math\.round\(contextWindow \* compactRatio\)/.test(probeSrc)
+      && /buildModelCatalog\(candidate, ratio\)/.test(catalogSrc),
+      "压缩阈值随模型进 catalog（每个模型 窗口 × 比例），引擎按会话当前模型原生触发");
     ok(/先手动压缩/.test(textRender) && /先手动压缩/.test(textMain)
       && /\/compact/.test(textRender) && /\/compact/.test(textMain),
       "超限文案 = 手动压缩提醒（点上下文环 / 输入 /compact），渲染层与主进程两份逐字一致");

@@ -37,7 +37,7 @@ import { BotStreamSession, readBotStreamSettingsSync } from "../bot-stream";
 import { ensureBuiltinSkills, ensureEgoBrowserSkill, ensureExpertSkillsMarketplace } from "../builtin-skills";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { developerInstructionsLine } from "../developer-instructions";
-import { normalizeAutoCompactRatio, readAppSettings, readAppSettingsSync, saveAppSettings } from "../app-settings";
+import { readAppSettingsSync, saveAppSettings } from "../app-settings";
 import { backupTurnIfEnabled as backupTurnIfEnabledImpl, normalizeBackupDir } from "./change-backup";
 import { broadcastCodexEvent, broadcastHarnessEvent } from "./window-bus";
 import { handleRoleMemoryToolCall } from "../role-memory-tool";
@@ -1349,41 +1349,24 @@ export async function bootApp() {
       //    没这个检查时，若其它漂移条件恰好都不满足就不会重写 → 旧值一直生效，用户重启后 bug 依旧
       //    （教训：「删掉写入」不等于「清掉已写下的值」）。
       const legacyContextKey = /^\s*model_context_window\s*=/m.test(configText);
-      /* ⛔ 自动压缩阈值漂移（09-25 加；code review 抓到）。上面所有判据都只问「键在不在 / 模型对不对」，
-         没有一个会因「压缩比例变了」而重写 ⇒ 改了设置页那个下拉（只写 app-settings.json）、
-         或改了 `DEFAULT_AUTO_COMPACT_RATIO` 默认值，**config.toml 里的旧阈值会一直生效**
-         —— 正是本项目反复踩的「删掉写入 ≠ 清掉已写下的值」那一类。
-         ⛔ 期望值必须与 applyCustomModel 的算法**逐字同源**（同一个 normalizeAutoCompactRatio、
-            同一个 activeContext 表达式、同一个 Math.round），否则要么恒 false（永不落地）、
-            要么恒 true（每次启动整份重写 —— 09-16 踩过）。跨文件不同源由守卫【159】钉住。 */
-      const compactWindow = Number(custom.models?.find((m: any) => m.id === custom.model)?.contextWindow ?? custom.contextWindow ?? 128000);
-      const compactApplied = await readAppSettings(app.getPath("userData"));
-      const expectedCompact = Math.round(compactWindow * normalizeAutoCompactRatio(compactApplied.autoCompactRatio));
-      const compactStale = !new RegExp(`model_auto_compact_token_limit = ${expectedCompact}\\b`).test(configText);
-      // ⛔⛔ 09-28 键位迁移残留（0.157.1 实测）：旧写入器把 model_auto_compact_token_limit /
-      //    _scope / model_max_output_tokens 写在**各 provider 段内**，0.157.1 已不认
-      //    ⇒ 每次启动引擎报 N 条「unrecognized configuration settings」（用户截图：弹两条重复
-      //    警告）。⚠️ 判据不能用缩进区分（写入器的段内键本就无缩进）——按 TOML 语义逐行扫：
-      //    「段内出现旧键」或「顶层（首个 [table] 之前）没有 auto_compact 行」都算残留；
-      //    命中 ⇒ 整份重写一次即收敛（新写入器：顶层三行 + 段内零旧键）。
-      //    误判代价 = 多一次整份重写（幂等无害）；developer_instructions 多行串内恰有一行
-      //    以这些键开头的概率忽略不计。
+      /* ⛔ 11-09 自动压缩阈值随模型进 catalog（用户令「自动压缩用引擎原生的、改 config 阈值」）。
+         ⇒ 顶层**不许**再有 `model_auto_compact_token_limit`：11-09 隔离探针（0.167.0）实测
+         顶层一旦存在就盖掉 catalog 里的逐模型值（顶层 9000000 + 目录 2000 ⇒ 引擎不压）。
+         老版本写下的那几行必须主动清掉（preserveUserConfig 会丢弃它们，整份重写一次即收敛 ——
+         同 model_context_window 的教训：「删掉写入」≠「清掉已写下的值」）。
+         顶层 _scope="model" 是非法枚举（整份配置拒载）、model_max_output_tokens 已无落点，
+         顶层级出现任一都算残留；段内出现旧的阈值键同样算（0.157.1 起段内不认）。
+         ⛔ catalog 本身在上一行已无条件重写 ⇒ 阈值永远是「该模型窗口 × 当前比例」。
+         ⛔ 误判代价只是多一次整份重写（幂等无害）。 */
       const compactKeyResidue = (() => {
         let inTable = false;
-        let topLevelCompactSeen = false;
         for (const raw of configText.split(/\r?\n/)) {
           const line = raw.trim();
           if (/^\[/.test(line)) { inTable = true; continue; }
-          if (/^model_auto_compact_token_limit\s*=/.test(line)) {
-            if (inTable) return true;
-            topLevelCompactSeen = true;
-          }
-          // ⛔ 顶层 scope 非法值（09-28 用户现场）：scope 在 0.157.1 是枚举 total /
-          //    body_after_prefix，旧写入器写过 "model" ⇒ 整份配置解析失败（using defaults
-          //    ⇒ 供应商全丢）。出现即重写（新写入器已不写 scope）。
-          if (!inTable && (/^model_auto_compact_token_limit_scope\s*=\s*"model"/.test(line) || /^model_max_output_tokens\s*=/.test(line))) return true;
+          if (/^model_auto_compact_token_limit(_scope)?\s*=/.test(line)) return true;
+          if (!inTable && /^model_max_output_tokens\s*=/.test(line)) return true;
         }
-        return !topLevelCompactSeen;
+        return false;
       })();
       // 供应商/模型漂移：custom-model.json（当前激活）与 config.toml 顶层 model / model_provider 不一致时重写。
       // 场景：UI 切换供应商只保存配置（延迟生效），用户没点「重启生效」就退出应用——下次启动必须
@@ -1420,8 +1403,8 @@ export async function bootApp() {
       // 不该因为一个损坏的 json 把整段自愈判据一起带崩。
       // ⛔ 10-30 撤 nuphus 视觉 env 漂移判据：视觉辅助插件整体移除后
       //    原 nuphus-env 纯函数已删，老 config.toml 的残留 env 段由 preserveUserConfig 收敛（与「不需要 env」分支同型）。
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactStale || compactKeyResidue) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactStale=${compactStale}(期望 ${expectedCompact}), compactKeyResidue=${compactKeyResidue}; rewriting`);
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactKeyResidue) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactKeyResidue=${compactKeyResidue}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
