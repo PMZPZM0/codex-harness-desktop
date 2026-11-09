@@ -448,6 +448,19 @@ if (state) {
   const bossRegistry = read("electron/boss-groups/session-registry.ts");
   ok(/boss-sessions\.json/.test(bossRegistry) && /export function bossMemoryWorkspace/.test(bossRegistry),
     "BOSS 会话身份登记表落主进程（<userData>/boss-sessions.json）+ 专属记忆目录");
+  /* ⛔ 11-09 审查（并发）：名单是「读-改-写」+ 进程级缓存 ⇒ 两次并发变更各拿同一份旧快照，
+     后写的覆盖前一份（点中枢没登记上 / 刚摘掉的误登记又回来）。侧栏刷新的定时摘身份让窗口常态化。
+     ⇒ 所有变更必须走同一条 promise 链 `mutateRegistry`。 */
+  ok(/let mutationChain/.test(bossRegistry)
+    && /async function mutateRegistry/.test(bossRegistry)
+    && ["registerBossSession", "unregisterBossSession", "unregisterBossSessionQuiet", "renameBossSession", "backfillFromGroups"].every((name) => {
+      const at = bossRegistry.indexOf(`export async function ${name}(`);
+      if (at < 0) return false;
+      const body = bossRegistry.slice(at);
+      const callAt = body.indexOf("mutateRegistry(");
+      return callAt >= 0 && callAt < body.indexOf("\n}\n");
+    }),
+    "中枢名单的变更全部串行化（读-改-写并发会互相覆盖：点中枢没登记上 / 摘掉的又回来）");
   ok(/isBossSession/.test(read("electron/features/boot.ts")) && /bossMemoryWorkspace/.test(read("electron/features/boot.ts")),
     "⛔ 捕获写入按名单路由到 BOSS 专属目录（不写进用户选的项目）");
   const sendMem = read("src/features/app-state/parts/part08/02-seg/send.tsx");
@@ -476,8 +489,8 @@ if (state) {
     `面板调的记忆清理方法名必须在 preload 里存在（实测 ${clearCall ? clearCall[1] : "没匹配到"}）`);
   ok(/seen\.has\(s\.id\)/.test(bossRegistry) && /new Set\(bossThreadIds/.test(bossRegistry),
     "BOSS 会话名单**读/补登**都去重（同一个 bossThreadId 出现在两个群里也不会登记两次）");
-  ok(/merged\.set\(s\.id, s\)/.test(bossRegistry) && /merged\.set\(entry\.id, entry\)/.test(bossRegistry),
-    "BOSS 会话名单**写入**去重（并发 add 不会写两条）");
+  ok(/merged\.set\(s\.id, s\)/.test(bossRegistry) && /let mutationChain/.test(bossRegistry),
+    "BOSS 会话名单**写入**去重 + 变更串行化（并发 add 不会写两条、也不会互相覆盖）");
   ok(!/slice\(0, 8\)/.test(bossMemPanel),
     "⛔ 显示名不能只取 id 前 8 位（uuid v7 的时间戳前缀会撞）");
   /* ⛔⛔ 10-25 用户实测三处（截图实证）：

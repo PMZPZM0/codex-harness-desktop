@@ -94,30 +94,46 @@ export async function listBossSessions(): Promise<Array<{ id: string; createdAt:
   return reg.sessions.map((s) => ({ ...s, memoryDir: bossMemoryWorkspace(s.id) }));
 }
 
+/* ⛔⛔ 11-09 审查（并发）：名单是「读 → 改 → 写」，缓存又是进程级单例 ⇒ 两次并发变更各拿同一份
+   旧快照，后写的那份把前一份覆盖掉。表现：点「指挥中枢」却没登记上（徽标/记忆路由串成普通会话），
+   或刚摘掉的误登记又回来。侧栏刷新里的定时摘身份让这个窗口从「两次点击撞车」变成「点击撞轮询」。
+   ⇒ 所有变更走同一条 promise 链串行执行（读、改、写在链内一次完成）。 */
+let mutationChain: Promise<unknown> = Promise.resolve();
+async function mutateRegistry<T>(fn: (reg: RegistryFile) => { next?: RegistryFile; out: T }): Promise<T> {
+  const run = mutationChain.then(async () => {
+    const reg = await readRegistry();
+    const { next, out } = fn(reg);
+    if (next) await writeRegistry(next);
+    return out;
+  });
+  mutationChain = run.catch(() => undefined);
+  return run;
+}
+
 /** 登记一个 BOSS 会话（幂等）。 */
 export async function registerBossSession(id: string): Promise<{ id: string; createdAt: number; memoryDir: string } | null> {
   const key = String(id ?? "").trim();
   if (!key) return null;
-  const reg = await readRegistry();
-  const hit = reg.sessions.find((s) => s.id === key);
-  if (hit) return { ...hit, memoryDir: bossMemoryWorkspace(hit.id) };
-  const entry: BossSessionRecord = { id: key, createdAt: Date.now() };
-  /* ⛔ 写盘前再查一次并去重：两个 add 并发（渲染层 setBossHomeThreadId + ensureBossSessionRegistered
-     可能同时发）时，两者都读到"没有这条" ⇒ 各写一份 ⇒ 名单里出现重复 id。 */
-  const merged = new Map<string, BossSessionRecord>();
-  for (const s of reg.sessions) merged.set(s.id, s);
-  merged.set(entry.id, entry);
-  await writeRegistry({ version: 1, sessions: [...merged.values()] });
-  return { ...entry, memoryDir: bossMemoryWorkspace(entry.id) };
+  return mutateRegistry((reg) => {
+    const hit = reg.sessions.find((s) => s.id === key);
+    if (hit) return { out: { ...hit, memoryDir: bossMemoryWorkspace(hit.id) } };
+    const entry: BossSessionRecord = { id: key, createdAt: Date.now() };
+    return {
+      next: { version: 1, sessions: [...reg.sessions, entry] },
+      out: { ...entry, memoryDir: bossMemoryWorkspace(entry.id) },
+    };
+  });
 }
 
 /** 注销一个 BOSS 会话，并删掉它专属的记忆目录（会话都没了，记忆留着只是垃圾）。 */
 export async function unregisterBossSession(id: string): Promise<{ ok: boolean; removedDir: boolean }> {
   const key = String(id ?? "").trim();
-  const reg = await readRegistry();
-  const next = reg.sessions.filter((s) => s.id !== key);
-  if (next.length === reg.sessions.length) return { ok: false, removedDir: false };
-  await writeRegistry({ version: 1, sessions: next });
+  const removed = await mutateRegistry((reg) => {
+    const next = reg.sessions.filter((s) => s.id !== key);
+    if (next.length === reg.sessions.length) return { out: false };
+    return { next: { version: 1, sessions: next }, out: true };
+  });
+  if (!removed) return { ok: false, removedDir: false };
   let removedDir = false;
   try {
     const dir = bossMemoryWorkspace(key);
@@ -132,11 +148,11 @@ export async function unregisterBossSession(id: string): Promise<{ ok: boolean; 
 export async function unregisterBossSessionQuiet(id: string): Promise<boolean> {
   const key = String(id ?? "").trim();
   if (!key) return false;
-  const reg = await readRegistry();
-  const next = reg.sessions.filter((s) => s.id !== key);
-  if (next.length === reg.sessions.length) return false;
-  await writeRegistry({ version: 1, sessions: next });
-  return true;
+  return mutateRegistry((reg) => {
+    const next = reg.sessions.filter((s) => s.id !== key);
+    if (next.length === reg.sessions.length) return { out: false };
+    return { next: { version: 1, sessions: next }, out: true };
+  });
 }
 
 /** 会话重建（rollout 丢失自愈）时把身份登记从旧 id 换成新 id。 */
@@ -144,13 +160,15 @@ export async function renameBossSession(previousId: string, nextId: string): Pro
   const prev = String(previousId ?? "").trim();
   const next = String(nextId ?? "").trim();
   if (!prev || !next || prev === next) return false;
-  const reg = await readRegistry();
-  if (!reg.sessions.some((s) => s.id === prev)) return false;
-  const nextReg: RegistryFile = {
-    version: 1,
-    sessions: reg.sessions.map((s) => (s.id === prev ? { id: next, createdAt: s.createdAt } : s)),
-  };
-  await writeRegistry(nextReg);
+  const renamed = await mutateRegistry((reg) => {
+    if (!reg.sessions.some((s) => s.id === prev)) return { out: false };
+    const nextReg: RegistryFile = {
+      version: 1,
+      sessions: reg.sessions.map((s) => (s.id === prev ? { id: next, createdAt: s.createdAt } : s)),
+    };
+    return { next: nextReg, out: true };
+  });
+  if (!renamed) return false;
   /* 记忆目录也跟着搬（目录名 = 线程 id）⇒ 重建后记忆不丢。 */
   try {
     await fs.rename(bossMemoryWorkspace(prev), bossMemoryWorkspace(next));
@@ -169,14 +187,17 @@ export async function isBossSession(threadId: string): Promise<boolean> {
 /** 启动时从群账本**补登**（老用户的 BOSS 会话可能只在 boss-groups.json 里）。
  *  ⛔ 只补进群账本的 bossThreadId；没建群的「孤儿」BOSS 会话补不回来（那是 10-25 前的旧数据）。 */
 export async function backfillFromGroups(bossThreadIds: string[]): Promise<number> {
-  const reg = await readRegistry();
-  const known = new Set(reg.sessions.map((s) => s.id));
-  /* ⛔ 去重：同一个 bossThreadId 出现在**两个群里**时（用户换了个会话建新群，旧群还挂着它）
-     不去重就会把同一个 id 登记两次 ⇒ 面板出现两个同名条目（10-25 实测）。 */
-  const add = [...new Set(bossThreadIds.map(String).filter((id) => id && !known.has(id)))];
-  if (!add.length) return 0;
-  await writeRegistry({ version: 1, sessions: [...reg.sessions, ...add.map((id) => ({ id, createdAt: Date.now() }))] });
-  return add.length;
+  return mutateRegistry((reg) => {
+    const known = new Set(reg.sessions.map((s) => s.id));
+    /* ⛔ 去重：同一个 bossThreadId 出现在**两个群里**时（用户换了个会话建新群，旧群还挂着它）
+       不去重就会把同一个 id 登记两次 ⇒ 面板出现两个同名条目（10-25 实测）。 */
+    const add = [...new Set(bossThreadIds.map(String).filter((id) => id && !known.has(id)))];
+    if (!add.length) return { out: 0 };
+    return {
+      next: { version: 1, sessions: [...reg.sessions, ...add.map((id) => ({ id, createdAt: Date.now() }))] },
+      out: add.length,
+    };
+  });
 }
 
 /** 清空某个 BOSS 会话的专属记忆目录（⛔ 只清记忆，**不删会话**）。 */
