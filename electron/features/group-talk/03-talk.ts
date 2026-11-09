@@ -14,6 +14,8 @@
  *   已删除；本文件只保留**共享上下文纯函数**（buildTalkInput / groupHistoryBlock / sanitizeForEnvelope）。
  */
 import { type TalkMember } from "./01-channel";
+/* ⛔ 团队协作口径只有这一份（主理人通道 `team-invoke` 用的也是它）—— 群里复用，不写第二套。 */
+import { collaborationProtocolLines } from "../../../src/lib/team-models.mjs";
 
 type AppendEntry = Record<string, unknown>;
 type Append = (entry: AppendEntry) => Promise<{ ok: boolean; error?: string }>;
@@ -143,6 +145,19 @@ export function buildTalkInput(
     `你是 ${sanitizeForEnvelope(me.name)}${me.targetProfession ? `（${sanitizeForEnvelope(me.targetProfession)}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
     `群里的人：${roster || "（暂时只有你自己）"}`,
   ];
+  /* ⛔⛔ 11-09 用户：「让团队真正运作起来，更像一个开箱即用的成熟团队，不需要用户再调教」。
+     被 @ 到的若是专家团，它得知道**自己站哪一环**，否则只能凭职业名瞎猜：
+       · 主理人要知道自己负责拆解/分工/验收/汇总（不是自己上去写）；
+       · 团成员要知道自己只管这一环、缺输入先要、别越界。
+     口径直接复用 `collaborationProtocolLines`（与团主理人通道同一份），⛔ 不另写规则。 */
+  if (me.teamName && me.teamRole) {
+    const seat = me.teamRole === "lead" ? "你是这个团的主理人" : "你是这个团的成员";
+    need.push(
+      `【你在团队里的位置】你属于「${sanitizeForEnvelope(me.teamName)}」，${seat}。`
+        + (me.teamPeers?.length ? `同团：${me.teamPeers.map((n) => sanitizeForEnvelope(n)).join("、")}。` : ""),
+    );
+    need.push(...collaborationProtocolLines(me.teamRole));
+  }
   if (options.memory) need.push(`群里的共享背景：${sanitizeForEnvelope(String(options.memory))}`);
   if (topic) {
     /* ⛔ 话题 = 迷你群聊（11-09 用户定稿）：一句一句接着聊，**默认留在话题里**（不铺到群主流）；
@@ -166,6 +181,14 @@ export function buildTalkInput(
     "用这两种写法，宿主会把这句送进他的会话，他的回复会以他的署名进群。",
     "⛔ 只在句子里提到名字不算（例：`生图专家 你好`）—— 对方**收不到、也不会回你**；必须带 `@` 和冒号（全角半角都行），或走 group_say 的 to。",
     "打招呼、转达、提问、协作全都适用：用户让你「跟某某打个招呼」时，同样要 @ 他。",
+    /* ⛔⛔ 11-09 用户问「都知道什么时候回复不用艾特、什么时候需要艾特吧」——
+       原来只有**正向**规则（要 @ 才收得到），没有**反向**规则 ⇒ 模型容易把所有人都点一遍。
+       ⇒ 把「什么时候闭嘴 / 什么时候别 @」也写死，这是"成熟团队"和"吵成一团"的分界。 */
+    "【什么时候别说话 / 别 @ · 同样要遵守】",
+    "  · 只接**点到你**的那句：@ 了你、或问的正是你这一块。别人的闲聊、别人的活，不用插话刷存在。",
+    "  · 只是汇报、给结论、答用户：**不要 @ 任何人** —— 每 @ 一次都会真的把人叫起来干一轮（费时费钱）。",
+    "  · 一行最多 @ 一个人；要同时找几个人，就分别另起一行写（`@甲：…` 换行 `@乙：…`），别堆在一句里。",
+    "  · 别重复别人的结论；你已经说过的不再说第二遍。",
     "",
     "你手上有三个群聊工具：group_say（说话；填 to=名字 就是直接说给那个人，他会在群里回你；不填 to 只有用户看得到、其他成员不会因此回你）、group_read、group_members。",
     "",

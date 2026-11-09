@@ -30,6 +30,16 @@ export type TalkMember = {
   targetKind?: string;
   targetKey?: string;
   targetProfession?: string;
+  /* ⛔⛔ 11-09 用户：「让团队真正运作起来，更像一个开箱即用的成熟团队，不需要用户再调教」。
+     群里被 @ 到的若是**专家团**（整团 or 团成员），它必须知道自己站哪个位置，
+     否则只能凭职业名瞎猜分工 —— 这就是「群里的团不如外面成熟」的根因。
+     ⇒ 位置信息随 roster 一起下发，协作口径**复用** `team-models` 的 collaborationProtocolLines
+       （⛔ 不在这里另写一套规则文案）。 */
+  /** lead = 这个团的主理人；member = 团成员。 */
+  teamRole?: "lead" | "member";
+  teamName?: string;
+  /** 同团其他人（`名字（职业）`），主理人与成员都看得到。 */
+  teamPeers?: string[];
 };
 
 type Entry = { threadId: string; name: string; at: number };

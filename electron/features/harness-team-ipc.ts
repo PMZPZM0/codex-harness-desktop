@@ -534,11 +534,16 @@ async function runDispatchRounds(
     ...group.members.map((m) => ({
       id: m.id, name: m.name, targetKind: m.targetKind, targetKey: m.targetKey, targetProfession: m.targetProfession,
     })),
-    ...teamKidsOf(group, catalog).map((kid) => ({
-      id: teamAuthorIdOf(String(group.members.find((m) => m.targetKind === "team")?.targetKey ?? ""), teamMemberIdOf(kid as unknown as Record<string, unknown>)),
-      name: String(kid.name), targetKind: "member", targetKey: teamMemberIdOf(kid as unknown as Record<string, unknown>),
-      targetProfession: String((kid as unknown as Record<string, unknown>).profession ?? ""),
-    })),
+    ...teamKidsOf(group, catalog).map((kid) => {
+      const memberId = teamMemberIdOf(kid as unknown as Record<string, unknown>);
+      const teamId = String(group.members.find((m) => m.targetKind === "team")?.targetKey ?? "");
+      const id = teamAuthorIdOf(teamId, memberId);
+      return {
+        id, name: String(kid.name), targetKind: "member", targetKey: memberId,
+        targetProfession: String((kid as unknown as Record<string, unknown>).profession ?? ""),
+        ...(teamSeatOf(catalog, id, "member", memberId) ?? {}),
+      };
+    }),
   ];
   const talkOptions = {
     groupId: group.id,
@@ -552,6 +557,62 @@ async function runDispatchRounds(
   /* ⛔ 11-08 用户问「群成员，都能看到群会话内容吗」：群里最近的消息由**这一份**读出，
      既给每轮注入的共享上下文、也给 group_read 工具 —— 两处口径必须同一份，否则模型
      主动读到的与默认看到的会对不上。纯读盘、不写、不联网。 */
+/** 群里的这位站团队哪一环（主理人 / 团成员）+ 同团还有谁。
+ *  数据全来自调度目录（`kind: "team" | "expert" | "member"` 带同一个 `teamId`），⛔ 不再去读团队配置：
+ *  群聊域只负责"我是谁、旁边是谁"，要不要按 SOP 走由 `collaborationProtocolLines` 的口径决定。
+ *  ⛔ 整团那条 member 的 id 是群成员 id（`targetKind === "team"`）；团成员是合成 id `team:<团队>:<成员>`。 */
+function teamSeatOf(
+  catalog: unknown[],
+  selfId: string,
+  targetKind?: string,
+  targetKey?: string,
+): { teamName: string; teamRole: "lead" | "member"; teamPeers: string[] } | undefined {
+  const rows = (Array.isArray(catalog) ? catalog : []) as Array<Record<string, unknown>>;
+  /* ⛔ teamId 有**三种**来源，缺一种就会有成员认不出自己的团：
+     ① 群里放的是整团 → `targetKind === "team"`、targetKey 就是 teamId；
+     ② 群里的团成员（宿主展开的）→ 合成 id `team:<团队>:<成员>`；
+     ③ **用户从 @ 面板单独拉进来的成员/主理人** → targetKind 是 `member`/`expert`，
+        身上没有 teamId ⇒ 必须拿 targetKey(=catalog 的 memberId) 回目录反查（11-09 补）。 */
+  let teamId = "";
+  if (targetKind === "team") teamId = String(targetKey ?? "");
+  else if (selfId.startsWith("team:")) teamId = selfId.split(":")[1] ?? "";
+  else if (targetKey) {
+    const mine = rows.find((r) => String(r.kind) === String(targetKind ?? "") && String(r.memberId) === String(targetKey));
+    teamId = String(mine?.teamId ?? "");
+  }
+  if (!teamId) return undefined;
+  const teamRow = rows.find((r) => String(r.kind) === "team" && String(r.teamId) === teamId);
+  if (!teamRow) return undefined;
+  const leadRow = rows.find((r) => String(r.kind) === "expert" && String(r.teamId) === teamId);
+  const memberRows = rows.filter((r) => String(r.kind) === "member" && String(r.teamId) === teamId);
+  const label = (r?: Record<string, unknown>) => {
+    const name = String(r?.name ?? "").trim();
+    if (!name) return "";
+    const profession = String(r?.profession ?? "").trim();
+    return profession ? `${name}（${profession}）` : name;
+  };
+  /* 主理人三种形态都要认出来：整团条目 / 合成 id / 单独拉进来的主理人（targetKey = lead.memberId）。 */
+  const leadMemberId = String(leadRow?.memberId ?? "");
+  const isLead = targetKind === "team"
+    || (Boolean(leadMemberId) && selfId === teamAuthorIdOf(teamId, leadMemberId))
+    || (Boolean(leadMemberId) && String(targetKey ?? "") === leadMemberId && String(targetKind ?? "") === "expert");
+  const peers: string[] = [];
+  if (!isLead && leadRow) {
+    const text = label(leadRow);
+    if (text) peers.push(`主理人 ${text}`);
+  }
+  for (const row of memberRows) {
+    const memberId = String(row.memberId ?? "");
+    if (!isLead && leadRow && memberId === String(leadRow.memberId ?? "")) continue;
+    if (selfId === teamAuthorIdOf(teamId, memberId)) continue;
+    const text = label(row);
+    if (text) peers.push(text);
+  }
+  const teamName = String(teamRow.name ?? "").trim();
+  if (!teamName) return undefined;
+  return { teamName, teamRole: isLead ? "lead" : "member", teamPeers: peers };
+}
+
   const readGroupHistory = (limit: number): { speaker: string; text: string }[] => {
     const rows = readStore().messages?.[group.id] ?? [];
     return rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
@@ -571,6 +632,8 @@ async function runDispatchRounds(
       if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
       /* ⛔ 11-08 审查确认（真缺陷）：runOne 对**本轮已派过**的成员会静默早退，而工具却回
          「已经说给 X 了」—— 模型以为送达、群里实际没有任何反应（这句只进了群日志）。
+      /* ⛔ 11-09：团成员/主理人要拿到"我在团队里的位置"，否则群里只能凭职业名瞎猜分工。 */
+      ...(teamSeatOf(catalog, m.id, m.targetKind, m.targetKey) ?? {}),
          ⇒ 按事实回失败，模型会改口/晚点再说，而不是骗用户。 */
       if (ranIds.has(String(to.id))) {
         return Promise.resolve({ ok: false, error: "这位伙伴本轮已经说过话（同一条消息里不能再叫他一次），下一条消息里再 @ 他" });
@@ -579,7 +642,6 @@ async function runDispatchRounds(
          ⛔ 不再退化成通用的「群成员」—— 被叫的会话头部与模型都要看到真实发送者。 */
       const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: String(fromName ?? "").trim() || "群成员" };
       /* ⛔ 不 await：工具调用立刻返回，被叫的人稍后自己在群里回话。 */
-      /* ⛔ hop=0：工具发起的对话也要能继续接力（只跳一跳就变成「说一句就断」）。 */
       void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
       return Promise.resolve({ ok: true });
     },
@@ -616,6 +678,15 @@ async function runDispatchRounds(
     /* 常驻用量监听（幂等）：本轮之后的用量事件即使晚到，也能补到落盘的那条消息上。 */
     installTalkUsageWatcher();
     const startedAt = Date.now();
+      /* ⛔⛔ 11-09 用户：「让团队真正运作起来」——原来是**两条路不一样长**：
+         行首 `@名字：` 走 hop=1（再 @ 就不接力了），`group_say` 走 hop=0（能一直接力），
+         而且 `group_say` 这条路**不扣预算**。同样是"成员之间沟通"，能走多远却不同 ⇒ 统一：
+         两条路都 hop=0（都允许继续接力），但**都扣同一份预算**（`chainBudget`，手动派活 4 次）。
+         `ranIds` 再保证同一位成员一轮只跑一次 ⇒ 最多 4 个不同的人，不会对烧。 */
+      if (chainBudget <= 0) {
+        return Promise.resolve({ ok: false, error: "这一轮的接力用完了（最多 4 次）——下一条消息再叫他，或者你自己接着做" });
+      }
+      chainBudget -= 1;
     let chars = 0;
     let threadId = "";
     let okFlag = false;
@@ -902,7 +973,9 @@ async function runDispatchRounds(
           chainBudget -= 1;
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
-          void runOne(next, 1, { id: partner.id, name: partner.name }, ask.ask);
+          /* ⛔ hop 统一 0（原来传 1）：团队要能"主理人 → 成员 A → 成员 B"往下走，
+             ⛔ 别再靠 hop 截断 —— 截断交给 `chainBudget`（4 次）+ `ranIds`（每人一次）。 */
+          void runOne(next, 0, { id: partner.id, name: partner.name }, ask.ask);
         }
       }
     } catch (err) {

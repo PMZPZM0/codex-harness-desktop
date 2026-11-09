@@ -1297,24 +1297,40 @@
 /* ⛔⛔ 11-08 用户令（截图）：「这个不要底色，也不要拉到对面了，很丑」——
    引用行不再整行铺底：去掉底色/圆角，宽度收成**内容宽**（不打满气泡、不拉到对面）。
    竖线仍绝对定位在气泡左内边距里，引用文字起点与正文对齐（11-07 的口径不变）。 */
+/* ⛔⛔ 11-09 用户（截图）：「这个点展示位置，怎么一会变这里来了，一会又到正常位置了」——
+   根因是**几何规则写在了 `.team-msg__body` 作用域里**：同一条引用块，一旦换了宿主
+   （运行中的流式卡 / 收尾后的消息行 / 别的容器），就退回下面那套基础样式 ——
+   `display: flex`（块级、宽度撑满）+ 竖线**作为 flex 子项参与排版**，
+   于是那条 2px 竖线在「绝对定位贴左」和「跟着 flex 流走」两种形态之间来回切。
+   ⇒ 收敛成**一套**：不分宿主，一律 inline-flex + 竖线绝对定位贴左（不占位）。
+   ⛔ 别再按父容器加作用域（那正是本次报障的来源）；⛔ 也别删这条退回基础样式。 */
 .team-process__quote--top {
-  margin: 6px 0 4px;
-}
-.team-msg__body .team-process__quote--top {
   position: relative;
-  display: inline-flex;
+  /* ⛔⛔ 用 `flex + width:fit-content` 而不是 inline-flex：
+     inline-flex 是**行内级**盒子，同一容器里后面若跟一个行内元素（正文还没落盘时的指示、
+     行内图标等）就会**并排挤在同一行**，于是引用行右端会冒出一个不属于它的东西；
+     换成块级 + fit-content ⇒ 既**独占一行**（后面一定换行），宽度又只跟着内容走（不拉满）。
+     ⛔ 别改回 inline-flex。
+     ⛔ 也别写成 display:flex 不加 fit-content（那会拉满整行，用户 11-08 已否过）。 */
+  display: flex;
+  width: fit-content;
+  /* ⛔ 显式声明方向：防父级的 row-reverse / direction 继承把顺序翻过来（翻了竖线就跑到右端）。 */
+  flex-direction: row;
+  align-items: flex-start;
   max-width: 100%;
   margin: 2px 0 8px -8px;
   padding: 0 0 0 8px;
   background: none;
 }
-.team-msg__body .team-process__quote--top .team-process__quote-bar {
+.team-process__quote--top > .team-process__quote-bar {
   position: absolute;
   left: 0;
   top: 1px;
   bottom: 1px;
   width: 2px;
   height: auto;
+  margin: 0;
+  order: -1;
 }
 /* ══════ 群输入框：与主对话 composer 同形（11-06）════════════════════════════
    16px 大圆角 + 轻阴影 + 框内底部工具行；@ 伙伴那一行留在框外（群自己的提及，

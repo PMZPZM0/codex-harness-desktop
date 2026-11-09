@@ -1,5 +1,5 @@
 /** Markdown 渲染与代码块（从 src/App.tsx 原样搬来，内容未改）。域公开面见 ./index.ts */
-import { memo, useMemo, useRef, useEffect } from "react";
+import { memo, useMemo, useRef, useEffect, createContext, useContext } from "react";
 import { hasWidgetFence, extractStreamingWidget } from "../../lib/generative-widget";
 import type { ShowWidgetData } from "../../lib/generative-widget";
 import { isWidgetDark } from "../../lib/widget-dark";
@@ -17,6 +17,7 @@ import { MermaidDiagram } from "../../components/MermaidDiagram";
 import { codeFontStack, codeThemeStyle } from "../../lib/code-themes";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { markdownUrlTransform } from "../../lib/markdown-url";
+import { mentionIdOfHref } from "../../lib/team-mention-render.mjs";
 // 分块逻辑搬去 src/lib/markdown-blocks.mjs（纯函数 ⇒ 预检守卫可直接跑真值表）。
 // ⛔ 其中含一处容错：列表项后面顶格紧跟的结语行原先被 CommonMark 当 lazy 续行塞进最后一个
 //   <li>，渲染上缩进到 marker 之后、左侧空出 marker 宽度（用户 09-24：「最后一个总是歪的，
@@ -265,6 +266,24 @@ const MdTable = memo(function MdTable({ children }: { children?: React.ReactNode
   );
 });
 
+/* ⛔⛔ 11-09 用户（群聊截图）：「成员之间相互艾特也要有我艾特他们一样的效果」——
+   伙伴回复的正文是**主对话 TurnView 里的 Markdown** 画的，那边不认识群成员，
+   于是 `@观澜：收到…` 只是纯文字。而 `TeamMentionText` 只在「回合还没拉回来」的
+   fallback 里生效 ⇒ 一旦回合拉到，提及就退回纯文本。
+   ⇒ 给 Markdown 加一个**渲染作用域**：谁在外层提供它，其子树里**所有** Markdown
+     （含 TurnView / ItemView 内部那些）就都把 `@名字` 画成真提及。
+   ⛔ 本文件不 import 群聊 UI（那是反向依赖）：`linkify` 与 `render` 都由调用方注入。
+   ⛔ 没有 Provider 时行为与以前**逐字一致**（默认 MD_COMPONENTS，不 linkify）。
+   ⛔⛔ 已经自己做过 linkify 的调用方（`TeamMentionText`）必须再包一层 `Provider value={null}`
+      把本作用域屏蔽掉，否则会二次 linkify 把 `[@观澜](#tm-x)` 套成两层链接。 */
+export type MentionScope = {
+  /** 把正文里的 `@名字` 改写成行内链接（调用方用 `linkifyMentions`）。 */
+  linkify: (text: string) => string;
+  /** 把一个提及链接画成元素（调用方用群自己的 chip）。 */
+  render: (id: string, fallbackName: string) => React.ReactNode;
+};
+export const MentionScopeContext = createContext<MentionScope | null>(null);
+
 export const MD_COMPONENTS: Components = {
   p: ({ children }) => {
     const list = Array.isArray(children) ? children : [children];
@@ -302,7 +321,13 @@ export const Markdown = memo(function Markdown({ children, components }: { child
      ⛔ 文本层先行：这比在 markdown AST 里挖 `code` 节点稳 —— 围栏未闭合（流式中）也要整段吞掉，
         否则用户会眼看着半句草稿在屏幕上成形然后消失。
      ⛔ 这是**唯一**的去处： Markdown.tsx 是唯一的渲染入口（流式正文、历史消息、引用、弹窗都过这里）。 */
-  const text = useMemo(() => stripVoiceScript(children), [children]);
+  const mention = useContext(MentionScopeContext);
+  const text = useMemo(() => {
+    const stripped = stripVoiceScript(children);
+    /* ⛔ 顺序不能反：先剥播报稿，再 linkify（否则 voice 围栏里的 @ 也会被当提及）。
+       ⛔ 没作用域时原样返回，与以前逐字一致。 */
+    return mention ? mention.linkify(stripped) : stripped;
+  }, [children, mention]);
   // 若正文含可视化 fence（```show_widget / ```widget 等），混合渲染普通 markdown 块 + widget 卡片。
   // 流式阶段未闭合的 fence 用 loading 占位卡（streaming），闭合后替换为真实 iframe。
   const { blocks, widgets } = useMemo<{ blocks: string[]; widgets: Array<{ key: number; data: ShowWidgetData; streaming: boolean }> }>(() => {
@@ -316,9 +341,29 @@ export const Markdown = memo(function Markdown({ children, components }: { child
     });
     if (result.streamingWidget) ws.push({ key: -1, data: result.streamingWidget, streaming: true });
     return { blocks: bs, widgets: ws };
-  }, [children]);
+  }, [text]);
+  /* ⛔ 有作用域时接管 `a`：`#tm-*` 一律画成调用方给的提及 chip，其它链接仍是默认外链行为。
+     ⛔ 用 useMemo 稳住引用：MdBlock 是 memo 的，每次新建对象会让所有块重渲（长会话会卡）。 */
+  const mergedComponents = useMemo<Components | undefined>(() => {
+    if (!mention) return components;
+    return {
+      ...(components ?? MD_COMPONENTS),
+      a: ({ href, children: kids }: { href?: string; children?: React.ReactNode }) => {
+        const id = mentionIdOfHref(href);
+        if (!id) {
+          return (
+            <a href={href} onClick={(event) => { event.preventDefault(); if (href) void window.codex.openExternal(href); }}>
+              {kids}
+            </a>
+          );
+        }
+        return <>{mention.render(id, String(kids ?? "").replace(/^@/, "").trim())}</>;
+      },
+    } as Components;
+  }, [components, mention]);
+
   // 流式出字是纯追加，前面的块只会变多不会重排，用 index 作 key 稳定且足够
-  const rendered = blocks.map((text, index) => <MdBlock text={text} key={`b${index}`} components={components} />);
+  const rendered = blocks.map((text, index) => <MdBlock text={text} key={`b${index}`} components={mergedComponents} />);
   // widget 卡片按流序与文本块交错插入（text/widget 由 segments 顺序保证）
   const dark = isWidgetDark();
   const ordered: React.ReactNode[] = [];

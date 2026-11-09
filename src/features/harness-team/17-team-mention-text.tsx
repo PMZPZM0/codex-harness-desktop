@@ -15,7 +15,7 @@
  *    ⛔ 头像是按 id 取**真身**（群主 ⇒ 用户中心头像与真名；成员 ⇒ 智能体头像），不是首字圆圈。
  */
 import type { ReactNode } from "react";
-import { Markdown, MD_COMPONENTS } from "../markdown";
+import { Markdown, MD_COMPONENTS, MentionScopeContext } from "../markdown";
 import { linkifyMentions, mentionIdOfHref } from "../../lib/team-mention-render.mjs";
 import { MemberAvatar } from "./13-team-avatar";
 
@@ -27,6 +27,29 @@ export type MentionFace = {
   targetKind?: string;
   targetKey?: string;
 };
+
+/** 一枚「头像 + 名字」的提及胶囊。
+ *  ⛔ 群消息正文、引用行、以及 Markdown 作用域（成员互 @）**共用这一个实现** ——
+ *    用户 11-09：「成员之间相互艾特也要有我艾特他们一样得效果」。⛔ 别再各画一套。 */
+export function TeamMentionChip({ id, name, faceOfId, onPick, size = 16 }: {
+  id: string;
+  name: string;
+  faceOfId: (id: string) => MentionFace;
+  onPick: (id: string) => void;
+  size?: number;
+}) {
+  return (
+    <button
+      type="button"
+      className="team-at"
+      title={`@${name} · 点一下加进本轮 @`}
+      onClick={(event) => { event.preventDefault(); onPick(id); }}
+    >
+      <MemberAvatar member={faceOfId(id)} size={size} className="team-at__avatar" />
+      <span className="team-at__name">{name}</span>
+    </button>
+  );
+}
 
 /** 把正文里的 @ 名字渲染成 chip（可点开资料），不是简单字符串。 */
 export function TeamMentionText({
@@ -66,22 +89,16 @@ export function TeamMentionText({
         );
       }
       const name = nameOf(id) || String(children ?? "").replace(/^@/, "");
-      return (
-        <button
-          type="button"
-          className="team-at"
-          title={`@${name} · 点一下加进本轮 @`}
-          onClick={(event) => { event.preventDefault(); onPick(id); }}
-        >
-          <MemberAvatar member={faceOfId(id)} size={16} className="team-at__avatar" />
-          <span className="team-at__name">{name}</span>
-        </button>
-      );
+      return <TeamMentionChip id={id} name={name} faceOfId={faceOfId} onPick={onPick} />;
     },
   };
   return (
     <div className={className}>
-      <Markdown components={components}>{linkifyMentions(text, candidates, { excludeId })}</Markdown>
+      {/* ⛔⛔ 本组件**自己已经 linkify 过**，必须把外层的提及作用域屏蔽掉：
+          否则 Markdown 会再 linkify 一遍，把 `[@观澜](#tm-x)` 套成两层链接（渲染成乱码）。 */}
+      <MentionScopeContext.Provider value={null}>
+        <Markdown components={components}>{linkifyMentions(text, candidates, { excludeId })}</Markdown>
+      </MentionScopeContext.Provider>
     </div>
   );
 }
