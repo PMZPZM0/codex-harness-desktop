@@ -29,7 +29,7 @@ import { TurnMediaCard } from "../../media";
 /** 回合视图：回合头（含 Codex 名字与耗时）+ 内容 + 底部状态。
  *  `assistantName` / `assistantAvatar`：群聊伙伴会话在外面显示**伙伴本人**的名字与头像
  *  （11-09 用户令：与群聊里看到的一致，历史回合也实时跟随）；缺省 = 全局 Codex 身份。 */
-export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode }) {
+export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, waitingForApproval, interruptedAt, elapsedSeconds, handlers, hooks, isLastTurn, assistantName, assistantAvatar, onOpenReview }: { turn: Turn; threadId: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; waitingForApproval?: boolean; interruptedAt?: number; elapsedSeconds?: number; handlers: FoldHandlers; hooks?: any[] | null; isLastTurn?: boolean; assistantName?: string; assistantAvatar?: ReactNode; /** 群聊：汇总卡「审查」要把浮动侧栏开到审阅页（主对话不传 = 走全局右栏）。 */ onOpenReview?: () => void }) {
   // Codex 的名字（09-17）：用户在用户中心取的；走外部 store 而不是逐层传 props
   // —— 回合标识（.turn-head）在 TurnView 渲染，这里取一次（见 codex-identity.mjs）。
   const codexName = useCodexName();
@@ -193,7 +193,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
                         </div>
                       )}
                       <TurnFoldStream items={segFold} turn={turn} running={running} fallbackWindow={fallbackWindow} waitingForApproval={waitingForApproval} handlers={handlers} finalAgentId={last ? finalAgent?.id : undefined} usage={usage} tokenUsage={tokenUsage} keepProcessOpen={userStopped} completedSkin={last} />
-                      {last && turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />}
+                      {last && turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} onReview={onOpenReview} />}
                       {turnFinished && <TurnMediaCard threadId={threadId} turnId={turn.id} />}
                       {last && userStopped && (
                         <div className="turn-user-stopped" role="status">
@@ -273,7 +273,7 @@ export function TurnView({ turn, threadId, usage, tokenUsage, fallbackWindow, wa
               10-06：把 onOpenFile 递进去 —— 汇报行点击 = 直接打开文件预览（用户对照 Qoder 效果图点名）。
               ⛔ 运行中的实时「编辑」行**不在这里**（用户 10-06 二次纠正：「在哪个地方就展示在哪个地方，
                  不是一直在新消息下面，这样多丑」）—— 它们由 TurnFoldStream 按锚点挂在对应工具项后面。 */}
-          {turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />}
+          {turnFinished && <CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} onReview={onOpenReview} />}
           {turnFinished && <TurnMediaCard threadId={threadId} turnId={turn.id} />}
           {/* 「用户已停止」标记：落在**最新内容之后**（用户 09-18 明确定位）。
               ⛔ 不重复耗时：上方过程组的标题已经写着「已停止 · 耗时 36 秒」，这里再说一遍就是

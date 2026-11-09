@@ -71,7 +71,7 @@ ok(sessionQueue.includes("renderAfter={(unit) => liveRowsFor(unit.item.id)}") &&
   "两个渲染口（折叠段 + 运行尾段）都把实时行挂在对应工具项**后面**（用户：不是一直在新消息下面）");
 ok(sessionCards.includes("renderAfter?: (unit: FoldUnit) => React.ReactNode") && sessionCards.includes("renderAfter ? renderAfter(unit) : null"),
   "CappedToolSequence / CappedToolRun 支持 renderAfter（锚点行按序插在每条工具项后面）");
-ok(turnView && !turnView.includes("LiveFileChanges") && /turnFinished && <CompletedChanges turn=\{turn\} onOpenFile=\{handlers\.onOpenFile\}(?: isLastTurn=\{isLastTurn\})? \/>/.test(turnView),
+ok(turnView && !turnView.includes("LiveFileChanges") && /turnFinished && <CompletedChanges turn=\{turn\} onOpenFile=\{handlers\.onOpenFile\}(?: isLastTurn=\{isLastTurn\})?(?: onReview=\{onOpenReview\})? \/>/.test(turnView),
   "回合视图：底部只剩收尾汇总卡；运行中实时行**不在底部**（由折叠流锚定渲染）");
 
 /* ── 四、文件类型图标 ───────────────────────────────────────── */

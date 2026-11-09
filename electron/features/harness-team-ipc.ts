@@ -610,14 +610,11 @@ async function runDispatchRounds(
     /* 落盘那一刻是否已把用量写进消息（false ⇒ 收尾再补一次，防事件卡在 append 与 finally 之间）。 */
     let usageWritten: boolean | null = null;
     let wroteMessage = false;
-    /* ⛔⛔ 11-08 用户令「正文输出一次就发一次新消息」「跟主对话框实时同步」：
-       过程模式按**每条 agentMessage 完成**立即落一条群消息（不再等整回合结束才发一条）；
-       该轮第一条带 `runFirst`（运行过程大折叠挂在它上面），最后一条带 `summary`（文件卡/用量挂在它上面）。
-       ⛔ 占位模式承诺"不展示过程与流式正文" ⇒ 这条链只在 process 模式启用。 */
-    const streamingEnabled = String((group as unknown as { replyMode?: string }).replyMode ?? "process") === "process";
-    const streamedRows: Array<{ id: string; text: string }> = [];
-    let streamChain: Promise<unknown> = Promise.resolve();
-    /* 本轮开始时的「清空代际」：中途用户清空聊天记录 ⇒ 后续流式落盘全部丢弃（与收尾落盘同一判据）。 */
+    /* ⛔⛔ 11-09 用户令（两条：「现在每个正文输出一个新消息有点刷屏」「图二效果一模一样，直接把主对话那一套接过来」）：
+       撤回 11-08 的「每条 agentMessage 落一条群消息」——**一个回合只落一条成品消息**（= 主对话的一轮），
+       过程/正文/文件卡由渲染层按**回合**整体渲染（群视图直接复用主对话的 TurnView）。
+       ⛔ 运行中仍然逐字上屏（走 group-talk-live delta 的流式卡），只是不再把每条正文写成独立群消息。 */
+    /* 本轮开始时的「清空代际」：中途用户清空聊天记录 ⇒ 后续落盘全部丢弃（与收尾落盘同一判据）。 */
     const clearedMark = groupClearedAt.get(group.id) ?? 0;
     try {
       /* ⛔⛔ 11-07 用户令：群聊走**独立通道**。这里给成员的是「群里有人对你说了一句」，
@@ -679,28 +676,7 @@ async function runDispatchRounds(
           if (method === "item/completed") {
             const item = p.item ?? null;
             if (item && String(item.type ?? "") === "agentMessage") {
-              const text = String(item.text ?? "").trim();
               const itemId = String(item.id ?? "");
-              if (text && streamingEnabled) {
-                /* ⛔ 串行落盘：保持消息顺序；清空代际/重复句都跳过（与收尾落盘同一判据）。 */
-                streamChain = streamChain.then(async () => {
-                  if ((groupClearedAt.get(group.id) ?? 0) > clearedMark) return;
-                  if (streamedRows.some((row) => row.text === text || textsAreNearDuplicate(row.text, text))) return;
-                  const first = streamedRows.length === 0;
-                  const res = await appendMessageTo(group.id, {
-                    authorId: partner.id,
-                    authorKind: "bot",
-                    senderKind: "member",
-                    threadId: liveThreadId,
-                    text,
-                    via: caller ? { memberId: caller.id, name: caller.name } : null,
-                    runId,
-                    ...(first ? { runFirst: true } : {}),
-                  }).catch(() => null);
-                  const rowId = String((res as { entry?: { id?: unknown } } | null)?.entry?.id ?? "");
-                  if (rowId) streamedRows.push({ id: rowId, text });
-                }).catch(() => undefined);
-              }
               broadcastHarnessEvent({ type: "group-talk-live", phase: "item-done", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, itemId, at: Date.now() } as never);
             }
           }
@@ -778,28 +754,25 @@ async function runDispatchRounds(
       }
       const output = String(res.text ?? "").trim();
       chars = query.length + output.length;
-      /* ⛔ 11-08 用户令「正文输出一次就发一次新消息」：先把本轮已完成的流式消息全部落完，
-         再决定收尾要不要补一条汇总（顺序与内容都按真实事件走）。 */
-      await streamChain;
       /* ⛔ 清空发生在这一回合开始之后 ⇒ 只结算、不落盘（运行照跑完、账照记，11-06 口径）。 */
       const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
       /* ⛔ 11-08 用户实测（「成员消息为啥重复」）：成员一回合里既调了 group_say（已把回复发进群）、
          又写了最终回复 —— 两条都落盘就是群里两份。这一回合已通过工具说过话、且最终回复与它高度重合 ⇒ 不再重复落盘。 */
-      const spokenDuringRun = (readStore().messages?.[group.id] ?? [])
+      const spokenRows = (readStore().messages?.[group.id] ?? [])
         .filter((row) => String((row as { authorId?: unknown })?.authorId ?? "") === partner.id && Number((row as { at?: unknown })?.at ?? 0) >= startedAt)
-        .map((row) => String((row as { text?: unknown })?.text ?? ""));
-      const duplicated = spokenDuringRun.some((text) => textsAreNearDuplicate(text, output));
+        .map((row) => ({ id: String((row as { id?: unknown })?.id ?? ""), text: String((row as { text?: unknown })?.text ?? "") }));
+      const duplicateRow = spokenRows.filter((row) => row.text && textsAreNearDuplicate(row.text, output)).at(-1) ?? null;
+      const duplicated = Boolean(duplicateRow);
       /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
       const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
       let wrote: { ok: boolean; error?: string } = { ok: true };
       if (clearedDuringRun) {
         wrote = { ok: true };
-      } else if (duplicated) {
-        /* 最终回复已经作为流式消息 / group_say 落过 ⇒ 不再发第二条；
-           把**本轮最后一条**标成 summary 并回填用量（文件卡 / 页脚挂在收尾那条上）。 */
-        const last = streamedRows[streamedRows.length - 1];
-        if (last?.id) {
-          const patched = await patchTalkMessageRow(group.id, last.id, {
+      } else if (duplicateRow) {
+        /* 最终回复已经通过 group_say 落过 ⇒ 不再发第二条；把它标成 summary 并回填用量
+           （文件卡 / 页脚挂在收尾那条上 = 一轮的唯一一条）。 */
+        if (duplicateRow.id) {
+          const patched = await patchTalkMessageRow(group.id, duplicateRow.id, {
             summary: true,
             ...(usageForMessage ? { usage: usageForMessage } : {}),
           });
@@ -813,9 +786,9 @@ async function runDispatchRounds(
           threadId,
           text: output || "（没有返回文本内容）",
           via: caller ? { memberId: caller.id, name: caller.name } : null,
-          /* 流式启用但这一轮一条正文都没落（占位模式 / 引擎没发 item）⇒ 这条就是该轮第一条 + 收尾。 */
+          /* 一个回合只落这一条（收尾），渲染层按回合渲染过程 / 正文 / 文件卡。 */
           runId,
-          ...(streamedRows.length === 0 ? { runFirst: true } : {}),
+          runFirst: true,
           summary: true,
           ...(usageForMessage ? { usage: usageForMessage } : {}),
         });

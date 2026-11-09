@@ -67,8 +67,8 @@ ok(/\(editable \? 5 : 4\) \* itemH/.test(shared),
 
 /* ── 三、接线与样式 ───────────────────────────────────────────── */
 
-ok(turnView.includes("<CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} />"),
-  "turn-view 把 handlers.onOpenFile 与 isLastTurn 递进汇报卡（不递 = 行点击静默失效 / 最新回合不自动带出审阅）");
+ok(turnView.includes("<CompletedChanges turn={turn} onOpenFile={handlers.onOpenFile} isLastTurn={isLastTurn} onReview={onOpenReview} />"),
+  "turn-view 把 handlers.onOpenFile / isLastTurn / onReview 递进汇报卡（不递 = 行点击静默失效 / 最新回合不自动带出审阅 / 群里审查不接浮动侧栏）");
 ok(/\.completed-file\.clickable:hover/.test(css) && /\.completed-file-thumb img/.test(css) && /\.completed-more:hover/.test(css),
   "样式齐：行 hover / 缩略图裁切 / 折叠钮 hover（少一个 = 看着像坏了）");
 

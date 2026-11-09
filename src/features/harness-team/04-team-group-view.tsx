@@ -37,6 +37,8 @@ import { usageInputTokens } from "../../lib/usage-input-tokens";
 import { usageNumber } from "../../lib/usage-number";
 import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { TeamCards } from "./11-team-cards";
+/* ⛔ 11-09 用户令「图二效果一模一样，直接把主对话那一套接过来」：伙伴回复整轮复用 TurnView。 */
+import { TeamTurnView } from "./29-team-turn-view";
 import { TeamSidePanel, type TeamSideTab } from "./28-team-side-panel";
 import { openRightFile, subscribeRightFile } from "../../lib/right-file.mjs";
 import { MemberAvatar } from "./13-team-avatar";
@@ -559,12 +561,14 @@ export function TeamGroupView({
   /* ⛔ 11-06 用户：「补充文件引用和对话消息引用」——
      引用一条群消息 = 以主对话同款 `> 引文` 前缀放进输入框（发送时模型能读到），
      ⛔ 不新增群日志字段、⛔ 不改投影结构。 */
-  const quoteRow = (row: GroupMessageRow) => {
-    const quoted = String(row.text ?? "").trim().split("\n").map((line) => `> ${line}`).join("\n");
+  /* 以主对话同款 `> 引文` 前缀放进输入框；行/整段文本共用一个实现（TurnView 的页脚给的是文本）。 */
+  const quoteText = (text: string) => {
+    const quoted = String(text ?? "").trim().split("\n").map((line) => `> ${line}`).join("\n");
     if (!quoted) return;
     setText((prev) => `${prev.trimEnd()}${prev.trim() ? "\n\n" : ""}${quoted}\n\n`);
     requestAnimationFrame(() => composerRef.current?.focus());
   };
+  const quoteRow = (row: GroupMessageRow) => quoteText(row.text);
 
   /* 11-09 用户令「把主对话框用户消息下面那一排按键复用过来」：编辑 = 把这条原文放回输入框
      （群记录不可改写，改完再发就是一条新消息）；⛔ 不覆盖用户已经写了一半的草稿。 */
@@ -968,9 +972,26 @@ export function TeamGroupView({
   }, [group.id]);
   useEffect(() => { if (followRef.current) stick(); }, [rows.length, liveLen]);
 
+  /* ⛔⛔ 11-09 用户令「一个回合只出一条消息，跟主对话一样」：老群记录里同一位成员一轮会留下
+     好几条"步骤"消息（11-08 的逐条落盘）。渲染时按**回合**收口：同一 threadId + 同一 runId
+     （或两边都没有 runId、同作者且间隔 ≤5 分钟）只渲染最后一条 —— 只动渲染，⛔ 不删群记录。 */
+  const runCollapsedRows = useMemo(() => {
+    const drop = new Set<string>();
+    for (let i = 0; i < shownRows.length - 1; i += 1) {
+      const a = shownRows[i];
+      const b = shownRows[i + 1];
+      if (a.authorKind !== "bot" || b.authorKind !== "bot") continue;
+      if (a.threadId !== b.threadId || a.authorId !== b.authorId) continue;
+      const sameRun = a.runId && b.runId
+        ? a.runId === b.runId
+        : (!a.runId && !b.runId && Number(b.at) - Number(a.at) <= 5 * 60_000);
+      if (sameRun) drop.add(a.key);
+    }
+    return drop.size ? shownRows.filter((row) => !drop.has(row.key)) : shownRows;
+  }, [shownRows]);
   /* ⛔ 同一作者、短间隔的连续消息并成一条（用户：「别框框刷屏」）。
      只影响渲染分组，`continued` 里仍是独立消息（各自 itemId 可溯源）。 */
-  const displayRows = useMemo(() => mergeConsecutive(shownRows), [shownRows]);
+  const displayRows = useMemo(() => mergeConsecutive(runCollapsedRows), [runCollapsedRows]);
   /* ⛔ 11-09 用户截图（两枚「处理中」）：同一位成员的历史正文也被标成处理中，看着像两轮一起跑。
      只标**当前轮最后一条**（同一 threadId+runId 的末条），历史正文不再挂状态。 */
   const activeRunKeys = useMemo(() => {
@@ -1285,6 +1306,10 @@ export function TeamGroupView({
                   if (effectiveMessageForm === "topic" && isBot) return null;
                   const role = roleOf(row.authorId);
                   const running = activeRunKeys.has(row.key);
+                  /* ⛔ 11-09 用户令「图二效果一模一样，直接把主对话那一套接过来」：
+                     一个回合只落一条群消息 ⇒ 正文 / 过程 / 文件卡 / 页脚**整体**交给主对话的 TurnView。
+                     占位模式仍只给正文（该模式承诺不展示过程）。 */
+                  const useTurnView = isBot && effectiveReplyMode !== "placeholder" && row.kind !== "card";
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
                      运行过程另起一个折叠块挂在正文下面，默认收起。 */
                   const quote = isBot ? quotes.get(row.key) : undefined;
@@ -1365,20 +1390,9 @@ export function TeamGroupView({
                             运行过程 / 动作条。引用与正文同属这块气泡，左边界才能对齐。 */}
                         <div className="team-msg__body">
 
-                        {/* ⛔ 11-08 用户令「正文输出一次就发一次新消息 / 最早那条继续挂运行流程」：
-                            运行过程大折叠挂在**该轮第一条**消息上（与主对话同一个 TeamProcess），
-                            流式编辑行也挂这里；该轮跑完（live 卡消失）后整块自动隐藏。
-                            ⛔ 按 runId 精确匹配，否则同一位成员下一次运行会把旧的「第一条」也点亮。 */}
-                        {isBot && row.runFirst && row.runId && (() => {
-                          const liveRun = (live ?? []).find((run) => run.threadId === row.threadId && run.runId === row.runId && run.status === "running");
-                          if (!liveRun) return null;
-                          return (
-                            <>
-                              <TeamProcess threadId={row.threadId} at={liveRun.startedAt} bodyText="" running live onOpenFile={openFilePreview} />
-                              <TeamLiveFiles threadId={row.threadId} />
-                            </>
-                          );
-                        })()}
+                        {/* ⛔ 11-09 用户令「一个回合只出一条消息，跟主对话一模一样」：
+                            不再有"该轮第一条"的流式消息 ⇒ 运行中的流式卡改到消息流末尾统一渲染
+                            （见 displayRows 之后的 live 区块）。 */}
                         {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
                             ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
                         {isBot && quote && (
@@ -1425,14 +1439,40 @@ export function TeamGroupView({
                                 ⇒ 现在**只从正文出**（`17-team-mention-text`）：每个 `@名字` 就地变成
                                   带头像的提及，顺序 = 正文出现顺序。⛔ 不要再加回前缀 chip。 */
                           <>
-                            <TeamMentionText
-                              text={stripVoiceScript(row.text)}
-                              candidates={mentionCandidates}
-                              faceOfId={faceOfId}
-                              nameOf={nameOf}
-                              onPick={mentionPartner}
-                              excludeId={row.authorId}
-                            />
+                            {/* ⛔ 11-09 用户令「跟主对话一模一样」：伙伴回复整轮交给 TurnView
+                                （深度思考 / 过程步骤 / 正文 / 文件卡 / 页脚同一套实现）。
+                                回合还没拉回来时先显示群自己的 @ 可点正文，拉到后无缝换掉。 */}
+                            {useTurnView ? (
+                              <TeamTurnView
+                                threadId={row.threadId}
+                                at={row.at}
+                                bodyText={row.text}
+                                usage={row.usage}
+                                onOpenFile={openFilePreview}
+                                onOpenReview={openReviewPanel}
+                                onQuote={quoteText}
+                                onOpenThread={onOpenThread}
+                                fallback={(
+                                  <TeamMentionText
+                                    text={stripVoiceScript(row.text)}
+                                    candidates={mentionCandidates}
+                                    faceOfId={faceOfId}
+                                    nameOf={nameOf}
+                                    onPick={mentionPartner}
+                                    excludeId={row.authorId}
+                                  />
+                                )}
+                              />
+                            ) : (
+                              <TeamMentionText
+                                text={stripVoiceScript(row.text)}
+                                candidates={mentionCandidates}
+                                faceOfId={faceOfId}
+                                nameOf={nameOf}
+                                onPick={mentionPartner}
+                                excludeId={row.authorId}
+                              />
+                            )}
                             {/* ⛔⛔ 11-08 用户（截图 3）：「我点出来的那个 @ 总是固定在消息下面，很不好看」——
                                 气泡底部那排「补正文没写到的 @」整块删除：@ 只认正文（行内提及），
                                 ⛔ 不再在消息下面另起一排 chip。 */}
@@ -1480,24 +1520,25 @@ export function TeamGroupView({
                                 />
                               </div>
                             )}
-                            {/* 11-09 用户实测（截图：每一步都挂一张「已更改 N 个文件」）：
-                                **只在这一轮的末条**（汇总消息位）展示「运行过程折叠（默认收起）+ 文件卡」。
-                                运行中该行由 live 卡负责，这里让位（`running` 为真时不画，避免两个折叠）。 */}
-                            {isBot && runTailKeys.has(row.key) && !running ? (
-                              <>
-                                <TeamProcess threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} />
-                                <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} onReview={openReviewPanel} />
-                              </>
+                            {/* 占位模式（不展示过程）：仍只挂这一轮的文件卡；过程模式下卡由 TurnView 自己渲染。 */}
+                            {isBot && !useTurnView && runTailKeys.has(row.key) && !running ? (
+                              <TeamCards threadId={row.threadId} at={row.at} bodyText={row.text} onOpenFile={openFilePreview} onReview={openReviewPanel} />
                             ) : null}
                           </>
                         )}
                         {isBot && (
                           <div className="team-msg__actions">
-                            <button type="button" onClick={() => void copyText(row)}>
-                              {copied === row.key ? "已复制" : "复制"}
-                            </button>
+                            {/* 过程模式整轮交给 TurnView：复制 / 引用 / 用量都在它的页脚里（⛔ 不再重复一排）。
+                                这里只留群特有的「追问（再 @ 它一轮）」与「来源会话」。 */}
+                            {!useTurnView && (
+                              <button type="button" onClick={() => void copyText(row)}>
+                                {copied === row.key ? "已复制" : "复制"}
+                              </button>
+                            )}
                             <button type="button" onClick={() => askAgain(row)}>追问</button>
-                            <button type="button" onClick={() => quoteRow(row)} title="把这条消息引用到输入框（发送时带 > 引文）">引用</button>
+                            {!useTurnView && (
+                              <button type="button" onClick={() => quoteRow(row)} title="把这条消息引用到输入框（发送时带 > 引文）">引用</button>
+                            )}
                             {mentioned.map((m) => (
                               <button
                                 key={m.id}
@@ -1512,7 +1553,7 @@ export function TeamGroupView({
                                 · 反向 —— 那条会话被删掉时由 `goneThreads` 标成不可点的「已删除」
                                   （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
                             {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
-                            {row.usage && <TeamUsage usage={row.usage} />}
+                            {!useTurnView && row.usage && <TeamUsage usage={row.usage} />}
                             {goneThreads?.has(row.threadId) ? (
                               <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
                             ) : (
@@ -1555,9 +1596,14 @@ export function TeamGroupView({
                       <time>{fmtTime(run.startedAt)}</time>
                     </div>
                     <div className="team-msg__body">
-                    {/* ⛔ 11-08 用户令「最早那条继续挂运行流程」：过程大折叠与流式编辑行已挂到
-                        该轮**第一条正文消息**上（见上面 row.runFirst 分支）—— 流式卡只负责"正在写"的逐字预览，
-                        ⛔ 不再在这里画第二份（否则同一条过程会出现两个折叠块）。 */}
+                    {/* ⛔ 11-09：一个回合只落一条成品消息（正文不再逐条落盘）⇒ 运行中的
+                        过程折叠与实时编辑行**回到流式卡里**（与主对话同序：过程在上、正文在下）。 */}
+                    {effectiveReplyMode === "process" && (
+                      <>
+                        <TeamProcess threadId={run.threadId} at={run.startedAt} bodyText="" running live onOpenFile={openFilePreview} />
+                        <TeamLiveFiles threadId={run.threadId} />
+                      </>
+                    )}
                     {/* ⛔⛔ 11-08 审查：占位模式承诺「不展示过程与流式正文」——
                         流式卡也必须跟着分叉，否则主窗口里照样能看到流式正文。 */}
                     {effectiveReplyMode === "process" && String(run.text ?? "").trim()

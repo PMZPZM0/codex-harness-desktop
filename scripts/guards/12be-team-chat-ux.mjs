@@ -824,9 +824,12 @@ const catalog = [
     "反馈组件只收 mode/partners/faceOfId（⛔ 不再把 live 传进去 —— 占位图标不依赖流式正文）");
   ok(!/isBot && row\.kind !== "card" && \(\s*<TeamProcess/.test(view),
     "⛔ 成品消息里不许再出现过程块（用户：「运行结束后，运行过程隐藏掉，只留最后汇报」）");
-  ok(/isBot && row\.runFirst && row\.runId/.test(view) && /<TeamProcess threadId=\{row\.threadId\} at=\{liveRun\.startedAt\}/.test(view)
-    && !/<TeamProcess threadId=\{run\.threadId\}/.test(view),
-    "11-08 用户令：运行过程大折叠挂在**该轮第一条消息**上（跑完随 live 卡消失）；⛔ 不再挂在流式卡里（会与第一条重复）");
+  /* ⛔ 11-09：「一回合一条成品消息」后没有"该轮第一条消息"可挂 ⇒ 运行中的过程折叠归**流式卡**，
+     跑完整轮由 TurnView 呈现；占位模式照旧不画过程。 */
+  ok(/<TeamProcess threadId=\{run\.threadId\} at=\{run\.startedAt\}/.test(view)
+    && /effectiveReplyMode === "process" && \([\s\S]{0,260}?<TeamProcess/.test(view)
+    && !/row\.runFirst/.test(view),
+    "运行中的过程折叠挂在**流式卡**里（与主对话同序：过程在上、正文在下）；占位模式不画");
   /* ⛔ 11-08 用户实测（群聊页脚「缓存 0 · 命中 0%」一直不变）：群聊用量是归一化对象
      （字段 `cachedTokens`），取值函数只认引擎原始字段名 ⇒ 归一化值被漏掉、恒 0。 */
   ok(/cachedTokens", "cached_tokens"/.test(read("src/lib/usage-cached-tokens.ts")),
@@ -846,7 +849,7 @@ const catalog = [
       && /subscribeTeamProcessTicks/.test(procComp)
       && !/setInterval\(\(\) => setTick\(\(n\) => n \+ 1\), 2500\)/.test(procComp)
       && /getThreadLiveFileChanges/.test(fileStore) && /liveByThread/.test(fileStore)
-      && /<TeamLiveFiles threadId=\{row\.threadId\} \/>/.test(viewProc),
+      && /<TeamLiveFiles threadId=\{run\.threadId\} \/>/.test(viewProc),
       "群聊过程与主对话一致：事件驱动重拉（group-talk-tick，⛔ 不再 2.5s 轮询）+ 流式卡实时编辑行（按线程）");
   }
   /* ⛔ 11-08 用户令「三样都补上，跟主对话完全一致」：用量页脚 / 推理浮窗 / 网页来源条。 */
@@ -925,8 +928,8 @@ const catalog = [
       "群输入框的模型 / 沙箱 / 审批档真下发到成员会话（⛔ 不再是只接 effort 的死控件，11-08 审查）");
     ok(/groupClearedAt\.set\(gid, Date\.now\(\)\)/.test(ipcSrc)
       && /const clearedMark = groupClearedAt\.get\(group\.id\)/.test(ipcSrc)
-      && /await streamChain;/.test(ipcSrc) && /if \(clearedDuringRun\) \{/.test(ipcSrc)
-      && /patchTalkMessageRow\(group\.id, last\.id/.test(ipcSrc)
+      && /if \(clearedDuringRun\) \{/.test(ipcSrc)
+      && /patchTalkMessageRow\(group\.id, duplicateRow\.id/.test(ipcSrc)
       && /cleared > since/.test(ipcSrc),
       "清空聊天记录后，在飞回合（群聊 + 主理人工具派活）的回复都不再写回空群（主进程代际判定，11-08 审查）");
   }
@@ -944,7 +947,7 @@ const catalog = [
       && /item\/agentMessage\/delta/.test(ipcLive)
       && /event\.type === "group-talk-live"/.test(storeLive)
       && /event\.type === "harness-team-messages"/.test(storeLive)
-      && /textsAreNearDuplicate\(text, output\)/.test(ipcLive)
+      && /textsAreNearDuplicate\(row\.text, output\)/.test(ipcLive)
       && /不要两样都做/.test(talkLive),
       "群聊回复实时上屏：写库广播 + 回合内增量广播（渲染层两个 handler）+ 工具/最终回复去重 + 提示词二选一（11-08 用户实测）");
     /* ⛔⛔ 11-08 审查（Required）：去重只看"重合率"不看长度 ⇒ 短句「收到，我马上开始」的二元组
@@ -1062,21 +1065,21 @@ const catalog = [
     "专家库分组有单测（在群的团 / 已加过的专家不重复列）");
 }
 
-/* ── ⑬e 群聊正文流式多消息（11-08 用户令：「正文输出一次就发一次新消息，跟主对话框实时同步」）── */
+/* ── ⑬e 群聊一回合一条成品消息（11-09 用户令：「每步一个新消息刷屏」「跟主对话一模一样」）── */
 {
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   const store = codeOnly(read("src/features/harness-team/02-team-store.ts"));
-  ok(/method === "item\/completed"[\s\S]{0,900}?appendMessageTo\(group\.id/.test(ipc)
-    && /const streamedRows/.test(ipc) && /runFirst: true/.test(ipc) && /summary: true/.test(ipc),
-    "每条 agentMessage 完成即落一条群消息（⛔ 不再等整回合）；该轮第一条带 runFirst、收尾那条带 summary");
-  ok(/if \(duplicated\) \{[\s\S]{0,500}?patchTalkMessageRow\(group\.id, last\.id, \{[\s\S]{0,160}?summary: true/.test(ipc),
-    "最终回复已作为流式消息落过 ⇒ 不再发第二条，把它标成 summary 并回填用量");
-  ok(/const runTailKeys = useMemo/.test(view)
-    && /isBot && runTailKeys\.has\(row\.key\) && !running/.test(view)
-    && /<TeamProcess threadId=\{row\.threadId\} at=\{row\.at\} bodyText=\{row\.text\}/.test(view)
-    && !/\(isBot && row\.summary\) \|\| \(isBot && !row\.runId\)/.test(view),
-    "过程折叠 + 文件卡只挂**这一轮的末条**（汇总消息位）；⛔ 每一步都挂一张卡（CLI 消息没有 runId 曾导致每条都画）");
+  ok(!/method === "item\/completed"[\s\S]{0,900}?appendMessageTo\(group\.id/.test(ipc)
+    && /const duplicateRow = spokenRows/.test(ipc)
+    && /summary: true,/.test(ipc) && /runFirst: true,/.test(ipc),
+    "⛔ 一个回合只落一条成品消息（撤回逐条落盘）：正文/过程/文件卡由渲染层按**回合**整体渲染");
+  ok(/const duplicateRow = spokenRows[\s\S]{0,900}?patchTalkMessageRow\(group\.id, duplicateRow\.id, \{[\s\S]{0,160}?summary: true/.test(ipc),
+    "最终回复已通过 group_say 落过 ⇒ 不再发第二条，把它标成 summary 并回填用量");
+  ok(/const runCollapsedRows = useMemo/.test(view)
+    && /const useTurnView = isBot && effectiveReplyMode !== "placeholder"/.test(view)
+    && /<TeamTurnView/.test(view) && /onOpenReview=\{openReviewPanel\}/.test(view),
+    "伙伴回复整轮复用主对话 TurnView（深度思考/步骤/正文/文件卡/页脚）；老群记录按回合收口只渲染末条");
   ok(/phase === "item-start" \|\| phase === "item-done"/.test(store),
     "一条正文开始/完成 ⇒ 流式卡清空，下一条重新逐字上屏（⛔ 不叠在已落盘消息上）");
   ok(/!isBot && \([\s\S]{0,400}?<MessageFooter/.test(view) && /team-msg__footer/.test(view)
