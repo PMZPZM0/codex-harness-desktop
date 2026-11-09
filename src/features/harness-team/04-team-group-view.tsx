@@ -11,7 +11,7 @@
  *      （复制 / 追问 / 来源会话）的卡片；
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
-import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
 import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen, PanelRight } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
@@ -194,8 +194,8 @@ function TeamLiveFiles({ threadId }: { threadId: string }) {
 function TeamQuoteBlock({ quote, nameOf, faceOfId, mentionCandidates, mentionPartner, excludeId }: {
   quote: { authorId: string; text: string };
   nameOf: (id: string) => string;
-  faceOfId: (id: string) => any;
-  mentionCandidates: any;
+  faceOfId: (id: string) => ComponentProps<typeof MemberAvatar>["member"];
+  mentionCandidates: { id: string; name: string }[];
   mentionPartner: (id: string) => void;
   excludeId: string;
 }) {

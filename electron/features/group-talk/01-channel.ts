@@ -86,7 +86,7 @@ function mutateLedger<T>(fn: (all: Ledger) => { all: Ledger; out: T }): Promise<
 /** resume 失败的分类；`busy` / `transient` 抛可识别错误（⛔ 调用方据此**不重建**会话）。 */
 async function resumeTalkThread(
   threadId: string,
-  options: { sandbox?: string; approvalPolicy?: string },
+  options: { sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string> },
 ): Promise<{ ok: true } | { ok: false; kind: "busy" | "missing" | "transient"; message: string }> {
   try {
     const resumed: unknown = await server.request("thread/resume", {
@@ -94,6 +94,7 @@ async function resumeTalkThread(
       excludeTurns: false,
       ...(options.sandbox ? { sandbox: options.sandbox } : {}),
       ...(options.approvalPolicy ? { approvalPolicy: options.approvalPolicy } : {}),
+      ...talkShellConfig(options.shellEnv),
     });
     const id = String((resumed as { thread?: { id?: unknown } } | null)?.thread?.id ?? "");
     return id ? { ok: true } : { ok: false, kind: "transient", message: "thread/resume 没返回 threadId" };
@@ -101,6 +102,13 @@ async function resumeTalkThread(
     const message = error instanceof Error ? error.message : String(error);
     return { ok: false, kind: classifyTalkResumeFailure(message), message };
   }
+}
+
+/* CLI 成员的 shell 环境（11-09「必须要真的 cli 智能体」）：与 delegation 同口径 ——
+   整表覆盖 + 带上增强 PATH（不写 PATH 会把 config.toml 那份顶掉）。没传 = 不加 config（旧行为）。 */
+function talkShellConfig(shellEnv?: Record<string, string>): { config?: Record<string, unknown> } {
+  if (!shellEnv || !Object.keys(shellEnv).length) return {};
+  return { config: { shell_environment_policy: { inherit: "all", ignore_default_excludes: true, set: shellEnv } } };
 }
 
 /** 群聊会话忙/暂时不可用的错误（调用方据此提示"稍后再试"，⛔ 不重建会话）。 */
@@ -194,7 +202,7 @@ export function forgetTalkThreads(threadIds: string[]): number {
 export async function ensureTalkThread(
   groupId: string,
   member: TalkMember,
-  options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void; sandbox?: string; approvalPolicy?: string } = {},
+  options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void; sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string> } = {},
 ): Promise<{ threadId: string; created: boolean }> {
   /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
   if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
@@ -263,6 +271,7 @@ export async function ensureTalkThread(
     sandbox: options.sandbox || "workspace-write",
     approvalPolicy: options.approvalPolicy || "never",
     dynamicTools: buildGroupTalkTools(),
+    ...talkShellConfig(options.shellEnv),
   });
   const threadId = String(started?.thread?.id ?? "");
   if (!threadId) throw new Error("群聊会话创建失败（引擎没返回 threadId）");
@@ -289,7 +298,7 @@ export async function ensureTalkThread(
 export async function peekTalkThread(
   groupId: string,
   member: TalkMember,
-  options: { sandbox?: string; approvalPolicy?: string } = {},
+  options: { sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string> } = {},
 ): Promise<{ threadId: string; busy: boolean } | null> {
   const hit = readLedger()[talkKey(groupId, member.id)];
   if (!hit?.threadId) return null;
@@ -368,12 +377,14 @@ export async function runTalkTurn(
   inputText: string,
   options: {
     cwd?: string; groupName?: string; effort?: string; model?: string; sandbox?: string; approvalPolicy?: string;
+    /** CLI 成员的 shell 环境（真 CLI 链路）：建/复用会话时注入，子进程才拿得到供应商与 PATH。 */
+    shellEnv?: Record<string, string>;
     /** 调用方已解析好的会话（先用 `ensureTalkThread` 拿到再过进来）⇒ ⛔ 不再重复 resume 一次。 */
     threadId?: string;
   } = {},
 ): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
   let threadId = options.threadId
-    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy })).threadId;
+    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv })).threadId;
   try {
     return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
   } catch (error) {
@@ -384,7 +395,7 @@ export async function runTalkTurn(
     } catch {
       await server.request("thread/archive", { threadId }).catch(() => undefined);
     }
-    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy })).threadId;
+    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv })).threadId;
     return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
   }
 }
