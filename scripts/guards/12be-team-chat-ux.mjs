@@ -1198,8 +1198,8 @@ const catalog = [
     "⛔ 回复模式必须同时传读值（只传写入回调 ⇒ 点占位模式写进盘但界面不动，用户「选不了，点不过来」）");
   /* ⛔ 用**顺序**判定而不是"相隔多少字符"：板块长度会随文案变化，写死窗口会假红。 */
   const sectionOrder = [...settings.matchAll(/data-section="([^"]+)"/g)].map((m) => m[1]).join(">");
-  ok(/^layout>message-form>dialog-flow>partners>memory>/.test(sectionOrder),
-    "群设置常用置顶：消息排版 → 群消息形式 → 对话流 → 伙伴 → 群记忆…（低频项下沉；快捷指令段已删）");
+  ok(/^layout>message-form>dialog-flow>(admin>)?partners>memory>/.test(sectionOrder),
+    "群设置常用置顶：消息排版 → 群消息形式 → 对话流 →（群管理员）→ 伙伴 → 群记忆…（低频项下沉；快捷指令段已删）");
   ok(/export function normalizeMessageForm/.test(read("src/lib/team-models.mjs"))
     && /harness-team:set-message-form/.test(read("electron/features/harness-team-ipc.ts"))
     && /harnessTeamSetMessageForm/.test(read("electron/preload.ts")),
