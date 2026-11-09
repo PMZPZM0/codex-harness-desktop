@@ -94,7 +94,7 @@ export function describeTurnError(raw: unknown): TurnErrorText {
     const size = used && max ? `本次约 ${used} tokens，模型上限 ${max}。` : "";
     return {
       title: "内容超出模型上限",
-      detail: `${size}新建一个会话再来；大段内容先存成文件（.md / .txt）再让我读，比直接粘贴省很多。`,
+      detail: `${size}先手动压缩：点输入框旁的上下文环 → 压缩，或输入 /compact（会保留摘要）；也可以新建会话。大段内容先存成文件（.md / .txt）再让我读，比直接粘贴省很多。`,
     };
   }
 

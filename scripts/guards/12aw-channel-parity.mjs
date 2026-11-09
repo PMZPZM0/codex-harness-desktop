@@ -140,17 +140,20 @@ if (missing.length) {
     && /setChannelHandoff\(channel, digest\)/.test(inbCode)
     && /takeChannelHandoff\("wechat"\)/.test(inbCode),
     "⑧渠道上下文超限 ⇒ 先压缩并重试原消息（保留历史）；压缩失败才换会话并带上最近几轮摘要");
-  /* ⛔ 11-08 用户令「把真实限额按模型持久化，全局生效」：超限报错的 M 记成模型级限额，
-     桌面/渠道/委派共用；下一轮按 min(配置阈值, 真实) 提前压。 */
+  /* ⛔ 11-08 用户追加评估后撤回「按模型持久化真实限额」：担心重复压与全局副作用；
+     撞到超限只**提醒手动压缩**（/compact 或上下文环），渠道没有界面才自动压缩+重试。 */
   {
     const srvSrc = stripComments(read("electron/codex-server.ts"));
     const guardSrc = stripComments(read("electron/context-compact-guard.ts"));
-    ok(/noteOverflowLimit\(message\.method, message\.params\)/.test(srvSrc)
-      && /noteRealLimit\(this\.codexHome, modelKey, limit\)/.test(srvSrc)
-      && /shouldCompact\(this\.codexHome, threadId, modelKey\)/.test(srvSrc)
-      && /model-real-limits\.json/.test(guardSrc)
-      && /Math\.min\(limit, hit\.limit\)/.test(guardSrc),
-      "⑨真实限额按模型持久化 + 全局生效（引擎通知单一出口识别；桌面/渠道/委派一起提前压）");
+    const textRender = read("src/lib/turn-error-text.mjs");
+    const textMain = read("electron/turn-error-text.ts");
+    ok(!/model-real-limits|noteRealLimit|modelLimits|readConfigModel/.test(guardSrc)
+      && /shouldCompact\(this\.codexHome, threadId\)/.test(srvSrc)
+      && !/noteOverflowLimit/.test(srvSrc),
+      "⛔ 不搞「按模型持久化真实限额」（只按 config 阈值；不静默改全局口径）");
+    ok(/先手动压缩/.test(textRender) && /先手动压缩/.test(textMain)
+      && /\/compact/.test(textRender) && /\/compact/.test(textMain),
+      "超限文案 = 手动压缩提醒（点上下文环 / 输入 /compact），渲染层与主进程两份逐字一致");
   }
   globalThis.fetch = realFetch;
 }

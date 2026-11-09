@@ -7,7 +7,7 @@ import { app } from "electron";
 import { toolchainEnv } from "./toolchain";
 import { ensureSessionWorkspace } from "./features/session-workspace";
 import { threadCwd } from "./thread-cwd";
-import { markAttempt, noteRealLimit, readConfigModel, shouldCompact } from "./context-compact-guard";
+import { markAttempt, shouldCompact } from "./context-compact-guard";
 import { describeTurnError } from "../src/lib/turn-error-text.mjs";
 
 type RpcId = number | string;
@@ -654,13 +654,7 @@ export class CodexServer extends EventEmitter {
   private async compactBeforeTurn(params: unknown): Promise<void> {
     try {
       const threadId = String((params as any)?.threadId ?? "");
-      /* ⛔ 11-08：真实限额按**模型**持久化 ⇒ 这里要把模型名交给判定（没显式带就用 config 默认）。 */
-      const modelKey = String((params as any)?.model ?? "").trim() || readConfigModel(this.codexHome);
-      if (threadId && modelKey) {
-        this.threadModel.set(threadId, modelKey);
-        if (this.threadModel.size > 500) this.threadModel.delete(this.threadModel.keys().next().value as string);
-      }
-      const decision = shouldCompact(this.codexHome, threadId, modelKey);
+      const decision = shouldCompact(this.codexHome, threadId);
       if (!decision.compact) {
         /* 只在水位过半时记一行，避免每发一条消息都往 engine-debug.log 写。 */
         if (decision.reason === "below" && (decision.used ?? 0) > (decision.limit ?? 0) * 0.5) {
@@ -792,8 +786,6 @@ export class CodexServer extends EventEmitter {
       处理方式：只对**超过阈值**的行延后到事件循环空闲再解析；小行（绝大多数流式 delta）
       仍然同步解析、**保持原有即时性**。延后项用单条链串起来，确保它们之间顺序不乱。 */
   private deferredParseChain: Promise<void> = Promise.resolve();
-  /* 线程 → 最近一次 turn/start 用的模型（超限事件按它归因到模型；有界缓存）。 */
-  private threadModel = new Map<string, string>();
   private static readonly DEFER_PARSE_BYTES = 256 * 1024;
 
   private handleLine(line: string) {
@@ -836,29 +828,7 @@ export class CodexServer extends EventEmitter {
       this.emitEvent({ kind: "request", id: message.id, method: message.method, params: message.params });
       return;
     }
-    if (message.method) {
-      this.noteOverflowLimit(message.method, message.params);
-      this.emitEvent({ kind: "notification", method: message.method, params: message.params });
-    }
-  }
-
-  /** 上游拒绝「内容超长」⇒ 把真实限额按**模型**记下来（持久化，同模型所有会话共享）。
-   *  ⛔ 只在这一个出口做：引擎所有通知都从 parseAndDispatch 过，桌面/渠道/委派一次覆盖。 */
-  private noteOverflowLimit(method: string, params: any): void {
-    if (method !== "turn/completed" && method !== "turn/failed") return;
-    const raw = params?.turn?.error?.message ?? params?.error?.message;
-    if (!raw) return;
-    let over = false;
-    try { over = describeTurnError(raw).title === "内容超出模型上限"; } catch { over = false; }
-    if (!over) return;
-    const text = typeof raw === "string" ? raw : JSON.stringify(raw);
-    const m = text.match(/(\d[\d,]{3,})\s*tokens?\s*>\s*(\d[\d,]{3,})/i);
-    if (!m) return;
-    const limit = Number(String(m[2]).replace(/,/g, ""));
-    const threadId = String(params?.threadId ?? "");
-    const modelKey = this.threadModel.get(threadId) || readConfigModel(this.codexHome);
-    noteRealLimit(this.codexHome, modelKey, limit);
-    this.debugLog("[compact-guard] 上游报真实限额 " + limit + "（模型 " + (modelKey || "?") + "）⇒ 下一轮按它提前压");
+    if (message.method) this.emitEvent({ kind: "notification", method: message.method, params: message.params });
   }
 
   private fail(error: Error) {

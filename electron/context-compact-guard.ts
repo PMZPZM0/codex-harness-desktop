@@ -118,95 +118,33 @@ export function lastInputTokens(file: string): number | null {
   }
 }
 
-/* ⛔ 11-08 用户令「把真实限额按模型持久化，全局生效」：供应商实际限额常常**小于**
-   模型标称窗口（中转站常见，标 1M 实际只给 128K）。超限报错里通常带「N tokens > M」，
-   M 就是真实上限 ⇒ 按**模型**记到 <userData>/model-real-limits.json（30 天有效），
-   同一模型的所有会话（桌面 / 渠道 / 委派）都按 min(配置阈值, M) 提前压。
-   ⛔ 键只用模型名（用户口径「按模型」）：同名模型换供应商会共享限额，但那只会让它
-      更早压，不会把数据压坏。 */
-type ModelLimit = { limit: number; at: number };
-const MODEL_LIMIT_TTL = 30 * 24 * 60 * 60 * 1000;
-const modelLimits = new Map<string, ModelLimit>();
-let limitsLoadedFor = "";
-let limitsSaveTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** 真实限额的落盘文件（与 codex-home 同级 = userData）。 */
-function modelLimitFile(codexHome: string): string {
-  return path.join(path.dirname(codexHome), "model-real-limits.json");
-}
-
-function loadModelLimits(codexHome: string): void {
-  const file = modelLimitFile(codexHome);
-  if (limitsLoadedFor === file) return;
-  limitsLoadedFor = file;
-  modelLimits.clear();
-  try {
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    for (const [key, value] of Object.entries(parsed && typeof parsed === "object" ? parsed : {})) {
-      const limit = Number((value as ModelLimit)?.limit);
-      const at = Number((value as ModelLimit)?.at ?? 0) || 0;
-      if (key && Number.isFinite(limit) && limit > 0) modelLimits.set(key, { limit: Math.floor(limit), at });
-    }
-  } catch { /* 没有 / 损坏：从空开始 */ }
-}
-
-function saveModelLimits(codexHome: string): void {
-  if (limitsSaveTimer) return;
-  limitsSaveTimer = setTimeout(() => {
-    limitsSaveTimer = null;
-    try {
-      const file = modelLimitFile(codexHome);
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      const out: Record<string, ModelLimit> = {};
-      for (const [key, value] of modelLimits) out[key] = value;
-      const tmp = file + ".tmp";
-      fs.writeFileSync(tmp, JSON.stringify(out, null, 2), "utf8");
-      fs.renameSync(tmp, file);
-    } catch { /* 持久化失败只影响下次启动的提前量 */ }
-  }, 500);
-  limitsSaveTimer.unref?.();
-}
-
-/** 记下某模型的供应商真实限额（超限报错里的 M）：同模型所有会话共享，持久化。 */
-export function noteRealLimit(codexHome: string, modelKey: string, limitTokens: number, now = Date.now()): void {
-  const key = String(modelKey ?? "").trim();
-  const limit = Number(limitTokens);
-  if (!key || !Number.isFinite(limit) || limit <= 0) return;
-  loadModelLimits(codexHome);
-  modelLimits.set(key, { limit: Math.floor(limit), at: now });
-  saveModelLimits(codexHome);
-}
-
-/** 引擎 config.toml 的默认模型名（turn/start 没带 model 时用它当键）。 */
-export function readConfigModel(codexHome: string): string {
-  try {
-    const text = fs.readFileSync(path.join(codexHome, "config.toml"), "utf8");
-    const m = text.match(/^\s*model\s*=\s*"([^"]+)"/m);
-    return m ? String(m[1]).trim() : "";
-  } catch { return ""; }
-}
+/* ⛔ 11-08 用户追加评估后**撤回**「按模型持久化真实限额」这一层（用户原话：
+   「担心会不会重复压，全局持久生效会不会有 Bug 和副作用，做一个手动压缩提醒就好」）：
+   · 风险一（重复压）：真实限额往往来自某一次超限报错，可能只反映「那家供应商当次的
+     小限额」；把全局阈值压到它以后，若压缩后的摘要仍高于新阈值，就会每 10 分钟压一次
+     （宿主冷却）—— 表现为「一直在压缩、很慢」。
+   · 风险二（副作用）：键只用模型名，同名模型换供应商会共享那条限额（大窗口被小窗口拖累）；
+     30 天不回退；报错里的数字未必是真实上下文上限（可能是输入 token 上限），会过度压缩。
+   ⇒ 恢复成「只看 config.toml 的阈值」（引擎 0.167 自己也会按同一阈值压），
+     撞到供应商真实限额时**只提示用户手动压缩**（/compact 或输入框旁的上下文环），
+     不再静默改全局阈值。渠道机器人没有界面，仍保留「压缩+重试 / 换会话+摘要交接」。 */
 
 export type CompactDecision =
   | { compact: true; used: number; limit: number }
   | { compact: false; reason: "no-thread" | "cooldown" | "no-limit" | "no-rollout" | "no-usage" | "below"; used?: number; limit?: number };
 
-/** 判断该不该自动压缩：无会话 / 冷却中 / 没到阈值都返回 false 并给出原因。
- *  `modelKey` 用于套用**按模型持久化**的真实限额（见 noteRealLimit）。 */
-export function shouldCompact(codexHome: string, threadId: string, modelKey = "", now = Date.now()): CompactDecision {
+/** 判断该不该自动压缩：无会话 / 冷却中 / 没到阈值都返回 false 并给出原因。 */
+export function shouldCompact(codexHome: string, threadId: string, now = Date.now()): CompactDecision {
   if (!threadId) return { compact: false, reason: "no-thread" };
   if (now - (lastAttempt.get(threadId) ?? 0) < RETRY_COOLDOWN_MS) return { compact: false, reason: "cooldown" };
   const limit = readAutoCompactLimit(codexHome);
   if (!limit) return { compact: false, reason: "no-limit" };
-  loadModelLimits(codexHome);
-  const key = String(modelKey ?? "").trim();
-  const hit = key ? modelLimits.get(key) : undefined;
-  const effective = hit && now - hit.at <= MODEL_LIMIT_TTL ? Math.min(limit, hit.limit) : limit;
   const file = findRollout(codexHome, threadId, now);
   if (!file) return { compact: false, reason: "no-rollout" };
   const used = lastInputTokens(file);
   if (!used) return { compact: false, reason: "no-usage" };
-  if (used < effective * TRIGGER_RATIO) return { compact: false, reason: "below", used, limit: effective };
-  return { compact: true, used, limit: effective };
+  if (used < limit * TRIGGER_RATIO) return { compact: false, reason: "below", used, limit };
+  return { compact: true, used, limit };
 }
 
 /** 记一次尝试（成功失败都记）：失败时靠它把重试压到 10 分钟一次，别每轮都卡。 */
@@ -217,6 +155,4 @@ export function markAttempt(threadId: string, now = Date.now()): void {
 /** 测试用：清空内部状态。 */
 export function __resetCompactGuardState(): void {
   lastAttempt.clear();
-  modelLimits.clear();
-  limitsLoadedFor = "";
 }
