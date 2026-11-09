@@ -514,49 +514,6 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
   return { removed, failed };
 }
 
-async function runDispatchRounds(
-  group: GroupShape,
-  targets: GroupTarget[],
-  text: string,
-  source: "human" | "automation",
-  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[] } = {},
-): Promise<{ ok: boolean; sent: number; failed: string[] }> {
-  const catalog = Array.isArray(options.catalog) ? options.catalog : await buildDispatchCatalog().catch(() => []);
-  const failed: string[] = [];
-  const ranIds = new Set<string>();
-  /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。
-     ⛔ 两条护栏：只走**一跳** + 一轮总量 4，防两个伙伴互 @ 无限对烧。 */
-  let chainBudget = options.allowChain ? 4 : 0;
-  const params = options.params ?? {};
-  /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
-     所以团成员之间也能互相说话，不再需要「主理人代转」。 */
-  const roster: TalkMember[] = [
-    ...group.members.map((m) => ({
-      id: m.id, name: m.name, targetKind: m.targetKind, targetKey: m.targetKey, targetProfession: m.targetProfession,
-    })),
-    ...teamKidsOf(group, catalog).map((kid) => {
-      const memberId = teamMemberIdOf(kid as unknown as Record<string, unknown>);
-      const teamId = String(group.members.find((m) => m.targetKind === "team")?.targetKey ?? "");
-      const id = teamAuthorIdOf(teamId, memberId);
-      return {
-        id, name: String(kid.name), targetKind: "member", targetKey: memberId,
-        targetProfession: String((kid as unknown as Record<string, unknown>).profession ?? ""),
-        ...(teamSeatOf(catalog, id, "member", memberId) ?? {}),
-      };
-    }),
-  ];
-  const talkOptions = {
-    groupId: group.id,
-    groupName: group.name,
-    cwd: group.workspace || undefined,
-    memory: String((group as unknown as Record<string, unknown>).memory ?? ""),
-    roster,
-    group: group as unknown as Record<string, unknown>,
-    catalog,
-  };
-  /* ⛔ 11-08 用户问「群成员，都能看到群会话内容吗」：群里最近的消息由**这一份**读出，
-     既给每轮注入的共享上下文、也给 group_read 工具 —— 两处口径必须同一份，否则模型
-     主动读到的与默认看到的会对不上。纯读盘、不写、不联网。 */
 /** 群里的这位站团队哪一环（主理人 / 团成员）+ 同团还有谁。
  *  数据全来自调度目录（`kind: "team" | "expert" | "member"` 带同一个 `teamId`），⛔ 不再去读团队配置：
  *  群聊域只负责"我是谁、旁边是谁"，要不要按 SOP 走由 `collaborationProtocolLines` 的口径决定。
@@ -613,6 +570,51 @@ function teamSeatOf(
   return { teamName, teamRole: isLead ? "lead" : "member", teamPeers: peers };
 }
 
+async function runDispatchRounds(
+  group: GroupShape,
+  targets: GroupTarget[],
+  text: string,
+  source: "human" | "automation",
+  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[] } = {},
+): Promise<{ ok: boolean; sent: number; failed: string[] }> {
+  const catalog = Array.isArray(options.catalog) ? options.catalog : await buildDispatchCatalog().catch(() => []);
+  const failed: string[] = [];
+  const ranIds = new Set<string>();
+  /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。
+     ⛔ 两条护栏：只走**一跳** + 一轮总量 4，防两个伙伴互 @ 无限对烧。 */
+  let chainBudget = options.allowChain ? 4 : 0;
+  const params = options.params ?? {};
+  /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
+     所以团成员之间也能互相说话，不再需要「主理人代转」。 */
+  const roster: TalkMember[] = [
+    ...group.members.map((m) => ({
+      id: m.id, name: m.name, targetKind: m.targetKind, targetKey: m.targetKey, targetProfession: m.targetProfession,
+      /* ⛔ 11-09：团成员/主理人要拿到"我在团队里的位置"，否则群里只能凭职业名瞎猜分工。 */
+      ...(teamSeatOf(catalog, m.id, m.targetKind, m.targetKey) ?? {}),
+    })),
+    ...teamKidsOf(group, catalog).map((kid) => {
+      const memberId = teamMemberIdOf(kid as unknown as Record<string, unknown>);
+      const teamId = String(group.members.find((m) => m.targetKind === "team")?.targetKey ?? "");
+      const id = teamAuthorIdOf(teamId, memberId);
+      return {
+        id, name: String(kid.name), targetKind: "member", targetKey: memberId,
+        targetProfession: String((kid as unknown as Record<string, unknown>).profession ?? ""),
+        ...(teamSeatOf(catalog, id, "member", memberId) ?? {}),
+      };
+    }),
+  ];
+  const talkOptions = {
+    groupId: group.id,
+    groupName: group.name,
+    cwd: group.workspace || undefined,
+    memory: String((group as unknown as Record<string, unknown>).memory ?? ""),
+    roster,
+    group: group as unknown as Record<string, unknown>,
+    catalog,
+  };
+  /* ⛔ 11-08 用户问「群成员，都能看到群会话内容吗」：群里最近的消息由**这一份**读出，
+     既给每轮注入的共享上下文、也给 group_read 工具 —— 两处口径必须同一份，否则模型
+     主动读到的与默认看到的会对不上。纯读盘、不写、不联网。 */
   const readGroupHistory = (limit: number): { speaker: string; text: string }[] => {
     const rows = readStore().messages?.[group.id] ?? [];
     return rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
@@ -632,8 +634,6 @@ function teamSeatOf(
       if (!to) return Promise.resolve({ ok: false, error: `群里没有叫「${toName}」的人` });
       /* ⛔ 11-08 审查确认（真缺陷）：runOne 对**本轮已派过**的成员会静默早退，而工具却回
          「已经说给 X 了」—— 模型以为送达、群里实际没有任何反应（这句只进了群日志）。
-      /* ⛔ 11-09：团成员/主理人要拿到"我在团队里的位置"，否则群里只能凭职业名瞎猜分工。 */
-      ...(teamSeatOf(catalog, m.id, m.targetKind, m.targetKey) ?? {}),
          ⇒ 按事实回失败，模型会改口/晚点再说，而不是骗用户。 */
       if (ranIds.has(String(to.id))) {
         return Promise.resolve({ ok: false, error: "这位伙伴本轮已经说过话（同一条消息里不能再叫他一次），下一条消息里再 @ 他" });
@@ -641,6 +641,15 @@ function teamSeatOf(
       /* ⛔ 11-08 用户（截图：「群成员 伙伴转交」看不出是谁发的）：名册里查不到 id 时用**台账里的名字**兜底，
          ⛔ 不再退化成通用的「群成员」—— 被叫的会话头部与模型都要看到真实发送者。 */
       const from = roster.find((m) => m.id === fromId) ?? { id: fromId, name: String(fromName ?? "").trim() || "群成员" };
+      /* ⛔⛔ 11-09 用户：「让团队真正运作起来」——原来是**两条路不一样长**：
+         行首 `@名字：` 走 hop=1（再 @ 就不接力了），`group_say` 走 hop=0（能一直接力），
+         而且 `group_say` 这条路**不扣预算**。同样是"成员之间沟通"，能走多远却不同 ⇒ 统一：
+         两条路都 hop=0（都允许继续接力），但**都扣同一份预算**（`chainBudget`，手动派活 4 次）。
+         `ranIds` 再保证同一位成员一轮只跑一次 ⇒ 最多 4 个不同的人，不会对烧。 */
+      if (chainBudget <= 0) {
+        return Promise.resolve({ ok: false, error: "这一轮的接力用完了（最多 4 次）——下一条消息再叫他，或者你自己接着做" });
+      }
+      chainBudget -= 1;
       /* ⛔ 不 await：工具调用立刻返回，被叫的人稍后自己在群里回话。 */
       void runOne(to as unknown as GroupTarget, 0, { id: from.id, name: from.name }, msg).catch(() => undefined);
       return Promise.resolve({ ok: true });
@@ -678,15 +687,6 @@ function teamSeatOf(
     /* 常驻用量监听（幂等）：本轮之后的用量事件即使晚到，也能补到落盘的那条消息上。 */
     installTalkUsageWatcher();
     const startedAt = Date.now();
-      /* ⛔⛔ 11-09 用户：「让团队真正运作起来」——原来是**两条路不一样长**：
-         行首 `@名字：` 走 hop=1（再 @ 就不接力了），`group_say` 走 hop=0（能一直接力），
-         而且 `group_say` 这条路**不扣预算**。同样是"成员之间沟通"，能走多远却不同 ⇒ 统一：
-         两条路都 hop=0（都允许继续接力），但**都扣同一份预算**（`chainBudget`，手动派活 4 次）。
-         `ranIds` 再保证同一位成员一轮只跑一次 ⇒ 最多 4 个不同的人，不会对烧。 */
-      if (chainBudget <= 0) {
-        return Promise.resolve({ ok: false, error: "这一轮的接力用完了（最多 4 次）——下一条消息再叫他，或者你自己接着做" });
-      }
-      chainBudget -= 1;
     let chars = 0;
     let threadId = "";
     let okFlag = false;
