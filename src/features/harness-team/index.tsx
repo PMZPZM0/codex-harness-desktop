@@ -41,7 +41,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
-    create, rename, addPartner, removePartner, mute, setAvatar, renameMember, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf,
+    create, rename, addPartner, removePartner, mute, setAvatar, renameMember, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf, setAdminOf,
     addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm, saveDialogFlow,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
@@ -279,6 +279,8 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             onRemovePartner={(id) => removePartner(active.id, id)}
             onMute={(id, m) => mute(active.id, id, m)}
             onSetManager={(memberId, managerId) => setManagerOf(active.id, memberId, managerId)}
+            /* ⛔ 11-09：管理员入口必须接到 store 的 setAdminOf（原来只接了 IPC，界面点不到）。 */
+            onSetAdmin={(memberId) => setAdminOf(active.id, memberId)}
             onSetMemory={(text) => setMemory(active.id, text)}
             onSetWorkspace={(workspace) => setWorkspace(active.id, workspace)}
             onSetFiles={(files) => saveFiles(active.id, files)}

@@ -44,6 +44,8 @@ type Props = {
   onRemovePartner: (partnerId: string) => Promise<{ ok: boolean; error?: string }>;
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
   onSetManager: (memberId: string, managerId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 群管理员（11-09）：空串 = 取消。专家团群由主理人兜底，界面不给入口。 */
+  onSetAdmin: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
   /** 项目地址（群的工作目录；空串 = 跟随应用默认） */
   onSetWorkspace: (workspace: string) => Promise<{ ok: boolean; error?: string }>;
@@ -277,7 +279,7 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
 }
 
 /** 群设置页：伙伴、群记忆、文件、定时任务与解散群等分区（视图开关已拆到 TeamViewModeSettings）。 */
-function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule }: Props) {
+function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetAdmin, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -505,6 +507,37 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
     <>
       {/* ── 常用置顶 2/8：partners ─────────────────────────── */}
       {/* ── 伙伴 ───────────────────────────────────────────────────────── */}
+      {/* ⛔⛔ 11-09 用户令：「无需 @ 成员时可直接发消息」「为普通群聊增加设置管理员功能」。
+          后端（IPC + store + 默认路由）早就 Ready，但**界面没有入口** ⇒ 用户被错误文案
+          「在群设置里设个管理员」指过来却找不到地方。这里补上。
+          ⛔ 专家团群不显示入口：由团主理人兜底（与 defaultRouteCandidates 同一口径）。 */}
+      <section className="team-settings__block" data-section="admin">
+        <h3><Users size={14} className="ic-violet" />群管理员</h3>
+        <p className="team-settings__hint">
+          不 @ 任何人直接发消息时，先交给上一位回复的伙伴；没有上下文就交给<strong>管理员</strong>推进进度。
+          设好之后，普通群里直接打字也能开工。专家团群不用设置，由团主理人接话。
+        </p>
+        {group.members.some((m) => String(m.targetKind ?? "") === "team") ? (
+          <p className="team-settings__hint">这个群绑定了专家团，由团主理人接话，不需要管理员。</p>
+        ) : (
+          <span className="team-settings__select">
+            <AppSelect
+              value={String(group.adminId ?? "")}
+              onChange={(value) => void run(
+                () => onSetAdmin(value),
+                value ? `管理员已设为 ${partners.find((p) => p.id === value)?.name ?? value}` : "已取消管理员",
+              )}
+              options={[
+                { value: "", label: "不设置（只按上下文接话）" },
+                ...partners.map((p) => ({ value: p.id, label: p.name })),
+              ]}
+            />
+          </span>
+        )}
+        <p className="team-settings__hint team-settings__layout-current">
+          当前：<strong>{group.adminId ? (partners.find((p) => p.id === group.adminId)?.name ?? "已移出群") : "不设置"}</strong>
+        </p>
+      </section>
       <section className="team-settings__block" data-section="partners">
         <h3>
           <Users size={14} className="ic-blue" />
@@ -1067,6 +1100,8 @@ export const TeamSettings = memo(TeamSettingsImpl, (a, b) => (
   a.issues === b.issues && a.limit === b.limit
   && a.group.id === b.group.id && a.group.name === b.group.name && a.group.leadId === b.group.leadId
   && a.group.members === b.group.members && a.group.files === b.group.files
+  /* ⛔ 11-09：管理员只改这一个字段，漏比会让设置完界面纹丝不动（用户判「选不了」）。 */
+  && a.group.adminId === b.group.adminId
   && a.group.memory === b.group.memory && a.group.memoryNotes === b.group.memoryNotes
   && a.group.schedules === b.group.schedules && a.group.workspace === b.group.workspace
 ));

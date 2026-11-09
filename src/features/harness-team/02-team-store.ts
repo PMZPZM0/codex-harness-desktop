@@ -787,6 +787,14 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 管理员（11-09）：普通群「用户没 @ 时由谁接话推进进度」；空串 = 取消。
+   *  ⛔ 只改这一条数据，不动任何会话与上下级关系。 */
+  const setAdminOf = useCallback(
+    async (groupId: string, memberId: string) =>
+      apply((await window.codex.harnessTeamSetAdmin(groupId, memberId)) as MutationResult),
+    [apply],
+  );
+
   /** 加一条记忆（type + origin 由主进程补；这里只传正文与类型） */
   const addNote = useCallback(
     async (groupId: string, note: { text: string; type: MemoryNote["type"]; threadId?: string }) =>
@@ -866,6 +874,6 @@ export function useTeamGroups() {
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     renameMember,
     setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
-    setManagerOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm, saveDialogFlow,
+    setManagerOf, setAdminOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm, saveDialogFlow,
   };
 }

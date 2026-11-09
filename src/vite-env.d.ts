@@ -1429,6 +1429,8 @@ interface Window {
     harnessTeamSetFiles(groupId: string, files: unknown): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：上下级（委派白名单） */
     harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
+    /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
+    harnessTeamSetAdmin(groupId: string, memberId: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamAddNote(groupId: string, note: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */

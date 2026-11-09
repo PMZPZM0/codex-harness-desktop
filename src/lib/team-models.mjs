@@ -209,6 +209,11 @@ export function createGroup(input) {
   const seen = new Set();
   const deduped = members.filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
   const leadId = String(input?.leadId ?? deduped[0]?.id ?? "");
+  /* 管理员（11-09 用户令）：普通群里「没人被 @ 时由谁接话推进进度」。
+     ⛔ 与 `managerId`（上下级 / 委派白名单）不是一回事，别合并。
+     ⛔ 只认群内 bot 成员：团成员是派生的（不在 members 里），而且专家团群不启用管理员。
+     成员被移出后这里会自动归零（校验失败 ⇒ 空串），不需要额外的清理逻辑。 */
+  const adminId = normalizeAdminId(input?.adminId, deduped);
   const files = (Array.isArray(input?.files) ? input.files : [])
     .map(normalizeGroupFile)
     .filter(Boolean)
@@ -226,6 +231,7 @@ export function createGroup(input) {
     id: String(input?.id ?? ""),
     name: String(input?.name ?? "未命名团队"),
     leadId,
+    adminId,
     members: deduped,
     /* 派生成员（团成员，不在 members 里）的头像覆盖表 —— 见 normalizeAvatarMap */
     avatars: normalizeAvatarMap(input?.avatars),
@@ -323,6 +329,100 @@ export function setManager(group, memberId, managerId) {
     changed: String(base.members.find((m) => m.id === id)?.managerId ?? "") !== up,
     group: { ...base, members: base.members.map((m) => (m.id === id ? { ...m, managerId: up } : m)) },
   };
+}
+
+/**
+ * 管理员 id 归一：只认**本群内的 bot 成员**，其余一律当"没设"。
+ *  ⛔ 这里不做"专家团群不启用"的判断 —— 那是路由（`defaultRouteCandidates`）的事：
+ *    数据里留着不影响正确性，团群那边根本不会读它。
+ */
+function normalizeAdminId(value, members) {
+  const id = String(value ?? "").trim();
+  if (!id) return "";
+  const hit = (Array.isArray(members) ? members : []).find((m) => m && m.id === id && m.kind === "bot");
+  return hit ? id : "";
+}
+
+/**
+ * 设置群管理员（11-09 用户令：「普通群聊增加设置管理员功能，管理员 agent 负责推动工作进度」）。
+ *  ⛔ 传空串 = 取消（不报错）；⛔ 指向不存在/不是伙伴的成员 = 拒绝（`not_member`）；
+ *  ⛔ 专家团群不该走到这里 —— 界面不提供入口，`defaultRouteCandidates` 也不用它。
+ */
+export function setAdmin(group, memberId) {
+  const base = createGroup(group);
+  const id = String(memberId ?? "").trim();
+  if (!id) return base.adminId ? { ok: true, changed: true, group: { ...base, adminId: "" } } : { ok: true, changed: false, group: base };
+  if (!base.members.some((m) => m.id === id && m.kind === "bot")) return { ok: false, reason: "not_member", group: base };
+  if (base.adminId === id) return { ok: true, changed: false, group: base };
+  return { ok: true, changed: true, group: { ...base, adminId: id } };
+}
+
+/**
+ * 群里绑定的专家团 → **主理人**的派活 id（合成 id `team:<teamId>:<leadMemberId>`）。
+ *  ⛔ 不是 `leadId`：那个是**群主**（发起人「我」），主理人是调度目录里 `kind: "expert"` 那条。
+ *  没有团 / 团里没主理人 ⇒ 空串（调用方自行降级）。
+ */
+export function teamLeadRouteIdOf(group, catalog) {
+  const g = createGroup(group);
+  const cat = Array.isArray(catalog) ? catalog : [];
+  for (const m of g.members) {
+    if (!m || m.kind !== "bot" || m.targetKind !== "team" || !m.targetKey) continue;
+    const lead = cat.find((t) => t && t.kind === "expert" && String(t.teamId ?? "") === String(m.targetKey));
+    const memberId = String(lead?.memberId ?? "").trim();
+    if (!memberId) continue;
+    const id = teamAuthorIdOf(String(m.targetKey), memberId);
+    if (id) return id;
+  }
+  return "";
+}
+
+/**
+ * 用户**没 @ 任何人**时，这条消息该投给谁（按优先级返回候选，主进程逐个试）。
+ *
+ * ⛔⛔ 11-09 用户令（两条路由需求的"默认值"会打架，分层在这里定死）：
+ *   ① **专家团群一律交给主理人**（成员里有 `targetKind === "team"` 即算），不看上下文。
+ *      理由：需求一要求"专家团群无 @ 时默认由主代理回复"，而团成员的产出必须由主理人
+ *      拆解/分工/验收；若沿用"上一回合团成员回的就还给它"，就会**绕过 SOP 直接点团成员**，
+ *      两条需求互相打架。⇒ 团群：主理人在 ⇒ 只返回它；主理人缺失 ⇒ 返回空（⛔ 不降级到管理员）。
+ *   ② **普通群：上下文优先**。上一回合是哪个 agent 回的，就接着给它 —— 这是"接着说"，
+ *      意图最精确（刚跟 A 聊完，下一句不点名也是在跟 A 说）。
+ *   ③ **没有可延续对象时**才换人：普通群 ⇒ 群管理员（"未 @ 时默认由管理员回复以推进进度"）。
+ *      管理员只在**兜底位**，不会抢走正在进行的对话；这正是两条需求不冲突的关键。
+ *   ④ 都没有 ⇒ 空数组，调用方给"先 @ 一个伙伴，或在群设置里设个管理员"。
+ *
+ * ⛔ 只返回候选 id + 原因，**不判**"这个人还在不在群 / 静音没有"：
+ *   合法性由主进程 `resolveGroupTargets` 逐个试（纯函数看不到目录细节）；
+ *   `createGroup` 已把"被移出的管理员"归一成空串，属于这里能判的边界。
+ */
+export function defaultRouteCandidates({ group, catalog, rows } = {}) {
+  const g = createGroup(group);
+  /* ① 专家团群：**不读上下文**，只认主理人（见上方注释的冲突说明）。⛔ 管理员不启用。 */
+  const hasTeam = g.members.some((m) => m && m.kind === "bot" && m.targetKind === "team");
+  if (hasTeam) {
+    const lead = teamLeadRouteIdOf(g, catalog);
+    return lead ? [{ id: lead, reason: "team-lead" }] : [];
+  }
+  const out = [];
+  const seen = new Set();
+  const push = (id, reason) => {
+    const key = String(id ?? "").trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({ id: key, reason });
+  };
+  /* ② 普通群 · 上下文：最后一条**真实 agent 回复**。⛔ 排除系统提示与用户自己。 */
+  const list = Array.isArray(rows) ? rows : [];
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const row = list[i];
+    if (!row || row.authorKind !== "bot") continue;
+    const authorId = String(row.authorId ?? "").trim();
+    if (!authorId || authorId === "system") continue;
+    push(authorId, "context");
+    break;
+  }
+  /* ③ 普通群 · 兜底：管理员（⛔ 排在上下文之后，别抢走正在进行的对话）。 */
+  if (g.adminId) push(g.adminId, "admin");
+  return out;
 }
 
 /**

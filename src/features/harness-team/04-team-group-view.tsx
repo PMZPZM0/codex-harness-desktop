@@ -95,6 +95,8 @@ type Props = {
   onRemovePartner: (partnerId: string) => Promise<{ ok: boolean; error?: string }>;
   onMute: (partnerId: string, muted: boolean) => Promise<{ ok: boolean; error?: string }>;
   onSetManager: (memberId: string, managerId: string) => Promise<{ ok: boolean; error?: string }>;
+  /** 群管理员（11-09）：普通群「没 @ 时由谁接话」；空串 = 取消。 */
+  onSetAdmin: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
   /** 项目地址（群的工作目录） */
   onSetWorkspace: (workspace: string) => Promise<{ ok: boolean; error?: string }>;
@@ -236,7 +238,7 @@ function TeamQuoteBlock({ quote, nameOf, faceOfId, mentionCandidates, mentionPar
  *  ⛔ 11-09 加部件时把原来的注释挤开了，守卫【295】会盯「导出函数必须有中文文档注释」，别再挪。 */
 export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
-  onAddPartner, onRemovePartner, onMute, onSetManager, onSetMemory, onSetWorkspace, onSetFiles,
+  onAddPartner, onRemovePartner, onMute, onSetManager, onSetAdmin, onSetMemory, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
   onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onRenameMember, onSetMessageLayout, onSetReplyMode, onSetMessageForm, dialogFlow, onSetDialogFlow,
@@ -940,8 +942,12 @@ export function TeamGroupView({
         if (queued.length) {
           clearComposer(Boolean(override));
           flashMenuMsg(`已排进 ${queued.join("、")} 的队列（它跑完这一轮就接着做；点「立即」可插队）`);
+          return { ok: true };
         }
-        return { ok: true };
+        /* ⛔⛔ 11-09 用户令「无需 @ 成员时可直接发消息」——
+           原来这里**直接 return { ok: true }**：没 @ 任何人 ⇒ targets 是空数组 ⇒ 什么都不发，
+           用户按了回车却毫无反应（连报错都没有）。⇒ 空目标必须继续往下交给主进程，
+           由它按「上下文 → 团主理人 / 群管理员」挑收件人；⛔ 别再在这里吞掉。 */
       }
       const r = await onSend?.(idleTargets, fullBody, params);
       if (r && !r.ok) {
@@ -1393,6 +1399,7 @@ export function TeamGroupView({
             onRemovePartner={onRemovePartner}
             onMute={onMute}
             onSetManager={onSetManager}
+            onSetAdmin={onSetAdmin}
             onSetMemory={onSetMemory}
             onSetWorkspace={onSetWorkspace}
             onSetFiles={onSetFiles}

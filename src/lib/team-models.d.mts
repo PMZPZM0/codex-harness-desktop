@@ -82,6 +82,8 @@ export interface TeamGroupLite {
   id: string;
   name: string;
   leadId: string;
+  /** 管理员（11-09）：普通群「用户没 @ 时由谁接话推进进度」；空串 = 没设。⛔ 与 managerId 不是一回事 */
+  adminId?: string;
   members: TeamMemberLite[];
   /** 派生成员（团成员，合成 id）的头像覆盖表 */
   avatars?: Record<string, string>;
@@ -177,6 +179,18 @@ export function setManager(
   memberId: string,
   managerId?: string,
 ): { ok: boolean; reason?: string; group: TeamGroupLite; changed?: boolean };
+export function setAdmin(
+  group: TeamGroupLite,
+  memberId?: string,
+): { ok: boolean; reason?: string; group: TeamGroupLite; changed?: boolean };
+/** 群里绑定的专家团 → 主理人的派活 id（`team:<teamId>:<leadMemberId>`）；没有团返回空串。 */
+export function teamLeadRouteIdOf(group: unknown, catalog?: unknown): string;
+/** 用户没 @ 任何人时的候选投递目标（上下文优先 → 团主理人 / 群管理员兜底）。 */
+export function defaultRouteCandidates(input?: {
+  group?: unknown;
+  catalog?: unknown;
+  rows?: unknown;
+}): Array<{ id: string; reason: "context" | "team-lead" | "admin" }>;
 export function createGroup(input: unknown): TeamGroupLite;
 export function memberIdsOf(group: TeamGroupLite | null | undefined): string[];
 export function partnersOf(group: TeamGroupLite | null | undefined): TeamMemberLite[];

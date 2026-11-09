@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 648,
+  "count": 649,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6301,6 +6301,16 @@
       "invokeArgs": "groupId, memberId, managerId",
       "cast": null,
       "note": "团队模式：上下级（委派白名单）"
+    },
+    {
+      "name": "harnessTeamSetAdmin",
+      "channel": "harness-team:set-admin",
+      "paramsImpl": "groupId: string, memberId: string",
+      "paramsDecl": "groupId: string, memberId: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, memberId",
+      "cast": null,
+      "note": "团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底）"
     },
     {
       "name": "harnessTeamAddNote",

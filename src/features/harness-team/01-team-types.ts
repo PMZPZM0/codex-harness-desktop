@@ -84,6 +84,10 @@ export type TeamGroup = {
   id: string;
   name: string;
   leadId: string;
+  /** 管理员（11-09）：普通群「用户没 @ 时由谁接话推进进度」；空串 = 没设。
+   *  ⛔ 与成员上的 `managerId`（上下级 / 委派白名单）不是一回事，别合并。
+   *  ⛔ 专家团群不用它（由团主理人兜底），界面也不给入口。 */
+  adminId?: string;
   members: TeamMember[];
   /** 派生成员（团成员，合成 id）的头像覆盖表：他们不在 members 里，脸单独记一份 */
   avatars?: Record<string, string>;
