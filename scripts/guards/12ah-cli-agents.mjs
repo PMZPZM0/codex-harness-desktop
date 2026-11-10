@@ -752,14 +752,14 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
 
   /* ── 11-07 供应商自动跟随（安装即配置 / 切供应商自动更新 / 升级自动补）──────── */
   const providers = await import(pathToFileURL(join(ROOT, "src/lib/cli-provider-config.mjs")).href);
-  ok(providers.isLocalBaseUrl("http://本机中转端口/v1") && !providers.isLocalBaseUrl("https://api.openai.com/v1"),
+  ok(providers.isLocalBaseUrl("http://localhost:3425/v1") && !providers.isLocalBaseUrl("https://api.openai.com/v1"),
     "本机中转识别（只有本机/内网才写含占位 Key 的配置）");
-  ok(providers.stripV1Suffix("http://本机中转端口/v1") === "http://本机中转端口",
+  ok(providers.stripV1Suffix("http://localhost:3425/v1") === "http://localhost:3425",
     "Anthropic/Gemini 的 base 剥掉 /v1（SDK 自己拼）");
-  const kimiToml = providers.kimiConfigToml({ baseUrl: "http://本机中转端口/v1", model: "m/x", apiKey: "harness-local" });
+  const kimiToml = providers.kimiConfigToml({ baseUrl: "http://localhost:3425/v1", model: "m/x", apiKey: "harness-local" });
   ok(/\[providers\.harness\]/.test(kimiToml) && /default_model = "harness\/m\/x"/.test(kimiToml) && /\[models\."harness\/m\/x"\]/.test(kimiToml),
     "Kimi config.toml：provider / model / default_model 三处对齐");
-  const codexToml = providers.codexConfigToml({ baseUrl: "http://本机中转端口/v1", model: "m/x" });
+  const codexToml = providers.codexConfigToml({ baseUrl: "http://localhost:3425/v1", model: "m/x" });
   ok(/model_provider = "harness"/.test(codexToml) && /env_key = "OPENAI_API_KEY"/.test(codexToml) && !/harness-local/.test(codexToml),
     "Codex 独立 home 配置：provider 指向当前供应商，文件里不写 Key");
   const geminiMerged = providers.mergeGeminiSettings({ theme: "dark", security: { auth: { keep: 1 } } }, { model: "m/x" });
