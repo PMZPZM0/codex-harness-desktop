@@ -8,10 +8,12 @@
  * 我们只提供**宿主适配**（模型/密钥/静态目录），不重写它的界面与流程。
  *
  * 数据落在 `<userData>/media-desk-host/media-desk/state.json`（通过 DSH_HOME 重定向）。
- * ⛔ 只绑 127.0.0.1；连接鉴权用本地放行（不暴露到局域网）。
+ * ⛔ 只绑 127.0.0.1；页面与接口都挂在**随机令牌前缀** `/t/<TOKEN>/` 下、并校验 Host 头 ——
+ *    本机其它网页既猜不中地址也过不了 Host 检查（防本机 CSRF / DNS rebinding）。
  */
 import http from "node:http";
 import path from "node:path";
+import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { app } from "electron";
@@ -33,6 +35,14 @@ const MIME: Record<string, string> = {
   ".gif": "image/gif", ".svg": "image/svg+xml", ".ico": "image/x-icon",
 };
 
+/* 每次进程启动换一次令牌：地址只交给自己的 iframe 与主进程工具。 */
+const TOKEN = randomBytes(18).toString("hex");
+const PREFIX = `/t/${TOKEN}`;
+
+/* ⛔ tsc（CommonJS）会把 import() 降级成 require()，而 require 既不认 file:// URL 也读不了 ESM；
+   用 Function 构造保住原生动态 import，否则随包的 host.js 永远加载失败。 */
+const nativeImport = new Function("specifier", "return import(specifier);") as (specifier: string) => Promise<any>;
+
 function vendorDir(): string {
   return app.isPackaged ? path.join(process.resourcesPath, "media-desk") : path.join(app.getAppPath(), "resources", "media-desk");
 }
@@ -41,9 +51,16 @@ function vendorDir(): string {
 async function activeModel(): Promise<{ baseUrl: string; model: string; apiKey: string }> {
   const active = await readCustomModel().catch(() => null);
   if (!active) return { baseUrl: "", model: "", apiKey: "" };
-  const key = active.encryptedKey && secureHost?.isEncryptionAvailable()
-    ? secureHost.decryptString(Buffer.from(active.encryptedKey, "base64"))
-    : "";
+  /* ⛔ 解不开就按「无 Key」继续：密钥库换过 / 档案从别的机器拷来都会在这里抛，
+     不接住的话整个工作台起不来（e2e 持久档案实测报 decryptString 失败）。 */
+  let key = "";
+  if (active.encryptedKey && secureHost?.isEncryptionAvailable()) {
+    try {
+      key = secureHost.decryptString(Buffer.from(active.encryptedKey, "base64"));
+    } catch {
+      key = "";
+    }
+  }
   return { baseUrl: String(active.baseUrl ?? ""), model: String(active.model ?? ""), apiKey: key };
 }
 
@@ -91,11 +108,11 @@ function llmAdapter() {
 
 let serverPromise: Promise<string> | null = null;
 let routeHandler: ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>) | null = null;
+let boundPort = 0;
 
-function serveStatic(req: http.IncomingMessage, res: http.ServerResponse): boolean {
-  const url = new URL(req.url || "/", "http://local");
-  const pathname = decodeURIComponent(url.pathname);
-  const file = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+/** 静态页只放行随包顶层的几个文件（⛔ 防路径穿越：目录分隔符一律拒绝）。 */
+function serveStatic(rel: string, res: http.ServerResponse): boolean {
+  const file = rel === "" || rel === "/" ? "index.html" : rel.replace(/^\/+/, "");
   if (!/^[\w.-]+$/.test(file)) return false;
   const full = path.join(vendorDir(), file);
   try {
@@ -114,7 +131,7 @@ export function ensureMediaDeskServer(): Promise<string> {
   serverPromise = (async () => {
     /* DSH_HOME 决定上游 Store 的数据目录 —— 在加载 host.js 之前设好。 */
     process.env.DSH_HOME = path.join(app.getPath("userData"), "media-desk-host");
-    const hostModule: any = await import(pathToFileURL(path.join(vendorDir(), "host", "host.js")).href);
+    const hostModule: any = await nativeImport(pathToFileURL(path.join(vendorDir(), "host", "host.js")).href);
     const plugin = hostModule?.default ?? hostModule;
     const model = await activeModel();
     const ctx: any = {
@@ -131,13 +148,27 @@ export function ensureMediaDeskServer(): Promise<string> {
     await plugin.apply(ctx);
 
     const server = http.createServer((req, res) => {
-      const url = req.url || "/";
-      if (url.startsWith("/media-desk")) {
+      /* Host 头必须是本机这一跳：别的网页把 localhost 解析到本端口也进不来。 */
+      if (String(req.headers.host ?? "") !== `127.0.0.1:${boundPort}`) {
+        res.writeHead(403, { "content-type": "text/plain; charset=utf-8" });
+        res.end("forbidden");
+        return;
+      }
+      const url = new URL(req.url || "/", "http://127.0.0.1");
+      if (url.pathname !== PREFIX && !url.pathname.startsWith(PREFIX + "/")) {
+        res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+        res.end("not found");
+        return;
+      }
+      const rest = url.pathname.slice(PREFIX.length) || "/";
+      if (rest === "/media-desk" || rest.startsWith("/media-desk/")) {
         if (!routeHandler) { res.writeHead(503); res.end("media desk not ready"); return; }
+        /* 上游 handler 自己按 /media-desk/ 前缀解析路径：去掉令牌段再交给它。 */
+        req.url = rest + url.search;
         void routeHandler(req, res).catch((error) => { try { res.writeHead(500); res.end(String(error?.message ?? error)); } catch { /* 已响应 */ } });
         return;
       }
-      if (serveStatic(req, res)) return;
+      if (serveStatic(rest, res)) return;
       res.writeHead(404);
       res.end("not found");
     });
@@ -145,22 +176,32 @@ export function ensureMediaDeskServer(): Promise<string> {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => {
         const address = server.address();
-        resolve(typeof address === "object" && address ? address.port : 0);
+        boundPort = typeof address === "object" && address ? address.port : 0;
+        resolve(boundPort);
       });
     });
-    return `http://127.0.0.1:${port}/`;
-  })();
+    return `http://127.0.0.1:${port}${PREFIX}/`;
+  })().catch((error) => {
+    /* 起不来就允许下次重试（否则整个进程生命周期内永远是同一个失败的 Promise）。 */
+    serverPromise = null;
+    throw error;
+  });
   return serverPromise;
 }
 
 /** Codex 工具走的内部请求：直接打本地服务（与界面同一份数据/流程）。 */
 export async function mediaDeskRequest(pathname: string, body?: unknown): Promise<any> {
   const endpoint = await ensureMediaDeskServer();
-  const url = new URL(pathname.replace(/^\/+/, ""), endpoint);
-  const res = await fetch(url, body === undefined
-    ? { headers: { "x-media-desk-lang": "zh" } }
-    : { method: "POST", headers: { "content-type": "application/json", "x-media-desk-lang": "zh" }, body: JSON.stringify(body) });
+  /* 上游路由全在 /media-desk/ 下；endpoint 已带令牌前缀，这里只拼业务路径。 */
+  const url = new URL(`media-desk/${pathname.replace(/^\/+/, "")}`, endpoint);
+  const headers: Record<string, string> = { "x-media-desk-lang": "zh" };
+  if (body !== undefined) headers["content-type"] = "application/json";
+  const res = await fetch(url, {
+    ...(body === undefined ? {} : { method: "POST", body: JSON.stringify(body) }),
+    headers,
+    signal: AbortSignal.timeout(30_000),
+  });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(String(data?.error ?? `HTTP ${res.status}`));
+  if (!res.ok) throw new Error(String(data?.error ?? `工作台接口返回 HTTP ${res.status}`));
   return data;
 }

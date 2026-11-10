@@ -858,7 +858,10 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 
 独立设置页板块（设置 → 能力与内容 → 自媒体工作台）。**界面与流程 = 开源 dsh-media-desk 2.6.2 原样嵌入**（DSH/Cordis 插件、MIT；用户令「开源啥样就复刻啥样」）—— 客户端 bundle、宿主源码、封面素材都随包（`resources/media-desk/`，extraResources 映射到 `media-desk/`），我们不重写它的 UI。
 - 运行：主进程 `media-desk/embed.ts` 起一个**只绑 127.0.0.1** 的本地服务：`/media-desk/*` 交给它自己的 `host/host.js`；`/` 是最小页面（`index.html` + `glue.js` + `react.bundle.js`）把它的 main 组件挂出来。设置页用 iframe 打开（`media-desk:endpoint` 拿地址；CSP frame-src 已放行 127.0.0.1）。
-- 宿主适配只有三样：`llm`（`prepareCall().stream()` → 用应用当前供应商跑一轮，Key 走 secure 接缝）、`agentDefaultModel`（当前模型）、`connection`（本地放行）。数据经 `DSH_HOME` 落到 `<userData>/media-desk-host/media-desk/state.json`。
-- Codex 工具：`harness_tools({name:"media_desk", args:{action,…}})`（dispatch-rpc 走 `mediaDeskRequest`，与界面**同一份**数据/流程）：state / capture / draft / produce / schedule / metric / style / delete / undo。
+- ⛔ 安全面（11-10 审查加固）：页面与接口都挂在**随机令牌前缀** `/t/<TOKEN>/` 下（每次进程换一次）+ 校验 Host 头必须是 `127.0.0.1:<port>`（防本机 CSRF / DNS rebinding）；`index.html` 的脚本引用必须是**相对路径**（`./react.bundle.js`），否则令牌前缀下取不到。
+- ⛔ 上游 `host.js` 是 **ESM + file://**：tsc(CommonJS) 会把 `import()` 降级成 `require()` ⇒ 必须用 `new Function("specifier","return import(specifier)")` 的原生动态 import（`nativeImport`），否则整个工作台加载失败。
+- 宿主适配只有三样：`llm`（`prepareCall().stream()` → 用应用当前供应商跑一轮，Key 走 secure 接缝）、`agentDefaultModel`（当前模型）、`connection`（本地放行）。数据经 `DSH_HOME` 落到 `<userData>/media-desk-host/media-desk/state.json`。⛔ 解不开 Key（密钥库换过 / 档案拷来）按「无 Key」继续，不许让整页起不来。
+- 上游 op 是**扁平字段**（`{op:"add_item", title, body…}`），⛔ 不是 `{op, item:{…}}`；工具请求路径必须拼 `media-desk/` 前缀（上游路由全在这个前缀下）。
+- Codex 工具：`harness_tools({name:"media_desk", args:{action,…}})`（dispatch-rpc 走 `mediaDeskRequest`，与界面**同一份**数据/流程）：state / capture / draft / produce / schedule / metric / style / delete / undo。capture 带 url 走上游 `capture-url`（抓标题/摘要/封面）；draft 的 `styleId` 走 `set_style`（切换当前写作风格）；schedule 带 `postId` 改已有条目排期（`schedule_item`），不带则新建。
 - ⛔ 排期只是本地计划、不会自动发布；数据是手动记录；生图在工作台设置里配 OpenAI 兼容接口。
-- 升级上游 = 用 npm 包 `dsh-media-desk@最新` 覆盖 `resources/media-desk/{host,assets,client.js}` 并重跑 `npx esbuild resources/media-desk/react-entry.js --bundle --format=iife --global-name=MDReact --outfile=resources/media-desk/react.bundle.js`；守卫 `12bi-media-desk`（随包产物 / 只绑本机 / 采集拒绝内网 / 工具接线）。
+- 升级上游 = 用 npm 包 `dsh-media-desk@最新` 覆盖 `resources/media-desk/{host,assets,client.js}`，并用 `node node_modules/vite/bin/vite.js build`（临时 lib 配置：iife / name=MDReact / define `process.env.NODE_ENV="production"` / minify）重建 `react.bundle.js`（生产包 ~219KB；⛔ 别用 dev 包，1.2MB 还带 DevTools 提示）。守卫 `12bi-media-desk`（22 条：随包产物 / 令牌+Host / 原生 import / 扁平 op / 解密兜底 / 采集拒绝内网 / 工具接线）+ 验收项 `media-desk`（iframe target 读 DOM，证明原版界面真渲染）。

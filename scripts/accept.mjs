@@ -16,6 +16,7 @@
 //   ⑪ thread-tag-column：会话行标签固定成一列（贴置顶键左边）+ 标签最多 3 个字（11-08）
 //   ⑫ team-skill-picker：工作伙伴「引用技能」贴 + 图标弹、可多选有反馈、点一下不关（11-08）
 //   ⑬ team-composer-input：群聊输入框插 @ 后打字光标不跳 / 输入法组合不重建 / 粘贴只进纯文本（11-08 审查）
+//   ⑭ media-desk：自媒体工作台原版界面在令牌前缀 iframe 里真渲染 + 工具与界面同源（11-09 审查）
 //
 // 用法：
 //   node scripts/accept.mjs                 # 跑全部当前项
@@ -29,6 +30,7 @@
 import { existsSync, mkdirSync, writeFileSync, truncateSync, rmSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import WebSocket from "ws";
 import { ElectronHarness } from "./e2e/lib/harness.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -2100,6 +2102,80 @@ const CHECKS = [
         flow.pastedText.includes("纯文本粘贴") && !flow.hasBoldTag,
         JSON.stringify({ text: flow.pastedText, html: flow.hasBoldTag }));
       h.check("⑤ 收尾：输入框已清空（不把测试文本留在用户群里）", flow.cleared === true, String(flow.cleared));
+    },
+  },
+  {
+    id: "media-desk",
+    name: "自媒体工作台：原版界面在令牌前缀 iframe 里真渲染 + 工具与界面同源（11-09 审查）",
+    run: async (h) => {
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await h.waitFor(`[...document.querySelectorAll(".settings-nav button")].some(function(b){ return (b.textContent||"").trim()==="自媒体工作台"; })`, { label: "工作台导航项", timeoutMs: 8000 });
+      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="自媒体工作台"; }); if(!b) return 0; b.click(); return 1; })()`);
+      h.check("⓪ 前置：设置面板里有「自媒体工作台」导航且已点击", clicked === 1, String(clicked));
+      if (clicked !== 1) return;
+      await h.waitFor(`!!document.querySelector(".media-desk-frame") || !!document.querySelector(".media-desk-error")`, { label: "工作台页面", timeoutMs: 20000 });
+      const early = await h.eval(`(function(){ return { error:(document.querySelector(".media-desk-error")?.textContent||"").slice(0,200), loading:!!document.querySelector(".media-desk-loading") }; })()`);
+      h.check("① 工作台页面挂载成功（⛔ 不是启动失败提示）", !early.error, JSON.stringify(early));
+      if (early.error) return;
+      await h.waitFor(`!!document.querySelector(".media-desk-frame")`, { label: "工作台 iframe", timeoutMs: 8000 });
+      const frame = await h.eval(`(function(){ const f=document.querySelector(".media-desk-frame"); return f ? { src:f.getAttribute("src")||"" } : null; })()`);
+      const endpointOk = Boolean(frame && /^http:\/\/127\.0\.0\.1:\d+\/t\/[0-9a-f]{36}\/$/.test(frame.src));
+      h.check("② iframe 指向带随机令牌的本机地址", endpointOk, JSON.stringify(frame));
+      if (!endpointOk) return;
+
+      /* 本机服务真能取到页面 + 生产版 React 包（⛔ 不是 dev 包） */
+      const pageOk = await fetch(frame.src).then((r) => r.text()).then((t) => t.includes("md-fatal")).catch(() => false);
+      const bundle = await fetch(new URL("react.bundle.js", frame.src)).then(async (r) => ({ status: r.status, size: (await r.text()).length })).catch(() => ({ status: 0, size: 0 }));
+      h.check("③ 页面与本机 React 包都取得到（且是生产包）", pageOk && bundle.status === 200 && bundle.size > 100000, JSON.stringify(bundle));
+
+      /* 原版界面真渲染：跨源 iframe 是独立的 `iframe` target（进不了页面帧树，也读不到 DOM）
+         ⇒ 按 /json 找到它、单独连一个 CDP ws 读 #root。 */
+      const readIframe = async () => {
+        const list = await (await fetch(`http://127.0.0.1:${h.port}/json`)).json();
+        const target = list.find((t) => t.type === "iframe" && String(t.url || "").startsWith(frame.src.replace(/\/$/, "")));
+        if (!target) return null;
+        const ws = new WebSocket(target.webSocketDebuggerUrl);
+        const pending = new Map();
+        let seq = 0;
+        await new Promise((resolve, reject) => { ws.on("open", resolve); ws.on("error", () => reject(new Error("iframe CDP 连接失败"))); });
+        ws.on("message", (data) => {
+          const m = JSON.parse(data.toString());
+          const slot = pending.get(m.id);
+          if (slot) { pending.delete(m.id); slot(m); }
+        });
+        const send = (method, params = {}) => new Promise((resolve, reject) => {
+          const id = ++seq;
+          const timer = setTimeout(() => { pending.delete(id); reject(new Error(`iframe CDP ${method} 超时`)); }, 8000);
+          pending.set(id, (m) => { clearTimeout(timer); if (m.error) reject(new Error(m.error.message)); else resolve(m.result); });
+          ws.send(JSON.stringify({ id, method, params }));
+        });
+        try {
+          const r = await send("Runtime.evaluate", {
+            expression: `(function(){ const root=document.getElementById("root"); return JSON.stringify({ ready:document.readyState, kids: root?root.children.length:0, text:(document.body.innerText||"").slice(0,160) }); })()`,
+            returnByValue: true,
+          });
+          return JSON.parse(r?.result?.value ?? "null");
+        } finally {
+          ws.close();
+        }
+      };
+      let view = null;
+      const t0 = Date.now();
+      while (!view && Date.now() - t0 < 20000) {
+        try { view = await readIframe(); } catch { /* 帧还没建好 */ }
+        if (!view) await wait(400);
+      }
+      h.check("④ 原版工作台已在 iframe 内渲染（#root 有内容）", Boolean(view && view.kids > 0), JSON.stringify(view));
+      if (view) h.check("⑤ 渲染的是上游界面（导航/标题文字在位）", /灵感|内容|排期|复盘|风格/.test(view.text), JSON.stringify(view.text));
+
+      /* 工具与界面同一份数据：bridge 返回同一地址（幂等，不另起第二个服务） */
+      let again = "";
+      for (let i = 0; i < 3 && again !== frame.src; i += 1) {
+        again = String(await h.eval(`window.codex.mediaDeskEndpoint()`).catch(() => "") ?? "");
+        if (again !== frame.src) await wait(500);
+      }
+      h.check("⑥ 工具走的 endpoint 与界面同源（幂等复用同一个服务）", again === frame.src, JSON.stringify({ again, src: frame.src }));
     },
   },
 ];

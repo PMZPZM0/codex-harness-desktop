@@ -65,9 +65,28 @@ export async function run() {
     "随包产物齐备（原版客户端 / 页面 / React 包 / 宿主源码 / 封面素材）");
   ok(JSON.stringify(pkg.build?.extraResources ?? []).includes("resources/media-desk"),
     "打包会带上 resources/media-desk（extraResources）");
-  ok(/listen\(0, "127\.0\.0\.1"/.test(embed) && /process\.env\.DSH_HOME = path\.join\(app\.getPath\("userData"\), "media-desk-host"\)/.test(embed)
-    && /media-desk\/\$/.test(embed) === false,
+  ok(/listen\(0, "127\.0\.0\.1"/.test(embed) && /process\.env\.DSH_HOME = path\.join\(app\.getPath\("userData"\), "media-desk-host"\)/.test(embed),
     "本地服务只绑 127.0.0.1，数据目录经 DSH_HOME 落到 userData");
+  ok(/const TOKEN = randomBytes\(18\)\.toString\("hex"\)/.test(embed)
+    && /const PREFIX = `\/t\/\$\{TOKEN\}`/.test(embed)
+    && /url\.pathname !== PREFIX && !url\.pathname\.startsWith\(PREFIX \+ "\/"\)/.test(embed),
+    "页面与接口都挂在随机令牌前缀下（本机其它网页猜不到地址）");
+  ok(/String\(req\.headers\.host \?\? ""\) !== `127\.0\.0\.1:\$\{boundPort\}`/.test(embed),
+    "Host 头必须是本机这一跳（挡 DNS rebinding / 跨站打到本地服务）");
+  ok(/new Function\("specifier", "return import\(specifier\);"\)/.test(embed) && /nativeImport\(pathToFileURL/.test(embed),
+    "随包 host.js 用原生动态 import 加载（⛔ tsc 会把 import() 降级成 require，file:// 与 ESM 都读不了）");
+  ok(/op: "add_item", \.\.\.item/.test(tool) && !/op: "add_item", item/.test(tool),
+    "上游 op 用扁平字段（⛔ 不是 {op, item:{…}}，套一层会被判「灵感内容为空」）");
+  ok(/try \{\s*key = secureHost\.decryptString[\s\S]{0,80}catch \{\s*key = ""/.test(embed),
+    "解密失败按「无 Key」继续（⛔ 密钥库换过 / 档案拷来不许让整个工作台起不来）");
+  ok(/AbortSignal\.timeout\(30_000\)/.test(embed) && /serverPromise = null;[\s\S]{0,40}throw error/.test(embed),
+    "工具请求有 30s 超时；启动失败会清掉 Promise 允许重试");
+  ok(/new URL\(`media-desk\/\$\{pathname\.replace/.test(embed),
+    "工具请求拼上 media-desk/ 前缀（与界面同一套上游路由）");
+  ok(/src="\.\/react\.bundle\.js"/.test(read("resources/media-desk/index.html")),
+    "页面用相对路径加载随包脚本（令牌前缀下也能取到）");
+  ok(/dsh-media-desk 2\.6\.2/.test(read("THIRD_PARTY_NOTICES.md")) && /woniuniuniu\/dsh-media-desk/.test(read("THIRD_PARTY_NOTICES.md")),
+    "第三方声明登记了随包的 dsh-media-desk（MIT + 上游地址）");
   ok(!/safeStorage/.test(codeOnly(ipc)) && !/safeStorage/.test(codeOnly(embed)) && /secure/.test(embed),
     "⛔ 域不直取 safeStorage（密钥走宿主 secure 接缝）");
   ok(/<iframe className="media-desk-frame"/.test(board) && /mediaDeskEndpoint/.test(board),
@@ -75,6 +94,10 @@ export async function run() {
   ok(/action: \{ type: "string", enum: \["state", "capture", "draft", "produce", "schedule", "metric", "style", "delete", "undo"\]/.test(dispatchCore)
     && /name === "media_desk"/.test(dispatchRpc) && /runMediaDeskTool/.test(dispatchRpc) && /mediaDeskRequest/.test(tool),
     "Codex 可直接跑整条流程（media_desk 工具 → 本地服务，与界面同一份数据）");
+  ok(/capture-url/.test(tool) && /op: "set_style"/.test(tool) && /op: "schedule_item"/.test(tool) && !/angleId/.test(tool),
+    "工具语义对齐上游：链接走 capture-url、风格走 set_style、已有稿改期走 schedule_item（不复用 angleId）");
+  ok(!/images: \{ type/.test(dispatchCore) && !/what: \{ type/.test(dispatchCore) && !/inspirationId/.test(dispatchCore) && !/collection: \{ type/.test(dispatchCore),
+    "工具 schema 不再宣传未实现的参数（images / what / inspirationId / collection）");
 
   /* 行为：随包的采集闸真的拦内网、放公网（IP 字面量，避免测试依赖 DNS）。 */
   try {

@@ -101,6 +101,7 @@
 | Nuphus MCP | MIT | 桌面 / 浏览器自动化 MCP（`resources/tools/npm-global`） |
 | zy-cinematic-realism（造梦师） | CC BY-NC 4.0 | 电影视觉 Prompt 工作流技能包（`resources/expert-skills/zy-cinematic-realism`，源自 <https://github.com/popopo-99/zy-cinematic-realism>，SKILL.md 与 references/ 逐字未改；中文导读为旁挂 README.zh-CN.md）。⛔ NC = 仅限非商业用途，署名见包内 NOTICE.md |
 | dsh-550c-boot 的 550C 开机动画（2026-10-11 移植为「外观 → 开机动画」） | MIT | DSH 插件 `dsh-550c-boot@0.3.3` 的启动片头 —— 动画与 HTML 原稿 **Voidpoket**（<https://github.com/Voidpoket>），插件工程与移植 **Ziyang Song**（<https://github.com/yannicksong0106>）。本应用**逐字移植**其样式表 / 标记 / 驱动：`src/features/settings-appearance/boot550c/assets.ts`（CSS_550C / ENHANCE_CSS / BOOT_MARKUP / APP_MARKUP）与 `show.mjs`（动画驱动，仅加 `export`），零改写。上游 <https://github.com/yannicksong0106/dsh-550c-boot> |
+| dsh-media-desk 2.6.2（2026-11-09 内置为「设置 → 自媒体工作台」） | MIT | 自媒体工作台。本应用**原样随包**其客户端 bundle（`resources/media-desk/client.js`）、宿主源码（`resources/media-desk/host/**`）与封面素材（`resources/media-desk/assets/**`），界面与流程零改写；宿主侧只提供模型适配（`electron/features/media-desk/embed.ts`：本地 127.0.0.1 服务 + 当前供应商）与一个最小页面壳（`index.html` / `glue.js` / `react.bundle.js`，仅做 module loader 与 React 挂载）。上游 <https://github.com/woniuniuniu/dsh-media-desk>（版本 2.6.2 的 `dist/client.js` 与 `src/host/` 原码） |
 
 （本表只列「我们主动引入且有明确上游」的组件；上述工具各自的完整许可文本随其自身目录分发。）
 

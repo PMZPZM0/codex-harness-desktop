@@ -23,10 +23,16 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
       canUndo: payload?.canUndo ?? undefined,
     };
   };
-  const addItem = async (item: Record<string, unknown>) => {
-    const res = await mediaDeskRequest("ops", { ops: [{ op: "add_item", item }] });
+  /** 跑一批上游 op；有 errors 就抛（上游对非法字段是逐条回错误的）。 */
+  const applyOps = async (ops: Array<Record<string, unknown>>) => {
+    const res = await mediaDeskRequest("ops", { ops });
     const errors: string[] = Array.isArray(res?.errors) ? res.errors : [];
     if (errors.length) throw new Error(errors.join("；"));
+    return res as { receipts?: Array<{ target?: string }> };
+  };
+  const addItem = async (item: Record<string, unknown>) => {
+    /* 上游 op 是「扁平字段」（{op:'add_item', title, body…}），⛔ 不是 {op, item:{…}}。 */
+    const res = await applyOps([{ op: "add_item", ...item }]);
     return String(res?.receipts?.[0]?.target ?? "");
   };
   /** 等生产完成（produce 异步起跑）；超时也如实回当前进度。 */
@@ -42,90 +48,116 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
     return last;
   };
 
-  switch (action) {
-    case "state":
-      return out(summarize(await mediaDeskRequest("state")));
-    case "capture": {
-      const url = String(args?.url ?? "").trim();
-      const text = String(args?.text ?? "").trim();
-      if (!url && !text) return { ok: false, error: "capture 需要 text 或 url" };
-      const id = await addItem({ title: text.slice(0, 40) || url, body: text || url, ...(url ? { url } : {}), kind: "note", status: "idea" });
-      return out({ id, state: summarize(await mediaDeskRequest("state")) });
+  try {
+    switch (action) {
+      case "state":
+        return out(summarize(await mediaDeskRequest("state")));
+      case "capture": {
+        const url = String(args?.url ?? "").trim();
+        const text = String(args?.text ?? "").trim();
+        if (!url && !text) return { ok: false, error: "capture 需要 text 或 url" };
+        /* 带链接走上游的 capture-url：它会抓标题/摘要/封面（内网地址由它自己的采集闸拒绝）。 */
+        const id = url
+          ? String((await mediaDeskRequest("capture-url", {
+            url,
+            ...(args?.title ? { title: String(args.title) } : {}),
+            ...(text ? { note: text } : {}),
+          }))?.id ?? "")
+          : await addItem({ title: text.slice(0, 40), body: text, kind: "note", status: "idea" });
+        if (!id) return { ok: false, error: "记灵感失败（上游没有回执）" };
+        return out({ id, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "draft": {
+        const text = String(args?.text ?? "").trim();
+        const styleId = String(args?.styleId ?? "").trim();
+        const id = await addItem({
+          title: String(args?.title ?? "").trim() || text.slice(0, 40) || "未命名选题",
+          body: text,
+          kind: "note",
+          status: "idea",
+          ...(args?.platform ? { platform: String(args.platform) } : {}),
+        });
+        if (!id) return { ok: false, error: "建灵感失败" };
+        /* 上游的写作风格是「当前风格」（state.activeStyleId），不支持逐条绑；先切再产稿。 */
+        if (styleId) await applyOps([{ op: "set_style", id: styleId }]);
+        await mediaDeskRequest("produce", { id });
+        const done = await waitProduced(id);
+        const state = await mediaDeskRequest("state");
+        const item = (state?.state?.items ?? []).find((row: any) => row.id === id);
+        return out({
+          id,
+          production: done?.production ?? item?.production ?? null,
+          title: item?.title,
+          article: String(item?.production?.article ?? "").slice(0, 5000),
+          shots: item?.production?.shots ?? undefined,
+          state: summarize(state),
+        });
+      }
+      case "produce": {
+        const state = await mediaDeskRequest("state");
+        const id = String(args?.postId ?? state?.state?.items?.[0]?.id ?? "");
+        if (!id) return { ok: false, error: "还没有内容，先 capture 或 draft" };
+        await mediaDeskRequest("produce", { id });
+        const done = await waitProduced(id);
+        return out({ id, production: done?.production ?? null, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "schedule": {
+        const whenRaw = args?.when;
+        const when = typeof whenRaw === "number" ? new Date(whenRaw).toISOString() : String(whenRaw ?? "");
+        if (!when || Number.isNaN(Date.parse(when))) return { ok: false, error: "when 需要 ISO 时间（如 2026-11-10T09:00:00+08:00）或毫秒时间戳" };
+        const postId = String(args?.postId ?? "").trim();
+        if (postId) {
+          /* 给已有内容改排期（上游 schedule_item）。 */
+          await applyOps([{
+            op: "schedule_item",
+            id: postId,
+            scheduledAt: when,
+            ...(args?.platform ? { platform: String(args.platform) } : {}),
+          }]);
+          return out({ id: postId, scheduledAt: when, state: summarize(await mediaDeskRequest("state")) });
+        }
+        const id = await addItem({
+          title: String(args?.title ?? "").trim() || "未命名排期", body: String(args?.text ?? ""),
+          kind: "note", status: "idea", scheduledAt: when,
+          ...(args?.platform ? { platform: String(args.platform) } : {}),
+        });
+        if (!id) return { ok: false, error: "排期失败（上游没有回执）" };
+        return out({ id, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "metric": {
+        const res = await applyOps([{
+          op: "add_metric",
+          itemId: args?.postId ? String(args.postId) : undefined,
+          date: String(args?.date ?? new Date().toISOString().slice(0, 10)),
+          views: Number(args?.views ?? 0) || 0, likes: Number(args?.likes ?? 0) || 0,
+          comments: Number(args?.comments ?? 0) || 0, shares: Number(args?.shares ?? 0) || 0,
+          ...(args?.platform ? { platform: String(args.platform) } : {}),
+        }]);
+        return out({ receipts: res?.receipts, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "style": {
+        const res = await applyOps([{
+          op: "add_style",
+          name: String(args?.name ?? "新风格"),
+          summary: String(args?.description ?? ""),
+          structure: String(args?.prompt ?? ""),
+        }]);
+        return out({ receipts: res?.receipts, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "delete": {
+        const id = String(args?.id ?? "");
+        if (!id) return { ok: false, error: "delete 需要 id（state 里有）" };
+        const res = await applyOps([{ op: "delete_item", id }]);
+        return out({ receipts: res?.receipts, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "undo": {
+        const res = await mediaDeskRequest("undo", {});
+        return out({ label: res?.label, state: summarize(res) });
+      }
+      default:
+        return { ok: false, error: "media_desk 不认识的 action：" + action + "（可用 state / capture / draft / produce / schedule / metric / style / delete / undo）" };
     }
-    case "draft": {
-      const text = String(args?.text ?? "").trim();
-      const id = await addItem({
-        title: String(args?.title ?? "").trim() || text.slice(0, 40) || "未命名选题",
-        body: text,
-        kind: "note",
-        status: "idea",
-        ...(args?.platform ? { platform: String(args.platform) } : {}),
-        ...(args?.styleId ? { angleId: String(args.styleId) } : {}),
-      });
-      if (!id) return { ok: false, error: "建灵感失败" };
-      await mediaDeskRequest("produce", { id });
-      const done = await waitProduced(id);
-      const state = await mediaDeskRequest("state");
-      const item = (state?.state?.items ?? []).find((row: any) => row.id === id);
-      return out({
-        id,
-        production: done?.production ?? item?.production ?? null,
-        title: item?.title,
-        article: String(item?.production?.article ?? "").slice(0, 5000),
-        shots: item?.production?.shots ?? undefined,
-        state: summarize(state),
-      });
-    }
-    case "produce": {
-      const state = await mediaDeskRequest("state");
-      const id = String(args?.postId ?? state?.state?.items?.[0]?.id ?? "");
-      if (!id) return { ok: false, error: "还没有内容，先 capture 或 draft" };
-      await mediaDeskRequest("produce", { id });
-      const done = await waitProduced(id);
-      return out({ id, production: done?.production ?? null, state: summarize(await mediaDeskRequest("state")) });
-    }
-    case "schedule": {
-      const whenRaw = args?.when;
-      const when = typeof whenRaw === "number" ? new Date(whenRaw).toISOString() : String(whenRaw ?? "");
-      if (!when || Number.isNaN(Date.parse(when))) return { ok: false, error: "when 需要 ISO 时间（如 2026-11-10T09:00:00+08:00）或毫秒时间戳" };
-      const id = await addItem({
-        title: String(args?.title ?? "未命名排期"), body: String(args?.text ?? ""),
-        kind: "note", status: "idea", scheduledAt: when,
-        ...(args?.platform ? { platform: String(args.platform) } : {}),
-      });
-      return out({ id, state: summarize(await mediaDeskRequest("state")) });
-    }
-    case "metric": {
-      const res = await mediaDeskRequest("ops", { ops: [{
-        op: "add_metric",
-        itemId: args?.postId ? String(args.postId) : undefined,
-        date: String(args?.date ?? new Date().toISOString().slice(0, 10)),
-        views: Number(args?.views ?? 0) || 0, likes: Number(args?.likes ?? 0) || 0,
-        comments: Number(args?.comments ?? 0) || 0, shares: Number(args?.shares ?? 0) || 0,
-        ...(args?.platform ? { platform: String(args.platform) } : {}),
-      }] });
-      return out({ receipts: res?.receipts, errors: res?.errors, state: summarize(await mediaDeskRequest("state")) });
-    }
-    case "style": {
-      const res = await mediaDeskRequest("ops", { ops: [{
-        op: "add_style",
-        name: String(args?.name ?? "新风格"),
-        summary: String(args?.description ?? ""),
-        structure: String(args?.prompt ?? ""),
-      }] });
-      return out({ receipts: res?.receipts, errors: res?.errors, state: summarize(await mediaDeskRequest("state")) });
-    }
-    case "delete": {
-      const id = String(args?.id ?? "");
-      if (!id) return { ok: false, error: "delete 需要 id（state 里有）" };
-      const res = await mediaDeskRequest("ops", { ops: [{ op: "delete_item", id }] });
-      return out({ receipts: res?.receipts, errors: res?.errors, state: summarize(await mediaDeskRequest("state")) });
-    }
-    case "undo": {
-      const res = await mediaDeskRequest("undo", {});
-      return out({ label: res?.label, state: summarize(res) });
-    }
-    default:
-      return { ok: false, error: "media_desk 不认识的 action：" + action + "（可用 state / capture / draft / produce / schedule / metric / style / delete / undo）" };
+  } catch (error: any) {
+    return { ok: false, error: String(error?.message ?? error).slice(0, 300) };
   }
 }
