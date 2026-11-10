@@ -72,7 +72,7 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -953,9 +953,24 @@ async function runDispatchRounds(
       const clearedDuringRun = (groupClearedAt.get(group.id) ?? 0) > clearedMark;
       /* ⛔ 11-08 用户实测（「成员消息为啥重复」）：成员一回合里既调了 group_say（已把回复发进群）、
          又写了最终回复 —— 两条都落盘就是群里两份。这一回合已通过工具说过话、且最终回复与它高度重合 ⇒ 不再重复落盘。 */
-      const spokenRows = (readStore().messages?.[group.id] ?? [])
-        .filter((row) => String((row as { authorId?: unknown })?.authorId ?? "") === partner.id && Number((row as { at?: unknown })?.at ?? 0) >= startedAt)
-        .map((row) => ({ id: String((row as { id?: unknown })?.id ?? ""), text: String((row as { text?: unknown })?.text ?? "") }));
+      /* ⛔ 11-10：一份群日志只读一次，同回合判重与代码层硬约束共用 groupRows。 */
+      const groupRows = (readStore().messages?.[group.id] ?? []) as Array<{ id?: string; authorId?: string; authorKind?: string; text?: string; at?: number }>;
+      const spokenRows = groupRows
+        .filter((row) => String(row.authorId ?? "") === partner.id && Number(row.at ?? 0) >= startedAt)
+        .map((row) => ({ id: String(row.id ?? ""), text: String(row.text ?? "") }));
+      /* ⛔⛔ 11-10 用户令「不能光靠模型自觉」：硬约束在**每条产出的唯一收口**生效。
+         边界（10-26 事故）：只硬拦动作、把事实摆出来；⛔ 不加定时器/巡检/自动催办，
+         ⛔ 不替模型判断「写得好不好、该不该做」——那是模型的事，宿主越权只会刷屏。 */
+      const guard = evaluateMemberOutput({
+        text: output,
+        recentRows: groupRows,
+        /* 本回合自己通过 group_say 已落的那条由上面的同回合判重处理，别重复记账。 */
+        excludeIds: new Set(spokenRows.map((row) => row.id)),
+        rosterNames: [...roster.map((m) => m.name), "管理员"],
+        selfName: partner.name,
+      });
+      /* 只有汇报行时 mainText 为空 ⇒ 不落一条占位正文（汇报行下面单独发）。 */
+      const outputForStore = guard.announcements.length ? guard.mainText : (guard.mainText || output);
       const duplicateRow = spokenRows.filter((row) => row.text && textsAreNearDuplicate(row.text, output)).at(-1) ?? null;
       const duplicated = Boolean(duplicateRow);
       /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
@@ -973,13 +988,16 @@ async function runDispatchRounds(
           });
           wrote = patched ? { ok: true } : { ok: false, error: "产出没能写进群聊记录" };
         }
+      } else if (!guard.mainText && guard.announcements.length) {
+        /* ⛔ 只有汇报行：不落占位正文、不假装"有成品消息"，汇报行下面单独发进群主流。 */
+        wrote = { ok: true };
       } else {
         wrote = await appendMessageTo(group.id, {
           authorId: partner.id,
           authorKind: "bot",
           senderKind: "member",
           threadId,
-          text: output || "（没有返回文本内容）",
+          text: outputForStore || "（没有返回文本内容）",
           via: caller ? { memberId: caller.id, name: caller.name } : null,
           /* 一个回合只落这一条（收尾），渲染层按回合渲染过程 / 正文 / 文件卡。 */
           runId,
@@ -989,14 +1007,52 @@ async function runDispatchRounds(
         });
       }
       usageWritten = Boolean(usageForMessage);
-      wroteMessage = !clearedDuringRun && !duplicated && Boolean(wrote.ok);
-      okFlag = Boolean(wrote.ok);
+      wroteMessage = !clearedDuringRun && !duplicated && Boolean(wrote.ok) && Boolean(outputForStore);
+      /* ⛔ 空产出原来会落一句「（没有返回文本内容）」并算成功 ⇒ 用户以为任务做完了。 */
+      okFlag = Boolean(wrote.ok) && guard.countsAsOutput;
+      if (!guard.countsAsOutput) {
+        errMsg = "这一轮没有返回任何正文";
+        failed.push(`${partner.name}：${errMsg}`);
+      }
+      /* ⛔⛔ 11-10：补上 prompt 早就承诺、代码却没做的「汇报行额外发到群主流」。
+         主产出去掉汇报行后落盘 ⇒ 其余内容仍归话题；汇报单独一条带前缀 ⇒ 分组判据让它在主流独立显示。
+         ⛔ 不合并、不改写、作者仍是这位成员；⛔ 一条汇报一条消息，最多靠 prompt 约束行数。 */
+      if (!clearedDuringRun && wrote.ok) {
+        for (const body of guard.announcements) {
+          await appendMessageTo(group.id, {
+            authorId: partner.id,
+            authorKind: "bot",
+            senderKind: "member",
+            threadId,
+            text: `【群里汇报】${body}`,
+            via: caller ? { memberId: caller.id, name: caller.name } : null,
+            runId,
+          }).catch(() => undefined);
+        }
+      }
+      /* ⛔ 无效 @ 原来静默失效（一行第二个 @ 被丢 / 点了不存在的人没反应 / 点了自己）。
+         ⇒ 明确回执，每条产出最多一条（runOne 只评估一次），不刷屏；⛔ 只陈述事实不替模型改口。 */
+      const mentionNotices = [
+        guard.mentionIssues.multiple.length ? `${guard.mentionIssues.multiple.length} 行写了多个 @（只有第一个会生效）` : "",
+        guard.mentionIssues.unknown.length ? `群里没有：${guard.mentionIssues.unknown.join("、")}` : "",
+        guard.mentionIssues.self.length ? `点到了自己：${guard.mentionIssues.self.join("、")}` : "",
+      ].filter(Boolean);
+      if (mentionNotices.length && !clearedDuringRun) {
+        await appendMessageTo(group.id, {
+          id: `sys-guardrail:${runId}`,
+          authorId: "system",
+          authorKind: "bot",
+          senderKind: "system",
+          text: `${partner.name} 的回复有 ${mentionNotices.length} 处 @ 没生效：\n${mentionNotices.map((n) => `· ${n}`).join("\n")}`,
+        }).catch(() => undefined);
+      }
       if (!wrote.ok) {
         errMsg = wrote.error || "产出没能写进群聊记录";
         failed.push(`${partner.name}：${errMsg}`);
       }
       options.onPhase?.("finished", partner, { ok: okFlag, error: errMsg || undefined, threadId });
-      if (hop === 0 && chainBudget > 0 && okFlag && output) {
+      /* ⛔ 11-10 硬闸：与群里已有结论近重复的产出**不再拉起一串人**（防刷屏式接力）。 */
+      if (hop === 0 && chainBudget > 0 && okFlag && output && guard.allowRelay) {
         const asks = parseAgentMentions(output, group, {
           excludeId: partner.id,
           alreadyRan: [...ranIds],
@@ -1086,7 +1142,16 @@ async function runDispatchRounds(
       authorId: "system",
       authorKind: "bot",
       senderKind: "system",
-      text: `派活失败（${failed.length}/${targets.length}）：\n${failed.map((f) => `· ${f}`).join("\n")}`,
+      /* ⛔⛔ 11-10：把「谁没交」连同「谁负责推进」作为**事实**摆出来。
+         ⛔ 不是看门狗、不自动重派、不下指令（10-26 事故）；让管理员/主理人自己判断要不要接。 */
+      text: `派活未完成（${failed.length}/${targets.length}）：\n${failed.map((f) => `· ${f}`).join("\n")}\n`
+        + (group.members.some((m) => m.targetKind === "team")
+          ? "本群推进人：专家团主理人"
+          : (() => {
+            const adminId = String((group as { adminId?: unknown }).adminId ?? "");
+            const admin = group.members.find((m) => m.id === adminId);
+            return admin ? `本群推进人：${admin.name}（管理员）` : "未设置推进人（可在群设置里指定管理员）";
+          })()),
     }).catch(() => undefined);
   }
   return { ok: failed.length < targets.length, sent: targets.length - failed.length, failed };

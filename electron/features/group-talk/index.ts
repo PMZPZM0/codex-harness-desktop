@@ -6,4 +6,6 @@ export type { GroupTalkHooks } from "./02-tools";
 export { buildTalkInput, groupHistoryBlock, TALK_HISTORY_LIMIT } from "./03-talk";
 export type { GroupTalkOptions, TalkHistoryRow } from "./03-talk";
 export { planTalkCli, runTalkCliDirect, killTalkCliRuns } from "./04-cli";
+/* 11-10：代码层硬约束（独立板块，规则表可拓展；⛔ 不加看门狗） */
+export { evaluateMemberOutput } from "./05-guardrails";
 export type { TalkCliPlan } from "./04-cli";

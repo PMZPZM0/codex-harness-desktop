@@ -21,6 +21,8 @@ import { personalNormsPrompt } from "../src/lib/engineering-norms.mjs";
 import { senderLineOf, taskLineOf } from "../src/lib/message-origin.mjs";
 import { MEMBER_TASK_NOTE, humanizeRefs } from "../src/lib/dispatch-voice.mjs";
 import { parseAgentMentions, teamAuthorIdOf, collaborationProtocolLines } from "../src/lib/team-models.mjs";
+/* ⛔ 11-10：两条产出链（群聊通道 / 专家团成员通道）共用同一份硬约束判据，⛔ 不各写一套。 */
+import { evaluateMemberOutput } from "./features/group-talk";
 import { appendMemberOutputToGroup, groupOfTeam } from "./team-group-bridge";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
@@ -237,8 +239,11 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
       const resumed: any = await server.request("thread/resume", { threadId: memberThreadId, excludeTurns: false }).catch(() => null);
       output = turnOutputText(resumed?.thread?.turns?.find((entry: any) => entry.id === turnId));
     }
-    const text = output || `（成员 ${member.name} 未返回文本内容）`;
-    teamRunStore.finishRun(run.runId, { status: "done", output: text });
+    /* ⛔ 11-10 硬约束：空产出原来被标成 done ⇒ 界面显示"已完成"但群里只有一句占位文本。
+       ⛔ 这条链不剥汇报行（它不额外发汇报，剥了会丢内容），只共用「算不算有产出」这一个判据。 */
+    const guard = evaluateMemberOutput({ text: output, selfName: member.name });
+    const text = guard.countsAsOutput ? output : `（成员 ${member.name} 未返回文本内容）`;
+    teamRunStore.finishRun(run.runId, { status: guard.countsAsOutput ? "done" : "failed", output: text });
     /* ⛔⛔ 11-07 用户令「关掉群弹窗任务就结束、没结果回传」：成员产出原来是**渲染层**在
        `team-run finished` 里写进群的 —— 面板一卸载就没人接。现在主进程直接落群：
        id 与渲染层同一个（`team-run:<runId>`），两边都写也只会是同一条（按 id 覆盖）。

@@ -1599,6 +1599,34 @@ const catalog = [
   ok(/setDiffHover\(null\); openReview\(file\.path\)/.test(status)
     && /\.turn-diff-modal-mask \{[\s\S]{0,160}?z-index: 1002/.test(cssCards),
     "「审查」不再被悬停预览压住：打开前收起 hover；弹窗层级 1002 > 悬停 1000");
+
+  /* ── ㉗ 11-10 代码层硬约束（用户令「不能光靠模型自觉」）──────────────────
+     ⛔ 边界：10-26 用户明确删掉停滞/待审看门狗 ⇒ 这一组同时钉「不许复活」。 */
+  const ipcG = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const guardSrc = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));
+  const invokeG = codeOnly(read("electron/team-invoke.ts"));
+  const barrelG = read("electron/features/group-talk/index.ts");
+  ok(/export const GUARDRAIL_RULES/.test(guardSrc)
+    && /export function evaluateMemberOutput/.test(guardSrc)
+    && /textsAreNearDuplicate/.test(guardSrc)
+    && /05-guardrails/.test(barrelG)
+    && !/setInterval|setTimeout|watchdog|markStalled|markReviewStalled/.test(guardSrc),
+    "硬约束是独立板块的纯函数 + 规则表可拓展（⛔ 不许夹定时器/看门狗）");
+  ok(/evaluateMemberOutput\(/.test(ipcG)
+    && /guard\.allowRelay/.test(ipcG)
+    && /guard\.countsAsOutput/.test(ipcG)
+    && /outputForStore/.test(ipcG),
+    "每条产出收尾真过代码判据：重复结论不再接力 / 空产出不假装成功 / 汇报行剥出正文");
+  ok(/【群里汇报】\$\{body\}/.test(ipcG) && /ANNOUNCE_RE/.test(read("src/lib/team-fold.mjs")),
+    "prompt 承诺的「汇报行额外发到群主流」真落地（⛔ 不是只有注释）");
+  ok(/mentionNotices/.test(ipcG) && /sys-guardrail:/.test(ipcG),
+    "一行多 @ / 找不到的人 / 点自己 ⇒ 明确回执，不再静默失效");
+  ok(/evaluateMemberOutput/.test(invokeG)
+    && /status: guard\.countsAsOutput \? "done" : "failed"/.test(invokeG)
+    && /派活未完成/.test(ipcG) && /本群推进人/.test(ipcG),
+    "两条产出链共用同一判据；失败把「谁没交 + 谁推进」作为事实摆出来（不自动催办）");
+  ok(!/markStalled|markReviewStalled|setInterval\([^)]*stall/i.test(ipcG),
+    "⛔ 不复活停滞/待审看门狗（10-26 事故：回投刷爆消息队列，用户明确要求删除）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
