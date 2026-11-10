@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 import { safeStorage } from "electron";
 import { binOnPath, cliCodexHome, cliCodexHomeReady, cliModelEnv, cliProcessEnv, readUsableCliAgents, type CliAgentDef } from "../../cli-agents";
 import { readCustomModel } from "../../main/01-model-catalog";
-import { isLocalBaseUrl } from "../../../src/lib/cli-provider-config.mjs";
+import { isLocalBaseUrl, cliProtocolOf } from "../../../src/lib/cli-provider-config.mjs";
 import { cliPermissionTierOf, cliPromptCommandFor, fillCliPromptTemplate } from "../../../src/lib/cli-command.mjs";
 import type { TalkMember } from "./01-channel";
 
@@ -43,7 +43,10 @@ export async function planTalkCli(member: TalkMember): Promise<TalkCliPlan | nul
     ? safeStorage.decryptString(Buffer.from(custom.encryptedKey, "base64"))
     : "";
   const shellEnv: Record<string, string> = {
-    ...cliModelEnv({ provider, baseUrl: custom?.baseUrl, model: custom?.model, local: isLocalBaseUrl(custom?.baseUrl) }, apiKey),
+    /* ⛔ 按这个 CLI 的**协议族**注入（11-10 用户报障「群里 CLI 成员都用不了」）：
+       Claude Code 只认 ANTHROPIC_*（给它 OPENAI_* 等于没配 ⇒ `Not logged in`），
+       Kimi 走 config.toml 的 api_key_env、Codex 走自己的 home，Gemini 系认 GOOGLE_GEMINI_*。 */
+    ...cliModelEnv({ provider, baseUrl: custom?.baseUrl, model: custom?.model, local: isLocalBaseUrl(custom?.baseUrl), protocol: cliProtocolOf(cli.bin) }, apiKey),
     ...(cliCodexHomeReady() ? { CODEX_HOME: cliCodexHome() } : {}),
   };
   return { installed: true, cli, shellEnv };
@@ -117,6 +120,32 @@ export function killTalkCliRuns(groupId: string, memberId?: string): number {
   return n;
 }
 
+/**
+ * 失败原因 → 人话提示（11-10 用户截图：群里只有一坨 `provider.connection_error` / 400 JSON，
+ * 看不出该做什么）。⛔ 只**追加**一行，不吞原始报错 —— 用户/模型仍能读到原文。
+ * ⛔ 这些是"症状→下一步"，不是猜根因：命中不了就只留原文。
+ */
+const FAILURE_HINTS: Array<[RegExp, string]> = [
+  [/Not logged in|Please run \/login/i,
+    "这个 CLI 还没登录。应用会自动把当前供应商注入给它；若仍报未登录，先在本机终端跑一次 `{bin}` 完成它自己的登录（或在「设置 → 账号与模型」确认供应商可用）。"],
+  [/provider\.connection_error|Connection error|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|connect ETIMEDOUT/i,
+    "连不上模型服务：当前供应商地址（或它依赖的本地代理）没有在运行。到「设置 → 账号与模型」确认供应商可用，或把供应商切到能用的那个。"],
+  [/"code":\s*400|Error code: 400|bad request/i,
+    "模型服务拒了这次请求（400）：多半是模型名或协议与当前供应商不匹配。切一个支持该 CLI 协议的供应商，或换用与该供应商兼容的 CLI。"],
+  [/"code":\s*401|401 Unauthorized|invalid api key|authentication_error/i,
+    "鉴权失败（401）：当前供应商的 Key 无效或已过期，到「设置 → 账号与模型」更新。"],
+
+  [/command not found|不是内部或外部命令|ENOENT/i,
+    "命令行入口找不到：到「设置 → 开发工具 → CLI 智能体」确认这个 CLI 已安装。"],
+];
+
+function cliFailureHint(text: string, cli: CliAgentDef): string {
+  for (const [pattern, hint] of FAILURE_HINTS) {
+    if (pattern.test(text)) return hint.replace("{bin}", cli.bin || cli.name);
+  }
+  return "";
+}
+
 /** 直接起本地 CLI 子进程跑单轮命令，stdout 即回复；onDelta 逐块上屏。 */
 export async function runTalkCliDirect(
   cli: CliAgentDef,
@@ -139,6 +168,10 @@ export async function runTalkCliDirect(
       cwd: String(options.cwd ?? "").trim() || process.cwd(),
       env,
       windowsHide: true,
+      /* ⛔⛔ stdin 必须忽略（11-10 实测）：Claude Code 在 `-p` 下看到「打开的 stdin」会等 3 秒
+         打一句 `no stdin data received in 3s` 再继续，且这条路径的正文可能整段丢掉
+         （群里表现就是「成员回了但没有内容」）。CLI 单轮不需要任何标准输入。 */
+      stdio: ["ignore", "pipe", "pipe"],
       ...(isWin ? { windowsVerbatimArguments: true } : {}),
     });
     /* 按 `群id::成员id` 登记，供「停止」杀掉；⛔ 不登记就没有任何办法中断本机 CLI。 */
@@ -177,7 +210,10 @@ export async function runTalkCliDirect(
       clearTimeout(timer);
       untrack();
       const text = unwrapCliStdout(out.trim() || errOut.trim());
-      resolve({ ok: ok || Boolean(text), text: text || "（CLI 没有输出）" });
+      /* 失败时补一行"下一步"（原文照留）；成功就一个字符都不加。 */
+      const hint = ok && out.trim() ? "" : cliFailureHint(`${text}\n${errOut}`, cli);
+      const body = text || "（CLI 没有输出）";
+      resolve({ ok: ok || Boolean(text), text: hint ? `${body}\n\n—— ${hint}` : body });
     };
     child.on("error", (error) => { errOut += String(error?.message ?? error); finish(false); });
     child.on("close", (code) => finish(code === 0));

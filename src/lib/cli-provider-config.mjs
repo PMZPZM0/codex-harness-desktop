@@ -27,12 +27,29 @@ export function stripV1Suffix(baseUrl) {
   return String(baseUrl ?? "").trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
 }
 
-/** Kimi Code 的 config.toml（`[providers.*]` + `[models.*]`，default_model 在顶层）。 */
+/**
+ * Kimi Code 读 key 的环境变量名（11-10：外部供应商的真实 Key 绝不落进配置文件）。
+ * kimi 的 provider 支持 `api_key_env = "<变量名>"`（2.5.2 dist/main.mjs 实证：
+ * 「declares api_key_env in config.toml, but the environment variable is not set」），
+ * 所以配置里只写变量名，Key 由派活子进程环境给出。
+ */
+export const CLI_KEY_ENV = "HARNESS_CLI_API_KEY";
+
+/** Kimi Code 的 config.toml（`[providers.*]` + `[models.*]`，default_model 在顶层）。
+ *  ⛔ 二选一：本机中转不校验 Key ⇒ 写占位符 api_key；外部供应商 ⇒ 只写 api_key_env。
+ *     两者同时出现 kimi 会直接报 mutually exclusive。 */
 export function kimiConfigToml(input) {
   const baseUrl = String(input?.baseUrl ?? "").trim().replace(/\/+$/, "");
   const model = String(input?.model ?? "").trim();
   const apiKey = String(input?.apiKey ?? "").trim();
+  const apiKeyEnv = String(input?.apiKeyEnv ?? "").trim();
   if (!baseUrl || !model) return "";
+  const credential = apiKey
+    ? `api_key = ${JSON.stringify(apiKey)}`
+    : apiKeyEnv
+      ? `api_key_env = ${JSON.stringify(apiKeyEnv)}`
+      : "";
+  if (!credential) return "";
   const modelKey = `harness/${model}`;
   return [
     `default_model = ${JSON.stringify(modelKey)}`,
@@ -40,7 +57,7 @@ export function kimiConfigToml(input) {
     "[providers.harness]",
     'type = "openai"',
     `base_url = ${JSON.stringify(baseUrl)}`,
-    `api_key = ${JSON.stringify(apiKey)}`,
+    credential,
     "",
     `[models.${JSON.stringify(modelKey)}]`,
     'provider = "harness"',
@@ -49,6 +66,25 @@ export function kimiConfigToml(input) {
     'capabilities = ["tool_use"]',
     "",
   ].join("\n");
+}
+
+/**
+ * CLI 的「模型协议族」（11-10 用户令：「把我们的配置的供应商自动配置给 CLI…全部自动化」）。
+ *
+ * 为什么必须按协议分：同一个供应商端点，各家 CLI 认的变量名完全不同 ——
+ *   · Claude Code 只认 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN（⛔ 给它 OPENAI_* 等于没配，
+ *     实测症状就是 `Not logged in · Please run /login`）；
+ *   · Gemini / Qwen Code 认 GOOGLE_GEMINI_BASE_URL + GEMINI_API_KEY；
+ *   · OpenAI 兼容系（aider / openclaw / qwenpaw / codebuddy…）认 OPENAI_*；
+ *   · Kimi / Codex 走自己的配置文件（环境变量不生效，见 sync 模块）。
+ * ⛔ 判定只认可执行名，不猜供应商名字（`custom964` 这种自建 id 里不可能含 anthropic）。
+ */
+export function cliProtocolOf(bin) {
+  const key = String(bin ?? "").trim().toLowerCase().replace(/\.(exe|cmd|bat|ps1|sh)$/, "");
+  if (key === "claude") return "anthropic";
+  if (key === "gemini" || key === "qwen" || key === "iflow") return "gemini";
+  if (key === "kimi" || key === "codex") return "native";
+  return "openai";
 }
 
 /** Codex CLI 的独立 home（⛔ 不碰用户自己的 ~/.codex）：provider 指向当前供应商，Key 走环境变量名。 */

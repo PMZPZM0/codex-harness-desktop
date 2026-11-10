@@ -27,7 +27,7 @@ import crypto from "node:crypto";
 import { execFile } from "node:child_process";
 import { augmentedPath, applyNoProxyFix } from "./toolchain";
 import { cliPermissionTierOf, cliPromptCommandFor } from "../src/lib/cli-command.mjs";
-import { isLocalBaseUrl, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
+import { CLI_KEY_ENV, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
 
 /** 派活权限档（11-07）：safe=只读 / standard=可改文件（默认） / full=连命令一起放行。 */
 export type CliPermissionTier = ReturnType<typeof cliPermissionTierOf>;
@@ -598,32 +598,60 @@ export function cliCodexHomeReady(): boolean {
   return existsSync(path.join(cliCodexHome(), "config.toml"));
 }
 
-/** 派活时注入的模型环境（11-07 扩展）：本机中转支持 OpenAI / Responses / Anthropic / Gemini 四种协议，
- *  所以对 local 端点同时注入三套环境变量 —— Claude / Gemini 也能跟着主会话模型走。
- *  ⛔ 外部供应商只注入 OpenAI/Anthropic（按 provider 判断），不瞎塞 Gemini 变量。 */
-export function cliModelEnv(input: { provider?: string; baseUrl?: string; model?: string; local?: boolean }, apiKey: string): Record<string, string> {
+/** 派活时注入的模型环境（11-07 扩展，11-10 按协议族细分）。
+ *
+ *  ⛔⛔ 11-10 用户报障「群里 CLI 成员都用不了」的根因就在这：本函数原来只有
+ *    「provider/baseUrl 里含 anthropic 才注 ANTHROPIC_*」一条判据，而用户的中转是自建
+ *    供应商 id（`custom964`）+ 普通域名 ⇒ 判定为 false ⇒ **Claude Code 一个变量都收不到**，
+ *    症状正是 `Not logged in · Please run /login`（实测：同一个端点 POST /v1/messages
+ *    返 200，补上 ANTHROPIC_BASE_URL/AUTH_TOKEN 后 exit=0）。
+ *    所以现在按 CLI 的**协议族**注入（`cliProtocolOf(bin)`），不再猜供应商名字：
+ *      · anthropic ⇒ 只注 ANTHROPIC_*（Claude Code 不读 OPENAI_*，塞了也没用）
+ *      · gemini    ⇒ GOOGLE_GEMINI_* / GEMINI_*
+ *      · openai    ⇒ OPENAI_*
+ *      · native    ⇒ 只给 OPENAI_API_KEY（Codex 的 config.toml 用 env_key 引它），
+ *                    Kimi 走 `api_key_env` 引 CLI_KEY_ENV，配置本身不落 Key。
+ *  ⛔ 没传 protocol 时完全保持 11-07 的老行为（其它调用方零影响）。 */
+export function cliModelEnv(
+  input: { provider?: string; baseUrl?: string; model?: string; local?: boolean; protocol?: string },
+  apiKey: string,
+): Record<string, string> {
   const baseUrl = String(input?.baseUrl ?? "").trim();
   const model = String(input?.model ?? "").trim();
   const provider = String(input?.provider ?? "").trim();
   const local = Boolean(input?.local);
+  const protocol = String(input?.protocol ?? "").trim();
   /* 本机中转不校验 Key ⇒ 没有 Key 时用占位符；外部供应商没有 Key 就什么都不注入（退回 CLI 自己的登录态）。 */
   const key = String(apiKey ?? "").trim() || (local ? "harness-local" : "");
   if (!key || (!baseUrl && !model)) return {};
-  const env: Record<string, string> = { OPENAI_API_KEY: key };
-  if (baseUrl) {
-    env.OPENAI_BASE_URL = baseUrl;
-    env.OPENAI_API_BASE = baseUrl;
-  }
-  if (model) env.OPENAI_MODEL = model;
+  /* Kimi 的 `api_key_env` 就引这个名字；⛔ 只进子进程环境，不进配置文件、不落盘。 */
+  const env: Record<string, string> = { [CLI_KEY_ENV]: key };
+
   const looksAnthropic = /anthropic/i.test(`${provider} ${baseUrl}`);
-  if (looksAnthropic || local) {
+  const wantOpenAI = protocol === "" ? true : protocol === "openai";
+  const wantAnthropic = protocol === "" ? looksAnthropic || local : protocol === "anthropic";
+  const wantGemini = protocol === "" ? local : protocol === "gemini";
+  const wantKeyOnly = protocol === "native";
+
+  if (wantOpenAI || wantKeyOnly) env.OPENAI_API_KEY = key;
+  if (wantOpenAI) {
+    if (baseUrl) {
+      env.OPENAI_BASE_URL = baseUrl;
+      env.OPENAI_API_BASE = baseUrl;
+    }
+    if (model) env.OPENAI_MODEL = model;
+  }
+  if (wantAnthropic) {
     const root = stripV1Suffix(baseUrl);
     if (root) env.ANTHROPIC_BASE_URL = root;
     env.ANTHROPIC_AUTH_TOKEN = key;
     env.ANTHROPIC_API_KEY = key;
-    if (model) env.ANTHROPIC_MODEL = model;
+    if (model) {
+      env.ANTHROPIC_MODEL = model;
+      env.ANTHROPIC_SMALL_FAST_MODEL = model;
+    }
   }
-  if (local) {
+  if (wantGemini) {
     const root = stripV1Suffix(baseUrl);
     if (root) env.GOOGLE_GEMINI_BASE_URL = root;
     env.GEMINI_API_KEY = key;

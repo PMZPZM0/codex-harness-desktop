@@ -9,8 +9,10 @@
  *         provider 指向当前供应商，Key 只写环境变量名（OPENAI_API_KEY），文件里没有明文；
  *       - Gemini：`~/.gemini/settings.json` 合并「用 API Key 认证」（否则非交互报 Invalid auth method）；
  *       - Kimi：`~/.kimi-code/config.toml` 的 provider/model 段。
- *   ⛔ 只有**本机中转**才写 Gemini/Kimi 的配置（中转不校验 Key，用占位符）——
- *      外部供应商的真实 Key 绝不落进任何 CLI 配置文件。
+ *   ⛔⛔ 11-10 修：「只有本机中转才写 Gemini/Kimi」是错的 —— 切到外部供应商后这两份配置
+ *      会**永远停在旧的本机中转地址**（实测 kimi 焊死 本机中转端口，无监听 ⇒ 群里
+ *      `provider.connection_error`，用户报「CLI 成员都用不了」）。现在每次都重写当前供应商：
+ *      外部的 Key 通过 `api_key_env`（Kimi）/ 环境变量（Gemini）给出，⛔ 配置文件里永不含明文 Key。
  *   ⛔ 首次改动前留 `<file>.harness.bak`；内容相同不重写（幂等）。
  */
 import fs from "node:fs/promises";
@@ -18,7 +20,7 @@ import os from "node:os";
 import path from "node:path";
 import { readCustomModel } from "./main/01-model-catalog";
 import { binOnPath, cliCodexHome } from "./cli-agents";
-import { codexConfigToml, isLocalBaseUrl, kimiConfigToml, mergeGeminiSettings } from "../src/lib/cli-provider-config.mjs";
+import { CLI_KEY_ENV, codexConfigToml, isLocalBaseUrl, kimiConfigToml, mergeGeminiSettings } from "../src/lib/cli-provider-config.mjs";
 
 export type CliProviderSyncResult = { updated: string[]; skipped: string[] };
 
@@ -62,22 +64,28 @@ export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResul
     if (await writeManaged(path.join(cliCodexHome(), "config.toml"), codexConfigToml({ baseUrl, model }))) updated.push("codex");
   });
 
-  if (isLocalBaseUrl(baseUrl)) {
-    await attempt("gemini", async () => {
-      if (!(await binOnPath("gemini"))) { skipped.push("gemini"); return; }
-      const file = path.join(os.homedir(), ".gemini", "settings.json");
-      const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
-      const merged = `${JSON.stringify(mergeGeminiSettings(raw, { model }), null, 2)}\n`;
-      if (await writeManaged(file, merged, true)) updated.push("gemini");
-    });
-    await attempt("kimi", async () => {
-      if (!(await binOnPath("kimi"))) { skipped.push("kimi"); return; }
-      const file = path.join(os.homedir(), ".kimi-code", "config.toml");
-      if (await writeManaged(file, kimiConfigToml({ baseUrl, model, apiKey: "harness-local" }), true)) updated.push("kimi");
-    });
-  } else {
-    /* 外部供应商：Gemini/Kimi 的配置需要写真实 Key —— 不落盘（只在派活子进程环境里出现）。 */
-    skipped.push("gemini(非本机中转)", "kimi(非本机中转)");
-  }
+  /* Gemini CLI 的 settings.json 只写「用 API Key 认证 + 模型名」，**不含 Key**（Key 走环境变量
+     GEMINI_API_KEY）⇒ 本机中转和外部供应商都安全、都该写。原来的「只有本机中转才写」会让
+     切到外部供应商后这份配置永远停在旧模型上。 */
+  await attempt("gemini", async () => {
+    if (!(await binOnPath("gemini"))) { skipped.push("gemini"); return; }
+    const file = path.join(os.homedir(), ".gemini", "settings.json");
+    const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
+    const merged = `${JSON.stringify(mergeGeminiSettings(raw, { model }), null, 2)}\n`;
+    if (await writeManaged(file, merged, true)) updated.push("gemini");
+  });
+  /* Kimi Code（11-10 修）：原来「非本机中转就跳过」，导致切到外部供应商后 config.toml 里
+     仍焊着上一次的本机中转地址（实测 本机中转端口 已经没人监听 ⇒ 群里永远
+     `provider.connection_error: Connection error`）。现在**每次都写**：
+       · 本机中转 ⇒ api_key 占位符（不校验）；
+       · 外部供应商 ⇒ api_key_env = CLI_KEY_ENV，Key 只经派活子进程环境给出，⛔ 配置里没有明文。 */
+  await attempt("kimi", async () => {
+    if (!(await binOnPath("kimi"))) { skipped.push("kimi"); return; }
+    const file = path.join(os.homedir(), ".kimi-code", "config.toml");
+    const next = isLocalBaseUrl(baseUrl)
+      ? kimiConfigToml({ baseUrl, model, apiKey: "harness-local" })
+      : kimiConfigToml({ baseUrl, model, apiKeyEnv: CLI_KEY_ENV });
+    if (await writeManaged(file, next, true)) updated.push("kimi");
+  });
   return { updated, skipped };
 }

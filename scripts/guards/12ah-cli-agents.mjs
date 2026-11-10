@@ -210,8 +210,8 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/binOnPath\(cli\.bin\)/.test(delegationSrc), "⛔ 派活前现查 PATH（缓存拦不住模型凭参数硬调，执行侧必须重检）");
   ok(/未安装：到 设置 → 开发工具 → CLI 智能体 点「一键安装」/.test(delegationSrc),
     "未装就拒并给可操作指引（不烧一回合让被委派会话自己发现）");
-  ok(/cliModelEnv\(\{ provider, baseUrl: customModel\?\.baseUrl, model: effectiveModel, local: isLocalBaseUrl\(customModel\?\.baseUrl\) \}, apiKey\)/.test(delegationSrc),
-    "派 CLI 时把主会话的供应商配置交给 cliModelEnv（base_url / key / model / local）");
+  ok(/cliModelEnv\(\{ provider, baseUrl: customModel\?\.baseUrl, model: effectiveModel,[\s\S]{0,160}?protocol: cliProtocolOf\(cliAgentBin\)/.test(delegationSrc),
+    "派 CLI 时把主会话的供应商配置交给 cliModelEnv（base_url / key / model / local / 协议族）");
   ok(/shell_environment_policy = \{ inherit: "all", ignore_default_excludes: true, set: \{ PATH: augmentedPath\(\), \.\.\.cliShellEnv \} \}/.test(delegationSrc),
     "env 经 thread/start 的 shell_environment_policy 注入（并带上 PATH —— 整表覆盖会顶掉 config.toml 的增强 PATH）");
   const envSrc = mainSrc;
@@ -752,14 +752,14 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
 
   /* ── 11-07 供应商自动跟随（安装即配置 / 切供应商自动更新 / 升级自动补）──────── */
   const providers = await import(pathToFileURL(join(ROOT, "src/lib/cli-provider-config.mjs")).href);
-  ok(providers.isLocalBaseUrl("http://127.0.0.1:3425/v1") && !providers.isLocalBaseUrl("https://api.openai.com/v1"),
+  ok(providers.isLocalBaseUrl("http://本机中转端口/v1") && !providers.isLocalBaseUrl("https://api.openai.com/v1"),
     "本机中转识别（只有本机/内网才写含占位 Key 的配置）");
-  ok(providers.stripV1Suffix("http://127.0.0.1:3425/v1") === "http://127.0.0.1:3425",
+  ok(providers.stripV1Suffix("http://本机中转端口/v1") === "http://本机中转端口",
     "Anthropic/Gemini 的 base 剥掉 /v1（SDK 自己拼）");
-  const kimiToml = providers.kimiConfigToml({ baseUrl: "http://127.0.0.1:3425/v1", model: "m/x", apiKey: "harness-local" });
+  const kimiToml = providers.kimiConfigToml({ baseUrl: "http://本机中转端口/v1", model: "m/x", apiKey: "harness-local" });
   ok(/\[providers\.harness\]/.test(kimiToml) && /default_model = "harness\/m\/x"/.test(kimiToml) && /\[models\."harness\/m\/x"\]/.test(kimiToml),
     "Kimi config.toml：provider / model / default_model 三处对齐");
-  const codexToml = providers.codexConfigToml({ baseUrl: "http://127.0.0.1:3425/v1", model: "m/x" });
+  const codexToml = providers.codexConfigToml({ baseUrl: "http://本机中转端口/v1", model: "m/x" });
   ok(/model_provider = "harness"/.test(codexToml) && /env_key = "OPENAI_API_KEY"/.test(codexToml) && !/harness-local/.test(codexToml),
     "Codex 独立 home 配置：provider 指向当前供应商，文件里不写 Key");
   const geminiMerged = providers.mergeGeminiSettings({ theme: "dark", security: { auth: { keep: 1 } } }, { model: "m/x" });
@@ -780,8 +780,30 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "cliCodexHomeReady：以 config.toml 存在为闸（⛔ 不许退回无条件设 CODEX_HOME）");
   const syncSrc = readFileSync(join(ROOT, "electron/cli-agent-provider-sync.ts"), "utf8");
   ok(/codexConfigToml/.test(syncSrc) && /kimiConfigToml/.test(syncSrc) && /mergeGeminiSettings/.test(syncSrc)
-    && /isLocalBaseUrl\(baseUrl\)/.test(syncSrc) && /\.harness\.bak/.test(syncSrc),
-    "同步模块：Codex / Gemini / Kimi 落盘 + 仅本机中转写含 Key 配置 + 首次改动留备份");
+    && /\.harness\.bak/.test(syncSrc) && /apiKeyEnv: CLI_KEY_ENV/.test(syncSrc),
+    "同步模块：Codex / Gemini / Kimi 落盘 + 外部供应商写 api_key_env（Key 不落盘）+ 首次改动留备份");
+  /* ⛔⛔ 11-10 用户报障「群里 CLI 成员都用不了」的三处根因，逐条钉死： */
+  ok((syncSrc.match(/await attempt\("kimi"/g) || []).length === 1 && !/kimi\(非本机中转\)/.test(syncSrc)
+    && !/if \(isLocalBaseUrl\(baseUrl\)\) \{[\s\S]{0,600}?attempt\("kimi"/.test(syncSrc),
+    "⛔ kimi 同步不再「非本机中转就跳过」——跳过会把上一次的本机中转配置焊死在磁盘上（实测 本机中转端口 无监听 ⇒ 永远 connection_error）");
+  ok(providers.cliProtocolOf("claude") === "anthropic" && providers.cliProtocolOf("claude.cmd") === "anthropic"
+    && providers.cliProtocolOf("kimi") === "native" && providers.cliProtocolOf("codex") === "native"
+    && providers.cliProtocolOf("gemini") === "gemini" && providers.cliProtocolOf("qwen") === "gemini"
+    && providers.cliProtocolOf("aider") === "openai" && providers.cliProtocolOf("qwenpaw") === "openai",
+    "协议族判定：claude=anthropic / kimi,codex=native / gemini,qwen=gemini / 其余=openai");
+  ok(/wantAnthropic = protocol === "" \? looksAnthropic \|\| local : protocol === "anthropic"/.test(mainSrc)
+    && /wantAnthropic/.test(mainSrc) && /ANTHROPIC_SMALL_FAST_MODEL/.test(mainSrc),
+    "⛔ cliModelEnv 按协议注入：anthropic 协议**不靠供应商名字**也注 ANTHROPIC_*（Claude Code 收不到就是 Not logged in）");
+  ok(/\[CLI_KEY_ENV\]: key/.test(mainSrc) && providers.CLI_KEY_ENV === "HARNESS_CLI_API_KEY",
+    "Key 经 CLI_KEY_ENV 进子进程环境（kimi 的 api_key_env 引它，配置文件里没有明文）");
+  /* 三个派活入口都必须传协议族，漏一个就有一类 CLI 拿不到凭据。 */
+  const talkCliSrc = readFileSync(join(ROOT, "electron/features/group-talk/04-cli.ts"), "utf8");
+  const bossEnvSrc = readFileSync(join(ROOT, "electron/boss-groups/cli-env.ts"), "utf8");
+  const bossRunSrc2 = readFileSync(join(ROOT, "electron/boss-groups/runner.ts"), "utf8");
+  ok(/protocol: cliProtocolOf\(cli\.bin\)/.test(talkCliSrc) && /protocol: cliProtocolOf\(input\?\.bin\)/.test(bossEnvSrc)
+    && /protocol: cliProtocolOf\(cliAgentBin\)/.test(delegationSrc)
+    && /bin: cliBinOf\(member\.cliCommand \?\? ""\)/.test(bossRunSrc2),
+    "群聊 / boss 群 / @ 调度三个入口都按协议族注入（⛔ 漏一处就有一类 CLI 拿不到凭据）");
   /* 11-08 审查：单 try 包全部 CLI ⇒ Gemini 写挂连累 Kimi 静默跳过；每个 CLI 独立 catch。 */
   ok(/const attempt = async \(name: string, fn: \(\) => Promise<void>\) => \{\s*try \{ await fn\(\); \} catch \{ skipped\.push\(name\); \}\s*\};/.test(syncSrc)
     && (syncSrc.match(/await attempt\("/g) || []).length === 3,

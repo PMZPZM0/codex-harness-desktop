@@ -19,7 +19,7 @@ import { SUBCONV_NOTE, humanizeRefs } from "../../src/lib/dispatch-voice.mjs";
 import { PROVIDER_RETRY_TUNING } from "../provider-retry";
 import { buildDelegateMemory } from "../delegate-memory";
 import { binOnPath, buildCliRolePrompt, cliCodexHome, cliCodexHomeReady, cliModelEnv, readUsableCliAgents } from "../cli-agents";
-import { isLocalBaseUrl } from "../../src/lib/cli-provider-config.mjs";
+import { isLocalBaseUrl, cliProtocolOf } from "../../src/lib/cli-provider-config.mjs";
 import { augmentedPath } from "../toolchain";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
@@ -100,6 +100,10 @@ export async function runDelegatedTask(input: {
   const found = resolveDispatchTarget(targets, { kind: input.kind, name: input.name });
   if (!found.target) return { ok: false, output: "", error: found.error };
   const target = found.target;
+  /* CLI 目标的壳脚本名：`cli` 变量在下面的 if 块里（块级作用域），而注入环境要按它的
+     **协议族**决定注 ANTHROPIC_* 还是 OPENAI_*（11-10：Claude Code 拿不到 ANTHROPIC_* 就报
+     「Not logged in」，见 cli-agents.cliModelEnv 的注释）。 */
+  let cliAgentBin = "";
 
   // 解析角色提示词、角色归属（10-05 角色独立记忆）与（团队才有的）调度工具
   let rolePrompt = "";
@@ -139,6 +143,7 @@ export async function runDelegatedTask(input: {
       };
     }
     rolePrompt = buildCliRolePrompt(cli);
+    cliAgentBin = cli.bin;
     displayName = cli.name;
   } else {
     const teams = await readUsableExpertTeams();
@@ -210,7 +215,7 @@ export async function runDelegatedTask(input: {
         该 policy 是整表覆盖，不写 PATH 会把 config.toml 里那份增强 PATH 顶掉（等于废掉工具链）。 */
   const cliShellEnv = target.kind === "cli"
     ? {
-        ...cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel, local: isLocalBaseUrl(customModel?.baseUrl) }, apiKey),
+        ...cliModelEnv({ provider, baseUrl: customModel?.baseUrl, model: effectiveModel, local: isLocalBaseUrl(customModel?.baseUrl), protocol: cliProtocolOf(cliAgentBin) }, apiKey),
         /* Codex CLI 用应用自己的独立 home（不碰用户 ~/.codex；配置没写就不设，退回用户登录态）。 */
         ...(cliCodexHomeReady() ? { CODEX_HOME: cliCodexHome() } : {}),
       }

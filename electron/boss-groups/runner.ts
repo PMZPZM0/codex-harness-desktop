@@ -15,7 +15,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { readUsableExpertTeams } from "../expert-teams";
 import { cliInstalledFlags, cliPermissionTierFor, readUsableCliAgents } from "../cli-agents";
-import { applyCliPermissionTier, cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
+import { applyCliPermissionTier, cliBinOf, cliPromptCommand, fillCliPromptTemplate, healCliCommand } from "../../src/lib/cli-command.mjs";
 import { cliMemberEnv } from "./cli-env";
 import { bridgeDial } from "../main";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
@@ -769,7 +769,8 @@ async function personalNormsBlock(): Promise<string> {
  *  ⛔ 环境 = 增强 PATH + 主会话供应商/模型（cli-env.ts，与 @ 调度的 CLI 会话同口径）。 */
 async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTask): Promise<void> {
   const norms = await personalNormsBlock();
-  const env = await cliMemberEnv({ bossModel: await bossModelOf(group), memberModel: member.model });
+  /* ⛔ 11-10：可执行名一起传 —— 注入哪套变量按 CLI 协议族定（Claude 只认 ANTHROPIC_*）。 */
+  const env = await cliMemberEnv({ bossModel: await bossModelOf(group), memberModel: member.model, bin: cliBinOf(member.cliCommand ?? "") });
   /* ⛔ 11-07：权限档在 CLI 目录里（不是成员上）—— 群成员只存命令模板。
      档位决定模板尾部追加哪组无头参数（safe/standard/full，见 cli-command.mjs）。 */
   const tier = await cliPermissionTierFor(member.name);
@@ -803,7 +804,8 @@ async function runCliMember(group: BossGroup, member: GroupMember, task: GroupTa
         if (error && !text) { reject(new Error(`CLI「${member.name}」执行失败：${String(error.message ?? error).slice(0, 200)}`)); return; }
         void settleSubmission(task.id, text.slice(0, 16_000) || "（CLI 没有输出）");
         resolve();
-      });
+      /* ⛔ 11-10：单轮 CLI 不需要 stdin —— 开着它 Claude 会等 3 秒且正文可能整段丢。 */
+      }).stdin?.end();
     });
   } catch (error: any) {
     void failTask(task.id, String(error?.message ?? error));
