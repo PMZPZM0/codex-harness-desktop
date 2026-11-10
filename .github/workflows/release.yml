@@ -33,6 +33,9 @@ jobs:
 
   publish:
     needs: [mac, win]
+    # ⛔ 11-10：任一端失败/超时也要把已构建成功的资产发出去
+    #   （实测 Intel mac 打包会卡在 electron-builder 一小时以上，把 win + arm64 一起挡在门外）
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -70,6 +73,23 @@ jobs:
             esac
             cp "${found[0]}" "dist-assets/${out}"
           }
+          # ⛔ 11-10：Intel mac 包缺失不阻断发布 —— x64 打包步骤会卡死/超时，
+          #    但 win 与 arm64 已经构建成功，不能让它们陪着一起发不出去。
+          pick_soft() {
+            local dir="$1" pattern="$2" out="$3"
+            local found=()
+            while IFS= read -r file; do found+=("$file"); done < <(find "$dir" -type f -name "$pattern" 2>/dev/null | sort || true)
+            if [ "${#found[@]}" -ne 1 ]; then
+              echo "::warning::${dir} 下 ${pattern} 有 ${#found[@]} 个 —— 跳过该资产（不阻断发布）"
+              return 0
+            fi
+            case "$(basename "${found[0]}")" in
+              *"${VERSION}"*) ;;
+              *) echo "::warning::${found[0]} 文件名不含版本号 ${VERSION}，跳过"; return 0 ;;
+            esac
+            cp "${found[0]}" "dist-assets/${out}"
+          }
+
           pick artifacts/win-x64   '*.exe' "Codex.Harness.Desktop-${VERSION}-win-x64.exe"
           # 10-25 NSIS 差分更新：blockmap 与 latest.yml 必须跟安装包一起发；
           # 缺任何一个，客户端都会自动回退到完整包（不会坏，但没有增量效果）。
@@ -86,7 +106,11 @@ jobs:
             exit 1
           fi
           pick artifacts/mac-arm64 '*.zip' "Codex.Harness.Desktop-${VERSION}-arm64-mac.zip"
-          pick artifacts/mac-x64   '*.zip' "Codex.Harness.Desktop-${VERSION}-x64-mac.zip"
+          pick_soft artifacts/mac-x64 '*.zip' "Codex.Harness.Desktop-${VERSION}-x64-mac.zip"
+          if [ ! -f "dist-assets/Codex.Harness.Desktop-${VERSION}-x64-mac.zip" ]; then
+            echo "X64_MISSING=1" >> "$GITHUB_ENV"
+            echo "::warning::本版缺 Intel mac 包（x64 打包失败/超时），将只发布 win + arm64"
+          fi
           echo "=== 待发布资产 ==="
           (cd dist-assets && sha256sum ./* | tee ../assets-sha256.txt && ls -l)
 
@@ -111,6 +135,10 @@ jobs:
             gh release edit "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           else
             gh release create "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
+          fi
+          if [ "${X64_MISSING:-0}" = "1" ]; then
+            printf '\n> ⚠️ **本版未包含 Intel mac 包**（x64 打包步骤失败/超时）；Apple Silicon 与 Windows 用户不受影响。\n' >> "${NOTES}"
+            gh release edit "v${VERSION}" --title "v${VERSION}" --notes-file "${NOTES}"
           fi
           gh release upload "v${VERSION}" dist-assets/* --clobber
           # ⛔⛔ 转正兜底：**删 tag 重建会让同名 release 退回草稿态**（GitHub 的行为），
