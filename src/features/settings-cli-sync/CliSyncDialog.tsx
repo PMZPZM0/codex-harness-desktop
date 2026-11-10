@@ -6,11 +6,13 @@
  *   · 识别「装了哪些 CLI、各自怎么同步」全在主进程 `inspectCliSyncTargets`
  *     （渲染层不自己 where/which，也不自己拼配置）；
  *   · Key 全程不出主进程 —— 这里调用的两个通道都不返回 Key。
- * ⛔ Claude 单独一块的原因写在卡片里（它只认 ANTHROPIC_*，唯一能让「本机终端直跑也跟随」的
- *   地方是 ~/.claude/settings.json，而那里是**明文 Key**）⇒ 按钮要二次确认，⛔ 不做静默落盘。
+ * ⛔ Claude 为什么仍要单独确认：它只认 ANTHROPIC_*，唯一能「本机终端直跑也跟随」的地方是
+ *   `~/.claude/settings.json`（明文 Key）⇒ 第一次点只展开警告，第二次才真写，⛔ 不做静默落盘。
+ * ⛔ 11-10 二改（用户「现在整体这个同步板块就不好看」）：整块重排成**一张列表卡** ——
+ *   行 = 图标 + 名称/标签 + 一句说明 + 右侧状态/按钮；⛔ 不再有顶部结果卡和整段说明文字。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Check, CircleAlert, RefreshCw, Sparkles, Terminal, X } from "lucide-react";
+import { Check, CircleAlert, ExternalLink, RefreshCw, Terminal, X } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
@@ -40,8 +42,8 @@ type Snapshot = {
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const KIND_LABEL: Record<SyncTarget["kind"], string> = {
-  keyed: "写配置文件（含 Key）",
-  claude: "单独配置",
+  claude: "需单独写 Key",
+  keyed: "写配置（含 Key）",
   config: "配置文件",
   env: "环境变量",
   own: "它自己管",
@@ -64,13 +66,22 @@ function summarizeResults(entries: SyncResult[]): string {
   return parts.length ? parts.join(" · ") : "没有可同步的 CLI";
 }
 
+/** Claude 的落盘状态：它**不会**跟着切换供应商自动改（写它是含明文 Key 的动作），
+ *  所以这一行必须把「已同步 / 与当前不一致 / 未同步」直接摆在右边 ——
+ *  用户切完供应商一眼就知道要回来手动同步一次。 */
+function claudeChip(status: string): { text: string; tone: "ok" | "warn" | "idle" } {
+  if (status.startsWith("已同步到当前供应商")) return { text: "已同步", tone: "ok" };
+  if (status.startsWith("已同步到其它供应商")) return { text: "与当前不一致", tone: "warn" };
+  return { text: "未同步", tone: "idle" };
+}
+
 export type CliSyncDialogProps = {
   open: boolean;
   onClose: () => void;
   onNotice?: (message: string) => void;
 };
 
-/** 「同步给 CLI 智能体」弹窗：展示当前供应商 → Claude 单独一块 → 其它已安装 CLI 列表。
+/** 「同步给 CLI 智能体」弹窗：一张列表卡，行内完成「看说明 → 同步 → 看结果」。
  *  ⛔ 只读展示 + 触发同步；识别与写入全在主进程（渲染层不自己探测、不碰 Key）。 */
 export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
@@ -82,9 +93,9 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
   const [confirmKeyed, setConfirmKeyed] = useState("");
   const [busyTarget, setBusyTarget] = useState("");
   const [busy, setBusy] = useState<"claude" | "all" | "">("");
-  /** 脚底一句话总结（11-10 用户：「不能在后面反馈状态吗」——不要顶部大卡片，成绩放脚底）。 */
+  /** 脚底一句话总结（⛔ 不做顶部结果卡）。 */
   const [summary, setSummary] = useState("");
-  /** 行内回执：点的是这一行，结果就挂这一行**右侧**（失败原因才在行内单独一行）。 */
+  /** 行内回执：结果挂这一行**右侧**（失败原因才在行内多一行）。 */
   const [feedback, setFeedback] = useState<Record<string, { ok: boolean; state: SyncState; text: string }>>({});
 
   useEscapeLayer(open, onClose);
@@ -112,6 +123,28 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
     void refresh();
   }, [open, refresh]);
 
+  /* 11-10 用户令「切换了供应商后，这里还可以手动同步一次」：
+     · provider-activated（保存 / 启用 / 云端同步都会广播）⇒ 重读供应商与各家状态，
+       绝不拿着弹窗打开时那份旧快照让人以为已经同步过了；
+     · 窗口重新获得焦点也补一次（用户在别处改完配置回来）。两个都是只读刷新。
+     ⛔ 这类「外部变更」回来时要连同旧回执一起清掉 —— 否则 Claude 行还挂着上一家供应商的「已同步」。 */
+  useEffect(() => {
+    if (!open) return;
+    const reload = () => {
+      setFeedback({});
+      setSummary("");
+      void refresh();
+    };
+    const off = window.codex.onHarnessEvent((event) => {
+      if (event?.type === "provider-activated") reload();
+    });
+    window.addEventListener("focus", reload);
+    return () => {
+      off?.();
+      window.removeEventListener("focus", reload);
+    };
+  }, [open, refresh]);
+
   /** 把一批回执落到「行内状态 + 脚底总结」两处（单点与全量共用）。 */
   const publishResults = (entries: SyncResult[]) => {
     const text = summarizeResults(entries);
@@ -126,6 +159,11 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
     });
     return text;
   };
+
+  const targets = snapshot?.targets ?? [];
+  const provider = snapshot?.provider;
+  const claude = targets.find((target) => target.kind === "claude") ?? null;
+  const ownCount = targets.filter((target) => target.kind === "own").length;
 
   const runClaude = async () => {
     if (!confirmClaude) { setConfirmClaude(true); return; }
@@ -144,8 +182,8 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
     }
   };
 
-  /** 单点按键：按这个 CLI 自己的方式同步（keyed 类先要一次确认，因为它要落明文 Key）。
-   *  ⛔ 成败要落在**这一行**上（用户报「没有成功反馈」）——只更新底部汇总等于没反馈。 */
+  /** 单点按键：按这个 CLI 自己的方式同步（含 Key 的先要一次确认）。
+   *  ⛔ 成败要落在**这一行**上（用户报「没有成功反馈」）——只更新脚底汇总等于没反馈。 */
   const runOne = async (target: SyncTarget, needConfirm: boolean) => {
     if (needConfirm && confirmKeyed !== target.id) { setConfirmKeyed(target.id); return; }
     setBusyTarget(target.id);
@@ -180,10 +218,6 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
 
   if (!open) return null;
 
-  const claude = snapshot?.targets.find((t) => t.kind === "claude") ?? null;
-  const others = (snapshot?.targets ?? []).filter((t) => t.kind !== "claude");
-  const provider = snapshot?.provider;
-
   return (
     <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="cli-sync-modal" role="dialog" aria-modal="true" aria-label="同步给 CLI 智能体" data-testid="cli-sync">
@@ -208,117 +242,105 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
             <div className="cli-sync-warn"><CircleAlert size={13} /> {error}</div>
           )}
 
-          {/* 11-10 用户报障「没有成功反馈，只有一个弹窗提醒」：回执放在**最上面**
-              （旧版在列表末尾，弹窗一开用户根本滚不到；而且全量同步只回一条汇总）。 */}
-          {claude && (
-            <section className="cli-sync-claude">
-              <div className="cli-sync-claude-top">
-                <Sparkles size={14} />
-                <b>Claude Code</b>
-                <span className="cli-sync-tag">需要单独同步</span>
+          {targets.length > 0 && (
+            <>
+              <div className="cli-sync-section-bar">
+                <span><Terminal size={13} />已安装的 CLI</span>
+                <em>{targets.length} 个</em>
               </div>
-              <p>
-                它不认 OpenAI 那一套变量，只认 <code>ANTHROPIC_*</code>。别处是把配置写进各自的
-                config.toml；Claude 只能写 <code>~/.claude/settings.json</code> 的 <code>env</code> 段，
-                这样你在本机终端直接跑 <code>claude</code> 也会跟随当前供应商（群里派活本来就会自动注入）。
-              </p>
-              {confirmClaude && (
-                <p className="cli-sync-warn">
-                  ⚠ 这一步会把当前供应商的 <b>Key 明文</b>写进本机 <code>~/.claude/settings.json</code>
-                  （只在这台机器生效）。确认再点一次。
-                </p>
-              )}
-              <div className="cli-sync-claude-actions">
-                <button className={confirmClaude ? "danger-setting" : "primary-setting"} disabled={busy !== "" || busyTarget !== "" || !provider?.ready} onClick={() => void runClaude()}>
-                  {busy === "claude" ? <><Spinner /> 写入中…</> : confirmClaude ? "确认写入（含 Key）" : "同步 Claude Code"}
-                </button>
-                <span className="cli-sync-row-status">{claude.status}</span>
-              </div>
-            </section>
-          )}
 
-          <div className="cli-sync-section-title">
-            <Terminal size={13} />
-            <span>其它已安装的 CLI</span>
-            <em>（自动识别；装了才出现在这里）</em>
-          </div>
-
-          {others.some((target) => target.kind === "own") && (
-            <p className="cli-sync-hint">
-              「需自己登录」= 这类 CLI 只认<b>它自己账号</b>的登录态（不是这里的供应商 Key）：在它自己的终端登录一次即可，登录后群里就能用；
-              本弹窗的同步只写模型配置，<b>不会代登录</b>。
-            </p>
-          )}
-
-          {others.length === 0 ? (
-            <div className="cli-sync-empty">本机还没装其它 CLI —— 到「设置 → 开发工具 → CLI 智能体」安装后再来。</div>
-          ) : (
-            <div className="cli-sync-list">
-              {others.map((target) => {
-                /* 每个 CLI 的按键按它自己的跟随方式定制（用户令「定制模型同步按键」）：
-                   keyed = 写含 Key 的文件（要二次确认）/ config = 写不含 Key 的配置 /
-                   env = 派活时自动注入（没有文件可写）/ own = 只能用它自己的登录。 */
-                const canWrite = target.kind === "keyed" || target.kind === "config";
-                const needConfirm = target.kind === "keyed";
-                const confirming = confirmKeyed === target.id;
-                return (
-                  <div className="cli-sync-row" key={target.id}>
-                    <div className="cli-sync-row-main">
-                      <div className="cli-sync-row-head">
-                        <b>{target.name}</b>
-                        <span className="cli-sync-kind" data-kind={target.kind}>{KIND_LABEL[target.kind]}</span>
-                        <code>{target.bin}</code>
+              <div className="cli-sync-card">
+                {targets.map((target) => {
+                  /* 每个 CLI 的按键按它自己的跟随方式定制（用户令「定制模型同步按键」）：
+                     claude / keyed = 写含 Key 的文件（先要一次确认）/ config = 写不含 Key 的配置 /
+                     env = 派活时自动注入（没有文件可写）/ own = 只能用它自己的登录。 */
+                  const isClaude = target.kind === "claude";
+                  const canWrite = isClaude || target.kind === "keyed" || target.kind === "config";
+                  const needConfirm = isClaude || target.kind === "keyed";
+                  const confirming = isClaude ? confirmClaude : confirmKeyed === target.id;
+                  const busyThis = isClaude ? busy === "claude" : busyTarget === target.id;
+                  const entry = feedback[target.id];
+                  /* 同步结果优先；还没点过时，Claude 显示它当前落盘状态（切换供应商后靠它提示手动补一次）。 */
+                  const claudeState = isClaude && !entry ? claudeChip(target.status) : null;
+                  return (
+                    <div className="cli-sync-row" key={target.id} data-kind={target.kind}>
+                      <span className="cli-sync-avatar">
+                        <Terminal size={13} />
+                      </span>
+                      <div className="cli-sync-row-main">
+                        <div className="cli-sync-row-head">
+                          <b>{target.name}</b>
+                          <span className="cli-sync-kind" data-kind={target.kind}>{KIND_LABEL[target.kind]}</span>
+                          <code>{target.bin}</code>
+                        </div>
+                        <div className="cli-sync-row-note" title={target.status}>{target.action}</div>
+                        {confirming && (
+                          <div className="cli-sync-confirm">
+                            ⚠ 会把当前供应商的 Key 明文写进它自己的配置文件（仅本机）。再点一次确认。
+                          </div>
+                        )}
+                        {entry?.state === "failed" && <div className="cli-sync-row-error">{entry.text}</div>}
                       </div>
-                      <div className="cli-sync-row-note">{target.action}</div>
-                      <div className="cli-sync-row-status">{target.status}</div>
-                      {/* 只有失败才在行内展开原因（成功不铺第二行，状态挂在右侧）。 */}
-                      {feedback[target.id]?.state === "failed" && (
-                        <div className="cli-sync-row-error">{feedback[target.id].text}</div>
-                      )}
-                    </div>
-                    <div className="cli-sync-row-action">
-                      {canWrite ? (
-                        <>
-                          {feedback[target.id] && (
-                            <span
-                              className={`cli-sync-step ${feedback[target.id].state === "failed" ? "is-bad" : "is-ok"}`}
-                              title={feedback[target.id].text}
-                              data-state={feedback[target.id].state}
-                            >
-                              {feedback[target.id].state === "failed" ? <CircleAlert size={11} /> : <Check size={11} />}
-                              {feedback[target.id].state === "failed" ? "失败" : feedback[target.id].state === "current" ? "已是最新" : "已同步"}
-                            </span>
-                          )}
+                      <div className="cli-sync-row-action">
+                        {claudeState && (
+                          <span className={`cli-sync-step is-${claudeState.tone}`} title={target.status}>
+                            {claudeState.tone === "ok" ? <Check size={11} /> : claudeState.tone === "warn" ? <CircleAlert size={11} /> : null}
+                            {claudeState.text}
+                          </span>
+                        )}
+                        {entry && canWrite && (
+                          <span
+                            className={`cli-sync-step ${entry.state === "failed" ? "is-bad" : "is-ok"}`}
+                            title={entry.text}
+                            data-state={entry.state}
+                          >
+                            {entry.state === "failed" ? <CircleAlert size={11} /> : <Check size={11} />}
+                            {entry.state === "failed" ? "失败" : entry.state === "current" ? "已是最新" : "已同步"}
+                          </span>
+                        )}
+                        {canWrite ? (
                           <button
                             className={confirming ? "danger-setting" : "secondary-setting"}
-                            disabled={busy !== "" || busyTarget !== ""}
+                            disabled={busy !== "" || busyTarget !== "" || !provider?.ready}
                             title={needConfirm ? "这一步会把当前供应商的 Key 明文写进它自己的配置文件（仅本机）" : "按当前供应商重写它的配置文件"}
-                            onClick={() => void runOne(target, needConfirm)}
+                            onClick={() => void (isClaude ? runClaude() : runOne(target, needConfirm))}
                           >
-                            {busyTarget === target.id
+                            {busyThis
                               ? <><Spinner />写入中…</>
-                              : confirming ? "确认写入" : needConfirm ? "同步（含 Key）" : "同步"}
+                              : confirming ? "确认写入" : needConfirm && !isClaude ? "同步（含 Key）" : "同步"}
                           </button>
-                        </>
-                      ) : (
-                        <>
-                          <span className="cli-sync-row-status">{target.kind === "env" ? "自动注入" : "需自己登录"}</span>
-                          {target.kind === "own" && target.docs && (
-                            <button
-                              className="cli-sync-doc"
-                              title="在浏览器打开它的官方文档（登录方式在里面）"
-                              onClick={() => void window.codex.openExternal(String(target.docs))}
-                            >
-                              官方文档
-                            </button>
-                          )}
-                        </>
-                      )}
+                        ) : target.kind === "env" ? (
+                          <span className="cli-sync-step is-idle">自动注入</span>
+                        ) : (
+                          <>
+                            <span className="cli-sync-step is-idle">需自己登录</span>
+                            {target.docs && (
+                              <button
+                                className="cli-sync-doc"
+                                title="在浏览器打开它的官方文档（登录方式在里面）"
+                                onClick={() => void window.codex.openExternal(String(target.docs))}
+                              >
+                                <ExternalLink size={11} />官方文档
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+
+              {ownCount > 0 && (
+                <p className="cli-sync-footnote">
+                  「需自己登录」的 CLI 只认它自己的账号：在它的终端登录一次即可，登录后群里就能用；这里的同步只写模型配置，<b>不会代登录</b>。
+                </p>
+              )}
+            </>
+          )}
+
+          {snapshot && targets.length === 0 && (
+            <div className="cli-sync-empty">本机还没装 CLI —— 到「设置 → 开发工具 → CLI 智能体」安装后再来。</div>
           )}
         </div>
 

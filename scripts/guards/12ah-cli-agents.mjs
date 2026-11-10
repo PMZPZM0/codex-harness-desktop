@@ -886,6 +886,11 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && /不会代登录/.test(syncDialogSrc) && /官方文档/.test(syncDialogSrc)
     && !/data-testid="cli-sync-result"/.test(syncDialogSrc),
     "同步状态挂在行右侧（cli-sync-step）+ 失败原因行内 + 脚底总结；⛔ 顶部结果卡不许复活");
+  /* 11-10 用户令「切换了供应商后，这里还可以手动同步一次」：快照必须在供应商切换后重读，
+     Claude 行要直接显示「与当前不一致」（它不会自动跟随，只能来这里手动补一次）。 */
+  ok(/provider-activated/.test(syncDialogSrc) && /addEventListener\("focus"/.test(syncDialogSrc)
+    && /claudeChip/.test(syncDialogSrc) && /与当前不一致/.test(syncDialogSrc),
+    "切换供应商后仍可手动同步：provider-activated / 窗口聚焦重读快照，Claude 行标出「与当前不一致」");
   /* ⛔⛔ 11-10 技能审查（数据丢失）：原来 `readFile(...).then(JSON.parse).catch(() => null)`
      把「文件不存在」和「文件坏了」混成一种，坏 JSON 会被当成空对象 ⇒ 用户原有 settings.json
      被整个覆盖。Claude 还直接 fs.writeFile 没有备份。两条都钉住。 */
