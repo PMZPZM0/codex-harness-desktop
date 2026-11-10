@@ -6,6 +6,9 @@
  * 数据与 Codex 工具共用同一份（`<userData>/media-desk-host/media-desk/state.json`）。
  */
 import { useEffect, useState } from "react";
+import { ExternalLink } from "lucide-react";
+
+const SOURCE_URL = "https://github.com/woniuniuniu/dsh-media-desk";
 
 /** 工作台页面：iframe 打开主进程起的原版界面（同源本地服务，只监听 127.0.0.1）。 */
 export function MediaDeskPage() {
@@ -20,5 +23,16 @@ export function MediaDeskPage() {
   }, []);
   if (error) return <p className="media-desk-error" role="status">工作台启动失败：{error}</p>;
   if (!src) return <p className="media-desk-loading" role="status">正在打开工作台…</p>;
-  return <iframe className="media-desk-frame" src={src} title="自媒体工作台" />;
+  return (
+    <div className="media-desk-page">
+      <iframe className="media-desk-frame" src={src} title="自媒体工作台" />
+      <div className="media-desk-note">
+        <span>界面与流程来自开源项目 dsh-media-desk（MIT）；数据只存本机，排期不会自动发布。</span>
+        <button type="button" className="media-desk-link" onClick={() => void window.codex.openExternal(SOURCE_URL)}>
+          <ExternalLink size={12} />
+          开源项目
+        </button>
+      </div>
+    </div>
+  );
 }

@@ -43,6 +43,7 @@ export async function run() {
   ];
   const pageSrc = (() => { for (const rel of pageCandidates) { try { return read(rel); } catch { /* 换下一个 */ } } return ""; })();
   const board = read("src/features/media-desk/index.tsx");
+  const boardCss = read("src/styles/63-media-desk.css");
   const dispatchCore = read("electron/features/dispatch-core.ts");
   const dispatchRpc = read("electron/features/dispatch-rpc.ts");
   const tool = read("electron/features/media-desk/tool.ts");
@@ -91,6 +92,11 @@ export async function run() {
     "⛔ 域不直取 safeStorage（密钥走宿主 secure 接缝）");
   ok(/<iframe className="media-desk-frame"/.test(board) && /mediaDeskEndpoint/.test(board),
     "渲染层用 iframe 打开原版界面（不再自绘一套）");
+  ok(/dsh-media-desk（MIT）/.test(board) && /数据只存本机/.test(board) && /排期不会自动发布/.test(board)
+    && /openExternal\(SOURCE_URL\)/.test(board) && /github\.com\/woniuniuniu\/dsh-media-desk/.test(board),
+    "页面写明开源声明（MIT / 数据只存本机 / 排期不自动发布）并有「开源项目」跳转按键");
+  ok(/\.media-desk-note\b/.test(boardCss) && /\.media-desk-link:hover/.test(boardCss) && /height: calc\(100vh - 190px\)/.test(boardCss),
+    "声明与跳转按键有样式（且 iframe 高度为底部说明让位）");
   ok(/action: \{ type: "string", enum: \["state", "capture", "draft", "produce", "schedule", "metric", "style", "delete", "undo"\]/.test(dispatchCore)
     && /name === "media_desk"/.test(dispatchRpc) && /runMediaDeskTool/.test(dispatchRpc) && /mediaDeskRequest/.test(tool),
     "Codex 可直接跑整条流程（media_desk 工具 → 本地服务，与界面同一份数据）");

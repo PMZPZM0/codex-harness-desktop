@@ -2176,6 +2176,16 @@ const CHECKS = [
         if (again !== frame.src) await wait(500);
       }
       h.check("⑥ 工具走的 endpoint 与界面同源（幂等复用同一个服务）", again === frame.src, JSON.stringify({ again, src: frame.src }));
+
+      /* 声明与跳转按键在位（⛔ 不真点：点了会拉起系统浏览器） */
+      const note = await h.eval(`(function(){ return {
+        text: (document.querySelector(".media-desk-note")?.textContent || "").replace(/\\s+/g, " ").trim(),
+        hasLink: !!document.querySelector(".media-desk-link"),
+        canOpen: typeof window.codex.openExternal === "function",
+      }; })()`);
+      h.check("⑦ 开源声明与跳转按键在位（MIT / 数据本机 / 不自动发布 + 可调 openExternal）",
+        Boolean(note && /dsh-media-desk/.test(note.text) && /MIT/.test(note.text) && /不会自动发布/.test(note.text) && note.hasLink && note.canOpen),
+        JSON.stringify(note));
     },
   },
 ];
