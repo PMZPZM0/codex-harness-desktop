@@ -147,38 +147,40 @@ export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResul
  *   · codex / kimi   ⇒ 写不含 Key 的配置；
  *   · 其它（env / own）⇒ 没有可写的文件，返回「不需要按键」的说明，⛔ 不假装同步过。
  */
-export async function syncOneCliProvider(targetId: string): Promise<{ ok: boolean; name: string; detail: string }> {
+export async function syncOneCliProvider(targetId: string): Promise<{ ok: boolean; id: string; name: string; detail: string }> {
+  const id = String(targetId);
   const list = await readCliAgents().catch(() => []);
-  const agent = list.find((entry) => String(entry.id) === String(targetId));
-  if (!agent) return { ok: false, name: String(targetId), detail: "找不到这个 CLI" };
+  const agent = list.find((entry) => String(entry.id) === id);
+  if (!agent) return { ok: false, id, name: id, detail: "找不到这个 CLI" };
   const name = agent.name;
   const bin = String(agent.bin ?? "").toLowerCase();
   if (!bin || !(await binOnPath(bin).catch(() => false))) {
-    return { ok: false, name, detail: `本机没检测到 \`${bin || agent.name}\`，先去安装再同步` };
+    return { ok: false, id, name, detail: `本机没检测到 \`${bin || agent.name}\`，先去安装再同步` };
   }
   const custom = await readCustomModel().catch(() => null);
   const baseUrl = String(custom?.baseUrl ?? "").trim();
   const model = String(custom?.model ?? "").trim();
-  if (!baseUrl || !model) return { ok: false, name, detail: "还没配置供应商或模型" };
+  if (!baseUrl || !model) return { ok: false, id, name, detail: "还没配置供应商或模型" };
 
   if (bin === "claude") {
     const r = await syncClaudeProvider({ baseUrl, model, apiKey: await currentProviderApiKey() });
-    return { ok: r.ok, name, detail: r.detail };
+    return { ok: r.ok, id, name, detail: r.detail };
   }
   if (bin === "iflow") {
     const outcome = await writeIflowConfig(baseUrl, model);
-    return describeWriteOutcome(name, outcome, "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）");
+    return { id, ...describeWriteOutcome(name, outcome, "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）") };
   }
   if (bin === "codex") {
     const outcome = await writeCodexConfig(baseUrl, model);
-    return describeWriteOutcome(name, outcome, "已重写应用自己的 cli-codex-home/config.toml（不含 Key）");
+    return { id, ...describeWriteOutcome(name, outcome, "已重写应用自己的 cli-codex-home/config.toml（不含 Key）") };
   }
   if (bin === "kimi") {
     const outcome = await writeKimiConfig(baseUrl, model);
-    return describeWriteOutcome(name, outcome, "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）");
+    return { id, ...describeWriteOutcome(name, outcome, "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）") };
   }
   return {
     ok: true,
+    id,
     name,
     detail: "这个 CLI 不需要写文件 —— 派活时自动注入环境变量；如果它要自己的账号，请按它自己的登录流程授权",
   };
@@ -204,9 +206,15 @@ export type CliSyncKind = "claude" | "keyed" | "config" | "env" | "own";
  *     （触碰系统密钥库的能力必须留在内核侧模块）。 */
 export async function currentProviderApiKey(): Promise<string> {
   const custom = await readCustomModel().catch(() => null);
-  return custom?.encryptedKey && safeStorage.isEncryptionAvailable()
-    ? safeStorage.decryptString(Buffer.from(custom.encryptedKey, "base64"))
-    : "";
+  if (!custom?.encryptedKey || !safeStorage.isEncryptionAvailable()) return "";
+  try {
+    return safeStorage.decryptString(Buffer.from(custom.encryptedKey, "base64"));
+  } catch {
+    /* ⛔ 解不开不是致命错误：换机 / profile 迁移 / 系统密钥库变化都会让它抛（实测 e2e profile 就抛）。
+       返回空串 ⇒ 各 CLI 的回执如实写「拿不到 Key」；⛔ 不许让它把整个「全部同步」变成一条
+       invoke 失败（那样用户又只剩一个报错弹窗、看不到任何逐项结果）。 */
+    return "";
+  }
 }
 
 export type CliSyncTarget = {
@@ -219,7 +227,17 @@ export type CliSyncTarget = {
   action: string;
   /** 当前状态（人话） */
   status: string;
+  /** 官方文档（11-10：own 类只能自己登录，界面给一个「在哪登录」的出口）。 */
+  docs?: string;
 };
+
+/** 一条逐 CLI 的同步回执。
+ *  `state`：synced=这次真写了 / current=本来就一致 / auto=派活时自动注入（没有文件可写）/
+ *  manual=只能它自己登录 / failed=写失败。⛔ 只有 failed 算整体失败 ——
+ *  「自动注入」「需自己登录」是**说明**，不是同步出错（用户报「没有成功反馈」的修法之一：
+ *  旧实现只回一条汇总，用户看不出哪个成了、哪个本来就不用同步）。 */
+export type CliSyncState = "synced" | "current" | "auto" | "manual" | "failed";
+export type CliSyncResultEntry = { id: string; name: string; ok: boolean; state: CliSyncState; detail: string };
 
 /** 每个 CLI 的同步方式与现状（rendering 层只展示，判定全在这里）。 */
 export async function inspectCliSyncTargets(): Promise<{
@@ -282,7 +300,7 @@ export async function inspectCliSyncTargets(): Promise<{
       targets.push({
         id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
         action: "用它自己的模型配置（qwenpaw models）",
-        status: "不跟随主会话：它不读 OPENAI_*，用的是自己配的 provider",
+        status: "不跟随主会话：它不读 OPENAI_*，用的是自己配的 provider（在它自己的终端里配一次/登录一次即可，本弹窗不代登录）",
       });
       continue;
     }
@@ -300,7 +318,7 @@ export async function inspectCliSyncTargets(): Promise<{
       targets.push({
         id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
         action: "用它自己的百度 license / ptoken",
-        status: "不跟随主会话：实测报「No license or token provided」，需要在它自己的登录体系里授权",
+        status: "不跟随主会话：实测报「No license or token provided」，要在它自己的登录体系里授权（登录一次即可，本弹窗不代登录）",
       });
       continue;
     }
@@ -308,7 +326,7 @@ export async function inspectCliSyncTargets(): Promise<{
       targets.push({
         id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
         action: "用它自己的 gateway 配置",
-        status: "不跟随主会话：实测要求 gateway.auth 配对（token/password），不是模型 Key 能替代的",
+        status: "不跟随主会话：实测要求 gateway.auth 配对（token/password），不是模型 Key 能替代的（在它自己的终端里授权一次即可，本弹窗不代登录）",
       });
       continue;
     }
@@ -316,7 +334,7 @@ export async function inspectCliSyncTargets(): Promise<{
       targets.push({
         id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
         action: "用它自己的登录态",
-        status: "不跟随主会话：实测在主会话 Key 下报错，需要按它自己的 login 流程授权",
+        status: "不跟随主会话：实测在主会话 Key 下报错，需要按它自己的 login 流程授权（登录一次即可，本弹窗不代登录）",
       });
       continue;
     }
@@ -329,7 +347,10 @@ export async function inspectCliSyncTargets(): Promise<{
   }
   return {
     provider: { name: String(custom?.name ?? custom?.provider ?? "(未配置)"), model, host, local, ready: Boolean(baseUrl && model) },
-    targets,
+    targets: targets.map((target) => ({
+      ...target,
+      docs: String(agents.find((agent) => agent.id === target.id)?.docs ?? ""),
+    })),
   };
 }
 
@@ -385,25 +406,51 @@ export async function syncClaudeProvider(input: { baseUrl: string; model: string
   };
 }
 
-/** 「全部同步」：Claude 走 settings.json，其余按各自方式重跑一遍自动同步。 */
-export async function syncAllCliProviders(input: { apiKey: string }): Promise<{ ok: boolean; results: Array<{ name: string; ok: boolean; detail: string }> }> {
-  const results: Array<{ name: string; ok: boolean; detail: string }> = [];
+/** 「全部同步」：逐 CLI 给出回执（11-10 用户报障「没有成功反馈，只有一个弹窗提醒」）。
+ *  ⛔ 旧的汇总式只回一条「配置文件同步：已重写 codex / kimi」，env / own 类连条目都没有
+ *     ⇒ 用户点完看不出谁成了、谁本来就不用同步。
+ *  ⛔ 分类复用 `inspectCliSyncTargets`（单一真相源）：这里**不再自己判 bin**，
+ *     否则两处判定迟早漂移（写文件的档位与列表里显示的档位必须一致）。
+ *  ⛔ 每个 CLI 独立 catch：一个写挂（EACCES 等）不影响其它条目。 */
+export async function syncAllCliProviders(input: { apiKey: string }): Promise<{ ok: boolean; results: CliSyncResultEntry[] }> {
+  const snapshot = await inspectCliSyncTargets();
   const custom = await readCustomModel().catch(() => null);
   const baseUrl = String(custom?.baseUrl ?? "").trim();
-  const model = String(custom?.model ?? "").trim();
-  const agents = await readCliAgents().catch(() => []);
-  const hasClaude = agents.some((entry) => entry.enabled !== false && String(entry.bin).toLowerCase() === "claude");
-  if (hasClaude && (await binOnPath("claude").catch(() => false))) {
-    const r = await syncClaudeProvider({ baseUrl, model, apiKey: String(input?.apiKey ?? "") });
-    results.push({ name: "Claude Code", ok: r.ok, detail: r.detail });
+  const results: CliSyncResultEntry[] = [];
+  const failedText = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+  for (const target of snapshot.targets) {
+    try {
+      if (target.kind === "claude") {
+        const r = await syncClaudeProvider({ baseUrl, model: snapshot.provider.model, apiKey: String(input?.apiKey ?? "") });
+        results.push({
+          id: target.id, name: target.name, ok: r.ok, detail: r.detail,
+          state: !r.ok ? "failed" : /无需改写/.test(r.detail) ? "current" : "synced",
+        });
+        continue;
+      }
+      if (target.kind === "keyed" || target.kind === "config") {
+        const r = await syncOneCliProvider(target.id);
+        results.push({
+          id: target.id, name: r.name, ok: r.ok, detail: r.detail,
+          state: !r.ok ? "failed" : /最新|无需改写/.test(r.detail) ? "current" : "synced",
+        });
+        continue;
+      }
+      if (target.kind === "env") {
+        results.push({
+          id: target.id, name: target.name, ok: true, state: "auto",
+          detail: "派活时自动注入环境变量，没有要写的文件（本次无需改动）",
+        });
+        continue;
+      }
+      results.push({
+        id: target.id, name: target.name, ok: true, state: "manual",
+        detail: "它只认自己的账号：在它自己的终端登录一次即可；同步只写模型配置，不会代登录",
+      });
+    } catch (error) {
+      results.push({ id: target.id, name: target.name, ok: false, state: "failed", detail: `写入失败：${failedText(error)}` });
+    }
   }
-  const r = await syncCliAgentProviderConfig();
-  if (r.updated.length) results.push({ name: "配置文件同步", ok: true, detail: `已重写：${r.updated.join(" / ")}` });
-  if (r.unchanged.length) results.push({ name: "配置文件同步", ok: true, detail: `已是最新：${r.unchanged.join(" / ")}` });
-  if (r.skipped.length) {
-    /* ⛔ 只有「写入失败」算失败；「未安装 / 没值可写」是状态说明，不是这次同步的错。 */
-    const failed = r.skipped.some((entry) => entry.includes("写入失败"));
-    results.push({ name: failed ? "写入失败" : "未同步", ok: !failed, detail: r.skipped.join(" / ") });
-  }
-  return { ok: results.every((entry) => entry.ok), results };
+  return { ok: results.every((entry) => entry.state !== "failed"), results };
 }

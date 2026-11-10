@@ -22,7 +22,14 @@ type SyncTarget = {
   kind: "claude" | "keyed" | "config" | "env" | "own";
   action: string;
   status: string;
+  /** own 类只能它自己登录 —— 给一个「去哪登录」的出口（官方文档）。 */
+  docs?: string;
 };
+
+/** 逐 CLI 回执：synced=这次写了 / current=本来就一致 / auto=派活时自动注入 /
+ *  manual=只能它自己登录 / failed=写失败。 */
+type SyncState = "synced" | "current" | "auto" | "manual" | "failed";
+type SyncResult = { id?: string; name: string; ok: boolean; state?: SyncState; detail: string };
 
 type Snapshot = {
   provider: { name: string; model: string; host: string; local: boolean; ready: boolean };
@@ -39,6 +46,23 @@ const KIND_LABEL: Record<SyncTarget["kind"], string> = {
   env: "环境变量",
   own: "它自己管",
 };
+
+/** 单条回执的状态（主进程已给 state；单点同步只有 ok，按文案归一到同一套）。 */
+const stateOf = (entry: SyncResult): SyncState =>
+  entry.state ?? (!entry.ok ? "failed" : /最新|无需改写/.test(entry.detail) ? "current" : "synced");
+
+/** 一句人话总结：⛔ auto / manual 是说明，不算失败。 */
+function summarizeResults(entries: SyncResult[]): string {
+  const count = (state: SyncState) => entries.filter((entry) => stateOf(entry) === state).length;
+  const parts = [
+    count("synced") ? `已同步 ${count("synced")}` : "",
+    count("current") ? `已是最新 ${count("current")}` : "",
+    count("auto") ? `自动注入 ${count("auto")}` : "",
+    count("manual") ? `需自己登录 ${count("manual")}` : "",
+    count("failed") ? `失败 ${count("failed")}` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "没有可同步的 CLI";
+}
 
 export type CliSyncDialogProps = {
   open: boolean;
@@ -58,7 +82,11 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
   const [confirmKeyed, setConfirmKeyed] = useState("");
   const [busyTarget, setBusyTarget] = useState("");
   const [busy, setBusy] = useState<"claude" | "all" | "">("");
-  const [result, setResult] = useState<Array<{ name: string; ok: boolean; detail: string }>>([]);
+  const [result, setResult] = useState<SyncResult[]>([]);
+  /** 顶部结果条的一句话总结（点完同步立刻出现，⛔ 不再只靠弹窗外的 notice）。 */
+  const [summary, setSummary] = useState("");
+  /** 行内回执：用户点的是这一行，就在这一行下面给出成败（旧版只有个列表底部的汇总）。 */
+  const [feedback, setFeedback] = useState<Record<string, { ok: boolean; state: SyncState; text: string }>>({});
 
   useEscapeLayer(open, onClose);
 
@@ -78,40 +106,60 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
   useEffect(() => {
     if (!open) return;
     setResult([]);
+    setSummary("");
+    setFeedback({});
     setConfirmClaude(false);
     setConfirmKeyed("");
     setBusyTarget("");
     void refresh();
   }, [open, refresh]);
 
+  /** 把一批回执落到「顶部结果条 + 行内回执」两处（单点与全量共用）。 */
+  const publishResults = (entries: SyncResult[]) => {
+    setResult(entries);
+    setSummary(summarizeResults(entries));
+    setFeedback((current) => {
+      const next = { ...current };
+      for (const entry of entries) {
+        if (!entry.id) continue;
+        next[entry.id] = { ok: entry.ok, state: stateOf(entry), text: entry.detail };
+      }
+      return next;
+    });
+    return summarizeResults(entries);
+  };
+
   const runClaude = async () => {
     if (!confirmClaude) { setConfirmClaude(true); return; }
     setBusy("claude");
     try {
       const r = await window.codex.applyCliSync({ scope: "claude" });
-      setResult([{ name: "Claude Code", ok: Boolean(r.ok), detail: String(r.detail ?? "") }]);
-      onNotice?.(r.ok ? "Claude Code 已同步当前供应商" : `Claude Code 同步失败：${r.detail ?? ""}`);
+      const entry: SyncResult = { id: claude?.id, name: "Claude Code", ok: Boolean(r.ok), detail: String(r.detail ?? "") };
+      const text = publishResults([entry]);
+      onNotice?.(r.ok ? `Claude Code：${text}` : `Claude Code 同步失败：${r.detail ?? ""}`);
       setConfirmClaude(false);
       await refresh();
     } catch (e) {
-      setResult([{ name: "Claude Code", ok: false, detail: errorMessage(e) }]);
+      publishResults([{ id: claude?.id, name: "Claude Code", ok: false, detail: errorMessage(e) }]);
     } finally {
       setBusy("");
     }
   };
 
-  /** 单点按键：按这个 CLI 自己的方式同步（keyed 类先要一次确认，因为它要落明文 Key）。 */
+  /** 单点按键：按这个 CLI 自己的方式同步（keyed 类先要一次确认，因为它要落明文 Key）。
+   *  ⛔ 成败要落在**这一行**上（用户报「没有成功反馈」）——只更新底部汇总等于没反馈。 */
   const runOne = async (target: SyncTarget, needConfirm: boolean) => {
     if (needConfirm && confirmKeyed !== target.id) { setConfirmKeyed(target.id); return; }
     setBusyTarget(target.id);
     try {
       const r = await window.codex.applyCliSync({ targetId: target.id });
-      setResult([{ name: r.name ?? target.name, ok: Boolean(r.ok), detail: String(r.detail ?? "") }]);
-      onNotice?.(r.ok ? `${target.name} 已同步` : `${target.name} 同步失败：${r.detail ?? ""}`);
+      const entry: SyncResult = { id: target.id, name: r.name ?? target.name, ok: Boolean(r.ok), detail: String(r.detail ?? "") };
+      publishResults([entry]);
+      onNotice?.(r.ok ? `${target.name}：${entry.detail}` : `${target.name} 同步失败：${entry.detail}`);
       setConfirmKeyed("");
       await refresh();
     } catch (e) {
-      setResult([{ name: target.name, ok: false, detail: errorMessage(e) }]);
+      publishResults([{ id: target.id, name: target.name, ok: false, detail: errorMessage(e) }]);
     } finally {
       setBusyTarget("");
     }
@@ -121,11 +169,12 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
     setBusy("all");
     try {
       const r = await window.codex.applyCliSync({ scope: "all" });
-      setResult(r.results ?? []);
-      onNotice?.(r.ok ? "已同步给 CLI 智能体" : "部分 CLI 同步失败，见弹窗明细");
+      const entries = (r.results ?? []) as SyncResult[];
+      const text = publishResults(entries);
+      onNotice?.(r.ok ? `同步完成：${text}` : `部分 CLI 同步失败：${text}`);
       await refresh();
     } catch (e) {
-      setResult([{ name: "同步", ok: false, detail: errorMessage(e) }]);
+      publishResults([{ name: "同步", ok: false, detail: errorMessage(e) }]);
     } finally {
       setBusy("");
     }
@@ -161,6 +210,27 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
             <div className="cli-sync-warn"><CircleAlert size={13} /> {error}</div>
           )}
 
+          {/* 11-10 用户报障「没有成功反馈，只有一个弹窗提醒」：回执放在**最上面**
+              （旧版在列表末尾，弹窗一开用户根本滚不到；而且全量同步只回一条汇总）。 */}
+          {result.length > 0 && (
+            <section className={`cli-sync-result ${result.some((entry) => stateOf(entry) === "failed") ? "is-bad" : "is-ok"}`} data-testid="cli-sync-result">
+              <div className="cli-sync-result-head">
+                {result.some((entry) => stateOf(entry) === "failed") ? <CircleAlert size={14} /> : <Check size={14} />}
+                <b>{summary}</b>
+              </div>
+              {result.map((entry, index) => {
+                const state = stateOf(entry);
+                return (
+                  <div className="cli-sync-result-row" key={`${entry.id ?? entry.name}-${index}`} data-state={state}>
+                    {state === "failed" || state === "manual" ? <CircleAlert size={12} /> : <Check size={12} />}
+                    <b>{entry.name}</b>
+                    <span>{entry.detail}</span>
+                  </div>
+                );
+              })}
+            </section>
+          )}
+
           {claude && (
             <section className="cli-sync-claude">
               <div className="cli-sync-claude-top">
@@ -194,6 +264,13 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
             <em>（自动识别；装了才出现在这里）</em>
           </div>
 
+          {others.some((target) => target.kind === "own") && (
+            <p className="cli-sync-hint">
+              「需自己登录」= 这类 CLI 只认<b>它自己账号</b>的登录态（不是这里的供应商 Key）：在它自己的终端登录一次即可，登录后群里就能用；
+              本弹窗的同步只写模型配置，<b>不会代登录</b>。
+            </p>
+          )}
+
           {others.length === 0 ? (
             <div className="cli-sync-empty">本机还没装其它 CLI —— 到「设置 → 开发工具 → CLI 智能体」安装后再来。</div>
           ) : (
@@ -215,6 +292,15 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
                       </div>
                       <div className="cli-sync-row-note">{target.action}</div>
                       <div className="cli-sync-row-status">{target.status}</div>
+                      {/* 行内回执：点的是这一行，成败就落这一行（含「本来就一致」与失败原因）。 */}
+                      {feedback[target.id] && (
+                        <div className="cli-sync-row-feedback" data-state={feedback[target.id].state}>
+                          {feedback[target.id].state === "failed" || feedback[target.id].state === "manual"
+                            ? <CircleAlert size={12} />
+                            : <Check size={12} />}
+                          <span>{feedback[target.id].text}</span>
+                        </div>
+                      )}
                     </div>
                     <div className="cli-sync-row-action">
                       {canWrite ? (
@@ -229,28 +315,23 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
                             : confirming ? "确认写入" : needConfirm ? "同步（含 Key）" : "同步"}
                         </button>
                       ) : (
-                        <span className="cli-sync-row-status">{target.kind === "env" ? "自动注入" : "需自己登录"}</span>
+                        <>
+                          <span className="cli-sync-row-status">{target.kind === "env" ? "自动注入" : "需自己登录"}</span>
+                          {target.kind === "own" && target.docs && (
+                            <button
+                              className="cli-sync-doc"
+                              title="在浏览器打开它的官方文档（登录方式在里面）"
+                              onClick={() => void window.codex.openExternal(String(target.docs))}
+                            >
+                              官方文档
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {result.length > 0 && (
-            <div className="cli-sync-list">
-              {result.map((entry, index) => (
-                <div className="cli-sync-row" key={`${entry.name}-${index}`}>
-                  <div className="cli-sync-row-main">
-                    <div className="cli-sync-row-head">
-                      {entry.ok ? <Check size={13} /> : <CircleAlert size={13} />}
-                      <b>{entry.name}</b>
-                    </div>
-                    <div className="cli-sync-row-status">{entry.detail}</div>
-                  </div>
-                </div>
-              ))}
             </div>
           )}
         </div>

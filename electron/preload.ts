@@ -235,7 +235,7 @@ contextBridge.exposeInMainWorld("codex", {
   cancelCliAgentInstall: (id: string) => __ipc("cliagents:cancel", 1, [id]),
   /* 11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key） */
   inspectCliSyncTargets: () => __ipc("cliagents:sync-inspect", 0, []),
-  /* 11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；其它走自动同步 */
+  /* 11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；scope=all 逐 CLI 回执（synced/current/auto/manual/failed） */
   applyCliSync: (input?: { scope?: string; targetId?: string }) => __ipc("cliagents:sync-apply", 0, [input]),
   /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
   respondCloseConfirm: (action: "tray" | "quit" | "cancel", remember: boolean) => __ipc("close-confirm:respond", 2, [action, remember]),

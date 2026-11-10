@@ -874,9 +874,16 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && absent.ok === false && /没检测到/.test(absent.detail)
     && skipped.ok === false && /没写成/.test(skipped.detail),
     "行为断言：四种写入 outcome 的成败与文案（⛔ same 必须算成功 —— 重复点同步不能显示假失败）");
-  ok(/const failed = r\.skipped\.some\(\(entry\) => entry\.includes\("写入失败"\)\)/.test(syncSrc)
-    && /results\.push\(\{ name: failed \? "写入失败" : "未同步", ok: !failed/.test(syncSrc),
-    "⛔ 全量同步：只有「写入失败」算失败，「未安装 / 没值可写」只是状态说明（不能一律 ok:true 也不能一律当失败）");
+  ok(/export async function syncAllCliProviders[\s\S]{0,2200}?inspectCliSyncTargets\(\)/.test(syncSrc)
+    && /state: "auto"/.test(syncSrc) && /state: "manual"/.test(syncSrc)
+    && /state !== "failed"/.test(syncSrc),
+    "⛔ 全量同步逐 CLI 回执：env=自动注入 / own=需自己登录 / 只有 failed 算整体失败；分类复用 inspectCliSyncTargets（⛔ 不自己再判一遍 bin）");
+  /* ⛔ 11-10 用户报障「没有成功反馈，只有一个弹窗提醒」：回执必须落在弹窗**里面**
+     （顶部结果条 + 行内状态），并且 own 类要说明「登录一次即可、同步不代登录」。 */
+  ok(/data-testid="cli-sync-result"/.test(syncDialogSrc) && /setFeedback/.test(syncDialogSrc)
+    && /cli-sync-row-feedback/.test(syncDialogSrc) && /不会代登录/.test(syncDialogSrc)
+    && /官方文档/.test(syncDialogSrc),
+    "弹窗内逐项回执（顶部结果条 + 行内状态）+ own 类「登录一次即可、不代登录」的说明与官方文档出口");
   /* ⛔⛔ 11-10 技能审查（数据丢失）：原来 `readFile(...).then(JSON.parse).catch(() => null)`
      把「文件不存在」和「文件坏了」混成一种，坏 JSON 会被当成空对象 ⇒ 用户原有 settings.json
      被整个覆盖。Claude 还直接 fs.writeFile 没有备份。两条都钉住。 */
