@@ -387,5 +387,26 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "通知条 success / error 两套皮肤都在（绿 = 勾，红 = 叉）");
 }
 
+/* ── 11-09 用户令：汇总消息下加视频/图片预览卡，点击复用现有播放器/灯箱；主对话+群聊共用 ── */
+{
+  const status = readFileSync(join(ROOT, "src", "features", "status", "Status.tsx"), "utf8");
+  const cards = readFileSync(join(ROOT, "src", "features", "status", "TurnMediaCards.tsx"), "utf8");
+  const popout = readFileSync(join(ROOT, "src", "features", "harness-team", "21-team-popout-root.tsx"), "utf8");
+  const teamCards = readFileSync(join(ROOT, "src", "features", "harness-team", "11-team-cards.tsx"), "utf8");
+  const css = readFileSync(join(ROOT, "src", "styles", "04-cards-tools.css"), "utf8");
+  ok(/<TurnMediaCards files=\{files\} \/>/.test(status),
+    "汇总卡（CompletedChanges）渲染媒体预览卡 ⇒ 主对话与群聊共用同一份");
+  ok(/isVideoPath/.test(cards) && /openMediaPreview\(\{ source: file\.path, kind: "video"/.test(cards)
+    && /isImagePath/.test(cards) && /openImageLightbox\(file\.path, name\)/.test(cards)
+    && /!f\.deletedFile/.test(cards),
+    "视频卡点击走现有 openMediaPreview、图片卡走现有 openImageLightbox（不新造播放器/灯箱）；删除文件不出卡");
+  ok(/<MediaPreviewBridge/.test(popout) && /<ImageLightbox/.test(popout),
+    "群聊独立窗挂载媒体播放器/大图灯箱（否则汇总媒体卡点了没反应）");
+  ok(/CompletedChanges/.test(teamCards),
+    "群聊汇总复用主对话 CompletedChanges（媒体卡随之生效）");
+  ok(/\.turn-media-card/.test(css) && /\.turn-media-thumb/.test(css),
+    "媒体预览卡样式在（缩略图 + 播放角标 + 名称）");
+}
+
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

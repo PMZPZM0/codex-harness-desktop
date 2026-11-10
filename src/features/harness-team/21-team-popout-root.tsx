@@ -9,6 +9,8 @@ import { useEffect } from "react";
 import type { HarnessAppApi } from "../app-state";
 import { teamChatOpen } from "./00-open-store";
 import { TeamChatOverlay } from "./index";
+import { MediaPreviewBridge } from "../media";
+import { ImageLightbox } from "../preview";
 
 /** 团队独立窗的根组件：置团队开启态、加 body 类名与窗口标题「工作伙伴」。 */
 export function TeamPopoutRoot({ app }: { app: HarnessAppApi }) {
@@ -30,6 +32,10 @@ export function TeamPopoutRoot({ app }: { app: HarnessAppApi }) {
         onOpenThread={(threadId) => { void window.codex.popoutThread(threadId); }}
         onCloseWindow={() => { void window.codex.popoutTeamClose(); }}
       />
+      {/* ⛔ 11-09：独立窗口不渲染 AppView，媒体播放器/大图灯箱没人挂载 ⇒ 汇总媒体卡点了没反应。
+         这里补上（仅独立窗；内嵌主界面已由 AppView 挂载，不重复）。 */}
+      <MediaPreviewBridge threadId="" runningTurnIdsRef={app.runningTurnIdsRef} />
+      {app.lightbox && <ImageLightbox path={app.lightbox.path} alt={app.lightbox.alt} onClose={() => app.setLightbox(null)} />}
     </div>
   );
 }

@@ -2530,6 +2530,88 @@
 }
 .turn-output-stats i { color: var(--green, #3B6D11); font-style: normal; }
 .turn-output-stats em { color: var(--red); font-style: normal; }
+
+/* ── 回合媒体产物预览卡（11-09：视频/图片，点击复用现有播放器/灯箱）───────────── */
+.turn-media-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+  max-width: 640px;
+}
+.turn-media-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 132px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+.turn-media-card:hover,
+.turn-media-card:focus-visible { border-color: var(--accent); box-shadow: 0 2px 10px rgba(0,0,0,0.10); }
+.turn-media-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 84px;
+  background: var(--panel-2);
+}
+.turn-media-thumb video,
+.turn-media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  pointer-events: none;
+}
+.turn-media-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(20,20,18,0.55);
+  color: #fff;
+}
+.turn-media-card.is-image .turn-media-play { width: 24px; height: 24px; background: rgba(20,20,18,0.4); }
+.turn-media-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  min-width: 0;
+}
+.turn-media-meta b {
+  font-size: 11.5px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.turn-media-meta small { font-size: 10.5px; color: var(--muted); }
+.turn-media-disclosure {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.turn-media-disclosure:hover { color: var(--text); }
+.turn-media-disclosure .open { transform: rotate(180deg); }
 .turn-output-actions {
   flex: none;
   display: inline-flex;
