@@ -139,7 +139,7 @@ export type AppSettings = {
   /**
    * 自动化能力与引擎的自动更新（10-13 用户令）：四类**各自独立、互不影响**，缺省即**开启**。
    *   · autoUpdateDesktop     = 桌面自动化（nuphus MCP，`@nuphus/nuphus-mcp`）
-   *   · autoUpdateComputerUse = Mac 电脑操作（`open-computer-use`，仅 macOS 生效，其它平台恒跳过）
+   *   · autoUpdateComputerUse = 电脑操作（`open-computer-use`，mac 随包 / win32 辅助后端；未装时更新跳过）
    *   · autoUpdateEngine      = Codex 引擎本体（`@openai/codex`）
    * ⛔ 缺省值判据统一走 `autoUpdateEnabled(settings, key)`（**`!== false`**）—— 字段不存在 = 开；
    *   ⛔ 别在别处另写一份默认判断（本项目反复栽在两处各写一套上）。

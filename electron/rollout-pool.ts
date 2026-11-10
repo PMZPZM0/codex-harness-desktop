@@ -43,7 +43,7 @@ function ensureWorker(): Worker | null {
     else entry.reject(new Error(String(msg.error ?? "rollout worker failed")));
   });
   worker.on("error", (error) => {
-    console.warn("[rollout-pool] worker 出错，后续请求将重建：", error?.message);
+    console.warn("[rollout-pool] worker 出错，后续请求将重建：", error instanceof Error ? error.message : String(error));
     failAll(error instanceof Error ? error : new Error(String(error)));
   });
   worker.on("exit", (code) => {

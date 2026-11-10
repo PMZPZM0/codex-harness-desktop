@@ -13,7 +13,7 @@
  */
 const TOOLS_VERSIONS = {
   /** 桌面自动化 MCP（nuphus）：四处同源，升级理由通常是安全依赖 */
-  nuphus: "0.3.3",
+  nuphus: "0.3.4",
   /**
    * Codex 式电脑操作（open-computer-use，MIT）：**只在 macOS 随包**，作为 mac 的桌面自动化后端。
    * npm 包已内置四平台二进制（解包 13MB），postinstall 只打印安装提示 ⇒ CI 用 --ignore-scripts 也装得动。

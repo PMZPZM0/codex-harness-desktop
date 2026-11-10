@@ -762,9 +762,11 @@ try {
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
     "视图 / 头像对 undefined 成员不再解引用 targetKind（旧 dist 的崩溃点）");
-  ok(/parseAgentMentions\(/.test(ipcSrc2) && /void runOne\(next, 1, \{ id: partner\.id, name: partner\.name \}, ask\.ask\)/.test(ipcSrc2)
-    && !/在群里叫你/.test(ipcSrc2),
-    "互 @ 把原话原样投递给对方会话（⛔ 不再包一层任务口吻）");
+  /* ⛔ hop 统一 0（47d060d64 起）：接力交给 chainBudget + ranIds 截断，不再靠 hop=1 掐断
+     「主理人 → 成员 A → 成员 B」。守卫曾继续钉 hop=1 ⇒ 既存假红。 */
+  ok(/parseAgentMentions\(/.test(ipcSrc2) && /void runOne\(next, 0, \{ id: partner\.id, name: partner\.name \}, ask\.ask\)/.test(ipcSrc2)
+    && !/void runOne\(next, 1,/.test(ipcSrc2) && !/在群里叫你/.test(ipcSrc2),
+    "互 @ 把原话原样投递给对方会话（⛔ 不再包一层任务口吻；hop 交 chainBudget 截断）");
   const teamInvokeSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
   ok(/parseAgentMentions\(text, roster, \{ excludeId: member\.id, max: 1 \}\)/.test(teamInvokeSrc)
     && /hop: 1/.test(teamInvokeSrc) && /在群里叫你/.test(teamInvokeSrc),

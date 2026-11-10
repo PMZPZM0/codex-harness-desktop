@@ -580,7 +580,7 @@ export interface Bag {
   toggleSection: (key: string) => void;
   threadAttention: Map<string, string>;
   /* 三个插槽只被当 JSX 子节点渲染（badge 进 ReactNode[]、actions/footer 直接放元素）⇒ 类型就是 ReactNode，原来写 any 是偷懒。 */
-  renderThreadRow: (entry: import("../../app-view/types.ts").Thread, variant?: "member" | "lead" | undefined, extras?: { actions?: React.ReactNode; badge?: React.ReactNode; footer?: React.ReactNode; } | undefined) => React.JSX.Element;
+  renderThreadRow: (entry: import("../../app-view/types.ts").Thread, variant?: "member" | "lead" | undefined, extras?: { actions?: React.ReactNode; badge?: React.ReactNode; footer?: React.ReactNode; } | undefined) => React.JSX.Element | null;
   clusterSplit: (entries: import("../../app-view/types.ts").Thread[]) => { clusters: { teamId: string; lead: import("../../app-view/types.ts").Thread | null; members: import("../../app-view/types.ts").Thread[]; }[]; singles: import("../../app-view/types.ts").Thread[]; };
   renderClusterRow: (cluster: { teamId: string; lead: import("../../app-view/types.ts").Thread | null; members: import("../../app-view/types.ts").Thread[]; }) => React.JSX.Element | null;
   renderClusterList: (entries: import("../../app-view/types.ts").Thread[]) => React.JSX.Element;

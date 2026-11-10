@@ -95,7 +95,7 @@ async function fetchText(url: string, proxyUrl?: string, timeoutMs = 20000): Pro
       "\r\n",
     ].join("\r\n"));
     const chunks: Buffer[] = [];
-    socket.on("data", (c) => chunks.push(c));
+    socket.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
     socket.on("close", () => {
       const raw = Buffer.concat(chunks);
       const idx = raw.indexOf("\r\n\r\n");

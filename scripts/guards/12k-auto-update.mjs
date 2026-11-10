@@ -107,6 +107,8 @@ ok(/CHINA_NPM_REGISTRY/.test(runtimeIpc) && /NPMMIRROR/.test(read("electron/engi
 console.log("【④ 电脑操作（computer-use）：按平台过滤 + 包名只写一次】");
 ok(/"computer-use": \{[^}]*open-computer-use[^}]*platforms: \["darwin", "win32"\]/.test(runtimeIpc),
   "UPDATEABLE_TOOLS 里 computer-use 带 platforms:[darwin, win32]（Windows 可装辅助后端）");
+ok(/id: "computer-use"[\s\S]{0,600}platforms: \["darwin", "win32"\]/.test(read("electron/update-registry.ts")),
+  "⛔ 组件注册表 computer-use 同样双平台可见（Windows 上的组件更新入口不能被过滤掉）");
 ok(/export function updateableToolIds\(\)[\s\S]{0,300}platforms\.includes\(process\.platform\)/.test(runtimeIpc),
   "updateableToolIds() 按平台过滤（不支持的系统根本不入清单）");
 ok(/const ids = idValue \? \[idValue\] : updateableToolIds\(\)/.test(runtimeIpc),

@@ -6,7 +6,7 @@
  *
  * 职责：**后台静默自动更新**四类能力 + **承载全部自动更新开关的状态与读写**（含技能那条）。
  *   1. 桌面自动化     nuphus            （@nuphus/nuphus-mcp）
- *   2. Mac 电脑操作   open-computer-use （仅 macOS，其它平台根本不入清单）
+ *   2. 电脑操作      open-computer-use （mac 随包 / win32 按需安装；未装时后台更新跳过）
  *   3. Codex 引擎     @openai/codex
  *   4. 市场技能内容更新 —— ⛔ **只承载开关与显示，不在这里跑循环**：它的检查/更新流程在
  *      skills-ipc（checkSkillUpdateRows / updateSkillFolder，含安全检查）里已有独立调度器。

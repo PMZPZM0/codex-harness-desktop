@@ -102,16 +102,19 @@ export const COMPONENT_SPECS: readonly ComponentSpec[] = [
   {
     id: "computer-use",
     kind: "npm-tool",
-    label: "Mac 电脑操作（Computer Use）",
+    label: "电脑操作（Computer Use）",
     group: "工具",
     pkg: "open-computer-use",
     channel: "npm",
     mirror: true,
     reason: "npm 包，走 npmmirror",
     dynamic: false,
-    // ⛔ 只在 mac 随包安装；Windows 上既没装也不该提示（列出来会永远显示「未检测到已装版本」，
-    //    后台还会为它白跑一次 npm 安装）—— 由 visibleSpecs() 按平台过滤掉。
-    platforms: ["darwin"],
+    /* ⛔ 11-10 修「Windows 上看不到更新入口」：11-03 起 runtime-ipc 的 UPDATEABLE_TOOLS
+       已把 win32 列为可装/可更新（辅助后端），这里却仍按旧口径只留 darwin，把整行从
+       组件清单里过滤掉 ⇒ 控制台清单与 runtime:update-check 两套口径漂移。
+       Windows 未安装时清单显示「未安装」，更新走 updateComponent 的 npm-tool 分支会
+       skipped「未检测到已安装版本」（不会白装），所以放行这一行是安全的。 */
+    platforms: ["darwin", "win32"],
   },
   {
     // REA 逆向分析（10-13 内置专家「洞见」配套）：npm-tool 后端自动复用 UPDATEABLE_TOOLS 的
