@@ -21,7 +21,7 @@ import path from "node:path";
 import { safeStorage } from "electron";
 import { readCustomModel } from "./main/01-model-catalog";
 import { binOnPath, cliCodexHome, readCliAgents } from "./cli-agents";
-import { CLI_KEY_ENV, cliProtocolOf, codexConfigToml, iflowSettingsJson, isLocalBaseUrl, kimiConfigToml, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
+import { CLI_KEY_ENV, cliProtocolOf, codexConfigToml, describeWriteOutcome, iflowSettingsJson, isLocalBaseUrl, kimiConfigToml, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
 
 /** 同步结果：`updated` 真写了 / `unchanged` 内容本来就一致 / `skipped` 没装或没值可写。
  *  ⛔ 必须分开记：`writeManaged` 在「内容相同」时返回非「written」，把它当失败就会在用户
@@ -80,19 +80,27 @@ async function writeIflowConfig(baseUrl: string, model: string): Promise<WriteOu
   const apiKey = await currentProviderApiKey();
   if (!apiKey) return "skipped";
   const file = path.join(os.homedir(), ".iflow", "settings.json");
-  const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
+  const raw = await readJsonObject(file);
+  if (!raw) return "skipped";   // 文件坏了 ⇒ 不覆盖用户配置
   const next = iflowSettingsJson(raw, { baseUrl, model, apiKey });
   return writeManaged(file, next, true);
 }
 
-/** 把写入结果翻译成「这算成功吗 + 一句人话」（单点按键与全量汇总共用同一套口径）。 */
-function describeOutcome(name: string, outcome: WriteOutcome, done: string):
-  { ok: boolean; name: string; detail: string } {
-  if (outcome === "written") return { ok: true, name, detail: done };
-  /* ⛔ 内容相同 = 目标状态已达成，必须是成功（否则用户再点一次就看见红色「没写成」）。 */
-  if (outcome === "same") return { ok: true, name, detail: "已是最新，无需改写" };
-  if (outcome === "absent") return { ok: false, name, detail: `本机没检测到 ${name}，先去安装再同步` };
-  return { ok: false, name, detail: "没写成：拿不到当前供应商的 Key，或目标文件不可写" };
+/* `describeWriteOutcome` 下沉到 cli-provider-config.mjs（纯函数，⛔ 不在这里留第二份）：
+   守卫 12ah 直接 import 它**真跑一遍**四种 outcome，而不是只 grep 源码字符串。 */
+/** 读一份 JSON 对象配置。⛔ 文件不存在 ⇒ 空对象（可以新建）；文件存在但不是合法 JSON 对象
+ *  ⇒ 返回 null，调用方**必须放弃写入** —— 否则会拿一个空对象把用户原有配置整个覆盖掉
+ *  （11-10 技能审查发现：`readFile(...).then(JSON.parse).catch(() => null)` 把「文件不存在」和
+ *   「文件坏了」混成同一种情况，后者会造成不可逆的配置丢失）。 */
+async function readJsonObject(file: string): Promise<Record<string, unknown> | null> {
+  const text = await fs.readFile(file, "utf8").catch(() => null);
+  if (text === null) return {};
+  try {
+    const parsed = JSON.parse(text);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch { return null; }
 }
 
 /** 同步一次。失败一律吞掉（同步是旁路，不许影响启动 / 派活）；
@@ -159,15 +167,15 @@ export async function syncOneCliProvider(targetId: string): Promise<{ ok: boolea
   }
   if (bin === "iflow") {
     const outcome = await writeIflowConfig(baseUrl, model);
-    return describeOutcome(name, outcome, "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）");
+    return describeWriteOutcome(name, outcome, "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）");
   }
   if (bin === "codex") {
     const outcome = await writeCodexConfig(baseUrl, model);
-    return describeOutcome(name, outcome, "已重写应用自己的 cli-codex-home/config.toml（不含 Key）");
+    return describeWriteOutcome(name, outcome, "已重写应用自己的 cli-codex-home/config.toml（不含 Key）");
   }
   if (bin === "kimi") {
     const outcome = await writeKimiConfig(baseUrl, model);
-    return describeOutcome(name, outcome, "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）");
+    return describeWriteOutcome(name, outcome, "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）");
   }
   return {
     ok: true,
@@ -349,8 +357,10 @@ export async function syncClaudeProvider(input: { baseUrl: string; model: string
   if (!baseUrl || !model) return { ok: false, detail: "还没配置供应商或模型" };
   if (!apiKey) return { ok: false, detail: "读不到当前供应商的 Key（可能未保存或系统加密不可用）" };
   const file = path.join(os.homedir(), ".claude", "settings.json");
-  const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
-  const current = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const current = await readJsonObject(file);
+  if (!current) {
+    return { ok: false, detail: `${file} 不是合法的 JSON 对象。为避免覆盖你原有的配置，这次没有写入 —— 请先修好该文件再同步。` };
+  }
   const env = current.env && typeof current.env === "object" ? (current.env as Record<string, unknown>) : {};
   const next = {
     ...current,
@@ -363,9 +373,16 @@ export async function syncClaudeProvider(input: { baseUrl: string; model: string
       ANTHROPIC_SMALL_FAST_MODEL: model,
     },
   };
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(next, null, 2)}\n`, "utf8");
-  return { ok: true, detail: `已写入 ${file}（Key 明文，仅本机）` };
+  /* ⛔ 走 writeManaged：首次改动留 .harness.bak（原来直接 fs.writeFile 没有备份），
+     内容相同也不重复写。 */
+  const outcome = await writeManaged(file, `${JSON.stringify(next, null, 2)}\n`, true);
+  if (outcome === "skipped") return { ok: false, detail: "没能生成配置内容" };
+  return {
+    ok: true,
+    detail: outcome === "same"
+      ? `已经是当前供应商，无需改写（${file}）`
+      : `已写入 ${file}（Key 明文，仅本机；首次改动已留 .harness.bak 备份）`,
+  };
 }
 
 /** 「全部同步」：Claude 走 settings.json，其余按各自方式重跑一遍自动同步。 */

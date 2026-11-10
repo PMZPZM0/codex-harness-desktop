@@ -863,11 +863,31 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   /* ⛔⛔ 11-10 审查发现的两个「自洽地错」：写入返回 false 既可能是"内容相同"也可能是"没写"，
      原来一律当失败 ⇒ 用户再点一次同步就看见红色「没写成」（假失败）；全量同步又把 skipped
      一律标 ok ⇒ 真失败也被算成成功。三态口径必须钉住。 */
-  ok(/if \(outcome === "same"\) return \{ ok: true/.test(syncSrc) && /type WriteOutcome = "written" \| "same" \| "skipped" \| "absent"/.test(syncSrc),
-    "⛔ 写入三态：same（内容已一致）必须算成功 —— 否则重复点同步会显示假失败");
+  /* ⛔ 行为断言（11-10 技能审查升级）：原来只 grep 源码字符串，实现改坏了也可能假绿。
+     把映射下沉成纯函数后直接**真跑**四种 outcome —— 代码改了这里就能抓到回归。 */
+  const written = providers.describeWriteOutcome("Kimi Code", "written", "已写入");
+  const same = providers.describeWriteOutcome("Kimi Code", "same", "已写入");
+  const absent = providers.describeWriteOutcome("Kimi Code", "absent", "已写入");
+  const skipped = providers.describeWriteOutcome("Kimi Code", "skipped", "已写入");
+  ok(written.ok === true && written.detail === "已写入"
+    && same.ok === true && /最新/.test(same.detail)
+    && absent.ok === false && /没检测到/.test(absent.detail)
+    && skipped.ok === false && /没写成/.test(skipped.detail),
+    "行为断言：四种写入 outcome 的成败与文案（⛔ same 必须算成功 —— 重复点同步不能显示假失败）");
   ok(/const failed = r\.skipped\.some\(\(entry\) => entry\.includes\("写入失败"\)\)/.test(syncSrc)
     && /results\.push\(\{ name: failed \? "写入失败" : "未同步", ok: !failed/.test(syncSrc),
     "⛔ 全量同步：只有「写入失败」算失败，「未安装 / 没值可写」只是状态说明（不能一律 ok:true 也不能一律当失败）");
+  /* ⛔⛔ 11-10 技能审查（数据丢失）：原来 `readFile(...).then(JSON.parse).catch(() => null)`
+     把「文件不存在」和「文件坏了」混成一种，坏 JSON 会被当成空对象 ⇒ 用户原有 settings.json
+     被整个覆盖。Claude 还直接 fs.writeFile 没有备份。两条都钉住。 */
+  ok(/async function readJsonObject\(file: string\)/.test(syncSrc)
+    && /if \(text === null\) return \{\}/.test(syncSrc)
+    && (syncSrc.match(/await readJsonObject\(file\)/g) || []).length === 2
+    && !/JSON\.parse\(text\)\)\.catch\(\(\) => null\)/.test(syncSrc),
+    "⛔ 读配置必须区分「文件不存在」与「文件坏了」；两处写入点都用 readJsonObject，坏 JSON 放弃写入");
+  ok(/const outcome = await writeManaged\(file, `\$\{JSON\.stringify\(next, null, 2\)\}\\n`, true\)/.test(syncSrc)
+    && /首次改动已留 \.harness\.bak 备份/.test(syncSrc),
+    "⛔ Claude 的 settings.json 写入走 writeManaged（首次改动留备份，⛔ 不许裸 fs.writeFile 覆盖）");
   ok(!providers.isLocalBaseUrl("http://10.evil.com/v1") && !providers.isLocalBaseUrl("http://192.168.evil.com/v1")
     && providers.isLocalBaseUrl("http://172.16.0.1/v1") && !providers.isLocalBaseUrl("http://172.32.0.1/v1"),
     "本机中转识别：先验 IPv4 形态再判网段（10.evil.com 这类公网域不算本机）");

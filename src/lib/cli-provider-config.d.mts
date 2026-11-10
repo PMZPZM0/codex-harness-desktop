@@ -10,3 +10,5 @@ export declare function codexConfigToml(input: { baseUrl?: string; model?: strin
 export declare function mergeGeminiSettings(raw: unknown, input: { model?: string }): Record<string, unknown>;
 /** CLI 的模型协议族：anthropic（Claude Code）/ gemini（Gemini、Qwen Code、iFlow）/ native（Kimi、Codex）/ openai（其余）。 */
 export declare function cliProtocolOf(bin: unknown): "anthropic" | "gemini" | "native" | "openai";
+/** 写入三态 → 用户可见结果。守卫 12ah 直接 import 真跑（行为断言）。 */
+export declare function describeWriteOutcome(name: string, outcome: "written" | "same" | "skipped" | "absent", done: string): { ok: boolean; name: string; detail: string };

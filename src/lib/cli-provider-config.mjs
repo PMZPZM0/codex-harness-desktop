@@ -151,3 +151,17 @@ export function mergeGeminiSettings(raw, input) {
     ...(model ? { model: { ...modelBlock, name: model } } : {}),
   };
 }
+
+/**
+ * 把写入结果翻译成「这算成功吗 + 一句人话」（单点按键与全量汇总共用同一套口径）。
+ *
+ * ⛔ `same` 必须是成功：内容本来就一致 = 目标状态已达成。11-10 审查发现把它当失败会让
+ *   用户**再点一次同步就看到红色「没写成」**（假失败）。
+ * ⛔ 这是纯函数，守卫 12ah 直接 import 真跑四种 outcome —— 不是 grep 源码字符串。
+ */
+export function describeWriteOutcome(name, outcome, done) {
+  if (outcome === "written") return { ok: true, name, detail: done };
+  if (outcome === "same") return { ok: true, name, detail: "已是最新，无需改写" };
+  if (outcome === "absent") return { ok: false, name, detail: `本机没检测到 ${name}，先去安装再同步` };
+  return { ok: false, name, detail: "没写成：拿不到当前供应商的 Key，或目标文件不可写" };
+}
