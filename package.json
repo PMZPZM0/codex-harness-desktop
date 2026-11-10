@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.54",
+  "version": "0.0.55",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -53,7 +53,7 @@
     "jimp": "^1.6.1",
     "katex": "^0.19.1",
     "koffi": "^3.3.7",
-    "lucide-react": "^1.70.0",
+    "lucide-react": "^1.71.0",
     "mermaid": "^12.3.0",
     "pixi.js": "^8.22.0",
     "qrcode": "^1.5.4",
