@@ -16,10 +16,17 @@
 import { broadcastHarnessEvent } from "./window-bus";
 import { CLI_CATEGORIES, detectCliAgent, invalidateCliInstalledCache, readCliAgents, removeCliAgent, saveCliAgent } from "../cli-agents";
 import { cancelCliInstall, checkCliAgentUpdates, installCliAgent, uninstallCliAgent, updateCliAgent } from "../cli-install";
+import { inspectCliSyncTargets, currentProviderApiKey, syncAllCliProviders, syncClaudeProvider } from "../cli-agent-provider-sync";
+import { readCustomModel } from "../main/01-model-catalog";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
-const CLI_AGENTS_CHANNELS = ["cliagents:list", "cliagents:detect", "cliagents:save", "cliagents:remove", "cliagents:install", "cliagents:uninstall", "cliagents:check-updates", "cliagents:update", "cliagents:cancel"];
+/* ── 「同步给 CLI 智能体」弹窗的两条通道（11-10 用户令）─────────────────────────
+   ⛔ Key 只在 cli-agent-provider-sync.currentProviderApiKey 里解（safeStorage 属内核能力，
+     【266】禁止 features/** 直取）；解完直接交给同步函数，绝不回传渲染层
+     （渲染层拿到就等于 Key 进了 DOM / 日志）。 */
+
+const CLI_AGENTS_CHANNELS = ["cliagents:list", "cliagents:detect", "cliagents:save", "cliagents:remove", "cliagents:install", "cliagents:uninstall", "cliagents:check-updates", "cliagents:update", "cliagents:cancel", "cliagents:sync-inspect", "cliagents:sync-apply"];
 
 export const cliAgentsFeature = defineFeature<null>({
   id: "cliagents",
@@ -47,6 +54,20 @@ export const cliAgentsFeature = defineFeature<null>({
     ipcHost.handle("cliagents:check-updates", async (_event, ids?: string[]) => checkCliAgentUpdates(Array.isArray(ids) ? ids.map(String) : undefined));
     ipcHost.handle("cliagents:update", async (_event, id: string) => updateCliAgent(String(id ?? "")));
     ipcHost.handle("cliagents:cancel", async (_event, id: string) => cancelCliInstall(String(id ?? "")));
+    /* 同步给 CLI 智能体（模型配置页的弹窗）：inspect = 只读，apply = 真写。 */
+    ipcHost.handle("cliagents:sync-inspect", async () => inspectCliSyncTargets());
+    ipcHost.handle("cliagents:sync-apply", async (_event, input?: { scope?: string }) => {
+      const scope = String(input?.scope ?? "all");
+      if (scope === "claude") {
+        const custom = await readCustomModel().catch(() => null);
+        return syncClaudeProvider({
+          baseUrl: String(custom?.baseUrl ?? ""),
+          model: String(custom?.model ?? ""),
+          apiKey: await currentProviderApiKey(),
+        });
+      }
+      return syncAllCliProviders({ apiKey: await currentProviderApiKey() });
+    });
 
     ctx.effect(() => {
       for (const ch of CLI_AGENTS_CHANNELS) ipcHost.removeHandler(ch);

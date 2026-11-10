@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { AppSelect } from "../../components/AppSelect";
 import { PPTokenEndpoints } from "../../lib/pptoken-endpoints";
-import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, PowerOff, RefreshCw, Rocket, Store, Trash2, Wand2, X, Zap } from "lucide-react";
+import { Check, ChevronRight, ExternalLink, Eye, EyeOff, ListChecks, PenLine, Plus, PowerOff, RefreshCw, Rocket, Store, Terminal, Trash2, Wand2, X, Zap } from "lucide-react";
 import { AVATAR_GRADIENTS, avatarToneOf } from "../../lib/entity-avatar";
 import { Spinner } from "../../components/CardShell";
 import { FieldHelp } from "../../features/auth";
@@ -15,6 +15,7 @@ import { classifyProviderProbeFailure, UpstreamProtocol } from "../../hooks/useM
 import { ModelIdInput } from "../../components/ModelIdInput";
 import { matchModelSpec } from "../../lib/model-specs";
 import { ProviderSetupDialog, type ProviderSetupCompleted, type ProviderSetupIntent } from "../provider-setup";
+import { CliSyncDialog } from "../settings-cli-sync";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 
 export type ModelSettingsSectionProps = { refreshActive?: () => void; autoCompactRatio: any; setAutoCompactRatio: any; setNotice: any; providersList: any; pptokenCardOff: any; editingProvider: any; setCustomDraft: any; setEditingProvider: any; uniqueModelCount: any; customModel: any; setPptokenCardOff: any; setProviderEnabled: any; currentProvider: any; probingProvider: any; probeActiveProvider: any; providerAutoOpenRef: any; customDraft: any; savingSettings: any; openAppConfirm: any; removeProvider: any; LOCAL_MODEL_PRESETS: any; showApiKey: any; setShowApiKey: any; probeProvider: any; saveCustomDraft: any; switchingModel: any; probeOneModel: any; openModelEditor: any; providerStatus: any; showToast: any; saveCustomModel: any; modelEditor: any; setModelEditor: any; targetProviderHint: any; applyModelIdInput: any; modelSuggestions: any; saveModelEditor: any };
@@ -24,6 +25,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
   const { refreshActive, autoCompactRatio, setAutoCompactRatio, setNotice, providersList, pptokenCardOff, editingProvider, setCustomDraft, setEditingProvider, uniqueModelCount, customModel, setPptokenCardOff, setProviderEnabled, currentProvider, probingProvider, probeActiveProvider, providerAutoOpenRef, customDraft, savingSettings, openAppConfirm, removeProvider, LOCAL_MODEL_PRESETS, showApiKey, setShowApiKey, probeProvider, saveCustomDraft, switchingModel, probeOneModel, openModelEditor, providerStatus, showToast, saveCustomModel, modelEditor, setModelEditor, targetProviderHint, applyModelIdInput, modelSuggestions, saveModelEditor } = props;
   /* 10-24：自动配置弹窗（大面板）——填地址+密钥 → 自动检测 → 勾选 → 保存启用 → 重启。 */
   const [setupIntent, setSetupIntent] = useState<ProviderSetupIntent | null>(null);
+  /* 11-10：同步给 CLI 智能体弹窗（Claude 单独按键，其它已安装 CLI 自动列）。 */
+  const [cliSyncOpen, setCliSyncOpen] = useState(false);
   /* 10-24 二轮（用户：「旧的供应商卡片改造成大卡片 + 二级弹窗预览」）：
      页面只保留大卡片；详细配置（原右侧表单）迁进二级弹窗。⛔ 表单里的功能一个不删。 */
   const [editorOpen, setEditorOpen] = useState(false);
@@ -223,6 +226,7 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
                       </span>
                       <div className="provider-page-actions">
                         <button className="primary-setting" onClick={openAutoSetup}><Wand2 size={14} />自动配置</button>
+                        <button className="secondary-setting" onClick={() => setCliSyncOpen(true)} title="把当前供应商同步给本机已安装的 CLI 智能体（Claude 单独同步）"><Terminal size={14} />同步给 CLI</button>
                         <button className="secondary-setting" onClick={openNewProvider}><Plus size={14} />自定义供应商</button>
                         <button className="danger-setting" disabled={restarting} onClick={() => void saveAndRestart()} title="配置已逐项保存；重启应用让引擎重新读取密钥与模型列表"><PowerOff size={14} />{restarting ? "重启中…" : "保存重启"}</button>
                       </div>
@@ -585,6 +589,8 @@ export function ModelSettingsSection(props: ModelSettingsSectionProps) {
           onCompleted={finishAutoSetup}
         />
       )}
+      {/* 11-10 用户令：把当前供应商同步给 CLI 智能体（Claude 单独按键，弹窗模式）。 */}
+      <CliSyncDialog open={cliSyncOpen} onClose={() => setCliSyncOpen(false)} onNotice={setNotice} />
     </>
   );
 }

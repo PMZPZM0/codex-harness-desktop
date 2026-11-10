@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 649,
+  "count": 651,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -975,6 +975,26 @@
       "invokeArgs": "id",
       "cast": null,
       "note": "11-06 取消安装/更新：kill 子进程（真停，不是只改 UI）"
+    },
+    {
+      "name": "inspectCliSyncTargets",
+      "channel": "cliagents:sync-inspect",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: \"claude\" | \"config\" | \"env\" | \"own\"; action: string; status: string }> }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key）"
+    },
+    {
+      "name": "applyCliSync",
+      "channel": "cliagents:sync-apply",
+      "paramsImpl": "input?: { scope?: string }",
+      "paramsDecl": "input?: { scope?: string }",
+      "returns": "Promise<{ ok: boolean; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；其它走自动同步"
     },
     {
       "name": "respondCloseConfirm",

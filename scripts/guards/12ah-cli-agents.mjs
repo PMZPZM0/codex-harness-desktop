@@ -804,6 +804,33 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && /protocol: cliProtocolOf\(cliAgentBin\)/.test(delegationSrc)
     && /bin: cliBinOf\(member\.cliCommand \?\? ""\)/.test(bossRunSrc2),
     "群聊 / boss 群 / @ 调度三个入口都按协议族注入（⛔ 漏一处就有一类 CLI 拿不到凭据）");
+
+  /* ── 11-10「同步给 CLI 智能体」弹窗（模型配置页出口）────────────────────────── */
+  const syncUiSrc = readFileSync(join(ROOT, "electron/cli-agent-provider-sync.ts"), "utf8");
+  ok(/export async function inspectCliSyncTargets/.test(syncUiSrc) && /if \(!installed\) continue;/.test(syncUiSrc),
+    "同步弹窗只列**已安装**的 CLI（用户令「其他也是已安装的 cli 就都识别出来」）");
+  ok(/\.claude", "settings\.json"/.test(syncUiSrc) && /ANTHROPIC_AUTH_TOKEN: apiKey/.test(syncUiSrc),
+    "Claude 单独一档：写 ~/.claude/settings.json 的 env（它没有可跟随的 provider 配置约定）");
+  ok(/kind: "own"/.test(syncUiSrc) && /qwenpaw/.test(syncUiSrc),
+    "不跟随主会话的 CLI（QwenPaw 这类）如实标 own，⛔ 不假装同步过");
+  const ipcSrc = readFileSync(join(ROOT, "electron/features/cli-agents-ipc.ts"), "utf8");
+  const registrySrc = readFileSync(join(ROOT, "electron/ipc-registry.ts"), "utf8");
+  const manifestSrc = readFileSync(join(ROOT, "electron/ipc-channels.manifest.json"), "utf8");
+  ok(/cliagents:sync-inspect/.test(ipcSrc) && /cliagents:sync-apply/.test(ipcSrc)
+    && /cliagents:sync-inspect/.test(manifestSrc) && /cliagents:sync-apply/.test(manifestSrc)
+    && /prefix: "cliagents", count: 11/.test(registrySrc),
+    "同步弹窗两条通道已登记（ipc-registry count 跟着 +2，⛔ 不改会被【2】/【107】报红）");
+  ok(/cliagents:sync-inspect",\s*[\s\S]{0,400}?"returns": "[^"]*"[\s\S]{0,120}?"invokeArgs": "input"/.test(manifestSrc)
+    || (/"channel": "cliagents:sync-inspect"/.test(manifestSrc) && /"channel": "cliagents:sync-apply"/.test(manifestSrc) && /"invokeArgs": "input"/.test(manifestSrc)),
+    "⛔ sync-apply 的实参由 invokeArgs 决定（漏写 = preload 层静默丢 scope）");
+  ok(!/"channel": "cliagents:sync-inspect"[\s\S]{0,500}?apiKey/i.test(manifestSrc),
+    "⛔ 只读通道的返回体里没有 Key（Key 只在主进程解，绝不回传渲染层）");
+  const syncDialogSrc = readFileSync(join(ROOT, "src/features/settings-cli-sync/CliSyncDialog.tsx"), "utf8");
+  const modelSectionSrc = readFileSync(join(ROOT, "src/features/settings-model/ModelSettingsSection.tsx"), "utf8");
+  ok(/data-testid="cli-sync"/.test(syncDialogSrc) && /confirmClaude/.test(syncDialogSrc) && /Key 明文/.test(syncDialogSrc),
+    "弹窗：Claude 写 Key 前必须二次确认（⛔ 不做静默落盘）");
+  ok(/setCliSyncOpen\(true\)/.test(modelSectionSrc) && /<CliSyncDialog/.test(modelSectionSrc),
+    "模型配置页有入口按钮 + 弹窗挂载（用户令「在模型配置界面加」）");
   /* 11-08 审查：单 try 包全部 CLI ⇒ Gemini 写挂连累 Kimi 静默跳过；每个 CLI 独立 catch。 */
   ok(/const attempt = async \(name: string, fn: \(\) => Promise<void>\) => \{\s*try \{ await fn\(\); \} catch \{ skipped\.push\(name\); \}\s*\};/.test(syncSrc)
     && (syncSrc.match(/await attempt\("/g) || []).length === 3,

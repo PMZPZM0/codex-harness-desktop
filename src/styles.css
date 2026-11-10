@@ -87,4 +87,7 @@
       新板块要插在 59-motion **之前**，不是"文件末尾"。 */
 @import "./styles/60-event-broadcast" layer(components);
 @import "./styles/61-team-mode" layer(pages);
+/* 11-10 同步给 CLI 智能体弹窗（模型配置页出口）。只有自己的 .cli-sync-* 类。
+   ⛔ 必须插在 59-motion **之前**（motion 靠后写者胜去覆盖各分节时长变量）。 */
+@import "./styles/62-cli-sync" layer(components);
 @import "./styles/59-motion" layer(components);

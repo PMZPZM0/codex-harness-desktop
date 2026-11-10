@@ -18,9 +18,10 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { safeStorage } from "electron";
 import { readCustomModel } from "./main/01-model-catalog";
-import { binOnPath, cliCodexHome } from "./cli-agents";
-import { CLI_KEY_ENV, codexConfigToml, isLocalBaseUrl, kimiConfigToml, mergeGeminiSettings } from "../src/lib/cli-provider-config.mjs";
+import { binOnPath, cliCodexHome, readCliAgents } from "./cli-agents";
+import { CLI_KEY_ENV, cliProtocolOf, codexConfigToml, isLocalBaseUrl, kimiConfigToml, mergeGeminiSettings, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
 
 export type CliProviderSyncResult = { updated: string[]; skipped: string[] };
 
@@ -88,4 +89,157 @@ export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResul
     if (await writeManaged(file, next, true)) updated.push("kimi");
   });
   return { updated, skipped };
+}
+
+/* ── 「同步给 CLI 智能体」弹窗（11-10 用户令：「在模型配置界面加一个同步给 CLI 智能体配置功能，
+      Claude 比较特殊，就单独按键同步，其他也是已安装的 cli 就都识别出来，按键做成弹窗模式」）────
+
+   ⛔ Claude Code 为什么单独一档：它**没有可跟随的配置文件约定**（不读 OPENAI_*，也不像
+     kimi / gemini 那样有一份 provider 段让我们写），唯一能让它「以后一直跟着走」的地方是
+     `~/.claude/settings.json` 的 `env` 段（Claude Code 官方设置文件）。别的 CLI 走
+     config.toml / settings.json / 环境变量，它要单独按键、单独写，并明确告诉用户
+     「会把 Key 明文写进本机 ~/.claude/settings.json」—— 不做隐性落盘。
+   ⛔ 其余 CLI 分三类：config（写配置文件）/ env（派活时注入环境变量）/ own（用它自己的模型配置）。
+     同步动作只对前两类生效，own 类如实标注「不跟随主会话」，不假装同步过。 */
+
+export type CliSyncKind = "claude" | "config" | "env" | "own";
+
+/** 当前供应商的明文 Key（**只给同步函数用**，⛔ 绝不经 IPC 回传渲染层）。
+ *  ⛔ 放在这个模块而不是 features/** 里：【266】禁止域文件直取 safeStorage
+ *     （触碰系统密钥库的能力必须留在内核侧模块）。 */
+export async function currentProviderApiKey(): Promise<string> {
+  const custom = await readCustomModel().catch(() => null);
+  return custom?.encryptedKey && safeStorage.isEncryptionAvailable()
+    ? safeStorage.decryptString(Buffer.from(custom.encryptedKey, "base64"))
+    : "";
+}
+
+export type CliSyncTarget = {
+  id: string;
+  name: string;
+  bin: string;
+  installed: boolean;
+  kind: CliSyncKind;
+  /** 同步会发生什么（界面上一行说明） */
+  action: string;
+  /** 当前状态（人话） */
+  status: string;
+};
+
+/** 每个 CLI 的同步方式与现状（rendering 层只展示，判定全在这里）。 */
+export async function inspectCliSyncTargets(): Promise<{
+  provider: { name: string; model: string; host: string; local: boolean; ready: boolean };
+  targets: CliSyncTarget[];
+}> {
+  const custom = await readCustomModel().catch(() => null);
+  const baseUrl = String(custom?.baseUrl ?? "").trim();
+  const model = String(custom?.model ?? "").trim();
+  let host = "";
+  try { host = baseUrl ? new URL(baseUrl).host : ""; } catch { host = ""; }
+  const local = isLocalBaseUrl(baseUrl);
+
+  const agents = await readCliAgents().catch(() => []);
+  const targets: CliSyncTarget[] = [];
+  for (const agent of agents) {
+    if (agent.enabled === false) continue;
+    const installed = agent.bin ? await binOnPath(agent.bin).catch(() => false) : false;
+    if (!installed) continue;   // 用户令：只识别**已安装**的
+    const bin = String(agent.bin ?? "").toLowerCase();
+    const protocol = cliProtocolOf(bin);
+    if (bin === "claude") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "claude",
+        action: `写入 ~/.claude/settings.json 的 env（含 Key，仅本机生效）`,
+        status: await claudeSettingsState(baseUrl, model),
+      });
+      continue;
+    }
+    if (bin === "codex" || bin === "kimi" || bin === "gemini") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "config",
+        action: "按当前供应商重写它自己的配置文件（Key 不落盘）",
+        status: "跟随当前供应商（启动 / 切供应商 / 安装后自动同步）",
+      });
+      continue;
+    }
+    if (bin === "qwenpaw") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
+        action: "用它自己的模型配置（qwenpaw models）",
+        status: "不跟随主会话：它不读 OPENAI_*，用的是自己配的 provider",
+      });
+      continue;
+    }
+    targets.push({
+      id: agent.id, name: agent.name, bin: agent.bin, installed,
+      kind: protocol === "native" ? "own" : "env",
+      action: "派活时注入对应协议的环境变量（不落盘）",
+      status: protocol === "native" ? "用它自己的登录态" : "派活时自动注入，无需配置",
+    });
+  }
+  return {
+    provider: { name: String(custom?.name ?? custom?.provider ?? "(未配置)"), model, host, local, ready: Boolean(baseUrl && model) },
+    targets,
+  };
+}
+
+/** `~/.claude/settings.json` 里有没有指向**当前**供应商的 env（只读判定，不写）。 */
+async function claudeSettingsState(baseUrl: string, model: string): Promise<string> {
+  const file = path.join(os.homedir(), ".claude", "settings.json");
+  try {
+    const raw = JSON.parse(await fs.readFile(file, "utf8")) as { env?: Record<string, unknown> };
+    const base = String(raw?.env?.ANTHROPIC_BASE_URL ?? "").trim();
+    const name = String(raw?.env?.ANTHROPIC_MODEL ?? "").trim();
+    if (!base) return "未同步（派活时会临时注入，本机终端直跑不会跟随）";
+    if (base === stripV1Suffix(baseUrl) && (!model || name === model)) return "已同步到当前供应商";
+    return `已同步到其它供应商（${name || "未写模型"}），与当前配置不一致`;
+  } catch {
+    return "未同步（派活时会临时注入，本机终端直跑不会跟随）";
+  }
+}
+
+/** Claude 单独同步：把当前供应商写进 `~/.claude/settings.json` 的 env 段（合并，不动其它键）。
+ *  ⛔ key 会明文落进这个文件 —— 由用户按「同步 Claude Code」按钮显式触发，不自动做。 */
+export async function syncClaudeProvider(input: { baseUrl: string; model: string; apiKey: string }): Promise<{ ok: boolean; detail: string }> {
+  const baseUrl = String(input?.baseUrl ?? "").trim();
+  const model = String(input?.model ?? "").trim();
+  const apiKey = String(input?.apiKey ?? "").trim();
+  if (!baseUrl || !model) return { ok: false, detail: "还没配置供应商或模型" };
+  if (!apiKey) return { ok: false, detail: "读不到当前供应商的 Key（可能未保存或系统加密不可用）" };
+  const file = path.join(os.homedir(), ".claude", "settings.json");
+  const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
+  const current = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const env = current.env && typeof current.env === "object" ? (current.env as Record<string, unknown>) : {};
+  const next = {
+    ...current,
+    env: {
+      ...env,
+      ANTHROPIC_BASE_URL: stripV1Suffix(baseUrl),
+      ANTHROPIC_AUTH_TOKEN: apiKey,
+      ANTHROPIC_API_KEY: apiKey,
+      ANTHROPIC_MODEL: model,
+      ANTHROPIC_SMALL_FAST_MODEL: model,
+    },
+  };
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, `${JSON.stringify(next, null, 2)}\n`, "utf8");
+  return { ok: true, detail: `已写入 ${file}（Key 明文，仅本机）` };
+}
+
+/** 「全部同步」：Claude 走 settings.json，其余按各自方式重跑一遍自动同步。 */
+export async function syncAllCliProviders(input: { apiKey: string }): Promise<{ ok: boolean; results: Array<{ name: string; ok: boolean; detail: string }> }> {
+  const results: Array<{ name: string; ok: boolean; detail: string }> = [];
+  const custom = await readCustomModel().catch(() => null);
+  const baseUrl = String(custom?.baseUrl ?? "").trim();
+  const model = String(custom?.model ?? "").trim();
+  const agents = await readCliAgents().catch(() => []);
+  const hasClaude = agents.some((entry) => entry.enabled !== false && String(entry.bin).toLowerCase() === "claude");
+  if (hasClaude && (await binOnPath("claude").catch(() => false))) {
+    const r = await syncClaudeProvider({ baseUrl, model, apiKey: String(input?.apiKey ?? "") });
+    results.push({ name: "Claude Code", ok: r.ok, detail: r.detail });
+  }
+  const r = await syncCliAgentProviderConfig();
+  if (r.updated.length) results.push({ name: "配置文件同步", ok: true, detail: `已重写：${r.updated.join(" / ")}` });
+  if (r.skipped.length) results.push({ name: "跳过", ok: true, detail: r.skipped.join(" / ") });
+  return { ok: results.every((entry) => entry.ok), results };
 }
