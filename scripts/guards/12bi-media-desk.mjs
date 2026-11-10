@@ -115,6 +115,15 @@ export async function run() {
     "文本模型两种协议都支持（responses / chat；只认 chat 会让 responses 供应商的成稿退化成结构草稿）");
   ok(/productionSummary/.test(tool) && (tool.match(/production\?\.status === "failed"/g) ?? []).length >= 2,
     "成稿失败如实回 ok:false（draft / produce 都要判失败）+ 生产结果只给摘要（原文可达 20 万字）");
+  ok(/if \(name === "tools"\) return mediaDeskTools\(\)/.test(embed)
+    && /generateImageResilient\(/.test(embed) && /outputDir: subscriptionImagesDir\(\)/.test(embed)
+    && /readBuiltinPlugins/.test(embed),
+    "生图默认走内置生图插件（ctx 'tools' 适配 → generateImageResilient，产物落上游订阅目录供校验）");
+  ok(/saved\.image\.source === "http" && !saved\.image\.baseUrl && !saved\.image\.apiKey/.test(embed)
+    && /settings\.update\(\{ image: \{ source: "tool" \} \}\)/.test(embed),
+    "仅当未配 HTTP 生图时才默认切 'tool'（⛔ 不静默覆盖用户已配的图片 API）");
+  ok(/内置生图插件/.test(dispatchCore),
+    "media_desk 描述写明生图默认复用内置生图插件（模型知道不用另配）");
 
   /* 行为：随包的采集闸真的拦内网、放公网（IP 字面量，避免测试依赖 DNS）。 */
   try {

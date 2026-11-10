@@ -15,9 +15,12 @@ import http from "node:http";
 import path from "node:path";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { mkdir } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { app } from "electron";
 import { readCustomModel } from "../../main/01-model-catalog";
+import { readBuiltinPlugins } from "../../main/09-agents-plugins";
+import { generateImageResilient } from "../builtin-ipc";
 import { callModel } from "./ai";
 
 type SecureLike = { isEncryptionAvailable: () => boolean; decryptString: (buf: Buffer) => string };
@@ -26,6 +29,68 @@ let secureHost: SecureLike | null = null;
 /** 注入密钥接缝（feature setup 调一次；卸载传 null）。 */
 export function setMediaDeskSecure(host: SecureLike | null): void {
   secureHost = host;
+}
+
+/* ── 生图复用内置生图插件（11-10 用户令：「生图可以调用生图插件，这样更方便」）──
+   上游 workbench 本来就有 source:'tool' 一条路（image-tool.js），它向 ctx.get('tools')
+   要一个「公共执行接口」。我们在这里把**应用内置生图插件**包装成那个接口：
+   不重写上游、不把密钥写进工作台 settings.json，图落到上游约定的订阅生图目录供它校验读取。
+   没配内置插件时 executable() 返回 undefined ⇒ 上游 imageTool() 判不可用 ⇒ 成稿自动跳过图（不报错）。 */
+type BuiltinImage = { baseUrl: string; apiKey: string; model: string };
+let builtinImage: BuiltinImage | null = null;
+
+/** 读内置生图插件配置（启用且有地址/模型才算可用）；启动与每次执行前刷新。 */
+async function refreshBuiltinImage(): Promise<void> {
+  const cfg = await readBuiltinPlugins().catch(() => ({} as Awaited<ReturnType<typeof readBuiltinPlugins>>));
+  const img = cfg?.image;
+  builtinImage = img && img.enabled !== false && img.baseUrl && img.model
+    ? { baseUrl: img.baseUrl, apiKey: img.apiKey ?? "", model: img.model }
+    : null;
+}
+
+/** 上游 image-tool.js 只允许读这个目录下的图（realpath 校验），我们把内置插件产物落这里。 */
+function subscriptionImagesDir(): string {
+  return path.join(process.env.DSH_HOME ?? "", "plugins", "subscriptions", "images");
+}
+
+const IMAGE_TOOL_NAMES = ["dsh_subscriptions_image_generate", "image_generate"];
+
+/** 把内置生图插件包装成上游要求的 tools 公共执行接口。 */
+function mediaDeskTools() {
+  return {
+    executable(name: string) {
+      if (!builtinImage || !IMAGE_TOOL_NAMES.includes(name)) return undefined;
+      return {
+        name,
+        parameters: { type: "object", properties: { prompt: { type: "string" }, size: { type: "string" }, quality: { type: "string" } } },
+        output: { schema: { type: "object", properties: { paths: { type: "array", items: { type: "string" } } } } },
+      };
+    },
+    selectExecutor() {
+      return { describe: (defs: Array<{ name: string }>) => ({ schemas: (defs ?? []).map((d) => ({ name: d.name })) }) };
+    },
+    async execute(batch: { calls: Array<{ id: string; name: string; arguments?: string }>; signal?: AbortSignal }) {
+      await refreshBuiltinImage();
+      const results = [];
+      for (const call of batch?.calls ?? []) {
+        try {
+          if (!builtinImage) throw new Error("内置生图插件未配置");
+          const args = JSON.parse(call.arguments ?? "{}") as { prompt?: string; size?: string };
+          const { path: file } = await generateImageResilient({
+            baseUrl: builtinImage.baseUrl, apiKey: builtinImage.apiKey, model: builtinImage.model,
+            prompt: String(args.prompt ?? ""),
+            ...(args.size && args.size !== "auto" ? { size: args.size } : {}),
+            outputDir: subscriptionImagesDir(),
+          }, 2);
+          if (!file) throw new Error("生图没有落盘");
+          results.push({ callId: call.id, result: { isError: false, value: { paths: [file] } } });
+        } catch (error) {
+          results.push({ callId: call.id, result: { isError: true, error: { message: String((error as Error)?.message ?? error) } } });
+        }
+      }
+      return { results };
+    },
+  };
 }
 
 const MIME: Record<string, string> = {
@@ -136,6 +201,8 @@ export function ensureMediaDeskServer(): Promise<string> {
   serverPromise = (async () => {
     /* DSH_HOME 决定上游 Store 的数据目录 —— 在加载 host.js 之前设好。 */
     process.env.DSH_HOME = path.join(app.getPath("userData"), "media-desk-host");
+    await refreshBuiltinImage();
+    if (builtinImage) await mkdir(subscriptionImagesDir(), { recursive: true }).catch(() => undefined);
     const hostModule: any = await nativeImport(pathToFileURL(path.join(vendorDir(), "host", "host.js")).href);
     const plugin = hostModule?.default ?? hostModule;
     const model = await activeModel();
@@ -144,6 +211,7 @@ export function ensureMediaDeskServer(): Promise<string> {
         if (name === "llm") return llmAdapter();
         if (name === "agentDefaultModel") return { currentSelection: () => (model.model ? { provider: "harness", model: model.model } : null) };
         if (name === "connection") return { requestRejection: () => undefined };
+        if (name === "tools") return mediaDeskTools();
         if (name === "webServer") return { register: (route: any) => { routeHandler = route.handler; return () => { routeHandler = null; }; } };
         return undefined;
       },
@@ -151,6 +219,19 @@ export function ensureMediaDeskServer(): Promise<string> {
       webServer: { register: (route: any) => { routeHandler = route.handler; return () => { routeHandler = null; }; } },
     };
     await plugin.apply(ctx);
+
+    /*  convenience：内置生图插件可用、且用户还没在工作台单独配 HTTP 生图时，
+        默认把生图来源切到 'tool'（= 调内置插件）。已配过 HTTP 的不动（不静默覆盖用户配置）。 */
+    if (builtinImage) {
+      try {
+        const settingsModule: any = await nativeImport(pathToFileURL(path.join(vendorDir(), "host", "settings.js")).href);
+        const settings = new settingsModule.Settings(path.join(process.env.DSH_HOME, "media-desk"));
+        const saved = await settings.read();
+        if (saved.image.source === "http" && !saved.image.baseUrl && !saved.image.apiKey) {
+          await settings.update({ image: { source: "tool" } });
+        }
+      } catch { /* 默认值设置失败不影响主流程，用户仍可手动选 */ }
+    }
 
     const server = http.createServer((req, res) => {
       /* Host 头必须是本机这一跳：别的网页把 localhost 解析到本端口也进不来。 */
