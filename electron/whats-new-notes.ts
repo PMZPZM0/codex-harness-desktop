@@ -43,7 +43,7 @@ export type WhatsNewEntry = {
 /** 全部版本的要点，**最新在最前**（弹窗按数组顺序展示）。 */
 export const WHATS_NEW_ENTRIES: WhatsNewEntry[] = [
   {
-    version: "0.0.55",
+    version: "0.0.56",
     date: "2026-11-10",
     items: [
       { t: "工作伙伴和主对话一个样", d: "群里的回复改成主对话那种回合视图：逐条实时上屏、过程大折叠、用量页脚、推理浮窗、网页来源条都齐了。" },
