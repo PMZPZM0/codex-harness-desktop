@@ -19,7 +19,7 @@ const TOOLS_VERSIONS = {
    * npm 包已内置四平台二进制（解包 13MB），postinstall 只打印安装提示 ⇒ CI 用 --ignore-scripts 也装得动。
    * Windows 不用它（那边是 nuphus + 我们自己的 UIA 控件清单通道）。
    */
-  computerUse: "1.1.3",
+  computerUse: "1.1.4",
   /** 飞书官方 CLI（@larksuite/cli，Go 二进制，npm postinstall 按平台下载）。50MB 出头 ⇒ 按需安装，不随包 */
   feishuCli: "1.0.98",
   /**
