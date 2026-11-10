@@ -8,8 +8,10 @@
  *
  * 网络配套（09-27 与「开发工具」页的下载源统一）：
  * - 下载源 `app-settings.downloadSource`：auto / mirror → **国内镜像（npmmirror）在前**，
- *   失败回落 npmjs；direct → 官方源在前；ghproxy / ghfast 是 GitHub 加速通道、对 npm registry
+ *   官方兜底；direct → 官方源在前；ghproxy / ghfast 是 GitHub 加速通道、对 npm registry
  *   没有对应实现 ⇒ 回落 auto；每次更新现读，切完源下一次检查立即生效。
+ *   ⛔ 11-10：**查最新版时两个源都查、取版本号最大者**（npmmirror 是缓存快照，可能落后官方数天）；
+ *   tarball 下载仍按源序逐档尝试（镜像还没有新版时 404 回落官方）。
  * - 代理 `app-settings.engineProxyUrl`（如 http://127.0.0.1:7890）：走 HTTP CONNECT 隧道。
  *   ⛔ 代理是"怎么连"、下载源是"连谁"：配了代理时两个源都走隧道，但**先后顺序仍按下载源偏好**。
  */
@@ -24,6 +26,7 @@ import os from "node:os";
 import { codexBinaryPath } from "./codex-server";
 import { readAppSettings } from "./app-settings";
 import { healEngineInstall } from "./engine-install-heal";
+import { probeNewestNpmVersion } from "./npm-version";
 
 const NPMJS = "https://registry.npmjs.org";
 const NPMMIRROR = "https://registry.npmmirror.com";
@@ -227,17 +230,23 @@ function trimVersion(raw: string): string {
   return String(raw).replace(/^codex-cli\s*/i, "").trim();
 }
 
+/**
+ * ⛔ 11-10：不再「第一个成功就 return」——镜像成功但版本滞后时，官方源必须有机会说话。
+ * 判定（不早退 + 取最大 + 全失败才报错）统一在 npm-version.ts，这里只注入 fetchText 探测。
+ */
 async function fetchLatestVersion(endpoints: { base: string; proxy?: string }[]): Promise<string> {
-  let lastError: unknown = null;
-  for (const ep of endpoints) {
-    try {
-      const body = await fetchText(`${ep.base}/${PKG_NAME}/latest`, ep.proxy);
+  const result = await probeNewestNpmVersion(
+    endpoints.map((ep) => ep.base),
+    async (base) => {
+      const proxy = endpoints.find((ep) => ep.base === base)?.proxy;
+      const body = await fetchText(`${base}/${PKG_NAME}/latest`, proxy);
       const meta = JSON.parse(body) as { version?: string };
       if (!meta.version) throw new Error("响应里没有 version 字段");
       return meta.version;
-    } catch (err) { lastError = err; }
-  }
-  throw new Error(`查询最新版本失败：${lastError instanceof Error ? lastError.message : String(lastError)}`);
+    },
+    25000,
+  );
+  return result.version;
 }
 
 // ── 版本与安装 ──

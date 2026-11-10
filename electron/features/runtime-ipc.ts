@@ -44,6 +44,10 @@ import { recordToolRemoved } from "./tool-persistence";
 import type { IpcHost } from "../ipc-host";
 // 版本比较统一走 `../updates`（含预发布语义：1.2.3-beta < 1.2.3）——⛔ 别再写第二份。
 import { compareVersions } from "../updates";
+/* 11-10：查最新版本走统一判定层（所有源都查 + 取最大，官方源兜底）；
+   NPM_SOURCES 用于把「胜出源」映射成安装器认识的取值，不在这里再抄一份 URL。 */
+import { probeNewestNpmVersion } from "../npm-version";
+import { NPM_SOURCES } from "../update-registry";
 /* ⛔⛔ 10-30 Windows 真机事故（0.0.51 装了打不开，用户截图：Cannot find module
    '../../scripts/lib/tools-versions.cjs'）：这张**版本表**原先在模块顶层裸 require，而 build.files
    白名单里没有 scripts/** ⇒ 文件没进 asar ⇒ 主进程启动即死。两件事都要有：
@@ -431,7 +435,7 @@ function assertInstallVerified(id: DevRuntimeId, spec: DevRuntimeSpec): void {
 }
 
 /** npm 包按需安装：用**内置 node 自带的 npm**，registry 国内镜像优先、失败回落官方源。 */
-async function runNpmInstall(id: string, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto", allowScripts: string[] = []): Promise<void> {
+async function runNpmInstall(id: string, pkg: string, label: string, source: NonNullable<AppSettings["downloadSource"]> = "auto", allowScripts: string[] = [], preferredRegistry?: string): Promise<void> {
   const node = bundledNode();
   if (!node) throw new Error(`缺少内置 Node，无法安装 ${label}`);
   // ⛔ 按平台候选探测（Windows zip 布局 / mac tar.gz 布局）—— 别在这里复制路径字面量，见 toolchain.bundledNpmCli
@@ -441,8 +445,14 @@ async function runNpmInstall(id: string, pkg: string, label: string, source: Non
   await fs.mkdir(globalDir, { recursive: true });
   const userRegistry = process.env.npm_config_registry || process.env.NPM_CONFIG_REGISTRY || "";
   const registries = userRegistry ? [userRegistry] : source === "direct" ? [""] : [CHINA_NPM_REGISTRY, ""];
+  /* ⛔ 11-10：检查更新已按「所有源查完取最大」判版本 ⇒ 安装必须优先走**同一个胜出源**。
+     否则 @latest 在还没同步的镜像上会装回旧版：界面显示「有更新」，点完仍是旧版。
+     传 "" = 不设 registry（npm 回落官方源）；undefined = 沿用默认源序。 */
+  const ordered = preferredRegistry === undefined
+    ? registries
+    : [preferredRegistry, ...registries.filter((entry) => entry !== preferredRegistry)];
   let lastError: Error | null = null;
-  for (const registry of registries) {
+  for (const registry of ordered) {
     const via = registry ? (userRegistry ? "用户配置的源" : "国内镜像") : "官方源";
     try {
       await new Promise<void>((resolve, reject) => {
@@ -828,7 +838,13 @@ function installedVersionOf(id: string): string {
   return "";
 }
 
-/** 查 npm 上某包的最新版：国内镜像优先、失败回落官方源（与 runNpmInstall 同序、同口径）。 */
+/**
+ * 查 npm 上某包的最新版：**镜像 + 官方都查，取真正最新的那个**（11-10 用户令）。
+ *
+ * ⛔ 旧实现「第一个成功就 return」被 npmmirror 的缓存快照骗过：镜像成功但滞后数天，
+ *    官方源永远没机会说话 ⇒ 组件更新清单恒显示「已是最新」。判定层在 npm-version.ts，
+ *    这里只负责「按下载源列出候选」+「用 fetch 探测」，不自己判谁新。
+ */
 async function fetchRegistryLatest(
   pkg: string,
   source: NonNullable<AppSettings["downloadSource"]>,
@@ -840,8 +856,7 @@ async function fetchRegistryLatest(
     : source === "direct"
       ? ["https://registry.npmjs.org", CHINA_NPM_REGISTRY]
       : [CHINA_NPM_REGISTRY, "https://registry.npmjs.org"];
-  let lastError = "";
-  for (const registry of registries) {
+  const result = await probeNewestNpmVersion(registries, async (registry) => {
     // ⛔ 必须带超时：镜像站偶发挂住时不能让「检查更新」按钮永远转圈
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -851,18 +866,19 @@ async function fetchRegistryLatest(
         // 精简 packument：只要 dist-tags，不要每个版本的完整元数据（镜像与官方源都支持）
         headers: { accept: "application/vnd.npm.install-v1+json, application/json" },
       });
-      if (!res.ok) { lastError = `${registry} 返回 HTTP ${res.status}`; continue; }
+      if (!res.ok) throw new Error(`返回 HTTP ${res.status}`);
       const json = (await res.json()) as { "dist-tags"?: { latest?: unknown } };
       const latest = json?.["dist-tags"]?.latest;
-      if (typeof latest === "string" && latest) return { version: latest, registry };
-      lastError = `${registry} 的响应里没有 dist-tags.latest`;
-    } catch (error) {
-      lastError = `${registry}：${(error as Error)?.message ?? String(error)}`;
+      if (typeof latest !== "string" || !latest) throw new Error("响应里没有 dist-tags.latest");
+      return latest;
     } finally {
       clearTimeout(timer);
     }
+  }, timeoutMs + 2000);
+  if (result.errors.length) {
+    console.warn(`[runtime-ipc] ${pkg} 部分更新源不可用，已按其余源判定：${result.errors.join("；")}`);
   }
-  throw new Error(`查最新版本失败（国内镜像与官方源都试过了）：${lastError}`);
+  return { version: result.version, registry: result.registry };
 }
 
 /* ── 手动/自动共用的两条链路（10-13 抽出）────────────────────────────────────
@@ -932,10 +948,29 @@ export async function performRuntimeUpdate(
   if (inFlight) { await inFlight; return { ok: true, joined: true, from: "", to: installedVersionOf(id) }; }
   const from = installedVersionOf(id);
   const downloadSource = await readDownloadSource();
+  /* ⛔ 11-10：检查更新已按「所有源取最大」判版本，安装必须复用**同一份结论** ——
+     装 <pkg>@<具体版本> 并优先从胜出源装，最后复核磁盘版本确实等于目标。
+     否则镜像还没同步新版时，@latest 会装回旧版：界面显示「有更新」却永远点不动。 */
+  let target: { version: string; registry: string } | null = null;
+  try {
+    target = await fetchRegistryLatest(tool.pkg, downloadSource);
+  } catch (error) {
+    emitRuntimeProgress(id, `查最新版本失败，改用 @latest 与默认源序：${(error as Error)?.message ?? String(error)}`);
+  }
+  const pkgSpec = target ? `${tool.pkg}@${target.version}` : `${tool.pkg}@latest`;
+  // 官方源映射成 ""（npm 不设 registry）；镜像本来就是默认首选项 ⇒ 不必插队；
+  // 用户私有源原样传入，安装器把它排到最前。
+  const preferredRegistry = target
+    ? target.registry === NPM_SOURCES.official
+      ? ""
+      : target.registry === CHINA_NPM_REGISTRY
+        ? undefined
+        : target.registry
+    : undefined;
   const task = (async () => {
     emitRuntimeProgress(id, `@@STAGE 更新 ${tool.label}`);
-    emitRuntimeProgress(id, `正在从国内镜像更新 ${tool.pkg}@latest（当前 ${from || "未知"}）…`);
-    await runNpmInstall(id, `${tool.pkg}@latest`, tool.label, downloadSource, NPM_ALLOW_SCRIPTS[id as DevRuntimeId]);
+    emitRuntimeProgress(id, `正在更新 ${pkgSpec}（当前 ${from || "未知"}）…`);
+    await runNpmInstall(id, pkgSpec, tool.label, downloadSource, NPM_ALLOW_SCRIPTS[id as DevRuntimeId], preferredRegistry);
     // 引擎重启会等当前任务跑完（闸门），期间界面显示「等待任务结束后刷新引擎」
     await restartServerWhenIdle(id);
   })();
@@ -945,6 +980,9 @@ export async function performRuntimeUpdate(
     const to = installedVersionOf(id);
     // ⛔ 复核：命令退出码 0 ≠ 装上了（落位/权限/半截网络都可能「成功退出」）
     if (!to) throw new Error(`${tool.label} 更新命令已跑完，但读不到已装版本 —— 请点「修复安装」回到随包版本`);
+    if (target && compareVersions(to, target.version) !== 0) {
+      throw new Error(`${tool.label} 装完是 ${to}，但目标版本是 ${target.version} —— 该版本可能还没同步到所选源，请稍后重试或把下载源切到「官方直连」`);
+    }
     sendToWindow("runtime:progress", { id, message: `已更新到 ${to}`, percent: 100, speed: "", done: true });
     return { ok: true, from, to };
   } catch (error) {

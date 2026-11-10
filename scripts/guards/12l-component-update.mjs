@@ -223,6 +223,59 @@ console.log("【⑪ 当前版本 = 实际安装态（不是随包常量）】");
     "【⑫】两处回滚失败都留日志（不许静默吞掉）");
 }
 
+/* 【⑬】组件更新 npm 通道：所有源都查 + 取最大（11-10 用户令「官方源兜底」）。
+   ⛔ 回归场景：npmmirror 是缓存快照，1.1.4 发布 3 天后仍报 1.1.3；旧实现
+      「第一个成功就 return」⇒ 官方源永远插不上话，界面恒显示「已是最新」。
+      ⛔ 形态断言之外必须**造夹具真跑编译产物**，否则守卫会「自洽地绿」。 */
+{
+  const probeSrc = stripComments(read("electron/npm-version.ts"));
+  const runtimeSrc = stripComments(read("electron/features/runtime-ipc.ts"));
+  const engineSrc = stripComments(read("electron/engine-updater.ts"));
+  ok(/export function pickNewestVersion/.test(probeSrc) && /export async function probeNewestNpmVersion/.test(probeSrc),
+    "【⑬】npm 版本判定收敛到 npm-version.ts（pickNewestVersion + probeNewestNpmVersion）");
+  ok(/compareVersions/.test(probeSrc) && /from "\.\/updates"/.test(probeSrc),
+    "【⑬】版本比较只认 updates.ts 的 compareVersions（不手写第二份）");
+  ok(/for \(const registry of registries\)/.test(probeSrc) && !/return \{ version: latest/.test(probeSrc),
+    "【⑬】⛔ 探测循环不早退：所有候选源都查完再挑最大");
+  ok(/probeNewestNpmVersion\(/.test(runtimeSrc) && /probeNewestNpmVersion\(/.test(engineSrc),
+    "【⑬】工具链与引擎两条检查更新链都走同一判定层");
+  ok(!/查最新版本失败（国内镜像与官方源都试过了）/.test(runtimeSrc) && !/查询最新版本失败：/.test(engineSrc),
+    "【⑬】⛔ 两条链路都不再有「第一个成功就返回」的旧兜底文案");
+  ok(/preferredRegistry/.test(runtimeSrc) && /compareVersions\(to, target\.version\) !== 0/.test(runtimeSrc),
+    "【⑬】安装侧用胜出源 + 具体版本，并复核装完版本等于目标（否则 @latest 会从滞后镜像装回旧版）");
+
+  const distProbe = join(ROOT, "dist-electron", "npm-version.js");
+  if (!existsSync(distProbe)) {
+    ok(false, "【⑬】dist-electron/npm-version.js 不存在（先构建再跑预检）—— 行为断言无法执行");
+  } else {
+    try {
+      const mod = await import(pathToFileURL(distProbe).href);
+      const { probeNewestNpmVersion, pickNewestVersion } = mod;
+      const mirror = "https://registry.npmmirror.com";
+      const official = "https://registry.npmjs.org";
+      const lag = await probeNewestNpmVersion([mirror, official], async (r) => r === mirror ? "1.1.3" : "1.1.4");
+      ok(lag.version === "1.1.4" && lag.registry === official && lag.checked.length === 2,
+        "【⑬】真值：镜像 1.1.3 / 官方 1.1.4 ⇒ 取官方 1.1.4（⛔ 不能停在镜像的「已是最新」）");
+      const down = await probeNewestNpmVersion([mirror, official], async (r) => {
+        if (r === mirror) throw new Error("mirror down");
+        return "1.1.4";
+      });
+      ok(down.version === "1.1.4" && down.errors.length === 1,
+        "【⑬】真值：镜像挂掉 ⇒ 官方仍生效，错误留痕不吞");
+      const tie = await probeNewestNpmVersion([mirror, official], async () => "1.1.4");
+      ok(tie.version === "1.1.4" && tie.registry === mirror,
+        "【⑬】真值：两源同版 ⇒ 保留候选序靠前的镜像（下载快）");
+      let threw = false;
+      try { await probeNewestNpmVersion([mirror, official], async () => { throw new Error("down"); }); } catch { threw = true; }
+      ok(threw, "【⑬】真值：全部源失败 ⇒ 抛错（不许拿空版本当「已是最新」）");
+      ok(pickNewestVersion([{ version: "1.9.0", registry: mirror }, { version: "1.10.0", registry: official }])?.version === "1.10.0",
+        "【⑬】真值：版本比较按数值段（1.10.0 > 1.9.0），不是字符串字典序");
+    } catch (e) {
+      ok(false, `【⑬】行为断言执行失败：${e && e.message ? e.message : String(e)}`);
+    }
+  }
+}
+
 console.log("");
 console.log(fails === 0 ? `12l 组件更新守卫：全部通过（${checks}/${checks}）` : `12l 组件更新守卫：${fails} 项未通过（共 ${checks} 项）`);
 process.exit(fails === 0 ? 0 : 1);
