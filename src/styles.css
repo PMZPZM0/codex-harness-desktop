@@ -90,4 +90,6 @@
 /* 11-10 同步给 CLI 智能体弹窗（模型配置页出口）。只有自己的 .cli-sync-* 类。
    ⛔ 必须插在 59-motion **之前**（motion 靠后写者胜去覆盖各分节时长变量）。 */
 @import "./styles/62-cli-sync" layer(components);
+/* 11-09 自媒体工作台（设置页独立板块）。⛔ 同样必须在 59-motion 之前。 */
+@import "./styles/63-media-desk" layer(components);
 @import "./styles/59-motion" layer(components);

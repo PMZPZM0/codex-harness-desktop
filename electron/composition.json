@@ -303,6 +303,13 @@
       "config": null
     },
     {
+      "id": "media-desk",
+      "enabled": true,
+      "file": "features/media-desk/ipc.ts",
+      "export": "mediaDeskFeature",
+      "config": null
+    },
+    {
       "id": "feishu",
       "enabled": true,
       "file": "features/feishu-ipc.ts",

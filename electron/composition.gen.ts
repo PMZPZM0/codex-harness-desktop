@@ -50,6 +50,7 @@ import { expertMarketFeature as feat_expert_market } from "./features/expert-mar
 import { extensionsFeature as feat_extensions } from "./features/extensions-ipc";
 import { externalFeature as feat_external } from "./features/external-ipc";
 import { favoritesFeature as feat_favorites } from "./features/favorites/ipc";
+import { mediaDeskFeature as feat_media_desk } from "./features/media-desk/ipc";
 import { feishuFeature as feat_feishu } from "./features/feishu-ipc";
 import { fsFeature as feat_fs } from "./features/fs-ipc";
 import { gitFeature as feat_git } from "./features/git-ipc";
@@ -176,6 +177,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "extensions", plugin: feat_extensions as Plugin<unknown>, config: null },
   { id: "external", plugin: feat_external as Plugin<unknown>, config: null },
   { id: "favorites", plugin: feat_favorites as Plugin<unknown>, config: null },
+  { id: "media-desk", plugin: feat_media_desk as Plugin<unknown>, config: null },
   { id: "feishu", plugin: feat_feishu as Plugin<unknown>, config: null },
   { id: "fs", plugin: feat_fs as Plugin<unknown>, config: null },
   { id: "git", plugin: feat_git as Plugin<unknown>, config: null },

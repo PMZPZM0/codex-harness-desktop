@@ -28,7 +28,7 @@ export type { ExtAction, MenuEntrySpec, RailPanelSpec };
 export type ExternalAction = ExtAction;
 
 /* 10-27 审查：扩展项只能跳**真实存在的**设置页 —— 白名单与渲染层侧栏同一份（settingsNav）。 */
-const SETTINGS_PAGES = new Set(["user","general","devtools","extensibility","appearance","personalization","model","relay","cloud","openai","browser","computer","memory","agents","teams","expert-center","plugins","mcp","ssh","skills","commands","hooks","usage","channel","schedule","rpa","archive","backup","storage","automation","agentteam","voice","screenshot","favorites","pet","component-library","soul-market","knowledge-base","boss-groups","app-lock"]);
+const SETTINGS_PAGES = new Set(["user","general","devtools","extensibility","appearance","personalization","model","relay","cloud","openai","browser","computer","memory","agents","teams","expert-center","plugins","mcp","ssh","skills","commands","hooks","usage","channel","schedule","rpa","archive","backup","storage","automation","agentteam","voice","screenshot","favorites","pet","component-library","media-desk","soul-market","knowledge-base","boss-groups","app-lock"]);
 
 const BUILTIN_RAIL: RailPanelSpec[] = [
   { id: "favorites", label: "收藏夹", icon: "bookmark", kind: "builtin", order: 10 },

@@ -401,6 +401,30 @@ type FavoriteItem = {
 };
 type FavoriteDeleteResult = { items: FavoriteItem[]; removed: number };
 
+/* ── 自媒体工作台（11-09）类型面：与 electron/features/media-desk/store.ts 同形 ─────────── */
+type MediaDeskPlan = { title: string; angle: string; points: string[]; coverText: string; shots: Array<{ text: string }> };
+type MediaDeskSettings = {
+  assistant: { baseUrl: string; model: string; apiKey: string };
+  image: { baseUrl: string; model: string; apiKey: string; size: string; quality: string };
+  imageCount: number;
+  shotCount: number;
+  language: string;
+};
+type MediaDeskState = {
+  inspirations: Array<{ id: string; text: string; url?: string; title?: string; desc?: string; image?: string; tags: string[]; createdAt: number }>;
+  posts: Array<{ id: string; title: string; platform: string; kind: string; status: string; inspirationIds: string[]; styleId?: string; plan?: MediaDeskPlan | null; script: string; cover?: string; images: Array<{ id: string; label: string; path: string }>; createdAt: number; updatedAt: number }>;
+  schedules: Array<{ id: string; postId?: string; title: string; when: number; platform: string; status: string }>;
+  styles: Array<{ id: string; name: string; description: string; prompt: string; createdAt: number }>;
+  metrics: Array<{ id: string; postId?: string; date: string; views: number; likes: number; comments: number; shares: number; note?: string }>;
+  settings: MediaDeskSettings;
+  hasAssistantKey?: boolean;
+  hasImageKey?: boolean;
+};
+type MediaDeskSettingsPatch = Partial<MediaDeskSettings> & {
+  assistant?: Partial<MediaDeskSettings["assistant"]>;
+  image?: Partial<MediaDeskSettings["image"]>;
+};
+
 /* 输入框竖条 / 密码本 / 开发日记 / 扩展目录的类型统一定义在 src/lib/rail-ipc-types.d.ts（跨进程单一来源）。 */
 /** 写入记忆金字塔的层：user=L0 用户档案 · project=L1 项目记忆 · background=L3 项目背景 · lessons=L2 纪律 */
 type MemoryLayerScope = "user" | "project" | "background" | "lessons";
@@ -1465,6 +1489,26 @@ interface Window {
     harnessTeamQueueStart(input: Record<string, unknown>): Promise<{ ok: boolean; mode?: "steer" | "start"; error?: string; reason?: string }>;
     /* 团队模式：取该会话最近一轮真实 token */
     harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
+    /* 自媒体工作台：整份状态（apiKey 已抹空，另有 hasAssistantKey / hasImageKey） */
+    mediaDeskState(): Promise<MediaDeskState>;
+    /* 新增一条（inspirations / posts / schedules / styles / metrics） */
+    mediaDeskAdd(collection: string, item: Record<string, unknown>): Promise<MediaDeskState>;
+    /* 局部更新一条 */
+    mediaDeskUpdate(collection: string, id: string, patch: Record<string, unknown>): Promise<MediaDeskState>;
+    /* 删除一条（只认显式 id） */
+    mediaDeskDelete(collection: string, id: string): Promise<MediaDeskState>;
+    /* 撤销上一步（内存里最多 20 步，重启清空） */
+    mediaDeskUndo(): Promise<MediaDeskState>;
+    /* 合并设置；apiKey 只在给了非空值时覆盖（空串=保持不变） */
+    mediaDeskSettings(patch: MediaDeskSettingsPatch): Promise<MediaDeskState>;
+    /* 抓公开网页的 title/description/og:image（只许公网 http(s)，内网地址拒绝） */
+    mediaDeskHarvest(url: string): Promise<{ ok: boolean; url?: string; title?: string; desc?: string; image?: string; error?: string }>;
+    /* 生成计划（标题/角度/要点/封面文案/分镜）并回写稿子 */
+    mediaDeskPlan(postId: string): Promise<{ ok: boolean; error?: string; state: MediaDeskState }>;
+    /* produce what = plan | article | images | all（images 走设置里的 OpenAI 兼容生图） */
+    mediaDeskProduce(postId: string, what: string): Promise<{ ok: boolean; error?: string; failed?: string[]; state: MediaDeskState }>;
+    /* 工作室对话：在现有稿子上继续改 */
+    mediaDeskChat(postId: string, message: string): Promise<{ ok: boolean; reply?: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
