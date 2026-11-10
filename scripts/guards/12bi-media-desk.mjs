@@ -34,7 +34,13 @@ export async function run() {
   const store = read("electron/features/media-desk/store.ts");
   const catalogs = read("src/features/app-view/helpers/catalogs.ts");
   const help = read("src/components/HelpDialog.tsx");
-  const capabilities = read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx");
+  /* 页面注册位置随设置页拆分进度不同（主仓 pages/capabilities.tsx；老仓 00-settings-registry.tsx）。 */
+  const pageCandidates = [
+    "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx",
+    "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx",
+    "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/02-settings-content.tsx",
+  ];
+  const pageSrc = (() => { for (const rel of pageCandidates) { try { return read(rel); } catch { /* 换下一个 */ } } return ""; })();
   const board = read("src/features/media-desk/index.tsx");
   const styles = read("src/styles.css");
 
@@ -46,7 +52,7 @@ export async function run() {
   ok(/mediaDeskState/.test(preload) && /mediaDeskState\(\): Promise<MediaDeskState>/.test(dts),
     "桥三件套齐备（preload / vite-env 都有 mediaDeskState）");
   ok(/\["media-desk", "自媒体工作台"/.test(catalogs) && /\{ page: "自媒体工作台"/.test(help)
-    && /"media-desk": \{ render:/.test(capabilities),
+    && /"media-desk": \{ render:/.test(pageSrc),
     "设置页可到达：导航 + 帮助总览 + 页面注册三处都在");
   const aiSrc = read("electron/features/media-desk/ai.ts");
   ok(!/safeStorage/.test(codeOnly(ipc)) && !/safeStorage/.test(codeOnly(aiSrc)) && /setSecureHost\(/.test(ipc),
