@@ -441,6 +441,72 @@
   background: #0b0d10;
 }
 
+/* ── 11-09 用户令「两边各 4 个」：浅色补 3 套 / 深色补 2 套 ─────────────────────
+   ⛔ 与既有主题同一套变量名、另一组手调值；深色专属规则走 data-theme-mode="dark"，
+      新深色主题不用复制那 20+ 条分支。--bg 与 electron/main.ts THEME_WINDOW_BG 同源。 */
+:root[data-theme="paper"] {
+  color-scheme: light;
+  --bg: #faf6ef; --bg-base: #faf6ef;
+  --panel: #fbf7f0; --panel-base: #fbf7f0;
+  --panel-2: #f3ede2; --panel-2-base: #f3ede2;
+  --line: #e8e0d0; --line-soft: #efe8db; --line-strong: #d9cfba;
+  --field: #fffdf8; --field-base: #fffdf8;
+  --text: #2b2620; --muted: #6f6a5e; --faint: #9b958a;
+  --accent: #b45309; --accent-text: #fff; --accent-soft: #b4530914; --link: #b45309;
+  --green: #1a7f37; --red: #d94f43;
+  background: #faf6ef;
+}
+:root[data-theme="mint"] {
+  color-scheme: light;
+  --bg: #f2f7f4; --bg-base: #f2f7f4;
+  --panel: #f4f9f6; --panel-base: #f4f9f6;
+  --panel-2: #e8f1ec; --panel-2-base: #e8f1ec;
+  --line: #d8e6dd; --line-soft: #e4efe8; --line-strong: #c4d8cb;
+  --field: #ffffff; --field-base: #ffffff;
+  --text: #1f2a24; --muted: #5f6f66; --faint: #8ba096;
+  --accent: #1a7f37; --accent-text: #fff; --accent-soft: #1a7f3714; --link: #1a7f37;
+  --green: #1a7f37; --red: #d94f43;
+  background: #f2f7f4;
+}
+:root[data-theme="sakura"] {
+  color-scheme: light;
+  --bg: #fbf4f6; --bg-base: #fbf4f6;
+  --panel: #fcf6f8; --panel-base: #fcf6f8;
+  --panel-2: #f5e9ee; --panel-2-base: #f5e9ee;
+  --line: #eadbe2; --line-soft: #f1e6eb; --line-strong: #dcc8d2;
+  --field: #ffffff; --field-base: #ffffff;
+  --text: #2b2024; --muted: #6f5f66; --faint: #9b8b92;
+  --accent: #d5487a; --accent-text: #fff; --accent-soft: #d5487a14; --link: #d5487a;
+  --green: #1a7f37; --red: #d94f43;
+  background: #fbf4f6;
+}
+:root[data-theme="midnight"] {
+  color-scheme: dark;
+  --bg: #0d1220; --bg-base: #0d1220;
+  --panel: #121a2c; --panel-base: #121a2c;
+  --panel-2: #1a2438; --panel-2-base: #1a2438;
+  --line: #263248; --line-soft: #1c2739; --line-strong: #35455f;
+  --field: #0f1526; --field-base: #0f1526;
+  --text: #e6ebf5; --muted: #9aa7bd; --faint: #6e7c94;
+  --accent: #7cabf8; --accent-text: #161615; --accent-soft: #7cabf81f; --link: #7cabf8;
+  --green: #4ec27a; --red: #ec7a70;
+  --shadow: 0 1px 3px #00000059, 0 10px 30px #00000059;
+  background: #0d1220;
+}
+:root[data-theme="forest"] {
+  color-scheme: dark;
+  --bg: #0c1512; --bg-base: #0c1512;
+  --panel: #111d18; --panel-base: #111d18;
+  --panel-2: #182a22; --panel-2-base: #182a22;
+  --line: #24382e; --line-soft: #1a2b23; --line-strong: #35503f;
+  --field: #0e1a15; --field-base: #0e1a15;
+  --text: #e6f2ea; --muted: #9ab5a6; --faint: #6e8a7b;
+  --accent: #4ec27a; --accent-text: #161615; --accent-soft: #4ec27a1f; --link: #4ec27a;
+  --green: #4ec27a; --red: #ec7a70;
+  --shadow: 0 1px 3px #00000059, 0 10px 30px #00000059;
+  background: #0c1512;
+}
+
 /* ── 主题色定制（11-09 用户令：「白天和黑夜定制都定制各 5 套」）─────────────────
    档位 id 由 lib/theme-accent.ts 挂到 <html data-accent>；按明暗各一套手调值。
    ⛔ default 档不写块 ⇒ 落回主题本身的 --accent（即"恢复默认"）。

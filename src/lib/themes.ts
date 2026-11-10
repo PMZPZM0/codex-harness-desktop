@@ -23,15 +23,21 @@ export interface ThemeDef {
 
 export const THEMES: readonly ThemeDef[] = [
   { id: "light", label: "白天", preview: "tpw-light" },
+  /* 11-09 用户令：「白天现在就一个，黑色还有两个，两边各 4 个」⇒ 浅色补到 4、深色补到 4。 */
+  { id: "paper", label: "暖纸", preview: "tpw-paper" },
+  { id: "mint", label: "青瓷", preview: "tpw-mint" },
+  { id: "sakura", label: "樱粉", preview: "tpw-sakura" },
   { id: "dark", label: "黑夜", preview: "tpw-dark" },
   /* 11-02 高级感主题：深炭黑 + 香槟金点缀（用户原话「主题背景都好 low，要一套高级感的」）。 */
   { id: "obsidian", label: "曜石", preview: "tpw-obsidian" },
+  { id: "midnight", label: "午夜", preview: "tpw-midnight" },
+  { id: "forest", label: "墨绿", preview: "tpw-forest" },
 ] as const;
 
 /** 深色系主题（决定 color-scheme / 窗口底色 / 壁纸取色）。⛔ 新增暗色主题必须加进来，
  *  否则主进程会按「非暗色」处理（窗口露出白底、滚动条变浅）。 */
 export function isDarkTheme(value: unknown): boolean {
-  return value === "dark" || value === "obsidian";
+  return value === "dark" || value === "obsidian" || value === "midnight" || value === "forest";
 }
 
 /** 兜底：未知 id（旧 localStorage 脏值）回退到 light，避免 data-theme 落到无变量块的值。 */

@@ -1010,15 +1010,20 @@ function applyWindowChrome(dark: boolean, bg = dark ? "#1b1b1a" : "#ffffff") {
 //    新增非暗色系主题无需动这里；新增**暗色系**第三主题时，把判定换成注册表口径。
 /* 深色系主题 id —— 与渲染层 src/lib/themes.ts 的 isDarkTheme 同口径。
    ⛔ 新增暗色主题必须两处一起加：漏这里 → 窗口底色/系统控件按浅色走（露出一圈白边）。 */
-const DARK_THEME_IDS = new Set(["dark", "obsidian"]);
-const THEME_IDS = new Set(["light", "dark", "obsidian"]);
+const DARK_THEME_IDS = new Set(["dark", "obsidian", "midnight", "forest"]);
+const THEME_IDS = new Set(["light", "paper", "mint", "sakura", "dark", "obsidian", "midnight", "forest"]);
+/* 11-09 各主题窗口底色（与 CSS 变量块 --bg 同源）：漏配会露白边/黑边。 */
+const THEME_WINDOW_BG: Record<string, string> = {
+  light: "#ffffff", paper: "#faf6ef", mint: "#f2f7f4", sakura: "#fbf4f6",
+  dark: "#1b1b1a", obsidian: "#0b0d10", midnight: "#0d1220", forest: "#0c1512",
+};
 ipcMain.handle("theme:apply", (_event, theme: string) => {
   const nextTheme = THEME_IDS.has(theme) ? theme : "light";
   const dark = DARK_THEME_IDS.has(nextTheme);
   appThemeDark = dark;
   setAppThemeDark(dark);
   nativeTheme.themeSource = dark ? "dark" : "light";
-  applyWindowChrome(dark, nextTheme === "obsidian" ? "#0b0d10" : dark ? "#1b1b1a" : "#ffffff");
+  applyWindowChrome(dark, THEME_WINDOW_BG[nextTheme] ?? (dark ? "#1b1b1a" : "#ffffff"));
   /* ⛔ 广播给所有窗口（10-16，与云助手同轮同步）：独立会话弹窗当初只在**创建时**取主题，
      主窗口之后换主题它不会跟着变（用户令「独立窗口的主题色要跟着主界面变」）。
      11-02：广播**主题 id 本身**（不再压成 dark/light）—— 否则副窗切到「曜石」会退回旧「黑夜」。 */

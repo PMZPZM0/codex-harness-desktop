@@ -1343,6 +1343,12 @@
 .tpw-obsidian {
   background: #0b0d10;
 }
+/* 11-09 两边各 4 个：新主题预览底色（与 --bg 同源） */
+.tpw-paper { background: #faf6ef; }
+.tpw-mint { background: #f2f7f4; }
+.tpw-sakura { background: #fbf4f6; }
+.tpw-midnight { background: #0d1220; }
+.tpw-forest { background: #0c1512; }
 .tpw-obsidian .tpw-titlebar {
   background: #12151a;
   border-color: #222831;
