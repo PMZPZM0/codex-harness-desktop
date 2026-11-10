@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { guardedFetch } from "./net-guard";
 
 const ILINK_BASE = "https://ilinkai.weixin.qq.com";
 const ILINK_APP_ID = "bot";
@@ -44,12 +45,12 @@ function headers(token?: string) {
 }
 
 async function post(baseUrl: string, endpoint: string, body: any, token?: string, timeoutMs = 15_000) {
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/${endpoint}`, {
+  const response = await guardedFetch(`${baseUrl.replace(/\/$/, "")}/${endpoint}`, {
     method: "POST",
     headers: headers(token),
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(timeoutMs),
-  });
+  }, { timeoutMs });
   const text = await response.text();
   if (!response.ok) throw new Error(`iLink ${endpoint} HTTP ${response.status}`);
   return JSON.parse(text);
@@ -93,7 +94,7 @@ export class WeixinGateway {
     if (this.loginSession.pendingVerifyCode) endpoint += `&verify_code=${encodeURIComponent(this.loginSession.pendingVerifyCode)}`;
     let response: any;
     try {
-      const res = await fetch(`${ILINK_BASE}/${endpoint}`, { headers: headers(), signal: AbortSignal.timeout(QR_POLL_TIMEOUT_MS) });
+      const res = await guardedFetch(`${ILINK_BASE}/${endpoint}`, { headers: headers(), signal: AbortSignal.timeout(QR_POLL_TIMEOUT_MS) }, { timeoutMs: QR_POLL_TIMEOUT_MS });
       response = JSON.parse(await res.text());
     } catch { return { status: "wait" }; }
     switch (response.status) {

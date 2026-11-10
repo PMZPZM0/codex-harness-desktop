@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { app } from "electron";
+import { guardedFetch } from "../net-guard";
 
 /** 凭据落点：**惰性**取 userData ——
  *  ⛔ 模块顶层求值会早于 main.ts 的 `app.setPath("userData")` ⇒ 拿到默认目录（路径静默漂移）。
@@ -42,8 +43,8 @@ export class TelegramGateway {
   private async api(method: string, body?: Record<string, unknown>): Promise<any> {
     const url = `${API}/bot${this.token}/${method}`;
     const response = body
-      ? await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) })
-      : await fetch(url, { signal: AbortSignal.timeout(POLL_TIMEOUT_MS + 10_000) });
+      ? await guardedFetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) }, { timeoutMs: 15_000 })
+      : await guardedFetch(url, { signal: AbortSignal.timeout(POLL_TIMEOUT_MS + 10_000) }, { timeoutMs: POLL_TIMEOUT_MS + 10_000 });
     const text = await response.text();
     let data: any;
     try { data = JSON.parse(text); } catch {

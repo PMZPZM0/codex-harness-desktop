@@ -17,6 +17,7 @@ function stateFilePath() {
 // 群里 @机器人 发消息 → 收到 text → 走标准 thread 管线 → 回复经 sessionWebhook 回发。
 // 凭据持久化 userData/dingtalk-account.json，重启自动恢复。
 import DingTalkStream from "dingtalk-stream";
+import { guardedFetch } from "../net-guard";
 
 
 export type DingtalkEvents = {
@@ -50,12 +51,12 @@ export class DingtalkGateway {
     const secret = clientSecret.trim();
     if (!id || !secret) throw new Error("Client ID / Client Secret 不能为空（open-dev.dingtalk.com → 应用信息 → 凭证）");
     // 先拿企业 access_token 校验凭据（官方接口 /v1.0/oauth2/accessToken）
-    const probeResponse = await fetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
+    const probeResponse = await guardedFetch("https://api.dingtalk.com/v1.0/oauth2/accessToken", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ appKey: id, appSecret: secret }),
       signal: AbortSignal.timeout(10_000),
-    });
+    }, { timeoutMs: 10_000 });
     const probe = (await probeResponse.json().catch(() => ({}))) as any;
     if (!probeResponse.ok || !probe.accessToken) {
       throw new Error(`凭据无效（HTTP ${probeResponse.status}）：${probe.message ?? JSON.stringify(probe).slice(0, 120)}。请检查 Client ID/Secret，并确认应用已开通「机器人」能力且消息接收模式为「Stream 模式」`);
@@ -165,12 +166,12 @@ export class DingtalkGateway {
     const expired = session.expiresAt ? Date.now() >= session.expiresAt : false;
     if (expired) throw new Error("回复通道已过期（钉钉 sessionWebhook 是临时的）：请在钉钉群里重新 @机器人 发一条消息");
     const safe = text.length > 3800 ? text.slice(0, 3800) + "\n\n…（内容过长已截断）" : text;
-    const response = await fetch(session.webhook, {
+    const response = await guardedFetch(session.webhook, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ msgtype: "text", text: { content: safe } }),
       signal: AbortSignal.timeout(15_000),
-    });
+    }, { timeoutMs: 15_000 });
     // ⛔ 不看 HTTP 状态的裸 `.then(r => r.json())`：代理/网关回 HTML 时抛的是英文 SyntaxError，
     //   而且钉钉限流（20 条/分）时回的是 4xx —— 都会被吞成「钉钉发送失败：」这种空白原因
     const bodyText = await response.text();

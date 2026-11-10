@@ -47,6 +47,7 @@ import { compareVersions } from "../updates";
 /* 11-10：查最新版本走统一判定层（所有源都查 + 取最大，官方源兜底）；
    NPM_SOURCES 用于把「胜出源」映射成安装器认识的取值，不在这里再抄一份 URL。 */
 import { probeNewestNpmVersion } from "../npm-version";
+import { guardedFetch } from "../net-guard";
 import { NPM_SOURCES } from "../update-registry";
 /* ⛔⛔ 10-30 Windows 真机事故（0.0.51 装了打不开，用户截图：Cannot find module
    '../../scripts/lib/tools-versions.cjs'）：这张**版本表**原先在模块顶层裸 require，而 build.files
@@ -560,7 +561,7 @@ async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promis
   let expectedSha = "";
   for (const candidate of mirrorCandidates(`https://github.com/${FILEE_REPO}/releases/download/v${version}/Filee-${version}-SHA256SUMS.txt`)) {
     try {
-      const res = await fetch(candidate, { redirect: "follow", signal: AbortSignal.timeout(60_000) });
+      const res = await guardedFetch(candidate, { redirect: "follow", signal: AbortSignal.timeout(60_000) }, { timeoutMs: 60_000 });
       if (!res.ok) continue;
       const text = await res.text();
       const row = text.split(/\r?\n/).find((line) => line.toLowerCase().includes(asset.toLowerCase()));
@@ -630,7 +631,7 @@ async function fetchGitHubLatestTag(repo: string): Promise<string> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 20_000);
     try {
-      const res = await fetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } });
+      const res = await guardedFetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } }, { timeoutMs: 20_000 });
       if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
       const json = (await res.json()) as { tag_name?: unknown };
       const tag = typeof json?.tag_name === "string" ? json.tag_name.replace(/^v/, "") : "";
@@ -861,11 +862,11 @@ async function fetchRegistryLatest(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
-      const res = await fetch(`${registry}/${pkg.replace("/", "%2F")}`, {
+      const res = await guardedFetch(`${registry}/${pkg.replace("/", "%2F")}`, {
         signal: controller.signal,
         // 精简 packument：只要 dist-tags，不要每个版本的完整元数据（镜像与官方源都支持）
         headers: { accept: "application/vnd.npm.install-v1+json, application/json" },
-      });
+      }, { timeoutMs });
       if (!res.ok) throw new Error(`返回 HTTP ${res.status}`);
       const json = (await res.json()) as { "dist-tags"?: { latest?: unknown } };
       const latest = json?.["dist-tags"]?.latest;

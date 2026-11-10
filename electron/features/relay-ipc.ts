@@ -17,6 +17,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { normalizeRelayStore, pickRelayActiveId, relayProviderIdOf } from "../relay-accounts";
+import { guardedFetch } from "../net-guard";
 import { server as relayServer } from "../runtime-refs";
 // 跨域共用符号的基座门面（10-03）：用命名空间整体引入，避免与内部同名局部变量打架
 import * as runtimeRefs from "../runtime-refs";
@@ -206,7 +207,7 @@ function registerRelayIpc(deps: RelayIpcDeps) {
   async function relayRequest(url: string, init: RequestInit = {}): Promise<{ ok: boolean; status: number; data: any; message?: string }> {
     let response: Response;
     try {
-      response = await fetch(url, { signal: AbortSignal.timeout(20_000), ...init });
+      response = await guardedFetch(url, { signal: AbortSignal.timeout(20_000), ...init }, { timeoutMs: 20_000 });
     } catch (error) {
       throw describeNetworkError(error, "中转站请求");
     }

@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { readCustomModel } from "./main/01-model-catalog";
+import { guardedFetch } from "./net-guard";
 
 const SYSTEM = [
   "你是生图提示词润色助手。要求：",
@@ -42,7 +43,7 @@ export async function polishPromptOnce(text: string, context?: string): Promise<
   /* ⛔ 两种协议都支持（10-01 用户实测「AI 润色用不了」）：他的供应商走 responses 协议，
       旧实现只认 chat ⇒ 直接报错不给用。两个分支都返回一段纯文本，调用方不感知协议差异。 */
   if (cfg.wireApi === "responses") {
-    const response = await fetch(`${base}/responses`, {
+    const response = await guardedFetch(`${base}/responses`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
       body: JSON.stringify({
@@ -52,7 +53,7 @@ export async function polishPromptOnce(text: string, context?: string): Promise<
         input: [{ role: "user", content: [{ type: "input_text", text: userText }] }],
       }),
       signal: AbortSignal.timeout(30_000),
-    });
+    }, { timeoutMs: 30_000 });
     if (!response.ok) {
       const raw = await response.text().catch(() => "");
       throw new Error(`润色请求失败（HTTP ${response.status}）${raw ? "：" + raw.slice(0, 160) : ""}`);
@@ -66,7 +67,7 @@ export async function polishPromptOnce(text: string, context?: string): Promise<
     return out;
   }
 
-  const response = await fetch(`${base}/chat/completions`, {
+  const response = await guardedFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
@@ -78,7 +79,7 @@ export async function polishPromptOnce(text: string, context?: string): Promise<
       ],
     }),
     signal: AbortSignal.timeout(30_000),
-  });
+  }, { timeoutMs: 30_000 });
   if (!response.ok) {
     const raw = await response.text().catch(() => "");
     throw new Error(`润色请求失败（HTTP ${response.status}）${raw ? "：" + raw.slice(0, 160) : ""}`);
@@ -134,7 +135,7 @@ export async function describeProductOnce(imageRef: string, context?: string): P
 
   const source = await toVisionSource(ref);
   const base = cfg.baseUrl.replace(/\/$/, "");
-  const response = await fetch(`${base}/chat/completions`, {
+  const response = await guardedFetch(`${base}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
@@ -149,7 +150,7 @@ export async function describeProductOnce(imageRef: string, context?: string): P
       }],
     }),
     signal: AbortSignal.timeout(45_000),
-  });
+  }, { timeoutMs: 45_000 });
   if (!response.ok) {
     const raw = await response.text().catch(() => "");
     let hint = raw.slice(0, 160);

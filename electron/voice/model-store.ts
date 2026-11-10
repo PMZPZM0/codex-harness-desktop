@@ -11,6 +11,7 @@
 
 import { createHash } from "crypto";
 import { existingToolPath } from "../toolchain";
+import { net } from "electron";
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink } from "fs/promises";
@@ -189,7 +190,7 @@ async function downloadOne(
 
   let response: Response;
   try {
-    response = await fetch(modelUrl(host, repo, file), { headers, signal: opts?.signal });
+    response = await net.fetch(modelUrl(host, repo, file), { headers, signal: opts?.signal });
   } catch (error: any) {
     return { ok: false, error: `请求失败：${error?.message ?? error}` };
   }
@@ -265,7 +266,7 @@ async function probeFile(
 ): Promise<{ host: string; size: number; latencyMs: number; ok: boolean; error?: string }> {
   const t0 = Date.now();
   try {
-    const res = await fetch(modelUrl(host, repo, file), { method: "HEAD", signal });
+    const res = await net.fetch(modelUrl(host, repo, file), { method: "HEAD", signal });
     const size = Number(res.headers.get("content-length") ?? 0);
     return { host, size, latencyMs: Date.now() - t0, ok: res.ok && size > 0 };
   } catch (error: any) {
@@ -357,7 +358,7 @@ async function downloadParallel(
     };
     let res: Response;
     try {
-      res = await fetch(modelUrl(host, repo, file), { headers, signal });
+      res = await net.fetch(modelUrl(host, repo, file), { headers, signal });
     } catch (e: any) {
       throw new Error(`分块 ${chunk.idx} 请求失败：${e?.message ?? e}`);
     }
@@ -653,7 +654,7 @@ async function downloadOnce(
       : timeoutCtl.signal;
     let response: Response;
     try {
-      response = await fetch(url, { redirect: "follow", headers, signal: combinedSignal as any });
+      response = await net.fetch(url, { redirect: "follow", headers, signal: combinedSignal as any });
     } catch (error: any) {
       if (signal?.aborted) return cancelled();
       return { ok: false, error: `连接超时（${headersTimeoutMs / 1000}s 无响应）` };
@@ -768,7 +769,7 @@ async function orderCandidatesByLatency(candidates: string[], signal?: AbortSign
     const timer = setTimeout(() => ctl.abort(), 2000);
     try {
       const probeSignal = signal && typeof (AbortSignal as any).any === "function" ? (AbortSignal as any).any([signal, ctl.signal]) : ctl.signal;
-      const res = await fetch(url, { headers: { Range: "bytes=0-1" }, redirect: "follow", signal: probeSignal as any });
+      const res = await net.fetch(url, { headers: { Range: "bytes=0-1" }, redirect: "follow", signal: probeSignal as any });
       if (!res.ok) return { url, ok: false, ms: Date.now() - t0 };
       await res.arrayBuffer().catch(() => undefined);
       return { url, ok: true, ms: Date.now() - t0 };

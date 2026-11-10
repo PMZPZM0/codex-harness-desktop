@@ -25,6 +25,7 @@ import { existsSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { app } from "electron";
 import { readAppSettingsSync, saveAppSettings } from "../app-settings";
+import { guardedFetch } from "../net-guard";
 import { ensureBuiltinSkills } from "../builtin-skills";
 import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryBackend } from "../memory-backend";
 import { lookupRoleSession, listRoleSessions } from "../role-memory";
@@ -564,7 +565,7 @@ export const memoryFeature = defineFeature<null>({
       const endpoint = String(input.endpoint ?? "").trim().replace(/\/$/, "");
       if (!endpoint) throw new Error("请填写 Memory Gateway 地址");
       const startedAt = Date.now();
-      const response = await fetch(`${endpoint}/health`, { headers: input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}, signal: AbortSignal.timeout(15_000) });
+      const response = await guardedFetch(`${endpoint}/health`, { headers: input.apiKey ? { Authorization: `Bearer ${input.apiKey}` } : {}, signal: AbortSignal.timeout(15_000) }, { timeoutMs: 15_000 });
       if (!response.ok) throw new Error(`Gateway HTTP ${response.status}`);
       return { ok: true, latencyMs: Date.now() - startedAt, health: await response.json() };
     });

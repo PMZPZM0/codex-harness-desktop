@@ -19,6 +19,7 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { guardedFetch } from "../net-guard";
 import { isInsideTrustedRoots } from "../runtime-refs";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -75,11 +76,11 @@ const hasCredentials = (providerId: string, cfg: ProviderConfig | undefined) =>
   !!cfg && VIDEO_PROVIDERS.find((p) => p.id === providerId)?.fields.every((f) => String(cfg[f] ?? "").trim());
 
 async function fetchJson(url: string, init: { method?: string; headers?: Record<string, string>; body?: unknown }): Promise<any> {
-  const response = await fetch(url, {
+  const response = await guardedFetch(url, {
     method: init.method ?? (init.body != null ? "POST" : "GET"),
     headers: init.headers,
     body: init.body != null ? JSON.stringify(init.body) : undefined,
-  });
+  }, { timeoutMs: 120_000 });
   const text = await response.text();
   try {
     return JSON.parse(text);
@@ -228,7 +229,7 @@ export async function downloadVideoCore(input: { url: string; workspace: string;
   let lastError: unknown = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(300_000) });
+      const response = await guardedFetch(url, { signal: AbortSignal.timeout(300_000) }, { timeoutMs: 300_000 });
       if (!response.ok) throw new Error(`下载失败 HTTP ${response.status}`);
       const buffer = Buffer.from(await response.arrayBuffer());
       if (!buffer.length) throw new Error("下载到 0 字节");

@@ -7,6 +7,7 @@ import { app } from "electron";
 // 拿 App ID / App Secret 填入即连；群里 @机器人 或私聊发消息都会推到本进程。
 // 凭据持久化 userData/feishu-account.json，重启自动恢复长连接。
 import lark from "@larksuiteoapi/node-sdk";
+import { guardedFetch } from "./net-guard";
 
 /** 凭据落点：**惰性**取 userData ——
  *  ⛔ 模块顶层求值会早于 main.ts 的 `app.setPath("userData")` ⇒ 拿到默认目录（路径静默漂移）。
@@ -53,12 +54,12 @@ export class FeishuGateway {
     const secret = appSecret.trim();
     if (!id || !secret) throw new Error("App ID / App Secret 不能为空（open.feishu.cn → 开发者后台 → 凭证与基础信息）");
     // 先用 auth/v3/app_access_token/internal 校验凭据有效性（官方接口，快且无副作用）
-    const probeResponse = await fetch("https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal", {
+    const probeResponse = await guardedFetch("https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ app_id: id, app_secret: secret }),
       signal: AbortSignal.timeout(10_000),
-    });
+    }, { timeoutMs: 10_000 });
     const probe = (await probeResponse.json().catch(() => ({}))) as any;
     if (!probeResponse.ok || probe.code !== 0) {
       throw new Error(`凭据无效（HTTP ${probeResponse.status}，code ${probe.code ?? "无"}）：${probe.msg ?? JSON.stringify(probe).slice(0, 120)}。请检查 App ID/Secret，并确认应用已发布可用版本`);

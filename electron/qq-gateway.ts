@@ -19,6 +19,7 @@ import path from "node:path";
 import os from "node:os";
 import fs from "node:fs";
 import WebSocket from "ws";
+import { guardedFetch } from "./net-guard";
 
 const API = "https://api.bot.qq.com";
 /** msg_id 判重窗口：官方「相同 msg_id 可能重复推送」，十分钟内见过就算同一条 */
@@ -95,12 +96,12 @@ export class QqGateway {
   private async request(method: "GET" | "POST", apiPath: string, body?: Record<string, unknown>, token?: string): Promise<any> {
     const headers: Record<string, string> = { "content-type": "application/json", Accept: "application/json" };
     if (token) headers.Authorization = `QQBot ${token}`;
-    const response = await fetch(`${API}${apiPath}`, {
+    const response = await guardedFetch(`${API}${apiPath}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(15_000),
-    });
+    }, { timeoutMs: 15_000 });
     const json = (await response.json().catch(() => ({}))) as any;
     const errCode = Number(json?.err_code ?? json?.code ?? json?.retcode ?? 0);
     if (!response.ok || !Number.isFinite(errCode) || errCode !== 0) {

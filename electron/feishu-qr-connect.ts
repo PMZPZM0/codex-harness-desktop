@@ -17,6 +17,8 @@
  *                                                       user_info: { open_id, tenant_brand } }
  * - 成功后凭据走标准链路：tenant_access_token + WebSocket 长连接。
  */
+import { guardedFetch } from "./net-guard";
+
 const ACCOUNTS_FEISHU = "https://accounts.feishu.cn";
 const ACCOUNTS_LARK = "https://accounts.larksuite.com";
 const REGISTRATION_PATH = "/oauth/v1/app/registration";
@@ -48,12 +50,12 @@ export function feishuQrSnapshot(): FeishuQrSnapshot {
 }
 
 async function postRegistration(domain: string, params: Record<string, string>): Promise<any> {
-  const res = await fetch(`${domain}${REGISTRATION_PATH}`, {
+  const res = await guardedFetch(`${domain}${REGISTRATION_PATH}`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(params).toString(),
     signal: AbortSignal.timeout(10_000),
-  });
+  }, { timeoutMs: 10_000 });
   if (!res.ok) throw new Error(`飞书注册接口 HTTP ${res.status}`);
   return res.json();
 }

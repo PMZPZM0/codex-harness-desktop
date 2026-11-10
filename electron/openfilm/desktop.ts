@@ -25,6 +25,7 @@ import os from "node:os";
 import path from "node:path";
 import { shell } from "electron";
 import { mirrorCandidates } from "../gh-mirror";
+import { guardedFetch } from "../net-guard";
 import { compareVersions, downloadUpdate } from "../updates";
 import { broadcastCodexEvent } from "../features/window-bus";
 import { desktopDir } from "./paths";
@@ -76,10 +77,10 @@ async function fetchRelease(): Promise<DesktopRelease> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 12_000);
     try {
-      const response = await fetch(candidate, {
+      const response = await guardedFetch(candidate, {
         signal: controller.signal,
         headers: { "User-Agent": "CodexHarness/openfilm", Accept: "application/vnd.github+json" },
-      });
+      }, { timeoutMs: 12_000 });
       if (!response.ok) { lastError = `HTTP ${response.status}`; continue; }
       const data: any = await response.json();
       const tag = String(data?.tag_name ?? "");

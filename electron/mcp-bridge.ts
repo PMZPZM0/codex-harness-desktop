@@ -17,6 +17,7 @@
  *    只读 `readConnectors()` 里已启用、带 url 的项。
  */
 import { spawn } from "node:child_process";
+import { guardedFetch } from "./net-guard";
 import { decryptSecret, readConnectors } from "./main/07-connectors-io";
 /* 10-20：工具名生成 + 「哪套后端该暴露」的判定都在 backend-routing.ts（单一真相源）。
    ⛔ 不许在本文件再写一份前缀/过滤规则 —— 那正是「指令教的名字 ≠ 工具列表里的名字」的来源。 */
@@ -77,7 +78,7 @@ async function rpc(url: string, token: string, body: Record<string, unknown>, ti
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await guardedFetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -86,7 +87,7 @@ async function rpc(url: string, token: string, body: Record<string, unknown>, ti
       },
       body: JSON.stringify(body),
       signal: ctrl.signal,
-    });
+    }, { timeoutMs });
     const text = await res.text();
     const json = parseMcpBody(text, String(res.headers.get("content-type") || ""));
     if (!res.ok) {

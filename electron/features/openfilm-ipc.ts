@@ -35,6 +35,7 @@ import type { IpcHost } from "../ipc-host";
 import { broadcastCodexEvent } from "./window-bus";
 import { CHINA_NPM_REGISTRY, bundledNpmCli } from "../toolchain";
 import { compareVersions } from "../updates";
+import { guardedFetch } from "../net-guard";
 import {
   PKG, cliEntry, cliVersion, openfilmRoot, pkgDir, readSettings, runtimeDir, writeSettings,
   type Settings,
@@ -184,6 +185,7 @@ async function uninstall(): Promise<{ ok: boolean; removed: number; error?: stri
 
 /* ── 版本检查（镜像优先；比较只认 compareVersions） ─────────────────────── */
 
+/** 查询 OpenFilm 最新版；出站走 Chromium 网络栈，避免 Node TLS 写入竞态。 */
 async function latestVersion(): Promise<{ version: string; source: string }> {
   const settings = readSettings();
   const sources = settings.mirror === "official"
@@ -194,7 +196,7 @@ async function latestVersion(): Promise<{ version: string; source: string }> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
     try {
-      const response = await fetch(`${base}/${PKG}/latest`, { signal: controller.signal });
+      const response = await guardedFetch(`${base}/${PKG}/latest`, { signal: controller.signal }, { timeoutMs: 8000 });
       if (!response.ok) { lastError = `HTTP ${response.status}`; continue; }
       const data: any = await response.json();
       const version = String(data?.version ?? "");

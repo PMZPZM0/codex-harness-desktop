@@ -27,6 +27,7 @@ import { codexBinaryPath } from "./codex-server";
 import { readAppSettings } from "./app-settings";
 import { healEngineInstall } from "./engine-install-heal";
 import { probeNewestNpmVersion } from "./npm-version";
+import { guardedFetch } from "./net-guard";
 
 const NPMJS = "https://registry.npmjs.org";
 const NPMMIRROR = "https://registry.npmmirror.com";
@@ -71,42 +72,55 @@ function connectThroughProxy(proxy: URL, targetHost: string, targetPort: number,
   });
 }
 
-// registry JSON 很小：整包收完再解析；tarball 下载单独走流式函数。
+/** 查询引擎 registry 元数据；无显式代理时走 Chromium 网络栈，避免 Node TLS 写入竞态。 */
 async function fetchText(url: string, proxyUrl?: string, timeoutMs = 20000): Promise<string> {
+  if (!proxyUrl) {
+    const response = await guardedFetch(url, { headers: { Accept: "application/json", "User-Agent": USER_AGENT } }, { timeoutMs });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.text();
+  }
   const parsed = new URL(url);
   const isHttps = parsed.protocol === "https:";
   const port = Number(parsed.port || (isHttps ? 443 : 80));
-  let socket: net.Socket;
-  if (proxyUrl) {
-    const proxy = new URL(proxyUrl);
-    socket = await connectThroughProxy(proxy, parsed.hostname, port, timeoutMs);
-  } else {
-    socket = net.connect({ host: parsed.hostname, port });
-  }
-  if (isHttps) {
-    socket = tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: !allowInsecureTls() }) as unknown as net.Socket;
-  }
+  let socket: net.Socket | undefined;
+  let secure: net.Socket | undefined;
   return new Promise((resolve, reject) => {
-    socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error("请求超时")); });
-    socket.once("error", (err) => reject(err));
-    socket.write([
-      `GET ${parsed.pathname}${parsed.search} HTTP/1.1`,
-      `Host: ${parsed.hostname}`,
-      `User-Agent: ${USER_AGENT}`,
-      "Accept: application/json",
-      "Connection: close",
-      "\r\n",
-    ].join("\r\n"));
+    let settled = false;
+    const timer = setTimeout(() => finish(new Error("请求超时")), timeoutMs);
+    const finish = (error: Error | null, body = "") => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      secure?.destroy();
+      if (secure !== socket) socket?.destroy();
+      error ? reject(error) : resolve(body);
+    };
     const chunks: Buffer[] = [];
-    socket.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
-    socket.on("close", () => {
-      const raw = Buffer.concat(chunks);
-      const idx = raw.indexOf("\r\n\r\n");
-      if (idx < 0) return reject(new Error("响应格式异常"));
-      const status = Number(raw.slice(0, idx).toString("latin1").match(/HTTP\/1\.[01] (\d+)/)?.[1] ?? 0);
-      if (status !== 200) return reject(new Error(`HTTP ${status}`));
-      resolve(raw.slice(idx + 4).toString("utf8"));
-    });
+    void (async () => {
+      socket = await connectThroughProxy(new URL(proxyUrl), parsed.hostname, port, timeoutMs);
+      if (settled) { socket.destroy(); return; }
+      secure = isHttps
+        ? tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: !allowInsecureTls() }) as unknown as net.Socket
+        : socket;
+      secure.once("error", finish);
+      secure.on("data", (c) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
+      secure.on("close", () => {
+        const raw = Buffer.concat(chunks);
+        const idx = raw.indexOf("\r\n\r\n");
+        if (idx < 0) return finish(new Error("响应格式异常"));
+        const status = Number(raw.slice(0, idx).toString("latin1").match(/HTTP\/1\.[01] (\d+)/)?.[1] ?? 0);
+        if (status !== 200) return finish(new Error(`HTTP ${status}`));
+        finish(null, raw.slice(idx + 4).toString("utf8"));
+      });
+      secure.write([
+        `GET ${parsed.pathname}${parsed.search} HTTP/1.1`,
+        `Host: ${parsed.hostname}`,
+        `User-Agent: ${USER_AGENT}`,
+        "Accept: application/json",
+        "Connection: close",
+        "\r\n",
+      ].join("\r\n"));
+    })().catch(finish);
   });
 }
 
@@ -122,27 +136,20 @@ export async function downloadTo(
   const parsed = new URL(url);
   const isHttps = parsed.protocol === "https:";
   const port = Number(parsed.port || (isHttps ? 443 : 80));
-  let socket: net.Socket;
-  if (proxyUrl) {
-    const proxy = new URL(proxyUrl);
-    socket = await connectThroughProxy(proxy, parsed.hostname, port, timeoutMs);
-  } else {
-    socket = net.connect({ host: parsed.hostname, port });
-  }
-  if (isHttps) {
-    socket = tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: !allowInsecureTls() }) as unknown as net.Socket;
-  }
+  let socket: net.Socket | undefined;
+  let secure: net.Socket | undefined;
   await new Promise<void>((resolve, reject) => {
-    socket.setTimeout(timeoutMs, () => { socket.destroy(); reject(new Error("下载超时")); });
-    socket.once("error", (err) => reject(err));
-    socket.write([
-      `GET ${parsed.pathname}${parsed.search} HTTP/1.1`,
-      `Host: ${parsed.hostname}`,
-      `User-Agent: ${USER_AGENT}`,
-      "Accept: */*",
-      "Connection: close",
-      "\r\n",
-    ].join("\r\n"));
+    let settled = false;
+    let redirected = false;
+    const closeSockets = () => { secure?.destroy(); if (secure !== socket) socket?.destroy(); };
+    const timer = setTimeout(() => finish(new Error("下载超时")), timeoutMs);
+    const finish = (error: Error | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      closeSockets();
+      error ? reject(error) : resolve();
+    };
     let raw = Buffer.alloc(0);
     let headerDone = false;
     let status = 0;
@@ -163,18 +170,19 @@ export async function downloadTo(
         }
         headerDone = true;
         if (status === 301 || status === 302 || status === 303 || status === 307) {
-          socket.destroy();
+          redirected = true;
+          closeSockets();
           const location = headers["location"];
-          if (!location || redirectsLeft <= 0) return reject(new Error(`重定向异常（HTTP ${status}）`));
+          if (!location || redirectsLeft <= 0) return finish(new Error(`重定向异常（HTTP ${status}）`));
           const next = new URL(location, url).toString();
-          downloadTo(next, dest, proxyUrl, onProgress, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          downloadTo(next, dest, proxyUrl, onProgress, timeoutMs, redirectsLeft - 1).then(() => finish(null), finish);
           return;
         }
-        if (status !== 200) { socket.destroy(); return reject(new Error(`HTTP ${status}`)); }
+        if (status !== 200) return finish(new Error(`HTTP ${status}`));
         total = Number(headers["content-length"] ?? 0) || 0;
         out = createWriteStream(dest);
-        out.on("error", (err) => { socket.destroy(); reject(err); });
-        out.on("finish", () => { out?.close(() => resolve()); });
+        out.on("error", finish);
+        out.on("finish", () => { out?.close(() => finish(null)); });
         const rest = raw.slice(raw.indexOf("\r\n\r\n") + 4);
         if (rest.length) writeBody(rest);
         return;
@@ -186,11 +194,30 @@ export async function downloadTo(
       out?.write(chunk);
       if (total) onProgress(Math.min(1, received / total));
     };
-    socket.on("data", handleChunk);
-    socket.on("close", () => {
-      if (out && !out.writableEnded) out.end(() => resolve());
-      else if (!headerDone) reject(new Error("连接提前断开"));
-    });
+    void (async () => {
+      socket = proxyUrl
+        ? await connectThroughProxy(new URL(proxyUrl), parsed.hostname, port, timeoutMs)
+        : net.connect({ host: parsed.hostname, port });
+      if (settled) { socket.destroy(); return; }
+      secure = isHttps
+        ? tls.connect({ socket, servername: parsed.hostname, rejectUnauthorized: !allowInsecureTls() }) as unknown as net.Socket
+        : socket;
+      secure.once("error", finish);
+      secure.on("data", handleChunk);
+      secure.on("close", () => {
+        if (redirected || settled) return;
+        if (out && !out.writableEnded) out.end(() => finish(null));
+        else if (!headerDone) finish(new Error("连接提前断开"));
+      });
+      secure.write([
+        `GET ${parsed.pathname}${parsed.search} HTTP/1.1`,
+        `Host: ${parsed.hostname}`,
+        `User-Agent: ${USER_AGENT}`,
+        "Accept: */*",
+        "Connection: close",
+        "\r\n",
+      ].join("\r\n"));
+    })().catch(finish);
   });
 }
 

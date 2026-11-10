@@ -21,6 +21,7 @@ import https from "node:https";
 import { shell } from "electron";
 import { URL } from "node:url";
 import { mirrorCandidates } from "./gh-mirror";
+import { guardedFetch } from "./net-guard";
 
 /** GitHub 开源仓库（唯一更新源，走 Releases API） */
 export const GITHUB_REPO = "PMZPZM0/codex-harness-desktop";
@@ -94,45 +95,16 @@ export type LatestInfo = {
 
 // ============== HTTP 工具（不走 axios / fetch，保持零依赖） ==============
 // 唯一调用方是 GitHub Releases API（恒 https），不再需要 http 分支
-function requestJson(
+/** 读取 GitHub 更新元数据；走 Chromium 网络栈，避免 Node TLS 写入竞态。 */
+async function requestJson(
   url: string,
   timeoutMs = 8000
-): Promise<{ status: number; body: string; headers: Record<string, string | string[] | undefined> }> {
-  return new Promise((resolve, reject) => {
-    let parsed: URL;
-    try {
-      parsed = new URL(url);
-    } catch {
-      reject(new Error("invalid_url"));
-      return;
-    }
-    const req = https.request(
-      {
-        method: "GET",
-        hostname: parsed.hostname,
-        port: parsed.port || 443,
-        path: parsed.pathname + parsed.search,
-        timeout: timeoutMs,
-        headers: { "User-Agent": "CodexHarness/0.1" },
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on("data", (c: Buffer) => chunks.push(c));
-        res.on("end", () =>
-          resolve({
-            status: res.statusCode ?? 0,
-            body: Buffer.concat(chunks).toString("utf8"),
-            headers: res.headers,
-          })
-        );
-      }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => {
-      req.destroy(new Error("timeout"));
-    });
-    req.end();
-  });
+): Promise<{ status: number; body: string; headers: Record<string, string> }> {
+  const response = await guardedFetch(url, {
+    method: "GET",
+    headers: { "User-Agent": "CodexHarness/0.1" },
+  }, { timeoutMs });
+  return { status: response.status, body: await response.text(), headers: Object.fromEntries(response.headers) };
 }
 
 /** GitHub 资产的 `digest` 形如 `sha256:abcd…`（10-11 实测 release 资产都带）；取不出则 undefined（跳过校验）。 */

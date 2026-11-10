@@ -12,6 +12,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { safeProviderId } from "./provider-id";
+import { guardedFetch } from "./net-guard";
 import { randomUUID } from "node:crypto";
 import type { CodexServer } from "./codex-server";
 import { MEMORY_CATEGORY_WEIGHT, MEMORY_MAX_RECORDS, MEMORY_TTL_MS, pickPrunable } from "./memory/memory-prune";
@@ -373,12 +374,12 @@ export class MemoryStore {
 
   private async remoteRequest(route: string, body: unknown) {
     const config = this.remote!;
-    const response = await fetch(`${config.endpoint.replace(/\/$/, "")}${route}`, {
+    const response = await guardedFetch(`${config.endpoint.replace(/\/$/, "")}${route}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(15_000),
-    });
+    }, { timeoutMs: 15_000 });
     const result = await response.json() as any;
     if (!response.ok) throw new Error(`Memory Gateway HTTP ${response.status}: ${result.message ?? result.error ?? JSON.stringify(result)}`);
     return result;

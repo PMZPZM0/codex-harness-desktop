@@ -27,6 +27,9 @@ const inflight = new Map<string, Promise<unknown>>();
 const cooldownUntil = new Map<string, number>();
 const failureCount = new Map<string, number>();
 
+/** 传输注入仅供回归测试；业务调用始终使用 Electron net。 */
+type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
 export type GuardedFetchOptions = {
   /** 单次请求超时（毫秒）。默认 12s —— 必须明显小于上游 30s 掐断窗口。 */
   timeoutMs?: number;
@@ -34,6 +37,8 @@ export type GuardedFetchOptions = {
   cooldownMs?: number;
   /** 允许的重试次数（不含首次）。默认 0：云侧写入类请求不该自动重试。 */
   retries?: number;
+  /** @internal 回归测试注入传输；生产代码不要传。 */
+  transport?: FetchLike;
 };
 
 function originOf(input: RequestInfo | URL): string {
@@ -92,7 +97,7 @@ export async function guardedFetch(
         /* ⛔⛔ 关键：走 **Electron net（Chromium 网络栈）**，不是 Node 的 fetch。
            Node 那条路才会经过 node::crypto::TLSWrap（崩溃点）；Chromium 的 TLS 实现是另一套，
            没有这个 use-after-free。能拿到 net 就用 net，拿不到（极早期/测试环境）才回落。 */
-        const doFetch = (typeof net?.fetch === "function" ? net.fetch.bind(net) : fetch) as typeof fetch;
+        const doFetch = options.transport ?? (typeof net?.fetch === "function" ? net.fetch.bind(net) : fetch) as FetchLike;
         const response = await doFetch(input, { ...init, signal });
         markSuccess(origin);
         return response;

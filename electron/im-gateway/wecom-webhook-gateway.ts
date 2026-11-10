@@ -1,6 +1,7 @@
 import path from "node:path";
 import fs from "node:fs";
 import { app } from "electron";
+import { guardedFetch } from "../net-guard";
 
 /** 凭据落点：**惰性**取 userData ——
  *  ⛔ 模块顶层求值会早于 main.ts 的 `app.setPath("userData")` ⇒ 拿到默认目录（路径静默漂移）。
@@ -53,12 +54,12 @@ export class WecomWebhookGateway {
   /** 一次 webhook POST：⛔ 不许裸 `.then(r => r.json())` —— 代理返回 HTML 时抛的是英文
    *  SyntaxError，会被原样贴给用户（11-04 审查，与 QQ/钉钉同族缺陷） */
   private async post(url: string, payload: Record<string, unknown>): Promise<any> {
-    const response = await fetch(url, {
+    const response = await guardedFetch(url, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15_000),
-    });
+    }, { timeoutMs: 15_000 });
     const text = await response.text();
     try {
       return JSON.parse(text);

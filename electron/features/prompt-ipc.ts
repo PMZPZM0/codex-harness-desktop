@@ -10,6 +10,7 @@
  */
 
 import { readCustomModel } from "../main";
+import { guardedFetch } from "../net-guard";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import type { HostCaps } from "../runtime/seams";
@@ -43,7 +44,7 @@ export const promptFeature = defineFeature<null>({
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 60_000);
         try {
-          const response = await fetch(endpoint, {
+          const response = await guardedFetch(endpoint, {
             method: "POST",
             signal: controller.signal,
             headers: { "Content-Type": "application/json", ...(apiKey ? { Authorization: "Bearer " + apiKey } : {}) },
@@ -55,7 +56,7 @@ export const promptFeature = defineFeature<null>({
               ],
               temperature: 0.4,
             }),
-          });
+          }, { timeoutMs: 60_000 });
           if (!response.ok) {
             const body = await response.text().catch(() => "");
             return { ok: false, error: `增强失败 HTTP ${response.status}${body ? "：" + body.slice(0, 160) : ""}` };
