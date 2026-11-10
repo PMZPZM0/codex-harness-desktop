@@ -19,7 +19,7 @@ type SyncTarget = {
   name: string;
   bin: string;
   installed: boolean;
-  kind: "claude" | "config" | "env" | "own";
+  kind: "claude" | "keyed" | "config" | "env" | "own";
   action: string;
   status: string;
 };
@@ -33,6 +33,7 @@ type Snapshot = {
 const errorMessage = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 const KIND_LABEL: Record<SyncTarget["kind"], string> = {
+  keyed: "写配置文件（含 Key）",
   claude: "单独配置",
   config: "配置文件",
   env: "环境变量",
@@ -53,6 +54,9 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
   const [error, setError] = useState("");
   /** Claude 的二次确认（第一次点只展开警告，第二次才真写） */
   const [confirmClaude, setConfirmClaude] = useState(false);
+  /** 其它 CLI：哪一个正等着二次确认（keyed 类，含明文 Key） */
+  const [confirmKeyed, setConfirmKeyed] = useState("");
+  const [busyTarget, setBusyTarget] = useState("");
   const [busy, setBusy] = useState<"claude" | "all" | "">("");
   const [result, setResult] = useState<Array<{ name: string; ok: boolean; detail: string }>>([]);
 
@@ -75,6 +79,8 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
     if (!open) return;
     setResult([]);
     setConfirmClaude(false);
+    setConfirmKeyed("");
+    setBusyTarget("");
     void refresh();
   }, [open, refresh]);
 
@@ -91,6 +97,23 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
       setResult([{ name: "Claude Code", ok: false, detail: errorMessage(e) }]);
     } finally {
       setBusy("");
+    }
+  };
+
+  /** 单点按键：按这个 CLI 自己的方式同步（keyed 类先要一次确认，因为它要落明文 Key）。 */
+  const runOne = async (target: SyncTarget, needConfirm: boolean) => {
+    if (needConfirm && confirmKeyed !== target.id) { setConfirmKeyed(target.id); return; }
+    setBusyTarget(target.id);
+    try {
+      const r = await window.codex.applyCliSync({ targetId: target.id });
+      setResult([{ name: r.name ?? target.name, ok: Boolean(r.ok), detail: String(r.detail ?? "") }]);
+      onNotice?.(r.ok ? `${target.name} 已同步` : `${target.name} 同步失败：${r.detail ?? ""}`);
+      setConfirmKeyed("");
+      await refresh();
+    } catch (e) {
+      setResult([{ name: target.name, ok: false, detail: errorMessage(e) }]);
+    } finally {
+      setBusyTarget("");
     }
   };
 
@@ -175,19 +198,43 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
             <div className="cli-sync-empty">本机还没装其它 CLI —— 到「设置 → 开发工具 → CLI 智能体」安装后再来。</div>
           ) : (
             <div className="cli-sync-list">
-              {others.map((target) => (
-                <div className="cli-sync-row" key={target.id}>
-                  <div className="cli-sync-row-main">
-                    <div className="cli-sync-row-head">
-                      <b>{target.name}</b>
-                      <span className="cli-sync-kind" data-kind={target.kind}>{KIND_LABEL[target.kind]}</span>
-                      <code>{target.bin}</code>
+              {others.map((target) => {
+                /* 每个 CLI 的按键按它自己的跟随方式定制（用户令「定制模型同步按键」）：
+                   keyed = 写含 Key 的文件（要二次确认）/ config = 写不含 Key 的配置 /
+                   env = 派活时自动注入（没有文件可写）/ own = 只能用它自己的登录。 */
+                const canWrite = target.kind === "keyed" || target.kind === "config";
+                const needConfirm = target.kind === "keyed";
+                const confirming = confirmKeyed === target.id;
+                return (
+                  <div className="cli-sync-row" key={target.id}>
+                    <div className="cli-sync-row-main">
+                      <div className="cli-sync-row-head">
+                        <b>{target.name}</b>
+                        <span className="cli-sync-kind" data-kind={target.kind}>{KIND_LABEL[target.kind]}</span>
+                        <code>{target.bin}</code>
+                      </div>
+                      <div className="cli-sync-row-note">{target.action}</div>
+                      <div className="cli-sync-row-status">{target.status}</div>
                     </div>
-                    <div className="cli-sync-row-note">{target.action}</div>
-                    <div className="cli-sync-row-status">{target.status}</div>
+                    <div className="cli-sync-row-action">
+                      {canWrite ? (
+                        <button
+                          className={confirming ? "danger-setting" : "secondary-setting"}
+                          disabled={busy !== ""}
+                          title={needConfirm ? "这一步会把当前供应商的 Key 明文写进它自己的配置文件（仅本机）" : "按当前供应商重写它的配置文件"}
+                          onClick={() => void runOne(target, needConfirm)}
+                        >
+                          {busyTarget === target.id
+                            ? <><Spinner />写入中…</>
+                            : confirming ? "确认写入" : needConfirm ? "同步（含 Key）" : "同步"}
+                        </button>
+                      ) : (
+                        <span className="cli-sync-row-status">{target.kind === "env" ? "自动注入" : "需自己登录"}</span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

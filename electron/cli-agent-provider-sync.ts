@@ -21,7 +21,7 @@ import path from "node:path";
 import { safeStorage } from "electron";
 import { readCustomModel } from "./main/01-model-catalog";
 import { binOnPath, cliCodexHome, readCliAgents } from "./cli-agents";
-import { CLI_KEY_ENV, cliProtocolOf, codexConfigToml, isLocalBaseUrl, kimiConfigToml, mergeGeminiSettings, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
+import { CLI_KEY_ENV, cliProtocolOf, codexConfigToml, iflowSettingsJson, isLocalBaseUrl, kimiConfigToml, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
 
 export type CliProviderSyncResult = { updated: string[]; skipped: string[] };
 
@@ -43,8 +43,43 @@ async function writeManaged(file: string, content: string, backup = false): Prom
   return true;
 }
 
+/* ── 单个 CLI 的写入实现（唯一实现，全量同步与「单点按键」共用，⛔ 不写第二份）──────
+   每个函数都自己判「装了没 / 值够不够」，返回 true = 真的写了文件。 */
+
+async function writeCodexConfig(baseUrl: string, model: string): Promise<boolean> {
+  if (!(await binOnPath("codex"))) return false;
+  return writeManaged(path.join(cliCodexHome(), "config.toml"), codexConfigToml({ baseUrl, model }));
+}
+
+/** Kimi Code（11-10 修）：原来「非本机中转就跳过」，导致切到外部供应商后 config.toml 里
+ *  仍焊着上一次的本机中转地址（实测本机中转端口没人监听 ⇒ 群里永远
+ *  `provider.connection_error`）。现在**每次都写**：
+ *    · 本机中转 ⇒ api_key 占位符（不校验）；
+ *    · 外部供应商 ⇒ api_key_env = CLI_KEY_ENV，Key 只经派活子进程环境给出，⛔ 配置里没有明文。 */
+async function writeKimiConfig(baseUrl: string, model: string): Promise<boolean> {
+  if (!(await binOnPath("kimi"))) return false;
+  const file = path.join(os.homedir(), ".kimi-code", "config.toml");
+  const next = isLocalBaseUrl(baseUrl)
+    ? kimiConfigToml({ baseUrl, model, apiKey: "harness-local" })
+    : kimiConfigToml({ baseUrl, model, apiKeyEnv: CLI_KEY_ENV });
+  return writeManaged(file, next, true);
+}
+
+/** iFlow CLI（11-10 实测 0.5.19）：环境变量只够过 auth 判定（IFLOW_API_KEY），baseUrl / model
+ *  必须落在 `~/.iflow/settings.json` 顶层（字段白名单见 iflowSettingsJson 的注释）。
+ *  ⛔ 该文件必然含明文 Key —— 这是 iFlow 官方唯一的跟随方式；拿不到 Key 就什么都不写。 */
+async function writeIflowConfig(baseUrl: string, model: string): Promise<boolean> {
+  if (!(await binOnPath("iflow"))) return false;
+  const apiKey = await currentProviderApiKey();
+  if (!apiKey) return false;
+  const file = path.join(os.homedir(), ".iflow", "settings.json");
+  const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
+  const next = iflowSettingsJson(raw, { baseUrl, model, apiKey });
+  return Boolean(next) && (await writeManaged(file, next, true));
+}
+
 /** 同步一次。失败一律吞掉（同步是旁路，不许影响启动 / 派活）；
- *  ⛔ 每个 CLI 独立 catch —— Gemini 写挂（EACCES 等）不许连累后面的 Kimi。 */
+ *  ⛔ 每个 CLI 独立 catch —— 一个写挂（EACCES 等）不许连累后面的。 */
 export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResult> {
   const updated: string[] = [];
   const skipped: string[] = [];
@@ -61,34 +96,71 @@ export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResul
   };
 
   await attempt("codex", async () => {
-    if (!(await binOnPath("codex"))) { skipped.push("codex"); return; }
-    if (await writeManaged(path.join(cliCodexHome(), "config.toml"), codexConfigToml({ baseUrl, model }))) updated.push("codex");
+    if (await writeCodexConfig(baseUrl, model)) updated.push("codex"); else skipped.push("codex");
   });
 
-  /* Gemini CLI 的 settings.json 只写「用 API Key 认证 + 模型名」，**不含 Key**（Key 走环境变量
-     GEMINI_API_KEY）⇒ 本机中转和外部供应商都安全、都该写。原来的「只有本机中转才写」会让
-     切到外部供应商后这份配置永远停在旧模型上。 */
-  await attempt("gemini", async () => {
-    if (!(await binOnPath("gemini"))) { skipped.push("gemini"); return; }
-    const file = path.join(os.homedir(), ".gemini", "settings.json");
-    const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
-    const merged = `${JSON.stringify(mergeGeminiSettings(raw, { model }), null, 2)}\n`;
-    if (await writeManaged(file, merged, true)) updated.push("gemini");
-  });
-  /* Kimi Code（11-10 修）：原来「非本机中转就跳过」，导致切到外部供应商后 config.toml 里
-     仍焊着上一次的本机中转地址（实测 本机中转端口 已经没人监听 ⇒ 群里永远
-     `provider.connection_error: Connection error`）。现在**每次都写**：
-       · 本机中转 ⇒ api_key 占位符（不校验）；
-       · 外部供应商 ⇒ api_key_env = CLI_KEY_ENV，Key 只经派活子进程环境给出，⛔ 配置里没有明文。 */
+  /* ⛔⛔ Gemini 不在这里落盘（11-10 实测）：它只会拼 Gemini 协议（`/v1beta/…`），而我们的
+     供应商是 OpenAI / Anthropic 协议 ⇒ 写 `selectedType: gemini-api-key` 反而把它从
+     「用自己 Google 登录还能跑」改成「拿一个跑不通的 key 去撞 405」。
+     协议对不上就不硬凑 —— 让它用自己的登录态，弹窗里如实标注。 */
   await attempt("kimi", async () => {
-    if (!(await binOnPath("kimi"))) { skipped.push("kimi"); return; }
-    const file = path.join(os.homedir(), ".kimi-code", "config.toml");
-    const next = isLocalBaseUrl(baseUrl)
-      ? kimiConfigToml({ baseUrl, model, apiKey: "harness-local" })
-      : kimiConfigToml({ baseUrl, model, apiKeyEnv: CLI_KEY_ENV });
-    if (await writeManaged(file, next, true)) updated.push("kimi");
+    if (await writeKimiConfig(baseUrl, model)) updated.push("kimi"); else skipped.push("kimi");
+  });
+  await attempt("iflow", async () => {
+    if (await writeIflowConfig(baseUrl, model)) updated.push("iflow"); else skipped.push("iflow");
   });
   return { updated, skipped };
+}
+
+/**
+ * **单点同步**（11-10 用户令：「可以根据每个CLI特殊情况，定制模型同步按键」）。
+ *
+ * 每个 CLI 的跟随方式本来就不同（谁写配置、谁要明文 Key、谁只能自己登录），所以按键也按条给：
+ *   · claude / iflow ⇒ 写含 Key 的文件（界面上要先二次确认）；
+ *   · codex / kimi   ⇒ 写不含 Key 的配置；
+ *   · 其它（env / own）⇒ 没有可写的文件，返回「不需要按键」的说明，⛔ 不假装同步过。
+ */
+export async function syncOneCliProvider(targetId: string): Promise<{ ok: boolean; name: string; detail: string }> {
+  const list = await readCliAgents().catch(() => []);
+  const agent = list.find((entry) => String(entry.id) === String(targetId));
+  if (!agent) return { ok: false, name: String(targetId), detail: "找不到这个 CLI" };
+  const name = agent.name;
+  const bin = String(agent.bin ?? "").toLowerCase();
+  if (!bin || !(await binOnPath(bin).catch(() => false))) {
+    return { ok: false, name, detail: `本机没检测到 \`${bin || agent.name}\`，先去安装再同步` };
+  }
+  const custom = await readCustomModel().catch(() => null);
+  const baseUrl = String(custom?.baseUrl ?? "").trim();
+  const model = String(custom?.model ?? "").trim();
+  if (!baseUrl || !model) return { ok: false, name, detail: "还没配置供应商或模型" };
+
+  if (bin === "claude") {
+    const r = await syncClaudeProvider({ baseUrl, model, apiKey: await currentProviderApiKey() });
+    return { ok: r.ok, name, detail: r.detail };
+  }
+  if (bin === "iflow") {
+    const done = await writeIflowConfig(baseUrl, model);
+    return done
+      ? { ok: true, name, detail: "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）" }
+      : { ok: false, name, detail: "写入失败：可能读不到当前供应商的 Key，或该文件不可写" };
+  }
+  if (bin === "codex") {
+    const done = await writeCodexConfig(baseUrl, model);
+    return done
+      ? { ok: true, name, detail: "已重写应用自己的 cli-codex-home/config.toml（不含 Key）" }
+      : { ok: false, name, detail: "没写成：文件内容已是最新，或该目录不可写" };
+  }
+  if (bin === "kimi") {
+    const done = await writeKimiConfig(baseUrl, model);
+    return done
+      ? { ok: true, name, detail: "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）" }
+      : { ok: false, name, detail: "没写成：文件内容已是最新，或该目录不可写" };
+  }
+  return {
+    ok: true,
+    name,
+    detail: "这个 CLI 不需要写文件 —— 派活时自动注入环境变量；如果它要自己的账号，请按它自己的登录流程授权",
+  };
 }
 
 /* ── 「同步给 CLI 智能体」弹窗（11-10 用户令：「在模型配置界面加一个同步给 CLI 智能体配置功能，
@@ -102,7 +174,9 @@ export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResul
    ⛔ 其余 CLI 分三类：config（写配置文件）/ env（派活时注入环境变量）/ own（用它自己的模型配置）。
      同步动作只对前两类生效，own 类如实标注「不跟随主会话」，不假装同步过。 */
 
-export type CliSyncKind = "claude" | "config" | "env" | "own";
+/** `keyed` = 写配置文件且**含明文 Key** 的跟随方式（Claude / iFlow 这类没有间接引用机制）。
+ *  `claude` 单独存在是因为它在界面上要独占一块（用户点名「Claude 比较特殊，就单独按键同步」）。 */
+export type CliSyncKind = "claude" | "keyed" | "config" | "env" | "own";
 
 /** 当前供应商的明文 Key（**只给同步函数用**，⛔ 绝不经 IPC 回传渲染层）。
  *  ⛔ 放在这个模块而不是 features/** 里：【266】禁止域文件直取 safeStorage
@@ -154,11 +228,28 @@ export async function inspectCliSyncTargets(): Promise<{
       });
       continue;
     }
-    if (bin === "codex" || bin === "kimi" || bin === "gemini") {
+    if (bin === "codex" || bin === "kimi") {
       targets.push({
         id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "config",
         action: "按当前供应商重写它自己的配置文件（Key 不落盘）",
         status: "跟随当前供应商（启动 / 切供应商 / 安装后自动同步）",
+      });
+      continue;
+    }
+    if (bin === "gemini") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
+        action: "用它自己的 Google 账号，或指向一个支持 Gemini 协议的中转",
+        status: "当前供应商只提供 OpenAI / Anthropic 协议 —— 实测 gemini 拼 /v1beta/… 会被拒（405）；"
+          + "要让它跟随，得把供应商换成 Gemini 协议端点。命令已带 --skip-trust，仍可用它自己的登录",
+      });
+      continue;
+    }
+    if (bin === "iflow") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "keyed",
+        action: "写 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）",
+        status: "跟随当前供应商（该 CLI 只支持把自己的配置文件写全，环境变量不够）",
       });
       continue;
     }
@@ -167,6 +258,40 @@ export async function inspectCliSyncTargets(): Promise<{
         id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
         action: "用它自己的模型配置（qwenpaw models）",
         status: "不跟随主会话：它不读 OPENAI_*，用的是自己配的 provider",
+      });
+      continue;
+    }
+    if (bin === "qwen") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "env",
+        action: "派活时注入 OPENAI_*，命令自动带 --auth-type openai",
+        status: "派活时自动注入（它默认按 gemini 协议拼路径，会撞 405，所以固定带 auth-type）",
+      });
+      continue;
+    }
+    /* 11-10 实测：这几个拿主会话的 Key **用不了**，它们要的是自己的账号/网关 —— 如实标注，
+       ⛔ 不写进「跟随」那一档（否则用户以为同步过了，进群还是失败）。 */
+    if (bin === "comatecli") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
+        action: "用它自己的百度 license / ptoken",
+        status: "不跟随主会话：实测报「No license or token provided」，需要在它自己的登录体系里授权",
+      });
+      continue;
+    }
+    if (bin === "openclaw") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
+        action: "用它自己的 gateway 配置",
+        status: "不跟随主会话：实测要求 gateway.auth 配对（token/password），不是模型 Key 能替代的",
+      });
+      continue;
+    }
+    if (bin === "qoder") {
+      targets.push({
+        id: agent.id, name: agent.name, bin: agent.bin, installed, kind: "own",
+        action: "用它自己的登录态",
+        status: "不跟随主会话：实测在主会话 Key 下报错，需要按它自己的 login 流程授权",
       });
       continue;
     }

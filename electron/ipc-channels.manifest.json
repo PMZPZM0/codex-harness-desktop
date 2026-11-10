@@ -981,7 +981,7 @@
       "channel": "cliagents:sync-inspect",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: \"claude\" | \"config\" | \"env\" | \"own\"; action: string; status: string }> }>",
+      "returns": "Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: \"claude\" | \"keyed\" | \"config\" | \"env\" | \"own\"; action: string; status: string }> }>",
       "invokeArgs": "",
       "cast": null,
       "note": "11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key）"
@@ -989,9 +989,9 @@
     {
       "name": "applyCliSync",
       "channel": "cliagents:sync-apply",
-      "paramsImpl": "input?: { scope?: string }",
-      "paramsDecl": "input?: { scope?: string }",
-      "returns": "Promise<{ ok: boolean; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>",
+      "paramsImpl": "input?: { scope?: string; targetId?: string }",
+      "paramsDecl": "input?: { scope?: string; targetId?: string }",
+      "returns": "Promise<{ ok: boolean; name?: string; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；其它走自动同步"

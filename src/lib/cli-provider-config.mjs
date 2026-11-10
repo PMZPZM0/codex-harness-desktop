@@ -74,17 +74,47 @@ export function kimiConfigToml(input) {
  * 为什么必须按协议分：同一个供应商端点，各家 CLI 认的变量名完全不同 ——
  *   · Claude Code 只认 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN（⛔ 给它 OPENAI_* 等于没配，
  *     实测症状就是 `Not logged in · Please run /login`）；
- *   · Gemini / Qwen Code 认 GOOGLE_GEMINI_BASE_URL + GEMINI_API_KEY；
+ *   · Qwen Code 默认按 **gemini 协议**拼 `/v1beta/...`，中转只讲 OpenAI ⇒ 回
+ *     `{"detail":"Method Not Allowed"}`；必须 `--auth-type openai` + OPENAI_*（实测 exit=0）；
+ *   · Gemini 认 GOOGLE_GEMINI_BASE_URL + GEMINI_API_KEY；
  *   · OpenAI 兼容系（aider / openclaw / qwenpaw / codebuddy…）认 OPENAI_*；
- *   · Kimi / Codex 走自己的配置文件（环境变量不生效，见 sync 模块）。
+ *   · Kimi / Codex / iFlow 走自己的配置文件（环境变量不生效或不足）。
  * ⛔ 判定只认可执行名，不猜供应商名字（`custom964` 这种自建 id 里不可能含 anthropic）。
  */
 export function cliProtocolOf(bin) {
   const key = String(bin ?? "").trim().toLowerCase().replace(/\.(exe|cmd|bat|ps1|sh)$/, "");
   if (key === "claude") return "anthropic";
-  if (key === "gemini" || key === "qwen" || key === "iflow") return "gemini";
-  if (key === "kimi" || key === "codex") return "native";
+  if (key === "gemini") return "gemini";
+  /* ⛔ qwen 曾经归 gemini（Gemini CLI 同源），0.26.9 实测必须归 openai：
+     否则它拼 /v1beta/... 被中转 405（`Method Not Allowed`）。 */
+  if (key === "qwen") return "openai";
+  /* ⛔ iflow 0.5.19 实测：环境变量只认 IFLOW_API_KEY（且不够配 base/model），
+     跟随供应商只能写 ~/.iflow/settings.json ⇒ 归 native，由同步模块落盘。 */
+  if (key === "kimi" || key === "codex" || key === "iflow") return "native";
   return "openai";
+}
+
+/**
+ * iFlow CLI 的 `~/.iflow/settings.json`（0.5.19 实测）。
+ *
+ * 它把 auth 写在 settings 顶层（bundle 里字段白名单：selectedAuthType / apiKey / baseUrl /
+ * modelName / …）；`selectedAuthType` 缺省时只认 `IFLOW_API_KEY`，而那个变量不包含
+ * baseUrl/model ⇒ 想跟随当前供应商必须落这四项。
+ * ⛔ Key 是明文（该 CLI 没有 api_key_env 之类的间接机制）—— 由用户显式点同步触发。
+ */
+export function iflowSettingsJson(raw, input) {
+  const baseUrl = String(input?.baseUrl ?? "").trim().replace(/\/+$/, "");
+  const model = String(input?.model ?? "").trim();
+  const apiKey = String(input?.apiKey ?? "").trim();
+  if (!baseUrl || !model || !apiKey) return "";
+  const current = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return `${JSON.stringify({
+    ...current,
+    selectedAuthType: "openai-compatible",
+    apiKey,
+    baseUrl,
+    modelName: model,
+  }, null, 2)}\n`;
 }
 
 /** Codex CLI 的独立 home（⛔ 不碰用户自己的 ~/.codex）：provider 指向当前供应商，Key 走环境变量名。 */

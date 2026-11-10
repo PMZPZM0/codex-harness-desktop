@@ -143,6 +143,25 @@ async function resolveEntry(id: string): Promise<{ id: string; name: string; bin
   return { id: item.id, name: item.name, bin: item.bin, installCmd: item.installCmd };
 }
 
+/** pip / npm 的原始报错 → 人话（11-10 用户：「这三个安装不了，看看啥原因」）。
+ *  ⛔ 只翻译**已核实**的两种形态，其它原样带出 —— 不吃掉日志，用户/我们还要靠它排查。 */
+function humanizeInstallError(raw: string, entry: { name: string; installCmd: string }): string {
+  const tail = raw.slice(-1200);
+  /* 实测（aider-chat 0.16.0）：它钉死 `aiohttp==3.8.4`，那个版本没有 cp313 轮子 ⇒ pip 回退
+     源码编译 ⇒ 构建后端 import 老 setuptools ⇒ `module 'pkgutil' has no attribute 'ImpImporter'`
+     （Python 3.13 移除了它）。结论是**上游依赖限制**，不是网络/镜像问题。 */
+  if (/ImpImporter|no attribute 'pkgutil'/i.test(raw)) {
+    return `${entry.name} 装不上：它锁定了一个只支持 Python ≤3.12 的依赖，而应用内置的 Python 是 3.13`
+      + `（源码编译又会用到 3.13 已移除的 setuptools 接口）。这条一键安装走不通，换一个支持 3.13 的 CLI，`
+      + `或等上游放宽依赖。\n\n原始输出：${tail}`;
+  }
+  if (/ResolutionImpossible|no matching distributions available/i.test(raw)) {
+    return `${entry.name} 装不上：它的依赖版本与内置 Python 3.13 没有匹配的预编译包（源码编译也失败）。`
+      + `换一个 CLI，或等上游更新依赖。\n\n原始输出：${tail}`;
+  }
+  return raw;
+}
+
 /** 一键安装：解析 installCmd → 真跑 → 复核 PATH 上真的有了。 */
 export async function installCliAgent(id: string): Promise<CliInstallOutcome> {
   const entry = await resolveEntry(id);
@@ -175,7 +194,7 @@ export async function installCliAgent(id: string): Promise<CliInstallOutcome> {
     void import("./cli-agent-provider-sync").then((m) => m.syncCliAgentProviderConfig()).catch(() => undefined);
     return { ok: true, detail: `已安装 ${entry.name}${check.version ? ` · ${check.version}` : ""}` };
   } catch (error) {
-    const message = String((error as Error)?.message ?? error);
+    const message = humanizeInstallError(String((error as Error)?.message ?? error), entry);
     invalidateCliInstalledCache();
     emit(entry.id, "error", message.slice(0, 300));
     return { ok: false, error: message };

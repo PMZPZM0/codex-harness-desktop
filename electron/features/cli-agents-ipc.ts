@@ -16,7 +16,7 @@
 import { broadcastHarnessEvent } from "./window-bus";
 import { CLI_CATEGORIES, detectCliAgent, invalidateCliInstalledCache, readCliAgents, removeCliAgent, saveCliAgent } from "../cli-agents";
 import { cancelCliInstall, checkCliAgentUpdates, installCliAgent, uninstallCliAgent, updateCliAgent } from "../cli-install";
-import { inspectCliSyncTargets, currentProviderApiKey, syncAllCliProviders, syncClaudeProvider } from "../cli-agent-provider-sync";
+import { inspectCliSyncTargets, currentProviderApiKey, syncAllCliProviders, syncClaudeProvider, syncOneCliProvider } from "../cli-agent-provider-sync";
 import { readCustomModel } from "../main/01-model-catalog";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -56,7 +56,11 @@ export const cliAgentsFeature = defineFeature<null>({
     ipcHost.handle("cliagents:cancel", async (_event, id: string) => cancelCliInstall(String(id ?? "")));
     /* 同步给 CLI 智能体（模型配置页的弹窗）：inspect = 只读，apply = 真写。 */
     ipcHost.handle("cliagents:sync-inspect", async () => inspectCliSyncTargets());
-    ipcHost.handle("cliagents:sync-apply", async (_event, input?: { scope?: string }) => {
+    ipcHost.handle("cliagents:sync-apply", async (_event, input?: { scope?: string; targetId?: string }) => {
+      /* 单点按键（用户令「可以根据每个CLI特殊情况，定制模型同步按键」）：按 id 只同步那一个，
+         每个 CLI 的写入方式由主进程按 bin 决定，渲染层不参与判定。 */
+      const targetId = String(input?.targetId ?? "").trim();
+      if (targetId) return syncOneCliProvider(targetId);
       const scope = String(input?.scope ?? "all");
       if (scope === "claude") {
         const custom = await readCustomModel().catch(() => null);

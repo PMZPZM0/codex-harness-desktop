@@ -17,13 +17,17 @@
 export const CLI_PROMPT_COMMANDS = {
   claude: 'claude -p "{prompt}"',
   codex: 'codex exec "{prompt}"',
-  gemini: 'gemini -p "{prompt}"',
+  gemini: 'gemini -p "{prompt}" --skip-trust',
   aider: 'aider --message "{prompt}" --yes',
   /* OpenClaw：setup 文档 `-m/--message` 单次请求；agent 子命令要带 --agent 名。
      ⛔ 加 --json：社区实证不带它 stdout 只回「completed + 状态条」，看不到回答。 */
   openclaw: 'openclaw agent --agent main -m "{prompt}" --json',
-  /* Qwen Code：官方 headless 文档写的是 `qwen --prompt "<任务>"`。 */
-  qwen: 'qwen --prompt "{prompt}"',
+  /* Qwen Code：官方 headless 文档写的是 `qwen --prompt "<任务>"`。
+     ⛔⛔ 11-10 实测（0.26.9）：它默认按 **gemini 协议**拼 `/v1beta/...`，遇到只讲
+     OpenAI 协议的中转会回 `[API Error: {"detail":"Method Not Allowed"}]` —— 必须显式
+     `--auth-type openai`（help 里 choices 含 openai / anthropic / gemini / vertex-ai），
+     再把 OPENAI_API_KEY / OPENAI_BASE_URL 从环境给它。实测 exit=0 回「你好」。 */
+  qwen: 'qwen --prompt "{prompt}" --auth-type openai',
   /* QwenPaw（pip 包同时装出 qwenpaw / copaw 两个入口）：
      `task` 子命令 + `-i/--instruction` 必填；实测 `qwenpaw task --help`。 */
   qwenpaw: 'qwenpaw task -i "{prompt}" --max-iters 20 -t 540',

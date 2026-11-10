@@ -622,9 +622,9 @@ interface Window {
     /* 11-06 取消安装/更新：kill 子进程（真停，不是只改 UI） */
     cancelCliAgentInstall(id: string): Promise<{ ok: boolean; cancelled: boolean }>;
     /* 11-10 同步弹窗：只读列出**已安装**的 CLI 与各自同步方式（⛔ 不返回 Key） */
-    inspectCliSyncTargets(): Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: "claude" | "config" | "env" | "own"; action: string; status: string }> }>;
+    inspectCliSyncTargets(): Promise<{ provider: { name: string; model: string; host: string; local: boolean; ready: boolean }; targets: Array<{ id: string; name: string; bin: string; installed: boolean; kind: "claude" | "keyed" | "config" | "env" | "own"; action: string; status: string }> }>;
     /* 11-10 同步弹窗：scope=claude 只写 ~/.claude/settings.json（含 Key，用户显式点）；其它走自动同步 */
-    applyCliSync(input?: { scope?: string }): Promise<{ ok: boolean; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>;
+    applyCliSync(input?: { scope?: string; targetId?: string }): Promise<{ ok: boolean; name?: string; detail?: string; results?: Array<{ name: string; ok: boolean; detail: string }> }>;
     /* 10-13 关闭确认弹窗的回包：tray=隐藏主窗口 / quit=置 closeConfirmed 后二次 close / cancel=不动。remember=true 写 closeToTray（动作）+ closePromptSeen（不再弹）。⛔ ask 方向是推送类手写桥（preload onCloseConfirmAsk），不在本清单 */
     respondCloseConfirm(action: "tray" | "quit" | "cancel", remember: boolean): Promise<{ ok: boolean; error?: string }>;
     /* 云账号登录（10-16）：账号密码换云端 Bearer 会话令牌，safeStorage 加密后落 userData/cloud/auth.json。⛔ 不是配对流程 —— 服务端 accountWho() 同时认会话令牌与设备令牌 */

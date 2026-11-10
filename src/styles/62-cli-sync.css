@@ -140,6 +140,18 @@
   flex: 1;
   min-width: 0;
 }
+/* 每行的定制按键（同步 / 确认写入 / 自动注入 说明） */
+.cli-sync-row-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 88px;
+  flex: 0 0 auto;
+}
+.cli-sync-row-action .secondary-setting,
+.cli-sync-row-action .danger-setting {
+  white-space: nowrap;
+}
 .cli-sync-row-head {
   display: flex;
   align-items: center;

@@ -628,10 +628,10 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   const EXPECTED = {
     claude: /^claude -p "\{prompt\}"$/,
     codex: /^codex exec "\{prompt\}"$/,
-    gemini: /^gemini -p "\{prompt\}"$/,
+    gemini: /^gemini -p "\{prompt\}" --skip-trust$/,
     aider: /^aider --message "\{prompt\}" --yes$/,
     openclaw: /^openclaw agent --agent main -m "\{prompt\}" --json$/,
-    qwen: /^qwen --prompt "\{prompt\}"$/,
+    qwen: /^qwen --prompt "\{prompt\}" --auth-type openai$/,
     qwenpaw: /^qwenpaw task -i "\{prompt\}" --max-iters 20 -t 540$/,
     kimi: /^kimi -p "\{prompt\}"$/,
     codebuddy: /^codebuddy -p "\{prompt\}"$/,
@@ -664,14 +664,14 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
       full: 'codex exec --dangerously-bypass-approvals-and-sandbox "{prompt}"',
     },
     gemini: {
-      safe: 'gemini -p "{prompt}" --approval-mode plan',
-      standard: 'gemini -p "{prompt}" --approval-mode auto_edit',
-      full: 'gemini -p "{prompt}" --approval-mode yolo',
+      safe: 'gemini -p "{prompt}" --skip-trust --approval-mode plan',
+      standard: 'gemini -p "{prompt}" --skip-trust --approval-mode auto_edit',
+      full: 'gemini -p "{prompt}" --skip-trust --approval-mode yolo',
     },
     qwen: {
-      safe: 'qwen --prompt "{prompt}" --approval-mode plan',
-      standard: 'qwen --prompt "{prompt}" --approval-mode auto-edit',
-      full: 'qwen --prompt "{prompt}" --approval-mode yolo',
+      safe: 'qwen --prompt "{prompt}" --auth-type openai --approval-mode plan',
+      standard: 'qwen --prompt "{prompt}" --auth-type openai --approval-mode auto-edit',
+      full: 'qwen --prompt "{prompt}" --auth-type openai --approval-mode yolo',
     },
     qoder: {
       safe: 'qoder -p "{prompt}"',
@@ -779,18 +779,34 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/export function cliCodexHomeReady\(\): boolean \{\s*return existsSync\(path\.join\(cliCodexHome\(\), "config\.toml"\)\);\s*\}/.test(mainSrc),
     "cliCodexHomeReady：以 config.toml 存在为闸（⛔ 不许退回无条件设 CODEX_HOME）");
   const syncSrc = readFileSync(join(ROOT, "electron/cli-agent-provider-sync.ts"), "utf8");
-  ok(/codexConfigToml/.test(syncSrc) && /kimiConfigToml/.test(syncSrc) && /mergeGeminiSettings/.test(syncSrc)
+  ok(/codexConfigToml/.test(syncSrc) && /kimiConfigToml/.test(syncSrc) && !/mergeGeminiSettings/.test(syncSrc)
     && /\.harness\.bak/.test(syncSrc) && /apiKeyEnv: CLI_KEY_ENV/.test(syncSrc),
-    "同步模块：Codex / Gemini / Kimi 落盘 + 外部供应商写 api_key_env（Key 不落盘）+ 首次改动留备份");
+    "同步模块：Codex / Kimi 落盘 + 外部供应商写 api_key_env（Key 不落盘）+ 首次改动留备份；⛔ Gemini 不落盘（它只讲 Gemini 协议，硬写等于把它从能跑改成 405）");
   /* ⛔⛔ 11-10 用户报障「群里 CLI 成员都用不了」的三处根因，逐条钉死： */
   ok((syncSrc.match(/await attempt\("kimi"/g) || []).length === 1 && !/kimi\(非本机中转\)/.test(syncSrc)
     && !/if \(isLocalBaseUrl\(baseUrl\)\) \{[\s\S]{0,600}?attempt\("kimi"/.test(syncSrc),
     "⛔ kimi 同步不再「非本机中转就跳过」——跳过会把上一次的本机中转配置焊死在磁盘上（实测 本机中转端口 无监听 ⇒ 永远 connection_error）");
   ok(providers.cliProtocolOf("claude") === "anthropic" && providers.cliProtocolOf("claude.cmd") === "anthropic"
     && providers.cliProtocolOf("kimi") === "native" && providers.cliProtocolOf("codex") === "native"
-    && providers.cliProtocolOf("gemini") === "gemini" && providers.cliProtocolOf("qwen") === "gemini"
+    && providers.cliProtocolOf("iflow") === "native"
+    && providers.cliProtocolOf("gemini") === "gemini"
+    && providers.cliProtocolOf("qwen") === "openai"
     && providers.cliProtocolOf("aider") === "openai" && providers.cliProtocolOf("qwenpaw") === "openai",
-    "协议族判定：claude=anthropic / kimi,codex=native / gemini,qwen=gemini / 其余=openai");
+    "协议族判定：claude=anthropic / kimi,codex,iflow=native / gemini=gemini / qwen,其余=openai");
+  /* ⛔⛔ 11-10 用户截图「好多CLI智能体还是用不了」暴露的两个真凭据面，逐条钉住： */
+  const cmdSrc = readFileSync(join(ROOT, "src/lib/cli-command.mjs"), "utf8");
+  ok(/qwen: 'qwen --prompt "\{prompt\}" --auth-type openai'/.test(cmdSrc),
+    "⛔ qwen 模板必须带 --auth-type openai（它默认按 gemini 协议拼 /v1beta/…，中转回 405 Method Not Allowed；实测带上后 exit=0）");
+  const iflowToml = providers.iflowSettingsJson({ cna: "x" }, { baseUrl: "https://example.test/v1", model: "m/x", apiKey: "k" });
+  const iflowObj = JSON.parse(iflowToml);
+  ok(iflowObj.selectedAuthType === "openai-compatible" && iflowObj.apiKey === "k"
+    && iflowObj.baseUrl === "https://example.test/v1" && iflowObj.modelName === "m/x" && iflowObj.cna === "x",
+    "⛔ iFlow settings.json 四字段：selectedAuthType=openai-compatible + apiKey/baseUrl/modelName（缺 authType 它会报 Please set an Auth method；实测补齐后 exit=0）");
+  ok(providers.iflowSettingsJson({}, { baseUrl: "", model: "m", apiKey: "k" }) === ""
+    && providers.iflowSettingsJson({}, { baseUrl: "u", model: "", apiKey: "k" }) === "",
+    "iFlow 配置缺字段时返回空串（⛔ 不写出半截配置让它连不上）");
+  ok(/attempt\("iflow"/.test(syncSrc) && /iflowSettingsJson\(raw, \{ baseUrl, model, apiKey \}\)/.test(syncSrc),
+    "同步模块真的会写 iFlow 配置（不是只在弹窗里列一行）");
   ok(/wantAnthropic = protocol === "" \? looksAnthropic \|\| local : protocol === "anthropic"/.test(mainSrc)
     && /wantAnthropic/.test(mainSrc) && /ANTHROPIC_SMALL_FAST_MODEL/.test(mainSrc),
     "⛔ cliModelEnv 按协议注入：anthropic 协议**不靠供应商名字**也注 ANTHROPIC_*（Claude Code 收不到就是 Not logged in）");
@@ -831,6 +847,15 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     "弹窗：Claude 写 Key 前必须二次确认（⛔ 不做静默落盘）");
   ok(/setCliSyncOpen\(true\)/.test(modelSectionSrc) && /<CliSyncDialog/.test(modelSectionSrc),
     "模型配置页有入口按钮 + 弹窗挂载（用户令「在模型配置界面加」）");
+  /* ⛔ 11-10 用户令「可以根据每个CLI特殊情况，定制模型同步按键」：按键按条给，且写法共用一份实现。 */
+  ok(/export async function syncOneCliProvider/.test(syncUiSrc) && /if \(bin === "claude"\)/.test(syncUiSrc)
+    && /if \(bin === "iflow"\)/.test(syncUiSrc) && /await writeKimiConfig\(baseUrl, model\)/.test(syncUiSrc),
+    "单点同步按 bin 分派到各自写法（⛔ 全量同步与单点共用 writeCodex/Kimi/Iflow 三个实现，不写第二份）");
+  ok(/targetId/.test(ipcSrc) && /syncOneCliProvider\(targetId\)/.test(ipcSrc),
+    "IPC 支持 targetId：一次只同步一个 CLI");
+  ok(/runOne\(target, needConfirm\)/.test(syncDialogSrc) && /confirmKeyed/.test(syncDialogSrc)
+    && /同步（含 Key）/.test(syncDialogSrc) && /需自己登录/.test(syncDialogSrc),
+    "每行按键按 kind 定制（含 Key 的要二次确认；env 显示自动注入；own 显示需自己登录）");
   /* 11-08 审查：单 try 包全部 CLI ⇒ Gemini 写挂连累 Kimi 静默跳过；每个 CLI 独立 catch。 */
   ok(/const attempt = async \(name: string, fn: \(\) => Promise<void>\) => \{\s*try \{ await fn\(\); \} catch \{ skipped\.push\(name\); \}\s*\};/.test(syncSrc)
     && (syncSrc.match(/await attempt\("/g) || []).length === 3,
