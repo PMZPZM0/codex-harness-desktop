@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>自媒体工作台</title>
+<style>
+  html, body, #root { height: 100%; margin: 0; }
+  body { background: transparent; overflow: hidden; }
+  #md-fatal { padding: 24px; font: 13px/1.6 "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; color: #b14040; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  window.__ModuleLoader__ = {
+    load: function (entry) {
+      try {
+        window.__mdModule = entry.factory(function require(name) {
+          if (name === "react") return window.MDReact.React;
+          throw new Error("未提供的模块：" + name);
+        });
+      } catch (error) {
+        document.getElementById("root").innerHTML = '<pre id="md-fatal"></pre>';
+        document.getElementById("md-fatal").textContent = "客户端加载失败：" + (error && error.message || error);
+      }
+    }
+  };
+</script>
+<script src="/react.bundle.js"></script>
+<script src="/client.js"></script>
+<script src="/glue.js"></script>
+</body>
+</html>

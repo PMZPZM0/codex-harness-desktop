@@ -1489,26 +1489,8 @@ interface Window {
     harnessTeamQueueStart(input: Record<string, unknown>): Promise<{ ok: boolean; mode?: "steer" | "start"; error?: string; reason?: string }>;
     /* 团队模式：取该会话最近一轮真实 token */
     harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
-    /* 自媒体工作台：整份状态（apiKey 已抹空，另有 hasAssistantKey / hasImageKey） */
-    mediaDeskState(): Promise<MediaDeskState>;
-    /* 新增一条（inspirations / posts / schedules / styles / metrics） */
-    mediaDeskAdd(collection: string, item: Record<string, unknown>): Promise<MediaDeskState>;
-    /* 局部更新一条 */
-    mediaDeskUpdate(collection: string, id: string, patch: Record<string, unknown>): Promise<MediaDeskState>;
-    /* 删除一条（只认显式 id） */
-    mediaDeskDelete(collection: string, id: string): Promise<MediaDeskState>;
-    /* 撤销上一步（内存里最多 20 步，重启清空） */
-    mediaDeskUndo(): Promise<MediaDeskState>;
-    /* 合并设置；apiKey 只在给了非空值时覆盖（空串=保持不变） */
-    mediaDeskSettings(patch: MediaDeskSettingsPatch): Promise<MediaDeskState>;
-    /* 抓公开网页的 title/description/og:image（只许公网 http(s)，内网地址拒绝） */
-    mediaDeskHarvest(url: string): Promise<{ ok: boolean; url?: string; title?: string; desc?: string; image?: string; error?: string }>;
-    /* 生成计划（标题/角度/要点/封面文案/分镜）并回写稿子 */
-    mediaDeskPlan(postId: string): Promise<{ ok: boolean; error?: string; state: MediaDeskState }>;
-    /* produce what = plan | article | images | all（images 走设置里的 OpenAI 兼容生图） */
-    mediaDeskProduce(postId: string, what: string): Promise<{ ok: boolean; error?: string; failed?: string[]; state: MediaDeskState }>;
-    /* 工作室对话：在现有稿子上继续改 */
-    mediaDeskChat(postId: string, message: string): Promise<{ ok: boolean; reply?: string; error?: string }>;
+    /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
+    mediaDeskEndpoint(): Promise<string>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

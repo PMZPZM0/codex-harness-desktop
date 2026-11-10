@@ -854,11 +854,11 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 - 🌐 汇总卡「网页来源」条（10-12 立）：回合右下角 favicon 圆标 ≤3 + 「···」全量弹层（portal body / Esc / 点外关），点条目走 openExternal 默认浏览器。数据 = 纯函数 `src/lib/turn-web-sources.mjs` 从回合 items 提取（webSearch query/结果 + 工具参数 + 命令行 URL；⛔ 不扫工具输出防噪音；host 去重 + 滤本机地址）；零文件改动的纯检索回合也显示（独立条形态）。favicon 链 favicon.im → google s2 → 首字母色块（国内可达性实测：google s2 直连不通、favicon.im 走 Cloudflare 可达）。判据：守卫 **12g 17 条**（真值表 + 接线 + CSS；6 处变异全抓）+ 验收项 **web-sources 4 条**（真回合 4 curl → 3 圆标 + 弹层 ≥4 条 + Esc 关）。同轮顺手解锁 check 链四笔并行会话存量红：11s 技能通道 12→14 对账 / 11z 通知断言 CRLF 兼容（autocrlf 检出后 \n}\n 失配抓空）/ 12e 更新镜像锚点跟 releases LIST API / 删 12f 已 revert 的死链引用 + UpdateReadyToast 死导入。
 - 🎨 壁纸主题色适配 + 星野替代 3D 背景（10-11，用户三连报：「3D 背景跟自定义的主题有些没做主题色适配，太丑了」「必须完全主题色适配」→「**黑夜→星空；白天→动态点；点之间不要连线**」→「**都要动态星空、跟着鼠标动，不是静态的**」）：① ⛔ **vanta/three 整体退役** —— vanta NET 的形态就是「点+连线」的网，**调参调不出「无连线的点阵」**；改成 `WallpaperLayer.tsx` 自绘 2D canvas **星野**（零依赖、零连线、ResizeObserver 跟尺寸、DPR 缩放、减动效只画一帧），配色取 `--text`（深色=浅色星带缓慢明灭 / 浅色=深色点稳定可见），**鼠标缓动视差 + 纵深系数**（近层位移大、远层小，实测指针两角重心位移 dx≈55px）＋缓速自漂（⛔ 鼠标不动也不静止）；模式 id `vanta` → `stars` 且**旧值自动迁移**（老档案存着 vanta 的用户不会突然没壁纸）。② **自定义图 / 精选渐变的「雾」按主题分档**（深色 82%→54%，浅色保持 46%→18%）—— 浅色预设不再把深色界面染成米黄。③ **粒子档**接上那个写着却没人用的 `useThemeColor`（原来切主题不换色）。判据：守卫 14-wallpaper **37 条**（含「canvas 里不许出现 moveTo/lineTo/stroke」与「vanta 不许复活」两条负向；5 处变异全抓）＋渲染探针实拍（深浅两档 + 指针两角位移实证视差）。⛔ **「你这也叫修好了？」那次真因 = 我只同步了源码没重建 dist**（用户跑的是旧产物）⇒ 流程已补「收尾默认重建 dist」。
 
-### 📣 自媒体工作台（`electron/features/media-desk/` + `src/features/media-desk/`，11-09 立）
+### 📣 自媒体工作台（`resources/media-desk/` + `electron/features/media-desk/` + `src/features/media-desk/`，11-09 立）
 
-独立设置页板块（设置 → 能力与内容 → 自媒体工作台），逻辑移植自开源 **dsh-media-desk 2.6.2**（DSH/Cordis 插件，MIT，无法直接安装 ⇒ 移植成我们自己的域）。链路：灵感墙（文字/链接，链接经主进程抓 title/description/og:image，**SSRF 闸**只放公网 http(s)）→ 一键成稿（计划 → 口播脚本 → 封面/配图/黑白分镜）→ 本地排期 → 手动数据记录 → 写作风格。
-- 数据：`<userData>/media-desk/state.json`（图片在 `files/`）；内存撤销 20 步。
-- 模型：工作台设置优先，留空沿用应用当前供应商；**Key 只走宿主 `secure` 接缝**（域不许直取 safeStorage，守卫【266】），对外 state 抹空 apiKey 只给 `has*Key`。
-- 生图：OpenAI 兼容 `/images/generations`（b64/url，png/jpg/webp/gif，≤40MB，401/404 不重试）。
-- ⛔ 排期只是本地计划、不会自动发布；数据是手动记录、不接平台 API —— 别在文案里夸大。
-- 域接线：composition.json + ipc-registry（10 通道）+ manifest → `npm run gen:ipc` / `gen:domains`；设置页三处（catalogs 导航 / HelpDialog 总览 / capabilities 页）同轮加；守卫 `12bi-media-desk`（含 SSRF 行为测试）。
+独立设置页板块（设置 → 能力与内容 → 自媒体工作台）。**界面与流程 = 开源 dsh-media-desk 2.6.2 原样嵌入**（DSH/Cordis 插件、MIT；用户令「开源啥样就复刻啥样」）—— 客户端 bundle、宿主源码、封面素材都随包（`resources/media-desk/`，extraResources 映射到 `media-desk/`），我们不重写它的 UI。
+- 运行：主进程 `media-desk/embed.ts` 起一个**只绑 127.0.0.1** 的本地服务：`/media-desk/*` 交给它自己的 `host/host.js`；`/` 是最小页面（`index.html` + `glue.js` + `react.bundle.js`）把它的 main 组件挂出来。设置页用 iframe 打开（`media-desk:endpoint` 拿地址；CSP frame-src 已放行 127.0.0.1）。
+- 宿主适配只有三样：`llm`（`prepareCall().stream()` → 用应用当前供应商跑一轮，Key 走 secure 接缝）、`agentDefaultModel`（当前模型）、`connection`（本地放行）。数据经 `DSH_HOME` 落到 `<userData>/media-desk-host/media-desk/state.json`。
+- Codex 工具：`harness_tools({name:"media_desk", args:{action,…}})`（dispatch-rpc 走 `mediaDeskRequest`，与界面**同一份**数据/流程）：state / capture / draft / produce / schedule / metric / style / delete / undo。
+- ⛔ 排期只是本地计划、不会自动发布；数据是手动记录；生图在工作台设置里配 OpenAI 兼容接口。
+- 升级上游 = 用 npm 包 `dsh-media-desk@最新` 覆盖 `resources/media-desk/{host,assets,client.js}` 并重跑 `npx esbuild resources/media-desk/react-entry.js --bundle --format=iife --global-name=MDReact --outfile=resources/media-desk/react.bundle.js`；守卫 `12bi-media-desk`（随包产物 / 只绑本机 / 采集拒绝内网 / 工具接线）。

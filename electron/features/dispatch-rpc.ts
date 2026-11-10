@@ -906,6 +906,11 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     sendToWindow("wallpaper:apply", { mode, image });
     return { ok: true, output: `壁纸已切换（mode=${mode}${image ? `，image=${image}` : ""}），用户立即可见。` };
   }
+  /* ── 自媒体工作台（11-09）：逻辑在 media-desk/tool.ts（与界面同一份数据/流程）。 */
+  if (name === "media_desk") {
+    const { runMediaDeskTool } = await import("./media-desk/tool");
+    return runMediaDeskTool(args);
+  }
   return { ok: false, error: `未知工具：${String(name)}` };
 }
 /** 确保本地 dispatch HTTP 服务起来（先备好令牌再起服务）；重复调用复用同一个 Promise。 */

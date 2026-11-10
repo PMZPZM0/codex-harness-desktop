@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 661,
+  "count": 652,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6481,106 +6481,15 @@
       "invokeArgs": "threadId",
       "cast": null,
       "note": "团队模式：取该会话最近一轮真实 token"
-    },
-    {
-      "name": "mediaDeskState",
-      "channel": "media-desk:state",
+    },    {
+      "name": "mediaDeskEndpoint",
+      "channel": "media-desk:endpoint",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<MediaDeskState>",
+      "returns": "Promise<string>",
       "invokeArgs": "",
       "cast": null,
-      "note": "自媒体工作台：整份状态（apiKey 已抹空，另有 hasAssistantKey / hasImageKey）"
-    },
-    {
-      "name": "mediaDeskAdd",
-      "channel": "media-desk:add",
-      "paramsImpl": "collection: string, item: Record<string, unknown>",
-      "paramsDecl": "collection: string, item: Record<string, unknown>",
-      "returns": "Promise<MediaDeskState>",
-      "invokeArgs": "collection, item",
-      "cast": null,
-      "note": "新增一条（inspirations / posts / schedules / styles / metrics）"
-    },
-    {
-      "name": "mediaDeskUpdate",
-      "channel": "media-desk:update",
-      "paramsImpl": "collection: string, id: string, patch: Record<string, unknown>",
-      "paramsDecl": "collection: string, id: string, patch: Record<string, unknown>",
-      "returns": "Promise<MediaDeskState>",
-      "invokeArgs": "collection, id, patch",
-      "cast": null,
-      "note": "局部更新一条"
-    },
-    {
-      "name": "mediaDeskDelete",
-      "channel": "media-desk:delete",
-      "paramsImpl": "collection: string, id: string",
-      "paramsDecl": "collection: string, id: string",
-      "returns": "Promise<MediaDeskState>",
-      "invokeArgs": "collection, id",
-      "cast": null,
-      "note": "删除一条（只认显式 id）"
-    },
-    {
-      "name": "mediaDeskUndo",
-      "channel": "media-desk:undo",
-      "paramsImpl": "",
-      "paramsDecl": "",
-      "returns": "Promise<MediaDeskState>",
-      "invokeArgs": "",
-      "cast": null,
-      "note": "撤销上一步（内存里最多 20 步，重启清空）"
-    },
-    {
-      "name": "mediaDeskSettings",
-      "channel": "media-desk:settings",
-      "paramsImpl": "patch: Record<string, unknown>",
-      "paramsDecl": "patch: MediaDeskSettingsPatch",
-      "returns": "Promise<MediaDeskState>",
-      "invokeArgs": "patch",
-      "cast": null,
-      "note": "合并设置；apiKey 只在给了非空值时覆盖（空串=保持不变）"
-    },
-    {
-      "name": "mediaDeskHarvest",
-      "channel": "media-desk:harvest",
-      "paramsImpl": "url: string",
-      "paramsDecl": "url: string",
-      "returns": "Promise<{ ok: boolean; url?: string; title?: string; desc?: string; image?: string; error?: string }>",
-      "invokeArgs": "url",
-      "cast": null,
-      "note": "抓公开网页的 title/description/og:image（只许公网 http(s)，内网地址拒绝）"
-    },
-    {
-      "name": "mediaDeskPlan",
-      "channel": "media-desk:plan",
-      "paramsImpl": "postId: string",
-      "paramsDecl": "postId: string",
-      "returns": "Promise<{ ok: boolean; error?: string; state: MediaDeskState }>",
-      "invokeArgs": "postId",
-      "cast": null,
-      "note": "生成计划（标题/角度/要点/封面文案/分镜）并回写稿子"
-    },
-    {
-      "name": "mediaDeskProduce",
-      "channel": "media-desk:produce",
-      "paramsImpl": "postId: string, what: string",
-      "paramsDecl": "postId: string, what: string",
-      "returns": "Promise<{ ok: boolean; error?: string; failed?: string[]; state: MediaDeskState }>",
-      "invokeArgs": "postId, what",
-      "cast": null,
-      "note": "produce what = plan | article | images | all（images 走设置里的 OpenAI 兼容生图）"
-    },
-    {
-      "name": "mediaDeskChat",
-      "channel": "media-desk:chat",
-      "paramsImpl": "postId: string, message: string",
-      "paramsDecl": "postId: string, message: string",
-      "returns": "Promise<{ ok: boolean; reply?: string; error?: string }>",
-      "invokeArgs": "postId, message",
-      "cast": null,
-      "note": "工作室对话：在现有稿子上继续改"
+      "note": "11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开"
     }
   ]
 }
