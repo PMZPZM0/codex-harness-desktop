@@ -97,13 +97,24 @@ export async function run() {
     "页面写明开源声明（MIT / 数据只存本机 / 排期不自动发布）并有「开源项目」跳转按键");
   ok(/\.media-desk-note\b/.test(boardCss) && /\.media-desk-link:hover/.test(boardCss) && /height: calc\(100vh - 190px\)/.test(boardCss),
     "声明与跳转按键有样式（且 iframe 高度为底部说明让位）");
-  ok(/action: \{ type: "string", enum: \["state", "capture", "draft", "produce", "schedule", "metric", "style", "delete", "undo"\]/.test(dispatchCore)
+  ok(/action: \{ type: "string", enum: \["state", "capture", "draft", "produce", "schedule", "metric", "insights", "style", "delete", "undo"\]/.test(dispatchCore)
     && /name === "media_desk"/.test(dispatchRpc) && /runMediaDeskTool/.test(dispatchRpc) && /mediaDeskRequest/.test(tool),
     "Codex 可直接跑整条流程（media_desk 工具 → 本地服务，与界面同一份数据）");
+  ok(/metric 需要 platform/.test(tool) && /case "insights"/.test(tool) && /mediaDeskRequest\("insights"\)/.test(tool),
+    "记数据必须带平台（上游 drop 非法平台会报「数据需要平台」）+ 复盘可读（insights）");
   ok(/capture-url/.test(tool) && /op: "set_style"/.test(tool) && /op: "schedule_item"/.test(tool) && !/angleId/.test(tool),
     "工具语义对齐上游：链接走 capture-url、风格走 set_style、已有稿改期走 schedule_item（不复用 angleId）");
   ok(!/images: \{ type/.test(dispatchCore) && !/what: \{ type/.test(dispatchCore) && !/inspirationId/.test(dispatchCore) && !/collection: \{ type/.test(dispatchCore),
     "工具 schema 不再宣传未实现的参数（images / what / inspirationId / collection）");
+  ok(/media_desk（自媒体工作台/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
+    "能力网关 description 点名 media_desk（⛔ 不写进描述 = 模型不知道它能用）");
+  ok(/const wireApi = target\.wireApi === "responses" \? "responses" : "chat";/.test(read("electron/features/media-desk/ai.ts"))
+    && /const body = wireApi === "responses"/.test(read("electron/features/media-desk/ai.ts"))
+    && /\/responses/.test(read("electron/features/media-desk/ai.ts"))
+    && /wireApi: active\.wireApi === "responses"/.test(embed),
+    "文本模型两种协议都支持（responses / chat；只认 chat 会让 responses 供应商的成稿退化成结构草稿）");
+  ok(/productionSummary/.test(tool) && (tool.match(/production\?\.status === "failed"/g) ?? []).length >= 2,
+    "成稿失败如实回 ok:false（draft / produce 都要判失败）+ 生产结果只给摘要（原文可达 20 万字）");
 
   /* 行为：随包的采集闸真的拦内网、放公网（IP 字面量，避免测试依赖 DNS）。 */
   try {

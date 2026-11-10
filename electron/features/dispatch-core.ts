@@ -424,15 +424,15 @@ function dispatchMcpTools(): unknown[] {
        与「设置 → 能力与内容 → 自媒体工作台」共用同一份数据（userData/media-desk/state.json）。 */
     {
       name: "media_desk",
-      description: "自媒体工作台：action=state 看现状；capture 记灵感（text 或 url，url 会抓标题/摘要/封面）；draft 一步成稿（建稿 → 计划 → 口播脚本 → 封面/配图/分镜；styleId 会把工作台当前写作风格切到该风格）；produce 对已有稿子重跑整条生产线；schedule 加本地排期（不带 postId 建新条目，带 postId 改已有条目的排期；when 用 ISO 时间或毫秒）；metric 记播放/点赞/评论/转发；style 新增写作风格；delete 按 id 删除；undo 撤销上一步。生图需用户在工作台设置里配好图片 API。⛔ 排期只是本地计划，不会自动发布。",
+      description: "自媒体工作台：action=state 看现状；capture 记灵感（text 或 url，url 会抓标题/摘要/封面）；draft 一步成稿（建稿 → 计划 → 口播脚本 → 封面/配图/分镜；styleId 会把工作台当前写作风格切到该风格）；produce 对已有稿子重跑整条生产线；schedule 加本地排期（不带 postId 建新条目，带 postId 改已有条目的排期；when 用 ISO 时间或毫秒）；metric 记播放/点赞/评论/转发（platform 必填）；insights 看数据复盘（播放 / 互动率 / 平台分布 / 表现最好的内容）；style 新增写作风格；delete 按 id 删除；undo 撤销上一步。生图需用户在工作台设置里配好图片 API。⛔ 排期只是本地计划，不会自动发布。",
       inputSchema: {
         type: "object",
         properties: {
-          action: { type: "string", enum: ["state", "capture", "draft", "produce", "schedule", "metric", "style", "delete", "undo"], description: "要执行的动作" },
+          action: { type: "string", enum: ["state", "capture", "draft", "produce", "schedule", "metric", "insights", "style", "delete", "undo"], description: "要执行的动作" },
           text: { type: "string", description: "灵感正文 / 成稿素材" },
           url: { type: "string", description: "灵感链接（capture 时抓标题摘要封面）" },
           title: { type: "string", description: "标题 / 排期标题" },
-          platform: { type: "string", description: "平台（抖音 / 小红书 / 视频号 / B站 / 公众号 / 通用）" },
+          platform: { type: "string", description: "平台（公众号 / 小红书 / 抖音 / B站 / 视频号 / TikTok / Instagram / YouTube / X）" },
           styleId: { type: "string", description: "写作风格 id（state 里有 styles；draft 会切到该风格再成稿）" },
           postId: { type: "string", description: "稿子 id（produce / schedule 时用）" },
           when: { type: "string", description: "排期时间（ISO，如 2026-11-10T09:00:00+08:00）" },

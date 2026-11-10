@@ -48,9 +48,9 @@ function vendorDir(): string {
 }
 
 /** 当前有效模型（工作台没单独配时就是应用当前供应商）。 */
-async function activeModel(): Promise<{ baseUrl: string; model: string; apiKey: string }> {
+async function activeModel(): Promise<{ baseUrl: string; model: string; apiKey: string; wireApi: "chat" | "responses" }> {
   const active = await readCustomModel().catch(() => null);
-  if (!active) return { baseUrl: "", model: "", apiKey: "" };
+  if (!active) return { baseUrl: "", model: "", apiKey: "", wireApi: "chat" };
   /* ⛔ 解不开就按「无 Key」继续：密钥库换过 / 档案从别的机器拷来都会在这里抛，
      不接住的话整个工作台起不来（e2e 持久档案实测报 decryptString 失败）。 */
   let key = "";
@@ -61,7 +61,12 @@ async function activeModel(): Promise<{ baseUrl: string; model: string; apiKey: 
       key = "";
     }
   }
-  return { baseUrl: String(active.baseUrl ?? ""), model: String(active.model ?? ""), apiKey: key };
+  return {
+    baseUrl: String(active.baseUrl ?? ""),
+    model: String(active.model ?? ""),
+    apiKey: key,
+    wireApi: active.wireApi === "responses" ? "responses" : "chat",
+  };
 }
 
 /** 从 host.js 的 stream 载荷里取纯文本（它的 content 是 [{type:'text',text}]）。 */

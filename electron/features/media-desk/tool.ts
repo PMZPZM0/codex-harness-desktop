@@ -17,7 +17,7 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
     const items: any[] = Array.isArray(state.items) ? state.items : [];
     return {
       counts: { items: items.length, styles: (state.styles ?? []).length, metrics: (state.metrics ?? []).length },
-      items: items.slice(0, 10).map((i) => ({ id: i.id, title: i.title, kind: i.kind, status: i.status, platform: i.platform, scheduledAt: i.scheduledAt, produced: i.production?.status === "done" })),
+      items: items.slice(0, 10).map((i) => ({ id: i.id, title: i.title, kind: i.kind, status: i.status, platform: i.platform, scheduledAt: i.scheduledAt, produced: i.production?.status === "done", productionStatus: i.production?.status ?? undefined, productionError: i.production?.error ?? undefined })),
       styles: (state.styles ?? []).slice(0, 10).map((s: any) => ({ id: s.id, name: s.name })),
       model: payload?.model ?? undefined,
       canUndo: payload?.canUndo ?? undefined,
@@ -46,6 +46,20 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
       await new Promise((resolve) => setTimeout(resolve, 3000));
     }
     return last;
+  };
+  /** 上游 production 里有整篇正文（可达 20 万字），⛔ 不能原样塞给模型：只留判据与摘要。 */
+  const productionSummary = (production: any) => {
+    if (!production) return null;
+    return {
+      status: production.status ?? undefined,
+      error: production.error ?? undefined,
+      notice: production.notice ?? undefined,
+      title: production.title ?? undefined,
+      article: typeof production.article === "string" ? production.article.slice(0, 5000) : undefined,
+      cover: production.cover ?? undefined,
+      imageCount: Array.isArray(production.images) ? production.images.length : 0,
+      shotCount: Array.isArray(production.shots) ? production.shots.length : 0,
+    };
   };
 
   try {
@@ -84,14 +98,10 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
         const done = await waitProduced(id);
         const state = await mediaDeskRequest("state");
         const item = (state?.state?.items ?? []).find((row: any) => row.id === id);
-        return out({
-          id,
-          production: done?.production ?? item?.production ?? null,
-          title: item?.title,
-          article: String(item?.production?.article ?? "").slice(0, 5000),
-          shots: item?.production?.shots ?? undefined,
-          state: summarize(state),
-        });
+        const production = productionSummary(item?.production ?? done?.production ?? null);
+        if (production?.status === "failed") return { ok: false, error: `成稿失败：${production.error ?? "未知原因（检查工作台的模型设置）"}` };
+        if (production?.status === "cancelled") return { ok: false, error: "成稿已取消" };
+        return out({ id, production, title: item?.title, state: summarize(state) });
       }
       case "produce": {
         const state = await mediaDeskRequest("state");
@@ -99,7 +109,10 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
         if (!id) return { ok: false, error: "还没有内容，先 capture 或 draft" };
         await mediaDeskRequest("produce", { id });
         const done = await waitProduced(id);
-        return out({ id, production: done?.production ?? null, state: summarize(await mediaDeskRequest("state")) });
+        const production = productionSummary(done?.production ?? null);
+        if (production?.status === "failed") return { ok: false, error: `成稿失败：${production.error ?? "未知原因（检查工作台的模型设置）"}` };
+        if (production?.status === "cancelled") return { ok: false, error: "成稿已取消" };
+        return out({ id, production, stillRunning: production?.status === "running", state: summarize(await mediaDeskRequest("state")) });
       }
       case "schedule": {
         const whenRaw = args?.when;
@@ -125,15 +138,30 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
         return out({ id, state: summarize(await mediaDeskRequest("state")) });
       }
       case "metric": {
+        const platform = String(args?.platform ?? "").trim();
+        if (!platform) return { ok: false, error: "metric 需要 platform（公众号 / 小红书 / 抖音 / B站 / 视频号 / TikTok / Instagram / YouTube / X）" };
         const res = await applyOps([{
           op: "add_metric",
           itemId: args?.postId ? String(args.postId) : undefined,
           date: String(args?.date ?? new Date().toISOString().slice(0, 10)),
           views: Number(args?.views ?? 0) || 0, likes: Number(args?.likes ?? 0) || 0,
           comments: Number(args?.comments ?? 0) || 0, shares: Number(args?.shares ?? 0) || 0,
-          ...(args?.platform ? { platform: String(args.platform) } : {}),
+          platform,
         }]);
         return out({ receipts: res?.receipts, state: summarize(await mediaDeskRequest("state")) });
+      }
+      case "insights": {
+        const data: any = await mediaDeskRequest("insights");
+        return out({
+          views: data?.views ?? 0,
+          engaged: data?.engaged ?? 0,
+          engagementRate: data?.engagementRate ?? 0,
+          published: data?.published ?? 0,
+          followers: data?.followers ?? 0,
+          platforms: (data?.platforms ?? []).slice(0, 8),
+          top: (data?.top ?? []).slice(0, 8),
+          hasSample: data?.hasSample ?? undefined,
+        });
       }
       case "style": {
         const res = await applyOps([{
@@ -155,7 +183,7 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
         return out({ label: res?.label, state: summarize(res) });
       }
       default:
-        return { ok: false, error: "media_desk 不认识的 action：" + action + "（可用 state / capture / draft / produce / schedule / metric / style / delete / undo）" };
+        return { ok: false, error: "media_desk 不认识的 action：" + action + "（可用 state / capture / draft / produce / schedule / metric / insights / style / delete / undo）" };
     }
   } catch (error: any) {
     return { ok: false, error: String(error?.message ?? error).slice(0, 300) };
