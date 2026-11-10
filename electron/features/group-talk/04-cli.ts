@@ -134,6 +134,15 @@ const FAILURE_HINTS: Array<[RegExp, string]> = [
     "模型服务拒了这次请求（400）：多半是模型名或协议与当前供应商不匹配。切一个支持该 CLI 协议的供应商，或换用与该供应商兼容的 CLI。"],
   [/"code":\s*401|401 Unauthorized|invalid api key|authentication_error/i,
     "鉴权失败（401）：当前供应商的 Key 无效或已过期，到「设置 → 账号与模型」更新。"],
+  /* 11-10 实测（用户截图）：Qwen Code 默认按 Gemini 协议拼 /v1beta/…，中转回的就是这一句。
+     ⛔ 不能笼统说"网络问题"——它其实是**协议不匹配**，换供应商或换 CLI 才对。 */
+  [/Method Not Allowed|"status":\s*405|Error code: 405/i,
+    "协议不匹配（405）：这个 CLI 用的是当前供应商不支持的协议（例如它只讲 Gemini 协议，而供应商只开 OpenAI / Anthropic）。换一个与该供应商兼容的 CLI，或把供应商换成支持它协议的那个。"],
+  /* 各家自己的账号体系（Comate 的 license、OpenClaw 的 gateway 配对等）—— 主会话的 Key 帮不上。 */
+  [/No license or token provided|configure gateway\.auth|please set an auth method/i,
+    "这个 CLI 要它自己的账号授权（不是模型 Key 能替代的）：到它自己的登录 / 配置流程里授权一次，或换用能跟随主会话的 CLI。"],
+  [/EADDRINUSE|address already in use/i,
+    "端口被占用：这个 CLI 上次可能没退干净。等几秒重试；还不行就重启一下应用再发。"],
 
   [/command not found|不是内部或外部命令|ENOENT/i,
     "命令行入口找不到：到「设置 → 开发工具 → CLI 智能体」确认这个 CLI 已安装。"],

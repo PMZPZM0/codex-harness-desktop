@@ -145,7 +145,7 @@ async function resolveEntry(id: string): Promise<{ id: string; name: string; bin
 
 /** pip / npm 的原始报错 → 人话（11-10 用户：「这三个安装不了，看看啥原因」）。
  *  ⛔ 只翻译**已核实**的两种形态，其它原样带出 —— 不吃掉日志，用户/我们还要靠它排查。 */
-function humanizeInstallError(raw: string, entry: { name: string; installCmd: string }): string {
+function humanizeInstallError(raw: string, entry: { name: string }): string {
   const tail = raw.slice(-1200);
   /* 实测（aider-chat 0.16.0）：它钉死 `aiohttp==3.8.4`，那个版本没有 cp313 轮子 ⇒ pip 回退
      源码编译 ⇒ 构建后端 import 老 setuptools ⇒ `module 'pkgutil' has no attribute 'ImpImporter'`

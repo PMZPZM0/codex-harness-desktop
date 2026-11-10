@@ -856,10 +856,18 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
   ok(/runOne\(target, needConfirm\)/.test(syncDialogSrc) && /confirmKeyed/.test(syncDialogSrc)
     && /同步（含 Key）/.test(syncDialogSrc) && /需自己登录/.test(syncDialogSrc),
     "每行按键按 kind 定制（含 Key 的要二次确认；env 显示自动注入；own 显示需自己登录）");
-  /* 11-08 审查：单 try 包全部 CLI ⇒ Gemini 写挂连累 Kimi 静默跳过；每个 CLI 独立 catch。 */
-  ok(/const attempt = async \(name: string, fn: \(\) => Promise<void>\) => \{\s*try \{ await fn\(\); \} catch \{ skipped\.push\(name\); \}\s*\};/.test(syncSrc)
+  /* 11-08 审查：单 try 包全部 CLI ⇒ 一个写挂连累后面的静默跳过；每个 CLI 独立 catch。 */
+  ok(/const attempt = async \(name: string, fn: \(\) => Promise<void>\) => \{\s*try \{ await fn\(\); \} catch \{ skipped\.push\(/.test(syncSrc)
     && (syncSrc.match(/await attempt\("/g) || []).length === 3,
     "同步模块：每个 CLI 独立 catch（一个写挂不连累其余）");
+  /* ⛔⛔ 11-10 审查发现的两个「自洽地错」：写入返回 false 既可能是"内容相同"也可能是"没写"，
+     原来一律当失败 ⇒ 用户再点一次同步就看见红色「没写成」（假失败）；全量同步又把 skipped
+     一律标 ok ⇒ 真失败也被算成成功。三态口径必须钉住。 */
+  ok(/if \(outcome === "same"\) return \{ ok: true/.test(syncSrc) && /type WriteOutcome = "written" \| "same" \| "skipped" \| "absent"/.test(syncSrc),
+    "⛔ 写入三态：same（内容已一致）必须算成功 —— 否则重复点同步会显示假失败");
+  ok(/const failed = r\.skipped\.some\(\(entry\) => entry\.includes\("写入失败"\)\)/.test(syncSrc)
+    && /results\.push\(\{ name: failed \? "写入失败" : "未同步", ok: !failed/.test(syncSrc),
+    "⛔ 全量同步：只有「写入失败」算失败，「未安装 / 没值可写」只是状态说明（不能一律 ok:true 也不能一律当失败）");
   ok(!providers.isLocalBaseUrl("http://10.evil.com/v1") && !providers.isLocalBaseUrl("http://192.168.evil.com/v1")
     && providers.isLocalBaseUrl("http://172.16.0.1/v1") && !providers.isLocalBaseUrl("http://172.32.0.1/v1"),
     "本机中转识别：先验 IPv4 形态再判网段（10.evil.com 这类公网域不算本机）");

@@ -180,7 +180,7 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
                 </p>
               )}
               <div className="cli-sync-claude-actions">
-                <button className={confirmClaude ? "danger-setting" : "primary-setting"} disabled={busy !== "" || !provider?.ready} onClick={() => void runClaude()}>
+                <button className={confirmClaude ? "danger-setting" : "primary-setting"} disabled={busy !== "" || busyTarget !== "" || !provider?.ready} onClick={() => void runClaude()}>
                   {busy === "claude" ? <><Spinner /> 写入中…</> : confirmClaude ? "确认写入（含 Key）" : "同步 Claude Code"}
                 </button>
                 <span className="cli-sync-row-status">{claude.status}</span>
@@ -220,7 +220,7 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
                       {canWrite ? (
                         <button
                           className={confirming ? "danger-setting" : "secondary-setting"}
-                          disabled={busy !== ""}
+                          disabled={busy !== "" || busyTarget !== ""}
                           title={needConfirm ? "这一步会把当前供应商的 Key 明文写进它自己的配置文件（仅本机）" : "按当前供应商重写它的配置文件"}
                           onClick={() => void runOne(target, needConfirm)}
                         >
@@ -263,7 +263,7 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
             <button className="secondary-setting" disabled={loading} onClick={() => void refresh()}>
               <RefreshCw size={13} />重新识别
             </button>
-            <button className="primary-setting" disabled={busy !== "" || !provider?.ready} onClick={() => void runAll()}>
+            <button className="primary-setting" disabled={busy !== "" || busyTarget !== "" || !provider?.ready} onClick={() => void runAll()}>
               {busy === "all" ? <><Spinner /> 同步中…</> : "全部同步"}
             </button>
           </div>

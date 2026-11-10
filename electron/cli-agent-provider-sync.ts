@@ -23,31 +23,38 @@ import { readCustomModel } from "./main/01-model-catalog";
 import { binOnPath, cliCodexHome, readCliAgents } from "./cli-agents";
 import { CLI_KEY_ENV, cliProtocolOf, codexConfigToml, iflowSettingsJson, isLocalBaseUrl, kimiConfigToml, stripV1Suffix } from "../src/lib/cli-provider-config.mjs";
 
-export type CliProviderSyncResult = { updated: string[]; skipped: string[] };
+/** 同步结果：`updated` 真写了 / `unchanged` 内容本来就一致 / `skipped` 没装或没值可写。
+ *  ⛔ 必须分开记：`writeManaged` 在「内容相同」时返回非「written」，把它当失败就会在用户
+ *     再点一次同步时显示红色「没写成」——那是假失败（11-10 审查发现）。 */
+export type CliProviderSyncResult = { updated: string[]; unchanged: string[]; skipped: string[] };
+
+/** 单个受管文件的写入结果。`same` 等价成功，`absent` = 这个 CLI 没装。 */
+type WriteOutcome = "written" | "same" | "skipped" | "absent";
 
 async function exists(file: string): Promise<boolean> {
   try { await fs.access(file); return true; } catch { return false; }
 }
 
-/** 写受管文件：内容相同不写；`backup` 时首次改动前留一份 .harness.bak。 */
-async function writeManaged(file: string, content: string, backup = false): Promise<boolean> {
-  if (!content) return false;
+/** 写受管文件：内容相同不写；`backup` 时首次改动前留一份 .harness.bak。
+ *  ⛔ 返回三态而不是 boolean：「内容已一致」不是失败（见 CliProviderSyncResult 的注释）。 */
+async function writeManaged(file: string, content: string, backup = false): Promise<WriteOutcome> {
+  if (!content) return "skipped";
   const current = await fs.readFile(file, "utf8").catch(() => null);
-  if (current === content) return false;
+  if (current === content) return "same";
   if (backup && current !== null) {
     const bak = `${file}.harness.bak`;
     if (!(await exists(bak))) await fs.copyFile(file, bak).catch(() => undefined);
   }
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, content, "utf8");
-  return true;
+  return "written";
 }
 
 /* ── 单个 CLI 的写入实现（唯一实现，全量同步与「单点按键」共用，⛔ 不写第二份）──────
-   每个函数都自己判「装了没 / 值够不够」，返回 true = 真的写了文件。 */
+   每个函数都自己判「装了没 / 值够不够」，返回 WriteOutcome 三态。 */
 
-async function writeCodexConfig(baseUrl: string, model: string): Promise<boolean> {
-  if (!(await binOnPath("codex"))) return false;
+async function writeCodexConfig(baseUrl: string, model: string): Promise<WriteOutcome> {
+  if (!(await binOnPath("codex"))) return "absent";
   return writeManaged(path.join(cliCodexHome(), "config.toml"), codexConfigToml({ baseUrl, model }));
 }
 
@@ -56,8 +63,8 @@ async function writeCodexConfig(baseUrl: string, model: string): Promise<boolean
  *  `provider.connection_error`）。现在**每次都写**：
  *    · 本机中转 ⇒ api_key 占位符（不校验）；
  *    · 外部供应商 ⇒ api_key_env = CLI_KEY_ENV，Key 只经派活子进程环境给出，⛔ 配置里没有明文。 */
-async function writeKimiConfig(baseUrl: string, model: string): Promise<boolean> {
-  if (!(await binOnPath("kimi"))) return false;
+async function writeKimiConfig(baseUrl: string, model: string): Promise<WriteOutcome> {
+  if (!(await binOnPath("kimi"))) return "absent";
   const file = path.join(os.homedir(), ".kimi-code", "config.toml");
   const next = isLocalBaseUrl(baseUrl)
     ? kimiConfigToml({ baseUrl, model, apiKey: "harness-local" })
@@ -68,48 +75,60 @@ async function writeKimiConfig(baseUrl: string, model: string): Promise<boolean>
 /** iFlow CLI（11-10 实测 0.5.19）：环境变量只够过 auth 判定（IFLOW_API_KEY），baseUrl / model
  *  必须落在 `~/.iflow/settings.json` 顶层（字段白名单见 iflowSettingsJson 的注释）。
  *  ⛔ 该文件必然含明文 Key —— 这是 iFlow 官方唯一的跟随方式；拿不到 Key 就什么都不写。 */
-async function writeIflowConfig(baseUrl: string, model: string): Promise<boolean> {
-  if (!(await binOnPath("iflow"))) return false;
+async function writeIflowConfig(baseUrl: string, model: string): Promise<WriteOutcome> {
+  if (!(await binOnPath("iflow"))) return "absent";
   const apiKey = await currentProviderApiKey();
-  if (!apiKey) return false;
+  if (!apiKey) return "skipped";
   const file = path.join(os.homedir(), ".iflow", "settings.json");
   const raw = await fs.readFile(file, "utf8").then((text) => JSON.parse(text)).catch(() => null);
   const next = iflowSettingsJson(raw, { baseUrl, model, apiKey });
-  return Boolean(next) && (await writeManaged(file, next, true));
+  return writeManaged(file, next, true);
+}
+
+/** 把写入结果翻译成「这算成功吗 + 一句人话」（单点按键与全量汇总共用同一套口径）。 */
+function describeOutcome(name: string, outcome: WriteOutcome, done: string):
+  { ok: boolean; name: string; detail: string } {
+  if (outcome === "written") return { ok: true, name, detail: done };
+  /* ⛔ 内容相同 = 目标状态已达成，必须是成功（否则用户再点一次就看见红色「没写成」）。 */
+  if (outcome === "same") return { ok: true, name, detail: "已是最新，无需改写" };
+  if (outcome === "absent") return { ok: false, name, detail: `本机没检测到 ${name}，先去安装再同步` };
+  return { ok: false, name, detail: "没写成：拿不到当前供应商的 Key，或目标文件不可写" };
 }
 
 /** 同步一次。失败一律吞掉（同步是旁路，不许影响启动 / 派活）；
  *  ⛔ 每个 CLI 独立 catch —— 一个写挂（EACCES 等）不许连累后面的。 */
 export async function syncCliAgentProviderConfig(): Promise<CliProviderSyncResult> {
   const updated: string[] = [];
+  const unchanged: string[] = [];
   const skipped: string[] = [];
   let custom: Awaited<ReturnType<typeof readCustomModel>>;
   try {
     custom = await readCustomModel();
-  } catch { return { updated, skipped: ["未配置供应商"] }; }
+  } catch { return { updated, unchanged, skipped: ["未配置供应商"] }; }
   const baseUrl = String(custom?.baseUrl ?? "").trim();
   const model = String(custom?.model ?? "").trim();
-  if (!baseUrl || !model) return { updated, skipped: ["未配置供应商"] };
+  if (!baseUrl || !model) return { updated, unchanged, skipped: ["未配置供应商"] };
 
+  /** 三态归类：written→updated（真写了）/ same→unchanged（本来就一致）/ 其余→skipped（带原因）。 */
+  const record = (name: string, outcome: WriteOutcome) => {
+    if (outcome === "written") updated.push(name);
+    else if (outcome === "same") unchanged.push(name);
+    else if (outcome === "absent") skipped.push(`${name}（未安装）`);
+    else skipped.push(`${name}（没值可写）`);
+  };
   const attempt = async (name: string, fn: () => Promise<void>) => {
-    try { await fn(); } catch { skipped.push(name); }
+    try { await fn(); } catch { skipped.push(`${name}（写入失败）`); }
   };
 
-  await attempt("codex", async () => {
-    if (await writeCodexConfig(baseUrl, model)) updated.push("codex"); else skipped.push("codex");
-  });
+  await attempt("codex", async () => { record("codex", await writeCodexConfig(baseUrl, model)); });
 
   /* ⛔⛔ Gemini 不在这里落盘（11-10 实测）：它只会拼 Gemini 协议（`/v1beta/…`），而我们的
      供应商是 OpenAI / Anthropic 协议 ⇒ 写 `selectedType: gemini-api-key` 反而把它从
      「用自己 Google 登录还能跑」改成「拿一个跑不通的 key 去撞 405」。
      协议对不上就不硬凑 —— 让它用自己的登录态，弹窗里如实标注。 */
-  await attempt("kimi", async () => {
-    if (await writeKimiConfig(baseUrl, model)) updated.push("kimi"); else skipped.push("kimi");
-  });
-  await attempt("iflow", async () => {
-    if (await writeIflowConfig(baseUrl, model)) updated.push("iflow"); else skipped.push("iflow");
-  });
-  return { updated, skipped };
+  await attempt("kimi", async () => { record("kimi", await writeKimiConfig(baseUrl, model)); });
+  await attempt("iflow", async () => { record("iflow", await writeIflowConfig(baseUrl, model)); });
+  return { updated, unchanged, skipped };
 }
 
 /**
@@ -139,22 +158,16 @@ export async function syncOneCliProvider(targetId: string): Promise<{ ok: boolea
     return { ok: r.ok, name, detail: r.detail };
   }
   if (bin === "iflow") {
-    const done = await writeIflowConfig(baseUrl, model);
-    return done
-      ? { ok: true, name, detail: "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）" }
-      : { ok: false, name, detail: "写入失败：可能读不到当前供应商的 Key，或该文件不可写" };
+    const outcome = await writeIflowConfig(baseUrl, model);
+    return describeOutcome(name, outcome, "已写入 ~/.iflow/settings.json（selectedAuthType=openai-compatible + Key，仅本机）");
   }
   if (bin === "codex") {
-    const done = await writeCodexConfig(baseUrl, model);
-    return done
-      ? { ok: true, name, detail: "已重写应用自己的 cli-codex-home/config.toml（不含 Key）" }
-      : { ok: false, name, detail: "没写成：文件内容已是最新，或该目录不可写" };
+    const outcome = await writeCodexConfig(baseUrl, model);
+    return describeOutcome(name, outcome, "已重写应用自己的 cli-codex-home/config.toml（不含 Key）");
   }
   if (bin === "kimi") {
-    const done = await writeKimiConfig(baseUrl, model);
-    return done
-      ? { ok: true, name, detail: "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）" }
-      : { ok: false, name, detail: "没写成：文件内容已是最新，或该目录不可写" };
+    const outcome = await writeKimiConfig(baseUrl, model);
+    return describeOutcome(name, outcome, "已重写 ~/.kimi-code/config.toml（外部供应商用 api_key_env，Key 不落盘）");
   }
   return {
     ok: true,
@@ -212,11 +225,15 @@ export async function inspectCliSyncTargets(): Promise<{
   try { host = baseUrl ? new URL(baseUrl).host : ""; } catch { host = ""; }
   const local = isLocalBaseUrl(baseUrl);
 
-  const agents = await readCliAgents().catch(() => []);
+  const agents = (await readCliAgents().catch(() => [])).filter((agent) => agent.enabled !== false);
+  /* ⛔ 并发探测（11-10 审查）：内置表 18 条，串行 where 会一条条等 ⇒ 弹窗转好几秒。
+     先并发拿到「装没装」，再顺序构造（Claude 的 status 还要读文件，不适合塞进 map）。 */
+  const installedFlags = await Promise.all(
+    agents.map((agent) => (agent.bin ? binOnPath(agent.bin).catch(() => false) : Promise.resolve(false))),
+  );
   const targets: CliSyncTarget[] = [];
-  for (const agent of agents) {
-    if (agent.enabled === false) continue;
-    const installed = agent.bin ? await binOnPath(agent.bin).catch(() => false) : false;
+  for (const [index, agent] of agents.entries()) {
+    const installed = installedFlags[index];
     if (!installed) continue;   // 用户令：只识别**已安装**的
     const bin = String(agent.bin ?? "").toLowerCase();
     const protocol = cliProtocolOf(bin);
@@ -365,6 +382,11 @@ export async function syncAllCliProviders(input: { apiKey: string }): Promise<{ 
   }
   const r = await syncCliAgentProviderConfig();
   if (r.updated.length) results.push({ name: "配置文件同步", ok: true, detail: `已重写：${r.updated.join(" / ")}` });
-  if (r.skipped.length) results.push({ name: "跳过", ok: true, detail: r.skipped.join(" / ") });
+  if (r.unchanged.length) results.push({ name: "配置文件同步", ok: true, detail: `已是最新：${r.unchanged.join(" / ")}` });
+  if (r.skipped.length) {
+    /* ⛔ 只有「写入失败」算失败；「未安装 / 没值可写」是状态说明，不是这次同步的错。 */
+    const failed = r.skipped.some((entry) => entry.includes("写入失败"));
+    results.push({ name: failed ? "写入失败" : "未同步", ok: !failed, detail: r.skipped.join(" / ") });
+  }
   return { ok: results.every((entry) => entry.ok), results };
 }
