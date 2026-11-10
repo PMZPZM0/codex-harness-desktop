@@ -878,12 +878,14 @@ const dts = readFileSync(join(ROOT, "src/vite-env.d.ts"), "utf8");
     && /state: "auto"/.test(syncSrc) && /state: "manual"/.test(syncSrc)
     && /state !== "failed"/.test(syncSrc),
     "⛔ 全量同步逐 CLI 回执：env=自动注入 / own=需自己登录 / 只有 failed 算整体失败；分类复用 inspectCliSyncTargets（⛔ 不自己再判一遍 bin）");
-  /* ⛔ 11-10 用户报障「没有成功反馈，只有一个弹窗提醒」：回执必须落在弹窗**里面**
-     （顶部结果条 + 行内状态），并且 own 类要说明「登录一次即可、同步不代登录」。 */
-  ok(/data-testid="cli-sync-result"/.test(syncDialogSrc) && /setFeedback/.test(syncDialogSrc)
-    && /cli-sync-row-feedback/.test(syncDialogSrc) && /不会代登录/.test(syncDialogSrc)
-    && /官方文档/.test(syncDialogSrc),
-    "弹窗内逐项回执（顶部结果条 + 行内状态）+ own 类「登录一次即可、不代登录」的说明与官方文档出口");
+  /* ⛔ 11-10 用户报障「没有成功反馈，只有一个弹窗提醒」，随后又要求「不能在后面反馈状态吗…现在太丑了」：
+     成功状态只挂**行右侧**（小徽标），失败原因才在行内多一行；总量总结并入脚底说明。
+     ⛔ 不许再回到顶部铺一张结果卡（第一版的做法，被用户否掉）。 */
+  ok(/setFeedback/.test(syncDialogSrc) && /cli-sync-step/.test(syncDialogSrc)
+    && /cli-sync-row-error/.test(syncDialogSrc) && /data-testid="cli-sync-summary"/.test(syncDialogSrc)
+    && /不会代登录/.test(syncDialogSrc) && /官方文档/.test(syncDialogSrc)
+    && !/data-testid="cli-sync-result"/.test(syncDialogSrc),
+    "同步状态挂在行右侧（cli-sync-step）+ 失败原因行内 + 脚底总结；⛔ 顶部结果卡不许复活");
   /* ⛔⛔ 11-10 技能审查（数据丢失）：原来 `readFile(...).then(JSON.parse).catch(() => null)`
      把「文件不存在」和「文件坏了」混成一种，坏 JSON 会被当成空对象 ⇒ 用户原有 settings.json
      被整个覆盖。Claude 还直接 fs.writeFile 没有备份。两条都钉住。 */

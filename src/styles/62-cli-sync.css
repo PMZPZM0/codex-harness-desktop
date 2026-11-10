@@ -194,58 +194,33 @@
   color: var(--muted);
 }
 
-/* ── 同步回执（11-10 用户报障「没有成功反馈，只有一个弹窗提醒」）──────────────
-   顶部结果条 + 行内状态：点完立刻能看见「谁写了 / 谁本来就一致 / 谁要自己登录」。
-   ⛔ manual / auto 不算失败（不标红），只有真写失败才用 --danger。 */
-.cli-sync-result {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 9px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  background: color-mix(in srgb, var(--accent) 7%, var(--field));
-}
-.cli-sync-result.is-bad {
-  border-color: color-mix(in srgb, var(--danger) 42%, var(--line));
-  background: color-mix(in srgb, var(--danger) 6%, var(--field));
-}
-.cli-sync-result-head {
-  display: flex;
+/* ── 同步状态（11-10 二改：用户「不能在后面反馈状态吗…现在太丑了」）─────────
+   不再顶部铺一张结果卡：成功只在行**右侧**挂一个小徽标（行内第二行留给失败原因），
+   成绩总结并入脚底那行说明（不新增块）。 */
+.cli-sync-step {
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--text);
-}
-.cli-sync-result.is-ok .cli-sync-result-head { color: var(--accent); }
-.cli-sync-result.is-bad .cli-sync-result-head { color: var(--danger); }
-.cli-sync-result-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  font-size: 11.5px;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
   line-height: 1.5;
-  color: var(--muted);
+  white-space: nowrap;
 }
-.cli-sync-result-row b {
-  flex: 0 0 auto;
-  color: var(--text);
-  font-weight: 600;
-}
-.cli-sync-result-row span { min-width: 0; }
-.cli-sync-result-row[data-state="failed"] { color: var(--danger); }
-.cli-sync-row-feedback {
-  margin-top: 4px;
-  display: flex;
-  align-items: flex-start;
-  gap: 5px;
-  font-size: 11.5px;
-  line-height: 1.5;
+.cli-sync-step.is-ok {
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
-.cli-sync-row-feedback[data-state="failed"] { color: var(--danger); }
-.cli-sync-row-feedback[data-state="manual"] { color: var(--muted); }
-.cli-sync-row-feedback span { min-width: 0; }
+.cli-sync-step.is-bad {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.cli-sync-row-error {
+  margin-top: 3px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--danger);
+}
 .cli-sync-hint {
   margin: 0;
   font-size: 11.5px;

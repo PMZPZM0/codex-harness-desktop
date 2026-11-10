@@ -82,10 +82,9 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
   const [confirmKeyed, setConfirmKeyed] = useState("");
   const [busyTarget, setBusyTarget] = useState("");
   const [busy, setBusy] = useState<"claude" | "all" | "">("");
-  const [result, setResult] = useState<SyncResult[]>([]);
-  /** 顶部结果条的一句话总结（点完同步立刻出现，⛔ 不再只靠弹窗外的 notice）。 */
+  /** 脚底一句话总结（11-10 用户：「不能在后面反馈状态吗」——不要顶部大卡片，成绩放脚底）。 */
   const [summary, setSummary] = useState("");
-  /** 行内回执：用户点的是这一行，就在这一行下面给出成败（旧版只有个列表底部的汇总）。 */
+  /** 行内回执：点的是这一行，结果就挂这一行**右侧**（失败原因才在行内单独一行）。 */
   const [feedback, setFeedback] = useState<Record<string, { ok: boolean; state: SyncState; text: string }>>({});
 
   useEscapeLayer(open, onClose);
@@ -105,7 +104,6 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
 
   useEffect(() => {
     if (!open) return;
-    setResult([]);
     setSummary("");
     setFeedback({});
     setConfirmClaude(false);
@@ -114,10 +112,10 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
     void refresh();
   }, [open, refresh]);
 
-  /** 把一批回执落到「顶部结果条 + 行内回执」两处（单点与全量共用）。 */
+  /** 把一批回执落到「行内状态 + 脚底总结」两处（单点与全量共用）。 */
   const publishResults = (entries: SyncResult[]) => {
-    setResult(entries);
-    setSummary(summarizeResults(entries));
+    const text = summarizeResults(entries);
+    setSummary(text);
     setFeedback((current) => {
       const next = { ...current };
       for (const entry of entries) {
@@ -126,7 +124,7 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
       }
       return next;
     });
-    return summarizeResults(entries);
+    return text;
   };
 
   const runClaude = async () => {
@@ -212,25 +210,6 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
 
           {/* 11-10 用户报障「没有成功反馈，只有一个弹窗提醒」：回执放在**最上面**
               （旧版在列表末尾，弹窗一开用户根本滚不到；而且全量同步只回一条汇总）。 */}
-          {result.length > 0 && (
-            <section className={`cli-sync-result ${result.some((entry) => stateOf(entry) === "failed") ? "is-bad" : "is-ok"}`} data-testid="cli-sync-result">
-              <div className="cli-sync-result-head">
-                {result.some((entry) => stateOf(entry) === "failed") ? <CircleAlert size={14} /> : <Check size={14} />}
-                <b>{summary}</b>
-              </div>
-              {result.map((entry, index) => {
-                const state = stateOf(entry);
-                return (
-                  <div className="cli-sync-result-row" key={`${entry.id ?? entry.name}-${index}`} data-state={state}>
-                    {state === "failed" || state === "manual" ? <CircleAlert size={12} /> : <Check size={12} />}
-                    <b>{entry.name}</b>
-                    <span>{entry.detail}</span>
-                  </div>
-                );
-              })}
-            </section>
-          )}
-
           {claude && (
             <section className="cli-sync-claude">
               <div className="cli-sync-claude-top">
@@ -292,28 +271,35 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
                       </div>
                       <div className="cli-sync-row-note">{target.action}</div>
                       <div className="cli-sync-row-status">{target.status}</div>
-                      {/* 行内回执：点的是这一行，成败就落这一行（含「本来就一致」与失败原因）。 */}
-                      {feedback[target.id] && (
-                        <div className="cli-sync-row-feedback" data-state={feedback[target.id].state}>
-                          {feedback[target.id].state === "failed" || feedback[target.id].state === "manual"
-                            ? <CircleAlert size={12} />
-                            : <Check size={12} />}
-                          <span>{feedback[target.id].text}</span>
-                        </div>
+                      {/* 只有失败才在行内展开原因（成功不铺第二行，状态挂在右侧）。 */}
+                      {feedback[target.id]?.state === "failed" && (
+                        <div className="cli-sync-row-error">{feedback[target.id].text}</div>
                       )}
                     </div>
                     <div className="cli-sync-row-action">
                       {canWrite ? (
-                        <button
-                          className={confirming ? "danger-setting" : "secondary-setting"}
-                          disabled={busy !== "" || busyTarget !== ""}
-                          title={needConfirm ? "这一步会把当前供应商的 Key 明文写进它自己的配置文件（仅本机）" : "按当前供应商重写它的配置文件"}
-                          onClick={() => void runOne(target, needConfirm)}
-                        >
-                          {busyTarget === target.id
-                            ? <><Spinner />写入中…</>
-                            : confirming ? "确认写入" : needConfirm ? "同步（含 Key）" : "同步"}
-                        </button>
+                        <>
+                          {feedback[target.id] && (
+                            <span
+                              className={`cli-sync-step ${feedback[target.id].state === "failed" ? "is-bad" : "is-ok"}`}
+                              title={feedback[target.id].text}
+                              data-state={feedback[target.id].state}
+                            >
+                              {feedback[target.id].state === "failed" ? <CircleAlert size={11} /> : <Check size={11} />}
+                              {feedback[target.id].state === "failed" ? "失败" : feedback[target.id].state === "current" ? "已是最新" : "已同步"}
+                            </span>
+                          )}
+                          <button
+                            className={confirming ? "danger-setting" : "secondary-setting"}
+                            disabled={busy !== "" || busyTarget !== ""}
+                            title={needConfirm ? "这一步会把当前供应商的 Key 明文写进它自己的配置文件（仅本机）" : "按当前供应商重写它的配置文件"}
+                            onClick={() => void runOne(target, needConfirm)}
+                          >
+                            {busyTarget === target.id
+                              ? <><Spinner />写入中…</>
+                              : confirming ? "确认写入" : needConfirm ? "同步（含 Key）" : "同步"}
+                          </button>
+                        </>
                       ) : (
                         <>
                           <span className="cli-sync-row-status">{target.kind === "env" ? "自动注入" : "需自己登录"}</span>
@@ -337,8 +323,8 @@ export function CliSyncDialog({ open, onClose, onNotice }: CliSyncDialogProps) {
         </div>
 
         <footer className="cli-sync-foot">
-          <span className="cli-sync-foot-note">
-            启动 / 切换供应商 / 安装完 CLI 时都会自动同步一次，这里只是手动补一次。
+          <span className="cli-sync-foot-note" title={summary || undefined} data-testid="cli-sync-summary">
+            {summary || "启动 / 切换供应商 / 安装完 CLI 时都会自动同步一次，这里只是手动补一次。"}
           </span>
           <div className="cli-sync-foot-actions">
             <button className="secondary-setting" disabled={loading} onClick={() => void refresh()}>
