@@ -155,6 +155,42 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-weight: 600;
 }
 .settings-pill-row-label > svg { color: var(--green); }
+/* ── 主题色定制色板（11-09：白天/黑夜各 5 套）────────────────────────────── */
+.accent-swatches {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.accent-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.accent-swatch i {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.12);
+}
+.accent-swatch:hover { color: var(--text); border-color: var(--line-strong); }
+.accent-swatch.is-on {
+  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
 .settings-exp-shell .settings-card.card-pills > .settings-card-head { padding: 0; }
 .segmented-tabs button {
   height: 26px;

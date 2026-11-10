@@ -440,6 +440,21 @@
   --shadow: 0 1px 2px #00000080, 0 16px 44px #0000008f;
   background: #0b0d10;
 }
+
+/* ── 主题色定制（11-09 用户令：「白天和黑夜定制都定制各 5 套」）─────────────────
+   档位 id 由 lib/theme-accent.ts 挂到 <html data-accent>；按明暗各一套手调值。
+   ⛔ default 档不写块 ⇒ 落回主题本身的 --accent（即"恢复默认"）。
+   ⛔ 只换强调色相关变量（--accent/--link/--accent-soft/--accent-text），
+      --shell-edge 等由 --accent 派生自动跟随；背景/正文不动（那是主题的事）。 */
+:root[data-theme-mode="light"][data-accent="rose"] { --accent: #d5487a; --link: #d5487a; --accent-soft: #d5487a14; --accent-text: #fff; }
+:root[data-theme-mode="dark"][data-accent="rose"] { --accent: #f08bab; --link: #f08bab; --accent-soft: #f08bab1f; --accent-text: #161615; }
+:root[data-theme-mode="light"][data-accent="green"] { --accent: #1a7f37; --link: #1a7f37; --accent-soft: #1a7f3714; --accent-text: #fff; }
+:root[data-theme-mode="dark"][data-accent="green"] { --accent: #4ec27a; --link: #4ec27a; --accent-soft: #4ec27a1f; --accent-text: #161615; }
+:root[data-theme-mode="light"][data-accent="violet"] { --accent: #7c4dcc; --link: #7c4dcc; --accent-soft: #7c4dcc14; --accent-text: #fff; }
+:root[data-theme-mode="dark"][data-accent="violet"] { --accent: #a78bfa; --link: #a78bfa; --accent-soft: #a78bfa1f; --accent-text: #161615; }
+:root[data-theme-mode="light"][data-accent="amber"] { --accent: #b45309; --link: #b45309; --accent-soft: #b4530914; --accent-text: #fff; }
+:root[data-theme-mode="dark"][data-accent="amber"] { --accent: #f0a35c; --link: #f0a35c; --accent-soft: #f0a35c1f; --accent-text: #161615; }
+
 * {
   box-sizing: border-box;
 }

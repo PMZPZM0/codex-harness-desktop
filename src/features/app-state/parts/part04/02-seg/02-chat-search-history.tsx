@@ -10,6 +10,7 @@ import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant, setScrollUserDet
 import { turnWindowTailFor } from "../../../../../lib/turn-history.mjs";
 import { HIGHLIGHT_CACHE } from "../../../../../lib/highlight-cache";
 import { isDarkTheme } from "../../../../../lib/themes";
+import { applyThemeAccent } from "../../../../../lib/theme-accent";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 
@@ -201,6 +202,8 @@ export function usePart04b2(bag: Bag) {
     /* 深色分支规则统一认 `data-theme-mode`（11-02 新增「曜石」后，20 多条
        `[data-theme="dark"]` 规则不能再只认 id）—— 新暗色主题只改变量块即可。 */
     document.documentElement.dataset.themeMode = isDarkTheme(bag.theme) ? "dark" : "light";
+    /* 11-09 主题色定制：明暗各存一份档位，切主题时挂上当前模式的那份（白天/黑夜互不覆盖）。 */
+    applyThemeAccent(isDarkTheme(bag.theme) ? "dark" : "light");
     localStorage.setItem("theme", bag.theme);
     // 同步窗口外观：深色模式下标题栏 overlay 与背景跟随主题（不再残留浅色外框）
     void window.codex.themeApply(bag.theme).catch(() => undefined);

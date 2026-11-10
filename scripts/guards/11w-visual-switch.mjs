@@ -182,5 +182,23 @@ ok(/radial-gradient/.test(rimBlock) && /pointer-events:\s*none/.test(rimBlock),
 ok(/@keyframes fx-ripple-rim[\s\S]{0,200}?var\(--switch-r/.test(codeOnly(base)),
   "⑨ 高光终点半径复用同一个 --switch-r（与裁切圆同一条几何，不另算）");
 
+/* ── 11-09 用户令：「主题色现在太少了，白天和黑夜定制都定制各 5 套」────────────── */
+{
+  const accent = read("src/lib/theme-accent.ts");
+  const appear = read("src/features/settings-appearance/AppearanceSettingsSection.tsx");
+  const themeEffect = read("src/features/app-state/parts/part04/02-seg/02-chat-search-history.tsx");
+  const presetCount = (accent.match(/\{ id: "/g) || []).length;
+  ok(presetCount === 10 && /ACCENT_PRESETS/.test(accent) && /applyThemeAccent/.test(accent) && /setThemeAccent/.test(accent),
+    `主题色注册表白天+黑夜共 10 档（各 5 套，实测 ${presetCount}）`);
+  const accentBlocks = (base.match(/\[data-accent="(rose|green|violet|amber)"\]/g) || []).length;
+  ok(accentBlocks === 8,
+    `CSS 明暗×4 自定义档共 8 个变量块（default 不写块=恢复默认，实测 ${accentBlocks}）`);
+  ok(/accentRow\("light", "白天主题色"\)/.test(appear) && /accentRow\("dark", "黑夜主题色"\)/.test(appear)
+    && /ACCENT_PRESETS\[mode\]\.map/.test(appear),
+    "外观页白天/黑夜各渲染一排 5 档色板（由注册表驱动）");
+  ok(/applyThemeAccent\(isDarkTheme\(bag\.theme\) \? "dark" : "light"\)/.test(themeEffect),
+    "切主题时挂上当前模式的主题色档位（白天/黑夜各存一份互不覆盖）");
+}
+
 console.log(`\n  【visual-switch】${checks - fails}/${checks} 通过`);
 if (fails) process.exit(1);

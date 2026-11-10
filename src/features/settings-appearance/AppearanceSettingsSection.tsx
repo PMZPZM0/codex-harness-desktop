@@ -5,13 +5,15 @@
  * ⛔ 主题按钮由 src/lib/themes.ts 的 THEMES 注册表渲染：新增主题 = 表里加一行
  *    + styles 里加一段 `:root[data-theme="<id>"]` 变量块，这里与 bag 零改动。
  */
-import { Brain, FileCode2, List, Sun, ZoomIn } from "lucide-react";
+import { Brain, FileCode2, List, Palette, Sun, ZoomIn } from "lucide-react";
 import { flushSync } from "react-dom";
+import { useState } from "react";
 import { CodeAppearanceSection } from "../../components/CodeAppearance";
 import { FunctionMenuSettings } from "../function-menu";
 import { WallpaperSettingsSection } from "../wallpaper";
 import { BootIntroSettingsRow } from "./boot550c";
 import { THEMES } from "../../lib/themes";
+import { ACCENT_PRESETS, readThemeAccent, setThemeAccent, type AccentMode } from "../../lib/theme-accent";
 import { setReasoningDisplayMode, useReasoningDisplayMode } from "../../lib/reasoning-display-mode";
 import { setRunProcessMode, useRunProcessMode } from "../../lib/run-process-mode";
 import { setDialogFlowMode, useDialogFlowMode } from "../../lib/dialog-flow-mode";
@@ -26,6 +28,34 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
   const reasoningDisplay = useReasoningDisplayMode();
   const runProcessMode = useRunProcessMode();
   const dialogFlow = useDialogFlowMode();
+  /* 11-09 主题色定制：白天/黑夜各 5 套。选择按模式各存一份；tick 只为选完重渲高亮。 */
+  const [accentTick, setAccentTick] = useState(0);
+  void accentTick;
+  const pickAccent = (mode: AccentMode, id: string, label: string) => {
+    setThemeAccent(mode, id);
+    setAccentTick((t) => t + 1);
+    onNotice?.(`${mode === "light" ? "白天" : "黑夜"}主题色：${label}`);
+  };
+  const accentRow = (mode: AccentMode, label: string) => (
+    <div className="settings-pill-row">
+      <span className="settings-pill-row-label"><Palette size={13} />{label}</span>
+      <div className="accent-swatches" role="group" aria-label={label}>
+        {ACCENT_PRESETS[mode].map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={`accent-swatch${readThemeAccent(mode) === p.id ? " is-on" : ""}`}
+            aria-pressed={readThemeAccent(mode) === p.id}
+            title={`${label}：${p.label}`}
+            onClick={() => pickAccent(mode, p.id, p.label)}
+          >
+            <i style={{ backgroundColor: p.swatch }} aria-hidden />
+            <span>{p.label}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
   return (
     <>
       <section className="settings-section stack appearance-page settings-exp-page">
@@ -42,6 +72,8 @@ export function AppearanceSettingsSection(props: AppearanceSettingsSectionProps)
               ))}
             </div>
           </div>
+          {accentRow("light", "白天主题色")}
+          {accentRow("dark", "黑夜主题色")}
           <div className="settings-pill-row">
             <span className="settings-pill-row-label"><ZoomIn size={13} />消息字号</span>
             <div className="segmented-tabs row-pills" role="group" aria-label="消息字号">
