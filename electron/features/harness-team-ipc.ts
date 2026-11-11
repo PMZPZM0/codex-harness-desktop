@@ -70,7 +70,9 @@ import {
 } from "../../src/lib/team-schedule.mjs";
 /* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
-import { delegateRegistry, engineActiveTurnIds, server } from "../runtime-refs";
+import { codexHome, delegateRegistry, engineActiveTurnIds, server, teamRunStore, threadCwd } from "../runtime-refs";
+/* ⛔ 11-11：团群主理人会话的工具面升级（附录 Z：只能改 rollout 首行，且必须赶在引擎 spawn 之前）。 */
+import { syncToolSurfaceAsync } from "../rollout-pool";
 import { stopTeamRuns, consumeTalkCancel, clearTalkCancel, type TeamStopInput } from "./harness-team-stop";
 import { startTeamQueued, type TeamQueueStartInput } from "./harness-team-queue";
 /* ⛔ 定时任务的"下一次什么时候跑"**不在本文件算**：RRULE 构造 / 相位守恒 / 补跑窗口
@@ -79,10 +81,17 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, buildGroupTalkTools, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
+/* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
+   团群主理人的会话要挂**真的**调度工具（工具面只在 thread/start 定死，见附录 Z）。
+   ⛔ 只取工具**描述**，执行与权限仍在 team-invoke / team-tool-fallback（⛔ 不在这里调度成员）。 */
+import { buildTeamPhaseTool, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
+import { withStepParam } from "../../src/lib/step-note.mjs";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
+/* ⛔ 11-11：主理人这一轮到底用没用真调度工具 —— 决定催办说哪种话（见下面的 isLeadSelf）。 */
+import { teamToolUsedSince } from "../team-tool-fallback";
 /* ⛔ 误登记成指挥中枢的伙伴会话要能静默摘掉身份（保留记忆目录）——见 talk-threads 通道。 */
 import { unregisterBossSessionQuiet } from "../boss-groups/session-registry";
 import {
@@ -613,6 +622,50 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
   return { removed, failed };
 }
 
+/** 团群主理人会话的完整工具面 = 群聊三件套 + 团队调度两件（⛔ 与 runDispatchRounds 同一份构造口径）。 */
+function groupLeadSurfaceOf(team: { teamId: string } & Record<string, any>): unknown[] {
+  return [...buildGroupTalkTools(), ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never)])] as unknown[];
+}
+
+/** ⛔⛔ 11-11：启动时把**已有**团群主理人会话的工具面补到最新（附录 Z：引擎只读 rollout 首行）。
+ *  ⛔ 必须在**渲染层 resume 之前**调用（boot 在 createWindow 前调）—— 会话一旦被 spawn，
+ *     再改首行本次不生效（下次引擎重启才认），模型就会拿着旧工具面调 → `unsupported call`。
+ *  ⛔ 失败静默：预升级不成功也不该挡住启动；首次派活时 `ensureTalkThread` 还会再试一次。 */
+export async function upgradeGroupLeadSurfaces(): Promise<void> {
+  try {
+    if (!codexHome) return;
+    const groups = (readStore().groups ?? []) as GroupShape[];
+    if (!groups.length) return;
+    const teams = await readUsableExpertTeams().catch(() => []);
+    const ledger = listTalkThreads();
+    let patched = 0;
+    for (const group of groups) {
+      const slot = group.members.find((m) => m.targetKind === "team");
+      if (!slot) continue;
+      const team = teams.find((e) => String(e.teamId) === String(slot.targetKey));
+      if (!team) continue;
+      /* ⛔⛔ 主理人的会话键有两种历史形态：**合成 id**（`team:<team>:<leadId>`，用户从成员栏 @ 主理人时
+         走这条 —— 现在的主流）与**整团槽 id**（`tgt:team:<team>`，@ 整团时走这条）。⛔ 两个都试，
+         只认一个就是"工具面明明写了却永远升不上去"（真机踩过：只查整团槽 ⇒ 一条都没命中）。 */
+      const leadKey = teamAuthorIdOf(String(team.teamId), String((team as { lead?: { id?: string } }).lead?.id ?? ""));
+      const row = ledger.find((r) => String(r.groupId) === String(group.id) && String(r.memberId) === leadKey)
+        ?? ledger.find((r) => String(r.groupId) === String(group.id) && String(r.memberId) === String(slot.id));
+      if (!row?.threadId) continue;
+      try {
+        const res = await syncToolSurfaceAsync(codexHome, row.threadId, groupLeadSurfaceOf(team as never));
+        if (res?.patched) patched += 1;
+      } catch { /* 单条失败不影响其它群 */ }
+      /* ⛔⛔ 归属**必须在这里补**：`team_member_invoke` 的执行端只认 teamRunStore（模型自报一律不信），
+         而运行期登记是防抖写盘 —— 应用被杀/崩溃时那条可能没落盘（真机已见：功能当场成功，
+         重启后 team-threads.json 里没有这个小会话 ⇒ 下一轮工具能调、执行端却报「无法确定所属团」）。
+         ⛔ 启动时补一次是确定性的；幂等，重复设同值无害。 */
+      teamRunStore.setThreadTeam(row.threadId, String(team.teamId));
+      teamRunStore.setThreadLead(row.threadId);
+    }
+    if (patched) console.log("[group-tools] 启动预升级 " + patched + " 个团群主理人会话的工具面");
+  } catch { /* 预升级整体失败：不阻断启动 */ }
+}
+
 /** 群里的这位站团队哪一环（主理人 / 团成员）+ 同团还有谁。
  *  数据全来自调度目录（`kind: "team" | "expert" | "member"` 带同一个 `teamId`），⛔ 不再去读团队配置：
  *  群聊域只负责"我是谁、旁边是谁"，要不要按 SOP 走由 `collaborationProtocolLines` 的口径决定。
@@ -622,7 +675,7 @@ function teamSeatOf(
   selfId: string,
   targetKind?: string,
   targetKey?: string,
-): { teamName: string; teamRole: "lead" | "member"; teamPeers: string[]; teamLeadName?: string; teamLeadProfession?: string } | undefined {
+): { teamId: string; teamName: string; teamRole: "lead" | "member"; teamPeers: string[]; teamLeadName?: string; teamLeadProfession?: string } | undefined {
   const rows = (Array.isArray(catalog) ? catalog : []) as Array<Record<string, unknown>>;
   /* ⛔ teamId 有**三种**来源，缺一种就会有成员认不出自己的团：
      ① 群里放的是整团 → `targetKind === "team"`、targetKey 就是 teamId；
@@ -670,6 +723,9 @@ function teamSeatOf(
      只用它当身份，模型就知道不了「用户 @文枢 是在叫我」。 */
   return {
     teamName,
+    /* ⛔ 11-11：把算出来的 teamId 一起下发 —— 团群主理人要拿它挂团队工具、落团队归属，
+       ⛔ 不让调用方再从群档案里猜一遍（三种来源只有这里判全了）。 */
+    teamId,
     teamRole: isLead ? "lead" : "member",
     teamPeers: peers,
     ...(leadRow?.name ? { teamLeadName: String(leadRow.name) } : {}),
@@ -881,6 +937,25 @@ async function runDispatchRounds(
      所以团成员之间也能互相说话，不再需要「主理人代转」。 */
   /* ⛔ 11-10：管理员身份只有一个真相源（群档案），团群不启用 ⇒ 一律不标。 */
   const isTeamGroup = group.members.some((m) => m.targetKind === "team");
+  const teamSlot = isTeamGroup ? group.members.find((m) => m.targetKind === "team") : undefined;
+  /* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
+     团群主理人必须拿到**真的**调度工具。原来群聊会话的工具面只有 group_say / group_read /
+     group_members（01-channel 新建时写死的），主理人拿着"编排整团"的 SOP 却没有调人的工具
+     ⇒ 只能把成员发言自己编出来，或者用行首 @ 让宿主代转（那条链只让它说一句话，不算调度）。
+     ⇒ ① 建会话时把团队工具挂上去；② 老会话 resume 前改写 rollout 首行（附录 Z）；
+       ③ 团队的「线程 → 团」归属落到 teamRunStore（执行端唯一认的真相源）。
+     ⛔ 只给主理人：成员拿到就是绕过「只有主理人能调度」的硬闸（执行端会拒，但别白给）。 */
+  const groupTeamId = String(teamSlot?.targetKey ?? "");
+  const groupTeam = groupTeamId
+    ? (await readUsableExpertTeams().catch(() => [])).find((t) => String(t.teamId) === groupTeamId) ?? null
+    : null;
+  const leadDispatchTools = groupTeam
+    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam)])
+    : [];
+  const leadToolNames = groupTeam ? ["team_member_invoke", "team_phase_invoke"] : [];
+  /* ⛔ 成员产出落群：`team_member_invoke` 起的是**团队会话**，产出靠 team-group-bridge 回写群；
+     不绑 `groupOfTeam(teamId)` 就返回空串 ⇒ 产出静默丢掉（只有主理人看得到工具返回值）。 */
+  if (groupTeam) bindTeamGroup(groupTeamId, group.id);
   const adminId = isTeamGroup ? "" : String(group.adminId ?? "");
   const roster: TalkMember[] = [
     ...group.members.map((m) => ({
@@ -1054,6 +1129,37 @@ async function runDispatchRounds(
          平级专家群把互相矛盾的结论摆出来、CLI 群只给纯文本片段（它读不了文件）。
          座位从 roster 取（partner 只是派活目标，没有 teamRole/isAdmin）。 */
       const seatSelf = roster.find((m) => String(m.id) === String(partner.id));
+      /* ⛔⛔ 11-11：判「这位是不是本团主理人」**不能只靠 catalog 的座位推断** —— `teamSeatOf` 要求
+         调度目录里有 `kind:"team"` 那一行，缺一行（团被改过名 / 目录没刷新）整条就断，
+         结果是「工具面静默不挂、模型调就 unsupported call」，比报错更难查（真机已踩一次）。
+         群里的**整团槽本身就是主理人**（`prepareGroupDispatch` 把团群 @ 收敛到它，语义同源）⇒ 按 id 判。
+         座位字段（teamRole / teamName）仍优先取 catalog 的，取不到用团队配置兜底。 */
+      /* ⛔ 注意两种 id：用户 @ 成员栏里的「主理人」⇒ partner.id = `team:<team>:<leadId>`（合成 id）；
+         @ 整团槽 ⇒ partner.id = `tgt:team:<team>`。⛔ 只判整团槽 = 主流路径永远不挂工具（真机踩过）。 */
+      const leadAuthorId = groupTeam ? teamAuthorIdOf(String(groupTeam.teamId), String(groupTeam.lead?.id ?? "")) : "";
+      const isLeadSeat = seatSelf?.teamRole === "lead"
+        || Boolean(teamSlot && String(partner.id) === String(teamSlot.id))
+        || Boolean(leadAuthorId && String(partner.id) === leadAuthorId);
+      const partnerTools = isLeadSeat ? leadDispatchTools : [];
+      const partnerToolNames = isLeadSeat ? leadToolNames : [];
+      /* ⛔ `partner` 只是派活目标（GroupTarget），没有 teamRole / teamName / isAdmin ⇒ 原来
+         buildTalkInput 里「你在团队里的位置」「你是主持人」两段**永远不生效**（主理人不知道自己是谁）。
+         座位信息 roster 里已经算好，这里合并进去；⛔ id / name 仍以 partner 为准（别被 roster 改掉）。 */
+      const me: TalkMember = {
+        ...(partner as TalkMember),
+        ...(seatSelf ?? {}),
+        id: partner.id,
+        name: partner.name,
+        ...(isLeadSeat && groupTeam
+          ? { teamRole: "lead" as const, teamName: groupTeam.displayName.zh, teamId: String(groupTeam.teamId) }
+          : {}),
+        ...(partnerToolNames.length ? { dispatchTools: partnerToolNames } : {}),
+      };
+      /* 真机排障用：主理人这一轮到底挂没挂团队工具（⛔ 不刷屏，只在团群主理人回合打一条）。 */
+      if (isLeadSeat) {
+        console.log("[group-tools] 主理人「" + partner.name + "」工具面："
+          + (partnerTools.length ? "已挂 " + partnerToolNames.join("/") : "⛔ 没挂（groupTeam=" + Boolean(groupTeam) + "）"));
+      }
       const groupMemory = await buildGroupMemoryBlock({
         workspace: group.workspace || undefined,
         group,
@@ -1062,7 +1168,7 @@ async function runDispatchRounds(
       }).catch(() => null);
       const query = buildTalkInput(
         talkOptions as Parameters<typeof buildTalkInput>[0],
-        partner as TalkMember,
+        me,
         fromTalk,
         bodyText,
         readGroupHistory(TALK_HISTORY_LIMIT),
@@ -1132,6 +1238,8 @@ async function runDispatchRounds(
       const liveThread = await peekTalkThread(group.id, partner as TalkMember, {
         sandbox: params.sandbox,
         approvalPolicy: params.approvalPolicy,
+        /* ⛔ 探测到的会话就是这一轮要用的那条（拿到 threadId 后不再 ensure）⇒ 升级口必须在这里。 */
+        ...(partnerTools.length ? { extraTools: partnerTools } : {}),
       }).catch(() => null);
       /* ⛔⛔ 11-08 用户令「跟主对话实时同步」：监听器必须在**会话已确定**时就挂上 ——
          新建会话（首条消息）时 peek 拿不到 threadId，原来整轮都没有流式事件（只能收尾一次性落盘）。
@@ -1139,6 +1247,17 @@ async function runDispatchRounds(
       const attachLive = (tid: string) => {
         if (!tid || liveThreadId) return;
         liveThreadId = tid;
+        /* ⛔⛔ 11-11：主理人的群聊会话**就是**团队主理人会话 —— 必须落「线程 → 团」归属。
+           否则 team_member_invoke 的执行端（team-tool-fallback → invokeTeamMemberCore）会以
+           「无法确定会话所属的专家团」「当前会话是子会话，没有调度权限」拒掉。
+           ⛔ 这是执行端**唯一**认的真相源（模型自报的 teamId 一律不信）。 */
+        if (partnerTools.length && groupTeam) {
+          teamRunStore.setThreadTeam(tid, groupTeam.teamId);
+          teamRunStore.setThreadLead(tid);
+        }
+        /* ⛔ 团队成员的会话按主理人会话的 cwd 建（invokeTeamMemberCore 用 threadCwd）。
+           群聊会话不登记 ⇒ 成员会话落到 process.cwd()（应用安装目录）⇒ 产物写错地方。 */
+        if (String(group.workspace ?? "").trim()) threadCwd.set(tid, String(group.workspace).trim());
         /* 上一轮的收尾标记在本轮开跑时摘掉（否则中途 group_say 那条会被当成收尾后补写、用量挂两遍）。 */
         finishedTalkRuns.delete(tid);
         broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
@@ -1201,6 +1320,7 @@ async function runDispatchRounds(
             groupName: group.name,
             sandbox: params.sandbox,
             approvalPolicy: params.approvalPolicy,
+            ...(partnerTools.length ? { extraTools: partnerTools } : {}),
           }).catch(() => null);
           if (ensured?.threadId) attachLive(ensured.threadId);
           /* ⛔ 11-09 审查：建会话要 1~3 秒 —— 排队入口那次消费之后、会话建好之前用户点了停止，
@@ -1218,7 +1338,8 @@ async function runDispatchRounds(
           ...(params.effort ? { effort: params.effort } : {}),
           ...(params.sandbox ? { sandbox: params.sandbox } : {}),
           ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
-        }), partner.name);
+          ...(partnerTools.length ? { extraTools: partnerTools } : {}),
+        }), partner.name, partnerTools.length ? LEAD_DISPATCH_TIMEOUT_MS : undefined);
       });
       if ((res as { cancelled?: boolean } | null)?.cancelled) {
         options.onPhase?.("finished", partner, { ok: true });
@@ -1472,10 +1593,18 @@ async function runDispatchRounds(
             && leadSelfNudges < MAX_LEAD_SELF_NUDGES && chainBudget > 0 && canRun(partner.id)) {
             leadSelfNudges += 1;
             chainBudget -= 1;
+            /* ⛔⛔ 11-11：它这一轮**已经调过** team_member_invoke / team_phase_invoke 的话，
+               ⛔ 别再叫它「另起一行 @名字」——那会把它推回"行首 @ 演戏"（群里说一句、没人真干活）。
+               同一件事，两种口径：有真工具就用真工具往下推。 */
+            const usedTool = teamToolUsedSince(threadId, startedAt);
             void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name },
-              "[系统] 你这一轮没有派任何成员，也没有写「收口」。按 SOP 继续推进："
-              + "先向群里通报阶段进度（已完成哪几环、还差哪几环），再另起一行写 `@名字：要他做什么`"
-              + "把下一阶段真正派出去（⛔ 不要自己代写成员的发言）；只有全部阶段验收完才写「收口」给最终结论。")
+              usedTool
+                ? "[系统] 你这一轮已经调过团队工具，但还没写「收口」。按 SOP 继续：先用 team_member_invoke / "
+                  + "team_phase_invoke 把下一阶段真的派出去（⛔ 不用行首 @ 派活，那只是群里说了一句话），"
+                  + "并先向群里通报阶段进度（已完成哪几环、还差哪几环）；只有全部阶段验收完才写「收口」给最终结论。"
+                : "[系统] 你这一轮没有派任何成员，也没有写「收口」。按 SOP 继续推进："
+                  + "先向群里通报阶段进度（已完成哪几环、还差哪几环），再另起一行写 `@名字：要他做什么`"
+                  + "把下一阶段真正派出去（⛔ 不要自己代写成员的发言）；只有全部阶段验收完才写「收口」给最终结论。")
               .catch(() => undefined);
           }
         }
@@ -1559,15 +1688,20 @@ async function runDispatchRounds(
 const DISPATCH_TIMEOUT_MS = Number(process.env.CODEX_DISPATCH_TIMEOUT_MS) > 0
   ? Number(process.env.CODEX_DISPATCH_TIMEOUT_MS)
   : 15 * 60 * 1000;
-async function withDispatchTimeout<T>(task: Promise<T>, name: string): Promise<T> {
+/* ⛔⛔ 11-11：团群主理人现在真的会调 team_member_invoke —— 那是一个**同步等成员跑完**的调用
+   （单个成员最多 10 分钟），一轮里串行调两三个就超过 15 分钟 ⇒ 用户会看到"派活超时"，
+   而引擎其实还在跑（超时只给结论、不取消回合）⇒ 界面报错 + 后面又冒出一条消息。
+   ⇒ 只有「拿着团队工具的那一轮」放宽到 40 分钟；其他群聊回合维持原值。 */
+const LEAD_DISPATCH_TIMEOUT_MS = 40 * 60 * 1000;
+async function withDispatchTimeout<T>(task: Promise<T>, name: string, timeoutMs = DISPATCH_TIMEOUT_MS): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
   try {
     return await Promise.race([
       task,
       new Promise<T>((_resolve, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`${name} 派活超时（${Math.round(DISPATCH_TIMEOUT_MS / 60000)} 分钟）—— 引擎可能没起来，去「设置 → 模型」看凭据/状态`)),
-          DISPATCH_TIMEOUT_MS,
+          () => reject(new Error(`${name} 派活超时（${Math.round(timeoutMs / 60000)} 分钟）—— 引擎可能没起来，去「设置 → 模型」看凭据/状态`)),
+          timeoutMs,
         );
       }),
     ]);

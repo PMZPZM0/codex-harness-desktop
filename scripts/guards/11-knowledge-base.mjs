@@ -312,8 +312,14 @@ try {
       "⛔ 主进程应答专家团工具（后台团队会话的事件送不到渲染层，不在这里应答 = 成员永远不被调用）");
     ok(/TEAM_TOOL_MEMBER = "team_member_invoke"/.test(teamFallback) && /TEAM_TOOL_PHASE = "team_phase_invoke"/.test(teamFallback),
       "⛔ 只认这两个工具名（其余返回 false 交回原流程，不吞别人的调用）");
-    ok(/if \(deps\.delivered\(threadId\)\) return false;/.test(teamFallback),
-      "⛔ 只在「送不到渲染层」时接管（两边都答 = 同一个成员被调度两次、同一个 id 应答两遍）");
+    /* ⛔⛔ 11-11：团群主理人的群聊会话现在也挂 team_member_invoke（原来只有独立团队会话有）。
+       群聊会话**永远**由主进程答（渲染层没有它的团队归属）⇒ 这里必须是「非群聊才看 delivered」，
+       并且 boot 必须把群聊会话的 item/tool/call **裁掉**——不然 watched 为 null 时事件会放行给渲染层，
+       同一个 id 被两边各答一遍（成员被调度两次）。两条必须同时成立，缺一条就是双答。 */
+    ok(/if \(!groupTalk && deps\.delivered\(threadId\)\) return false;/.test(teamFallback)
+      && /isGroupTalkThread/.test(teamFallback)
+      && /item\/tool\/call"\s*\n?\s*&& talkThreadIds\.has/.test(boot9),
+      "⛔ 只在「送不到渲染层」时接管（群聊会话例外：事件在 boot 就裁掉，物理上不会两边都答）");
     ok(/teamRunStore\.teamOfThread\(threadId\)/.test(teamFallback) && !/args\?\.teamId|args\.teamId/.test(teamFallback),
       "⛔ 团队归属取主进程落盘映射（⛔ 不用 args 里模型自报的 teamId）");
     ok(/invokeTeamMemberCore/.test(teamFallback) && /invokeTeamMemberCore/.test(teams),

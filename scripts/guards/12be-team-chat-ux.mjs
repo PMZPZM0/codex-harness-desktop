@@ -348,8 +348,11 @@ const catalog = [
   const dispatch = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const badge = codeOnly(read("src/features/dispatch/DispatchMenu.tsx"));
   ok(/export async function ensureTalkThread/.test(chan) && /export async function runTalkTurn/.test(chan)
-    && /dynamicTools: buildGroupTalkTools\(\)/.test(chan),
-    "群聊每人一条长期引擎会话（thread/start 挂自己的工具，resume 复用）");
+    && /dynamicTools: surface \?\? buildGroupTalkTools\(\)/.test(chan)
+    /* ⛔ 11-11：团群主理人要挂真调度工具 ⇒ 新建走 surface，老会话**必须**在 resume 前改写首行
+       （附录 Z：resume 传 dynamicTools 引擎整份忽略）。两条缺一，老群聊会话的工具面永远升不上去。 */
+    && /await syncToolSurfaceAsync\(codexHome, threadId, options\.tools\)/.test(chan),
+    "群聊每人一条长期引擎会话（thread/start 挂自己的工具，resume 复用；老会话按附录 Z 升级工具面）");
   ok(!/runDelegatedTask|delegateRegistry|canDispatchFrom|delegateScopeBlock/.test(chan + tools + talk),
     "⛔ 独立通道一行都不碰外面的调度链（不是改提示词糊弄）");
   ok(/group_say/.test(tools) && /group_read/.test(tools) && /group_members/.test(tools)
@@ -358,9 +361,29 @@ const catalog = [
     "工具三件套 + 主进程应答（群聊会话的事件会被 filterForRenderer 裁掉）");
   ok(/lookupGroupThread\(/.test(tools),
     "工具身份只认引擎下发的 threadId（⛔ 不许模型自报群 id / 成员 id）");
+  /* ⛔ 11-11：团群主理人真拿到 team_member_invoke 之后，它那一份输入**必须**允许出现派活口径
+     （输入 / 交付物 / 交给谁）—— 但那份口径只能由 `me.dispatchTools` 守门：
+     ⛔ 没挂工具的人（普通成员 / 普通群）看到的仍然是「别调任何调度工具」。 */
   ok(/export function buildTalkInput/.test(talk) && /@名字：你要说的话/.test(talk)
-    && !/结论、依据、建议|交付物|请给结论/.test(talk),
-    "群聊输入是「有人对你说了一句」，⛔ 不是任务派发模板");
+    && !/结论、依据、建议|请给结论/.test(talk)
+    && /Array\.isArray\(me\.dispatchTools\)/.test(talk)
+    && /别调任何调度工具/.test(talk),
+    "群聊输入是「有人对你说了一句」，⛔ 不是任务派发模板（派活口径只给真拿到团队工具的主理人）");
+  /* ⛔⛔ 11-11 用户令（原话：「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
+     团群里主理人必须拿到**真的**调度工具。四件缺一就退化成「行首 @ 演戏」：
+     ① 建会话接受额外工具面（01-channel）；② 给主理人时真的传了团队工具（harness-team-ipc）；
+     ③ 主理人会话落团队归属（执行端只认 teamRunStore）；④ 主进程认得群聊会话的 team_member_invoke
+     （渲染层没有它的团队归属，会以「没有团」失败）。 */
+  {
+    const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
+    const boot = codeOnly(read("electron/features/boot.ts"));
+    ok(/extraTools\?: unknown\[\]/.test(chan)
+      && /buildTeamTools\(groupTeam\)/.test(dispatch) && /leadDispatchTools/.test(dispatch)
+      && /partnerTools\.length \? \{ extraTools: partnerTools \}/.test(dispatch)
+      && /teamRunStore\.setThreadLead\(tid\)/.test(dispatch)
+      && /isGroupTalkThread/.test(fallback) && /isGroupTalkThread: \(tid\) => talkThreadIds\.has/.test(boot),
+      "团群主理人拿到真调度工具（工具面 + 归属登记 + 执行端认群聊会话）");
+  }
   ok(/runTalkTurn\(group\.id/.test(dispatch) && !/runDelegatedTask\(/.test(dispatch)
     && /attachGroupTalkEvents\(server\)/.test(dispatch),
     "群派活接线到独立通道，⛔ 不再调 runDelegatedTask");

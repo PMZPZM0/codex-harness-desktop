@@ -788,6 +788,15 @@ export async function bootApp() {
   } catch (error) {
     console.warn("voice permission handler failed:", error);
   }
+  /* ⛔⛔ 11-11：团群主理人的会话要挂 team_member_invoke（引擎只在 thread/start 定死工具面 ⇒
+     老会话只能改 rollout 首行，见附录 Z）。⛔ 必须赶在**渲染层 resume 之前**：会话一旦被 spawn，
+     再改首行本次不生效，模型就会拿着旧工具面调 → `unsupported call`（真机踩过）。
+     ⛔ 必须 await：这是**时序正确性**问题，不是性能问题 —— 手快的人点开团群不到一秒。
+     失败静默，首次派活时 ensureTalkThread 还会补一次。 */
+  try {
+    const { upgradeGroupLeadSurfaces } = await import("./harness-team-ipc");
+    await upgradeGroupLeadSurfaces();
+  } catch { /* 预升级失败不阻断启动 */ }
   markBoot("pre-create-window");
   createWindow();
   markBoot("window-created");
@@ -829,7 +838,7 @@ export async function bootApp() {
        而 `item/tool/call` 不在跨会话白名单里 ⇒ 后台跑的团队主理人（从普通会话 agent_invoke(kind:"team")
        派出去的）根本没人应答，成员永远不被调用（用户报「无法调用成员干活」）。
        ⛔ 只在**送不到渲染层**时接管：两边都答 = 同一个成员被调度两次。 */
-    void handleTeamToolCall({ event, respond: (id, result) => server.respond(id as any, result), delivered: isThreadDelivered })
+    void handleTeamToolCall({ event, respond: (id, result) => server.respond(id as any, result), delivered: isThreadDelivered, isGroupTalkThread: (tid) => talkThreadIds.has(String(tid ?? "")) })
       .catch(() => false);
     /* 10-10「委派超时转后台」的**收尾点**：宿主提前放手后，记录要保持 running 直到回合真正结束
        ⇒ 必须在引擎事件流里收敛（原来只有 delegation/teams-ipc 的 await 路径会做，一旦放手就永远
@@ -844,9 +853,16 @@ export async function bootApp() {
     const petThread = eventThreadId((event as { params?: unknown } | null)?.params);
     if (petThread && talkThreadIds.has(petThread)) forgetPetThread(petThread);
     else feedPetEvent(event);
+    /* ⛔⛔ 11-11：群聊会话（工作伙伴 / 团队群）的 `item/tool/call` **绝不给渲染层**。
+       渲染层没有这些会话的团队归属（teamId 取的是"当前正在看的会话"）⇒ 抢答只会以
+       「没有团队」失败；更糟的是同一个 id 会被应答两遍（主进程兜底 + 渲染层各一次）。
+       ⛔ 只裁这一种方法：正文 / 回合事件照常放行（用户可能点开那条会话看记录）。 */
+    const groupToolCall = event?.kind === "notification"
+      && String(event?.method ?? "") === "item/tool/call"
+      && talkThreadIds.has(String(eventThreadId((event as { params?: unknown } | null)?.params) ?? ""));
     // 裁剪后可能为 null（09-14 启用按会话过滤）——null 绝不能进 broadcastCodexEvent，
     // 否则渲染层收到一条空事件。channelBot / voiceService 拿的是未裁剪的原始事件。
-    const forwarded = filterForRenderer(event);
+    const forwarded = groupToolCall ? null : filterForRenderer(event);
     if (forwarded) broadcastCodexEvent(forwarded);
     channelBot.handleCodexEvent(event);
     // 语音通话：只旁听事件（正文增量 / 回合生命周期），不改变事件本身的任何流向

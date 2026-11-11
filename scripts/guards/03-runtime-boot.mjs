@@ -902,7 +902,10 @@ console.log(C.bold("\n【12】09-14 切换丝滑化不得回退（diff 行级虚
   //   「从 server.on("event" 起 400 字符内」这种**位置敏感**写法会因拼接后首处匹配偏移而假红。
   //   判据语义不变：这段判空必须存在（不关心它在哪个文件、离多远）。
   const forwardedGuard = mainSrc2;
-  /const forwarded = filterForRenderer\(event\);\s*if \(forwarded\) broadcastCodexEvent\(forwarded\)/.test(forwardedGuard)
+  /* ⛔ 11-11：判据是**语义**（裁剪结果必须判空再广播），不是那一行的字面 ——
+     群聊会话的 item/tool/call 现在要在出口额外裁掉（`groupToolCall ? null : filterForRenderer(event)`），
+     写法变了、判空这条契约一个字没少。⛔ 别为了过守卫去掉三元里的裁剪。 */
+  /const forwarded = [^\n]*filterForRenderer\(event\)[^\n]*;\s*if \(forwarded\) broadcastCodexEvent\(forwarded\)/.test(forwardedGuard)
     ? ok("裁剪结果先判空再广播（null 不会当成空事件发给渲染层）")
     : fail("裁剪后没有判空就广播 —— 渲染层会收到空事件");
 

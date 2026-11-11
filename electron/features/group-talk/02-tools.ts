@@ -35,7 +35,10 @@ export function setGroupTalkHooks(groupId: string, next: GroupTalkHooks | null):
   else hooksByGroup.delete(gid);
 }
 
-/** 引擎 `thread/start` 的 dynamicTools：三个工具一次挂齐（resume 时整份忽略，所以只在新建时给）。 */
+/** 引擎 `thread/start` 的 dynamicTools：三个工具一次挂齐（resume 时整份忽略，所以只在新建时给）。
+ *  ⛔ 11-11：**这不是群聊会话的全部工具面** —— 团群主理人还会被追加 `team_member_invoke` /
+ *     `team_phase_invoke`（由 harness-team-ipc 通过 `ensureTalkThread` 的 `extraTools` 传进来，
+ *     语义与执行仍在 team-invoke / team-tool-fallback）。⛔ 别在这里 import 团队配置把板块绑死。 */
 export function buildGroupTalkTools(): unknown[] {
   return [
     {

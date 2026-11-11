@@ -17,8 +17,11 @@ import { ensureProjectAgentsMd } from "../../project-conventions";
 import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { server } from "../../runtime-refs";
+import { codexHome, server } from "../../runtime-refs";
 import { turnOutputText, waitForTurnCompletion } from "../../main/03-turn-summary";
+/* ⛔⛔ 11-11：老群聊会话的工具面升级**只走改写 rollout 首行**（附录 Z：引擎只认 thread/start，
+   resume 传 dynamicTools 整份忽略）。复用 delegation 的同一条通道，⛔ 不另写实现。 */
+import { syncToolSurfaceAsync } from "../../rollout-pool";
 import { buildGroupTalkTools } from "./02-tools";
 import { classifyTalkResumeFailure } from "../../../src/lib/team-talk-resume.mjs";
 /* ⛔ 群聊回合失败按主对话同一套分类给中文原因（上下文超限 / 沙箱拒绝 / 限流…）。 */
@@ -38,6 +41,9 @@ export type TalkMember = {
   /** lead = 这个团的主理人；member = 团成员。 */
   teamRole?: "lead" | "member";
   teamName?: string;
+  /* ⛔ 11-11：这个座位属于哪个团。团群主理人要靠它拿团队工具 + 落团队归属，
+     ⛔ 别让调用方再从群档案里猜一遍（`teamSeatOf` 已经算过，见 harness-team-ipc）。 */
+  teamId?: string;
   /* ⛔⛔ 11-10 用户（截图）：「群成员连自己是谁都不知道」—— 真实现象：
      群里只有一个「内容创作专家团」槽，UI 却展开成 6 个人名；用户 @文枢 派活，
      投给模型的身份是**团名**（`你是 内容创作专家团`）⇒ 它回答"这条流程是文枢的活，我不抢"，
@@ -49,6 +55,9 @@ export type TalkMember = {
   managerName?: string;
   /** 同团其他人（`名字（职业）`），主理人与成员都看得到。 */
   teamPeers?: string[];
+  /* ⛔ 11-11：这位成员手上**真的**挂着的调度工具名（团群主理人 = team_member_invoke / team_phase_invoke）。
+     ⛔ 由调用方按"工具面是否真挂上"给：配置取不到时工具没挂，文案也必须说没有。 */
+  dispatchTools?: string[];
   /* ⛔⛔ 11-10 用户：「成员都不知道哪个是管理员，成员都互相不认识」。
      ⇒ 身份随名册一起下发：prompt 的「群里的人」、group_members 工具、
        group_say 的「管理员」别名，全都读这一份。⛔ 专家团群恒 false（不启用管理员）。 */
@@ -109,8 +118,16 @@ function mutateLedger<T>(fn: (all: Ledger) => { all: Ledger; out: T }): Promise<
 /** resume 失败的分类；`busy` / `transient` 抛可识别错误（⛔ 调用方据此**不重建**会话）。 */
 async function resumeTalkThread(
   threadId: string,
-  options: { sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string> },
+  options: { sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string>; tools?: unknown[] },
 ): Promise<{ ok: true } | { ok: false; kind: "busy" | "missing" | "transient"; message: string }> {
+  /* ⛔⛔ 11-11（附录 Z）：老群聊会话的工具面是**创建那一刻**的，之后加的工具它永远看不见；
+     resume 传 dynamicTools 引擎整份忽略 ⇒ 唯一可行路是 resume **之前**改写 rollout 首行。
+     ⛔ 必须在 server.request("thread/resume") 之前 await 完（resume 会立刻 spawn 并读首行）。
+     失败静默：工具面升级不成功也不该把这一轮群聊挡住（下一轮还会再试）。 */
+  if (options.tools?.length) {
+    try { await syncToolSurfaceAsync(codexHome, threadId, options.tools); }
+    catch { /* 升级失败：本轮按旧工具面跑，不影响发言 */ }
+  }
   try {
     const resumed: unknown = await server.request("thread/resume", {
       threadId,
@@ -225,8 +242,16 @@ export function forgetTalkThreads(threadIds: string[]): number {
 export async function ensureTalkThread(
   groupId: string,
   member: TalkMember,
-  options: { cwd?: string; groupName?: string; onCreated?: (threadId: string) => void; sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string> } = {},
+  options: {
+    cwd?: string; groupName?: string; onCreated?: (threadId: string) => void; sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string>;
+    /* ⛔ 11-11：调用方追加的工具（如团群主理人的 team_member_invoke / team_phase_invoke）。
+       ⛔ 群聊板块不认识"团队"这件事 —— 它只负责把这份工具面挂上/升级，工具语义与权限在执行端。 */
+    extraTools?: unknown[];
+  } = {},
 ): Promise<{ threadId: string; created: boolean }> {
+  /* ⛔⛔ 已存在会话的升级口：`resume` 前改写首行（附录 Z）。没有额外工具时**不传**，
+     保持老会话原有工具面不动（⛔ 别拿一个残缺列表去覆盖主进程拼好的那一份）。 */
+  const surface = options.extraTools?.length ? [...buildGroupTalkTools(), ...options.extraTools] : undefined;
   /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
   if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
   const key = talkKey(groupId, member.id);
@@ -257,7 +282,7 @@ export async function ensureTalkThread(
        引擎原话 `cannot resume running thread` —— 会话活着、只是正在跑。旧代码把所有 resume 失败
        都当"会话没了" ⇒ thread/start 新开一条 + 覆盖台账 ⇒ 同一位成员两条会话（侧栏重复）。
        ⇒ 只有引擎**明确说会话不存在**才重建；忙 / 引擎重启 / 超时一律抛可识别错误，绝不新建。 */
-    const resumed = await resumeTalkThread(hit.threadId, options);
+    const resumed = await resumeTalkThread(hit.threadId, { ...options, tools: surface });
     if (resumed.ok) return { threadId: hit.threadId, created: false };
     if (resumed.kind !== "missing") throw talkUnavailable(resumed.kind, resumed.message);
   }
@@ -277,7 +302,7 @@ export async function ensureTalkThread(
     return { all, out: { threadId: String(orphanEntry.threadId) } };
   });
   if (claimed) {
-    const resumed = await resumeTalkThread(claimed.threadId, options);
+    const resumed = await resumeTalkThread(claimed.threadId, { ...options, tools: surface });
     if (resumed.ok) return { threadId: claimed.threadId, created: false };
     if (resumed.kind !== "missing") throw talkUnavailable(resumed.kind, resumed.message);
   }
@@ -293,7 +318,7 @@ export async function ensureTalkThread(
        改成按调用方传入（缺省保持旧值，不影响既有行为）。 */
     sandbox: options.sandbox || "workspace-write",
     approvalPolicy: options.approvalPolicy || "never",
-    dynamicTools: buildGroupTalkTools(),
+    dynamicTools: surface ?? buildGroupTalkTools(),
     ...talkShellConfig(options.shellEnv),
   });
   const threadId = String(started?.thread?.id ?? "");
@@ -321,11 +346,17 @@ export async function ensureTalkThread(
 export async function peekTalkThread(
   groupId: string,
   member: TalkMember,
-  options: { sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string> } = {},
+  options: {
+    sandbox?: string; approvalPolicy?: string; shellEnv?: Record<string, string>;
+    /* ⛔ 11-11：探测到的会话**就是这一轮要用的那一条**（调用方拿到 threadId 后不再 ensure）
+       ⇒ 工具面升级必须在这里也做一次，否则"点开群 → 会话已在"这条路上永远升不了级。 */
+    extraTools?: unknown[];
+  } = {},
 ): Promise<{ threadId: string; busy: boolean } | null> {
   const hit = readLedger()[talkKey(groupId, member.id)];
   if (!hit?.threadId) return null;
-  const resumed = await resumeTalkThread(hit.threadId, options);
+  const surface = options.extraTools?.length ? [...buildGroupTalkTools(), ...options.extraTools] : undefined;
+  const resumed = await resumeTalkThread(hit.threadId, { ...options, tools: surface });
   if (resumed.ok) return { threadId: hit.threadId, busy: false };
   if (resumed.kind === "busy") return { threadId: hit.threadId, busy: true };
   return null;
@@ -404,10 +435,12 @@ export async function runTalkTurn(
     shellEnv?: Record<string, string>;
     /** 调用方已解析好的会话（先用 `ensureTalkThread` 拿到再过进来）⇒ ⛔ 不再重复 resume 一次。 */
     threadId?: string;
+    /** ⛔ 11-11：追加工具（团群主理人的团队调度工具）。已定好会话时由调用方保证工具面已升级。 */
+    extraTools?: unknown[];
   } = {},
 ): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
   let threadId = options.threadId
-    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv })).threadId;
+    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv, extraTools: options.extraTools })).threadId;
   try {
     return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
   } catch (error) {
@@ -418,7 +451,7 @@ export async function runTalkTurn(
     } catch {
       await server.request("thread/archive", { threadId }).catch(() => undefined);
     }
-    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv })).threadId;
+    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv, extraTools: options.extraTools })).threadId;
     return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
   }
 }

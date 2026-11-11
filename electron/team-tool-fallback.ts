@@ -27,6 +27,24 @@ const TEAM_TOOL_PHASE = "team_phase_invoke";
 
 type Respond = (id: string | number, result: unknown) => unknown;
 
+/* ⛔⛔ 11-11：这条会话最近**真的**调过团队工具（threadId → 时刻）。
+   群聊的闭环催办据此换口径：它已经用真工具派过活时，⛔ 别再催它「另起一行 @名字」——
+   那会把它推回"行首 @ 演戏"的旧模式（群里说一句，没人真去干活）。
+   ⛔ 只记事实，不做权限判断；上限清空只是防 Map 无限涨。 */
+const lastToolUseAt = new Map<string, number>();
+function noteTeamToolUse(threadId: string): void {
+  const tid = String(threadId ?? "");
+  if (!tid) return;
+  if (lastToolUseAt.size > 500) lastToolUseAt.clear();
+  lastToolUseAt.set(tid, Date.now());
+}
+
+/** 这条会话在 `since` 之后有没有真的调过团队工具（群聊闭环用）。 */
+export function teamToolUsedSince(threadId: string, since: number): boolean {
+  const at = lastToolUseAt.get(String(threadId ?? ""));
+  return Boolean(at && at >= Number(since || 0));
+}
+
 /** 从事件里取出这次调用的参数（`arguments` 可能是字符串，也可能是对象）。 */
 function readArgs(raw: unknown): any {
   if (typeof raw === "string") {
@@ -51,6 +69,13 @@ export async function handleTeamToolCall(deps: {
   event: any;
   respond: Respond;
   delivered: (threadId: string) => boolean;
+  /* ⛔⛔ 11-11：群聊会话（工作伙伴 / 团队群）的 `item/tool/call` **只由主进程答**。
+     为什么不能交给渲染层：渲染层拿到一条不认识 threadId 的 team_member_invoke 时，
+     它的 teamId 来自 `bag.threadTeamId`（当前正在看的会话）⇒ 群聊会话那里是空的，
+     会以「没有团队」失败；而 `watchedThreadIds()` 返回 null 的窗口期（没窗口活跃 / 有 stale），
+     `filterForRenderer` 会把事件**全放行**给渲染层 ⇒ 它抢答、主进程就此不答。
+     ⇒ 命中群聊台账就无条件接管（那条链路本来就不该经过渲染层）。 */
+  isGroupTalkThread?: (threadId: string) => boolean;
 }): Promise<boolean> {
   const { event, respond } = deps;
   if (event?.method !== "item/tool/call") return false;
@@ -58,11 +83,15 @@ export async function handleTeamToolCall(deps: {
   if (tool !== TEAM_TOOL_MEMBER && tool !== TEAM_TOOL_PHASE) return false;
 
   const threadId = String(event?.params?.threadId ?? "");
+  const groupTalk = Boolean(deps.isGroupTalkThread?.(threadId));
   // 渲染层收得到 ⇒ 让渲染层答（它还要点亮成员头像 / 累计并发指示）
-  if (deps.delivered(threadId)) return false;
+  if (!groupTalk && deps.delivered(threadId)) return false;
 
   const id = event?.id;
   if (id === undefined || id === null) return false;
+
+  /* ⛔ 11-11：先记事实（这条会话这一轮用过真工具），再决定怎么答。 */
+  noteTeamToolUse(threadId);
 
   const teamId = String(teamRunStore.teamOfThread(threadId) ?? "");
   if (!teamId) {
