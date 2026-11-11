@@ -2977,15 +2977,46 @@
 .dialog-anchor-card::before {
   content: "";
   position: absolute;
-  top: var(--arrow-top, 24px);
   width: 0;
   height: 0;
-  transform: translateY(-50%);
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
 }
-.dialog-anchor-card.side-right::before { left: -6px; border-right: 7px solid var(--panel); }
-.dialog-anchor-card.side-left::before { right: -6px; border-left: 7px solid var(--panel); }
+/* 上方弹：小三角在底边、指回按钮（参考 WorkBuddy 的确认气泡样式）。 */
+.dialog-anchor-card.side-top::before {
+  bottom: -6px;
+  left: var(--arrow-x, 24px);
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid var(--panel);
+}
+.dialog-anchor-card.side-bottom::before {
+  top: -6px;
+  left: var(--arrow-x, 24px);
+  transform: translateX(-50%);
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-bottom: 6px solid var(--panel);
+}
+.dialog-anchor-card.side-right::before {
+  left: -6px;
+  top: var(--arrow-y, 24px);
+  transform: translateY(-50%);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 6px solid var(--panel);
+}
+.dialog-anchor-card.side-left::before {
+  right: -6px;
+  top: var(--arrow-y, 24px);
+  transform: translateY(-50%);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-left: 6px solid var(--panel);
+}
 .dialog-anchor-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
 .dialog-anchor-text { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
 .dialog-anchor-card .app-prompt-form { display: flex; flex-direction: column; gap: 8px; }
+.dialog-anchor-text {
+  max-height: 160px;
+  overflow: auto;
+}

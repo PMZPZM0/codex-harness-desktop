@@ -23,3 +23,16 @@ export function takeDialogAnchor() {
   pending = null;
   return rect;
 }
+
+/**
+ * 没有显式锚点时的就近兜底：用**当前焦点元素**（点按钮触发时浏览器会给它焦点）。
+ * 拿不到（键盘触发 / body）返回 null ⇒ 仍回落到居中模态。
+ */
+export function activeDialogAnchor() {
+  const el = (typeof document !== "undefined" ? document.activeElement : null) as HTMLElement | null;
+  if (!el || el === document.body || el === document.documentElement) return null;
+  const rect = el.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
+}
+

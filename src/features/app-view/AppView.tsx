@@ -148,7 +148,7 @@ import {
   Bell,
   CheckCheck,
 } from "lucide-react";
-import { takeDialogAnchor } from "../../lib/dialog-anchor";
+import { takeDialogAnchor, activeDialogAnchor } from "../../lib/dialog-anchor";
 import { AnchoredDialogCard, type DialogAnchor } from "../shared/AnchoredDialog";
 import VoiceCallFloat from "../../components/VoiceCallFloat";
 import { PageInfo, HelpOpenContext } from "../../components/SettingsHead";
@@ -539,9 +539,9 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      打开那一刻取走锚点并冻结形态（有锚点 → 气泡，否则居中模态）；⛔ 不逐次渲染重新取。 */
   const promptHostRef = useRef<{ for: unknown; anchor: DialogAnchor | null }>({ for: null, anchor: null });
   const confirmHostRef = useRef<{ for: unknown; anchor: DialogAnchor | null }>({ for: null, anchor: null });
-  if (appPrompt && promptHostRef.current.for !== appPrompt) promptHostRef.current = { for: appPrompt, anchor: takeDialogAnchor() };
+  if (appPrompt && promptHostRef.current.for !== appPrompt) promptHostRef.current = { for: appPrompt, anchor: takeDialogAnchor() ?? activeDialogAnchor() };
   if (!appPrompt && promptHostRef.current.for) promptHostRef.current = { for: null, anchor: null };
-  if (appConfirm && confirmHostRef.current.for !== appConfirm) confirmHostRef.current = { for: appConfirm, anchor: takeDialogAnchor() };
+  if (appConfirm && confirmHostRef.current.for !== appConfirm) confirmHostRef.current = { for: appConfirm, anchor: takeDialogAnchor() ?? activeDialogAnchor() };
   if (!appConfirm && confirmHostRef.current.for) confirmHostRef.current = { for: null, anchor: null };
   const promptAnchor = promptHostRef.current.anchor;
   const confirmAnchor = confirmHostRef.current.anchor;
@@ -686,8 +686,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     这里**无条件挂载**、组件自己决定画不画。⛔ 别在 AppView 里再判一次版本（判定只能一处）。 */}
       <WhatsNewDialog />
 <AppViewTaskComposer app={app} />
-      {appPrompt && (promptBubble ? (
-        <AnchoredDialogCard ariaLabel={appPrompt.title} onClose={() => { appPrompt.resolve(null); setAppPrompt(null); }}>
+      {appPrompt && (promptAnchor ? (
+        <AnchoredDialogCard anchor={promptAnchor} ariaLabel={appPrompt.title} onClose={() => { appPrompt.resolve(null); setAppPrompt(null); }}>
           <div className="dialog-anchor-head"><PenLine size={15} /><strong>{appPrompt.title}</strong></div>
           <form className="agent-ask-free app-prompt-form" onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem("promptText") as HTMLInputElement | HTMLTextAreaElement; appPrompt.resolve(input.value); setAppPrompt(null); }}>
             {appPrompt.multiline
@@ -715,8 +715,8 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           </div>
         </div>
       ))}
-      {appConfirm && (confirmBubble ? (
-        <AnchoredDialogCard ariaLabel={appConfirm.title} onClose={() => { appConfirm.resolve(false); setAppConfirm(null); }}>
+      {appConfirm && (confirmAnchor ? (
+        <AnchoredDialogCard anchor={confirmAnchor} ariaLabel={appConfirm.title} onClose={() => { appConfirm.resolve(false); setAppConfirm(null); }}>
           <div className="dialog-anchor-head"><Trash2 size={15} /><strong>{appConfirm.title}</strong></div>
           <p className="dialog-anchor-text">{appConfirm.text}</p>
           <div className="app-prompt-actions">

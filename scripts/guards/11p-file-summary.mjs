@@ -456,5 +456,27 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "媒体预览卡样式在（缩略图 + 播放角标 + 名称）");
 }
 
+/* 11-11 用户令：「所有的小窗口就近弹、带归属箭头；菜单开着时时间不要和三个点叠住」。 */
+{
+  const appView = readFileSync(join(ROOT, "src", "features", "app-view", "AppView.tsx"), "utf8");
+  const bubble = readFileSync(join(ROOT, "src", "features", "shared", "AnchoredDialog.tsx"), "utf8");
+  const rowsSrc = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part02", "02-goal-browser-notice", "01-goal-review-file-browser", "02-thread-attention-rows.tsx"), "utf8");
+  const shellSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "01-sidebar-shell.tsx"), "utf8");
+  const cardsCss = readFileSync(join(ROOT, "src", "styles", "04-cards-tools.css"), "utf8");
+  const threadsCss = readFileSync(join(ROOT, "src", "styles", "02-sidebar-threads.css"), "utf8");
+  ok(/takeDialogAnchor\(\) \?\? activeDialogAnchor\(\)/.test(appView) && /<AnchoredDialogCard anchor=\{/.test(appView),
+    "改名/删除/确认：有锚点走气泡，无锚点回落居中模态");
+  ok(/side === "top"/.test(bubble) && /anchor\.bottom \+ gap/.test(bubble) && /window\.innerWidth/.test(bubble),
+    "气泡定位：上方优先、不够翻下方/左右，并夹进视口");
+  ok(/setDialogAnchor\(anchor\)/.test(rowsSrc) && /setDialogAnchor\(anchor\)/.test(shellSrc),
+    "会话菜单 / 项目菜单的改名、删除都把触发处坐标交给气泡");
+  ok(/\.dialog-anchor-card\.side-top::before/.test(cardsCss) && /\.dialog-anchor-card\.side-bottom::before/.test(cardsCss) && /--arrow-x/.test(cardsCss),
+    "气泡小三角 CSS 在（四个方向指回触发处）");
+  ok(/\.thread-row\.menu-open > button:first-child > small[\s\S]{0,60}visibility: hidden/.test(threadsCss),
+    "会话菜单打开时时间同样隐藏（不和三个点叠住）");
+  ok(/\.thread-row-menu::before \{[\s\S]{0,420}border-right: 6px solid var\(--panel\)/.test(threadsCss),
+    "会话菜单带归属箭头（左侧小三角指回「⋯」按钮）");
+}
+
 console.log(`\n【file-summary】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
