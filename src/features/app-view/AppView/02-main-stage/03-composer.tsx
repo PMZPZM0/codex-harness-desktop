@@ -156,6 +156,8 @@ import { AgentAskCard } from "./03-composer/03-agent-ask-card";
 import { ArchiveToast } from "../../../../components/ArchiveToast";
 import { UpdateProgressBar } from "../../../../components/UpdateProgressBar";
 import { ComposerComposerForm } from "./03-composer/02-composer-form";
+/* ⛔ 11-11 独立板块：异步执行反馈（外面会话里派团时的可见反馈；与群聊共用同一个板块）。 */
+import { AsyncRunPanel } from "../../../async-run-feedback";
 
 /** 主舞台输入区容器：调度状态、运行态、上下文项与发送链路都从这里接。 */
 export function MainStageComposer({ app }: { app: HarnessAppApi }) {
@@ -585,6 +587,11 @@ export function MainStageComposer({ app }: { app: HarnessAppApi }) {
                       <QueuedMessageList entries={queue} timers={queueTimers[thread.id] ?? {}} pendingIds={pendingSteerHide} onSetTimer={(entry, runAt) => void setQueuedTimer(thread.id, entry.id, runAt)} onOpenFile={messageHandlers.onOpenFile} onQuote={messageHandlers.onQuote} onDelete={(id) => void deleteQueued(id)} onStart={(id) => void startQueued(id)} onSave={(entry, text) => void saveQueued(entry, text)} onReorder={(from, to) => void reorderQueued(from, to)} dragIndex={queueDragIndex} setDragIndex={setQueueDragIndex} />
                     </div>
                   )}
+                  {/* ⛔ 11-11 独立板块：异步执行反馈（外面会话版）。
+                      主对话里派给专家团的成员会在独立团队会话里跑，原来这里同样只有主理人一句
+                      "转后台"、看不到任何人在干活 ⇒ 板块按 threadId 订阅 group-async-run 事件。
+                      ⛔ 与群聊那块是同一个板块（不是第二套），只是作用域不同。 */}
+                  <AsyncRunPanel threadId={thread?.id} />
                   <ComposerComposerForm app={app} />
                   {/* AI 内容提示（09-20 用户要求：「在输入框下面空白居中位置加一排字」）。
                       ⛔ 只放**静态一行**，不参与任何布局计算：`.composer-wrap` 被 ResizeObserver 观察

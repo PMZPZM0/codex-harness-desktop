@@ -391,6 +391,13 @@ export async function run() {
       (localImageUrl(win) === want ? ok : fail)("【47】本地路径双重编码（改单编码会让图片变透明占位）");
       (/%25/.test(localImageUrl(win)) ? ok : fail)("【47】确实编了两层（URL 里出现 %25）");
       (imageDisplaySrc(win).startsWith(LOCAL_IMAGE_SCHEME) ? ok : fail)("【47】本地路径走自定义协议");
+      /* 11-11 用户实测「重启后图片全变成破图」：引擎回读的图片 part 是 file:///D:/… 形态，
+         旧逻辑当普通路径又包一层 ⇒ 主进程找不到 file:\D:\… 。必须还原成本地路径再走协议。 */
+      const fileSrc = imageDisplaySrc("file:///D:/6/taskbar-check.png");
+      let fileDecoded = fileSrc.replace(LOCAL_IMAGE_SCHEME, "");
+      try { fileDecoded = decodeURIComponent(decodeURIComponent(fileDecoded)); } catch { /* 保持 */ }
+      (fileSrc.startsWith(LOCAL_IMAGE_SCHEME) && /^D:\/6\/taskbar-check\.png$/.test(fileDecoded) ? ok : fail)(
+        `【47】file:// URL 归一成本地协议（实得 ${fileDecoded}）`);
       // ⛔ 灯箱的「在文件夹中显示」必须靠 resolveImagePath 的真返回值决定：它对 data URL / http
       //    返回 null（那两个来源没有本机文件可定位）。断言这段结构，防"给 data URL 也挂一个
       //    指向假路径的按钮"。曾写过一个 isLocalImageSource 纯函数，但它没有任何调用点

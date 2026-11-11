@@ -21,6 +21,8 @@
 import { teamRunStore, threadCwd } from "./runtime-refs";
 import { invokeTeamMemberCore, type InvokeMemberInput, type InvokeMemberResult } from "./team-invoke";
 import { dedupeTeamPhaseTasks } from "../src/lib/team-phase.mjs";
+import { groupOfTeam, relayGroupLead } from "./team-group-bridge";
+import { broadcastHarnessEvent } from "./features/window-bus";
 
 const TEAM_TOOL_MEMBER = "team_member_invoke";
 const TEAM_TOOL_PHASE = "team_phase_invoke";
@@ -107,6 +109,60 @@ export async function handleTeamToolCall(deps: {
     //    都没有就不传（invokeTeamMemberCore 自己回到 process.cwd()，与老行为一致）。
     cwd: threadCwd.get(threadId) || undefined,
   };
+
+  /* ⛔⛔ 11-11 用户令（「一直卡着空转」）—— **群聊会话专用异步排片**：
+     原实现 `await Promise.allSettled(成员回合)`，主理人这一轮被同步挂住 3~5 分钟，
+     界面只剩它自己那张「正在写」，用户只能判定卡死。
+     ⇒ 群里改成：① 工具**立刻**应答「已派给谁」（引擎不等）；② 成员在后台并发跑，
+       产出照旧自己落群（team-invoke 那条链）；③ 全部跑完后由宿主把话头交回主理人。
+     ⛔ 独立团会话 / 主对话派出去的团队会话（groupTalk=false）**保持同步原样**——
+       那条链把成员产出当 tool result 交给主理人汇总，改异步会直接断掉。 */
+  if (groupTalk) {
+    const tasks = tool === TEAM_TOOL_PHASE
+      ? dedupeTeamPhaseTasks(args?.tasks)
+      : [{ memberId: String(args?.memberId ?? ""), query: String(args?.query ?? "") }];
+    if (!tasks.length) {
+      await respond(id, { contentItems: [{ type: "inputText", text: "team_phase_invoke 需要至少一个成员任务（tasks 为空）" }], success: false });
+      return true;
+    }
+    const names = tasks.map((task: any) => String(task?.memberId ?? "")).filter(Boolean).join("、");
+    /* ⛔ 11-11 用户令「加一个异步执行反馈效果板块」：派单这一刻就把整批任务广播出去，
+       板块自己订阅 `group-async-run` 事件（零 IPC、独立板块）。⛔ 只广播事实，不在这里
+       维护任何状态 —— 关掉群弹窗再打开时板块按事件重建即可。 */
+    const gid = groupOfTeam(teamId);
+    const emitAsync = (phase: string, extra: Record<string, unknown> = {}) => {
+      if (!gid) return;
+      try {
+        broadcastHarnessEvent({
+          type: "group-async-run", phase, groupId: gid, teamId, at: Date.now(), ...extra,
+        } as never);
+      } catch { /* 广播失败不影响派活 */ }
+    };
+    emitAsync("batch", { total: tasks.length, note: names });
+    for (const task of tasks) {
+      emitAsync("queued", { memberId: String(task?.memberId ?? ""), name: String(task?.memberId ?? "") });
+    }
+    const ack = `[已派单] 已把 ${tasks.length} 件活交给 ${names || "团队成员"}，他们正在后台跑，产出会自己发进群。\n`
+      + `⛔ 这一轮只回一句「已派给谁、在等什么」：不要写「收口」、不要重复派同一位、不要代写成员的产出。\n`
+      + `成员全部交回后，宿主会把产出交回给你，那时再验收 / 推进下一阶段 / 收口。`;
+    await respond(id, { contentItems: [{ type: "inputText", text: ack }], success: true });
+    void (async () => {
+      const settled = await Promise.allSettled(tasks.map((task: any) => invokeTeamMemberCore({
+        ...base, memberId: String(task?.memberId ?? ""), query: String(task?.query ?? ""),
+      })));
+      const done = settled.filter((entry) => entry.status === "fulfilled").length;
+      const failed = settled.length - done;
+      const gid = groupOfTeam(teamId);
+      if (!gid) return;
+      emitAsync("settled", { done, failed });
+      relayGroupLead(gid, teamId,
+        `[系统] 你派的这一阶段共 ${settled.length} 件：交回 ${done} 件${failed ? `、失败 ${failed} 件` : ""}，`
+        + "成员的产出已经各自发进群，请按 SOP 继续：先向群里通报阶段进度（已完成哪几环、还差哪几环），"
+        + "验收这一轮产出，再决定下一步派谁；只有全部阶段验收完才写「收口」给最终结论。"
+        + "⛔ 不要重复派同一位同一件活，也不要代写成员产出。");
+    })().catch(() => undefined);
+    return true;
+  }
 
   try {
     if (tool === TEAM_TOOL_MEMBER) {

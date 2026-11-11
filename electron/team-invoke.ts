@@ -232,14 +232,30 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
      只能判定"卡住了"。实测：它 21:15:56 真派了活、同一秒建了成员会话，界面却毫无痕迹。
      ⇒ 成员开跑 / 收尾各广播一次，群里出现「问俗 正在写」的卡（与群派活同一套事件口径）。 */
   const liveGroup = groupOfTeam(String(team.teamId ?? ""));
+  /* ⛔⛔ 11-11 用户令「这个可以给外面会话也加上异步板块反馈」：
+     主对话里派出去的团（没有绑群）也要有反馈 ⇒ 作用域退回**发起这次派活的那条会话**
+     （`input.leadThreadId`）。板块按 threadId 订阅，群聊仍按 groupId，两条互不干扰。 */
+  const liveThreadScope = liveGroup ? "" : String(input.leadThreadId ?? "");
   const liveMemberId = teamAuthorIdOf(String(team.teamId ?? ""), String(member.id ?? ""));
   const liveRunId = `team:${String(team.teamId)}:${String(member.id)}:${memberRunStartedAt}`;
   const announceLive = (phase: "started" | "finished") => {
-    if (!liveGroup) return;
+    if (!liveGroup && !liveThreadScope) return;
     try {
+      /* 群聊才有「正在写」流式卡；外面会话只要异步板块那条反馈。 */
+      if (liveGroup) {
+        broadcastHarnessEvent({
+          type: "group-talk-live", phase, groupId: liveGroup, memberId: liveMemberId,
+          name: member.name, threadId: memberThreadId, runId: liveRunId, at: Date.now(),
+        } as never);
+      }
+      /* ⛔ 11-11 独立板块「异步执行反馈」：成员开跑 / 交回都要喂给板块（零 IPC）。
+         ⛔ 群聊按 groupId、外面会话按 threadId —— 同一条 announceLive 里发，两张视图不会分家。 */
       broadcastHarnessEvent({
-        type: "group-talk-live", phase, groupId: liveGroup, memberId: liveMemberId,
-        name: member.name, threadId: memberThreadId, runId: liveRunId, at: Date.now(),
+        type: "group-async-run",
+        phase: phase === "started" ? "running" : "done",
+        ...(liveGroup ? { groupId: liveGroup } : { threadId: liveThreadScope }),
+        teamId: String(team.teamId ?? ""),
+        memberId: liveMemberId, name: member.name, at: Date.now(),
       } as never);
     } catch { /* 广播失败不影响派活 */ }
   };

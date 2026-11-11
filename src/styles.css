@@ -98,4 +98,6 @@
 @import "./styles/65-memory-list-tools" layer(components);
 /* 11-09 自媒体工作台（设置页独立板块）。⛔ 同样必须在 59-motion 之前。 */
 @import "./styles/63-media-desk" layer(components);
+/* 11-11 异步执行反馈板块（群聊里的独立板块，零 IPC；⛔ 必须在 59-motion 之前） */
+@import "./styles/66-async-run-feedback" layer(components);
 @import "./styles/59-motion" layer(components);

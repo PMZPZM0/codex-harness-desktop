@@ -23,6 +23,28 @@ export function setTeamGroupAppender(fn: AppendFn | null): void {
   appendFn = fn;
 }
 
+/* ⛔⛔ 11-11 用户令（「一直卡着空转」）：群聊里主理人调 team_member_invoke / team_phase_invoke
+   原来是**同步等成员跑完**（3~5 分钟）才把结果交回，期间主理人那张卡一直挂着。
+   ⇒ 群聊路径改成异步排片：工具立刻回「已派单」，成员在后台跑、产出自行落群；
+     **全部跑完后**由宿主把话头交回主理人（交回的是"成员产出已进群"的事实 + 验收要求）。
+   ⛔ 这个回调只负责"通知"，⛔ 不在这里直接起引擎回合（群派活链在 harness-team-ipc，
+      它自带 queueTalkDelivery 串行键，会排队等主理人上一回合真正跑完，不会 busy 冲突）。 */
+type RelayFn = (groupId: string, teamId: string, note: string) => void;
+let relayFn: RelayFn | null = null;
+
+/** 群存储挂载时注入（与 setTeamGroupAppender 同一处 mount）。 */
+export function setTeamGroupRelay(fn: RelayFn | null): void {
+  relayFn = fn;
+}
+
+/** 成员全部跑完后把话头交回主理人。⛔ 失败静默：通知不到不该影响已落盘的成员产出。 */
+export function relayGroupLead(groupId: string, teamId: string, note: string): void {
+  const gid = String(groupId ?? "");
+  if (!gid || !relayFn) return;
+  try { relayFn(gid, String(teamId ?? ""), String(note ?? "")); }
+  catch { /* 回喂失败不阻断派活 */ }
+}
+
 /** teamId → 群 id（派活期间有效）。⛔ 只记最近一次派活的群：同一个团在同一时刻只在一个群里干活。 */
 const boundGroupByTeam = new Map<string, { groupId: string; at: number }>();
 

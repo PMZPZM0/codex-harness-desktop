@@ -82,6 +82,8 @@ import { dayKeyOf, dayLabelOf } from "../../lib/team-view.mjs";
    连带注释里出现那个字面量都会被扫到）。群消息流没有主对话那圈「尾部留白」，
    所以目标就是内容底 —— 但写入路径必须同源。 */
 import { scrollToOffsetInstant } from "../../components/scroll-utils";
+/* ⛔ 11-11 独立板块：异步执行反馈（群聊与外面会话共用同一块；零 IPC、自己订阅事件）。 */
+import { AsyncRunPanel } from "../async-run-feedback";
 import type { HarnessAppApi } from "../app-state";
 
 type Props = {
@@ -1944,6 +1946,9 @@ export function TeamGroupView({
             {(sendError || notice) && (
               <p className="team-group__notice" role="status">{sendError || notice}</p>
             )}
+            {/* ⛔ 11-11 独立板块：异步执行反馈（自己订阅 group-async-run 事件，⛔ 不占群聊域状态）。
+                放在输入卡上方 —— 用户要的是"派了几件、谁在跑、谁交回了"一眼可见。 */}
+            <AsyncRunPanel groupId={group.id} />
 
             <footer className="team-group__composer">
               {/* 11-08 用户令「询问，审批，计划，等等全部跟对话框一样」：伙伴跑起来后的

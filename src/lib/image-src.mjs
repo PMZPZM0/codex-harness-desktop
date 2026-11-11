@@ -22,8 +22,18 @@ export function localImageUrl(path) {
 /** 任意图片来源 → 可直接放进 <img src> / 灯箱的 src。
  *  已是 data:/blob:/http(s):/harness-image: 的原样返回；其余（本地路径）走协议 URL。 */
 export function imageDisplaySrc(source) {
-  const s = String(source ?? "");
+  const s = String(source ?? "").trim();
   if (!s) return "";
   if (/^(data:|blob:|https?:|harness-image:)/i.test(s)) return s;
+  /* 11-11 修复「重启后图片全变成破图」：引擎回读的图片 part 可能是 `file:///D:/…` 形态，
+     旧逻辑把它当**普通路径**又包一层协议 ⇒ 主进程找不到 `file:\D:\…` ⇒ 破图。
+     这里把 file URL 还原成本地路径，再走统一的 harness-image 协议。 */
+  if (/^file:/i.test(s)) {
+    let p = s.replace(/^file:\/\//i, "").replace(/^file:\//i, "");
+    if (/^localhost\//i.test(p)) p = p.slice("localhost/".length);
+    try { p = decodeURIComponent(p); } catch { /* 保持原样 */ }
+    if (/^\/[a-zA-Z]:[\\/]/.test(p)) p = p.slice(1);
+    if (p) return localImageUrl(p);
+  }
   return localImageUrl(s);
 }

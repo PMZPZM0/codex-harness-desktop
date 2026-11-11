@@ -1,0 +1,77 @@
+/* 异步执行反馈板块（11-11 立，独立板块样式）。
+   ⛔ 与输入卡 / 消息列同一条 --team-column 轴；⛔ 不铺满整条底栏。 */
+.async-run-panel {
+  margin-inline: max(14px, calc((100% - var(--team-column)) / 2));
+  margin-bottom: 8px;
+  border: 1px solid var(--line, #e5e7eb);
+  border-radius: 10px;
+  background: var(--bg, #fff);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 4%);
+  padding: 10px 12px 9px;
+  font-size: 12px;
+  color: var(--text, #1f2328);
+}
+.async-run-panel.is-settled { border-color: var(--line-soft, #eceef1); }
+
+.async-run-panel__head { display: flex; align-items: center; gap: 8px; }
+.async-run-panel__toggle {
+  display: inline-flex; align-items: center; gap: 4px;
+  border: 0; background: transparent; padding: 0; cursor: pointer;
+  color: inherit; font: inherit; font-weight: 600;
+}
+.async-run-panel__count { color: var(--muted, #6b7280); }
+.async-run-panel__elapsed {
+  margin-left: auto; font-variant-numeric: tabular-nums;
+  color: var(--faint, #9ca3af);
+}
+.async-run-panel__close {
+  border: 0; background: transparent; cursor: pointer; color: var(--muted, #6b7280);
+  display: inline-flex; padding: 2px; border-radius: 4px;
+}
+.async-run-panel__close:hover { background: var(--accent-soft, #f2f4f7); }
+
+.async-run-panel__track {
+  height: 4px; border-radius: 3px; overflow: hidden;
+  background: var(--accent-soft, #eef1f5); margin: 8px 0 6px;
+}
+.async-run-panel__track > span {
+  display: block; height: 100%; border-radius: 3px;
+  background: var(--accent, #4f6bed);
+  transition: width 320ms ease;
+}
+.async-run-panel.is-settled .async-run-panel__track > span { background: var(--ok, #22a06b); }
+
+.async-run-panel__rows { list-style: none; margin: 0; padding: 0; }
+.async-run-panel__rows > li {
+  display: flex; align-items: center; gap: 7px;
+  padding: 3px 0; color: var(--muted, #6b7280);
+}
+.async-run-panel__dot {
+  width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--faint, #c2c8d0);
+}
+.async-run-panel__rows > li.is-running .async-run-panel__dot {
+  background: var(--accent, #4f6bed);
+  animation: async-run-pulse 1.2s ease-in-out infinite;
+}
+.async-run-panel__rows > li.is-done .async-run-panel__dot { background: var(--ok, #22a06b); }
+.async-run-panel__rows > li.is-failed .async-run-panel__dot { background: var(--orange, #d97706); }
+.async-run-panel__name {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--text, #1f2328); max-width: 42%;
+}
+.async-run-panel__phase { flex: 0 0 auto; }
+.async-run-panel__time {
+  margin-left: auto; font-variant-numeric: tabular-nums; color: var(--faint, #9ca3af);
+}
+.async-run-panel__hint { margin: 6px 0 0; color: var(--faint, #9ca3af); line-height: 1.5; }
+.async-run-panel__hint.is-warn { color: var(--orange, #d97706); }
+
+@keyframes async-run-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: .45; transform: scale(.78); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .async-run-panel__rows > li.is-running .async-run-panel__dot { animation: none; }
+  .async-run-panel__track > span { transition: none; }
+}

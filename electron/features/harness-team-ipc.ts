@@ -93,7 +93,7 @@ import { buildTeamPhaseTool, buildTeamTools, readUsableExpertTeams } from "../ex
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
-import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
+import { bindTeamGroup, setTeamGroupAppender, setTeamGroupRelay } from "../team-group-bridge";
 /* ⛔ 11-11：主理人这一轮到底用没用真调度工具 —— 决定催办说哪种话（见下面的 isLeadSelf）。 */
 import { teamToolUsedSince } from "../team-tool-fallback";
 /* ⛔ 误登记成指挥中枢的伙伴会话要能静默摘掉身份（保留记忆目录）——见 talk-threads 通道。 */
@@ -635,11 +635,54 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
   return { removed, failed };
 }
 
+/** ⛔⛔ 11-11 群聊异步排片的收口：成员全部跑完后，宿主把话头交回主理人。
+ *  ⛔ 不落"用户消息"—— 直接走 `runDispatchRounds`（它的 text 只进提示词、不落群日志），
+ *     所以群里不会凭空多出一条「用户说：成员交回了…」。
+ *  ⛔ 复用群聊串行队列（键 = talkAs）⇒ 主理人上一回合没跑完时这一轮会**排队**，
+ *     ⛔ 不会并发 resume 同一条会话（引擎会报 busy）。 */
+async function relayLeadAfterMembers(groupId: string, teamId: string, note: string): Promise<void> {
+  const group = (readStore().groups ?? []).find((g) => String(g.id) === String(groupId));
+  if (!group) return;
+  const teams = await readUsableExpertTeams().catch(() => []);
+  const team = teams.find((t) => String(t?.teamId) === String(teamId)) as
+    | { lead?: { id?: string; name?: string } }
+    | undefined;
+  const leadId = String(team?.lead?.id ?? "");
+  if (!leadId) return;
+  const target: GroupTarget = {
+    id: teamAuthorIdOf(String(teamId), leadId),
+    kind: "bot",
+    name: String(team?.lead?.name ?? "") || leadId,
+    targetKind: "member",
+    targetKey: `${teamId}:${leadId}`,
+  };
+  await runDispatchRounds(group, [target], note, "automation", { allowChain: true });
+}
+
+/** ⛔⛔ 11-11：群聊里这两个调度工具是**异步排片**（工具立刻回「已派单」、成员后台跑、
+ *  产出各自进群、全部交回后宿主再请主理人验收）；独立团会话才是"一次性返回全部结论"。
+ *  ⛔ 但 schema 是同一份 `buildTeamTools / buildTeamPhaseTool`，描述硬写着"一起返回"——
+ *     模型在群里会据此以为活已干完，直接写「收口」或把同一批人再派一遍。
+ *  ⇒ 只在群聊工具面上覆写 description（纯函数，⛔ 不动独立团会话那份）。 */
+function groupAsyncToolCopy(tool: unknown): unknown {
+  if (!tool || typeof tool !== "object") return tool;
+  const src = tool as Record<string, unknown>;
+  const text = String(src.description ?? "")
+    .replace("宿主会**并发**跑完它们并把全部结论一起返回",
+      "宿主会**并发**在后台跑，群里先收到「已派单」回执，成员产出各自以本人署名发进群，全部交回后宿主再请你验收")
+    .replace("并返回结构化结果", "并在后台产出（产出以本人署名发进群）");
+  return {
+    ...src,
+    description: text
+      + " ⛔ 群聊里这是异步派单：拿到「已派单」的这一轮只回一句「已派给谁、在等什么」，不要写「收口」、不要重派同一位、不要代写成员产出。",
+  };
+}
+
 /** 团群主理人会话的完整工具面 = 群聊三件套 + 团队调度两件（⛔ 与 runDispatchRounds 同一份构造口径）。 */
 function groupLeadSurfaceOf(team: { teamId: string } & Record<string, any>): unknown[] {
   return [
     ...buildGroupTalkTools(),
-    ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never), buildDelegateHarnessTool()]),
+    ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never), buildDelegateHarnessTool()].map(groupAsyncToolCopy)),
   ] as unknown[];
 }
 
@@ -987,7 +1030,7 @@ async function runDispatchRounds(
     ? (await readUsableExpertTeams().catch(() => [])).find((t) => String(t.teamId) === groupTeamId) ?? null
     : null;
   const leadDispatchTools = groupTeam
-    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam), buildDelegateHarnessTool()])
+    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam), buildDelegateHarnessTool()].map(groupAsyncToolCopy))
     : [];
   const leadToolNames = groupTeam ? ["team_member_invoke", "team_phase_invoke", "harness_tools"] : [];
   /* ⛔ 成员产出落群：`team_member_invoke` 起的是**团队会话**，产出靠 team-group-bridge 回写群；
@@ -2509,9 +2552,14 @@ async function healOrphanTalkThreads(): Promise<void> {
       if (since && cleared > since) return Promise.resolve({ ok: true });
       return appendMessageTo(gid, entry);
     });
+    /* ⛔ 11-11：群聊会话的团队派活已异步排片 —— 成员全部跑完后由这里把话头交回主理人。
+       ⛔ 只注入"通知"函数，真正的回合仍走 runDispatchRounds（自带串行队列与安全阀）。 */
+    setTeamGroupRelay((gid, teamId, note) => {
+      void relayLeadAfterMembers(gid, teamId, note).catch(() => undefined);
+    });
     /* ⛔ 群聊会话的工具调用由独立板块自己应答（它的事件会被 filterForRenderer 裁掉）。 */
     ctx.effect(attachGroupTalkEvents(server));
-    ctx.effect(() => () => setTeamGroupAppender(null));
+    ctx.effect(() => () => { setTeamGroupAppender(null); setTeamGroupRelay(null); });
     ctx.effect(() => {
       for (const ch of HARNESS_TEAM_CHANNELS) ipcHost.removeHandler(ch);
     });

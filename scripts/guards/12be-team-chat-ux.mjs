@@ -388,7 +388,7 @@ const catalog = [
        缺的只是工具面这根线。⛔ 成员不给（每个成员都放开写知识库 = 权限面失控），
        而且文案必须按 `me.harnessGateway` 分叉：没挂的人要说"定时任务不在这儿建"。 */
     ok(/buildDelegateHarnessTool/.test(dispatch)
-      && /withStepParam\(\[buildTeamTools\(groupTeam\), buildTeamPhaseTool\(groupTeam\), buildDelegateHarnessTool\(\)\]\)/.test(dispatch)
+      && /withStepParam\(\[buildTeamTools\(groupTeam\), buildTeamPhaseTool\(groupTeam\), buildDelegateHarnessTool\(\)\]\.map\(groupAsyncToolCopy\)\)/.test(dispatch)
       && /harness_tools/.test(dispatch)
       && /harnessGateway: true/.test(dispatch)
       && /me\.harnessGateway/.test(talk) && /定时任务不在你这儿建/.test(talk),
@@ -416,6 +416,39 @@ const catalog = [
       && !/String\(admin\.id\) !== String\(partner\.id\)/.test(dispatch)
       && !/String\(admin\.id\) === String\(partner\.id\)/.test(dispatch),
       "团群里「同一个人」按椅子判（@整团 与 @主理人 同座），⛔ 不按 id 字符串（否则自己回喂自己）");
+    /* ⛔⛔ 11-11 用户令（「一直卡着空转」）：群聊里 team_member_invoke / team_phase_invoke
+       原来是**同步等成员跑完**（3~5 分钟）⇒ 主理人那张卡一直挂着，用户只能判定卡死。
+       改异步排片后四件缺一就退回老问题 / 产出没人接：
+       ① fallback 群聊分支立即 respond + 后台并发跑；② 桥接 relay + 注入（走群聊串行队列）；
+       ③ 工具 schema 描述按群聊覆写（否则模型以为结论已返回，直接收口 / 重派）；
+       ④ 提示词改异步口径。⛔ 负向：独立团会话的同步返回链必须还在。 */
+    const bridge = codeOnly(read("electron/team-group-bridge.ts"));
+    ok(/if \(groupTalk\) \{/.test(fallback)
+      && /\[已派单\]/.test(fallback)
+      && /text: ack \}\], success: true/.test(fallback)
+      && /void \(async \(\) => \{/.test(fallback)
+      && /relayGroupLead\(gid, teamId,/.test(fallback)
+      && /Promise\.allSettled\(tasks\.map/.test(fallback),
+      "群聊团队工具异步排片：立刻回已派单 + 后台并发跑成员 + 完成后回喂主理人");
+    ok(/export function relayGroupLead/.test(bridge)
+      && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
+      && /relayLeadAfterMembers\(/.test(dispatch)
+      && /runDispatchRounds\(group, \[target\], note, "automation"/.test(dispatch),
+      "回喂走群聊串行队列（不落假用户消息、⛔ 不并发 resume 同一条会话）");
+    ok(/groupAsyncToolCopy/.test(dispatch) && /异步派单/.test(dispatch)
+      && /异步排片/.test(talk) && /不要写「收口」/.test(talk)
+      && /await Promise\.allSettled\(tasks\.map/.test(fallback),
+      "工具 schema 与提示词同改异步口径；⛔ 独立团会话仍保留同步返回链");
+    /* ⛔⛔ 11-11 用户令「加一个异步执行反馈效果板块」+「这个可以给外面会话也加上」：
+       板块必须是**独立的**（自己订阅事件、零 IPC、不占群聊域状态），且群聊与外面会话
+       共用同一块（⛔ 不是各写一套）。四处缺一就等于没落地。 */
+    ok(/export function AsyncRunPanel/.test(read("src/features/async-run-feedback/AsyncRunPanel.tsx"))
+      && /group-async-run/.test(read("src/features/async-run-feedback/useAsyncRunState.ts"))
+      && /export function reduceAsyncRunEvent/.test(read("src/features/async-run-feedback/useAsyncRunState.ts"))
+      && /<AsyncRunPanel groupId=\{group\.id\}/.test(read("src/features/harness-team/04-team-group-view.tsx"))
+      && /<AsyncRunPanel threadId=\{thread\?\.id\}/.test(read("src/features/app-view/AppView/02-main-stage/03-composer.tsx"))
+      && /66-async-run-feedback/.test(read("src/styles.css")),
+      "异步执行反馈是独立板块（自己订阅事件 / 零 IPC），群聊与外面会话共用同一块");
   }
   ok(/runTalkTurn\(group\.id/.test(dispatch) && !/runDelegatedTask\(/.test(dispatch)
     && /attachGroupTalkEvents\(server\)/.test(dispatch),
@@ -627,7 +660,9 @@ const catalog = [
     && !/invokeAgent\(/.test(store),
     "⛔ 消息上屏即返回：渲染层只发一条 dispatch（不再自己 await 全部回复 ⇒ 清空被推迟几十秒）");
   ok(/void runDispatchRounds\(g, opened\.targets, text, "human"/.test(ipcDispatch)
-    && !/await runDispatchRounds\(/.test(ipcDispatch),
+    /* ⛔ 11-11：判据收窄到 **handler 那次调用** —— relayLeadAfterMembers 里的 await 是后台回喂，
+       ⛔ 不绑回 IPC 请求生命周期（它由成员完成事件触发，与 handler 无关）。 */
+    && !/await runDispatchRounds\(g, opened\.targets/.test(ipcDispatch),
     "⛔ 主进程不 await 派活：关面板/切页后任务照跑（产出照进群、互 @ 照接力）");
   const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
   /* 11-08：派活前多了「运行中的伙伴先进队列」这一跳（idleTargets），清空仍只在**成功之后**。 */
