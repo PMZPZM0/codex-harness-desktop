@@ -253,6 +253,10 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(/window\.codex\.readFile\((?:path|target)\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
     && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
+  /* 11-11 用户：「侧边栏的这个图片也加上点击预览功能」。 */
+  ok(/openImageLightbox\(state\.resolvedPath \|\| path, name\)/.test(workspacePreview)
+    && /\.workspace-file-preview-image \{[\s\S]{0,140}cursor: zoom-in;/.test(read("src/styles/14-model-onboarding.css")),
+    "右栏图片预览点击进大图灯箱（cursor: zoom-in）");
   /* ⛔ 10-29 用户令推翻了这里原来的口径（「不用授权弹窗，不管哪里的文件都要能预览和编辑」）：
      shell:open 现在**故意**不判可信根 —— 断言翻转成「必须是直通」，防的是有人悄悄把闸加回去
      （那会让用户点「默认应用」又变成"打开失败"，而这正是本次要修的症状）。 */
@@ -283,6 +287,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
       "「本轮产物」默认折叠，文件引用卡与已更改文件都在折叠里");
     ok(!/<InlineFileCards/.test(itemView) && !/import \{ InlineFileCards \}/.test(itemView),
       "消息正文不再单独画文件卡（⛔ 与折叠里重复）");
+    ok(/extractFilePathsFromMarkdown\(assistantText\)/.test(statusSrc) && /!referencedInText\(file\.path\)/.test(statusSrc),
+      "正文已引用的文件不再出「本轮产物」卡（⛔ 同一张图两张长卡）");
     ok(/\.turn-outputs > summary \{[\s\S]{0,160}display: inline-flex;/.test(read("src/styles/04-cards-tools.css"))
       && !/\.turn-outputs > summary svg:last-child \{ margin-left: auto/.test(read("src/styles/04-cards-tools.css")),
       "「本轮产物」标题不拉整行（紧凑 inline-flex，折叠箭头紧跟文字）");

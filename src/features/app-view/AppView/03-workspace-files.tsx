@@ -21,7 +21,7 @@ import { BINARY_EXTENSIONS, IMAGE_EXTENSIONS, decodeText } from "../../../hooks/
 import { toFileUrl } from "../../../lib/file-url.mjs";
 /* 卡片路径打不开时的回落（会话台账里同名真实文件），与居中编辑器同一个实现 */
 import { resolveExistingFile } from "../../../lib/path-fallback.mjs";
-import { lookupKnownFile } from "../../../lib/ui-channels";
+import { lookupKnownFile, openImageLightbox } from "../../../lib/ui-channels";
 /* 错误文案统一去噪（10-30）：主进程抛的「文件不存在或不可读」不该被 [ERR_…] 三层包壳埋掉。 */
 import { ipcErrorMessageOf } from "../../../lib/ipc-error.mjs";
 import { delimiterOf, parseDelimited } from "../../../lib/csv-preview.mjs";
@@ -194,7 +194,14 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
             <button type="button" onClick={() => setRetry((n) => n + 1)}><RotateCcw size={12} />重试</button>
           </div>
         ) : state.kind === "image" ? (
-          <img className="workspace-file-preview-image" src={toFileUrl(path)} alt={name} />
+          /* 11-11 用户：「侧边栏的这个图片也加上点击预览功能」——点缩略图进大图灯箱。 */
+          <img
+            className="workspace-file-preview-image"
+            src={toFileUrl(state.resolvedPath || path)}
+            alt={name}
+            title="点击放大预览"
+            onClick={() => openImageLightbox(state.resolvedPath || path, name)}
+          />
         ) : state.kind === "pdf" ? (
           <iframe className="workspace-file-preview-pdf" src={toFileUrl(path)} title={name} />
         ) : state.kind === "office" ? (

@@ -175,8 +175,23 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
   };
   const visible = expanded ? files : files.slice(0, COLLAPSE_LIMIT);
   /* 10-22 Qoder 式「本轮产物」：只给**新建文件**出卡片（编辑已有文件仍走下面的汇总卡），
-     避免同一批文件在卡片和汇总里重复两遍。最多 7 张、超出折叠（Qoder 同口径）。 */
-  const outputFiles = files.filter((file) => file.newFile && !file.deletedFile).map((file) => ({ path: file.path, added: file.added, deleted: file.deleted }));
+     避免同一批文件在卡片和汇总里重复两遍。最多 7 张、超出折叠（Qoder 同口径）。
+     11-11 用户截图「文件卡片重复两个图片卡片」：正文已经引用过的文件不再出「本轮产物」卡，
+     否则同一张图会有两张长卡（正文引用卡 + 产物卡 + 已更改行）。路径归一 + 文件名兜底匹配。 */
+  const refKeys = new Set<string>();
+  for (const match of extractFilePathsFromMarkdown(assistantText)) {
+    const norm = String(match.path).replaceAll("\\", "/");
+    refKeys.add(norm);
+    const base = norm.slice(norm.lastIndexOf("/") + 1);
+    if (base) refKeys.add(base);
+  }
+  const referencedInText = (filePath: string) => {
+    const norm = String(filePath).replaceAll("\\", "/");
+    return refKeys.has(norm) || refKeys.has(norm.slice(norm.lastIndexOf("/") + 1));
+  };
+  const outputFiles = files
+    .filter((file) => file.newFile && !file.deletedFile && !referencedInText(file.path))
+    .map((file) => ({ path: file.path, added: file.added, deleted: file.deleted }));
   return (
     <>
       {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。
