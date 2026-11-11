@@ -489,8 +489,8 @@ contextBridge.exposeInMainWorld("codex", {
   recallMemoryAtoms: (workspace: string, query: string, seat?: string) => __ipc("memory:atoms:recall", 2, [workspace, query, seat]),
   /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
   saveMemoryAtoms: (workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }) => __ipc("memory:atoms:save", 2, [workspace, input]),
-  /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引） */
-  forgetMemoryAtoms: (workspace: string, ids: string[]) => __ipc("memory:atoms:forget", 2, [workspace, ids]),
+  /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目 */
+  forgetMemoryAtoms: (workspace: string, targets: Array<string | { id: string; group?: string }>) => __ipc("memory:atoms:forget", 2, [workspace, targets]),
   writeMemoryLayer: (input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }) => __ipc("memory:layers:write", 1, [input]),
   listMemory: (category?: string) => __ipc("memory:list", 0, [category]),
   /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */

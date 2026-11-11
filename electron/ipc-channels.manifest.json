@@ -2596,12 +2596,12 @@
     {
       "name": "forgetMemoryAtoms",
       "channel": "memory:atoms:forget",
-      "paramsImpl": "workspace: string, ids: string[]",
-      "paramsDecl": "workspace: string, ids: string[]",
+      "paramsImpl": "workspace: string, targets: Array<string | { id: string; group?: string }>",
+      "paramsDecl": "workspace: string, targets: Array<string | { id: string; group?: string }>",
       "returns": "Promise<{ ok: boolean; done: number; failed: number; error?: string }>",
-      "invokeArgs": "workspace, ids",
+      "invokeArgs": "workspace, targets",
       "cast": null,
-      "note": "11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）"
+      "note": "11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目"
     },
     {
       "name": "writeMemoryLayer",

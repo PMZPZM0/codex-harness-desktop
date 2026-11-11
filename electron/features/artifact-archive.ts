@@ -176,7 +176,10 @@ export async function archiveFiles(workspace: string, input: ArchiveInput): Prom
     fs.copyFileSync(full, path.join(dir, dest));   // ⛔ 只复制，不删原文件
     saved.push({ path: path.join(dir, dest), name: dest, bytes: stat.size });
   }
-  if (!saved.length) return { ok: false, error: "没有任何文件归档成功", skipped };
+  if (!saved.length) {
+    try { if (fs.readdirSync(dir).length === 0) fs.rmdirSync(dir); } catch { /* 非空 / 并发写入就留着 */ }
+    return { ok: false, error: "没有任何文件归档成功", skipped };
+  }
 
   const at = Number(input.at ?? Date.now());
   const existing: ArchiveRow = { dir: dirName, task: normalizeTaskName(input.task), at, files: [] };

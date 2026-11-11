@@ -117,7 +117,11 @@ export async function writeAtom(
   const id = normalizeId(meta.id);
   if (!id) return "skipped";
   const scope = ATOM_SCOPES.includes(meta.scope) ? meta.scope : "project";
-  const file = path.join(atomsEntriesRoot(workspace), scope, `${id}.md`);
+  /* ⛔⛔ 11-11 自审发现：读侧 readAtoms 认 entries/session/<群id>/ 两级目录，
+     写侧原来只写 entries/session/<id>.md ⇒ 同一 id 在不同群互相覆盖，群隔离形同虚设。
+     ⇒ session 域带 group 必须落到自己的群目录；工作区级 / 老数据保持一级目录不变。 */
+  const group = meta.scope === "session" ? String(meta.group ?? "").trim() : "";
+  const file = path.join(atomsEntriesRoot(workspace), scope, ...(group ? [group] : []), `${id}.md`);
   const next = serializeAtom({ ...meta, id, scope }, body);
   const current = await fs.readFile(file, "utf8").catch(() => null);
   if (current === next) return "same";
@@ -149,7 +153,8 @@ export async function regenerateIndex(workspace: string, now = Date.now()): Prom
     lines.push(`## ${title}`);
     for (const row of rows) {
       const flag = row.meta.confidence === "tentative" ? " · 待验证" : "";
-      lines.push(`- [[${row.meta.id}]] — ${row.meta.summary}${flag} · ${String(row.meta.updated).slice(5)}`);
+      const groupHint = row.meta.group ? ` · 群 ${row.meta.group}` : "";
+      lines.push(`- [[${row.meta.id}]] — ${row.meta.summary}${flag}${groupHint} · ${String(row.meta.updated).slice(5)}`);
     }
     lines.push("");
   }

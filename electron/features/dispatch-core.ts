@@ -227,6 +227,7 @@ function dispatchMcpTools(): unknown[] {
         properties: {
           id: { type: "string", description: "要作废的条目 id（索引里写作 [[id]]）" },
           reason: { type: "string", description: "为什么作废 / 被什么取代（会写进条目尾部）" },
+          group: { type: "string", description: "可选：条目归属的群 id。同一 id 可能在多个群各存一份，带上群才不会作废错那条" },
         },
         required: ["id"],
       },

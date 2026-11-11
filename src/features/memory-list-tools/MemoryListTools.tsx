@@ -58,6 +58,8 @@ export function MemoryListTools({
       await pending.run(ids);
       onSelectionChange([]);
       setPendingKey(null);
+    } catch {
+      /* ⛔ 动作自身抛错时保留选择与确认框，允许重试；⛔ 不能让 void 调用变成未捕获拒绝。 */
     } finally {
       setBusy(false);
     }
@@ -67,7 +69,8 @@ export function MemoryListTools({
     <div className="mlt">
       <label className="mlt-search-wrap">
         <Search size={12} aria-hidden="true" />
-        <input className="mlt-search" type="search" value={query} onChange={(e) => onQueryChange(e.target.value)}
+        <input className="mlt-search" type="search" value={query}
+          onChange={(e) => { onQueryChange(e.target.value); if (selected.length) onSelectionChange([]); }}
           placeholder={placeholder} aria-label="搜索" data-mlt-search="" />
       </label>
       {filters.length ? (

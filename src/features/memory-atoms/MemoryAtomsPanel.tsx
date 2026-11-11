@@ -39,6 +39,8 @@ const TYPE_LABEL: Record<string, string> = {
 const TYPE_ORDER = ["rule", "decision", "runbook", "fact", "preference"];
 
 const typeLabel = (t: string) => TYPE_LABEL[t] ?? t;
+/** ⛔ 同一 id 可在多个群各存一份 ⇒ 勾选/作废键必须带群。 */
+const rowKeyOf = (e: AtomEntry) => `${e.group ?? ""}:${e.id}`;
 
 /**
  * 本地记忆面板：左边索引、右边正文、底部注入预览。
@@ -175,7 +177,9 @@ export function MemoryAtomsPanel({ workspace }: { workspace?: string }) {
     run: async (ids) => {
       if (!workspace) return;
       try {
-        const res = await window.codex.forgetMemoryAtoms(workspace, ids);
+        const targets = visibleEntries.filter((e) => ids.includes(rowKeyOf(e)))
+          .map((e) => ({ id: e.id, group: String(e.group ?? "").trim() }));
+        const res = await window.codex.forgetMemoryAtoms(workspace, targets);
         setNotice(res?.ok
           ? `已作废 ${res.done} 条${res.failed ? `，失败 ${res.failed} 条` : ""}（文件保留，可查）`
           : String(res?.error ?? "作废失败"));
@@ -223,7 +227,7 @@ export function MemoryAtomsPanel({ workspace }: { workspace?: string }) {
               { key: "scope", label: "按作用域筛选", value: scopeFilter, options: ATOM_SCOPE_OPTIONS, onChange: (v) => { setScopeFilter(v); setChecked([]); } },
               { key: "status", label: "按状态筛选", value: statusFilter, options: ATOM_STATUS_OPTIONS, onChange: (v) => { setStatusFilter(v); setChecked([]); } },
             ]}
-            visibleIds={visibleEntries.map((e) => e.id)} selected={checked} onSelectionChange={setChecked}
+            visibleIds={visibleEntries.map(rowKeyOf)} selected={checked} onSelectionChange={setChecked}
             actions={batchActions} summary={`共 ${entries.length} 条`}
           />
           {!entries.length ? (
@@ -239,8 +243,8 @@ export function MemoryAtomsPanel({ workspace }: { workspace?: string }) {
                 {group.rows.map((row) => (
                   <div className="memory-atoms__row-wrap" key={row.id}>
                     <input type="checkbox" className="mlt-check" aria-label={`选择 ${row.summary}`}
-                      checked={checked.includes(row.id)}
-                      onChange={(e) => setChecked(toggleSelection(checked, [row.id], e.target.checked))} />
+                      checked={checked.includes(rowKeyOf(row))}
+                      onChange={(e) => setChecked(toggleSelection(checked, [rowKeyOf(row)], e.target.checked))} />
                     <button
                       type="button"
                       className={`memory-atoms__row${row.id === selected ? " is-on" : ""}${row.status !== "active" ? " is-off" : ""}`}

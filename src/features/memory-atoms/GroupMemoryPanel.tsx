@@ -121,9 +121,10 @@ export function GroupMemoryPanel({ workspace }: { workspace?: string }) {
     confirmText: (n) => `将把选中的 ${n} 条群记忆标记为「已作废」（文件保留可查，不再注入）。`,
     run: async (keys) => {
       if (!workspace) return;
-      const ids = sessionEntries.filter((e) => keys.includes(rowKeyOf(e))).map((e) => e.id);
+      const targets = sessionEntries.filter((e) => keys.includes(rowKeyOf(e)))
+        .map((e) => ({ id: e.id, group: String(e.group ?? "").trim() }));
       try {
-        const res = await window.codex.forgetMemoryAtoms(workspace, ids);
+        const res = await window.codex.forgetMemoryAtoms(workspace, targets);
         setNotice(res?.ok
           ? `已作废 ${res.done} 条${res.failed ? `，失败 ${res.failed} 条` : ""}（文件保留，可查）`
           : String(res?.error ?? "作废失败"));

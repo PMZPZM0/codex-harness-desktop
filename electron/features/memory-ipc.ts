@@ -498,14 +498,20 @@ export const memoryFeature = defineFeature<null>({
     });
     /* 11-11 四个记忆板块的「批量作废」：⛔ 复用引擎侧 runMemoryTool 的 memory_forget
        （标 superseded、文件保留可查、重建索引），⛔ 不写第二份作废逻辑、不物理删文件。 */
-    ipcHost.handle("memory:atoms:forget", async (_event, workspace: string, ids: string[]) => {
+    ipcHost.handle("memory:atoms:forget", async (_event, workspace: string, targets: Array<string | { id: string; group?: string }>) => {
       const ws = String(workspace ?? "").trim();
-      const list = Array.isArray(ids) ? ids.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+      /* ⛔ 同一 id 可在多个群各存一份 ⇒ 作废键必须是 (id, group)，不能只按 id。 */
+      const list = (Array.isArray(targets) ? targets : [])
+        .map((t) => typeof t === "string"
+          ? { id: String(t).trim(), group: "" }
+          : { id: String(t?.id ?? "").trim(), group: String(t?.group ?? "").trim() })
+        .filter((t) => t.id);
       if (!ws) return { ok: false, done: 0, failed: 0, error: "缺少工作区" };
       if (!list.length) return { ok: false, done: 0, failed: 0, error: "没有选中任何条目" };
       const { runMemoryTool } = await import("../memory/atoms-tool");
-      const results = await Promise.allSettled(list.map((id) => runMemoryTool({
-        name: "memory_forget", workspace: ws, args: { id, reason: "在设置页批量作废" },
+      const results = await Promise.allSettled(list.map((t) => runMemoryTool({
+        name: "memory_forget", workspace: ws,
+        args: { id: t.id, ...(t.group ? { group: t.group } : {}), reason: "在设置页批量作废" },
       })));
       const done = results.filter((r) => r.status === "fulfilled" && r.value?.ok).length;
       return { ok: done > 0, done, failed: results.length - done };

@@ -7,7 +7,8 @@
  *   格式解析、摘要截断、状态过滤、召回排序、冲突检出、预算截断、三类群策略差异。
  * ⛔ 跑之前必须 `npm run build`（产物缺失时本守卫直接判红并说明，而不是静默跳过）。
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -210,6 +211,40 @@ evidence:
     "产物区按 日期-短名 归档（方案第 13 项：落盘模块 + 默认 dry-run 的迁移脚本）");
 }
 
+/* ── ⑨ 作废按群精确定位（11-11 自审发现的数据完整性问题）─────────────────
+   entries/session/<群id>/<id>.md 允许同一 id 在多个群各存一份；只按 id 找会作废错群。 */
+{
+  const tool = await load("atoms-tool.js");
+  const store = await load("atoms-store.js");
+  const ws = mkdtempSync(join(tmpdir(), "atoms-forget-"));
+  try {
+    for (const g of ["g1", "g2"]) {
+      const w = await tool.runMemoryTool({ name: "memory_write", workspace: ws,
+        args: { id: "same-id", summary: `${g} 口径`, body: "正文", scope: "session", group: g } });
+      if (!w.ok) throw new Error(w.error);
+    }
+    const { docs } = await store.readAtoms(ws);
+    ok(docs.filter((d) => d.meta.id === "same-id").length === 2, "同一 id 在两个群各存一份（复现跨群场景）");
+    const r = await tool.runMemoryTool({ name: "memory_forget", workspace: ws,
+      args: { id: "same-id", group: "g2", reason: "自审" } });
+    const { docs: after } = await store.readAtoms(ws);
+    const g1 = after.find((d) => d.meta.id === "same-id" && d.meta.group === "g1");
+    const g2 = after.find((d) => d.meta.id === "same-id" && d.meta.group === "g2");
+    ok(r.ok && g1?.meta.status === "active" && g2?.meta.status === "superseded",
+      "⛔ 作废带 group 只命中本群那条（不带 group 会误作废别的群的记忆）");
+    const ws2 = mkdtempSync(join(tmpdir(), "atoms-forget2-"));
+    try {
+      await tool.runMemoryTool({ name: "memory_write", workspace: ws2, args: { id: "dup", summary: "无群", body: "正文", scope: "session" } });
+      await tool.runMemoryTool({ name: "memory_write", workspace: ws2, args: { id: "dup", summary: "g1", body: "正文", scope: "session", group: "g1" } });
+      const r2 = await tool.runMemoryTool({ name: "memory_forget", workspace: ws2, args: { id: "dup" } });
+      const { docs: d2 } = await store.readAtoms(ws2);
+      const plain = d2.find((d) => d.meta.id === "dup" && !d.meta.group);
+      const grouped = d2.find((d) => d.meta.id === "dup" && d.meta.group === "g1");
+      ok(r2.ok && plain?.meta.status === "superseded" && grouped?.meta.status === "active",
+        "⛔ 不带 group 只作废无群条目，不误伤同 id 的群记忆");
+    } finally { rmSync(ws2, { recursive: true, force: true }); }
+  } finally { rmSync(ws, { recursive: true, force: true }); }
+}
 console.log(`【memory-atoms】${checks - fails}/${checks} 通过`);
 if (fails) {
   console.error(`\n✗ ${fails} 项未通过`);

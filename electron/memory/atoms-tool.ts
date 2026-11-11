@@ -95,9 +95,14 @@ export async function runMemoryTool(input: MemoryToolInput): Promise<MemoryToolR
   if (input.name === "memory_forget") {
     const id = normalizeId(args.id ?? args.key ?? "");
     if (!id) return { ok: false, error: "要作废哪一条？给 id（在记忆索引里是 [[id]]）" };
+    /* ⛔⛔ 11-11 审查发现：`entries/session/<群id>/<id>.md` 允许**同一 id 在不同群各存一份**，
+       只按 id 找会命中错误的那一条（或漏掉本群那条）⇒ 作废必须支持按群精确定位。
+       group 为空 = 作废工作区级 / 唯一 id 的条目（旧行为零变化）。 */
+    const group = String(args.group ?? "").trim();
     const { docs } = await readAtoms(workspace);
-    const hit = docs.find((d) => d.meta.id === id);
-    if (!hit) return { ok: false, error: `找不到条目 ${id} —— 先用 memory_recall 查准确的 id` };
+    const hit = docs.find((d) => d.meta.id === id
+      && String(d.meta.group ?? "").trim() === group);
+    if (!hit) return { ok: false, error: `找不到条目 ${id}${group ? `（群 ${group}）` : ""} —— 先用 memory_recall 查准确的 id${group ? "" : "；群记忆请带 group"}` };
     hit.meta.status = String(args.reason ?? "").includes("过期") ? "expired" : "superseded";
     hit.meta.updated = new Date().toISOString().slice(0, 10);
     const note = String(args.reason ?? "").trim();

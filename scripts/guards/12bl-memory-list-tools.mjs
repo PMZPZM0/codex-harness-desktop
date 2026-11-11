@@ -52,6 +52,7 @@ const { filterRows, matchesQuery, toggleSelection } = mod;
   const groups = read("src/features/memory-atoms/GroupMemoryPanel.tsx");
   const boss = read("src/features/settings-memory/BossMemoryPanel.tsx");
   const section = read("src/features/settings-memory/MemoryCenterSection.tsx");
+  ok(/rowKeyOf/.test(atoms) && /group: String\(e\.group/.test(groups), "两个条目面板都按 (group,id) 勾选/作废");
   ok(/<MemoryListTools[\s\S]*?actions=\{batchActions\}/.test(atoms), "项目共享记忆库 / 记忆条目：共用面板挂上工具条 + 批量动作");
   ok(/<MemoryListTools[\s\S]*?actions=\{batchActions\}/.test(groups), "工作伙伴记忆：挂上工具条 + 批量动作");
   ok(/<MemoryListTools[\s\S]*?actions=\{batchActions\}/.test(boss), "指挥中枢记忆：挂上工具条 + 批量动作");
@@ -69,8 +70,8 @@ const { filterRows, matchesQuery, toggleSelection } = mod;
   const ipc = read("electron/features/memory-ipc.ts");
   const tools = read("src/features/memory-list-tools/MemoryListTools.tsx");
   const css = read("src/styles/65-memory-list-tools.css");
-  ok(/"channel": "memory:atoms:forget"/.test(manifest) && /"invokeArgs": "workspace, ids"/.test(manifest),
-    "批量作废通道在 manifest（⛔ 实参只由 invokeArgs 决定：workspace, ids 一个都不能少）");
+  ok(/"channel": "memory:atoms:forget"/.test(manifest) && /"invokeArgs": "workspace, targets"/.test(manifest),
+    "批量作废通道在 manifest（⛔ 实参只由 invokeArgs 决定：workspace, targets 一个都不能少）");
   ok(/prefix: "memory", count: 35,/.test(registry) && /"memory:atoms:forget"/.test(registry), "域计数跟着通道数改（35）");
   ok(/ipcHost\.handle\("memory:atoms:forget"/.test(ipc) && /runMemoryTool\(\{[\s\S]{0,160}name: "memory_forget"/.test(ipc),
     "⛔ 批量作废复用引擎侧 memory_forget（标 superseded + 重建索引，不写第二份口径）");
@@ -89,5 +90,19 @@ const { filterRows, matchesQuery, toggleSelection } = mod;
     "两种列表行都给勾选框留了位置（窄列不挤压标题）");
 }
 
+  /* 11-11 自审修复：数据完整性 + 两个边界（⛔ 自带读取，不依赖其它块作用域） */
+  const a3 = read("src/features/memory-atoms/MemoryAtomsPanel.tsx");
+  const g3 = read("src/features/memory-atoms/GroupMemoryPanel.tsx");
+  const t3 = read("src/features/memory-list-tools/MemoryListTools.tsx");
+  const i3 = read("electron/features/memory-ipc.ts");
+  const s3 = read("electron/memory/atoms-store.ts");
+  ok(/group: t\.group/.test(i3) && /rowKeyOf/.test(a3) && /group: String\(e\.group/.test(g3),
+    "⛔ 批量作废按 (id, group) 精确定位：同 id 跨群时不许作废错那条");
+  ok(/meta\.scope === "session"/.test(s3) && /\.\.\.\(group \? \[group\] : \[\]\)/.test(s3),
+    "⛔ 写入侧按群分层落盘（读侧认两级目录，写侧不认 = 同 id 互相覆盖）");
+  ok(/if \(selected\.length\) onSelectionChange\(\[\]\)/.test(t3),
+    "搜索词变化清选择（⛔ 不许跨搜索误删看不见的行）");
+  ok(/catch \{[\s\S]{0,120}finally/.test(t3),
+    "确认动作异常有兜底（⛔ 不许 void 调用变成未捕获拒绝）");
 console.log(`【memory-list-tools】${checks - fails}/${checks} 通过`);
 if (fails) { console.error(`\n✗ ${fails} 项未通过`); process.exit(1); }

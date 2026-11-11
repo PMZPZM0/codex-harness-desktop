@@ -16,27 +16,27 @@
 
 ## 0. 现状数字（每轮收尾必须同步，滞后即视为违规）
 
-⛔ **口径与漂移**：数字是**某次提交的快照**（本次 = `ca5a0ff`，本次校准，§10 有并发写入纪律）；并发期数字会漂移，**以最新一次提交为准**，由最后收尾的那一路同步。
+⛔ **口径与漂移**：数字是**某次提交的快照**（本次 = `9d3b228ec`，11-11 校准，§10 有并发写入纪律）；并发期数字会漂移，**以最新一次提交为准**，由最后收尾的那一路同步。
 （校准依据：`docs/AUDIT-ARCH-2026-09-23.html` 的实测口径 —— 入口行数用 `wc -l`、IPC 面直接 require `dist-electron/ipc-registry.js`、业务文件分档排除 `scripts/` 与生成物。）
 
 | 位置 | 实测 | 说明 |
 |---|---:|---|
 | `src/App.tsx` | **12 行** | 只剩 `useHarnessApp()` + earlyView 短路 + `<AppView/>`，**不再吸收任何逻辑**（底部 60 行死 re-export 面 09-22 已删） |
 | `src/features/app-view/AppView.tsx` | 472 行 | 视图装配壳：编号段 `01-sidebar-shell` … `09-file-preview-editor` + 子目录 |
-| `src/features/` | **85 个域目录**（10-29 实测 `ls -d src/features/*/`；上次记录是 10-05 的 61，中间各线累计新增） | 其中 `settings-*` 按页同构拆分（粒度稳定）；10-03 新增 `codex-official-market`（Codex 官方插件市场板块）；10-05 新增 `ui-sketch`（前端开发，嵌 m3e-canvas；两轮改名：界面草图 → 手机前端UI → 前端开发）；10-29 新增 `skill-usage`（技能使用卡片；渲染层板块，零 IPC） |
+| `src/features/` | **98 个域目录**（11-11 实测 `ls -d src/features/*/`；上次记录是 10-05 的 61，中间各线累计新增） | 其中 `settings-*` 按页同构拆分（粒度稳定）；10-03 新增 `codex-official-market`（Codex 官方插件市场板块）；10-05 新增 `ui-sketch`（前端开发，嵌 m3e-canvas；两轮改名：界面草图 → 手机前端UI → 前端开发）；10-29 新增 `skill-usage`（技能使用卡片；渲染层板块，零 IPC） |
 | `src/features/app-state/useHarnessApp.tsx` | 39 行 | 组合根：建 `bag` → 按序调 9 个 part → 合并 return |
 | `src/features/app-state/parts/` | 9 组合根 + 30 子 hook + `types.ts` + `bag-types.ts` | `bag-types.ts` **自动生成，禁手改**（守卫【93】） |
-| `electron/main.ts` | **1171 行**（10-05 实测 `wc -l`；⛔ 行数随域下沉变动，改动后请重测本节；纯副作用 import **5** 行） | 余 5 handler（`theme:apply` + `window:popout-*`×4，已证搬不动）+ 系统托盘（`electron/tray.ts` 接线）+ 启动链 + 模块级单例；10-05 只多了一条 `sketch` 协议的特权声明 |
-| `electron/features/` | **102 个条目**（10-03 实测：101 顶层文件 + 1 子目录 `voice-ipc/`） | IPC handler 实现。⛔ **一个板块 = 一个域前缀**（10-03 用户令）：10 处多前缀欠账已全部拆完，守卫【253】⑥ 棘轮名单清零。域组合表启用 **78 个域**（10-03 实测 `composition.json`） |
+| `electron/main.ts` | **1567 行**（11-11 实测 `wc -l`；⛔ 行数随域下沉变动，改动后请重测本节；纯副作用 import **5** 行） | 余 5 handler（`theme:apply` + `window:popout-*`×4，已证搬不动）+ 系统托盘（`electron/tray.ts` 接线）+ 启动链 + 模块级单例；10-05 只多了一条 `sketch` 协议的特权声明 |
+| `electron/features/` | **149 个条目**（11-11 实测：101 顶层文件 + 1 子目录 `voice-ipc/`） | IPC handler 实现。⛔ **一个板块 = 一个域前缀**（10-03 用户令）：10 处多前缀欠账已全部拆完，守卫【253】⑥ 棘轮名单清零。域组合表启用 **114 个域**（11-11 实测 `composition.json`） |
 | `electron/ipc-registry.ts` | 账本 | `prefix / count / status(in-main\|in-features\|shell) / file / channels` |
-| `electron/ipc-channels.manifest.json` | **441 个通道**（IPC 桥单一真相源；10-11 实测） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
-| `src/styles/` | **52 个分节文件 / `styles.css` 55 行 `@import`**（10-29 实测；编号有重号 37，见下） | 界面区域样式；10-03 新增 `25-codex-official-market.css`；10-05 新增 `26-ui-sketch.css`；10-29 新增 `56-skill-usage.css`（技能使用卡） |
+| `electron/ipc-channels.manifest.json` | **658 个通道**（IPC 桥单一真相源；11-11 实测） | `preload.ts` gen 段 + `vite-env.d.ts` gen 段由它生成：`npm run gen:ipc`（**自动**同步 `count` 并**体检账本登记**，缺了直接打印可粘贴条目）；**生成物禁手改**（守卫【2】22 条）。09-24 起所有 invoke 走 `__ipc`：参数个数校验 + 错误归一化（`[ERR_*]` 消息前缀）+ 通道级超时表 |
+| `src/styles/` | **62 个分节文件 / `styles.css` 66 行 `@import`**（11-11 实测；编号有重号 37，见下） | 界面区域样式；10-03 新增 `25-codex-official-market.css`；10-05 新增 `26-ui-sketch.css`；10-29 新增 `56-skill-usage.css`（技能使用卡） |
 | 跨域活绑定 | **22 个** `electron/features/*` 从 `../main` 取值 | 架构层真残留，纪律 +【91】守着（见 §8） |
 | `electron/builtin-skills/` | **20 个内置技能**（含元技能 `skill-authoring` / `memory-distill` / `self-review` / `memory-hygiene` / `memory-classify` / `skill-audit`；09-29 新增 `image-generation` 与重写后的 `video-generation`；10-05 新增 `frontend-canvas`（前端开发画布组件手册，44 种字段速查）） | 启动时 `ensureBuiltinSkills` 落盘到 `$CODEX_HOME/skills`（守卫【103】；中文导读与 entries 一一对应，守卫【229】） |
 | **AI 画布工作流板块**（09-29 立，见 §2.1） | 渲染层 `src/features/drama-canvas/` 14 文件 / 3737 行；IPC 域 `drama-canvas` **2** + `video` **7** + `builtin`（生图）；CSS `src/styles/21-drama-canvas.css` **1519 行**；内置技能 `image-generation` / `video-generation`；MCP 工具 `image_generate` / `video_generate` / `video_status` / `video_concat` | **五层全占的独立功能板块**：界面 + 状态 + 存储 + IPC + 引擎工具/技能 |
 | **前端开发板块**（10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发；10-06 起画布 = 上游钉死提交 + 本仓补丁层，见 AGENTS.md 同名小节） | 渲染层 `src/features/ui-sketch/` 6 文件 / 501 行 + CSS `src/styles/26-ui-sketch.css` 160 行；**零 IPC**（不进 manifest / registry）；宿主侧新协议 `sketch://`（`electron/sketch-protocol.ts` + `boot.ts`）；随包第三方产物 `public/sketch/`（4.2MB，MIT，= 上游 039ec31 + 8 组件补丁；构建器 `scripts/sketch-fork/`）；内置技能 `frontend-canvas`（组件手册） | **嵌第三方静态站的板块样板**：不并源码进仓（克隆到 .workbuddy/tmp + 定点补丁），接缝全在我们这一侧（协议 / CSP / 只读桥 / 挂载 / 预览触发）；守卫【283】162 条 + 验收项 `ui-sketch` 11 条（10-06 重写：三形态探针）。⚠️ 曾接过一版"组件库送进草图"，用户实测后判没用 ⇒ 已整块删除，【283】留负向断言防复活 |
-| 记忆金字塔 | **L0–L7 八层，90% 蒸馏线** | 层表/阈值单一真相源 = `electron/memory-layers.ts`（守卫【104】） |
-| 记忆目录布局 | `<workspace>/.codex-harness/memory/` 下 `project/` `lessons/` `logs/` `rollups/` `archive/` | v2 分类分文件夹；v1 散文件由 `migrateLayout()` 搬（守卫【106】） |
+| 记忆原子（11-10 起替代金字塔） | `entries/<scope>/[<群id>]/<id>.md` 一条一文件 + `INDEX.md` 索引 + `.changelog.jsonl` | 格式 / 召回 / 落盘单一真相源 = `electron/memory/atoms-*.ts`（守卫 12bj）；金字塔界面已下线，旧层快照仍作注入兜底（`electron/memory-layers.ts`，守卫【104】） |
+| 记忆目录布局 | `<workspace>/.codex-harness/memory/` 下 `project/` `lessons/` `logs/` `rollups/` `archive/` `atoms/`（`entries/{project,rule,session/<群id>}/` + `INDEX.md` + `.changelog.jsonl`） | v2 分类分文件夹；v1 散文件由 `migrateLayout()` 搬（守卫【106】）；atoms 目录不存在时注入自动回退旧层逻辑 |
 | 记忆分类 | `lessons/` 内一个分类一个文件（**用户纠错单独一类**，永不淘汰） | 分类名与判定 = `electron/memory-lessons.ts`（守卫【105】） |
 | 记忆整洁与清理 | 三个动作：`prune-pool` / `tidy-lessons` / `purge-archive`（白名单 + 二次确认） | 规则表与判定 = `electron/memory-hygiene.ts`（守卫【107】） |
 | 技能落点 | 全局 `$CODEX_HOME/skills` + 项目级 `<cwd>/.codex/skills` | 引擎原生发现（`scope:"user"` / `scope:"repo"`），见 §11.2 |

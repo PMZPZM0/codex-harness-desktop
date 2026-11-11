@@ -901,8 +901,8 @@ interface Window {
     recallMemoryAtoms(workspace: string, query: string, seat?: string): Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>;
     /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
     saveMemoryAtoms(workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }): Promise<{ ok: boolean; outcome?: string; error?: string }>;
-    /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引） */
-    forgetMemoryAtoms(workspace: string, ids: string[]): Promise<{ ok: boolean; done: number; failed: number; error?: string }>;
+    /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引）；targets 带 group 精确定位同 id 跨群条目 */
+    forgetMemoryAtoms(workspace: string, targets: Array<string | { id: string; group?: string }>): Promise<{ ok: boolean; done: number; failed: number; error?: string }>;
     writeMemoryLayer(input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
     listMemory(category?: string): Promise<any[]>;
     /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
