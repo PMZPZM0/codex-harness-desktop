@@ -370,8 +370,9 @@ try {
    ⛔ 这块此前**一条断言都没有**：协作铁律可以被随手改掉而没人发现。 */
 {
   const teamTools = readFileSync(join(ROOT, "electron/expert-teams/06-team-tools.ts"), "utf8");
-  ok(/你不亲自干活/.test(teamTools) && /先派活，再说话/.test(teamTools),
-    "专家团铁律：⛔ 不亲自干活（可交付物必须来自成员）+ 先派活再动手");
+  ok(/你不亲自干活/.test(teamTools) && /先想清楚，再派活/.test(teamTools)
+    && /先在群里发\*\*一条计划\*\*/.test(teamTools),
+    "专家团铁律：⛔ 不亲自干活（可交付物必须来自成员）+ 先出计划再派第一步");
   ok(/team_phase_invoke/.test(teamTools) && /并行/.test(teamTools),
     "并行阶段走 team_phase_invoke（并行由宿主保证，不靠模型自觉）");
   const teamsIpc = readFileSync(join(ROOT, "electron/features/teams-ipc.ts"), "utf8");
@@ -408,7 +409,7 @@ try {
   ok(/setTeamLeadThreads\(Object\.keys\(leadIds\)\)/.test(readFileSync(join(ROOT, "src/features/app-state/parts/part02/01-mcp-teams-plan/02-team-roles-import.tsx"), "utf8")),
     "渲染层把主进程那份名单灌进来（重启后也认得出旧团队会话）");
   const seeds = readFileSync(join(ROOT, "src/lib/prompt-seeds.mjs"), "utf8");
-  ok(/你不亲自干活/.test(seeds) && /先派活，再说话/.test(seeds),
+  ok(/你不亲自干活/.test(seeds) && /先想清楚，再派活/.test(seeds),
     "补发文案与 06-team-tools.ts 的铁律同义（新旧会话行为一致）");
 }
 

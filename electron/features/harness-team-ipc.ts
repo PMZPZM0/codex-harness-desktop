@@ -93,7 +93,7 @@ import { buildTeamPhaseTool, buildTeamTools, readUsableExpertTeams } from "../ex
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
-import { bindTeamGroup, setTeamGroupAppender, setTeamGroupRelay } from "../team-group-bridge";
+import { bindTeamGroup, setTeamGroupAppender, setTeamGroupReader, setTeamGroupRelay } from "../team-group-bridge";
 /* ⛔ 11-11：主理人这一轮到底用没用真调度工具 —— 决定催办说哪种话（见下面的 isLeadSelf）。 */
 import { teamToolUsedSince } from "../team-tool-fallback";
 /* ⛔ 误登记成指挥中枢的伙伴会话要能静默摘掉身份（保留记忆目录）——见 talk-threads 通道。 */
@@ -1623,16 +1623,22 @@ async function runDispatchRounds(
               /* ⛔⛔ 11-11：排片跑完必须把话头交回主理人做阶段通报 / 验收 / 收口。
                  否则群里停在最后一位成员的文件卡片上，用户看到的就是「任务 2/2 完成了，然后没了」。 */
               const lead = roster.find((m) => m.teamRole === "lead");
-              if (lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
+              /* ⛔⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」。
+                 这两处 `[系统]` 催办是刷屏的主要源头 —— 原来**每一批/每一环**交回都催它
+                 「先向群里通报阶段进度」，4 个成员就刷 4 条「进度 2/4」。⇒ 两改：
+                 ① 同团队还有成员在跑就不催（等最后一批一次汇总）；
+                 ② 催办也不再要求报进度，只要结论。 */
+              const stillRunning = teamRunStore.activeRunList()
+                .some((run) => String(run.teamId ?? "") === groupTeamId);
+              if (lead && !stillRunning && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
                 leadCatchUps += 1;
                 chainBudget -= 1;
                 void runOne(lead as unknown as GroupTarget, 0, caller,
-                  `[系统] 你这一轮排的 ${queue.length} 位成员都交回产出了。现在按 SOP 推进：`
-                  + "① 先向群里通报阶段进度（已完成哪几环、还差哪几环）；"
-                  + "② 验收成员产出，不合格就点名打回重做；"
-                  + "③ 还有下一阶段就另起一行 @ 名字继续派；"
-                  + "④ 只有全部阶段验收完，才写「收口」并按「结论 / 依据 / 还剩什么没做」给用户最终结论。"
-                  + "⛔ 不要只回「收到」，也不要自己代写成员的产出。")
+                  `[系统] 你这一轮排的 ${queue.length} 位成员都交回产出了。按 SOP 推进：`
+                  + "① 验收成员产出，不合格就点名打回重做；"
+                  + "② 还有下一阶段就另起一行 @ 名字继续派；"
+                  + "③ 只有全部阶段验收完，才写「收口」并按「结论 / 依据 / 还剩什么没做」给用户最终结论。"
+                  + "⛔ 群里不要报进度（用户明确不要刷屏），不要只回「收到」，也不要代写成员的产出。")
                   .catch(() => undefined);
               }
             })();
@@ -1682,13 +1688,18 @@ async function runDispatchRounds(
             const leadSeats = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
             return leadSeats.has(x) && leadSeats.has(y);
           };
+          /* ⛔⛔ 11-12 用户：「主代理一直刷屏」—— 同团队还有成员在跑就不回喂，
+             等最后一批交回时一次汇总（⛔ 不再每环催一次「通报阶段进度」）。 */
+          const membersStillRunning = teamRunStore.activeRunList()
+            .some((run) => String(run.teamId ?? "") === groupTeamId);
           const mustHandBack = Boolean(isTeamGroup && admin && !sameSeat(admin.id, partner.id)
+            && !membersStillRunning
             && !relayInFlight && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
           if ((verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
             if (mustHandBack) leadCatchUps += 1;
             chainBudget -= 1;
             const ask = mustHandBack
-              ? `[系统] ${partner.name} 交回了这一环的产出。按 SOP 推进：先向群里通报阶段进度（已完成哪几环、还差哪几环），再决定下一步点谁（行首 @ 名字）继续派；只有全部阶段验收完，才写「收口」并给用户最终结论（结论 / 依据 / 还剩什么没做）。⛔ 不要只回「收到」，也不要代写成员产出。`
+              ? `[系统] ${partner.name} 交回了这一环的产出。按 SOP 推进：验收这一环，合格就继续下一阶段（行首 @ 名字），全部阶段完成才写「收口」给最终结论（结论 / 依据 / 还剩什么没做）。⛔ 群里不要报进度（用户明确不要刷屏），不要只回「收到」，也不要代写成员产出。`
               : `[系统] ${partner.name} 说完了（${verdict.reason}）。你决定：下一步点谁（行首 @ 名字），或者收口给结论。`;
             void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name }, ask)
               .catch(() => undefined);
@@ -2557,9 +2568,13 @@ async function healOrphanTalkThreads(): Promise<void> {
     setTeamGroupRelay((gid, teamId, note) => {
       void relayLeadAfterMembers(gid, teamId, note).catch(() => undefined);
     });
+    /* ⛔⛔ 11-12 用户：「模型不知道自己要干什么，成员也不知道自己要干什么，团队是散的，
+       互相不了解对方的能力和擅长领域」。⇒ 成员开跑时（team-invoke）要能读到群里的**共享上下文**
+       （主理人刚发的计划 / 上一环交回了什么）。这里只注入只读口，⛔ 不让 team-invoke import 群存储。 */
+    setTeamGroupReader((gid) => (readStore().messages?.[gid] ?? []) as never);
     /* ⛔ 群聊会话的工具调用由独立板块自己应答（它的事件会被 filterForRenderer 裁掉）。 */
     ctx.effect(attachGroupTalkEvents(server));
-    ctx.effect(() => () => { setTeamGroupAppender(null); setTeamGroupRelay(null); });
+    ctx.effect(() => () => { setTeamGroupAppender(null); setTeamGroupRelay(null); setTeamGroupReader(null); });
     ctx.effect(() => {
       for (const ch of HARNESS_TEAM_CHANNELS) ipcHost.removeHandler(ch);
     });

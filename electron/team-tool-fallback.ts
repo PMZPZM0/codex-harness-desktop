@@ -173,11 +173,18 @@ export async function handleTeamToolCall(deps: {
       } catch { /* 广播失败不影响派活 */ }
     };
     emitAsync("batch", { total: fresh.length, note: names });
+    /* ⛔ 11-12 用户「完全不知道派给谁、在跑什么」：每行都要带**这一步在做什么**（任务摘要）。
+       ⛔ 不带 name（英文 id 会先闪一下）—— 中文名由成员真正开跑时的 running 事件补上。 */
+    const summaryOf = (task: any) => String(task?.query ?? "")
+      .replace(/\s+/g, " ").trim().slice(0, 28);
     for (const task of fresh) {
-      emitAsync("queued", { memberId: String(task?.memberId ?? ""), name: String(task?.memberId ?? "") });
+      emitAsync("queued", { memberId: String(task?.memberId ?? ""), title: summaryOf(task) });
     }
+    /* ⛔⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」。
+       原 ack 让模型「回一句已派给谁」= 自己又发一条，而派单消息（@成员：任务…）已经在群里了
+       ⇒ 同一件事在群里说两遍。现在要求它**别说话**，只在全部交回后汇总一次。 */
     const ack = `[已派单] 已把 ${fresh.length} 件活交给 ${names || "团队成员"}，他们正在后台跑，产出会自己发进群。\n`
-      + `⛔ 这一轮只回一句「已派给谁、在等什么」：不要写「收口」、不要重复派同一位、不要代写成员的产出。\n`
+      + `⛔ 派单消息已经发进群了，**这一轮不要再说话**（不要复述派给谁、不要报进度）。\n`
       + `成员全部交回后，宿主会把产出交回给你，那时再验收 / 推进下一阶段 / 收口。`;
     /* ⛔⛔ 11-12 顺序要点：**先启动后台成员任务，再回执**。原顺序在回执抛异常时（通道异常 / 引擎忙）
        成员永远不会被启动 —— 用户看到「已派单」，实际没人干活，比"卡住"更难查。 */
@@ -196,10 +203,15 @@ export async function handleTeamToolCall(deps: {
       const gid = groupOfTeam(teamId);
       if (!gid) return;
       emitAsync("settled", { done, failed });
+      /* ⛔⛔ 11-12 「主代理一直刷屏」的第二个源头：**每批完成都回喂一次**，主理人每批都说一段
+         （「进度 2/4」「进度 3/4」…4 个成员就刷 4 条）。⇒ 同一团队**还有人在跑就不回喂**，
+         等最后一批交回时一次汇总（那时它说一条结论就够）。 */
+      const stillRunning = teamRunStore.activeRunList().some((run) => String(run.teamId ?? "") === teamId);
+      if (stillRunning) return;
       relayGroupLead(gid, teamId,
-        `[系统] 你派的这一阶段共 ${settled.length} 件：交回 ${done} 件${failed ? `、失败 ${failed} 件` : ""}，`
-        + "成员的产出已经各自发进群，请按 SOP 继续：先向群里通报阶段进度（已完成哪几环、还差哪几环），"
-        + "验收这一轮产出，再决定下一步派谁；只有全部阶段验收完才写「收口」给最终结论。"
+        `[系统] 这一批 ${settled.length} 件：交回 ${done} 件${failed ? `、失败 ${failed} 件` : ""}。`
+        + "成员的产出已经各自发进群。⛔ 群里不需要逐步播报进度（用户明确不要刷屏）——"
+        + "只有**全部成员都交回**时才说一条：验收结论 + 缺什么 + 下一步；全部阶段完成才写「收口」。"
         + "⛔ 不要重复派同一位同一件活，也不要代写成员产出。");
     })().catch(() => undefined);
     await respond(id, { contentItems: [{ type: "inputText", text: ack }], success: true });

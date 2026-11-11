@@ -88,3 +88,22 @@ export async function appendMemberOutputToGroup(
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+/* ⛔⛔ 11-12 用户：「模型不知道自己要干什么，成员也不知道自己要干什么，团队是散的，
+   互相不了解对方的能力和擅长领域」。
+   ⇒ 成员开跑前必须拿到**群里的共享上下文**（主理人刚发的计划 / 上一环交回了什么）。
+   这里只开一个只读口（同样不 import 群存储，避免成环）。 */
+type ReadFn = (groupId: string) => Array<{ authorId?: string; authorKind?: string; text?: string; at?: number }>;
+let readFn: ReadFn | null = null;
+
+/** 群存储挂载时注入（与 setTeamGroupAppender 同一处 mount）。 */
+export function setTeamGroupReader(fn: ReadFn | null): void {
+  readFn = fn;
+}
+
+/** 群里最近的消息（升序）。⛔ 没接线返回空数组，由调用方降级（不阻断派活）。 */
+export function recentGroupMessages(groupId: string): Array<{ authorId?: string; authorKind?: string; text?: string; at?: number }> {
+  const gid = String(groupId ?? "");
+  if (!gid || !readFn) return [];
+  try { return readFn(gid) ?? []; } catch { return []; }
+}

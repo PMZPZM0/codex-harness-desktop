@@ -74,7 +74,10 @@ export function AsyncRunPanel({ groupId, threadId }: { groupId?: string; threadI
           {batch.rows.map((row) => (
             <li key={row.memberId} className={`is-${row.phase}`}>
               <span className="async-run-panel__dot" aria-hidden />
-              <span className="async-run-panel__name" title={row.memberId}>{row.name}</span>
+              <span className="async-run-panel__name" title={row.memberId}>
+                {row.name}
+                {row.title && <em className="async-run-panel__task" title={row.title}>{row.title}</em>}
+              </span>
               <span className="async-run-panel__phase">{PHASE_LABEL[row.phase]}</span>
               <span className="async-run-panel__time">{elapsedOf(row, now)}</span>
             </li>

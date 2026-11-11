@@ -23,7 +23,7 @@ import { MEMBER_TASK_NOTE, humanizeRefs } from "../src/lib/dispatch-voice.mjs";
 import { parseAgentMentions, teamAuthorIdOf, collaborationProtocolLines } from "../src/lib/team-models.mjs";
 /* ⛔ 11-10：两条产出链（群聊通道 / 专家团成员通道）共用同一份硬约束判据，⛔ 不各写一套。 */
 import { evaluateMemberOutput } from "./features/group-talk";
-import { appendMemberOutputToGroup, groupOfTeam } from "./team-group-bridge";
+import { appendMemberOutputToGroup, groupOfTeam, recentGroupMessages } from "./team-group-bridge";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";
@@ -65,6 +65,45 @@ export type InvokeMemberResult = {
 };
 
 /** 调一个团成员：按「主理人会话 + 团队 + 成员」加锁串行（并行阶段对同一成员重复提交会各起一个会话）；不同成员仍并行。 */
+/* ⛔⛔ 11-12 用户（连着四条）：「模型不知道自己要干什么，成员也不知道自己要干什么，团队是散的，
+   互相不了解对方的能力和擅长领域」「交完就没事了」「飞书里智能体之间配合天衣无缝，团队是一个整体」。
+   根因：成员会话只拿到**自己那一句任务**，不知道团队在做什么、同事擅长什么、上一环交回了什么
+   ⇒ 各干各的、产出接不上、交完就停。
+   ⇒ 每次派活都把「团队整体」拼进成员的系统前缀：成员名册（含擅长）＋ 团队负责人最近说的（计划/先后）。
+   ⛔ 只读群日志快照，⛔ 不改任何状态；没接群就退化成"只有名册"，不影响派活。 */
+function teamBriefOf(
+  team: { teamId: string; displayName?: { zh?: string }; description?: { zh?: string };
+    lead?: { id?: string; name?: string; profession?: { zh?: string }; description?: string };
+    members?: Array<{ id: string; name: string; profession?: { zh?: string }; description?: string }> },
+  memberId: string,
+  groupId: string,
+): string {
+  const all = [team.lead, ...(team.members ?? [])].filter(Boolean) as Array<{
+    id: string; name: string; profession?: { zh?: string }; description?: string;
+  }>;
+  const mine = String(memberId ?? "").toLowerCase();
+  const roster = all.map((m) => {
+    const isMe = String(m.id ?? "").toLowerCase() === mine;
+    const skill = String(m.description ?? "").replace(/\s+/g, " ").trim().slice(0, 90);
+    return `- ${m.name}（${String(m.profession?.zh ?? "")}）${skill ? `：${skill}` : ""}${isMe ? "　← 这就是你" : ""}`;
+  }).join("\n");
+  /* 团队负责人最近说的一两条（多半就是那份计划）——成员据此对齐，别自己另起一套。 */
+  const leadId = teamAuthorIdOf(team.teamId, String(team.lead?.id ?? ""));
+  const plan = (groupId ? recentGroupMessages(groupId) : [])
+    .filter((row) => String(row?.authorId ?? "") === leadId && String(row?.text ?? "").trim().length >= 20)
+    .slice(-2)
+    .map((row) => String(row.text).replace(/\s+/g, " ").trim().slice(0, 420))
+    .join("\n…\n");
+  return `# 你们这个团队（一个整体，不是各干各的）
+${String(team.displayName?.zh ?? "")}${team.description?.zh ? `：${String(team.description.zh).slice(0, 120)}` : ""}
+
+## 成员与各自擅长（要协作就直接找对人）
+${roster}
+${plan ? `\n## 团队负责人最近说的（对齐它，别自己另起一套）\n${plan}\n` : ""}
+⛔ 你的产出要接得上团队整体：写清交付物放在哪、下一步该谁接；需要别人配合就另起一行写 \`@名字：要他做什么\`（宿主会真的把他叫进来）。
+`;
+}
+
 export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<InvokeMemberResult> {
   /* 同一「主理人会话 + 团队 + 成员」串行：并行阶段可能对同一成员重复提交任务，
      两条并发会在线程登记前各自 thread/start，产生重复会话。锁只按成员，不同成员仍并行。 */
@@ -209,6 +248,8 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
        团成员会话由 team_member_invoke 起，拿不到群派活的 groupContextBlock —— 协议必须在这里再给一份。
        ⛔ 与 team-models 同一份纯函数，别在提示词里抄第二套文案。 */
     + "# 协作方式\n" + collaborationProtocolLines("member").slice(1).join("\n") + "\n\n"
+    /* ⛔⛔ 11-12：把「团队整体」交给成员（名册 + 负责人最近那份计划）。见 teamBriefOf 的注释。 */
+    + teamBriefOf(team as never, member.id, groupOfTeam(String(team.teamId ?? "")))
     + "# 调度权限\n你是团里的成员，没有调度工具：别调 agent_invoke / team_member_invoke，也别跟用户说你能调人。要请团里另一位帮忙，另起一行写 `@名字：要他做什么`（这一行只放这句），宿主会真的叫他，他的回复自己发进群。\n\n";
   // ③ 修掉死指令：成员线程**没有**挂任何 dynamicTools，不存在 SendMessage 之类的回传工具。
   //    真实回传路径是同步的：宿主等这个回合跑完，把最终文本当 team_member_invoke 的返回值

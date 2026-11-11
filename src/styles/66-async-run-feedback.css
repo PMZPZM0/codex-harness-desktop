@@ -59,6 +59,13 @@
 .async-run-panel__name {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   color: var(--text, #1f2328); max-width: 42%;
+  /* ⛔ 11-12 用户「不知道在跑什么」：名字后面跟一句任务摘要（灰、可截断），
+     这里用 flex 让摘要自动吃掉剩余宽度，名字本身不换行。 */
+  display: inline-flex; align-items: baseline; gap: 6px;
+}
+.async-run-panel__task {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-style: normal; font-size: 11px; color: var(--faint, #8b949e);
 }
 .async-run-panel__phase { flex: 0 0 auto; }
 .async-run-panel__time {

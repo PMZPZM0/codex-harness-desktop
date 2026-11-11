@@ -440,15 +440,40 @@ const catalog = [
       && /\[已派过\]/.test(fallback)
       && /entry\.status === "rejected"[\s\S]{0,120}recentDispatch\.delete/.test(fallback),
       "群聊派活短时幂等：同一件活 10 分钟内不重复起 turn（⛔ 失败的那次仍允许重派）");
+    /* ⛔⛔ 11-12 用户截图「看不懂」：群里 4 条派单长得一模一样、正文全空。
+       根因是**宿主写的派活交接**（`team-dispatch:<runId>`）被当成成员回合交给 TurnView ——
+       TurnView 按 threadId + at 去引擎回合取正文，交接那句话不在回合里 ⇒ 正文被整段吞掉，
+       只剩引用块 + 耗时；成员交回后这 4 条又把同一段产出各显示一遍。
+       ⇒ 合成消息必须走普通正文（itemId 前缀判），且不再叠引用。 */
+    const hostView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+    ok(/const hostAuthored = String\(row\.itemId \?\? ""\)\.startsWith\("team-dispatch:"\)/.test(hostView)
+      && /const useTurnView = isBot[\s\S]{0,240}&& !hostAuthored/.test(hostView)
+      && /\{isBot && quote && !hostAuthored && \(/.test(hostView),
+      "派活交接（team-dispatch:）走普通正文：⛔ 不交 TurnView（正文会被吞成空壳）、⛔ 不叠引用");
+    /* ⛔⛔ 11-12 用户：「成员也不知道自己要干什么，团队是散的，互相不了解对方的能力和擅长领域」
+       「交完就没事了」「飞书里智能体之间配合天衣无缝，团队是一个整体」。
+       ⇒ 成员开跑前必须拿到团队整体：名册（含擅长）+ 团队负责人最近的计划；且要能读到群日志。 */
+    const invokeSrc = codeOnly(read("electron/team-invoke.ts"));
+    const bridgeSrc = codeOnly(read("electron/team-group-bridge.ts"));
+    const teamIpcSrc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(/function teamBriefOf/.test(invokeSrc)
+      && /## 成员与各自擅长/.test(invokeSrc)
+      && /团队负责人最近说的/.test(invokeSrc)
+      && /teamBriefOf\(team as never, member\.id, groupOfTeam/.test(invokeSrc)
+      && /export function recentGroupMessages/.test(bridgeSrc)
+      && /setTeamGroupReader\(/.test(teamIpcSrc),
+      "成员开跑时拿到团队整体（名册含擅长 + 负责人最近的计划），⛔ 不是只给一句任务");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
       && /runDispatchRounds\(group, \[target\], note, "automation"/.test(dispatch),
       "回喂走群聊串行队列（不落假用户消息、⛔ 不并发 resume 同一条会话）");
+    /* ⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」⇒ 口径从「回一句已派给谁」
+       改成「拿到已派单就不要再说话」（派单消息已经进群，复述=同一件事说两遍）。 */
     ok(/groupAsyncToolCopy/.test(dispatch) && /异步派单/.test(dispatch)
-      && /异步排片/.test(talk) && /不要写「收口」/.test(talk)
+      && /异步排片/.test(talk) && /拿到「已派单」就\*\*不要再说话\*\*/.test(talk)
       && /await Promise\.allSettled\(tasks\.map/.test(fallback),
-      "工具 schema 与提示词同改异步口径；⛔ 独立团会话仍保留同步返回链");
+      "工具 schema 与提示词同改异步口径（拿到已派单就不再复述）；⛔ 独立团会话仍保留同步返回链");
     /* ⛔⛔ 11-11 用户令「加一个异步执行反馈效果板块」+「这个可以给外面会话也加上」：
        板块必须是**独立的**（自己订阅事件、零 IPC、不占群聊域状态），且群聊与外面会话
        共用同一块（⛔ 不是各写一套）。四处缺一就等于没落地。 */

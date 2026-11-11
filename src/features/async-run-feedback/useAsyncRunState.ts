@@ -18,6 +18,8 @@ export type AsyncRunPhase = "queued" | "running" | "done" | "failed";
 export type AsyncRunRow = {
   memberId: string;
   name: string;
+  /** 这一步到底在做什么（主进程给的 query 摘要）。⛔ 只有名字的话用户看不懂"在跑什么"。 */
+  title: string;
   phase: AsyncRunPhase;
   queuedAt: number;
   startedAt?: number;
@@ -72,12 +74,16 @@ export function reduceAsyncRunEvent(
   if (!isPhase(phase)) return cur;
   const memberId = String(event?.memberId ?? "");
   if (!memberId) return cur;
-  const name = String(event?.name ?? "") || memberId;
   const idx = cur.rows.findIndex((row) => row.memberId === memberId);
   const old = idx >= 0 ? cur.rows[idx] : null;
+  /* ⛔ 名字与任务摘要都要**沿用上一份**：queued 事件只带任务摘要（成员中文名由主进程在
+     running 事件里补），不沿用就会先显示英文 id、再闪成中文名。 */
+  const name = String(event?.name ?? "") || old?.name || memberId;
+  const title = String(event?.title ?? "") || old?.title || "";
   const row: AsyncRunRow = {
     memberId,
     name,
+    title,
     phase,
     queuedAt: old?.queuedAt ?? at,
     startedAt: phase === "running" ? (old?.startedAt ?? at) : old?.startedAt,

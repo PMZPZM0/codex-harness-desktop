@@ -158,7 +158,7 @@ const CASES = [
   },
   {
     name: "旧团队会话补种（团队纪律补充 · 告知块包裹）",
-    text: "\n<!--harness-notice-->\n【团队工作纪律 · 补发】\n0. ⛔ 你不亲自干活：只做拆解、派活、验收、汇总。\n1. ⛔ 先派活，再说话。\n<!--/harness-notice-->\n\n继续上一版，把测试补上",
+    text: "\n<!--harness-notice-->\n【团队工作纪律 · 补发】\n0. ⛔ 你不亲自干活：只做拆解、派活、验收、汇总。\n1. ⛔ 先想清楚，再派活。\n<!--/harness-notice-->\n\n继续上一版，把测试补上",
     expect: "继续上一版，把测试补上",
     forbid: ["harness-notice", "团队工作纪律", "补发"],
   },
@@ -433,7 +433,7 @@ async function main() {
   {
     const seeds = await import(new URL("../src/lib/prompt-seeds.mjs", import.meta.url));
     const teamTools = readFileSync(join(ROOT, "electron", "expert-teams", "06-team-tools.ts"), "utf8");
-    const missing = ["你不亲自干活", "先派活，再说话"].filter((a) => !teamTools.includes(a) || !seeds.TEAM_DISPATCH_SUPPLEMENT.includes(a));
+    const missing = ["你不亲自干活", "先想清楚，再派活"].filter((a) => !teamTools.includes(a) || !seeds.TEAM_DISPATCH_SUPPLEMENT.includes(a));
     if (missing.length) {
       bad += 1;
       console.log(`✗ 团队纪律两处文案不同源：${missing.join("、")}（06-team-tools.ts 与 prompt-seeds.mjs 必须同义）`);
