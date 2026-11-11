@@ -408,6 +408,14 @@ const catalog = [
       && /const key = talkKey\(groupId, String\(options\.talkAs \?\? ""\)\.trim\(\) \|\| String\(member\.id\)\)/.test(chan)
       && /export async function adoptTalkThreadAlias/.test(chan),
       "主理人双会话合并：整团槽台账并入合成 id（弃置那条只归档，⛔ 不删用户记录）");
+    /* ⛔⛔ 11-11 真机（一句「在呢」回了两条，第二条 via 指向它自己）：@整团 与 @主理人是
+       **同一张椅子、两个 id** —— 判「是不是同一个人」必须按椅子，⛔ 不能按 id 字符串。
+       这两处负向断言防的是"把必回喂/催办改回字符串比较"（那会让主理人把自己当成成员回喂自己）。 */
+    ok(/const sameSeat = \(a: string, b: string\) =>/.test(dispatch)
+      && /sameSeat\(admin\.id, partner\.id\)/.test(dispatch)
+      && !/String\(admin\.id\) !== String\(partner\.id\)/.test(dispatch)
+      && !/String\(admin\.id\) === String\(partner\.id\)/.test(dispatch),
+      "团群里「同一个人」按椅子判（@整团 与 @主理人 同座），⛔ 不按 id 字符串（否则自己回喂自己）");
   }
   ok(/runTalkTurn\(group\.id/.test(dispatch) && !/runDelegatedTask\(/.test(dispatch)
     && /attachGroupTalkEvents\(server\)/.test(dispatch),

@@ -1627,9 +1627,21 @@ async function runDispatchRounds(
           /* ⛔⛔ 11-11：团群里**只有主理人有权收口**。成员产出里带「已完成 / 已交付」会让
              classifyTurn 判 wrap，原来链路就死在成员那一句 —— 主理人再也不回来报进度、不汇总。
              ⇒ 团群 + 成员回合 + 排片没在跑 ⇒ 强制回喂主理人一次（次数/预算/回合上限三道安全阀）。 */
-          const mustHandBack = Boolean(isTeamGroup && admin && String(admin.id) !== String(partner.id)
+          /* ⛔⛔ 11-11 真机（用户截图：一句「在呢」，执矩回了两条，第二条 via 指向它自己）：
+             @整团（`tgt:team:X`）与 @主理人（`team:X:lead`）是**同一张椅子**，id 却是两个。
+             「是不是同一个人」必须按椅子判，⛔ 不能按 id 字符串 —— 否则主理人这一轮会被当成
+             「某位成员交回了产出」（admin 是整团槽、partner 是合成 id）⇒ 宿主强制回喂它一次，
+             群里就多一条几乎一样的回复。这一条与催办无关（催办另有 taskLike 门），是两条独立路径。 */
+          const sameSeat = (a: string, b: string) => {
+            const x = String(a ?? ""), y = String(b ?? "");
+            if (x === y) return true;
+            if (!leadAuthorId) return false;
+            const leadSeats = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
+            return leadSeats.has(x) && leadSeats.has(y);
+          };
+          const mustHandBack = Boolean(isTeamGroup && admin && !sameSeat(admin.id, partner.id)
             && !relayInFlight && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
-          if ((verdict.action === "continue" || mustHandBack) && admin && String(admin.id) !== String(partner.id) && canRun(admin.id)) {
+          if ((verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
             if (mustHandBack) leadCatchUps += 1;
             chainBudget -= 1;
             const ask = mustHandBack
@@ -1644,7 +1656,7 @@ async function runDispatchRounds(
              用户看到的就是「出完方案，主代理人死了」「任务都不推进」。
              ⇒ 团群里主理人自己没派人、也没写收口时，宿主催办**一次**（只一次，不自循环）：
              要它按 SOP 真正把下一阶段派出去、先报阶段进度，别再代写成员发言。 */
-          const isLeadSelf = Boolean(isTeamGroup && admin && String(admin.id) === String(partner.id));
+          const isLeadSelf = Boolean(isTeamGroup && admin && sameSeat(admin.id, partner.id));
           /* ⛔⛔ 11-11 真机（用户截图「这又是啥情况，看不懂」+ rollout 里实证 2 条 `[系统]` 注入）：
              用户只发了一个「在」，主理人回「我在，团队四个人都在位…你丢一句要干嘛」——
              这是**正常应答**，不是"该推进了"。但 classifyTurn 对寒暄也判非 wrap ⇒ 催办再跑一轮
