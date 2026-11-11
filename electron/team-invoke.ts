@@ -25,7 +25,8 @@ import { parseAgentMentions, teamAuthorIdOf, collaborationProtocolLines } from "
 import { evaluateMemberOutput } from "./features/group-talk";
 import { appendMemberOutputToGroup, groupOfTeam, recentGroupMessages } from "./team-group-bridge";
 /* ⛔ 名册 + 能力清单只有一份口径（主理人系统提示词与成员上下文共用）。 */
-import { memberRosterLines } from "./expert-teams";
+/* ⛔ 直连 06（别走 expert-teams 桶：那会把 02/04/14/15/16/07 全拖进来，依赖面白白变大）。 */
+import { memberRosterLines } from "./expert-teams/06-team-tools";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";

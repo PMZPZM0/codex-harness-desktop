@@ -217,14 +217,19 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
         <div className="team-sheet__card team-created">
           <h2 className="team-created__title">群已建好：{done.name}</h2>
           <p className="team-created__lead">成员（{picked.length} 位伙伴 + 你）：</p>
-          <ul className="team-created__members">
-            {picked.map((p) => (
-              <li key={`${p.kind}:${p.key}`}>
-                <strong>{p.name}</strong>
-                {p.profession && <em>{p.profession}</em>}
-              </li>
-            ))}
-          </ul>
+          {picked.length > 0 ? (
+            <ul className="team-created__members">
+              {picked.map((p) => (
+                <li key={`${p.kind}:${p.key}`}>
+                  <strong>{p.name}</strong>
+                  {p.profession && <em>{p.profession}</em>}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            /* ⛔ 审查补：允许"先建群、之后再加伙伴" ⇒ 空名单要给一句话，别留一个空 ul。 */
+            <p className="team-created__lead">还没有伙伴 —— 进群后在「群设置 → 添加伙伴」里加。</p>
+          )}
           <div className="team-created__hint">
             <strong>还差一个管理员</strong>
             <p>

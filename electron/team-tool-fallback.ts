@@ -228,7 +228,14 @@ export async function handleTeamToolCall(deps: {
     const summaryOf = (task: any) => String(task?.query ?? "")
       .replace(/\s+/g, " ").trim().slice(0, 28);
     for (const task of fresh) {
-      emitAsync("queued", { memberId: String(task?.memberId ?? ""), title: summaryOf(task) });
+      /* ⛔⛔ 11-12 审查修：这里原来发的是**裸 memberId**（`copywriter`），而成员真正开跑时
+         `announceLive` 发的是合成 id（`team:<teamId>:copywriter`）⇒ 板块按 memberId 合并行，
+         结果是同一个人出现**两行**（一行英文 id、一行中文名），总数也跟着算多。
+         ⇒ 统一用 teamAuthorIdOf 的合成 id，与 running/done 事件同一口径。 */
+      emitAsync("queued", {
+        memberId: teamAuthorIdOf(teamId, String(task?.memberId ?? "")),
+        title: summaryOf(task),
+      });
     }
     /* ⛔⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」。
        原 ack 让模型「回一句已派给谁」= 自己又发一条，而派单消息（@成员：任务…）已经在群里了
@@ -252,12 +259,14 @@ export async function handleTeamToolCall(deps: {
       const failed = settled.length - done;
       const gid = groupOfTeam(teamId);
       if (!gid) return;
+      /* ⛔⛔ 11-12 审查修：`settled` 原来发在"还有人在跑"判断**之前** ⇒ 板块标题立刻变
+         「已收口」，而成员还在跑（用户看到"收口了但人还在写"）。⇒ 只有整团真的没人跑了才收口。 */
+      const stillRunning = teamRunStore.activeRunList().some((run) => String(run.teamId ?? "") === teamId);
+      if (stillRunning) return;
       emitAsync("settled", { done, failed });
       /* ⛔⛔ 11-12 「主代理一直刷屏」的第二个源头：**每批完成都回喂一次**，主理人每批都说一段
          （「进度 2/4」「进度 3/4」…4 个成员就刷 4 条）。⇒ 同一团队**还有人在跑就不回喂**，
          等最后一批交回时一次汇总（那时它说一条结论就够）。 */
-      const stillRunning = teamRunStore.activeRunList().some((run) => String(run.teamId ?? "") === teamId);
-      if (stillRunning) return;
       relayGroupLead(gid, teamId,
         `[系统] 这一批 ${settled.length} 件：交回 ${done} 件${failed ? `、失败 ${failed} 件` : ""}。`
         + "成员的产出已经各自发进群。⛔ 群里不需要逐步播报进度（用户明确不要刷屏）——"

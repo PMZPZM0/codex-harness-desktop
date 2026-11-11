@@ -667,6 +667,11 @@ async function relayLeadAfterMembers(groupId: string, teamId: string, note: stri
 function groupAsyncToolCopy(tool: unknown): unknown {
   if (!tool || typeof tool !== "object") return tool;
   const src = tool as Record<string, unknown>;
+  /* ⛔⛔ 11-12 审查发现的真 bug：这段文案原来被追加到**所有**工具上 —— 于是
+     `team_plan` / `team_status` / `harness_tools` 的描述里都多了一句"群聊里这是异步派单…"，
+     模型读到的就是"查进度=异步派单"这种自相矛盾的说明。⇒ 只对**派活**那两个工具改写。 */
+  const name = String(src.name ?? "");
+  if (name !== "team_member_invoke" && name !== "team_phase_invoke") return tool;
   const text = String(src.description ?? "")
     .replace("宿主会**并发**跑完它们并把全部结论一起返回",
       "宿主会**并发**在后台跑，群里先收到「已派单」回执，成员产出各自以本人署名发进群，全部交回后宿主再请你验收")
@@ -674,7 +679,8 @@ function groupAsyncToolCopy(tool: unknown): unknown {
   return {
     ...src,
     description: text
-      + " ⛔ 群聊里这是异步派单：拿到「已派单」的这一轮只回一句「已派给谁、在等什么」，不要写「收口」、不要重派同一位、不要代写成员产出。",
+      + " ⛔ 群聊里这是异步派单：拿到「已派单」就**不要再说话**（不要复述派给谁、不要报进度），"
+      + "不要写「收口」、不要重派同一位、不要代写成员产出。",
   };
 }
 

@@ -507,6 +507,12 @@ const catalog = [
       && /if \(askLike\) return false;/.test(teamIpcSrc)
       && /leadTurnTaskLike/.test(teamIpcSrc),
       "催办只认「布置任务」：提问/询问一律不算（⛔ 否则答完又被催一轮 = 同一问题回两次）");
+    /* ⛔⛔ 11-12 审查修的两处（都只影响"看得对不对"，但会让用户判"又坏了"）：
+       ① queued 用裸 memberId、running 用合成 id ⇒ 同一个人两行；
+       ② settled 发在"还有人在跑"之前 ⇒ 明明还在跑却显示已收口。 */
+    ok(/emitAsync\("queued", \{[\s\S]{0,160}teamAuthorIdOf\(teamId, String\(task\?\.memberId/.test(fallback)
+      && /const stillRunning = teamRunStore\.activeRunList[\s\S]{0,140}if \(stillRunning\) return;\s*emitAsync\("settled"/.test(fallback),
+      "异步反馈口径一致：queued 与 running 同一合成 id；整团没人跑了才 announce settled");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
