@@ -853,10 +853,10 @@
   }
 }
 
-/* ── 11-11 用户令：图片预览做成小正方形、放在汇总消息下面 ──────────────────────
+/* ── 11-11 用户令：图片预览做成小正方形、放在长条文件卡上面（不要文件名）──────
    原来 39 段的 .turn-media-card 是整行条（width:100%），图片缩略被拉得又宽又长。
-   这里用更具体的 .is-image 覆盖：112×112 正方形缩略 + 下方文件名，横排换行；
-   视频保持整行条（播放条本来就是条形）。⛔ 位置由 Status.tsx 移到 </details> 之后。 */
+   这里用更具体的 .is-image 覆盖：112×112 正方形，只留图、不显示文件名/类型；
+   视频保持整行播放条（文件名对视频仍有用）。⛔ 位置由 Status.tsx 放在「已更改」长条卡之前。 */
 .turn-media-cards {
   flex-direction: row;
   flex-wrap: wrap;
@@ -866,6 +866,7 @@
 }
 .turn-media-card.is-image {
   width: 112px;
+  height: 112px;
   flex-direction: column;
   align-items: stretch;
   gap: 0;
@@ -875,13 +876,11 @@
 }
 .turn-media-card.is-image .turn-media-thumb {
   width: 100%;
-  height: 112px;
+  height: 100%;
 }
+/* 11-11 用户：「文件名可以不要」——正方形预览只留图。 */
 .turn-media-card.is-image .turn-media-meta {
-  padding: 5px 7px;
-}
-.turn-media-card.is-image .turn-media-meta b {
-  font-size: 11px;
+  display: none;
 }
 .turn-media-card.is-image .turn-media-play {
   width: 22px;

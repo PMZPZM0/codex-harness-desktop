@@ -34,6 +34,8 @@ import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, wait
 import { noteRoleThread } from "./role-memory-tool";
 import { server, teamRunStore, threadCwd, threadRuntimeStore, delegateRegistry } from "./runtime-refs";
 import { readUsableExpertTeams } from "./expert-teams";
+/* ⛔ 11-11：成员开跑/收尾要广播到群里（否则主理人挂了、群里看不到有人在干活）。 */
+import { broadcastHarnessEvent } from "./features/window-bus";
 
 /** 成员调度入参（渲染层与主进程兜底共用）。 */
 export type InvokeMemberInput = {
@@ -224,6 +226,45 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
   let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
   /* ⛔ 11-08 审查：清空记录代际的基准 —— 这一轮成员派活是什么时候开跑的。 */
   const memberRunStartedAt = Date.now();
+  /* ⛔⛔ 11-11 用户现场（截图「这是排不出去吗，不会吗」「一直卡着空转」）：
+     主理人调完 team_phase_invoke 之后，群里**只有它自己那张"深度思考中"**——
+     因为成员跑在**独立团队会话**里，这条链不广播 group-talk-live，用户看不到任何人在干活，
+     只能判定"卡住了"。实测：它 21:15:56 真派了活、同一秒建了成员会话，界面却毫无痕迹。
+     ⇒ 成员开跑 / 收尾各广播一次，群里出现「问俗 正在写」的卡（与群派活同一套事件口径）。 */
+  const liveGroup = groupOfTeam(String(team.teamId ?? ""));
+  const liveMemberId = teamAuthorIdOf(String(team.teamId ?? ""), String(member.id ?? ""));
+  const liveRunId = `team:${String(team.teamId)}:${String(member.id)}:${memberRunStartedAt}`;
+  const announceLive = (phase: "started" | "finished") => {
+    if (!liveGroup) return;
+    try {
+      broadcastHarnessEvent({
+        type: "group-talk-live", phase, groupId: liveGroup, memberId: liveMemberId,
+        name: member.name, threadId: memberThreadId, runId: liveRunId, at: Date.now(),
+      } as never);
+    } catch { /* 广播失败不影响派活 */ }
+  };
+  /* ⛔⛔ 11-11 用户当场（原话：「给成员安排活不要艾特吗，啥狗屁反馈都没有，之前还有，
+     鬼知道他派活了啊」）：换成**真调度工具**之后，派活只发生在工具调用里 ——
+     群里一个字都不显示，用户既看不到派给谁、也看不到派了什么。
+     ⇒ 每次派活都在群里落一条 `@成员：任务`（作者 = 主理人），这就是**可见的交接**。
+     ⛔ 它不是"演给用户看的假 @"：真活由这次 team_member_invoke 同步跑，
+        这条消息只负责让群里看得见"谁把什么交给了谁"。 */
+  {
+    const leadAuthor = teamAuthorIdOf(String(team.teamId ?? ""), String(team.lead?.id ?? ""));
+    const briefRaw = String(input.query ?? "").replace(/\s+/g, " ").trim();
+    const brief = briefRaw.length > 160 ? `${briefRaw.slice(0, 160)}…` : briefRaw;
+    if (liveGroup && leadAuthor && brief) {
+      void appendMemberOutputToGroup(liveGroup, {
+        id: `team-dispatch:${run.runId}`,
+        authorId: leadAuthor,
+        authorKind: "bot",
+        senderKind: "member",
+        threadId: memberThreadId,
+        text: `@${member.name}：${brief}`,
+        runId: run.runId,
+      }, memberRunStartedAt).catch(() => undefined);
+    }
+  }
   try {
     const turn: any = await server.request("turn/start", {
       threadId: memberThreadId,
@@ -233,6 +274,7 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     });
     turnId = turn.turn?.id;
     if (!turnId) throw new Error("成员调度失败：未返回 turnId");
+    announceLive("started");
     const completed = await waitForTurnCompletion(memberThreadId, turnId);
     let output = turnOutputText(completed);
     if (!output) {
@@ -244,6 +286,7 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     const guard = evaluateMemberOutput({ text: output, selfName: member.name });
     const text = guard.countsAsOutput ? output : `（成员 ${member.name} 未返回文本内容）`;
     teamRunStore.finishRun(run.runId, { status: guard.countsAsOutput ? "done" : "failed", output: text });
+    announceLive("finished");
     /* ⛔⛔ 11-07 用户令「关掉群弹窗任务就结束、没结果回传」：成员产出原来是**渲染层**在
        `team-run finished` 里写进群的 —— 面板一卸载就没人接。现在主进程直接落群：
        id 与渲染层同一个（`team-run:<runId>`），两边都写也只会是同一条（按 id 覆盖）。

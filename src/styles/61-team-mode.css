@@ -447,7 +447,11 @@
 /* 11-07 用户「这一块删了」：运行态条 + 圆点/停止键样式整体移除（谁在跑看成员行）。 */
 .team-group__notice {
   margin: 0;
-  padding: 6px 16px;
+  /* ⛔ 11-11 用户（截图红框）：「这个提醒对齐输入框左边」——
+     提示条原来固定 `padding: 6px 16px`，而输入卡与消息列都走 --team-column 居中钳制
+     ⇒ 宽屏下提示比输入框左出一截（两条轴分家）。
+     ⇒ 与 .team-group__composer 用**同一个 padding-inline 公式**，永远同一条轴。 */
+  padding: 6px max(14px, calc((100% - var(--team-column)) / 2));
   color: var(--danger);
   font-size: 12px;
   line-height: 1.6;
