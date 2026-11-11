@@ -720,8 +720,10 @@ export async function reconcileInterruptedDispatches(): Promise<void> {
     const since = Date.now() - 2 * 60 * 60 * 1000;
     for (const g of store.groups ?? []) {
       const rows = (store.messages?.[g.id] ?? []) as Array<{ id?: string; at?: number; authorKind?: string; text?: string }>;
+      /* ⛔ 审查修：这里原来 `if (!recent.length) continue`，但 @ 链停住可能发生在**两小时以前**
+         （真机：05:13 停住、07:26 才重启）⇒ 窗口一过就永远对不上账。
+         `recent` 只用于工具派活链（dispatch/run 配对）；@ 链判据直接看 `rows` 全量。 */
       const recent = rows.filter((row) => Number(row.at ?? 0) >= since);
-      if (!recent.length) continue;
       const produced = new Set(recent
         .map((row) => String(row.id ?? ""))
         .filter((id) => id.startsWith("team-run:"))
