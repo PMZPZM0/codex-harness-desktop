@@ -506,6 +506,15 @@ const catalog = [
       && /const pickAdmin = async/.test(read("src/features/harness-team/12-team-create.tsx"))
       && /onSetAdmin=\{\(gid, memberId\) => setAdminOf/.test(read("src/features/harness-team/index.tsx")),
       "建群完成屏可直接设管理员（接线到 setAdminOf），⛔ 不用再跑一趟群设置");
+    /* ⛔⛔ 11-12 用户：「群里汇总出字效果能不能加一下，现在是闪出来的，界面也跟着闪一下」。
+       入场必须**不触发布局**（只 opacity/transform/clip-path）；且要跟项目既有的
+       msg-appear 同档（0.16~0.18s）+ 尊重 prefers-reduced-motion。 */
+    const teamCss = read("src/styles/61-team-mode.css");
+    ok(/@keyframes team-msg-appear/.test(teamCss)
+      && /\.team-msg__body \{ animation: team-msg-reveal/.test(teamCss)
+      && !/\.team-msg \{[^}]*height:/.test(teamCss)
+      && /prefers-reduced-motion[\s\S]{0,120}\.team-msg \{ animation: none; \}/.test(teamCss),
+      "群消息入场是「出字」而非硬闪：opacity+位移+正文自上而下揭开，⛔ 不触发布局，且可降级");
     /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
        判据必须排除提问/询问，⛔ 不能只看字数。 */
     ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)

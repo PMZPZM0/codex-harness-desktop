@@ -3600,3 +3600,32 @@
 }
 .team-created__admin-state { font-style: normal; font-size: 11px; color: var(--faint, #8b949e); }
 .team-created__admin-state.is-warn { color: var(--danger, #d1242f); }
+
+/* ⛔⛔ 11-12 用户：「群里汇总出字效果能不能加一下，现在是闪出来的，界面也跟着闪一下」。
+   群消息原来是**瞬间插入**（没有任何入场），而落盘那一刻 live 卡同时被撤 ⇒ 高度一换，
+   用户看到的就是"字啪一下出来 + 界面抖一下"。
+
+   这里只做两件事，且都**不触发布局**（⛔ 不用 height/margin，只动 opacity + transform）：
+   · 新插入的群消息淡入 + 3px 上移，让文字像"显出来"而不是"蹦出来"；
+   · 同一帧里 rolling 贴底只跟 transform 走，不再因为高度突变跳一下。
+   时长 0.18s 与项目既有 `msg-appear`（0.16~0.18s ease-out）同档，⛔ 不另立一套节奏。 */
+.team-msg {
+  animation: team-msg-appear 0.18s ease-out both;
+}
+@keyframes team-msg-appear {
+  0% { opacity: 0; transform: translateY(3px); }
+  100% { opacity: 1; transform: none; }
+}
+/* ⛔ 只淡入还是"整块出现"，用户要的是**出字**：正文再自上而下揭开一层
+   （clip-path 裁的是正文容器，⛔ 不裁 .team-msg —— 那头像/资料卡浮层会被切边）。
+   0.24s 比淡入略长，长段文字看起来是一行行"写"出来。 */
+.team-msg__body { animation: team-msg-reveal 0.24s ease-out both; }
+@keyframes team-msg-reveal {
+  0% { clip-path: inset(0 0 96% 0); }
+  100% { clip-path: inset(0 0 0 0); }
+}
+/* 搜索命中要走它自己那条高亮动画（同属性会覆盖入场），入场就不播了 —— 定位跳转本来就在动。 */
+.team-msg.is-search-hit { animation: team-msg-flash 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="force"]) .team-msg { animation: none; }
+}
