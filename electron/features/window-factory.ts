@@ -11,7 +11,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { fileURLToPath } from "node:url";
 import { BrowserWindow, app, dialog, shell } from "electron";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { applyRoundedCorners } from "../window/win-rounded-corners";
 import { sendToWindow } from "./window-bus";
 import { popoutBusWindows, registerBusWindow, unregisterBusWindow } from "../features/window-bus";
@@ -21,6 +21,25 @@ import { applyThemeToWindow, closeToTrayEnabled, closePromptSeen, closeConfirmBr
 import { closePetWindow } from "./pet-window";
 import { mutableState } from "../main";
 import { isInsideTrustedRoots } from "../runtime-refs";
+
+/**
+ * 构建指纹（11-12 用户实测「重启后图片还是坏的，强制刷新一下才好」）：
+ * Chromium 会缓存 dist/index.html，重启后仍加载**旧 bundle**（旧图片路径逻辑）⇒ 必须手动硬刷新。
+ * 把构建时间作为 URL 查询参数 ⇒ 每次重建后窗口 URL 都变，自动绕过缓存；未重建则命中缓存不拖慢启动。
+ */
+function cacheBustToken(): string {
+  try {
+    return String(Math.floor(statSync(path.join(app.getAppPath(), "dist", "index.html")).mtimeMs));
+  } catch {
+    return String(Date.now());
+  }
+}
+
+/** 给 dev URL / 文件查询拼上构建指纹（不改变任何业务 query）。 */
+function withCacheBust(devUrl: string, query: string): string {
+  const sep = devUrl.includes("?") ? "&" : "?";
+  return `${devUrl}${sep}${query}${query ? "&" : ""}v=${cacheBustToken()}`;
+}
 /** 建主窗口（带**防重入**：已有未销毁的主窗口就复用并聚焦，⛔ 否则 second-instance 链路会造出两个一模一样的主窗）。 */
 export function createWindow() {
   /* ⛔⛔ 防重入（10-22 用户实测「应用还能重复打开」= 两个一模一样的主窗口）：
@@ -204,10 +223,10 @@ export function createWindow() {
   //    打包版无 devUrl，走下面的 loadFile，不受影响。
   if (devUrl) {
     const distIndex = path.join(app.getAppPath(), "dist", "index.html");
-    mutableState.mainWindow.loadURL(devUrl).catch(() => {
-      try { void mutableState.mainWindow?.loadFile(distIndex); } catch { /* 兜底失败不再处理 */ }
+    mutableState.mainWindow.loadURL(withCacheBust(devUrl, "")).catch(() => {
+      try { void mutableState.mainWindow?.loadFile(distIndex, { query: { v: cacheBustToken() } }); } catch { /* 兜底失败不再处理 */ }
     });
-  } else void mutableState.mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+  } else void mutableState.mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { v: cacheBustToken() } });
   /* ⛔⛔ 白屏自愈（10-03 用户实测两次白屏）：`npm run check` / 手工构建会先 `clean-dist` 清空
      dist 再重建，若窗口恰好在这个窗口期加载（或用户此时点开应用）⇒ did-fail-load，界面全白。
      这里不再留白：加载失败就换一页自刷新的提示页（3 秒重试一次），构建一完成自动回到真界面；
@@ -215,7 +234,7 @@ export function createWindow() {
   contents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
     if (!isMainFrame) return;
     const appIndex = path.join(app.getAppPath(), "dist", "index.html");
-    const retryUrl = pathToFileURL(appIndex).href;
+    const retryUrl = `${pathToFileURL(appIndex).href}?v=${cacheBustToken()}`;
     const page = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>正在准备界面…</title>
 <style>body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;font-family:"Segoe UI",system-ui,sans-serif;background:#fff;color:#23231f}img{width:112px;height:112px;border-radius:26px}small{color:#6f6f69}</style>
 </head><body><img src="${pathToFileURL(path.join(app.getAppPath(), "dist", "icon.png")).href}" alt="">
@@ -299,10 +318,9 @@ export function createPopoutWindow(threadId: string) {
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   const query = `?popout=${encodeURIComponent(threadId)}`;
   if (devUrl) {
-    const sep = devUrl.includes("?") ? "&" : "?";
-    void win.loadURL(devUrl + sep + query.slice(1));
+    void win.loadURL(withCacheBust(devUrl, query.slice(1)));
   } else {
-    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { popout: threadId } });
+    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { popout: threadId, v: cacheBustToken() } });
   }
   installContextMenu(win);
   return win;
@@ -446,10 +464,9 @@ export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
   }
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
-    const sep = devUrl.includes("?") ? "&" : "?";
-    void win.loadURL(devUrl + sep + "teamPopout=1");
+    void win.loadURL(withCacheBust(devUrl, "teamPopout=1"));
   } else {
-    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { teamPopout: "1" } });
+    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { teamPopout: "1", v: cacheBustToken() } });
   }
   installContextMenu(win);
   return { ok: true, focused: false };
@@ -480,10 +497,9 @@ export function createMediaDeskPopoutWindow(): { ok: boolean; focused: boolean }
   });
   const devUrl = process.env.VITE_DEV_SERVER_URL;
   if (devUrl) {
-    const sep = devUrl.includes("?") ? "&" : "?";
-    void win.loadURL(devUrl + sep + "mediaDesk=1");
+    void win.loadURL(withCacheBust(devUrl, "mediaDesk=1"));
   } else {
-    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { mediaDesk: "1" } });
+    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { mediaDesk: "1", v: cacheBustToken() } });
   }
   return { ok: true, focused: false };
 }

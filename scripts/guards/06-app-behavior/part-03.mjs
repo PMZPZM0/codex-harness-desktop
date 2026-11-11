@@ -523,7 +523,9 @@ if (!existsSync(join(ROOT, "src", "features", "team-office", "office-render.ts")
       "【174】app:relaunch 用 app.quit() 优雅退出（app.exit 会跳过 before-quit 清理并打断任务栏图标）"
     );
     // ③ 窗口加载失败要能回落本地 dist（宁可看构建版也不能白屏）
-    (/loadURL\(devUrl\)\.catch\(/.test(winSrc) && /loadFile\(distIndex\)/.test(winSrc) ? ok : fail)(
+    /* ⛔ 11-12：dev URL 现在经 withCacheBust(devUrl, "") 包一层（缓存戳）⇒ 判据放宽到
+       "loadURL 里带 devUrl 且有 .catch("，契约不变：**dev 加载失败要回落 dist**。 */
+    (/loadURL\([\s\S]{0,120}?devUrl[\s\S]{0,120}?\)\.catch\(/.test(winSrc) && /loadFile\(distIndex[,)]/.test(winSrc) ? ok : fail)(
       "【174】dev URL 加载失败回落本地 dist（白屏第二道保险）"
     );
     // ④ 图标路径必须多源兜底（只认 app.getAppPath() 一条会在 relaunch 后丢图标）
