@@ -679,6 +679,11 @@ function groupAsyncToolCopy(tool: unknown): unknown {
 }
 
 /** 团群主理人会话的完整工具面 = 群聊三件套 + 团队调度两件（⛔ 与 runDispatchRounds 同一份构造口径）。 */
+/** ⛔⛔ 11-12 用户裁定（问「主代理该不该自己能干」→ 选 B）：
+ *  **主代理保留完整能力**，只是不许一个人包干。所以工具面里 `buildDelegateHarnessTool()` 保留
+ *  —— 它自己可以拟提纲、定标准、查资料、做判断；但**可交付物默认派给成员**，
+ *  顺序与分工由「计划先行 + 一次一步」那几条约束（见 buildTeamSystemPrompt 的角色段）。
+ *  ⛔ 别再走「把它的能力删光」那条路：那不是分工，是把它变成只会转发消息的空壳。 */
 function groupLeadSurfaceOf(team: { teamId: string } & Record<string, any>): unknown[] {
   return [
     ...buildGroupTalkTools(),
@@ -1009,8 +1014,7 @@ async function runDispatchRounds(
   let leadCatchUps = 0;
   /* ⛔ 主理人自己那一轮「没派任何人、没写收口」时只催办一次（防自循环烧钱）。 */
   const MAX_LEAD_SELF_NUDGES = 1;
-  let leadSelfNudges = 0;
-  /* ⛔ 主持人排片串行执行期间，别让中途某位成员的回合把话头抢回主理人（会把剩下的排片冲散）。 */
+  let leadSelfNudges = 0;  /* ⛔ 主持人排片串行执行期间，别让中途某位成员的回合把话头抢回主理人（会把剩下的排片冲散）。 */
   let relayInFlight = false;
   const params = options.params ?? {};
   /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
@@ -1029,6 +1033,8 @@ async function runDispatchRounds(
   const groupTeam = groupTeamId
     ? (await readUsableExpertTeams().catch(() => [])).find((t) => String(t.teamId) === groupTeamId) ?? null
     : null;
+  /* ⛔⛔ 11-12 用户裁定 B：主理人保留完整能力（能用 harness 网关自己查、自己拟），
+     只是不许一个人包干 —— 那靠「计划先行 + 一次一步」约束，⛔ 不靠删工具。 */
   const leadDispatchTools = groupTeam
     ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam), buildDelegateHarnessTool()].map(groupAsyncToolCopy))
     : [];
@@ -1488,6 +1494,14 @@ async function runDispatchRounds(
       const duplicated = Boolean(duplicateRow);
       /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
       const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
+      /* ⛔⛔⛔ 11-12 用户（连着两条）：「硬伤就是主代理和管理员，光靠自己一个人框框框框输出」。
+         根因不是提示词不够狠，而是**宿主从不拦**：主理人这一轮一件活都没派，却写了一大篇成品，
+         宿主照单落群 —— 用户看到的就是"它一个人把活全干了"，成员形同虚设。
+         ⇒ 硬闸（只拦这一种动作，⛔ 不判断写得好不好）：
+           团群里 · 说话的是主理人 · 这一轮没调任何团队工具 · 输出 ≥400 字且像成品
+           （有标题 / 代码块 / ≥4 个列表项）· 用户那句不是提问
+           ⇒ **不落群**，回喂一条纠偏要它拆成任务派出去。
+         ⛔ 每个会话只纠偏一次（防自循环）；⛔ 问句/寒暄不拦（那是正常对话）。 */
       let wrote: { ok: boolean; error?: string } = { ok: true };
       if (clearedDuringRun) {
         wrote = { ok: true };
