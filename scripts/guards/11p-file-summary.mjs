@@ -466,10 +466,12 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   const threadsCss = readFileSync(join(ROOT, "src", "styles", "02-sidebar-threads.css"), "utf8");
   ok(/takeDialogAnchor\(\) \?\? activeDialogAnchor\(\)/.test(appView) && /<AnchoredDialogCard anchor=\{/.test(appView),
     "改名/删除/确认：有锚点走气泡，无锚点回落居中模态");
-  ok(/side === "top"/.test(bubble) && /anchor\.bottom \+ gap/.test(bubble) && /window\.innerWidth/.test(bubble),
-    "气泡定位：上方优先、不够翻下方/左右，并夹进视口");
-  ok(/setDialogAnchor\(anchor\)/.test(rowsSrc) && /setDialogAnchor\(anchor\)/.test(shellSrc),
-    "会话菜单 / 项目菜单的改名、删除都把触发处坐标交给气泡");
+  ok(/side === "top"/.test(bubble) && /anchor\.bottom \+ gap/.test(bubble) && /const inSidebar = anchor\.right <= 360/.test(bubble)
+    && /rightBase = sidebar \? Math\.max\(anchor\.right, sidebar\.right\)/.test(bubble),
+    "气泡定位：侧栏锚点贴侧栏右缘（与会话行同行对齐），主内容区上方优先、不够翻下方/左右，并夹进视口");
+  ok(/setDialogAnchor\(threadMenuTriggerRect\)/.test(rowsSrc) && /threadMenuTriggerRect = rect/.test(rowsSrc)
+    && /setDialogAnchor\(projectMenuTriggerRect\)/.test(shellSrc) && /projectMenuTriggerRect = rect/.test(shellSrc),
+    "会话/项目菜单的改名、删除都用「⋯」按钮矩形定位（⛔ 不用菜单项位置，否则飘在侧栏中间）");
   ok(/\.dialog-anchor-card\.side-top::before/.test(cardsCss) && /\.dialog-anchor-card\.side-bottom::before/.test(cardsCss) && /--arrow-x/.test(cardsCss),
     "气泡小三角 CSS 在（四个方向指回触发处）");
   ok(/\.thread-row\.menu-open > button:first-child > small[\s\S]{0,60}visibility: hidden/.test(threadsCss),

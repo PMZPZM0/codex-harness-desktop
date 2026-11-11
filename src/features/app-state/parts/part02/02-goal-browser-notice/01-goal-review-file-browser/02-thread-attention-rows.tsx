@@ -154,6 +154,8 @@ import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../.
 
 /** 会话行菜单的锚点 Y（触发按钮中心，视口坐标）——菜单右弹时箭头指回「⋯」按钮。单开菜单，模块级足够。 */
 let threadMenuAnchorY = 0;
+/** 触发「⋯」按钮的矩形：改名/删除气泡要贴着**会话行**弹，⛔ 不能用菜单项位置（会飘在侧栏中间）。 */
+let threadMenuTriggerRect: DOMRect | null = null;
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
 import type { Bag } from "../../../bag-types";
@@ -392,6 +394,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             const menuWidth = 170;
             const menuHeight = 300;
             threadMenuAnchorY = rect.top + rect.height / 2;
+            threadMenuTriggerRect = rect;
             bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.top - 4, window.innerHeight - menuHeight - 8)), left: Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - menuWidth - 8)) });
           }}><MoreHorizontal size={14} /></button>
           {extras?.actions}
@@ -409,7 +412,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             {/* ⛔ 11-01 用户令：**只留一个改名入口**。
                 「重命名」和「改笔名」本来是同一个操作（笔名就是会话名），两个选项让人以为分工不同。
                 现在统一叫「改名字」：写别名记录 + 写引擎会话名 + 广播（子会话里的「上级：X」跟着变）。 */}
-            <button onClick={(event) => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText, event.currentTarget.getBoundingClientRect()); }}><PenLine size={13} /><span>改名字</span></button>
+            <button onClick={() => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText, threadMenuTriggerRect); }}><PenLine size={13} /><span>改名字</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span>{
               /* ⛔ 11-08 用户（截图）：「添加标签后面的『点标签可切换』怎么也没了」。
                  原条件是 `length > 1` —— 只有 1 枚标签的行（例如只有「专家」身份徽标）就把提示藏了，
@@ -444,10 +447,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             </div>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.copyThreadReferenceId(entry); }}><Copy size={13} /><span>复制会话 ID</span></button>
-            <button className="danger" onClick={async (event) => {
-              const anchor = event.currentTarget.getBoundingClientRect();
+            <button className="danger" onClick={async () => {
               bag.setThreadRowMenu(null);
-              setDialogAnchor(anchor);
+              setDialogAnchor(threadMenuTriggerRect);
               if (!(await bag.openAppConfirm(
                 "删除会话",
                 `会话「${entry.name || entry.preview || "未命名"}」及其中的消息、工具记录将被永久删除，此操作无法撤销。`,

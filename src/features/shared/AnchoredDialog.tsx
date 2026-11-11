@@ -8,9 +8,10 @@ import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode }
 import { createPortal } from "react-dom";
 
 export type DialogAnchor = { left: number; top: number; right: number; bottom: number; width: number; height: number };
+type Side = "top" | "bottom" | "left" | "right";
 
-/** 气泡壳：按调用方给的锚点定位（右优先，放不下翻左），画卡片 + 指回小三角。 */
-export function AnchoredDialogCard({ anchor, ariaLabel, width = 320, onClose, children }: {
+/** 气泡壳：按调用方给的锚点就近定位（优先上方 → 下方 → 右侧 → 左侧），画卡片 + 指回触发处的小三角。 */
+export function AnchoredDialogCard({ anchor, ariaLabel, width = 280, onClose, children }: {
   anchor: DialogAnchor | null;
   ariaLabel: string;
   width?: number;
@@ -18,20 +19,43 @@ export function AnchoredDialogCard({ anchor, ariaLabel, width = 320, onClose, ch
   children: ReactNode;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
-  const [box, setBox] = useState<{ left: number; top: number; side: "left" | "right"; arrowTop: number } | null>(null);
+  const [box, setBox] = useState<{ left: number; top: number; side: Side; arrowX: number; arrowY: number } | null>(null);
 
   useLayoutEffect(() => {
     const el = cardRef.current;
     if (!anchor || !el) return;
     const margin = 8;
-    const gap = 10;
+    const gap = 12;
     const height = el.offsetHeight;
-    const canRight = anchor.right + gap + width <= window.innerWidth - margin;
-    const side: "left" | "right" = canRight ? "right" : "left";
-    const left = side === "right" ? anchor.right + gap : Math.max(margin, anchor.left - width - gap);
-    const top = Math.max(margin, Math.min(anchor.top + anchor.height / 2 - height / 2, window.innerHeight - height - margin));
-    const arrowTop = Math.max(16, Math.min(anchor.top + anchor.height / 2 - top, height - 16));
-    setBox({ left, top, side, arrowTop });
+    const centerX = anchor.left + anchor.width / 2;
+    const centerY = anchor.top + anchor.height / 2;
+    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
+    /* 11-11 用户纠正：「要跟会话/项目这一行对上」——侧栏里的锚点优先**贴右侧**（和菜单同一列，
+       箭头左侧指回「⋯」）；主内容区里的按钮才优先上下弹。 */
+    const inSidebar = anchor.right <= 360;
+    /* 贴右侧时锚到**侧栏右缘**（不是按钮右缘）：按钮在侧栏里，直接用按钮右缘会让卡片压进侧栏。 */
+    const sidebar = inSidebar ? document.querySelector(".sidebar")?.getBoundingClientRect() ?? null : null;
+    const rightBase = sidebar ? Math.max(anchor.right, sidebar.right) : anchor.right;
+    let side: Side = "top";
+    if (inSidebar && rightBase + gap + width <= window.innerWidth - margin) side = "right";
+    else if (anchor.top - gap - height >= margin) side = "top";
+    else if (anchor.bottom + gap + height <= window.innerHeight - margin) side = "bottom";
+    else if (anchor.right + gap + width <= window.innerWidth - margin) side = "right";
+    else side = "left";
+    let left: number;
+    let top: number;
+    let arrowX = 0;
+    let arrowY = 0;
+    if (side === "top" || side === "bottom") {
+      left = clamp(centerX - width / 2, margin, window.innerWidth - width - margin);
+      top = side === "top" ? anchor.top - gap - height : anchor.bottom + gap;
+      arrowX = clamp(centerX - left, 16, width - 16);
+    } else {
+      left = side === "right" ? rightBase + gap : Math.max(margin, anchor.left - width - gap);
+      top = clamp(centerY - height / 2, margin, window.innerHeight - height - margin);
+      arrowY = clamp(centerY - top, 16, height - 16);
+    }
+    setBox({ left, top, side, arrowX, arrowY });
   }, [anchor, width]);
 
   if (!anchor) return null;
@@ -43,7 +67,7 @@ export function AnchoredDialogCard({ anchor, ariaLabel, width = 320, onClose, ch
         className={`dialog-anchor-card side-${box?.side ?? "right"}`}
         role="dialog"
         aria-label={ariaLabel}
-        style={{ left: box?.left ?? 8, top: box?.top ?? 8, width, visibility: box ? "visible" : "hidden", "--arrow-top": `${box?.arrowTop ?? 24}px` } as CSSProperties}
+        style={{ left: box?.left ?? 8, top: box?.top ?? 8, width, visibility: box ? "visible" : "hidden", "--arrow-x": `${box?.arrowX ?? 24}px`, "--arrow-y": `${box?.arrowY ?? 24}px` } as CSSProperties}
       >
         {children}
       </div>

@@ -170,6 +170,9 @@ import { UpdateReadyToast } from "./UpdateReadyToast";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 /** 侧栏壳：项目/会话树、团队条、指挥中枢入口。⛔ 中枢就是**一个普通会话**（点按钮 = openThread(bossThreadId)），不是覆盖层。 */
+/** 项目「⋯」按钮矩形：项目改名/删除气泡贴着**项目行**弹（⛔ 不用菜单项位置，否则飘在侧栏中间）。 */
+let projectMenuTriggerRect: DOMRect | null = null;
+
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
      用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成指挥中枢，不就好了嘛」。
@@ -919,6 +922,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                                  ⛔ 横锚取**侧栏右缘**而不是按钮右缘：.sidebar 有 10px 右内边距 + 滚动条，
                                  锚按钮会让菜单左缘落进侧栏里（实测 240 < 256，看着还是"内嵌"）。 */
                               const rect = event.currentTarget.getBoundingClientRect();
+                              projectMenuTriggerRect = rect;
                               const side = document.querySelector(".sidebar")?.getBoundingClientRect();
                               const width = 216;
                               const height = 148;
@@ -934,13 +938,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                               <span className="project-menu-arrow" style={{ top: projectMenuPos.arrowTop, left: projectMenuPos.left - 6 }} />
                             )}
                             <div className="project-menu" style={projectMenuPos ? { top: projectMenuPos.top, left: projectMenuPos.left } : undefined}>
-                              <button onClick={(event) => { const anchor = event.currentTarget.getBoundingClientRect(); setProjectMenu(null); setDialogAnchor(anchor); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                              <button onClick={() => { setProjectMenu(null); setDialogAnchor(projectMenuTriggerRect); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
                               <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                               <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
-                              <button className="danger" onClick={async (event) => {
-                                const anchor = event.currentTarget.getBoundingClientRect();
+                              <button className="danger" onClick={async () => {
                                 setProjectMenu(null);
-                                setDialogAnchor(anchor);
+                                setDialogAnchor(projectMenuTriggerRect);
                                 if (!(await app.openAppConfirm("删除项目", `项目「${projectNameOf(cwd)}」下的全部会话与记录将被永久删除，此操作无法撤销。`, "永久删除"))) return;
                                 unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd);
                               }}><Trash2 size={14} />删除项目（含全部会话）</button>
