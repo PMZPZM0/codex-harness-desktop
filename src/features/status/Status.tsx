@@ -175,8 +175,6 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
   return (
     <>
       {outputFiles.length > 0 && <OutputFileCards files={outputFiles} onOpenEditor={onOpenFile} />}
-      {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。 */}
-      <TurnMediaCards files={files} />
       <details className="completed-changes" open>
         <summary><FileCode2 size={15} /><strong>已更改 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
         <div>
@@ -223,6 +221,9 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
           )}
         </div>
       </details>
+      {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。
+          11-11 用户令：「图片预览做成小正方形、放在汇总消息下面」⇒ 移到已更改汇总之后。 */}
+      <TurnMediaCards files={files} />
       {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
           ⛔ 不复制第二份菜单实现 —— 菜单项永远只有一处真相源。 */}
       {menu && <FileCardMenu menu={menu} onOpen={() => openPath(menu.path, menu.name)} onClose={() => setMenu(null)} />}

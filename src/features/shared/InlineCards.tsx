@@ -180,7 +180,15 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
     }
     return () => { cancelled = true; };
   }, [matches]);
-  const confirmed = matches.filter((match) => Boolean(resolvedPaths[match.path]));
+  /* 11-11 用户截图：图片的正文引用要跟普通文件一样是**整行文件卡**（点击开右栏/预览），
+     ⛔ 不要再画小缩略芯片（会和回合预览卡、已更改文件行重复成三份）。
+     视频仍不出正文芯片：回合预览卡（TurnMediaCards）负责播放；音频 / 3D 保留缩略芯片。 */
+  const confirmed = matches.filter((match) => {
+    const resolved = resolvedPaths[match.path];
+    if (!resolved) return false;
+    if (mediaKindOf(resolved) === "video") return false;
+    return true;
+  });
   if (confirmed.length === 0) return null;
   return (
     <>
@@ -190,9 +198,9 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
         const openPath = resolvedPaths[m.path];
         const mediaKind = mediaKindOf(openPath);
         const mediaTitle = mediaKind === "video" ? "点击播放" : mediaKind === "audio" ? "点击播放音频" : mediaKind === "model" ? "点击预览 3D" : "";
-        /* 10-22 用户截图：「还是这种旧的」——普通文件改成 Qoder 式卡片（默认右栏预览），
-           图片/音视频/3D 仍走原来的缩略芯片（点击进灯箱/播放器，不显示打开方式下拉）。 */
-        if (!isImagePath(openPath) && !mediaKind) {
+        /* 10-22：普通文件（含图片）改成 Qoder 式整行卡片（默认右栏预览）；
+           音视频 / 3D 仍走缩略芯片（点击进播放器/3D 弹窗）。 */
+        if (!mediaKind) {
           return (
             <FileRefCard
               key={`${m.path}-${index}`}

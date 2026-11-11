@@ -261,11 +261,24 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "「默认应用」走 shell:open，且**不再判可信根**（10-29 用户令：任意位置的文件都要能打开）");
 
   /* 10-22 用户截图：「我没改嘛，还是这种旧的」——消息末尾的内联文件引用原来还是小芯片。
-     普通文件必须换成同一张 FileRefCard（默认右栏），图片/音视频保留缩略芯片。 */
+     普通文件与图片都用同一张 FileRefCard（默认右栏预览）；只有音视频 / 3D 保留缩略芯片。 */
   const inlineCards = read("src/features/shared/InlineCards.tsx");
   const fileRefCard = read("src/components/FileRefCard.tsx");
-  ok(inlineCards.includes("FileRefCard") && /!isImagePath\(openPath\) && !mediaKind/.test(inlineCards) && inlineCards.includes("<FileRefCard"),
-    "消息末尾普通文件引用用 FileRefCard（图片/音视频仍走缩略芯片）");
+  ok(inlineCards.includes("FileRefCard") && /if \(!mediaKind\) \{/.test(inlineCards) && inlineCards.includes("<FileRefCard"),
+    "消息末尾普通文件 / 图片引用用 FileRefCard（整行卡；⛔ 图片不再是小缩略芯片）");
+  /* 11-11 用户：图片已有预览卡 + 已更改文件行，正文再出海缩略芯片就是三重展示；视频同理（预览卡负责播放）。 */
+  ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) return false/.test(inlineCards),
+    "视频不再出正文缩略芯片（图片走文件卡，不再排除）");
+  /* 11-11 用户令：「图片预览卡片不用这么大这么长，可以正方形在汇总消息下面，可以小一点」。 */
+  {
+    const statusSrc = read("src/features/status/Status.tsx");
+    const mediaCss = read("src/styles/39-media-preview.css");
+    ok(statusSrc.indexOf("<TurnMediaCards") > statusSrc.indexOf("</details>"),
+      "媒体预览卡渲染在「已更改」汇总之后（汇总消息下面）");
+    ok(/\.turn-media-card\.is-image \{[\s\S]{0,160}width: 112px;/.test(mediaCss)
+      && /\.turn-media-card\.is-image \.turn-media-thumb \{[\s\S]{0,80}height: 112px;/.test(mediaCss),
+      "图片预览是小正方形（112×112，不再是整行大图）");
+  }
   ok(fileRefCard.includes("openRightFile") && /target === "editor" && onOpenEditor/.test(fileRefCard) && /shellOpen/.test(fileRefCard),
     "文件引用卡默认右栏预览；编辑器 / 默认应用从下拉选择（⛔ 不再默认弹居中编辑器）");
   ok(fileRefCard.includes("MODE_KEY") && /localStorage\.getItem\(MODE_KEY\)/.test(fileRefCard) && /localStorage\.setItem\(MODE_KEY/.test(fileRefCard),
