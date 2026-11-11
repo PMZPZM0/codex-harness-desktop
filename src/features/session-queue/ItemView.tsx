@@ -26,7 +26,6 @@ import { PlanEditor } from "../../components/PlanEditor";
 import { ImagePreview } from "../preview";
 import { FileResultCards, MediaResultCards } from "../media";
 import { Markdown } from "../markdown";
-import { InlineFileCards } from "../inline-cards";
 import { usePacketRevealText } from "../shared/use-packet-reveal-text";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { bufferedAgentRevealStarts } from "../../lib/buffered-agent-reveal-starts";
@@ -250,7 +249,9 @@ function payloadLanguage(text: string): string {
 /** 正文渐进揭示：长文按包逐步显示，避免整段蹦出（揭示中带 CSS 类）。 */
 export function ProgressiveAgentBody({ itemId, text, active, footer, onOpenFile }: { itemId: string; text: string; active?: boolean; footer?: React.ReactNode; onOpenFile?: (path: string) => void }) {
   const { displayed, revealing } = usePacketRevealText(itemId, text, Boolean(active), bufferedAgentRevealStarts, 24);
-  return <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}><Markdown>{displayed}</Markdown>{!revealing ? <InlineFileCards text={text} onOpenFile={onOpenFile} /> : null}{!revealing ? footer : null}</div>;
+  /* 11-11 用户：文件卡片 / 已修改文件都收进「本轮产物」折叠（在 Status 里统一渲染），
+     正文这里只画 Markdown 与 footer，⛔ 不再单独渲染 InlineFileCards（否则折叠外又出现一份）。 */
+  return <div className={`message-body markdown ${revealing ? "packet-revealing" : ""}`}><Markdown>{displayed}</Markdown>{!revealing ? footer : null}</div>;
 }
 
 /** fileChange 卡（10-01 从 ItemView 主链抽出：diff 的流式揭示是 hook，不能挂在条件分支里）。

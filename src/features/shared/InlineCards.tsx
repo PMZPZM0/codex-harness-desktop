@@ -101,7 +101,7 @@ function looksLikeFilePath(candidate: string): boolean {
   return false;
 }
 
-function extractFilePathsFromMarkdown(text: string): { path: string; prefix: string }[] {
+export function extractFilePathsFromMarkdown(text: string): { path: string; prefix: string }[] {
   const seen = new Set<string>();
   const out: { path: string; prefix: string }[] = [];
   const push = (raw: string, prefix: string) => {

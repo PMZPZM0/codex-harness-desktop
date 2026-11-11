@@ -2924,3 +2924,34 @@
     animation: none !important;
   }
 }
+
+/* ── 11-11 用户令：「加一个本轮产物字样，点击折叠展开，默认折叠；文件卡片和已修改文件都放进去」────
+   媒体预览卡在折叠**上面**始终可见；折叠里依次是：正文文件引用卡 → 本轮产物卡 → 已更改文件汇总。 */
+.turn-outputs {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.turn-outputs > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  user-select: none;
+}
+.turn-outputs > summary::-webkit-details-marker { display: none; }
+.turn-outputs > summary svg:last-child { margin-left: auto; color: var(--muted); transition: transform .15s ease; }
+.turn-outputs[open] > summary svg:last-child { transform: rotate(180deg); }
+.turn-outputs-count { color: var(--muted); font-size: 12px; }
+.turn-outputs-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 2px 12px 12px;
+}
+.turn-outputs-body .completed-changes { margin-top: 0; }

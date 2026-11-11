@@ -7,7 +7,8 @@ import { Turn } from "../../lib/turn";
 import { diffStats } from "../../lib/diff-stats";
 import { ToolCodeBlock } from "../shared/ToolCodeBlock";
 import { DiffPreviewBody } from "./DiffPreview";
-import { FileCardMenu } from "../shared/InlineCards";
+import { FileCardMenu, InlineFileCards, extractFilePathsFromMarkdown } from "../shared/InlineCards";
+import { itemText } from "../../lib/item-text";
 import { getTurnFileChanges, getTurnLiveFileChanges, subscribeTurnFileChanges } from "../../lib/turn-file-changes.mjs";
 import { useCenteredPopoverLeft } from "../../lib/use-centered-popover";
 import { useRunProcessMode } from "../../lib/run-process-mode";
@@ -148,7 +149,11 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
       files: reviewFiles,
     });
   }, [isLastTurn, turn.id, reviewSignature]);
-  if (!changes.length && !tracked.length) return null;
+  /* 11-11 用户令：「下面的文件卡片和已修改文件，都放这个折叠里面」——正文里的文件引用卡
+     也收进回合尾部的「本轮产物」折叠（由本组件统一渲染，⛔ 消息正文里不再画第二份）。 */
+  const assistantText = turn.items.filter((entry) => entry.type === "agentMessage").map((entry) => itemText(entry)).join("\n\n");
+  const hasRefs = extractFilePathsFromMarkdown(assistantText).length > 0;
+  if (!changes.length && !tracked.length && !hasRefs) return null;
   /** 行点击 / 菜单「打开」共用：图片走灯箱，其余交给文件预览弹窗（会话单例的统一入口）。 */
   const openPath = (path: string, name: string) => {
     if (isImagePath(path)) openImageLightbox(path, name);
@@ -174,11 +179,18 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
   const outputFiles = files.filter((file) => file.newFile && !file.deletedFile).map((file) => ({ path: file.path, added: file.added, deleted: file.deleted }));
   return (
     <>
-      {outputFiles.length > 0 && <OutputFileCards files={outputFiles} onOpenEditor={onOpenFile} />}
       {/* 11-09：本回合产出的视频/图片预览卡（点击复用现有播放器/灯箱）；主对话与群聊共用。
-          11-11 用户令：「文件名可以不要，放长条卡片上面」⇒ 放在「已更改」长条卡之前，图片只留正方形。 */}
+          11-11 用户令：视频也放这个位置；图片只留正方形、不显示文件名；放在「本轮产物」折叠**上面**。 */}
       <TurnMediaCards files={files} />
-      <details className="completed-changes" open>
+      {/* 11-11 用户令：「这下面的展示加一个『本轮产物』字样，点击字可以折叠展开，默认折叠状态；
+          下面的文件卡片和已修改文件，都放这个折叠里面」。 */}
+      <details className="turn-outputs">
+        <summary><FileCode2 size={15} /><strong>本轮产物</strong><span className="turn-outputs-count">{files.length} 个文件</span><ChevronDown size={14} /></summary>
+        <div className="turn-outputs-body">
+          <InlineFileCards text={assistantText} onOpenFile={onOpenFile} />
+          {outputFiles.length > 0 && <OutputFileCards files={outputFiles} onOpenEditor={onOpenFile} />}
+          {files.length > 0 && (
+          <details className="completed-changes" open>
         <summary><FileCode2 size={15} /><strong>已更改 {files.length} 个文件</strong><span className="diff-add">+{totals.added}</span><span className="diff-delete">-{totals.deleted}</span><ChevronDown size={14} /></summary>
         <div>
           {visible.map((file) => {
@@ -221,6 +233,9 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
             <button type="button" className="completed-more" onClick={() => setExpanded((value) => !value)}>
               {expanded ? "收起" : `再显示 ${files.length - COLLAPSE_LIMIT} 个文件`}
             </button>
+          )}
+        </div>
+      </details>
           )}
         </div>
       </details>

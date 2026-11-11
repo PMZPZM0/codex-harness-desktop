@@ -55,7 +55,7 @@ ok(statusCode.includes('className="completed-file-new">新增'), "宿主追踪�
 
 /* ── 二、右键菜单：复用一份 + 两项点名 ───────────────────────────── */
 
-ok(statusCode.includes('import { FileCardMenu } from "../shared/InlineCards"'),
+ok(/import \{[^}]*\bFileCardMenu\b[^}]*\} from "\.\.\/shared\/InlineCards"/.test(statusCode),
   "菜单是**复用** shared 基座的那一份（第二份菜单实现 = 两处真相源，改一处漏一处）");
 ok(shared.includes("export function FileCardMenu"), "shared 的 FileCardMenu 已导出（复用面）");
 ok(shared.includes('label: "复制文件路径"') && shared.includes("copyTextToClipboard(menu.path)"),
@@ -269,12 +269,20 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   /* 11-11 用户：图片已有预览卡 + 已更改文件行，正文再出海缩略芯片就是三重展示；视频同理（预览卡负责播放）。 */
   ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) return false/.test(inlineCards),
     "视频不再出正文缩略芯片（图片走文件卡，不再排除）");
-  /* 11-11 用户令：「图片预览小正方形、放在长条文件卡上面；文件名可以不要」。 */
+  /* 11-11 用户令：图片预览小正方形、不显示文件名；视频同位置；其下「本轮产物」折叠（默认收起），
+     文件卡片与已修改文件都收进折叠里。 */
   {
     const statusSrc = read("src/features/status/Status.tsx");
     const mediaCss = read("src/styles/39-media-preview.css");
-    ok(statusSrc.indexOf("<TurnMediaCards") > 0 && statusSrc.indexOf("<TurnMediaCards") < statusSrc.indexOf("</details>"),
-      "媒体预览卡渲染在「已更改」长条卡之前（长条卡片上面）");
+    const itemView = read("src/features/session-queue/ItemView.tsx");
+    ok(statusSrc.indexOf("<TurnMediaCards") > 0 && statusSrc.indexOf("<TurnMediaCards") < statusSrc.indexOf('className="turn-outputs"'),
+      "媒体预览卡在「本轮产物」折叠上方（正文下面）");
+    ok(/<details className="turn-outputs">\s*\n\s*<summary>[\s\S]{0,200}本轮产物/.test(statusSrc)
+      && statusSrc.indexOf('className="turn-outputs"') < statusSrc.indexOf("<InlineFileCards")
+      && /<InlineFileCards text=\{assistantText\}/.test(statusSrc),
+      "「本轮产物」默认折叠，文件引用卡与已更改文件都在折叠里");
+    ok(!/<InlineFileCards/.test(itemView) && !/import \{ InlineFileCards \}/.test(itemView),
+      "消息正文不再单独画文件卡（⛔ 与折叠里重复）");
     ok(/\.turn-media-card\.is-image \{[\s\S]{0,160}width: 112px;/.test(mediaCss)
       && /\.turn-media-card\.is-image \{[\s\S]{0,200}height: 112px;/.test(mediaCss)
       && /\.turn-media-card\.is-image \.turn-media-meta \{[\s\S]{0,40}display: none;/.test(mediaCss),
