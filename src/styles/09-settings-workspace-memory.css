@@ -1075,7 +1075,9 @@
   cursor: zoom-in;
 }
 .lightbox {
-  z-index: 90;
+  /* 11-11 用户「群聊图片没有预览」：群聊/工作伙伴是全局模态（400），灯箱 90 被压在下面看不见。
+     抬到 990：高于所有模态/画布，低于轻浮层 1000 与自绘窗口钮，body 已有 56px 顶留白避开窗口钮。 */
+  z-index: 990;
   -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   background: #12120fd1;

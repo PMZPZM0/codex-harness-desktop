@@ -451,6 +451,9 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
       "预览卡容器与播放条容器分开（is-previews；正方形只作用于预览）");
     ok(/const covered = new Set\(/.test(mediaCard) && /item\.kind === "video" && covered\.has/.test(mediaCard),
       "文件来源的视频不再在「回合播放卡」里重复（音频不受影响）");
+    ok(/openImageLightbox/.test(readFileSync(join(ROOT, "src", "features", "markdown", "Markdown.tsx"), "utf8"))
+      && /\.lightbox \{[\s\S]{0,220}z-index: 990;/.test(readFileSync(join(ROOT, "src", "styles", "09-settings-workspace-memory.css"), "utf8")),
+      "群聊图片灯箱接线：Markdown img → openImageLightbox，且灯箱 z=990 高于群模态 400");
   }
   ok(/\.turn-media-card/.test(css) && /\.turn-media-thumb/.test(css),
     "媒体预览卡样式在（缩略图 + 播放角标 + 名称）");
