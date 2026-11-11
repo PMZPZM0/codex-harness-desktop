@@ -501,6 +501,12 @@ const catalog = [
       && /群已建好/.test(read("src/features/harness-team/12-team-create.tsx"))
       && /还差一个管理员/.test(read("src/features/harness-team/12-team-create.tsx")),
       "没设管理员给提醒（可关且记住）+ 建群完成屏给成员名单与管理员作用");
+    /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
+       判据必须排除提问/询问，⛔ 不能只看字数。 */
+    ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)
+      && /if \(askLike\) return false;/.test(teamIpcSrc)
+      && /leadTurnTaskLike/.test(teamIpcSrc),
+      "催办只认「布置任务」：提问/询问一律不算（⛔ 否则答完又被催一轮 = 同一问题回两次）");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)

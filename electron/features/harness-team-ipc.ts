@@ -1738,7 +1738,16 @@ async function runDispatchRounds(
              ⇒ 群里出现两条几乎一样的开场白，用户以为出了故障。
              ⇒ 只有「这一轮用户真的给了活」才催办：去掉 @ 之后的正文 ≥6 字，且不是纯应答词。 */
           const leadTurnTaskLike = (() => {
-            const plain = String(text ?? "").replace(/@[^\s：:]+/g, "").replace(/\s+/g, "");
+            const plainRaw = String(text ?? "").replace(/@[^\s：:]+/g, "").trim();
+            /* ⛔⛔⛔ 11-12 用户截图（同一个问题，回复两次）：用户问「群聊，工具，你有哪些」，
+               主理人答完一条工具清单，宿主又催它一轮 ⇒ 它再解释「上一轮是答工具清单，没有可派的活」。
+               根因：这里的判据只看**字数**（去掉 @ 后 ≥6 字），提问也算"给了活"。
+               ⇒ 提问 / 询问类一律不算派活：⛔ 宁可漏催一次，也不能把"回答"当成"该推进了"。 */
+            const askLike = /[?？]\s*$/.test(plainRaw)
+              || /^(谁|什么|怎么|如何|为什么|为啥|哪|哪些|能不能|可不可以|是不是|有没有|有多少|在吗)/.test(plainRaw)
+              || /(有哪些|有什么|是什么|能干什么|干什么的|会什么|在哪|多少)/.test(plainRaw);
+            if (askLike) return false;
+            const plain = plainRaw.replace(/\s+/g, "");
             if (plain.length < 6) return false;
             return !/^(在|在吗|好|好的|行|嗯|收到|可以|ok|OK|继续|你好|谢谢)[。！!？?~～.…]*$/.test(plain);
           })();
@@ -1753,11 +1762,11 @@ async function runDispatchRounds(
             void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name },
               usedTool
                 ? "[系统] 你这一轮已经调过团队工具，但还没写「收口」。按 SOP 继续：先用 team_member_invoke / "
-                  + "team_phase_invoke 把下一阶段真的派出去（⛔ 不用行首 @ 派活，那只是群里说了一句话），"
-                  + "并先向群里通报阶段进度（已完成哪几环、还差哪几环）；只有全部阶段验收完才写「收口」给最终结论。"
+                  + "team_phase_invoke 把下一阶段真的派出去（⛔ 不用行首 @ 派活，那只是群里说了一句话）；"
+                  + "只有全部阶段验收完才写「收口」给最终结论。"
                 : "[系统] 你这一轮没有派任何成员，也没有写「收口」。按 SOP 继续推进："
-                  + "先向群里通报阶段进度（已完成哪几环、还差哪几环），再另起一行写 `@名字：要他做什么`"
-                  + "把下一阶段真正派出去（⛔ 不要自己代写成员的发言）；只有全部阶段验收完才写「收口」给最终结论。")
+                  + "用 team_member_invoke 把当前这一步真正派出去（⛔ 不要自己代写成员的成品）；"
+                  + "只有全部阶段验收完才写「收口」给最终结论。")
               .catch(() => undefined);
           }
         }
