@@ -321,6 +321,61 @@ export function createPopoutWindow(threadId: string) {
  */
 let teamPopoutWin: BrowserWindow | null = null;
 
+/** 建辅助独立窗（工作伙伴 / 自媒体工作台共用）：以主窗口当前尺寸为默认、frameless + 自绘窗钮。 */
+function createAuxPopoutWindow(title: string): BrowserWindow {
+  const windowIcon = path.join(
+    app.getAppPath(),
+    "build",
+    process.platform === "win32" ? "icon.ico" : "icon.png",
+  );
+  /* ⛔ 以**主窗口当前尺寸**为默认（主窗口最大化时开出来也是最大化那档）；
+     主窗口不可用（已销毁）才退回 1280×800（= 主窗口的默认尺寸）。 */
+  const mainNow = mutableState.mainWindow;
+  const baseSize = mainNow && !mainNow.isDestroyed() ? mainNow.getBounds() : { width: 1280, height: 800 };
+  const win = new BrowserWindow({
+    width: baseSize.width,
+    height: baseSize.height,
+    minWidth: 560,
+    minHeight: 460,
+    resizable: true,
+    backgroundColor: "#ffffff",
+    title,
+    icon: existsSync(windowIcon) ? windowIcon : undefined,
+    autoHideMenuBar: true,
+    /* 与 `?popout=` / `?teamPopout=1` 同一套窗框：系统钮只由渲染层画一次。 */
+    ...(process.platform === "win32" ? { frame: false } : { titleBarStyle: "hiddenInset" as const }),
+    webPreferences: {
+      preload: path.join(app.getAppPath(), "dist-electron", "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    },
+  });
+  applyRoundedCorners(win);
+  win.webContents.on("will-navigate", (event, target) => {
+    const devUrl = process.env.VITE_DEV_SERVER_URL ?? "";
+    if (devUrl && target.startsWith(devUrl)) return;
+    if (target.startsWith("file://") && target.includes("/dist/index.html")) return;
+    event.preventDefault();
+    if (/^https?:/i.test(target)) void shell.openExternal(target).catch(() => undefined);
+  });
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url).catch(() => undefined);
+    return { action: "deny" };
+  });
+  registerBusWindow(win);
+  applyThemeToWindow(win);
+  win.once("show", () => applyThemeToWindow(win));
+  /* ⛔ 主应用真关闭时一起关闭；托盘最小化（hide）不算关闭。 */
+  const mainWin = mutableState.mainWindow;
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.once("closed", () => { if (!win.isDestroyed()) win.close(); });
+  }
+  installContextMenu(win);
+  return win;
+}
+
 /** 建团队独立窗口；已存在就还原/显示/聚焦，返回是否聚焦成功。 */
 export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
   if (teamPopoutWin && !teamPopoutWin.isDestroyed()) {
@@ -397,5 +452,38 @@ export function createTeamPopoutWindow(): { ok: boolean; focused: boolean } {
     void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { teamPopout: "1" } });
   }
   installContextMenu(win);
+  return { ok: true, focused: false };
+}
+
+/**
+ * 自媒体工作台独立窗口（11-11 用户令：「在工作伙伴下面加一个选项，做主界面一样的弹窗大小，设置那边就不要了」）。
+ *
+ * ⛔ 与工作伙伴同一套窗框与尺寸语义；`?mediaDesk=1` 让渲染层只渲染工作台。
+ * ⛔ 单例：重复点侧栏入口只聚焦；主窗口真关闭时一起关闭。
+ */
+let mediaDeskPopoutWin: BrowserWindow | null = null;
+
+/** 建自媒体工作台独立窗口；已存在就还原/显示/聚焦。 */
+export function createMediaDeskPopoutWindow(): { ok: boolean; focused: boolean } {
+  if (mediaDeskPopoutWin && !mediaDeskPopoutWin.isDestroyed()) {
+    const hit = mediaDeskPopoutWin;
+    if (hit.isMinimized()) hit.restore();
+    if (!hit.isVisible()) hit.show();
+    hit.focus();
+    return { ok: true, focused: true };
+  }
+  const win = createAuxPopoutWindow("自媒体工作台");
+  mediaDeskPopoutWin = win;
+  win.on("closed", () => {
+    unregisterBusWindow(win);
+    if (mediaDeskPopoutWin === win) mediaDeskPopoutWin = null;
+  });
+  const devUrl = process.env.VITE_DEV_SERVER_URL;
+  if (devUrl) {
+    const sep = devUrl.includes("?") ? "&" : "?";
+    void win.loadURL(devUrl + sep + "mediaDesk=1");
+  } else {
+    void win.loadFile(path.join(app.getAppPath(), "dist", "index.html"), { query: { mediaDesk: "1" } });
+  }
   return { ok: true, focused: false };
 }

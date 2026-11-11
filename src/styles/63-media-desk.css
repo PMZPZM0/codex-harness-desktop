@@ -1,14 +1,43 @@
-/* 自媒体工作台（11-09）：原版界面在本地服务里渲染，这里只负责铺满设置页。 */
+/* 自媒体工作台（11-09）：原版界面在本地服务里渲染；11-11 起只在独立窗口（?mediaDesk=1）里使用。 */
+.media-desk-popout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+/* 标题栏兼拖拽区（与工作伙伴独立窗同口径）；右上角留给自绘窗口钮。 */
+.media-desk-popout-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  height: 44px;
+  padding: 0 112px 0 16px;
+  border-bottom: 1px solid var(--line);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+.media-desk-popout-head strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+[data-os="darwin"] .media-desk-popout-head { padding-left: 80px; }
+
 .media-desk-page {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
+  padding: 12px;
+  box-sizing: border-box;
 }
 .media-desk-frame {
   display: block;
   width: 100%;
-  height: calc(100vh - 190px);
-  min-height: 520px;
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
@@ -19,6 +48,7 @@
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  flex: none;
   font-size: 12px;
   color: var(--muted);
 }

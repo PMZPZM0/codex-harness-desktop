@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 660,
+  "count": 661,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6561,6 +6561,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开"
+    },
+    {
+      "name": "mediaDeskPopout",
+      "channel": "media-desk:popout",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; focused: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例）"
     },
     {
       "name": "listArtifactArchives",

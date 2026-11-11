@@ -2106,91 +2106,71 @@ const CHECKS = [
   },
   {
     id: "media-desk",
-    name: "自媒体工作台：原版界面在令牌前缀 iframe 里真渲染 + 工具与界面同源（11-09 审查）",
+    name: "自媒体工作台：侧栏入口开独立窗（尺寸跟随主窗口）+ 原版界面真渲染（11-11 改入口）",
     run: async (h) => {
-      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
-      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
-      await h.waitFor(`[...document.querySelectorAll(".settings-nav button")].some(function(b){ return (b.textContent||"").trim()==="自媒体工作台"; })`, { label: "工作台导航项", timeoutMs: 8000 });
-      const clicked = await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="自媒体工作台"; }); if(!b) return 0; b.click(); return 1; })()`);
-      h.check("⓪ 前置：设置面板里有「自媒体工作台」导航且已点击", clicked === 1, String(clicked));
-      if (clicked !== 1) return;
-      await h.waitFor(`!!document.querySelector(".media-desk-frame") || !!document.querySelector(".media-desk-error")`, { label: "工作台页面", timeoutMs: 20000 });
-      const early = await h.eval(`(function(){ return { error:(document.querySelector(".media-desk-error")?.textContent||"").slice(0,200), loading:!!document.querySelector(".media-desk-loading") }; })()`);
-      h.check("① 工作台页面挂载成功（⛔ 不是启动失败提示）", !early.error, JSON.stringify(early));
-      if (early.error) return;
-      await h.waitFor(`!!document.querySelector(".media-desk-frame")`, { label: "工作台 iframe", timeoutMs: 8000 });
-      const frame = await h.eval(`(function(){ const f=document.querySelector(".media-desk-frame"); return f ? { src:f.getAttribute("src")||"" } : null; })()`);
-      const endpointOk = Boolean(frame && /^http:\/\/127\.0\.0\.1:\d+\/t\/[0-9a-f]{36}\/$/.test(frame.src));
-      h.check("② iframe 指向带随机令牌的本机地址", endpointOk, JSON.stringify(frame));
-      if (!endpointOk) return;
+      let mainSize = await h.eval(`(function(){ return { w: window.outerWidth, h: window.outerHeight }; })()`);
+      /* 主窗可能还没 show（outerWidth=0）；等一会儿，仍拿不到就按主窗口默认尺寸兜底 */
+      for (let i = 0; i < 20 && !mainSize.w; i += 1) {
+        await wait(250);
+        mainSize = await h.eval(`(function(){ return { w: window.outerWidth, h: window.outerHeight }; })()`);
+      }
+      const opened = await h.eval(`window.codex.mediaDeskPopout()`).catch(() => null);
+      h.check("⓪ 侧栏入口的调用成功返回", Boolean(opened && opened.ok), JSON.stringify(opened));
 
-      /* 本机服务真能取到页面 + 生产版 React 包（⛔ 不是 dev 包） */
-      const pageOk = await fetch(frame.src).then((r) => r.text()).then((t) => t.includes("md-fatal")).catch(() => false);
-      const bundle = await fetch(new URL("react.bundle.js", frame.src)).then(async (r) => ({ status: r.status, size: (await r.text()).length })).catch(() => ({ status: 0, size: 0 }));
-      h.check("③ 页面与本机 React 包都取得到（且是生产包）", pageOk && bundle.status === 200 && bundle.size > 100000, JSON.stringify(bundle));
+      const listPop = async () => (await (await fetch(`http://127.0.0.1:${h.port}/json`)).json())
+        .filter((t) => t.type === "page" && String(t.url || "").includes("mediaDesk=1"));
+      let popTargets = [];
+      for (let i = 0; i < 80 && !popTargets.length; i += 1) {
+        popTargets = await listPop();
+        if (!popTargets.length) await wait(200);
+      }
+      h.check("① 独立窗口已打开（?mediaDesk=1，单例）", popTargets.length === 1, String(popTargets.length));
+      if (popTargets.length !== 1) return;
 
-      /* 原版界面真渲染：跨源 iframe 是独立的 `iframe` target（进不了页面帧树，也读不到 DOM）
-         ⇒ 按 /json 找到它、单独连一个 CDP ws 读 #root。 */
-      const readIframe = async () => {
-        const list = await (await fetch(`http://127.0.0.1:${h.port}/json`)).json();
-        const target = list.find((t) => t.type === "iframe" && String(t.url || "").startsWith(frame.src.replace(/\/$/, "")));
-        if (!target) return null;
-        const ws = new WebSocket(target.webSocketDebuggerUrl);
-        const pending = new Map();
-        let seq = 0;
-        await new Promise((resolve, reject) => { ws.on("open", resolve); ws.on("error", () => reject(new Error("iframe CDP 连接失败"))); });
-        ws.on("message", (data) => {
-          const m = JSON.parse(data.toString());
-          const slot = pending.get(m.id);
-          if (slot) { pending.delete(m.id); slot(m); }
-        });
-        const send = (method, params = {}) => new Promise((resolve, reject) => {
-          const id = ++seq;
-          const timer = setTimeout(() => { pending.delete(id); reject(new Error(`iframe CDP ${method} 超时`)); }, 8000);
-          pending.set(id, (m) => { clearTimeout(timer); if (m.error) reject(new Error(m.error.message)); else resolve(m.result); });
-          ws.send(JSON.stringify({ id, method, params }));
-        });
+      /* 尺寸：与主窗口当前尺寸一致（允许少量窗框差） */
+      const popSize = JSON.parse(await h.evalInTarget("mediaDesk=1", `(function(){ return JSON.stringify({ w: window.outerWidth, h: window.outerHeight }); })()`).catch(() => "null"));
+      const sizeOk = Boolean(popSize) && (mainSize.w > 0
+        ? Math.abs(popSize.w - mainSize.w) <= 8 && Math.abs(popSize.h - mainSize.h) <= 8
+        : popSize.w >= 1200 && popSize.h >= 760);
+      h.check("② 独立窗尺寸跟随主窗口（主窗未 show 时按 1280×800 兜底）", sizeOk,
+        JSON.stringify({ mainSize, popSize }));
+
+      /* 幂等：再点一次只聚焦 */
+      await h.eval(`window.codex.mediaDeskPopout()`).catch(() => null);
+      await wait(400);
+      h.check("③ 再点一次只聚焦、不新开窗口（单例）", (await listPop()).length === 1);
+
+      /* 页面挂载 + 令牌地址 */
+      const readPop = async (expr) => {
         try {
-          const r = await send("Runtime.evaluate", {
-            expression: `(function(){ const root=document.getElementById("root"); return JSON.stringify({ ready:document.readyState, kids: root?root.children.length:0, text:(document.body.innerText||"").slice(0,160) }); })()`,
-            returnByValue: true,
-          });
-          return JSON.parse(r?.result?.value ?? "null");
-        } finally {
-          ws.close();
+          const raw = await h.evalInTarget("mediaDesk=1", expr, { timeoutMs: 3000 });
+          return raw == null ? null : JSON.parse(raw);
+        } catch {
+          return null;
         }
       };
-      let view = null;
-      const t0 = Date.now();
-      while (!view && Date.now() - t0 < 20000) {
-        try { view = await readIframe(); } catch { /* 帧还没建好 */ }
-        if (!view) await wait(400);
+      let frame = null;
+      for (let i = 0; i < 60 && !frame; i += 1) {
+        const snap = await readPop(`(function(){ const f=document.querySelector(".media-desk-frame"); return JSON.stringify({ error:(document.querySelector(".media-desk-error")?.textContent||"").slice(0,200), src:f?f.getAttribute("src")||"":"" }); })()`);
+        if (snap?.error) { h.check("④ 工作台页面挂载成功（⛔ 不是启动失败提示）", false, JSON.stringify(snap)); return; }
+        if (snap?.src) frame = { src: snap.src };
+        if (!frame) await wait(300);
       }
-      h.check("④ 原版工作台已在 iframe 内渲染（#root 有内容）", Boolean(view && view.kids > 0), JSON.stringify(view));
-      if (view) h.check("⑤ 渲染的是上游界面（导航/标题文字在位）", /灵感|内容|排期|复盘|风格/.test(view.text), JSON.stringify(view.text));
+      h.check("④ 工作台页面挂载成功（⛔ 不是启动失败提示）", Boolean(frame), JSON.stringify(frame));
+      if (!frame) return;
+      const endpointOk = /^http:\/\/127\.0\.0\.1:\d+\/t\/[0-9a-f]{36}\/$/.test(frame.src);
+      h.check("⑤ iframe 指向带随机令牌的本机地址", endpointOk, JSON.stringify(frame));
+      if (!endpointOk) return;
 
-      /* 工具与界面同一份数据：bridge 返回同一地址（幂等，不另起第二个服务） */
-      let again = "";
-      for (let i = 0; i < 3 && again !== frame.src; i += 1) {
-        again = String(await h.eval(`window.codex.mediaDeskEndpoint()`).catch(() => "") ?? "");
-        if (again !== frame.src) await wait(500);
-      }
-      h.check("⑥ 工具走的 endpoint 与界面同源（幂等复用同一个服务）", again === frame.src, JSON.stringify({ again, src: frame.src }));
+      /* 页面 + 生产包真能取到 */
+      const pageOk = await fetch(frame.src).then((r) => r.text()).then((t) => t.includes("md-fatal")).catch(() => false);
+      const bundle = await fetch(new URL("react.bundle.js", frame.src)).then(async (r) => ({ status: r.status, size: (await r.text()).length })).catch(() => ({ status: 0, size: 0 }));
+      h.check("⑥ 页面与本机 React 包都取得到（且是生产包）", pageOk && bundle.status === 200 && bundle.size > 100000, JSON.stringify(bundle));
 
-      /* 声明与跳转按键在位（⛔ 不真点：点了会拉起系统浏览器） */
-      const note = await h.eval(`(function(){ return {
-        text: (document.querySelector(".media-desk-note")?.textContent || "").replace(/\\s+/g, " ").trim(),
-        hasLink: !!document.querySelector(".media-desk-link"),
-        canOpen: typeof window.codex.openExternal === "function",
-      }; })()`);
-      h.check("⑦ 开源声明与跳转按键在位（MIT / 数据本机 / 不自动发布 + 可调 openExternal）",
-        Boolean(note && /dsh-media-desk/.test(note.text) && /MIT/.test(note.text) && /不会自动发布/.test(note.text) && note.hasLink && note.canOpen),
-        JSON.stringify(note));
-
-      /* 宿主主题变量：缺了会「透明看不见 / 透明遮罩挡住整页」（11-11 用户实测） */
+      /* 原版界面真渲染（跨源 iframe 是独立 target，需单独连） */
       const frameEval = async (expression) => {
-        const list = await (await fetch(`http://127.0.0.1:${h.port}/json`)).json();
-        const target = list.find((t) => t.type === "iframe" && String(t.url || "").startsWith(frame.src.replace(/\/$/, "")));
+        const targets = await (await fetch(`http://127.0.0.1:${h.port}/json`)).json();
+        const target = targets.find((t) => t.type === "iframe" && String(t.url || "").startsWith(frame.src.replace(/\/$/, "")));
         if (!target) return null;
         const ws = new WebSocket(target.webSocketDebuggerUrl);
         const pending = new Map();
@@ -2210,116 +2190,49 @@ const CHECKS = [
           ws.close();
         }
       };
-      const theme = JSON.parse(await frameEval(`(function(){ const b=getComputedStyle(document.body); return JSON.stringify({ bg:b.backgroundColor, color:b.color, mask:getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-bg-mask-1").trim(), font:getComputedStyle(document.body).fontFamily.slice(0,20) }); })()`) ?? "null");
-      h.check("⑧ 宿主主题变量生效（页面不透明 / 文字有颜色 / 遮罩有真值）",
+      let view = null;
+      for (let i = 0; i < 40 && !view; i += 1) {
+        try {
+          /* ⛔ 别用 innerText 判界面：上游把 <style> 画在 #root 里，innerText 会带 CSS 源文本 */
+          view = JSON.parse(await frameEval(`(function(){ const root=document.getElementById("root"); const navs=[...document.querySelectorAll(".md-nav button")]; return JSON.stringify({ ready:document.readyState, kids:root?root.children.length:0, navs:navs.length, nav:(document.querySelector(".md-nav button.is-on")?.textContent||"").trim() }); })()`) ?? "null");
+        } catch { /* 帧还没建好 */ }
+        if (!view || !view.kids || view.navs < 5) { view = null; await wait(300); }
+      }
+      h.check("⑦ 原版工作台已在独立窗内渲染（#root 有内容 + 五个导航键）", Boolean(view && view.kids > 0 && view.navs >= 5), JSON.stringify(view));
+      if (view) h.check("⑧ 渲染的是上游界面（当前导航是 灵感/内容/排期/复盘/风格 之一）", /^(灵感|内容|排期|复盘|风格)$/.test(view.nav), JSON.stringify(view.nav));
+
+      /* 声明 / 跳转按键 / 主题变量 / 弹窗可见性（11-11 用户实测项） */
+      const note = JSON.parse(await h.evalInTarget("mediaDesk=1", `(function(){ return JSON.stringify({ text:(document.querySelector(".media-desk-note")?.textContent||"").replace(/\\s+/g," ").trim(), hasLink:!!document.querySelector(".media-desk-link"), canOpen:typeof window.codex?.openExternal === "function" }); })()`).catch(() => "null") ?? "null");
+      h.check("⑨ 开源声明与跳转按键在位（MIT / 数据本机 / 不自动发布）",
+        Boolean(note && /dsh-media-desk/.test(note.text) && /MIT/.test(note.text) && /不会自动发布/.test(note.text) && note.hasLink && note.canOpen),
+        JSON.stringify(note));
+      const theme = JSON.parse(await frameEval(`(function(){ const b=getComputedStyle(document.body); return JSON.stringify({ bg:b.backgroundColor, color:b.color, mask:getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-bg-mask-1").trim() }); })()`) ?? "null");
+      h.check("⑩ 宿主主题变量生效（页面不透明 / 文字有颜色 / 遮罩有真值）",
         Boolean(theme && theme.bg !== "rgba(0, 0, 0, 0)" && theme.color !== "rgba(0, 0, 0, 0)" && theme.mask),
         JSON.stringify(theme));
-
-      await frameEval(`(function(){ const b=[...document.querySelectorAll(".md-topbar button")].find(function(x){ return (x.getAttribute("aria-label")||"")==="设置"; }); b&&b.click(); return 1; })()`);
-      await wait(600);
-      const dlg = JSON.parse(await frameEval(`(function(){ const m=document.querySelector(".md-dialog-mask"); if(!m) return JSON.stringify(null); const s=getComputedStyle(m); const panel=[...m.querySelectorAll("*")].find(function(e){ const b=getComputedStyle(e).backgroundColor; return b && b!=="rgba(0, 0, 0, 0)" && e.getBoundingClientRect().width>200; }); return JSON.stringify({ mask:s.backgroundColor, pe:s.pointerEvents, panel:panel?getComputedStyle(panel).backgroundColor:null }); })()`) ?? "null");
-      h.check("⑨ 工作台弹窗：遮罩可见 + 面板不透明（⛔ 透明遮罩 = 看不见弹窗但整页点不动）",
+      let dlg = null;
+      for (let i = 0; i < 12 && !dlg; i += 1) {
+        await frameEval(`(function(){ const b=[...document.querySelectorAll(".md-topbar button")].find(function(x){ return (x.getAttribute("aria-label")||"")==="设置"; }); if(b && !document.querySelector(".md-dialog-mask")) b.click(); return 1; })()`);
+        await wait(300);
+        const raw = await frameEval(`(function(){ const m=document.querySelector(".md-dialog-mask"); if(!m) return JSON.stringify(null); const s=getComputedStyle(m); const panel=m.querySelector(".md-dialog") || [...m.querySelectorAll("*")].find(function(e){ const b=getComputedStyle(e).backgroundColor; return b && b!=="rgba(0, 0, 0, 0)" && e.getBoundingClientRect().width>100; }); return JSON.stringify({ mask:s.backgroundColor, pe:s.pointerEvents, panel:panel?getComputedStyle(panel).backgroundColor:null }); })()`);
+        dlg = raw ? JSON.parse(raw) : null;
+        if (!dlg) await wait(300);
+      }
+      h.check("⑪ 工作台弹窗：遮罩可见 + 面板不透明（⛔ 透明遮罩 = 整页点不动）",
         Boolean(dlg && dlg.mask !== "rgba(0, 0, 0, 0)" && dlg.pe !== "none" && dlg.panel && dlg.panel !== "rgba(0, 0, 0, 0)"),
         JSON.stringify(dlg));
-    },
-  },
-  {
-    id: "voice-engine-state",
-    name: "🎙 语音设置：停用如实回显 / MOSS-Live 保存即刷新 / Kokoro 已移除（11-11）",
-    run: async (h) => {
-      if (!(await h.exists(".settings-modal"))) {
-        await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
-        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 10000 });
-        await wait(500);
-      }
-      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="语音通话"; }); b&&b.click(); return !!b; })()`);
-      await h.waitFor(`!!document.querySelector(".voice-settings")`, { label: "语音设置页", timeoutMs: 15000 });
-      await wait(800);
-      const read = () => h.eval(`(function(){
-        const cards=[...document.querySelectorAll(".voice-engine-card")];
-        const vits=cards.find(function(c){ return (c.innerText||"").includes("轻量播报"); });
-        const remote=document.querySelector(".voice-engine-remote");
-        const toggle=document.querySelector(".voice-moss-modal .voice-remote-toggle")||document.querySelector(".voice-remote-toggle");
-        return {
-          names:cards.map(function(c){ return (c.querySelector(".voice-engine-name-row strong")?.textContent||"").trim(); }),
-          vitsText:(vits?.innerText||"").replace(/\\s+/g," ").trim(),
-          remoteState:(remote?.querySelector(".voice-engine-state")?.textContent||"").trim(),
-          hasToggle:!!toggle,
-          toggleText:toggle?(toggle.textContent||"").replace(/\\s+/g," ").trim():"",
-          remoteActions:(function(){ const card=document.querySelector(".voice-engine-remote"); return card?[...card.querySelectorAll("button")].map(function(b){ return (b.textContent||"").trim(); }):[]; })()
-        };
-      })()`);
-      const ui = await read();
-      h.check("① Kokoro（自然多音色）卡片已移除",
-        Boolean(ui && !ui.names.some(function(n){ return /自然多音色|Kokoro/i.test(n); })), JSON.stringify(ui?.names));
-      const opened = await h.eval(`(function(){ const card=document.querySelector(".voice-engine-remote"); const b=card?[...card.querySelectorAll("button")].find(function(x){ return (x.textContent||"").trim()==="配置"; }):null; if(!b) return false; b.click(); return true; })()`);
-      await h.waitFor(`!!document.querySelector(".voice-moss-modal")`, { label: "MOSS 配置弹窗", timeoutMs: 8000 });
-      const ui2 = await read();
-      h.check("② MOSS-Live 卡与本地引擎卡同构：配置 / 启用停用 / 试听音色（配置收进弹窗）",
-        Boolean(opened && ui && ui.remoteActions.includes("配置") && ui.remoteActions.some(function(x){ return /^(启用|停用)$/.test(x); }) && ui.remoteActions.some(function(x){ return x.includes("试听音色"); })),
-        JSON.stringify(ui && ui.remoteActions));
-      h.check("②b 弹窗里有「用作实时通话后端」开关",
-        Boolean(ui2 && ui2.hasToggle && /实时通话后端/.test(ui2.toggleText)), JSON.stringify({ hasToggle: ui2?.hasToggle, toggleText: ui2?.toggleText }));
-      const speedUi = await h.eval(`(function(){
-        const m=document.querySelector(".voice-moss-modal"); if(!m) return null;
-        return { hasSpeed: (m.innerText||"").includes("播报语速"), chips: m.querySelectorAll(".voice-speed-chip").length, range: !!m.querySelector(".voice-range") };
-      })()`).catch(() => null);
-      h.check("②c MOSS 配置弹窗有播报语速（5 档 + 滑块，与全局语速同源）",
-        Boolean(speedUi && speedUi.hasSpeed && speedUi.chips >= 5 && speedUi.range), JSON.stringify(speedUi));
 
-      /* 用户实测「配置完状态都不刷新」：走真实表单保存，徽标必须立刻变「已配置」。 */
-      const originalRemote = await h.eval(`window.codex.voiceSettingsGet().then(function(r){ return (r && r.settings && r.settings.remote) || {}; })`).catch(() => ({}));
-      /* 新语义：远程配置按 id 合并、value=null 才是删除；空对象不再清空。 */
-      const restoredRemote = originalRemote && Object.keys(originalRemote).length ? originalRemote : { "moss-live": null };
-      try {
-        const filled = await h.eval(`(function(){
-          const form=document.querySelector(".voice-remote-form"); if(!form) return 0;
-          const set=function(el,v){ const d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value"); d.set.call(el,v); el.dispatchEvent(new Event("input",{bubbles:true})); };
-          const ins=form.querySelectorAll("input"); if(ins.length<3) return 0;
-          set(ins[0],"wss://e2e.invalid/v1/realtime");
-          set(ins[1],"moss-live-e2e");
-          set(ins[2],"sk-e2e-test");
-          return ins.length;
-        })()`);
-        h.check("③ 前置：MOSS-Live 表单三个字段都能填", filled === 3, String(filled));
-        await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-remote-actions button")].find(function(x){ return (x.textContent||"").trim()==="保存配置"; }); b&&b.click(); return !!b; })()`);
-        let after = null;
-        for (let i = 0; i < 20; i += 1) {
-          await wait(250);
-          after = await read();
-          if (after && after.remoteState.includes("已配置")) break;
-        }
-        h.check("④ 保存后卡片状态立即变「已配置」（⛔ 不再挂旧「未配置」）",
-          Boolean(after && after.remoteState.includes("已配置")), JSON.stringify(after && after.remoteState));
-      } finally {
-        await h.eval(`window.codex.voiceSettingsSet({ remote: ${JSON.stringify(restoredRemote)} })`).catch(() => undefined);
-        await h.eval(`document.querySelector(".voice-moss-modal .voice-confirm-close")?.click()`).catch(() => undefined);
-      }
-
-      /* 用户实测「停用不行」：①主进程 baseEnabled 必须真翻转；②已装模型时引擎卡显示「已停用」；
-         ③任何情况下都不能再写「使用中」（测试 profile 没装模型时显示「未安装」也不算可用）。 */
-      const prevStatus = await h.eval(`window.codex.voiceModelsStatus()`).catch(() => null);
-      const prevEnabled = Boolean(prevStatus && prevStatus.baseEnabled !== false);
-      const installed = Boolean(prevStatus && prevStatus.ready);
-      try {
-        await h.eval(`window.codex.voiceResourceSetEnabled({ kind: "base", enabled: false })`);
-        const afterDisable = await h.eval(`window.codex.voiceModelsStatus()`).catch(() => null);
-        let uiAfter = null;
-        for (let i = 0; i < 20; i += 1) {
-          await wait(250);
-          uiAfter = await read();
-          if (uiAfter && !/使用中/.test(uiAfter.vitsText)) break;
-        }
-        h.check("⑤ 停用真的落到主进程（baseEnabled=false）+ 引擎卡不再写「使用中」" + (installed ? "，并显示「已停用」" : "（本 profile 未装模型，显示「未安装」）"),
-          Boolean(afterDisable && afterDisable.baseEnabled === false && uiAfter && !/使用中/.test(uiAfter.vitsText)
-            && (!installed || /已停用/.test(uiAfter.vitsText))),
-          JSON.stringify({ baseEnabled: afterDisable && afterDisable.baseEnabled, installed, vits: uiAfter && uiAfter.vitsText.slice(0, 120) }));
-      } finally {
-        await h.eval(`window.codex.voiceResourceSetEnabled({ kind: "base", enabled: ${prevEnabled ? "true" : "false"} })`).catch(() => undefined);
-      }
+      /* 设置页入口已撤（11-11 用户令） */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(500);
+      const navHit = await h.eval(`[...document.querySelectorAll(".settings-nav button")].some(function(b){ return (b.textContent||"").trim()==="自媒体工作台"; })`);
+      h.check("⑫ 设置里不再有「自媒体工作台」入口", navHit === false, String(navHit));
+      await h.pressKey("Escape").catch(() => undefined);
     },
   },
 ];
+
 
 if (flag("list")) {
   for (const c of CHECKS) console.log(`  ${c.id.padEnd(20)} ${c.name}`);

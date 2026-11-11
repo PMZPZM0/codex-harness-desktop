@@ -44,6 +44,11 @@ export async function run() {
   const pageSrc = (() => { for (const rel of pageCandidates) { try { return read(rel); } catch { /* 换下一个 */ } } return ""; })();
   const board = read("src/features/media-desk/index.tsx");
   const boardCss = read("src/styles/63-media-desk.css");
+  const popout = read("src/features/media-desk/popout.tsx");
+  const appEntry = read("src/App.tsx");
+  const popoutQuery = read("src/lib/media-desk-window.ts");
+  const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  const winFactory = read("electron/features/window-factory.ts");
   const dispatchCore = read("electron/features/dispatch-core.ts");
   const dispatchRpc = read("electron/features/dispatch-rpc.ts");
   const tool = read("electron/features/media-desk/tool.ts");
@@ -52,13 +57,26 @@ export async function run() {
   const channels = manifest.channels.filter((c) => String(c.channel).startsWith("media-desk:"));
   ok(/"id": "media-desk"/.test(composition) && /features\/media-desk\/ipc\.ts/.test(composition),
     "组合表已挂载 media-desk 域");
-  ok(channels.length === 1 && channels[0].channel === "media-desk:endpoint" && /prefix: "media-desk", count: 1/.test(registry),
-    `桥只有 endpoint 一条（实测 ${channels.length}，界面走本地服务，不再铺 10 条数据通道）`);
-  ok(/mediaDeskEndpoint/.test(preload) && /mediaDeskEndpoint\(\): Promise<string>/.test(dts),
-    "桥三件套齐备（preload / vite-env 都有 mediaDeskEndpoint）");
-  ok(/\["media-desk", "自媒体工作台"/.test(catalogs) && /\{ page: "自媒体工作台"/.test(help)
-    && /"media-desk": \{ render:/.test(pageSrc),
-    "设置页可到达：导航 + 帮助总览 + 页面注册三处都在");
+  ok(channels.length === 2 && channels.some((c) => c.channel === "media-desk:endpoint") && channels.some((c) => c.channel === "media-desk:popout")
+    && /prefix: "media-desk", count: 2/.test(registry),
+    `桥只有 endpoint + popout 两条（实测 ${channels.length}，界面走本地服务，不再铺数据通道）`);
+  ok(/mediaDeskEndpoint/.test(preload) && /mediaDeskEndpoint\(\): Promise<string>/.test(dts)
+    && /mediaDeskPopout/.test(preload) && /mediaDeskPopout\(\): Promise<\{ ok: boolean; focused: boolean \}>/.test(dts),
+    "桥四件套齐备（preload / vite-env 都有 endpoint + popout）");
+  /* 11-11 用户令：入口从设置页挪到侧栏「工作伙伴」下面，开独立窗口；设置页三处必须全部撤掉。 */
+  ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/自媒体工作台/.test(help) && !/"media-desk": \{ render:/.test(pageSrc)
+    && !/page: "自媒体工作台"/.test(help),
+    "设置页入口已撤（导航 / 帮助总览 / 页面注册三处都不再出现）");
+  ok(/mediaDeskPopout\(\)/.test(sidebar) && sidebar.indexOf("popoutTeam()") >= 0 && sidebar.indexOf("popoutTeam()") < sidebar.indexOf("mediaDeskPopout()"),
+    "侧栏入口在「工作伙伴」下面（同一组快捷入口，顺序钉住）");
+  ok(/isMediaDeskWindow/.test(appEntry) && /<MediaDeskPopoutRoot \/>/.test(appEntry) && /document\.title = "自媒体工作台"/.test(popout)
+    && /media-desk-popout-head/.test(popout) && /-webkit-app-region: drag/.test(boardCss),
+    "独立窗口根：App 分流 + 标题栏可拖拽（与工作伙伴同口径）");
+  ok(/createMediaDeskPopoutWindow/.test(winFactory) && /mediaDesk=1/.test(winFactory)
+    && /mainNow\.getBounds\(\)/.test(winFactory) && /mediaDeskPopoutWin && !mediaDeskPopoutWin\.isDestroyed\(\)/.test(winFactory),
+    "独立窗口：以主窗口当前尺寸为默认 + 单例聚焦 + ?mediaDesk=1");
+  ok(/isMediaDeskWindow\(\)/.test(popoutQuery) && /get\("mediaDesk"\) === "1"/.test(popoutQuery),
+    "窗口识别只看 ?mediaDesk=1（⛔ 不能被登录门短路）");
 
   ok(has("resources/media-desk/client.js") && has("resources/media-desk/index.html") && has("resources/media-desk/glue.js")
     && has("resources/media-desk/react.bundle.js") && has("resources/media-desk/host/host.js") && has("resources/media-desk/host/package.json")
@@ -107,8 +125,9 @@ export async function run() {
   ok(/dsh-media-desk（MIT）/.test(board) && /数据只存本机/.test(board) && /排期不会自动发布/.test(board)
     && /openExternal\(SOURCE_URL\)/.test(board) && /github\.com\/woniuniuniu\/dsh-media-desk/.test(board),
     "页面写明开源声明（MIT / 数据只存本机 / 排期不自动发布）并有「开源项目」跳转按键");
-  ok(/\.media-desk-note\b/.test(boardCss) && /\.media-desk-link:hover/.test(boardCss) && /height: calc\(100vh - 190px\)/.test(boardCss),
-    "声明与跳转按键有样式（且 iframe 高度为底部说明让位）");
+  ok(/\.media-desk-note\b/.test(boardCss) && /\.media-desk-link:hover/.test(boardCss)
+    && /\.media-desk-page \{[\s\S]{0,160}flex: 1;/.test(boardCss) && /\.media-desk-frame \{[\s\S]{0,120}flex: 1;/.test(boardCss),
+    "声明与跳转按键有样式；iframe 用 flex 撑满窗口（⛔ 不再按设置页高度写死）");
   ok(/action: \{ type: "string", enum: \["state", "capture", "draft", "produce", "schedule", "metric", "insights", "style", "delete", "undo"\]/.test(dispatchCore)
     && /name === "media_desk"/.test(dispatchRpc) && /runMediaDeskTool/.test(dispatchRpc) && /mediaDeskRequest/.test(tool),
     "Codex 可直接跑整条流程（media_desk 工具 → 本地服务，与界面同一份数据）");

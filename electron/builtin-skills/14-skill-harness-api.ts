@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（116 个能力域 / 660 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（116 个能力域 / 661 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -481,9 +481,9 @@ RPA 配方（录制好的桌面自动化流程）
 收藏夹（收藏消息/片段，一键再发送）
 通道：favorites:list, favorites:add, favorites:update, favorites:delete, favorites:touch, favorites:to-memory
 
-### media-desk（1 通道）
-自媒体工作台（设置 → 能力与内容，11-09）：灵感墙（文字/链接，链接抓标题摘要封面）→ 一键成稿（计划、口播脚本、封面与黑白分镜）→ 本地排期 → 数据记录 → 写作风格。文本模型用工作台设置或应用当前供应商；生图走用户配置的 OpenAI 兼容 /images/generations。⛔ 排期只是本地计划、不自动发布；数据是手动记录，不接平台 API
-通道：media-desk:endpoint
+### media-desk（2 通道）
+自媒体工作台（工作伙伴 → 自媒体工作台，独立窗口；11-11 从设置页挪出）：灵感墙（文字/链接，链接抓标题摘要封面）→ 一键成稿（计划、口播脚本、封面与黑白分镜）→ 本地排期 → 数据记录 → 写作风格。文本模型用工作台设置或应用当前供应商；生图走用户配置的 OpenAI 兼容 /images/generations。⛔ 排期只是本地计划、不自动发布；数据是手动记录，不接平台 API
+通道：media-desk:endpoint, media-desk:popout
 
 ### artifact（1 通道）
 产物归档（11-11）：设置 → 数据 →「产物归档」按 artifacts/YYYYMMDD-任务短名/ 列出每次任务的成品，可一键在资源管理器打开目录。只读清单；归档动作由模型经 harness_tools 的 artifact_archive 完成（只复制不删原文件、同名自动 -r2 迭代、写 manifest 与总台账），历史散落文件用 scripts/artifacts-migrate.mjs 归位（默认 dry-run）
