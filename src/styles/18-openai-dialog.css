@@ -2035,6 +2035,17 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-engine-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .voice-engine-actions .secondary-setting { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 
+/* 11-10 远程实时语音模型（MOSS-Live）配置卡：不下载模型，填地址/模型/密钥。 */
+.voice-engine-remote { margin-top: 10px; }
+.voice-remote-form { display: flex; flex-direction: column; gap: 7px; }
+.voice-remote-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
+.voice-remote-form input {
+  padding: 6px 8px; border-radius: 8px; font-size: 12px;
+  border: 1px solid var(--line); background: var(--field, var(--panel)); color: var(--text);
+}
+.voice-remote-form input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.voice-remote-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
 /* ── 功能域：分类卡片（10-31 用户：「这个分类卡片展示」）── */
 .domains-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
 .domains-head > div { display:flex; flex-direction:column; gap:2px; min-width:0; }

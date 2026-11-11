@@ -1240,4 +1240,23 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "裁尾是纯函数且有真值表单测（尾巴砍掉 / 轻声尾音保留 / 全噪声返回空）");
 }
 
+/* ── 11-10 语音模型扩展接口 + MOSS-Live（留接口+模型卡）───────────────────── */
+{
+  const provider = read("electron/voice/model-provider.ts");
+  const vsettings = read("electron/voice/voice-settings.ts");
+  const misc = read("electron/features/voice-ipc/01-voice-hotkey-models.ts");
+  const enginesTsx = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
+  ok(/export type VoiceModelProvider/.test(provider) && /VOICE_MODEL_PROVIDERS/.test(provider)
+    && /id: "moss-live"/.test(provider) && /kind: "remote-live"/.test(provider),
+    "语音模型留了扩展接口（VoiceModelProvider 注册表），MOSS-Live 登记为 remote-live");
+  ok(/runnable: false/.test(provider) && /remoteConfigured/.test(provider),
+    "MOSS-Live 如实标 runnable:false（实时推理待接入），配置齐备判定独立成函数");
+  ok(/remote\?: Record<string, RemoteVoiceConfig>/.test(vsettings) && /remote: mergeRemote/.test(vsettings),
+    "远程配置进 VoiceSettings 且显式透传（⛔ 漏了=填了密钥保存后读回是空）");
+  ok(/mossLive:/.test(misc) && /hasKey: Boolean\(c\.apiKey\)/.test(misc) && !/apiKey: c\.apiKey/.test(misc),
+    "状态 IPC 只回 hasKey/末四位，不回明文密钥");
+  ok(/MOSS-Live/.test(enginesTsx) && /voice-remote-form/.test(enginesTsx) && /saveMoss/.test(enginesTsx),
+    "设置页有 MOSS-Live 配置卡（地址/模型/密钥 + 保存 + 官方文档），不假装能本地合成");
+}
+
 process.exit(fails ? 1 : 0);

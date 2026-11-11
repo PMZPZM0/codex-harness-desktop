@@ -110,6 +110,8 @@ const ENGINES: EngineInfo[] = [
 /** TTS 引擎与音色包管理卡：显示安装状态、下载进度、切换引擎，失败在卡内给反馈条。 */
 export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings }: Props) {
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
+  const [moss, setMoss] = useState<{ configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string } | null>(null);
+  const [mossDraft, setMossDraft] = useState({ baseUrl: "", model: "", apiKey: "" });
   const [busy, setBusy] = useState<PackId | null>(null);
   const [progress, setProgress] = useState<{ pack: PackId; percent: number; message: string } | null>(null);
   /** 卡片内反馈条（下载成功/失败、切换成功）—— ⛔ 不能只靠一闪而过的 toast */
@@ -118,6 +120,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const refresh = useCallback(async () => {
     try {
       const status: any = await window.codex.voiceModelsStatus();
+      setMoss(status?.mossLive ?? null);
       const next: Partial<Record<PackId, PackState>> = {
         vits: { ready: Boolean(status?.ready), enabled: true, bytes: 0, runnable: true },
         kokoro: status?.kokoro
@@ -184,6 +187,19 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     const id = settings?.tts?.engine;
     return id === "kokoro" || id === "emotivoice" ? id : "vits";
   }, [settings]);
+
+  /* MOSS-Live 配置草稿：地址/模型从已存配置回填；密钥不回显（只留占位），保存时留空=沿用旧密钥。 */
+  const savedMoss = settings?.remote?.["moss-live"];
+  useEffect(() => {
+    setMossDraft((d) => ({ ...d, baseUrl: savedMoss?.baseUrl ?? d.baseUrl, model: savedMoss?.model ?? d.model }));
+  }, [savedMoss?.baseUrl, savedMoss?.model]);
+
+  const saveMoss = useCallback(() => {
+    const apiKey = mossDraft.apiKey.trim() || savedMoss?.apiKey || "";
+    apply({ remote: { ...(settings?.remote ?? {}), "moss-live": { baseUrl: mossDraft.baseUrl.trim(), model: mossDraft.model.trim(), apiKey } } });
+    setMossDraft((d) => ({ ...d, apiKey: "" }));
+    onNotice("MOSS-Live 配置已保存（实时推理运行时接入后即可启用）");
+  }, [apply, mossDraft, onNotice, savedMoss?.apiKey, settings?.remote]);
 
   /* ⛔ 11-01 用户实测「取消不了」：主进程早就有 `voice:tts-pack-cancel`（abort 掉下载用的
      AbortController），但界面从来没接 —— 卡片上只有「下载中…」没有取消入口；而上面那张
@@ -392,6 +408,52 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               </div>
             );
           })}
+        </div>
+
+        {/* 11-10 远程实时语音模型（MOSS-Live）：留接口+配置卡。不下载模型、需 API 密钥；
+            实时推理运行时待接入 ⇒ 如实提示，不假装能用。 */}
+        <div className="voice-engine-card voice-engine-remote">
+          <div className="voice-engine-head">
+            <div className="voice-engine-title">
+              <span className="voice-engine-name-row">
+                <strong>MOSS-Live</strong>
+                <span className="voice-engine-tag">远程 · 全双工实时</span>
+              </span>
+              <span className="voice-engine-tagline">边听边说 · 自然打断 · 不占本机磁盘</span>
+            </div>
+            <div className="voice-engine-head-right">
+              <span className={`voice-engine-state${moss?.configured ? " ok" : ""}`}>
+                {moss?.configured ? "已配置" : "未配置"}
+              </span>
+            </div>
+          </div>
+          <div className="voice-engine-role">
+            远程实时对话模型，需提供方 API 密钥。当前已留好语音模型接口与配置；实时推理运行时接入后才会真正发声。
+          </div>
+          <div className="voice-remote-form">
+            <label>接口地址
+              <input value={mossDraft.baseUrl} placeholder="https://…（MOSS-Live API 基址）"
+                onChange={(e) => setMossDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
+            </label>
+            <label>模型
+              <input value={mossDraft.model} placeholder="moss-live"
+                onChange={(e) => setMossDraft((d) => ({ ...d, model: e.target.value }))} />
+            </label>
+            <label>API 密钥
+              <input type="password" value={mossDraft.apiKey}
+                placeholder={moss?.hasKey ? `已配置 ····${moss.keyHint}（留空沿用）` : "sk-…"}
+                onChange={(e) => setMossDraft((d) => ({ ...d, apiKey: e.target.value }))} />
+            </label>
+            <div className="voice-remote-actions">
+              <button className="secondary-setting" onClick={saveMoss}>保存配置</button>
+              {moss?.docs && (
+                <button className="secondary-setting" onClick={() => void window.codex.openExternal(moss.docs!)}>官方文档</button>
+              )}
+            </div>
+          </div>
+          <div className="voice-engine-note">
+            对话内容会发送到提供方服务器；离线不可用。配置保存后仍不能本地合成（实时运行时待接入），不会静默失败。
+          </div>
         </div>
       </div>
     </div>

@@ -10,6 +10,7 @@ import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPV
 import { ensureEmotivoice, ensureKokoro, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
 import { EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, KOKORO_ARCHIVE, KOKORO_DIR, emotivoiceReady, kokoroReady } from "../../voice/model-manifest";
 import { isVoiceResourceEnabled, loadVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
+import { MOSS_LIVE_PROVIDER, remoteConfigOf, remoteConfigured } from "../../voice/model-provider";
 import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
 import { defineFeature } from "../../context";
@@ -286,6 +287,22 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
       // 基础模型：readyFiles/totalFiles 已说明装了多少，这里补启用状态
       baseEnabled: isVoiceResourceEnabled(settings, "base"),
       resources: voiceResourceStates(settings),
+      /* 11-10 远程实时语音模型（MOSS-Live）：只回配置态，不回明文密钥。
+         runnable=false（实时推理运行时待接入），UI 照它给说法，不能点了没反应。 */
+      mossLive: (() => {
+        const c = remoteConfigOf(settings.remote, MOSS_LIVE_PROVIDER.id);
+        return {
+          id: MOSS_LIVE_PROVIDER.id,
+          kind: MOSS_LIVE_PROVIDER.kind,
+          docs: MOSS_LIVE_PROVIDER.docs,
+          configured: remoteConfigured(settings.remote, MOSS_LIVE_PROVIDER.id),
+          runnable: MOSS_LIVE_PROVIDER.runnable,
+          baseUrl: c.baseUrl,
+          model: c.model,
+          hasKey: Boolean(c.apiKey),
+          keyHint: c.apiKey ? c.apiKey.slice(-4) : "",
+        };
+      })(),
     };
   });
 

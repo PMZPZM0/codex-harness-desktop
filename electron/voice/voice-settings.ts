@@ -80,9 +80,18 @@ export type VoiceSettings = {
    *   - 删除是独立动作（物理删文件），与 enabled 无关
    */
   resources?: Partial<Record<VoiceResourceKind, boolean>>;
+  /**
+   * 远程实时语音模型配置（11-10「留一个语音模型接口」，见 model-provider.ts）。
+   * key = provider id（如 moss-live）。⛔ 新增字段、非旧默认变更 ⇒ 不 +version，
+   * mergeSettings 显式透传；老档案没有它 = 未配置，升级零变化。
+   */
+  remote?: Record<string, RemoteVoiceConfig>;
   /** 结构版本（迁移用） */
   version?: number;
 };
+
+/** 远程语音模型的连接配置（apiKey 仅本机存档，状态 IPC 只回 hasKey/末四位）。 */
+export type RemoteVoiceConfig = { baseUrl?: string; model?: string; apiKey?: string };
 
 /**
  * 可单独启用/停用/删除的已下载资源。
@@ -533,8 +542,26 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
     //    「用户点了停用 → 保存 → 下次读回来又是启用」，而且**不报任何错**。
     //    同款坑：09-12 profileId 被吞、09-12 zipvoice 状态被吞。
     resources: mergeResources(raw.resources),
+    // ⛔ 显式透传（同款坑）：漏了 = 用户填了 MOSS-Live 密钥、保存后读回来又是空。
+    remote: mergeRemote((raw as any).remote),
     version: VOICE_SETTINGS_VERSION,
   };
+}
+
+/** 规范化远程语音配置：只保留字符串字段，未知 provider 也保留（接口可扩展），值去首尾空白。 */
+function mergeRemote(raw: unknown): Record<string, RemoteVoiceConfig> {
+  const out: Record<string, RemoteVoiceConfig> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== "object") continue;
+    const c = value as Record<string, unknown>;
+    const entry: RemoteVoiceConfig = {};
+    for (const key of ["baseUrl", "model", "apiKey"] as const) {
+      if (typeof c[key] === "string") entry[key] = (c[key] as string).trim();
+    }
+    out[id] = entry;
+  }
+  return out;
 }
 
 /**
