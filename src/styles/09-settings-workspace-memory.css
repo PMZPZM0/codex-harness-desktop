@@ -1182,6 +1182,11 @@
 }
 .lightbox-toolbar {
   z-index: 2;
+  /* 11-11：DOM 里工具条在 body 之前 ⇒ 必须 order:2 才会排到图片下方（否则 static 后会跑到顶部，
+     正好落进原生窗口拖拽区，按钮点不动）。 */
+  order: 2;
+  flex: none;
+  align-self: center;
   border: 1px solid var(--line);
   background: var(--panel);
   border-radius: 10px;
@@ -1189,11 +1194,9 @@
   gap: 6px;
   padding: 5px 7px;
   display: flex;
-  position: absolute;
-  /* top 必须避开原生 titleBarOverlay 窗口钮区（高 43px，系统合成层永远盖住网页内容）——
-     否则灯箱的「关闭 ×」与应用「关闭 ×」重叠，点灯箱关闭会直接关掉整个应用（09-08 反馈） */
-  top: 56px;
-  right: 14px;
+  /* 11-11 用户令「按键放到图标下方居中」：从右上角浮条改成图片下方的居中工具条（不再遮挡画面，
+     也不再需要避开原生窗口钮区）。 */
+  margin: 0 auto max(16px, env(safe-area-inset-bottom, 0px));
   box-shadow: 0 6px 24px #00000040;
 }
 .lightbox-toolbar button {
