@@ -435,8 +435,16 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     && /isImagePath/.test(cards) && /openImageLightbox\(file\.path, name\)/.test(cards)
     && /!f\.deletedFile/.test(cards),
     "视频卡点击走现有 openMediaPreview、图片卡走现有 openImageLightbox（不新造播放器/灯箱）；删除文件不出卡");
-  ok(/<MediaPreviewBridge/.test(popout) && /<ImageLightbox/.test(popout),
-    "群聊独立窗挂载媒体播放器/大图灯箱（否则汇总媒体卡点了没反应）");
+  ok(/<MediaPreviewBridge/.test(popout) && /<ImageLightbox/.test(popout) && /<ModelViewerBridge/.test(popout),
+    "群聊独立窗挂载媒体播放器/大图灯箱/3D 预览（否则汇总媒体卡点了没反应）");
+  {
+    const mediaCss = readFileSync(join(ROOT, "src", "styles", "39-media-preview.css"), "utf8");
+    const modelCss = readFileSync(join(ROOT, "src", "styles", "27-model-viewer.css"), "utf8");
+    ok(/\.media-preview-backdrop \{[\s\S]{0,240}z-index: 980;/.test(mediaCss)
+      && /\.media-preview-backdrop\.is-mini \{[\s\S]{0,80}z-index: 985;/.test(mediaCss)
+      && /\.model-viewer-backdrop[^}]*z-index: 970/.test(modelCss),
+      "视频/音频/3D 预览层级：980/985/970 > 群模态 400（⛔ 同层会被群聊压住看不见）");
+  }
   ok(/CompletedChanges/.test(teamCards),
     "群聊汇总复用主对话 CompletedChanges（媒体卡随之生效）");
   /* 11-11 用户「这些改动要同步到工作伙伴的群里」↔「全局查重复」：
