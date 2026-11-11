@@ -568,14 +568,22 @@ export function TeamGroupView({
     if (id === "system") return "系统";
     /* 11-07 用户令：专家团成员要「以自己的身份」在群里说话。作者 id 是
        `team:<teamId>:<memberId>`（主进程/渲染层都用这一个口径），名字从调度目录查 —— 目录还没回来
-       就退回 memberId（⛔ 不编名字，也不把整条消息丢掉）。 */
+       就退回 memberId（⛔ 不编名字，也不把整条消息丢掉）。
+       ⛔⛔ 11-11 真机：主理人在目录里是 kind:"expert"（不是 "member"），只查 member 会让主理人的
+       消息显示成裸英文 `software-dev-team-lead` —— 右侧成员栏却是「承枢」，用户以为有陌生人乱入。
+       ⇒ 主理人也按 expert 反查；另一条路径（作者 id 直接就是 lead.id）在下面末尾兜底。 */
     const teamAuthor = parseTeamAuthorId(id);
     if (teamAuthor) {
-      const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && (teamMemberIdOf(t) === teamAuthor.memberId || t.key === teamAuthor.memberId));
+      const kid = catalog.find((t) => (t.kind === "member" || t.kind === "expert") && t.teamId === teamAuthor.teamId && (teamMemberIdOf(t) === teamAuthor.memberId || t.key === teamAuthor.memberId));
       return kid?.name || teamAuthor.memberId;
     }
     const m = group.members.find((x) => x.id === id);
-    return m ? personNameOf(m) : id;
+    if (m) return personNameOf(m);
+    /* ⛔ 团主理人的作者 id 有时就是 lead.id（英文 kebab-case），既不是合成 id 也不在 group.members 里。
+       目录里主理人条目：kind "expert" / key "<teamId>:<lead.id>" / memberId = lead.id / name = 中文名。 */
+    const leadEntry = catalog.find((t) => t.kind === "expert"
+      && (teamMemberIdOf(t) === id || String(t.key ?? "").endsWith(`:${id}`)));
+    return leadEntry?.name || id;
   };
   const memberOf = (id: string) => group.members.find((m) => m.id === id) ?? null;
   /* 团这一行的职业写主理人的（「交付总监」）；目录里 team 条目的 profession 是「4 位成员」，
@@ -1355,9 +1363,9 @@ export function TeamGroupView({
                     <details className="team-tasks">
                       <summary
                         className="team-group__progress is-open"
-                        title={`群内任务：共 ${taskProgress.total} 条，已完成 ${taskProgress.done} 条，未结束 ${taskProgress.open} 条${taskProgress.waiting ? `，其中 ${taskProgress.waiting} 条还在等人回话` : ""}（点开看清单）`}
+                        title={`群内点名交接：共 ${taskProgress.total} 条，已回话 ${taskProgress.done} 条，未结束 ${taskProgress.open} 条${taskProgress.waiting ? `，其中 ${taskProgress.waiting} 条还在等人回话` : ""}。这是「谁被点名、谁回过了」的交接台账，不是专家团 SOP 的阶段进度（点开看清单）`}
                       >
-                        任务 {taskProgress.done}/{taskProgress.total}
+                        交接 {taskProgress.done}/{taskProgress.total}
                         {taskProgress.waiting > 0 ? ` · 等 ${taskProgress.waiting} 人` : ""}
                       </summary>
                       <div className="team-tasks__pop" role="group" aria-label="未结束的任务">
@@ -1382,9 +1390,9 @@ export function TeamGroupView({
                   ) : (
                     <span
                       className="team-group__progress is-done"
-                      title={`群内任务：共 ${taskProgress.total} 条，全部已结束`}
+                      title={`群内点名交接：共 ${taskProgress.total} 条，全部已回话。这只是点名交接结束，不代表专家团 SOP 各阶段已交付`}
                     >
-                      任务 {taskProgress.done}/{taskProgress.total}
+                      交接 {taskProgress.done}/{taskProgress.total}
                     </span>
                   )
                 ) : null}
@@ -2004,7 +2012,11 @@ export function TeamGroupView({
                 ⇒ 这里**只剩一行「成员 N」**：⛔ 不再有全局「停止运行」大按钮，
                    ⛔ 不要再加回来（三个位置都试过，用户最终口径是"运行态与停止都在每个成员那一行"）。 */}
             <div className="team-group__members-head">
-              <span>成员 {group.members.length}</span>
+              {/* ⛔ 11-11 真机：标题只数 group.members（团槽位 2），下面却把团成员全展开渲染（6 行）
+                  ⇒ 用户看到「成员 2」下面挂着 6 个人。口径统一成实际渲染行数。 */}
+              <span title={`群成员 ${group.members.length} 位，另有展开的团成员 ${group.members.reduce((n, x) => n + teamKidsOf(x).length, 0)} 位`}>
+                成员 {group.members.length + group.members.reduce((n, x) => n + teamKidsOf(x).length, 0)}
+              </span>
             </div>
             <ul>
               {group.members.map((m) => {

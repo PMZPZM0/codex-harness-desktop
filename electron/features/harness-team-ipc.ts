@@ -865,6 +865,17 @@ async function runDispatchRounds(
   const markRan = (id: unknown) => ranCount.set(String(id), (ranCount.get(String(id)) ?? 0) + 1);
   /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。 */
   let chainBudget = options.allowChain ? CHAIN_BUDGET_MANUAL : 0;
+  /* ⛔⛔ 11-11 真机（用户：「出完方案，主代理人死了吗」「任务都不推进」）：
+     团群里主理人一次 @ 多人 ⇒ 宿主按它写的顺序串行跑完，链路就**停在最后一位成员的产出**，
+     主理人再也不回来 —— 没有阶段进度、没有验收、没有最终结论，而 UI 的交接台账已 2/2 全 done。
+     ⇒ 排片跑完 / 成员交完活，必须把话头交回主理人；只有它有权收口。这两道计数是安全阀。 */
+  const MAX_LEAD_CATCH_UPS = 3;
+  let leadCatchUps = 0;
+  /* ⛔ 主理人自己那一轮「没派任何人、没写收口」时只催办一次（防自循环烧钱）。 */
+  const MAX_LEAD_SELF_NUDGES = 1;
+  let leadSelfNudges = 0;
+  /* ⛔ 主持人排片串行执行期间，别让中途某位成员的回合把话头抢回主理人（会把剩下的排片冲散）。 */
+  let relayInFlight = false;
   const params = options.params ?? {};
   /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
      所以团成员之间也能互相说话，不再需要「主理人代转」。 */
@@ -1384,8 +1395,25 @@ async function runDispatchRounds(
           const caller = { id: partner.id, name: partner.name };
           if (String(partner.id) === adminIdForRounds) {
             void (async () => {
+              relayInFlight = true;
               for (const item of queue) {
                 await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
+              }
+              relayInFlight = false;
+              /* ⛔⛔ 11-11：排片跑完必须把话头交回主理人做阶段通报 / 验收 / 收口。
+                 否则群里停在最后一位成员的文件卡片上，用户看到的就是「任务 2/2 完成了，然后没了」。 */
+              const lead = roster.find((m) => m.teamRole === "lead");
+              if (lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
+                leadCatchUps += 1;
+                chainBudget -= 1;
+                void runOne(lead as unknown as GroupTarget, 0, caller,
+                  `[系统] 你这一轮排的 ${queue.length} 位成员都交回产出了。现在按 SOP 推进：`
+                  + "① 先向群里通报阶段进度（已完成哪几环、还差哪几环）；"
+                  + "② 验收成员产出，不合格就点名打回重做；"
+                  + "③ 还有下一阶段就另起一行 @ 名字继续派；"
+                  + "④ 只有全部阶段验收完，才写「收口」并按「结论 / 依据 / 还剩什么没做」给用户最终结论。"
+                  + "⛔ 不要只回「收到」，也不要自己代写成员的产出。")
+                  .catch(() => undefined);
               }
             })();
           } else {
@@ -1419,10 +1447,35 @@ async function runDispatchRounds(
               text: "还有任务没结束，接力预算用尽 —— 已自动续 4 次继续推进（想停就说「收口」）。",
             }).catch(() => undefined);
           }
-          if (verdict.action === "continue" && admin && String(admin.id) !== String(partner.id) && canRun(admin.id)) {
+          /* ⛔⛔ 11-11：团群里**只有主理人有权收口**。成员产出里带「已完成 / 已交付」会让
+             classifyTurn 判 wrap，原来链路就死在成员那一句 —— 主理人再也不回来报进度、不汇总。
+             ⇒ 团群 + 成员回合 + 排片没在跑 ⇒ 强制回喂主理人一次（次数/预算/回合上限三道安全阀）。 */
+          const mustHandBack = Boolean(isTeamGroup && admin && String(admin.id) !== String(partner.id)
+            && !relayInFlight && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
+          if ((verdict.action === "continue" || mustHandBack) && admin && String(admin.id) !== String(partner.id) && canRun(admin.id)) {
+            if (mustHandBack) leadCatchUps += 1;
+            chainBudget -= 1;
+            const ask = mustHandBack
+              ? `[系统] ${partner.name} 交回了这一环的产出。按 SOP 推进：先向群里通报阶段进度（已完成哪几环、还差哪几环），再决定下一步点谁（行首 @ 名字）继续派；只有全部阶段验收完，才写「收口」并给用户最终结论（结论 / 依据 / 还剩什么没做）。⛔ 不要只回「收到」，也不要代写成员产出。`
+              : `[系统] ${partner.name} 说完了（${verdict.reason}）。你决定：下一步点谁（行首 @ 名字），或者收口给结论。`;
+            void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name }, ask)
+              .catch(() => undefined);
+          }
+          /* ⛔⛔ 11-11 真机（截图）：主理人把四位成员的发言**全自己代写**进一条消息里，
+             一个行首 @ 都没有 ⇒ asks 为空；而团群的「主持人」就是它自己，原来的
+             「自己说的不往回喂（防自循环）」于是让整条链停在这句方案上 ——
+             用户看到的就是「出完方案，主代理人死了」「任务都不推进」。
+             ⇒ 团群里主理人自己没派人、也没写收口时，宿主催办**一次**（只一次，不自循环）：
+             要它按 SOP 真正把下一阶段派出去、先报阶段进度，别再代写成员发言。 */
+          const isLeadSelf = Boolean(isTeamGroup && admin && String(admin.id) === String(partner.id));
+          if (isLeadSelf && verdict.action !== "wrap" && !relayInFlight
+            && leadSelfNudges < MAX_LEAD_SELF_NUDGES && chainBudget > 0 && canRun(partner.id)) {
+            leadSelfNudges += 1;
             chainBudget -= 1;
             void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name },
-              `[系统] ${partner.name} 说完了（${verdict.reason}）。你决定：下一步点谁（行首 @ 名字），或者收口给结论。`)
+              "[系统] 你这一轮没有派任何成员，也没有写「收口」。按 SOP 继续推进："
+              + "先向群里通报阶段进度（已完成哪几环、还差哪几环），再另起一行写 `@名字：要他做什么`"
+              + "把下一阶段真正派出去（⛔ 不要自己代写成员的发言）；只有全部阶段验收完才写「收口」给最终结论。")
               .catch(() => undefined);
           }
         }
