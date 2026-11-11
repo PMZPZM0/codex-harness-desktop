@@ -1133,8 +1133,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/export function getAnnounceEngineReady/.test(ready)
       && /voiceModelsStatus/.test(ready)
       && /downloadDone/.test(ready)
-      && /const next = base \|\| kokoro \|\| emotivoice;/.test(ready),
-      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / Kokoro / 情感语音），装完 downloadDone 自动重探");
+      && /const next = base \|\| emotivoice;/.test(ready),
+      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / 情感语音；停用的不算），装完 downloadDone 自动重探");
     ok(/const engineReady = useSyncExternalStore/.test(toggle)
       && /const enabled = engineReady && globalOn && !muted;/.test(toggle)
       && /if \(!engineReady\) \{[\s\S]{0,200}?setNotice\(/.test(toggle),
@@ -1240,23 +1240,45 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "裁尾是纯函数且有真值表单测（尾巴砍掉 / 轻声尾音保留 / 全噪声返回空）");
 }
 
-/* ── 11-10 语音模型扩展接口 + MOSS-Live（留接口+模型卡）───────────────────── */
+/* ── 11-10 语音模型扩展接口 + MOSS-Live（11-11 接通实时通话、移除 Kokoro）──────── */
 {
   const provider = read("electron/voice/model-provider.ts");
   const vsettings = read("electron/voice/voice-settings.ts");
   const misc = read("electron/features/voice-ipc/01-voice-hotkey-models.ts");
   const enginesTsx = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
+  const transport = read("src/voice/audio-transport.ts");
+  const hookSrc = read("src/components/VoiceCallFloat/use-voice-call-float-state.tsx");
   ok(/export type VoiceModelProvider/.test(provider) && /VOICE_MODEL_PROVIDERS/.test(provider)
     && /id: "moss-live"/.test(provider) && /kind: "remote-live"/.test(provider),
     "语音模型留了扩展接口（VoiceModelProvider 注册表），MOSS-Live 登记为 remote-live");
   ok(/runnable: false/.test(provider) && /remoteConfigured/.test(provider),
-    "MOSS-Live 如实标 runnable:false（实时推理待接入），配置齐备判定独立成函数");
-  ok(/remote\?: Record<string, RemoteVoiceConfig>/.test(vsettings) && /remote: mergeRemote/.test(vsettings),
-    "远程配置进 VoiceSettings 且显式透传（⛔ 漏了=填了密钥保存后读回是空）");
+    "MOSS-Live 仍标 runnable:false（未对真实提供方逐条验证），配置齐备判定独立成函数");
+  ok(/remote\?: Record<string, RemoteVoiceConfig>/.test(vsettings) && /remote: mergeRemote/.test(vsettings)
+    && /call\?: \{ backend\?: "local" \| "moss-live" \}/.test(vsettings),
+    "远程配置与 call.backend 进 VoiceSettings 且显式透传（⛔ 漏了=填了密钥保存后读回是空）");
   ok(/mossLive:/.test(misc) && /hasKey: Boolean\(c\.apiKey\)/.test(misc) && !/apiKey: c\.apiKey/.test(misc),
     "状态 IPC 只回 hasKey/末四位，不回明文密钥");
   ok(/MOSS-Live/.test(enginesTsx) && /voice-remote-form/.test(enginesTsx) && /saveMoss/.test(enginesTsx),
-    "设置页有 MOSS-Live 配置卡（地址/模型/密钥 + 保存 + 官方文档），不假装能本地合成");
+    "设置页有 MOSS-Live 配置卡（地址/模型/密钥 + 保存 + 官方文档）");
+  /* 11-11 用户实测「配置完状态都不刷新，我怎么用」：saveMoss 必须**等落盘后重读**，
+     且要有把 call.backend 切到 moss-live 的开关；普通 TTS 地址要当场点出来。 */
+  ok(/await apply\(/.test(enginesTsx) && /await refresh\(\)/.test(enginesTsx),
+    "MOSS-Live 保存后重读主进程状态（⛔ 只发不读 = 卡片一直挂旧状态）");
+  ok(/setCallBackend/.test(enginesTsx) && /backend: next \? "moss-live" : "local"/.test(enginesTsx),
+    "有「用作实时通话后端」开关，落盘写 call.backend");
+  ok(/mossLooksLikeTts/.test(enginesTsx) && /setCallBackend/.test(enginesTsx),
+    "填了普通 TTS（/audio/speech）地址时给告警、不允许当作实时后端开启");
+  ok(/decodePcm16Base64/.test(transport) && /decodePcm16Base64/.test(hookSrc)
+    && !/base64Pcm16ToFloat32/.test(hookSrc),
+    "远程实时音频按 PCM16 解码（⛔ 别用 Float32 解码器硬解，会得到噪声）");
+  /* 11-11 用户令「自然多音色那个语音模型删了，不要了」⇒ Kokoro 整族移除（不留死通道/死卡片）。 */
+  ok(!/kokoro/i.test(codeOnlyTs(provider)) && !/kokoro/i.test(codeOnlyTs(vsettings))
+    && !/kokoro/i.test(codeOnlyTs(misc)) && !/kokoro/i.test(codeOnlyTs(enginesTsx)),
+    "Kokoro 已整族移除（引擎枚举 / 资源白名单 / 注册表 / 设置卡均无残留）");
+  /* 11-11 用户实测「点了停用，上面还写着使用中」：引擎卡的可用态必须看 baseEnabled。 */
+  ok(/status\?\.baseEnabled !== false/.test(enginesTsx)
+    && /const inUse = selected && ready && enabled;/.test(enginesTsx),
+    "合成引擎卡把「已停用」当不可用（ready=文件在 ≠ 能用）");
 }
 
 process.exit(fails ? 1 : 0);

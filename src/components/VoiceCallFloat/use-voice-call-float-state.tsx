@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouse
 import { createAec, createEchoGate, createSentenceChunker, resampleLinear, rmsOf } from "../../lib/voice-aec.mjs";
 import { createSpeakFilter } from "../../lib/speak-text.mjs";
 import { CAPTURE_WORKLET_SOURCE } from "../../voice/capture-worklet";
-import { decodeFloat32Base64 } from "../../voice/audio-transport";
+import { decodeFloat32Base64, decodePcm16Base64 } from "../../voice/audio-transport";
 import { patchVoiceStage, requestVoiceCallNotice, requestVoiceDictationSend, requestVoiceOpenSettings, resetVoiceStage, setVoiceDictationHandler, setVoiceLevel, setVoiceSkipHandler, setVoiceStopHandler } from "../../voice/wave-level";
 import { normalizeVoiceBallStyle } from "../../lib/voice-ball-styles.mjs";
 import { isLikelySelfEcho } from "../../lib/voice-echo.mjs";
@@ -363,6 +363,29 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
         patchVoiceStage({ agentText: agentTextRef.current });
         // ★ 播报总开关（10-09 第二轮收成一个）：关掉就只出字幕、不出声（通话的正文朗读也由它门控）
         if (announceRef.current.enabled) void speakDelta(piece);
+        return;
+      }
+      /* 11-10 MOSS-Live 全双工：字幕/音频由服务端下行，直接播放，不走本地 TTS/断句器。 */
+      if (event.type === "remoteDelta") {
+        const piece = String(event.text ?? "");
+        setAgentText((prev) => { const next = prev + piece; agentTextRef.current = next; return next; });
+        patchVoiceStage({ agentText: agentTextRef.current });
+        return;
+      }
+      if (event.type === "remoteAudio") {
+        const samples = decodePcm16Base64(String(event.base64 ?? ""));
+        if (samples.length) void enqueuePlay(samples, Number(event.sampleRate ?? 24000));
+        return;
+      }
+      if (event.type === "remoteBarge") {
+        bumpSpeechEpoch();
+        stopPlayback();
+        return;
+      }
+      if (event.type === "remoteDone") {
+        if (String(agentTextRef.current ?? "").trim()) pushTranscript("agent", agentTextRef.current);
+        setAgentText("");
+        agentTextRef.current = "";
         return;
       }
       if (event.type === "turnDone") {

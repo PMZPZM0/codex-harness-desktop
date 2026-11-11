@@ -16,7 +16,7 @@ import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync, statSync } from "fs";
 import { copyFile, mkdir, open, readdir, readFile, rename, rm, stat, unlink } from "fs/promises";
 import { basename, dirname, join } from "path";
-import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady, EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, EMOTIVOICE_URLS, KOKORO_ARCHIVE, KOKORO_DIR, emotivoiceReady, kokoroReady } from "./model-manifest";
+import { MODEL_HOSTS, modelUrl, type VoiceModelFile, type VoiceModelRepo, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_DIR, ZIPVOICE_ARCHIVE, zipvoiceReady, EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, EMOTIVOICE_URLS, emotivoiceReady } from "./model-manifest";
 
 export type VoiceDownloadProgress = {
   /** 当前仓库 id */
@@ -1016,54 +1016,6 @@ export async function ensureZipvoice(
   }
 
   report("完成", 100, "音色克隆模型就绪", 2, 2);
-  return { ok: true };
-}
-
-/**
- * 安装/补齐**可选合成引擎 Kokoro**（归档型，140MB → 解压 206MB）。
- * 与 zipvoice 同一条路：整包下载（含 GitHub 镜像前缀）→ SHA256 → 解压 → 回读就绪判定。
- */
-export async function ensureKokoro(
-  modelsRoot: string,
-  resourcesToolsDir: string,
-  onProgress?: (p: VoiceDownloadProgress) => void,
-  signal?: AbortSignal,
-): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (kokoroReady(modelsRoot)) return { ok: true };
-  const report = (percent: number, message: string) =>
-    onProgress?.({ repo: KOKORO_DIR, file: "模型包", doneFiles: 0, totalFiles: 1, percent, message });
-
-  const dir = join(modelsRoot, KOKORO_DIR);
-  const minOf = KOKORO_ARCHIVE.readyFileMinBytes;
-  const needMain = KOKORO_ARCHIVE.readyFiles.some((name) => {
-    try { return statSync(join(dir, name)).size < (minOf[name] ?? 1); } catch { return true; }
-  });
-  if (needMain) {
-    const archivePath = join(modelsRoot, ".cache", KOKORO_DIR + ".tar.bz2");
-    const cached = existsSync(archivePath)
-      ? await sha256File(archivePath).then((h) => h === KOKORO_ARCHIVE.sha256).catch(() => false)
-      : false;
-    if (!cached) {
-      report(0, "正在下载 Kokoro 模型（约 140MB）…");
-      const downloaded = await downloadUrlToFile(
-        KOKORO_ARCHIVE.url, archivePath, KOKORO_ARCHIVE.sha256, KOKORO_ARCHIVE.bytes,
-        (received, total) => report(total ? Math.round((received / total) * 100) : -1,
-          "正在下载 Kokoro " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB"),
-        signal,
-        GITHUB_MIRROR_PREFIXES,
-      );
-      if (!downloaded.ok) return downloaded;
-    }
-    report(100, "正在解压 Kokoro 模型…");
-    const extracted = await extractArchiveInto(archivePath, modelsRoot, KOKORO_DIR, resourcesToolsDir);
-    if (!extracted.ok) return extracted;
-    await unlink(archivePath).catch(() => undefined);
-  }
-  /* ⛔ 与 zipvoice 同口径：装完必须**回读就绪判定**，不能只信下载器说成功。 */
-  if (!kokoroReady(modelsRoot)) {
-    return { ok: false, error: "Kokoro 模型校验未通过（文件不完整或 espeak-ng-data 缺失），请重试下载" };
-  }
-  report(100, "Kokoro 模型就绪");
   return { ok: true };
 }
 

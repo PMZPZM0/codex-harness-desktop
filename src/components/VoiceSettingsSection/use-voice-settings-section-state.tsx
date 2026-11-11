@@ -50,7 +50,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
    *    「开关能打开、点了没声音」，这是最典型的静默失败。
    * 下载完成事件（downloadDone）会重拉一次：装完立刻就能开播报，不必刷新页面。
    */
-  const [packs, setPacks] = useState({ base: false, kokoro: false, emotivoice: false });
+  const [packs, setPacks] = useState({ base: false, emotivoice: false });
   const ttsReadyRef = useRef(true);
 
   const [draft, setDraft] = useState<{ draftFile: string; refText: string; sourceName: string; durationSec: number } | null>(null);
@@ -68,10 +68,9 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
     try {
       const st: any = await window.codex.voiceModelsStatus();
       const total = Number(st?.totalFiles ?? 0);
-      const base = total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready);
+      const base = st?.baseEnabled !== false && (total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready));
       setPacks({
         base,
-        kokoro: Boolean(st?.kokoro?.ready) && st?.kokoro?.runnable !== false,
         /* 情感语音：模型装了但缺推理运行时时**不算就绪**（合成会失败） */
         emotivoice: Boolean(st?.emotivoice?.ready) && st?.emotivoice?.runnable === true,
       });
@@ -305,8 +304,10 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   useEffect(() => () => { micTestRef.current?.stop(); }, []);
 
 
-  const apply = useCallback((patch: Partial<Settings>) => {
-    if (!settings || savingRef.current) return;
+  /* 返回保存 Promise：MOSS-Live 这类「保存后要立刻重读主进程状态」的调用方需要等落盘
+     （只 fire-and-forget 会让 refresh 抢在保存之前，卡片仍显示旧状态）。 */
+  const apply = useCallback((patch: Partial<Settings>): Promise<void> => {
+    if (!settings || savingRef.current) return Promise.resolve();
     savingRef.current = true;
     setSaving(true);
     const next: Settings = {
@@ -318,7 +319,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       barge: { ...settings.barge, ...(patch.barge ?? {}) },
     };
     setSettings(next);
-    window.codex.voiceSettingsSet(patch)
+    return window.codex.voiceSettingsSet(patch)
       .then((saved) => setSettings(saved as unknown as Settings))
       .catch((e: any) => onNotice(`保存语音设置失败：${e?.message ?? e}`))
       .finally(() => { savingRef.current = false; setSaving(false); });
@@ -472,8 +473,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
 
   /**
    * 重拉设置元信息（音色表 / 镜像源）。
-   * ⛔ 换合成引擎后**必须调**：vits 只有 5 个音色、Kokoro 有 103 个，
-   *    音色表是主进程按当前引擎给的 ⇒ 不重拉就会出现"下拉里还是旧引擎的音色"。
+   * ⛔ 换合成引擎后仍要调：音色表由主进程按引擎给，不重拉可能拿到旧表。
    */
   const reloadMeta = useCallback(async () => {
     try {
@@ -492,8 +492,8 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [meta]);
 
   /* 当前引擎就绪与否（播报开关 / 试听的联动判据）——派生量，⛔ 不另存一份状态 */
-  const ttsEngineId = settings?.tts?.engine === "kokoro" || settings?.tts?.engine === "emotivoice" ? settings.tts.engine : "vits";
-  const ttsReady = ttsEngineId === "kokoro" ? packs.kokoro : ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base;
+  const ttsEngineId = settings?.tts?.engine === "emotivoice" ? "emotivoice" : "vits";
+  const ttsReady = ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base;
   ttsReadyRef.current = ttsReady;
 
   return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, reloadPacks, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };

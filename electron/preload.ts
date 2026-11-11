@@ -896,7 +896,7 @@ contextBridge.exposeInMainWorld("codex", {
   voiceStop: () => __ipc("voice:stop", 0, []) as Promise<{ ok: boolean }>,
   /* 10-26 取消当前引擎包下载 */
   voiceTtsPackCancel: () => __ipc("voice:tts-pack-cancel", 0, []) as Promise<any>,
-  /* 10-26 可选合成引擎包（kokoro / emotivoice）按需下载；进度事件 voice:event 带 target=pack */
+  /* 可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack */
   voiceTtsPackInstall: (pack: string) => __ipc("voice:tts-pack-install", 1, [pack]) as Promise<any>,
   voiceWakeAudio: (samples: Float32Array) => __ipc("voice:wake-audio", 1, [samples]),
   voiceWakeReset: () => __ipc("voice:wake-reset", 0, []) as Promise<{ ok: boolean }>,

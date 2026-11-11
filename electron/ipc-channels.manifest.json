@@ -5425,7 +5425,7 @@
       "channel": "voice:settings-get",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ settings: { tts: { sid: number; speed: number; volume: number; engine?: \"vits\" | \"kokoro\" | \"emotivoice\"; profileId?: string; numSteps: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style: string }; resources?: Partial<Record<\"base\" | \"zipvoice\" | \"kws\" | \"kokoro\" | \"emotivoice\", boolean>>; version?: number }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>",
+      "returns": "Promise<{ settings: { tts: { sid: number; speed: number; volume: number; engine?: \"vits\" | \"emotivoice\"; profileId?: string; numSteps: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style: string }; resources?: Partial<Record<\"base\" | \"zipvoice\" | \"kws\" | \"emotivoice\", boolean>>; version?: number }; ttsVoices: Record<number, string>; modelHosts: Record<string, string>; modelHostOptions: string[]; }>",
       "cast": null,
       "note": null
     },
@@ -5434,7 +5434,7 @@
       "channel": "voice:settings-set",
       "paramsImpl": "patch: any",
       "paramsDecl": "patch: any",
-      "returns": "Promise<{ tts: { sid: number; speed: number; volume: number; engine?: \"vits\" | \"kokoro\" | \"emotivoice\"; profileId?: string; numSteps: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style: string }; resources?: Partial<Record<\"base\" | \"zipvoice\" | \"kws\" | \"kokoro\" | \"emotivoice\", boolean>>; version?: number }>",
+      "returns": "Promise<{ tts: { sid: number; speed: number; volume: number; engine?: \"vits\" | \"emotivoice\"; profileId?: string; numSteps: number }; asr: { rule1: number; rule2: number; rule3: number; numThreads: number }; mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean }; barge: { gateDb: number; mode: \"auto\" | \"manual\" }; aec?: { mode: \"auto\" | \"on\" | \"off\" }; modelHost: \"auto\" | \"huggingface\" | \"hf-mirror\"; hotkey: { enabled: boolean; accelerator: string }; dictationHotkey: { enabled: boolean; accelerator: string }; wake: { enabled: boolean; phrase: string }; announce: { enabled: boolean }; ball: { visible: boolean; hints: boolean; style: string }; resources?: Partial<Record<\"base\" | \"zipvoice\" | \"kws\" | \"emotivoice\", boolean>>; version?: number }>",
       "invokeArgs": "patch",
       "cast": null,
       "note": null
@@ -5496,7 +5496,7 @@
       "returns": "Promise<any>",
       "invokeArgs": "pack",
       "cast": "Promise<any>",
-      "note": "10-26 可选合成引擎包（kokoro / emotivoice）按需下载；进度事件 voice:event 带 target=pack"
+      "note": "可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack"
     },
     {
       "name": "voiceWakeAudio",

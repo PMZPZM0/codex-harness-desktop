@@ -17,3 +17,24 @@ export function decodeFloat32Base64(base64: string | undefined): Float32Array {
   if (usableLength <= 0) return new Float32Array(0);
   return new Float32Array(bytes.buffer, 0, usableLength / Float32Array.BYTES_PER_ELEMENT);
 }
+
+/**
+ * 把 **PCM16（小端）Base64** 还原成 [-1,1] 的 Float32Array。
+ *
+ * 用于远程实时语音（MOSS-Live）的 `response.audio.delta`：服务端下发的是 16-bit PCM，
+ * 与本地 TTS 的 Float32 Base64 不是同一种编码（⛔ 别拿 decodeFloat32Base64 硬解，
+ * 字节数对不上会得到一段噪声）。
+ */
+export function decodePcm16Base64(base64: string | undefined): Float32Array {
+  if (!base64) return new Float32Array(0);
+  const binary = atob(base64);
+  const count = binary.length >> 1;
+  if (!count) return new Float32Array(0);
+  const out = new Float32Array(count);
+  for (let i = 0; i < count; i += 1) {
+    let sample = (binary.charCodeAt(i * 2) | (binary.charCodeAt(i * 2 + 1) << 8)) & 0xffff;
+    if (sample >= 0x8000) sample -= 0x10000;
+    out[i] = sample / 0x8000;
+  }
+  return out;
+}

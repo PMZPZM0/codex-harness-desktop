@@ -12,7 +12,7 @@
  *
  *  ⛔ 单一真相源：`voice:models-status`（与设置页那张卡片同一份判据）。
  *    这里不自己推磁盘，也不缓存"用户选的是哪个引擎"——**任一套引擎可用就算就绪**
- *    （用户可以只装 Kokoro/情感语音而不装基础模型）。
+ *    （用户可以不装基础模型、只用情感语音；但被**停用**的模型不算就绪）。
  *  ⛔ 探针只起一次；`downloadDone` 到达就重拉（装完立刻能开播报，不必重启）。
  */
 /** `voice:models-status` 里本模块用到的字段（⛔ 不写 `any`：渲染层 any 是棘轮判据，新文件不许加基线）。 */
@@ -20,7 +20,7 @@ type ModelsStatusShape = {
   totalFiles?: number;
   readyFiles?: number;
   ready?: boolean;
-  kokoro?: { ready?: boolean; runnable?: boolean };
+  baseEnabled?: boolean;
   emotivoice?: { ready?: boolean; runnable?: boolean };
 };
 
@@ -45,13 +45,11 @@ export async function refreshAnnounceEngineReady(): Promise<void> {
     const st = (await window.codex.voiceModelsStatus?.()) as ModelsStatusShape | undefined;
     if (!st) return;
     /* 与 `use-voice-settings-section-state` 的 packs 同口径：
-       基础模型按「就绪文件数 == 总数」；Kokoro 要求 ready 且 runnable；
-       情感语音要求 ready 且 **runnable === true**（缺 onnxruntime 时不算就绪）。 */
+       基础模型按「未停用 + 就绪文件数 == 总数」；情感语音要求 ready 且 **runnable === true**。 */
     const total = Number(st?.totalFiles ?? 0);
-    const base = total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready);
-    const kokoro = Boolean(st?.kokoro?.ready) && st?.kokoro?.runnable !== false;
+    const base = st?.baseEnabled !== false && (total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready));
     const emotivoice = Boolean(st?.emotivoice?.ready) && st?.emotivoice?.runnable === true;
-    const next = base || kokoro || emotivoice;
+    const next = base || emotivoice;
     if (next === ready) return;
     ready = next;
     for (const fn of [...listeners]) fn();

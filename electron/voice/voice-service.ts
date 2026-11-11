@@ -18,6 +18,8 @@ import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerCli
 import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
 import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
 import { buildEngineWorkerData } from "./tts-engine-data";
+import { MossLiveRealtime } from "./moss-live-realtime";
+import { MOSS_LIVE_PROVIDER, remoteConfigured, remoteConfigOf } from "./model-provider";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
 import { listProfiles, profileAudioPath, type VoiceProfile } from "./voice-profiles";
@@ -43,6 +45,16 @@ function pcm16WavToFloat32(buf: Buffer): Float32Array {
 }
 
 const SAMPLE_RATE = 16000;
+
+/** Float32（-1..1）→ PCM16 base64（MOSS-Live 上行格式）。 */
+function float32ToPcm16Base64(samples: Float32Array): string {
+  const buf = Buffer.alloc(samples.length * 2);
+  for (let i = 0; i < samples.length; i++) {
+    const v = Math.max(-1, Math.min(1, samples[i]));
+    buf.writeInt16LE(Math.round(v * 32767), i * 2);
+  }
+  return buf.toString("base64");
+}
 
 /** 语音轮的推理档位：通话场景优先低延迟（自定义模型档位是 low/medium/high）。 */
 const VOICE_EFFORT = "low";
@@ -81,7 +93,12 @@ export type VoiceEvent =
   | { type: "wakeHeard"; text: string; matched: boolean }
   | { type: "error"; message: string }
   | { type: "download"; repo?: string; file?: string; repoIndex?: number; repoTotal?: number; percent: number; message: string }
-  | { type: "downloadDone"; ok: boolean; error?: string };
+  | { type: "downloadDone"; ok: boolean; error?: string }
+  /* 11-10 MOSS-Live 全双工实时：音频/字幕由服务端下行，渲染层直接播放，不走本地 TTS。 */
+  | { type: "remoteAudio"; base64: string; sampleRate: number }
+  | { type: "remoteDelta"; text: string }
+  | { type: "remoteDone" }
+  | { type: "remoteBarge" };
 
 export type VoiceSpeakResult =
   | { ok: true; sampleRate: number; samples: Float32Array }
@@ -115,6 +132,8 @@ type Deps = {
 export class VoiceService {
   private asr: VoiceWorkerClient | null = null;
   private tts: VoiceWorkerClient | null = null;
+  /** 11-10 MOSS-Live 全双工实时后端（配置且选中时替代本地 ASR+引擎+TTS）。 */
+  private remote: MossLiveRealtime | null = null;
   /** 唤醒用的独立识别器（持续聆听，不参与通话、不开引擎回合） */
   private wakeAsr: VoiceWorkerClient | null = null;
   private threadId = "";
@@ -208,6 +227,13 @@ export class VoiceService {
     // 每次 start 都重读一次设置——用户在设置页改了镜像源/音色，下一次通话立刻生效
     this.currentSettings = loadVoiceSettings(this.deps.userDataDir);
 
+    /* 11-10 MOSS-Live 实时后端：选中且已配置 ⇒ 走全双工 S2S，不依赖本地模型。
+       连不上 ⇒ 如实提示并回落本地链路（下面继续），不静默失败。 */
+    if (this.currentSettings.call?.backend === "moss-live"
+      && remoteConfigured(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id)) {
+      if (await this.startRemote(input.threadId)) return { ok: true };
+    }
+
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) {
       const message = "语音运行时未就绪（sherpa-onnx 未安装），请重新安装应用或联系支持";
@@ -280,9 +306,12 @@ export class VoiceService {
   async stop(): Promise<void> {
     const asr = this.asr;
     const tts = this.tts;
+    const remote = this.remote;
     const wasActive = this.active;
     this.asr = null;
     this.tts = null;
+    this.remote = null;
+    remote?.close();
     this.active = false;
     this.busy = false;
     this.currentTurnId = "";
@@ -348,8 +377,39 @@ export class VoiceService {
    * 送入一块 16k 单声道 PCM。识别是流式的：每块都会回一个 partial，
    * 端点检测命中（用户说完了）就提交给引擎。
    */
+  /** 11-10 建 MOSS-Live 全双工连接；成功=true（通话走远程），失败=false（回落本地）。 */
+  private async startRemote(threadId: string): Promise<boolean> {
+    const cfg = remoteConfigOf(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id);
+    const client = new MossLiveRealtime(cfg, {
+      onUserPartial: (text) => this.deps.emit({ type: "partial", text }),
+      onUserFinal: (text) => this.deps.emit({ type: "final", text }),
+      onAgentDelta: (text) => this.deps.emit({ type: "remoteDelta", text }),
+      onAudio: (base64, sampleRate) => this.deps.emit({ type: "remoteAudio", base64, sampleRate }),
+      onDone: () => { this.deps.emit({ type: "remoteDone" }); if (this.active) this.setState("listening"); },
+      onBarge: () => { this.deps.emit({ type: "remoteBarge" }); if (this.active) this.setState("listening"); },
+      onError: (message) => { if (this.active) this.fail(message); },
+    });
+    try {
+      await client.connect();
+    } catch (error: any) {
+      client.close();
+      this.deps.log("error", `MOSS-Live 实时连接失败，回落本地语音：${error?.message ?? error}`);
+      this.deps.emit({ type: "error", message: `MOSS-Live 连不上（${error?.message ?? error}），已回落本地语音` });
+      return false;
+    }
+    this.remote = client;
+    this.threadId = threadId;
+    this.mode = "conversation";
+    this.active = true;
+    this.setState("listening");
+    this.deps.log("info", "MOSS-Live 全双工实时通话已建立");
+    return true;
+  }
+
   async handleAudio(samples: Float32Array): Promise<void> {
-    if (!this.active || !this.asr) return;
+    if (!this.active) return;
+    if (this.remote) { this.remote.feed(float32ToPcm16Base64(samples)); return; }
+    if (!this.asr) return;
     let result: any;
     try {
       result = await this.asr.request("feed", { samples });
@@ -502,6 +562,8 @@ export class VoiceService {
   /** 引擎事件：只关心正文增量与回合生命周期（思考/工具内容不朗读）。 */
   handleCodexEvent(event: any): void {
     if (!this.active) return;
+    // MOSS-Live 全双工：对话由服务端完成，不消费引擎回合事件。
+    if (this.remote) return;
     if (event?.kind !== "notification") return;
     const params = event.params ?? {};
     if (params.threadId && this.threadId && String(params.threadId) !== this.threadId) return;
@@ -579,12 +641,12 @@ export class VoiceService {
       /* 模型在、档案没了/参考文本空：同样显式失败（⛔ 不许静默换内置音色）。 */
       throw new Error("你选中的克隆音色档案已不可用（档案被删除或缺少参考文本）—— 到 设置 → 语音通话 重新选择，或点「改回内置音色」");
     }
-    /* 10-26：合成引擎（vits / Kokoro）；装配在独立模块（本文件受守卫【265】棘轮，只许缩不许长）。
-     * ⛔ 优先级：克隆音色 > Kokoro > vits（克隆分支在上面先返回）。
+    /* 10-26：合成引擎装配在独立模块（本文件受守卫【265】棘轮，只许缩不许长）。
+     * 11-11 移除 Kokoro 后本地只剩 vits；克隆音色分支在上面先返回。
      */
     const pick = buildEngineWorkerData({
       modelsRoot: this.deps.modelsRoot, engine: this.currentSettings?.tts?.engine,
-      numThreads, sherpaPath, isEnabled: (kind) => isVoiceResourceEnabled(this.settingsNow(), kind),
+      numThreads, sherpaPath,
     });
     if (pick.note) this.deps.log("info", pick.note);
     return pick.workerData;
@@ -623,6 +685,7 @@ export class VoiceService {
    */
   async barge(): Promise<{ ok: boolean }> {
     if (!this.active) return { ok: false };
+    if (this.remote) { this.remote.cancel(); this.deps.emit({ type: "remoteBarge" }); this.setState("listening"); return { ok: true }; }
     const threadId = this.threadId;
     const turnId = this.currentTurnId;
     this.setState("listening");
@@ -691,7 +754,7 @@ export class VoiceService {
    *    不能靠「空合成一句」—— 合成本身要几秒，反而会把第一句真正的播报排在它后面。
    */
   private async ensurePreviewWorker(sherpaPath: string, wanted: string, numThreads: number): Promise<VoiceWorkerClient> {
-    /* ⛔ key 必须带引擎：换引擎后模型不同（vits ↔ kokoro），复用旧 worker = 听着还是旧引擎。 */
+    /* ⛔ key 必须带引擎：换引擎后模型不同，复用旧 worker = 听着还是旧引擎。 */
     const key = `${wanted}|${numThreads}|${this.currentSettings?.tts?.engine ?? "vits"}`;
     if (this.previewTts && this.previewTts.alive && this.previewTtsKey === key) {
       this.schedulePreviewDispose();

@@ -35,7 +35,7 @@ export type Settings = {
   /* 10-26：合成引擎三选一。⛔ 渲染层与 electron 各有一份字面量（两边互不 import），
      加字段必须**两边同改**（electron/voice/voice-settings.ts 的 VoiceSettings.tts.engine）。 */
   tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number;
-    engine?: "vits" | "kokoro" | "emotivoice"; };
+    engine?: "vits" | "emotivoice"; };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };
@@ -48,6 +48,8 @@ export type Settings = {
   announce: { enabled: boolean };
   /** 11-10 远程实时语音模型配置（MOSS-Live 等，见 electron/voice/model-provider.ts）。 */
   remote?: Record<string, { baseUrl?: string; model?: string; apiKey?: string }>;
+  /** 实时通话后端：local = 本地链路（默认）；moss-live = 远程全双工（连不上自动回落）。 */
+  call?: { backend?: "local" | "moss-live" };
 };
 
 /**
@@ -134,7 +136,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           <PageInfo
             label="基础语音模型"
             helpKey="voice"
-            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」。不装它，语音通话与默认播报都用不了；换引擎（Kokoro 等）也仍要靠它做识别。</>}
+            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」。不装它，语音通话与默认播报都用不了。</>}
           />
         </div>
         <VoiceSettingsSectionTtsEngines apply={apply} onNotice={onNotice} reloadMeta={reloadMeta} settings={settings} />
@@ -144,7 +146,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         <div className="voice-group-head">
           <span className="voice-group-tag">选声音</span>
           <strong>音色与试听</strong>
-          <span className="voice-group-sub">列表跟着当前引擎变（轻量播报 5 个 / Kokoro 103 个）</span>
+          <span className="voice-group-sub">内置音色列表（轻量播报 5 个）</span>
         </div>
         <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
       </div>

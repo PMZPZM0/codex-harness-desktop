@@ -132,54 +132,6 @@ export function zipvoiceReady(modelsRoot: string): boolean {
 }
 
 /**
- * 可选合成引擎 ②：Kokoro v1.1 int8（中英，103 说话人）。
- *
- * ⛔ 为什么走「归档型资源」而不是逐文件清单：包里的 `espeak-ng-data/` 是 **120 个文件**的目录
- *    （还有 `dict/` 目录），逐文件列清单不现实 —— 与 zipvoice 同一套路：整包下载 → 校验 → 解压。
- *
- * 全部数字为**本机实测**（2026-10-26）：压缩包 147,031,220 字节，解压后 206MB。
- * 官方 RTF（Raspberry Pi 4B）：1/2/3/4 线程 = 7.635 / 4.470 / 3.430 / 3.191
- *    （对比 vits-zh-ll 的 4.275 / 2.494 / 1.840 / 1.593 ⇒ **约慢 1.8 倍**，换来自然度与 103 音色）。
- */
-export const KOKORO_DIR = "kokoro-int8-multi-lang-v1_1";
-export const KOKORO_ARCHIVE = {
-  dir: KOKORO_DIR,
-  /* ⛔⛔ 11-01：上游在 2026-10-26 **重新上传**过这个包，文件内容变了
-     （sha256 a1e94694… → 259c9c8b…，体积 147,031,220 → 147,052,523）。
-     旧值会让下载跑完、sha256 对不上 ⇒ 用户看到「校验失败」，且重试永远失败。
-     判据来源：GitHub release asset 的 digest 字段（比下载 147MB 再算更快）。 */
-  url: "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kokoro-int8-multi-lang-v1_1.tar.bz2",
-  sha256: "259c9c8bc906d6078e4e0570421885dabb68b539c2f970fcbb890a58eeaf3e9c",
-  bytes: 147_052_523,
-  /** 解压后必须存在的关键文件（就绪判定用；体积为实测字节数） */
-  readyFiles: ["model.int8.onnx", "voices.bin", "tokens.txt", "lexicon-zh.txt"],
-  /** 最小合理体积：实测 114,299,010 / 53,790,720 / 1,111 / 2,119,465 ⇒ 取 ~30% 挡半截 */
-  readyFileMinBytes: {
-    "model.int8.onnx": 34_000_000,
-    "voices.bin": 16_000_000,
-    "tokens.txt": 300,
-    "lexicon-zh.txt": 600_000,
-  } as Record<string, number>,
-  /** espeak-ng-data 是目录，只按目录存在 + 文件数判定（解压中断最常见的残留形态） */
-  extra: { espeakDir: "espeak-ng-data", espeakMinFiles: 100 },
-} as const;
-
-/** 判断 Kokoro 语音包是否就绪（关键文件都在且体积达标）。 */
-export function kokoroReady(modelsRoot: string): boolean {
-  const dir = path.join(modelsRoot, KOKORO_DIR);
-  const minOf = KOKORO_ARCHIVE.readyFileMinBytes;
-  const ok = KOKORO_ARCHIVE.readyFiles.every((name) => {
-    try { return statSync(path.join(dir, name)).size >= (minOf[name] ?? 1); } catch { return false; }
-  });
-  if (!ok) return false;
-  try {
-    const espeak = path.join(dir, KOKORO_ARCHIVE.extra.espeakDir);
-    return statSync(espeak).isDirectory()
-      && readdirSync(espeak).length >= KOKORO_ARCHIVE.extra.espeakMinFiles;
-  } catch { return false; }
-}
-
-/**
  * 可选合成引擎 ③：EmotiVoice（网易有道，Apache-2.0）——**真情绪控制**。
  *
  * ⛔ 说明：这套不是 sherpa-onnx 能直接吃的模型。生成器 ONNX 由我们从官方权重导出

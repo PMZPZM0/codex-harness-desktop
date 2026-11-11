@@ -3,26 +3,27 @@
  * 每个优势劣势都写清楚」「模型按需下载，原有的模型保留」）。
  *
  * ⛔ 设计约束（都是踩过的坑，别改回去了）：
- *   · **原有模型保留**：vits-zh-ll 是默认引擎，装了 Kokoro / EmotiVoice 也不会动它，
- *     三个包各自独立目录、独立下载、独立删除。
+ *   · **原有模型保留**：vits-zh-ll 是默认引擎，装了其它可选引擎也不会动它，
+ *     每个包各自独立目录、独立下载、独立删除。
  *   · **不许用 disabled 表达"能不能用"**：EmotiVoice 目前缺推理运行时，按钮照常可点，
  *     点了给**明确说明**（10-20 教训：灰按钮点了没反应是最差体验）。
  *   · 优势/劣势必须写**实测数字**，不写"更快更好"这种空话。
  */
-import { Check, Download, LoaderCircle, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, Download, LoaderCircle, Power, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { ToggleSwitch } from "../SettingsWidgets";
 import { Settings } from "../VoiceSettingsSection";
 import VoiceDevToolsSection from "../VoiceDevToolsSection";
 
 type Props = {
-  apply: (patch: Partial<Settings>) => void;
+  apply: (patch: Partial<Settings>) => Promise<void>;
   onNotice: (m: string) => void;
   settings: Settings;
-  /** 重拉音色表（换引擎后必须调：vits 5 个音色 vs Kokoro 103 个） */
+  /** 重拉音色表（换引擎后必须调：主进程按引擎给音色表） */
   reloadMeta: () => Promise<void>;
 };
 
-type PackId = "vits" | "kokoro" | "emotivoice";
+type PackId = "vits" | "emotivoice";
 
 type PackState = {
   ready: boolean;
@@ -68,25 +69,6 @@ const ENGINES: EngineInfo[] = [
     cons: ["偏机械，几乎没有语气变化", "只有 5 个音色可选", "不能克隆、不能指定情绪"],
   },
   {
-    id: "kokoro",
-    name: "自然多音色",
-    badge: "可选 · 更自然",
-    tagline: "Kokoro v1.1 int8 · 中英 103 音色",
-    role: "想让播报更像真人在说话时用它。",
-    sizeMB: 140,
-    speakerCount: "103 个音色",
-    pros: [
-      "103 个音色（中英），韵律自然度明显好于 VITS",
-      "压缩包仅 140MB（int8），解压后 206MB",
-      "和现有引擎同一套运行时（sherpa-onnx），装完即可切换",
-    ],
-    cons: [
-      "CPU 慢约 1.8 倍（官方 RTF 4.47 vs 2.49 @2 线程）",
-      "需要额外带 espeak-ng 数据（120 个文件的目录）",
-      "音色多但没有情绪控制，仍是「照着念」",
-    ],
-  },
-  {
     id: "emotivoice",
     name: "情感语气",
     badge: "可选 · 有情绪",
@@ -122,10 +104,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       const status: any = await window.codex.voiceModelsStatus();
       setMoss(status?.mossLive ?? null);
       const next: Partial<Record<PackId, PackState>> = {
-        vits: { ready: Boolean(status?.ready), enabled: true, bytes: 0, runnable: true },
-        kokoro: status?.kokoro
-          ? { ready: Boolean(status.kokoro.ready), enabled: status.kokoro.enabled !== false, bytes: status.kokoro.bytes ?? 0, runnable: status.kokoro.runnable !== false }
-          : { ready: false, enabled: true, bytes: 147_031_220, runnable: true },
+        /* ⛔ 11-11 用户实测「点了停用，上面还写着使用中」：基础模型的 enabled 必须从
+           `status.baseEnabled` 取，不能写死 true —— ready（文件在不在）与 enabled（加载不加载）
+           是两个正交维度，只回一个必然自相矛盾。 */
+        vits: { ready: Boolean(status?.ready), enabled: status?.baseEnabled !== false, bytes: 0, runnable: true },
         emotivoice: status?.emotivoice
           ? {
               ready: Boolean(status.emotivoice.ready),
@@ -160,7 +142,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         if (event?.type === "downloadDone") void refresh();
         return;
       }
-      if (target !== "kokoro" && target !== "emotivoice") return;
+      if (target !== "emotivoice") return;
       if (event?.type === "download") {
         setProgress({ pack: target, percent: Number(event.percent ?? -1), message: String(event.message ?? "下载中…") });
       } else if (event?.type === "downloadDone") {
@@ -174,7 +156,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           if (!cancelled) onNotice(msg);
           setFlash({ pack: target, kind: cancelled ? "info" : "err", text: msg });
         } else {
-          const msg = target === "kokoro" ? "Kokoro 已就绪，可以点「用它」切换" : "情感语音模型已下载（还缺推理运行时，暂不能合成）";
+          const msg = "情感语音模型已下载（还缺推理运行时，暂不能合成）";
           onNotice(msg);
           setFlash({ pack: target, kind: "ok", text: msg });
         }
@@ -185,7 +167,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
   const current: PackId = useMemo(() => {
     const id = settings?.tts?.engine;
-    return id === "kokoro" || id === "emotivoice" ? id : "vits";
+    return id === "emotivoice" ? id : "vits";
   }, [settings]);
 
   /* MOSS-Live 配置草稿：地址/模型从已存配置回填；密钥不回显（只留占位），保存时留空=沿用旧密钥。 */
@@ -194,12 +176,37 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     setMossDraft((d) => ({ ...d, baseUrl: savedMoss?.baseUrl ?? d.baseUrl, model: savedMoss?.model ?? d.model }));
   }, [savedMoss?.baseUrl, savedMoss?.model]);
 
-  const saveMoss = useCallback(() => {
+  const callBackend = settings?.call?.backend === "moss-live";
+  /* ⛔ 用户填过 https://…/v1/audio/speech：那是普通语音合成（TTS）HTTP 接口，
+     实时通话要的是 Realtime WebSocket（wss）。不拦下就会得到一个「配置成功但连不上的开关」。 */
+  const mossLooksLikeTts = /\/audio\/speech\b/i.test(String(savedMoss?.baseUrl ?? ""));
+
+  const saveMoss = useCallback(async () => {
+    const baseUrl = mossDraft.baseUrl.trim();
+    const model = mossDraft.model.trim();
     const apiKey = mossDraft.apiKey.trim() || savedMoss?.apiKey || "";
-    apply({ remote: { ...(settings?.remote ?? {}), "moss-live": { baseUrl: mossDraft.baseUrl.trim(), model: mossDraft.model.trim(), apiKey } } });
+    if (!baseUrl || !model || !apiKey) {
+      onNotice("接口地址、模型、API 密钥都要填");
+      return;
+    }
+    await apply({ remote: { ...(settings?.remote ?? {}), "moss-live": { baseUrl, model, apiKey } } });
     setMossDraft((d) => ({ ...d, apiKey: "" }));
-    onNotice("MOSS-Live 配置已保存（实时推理运行时接入后即可启用）");
-  }, [apply, mossDraft, onNotice, savedMoss?.apiKey, settings?.remote]);
+    /* ⛔ 保存后必须重读主进程状态，否则卡片一直挂着旧的「未配置」（用户实测点名）。 */
+    await refresh();
+    onNotice(/\/audio\/speech\b/i.test(baseUrl)
+      ? "配置已保存；但这是语音合成（TTS）地址，实时通话还需要 Realtime WebSocket 地址"
+      : "MOSS-Live 配置已保存");
+  }, [apply, mossDraft, onNotice, refresh, savedMoss?.apiKey, settings?.remote]);
+
+  /** 实时通话后端开关：开 = 通话走 MOSS-Live，连不上自动回落本地语音（VoiceService 里有回落）。 */
+  const setCallBackend = useCallback(async (next: boolean) => {
+    if (next) {
+      if (!moss?.configured) { onNotice("请先保存接口地址、模型和 API 密钥，再开启实时通话"); return; }
+      if (mossLooksLikeTts) { onNotice("当前地址是语音合成（TTS）接口，不是实时通话接口：请改填 Realtime WebSocket 地址后再开启"); return; }
+    }
+    await apply({ call: { backend: next ? "moss-live" : "local" } });
+    onNotice(next ? "实时通话将走 MOSS-Live（连不上会自动回落本地语音）" : "实时通话已切回本地语音");
+  }, [apply, moss?.configured, mossLooksLikeTts, onNotice]);
 
   /* ⛔ 11-01 用户实测「取消不了」：主进程早就有 `voice:tts-pack-cancel`（abort 掉下载用的
      AbortController），但界面从来没接 —— 卡片上只有「下载中…」没有取消入口；而上面那张
@@ -257,6 +264,14 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       onNotice("这个引擎的模型还没下载，先点「下载」");
       return;
     }
+    /* ⛔ 停用 ≠ 可用：文件还在磁盘但主进程不会加载它。点「用它」必须先引导去启用，
+       否则用户会以为切过去了、实际通话仍旧不出声。 */
+    if (state && state.enabled === false) {
+      onNotice(id === "vits"
+        ? "基础语音模型已停用：请先在本卡的「启用」按钮恢复（文件还在，无需重新下载）"
+        : "该引擎已停用，请先重新启用再切换");
+      return;
+    }
     if (id !== "vits" && state && !state.runnable) {
       onNotice(`模型已下载，但还缺推理运行时（约 287MB），运行时接入后才能用它合成；现在仍用「${packLabel(current)}」`);
       return;
@@ -269,9 +284,11 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     setFlash({ pack: id, kind: "info", text: msg });
   }, [apply, current, onNotice, packs, reloadMeta, settings]);
 
-  /* ⛔ 10-26：「当前」也要说真话 —— 设置里选的是它，但没装就合成不了。
-     另：三个都没装时整块给一句明确指路（用户原话「我模型都没下载呢」）。 */
-  const currentReady = Boolean(packs[current]?.ready);
+  /* ⛔ 10-26：「当前」也要说真话 —— 设置里选的是它，但没装就合成不了；
+     停用的模型文件还在（ready=true）同样不能算「可用」（11-11 用户实测
+     「点了停用，上面还写着使用中」）。 */
+  const currentReady = Boolean(packs[current]?.ready) && packs[current]?.enabled !== false;
+  const currentDisabled = Boolean(packs[current]?.ready) && packs[current]?.enabled === false;
   const anyReady = Object.values(packs).some((p) => Boolean(p?.ready));
 
   return (
@@ -280,19 +297,19 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         <Sparkles size={15} />
         <span>合成引擎</span>
         <span className="voice-card-value">
-          当前：{packLabel(current)}{currentReady ? "" : " · 未安装"}
+          当前：{packLabel(current)}{currentReady ? "" : currentDisabled ? " · 已停用" : " · 未安装"}
         </span>
       </div>
       <div className="voice-card-body">
         <div className="voice-card-hint">
-          各引擎独立安装、互不干扰：下载新的不会动旧的，删掉新的旧的照样能用；切换后通话与播报都用它。
+          轻量播报（vits-zh-ll）跟着基础语音模型一起装，不额外下载；通话与播报都用它。
         </div>
         {!anyReady && (
           <div className="voice-engine-empty">
             <TriangleAlert size={13} />
             <span>
-              现在<strong>一个合成引擎都还没装</strong>，语音通话与播报都无法出声。
-              轻量播报随「基础语音模型」一起装 —— 用下方「轻量播报」卡里的「下载模型 / 本地导入」；其它引擎包各自单独下载。
+              现在<strong>合成引擎还没装</strong>，语音通话与播报都无法出声。
+              轻量播报随「基础语音模型」一起装 —— 用下方「轻量播报」卡里的「下载模型 / 本地导入」。
             </span>
           </div>
         )}
@@ -303,18 +320,19 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           {ENGINES.filter((engine) => engine.id !== "emotivoice").map((engine) => {
             const state = packs[engine.id];
             const ready = Boolean(state?.ready);
+            const enabled = state?.enabled !== false;
             const selected = current === engine.id;
             /* ⛔⛔ 10-26 用户实测：「我都没下载，怎么显示使用中」——
                `使用中` 是**能力声明**（能拿它合成），不是"设置里选了它"。
-               原来只比 `current === id` ⇒ 选中但**没装**的引擎照样打「使用中」，
-               同一张卡上还写着「未安装」，自相矛盾。
-               ⇒ 在用 = 选中 **且** 已安装；选中但没装 = 琥珀色「缺模型」。 */
-            const inUse = selected && ready;
+               11-11 又抓到同型另一半：停用后文件仍在（ready=true）却照样打「使用中」，
+               下面却露出「启用」按钮。⇒ 在用 = 选中 **且** 已安装 **且** 未停用。 */
+            const inUse = selected && ready && enabled;
+            const selectedDisabled = selected && ready && !enabled;
             const downloading = busy === engine.id || progress?.pack === engine.id;
             return (
               <div
                 key={engine.id}
-                className={`voice-engine-card${inUse ? " is-active" : ""}${selected && !ready ? " is-pending" : ""}${ready ? " is-ready" : ""}`}
+                className={`voice-engine-card${inUse ? " is-active" : ""}${(selected && !ready) || selectedDisabled ? " is-pending" : ""}${ready ? " is-ready" : ""}`}
               >
                 <div className="voice-engine-head">
                   <div className="voice-engine-title">
@@ -326,14 +344,17 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                   </div>
                   <div className="voice-engine-head-right">
                     {inUse && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+                    {selectedDisabled && (
+                      <span className="voice-engine-flag is-missing"><Power size={12} />已停用</span>
+                    )}
                     {selected && !ready && (
                       <span className="voice-engine-flag is-missing"><TriangleAlert size={12} />缺模型</span>
                     )}
                     <div className="voice-engine-actions">
                       {ready ? (
                         <>
-                          <button className="secondary-setting" onClick={() => choose(engine.id)} disabled={inUse}>
-                            {inUse ? "使用中" : "用它"}
+                          <button className="secondary-setting" onClick={() => choose(engine.id)} disabled={inUse} title={selectedDisabled ? "先在下方卡片点「启用」" : undefined}>
+                            {inUse ? "使用中" : selectedDisabled ? "已停用" : "用它"}
                           </button>
                           {engine.id !== "vits" && (
                             <button className="secondary-setting" onClick={() => void remove(engine.id)} title="删除这个引擎的模型文件">
@@ -353,7 +374,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                 <div className="voice-engine-meta">
                   <span>{engine.speakerCount}</span>
                   <span>{engine.id === "vits" ? "随基础模型" : `${Math.round(engine.sizeMB)}MB`}</span>
-                  <span className={`voice-engine-state${ready ? " ok" : ""}`}>{ready ? "已安装" : "未安装"}</span>
+                  <span className={`voice-engine-state${ready && enabled ? " ok" : ""}`}>{!ready ? "未安装" : enabled ? "已安装" : "已停用"}</span>
                 </div>
 
                 <div className="voice-engine-role">{engine.role}</div>
@@ -410,8 +431,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           })}
         </div>
 
-        {/* 11-10 远程实时语音模型（MOSS-Live）：留接口+配置卡。不下载模型、需 API 密钥；
-            实时推理运行时待接入 ⇒ 如实提示，不假装能用。 */}
+        {/* 11-10 远程实时语音模型（MOSS-Live）：不下载模型、需 API 密钥。
+            11-11 接通实时通话链路：开启后 VoiceService 走全双工 S2S，连不上自动回落本地。 */}
         <div className="voice-engine-card voice-engine-remote">
           <div className="voice-engine-head">
             <div className="voice-engine-title">
@@ -428,11 +449,11 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             </div>
           </div>
           <div className="voice-engine-role">
-            远程实时对话模型，需提供方 API 密钥。当前已留好语音模型接口与配置；实时推理运行时接入后才会真正发声。
+            远程实时对话模型，需提供方 API 密钥。保存配置并开启下方开关后，语音通话走 MOSS-Live 全双工对话。
           </div>
           <div className="voice-remote-form">
             <label>接口地址
-              <input value={mossDraft.baseUrl} placeholder="https://…（MOSS-Live API 基址）"
+              <input value={mossDraft.baseUrl} placeholder="wss://…/v1/realtime（实时 WebSocket 接口）"
                 onChange={(e) => setMossDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
             </label>
             <label>模型
@@ -445,14 +466,27 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                 onChange={(e) => setMossDraft((d) => ({ ...d, apiKey: e.target.value }))} />
             </label>
             <div className="voice-remote-actions">
-              <button className="secondary-setting" onClick={saveMoss}>保存配置</button>
+              <button className="secondary-setting" onClick={() => void saveMoss()}>保存配置</button>
               {moss?.docs && (
                 <button className="secondary-setting" onClick={() => void window.codex.openExternal(moss.docs!)}>官方文档</button>
               )}
             </div>
           </div>
+          <div className="voice-remote-toggle">
+            <div>
+              <strong>用作实时通话后端</strong>
+              <span>开 = 通话走 MOSS-Live；连不上会自动回落本地语音，不会静默失败。</span>
+            </div>
+            <ToggleSwitch checked={callBackend} label="用作实时通话后端" onChange={(next) => void setCallBackend(next)} />
+          </div>
+          {mossLooksLikeTts && (
+            <div className="voice-engine-feedback is-err">
+              <TriangleAlert size={12} />
+              <span>当前地址是普通语音合成（TTS）接口（/audio/speech），实时通话需要提供方的 Realtime WebSocket 地址。</span>
+            </div>
+          )}
           <div className="voice-engine-note">
-            对话内容会发送到提供方服务器；离线不可用。配置保存后仍不能本地合成（实时运行时待接入），不会静默失败。
+            对话内容会发送到提供方服务器；离线不可用。开启后语音通话改由服务端端到端生成，本地模型仍可用于播报。
           </div>
         </div>
       </div>

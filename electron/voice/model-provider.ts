@@ -1,7 +1,7 @@
 /**
  * 语音模型提供方注册表（11-10 用户令：「加一个 moss live 模型，留一个语音模型接口」）。
  *
- * 这是语音模型的**扩展接口**：现有本地离线引擎（vits/kokoro/emotivoice）与远程实时模型
+ * 这是语音模型的**扩展接口**：现有本地离线引擎（vits/emotivoice）与远程实时模型
  * （MOSS-Live）都登记成 `VoiceModelProvider`。新增模型 = 往 `VOICE_MODEL_PROVIDERS` 加一条，
  * 界面/状态按 kind 分流，⛔ 不再往 UI 里硬编码卡片。
  *
@@ -9,7 +9,8 @@
  * ⛔ 两类模型生命周期不同：
  *   · local-onnx：下载模型包 → 校验 → 本机 sherpa-onnx 推理（现有链路）；
  *   · remote-live：不下载模型，填远端地址/模型/密钥，走提供方 API（全双工实时）。
- *     目前只**留接口与配置**，实时推理运行时待接入 ⇒ runnable=false，UI 如实提示。
+ *     实时通道已按 OpenAI Realtime 兼容协议接入；`runnable` 仍为 false 表示「未对真实提供方逐条验证」，
+ *     UI 据此不夸口，只如实说明可能需适配。
  */
 
 export type VoiceModelKind = "local-onnx" | "remote-live";
@@ -47,13 +48,13 @@ export const MOSS_LIVE_PROVIDER: VoiceModelProvider = {
   role: "远程实时对话模型：自然打断、边听边说。不占本机磁盘，需提供方 API 密钥。",
   docs: "https://platform.mosi.cn/docs/models/moss-live",
   remoteFields: [
-    { key: "baseUrl", label: "接口地址", placeholder: "https://…（MOSS-Live API 基址）" },
+    { key: "baseUrl", label: "接口地址", placeholder: " wss://…/v1/realtime（Realtime WebSocket）" },
     { key: "model", label: "模型", placeholder: "moss-live" },
     { key: "apiKey", label: "API 密钥", placeholder: " sk-…", secret: true },
   ],
   runnable: false,
   pros: ["全双工：边听边说、自然打断，接近真人对话", "不下载模型、不占本机磁盘与 CPU", "表现力与自然度高于本地离线 TTS"],
-  cons: ["需联网与提供方 API 密钥，离线不可用", "实时推理运行时待接入，当前仅留接口与配置", "对话内容会发送到提供方服务器"],
+  cons: ["需联网与提供方 API 密钥，离线不可用", "实时通道按 OpenAI Realtime 兼容协议接入；提供方协议不同时需适配", "对话内容会发送到提供方服务器"],
 };
 
 /** 现有本地引擎登记成同一接口（数据与 model-manifest / UI 文案保持一致）。 */
@@ -62,11 +63,6 @@ export const VOICE_MODEL_PROVIDERS: VoiceModelProvider[] = [
     id: "vits", label: "轻量播报", kind: "local-onnx", runnable: true,
     tagline: "vits-zh-ll · 装完基础模型就能用", role: "默认引擎，随基础语音模型一起装。",
     pros: ["体积最小、CPU 最快", "零额外依赖，装完即用"], cons: ["偏机械、只有 5 个音色"],
-  },
-  {
-    id: "kokoro", label: "自然多音色", kind: "local-onnx", runnable: true,
-    tagline: "Kokoro v1.1 int8 · 中英 103 音色", role: "想让播报更像真人时用它。",
-    pros: ["103 音色、韵律自然", "与现有同一套 sherpa-onnx 运行时"], cons: ["CPU 慢约 1.8 倍", "无情绪控制"],
   },
   {
     id: "emotivoice", label: "情感语气", kind: "local-onnx", runnable: false,

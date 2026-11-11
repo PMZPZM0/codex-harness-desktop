@@ -2045,6 +2045,15 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 }
 .voice-remote-form input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .voice-remote-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.voice-remote-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 9px; padding: 8px 10px; border-radius: 9px;
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+  border: 1px solid var(--line);
+}
+.voice-remote-toggle > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.voice-remote-toggle strong { font-size: 12px; color: var(--text); font-weight: 600; }
+.voice-remote-toggle > div span { font-size: 11px; line-height: 1.45; color: var(--muted); }
 
 /* ── 功能域：分类卡片（10-31 用户：「这个分类卡片展示」）── */
 .domains-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }

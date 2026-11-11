@@ -2188,6 +2188,86 @@ const CHECKS = [
         JSON.stringify(note));
     },
   },
+  {
+    id: "voice-engine-state",
+    name: "🎙 语音设置：停用如实回显 / MOSS-Live 保存即刷新 / Kokoro 已移除（11-11）",
+    run: async (h) => {
+      if (!(await h.exists(".settings-modal"))) {
+        await h.eval(`document.querySelector(".sidebar-settings")?.click()`);
+        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 10000 });
+        await wait(500);
+      }
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="语音通话"; }); b&&b.click(); return !!b; })()`);
+      await h.waitFor(`!!document.querySelector(".voice-settings")`, { label: "语音设置页", timeoutMs: 15000 });
+      await wait(800);
+      const read = () => h.eval(`(function(){
+        const cards=[...document.querySelectorAll(".voice-engine-card")];
+        const vits=cards.find(function(c){ return (c.innerText||"").includes("轻量播报"); });
+        const remote=document.querySelector(".voice-engine-remote");
+        const toggle=remote?remote.querySelector(".voice-remote-toggle"):null;
+        return {
+          names:cards.map(function(c){ return (c.querySelector(".voice-engine-name-row strong")?.textContent||"").trim(); }),
+          vitsText:(vits?.innerText||"").replace(/\\s+/g," ").trim(),
+          remoteState:(remote?.querySelector(".voice-engine-state")?.textContent||"").trim(),
+          hasToggle:!!toggle,
+          toggleText:toggle?(toggle.textContent||"").replace(/\\s+/g," ").trim():""
+        };
+      })()`);
+      const ui = await read();
+      h.check("① Kokoro（自然多音色）卡片已移除",
+        Boolean(ui && !ui.names.some(function(n){ return /自然多音色|Kokoro/i.test(n); })), JSON.stringify(ui?.names));
+      h.check("② MOSS-Live 卡有「用作实时通话后端」开关",
+        Boolean(ui && ui.hasToggle && /实时通话后端/.test(ui.toggleText)), JSON.stringify({ hasToggle: ui?.hasToggle, toggleText: ui?.toggleText }));
+
+      /* 用户实测「配置完状态都不刷新」：走真实表单保存，徽标必须立刻变「已配置」。 */
+      const originalRemote = await h.eval(`window.codex.voiceSettingsGet().then(function(r){ return (r && r.settings && r.settings.remote) || {}; })`).catch(() => ({}));
+      try {
+        const filled = await h.eval(`(function(){
+          const form=document.querySelector(".voice-remote-form"); if(!form) return 0;
+          const set=function(el,v){ const d=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value"); d.set.call(el,v); el.dispatchEvent(new Event("input",{bubbles:true})); };
+          const ins=form.querySelectorAll("input"); if(ins.length<3) return 0;
+          set(ins[0],"wss://e2e.invalid/v1/realtime");
+          set(ins[1],"moss-live-e2e");
+          set(ins[2],"sk-e2e-test");
+          return ins.length;
+        })()`);
+        h.check("③ 前置：MOSS-Live 表单三个字段都能填", filled === 3, String(filled));
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-remote-actions button")].find(function(x){ return (x.textContent||"").trim()==="保存配置"; }); b&&b.click(); return !!b; })()`);
+        let after = null;
+        for (let i = 0; i < 20; i += 1) {
+          await wait(250);
+          after = await read();
+          if (after && after.remoteState.includes("已配置")) break;
+        }
+        h.check("④ 保存后卡片状态立即变「已配置」（⛔ 不再挂旧「未配置」）",
+          Boolean(after && after.remoteState.includes("已配置")), JSON.stringify(after && after.remoteState));
+      } finally {
+        await h.eval(`window.codex.voiceSettingsSet({ remote: ${JSON.stringify(originalRemote)} })`).catch(() => undefined);
+      }
+
+      /* 用户实测「停用不行」：①主进程 baseEnabled 必须真翻转；②已装模型时引擎卡显示「已停用」；
+         ③任何情况下都不能再写「使用中」（测试 profile 没装模型时显示「未安装」也不算可用）。 */
+      const prevStatus = await h.eval(`window.codex.voiceModelsStatus()`).catch(() => null);
+      const prevEnabled = Boolean(prevStatus && prevStatus.baseEnabled !== false);
+      const installed = Boolean(prevStatus && prevStatus.ready);
+      try {
+        await h.eval(`window.codex.voiceResourceSetEnabled({ kind: "base", enabled: false })`);
+        const afterDisable = await h.eval(`window.codex.voiceModelsStatus()`).catch(() => null);
+        let uiAfter = null;
+        for (let i = 0; i < 20; i += 1) {
+          await wait(250);
+          uiAfter = await read();
+          if (uiAfter && !/使用中/.test(uiAfter.vitsText)) break;
+        }
+        h.check("⑤ 停用真的落到主进程（baseEnabled=false）+ 引擎卡不再写「使用中」" + (installed ? "，并显示「已停用」" : "（本 profile 未装模型，显示「未安装」）"),
+          Boolean(afterDisable && afterDisable.baseEnabled === false && uiAfter && !/使用中/.test(uiAfter.vitsText)
+            && (!installed || /已停用/.test(uiAfter.vitsText))),
+          JSON.stringify({ baseEnabled: afterDisable && afterDisable.baseEnabled, installed, vits: uiAfter && uiAfter.vitsText.slice(0, 120) }));
+      } finally {
+        await h.eval(`window.codex.voiceResourceSetEnabled({ kind: "base", enabled: ${prevEnabled ? "true" : "false"} })`).catch(() => undefined);
+      }
+    },
+  },
 ];
 
 if (flag("list")) {
