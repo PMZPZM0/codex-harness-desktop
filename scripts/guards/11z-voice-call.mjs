@@ -144,7 +144,7 @@ ok(/if \(version < 5\)[\s\S]{0,600}?Math\.abs\(speed - 1\.0\) < 1e-9[\s\S]{0,400
      ③ 设置页有可选的音质档（否则用户只能吃默认）。 */
 ok(/numSteps: cfgRef\.current\.numSteps/.test(announceHook) && !/numSteps: ANNOUNCE_NUM_STEPS\b\)/.test(announceHook),
   "播报的合成步数取设置（`cfgRef.current.numSteps`），不再写死常量 —— 写死 = 用户选了「清晰」也没用");
-ok(/numSteps: options\?\.numSteps \?\? this\.currentSettings\.tts\.numSteps/.test(voiceService),
+ok(/numSteps: options\?\.numSteps \?\? (?:this\.currentSettings|settings)\.tts\.numSteps/.test(voiceService),
   "speak 把 numSteps 下发到 worker（漏下发 = worker 用默认 4，设置里的档位形同虚设）");
 ok(/tts: \{ \.\.\.settings\.tts, numSteps: Number\(v\) \}/.test(announceCard),
   "设置页「播报音质」三档可选（写回 tts.numSteps，与播报/通话/试听共用）");
