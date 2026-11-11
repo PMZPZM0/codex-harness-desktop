@@ -76,6 +76,8 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  /** ⛔ 建群成功后的那一屏（群 id + 群名）：给"成员名单 + 管理员提醒"，⛔ 不是直接关窗。 */
+  const [done, setDone] = useState<{ id: string; name: string } | null>(null);
 
   /* 每次打开都从干净状态开始（⛔ 不要留着上次填了一半的群名） */
   useEffect(() => {
@@ -87,6 +89,7 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
     setPicked([]);
     setQuery("");
     setError("");
+    setDone(null);
   }, [open]);
 
   const reloadCatalog = useCallback(async () => {
@@ -198,11 +201,50 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
       setError(r.error ?? "建群失败");
       return;
     }
-    onCreated?.(r.id ?? "");
-    onClose();
+    /* ⛔⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
+       原来建完直接关窗，用户进群看到一堆人名却不知道下一步做什么（更不知道该设管理员）。
+       ⇒ 先给一屏"建好了 + 都有谁 + 还缺一个管理员（它管什么）"，再进群。 */
+    setDone({ id: r.id ?? "", name: name.trim() });
   };
 
   if (!open) return null;
+
+  /* ⛔⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
+     建完先给一屏：**都有谁**（名单）+ **还缺一个管理员**（它管什么），再进群。 */
+  if (done) {
+    return (
+      <div className="team-sheet" role="dialog" aria-modal="true" aria-label="群已创建">
+        <div className="team-sheet__card team-created">
+          <h2 className="team-created__title">群已建好：{done.name}</h2>
+          <p className="team-created__lead">成员（{picked.length} 位伙伴 + 你）：</p>
+          <ul className="team-created__members">
+            {picked.map((p) => (
+              <li key={`${p.kind}:${p.key}`}>
+                <strong>{p.name}</strong>
+                {p.profession && <em>{p.profession}</em>}
+              </li>
+            ))}
+          </ul>
+          <div className="team-created__hint">
+            <strong>还差一个管理员</strong>
+            <p>
+              管理员是群里的<strong>默认推进人</strong>：你不 @ 任何人时由它接话、拆解、分派、验收、收口；
+              出问题也找它，不用你追着每个人问。
+            </p>
+            <p>进群后输入框上方会提示你设置，也可以在「群设置 → 群管理员」里随时改。</p>
+          </div>
+          <footer className="team-sheet__foot">
+            <span className="team-sheet__foot-hint">团群不用设：由团主理人担任</span>
+            <button
+              type="button"
+              className="is-primary"
+              onClick={() => { onCreated?.(done.id); onClose(); }}
+            >进群</button>
+          </footer>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

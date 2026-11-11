@@ -3481,3 +3481,92 @@
 }
 .team-tasks__meta { font-size: 10.5px; color: var(--muted); }
 .team-tasks__more { margin: 6px 0 0; font-size: 10.5px; color: var(--muted); }
+
+/* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」。
+   提醒条与输入卡同一根轴（同一个 padding-inline 公式），⛔ 不要再另起一套边距；
+   视觉上必须"是提示，不是错误"——用中性底色 + 强调色的感叹号，不用 danger 红。 */
+.team-admin-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 6px;
+  padding: 8px max(14px, calc((100% - var(--team-column)) / 2));
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-secondary, #57606a);
+  background: var(--warning-soft, rgba(245, 158, 11, 0.10));
+  border-top: 1px solid var(--warning-border, rgba(245, 158, 11, 0.22));
+  border-bottom: 1px solid var(--warning-border, rgba(245, 158, 11, 0.22));
+}
+.team-admin-hint__icon {
+  flex: 0 0 auto;
+  width: 15px; height: 15px;
+  margin-top: 2px;
+  border-radius: 50%;
+  background: var(--warning, #f59e0b);
+  color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 15px;
+  text-align: center;
+}
+.team-admin-hint__body { min-width: 0; }
+.team-admin-hint__body strong { color: var(--text, #1f2328); font-weight: 600; }
+.team-admin-hint__body p { margin: 2px 0 0; }
+.team-admin-hint__set {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.35));
+  border-radius: 999px;
+  background: transparent;
+  color: var(--warning, #b45309);
+  font-size: 11px;
+  cursor: pointer;
+}
+.team-admin-hint__set:hover { background: var(--warning-soft, rgba(245, 158, 11, 0.18)); }
+.team-admin-hint__close {
+  flex: 0 0 auto;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--faint, #9ca3af);
+  font-size: 14px; line-height: 1;
+  cursor: pointer;
+}
+.team-admin-hint__close:hover { color: var(--text, #1f2328); }
+
+/* ⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
+   这一屏只做三件事：确认建好（群名）/ 都有谁（名单）/ 还缺管理员（它管什么）。 */
+.team-created__title { margin: 0 0 10px; font-size: 15px; font-weight: 600; color: var(--text, #1f2328); }
+.team-created__lead { margin: 0 0 6px; font-size: 12px; color: var(--faint, #8b949e); }
+.team-created__members {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.team-created__members li {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.10));
+  font-size: 12px;
+}
+.team-created__members li strong { font-weight: 600; color: var(--text, #1f2328); }
+.team-created__members li em { font-style: normal; font-size: 11px; color: var(--faint, #8b949e); }
+.team-created__hint {
+  margin-bottom: 14px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  background: var(--warning-soft, rgba(245, 158, 11, 0.10));
+  border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.22));
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-secondary, #57606a);
+}
+.team-created__hint strong { display: block; margin-bottom: 3px; color: var(--text, #1f2328); }
+.team-created__hint p { margin: 0 0 3px; }
+.team-created__hint p:last-child { margin-bottom: 0; }

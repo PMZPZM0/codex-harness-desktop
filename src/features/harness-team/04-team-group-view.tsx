@@ -617,9 +617,21 @@ export function TeamGroupView({
     return !catalog.some((t) => t.kind === "member" && t.teamId === ta.teamId
       && (teamMemberIdOf(t) === ta.memberId || t.key === ta.memberId));
   };
+  /* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」。
+     只在**真的用得着**时提醒：普通群、没设管理员、还有伙伴可派、用户没关过。
+     ⛔ 关掉就记住（localStorage），别每次进群都弹一遍。 */
+  const adminHintKey = "harness-team-admin-hint:" + String(group.id ?? "");
+  const [adminHintDismissed, setAdminHintDismissed] = useState<boolean>(() => {
+    try { return localStorage.getItem(adminHintKey) === "1"; } catch { return false; }
+  });
+  const adminHintVisible = !teamSlotOf && !String(group.adminId ?? "")
+    && !adminHintDismissed && group.members.some((m) => m.targetKind !== "team");
+  const dismissAdminHint = () => {
+    setAdminHintDismissed(true);
+    try { localStorage.setItem(adminHintKey, "1"); } catch { /* 隐私模式写不了：本轮不再显示即可 */ }
+  };
   const roleOf = (id: string) => {
-    if (adminSeatOf(id)) return "管理员";
-    const teamAuthor = parseTeamAuthorId(id);
+    if (adminSeatOf(id)) return "管理员";    const teamAuthor = parseTeamAuthorId(id);
     if (teamAuthor) {
       const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && (teamMemberIdOf(t) === teamAuthor.memberId || t.key === teamAuthor.memberId));
       return kid?.profession || "团成员";
@@ -1980,6 +1992,23 @@ export function TeamGroupView({
             {/* ⛔ 11-11 独立板块：异步执行反馈（自己订阅 group-async-run 事件，⛔ 不占群聊域状态）。
                 放在输入卡上方 —— 用户要的是"派了几件、谁在跑、谁交回了"一眼可见。 */}
             <AsyncRunPanel groupId={group.id} />
+            {/* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」。
+               没有管理员的群 = 没人兜底推进（不 @ 人时只有"上一位回复的伙伴"能接，再没有就停住）。
+               这里在**用得着的地方**提醒，并把管理员到底管什么写清楚；可关掉，⛔ 不反复弹。 */}
+            {adminHintVisible && (
+              <div className="team-admin-hint" role="status">
+                <span className="team-admin-hint__icon" aria-hidden>!</span>
+                <div className="team-admin-hint__body">
+                  <strong>这个群还没设管理员</strong>
+                  <p>
+                    管理员 = 群里的默认推进人：你不 @ 任何人时由它接话、拆解、分派、验收、收口；
+                    出了问题也找它，不用你追着每个人问。
+                  </p>
+                </div>
+                <button type="button" className="team-admin-hint__set" onClick={() => setShowSettings(true)}>去设置</button>
+                <button type="button" className="team-admin-hint__close" title="不再提醒" onClick={dismissAdminHint} aria-label="不再提醒">×</button>
+              </div>
+            )}
 
             <footer className="team-group__composer">
               {/* 11-08 用户令「询问，审批，计划，等等全部跟对话框一样」：伙伴跑起来后的

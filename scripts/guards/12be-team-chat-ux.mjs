@@ -495,6 +495,12 @@ const catalog = [
       && /const adminId = isTeamGroup[\s\S]{0,80}teamSlotMember/.test(teamIpcSrc)
       && /你是这个群的\*\*管理员\*\*/.test(talk),
       "管理员=群级身份（团群由主理人担任）：标签 / 消息头角色 / 名册 / 提示词同一处判定");
+    /* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」「创建完成普通专家群之后，弹窗提醒+成员名单」。 */
+    ok(/team-admin-hint/.test(hostView) && /adminHintVisible/.test(hostView)
+      && /harness-team-admin-hint:/.test(hostView)
+      && /群已建好/.test(read("src/features/harness-team/12-team-create.tsx"))
+      && /还差一个管理员/.test(read("src/features/harness-team/12-team-create.tsx")),
+      "没设管理员给提醒（可关且记住）+ 建群完成屏给成员名单与管理员作用");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
