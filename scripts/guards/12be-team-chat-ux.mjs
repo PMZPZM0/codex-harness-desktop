@@ -521,6 +521,14 @@ const catalog = [
       && /team-dispatch:/.test(teamIpcSrc) && /team-run:/.test(teamIpcSrc)
       && /reconcileInterruptedDispatches\(\)/.test(read("electron/features/boot.ts")),
       "启动对账被打断的派活（群里说明 + ⛔ 不自动重派）");
+    /* ⛔⛔ 11-12 用户「断之前好像也没有接力」：排片跑完 / 成员交回的回交被按 teamId 的
+       "还有人在跑"门槛吞掉 —— 同一个团可被多个群同时调用 ⇒ 别的群在跑，本群就永远停在最后产出。
+       ⛔ 回交只按本次排片（relayInFlight）判，不许按 teamId 跨群判。 */
+    ok(/if \(lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS/.test(teamIpcSrc)
+      && /\&\& !relayInFlight && chainBudget > 0 && leadCatchUps/.test(teamIpcSrc)
+      && !/const stillRunning = teamRunStore\.activeRunList\(\)/.test(teamIpcSrc)
+      && !/const membersStillRunning = teamRunStore\.activeRunList\(\)/.test(teamIpcSrc),
+      "接力不串群：排片跑完/成员交回必回交主理人，⛔ 不再按 teamId 判断有没有人在跑");
     /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
        判据必须排除提问/询问，⛔ 不能只看字数。 */
     ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)

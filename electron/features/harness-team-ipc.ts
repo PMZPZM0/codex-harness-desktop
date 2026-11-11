@@ -1700,17 +1700,14 @@ async function runDispatchRounds(
                 await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
               }
               relayInFlight = false;
-              /* ⛔⛔ 11-11：排片跑完必须把话头交回主理人做阶段通报 / 验收 / 收口。
-                 否则群里停在最后一位成员的文件卡片上，用户看到的就是「任务 2/2 完成了，然后没了」。 */
+              /* ⛔⛔ 11-12 用户截图「这样没有后续了呀」「断之前好像也没有接力」—— 真因在这里：
+                 原来用 `teamRunStore.activeRunList().some(run => run.teamId === groupTeamId)` 判
+                 "还有人在跑"，但**同一个专家团可以同时被多个群调用** ⇒ A 群排片跑完，
+                 看到 B 群有 run 在跑就 return，A 群永远停在最后一位成员的产出上（用户看到"没接力"）。
+                 ⛔ `queue` 上面已经 `await` 全部跑完，这里根本不需要再判一次"还有没有人在跑"。
+                 ⇒ 排片跑完就回交主理人，只保留次数 / 预算 / canRun 三道安全阀。 */
               const lead = roster.find((m) => m.teamRole === "lead");
-              /* ⛔⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」。
-                 这两处 `[系统]` 催办是刷屏的主要源头 —— 原来**每一批/每一环**交回都催它
-                 「先向群里通报阶段进度」，4 个成员就刷 4 条「进度 2/4」。⇒ 两改：
-                 ① 同团队还有成员在跑就不催（等最后一批一次汇总）；
-                 ② 催办也不再要求报进度，只要结论。 */
-              const stillRunning = teamRunStore.activeRunList()
-                .some((run) => String(run.teamId ?? "") === groupTeamId);
-              if (lead && !stillRunning && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
+              if (lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
                 leadCatchUps += 1;
                 chainBudget -= 1;
                 void runOne(lead as unknown as GroupTarget, 0, caller,
@@ -1768,12 +1765,10 @@ async function runDispatchRounds(
             const leadSeats = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
             return leadSeats.has(x) && leadSeats.has(y);
           };
-          /* ⛔⛔ 11-12 用户：「主代理一直刷屏」—— 同团队还有成员在跑就不回喂，
-             等最后一批交回时一次汇总（⛔ 不再每环催一次「通报阶段进度」）。 */
-          const membersStillRunning = teamRunStore.activeRunList()
-            .some((run) => String(run.teamId ?? "") === groupTeamId);
+          /* ⛔⛔ 11-12 同一处串群误判：原来这里也按 `teamId` 判"还有成员在跑"，
+             别的群在跑同一个团就会把本群的回交吞掉。⇒ 只看 `relayInFlight`（**本次排片**是否在跑）
+             就够了：排片在跑时由上面的收尾统一回交，排片外的成员单独交回则这里回交。 */
           const mustHandBack = Boolean(isTeamGroup && admin && !sameSeat(admin.id, partner.id)
-            && !membersStillRunning
             && !relayInFlight && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
           if ((verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
             if (mustHandBack) leadCatchUps += 1;
