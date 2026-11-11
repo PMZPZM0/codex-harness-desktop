@@ -240,6 +240,11 @@
 .thread-row:not(.is-member-row):hover > button:first-child > small {
   visibility: hidden;
 }
+/* 11-11 用户实测：菜单开着时鼠标移到菜单里，行不再 hover ⇒ 时间又冒出来和三个点叠住。
+   菜单开着就同样隐藏时间（保留占位，标题不位移）。 */
+.thread-row.menu-open > button:first-child > small {
+  visibility: hidden;
+}
 .thread-actions {
   justify-content: flex-end;
   align-items: center;

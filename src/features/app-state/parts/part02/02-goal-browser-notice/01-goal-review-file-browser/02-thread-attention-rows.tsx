@@ -10,6 +10,7 @@ import { createPortal } from "react-dom";
 import { DispatchMenu, DispatchBadge } from "../../../../../../features/dispatch";
 import { getBossThreads } from "../../../../../../features/boss-group-view";
 import { getTeamTalkThreads, subscribeTeamTalkThreads } from "../../../../../../lib/team-talk-threads.mjs";
+import { setDialogAnchor } from "../../../../../../lib/dialog-anchor";
 import {
   AlertTriangle,
   Archive,
@@ -252,7 +253,9 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
      *   本地覆盖表 → threads 内存表 → 引擎会话名 → 别名记录（+ 广播）。
      *   侧栏菜单、侧栏双击标题、顶栏双击、斜杠命令走的是**同一个函数**，所以四处的名字永远一致。
      */
-    const renameSession = async (threadId: string, current: string) => {
+    const renameSession = async (threadId: string, current: string, anchor?: DOMRect | null) => {
+      /* 11-11 用户令：小窗口就近弹 ⇒ 把触发处坐标交给气泡壳（菜单项 / 标题行）。 */
+      setDialogAnchor(anchor ?? null);
       const next = await bag.openAppPrompt("改名字", String(current ?? "").trim()).catch(() => null);
       if (!next?.trim()) return;
       await bag.renameThread(threadId, next.trim());
@@ -368,7 +371,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
       style={rowColor ? ({ "--row-color": rowColor } as any) : undefined}
     >
       <button title={entry.rolloutMissing ? "该会话的历史记录文件已丢失，无法打开" : bag.runningThreadIds.has(entry.id) || entry.status === "inProgress" || entry.status === "running" ? "任务运行中" : bag.unreadDoneIds.has(entry.id) ? "任务已完成，点击查看" : "双击改名字"} onClick={() => { bag.clearThreadDoneUnread(entry.id); if (entry.rolloutMissing) { bag.showToast("会话记录已丢失", "该会话的历史记录文件（rollout）已不在磁盘上，引擎无法恢复内容。可归档该会话，或新建会话继续。"); return; } void bag.openThread(entry.id); }}>
-        <span className={`thread-row-title-line${shownBadge ? " has-tag" : ""}`} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{shownBadge && (<span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined}>{shownBadge}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
+        <span className={`thread-row-title-line${shownBadge ? " has-tag" : ""}`} onDoubleClick={(event) => { event.preventDefault(); event.stopPropagation(); void renameSession(entry.id, titleText, event.currentTarget.getBoundingClientRect()); }}><span className="thread-row-name" title={aliasMeaning && aliasLabel ? `${titleText} —— ${aliasMeaning}` : titleText}>{titleText}</span>{shownBadge && (<span className={`thread-row-tags${rowBadges.length > 1 ? " is-cyclable" : ""}`} onClick={rowBadges.length > 1 ? (event) => { event.preventDefault(); event.stopPropagation(); cycleThreadBadge(entry.id, rowBadges.length); } : undefined}>{shownBadge}</span>)}</span>{showRowTime && <small>{timeAgo(entry.updatedAt)}</small>}
       </button>
       <div className="thread-actions">
         {/* 11-05 用户令：「鼠标放上来只有右侧动，标签不要跟着动」——
@@ -406,7 +409,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             {/* ⛔ 11-01 用户令：**只留一个改名入口**。
                 「重命名」和「改笔名」本来是同一个操作（笔名就是会话名），两个选项让人以为分工不同。
                 现在统一叫「改名字」：写别名记录 + 写引擎会话名 + 广播（子会话里的「上级：X」跟着变）。 */}
-            <button onClick={() => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText); }}><PenLine size={13} /><span>改名字</span></button>
+            <button onClick={(event) => { bag.setThreadRowMenu(null); void renameSession(entry.id, titleText, event.currentTarget.getBoundingClientRect()); }}><PenLine size={13} /><span>改名字</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); openTagEditor({ kind: "thread", id: entry.id, title: rawTitle, value: customTag ?? null }); }}><Tag size={13} /><span>{customTag ? "编辑标签" : "添加标签"}</span>{
               /* ⛔ 11-08 用户（截图）：「添加标签后面的『点标签可切换』怎么也没了」。
                  原条件是 `length > 1` —— 只有 1 枚标签的行（例如只有「专家」身份徽标）就把提示藏了，
@@ -441,8 +444,10 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             </div>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.forkThreadFromSidebar(entry); }}><GitBranch size={13} /><span>分支</span></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.copyThreadReferenceId(entry); }}><Copy size={13} /><span>复制会话 ID</span></button>
-            <button className="danger" onClick={async () => {
+            <button className="danger" onClick={async (event) => {
+              const anchor = event.currentTarget.getBoundingClientRect();
               bag.setThreadRowMenu(null);
+              setDialogAnchor(anchor);
               if (!(await bag.openAppConfirm(
                 "删除会话",
                 `会话「${entry.name || entry.preview || "未命名"}」及其中的消息、工具记录将被永久删除，此操作无法撤销。`,

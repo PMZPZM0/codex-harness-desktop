@@ -2953,3 +2953,39 @@
   padding: 6px 0 0 2px;
 }
 .turn-outputs-body .completed-changes { margin-top: 0; }
+
+/* ── 11-11 归属气泡（prompt / confirm 就近弹）────────────────────────────── */
+.dialog-anchor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10030;
+  border: 0;
+  background: transparent;
+}
+.dialog-anchor-card {
+  position: fixed;
+  z-index: 10031;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .22);
+}
+.dialog-anchor-card::before {
+  content: "";
+  position: absolute;
+  top: var(--arrow-top, 24px);
+  width: 0;
+  height: 0;
+  transform: translateY(-50%);
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+}
+.dialog-anchor-card.side-right::before { left: -6px; border-right: 7px solid var(--panel); }
+.dialog-anchor-card.side-left::before { right: -6px; border-left: 7px solid var(--panel); }
+.dialog-anchor-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.dialog-anchor-text { margin: 0; font-size: 12.5px; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
+.dialog-anchor-card .app-prompt-form { display: flex; flex-direction: column; gap: 8px; }

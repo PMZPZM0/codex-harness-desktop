@@ -47,6 +47,20 @@ export function teamToolUsedSince(threadId: string, since: number): boolean {
   return Boolean(at && at >= Number(since || 0));
 }
 
+/* ⛔⛔ 11-12 真机（群消息实证：同一成员 21:20 / 21:21 连续三次收到同一份任务，
+   成员自己都回「这是第三次收到同一份任务派发，交付物状态没有变化」）：
+   主理人被催办 / 回喂后会重新调工具，把同一批活再派一遍 —— 白烧 token、群里刷屏。
+   ⇒ 群聊派活加**短时幂等**：同 team + 同 member + 同任务正文，10 分钟内只真启动一次；
+     重复那次只回执「已派过，还在跑」，⛔ 不再起 turn。
+   ⛔ 失败的不缓存（允许重派：失败往往正是要重试的那一次）；上限清空只防 Map 无限涨。 */
+const recentDispatch = new Map<string, number>();
+const DISPATCH_DEDUPE_MS = 10 * 60 * 1000;
+
+function dispatchSignature(teamId: string, memberId: string, query: string): string {
+  return `${String(teamId ?? "")}::${String(memberId ?? "")}::`
+    + String(query ?? "").replace(/\s+/g, " ").trim().slice(0, 240);
+}
+
 /** 从事件里取出这次调用的参数（`arguments` 可能是字符串，也可能是对象）。 */
 function readArgs(raw: unknown): any {
   if (typeof raw === "string") {
@@ -125,7 +139,27 @@ export async function handleTeamToolCall(deps: {
       await respond(id, { contentItems: [{ type: "inputText", text: "team_phase_invoke 需要至少一个成员任务（tasks 为空）" }], success: false });
       return true;
     }
-    const names = tasks.map((task: any) => String(task?.memberId ?? "")).filter(Boolean).join("、");
+    /* ⛔ 短时幂等：先筛掉「10 分钟内派过的同一件活」（规则见文件头 recentDispatch 的注释）。 */
+    const nowTs = Date.now();
+    const fresh = tasks.filter((task: any) => {
+      const at = recentDispatch.get(dispatchSignature(teamId, String(task?.memberId ?? ""), String(task?.query ?? "")));
+      return !(at && nowTs - at < DISPATCH_DEDUPE_MS);
+    });
+    if (!fresh.length) {
+      await respond(id, {
+        contentItems: [{
+          type: "inputText",
+          text: "[已派过] 这 " + tasks.length + " 件刚派出去、成员还在跑，⛔ 不重复派。等他们交回产出后宿主会通知你验收。",
+        }],
+        success: true,
+      });
+      return true;
+    }
+    for (const task of fresh) {
+      recentDispatch.set(dispatchSignature(teamId, String(task?.memberId ?? ""), String(task?.query ?? "")), nowTs);
+    }
+    if (recentDispatch.size > 300) recentDispatch.clear();
+    const names = fresh.map((task: any) => String(task?.memberId ?? "")).filter(Boolean).join("、");
     /* ⛔ 11-11 用户令「加一个异步执行反馈效果板块」：派单这一刻就把整批任务广播出去，
        板块自己订阅 `group-async-run` 事件（零 IPC、独立板块）。⛔ 只广播事实，不在这里
        维护任何状态 —— 关掉群弹窗再打开时板块按事件重建即可。 */
@@ -138,18 +172,25 @@ export async function handleTeamToolCall(deps: {
         } as never);
       } catch { /* 广播失败不影响派活 */ }
     };
-    emitAsync("batch", { total: tasks.length, note: names });
-    for (const task of tasks) {
+    emitAsync("batch", { total: fresh.length, note: names });
+    for (const task of fresh) {
       emitAsync("queued", { memberId: String(task?.memberId ?? ""), name: String(task?.memberId ?? "") });
     }
-    const ack = `[已派单] 已把 ${tasks.length} 件活交给 ${names || "团队成员"}，他们正在后台跑，产出会自己发进群。\n`
+    const ack = `[已派单] 已把 ${fresh.length} 件活交给 ${names || "团队成员"}，他们正在后台跑，产出会自己发进群。\n`
       + `⛔ 这一轮只回一句「已派给谁、在等什么」：不要写「收口」、不要重复派同一位、不要代写成员的产出。\n`
       + `成员全部交回后，宿主会把产出交回给你，那时再验收 / 推进下一阶段 / 收口。`;
-    await respond(id, { contentItems: [{ type: "inputText", text: ack }], success: true });
+    /* ⛔⛔ 11-12 顺序要点：**先启动后台成员任务，再回执**。原顺序在回执抛异常时（通道异常 / 引擎忙）
+       成员永远不会被启动 —— 用户看到「已派单」，实际没人干活，比"卡住"更难查。 */
     void (async () => {
-      const settled = await Promise.allSettled(tasks.map((task: any) => invokeTeamMemberCore({
+      const settled = await Promise.allSettled(fresh.map((task: any) => invokeTeamMemberCore({
         ...base, memberId: String(task?.memberId ?? ""), query: String(task?.query ?? ""),
       })));
+      /* ⛔ 失败的不留缓存：失败往往正是该重试的那一次。 */
+      settled.forEach((entry, i) => {
+        if (entry.status === "rejected") {
+          recentDispatch.delete(dispatchSignature(teamId, String((fresh[i] as any)?.memberId ?? ""), String((fresh[i] as any)?.query ?? "")));
+        }
+      });
       const done = settled.filter((entry) => entry.status === "fulfilled").length;
       const failed = settled.length - done;
       const gid = groupOfTeam(teamId);
@@ -161,6 +202,7 @@ export async function handleTeamToolCall(deps: {
         + "验收这一轮产出，再决定下一步派谁；只有全部阶段验收完才写「收口」给最终结论。"
         + "⛔ 不要重复派同一位同一件活，也不要代写成员产出。");
     })().catch(() => undefined);
+    await respond(id, { contentItems: [{ type: "inputText", text: ack }], success: true });
     return true;
   }
 

@@ -430,6 +430,16 @@ const catalog = [
       && /relayGroupLead\(gid, teamId,/.test(fallback)
       && /Promise\.allSettled\(tasks\.map/.test(fallback),
       "群聊团队工具异步排片：立刻回已派单 + 后台并发跑成员 + 完成后回喂主理人");
+    /* ⛔⛔ 11-12 真机（群消息实证）：同一成员在 21:20 / 21:21 连续三次收到同一份任务，
+       它自己都回「这是第三次收到同一份任务派发」—— 主理人被催办/回喂后重派。
+       ⇒ 群聊派活必须有**短时幂等**：同 team + 同 member + 同正文 10 分钟内只起一次 turn，
+         重复那次只回执；失败的不缓存（允许重试）。 */
+    ok(/const recentDispatch = new Map/.test(fallback)
+      && /DISPATCH_DEDUPE_MS/.test(fallback)
+      && /const fresh = tasks\.filter/.test(fallback)
+      && /\[已派过\]/.test(fallback)
+      && /entry\.status === "rejected"[\s\S]{0,120}recentDispatch\.delete/.test(fallback),
+      "群聊派活短时幂等：同一件活 10 分钟内不重复起 turn（⛔ 失败的那次仍允许重派）");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)

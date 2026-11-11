@@ -148,6 +148,8 @@ import {
   Bell,
   CheckCheck,
 } from "lucide-react";
+import { takeDialogAnchor } from "../../lib/dialog-anchor";
+import { AnchoredDialogCard, type DialogAnchor } from "../shared/AnchoredDialog";
 import VoiceCallFloat from "../../components/VoiceCallFloat";
 import { PageInfo, HelpOpenContext } from "../../components/SettingsHead";
 import { parseUserRefs, userDisplayText, userMessageMatchesInput, firstUserTextInTurn, cleanThreadDisplayTitle, extractThreadReferenceIds, stripThreadReferenceIds, formatThreadReferenceBlock, buildThreadReferencePayload, type ParsedUserRefs, type ThreadReferencePayload } from "../../lib/user-refs";
@@ -533,6 +535,17 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     (threadId: string, silent?: boolean) => cancelRateLimitRetry(threadId, silent),
   ), [cancelRateLimitRetry]);
 
+  /* 11-11 用户令：「所有的小窗口就近弹、哪里点击就在哪里、带归属箭头」。
+     打开那一刻取走锚点并冻结形态（有锚点 → 气泡，否则居中模态）；⛔ 不逐次渲染重新取。 */
+  const promptHostRef = useRef<{ for: unknown; anchor: DialogAnchor | null }>({ for: null, anchor: null });
+  const confirmHostRef = useRef<{ for: unknown; anchor: DialogAnchor | null }>({ for: null, anchor: null });
+  if (appPrompt && promptHostRef.current.for !== appPrompt) promptHostRef.current = { for: appPrompt, anchor: takeDialogAnchor() };
+  if (!appPrompt && promptHostRef.current.for) promptHostRef.current = { for: null, anchor: null };
+  if (appConfirm && confirmHostRef.current.for !== appConfirm) confirmHostRef.current = { for: appConfirm, anchor: takeDialogAnchor() };
+  if (!appConfirm && confirmHostRef.current.for) confirmHostRef.current = { for: null, anchor: null };
+  const promptAnchor = promptHostRef.current.anchor;
+  const confirmAnchor = confirmHostRef.current.anchor;
+
   return (
     // 设置页的「?」要能打开完整帮助弹窗（气泡里的「查看完整帮助」）：用 context 注入 setHelpKey。
     // 不走逐页 prop —— 二十多个设置页头部每处都传一遍回调，漏传的那个会静默点不开。
@@ -673,30 +686,56 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     这里**无条件挂载**、组件自己决定画不画。⛔ 别在 AppView 里再判一次版本（判定只能一处）。 */}
       <WhatsNewDialog />
 <AppViewTaskComposer app={app} />
-      {appPrompt && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appPrompt.resolve(null); setAppPrompt(null); } }}>
-        <div className="agent-ask-card" role="dialog" aria-modal="true" aria-label={appPrompt.title}>
-          <header><PenLine size={16} /><strong>{appPrompt.title}</strong></header>
+      {appPrompt && (promptBubble ? (
+        <AnchoredDialogCard ariaLabel={appPrompt.title} onClose={() => { appPrompt.resolve(null); setAppPrompt(null); }}>
+          <div className="dialog-anchor-head"><PenLine size={15} /><strong>{appPrompt.title}</strong></div>
           <form className="agent-ask-free app-prompt-form" onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem("promptText") as HTMLInputElement | HTMLTextAreaElement; appPrompt.resolve(input.value); setAppPrompt(null); }}>
             {appPrompt.multiline
-              ? <textarea ref={(node) => { appPromptInputRef.current = node; }} name="promptText" rows={6} defaultValue={appPrompt.value} />
+              ? <textarea ref={(node) => { appPromptInputRef.current = node; }} name="promptText" rows={5} defaultValue={appPrompt.value} />
               : <input ref={(node) => { appPromptInputRef.current = node; }} name="promptText" defaultValue={appPrompt.value} />}
             <div className="app-prompt-actions">
               <button type="button" className="secondary-setting" onClick={() => { appPrompt.resolve(null); setAppPrompt(null); }}>取消</button>
               <button type="submit" className="primary-setting"><Check size={14} />确定</button>
             </div>
           </form>
+        </AnchoredDialogCard>
+      ) : (
+        <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appPrompt.resolve(null); setAppPrompt(null); } }}>
+          <div className="agent-ask-card" role="dialog" aria-modal="true" aria-label={appPrompt.title}>
+            <header><PenLine size={16} /><strong>{appPrompt.title}</strong></header>
+            <form className="agent-ask-free app-prompt-form" onSubmit={(e) => { e.preventDefault(); const input = e.currentTarget.elements.namedItem("promptText") as HTMLInputElement | HTMLTextAreaElement; appPrompt.resolve(input.value); setAppPrompt(null); }}>
+              {appPrompt.multiline
+                ? <textarea ref={(node) => { appPromptInputRef.current = node; }} name="promptText" rows={6} defaultValue={appPrompt.value} />
+                : <input ref={(node) => { appPromptInputRef.current = node; }} name="promptText" defaultValue={appPrompt.value} />}
+              <div className="app-prompt-actions">
+                <button type="button" className="secondary-setting" onClick={() => { appPrompt.resolve(null); setAppPrompt(null); }}>取消</button>
+                <button type="submit" className="primary-setting"><Check size={14} />确定</button>
+              </div>
+            </form>
+          </div>
         </div>
-      </div>}
-      {appConfirm && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appConfirm.resolve(false); setAppConfirm(null); } }}>
-        <div className="agent-ask-card app-confirm-card" role="dialog" aria-modal="true" aria-label={appConfirm.title}>
-          <header><Trash2 size={16} /><strong>{appConfirm.title}</strong></header>
-          <p>{appConfirm.text}</p>
+      ))}
+      {appConfirm && (confirmBubble ? (
+        <AnchoredDialogCard ariaLabel={appConfirm.title} onClose={() => { appConfirm.resolve(false); setAppConfirm(null); }}>
+          <div className="dialog-anchor-head"><Trash2 size={15} /><strong>{appConfirm.title}</strong></div>
+          <p className="dialog-anchor-text">{appConfirm.text}</p>
           <div className="app-prompt-actions">
             <button type="button" className="secondary-setting" onClick={() => { appConfirm.resolve(false); setAppConfirm(null); }}>取消</button>
             <button type="button" className="danger primary-setting" onClick={() => { appConfirm.resolve(true); setAppConfirm(null); }}>{appConfirm.confirmLabel}</button>
           </div>
+        </AnchoredDialogCard>
+      ) : (
+        <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) { appConfirm.resolve(false); setAppConfirm(null); } }}>
+          <div className="agent-ask-card app-confirm-card" role="dialog" aria-modal="true" aria-label={appConfirm.title}>
+            <header><Trash2 size={16} /><strong>{appConfirm.title}</strong></header>
+            <p>{appConfirm.text}</p>
+            <div className="app-prompt-actions">
+              <button type="button" className="secondary-setting" onClick={() => { appConfirm.resolve(false); setAppConfirm(null); }}>取消</button>
+              <button type="button" className="danger primary-setting" onClick={() => { appConfirm.resolve(true); setAppConfirm(null); }}>{appConfirm.confirmLabel}</button>
+            </div>
+          </div>
         </div>
-      </div>}
+      ))}
       {memoryPreview && <div className="modal-backdrop agent-ask-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setMemoryPreview(null); }}>
         <div className="agent-ask-card memory-preview-card" role="dialog" aria-modal="true" aria-label="记忆全文">
           <header>

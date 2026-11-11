@@ -13,6 +13,7 @@ import { settingsNav } from "../helpers";
 import { hk } from "../../../lib/hk";
 import { getEntityTagState, openTagEditor, subscribeEntityTags } from "../../../lib/entity-tags.mjs";
 import { getThreadRowColors, subscribeThreadRowColors } from "../../../lib/thread-row-colors.mjs";
+import { setDialogAnchor } from "../../../lib/dialog-anchor";
 import { EntityTagEditorHost } from "../../../components/EntityTagEditor";
 import { useShortcuts } from "../../shortcuts";
 import { bindingMatches } from "../../../lib/shortcut-catalog.mjs";
@@ -933,10 +934,16 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                               <span className="project-menu-arrow" style={{ top: projectMenuPos.arrowTop, left: projectMenuPos.left - 6 }} />
                             )}
                             <div className="project-menu" style={projectMenuPos ? { top: projectMenuPos.top, left: projectMenuPos.left } : undefined}>
-                              <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
+                              <button onClick={(event) => { const anchor = event.currentTarget.getBoundingClientRect(); setProjectMenu(null); setDialogAnchor(anchor); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
                               <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                               <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
-                              <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
+                              <button className="danger" onClick={async (event) => {
+                                const anchor = event.currentTarget.getBoundingClientRect();
+                                setProjectMenu(null);
+                                setDialogAnchor(anchor);
+                                if (!(await app.openAppConfirm("删除项目", `项目「${projectNameOf(cwd)}」下的全部会话与记录将被永久删除，此操作无法撤销。`, "永久删除"))) return;
+                                unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd);
+                              }}><Trash2 size={14} />删除项目（含全部会话）</button>
                             </div>
                           </>,
                             document.body,
