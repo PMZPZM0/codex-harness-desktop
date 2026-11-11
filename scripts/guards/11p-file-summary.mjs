@@ -283,6 +283,9 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
       "「本轮产物」默认折叠，文件引用卡与已更改文件都在折叠里");
     ok(!/<InlineFileCards/.test(itemView) && !/import \{ InlineFileCards \}/.test(itemView),
       "消息正文不再单独画文件卡（⛔ 与折叠里重复）");
+    ok(/\.turn-outputs > summary \{[\s\S]{0,160}display: inline-flex;/.test(read("src/styles/04-cards-tools.css"))
+      && !/\.turn-outputs > summary svg:last-child \{ margin-left: auto/.test(read("src/styles/04-cards-tools.css")),
+      "「本轮产物」标题不拉整行（紧凑 inline-flex，折叠箭头紧跟文字）");
     ok(/\.turn-media-card\.is-image \{[\s\S]{0,160}width: 112px;/.test(mediaCss)
       && /\.turn-media-card\.is-image \{[\s\S]{0,200}height: 112px;/.test(mediaCss)
       && /\.turn-media-card\.is-image \.turn-media-meta \{[\s\S]{0,40}display: none;/.test(mediaCss),

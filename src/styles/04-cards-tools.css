@@ -2926,32 +2926,30 @@
 }
 
 /* ── 11-11 用户令：「加一个本轮产物字样，点击折叠展开，默认折叠；文件卡片和已修改文件都放进去」────
-   媒体预览卡在折叠**上面**始终可见；折叠里依次是：正文文件引用卡 → 本轮产物卡 → 已更改文件汇总。 */
-.turn-outputs {
-  margin-top: 8px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: var(--panel);
-  overflow: hidden;
-}
+   媒体预览卡在折叠**上面**始终可见；折叠里依次是：正文文件引用卡 → 本轮产物卡 → 已更改文件汇总。
+   11-11 追加：「不用拉这么长卡片，展开折叠图标在本轮产物后面就行」⇒ 标题行改成紧凑的
+   inline-flex（无整行底色/边框），箭头紧跟文字，不再用 margin-left:auto 推到最右。 */
+.turn-outputs { margin-top: 8px; }
 .turn-outputs > summary {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
   cursor: pointer;
   list-style: none;
   font-size: 13px;
   user-select: none;
 }
+.turn-outputs > summary:hover { background: var(--panel-2, var(--panel)); }
 .turn-outputs > summary::-webkit-details-marker { display: none; }
-.turn-outputs > summary svg:last-child { margin-left: auto; color: var(--muted); transition: transform .15s ease; }
+.turn-outputs > summary svg:last-child { color: var(--muted); transition: transform .15s ease; }
 .turn-outputs[open] > summary svg:last-child { transform: rotate(180deg); }
 .turn-outputs-count { color: var(--muted); font-size: 12px; }
 .turn-outputs-body {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 2px 12px 12px;
+  padding: 6px 0 0 2px;
 }
 .turn-outputs-body .completed-changes { margin-top: 0; }
