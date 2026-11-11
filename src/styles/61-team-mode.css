@@ -372,10 +372,11 @@
   white-space: nowrap;
 }
 /* ⛔ 11-12 用户：「管理员设置就不能再展示普通标了」——管理员要和职业标**看得出区别**，
-   否则它只是"另一个灰标"，用户还是分不清谁是负责人。 */
+   否则它只是"另一个灰标"，用户还是分不清谁是负责人。
+   ⛔ 用**实心**（身份）而不是另一个浅色底（分类）；`--warning*` 项目里没有，之前那版是土黄 fallback。 */
 .team-group__member-tag.is-admin {
-  background: var(--warning-soft, rgba(245, 158, 11, 0.16));
-  color: var(--warning, #f59e0b);
+  background: var(--link);
+  color: #fff;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -3482,9 +3483,11 @@
 .team-tasks__meta { font-size: 10.5px; color: var(--muted); }
 .team-tasks__more { margin: 6px 0 0; font-size: 10.5px; color: var(--muted); }
 
-/* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」。
-   提醒条与输入卡同一根轴（同一个 padding-inline 公式），⛔ 不要再另起一套边距；
-   视觉上必须"是提示，不是错误"——用中性底色 + 强调色的感叹号，不用 danger 红。 */
+/* ⛔⛔ 11-12 用户：「这个提醒颜色真的很丑诶，土黄色丑死了」。
+   ⛔ 根因是我引了 `--warning*` —— 项目里**根本没有**这些变量（见 08-settings-engine-update.css:2047
+   的注释，守卫【160】也会报"被引用但从未定义"），于是只剩 fallback 的 amber = 土黄，还是一大片底色。
+   ⇒ 提示条改**中性面板**（跟随主题明暗的灰），只留一个蓝色小点做"这里有件事"的信号；
+     按钮做成蓝色文字按钮。⛔ 不再用大面积彩色底。 */
 .team-admin-hint {
   display: flex;
   align-items: flex-start;
@@ -3493,46 +3496,46 @@
   padding: 8px max(14px, calc((100% - var(--team-column)) / 2));
   font-size: 12px;
   line-height: 1.65;
-  color: var(--text-secondary, #57606a);
-  background: var(--warning-soft, rgba(245, 158, 11, 0.10));
-  border-top: 1px solid var(--warning-border, rgba(245, 158, 11, 0.22));
-  border-bottom: 1px solid var(--warning-border, rgba(245, 158, 11, 0.22));
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
 }
 .team-admin-hint__icon {
   flex: 0 0 auto;
   width: 15px; height: 15px;
   margin-top: 2px;
   border-radius: 50%;
-  background: var(--warning, #f59e0b);
+  background: var(--link);
   color: #fff;
   font-size: 10px; font-weight: 700; line-height: 15px;
   text-align: center;
 }
 .team-admin-hint__body { min-width: 0; }
-.team-admin-hint__body strong { color: var(--text, #1f2328); font-weight: 600; }
-.team-admin-hint__body p { margin: 2px 0 0; }
+.team-admin-hint__body strong { color: var(--text); font-weight: 600; }
+.team-admin-hint__body p { margin: 2px 0 0; color: color-mix(in srgb, var(--text) 68%, transparent); }
 .team-admin-hint__set {
   flex: 0 0 auto;
   margin-left: auto;
-  padding: 2px 10px;
-  border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.35));
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--link) 34%, transparent);
   border-radius: 999px;
   background: transparent;
-  color: var(--warning, #b45309);
+  color: var(--link);
   font-size: 11px;
   cursor: pointer;
 }
-.team-admin-hint__set:hover { background: var(--warning-soft, rgba(245, 158, 11, 0.18)); }
+.team-admin-hint__set:hover { background: color-mix(in srgb, var(--link) 10%, transparent); }
 .team-admin-hint__close {
   flex: 0 0 auto;
   padding: 0 2px;
   border: 0;
   background: transparent;
-  color: var(--faint, #9ca3af);
+  color: color-mix(in srgb, var(--text) 45%, transparent);
   font-size: 14px; line-height: 1;
   cursor: pointer;
 }
-.team-admin-hint__close:hover { color: var(--text, #1f2328); }
+.team-admin-hint__close:hover { color: var(--text); }
 
 /* ⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
    这一屏只做三件事：确认建好（群名）/ 都有谁（名单）/ 还缺管理员（它管什么）。 */
@@ -3561,13 +3564,15 @@
   margin-bottom: 14px;
   padding: 9px 11px;
   border-radius: 8px;
-  background: var(--warning-soft, rgba(245, 158, 11, 0.10));
-  border: 1px solid var(--warning-border, rgba(245, 158, 11, 0.22));
+  /* ⛔ 11-12 用户：「刚刚那个弹窗也是，丑死了」—— 同一个病：`--warning*` 不存在 ⇒ 土黄大底色。
+     这里也改中性面板（灰底 + 细边），标题保持主文字色，靠字重而不是颜色分层。 */
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
   font-size: 12px;
   line-height: 1.7;
-  color: var(--text-secondary, #57606a);
+  color: color-mix(in srgb, var(--text) 72%, transparent);
 }
-.team-created__hint strong { display: block; margin-bottom: 3px; color: var(--text, #1f2328); }
+.team-created__hint strong { display: block; margin-bottom: 3px; color: var(--text); font-weight: 600; }
 .team-created__hint p { margin: 0 0 3px; }
 .team-created__hint p:last-child { margin-bottom: 0; }
 
