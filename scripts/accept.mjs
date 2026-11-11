@@ -2186,6 +2186,41 @@ const CHECKS = [
       h.check("⑦ 开源声明与跳转按键在位（MIT / 数据本机 / 不自动发布 + 可调 openExternal）",
         Boolean(note && /dsh-media-desk/.test(note.text) && /MIT/.test(note.text) && /不会自动发布/.test(note.text) && note.hasLink && note.canOpen),
         JSON.stringify(note));
+
+      /* 宿主主题变量：缺了会「透明看不见 / 透明遮罩挡住整页」（11-11 用户实测） */
+      const frameEval = async (expression) => {
+        const list = await (await fetch(`http://127.0.0.1:${h.port}/json`)).json();
+        const target = list.find((t) => t.type === "iframe" && String(t.url || "").startsWith(frame.src.replace(/\/$/, "")));
+        if (!target) return null;
+        const ws = new WebSocket(target.webSocketDebuggerUrl);
+        const pending = new Map();
+        let seq = 0;
+        await new Promise((resolve, reject) => { ws.on("open", resolve); ws.on("error", () => reject(new Error("iframe CDP 连接失败"))); });
+        ws.on("message", (data) => { const m = JSON.parse(data.toString()); const slot = pending.get(m.id); if (slot) { pending.delete(m.id); slot(m); } });
+        const send = (method, params = {}) => new Promise((resolve, reject) => {
+          const id = ++seq;
+          const timer = setTimeout(() => { pending.delete(id); reject(new Error(`iframe CDP ${method} 超时`)); }, 8000);
+          pending.set(id, (m) => { clearTimeout(timer); if (m.error) reject(new Error(m.error.message)); else resolve(m.result); });
+          ws.send(JSON.stringify({ id, method, params }));
+        });
+        try {
+          const r = await send("Runtime.evaluate", { expression, returnByValue: true });
+          return r?.result?.value;
+        } finally {
+          ws.close();
+        }
+      };
+      const theme = JSON.parse(await frameEval(`(function(){ const b=getComputedStyle(document.body); return JSON.stringify({ bg:b.backgroundColor, color:b.color, mask:getComputedStyle(document.documentElement).getPropertyValue("--dsw-alias-bg-mask-1").trim(), font:getComputedStyle(document.body).fontFamily.slice(0,20) }); })()`) ?? "null");
+      h.check("⑧ 宿主主题变量生效（页面不透明 / 文字有颜色 / 遮罩有真值）",
+        Boolean(theme && theme.bg !== "rgba(0, 0, 0, 0)" && theme.color !== "rgba(0, 0, 0, 0)" && theme.mask),
+        JSON.stringify(theme));
+
+      await frameEval(`(function(){ const b=[...document.querySelectorAll(".md-topbar button")].find(function(x){ return (x.getAttribute("aria-label")||"")==="设置"; }); b&&b.click(); return 1; })()`);
+      await wait(600);
+      const dlg = JSON.parse(await frameEval(`(function(){ const m=document.querySelector(".md-dialog-mask"); if(!m) return JSON.stringify(null); const s=getComputedStyle(m); const panel=[...m.querySelectorAll("*")].find(function(e){ const b=getComputedStyle(e).backgroundColor; return b && b!=="rgba(0, 0, 0, 0)" && e.getBoundingClientRect().width>200; }); return JSON.stringify({ mask:s.backgroundColor, pe:s.pointerEvents, panel:panel?getComputedStyle(panel).backgroundColor:null }); })()`) ?? "null");
+      h.check("⑨ 工作台弹窗：遮罩可见 + 面板不透明（⛔ 透明遮罩 = 看不见弹窗但整页点不动）",
+        Boolean(dlg && dlg.mask !== "rgba(0, 0, 0, 0)" && dlg.pe !== "none" && dlg.panel && dlg.panel !== "rgba(0, 0, 0, 0)"),
+        JSON.stringify(dlg));
     },
   },
   {

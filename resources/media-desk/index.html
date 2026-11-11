@@ -5,9 +5,71 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>自媒体工作台</title>
 <style>
+  /* ⛔ 开源 dsh-media-desk 的样式全部建立在 DSH 宿主主题变量（--dsw-alias-*）上；
+     宿主没注入这些变量时：背景 → transparent、文字 → 默认黑、弹窗遮罩 → 透明
+     ⇒ 暗色下直接看不见、打开弹窗后整页被透明遮罩挡住（表现为「按键点不了」）。
+     这里按 26 个实际用到的 token 补齐，亮/暗两套跟随系统（Electron nativeTheme）。 */
+  :root {
+    color-scheme: light;
+    --dsw-alias-bg-base: #f5f5f3;
+    --dsw-alias-bg-layer-2: #ffffff;
+    --dsw-alias-bg-mask-1: rgba(15, 23, 42, 0.34);
+    --dsw-alias-border-l2: rgba(15, 23, 42, 0.10);
+    --dsw-alias-border-l4: rgba(15, 23, 42, 0.16);
+    --dsw-alias-label-primary: #1f2328;
+    --dsw-alias-label-primary-inverted: #ffffff;
+    --dsw-alias-label-secondary: #4b5563;
+    --dsw-alias-label-tertiary: #6b7280;
+    --dsw-alias-label-caption: #8b93a1;
+    --dsw-alias-link: #2f6fed;
+    --dsw-alias-danger: #d14343;
+    --dsw-alias-button-primary-fill: #2f6fed;
+    --dsw-alias-button-primary-hover: #2560d8;
+    --dsw-alias-interactive-bg-hover: rgba(15, 23, 42, 0.06);
+    --dsw-alias-interactive-bg-active: rgba(15, 23, 42, 0.10);
+    --dsw-elevation-soft: 0 2px 8px rgba(15, 23, 42, 0.08);
+    --dsw-elevation-panel: 0 8px 24px rgba(15, 23, 42, 0.12);
+    --dsw-elevation-prominent: 0 16px 48px rgba(15, 23, 42, 0.18);
+    --dsw-font-family: "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif;
+    --dsw-radius-xs: 6px;
+    --dsw-radius-sm: 8px;
+    --dsw-radius-md: 12px;
+    --dsw-radius-lg: 16px;
+    --dsw-radius-xl: 20px;
+    --dsw-radius-panel: 16px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --dsw-alias-bg-base: #1b1b1a;
+      --dsw-alias-bg-layer-2: #262625;
+      --dsw-alias-bg-mask-1: rgba(0, 0, 0, 0.52);
+      --dsw-alias-border-l2: rgba(255, 255, 255, 0.10);
+      --dsw-alias-border-l4: rgba(255, 255, 255, 0.16);
+      --dsw-alias-label-primary: #ececeb;
+      --dsw-alias-label-primary-inverted: #101010;
+      --dsw-alias-label-secondary: #b9b9b6;
+      --dsw-alias-label-tertiary: #9a9a97;
+      --dsw-alias-label-caption: #8a8a86;
+      --dsw-alias-link: #7aa7ff;
+      --dsw-alias-danger: #ff7a7a;
+      --dsw-alias-button-primary-fill: #6c98ff;
+      --dsw-alias-button-primary-hover: #7aa7ff;
+      --dsw-alias-interactive-bg-hover: rgba(255, 255, 255, 0.08);
+      --dsw-alias-interactive-bg-active: rgba(255, 255, 255, 0.12);
+      --dsw-elevation-soft: 0 2px 8px rgba(0, 0, 0, 0.35);
+      --dsw-elevation-panel: 0 8px 24px rgba(0, 0, 0, 0.45);
+      --dsw-elevation-prominent: 0 16px 48px rgba(0, 0, 0, 0.55);
+    }
+  }
   html, body, #root { height: 100%; margin: 0; }
-  body { background: transparent; overflow: hidden; }
-  #md-fatal { padding: 24px; font: 13px/1.6 "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif; color: #b14040; white-space: pre-wrap; }
+  body {
+    background: var(--dsw-alias-bg-base);
+    color: var(--dsw-alias-label-primary);
+    font-family: var(--dsw-font-family);
+    overflow: hidden;
+  }
+  #md-fatal { padding: 24px; font: 13px/1.6 var(--dsw-font-family); color: var(--dsw-alias-danger); white-space: pre-wrap; }
 </style>
 </head>
 <body>

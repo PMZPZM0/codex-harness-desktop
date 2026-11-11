@@ -86,6 +86,18 @@ export async function run() {
     "工具请求拼上 media-desk/ 前缀（与界面同一套上游路由）");
   ok(/src="\.\/react\.bundle\.js"/.test(read("resources/media-desk/index.html")),
     "页面用相对路径加载随包脚本（令牌前缀下也能取到）");
+  /* ⛔ 上游样式全部吃 DSH 宿主主题变量（--dsw-alias-*）；缺一个就透明 ——
+     暗色下看不见、弹窗遮罩变透明把整页点死（11-11 用户实测「都透明，看不见 / 按键点不了」）。 */
+  {
+    const vendorPage = read("resources/media-desk/index.html");
+    const tokens = [...new Set(read("resources/media-desk/client.js").match(/--dsw-[a-zA-Z0-9-]+/g) ?? [])];
+    const missing = tokens.filter((token) => !vendorPage.includes(`${token}:`));
+    ok(tokens.length > 0 && missing.length === 0,
+      `宿主主题变量补齐（客户端用到 ${tokens.length} 个；缺失 ${missing.length} 个${missing.length ? "：" + missing.slice(0, 4).join("/") : ""}）`);
+    ok(/background: var\(--dsw-alias-bg-base\)/.test(vendorPage) && /color: var\(--dsw-alias-label-primary\)/.test(vendorPage)
+      && /--dsw-alias-bg-mask-1: rgba\(/.test(vendorPage) && /@media \(prefers-color-scheme: dark\)/.test(vendorPage),
+      "页面底色/文字色/弹窗遮罩都有真值（⛔ 透明遮罩 = 弹窗看不见但整页点不动）");
+  }
   ok(/dsh-media-desk 2\.6\.2/.test(read("THIRD_PARTY_NOTICES.md")) && /woniuniuniu\/dsh-media-desk/.test(read("THIRD_PARTY_NOTICES.md")),
     "第三方声明登记了随包的 dsh-media-desk（MIT + 上游地址）");
   ok(!/safeStorage/.test(codeOnly(ipc)) && !/safeStorage/.test(codeOnly(embed)) && /secure/.test(embed),
