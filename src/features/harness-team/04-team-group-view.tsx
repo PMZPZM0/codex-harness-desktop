@@ -578,7 +578,17 @@ export function TeamGroupView({
       return kid?.name || teamAuthor.memberId;
     }
     const m = group.members.find((x) => x.id === id);
-    if (m) return personNameOf(m);
+    if (m) {
+      /* ⛔⛔ 11-11 真机（用户截图原话：「软件开发团是什么鬼东西」）：@ 整团时作者 id 是**群成员槽本身**
+         （`tgt:team:<team>`，不是 `team:<team>:<member>` 合成 id），而实际在里面说话的是这个团的**主理人**。
+         直接回 `personNameOf(m)` 会让群里冒出一个叫「软件开发专家团」的发言人 —— 用户以为陌生人乱入，
+         也分不清是承枢。⇒ 整团槽一律显示主理人的名字（与右侧成员栏那一行同一份数据）。 */
+      if (String(m.targetKind ?? "") === "team") {
+        const lead = teamLeadOf(m);
+        if (lead?.name) return lead.name;
+      }
+      return personNameOf(m);
+    }
     /* ⛔ 团主理人的作者 id 有时就是 lead.id（英文 kebab-case），既不是合成 id 也不在 group.members 里。
        目录里主理人条目：kind "expert" / key "<teamId>:<lead.id>" / memberId = lead.id / name = 中文名。 */
     const leadEntry = catalog.find((t) => t.kind === "expert"
@@ -1644,6 +1654,11 @@ export function TeamGroupView({
                             const viaId = String(row.via.memberId ?? "");
                             const resolved = viaId ? nameOf(viaId) : "";
                             const viaName = resolved && resolved !== viaId ? resolved : row.via.name;
+                            /* ⛔⛔ 11-11 用户截图「这又是啥情况，看不懂」：主理人自己回的话被标成
+                               「由 X 叫来」—— @ 整团 / 主理人内部转一圈时 via 指向的其实是它自己
+                               （整团槽与主理人是同一个人）。⇒ 解析后与作者同名就不显示这条角标，
+                               ⛔ 不靠 id 比（两个 id 指向同一张椅子，正是这轮在收的债）。 */
+                            if (!viaName || viaName === authorName) return null;
                             return (
                               <em className="team-msg__via" title={`${viaName} 在群里叫它做这件事`}>
                                 由 {viaName} 叫来

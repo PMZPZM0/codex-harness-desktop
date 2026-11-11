@@ -58,6 +58,9 @@ export type TalkMember = {
   /* ⛔ 11-11：这位成员手上**真的**挂着的调度工具名（团群主理人 = team_member_invoke / team_phase_invoke）。
      ⛔ 由调用方按"工具面是否真挂上"给：配置取不到时工具没挂，文案也必须说没有。 */
   dispatchTools?: string[];
+  /* ⛔ 11-11：这位成员挂着 **harness_tools 能力网关**（宿主能力：知识库 / 定时任务 / 文件 / 记忆…）。
+     ⛔ 同样按事实给 —— 没挂就必须告诉它"定时任务不在你这儿建"，而不是给一句永远不成立的指令。 */
+  harnessGateway?: boolean;
   /* ⛔⛔ 11-10 用户：「成员都不知道哪个是管理员，成员都互相不认识」。
      ⇒ 身份随名册一起下发：prompt 的「群里的人」、group_members 工具、
        group_say 的「管理员」别名，全都读这一份。⛔ 专家团群恒 false（不启用管理员）。 */
@@ -218,6 +221,39 @@ export async function renameTalkMember(groupId: string, memberId: string, name: 
   return [threadId];
 }
 
+/** 把「同一个人的另一个台账键」并到正式键上（⛔ 群聊板块只懂"同一个人有两个键"，不懂团队）。
+ *
+ *  ⛔⛔ 11-11 真机：一个团群里出现了**两条**主理人会话 —— 从成员栏 @ 主理人建的键是
+ *     `team:<团>:<主理人>`，@ 整团建的键是 `tgt:team:<团>`，两条互不知道对方，
+ *     用户一会儿看到「承枢」、一会儿看到「软件开发专家团」，还以为是两个人。
+ *  ⇒ 调用方（调度域）认出"这两个键其实是同一张椅子"时调本函数合并：
+ *     · 只有 alias 有会话 ⇒ 改名到正式键（**历史保留**，这是主流情形）；
+ *     · 两边都有会话 ⇒ 保留正式键那条，alias 键删掉；被弃置的 threadId 交回调用方处置
+ *       （⛔ 本函数不删 rollout —— 那是用户的记录）。
+ *  @returns threadId = 合并后生效的那条；dropped = 被弃置的会话（空串 = 没弃置）。 */
+export async function adoptTalkThreadAlias(
+  groupId: string,
+  canonicalId: string,
+  aliasId: string,
+): Promise<{ threadId: string; dropped: string }> {
+  const canonKey = talkKey(groupId, canonicalId);
+  const aliasKey = talkKey(groupId, aliasId);
+  if (!String(canonicalId ?? "").trim() || !String(aliasId ?? "").trim() || canonKey === aliasKey) {
+    return { threadId: "", dropped: "" };
+  }
+  return mutateLedger((all) => {
+    const canon = all[canonKey];
+    const alias = all[aliasKey];
+    if (!alias?.threadId) return { all, out: { threadId: String(canon?.threadId ?? ""), dropped: "" } };
+    delete all[aliasKey];
+    if (!canon?.threadId) {
+      all[canonKey] = { threadId: String(alias.threadId), name: String(alias.name ?? ""), at: Number(alias.at ?? Date.now()) };
+      return { all, out: { threadId: String(alias.threadId), dropped: "" } };
+    }
+    return { all, out: { threadId: String(canon.threadId), dropped: String(alias.threadId) } };
+  });
+}
+
 /** 清掉指定的会话台账（解散群 / 自愈时调用；⛔ 只清**删成功**的那些 —— 删失败的留着下次重试）。
  *  ⛔ 不删引擎里的 rollout，那是用户自己的记录（删会话走 thread/delete，另一条链）。 */
 export function forgetTalkThreads(threadIds: string[]): number {
@@ -247,6 +283,10 @@ export async function ensureTalkThread(
     /* ⛔ 11-11：调用方追加的工具（如团群主理人的 team_member_invoke / team_phase_invoke）。
        ⛔ 群聊板块不认识"团队"这件事 —— 它只负责把这份工具面挂上/升级，工具语义与权限在执行端。 */
     extraTools?: unknown[];
+    /* ⛔⛔ 11-11：这轮"以谁的会话身份"开跑。派活目标（member.id）与实际说话的人可能不是同一个 id
+       —— @ 整团时目标是整团槽 `tgt:team:<团>`，真正说话的是该团主理人。
+       ⛔ 不给就用自己的 id（默认行为不变）。 */
+    talkAs?: string;
   } = {},
 ): Promise<{ threadId: string; created: boolean }> {
   /* ⛔⛔ 已存在会话的升级口：`resume` 前改写首行（附录 Z）。没有额外工具时**不传**，
@@ -254,7 +294,8 @@ export async function ensureTalkThread(
   const surface = options.extraTools?.length ? [...buildGroupTalkTools(), ...options.extraTools] : undefined;
   /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
   if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
-  const key = talkKey(groupId, member.id);
+  /* 台账键 = 会话身份（默认就是成员自己）。⛔ 本函数后续所有读写都用这个 key，别混用 member.id。 */
+  const key = talkKey(groupId, String(options.talkAs ?? "").trim() || String(member.id));
   const hit = readLedger()[key];
   if (hit?.threadId) {
     /* 自愈：同一个 threadId 若还挂在 `群id::`（成员 id 为空）这种脏键上，搬到正确的键上；
@@ -351,9 +392,11 @@ export async function peekTalkThread(
     /* ⛔ 11-11：探测到的会话**就是这一轮要用的那一条**（调用方拿到 threadId 后不再 ensure）
        ⇒ 工具面升级必须在这里也做一次，否则"点开群 → 会话已在"这条路上永远升不了级。 */
     extraTools?: unknown[];
+    /* ⛔ 与会话身份一致（见 ensureTalkThread）：@ 整团时探的是主理人那条会话。 */
+    talkAs?: string;
   } = {},
 ): Promise<{ threadId: string; busy: boolean } | null> {
-  const hit = readLedger()[talkKey(groupId, member.id)];
+  const hit = readLedger()[talkKey(groupId, String(options.talkAs ?? "").trim() || String(member.id))];
   if (!hit?.threadId) return null;
   const surface = options.extraTools?.length ? [...buildGroupTalkTools(), ...options.extraTools] : undefined;
   const resumed = await resumeTalkThread(hit.threadId, { ...options, tools: surface });
@@ -437,10 +480,12 @@ export async function runTalkTurn(
     threadId?: string;
     /** ⛔ 11-11：追加工具（团群主理人的团队调度工具）。已定好会话时由调用方保证工具面已升级。 */
     extraTools?: unknown[];
+    /** ⛔ 11-11：这轮以谁的会话身份开跑（见 ensureTalkThread）。 */
+    talkAs?: string;
   } = {},
 ): Promise<{ ok: boolean; text: string; threadId: string; error?: string }> {
   let threadId = options.threadId
-    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv, extraTools: options.extraTools })).threadId;
+    || (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv, extraTools: options.extraTools, talkAs: options.talkAs })).threadId;
   try {
     return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
   } catch (error) {
@@ -451,7 +496,7 @@ export async function runTalkTurn(
     } catch {
       await server.request("thread/archive", { threadId }).catch(() => undefined);
     }
-    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv, extraTools: options.extraTools })).threadId;
+    threadId = (await ensureTalkThread(groupId, member, { cwd: options.cwd, groupName: options.groupName, sandbox: options.sandbox, approvalPolicy: options.approvalPolicy, shellEnv: options.shellEnv, extraTools: options.extraTools, talkAs: options.talkAs })).threadId;
     return { ok: true, text: await runTalkTurnOnce(threadId, inputText, options), threadId };
   }
 }

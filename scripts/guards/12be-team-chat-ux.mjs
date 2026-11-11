@@ -383,6 +383,31 @@ const catalog = [
       && /teamRunStore\.setThreadLead\(tid\)/.test(dispatch)
       && /isGroupTalkThread/.test(fallback) && /isGroupTalkThread: \(tid\) => talkThreadIds\.has/.test(boot),
       "团群主理人拿到真调度工具（工具面 + 归属登记 + 执行端认群聊会话）");
+    /* ⛔⛔ 11-11：主理人还要拿到**宿主能力网关**（知识库 / 定时任务 / 文件 / 记忆）——
+       执行端权限早就按 dispatchOnly 定好（scheduler_save / knowledge_add 对群聊会话放行），
+       缺的只是工具面这根线。⛔ 成员不给（每个成员都放开写知识库 = 权限面失控），
+       而且文案必须按 `me.harnessGateway` 分叉：没挂的人要说"定时任务不在这儿建"。 */
+    ok(/buildDelegateHarnessTool/.test(dispatch)
+      && /withStepParam\(\[buildTeamTools\(groupTeam\), buildTeamPhaseTool\(groupTeam\), buildDelegateHarnessTool\(\)\]\)/.test(dispatch)
+      && /harness_tools/.test(dispatch)
+      && /harnessGateway: true/.test(dispatch)
+      && /me\.harnessGateway/.test(talk) && /定时任务不在你这儿建/.test(talk),
+      "团群主理人拿到宿主能力网关；没拿到的会话被明确告知定时任务该交给谁");
+    /* ⛔⛔ 11-11 用户令（「@整团 复用主理人那条，只保留一个承枢」）：
+       整团槽 `tgt:team:<团>` 只是派活入口，真正说话的是主理人 ⇒ 会话身份必须归一到合成 id。
+       ⛔ 判据是**四处都传了**（探测 / 建 / 回合 / 串行键）—— 少一处就分叉成两条会话
+       （漏串行键还会并发 resume 同一条，引擎报 busy）。 */
+    ok(/const talkAs = isLeadSeat && leadAuthorId \? leadAuthorId : "";/.test(dispatch)
+      && /talkAs \|\| partner\.id, async/.test(dispatch)
+      && (dispatch.match(/\.\.\.\(talkAs \? \{ talkAs \} : \{\}\)/g) || []).length >= 3,
+      "会话身份归一：@整团 与 @主理人打同一条会话（探测/建/回合/串行键四处都传）");
+    /* ⛔⛔ 老数据里两条会话都真实存在过 ⇒ 启动时必须**合并台账**，否则用户仍看到两个发言人。
+       ⛔ 被弃置的那条只**归档**（archivable），⛔ 不删除 —— rollout 是用户的记录。 */
+    ok(/adoptTalkThreadAlias\(group\.id, leadKey, slotId\)/.test(dispatch)
+      && /thread\/archive/.test(dispatch) && !/thread\/delete[\s\S]{0,200}adopted\.dropped/.test(dispatch)
+      && /const key = talkKey\(groupId, String\(options\.talkAs \?\? ""\)\.trim\(\) \|\| String\(member\.id\)\)/.test(chan)
+      && /export async function adoptTalkThreadAlias/.test(chan),
+      "主理人双会话合并：整团槽台账并入合成 id（弃置那条只归档，⛔ 不删用户记录）");
   }
   ok(/runTalkTurn\(group\.id/.test(dispatch) && !/runDelegatedTask\(/.test(dispatch)
     && /attachGroupTalkEvents\(server\)/.test(dispatch),
@@ -1069,9 +1094,11 @@ const catalog = [
   ok(/let ledgerChain: Promise<unknown>/.test(channel) && /function mutateLedger</.test(channel)
     && (channel.match(/await mutateLedger\(/g) ?? []).length >= 2,
     "台账写操作串行 + 链内重新读盘合并（⛔ 旧快照整份写回会把并发开跑的其他成员整条抹掉）");
+  /* ⛔ 11-11：串行键改成「会话身份」（@整团 与 @主理人打同一条会话，必须排同一条队列）。
+     判据是**语义**（探测→空闲才挂，新建在串行队列内 ensure 后再挂），不是那个字面 id。 */
   ok(/export async function peekTalkThread/.test(channel) && /peekTalkThread\(group\.id, partner as TalkMember/.test(ipc)
     && /if \(liveThread && !liveThread\.busy\) attachLive\(liveThread\.threadId\)/.test(ipc)
-    && /queueTalkDelivery\(group\.id, partner\.id, async \(\) => \{[\s\S]{0,900}?ensureTalkThread\(group\.id/.test(ipc),
+    && /queueTalkDelivery\(group\.id, (?:talkAs \|\| )?partner\.id, async \(\) => \{[\s\S]{0,900}?ensureTalkThread\(group\.id/.test(ipc),
     "流式监听前只做**只读探测**（探到空闲才挂）；新建会话（首条消息）在**串行队列内** ensure 后再挂（否则整轮没有流式事件）");
   ok(/export function queueTalkDelivery/.test(channel) && /queueTalkDelivery\(group\.id, partner\.id/.test(ipc)
     && /withDispatchTimeout\(runTalkTurn/.test(ipc),
@@ -1728,7 +1755,9 @@ const catalog = [
   const talkDuty = codeOnly(read("electron/features/group-talk/03-talk.ts"));
   ok(/closeOpenTasksOf\(gid, authorId\)/.test(ipcDuty) && /registerResponsibleFrom\(gid/.test(ipcDuty),
     "⛔ 责任人开口 ⇒ 自动关闭它名下待办；它这条里点了别人 ⇒ 先关后登记（顺序反了会自己关自己）");
-  ok(/openDutiesOf\(group\.id, partner\.id\)/.test(ipcDuty) && /你名下的待处理/.test(talkDuty),
+  /* ⛔ 11-11：待办按**发言人身份**取（@整团 与 @主理人是同一个人 ⇒ 同一个键），
+     判据是"本人名下待办注入到它自己的会话"，不是那个字面 id。 */
+  ok(/openDutiesOf\(group\.id, (?:speakerId|partner\.id)\)/.test(ipcDuty) && /你名下的待处理/.test(talkDuty),
     "⛔ 私聊 = 来源对话：本人名下待办注入到它自己的会话（用户令「我们的私聊就是那个来源对话」）");
   ok(/异常必须落到人/.test(talkDuty) && /交付要自证/.test(talkDuty),
     "提示词要求：报异常写责任人、说完成要带凭据（⛔ 只说「已完成」不算交付）");

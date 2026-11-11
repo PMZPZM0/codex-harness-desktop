@@ -81,12 +81,16 @@ import { buildRRuleFromInput, computeNextRunAt } from "../scheduler";
 import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
-import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, buildGroupTalkTools, type TalkMember } from "./group-talk";
+import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, buildGroupTalkTools, adoptTalkThreadAlias, type TalkMember } from "./group-talk";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
    团群主理人的会话要挂**真的**调度工具（工具面只在 thread/start 定死，见附录 Z）。
    ⛔ 只取工具**描述**，执行与权限仍在 team-invoke / team-tool-fallback（⛔ 不在这里调度成员）。 */
 import { buildTeamPhaseTool, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
+/* ⛔ 11-11：主理人还要拿得到宿主能力网关（知识库 / 定时任务 / 文件 / 记忆）——
+   执行端权限早就按 dispatchOnly 定好了（scheduler_save / knowledge_add 对群聊会话放行），
+   缺的只是工具面这一根线。 */
+import { buildDelegateHarnessTool } from "../delegate-harness-tool";
 import { withStepParam } from "../../src/lib/step-note.mjs";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender } from "../team-group-bridge";
@@ -457,8 +461,17 @@ function resolveGroupTargets(
     if (virtuals.some((v) => v.id === id)) continue;
     const teamId = parsed[1];
     const memberId = parsed[2];
+    /* ⛔⛔ 11-11 真机（用户截图红框：「这名字改不过来吗」，署名显示 `data-analysis-team-lead`）：
+       目录里**主理人是 `kind:"expert"`**、团成员才是 `kind:"member"`（dispatch-core 881-890）。
+       这里原来只认 member ⇒ @ 主理人 / @ 整团 解析出来的 name 回落成英文 id，
+       这个 id 会一路带到流式卡的标题、成员栏、群消息署名上（落盘后渲染层再靠目录映射才救回来）。
+       ⇒ 先按 member 找，再按 expert 找（同一张椅子两种 kind，⛔ 不是两套语义）。 */
     const hit = list.find((t) => t
       && t.kind === "member"
+      && String(t.teamId ?? "") === teamId
+      && (String(t.memberId ?? "") === memberId || String(t.key ?? "") === `${teamId}:${memberId}`))
+      ?? list.find((t) => t
+      && t.kind === "expert"
       && String(t.teamId ?? "") === teamId
       && (String(t.memberId ?? "") === memberId || String(t.key ?? "") === `${teamId}:${memberId}`));
     virtuals.push({
@@ -624,7 +637,10 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
 
 /** 团群主理人会话的完整工具面 = 群聊三件套 + 团队调度两件（⛔ 与 runDispatchRounds 同一份构造口径）。 */
 function groupLeadSurfaceOf(team: { teamId: string } & Record<string, any>): unknown[] {
-  return [...buildGroupTalkTools(), ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never)])] as unknown[];
+  return [
+    ...buildGroupTalkTools(),
+    ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never), buildDelegateHarnessTool()]),
+  ] as unknown[];
 }
 
 /** ⛔⛔ 11-11：启动时把**已有**团群主理人会话的工具面补到最新（附录 Z：引擎只读 rollout 首行）。
@@ -637,21 +653,37 @@ export async function upgradeGroupLeadSurfaces(): Promise<void> {
     const groups = (readStore().groups ?? []) as GroupShape[];
     if (!groups.length) return;
     const teams = await readUsableExpertTeams().catch(() => []);
-    const ledger = listTalkThreads();
     let patched = 0;
+    let merged = 0;
     for (const group of groups) {
       const slot = group.members.find((m) => m.targetKind === "team");
       if (!slot) continue;
       const team = teams.find((e) => String(e.teamId) === String(slot.targetKey));
       if (!team) continue;
-      /* ⛔⛔ 主理人的会话键有两种历史形态：**合成 id**（`team:<team>:<leadId>`，用户从成员栏 @ 主理人时
-         走这条 —— 现在的主流）与**整团槽 id**（`tgt:team:<team>`，@ 整团时走这条）。⛔ 两个都试，
-         只认一个就是"工具面明明写了却永远升不上去"（真机踩过：只查整团槽 ⇒ 一条都没命中）。 */
+      /* ⛔⛔ 主理人的会话键有两种历史形态：**合成 id**（`team:<team>:<leadId>`，从成员栏 @ 主理人）
+         与**整团槽 id**（`tgt:team:<team>`，@ 整团）。⛔⛔ 而且**两种可能同时存在**（真机实证：同一个群
+         18:58 建了合成 id 那条、19:56 @ 整团又建了整团槽那条）。
+         ⛔⛔ 11-11 用户令「@整团 复用主理人那条，只保留一个承枢」⇒ 先合并台账，再升级工具面。
+         合并后 @整团 与 @主理人打的是同一条会话（runOne 的 talkAs 也归一到合成 id）。 */
       const leadKey = teamAuthorIdOf(String(team.teamId), String((team as { lead?: { id?: string } }).lead?.id ?? ""));
-      const row = ledger.find((r) => String(r.groupId) === String(group.id) && String(r.memberId) === leadKey)
-        ?? ledger.find((r) => String(r.groupId) === String(group.id) && String(r.memberId) === String(slot.id));
-      if (!row?.threadId) continue;
-      try {
+      const slotId = String(slot.id);
+      if (leadKey && slotId && leadKey !== slotId) {
+        const adopted = await adoptTalkThreadAlias(group.id, leadKey, slotId).catch(() => null);
+        if (adopted?.dropped) {
+          /* 被弃置的是「@整团」那条（含 11-11 跑飞的那一轮）。⛔ 只**归档**不删除 ——
+             rollout 是用户自己的记录，删了不可逆；归档可恢复，且侧栏不再并排两条。 */
+          await server.request("thread/archive", { threadId: adopted.dropped }).catch(() => undefined);
+          merged += 1;
+          console.log("[group-tools] 主理人会话已合并：保留 " + String(adopted.threadId).slice(0, 8)
+            + "（承枢），归档 " + String(adopted.dropped).slice(0, 8) + "（整团槽那条）");
+        }
+      }
+      /* ⛔ 合并后重读：旧快照里那条已被删的台账行不该再被升级（它已经归档了）。 */
+      const ledger = listTalkThreads();
+      const keys = new Set([leadKey, slotId].filter(Boolean));
+      const rows = ledger.filter((r) => String(r.groupId) === String(group.id) && keys.has(String(r.memberId)));
+      if (!rows.length) continue;
+      for (const row of rows) try {
         const res = await syncToolSurfaceAsync(codexHome, row.threadId, groupLeadSurfaceOf(team as never));
         if (res?.patched) patched += 1;
       } catch { /* 单条失败不影响其它群 */ }
@@ -659,10 +691,15 @@ export async function upgradeGroupLeadSurfaces(): Promise<void> {
          而运行期登记是防抖写盘 —— 应用被杀/崩溃时那条可能没落盘（真机已见：功能当场成功，
          重启后 team-threads.json 里没有这个小会话 ⇒ 下一轮工具能调、执行端却报「无法确定所属团」）。
          ⛔ 启动时补一次是确定性的；幂等，重复设同值无害。 */
-      teamRunStore.setThreadTeam(row.threadId, String(team.teamId));
-      teamRunStore.setThreadLead(row.threadId);
+      for (const row of rows) {
+        teamRunStore.setThreadTeam(row.threadId, String(team.teamId));
+        teamRunStore.setThreadLead(row.threadId);
+      }
     }
-    if (patched) console.log("[group-tools] 启动预升级 " + patched + " 个团群主理人会话的工具面");
+    if (patched || merged) {
+      console.log("[group-tools] 启动预升级 " + patched + " 个团群主理人会话的工具面"
+        + (merged ? "；合并 " + merged + " 组「@整团 / @主理人」双会话" : ""));
+    }
   } catch { /* 预升级整体失败：不阻断启动 */ }
 }
 
@@ -950,9 +987,9 @@ async function runDispatchRounds(
     ? (await readUsableExpertTeams().catch(() => [])).find((t) => String(t.teamId) === groupTeamId) ?? null
     : null;
   const leadDispatchTools = groupTeam
-    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam)])
+    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam), buildDelegateHarnessTool()])
     : [];
-  const leadToolNames = groupTeam ? ["team_member_invoke", "team_phase_invoke"] : [];
+  const leadToolNames = groupTeam ? ["team_member_invoke", "team_phase_invoke", "harness_tools"] : [];
   /* ⛔ 成员产出落群：`team_member_invoke` 起的是**团队会话**，产出靠 team-group-bridge 回写群；
      不绑 `groupOfTeam(teamId)` 就返回空串 ⇒ 产出静默丢掉（只有主理人看得到工具返回值）。 */
   if (groupTeam) bindTeamGroup(groupTeamId, group.id);
@@ -1098,6 +1135,9 @@ async function runDispatchRounds(
     let threadId = "";
     let okFlag = false;
     let errMsg = "";
+    /* ⛔ 11-11：可见身份在 try 里按 talkAs 赋值，finally 收尾还要用 ⇒ 声明必须在 try 之外。 */
+    let speakerId = partner.id;
+    let speakerName = partner.name;
     /* 群聊流式广播（见下）：回合结束后必须摘监听 + 发 finished。 */
     let liveThreadId = "";
     let talkDelta: ((event: any) => void) | null = null;
@@ -1142,6 +1182,17 @@ async function runDispatchRounds(
         || Boolean(leadAuthorId && String(partner.id) === leadAuthorId);
       const partnerTools = isLeadSeat ? leadDispatchTools : [];
       const partnerToolNames = isLeadSeat ? leadToolNames : [];
+      /* ⛔⛔ 11-11 用户令「@整团 与 @主理人复用同一条会话，只保留一个承枢」：
+         整团槽 `tgt:team:<团>` 只是**派活入口**，真正说话的人是主理人 ⇒ 引擎会话身份归一到
+         主理人的合成 id。⛔ 派活目标（partner.id）一律不动 —— 界面那一行、任务账本、消息 authorId
+         仍按原样走，只有"用哪条会话"这一层统一。 */
+      const talkAs = isLeadSeat && leadAuthorId ? leadAuthorId : "";
+      /* ⛔⛔ 落到群里的「发言人」也必须是这个人：@ 整团时原来的 authorId / 流式卡的 memberId 用的是
+         整团槽 id ⇒ 群里同一个承枢有两个身份（两个头像、@ 到的是另一个 id、任务账本也分裂）。
+         ⛔ 用 talkAs 归一（没归一需求的成员 talkAs 为空 ⇒ 行为不变）。 */
+      speakerId = talkAs || partner.id;
+      const leadDisplayName = String((groupTeam as { lead?: { name?: string } } | null)?.lead?.name ?? "");
+      speakerName = talkAs && leadDisplayName ? leadDisplayName : partner.name;
       /* ⛔ `partner` 只是派活目标（GroupTarget），没有 teamRole / teamName / isAdmin ⇒ 原来
          buildTalkInput 里「你在团队里的位置」「你是主持人」两段**永远不生效**（主理人不知道自己是谁）。
          座位信息 roster 里已经算好，这里合并进去；⛔ id / name 仍以 partner 为准（别被 roster 改掉）。 */
@@ -1153,7 +1204,7 @@ async function runDispatchRounds(
         ...(isLeadSeat && groupTeam
           ? { teamRole: "lead" as const, teamName: groupTeam.displayName.zh, teamId: String(groupTeam.teamId) }
           : {}),
-        ...(partnerToolNames.length ? { dispatchTools: partnerToolNames } : {}),
+        ...(partnerToolNames.length ? { dispatchTools: partnerToolNames, harnessGateway: true } : {}),
       };
       /* 真机排障用：主理人这一轮到底挂没挂团队工具（⛔ 不刷屏，只在团群主理人回合打一条）。 */
       if (isLeadSeat) {
@@ -1177,7 +1228,7 @@ async function runDispatchRounds(
         params.topicRoot ? { rootText: String(params.topicRoot) } : null,
         groupMemory?.text ?? null,
         /* ⛔ 私聊 = 它自己的会话：把名下待办直接摆到眼前（用户令「我们的私聊就是那个来源对话」）。 */
-        openDutiesOf(group.id, partner.id),
+        openDutiesOf(group.id, speakerId),
       );
       /* ⛔⛔ 11-09 用户令「必须要真的 cli 智能体」：CLI 成员接真链路 ——
          角色提示词（命令引擎去跑本机 bin / 没装就如实报没装）拼在输入最前，
@@ -1191,13 +1242,13 @@ async function runDispatchRounds(
       if (cliPlan) {
         const liveId = `cli:${group.id}:${partner.id}`;
         options.onPhase?.("started", partner, {});
-        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, at: Date.now() } as never);
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveId, runId, at: Date.now() } as never);
         const res = cliPlan.installed
           ? await queueTalkDelivery(group.id, partner.id, () => runTalkCliDirect(cliPlan.cli, String(bodyText ?? "").trim() || query, {
             scopeId: `${group.id}::${partner.id}`,
             cwd: group.workspace || undefined,
             shellEnv: cliPlan.shellEnv,
-            onDelta: (text) => broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, text, at: Date.now() } as never),
+            onDelta: (text) => broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveId, runId, text, at: Date.now() } as never),
           }))
           : { ok: true, text: cliPlan.text };
         chars = query.length + res.text.length;
@@ -1207,7 +1258,7 @@ async function runDispatchRounds(
         const groupGone = !readStore().groups.some((g) => String(g.id) === String(group.id));
         if (!clearedDuringRun && !groupGone) {
           wrote = await appendMessageTo(group.id, {
-            authorId: partner.id,
+            authorId: speakerId,
             authorKind: "bot",
             senderKind: "member",
             /* 合成 id：CLI 直跑没有引擎会话；用 `cli:` 前缀让渲染层知道"无来源会话/无回合"。 */
@@ -1222,7 +1273,7 @@ async function runDispatchRounds(
         wroteMessage = !clearedDuringRun && Boolean(wrote.ok);
         okFlag = Boolean(wrote.ok) && res.ok;
         if (!wrote.ok) { errMsg = wrote.error || "产出没能写进群聊记录"; failed.push(`${partner.name}：${errMsg}`); }
-        broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveId, runId, at: Date.now() } as never);
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveId, runId, at: Date.now() } as never);
         options.onPhase?.("finished", partner, { ok: okFlag, error: errMsg || undefined, threadId: "" });
         return;
       }
@@ -1240,6 +1291,7 @@ async function runDispatchRounds(
         approvalPolicy: params.approvalPolicy,
         /* ⛔ 探测到的会话就是这一轮要用的那条（拿到 threadId 后不再 ensure）⇒ 升级口必须在这里。 */
         ...(partnerTools.length ? { extraTools: partnerTools } : {}),
+        ...(talkAs ? { talkAs } : {}),
       }).catch(() => null);
       /* ⛔⛔ 11-08 用户令「跟主对话实时同步」：监听器必须在**会话已确定**时就挂上 ——
          新建会话（首条消息）时 peek 拿不到 threadId，原来整轮都没有流式事件（只能收尾一次性落盘）。
@@ -1260,7 +1312,7 @@ async function runDispatchRounds(
         if (String(group.workspace ?? "").trim()) threadCwd.set(tid, String(group.workspace).trim());
         /* 上一轮的收尾标记在本轮开跑时摘掉（否则中途 group_say 那条会被当成收尾后补写、用量挂两遍）。 */
         finishedTalkRuns.delete(tid);
-        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "started", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveThreadId, runId, at: Date.now() } as never);
         let lastTickAt = 0;
         talkDelta = (event: any) => {
           if (event?.kind !== "notification") return;
@@ -1276,7 +1328,7 @@ async function runDispatchRounds(
             const item = p.item ?? null;
             if (item && String(item.type ?? "") === "agentMessage") {
               /* 新一条正文开始：让流式卡清空（否则整回合的文字会叠在卡里和已落盘消息重复）。 */
-              broadcastHarnessEvent({ type: "group-talk-live", phase: "item-start", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, itemId: String(item.id ?? ""), at: Date.now() } as never);
+              broadcastHarnessEvent({ type: "group-talk-live", phase: "item-start", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveThreadId, runId, itemId: String(item.id ?? ""), at: Date.now() } as never);
             }
             /* 继续走下面 tick（过程块要跟着刷新） */
           }
@@ -1284,12 +1336,12 @@ async function runDispatchRounds(
             const item = p.item ?? null;
             if (item && String(item.type ?? "") === "agentMessage") {
               const itemId = String(item.id ?? "");
-              broadcastHarnessEvent({ type: "group-talk-live", phase: "item-done", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, itemId, at: Date.now() } as never);
+              broadcastHarnessEvent({ type: "group-talk-live", phase: "item-done", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveThreadId, runId, itemId, at: Date.now() } as never);
             }
           }
           if (method === "item/agentMessage/delta") {
             const delta = String(p.delta ?? "");
-            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, text: delta, at: Date.now() } as never);
+            if (delta) broadcastHarnessEvent({ type: "group-talk-live", phase: "delta", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveThreadId, runId, text: delta, at: Date.now() } as never);
             return;
           }
           /* ⛔ 11-08 用户令「跟主对话完全一致」：过程块不再 2.5s 轮询 ——
@@ -1298,7 +1350,7 @@ async function runDispatchRounds(
           const now = Date.now();
           if (now - lastTickAt < 200) return;
           lastTickAt = now;
-          broadcastHarnessEvent({ type: "group-talk-tick", groupId: group.id, memberId: partner.id, threadId: liveThreadId, method, at: now } as never);
+          broadcastHarnessEvent({ type: "group-talk-tick", groupId: group.id, memberId: speakerId, threadId: liveThreadId, method, at: now } as never);
         };
         server.on("event", talkDelta);
       };
@@ -1308,7 +1360,9 @@ async function runDispatchRounds(
       /* ⛔⛔ 11-08 用户令「查一下 resume 失败后重复会话的问题」：同一成员的消息**串行投递** ——
          引擎不允许 resume/并行回合正在跑的会话，旧代码撞上就新建一条（重复会话）或直接失败。
          排队后第二条会等第一条跑完再 ensure + turn；超时也从**真正开跑**时算（⛔ 不含排队等待）。 */
-      const res = await queueTalkDelivery(group.id, partner.id, async () => {
+      /* ⛔ 串行键也用会话身份：@整团 与 @主理人打的是同一条会话，⛔ 两个键各排一条队列
+         就会并发 resume 同一条 ⇒ 引擎报 busy / 直接失败。 */
+      const res = await queueTalkDelivery(group.id, talkAs || partner.id, async () => {
         /* ⛔ 11-08 用户实测（点停止报「还没有它的会话」）：排队期间用户点了停止 ⇒
            建会话/开跑之前就放弃（别发出那条不该存在的消息）。 */
         if (consumeTalkCancel(group.id, partner.name)) {
@@ -1321,6 +1375,7 @@ async function runDispatchRounds(
             sandbox: params.sandbox,
             approvalPolicy: params.approvalPolicy,
             ...(partnerTools.length ? { extraTools: partnerTools } : {}),
+            ...(talkAs ? { talkAs } : {}),
           }).catch(() => null);
           if (ensured?.threadId) attachLive(ensured.threadId);
           /* ⛔ 11-09 审查：建会话要 1~3 秒 —— 排队入口那次消费之后、会话建好之前用户点了停止，
@@ -1339,6 +1394,7 @@ async function runDispatchRounds(
           ...(params.sandbox ? { sandbox: params.sandbox } : {}),
           ...(params.approvalPolicy ? { approvalPolicy: params.approvalPolicy } : {}),
           ...(partnerTools.length ? { extraTools: partnerTools } : {}),
+          ...(talkAs ? { talkAs } : {}),
         }), partner.name, partnerTools.length ? LEAD_DISPATCH_TIMEOUT_MS : undefined);
       });
       if ((res as { cancelled?: boolean } | null)?.cancelled) {
@@ -1370,7 +1426,7 @@ async function runDispatchRounds(
       /* ⛔ 11-10：一份群日志只读一次，同回合判重与代码层硬约束共用 groupRows。 */
       const groupRows = (readStore().messages?.[group.id] ?? []) as Array<{ id?: string; authorId?: string; authorKind?: string; text?: string; at?: number }>;
       const spokenRows = groupRows
-        .filter((row) => String(row.authorId ?? "") === partner.id && Number(row.at ?? 0) >= startedAt)
+        .filter((row) => String(row.authorId ?? "") === speakerId && Number(row.at ?? 0) >= startedAt)
         .map((row) => ({ id: String(row.id ?? ""), text: String(row.text ?? "") }));
       /* ⛔⛔ 11-10 用户令「不能光靠模型自觉」：硬约束在**每条产出的唯一收口**生效。
          边界（10-26 事故）：只硬拦动作、把事实摆出来；⛔ 不加定时器/巡检/自动催办，
@@ -1407,7 +1463,7 @@ async function runDispatchRounds(
         wrote = { ok: true };
       } else {
         wrote = await appendMessageTo(group.id, {
-          authorId: partner.id,
+          authorId: speakerId,
           authorKind: "bot",
           senderKind: "member",
           threadId,
@@ -1434,7 +1490,7 @@ async function runDispatchRounds(
       if (!clearedDuringRun && wrote.ok) {
         for (const body of guard.announcements) {
           await appendMessageTo(group.id, {
-            authorId: partner.id,
+            authorId: speakerId,
             authorKind: "bot",
             senderKind: "member",
             threadId,
@@ -1589,7 +1645,17 @@ async function runDispatchRounds(
              ⇒ 团群里主理人自己没派人、也没写收口时，宿主催办**一次**（只一次，不自循环）：
              要它按 SOP 真正把下一阶段派出去、先报阶段进度，别再代写成员发言。 */
           const isLeadSelf = Boolean(isTeamGroup && admin && String(admin.id) === String(partner.id));
-          if (isLeadSelf && verdict.action !== "wrap" && !relayInFlight
+          /* ⛔⛔ 11-11 真机（用户截图「这又是啥情况，看不懂」+ rollout 里实证 2 条 `[系统]` 注入）：
+             用户只发了一个「在」，主理人回「我在，团队四个人都在位…你丢一句要干嘛」——
+             这是**正常应答**，不是"该推进了"。但 classifyTurn 对寒暄也判非 wrap ⇒ 催办再跑一轮
+             ⇒ 群里出现两条几乎一样的开场白，用户以为出了故障。
+             ⇒ 只有「这一轮用户真的给了活」才催办：去掉 @ 之后的正文 ≥6 字，且不是纯应答词。 */
+          const leadTurnTaskLike = (() => {
+            const plain = String(text ?? "").replace(/@[^\s：:]+/g, "").replace(/\s+/g, "");
+            if (plain.length < 6) return false;
+            return !/^(在|在吗|好|好的|行|嗯|收到|可以|ok|OK|继续|你好|谢谢)[。！!？?~～.…]*$/.test(plain);
+          })();
+          if (isLeadSelf && verdict.action !== "wrap" && leadTurnTaskLike && !relayInFlight
             && leadSelfNudges < MAX_LEAD_SELF_NUDGES && chainBudget > 0 && canRun(partner.id)) {
             leadSelfNudges += 1;
             chainBudget -= 1;
@@ -1616,7 +1682,7 @@ async function runDispatchRounds(
     } finally {
       if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
       if (liveThreadId) {
-        broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: partner.id, name: partner.name, threadId: liveThreadId, runId, at: Date.now() } as never);
+        broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveThreadId, runId, at: Date.now() } as never);
       }
       /* ⛔ 11-08 审查：收尾标记按**真实会话 id**记（`liveThreadId || threadId`）——
          会话在开跑时正忙 / 走排队分支时 liveThreadId 是空的，只记 liveThreadId 会让这一轮
