@@ -5,6 +5,8 @@
  */
 /** ItemView（从 src/App.tsx 原样搬来）。多处共用 ⇒ 单独成模块，不复制一份。 */
 import { isCompactionItem } from "../../lib/compaction-item.mjs";
+import { isVoiceDelegationPrompt } from "../../lib/voice-delegation.mjs";
+import { itemText } from "../../lib/item-text";
 import { ThreadItem } from "../../lib/thread-item";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Turn } from "../../lib/turn";
@@ -37,6 +39,9 @@ import { webSearchResultsOf } from "../../lib/web-search-results.mjs";
 /** 单条 item 的分发渲染：用户消息、回复、思考、工具卡各走各自的视图。 */
 export function ItemView({ item, turn, turnActive, reasoningFloatHost, usage, tokenUsage, fallbackWindow, hideFooter, waitingForApproval, leadingAction, onCopy, onQuote, onFork, onImageCopy, onEditSubmit, onOpenFile, onOpenThread, onApplyPlan, pending }: { item: ThreadItem; turn?: Turn; turnActive?: boolean; reasoningFloatHost?: string; usage?: any; tokenUsage?: any; fallbackWindow?: number; hideFooter?: boolean; waitingForApproval?: boolean; leadingAction?: ReactNode; onCopy: (text: string) => void; onQuote: (text: string) => void; onFork?: () => void; onImageCopy?: (path: string) => void; onEditSubmit?: (item: ThreadItem) => void; onOpenFile?: (path: string) => void; onOpenThread?: (id: string) => void; onApplyPlan?: (markdown: string) => void; pending?: boolean }) {
   if (item.type === "userMessage") {
+    /* 11-11 用户令「注入提示词不要展示出来，隐藏掉」：语音委派是宿主拼给 Codex 的后台任务，
+       模型要看得见，时间线里整条不渲染（否则用户会看到一大段机器指令）。 */
+    if (isVoiceDelegationPrompt(itemText(item))) return null;
     return <UserMessageView item={item} turn={turn} pending={pending} leadingAction={leadingAction} onCopy={onCopy} onQuote={onQuote} onImageCopy={onImageCopy} onEditSubmit={onEditSubmit} onOpenFile={onOpenFile} onOpenThread={onOpenThread} />;
   }
   if (item.type === "agentMessage") {

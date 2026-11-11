@@ -19,6 +19,8 @@ import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher
 import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
 import { buildEngineWorkerData } from "./tts-engine-data";
 import { MossLiveRealtime } from "./moss-live-realtime";
+import type { MossDelegationTask } from "./moss-live-realtime";
+import { cancelVoiceDelegation, runVoiceDelegation } from "./voice-delegation";
 import { MOSS_LIVE_PROVIDER, remoteConfigured, remoteConfigOf } from "./model-provider";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
@@ -125,6 +127,12 @@ export class VoiceService {
   private tts: VoiceWorkerClient | null = null;
   /** 11-10 MOSS-Live 全双工实时后端（配置且选中时替代本地 ASR+引擎+TTS）。 */
   private remote: MossLiveRealtime | null = null;
+  /** 11-11 语音委派：服务端下发的后台任务 → 本机 Codex 会话执行 → commentary 回传。 */
+  private delegations = new Map<string, {
+    cancelled: boolean;
+    active: { threadId: string; turnId: string; worker: boolean } | null;
+    timer: ReturnType<typeof setTimeout> | null;
+  }>();
   /** 唤醒用的独立识别器（持续聆听，不参与通话、不开引擎回合） */
   private wakeAsr: VoiceWorkerClient | null = null;
   private threadId = "";
@@ -310,6 +318,13 @@ export class VoiceService {
     this.tts = null;
     this.remote = null;
     remote?.close();
+    /* 委派任务不因挂断而中断（活已经交给 Codex 了，用户通常希望它做完）；
+       只清掉计时器并标记静默，避免挂断后还往已关闭的连接推 commentary。 */
+    for (const entry of this.delegations.values()) {
+      entry.cancelled = true;
+      if (entry.timer) clearTimeout(entry.timer);
+    }
+    this.delegations.clear();
     this.active = false;
     this.busy = false;
     this.currentTurnId = "";
@@ -386,7 +401,9 @@ export class VoiceService {
       onDone: (status) => { this.deps.emit({ type: "remoteDone", status }); if (this.active) this.setState("listening"); },
       onBarge: () => { this.deps.emit({ type: "remoteBarge" }); if (this.active) this.setState("listening"); },
       onError: (message) => { if (this.active) this.fail(message); },
-      onSession: (info) => this.deps.log("info", `MOSS-Live 会话已建立（memory_scope=${info.memoryScope ?? "session"}）`),
+      onSession: (info) => this.deps.log("info", `MOSS-Live 会话已建立（memory_scope=${info.memoryScope ?? "session"}，delegation=${info.delegation ?? "none"}）`),
+      onDelegation: (task) => this.handleDelegation(task),
+      onDelegationCancelled: (id) => this.cancelDelegation(id),
     });
     try {
       await client.connect();
@@ -405,8 +422,57 @@ export class VoiceService {
     return true;
   }
 
-  async handleAudio(samples: Float32Array): Promise<void> {
-    if (!this.active) return;
+  /**
+   * 服务端委派一条后台任务 → 交给本机 Codex 会话执行。
+   * ⛔ 异步执行，期间继续收发音频；结果用 commentary 回传（服务端会念给用户听）。
+   * ⛔ 同时最多 3 条：再多就明确拒绝，不排队烧资源。
+   */
+  private handleDelegation(task: MossDelegationTask): void {
+    const client = this.remote;
+    if (!client || !task?.id) return;
+    if (this.delegations.has(task.id)) return;
+    if (this.delegations.size >= 3) {
+      client.delegationCommentary(task.id, "同时处理的任务太多了，等前面几件做完再试。", "failed");
+      return;
+    }
+    const entry = { cancelled: false, active: null as null | { threadId: string; turnId: string; worker: boolean }, timer: null as null | ReturnType<typeof setTimeout> };
+    this.delegations.set(task.id, entry);
+    client.delegationThinking(task.id, `开始执行：${String(task.objective ?? "").slice(0, 200)}`);
+    // 长任务先给一句可播报的进度（20s 内完成就不打扰）。
+    entry.timer = setTimeout(() => {
+      if (!entry.cancelled) client.delegationCommentary(task.id, "还在处理，稍等一下。", "in_progress");
+    }, 20_000);
+    void runVoiceDelegation({
+      id: task.id,
+      originThreadId: this.threadId,
+      objective: task.objective,
+      context: task.context,
+      purpose: task.purpose,
+      timeoutMs: task.timeoutMs,
+    }, (active) => { entry.active = active; }).then((result) => {
+      if (entry.timer) clearTimeout(entry.timer);
+      this.delegations.delete(task.id);
+      if (entry.cancelled) return;
+      if (result.ok) client.delegationCommentary(task.id, result.output || "已经处理完了。", "completed");
+      else client.delegationCommentary(task.id, `没办成：${result.error ?? "未知原因"}`, "failed");
+    }).catch((error: any) => {
+      if (entry.timer) clearTimeout(entry.timer);
+      this.delegations.delete(task.id);
+      if (!entry.cancelled) client.delegationCommentary(task.id, `没办成：${String(error?.message ?? error)}`, "failed");
+    });
+  }
+
+  /** 服务端取消委派：停掉 Codex 回合，并丢弃后续结果。 */
+  private cancelDelegation(id: string): void {
+    const entry = this.delegations.get(String(id ?? ""));
+    if (!entry) return;
+    entry.cancelled = true;
+    if (entry.timer) clearTimeout(entry.timer);
+    if (entry.active) void cancelVoiceDelegation(entry.active);
+    this.delegations.delete(String(id ?? ""));
+  }
+
+  async handleAudio(samples: Float32Array): Promise<void> {    if (!this.active) return;
     if (this.remote) { this.remote.feed(samples); return; }
     if (!this.asr) return;
     let result: any;

@@ -17,8 +17,19 @@
  * ⛔ 未配置/连不上 ⇒ 回调 onError，VoiceService 如实报错并回落本地链路，不静默失败。
  */
 import WebSocket from "ws";
+import { randomUUID } from "node:crypto";
 
 export type MossAudioMeta = { runId: string; turnId: string; chunkId: string };
+
+/** 服务端下发的客户端委派（把后台任务交给本机 Codex 执行）。 */
+export type MossDelegationTask = {
+  id: string;
+  objective: string;
+  context: { role?: string; content?: string }[];
+  purpose?: string;
+  timeoutMs?: number;
+  ownerTurnId?: string;
+};
 
 export type MossLiveCallbacks = {
   onUserPartial?: (text: string) => void;
@@ -33,6 +44,10 @@ export type MossLiveCallbacks = {
   onDone?: (status?: string) => void;
   onError?: (message: string) => void;
   onSession?: (info: { sessionId: string; memoryScope?: string; delegation?: string }) => void;
+  /** 客户端委派：交给本机 Codex 会话执行 */
+  onDelegation?: (task: MossDelegationTask) => void;
+  /** 服务端取消某条委派 */
+  onDelegationCancelled?: (id: string, reason: string) => void;
 };
 
 export type MossLiveConfig = { baseUrl: string; model: string; apiKey: string };
@@ -41,6 +56,18 @@ export type MossLiveConfig = { baseUrl: string; model: string; apiKey: string };
 export const MOSS_INPUT_RATE = 16000;
 export const MOSS_OUTPUT_RATE = 48000;
 export const MOSS_DEFAULT_MODEL = "moss-live-1.0";
+
+/**
+ * 会话指令：需要本机能力的长任务走客户端委派，普通闲聊仍由模型直接回答。
+ * ⛔ 这是让 session.delegation.created 真正落到 Codex 的关键（否则模型可能只用内置知识回答）。
+ */
+const SESSION_INSTRUCTIONS = [
+  "你是用户的实时语音助手。",
+  "当用户要求执行需要本机或后台能力的任务（读写文件、改代码、运行命令、查本机资料、调用工具、做长任务）时，",
+  "请把任务委派给客户端（delegation）执行；等待结果期间继续和用户自然对话。",
+  "普通闲聊、常识问答、简单解释不要委派，直接回答。",
+  "委派结果会用 commentary 回来，请用一两句话把结论念给用户听。",
+].join("");
 
 /**
  * 把用户填的地址归一化成官方 Realtime WebSocket 地址。
@@ -88,6 +115,9 @@ export class MossLiveRealtime {
   private ws: WebSocket | null = null;
   private closed = false;
   private attached = false;
+  private micEnabled = false;
+  private readyTimer: ReturnType<typeof setTimeout> | null = null;
+  private onReady: (() => void) | null = null;
   private sessionId = "";
   private outputRate = MOSS_OUTPUT_RATE;
   /** 下一条二进制帧的关联信息（服务端先发 response.audio.context） */
@@ -126,7 +156,8 @@ export class MossLiveRealtime {
 
       this.ws.on("open", () => {
         // ⛔ 必须先建会话；session_attached 之前不能发音频。
-        this.send({ action: "attach_session", session_id: null });
+        // delegation=client：服务端会把后台任务以 session.delegation.created 下发，由本机 Codex 执行。
+        this.send({ action: "attach_session", session_id: null, delegation: { type: "client" } });
       });
       this.ws.on("message", (raw, isBinary) => {
         try {
@@ -159,18 +190,21 @@ export class MossLiveRealtime {
       case "session_attached": {
         this.attached = true;
         this.sessionId = String(data.session_id ?? "");
+        this.onReady = onAttached;
         this.cb.onSession?.({
           sessionId: this.sessionId,
           memoryScope: data.memory_scope ? String(data.memory_scope) : undefined,
           delegation: data.delegation ? String(data.delegation) : undefined,
         });
-        // 会话就绪后开麦：之后持续送 16k PCM16 二进制帧（含静音）。
-        this.send({ action: "mic_state", enabled: true });
-        onAttached();
+        /* 先下发会话指令（长任务委派给本机 Codex），再开麦。
+           ⛔ session.updated 可能不回：2.5s 兜底开麦，不能因为等配置把通话卡住。 */
+        this.send({ action: "session.update", session: { instructions: SESSION_INSTRUCTIONS } });
+        this.readyTimer = setTimeout(() => this.enableMic(), 2500);
         break;
       }
       case "session.updated":
         if (data.error) this.cb.onError?.(`MOSS-Live 会话配置失败：${String(data.error)}`);
+        this.enableMic();
         break;
       case "media.configured": {
         const rate = Number(data?.output_audio?.sample_rate ?? 0);
@@ -209,6 +243,23 @@ export class MossLiveRealtime {
         if (typeof data.text === "string" && data.text) this.cb.onAgentTranscript?.(data.text, true);
         this.cb.onDone?.("interrupted");
         break;
+      case "session.delegation.created": {
+        const delegation = data.delegation && typeof data.delegation === "object" ? data.delegation : {};
+        const id = String(delegation.id ?? "");
+        if (!id) break;
+        this.cb.onDelegation?.({
+          id,
+          objective: String(data.objective ?? ""),
+          context: Array.isArray(data.context) ? data.context : [],
+          purpose: data.purpose ? String(data.purpose) : undefined,
+          timeoutMs: Number(data.timeout_ms) > 0 ? Number(data.timeout_ms) : undefined,
+          ownerTurnId: data.owner_turn_id ? String(data.owner_turn_id) : undefined,
+        });
+        break;
+      }
+      case "session.delegation.cancelled":
+        this.cb.onDelegationCancelled?.(String(data.delegation_id ?? ""), String(data.reason ?? ""));
+        break;
       case "error": {
         const err = data.error ?? {};
         const code = String(err.code ?? "");
@@ -219,6 +270,17 @@ export class MossLiveRealtime {
       default:
         break;
     }
+  }
+
+  /** 开麦（幂等）：会话配置确认或 2.5s 兜底后调用，并 resolve connect()。 */
+  private enableMic(): void {
+    if (this.micEnabled) return;
+    this.micEnabled = true;
+    if (this.readyTimer) { clearTimeout(this.readyTimer); this.readyTimer = null; }
+    this.send({ action: "mic_state", enabled: true });
+    const ready = this.onReady;
+    this.onReady = null;
+    ready?.();
   }
 
   private handleBinary(raw: Buffer): void {
@@ -298,6 +360,20 @@ export class MossLiveRealtime {
    */
   cancel(): void { /* 故意为空：见上方注释 */ }
 
+  /** 委派进度（静默，供后续回答使用）。 */
+  delegationThinking(delegationId: string, content: string): void {
+    const text = String(content ?? "").trim().slice(0, 2000);
+    if (!delegationId || !text) return;
+    this.send({ action: "session.thinking.append", content: text, delegation_id: delegationId, event_id: randomUUID() });
+  }
+
+  /** 委派进度/结果（会念给用户听）：status = in_progress | completed | failed。 */
+  delegationCommentary(delegationId: string, content: string, status: "in_progress" | "completed" | "failed" = "completed"): void {
+    const text = String(content ?? "").trim().slice(0, 2000);
+    if (!delegationId || !text) return;
+    this.send({ action: "session.commentary.append", content: text, delegation_id: delegationId, status, event_id: randomUUID() });
+  }
+
   private send(obj: unknown): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(obj));
   }
@@ -305,6 +381,9 @@ export class MossLiveRealtime {
   close(): void {
     this.closed = true;
     this.attached = false;
+    this.micEnabled = false;
+    if (this.readyTimer) { clearTimeout(this.readyTimer); this.readyTimer = null; }
+    this.onReady = null;
     this.clearReceipts();
     try { this.ws?.close(); } catch { /* ignore */ }
     this.ws = null;

@@ -7,6 +7,7 @@ import { Fragment, useEffect, useMemo, memo, useState, useRef } from "react";
 import { useRefObject } from "../../../lib/use-ref-object";
 import { itemText } from "../../../lib/item-text";
 import { parseUserRefs, userDisplayText } from "../../../lib/user-refs";
+import { isVoiceDelegationPrompt } from "../../../lib/voice-delegation.mjs";
 import { playWheelTick } from "../../../lib/wheel-tick.mjs";
 import { isHiddenNoticeBlock } from "../../../lib/visible-group-blocks.mjs";
 import { contentOffsetTop } from "../../../components/scroll-utils";
@@ -109,6 +110,8 @@ export function MessageRuler({
         // 刻度只对应用户消息，agent 消息不参与
         if (item.type !== "userMessage") continue;
         if (!itemText(item).trim()) continue;
+        // 语音委派注入是宿主后台指令，时间线不渲染 ⇒ 也不占刻度（11-11）。
+        if (isVoiceDelegationPrompt(itemText(item))) continue;
         // 团队/成员会话首条 SYSTEM TASK 段不展示给用户（与气泡/复制/编辑一致）
         const raw = itemText(item);
         const label = userDisplayText(raw);

@@ -1299,6 +1299,29 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/modelsReadyNow/.test(hookSrc) && /remoteCallRef/.test(hookSrc)
     && /started\?\.backend === "moss-live"/.test(hookSrc),
     "远程已配置时没装本地模型也能发起通话；连不上回落本地时不误发 Codex 语音通知");
+  /* 11-11 用户令「接一下，他可以直接调用 codex 会话干活」：MOSS 客户端委派要真的落到 Codex。 */
+  ok(/delegation: \{ type: "client" \}/.test(mossClient) && /session\.delegation\.created/.test(mossClient)
+    && /delegation_id: delegationId/.test(mossClient),
+    "MOSS 建会话启用 delegation=client，并回传带 delegation_id 的进度/结果");
+  const voiceDelegation = read("electron/voice/voice-delegation.ts");
+  ok(/runVoiceDelegation/.test(voiceDelegation) && /thread\/resume/.test(voiceDelegation)
+    && /threadBusy/.test(voiceDelegation) && /thread\/start/.test(voiceDelegation)
+    && /waitForTurnCompletion/.test(voiceDelegation),
+    "委派优先当前 Codex 会话；会话忙时另开工作会话（⛔ 不打断用户那轮）");
+  ok(/handleDelegation/.test(svcSrc) && /delegationCommentary\(task\.id/.test(svcSrc)
+    && /cancelDelegation/.test(svcSrc) && /cancelVoiceDelegation/.test(svcSrc),
+    "委派结果/取消接线：跑完用 commentary 回报，服务端取消会中断 Codex 回合");
+  /* 11-11 用户令「注入提示词不要展示出来，隐藏掉」：模型看得到、用户在气泡/刻度/搜索/导出里看不到。 */
+  const stripSrc = read("src/lib/harness-block-strip.mjs");
+  const itemView = read("src/features/session-queue/ItemView.tsx");
+  const rulerSrc = read("src/features/session-turn/SessionTurn/01-message-ruler.tsx");
+  const delegationLib = read("src/lib/voice-delegation.mjs");
+  ok(/VOICE_DELEGATION_TAG = "\[语音助手委派\]"/.test(delegationLib)
+    && /buildVoiceDelegationPrompt/.test(delegationLib) && /isVoiceDelegationPrompt/.test(delegationLib),
+    "委派提示词的标记/拼装/判定收在 src/lib/voice-delegation.mjs（单一真相源）");
+  ok(/语音助手委派/.test(stripSrc) && /isVoiceDelegationPrompt/.test(itemView)
+    && /return null/.test(itemView) && /isVoiceDelegationPrompt/.test(rulerSrc),
+    "语音委派消息在气泡与刻度尺里整条隐藏（⛔ 注入是给模型的，不是给用户看的）");
   /* 11-11 用户令「自然多音色那个语音模型删了，不要了」⇒ Kokoro 整族移除（不留死通道/死卡片）。 */
   ok(!/kokoro/i.test(codeOnlyTs(provider)) && !/kokoro/i.test(codeOnlyTs(vsettings))
     && !/kokoro/i.test(codeOnlyTs(misc)) && !/kokoro/i.test(codeOnlyTs(enginesTsx)),

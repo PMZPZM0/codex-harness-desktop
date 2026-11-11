@@ -56,7 +56,10 @@ export function stripHarnessBlocks(text) {
     .replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "")
     /* 10-29：中枢角色块（<!--boss-role-->…<!--/boss-role-->）。10-26 起它走 developerInstructions，
        但旧会话/旧注入仍可能写在用户消息里 —— 手机读历史走的就是本模块，必须一起剥掉。 */
-    .replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
+    .replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "")
+    /* 11-11：语音委派注入（主进程拼给 Codex 的后台任务指令）——模型要看得见，
+       用户气泡 / 侧栏标题 / 搜索 / 导出 / 云同步里必须整条隐藏（用户实测「注入提示词不要展示」）。 */
+    .replace(/^\s*\[语音助手委派\][\s\S]*$/, "");
 
   /* ② 残缺形态：残留头标签 + 其后是注入块特征 ⇒ 从该标签吃到串尾 */
   const hit = out.match(HEAD);
