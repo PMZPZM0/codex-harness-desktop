@@ -964,6 +964,17 @@
   max-height: min(260px, calc(100vh - 24px));
   overflow-y: auto;
 }
+/* 11-11：项目菜单右弹时的归属箭头（兄弟元素，⛔ 不能放 .project-menu 里 —— 它 overflow:auto 会裁掉）。 */
+.project-menu-arrow {
+  position: fixed;
+  z-index: 10020;
+  width: 0;
+  height: 0;
+  transform: translateY(-50%);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 6px solid var(--panel);
+}
 .project-menu button {
   display: flex;
   align-items: center;

@@ -403,7 +403,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   const [loginMgrOpen, setLoginMgrOpen] = useState(false);
   /* 项目菜单定位（11-08 用户：「往右边展示，不要放侧边栏里面」+「不会自适应往上吗」）：
      portal 到 body 向行右侧弹出；空间不够按视口钳制（整体上移/左收），⛔ 不再嵌在滚动容器里。 */
-  const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number; arrowTop: number } | null>(null);
   /* 11-07 优化：项目菜单补「点外部关闭 + Esc」——原来只靠 mouseleave，键盘/触屏会关不掉。 */
   useEffect(() => {
     if (!projectMenu) return;
@@ -923,17 +923,22 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                               const height = 148;
                               const left = Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - width - 8));
                               const top = Math.max(8, Math.min(rect.top - 4, window.innerHeight - height - 8));
-                              setProjectMenuPos({ top, left });
+                              const arrowTop = Math.max(top + 12, Math.min(rect.top + rect.height / 2, top + height - 12));
+                              setProjectMenuPos({ top, left, arrowTop });
                             }
                             setProjectMenu(open ? cwd : null);
                           }}><MoreHorizontal size={14} /></button>
-                          {projectMenu === cwd && createPortal(
+                          {projectMenu === cwd && createPortal(<>
+                            {projectMenuPos && (
+                              <span className="project-menu-arrow" style={{ top: projectMenuPos.arrowTop, left: projectMenuPos.left - 6 }} />
+                            )}
                             <div className="project-menu" style={projectMenuPos ? { top: projectMenuPos.top, left: projectMenuPos.left } : undefined}>
                               <button onClick={() => { setProjectMenu(null); void app.openAppPrompt("修改项目名称", projectNameOf(cwd)).then((next) => { if (next != null) renameProject(cwd, next); }); }}><PenLine size={14} />编辑项目名称</button>
                               <button onClick={() => { setProjectMenu(null); openTagEditor({ kind: "project", id: cwd, title: projectNameOf(cwd), value: projectTag ?? null }); }}><Tag size={14} />{projectTag ? "编辑标签" : "添加标签"}</button>
                               <button onClick={() => { setProjectMenu(null); void window.codex.shellReveal(cwd).catch(() => undefined); }}><FolderOpen size={14} />打开项目文件</button>
                               <button className="danger" onClick={() => { setProjectMenu(null); unregisterKnownProject(cwd); void deleteThreadsByCwd(cwd); }}><Trash2 size={14} />删除项目（含全部会话）</button>
-                            </div>,
+                            </div>
+                          </>,
                             document.body,
                           )}
                         </div>

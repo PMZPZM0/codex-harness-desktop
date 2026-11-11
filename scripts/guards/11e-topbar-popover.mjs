@@ -187,5 +187,17 @@ ok(
     "⛔ 工作区菜单不许再挂 menu-backdrop 遮罩（顶栏 drag 子树里的全屏遮罩 = 点击被吞成拖窗口、全屏点不动 —— 撤掉改非阻塞，别加回来）");
 }
 
+/* ── 11-11 用户令：会话行 / 项目行这类右弹菜单要带**归属箭头**（知道是哪个「⋯」出来的）── */
+{
+  const queuedCss = readFileSync(join(ROOT, "src/styles/15-queued-messages.css"), "utf8");
+  const rowsSrc = readFileSync(join(ROOT, "src/features/app-state/parts/part02/02-goal-browser-notice/01-goal-review-file-browser/02-thread-attention-rows.tsx"), "utf8");
+  const shellSrc = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
+  ok(/\.thread-row-menu::before\s*\{[^}]*border-right:\s*6px solid var\(--panel\)/.test(cssTopbar)
+    && /--thread-menu-arrow-top/.test(cssTopbar) && /--thread-menu-arrow-top/.test(rowsSrc)
+    && /\.project-menu-arrow\s*\{[^}]*border-right:\s*6px solid var\(--panel\)/.test(queuedCss)
+    && /project-menu-arrow/.test(shellSrc),
+    "会话行 / 项目行菜单右弹时带归属箭头（指回触发按钮；⛔ 箭头不能放进 overflow:auto 的菜单里，会被裁）");
+}
+
 console.log(`\n【popover】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

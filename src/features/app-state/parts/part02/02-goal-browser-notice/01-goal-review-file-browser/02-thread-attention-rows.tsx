@@ -5,7 +5,7 @@
  * ⛔ 顺序即契约：段内含 hook 调用，React 靠**调用顺序**绑定 state ⇒ 组合根必须按文件名前缀顺序调用。
  * ⛔ 本段语句只引用「自己的局部声明」与 bag；跨段名字由组合根按入参转交。
  */
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type FormEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { DispatchMenu, DispatchBadge } from "../../../../../../features/dispatch";
 import { getBossThreads } from "../../../../../../features/boss-group-view";
@@ -150,6 +150,9 @@ import { getEntityTagState, openTagEditor } from "../../../../../../lib/entity-t
 import { aliasLabelOf, getAliasState, subscribeAliases } from "../../../../../../lib/alias-store.mjs";
 import { badgeCycleIndexOf, cycleThreadBadge, getBadgeCycleState, subscribeBadgeCycle } from "../../../../../../lib/thread-badge-cycle.mjs";
 import { ROW_COLORS, getThreadRowColors, setThreadRowColor } from "../../../../../../lib/thread-row-colors.mjs";
+
+/** 会话行菜单的锚点 Y（触发按钮中心，视口坐标）——菜单右弹时箭头指回「⋯」按钮。单开菜单，模块级足够。 */
+let threadMenuAnchorY = 0;
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../../app-view/helpers";
 import type { Model, PendingRequest, SettingsPage, SystemEvent, Thread, TreeEntry } from "../../../../../app-view/types";
 import type { Bag } from "../../../bag-types";
@@ -385,6 +388,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             const side = document.querySelector(".sidebar")?.getBoundingClientRect();
             const menuWidth = 170;
             const menuHeight = 300;
+            threadMenuAnchorY = rect.top + rect.height / 2;
             bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.top - 4, window.innerHeight - menuHeight - 8)), left: Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - menuWidth - 8)) });
           }}><MoreHorizontal size={14} /></button>
           {extras?.actions}
@@ -396,7 +400,7 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
         {bag.openingThread === entry.id ? <Spinner /> : running ? <span className="thread-running-indicator" title="任务运行中"><i /></span> : bag.unreadDoneIds.has(entry.id) ? <span className="thread-done-dot" title="任务已完成，点击进入查看" /> : null}
         {bag.threadRowMenu?.id === entry.id && createPortal(<>
           <button className="thread-row-menu-backdrop" aria-label="关闭会话菜单" onClick={() => bag.setThreadRowMenu(null)} />
-          <div className="thread-row-menu" role="menu" style={{ top: bag.threadRowMenu.top, left: bag.threadRowMenu.left }}>
+          <div className="thread-row-menu" role="menu" style={{ top: bag.threadRowMenu.top, left: bag.threadRowMenu.left, "--thread-menu-arrow-top": `${Math.max(14, Math.min(threadMenuAnchorY - bag.threadRowMenu.top, 286))}px` } as CSSProperties}>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsMarkdown([entry.id]); }}><FileText size={13} /><span>导出会话</span><small>.md</small></button>
             <button onClick={() => { bag.setThreadRowMenu(null); void bag.exportThreadsBackup([entry.id]); }}><Download size={13} /><span>完整备份</span><small>.json</small></button>
             {/* ⛔ 11-01 用户令：**只留一个改名入口**。

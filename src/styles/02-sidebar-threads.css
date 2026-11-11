@@ -337,6 +337,19 @@
   gap: 1px;
   position: fixed;
 }
+/* 11-11 用户令「菜单加归属箭头，知道是哪个选项出来的」：右弹菜单左侧一个小三角指回「⋯」。 */
+.thread-row-menu::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: var(--thread-menu-arrow-top, 24px);
+  width: 0;
+  height: 0;
+  transform: translateY(-50%);
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+  border-right: 6px solid var(--panel);
+}
 .thread-row-menu button {
   min-height: 31px;
   width: 100%;
