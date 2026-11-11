@@ -63,6 +63,9 @@ const KNOWN_OPTIONAL = [
   // toolchain.ts 的三元：isPackaged ? resourcesPath/tools : getAppPath/resources/tools
   // 只有开发态走这一侧；打包态由 ③（resourcesPath）负责，已在 extraResources + afterPack 双端核对。
   ["resources/tools", "仅开发态分支（app.isPackaged 为 false）；打包态走 resourcesPath/tools"],
+  // media-desk 的 vendorDir()：isPackaged ? resourcesPath/media-desk : getAppPath/resources/media-desk
+  // 只有开发态走这一侧；打包态由 extraResources 的 {"from":"resources/media-desk","to":"media-desk"} 负责。
+  ["resources/media-desk", "仅开发态分支（app.isPackaged 为 false）；打包态走 resourcesPath/media-desk，extraResources 已带"],
 ];
 const optional = (relPath) =>
   KNOWN_OPTIONAL.find(([pat, why]) => globToRe(pat).test(relPath.replace(/\\/g, "/")) && why);

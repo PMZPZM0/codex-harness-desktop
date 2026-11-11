@@ -30,10 +30,13 @@ if (!mod) {
   process.exit(1);
 }
 const { chunkText, addDocument, searchDocs, listDocs } = mod;
+/* ⛔ 夹具不许写死品牌目录：PPcode 用 .ppcode-harness、桌面版用 .codex-harness。
+   写死会让向量缓存落错目录 ⇒ 语义档假报「零召回」。kbRoot 是实现导出的单一真相源。 */
+const kbHome = (w) => mod.kbRoot(w);
 
 // ── 造一个临时项目（⛔ 不碰用户真实知识库目录） ──
 const ws = mkdtempSync(join(tmpdir(), "kb-guard-"));
-mkdirSync(join(ws, ".codex-harness", "knowledge"), { recursive: true });
+mkdirSync(kbHome(ws), { recursive: true });
 
 try {
   // ── 判据 1：块间有重叠 ──
@@ -97,7 +100,7 @@ try {
   //   这正是用户最自然的提问方式。0 条 = 那个 bug 回来了。
   {
     const zhWs = mkdtempSync(join(tmpdir(), "kb-guard-zh-"));
-    mkdirSync(join(zhWs, ".codex-harness", "knowledge"), { recursive: true });
+    mkdirSync(kbHome(zhWs), { recursive: true });
     try {
       addDocument(zhWs, { title: "中文召回样本", text: "记忆库的容量上限是三万字。超过之后尾部内容会被截断。", source: "guard" });
       const zhHits = searchDocs(zhWs, "记忆库容量", 5);
@@ -116,7 +119,7 @@ try {
   // 做法：用一个**恒定返回同一向量**的假 embedding 逼它走语义档。
   if (typeof mod.searchDocsSemantic === "function") {
     const ws2 = mkdtempSync(join(tmpdir(), "kb-guard2-"));
-    mkdirSync(join(ws2, ".codex-harness", "knowledge"), { recursive: true });
+    mkdirSync(kbHome(ws2), { recursive: true });
     try {
       const body = Array.from({ length: 120 }, (_, i) => `填充段落${i}ABCDE。`).join("\n\n")
         + "\n\n末尾独有关键词ZZQQ位于文档最末。";
@@ -128,7 +131,7 @@ try {
       const chunks2 = chunkText(body);
       const lastIdx = chunks2.findIndex((c) => c.includes("ZZQQ"));
       const docId = listDocs(ws2)[0].id;
-      const docDir = join(ws2, ".codex-harness", "knowledge", "docs", docId);
+      const docDir = join(kbHome(ws2), "docs", docId);
       mkdirSync(docDir, { recursive: true });
       writeFileSync(
         join(docDir, "embeddings.json"),
