@@ -1251,8 +1251,10 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/export type VoiceModelProvider/.test(provider) && /VOICE_MODEL_PROVIDERS/.test(provider)
     && /id: "moss-live"/.test(provider) && /kind: "remote-live"/.test(provider),
     "语音模型留了扩展接口（VoiceModelProvider 注册表），MOSS-Live 登记为 remote-live");
-  ok(/runnable: false/.test(provider) && /remoteConfigured/.test(provider),
-    "MOSS-Live 仍标 runnable:false（未对真实提供方逐条验证），配置齐备判定独立成函数");
+  ok(/runnable: true/.test(provider) && /remoteConfigured/.test(provider),
+    "MOSS-Live 标 runnable:true（官方 Realtime 协议已接通），配置齐备判定独立成函数");
+  ok(/wss:\/\/api\.mosi\.cn\/v1\/realtime/.test(provider) && /moss-live-1\.0/.test(provider),
+    "MOSS-Live 配置卡给出官方实时地址与模型名（不是 TTS 的 /audio/speech）");
   ok(/remote\?: Record<string, RemoteVoiceConfig>/.test(vsettings) && /remote: mergeRemote/.test(vsettings)
     && /call\?: \{ backend\?: "local" \| "moss-live" \}/.test(vsettings),
     "远程配置与 call.backend 进 VoiceSettings 且显式透传（⛔ 漏了=填了密钥保存后读回是空）");
@@ -1271,6 +1273,32 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/decodePcm16Base64/.test(transport) && /decodePcm16Base64/.test(hookSrc)
     && !/base64Pcm16ToFloat32/.test(hookSrc),
     "远程实时音频按 PCM16 解码（⛔ 别用 Float32 解码器硬解，会得到噪声）");
+  /* 11-11 官方协议实测定性：MOSS 不是 OpenAI Realtime —— 事件名/帧格式完全不同，
+     写错一个就会「连上但永远没有声音」。守卫钉死协议锚点，⛔ 不许回退成 OpenAI 那套。 */
+  const mossClient = read("electron/voice/moss-live-realtime.ts");
+  ok(/action: "attach_session"/.test(mossClient) && /session_attached/.test(mossClient)
+    && /action: "mic_state", enabled: true/.test(mossClient),
+    "MOSS-Live 握手 = attach_session → session_attached → mic_state（官方会话流程）");
+  ok(/float32ToPcm16Buffer/.test(mossClient) && /ws\.send\(float32ToPcm16Buffer/.test(mossClient)
+    && !/input_audio_buffer\.append/.test(mossClient) && !/response\.audio\.delta/.test(mossClient),
+    "上行是 16k PCM16 二进制帧（⛔ 不是 OpenAI 的 base64 JSON append）");
+  ok(/response\.audio\.context/.test(mossClient) && /playback\.chunk\.completed/.test(mossClient)
+    && /playback\.stopped/.test(mossClient) && /output\.transcript\.(updated|done)/.test(mossClient),
+    "下行按 context+二进制解析，并回播放回执（chunk / completed / stopped）");
+  ok(/MOSS_DEFAULT_MODEL = "moss-live-1\.0"/.test(mossClient) && /mossRealtimeUrl/.test(mossClient)
+    && /是语音合成（TTS）接口/.test(mossClient),
+    "地址归一化默认 moss-live-1.0，并拒绝把 TTS（/audio/speech）当实时地址");
+  ok(/remoteTranscript/.test(hookSrc) && /text, done|text: string; done: boolean/.test(read("electron/voice/voice-service.ts")),
+    "远程字幕按「完整文本覆盖」语义（⛔ 不是本地 delta 的拼接）");
+  ok(/trim: false/.test(hookSrc) && /opts\?\.trim === false/.test(hookSrc),
+    "远程流式分片不裁尾（⛔ 按本地 TTS 裁尾会剪掉句间停顿）");
+  /* 11-11 全链路闸：远程可绕过本地模型门槛，但听写仍走本地；后端以主进程回执为准。 */
+  const svcSrc = read("electron/voice/voice-service.ts");
+  ok(/this\.mode === "conversation"/.test(svcSrc) && /remoteActive\(\)/.test(svcSrc),
+    "MOSS 只接管 conversation（听写仍走本地 ASR），真实后端以 remoteActive 回执判定");
+  ok(/modelsReadyNow/.test(hookSrc) && /remoteCallRef/.test(hookSrc)
+    && /started\?\.backend === "moss-live"/.test(hookSrc),
+    "远程已配置时没装本地模型也能发起通话；连不上回落本地时不误发 Codex 语音通知");
   /* 11-11 用户令「自然多音色那个语音模型删了，不要了」⇒ Kokoro 整族移除（不留死通道/死卡片）。 */
   ok(!/kokoro/i.test(codeOnlyTs(provider)) && !/kokoro/i.test(codeOnlyTs(vsettings))
     && !/kokoro/i.test(codeOnlyTs(misc)) && !/kokoro/i.test(codeOnlyTs(enginesTsx)),

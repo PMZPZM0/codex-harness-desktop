@@ -177,9 +177,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   }, [savedMoss?.baseUrl, savedMoss?.model]);
 
   const callBackend = settings?.call?.backend === "moss-live";
-  /* ⛔ 用户填过 https://…/v1/audio/speech：那是普通语音合成（TTS）HTTP 接口，
-     实时通话要的是 Realtime WebSocket（wss）。不拦下就会得到一个「配置成功但连不上的开关」。 */
-  const mossLooksLikeTts = /\/audio\/speech\b/i.test(String(savedMoss?.baseUrl ?? ""));
+  /* ⛔ 用户填过 https://…/v1/audio/speech 或 moss-tts-*：那是普通语音合成（TTS），
+     实时通话要的是 Realtime WebSocket + moss-live-1.0。不拦下就会得到一个「配置成功但连不上的开关」。 */
+  const mossLooksLikeTts = /\/audio\/speech\b|moss-tts|\btts\b/i.test(`${savedMoss?.baseUrl ?? ""} ${savedMoss?.model ?? ""}`);
 
   const saveMoss = useCallback(async () => {
     const baseUrl = mossDraft.baseUrl.trim();
@@ -193,8 +193,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     setMossDraft((d) => ({ ...d, apiKey: "" }));
     /* ⛔ 保存后必须重读主进程状态，否则卡片一直挂着旧的「未配置」（用户实测点名）。 */
     await refresh();
-    onNotice(/\/audio\/speech\b/i.test(baseUrl)
-      ? "配置已保存；但这是语音合成（TTS）地址，实时通话还需要 Realtime WebSocket 地址"
+    onNotice(/\/audio\/speech\b|moss-tts|\btts\b/i.test(`${baseUrl} ${model}`)
+      ? "配置已保存；但这是语音合成（TTS）地址/模型，实时通话需要 wss://api.mosi.cn/v1/realtime + moss-live-1.0"
       : "MOSS-Live 配置已保存");
   }, [apply, mossDraft, onNotice, refresh, savedMoss?.apiKey, settings?.remote]);
 
@@ -467,6 +467,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             </label>
             <div className="voice-remote-actions">
               <button className="secondary-setting" onClick={() => void saveMoss()}>保存配置</button>
+              <button className="secondary-setting" onClick={() => setMossDraft((d) => ({ ...d, baseUrl: "wss://api.mosi.cn/v1/realtime", model: "moss-live-1.0" }))}>填入官方地址</button>
               {moss?.docs && (
                 <button className="secondary-setting" onClick={() => void window.codex.openExternal(moss.docs!)}>官方文档</button>
               )}
@@ -482,11 +483,11 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           {mossLooksLikeTts && (
             <div className="voice-engine-feedback is-err">
               <TriangleAlert size={12} />
-              <span>当前地址是普通语音合成（TTS）接口（/audio/speech），实时通话需要提供方的 Realtime WebSocket 地址。</span>
+              <span>当前是普通语音合成（TTS）地址/模型。实时通话请用官方地址 wss://api.mosi.cn/v1/realtime + 模型 moss-live-1.0（可点「填入官方地址」）。</span>
             </div>
           )}
           <div className="voice-engine-note">
-            对话内容会发送到提供方服务器；离线不可用。开启后语音通话改由服务端端到端生成，本地模型仍可用于播报。
+            对话内容会发送到提供方服务器；离线不可用。官方接口是 WebSocket 长连接（上行 16k PCM16，下行 48k PCM16），连不上会自动回落本地语音。
           </div>
         </div>
       </div>

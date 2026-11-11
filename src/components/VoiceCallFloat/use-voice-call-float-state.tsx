@@ -85,6 +85,10 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
   /** 当前端点静音阈值（秒）：面板上显示出来，让「为什么它等了一下才回话」可见（审计 ④） */
   const [endpointSec, setEndpointSec] = useState(0.8);
   const [models, setModels] = useState<ModelsStatus | null>(null);
+  /* 本地模型就绪，或远程实时后端已配置且启用 —— 两者任一即可开始通话。
+     ⛔ 只认本地 ready 会让「没装模型但配了 MOSS-Live」的用户在悬浮球被拦下。 */
+  const modelsReadyNow = (models?.ready ?? false)
+    || (models?.call?.backend === "moss-live" && models?.call?.remoteConfigured === true);
   const [download, setDownload] = useState<{ percent: number; message: string } | null>(null);
   const [pos, setPos] = useState(readPos);
 
@@ -149,6 +153,8 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
   const phaseRef = useRef<VoicePhase>("idle");
   /** conversation=正常通话；dictation=只把识别内容回填输入框 */
   const voiceModeRef = useRef<"conversation" | "dictation">("conversation");
+  /** 11-11：本次通话是否走远程实时后端 —— 远程由服务端对话，不该再往 Codex 发「语音已开启」通知。 */
+  const remoteCallRef = useRef(false);
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
 
   phaseRef.current = phase;
@@ -166,6 +172,8 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
         // ⛔ 10-03 显式字段映射：漏了它，被停用时提示会指向"去下载 270MB"，
         //   而正确动作只是点一下「启用」（同款"显式映射吞新字段"坑，09-12/10-03 各踩一次）。
         baseEnabled: status.baseEnabled !== false,
+        // 11-11 远程实时后端：没装本地模型时也要能开 MOSS-Live（见 startCall 的闸）。
+        call: status.call,
       });
     } catch {
       setModels(null);
@@ -216,7 +224,7 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     let timer = 0;
     let hideTimer = 0;
     const tick = () => {
-      setHint(pickHint(phase, state, models?.ready ?? false, models?.baseEnabled === false, taskMood));
+      setHint(pickHint(phase, state, modelsReadyNow, models?.baseEnabled === false, taskMood));
       hideTimer = window.setTimeout(() => setHint(null), 3000);
       /* 没人理就计数：到限当天静音。球上任何交互（点击 / 菜单 / 拖动）都会清零。 */
       ignoredHintsRef.current += 1;
@@ -229,17 +237,17 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     timer = window.setTimeout(tick, 3000);
     return () => { window.clearTimeout(timer); window.clearTimeout(hideTimer); };
     // 依赖 phase/state/modelsReady/taskMood —— 状态变了下一条提示会立刻刷新成对应池
-  }, [hintsEnabled, quiet, autoMuted, phase, state, models?.ready, taskMood]);
+  }, [hintsEnabled, quiet, autoMuted, phase, state, modelsReadyNow, taskMood]);
 
   /* 收尾反馈（10-29）：等你确认 / 干完了 立刻冒一句（不等随机节奏）；failed 只做姿态不说话。
      ⛔ 不计入降噪计数：这是事件驱动的反馈，不是主动搭话。 */
   useEffect(() => {
     if (!hintsEnabled || quiet || autoMuted) return;
     if (taskMood !== "waiting" && taskMood !== "done") return;
-    setHint(pickHint(phase, state, models?.ready ?? false, models?.baseEnabled === false, taskMood));
+    setHint(pickHint(phase, state, modelsReadyNow, models?.baseEnabled === false, taskMood));
     const hide = window.setTimeout(() => setHint(null), 2800);
     return () => window.clearTimeout(hide);
-  }, [taskMood, hintsEnabled, quiet, autoMuted, phase, state, models?.ready]);
+  }, [taskMood, hintsEnabled, quiet, autoMuted, phase, state, modelsReadyNow]);
 
   // 点空白处收起右键菜单
   useEffect(() => {
@@ -365,16 +373,24 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
         if (announceRef.current.enabled) void speakDelta(piece);
         return;
       }
-      /* 11-10 MOSS-Live 全双工：字幕/音频由服务端下行，直接播放，不走本地 TTS/断句器。 */
-      if (event.type === "remoteDelta") {
-        const piece = String(event.text ?? "");
-        setAgentText((prev) => { const next = prev + piece; agentTextRef.current = next; return next; });
-        patchVoiceStage({ agentText: agentTextRef.current });
+      /* 11-11 MOSS-Live 全双工（官方协议）：字幕是**当前完整文本**（覆盖，不拼接），
+         音频是 48k PCM16 二进制分片；播完/打断由主进程回执给服务端。 */
+      if (event.type === "remoteTranscript") {
+        const text = String(event.text ?? "");
+        setAgentText(text);
+        agentTextRef.current = text;
+        patchVoiceStage({ agentText: text });
+        if (event.done) {
+          if (text.trim()) pushTranscript("agent", text);
+          setAgentText("");
+          agentTextRef.current = "";
+        }
         return;
       }
       if (event.type === "remoteAudio") {
         const samples = decodePcm16Base64(String(event.base64 ?? ""));
-        if (samples.length) void enqueuePlay(samples, Number(event.sampleRate ?? 24000));
+        // ⛔ 远程流式分片不能按本地 TTS 那样裁尾（会把句子间停顿/轻声尾音剪掉）。
+        if (samples.length) void enqueuePlay(samples, Number(event.sampleRate ?? 48000), { trim: false });
         return;
       }
       if (event.type === "remoteBarge") {
@@ -383,7 +399,10 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
         return;
       }
       if (event.type === "remoteDone") {
-        if (String(agentTextRef.current ?? "").trim()) pushTranscript("agent", agentTextRef.current);
+        const status = String(event.status ?? "completed");
+        const text = String(agentTextRef.current ?? "");
+        // completed 由 output.transcript.done 落账；中止/失败在这里补记，避免半句凭空消失。
+        if (status !== "completed" && text.trim()) pushTranscript("agent", text);
         setAgentText("");
         agentTextRef.current = "";
         return;
@@ -460,7 +479,7 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     refWriteRef.current = at + samples.length;
   }, []);
 
-  const enqueuePlay = useCallback(async (samples: Float32Array, sampleRate: number) => {
+  const enqueuePlay = useCallback(async (samples: Float32Array, sampleRate: number, opts?: { trim?: boolean }) => {
     if (!playCtxRef.current) {
       playCtxRef.current = new AudioContext();
     }
@@ -468,8 +487,9 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     if (ctx.state === "suspended") await ctx.resume().catch(() => undefined);
     /* ⛔ 11-08 用户实测（只开播报就能复现）：合成样本尾部挂一段低电平噪声，
        整段播 ⇒ 「话念完了、电流声还响几秒」。播放前统一裁尾（纯函数 voice-audio-trim.mjs）；
-       ⛔ 必须**先裁再写 AEC 参考**（下面 pushRef 用同一份 trimmed），否则参考与出声失步。 */
-    const trimmed = trimTtsSamples(samples, sampleRate);
+       ⛔ 必须**先裁再写 AEC 参考**（下面 pushRef 用同一份 trimmed），否则参考与出声失步。
+       ⛔ 11-11 远程实时分片传 `trim:false`：流式音频的句间停顿/轻声尾音不能被当成噪声剪掉。 */
+    const trimmed = opts?.trim === false ? samples : trimTtsSamples(samples, sampleRate);
     if (!trimmed.length) {
       if (playingCountRef.current === 0) {
         speakingRef.current = false;
@@ -846,7 +866,7 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
       setExpanded(true);
       return;
     }
-    if (models && !models.ready) {
+    if (!modelsReadyNow && models && !models.ready) {
       // ⛔ 10-03：停用与未下载要分开提示。停用时模型文件**就在本地**，
       //   说"尚未下载完整，请点下载"会把用户引去重下 270MB —— 而正确动作只是启用一下。
       if (models.baseEnabled === false) {
@@ -864,6 +884,9 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
        现在把裁决权交回主进程（voice:start 内有持有者存活判定 + 僵尸自愈），
        这里只负责：失败就把状态复位并如实提示（下面 catch 已经做了）。 */
     voiceModeRef.current = mode;
+    /* ⛔ 远程实时（MOSS-Live）是端到端对话：不发 Codex 通知、不让引擎起回合，
+       否则每通电话都会白烧一轮「收到」。真实后端以主进程回执为准（连不上会回落本地）。 */
+    remoteCallRef.current = false;
     setPhase("starting");
     prebufferRef.current = [];
     liveRef.current = false;
@@ -874,6 +897,7 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
       await startCapture();
       const started = await window.codex.voiceStart(threadId || "", { mode });
       if (!started?.ok) throw new Error(started?.error || "语音引擎启动失败");
+      remoteCallRef.current = started?.backend === "moss-live";
       // 就绪后把暂存音频按序回灌。顺序保证：回灌是**同步**的，回灌完才把 liveRef 打开，
       // 此后的块走实时链路——先到的先发，绝不乱序（不要改成 setPhase 之后再回灌：
       // React state 落地晚一帧，那一帧的块会被丢）。
@@ -898,7 +922,7 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
          「快问快答：先给结论再说过程」）。⛔ 文案在 src/voice/voice-notice.ts（单一真相源），
          引擎侧判据在 developer-instructions.ts —— 两边靠 VOICE_CALL_ON_TAG 对齐。
          ⛔ 听写（dictation）不是「通话」，不发这一条。 */
-      if (mode === "conversation") requestVoiceCallNotice(true, threadId || "");
+      if (mode === "conversation" && !remoteCallRef.current) requestVoiceCallNotice(true, threadId || "");
     } catch (error: any) {
       setPhase("idle");
       await teardown();
@@ -927,7 +951,10 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
     // 波浪/字幕随之收起
     resetVoiceStage();
     // 告知会话：实时语音已结束（撤销「快问快答」那套要求；10-08 用户要求挂断也要有状态通知）
-    if (wasConversation) requestVoiceCallNotice(false, threadId || "");
+    // ⛔ 远程实时通话没发过「开启」通知，挂断也不发（否则引擎会白跑一轮）。
+    const wasRemote = remoteCallRef.current;
+    remoteCallRef.current = false;
+    if (wasConversation && !wasRemote) requestVoiceCallNotice(false, threadId || "");
   }, [teardown, applyLevel]);
 
   // 波浪舞台上的「结束通话」按钮调的是这里（注册进 store，跨组件调用）
@@ -1074,7 +1101,8 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
           ? "思考中"
           : "播报中";
 
-  const modelsReady = models?.ready ?? false;
+  /* 本地模型就绪，或远程实时后端已配置且启用 —— 两者任一即可开始通话。 */
+  const modelsReady = modelsReadyNow;
   // 他窗口通话中 → 球置灰（视觉 + 语义），挂断后轮询自动恢复
   const ballClass = `voice-ball voice-ball--skin-${ballStyle} ${phase === "active" ? `is-${state}` : ""} ${phase === "starting" ? "is-starting" : ""} ${busyElsewhere && phase === "idle" ? "is-busy-elsewhere" : ""}`;
 

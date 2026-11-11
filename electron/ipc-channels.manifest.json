@@ -5258,7 +5258,7 @@
       "channel": "voice:models-status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; }>",
+      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; call?: { backend?: \"local\" | \"moss-live\"; remoteConfigured?: boolean }; mossLive?: { configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string }; }>",
       "cast": null,
       "note": "10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态"
     },
@@ -5454,7 +5454,7 @@
       "channel": "voice:start",
       "paramsImpl": "threadId: string, options?: { mode?: \"conversation\" | \"dictation\" }",
       "paramsDecl": "threadId: string, options?: { mode?: \"conversation\" | \"dictation\" }",
-      "returns": "Promise<{ ok: boolean; error?: string; status: unknown }>",
+      "returns": "Promise<{ ok: boolean; error?: string; backend?: \"local\" | \"moss-live\"; status: unknown }>",
       "invokeArgs": "threadId, options",
       "cast": null,
       "note": null

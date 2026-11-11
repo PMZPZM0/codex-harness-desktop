@@ -46,16 +46,6 @@ function pcm16WavToFloat32(buf: Buffer): Float32Array {
 
 const SAMPLE_RATE = 16000;
 
-/** Float32（-1..1）→ PCM16 base64（MOSS-Live 上行格式）。 */
-function float32ToPcm16Base64(samples: Float32Array): string {
-  const buf = Buffer.alloc(samples.length * 2);
-  for (let i = 0; i < samples.length; i++) {
-    const v = Math.max(-1, Math.min(1, samples[i]));
-    buf.writeInt16LE(Math.round(v * 32767), i * 2);
-  }
-  return buf.toString("base64");
-}
-
 /** 语音轮的推理档位：通话场景优先低延迟（自定义模型档位是 low/medium/high）。 */
 const VOICE_EFFORT = "low";
 
@@ -94,10 +84,11 @@ export type VoiceEvent =
   | { type: "error"; message: string }
   | { type: "download"; repo?: string; file?: string; repoIndex?: number; repoTotal?: number; percent: number; message: string }
   | { type: "downloadDone"; ok: boolean; error?: string }
-  /* 11-10 MOSS-Live 全双工实时：音频/字幕由服务端下行，渲染层直接播放，不走本地 TTS。 */
+  /* 11-11 MOSS-Live 全双工实时：音频/字幕由服务端下行，渲染层直接播放，不走本地 TTS。
+     ⛔ 字幕是「当前完整文本」（覆盖，不拼接），与本地 delta 语义不同。 */
   | { type: "remoteAudio"; base64: string; sampleRate: number }
-  | { type: "remoteDelta"; text: string }
-  | { type: "remoteDone" }
+  | { type: "remoteTranscript"; text: string; done: boolean }
+  | { type: "remoteDone"; status?: string }
   | { type: "remoteBarge" };
 
 export type VoiceSpeakResult =
@@ -228,8 +219,10 @@ export class VoiceService {
     this.currentSettings = loadVoiceSettings(this.deps.userDataDir);
 
     /* 11-10 MOSS-Live 实时后端：选中且已配置 ⇒ 走全双工 S2S，不依赖本地模型。
-       连不上 ⇒ 如实提示并回落本地链路（下面继续），不静默失败。 */
-    if (this.currentSettings.call?.backend === "moss-live"
+       连不上 ⇒ 如实提示并回落本地链路（下面继续），不静默失败。
+       ⛔ 听写（dictation）必须走本地 ASR：它只把文字回填输入框，不需要远程对话。 */
+    if (this.mode === "conversation"
+      && this.currentSettings.call?.backend === "moss-live"
       && remoteConfigured(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id)) {
       if (await this.startRemote(input.threadId)) return { ok: true };
     }
@@ -303,6 +296,11 @@ export class VoiceService {
   }
 
   /** 结束通话：释放麦克风/状态；工作线程**寄存保活**一段时间（见 WORKER_KEEPALIVE_MS）。 */
+  /** 当前通话是否走远程实时后端（渲染层据此决定是否发 Codex 语音通知）。 */
+  remoteActive(): boolean {
+    return Boolean(this.active && this.remote);
+  }
+
   async stop(): Promise<void> {
     const asr = this.asr;
     const tts = this.tts;
@@ -383,11 +381,12 @@ export class VoiceService {
     const client = new MossLiveRealtime(cfg, {
       onUserPartial: (text) => this.deps.emit({ type: "partial", text }),
       onUserFinal: (text) => this.deps.emit({ type: "final", text }),
-      onAgentDelta: (text) => this.deps.emit({ type: "remoteDelta", text }),
+      onAgentTranscript: (text, done) => this.deps.emit({ type: "remoteTranscript", text, done }),
       onAudio: (base64, sampleRate) => this.deps.emit({ type: "remoteAudio", base64, sampleRate }),
-      onDone: () => { this.deps.emit({ type: "remoteDone" }); if (this.active) this.setState("listening"); },
+      onDone: (status) => { this.deps.emit({ type: "remoteDone", status }); if (this.active) this.setState("listening"); },
       onBarge: () => { this.deps.emit({ type: "remoteBarge" }); if (this.active) this.setState("listening"); },
       onError: (message) => { if (this.active) this.fail(message); },
+      onSession: (info) => this.deps.log("info", `MOSS-Live 会话已建立（memory_scope=${info.memoryScope ?? "session"}）`),
     });
     try {
       await client.connect();
@@ -408,7 +407,7 @@ export class VoiceService {
 
   async handleAudio(samples: Float32Array): Promise<void> {
     if (!this.active) return;
-    if (this.remote) { this.remote.feed(float32ToPcm16Base64(samples)); return; }
+    if (this.remote) { this.remote.feed(samples); return; }
     if (!this.asr) return;
     let result: any;
     try {
@@ -685,7 +684,12 @@ export class VoiceService {
    */
   async barge(): Promise<{ ok: boolean }> {
     if (!this.active) return { ok: false };
-    if (this.remote) { this.remote.cancel(); this.deps.emit({ type: "remoteBarge" }); this.setState("listening"); return { ok: true }; }
+    if (this.remote) {
+      // MOSS 靠持续上行音频判定打断，不需要客户端 cancel；这里只把界面切回聆听。
+      this.deps.emit({ type: "remoteBarge" });
+      this.setState("listening");
+      return { ok: true };
+    }
     const threadId = this.threadId;
     const turnId = this.currentTurnId;
     this.setState("listening");

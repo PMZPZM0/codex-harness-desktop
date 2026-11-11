@@ -48,13 +48,13 @@ export const MOSS_LIVE_PROVIDER: VoiceModelProvider = {
   role: "远程实时对话模型：自然打断、边听边说。不占本机磁盘，需提供方 API 密钥。",
   docs: "https://platform.mosi.cn/docs/models/moss-live",
   remoteFields: [
-    { key: "baseUrl", label: "接口地址", placeholder: " wss://…/v1/realtime（Realtime WebSocket）" },
-    { key: "model", label: "模型", placeholder: "moss-live" },
+    { key: "baseUrl", label: "接口地址", placeholder: " wss://api.mosi.cn/v1/realtime" },
+    { key: "model", label: "模型", placeholder: "moss-live-1.0" },
     { key: "apiKey", label: "API 密钥", placeholder: " sk-…", secret: true },
   ],
-  runnable: false,
+  runnable: true,
   pros: ["全双工：边听边说、自然打断，接近真人对话", "不下载模型、不占本机磁盘与 CPU", "表现力与自然度高于本地离线 TTS"],
-  cons: ["需联网与提供方 API 密钥，离线不可用", "实时通道按 OpenAI Realtime 兼容协议接入；提供方协议不同时需适配", "对话内容会发送到提供方服务器"],
+  cons: ["需联网与提供方 API 密钥，离线不可用", "对话内容会发送到提供方服务器", "官方接口是 WebSocket 长连接；地址/模型填错会连接失败并回落本地"],
 };
 
 /** 现有本地引擎登记成同一接口（数据与 model-manifest / UI 文案保持一致）。 */

@@ -132,7 +132,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
       const senderId = Number((event as any)?.sender?.id ?? 0);
       callOwnerWcId = senderId > 0 ? senderId : null;
     }
-    return { ...result, status: svc().status() };
+    return { ...result, backend: svc().remoteActive() ? "moss-live" : "local", status: svc().status() };
   });
 
   ipcHost.handle("voice:dictation-finish", async () => svc().finishDictation());
@@ -279,8 +279,14 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
       // 基础模型：readyFiles/totalFiles 已说明装了多少，这里补启用状态
       baseEnabled: isVoiceResourceEnabled(settings, "base"),
       resources: voiceResourceStates(settings),
+      /* 11-11 实时后端状态：渲染层据此在「没装本地模型」时也允许开远程通话
+         （否则会先在悬浮球被「请先下载模型」拦下，MOSS-Live 永远用不上）。 */
+      call: {
+        backend: settings.call?.backend === "moss-live" ? "moss-live" : "local",
+        remoteConfigured: remoteConfigured(settings.remote, MOSS_LIVE_PROVIDER.id),
+      },
       /* 11-10 远程实时语音模型（MOSS-Live）：只回配置态，不回明文密钥。
-         runnable=false（实时推理运行时待接入），UI 照它给说法，不能点了没反应。 */
+         runnable=true（官方 Realtime 协议已接通），UI 照它给说法。 */
       mossLive: (() => {
         const c = remoteConfigOf(settings.remote, MOSS_LIVE_PROVIDER.id);
         return {

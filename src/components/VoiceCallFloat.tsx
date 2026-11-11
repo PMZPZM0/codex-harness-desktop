@@ -16,7 +16,7 @@ import { useBallReactions } from "./VoiceCallFloat/use-ball-reactions";
 
 export type VoicePhase = "idle" | "starting" | "active";
 export type VoiceState = "listening" | "thinking" | "speaking";
-export type ModelsStatus = { ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; /** 10-03：基础模型是否被用户停用（false = 停用；缺省 true 兼容老主进程） */ baseEnabled?: boolean };
+export type ModelsStatus = { ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; /** 10-03：基础模型是否被用户停用（false = 停用；缺省 true 兼容老主进程） */ baseEnabled?: boolean; /** 11-11：通话后端（local / moss-live）与远程配置是否齐备 —— 远程可用时不需要本地模型 */ call?: { backend?: "local" | "moss-live"; remoteConfigured?: boolean } };
 export const POS_KEY = "voice-float-pos";
 const DEFAULT_POS = { right: 22, bottom: 104 };
 export const CAPTURE_RATE = 16000;
