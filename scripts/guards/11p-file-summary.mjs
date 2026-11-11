@@ -269,15 +269,16 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   /* 11-11 用户：图片已有预览卡 + 已更改文件行，正文再出海缩略芯片就是三重展示；视频同理（预览卡负责播放）。 */
   ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) return false/.test(inlineCards),
     "视频不再出正文缩略芯片（图片走文件卡，不再排除）");
-  /* 11-11 用户令：「图片预览卡片不用这么大这么长，可以正方形在汇总消息下面，可以小一点」。 */
+  /* 11-11 用户令：「图片预览小正方形、放在长条文件卡上面；文件名可以不要」。 */
   {
     const statusSrc = read("src/features/status/Status.tsx");
     const mediaCss = read("src/styles/39-media-preview.css");
-    ok(statusSrc.indexOf("<TurnMediaCards") > statusSrc.indexOf("</details>"),
-      "媒体预览卡渲染在「已更改」汇总之后（汇总消息下面）");
+    ok(statusSrc.indexOf("<TurnMediaCards") > 0 && statusSrc.indexOf("<TurnMediaCards") < statusSrc.indexOf("</details>"),
+      "媒体预览卡渲染在「已更改」长条卡之前（长条卡片上面）");
     ok(/\.turn-media-card\.is-image \{[\s\S]{0,160}width: 112px;/.test(mediaCss)
-      && /\.turn-media-card\.is-image \.turn-media-thumb \{[\s\S]{0,80}height: 112px;/.test(mediaCss),
-      "图片预览是小正方形（112×112，不再是整行大图）");
+      && /\.turn-media-card\.is-image \{[\s\S]{0,200}height: 112px;/.test(mediaCss)
+      && /\.turn-media-card\.is-image \.turn-media-meta \{[\s\S]{0,40}display: none;/.test(mediaCss),
+      "图片预览是小正方形且不显示文件名（112×112，meta 隐藏）");
   }
   ok(fileRefCard.includes("openRightFile") && /target === "editor" && onOpenEditor/.test(fileRefCard) && /shellOpen/.test(fileRefCard),
     "文件引用卡默认右栏预览；编辑器 / 默认应用从下拉选择（⛔ 不再默认弹居中编辑器）");
