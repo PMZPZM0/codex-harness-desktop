@@ -155,6 +155,8 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
   const voiceModeRef = useRef<"conversation" | "dictation">("conversation");
   /** 11-11：本次通话是否走远程实时后端 —— 远程由服务端对话，不该再往 Codex 发「语音已开启」通知。 */
   const remoteCallRef = useRef(false);
+  /** 11-11：实时后端签名（backend + 远程配置）——只有它变了才重拉模型状态，避免每次改设置都扫盘。 */
+  const voiceBackendSigRef = useRef("");
   const dragRef = useRef<{ dx: number; dy: number; moved: boolean } | null>(null);
 
   phaseRef.current = phase;
@@ -321,6 +323,14 @@ export function useVoiceCallFloatState({ threadId, taskMood = "idle" }: { thread
         // 播报开关也走这条广播：设置页勾/取消后**当前通话立刻生效**（下一句起）
         const a = event.settings?.announce;
         if (a) announceRef.current = { enabled: typeof a.enabled === "boolean" ? a.enabled : (a.live !== false || a.summary === true) };
+        /* 11-11：实时后端（call.backend）/ 远程配置切换会改变「本地模型是否必需」——
+           不重拉的话悬浮球还按旧后端判断，出现「已配 MOSS 却提示去下载模型」/反之。
+           ⛔ 只在签名变化时重拉：voiceModelsStatus 要逐个文件校验，改音色/音量不该扫盘。 */
+        const nextSig = `${event.settings?.call?.backend ?? "local"}|${JSON.stringify(event.settings?.remote ?? {})}`;
+        if (nextSig !== voiceBackendSigRef.current) {
+          voiceBackendSigRef.current = nextSig;
+          void refreshModels();
+        }
         return;
       }
       if (event.type === "state") {

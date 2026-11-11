@@ -257,6 +257,8 @@ export function stripHarnessBlocks(text: string): string {
   out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
   /* 10-26：旧会话补种的中枢角色说明（send.tsx 的 seedInjection）——同样只在模型侧，导出正文不出现。 */
   out = out.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
+  /* 11-11：语音委派注入（MOSS delegation → Codex）——导出/备份正文里不能出现。 */
+  out = out.replace(/^\s*\[语音助手委派\][\s\S]*$/, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 

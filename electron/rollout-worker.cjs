@@ -71,6 +71,8 @@ function stripHarnessBlocks(text) {
   out = out.replace(/^##\s[^\n]*（本次注入\s*\d+\s*\/\s*命名空间共\s*\d+\s*条）[^\n]*(?:\r?\n(?!\r?\n)[^\n]*)*\r?\n?/gm, "");
   out = out.replace(/<!--harness-notice-->[\s\S]*?<!--\/harness-notice-->\s*/g, "");
   out = out.replace(/<!--boss-role-->[\s\S]*?<!--\/boss-role-->\s*/g, "");
+  /* 11-11：语音委派注入（MOSS delegation → Codex）——模型看，记忆/导出/标题里不能留。 */
+  out = out.replace(/^\s*\[语音助手委派\][\s\S]*$/, "");
   return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 

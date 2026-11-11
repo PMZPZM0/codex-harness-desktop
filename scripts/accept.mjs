@@ -2221,6 +2221,8 @@ const CHECKS = [
 
       /* 用户实测「配置完状态都不刷新」：走真实表单保存，徽标必须立刻变「已配置」。 */
       const originalRemote = await h.eval(`window.codex.voiceSettingsGet().then(function(r){ return (r && r.settings && r.settings.remote) || {}; })`).catch(() => ({}));
+      /* 新语义：远程配置按 id 合并、value=null 才是删除；空对象不再清空。 */
+      const restoredRemote = originalRemote && Object.keys(originalRemote).length ? originalRemote : { "moss-live": null };
       try {
         const filled = await h.eval(`(function(){
           const form=document.querySelector(".voice-remote-form"); if(!form) return 0;
@@ -2242,7 +2244,7 @@ const CHECKS = [
         h.check("④ 保存后卡片状态立即变「已配置」（⛔ 不再挂旧「未配置」）",
           Boolean(after && after.remoteState.includes("已配置")), JSON.stringify(after && after.remoteState));
       } finally {
-        await h.eval(`window.codex.voiceSettingsSet({ remote: ${JSON.stringify(originalRemote)} })`).catch(() => undefined);
+        await h.eval(`window.codex.voiceSettingsSet({ remote: ${JSON.stringify(restoredRemote)} })`).catch(() => undefined);
       }
 
       /* 用户实测「停用不行」：①主进程 baseEnabled 必须真翻转；②已装模型时引擎卡显示「已停用」；

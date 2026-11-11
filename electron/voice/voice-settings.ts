@@ -332,7 +332,25 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
 /** 部分写入并落盘；返回合并后的完整设置。 */
 export function saveVoiceSettings(userDataDir: string, patch: Partial<VoiceSettings>): VoiceSettings {
   const current = loadVoiceSettings(userDataDir);
-  const next = mergeSettings({ ...current, ...patch });
+  /* ⛔ 远程配置按 id 深合并：渲染层拿到的是**去掉密钥**的公开配置，
+     保存时不带 apiKey ⇒ 这里必须沿用已存的密钥，而不是把整条覆盖成空。
+     value=null 表示显式删除该条（设置页没有清空入口，但验收/复位要用）。 */
+  let remote = current.remote;
+  const patchRemote = (patch as any)?.remote;
+  if (patchRemote && typeof patchRemote === "object") {
+    const merged: Record<string, RemoteVoiceConfig> = { ...(current.remote ?? {}) };
+    for (const [id, value] of Object.entries(patchRemote as Record<string, unknown>)) {
+      if (value === null) { delete merged[id]; continue; }
+      if (!value || typeof value !== "object") continue;
+      const prev = merged[id] ?? {};
+      const entry: RemoteVoiceConfig = { ...prev, ...(value as RemoteVoiceConfig) };
+      if (!entry.apiKey) entry.apiKey = prev.apiKey;
+      if (!entry.apiKey) delete entry.apiKey;
+      merged[id] = entry;
+    }
+    remote = merged;
+  }
+  const next = mergeSettings({ ...current, ...patch, remote });
   writeFileSync(voiceSettingsFile(userDataDir), JSON.stringify(next, null, 2), "utf8");
   return next;
 }

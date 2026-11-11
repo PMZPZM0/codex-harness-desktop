@@ -129,7 +129,10 @@ export class VoiceService {
   private remote: MossLiveRealtime | null = null;
   /** 11-11 语音委派：服务端下发的后台任务 → 本机 Codex 会话执行 → commentary 回传。 */
   private delegations = new Map<string, {
+    /** 服务端要求取消（要中断 Codex 回合） */
     cancelled: boolean;
+    /** 通话已挂断：任务继续跑，但不再往旧连接回传（⛔ 不要和 cancelled 混用） */
+    silenced: boolean;
     active: { threadId: string; turnId: string; worker: boolean } | null;
     timer: ReturnType<typeof setTimeout> | null;
   }>();
@@ -319,9 +322,10 @@ export class VoiceService {
     this.remote = null;
     remote?.close();
     /* 委派任务不因挂断而中断（活已经交给 Codex 了，用户通常希望它做完）；
-       只清掉计时器并标记静默，避免挂断后还往已关闭的连接推 commentary。 */
+       只清掉计时器并标记**静默**，避免挂断后还往已关闭的连接推 commentary。
+       ⛔ 不能用 cancelled：那个标记会让 onStarted 去中断 Codex 回合。 */
     for (const entry of this.delegations.values()) {
-      entry.cancelled = true;
+      entry.silenced = true;
       if (entry.timer) clearTimeout(entry.timer);
     }
     this.delegations.clear();
@@ -435,12 +439,12 @@ export class VoiceService {
       client.delegationCommentary(task.id, "同时处理的任务太多了，等前面几件做完再试。", "failed");
       return;
     }
-    const entry = { cancelled: false, active: null as null | { threadId: string; turnId: string; worker: boolean }, timer: null as null | ReturnType<typeof setTimeout> };
+    const entry = { cancelled: false, silenced: false, active: null as null | { threadId: string; turnId: string; worker: boolean }, timer: null as null | ReturnType<typeof setTimeout> };
     this.delegations.set(task.id, entry);
     client.delegationThinking(task.id, `开始执行：${String(task.objective ?? "").slice(0, 200)}`);
     // 长任务先给一句可播报的进度（20s 内完成就不打扰）。
     entry.timer = setTimeout(() => {
-      if (!entry.cancelled) client.delegationCommentary(task.id, "还在处理，稍等一下。", "in_progress");
+      if (!entry.cancelled && !entry.silenced) client.delegationCommentary(task.id, "还在处理，稍等一下。", "in_progress");
     }, 20_000);
     void runVoiceDelegation({
       id: task.id,
@@ -449,16 +453,22 @@ export class VoiceService {
       context: task.context,
       purpose: task.purpose,
       timeoutMs: task.timeoutMs,
-    }, (active) => { entry.active = active; }).then((result) => {
+    }, (active) => {
+      entry.active = active;
+      /* ⛔ 取消可能早于回合真正开跑（线程 resume 期间就收到 session.delegation.cancelled）——
+         那一刻还没有 turnId 可中断；等 onStarted 拿到句柄后必须补一次，否则任务照样跑完。
+         ⛔ 只有服务端取消才中断；「挂断」只是静默，任务继续跑。 */
+      if (entry.cancelled) void cancelVoiceDelegation(active);
+    }).then((result) => {
       if (entry.timer) clearTimeout(entry.timer);
       this.delegations.delete(task.id);
-      if (entry.cancelled) return;
+      if (entry.cancelled || entry.silenced) return;
       if (result.ok) client.delegationCommentary(task.id, result.output || "已经处理完了。", "completed");
       else client.delegationCommentary(task.id, `没办成：${result.error ?? "未知原因"}`, "failed");
     }).catch((error: any) => {
       if (entry.timer) clearTimeout(entry.timer);
       this.delegations.delete(task.id);
-      if (!entry.cancelled) client.delegationCommentary(task.id, `没办成：${String(error?.message ?? error)}`, "failed");
+      if (!entry.cancelled && !entry.silenced) client.delegationCommentary(task.id, `没办成：${String(error?.message ?? error)}`, "failed");
     });
   }
 

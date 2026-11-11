@@ -1260,6 +1260,11 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "远程配置与 call.backend 进 VoiceSettings 且显式透传（⛔ 漏了=填了密钥保存后读回是空）");
   ok(/mossLive:/.test(misc) && /hasKey: Boolean\(c\.apiKey\)/.test(misc) && !/apiKey: c\.apiKey/.test(misc),
     "状态 IPC 只回 hasKey/末四位，不回明文密钥");
+  ok(/publicVoiceSettings/.test(misc) && /settings: publicVoiceSettings\(settings\)/.test(misc)
+    && /const safe = publicVoiceSettings\(next\)/.test(misc) && /settings: safe/.test(misc),
+    "settings-get / settings-set / settings 广播全部脱敏（⛔ 渲染层拿不到远程 API Key）");
+  ok(/moss\?\.hasKey/.test(enginesTsx) && /\.\.\.\(apiKey \? \{ apiKey \} : \{\}\)/.test(enginesTsx),
+    "保存时留空 = 沿用已存密钥（渲染层不持有密钥，也不把它写回 patch）");
   ok(/MOSS-Live/.test(enginesTsx) && /voice-remote-form/.test(enginesTsx) && /saveMoss/.test(enginesTsx),
     "设置页有 MOSS-Live 配置卡（地址/模型/密钥 + 保存 + 官方文档）");
   /* 11-11 用户实测「配置完状态都不刷新，我怎么用」：saveMoss 必须**等落盘后重读**，
@@ -1299,6 +1304,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/modelsReadyNow/.test(hookSrc) && /remoteCallRef/.test(hookSrc)
     && /started\?\.backend === "moss-live"/.test(hookSrc),
     "远程已配置时没装本地模型也能发起通话；连不上回落本地时不误发 Codex 语音通知");
+  ok(/实时后端（call\.backend）/.test(hookSrc) && /voiceBackendSigRef/.test(hookSrc) && /void refreshModels\(\)/.test(hookSrc),
+    "设置页切换实时后端后，悬浮球重拉状态（且只在后端签名变化时，避免每次改设置都扫盘）");
   /* 11-11 用户令「接一下，他可以直接调用 codex 会话干活」：MOSS 客户端委派要真的落到 Codex。 */
   ok(/delegation: \{ type: "client" \}/.test(mossClient) && /session\.delegation\.created/.test(mossClient)
     && /delegation_id: delegationId/.test(mossClient),
@@ -1311,6 +1318,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/handleDelegation/.test(svcSrc) && /delegationCommentary\(task\.id/.test(svcSrc)
     && /cancelDelegation/.test(svcSrc) && /cancelVoiceDelegation/.test(svcSrc),
     "委派结果/取消接线：跑完用 commentary 回报，服务端取消会中断 Codex 回合");
+  ok(/entry\.silenced = true/.test(svcSrc) && /entry\.cancelled \|\| entry\.silenced/.test(svcSrc),
+    "挂断只静默不中断：已交给 Codex 的委派任务继续跑完（⛔ silenced 不驱动 turn/interrupt）");
   /* 11-11 用户令「注入提示词不要展示出来，隐藏掉」：模型看得到、用户在气泡/刻度/搜索/导出里看不到。 */
   const stripSrc = read("src/lib/harness-block-strip.mjs");
   const itemView = read("src/features/session-queue/ItemView.tsx");
@@ -1319,9 +1328,11 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/VOICE_DELEGATION_TAG = "\[语音助手委派\]"/.test(delegationLib)
     && /buildVoiceDelegationPrompt/.test(delegationLib) && /isVoiceDelegationPrompt/.test(delegationLib),
     "委派提示词的标记/拼装/判定收在 src/lib/voice-delegation.mjs（单一真相源）");
-  ok(/语音助手委派/.test(stripSrc) && /isVoiceDelegationPrompt/.test(itemView)
-    && /return null/.test(itemView) && /isVoiceDelegationPrompt/.test(rulerSrc),
-    "语音委派消息在气泡与刻度尺里整条隐藏（⛔ 注入是给模型的，不是给用户看的）");
+  ok(/语音助手委派/.test(stripSrc) && /语音助手委派/.test(read("electron/rollout-worker.cjs"))
+    && /语音助手委派/.test(read("electron/thread-backup.ts"))
+    && /isVoiceDelegationPrompt/.test(itemView) && /return null/.test(itemView)
+    && /isVoiceDelegationPrompt/.test(rulerSrc),
+    "语音委派消息在气泡/刻度/记忆/导出里整条隐藏（⛔ 三处剥离实现必须同源，注入是给模型的）");
   /* 11-11 用户令「自然多音色那个语音模型删了，不要了」⇒ Kokoro 整族移除（不留死通道/死卡片）。 */
   ok(!/kokoro/i.test(codeOnlyTs(provider)) && !/kokoro/i.test(codeOnlyTs(vsettings))
     && !/kokoro/i.test(codeOnlyTs(misc)) && !/kokoro/i.test(codeOnlyTs(enginesTsx)),

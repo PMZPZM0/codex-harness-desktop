@@ -54,6 +54,16 @@ function requireVoiceModelsRoot(): string {
   return voiceModelsRoot;
 }
 
+/** 下发给渲染层的设置副本：远程配置只留地址/模型，**永不下发明文密钥**（密钥只进 hasKey/末四位）。 */
+function publicVoiceSettings(settings: any) {
+  const remote: Record<string, { baseUrl?: string; model?: string }> = {};
+  for (const [id, value] of Object.entries(settings?.remote ?? {})) {
+    if (!value || typeof value !== "object") continue;
+    remote[id] = { baseUrl: (value as any).baseUrl, model: (value as any).model };
+  }
+  return { ...settings, remote };
+}
+
 /** 语音域 IPC 第一批（模型与热键）。⛔ `svc()` / `modelsRoot()` 必须使用时现取：挂载时实例还没建，提前解构会永久拿到 null（症状是「语音一点反应都没有」且不报错）。 */
 export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   const { ipcHost, host } = deps;
@@ -73,7 +83,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     const settings = svc().getSettings();
     // 把枚举的可选值一起回传，渲染层不用自己硬码
     return {
-      settings,
+      settings: publicVoiceSettings(settings),
       /* ⛔ 音色表必须**跟着引擎走**（由主进程单一真相源给），别在渲染层硬码。 */
       ttsVoices: ttsVoiceNamesFor(settings.tts?.engine),
       modelHosts: MODEL_HOST_LABELS,
@@ -94,8 +104,10 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     // ★ 广播出去：语音唤醒这类「按设置常驻」的能力必须能**立刻**重挂。
     //   旧实现：VoiceCallFloat 的唤醒 effect 只在 phase 变化时读一次设置 →
     //   在设置页打开开关后毫无反应（用户 09-13 反馈「唤醒功能不太行」的直接原因之一）。
-    sendToWindow("voice:event", { type: "settings", settings: next });
-    return next;
+    //   ⛔ 广播同样要脱敏：渲染层不需要、也不该拿到远程 API Key。
+    const safe = publicVoiceSettings(next);
+    sendToWindow("voice:event", { type: "settings", settings: safe });
+    return safe;
   });
 
   ipcHost.handle("voice:start", async (event, threadId: string, options?: { mode?: "conversation" | "dictation"; force?: boolean }) => {

@@ -99,7 +99,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   /** 卡片内反馈条（下载成功/失败、切换成功）—— ⛔ 不能只靠一闪而过的 toast */
   const [flash, setFlash] = useState<{ pack: PackId; kind: "ok" | "err" | "info"; text: string } | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<any | null> => {
     try {
       const status: any = await window.codex.voiceModelsStatus();
       setMoss(status?.mossLive ?? null);
@@ -119,8 +119,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           : { ready: false, enabled: true, bytes: 612_000_000, runnable: false },
       };
       setPacks(next);
+      return status;
     } catch {
       /* 读不到就保持现状，卡片各自显示未安装 */
+      return null;
     }
   }, []);
 
@@ -184,19 +186,30 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const saveMoss = useCallback(async () => {
     const baseUrl = mossDraft.baseUrl.trim();
     const model = mossDraft.model.trim();
-    const apiKey = mossDraft.apiKey.trim() || savedMoss?.apiKey || "";
-    if (!baseUrl || !model || !apiKey) {
+    /* ⛔ 渲染层拿不到明文密钥（settings-get 已脱敏）——留空 = 沿用已存密钥。
+       只有「没存过密钥且这次也没填」才拒绝保存。 */
+    const apiKey = mossDraft.apiKey.trim();
+    if (!baseUrl || !model || (!apiKey && !moss?.hasKey)) {
       onNotice("接口地址、模型、API 密钥都要填");
       return;
     }
-    await apply({ remote: { ...(settings?.remote ?? {}), "moss-live": { baseUrl, model, apiKey } } });
+    const entry = { baseUrl, model, ...(apiKey ? { apiKey } : {}) };
+    await apply({ remote: { ...(settings?.remote ?? {}), "moss-live": entry } });
     setMossDraft((d) => ({ ...d, apiKey: "" }));
-    /* ⛔ 保存后必须重读主进程状态，否则卡片一直挂着旧的「未配置」（用户实测点名）。 */
-    await refresh();
+    /* ⛔ 保存后必须重读主进程状态，否则卡片一直挂着旧的「未配置」（用户实测点名）。
+       同时用回读值判定是否真的落盘 —— apply 内部吞掉 IPC 失败，只发成功提示会骗用户。 */
+    const status: any = await refresh();
+    const saved = Boolean(status?.mossLive?.configured
+      && String(status.mossLive.baseUrl ?? "") === baseUrl
+      && String(status.mossLive.model ?? "") === model);
+    if (!saved) {
+      onNotice("MOSS-Live 配置保存失败，请重试");
+      return;
+    }
     onNotice(/\/audio\/speech\b|moss-tts|\btts\b/i.test(`${baseUrl} ${model}`)
       ? "配置已保存；但这是语音合成（TTS）地址/模型，实时通话需要 wss://api.mosi.cn/v1/realtime + moss-live-1.0"
       : "MOSS-Live 配置已保存");
-  }, [apply, mossDraft, onNotice, refresh, savedMoss?.apiKey, settings?.remote]);
+  }, [apply, moss?.hasKey, mossDraft, onNotice, refresh, settings?.remote]);
 
   /** 实时通话后端开关：开 = 通话走 MOSS-Live，连不上自动回落本地语音（VoiceService 里有回落）。 */
   const setCallBackend = useCallback(async (next: boolean) => {
@@ -205,8 +218,14 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       if (mossLooksLikeTts) { onNotice("当前地址是语音合成（TTS）接口，不是实时通话接口：请改填 Realtime WebSocket 地址后再开启"); return; }
     }
     await apply({ call: { backend: next ? "moss-live" : "local" } });
-    onNotice(next ? "实时通话将走 MOSS-Live（连不上会自动回落本地语音）" : "实时通话已切回本地语音");
-  }, [apply, moss?.configured, mossLooksLikeTts, onNotice]);
+    /* 以落盘回读为准：apply 吞掉失败时别报「已切换」。 */
+    const status: any = await refresh();
+    const actual = String(status?.call?.backend ?? "local");
+    const ok = actual === (next ? "moss-live" : "local");
+    onNotice(ok
+      ? (next ? "实时通话将走 MOSS-Live（连不上会自动回落本地语音）" : "实时通话已切回本地语音")
+      : "切换实时通话后端失败，请重试");
+  }, [apply, moss?.configured, mossLooksLikeTts, onNotice, refresh]);
 
   /* ⛔ 11-01 用户实测「取消不了」：主进程早就有 `voice:tts-pack-cancel`（abort 掉下载用的
      AbortController），但界面从来没接 —— 卡片上只有「下载中…」没有取消入口；而上面那张
