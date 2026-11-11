@@ -1,10 +1,17 @@
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
 import {
   CORRECTION_CATEGORY, PITFALL_CATEGORY, PREFERENCE_CATEGORY, SOP_CATEGORY,
   appendLessonLine, groupLessonSections, lessonSectionTitle, sortLessonSections, splitLessonSections, shouldRememberLine,
 } from "./memory-lessons";
 import { effectiveMemoryBackend } from "./memory-backend";
+/* 记忆原子（11-10 用户令「按豆包那套全面改造，但要比他的更好」）：
+   项目记忆层从「一整篇长文」改成「索引 + 按当前任务召回正文」。
+   ⛔ 目录不存在 ⇒ 走回退逻辑（现有一篇 MEMORY.md 照旧整篇注入），行为零变化。 */
+import { atomsEntriesRoot, markUsed, readAtoms, readUsage } from "./memory/atoms-store";
+import { renderAtomsBlock, selectAtoms } from "./memory/atoms-select";
+import { isInjectable } from "./memory/atoms-format";
 /* P2 批次 4（10-18）：布局常量 / 预算 / 金字塔 / 水位 / 蒸馏切分等**纯逻辑**已切到 ./memory/layers-budget。
    ⛔ 重导出保持对外 API；类区仍使用的符号在下方显式回引。 */
 export * from "./memory/layers-budget";
@@ -615,7 +622,39 @@ export class MemoryLayers {
 
   // ── 注入上下文 ─────────────────────────────────────────────────
   /** 拼装常驻记忆块：L1.5 坑与纪律（最前）+ L0 + L1 常驻，L2 只回灌最近 3 天 */
-  async context(workspace?: string, includeWorkspace = true): Promise<{ text: string; stats: { chars: number; over: boolean } }> {
+  /** 记忆原子段：索引（常驻）+ 按本轮任务召回正文。⛔ 未启用 atoms ⇒ 返回空串，由调用方回退到整篇 MEMORY.md。 */
+  private async atomsSection(workspace: string, query: string | undefined, budget: MemoryBudget): Promise<string> {
+    try {
+      /* ⛔ 目录不存在 = 还没迁移 ⇒ 必须走旧逻辑。判存在而不是判"读出来空"，
+         否则空目录会让项目记忆整段消失（比没迁移更糟）。 */
+      if (!existsSync(atomsEntriesRoot(workspace))) return "";
+      const { docs } = await readAtoms(workspace);
+      const live = docs.filter((d) => isInjectable(d.meta));
+      if (!live.length) return "";
+      const usage = await readUsage(workspace);
+      /* ⛔ 只算一次：渲染与"记住用过谁"必须用同一份结果，算两遍会出现「索引里的和召回的不一致」。 */
+      const picked = selectAtoms(live, { query: query ?? "", workspace, now: Date.now(), lastUsedAt: usage }, {
+        indexMaxChars: Math.min(1200, budget.project),
+        /* 没有任务文本就不召回（只出索引）—— 别拿空 query 乱猜。 */
+        recallLimit: query && query.trim() ? 3 : 0,
+        bodyMaxChars: 600,
+      });
+      const text = renderAtomsBlock(picked, live.length);
+      /* 召回过的记住时间（下次略加权）。⛔ 旁路：失败不影响本轮注入。 */
+      const ids = picked.recalled.map((r) => r.meta.id);
+      if (ids.length) void markUsed(workspace, ids).catch(() => undefined);
+      /* ⛔ 这一段整体不许超预算：超了就切尾并明说，⛔ 不许悄悄丢（引擎会以为已经看全）。 */
+      if (text.length > budget.project) {
+        return `${text.slice(0, budget.project).trimEnd()}\n> ⛔ 项目记忆（原子）超出预算 ${text.length - budget.project} 字，已截断 —— 需要时读 INDEX.md 取全量。`;
+      }
+      return text;
+    } catch {
+      /* 记忆读取失败不许阻塞对话：返回空串会回退到旧逻辑，比整段消失安全。 */
+      return "";
+    }
+  }
+
+  async context(workspace?: string, includeWorkspace = true, recallQuery?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }> {
     /* 按当前倍率取一次预算（⛔ 全函数共用一个局部变量 —— 到处各读一次必然漏掉某一处）。 */
     const budget = this.budget;
     const userRaw = (await this.readUser()).trim();
@@ -636,7 +675,12 @@ export class MemoryLayers {
     if (lessons.text) blocks.push(`## 踩坑与纪律（必须遵守，别再犯）${lessons.cut ? clipped("踩坑与纪律", lessons.cut) : ""}\n${lessons.text}`);
     if (user.text) blocks.push(`## 用户档案${user.cut ? clipped("用户档案", user.cut) : ""}\n${user.text}`);
     if (background.text) blocks.push(`## 项目背景${background.cut ? clipped("项目背景", background.cut) : ""}\n${background.text}`);
-    if (project.text) blocks.push(`## 项目记忆${project.cut ? clipped("项目记忆", project.cut) : ""}\n${project.text}`);
+    /* ⛔⛔ 11-10 记忆原子（用户令「按豆包那套改造，但要比他的更好」）：
+       `atoms/entries/` 存在 ⇒ 用「索引 + 按任务召回正文」替代整篇 MEMORY.md；
+       不存在 ⇒ 下面那条旧分支原样生效（行为零变化，可随时回退）。 */
+    const atomsBlock = includeWorkspace && workspace ? await this.atomsSection(workspace, recallQuery, budget) : "";
+    if (atomsBlock) blocks.push(atomsBlock);
+    else if (project.text) blocks.push(`## 项目记忆${project.cut ? clipped("项目记忆", project.cut) : ""}\n${project.text}`);
     if (logs.length) {
       /* ⛔⛔ 日志段单独占预算（2026-10-10 修「记忆很快被占满」）：原来这段**没有任何上限**，
          它把前四层之外的剩余字符全吃掉，再被下面的 `body.slice(0, total)` 一刀切 ——

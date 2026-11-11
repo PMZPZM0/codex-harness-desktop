@@ -31,6 +31,12 @@ import { bundledNodePath, memoryBackendStatus, memoryInstallerPath, type MemoryB
 import { lookupRoleSession, listRoleSessions } from "../role-memory";
 import { agentOfRoleRef, handleFabricWrite } from "../memory-fabric-tool";
 import { buildContext, getMemoryHandles, listNamespaces, readNamespace } from "../memory-fabric";
+/* ⛔ 11-10 记忆原子：新界面（索引 + 原子条目）的全部读写都走这里，界面不碰路径与 frontmatter。 */
+import { atomsEntriesRoot, atomsRootOf, metaFromText, readAtoms, regenerateIndex, writeAtom } from "../memory/atoms-store";
+import { isInjectable, normalizeId } from "../memory/atoms-format";
+import { budgetOf, policyOf } from "../memory/group-memory-policy";
+import { readUsage } from "../memory/atoms-store";
+import { renderAtomsBlock, selectAtoms } from "../memory/atoms-select";
 import { syncLocalMemoryConnector } from "../memory-mcp-connector";
 import { CLEANUP_RULES, HYGIENE_ACTION_LABEL, isHygieneAction, planHygiene, suggestedActions } from "../memory-hygiene";
 import type { MemoryCategory, MemoryRemoteConfig } from "../memory-store";
@@ -221,6 +227,29 @@ const MEMORY_CHANNELS = [
  */
 let secureRef: HostCaps["secure"] | null = null;
 /** 注入 secure 接缝（记忆库加密用）：域不许直接取 safeStorage。 */
+/**
+ * 三类群策略摘要（11-11 补方案第 12 项「群策略说明」）。
+ * ⛔ 数值全部来自 group-memory-policy 的 policyOf（唯一真相源），前端不写第二份口径；
+ *    只挑界面要显示的字段，rules / preamble 不传，免得 IPC 变重。
+ */
+function memoryPolicyRows() {
+  const rows: Array<[string, ReturnType<typeof policyOf>]> = [
+    ["专家群（平级）", policyOf("expert", "member")],
+    ["专家团 · 主理人", policyOf("team", "lead")],
+    ["专家团 · 成员", policyOf("team", "member")],
+    ["CLI 智能体群", policyOf("cli", "cli")],
+  ];
+  return rows.map(([label, p]) => ({
+    label,
+    writable: [...p.writable],
+    supersede: p.supersede,
+    render: p.render,
+    recallLimit: p.recallLimit,
+    inject: p.inject.map((r) => `${r.scope} ${r.chars}`),
+  }));
+}
+
+/** 注册记忆域全部 IPC 通道（分层快照 / 记忆原子 / 群策略摘要 / 召回预览）。 */
 export function bindMemorySecure(host: HostCaps): void {
   secureRef = host.secure;
 }
@@ -417,6 +446,90 @@ export const memoryFeature = defineFeature<null>({
     ipcHost.handle("memory:gateway:read", async () => { const value = await readMemoryGateway(); return { ...memoryStore.remoteStatus(), sessionKey: value?.sessionKey ?? "", userId: value?.userId ?? "codex-harness", hasApiKey: Boolean(value?.apiKey) }; });
     ipcHost.handle("memory:gateway:save", (_event, input: unknown) => saveMemoryGateway(input));
     ipcHost.handle("memory:layers:read", async (_event, workspace?: string) => ({ ...(await memoryLayers.snapshot(workspace)), entries: await memoryStore.stats() }));
+    /* ── 记忆原子（11-10 用户令：废弃金字塔，改用「索引 + 原子条目」的新界面）──────
+       ⛔ 这两个通道是**新界面唯一的数据源**：界面不自己拼路径、不自己解析 frontmatter。
+       ⛔ 坏文件照实返回数量（broken），界面要能看见「有几条读不出来」——静默跳过等于骗人。 */
+    ipcHost.handle("memory:atoms:list", async (_event, workspace?: string) => {
+      const ws = String(workspace ?? "").trim();
+      if (!ws) return { ok: false, error: "缺少工作区 —— 先打开一个项目再管理记忆" };
+      if (!existsSync(atomsEntriesRoot(ws))) {
+        return { ok: true, index: "", stats: { total: 0, active: 0, broken: 0 }, entries: [], policies: memoryPolicyRows() };
+      }
+      const { docs, broken } = await readAtoms(ws);
+      const active = docs.filter((d) => isInjectable(d.meta)).length;
+      /* 变更历史读 changelog 尾部 —— ⛔ 不另开通道：界面要的就是"最近发生了什么"，
+         和列表同一次请求返回，省一次往返，也避免两处口径。 */
+      let history: Array<{ at: string; op: string; id: string; by: string; summary: string }> = [];
+      try {
+        const raw = await fs.readFile(path.join(atomsRootOf(ws), ".changelog.jsonl"), "utf8");
+        history = raw.trim().split("\n").slice(-30).reverse()
+          .map((line) => { try { return JSON.parse(line) as typeof history[number]; } catch { return null; } })
+          .filter((row): row is typeof history[number] => Boolean(row));
+      } catch { /* 还没有变更记录 */ }
+      return {
+        ok: true,
+        stats: { total: docs.length, active, broken: broken.length },
+        broken,
+        history,
+        policies: memoryPolicyRows(),
+        entries: docs.map((d) => ({
+          id: d.meta.id, summary: d.meta.summary, type: d.meta.type, scope: d.meta.scope,
+          status: d.meta.status, confidence: d.meta.confidence, updated: d.meta.updated,
+          tags: d.meta.tags, group: d.meta.group, body: d.body,
+        })),
+      };
+    });
+    /* 召回预览：与真实注入**同一套打分**（selectAtoms），⛔ 不是前端关键词过滤 —— 
+       否则界面显示的和引擎实际看到的会对不上，用户就再也不信这个预览了。 */
+    ipcHost.handle("memory:atoms:recall", async (_event, workspace: string, query: string, seat?: string) => {
+      const ws = String(workspace ?? "").trim();
+      if (!ws) return { ok: false, error: "缺少工作区" };
+      const { docs } = await readAtoms(ws);
+      const live = docs.filter((d) => isInjectable(d.meta));
+      if (!live.length) return { ok: true, text: "", recalled: [], conflicts: [] };
+      const policy = policyOf("plain", (seat as never) ?? "member");
+      const budget = budgetOf(policy);
+      const picked = selectAtoms(live, { query: String(query ?? ""), workspace: ws, now: Date.now(), lastUsedAt: await readUsage(ws) }, {
+        indexMaxChars: budget.index,
+        recallLimit: policy.recallLimit,
+        bodyMaxChars: budget.perBody,
+      });
+      return { ok: true, text: renderAtomsBlock(picked, live.length), recalled: picked.recalled.map((r) => r.meta.id), conflicts: picked.conflicts };
+    });
+    /* 11-11 四个记忆板块的「批量作废」：⛔ 复用引擎侧 runMemoryTool 的 memory_forget
+       （标 superseded、文件保留可查、重建索引），⛔ 不写第二份作废逻辑、不物理删文件。 */
+    ipcHost.handle("memory:atoms:forget", async (_event, workspace: string, ids: string[]) => {
+      const ws = String(workspace ?? "").trim();
+      const list = Array.isArray(ids) ? ids.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+      if (!ws) return { ok: false, done: 0, failed: 0, error: "缺少工作区" };
+      if (!list.length) return { ok: false, done: 0, failed: 0, error: "没有选中任何条目" };
+      const { runMemoryTool } = await import("../memory/atoms-tool");
+      const results = await Promise.allSettled(list.map((id) => runMemoryTool({
+        name: "memory_forget", workspace: ws, args: { id, reason: "在设置页批量作废" },
+      })));
+      const done = results.filter((r) => r.status === "fulfilled" && r.value?.ok).length;
+      return { ok: done > 0, done, failed: results.length - done };
+    });
+    ipcHost.handle("memory:atoms:save", async (_event, workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }) => {
+      const ws = String(workspace ?? "").trim();
+      if (!ws) return { ok: false, error: "缺少工作区" };
+      const { docs } = await readAtoms(ws);
+      const prev = docs.find((d) => d.meta.id === normalizeId(input?.id));
+      /* ⛔ 已存在的条目沿用原 meta（只改正文与摘要）—— 手改一次不该把来源/置信/取代链清空。 */
+      const meta = prev
+        ? { ...prev.meta, summary: input?.summary?.trim() || prev.meta.summary, updated: new Date().toISOString().slice(0, 10) }
+        : metaFromText({
+          title: String(input?.id ?? ""),
+          summary: input?.summary,
+          scope: (input?.scope as never) ?? "project",
+          type: (input?.type as never) ?? "fact",
+          source: { kind: "user", ref: "界面手写" },
+        });
+      if (!meta) return { ok: false, error: "缺少 id 或摘要" };
+      const outcome = await writeAtom(ws, meta, String(input?.body ?? ""), "manual");
+      await regenerateIndex(ws);
+      return { ok: outcome !== "skipped", outcome };
+    });
     /* 记忆容量倍率（10-10 用户要求「记忆库容量增加倍率功能」）：×1 基准按 1/2/4/8/10/16 放大。
        ⛔ 改完**当场生效**（setScale）后再落盘 —— 只落盘不应用就是"用户以为改了其实没改"
           （本项目点过名的那类 bug）。下次启动由 main.ts 从 app-settings 读回。

@@ -51,7 +51,12 @@ async function restrictedThreadRole(threadId: string): Promise<{ restricted: boo
   if (boss) {
     for (const group of Object.values(boss.groups ?? {})) {
       if ((group.members ?? []).some((member) => String(member.threadId ?? "") === threadId)) {
-        return { restricted: true, label: "群成员会话" };
+        /* ⛔⛔ 11-10 用户令「创建定时工具要给工作伙伴里面的智能体都配套上」：
+           群成员会话**只关调度**（不许再派专家/团 —— 那会套娃），
+           但定时任务照旧可以建 —— 那正是"团队自己按节奏推进"的入口。
+           ⛔ 与「外面的定时功能」不混：仍然是**同一个 scheduler**（同一张 tasks 表、同一套 rrule、
+             同一个执行器），这里只是把"谁能建"放开一格，⛔ 不另造群定时。 */
+        return { restricted: true, dispatchOnly: true, label: "群成员会话" };
       }
     }
   }
@@ -140,6 +145,92 @@ function dispatchMcpTools(): unknown[] {
         required: ["threadIds"],
       },
     },
+    /* ── 产物归档（11-11 用户令「文件里能看的东西最全」）──────────────────────────
+       豆包文件区按 日期-任务短名 分目录、文件写内容语义、多版用迭代后缀。
+       执行端在 features/artifact-archive.ts（⛔ 这里只放 schema，不写第二份落盘口径）。 */
+    {
+      name: "artifact_archive",
+      description:
+        "把做完的文件归档到 artifacts/YYYYMMDD-任务短名/（同一任务多版自动加 -r2/-r3，⛔ 不覆盖旧版）。"
+        + "⛔ 只复制不删除原文件；写完会记 manifest 与总台账。"
+        + "适合：报告、图、表、导出稿等**要留档**的成品；⛔ 临时中间文件不用归档。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          files: { type: "array", items: { type: "object", properties: { path: { type: "string", description: "文件绝对路径（或相对工作区）" }, name: { type: "string", description: "可选：改成有内容语义的文件名" } }, required: ["path"] }, description: "要归档的文件（一次最多 30 个）" },
+          task: { type: "string", description: "任务短名（中文即可，会进目录名）" },
+          note: { type: "string", description: "可选：这次产出的说明" },
+        },
+        required: ["files", "task"],
+      },
+    },
+    {
+      name: "artifact_list",
+      description: "列出这个项目已归档的产物（按日期倒序，含目录名、任务、文件清单）。用户问「之前那版图在哪 / 做过哪些产物」时用它。",
+      inputSchema: {
+        type: "object",
+        properties: { limit: { type: "number", description: "最多列几个任务目录（缺省 20）" } },
+        required: [],
+      },
+    },
+    /* ── 记忆三件套（11-10 用户令「记忆和记忆工具配套更新」）──────────────────────
+       之前模型只能手写 md 文件来记事：写错位置、格式不对、下次读不到 —— 这是记忆最常失败的地方。
+       现在给三个语义化工具。执行端在 `memory/atoms-tool.ts`（权限、落盘、重建索引都在那边，
+       本文件只放 schema，⛔ 不写第二份口径）。 */
+    {
+      name: "memory_recall",
+      description:
+        "查这个项目已确认的长期记忆（索引 + 与本轮最相关的几条正文）。"
+        + "用户问「之前说过的 / 我们定的口径 / 上次那个结论」，或你准备下结论前想确认既有约定时用它。"
+        + "⛔ 索引只有一行摘要，细节要取正文；标「待验证」的条目只能当线索，不能当事实引用。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "你要查的事（用自然语言，越具体越准）" },
+          limit: { type: "number", description: "要多几条正文（缺省按群型给 2~3 条）" },
+          group: { type: "string", description: "群聊记忆的归属群 id（宿主会自动带上，一般不用填）" },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "memory_write",
+      description:
+        "把一条**会被反复用到**的结论记进项目记忆（下次会话自动能看到）。"
+        + "适合：定下来的口径 / 踩过的坑 / 用户的固定偏好 / 可复用的操作流程。"
+        + "⛔ 不适合：一次性的中间结果、待办、猜测。"
+        + "⛔ 写完会重建索引；同 id 再写是覆盖更新，不是新增。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          summary: { type: "string", description: "一句话摘要（≤40 字，索引里显示的就是它）" },
+          body: { type: "string", description: "正文：什么时候、在哪、测出什么；有多个口径就分点列全；最后写「为什么重要」和「以后怎么用」" },
+          id: { type: "string", description: "条目 id（kebab-case）；不填就用摘要生成" },
+          type: { type: "string", enum: ["fact", "decision", "rule", "preference", "runbook"], description: "fact 事实 / decision 决定 / rule 纪律 / preference 偏好 / runbook 流程" },
+          scope: { type: "string", enum: ["project", "rule", "session"], description: "project 项目通用 / rule 纪律 / session 只属于当前群" },
+          confidence: { type: "string", enum: ["confirmed", "tentative"], description: "confirmed 已复现（缺省）/ tentative 待验证" },
+          tags: { type: "array", items: { type: "string" }, description: "标签（便于召回与查冲突）" },
+          expiresAt: { type: "string", description: "到期日 YYYY-MM-DD（临时性结论才填，过期自动失效）" },
+          group: { type: "string", description: "scope=session 时的归属群 id（宿主自动带上）" },
+        },
+        required: ["summary", "body"],
+      },
+    },
+    {
+      name: "memory_forget",
+      description:
+        "把一条记忆标记为**作废 / 已过期**（文件保留、可查，但不再注入）。"
+        + "用户说「那条不对了 / 早就不用了」，或你发现某个结论被后来的事实推翻时用它。"
+        + "⛔ 不是物理删除；⛔ 作废前先用 memory_recall 确认 id。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          id: { type: "string", description: "要作废的条目 id（索引里写作 [[id]]）" },
+          reason: { type: "string", description: "为什么作废 / 被什么取代（会写进条目尾部）" },
+        },
+        required: ["id"],
+      },
+    },
     /* ── 知识库检索（10-01 立项）：模型在会话里直接查项目知识库 ──────────────────
        执行端在 dispatch-rpc.ts（knowledge_search 调 kb:search 同源逻辑）。
        workspace 缺省 = 当前会话的工作目录（threadCwd）。 */
@@ -199,6 +290,12 @@ function dispatchMcpTools(): unknown[] {
           model: { type: "string", description: "可选：指定模型档位" },
           deliverWeixin: { type: "boolean", description: "执行完成后把回合结论推送给微信用户（需已绑定机器人）" },
           deliverTo: { type: "string", description: "可选：微信收信人（wxid 或绑定昵称）；缺省 = 最近对话的用户。仅在 deliverWeixin=true 时有效" },
+          /* ⛔ 11-10 用户令「定时任务要能派活，不是到点提醒一下」：这四项会并进到点那一轮的任务体，
+             模型因此知道「谁做 / 为什么是他 / 依赖谁的表」。不填 = 旧行为。 */
+          assignee: { type: "string", description: "这一步派给谁（群成员 / 专家 / 子智能体名，如「推广-投盈」）。填了它到点就会明确「这件事由谁做」" },
+          duty: { type: "string", description: "分工说明：为什么派他、他负责哪一段（如「推广汇报记录由他维护」）" },
+          dependsOn: { type: "array", items: { type: "string" }, description: "依赖别人的哪些产出（如「数据师-明策的每日底表」）；缺依赖时要求先问，不许自己编" },
+          archiveHint: { type: "string", description: "产物归档目录（如 `artifacts/YYYYMMDD-推广汇报/`）；产出的文件按它落盘，文件名写内容语义" },
         },
         required: ["name", "prompt"],
       },

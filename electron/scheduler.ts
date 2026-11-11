@@ -121,7 +121,53 @@ export type ScheduledTask = {
   recoveryDelayMs?: number;
   /** 执行完成后主动投递结论的目标（09-27；缺省 = 只落在应用会话列表里，不外推） */
   deliver?: DeliverTarget;
+  /* ── 派活四件套（11-10 用户令：定时任务不能只"叫起一个人"）────────────────
+     实测豆包那条「推广汇报每日9:35派投盈」，任务描述写的是：
+     「owner 定的分工：推广汇报记录由推广-投盈人工维护。此时数据师明策的每日底表……」
+     ⇒ 到点那一轮，模型拿到的是**谁做、为什么是他、依赖谁的表**，不是一句"提醒一下"。
+     ⛔ 这四个字段只影响投递文本（composeTaskPrompt），不改调度语义。 */
+  /** 派给谁（群成员 / 专家 / 子智能体名）。空 = 不指定，由执行会话自己判断。 */
+  assignee?: string;
+  /** 分工说明（为什么派他）。写清"由谁负责哪一段"，避免到点又变成全员讨论。 */
+  duty?: string;
+  /** 依赖：别人的产出（"数据师-明策的每日底表"）。缺依赖时要求它问，⛔ 不许自己编。 */
+  dependsOn?: string[];
+  /** 归档到哪个群/任务的产物目录（缺省不归档约定）。 */
+  archiveHint?: string;
+  /* ⛔⛔ 11-10 用户令「外面的定时工具跟工作伙伴里面的定时工具要**独立开**」：
+     同一套调度引擎（同表 / 同 rrule / 同执行器），但**归属分两套、互不串台**：
+       · kind: "chat"   —— 用户在会话里建的（设置 → 定时任务 里管）
+       · kind: "group"  —— 工作伙伴里的智能体建的（只在本群 / 本成员视角可见）
+     ⛔ 不是另造一套调度器；是给同一张表加一列归属，读的时候按身份过滤。 */
+  origin?: { kind: "chat" | "group"; by?: string; groupId?: string };
 };
+
+/**
+ * 定时任务的**投递文本**：把「派给谁 / 为什么派他 / 依赖谁」并进任务体。
+ *
+ * ⛔ 为什么不另起一条系统消息：到点那一轮模型只读 prompt，看不到调度簿记 ——
+ *   分工不并进来，它就只能"提醒用户一下"，而不会真的去推进。
+ * ⛔ 四个字段都没填时**原样返回**（旧任务行为零变化）。
+ */
+export function composeTaskPrompt(task: ScheduledTask): string {
+  const assignee = String(task.assignee ?? "").trim();
+  const duty = String(task.duty ?? "").trim();
+  const deps = Array.isArray(task.dependsOn) ? task.dependsOn.map((x) => String(x ?? "").trim()).filter(Boolean) : [];
+  const archive = String(task.archiveHint ?? "").trim();
+  if (!assignee && !duty && !deps.length && !archive) return task.prompt;
+  const lines = ["[定时任务 · 到点执行]", `任务：${task.name}`];
+  if (assignee) lines.push(`这一步派给：${assignee}${duty ? `（分工：${duty}）` : ""}`);
+  else if (duty) lines.push(`分工：${duty}`);
+  if (deps.length) lines.push(`依赖：${deps.join("、")} —— 拿不到就先问，⛔ 不要自己编数`);
+  if (archive) lines.push(`产物归档：${archive}`);
+  lines.push("", "要做的事：", task.prompt);
+  lines.push(
+    "",
+    "完成标准：给出可核对的产出（数字 / 文件路径 / 明确结论）。⛔ 不要只回「已完成」；"
+      + (assignee ? `该 ${assignee} 做的部分就交给它做，你不要替它编。` : "该谁做的部分就交给谁。"),
+  );
+  return lines.join("\n");
+}
 
 // ---------- 常量（对齐 WorkBuddy） ----------
 const RUN_TICK_MS = 30_000;
@@ -425,6 +471,14 @@ export class Scheduler {
       monthDay: input.monthDay, month: input.month, biweekly: input.biweekly,
       createdAt: current?.createdAt ?? now,
       consecutiveInterruptCount: current?.consecutiveInterruptCount ?? 0,
+      /* ⛔ 11-10：派活四件套 + 归属必须逐字段透传。
+         这里是 save() 的**唯一构造点** —— 漏一个字段，调用方传进来也静默丢掉
+         （这正是"只加 schema 不落库"那类假功能）。局部更新时缺省保留原值。 */
+      assignee: input.assignee === undefined ? current?.assignee : (input.assignee || undefined),
+      duty: input.duty === undefined ? current?.duty : (input.duty || undefined),
+      dependsOn: input.dependsOn === undefined ? current?.dependsOn : (input.dependsOn?.length ? input.dependsOn : undefined),
+      archiveHint: input.archiveHint === undefined ? current?.archiveHint : (input.archiveHint || undefined),
+      origin: input.origin === undefined ? current?.origin : input.origin,
       // 投递配置：显式传入才改（含 undefined = 明确清除）；缺省保留原值（会话里做局部更新不打掉已有投递）
       deliver: input.deliver === undefined ? current?.deliver : sanitizeDeliver(input.deliver),
     };
@@ -563,7 +617,8 @@ export class Scheduler {
         threadId = started.thread.id;
       }
       const startedAt = Date.now();
-      await this.server.request("turn/start", { threadId, input: [{ type: "text", text: task.prompt, text_elements: [] }], model: task.model || model.model, effort: task.effort });
+      /* ⛔ 用 composeTaskPrompt 而不是裸 task.prompt：派给谁 / 分工 / 依赖要一起进这一轮。 */
+      await this.server.request("turn/start", { threadId, input: [{ type: "text", text: composeTaskPrompt(task), text_elements: [] }], model: task.model || model.model, effort: task.effort });
       // 等待该线程首回合真正完成，用 finishedAt 推进下一次（对齐 WorkBuddy advanceNextRunAt(finishedAt)）
       const outcome = await this.waitForTurnCompletion(threadId, AUTOMATION_RUN_TIMEOUT_MS);
       finishedAt = Date.now();

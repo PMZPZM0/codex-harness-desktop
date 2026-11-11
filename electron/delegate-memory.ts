@@ -101,7 +101,9 @@ export async function buildDelegateMemory(input: {
   /* 常驻层：L0 用户档案 + L1 项目记忆 + L1.5 纪律 + L2 近期日志。
      与主会话同口径：即使工作区记忆关掉，也要拿到 L0（用户偏好不该因为关项目记忆就丢）。 */
   try {
-    const standing = await memoryLayers.context(workspace || undefined, includeWorkspace);
+    /* ⛔ 第三参 = 本次任务文本：记忆原子（atoms）按它召回相关条目正文。
+       没有它就只能出索引 —— 那和不改造没区别。 */
+    const standing = await memoryLayers.context(workspace || undefined, includeWorkspace, input.query);
     if (standing?.text) {
       body += standing.text;
       standingChars = standing.text.length;

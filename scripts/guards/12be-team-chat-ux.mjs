@@ -15,8 +15,8 @@
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargetsInText, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
 import { searchGroupRows } from "../../src/lib/team-search.mjs";
 import { createGroup, setMemberAvatar } from "../../src/lib/team-models.mjs";
 
@@ -1335,8 +1335,44 @@ const catalog = [
 {
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   const talk = codeOnly(read("electron/features/group-talk/03-talk.ts"));
-  ok(/if \(ranIds\.has\(String\(to\.id\)\)\)/.test(ipc) && /本轮已经说过话/.test(ipc),
-    "group_say(to=) 送到本轮已跑过的成员时回失败（⛔ 不再假报「已经说给他了」而群里毫无反应）");
+  /* ⛔ 11-10：「每人一轮只能一次（ranIds）」已改成「每人最多 N 回合（canRun）」
+     —— 判据随之从"说过话"改为"到回合上限"，语义仍是「不能再叫了要如实回失败」。 */
+  ok(/if \(!canRun\(to\.id\)\)/.test(ipc) && /到上限了/.test(ipc),
+    "group_say(to=) 送到本轮已到回合上限的成员时回失败（⛔ 不再假报「已经说给他了」而群里毫无反应）");
+
+  /* ⛔⛔ 11-10 用户现场（截图「就这种垃圾？」「群成员连自己是谁都不知道」）：
+     贴一整段任务书进群 ⇒ 正文里的 `@落纸`、`@砚云` 被**全文扫描**成派活目标 ⇒
+     几个人同时被唤起、各自都说"这不是我的活"，群里一个人都不动。
+     ⇒ 派活目标只认**行首 @**（与主进程 parseAgentMentions 同一口径），这里真跑五种输入。 */
+  {
+    const cands = [
+      { selectId: "a", name: "文枢" },
+      { selectId: "b", name: "落纸" },
+      { selectId: "c", name: "砚云" },
+    ];
+    const runs = [
+      ["@文枢 干活", ["a"], "行首 @ = 派给他"],
+      ["@文枢 【任务书】第 2 轮：@落纸 先给选题，@砚云 写正文", ["a"], "任务书里的行中 @ 不算派活（⛔ 全扫会叫起一堆人）"],
+      ["@文枢 派活\n@落纸 选题", ["a", "b"], "多行行首 @ = 派多人"],
+      ["我 @落纸 帮我看下这句", ["b"], "没有行首 @、但只提到一个人 ⇒ 仍认他（点选插在句中）"],
+      ["行中提 文枢 但没 @ 符号", [], "没 @ 符号不算"],
+    ];
+    const bad = runs.filter(([t, want]) => JSON.stringify(mentionTargetsInText(t, cands)) !== JSON.stringify(want));
+    ok(bad.length === 0,
+      `派活目标只认行首 @（任务书里的 @ 不误派；唯一命中仍认）${bad.length ? `（不符：${bad.map(([t]) => JSON.stringify(t.slice(0, 18))).join("、")}）` : " —— 五种输入全符合"}`);
+  }
+
+  /* ⛔ 团主理人必须知道「自己是谁」：群里只有一个团槽（名字是团名），
+     UI 却展开成人名 ⇒ 不注入真名，它会说"这是文枢的活，我不抢"。 */
+  ok(/teamLeadName/.test(talk) && /就是在叫你，不是在叫别人/.test(talk),
+    "⛔ 团主理人身份注入真名 + 「用户 @你就是叫你」（⛔ 否则它把自己当旁观者）");
+  /* ⛔ 团群没有 adminId ⇒ 只认 isAdmin 的话，主持人指令与闭环回喂都永远不生效。 */
+  ok(/me\.isAdmin === true \|\| me\.teamRole === "lead"/.test(talk),
+    "⛔ 团主理人也算主持人（团群没有管理员，只认 isAdmin 会导致主持指令不生效）");
+  ok(/roster\.find\(\(m\) => m\.teamRole === "lead"\)/.test(ipc),
+    "⛔ 闭环回喂兜底到团主理人（团群 adminId 恒空 ⇒ 原来链断在成员最后一句）");
+  ok(/effectiveIds = \[teamSlot\.id\]/.test(ipc),
+    "⛔ 团群里 @ 团内成员收敛到团（由主理人派单，⛔ 不是全员并行各说一句「我不抢」）");
   /* ⛔ 判据锚「两处具体清除点」—— 不能数 `finishedTalkRuns.delete(` 总数：
      淘汰最旧条目那行也是 delete，会把「本轮不清」掩盖成绿。 */
   ok(/finishedTalkRuns\.delete\(tid\);/.test(ipc)
@@ -1627,6 +1663,69 @@ const catalog = [
     "两条产出链共用同一判据；失败把「谁没交 + 谁推进」作为事实摆出来（不自动催办）");
   ok(!/markStalled|markReviewStalled|setInterval\([^)]*stall/i.test(ipcG),
     "⛔ 不复活停滞/待审看门狗（10-26 事故：回投刷爆消息队列，用户明确要求删除）");
+}
+
+/* ── 团队推进三件套（11-10 用户令「123 一起完成一套定制化升级」）────────────── */
+{
+  const ipcSrc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const talkSrc = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+
+  ok(/managerName/.test(ipcSrc) && /managerName/.test(talkSrc),
+    "⛔ 直属上级链：成员知道向谁汇报（团成员→主理人；普通群按 managerId）");
+  ok(/先向它说明再做/.test(talkSrc),
+    "卡住 / 要不到输入时先向上级说明 —— 不是沉默，也不是乱拉人");
+
+  ok(/artifacts\/YYYYMMDD-<任务短名>\//.test(talkSrc) && /内容语义/.test(talkSrc),
+    "⛔ 产物落盘约定：artifacts/YYYYMMDD-短名/ + 文件名写内容语义（用户：「文件里能看的东西最全」）");
+  ok(/别把产物散在目录根下/.test(talkSrc),
+    "⛔ 禁止把产物散在目录根下（一周后认不出哪个文件是哪次任务的）");
+}
+
+/* ── 异常落到责任人（11-10 用户令「继续补上缺口」）────────────────────────────
+   豆包是「群里发总榜 + 点名到人」；我们没有私聊载体，方案是：标记 → 待办 → 对方开口自动关闭。
+   ⛔ 这里**真跑**解析（不是 grep 源码），否则格式一改就静默失效。 */
+{
+  const duty = await import(pathToFileURL(join(ROOT, "src/lib/team-duty.mjs")).href);
+  const cases = [
+    ["异常：新链 21 点零成交\n【待处理 · 责任人：明策】", "明策", "全角冒号 + 分隔点"],
+    ["【待处理:责任人:投盈】费率超线", "投盈", "半角冒号也认"],
+    ["这条没有标记", null, "没有标记 ⇒ null（⛔ 不当成异常）"],
+    ["【待处理 · 责任人：】空名字", null, "空责任人 ⇒ null（⛔ 不许登记成无主待办）"],
+  ];
+  const bad = cases.filter(([text, want]) => {
+    const got = duty.parseDuty(text);
+    return want === null ? got !== null : got?.owner !== want;
+  });
+  ok(bad.length === 0,
+    `待处理标记解析：全角/半角冒号都认、无标记与空责任人返回 null${bad.length ? `（不符：${bad.map(([,, n]) => n).join("、")}）` : " —— 四种输入全符合"}`);
+
+  ok(duty.dutyKeyOf("明策", "新链零成交").startsWith("明策::"), "待办去重键按「责任人 + 标题」生成（⛔ 防群头数字虚高）");
+
+  const ipcDuty = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const talkDuty = codeOnly(read("electron/features/group-talk/03-talk.ts"));
+  ok(/closeOpenTasksOf\(gid, authorId\)/.test(ipcDuty) && /registerResponsibleFrom\(gid/.test(ipcDuty),
+    "⛔ 责任人开口 ⇒ 自动关闭它名下待办；它这条里点了别人 ⇒ 先关后登记（顺序反了会自己关自己）");
+  ok(/openDutiesOf\(group\.id, partner\.id\)/.test(ipcDuty) && /你名下的待处理/.test(talkDuty),
+    "⛔ 私聊 = 来源对话：本人名下待办注入到它自己的会话（用户令「我们的私聊就是那个来源对话」）");
+  ok(/异常必须落到人/.test(talkDuty) && /交付要自证/.test(talkDuty),
+    "提示词要求：报异常写责任人、说完成要带凭据（⛔ 只说「已完成」不算交付）");
+}
+
+/* ── 群头进度点得开（11-11 补缺口：原来只有数字，用户还得自己翻消息找「还欠谁一件事」）── */
+{
+  const ipcProg = codeOnly(read("electron/features/harness-team-ipc.ts"));
+  const viewProg = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  const cssProg = read("src/styles/61-team-mode.css");
+
+  ok(/status === "open"\s*\)\s*\.sort[\s\S]{0,200}slice\(0, 12\)/.test(ipcProg)
+    && /toName: x\.toName, fromName: x\.fromName, at: x\.at/.test(ipcProg),
+    "⛔ group-progress 返回未结束清单（只 open、最多 12 条，按时间正序 —— ⛔ 全量会随群龄无限涨）");
+  ok(/taskProgress\.items\.map/.test(viewProg) && /team-tasks__pop/.test(viewProg),
+    "⛔ 群头数字点得开：展开看到「标题 + 谁派给谁 + 什么时候」");
+  ok(/taskProgress\.open > 0 \?/.test(viewProg) && /is-done/.test(viewProg),
+    "⛔ 没有未结束任务时不给可展开的壳（点了什么都不发生比不能点更糟）");
+  ok(/\.team-tasks__pop\s*\{/.test(cssProg) && /summary::-webkit-details-marker/.test(cssProg),
+    "浮层有样式且去掉 details 默认三角（三角会把 1px 内边距的胶囊撑开）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

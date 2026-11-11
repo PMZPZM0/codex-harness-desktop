@@ -1,0 +1,60 @@
+/* ⛔ 11-11 四个记忆板块共用：搜索 / 筛选 / 批量管理工具条。
+   独立成文件（不塞进某一个板块的 CSS）—— 新增第五个板块直接复用。
+   ⛔ 暗色下原生控件按「浅色 UA」绘制 ⇒ 逐处 appearance:none，别省。 */
+.mlt { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.mlt-search-wrap {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); color: var(--muted);
+}
+.mlt-search-wrap:focus-within { border-color: var(--accent); }
+.mlt-search {
+  appearance: none; -webkit-appearance: none;
+  width: 100%; min-width: 0; border: 0; outline: 0; background: transparent;
+  color: var(--text); font-size: 12px; font-family: inherit;
+}
+.mlt-search::-webkit-search-cancel-button { appearance: none; -webkit-appearance: none; }
+.mlt-filters { display: flex; flex-wrap: wrap; gap: 4px; }
+/* ⛔ 别给 AppSelect 再刷背景：.app-select-trigger 自带 var(--bg) 白底 + 细边 + hover/focus，
+   之前误用 --faint（那是淡文字色）当背景 ⇒ 三个下拉变成深灰实心块，被用户点名难看。 */
+.mlt-select {
+  appearance: none; -webkit-appearance: none;
+  font-size: 11px; min-height: 28px;
+}
+.mlt-selectall { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.mlt-check {
+  appearance: none; -webkit-appearance: none;
+  position: relative; width: 14px; height: 14px; flex: none; margin: 0;
+  border: 1px solid var(--line); border-radius: 4px; background: transparent; cursor: pointer;
+}
+.mlt-check:checked { background: var(--amber); border-color: var(--amber); }
+.mlt-check:checked::after {
+  content: ""; position: absolute; left: 4px; top: 1px;
+  width: 4px; height: 8px; border: solid #fff; border-width: 0 2px 2px 0; transform: rotate(45deg);
+}
+.mlt-batch {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  padding: 6px 8px; border: 1px solid var(--line-soft); border-radius: 8px;
+}
+.mlt-batch-count { flex: 1 1 100%; font-size: 11px; color: var(--muted); }
+.mlt-batch button, .mlt-confirm-actions button {
+  appearance: none; -webkit-appearance: none;
+  padding: 3px 8px; border: 1px solid var(--line-soft); border-radius: 7px;
+  background: transparent; color: var(--text); font-size: 11px; font-family: inherit; cursor: pointer;
+}
+.mlt-batch button.danger, .mlt-confirm-actions button.danger { color: var(--red); }
+.mlt-confirm {
+  padding: 8px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--red) 35%, var(--line-soft));
+  background: color-mix(in srgb, var(--red) 6%, transparent);
+}
+.mlt-confirm p { margin: 0 0 6px; font-size: 11px; line-height: 1.6; color: var(--text); }
+.mlt-confirm-actions { display: flex; gap: 6px; justify-content: flex-end; }
+
+/* 指挥中枢那一屏：列表行 + 勾选 + 滚动区（其余样式在 29-memory-ui.css） */
+.boss-mem-row { display: flex; align-items: center; gap: 4px; }
+.boss-mem-row .boss-mem-item { flex: 1; min-width: 0; }
+.boss-mem-scroll { max-height: 280px; overflow-y: auto; }
+
+/* AppSelect 统一控件：包裹层负责 flex 宽度（⛔ 不用原生 select） */
+.mlt-filter-wrap { flex: 1 1 96px; min-width: 0; }

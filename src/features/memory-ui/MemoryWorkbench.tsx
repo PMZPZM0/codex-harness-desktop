@@ -372,7 +372,7 @@ function MemoryOverview({ pyramid, mcp, state, error, onRetry }: {
     <div className="mui-overview" data-layers={layers.length}>
       <button type="button" className="mui-overview-head" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
         <Layers size={13} />
-        <strong>金字塔记忆</strong>
+        <strong>记忆分层</strong>
         <span className="mui-overview-summary">{summary}</span>
         {needDistill ? <span className="mui-overview-warn">{needDistill} 层需蒸馏</span> : null}
         <span className="mui-overview-backend">存储：{mcp?.active ? "本地 MCP" : "内置分层"}</span>
@@ -409,7 +409,7 @@ function emptyPyramid(): PyramidMemory {
 function emptyMcp(): McpBackendMemory {
   return {
     kind: "mcp-backend", id: "empty", createdAt: 0, updatedAt: 0,
-    active: "builtin", connector: LOCAL_MEMORY_CONNECTOR, ready: false, sinkLabel: "内置记忆金字塔",
+    active: "builtin", connector: LOCAL_MEMORY_CONNECTOR, ready: false, sinkLabel: "内置记忆库",
     fallbackReason: null, installCommand: "",
   };
 }

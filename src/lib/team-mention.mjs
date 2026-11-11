@@ -251,31 +251,61 @@ export function flattenMentionSections(sections) {
  * ⛔ @ 的唯一真相源 = 正文：选伙伴 / 点成员行的 @ 都只往正文里插 `@名字 `，发消息时再从这里反查。
  * ⛔ 长名优先匹配（阿团子 > 阿团），按「首次出现位置」排序（与正文顺序一致）。
  */
+/**
+ * 兜底：整段没有「行首 @」，但正文里**只有一个人**被 @ —— 仍然认他。
+ *
+ * ⛔ 为什么留这一步：点选成员会插到光标处，光标在句中时就落在行中；
+ *   全按行首判会让「我 @落纸 帮我看下这句」失效（用户会以为点了没反应）。
+ * ⛔ 但**只在唯一命中时**生效：任务书里 @ 了四五个人 ⇒ 不算派活，交团主理人派单。
+ */
+function fallbackSingleMention(body, list) {
+  const found = [];
+  for (const c of list) {
+    if (!body.includes(`@${c.name}`)) continue;
+    if (found.some((x) => x.name.endsWith(c.name))) continue;   // 长名已占，短名不重复认
+    found.push(c);
+    if (found.length > 1) return [];                            // 多个 ⇒ 不当派活
+  }
+  return found.map((c) => c.id);
+}
+
 export function mentionTargetsInText(text, candidates) {
   const body = String(text ?? "");
   const list = (Array.isArray(candidates) ? candidates : [])
     .map((c) => ({ name: String(c?.name ?? "").trim(), id: String(c?.selectId ?? "") }))
     .filter((c) => c.name && c.id)
     .sort((a, b) => b.name.length - a.name.length);
+  /* ⛔⛔ 11-10 用户现场（截图「就这种垃圾？」）：把一整段任务书贴进群，正文里写着
+     「@落纸 先给选题」「@砚云 写正文」这类**流程**，原来的实现扫**全文** ⇒ 5 个人同时被唤起，
+     每人读完都判断"这段不是我的活"，群里只剩「我不抢，我等派单」，谁也不动。
+     ⛔ 主进程派活（`parseAgentMentions`）本来就只认**行首 @**；两边口径不一致，
+       等于「正文里提到谁」=「派活给谁」。
+     ⇒ 只认行首（允许缩进）。行中提到的名字只是文字，不是派活目标。
+     这也和群聊协议一致（提示词里要求「另起一行、行首 @名字：」）。 */
+  const starts = [];
+  {
+    let offset = 0;
+    for (const line of body.split(/\r?\n/)) {
+      const indent = line.length - line.replace(/^[ \t]+/, "").length;
+      if (line.slice(indent).startsWith("@")) starts.push(offset + indent);
+      offset += line.length + 1;
+    }
+  }
+  if (!starts.length) return fallbackSingleMention(body, list);
   const hits = [];
   const taken = [];
   /* ⛔ 长名先占位、短名不许在同一段里再命中：否则「@阿团子」会被「阿团」也认一次
-     （两个目标都被派活）。占位后短名仍可匹配正文里**别处**的独立 @阿团。 */
+     （两个目标都被派活）。占位后短名仍可匹配别处的独立 @阿团。 */
   for (const c of list) {
     if (hits.some((h) => h.id === c.id)) continue;
     const token = `@${c.name}`;
-    let from = 0;
-    while (from <= body.length) {
-      const at = body.indexOf(token, from);
-      if (at < 0) break;
+    for (const at of starts) {
       const end = at + token.length;
-      const overlap = taken.some((r) => at < r.end && end > r.start);
-      if (!overlap) {
-        taken.push({ start: at, end });
-        hits.push({ id: c.id, at });
-        break;
-      }
-      from = at + 1;
+      if (body.slice(at, end) !== token) continue;
+      if (taken.some((r) => at < r.end && end > r.start)) continue;
+      taken.push({ start: at, end });
+      hits.push({ id: c.id, at });
+      break;
     }
   }
   return hits.sort((a, b) => a.at - b.at).map((h) => h.id);

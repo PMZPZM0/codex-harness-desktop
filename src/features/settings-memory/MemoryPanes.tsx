@@ -21,7 +21,7 @@ import { basename } from "../../lib/basename";
 import { MEMORY_INJECT_LABEL, MEMORY_SCOPE_HINT, MEMORY_SCOPE_LABEL, MEMORY_SESSION_SCOPES, layersByScope } from "../../lib/memory-scope-rules.mjs";
 import { GlobalSearchView } from "../../components/IndexLibrary";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
-import { MemoryFunnel, MemoryHygienePanel, MemoryInjectPreview, MemoryLayersEditor, MemoryPyramid } from "../memory";
+import { MemoryFunnel, MemoryInjectPreview } from "../memory";
 import { MemoryWorkbench } from "../memory-ui";
 import { Cloud, CloudOff, Search, Settings2 } from "lucide-react";
 import type { HarnessAppApi } from "../app-view/types";
@@ -193,36 +193,14 @@ export function ResidentMemoryPane({ app }: { app: HarnessAppApi }) {
           </span>
         </div>
       </div>
-      <MemoryPyramid
-        snapshot={app.memoryLayers}
-        distilling={app.memoryDistilling}
-        onJump={(layerId: string) => {
-          if (layerId === "L0") { app.setMemoryLayerScope("user"); return; }
-          if (layerId === "L3") { app.setMemoryLayerScope("background"); return; }
-          if (layerId === "L1") { app.setMemoryLayerScope("project"); return; }
-          app.setMemoryStatus(`${layerId} 由捕获链 / 蒸馏自动写入，见下方「记忆整洁」与「近期日志」。`);
-        }}
-        onDistill={() => void app.runMemoryDistill()}
-        records={app.memories}
-        onOpenThread={(threadId: string) => { app.setSettingsOpen(false); void app.openThread(threadId); }}
-        onReveal={(path: string) => void window.codex.shellReveal(path)}
-      />
+      {/* ⛔ 11-11：记忆条目（索引 + 原子 + 注入预览）已升成设置页一级入口「记忆条目」
+          （见 MemoryCenterSection 的 atoms 卡片）。这里只留常驻记忆该管的东西 ——
+          ⛔ 同一套界面在两处渲染，用户会以为改了一个另一个没变。 */}
       <MemoryInjectPreview workspace={app.memoryManagementWorkspace} onNotice={app.setNotice} />
-      <MemoryLayersEditor
-        snapshot={app.memoryLayers}
-        scope={app.memoryLayerScope}
-        draft={app.memoryLayerDraft}
-        dirty={app.memoryLayerDirty}
-        distilling={app.memoryDistilling}
-        hasWorkspace={Boolean(app.memoryManagementWorkspace)}
-        savedAt={app.memoryLayerSavedAt}
-        onScope={app.setMemoryLayerScope}
-        onDraft={app.setMemoryLayerDraft}
-        onSave={() => void app.saveMemoryLayer()}
-        onDistill={() => void app.runMemoryDistill()}
-      />
-      {/* 记忆整洁与清理规则（09-22）：水位 / 待办 / 三个动作（危险动作二次确认） */}
-      <MemoryHygienePanel snapshot={app.memoryLayers} workspace={app.memoryManagementWorkspace} onStatus={app.setMemoryStatus} />
+      {/* ⛔ 11-11 用户令「金字塔的蒸馏那些配套功能、工具全部删干净」：
+         分层正文编辑（L0–L7 层文件）与「层水位 / 蒸馏 / 清理」整块下线 ——
+         ⛔ 它们只在金字塔体系里有意义；新结构一条记忆一个文件，改正文去「记忆条目」。
+         ⛔ 后端通道保留：引擎的自动压缩（0.6 阈值）还要用，删了会丢上下文而非"更干净"。 */}
     </div>
   );
 }

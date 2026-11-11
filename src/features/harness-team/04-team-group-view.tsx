@@ -354,6 +354,14 @@ export function TeamGroupView({
      看不到团里那 4 个人。⇒ 拉一次调度目录，把 member 条目按 teamId 挂到团下面。
      ⛔ 只读展示：团内成员由主理人编排，群视图不给它们单独派活（那是另一套语义）。 */
   const [catalog, setCatalog] = useState<Array<{ kind: string; key: string; name: string; profession?: string; teamId?: string }>>([]);
+  /* ⛔ 11-10 用户令「提升到 100 分」：群内进度要一眼看到，⛔ 别让人靠读消息猜。
+     只显示「有任务」的群：没有任务时一个字的占位都不放（用户之前专门要求删掉副标题赘述）。
+     ⛔ 11-11：带上 items（未结束的清单）—— 数字点得开才叫「看得到进度」，
+        只有数字时用户还得自己翻消息找「还欠谁一件事」。 */
+  const [taskProgress, setTaskProgress] = useState<{
+    total: number; open: number; done: number; waiting: number;
+    items: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>;
+  } | null>(null);
   /* ⛔⛔ 11-08 用户：「复用一套主对话框的滚轮和自动滚轮最新消息」——
      与主对话同语义：**只有真实用户输入**（滚轮 / 触摸 / 键盘）能解除跟随；
      滚回底部（或点「回到底部」）立刻恢复跟随；流式增长时跟着最新消息走。
@@ -994,7 +1002,51 @@ export function TeamGroupView({
     () => (rows.length > visibleCount ? rows.slice(rows.length - visibleCount) : rows),
     [rows, visibleCount],
   );
+  /* 进度随消息变化刷新（成员回了 ⇒ 任务关闭 ⇒ 数字要变）。⛔ 失败就保持上一次，不把界面打成 0。 */
+  useEffect(() => {
+    let alive = true;
+    const gid = String(group?.id ?? "");
+    if (!gid) { setTaskProgress(null); return () => { alive = false; }; }
+    /* ⛔ 用生成好的类型（vite-env.d.ts 有声明），⛔ 别用 as any 绕过去 —— 那样改了通道名编译也不报。 */
+    void window.codex?.harnessTeamGroupProgress?.(gid)
+      .then((r: { ok?: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }> } | null) => {
+        if (!alive || !r?.ok) return;
+        setTaskProgress({
+          total: Number(r.total ?? 0), open: Number(r.open ?? 0), done: Number(r.done ?? 0),
+          waiting: Number(r.waiting ?? 0), items: Array.isArray(r.items) ? r.items : [],
+        });
+      })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [group?.id, rows.length]);
+
   const liveLen = (live ?? []).map((r) => `${r.threadId}:${String(r.text ?? "").length}`).join("|");
+
+  /* ⛔⛔ 11-10 用户报「每个会话结束时群对话框短暂闪烁」的根因：
+     store 里 run 完成时**先** appendMessage（正式消息立刻出现），**再** setTimeout 300ms 才删流式卡。
+     这 300ms 里同一个回合有两张卡（live + 正式），随后 live 消失 —— 视觉上"多一块再少一块"，
+     就是那下闪。修法 = 渲染层做**同帧替换**：该会话已经有正式消息落进来（at ≥ 这一轮开始），
+     就立刻不渲染这张 live 卡，不再等 store 的 300ms。
+     ⛔ 判据用 startedAt 而不是 runId：同一个 threadId 会有多轮，跑第二轮时上一轮的正式消息
+        不该把新卡顶掉。 */
+  const persistedThreadAt = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const row of rows) {
+      const threadId = String(row.threadId ?? "");
+      if (!threadId) continue;
+      const at = Number(row.at ?? 0);
+      if (!map.has(threadId) || at > (map.get(threadId) ?? 0)) map.set(threadId, at);
+    }
+    return map;
+  }, [rows]);
+  const liveVisible = useMemo(
+    () => (live ?? []).filter((run) => {
+      const lastAt = persistedThreadAt.get(String(run.threadId ?? ""));
+      if (lastAt == null) return true;
+      return Number(run.startedAt ?? 0) > lastAt;   // 正式消息还没覆盖这一轮 ⇒ 继续显示
+    }),
+    [live, liveLen, persistedThreadAt],
+  );
 
   /* 11-08 用户令「询问/审批跟对话框一样」：伙伴的询问卡/审批卡要就地弹在群里。
      归属判据 = **本群出现过的子会话 id**（正在跑的 ∪ 群消息里的来源会话）——
@@ -1296,6 +1348,46 @@ export function TeamGroupView({
             ) : (
               <>
                 <h2>{group.name}</h2>
+                {taskProgress && taskProgress.total > 0 ? (
+                  taskProgress.open > 0 ? (
+                    /* ⛔ 11-11：有未结束任务时是**可展开**的（details 原生开关，不额外占 state）；
+                       open=0 时不渲染 details —— 点了什么都不发生比不能点更糟。 */
+                    <details className="team-tasks">
+                      <summary
+                        className="team-group__progress is-open"
+                        title={`群内任务：共 ${taskProgress.total} 条，已完成 ${taskProgress.done} 条，未结束 ${taskProgress.open} 条${taskProgress.waiting ? `，其中 ${taskProgress.waiting} 条还在等人回话` : ""}（点开看清单）`}
+                      >
+                        任务 {taskProgress.done}/{taskProgress.total}
+                        {taskProgress.waiting > 0 ? ` · 等 ${taskProgress.waiting} 人` : ""}
+                      </summary>
+                      <div className="team-tasks__pop" role="group" aria-label="未结束的任务">
+                        <p className="team-tasks__head">
+                          未结束 {taskProgress.open} 条{taskProgress.waiting > 0 ? ` · 等 ${taskProgress.waiting} 人回话` : ""}
+                        </p>
+                        <ul>
+                          {taskProgress.items.map((it) => (
+                            <li key={it.id}>
+                              <span className="team-tasks__title">{it.title}</span>
+                              <span className="team-tasks__meta">
+                                {it.fromName} 派给 {it.toName} · {new Date(it.at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                        {taskProgress.open > taskProgress.items.length ? (
+                          <p className="team-tasks__more">另有 {taskProgress.open - taskProgress.items.length} 条更早的未列出</p>
+                        ) : null}
+                      </div>
+                    </details>
+                  ) : (
+                    <span
+                      className="team-group__progress is-done"
+                      title={`群内任务：共 ${taskProgress.total} 条，全部已结束`}
+                    >
+                      任务 {taskProgress.done}/{taskProgress.total}
+                    </span>
+                  )
+                ) : null}
                 {onRename && (
                   <button
                     type="button"
@@ -1730,7 +1822,7 @@ export function TeamGroupView({
 
               {/* 流式卡（飞书 §2.4）：**同一个 threadId 只更新这一张**，不新建消息。
                   ⛔ 正式消息落盘时这张卡会被撤掉（store 里按 threadId 删），所以不会重复。 */}
-              {(live ?? []).map((run) => (
+              {liveVisible.map((run) => (
                 <article
                   key={`live:${run.threadId}`}
                   className={`team-msg is-bot is-live${run.status === "failed" ? " is-failed" : ""}`}
@@ -2073,6 +2165,8 @@ export function TeamGroupView({
           onClose={() => setProfile(null)}
           onMention={(id) => { mentionPartner(id); }}
           onRename={onRenameMember ? (name) => onRenameMember(profile.memberId, name) : undefined}
+          /* ⛔ 11-10 用户令：管理员在成员列表直接设，不走设置界面。 */
+          onSetAdmin={onSetAdmin}
           onStop={(id) => void onStopPartner(id).then((r) => {
                                   /* ⛔ 11-08：会话还在建 / 本来就没在跑 —— 这是状态说明，不是错误（别弹红字）。 */
                                   if (r.ok) return;

@@ -131,8 +131,8 @@ export function normalizeMcpBackend(raw: unknown): import("./types").McpBackendM
     connector: LOCAL_MEMORY_CONNECTOR,
     ready: installed,
     sinkLabel: effective === "mcp"
-      ? "MCP 记忆服务（独立数据库，不写金字塔文件）"
-      : "内置记忆金字塔（<项目>/.codex-harness/memory/）",
+      ? "MCP 记忆服务（独立数据库，不写本地分层文件）"
+      : "内置记忆库（<项目>/.codex-harness/memory/）",
     /* ⛔ 回退原因必须透出：这是用户唯一能知道"我明明开了 MCP 为什么没生效"的线索 */
     fallbackReason: str(r.fallbackReason, "") || null,
     installCommand: str(r.installCommand, ""),

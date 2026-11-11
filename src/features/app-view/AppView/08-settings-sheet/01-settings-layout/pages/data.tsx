@@ -6,6 +6,7 @@
  * ⛔ JSX 与搬迁前逐字一致（只换了外层包装与解构来源），行为等价性由预检【101】+ 设置页验收守着。
  */
 import type { HarnessAppApi } from "../../../../../app-state/useHarnessApp";
+import { ArtifactPanel } from "../../../../../../features/artifact-archive";
 import type { SettingsPage, SettingsPageEntry } from "../types";
 import { lazy } from "react";
 import UsagePanel from "../../../../../../components/UsagePanel";
@@ -52,6 +53,7 @@ export function dataPages(app: HarnessAppApi): Partial<Record<SettingsPage, Sett
     updateFavoriteItem,
   } = app;
   return {
+    artifacts: { render: () => <ArtifactPanel workspace={workspace} /> },
     usage: { render: () => <UsagePanel
                           stats={stats}
                           currentInput={usage?.inputTokens ?? usage?.input_tokens ?? 0}

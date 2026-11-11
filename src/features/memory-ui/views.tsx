@@ -36,7 +36,7 @@ export function PyramidView({ data }: { data: PyramidMemory }) {
   const archive = data?.archive ?? { files: 0, bytes: 0 };
   return (
     <MemorySection
-      title="金字塔记忆"
+      title="记忆分层"
       hint="七层结构 · 越靠下越稳定，满了会提示蒸馏"
       icon={<Gauge size={14} />}
       stat={[
@@ -86,7 +86,7 @@ export function McpBackendView({ data, state, error, onRetry }: {
   /* ⛔ 字段兜底同 PyramidView：`connector`/`sinkLabel` 是 10-05 上午凭空造的字段名，
      主进程一个都没返回 ⇒ 界面上是空白。宁可显示"未标注"也不能崩。 */
   const connector = data?.connector || "未标注";
-  const sinkLabel = data?.sinkLabel || (on ? "MCP 记忆服务" : "内置记忆金字塔");
+  const sinkLabel = data?.sinkLabel || (on ? "MCP 记忆服务" : "内置记忆库");
   return (
     <MemorySection
       title="本地 MCP 记忆"
@@ -101,13 +101,13 @@ export function McpBackendView({ data, state, error, onRetry }: {
           <div className="mcp-card-head">
             {/* ⛔ 状态用「图标 + 文字」双编码 */}
             {on ? <CheckCircle2 size={15} /> : <CircleSlash size={15} />}
-            <strong>{on ? "记忆走 MCP" : "记忆走内置金字塔"}</strong>
+            <strong>{on ? "记忆走 MCP" : "记忆走内置记忆库"}</strong>
             <MemoryBadge tone={on ? "accent" : "neutral"}>{on ? "MCP 生效中" : "内置生效"}</MemoryBadge>
           </div>
           <p className="mcp-card-body">
             {on
-              ? <>引擎通过连接器 <code>{connector}</code> 调用 MCP 记忆工具，写入不进金字塔文件。</>
-              : <>连接器 <code>{connector}</code> 处于停用状态，引擎看不到它，写入照旧进金字塔。</>}
+              ? <>引擎通过连接器 <code>{connector}</code> 调用 MCP 记忆工具，写入不进分层文件。</>
+              : <>连接器 <code>{connector}</code> 处于停用状态，引擎看不到它，写入照旧进分层。</>}
           </p>
           <dl className="mcp-card-meta">
             <div><dt>连接器</dt><dd><code>{connector}</code></dd></div>

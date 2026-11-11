@@ -756,17 +756,50 @@ try {
     "⛔ 派活在主进程：渲染层只发一条 dispatch，不再自己拼 target / 自己跑派活循环");
   ok(/function resolveGroupTargets/.test(ipcSrc2)
     && /targetKey: `\$\{teamId\}:\$\{memberId\}`/.test(ipcSrc2)
-    && /if \(!partner \|\| ranIds\.has\(partner\.id\)\) return;/.test(ipcSrc2),
+    /* ⛔ 11-10：闸门从「每人一次（ranIds Set）」改成「每人最多 MAX_TURNS_PER_MEMBER 回合（ranCount）」
+       —— 原来那道 Set 正是"回一次就终止"的硬闸。构造仍只有 resolveGroupTargets 一处。 */
+    && /if \(!partner \|\| !canRun\(partner\.id\)\) return;/.test(ipcSrc2),
     "⛔ 虚拟伙伴只有一处构造：群成员与团成员同形，递归互 @ 不缺字段（targetKind 崩溃的老根因）");
+
+  /* ⛔⛔ 11-10 用户令「明确消息流转与确认规则、界定何时收尾何时继续、给出可落地判断标准」：
+     判据落在 src/lib/team-collab.mjs 的纯函数里，这里**真跑六种输入**（不是 grep 源码）。 */
+  {
+    const collab = await import(pathToFileURL(join(ROOT, "src", "lib", "team-collab.mjs")).href);
+    const cases = [
+      [collab.classifyTurn({ text: "@构梁：去做 X", handoffTo: "构梁", budgetLeft: 5 }), "handoff"],
+      [collab.classifyTurn({ text: "等着", handoffs: [{ state: "pending", to: "构梁" }], budgetLeft: 5 }), "wait"],
+      [collab.classifyTurn({ text: "这里我收口，结论如下……", handoffs: [], budgetLeft: 5 }), "wrap"],
+      [collab.classifyTurn({ text: "我写了方案", handoffs: [], budgetLeft: 5, progress: { writtenFiles: 1 } }), "continue"],
+      [collab.classifyTurn({ text: "好的", handoffs: [], budgetLeft: 5, idleRounds: 2 }), "wrap"],
+      [collab.classifyTurn({ text: "好的", handoffs: [], budgetLeft: 0 }), "wrap"],
+      /* ⛔ 11-10：活没干完时**不许收尾**（连说「收口」也不行，预算见底也不行）—— 任务推进优先。 */
+      [collab.classifyTurn({ text: "这里我收口", handoffs: [], budgetLeft: 5, openTasks: 2 }), "continue"],
+      [collab.classifyTurn({ text: "好的", handoffs: [], budgetLeft: 0, openTasks: 1 }), "continue"],
+      /* ⛔ 任务账本的三种在办状态都算「活没干完」—— 收尾判据全靠它，口径不能被谁改宽。 */
+      [{
+        action: collab.openTaskCount([
+          { status: "open" }, { status: "assigned" }, { status: "running" },
+          { status: "submitted" }, { status: "reviewing" }, { status: "done" },
+        ]) === 5 && collab.openTaskCount([]) === 0 && collab.openTaskCount(null) === 0
+          ? "TASKCOUNT_OK" : "TASKCOUNT_BAD",
+      }, "TASKCOUNT_OK"],
+    ];
+    const bad = cases.filter(([got, want]) => got.action !== want);
+    ok(bad.length === 0,
+      `协作判据：点了人=handoff / 有人等=wait / 收口词=wrap / 有推进=continue / 连续空转=wrap / 预算耗尽=wrap${bad.length ? `（不符：${bad.map(([g]) => g.action).join("、")}）` : " —— 六种全部符合"}`);
+  }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
     "视图 / 头像对 undefined 成员不再解引用 targetKind（旧 dist 的崩溃点）");
   /* ⛔ hop 统一 0（47d060d64 起）：接力交给 chainBudget + ranIds 截断，不再靠 hop=1 掐断
      「主理人 → 成员 A → 成员 B」。守卫曾继续钉 hop=1 ⇒ 既存假红。 */
-  ok(/parseAgentMentions\(/.test(ipcSrc2) && /void runOne\(next, 0, \{ id: partner\.id, name: partner\.name \}, ask\.ask\)/.test(ipcSrc2)
-    && !/void runOne\(next, 1,/.test(ipcSrc2) && !/在群里叫你/.test(ipcSrc2),
-    "互 @ 把原话原样投递给对方会话（⛔ 不再包一层任务口吻；hop 交 chainBudget 截断）");
+  /* ⛔ 11-10：主持人回合改成"先收集再按序串行排片"，投递物仍是**原话**（item.ask.ask），
+     hop 仍为 0（截断交 chainBudget + ranCount）。断言跟着实现走，但口径不变。 */
+  ok(/parseAgentMentions\(/.test(ipcSrc2)
+    && /runOne\(item\.next, 0, caller, item\.ask\.ask\)/.test(ipcSrc2)
+    && !/runOne\(item\.next, 1,/.test(ipcSrc2) && !/在群里叫你/.test(ipcSrc2),
+    "互 @ 把原话原样投递给对方会话（⛔ 不包任务口吻；hop=0 交 chainBudget/ranCount 截断）");
   const teamInvokeSrc = readFileSync(join(ROOT, "electron/team-invoke.ts"), "utf8");
   ok(/parseAgentMentions\(text, roster, \{ excludeId: member\.id, max: 1 \}\)/.test(teamInvokeSrc)
     && /hop: 1/.test(teamInvokeSrc) && /在群里叫你/.test(teamInvokeSrc),
@@ -784,6 +817,56 @@ try {
       && /随时可派、不需要用户开任何开关/.test(dispatchSrc),
       "⛔ 模型可见文案与「专家随时可调」一致（member 不再被说成会被拒）");
   }
+}
+
+/* ── 定时任务要能派活（11-10 用户令「123 一起完成」）────────────────────────
+   实测豆包那条「推广汇报每日9:35派投盈」：任务描述里写着 owner 定的分工 + 依赖谁的表。
+   我们原来只有 prompt ⇒ 到点只能"提醒一下"。 */
+{
+  const readSrc = (rel) => codeOnly(readFileSync(join(ROOT, rel), "utf8"));
+  const schedulerSrc = readSrc("electron/scheduler.ts");
+  const coreSrc = readSrc("electron/features/dispatch-core.ts");
+  const rpcSrc = readSrc("electron/features/dispatch-rpc.ts");
+  ok(/export function composeTaskPrompt/.test(schedulerSrc)
+    && /text: composeTaskPrompt\(task\)/.test(schedulerSrc),
+    "⛔ 定时任务投递走 composeTaskPrompt（派给谁 / 分工 / 依赖要一起进这一轮，⛔ 不是裸 prompt）");
+  ok(/assignee/.test(schedulerSrc) && /dependsOn/.test(schedulerSrc),
+    "任务结构带 assignee / duty / dependsOn / archiveHint 四件套");
+  ok(/name: "scheduler_save"[\s\S]{0,2600}assignee/.test(coreSrc),
+    "⛔ scheduler_save 的 schema 暴露了派活四件套（⛔ 不给参数模型就永远只能建提醒）");
+  ok(/args\.assignee/.test(rpcSrc) && /args\.dependsOn/.test(rpcSrc),
+    "执行端把四件套真正落库（⛔ 只加 schema 不落库 = 静默丢参）");
+}
+
+/* ── 定时工具给群成员配套（11-10 用户令「不要和外面的定时功能混淆」）────────── */
+{
+  const coreSrc2 = codeOnly(readFileSync(join(ROOT, "electron/features/dispatch-core.ts"), "utf8"));
+  const rpcSrc2 = codeOnly(readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8"));
+  const talkSrc2 = codeOnly(readFileSync(join(ROOT, "electron/features/group-talk/03-talk.ts"), "utf8"));
+  ok(/dispatchOnly: true, label: "群成员会话"/.test(coreSrc2),
+    "⛔ 群成员也能建定时任务（只关调度，不关定时）—— 之前直接拒，团队永远不能自己排节奏");
+  ok(/restrict\.dispatchOnly && rawThreadId !== "current"/.test(rpcSrc2),
+    "⛔ 群成员建的任务只能在自己会话里跑（⛔ 不许新建/指定别人的会话 = 越权派活）");
+  ok(/scheduler\.save\(/.test(rpcSrc2) && /rrule/.test(rpcSrc2),
+    "⛔ 复用同一个 scheduler（同一张表 / 同一套 rrule / 同一个执行器），⛔ 不另造群定时");
+  ok(/你可以自己排节奏/.test(talkSrc2) && /scheduler_save/.test(talkSrc2),
+    "群成员被明确告知可以自建定时任务（且只在能调工具时才用，⛔ 不误导 CLI 会话）");
+}
+
+/* ── 两套定时独立（11-10 用户令「外面的定时工具跟工作伙伴里面的要独立开」）───── */
+{
+  const schedSrc = codeOnly(readFileSync(join(ROOT, "electron/scheduler.ts"), "utf8"));
+  const rpc2 = codeOnly(readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8"));
+  ok(/origin\?: \{ kind: "chat" \| "group"/.test(schedSrc),
+    "任务带归属（chat = 外面那套 / group = 工作伙伴里那套）");
+  ok(/origin: input\.origin === undefined \? current\?\.origin : input\.origin/.test(schedSrc),
+    "⛔ save() 逐字段透传 origin（漏一行 = 归属永远是空，两套又混到一起）");
+  ok(/kind: "group" as const, by: callerThreadId/.test(rpc2) && /kind: "chat" as const, by: callerThreadId/.test(rpc2),
+    "建任务时按调用者身份写归属（群成员建的就是群那套）");
+  ok(/restrict\.dispatchOnly[\s\S]{0,240}origin\.by === callerThreadId/.test(rpc2),
+    "⛔ list 按 origin.by 过滤（⛔ 不用模型自报的 groupId 当判据）");
+  ok(/\?\.filter|!== "group"/.test(rpc2),
+    "主会话的列表不混入群归属任务（两边互不可见）");
 }
 
 console.log("\n【dpcat】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

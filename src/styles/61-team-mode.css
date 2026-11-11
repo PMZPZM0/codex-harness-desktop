@@ -3394,3 +3394,78 @@
   background: var(--accent-soft);
   text-align: left;
 }
+
+/* ⛔ 11-10 群内任务进度（群头小徽标）：只在有任务时出现 —— 没有任务时放任何占位都是赘述
+   （用户之前专门要求删掉群头那行「N 位成员 · M 个伙伴」）。 */
+.team-group__progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  border: 1px solid var(--line-soft, rgba(128, 128, 128, 0.28));
+  color: var(--muted, #666);
+  background: var(--bg-base, rgba(128, 128, 128, 0.08));
+}
+.team-group__progress.is-open {
+  border-color: rgba(232, 149, 42, 0.55);
+  color: #b4701c;
+  background: rgba(232, 149, 42, 0.12);
+}
+.team-group__progress.is-done {
+  border-color: rgba(74, 160, 96, 0.5);
+  color: #2f7a45;
+  background: rgba(74, 160, 96, 0.1);
+}
+
+/* ⛔ 11-11 群头进度可展开：点数字看「还欠谁一件事」。
+   ⛔ 用原生 details（不需要额外 state / 点外关闭逻辑），但必须去掉默认三角——
+      三角会把 1px 内边距的胶囊撑开，视觉上直接错位。 */
+.team-tasks { position: relative; display: inline-flex; }
+.team-tasks > summary { list-style: none; cursor: pointer; }
+.team-tasks > summary::-webkit-details-marker { display: none; }
+.team-tasks > summary::marker { content: ""; }
+.team-tasks[open] > summary { border-color: rgba(232, 149, 42, 0.85); }
+.team-tasks__pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  width: min(340px, 72vw);
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+.team-tasks__head {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.team-tasks__pop ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: 240px;
+  overflow: auto;
+}
+.team-tasks__pop li { display: flex; flex-direction: column; gap: 1px; }
+.team-tasks__title {
+  font-size: 12px;
+  line-height: 17px;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.team-tasks__meta { font-size: 10.5px; color: var(--muted); }
+.team-tasks__more { margin: 6px 0 0; font-size: 10.5px; color: var(--muted); }

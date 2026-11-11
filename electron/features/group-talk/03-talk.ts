@@ -116,6 +116,14 @@ export function buildTalkInput(
      ⇒ 话题内派活时把话题起点带进来，并在 prompt 里明说「你在话题里」+ 一条跳出话题的约定写法。
      ⛔ 只加在**壳后**（模型读得到、气泡不显示）；⛔ 不改正文、不改落盘结构。 */
   topic?: { rootText?: string } | null,
+  /* ⛔ 11-10 用户令「专家群 / 专家团群 / CLI 群各定制一套记忆」：
+     这一段由 `memory/group-memory-inject` 按**群类型 + 座位**生成（团群给团级规则优先、
+     平级专家群把冲突摆出来、CLI 群只给纯文本片段），本函数只负责拼，⛔ 不在这里再判一次群类型。 */
+  groupMemory?: string | null,
+  /* ⛔ 11-10 用户令「私聊就是那个来源对话」：把**你名下的待处理**注入到你自己的会话里 ——
+     这就是"私聊触达"的等价物：它一开口就看到自己欠什么，不用额外起一个回合（不烧钱）。
+     ⛔ 由调用方按任务账本算出（toId = 本成员 且 status = open），这里只管渲染。 */
+  pendingDuties?: Array<{ title: string; fromName: string; at?: number }> | null,
 ): string {
   /* ⛔ 11-08 审查确认：成员名 / 群名 / 共享背景同样是外部可改文本，进信封前一律消毒
      （与正文同口径 —— 名字里塞结束标记同样能让剥离器提前截断）。 */
@@ -149,13 +157,38 @@ export function buildTalkInput(
     /* ⛔ 群历史放**壳后**：气泡只显示上面那段需求体，模型却能读到整段共享上下文。 */
     groupHistoryBlock(history, text),
     `【工作伙伴 · ${sanitizeForEnvelope(options.groupName)}】`,
-    `你是 ${sanitizeForEnvelope(me.name)}${me.targetProfession ? `（${sanitizeForEnvelope(me.targetProfession)}）` : ""}。这里是群聊，不是任务派发：刚那句是群里有人说的话，按你的身份回一句就行。`,
+    /* ⛔⛔ 11-10 用户（截图）：「群成员连自己是谁都不知道」。
+       实测：群里只有一个「内容创作专家团」槽，UI 展开成 6 个人名；用户 @文枢 派活，
+       投过去的是**团名** ⇒ 它回「这条流程是文枢的活，我不抢，在群里等派单」——
+       把自己当成了旁观者，整条链一个人都不动。
+       ⇒ 团主理人用**它自己的名字**做身份，并把「用户 @你就是在叫你」写死。 */
+    ...(() => {
+      const leadAsSelf = me.teamRole === "lead" && Boolean(me.teamLeadName);
+      const selfName = leadAsSelf ? String(me.teamLeadName) : sanitizeForEnvelope(me.name);
+      const selfProf = leadAsSelf ? String(me.teamLeadProfession ?? "") : String(me.targetProfession ?? "");
+      const lines = [`你是 ${sanitizeForEnvelope(selfName)}${selfProf ? `（${sanitizeForEnvelope(selfProf)}）` : ""}。`];
+      if (leadAsSelf) {
+        lines.push(
+          `群里的人只按名字认识你：用户写「@${sanitizeForEnvelope(selfName)}」就是在叫你，不是在叫别人。`
+            + `⛔ 别把自己当旁观者，也不要说"这是 ${sanitizeForEnvelope(selfName)} 的活"——那就是你的活。`,
+          `你是「${sanitizeForEnvelope(String(me.teamName ?? ""))}」的主理人：这个团谁做什么、做完验收、什么时候收口，都由你主持。`,
+        );
+      }
+      lines.push("这里是群聊：刚那句是群里有人说的。是交给你的事就直接干（或派给该干的人），⛔ 不要只回一句「收到」就停在那里。");
+      return lines;
+    })(),
     `群里的人：${roster || "（暂时只有你自己）"}`,
     /* ⛔ 11-10：把「谁推进进度」写死，别让成员凭名字猜。 */
     ...(() => {
       const admin = options.roster.find((m) => m.isAdmin);
       return admin ? [`【群里的分工】${sanitizeForEnvelope(admin.name)} 是这个群的管理员：用户没 @ 任何人时由它接话推进进度。想找它就直接另起一行写 @${sanitizeForEnvelope(admin.name)}：…，或调 group_say 填 to="管理员"。不确定谁负责什么，先调 group_members 看名册。`] : [];
     })(),
+    /* ⛔⛔ 11-10 用户令「让主理人自己排下一轮」：宿主能做的只有"按它说的顺序执行"，
+       所以这里必须让它**一次说清整轮排片**，而不是每次只说一个人、被事件一个个叫回来。 */
+    ...((me.isAdmin === true || me.teamRole === "lead")
+      ? ["【你是主持人】每一轮请一次说清：这一轮派给谁、要他做什么 —— 可以一次 @ 多人，宿主会按你写的顺序依次执行（前一个做完再叫下一个）。没人可派就自己把这一段讲完；整件事有结论时，最后一行写「收口」，宿主就不再拉人。",
+        "⛔ 用户已经把活交过来了：第一轮就要开始派（或自己先做第一步），⛔ 不要回一句「收到，我等你派单」——群里没有第二个人会替你派单。"]
+      : []),
   ];
   /* ⛔⛔ 11-09 用户：「让团队真正运作起来，更像一个开箱即用的成熟团队，不需要用户再调教」。
      被 @ 到的若是专家团，它得知道**自己站哪一环**，否则只能凭职业名瞎猜：
@@ -171,6 +204,50 @@ export function buildTalkInput(
     need.push(...collaborationProtocolLines(me.teamRole));
   }
   if (options.memory) need.push(`群里的共享背景：${sanitizeForEnvelope(String(options.memory))}`);
+  /* ⛔ 11-10 用户令「团队要像团队」：每个人得知道向谁汇报 —— 否则卡住只会沉默或乱拉人。 */
+  if (me.managerName) {
+    need.push(
+      `你的直属上级是 ${sanitizeForEnvelope(String(me.managerName))}：卡住、要不到输入、或判断影响面大时，先向它说明再做；它派的活优先于别人临时叫你。`,
+    );
+  }
+  /* ⛔ 11-10 用户令「继续补上缺口」：实测豆包是「群里发总榜 + 点名到人」。
+     我们这边没有私聊载体，真正的缺口是**异常发在群里没人认领** + **说"做完了"没有凭据**。 */
+  need.push(
+    "【异常必须落到人】报问题 / 异常 / 需要别人动手的事时，**单独一行**写：`【待处理 · 责任人：某人】`"
+      + "（某人是群里的人名，或「用户」）。宿主会把它记成一条待办，群头能看到「还欠谁一件事」，对方开口后自动关闭。"
+      + "⛔ 只说「有异常」不写责任人 = 这条没人接，等于没说。",
+    "【交付要自证】说「做完了 / 修好了 / 验过了」必须带可核对的东西：改了哪个文件、验过哪几个入口、关键数字的前后对照。"
+      + "⛔ 不要只说「已完成」—— 没有凭据的完成，下次还要重查一遍。",
+  );
+  need.push(
+    "【你可以自己排节奏】如果有件事需要按天/按点重复做，且本会话能调 `harness_tools`，"
+      + "就用 `scheduler_save`（`threadId` 传 \"current\"）建定时任务："
+      + "写清任务名、什么时候做、**派给谁**（assignee）、**依赖谁的产出**（dependsOn）。"
+      + "⛔ 只建真正需要重复的；一次性能做完的直接做。⛔ 调不到这个工具就把要做的事写进回复，让主持人安排。",
+  );
+  /* ⛔ 11-10 用户令「文件里能看的东西最全」⇒ 产物必须可归档、可回溯（实测豆包那种 261108-短名 目录）。
+     只给约定不强制路径：会话工作区由宿主决定，模型按约定建子目录。 */
+  if (options.cwd) {
+    need.push(
+      "【产物落盘】做完的东西放 `artifacts/YYYYMMDD-<任务短名>/`（例：`artifacts/20261110-推广汇报/daily-1107.png`）。",
+      "文件名写**内容语义**（daily-1107 / owner-fix / cat-top10），不要 a1.png、未命名.png；同一份东西多版用后缀区分（-r1 / -r2 / -low / -final）。",
+      "⛔ 别把产物散在目录根下：一周后谁也认不出哪个文件是哪次任务的。",
+    );
+  }
+  if (pendingDuties && pendingDuties.length) {
+    const rows = pendingDuties.slice(0, 5).map((d) => {
+      const when = d.at ? new Date(d.at).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+      return `- ${sanitizeForEnvelope(String(d.title))}${d.fromName ? `（${sanitizeForEnvelope(String(d.fromName))} 提的${when ? ` ${when}` : ""}）` : ""}`;
+    });
+    need.push(
+      `【你名下的待处理（${pendingDuties.length} 条）】`,
+      ...rows,
+      "⛔ 这些是别人点名等你处理的：先处理它们再说别的；处理完在群里说清结果（带凭据）。",
+    );
+  }
+  /* 群记忆块（索引 + 本轮召回）：与共享背景分开推 —— 它带自己的标题与规则行，
+     混进「共享背景」里会被当成人写的一段说明，模型就不当记忆用了。 */
+  if (groupMemory) need.push(sanitizeForEnvelope(String(groupMemory)));
   if (topic) {
     /* ⛔ 话题 = 迷你群聊（11-09 用户定稿）：一句一句接着聊，**默认留在话题里**（不铺到群主流）；
        只有「对全群都重要」的内容才额外汇报出去 —— 否则主流会被话题里的碎话刷满。 */

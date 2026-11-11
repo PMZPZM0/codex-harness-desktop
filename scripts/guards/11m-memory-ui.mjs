@@ -242,8 +242,8 @@ console.log("\n【mui】⑩ 分层规则 / 两级 IA / 会话↔记忆层级");
   ok(/className="settings-cards"/.test(CENTER) && /cards\.map\(/.test(CENTER), "一级渲染分类卡片网格（三张并列入口）");
   ok(!/memory-center-tabs/.test(CENTER), "⛔ 页内 tab 已删除（10-10 起改用卡片导航）");
   const dlgAt = CENTER.indexOf("<SettingsDialog");
-  ok(dlgAt > 0 && CENTER.indexOf("<MemorySourcesPane") > dlgAt,
-    "⛔ 内容只在二级弹窗里（迁移过来的会话记忆面板出现在 SettingsDialog 之后）");
+  ok(dlgAt > 0 && CENTER.indexOf("<MemoryAtomsPanel") > dlgAt,
+    "⛔ 内容只在二级弹窗里（记忆条目面板出现在 SettingsDialog 之后）");
   ok(/memory-rule-scope-list/.test(PANEL) && /layersByScope/.test(PANEL),
     "分层规则块直接渲染规则表（⛔ 不另写一份层表；规则来自 memory-scope-rules.mjs 唯一真相源）");
 
@@ -289,7 +289,9 @@ console.log("\n【mui】⑨ 维度分离（作用域 / 分层机制 / 存储后�
 console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
 {
   const center = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
-  const cardKeys = ["shared", "pyramid"];
+  /* ⛔ 11-11 用户令「把金字塔删干净」：卡片改成 项目库 / 记忆条目 / 工作伙伴记忆。
+     ⛔ pyramid **不许复活**（下面 ⑭ 有负向断言）。 */
+  const cardKeys = ["shared", "atoms", "groups"];
   const missing = cardKeys.filter((k) => !center.includes(`key: "${k}"`));
   ok(missing.length === 0, `内容入口齐全（缺：${missing.join("/") || "无"}）`);
   ok(/className="settings-cards"/.test(center) && /cards\.map\(/.test(center),
@@ -302,10 +304,10 @@ console.log("\n【mui】⑪ 设置页「记忆」两级 IA");
      = 让人多点一次。⇒ 弹窗必须**直接给内容**（条目给漏斗 / 常驻给层水位 / 存储搜索给状态）。 */
   {
     const dlgIdx = center.indexOf("<SettingsDialog");
-    ok(center.indexOf("<PyramidPanel") > dlgIdx,
-      "金字塔入口弹窗里直接渲染**金字塔面板**（⛔ 不是只放说明、也不是复用旧记忆库组件）");
-    ok(center.indexOf("<SharedLibraryPanel") > dlgIdx,
-      "项目共享入口弹窗里直接给**书架界面**（左选项目 + 右三层书架；⛔ 不是空白弹窗）");
+    ok(center.indexOf("<MemoryAtomsPanel") > dlgIdx && center.indexOf("<GroupMemoryPanel") > dlgIdx,
+      "新弹窗里直接渲染内容（记忆条目面板 / 工作伙伴记忆面板；⛔ 不是只放说明）");
+    ok(center.indexOf("<MemoryAtomsPanel") > dlgIdx,
+      "项目共享入口弹窗里直接给**记忆条目面板**（索引 + 原子正文；⛔ 11-11 起书架已下线）");
   }
   /* ⛔ 后端入口的"真能读能切"由控制台组件自己保证（旧的 MemoryBackendSection 已删）——
      守卫【150】在 10-memory-audit 里按同一口径核对，这里只钉"它确实被渲染进弹窗"。 */
@@ -346,10 +348,17 @@ console.log("\n【mui】⑭ 设置页「记忆」内容入口 + 三块后端板"
 {
   const center2 = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryCenterSection.tsx"), "utf8");
   const dlgIdx2 = center2.indexOf("<SettingsDialog");
-  ok(/项目共享记忆库/.test(center2) && /金字塔记忆架构/.test(center2) && /<MemoryBackendBoards/.test(center2),
-    "两个内容入口 + 三块后端板（MemoryBackendBoards）都在页面上");
-  ok(/key: "shared"/.test(center2) && /key: "pyramid"/.test(center2) && !/key: "backend"/.test(center2),
-    "内容卡片不再包含「记忆后端选项」；后端由三块板上的开关选择");
+  ok(/项目共享记忆库/.test(center2) && /记忆条目/.test(center2) && /工作伙伴记忆/.test(center2) && /<MemoryBackendBoards/.test(center2),
+    "三个内容入口（项目库 / 记忆条目 / 工作伙伴记忆）+ 三块后端板都在页面上");
+  ok(/key: "shared"/.test(center2) && /key: "atoms"/.test(center2) && /key: "groups"/.test(center2)
+    && !/key: "backend"/.test(center2),
+    "内容卡片不含「记忆后端选项」；后端由三块板上的开关选择");
+  /* ⛔⛔ 负向：金字塔必须真的下线（用户 11-11「把金字塔删干净」）。
+     ⛔ 只删文案不算 —— 卡片 key、弹窗渲染、组件都要没有。 */
+  ok(!/key: "pyramid"/.test(center2) && !/<PyramidPanel/.test(center2) && !/<MemoryPyramid/.test(center2),
+    "⛔ 金字塔入口/组件已从设置页删除（⛔ 不许复活：要恢复必须先问用户）");
+  ok(/<MemoryAtomsPanel/.test(center2) && /<GroupMemoryPanel/.test(center2),
+    "新界面真的挂上了（记忆条目 = MemoryAtomsPanel；工作伙伴记忆 = GroupMemoryPanel）");
   const boardsSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryBackendBoards.tsx"), "utf8");
   ok(/id: "builtin"/.test(boardsSrc) && /id: "mcp"/.test(boardsSrc) && /id: "cloud"/.test(boardsSrc)
     && /type="checkbox"/.test(boardsSrc) && /role="switch"/.test(boardsSrc),
@@ -358,21 +367,16 @@ console.log("\n【mui】⑭ 设置页「记忆」内容入口 + 三块后端板"
     "开关真的切后端（setMemoryBackend）并以后端回报的 effective 为准（未就绪回退可见）");
   ok(/focus\?: "builtin" \| "mcp" \| "cloud"/.test(readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8")),
     "详情面板按块聚焦（不再在三块板之外重复一套后端选择）");
-  const libSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "SharedLibraryPanel.tsx"), "utf8");
-  ok(/readMemoryLayers/.test(libSrc) && /lib-spine/.test(libSrc) && /<SharedLibraryPanel/.test(center2),
-    "① 可切换项目：切项目就重读该项目的层快照（书架组件内 readMemoryLayers）");
+  ok(/<MemoryAtomsPanel/.test(center2) && /listMemoryAtoms/.test(readFileSync(join(ROOT, "src", "features", "memory-atoms", "MemoryAtomsPanel.tsx"), "utf8")),
+    "① 项目库直接读记忆原子（⛔ 不再读书架/层快照 —— 那套随金字塔一起下线）");
   ok(/用户档案/.test(center2) && /项目规则/.test(center2) && /工作纪律/.test(center2),
     "① 覆盖三类共享内容（用户档案 / 项目规则 / 工作纪律）");
-  ok(center2.indexOf("<PyramidPanel") > dlgIdx2,
-    "② 金字塔入口用**新做的 PyramidPanel**（⛔ 用户明确要求「别偷懒又用旧的记忆库界面」）");
-  const pyrSrc = readFileSync(join(ROOT, "src", "features", "settings-memory", "PyramidPanel.tsx"), "utf8");
-  ok(/listFabricNamespaces/.test(pyrSrc), "② 按会话给独立层计数（一次 IPC 取 private__ 命名空间计数，⛔ 不 N+1）");
-  ok(/data-pyr-project/.test(pyrSrc) && /readMemoryLayers\?\.\(project\)/.test(pyrSrc),
-    "② 面板顶部有**项目切换**，切了就重读该项目的层快照（⛔ 10-10 二轮反馈：原来没有项目维度，共享层会显示上一个项目的数字）");
-  ok(/threads/.test(pyrSrc) && /String\(t\.cwd/.test(pyrSrc) && /=== project/.test(pyrSrc),
-    "⛔ 会话清单来自**真实会话**（threads × cwd 归属项目）—— ⛔ 只列 private__ 命名空间会把没写过记忆的会话全漏掉（用户二轮反馈「已有的会话没识别出来」）");
-  ok(/共享层 L0–L6/.test(pyrSrc) && /独立层 L7/.test(pyrSrc),
-    "② 如实标注：共享层所有会话同一份 / 独立层各异（⛔ 不谎称「每会话一套金字塔」）");
+  ok(center2.indexOf("<MemoryAtomsPanel") > dlgIdx2,
+    "② 记忆条目入口用新面板（索引 + 原子正文，⛔ 用户 11-11 令「金字塔删干净」）");
+  ok(!existsSync(join(ROOT, "src", "features", "settings-memory", "PyramidPanel.tsx")),
+    "⛔ 金字塔面板文件已删除（⛔ 文件还在就迟早会被挂回来）");
+  ok(!/MemoryLayersEditor/.test(center2) && !/MemoryHygienePanel/.test(center2) && !/LayerRulesPane/.test(center2),
+    "⛔ 蒸馏 / 层水位 / 分层规则这些金字塔配套不再进设置页");
   const bcSrc0 = readFileSync(join(ROOT, "src", "features", "settings-memory", "BackendConsolePanel.tsx"), "utf8");
   ok(/<BackendConsolePanel/.test(center2) && /readMemoryBackend/.test(bcSrc0),
     "③ 后端配置仍在（守卫【150】：能读能切 —— 现在由控制台组件自己调这组 IPC）");
@@ -385,14 +389,11 @@ console.log("\n【mui】⑮ 三套界面各自独立");
 {
   const dir = join(ROOT, "src", "features", "settings-memory");
   const shell = readFileSync(join(dir, "MemoryCenterSection.tsx"), "utf8");
-  const lib = readFileSync(join(dir, "SharedLibraryPanel.tsx"), "utf8");
-  const pyr = readFileSync(join(dir, "PyramidPanel.tsx"), "utf8");
   const bc = readFileSync(join(dir, "BackendConsolePanel.tsx"), "utf8");
   const css = readFileSync(join(ROOT, "src", "styles", "29-memory-ui.css"), "utf8");
-  ok(/<SharedLibraryPanel/.test(shell) && /<PyramidPanel/.test(shell) && /<BackendConsolePanel/.test(shell),
-    "三个入口各接一个**独立组件**（书架 / 金字塔 / 控制台）");
-  ok(/lib-root/.test(lib) && /lib-spines/.test(lib) && /lib-shelf/.test(lib), "① 书架：左书脊 + 右书架（左右分栏骨架）");
-  ok(/pyr-shape/.test(pyr) && /pyr-tier/.test(pyr), "② 金字塔：梯形层叠（纵向骨架）");
+  ok(/<MemoryAtomsPanel/.test(shell) && /<GroupMemoryPanel/.test(shell) && /<BackendConsolePanel/.test(shell),
+    "各入口各接一个独立组件（记忆条目 / 工作伙伴记忆 / 后端控制台）");
+  /* 金字塔骨架已删（11-11）—— 只留负向判据，防止有人把 pyr-shape 那段样式又挂回来。 */
   ok(/bc-statusbar/.test(bc) && /bc-device/.test(bc) && /bc-row/.test(bc), "③ 控制台：状态灯条 + 设备卡 + 控制行（面板骨架）");
   ok(/\.lib-root/.test(css) && /\.pyr-shape/.test(css) && /\.bc-root/.test(css),
     "三套骨架在样式上也是三段独立定义（⛔ 不是同一套类名换颜色）");
@@ -413,13 +414,21 @@ console.log("\n【mui】⑰ 旧记忆中心已删干净（内容迁进三个弹�
   ok(!/打开记忆中心/.test(CENTER.replace(/\/\*[\s\S]*?\*\//g, "")), "⛔ 设置页不再有「打开记忆中心」入口（旧的记忆板块入口）");
   ok(!/memoryCenterTab|memoryCenterOpen/.test(readFileSync(join(ROOT, "src", "features", "app-state", "parts", "bag-types.ts"), "utf8")),
     "⛔ 旧弹窗的开合状态已从 bag 摘掉（留着一个没人读的状态位 = 下次有人照着它把弹窗建回来）");
-  const panes = ["LayerRulesPane", "MemoryEntriesPane", "ResidentMemoryPane", "MemorySearchPane", "MemoryModePane", "MemorySourcesPane"];
+  /* ⛔ 11-11 用户令「金字塔的蒸馏那些配套功能删干净」⇒ LayerRulesPane（八层明细）不再挂载、不再必挂。 */
+  /* ⛔ 11-11「四个模块同步更新，我不想再看见旧的」⇒ 旧条目槽与常驻记忆面板不再挂载。 */
+  const panes = ["MemorySearchPane", "MemoryModePane"];
   const missingPane = panes.filter((n) => !new RegExp(`export function ${n}\\(`).test(PANEL));
-  ok(missingPane.length === 0, `迁走的六个内容页都在（缺：${missingPane.join("/") || "无"}）`);
+  ok(missingPane.length === 0, `迁走的内容页都在（缺：${missingPane.join("/") || "无"}）`);
+  ok(!/<LayerRulesPane[ /]/.test(CENTER) && !/<MemoryEntriesPane[ /]/.test(CENTER) && !/<ResidentMemoryPane[ /]/.test(CENTER),
+    "⛔ 分层规则 / 旧条目槽 / 常驻记忆面板都不再挂载；旧界面不是藏起来，是没有了");
   const missingMount = panes.filter((n) => !new RegExp(`<${n}[ /]`).test(CENTER));
   ok(missingMount.length === 0, `⛔ 六个内容页都**真的挂在弹窗里**（缺挂载：${missingMount.join("/") || "无"}）—— 迁了却不挂 = 功能凭空消失`);
-  ok(/<MemoryHygienePanel/.test(PANEL) && /<MemoryLayersEditor/.test(PANEL) && /<GlobalSearchView/.test(PANEL) && /<MemoryFunnel/.test(PANEL),
-    "⛔ 五项能力逐个在位：整洁清理 / 常驻记忆编辑 / 全局搜索 / 记忆条目");
+  /* ⛔ 11-11：整洁清理（水位）/ 常驻记忆编辑（分层正文）随金字塔下线 ——
+     取而代之的是「记忆条目」面板（索引 + 正文可改 + 注入预览）+ 全局搜索。 */
+  ok(/<GlobalSearchView/.test(PANEL) && /<MemoryAtomsPanel/.test(CENTER),
+    "新界面在位：记忆条目（索引 + 正文 + 注入预览）+ 全局搜索");
+  ok(!/<MemoryHygienePanel/.test(PANEL) && !/<MemoryLayersEditor/.test(PANEL),
+    "⛔ 整洁清理 / 分层正文编辑不再渲染（⛔ 只留组件文件不算，渲染处必须没有）");
 }
 
 console.log("\n【mui】" + (checks - fails) + "/" + checks + " 通过" + (fails ? " —— " + fails + " 条红" : ""));

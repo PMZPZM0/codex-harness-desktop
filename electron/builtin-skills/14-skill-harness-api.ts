@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（115 个能力域 / 652 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（116 个能力域 / 658 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -233,9 +233,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 插件卸载入口
 通道：plugin:validate
 
-### harness-team（37 通道）
+### harness-team（38 通道）
 团队模式：应用内的群（伙伴成员 / 上下级委派白名单 / 群护栏 / 消息投影）,打开一个群就能 @ 伙伴派活
-通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:rename-member, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-avatar, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:dispatch, harness-team:clear-messages, harness-team:delete, harness-team:set-memory, harness-team:set-workspace, harness-team:running, harness-team:set-files, harness-team:set-manager, harness-team:set-admin, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:set-menu-placement, harness-team:set-message-layout, harness-team:set-reply-mode, harness-team:set-message-form, harness-team:set-dialog-flow, harness-team:set-schedule, harness-team:run-schedule, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:queue-start, harness-team:thread-usage, harness-team:talk-threads
+通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:rename-member, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-avatar, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:dispatch, harness-team:clear-messages, harness-team:delete, harness-team:set-memory, harness-team:set-workspace, harness-team:running, harness-team:set-files, harness-team:set-manager, harness-team:set-admin, harness-team:group-progress, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:set-menu-placement, harness-team:set-message-layout, harness-team:set-reply-mode, harness-team:set-message-form, harness-team:set-dialog-flow, harness-team:set-schedule, harness-team:run-schedule, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:queue-start, harness-team:thread-usage, harness-team:talk-threads
 
 ### remote（12 通道）
 远程会话（手机/网页端远程接入宿主）
@@ -437,9 +437,9 @@ SkillHub **人格市场**（skillhub.cn/soul，16 套现成人格）：list 浏�
 IM 通道 Bot（把某个会话接到 IM 机器人上）
 通道：channel-bot:read, channel-bot:save, channel-bot:test
 
-### memory（31 通道）
+### memory（35 通道）
 记忆金字塔全链路（L0~L7 分层读写、召回、蒸馏、清理计划/执行、云端网关、工作区开关、记忆后端**三选一**：内置金字塔 / 本地 MCP 记忆服务 / 云端 memapi）
-通道：memory:backend:read, memory:backend:set, memory:delete, memory:distill, memory:fabric-entries, memory:fabric-namespaces, memory:fabric-write, memory:gateway:read, memory:gateway:save, memory:gateway:test, memory:hygiene:apply, memory:hygiene:plan, memory:layers:context, memory:layers:read, memory:layers:write, memory:list, memory:mcp:install, memory:mcp:uninstall, memory:mcp:verify, memory:mode-read, memory:mode-set, memory:recall, memory:reset, memory:role-context, memory:role-sessions, memory:save, memory:scale:read, memory:scale:set, memory:search, memory:workspace-enabled:read, memory:workspace-enabled:set
+通道：memory:atoms:forget, memory:atoms:list, memory:atoms:recall, memory:atoms:save, memory:backend:read, memory:backend:set, memory:delete, memory:distill, memory:fabric-entries, memory:fabric-namespaces, memory:fabric-write, memory:gateway:read, memory:gateway:save, memory:gateway:test, memory:hygiene:apply, memory:hygiene:plan, memory:layers:context, memory:layers:read, memory:layers:write, memory:list, memory:mcp:install, memory:mcp:uninstall, memory:mcp:verify, memory:mode-read, memory:mode-set, memory:recall, memory:reset, memory:role-context, memory:role-sessions, memory:save, memory:scale:read, memory:scale:set, memory:search, memory:workspace-enabled:read, memory:workspace-enabled:set
 
 ### monitor（1 通道）
 任务监控（右栏「监控」页，10-30）：按会话读每轮的技能 / MCP / 插件使用与本轮产物，以及本会话模型产出的「自我改进建议」。建议可编辑、可重生成，一键「进化」会带 self-review 技能直接发回对话。⛔ 全部按 threadId 隔离，一个会话看不到另一个会话的记录
@@ -484,6 +484,10 @@ RPA 配方（录制好的桌面自动化流程）
 ### media-desk（1 通道）
 自媒体工作台（设置 → 能力与内容，11-09）：灵感墙（文字/链接，链接抓标题摘要封面）→ 一键成稿（计划、口播脚本、封面与黑白分镜）→ 本地排期 → 数据记录 → 写作风格。文本模型用工作台设置或应用当前供应商；生图走用户配置的 OpenAI 兼容 /images/generations。⛔ 排期只是本地计划、不自动发布；数据是手动记录，不接平台 API
 通道：media-desk:endpoint
+
+### artifact（1 通道）
+产物归档（11-11）：设置 → 数据 →「产物归档」按 artifacts/YYYYMMDD-任务短名/ 列出每次任务的成品，可一键在资源管理器打开目录。只读清单；归档动作由模型经 harness_tools 的 artifact_archive 完成（只复制不删原文件、同名自动 -r2 迭代、写 manifest 与总台账），历史散落文件用 scripts/artifacts-migrate.mjs 归位（默认 dry-run）
+通道：artifact:list
 
 ### history（1 通道）
 跨会话历史搜索（全文检索会话与消息，命中按会话分组）

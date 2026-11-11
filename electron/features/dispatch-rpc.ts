@@ -133,6 +133,28 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
      专家安排任务、任务再调专家）；工作区缺省 = 调用者会话的 cwd（threadCwd）。 */
   /* ── 知识库检索（10-01 立项）：模型直接查项目知识库 ────────────────────────────
      workspace 缺省 = 调用者会话的 cwd（threadCwd）。调 knowledge-base 的 searchDocs 同源。 */
+  /* ── 记忆三件套（11-10 用户令「记忆和记忆工具配套更新」）：模型侧唯一记忆入口 ──────
+     权限 / 落盘 / 重建索引全在 `memory/atoms-tool.ts`（⛔ 这里不写第二份口径）。
+     workspace 只能取调用者会话的 cwd（⛔ 不许模型自报 —— 那等于让它往任意项目写记忆）。 */
+  /* ⛔ 11-11 产物归档：workspace 同样只能取宿主注入的 cwd（⛔ 不许模型自报）。 */
+  if (name === "artifact_archive" || name === "artifact_list") {
+    const cwd = threadCwd.get(callerThreadId) || "";
+    const { runArtifactTool } = await import("./artifact-archive");
+    return runArtifactTool({ name, args: (args ?? {}) as Record<string, unknown>, workspace: cwd });
+  }
+  if (name === "memory_recall" || name === "memory_write" || name === "memory_forget") {
+    const cwd = threadCwd.get(callerThreadId) || "";
+    /* ⛔⛔ 11-11 全链路验收发现：执行端原来不传身份 ⇒ 主会话被当「普通群成员」，
+       写 project 域当场被拒（而界面手动编辑能写）⇒ 同一条记忆两套口径。
+       ⇒ 用调度权限闸同源判身份：主会话 = owner（可写 project/session），
+         群成员 / 专家 / 被调度子会话 = member（只写 session）。⛔ 不让模型自报 seat。 */
+    const restrict = await restrictedThreadRole(callerThreadId);
+    const { runMemoryTool } = await import("../memory/atoms-tool");
+    return runMemoryTool({
+      name, args: (args ?? {}) as Record<string, unknown>, workspace: cwd,
+      seat: restrict.restricted ? "member" : "owner",
+    });
+  }
   if (name === "knowledge_search") {
     const cwd = threadCwd.get(callerThreadId) || "";
     if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 知识库是项目级的，请先在会话里选择工作文件夹" };
@@ -245,7 +267,14 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     if (args.scheduleType === "recurring" && !String(args.rrule ?? "").trim()) return { ok: false, error: "周期任务必须传 rrule（如 FREQ=DAILY;BYHOUR=9;BYMINUTE=0）" };
     // 会话目标：\"current\" = 调用者自己的会话（模型不用猜 id）；其它值原样交给引擎（到点 thread/resume，
     // 失败降级新建并留 lastError）。缺省 = 新建会话。
-    const rawThreadId = String(args.threadId ?? "").trim();
+    const rawThreadId = String(args.threadId ?? "").trim() || (restrict.dispatchOnly ? "current" : "");
+    /* ⛔⛔ 11-10 用户令「定时工具给工作伙伴里的智能体都配套上」——
+       群成员可以建定时任务，但**只能在自己这个会话里执行**（到点它自己接活）。
+       ⛔ 不许新建会话 / 指定别人的会话：那是越权派活（能往任意会话塞任务）。
+       ⛔ 仍然复用同一个 scheduler（同一张表、同一套 rrule、同一个执行器）—— 不另造群定时。 */
+    if (restrict.dispatchOnly && rawThreadId !== "current") {
+      return { ok: false, error: "群成员建的定时任务只能在自己这个会话里执行（threadId 传 \"current\" 或不传）" };
+    }
     const threadId = rawThreadId === "current" ? callerThreadId : rawThreadId || undefined;
     if (rawThreadId === "current" && !threadId) return { ok: false, error: "无法确定当前会话 id —— 请改为新建会话（不传 threadId）" };
     const deliverTo = String(args.deliverTo ?? "").trim();
@@ -259,15 +288,37 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       scheduledAt: args.scheduledAt ? String(args.scheduledAt) : undefined,
       rrule: args.rrule ? String(args.rrule) : undefined,
       enabled: true,
+      /* ⛔ 11-10 用户令「定时任务要能派活」：这四个字段会在到点那一轮并进任务体
+         （composeTaskPrompt）。不传 = 旧行为（只提醒）。 */
+      ...(String(args.assignee ?? "").trim() ? { assignee: String(args.assignee).trim() } : {}),
+      ...(String(args.duty ?? "").trim() ? { duty: String(args.duty).trim() } : {}),
+      ...(Array.isArray(args.dependsOn) && args.dependsOn.length ? { dependsOn: args.dependsOn.map((x: unknown) => String(x)) } : {}),
+      ...(String(args.archiveHint ?? "").trim() ? { archiveHint: String(args.archiveHint).trim() } : {}),
+      /* ⛔⛔ 11-10 用户令「外面的定时工具跟工作伙伴里面的定时工具要独立开」：
+         同一张表，但**归属分两套** —— 群成员建的记 group（并在本会话执行），
+         主会话建的记 chat。读的时候按身份过滤，两边互不可见。 */
+      origin: restrict.dispatchOnly
+        ? { kind: "group" as const, by: callerThreadId }
+        : { kind: "chat" as const, by: callerThreadId },
       deliver: args.deliverWeixin ? (deliverTo ? { channel: "weixin", to: deliverTo } : { channel: "weixin" }) : undefined,
     });
     const where = threadId ? `会话 ${threadId} 里续聊执行` : "新建会话执行";
     const notify = args.deliverWeixin ? `；完成后微信推送给${deliverTo ? `「${deliverTo}」` : "最近对话用户"}` : "";
-    return { ok: true, output: `定时任务已创建：「${task.name}」（id=${task.id}）下次运行：${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString("zh-CN") : "无"}，在${where}${notify}。可在 设置 → 定时任务 里查看与管理。` };
+    const assignee = String(args.assignee ?? "").trim();
+    const duty = assignee ? `；派给「${assignee}」${String(args.duty ?? "").trim() ? `（${String(args.duty).trim()}）` : ""}` : "";
+    return { ok: true, output: `定时任务已创建：「${task.name}」（id=${task.id}）下次运行：${task.nextRunAt ? new Date(task.nextRunAt).toLocaleString("zh-CN") : "无"}，在${where}${assignee ? duty : ""}${notify}。可在 设置 → 定时任务 里查看与管理。` };
   }
   if (name === "scheduler_list") {
-    const list = await scheduler.list();
-    if (!list.length) return { ok: true, output: "当前没有任何定时任务。" };
+    const restrict = await restrictedThreadRole(callerThreadId);
+    const all = await scheduler.list();
+    /* ⛔ 11-10「两套独立」：群成员只看**群归属**里自己建的；主会话只看**chat 归属**。
+       ⛔ 用 origin.by 比对，而不是让它自己传 groupId（模型可控参数不能当身份判据）。 */
+    const list = restrict.dispatchOnly
+      ? all.filter((t) => t.origin?.kind === "group" && t.origin.by === callerThreadId)
+      : all.filter((t) => (t.origin?.kind ?? "chat") !== "group");
+    if (!list.length) {
+      return { ok: true, output: restrict.dispatchOnly ? "本会话还没有定时任务（你建的会记在这里，和外面的定时任务分开）。" : "当前没有任何定时任务。" };
+    }
     return {
       ok: true,
       output: list.map((t) => {

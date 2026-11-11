@@ -1,0 +1,67 @@
+/* ⛔ 11-11 产物归档面板（独立板块）。变量一律用已定义的（--line-soft / --muted / --text）。 */
+.artifact-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+}
+.artifact-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.artifact-panel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+.artifact-panel__stats { flex: 1; font-size: 12px; color: var(--muted); }
+.artifact-panel__hint { font-size: 12px; line-height: 1.7; color: var(--muted); margin: 0; }
+.artifact-panel__hint code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: rgba(128, 128, 128, 0.14);
+}
+.artifact-panel__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 460px;
+  overflow: auto;
+}
+.artifact-panel__row {
+  border: 1px solid var(--line-soft);
+  border-radius: 9px;
+  padding: 8px 10px;
+}
+.artifact-panel__row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.artifact-panel__row-head code { color: var(--text); }
+.artifact-panel__note, .artifact-panel__meta { font-size: 11px; color: var(--muted); }
+.artifact-panel__note { flex: 1; }
+.artifact-panel__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.artifact-panel__files span {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--line-soft);
+  color: var(--muted);
+}

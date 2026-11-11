@@ -12,7 +12,7 @@
  *    —— 成员档案里没有模型，写一个假值比不写更糟。
  */
 import { useEffect, useMemo, useState } from "react";
-import { AtSign, Square, X, Pencil, Check } from "lucide-react";
+import { AtSign, Square, X, Pencil, Check, Users } from "lucide-react";
 import type { GroupMessageRow, TeamGroup, TeamMember } from "./01-team-types";
 import { MemberAvatar } from "./13-team-avatar";
 import { resolveManagerId } from "../../lib/team-models.mjs";
@@ -49,6 +49,7 @@ function fmtWhen(at: number): string {
 /** 成员资料卡：身份、在本群的产出统计、可 @ / 可停止。 */
 export function TeamProfileCard({
   member, group, rows, catalog, modelName, running, anchor, onClose, onMention, onStop, onRename,
+  onSetAdmin,
 }: {
   member: TeamMember;
   group: TeamGroup;
@@ -63,6 +64,9 @@ export function TeamProfileCard({
   onStop: (memberId: string) => void;
   /** 成员改名（11-09）：主进程改群档案 + 伙伴会话标题；成功后关卡片。 */
   onRename?: (name: string) => Promise<{ ok: boolean; error?: string }>;
+  /** ⛔ 11-10 用户：「我设置个管理员还跑设置界面，我要在成员列表直接设置懂不」
+      ⇒ 资料卡底部直接给开关；传空串 = 取消（主进程 setAdmin 的口径）。 */
+  onSetAdmin?: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
 }) {
   useEscapeLayer(true, onClose);
   const [stat, setStat] = useState<LedgerStat | null>(null);
@@ -74,6 +78,9 @@ export function TeamProfileCard({
   /* ⛔ 团成员的显示名来自专家目录（资料卡显示主理人名），群内改名不会改变展示 ⇒ 不提供入口；
      人类成员跟随用户中心。只有绑定到专家/子智能体/CLI 的伙伴可以群内改名。 */
   const canRename = Boolean(onRename) && member.kind === "bot" && member.targetKind !== "team";
+  /* ⛔ 11-10：管理员在成员列表直接设（用户原话：不要跑设置界面）。团群有自己的主理人 ⇒ 不给这个开关。 */
+  const isAdminOfCard = String((group as { adminId?: unknown })?.adminId ?? "") === String(member.id);
+  const teamGroupOfCard = ((group as { members?: Array<{ targetKind?: string }> })?.members ?? []).some((m) => m.targetKind === "team");
 
   /* 台账按「成员 id」聚合（主进程 `summarizeLedger` 的 byPartner）。
      ⛔ 人类成员没有台账，直接跳过；⛔ 读失败也不弹错（旁路观测不影响资料卡）。 */
@@ -237,6 +244,15 @@ export function TeamProfileCard({
           {canRename && !renaming && (
             <button type="button" onClick={() => { setDraft(String(member.name ?? "")); setRenaming(true); setRenameError(""); }}>
               <Pencil size={12} /> 改名字
+            </button>
+          )}
+          {onSetAdmin && !teamGroupOfCard && (
+            <button
+              type="button"
+              title={isAdminOfCard ? "取消管理员（之后谁先接话由团队自己判断）" : "设为管理员：以后由它负责推动群里的进度"}
+              onClick={() => { void onSetAdmin(isAdminOfCard ? "" : member.id).then((r) => { if (r?.ok) onClose(); }); }}
+            >
+              <Users size={12} /> {isAdminOfCard ? "取消管理员" : "设为管理员"}
             </button>
           )}
           <button type="button" onClick={() => { onMention(member.id); onClose(); }}>

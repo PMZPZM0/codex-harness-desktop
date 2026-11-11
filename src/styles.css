@@ -90,6 +90,12 @@
 /* 11-10 同步给 CLI 智能体弹窗（模型配置页出口）。只有自己的 .cli-sync-* 类。
    ⛔ 必须插在 59-motion **之前**（motion 靠后写者胜去覆盖各分节时长变量）。 */
 @import "./styles/62-cli-sync" layer(components);
+/* ⛔ 11-10 本地记忆界面（记忆原子）—— 金字塔下线后的新一屏 */
+@import "./styles/63-memory-atoms" layer(components);
+/* ⛔ 11-11 产物归档面板（设置 → 数据 → 产物归档） */
+@import "./styles/64-artifact-archive" layer(components);
+/* ⛔ 11-11 四个记忆板块共用：搜索 / 筛选 / 批量管理工具条 */
+@import "./styles/65-memory-list-tools" layer(components);
 /* 11-09 自媒体工作台（设置页独立板块）。⛔ 同样必须在 59-motion 之前。 */
 @import "./styles/63-media-desk" layer(components);
 @import "./styles/59-motion" layer(components);

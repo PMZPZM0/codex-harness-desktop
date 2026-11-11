@@ -605,7 +605,9 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     (/export function MemoryHygienePanel/.test(panelsSrc) ? ok : fail)("【107】整洁面板组件存在");
     (/pending === action/.test(panelsSrc) && /确认执行/.test(panelsSrc) ? ok : fail)("【107】UI 危险动作走二次确认（点一次只展开确认条）");
     const panelUse = readFileSync(join(ROOT, "src", "features", "settings-memory", "MemoryPanes.tsx"), "utf8");
-    (/<MemoryHygienePanel/.test(panelUse) ? ok : fail)("【107】整洁面板挂进了记忆页弹窗（否则用户看不见）");
+    /* ⛔ 11-11 用户令「金字塔的蒸馏那些配套功能删干净」：整洁面板（层水位 + 清理）
+       随金字塔下线 ⇒ 判据反过来：**不再挂进记忆页**（组件文件可留，渲染处必须没有）。 */
+    (!/<MemoryHygienePanel/.test(panelUse) ? ok : fail)("【107】整洁面板已从记忆页下线（⛔ 11-11 起不再渲染）");
   }
 
   {

@@ -136,12 +136,12 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
           detail: "先按下方提示确认 / 开通云端记忆，成功后再选。当前仍按原后端工作，记忆不会丢。",
         };
       }
-      return { tone: "ok", title: "已切到云端记忆：对话记忆由 memapi 自动注入与回写，本地金字塔停止写入" };
+      return { tone: "ok", title: "已切到云端记忆：对话记忆由 memapi 自动注入与回写，本地记忆库停止写入" };
     }
     if (backend === "mcp" && String(value?.effective ?? "") !== "mcp") {
-      return { tone: "warn", title: "已记下选择，但 MCP 服务尚未就绪 —— 当前仍走内置金字塔（记忆不会丢）", detail: String(value?.fallbackReason ?? "").slice(0, 300) || undefined };
+      return { tone: "warn", title: "已记下选择，但 MCP 服务尚未就绪 —— 当前仍走内置记忆库（记忆不会丢）", detail: String(value?.fallbackReason ?? "").slice(0, 300) || undefined };
     }
-    return { tone: "ok", title: backend === "mcp" ? "已切到 MCP 记忆后端：技能与连接器已同步，重启应用后引擎侧生效" : "已切回内置记忆金字塔：技能与连接器已同步，重启应用后引擎侧生效" };
+    return { tone: "ok", title: backend === "mcp" ? "已切到 MCP 记忆后端：技能与连接器已同步，重启应用后引擎侧生效" : "已切回内置记忆库：技能与连接器已同步，重启应用后引擎侧生效" };
   };
 
   const run = async (action: ActionKey, judge: (value: any) => Verdict, fn: () => Promise<any>) => {
@@ -221,7 +221,7 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
     id === "builtin" ? "ok" : id === "cloud" ? (cloudConfirming ? "warn" : cloudReady ? "ok" : "off") : ready ? "ok" : "warn";
 
   const DEVICES = [
-    { id: "builtin" as const, name: "内置记忆金字塔", icon: <Database size={16} />, desc: "随包内置、离线可用；L0–L7 分层注入", tag: "默认" },
+    { id: "builtin" as const, name: "内置记忆库", icon: <Database size={16} />, desc: "随包内置、离线可用；索引 + 原子条目，按任务召回", tag: "默认" },
     {
       id: "cloud" as const,
       name: "云端记忆",
@@ -250,15 +250,15 @@ export function BackendConsolePanel({ workspace, workspaceEnabled, onNotice, onO
       <div className="bc-statusbar" data-backend={current}>
         <span className={`bc-lamp is-${busy ? "warn" : ready || current === "builtin" ? "ok" : "warn"}`} />
         <span className="bc-statusbar-copy">
-          <strong>当前生效：{busy ? `${ACTION_LABEL[busy as ActionKey]}进行中…` : current === "cloud" ? "云端记忆" : current === "mcp" ? "MCP 记忆服务" : "内置记忆金字塔"}</strong>
+          <strong>当前生效：{busy ? `${ACTION_LABEL[busy as ActionKey]}进行中…` : current === "cloud" ? "云端记忆" : current === "mcp" ? "MCP 记忆服务" : "内置记忆库"}</strong>
           <small>
             {status?.version ? `版本 ${status.version} · ` : ""}
             {status?.fallbackReason
               ? status.fallbackReason
               : current === "cloud"
-              ? "写入走云端 memapi：对话自动注入与回写，跨设备共享；本地金字塔已停止写入"
+              ? "写入走云端 memapi：对话自动注入与回写，跨设备共享；本地记忆库已停止写入"
               : current === "mcp"
-              ? (ready ? "服务已就绪，写入走 MCP" : "未就绪 —— 会自动回退到内置金字塔，记忆不会丢")
+              ? (ready ? "服务已就绪，写入走 MCP" : "未就绪 —— 会自动回退到内置记忆库，记忆不会丢")
               : "写入落在本机分层文件里，无需额外依赖"}
           </small>
         </span>

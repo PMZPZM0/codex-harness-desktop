@@ -483,6 +483,14 @@ contextBridge.exposeInMainWorld("codex", {
   /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
   readMemoryContext: (workspace?: string, includeWorkspace = true, threadId?: string) => __ipc("memory:layers:context", 0, [workspace, includeWorkspace, threadId]),
   readMemoryLayers: (workspace?: string) => __ipc("memory:layers:read", 0, [workspace]),
+  /* 记忆原子：列出条目 + 索引（新记忆界面的唯一数据源） */
+  listMemoryAtoms: (workspace?: string) => __ipc("memory:atoms:list", 0, [workspace]),
+  /* 记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤） */
+  recallMemoryAtoms: (workspace: string, query: string, seat?: string) => __ipc("memory:atoms:recall", 2, [workspace, query, seat]),
+  /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
+  saveMemoryAtoms: (workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }) => __ipc("memory:atoms:save", 2, [workspace, input]),
+  /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引） */
+  forgetMemoryAtoms: (workspace: string, ids: string[]) => __ipc("memory:atoms:forget", 2, [workspace, ids]),
   writeMemoryLayer: (input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }) => __ipc("memory:layers:write", 1, [input]),
   listMemory: (category?: string) => __ipc("memory:list", 0, [category]),
   /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
@@ -1047,6 +1055,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamSetManager: (groupId: string, memberId: string, managerId: string) => __ipc("harness-team:set-manager", 3, [groupId, memberId, managerId]),
   /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
   harnessTeamSetAdmin: (groupId: string, memberId: string) => __ipc("harness-team:set-admin", 2, [groupId, memberId]),
+  /* 团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度 */
+  harnessTeamGroupProgress: (groupId: string) => __ipc("harness-team:group-progress", 1, [groupId]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
   harnessTeamAddNote: (groupId: string, note: Record<string, unknown>) => __ipc("harness-team:add-note", 2, [groupId, note]),
   /* 团队模式：记忆条目 / 菜单 / 用量账本 */
@@ -1079,6 +1089,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamThreadUsage: (threadId: string) => __ipc("harness-team:thread-usage", 1, [threadId]),
   /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
   mediaDeskEndpoint: () => __ipc("media-desk:endpoint", 0, []),
+  /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
+  listArtifactArchives: (workspace?: string) => __ipc("artifact:list", 0, [workspace]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

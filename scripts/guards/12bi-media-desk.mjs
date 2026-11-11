@@ -115,6 +115,7 @@ export async function run() {
     "文本模型两种协议都支持（responses / chat；只认 chat 会让 responses 供应商的成稿退化成结构草稿）");
   ok(/productionSummary/.test(tool) && (tool.match(/production\?\.status === "failed"/g) ?? []).length >= 2,
     "成稿失败如实回 ok:false（draft / produce 都要判失败）+ 生产结果只给摘要（原文可达 20 万字）");
+  /* 11-10 生图复用内置插件：把内置生图包装成上游 'tool' 执行接口，不重写上游、不写密钥进工作台。 */
   ok(/if \(name === "tools"\) return mediaDeskTools\(\)/.test(embed)
     && /generateImageResilient\(/.test(embed) && /outputDir: subscriptionImagesDir\(\)/.test(embed)
     && /readBuiltinPlugins/.test(embed),

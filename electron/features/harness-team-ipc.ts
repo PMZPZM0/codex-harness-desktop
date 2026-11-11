@@ -54,6 +54,13 @@ import {
   renameMember,
 } from "../../src/lib/team-models.mjs";
 import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsableFor, type GroupUsage } from "../../src/lib/team-usage.mjs";
+/* ⛔ 11-10 用户令「界定什么时候收尾、什么时候继续推进」：判据是纯函数，⛔ 不在这里写 if 堆。 */
+import { classifyTurn, settleHandoffs } from "../../src/lib/team-collab.mjs";
+/* ⛔ 11-10「异常落到责任人」的标记解析（纯函数，守卫真跑）。 */
+import { dutyKeyOf, parseDuty } from "../../src/lib/team-duty.mjs";
+/* ⛔ 11-10 群记忆：按「群类型 + 座位」注入（专家群 / 专家团群 / CLI 智能体群各一套）。
+   ⛔ 判定与渲染都在 memory/ 域里，这里只取一段字符串 —— 群聊域不重新判一次群类型。 */
+import { buildGroupMemoryBlock } from "../memory/group-memory-inject";
 import { normalizeMenu, normalizeMenuPlacement, MENU_MAX_ITEMS } from "../../src/lib/team-menu.mjs";
 import {
   MAX_GROUP_SCHEDULES,
@@ -131,10 +138,27 @@ type GroupShape = ReturnType<typeof createGroup>;
 
 /** 落盘形状（v2 起多一份 per-group 消息日志，P0b）。
  *  ⛔ 老文件（v1，只有 groups）照样能读：messages 缺省即 `{}`。 */
+/** 工作伙伴群的一条任务（11-10）：一次 handoff 就是一条任务，派出去 open、被确认 done。
+ *  ⛔ 落盘而不是放内存 Map：「活还没干完」是收尾判据的第一依据，不能一重启就忘。 */
+type TeamGroupTask = {
+  id: string;
+  groupId: string;
+  title: string;
+  fromId: string;
+  fromName: string;
+  toId: string;
+  toName: string;
+  status: "open" | "done";
+  at: number;
+  doneAt?: number;
+};
+
 type StoreShape = {
   version: number;
   groups: GroupShape[];
   messages: Record<string, ReturnType<typeof normalizeGroupMessage>[]>;
+  /** 任务账本：key = 任务 id。与 messages 分开，⛔ 不塞进群对象（群配置常常整份改写）。 */
+  tasks?: Record<string, TeamGroupTask>;
 };
 
 function readStore(): StoreShape {
@@ -151,11 +175,26 @@ function readStore(): StoreShape {
       /* ⛔ 过一遍 normalizeGroupMessage：坏条目（缺 id/threadId）当场丢掉，别让它进投影 */
       messages[gid] = list.map((m) => normalizeGroupMessage(m)).filter(Boolean).slice(-MAX_GROUP_MESSAGES);
     }
+    const tasks: Record<string, TeamGroupTask> = {};
+    const rawTasks = parsed?.tasks && typeof parsed.tasks === "object" ? parsed.tasks : {};
+    for (const [tid, row] of Object.entries(rawTasks as Record<string, unknown>)) {
+      const r = row as Partial<TeamGroupTask>;
+      const gid = String(r?.groupId ?? "");
+      if (!tid || !gid || !String(r?.toId ?? "")) continue;
+      tasks[tid] = {
+        id: tid, groupId: gid, title: String(r.title ?? ""),
+        fromId: String(r.fromId ?? ""), fromName: String(r.fromName ?? ""),
+        toId: String(r.toId ?? ""), toName: String(r.toName ?? ""),
+        status: r.status === "done" ? "done" : "open",
+        at: Number(r.at ?? 0), ...(r.doneAt ? { doneAt: Number(r.doneAt) } : {}),
+      };
+    }
     return {
       version: 2,
       /* ⛔ 过一遍 createGroup：老文件缺字段（新增护栏/目标绑定）也能读出来 */
       groups: rows.map((g: unknown) => createGroup(g as Record<string, unknown>) as GroupShape).filter((g: GroupShape) => Boolean(g.id)),
       messages,
+      tasks,
     };
   } catch {
     return empty;
@@ -166,7 +205,7 @@ function writeStore(store: StoreShape): { ok: boolean } {
   const file = teamsFile();
   mkdirSync(dirname(file), { recursive: true });
   const tmp = `${file}.tmp`;
-  writeFileSync(tmp, JSON.stringify({ version: 2, groups: store.groups, messages: store.messages }, null, 2), "utf8");
+  writeFileSync(tmp, JSON.stringify({ version: 2, groups: store.groups, messages: store.messages, tasks: store.tasks ?? {} }, null, 2), "utf8");
   renameSync(tmp, file);
   return { ok: true };
 }
@@ -274,6 +313,13 @@ async function appendMessageTo(groupId: string, entry: Record<string, unknown>):
     };
   });
   if (result.ok) broadcastHarnessEvent({ type: "harness-team-messages", groupId: gid, rows: result.rows } as never);
+  /* ⛔ 11-10「异常要落到责任人」：伙伴开口 ⇒ 先关它名下旧的待处理；它这条里若点了责任人 ⇒ 再登记新的。
+     顺序不能反（先登记后关闭会把自己刚建的立刻关掉）。⛔ 旁路：失败不影响落盘结果。 */
+  if (result.ok && authorKind === "bot") {
+    const authorId = String(entry?.authorId ?? "");
+    if (authorId) closeOpenTasksOf(gid, authorId);
+    void registerResponsibleFrom(gid, { ...entry, authorId }).catch(() => undefined);
+  }
   return result;
 }
 
@@ -461,6 +507,21 @@ async function prepareGroupDispatch(
      ⛔ 只对**用户手发**生效：定时任务（automation）必须显式 @ —— 否则到点会莫名叫起一个人。
      ⛔ 候选逐个试而不是直接取第一个：那个人可能已被移出 / 静音 / 未绑定，退到下一个才符合预期。 */
   let effectiveIds = memberIds;
+  /* ⛔⛔ 11-10 用户现场（截图）：把一整段任务书贴进群，里面写着「@落纸 先给选题」「@砚云 写正文」——
+     那是**写给模型看的流程**，但渲染层按「正文里的 @ = 派活」把它们全解析成目标
+     ⇒ 好几个人同时被唤起，各自读完任务书都判断"这段不是我的活"，
+     结果群里只剩「我不抢，我等派单」，谁也不动（实测就停在这里）。
+     ⇒ 团群里 @ 团内成员**收敛到团**：由团主理人一个人接单，再由它决定派给谁。
+       只有用户**单独** @ 一个团成员（并且没 @ 整团）时才直达他本人。
+     ⛔ 普通群（没有团槽）不受影响：那儿 @ 多人就是并行派活，是正当用法。 */
+  const teamSlot = group.members.find((m) => m.targetKind === "team");
+  if (teamSlot && effectiveIds.length) {
+    const kidPrefix = `team:${String(teamSlot.targetKey ?? "")}:`;
+    const kids = effectiveIds.filter((id) => id.startsWith(kidPrefix));
+    if (effectiveIds.includes(teamSlot.id) || kids.length > 1) {
+      effectiveIds = [teamSlot.id];
+    }
+  }
   let routedBy: "context" | "team-lead" | "admin" | "" = "";
   let routeError = "";
   if (!memberIds.length && source === "human") {
@@ -561,7 +622,7 @@ function teamSeatOf(
   selfId: string,
   targetKind?: string,
   targetKey?: string,
-): { teamName: string; teamRole: "lead" | "member"; teamPeers: string[] } | undefined {
+): { teamName: string; teamRole: "lead" | "member"; teamPeers: string[]; teamLeadName?: string; teamLeadProfession?: string } | undefined {
   const rows = (Array.isArray(catalog) ? catalog : []) as Array<Record<string, unknown>>;
   /* ⛔ teamId 有**三种**来源，缺一种就会有成员认不出自己的团：
      ① 群里放的是整团 → `targetKind === "team"`、targetKey 就是 teamId；
@@ -605,7 +666,170 @@ function teamSeatOf(
   }
   const teamName = String(teamRow.name ?? "").trim();
   if (!teamName) return undefined;
-  return { teamName, teamRole: isLead ? "lead" : "member", teamPeers: peers };
+  /* ⛔ 11-10：主理人的**真名**一起下发 —— 群成员槽的名字是团名（「内容创作专家团」），
+     只用它当身份，模型就知道不了「用户 @文枢 是在叫我」。 */
+  return {
+    teamName,
+    teamRole: isLead ? "lead" : "member",
+    teamPeers: peers,
+    ...(leadRow?.name ? { teamLeadName: String(leadRow.name) } : {}),
+    ...(leadRow?.profession ? { teamLeadProfession: String(leadRow.profession) } : {}),
+  };
+}
+
+/* ── 任务账本（11-10）：一次 handoff = 一条任务，派出去 open、被确认 done ──────────
+   ⛔ 为什么不再用内存 Map：`活还没干完` 是收尾判据的第一依据，重启就忘等于判据失效。
+   ⛔ 只保留最近 200 条：任务账本会随对话增长，不裁剪会让文件无限大。 */
+const HANDOFF_TIMEOUT_MS = 10 * 60 * 1000;
+
+/* ⛔ 审查修（性能）：原来走 readStore + writeStore ⇒ 每次任务读写都把**全部群消息** normalize 一遍、
+   再整份写回。成员每说一句就 2~3 次全量正则在热路径上跑，消息一多就卡。
+   现在只解析一次原始 JSON、只替换 tasks 字段，groups / messages 原样带过（⛔ 不解析、不 normalize）。 */
+function readTasksRaw(): Record<string, TeamGroupTask> {
+  const file = teamsFile();
+  if (!existsSync(file)) return {};
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8"));
+    return (parsed?.tasks && typeof parsed.tasks === "object" ? parsed.tasks : {}) as Record<string, TeamGroupTask>;
+  } catch { return {}; }
+}
+
+function writeTasksOnly(tasks: Record<string, TeamGroupTask>): void {
+  const file = teamsFile();
+  mkdirSync(dirname(file), { recursive: true });
+  let base: Record<string, unknown> = { version: 2, groups: [], messages: {} };
+  try { base = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>; } catch { /* 新文件 */ }
+  base.tasks = tasks;
+  const tmp = `${file}.tmp`;
+  writeFileSync(tmp, JSON.stringify(base, null, 2), "utf8");
+  renameSync(tmp, file);
+}
+
+/**
+ * 把「异常」落到具体责任人头上（11-10 用户令「继续补上缺口」）。
+ *
+ * 实测豆包的做法是**两级触达**：群里发总榜 + 私聊点名「你名下…核是否断货」。
+ * 我们这边私聊没有载体（用户就在看群），真正的缺口是**异常发在群里没人认领**。
+ * ⇒ 约定一条标记：伙伴报异常时写 `【待处理 · 责任人：某人】`，
+ *   宿主把它登记成一条任务（open / toId=那个人），群头进度与收尾判据都能看见"还欠谁一件事"。
+ * ⛔ 只解析 bot 产出；⛔ 不阻断落盘（登记失败不许影响消息上屏）。
+ */
+async function registerResponsibleFrom(groupId: string, entry: Record<string, unknown>): Promise<void> {
+  /* ⛔ 解析走纯函数（src/lib/team-duty.mjs）：守卫能真跑，⛔ 不在这里再写一条正则。 */
+  const duty = parseDuty(String(entry?.text ?? ""));
+  if (!duty) return;
+  const name = duty.owner;
+  const store = readStore();
+  const group = findGroup(store.groups, groupId);
+  if (!group) return;
+  const flat = (v: unknown) => String(v ?? "").replace(/\s+/g, "");
+  const to = group.members.find((m) => flat(m.name) === flat(name));
+  if (!to) return;
+  const title = duty.title;
+  const fromId = String(entry?.authorId ?? "");
+  const fromName = String(entry?.authorName ?? "") || "群成员";
+  /* ⛔ 去重：同一个人 + 同一个标题前 20 字 + 仍未关闭 ⇒ 不重复登记（否则群头数字会虚高）。 */
+  mutateTasks((tasks) => {
+    const key = dutyKeyOf(to.name, title);
+    const dup = Object.values(tasks).some((t) => t.groupId === groupId && t.status === "open" && dutyKeyOf(t.toName, t.title) === key);
+    if (dup) return;
+    const id = `rt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    tasks[id] = { id, groupId, title, fromId, fromName, toId: to.id, toName: to.name, status: "open", at: Date.now() };
+  });
+}
+
+/** 责任人开口了 ⇒ 它名下未关闭的"待处理"自动关闭（这就是闭环，⛔ 不需要人手动勾）。 */
+function closeOpenTasksOf(groupId: string, memberId: string): number {
+  if (!groupId || !memberId) return 0;
+  let closed = 0;
+  mutateTasks((tasks) => {
+    for (const task of Object.values(tasks)) {
+      if (task.groupId !== groupId || task.toId !== memberId || task.status !== "open") continue;
+      task.status = "done";
+      task.doneAt = Date.now();
+      closed += 1;
+    }
+  });
+  return closed;
+}
+
+/** 某成员名下还没关闭的待办（按时间升序）—— 注入到它自己的会话里，等于"私聊提醒"。 */
+function openDutiesOf(groupId: string, memberId: string): Array<{ title: string; fromName: string; at: number }> {
+  if (!groupId || !memberId) return [];
+  const tasks = readTasksRaw();
+  return Object.values(tasks)
+    .filter((task) => task.groupId === groupId && task.toId === memberId && task.status === "open")
+    .sort((a, b) => a.at - b.at)
+    .slice(0, 8)
+    .map((task) => ({ title: task.title, fromName: task.fromName, at: task.at }));
+}
+
+function mutateTasks(mutate: (tasks: Record<string, TeamGroupTask>) => void): void {
+  const tasks = readTasksRaw();
+  mutate(tasks);
+  const rows = Object.entries(tasks).sort((a, b) => Number(a[1]?.at ?? 0) - Number(b[1]?.at ?? 0));
+  if (rows.length > 200) for (const [id] of rows.slice(0, rows.length - 200)) delete tasks[id];
+  writeTasksOnly(tasks);
+}
+
+/** 派出去一条任务（A 点了 B）。 */
+function openTaskFor(groupId: string, from: { id: string; name: string }, to: { id: string; name: string }, title: string): void {
+  if (!groupId || !to?.id) return;
+  mutateTasks((tasks) => {
+    const id = `t_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+    tasks[id] = {
+      id, groupId, title: String(title ?? "").replace(/\s+/g, " ").trim().slice(0, 120),
+      fromId: String(from?.id ?? ""), fromName: String(from?.name ?? ""),
+      toId: String(to.id), toName: String(to.name ?? to.id),
+      status: "open", at: Date.now(),
+    };
+  });
+}
+
+/** 某人交了产出 ⇒ 所有派给他的 open 任务算完成。返回完成了几条（判据据此算推进）。 */
+function closeTasksFor(groupId: string, toId: string): number {
+  let done = 0;
+  mutateTasks((tasks) => {
+    for (const task of Object.values(tasks)) {
+      if (task.groupId !== groupId || task.toId !== toId || task.status !== "open") continue;
+      task.status = "done"; task.doneAt = Date.now(); done += 1;
+    }
+  });
+  return done;
+}
+
+/** 还在等回话的任务；顺便把超时（10 分钟没回）的关掉 —— ⛔ 不能让"对方崩了"永久挂住整条链。 */
+function pendingHandoffsOf(groupId: string) {
+  const now = Date.now();
+  const store = readStore();
+  const open = Object.values(store.tasks ?? {}).filter((x) => x.groupId === groupId && x.status === "open");
+  const stale = open.filter((x) => now - Number(x.at ?? 0) > HANDOFF_TIMEOUT_MS);
+  if (stale.length) {
+    mutateTasks((tasks) => {
+      for (const s of stale) { const cur = tasks[s.id]; if (cur && cur.status === "open") { cur.status = "done"; cur.doneAt = now; } }
+    });
+  }
+  return open
+    .filter((x) => !stale.includes(x))
+    .map((x) => ({ to: x.toId, toName: x.toName, from: x.fromId, at: x.at, state: "pending" as const }));
+}
+
+/** 群里还剩几个活没结束（收尾判据用）。 */
+function openTaskCountOf(groupId: string): number {
+  /* ⛔⛔ 11-10 自查抓到的死循环：原来这里直接数 `status === "open"`，**不排除超时**。
+     后果：某个成员崩了 / 一直没回 ⇒ 那条任务永远 open ⇒ 判据永远返回 continue，
+     而 continue 又会触发 overBudget 扩容 ⇒ **无限跑下去烧 token**。
+     ⇒ 超时的先关掉（和 pendingHandoffsOf 同一口径），再数"真正在等"的。 */
+  const now = Date.now();
+  const store = readStore();
+  const open = Object.values(store.tasks ?? {}).filter((x) => x.groupId === groupId && x.status === "open");
+  const expired = open.filter((x) => now - Number(x.at ?? 0) > HANDOFF_TIMEOUT_MS);
+  if (expired.length) {
+    mutateTasks((tasks) => {
+      for (const e of expired) { const cur = tasks[e.id]; if (cur && cur.status === "open") { cur.status = "done"; cur.doneAt = now; } }
+    });
+  }
+  return open.length - expired.length;
 }
 
 async function runDispatchRounds(
@@ -617,10 +841,30 @@ async function runDispatchRounds(
 ): Promise<{ ok: boolean; sent: number; failed: string[] }> {
   const catalog = Array.isArray(options.catalog) ? options.catalog : await buildDispatchCatalog().catch(() => []);
   const failed: string[] = [];
-  const ranIds = new Set<string>();
-  /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。
-     ⛔ 两条护栏：只走**一跳** + 一轮总量 4，防两个伙伴互 @ 无限对烧。 */
-  let chainBudget = options.allowChain ? 4 : 0;
+  /* ⛔⛔ 11-10 用户现场（「回两个就没」「懂什么叫沟通交流吗」「根据实时任务来」）：
+     原来这里有两道**硬闸**把讨论掐死 ——
+       ① `ranIds` 是 Set：**同一位成员一轮只能说一次** ⇒ 主理人说完、成员答完，
+          主理人再也叫不回来（它已在 ranIds 里）⇒ 「主理人→成员→主理人→下一位」这条
+          最基本的来回永远走不到第二轮；
+       ② `chainBudget = 4`：整轮只够 4 次，连三个人各回一次都不够。
+     ⇒ 改成**按推进算**：同一位最多 MAX_TURNS_PER_MEMBER 回合（他要能接着被问第二次、第三次），
+       总额提到 CHAIN_BUDGET_MANUAL，安全阀仍然是这两个数（防两个伙伴互 @ 无限对烧）。
+     ⛔ 不要退回"每人一次"：那正是"回一次就终止"的根源。 */
+  const MAX_TURNS_PER_MEMBER = 3;
+  /* ⛔ 主持人要多开口：每次轮次推进它都要说话，3 回合不够（11-10）。 */
+  const MAX_TURNS_ADMIN = 6;
+  const CHAIN_BUDGET_MANUAL = 12;
+  /* ⛔ 预算最多续两次（每次 4）—— 再多就该停下来问人，而不是自己一直跑。 */
+  const MAX_BUDGET_EXTENSIONS = 2;
+  const ranCount = new Map<string, number>();
+  /* ⛔ 11-10 用户令「让主理人自己排下一轮」：主持人（管理员）需要更多回合，
+     否则它说两三轮就到顶 ⇒ 剩下的人没人调度，链又断。 */
+  let adminIdForRounds = "";
+  const limitOf = (id: unknown) => (adminIdForRounds && String(id) === adminIdForRounds ? MAX_TURNS_ADMIN : MAX_TURNS_PER_MEMBER);
+  const canRun = (id: unknown) => (ranCount.get(String(id)) ?? 0) < limitOf(id);
+  const markRan = (id: unknown) => ranCount.set(String(id), (ranCount.get(String(id)) ?? 0) + 1);
+  /* 伙伴之间互相 @ 的预算（手动派活才接力；定时任务不递归 —— 无人值守再互 @ 就是烧钱）。 */
+  let chainBudget = options.allowChain ? CHAIN_BUDGET_MANUAL : 0;
   const params = options.params ?? {};
   /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
      所以团成员之间也能互相说话，不再需要「主理人代转」。 */
@@ -645,6 +889,22 @@ async function runDispatchRounds(
       };
     }),
   ];
+  /* ⛔ 11-10：主持人不只是「管理员」—— 团群没有管理员，团主理人就是主持人。
+     只认 isAdmin 的话，团群的闭环回喂永远找不到人（管理员为空 ⇒ 链断在成员最后一句）。 */
+  /* ⛔ 直属上级：团成员 → 团主理人；普通群 → 群档案里的 managerId。
+     ⛔ 自己不能是自己的上级（团主理人没有上级）。 */
+  const leadMember = roster.find((m) => m.teamRole === "lead");
+  for (const m of roster) {
+    if (m.teamRole === "lead") continue;
+    const byManager = String((group.members.find((x) => x.id === m.id)?.managerId ?? "")).trim();
+    const boss = byManager ? roster.find((x) => x.id === byManager) : leadMember;
+    if (boss && boss.id !== m.id) m.managerName = boss.name;
+  }
+  adminIdForRounds = String(
+    roster.find((m) => m.isAdmin === true)?.id
+    ?? roster.find((m) => m.teamRole === "lead")?.id
+    ?? "",
+  );
   const talkOptions = {
     groupId: group.id,
     groupName: group.name,
@@ -682,8 +942,8 @@ async function runDispatchRounds(
       /* ⛔ 11-08 审查确认（真缺陷）：runOne 对**本轮已派过**的成员会静默早退，而工具却回
          「已经说给 X 了」—— 模型以为送达、群里实际没有任何反应（这句只进了群日志）。
          ⇒ 按事实回失败，模型会改口/晚点再说，而不是骗用户。 */
-      if (ranIds.has(String(to.id))) {
-        return Promise.resolve({ ok: false, error: "这位伙伴本轮已经说过话（同一条消息里不能再叫他一次），下一条消息里再 @ 他" });
+      if (!canRun(to.id)) {
+        return Promise.resolve({ ok: false, error: `这位伙伴本轮已经说了 ${MAX_TURNS_PER_MEMBER} 次（到上限了），缓一缓再说` });
       }
       /* ⛔ 11-08 用户（截图：「群成员 伙伴转交」看不出是谁发的）：名册里查不到 id 时用**台账里的名字**兜底，
          ⛔ 不再退化成通用的「群成员」—— 被叫的会话头部与模型都要看到真实发送者。 */
@@ -692,9 +952,9 @@ async function runDispatchRounds(
          行首 `@名字：` 走 hop=1（再 @ 就不接力了），`group_say` 走 hop=0（能一直接力），
          而且 `group_say` 这条路**不扣预算**。同样是"成员之间沟通"，能走多远却不同 ⇒ 统一：
          两条路都 hop=0（都允许继续接力），但**都扣同一份预算**（`chainBudget`，手动派活 4 次）。
-         `ranIds` 再保证同一位成员一轮只跑一次 ⇒ 最多 4 个不同的人，不会对烧。 */
+         `ranCount` 再保证同一个人最多 MAX_TURNS_PER_MEMBER 回合 ⇒ 能来回问答，又不会对烧。 */
       if (chainBudget <= 0) {
-        return Promise.resolve({ ok: false, error: "这一轮的接力用完了（最多 4 次）——下一条消息再叫他，或者你自己接着做" });
+        return Promise.resolve({ ok: false, error: `这一轮的接力用完了（最多 ${CHAIN_BUDGET_MANUAL} 次）——下一条消息再叫他，或者你自己接着做` });
       }
       chainBudget -= 1;
       /* ⛔ 不 await：工具调用立刻返回，被叫的人稍后自己在群里回话。 */
@@ -723,6 +983,15 @@ async function runDispatchRounds(
       role: m.teamRole === "lead" ? "团主理人" : m.teamRole === "member" ? "团成员" : "",
     }))),
   });
+  /* ⛔⛔ 11-10 用户令「直接优化到 100 分」：判据要的三样**必须是真值**，不许再写常量。
+     · lastOpenTasks 滚动比对 ⇒ 这一轮有没有新任务；
+     · idleRounds ⇒ 连续多少轮零推进（用于收尾）；
+     · acked ⇒ 这一轮确认掉几条 handoff。 */
+  /* ⛔ 工作伙伴群没有任务表（StoreShape 只有 groups + messages）⇒ "未完成的活"只能取两个真值：
+     还在等回话的 handoff 数、以及连续多少轮没有任何确认。⛔ 别再写 idleRounds:0 这种假值。 */
+  let idleRounds = 0;
+  /* ⛔ 续期必须限次：活没干完就续、续完还没完又续 ⇒ 无人值守时会一直烧。 */
+  let budgetExtensions = 0;
   const runOne = async (
     partner: GroupTarget,
     hop = 0,
@@ -730,12 +999,12 @@ async function runDispatchRounds(
     bodyText = text,
 
   ): Promise<void> => {
-    if (!partner || ranIds.has(partner.id)) return;
+    if (!partner || !canRun(partner.id)) return;
     /* ⛔ 11-08 审查确认：群可能在派活排队期间被删 —— 迟到的 runOne 仍会 ensure 出会话并写回
        已删群的台账 ⇒ 侧栏多一条没有出处的「伙伴」会话（自愈本进程只跑一次，救不回来）。
        ⇒ 开跑前按群档案复核，群没了直接放弃；建完会话后再复核一次（排队那条会晚建）。 */
     if (!readStore().groups.some((g) => String(g.id) === String(group.id))) return;
-    ranIds.add(partner.id);
+    markRan(partner.id);
     /* 常驻用量监听（幂等）：本轮之后的用量事件即使晚到，也能补到落盘的那条消息上。 */
     installTalkUsageWatcher();
     const startedAt = Date.now();
@@ -770,6 +1039,16 @@ async function runDispatchRounds(
         : (source === "automation" ? { id: AUTOMATION_ACTOR_ID, name: "定时任务" } : { id: "local-user", name: "我" });
       /* ⛔ 每轮都重读群日志：接力到第 2 跳时，前面那位刚说的话已经在群里了，
          不重读就等于「后来的人看不到前面人说了什么」——正是成员之间接不上话的根因。 */
+      /* ⛔ 11-10：群记忆按「群类型 + 这个人的座位」现算 —— 团群给团级规则优先、
+         平级专家群把互相矛盾的结论摆出来、CLI 群只给纯文本片段（它读不了文件）。
+         座位从 roster 取（partner 只是派活目标，没有 teamRole/isAdmin）。 */
+      const seatSelf = roster.find((m) => String(m.id) === String(partner.id));
+      const groupMemory = await buildGroupMemoryBlock({
+        workspace: group.workspace || undefined,
+        group,
+        seat: seatSelf?.isAdmin ? "admin" : seatSelf?.teamRole === "lead" ? "lead" : partner.targetKind === "cli" ? "cli" : "member",
+        query: bodyText,
+      }).catch(() => null);
       const query = buildTalkInput(
         talkOptions as Parameters<typeof buildTalkInput>[0],
         partner as TalkMember,
@@ -779,6 +1058,9 @@ async function runDispatchRounds(
         /* ⛔ 11-09 用户令：「里面的 agent 必须知道自己在话题里面」——
            话题内派活带 root 原文，prompt 里就会有一段「你在话题里 + 重要内容怎么汇报到群主流」。 */
         params.topicRoot ? { rootText: String(params.topicRoot) } : null,
+        groupMemory?.text ?? null,
+        /* ⛔ 私聊 = 它自己的会话：把名下待办直接摆到眼前（用户令「我们的私聊就是那个来源对话」）。 */
+        openDutiesOf(group.id, partner.id),
       );
       /* ⛔⛔ 11-09 用户令「必须要真的 cli 智能体」：CLI 成员接真链路 ——
          角色提示词（命令引擎去跑本机 bin / 没装就如实报没装）拼在输入最前，
@@ -1050,18 +1332,23 @@ async function runDispatchRounds(
         errMsg = wrote.error || "产出没能写进群聊记录";
         failed.push(`${partner.name}：${errMsg}`);
       }
+      /* ⛔ 11-10：这条产出就是"回了"——把所有等他的 handoff 标 done（成败都算回了）。 */
+      const ackedThisTurn = closeTasksFor(group.id, partner.id);
+      /* ⛔ 只留 idleRounds：progressTotal 原来只加不读，是死变量（审查发现）。 */
+      idleRounds = ackedThisTurn > 0 ? 0 : idleRounds + 1;
       options.onPhase?.("finished", partner, { ok: okFlag, error: errMsg || undefined, threadId });
       /* ⛔ 11-10 硬闸：与群里已有结论近重复的产出**不再拉起一串人**（防刷屏式接力）。 */
       if (hop === 0 && chainBudget > 0 && okFlag && output && guard.allowRelay) {
+        const queue: Array<{ next: GroupTarget; ask: { ask: string } }> = [];
         const asks = parseAgentMentions(output, group, {
           excludeId: partner.id,
-          alreadyRan: [...ranIds],
+          alreadyRan: [...ranCount.entries()].filter(([, n]) => n >= MAX_TURNS_PER_MEMBER).map(([id]) => id),
           max: chainBudget,
           catalog,
         });
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
-          if (!next || ranIds.has(next.id)) continue;
+          if (!next || !canRun(next.id)) continue;
           /* ⛔⛔ 11-07 真机：同一位团成员被**派了两次**（群里两条几乎一样的自我介绍，同一会话跑了两轮）。
              根因：主理人回复里行首 @ 了四位成员 —— 它自己在回合内已经用 `team_member_invoke` 派过一遍，
              宿主又按"行首点名"重派一遍。
@@ -1085,8 +1372,59 @@ async function runDispatchRounds(
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
           /* ⛔ hop 统一 0（原来传 1）：团队要能"主理人 → 成员 A → 成员 B"往下走，
-             ⛔ 别再靠 hop 截断 —— 截断交给 `chainBudget`（4 次）+ `ranIds`（每人一次）。 */
-          void runOne(next, 0, { id: partner.id, name: partner.name }, ask.ask);
+             ⛔ 别再靠 hop 截断 —— 截断交给 `chainBudget` + `ranCount`（每人最多几回合）。 */
+          openTaskFor(group.id, { id: partner.id, name: partner.name }, { id: next.id, name: next.name }, String(ask.ask ?? "").slice(0, 120));
+          /* ⛔ 先收集，再决定并行还是串行（见循环后的排片）。 */
+          queue.push({ next, ask });
+        }
+        /* ⛔⛔ 11-10「让主理人自己排下一轮」：主持人一次回合里可能点了好几个人 ——
+           **按它说的顺序串行执行**（后台链，不阻塞它这一轮的收尾），观感上就是它在排片；
+           其他人点的人照旧并行（互不依赖，等一个人会浪费）。 */
+        if (queue.length) {
+          const caller = { id: partner.id, name: partner.name };
+          if (String(partner.id) === adminIdForRounds) {
+            void (async () => {
+              for (const item of queue) {
+                await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
+              }
+            })();
+          } else {
+            for (const item of queue) void runOne(item.next, 0, caller, item.ask.ask);
+          }
+        }
+        /* ⛔⛔ 11-10 闭环（用户：「成员之间持续沟通」「界定收尾条件」）：
+           这条产出**没点任何人** —— 原来这里就是链路自然死亡的地方（群里停在最后一句）。
+           ⇒ 按判据决定"继续 or 收尾"：continue 则把话头交回管理员（它决定下一步点谁/收口），
+             wrap 则不再拉人（收口词已在产出里，管理员那句就是结论）。
+           ⛔ 管理员自己说的不往回喂（否则自循环）；⛔ 它也有回合上限（canRun）。 */
+        if (!asks.length) {
+          /* ⛔ 11-10：团群不设管理员（adminId 恒空）⇒ 原来这里永远找不到人，
+             闭环在团群里其实是**死的**。兜底到团主理人（它就是团里的主持人）。 */
+          const admin = roster.find((m) => m.isAdmin === true) ?? roster.find((m) => m.teamRole === "lead");
+          const verdict = classifyTurn({
+            text: output, handoffTo: "",
+            handoffs: pendingHandoffsOf(group.id),
+            budgetLeft: chainBudget,
+            idleRounds,
+            openTasks: openTaskCountOf(group.id),
+            /* 有内容且不是纯寒暄才算一份产出（长度门槛由判据侧统一看，这里只给事实）。 */
+            progress: { ackedHandoffs: ackedThisTurn, writtenFiles: 0, createdTasks: 0 },
+          });
+          /* ⛔ 活没干完但预算见底 ⇒ 不许悄悄收尾：续一段并在群里说清楚（用户能看到为什么还在跑）。 */
+          if ((verdict as { overBudget?: boolean }).overBudget && budgetExtensions < MAX_BUDGET_EXTENSIONS) {
+            budgetExtensions += 1;
+            chainBudget += 4;
+            await appendMessageTo(group.id, {
+              id: "sys-budget:" + runId, authorId: "system", authorKind: "bot", senderKind: "system",
+              text: "还有任务没结束，接力预算用尽 —— 已自动续 4 次继续推进（想停就说「收口」）。",
+            }).catch(() => undefined);
+          }
+          if (verdict.action === "continue" && admin && String(admin.id) !== String(partner.id) && canRun(admin.id)) {
+            chainBudget -= 1;
+            void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name },
+              `[系统] ${partner.name} 说完了（${verdict.reason}）。你决定：下一步点谁（行首 @ 名字），或者收口给结论。`)
+              .catch(() => undefined);
+          }
         }
       }
     } catch (err) {
@@ -1465,6 +1803,24 @@ export const harnessTeamFeature = defineFeature<null>({
         return { ok: false, error: r.reason === "not_member" ? "管理员只能是这个群里的伙伴" : "设置失败" };
       }
       return saveOne(store, r.group);
+    });
+
+    /* ⛔ 11-10 用户令「提升到 100 分」：群内进度必须能一眼看到 —— 别让人靠读消息猜。
+       `waiting` 是"派出去还没人回"的条数，和 open 不同（open 含正在跑的）。 */
+    ipcHost.handle("harness-team:group-progress", (_event, groupId: string) => {
+      const gid = String(groupId ?? "");
+      if (!gid) return { ok: false, error: "缺少 groupId" };
+      const rows = Object.values(readStore().tasks ?? {}).filter((x) => x.groupId === gid);
+      const open = rows.filter((x) => x.status === "open").length;
+      /* ⛔ 11-11 补缺口：群头原来只出数字、点不开看清单 ⇒ 一并返回未结束的任务。
+         ⛔ 只回 open、最多 12 条（按时间正序 = 最先欠的最先处理）：全量会随群龄无限涨，
+            浮层读不完，IPC 也跟着变重。 */
+      const items = rows
+        .filter((x) => x.status === "open")
+        .sort((a, b) => a.at - b.at)
+        .slice(0, 12)
+        .map((x) => ({ id: x.id, title: x.title, toName: x.toName, fromName: x.fromName, at: x.at }));
+      return { ok: true, total: rows.length, open, done: rows.length - open, waiting: pendingHandoffsOf(gid).length, items };
     });
 
     ipcHost.handle("harness-team:set-guard", (_event, groupId: string, guard: Record<string, unknown>) => {

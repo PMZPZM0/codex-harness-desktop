@@ -137,6 +137,8 @@ export type BossGroup = {
   paused?: boolean;
   /** 置顶的群事件 id（群视图顶部卡带，最多 3 条，超出挤掉最旧；视图层收藏，不影响任务状态）。 */
   pinnedEventIds: string[];
+  /** 自动推进到第几轮（11-10：成员说完 → 唤醒主理人继续主持；用户发言归零，到上限停）。 */
+  autoRound?: number;
 };
 
 export type BossState = {

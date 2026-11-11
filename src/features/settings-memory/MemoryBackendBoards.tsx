@@ -40,7 +40,7 @@ const BOARDS: {
   tone: string;
   desc: string;
 }[] = [
-  { id: "builtin", name: "本地金字塔记忆", icon: Database, tone: "ic-blue", desc: "随包离线，L0–L7 分层；数据在本机，按项目和会话隔离。" },
+  { id: "builtin", name: "本地记忆库", icon: Database, tone: "ic-blue", desc: "索引 + 原子条目（一条一个文件）；数据在本机，按项目、群、会话隔离。" },
   { id: "mcp", name: "MCP 记忆", icon: Server, tone: "ic-pink", desc: "独立 MCP 服务，memory.db 按 type 分类；需要先安装。" },
   { id: "cloud", name: "云端记忆", icon: Cloud, tone: "ic-violet", desc: "memapi 跨设备；对话自动注入与回写，按云账号隔离。" },
 ];
@@ -89,7 +89,7 @@ export function MemoryBackendBoards({ memoryEnabled, fallbackBackend, onManage, 
       } else if (id === "mcp" && result?.effective !== "mcp") {
         onNotice(`已记下选择，但 MCP 未就绪 —— 当前仍走本地金字塔${result?.fallbackReason ? `：${String(result.fallbackReason).slice(0, 120)}` : ""}`);
       } else {
-        onNotice(id === "builtin" ? "已切回本地金字塔记忆" : id === "mcp" ? "已切到 MCP 记忆：重启应用后引擎侧生效" : "已切到云端记忆：记忆由 memapi 自动注入与回写");
+        onNotice(id === "builtin" ? "已切回本地记忆库" : id === "mcp" ? "已切到 MCP 记忆：重启应用后引擎侧生效" : "已切到云端记忆：记忆由 memapi 自动注入与回写");
       }
       await refresh();
     } catch (error: any) {
@@ -145,8 +145,8 @@ export function MemoryBackendBoards({ memoryEnabled, fallbackBackend, onManage, 
     return cloudReady ? "管理" : act?.entitled ? "接通" : act?.state === "unknown" ? "确认" : "开通";
   };
 
-  const configuredName = BOARDS.find((board) => board.id === configured)?.name ?? "本地金字塔记忆";
-  const currentName = BOARDS.find((board) => board.id === current)?.name ?? "本地金字塔记忆";
+  const configuredName = BOARDS.find((board) => board.id === configured)?.name ?? "本地记忆库";
+  const currentName = BOARDS.find((board) => board.id === current)?.name ?? "本地记忆库";
 
   return (
     <section className="memory-backends" aria-label="记忆后端三选一">

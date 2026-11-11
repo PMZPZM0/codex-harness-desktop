@@ -895,6 +895,14 @@ interface Window {
     /* 常驻记忆（L 层）；threadId 仅供注入审计（隔离仍按工作区） */
     readMemoryContext(workspace?: string, includeWorkspace?: boolean, threadId?: string): Promise<{ text: string; stats: { chars: number; over: boolean } }>;
     readMemoryLayers(workspace?: string): Promise<MemoryLayersSnapshot>;
+    /* 记忆原子：列出条目 + 索引（新记忆界面的唯一数据源） */
+    listMemoryAtoms(workspace?: string): Promise<{ ok: boolean; index?: string; stats?: { total: number; active: number; broken: number }; entries?: Array<{ id: string; summary: string; type: string; scope: string; status: string; confidence: string; updated: string; tags: string[]; group?: string; body: string }>; history?: Array<{ at: string; op: string; id: string; by: string; summary: string }>; broken?: string[]; policies?: Array<{ label: string; writable: string[]; supersede: string; render: string; recallLimit: number; inject: string[] }>; error?: string }>;
+    /* 记忆原子：预览「这句话会注入哪些记忆」—— 与真实注入用同一套打分（⛔ 不是前端假过滤） */
+    recallMemoryAtoms(workspace: string, query: string, seat?: string): Promise<{ ok: boolean; text?: string; recalled?: string[]; conflicts?: Array<[string, string]>; error?: string }>;
+    /* 记忆原子：保存一条（手动编辑用；内容相同返回 same，算成功） */
+    saveMemoryAtoms(workspace: string, input: { id: string; scope?: string; summary?: string; body: string; type?: string }): Promise<{ ok: boolean; outcome?: string; error?: string }>;
+    /* 11-11 四个记忆板块的批量作废：逐条复用 memory_forget（标 superseded、文件保留可查、重建索引） */
+    forgetMemoryAtoms(workspace: string, ids: string[]): Promise<{ ok: boolean; done: number; failed: number; error?: string }>;
     writeMemoryLayer(input: { scope: "user" | "background" | "project" | "lessons"; content: string; workspace?: string }): Promise<MemoryLayersSnapshot>;
     listMemory(category?: string): Promise<any[]>;
     /* 一键安装 MCP 记忆服务（主进程用应用自带 node 跑安装器；新电脑无需预装 Node） */
@@ -1459,6 +1467,8 @@ interface Window {
     harnessTeamSetManager(groupId: string, memberId: string, managerId: string): Promise<{ ok: boolean; group?: any; changed?: boolean; error?: string; reason?: string }>;
     /* 团队模式：管理员（普通群「用户没 @ 时由谁接话推进进度」；专家团群不启用，由团主理人兜底） */
     harnessTeamSetAdmin(groupId: string, memberId: string): Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>;
+    /* 团队模式：群内任务进度（总数/未完成/已完成/在等回话）—— 群头部进度条用它，⛔ 别再让用户靠读消息猜进度 */
+    harnessTeamGroupProgress(groupId: string): Promise<{ ok: boolean; total?: number; open?: number; done?: number; waiting?: number; items?: Array<{ id: string; title: string; toName: string; fromName: string; at: number }>; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
     harnessTeamAddNote(groupId: string, note: Record<string, unknown>): Promise<{ ok: boolean; group?: any; issues?: string[]; dropped?: string[]; error?: string }>;
     /* 团队模式：记忆条目 / 菜单 / 用量账本 */
@@ -1491,6 +1501,8 @@ interface Window {
     harnessTeamThreadUsage(threadId: string): Promise<{ ok: boolean; tokens?: { input: number; cached: number; output: number; total: number } | null; error?: string }>;
     /* 11-09 自媒体工作台：开源 dsh-media-desk 原样嵌入；返回本地服务地址（只监听 127.0.0.1），渲染层用 iframe 打开 */
     mediaDeskEndpoint(): Promise<string>;
+    /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
+    listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

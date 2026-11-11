@@ -605,6 +605,8 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           + "moekoe_status / moekoe_search / moekoe_play / moekoe_lyric / moekoe_qualities / moekoe_install（MoeKoe 音乐：状态 / 搜歌（可按专辑/歌手/歌单/MV） / 内播 / 歌词 / 音质权限 / 国内镜像安装）；"
           + "wallpaper_set（壁纸：aurora/ribbon/halo/custom 四类，Codex 可自助做图设壁纸）；"
           + "media_desk（自媒体工作台：灵感 → 一条成稿 → 本地排期 → 数据复盘 → 写作风格；不确定先 name=\"media_desk\" args={action:\"state\"} 看现状）；"
+          + "memory_recall / memory_write / memory_forget（项目记忆：查 / 记 / 作废；下次会话会自动看到，⛔ 别手写 md 文件）；"
+          + "artifact_archive / artifact_list（产物归档：把成品存进 artifacts/日期-任务短名/ 并查清单；⛔ 只复制不删原文件）；"
           + "connector_register（注册 MCP 连接器）。传 name=\"list\" 可拿到每个能力的完整参数说明（不确定参数就先调它）。"
           + "⛔ 调度专家 / 专家团 / 子智能体请用专用工具 agent_invoke，不在这里。"
           + "⛔ 图像生成与编辑（image_generate / image_edit / image_info / image_view）是**各自独立的工具**，本工具里调不到 —— 直接按名字调它们。"

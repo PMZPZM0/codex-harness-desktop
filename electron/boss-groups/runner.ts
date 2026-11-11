@@ -269,6 +269,8 @@ export async function sayToGroup(input: { groupId: string; text: string }): Prom
   if (!text) return { ok: false, error: "说点啥再发" };
   try {
     const group = groupOf(state, String(input.groupId ?? ""));
+    /* ⛔ 11-10：用户自己开口 ⇒ 自动推进的轮次归零（他要把话题拉回来时不该被上限挡住）。 */
+    if (Number(group.autoRound ?? 0) !== 0) { group.autoRound = 0; }
     pushEvent(state, { groupId: group.id, kind: "chat-user", text: text.slice(0, 600) });
     bossStore.save();
     emit({ type: "boss-group", phase: "chat", groupId: group.id });
@@ -410,8 +412,24 @@ export async function reconcileRunningTasks(): Promise<number> {
     await pruneBossQueue(group).catch(() => undefined);
   }
   const running = Object.values(state.tasks).filter((t) => t.status === "running");
-  if (!running.length) return 0;
   let fixed = 0;
+  /* ⛔⛔ 11-10 真机取证（用户：「回两个就没」「这叫什么交流」）：`boss-groups.json` 里有 6 个任务
+     `status=assigned`、成员却是 `idle`、`attempt.endedAt` 全为 null，时间横跨 17:47~19:32。
+     原因：`dispatchTask` 在 `markRunning` **之前**失败（turn/start 抛错/引擎没接住）⇒ 任务停在
+     assigned；而对账**只捞 running** ⇒ 这批任务没有任何人去回收 ⇒ 成员虽然被放回 idle，
+     但那条活永远"已派未跑"，群看起来就是"说了两句就断"。
+     ⇒ 对账必须同时收 assigned：有 startedAt 且已静置超过阈值 = 派活从没跑起来。 */
+  const STALE_ASSIGNED_MS = 3 * 60 * 1000;
+  const staleBefore = Date.now() - STALE_ASSIGNED_MS;
+  for (const task of Object.values(state.tasks)) {
+    if (task.status !== "assigned") continue;
+    const attempt = task.attempts[task.attempts.length - 1];
+    const startedAt = Number(attempt?.startedAt ?? 0);
+    if (!startedAt || startedAt > staleBefore) continue;   // 刚开始派的先放过（可能正在 turn/start）
+    await failTask(task.id, "派活后回合一直没有启动（引擎没接住或进程中断）", true).catch(() => undefined);
+    fixed += 1;
+  }
+  if (!running.length) return fixed;
   for (const task of running) {
     const attempt = task.attempts[task.attempts.length - 1];
     const threadId = String(attempt?.threadId ?? "");
@@ -928,8 +946,84 @@ export async function dispatchTask(taskId: string, options: { memberId?: string 
     return { ok: true, taskId: task.id, memberId: member.id };
   } catch (error: any) {
     bossStore.save();
+    /* ⛔⛔ 11-10：派活失败原来**只 return 给调用方**，而任务已经 assign 过了 ⇒ 它永远停在
+       assigned、成员放回 idle，群里既没有这条活也没有失败提示（真机 6 条实例）。
+       ⇒ 在这里就把任务标失败并释放成员；原因照样返回（模型据此对用户说明）。 */
+    await failTask(taskId, `派活失败：${String(error?.message ?? error).slice(0, 200)}`, true).catch(() => undefined);
     return { ok: false, error: String(error?.message ?? error) };
   }
+}
+
+/** 群聊自动推进的上限（11-10 用户令：一次要能聊 10 回合以上） */
+const MAX_AUTO_ROUNDS = 12;
+
+/**
+ * **让主理人真的醒来**（11-10 用户现场两次：「回两个就没」「懂什么叫沟通交流吗」）。
+ *
+ * ⛔ 原来只有 `postToBoss` 一条路：`thread/queue/add` + `thread/queue/start`。
+ *   这条路依赖「引擎认为该线程空闲」的时序 —— 主理人**刚收尾那一刻**最容易判错
+ *   ⇒ 消息进了队列但没起回合 ⇒ 群里就是"说两句就断"，而且没有任何报错。
+ * ⇒ 现在改成两层：有活跃回合就 steer（追加进当前回合）；没有就**直接 turn/start**。
+ *   ⛔ 不走 queue：那条路正是断链的根源。
+ */
+async function wakeBoss(group: BossGroup, text: string): Promise<boolean> {
+  const boss = String(group.bossThreadId ?? "");
+  if (!boss || !text.trim()) return false;
+  const turnId = activeTurnOf(boss);
+  if (turnId) {
+    const steered = await server.request("turn/steer", {
+      threadId: boss,
+      expectedTurnId: turnId,
+      input: [{ type: "text", text, text_elements: [] }],
+    }).then(() => true).catch(() => false);
+    if (steered) return true;
+  }
+  const env = await providerEnv();
+  const started: any = await server.request("turn/start", {
+    threadId: boss,
+    input: [{ type: "text", text, text_elements: [] }],
+    model: env.model,
+    effort: "high",
+  }).catch(() => null);
+  return Boolean(started?.turn?.id);
+}
+
+/**
+ * 成员说完之后，把话头交回主理人（11-10 用户令：「根据实时任务来」「什么叫沟通交流」）。
+ *
+ * 规则（都不靠定时器，全都是有因果的单次唤醒）：
+ *   · 每有一个成员发言/交活 ⇒ 主理人获得一次「继续主持」的机会；
+ *   · 累计到 MAX_AUTO_ROUNDS 就停一次并说明，用户回一句「继续」重新计数；
+ *   · 用户自己说话 ⇒ 计数归零（他要把话题拉回来）。
+ */
+export async function continueGroupConversation(groupId: string, note: string): Promise<void> {
+  const state = await bossStore.load();
+  const group = state.groups[groupId];
+  if (!group || group.paused) return;
+  const boss = String(group.bossThreadId ?? "");
+  if (!boss) return;
+  const round = Number(group.autoRound ?? 0);
+  if (round >= MAX_AUTO_ROUNDS) {
+    /* ⛔ 只提示一次（否则每来一条成员消息就刷一条"到上限了"）。 */
+    if (round === MAX_AUTO_ROUNDS) {
+      group.autoRound = MAX_AUTO_ROUNDS + 1;
+      bossStore.save();
+      await wakeBoss(group, `[群事件] 已经自动往下推进了 ${MAX_AUTO_ROUNDS} 轮，先停在这里。要继续就回一句「继续」；想收尾就直接说结论。`);
+      emit({ type: "boss-group", phase: "chat", groupId });
+    }
+    return;
+  }
+  group.autoRound = round + 1;
+  bossStore.save();
+  pushEvent(state, { groupId, kind: "note", text: `自动推进第 ${round + 1} 轮` });
+  bossStore.save();
+  emit({ type: "boss-group", phase: "chat", groupId });
+  await wakeBoss(
+    group,
+    `[群事件] ${note}\n你继续往下主持（自动第 ${round + 1} 轮，最多 ${MAX_AUTO_ROUNDS} 轮）：`
+    + `该谁接就 @ 谁并把要他做什么一句话说清；没人可 @ 就自己接着把这一段讲完。`
+    + `这一轮收完（或整件事已经有结论）就写「收口」并给结论，别再 @ 人。`,
+  );
 }
 
 /**
@@ -995,6 +1089,12 @@ export async function settleSubmission(taskId: string, output: string): Promise<
     body: deliverable.slice(0, 4000),
     file: deliverableFile,
   });
+  /* ⛔⛔ 11-10 用户现场（「回两个就没」「懂什么叫沟通交流吗」）：成员交活就是**一次发言**，
+     必须把话头交回主理人，否则群里永远停在"成员最后一句"。顺序也重要：
+     先把成品真发出去（不等出站定时器），再唤醒 —— 反过来的话主理人先被叫醒却看不到内容。 */
+  await flushOutbox(group.id).catch(() => undefined);
+  void continueGroupConversation(group.id, `${deliverer.name} 交活了「${task.title}」（成品已进群，带文件卡）`)
+    .catch(() => undefined);
   if (alreadyLeftRunning) await reviewTask(taskId);   // 重复回调（已不在 running）⇒ 不再审
 }
 

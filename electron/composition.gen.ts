@@ -121,6 +121,7 @@ import { fileeFeature as feat_filee } from "./features/filee-ipc";
 import { taskMonitorFeature as feat_monitor } from "./features/task-monitor";
 import { sessionAliasFeature as feat_session_alias } from "./features/session-alias-ipc";
 import { harnessTeamFeature as feat_harness_team } from "./features/harness-team-ipc";
+import { artifactArchiveFeature as feat_artifact } from "./features/artifact-archive-ipc";
 
 import { app } from "electron";
 import { readAppSettingsSync } from "./app-settings";
@@ -248,6 +249,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "monitor", plugin: feat_monitor as Plugin<unknown>, config: null },
   { id: "session-alias", plugin: feat_session_alias as Plugin<unknown>, config: null },
   { id: "harness-team", plugin: feat_harness_team as Plugin<unknown>, config: null },
+  { id: "artifact", plugin: feat_artifact as Plugin<unknown>, config: null },
 ];
 
 /**
