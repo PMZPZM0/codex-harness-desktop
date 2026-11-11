@@ -1042,7 +1042,14 @@ async function runDispatchRounds(
   /* ⛔ 成员产出落群：`team_member_invoke` 起的是**团队会话**，产出靠 team-group-bridge 回写群；
      不绑 `groupOfTeam(teamId)` 就返回空串 ⇒ 产出静默丢掉（只有主理人看得到工具返回值）。 */
   if (groupTeam) bindTeamGroup(groupTeamId, group.id);
-  const adminId = isTeamGroup ? "" : String(group.adminId ?? "");
+  /* ⛔⛔ 11-12 用户：「管理员设置就不能再展示普通标了」「管理员设置后多了哪些工具联动」。
+     管理员升成**群级身份**：团群由团主理人担任（团槽那一行就是管理员），普通群仍是 adminId。
+     ⇒ 名册 / group_members / group_say 的「管理员」别名 / 不 @ 时的默认收件人，
+       全部读同一个 `adminId`，⛔ 不再"团群恒空"。 */
+  const teamSlotMember = group.members.find((m) => m.targetKind === "team");
+  const adminId = isTeamGroup
+    ? String(teamSlotMember?.id ?? "")
+    : String(group.adminId ?? "");
   const roster: TalkMember[] = [
     ...group.members.map((m) => ({
       id: m.id, name: m.name, targetKind: m.targetKind, targetKey: m.targetKey, targetProfession: m.targetProfession,

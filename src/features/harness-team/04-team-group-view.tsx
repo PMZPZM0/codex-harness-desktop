@@ -600,7 +600,25 @@ export function TeamGroupView({
   const memberOf = (id: string) => group.members.find((m) => m.id === id) ?? null;
   /* 团这一行的职业写主理人的（「交付总监」）；目录里 team 条目的 profession 是「4 位成员」，
      那是人数不是身份（用户要看的是"谁、什么角色"）。 */
+  /* ⛔⛔ 11-12 用户：「管理员设置就不能再展示普通标了」+「管理员设置后多了哪些工具联动」。
+     管理员从"普通群的一个设置项"升成**群级身份**：团群里它天然就是团主理人（那张椅子），
+     普通群里是 `group.adminId`。判定只此一处，显示 / 路由 / 名册全部读它。 */
+  const teamSlotOf = group.members.find((m) => m.targetKind === "team") ?? null;
+  /** 这个人是不是本群的管理员（按"椅子"判：整团槽 / 主理人合成 id / 普通群 adminId）。 */
+  const adminSeatOf = (id: string) => {
+    const key = String(id ?? "");
+    if (!key) return false;
+    if (group.adminId && key === String(group.adminId)) return true;
+    if (!teamSlotOf) return false;
+    if (key === String(teamSlotOf.id)) return true;
+    const ta = parseTeamAuthorId(key);
+    if (!ta || ta.teamId !== String(teamSlotOf.targetKey ?? "")) return false;
+    /* ⛔ 团成员不是管理员：目录里能查到 member 条目的一律排除（主理人不在成员表里）。 */
+    return !catalog.some((t) => t.kind === "member" && t.teamId === ta.teamId
+      && (teamMemberIdOf(t) === ta.memberId || t.key === ta.memberId));
+  };
   const roleOf = (id: string) => {
+    if (adminSeatOf(id)) return "管理员";
     const teamAuthor = parseTeamAuthorId(id);
     if (teamAuthor) {
       const kid = catalog.find((t) => t.kind === "member" && t.teamId === teamAuthor.teamId && (teamMemberIdOf(t) === teamAuthor.memberId || t.key === teamAuthor.memberId));
@@ -1568,7 +1586,17 @@ export function TeamGroupView({
                      占位模式仍只给正文（该模式承诺不展示过程）。 */
                   /* ⛔ 11-09：CLI 直跑消息没有引擎回合（`cli:` 合成 id）⇒ 不能走 TurnView
                      （它拉不到回合 → 只剩正文、页脚/追问全空）。走普通正文 + 群操作条。 */
+                  /* ⛔⛔ 11-12 用户截图「看不懂」：4 条派单长得一模一样、正文却是空的。
+                     根因：**宿主写的派活交接**（`team-dispatch:<runId>`，见 team-invoke 落群那条）是
+                     bot 消息、threadId 指向成员会话 ⇒ 被当成「成员回合」交给 TurnView。
+                     而 TurnView 是按 threadId + at 去**引擎回合**里取正文的，交接那句话根本不在回合里
+                     ⇒ 正文被整段吞掉，只剩引用块 + 耗时；等到成员交回，这 4 条又会各自把同一段产出
+                     再显示一遍（= 用户看到的"重复刷屏"）。
+                     ⇒ 宿主合成消息一律走普通正文（`row.text` 就是它该显示的那句话）。
+                     ⛔ 判据用 itemId 前缀（落盘就带、刷新后仍成立），⛔ 不靠文本猜。 */
+                  const hostAuthored = String(row.itemId ?? "").startsWith("team-dispatch:");
                   const useTurnView = isBot && effectiveReplyMode !== "placeholder" && row.kind !== "card"
+                    && !hostAuthored
                     && !String(row.threadId ?? "").startsWith("cli:");
                   /* ⛔ 正文永远正常显示（用户：「只有正文正常消息发送出来」）；
                      运行过程另起一个折叠块挂在正文下面，默认收起。 */
@@ -1686,7 +1714,10 @@ export function TeamGroupView({
                             （见 displayRows 之后的 live 区块）。 */}
                         {/* 引用行放在**正文上面**（用户：这个应该放上面吧，在正文消息上面）。
                             ⛔ 只有伙伴消息有引用；它取的是这条回复之前最近一条人类消息。 */}
-                        {isBot && quote && (
+                        {/* ⛔ 派活交接（`team-dispatch:`）不挂引用：它是"派给谁"的通知，
+                            正文本身就以 `@成员：任务…` 开头，再叠一条「回复 我：…」只会让
+                            4 条派单看起来一模一样（11-12 用户截图看不懂就是它）。 */}
+                        {isBot && quote && !hostAuthored && (
                           <TeamQuoteBlock
                             quote={quote}
                             nameOf={nameOf}
@@ -2085,9 +2116,11 @@ export function TeamGroupView({
                       onClick={(event) => openProfile(event, m.id)}
                     >
                       <strong>{personNameOf(m)}</strong>
-                      {/* ⛔ 11-10 用户：成员列表里管理员要有标签。团群不启用管理员 ⇒ 同样不显示。 */}
-                      {m.id === group.adminId && !group.members.some((x) => x.targetKind === "team") && (
-                        <em className="team-group__member-tag">管理员</em>
+                      {/* ⛔ 11-12 用户：「管理员设置就不能再展示普通标了」。
+                          团群的管理员 = 团主理人（原来这里写死"团群不显示"，于是它只剩
+                          「团队成员」这个普通标）。判定走 adminSeatOf（按椅子，不比 id 字符串）。 */}
+                      {adminSeatOf(m.id) && (
+                        <em className="team-group__member-tag is-admin" title="这个群的管理员：用户没 @ 时由它接话、推进进度">管理员</em>
                       )}
                     </button>
                     {/* ⛔ 11-07 用户：「每个成员 @ 的前面有运行动态展示吗」⇒ 运行态点 + @ + 停 三件套

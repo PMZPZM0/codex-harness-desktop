@@ -172,6 +172,10 @@ export function buildTalkInput(
           `群里的人只按名字认识你：用户写「@${sanitizeForEnvelope(selfName)}」就是在叫你，不是在叫别人。`
             + `⛔ 别把自己当旁观者，也不要说"这是 ${sanitizeForEnvelope(selfName)} 的活"——那就是你的活。`,
           `你是「${sanitizeForEnvelope(String(me.teamName ?? ""))}」的主理人：这个团谁做什么、做完验收、什么时候收口，都由你主持。`,
+          /* ⛔⛔ 11-12 用户：「管理员设置就不能再展示普通标了」「管理员设置后多了哪些工具联动」。
+             管理员是**群级身份**：团群的管理员就是主理人 —— 它要在行为上（不只是标签上）按管理员来：
+             没人 @ 时它接话，它决定谁做、先做什么。 */
+          "你是这个群的**管理员**：用户不 @ 任何人时就是在找你；由你判断这一轮谁做、先做什么（⛔ 别问用户该派谁）。",
         );
       }
       lines.push("这里是群聊：刚那句是群里有人说的。是交给你的事就直接干（或派给该干的人），⛔ 不要只回一句「收到」就停在那里。");
@@ -180,7 +184,9 @@ export function buildTalkInput(
     `群里的人：${roster || "（暂时只有你自己）"}`,
     /* ⛔ 11-10：把「谁推进进度」写死，别让成员凭名字猜。 */
     ...(() => {
-      const admin = options.roster.find((m) => m.isAdmin);
+      /* ⛔ 11-12：团群不设 adminId，管理员就是主理人 ⇒ 这里兜一层，名册/分工文案才不会漏掉它。 */
+      const admin = options.roster.find((m) => m.isAdmin)
+        ?? (me.teamRole === "lead" && me.teamLeadName ? { name: String(me.teamLeadName), isAdmin: true } : undefined);
       return admin ? [`【群里的分工】${sanitizeForEnvelope(admin.name)} 是这个群的管理员：用户没 @ 任何人时由它接话推进进度。想找它就直接另起一行写 @${sanitizeForEnvelope(admin.name)}：…，或调 group_say 填 to="管理员"。不确定谁负责什么，先调 group_members 看名册。`] : [];
     })(),
     /* ⛔⛔ 11-10 用户令「让主理人自己排下一轮」：宿主能做的只有"按它说的顺序执行"，

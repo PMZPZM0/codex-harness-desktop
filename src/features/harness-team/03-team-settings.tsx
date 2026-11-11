@@ -519,10 +519,16 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
         <h3><Users size={14} className="ic-violet" />群管理员</h3>
         <p className="team-settings__hint">
           不 @ 任何人直接发消息时，先交给上一位回复的伙伴；没有上下文就交给<strong>管理员</strong>推进进度。
-          设好之后，普通群里直接打字也能开工。专家团群不用设置，由团主理人接话。
+          设好之后，普通群里直接打字也能开工。
         </p>
+        {/* ⛔⛔ 11-12 用户：「管理员设置就不能再展示普通标了」。
+            管理员是**群级身份**：团群里天然由团主理人担任（不是"不需要管理员"），
+            这里把身份说清楚，只是不给改的入口（改了会和团队调度打架）。 */}
         {group.members.some((m) => String(m.targetKind ?? "") === "team") ? (
-          <p className="team-settings__hint">这个群绑定了专家团，由团主理人接话，不需要管理员。</p>
+          <p className="team-settings__hint">
+            管理员：<strong>{group.members.find((m) => String(m.targetKind ?? "") === "team")?.name ?? "团主理人"}</strong>
+            （由团主理人担任，不需要另设）。用户没 @ 人时由它接话、拆解、派活、收口。
+          </p>
         ) : (
           <span className="team-settings__select">
             <AppSelect

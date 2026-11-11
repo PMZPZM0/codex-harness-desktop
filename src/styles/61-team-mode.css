@@ -371,6 +371,14 @@
   line-height: 1.5;
   white-space: nowrap;
 }
+/* ⛔ 11-12 用户：「管理员设置就不能再展示普通标了」——管理员要和职业标**看得出区别**，
+   否则它只是"另一个灰标"，用户还是分不清谁是负责人。 */
+.team-group__member-tag.is-admin {
+  background: var(--warning-soft, rgba(245, 158, 11, 0.16));
+  color: var(--warning, #f59e0b);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
 .team-settings__meta { flex: none; font-size: 12px; color: var(--faint); white-space: nowrap; }
 
 /* 下拉槽：固定宽度，内部 `.app-select-trigger` 的 100% 就落在槽里 */

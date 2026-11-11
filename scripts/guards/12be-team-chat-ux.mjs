@@ -485,6 +485,16 @@ const catalog = [
       && /buildTeamPlanTool\(\)/.test(codeOnly(read("electron/features/harness-team-ipc.ts")))
       && /buildTeamStatusTool\(\)/.test(codeOnly(read("electron/features/harness-team-ipc.ts"))),
       "流程配套工具：team_plan 发计划进群、team_status 查进度，且都挂在主理人工具面");
+    /* ⛔⛔ 11-12 用户：「管理员设置就不能再展示普通标了」「管理员设置后多了哪些工具联动」。
+       管理员是**群级身份**：团群由主理人担任（不是"团群不启用管理员"）。
+       ⇒ 判定一处（adminSeatOf）、显示跟着走（成员标签 + 消息头角色）、名册 isAdmin 也跟着走。 */
+    ok(/const adminSeatOf = \(id: string\)/.test(hostView)
+      && /adminSeatOf\(m\.id\) && \(/.test(hostView)
+      && /team-group__member-tag is-admin/.test(hostView)
+      && /if \(adminSeatOf\(id\)\) return "管理员"/.test(hostView)
+      && /const adminId = isTeamGroup[\s\S]{0,80}teamSlotMember/.test(teamIpcSrc)
+      && /你是这个群的\*\*管理员\*\*/.test(talk),
+      "管理员=群级身份（团群由主理人担任）：标签 / 消息头角色 / 名册 / 提示词同一处判定");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
