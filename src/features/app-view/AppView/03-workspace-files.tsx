@@ -5,7 +5,7 @@
  * ⛔ 读文件走 `window.codex.readFile`（同一道可信根闸）；⛔ 不在这里做写入/编辑（编辑仍走居中编辑器）。
  */
 import { useEffect, useMemo, useState } from "react";
-import { ExternalLink, FileText, FolderOpen, RotateCcw, ChevronsUp, ChevronsDown } from "lucide-react";
+import { ExternalLink, FileText, FolderOpen, RotateCcw, ChevronsUp, ChevronsDown, ZoomIn } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "../../../components/FileTypeIcon";
 import { Spinner } from "../../../components/CardShell";
 import { Markdown, FilePreviewCode } from "../../markdown";
@@ -194,14 +194,17 @@ export function WorkspaceFilePreview({ path, onOpenEditor, expanded, onToggleExp
             <button type="button" onClick={() => setRetry((n) => n + 1)}><RotateCcw size={12} />重试</button>
           </div>
         ) : state.kind === "image" ? (
-          /* 11-11 用户：「侧边栏的这个图片也加上点击预览功能」——点缩略图进大图灯箱。 */
-          <img
-            className="workspace-file-preview-image"
-            src={toFileUrl(state.resolvedPath || path)}
-            alt={name}
+          /* 11-11 用户：「侧边栏的图标 鼠标放上去显示一个放大镜动态展示图标」——
+             整块图片包成按钮，悬停浮出放大镜（缩放+淡入），点击进大图灯箱。 */
+          <button
+            type="button"
+            className="workspace-file-preview-image-wrap"
             title="点击放大预览"
             onClick={() => openImageLightbox(state.resolvedPath || path, name)}
-          />
+          >
+            <img className="workspace-file-preview-image" src={toFileUrl(state.resolvedPath || path)} alt={name} />
+            <span className="workspace-file-preview-zoom" aria-hidden="true"><ZoomIn size={22} /></span>
+          </button>
         ) : state.kind === "pdf" ? (
           <iframe className="workspace-file-preview-pdf" src={toFileUrl(path)} title={name} />
         ) : state.kind === "office" ? (

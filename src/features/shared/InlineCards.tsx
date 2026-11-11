@@ -184,19 +184,26 @@ export function InlineFileCards({ text, onOpenFile }: { text: string; onOpenFile
   /* 11-11 用户截图：图片的正文引用要跟普通文件一样是**整行文件卡**（点击开右栏/预览），
      ⛔ 不要再画小缩略芯片（会和回合预览卡、已更改文件行重复成三份）。
      视频仍不出正文芯片：回合预览卡（TurnMediaCards）负责播放；音频 / 3D 保留缩略芯片。 */
-  const confirmed = matches.filter((match) => {
+  const confirmed: Array<{ path: string; prefix: string; resolved: string }> = [];
+  const seenResolved = new Set<string>();
+  for (const match of matches) {
     const resolved = resolvedPaths[match.path];
-    if (!resolved) return false;
-    if (mediaKindOf(resolved) === "video") return false;
-    return true;
-  });
+    if (!resolved) continue;
+    if (mediaKindOf(resolved) === "video") continue;
+    /* 同一文件可能先以裸文件名、后以绝对路径各出现一次：按**解析后的真实路径**去重，
+       ⛔ 只按原文去重会出两张卡。 */
+    const key = resolved.replaceAll("\\", "/");
+    if (seenResolved.has(key)) continue;
+    seenResolved.add(key);
+    confirmed.push({ ...match, resolved });
+  }
   if (confirmed.length === 0) return null;
   return (
     <>
     <div className="inline-file-cards" aria-label="涉及到的文件">
       {confirmed.map((m, index) => {
         const name = basename(m.path) || m.path;
-        const openPath = resolvedPaths[m.path];
+        const openPath = m.resolved;
         const mediaKind = mediaKindOf(openPath);
         const mediaTitle = mediaKind === "video" ? "点击播放" : mediaKind === "audio" ? "点击播放音频" : mediaKind === "model" ? "点击预览 3D" : "";
         /* 10-22：普通文件（含图片）改成 Qoder 式整行卡片（默认右栏预览）；

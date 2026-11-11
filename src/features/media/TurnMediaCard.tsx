@@ -54,11 +54,19 @@ export function TurnMediaCard({ threadId, turnId }: { threadId: string; turnId: 
   }, [turnId, trackedVersion]);
 
   const items = useMemo<CardItem[]>(() => {
+    /* ⛔ 11-11 用户「全局查重复」：回合文件里的视频已由 CompletedChanges 的媒体预览卡渲染，
+       这张「回合播放卡」再列一遍就是同一视频两张卡 ⇒ 文件来源的视频在这里跳过（音频不受影响）。 */
+    const covered = new Set(
+      [...getTurnFileChanges(turnId), ...getTurnLiveFileChanges(turnId)]
+        .filter((entry) => mediaKindOf(String(entry?.path ?? "")) === "video")
+        .map((entry) => String(entry.path).replaceAll("\\", "/")),
+    );
     const out: CardItem[] = [];
     const seen = new Set<string>();
     for (const item of [...recorded, ...generated]) {
       if (item.kind !== "video" && item.kind !== "audio") continue;
       if (seen.has(item.source)) continue;
+      if (item.kind === "video" && covered.has(String(item.source).replaceAll("\\", "/"))) continue;
       seen.add(item.source);
       out.push({
         source: item.source,

@@ -253,10 +253,12 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(/window\.codex\.readFile\((?:path|target)\)/.test(workspacePreview) && /FilePreviewCode/.test(workspacePreview) && /Markdown/.test(workspacePreview)
     && /workspace-file-preview-pdf/.test(workspacePreview) && /workspace-file-preview-image/.test(workspacePreview),
     "预览走 fs:read，覆盖 Markdown / 代码 / 图片 / PDF / 二进制占位");
-  /* 11-11 用户：「侧边栏的这个图片也加上点击预览功能」。 */
+  /* 11-11 用户：「侧边栏的这个图片也加上点击预览功能」+「鼠标放上去显示一个放大镜动态展示图标」。 */
   ok(/openImageLightbox\(state\.resolvedPath \|\| path, name\)/.test(workspacePreview)
-    && /\.workspace-file-preview-image \{[\s\S]{0,140}cursor: zoom-in;/.test(read("src/styles/14-model-onboarding.css")),
-    "右栏图片预览点击进大图灯箱（cursor: zoom-in）");
+    && /workspace-file-preview-image-wrap/.test(workspacePreview) && /<ZoomIn/.test(workspacePreview)
+    && /\.workspace-file-preview-image-wrap:hover \.workspace-file-preview-zoom/.test(read("src/styles/14-model-onboarding.css"))
+    && /\.workspace-file-preview-zoom \{[\s\S]{0,520}transition: opacity/.test(read("src/styles/14-model-onboarding.css")),
+    "右栏图片：悬停显示放大镜、点击进大图灯箱");
   /* ⛔ 10-29 用户令推翻了这里原来的口径（「不用授权弹窗，不管哪里的文件都要能预览和编辑」）：
      shell:open 现在**故意**不判可信根 —— 断言翻转成「必须是直通」，防的是有人悄悄把闸加回去
      （那会让用户点「默认应用」又变成"打开失败"，而这正是本次要修的症状）。 */
@@ -271,8 +273,10 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
   ok(inlineCards.includes("FileRefCard") && /if \(!mediaKind\) \{/.test(inlineCards) && inlineCards.includes("<FileRefCard"),
     "消息末尾普通文件 / 图片引用用 FileRefCard（整行卡；⛔ 图片不再是小缩略芯片）");
   /* 11-11 用户：图片已有预览卡 + 已更改文件行，正文再出海缩略芯片就是三重展示；视频同理（预览卡负责播放）。 */
-  ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) return false/.test(inlineCards),
+  ok(!/if \(isImagePath\(resolved\)\) return false;/.test(inlineCards) && /mediaKindOf\(resolved\) === "video"\) continue;/.test(inlineCards),
     "视频不再出正文缩略芯片（图片走文件卡，不再排除）");
+  ok(/const seenResolved = new Set<string>\(\)/.test(inlineCards) && /const openPath = m\.resolved;/.test(inlineCards),
+    "同一文件（裸名 + 绝对路径各出现一次）按解析后的真实路径只出一张卡");
   /* 11-11 用户令：图片预览小正方形、不显示文件名；视频同位置；其下「本轮产物」折叠（默认收起），
      文件卡片与已修改文件都收进折叠里。 */
   {
@@ -435,6 +439,19 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
     "群聊独立窗挂载媒体播放器/大图灯箱（否则汇总媒体卡点了没反应）");
   ok(/CompletedChanges/.test(teamCards),
     "群聊汇总复用主对话 CompletedChanges（媒体卡随之生效）");
+  /* 11-11 用户「这些改动要同步到工作伙伴的群里」↔「全局查重复」：
+     群聊回合直接渲染主对话 TurnView（正文/文件卡/折叠/媒体同源），右侧栏也复用主对话面板。 */
+  {
+    const teamTurn = readFileSync(join(ROOT, "src", "features", "harness-team", "29-team-turn-view.tsx"), "utf8");
+    const teamSide = readFileSync(join(ROOT, "src", "features", "harness-team", "28-team-side-panel.tsx"), "utf8");
+    const mediaCard = readFileSync(join(ROOT, "src", "features", "media", "TurnMediaCard.tsx"), "utf8");
+    ok(/<TurnView/.test(teamTurn) && /AppViewReviewPanel app=\{panelApp\}/.test(teamSide),
+      "群聊回合 = 主对话 TurnView，右侧栏 = 主对话面板（折叠/文件卡/右栏图片灯箱同步生效）");
+    ok(/className="turn-media-cards is-previews"/.test(cards) && /\.turn-media-cards\.is-previews \{/.test(readFileSync(join(ROOT, "src", "styles", "39-media-preview.css"), "utf8")),
+      "预览卡容器与播放条容器分开（is-previews；正方形只作用于预览）");
+    ok(/const covered = new Set\(/.test(mediaCard) && /item\.kind === "video" && covered\.has/.test(mediaCard),
+      "文件来源的视频不再在「回合播放卡」里重复（音频不受影响）");
+  }
   ok(/\.turn-media-card/.test(css) && /\.turn-media-thumb/.test(css),
     "媒体预览卡样式在（缩略图 + 播放角标 + 名称）");
 }

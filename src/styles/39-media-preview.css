@@ -857,7 +857,7 @@
    原来 39 段的 .turn-media-card 是整行条（width:100%），图片缩略被拉得又宽又长。
    这里用更具体的 .is-image 覆盖：112×112 正方形，只留图、不显示文件名/类型；
    视频保持整行播放条（文件名对视频仍有用）。⛔ 位置由 Status.tsx 放在「已更改」长条卡之前。 */
-.turn-media-cards {
+.turn-media-cards.is-previews {
   flex-direction: row;
   flex-wrap: wrap;
   gap: 10px;

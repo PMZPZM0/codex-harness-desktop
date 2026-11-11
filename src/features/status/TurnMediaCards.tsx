@@ -42,7 +42,7 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
   };
 
   return (
-    <section className="turn-media-cards" aria-label="本轮媒体产物" data-testid="turn-media-cards">
+    <section className="turn-media-cards is-previews" aria-label="本轮媒体产物" data-testid="turn-media-cards">
       {visible.map((file) => {
         const name = nameOf(file.path);
         return file.kind === "video" ? (
