@@ -9,7 +9,7 @@ import { VoiceService } from "../../voice/voice-service";
 import { ALL_VOICE_REPOS, KWS_ARCHIVE, KWS_DIR, kwsReady, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, zipvoiceReady } from "../../voice/model-manifest";
 import { ensureEmotivoice, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus } from "../../voice/model-store";
 import { EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, emotivoiceReady } from "../../voice/model-manifest";
-import { isVoiceResourceEnabled, loadVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
+import { isVoiceResourceEnabled, loadVoiceSettings, publicVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { MOSS_LIVE_PROVIDER, remoteConfigOf, remoteConfigured } from "../../voice/model-provider";
 import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
@@ -52,21 +52,6 @@ function requireVoiceService(): VoiceService {
 function requireVoiceModelsRoot(): string {
   if (!voiceModelsRoot) throw new Error("voice: 模型根目录尚未注入（main.ts 应调 setVoiceModelsRoot）");
   return voiceModelsRoot;
-}
-
-/** 下发给渲染层的设置副本：远程配置只留地址/模型，**永不下发明文密钥**（密钥只进 hasKey/末四位）。 */
-function publicVoiceSettings(settings: any) {
-  const remote: Record<string, { baseUrl?: string; model?: string; voiceId?: string }> = {};
-  for (const [id, value] of Object.entries(settings?.remote ?? {})) {
-    if (!value || typeof value !== "object") continue;
-    // voiceId 是音色标识（不是密钥），设置页回填/试听需要它。
-    remote[id] = {
-      baseUrl: (value as any).baseUrl,
-      model: (value as any).model,
-      ...((value as any).voiceId ? { voiceId: (value as any).voiceId } : {}),
-    };
-  }
-  return { ...settings, remote };
 }
 
 /** 语音域 IPC 第一批（模型与热键）。⛔ `svc()` / `modelsRoot()` 必须使用时现取：挂载时实例还没建，提前解构会永久拿到 null（症状是「语音一点反应都没有」且不报错）。 */
@@ -196,7 +181,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     return voiceAudioForIpc(await svc().previewVoice(input ?? {}));
   });
   /* MOSS-TTS 音色试听：直接按草稿的 model/voiceId 合成，不要求先开启播报。 */
-  ipcHost.handle("voice:moss-preview", async (_event, input?: { model?: string; voiceId?: string; text?: string }) =>
+  ipcHost.handle("voice:moss-preview", async (_event, input?: { model?: string; voiceId?: string; text?: string; speed?: number }) =>
     voiceAudioForIpc(await svc().previewMossVoice(input ?? {}))
   );
 

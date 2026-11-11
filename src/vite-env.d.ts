@@ -1276,8 +1276,8 @@ interface Window {
     voiceBarge(): Promise<{ ok: boolean }>;
     /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
     voiceMossVoices(): Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>;
-    /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报） */
-    voiceMossPreview(input?: { model?: string; voiceId?: string; text?: string }): Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>;
+    /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId/speed 合成，不要求先开启播报） */
+    voiceMossPreview(input?: { model?: string; voiceId?: string; text?: string; speed?: number }): Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>;
     voiceDictationFinish(): Promise<{ ok: boolean; text?: string; error?: string }>;
     voiceEndpointNow(): Promise<{ ok: boolean; text?: string }>;
     voiceHotkeyGet(): Promise<{ registered: string }>;

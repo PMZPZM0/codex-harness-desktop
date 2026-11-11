@@ -22,6 +22,7 @@ import { readConnectors } from "../main";
 import { voiceService } from "../main";
 import { loadVoiceSettings } from "../voice/voice-settings";
 import { encodeWav16 } from "../voice/voice-profiles";
+import { mossVoiceList, mossVoiceSet } from "./moss-voice-tool";
 import { writeConnectors } from "../connector-store";
 import { boardsFileOf, readWorkflowBoards, writeWorkflowBoards } from "./drama-workflow-boards";
 import { saveSubAgentConfig } from "../subagent-config";
@@ -516,6 +517,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
       output: "已请求：本条回复的正文会在生成过程中逐句念给用户听（本地语音模型未下载或窗口不在前台时不会出声；用户可以随时点「停止播报」掐断）。",
     };
   }
+  if (name === "moss_voice_list") return mossVoiceList(args);
+  if (name === "moss_voice_set") return mossVoiceSet(args);
   if (name === "connector_register") {
     const id = String(args.id ?? "").trim().replace(/[^a-zA-Z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 64);
     const displayName = String(args.name ?? "").trim();

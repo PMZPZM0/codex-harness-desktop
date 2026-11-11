@@ -2225,6 +2225,12 @@ const CHECKS = [
         JSON.stringify(ui && ui.remoteActions));
       h.check("②b 弹窗里有「用作实时通话后端」开关",
         Boolean(ui2 && ui2.hasToggle && /实时通话后端/.test(ui2.toggleText)), JSON.stringify({ hasToggle: ui2?.hasToggle, toggleText: ui2?.toggleText }));
+      const speedUi = await h.eval(`(function(){
+        const m=document.querySelector(".voice-moss-modal"); if(!m) return null;
+        return { hasSpeed: (m.innerText||"").includes("播报语速"), chips: m.querySelectorAll(".voice-speed-chip").length, range: !!m.querySelector(".voice-range") };
+      })()`).catch(() => null);
+      h.check("②c MOSS 配置弹窗有播报语速（5 档 + 滑块，与全局语速同源）",
+        Boolean(speedUi && speedUi.hasSpeed && speedUi.chips >= 5 && speedUi.range), JSON.stringify(speedUi));
 
       /* 用户实测「配置完状态都不刷新」：走真实表单保存，徽标必须立刻变「已配置」。 */
       const originalRemote = await h.eval(`window.codex.voiceSettingsGet().then(function(r){ return (r && r.settings && r.settings.remote) || {}; })`).catch(() => ({}));

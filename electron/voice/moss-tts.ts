@@ -17,6 +17,26 @@ export const MOSS_VOICES_URL = "https://api.mosi.cn/v1/audio/voices";
 export type MossTtsConfig = { baseUrl: string; model: string; voiceId: string; apiKey: string };
 export type MossSpeakResult = { ok: true; sampleRate: number; samples: Float32Array } | { ok: false; error: string };
 
+/** 语速校准：MOSS 没有 speed 字段，用 expected_duration_sec 控时长；字符/秒按实际合成结果自校准。 */
+const DEFAULT_UNITS_PER_SEC = 5;
+const unitsPerSec = new Map<string, number>();
+
+/** 中文按字、英文按词折算成「发音单位」，用于估算自然时长。 */
+function speechUnits(text: string): number {
+  const latin = text.match(/[A-Za-z0-9]+/g) ?? [];
+  const latinUnits = latin.reduce((sum, word) => sum + Math.max(1, word.length / 3), 0);
+  const rest = text.replace(/[A-Za-z0-9]+/g, "").replace(/\s+/g, "");
+  return Math.max(1, latinUnits + rest.length);
+}
+
+/** 语速 → expected_duration_sec（1.0 不传，保留模型自然节奏）。 */
+function expectedDurationSec(text: string, speed: number, key: string): number | null {
+  const rate = Math.max(0.5, Math.min(2, Number(speed) || 1));
+  if (Math.abs(rate - 1) < 0.01) return null;
+  const cps = unitsPerSec.get(key) || DEFAULT_UNITS_PER_SEC;
+  return Math.max(0.5, Math.min(600, speechUnits(text) / cps / rate));
+}
+
 /** 解 MOSS-TTS 返回的 WAV（16-bit PCM，可能是 48k 立体声）→ 单声道 Float32。 */
 export function decodeWavPcm16Mono(buf: Buffer): { samples: Float32Array; sampleRate: number } {
   if (buf.length < 44 || buf.toString("ascii", 0, 4) !== "RIFF" || buf.toString("ascii", 8, 12) !== "WAVE") {
@@ -79,16 +99,24 @@ export function remoteTtsConfig(settings?: VoiceSettings):
   return { ok: true, cfg: { baseUrl, model, voiceId, apiKey } };
 }
 
-/** 调 MOSS 单人语音生成（POST /v1/audio/speech，返回 48k WAV）。 */
-export async function speakMoss(text: string, cfg: MossTtsConfig): Promise<MossSpeakResult> {
+/** 调 MOSS 单人语音生成（POST /v1/audio/speech，返回 48k WAV）。speed 用 expected_duration_sec 实现。 */
+export async function speakMoss(text: string, cfg: MossTtsConfig, speed = 1): Promise<MossSpeakResult> {
   const clean = String(text ?? "").trim().slice(0, 2000);
   if (!clean) return { ok: false, error: "空文本" };
+  const key = `${cfg.model}|${cfg.voiceId}`;
+  const expected = expectedDurationSec(clean, speed, key);
   try {
     const res = await guardedFetch(cfg.baseUrl, {
       method: "POST",
       headers: { Authorization: `Bearer ${cfg.apiKey}`, "Content-Type": "application/json" },
       // ⛔ 官方字段是 voice_id（不是 voice）；wav 便于本地无损解码，不引入 mp3 解码依赖。
-      body: JSON.stringify({ model: cfg.model, input: clean, voice_id: cfg.voiceId, response_format: "wav" }),
+      body: JSON.stringify({
+        model: cfg.model,
+        input: clean,
+        voice_id: cfg.voiceId,
+        response_format: "wav",
+        ...(expected ? { expected_duration_sec: Number(expected.toFixed(2)) } : {}),
+      }),
     }, { timeoutMs: 60_000, retries: 0 });
     const contentType = String(res.headers.get("content-type") ?? "");
     if (!res.ok || contentType.includes("json")) {
@@ -99,6 +127,15 @@ export async function speakMoss(text: string, cfg: MossTtsConfig): Promise<MossS
     }
     const decoded = decodeWavPcm16Mono(Buffer.from(await res.arrayBuffer()));
     if (!decoded.samples.length) return { ok: false, error: "MOSS 播报返回的音频无法解码（需要 16-bit PCM WAV）" };
+    /* 只拿「自然语速」的样本校准字符/秒；调速后的时长反映的是目标，不能拿来当基准。 */
+    if (!expected && decoded.sampleRate > 0) {
+      const seconds = decoded.samples.length / decoded.sampleRate;
+      if (seconds > 0.2) {
+        const observed = speechUnits(clean) / seconds;
+        const prev = unitsPerSec.get(key) || DEFAULT_UNITS_PER_SEC;
+        unitsPerSec.set(key, prev * 0.7 + observed * 0.3);
+      }
+    }
     return { ok: true, sampleRate: decoded.sampleRate, samples: decoded.samples };
   } catch (error: any) {
     return { ok: false, error: `MOSS 播报失败：${error?.message ?? error}` };
@@ -129,7 +166,7 @@ export async function listMossVoices(settings: VoiceSettings): Promise<{ ok: boo
 /** MOSS 音色试听：用草稿 model/voiceId 合成一句，不要求先开启播报。 */
 export async function previewMossVoice(
   settings: VoiceSettings,
-  input?: { model?: string; voiceId?: string; text?: string },
+  input?: { model?: string; voiceId?: string; text?: string; speed?: number },
 ): Promise<MossSpeakResult> {
   const entry: RemoteVoiceConfig | undefined = settings.remote?.["moss-tts"];
   const live: RemoteVoiceConfig | undefined = settings.remote?.["moss-live"];
@@ -143,5 +180,5 @@ export async function previewMossVoice(
     model,
     voiceId,
     apiKey,
-  });
+  }, Number(input?.speed ?? settings.tts?.speed ?? 1));
 }

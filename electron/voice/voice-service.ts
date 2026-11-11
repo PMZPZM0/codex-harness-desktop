@@ -313,6 +313,11 @@ export class VoiceService {
     return Boolean(this.active && this.remote);
   }
 
+  /** 通话中换 MOSS 音色（下一轮回复生效；工具 moss_voice_set 调它）。 */
+  setRemoteVoice(voiceId: string): void {
+    this.remote?.changeVoice(voiceId);
+  }
+
   async stop(): Promise<void> {
     const asr = this.asr;
     const tts = this.tts;
@@ -398,7 +403,9 @@ export class VoiceService {
   /** 11-10 建 MOSS-Live 全双工连接；成功=true（通话走远程），失败=false（回落本地）。 */
   private async startRemote(threadId: string): Promise<boolean> {
     const cfg = remoteConfigOf(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id);
-    const client = new MossLiveRealtime(cfg, {
+    /* MOSS 通话与播报共用音色：取 MOSS-TTS 里选的 voice_id（没有就用服务端默认）。 */
+    const voiceId = String(this.currentSettings.remote?.["moss-tts"]?.voiceId ?? "").trim();
+    const client = new MossLiveRealtime({ ...cfg, ...(voiceId ? { voiceId } : {}) }, {
       onUserPartial: (text) => this.deps.emit({ type: "partial", text }),
       onUserFinal: (text) => this.deps.emit({ type: "final", text }),
       onAgentTranscript: (text, done) => this.deps.emit({ type: "remoteTranscript", text, done }),
@@ -734,7 +741,7 @@ export class VoiceService {
   }
 
   /** MOSS 音色试听（薄包装）。 */
-  previewMossVoice(input?: { model?: string; voiceId?: string; text?: string }) {
+  previewMossVoice(input?: { model?: string; voiceId?: string; text?: string; speed?: number }) {
     return previewMossVoiceRemote(loadVoiceSettings(this.deps.userDataDir), input);
   }
 
@@ -749,7 +756,7 @@ export class VoiceService {
     const remote = remoteTtsConfig(settings);
     if (remote) {
       if (!remote.ok) return { ok: false, error: remote.error };
-      const result = await speakMoss(clean, remote.cfg);
+      const result = await speakMoss(clean, remote.cfg, settings.tts.speed);
       if (result.ok) this.setState("speaking");
       return result;
     }
@@ -821,7 +828,7 @@ export class VoiceService {
     const remote = remoteTtsConfig(settings);
     if (!wanted && remote) {
       if (!remote.ok) return { ok: false, error: remote.error };
-      return speakMoss(String(input?.text ?? VOICE_SAMPLE_TEXT), remote.cfg);
+      return speakMoss(String(input?.text ?? VOICE_SAMPLE_TEXT), remote.cfg, Number(input?.speed ?? settings.tts.speed));
     }
     // 通话线程只有在「加载的正是这个音色」时才能直接复用；音色不同必须走试听 worker 重建
     if (this.tts && !input?.profileId && wanted === this.ttsProfileWanted) {

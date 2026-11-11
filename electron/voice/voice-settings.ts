@@ -331,6 +331,20 @@ export function migrateSettings(raw: Partial<VoiceSettings> | undefined): { sett
   return { settings, changed };
 }
 
+/** 下发给渲染层的设置副本：远程配置只留地址/模型/音色，**永不下发明文密钥**。 */
+export function publicVoiceSettings(settings: VoiceSettings): VoiceSettings {
+  const remote: Record<string, RemoteVoiceConfig> = {};
+  for (const [id, value] of Object.entries(settings?.remote ?? {})) {
+    if (!value || typeof value !== "object") continue;
+    remote[id] = {
+      baseUrl: value.baseUrl,
+      model: value.model,
+      ...(value.voiceId ? { voiceId: value.voiceId } : {}),
+    };
+  }
+  return { ...settings, remote };
+}
+
 /** 部分写入并落盘；返回合并后的完整设置。 */
 export function saveVoiceSettings(userDataDir: string, patch: Partial<VoiceSettings>): VoiceSettings {
   const current = loadVoiceSettings(userDataDir);

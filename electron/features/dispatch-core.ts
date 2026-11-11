@@ -809,6 +809,32 @@ function dispatchMcpTools(): unknown[] {
         + "回合结束那段播报稿不受影响。用户把「语音播报」总开关关掉时本工具会被拒绝。",
       inputSchema: { type: "object", properties: {}, additionalProperties: false },
     },
+    /* ── MOSS 音色（11-11 用户令「moss live 里面的音色要让 codex 可以自己选，配套上调整工具」）──
+       ⛔ 模型不该让用户手动找音色 ID：先 list（含当前/语速/开关），再 set。 */
+    {
+      name: "moss_voice_list",
+      description: "列出 MOSS 账号可用音色（MOSS-Live 通话与 MOSS-TTS 播报共用同一套 voice_id），并返回当前音色、语速与播报开关。换音色前先调它（不要猜 id）；可用 query 按名字筛选。",
+      inputSchema: {
+        type: "object",
+        properties: { query: { type: "string", description: "可选：按音色名字筛选（模糊匹配）" } },
+        additionalProperties: false,
+      },
+    },
+    {
+      name: "moss_voice_set",
+      description: "切换 MOSS 音色（通话与播报共用），可同时调播报语速/模型/是否开启 MOSS 播报。voiceId 或 voiceName 二选一（名字重名时给更精确的名字或 id；先用 moss_voice_list 看列表）。默认会开启 MOSS 播报；语速 0.5–2.0。改完立即生效；通话中会请求实时换声（下一轮回复生效）。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          voiceId: { type: "string", description: "音色 id（moss_voice_list 返回的 id）" },
+          voiceName: { type: "string", description: "音色名字（可精确或唯一模糊匹配）" },
+          speed: { type: "number", description: "可选：播报语速 0.5–2.0（缺省保持不变）" },
+          model: { type: "string", description: "可选：TTS 模型（缺省 moss-tts-1.5-flash）" },
+          enable: { type: "boolean", description: "可选：是否开启 MOSS 播报，默认 true" },
+        },
+        additionalProperties: false,
+      },
+    },
   ];
 }
 

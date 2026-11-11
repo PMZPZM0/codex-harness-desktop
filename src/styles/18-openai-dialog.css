@@ -2078,6 +2078,7 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-moss-modal-head strong { font-size: 13px; }
 .voice-moss-modal-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
 .voice-moss-section-title { margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.voice-moss-speed { display: flex; flex-direction: column; gap: 6px; }
 
 /* ── 功能域：分类卡片（10-31 用户：「这个分类卡片展示」）── */
 .domains-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }

@@ -50,7 +50,7 @@ export type MossLiveCallbacks = {
   onDelegationCancelled?: (id: string, reason: string) => void;
 };
 
-export type MossLiveConfig = { baseUrl: string; model: string; apiKey: string };
+export type MossLiveConfig = { baseUrl: string; model: string; apiKey: string; /** 通话音色（与 MOSS-TTS 共用 voice_id；空=服务端默认） */ voiceId?: string };
 
 /** 上行麦克风 16k；下行默认 48k（官方 standard 预设）。 */
 export const MOSS_INPUT_RATE = 16000;
@@ -199,6 +199,8 @@ export class MossLiveRealtime {
         /* 先下发会话指令（长任务委派给本机 Codex），再开麦。
            ⛔ session.updated 可能不回：2.5s 兜底开麦，不能因为等配置把通话卡住。 */
         this.send({ action: "session.update", session: { instructions: SESSION_INSTRUCTIONS } });
+        // 指定音色：官方 change_voice（voice_name = 查询音色列表返回的 id），下一轮回答生效。
+        if (this.cfg.voiceId) this.send({ action: "change_voice", voice_name: this.cfg.voiceId });
         this.readyTimer = setTimeout(() => this.enableMic(), 2500);
         break;
       }
@@ -352,6 +354,14 @@ export class MossLiveRealtime {
     if (!this.attached || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     if (!samples.length) return;
     try { this.ws.send(float32ToPcm16Buffer(samples)); } catch { /* 断线由 close 统一报 */ }
+  }
+
+  /** 通话中换音色（官方 change_voice）：下一轮回答生效。 */
+  changeVoice(voiceId: string): void {
+    const id = String(voiceId ?? "").trim();
+    if (!id) return;
+    this.cfg.voiceId = id;
+    if (this.attached) this.send({ action: "change_voice", voice_name: id });
   }
 
   /**

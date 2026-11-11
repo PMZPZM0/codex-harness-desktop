@@ -16,7 +16,7 @@ import { AppSelect } from "../AppSelect";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { ToggleSwitch } from "../SettingsWidgets";
-import { Settings, playSamples } from "../VoiceSettingsSection";
+import { Settings, playSamples, VOICE_SPEED_PRESETS } from "../VoiceSettingsSection";
 import VoiceDevToolsSection from "../VoiceDevToolsSection";
 
 type Props = {
@@ -296,6 +296,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       const result: any = await window.codex.voiceMossPreview({
         model: mossTtsDraft.model.trim(),
         voiceId,
+        speed: settings.tts.speed,
         text: "你好，我是你的语音助手，这是 MOSS 音色试听。",
       });
       if (!result?.ok) { onNotice(result?.error ?? "试听失败"); return; }
@@ -310,7 +311,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       previewCtlRef.current = null;
       setPreviewing(false);
     }
-  }, [mossTtsDraft.model, mossTtsDraft.voiceId, onNotice, savedMossTts?.voiceId]);
+  }, [mossTtsDraft.model, mossTtsDraft.voiceId, onNotice, savedMossTts?.voiceId, settings.tts.speed]);
 
   /* ⛔ 11-01 用户实测「取消不了」：主进程早就有 `voice:tts-pack-cancel`（abort 掉下载用的
      AbortController），但界面从来没接 —— 卡片上只有「下载中…」没有取消入口；而上面那张
@@ -557,6 +558,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             <span>实时通话</span>
             <span>{moss?.model || "moss-live-1.0"}</span>
             <span>播报：{ttsRemote ? "MOSS" : "本地"}</span>
+            <span>{settings.tts.speed.toFixed(2)}×</span>
             {(savedMossTts?.voiceId || mossTtsDraft.voiceId) ? (
               <span>{mossVoiceName(savedMossTts?.voiceId || mossTtsDraft.voiceId)}</span>
             ) : null}
@@ -647,7 +649,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                 <div className="voice-remote-toggle">
                   <div>
                     <strong>用 MOSS 朗读回复</strong>
-                    <span>开启后 Codex 的播报与试听改用 MOSS-TTS；实时通话不受影响。克隆音色仍优先本地。</span>
+                    <span>开启后 Codex 的播报与试听改用 MOSS-TTS；实时通话不受影响。音色与通话共用。克隆音色仍优先本地。</span>
                   </div>
                   <ToggleSwitch checked={ttsRemote} label="用 MOSS 朗读回复" onChange={(next) => void setTtsRemote(next)} />
                 </div>
@@ -656,10 +658,39 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                     <input value={mossTtsDraft.model} placeholder="moss-tts-1.5-flash"
                       onChange={(e) => setMossTtsDraft((d) => ({ ...d, model: e.target.value }))} />
                   </label>
-                  <label>音色 ID
+                  <label>音色 ID（通话 / 播报共用）
                     <input value={mossTtsDraft.voiceId} placeholder="点「查询音色」选择一个"
                       onChange={(e) => setMossTtsDraft((d) => ({ ...d, voiceId: e.target.value }))} />
                   </label>
+                  {/* 11-11 用户令「MOSS 没有播报速度调整，加一个」：与全局语速共用 tts.speed（单一真相源）。 */}
+                  <div className="voice-moss-speed">
+                    <div className="voice-engine-meta">
+                      <span>播报语速</span>
+                      <span>{settings.tts.speed.toFixed(2)}×</span>
+                    </div>
+                    <div className="voice-speed-presets" role="group" aria-label="MOSS 播报语速">
+                      {VOICE_SPEED_PRESETS.map((speed) => (
+                        <button
+                          key={speed}
+                          type="button"
+                          className={`voice-speed-chip${Math.abs(settings.tts.speed - speed) < 0.001 ? " is-active" : ""}`}
+                          onClick={() => void apply({ tts: { ...settings.tts, speed } })}
+                        >
+                          {speed}×
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      className="voice-range"
+                      type="range"
+                      min={0.5}
+                      max={2.0}
+                      step={0.05}
+                      value={settings.tts.speed}
+                      onChange={(e) => void apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
+                    />
+                    <div className="voice-card-hint">与上方「语速」是同一个值（通话 / 本地播报 / MOSS 播报共用）。</div>
+                  </div>
                   {mossVoices.length > 0 && (
                     <label>从列表选择
                       <AppSelect

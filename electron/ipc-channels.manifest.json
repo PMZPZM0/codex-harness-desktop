@@ -5191,12 +5191,12 @@
     {
       "name": "voiceMossPreview",
       "channel": "voice:moss-preview",
-      "paramsImpl": "input?: { model?: string; voiceId?: string; text?: string }",
-      "paramsDecl": "input?: { model?: string; voiceId?: string; text?: string }",
+      "paramsImpl": "input?: { model?: string; voiceId?: string; text?: string; speed?: number }",
+      "paramsDecl": "input?: { model?: string; voiceId?: string; text?: string; speed?: number }",
       "returns": "Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": "11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报）"
+      "note": "11-11 MOSS-TTS 音色试听（按草稿 model/voiceId/speed 合成，不要求先开启播报）"
     },
     {
       "name": "voiceDictationFinish",

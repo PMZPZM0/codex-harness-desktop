@@ -1263,7 +1263,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "状态 IPC 只回 hasKey/末四位，不回明文密钥");
   ok(/publicVoiceSettings/.test(misc) && /settings: publicVoiceSettings\(settings\)/.test(misc)
     && /const safe = publicVoiceSettings\(next\)/.test(misc) && /settings: safe/.test(misc)
-    && /voiceId: \(value as any\)\.voiceId/.test(misc) && !/apiKey: \(value as any\)\.apiKey/.test(misc),
+    && /export function publicVoiceSettings/.test(vsettings) && /value\.voiceId/.test(vsettings)
+    && !/apiKey: value\.apiKey/.test(vsettings),
     "settings-get / settings-set / settings 广播脱敏：只回地址/模型/音色，⛔ 不回远程 API Key");
   ok(/moss\?\.hasKey/.test(enginesTsx) && /\.\.\.\(apiKey \? \{ apiKey \} : \{\}\)/.test(enginesTsx),
     "保存时留空 = 沿用已存密钥（渲染层不持有密钥，也不把它写回 patch）");
@@ -1325,8 +1326,25 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   const mossTtsSrc = read("electron/voice/moss-tts.ts");
   ok(/speakMoss/.test(mossTtsSrc) && /previewMossVoice/.test(mossTtsSrc)
     && /MOSS_TTS_DEFAULT_URL/.test(mossTtsSrc) && /voice_id: cfg\.voiceId/.test(mossTtsSrc)
-    && /decodeWavPcm16Mono/.test(mossTtsSrc) && /speakMoss\(/.test(svcSrc),
-    "MOSS-TTS 播报：官方 voice_id + WAV 解码（独立模块），播报与试听共用同一条远端合成");
+    && /decodeWavPcm16Mono/.test(mossTtsSrc) && /expected_duration_sec/.test(mossTtsSrc)
+    && /speakMoss\(/.test(svcSrc),
+    "MOSS-TTS 播报：官方 voice_id + WAV 解码（独立模块），语速用 expected_duration_sec 实现");
+  ok(/播报语速/.test(enginesTsx) && /VOICE_SPEED_PRESETS/.test(enginesTsx)
+    && /speed: settings\.tts\.speed/.test(enginesTsx),
+    "MOSS 配置弹窗有播报语速（与全局 tts.speed 同源），试听也按当前语速合成");
+  const dispatchCore = read("electron/features/dispatch-core.ts");
+  const dispatchRpc = read("electron/features/dispatch-rpc.ts");
+  const mossTool = read("electron/features/moss-voice-tool.ts");
+  const gatewayDesc = read("src/features/app-state/parts/part08/01-seg.tsx");
+  ok(/name: "moss_voice_list"/.test(dispatchCore) && /name: "moss_voice_set"/.test(dispatchCore)
+    && /name === "moss_voice_list"/.test(dispatchRpc) && /name === "moss_voice_set"/.test(dispatchRpc)
+    && /mossVoiceList/.test(mossTool) && /mossVoiceSet/.test(mossTool)
+    && /moss_voice_list \/ moss_voice_set/.test(gatewayDesc),
+    "Codex 可自己选 MOSS 音色：list/set 工具已定义、已分发、并在能力网关描述里点名");
+  ok(/change_voice/.test(mossClient) && /setRemoteVoice/.test(svcSrc),
+    "MOSS 通话音色：建会话下发 change_voice，工具可在通话中实时换声");
+  ok(/publicVoiceSettings\(next\)/.test(mossTool) && !/apiKey/.test(mossTool),
+    "音色工具改设置后广播脱敏（⛔ 不把 API Key 推给渲染层）");
   ok(/voice-moss-modal/.test(enginesTsx) && /createPortal/.test(enginesTsx)
     && /voiceMossPreview/.test(enginesTsx) && /试听音色/.test(enginesTsx),
     "MOSS 卡与本地引擎卡同构：配置收进弹窗 + 启用/停用 + 音色直接试听");
