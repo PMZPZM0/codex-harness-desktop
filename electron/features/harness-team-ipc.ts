@@ -732,13 +732,22 @@ export async function reconcileInterruptedDispatches(): Promise<void> {
         .map((id) => id.slice("team-dispatch:".length))
         .filter((runId) => runId && !produced.has(runId)))];
       if (!pendingRuns.length) continue;
+      /* ⛔ 光说"有 N 件没跑完"没用 —— 用户说「继续」时主理人得知道**缺哪几件**，
+         才可能只补没交回的、不把已交回的重跑一遍。派单消息本身就是清单（`@名字：任务…`）。 */
+      const pendingLines = pendingRuns
+        .map((runId) => recent.find((row) => String(row.id ?? "") === `team-dispatch:${runId}`))
+        .map((row) => String((row as { text?: string })?.text ?? "").replace(/\s+/g, " ").trim().slice(0, 60))
+        .filter(Boolean)
+        .map((line) => `· ${line}`);
       await appendMessageTo(g.id, {
         id: `sys-interrupted:${Date.now()}:${g.id}`,
         authorId: "system",
         authorKind: "bot",
         senderKind: "system",
         threadId: groupThreadId(g.id),
-        text: `上一轮有 ${pendingRuns.length} 件派活没跑完（应用重启把它打断了）。发一句「继续」，我就接着安排。`,
+        text: `上一轮有 ${pendingRuns.length} 件派活没跑完（应用重启把它打断了）：\n`
+          + `${pendingLines.join("\n")}\n`
+          + `发一句「继续」，只重派上面这几件（已交回的不会再跑）。`,
         at: Date.now(),
       }).catch(() => undefined);
     }
