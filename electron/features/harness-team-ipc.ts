@@ -1605,6 +1605,10 @@ async function runDispatchRounds(
           authorId: speakerId,
           authorKind: "bot",
           senderKind: "member",
+          /* ⛔ 11-12：群聊 @ 链同样要写下游收件人 —— 否则成员交回后群里看不到"交给谁"，
+             主理人也未必被叫醒。⛔ 主理人自己那两条 id（整团槽 / 合成 id）都不标。 */
+          ...(isTeamGroup && leadAuthorId && speakerId !== leadAuthorId
+            && speakerId !== String(teamSlot?.id ?? "") ? { handoffTo: leadAuthorId } : {}),
           threadId,
           text: outputForStore || "（没有返回文本内容）",
           via: caller ? { memberId: caller.id, name: caller.name } : null,

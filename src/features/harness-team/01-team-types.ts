@@ -131,6 +131,8 @@ export type GroupMessageRow = {
   card: unknown;
   /** @ 了谁（成员 id） */
   mentions: string[];
+  /** ⛔ 11-12：这条产出**交回给谁**（下游收件人，通常是团主理人）；渲染层显示「交回 @X」 */
+  handoffTo?: string;
   /** 被哪个伙伴叫来的（伙伴之间 @ 沟通）；null = 用户派的 */
   via?: { memberId: string; name: string } | null;
   /** 这一回合的 token 用量（11-08：与主对话页脚一致；老日志为 null） */

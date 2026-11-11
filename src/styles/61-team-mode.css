@@ -2425,6 +2425,17 @@
   font-style: normal;
   white-space: nowrap;
 }
+/* ⛔ 11-12：成员交回给主理人的下游标记。与 via（上游「由 X 叫来」）方向相反，
+   颜色也区分开：via 用 accent 软底，交回用 --link 描边（身份/动作，不是普通标签）。 */
+.team-msg__handoff {
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--link) 34%, transparent);
+  color: var(--link);
+  font-size: 10.5px;
+  font-style: normal;
+  white-space: nowrap;
+}
 /* 真实发送者标记（11-07 用户令：「准确区分每条消息是上级发送还是用户发送」）。
    合成来源（定时任务 / 系统）**用它代替名字**（真机截图：名字 + 徽标 = 「定时任务 定时任务」重复），
    所以它得长得像名字位：字重稍强、行内高度与 <strong> 对齐；⛔ 不改 authorKind

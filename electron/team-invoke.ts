@@ -349,6 +349,10 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
         void appendMemberOutputToGroup(boundGroup, {
           id: `team-run:${run.runId}`,
           authorId: teamAuthorIdOf(team.teamId, member.id),
+          /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，主代理能知道他跑完了？」
+             产出原来只是一段正文落群，下游收件人**哪里都没写**。⇒ 结构化记下交回给主理人，
+             群里名字行显示「交回 @主理人」，同时这也是宿主回喂的那个对象。 */
+          handoffTo: teamAuthorIdOf(String(team.teamId ?? ""), String(team.lead?.id ?? "")),
           authorKind: "bot",
           senderKind: "member",
           threadId: memberThreadId,

@@ -1708,6 +1708,19 @@ export function TeamGroupView({
                             );
                           })()}
                           {isBot && role && <em className="team-msg__role">{role}</em>}
+                          {/* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理」。
+                             产出落群时带了结构化 handoffTo，这里把下游收件人显式画出来 ——
+                             ⛔ 不塞进正文（正文由 TurnView 从引擎回合取，塞了也看不见）。 */}
+                          {row.handoffTo && (() => {
+                            const toId = String(row.handoffTo);
+                            const toName = nameOf(toId);
+                            if (!toName || toName === toId || toName === authorName) return null;
+                            return (
+                              <em className="team-msg__handoff" title="这一环交回给它验收 / 推进">
+                                交回 @{toName}
+                              </em>
+                            );
+                          })()}
                           {isBot && running && <em className="team-msg__role is-live">处理中</em>}
                           {/* ⛔⛔ 11-07 用户令：「准确区分每条消息是上级发送还是用户发送」。
                               定时任务以前 authorKind=human ⇒ 在群里显示成「我」说的话；

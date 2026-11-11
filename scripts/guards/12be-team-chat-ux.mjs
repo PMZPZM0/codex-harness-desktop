@@ -535,6 +535,14 @@ const catalog = [
       && !/const stillRunning = teamRunStore\.activeRunList\(\)/.test(teamIpcSrc)
       && !/const membersStillRunning = teamRunStore\.activeRunList\(\)/.test(teamIpcSrc),
       "接力不串群：排片跑完/成员交回必回交主理人，⛔ 不再按 teamId 判断有没有人在跑");
+    /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，主代理能知道他跑完了？」 */
+    ok(/handoffTo: teamAuthorIdOf/.test(read("electron/team-invoke.ts"))
+      && /handoffTo: leadAuthorId/.test(teamIpcSrc)
+      && /handoffTo: String\(entry/.test(read("src/lib/team-models.mjs"))
+      && /team-msg__handoff/.test(hostView)
+      && /run\.leadThreadId/.test(fallback)
+      && !/activeRunList\(\)\.some\(\(run\) => String\(run\.teamId/.test(fallback),
+      "成员交回显式 @ 主理人（结构化 handoffTo + 名字行标签），回喂按 leadThreadId 不串群");
     /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
        判据必须排除提问/询问，⛔ 不能只看字数。 */
     ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)

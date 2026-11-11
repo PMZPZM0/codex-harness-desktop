@@ -263,7 +263,13 @@ export async function handleTeamToolCall(deps: {
       if (!gid) return;
       /* ⛔⛔ 11-12 审查修：`settled` 原来发在"还有人在跑"判断**之前** ⇒ 板块标题立刻变
          「已收口」，而成员还在跑（用户看到"收口了但人还在写"）。⇒ 只有整团真的没人跑了才收口。 */
-      const stillRunning = teamRunStore.activeRunList().some((run) => String(run.teamId ?? "") === teamId);
+      /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，这主代理能知道他跑完了？」
+         原来这里按 `teamId` 判"还有人在跑" ⇒ **同一个专家团被多个群同时调用时**，
+         A 群这批明明跑完了，却因为 B 群在跑同一个团而 `return` —— 群里看不到回交，
+         主理人也真的不会被叫醒。⇒ 改用 `leadThreadId`（一个群的主理人是同一条会话），
+         精确到"这个主理人还有没有别的批次在跑"，不再跨群串。 */
+      const stillRunning = teamRunStore.activeRunList()
+        .some((run) => String(run.leadThreadId ?? "") === String(threadId));
       if (stillRunning) return;
       emitAsync("settled", { done, failed });
       /* ⛔⛔ 11-12 「主代理一直刷屏」的第二个源头：**每批完成都回喂一次**，主理人每批都说一段

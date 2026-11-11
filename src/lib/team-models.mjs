@@ -1004,6 +1004,10 @@ export function normalizeGroupMessage(entry) {
     card: entry?.card ?? null,
     /* @ 了谁（成员 id 数组）：飞书消息里 @ 是高亮 mention，不是普通文本。
        ⛔ 只留群里真实存在的 id，别把已移除的伙伴留在消息里。 */
+    /* ⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理」——
+       成员产出落群时记下**下游收件人**（主理人），渲染层在名字行显示「交回 @X」。
+       ⛔ 不写进正文：产出正文由 TurnView 从引擎回合取，塞进去用户根本看不见。 */
+    handoffTo: String(entry?.handoffTo ?? "").trim() || undefined,
     mentions: Array.isArray(entry?.mentions) ? entry.mentions.map(String).filter(Boolean) : [],
     /* 这条回复是**被哪个伙伴叫来的**（11-06 伙伴之间 @ 沟通）：null = 用户派的。
        ⛔ 只存 id + 名字，不存整条消息；渲染层据此标「由 X 叫来」。 */
