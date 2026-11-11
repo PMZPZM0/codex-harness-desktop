@@ -140,7 +140,9 @@ export async function handleTeamToolCall(deps: {
     const body = ["【计划】" + goal, ...steps.map((step: Record<string, unknown>, i: number) =>
       String(i + 1) + ". @" + String(step?.memberName ?? "") + "：" + String(step?.task ?? ""))].join("\n");
     await appendMemberOutputToGroup(gid, {
-      id: "team-plan:" + String(Date.now()),
+      /* ⛔ 审查修：只有一个 Date.now() 的话，同一毫秒两次 team_plan 会撞 id
+         （appendGroupMessage 是"同 id 覆盖"）⇒ 后一份计划把前一份吞掉。加随机后缀。 */
+      id: "team-plan:" + String(Date.now()) + ":" + Math.random().toString(36).slice(2, 6),
       authorId: leadAuthor,
       authorKind: "bot",
       senderKind: "member",

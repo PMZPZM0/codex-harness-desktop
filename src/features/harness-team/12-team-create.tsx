@@ -243,8 +243,11 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
             <button
               type="button"
               className="is-primary"
-              onClick={() => { onCreated?.(done.id); onClose(); }}
-            >进群</button>
+              /* ⛔ 审查修：`create()` 的 id 来自 `res.group?.id`，后端 ok 但没带 group 时会是空串 ——
+                 原来这里照样 onCreated("") ⇒ 主列选中一个不存在的群（空白）。没有 id 就只关窗，
+                 让用户从左侧列表里点它。 */
+              onClick={() => { if (done.id) onCreated?.(done.id); onClose(); }}
+            >{done.id ? "进群" : "完成"}</button>
           </footer>
         </div>
       </div>
