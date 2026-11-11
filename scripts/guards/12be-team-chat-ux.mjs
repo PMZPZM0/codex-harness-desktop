@@ -515,6 +515,12 @@ const catalog = [
       && !/\.team-msg \{[^}]*height:/.test(teamCss)
       && /prefers-reduced-motion[\s\S]{0,120}\.team-msg \{ animation: none; \}/.test(teamCss),
       "群消息入场是「出字」而非硬闪：opacity+位移+正文自上而下揭开，⛔ 不触发布局，且可降级");
+    /* ⛔⛔ 11-12 用户截图「这样没有后续了呀」：派活批次只在内存里，进程一退就没人收尾
+       ⇒ 启动必须对账（补群消息说明），⛔ 但不许自动重派（幂等缓存是内存的，重启后失效会重复烧钱）。 */
+    ok(/export async function reconcileInterruptedDispatches/.test(teamIpcSrc)
+      && /team-dispatch:/.test(teamIpcSrc) && /team-run:/.test(teamIpcSrc)
+      && /reconcileInterruptedDispatches\(\)/.test(read("electron/features/boot.ts")),
+      "启动对账被打断的派活（群里说明 + ⛔ 不自动重派）");
     /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
        判据必须排除提问/询问，⛔ 不能只看字数。 */
     ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)

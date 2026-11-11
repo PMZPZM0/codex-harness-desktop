@@ -701,6 +701,50 @@ function groupLeadSurfaceOf(team: { teamId: string } & Record<string, any>): unk
  *  ⛔ 必须在**渲染层 resume 之前**调用（boot 在 createWindow 前调）—— 会话一旦被 spawn，
  *     再改首行本次不生效（下次引擎重启才认），模型就会拿着旧工具面调 → `unsupported call`。
  *  ⛔ 失败静默：预升级不成功也不该挡住启动；首次派活时 `ensureTalkThread` 还会再试一次。 */
+/**
+ * ⛔⛔ 11-12 用户截图「这样没有后续了呀」（群里停在「交接 2/3 · 等 1 人」再没动静）。
+ *
+ * 根因不是模型不干活，而是**派活批次只活在内存里**：`void (async () => Promise.allSettled(...))()`
+ * 那个回调随进程退出消失 ⇒ 第 3 位成员永远等不到、也没人把话头交回主理人。
+ * （这次是我为了上样式连着重启，把正在跑的成员打断了 —— 但结构性缺口在这里：
+ *   以后任何一次重启/崩溃都会留下这种"永远等 1 人"的群。）
+ *
+ * ⇒ 启动时对账一次：最近 2 小时内有 `team-dispatch:<runId>`，但没有对应的 `team-run:<runId>` 产出
+ *   ⇒ 判定"被重启打断"，在群里补一条系统说明。
+ * ⛔ **不自动重派**：幂等缓存（recentDispatch）在内存里，重启后已失效，自动重派会重复烧钱；
+ *   由用户一句「继续」触发，可控。
+ */
+export async function reconcileInterruptedDispatches(): Promise<void> {
+  try {
+    const store = readStore();
+    const since = Date.now() - 2 * 60 * 60 * 1000;
+    for (const g of store.groups ?? []) {
+      const rows = (store.messages?.[g.id] ?? []) as Array<{ id?: string; at?: number }>;
+      const recent = rows.filter((row) => Number(row.at ?? 0) >= since);
+      if (!recent.length) continue;
+      const produced = new Set(recent
+        .map((row) => String(row.id ?? ""))
+        .filter((id) => id.startsWith("team-run:"))
+        .map((id) => id.slice("team-run:".length)));
+      const pendingRuns = [...new Set(recent
+        .map((row) => String(row.id ?? ""))
+        .filter((id) => id.startsWith("team-dispatch:"))
+        .map((id) => id.slice("team-dispatch:".length))
+        .filter((runId) => runId && !produced.has(runId)))];
+      if (!pendingRuns.length) continue;
+      await appendMessageTo(g.id, {
+        id: `sys-interrupted:${Date.now()}:${g.id}`,
+        authorId: "system",
+        authorKind: "bot",
+        senderKind: "system",
+        threadId: groupThreadId(g.id),
+        text: `上一轮有 ${pendingRuns.length} 件派活没跑完（应用重启把它打断了）。发一句「继续」，我就接着安排。`,
+        at: Date.now(),
+      }).catch(() => undefined);
+    }
+  } catch { /* 对账失败不该挡住启动 */ }
+}
+
 export async function upgradeGroupLeadSurfaces(): Promise<void> {
   try {
     if (!codexHome) return;
