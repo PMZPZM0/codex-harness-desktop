@@ -101,6 +101,7 @@ function looksLikeFilePath(candidate: string): boolean {
   return false;
 }
 
+/** 从 markdown 正文里抽出文件路径（含反引号 / 裸路径两种写法），去重后交给内联文件卡解析。 */
 export function extractFilePathsFromMarkdown(text: string): { path: string; prefix: string }[] {
   const seen = new Set<string>();
   const out: { path: string; prefix: string }[] = [];
