@@ -25,7 +25,9 @@ export async function run() {
      项目 ⋯ 菜单 portal 到 body、fixed 向行右侧弹出；右/下空间不够按视口钳制（整体上移）。
      ⛔ 旧形态（absolute 挂 head + is-up 翻转）被 .thread-list 的 overflow 裁掉，
      且翻转参照 window 而非滚动容器底边 ⇒ 靠近侧栏底时永远不翻（用户两次截图点名）。 */
-  (/createPortal\([\s\S]{0,200}?className="project-menu"/.test(side180)
+  /* ⛔ 11-12：createPortal 里现在先渲染「归属箭头」再渲染菜单 ⇒ 窗口从 200 放到 600
+     （判据仍是"portal 到 body 且渲的是 .project-menu"，⛔ 不是放宽语义）。 */
+  (/createPortal\([\s\S]{0,600}?className="project-menu"/.test(side180)
     && /document\.querySelector\("\.sidebar"\)\?\.getBoundingClientRect\(\)/.test(side180)
     && /const left = Math\.max\(8, Math\.min\(\(side \? side\.right : rect\.right\) \+ 6, window\.innerWidth - width - 8\)\)/.test(side180)
     && /const top = Math\.max\(8, Math\.min\(rect\.top - 4, window\.innerHeight - height - 8\)\)/.test(side180)

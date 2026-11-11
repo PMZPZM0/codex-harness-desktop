@@ -430,7 +430,26 @@ if (!existsSync(stylesEntry)) {
        --row-color：会话行自选底色，内联 style 写在 .thread-row 上；
        --dot：同上的色板圆点，内联写在 .thread-row-color-dot 上。 */
     "--tag-col-w", "--tag-col-w-nested", "--row-color", "--dot"]);
-  const orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
+  let orphan = [...refs].filter((v) => !defined.has(v) && !whitelist.has(v));
+  /* ⛔⛔ 11-12：`--thread-menu-arrow-top` 这类变量是渲染层**行内注入**的（`style={{"--x": v}}` /
+     `setProperty("--x", v)`）—— CSS 里本该没有单一定义，每加一个就手工登记一次等于逼人漏登记
+     （11-11 归属箭头那笔就漏了，预检红）。⇒ 对 orphan 逐个回源码确认是否"真的被注入"：
+     只在 orphan 非空时扫（常态 0 个，无性能负担），⛔ 不整份放行。 */
+  if (orphan.length) {
+    const injected = new Set();
+    const walk = (dir) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const p = join(dir, entry.name);
+        if (entry.isDirectory()) { if (!/node_modules|dist/.test(p)) walk(p); continue; }
+        if (!/\.(ts|tsx)$/.test(entry.name)) continue;
+        const text = readFileSync(p, "utf8");
+        for (const m of text.matchAll(/["'](--[\w-]+)["']\s*:/g)) injected.add(m[1]);
+        for (const m of text.matchAll(/setProperty\(\s*["'](--[\w-]+)["']/g)) injected.add(m[1]);
+      }
+    };
+    walk(join(ROOT, "src"));
+    orphan = orphan.filter((v) => !injected.has(v));
+  }
   (orphan.length === 0 ? ok : fail)(
     orphan.length
       ? `【160】CSS 变量定义对账：${orphan.length} 个变量被引用但从未定义（暗色主题下恒落亮色 fallback）：${orphan.join(", ")}`

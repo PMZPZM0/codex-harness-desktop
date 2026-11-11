@@ -411,7 +411,10 @@ export async function run() {
       (badTernary === 0 ? ok : fail)(`【47】没有残留「只看 http、其余当本地路径」的旧写法（实得 ${badTernary} 处，已排除注释）`);
       const displaySites = (appSrc46.match(/imageDisplaySrc\(/g) || []).length;
       (displaySites >= 3 ? ok : fail)(`【47】消息图片 / 灯箱 / 悬停预览都走 imageDisplaySrc（${displaySites} 处，含定义 1）`);
-      (/function imageUrl\(path: string\) \{\s*\r?\n\s*\/\/[^\n]*\r?\n\s*return localImageUrl\(path\);/.test(appSrc46)
+      /* ⛔ 11-12：imageUrl 已从 App.tsx 搬进 `src/lib/image-url.ts`（22:26 那笔图片路径归一）。
+         契约没变：**转发到纯函数**（可离线断言），所以判据改成读新模块 —— ⛔ 不是删断言。 */
+      const imageUrlSrc = (() => { try { return readFileSync(join(ROOT, "src", "lib", "image-url.ts"), "utf8"); } catch { return ""; } })();
+      (/export function imageUrl\(path: string\)\s*\{[\s\S]{0,160}?return imageDisplaySrc\(path\);/.test(imageUrlSrc)
         ? ok : fail)("【47】imageUrl 转发到纯函数（行为不变、可离线断言）");
       // ③ 组件必须是模块级的（内联箭头函数会每次 render 换身份 → 图片子树重挂、预览闪烁）
       (/^function MessageAttachChip\(/m.test(appSrc46) ? ok : fail)("【47】内联附件 chip 是模块级组件（不在 render 里现造）");

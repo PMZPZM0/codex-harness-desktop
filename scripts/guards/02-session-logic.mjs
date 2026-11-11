@@ -1754,7 +1754,9 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
        会话 ⋯ 菜单原用 right 锚（右缘贴按钮 ⇒ 菜单向左展开压进侧栏），改 left 锚 = 侧栏右缘 + 视口钳制。 */
     (/const side = document\.querySelector\("\.sidebar"\)\?\.getBoundingClientRect\(\)/.test(rowsSrc285)
       && /left: Math\.max\(8, Math\.min\(\(side \? side\.right : rect\.right\) \+ 6, window\.innerWidth - menuWidth - 8\)\)/.test(rowsSrc285)
-      && /style=\{\{ top: bag\.threadRowMenu\.top, left: bag\.threadRowMenu\.left \}\}/.test(rowsSrc285) ? ok : fail)(
+      /* ⛔ 11-12：style 里现在还会注入 `--thread-menu-arrow-top`（归属箭头指向触发点）——
+         判据看的是"**锚还是 top/left 这两个值**"，允许后面追加行内自定义属性。 */
+      && /style=\{\{ top: bag\.threadRowMenu\.top, left: bag\.threadRowMenu\.left/.test(rowsSrc285) ? ok : fail)(
       "【285】会话 ⋯ 菜单向侧栏右边弹出（left 锚 + 视口钳制，与项目菜单同款；11-08 用户令）"
     );
     (!/right: Math\.max\(8, window\.innerWidth - rect\.right\)/.test(rowsSrc285) && !/right: bag\.threadRowMenu\.right/.test(rowsSrc285) ? ok : fail)(
