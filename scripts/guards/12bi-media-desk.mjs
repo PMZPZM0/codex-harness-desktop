@@ -116,6 +116,8 @@ export async function run() {
       && /--dsw-alias-bg-mask-1: rgba\(/.test(vendorPage) && /@media \(prefers-color-scheme: dark\)/.test(vendorPage),
       "页面底色/文字色/弹窗遮罩都有真值（⛔ 透明遮罩 = 弹窗看不见但整页点不动）");
   }
+  ok(/\.md-root \.md-style-grid \{[^}]*repeat\(auto-fit, minmax\(260px, 1fr\)\) !important/.test(read("resources/media-desk/index.html")),
+    "风格页网格自适应（auto-fit：只有 2 张卡的分类铺满整行，不留空列）");
   ok(/dsh-media-desk 2\.6\.2/.test(read("THIRD_PARTY_NOTICES.md")) && /woniuniuniu\/dsh-media-desk/.test(read("THIRD_PARTY_NOTICES.md")),
     "第三方声明登记了随包的 dsh-media-desk（MIT + 上游地址）");
   ok(!/safeStorage/.test(codeOnly(ipc)) && !/safeStorage/.test(codeOnly(embed)) && /secure/.test(embed),

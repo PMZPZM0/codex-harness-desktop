@@ -2222,6 +2222,15 @@ const CHECKS = [
         Boolean(dlg && dlg.mask !== "rgba(0, 0, 0, 0)" && dlg.pe !== "none" && dlg.panel && dlg.panel !== "rgba(0, 0, 0, 0)"),
         JSON.stringify(dlg));
 
+      /* 风格页网格自适应（11-11 用户「排版做好自适应，这么大空白呢」） */
+      await frameEval(`(function(){ const b=[...document.querySelectorAll(".md-nav button")].find(function(x){ return (x.textContent||"").trim()==="风格"; }); b&&b.click(); return 1; })()`);
+      await wait(700);
+      const grid = JSON.parse(await frameEval(`(function(){ const g=[...document.querySelectorAll(".md-style-grid")].find(function(x){ return x.children.length>=2; }); if(!g) return JSON.stringify(null); const r=g.getBoundingClientRect(); const kids=[...g.children].map(function(c){ return c.getBoundingClientRect().width; }); return JSON.stringify({ w:Math.round(r.width), kids:kids.map(Math.round), cols:getComputedStyle(g).gridTemplateColumns }); })()`) ?? "null");
+      h.check("⑬ 风格页网格自适应（2 张卡的分类铺满整行、不留空列）",
+        Boolean(grid && grid.kids.length === 2 && grid.kids.every((w) => w >= grid.w / 2 - 12)),
+        JSON.stringify(grid));
+      await frameEval(`(function(){ const b=[...document.querySelectorAll(".md-nav button")].find(function(x){ return (x.textContent||"").trim()==="灵感"; }); b&&b.click(); return 1; })()`);
+
       /* 设置页入口已撤（11-11 用户令） */
       await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
       await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });

@@ -70,6 +70,9 @@
     overflow: hidden;
   }
   #md-fatal { padding: 24px; font: 13px/1.6 var(--dsw-font-family); color: var(--dsw-alias-danger); white-space: pre-wrap; }
+  /* 11-11 用户「排版做好自适应，这么大空白呢」：原版 .md-style-grid 用 auto-fill，
+     分类只有 2 张卡时第 3 列整列留空 —— 改 auto-fit：卡少的分类自动铺满整行，窄窗自动降列。 */
+  .md-root .md-style-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important; }
 </style>
 </head>
 <body>
