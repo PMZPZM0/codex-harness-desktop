@@ -387,8 +387,12 @@ const catalog = [
        执行端权限早就按 dispatchOnly 定好（scheduler_save / knowledge_add 对群聊会话放行），
        缺的只是工具面这根线。⛔ 成员不给（每个成员都放开写知识库 = 权限面失控），
        而且文案必须按 `me.harnessGateway` 分叉：没挂的人要说"定时任务不在这儿建"。 */
+    /* ⛔ 11-12：工具面里现在还插了 team_plan / team_status ⇒ 判据改为"同一处 withStepParam 里
+       同时含调度两件 + 能力网关"（⛔ 不再逐字匹配整行数组，否则每加一个工具就红一次）。 */
     ok(/buildDelegateHarnessTool/.test(dispatch)
-      && /withStepParam\(\[buildTeamTools\(groupTeam\), buildTeamPhaseTool\(groupTeam\), buildDelegateHarnessTool\(\)\]\.map\(groupAsyncToolCopy\)\)/.test(dispatch)
+      && /withStepParam\(\[buildTeamTools\(groupTeam\)/.test(dispatch)
+      && /buildTeamPhaseTool\(groupTeam\)/.test(dispatch)
+      && /buildDelegateHarnessTool\(\)/.test(dispatch)
       && /harness_tools/.test(dispatch)
       && /harnessGateway: true/.test(dispatch)
       && /me\.harnessGateway/.test(talk) && /定时任务不在你这儿建/.test(talk),
@@ -463,6 +467,24 @@ const catalog = [
       && /export function recentGroupMessages/.test(bridgeSrc)
       && /setTeamGroupReader\(/.test(teamIpcSrc),
       "成员开跑时拿到团队整体（名册含擅长 + 负责人最近的计划），⛔ 不是只给一句任务");
+    /* ⛔⛔ 11-12 用户：「如果还要我指定让他派哪个人干嘛，那就是废物，自己成员都不了解？」
+       「成员名册+能力清单」⇒ 名册必须带"擅长"，且主理人与成员读**同一份**口径。 */
+    const toolsSrc = codeOnly(read("electron/expert-teams/06-team-tools.ts"));
+    ok(/export function memberRosterLines/.test(toolsSrc)
+      && /擅长：/.test(toolsSrc)
+      && /memberRosterLines\(team, \{ withLead: true \}\)/.test(toolsSrc)
+      && /memberRosterLines\(team as never, \{ withLead: true, selfId: memberId \}\)/.test(invokeSrc)
+      && /派谁由你自己判断/.test(codeOnly(read("electron/features/group-talk/03-talk.ts"))),
+      "名册=能力清单（含擅长）且一处口径；派谁由主理人自己判断，⛔ 不许问用户");
+    /* ⛔⛔ 11-12 用户：「你给他们设计好流程，配套好工具」。
+       流程必须落到工具：计划 → team_plan（落成群消息）；进度 → team_status（读群事实）。 */
+    ok(/export function buildTeamPlanTool/.test(toolsSrc)
+      && /export function buildTeamStatusTool/.test(toolsSrc)
+      && /TEAM_TOOL_PLAN/.test(fallback) && /TEAM_TOOL_STATUS/.test(fallback)
+      && /"team-plan:"/.test(fallback)
+      && /buildTeamPlanTool\(\)/.test(codeOnly(read("electron/features/harness-team-ipc.ts")))
+      && /buildTeamStatusTool\(\)/.test(codeOnly(read("electron/features/harness-team-ipc.ts"))),
+      "流程配套工具：team_plan 发计划进群、team_status 查进度，且都挂在主理人工具面");
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)

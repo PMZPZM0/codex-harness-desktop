@@ -6,11 +6,38 @@ import type { ExpertTeamConfig } from "./01-team-types";
 // ─────────────────────────────────────────────────────────────
 // 团队会话上下文构建（注入主理人会话）
 // ─────────────────────────────────────────────────────────────
-/** 构建主理人的系统提示：团队组织 + 成员清单 + SOP + 铁律 */
-export function buildTeamSystemPrompt(team: ExpertTeamConfig): string {
-  const memberList = team.members
-    .map((m) => `- ${m.name}（${m.id}）${m.profession.zh}：${m.description}`)
+/**
+ * ⛔⛔ 11-12 用户：「如果还要我指定让他派哪个人干嘛，那就是废物，自己成员都不了解？」
+ *   「成员名册+能力清单」。
+ *
+ * 主理人要能**自己点将**，前提是名册里写着"他擅长什么、能交出什么"，而不是只有一个花名。
+ * ⛔ 一处口径：主理人的系统提示词与成员开跑时的上下文都读这一份（别各写一套名册格式）。
+ * 能力来源优先级：一句话职责（description）→ 角色定义首段（systemPrompt 去标题后第一段）。
+ */
+export function memberRosterLines(
+  team: { lead?: ExpertTeamConfig["lead"]; members: ExpertTeamConfig["members"] },
+  opts: { withLead?: boolean; selfId?: string } = {},
+): string {
+  const all = [...(opts.withLead && team.lead ? [team.lead] : []), ...team.members].filter(Boolean);
+  const self = String(opts.selfId ?? "").toLowerCase();
+  return all
+    .map((m) => {
+      const oneLine = String(m.description ?? "").replace(/\s+/g, " ").trim();
+      /* 角色定义首段：去掉 markdown 标题与空行，取第一段有效文字（通常就是"你能做什么"）。 */
+      const firstPara = String(m.systemPrompt ?? "")
+        .split("\n")
+        .map((line) => line.replace(/^#+\s*/, "").trim())
+        .find((line) => line.length >= 12 && !/^[-*|]/.test(line)) ?? "";
+      const ability = (oneLine || firstPara).slice(0, 110);
+      const isMe = String(m.id ?? "").toLowerCase() === self;
+      return `- ${m.name}｜${m.id}｜${m.profession.zh}${ability ? `｜擅长：${ability}` : ""}${isMe ? "　← 这就是你" : ""}`;
+    })
     .join("\n");
+}
+
+/** 构建主理人的系统提示：团队组织 + 名册能力清单 + SOP + 铁律 */
+export function buildTeamSystemPrompt(team: ExpertTeamConfig): string {
+  const memberList = memberRosterLines(team, { withLead: true });
   return `# ${team.displayName.zh}
 
 你是本专家团的主理人 ${team.lead.name}（${team.lead.profession.zh}）。
@@ -34,8 +61,9 @@ ${team.lead.systemPrompt}
 ### 接活的顺序（一步都不能跳）
 ① **分析** —— 交付物是什么、难点在哪、有没有必须先确认的前提
 ② **拆解** —— 分成有先后顺序的几步，每步一个**可验收**的交付物
-③ **点将** —— 按各自擅长分配；确实缺某一类人，就直说缺什么
-④ **发计划** —— 在群里发**一条**计划（目标 / 步骤 / 谁做 / 顺序），让所有人跟你对齐
+③ **点将** —— **由你按各自擅长决定派谁**。这是你的本职，⛔ 不许问用户「要派给谁」「谁来做合适」
+   （自己的团队都不了解，那要你干什么）；只有确实缺某一类人，才说一句缺什么
+④ **发计划** —— 调 team_plan 把（目标 / 步骤 / 谁做 / 顺序）发成群里**一条**消息，让所有人跟你对齐
 ⑤ **派第一步** —— 只派当前这一步，写清「输入 / 交付物 / 交给谁」
 
 ### 派活的规矩
@@ -98,6 +126,54 @@ ${team.sop}
 }
 
 /** 构建团队会话工具描述（注入 dynamicTools） */
+/**
+ * ⛔⛔ 11-12 用户：「你给他们设计好流程，配套好工具」。
+ *
+ * 原来流程只写在提示词里 —— 计划在模型脑子里、进度靠它自己记，交回几轮就乱了。
+ * ⇒ 把流程做成**工具**：计划必须先写出来（team_plan，落成群里一条消息），进度随时可查（team_status）。
+ *   ⛔ 计划不另存一份状态：它就是群里那条消息（刷新/重启都还在，用户也看得见）。
+ */
+export function buildTeamPlanTool() {
+  return {
+    type: "function",
+    name: "team_plan",
+    description: "开工第一步：把任务拆成**有先后顺序**的步骤，写成一条计划发进群，让所有人对齐。"
+      + "⛔ 必须先调它，再派第一步；⛔ 用户还没说清要做什么时不要调（先问）。"
+      + "步骤要按依赖排序：后一步用到前一步的产出，就排在后面。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        goal: { type: "string", description: "这轮要交付什么（一句话，说清「什么算完成」）" },
+        steps: {
+          type: "array",
+          minItems: 1,
+          description: "按先后顺序排好的步骤（每一步一个可验收的交付物）",
+          items: {
+            type: "object",
+            properties: {
+              memberName: { type: "string", description: "这一步交给谁（用名册里的花名）" },
+              task: { type: "string", description: "这一步要交出什么（一句话）" },
+            },
+            required: ["memberName", "task"],
+          },
+        },
+      },
+      required: ["goal", "steps"],
+    },
+  };
+}
+
+/** 进度查询：把群里刚才发生了什么**原样**给它（⛔ 不给判断、不替它下结论）。 */
+export function buildTeamStatusTool() {
+  return {
+    type: "function",
+    name: "team_status",
+    description: "查群里最近的进展（谁派了谁、谁交回了什么、还差什么）。"
+      + "⛔ 不确定做到第几步、谁交回了什么时先调它，别凭记忆猜。",
+    inputSchema: { type: "object", properties: {} },
+  };
+}
+
 export function buildTeamTools(team: ExpertTeamConfig) {
   const memberOptions = team.members.map((m) => `${m.id}（${m.name}·${m.profession.zh}：${m.description}）`).join("；");
   return {

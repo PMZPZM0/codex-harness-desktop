@@ -10,7 +10,7 @@ export { videoProductionTeam } from "./expert-teams/14-video-production-team";
 export { imageGenExpert } from "./expert-teams/15-image-gen-expert";
 export { reverseEngineeringExpert } from "./expert-teams/16-reverse-engineering-expert";
 export { SKILLS_PATH_MARK, skillsPathBlock, readSkillsPath, syncSkillsPath, syncSkillsPathInTeam } from "./expert-teams/05-skills-path";
-export { buildTeamSystemPrompt, buildTeamTools, buildTeamPhaseTool } from "./expert-teams/06-team-tools";
+export { buildTeamSystemPrompt, buildTeamTools, buildTeamPhaseTool, buildTeamPlanTool, buildTeamStatusTool, memberRosterLines } from "./expert-teams/06-team-tools";
 export { buildDefaultExpertTeams } from "./expert-teams/07-team-default";
 
 

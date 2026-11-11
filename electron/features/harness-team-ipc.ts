@@ -86,7 +86,7 @@ import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
    团群主理人的会话要挂**真的**调度工具（工具面只在 thread/start 定死，见附录 Z）。
    ⛔ 只取工具**描述**，执行与权限仍在 team-invoke / team-tool-fallback（⛔ 不在这里调度成员）。 */
-import { buildTeamPhaseTool, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
+import { buildTeamPhaseTool, buildTeamPlanTool, buildTeamStatusTool, buildTeamTools, readUsableExpertTeams } from "../expert-teams";
 /* ⛔ 11-11：主理人还要拿得到宿主能力网关（知识库 / 定时任务 / 文件 / 记忆）——
    执行端权限早就按 dispatchOnly 定好了（scheduler_save / knowledge_add 对群聊会话放行），
    缺的只是工具面这一根线。 */
@@ -687,7 +687,7 @@ function groupAsyncToolCopy(tool: unknown): unknown {
 function groupLeadSurfaceOf(team: { teamId: string } & Record<string, any>): unknown[] {
   return [
     ...buildGroupTalkTools(),
-    ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never), buildDelegateHarnessTool()].map(groupAsyncToolCopy)),
+    ...withStepParam([buildTeamTools(team as never), buildTeamPhaseTool(team as never), buildTeamPlanTool(), buildTeamStatusTool(), buildDelegateHarnessTool()].map(groupAsyncToolCopy)),
   ] as unknown[];
 }
 
@@ -1036,9 +1036,9 @@ async function runDispatchRounds(
   /* ⛔⛔ 11-12 用户裁定 B：主理人保留完整能力（能用 harness 网关自己查、自己拟），
      只是不许一个人包干 —— 那靠「计划先行 + 一次一步」约束，⛔ 不靠删工具。 */
   const leadDispatchTools = groupTeam
-    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam), buildDelegateHarnessTool()].map(groupAsyncToolCopy))
+    ? withStepParam([buildTeamTools(groupTeam), buildTeamPhaseTool(groupTeam), buildTeamPlanTool(), buildTeamStatusTool(), buildDelegateHarnessTool()].map(groupAsyncToolCopy))
     : [];
-  const leadToolNames = groupTeam ? ["team_member_invoke", "team_phase_invoke", "harness_tools"] : [];
+  const leadToolNames = groupTeam ? ["team_plan", "team_status", "team_member_invoke", "team_phase_invoke", "harness_tools"] : [];
   /* ⛔ 成员产出落群：`team_member_invoke` 起的是**团队会话**，产出靠 team-group-bridge 回写群；
      不绑 `groupOfTeam(teamId)` 就返回空串 ⇒ 产出静默丢掉（只有主理人看得到工具返回值）。 */
   if (groupTeam) bindTeamGroup(groupTeamId, group.id);

@@ -24,6 +24,8 @@ import { parseAgentMentions, teamAuthorIdOf, collaborationProtocolLines } from "
 /* ⛔ 11-10：两条产出链（群聊通道 / 专家团成员通道）共用同一份硬约束判据，⛔ 不各写一套。 */
 import { evaluateMemberOutput } from "./features/group-talk";
 import { appendMemberOutputToGroup, groupOfTeam, recentGroupMessages } from "./team-group-bridge";
+/* ⛔ 名册 + 能力清单只有一份口径（主理人系统提示词与成员上下文共用）。 */
+import { memberRosterLines } from "./expert-teams";
 import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 import { ensureSessionAlias, supervisorLabelOf } from "./session-alias";
 import { refreshSupervisorScopeForThread } from "./session-scope";
@@ -78,15 +80,7 @@ function teamBriefOf(
   memberId: string,
   groupId: string,
 ): string {
-  const all = [team.lead, ...(team.members ?? [])].filter(Boolean) as Array<{
-    id: string; name: string; profession?: { zh?: string }; description?: string;
-  }>;
-  const mine = String(memberId ?? "").toLowerCase();
-  const roster = all.map((m) => {
-    const isMe = String(m.id ?? "").toLowerCase() === mine;
-    const skill = String(m.description ?? "").replace(/\s+/g, " ").trim().slice(0, 90);
-    return `- ${m.name}（${String(m.profession?.zh ?? "")}）${skill ? `：${skill}` : ""}${isMe ? "　← 这就是你" : ""}`;
-  }).join("\n");
+  const roster = memberRosterLines(team as never, { withLead: true, selfId: memberId });
   /* 团队负责人最近说的一两条（多半就是那份计划）——成员据此对齐，别自己另起一套。 */
   const leadId = teamAuthorIdOf(team.teamId, String(team.lead?.id ?? ""));
   const plan = (groupId ? recentGroupMessages(groupId) : [])

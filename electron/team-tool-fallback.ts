@@ -21,11 +21,17 @@
 import { teamRunStore, threadCwd } from "./runtime-refs";
 import { invokeTeamMemberCore, type InvokeMemberInput, type InvokeMemberResult } from "./team-invoke";
 import { dedupeTeamPhaseTasks } from "../src/lib/team-phase.mjs";
-import { groupOfTeam, relayGroupLead } from "./team-group-bridge";
+import { appendMemberOutputToGroup, groupOfTeam, recentGroupMessages, relayGroupLead } from "./team-group-bridge";
+import { teamAuthorIdOf } from "../src/lib/team-models.mjs";
+import { readUsableExpertTeams } from "./expert-teams";
 import { broadcastHarnessEvent } from "./features/window-bus";
 
 const TEAM_TOOL_MEMBER = "team_member_invoke";
 const TEAM_TOOL_PHASE = "team_phase_invoke";
+/* ⛔⛔ 11-12 用户：「你给他们设计好流程，配套好工具」。
+   流程不能只写在提示词里：计划要落成群里一条消息（team_plan），进度要能查（team_status）。 */
+const TEAM_TOOL_PLAN = "team_plan";
+const TEAM_TOOL_STATUS = "team_status";
 
 type Respond = (id: string | number, result: unknown) => unknown;
 
@@ -96,7 +102,8 @@ export async function handleTeamToolCall(deps: {
   const { event, respond } = deps;
   if (event?.method !== "item/tool/call") return false;
   const tool = String(event?.params?.tool ?? "");
-  if (tool !== TEAM_TOOL_MEMBER && tool !== TEAM_TOOL_PHASE) return false;
+  if (tool !== TEAM_TOOL_MEMBER && tool !== TEAM_TOOL_PHASE
+    && tool !== TEAM_TOOL_PLAN && tool !== TEAM_TOOL_STATUS) return false;
 
   const threadId = String(event?.params?.threadId ?? "");
   const groupTalk = Boolean(deps.isGroupTalkThread?.(threadId));
@@ -116,6 +123,49 @@ export async function handleTeamToolCall(deps: {
   }
 
   const args = readArgs(event?.params?.arguments);
+
+  /* ⛔⛔ 计划工具：把"目标 + 有先后的步骤"落成群里的**一条消息**。
+     ⛔ 不另存状态（重启/刷新都还在、用户也看得见）；步骤顺序就是执行顺序。 */
+  if (tool === TEAM_TOOL_PLAN) {
+    const gid = groupOfTeam(teamId);
+    const team = (await readUsableExpertTeams().catch(() => []))
+      .find((entry) => String(entry.teamId) === teamId);
+    const leadAuthor = team ? teamAuthorIdOf(String(team.teamId), String(team.lead?.id ?? "")) : "";
+    const goal = String(args?.goal ?? "").trim();
+    const steps = Array.isArray(args?.steps) ? args.steps : [];
+    if (!gid || !leadAuthor || !goal || !steps.length) {
+      await respond(id, { contentItems: [{ type: "inputText", text: "计划没发出去：缺目标或步骤，或这个团没绑群。" }], success: false });
+      return true;
+    }
+    const body = ["【计划】" + goal, ...steps.map((step: Record<string, unknown>, i: number) =>
+      String(i + 1) + ". @" + String(step?.memberName ?? "") + "：" + String(step?.task ?? ""))].join("\n");
+    await appendMemberOutputToGroup(gid, {
+      id: "team-plan:" + String(Date.now()),
+      authorId: leadAuthor,
+      authorKind: "bot",
+      senderKind: "member",
+      threadId,
+      text: body,
+      at: Date.now(),
+    });
+    await respond(id, { contentItems: [{ type: "inputText", text: "计划已发进群。现在只派第 1 步；⛔ 不要一次全派。" }], success: true });
+    return true;
+  }
+
+  /* ⛔⛔ 进度工具：把群里最近发生了什么**原样**给它（⛔ 不给判断、不替它下结论）。 */
+  if (tool === TEAM_TOOL_STATUS) {
+    const gid = groupOfTeam(teamId);
+    const rows = gid ? recentGroupMessages(gid).slice(-40) : [];
+    const text = rows.length
+      ? rows.map((row) => {
+        const at = Number(row?.at ?? 0);
+        const hhmm = at ? new Date(at).toTimeString().slice(0, 5) : "";
+        return hhmm + " " + String(row?.text ?? "").replace(/\s+/g, " ").trim().slice(0, 90);
+      }).join("\n")
+      : "群里还没有消息。";
+    await respond(id, { contentItems: [{ type: "inputText", text }], success: true });
+    return true;
+  }
   const base: Omit<InvokeMemberInput, "memberId" | "query"> = {
     teamId,
     leadThreadId: threadId,
