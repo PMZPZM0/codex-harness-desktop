@@ -719,7 +719,7 @@ export async function reconcileInterruptedDispatches(): Promise<void> {
     const store = readStore();
     const since = Date.now() - 2 * 60 * 60 * 1000;
     for (const g of store.groups ?? []) {
-      const rows = (store.messages?.[g.id] ?? []) as Array<{ id?: string; at?: number }>;
+      const rows = (store.messages?.[g.id] ?? []) as Array<{ id?: string; at?: number; authorKind?: string; text?: string }>;
       const recent = rows.filter((row) => Number(row.at ?? 0) >= since);
       if (!recent.length) continue;
       const produced = new Set(recent
@@ -731,23 +731,37 @@ export async function reconcileInterruptedDispatches(): Promise<void> {
         .filter((id) => id.startsWith("team-dispatch:"))
         .map((id) => id.slice("team-dispatch:".length))
         .filter((runId) => runId && !produced.has(runId)))];
-      if (!pendingRuns.length) continue;
+      /* ⛔⛔ 11-12 审查发现的覆盖缺口：用户那个群走的是**群聊 @ 链**（消息 id 是 msg_…，
+         既没有 team-dispatch: 也没有 team-run:）⇒ 上面这套判据一条都命中不了，
+         "断了"依然没有任何提示。⇒ 补一条 @ 链判据：最后一条 bot 产出里还留着
+         「待处理 / 责任人 / 待确认 / 等你拍板」这类停住信号，且已静置 >10 分钟。 */
+      const last = rows[rows.length - 1] ?? null;
+      const stoppedByHandoff = Boolean(last
+        && String(last.authorKind ?? "") === "bot"
+        && /【待处理|责任人[:：]|待确认|需要.{0,6}确认|等你拍板|请.{0,4}拍板/.test(String(last.text ?? ""))
+        && Date.now() - Number(last.at ?? 0) > 10 * 60 * 1000);
+      if (!pendingRuns.length && !stoppedByHandoff) continue;
+      /* ⛔ 幂等：marker 绑定"触发它的那条消息 id"，写前先查群里有没有 ——
+         原来只有 Date.now()，同一状态每重启一次就多补一条，越积越多。 */
+      const marker = `sys-interrupted:${g.id}:${String(last?.id ?? pendingRuns.join(","))}`;
+      if (rows.some((row) => String(row.id ?? "") === marker)) continue;
       /* ⛔ 光说"有 N 件没跑完"没用 —— 用户说「继续」时主理人得知道**缺哪几件**，
          才可能只补没交回的、不把已交回的重跑一遍。派单消息本身就是清单（`@名字：任务…`）。 */
       const pendingLines = pendingRuns
         .map((runId) => recent.find((row) => String(row.id ?? "") === `team-dispatch:${runId}`))
-        .map((row) => String((row as { text?: string })?.text ?? "").replace(/\s+/g, " ").trim().slice(0, 60))
+        .map((row) => String(row?.text ?? "").replace(/\s+/g, " ").trim().slice(0, 60))
         .filter(Boolean)
         .map((line) => `· ${line}`);
+      const body = pendingRuns.length
+        ? `上一轮有 ${pendingRuns.length} 件派活没跑完（应用重启把它打断了）：\n${pendingLines.join("\n")}\n发一句「继续」，只重派上面这几件（已交回的不会再跑）。`
+        : "上一轮停在一位成员的产出上（还留着待处理 / 待确认项），没有继续派下一环。\n发一句「继续」，主理人会接着验收、派下一环或收口。";
       await appendMessageTo(g.id, {
-        id: `sys-interrupted:${Date.now()}:${g.id}`,
+        id: marker,
         authorId: "system",
         authorKind: "bot",
         senderKind: "system",
         threadId: groupThreadId(g.id),
-        text: `上一轮有 ${pendingRuns.length} 件派活没跑完（应用重启把它打断了）：\n`
-          + `${pendingLines.join("\n")}\n`
-          + `发一句「继续」，只重派上面这几件（已交回的不会再跑）。`,
+        text: body,
         at: Date.now(),
       }).catch(() => undefined);
     }

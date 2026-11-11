@@ -521,6 +521,12 @@ const catalog = [
       && /team-dispatch:/.test(teamIpcSrc) && /team-run:/.test(teamIpcSrc)
       && /reconcileInterruptedDispatches\(\)/.test(read("electron/features/boot.ts")),
       "启动对账被打断的派活（群里说明 + ⛔ 不自动重派）");
+    /* ⛔ 审查修：只认 team-dispatch:/team-run: 会漏掉**群聊 @ 链**（用户那个群正是这条）；
+       且 marker 用 Date.now() 会每重启补一条。 */
+    ok(/stoppedByHandoff/.test(teamIpcSrc)
+      && /【待处理/.test(teamIpcSrc)
+      && /rows\.some\(\(row\) => String\(row\.id \?\? ""\) === marker\)/.test(teamIpcSrc),
+      "对账同时覆盖 @ 链停住，且按触发消息幂等（⛔ 不重复补说明）");
     /* ⛔⛔ 11-12 用户「断之前好像也没有接力」：排片跑完 / 成员交回的回交被按 teamId 的
        "还有人在跑"门槛吞掉 —— 同一个团可被多个群同时调用 ⇒ 别的群在跑，本群就永远停在最后产出。
        ⛔ 回交只按本次排片（relayInFlight）判，不许按 teamId 跨群判。 */
