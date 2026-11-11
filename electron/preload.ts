@@ -862,6 +862,10 @@ contextBridge.exposeInMainWorld("codex", {
   /* 会话级静音闩锁（同一 threadId 的窗口一起安静；别的会话不受影响） */
   announceSetMuted: (input?: { muted?: boolean; threadId?: string }) => __ipc("voice:announce-set-muted", 0, [input]),
   voiceBarge: () => __ipc("voice:barge", 0, []) as Promise<{ ok: boolean }>,
+  /* 11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥） */
+  voiceMossVoices: () => __ipc("voice:moss-voices", 0, []),
+  /* 11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报） */
+  voiceMossPreview: (input?: { model?: string; voiceId?: string; text?: string }) => __ipc("voice:moss-preview", 0, [input]),
   voiceDictationFinish: () => __ipc("voice:dictation-finish", 0, []),
   voiceEndpointNow: () => __ipc("voice:endpoint-now", 0, []),
   voiceHotkeyGet: () => __ipc("voice:hotkey-get", 0, []) as Promise<{ registered: string }>,

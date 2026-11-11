@@ -35,7 +35,9 @@ export type Settings = {
   /* 10-26：合成引擎三选一。⛔ 渲染层与 electron 各有一份字面量（两边互不 import），
      加字段必须**两边同改**（electron/voice/voice-settings.ts 的 VoiceSettings.tts.engine）。 */
   tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number;
-    engine?: "vits" | "emotivoice"; };
+    engine?: "vits" | "emotivoice";
+    /** 11-11：播报走 MOSS-TTS（远端）；克隆音色仍优先本地 */
+    remote?: boolean; };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
   barge: { gateDb: number; mode: "auto" | "manual" };
@@ -47,7 +49,7 @@ export type Settings = {
    *  ⛔ 语速不在这里另开一份 —— 与通话共用 tts.speed（单一真相源）。 */
   announce: { enabled: boolean };
   /** 11-10 远程实时语音模型配置（MOSS-Live 等，见 electron/voice/model-provider.ts）。 */
-  remote?: Record<string, { baseUrl?: string; model?: string; apiKey?: string }>;
+  remote?: Record<string, { baseUrl?: string; model?: string; apiKey?: string; /** MOSS-TTS 音色 ID */ voiceId?: string }>;
   /** 实时通话后端：local = 本地链路（默认）；moss-live = 远程全双工（连不上自动回落）。 */
   call?: { backend?: "local" | "moss-live" };
 };

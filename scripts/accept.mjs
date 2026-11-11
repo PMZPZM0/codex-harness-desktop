@@ -2204,20 +2204,27 @@ const CHECKS = [
         const cards=[...document.querySelectorAll(".voice-engine-card")];
         const vits=cards.find(function(c){ return (c.innerText||"").includes("轻量播报"); });
         const remote=document.querySelector(".voice-engine-remote");
-        const toggle=remote?remote.querySelector(".voice-remote-toggle"):null;
+        const toggle=document.querySelector(".voice-moss-modal .voice-remote-toggle")||document.querySelector(".voice-remote-toggle");
         return {
           names:cards.map(function(c){ return (c.querySelector(".voice-engine-name-row strong")?.textContent||"").trim(); }),
           vitsText:(vits?.innerText||"").replace(/\\s+/g," ").trim(),
           remoteState:(remote?.querySelector(".voice-engine-state")?.textContent||"").trim(),
           hasToggle:!!toggle,
-          toggleText:toggle?(toggle.textContent||"").replace(/\\s+/g," ").trim():""
+          toggleText:toggle?(toggle.textContent||"").replace(/\\s+/g," ").trim():"",
+          remoteActions:(function(){ const card=document.querySelector(".voice-engine-remote"); return card?[...card.querySelectorAll("button")].map(function(b){ return (b.textContent||"").trim(); }):[]; })()
         };
       })()`);
       const ui = await read();
       h.check("① Kokoro（自然多音色）卡片已移除",
         Boolean(ui && !ui.names.some(function(n){ return /自然多音色|Kokoro/i.test(n); })), JSON.stringify(ui?.names));
-      h.check("② MOSS-Live 卡有「用作实时通话后端」开关",
-        Boolean(ui && ui.hasToggle && /实时通话后端/.test(ui.toggleText)), JSON.stringify({ hasToggle: ui?.hasToggle, toggleText: ui?.toggleText }));
+      const opened = await h.eval(`(function(){ const card=document.querySelector(".voice-engine-remote"); const b=card?[...card.querySelectorAll("button")].find(function(x){ return (x.textContent||"").trim()==="配置"; }):null; if(!b) return false; b.click(); return true; })()`);
+      await h.waitFor(`!!document.querySelector(".voice-moss-modal")`, { label: "MOSS 配置弹窗", timeoutMs: 8000 });
+      const ui2 = await read();
+      h.check("② MOSS-Live 卡与本地引擎卡同构：配置 / 启用停用 / 试听音色（配置收进弹窗）",
+        Boolean(opened && ui && ui.remoteActions.includes("配置") && ui.remoteActions.some(function(x){ return /^(启用|停用)$/.test(x); }) && ui.remoteActions.some(function(x){ return x.includes("试听音色"); })),
+        JSON.stringify(ui && ui.remoteActions));
+      h.check("②b 弹窗里有「用作实时通话后端」开关",
+        Boolean(ui2 && ui2.hasToggle && /实时通话后端/.test(ui2.toggleText)), JSON.stringify({ hasToggle: ui2?.hasToggle, toggleText: ui2?.toggleText }));
 
       /* 用户实测「配置完状态都不刷新」：走真实表单保存，徽标必须立刻变「已配置」。 */
       const originalRemote = await h.eval(`window.codex.voiceSettingsGet().then(function(r){ return (r && r.settings && r.settings.remote) || {}; })`).catch(() => ({}));
@@ -2245,6 +2252,7 @@ const CHECKS = [
           Boolean(after && after.remoteState.includes("已配置")), JSON.stringify(after && after.remoteState));
       } finally {
         await h.eval(`window.codex.voiceSettingsSet({ remote: ${JSON.stringify(restoredRemote)} })`).catch(() => undefined);
+        await h.eval(`document.querySelector(".voice-moss-modal .voice-confirm-close")?.click()`).catch(() => undefined);
       }
 
       /* 用户实测「停用不行」：①主进程 baseEnabled 必须真翻转；②已装模型时引擎卡显示「已停用」；

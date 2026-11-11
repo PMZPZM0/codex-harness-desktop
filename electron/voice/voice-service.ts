@@ -21,6 +21,7 @@ import { buildEngineWorkerData } from "./tts-engine-data";
 import { MossLiveRealtime } from "./moss-live-realtime";
 import type { MossDelegationTask } from "./moss-live-realtime";
 import { cancelVoiceDelegation, runVoiceDelegation } from "./voice-delegation";
+import { listMossVoices as listMossVoicesRemote, previewMossVoice as previewMossVoiceRemote, remoteTtsConfig, speakMoss } from "./moss-tts";
 import { MOSS_LIVE_PROVIDER, remoteConfigured, remoteConfigOf } from "./model-provider";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
@@ -727,20 +728,41 @@ export class VoiceService {
     return pick.workerData;
   }
 
+  /** MOSS 音色列表（薄包装，实现与协议在 moss-tts.ts）。 */
+  listMossVoices() {
+    return listMossVoicesRemote(loadVoiceSettings(this.deps.userDataDir));
+  }
+
+  /** MOSS 音色试听（薄包装）。 */
+  previewMossVoice(input?: { model?: string; voiceId?: string; text?: string }) {
+    return previewMossVoiceRemote(loadVoiceSettings(this.deps.userDataDir), input);
+  }
+
   /** 合成一句话（渲染层按句调用，实现边生成边播）。 */
   async speak(text: string, options?: { sid?: number; speed?: number; numSteps?: number }): Promise<VoiceSpeakResult> {
-    if (!this.tts) return { ok: false, error: "语音合成未就绪" };
     const clean = String(text ?? "").trim();
     if (!clean) return { ok: false, error: "空文本" };
+    /* ⛔ 每次现读设置：播报可能在「从没开过通话」时发生（currentSettings 还是默认值），
+       不读盘就会出现「开了 MOSS 播报/改了语速却没生效」。 */
+    const settings = this.settingsNow();
+    /* 11-11：MOSS 播报开启时优先走远端（克隆音色仍走本地，remoteTtsConfig 会返回 null）。 */
+    const remote = remoteTtsConfig(settings);
+    if (remote) {
+      if (!remote.ok) return { ok: false, error: remote.error };
+      const result = await speakMoss(clean, remote.cfg);
+      if (result.ok) this.setState("speaking");
+      return result;
+    }
+    if (!this.tts) return { ok: false, error: "语音合成未就绪" };
     try {
       const result = await this.tts.request("speak", {
         text: clean,
         // 默认走设置里的音色/语速，调用方传了 options 就覆盖（便于临时切换）
-        sid: options?.sid ?? this.currentSettings.tts.sid,
-        speed: options?.speed ?? this.currentSettings.tts.speed,
+        sid: options?.sid ?? settings.tts.sid,
+        speed: options?.speed ?? settings.tts.speed,
         /* ⛔ 10-24：音质（合成步数）走设置里的单一档位。早先这里不下发 ⇒ worker 用 4；
            播报端又自己写死 2（换延迟）⇒ 用户听到的播报比试听明显沙哑。现在统一由设置决定。 */
-        numSteps: options?.numSteps ?? this.currentSettings.tts.numSteps,
+        numSteps: options?.numSteps ?? settings.tts.numSteps,
       });
       this.setState("speaking");
       return { ok: true, sampleRate: Number(result.sampleRate ?? 22050), samples: result.samples };
@@ -795,6 +817,12 @@ export class VoiceService {
     const settings = loadVoiceSettings(this.deps.userDataDir);
     const wanted = String(input?.profileId ?? settings.tts.profileId ?? "").trim();
     const numThreads = settings.asr.numThreads;
+    /* 11-11：MOSS 播报开启且没选克隆音色 ⇒ 试听也走远端（与播报同一嗓子）。 */
+    const remote = remoteTtsConfig(settings);
+    if (!wanted && remote) {
+      if (!remote.ok) return { ok: false, error: remote.error };
+      return speakMoss(String(input?.text ?? VOICE_SAMPLE_TEXT), remote.cfg);
+    }
     // 通话线程只有在「加载的正是这个音色」时才能直接复用；音色不同必须走试听 worker 重建
     if (this.tts && !input?.profileId && wanted === this.ttsProfileWanted) {
       /* ⛔ 复用通话 worker 时同样要带 numSteps：不带就回落 worker 默认 4 ⇒ 用户选了「清晰(8)」
@@ -883,10 +911,12 @@ export class VoiceService {
 
   /** 只预热播报/试听 worker（加载模型，不合成、不出声）。 */
   async warmPreviewVoice(): Promise<{ ok: boolean; error?: string }> {
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    // MOSS 播报没有本地模型要预热：直接成功（真正合成时再连远端）。
+    if (remoteTtsConfig(settings)) return { ok: true };
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) return { ok: false, error: "语音运行时未就绪（sherpa-onnx 未安装）" };
     if (!(await this.refreshModelsReady())) return { ok: false, error: "语音模型未下载完整" };
-    const settings = loadVoiceSettings(this.deps.userDataDir);
     try {
       await this.ensurePreviewWorker(sherpaPath, String(settings.tts.profileId ?? "").trim(), settings.asr.numThreads);
       return { ok: true };

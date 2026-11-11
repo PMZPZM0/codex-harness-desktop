@@ -12,6 +12,7 @@
  */
 import { originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
+import { ensureProjectAgentsMd } from "../project-conventions";
 import { server, threadCwd, threadRuntimeStore } from "../runtime-refs";
 import { buildVoiceDelegationPrompt } from "../../src/lib/voice-delegation.mjs";
 
@@ -76,6 +77,9 @@ async function startWorkerThread(originThreadId: string, inputText: string, titl
   const runtime = await threadRuntimeStore.get(originThreadId).catch(() => null);
   const cwd = threadCwd.get(originThreadId) || "";
   const model = (await originSessionModel(originThreadId, threadRuntimeStore).catch(() => "")) || runtime?.model || "";
+  /* ⛔ 11-11【171】：新开的工作会话同样是项目会话 ⇒ 起跑前必须确保项目 AGENTS.md 已就位，
+     否则语音委派出来的会话看不到项目约定（与 delegation / 群聊同一口径）。 */
+  ensureProjectAgentsMd(cwd || process.cwd());
   const created: any = await server.request("thread/start", {
     ...(model ? { model } : {}),
     ...(cwd ? { cwd } : {}),

@@ -2043,6 +2043,10 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
   padding: 6px 8px; border-radius: 8px; font-size: 12px;
   border: 1px solid var(--line); background: var(--field, var(--panel)); color: var(--text);
 }
+.voice-remote-form select {
+  padding: 6px 8px; border-radius: 8px; font-size: 12px;
+  border: 1px solid var(--line); background: var(--field, var(--panel)); color: var(--text);
+}
 .voice-remote-form input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .voice-remote-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .voice-remote-toggle {
@@ -2054,6 +2058,26 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-remote-toggle > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .voice-remote-toggle strong { font-size: 12px; color: var(--text); font-weight: 600; }
 .voice-remote-toggle > div span { font-size: 11px; line-height: 1.45; color: var(--muted); }
+
+/* 11-11 MOSS-Live 配置弹窗（设置页本身是 z=900 的模态，这里必须更高；portal 到 body）。 */
+.voice-moss-modal {
+  width: min(560px, 100%);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 22px 60px rgba(0, 0, 0, .34);
+}
+.voice-moss-modal-head {
+  position: sticky; top: 0; z-index: 1;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px; border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+.voice-moss-modal-head strong { font-size: 13px; }
+.voice-moss-modal-body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 10px; }
+.voice-moss-section-title { margin-top: 4px; font-size: 11.5px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
 
 /* ── 功能域：分类卡片（10-31 用户：「这个分类卡片展示」）── */
 .domains-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }

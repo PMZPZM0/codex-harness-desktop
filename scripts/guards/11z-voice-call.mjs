@@ -336,11 +336,10 @@ ok(/draftProfileAudio\(/.test(voiceProfilesSeg.slice(voiceProfilesSeg.indexOf('"
 ok(/voiceProfileUpload: \(input\?/.test(read("electron/preload.ts")) && /voiceProfileUpload\(input\?/.test(read("src/vite-env.d.ts")),
   "生成物两侧都有 voiceProfileUpload（preload 内联段 + d.ts 生成段；跑过 gen:ipc，不是只改了 manifest）");
 const registrySrc = read("electron/ipc-registry.ts");
-/* count 是**事实账**：voice 域实列多少条就写多少（10-21 +2 = announce-owner / announce-set-muted）。 */
-/* ⛔ count 是**写死的数字**：加了 voice 域的通道必须同步改这里（否则守卫红）。
-   10-26 加了 2 条引擎包下载通道（tts-pack-install / tts-pack-cancel）⇒ 44 → 46。 */
-ok(/\{ prefix: "voice", count: 46/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
-  "ipc-registry 的 voice 域计到 46 且列出新通道（不同步会被【107】/【90】报红）");
+/* count 是**事实账**：voice 域 manifest 通道数（listen-only 的 voice:audio 不在 manifest，故数组比 count 多 1）。
+   11-11 加 moss-voices / moss-preview 后为 48。 */
+ok(/\{ prefix: "voice", count: 48/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
+  "ipc-registry 的 voice 域计到 48 且列出新通道（不同步会被【107】/【90】报红）");
 const settingsState = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
 ok(/voiceProfileUpload\(\{ source: "file" \}\)/.test(settingsState)
   && /uploadProfile=\{uploadProfile\}/.test(read("src/components/VoiceSettingsSection.tsx")),
@@ -900,10 +899,12 @@ ok(/onVoiceCallState\?\./.test(announceHook) && /remoteCallActiveRef\.current/.t
 ok(/broadcastToAll\("voice:call-state", \{ state: event\.state, active \}\)/.test(mainSrc)
   && /if \(event\.type === "state"\)/.test(mainSrc),
   "通话状态旁路广播到**所有窗口**，且只转 state（⛔ 不把 partial/delta 塞进弹窗）");
+const voiceRegMatch = registryForOwner.match(/prefix: "voice", count: (\d+),[\s\S]*?channels: \[([^\]]*)\]/);
+const voiceManifestCount = (manifestJson.match(/"channel": "voice:/g) || []).length;
 ok(/voice:announce-owner/.test(manifestJson) && /voice:announce-set-muted/.test(manifestJson)
-  && /"voice:announce-owner","voice:announce-set-muted"\]/.test(registryForOwner)
-  && /count: 46/.test(registryForOwner),
-  "两条新通道进 manifest + registry（count 42→44）—— 漏登记 = 预检【2】红 + 账本读不到");
+  && /"voice:announce-owner"/.test(registryForOwner) && /"voice:announce-set-muted"/.test(registryForOwner)
+  && voiceRegMatch && Number(voiceRegMatch[1]) === voiceManifestCount,
+  `voice 域 count 与 manifest 通道数同步（${voiceManifestCount} 条；listen-only 的 voice:audio 不在 manifest）`);
 ok(/onAnnounceOwnerChanged: \(listener/.test(preloadSrc) && /onAnnounceMuted: \(listener/.test(preloadSrc)
   && /onVoiceCallState: \(listener/.test(preloadSrc),
   "三条推送类手写桥在 preload（不在 gen 段：主→渲染的广播不生成 invoke 桥）");
@@ -1261,8 +1262,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(/mossLive:/.test(misc) && /hasKey: Boolean\(c\.apiKey\)/.test(misc) && !/apiKey: c\.apiKey/.test(misc),
     "状态 IPC 只回 hasKey/末四位，不回明文密钥");
   ok(/publicVoiceSettings/.test(misc) && /settings: publicVoiceSettings\(settings\)/.test(misc)
-    && /const safe = publicVoiceSettings\(next\)/.test(misc) && /settings: safe/.test(misc),
-    "settings-get / settings-set / settings 广播全部脱敏（⛔ 渲染层拿不到远程 API Key）");
+    && /const safe = publicVoiceSettings\(next\)/.test(misc) && /settings: safe/.test(misc)
+    && /voiceId: \(value as any\)\.voiceId/.test(misc) && !/apiKey: \(value as any\)\.apiKey/.test(misc),
+    "settings-get / settings-set / settings 广播脱敏：只回地址/模型/音色，⛔ 不回远程 API Key");
   ok(/moss\?\.hasKey/.test(enginesTsx) && /\.\.\.\(apiKey \? \{ apiKey \} : \{\}\)/.test(enginesTsx),
     "保存时留空 = 沿用已存密钥（渲染层不持有密钥，也不把它写回 patch）");
   ok(/MOSS-Live/.test(enginesTsx) && /voice-remote-form/.test(enginesTsx) && /saveMoss/.test(enginesTsx),
@@ -1320,6 +1322,17 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "委派结果/取消接线：跑完用 commentary 回报，服务端取消会中断 Codex 回合");
   ok(/entry\.silenced = true/.test(svcSrc) && /entry\.cancelled \|\| entry\.silenced/.test(svcSrc),
     "挂断只静默不中断：已交给 Codex 的委派任务继续跑完（⛔ silenced 不驱动 turn/interrupt）");
+  const mossTtsSrc = read("electron/voice/moss-tts.ts");
+  ok(/speakMoss/.test(mossTtsSrc) && /previewMossVoice/.test(mossTtsSrc)
+    && /MOSS_TTS_DEFAULT_URL/.test(mossTtsSrc) && /voice_id: cfg\.voiceId/.test(mossTtsSrc)
+    && /decodeWavPcm16Mono/.test(mossTtsSrc) && /speakMoss\(/.test(svcSrc),
+    "MOSS-TTS 播报：官方 voice_id + WAV 解码（独立模块），播报与试听共用同一条远端合成");
+  ok(/voice-moss-modal/.test(enginesTsx) && /createPortal/.test(enginesTsx)
+    && /voiceMossPreview/.test(enginesTsx) && /试听音色/.test(enginesTsx),
+    "MOSS 卡与本地引擎卡同构：配置收进弹窗 + 启用/停用 + 音色直接试听");
+  const registrySrc = read("electron/ipc-registry.ts");
+  ok(/voice:moss-voices/.test(registrySrc) && /voice:moss-preview/.test(registrySrc),
+    "MOSS 音色列表/试听两条通道已登记（只回 id/name 与音频，不回密钥）");
   /* 11-11 用户令「注入提示词不要展示出来，隐藏掉」：模型看得到、用户在气泡/刻度/搜索/导出里看不到。 */
   const stripSrc = read("src/lib/harness-block-strip.mjs");
   const itemView = read("src/features/session-queue/ItemView.tsx");

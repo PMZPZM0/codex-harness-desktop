@@ -9,10 +9,14 @@
  *     点了给**明确说明**（10-20 教训：灰按钮点了没反应是最差体验）。
  *   · 优势/劣势必须写**实测数字**，不写"更快更好"这种空话。
  */
-import { Check, Download, LoaderCircle, Power, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Check, Download, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { AppSelect } from "../AppSelect";
+import { useEscapeLayer } from "../../hooks/useEscapeLayer";
+import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { ToggleSwitch } from "../SettingsWidgets";
-import { Settings } from "../VoiceSettingsSection";
+import { Settings, playSamples } from "../VoiceSettingsSection";
 import VoiceDevToolsSection from "../VoiceDevToolsSection";
 
 type Props = {
@@ -94,6 +98,15 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
   const [moss, setMoss] = useState<{ configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string } | null>(null);
   const [mossDraft, setMossDraft] = useState({ baseUrl: "", model: "", apiKey: "" });
+  /** MOSS 播报（TTS）：独立的模型/音色；密钥沿用 moss-live 那张卡，不在这里重复填。 */
+  const [mossTtsDraft, setMossTtsDraft] = useState({ model: "moss-tts-1.5-flash", voiceId: "" });
+  const [mossVoices, setMossVoices] = useState<{ id: string; name: string }[]>([]);
+  /** 配置收进弹窗：卡面上只留状态/启用停用/试听；弹窗打开时 Esc 只关它（全局 ESC 栈）。 */
+  const [mossModalOpen, setMossModalOpen] = useState(false);
+  const [previewing, setPreviewing] = useState(false);
+  const previewCtlRef = useRef<{ stop: () => void } | null>(null);
+  useEscapeLayer(mossModalOpen, () => setMossModalOpen(false));
+  useEffect(() => () => { previewCtlRef.current?.stop(); previewCtlRef.current = null; }, []);
   const [busy, setBusy] = useState<PackId | null>(null);
   const [progress, setProgress] = useState<{ pack: PackId; percent: number; message: string } | null>(null);
   /** 卡片内反馈条（下载成功/失败、切换成功）—— ⛔ 不能只靠一闪而过的 toast */
@@ -174,9 +187,17 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
   /* MOSS-Live 配置草稿：地址/模型从已存配置回填；密钥不回显（只留占位），保存时留空=沿用旧密钥。 */
   const savedMoss = settings?.remote?.["moss-live"];
+  const savedMossTts = settings?.remote?.["moss-tts"];
   useEffect(() => {
     setMossDraft((d) => ({ ...d, baseUrl: savedMoss?.baseUrl ?? d.baseUrl, model: savedMoss?.model ?? d.model }));
   }, [savedMoss?.baseUrl, savedMoss?.model]);
+  useEffect(() => {
+    setMossTtsDraft((d) => ({
+      model: savedMossTts?.model ?? d.model ?? "moss-tts-1.5-flash",
+      voiceId: savedMossTts?.voiceId ?? d.voiceId,
+    }));
+  }, [savedMossTts?.model, savedMossTts?.voiceId]);
+  const ttsRemote = settings?.tts?.remote === true;
 
   const callBackend = settings?.call?.backend === "moss-live";
   /* ⛔ 用户填过 https://…/v1/audio/speech 或 moss-tts-*：那是普通语音合成（TTS），
@@ -212,8 +233,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   }, [apply, moss?.hasKey, mossDraft, onNotice, refresh, settings?.remote]);
 
   /** 实时通话后端开关：开 = 通话走 MOSS-Live，连不上自动回落本地语音（VoiceService 里有回落）。 */
-  const setCallBackend = useCallback(async (next: boolean) => {
-    if (next) {
+  const setCallBackend = useCallback(async (next: boolean) => {    if (next) {
       if (!moss?.configured) { onNotice("请先保存接口地址、模型和 API 密钥，再开启实时通话"); return; }
       if (mossLooksLikeTts) { onNotice("当前地址是语音合成（TTS）接口，不是实时通话接口：请改填 Realtime WebSocket 地址后再开启"); return; }
     }
@@ -226,6 +246,71 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       ? (next ? "实时通话将走 MOSS-Live（连不上会自动回落本地语音）" : "实时通话已切回本地语音")
       : "切换实时通话后端失败，请重试");
   }, [apply, moss?.configured, mossLooksLikeTts, onNotice, refresh]);
+
+  /* MOSS 播报（TTS）：密钥沿用 moss-live，音色要单独查。 */
+  const queryMossVoices = useCallback(async () => {
+    const r: any = await window.codex.voiceMossVoices().catch((e: any) => ({ ok: false, error: String(e?.message ?? e) }));
+    if (!r?.ok) { onNotice(r?.error ?? "查询音色失败"); return; }
+    const list = Array.isArray(r.voices) ? r.voices : [];
+    setMossVoices(list);
+    if (!list.length) { onNotice("这个 MOSS 账号还没有可用音色"); return; }
+    setMossTtsDraft((d) => ({ ...d, voiceId: d.voiceId || list[0].id }));
+    onNotice(`找到 ${list.length} 个音色，选一个再保存`);
+  }, [onNotice]);
+
+  const saveMossTts = useCallback(async () => {
+    const model = mossTtsDraft.model.trim() || "moss-tts-1.5-flash";
+    const voiceId = mossTtsDraft.voiceId.trim();
+    if (!voiceId) { onNotice("先点「查询音色」并选一个音色"); return; }
+    await apply({
+      remote: { ...(settings?.remote ?? {}), "moss-tts": { baseUrl: "https://api.mosi.cn/v1/audio/speech", model, voiceId } },
+      tts: { ...settings.tts, remote: ttsRemote },
+    });
+    const res: any = await window.codex.voiceSettingsGet().catch(() => null);
+    const saved = res?.settings?.remote?.["moss-tts"];
+    onNotice(saved?.voiceId === voiceId && saved?.model === model ? "MOSS 播报配置已保存" : "MOSS 播报配置保存失败，请重试");
+  }, [apply, mossTtsDraft, onNotice, settings, ttsRemote]);
+
+  const setTtsRemote = useCallback(async (next: boolean) => {
+    if (next && !(mossTtsDraft.voiceId || savedMossTts?.voiceId)) { onNotice("先点「查询音色」并选一个音色，再开启 MOSS 播报"); return; }
+    await apply({ tts: { ...settings.tts, remote: next } });
+    const res: any = await window.codex.voiceSettingsGet().catch(() => null);
+    const actual = res?.settings?.tts?.remote === true;
+    onNotice(actual === next ? (next ? "已开启 MOSS 播报" : "已切回本地播报") : "切换播报后端失败，请重试");
+  }, [apply, mossTtsDraft.voiceId, onNotice, savedMossTts?.voiceId, settings, ttsRemote]);
+
+  /** 音色显示名（列表加载过就用名字，否则截前 8 位 id）。 */
+  const mossVoiceName = useCallback((id?: string) => {
+    const key = String(id ?? "");
+    if (!key) return "";
+    return mossVoices.find((voice) => voice.id === key)?.name || `音色 ${key.slice(0, 8)}`;
+  }, [mossVoices]);
+
+  /** 直接试听 MOSS 音色：按弹窗里的草稿 model/voiceId 合成，不要求先开启播报。 */
+  const auditionMoss = useCallback(async () => {
+    const voiceId = String(mossTtsDraft.voiceId || savedMossTts?.voiceId || "").trim();
+    if (!voiceId) { onNotice("先点「查询音色」并选一个音色"); return; }
+    previewCtlRef.current?.stop();
+    setPreviewing(true);
+    try {
+      const result: any = await window.codex.voiceMossPreview({
+        model: mossTtsDraft.model.trim(),
+        voiceId,
+        text: "你好，我是你的语音助手，这是 MOSS 音色试听。",
+      });
+      if (!result?.ok) { onNotice(result?.error ?? "试听失败"); return; }
+      const samples = decodeFloat32Base64(result.audioBase64);
+      if (!samples.length) { onNotice("试听音频为空"); return; }
+      const ctl = await playSamples(samples, Number(result.sampleRate ?? 48000));
+      previewCtlRef.current = ctl;
+      await ctl.done;
+    } catch (error: any) {
+      onNotice(`试听失败：${error?.message ?? error}`);
+    } finally {
+      previewCtlRef.current = null;
+      setPreviewing(false);
+    }
+  }, [mossTtsDraft.model, mossTtsDraft.voiceId, onNotice, savedMossTts?.voiceId]);
 
   /* ⛔ 11-01 用户实测「取消不了」：主进程早就有 `voice:tts-pack-cancel`（abort 掉下载用的
      AbortController），但界面从来没接 —— 卡片上只有「下载中…」没有取消入口；而上面那张
@@ -450,9 +535,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           })}
         </div>
 
-        {/* 11-10 远程实时语音模型（MOSS-Live）：不下载模型、需 API 密钥。
-            11-11 接通实时通话链路：开启后 VoiceService 走全双工 S2S，连不上自动回落本地。 */}
-        <div className="voice-engine-card voice-engine-remote">
+        {/* 11-11 MOSS-Live：卡片与本地引擎卡同构（状态 + 启用/停用 + 配置），
+            具体配置（实时通话 / MOSS 播报）收进弹窗；音色可直接试听。 */}
+        <div className={`voice-engine-card voice-engine-remote${callBackend ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
           <div className="voice-engine-head">
             <div className="voice-engine-title">
               <span className="voice-engine-name-row">
@@ -462,53 +547,145 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               <span className="voice-engine-tagline">边听边说 · 自然打断 · 不占本机磁盘</span>
             </div>
             <div className="voice-engine-head-right">
+              {callBackend && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
               <span className={`voice-engine-state${moss?.configured ? " ok" : ""}`}>
                 {moss?.configured ? "已配置" : "未配置"}
               </span>
             </div>
           </div>
+          <div className="voice-engine-meta">
+            <span>实时通话</span>
+            <span>{moss?.model || "moss-live-1.0"}</span>
+            <span>播报：{ttsRemote ? "MOSS" : "本地"}</span>
+            {(savedMossTts?.voiceId || mossTtsDraft.voiceId) ? (
+              <span>{mossVoiceName(savedMossTts?.voiceId || mossTtsDraft.voiceId)}</span>
+            ) : null}
+          </div>
           <div className="voice-engine-role">
-            远程实时对话模型，需提供方 API 密钥。保存配置并开启下方开关后，语音通话走 MOSS-Live 全双工对话。
+            远程实时对话模型，需提供方 API 密钥。启用后语音通话走 MOSS-Live 全双工对话；配置里还能用 MOSS-TTS 朗读回复。
           </div>
-          <div className="voice-remote-form">
-            <label>接口地址
-              <input value={mossDraft.baseUrl} placeholder="wss://…/v1/realtime（实时 WebSocket 接口）"
-                onChange={(e) => setMossDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
-            </label>
-            <label>模型
-              <input value={mossDraft.model} placeholder="moss-live"
-                onChange={(e) => setMossDraft((d) => ({ ...d, model: e.target.value }))} />
-            </label>
-            <label>API 密钥
-              <input type="password" value={mossDraft.apiKey}
-                placeholder={moss?.hasKey ? `已配置 ····${moss.keyHint}（留空沿用）` : "sk-…"}
-                onChange={(e) => setMossDraft((d) => ({ ...d, apiKey: e.target.value }))} />
-            </label>
-            <div className="voice-remote-actions">
-              <button className="secondary-setting" onClick={() => void saveMoss()}>保存配置</button>
-              <button className="secondary-setting" onClick={() => setMossDraft((d) => ({ ...d, baseUrl: "wss://api.mosi.cn/v1/realtime", model: "moss-live-1.0" }))}>填入官方地址</button>
-              {moss?.docs && (
-                <button className="secondary-setting" onClick={() => void window.codex.openExternal(moss.docs!)}>官方文档</button>
-              )}
-            </div>
+          <div className="voice-engine-actions">
+            <button className="secondary-setting" onClick={() => setMossModalOpen(true)}>
+              <Settings2 size={13} />配置
+            </button>
+            <button
+              className={callBackend ? "secondary-setting" : "primary-setting"}
+              onClick={() => {
+                if (!moss?.configured) { setMossModalOpen(true); onNotice("先填好地址、模型和 API 密钥再启用"); return; }
+                void setCallBackend(!callBackend);
+              }}
+            >
+              <Power size={13} />{callBackend ? "停用" : "启用"}
+            </button>
+            <button
+              className="secondary-setting"
+              disabled={previewing || !(mossTtsDraft.voiceId || savedMossTts?.voiceId)}
+              onClick={() => void auditionMoss()}
+              title={(mossTtsDraft.voiceId || savedMossTts?.voiceId) ? "用 MOSS 音色试听一句" : "先在「配置」里选择音色"}
+            >
+              {previewing ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />}试听音色
+            </button>
           </div>
-          <div className="voice-remote-toggle">
-            <div>
-              <strong>用作实时通话后端</strong>
-              <span>开 = 通话走 MOSS-Live；连不上会自动回落本地语音，不会静默失败。</span>
-            </div>
-            <ToggleSwitch checked={callBackend} label="用作实时通话后端" onChange={(next) => void setCallBackend(next)} />
-          </div>
-          {mossLooksLikeTts && (
-            <div className="voice-engine-feedback is-err">
-              <TriangleAlert size={12} />
-              <span>当前是普通语音合成（TTS）地址/模型。实时通话请用官方地址 wss://api.mosi.cn/v1/realtime + 模型 moss-live-1.0（可点「填入官方地址」）。</span>
-            </div>
-          )}
           <div className="voice-engine-note">
-            对话内容会发送到提供方服务器；离线不可用。官方接口是 WebSocket 长连接（上行 16k PCM16，下行 48k PCM16），连不上会自动回落本地语音。
+            {ttsRemote
+              ? "播报/试听走 MOSS-TTS；实时通话走 MOSS-Live（WebSocket）。连不上都会如实报错，不静默失败。"
+              : "实时通话走 MOSS-Live（WebSocket）；播报仍用本地合成。点「配置」可开启 MOSS 播报。"}
           </div>
         </div>
+
+        {mossModalOpen && createPortal((
+          <div
+            className="voice-confirm-backdrop"
+            onMouseDown={(event) => { if (event.target === event.currentTarget) setMossModalOpen(false); }}
+          >
+            <div className="voice-moss-modal" role="dialog" aria-modal="true" aria-label="MOSS-Live 配置">
+              <div className="voice-moss-modal-head">
+                <strong>MOSS-Live 配置</strong>
+                <button type="button" className="voice-confirm-close" aria-label="关闭" onClick={() => setMossModalOpen(false)}>
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="voice-moss-modal-body">
+                <div className="voice-moss-section-title">实时通话</div>
+                <div className="voice-remote-form">
+                  <label>接口地址
+                    <input value={mossDraft.baseUrl} placeholder="wss://api.mosi.cn/v1/realtime"
+                      onChange={(e) => setMossDraft((d) => ({ ...d, baseUrl: e.target.value }))} />
+                  </label>
+                  <label>模型
+                    <input value={mossDraft.model} placeholder="moss-live-1.0"
+                      onChange={(e) => setMossDraft((d) => ({ ...d, model: e.target.value }))} />
+                  </label>
+                  <label>API 密钥
+                    <input type="password" value={mossDraft.apiKey}
+                      placeholder={moss?.hasKey ? `已配置 ····${moss.keyHint}（留空沿用）` : "sk-…"}
+                      onChange={(e) => setMossDraft((d) => ({ ...d, apiKey: e.target.value }))} />
+                  </label>
+                  <div className="voice-remote-actions">
+                    <button className="secondary-setting" onClick={() => void saveMoss()}>保存配置</button>
+                    <button className="secondary-setting" onClick={() => setMossDraft((d) => ({ ...d, baseUrl: "wss://api.mosi.cn/v1/realtime", model: "moss-live-1.0" }))}>填入官方地址</button>
+                    {moss?.docs && (
+                      <button className="secondary-setting" onClick={() => void window.codex.openExternal(moss.docs!)}>官方文档</button>
+                    )}
+                  </div>
+                </div>
+                <div className="voice-remote-toggle">
+                  <div>
+                    <strong>用作实时通话后端</strong>
+                    <span>开 = 通话走 MOSS-Live；连不上会自动回落本地语音，不会静默失败。</span>
+                  </div>
+                  <ToggleSwitch checked={callBackend} label="用作实时通话后端" onChange={(next) => void setCallBackend(next)} />
+                </div>
+                {mossLooksLikeTts && (
+                  <div className="voice-engine-feedback is-err">
+                    <TriangleAlert size={12} />
+                    <span>当前是普通语音合成（TTS）地址/模型。实时通话请用官方地址 wss://api.mosi.cn/v1/realtime + 模型 moss-live-1.0（可点「填入官方地址」）。</span>
+                  </div>
+                )}
+
+                <div className="voice-moss-section-title">语音播报（MOSS-TTS）</div>
+                <div className="voice-remote-toggle">
+                  <div>
+                    <strong>用 MOSS 朗读回复</strong>
+                    <span>开启后 Codex 的播报与试听改用 MOSS-TTS；实时通话不受影响。克隆音色仍优先本地。</span>
+                  </div>
+                  <ToggleSwitch checked={ttsRemote} label="用 MOSS 朗读回复" onChange={(next) => void setTtsRemote(next)} />
+                </div>
+                <div className="voice-remote-form">
+                  <label>TTS 模型
+                    <input value={mossTtsDraft.model} placeholder="moss-tts-1.5-flash"
+                      onChange={(e) => setMossTtsDraft((d) => ({ ...d, model: e.target.value }))} />
+                  </label>
+                  <label>音色 ID
+                    <input value={mossTtsDraft.voiceId} placeholder="点「查询音色」选择一个"
+                      onChange={(e) => setMossTtsDraft((d) => ({ ...d, voiceId: e.target.value }))} />
+                  </label>
+                  {mossVoices.length > 0 && (
+                    <label>从列表选择
+                      <AppSelect
+                        value={mossTtsDraft.voiceId}
+                        onChange={(id) => setMossTtsDraft((d) => ({ ...d, voiceId: id }))}
+                        ariaLabel="MOSS 音色"
+                        options={mossVoices.map((voice) => ({ value: voice.id, label: voice.name }))}
+                      />
+                    </label>
+                  )}
+                  <div className="voice-remote-actions">
+                    <button className="secondary-setting" onClick={() => void queryMossVoices()}>查询音色</button>
+                    <button className="secondary-setting" disabled={previewing || !mossTtsDraft.voiceId} onClick={() => void auditionMoss()}>
+                      {previewing ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />}试听
+                    </button>
+                    <button className="secondary-setting" onClick={() => void saveMossTts()}>保存播报配置</button>
+                  </div>
+                </div>
+                <div className="voice-engine-note">
+                  对话内容会发送到提供方服务器；离线不可用。实时通话是 WebSocket 长连接（上行 16k PCM16，下行 48k PCM16）；播报是 48k WAV。连不上都会如实报错。
+                </div>
+              </div>
+            </div>
+          </div>
+        ), document.body)}
+
       </div>
     </div>
   );

@@ -56,10 +56,15 @@ function requireVoiceModelsRoot(): string {
 
 /** 下发给渲染层的设置副本：远程配置只留地址/模型，**永不下发明文密钥**（密钥只进 hasKey/末四位）。 */
 function publicVoiceSettings(settings: any) {
-  const remote: Record<string, { baseUrl?: string; model?: string }> = {};
+  const remote: Record<string, { baseUrl?: string; model?: string; voiceId?: string }> = {};
   for (const [id, value] of Object.entries(settings?.remote ?? {})) {
     if (!value || typeof value !== "object") continue;
-    remote[id] = { baseUrl: (value as any).baseUrl, model: (value as any).model };
+    // voiceId 是音色标识（不是密钥），设置页回填/试听需要它。
+    remote[id] = {
+      baseUrl: (value as any).baseUrl,
+      model: (value as any).model,
+      ...((value as any).voiceId ? { voiceId: (value as any).voiceId } : {}),
+    };
   }
   return { ...settings, remote };
 }
@@ -190,6 +195,10 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     // 设置页「音色试听」：不必在通话中，内部会临时起一个 TTS worker，合成完即销毁
     return voiceAudioForIpc(await svc().previewVoice(input ?? {}));
   });
+  /* MOSS-TTS 音色试听：直接按草稿的 model/voiceId 合成，不要求先开启播报。 */
+  ipcHost.handle("voice:moss-preview", async (_event, input?: { model?: string; voiceId?: string; text?: string }) =>
+    voiceAudioForIpc(await svc().previewMossVoice(input ?? {}))
+  );
 
   // ── 语音通话「按键启动」：系统级快捷键（Electron globalShortcut）──
   // 用全局快捷键而不是页面内 keydown：即便应用没聚焦、焦点在别处也能唤起语音。
@@ -238,6 +247,9 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
   ipcHost.handle("voice:wake-stop", async () => { await svc().stopWakeListener(); return { ok: true }; });
 
   ipcHost.handle("voice:barge", () => svc().barge());
+
+  /** MOSS-TTS 音色列表（设置页「查询音色」用；只回 id/name）。 */
+  ipcHost.handle("voice:moss-voices", () => svc().listMossVoices());
 
   ipcHost.handle("voice:playback-done", () => {
     svc().notifyPlaybackDone();

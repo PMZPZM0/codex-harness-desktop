@@ -36,6 +36,8 @@ export type VoiceSettings = {
     /** 合成步数（10-24 新增，2–12）。步数越多音质越清晰、合成越慢。
      *  ⛔ 单一真相源：播报 / 通话 / 试听共用这一档（播报端曾写死 2 步换延迟，实测「沙哑听不清」）。 */
     numSteps: number;
+    /** 11-11：语音播报走 MOSS-TTS（远端）；false/缺省 = 本地引擎。克隆音色仍优先本地。 */
+    remote?: boolean;
   };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
   mic: { deviceId: string; noiseSuppression: boolean; echoCancellation: boolean; autoGainControl: boolean };
@@ -93,7 +95,7 @@ export type VoiceSettings = {
 };
 
 /** 远程语音模型的连接配置（apiKey 仅本机存档，状态 IPC 只回 hasKey/末四位）。 */
-export type RemoteVoiceConfig = { baseUrl?: string; model?: string; apiKey?: string };
+export type RemoteVoiceConfig = { baseUrl?: string; model?: string; apiKey?: string; /** MOSS-TTS 音色 ID（/v1/audio/voices 返回的 id） */ voiceId?: string };
 
 /**
  * 可单独启用/停用/删除的已下载资源。
@@ -393,6 +395,8 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       /* ⛔ engine 同理必须显式透传：漏了 = 用户选了 Kokoro、设置里根本没这一项，
          刷新后回落到 vits（表现为"切了没反应"）。 */
       ...(VOICE_TTS_ENGINES.includes(engine) ? { engine } : {}),
+      /* 11-11：MOSS 播报开关必须显式透传（漏了 = 开了播报刷新后又变本地）。 */
+      ...((tts as any).remote === true ? { remote: true } : {}),
     },
     asr: {
       rule1: clampNum(asr.rule1, 0.4, 6.0, d.asr.rule1),
@@ -456,7 +460,7 @@ function mergeRemote(raw: unknown): Record<string, RemoteVoiceConfig> {
     if (!value || typeof value !== "object") continue;
     const c = value as Record<string, unknown>;
     const entry: RemoteVoiceConfig = {};
-    for (const key of ["baseUrl", "model", "apiKey"] as const) {
+    for (const key of ["baseUrl", "model", "apiKey", "voiceId"] as const) {
       if (typeof c[key] === "string") entry[key] = (c[key] as string).trim();
     }
     out[id] = entry;

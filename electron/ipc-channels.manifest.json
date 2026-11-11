@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 658,
+  "count": 660,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5177,6 +5177,26 @@
       "invokeArgs": "",
       "cast": "Promise<{ ok: boolean }>",
       "note": null
+    },
+    {
+      "name": "voiceMossVoices",
+      "channel": "voice:moss-voices",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; voices?: { id: string; name: string }[]; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-11 MOSS-TTS 音色列表（查询 /v1/audio/voices；只回 id/name，不回密钥）"
+    },
+    {
+      "name": "voiceMossPreview",
+      "channel": "voice:moss-preview",
+      "paramsImpl": "input?: { model?: string; voiceId?: string; text?: string }",
+      "paramsDecl": "input?: { model?: string; voiceId?: string; text?: string }",
+      "returns": "Promise<{ ok: true; sampleRate: number; audioBase64: string } | { ok: false; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-11 MOSS-TTS 音色试听（按草稿 model/voiceId 合成，不要求先开启播报）"
     },
     {
       "name": "voiceDictationFinish",
