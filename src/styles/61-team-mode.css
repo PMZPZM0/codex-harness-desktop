@@ -3570,3 +3570,28 @@
 .team-created__hint strong { display: block; margin-bottom: 3px; color: var(--text, #1f2328); }
 .team-created__hint p { margin: 0 0 3px; }
 .team-created__hint p:last-child { margin-bottom: 0; }
+
+/* ⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 完成屏直接选。
+   原生 select 的颜色跟随根 `color-scheme`（项目已在 01-base 里按明暗设好），⛔ 不用 appearance:none
+   （那会把自带的箭头干掉，用户不知道能点）。 */
+.team-created__admin {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+  font-size: 12px;
+}
+.team-created__admin > span { color: var(--text-secondary, #57606a); }
+.team-created__admin select {
+  min-width: 190px;
+  max-width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.28));
+  border-radius: 6px;
+  background: var(--surface, transparent);
+  color: var(--text, #1f2328);
+  font-size: 12px;
+}
+.team-created__admin-state { font-style: normal; font-size: 11px; color: var(--faint, #8b949e); }
+.team-created__admin-state.is-warn { color: var(--danger, #d1242f); }

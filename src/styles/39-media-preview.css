@@ -5,7 +5,8 @@
 .media-preview-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 400;
+  /* 11-11：群聊/工作伙伴是全局模态 400，预览弹窗同层会被压住 ⇒ 抬到 980（低于灯箱 990 / 轻浮层 1000）。 */
+  z-index: 980;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -200,6 +201,7 @@
    ⛔ 遮罩整层 pointer-events:none ⇒ 底下的工作区照常可点；z=70 高于内容与思考浮窗（60）、
       低于设置页（80）与全局模态（400）—— 开设置时自动被盖住。 */
 .media-preview-backdrop.is-mini {
+  z-index: 985;
   inset: auto;
   top: 60px;
   right: 16px;

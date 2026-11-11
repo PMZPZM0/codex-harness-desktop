@@ -501,6 +501,11 @@ const catalog = [
       && /群已建好/.test(read("src/features/harness-team/12-team-create.tsx"))
       && /还差一个管理员/.test(read("src/features/harness-team/12-team-create.tsx")),
       "没设管理员给提醒（可关且记住）+ 建群完成屏给成员名单与管理员作用");
+    /* ⛔⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 建群完成屏就得能设，别让人再跑一趟群设置。 */
+    ok(/onSetAdmin/.test(read("src/features/harness-team/12-team-create.tsx"))
+      && /const pickAdmin = async/.test(read("src/features/harness-team/12-team-create.tsx"))
+      && /onSetAdmin=\{\(gid, memberId\) => setAdminOf/.test(read("src/features/harness-team/index.tsx")),
+      "建群完成屏可直接设管理员（接线到 setAdminOf），⛔ 不用再跑一趟群设置");
     /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
        判据必须排除提问/询问，⛔ 不能只看字数。 */
     ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)

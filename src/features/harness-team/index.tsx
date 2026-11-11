@@ -370,6 +370,8 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
         limit={limit}
         onClose={() => setCreateOpen(false)}
         onCreate={createFromDialog}
+        /* ⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 建群完成屏直接设，别再跑一趟群设置。 */
+        onSetAdmin={(gid, memberId) => setAdminOf(gid, memberId)}
         onCreated={(id) => {
           if (!id) return;
           setActiveId(id);

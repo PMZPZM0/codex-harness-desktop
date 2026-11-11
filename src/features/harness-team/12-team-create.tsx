@@ -61,10 +61,12 @@ type Props = {
   onCreate: (input: TeamCreateInput) => Promise<{ ok: boolean; error?: string; id?: string }>;
   /** 建完把新群选中（父层负责读它的消息） */
   onCreated?: (id: string) => void;
+  /** ⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 建完就在这一屏设，别让人再跑一趟群设置。 */
+  onSetAdmin?: (groupId: string, memberId: string) => Promise<{ ok?: boolean; error?: string }>;
 };
 
 /** 建群弹窗：群名、记忆、工作区与初始成员（受成员数上限约束）。 */
-export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCreated }: Props) {
+export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCreated, onSetAdmin }: Props) {
   const [name, setName] = useState("");
   const [memory, setMemory] = useState("");
   const [workspace, setWorkspace] = useState("");
@@ -78,6 +80,10 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
   const [error, setError] = useState("");
   /** ⛔ 建群成功后的那一屏（群 id + 群名）：给"成员名单 + 管理员提醒"，⛔ 不是直接关窗。 */
   const [done, setDone] = useState<{ id: string; name: string } | null>(null);
+  /* ⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 就在完成屏选，选完立刻存。 */
+  const [adminPick, setAdminPick] = useState("");
+  const [adminSaving, setAdminSaving] = useState(false);
+  const [adminError, setAdminError] = useState("");
 
   /* 每次打开都从干净状态开始（⛔ 不要留着上次填了一半的群名） */
   useEffect(() => {
@@ -90,6 +96,8 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
     setQuery("");
     setError("");
     setDone(null);
+    setAdminPick("");
+    setAdminError("");
   }, [open]);
 
   const reloadCatalog = useCallback(async () => {
@@ -207,6 +215,27 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
     setDone({ id: r.id ?? "", name: name.trim() });
   };
 
+  /* ⛔ 完成屏直接设管理员：选完立刻落盘（走 store 的 setAdminOf → 主进程），
+     失败就把选择退回「不设」并说明，⛔ 不假装成功。 */
+  const pickAdmin = async (memberId: string) => {
+    setAdminPick(memberId);
+    setAdminError("");
+    if (!memberId || !done?.id || !onSetAdmin) return;
+    setAdminSaving(true);
+    try {
+      const r = await onSetAdmin(done.id, memberId);
+      if (r && r.ok === false) {
+        setAdminError(r.error ?? "没设上，可进群后在「群设置 → 群管理员」再设");
+        setAdminPick("");
+      }
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : String(err));
+      setAdminPick("");
+    } finally {
+      setAdminSaving(false);
+    }
+  };
+
   if (!open) return null;
 
   /* ⛔⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
@@ -231,12 +260,32 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
             <p className="team-created__lead">还没有伙伴 —— 进群后在「群设置 → 添加伙伴」里加。</p>
           )}
           <div className="team-created__hint">
-            <strong>还差一个管理员</strong>
+            <strong>{adminPick ? "管理员已设好" : "还差一个管理员"}</strong>
             <p>
               管理员是群里的<strong>默认推进人</strong>：你不 @ 任何人时由它接话、拆解、分派、验收、收口；
               出问题也找它，不用你追着每个人问。
             </p>
-            <p>进群后输入框上方会提示你设置，也可以在「群设置 → 群管理员」里随时改。</p>
+            {onSetAdmin && done.id && picked.length > 0 ? (
+              <label className="team-created__admin">
+                <span>现在就设</span>
+                <select
+                  value={adminPick}
+                  disabled={adminSaving}
+                  onChange={(e) => void pickAdmin(e.target.value)}
+                >
+                  <option value="">不设（进群后也可在群设置里改）</option>
+                  {picked.map((p) => (
+                    <option key={`${p.kind}:${p.key}`} value={`tgt:${p.kind}:${p.key}`}>
+                      {p.name}{p.profession ? ` · ${p.profession}` : ""}
+                    </option>
+                  ))}
+                </select>
+                {adminSaving && <em className="team-created__admin-state">保存中…</em>}
+                {adminError && <em className="team-created__admin-state is-warn">{adminError}</em>}
+              </label>
+            ) : (
+              <p>进群后输入框上方会提示你设置，也可以在「群设置 → 群管理员」里随时改。</p>
+            )}
           </div>
           <footer className="team-sheet__foot">
             <span className="team-sheet__foot-hint">团群不用设：由团主理人担任</span>
