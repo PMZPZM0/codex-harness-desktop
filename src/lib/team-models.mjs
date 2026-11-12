@@ -944,6 +944,9 @@ export function projectGroupMessages(sources) {
     for (const msg of Array.isArray(src?.messages) ? src.messages : []) {
       const itemId = String(msg?.itemId ?? "");
       if (!threadId || !itemId) continue; // 无真身引用 ⇒ 丢弃（不造投影）
+      /* ⛔ 11-12 用户「系统消息要来干嘛」：启动对账补的 sys-interrupted 提示已整体取消，
+         历史落过盘的那些也不再投影到群里（⛔ 数据保留，只是不显示）。 */
+      if (itemId.startsWith("sys-interrupted:")) continue;
       const key = `${threadId}:${itemId}`;
       if (seen.has(key)) continue;
       seen.add(key);

@@ -1631,14 +1631,14 @@ export function TeamGroupView({
                         >@{m.name}</button>
                       ))}
                       {row.threadId && !row.threadId.startsWith("cli:") ? (goneThreads?.has(row.threadId) ? (
-                        <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
+                        <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">与 {nameOf(row.authorId)} 的会话已删除</span>
                       ) : (
                         <button
                           type="button"
                           className="team-msg__origin"
-                          title={onOpenThread ? `打开来源会话：${row.threadId}` : `来源会话：${row.threadId}（点一下复制）`}
+                          title={`打开与 ${nameOf(row.authorId)} 的私聊会话`}
                           onClick={() => { if (onOpenThread) onOpenThread(row.threadId); else void copyText({ ...row, text: row.threadId }); }}
-                        >来源 {shortId(row.threadId)}{onOpenThread ? " ↗" : ""}</button>
+                        >私聊 {nameOf(row.authorId)}{onOpenThread ? " ↗" : ""}</button>
                       )) : null}
                     </>
                   ) : null;
@@ -1866,14 +1866,14 @@ export function TeamGroupView({
                             {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
                             {row.usage && <TeamUsage usage={row.usage} />}
                             {row.threadId && !row.threadId.startsWith("cli:") ? (goneThreads?.has(row.threadId) ? (
-                              <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">来源 {shortId(row.threadId)} · 已删除</span>
+                              <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">与 {nameOf(row.authorId)} 的会话已删除</span>
                             ) : (
                               <button
                                 type="button"
                                 className="team-msg__origin"
-                                title={onOpenThread ? `打开来源会话：${row.threadId}` : `来源会话：${row.threadId}（点一下复制）`}
+                                title={`打开与 ${nameOf(row.authorId)} 的私聊会话`}
                                 onClick={() => { if (onOpenThread) onOpenThread(row.threadId); else void copyText({ ...row, text: row.threadId }); }}
-                              >来源 {shortId(row.threadId)}{onOpenThread ? " ↗" : ""}</button>
+                              >私聊 {nameOf(row.authorId)}{onOpenThread ? " ↗" : ""}</button>
                             )) : null}
                           </div>
                         )}

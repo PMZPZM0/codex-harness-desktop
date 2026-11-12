@@ -515,18 +515,15 @@ const catalog = [
       && !/\.team-msg \{[^}]*height:/.test(teamCss)
       && /prefers-reduced-motion[\s\S]{0,120}\.team-msg \{ animation: none; \}/.test(teamCss),
       "群消息入场是「出字」而非硬闪：opacity+位移+正文自上而下揭开，⛔ 不触发布局，且可降级");
-    /* ⛔⛔ 11-12 用户截图「这样没有后续了呀」：派活批次只在内存里，进程一退就没人收尾
-       ⇒ 启动必须对账（补群消息说明），⛔ 但不许自动重派（幂等缓存是内存的，重启后失效会重复烧钱）。 */
-    ok(/export async function reconcileInterruptedDispatches/.test(teamIpcSrc)
-      && /team-dispatch:/.test(teamIpcSrc) && /team-run:/.test(teamIpcSrc)
-      && /reconcileInterruptedDispatches\(\)/.test(read("electron/features/boot.ts")),
-      "启动对账被打断的派活（群里说明 + ⛔ 不自动重派）");
-    /* ⛔ 审查修：只认 team-dispatch:/team-run: 会漏掉**群聊 @ 链**（用户那个群正是这条）；
-       且 marker 用 Date.now() 会每重启补一条。 */
-    ok(/stoppedByHandoff/.test(teamIpcSrc)
-      && /【待处理/.test(teamIpcSrc)
-      && /rows\.some\(\(row\) => String\(row\.id \?\? ""\) === marker\)/.test(teamIpcSrc),
-      "对账同时覆盖 @ 链停住，且按触发消息幂等（⛔ 不重复补说明）");
+    /* ⛔⛔ 11-12 用户：「这个系统是啥意思，然后来源啥的，改成私聊会话」「系统消息要来干嘛」。
+       ⇒ 群消息流里不许再出现启动对账的系统提示；历史落过盘的也不投影；
+         来源按钮不再露内部 threadId，改成「私聊 成员名」。 */
+    ok(!/sys-interrupted:/.test(teamIpcSrc)
+      && !/reconcileInterruptedDispatches/.test(read("electron/features/boot.ts"))
+      && /itemId\.startsWith\("sys-interrupted:"\)/.test(read("src/lib/team-models.mjs"))
+      && !/来源 \{shortId\(row\.threadId\)\}/.test(hostView)
+      && /私聊 \{nameOf\(row\.authorId\)\}/.test(hostView),
+      "群里没有系统提示：对账消息已取消、历史不投影；来源是「私聊 成员名」而非内部 id");
     /* ⛔⛔ 11-12 用户「断之前好像也没有接力」：排片跑完 / 成员交回的回交被按 teamId 的
        "还有人在跑"门槛吞掉 —— 同一个团可被多个群同时调用 ⇒ 别的群在跑，本群就永远停在最后产出。
        ⛔ 回交只按本次排片（relayInFlight）判，不许按 teamId 跨群判。 */

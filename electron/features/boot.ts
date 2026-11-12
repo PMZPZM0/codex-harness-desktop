@@ -797,12 +797,8 @@ export async function bootApp() {
     const { upgradeGroupLeadSurfaces } = await import("./harness-team-ipc");
     await upgradeGroupLeadSurfaces();
   } catch { /* 预升级失败不阻断启动 */ }
-  /* ⛔⛔ 11-12 用户截图「这样没有后续了呀」：派活批次活在内存里，进程一退就没人收尾
-     ⇒ 启动时对账一次，把被打断的派活在群里说明（⛔ 不自动重派，避免重复烧钱）。 */
-  try {
-    const { reconcileInterruptedDispatches } = await import("./harness-team-ipc");
-    await reconcileInterruptedDispatches();
-  } catch { /* 对账失败不阻断启动 */ }
+  /* ⛔ 11-12 用户：「系统消息要来干嘛」—— 启动对账往群里补的系统提示已整体移除。
+     接力靠「链空必回交主理人」（runDispatchRounds 里的根因修复），不再补系统消息。 */
   markBoot("pre-create-window");
   createWindow();
   markBoot("window-created");
