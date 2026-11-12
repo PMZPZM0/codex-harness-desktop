@@ -116,7 +116,10 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady
           </div>
         )}
         {/* 10-24 用户报「播报声音太沙哑，听不清」：播报端原先写死 2 步（换延迟）⇒ 音质明显掉。
-            改成三档可选，默认「标准（4 步）= 模型默认音质」。⛔ 与通话/试听共用 tts.numSteps。 */}
+            改成三档可选，默认「标准（4 步）= 模型默认音质」。⛔ 与通话/试听共用 tts.numSteps。
+            ⛔ 11-12 用户：「MOSS 还需要这个选项？不需要吧」—— 音质档只对本机合成有效，
+               播报走 MOSS（且没选克隆音色）时整行不显示。 */}
+        {!(ttsRemote && !cloneSelected) && (
         <div className="voice-toggle" style={{ marginTop: 8, alignItems: "center", gap: 10 }}>
           <span style={{ minWidth: 64 }}>播报音质</span>
           <AppSelect
@@ -132,6 +135,7 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady
             ]}
           />
         </div>
+        )}
         <div className="voice-card-hint">
           开启后，应用会念 <strong>Codex 自己写的播报稿</strong> —— 它在回复末尾写一个小块
           （屏幕上不显示），念什么、什么语气都由它按上下文自己定；<strong>写不写、写什么，由它决定</strong>，
@@ -143,7 +147,7 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady
           通话中与非通话时都生效；<strong>非通话时只听不说话</strong>（不开麦克风），所以播报期间
           输入框上方会出现一条「语音播报中」的状态条（显示当前句与待播句数），<strong>点「停止」随时掐断</strong>，
           也可以右键悬浮球选择停止播报。语速见下方「语速」卡片（播报与通话共用同一档）；
-          <strong>觉得声音沙哑就调上面「播报音质」</strong>（步数越多越清晰、合成越慢），
+          <strong>觉得声音沙哑就调上面「播报音质」</strong>（步数越多越清晰、合成越慢；MOSS 播报不需要这一项），
           觉得赶不上就选「极速」。
         </div>
       </div>

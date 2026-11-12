@@ -2,7 +2,7 @@
  * VoiceSettingsSection —— **视图层**（09-22：状态与逻辑已提成 useVoiceSettingsSectionState，本文件只剩 JSX）。
  * ⛔ 解构名与 hook 返回键同名 ⇒ JSX 与搬迁前逐字一致。
  */
-import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, ShieldAlert, Sparkles, Square, Zap } from "lucide-react";
+import { Trash2, Upload, Headphones, Keyboard, Mic, Play, Radio, Sparkles, Square, Zap } from "lucide-react";
 import { AppSelect } from "./AppSelect";
 import { PageInfo } from "./SettingsHead";
 import { hotkeyLabel } from "../lib/hotkey.mjs";
@@ -155,6 +155,61 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           settings={settings}
           localExtra={<>
             <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
+            {/* 11-12 用户：「这两个都不是通用的，丢到基础语音模型配置里面去」——
+                语速/音量属于本机合成，跟着基础模型走；云端语速在 MOSS 弹窗里单独调。 */}
+            <div className="voice-subhead">
+              <strong>语速与音量</strong>
+              <span className="voice-group-sub">本机播报与通话共用；MOSS 播报语速在云端弹窗里</span>
+            </div>
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <span>语速与音量</span>
+                <span className="voice-card-value">{settings.tts.speed.toFixed(2)}× · {Math.round(settings.tts.volume * 100)}%</span>
+              </div>
+              <div className="voice-card-body">
+                <div className="voice-speed-presets" role="group" aria-label="语速档位">
+                  {VOICE_SPEED_PRESETS.map((speed) => (
+                    <button
+                      key={speed}
+                      type="button"
+                      className={`voice-speed-chip${Math.abs(settings.tts.speed - speed) < 0.001 ? " is-active" : ""}`}
+                      onClick={() => apply({ tts: { ...settings.tts, speed } })}
+                      disabled={saving}
+                      title={`切到 ${speed}×`}
+                    >
+                      {speed}×
+                    </button>
+                  ))}
+                </div>
+                <div className="voice-range-row">
+                  <span>语速</span>
+                  <input
+                    className="voice-range"
+                    type="range"
+                    min={0.5}
+                    max={2.0}
+                    step={0.05}
+                    value={settings.tts.speed}
+                    onChange={(e) => apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
+                    disabled={saving}
+                  />
+                </div>
+                <div className="voice-range-row">
+                  <span>音量</span>
+                  <input
+                    className="voice-range"
+                    type="range"
+                    min={0}
+                    max={2.0}
+                    step={0.05}
+                    value={settings.tts.volume}
+                    onChange={(e) => apply({ tts: { ...settings.tts, volume: Number(e.target.value) } })}
+                    disabled={saving}
+                  />
+                </div>
+                <div className="voice-card-hint">语速 0.5×～2.0×，音量 0%（静音）～200%；通话与播报共用这一份。</div>
+              </div>
+            </div>
             <div className="voice-subhead">
               <span className="voice-group-tag is-optional">可选</span>
               <strong>用自己的声音（音色克隆）</strong>
@@ -165,6 +220,84 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
                 装好 / 删除 / 导入后立即同步，不必重进页面。 */}
             <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" onStatusChange={() => { void reloadProfiles(); }} />
             <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
+            {/* 11-12 用户：「这个（识别细节/下载镜像）也全部丢进去，都不是通用的」——
+                识别断句、线程数、镜像源都属于本机模型，跟着基础模型配置走。 */}
+            <div className="voice-subhead">
+              <strong>识别细节 / 下载镜像</strong>
+              <span className="voice-group-sub">断句、线程数与镜像源；只影响本机识别与下载</span>
+            </div>
+            <VoiceSettingsSectionEndpointWait apply={apply} saving={saving} settings={settings} />
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <span>长句提前断句</span>
+                <span className="voice-card-value">{settings.asr.rule2.toFixed(1)} 秒</span>
+              </div>
+              <div className="voice-card-body">
+                <input
+                  className="voice-range"
+                  type="range"
+                  min={0.2}
+                  max={4.0}
+                  step={0.1}
+                  value={settings.asr.rule2}
+                  onChange={(e) => apply({ asr: { ...settings.asr, rule2: Number(e.target.value) } })}
+                  disabled={saving}
+                />
+                <div className="voice-card-hint">已经说了一大段时，用更短的停顿就断句（避免长句子憋着不提交）。</div>
+              </div>
+            </div>
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <span>单句最长时长</span>
+                <span className="voice-card-value">{settings.asr.rule3} 秒</span>
+              </div>
+              <div className="voice-card-body">
+                <input
+                  className="voice-range"
+                  type="range"
+                  min={3}
+                  max={60}
+                  step={1}
+                  value={settings.asr.rule3}
+                  onChange={(e) => apply({ asr: { ...settings.asr, rule3: Number(e.target.value) } })}
+                  disabled={saving}
+                />
+                <div className="voice-card-hint">到点强制成句提交，防止一直不停地说导致迟迟不出字。</div>
+              </div>
+            </div>
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <span>识别线程数</span>
+                <span className="voice-card-value">{settings.asr.numThreads} 线程</span>
+              </div>
+              <div className="voice-card-body">
+                <input
+                  className="voice-range"
+                  type="range"
+                  min={1}
+                  max={4}
+                  step={1}
+                  value={settings.asr.numThreads}
+                  onChange={(e) => apply({ asr: { ...settings.asr, numThreads: Number(e.target.value) } })}
+                  disabled={saving}
+                />
+                <div className="voice-card-hint">CPU 核心多可以调高（识别更跟手）；机器弱或要省电就调低。</div>
+              </div>
+            </div>
+            <div className="voice-card">
+              <div className="voice-card-head"><Zap size={15} /><span>模型下载镜像源</span></div>
+              <div className="voice-card-body">
+                <AppSelect
+                  className="voice-input"
+                  value={settings.modelHost}
+                  onChange={(v) => apply({ modelHost: v as Settings["modelHost"] })}
+                  disabled={saving}
+                  ariaLabel="模型下载镜像源"
+                  options={Object.entries(meta.modelHosts).map(([k, v]) => ({ value: k, label: v }))}
+                />
+                <div className="voice-card-hint">自动模式会先并发 HEAD 测速，按延迟排序选最快源；强制模式只走指定源。</div>
+              </div>
+            </div>
           </>}
         />
       </div>
@@ -173,61 +306,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       <div className="voice-group voice-group-step">
         <div className="voice-group-head">
           <span className="voice-group-step-badge">2</span>
-          <strong>播报与通用音量</strong>
-          <span className="voice-group-sub">只影响语音播报；语速与音量通话也共用</span>
+          <strong>语音播报</strong>
+          <span className="voice-group-sub">只影响播报；语速/音量与识别细节已并入第 1 步的「基础模型配置」</span>
         </div>
       <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} ttsReady={ttsReady} ttsBlockedReason={ttsBlockedReason} ttsRemote={settings.tts.remote === true} cloneSelected={Boolean(settings.tts.profileId)} mossReady={mossConfigured} onPickTtsSource={pickTtsSource} onGoModels={goModels} />
-
-      {/* 11-12：语速 + 音量合成一张卡（都是"通用项"，分两张只会让页面更长） */}
-      <div className="voice-card">
-        <div className="voice-card-head">
-          <span>语速与音量</span>
-          <span className="voice-card-value">{settings.tts.speed.toFixed(2)}× · {Math.round(settings.tts.volume * 100)}%</span>
-        </div>
-        <div className="voice-card-body">
-          <div className="voice-speed-presets" role="group" aria-label="语速档位">
-            {VOICE_SPEED_PRESETS.map((speed) => (
-              <button
-                key={speed}
-                type="button"
-                className={`voice-speed-chip${Math.abs(settings.tts.speed - speed) < 0.001 ? " is-active" : ""}`}
-                onClick={() => apply({ tts: { ...settings.tts, speed } })}
-                disabled={saving}
-                title={`切到 ${speed}×`}
-              >
-                {speed}×
-              </button>
-            ))}
-          </div>
-          <div className="voice-range-row">
-            <span>语速</span>
-            <input
-              className="voice-range"
-              type="range"
-              min={0.5}
-              max={2.0}
-              step={0.05}
-              value={settings.tts.speed}
-              onChange={(e) => apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
-              disabled={saving}
-            />
-          </div>
-          <div className="voice-range-row">
-            <span>音量</span>
-            <input
-              className="voice-range"
-              type="range"
-              min={0}
-              max={2.0}
-              step={0.05}
-              value={settings.tts.volume}
-              onChange={(e) => apply({ tts: { ...settings.tts, volume: Number(e.target.value) } })}
-              disabled={saving}
-            />
-          </div>
-          <div className="voice-card-hint">语速 0.5×～2.0×，音量 0%（静音）～200%；通话与播报共用这一份。</div>
-        </div>
-      </div>
 
       </div>
 
@@ -236,7 +318,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         <div className="voice-group-head">
           <span className="voice-group-step-badge">3</span>
           <strong>实时通话</strong>
-          <span className="voice-group-sub">按住快捷键说话、打断与悬浮球；识别细节可展开</span>
+          <span className="voice-group-sub">按住快捷键说话、打断与悬浮球；识别细节在基础模型配置里</span>
         </div>
 
       {/* 按键启动（全局快捷键） */}
@@ -275,99 +357,6 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       {/* 悬浮球（显示 / 随机气泡） */}
       <VoiceSettingsSectionFloatingBall apply={apply} saving={saving} settings={settings} />
 
-      <details className="settings-exp-advanced">
-        <summary>识别细节 / 下载镜像<small>高级</small></summary>
-      {/* 断句灵敏度 */}
-      <VoiceSettingsSectionEndpointWait apply={apply} saving={saving} settings={settings} />
-
-      {/* 长句阈值 */}
-      <div className="voice-card">
-        <div className="voice-card-head">
-          <span>长句提前断句</span>
-          <span className="voice-card-value">{settings.asr.rule2.toFixed(1)} 秒</span>
-        </div>
-        <div className="voice-card-body">
-          <input
-            className="voice-range"
-            type="range"
-            min={0.2}
-            max={4.0}
-            step={0.1}
-            value={settings.asr.rule2}
-            onChange={(e) => apply({ asr: { ...settings.asr, rule2: Number(e.target.value) } })}
-            disabled={saving}
-          />
-          <div className="voice-card-hint">已经说了一大段时，用更短的停顿就断句（避免长句子憋着不提交）。</div>
-        </div>
-      </div>
-
-      {/* 单句上限 */}
-      <div className="voice-card">
-        <div className="voice-card-head">
-          <span>单句最长时长</span>
-          <span className="voice-card-value">{settings.asr.rule3} 秒</span>
-        </div>
-        <div className="voice-card-body">
-          <input
-            className="voice-range"
-            type="range"
-            min={3}
-            max={60}
-            step={1}
-            value={settings.asr.rule3}
-            onChange={(e) => apply({ asr: { ...settings.asr, rule3: Number(e.target.value) } })}
-            disabled={saving}
-          />
-          <div className="voice-card-hint">到点强制成句提交，防止一直不停地说导致迟迟不出字。</div>
-        </div>
-      </div>
-
-      {/* 识别线程数 */}
-      <div className="voice-card">
-        <div className="voice-card-head">
-          <span>识别线程数</span>
-          <span className="voice-card-value">{settings.asr.numThreads} 线程</span>
-        </div>
-        <div className="voice-card-body">
-          <input
-            className="voice-range"
-            type="range"
-            min={1}
-            max={4}
-            step={1}
-            value={settings.asr.numThreads}
-            onChange={(e) => apply({ asr: { ...settings.asr, numThreads: Number(e.target.value) } })}
-            disabled={saving}
-          />
-          <div className="voice-card-hint">CPU 核心多可以调高（识别更跟手）；机器弱或要省电就调低。</div>
-        </div>
-      </div>
-
-      {/* 镜像源 */}
-      <div className="voice-card">
-        <div className="voice-card-head"><Zap size={15} /><span>模型下载镜像源</span></div>
-        <div className="voice-card-body">
-          <AppSelect
-            className="voice-input"
-            value={settings.modelHost}
-            onChange={(v) => apply({ modelHost: v as Settings["modelHost"] })}
-            disabled={saving}
-            ariaLabel="模型下载镜像源"
-            options={Object.entries(meta.modelHosts).map(([k, v]) => ({ value: k, label: v }))}
-          />
-          <div className="voice-card-hint">自动模式会先并发 HEAD 测速，按延迟排序选最快源；强制模式只走指定源。</div>
-        </div>
-      </div>
-
-      <div className="voice-card voice-card-note">
-        <ShieldAlert size={15} />
-        <span>
-          {settings.barge.mode === "manual"
-            ? "手动模式下，播报时你说话不会自动停 TTS——需要点「打断」按钮才会停。"
-            : "自动模式下，播报时检测到真人插话（高于回声地板）即自动停 TTS 并 turn/interrupt。"}
-        </span>
-      </div>
-      </details>
       </div>
     </section>
   );

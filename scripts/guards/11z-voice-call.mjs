@@ -1171,6 +1171,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/voice-tts-source/.test(announceSrc) && /基础模型（本机）/.test(announceSrc)
       && /付费云端（MOSS）/.test(announceSrc) && /onPickTtsSource/.test(announceSrc),
       "播报卡可直接选择生效模型（本机 / 云端 MOSS），配置仍在各自弹窗里");
+    ok(/!\(ttsRemote && !cloneSelected\)/.test(announceSrc) && /MOSS 播报不需要这一项/.test(announceSrc),
+      "播报走 MOSS 时隐藏「播报音质」（音质档只对本机合成有效，11-12 用户令）");
     ok(/const mossInUse = callBackend && Boolean\(moss\?\.configured\);/.test(enginesTsx2)
       && /const mossBroken = callBackend && !moss\?\.configured;/.test(enginesTsx2)
       && /配置不完整/.test(enginesTsx2),
