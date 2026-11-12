@@ -82,6 +82,12 @@ test("私聊认成员栏给主理人换过的脸（整团槽成员行）", () =>
   assert.equal(out.avatar, "preset:avatar-07");
 });
 
+test("私下换脸写进群级覆盖表（团槽 avatar 为空串）⇒ 私聊也要跟着变", () => {
+  const changed = { ...teamGroup, avatars: { "team:t1:lead1": "preset:avatar-03" } };
+  const out = talkPartnerIdentity({ memberId: "team:t1:lead1", name: "x" }, changed, catalog);
+  assert.equal(out.avatar, "preset:avatar-03");
+});
+
 test("目录读不到时降级为旧口径（⛔ 不把团成员画成主理人）", () => {
   const out = talkPartnerIdentity({ memberId: "team:t1:lead1", name: "文枢" }, teamGroup);
   assert.equal(out.targetKind, "member");

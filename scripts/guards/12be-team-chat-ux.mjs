@@ -2049,6 +2049,12 @@ const catalog = [
   const customGroup = { ...realGroup, members: realGroup.members.map((m) => m.targetKind === "team" ? { ...m, avatar: "preset:avatar-07" } : m) };
   ok(talkPartnerIdentity({ memberId: "team:t1:lead1", name: "x" }, customGroup, realCatalog).avatar === "preset:avatar-07",
     "私聊也认成员栏换过的脸（整团槽成员行与群级覆盖表两处都读）");
+  /* ⛔ 审查修正：团槽 avatar 默认就是空串，写成 `?? 覆盖表` 会让「从 @ 面板换脸」只有群聊变。 */
+  const overrideGroup = { ...realGroup, avatars: { "team:t1:lead1": "preset:avatar-03" } };
+  ok(talkPartnerIdentity({ memberId: "team:t1:lead1", name: "x" }, overrideGroup, realCatalog).avatar === "preset:avatar-03",
+    "团槽 avatar 为空串时仍回落到群级覆盖表（与 leadFaceOf 同为 || 口径）");
+  ok(/avatar: String\(slot\?\.avatar \?\? ""\)\.trim\(\) \|\| String\(group\?\.avatars\?\.\[memberId\]/.test(read("src/lib/team-models.mjs")),
+    "纯函数源码钉住 || 回落（⛔ 退回 ?? 就是「换了头像只有半边界面变」）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

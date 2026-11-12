@@ -1166,7 +1166,10 @@ export function talkPartnerIdentity(row, group, catalog = []) {
     return {
       id: memberId,
       name: String(leadEntry?.name ?? row?.name ?? ""),
-      avatar: String(slot?.avatar ?? group?.avatars?.[memberId] ?? ""),
+      /* ⛔ 11-12 审查修正：空串必须回落到群级覆盖表（团槽默认 avatar 就是 ""）。
+         群视图 leadFaceOf 用的是 `String(m.avatar ?? "").trim() || override`；
+         这里若写成 `slot?.avatar ?? 覆盖表`，从 @ 面板换过的脸只有群聊变、私聊不变。 */
+      avatar: String(slot?.avatar ?? "").trim() || String(group?.avatars?.[memberId] ?? "").trim(),
       kind: "bot",
       targetKind: "expert",
       targetKey: String(leadEntry?.key ?? ""),
