@@ -199,6 +199,9 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
       <TurnMediaCards files={files} />
       {/* 11-11 用户令：「这下面的展示加一个『本轮产物』字样，点击字可以折叠展开，默认折叠状态；
           下面的文件卡片和已修改文件，都放这个折叠里面」。 */}
+      {/* 11-12 用户：「如果没有文件产出，可以不展示」——0 个文件时不画空折叠。
+          判定用**产物与改动都为空**（正文内联引用通常也是这些文件，没产物就没有卡片可展开）。 */}
+      {(outputFiles.length > 0 || files.length > 0) && (
       <details className="turn-outputs">
         <summary><FileCode2 size={15} /><strong>本轮产物</strong><span className="turn-outputs-count">{files.length} 个文件</span><ChevronDown size={14} /></summary>
         <div className="turn-outputs-body">
@@ -254,6 +257,7 @@ export function CompletedChanges({ turn, onOpenFile, isLastTurn, onReview }: { t
           )}
         </div>
       </details>
+      )}
       {/* 右键菜单：与文件卡（消息里的内联卡片）共用同一份（在文件夹中显示 / 复制文件路径 / …），
           ⛔ 不复制第二份菜单实现 —— 菜单项永远只有一处真相源。 */}
       {menu && <FileCardMenu menu={menu} onOpen={() => openPath(menu.path, menu.name)} onClose={() => setMenu(null)} />}

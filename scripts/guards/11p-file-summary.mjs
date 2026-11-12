@@ -293,6 +293,8 @@ ok(watch.includes("export function dropStoredReports") && boot.includes("dropSto
       "消息正文不再单独画文件卡（⛔ 与折叠里重复）");
     ok(/extractFilePathsFromMarkdown\(assistantText\)/.test(statusSrc) && /!referencedInText\(file\.path\)/.test(statusSrc),
       "正文已引用的文件不再出「本轮产物」卡（⛔ 同一张图两张长卡）");
+    ok(/\(outputFiles\.length > 0 \|\| files\.length > 0\) && \(\s*\n\s*<details className="turn-outputs">/.test(statusSrc),
+      "本轮没有文件产出时不画空的「本轮产物」折叠（11-12 用户令）");
     ok(/\.turn-outputs > summary \{[\s\S]{0,160}display: inline-flex;/.test(read("src/styles/04-cards-tools.css"))
       && !/\.turn-outputs > summary svg:last-child \{ margin-left: auto/.test(read("src/styles/04-cards-tools.css")),
       "「本轮产物」标题不拉整行（紧凑 inline-flex，折叠箭头紧跟文字）");
