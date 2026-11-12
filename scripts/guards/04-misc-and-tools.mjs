@@ -960,8 +960,10 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     /DELEGATE_RAIL_LINGER_MS/.test(appSrc9) && /20\d\d\d/.test(appSrc9)
       ? ok("★ 调度头像轨跑完停留 20 秒（用户要求：方便查看内容）")
       : fail("头像跑完立刻消失 —— 用户没时间看内容");
-    /dispatchMcpCount !== 1/.test(mainSrc9)
-      ? ok("★ 启动自愈检测调度 MCP 段缺失/重复（老配置自动重写）")
+    /* 11-12：harness-dispatch MCP 退役（引擎 0.157 起延迟暴露 + 每次启动握手 failed）。
+       自愈契约从「缺失/重复就补写」改成「有残留段就清理」；调度工具面真相源 = dynamicTools。 */
+    /dispatchMcpCount !== 0/.test(mainSrc9) && /清理历史 MCP 段/.test(mainSrc9)
+      ? ok("★ 启动自愈清理历史调度 MCP 段（老配置自动重写，MCP 已退役）")
       : fail("启动自愈不检测调度 MCP 段 —— 老配置永远不会被修复");
     /canDispatchFrom\(/.test(mainSrc9) && /delegateRegistry\.register/.test(mainSrc9)
       ? ok("主进程调度入口接了硬闸与登记表")

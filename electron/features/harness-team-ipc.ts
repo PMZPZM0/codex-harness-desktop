@@ -86,6 +86,8 @@ import { buildDispatchCatalog } from "./dispatch-core";
 /* ⛔⛔ 11-07 用户令：「群聊是独立板块、独立通道，群聊不需要调度」 ——
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
 import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, buildGroupTalkTools, adoptTalkThreadAlias, type TalkMember } from "./group-talk";
+/* 11-12 三条群聊编排机制（② 显式发言权 / ③ 宿主判定终止）：纯函数策略，宿主侧仲裁。 */
+import { canSpeak, shouldStopGroupTurn } from "../../src/lib/group-orchestration.mjs";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
    团群主理人的会话要挂**真的**调度工具（工具面只在 thread/start 定死，见附录 Z）。
@@ -1536,6 +1538,13 @@ async function runDispatchRounds(
       const guard = evaluateMemberOutput({
         text: output,
         recentRows: groupRows,
+        /* ① 执行与汇报分离：本回合**其他成员**已真实落盘的产出才算证据；
+           主理人自己写的「已派出 / 进度到第二环」不算（11-12 用户实测的编造进度）。 */
+        memberOutputs: groupRows
+          .filter((row) => Number(row.at ?? 0) >= startedAt
+            && String(row.authorId ?? "") !== speakerId
+            && String(row.text ?? "").trim())
+          .map((row) => String(row.text ?? "")),
         /* 本回合自己通过 group_say 已落的那条由上面的同回合判重处理，别重复记账。 */
         excludeIds: new Set(spokenRows.map((row) => row.id)),
         rosterNames: [...roster.map((m) => m.name), "管理员"],
@@ -1640,8 +1649,19 @@ async function runDispatchRounds(
       idleRounds = ackedThisTurn > 0 ? 0 : idleRounds + 1;
       options.onPhase?.("finished", partner, { ok: okFlag, error: errMsg || undefined, threadId });
       /* ⛔ 11-10 硬闸：与群里已有结论近重复的产出**不再拉起一串人**（防刷屏式接力）。 */
-      if (hop === 0 && chainBudget > 0 && okFlag && output && guard.allowRelay) {
+      /* ③ 宿主判定终止：完成由任务项数 / 预算 / 每人回合上限决定，⛔ 不采信模型自报「做完了」
+         （11-12 借鉴成熟群聊编排：COUNT THE ITEMS, NOT THE HEADS）。 */
+      const hostStop = shouldStopGroupTurn({ chainBudget, ranCount, maxTurnsPerMember: MAX_TURNS_PER_MEMBER });
+      if (hop === 0 && !hostStop.stop && okFlag && output && guard.allowRelay) {
         const queue: Array<{ next: GroupTarget; ask: { ask: string } }> = [];
+        /* ② 显式发言权：本轮已发言者按共享消息总线一次性算出，宿主仲裁谁能接话，
+           ⛔ 不再靠模型自觉写行首 @，也不在循环里逐行重读全量群日志。 */
+        const spokeSince = [...new Set(
+          (readStore().messages?.[group.id] ?? [])
+            .filter((row) => Number((row as { at?: unknown })?.at ?? 0) >= startedAt)
+            .map((row) => String((row as { authorId?: unknown })?.authorId ?? ""))
+            .filter(Boolean),
+        )];
         const asks = parseAgentMentions(output, group, {
           excludeId: partner.id,
           alreadyRan: [...ranCount.entries()].filter(([, n]) => n >= MAX_TURNS_PER_MEMBER).map(([id]) => id),
@@ -1665,11 +1685,12 @@ async function runDispatchRounds(
                否则照常把他的这半句投递过去（这才是"成员之间互相沟通"）。 */
           /* ⛔⛔ 11-08 审查：判重窗口必须是**本轮开始之后**（之前一分钟也算 = 上一轮刚说过话的
              成员会被静默跳过，正是"艾特不回"的复发点）。 */
-          const spokeRecently = (readStore().messages?.[group.id] ?? []).some(
-            (row) => String((row as { authorId?: unknown })?.authorId ?? "") === next.id
-              && Number((row as { at?: unknown })?.at ?? 0) >= startedAt,
-          );
-          if (spokeRecently) continue;
+          if (!canSpeak({
+            memberId: String(next.id),
+            spokeSince,
+            ranCount: Number(ranCount.get(String(next.id)) ?? 0),
+            maxTurnsPerMember: MAX_TURNS_PER_MEMBER,
+          })) continue;
           chainBudget -= 1;
           /* ⛔ 不 await：主回复先上屏，被叫的人稍后自己进来（否则一个人卡住整条链）。
              ⛔ 以前把整条原消息又发一遍，被叫的人不知道自己要做什么。 */
@@ -1678,6 +1699,8 @@ async function runDispatchRounds(
           openTaskFor(group.id, { id: partner.id, name: partner.name }, { id: next.id, name: next.name }, String(ask.ask ?? "").slice(0, 120));
           /* ⛔ 先收集，再决定并行还是串行（见循环后的排片）。 */
           queue.push({ next, ask });
+          /* ③ 预算 / 上限由宿主收口：到顶就停，不靠模型说「做完了」。 */
+          if (shouldStopGroupTurn({ chainBudget, ranCount, maxTurnsPerMember: MAX_TURNS_PER_MEMBER }).stop) break;
         }
         /* ⛔⛔ 11-10「让主理人自己排下一轮」：主持人一次回合里可能点了好几个人 ——
            **按它说的顺序串行执行**（后台链，不阻塞它这一轮的收尾），观感上就是它在排片；

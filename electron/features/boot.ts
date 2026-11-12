@@ -1431,12 +1431,12 @@ export async function bootApp() {
       // model_provider 加载配置，段被移除会报 "Model provider `X` not found" → 会话内容全空。
       // 旧版本 applyCustomModel 写配置时过滤了禁用供应商——检测到缺失就整份重写补回。
       const disabledMissing = (await readCustomModels()).some((candidate: any) => candidate.enabled === false && !configText.includes(`[model_providers.${candidate.provider}]`));
-      // 调度 MCP（harness-dispatch）：段缺失（老配置）/ 重复（09-16 保留机制漏排除的历史文件）
-      // 都触发重写。⛔ 端口已固定、令牌已持久化 → url 跨运行稳定，不再有「每次启动都过期」的问题；
-      // 但仍要校验端口/令牌真的对得上（旧版本写过随机端口的历史文件必须被纠正）。
+      // ⛔⛔ 11-12：harness-dispatch MCP 退役。段**存在**就是历史残留 ⇒ 触发重写清掉
+      //   （ownedMcpServers 里仍列着它 ⇒ 重写不会把旧段保留回来）。
+      //   引擎 0.157 起内置 MCP 工具延迟暴露，注册它只会每次启动握手 failed；
+      //   调度工具面真相源 = 宿主 dynamicTools。HTTP /rpc 服务照旧由 boot 起，不受影响。
       const dispatchMcpCount = (configText.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
-      await ensureDispatchToken(); // 令牌持久化在文件里，这里读出来才能比对配置是否过期
-      const dispatchMcpBad = dispatchMcpCount !== 1 || !configText.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !configText.includes(getDispatchToken());
+      const dispatchMcpBad = dispatchMcpCount !== 0;
       // ⛔ 安装目录漂移（09-19 用户：「还有没有绝对路径的，通通查出来了解决掉」）：
       //   上面所有检查都只问「键**在不在**」，不问「路径**还对不对**」。而 config.toml 里的
       //   PATH / PYTHON / PYTHONHOME / tools 相关绝对路径是**按当时的安装目录生成**的 ——
@@ -1464,20 +1464,17 @@ export async function bootApp() {
       console.warn("[custom-model] config self-heal failed:", error);
     }
   } else {
-    // 没配自定义模型（如被清空/首次运行）：config.toml 也要保证有调度 MCP 段，
-    // 否则引擎起来后连不上 → 工具永远注册不上。直接做一次最小重写。
+    // 没配自定义模型：11-12 起同样**清掉**历史 harness-dispatch 段（不再补写）。
+    // ⛔ 只删这几行：config.toml 的其余用户配置必须逐字保留（用户手写的 MCP 段不能动）。
     try {
-      await ensureDispatchToken();
       const cfgPath = path.join(codexHome, "config.toml");
       const existing = await fs.readFile(cfgPath, "utf8").catch(() => "");
-      const block = `[mcp_servers.harness-dispatch]\nurl = "http://127.0.0.1:${DISPATCH_FIXED_PORT}/mcp?token=${getDispatchToken()}"\nstartup_timeout_sec = 60\n`;
-      const count = (existing.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
-      if (count !== 1 || !existing.includes(`:${DISPATCH_FIXED_PORT}/mcp`) || !existing.includes(getDispatchToken())) {
+      if (/\[mcp_servers\.harness-dispatch\]/.test(existing)) {
         const cleaned = existing.replace(/\[mcp_servers\.harness-dispatch\][^\[]*/g, "").replace(/\[mcp_servers\.harness-dispatch\.env\][^\[]*/g, "");
-        await writeTextFileAtomic(cfgPath, cleaned.trimEnd() + "\n\n" + block);
+        await writeTextFileAtomic(cfgPath, cleaned.trimEnd() + "\n");
       }
     } catch (error) {
-      console.warn("[dispatch] MCP 段兜底写入失败：", error);
+      console.warn("[dispatch] 清理历史 MCP 段失败：", error);
     }
   }
   // 启动副作用一律「尽力而为」：这里任何一处抛出都会让 whenReady 的 promise 变成

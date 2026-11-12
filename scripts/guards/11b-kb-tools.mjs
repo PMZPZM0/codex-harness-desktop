@@ -60,14 +60,15 @@ for (const name of ["knowledge_search", "knowledge_add"]) {
 //   真名是 **`harness-dispatch`（连字符）**，见 boot.ts 的 `[mcp_servers.harness-dispatch]`。
 //   ⇒ 教训：判据里的**标识符必须从源码抄**，不能凭"大概是下划线"写 —— 那是恒红的制造机。
 const boot = readFileSync(join(ROOT, "electron", "features", "boot.ts"), "utf8");
-ok(/\[mcp_servers\.harness-dispatch\]/.test(boot),
-  "boot 会把 harness-dispatch MCP server 写进 codex 配置（不写 = 模型永远看不到这些工具）");
-// ⛔ 端口必须用**常量插值**（源码是模板串 `${DISPATCH_FIXED_PORT}`，运行时才成数字）。
-//   ⇒ 判据查"有没有用这个常量"，而不是查字面 URL —— 源码里根本不存在数字形态。
-ok(
-  /\[mcp_servers\.harness-dispatch\][^`]*\$\{DISPATCH_FIXED_PORT\}/.test(boot),
-  "MCP 配置的 url 用的是 DISPATCH_FIXED_PORT 常量（写死端口号 ⇒ 改端口即断链）",
-);
+/* ⛔⛔ 11-12 改锚：引擎 0.157 起内置 MCP 工具整批延迟暴露 ⇒ MCP 段**不是**模型可见性的证据。
+   harness-dispatch MCP 已退役（每次启动握手 failed），知识库工具唯一可见通道 =
+   宿主 dynamicTools 的 harness_tools 网关（part08/01-seg.tsx）。 */
+const seg08 = readFileSync(join(ROOT, "src", "features", "app-state", "parts", "part08", "01-seg.tsx"), "utf8");
+ok(/name: "harness_tools"/.test(seg08) && /knowledge_search/.test(seg08) && /knowledge_add/.test(seg08),
+  "知识库工具挂在宿主 dynamicTools 网关（MCP 退役后模型唯一可见通道）");
+ok(!/url = "http:\/\/127\.0\.0\.1:\$\{DISPATCH_FIXED_PORT\}\/mcp/.test(boot)
+  && /dispatchMcpCount !== 0/.test(boot),
+  "boot 不再注册 harness-dispatch MCP（避免每次启动握手 failed），只清理历史残留段");
 
 // ⚠️ 失败模式的对照说明：`unsupported call` 有两种成因，静态核对只能排除第二种。
 //   ① MCP server 没起/端口错位→ 引擎连不上，一个工具都调不到。

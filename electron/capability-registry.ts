@@ -124,7 +124,7 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     label: "多智能体调度",
     purpose: "把任务派给另一个会话/子智能体执行",
     backends: [
-      { id: "harness-dispatch", label: "内置 MCP（harness-dispatch · agent_invoke）", why: "已固定走 MCP（早期用 dynamicTools 的通道已废弃）；仅主会话注册，委派会话不再往下套娃" },
+      { id: "harness-dispatch", label: "宿主 dynamicTools（agent_invoke / harness_tools 网关）", why: "11-12 起内置 harness-dispatch MCP 已退役：引擎 0.157 起内置 MCP 工具整批延迟暴露，模型看不到；注册只会每次启动握手失败。调度与 40+ 内置能力的唯一可见通道 = 宿主 dynamicTools（thread/start 定死 + resume 前改写 rollout 首行），执行闸仍在主进程" },
     ],
   },
 ];

@@ -20,8 +20,8 @@ import type { CustomModelFile } from "../features/custom-model-types";
 import { collectSessionProviderIds } from "../features/provider-sessions";
 import { connectorEnv, connectorToml, mcpToolRulesOf } from "../main/04-connector-config";
 import { devInstructionsInput } from "../main/12-skill-discipline";
-import { dispatchHttpPort, dispatchToken } from "../features/dispatch-core";
-import { ensureDispatchHttp } from "../features/dispatch-rpc";
+/* 11-12：harness-dispatch MCP 已退役 ⇒ 这三个符号不再参与 config 生成。
+   HTTP 服务本身仍由 boot 无条件起（/rpc 内部通道保留），只是不向引擎注册 MCP server。 */
 import { escapeToml, readConnectors } from "../main/07-connectors-io";
 import { mcpOverrideEnabled, readMcpOverrides } from "../main/06-mcp-overrides";
 import { normalizeProvider, readCustomModels, readUserConfigSplit, writeModelCatalogToml } from "../main/01-model-catalog";
@@ -302,25 +302,15 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     // 没有工具映射字段），又因为缺 `default_permissions` 让整份配置非法。
     // 现在由文件末尾的 injectMcpToolRules 把规则落到 `disabled_tools` / `[mcp_servers.X.tools.<名>]`
     // 这两个**引擎真正支持**的键上（见 mcpToolRulesOf 上方实证记录）。
-    // 内置调度 MCP（09-16）：agent_invoke 走引擎级 MCP 注入 —— dynamicTools 只在 thread/start
-    // 生效（引擎硬约束），MCP 是唯一能覆盖**所有会话（含老会话）**的注册通道。执行闸在主进程。
-    ...(await (async () => {
-      try {
-        await ensureDispatchHttp();
-        if (!dispatchHttpPort) return [];
-        // 直连 HTTP 传输（引擎原生支持 url）：无子进程冷启动 —— stdio 走 electron.exe 实测要
-        // 28s 才握手完，超过 startup_timeout 会被引擎判死，工具根本不注册（09-16 踩过）。
-        return [
-          "[mcp_servers.harness-dispatch]",
-          `url = "http://127.0.0.1:${dispatchHttpPort}/mcp?token=${dispatchToken}"`,
-          "startup_timeout_sec = 60",
-          "",
-        ];
-      } catch (error: any) {
-        console.warn("[dispatch] MCP 段写入失败：", error?.message ?? error);
-        return [];
-      }
-    })()),
+    // ⛔⛔ 11-12 起**不再向引擎注册 harness-dispatch MCP**（根因修复，不是绕过）：
+    //   引擎 0.157 起内置 MCP 工具整批「延迟暴露」，这 40 多个工具对模型全不可达
+    //   （项目 10-05 隔离复现实测：input 里 agent_invoke 出现 0 次）；唯一可见通道是宿主
+    //   dynamicTools 的 agent_invoke / harness_tools 网关。继续注册只会让引擎每次启动
+    //   握手 failed（mcp-diag 里 4 个会话全挂、其余 7 个 ready），还占 60s startup_timeout。
+    //   ⇒ 调度工具面只有一个真相源：dynamicTools。
+    //   `ownedMcpServers` 仍保留 "harness-dispatch" ⇒ 重写配置时会**清掉历史残留段**，
+    //   老配置里的 [mcp_servers.harness-dispatch] 不会复活。
+    ...([] as string[]),
     // 内置桌面自动化 MCP：受覆盖表 + 两个自动化总闸控制。
     // ⛔ 09-20 修正注册条件（原先只看 desktopAuto）：nuphus 是**同一个 MCP 服务器**同时提供
     //    `desktop_*` 与 `browser_*`，只看桌面开关会带来两个问题 ——

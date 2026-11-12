@@ -2103,5 +2103,43 @@ const catalog = [
       "群聊 ensure / peek 两处恒写回权威工具面（⛔ 已被污染的旧会话能自愈，主理人 extraTools 不丢）");
   }
 
+  /* ⛔⛔ 11-12 用户令「把值得抄的三条机制拿出来」：落成纯函数并真跑，⛔ 不靠注释声称。
+     借鉴 Cumora COORDINATION.md / AgentChat speaker selection / MetaGPT Environment。 */
+  {
+    const orch = await import(pathToFileURL(join(ROOT, "src/lib/group-orchestration.mjs")).href);
+    const fake = orch.verifyProgressClaim({ text: "已经派给落纸了，进度到第二环" });
+    const real = orch.verifyProgressClaim({ text: "已经派给落纸了，进度到第二环", memberOutputs: ["落纸的正文"] });
+    const tool = orch.verifyProgressClaim({ text: "已完成 2/4", toolCalls: [{ name: "team_member_invoke" }] });
+    ok(fake.claim && !fake.ok && fake.notice.length > 0 && real.ok && tool.ok,
+      "① 执行与汇报分离：无证据自报进度被拦并给可见回执，有成员产出/派活调用才放行");
+    const spokeSince = ["a"];
+    const picked = orch.selectNextSpeakers({ candidates: ["a", "b", "b", "c"], spokeSince, known: ["a", "b", "c"], budget: 2, maxTurnsPerMember: 2, ranCount: { b: 2 } });
+    ok(!orch.canSpeak({ memberId: "a", spokeSince, known: ["a", "b", "c"] }) && JSON.stringify(picked) === '["c"]',
+      "② 显式发言权：已发言 / 超回合上限 / 重复候选由宿主过滤，预算截断");
+    ok(orch.shouldStopGroupTurn({ itemsTotal: 3, itemsDone: 3 }).stop
+      && orch.shouldStopGroupTurn({ chainBudget: 0 }).stop
+      && !orch.shouldStopGroupTurn({ itemsTotal: 3, itemsDone: 2, chainBudget: 5, ranCount: { a: 1, b: 1 } }).stop,
+      "③ 宿主判定终止：按任务项数 / 预算收口，不是「每人都发过一次」就算完成");
+  }
+  {
+    const guardrails = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));
+    const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(/verifyProgressClaim\(/.test(guardrails) && /progressClaim/.test(guardrails)
+      && /memberOutputs:/.test(ipc) && /canSpeak\(/.test(ipc) && /shouldStopGroupTurn\(/.test(ipc),
+      "三条机制都接进群聊链路（guardrails 收口 ①、接力循环接 ②③）");
+  }
+
+  /* ⛔⛔ 11-12：harness-dispatch 内置 MCP 是冗余第二套（引擎 0.157 起延迟暴露，模型看不到），
+     每次启动握手 failed。根因修复 = 不再注册 + 清历史段 + 改掉「已固定走 MCP」的假注释。 */
+  {
+    const apply = codeOnly(read("electron/features/custom-model-apply.ts"));
+    const boot = codeOnly(read("electron/features/boot.ts"));
+    const reg = codeOnly(read("electron/capability-registry.ts"));
+    ok(!/\[mcp_servers\.harness-dispatch\]/.test(apply)
+      && /dispatchMcpCount !== 0/.test(boot)
+      && !/已固定走 MCP/.test(reg),
+      "⛔ harness-dispatch MCP 已退役：不再注册、残留段会清理、能力表不再声称走 MCP");
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
