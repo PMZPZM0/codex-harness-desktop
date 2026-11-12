@@ -19,6 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargetsInText, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
 import { searchGroupRows } from "../../src/lib/team-search.mjs";
 import { createGroup, setMemberAvatar } from "../../src/lib/team-models.mjs";
+import { pickAgentAvatar } from "../../src/lib/agent-avatars.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -1972,6 +1973,58 @@ const catalog = [
     && /\.team-sheet__card\.team-created \{ width: min\(480px/.test(read("src/styles/61-team-mode.css"))
     && /\.team-created__hint \{[\s\S]{0,220}border-left/.test(read("src/styles/61-team-mode.css")),
     "团群不再提示设管理员；完成屏收窄、有内边距、去掉卡中卡");
+}
+
+/* ── ⑦ 同一个人的头像必须只有一张脸（11-12 用户截图：「头像为什么对不上」）──
+   ⛔⛔ fixture 必须照**真实目录形状**写：member 的 `key` 是 `<teamId>:<memberId>`、
+      主理人 key 同样带 `<teamId>:` 前缀。上面那个 `m1` / `chengshu` 的裸 key fixture
+      把"两处 seed 不同"这个 bug 完全掩盖了 —— 它测了三年都是绿的，用户一眼就看见两张脸。 */
+{
+  const realCatalog = [
+    { kind: "expert", key: "t1:lead1", memberId: "lead1", name: "文枢", profession: "主编", teamId: "t1" },
+    { kind: "member", key: "t1:m1", memberId: "m1", name: "衡纸", profession: "撰稿", teamId: "t1" },
+  ];
+  const realGroup = {
+    id: "g2", name: "内容生产组", leadId: "u1",
+    members: [
+      { id: "u1", kind: "human", name: "我" },
+      { id: "p2", kind: "bot", name: "内容创作专家团", targetKind: "team", targetKey: "t1" },
+    ],
+  };
+  const sec = mentionSectionsOf(realGroup, realCatalog);
+  const kidItem = sec.find((s) => s.key === "kid").items[0];
+  const teamItem = sec.find((s) => s.key === "team").items[0];
+
+  /* 团成员：@ 面板 seed = 裸 memberId（消息气泡按合成 id `team:t1:m1` 拆出来的就是它） */
+  ok(kidItem.avatar.targetKey === "m1",
+    `团成员头像 seed = 裸 memberId（实得 ${JSON.stringify(kidItem.avatar.targetKey)}；⛔ 用目录 key t1:m1 就与气泡不同脸）`);
+  /* 主理人：seed = 目录 key（成员栏 leadFaceOf / @ 面板 / 资料卡三处同一口径） */
+  ok(teamItem.avatar.targetKey === "t1:lead1",
+    `主理人头像 seed = 目录 key（实得 ${JSON.stringify(teamItem.avatar.targetKey)}）`);
+
+  /* 反证：这两种 seed 真的会散列到不同造型 ⇒「必须统一」不是洁癖 */
+  const a = pickAgentAvatar("expert", "t1:lead1");
+  const b = pickAgentAvatar("expert", "lead1");
+  ok(`${a.file}#${a.cell}` !== `${b.file}#${b.cell}`,
+    `两种 seed 精确画出两张脸（${a.file}#${a.cell} vs ${b.file}#${b.cell}）—— 这就是用户看到「对不上」的成因`);
+
+  const view = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+  /* 主理人在群里发言用合成 id ⇒ 必须回成员栏那一份，⛔ 不许自己拼 targetKey */
+  ok(/if \(slot && !isTeamKidAuthor\(teamAuthor\.teamId, teamAuthor\.memberId\)\) return leadFaceOf\(slot\)/.test(view),
+    "合成 id 的主理人分支复用 leadFaceOf（与成员栏同一份 seed + 同一份换脸覆盖）");
+  ok(!/targetKey: kid\.key/.test(view),
+    "⛔ 成员栏团成员不许拿目录 key 当头像 seed（那会与气泡画成两张脸）");
+  ok(/return !isTeamKidAuthor\(ta\.teamId, ta\.memberId\)/.test(view),
+    "「是不是团成员」判据只有 isTeamKidAuthor 一处（管理员与头像共用，⛔ 两处各判一次就会漂）");
+  /* 换脸覆盖两处都认：成员行 avatar + 群级覆盖表（按合成 id 存） */
+  ok(/group\.avatars\?\.\[teamAuthorIdOf\(String\(m\.targetKey \?\? ""\), teamMemberIdOf\(lead\)\)\]/.test(view),
+    "主理人换脸两处都认（成员行 + 按合成 id 存的群级覆盖表），⛔ 只认一处 ⇒ 换了只有半边界面变");
+  ok(/group\.avatars\?\.\[kidId\]/.test(view) && /targetKey: teamMemberIdOf\(kid\)/.test(view),
+    "团成员换脸覆盖按合成 id 存、seed 用裸 memberId（覆盖与选脸口径分开）");
+
+  const mentionSrc = codeOnly(read("src/lib/team-mention.mjs"));
+  ok(/targetKey: memberKey \}/.test(mentionSrc) && !/targetKey: key \},\s*$/m.test(mentionSrc.split("kids.push")[1]?.slice(0, 900) ?? ""),
+    "@ 面板团成员同样用裸 memberId（纯函数层与视图同一口径）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

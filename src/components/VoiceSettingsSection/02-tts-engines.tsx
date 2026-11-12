@@ -266,7 +266,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
   /* MOSS 播报（TTS）：密钥沿用 moss-live，音色要单独查。 */
   const queryMossVoices = useCallback(async () => {
-    const r: any = await window.codex.voiceMossVoices().catch((e: any) => ({ ok: false, error: String(e?.message ?? e) }));
+    /* ⛔ catch 的 err 用 unknown（11-12 把这里的 `e: any` 收掉：它让本文件 any 14→15，
+       而 any 棘轮只许降不许涨 —— 这类纯类型收紧零行为变化，别靠 --update 记账绕过去）。 */
+    const r: any = await window.codex.voiceMossVoices().catch((e: unknown) => ({ ok: false, error: String((e as { message?: unknown })?.message ?? e) }));
     if (!r?.ok) { onNotice(r?.error ?? "查询音色失败"); return; }
     const list = Array.isArray(r.voices) ? r.voices : [];
     setMossVoices(list);

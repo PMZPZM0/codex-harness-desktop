@@ -556,11 +556,25 @@ export function TeamGroupView({
      ⛔ 头像仍用主理人的脸（`faceOf`），那是同一个人的招牌。 */
 
   /** 头像种子同理：团用**主理人**的身份（kind=expert + 主理人 key），画出来才是专家中心那张脸；
-     ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。 */
-  const faceOf = (m: TeamGroup["members"][number]) => {
+     ⛔ 只换 key 不换 kind 会画成团队徽章（`agentAvatarKindOf("team")`），等于没换。
+     ⛔⛔ 11-12 用户（截图红框）：「头像为什么对不上」—— 同一行「文枢」在成员栏画一张脸、
+        在消息气泡里画另一张。根因是**同一身份两条渲染路径各拼一份 seed**：
+        成员栏走整团槽（seed = 目录 `lead.key`，形如 `<teamId>:<leadId>`），
+        而主理人在群里发言的 authorId 是合成 id `team:<teamId>:<leadId>` ⇒ `faceOfId`
+        取 `memberId` 段当 seed ⇒ 少了 `<teamId>:` 前缀。FNV 散列对这两个串给出
+        不同图集不同格子（实测 expert-b/cell3 vs expert-a/cell1）⇒ 两张脸。
+        ⇒ **团槽 = 主理人这份脸只在这里算一次**（`leadFaceOf`），成员栏 / 消息气泡 /
+          @ 芯片 / 群头头像全部复用它。⛔ 别在别处再拼 targetKey。 */
+  const leadFaceOf = (m: TeamGroup["members"][number]) => {
     const lead = teamLeadOf(m);
-    return lead ? { ...m, targetKind: "expert", targetKey: lead.key } : m;
+    if (!lead) return m;
+    /* 换脸覆盖两处都认：① 成员行自己的 `avatar`（成员栏点头像写进 members[]）；
+       ② 群级覆盖表按**合成 id** 存的那条（@ 面板/团成员路径写进 avatars{}）。
+       ⛔ 只认一处 ⇒ 换个头像只有半边界面变，又变成"对不上"。 */
+    const override = String(group.avatars?.[teamAuthorIdOf(String(m.targetKey ?? ""), teamMemberIdOf(lead))] ?? "").trim();
+    return { ...m, targetKind: "expert", targetKey: lead.key, avatar: String(m.avatar ?? "").trim() || override };
   };
+  const faceOf = (m: TeamGroup["members"][number]) => (m?.targetKind === "team" ? leadFaceOf(m) : m);
 
   /* 定时任务在群日志里的作者 id 是 `automation`（主进程写入）—— 它不是群成员，
      但消息不能显示成裸 id「automation」。⛔ 只有这一处映射，别在别处再判断一次。 */
@@ -604,6 +618,12 @@ export function TeamGroupView({
      管理员从"普通群的一个设置项"升成**群级身份**：团群里它天然就是团主理人（那张椅子），
      普通群里是 `group.adminId`。判定只此一处，显示 / 路由 / 名册全部读它。 */
   const teamSlotOf = group.members.find((m) => m.targetKind === "team") ?? null;
+  /** 这条合成 id 是不是该团的**普通成员**（目录里有 member 条目）。
+     ⛔ 主理人不在成员表里 ⇒ 查不到 = 主理人。判据只此一处：管理员判定与头像判定都读它，
+        11-12 的两张脸就是"两处各判一次、判据漂了"造成的。 */
+  const isTeamKidAuthor = (teamId: string, memberId: string) =>
+    catalog.some((t) => t.kind === "member" && t.teamId === teamId
+      && (teamMemberIdOf(t) === memberId || t.key === memberId));
   /** 这个人是不是本群的管理员（按"椅子"判：整团槽 / 主理人合成 id / 普通群 adminId）。 */
   const adminSeatOf = (id: string) => {
     const key = String(id ?? "");
@@ -614,8 +634,7 @@ export function TeamGroupView({
     const ta = parseTeamAuthorId(key);
     if (!ta || ta.teamId !== String(teamSlotOf.targetKey ?? "")) return false;
     /* ⛔ 团成员不是管理员：目录里能查到 member 条目的一律排除（主理人不在成员表里）。 */
-    return !catalog.some((t) => t.kind === "member" && t.teamId === ta.teamId
-      && (teamMemberIdOf(t) === ta.memberId || t.key === ta.memberId));
+    return !isTeamKidAuthor(ta.teamId, ta.memberId);
   };
   /* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」。
      只在**真的用得着**时提醒：普通群、没设管理员、还有伙伴可派、用户没关过。
@@ -642,20 +661,26 @@ export function TeamGroupView({
   };
   /** 按 id 取"画头像用的那个 member"（团 ⇒ 主理人的 key；团成员 ⇒ 目录里那条；未知 id ⇒ 只有名字的占位） */
   const faceOfId = (id: string) => {
-    const teamAuthor = parseTeamAuthorId(id);
+    const key = String(id ?? "");
+    const teamAuthor = parseTeamAuthorId(key);
     if (teamAuthor) {
+      /* ⛔⛔ 11-12「头像对不上」：主理人发言用合成 id，但它跟成员栏那一行是**同一个人**
+         ⇒ 一律回 `leadFaceOf(团槽)`（同一份 seed + 同一份换脸覆盖），⛔ 不再自己拼 targetKey。
+         判据与 `adminSeatOf` 同源：目录里查得到 member 条目才是团成员，否则就是主理人。 */
+      const slot = group.members.find((m) => m.targetKind === "team" && String(m.targetKey ?? "") === teamAuthor.teamId);
+      if (slot && !isTeamKidAuthor(teamAuthor.teamId, teamAuthor.memberId)) return leadFaceOf(slot);
       return {
         id: teamAuthor.memberId,
         kind: "bot",
-        name: nameOf(id),
+        name: nameOf(key),
         targetKind: "member",
         targetKey: teamAuthor.memberId,
         /* 团成员换过的脸（群级覆盖表，key = 合成 id）：消息气泡 / @ 芯片与成员栏同一张。 */
-        avatar: group.avatars?.[id] ?? "",
+        avatar: group.avatars?.[key] ?? "",
       };
     }
-    const m = memberOf(id);
-    return m ? faceOf(m) : { id, name: nameOf(id) };
+    const m = memberOf(key);
+    return m ? faceOf(m) : { id: key, name: nameOf(key) };
   };
 
   /* @ 候选（正文解析用）：群成员 + 团成员，名字统一走 personNameOf（群主 = 用户中心真名）。 */
@@ -2211,7 +2236,10 @@ export function TeamGroupView({
                                 }}
                               >
                                 <MemberAvatar
-                                  member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: kid.key, avatar: group.avatars?.[kidId] ?? "" }}
+                                  /* ⛔⛔ 11-12「头像对不上」：seed 取**裸 memberId**，⛔ 不是目录 `kid.key`
+                                     （`<teamId>:<memberId>`）。消息气泡的 `faceOfId` 用的是合成 id 拆出来的
+                                     memberId —— 两处 seed 不同就会画成两张脸（同主理人那个坑）。 */
+                                  member={{ id: kid.key, kind: "bot", name: kid.name, targetKind: "member", targetKey: teamMemberIdOf(kid), avatar: group.avatars?.[kidId] ?? "" }}
                                   size={22}
                                 />
                               </button>

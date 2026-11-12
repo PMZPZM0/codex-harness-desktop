@@ -194,11 +194,20 @@ ok(deliverBlock.indexOf("for (const entry of entries) {") < deliverBlock.indexOf
 const timerRevokes = [...deliverBlock.matchAll(/setQueuedTimer\(threadId, entry\.id, null, \{ silent: true \}\)/g)];
 ok(timerRevokes.length === 2,
   `派发两条落点都撤销这条的定时（各 1 处，实测 ${timerRevokes.length}）—— 消息都发出去了还留着主进程定时器，到点会对一个不存在的队列条目广播 due`);
-ok(/armPinForReleasedQueue\(threadId, "steer"\);\s*\r?\n\s*settlePendingSteers\(threadId, \[entry\.id\]\);\s*\r?\n\s*try \{/.test(deliverBlock)
+/* ⛔⛔ 11-12（`309732b86`）用户实测「点了立即，上屏有延迟」：arm→take→settle 在同一同步 tick，
+   React 还没绘制气泡就被摘掉，用户要等 1s+ 引擎回声才看到消息。
+   ⇒ 判据改成**顺序契约**（比原来更严）：① armPin 后**不许**立刻 settle（否则又回到这个毛病）；
+   ② steer 成功交接时先 settle 再撤定时/删队列（反过来就是"队列没了气泡还在"⇒ 同一句两遍）；
+   ③ 失败路径与 finally 各兜一次，任何 continue / 抛错都不许把条目卡在 sending。 */
+ok(/armPinForReleasedQueue\(threadId, "steer"\);\s*\r?\n\s*try \{/.test(deliverBlock)
+  && !/armPinForReleasedQueue\(threadId, "steer"\);\s*\r?\n\s*settlePendingSteers/.test(deliverBlock),
+  "⛔ armPin 之后不许立刻摘气泡（11-12 用户实测「点了立即上屏有延迟」：同一 tick 摘掉 = React 没画就没了）");
+ok(/if \(steered\) \{\s*\r?\n\s*settlePendingSteers\(threadId, \[entry\.id\]\);\s*\r?\n\s*void bag\.setQueuedTimer/.test(deliverBlock)
   && /const armedForStart = bag\.armPinForReleasedQueue/.test(deliverBlock)
   && /settlePendingSteers\(threadId, \[entry\.id\]\);\s*\r?\n\s*if \(armedForStart\)/.test(deliverBlock)
-  && /finally \{[\s\S]{0,200}?settlePendingSteers\(threadId, \[entry\.id\]\)/.test(deliverBlock),
-  "交出去之前先摘气泡（两条落点都先 settle）：引擎回声会把这条画在当前回合里，气泡留着就是同一句显示两遍；finally 再兜一次底，任何提前 continue / 抛错都不许把条目卡在 sending");
+  && /finally \{[\s\S]{0,200}?settlePendingSteers\(threadId, \[entry\.id\]\)/.test(deliverBlock)
+  && /disarmPinIntent\("steer-fail"\);\s*\r?\n\s*settlePendingSteers\(threadId, \[entry\.id\]\)/.test(deliverBlock),
+  "steer 成功先 settle 再撤定时/删队列；失败与 finally 各兜一次（气泡留着 = 同一句显示两遍）");
 ok(/if \(armedForStart\) \{[\s\S]{0,200}?showQueuedOptimistic\(bag, entry\.input\)/.test(deliverBlock)
   && /disarmPinIntent\("queue-start-fail"\)/.test(deliverBlock)
   && /if \(isCurrent\(\)\) \{\s*\r?\n\s*if \(armedForStart\) bag\.setOptimisticInput\(null\);/.test(deliverBlock),

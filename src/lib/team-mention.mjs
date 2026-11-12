@@ -180,7 +180,9 @@ export function mentionSectionsOf(group, catalog) {
           name: String(k.name ?? key),
           role: String(k.profession || "团成员"),
           hint: `只叫${String(k.name ?? key)}本人（不经过主理人）`,
-          avatar: { id: key, kind: "bot", name: String(k.name ?? key), targetKind: "member", targetKey: key },
+          /* ⛔⛔ 头像 seed 取**裸 memberId**（`memberKey`），⛔ 不是目录 `key`（`<teamId>:<memberId>`）：
+             消息气泡按合成 id 拆出裸 memberId 选脸，两处 seed 不同 = @ 面板与群里是两张脸（11-12 实测）。 */
+          avatar: { id: key, kind: "bot", name: String(k.name ?? key), targetKind: "member", targetKey: memberKey },
           muted,
           unbound: false,
         });
