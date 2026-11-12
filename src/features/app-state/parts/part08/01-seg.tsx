@@ -707,8 +707,13 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       PERSONA_APPLY_TOOL,
       /* 创世 boss 的群编排面（10-24）：建群 → 派活 → 查账 → 审查覆盖 / 升级 → 浏览器能力检查。
          ⛔ 只给带队会话用：成员会话不挂（成员不许拉人、不许审人）。
-         ⛔ 派活是异步的（宿主 turn/start 立刻返回），结果以 [群事件] 回投 —— 描述里已写死，别改成"等结果"。 */
-      ...(BOSS_GROUP_TOOLS as unknown as any[]),
+         ⛔ 派活是异步的（宿主 turn/start 立刻返回），结果以 [群事件] 回投 —— 描述里已写死，别改成"等结果"。
+         ⛔⛔ 11-12 用户实测（「进度到第二环」全是假的）：原来这里**无条件**展开，工作伙伴群的主理人
+            会话（restrictedThreadRole 判为「工作伙伴会话」）也拿到了 group_create/group_assign，
+            于是它自己新建了一个演示群、造了四个同名角色，在假群里派活+自审，再把假群进度当真事
+            汇报到用户眼前 —— 用户这边一个成员产出都看不到。⇒ 与上面的 agent_invoke 同一道闸：
+            受限会话一律不挂 BOSS 群编排工具；真正派活只认 team_member_invoke（当前群成员）。 */
+      ...(bag.threadRole.restricted ? [] : (BOSS_GROUP_TOOLS as unknown as any[])),
       /* 10-29：收藏夹 / 开发日记 / 密码本 —— 用户指定的权限模型（会话级授权、默认关、
          只读 + 只追加、密码本明文不进上下文）。⛔ 注册**不带开关条件**：dynamicTools 只在
          thread/start 与 resume 定死，带条件就会出现「刚打开开关，模型还是没有工具」；

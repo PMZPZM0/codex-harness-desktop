@@ -558,6 +558,14 @@ try {
     "工具描述与 MCP 孪生都标明：只有主会话可调度，子会话没有权限");
   ok(/bag\.threadRole\.restricted \? \[\]/.test(seg08Src),
     "受限会话不注册 agent_invoke / agent_archive_sessions（不只靠执行端拒绝）");
+  /* ⛔⛔ 11-12 用户实测「进度到第二环」全是假的：BOSS 群编排工具原先**无条件**展开，
+     工作伙伴群主理人拿到 group_create/group_assign 后自己造了个演示群自导自演。
+     只查「文件里有没有 restricted ? []」会恒真（agent_invoke 那一处就能顶绿）⇒ 必须精确
+     锚到 BOSS_GROUP_TOOLS 那一行，并负向禁止无条件展开（剥注释，防注释把它顶假红）。 */
+  const seg08Code = seg08Src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  ok(/\.\.\.\(bag\.threadRole\.restricted \? \[\] : \(BOSS_GROUP_TOOLS as unknown as any\[\]\)\)/.test(seg08Code)
+    && !/\.\.\.\(BOSS_GROUP_TOOLS as unknown as any\[\]\)/.test(seg08Code),
+    "⛔ 工作伙伴/被调度会话一律不挂 BOSS 群编排工具（不许自己新建群派活，只认当前群的 team_member_invoke）");
   /* ⛔ 11-07：零调度权限这句话收进了 `src/lib/dispatch-voice.mjs`（人话版），三处壳改成引用它。
      ⇒ 断言**改锚接线**：既要有"口径只有一处"，也要有"三处都真用上"。
      ⛔ 只查字面量的话，改文案就红；只查引用的话，把话删了还绿（自洽地错）。 */
