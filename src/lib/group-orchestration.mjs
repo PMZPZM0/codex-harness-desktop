@@ -34,6 +34,53 @@ export const ORCHESTRATION_RULES = Object.freeze({
 export const DISPATCH_TOOL_NAMES = Object.freeze(["team_member_invoke", "team_phase_invoke", "agent_invoke"]);
 
 /**
+ * ④ 编排主体识别（11-12 补，① ~ ③ 的前置条件）。
+ *
+ * ⛔⛔ 背景（真机故障）：整套编排（工具面 / 催办 / 回交 / 收口 / handoffTo）原来只认
+ *   「群里有整团槽」（`targetKind === "team"`）。但用户建群的主流方式是从 @ 面板**逐个拉人**：
+ *   群里坐着一个团的**主理人**（`targetKind === "expert"`，`targetKey = "<teamId>:<leadId>"`）
+ *   加若干成员 ⇒ 判定为"非团群" ⇒ 主理人工具面只剩 group_say/group_read/group_members，
+ *   它只能把任务书写进正文（"这一轮派给：显影"），成员从未被唤醒 —— 用户看到的就是"说了没人干"。
+ *
+ * ⇒ 编排主体按**座位**解析，三种形态同一口径：
+ *   ① 整团槽（`targetKind === "team"`）—— 原路径，优先；
+ *   ② 主持人座位（`adminId` 指向的 expert，其 targetKey 拆出的 lead 与该团 lead 一致）；
+ *   ③ 群里唯一的团主理人座位（② 没命中时的兜底）。
+ * ⛔ 多个团主理人同群且都不是主持人 ⇒ 返回 null（判不准就不猜，保持旧行为）。
+ *
+ * @param {{ members?: Array<{ id?: string, targetKind?: string, targetKey?: string }>,
+ *           adminId?: string, teams?: Array<{ teamId?: string, lead?: { id?: string } }> }} input
+ * @returns {{ seatId: string, teamId: string, via: "team-slot" | "admin-seat" | "lead-seat" } | null}
+ */
+export function resolveGroupTeamSeat(input = {}) {
+  const rows = (Array.isArray(input?.members) ? input.members : []).filter(Boolean);
+  const slot = rows.find((m) => String(m.targetKind ?? "") === "team");
+  if (slot) {
+    const teamId = String(slot.targetKey ?? "");
+    return teamId ? { seatId: String(slot.id ?? ""), teamId, via: "team-slot" } : null;
+  }
+  const teamById = new Map(
+    (Array.isArray(input?.teams) ? input.teams : []).filter(Boolean)
+      .map((t) => [String(t.teamId ?? ""), t]),
+  );
+  const seatOf = (m, via) => {
+    if (!m || String(m.targetKind ?? "") !== "expert") return null;
+    const key = String(m.targetKey ?? "");
+    const cut = key.indexOf(":");
+    if (cut <= 0) return null;
+    const teamId = key.slice(0, cut);
+    const leadId = key.slice(cut + 1);
+    const team = teamById.get(teamId);
+    if (!team || !leadId || String(team?.lead?.id ?? "") !== leadId) return null;
+    return { seatId: String(m.id ?? ""), teamId, via };
+  };
+  const byAdmin = seatOf(rows.find((m) => String(m.id ?? "") === String(input?.adminId ?? "")), "admin-seat");
+  if (byAdmin) return byAdmin;
+  const hits = rows.map((m) => seatOf(m, "lead-seat")).filter(Boolean);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/**
  * 「自报进度」文案特征。⛔ 只收集**明确宣称已执行动作/进度**的句式；
  * 不碰「我建议 / 可以派 / 下一步」这类未宣称完成的表达，避免误伤。
  */

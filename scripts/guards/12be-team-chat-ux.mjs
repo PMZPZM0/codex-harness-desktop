@@ -494,7 +494,7 @@ const catalog = [
       && /adminSeatOf\(m\.id\) && \(/.test(hostView)
       && /team-group__member-tag is-admin/.test(hostView)
       && /if \(adminSeatOf\(id\)\) return "管理员"/.test(hostView)
-      && /const adminId = isTeamGroup[\s\S]{0,80}teamSlotMember/.test(teamIpcSrc)
+      && /const adminId = isTeamGroup[\s\S]{0,80}teamSlot\?\.id/.test(teamIpcSrc)
       && /你是这个群的\*\*管理员\*\*/.test(talk),
       "管理员=群级身份（团群由主理人担任）：标签 / 消息头角色 / 名册 / 提示词同一处判定");
     /* ⛔⛔ 11-12 用户：「加一个设置管理员提醒，管理员的作用」「创建完成普通专家群之后，弹窗提醒+成员名单」。 */
@@ -1526,8 +1526,11 @@ const catalog = [
     && /另起一行、行首/.test(talk) && /必须带 `@` 和冒号/.test(talk)
     && /收不到、也不会回你/.test(talk),
     "成员提示词：独立「群聊沟通协议」段（行首 @名字：/ group_say(to=) 二选一，只写名字不算）");
-  ok(/不填 to 只有用户看得到，其他成员不会因此回你/.test(tools),
-    "group_say 工具描述写清「不填 to = 其他成员不会回你」");
+  /* ⛔ 11-12：描述同时要写清「填 to = 真的把活交给他」（旧文案写的是"这是沟通，不是派任务"，
+     等于当场否掉派活语义 —— 主理人于是只写正文「派给：某人」而不填 to）。 */
+  ok(/不填 to 只有用户看得到，其他成员不会被叫醒/.test(tools)
+    && /只写「派给：某人」却不填 to/.test(tools),
+    "group_say 工具描述写清「不填 to = 其他人不会被叫醒」「填 to = 真的把活交给他」");
 }
 
 /* ── ⑳ 删群联动（11-08 用户实测：群删了、伙伴会话还挂在侧栏，「联动性太差了」）──────
@@ -2137,6 +2140,32 @@ const catalog = [
       && orch.shouldStopGroupTurn({ chainBudget: 0 }).stop
       && !orch.shouldStopGroupTurn({ itemsTotal: 3, itemsDone: 2, chainBudget: 5, ranCount: { a: 1, b: 1 } }).stop,
       "③ 宿主判定终止：按任务项数 / 预算收口，不是「每人都发过一次」就算完成");
+  }
+  /* ⛔⛔ 11-12 用户截图连续两轮（「这一轮派给：显影」/「催办会不会重复回复」）：
+     ① 编排主体原来只认整团槽 ⇒ 逐个拉人建的群（主理人是 expert 座位）判成"非团群"
+        ⇒ 主理人工具面只剩 3 个群聊工具、催办/回交/收口全部不激活，它只能把任务书写进正文；
+     ② 催办会让主理人再落一条消息 ⇒ 重复回复。修法用**事实判据**（有没有调派活工具），不靠文本相似度。 */
+  {
+    const orch = await import(pathToFileURL(join(ROOT, "src/lib/group-orchestration.mjs")).href);
+    const teams = [
+      { teamId: "t1", lead: { id: "t1lead" } },
+      { teamId: "t2", lead: { id: "t2lead" } },
+    ];
+    const lead = { id: "tgt:expert:t1:t1lead", targetKind: "expert", targetKey: "t1:t1lead" };
+    const slot = orch.resolveGroupTeamSeat({ members: [lead, { id: "tgt:team:t2", targetKind: "team", targetKey: "t2" }], teams });
+    const byAdmin = orch.resolveGroupTeamSeat({ members: [lead], adminId: "tgt:expert:t1:t1lead", teams });
+    const byOnly = orch.resolveGroupTeamSeat({ members: [lead], teams });
+    const ambiguous = orch.resolveGroupTeamSeat({ members: [lead, { id: "x", targetKind: "expert", targetKey: "t2:t2lead" }], teams });
+    const plain = orch.resolveGroupTeamSeat({ members: [{ id: "u", targetKind: "member", targetKey: "t9:u" }], teams });
+    ok(slot?.via === "team-slot" && slot.teamId === "t2"
+      && byAdmin?.via === "admin-seat" && byAdmin.teamId === "t1"
+      && byOnly?.via === "lead-seat"
+      && ambiguous === null && plain === null,
+      "④ 编排主体按**座位**解析：整团槽 / 主持人座位 / 唯一主理人同一口径；判不准（两个主理人都不是主持人 / 普通群）返回 null");
+    const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok((ipc.match(/resolveGroupTeamSeat\(/g) || []).length >= 2
+      && /echoedNudge/.test(ipc) && /&&\s*!echoedNudge/.test(ipc),
+      "④ 接线：发言与启动预升级两处同源解析；催办回合没调派活工具 ⇒ 不落群（⛔ 不靠文本相似度兜）");
   }
   {
     const guardrails = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));

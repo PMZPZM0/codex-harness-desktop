@@ -43,6 +43,18 @@ export declare const ORCHESTRATION_RULES: Readonly<Record<"progressClaim" | "spe
 export declare const DISPATCH_TOOL_NAMES: readonly string[];
 export declare const PROGRESS_CLAIM_RE: RegExp;
 export declare function verifyProgressClaim(input?: { text?: string; toolCalls?: Array<{ name?: string } | string>; memberOutputs?: unknown[] }): ProgressVerdict;
+
+export interface GroupSeatInput {
+  members?: Array<{ id?: string; targetKind?: string; targetKey?: string }>;
+  adminId?: string;
+  teams?: Array<{ teamId?: string; lead?: { id?: string } }>;
+}
+export interface GroupTeamSeat {
+  seatId: string;
+  teamId: string;
+  via: "team-slot" | "admin-seat" | "lead-seat";
+}
+export declare function resolveGroupTeamSeat(input?: GroupSeatInput): GroupTeamSeat | null;
 export declare function canSpeak(input?: SpeakInput): boolean;
 export declare function selectNextSpeakers(input?: SelectSpeakersInput): string[];
 export declare function shouldStopGroupTurn(input?: StopInput): { stop: boolean; reason: string };

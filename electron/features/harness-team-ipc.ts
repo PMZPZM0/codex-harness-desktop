@@ -87,7 +87,7 @@ import { buildDispatchCatalog } from "./dispatch-core";
    群聊会话/工具/消息投递全在 group-talk/ 里，⛔ 不走外面的 runDelegatedTask 调度链。 */
 import { runTalkTurn, ensureTalkThread, peekTalkThread, queueTalkDelivery, buildTalkInput, setGroupTalkHooks, attachGroupTalkEvents, listTalkThreads, forgetTalkThreads, renameTalkMember, planTalkCli, runTalkCliDirect, TALK_HISTORY_LIMIT, evaluateMemberOutput, buildGroupTalkTools, adoptTalkThreadAlias, type TalkMember } from "./group-talk";
 /* 11-12 三条群聊编排机制（② 显式发言权 / ③ 宿主判定终止）：纯函数策略，宿主侧仲裁。 */
-import { canSpeak, shouldStopGroupTurn } from "../../src/lib/group-orchestration.mjs";
+import { canSpeak, shouldStopGroupTurn, resolveGroupTeamSeat } from "../../src/lib/group-orchestration.mjs";
 import { broadcastHarnessEvent } from "./window-bus";
 /* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
    团群主理人的会话要挂**真的**调度工具（工具面只在 thread/start 定死，见附录 Z）。
@@ -752,9 +752,15 @@ export async function upgradeGroupLeadSurfaces(): Promise<void> {
     let patched = 0;
     let merged = 0;
     for (const group of groups) {
-      const slot = group.members.find((m) => m.targetKind === "team");
-      if (!slot) continue;
-      const team = teams.find((e) => String(e.teamId) === String(slot.targetKey));
+      /* ⛔ 11-12：与 runGroupTalk 同一口径 —— 逐个拉人建的群（主理人是 expert 座位，没有整团槽）
+         原来在这里直接 `continue` ⇒ 老会话的工具面永远不会被补成含派活工具的那份。 */
+      const seat = resolveGroupTeamSeat({
+        members: group.members as Array<{ id?: string; targetKind?: string; targetKey?: string }>,
+        adminId: String(group.adminId ?? ""),
+        teams: teams as Array<{ teamId?: string; lead?: { id?: string } }>,
+      });
+      if (!seat) continue;
+      const team = teams.find((e) => String(e.teamId) === String(seat.teamId));
       if (!team) continue;
       /* ⛔⛔ 主理人的会话键有两种历史形态：**合成 id**（`team:<team>:<leadId>`，从成员栏 @ 主理人）
          与**整团槽 id**（`tgt:team:<team>`，@ 整团）。⛔⛔ 而且**两种可能同时存在**（真机实证：同一个群
@@ -762,7 +768,7 @@ export async function upgradeGroupLeadSurfaces(): Promise<void> {
          ⛔⛔ 11-11 用户令「@整团 复用主理人那条，只保留一个承枢」⇒ 先合并台账，再升级工具面。
          合并后 @整团 与 @主理人打的是同一条会话（runOne 的 talkAs 也归一到合成 id）。 */
       const leadKey = teamAuthorIdOf(String(team.teamId), String((team as { lead?: { id?: string } }).lead?.id ?? ""));
-      const slotId = String(slot.id);
+      const slotId = String(seat.seatId);
       if (leadKey && slotId && leadKey !== slotId) {
         const adopted = await adoptTalkThreadAlias(group.id, leadKey, slotId).catch(() => null);
         if (adopted?.dropped) {
@@ -1068,8 +1074,24 @@ async function runDispatchRounds(
   /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
      所以团成员之间也能互相说话，不再需要「主理人代转」。 */
   /* ⛔ 11-10：管理员身份只有一个真相源（群档案），团群不启用 ⇒ 一律不标。 */
-  const isTeamGroup = group.members.some((m) => m.targetKind === "team");
-  const teamSlot = isTeamGroup ? group.members.find((m) => m.targetKind === "team") : undefined;
+  /* ⛔⛔ 11-12 用户实测（截图「这一轮派给：显影」+ rollout 实证整轮只有 group_members 一次调用）：
+     编排主体原来只认**整团槽**（`targetKind === "team"`），而用户建群的主流方式是逐个拉人 ——
+     群里坐着团主理人（`targetKind === "expert"`，`targetKey = "<teamId>:<leadId>"`）⇒ 判成"非团群"
+     ⇒ 主理人工具面只剩 3 个群聊工具、催办/回交/收口全部不激活，它只能把任务书写进正文。
+     ⇒ 用 `resolveGroupTeamSeat`（`src/lib/group-orchestration.mjs`，单一真相源）按**座位**解析：
+       整团槽 / 主持人座位 / 唯一主理人座位同一口径。 */
+  const usableTeams = await readUsableExpertTeams().catch(() => []);
+  const teamSeat = resolveGroupTeamSeat({
+    members: group.members as Array<{ id?: string; targetKind?: string; targetKey?: string }>,
+    adminId: String(group.adminId ?? ""),
+    teams: usableTeams as Array<{ teamId?: string; lead?: { id?: string } }>,
+  });
+  const isTeamGroup = Boolean(teamSeat);
+  /* ⛔ `teamSlot` 的后续用途（isLeadSeat 判座位 / adminId / sameSeat / handoffTo）都指"承枢那一行"，
+     整团槽与主理人座位只是两种形态 ⇒ 统一取 `teamSeat.seatId` 对应的成员行。 */
+  const teamSlot = teamSeat
+    ? group.members.find((m) => String(m.id) === String(teamSeat.seatId))
+    : undefined;
   /* ⛔⛔ 11-11 用户令（「群聊会话仍然拿不到 team_member_invoke，主理人还是靠行首 @名字：派活」）：
      团群主理人必须拿到**真的**调度工具。原来群聊会话的工具面只有 group_say / group_read /
      group_members（01-channel 新建时写死的），主理人拿着"编排整团"的 SOP 却没有调人的工具
@@ -1077,9 +1099,9 @@ async function runDispatchRounds(
      ⇒ ① 建会话时把团队工具挂上去；② 老会话 resume 前改写 rollout 首行（附录 Z）；
        ③ 团队的「线程 → 团」归属落到 teamRunStore（执行端唯一认的真相源）。
      ⛔ 只给主理人：成员拿到就是绕过「只有主理人能调度」的硬闸（执行端会拒，但别白给）。 */
-  const groupTeamId = String(teamSlot?.targetKey ?? "");
+  const groupTeamId = String(teamSeat?.teamId ?? "");
   const groupTeam = groupTeamId
-    ? (await readUsableExpertTeams().catch(() => [])).find((t) => String(t.teamId) === groupTeamId) ?? null
+    ? usableTeams.find((t) => String(t.teamId) === groupTeamId) ?? null
     : null;
   /* ⛔⛔ 11-12 用户裁定 B：主理人保留完整能力（能用 harness 网关自己查、自己拟），
      只是不许一个人包干 —— 那靠「计划先行 + 一次一步」约束，⛔ 不靠删工具。 */
@@ -1094,9 +1116,10 @@ async function runDispatchRounds(
      管理员升成**群级身份**：团群由团主理人担任（团槽那一行就是管理员），普通群仍是 adminId。
      ⇒ 名册 / group_members / group_say 的「管理员」别名 / 不 @ 时的默认收件人，
        全部读同一个 `adminId`，⛔ 不再"团群恒空"。 */
-  const teamSlotMember = group.members.find((m) => m.targetKind === "team");
+  /* ⛔ `teamSlot` 已按座位解析（整团槽或主理人座位）⇒ 管理员恒为承枢那一行，
+     ⛔ 不再单独 find("team")（逐个拉人建的群会恒空 ⇒ 名册没有管理员、group_say(to="管理员") 失效）。 */
   const adminId = isTeamGroup
-    ? String(teamSlotMember?.id ?? "")
+    ? String(teamSlot?.id ?? String(group.adminId ?? ""))
     : String(group.adminId ?? "");
   const roster: TalkMember[] = [
     ...group.members.map((m) => ({
@@ -1553,7 +1576,17 @@ async function runDispatchRounds(
       /* 只有汇报行时 mainText 为空 ⇒ 不落一条占位正文（汇报行下面单独发）。 */
       const outputForStore = guard.announcements.length ? guard.mainText : (guard.mainText || output);
       const duplicateRow = spokenRows.filter((row) => row.text && textsAreNearDuplicate(row.text, output)).at(-1) ?? null;
-      const duplicated = Boolean(duplicateRow);
+      /* ⛔⛔ 11-12 用户三连问「催办会不会重复回复 / 那怎么解决 / 没有别的办法了吗」：
+         催办（`[系统]` 注入）会让主理人再跑一回合 ⇒ **再落一条群消息**，这是它的结构性代价。
+         ⛔ 不用「文本相似度判重」兜（阈值边界会漏，且模型换个说法就绕过去）；
+         ✅ 用**事实判据**：催办回合的唯一正当目的是「真的把活派出去」——
+            · 这一轮真调了派活工具 ⇒ 正文落群（那是事务性进展，与上一轮必然不同）；
+            · 一个派活工具都没调 ⇒ 它只是在复述，**不落群**（只留日志 + 记失败，便于诊断）。
+         ⛔ 这不算"吞用户内容"：催办回合的上一轮正文已经完整落过盘，这里略过的是模型自我复述。 */
+      const nudgedTurn = /^\[系统\]/.test(String(bodyText ?? "").trim());
+      const dispatchUsedThisTurn = nudgedTurn ? teamToolUsedSince(threadId, startedAt) : false;
+      const echoedNudge = Boolean(nudgedTurn && !dispatchUsedThisTurn);
+      const duplicated = Boolean(duplicateRow) || echoedNudge;
       /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
       const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
       /* ⛔⛔⛔ 11-12 用户（连着两条）：「硬伤就是主代理和管理员，光靠自己一个人框框框框输出」。
@@ -1577,6 +1610,11 @@ async function runDispatchRounds(
           });
           wrote = patched ? { ok: true } : { ok: false, error: "产出没能写进群聊记录" };
         }
+      } else if (echoedNudge) {
+        /* 催办回合一个派活工具都没调 ⇒ 它只是在复述上一轮，不落第二条（判据见上）。
+           ⛔ 留日志便于诊断：频繁出现说明工具面/SOP 还有问题，别当成正常。 */
+        wrote = { ok: true };
+        console.log("[group-tools] 催办回合没有派出任何成员 ⇒ 不落群（防重复）：" + partner.name);
       } else if (!guard.mainText && guard.announcements.length) {
         /* ⛔ 只有汇报行：不落占位正文、不假装"有成品消息"，汇报行下面单独发进群主流。 */
         wrote = { ok: true };
@@ -1601,10 +1639,15 @@ async function runDispatchRounds(
       }
       usageWritten = Boolean(usageForMessage);
       wroteMessage = !clearedDuringRun && !duplicated && Boolean(wrote.ok) && Boolean(outputForStore);
-      /* ⛔ 空产出原来会落一句「（没有返回文本内容）」并算成功 ⇒ 用户以为任务做完了。 */
-      okFlag = Boolean(wrote.ok) && guard.countsAsOutput;
+      /* ⛔ 空产出原来会落一句「（没有返回文本内容）」并算成功 ⇒ 用户以为任务做完了。
+         ⛔ 催办回合没派出任何人同样不算这一轮成功（`echoedNudge`）：它没推进任何事，
+            记成失败才能在任务账本/诊断里看出来并继续收敛，⛔ 别当成功。 */
+      okFlag = Boolean(wrote.ok) && guard.countsAsOutput && !echoedNudge;
       if (!guard.countsAsOutput) {
         errMsg = "这一轮没有返回任何正文";
+        failed.push(`${partner.name}：${errMsg}`);
+      } else if (echoedNudge) {
+        errMsg = "被催办后仍未派出任何成员";
         failed.push(`${partner.name}：${errMsg}`);
       }
       /* ⛔⛔ 11-10：补上 prompt 早就承诺、代码却没做的「汇报行额外发到群主流」。
@@ -1831,8 +1874,15 @@ async function runDispatchRounds(
                   + "team_phase_invoke 把下一阶段真的派出去（⛔ 不用行首 @ 派活，那只是群里说了一句话）；"
                   + "只有全部阶段验收完才写「收口」给最终结论。"
                 : "[系统] 你这一轮没有派任何成员，也没有写「收口」。按 SOP 继续推进："
-                  + "用 team_member_invoke 把当前这一步真正派出去（⛔ 不要自己代写成员的成品）；"
-                  + "只有全部阶段验收完才写「收口」给最终结论。")
+                  /* ⛔⛔ 11-12 用户问「催办会不会重复回复」⇒ 这一轮**只在真的调了派活工具时**才落群
+                     （判据见落盘处 `echoedNudge`），所以这里必须提前说清，别让它白写一大段：
+                     本团成员用 team_member_invoke；群里其它团的人用 group_say(to=名字) —— 那条链是
+                     真的把话送进他的会话、他会动手并把结果发进群，⛔ 不是"群里说一句"。 */
+                  + (groupTeam
+                    ? "本团成员用 team_member_invoke；群里其它团的人用 group_say(to=名字)（那也是真的派活）。"
+                    : "用 group_say(to=名字) 把这一步交给他（那是真的派活，他会动手并把结果发进群）。")
+                  + "⛔ 这一轮不要复述上一条：只要没有真正调用派活工具，宿主不会把这一段发到群里。"
+                  + "⛔ 不要自己代写成员的成品；只有全部阶段验收完才写「收口」给最终结论。")
               .catch(() => undefined);
           }
         }

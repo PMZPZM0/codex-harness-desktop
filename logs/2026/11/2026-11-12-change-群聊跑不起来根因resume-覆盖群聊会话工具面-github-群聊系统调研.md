@@ -104,3 +104,52 @@ importance: high
 **遗留（如实记）**：`01a1cf0b` 那条 rollout 首行的 95 个宿主工具是**历史污染**，本轮只阻止继续污染，
 没有回写修复 —— BOSS 群成员建线程时 `thread/start` 本就不带 dynamicTools（= 0 个），
 要不要把历史污染会话回写成空工具面需单独评估（专家团成员的工具面来源不同，⛔ 不能一刀切清空）。
+
+---
+
+## 第三层根因（21:49 用户第三轮：「开始还可以，现在又废了」）
+
+**症状**：主理人「拔节」在群里写「这一轮派给：显影」+ 一整段任务书，显影**没有任何回合**，
+连派活工具调用卡都没有 —— 说完就停，成员形同虚设。
+
+**取证（三级证据链，不靠读代码猜）**：
+1. 群台账 `group-talk-threads.json`：`grp_mwdlqz10::tgt:expert:marketing-growth-team:marketing-growth-team-lead`
+   → thread `01a1d003`。
+2. 该 rollout **首行** `session_meta.dynamic_tools` 只有 **3 个**：`group_say / group_read / group_members`
+   —— 没有任何派活工具。汇总整份 rollout，三次用户发言里**只调过一次 `group_members`**。
+3. 群档案 `harness-teams.json` 的 `grp_mwdlqz10` 成员表：**没有整团槽**（`targetKind === "team"`），
+   而是逐个拉进来的 `member`（析毫/察势/显影属数据团、执棋属增长团）+ `expert`（拔节＝增长团主理人）。
+
+**根因**：`isTeamGroup` / `groupTeam` 的判定只认**整团槽**。
+`const isTeamGroup = group.members.some(m => m.targetKind === "team")` ⇒ 逐个拉人建的群恒为 false
+⇒ `groupTeam = null` ⇒ `leadDispatchTools = []` ⇒ 主理人工具面只剩 3 个群聊工具；
+连带 `mustHandBack` / `isLeadSelf` 催办 / `handoffTo` / 收口**全部以 `isTeamGroup` 为门** ⇒ 整套编排不激活。
+模型只能把任务书写进正文 —— 它写了「派给：显影」，但一个 `to` 都没填，没人被叫醒。
+
+**为什么"开始还可以"**：@ 整团建的群有整团槽（走原路径）；用户后来改成逐个拉人建群 ⇒ 掉出判据。
+
+**改法**：
+1. `src/lib/group-orchestration.mjs` 新增 `resolveGroupTeamSeat`（单一真相源，可离线真跑）：
+   ① 整团槽 ② `adminId` 指向的 expert 座位（`targetKey = "<teamId>:<leadId>"`，校验 `team.lead.id`）
+   ③ 群里唯一的团主理人座位；判不准（两个主理人都不是主持人 / 普通群）返回 `null`（⛔ 不猜）。
+2. `harness-team-ipc.ts` 发言链路与 `upgradeGroupLeadSurfaces` **两处**都用它；`teamSlot` 改为
+   「承枢那一行」（整团槽或主理人座位两种形态），`adminId` / `isLeadSeat` / `sameSeat` / `handoffTo` 跟着同源。
+3. 跨团成员（`team_member_invoke` 只能派本团，执行端按 teamId 校验）：SOP 与 `group_say` 描述统一改写 ——
+   填 `to=名字` **= 真的把活交给他**（relay 送进他的会话、他跑完整回合、产出以他的署名发进群），
+   并把旧文案「这是沟通，不是派任务」删掉（那句话等于当场否掉派活语义）。
+
+**"催办会不会重复回复"（用户追问三连）**：会 —— 催办注入 `[系统]` 让主理人再跑一回合 ⇒ 再落一条消息。
+**不用文本相似度兜**（阈值边界会漏、换个说法就绕过去），改**事实判据**：
+催办回合若一个派活工具都没调 ⇒ 视为复述，**不落群**（只留日志 + 记失败）；真调了工具才落正文。
+落点 `echoedNudge`，`okFlag` 同轮扣掉，⛔ 不当成功。
+
+**判据**（全部真跑）：
+- 纯函数六形态：整团槽 / 主持人座位 / 唯一主理人 / 两个主理人无主持人 → null / leadId 不匹配 → null / 普通群 → null。
+- 守卫 12be **399/399**（新增 ④ 两条：座位解析真跑 + 接线含 `echoedNudge`）；11f 185/185；12ah 250/250；预检通过。
+- **真机**：重启后该 rollout 首行 `dynamic_tools` 由 **3 → 8**
+  （`group_say / group_read / group_members / team_member_invoke / team_phase_invoke / team_plan / team_status / harness_tools`），
+  存量会话当场自愈，⛔ 不需要重建群。`[group-tools] 启动预升级` 走 `admin-seat` 分支。
+
+**遗留（如实记）**：
+- 跨团成员仍只能走 `group_say(to=)`（`team_member_invoke` 的执行端按 teamId 硬校验，跨团派活本轮不做）。
+- 主理人拿到工具后若仍不调、宿主催办也不动 ⇒ 现在只是「不重复」+ 记失败，没有再上一层强制投递。
