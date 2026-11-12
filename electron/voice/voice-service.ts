@@ -232,21 +232,34 @@ export class VoiceService {
 
     /* 11-10 MOSS-Live 实时后端：选中且已配置 ⇒ 走全双工 S2S，不依赖本地模型。
        连不上 ⇒ 如实提示并回落本地链路（下面继续），不静默失败。
-       ⛔ 听写（dictation）必须走本地 ASR：它只把文字回填输入框，不需要远程对话。 */
-    if (this.mode === "conversation"
-      && this.currentSettings.call?.backend === "moss-live"
-      && remoteConfigured(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id)) {
+       ⛔ 听写（dictation）必须走本地 ASR：它只把文字回填输入框，不需要远程对话。
+       ⛔ 11-12：选中了但配置不完整时，回落本地也要说清原因 —— 否则用户只看到
+       「语音模型未下载完整」，会去下模型，而真正缺的是 MOSS 的密钥/地址。 */
+    const wantsRemote = this.mode === "conversation" && this.currentSettings.call?.backend === "moss-live";
+    const remoteReady = wantsRemote && remoteConfigured(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id);
+    let remoteIssue = "";
+    if (wantsRemote && !remoteReady) {
+      const c = remoteConfigOf(this.currentSettings.remote, MOSS_LIVE_PROVIDER.id);
+      const missing = [!c.baseUrl && "接口地址", !c.model && "模型", !c.apiKey && "API 密钥"].filter(Boolean).join("、");
+      remoteIssue = `MOSS-Live 已选为通话后端，但配置不完整（缺${missing || "必要项"}）`;
+      this.deps.log("info", `${remoteIssue}，本次回落本地语音`);
+    }
+    if (remoteReady) {
       if (await this.startRemote(input.threadId)) return { ok: true };
     }
 
     const sherpaPath = resolveSherpaPath();
     if (!sherpaPath) {
-      const message = "语音运行时未就绪（sherpa-onnx 未安装），请重新安装应用或联系支持";
+      const message = remoteIssue
+        ? `${remoteIssue}；本地语音运行时也未就绪（sherpa-onnx 未安装）`
+        : "语音运行时未就绪（sherpa-onnx 未安装），请重新安装应用或联系支持";
       this.fail(message);
       return { ok: false, error: message };
     }
     if (!(await this.refreshModelsReady())) {
-      const message = "语音模型未下载完整，请先在通话面板点「下载模型」";
+      const message = remoteIssue
+        ? `${remoteIssue}；本地语音模型也未下载完整 —— 到 设置 → 语音通话 补齐配置或下载基础模型`
+        : "语音模型未下载完整，请先在通话面板点「下载模型」";
       this.fail(message);
       return { ok: false, error: message };
     }

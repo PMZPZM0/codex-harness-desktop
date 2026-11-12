@@ -50,7 +50,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
    *    「开关能打开、点了没声音」，这是最典型的静默失败。
    * 下载完成事件（downloadDone）会重拉一次：装完立刻就能开播报，不必刷新页面。
    */
-  const [packs, setPacks] = useState({ base: false, emotivoice: false });
+  const [packs, setPacks] = useState({ base: false, emotivoice: false, mossTts: false });
   const ttsReadyRef = useRef(true);
 
   const [draft, setDraft] = useState<{ draftFile: string; refText: string; sourceName: string; durationSec: number } | null>(null);
@@ -73,6 +73,8 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
         base,
         /* 情感语音：模型装了但缺推理运行时时**不算就绪**（合成会失败） */
         emotivoice: Boolean(st?.emotivoice?.ready) && st?.emotivoice?.runnable === true,
+        /* 11-12：MOSS-TTS 远程播报配置齐全 ⇒ 播报可用，不依赖本机模型 */
+        mossTts: st?.mossTts?.configured === true,
       });
     } catch { /* 读不到就保持现状（开关仍按未就绪处理，⛔ 不假装能用） */ }
   }, []);
@@ -80,7 +82,8 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   useEffect(() => {
     void reloadPacks();
     const unsub = window.codex.onVoiceEvent((event: any) => {
-      if (event?.type === "downloadDone") void reloadPacks();
+      /* 11-12：设置变化（开启/关闭 MOSS 播报）也要重探，否则 ttsReady 还停在旧判据。 */
+      if (event?.type === "downloadDone" || event?.type === "settings") void reloadPacks();
     });
     return () => { try { unsub?.(); } catch { /* 忽略 */ } };
   }, [reloadPacks]);
@@ -491,9 +494,10 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       .sort((a, b) => a.value - b.value);
   }, [meta]);
 
-  /* 当前引擎就绪与否（播报开关 / 试听的联动判据）——派生量，⛔ 不另存一份状态 */
+  /* 当前引擎就绪与否（播报开关 / 试听的联动判据）——派生量，⛔ 不另存一份状态。
+     11-12：MOSS 播报配置齐全同样算"能出声"，否则远程播报用户会被一直拦在门外。 */
   const ttsEngineId = settings?.tts?.engine === "emotivoice" ? "emotivoice" : "vits";
-  const ttsReady = ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base;
+  const ttsReady = (ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base) || packs.mossTts;
   ttsReadyRef.current = ttsReady;
 
   return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, reloadPacks, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };

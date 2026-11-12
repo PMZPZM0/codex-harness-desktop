@@ -97,6 +97,8 @@ const ENGINES: EngineInfo[] = [
 export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings }: Props) {
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
   const [moss, setMoss] = useState<{ configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string } | null>(null);
+  /** 11-12：MOSS-TTS 远程播报状态（配置齐全即可播，不依赖本机模型）。 */
+  const [mossTts, setMossTts] = useState<{ enabled: boolean; configured: boolean; voiceId: string; error: string } | null>(null);
   const [mossDraft, setMossDraft] = useState({ baseUrl: "", model: "", apiKey: "" });
   /** MOSS 播报（TTS）：独立的模型/音色；密钥沿用 moss-live 那张卡，不在这里重复填。 */
   const [mossTtsDraft, setMossTtsDraft] = useState({ model: "moss-tts-1.5-flash", voiceId: "" });
@@ -116,6 +118,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     try {
       const status: any = await window.codex.voiceModelsStatus();
       setMoss(status?.mossLive ?? null);
+      setMossTts(status?.mossTts ?? null);
       const next: Partial<Record<PackId, PackState>> = {
         /* ⛔ 11-11 用户实测「点了停用，上面还写着使用中」：基础模型的 enabled 必须从
            `status.baseEnabled` 取，不能写死 true —— ready（文件在不在）与 enabled（加载不加载）
@@ -266,6 +269,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       remote: { ...(settings?.remote ?? {}), "moss-tts": { baseUrl: "https://api.mosi.cn/v1/audio/speech", model, voiceId } },
       tts: { ...settings.tts, remote: ttsRemote },
     });
+    /* 11-12：保存后重读状态 —— 顶部警告 / 播报开关的就绪判据都吃这一份（mossTts）。 */
+    await refresh();
     const res: any = await window.codex.voiceSettingsGet().catch(() => null);
     const saved = res?.settings?.remote?.["moss-tts"];
     onNotice(saved?.voiceId === voiceId && saved?.model === model ? "MOSS 播报配置已保存" : "MOSS 播报配置保存失败，请重试");
@@ -274,6 +279,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const setTtsRemote = useCallback(async (next: boolean) => {
     if (next && !(mossTtsDraft.voiceId || savedMossTts?.voiceId)) { onNotice("先点「查询音色」并选一个音色，再开启 MOSS 播报"); return; }
     await apply({ tts: { ...settings.tts, remote: next } });
+    await refresh();
     const res: any = await window.codex.voiceSettingsGet().catch(() => null);
     const actual = res?.settings?.tts?.remote === true;
     onNotice(actual === next ? (next ? "已开启 MOSS 播报" : "已切回本地播报") : "切换播报后端失败，请重试");
@@ -395,6 +401,14 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const currentReady = Boolean(packs[current]?.ready) && packs[current]?.enabled !== false;
   const currentDisabled = Boolean(packs[current]?.ready) && packs[current]?.enabled === false;
   const anyReady = Object.values(packs).some((p) => Boolean(p?.ready));
+  /* 11-12 联动：MOSS-TTS 配置齐全也算"能出声" —— 否则本站没装模型时，
+     远程播报用户会被顶部警告 / 📢 / 模型指令一起误判成"播报不可用"。 */
+  const mossTtsReady = mossTts?.configured === true;
+  const speechReady = anyReady || mossTtsReady;
+  /* MOSS-Live 实时通话：选中 + 配置齐全才算"使用中"；只选中没配好要显式报错，
+     ⛔ 不能一边打「使用中」一边打「未配置」。 */
+  const mossInUse = callBackend && Boolean(moss?.configured);
+  const mossBroken = callBackend && !moss?.configured;
 
   return (
     <div className="voice-card voice-engines">
@@ -402,20 +416,30 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         <Sparkles size={15} />
         <span>合成引擎</span>
         <span className="voice-card-value">
-          当前：{packLabel(current)}{currentReady ? "" : currentDisabled ? " · 已停用" : " · 未安装"}
+          {ttsRemote && mossTtsReady
+            ? "当前：MOSS-TTS · 远程播报"
+            : currentReady
+              ? `当前：${packLabel(current)}`
+              : `当前：${packLabel(current)}${currentDisabled ? " · 已停用" : " · 未安装"}`}
         </span>
       </div>
       <div className="voice-card-body">
         <div className="voice-card-hint">
-          轻量播报（vits-zh-ll）跟着基础语音模型一起装，不额外下载；通话与播报都用它。
+          轻量播报（vits-zh-ll）跟着基础语音模型一起装，不额外下载；未切远程时通话与播报都用它。
         </div>
-        {!anyReady && (
+        {!speechReady && (
           <div className="voice-engine-empty">
             <TriangleAlert size={13} />
             <span>
-              现在<strong>合成引擎还没装</strong>，语音通话与播报都无法出声。
-              轻量播报随「基础语音模型」一起装 —— 用下方「轻量播报」卡里的「下载模型 / 本地导入」。
+              现在<strong>没有可用的合成引擎</strong>，语音通话与播报都无法出声。
+              轻量播报随「基础语音模型」一起装 —— 用下方「轻量播报」卡里的「下载模型 / 本地导入」；
+              只用远程语音时，也可以在 MOSS-Live 里开启播报。
             </span>
+          </div>
+        )}
+        {!anyReady && mossTtsReady && (
+          <div className="voice-card-hint">
+            本机合成模型未安装，<strong>播报已走 MOSS-TTS（远程）</strong>；语音通话要启用 MOSS-Live，或安装基础模型后走本地。
           </div>
         )}
         <div className="voice-engine-grid">
@@ -538,7 +562,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
         {/* 11-11 MOSS-Live：卡片与本地引擎卡同构（状态 + 启用/停用 + 配置），
             具体配置（实时通话 / MOSS 播报）收进弹窗；音色可直接试听。 */}
-        <div className={`voice-engine-card voice-engine-remote${callBackend ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
+        <div className={`voice-engine-card voice-engine-remote${mossInUse ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
           <div className="voice-engine-head">
             <div className="voice-engine-title">
               <span className="voice-engine-name-row">
@@ -548,7 +572,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               <span className="voice-engine-tagline">边听边说 · 自然打断 · 不占本机磁盘</span>
             </div>
             <div className="voice-engine-head-right">
-              {callBackend && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+              {mossInUse && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+              {mossBroken && (
+                <span className="voice-engine-flag is-missing"><TriangleAlert size={12} />配置不完整</span>
+              )}
               <span className={`voice-engine-state${moss?.configured ? " ok" : ""}`}>
                 {moss?.configured ? "已配置" : "未配置"}
               </span>
@@ -557,7 +584,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           <div className="voice-engine-meta">
             <span>实时通话</span>
             <span>{moss?.model || "moss-live-1.0"}</span>
-            <span>播报：{ttsRemote ? "MOSS" : "本地"}</span>
+            <span>播报：{ttsRemote ? (mossTtsReady ? "MOSS" : "MOSS · 缺配置") : "本地"}</span>
             <span>{settings.tts.speed.toFixed(2)}×</span>
             {(savedMossTts?.voiceId || mossTtsDraft.voiceId) ? (
               <span>{mossVoiceName(savedMossTts?.voiceId || mossTtsDraft.voiceId)}</span>
@@ -588,6 +615,18 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               {previewing ? <LoaderCircle size={13} className="spin" /> : <Play size={13} />}试听音色
             </button>
           </div>
+          {mossBroken && (
+            <div className="voice-engine-feedback is-err">
+              <TriangleAlert size={12} />
+              <span>已选为实时通话后端，但地址 / 模型 / 密钥不完整 —— 通话会回落本地语音；点「配置」补齐。</span>
+            </div>
+          )}
+          {ttsRemote && !mossTtsReady && mossTts?.error && (
+            <div className="voice-engine-feedback is-err">
+              <TriangleAlert size={12} />
+              <span>{mossTts.error}</span>
+            </div>
+          )}
           <div className="voice-engine-note">
             {ttsRemote
               ? "播报/试听走 MOSS-TTS；实时通话走 MOSS-Live（WebSocket）。连不上都会如实报错，不静默失败。"

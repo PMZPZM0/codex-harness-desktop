@@ -11,6 +11,7 @@ import { ensureEmotivoice, ensureZipvoice, modelsSizeOnDisk, voiceModelsStatus }
 import { EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, emotivoiceReady } from "../../voice/model-manifest";
 import { isVoiceResourceEnabled, loadVoiceSettings, publicVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { MOSS_LIVE_PROVIDER, remoteConfigOf, remoteConfigured } from "../../voice/model-provider";
+import { remoteTtsConfig } from "../../voice/moss-tts";
 import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
 import { defineFeature } from "../../context";
@@ -243,16 +244,23 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
 
   ipcHost.handle("voice:models-status", async () => {
     const status = await voiceModelsStatus(modelsRoot(), ALL_VOICE_REPOS);
-    /* 顺带刷新播报就绪缓存（同一个判据、同一次扫盘，不额外开销）—— 见文件顶部那段说明 */
-    {
-      const base = status.totalFiles > 0 ? status.readyFiles === status.totalFiles : status.ready;
-      announceReadyCache = base;
-    }
     // ⛔ 10-03：启用状态要与"是否就绪"**分开**回传 —— 两者正交：
     //    停用中的资源文件仍在磁盘（installed 仍为 true），只是不加载（enabled=false）。
     //    只回一个就必然丢信息：回 installed 会让「停用」显示成「已就绪」，
     //    回 enabled 会让「没下载」显示成「已停用」。渲染层靠这两个字段组合出四态。
     const settings = loadVoiceSettings(app.getPath("userData"));
+    /* 11-12 用户实测「联动性太差」：播报已切 MOSS-TTS（远程），但本机模型没装 ⇒
+       页面、📢、下发给模型的 announceEnabled 全都还按「没有合成引擎」处理。
+       ⇒ 就绪判据统一为：本地基础模型（未停用）**或** 本地情感引擎（可运行）**或** MOSS-TTS 配置齐全。
+       ⛔ 顺带刷新播报就绪缓存（同一个判据、同一次扫盘，不额外开销）。 */
+    {
+      const total = Number(status.totalFiles ?? 0);
+      const base = isVoiceResourceEnabled(settings, "base")
+        && (total > 0 ? Number(status.readyFiles ?? 0) === total : Boolean(status.ready));
+      const emotivoice = isVoiceResourceEnabled(settings, "emotivoice") && emotivoiceReady(modelsRoot());
+      const mossTts = remoteTtsConfig(settings);
+      announceReadyCache = base || emotivoice || mossTts?.ok === true;
+    }
     return {
       ...status,
       bytes: modelsSizeOnDisk(modelsRoot()),
@@ -308,6 +316,19 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
           model: c.model,
           hasKey: Boolean(c.apiKey),
           keyHint: c.apiKey ? c.apiKey.slice(-4) : "",
+        };
+      })(),
+      /* 11-12 联动：MOSS-TTS（播报）是否真的能合成 —— 远程播报不依赖本机模型。
+         与 `remoteTtsConfig` 同一判据（开启 + 音色 + 密钥）；只回状态不回密钥。 */
+      mossTts: (() => {
+        const remote = remoteTtsConfig(settings);
+        const entry = settings.remote?.["moss-tts"];
+        return {
+          enabled: settings.tts?.remote === true,
+          configured: remote?.ok === true,
+          model: String(entry?.model ?? ""),
+          voiceId: String(entry?.voiceId ?? ""),
+          error: remote && remote.ok === false ? remote.error : "",
         };
       })(),
     };

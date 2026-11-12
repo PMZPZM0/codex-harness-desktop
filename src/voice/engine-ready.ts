@@ -22,6 +22,8 @@ type ModelsStatusShape = {
   ready?: boolean;
   baseEnabled?: boolean;
   emotivoice?: { ready?: boolean; runnable?: boolean };
+  /** 11-12：MOSS-TTS 远程播报（与本机模型无关，配置齐全即可播） */
+  mossTts?: { configured?: boolean };
 };
 
 let ready = true;               // 未探测前按"就绪"处理：⛔ 不要用 false 当初始值，那会把正常用户误标成不可用
@@ -45,11 +47,13 @@ export async function refreshAnnounceEngineReady(): Promise<void> {
     const st = (await window.codex.voiceModelsStatus?.()) as ModelsStatusShape | undefined;
     if (!st) return;
     /* 与 `use-voice-settings-section-state` 的 packs 同口径：
-       基础模型按「未停用 + 就绪文件数 == 总数」；情感语音要求 ready 且 **runnable === true**。 */
+       基础模型按「未停用 + 就绪文件数 == 总数」；情感语音要求 ready 且 **runnable === true**；
+       MOSS-TTS 配置齐全也算一套（11-12：播报切了远程就不再依赖本机模型）。 */
     const total = Number(st?.totalFiles ?? 0);
     const base = st?.baseEnabled !== false && (total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready));
     const emotivoice = Boolean(st?.emotivoice?.ready) && st?.emotivoice?.runnable === true;
-    const next = base || emotivoice;
+    const mossTts = st?.mossTts?.configured === true;
+    const next = base || emotivoice || mossTts;
     if (next === ready) return;
     ready = next;
     for (const fn of [...listeners]) fn();
@@ -65,7 +69,9 @@ export function startAnnounceEngineProbe(): void {
   void refreshAnnounceEngineReady();
   try {
     window.codex.onVoiceEvent?.((event: { type?: string }) => {
-      if (event?.type === "downloadDone") void refreshAnnounceEngineReady();
+      /* 11-12：设置变化（例如开启 MOSS 播报）也要重探 —— 只认 downloadDone 会让
+         「切到远程播报」之后的 📢 还停在未就绪。 */
+      if (event?.type === "downloadDone" || event?.type === "settings") void refreshAnnounceEngineReady();
     });
   } catch { /* 忽略：没有该桥时仅剩首次探测 */ }
 }

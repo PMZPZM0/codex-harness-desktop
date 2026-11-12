@@ -67,9 +67,9 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady
           <div className="voice-gate-hint">
             <TriangleAlert size={13} />
             <span>
-              {blocked ? "还不能打开：本机没有可用的合成引擎，打开了也不会有声音。"
-                : "本机还没有可用的合成引擎，播报不会有声音。"}
-              先装「必需 · 基础语音模型」（约 270MB，轻量播报随它一起装）。
+              {blocked ? "还不能打开：本机没有可用的合成引擎，MOSS 播报也没配置好，打开了也不会有声音。"
+                : "本机没有可用的合成引擎，MOSS 播报也没配置好，播报不会有声音。"}
+              装「必需 · 基础语音模型」（约 270MB，轻量播报随它一起装），或在下方 MOSS-Live 里开启 MOSS 播报。
               {enabled ? "装好之后会自动按你原来的设置开启。" : ""}
             </span>
             <button type="button" className="secondary-setting" onClick={onGoModels}>去装模型</button>

@@ -69,12 +69,12 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
   if (!threadId) return null;
   const enabled = engineReady && globalOn && !muted;
   const playing = enabled && status.active;
-  const action = !engineReady ? "语音模型未安装" : !globalOn ? "去打开" : muted ? "开启" : "关闭";
+  const action = !engineReady ? "没有可用的语音合成引擎" : !globalOn ? "去打开" : muted ? "开启" : "关闭";
 
   function toggle() {
     /* 没装引擎：点了不翻转，只给可照做的说明（⛔ 不要静默吞掉点击） */
     if (!engineReady) {
-      setNotice({ text: "未安装语音模型 —— 设置 → 语音通话 → 下载基础语音模型", key: Date.now() });
+      setNotice({ text: "没有可用的语音合成引擎 —— 设置 → 语音通话：下载基础语音模型，或开启 MOSS 播报", key: Date.now() });
       if (timerRef.current != null) window.clearTimeout(timerRef.current);
       timerRef.current = window.setTimeout(() => setNotice(null), 3200);
       return;
@@ -101,7 +101,7 @@ export function SessionAnnounceToggle({ threadId }: { threadId: string }) {
         /* 引擎没装时**保持可点**（点了给"去哪下载"的提示）；只有总开关关着才禁用 */
         disabled={engineReady && !globalOn}
         aria-label={`${action}当前会话语音播报${playing ? "（正在播报）" : ""}`}
-        title={!engineReady ? "未安装语音合成模型，点了也不会出声 —— 设置 → 语音通话 → 下载基础语音模型" : !globalOn ? "语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开" : muted ? "开启当前会话语音播报（与悬浮球的恢复播报同步）" : playing ? "正在播报 · 点击停止当前会话" : "关闭当前会话语音播报（与悬浮球的停止播报同步）"}
+        title={!engineReady ? "没有可用的语音合成引擎，点了也不会出声 —— 设置 → 语音通话：下载基础语音模型，或开启 MOSS 播报" : !globalOn ? "语音播报总开关已关闭 —— 去「设置 → 语音通话 → 语音播报」打开" : muted ? "开启当前会话语音播报（与悬浮球的恢复播报同步）" : playing ? "正在播报 · 点击停止当前会话" : "关闭当前会话语音播报（与悬浮球的停止播报同步）"}
         onClick={toggle}
       >
         <AnnounceIcon muted={!enabled} playing={playing} />

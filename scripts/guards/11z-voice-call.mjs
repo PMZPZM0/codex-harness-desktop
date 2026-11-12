@@ -1134,8 +1134,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/export function getAnnounceEngineReady/.test(ready)
       && /voiceModelsStatus/.test(ready)
       && /downloadDone/.test(ready)
-      && /const next = base \|\| emotivoice;/.test(ready),
-      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / 情感语音；停用的不算），装完 downloadDone 自动重探");
+      && /const next = base \|\| emotivoice \|\| mossTts;/.test(ready),
+      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / 情感语音 / MOSS-TTS；停用的不算），装完 downloadDone 自动重探");
     ok(/const engineReady = useSyncExternalStore/.test(toggle)
       && /const enabled = engineReady && globalOn && !muted;/.test(toggle)
       && /if \(!engineReady\) \{[\s\S]{0,200}?setNotice\(/.test(toggle),
@@ -1145,6 +1145,20 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/announceEngineReadyCached\(\),/.test(discipline)
       && /export function announceEngineReadyCached/.test(dirMain),
       "主进程下发 announceEnabled 前也看引擎（否则模型会承诺播报，实际静默失败）");
+    /* 11-12 用户实测「联动性太差」：播报已切 MOSS-TTS，页面/📢/模型指令却仍按本机模型判定。 */
+    const stateHook = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
+    const enginesTsx2 = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
+    ok(/mossTts: \(\(\) => \{/.test(dirMain)
+      && /configured: remote\?\.ok === true/.test(dirMain)
+      && /announceReadyCache = base \|\| emotivoice \|\| mossTts\?\.ok === true;/.test(dirMain),
+      "models-status 回 mossTts 配置态，主进程播报就绪缓存也认远程播报（⛔ 只认本机模型会误判）");
+    ok(/st\?\.mossTts\?\.configured === true/.test(stateHook)
+      && /const ttsReady = \(ttsEngineId === "emotivoice" \? packs\.emotivoice : packs\.base\) \|\| packs\.mossTts;/.test(stateHook),
+      "设置页播报开关就绪判据 = 本地引擎 **或** MOSS 播报（远程用户不再被拦）");
+    ok(/const mossInUse = callBackend && Boolean\(moss\?\.configured\);/.test(enginesTsx2)
+      && /const mossBroken = callBackend && !moss\?\.configured;/.test(enginesTsx2)
+      && /配置不完整/.test(enginesTsx2),
+      "MOSS 卡不许同时打「使用中」+「未配置」：配置不完整要单独报出来（11-12 用户截图）");
   }
 }
 /* ── ⑪ 语音资源危险动作走确认弹窗（10-31 用户令：「卸载，停用，清空都做成弹窗」）──────

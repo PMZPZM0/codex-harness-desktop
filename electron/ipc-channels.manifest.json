@@ -5318,7 +5318,7 @@
       "channel": "voice:models-status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; call?: { backend?: \"local\" | \"moss-live\"; remoteConfigured?: boolean }; mossLive?: { configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string }; }>",
+      "returns": "Promise<{ ready: boolean; missing: string[]; readyFiles: number; totalFiles: number; bytes: number; root: string; repos: { id: string; lastSegment: string }[]; baseEnabled?: boolean; zipvoice?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; kws?: { ready: boolean; enabled?: boolean; bytes: number; dir: string }; resources?: Record<string, { enabled: boolean; label: string }>; call?: { backend?: \"local\" | \"moss-live\"; remoteConfigured?: boolean }; mossLive?: { configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string }; mossTts?: { enabled: boolean; configured: boolean; model: string; voiceId: string; error: string }; }>",
       "cast": null,
       "note": "10-03：新增 baseEnabled / 各资源 enabled —— 启用与已下载正交，UI 靠它们组合出四态"
     },
