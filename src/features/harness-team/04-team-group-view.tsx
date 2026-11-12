@@ -1630,7 +1630,7 @@ export function TeamGroupView({
                           onClick={() => mentionPartner(m.id)}
                         >@{m.name}</button>
                       ))}
-                      {row.threadId && !row.threadId.startsWith("cli:") ? (goneThreads?.has(row.threadId) ? (
+                      {row.threadId && !row.threadId.startsWith("cli:") && row.senderKind !== "system" && row.senderKind !== "automation" ? (goneThreads?.has(row.threadId) ? (
                         <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">与 {nameOf(row.authorId)} 的会话已删除</span>
                       ) : (
                         <button
@@ -1865,7 +1865,7 @@ export function TeamGroupView({
                                   （见 store 的 `team-thread-gone` 广播），⛔ 不让按钮点了没反应。 */}
                             {/* ⛔ 11-08 用户令「用量页脚也要一致」：与主对话 MessageFooter 同一口径。 */}
                             {row.usage && <TeamUsage usage={row.usage} />}
-                            {row.threadId && !row.threadId.startsWith("cli:") ? (goneThreads?.has(row.threadId) ? (
+                            {row.threadId && !row.threadId.startsWith("cli:") && row.senderKind !== "system" && row.senderKind !== "automation" ? (goneThreads?.has(row.threadId) ? (
                               <span className="team-msg__origin is-gone" title="这条会话已被删除（群记录保留）">与 {nameOf(row.authorId)} 的会话已删除</span>
                             ) : (
                               <button
