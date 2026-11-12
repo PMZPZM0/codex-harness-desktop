@@ -1931,6 +1931,11 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-model-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; min-width: 0; }
 .voice-model-title strong { font-size: 13px; color: var(--text); }
 .voice-local-modal { width: min(640px, 100%); }
+/* 两张模型卡等高时，左侧能力状态撑住空白；按钮贴底（不浮在中间） */
+.voice-model-card .voice-engine-actions { margin-top: auto; }
+.voice-model-checks { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
+.voice-model-checks > span { display: inline-flex; align-items: center; gap: 4px; }
+.voice-model-checks > span.is-ok { color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
 
 /* 播报使用哪个模型（本机 / 云端）：一级界面直接选，配置仍在弹窗里 */
 .voice-tts-source { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0 2px; }

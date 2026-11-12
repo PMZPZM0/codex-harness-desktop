@@ -456,6 +456,21 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             <span>{cloneActive ? (cloneReady ? "克隆音色就绪" : "克隆音色未就绪") : anyReady ? "本机可用" : "未就绪"}</span>
           </div>
           <div className="voice-engine-role">离线合成、不联网不额外付费。模型下载、引擎、音色与克隆都在「配置」里。</div>
+          {/* 11-12 用户：「左边为什么这么丑」——两张卡等高时左侧太空，补一排能力状态撑住视觉 */}
+          <div className="voice-model-checks">
+            <span className={anyReady ? "is-ok" : ""}>
+              {anyReady ? <Check size={12} /> : <TriangleAlert size={12} />}语音识别
+            </span>
+            <span className={anyReady ? "is-ok" : ""}>
+              {anyReady ? <Check size={12} /> : <TriangleAlert size={12} />}断句 / 端点
+            </span>
+            <span className={anyReady && !currentDisabled ? "is-ok" : ""}>
+              {anyReady && !currentDisabled ? <Check size={12} /> : <TriangleAlert size={12} />}本机播报
+            </span>
+            <span className={zipVoiceReady ? "is-ok" : ""}>
+              {zipVoiceReady ? <Check size={12} /> : <TriangleAlert size={12} />}音色克隆
+            </span>
+          </div>
           <div className="voice-engine-actions">
             <button className={anyReady ? "secondary-setting" : "primary-setting"} onClick={() => setLocalModalOpen(true)}>
               <Settings2 size={13} />配置
@@ -633,7 +648,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             ) : null}
           </div>
           <div className="voice-engine-role">
-            远程实时对话模型，需提供方 API 密钥。启用后语音通话走 MOSS-Live 全双工对话；配置里还能用 MOSS-TTS 朗读回复。
+            远程全双工实时对话，需提供方 API 密钥；播报音色在「配置」里。实时通话连不上会回落本地。
           </div>
           <div className="voice-engine-actions">
             <button className="secondary-setting" onClick={() => setMossModalOpen(true)}>
@@ -669,11 +684,6 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               <span>{mossTts.error}</span>
             </div>
           )}
-          <div className="voice-engine-note">
-            {ttsRemote
-              ? "播报/试听走 MOSS-TTS；实时通话走 MOSS-Live（WebSocket）。连不上都会如实报错，不静默失败。"
-              : "实时通话走 MOSS-Live（WebSocket）；播报仍用本地合成。到「播报」卡里可切换播报使用的模型。"}
-          </div>
         </div>
       </div>
 
