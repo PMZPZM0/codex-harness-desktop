@@ -413,6 +413,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
      ⛔ 不能一边打「使用中」一边打「未配置」。 */
   const mossInUse = callBackend && Boolean(moss?.configured);
   const mossBroken = callBackend && !moss?.configured;
+  /* 11-12 用户：「我点哪个，上面卡片就启用哪个」——播报源（tts.remote）决定哪张卡高亮/使用中。 */
+  const localActive = !ttsRemote;
+  const remoteActive = ttsRemote || mossInUse;
 
   /** 11-12：基础模型卡也要有「启用 / 停用」并和状态联动（与 MOSS 卡同款按钮位）。
       停用是可逆动作（文件保留），第一次点变成「确认停用」，3 秒未确认自动复位。 */
@@ -426,6 +429,12 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       else {
         onNotice(next ? "基础模型已启用" : "基础模型已停用（文件仍保留，可随时重新启用）");
         await refresh();
+        /* 正向联动：启用本机 ⇒ 播报切回本机；停用本机且云端可用 ⇒ 播报切到云端。 */
+        if (next) await apply({ tts: { ...settings.tts, remote: false } });
+        else if (mossTtsReady) {
+          await apply({ tts: { ...settings.tts, remote: true, profileId: "" } });
+          onNotice("播报已切到 MOSS（本机模型已停用）");
+        }
       }
     } catch (e: any) {
       onNotice(`操作失败：${e?.message ?? e}`);
@@ -433,7 +442,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       setBaseBusy(false);
       setConfirmDisableBase(false);
     }
-  }, [onNotice, refresh]);
+  }, [apply, mossTtsReady, onNotice, refresh, settings.tts]);
 
   return (
     <div className="voice-engines">
@@ -456,13 +465,14 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
 
       <div className="voice-model-grid">
         {/* ① 基础模型（本地）：一级界面只留摘要，模型/引擎/音色/克隆全进「配置」弹窗 */}
-        <div className={`voice-model-card${!cloneActive && speech?.effective === "local" ? " is-active" : ""}${anyReady ? " is-ready" : ""}`}>
+        <div className={`voice-model-card${localActive ? " is-active" : ""}${anyReady ? " is-ready" : ""}`}>
           <div className="voice-model-head">
             <span className="voice-model-icon"><HardDrive size={16} /></span>
             <div className="voice-model-titleblock">
               <div className="voice-model-name"><strong>基础模型（本地）</strong><span className="voice-engine-tag">免费 · 本机运行</span></div>
               <div className="voice-model-sub">离线合成 · 不联网 · 不额外付费</div>
             </div>
+            {localActive && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
             <span className={`voice-engine-state${anyReady ? " ok" : ""}`}>
               {anyReady ? (currentDisabled ? "已停用" : "已安装") : "未安装"}
             </span>
@@ -662,13 +672,14 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         ), document.body)}
 
         {/* ② 付费云端模型：与左侧卡**同结构、同尺寸**（行高由 CSS 固定，内容多少都一样高） */}
-        <div className={`voice-model-card${mossInUse ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
+        <div className={`voice-model-card${remoteActive ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
           <div className="voice-model-head">
             <span className="voice-model-icon"><Cloud size={16} /></span>
             <div className="voice-model-titleblock">
               <div className="voice-model-name"><strong>MOSS-Live</strong><span className="voice-engine-tag">付费云端 · 全双工</span></div>
               <div className="voice-model-sub">边听边说 · 自然打断 · 不占本机磁盘</div>
             </div>
+            {remoteActive && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
             <span className={`voice-engine-state${moss?.configured ? " ok" : ""}`}>
               {moss?.configured ? "已配置" : "未配置"}
             </span>
@@ -697,8 +708,13 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             <button
               className={callBackend ? "secondary-setting" : "primary-setting"}
               onClick={() => {
-                if (!moss?.configured) { setMossModalOpen(true); onNotice("先填好地址、模型和 API 密钥再启用"); return; }
-                void setCallBackend(!callBackend);
+                void (async () => {
+                  if (!moss?.configured) { setMossModalOpen(true); onNotice("先填好地址、模型和 API 密钥再启用"); return; }
+                  await setCallBackend(!callBackend);
+                  /* 反向联动：启用云端 ⇒ 播报也切到云端（清克隆）；停用 ⇒ 播报切回本机。 */
+                  if (!callBackend) await apply({ tts: { ...settings.tts, remote: true, profileId: "" } });
+                  else await apply({ tts: { ...settings.tts, remote: false } });
+                })();
               }}
             >
               <Power size={13} />{callBackend ? "停用" : "启用"}

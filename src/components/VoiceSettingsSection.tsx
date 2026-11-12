@@ -122,8 +122,14 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       return;
     }
     /* ⛔ 切到云端 = 真的生效：清掉克隆音色（克隆只属于基础模型，否则后台仍按克隆播，
-       用户看到「换了没变化」）。切回本机时不动克隆选择。 */
-    void apply({ tts: { ...settings.tts, remote, ...(remote ? { profileId: "" } : {}) } }).then(() => reloadPacks());
+       用户看到「换了没变化」）。切回本机时不动克隆选择。
+       正向联动：选本机就顺手启用基础模型（已启用时为幂等）。 */
+    void apply({ tts: { ...settings.tts, remote, ...(remote ? { profileId: "" } : {}) } }).then(async () => {
+      if (!remote) {
+        try { await window.codex.voiceResourceSetEnabled({ kind: "base", enabled: true }); } catch { /* 未安装时无副作用 */ }
+      }
+      await reloadPacks();
+    });
     if (remote) onNotice("已切到 MOSS 播报；克隆音色只在基础模型下使用");
   };
   return (

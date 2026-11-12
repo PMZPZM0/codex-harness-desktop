@@ -1190,6 +1190,11 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/voiceResourceSetEnabled\(\{ kind: "base", enabled: next \}\)/.test(enginesTsx2)
       && /确认停用/.test(enginesTsx2),
       "基础模型卡有启用/停用按钮并与状态联动（停用二次确认）");
+    ok(/const localActive = !ttsRemote;/.test(enginesTsx2)
+      && /const remoteActive = ttsRemote \|\| mossInUse;/.test(enginesTsx2)
+      && /localActive \? " is-active" : ""/.test(enginesTsx2)
+      && /remoteActive \? " is-active" : ""/.test(enginesTsx2),
+      "正反向联动：播报源高亮对应卡片，卡片启用/停用也回写播报源");
   }
 }
 /* ── ⑪ 语音资源危险动作走确认弹窗（10-31 用户令：「卸载，停用，清空都做成弹窗」）──────
