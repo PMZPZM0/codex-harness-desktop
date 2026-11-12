@@ -291,7 +291,10 @@ export async function ensureTalkThread(
 ): Promise<{ threadId: string; created: boolean }> {
   /* ⛔⛔ 已存在会话的升级口：`resume` 前改写首行（附录 Z）。没有额外工具时**不传**，
      保持老会话原有工具面不动（⛔ 别拿一个残缺列表去覆盖主进程拼好的那一份）。 */
-  const surface = options.extraTools?.length ? [...buildGroupTalkTools(), ...options.extraTools] : undefined;
+  /* ⛔⛔ 11-12：恒带 buildGroupTalkTools —— 原来 extraTools 为空时 surface 是 undefined，
+     于是已被宿主 resume 污染成 95 个工具的**老群聊会话永远自愈不了**（首行不写回）。
+     现在每次 ensure / peek 都把群聊权威工具面写回首行，团群主理人的 extraTools 附加在后。 */
+  const surface = [...buildGroupTalkTools(), ...(options.extraTools ?? [])];
   /* ⛔ 没有 id 就等于没有身份：建出来的台账键会是 `群id::`，之后所有反查都拿到空 memberId。 */
   if (!String(member?.id ?? "").trim()) throw new Error("群成员缺少 id，无法建立群聊会话");
   /* 台账键 = 会话身份（默认就是成员自己）。⛔ 本函数后续所有读写都用这个 key，别混用 member.id。 */
@@ -398,7 +401,10 @@ export async function peekTalkThread(
 ): Promise<{ threadId: string; busy: boolean } | null> {
   const hit = readLedger()[talkKey(groupId, String(options.talkAs ?? "").trim() || String(member.id))];
   if (!hit?.threadId) return null;
-  const surface = options.extraTools?.length ? [...buildGroupTalkTools(), ...options.extraTools] : undefined;
+  /* ⛔⛔ 11-12：恒带 buildGroupTalkTools —— 原来 extraTools 为空时 surface 是 undefined，
+     于是已被宿主 resume 污染成 95 个工具的**老群聊会话永远自愈不了**（首行不写回）。
+     现在每次 ensure / peek 都把群聊权威工具面写回首行，团群主理人的 extraTools 附加在后。 */
+  const surface = [...buildGroupTalkTools(), ...(options.extraTools ?? [])];
   const resumed = await resumeTalkThread(hit.threadId, { ...options, tools: surface });
   if (resumed.ok) return { threadId: hit.threadId, busy: false };
   if (resumed.kind === "busy") return { threadId: hit.threadId, busy: true };

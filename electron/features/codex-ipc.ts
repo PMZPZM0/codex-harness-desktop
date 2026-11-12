@@ -149,12 +149,28 @@ export const codexFeature = defineFeature<null>({
       if (method === "thread/resume") {
         const resumeThreadId = String((params as any)?.threadId ?? "");
         const resumeTools = (params as any)?.dynamicTools;
+        /* ⛔⛔ 11-12 真机（用户「群聊压根运行不起来」）：群聊伙伴会话被通用 resume 当成普通会话，
+           rollout 首行被整份改写成宿主工具面 ⇒ team_member_invoke / team_phase_invoke /
+           group_say / group_read 全丢。实测同一天 17:15、17:16 两条群会话首行分别是 0 个与
+           95 个宿主工具，而 15:43 刚建的那条是 8 个群聊工具（含 team_member_invoke）。
+           引擎只在 spawn 时读首行 ⇒ 主理人从此没有派活工具，只能靠嘴编「已派出 / 进度到第二环」。
+           ⇒ 群聊会话的工具面只由 group-talk 链路管（ensureTalkThread / peekTalkThread 会在
+             resume 之前写回首行，并带上团群主理人的 extraTools）；宿主这里一律不许覆盖。
+           动态 import 只为避开 group-talk ↔ codex-ipc 的加载环（记忆 §4 循环依赖纪律）。 */
+        let talkThread = false;
+        try {
+          const { lookupGroupThread } = await import("./group-talk");
+          talkThread = Boolean(lookupGroupThread(resumeThreadId));
+        } catch { /* 台账读不到就按普通会话处理，⛔ 绝不挡住 resume */ }
+        if (talkThread) {
+          console.log("[tool-surface] resume " + resumeThreadId.slice(0, 8) + " 是群聊伙伴会话 ⇒ 跳过宿主工具面升级（由 group-talk 负责）");
+        }
         /* ⛔ 11-02：resume 没带 dynamicTools ⇒ 老会话工具面**永远不会升级**（引擎只读首行），
            症状就是新工具报 not registered。这里至少留下证据，别静默。 */
-        if (resumeThreadId && !(Array.isArray(resumeTools) && resumeTools.length)) {
+        if (!talkThread && resumeThreadId && !(Array.isArray(resumeTools) && resumeTools.length)) {
           console.warn("[tool-surface] resume " + resumeThreadId.slice(0, 8) + " 未带 dynamicTools ⇒ 工具面不会升级");
         }
-        if (resumeThreadId && Array.isArray(resumeTools) && resumeTools.length) {
+        if (!talkThread && resumeThreadId && Array.isArray(resumeTools) && resumeTools.length) {
           try {
             /* ⛔ 同步进去的是**最终工具面**：这里也要带 `step`，否则 resume 一次就把
                首行的工具面换回无 step 的旧形态（老会话 = 卡片永远没有标题）。 */

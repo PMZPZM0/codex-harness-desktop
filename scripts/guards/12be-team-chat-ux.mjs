@@ -2084,5 +2084,24 @@ const catalog = [
       "引用摘要（team-fold）与正文解析（user-refs）同认附件段（⛔ 折行前先剥，否则引用里露出信封）");
   }
 
+  /* ⛔⛔ 11-12 真机「群聊压根运行不起来」：引擎只在 spawn 时读 rollout 首行
+     `session_meta.dynamic_tools`。宿主通用 `thread/resume` 升级会把**群聊伙伴会话**当成普通会话，
+     首行整份改写成宿主 95 个工具 ⇒ team_member_invoke / team_phase_invoke / group_say 全丢，
+     主理人没有派活工具，只能靠嘴编「已派出 / 进度到第二环」（实测 17:15=0 个、17:16=95 个，
+     而 15:43 刚建的那条是 8 个群聊工具）。
+     两条防线：① 通用 upgrade 对群聊会话早退（工具面只由 group-talk 管）；
+               ② group-talk 每次 ensure/peek 都把权威工具面写回首行 ⇒ 被污染的老会话能自愈。 */
+  {
+    const codexIpc = codeOnly(read("electron/features/codex-ipc.ts"));
+    const channel = codeOnly(read("electron/features/group-talk/01-channel.ts"));
+    ok(/lookupGroupThread\(resumeThreadId\)/.test(codexIpc)
+      && /if \(!talkThread && resumeThreadId && Array\.isArray\(resumeTools\) && resumeTools\.length\)/.test(codexIpc)
+      && /跳过宿主工具面升级/.test(codexIpc),
+      "⛔ 群聊伙伴会话不许被通用 resume 改写成宿主工具面（否则派活工具全丢）");
+    const surfaceHits = (channel.match(/const surface = \[\.\.\.buildGroupTalkTools\(\), \.\.\.\(options\.extraTools \?\? \[\]\)\]/g) || []).length;
+    ok(surfaceHits === 2 && !/const surface = options\.extraTools\?\.length/.test(channel),
+      "群聊 ensure / peek 两处恒写回权威工具面（⛔ 已被污染的旧会话能自愈，主理人 extraTools 不丢）");
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
