@@ -73,6 +73,32 @@
   /* 11-11 用户「排版做好自适应，这么大空白呢」：原版 .md-style-grid 用 auto-fill，
      分类只有 2 张卡时第 3 列整列留空 —— 改 auto-fit：卡少的分类自动铺满整行，窄窗自动降列。 */
   .md-root .md-style-grid { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important; }
+  /* 看板横向滚动条：上游横条挂在 1700+px 内容底部，要滚到底才够得着。
+     glue.js 在看板之后插一条镜像横条，sticky 贴**可视区底部**常驻（11-12 用户：
+     「这底下滚轮放错了，我要滚下去才能看见」→ 放底部常驻，别再挪到顶部）。
+     原生横条隐藏，避免出现两条。 */
+  .md-bottom-xscroll {
+    /* 挂在 .md-content（不滚动的可视面板）上贴底，不随 .md-page 滚动 ⇒ 一直看得见。
+       宽度/左边距由 glue.js 按看板实测写入。 */
+    position: absolute;
+    bottom: 6px;
+    z-index: 8;
+    height: 14px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    /* 贴底时盖住下面滚过的卡片边缘，否则半透明内容会从条里透出来 */
+    background: var(--dsw-alias-bg-base);
+  }
+  .md-bottom-xscroll::-webkit-scrollbar { height: 8px; }
+  .md-bottom-xscroll::-webkit-scrollbar-track { background: transparent; }
+  .md-bottom-xscroll::-webkit-scrollbar-thumb {
+    background: var(--dsw-alias-border-l4);
+    border-radius: 999px;
+  }
+  .md-bottom-xscroll::-webkit-scrollbar-thumb:hover { background: var(--dsw-alias-label-caption); }
+  .md-bottom-xscroll-inner { height: 2px; }
+  html body .md-root .md-page .md-board { overflow-x: hidden !important; }
 </style>
 </head>
 <body>

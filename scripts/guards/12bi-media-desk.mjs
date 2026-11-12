@@ -118,6 +118,18 @@ export async function run() {
   }
   ok(/\.md-root \.md-style-grid \{[^}]*repeat\(auto-fit, minmax\(260px, 1fr\)\) !important/.test(read("resources/media-desk/index.html")),
     "风格页网格自适应（auto-fit：只有 2 张卡的分类铺满整行，不留空列）");
+  /* 11-12 用户：「这底下滚轮放错了，我要滚下去才能看见」⇒ 常驻底部镜像横条。
+     判据锚**接线**（只锚常量会假绿）：条挂 body、贴底坐标按看板实测写入、
+     与 .md-board 双向同步 scrollLeft、原生横条隐藏。 */
+  const mdHost = read("resources/media-desk/index.html");
+  const mdGlue = read("resources/media-desk/glue.js");
+  ok(/\.md-bottom-xscroll \{[^}]*position: absolute[^}]*bottom: 6px/.test(mdHost)
+    && /\.md-page \.md-board \{ overflow-x: hidden !important; \}/.test(mdHost),
+    "看板横条常驻可视区底部（绝对定位在 .md-content 底、原生横条隐藏）");
+  ok(/mountBottomXScroll\(\)/.test(mdGlue) && /className = "md-bottom-xscroll"/.test(mdGlue)
+    && /bar\.scrollLeft = b\.scrollLeft/.test(mdGlue) && /b\.scrollLeft = bar\.scrollLeft/.test(mdGlue)
+    && /c\.appendChild\(bar\)/.test(mdGlue),
+    "镜像横条挂在 .md-content 里，并与 .md-board 双向同步 scrollLeft");
   ok(/dsh-media-desk 2\.6\.2/.test(read("THIRD_PARTY_NOTICES.md")) && /woniuniuniu\/dsh-media-desk/.test(read("THIRD_PARTY_NOTICES.md")),
     "第三方声明登记了随包的 dsh-media-desk（MIT + 上游地址）");
   ok(!/safeStorage/.test(codeOnly(ipc)) && !/safeStorage/.test(codeOnly(embed)) && /secure/.test(embed),
