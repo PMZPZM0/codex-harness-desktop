@@ -101,7 +101,7 @@ import { withStepParam } from "../../src/lib/step-note.mjs";
 /* ⛔ 11-07：团队成员产出落群的桥（关面板也照写；见 team-group-bridge.ts） */
 import { bindTeamGroup, setTeamGroupAppender, setTeamGroupReader, setTeamGroupRelay } from "../team-group-bridge";
 /* ⛔ 11-11：主理人这一轮到底用没用真调度工具 —— 决定催办说哪种话（见下面的 isLeadSelf）。 */
-import { teamToolUsedSince } from "../team-tool-fallback";
+import { teamToolUsedSince, teamToolsUsedSince } from "../team-tool-fallback";
 /* ⛔ 误登记成指挥中枢的伙伴会话要能静默摘掉身份（保留记忆目录）——见 talk-threads 通道。 */
 import { unregisterBossSessionQuiet } from "../boss-groups/session-registry";
 import {
@@ -1562,7 +1562,12 @@ async function runDispatchRounds(
         text: output,
         recentRows: groupRows,
         /* ① 执行与汇报分离：本回合**其他成员**已真实落盘的产出才算证据；
-           主理人自己写的「已派出 / 进度到第二环」不算（11-12 用户实测的编造进度）。 */
+           主理人自己写的「已派出 / 进度到第二环」不算（11-12 用户实测的编造进度）。
+           ⛔⛔ 11-12 真机（用户截图「已派出，等产出回来了我验收」下面紧跟一条
+           「本轮没有实际派活…不可核实」）：这一项原来**没传** ⇒ `verifyProgressClaim`
+           收到的 toolCalls 恒为空 ⇒ 真派了活也一律判无证据，每条真派活后面都甩一条假回执。
+           ⇒ 按回合取真实工具名（`teamToolsUsedSince` 只回本回合的），派活类由纯函数自己筛。 */
+        toolCalls: teamToolsUsedSince(threadId, startedAt).map((name) => ({ name })),
         memberOutputs: groupRows
           .filter((row) => Number(row.at ?? 0) >= startedAt
             && String(row.authorId ?? "") !== speakerId
@@ -1831,7 +1836,9 @@ async function runDispatchRounds(
             if (mustHandBack) leadCatchUps += 1;
             chainBudget -= 1;
             const ask = mustHandBack
-              ? `[系统] ${partner.name} 交回了这一环的产出。按 SOP 推进：验收这一环，合格就继续下一阶段（行首 @ 名字），全部阶段完成才写「收口」给最终结论（结论 / 依据 / 还剩什么没做）。⛔ 群里不要报进度（用户明确不要刷屏），不要只回「收到」，也不要代写成员产出。`
+              ? `[系统] ${partner.name} 交回了这一环的产出。按 SOP 推进：验收这一环，合格就继续下一阶段（行首 @ 名字），全部阶段完成才写「收口」给最终结论（结论 / 依据 / 还剩什么没做）。`
+                + `⛔ 同一件活**不要重派**：他刚交回的这件就是这一环的结果，再派一次他会收到重复任务（真机实证：成员已回「这是第三次收到同一任务」）。`
+                + `没有下一阶段就直接写「收口」。⛔ 群里不要报进度，不要只回「收到」，也不要代写成员产出。`
               : `[系统] ${partner.name} 说完了（${verdict.reason}）。你决定：下一步点谁（行首 @ 名字），或者收口给结论。`;
             void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name }, ask)
               .catch(() => undefined);

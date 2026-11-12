@@ -2167,6 +2167,22 @@ const catalog = [
       && /echoedNudge/.test(ipc) && /&&\s*!echoedNudge/.test(ipc),
       "④ 接线：发言与启动预升级两处同源解析；催办回合没调派活工具 ⇒ 不落群（⛔ 不靠文本相似度兜）");
   }
+  /* ⛔⛔ 11-12 真机第二轮（派活跑通后暴露的三个瑕疵，用户截图「唉这个弄不好吗」）：
+     ① 同一件活被派三次（成员自己回「第三次收到同一任务」）—— 幂等签名取 query 原文，
+        模型改个标点就绕过；② 真派活后仍甩「本轮没有实际派活…不可核实」假回执 ——
+        `evaluateMemberOutput` 没传 `toolCalls`；③ 回喂文案没禁止重派。 */
+  {
+    const fb = codeOnly(read("electron/team-tool-fallback.ts"));
+    const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(/dispatchSignature/.test(fb)
+      && /replace\(\/\[\s*，。、；：！？,\.;:!\?/.test(fb)
+      && /noteTeamToolUse\(threadId, tool\)/.test(fb)
+      && /export function teamToolsUsedSince/.test(fb),
+      "⑤ 派活幂等签名先归一化（⛔ 不带标点差异）+ 团队工具按次记名（⛔ 只存一个时刻）");
+    ok(/toolCalls: teamToolsUsedSince\(threadId, startedAt\)/.test(ipc)
+      && /同一件活\*\*不要重派\*\*/.test(ipc),
+      "⑤ 派活证据按回合取真实工具名（⛔ 真派活不再甩「不可核实」假回执）+ 回喂文案禁止重派同一件活");
+  }
   {
     const guardrails = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));
     const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));

@@ -35,22 +35,37 @@ const TEAM_TOOL_STATUS = "team_status";
 
 type Respond = (id: string | number, result: unknown) => unknown;
 
-/* ⛔⛔ 11-11：这条会话最近**真的**调过团队工具（threadId → 时刻）。
+/* ⛔⛔ 11-11：这条会话最近**真的**调过团队工具（threadId → 逐次时刻 + 工具名）。
    群聊的闭环催办据此换口径：它已经用真工具派过活时，⛔ 别再催它「另起一行 @名字」——
    那会把它推回"行首 @ 演戏"的旧模式（群里说一句，没人真去干活）。
-   ⛔ 只记事实，不做权限判断；上限清空只是防 Map 无限涨。 */
-const lastToolUseAt = new Map<string, number>();
-function noteTeamToolUse(threadId: string): void {
+   ⛔ 只记事实，不做权限判断；上限清空只是防 Map 无限涨。
+   ⛔⛔ 11-12 改为逐次记录（原来只存"最近一次时刻"）：① 派活证据要能按回合取**工具名**
+   （`verifyProgressClaim` 只认 team_member_invoke / team_phase_invoke，⛔ team_status 不算派活）；
+   ② 只存一个时刻会让跨回合判断互相污染。 */
+type TeamToolUse = { at: number; name: string };
+const TEAM_TOOL_USE_KEEP = 20;
+const lastToolUseAt = new Map<string, TeamToolUse[]>();
+function noteTeamToolUse(threadId: string, name?: string): void {
   const tid = String(threadId ?? "");
   if (!tid) return;
   if (lastToolUseAt.size > 500) lastToolUseAt.clear();
-  lastToolUseAt.set(tid, Date.now());
+  const rows = lastToolUseAt.get(tid) ?? [];
+  rows.push({ at: Date.now(), name: String(name ?? "") });
+  if (rows.length > TEAM_TOOL_USE_KEEP) rows.splice(0, rows.length - TEAM_TOOL_USE_KEEP);
+  lastToolUseAt.set(tid, rows);
 }
 
 /** 这条会话在 `since` 之后有没有真的调过团队工具（群聊闭环用）。 */
 export function teamToolUsedSince(threadId: string, since: number): boolean {
-  const at = lastToolUseAt.get(String(threadId ?? ""));
-  return Boolean(at && at >= Number(since || 0));
+  const rows = lastToolUseAt.get(String(threadId ?? "")) ?? [];
+  return rows.some((row) => row.at >= Number(since || 0));
+}
+
+/** 这条会话在 `since` 之后调过的团队工具名（派活证据：`verifyProgressClaim` 自己会筛派活类）。
+ *  ⛔ 按时间过滤，⛔ 不返回上一回合的残留。 */
+export function teamToolsUsedSince(threadId: string, since: number): string[] {
+  const rows = lastToolUseAt.get(String(threadId ?? "")) ?? [];
+  return rows.filter((row) => row.at >= Number(since || 0) && row.name).map((row) => row.name);
 }
 
 /* ⛔⛔ 11-12 真机（群消息实证：同一成员 21:20 / 21:21 连续三次收到同一份任务，
@@ -63,8 +78,15 @@ const recentDispatch = new Map<string, number>();
 const DISPATCH_DEDUPE_MS = 10 * 60 * 1000;
 
 function dispatchSignature(teamId: string, memberId: string, query: string): string {
-  return `${String(teamId ?? "")}::${String(memberId ?? "")}::`
-    + String(query ?? "").replace(/\s+/g, " ").trim().slice(0, 240);
+  /* ⛔⛔ 11-12 真机（同一件活被派三次，成员自己回「这次是第三次收到同一任务」）：
+     签名原来直接取 query 前 240 字**原文** ⇒ 模型重派时改个标点、多加半句，签名就变
+     ⇒ 幂等形同虚设，三次全部放行、群里三条一样的任务书。
+     ⇒ 归一化：去掉所有空白与标点后再取前 120 字 —— 同一件活措辞微调也认成同一件。 */
+  const norm = String(query ?? "")
+    .replace(/\s+/g, "")
+    .replace(/[，。、；：！？,.;:!?"'“”‘’（）()【】[\]—…·]/g, "")
+    .slice(0, 120);
+  return `${String(teamId ?? "")}::${String(memberId ?? "")}::${norm}`;
 }
 
 /** 从事件里取出这次调用的参数（`arguments` 可能是字符串，也可能是对象）。 */
@@ -113,8 +135,10 @@ export async function handleTeamToolCall(deps: {
   const id = event?.id;
   if (id === undefined || id === null) return false;
 
-  /* ⛔ 11-11：先记事实（这条会话这一轮用过真工具），再决定怎么答。 */
-  noteTeamToolUse(threadId);
+  /* ⛔ 11-11：先记事实（这条会话这一轮用过真工具），再决定怎么答。
+     ⛔ 11-12：连工具名一起记 —— 派活证据只认 team_member_invoke / team_phase_invoke，
+       查询类的 team_status 不算（否则"查了下进度"就会被当成"已派出"）。 */
+  noteTeamToolUse(threadId, tool);
 
   const teamId = String(teamRunStore.teamOfThread(threadId) ?? "");
   if (!teamId) {
