@@ -413,9 +413,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
      ⛔ 不能一边打「使用中」一边打「未配置」。 */
   const mossInUse = callBackend && Boolean(moss?.configured);
   const mossBroken = callBackend && !moss?.configured;
-  /* 11-12 用户：「我点哪个，上面卡片就启用哪个」——播报源（tts.remote）决定哪张卡高亮/使用中。 */
+  /* 11-12 用户：「我点哪个，上面卡片就启用哪个」——卡片高亮只看**播报源**（tts.remote）。
+     ⛔ 不能把实时通话后端也算进来：通话开着 MOSS、播报选本机时，右边仍会错误地显示使用中。 */
   const localActive = !ttsRemote;
-  const remoteActive = ttsRemote || mossInUse;
+  const remoteActive = ttsRemote;
 
   /** 11-12：基础模型卡也要有「启用 / 停用」并和状态联动（与 MOSS 卡同款按钮位）。
       停用是可逆动作（文件保留），第一次点变成「确认停用」，3 秒未确认自动复位。 */

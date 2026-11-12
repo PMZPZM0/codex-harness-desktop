@@ -1191,10 +1191,10 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
       && /确认停用/.test(enginesTsx2),
       "基础模型卡有启用/停用按钮并与状态联动（停用二次确认）");
     ok(/const localActive = !ttsRemote;/.test(enginesTsx2)
-      && /const remoteActive = ttsRemote \|\| mossInUse;/.test(enginesTsx2)
+      && /const remoteActive = ttsRemote;/.test(enginesTsx2)
       && /localActive \? " is-active" : ""/.test(enginesTsx2)
       && /remoteActive \? " is-active" : ""/.test(enginesTsx2),
-      "正反向联动：播报源高亮对应卡片，卡片启用/停用也回写播报源");
+      "正反向联动：卡片高亮只看播报源（通话后端不参与，否则本机播报时云端仍显示使用中）");
   }
 }
 /* ── ⑪ 语音资源危险动作走确认弹窗（10-31 用户令：「卸载，停用，清空都做成弹窗」）──────
