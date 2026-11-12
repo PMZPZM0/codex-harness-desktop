@@ -126,10 +126,17 @@ export function sessionKindOf(facts = {}) {
   return "normal";
 }
 
-/** 能力矩阵取值。⛔ 未知类型回落 `normal` —— 与「拿不到角色不误禁」一致；
- *  真正的安全边界在主进程执行端（拿不到就按 delegate 处理，见 dispatch-core）。 */
+/** 类型归一化：不在矩阵里的值一律当普通会话（⛔ 用 hasOwn，别让 `__proto__` / `constructor`
+ *  这类原型链键取到 Object.prototype —— 那样 caps 会变成空对象、label 变成对象，UI 直接崩）。 */
+export function normalizeSessionKind(kind) {
+  return Object.hasOwn(SESSION_CAPS, kind) ? kind : "normal";
+}
+
+/** 能力矩阵取值。⛔ 未知类型回落 `normal` —— 与渲染层「拿不到角色不误禁」一致；
+ *  主进程的工具调用执行端每次都用 `restrictedThreadRole` 按 ID 重新判一次（见 dispatch-core），
+ *  ⛔ 不依赖调用方传进来的 kind，所以这里回落不会把权限放给派生会话。 */
 export function capabilitiesOf(kind) {
-  return SESSION_CAPS[kind] ?? SESSION_CAPS.normal;
+  return SESSION_CAPS[normalizeSessionKind(kind)];
 }
 
 /** 这类会话能不能对外派活（旧布尔 `restricted` 的唯一来源）。 */
@@ -161,12 +168,13 @@ export function toolGatesOf(kind) {
  *   新代码一律读 `caps` 或 `toolGatesOf(kind)`，⛔ 别再对这两个布尔做二次组合。
  */
 export function roleOfKind(kind) {
-  const caps = capabilitiesOf(kind);
+  const safe = normalizeSessionKind(kind);
+  const caps = SESSION_CAPS[safe];
   return {
     restricted: caps.dispatch !== true,
     dispatchOnly: caps.dispatch !== true && caps.scheduler === true,
-    label: SESSION_KIND_LABEL[kind] ?? SESSION_KIND_LABEL.normal,
-    kind: SESSION_CAPS[kind] ? kind : "normal",
+    label: SESSION_KIND_LABEL[safe],
+    kind: safe,
     caps,
   };
 }

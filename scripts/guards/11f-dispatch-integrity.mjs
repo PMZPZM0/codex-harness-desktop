@@ -564,6 +564,18 @@ try {
     "六类会话在能力矩阵里各有一行（普通 / 中枢 / 专家团 / 专家 / 工作伙伴 / 被调度 —— 少一类就是漏一条隔离）");
   ok(/dispatch: false, bossGroup: false, scheduler: true, knowledge: true, cliInstall: true/.test(kindSrc),
     "工作伙伴会话 = 只关调度（定时任务 / 知识库 / CLI 安装照旧，11-07 与 11-10 用户令）");
+  /* ⛔ 审查修正：静态断言挡不住「注释声称的能力其实没有」和「原型链键把 caps 变成
+     Object.prototype」⇒ 真跑一遍归一化，把契约钉在行为上而不是注释上。 */
+  const kindMod = await import(pathToFileURL(join(ROOT, "src/lib/session-kind.mjs")).href);
+  const weird = kindMod.roleOfKind("__proto__");
+  ok(weird.kind === "normal" && weird.caps === kindMod.SESSION_CAPS.normal
+    && weird.label === kindMod.SESSION_KIND_LABEL.normal
+    && kindMod.sessionKindOf({ groupMember: true }) === "workPartner"
+    && kindMod.sessionKindOf({ delegate: true, team: true }) === "delegate"
+    && kindMod.capabilitiesOf("workPartner").scheduler === true
+    && kindMod.capabilitiesOf("expertTeam").dispatch === false
+    && kindMod.capabilitiesOf("delegate").bossGroup === false,
+    "能力矩阵真跑：未知/原型链键归一到普通会话，派生类型一律拿不到主会话能力（⛔ 不靠注释）");
   /* ⛔ 负向判据必须先证切片非空（`split(...)[1] ?? ""` 会恒真 —— 10-05 项目踩过）。 */
   const kindFactsSrc = coreSrc.split("async function threadKindFacts")[1] ?? "";
   ok(kindFactsSrc.length > 200 && !/\{ restricted: true, label:/.test(kindFactsSrc),

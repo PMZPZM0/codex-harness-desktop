@@ -37,6 +37,7 @@ export declare const SESSION_KIND_LABEL: Record<SessionKind, string>;
 export declare const SESSION_KIND_HINT: Record<SessionKind, string>;
 export declare const SESSION_CAPS: Readonly<Record<SessionKind, Readonly<SessionCaps>>>;
 export declare function sessionKindOf(facts?: SessionFacts): SessionKind;
+export declare function normalizeSessionKind(kind: string): SessionKind;
 export declare function capabilitiesOf(kind: string): Readonly<SessionCaps>;
 export declare function isRestrictedKind(kind: string): boolean;
 export declare function isDispatchOnlyKind(kind: string): boolean;
