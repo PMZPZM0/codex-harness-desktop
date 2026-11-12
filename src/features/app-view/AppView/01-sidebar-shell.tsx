@@ -169,10 +169,10 @@ import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
-/** 侧栏壳：项目/会话树、团队条、指挥中枢入口。⛔ 中枢就是**一个普通会话**（点按钮 = openThread(bossThreadId)），不是覆盖层。 */
 /** 项目「⋯」按钮矩形：项目改名/删除气泡贴着**项目行**弹（⛔ 不用菜单项位置，否则飘在侧栏中间）。 */
 let projectMenuTriggerRect: DOMRect | null = null;
 
+/** 侧栏壳：项目/会话树、团队条、指挥中枢入口。⛔ 中枢就是**一个普通会话**（点按钮 = openThread(bossThreadId)），不是覆盖层。 */
 export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppApi; onOpenSettings?: (page: string) => void }) {
   /* ── 指挥中枢 = **一个普通会话**（10-25 用户令，推翻覆盖层）──────────────────
      用户原话：「一个正常对话框不会做嘛，新建一个会话，常驻成指挥中枢，不就好了嘛」。

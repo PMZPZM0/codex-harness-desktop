@@ -99,6 +99,7 @@ ${plan ? `\n## 团队负责人最近说的（对齐它，别自己另起一套�
 `;
 }
 
+/** 派一个成员执行任务的核心链路（按「主理人+团队+成员」串行、登记会话、回收结果）。 */
 export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<InvokeMemberResult> {
   /* 同一「主理人会话 + 团队 + 成员」串行：并行阶段可能对同一成员重复提交任务，
      两条并发会在线程登记前各自 thread/start，产生重复会话。锁只按成员，不同成员仍并行。 */

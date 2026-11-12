@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, FolderOpen, Search, Sparkles, Users, X } from "lucide-react";
+import { AppSelect } from "../../components/AppSelect";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
 import { addModeStateOf } from "../../lib/team-models.mjs";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
@@ -286,18 +287,19 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
               {onSetAdmin && done.id && picked.length > 0 ? (
                 <label className="team-created__admin">
                   <span>现在就设</span>
-                  <select
+                  <AppSelect
                     value={adminPick}
                     disabled={adminSaving}
-                    onChange={(e) => void pickAdmin(e.target.value)}
-                  >
-                    <option value="">不设（进群后也可在群设置里改）</option>
-                    {picked.map((p) => (
-                      <option key={`${p.kind}:${p.key}`} value={`tgt:${p.kind}:${p.key}`}>
-                        {p.name}{p.profession ? ` · ${p.profession}` : ""}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => void pickAdmin(v)}
+                    ariaLabel="群管理员"
+                    options={[
+                      { value: "", label: "不设（进群后也可在群设置里改）" },
+                      ...picked.map((p) => ({
+                        value: `tgt:${p.kind}:${p.key}`,
+                        label: `${p.name}${p.profession ? ` · ${p.profession}` : ""}`,
+                      })),
+                    ]}
+                  />
                   {adminSaving && <em className="team-created__admin-state">保存中…</em>}
                   {adminError && <em className="team-created__admin-state is-warn">{adminError}</em>}
                 </label>

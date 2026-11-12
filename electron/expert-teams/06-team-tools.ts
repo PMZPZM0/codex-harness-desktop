@@ -174,6 +174,7 @@ export function buildTeamStatusTool() {
   };
 }
 
+/** 构建整团可用的团队工具清单（派活 / 查状态 / 成员协作），⛔ 这里只出 schema，不执行任务。 */
 export function buildTeamTools(team: ExpertTeamConfig) {
   const memberOptions = team.members.map((m) => `${m.id}（${m.name}·${m.profession.zh}：${m.description}）`).join("；");
   return {
