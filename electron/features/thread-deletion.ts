@@ -162,4 +162,58 @@ async function forgetDeletedThreads(ids: string[]) {
   await fs.writeFile(deletedThreadsFile(), JSON.stringify(deletedThreadOrder, null, 2), "utf8").catch(() => undefined);
 }
 
+/**
+ * ⛔⛔ 11-12 用户令「后续也不准有残留」：每次启动按**墓碑**对账一次，
+ * 把任何以已删 threadId 为键的落盘清掉。这是删群同步清理之外的兜底，
+ * 也覆盖旧版本删群留下的历史孤儿（实测曾留 6 个账本 + 64 条线程登记）。
+ * ⛔ 幂等：只动墓碑命中的条目；⛔ 不动 rollout（血缘守卫可能故意保留源文件）。
+ */
+export async function reconcileDeletedThreadArtifacts(): Promise<{ runs: number; keys: number }> {
+  await loadDeletedThreads();
+  const ids = new Set([...deletedThreadIds].map(String));
+  if (!ids.size) return { runs: 0, keys: 0 };
+  const root = app.getPath("userData");
+  let runs = 0;
+  let keys = 0;
+  const runsDir = path.join(root, "team-runs");
+  try {
+    for (const name of await fs.readdir(runsDir)) {
+      if (!name.endsWith(".json") || !ids.has(name.slice(0, -5))) continue;
+      await fs.unlink(path.join(runsDir, name)).catch(() => undefined);
+      runs += 1;
+    }
+  } catch { /* 目录不存在 = 已清 */ }
+  /* 以 threadId 为键的登记：thread-runtime / session-workspaces(records) /
+     role-memory-index / team-threads(threads|leads|members)。 */
+  for (const file of ["thread-runtime.json", "session-workspaces.json", "role-memory-index.json", "team-threads.json"]) {
+    const p = path.join(root, file);
+    try {
+      const raw = JSON.parse(await fs.readFile(p, "utf8")) as Record<string, any>;
+      let changed = 0;
+      const scopes = file === "session-workspaces.json" ? [raw.records]
+        : file === "team-threads.json" ? [raw.threads, raw.leads]
+          : [raw];
+      for (const obj of scopes) {
+        if (!obj || typeof obj !== "object") continue;
+        for (const k of Object.keys(obj)) {
+          if (!ids.has(k)) continue;
+          delete obj[k];
+          changed += 1;
+        }
+      }
+      if (file === "team-threads.json" && raw.members && typeof raw.members === "object") {
+        for (const [k, v] of Object.entries(raw.members)) {
+          if (!ids.has(String(v))) continue;
+          delete (raw.members as Record<string, unknown>)[k];
+          changed += 1;
+        }
+      }
+      if (!changed) continue;
+      await fs.writeFile(p, JSON.stringify(raw), "utf8");
+      keys += changed;
+    } catch { /* 文件不存在 / 损坏：跳过，不阻塞启动 */ }
+  }
+  return { runs, keys };
+}
+
 export { DELETED_THREADS_LIMIT, deletedThreadIds, forgetDeletedThreads, healRolloutLineage, loadDeletedThreads, purgeDeletedThread, rememberDeletedThread };

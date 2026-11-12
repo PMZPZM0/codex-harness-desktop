@@ -18,6 +18,7 @@ import { reasoningItemText } from "../reasoning-text";
 import { remoteStepOf } from "../remote-step";
 import { clearGrants } from "./data-access-ipc";
 import { gcSessionWorkspaces, removeSessionWorkspace, setSessionWorkspaceState } from "./session-workspace";
+import { reconcileDeletedThreadArtifacts } from "./thread-deletion";
 import { initInternalThreads, loadInternalThreads } from "../internal-threads";
 import { captureScopeOf } from "../memory-capture-scope";
 import { setSessionAliasEmitter } from "../session-alias";
@@ -466,6 +467,14 @@ export async function bootApp() {
   // 已删除会话的墓碑必须在**第一次 thread/list 之前**载入：渲染层启动就会拉列表，靠懒加载
   // 会让首屏短暂出现幽灵会话（见 purgeDeletedThread 注释）。失败不阻塞启动。
   try { await loadDeletedThreads(); } catch (error) { console.warn("deleted-threads 载入失败：", error); }
+  /* ⛔⛔ 11-12 用户令「后续也不准有残留」：墓碑载入后立刻对账一次，
+     把旧版本 / 失败删除留下的账本与线程登记补齐清掉。幂等，失败不阻塞启动。 */
+  try {
+    const purged = await reconcileDeletedThreadArtifacts();
+    if (purged.runs || purged.keys) {
+      console.log(`[thread/purge] 启动对账：账本 ${purged.runs} 个、登记 ${purged.keys} 条`);
+    }
+  } catch (error) { console.warn("启动对账失败（不阻塞启动）：", error); }
   /* ⛔ 内部会话（内省/蒸馏用的一次性会话）登记表：必须在**第一次 thread/list 之前**载入，
      否则重启后的首屏会把它们当普通会话画出来（10-31 用户截图：侧栏刷出一排「你是这个桌面助手的…」）。
      首次运行会顺便认领历史遗留。失败不阻塞启动。 */

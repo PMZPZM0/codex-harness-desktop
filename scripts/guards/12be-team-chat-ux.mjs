@@ -1954,6 +1954,13 @@ const catalog = [
     && /cleanupThreadArtifacts\(removedIds\)/.test(read("electron/features/harness-team-ipc.ts"))
     && /threadRuntimeStore\.flush\(\)/.test(read("electron/features/harness-team-ipc.ts")),
     "删群同步清运行账本与线程运行时登记（⛔ 不等下次启动自愈）");
+  /* ⛔⛔ 11-12 用户追加「后续也不准有残留」：删除同步清全部会话级落盘 + 启动按墓碑对账兜底。 */
+  ok(/removeSessionWorkspace\(userDataDir, id\)/.test(read("electron/features/harness-team-ipc.ts"))
+    && /forgetRoleSession\(userDataDir, id\)/.test(read("electron/features/harness-team-ipc.ts"))
+    && /clearSessionPrivateMemory\(memRoot, id\)/.test(read("electron/features/harness-team-ipc.ts"))
+    && /export async function reconcileDeletedThreadArtifacts/.test(read("electron/features/thread-deletion.ts"))
+    && /await reconcileDeletedThreadArtifacts\(\)/.test(read("electron/features/boot.ts")),
+    "无残留双保险：删群同步清工作区/角色/私有记忆；启动按墓碑对账补漏");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

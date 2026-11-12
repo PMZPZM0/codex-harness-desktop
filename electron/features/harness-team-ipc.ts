@@ -16,6 +16,10 @@ import { existsSync, readFileSync, renameSync, writeFileSync, mkdirSync, statSyn
 import { dirname, isAbsolute, join } from "node:path";
 import { app } from "electron";
 import { defineFeature } from "../context";
+/* ⛔ 11-12 「删必须同步清理干净」：会话级残留的清理函数都在基座层，这里只负责接线。 */
+import { removeSessionWorkspace } from "./session-workspace";
+import { forgetRoleSession } from "../role-memory";
+import { clearSessionPrivateMemory } from "../memory-fabric";
 import type { IpcHost } from "../ipc-host";
 import {
   addPartner,
@@ -613,6 +617,16 @@ async function cleanupThreadArtifacts(ids: string[]): Promise<{ runs: number; ru
     try {
       if (await threadRuntimeStore.remove(id)) out.runtime += 1;
     } catch { ok = false; }
+    /* ⛔ 会话工作区 / 角色归属 / 私有记忆也是以 threadId 为键的落盘，
+       原来只在 boot 的 thread/deleted 分支里 `void` 异步清 ⇒ 删群当时并未清干净。
+       这里同步 await；失败不判整个删除失败（启动对账会兜底补齐）。 */
+    const userDataDir = app.getPath("userData");
+    try {
+      const ws = await removeSessionWorkspace(userDataDir, id);
+      const memRoot = ws?.projectRoot || threadCwd.get(id) || "";
+      if (memRoot) await clearSessionPrivateMemory(memRoot, id).catch(() => undefined);
+    } catch { /* 启动对账兜底 */ }
+    try { await forgetRoleSession(userDataDir, id); } catch { /* 启动对账兜底 */ }
     if (!ok) out.failed.push(id);
   }
   /* remove() 只是 scheduleSave()（120ms 合并落盘）⇒ 这里显式 flush，才叫"同一次删除里清干净"。 */
