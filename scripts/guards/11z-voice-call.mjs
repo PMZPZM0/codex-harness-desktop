@@ -1171,6 +1171,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/voice-tts-source/.test(announceSrc) && /基础模型（本机）/.test(announceSrc)
       && /付费云端（MOSS）/.test(announceSrc) && /onPickTtsSource/.test(announceSrc),
       "播报卡可直接选择生效模型（本机 / 云端 MOSS），配置仍在各自弹窗里");
+    ok(/profileId: ""/.test(read("src/components/VoiceSettingsSection.tsx"))
+      && /remote: false, profileId: id/.test(read("src/components/VoiceSettingsSection.tsx")),
+      "切换播报源真正生效：切云端清克隆音色，选克隆音色切回本机（⛔ 只写 tts.remote 会被克隆优先级吃掉）");
     ok(!/播报音质/.test(announceSrc) && /播报音质/.test(read("src/components/VoiceSettingsSection.tsx"))
       && /MOSS 播报不需要/.test(read("src/components/VoiceSettingsSection.tsx")),
       "播报音质只对本机合成有效：从播报卡移除、收进基础模型配置弹窗（11-12 用户令）");

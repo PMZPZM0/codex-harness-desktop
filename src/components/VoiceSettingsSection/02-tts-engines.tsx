@@ -9,7 +9,7 @@
  *     点了给**明确说明**（10-20 教训：灰按钮点了没反应是最差体验）。
  *   · 优势/劣势必须写**实测数字**，不写"更快更好"这种空话。
  */
-import { Check, Download, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, Download, FolderOpen, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -169,7 +169,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       /* ⛔ 10-31 联动：基础模型（无 target）装完 ⇒ 轻量播报卡「已安装/缺模型」必须跟着刷新，
          否则装好了上面还写着「未安装」（用户实测「旧的内容不更新」）。 */
       if (!target) {
-        if (event?.type === "downloadDone") void refresh();
+        /* 11-12：设置变化（切换播报本机/云端、选克隆音色）也要重探 speech，
+           否则上面那张卡还挂着旧的「未就绪」。 */
+        if (event?.type === "downloadDone" || event?.type === "settings") void refresh();
         return;
       }
       if (target !== "emotivoice") return;
@@ -475,6 +477,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             <button className={anyReady ? "secondary-setting" : "primary-setting"} onClick={() => setLocalModalOpen(true)}>
               <Settings2 size={13} />配置
             </button>
+            <button className="secondary-setting" onClick={() => void window.codex.voiceModelsReveal().catch(() => undefined)}>
+              <FolderOpen size={13} />打开目录
+            </button>
           </div>
         </div>
 
@@ -649,6 +654,21 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           </div>
           <div className="voice-engine-role">
             远程全双工实时对话，需提供方 API 密钥；播报音色在「配置」里。实时通话连不上会回落本地。
+          </div>
+          {/* 与左侧卡同结构的状态行：两张卡等高时不出现一边空一大块 */}
+          <div className="voice-model-checks">
+            <span className={mossInUse ? "is-ok" : ""}>
+              {mossInUse ? <Check size={12} /> : <TriangleAlert size={12} />}实时通话{mossInUse ? "使用中" : mossBroken ? "配置不完整" : "未启用"}
+            </span>
+            <span className={(cloneSelected ? cloneReady : mossTtsReady) ? "is-ok" : ""}>
+              {(cloneSelected ? cloneReady : mossTtsReady) ? <Check size={12} /> : <TriangleAlert size={12} />}播报{cloneSelected ? (cloneReady ? "克隆音色" : "克隆未就绪") : ttsRemote ? (mossTtsReady ? "MOSS" : "缺配置") : "本地"}
+            </span>
+            <span className={moss?.configured ? "is-ok" : ""}>
+              {moss?.configured ? <Check size={12} /> : <TriangleAlert size={12} />}接口 / 模型{moss?.configured ? "已填" : "未填"}
+            </span>
+            <span className={moss?.hasKey ? "is-ok" : ""}>
+              {moss?.hasKey ? <Check size={12} /> : <TriangleAlert size={12} />}API 密钥{moss?.hasKey ? "已保存" : "缺失"}
+            </span>
           </div>
           <div className="voice-engine-actions">
             <button className="secondary-setting" onClick={() => setMossModalOpen(true)}>

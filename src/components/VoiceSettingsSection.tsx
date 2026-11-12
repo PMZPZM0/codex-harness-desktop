@@ -98,7 +98,7 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
-  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, ttsBlockedReason, speech, mossConfigured, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
+  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, ttsBlockedReason, speech, mossConfigured, reloadPacks, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
   /** 缺模型时直达「基础模型」卡片（落点跟着模型卡走）。 */
   const goModels = () => {
     const el = document.getElementById("voice-engines");
@@ -121,7 +121,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       onNotice("先到「付费云端模型」卡片里完成配置，再切换播报使用云端");
       return;
     }
-    void apply({ tts: { ...settings.tts, remote } });
+    /* ⛔ 切到云端 = 真的生效：清掉克隆音色（克隆只属于基础模型，否则后台仍按克隆播，
+       用户看到「换了没变化」）。切回本机时不动克隆选择。 */
+    void apply({ tts: { ...settings.tts, remote, ...(remote ? { profileId: "" } : {}) } }).then(() => reloadPacks());
+    if (remote) onNotice("已切到 MOSS 播报；克隆音色只在基础模型下使用");
   };
   return (
     <section className="settings-section stack voice-settings">
@@ -268,7 +271,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
                 （zipReady 只在挂载时读一次；安装完成事件只刷新了播报引擎）⇒ 卡刷新完状态就回拉音色列表，
                 装好 / 删除 / 导入后立即同步，不必重进页面。 */}
             <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" onStatusChange={() => { void reloadProfiles(); }} />
-            <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
+            <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={async (id) => { await selectProfile(id); await apply({ tts: { ...settings.tts, remote: false, profileId: id } }); await reloadPacks(); }} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
             {/* 11-12 用户：「这个（识别细节/下载镜像）也全部丢进去，都不是通用的」——
                 识别断句、线程数、镜像源都属于本机模型，跟着基础模型配置走。 */}
             <div className="voice-subhead">
