@@ -798,7 +798,7 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
     });
 
     void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false })
-      .then((threadResult) => {
+      .then(async (threadResult) => {
         // 同样要贴本地覆盖（否则这条路径一跑，用户在别处改过的项目地址/名字就被引擎旧值顶回去）
         const list = (threadResult.data ?? []).map((entry: Thread) => bag.withNameOverride(bag.withCwdOverride(entry)));
         bag.setThreads(list);
@@ -807,8 +807,20 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         // ⛔ 独立会话弹窗：本窗口锁定 popout 会话（不读 last-thread、不走全局恢复）。
         // 弹窗启动即打开指定会话，侧栏仍完整可用（可再切到其他会话——弹窗是完整界面）。
         const lastId = (() => { try { return localStorage.getItem("last-thread"); } catch { return null; } })();
-        const targetId = bag.popoutThreadIdRef.current || lastId;
-        if (targetId && list.some((entry: any) => entry.id === targetId)) void bag.openThread(targetId);
+        const wanted = bag.popoutThreadIdRef.current || lastId;
+        let open = wanted && list.some((entry: any) => entry.id === wanted) ? String(wanted) : "";
+        /* ⛔ 11-12 用户令：「每次进去都是工作伙伴会话…能不能进去不要展示工作伙伴会话，展示别的也行，首页或者其他会话」。
+           工作伙伴/中枢群的成员会话已从侧栏隐藏，启动时也别默认打开它（否则一进去主区就是一条侧栏里找不到的会话）。
+           ⇒ 上次会话若是群成员会话，回落到最近一条**非成员**会话；一条都没有就停在首页（不打开任何会话）。
+           ⛔ 只看成员会话（memberThreadIds），与侧栏隐藏口径同源；独立弹窗（popout）不受影响。 */
+        if (open && !bag.popoutThreadIdRef.current) {
+          try {
+            const groups = await window.codex.listBossGroups();
+            const memberIds = new Set((Array.isArray(groups) ? groups : []).flatMap((g: any) => (Array.isArray(g?.memberThreadIds) ? g.memberThreadIds : [])).map(String));
+            if (memberIds.has(open)) open = String(list.find((entry: any) => entry?.id && !memberIds.has(String(entry.id)))?.id ?? "");
+          } catch { /* 拿不到群名单：按原逻辑打开（不阻断启动） */ }
+        }
+        if (open) void bag.openThread(open);
       })
       .catch(() => bag.setServerStatus("error"))
       .finally(() => bag.setLoading(false));
