@@ -9,7 +9,7 @@
  *     点了给**明确说明**（10-20 教训：灰按钮点了没反应是最差体验）。
  *   · 优势/劣势必须写**实测数字**，不写"更快更好"这种空话。
  */
-import { Check, Download, FolderOpen, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, Cloud, Download, FolderOpen, HardDrive, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -290,13 +290,6 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     onNotice(saved?.voiceId === voiceId && saved?.model === model ? "MOSS 播报配置已保存" : "MOSS 播报配置保存失败，请重试");
   }, [apply, mossTtsDraft, onNotice, settings, ttsRemote]);
 
-  /** 音色显示名（列表加载过就用名字，否则截前 8 位 id）。 */
-  const mossVoiceName = useCallback((id?: string) => {
-    const key = String(id ?? "");
-    if (!key) return "";
-    return mossVoices.find((voice) => voice.id === key)?.name || `音色 ${key.slice(0, 8)}`;
-  }, [mossVoices]);
-
   /** 直接试听 MOSS 音色：按弹窗里的草稿 model/voiceId 合成，不要求先开启播报。 */
   const auditionMoss = useCallback(async () => {
     const voiceId = String(mossTtsDraft.voiceId || savedMossTts?.voiceId || "").trim();
@@ -421,6 +414,27 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const mossInUse = callBackend && Boolean(moss?.configured);
   const mossBroken = callBackend && !moss?.configured;
 
+  /** 11-12：基础模型卡也要有「启用 / 停用」并和状态联动（与 MOSS 卡同款按钮位）。
+      停用是可逆动作（文件保留），第一次点变成「确认停用」，3 秒未确认自动复位。 */
+  const [baseBusy, setBaseBusy] = useState(false);
+  const [confirmDisableBase, setConfirmDisableBase] = useState(false);
+  const toggleBase = useCallback(async (next: boolean) => {
+    setBaseBusy(true);
+    try {
+      const r: any = await window.codex.voiceResourceSetEnabled({ kind: "base", enabled: next });
+      if (!r?.ok) onNotice(r?.error ?? "操作失败");
+      else {
+        onNotice(next ? "基础模型已启用" : "基础模型已停用（文件仍保留，可随时重新启用）");
+        await refresh();
+      }
+    } catch (e: any) {
+      onNotice(`操作失败：${e?.message ?? e}`);
+    } finally {
+      setBaseBusy(false);
+      setConfirmDisableBase(false);
+    }
+  }, [onNotice, refresh]);
+
   return (
     <div className="voice-engines">
       {!speechReady && (
@@ -444,21 +458,20 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
         {/* ① 基础模型（本地）：一级界面只留摘要，模型/引擎/音色/克隆全进「配置」弹窗 */}
         <div className={`voice-model-card${!cloneActive && speech?.effective === "local" ? " is-active" : ""}${anyReady ? " is-ready" : ""}`}>
           <div className="voice-model-head">
-            <div className="voice-model-title">
-              <strong>基础模型（本地）</strong>
-              <span className="voice-engine-tag">免费 · 本机运行</span>
+            <span className="voice-model-icon"><HardDrive size={16} /></span>
+            <div className="voice-model-titleblock">
+              <div className="voice-model-name"><strong>基础模型（本地）</strong><span className="voice-engine-tag">免费 · 本机运行</span></div>
+              <div className="voice-model-sub">离线合成 · 不联网 · 不额外付费</div>
             </div>
             <span className={`voice-engine-state${anyReady ? " ok" : ""}`}>
               {anyReady ? (currentDisabled ? "已停用" : "已安装") : "未安装"}
             </span>
           </div>
-          <div className="voice-engine-meta">
+          <div className="voice-model-meta">
             <span>{packLabel(current)}</span>
             <span>{cloneActive ? "克隆音色（优先）" : settings.tts.profileId ? "克隆音色" : "内置音色"}</span>
             <span>{cloneActive ? (cloneReady ? "克隆音色就绪" : "克隆音色未就绪") : anyReady ? "本机可用" : "未就绪"}</span>
           </div>
-          <div className="voice-engine-role">离线合成、不联网不额外付费。模型下载、引擎、音色与克隆都在「配置」里。</div>
-          {/* 11-12 用户：「左边为什么这么丑」——两张卡等高时左侧太空，补一排能力状态撑住视觉 */}
           <div className="voice-model-checks">
             <span className={anyReady ? "is-ok" : ""}>
               {anyReady ? <Check size={12} /> : <TriangleAlert size={12} />}语音识别
@@ -473,7 +486,32 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               {zipVoiceReady ? <Check size={12} /> : <TriangleAlert size={12} />}音色克隆
             </span>
           </div>
+          <div className="voice-model-note">模型下载、引擎、音色与克隆都在「配置」里。</div>
           <div className="voice-engine-actions">
+            {!anyReady || currentDisabled ? (
+              <button
+                className="primary-setting"
+                disabled={baseBusy}
+                title={anyReady ? "重新启用基础模型（文件还在，无需重新下载）" : "还没下载基础模型：点「配置」下载或本地导入"}
+                onClick={() => {
+                  if (!anyReady) { onNotice("还没下载基础模型：点「配置」下载或本地导入"); return; }
+                  void toggleBase(true);
+                }}
+              >
+                {baseBusy ? <LoaderCircle size={13} className="spin" /> : <Power size={13} />}启用
+              </button>
+            ) : (
+              <button
+                className="secondary-setting"
+                disabled={baseBusy}
+                onClick={() => {
+                  if (!confirmDisableBase) { setConfirmDisableBase(true); window.setTimeout(() => setConfirmDisableBase(false), 3000); return; }
+                  void toggleBase(false);
+                }}
+              >
+                {baseBusy ? <LoaderCircle size={13} className="spin" /> : <Power size={13} />}{confirmDisableBase ? "确认停用" : "停用"}
+              </button>
+            )}
             <button className={anyReady ? "secondary-setting" : "primary-setting"} onClick={() => setLocalModalOpen(true)}>
               <Settings2 size={13} />配置
             </button>
@@ -623,45 +661,29 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           </div>
         ), document.body)}
 
-        {/* ② 付费云端模型：配置进自己的弹窗（实时通话 + MOSS 播报音色） */}
-        <div className={`voice-engine-card voice-engine-remote${mossInUse ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
-          <div className="voice-engine-head">
-            <div className="voice-engine-title">
-              <span className="voice-engine-name-row">
-                <strong>MOSS-Live</strong>
-                <span className="voice-engine-tag">远程 · 全双工实时</span>
-              </span>
-              <span className="voice-engine-tagline">边听边说 · 自然打断 · 不占本机磁盘</span>
+        {/* ② 付费云端模型：与左侧卡**同结构、同尺寸**（行高由 CSS 固定，内容多少都一样高） */}
+        <div className={`voice-model-card${mossInUse ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
+          <div className="voice-model-head">
+            <span className="voice-model-icon"><Cloud size={16} /></span>
+            <div className="voice-model-titleblock">
+              <div className="voice-model-name"><strong>MOSS-Live</strong><span className="voice-engine-tag">付费云端 · 全双工</span></div>
+              <div className="voice-model-sub">边听边说 · 自然打断 · 不占本机磁盘</div>
             </div>
-            <div className="voice-engine-head-right">
-              {mossInUse && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
-              {mossBroken && (
-                <span className="voice-engine-flag is-missing"><TriangleAlert size={12} />配置不完整</span>
-              )}
-              <span className={`voice-engine-state${moss?.configured ? " ok" : ""}`}>
-                {moss?.configured ? "已配置" : "未配置"}
-              </span>
-            </div>
+            <span className={`voice-engine-state${moss?.configured ? " ok" : ""}`}>
+              {moss?.configured ? "已配置" : "未配置"}
+            </span>
           </div>
-          <div className="voice-engine-meta">
-            <span>实时通话</span>
+          <div className="voice-model-meta">
             <span>{moss?.model || "moss-live-1.0"}</span>
-            <span>播报：{cloneActive ? (cloneReady ? "克隆音色（本地）" : "克隆音色 · 不可用") : ttsRemote ? (mossTtsReady ? "MOSS" : "MOSS · 缺配置") : "本地"}</span>
-            <span>{settings.tts.speed.toFixed(2)}×</span>
-            {(savedMossTts?.voiceId || mossTtsDraft.voiceId) ? (
-              <span>{mossVoiceName(savedMossTts?.voiceId || mossTtsDraft.voiceId)}</span>
-            ) : null}
+            <span>{callBackend ? "实时通话已启用" : "实时通话未启用"}</span>
+            <span>{cloneActive ? (cloneReady ? "克隆音色" : "克隆音色未就绪") : ttsRemote ? (mossTtsReady ? "MOSS 播报" : "MOSS 缺配置") : "播报本地"}</span>
           </div>
-          <div className="voice-engine-role">
-            远程全双工实时对话，需提供方 API 密钥；播报音色在「配置」里。实时通话连不上会回落本地。
-          </div>
-          {/* 与左侧卡同结构的状态行：两张卡等高时不出现一边空一大块 */}
           <div className="voice-model-checks">
             <span className={mossInUse ? "is-ok" : ""}>
               {mossInUse ? <Check size={12} /> : <TriangleAlert size={12} />}实时通话{mossInUse ? "使用中" : mossBroken ? "配置不完整" : "未启用"}
             </span>
             <span className={(cloneSelected ? cloneReady : mossTtsReady) ? "is-ok" : ""}>
-              {(cloneSelected ? cloneReady : mossTtsReady) ? <Check size={12} /> : <TriangleAlert size={12} />}播报{cloneSelected ? (cloneReady ? "克隆音色" : "克隆未就绪") : ttsRemote ? (mossTtsReady ? "MOSS" : "缺配置") : "本地"}
+              {(cloneSelected ? cloneReady : mossTtsReady) ? <Check size={12} /> : <TriangleAlert size={12} />}播报{cloneSelected ? (cloneReady ? "克隆音色" : "未就绪") : ttsRemote ? (mossTtsReady ? "MOSS" : "缺配置") : "本地"}
             </span>
             <span className={moss?.configured ? "is-ok" : ""}>
               {moss?.configured ? <Check size={12} /> : <TriangleAlert size={12} />}接口 / 模型{moss?.configured ? "已填" : "未填"}
@@ -670,10 +692,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               {moss?.hasKey ? <Check size={12} /> : <TriangleAlert size={12} />}API 密钥{moss?.hasKey ? "已保存" : "缺失"}
             </span>
           </div>
+          <div className="voice-model-note">需提供方 API 密钥；连不上会回落本地语音。</div>
           <div className="voice-engine-actions">
-            <button className="secondary-setting" onClick={() => setMossModalOpen(true)}>
-              <Settings2 size={13} />配置
-            </button>
             <button
               className={callBackend ? "secondary-setting" : "primary-setting"}
               onClick={() => {
@@ -682,6 +702,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               }}
             >
               <Power size={13} />{callBackend ? "停用" : "启用"}
+            </button>
+            <button className="secondary-setting" onClick={() => setMossModalOpen(true)}>
+              <Settings2 size={13} />配置
             </button>
             <button
               className="secondary-setting"

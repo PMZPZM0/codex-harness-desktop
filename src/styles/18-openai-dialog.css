@@ -1919,23 +1919,37 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 }
 .voice-subhead strong { font-size: 12px; color: var(--text); font-weight: 600; }
 
-/* 一级界面的两张模型摘要卡（本地 / 云端），点「配置」各自进不同弹窗 */
-.voice-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+/* 一级界面两张模型摘要卡（本地 / 云端）：**同宽同高、同结构**——每行固定最小高度，
+   内容多少都不会让两张卡错位（用户要求「要一样大」）。 */
+.voice-model-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
 .voice-model-card {
   display: flex; flex-direction: column; gap: 8px;
+  min-height: 268px;
   padding: 12px 13px; border: 1px solid var(--line); border-radius: 12px;
   background: var(--panel); min-width: 0;
 }
 .voice-model-card.is-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
-.voice-model-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
-.voice-model-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; min-width: 0; }
-.voice-model-title strong { font-size: 13px; color: var(--text); }
-.voice-local-modal { width: min(640px, 100%); }
-/* 两张模型卡等高时，左侧能力状态撑住空白；按钮贴底（不浮在中间） */
-.voice-model-card .voice-engine-actions { margin-top: auto; }
-.voice-model-checks { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11px; color: var(--muted); }
-.voice-model-checks > span { display: inline-flex; align-items: center; gap: 4px; }
+.voice-model-head { display: flex; align-items: center; gap: 9px; min-height: 38px; }
+.voice-model-icon {
+  flex: none; width: 30px; height: 30px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+.voice-model-titleblock { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.voice-model-name { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; }
+.voice-model-name strong { font-size: 13px; color: var(--text); }
+.voice-model-sub { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.voice-model-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; min-height: 20px; font-size: 11px; color: var(--muted); }
+.voice-model-checks {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px;
+  align-content: start; min-height: 46px; font-size: 11px; color: var(--muted);
+}
+.voice-model-checks > span { display: inline-flex; align-items: center; gap: 4px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .voice-model-checks > span.is-ok { color: color-mix(in srgb, var(--accent) 80%, var(--text)); }
+.voice-model-note { min-height: 32px; font-size: 11px; line-height: 1.45; color: var(--muted); }
+.voice-model-card .voice-engine-actions { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.voice-local-modal { width: min(640px, 100%); }
+@media (max-width: 640px) { .voice-model-grid { grid-template-columns: 1fr; } }
 
 /* 播报使用哪个模型（本机 / 云端）：一级界面直接选，配置仍在弹窗里 */
 .voice-tts-source { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0 2px; }
@@ -2088,7 +2102,7 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-engine-actions .secondary-setting { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; }
 
 /* 11-10 远程实时语音模型（MOSS-Live）配置卡：不下载模型，填地址/模型/密钥。 */
-.voice-engine-remote { margin-top: 10px; }
+.voice-engine-remote { margin-top: 10px; } /* 兼容旧结构；一级页两张卡已改用 .voice-model-card 网格 */
 .voice-remote-form { display: flex; flex-direction: column; gap: 7px; }
 .voice-remote-form label { display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; color: var(--muted); }
 .voice-remote-form input {

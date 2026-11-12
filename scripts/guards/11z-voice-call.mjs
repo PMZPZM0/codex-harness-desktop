@@ -1181,6 +1181,15 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
       && /const mossBroken = callBackend && !moss\?\.configured;/.test(enginesTsx2)
       && /配置不完整/.test(enginesTsx2),
       "MOSS 卡不许同时打「使用中」+「未配置」：配置不完整要单独报出来（11-12 用户截图）");
+    /* 11-12 用户：「卡片重新做，要一样大」「要卡片启动停用联动」——两卡同为 voice-model-card
+       + 固定行高，且本机卡也直接给启用/停用（与 MOSS 卡同款）。 */
+    const modelCss = read("src/styles/18-openai-dialog.css");
+    ok(/voice-model-grid \{ display: grid; grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/.test(modelCss)
+      && /min-height: 268px/.test(modelCss) && (enginesTsx2.match(/className=\{`voice-model-card/g) || []).length >= 2,
+      "两张模型卡同宽同高（2 列等分 + 固定行高），结构一致");
+    ok(/voiceResourceSetEnabled\(\{ kind: "base", enabled: next \}\)/.test(enginesTsx2)
+      && /确认停用/.test(enginesTsx2),
+      "基础模型卡有启用/停用按钮并与状态联动（停用二次确认）");
   }
 }
 /* ── ⑪ 语音资源危险动作走确认弹窗（10-31 用户令：「卸载，停用，清空都做成弹窗」）──────
