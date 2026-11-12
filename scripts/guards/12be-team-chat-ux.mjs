@@ -20,6 +20,7 @@ import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargets
 import { searchGroupRows } from "../../src/lib/team-search.mjs";
 import { createGroup, setMemberAvatar, talkPartnerIdentity } from "../../src/lib/team-models.mjs";
 import { pickAgentAvatar } from "../../src/lib/agent-avatars.mjs";
+import { normalizeSessionKind, ownsHostToolSurface } from "../../src/lib/session-kind.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
@@ -2089,15 +2090,31 @@ const catalog = [
      首行整份改写成宿主 95 个工具 ⇒ team_member_invoke / team_phase_invoke / group_say 全丢，
      主理人没有派活工具，只能靠嘴编「已派出 / 进度到第二环」（实测 17:15=0 个、17:16=95 个，
      而 15:43 刚建的那条是 8 个群聊工具）。
-     两条防线：① 通用 upgrade 对群聊会话早退（工具面只由 group-talk 管）；
-               ② group-talk 每次 ensure/peek 都把权威工具面写回首行 ⇒ 被污染的老会话能自愈。 */
+   两条防线：① 通用 upgrade 对**派生会话**早退（工具面只由各自域管）；
+            ② group-talk 每次 ensure/peek 都把权威工具面写回首行 ⇒ 被污染的老会话能自愈。
+  ⛔⛔ 11-12 二次真机：① 的判据**一开始只查 group-talk 台账**（`lookupGroupThread`），漏了
+    boss-groups 的群成员（两套群台账并存）⇒ 日志里 `01a1cf0b` 照样被升成 95 个，每次启动
+    把刚自愈的会话又污染回去。判据必须按**会话类型**（唯一真相源 = `src/lib/session-kind.mjs`）。 */
   {
     const codexIpc = codeOnly(read("electron/features/codex-ipc.ts"));
     const channel = codeOnly(read("electron/features/group-talk/01-channel.ts"));
-    ok(/lookupGroupThread\(resumeThreadId\)/.test(codexIpc)
-      && /if \(!talkThread && resumeThreadId && Array\.isArray\(resumeTools\) && resumeTools\.length\)/.test(codexIpc)
-      && /跳过宿主工具面升级/.test(codexIpc),
-      "⛔ 群聊伙伴会话不许被通用 resume 改写成宿主工具面（否则派活工具全丢）");
+    const core = codeOnly(read("electron/features/dispatch-core.ts"));
+    ok(/sessionOwnsHostToolSurface\(resumeThreadId\)/.test(codexIpc)
+      && /if \(hostOwnsSurface && resumeThreadId && Array\.isArray\(resumeTools\) && resumeTools\.length\)/.test(codexIpc)
+      && /跳过宿主工具面升级/.test(codexIpc)
+      /* ⛔ 负向：resume 里不许再用「只查一张台账」的旧判据（那正是漏判 boss-groups 的形态）。 */
+      && !/lookupGroupThread\(resumeThreadId\)/.test(codexIpc),
+      "⛔ 派生会话（专家团 / 专家 / 工作伙伴 / 被调度）不许被通用 resume 改写成宿主工具面");
+    ok(/async function sessionOwnsHostToolSurface\(threadId: string\)[\s\S]{0,600}ownsHostToolSurface\(role\.kind\)/.test(core)
+      && /ensureDispatchToken, restrictedThreadRole, sessionOwnsHostToolSurface,/.test(core),
+      "会话类型判据与能力矩阵同源（⛔ 不在 resume 侧另写一张台账判断）");
+    /* 真跑（⛔ 不靠正则断言注释声称）：只有 normal / hub 归宿主，四类派生会话一律不归；
+       未知 / 原型链键归一化到 normal（⛔ 不许取到 Object.prototype 变成"能派活"）。 */
+    const owns = (kind) => ownsHostToolSurface(kind);
+    ok(owns("normal") && owns("hub") && !owns("expertTeam") && !owns("expert")
+      && !owns("workPartner") && !owns("delegate")
+      && normalizeSessionKind("__proto__") === "normal" && owns("__proto__"),
+      "⛔ 宿主工具面只归 normal / hub；四类派生会话不归，原型链键归一化为普通会话");
     const surfaceHits = (channel.match(/const surface = \[\.\.\.buildGroupTalkTools\(\), \.\.\.\(options\.extraTools \?\? \[\]\)\]/g) || []).length;
     ok(surfaceHits === 2 && !/const surface = options\.extraTools\?\.length/.test(channel),
       "群聊 ensure / peek 两处恒写回权威工具面（⛔ 已被污染的旧会话能自愈，主理人 extraTools 不丢）");

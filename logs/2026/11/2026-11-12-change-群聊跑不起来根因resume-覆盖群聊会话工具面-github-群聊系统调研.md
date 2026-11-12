@@ -75,3 +75,32 @@ importance: high
    （我们已靠 team_status / 群事件回投，但工具面被抹掉时模型就会退回编造）；
 2. **共享消息总线 + 显式发言权选择**（群成员按订阅消费，不靠模型自觉 @）；
 3. **终止条件由宿主判定**（chainBudget / ranCount，不靠模型说「做完了」）。
+
+## 追加（11-12 21:00）：首版判据漏了一张台账，已按会话类型重锚
+
+**现象**：修完后重启，启动日志仍出现 `[tool-surface] resume 升级 01a1cf0b → 95 个（宿主 39 + 主进程 56）`，
+且没有「跳过」那一行 —— 说明早退没生效，用户会觉得「修了还是跑不起来」。
+
+**取证**：
+- `01a1cf0b` 不在 group-talk 台账（`group-talk-threads.json` 只有 `grp_mwcx1h0s` 的 4 个成员），
+  但它在 `boss-groups.json` 的 `g_mwdc1m` 成员表里 —— **两套群台账并存**（`grp_*` 工作伙伴群 /
+  `g_*` BOSS 群）。
+- 首版早退判据只查 `lookupGroupThread`（group-talk 台账）⇒ BOSS 群成员被判成普通会话，
+  每次启动都被通用 resume 整份改写回首行 95 个宿主工具 ⇒ 刚自愈的会话又污染回去。
+
+**改法（消除第二套判据）**：
+- `src/lib/session-kind.mjs` 新增 `ownsHostToolSurface(kind)`：只有 `normal` / `hub` 的宿主工具面
+  归宿主，四类派生会话（专家团 / 专家 / 工作伙伴 / 被调度）由各自域负责。
+- `electron/features/dispatch-core.ts` 新增 `sessionOwnsHostToolSurface(threadId)`：走
+  `threadKindFacts → sessionKindOf`（读全部台账），⛔ 不在 resume 侧另写判断。
+- `electron/features/codex-ipc.ts` resume 分支改调它；派生会话早退并留日志
+  `是派生会话 ⇒ 跳过宿主工具面升级`。判定失败按宿主负责（升级是锦上添花，⛔ 不许挡住 resume）。
+
+**判据**：
+- 12be **397/397**（新增真跑：`ownsHostToolSurface` 对六类 + 原型链键的实际返回；负向禁止
+  resume 里再出现 `lookupGroupThread(resumeThreadId)`）；全链 `npm run check` 0 红；预检 0 硬失败。
+- 真机：重启后日志 `resume 01a1cf0b 是派生会话 ⇒ 跳过…`、`UPGRADE=0`（改前同一会话每次都被升）。
+
+**遗留（如实记）**：`01a1cf0b` 那条 rollout 首行的 95 个宿主工具是**历史污染**，本轮只阻止继续污染，
+没有回写修复 —— BOSS 群成员建线程时 `thread/start` 本就不带 dynamicTools（= 0 个），
+要不要把历史污染会话回写成空工具面需单独评估（专家团成员的工具面来源不同，⛔ 不能一刀切清空）。

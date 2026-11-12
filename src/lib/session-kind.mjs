@@ -150,6 +150,26 @@ export function isDispatchOnlyKind(kind) {
   return caps.dispatch !== true && caps.scheduler === true;
 }
 
+/**
+ * 这条会话的工具面是否由**宿主**负责登记（渲染层 dynamicTools + 主进程附加的三批）。
+ *
+ * ⛔⛔ 11-12 二次真机（用户「群聊压根运行不起来」的第二层）：引擎只在 spawn 时读 rollout
+ *   首行 `session_meta.dynamic_tools`，而宿主通用 `thread/resume` 会把首行整份改写成宿主
+ *   工具面（实测 95 个）。派生会话（专家团 / 专家 / 工作伙伴 / 被调度）的工具面归**各自域**
+ *   （team-run / group-talk / delegate）管，被宿主改写一次就永久失去派活与群聊工具。
+ *
+ * ⛔ 判据必须按**会话类型**：上版只查 group-talk 台账（`lookupGroupThread`），
+ *   漏了 boss-groups 的群成员（两套群台账并存），日志里 `01a1cf0b` 照样被升成 95 个工具 ——
+ *   一次启动就把刚自愈的会话又污染回去。类型真相源只有这一个模块。
+ *
+ * @param {string} kind 会话类型
+ * @returns {boolean} true = 宿主工具面归宿主（normal / hub）
+ */
+export function ownsHostToolSurface(kind) {
+  const k = normalizeSessionKind(kind);
+  return k === "normal" || k === "hub";
+}
+
 /** 工具面开关（渲染层注册用）：一个能力一个键，⛔ 别在注册处再判 kind。 */
 export function toolGatesOf(kind) {
   const caps = capabilitiesOf(kind);

@@ -30,7 +30,7 @@ import { delegateRegistry, teamRunStore } from "../runtime-refs";
 import { lookupGroupThread } from "./group-talk";
 /* 11-12 用户令「五类会话全用 ID 隔离开，工具也是」：类型与能力矩阵**只有这一份**，
    渲染层注册工具面与主进程执行端硬闸都读它（⛔ 别再写 `restricted && !dispatchOnly` 第二套判据）。 */
-import { roleOfKind, sessionKindOf, type SessionFacts, type ThreadRoleState } from "../../src/lib/session-kind.mjs";
+import { ownsHostToolSurface, roleOfKind, sessionKindOf, type SessionFacts, type ThreadRoleState } from "../../src/lib/session-kind.mjs";
 // ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
 // 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
 // L2（注册侧不给工具）在渲染层，但那一层防不住「线程复用 / 竞态 / 以后有人改错注册点」——
@@ -84,6 +84,28 @@ async function threadKindFacts(threadId: string): Promise<SessionFacts> {
 async function restrictedThreadRole(threadId: string): Promise<ThreadRole> {
   if (!threadId) return NORMAL_ROLE;
   return roleOfKind(sessionKindOf(await threadKindFacts(threadId)));
+}
+
+/**
+ * 这条会话的工具面是否由**宿主**负责登记（渲染层 dynamicTools + 主进程附加三批）。
+ *
+ * ⛔⛔ 11-12 二次真机（用户「群聊压根运行不起来」的第二层）：引擎只在 spawn 时读 rollout
+ *   首行 `session_meta.dynamic_tools`，宿主通用 `thread/resume` 会把首行整份改写成宿主工具面
+ *   （实测 95 个）⇒ 派生会话的派活 / 群聊工具全丢，模型只能靠嘴编进度。
+ *   判据必须按**会话类型**（`sessionKindOf` 读全部台账），⛔ 不许只查一张台账：
+ *   上版只查 group-talk 台账，漏了 boss-groups 的群成员，日志里 `01a1cf0b` 照样被升成 95 个，
+ *   每次启动都把刚自愈的会话又污染回去。
+ *
+ * 失败一律按「宿主负责」（= 允许升级）—— 升级是锦上添花，⛔ 不许因为台账读不到就卡住 resume。
+ */
+async function sessionOwnsHostToolSurface(threadId: string): Promise<boolean> {
+  if (!threadId) return true;
+  try {
+    const role = await restrictedThreadRole(threadId);
+    return ownsHostToolSurface(role.kind);
+  } catch {
+    return true;
+  }
 }
 
 // ⛔ 09-16 重大修正（引擎硬约束，四个决定性实验实测）：dynamicTools **只在 thread/start 生效**——
@@ -947,6 +969,6 @@ export function setDispatchHttpReady(v: Promise<void> | null): void { dispatchHt
 
 export {
   DISPATCH_FIXED_PORT, buildDispatchCatalog, dispatchHttpPort, dispatchHttpReady, dispatchMcpTools,
-  dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey,
+  dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, sessionOwnsHostToolSurface, stableKey,
   type DispatchProbe,
 };

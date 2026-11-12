@@ -41,6 +41,9 @@ export declare function normalizeSessionKind(kind: string): SessionKind;
 export declare function capabilitiesOf(kind: string): Readonly<SessionCaps>;
 export declare function isRestrictedKind(kind: string): boolean;
 export declare function isDispatchOnlyKind(kind: string): boolean;
+/** 工具面是否归宿主登记（只有 normal / hub；派生会话由各自域管） */
+export declare function ownsHostToolSurface(kind: string): boolean;
+
 export declare function toolGatesOf(kind: string): {
   dispatch: boolean;
   bossGroup: boolean;
