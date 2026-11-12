@@ -2442,19 +2442,25 @@ export const harnessTeamFeature = defineFeature<null>({
     /* 群聊伙伴会话台账（只读）：侧栏据此给这些**普通会话**打「伙伴」标签。
        ⛔ 它们在侧栏既没有 delegate 记录、也不属于中枢群 ⇒ 只能由群聊台账认；
           ⛔ 不许按标题前缀「伙伴·」猜（用户改名后就不成立了）。 */
-    ipcHost.handle("harness-team:talk-threads", () => {
+    ipcHost.handle("harness-team:talk-threads", async () => {
       /* 侧栏每次拉台账顺带自愈一次（幂等）：群已删、台账还留着的伙伴会话会被删掉并清账。 */
       void healOrphanTalkThreads().catch(() => undefined);
       /* ⛔ 11-09 用户令「群聊名字/头像实时同步给外面会话的伙伴会话」：
          名字/头像**不存快照**，每次按群成员表现算（群里改名/换头像 ⇒ 外面会话当场跟上）；
-         群已删 ⇒ 回退台账名字，不至于把会话显示成空名。 */
+         群已删 ⇒ 回退台账名字，不至于把会话显示成空名。
+         ⛔⛔ 11-12：合成 id 里主理人和团成员同形，只有调度目录能区分 ⇒
+         仅当台账里真有合成 id 才拉目录（普通伙伴不付这个代价），读失败降级为空目录。 */
       const store = readStore();
       const groups = new Map(store.groups.map((g) => [String(g.id), g]));
-      const threads = listTalkThreads().map((row) => {
+      const rows = listTalkThreads();
+      const catalog = rows.some((r) => String(r?.memberId ?? "").startsWith("team:"))
+        ? await buildDispatchCatalog().catch(() => [])
+        : [];
+      const threads = rows.map((row) => {
         const group = groups.get(String(row.groupId)) ?? null;
         return {
           ...row,
-          ...talkPartnerIdentity(row, group),
+          ...talkPartnerIdentity(row, group, catalog),
           groupName: String(group?.name ?? ""),
         };
       });

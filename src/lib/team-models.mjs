@@ -1139,16 +1139,39 @@ export function addModeStateOf(partners, mode) {
  *
  * ⛔ 名字取**群成员当前名字**：群里看到的是哪个名字，外面会话就显示哪个
  *   （台账里的是建会话那一刻的快照，成员改名后不能再用它）。
- * ⛔ 团成员是合成 id（`team:<团队>:<成员>`），不在 `group.members` 里 ⇒
- *   名字回落台账、头像取群级覆盖表（与群视图 `faceOfId` 同一口径）。
- * @param row   群聊台账行（`{ memberId, name }`）
- * @param group 群档案；群已删 / 读不到时传 null，退回台账名字
+ * ⛔⛔ 11-12 用户（「私聊界面的头像也没有同步」）：主理人的合成 id
+ *   `team:<teamId>:<leadId>` 在这里被当成**团成员**，targetKey 取裸 `leadId`；
+ *   而群聊视图 `leadFaceOf` 用目录 `lead.key`（`<teamId>:<leadId>`）⇒ 同一个文枢
+ *   在群聊一张脸、在私聊回合头另一张脸。⇒ 第三个参数传调度目录，按目录里的
+ *   expert / member 条目区分主理人与团成员，主理人一律用 `lead.key`。
+ * ⛔ catalog 读不到时保持旧行为（团成员口径），宁可降级也不把团成员画成主理人。
+ * @param row     群聊台账行（`{ memberId, name }`）
+ * @param group   群档案；群已删 / 读不到时传 null，退回台账名字
+ * @param catalog 调度目录（`buildDispatchCatalog()` 的结果，可选）
  * @returns 可直接喂 `MemberAvatar` 的成员形状（id/name/avatar/kind/targetKind/targetKey）
  */
-export function talkPartnerIdentity(row, group) {
+export function talkPartnerIdentity(row, group, catalog = []) {
   const memberId = String(row?.memberId ?? "");
   const members = Array.isArray(group?.members) ? group.members : [];
   const member = members.find((m) => String(m?.id ?? "") === memberId) ?? null;
+  const parsed = parseTeamAuthorId(memberId);
+  const cat = Array.isArray(catalog) ? catalog : [];
+  const inCatalog = (kind) => parsed && cat.find((t) => t && t.kind === kind && t.teamId === parsed.teamId
+    && (teamMemberIdOf(t) === parsed.memberId || String(t.key ?? "") === `${parsed.teamId}:${parsed.memberId}`));
+  const leadEntry = inCatalog("expert") ?? null;
+  const isLead = Boolean(parsed && !inCatalog("member") && leadEntry);
+  if (isLead) {
+    /* 换脸覆盖两处都认：整团槽成员行（成员栏点头像写这里）+ 按合成 id 存的群级覆盖表。 */
+    const slot = members.find((m) => m.targetKind === "team" && String(m.targetKey ?? "") === parsed.teamId) ?? null;
+    return {
+      id: memberId,
+      name: String(leadEntry?.name ?? row?.name ?? ""),
+      avatar: String(slot?.avatar ?? group?.avatars?.[memberId] ?? ""),
+      kind: "bot",
+      targetKind: "expert",
+      targetKey: String(leadEntry?.key ?? ""),
+    };
+  }
   const teamKid = memberId.startsWith("team:");
   const kidId = teamKid ? memberId.split(":").slice(2).join(":") : "";
   return {

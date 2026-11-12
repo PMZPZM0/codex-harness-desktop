@@ -297,4 +297,6 @@ export function renameMember(
 export function talkPartnerIdentity(
   row: { memberId?: string; name?: string } | null | undefined,
   group: TeamGroupLite | null | undefined,
+  /** 调度目录（11-12 私聊头像同步）：主理人用 lead.key，⛔ 不能拿合成 id 拆出的裸 memberId。 */
+  catalog?: ReadonlyArray<{ kind?: string; key?: string; teamId?: string; memberId?: string; name?: string }>,
 ): TalkPartnerIdentity;

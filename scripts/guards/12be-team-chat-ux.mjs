@@ -18,7 +18,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { applyMention, matchMentionCandidates, mentionSectionsOf, mentionTargetsInText, mentionTriggerOf } from "../../src/lib/team-mention.mjs";
 import { searchGroupRows } from "../../src/lib/team-search.mjs";
-import { createGroup, setMemberAvatar } from "../../src/lib/team-models.mjs";
+import { createGroup, setMemberAvatar, talkPartnerIdentity } from "../../src/lib/team-models.mjs";
 import { pickAgentAvatar } from "../../src/lib/agent-avatars.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -1682,14 +1682,17 @@ const catalog = [
   const barrel = codeOnly(read("src/features/harness-team/index.tsx"));
   const manifest = read("electron/ipc-channels.manifest.json");
 
-  ok(/export function talkPartnerIdentity\(row, group\)/.test(models)
+  ok(/export function talkPartnerIdentity\(row, group, catalog = \[\]\)/.test(models)
     && /name: String\(member\?\.name \?\? row\?\.name \?\? ""\)/.test(models)
-    && /avatar: String\(member\?\.avatar \?\? group\?\.avatars\?\.\[memberId\] \?\? ""\)/.test(models),
-    "伙伴身份按**群成员当前名字/头像**解析（⛔ 不用台账里的建会话快照）");
-  ok(/\.\.\.talkPartnerIdentity\(row, group\)/.test(ipc)
+    && /avatar: String\(member\?\.avatar \?\? group\?\.avatars\?\.\[memberId\] \?\? ""\)/.test(models)
+    && /const isLead = Boolean\(parsed && !inCatalog\("member"\) && leadEntry\)/.test(models)
+    && /targetKey: String\(leadEntry\?\.key \?\? ""\)/.test(models),
+    "伙伴身份按**群成员当前名字/头像**解析（⛔ 不用台账快照）；主理人用目录 lead.key，⛔ 不是裸 memberId");
+  ok(/\.\.\.talkPartnerIdentity\(row, group, catalog\)/.test(ipc)
+    && /buildDispatchCatalog\(\)/.test(ipc)
     && /groupName: String\(group\?\.name \?\? ""\)/.test(ipc)
     && /unregisterBossSessionQuiet\(row\.threadId\)/.test(ipc),
-    "talk-threads 下发伙伴身份 + 顺手摘掉误登记的中枢身份");
+    "talk-threads 下发伙伴身份 + 顺手摘掉误登记的中枢身份（私聊头像 seed 要带调度目录）");
   ok(/broadcastHarnessEvent\(\{ type: "team-talk-threads-changed"/.test(
       ipc.slice(ipc.indexOf('ipcHost.handle("harness-team:set-avatar"'), ipc.indexOf('ipcHost.handle("harness-team:set-avatar"') + 900)),
     "群内换头像后广播身份刷新（⛔ 等 8s 轮询 = 用户眼里的「不同步」）");
@@ -2029,6 +2032,23 @@ const catalog = [
   ok(kidsPushBlock.length > 0 && /targetKey: memberKey \}/.test(kidsPushBlock)
     && !/targetKey: key \},\s*$/m.test(kidsPushBlock),
     "@ 面板团成员同样用裸 memberId（纯函数层与视图同一口径；⛔ 锚点缺失必须报红，不许恒真）");
+
+  /* ⛔⛔ 11-12 用户追报「私聊界面的头像也没有同步」：伙伴会话回合头的身份来自
+     主进程 `talkPartnerIdentity`，它原先对主理人合成 id 取裸 memberId ⇒ 又是一张新脸。
+     这里真跑纯函数，证明私聊 seed 与群聊 lead.key 精确落在同一格。 */
+  const leadFace = talkPartnerIdentity({ memberId: "team:t1:lead1", name: "台账旧名" }, realGroup, realCatalog);
+  ok(leadFace.targetKind === "expert" && leadFace.targetKey === "t1:lead1",
+    `私聊主理人 seed = 目录 lead.key（实得 ${leadFace.targetKind}/${leadFace.targetKey}；⛔ 裸 lead1 就是第三张脸）`);
+  const groupPick = pickAgentAvatar("expert", "t1:lead1");
+  const chatPick = pickAgentAvatar("expert", leadFace.targetKey);
+  ok(`${groupPick.file}#${groupPick.cell}` === `${chatPick.file}#${chatPick.cell}`,
+    "私聊与群聊精确画出同一张脸（同一个文枢不允许第三次分叉）");
+  const kidFace = talkPartnerIdentity({ memberId: "team:t1:m1", name: "衡纸" }, realGroup, realCatalog);
+  ok(kidFace.targetKind === "member" && kidFace.targetKey === "m1",
+    "团成员仍按裸 memberId 画（⛔ 目录缺 member 条目时会被误判成主理人）");
+  const customGroup = { ...realGroup, members: realGroup.members.map((m) => m.targetKind === "team" ? { ...m, avatar: "preset:avatar-07" } : m) };
+  ok(talkPartnerIdentity({ memberId: "team:t1:lead1", name: "x" }, customGroup, realCatalog).avatar === "preset:avatar-07",
+    "私聊也认成员栏换过的脸（整团槽成员行与群级覆盖表两处都读）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

@@ -48,3 +48,42 @@ test("成员头像为空串 ⇒ 交给 MemberAvatar 走默认图集（⛔ 不编
   assert.equal(out.name, "新名字");
   assert.equal(out.avatar, "");
 });
+
+/* ⛔⛔ 11-12 用户：「私聊界面的头像也没有同步」。主理人的合成 id 与团成员同形，
+   只有调度目录能区分；私聊 seed 必须与群聊视图的 lead.key 完全一致。 */
+const catalog = [
+  { kind: "expert", key: "t1:lead1", memberId: "lead1", name: "文枢", teamId: "t1" },
+  { kind: "member", key: "t1:m1", memberId: "m1", name: "衡纸", teamId: "t1" },
+];
+const teamGroup = {
+  id: "g2",
+  name: "内容生产组",
+  members: [{ id: "slot", kind: "bot", name: "内容创作专家团", targetKind: "team", targetKey: "t1", avatar: "" }],
+  avatars: {},
+};
+
+test("主理人私聊身份用目录 lead.key（不是合成 id 拆出来的裸 memberId）", () => {
+  const out = talkPartnerIdentity({ memberId: "team:t1:lead1", name: "台账旧名" }, teamGroup, catalog);
+  assert.equal(out.targetKind, "expert");
+  assert.equal(out.targetKey, "t1:lead1");
+  assert.equal(out.name, "文枢");
+  assert.equal(out.avatar, "");
+});
+
+test("团成员不被误判成主理人（仍是裸 memberId）", () => {
+  const out = talkPartnerIdentity({ memberId: "team:t1:m1", name: "衡纸" }, teamGroup, catalog);
+  assert.equal(out.targetKind, "member");
+  assert.equal(out.targetKey, "m1");
+});
+
+test("私聊认成员栏给主理人换过的脸（整团槽成员行）", () => {
+  const changed = { ...teamGroup, members: [{ ...teamGroup.members[0], avatar: "preset:avatar-07" }] };
+  const out = talkPartnerIdentity({ memberId: "team:t1:lead1", name: "x" }, changed, catalog);
+  assert.equal(out.avatar, "preset:avatar-07");
+});
+
+test("目录读不到时降级为旧口径（⛔ 不把团成员画成主理人）", () => {
+  const out = talkPartnerIdentity({ memberId: "team:t1:lead1", name: "文枢" }, teamGroup);
+  assert.equal(out.targetKind, "member");
+  assert.equal(out.targetKey, "lead1");
+});
