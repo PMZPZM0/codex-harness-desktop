@@ -51,6 +51,11 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
    * 下载完成事件（downloadDone）会重拉一次：装完立刻就能开播报，不必刷新页面。
    */
   const [packs, setPacks] = useState({ base: false, emotivoice: false, mossTts: false });
+  /** 11-12：主进程按真实优先级（克隆 > MOSS > 本机）算出的合成状态（单一真相源）。 */
+  const [speech, setSpeech] = useState<{ effective: string; ready: boolean; label: string; reason: string } | null>(null);
+  /** 旧主进程没有 speech 时的回退判据（mossLive 配置态 / 克隆音色模型就绪态）。 */
+  const [mossLiveConfigured, setMossLiveConfigured] = useState(false);
+  const [zipVoiceReady, setZipVoiceReady] = useState(false);
   const ttsReadyRef = useRef(true);
 
   const [draft, setDraft] = useState<{ draftFile: string; refText: string; sourceName: string; durationSec: number } | null>(null);
@@ -76,6 +81,9 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
         /* 11-12：MOSS-TTS 远程播报配置齐全 ⇒ 播报可用，不依赖本机模型 */
         mossTts: st?.mossTts?.configured === true,
       });
+      setMossLiveConfigured(st?.mossLive?.configured === true);
+      setZipVoiceReady(Boolean(st?.zipvoice?.ready));
+      setSpeech(st?.speech ?? null);
     } catch { /* 读不到就保持现状（开关仍按未就绪处理，⛔ 不假装能用） */ }
   }, []);
 
@@ -495,10 +503,23 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   }, [meta]);
 
   /* 当前引擎就绪与否（播报开关 / 试听的联动判据）——派生量，⛔ 不另存一份状态。
-     11-12：MOSS 播报配置齐全同样算"能出声"，否则远程播报用户会被一直拦在门外。 */
+     11-12：以主进程 `speech` 为单一真相源（克隆音色 > MOSS 播报 > 本机引擎）；
+     旧主进程没有该字段时按设置 + 状态回退推算（⛔ 否则新界面会一直显示"不可用"）。 */
   const ttsEngineId = settings?.tts?.engine === "emotivoice" ? "emotivoice" : "vits";
-  const ttsReady = (ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base) || packs.mossTts;
+  const cloneSelected = Boolean(settings?.tts?.profileId);
+  const cloneReady = cloneSelected && zipVoiceReady;
+  const mossReady = packs.mossTts
+    || (settings?.tts?.remote === true && Boolean(settings?.remote?.["moss-tts"]?.voiceId) && mossLiveConfigured);
+  const localReady = ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base;
+  const fallbackReady = cloneSelected ? cloneReady : localReady || mossReady;
+  const ttsReady = typeof speech?.ready === "boolean" ? speech.ready : fallbackReady;
   ttsReadyRef.current = ttsReady;
+  const ttsBlockedReason = ttsReady ? "" : (speech?.reason
+    || (cloneSelected
+      ? "克隆音色模型未就绪：到「我的音色」安装/导入，或换回内置音色"
+      : settings?.tts?.remote === true && !mossReady
+        ? "MOSS 播报还缺音色或密钥：到「付费云端模型」卡片里补齐"
+        : "本机没有可用的合成引擎，MOSS 播报也未配置"));
 
-  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, reloadPacks, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };
+  return { onNotice, settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, ttsBlockedReason, speech, mossConfigured: mossReady, reloadPacks, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta };
 }

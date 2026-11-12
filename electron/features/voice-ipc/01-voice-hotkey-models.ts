@@ -251,18 +251,39 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     const settings = loadVoiceSettings(app.getPath("userData"));
     /* 11-12 用户实测「联动性太差」：播报已切 MOSS-TTS（远程），但本机模型没装 ⇒
        页面、📢、下发给模型的 announceEnabled 全都还按「没有合成引擎」处理。
-       ⇒ 就绪判据统一为：本地基础模型（未停用）**或** 本地情感引擎（可运行）**或** MOSS-TTS 配置齐全。
+       ⇒ 就绪判据收成**一个** `speech` 状态（单一真相源），顺序与真实合成链一致：
+          克隆音色（profileId，本地） > MOSS-TTS（远程，配好才用） > 本地基础/情感引擎。
+       ⛔ `remoteTtsConfig` 在选了克隆音色时会返回 null（克隆优先）—— 所以不能只按 MOSS 判，
+          否则克隆用户会被误报「MOSS 缺配置」、播报开关也打不开（用户截图）。
        ⛔ 顺带刷新播报就绪缓存（同一个判据、同一次扫盘，不额外开销）。 */
-    {
+    const speech = (() => {
+      const profileId = String(settings.tts?.profileId ?? "").trim();
+      const zipReady = zipvoiceReady(modelsRoot());
+      const remote = remoteTtsConfig(settings);
       const total = Number(status.totalFiles ?? 0);
       const base = isVoiceResourceEnabled(settings, "base")
         && (total > 0 ? Number(status.readyFiles ?? 0) === total : Boolean(status.ready));
       const emotivoice = isVoiceResourceEnabled(settings, "emotivoice") && emotivoiceReady(modelsRoot());
-      const mossTts = remoteTtsConfig(settings);
-      announceReadyCache = base || emotivoice || mossTts?.ok === true;
-    }
+      if (profileId) {
+        return {
+          effective: "clone",
+          ready: zipReady,
+          label: "克隆音色",
+          reason: zipReady ? "" : "克隆音色模型未就绪：到「我的音色」安装/导入，或换回内置音色",
+        };
+      }
+      if (remote && remote.ok === false) {
+        return { effective: "moss", ready: false, label: "MOSS-TTS", reason: remote.error };
+      }
+      if (remote?.ok) return { effective: "moss", ready: true, label: "MOSS-TTS", reason: "" };
+      if (base) return { effective: "local", ready: true, label: "本机合成", reason: "" };
+      if (emotivoice) return { effective: "local", ready: true, label: "情感语音", reason: "" };
+      return { effective: "none", ready: false, label: "", reason: "本机没有可用的合成引擎，MOSS 播报也未配置" };
+    })();
+    announceReadyCache = speech.ready;
     return {
       ...status,
+      speech,
       bytes: modelsSizeOnDisk(modelsRoot()),
       root: modelsRoot(),
       // 提示 UI「本地导入」该期望的目录结构（HF 仓库 id 很长，用户需要明确看到）

@@ -24,6 +24,8 @@ type ModelsStatusShape = {
   emotivoice?: { ready?: boolean; runnable?: boolean };
   /** 11-12：MOSS-TTS 远程播报（与本机模型无关，配置齐全即可播） */
   mossTts?: { configured?: boolean };
+  /** 11-12 单一真相源：当前真正会用的合成链（克隆 / MOSS / 本机 / 无） */
+  speech?: { effective?: string; ready?: boolean; label?: string; reason?: string };
 };
 
 let ready = true;               // 未探测前按"就绪"处理：⛔ 不要用 false 当初始值，那会把正常用户误标成不可用
@@ -46,14 +48,13 @@ export async function refreshAnnounceEngineReady(): Promise<void> {
   try {
     const st = (await window.codex.voiceModelsStatus?.()) as ModelsStatusShape | undefined;
     if (!st) return;
-    /* 与 `use-voice-settings-section-state` 的 packs 同口径：
-       基础模型按「未停用 + 就绪文件数 == 总数」；情感语音要求 ready 且 **runnable === true**；
-       MOSS-TTS 配置齐全也算一套（11-12：播报切了远程就不再依赖本机模型）。 */
+    /* 11-12：主进程已经按真实优先级（克隆 > MOSS > 本机）算好 speech.ready，
+       直接采信；旧主进程没有该字段时才走下面的兼容推算。 */
     const total = Number(st?.totalFiles ?? 0);
     const base = st?.baseEnabled !== false && (total > 0 ? Number(st?.readyFiles ?? 0) === total : Boolean(st?.ready));
     const emotivoice = Boolean(st?.emotivoice?.ready) && st?.emotivoice?.runnable === true;
     const mossTts = st?.mossTts?.configured === true;
-    const next = base || emotivoice || mossTts;
+    const next = typeof st?.speech?.ready === "boolean" ? st.speech.ready : base || emotivoice || mossTts;
     if (next === ready) return;
     ready = next;
     for (const fn of [...listeners]) fn();

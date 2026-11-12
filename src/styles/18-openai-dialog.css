@@ -1902,6 +1902,53 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
   border-color: color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
+/* ── 11-12 语音页改「按步骤走」：①模型 ②播报/通用音量 ③实时通话 ── */
+.voice-group-step .voice-group-head { align-items: center; }
+.voice-group-step-badge {
+  flex: none; width: 18px; height: 18px; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: var(--text);
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+/* 步骤内的二级小标题（音色 / 克隆）：与上一块用虚线分隔，不再单独占一个组 */
+.voice-subhead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px;
+  margin-top: 4px; padding-top: 10px;
+  border-top: 1px dashed var(--line-soft);
+}
+.voice-subhead strong { font-size: 12px; color: var(--text); font-weight: 600; }
+
+/* 一级界面的两张模型摘要卡（本地 / 云端），点「配置」各自进不同弹窗 */
+.voice-model-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; }
+.voice-model-card {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px 13px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--panel); min-width: 0;
+}
+.voice-model-card.is-active { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--panel)); }
+.voice-model-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+.voice-model-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 7px; min-width: 0; }
+.voice-model-title strong { font-size: 13px; color: var(--text); }
+.voice-local-modal { width: min(640px, 100%); }
+
+/* 播报使用哪个模型（本机 / 云端）：一级界面直接选，配置仍在弹窗里 */
+.voice-tts-source { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 2px 0 2px; }
+.voice-tts-source-label { font-size: 12px; color: var(--muted); }
+.voice-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.voice-seg button {
+  border: 0; background: transparent; padding: 6px 11px; cursor: pointer;
+  font-family: inherit; font-size: 11.5px; color: var(--muted);
+}
+.voice-seg button + button { border-left: 1px solid var(--line); }
+.voice-seg button.is-active { background: color-mix(in srgb, var(--accent) 14%, var(--panel)); color: var(--text); font-weight: 600; }
+.voice-tts-source-hint { flex-basis: 100%; font-size: 11px; color: var(--muted); }
+
+/* 语速 + 音量合并卡：两行滑杆，左侧小标签 */
+.voice-range-row { display: flex; align-items: center; gap: 10px; }
+.voice-range-row > span { flex: 0 0 40px; font-size: 11.5px; color: var(--muted); }
+.voice-range-row .voice-range { flex: 1; }
+
 /* ── 语音页的「按顺序来」引导条（10-26：用户说好几个下载入口看得眼花）──
    ⛔ 它是**说明**不是准入：不做 disabled、不拦点击，只是把 ①→②→③ 的顺序讲清楚。 */
 .voice-order-hint {

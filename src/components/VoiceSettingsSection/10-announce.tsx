@@ -22,12 +22,21 @@ type Props = {
   settings: Settings;
   /** 当前引擎是否真的能合成（模型装了且可运行）—— 播报开关的准入判据 */
   ttsReady: boolean;
+  /** 不能合成时的具体原因（主进程 speech.reason：克隆未就绪 / MOSS 缺配置 / 没有任何引擎） */
+  ttsBlockedReason?: string;
+  /** 播报当前是否走云端（tts.remote）；一级界面直接选「用哪个模型」。 */
+  ttsRemote?: boolean;
+  /** 是否选了克隆音色（克隆优先于本地/云端选择）。 */
+  cloneSelected?: boolean;
+  /** 云端模型是否已配置（未配置时点云端只给指引，不硬切）。 */
+  mossReady?: boolean;
+  onPickTtsSource?: (remote: boolean) => void;
   /** 缺模型时直达「必需 · 基础语音模型」 */
   onGoModels: () => void;
 };
 
 /** 播报卡：开关播报与播报范围。⛔ 没有可用 TTS 引擎时不许打开（打开就等于承诺会出声），点了给可照做的说明 + 直达下载。 */
-export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady, onGoModels }: Props) {
+export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady, ttsBlockedReason, ttsRemote = false, cloneSelected = false, mossReady = false, onPickTtsSource, onGoModels }: Props) {
   /* ⛔ 没有可用引擎时不许把开关打开（打开=承诺会出声）。点了给一句能照做的说明 + 直达下载。 */
   const [blocked, setBlocked] = useState(false);
   /* ⛔ 兜底（与 VoiceDevToolsSection 的 `enabled !== false` 同一约定）：设置是**显式字段映射**
@@ -63,13 +72,44 @@ export function VoiceSettingsSectionAnnounce({ apply, saving, settings, ttsReady
             <span>播报 Codex 写的内容</span>
           </label>
         </div>
+        {/* 11-12 用户令：「播报可以选择生效那一个」—— 一级界面直接选本地 / 云端，配置仍在各自弹窗里。 */}
+        <div className="voice-tts-source">
+          <span className="voice-tts-source-label">播报使用</span>
+          <div className="voice-seg" role="radiogroup" aria-label="播报使用的模型">
+            <button
+              type="button"
+              className={!ttsRemote ? "is-active" : ""}
+              aria-pressed={!ttsRemote}
+              disabled={saving}
+              onClick={() => onPickTtsSource?.(false)}
+            >
+              基础模型（本机）
+            </button>
+            <button
+              type="button"
+              className={ttsRemote ? "is-active" : ""}
+              aria-pressed={ttsRemote}
+              disabled={saving}
+              onClick={() => onPickTtsSource?.(true)}
+              title={mossReady ? "播报/试听走 MOSS-TTS" : "先到第 1 步「付费云端模型」里完成配置"}
+            >
+              付费云端（MOSS）
+            </button>
+          </div>
+          {cloneSelected && (
+            <span className="voice-tts-source-hint">已选克隆音色：它优先于这里的选择（切回内置音色后按这里生效）</span>
+          )}
+          {!mossReady && (
+            <span className="voice-tts-source-hint">云端未配置 —— 先到第 1 步「付费云端模型」卡片里配置</span>
+          )}
+        </div>
         {!ttsReady && (
           <div className="voice-gate-hint">
             <TriangleAlert size={13} />
             <span>
-              {blocked ? "还不能打开：本机没有可用的合成引擎，MOSS 播报也没配置好，打开了也不会有声音。"
-                : "本机没有可用的合成引擎，MOSS 播报也没配置好，播报不会有声音。"}
-              装「必需 · 基础语音模型」（约 270MB，轻量播报随它一起装），或在下方 MOSS-Live 里开启 MOSS 播报。
+              {ttsBlockedReason
+                ? `${blocked ? "还不能打开：" : ""}${ttsBlockedReason}。先按下方引擎卡里的提示处理，或换回可用的音色。`
+                : `${blocked ? "还不能打开：" : ""}本机没有可用的合成引擎，MOSS 播报也没配置好，打开了也不会有声音。装「必需 · 基础语音模型」（约 270MB，轻量播报随它一起装），或在下方 MOSS-Live 里开启 MOSS 播报。`}
               {enabled ? "装好之后会自动按你原来的设置开启。" : ""}
             </span>
             <button type="button" className="secondary-setting" onClick={onGoModels}>去装模型</button>

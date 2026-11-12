@@ -98,8 +98,8 @@ export async function playSamples(samples: Float32Array | undefined, sampleRate:
 }
 
 export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: string) => void }) {
-  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
-  /** 缺模型时直达「换一个更好听的引擎」组（基础模型的操作按钮已并入轻量播报卡，落点跟着挪）。 */
+  const { settings, setSettings, meta, setMeta, saving, setSaving, savingRef, playCtlRef, auditionPhase, setAuditionPhase, profilePreview, setProfilePreview, mics, setMics, micTesting, setMicTesting, micLevel, setMicLevel, capturing, setCapturing, micTestRef, profiles, setProfiles, zipReady, setZipReady, ttsReady, ttsBlockedReason, speech, mossConfigured, draft, setDraft, draftName, setDraftName, profileBusy, setProfileBusy, profileRecording, setProfileRecording, recordingRef, reloadProfiles, importProfile, uploadProfile, startProfileRecord, saveDraft, selectProfile, removeProfile, presets, setPresets, applyPreset, previewProfile, apply, audition, toggleMicTest, captureHotkey, voiceOptions, reloadMeta } = useVoiceSettingsSectionState({ onNotice });
+  /** 缺模型时直达「基础模型」卡片（落点跟着模型卡走）。 */
   const goModels = () => {
     const el = document.getElementById("voice-engines");
     if (!el) return;
@@ -108,7 +108,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
     window.setTimeout(() => el.classList.remove("is-flash"), 1400);
   };
 
-    if (!settings || !meta) {
+  if (!settings || !meta) {
     return (
       <section className="settings-section stack voice-settings">
         <div className="settings-section-title">语音通话</div>
@@ -116,6 +116,13 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       </section>
     );
   }
+  const pickTtsSource = (remote: boolean) => {
+    if (remote && !mossConfigured) {
+      onNotice("先到「付费云端模型」卡片里完成配置，再切换播报使用云端");
+      return;
+    }
+    void apply({ tts: { ...settings.tts, remote } });
+  };
   return (
     <section className="settings-section stack voice-settings">
       {/* 10-27 用户（语音页截图）：「把必须放到基础模型里面，然后这个首个卡片内容布局调一下，
@@ -124,64 +131,58 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           ② 「必需」标签 + 组说明并进基础模型卡（VoiceDevToolsSection 的卡头）；
           ③ 帮助 ? 改挂在基础模型卡右上角，文案重写成「这块是什么、怎么装」。 */}
 
-      {/* ⛔⛔ 10-26 用户两轮实测：「我看不懂…好几个下载的地方，看的眼花缭乱」/「分好类、排序好，
-          不装用不了的和拓展音色的要分开」⇒ 整页按**用途与依赖**分组，每组一个标签说明性质。
-          10-31 用户：「这两个卡片重复了，保留下面的就行了，把打开目录、卸载、停用放到卡片上去」
-          ⇒ 基础模型不再单独成卡，操作并进轻量播报卡（见 02-tts-engines 的 compact 嵌入）；
-            页面现在 = 换引擎（含基础模型操作）→ 选声音 → 克隆声音 → 日常。 */}
-      <div className="voice-group">
+      {/* 11-12 用户令：「一级界面分基础模型、付费云端模型，两个拆开，两个卡片进去不一样；
+          播报可以选择生效那一个」+「配置都做二级弹窗」⇒
+            ① 模型：两张摘要卡（本地 / 云端），各自「配置」进不同弹窗
+            ② 播报：开关 + 播报使用哪个模型 + 通用语速/音量
+            ③ 实时通话：快捷键 / 麦克风 / 打断 / 悬浮球（识别细节折叠） */}
+      <div className="voice-group voice-group-step">
         <div className="voice-group-head" id="voice-engines">
-          <span className="voice-group-tag is-optional">可选</span>
-          <strong>换一个更好听的引擎</strong>
-          <span className="voice-group-sub">不装也能用轻量播报；装好后到下面「音色」里挑声音</span>
+          <span className="voice-group-step-badge">1</span>
+          <strong>选择模型</strong>
+          <span className="voice-group-sub">基础模型（免费·本机）与付费云端模型分开；点卡片里的「配置」进去设置</span>
           {/* 基础模型的帮助挪到引擎组头（卡片已并入轻量播报卡，? 不能跟着丢） */}
           <PageInfo
             label="基础语音模型"
             helpKey="voice"
-            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」。不装它，语音通话与默认播报都用不了。</>}
+            text={<>必需模型：语音识别（zipformer）、断句端点检测（silero）、默认播报合成（vits-zh-ll）都在这一包里（约 270MB）。首次使用点「下载模型」——自动测速选最快的镜像；已有文件就点「本地导入」。不装它，本地语音通话与默认播报都用不了。</>}
           />
         </div>
-        <VoiceSettingsSectionTtsEngines apply={apply} onNotice={onNotice} reloadMeta={reloadMeta} settings={settings} />
+        <VoiceSettingsSectionTtsEngines
+          apply={apply}
+          onNotice={onNotice}
+          reloadMeta={reloadMeta}
+          settings={settings}
+          localExtra={<>
+            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
+            <div className="voice-subhead">
+              <span className="voice-group-tag is-optional">可选</span>
+              <strong>用自己的声音（音色克隆）</strong>
+              <span className="voice-group-sub">先装 156MB 的克隆模型，再导入或录一段参考音频；选中后优先于内置音色与 MOSS 播报</span>
+            </div>
+            {/* 11-02 用户实测：模型卡已显示「已就绪」，下面「我的音色」却还挂着「还没安装音色克隆模型」
+                （zipReady 只在挂载时读一次；安装完成事件只刷新了播报引擎）⇒ 卡刷新完状态就回拉音色列表，
+                装好 / 删除 / 导入后立即同步，不必重进页面。 */}
+            <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" onStatusChange={() => { void reloadProfiles(); }} />
+            <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
+          </>}
+        />
       </div>
 
-      <div className="voice-group">
+      {/* ② 通用项：只影响播报，但语速/音量通话也共用 —— 不与模型/引擎混在一起 */}
+      <div className="voice-group voice-group-step">
         <div className="voice-group-head">
-          <span className="voice-group-tag">选声音</span>
-          <strong>音色与试听</strong>
-          <span className="voice-group-sub">内置音色列表（轻量播报 5 个）</span>
-        </div>
-        <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} />
-      </div>
-
-      <div className="voice-group">
-        <div className="voice-group-head">
-          <span className="voice-group-tag is-optional">可选</span>
-          <strong>用自己的声音（音色克隆）</strong>
-          <span className="voice-group-sub">先装 156MB 的克隆模型，再导入或录一段参考音频</span>
-        </div>
-        {/* 11-02 用户实测：模型卡已显示「已就绪」，下面「我的音色」却还挂着「还没安装音色克隆模型」
-            （zipReady 只在挂载时读一次；安装完成事件只刷新了播报引擎）⇒ 卡刷新完状态就回拉音色列表，
-            装好 / 删除 / 导入后立即同步，不必重进页面。 */}
-        <VoiceDevToolsSection onNotice={onNotice} only="zipvoice" onStatusChange={() => { void reloadProfiles(); }} />
-        <VoiceSettingsSectionVoiceCloneProfile applyPreset={applyPreset} draft={draft} draftName={draftName} importProfile={importProfile} uploadProfile={uploadProfile} presets={presets} previewProfile={previewProfile} profileBusy={profileBusy} profilePreview={profilePreview} profileRecording={profileRecording} profiles={profiles} recordingRef={recordingRef} removeProfile={removeProfile} saveDraft={saveDraft} selectProfile={selectProfile} setDraft={setDraft} setDraftName={setDraftName} setProfileBusy={setProfileBusy} settings={settings} startProfileRecord={startProfileRecord} zipReady={zipReady} />
-      </div>
-
-
-      {/* 日常：只影响播报与音量（⛔ 与"装什么"分开，别和模型混在一起） */}
-      <div className="voice-group">
-        <div className="voice-group-head">
-          <span className="voice-group-tag">日常</span>
-          <strong>播报 / 语速 / 音量</strong>
+          <span className="voice-group-step-badge">2</span>
+          <strong>播报与通用音量</strong>
           <span className="voice-group-sub">只影响语音播报；语速与音量通话也共用</span>
         </div>
-      {/* 语音播报：两个开关（实时正文 / 结束汇总） */}
-      <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} ttsReady={ttsReady} onGoModels={goModels} />
+      <VoiceSettingsSectionAnnounce apply={apply} saving={saving} settings={settings} ttsReady={ttsReady} ttsBlockedReason={ttsBlockedReason} ttsRemote={settings.tts.remote === true} cloneSelected={Boolean(settings.tts.profileId)} mossReady={mossConfigured} onPickTtsSource={pickTtsSource} onGoModels={goModels} />
 
-      {/* 语速：档位 + 滑块（同一真相源 tts.speed —— 通话与语音播报共用） */}
+      {/* 11-12：语速 + 音量合成一张卡（都是"通用项"，分两张只会让页面更长） */}
       <div className="voice-card">
         <div className="voice-card-head">
-          <span>语速</span>
-          <span className="voice-card-value">{settings.tts.speed.toFixed(2)}×</span>
+          <span>语速与音量</span>
+          <span className="voice-card-value">{settings.tts.speed.toFixed(2)}× · {Math.round(settings.tts.volume * 100)}%</span>
         </div>
         <div className="voice-card-body">
           <div className="voice-speed-presets" role="group" aria-label="语速档位">
@@ -198,48 +199,84 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
               </button>
             ))}
           </div>
-          <input
-            className="voice-range"
-            type="range"
-            min={0.5}
-            max={2.0}
-            step={0.05}
-            value={settings.tts.speed}
-            onChange={(e) => apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
-            disabled={saving}
-          />
-          <div className="voice-card-hint">慢 0.5× ↔ 快 2.0×；档位与滑块改的是同一个值（语音通话与语音播报共用）</div>
+          <div className="voice-range-row">
+            <span>语速</span>
+            <input
+              className="voice-range"
+              type="range"
+              min={0.5}
+              max={2.0}
+              step={0.05}
+              value={settings.tts.speed}
+              onChange={(e) => apply({ tts: { ...settings.tts, speed: Number(e.target.value) } })}
+              disabled={saving}
+            />
+          </div>
+          <div className="voice-range-row">
+            <span>音量</span>
+            <input
+              className="voice-range"
+              type="range"
+              min={0}
+              max={2.0}
+              step={0.05}
+              value={settings.tts.volume}
+              onChange={(e) => apply({ tts: { ...settings.tts, volume: Number(e.target.value) } })}
+              disabled={saving}
+            />
+          </div>
+          <div className="voice-card-hint">语速 0.5×～2.0×，音量 0%（静音）～200%；通话与播报共用这一份。</div>
         </div>
       </div>
 
-      {/* 音量 */}
+      </div>
+
+      {/* ③ 实时通话：怎么开、麦克风、打断、悬浮球；识别细节收进折叠 */}
+      <div className="voice-group voice-group-step">
+        <div className="voice-group-head">
+          <span className="voice-group-step-badge">3</span>
+          <strong>实时通话</strong>
+          <span className="voice-group-sub">按住快捷键说话、打断与悬浮球；识别细节可展开</span>
+        </div>
+
+      {/* 按键启动（全局快捷键） */}
+      <VoiceSettingsSectionHotkeyStart apply={apply} captureHotkey={captureHotkey} capturing={capturing} onNotice={onNotice} saving={saving} settings={settings} />
+
+      {/* 长按语音输入快捷键（仅应用内：按住开始听写，松开结束） */}
+      <VoiceSettingsSectionDictationHotkey apply={apply} captureHotkey={captureHotkey} capturing={capturing} saving={saving} settings={settings} />
+
+      {/* 麦克风 */}
+      <VoiceSettingsSectionMicDevices apply={apply} micLevel={micLevel} micTesting={micTesting} mics={mics} saving={saving} settings={settings} toggleMicTest={toggleMicTest} />
+
+      {/* 打断方式 */}
+      <VoiceSettingsSectionBargeMode apply={apply} saving={saving} settings={settings} />
+
+      {/* 打断灵敏度 */}
       <div className="voice-card">
         <div className="voice-card-head">
-          <span>播报音量</span>
-          <span className="voice-card-value">{Math.round(settings.tts.volume * 100)}%</span>
+          <Mic size={15} /><span>打断灵敏度</span>
+          <span className="voice-card-value">{settings.barge.gateDb} dB</span>
         </div>
         <div className="voice-card-body">
           <input
             className="voice-range"
             type="range"
-            min={0}
-            max={2.0}
-            step={0.05}
-            value={settings.tts.volume}
-            onChange={(e) => apply({ tts: { ...settings.tts, volume: Number(e.target.value) } })}
+            min={3}
+            max={12}
+            step={1}
+            value={settings.barge.gateDb}
+            onChange={(e) => apply({ barge: { gateDb: Number(e.target.value), mode: settings.barge.mode } })}
             disabled={saving}
           />
-          <div className="voice-card-hint">0%（静音）↔ 100%（原始音量）↔ 200%（放大）</div>
+          <div className="voice-card-hint">安静环境 6~8 / 外放或嘈杂 10~12 减少误触发</div>
         </div>
       </div>
 
-      </div>
+      {/* 悬浮球（显示 / 随机气泡） */}
+      <VoiceSettingsSectionFloatingBall apply={apply} saving={saving} settings={settings} />
 
       <details className="settings-exp-advanced">
-        <summary>识别与通话细节 / 悬浮球 / 快捷键<small>高级</small></summary>
-      {/* 麦克风 */}
-      <VoiceSettingsSectionMicDevices apply={apply} micLevel={micLevel} micTesting={micTesting} mics={mics} saving={saving} settings={settings} toggleMicTest={toggleMicTest} />
-
+        <summary>识别细节 / 下载镜像<small>高级</small></summary>
       {/* 断句灵敏度 */}
       <VoiceSettingsSectionEndpointWait apply={apply} saving={saving} settings={settings} />
 
@@ -306,39 +343,6 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         </div>
       </div>
 
-      {/* 打断灵敏度 */}
-      <div className="voice-card">
-        <div className="voice-card-head">
-          <Mic size={15} /><span>打断灵敏度</span>
-          <span className="voice-card-value">{settings.barge.gateDb} dB</span>
-        </div>
-        <div className="voice-card-body">
-          <input
-            className="voice-range"
-            type="range"
-            min={3}
-            max={12}
-            step={1}
-            value={settings.barge.gateDb}
-            onChange={(e) => apply({ barge: { gateDb: Number(e.target.value), mode: settings.barge.mode } })}
-            disabled={saving}
-          />
-          <div className="voice-card-hint">安静环境 6~8 / 外放或嘈杂 10~12 减少误触发</div>
-        </div>
-      </div>
-
-      {/* 打断方式 */}
-      <VoiceSettingsSectionBargeMode apply={apply} saving={saving} settings={settings} />
-
-      {/* 悬浮球（显示 / 随机气泡） */}
-      <VoiceSettingsSectionFloatingBall apply={apply} saving={saving} settings={settings} />
-
-      {/* 按键启动（全局快捷键） */}
-      <VoiceSettingsSectionHotkeyStart apply={apply} captureHotkey={captureHotkey} capturing={capturing} onNotice={onNotice} saving={saving} settings={settings} />
-
-      {/* 长按语音输入快捷键（仅应用内：按住开始听写，松开结束） */}
-      <VoiceSettingsSectionDictationHotkey apply={apply} captureHotkey={captureHotkey} capturing={capturing} saving={saving} settings={settings} />
-
       {/* 镜像源 */}
       <div className="voice-card">
         <div className="voice-card-head"><Zap size={15} /><span>模型下载镜像源</span></div>
@@ -364,6 +368,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         </span>
       </div>
       </details>
+      </div>
     </section>
   );
 }

@@ -11,6 +11,7 @@
  */
 import { Check, Download, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AppSelect } from "../AppSelect";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
@@ -25,6 +26,8 @@ type Props = {
   settings: Settings;
   /** 重拉音色表（换引擎后必须调：主进程按引擎给音色表） */
   reloadMeta: () => Promise<void>;
+  /** 基础模型配置弹窗里的「音色 / 克隆」区（由设置页组合进来，避免把状态再拷一份） */
+  localExtra?: ReactNode;
 };
 
 type PackId = "vits" | "emotivoice";
@@ -94,20 +97,27 @@ const ENGINES: EngineInfo[] = [
 ];
 
 /** TTS 引擎与音色包管理卡：显示安装状态、下载进度、切换引擎，失败在卡内给反馈条。 */
-export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings }: Props) {
+export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings, localExtra }: Props) {
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
   const [moss, setMoss] = useState<{ configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string } | null>(null);
   /** 11-12：MOSS-TTS 远程播报状态（配置齐全即可播，不依赖本机模型）。 */
   const [mossTts, setMossTts] = useState<{ enabled: boolean; configured: boolean; voiceId: string; error: string } | null>(null);
+  /** 11-12 单一真相源：主进程按真实优先级（克隆 > MOSS > 本机）算出的合成状态。 */
+  const [speech, setSpeech] = useState<{ effective: string; ready: boolean; label: string; reason: string } | null>(null);
+  /** 旧主进程没有 speech 时的回退判据：克隆音色模型是否就绪。 */
+  const [zipVoiceReady, setZipVoiceReady] = useState(false);
   const [mossDraft, setMossDraft] = useState({ baseUrl: "", model: "", apiKey: "" });
   /** MOSS 播报（TTS）：独立的模型/音色；密钥沿用 moss-live 那张卡，不在这里重复填。 */
   const [mossTtsDraft, setMossTtsDraft] = useState({ model: "moss-tts-1.5-flash", voiceId: "" });
   const [mossVoices, setMossVoices] = useState<{ id: string; name: string }[]>([]);
   /** 配置收进弹窗：卡面上只留状态/启用停用/试听；弹窗打开时 Esc 只关它（全局 ESC 栈）。 */
   const [mossModalOpen, setMossModalOpen] = useState(false);
+  /** 基础模型（本地）的配置也收进弹窗：一级界面只留两张摘要卡。 */
+  const [localModalOpen, setLocalModalOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const previewCtlRef = useRef<{ stop: () => void } | null>(null);
   useEscapeLayer(mossModalOpen, () => setMossModalOpen(false));
+  useEscapeLayer(localModalOpen, () => setLocalModalOpen(false));
   useEffect(() => () => { previewCtlRef.current?.stop(); previewCtlRef.current = null; }, []);
   const [busy, setBusy] = useState<PackId | null>(null);
   const [progress, setProgress] = useState<{ pack: PackId; percent: number; message: string } | null>(null);
@@ -119,6 +129,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       const status: any = await window.codex.voiceModelsStatus();
       setMoss(status?.mossLive ?? null);
       setMossTts(status?.mossTts ?? null);
+      setSpeech(status?.speech ?? null);
+      setZipVoiceReady(Boolean(status?.zipvoice?.ready));
       const next: Partial<Record<PackId, PackState>> = {
         /* ⛔ 11-11 用户实测「点了停用，上面还写着使用中」：基础模型的 enabled 必须从
            `status.baseEnabled` 取，不能写死 true —— ready（文件在不在）与 enabled（加载不加载）
@@ -276,15 +288,6 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
     onNotice(saved?.voiceId === voiceId && saved?.model === model ? "MOSS 播报配置已保存" : "MOSS 播报配置保存失败，请重试");
   }, [apply, mossTtsDraft, onNotice, settings, ttsRemote]);
 
-  const setTtsRemote = useCallback(async (next: boolean) => {
-    if (next && !(mossTtsDraft.voiceId || savedMossTts?.voiceId)) { onNotice("先点「查询音色」并选一个音色，再开启 MOSS 播报"); return; }
-    await apply({ tts: { ...settings.tts, remote: next } });
-    await refresh();
-    const res: any = await window.codex.voiceSettingsGet().catch(() => null);
-    const actual = res?.settings?.tts?.remote === true;
-    onNotice(actual === next ? (next ? "已开启 MOSS 播报" : "已切回本地播报") : "切换播报后端失败，请重试");
-  }, [apply, mossTtsDraft.voiceId, onNotice, savedMossTts?.voiceId, settings, ttsRemote]);
-
   /** 音色显示名（列表加载过就用名字，否则截前 8 位 id）。 */
   const mossVoiceName = useCallback((id?: string) => {
     const key = String(id ?? "");
@@ -398,51 +401,81 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   /* ⛔ 10-26：「当前」也要说真话 —— 设置里选的是它，但没装就合成不了；
      停用的模型文件还在（ready=true）同样不能算「可用」（11-11 用户实测
      「点了停用，上面还写着使用中」）。 */
-  const currentReady = Boolean(packs[current]?.ready) && packs[current]?.enabled !== false;
   const currentDisabled = Boolean(packs[current]?.ready) && packs[current]?.enabled === false;
   const anyReady = Object.values(packs).some((p) => Boolean(p?.ready));
-  /* 11-12 联动：MOSS-TTS 配置齐全也算"能出声" —— 否则本站没装模型时，
-     远程播报用户会被顶部警告 / 📢 / 模型指令一起误判成"播报不可用"。 */
-  const mossTtsReady = mossTts?.configured === true;
-  const speechReady = anyReady || mossTtsReady;
+  /* 11-12 联动：MOSS-TTS 配置齐全也算"能出声"；旧主进程没有 mossTts 时按
+     「播报切了 MOSS + 实时密钥已配 + 选了音色」回退推算（否则新界面会一直显示不可用）。 */
+  const cloneSelected = Boolean(settings?.tts?.profileId);
+  const cloneReady = cloneSelected && zipVoiceReady;
+  const mossTtsReady = mossTts?.configured === true
+    || (mossTts == null && ttsRemote && Boolean(savedMossTts?.voiceId) && Boolean(moss?.configured));
+  const speechReady = cloneSelected
+    ? cloneReady
+    : (typeof speech?.ready === "boolean" ? speech.ready : anyReady || mossTtsReady);
+  /** 克隆音色优先级最高：选了它时 MOSS 播报会被跳过，不能显示成「MOSS 缺配置」。 */
+  const cloneActive = cloneSelected;
   /* MOSS-Live 实时通话：选中 + 配置齐全才算"使用中"；只选中没配好要显式报错，
      ⛔ 不能一边打「使用中」一边打「未配置」。 */
   const mossInUse = callBackend && Boolean(moss?.configured);
   const mossBroken = callBackend && !moss?.configured;
 
   return (
-    <div className="voice-card voice-engines">
-      <div className="voice-card-head">
-        <Sparkles size={15} />
-        <span>合成引擎</span>
-        <span className="voice-card-value">
-          {ttsRemote && mossTtsReady
-            ? "当前：MOSS-TTS · 远程播报"
-            : currentReady
-              ? `当前：${packLabel(current)}`
-              : `当前：${packLabel(current)}${currentDisabled ? " · 已停用" : " · 未安装"}`}
-        </span>
-      </div>
-      <div className="voice-card-body">
-        <div className="voice-card-hint">
-          轻量播报（vits-zh-ll）跟着基础语音模型一起装，不额外下载；未切远程时通话与播报都用它。
+    <div className="voice-engines">
+      {!speechReady && (
+        <div className="voice-engine-empty">
+          <TriangleAlert size={13} />
+          <span>
+            {speech?.reason
+              ? <>{speech.reason}。</>
+              : <>现在<strong>没有可用的合成引擎</strong>，语音通话与播报都无法出声。</>}
+            点「基础模型（本地）」的「配置」下载基础语音模型；只用远程语音时，点「付费云端模型」的「配置」填 MOSS 密钥。
+          </span>
         </div>
-        {!speechReady && (
-          <div className="voice-engine-empty">
-            <TriangleAlert size={13} />
-            <span>
-              现在<strong>没有可用的合成引擎</strong>，语音通话与播报都无法出声。
-              轻量播报随「基础语音模型」一起装 —— 用下方「轻量播报」卡里的「下载模型 / 本地导入」；
-              只用远程语音时，也可以在 MOSS-Live 里开启播报。
+      )}
+      {!anyReady && speech?.effective === "moss" && speech.ready && (
+        <div className="voice-card-hint">
+          本机合成模型未安装，<strong>播报已走 MOSS-TTS（远程）</strong>；语音通话要启用 MOSS-Live，或安装基础模型后走本地。
+        </div>
+      )}
+
+      <div className="voice-model-grid">
+        {/* ① 基础模型（本地）：一级界面只留摘要，模型/引擎/音色/克隆全进「配置」弹窗 */}
+        <div className={`voice-model-card${!cloneActive && speech?.effective === "local" ? " is-active" : ""}${anyReady ? " is-ready" : ""}`}>
+          <div className="voice-model-head">
+            <div className="voice-model-title">
+              <strong>基础模型（本地）</strong>
+              <span className="voice-engine-tag">免费 · 本机运行</span>
+            </div>
+            <span className={`voice-engine-state${anyReady ? " ok" : ""}`}>
+              {anyReady ? (currentDisabled ? "已停用" : "已安装") : "未安装"}
             </span>
           </div>
-        )}
-        {!anyReady && mossTtsReady && (
-          <div className="voice-card-hint">
-            本机合成模型未安装，<strong>播报已走 MOSS-TTS（远程）</strong>；语音通话要启用 MOSS-Live，或安装基础模型后走本地。
+          <div className="voice-engine-meta">
+            <span>{packLabel(current)}</span>
+            <span>{cloneActive ? "克隆音色（优先）" : settings.tts.profileId ? "克隆音色" : "内置音色"}</span>
+            <span>{cloneActive ? (cloneReady ? "克隆音色就绪" : "克隆音色未就绪") : anyReady ? "本机可用" : "未就绪"}</span>
           </div>
-        )}
-        <div className="voice-engine-grid">
+          <div className="voice-engine-role">离线合成、不联网不额外付费。模型下载、引擎、音色与克隆都在「配置」里。</div>
+          <div className="voice-engine-actions">
+            <button className={anyReady ? "secondary-setting" : "primary-setting"} onClick={() => setLocalModalOpen(true)}>
+              <Settings2 size={13} />配置
+            </button>
+          </div>
+        </div>
+
+        {/* 本地配置弹窗（模型 / 引擎 / 音色 / 克隆）—— 与云端那张卡的弹窗内容完全不同 */}
+        {localModalOpen && createPortal((
+          <div className="voice-confirm-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setLocalModalOpen(false); }}>
+            <div className="voice-moss-modal voice-local-modal" role="dialog" aria-modal="true" aria-label="基础模型配置">
+              <div className="voice-moss-modal-head">
+                <strong>基础模型（本地）</strong>
+                <button type="button" className="voice-confirm-close" aria-label="关闭" onClick={() => setLocalModalOpen(false)}>
+                  <X size={15} />
+                </button>
+              </div>
+              <div className="voice-moss-modal-body">
+                <div className="voice-moss-section-title">模型与引擎</div>
+                <div className="voice-engine-grid">
           {/* ⛔ 11-01 用户令：EmotiVoice 的生成器 ONNX 托管地址没配（EMOTIVOICE_ONNX_BASE），
               下载必然失败 —— 与其让用户点了白等、看着红字报错，不如**先不展示**。
               数据与后端通道都保留（配好地址后把这一行过滤删掉即可恢复）。 */}
@@ -559,9 +592,18 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             );
           })}
         </div>
+                {localExtra && (
+                  <>
+                    <div className="voice-moss-section-title">音色与克隆</div>
+                    {localExtra}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        ), document.body)}
 
-        {/* 11-11 MOSS-Live：卡片与本地引擎卡同构（状态 + 启用/停用 + 配置），
-            具体配置（实时通话 / MOSS 播报）收进弹窗；音色可直接试听。 */}
+        {/* ② 付费云端模型：配置进自己的弹窗（实时通话 + MOSS 播报音色） */}
         <div className={`voice-engine-card voice-engine-remote${mossInUse ? " is-active" : ""}${moss?.configured ? " is-ready" : ""}`}>
           <div className="voice-engine-head">
             <div className="voice-engine-title">
@@ -584,7 +626,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           <div className="voice-engine-meta">
             <span>实时通话</span>
             <span>{moss?.model || "moss-live-1.0"}</span>
-            <span>播报：{ttsRemote ? (mossTtsReady ? "MOSS" : "MOSS · 缺配置") : "本地"}</span>
+            <span>播报：{cloneActive ? (cloneReady ? "克隆音色（本地）" : "克隆音色 · 不可用") : ttsRemote ? (mossTtsReady ? "MOSS" : "MOSS · 缺配置") : "本地"}</span>
             <span>{settings.tts.speed.toFixed(2)}×</span>
             {(savedMossTts?.voiceId || mossTtsDraft.voiceId) ? (
               <span>{mossVoiceName(savedMossTts?.voiceId || mossTtsDraft.voiceId)}</span>
@@ -621,7 +663,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               <span>已选为实时通话后端，但地址 / 模型 / 密钥不完整 —— 通话会回落本地语音；点「配置」补齐。</span>
             </div>
           )}
-          {ttsRemote && !mossTtsReady && mossTts?.error && (
+          {ttsRemote && !cloneActive && !mossTtsReady && mossTts?.error && (
             <div className="voice-engine-feedback is-err">
               <TriangleAlert size={12} />
               <span>{mossTts.error}</span>
@@ -630,9 +672,10 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           <div className="voice-engine-note">
             {ttsRemote
               ? "播报/试听走 MOSS-TTS；实时通话走 MOSS-Live（WebSocket）。连不上都会如实报错，不静默失败。"
-              : "实时通话走 MOSS-Live（WebSocket）；播报仍用本地合成。点「配置」可开启 MOSS 播报。"}
+              : "实时通话走 MOSS-Live（WebSocket）；播报仍用本地合成。到「播报」卡里可切换播报使用的模型。"}
           </div>
         </div>
+      </div>
 
         {mossModalOpen && createPortal((
           <div
@@ -685,12 +728,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                 )}
 
                 <div className="voice-moss-section-title">语音播报（MOSS-TTS）</div>
-                <div className="voice-remote-toggle">
-                  <div>
-                    <strong>用 MOSS 朗读回复</strong>
-                    <span>开启后 Codex 的播报与试听改用 MOSS-TTS；实时通话不受影响。音色与通话共用。克隆音色仍优先本地。</span>
-                  </div>
-                  <ToggleSwitch checked={ttsRemote} label="用 MOSS 朗读回复" onChange={(next) => void setTtsRemote(next)} />
+                <div className="voice-engine-note">
+                  播报是否走 MOSS 在上一级「播报」卡里选（「播报使用」）；这里只配 MOSS 的模型、音色与语速。音色与实时通话共用，克隆音色仍优先本地。
                 </div>
                 <div className="voice-remote-form">
                   <label>TTS 模型
@@ -756,7 +795,6 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           </div>
         ), document.body)}
 
-      </div>
     </div>
   );
 }

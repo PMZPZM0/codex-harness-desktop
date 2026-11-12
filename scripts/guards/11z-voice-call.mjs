@@ -1134,8 +1134,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/export function getAnnounceEngineReady/.test(ready)
       && /voiceModelsStatus/.test(ready)
       && /downloadDone/.test(ready)
-      && /const next = base \|\| emotivoice \|\| mossTts;/.test(ready),
-      "播报引擎就绪探针：**任一套引擎可用**即就绪（基础 / 情感语音 / MOSS-TTS；停用的不算），装完 downloadDone 自动重探");
+      && /const next = typeof st\?\.speech\?\.ready === "boolean" \? st\.speech\.ready : base \|\| emotivoice \|\| mossTts;/.test(ready),
+      "播报引擎就绪探针：采信主进程 speech（克隆 / MOSS / 本机），旧主进程回落到三路组合判据");
     ok(/const engineReady = useSyncExternalStore/.test(toggle)
       && /const enabled = engineReady && globalOn && !muted;/.test(toggle)
       && /if \(!engineReady\) \{[\s\S]{0,200}?setNotice\(/.test(toggle),
@@ -1148,13 +1148,29 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     /* 11-12 用户实测「联动性太差」：播报已切 MOSS-TTS，页面/📢/模型指令却仍按本机模型判定。 */
     const stateHook = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
     const enginesTsx2 = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
+    const announceSrc = read("src/components/VoiceSettingsSection/10-announce.tsx");
     ok(/mossTts: \(\(\) => \{/.test(dirMain)
       && /configured: remote\?\.ok === true/.test(dirMain)
-      && /announceReadyCache = base \|\| emotivoice \|\| mossTts\?\.ok === true;/.test(dirMain),
-      "models-status 回 mossTts 配置态，主进程播报就绪缓存也认远程播报（⛔ 只认本机模型会误判）");
-    ok(/st\?\.mossTts\?\.configured === true/.test(stateHook)
-      && /const ttsReady = \(ttsEngineId === "emotivoice" \? packs\.emotivoice : packs\.base\) \|\| packs\.mossTts;/.test(stateHook),
-      "设置页播报开关就绪判据 = 本地引擎 **或** MOSS 播报（远程用户不再被拦）");
+      && /announceReadyCache = speech\.ready;/.test(dirMain),
+      "models-status 回 mossTts 配置态，播报就绪缓存直接采信 speech（⛔ 只认本机模型会误判）");
+    /* 11-12 用户第二次实测：选了克隆音色时 MOSS 被跳过，页面却显示「MOSS 缺配置」且开关打不开。 */
+    ok(/effective: "clone"/.test(dirMain) && /const profileId = String\(settings\.tts\?\.profileId/.test(dirMain)
+      && /remote && remote\.ok === false/.test(dirMain) && /effective: "moss"/.test(dirMain),
+      "speech 按真实优先级判定（克隆 > MOSS > 本机），克隆音色就绪时不再被 MOSS/本机模型卡住");
+    ok(/typeof speech\?\.ready === "boolean"[\s\S]{0,120}?speech\.ready/.test(stateHook)
+      && /const ttsBlockedReason = ttsReady \? "" :/.test(stateHook)
+      && /mossLiveConfigured/.test(stateHook) && /fallbackReady/.test(stateHook),
+      "设置页播报开关就绪与拦截原因都取 speech（旧主进程按 mossLive/克隆状态回退推算）");
+    /* 11-12 用户令：「一级界面分基础模型、付费云端模型，两个拆开，两个卡片进去不一样，
+       播报可以选择生效那一个」+「配置都做二级弹窗」。 */
+    ok(/voice-model-grid/.test(enginesTsx2) && /基础模型（本地）/.test(enginesTsx2)
+      && /MOSS-Live/.test(enginesTsx2) && /voice-local-modal/.test(enginesTsx2)
+      && /voice-moss-modal/.test(enginesTsx2) && /localExtra/.test(enginesTsx2)
+      && /设置页组合进来/.test(enginesTsx2),
+      "模型区拆成两张摘要卡（本地 / 云端），各自「配置」进不同弹窗，音色/克隆收进本地弹窗");
+    ok(/voice-tts-source/.test(announceSrc) && /基础模型（本机）/.test(announceSrc)
+      && /付费云端（MOSS）/.test(announceSrc) && /onPickTtsSource/.test(announceSrc),
+      "播报卡可直接选择生效模型（本机 / 云端 MOSS），配置仍在各自弹窗里");
     ok(/const mossInUse = callBackend && Boolean\(moss\?\.configured\);/.test(enginesTsx2)
       && /const mossBroken = callBackend && !moss\?\.configured;/.test(enginesTsx2)
       && /配置不完整/.test(enginesTsx2),
