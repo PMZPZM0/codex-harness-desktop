@@ -146,8 +146,8 @@ ok(/numSteps: cfgRef\.current\.numSteps/.test(announceHook) && !/numSteps: ANNOU
   "播报的合成步数取设置（`cfgRef.current.numSteps`），不再写死常量 —— 写死 = 用户选了「清晰」也没用");
 ok(/numSteps: options\?\.numSteps \?\? (?:this\.currentSettings|settings)\.tts\.numSteps/.test(voiceService),
   "speak 把 numSteps 下发到 worker（漏下发 = worker 用默认 4，设置里的档位形同虚设）");
-ok(/tts: \{ \.\.\.settings\.tts, numSteps: Number\(v\) \}/.test(announceCard),
-  "设置页「播报音质」三档可选（写回 tts.numSteps，与播报/通话/试听共用）");
+ok(/tts: \{ \.\.\.settings\.tts, numSteps: Number\(v\) \}/.test(read("src/components/VoiceSettingsSection.tsx")),
+  "设置页「播报音质」三档可选（写回 tts.numSteps；11-12 起收进基础模型配置弹窗）");
 /* ⛔ 10-26：显示态改成 `enabled && ttsReady`（没装引擎时显示为关）——
    意图不变：这一张卡上**只有一个**总开关，别把「正文实时 / 汇总」两个旧开关加回来。 */
 ok(/checked=\{enabled && ttsReady\}/.test(announceCard) && /apply\(\{ announce: \{ enabled: e\.target\.checked \} \}\)/.test(announceCard)
@@ -1150,9 +1150,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     const enginesTsx2 = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
     const announceSrc = read("src/components/VoiceSettingsSection/10-announce.tsx");
     ok(/mossTts: \(\(\) => \{/.test(dirMain)
-      && /configured: remote\?\.ok === true/.test(dirMain)
+      && /configured: Boolean\(voiceId && apiKey\)/.test(dirMain)
       && /announceReadyCache = speech\.ready;/.test(dirMain),
-      "models-status 回 mossTts 配置态，播报就绪缓存直接采信 speech（⛔ 只认本机模型会误判）");
+      "models-status 回 mossTts 配置态（音色+密钥，与当前播报是否切 MOSS 解耦），就绪缓存采信 speech");
     /* 11-12 用户第二次实测：选了克隆音色时 MOSS 被跳过，页面却显示「MOSS 缺配置」且开关打不开。 */
     ok(/effective: "clone"/.test(dirMain) && /const profileId = String\(settings\.tts\?\.profileId/.test(dirMain)
       && /remote && remote\.ok === false/.test(dirMain) && /effective: "moss"/.test(dirMain),
@@ -1171,8 +1171,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/voice-tts-source/.test(announceSrc) && /基础模型（本机）/.test(announceSrc)
       && /付费云端（MOSS）/.test(announceSrc) && /onPickTtsSource/.test(announceSrc),
       "播报卡可直接选择生效模型（本机 / 云端 MOSS），配置仍在各自弹窗里");
-    ok(/!\(ttsRemote && !cloneSelected\)/.test(announceSrc) && /MOSS 播报不需要这一项/.test(announceSrc),
-      "播报走 MOSS 时隐藏「播报音质」（音质档只对本机合成有效，11-12 用户令）");
+    ok(!/播报音质/.test(announceSrc) && /播报音质/.test(read("src/components/VoiceSettingsSection.tsx"))
+      && /MOSS 播报不需要/.test(read("src/components/VoiceSettingsSection.tsx")),
+      "播报音质只对本机合成有效：从播报卡移除、收进基础模型配置弹窗（11-12 用户令）");
     ok(/const mossInUse = callBackend && Boolean\(moss\?\.configured\);/.test(enginesTsx2)
       && /const mossBroken = callBackend && !moss\?\.configured;/.test(enginesTsx2)
       && /配置不完整/.test(enginesTsx2),

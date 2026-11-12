@@ -508,8 +508,10 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
   const ttsEngineId = settings?.tts?.engine === "emotivoice" ? "emotivoice" : "vits";
   const cloneSelected = Boolean(settings?.tts?.profileId);
   const cloneReady = cloneSelected && zipVoiceReady;
+  /* ⛔ 是否"配置好"与"当前播报有没有切到 MOSS"解耦：音色 + 密钥齐备即算可切换，
+     否则本地播报时永远点不了云端（鸡生蛋问题）。 */
   const mossReady = packs.mossTts
-    || (settings?.tts?.remote === true && Boolean(settings?.remote?.["moss-tts"]?.voiceId) && mossLiveConfigured);
+    || (Boolean(settings?.remote?.["moss-tts"]?.voiceId) && mossLiveConfigured);
   const localReady = ttsEngineId === "emotivoice" ? packs.emotivoice : packs.base;
   const fallbackReady = cloneSelected ? cloneReady : localReady || mossReady;
   const ttsReady = typeof speech?.ready === "boolean" ? speech.ready : fallbackReady;

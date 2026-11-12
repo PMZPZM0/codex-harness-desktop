@@ -339,17 +339,25 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
           keyHint: c.apiKey ? c.apiKey.slice(-4) : "",
         };
       })(),
-      /* 11-12 联动：MOSS-TTS（播报）是否真的能合成 —— 远程播报不依赖本机模型。
-         与 `remoteTtsConfig` 同一判据（开启 + 音色 + 密钥）；只回状态不回密钥。 */
+      /* 11-12 联动：MOSS-TTS（播报）配置是否齐全 —— 远程播报不依赖本机模型。
+         ⛔ `configured` 必须与「播报是否切到 MOSS」**解耦**：只表示音色 + 密钥齐备。
+            以前用 remoteTtsConfig（它要求 tts.remote=true）⇒ 当前播报是本地时 configured=false，
+            一级界面就永远不让用户切到云端（用户实测「联动做起来啊」）。 */
       mossTts: (() => {
-        const remote = remoteTtsConfig(settings);
         const entry = settings.remote?.["moss-tts"];
+        const live = settings.remote?.["moss-live"];
+        const voiceId = String(entry?.voiceId ?? "").trim();
+        const apiKey = String(entry?.apiKey || live?.apiKey || "").trim();
         return {
           enabled: settings.tts?.remote === true,
-          configured: remote?.ok === true,
+          configured: Boolean(voiceId && apiKey),
           model: String(entry?.model ?? ""),
-          voiceId: String(entry?.voiceId ?? ""),
-          error: remote && remote.ok === false ? remote.error : "",
+          voiceId,
+          error: !voiceId
+            ? "还没选 MOSS 音色：到「付费云端模型」配置里点「查询音色」选一个"
+            : !apiKey
+              ? "MOSS 播报缺少 API 密钥：先在「付费云端模型」里保存密钥"
+              : "",
         };
       })(),
     };

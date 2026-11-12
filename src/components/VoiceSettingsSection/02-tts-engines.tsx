@@ -408,7 +408,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const cloneSelected = Boolean(settings?.tts?.profileId);
   const cloneReady = cloneSelected && zipVoiceReady;
   const mossTtsReady = mossTts?.configured === true
-    || (mossTts == null && ttsRemote && Boolean(savedMossTts?.voiceId) && Boolean(moss?.configured));
+    || (mossTts == null && Boolean(savedMossTts?.voiceId) && Boolean(moss?.configured));
   const speechReady = cloneSelected
     ? cloneReady
     : (typeof speech?.ready === "boolean" ? speech.ready : anyReady || mossTtsReady);

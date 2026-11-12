@@ -211,6 +211,55 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
               </div>
             </div>
             <div className="voice-subhead">
+              <strong>播报音质</strong>
+              <span className="voice-group-sub">只影响本机合成；步数越多越清晰、合成越慢，MOSS 播报不需要</span>
+            </div>
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <span>播报音质</span>
+                <span className="voice-card-value">{Number(settings.tts.numSteps ?? 4)} 步</span>
+              </div>
+              <div className="voice-card-body">
+                <AppSelect
+                  className="voice-input"
+                  value={String(Number.isFinite(Number(settings.tts.numSteps)) ? settings.tts.numSteps : 4)}
+                  onChange={(v) => apply({ tts: { ...settings.tts, numSteps: Number(v) } })}
+                  disabled={saving}
+                  ariaLabel="播报音质"
+                  options={[
+                    { value: "2", label: "极速 · 2 步（最跟手，略沙哑）" },
+                    { value: "4", label: "标准 · 4 步（默认，推荐）" },
+                    { value: "8", label: "清晰 · 8 步（更清晰，合成约慢一倍）" },
+                  ]}
+                />
+                <div className="voice-card-hint">觉得声音沙哑就调到「清晰」；觉得赶不上就选「极速」。与通话/试听共用 tts.numSteps。</div>
+              </div>
+            </div>
+            <div className="voice-subhead">
+              <strong>打断（仅本机）</strong>
+              <span className="voice-group-sub">MOSS-Live 由服务端判定打断，不需要这两项</span>
+            </div>
+            <VoiceSettingsSectionBargeMode apply={apply} saving={saving} settings={settings} />
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <Mic size={15} /><span>打断灵敏度</span>
+                <span className="voice-card-value">{settings.barge.gateDb} dB</span>
+              </div>
+              <div className="voice-card-body">
+                <input
+                  className="voice-range"
+                  type="range"
+                  min={3}
+                  max={12}
+                  step={1}
+                  value={settings.barge.gateDb}
+                  onChange={(e) => apply({ barge: { gateDb: Number(e.target.value), mode: settings.barge.mode } })}
+                  disabled={saving}
+                />
+                <div className="voice-card-hint">安静环境 6~8 / 外放或嘈杂 10~12 减少误触发</div>
+              </div>
+            </div>
+            <div className="voice-subhead">
               <span className="voice-group-tag is-optional">可选</span>
               <strong>用自己的声音（音色克隆）</strong>
               <span className="voice-group-sub">先装 156MB 的克隆模型，再导入或录一段参考音频；选中后优先于内置音色与 MOSS 播报</span>
@@ -318,7 +367,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
         <div className="voice-group-head">
           <span className="voice-group-step-badge">3</span>
           <strong>实时通话</strong>
-          <span className="voice-group-sub">按住快捷键说话、打断与悬浮球；识别细节在基础模型配置里</span>
+          <span className="voice-group-sub">按住快捷键说话、麦克风与悬浮球；打断与识别细节在基础模型配置里</span>
         </div>
 
       {/* 按键启动（全局快捷键） */}
@@ -329,30 +378,6 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
 
       {/* 麦克风 */}
       <VoiceSettingsSectionMicDevices apply={apply} micLevel={micLevel} micTesting={micTesting} mics={mics} saving={saving} settings={settings} toggleMicTest={toggleMicTest} />
-
-      {/* 打断方式 */}
-      <VoiceSettingsSectionBargeMode apply={apply} saving={saving} settings={settings} />
-
-      {/* 打断灵敏度 */}
-      <div className="voice-card">
-        <div className="voice-card-head">
-          <Mic size={15} /><span>打断灵敏度</span>
-          <span className="voice-card-value">{settings.barge.gateDb} dB</span>
-        </div>
-        <div className="voice-card-body">
-          <input
-            className="voice-range"
-            type="range"
-            min={3}
-            max={12}
-            step={1}
-            value={settings.barge.gateDb}
-            onChange={(e) => apply({ barge: { gateDb: Number(e.target.value), mode: settings.barge.mode } })}
-            disabled={saving}
-          />
-          <div className="voice-card-hint">安静环境 6~8 / 外放或嘈杂 10~12 减少误触发</div>
-        </div>
-      </div>
 
       {/* 悬浮球（显示 / 随机气泡） */}
       <VoiceSettingsSectionFloatingBall apply={apply} saving={saving} settings={settings} />
