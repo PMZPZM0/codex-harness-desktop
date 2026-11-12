@@ -179,11 +179,17 @@ export function topicThreadOf(threads, displayRow) {
   };
 }
 
+/* ⛔ 引用摘要必须在**折行之前**去掉宿主的机器信封：下面的 snippet 会把 `\s+` 折成单空格，
+   而 `[附件文件]\n- path\n[附件结束]` 一旦折行就变成 `[附件文件] - path`，行级解析器（user-refs.ts
+   的 fileMatch 依赖 `\n- `）再也匹配不到 ⇒ 引用里原样露出「[附件文件] - C:\\…」（11-12 用户截图）。
+   ⛔ 信封格式的真相源是 src/lib/user-refs.ts：改那边必须同改这里（守卫 12be 钉住两边都认附件段）。 */
+const QUOTE_ENVELOPE = /\[附件文件\][\s\S]*?\[附件结束\]|\[本轮已引用技能\][\s\S]*?\[请按上述技能工作流执行\]|\[用户指定的对话上下文\][\s\S]*?\[上下文结束\]/g;
+
 export function buildReplyQuotes(rows) {
   const out = new Map();
   let lastHuman = null;
   const lastByAuthor = new Map();
-  const snippet = (row) => String(row?.text ?? "").replace(/\s+/g, " ").trim().slice(0, FOLD_QUOTE_CHARS);
+  const snippet = (row) => String(row?.text ?? "").replace(QUOTE_ENVELOPE, " ").replace(/\s+/g, " ").trim().slice(0, FOLD_QUOTE_CHARS);
   for (const r of Array.isArray(rows) ? rows : []) {
     if (!r || !r.key) continue;
     const text = snippet(r);

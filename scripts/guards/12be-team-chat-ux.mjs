@@ -2057,5 +2057,28 @@ const catalog = [
     "纯函数源码钉住 || 回落（⛔ 退回 ?? 就是「换了头像只有半边界面变」）");
 }
 
+  /* ⛔⛔ 11-12 用户截图（「把群里的图片和文件展示，还有其他所有同步主对话框，这啥玩意啊」）：
+     群消息正文/引用把 `[附件文件]…[附件结束]` 信封原样当文字画出来，而主对话会解析成图片/文件 chip。
+     ⇒ 群聊复用主对话那套：parseUserRefs 剥信封 + MessageAttachChip 渲染附件（⛔ 不另造 chip）。 */
+  {
+    const attachments = read("src/features/harness-team/30-team-attachments.tsx");
+    const groupView = codeOnly(read("src/features/harness-team/04-team-group-view.tsx"));
+    ok(/parseUserRefs\(/.test(attachments) && /MessageAttachChip/.test(attachments)
+      && /openImageLightbox/.test(attachments) && /teamMessageBodyText/.test(attachments),
+      "群消息附件复用主对话：parseUserRefs 剥信封 + MessageAttachChip 渲染图片/文件（⛔ 不另造 chip）");
+    ok(/import \{ TeamMessageBody, teamMessageBodyText \} from "\.\/30-team-attachments"/.test(groupView)
+      && /<TeamMessageBody[\s\S]{0,120}raw=\{row\.text\}/.test(groupView)
+      && /text=\{teamMessageBodyText\(quote\.text, false\)\}/.test(groupView)
+      && !/text=\{quote\.text\}/.test(groupView),
+      "群气泡与「回复 @X」引用都走 teamMessageBodyText（⛔ 引用不再原样显示附件信封）");
+    ok(/export function MessageAttachChip/.test(read("src/features/shared/UserMessageView.tsx"))
+      && /\.team-msg__attachments \{/.test(read("src/styles/61-team-mode.css")),
+      "MessageAttachChip 从主对话导出复用；群附件行有样式（.team-msg__attachments）");
+    /* ⛔ 引用摘要（buildReplyQuotes）先把 `\s+` 折成单空格 ⇒ `[附件文件]\n- path` 变 `[附件文件] - path`，
+       行级解析器再也匹配不到 ⇒ 必须在折行前用 team-fold 自己的信封正则剥掉。两边同认「附件文件」防漂移。 */
+    ok(/附件文件/.test(codeOnly(read("src/lib/team-fold.mjs"))) && /附件文件/.test(codeOnly(read("src/lib/user-refs.ts"))),
+      "引用摘要（team-fold）与正文解析（user-refs）同认附件段（⛔ 折行前先剥，否则引用里露出信封）");
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

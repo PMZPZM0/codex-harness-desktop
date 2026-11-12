@@ -461,7 +461,10 @@ function UserMessageEditor({ initial, onCancel, onSubmit }: { initial: string; o
     </div>
   );
 }
-function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
+/** 气泡里的单个附件 chip（图片点开灯箱、文件点开预览）。
+ *  ⛔ 导出给群聊复用（11-12「群里的图片和文件展示同步主对话框」）——两边必须是同一个 chip，
+ *     不要再造一个长得像的。 */
+export function MessageAttachChip({ name, source, image, onOpenImage, onOpenFile }: {
   name: string;
   source: string;
   image: boolean;

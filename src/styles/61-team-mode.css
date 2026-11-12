@@ -254,6 +254,9 @@
 .team-msg__meta time { color: var(--faint); font-size: 11px; }
 .team-msg__text { margin: 4px 0 0; font-size: 13px; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
 .team-msg__card { margin: 4px 0 0; padding: 10px; border-radius: 8px; background: var(--panel); font-size: 11px; overflow: auto; }
+/* 群消息附件（11-12）：`[附件文件]` 段解析出的图片/文件 chip，复用主对话 .composer-image-chip-inline
+   （样式由 04-cards-tools 提供，这里只负责排成一行、贴正文之后）。 */
+.team-msg__attachments { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
 /* ── 输入区 ── */
 .team-group__composer {

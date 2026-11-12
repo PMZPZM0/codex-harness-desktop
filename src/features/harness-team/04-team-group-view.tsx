@@ -41,6 +41,9 @@ import { usageCachedTokens } from "../../lib/usage-cached-tokens";
 import { TeamCards } from "./11-team-cards";
 /* ⛔ 11-09 用户令「图二效果一模一样，直接把主对话那一套接过来」：伙伴回复整轮复用 TurnView。 */
 import { TeamTurnView } from "./29-team-turn-view";
+/* ⛔ 11-12 用户「把群里的图片和文件展示，还有其他所有同步主对话框」：群消息正文/引用里的
+   `[附件文件]…[附件结束]` 信封原来原样显示 ⇒ 统一走 parseUserRefs 剥掉 + 主对话同款附件 chip。 */
+import { TeamMessageBody, teamMessageBodyText } from "./30-team-attachments";
 import { DialogFlowScope } from "../../lib/dialog-flow-mode";
 import { TeamSidePanel, type TeamSideTab } from "./28-team-side-panel";
 import { openRightFile, subscribeRightFile } from "../../lib/right-file.mjs";
@@ -223,7 +226,7 @@ function TeamQuoteBlock({ quote, nameOf, faceOfId, mentionCandidates, mentionPar
         </button>
         <span>：</span>
         <TeamMentionText
-          text={quote.text}
+          text={teamMessageBodyText(quote.text, false)}
           candidates={mentionCandidates}
           faceOfId={faceOfId}
           nameOf={nameOf}
@@ -1818,13 +1821,15 @@ export function TeamGroupView({
                                 )}
                               />
                             ) : (
-                              <TeamMentionText
-                                text={stripVoiceScript(row.text)}
+                              <TeamMessageBody
+                                raw={row.text}
+                                isBot={isBot}
                                 candidates={mentionCandidates}
                                 faceOfId={faceOfId}
                                 nameOf={nameOf}
                                 onPick={mentionPartner}
                                 excludeId={row.authorId}
+                                onOpenFile={openFilePreview}
                               />
                             )}
                             {/* ⛔⛔ 11-08 用户（截图 3）：「我点出来的那个 @ 总是固定在消息下面，很不好看」——
