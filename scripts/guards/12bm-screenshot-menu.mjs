@@ -90,6 +90,24 @@ const settings = codeOnly(read("src/features/settings-screenshot/ScreenshotSetti
 ok(/acceleratorLabel/.test(settings) && !/\bhk\(/.test(settings),
   "设置页也改用同一个 acceleratorLabel（不再自己拼 Windows/mac 两种写法）");
 
+/* ── ⑦ 隐藏窗口开关（全屏 / 框选共用 hideWindow）──────────────────── */
+ok(/quick-menu-toggle/.test(composer) && /shotSettings\?\.settings\.hideWindow/.test(composer),
+  "菜单里有「隐藏本窗口」开关，状态取自 screenshot 设置（两种截图都按它执行）");
+ok(/screenshotSettingsSet\(\{ hideWindow: value \}\)/.test(composer)
+  && !/localStorage[^\n]*hideWindow/.test(composer),
+  "开关写回主进程 hideWindow（与设置页同一真相源，不另存一份）");
+ok(/\.quick-menu-switch/.test(css),
+  "开关样式在位（菜单面板内的小胶囊，不额外引一套控件）");
+
+/* ── ⑧ 截图覆盖层：铺满整屏 + 工具条留在屏内 ───────────────────────── */
+const overlayWin = codeOnly(read("electron/screenshot/overlay-window.ts"));
+ok(/thickFrame: false/.test(overlayWin) && /overlay\.setBounds\(\{/.test(overlayWin),
+  "覆盖层去掉 Windows 不可见边框并强制 setBounds（否则内容区被压成工作区高度、看不到屏幕底部）");
+const overlayPage = codeOnly(read("electron/screenshot/overlay-page.ts"));
+ok(/bx=Math\.max\(6,Math\.min\(bx,innerWidth-bw-6\)\)/.test(overlayPage)
+  && /by=Math\.max\(6,Math\.min\(by,innerHeight-bh-6\)\)/.test(overlayPage),
+  "工具条最终一律钳进可视区（全屏选区=整屏时不会跑到屏幕外）");
+
 console.log("");
 console.log(fails === 0
   ? `【screenshot-menu】通过（${checks} 条）`

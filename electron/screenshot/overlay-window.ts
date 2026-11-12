@@ -36,6 +36,11 @@ export function pickEdited(
       height,
       show: false,
       frame: false,
+      // ⛔ 11-12 实测：Windows 会给无边框窗口加一圈不可见 resize 边框，
+      //    内容区比屏幕矮 40px + 左右各 8px ⇒ 页面可视区只有 1040，工具栏被放到
+      //    1080（按选区底边算）时直接跑到屏幕外（用户报「选项都跑屏幕外面去了」）。
+      //    thickFrame:false 去掉那圈边框，内容区才真正等于屏幕。
+      thickFrame: false,
       transparent: false,
       resizable: false,
       movable: false,
@@ -56,6 +61,10 @@ export function pickEdited(
     });
     // 压过任务栏/其它置顶窗口；mac 上还要允许盖住全屏空间
     overlay.setAlwaysOnTop(true, "screen-saver");
+    /* ⛔ 11-12 实测（1080p + 40px 任务栏）：上面按 display.bounds 建窗仍会被 Windows 压成
+       **工作区高度**（内容区 1040）⇒ 屏幕底部 40px 既看不到也无法框选，工具栏按选区底边
+       定位还会跑到屏幕外。建窗后立刻 setBounds 再强制一次，盖满整块显示器（含任务栏）。 */
+    try { overlay.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width, height }); } catch { /* 平台不支持 */ }
     try { overlay.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true }); } catch { /* 平台不支持 */ }
 
     let settled = false;

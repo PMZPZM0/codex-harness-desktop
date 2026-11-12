@@ -85,11 +85,15 @@ export function buildOverlayHtml(guideDataUri: string, initialRect: OverlayRect 
     sizeTag.style.left=Math.max(4,tx)+'px';sizeTag.style.top=Math.max(4,ty)+'px';}
   function placeBar(){
     var r=rect(),bw=bar.offsetWidth||320,bh=bar.offsetHeight||40;
+    // 默认贴在选区右下外侧；放不下就收进选区内侧
     var bx=r.x+r.width-bw,by=r.y+r.height+10;
-    if(bx<6)bx=r.x;
     if(by+bh>innerHeight-6)by=r.y+r.height-bh-8;
-    if(by<6)by=Math.max(6,r.y-bh-8);
-    bar.style.left=Math.max(6,bx)+'px';bar.style.top=Math.max(6,by)+'px';
+    if(bx+bw>innerWidth-6)bx=r.x+r.width-bw;
+    // ⛔ 最后一律钳进**可视区**：全屏模式的选区就是整块屏幕，只按选区算会把工具条
+    //    顶到屏幕外（11-12 用户实测「选项都跑屏幕外面去了」）；视口比选区小时以视口为准。
+    bx=Math.max(6,Math.min(bx,innerWidth-bw-6));
+    by=Math.max(6,Math.min(by,innerHeight-bh-6));
+    bar.style.left=bx+'px';bar.style.top=by+'px';
   }
   // ---- 工具条 ----
   var tool='',color='#e24b4a';

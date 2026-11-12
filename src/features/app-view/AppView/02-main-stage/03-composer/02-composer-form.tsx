@@ -420,6 +420,14 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
       else setNotice(`截图失败：${result.error ?? "未知原因"}`);
     }).catch((error: unknown) => setNotice(`截图失败：${(error as { message?: string } | null)?.message ?? String(error)}`));
   };
+  /** 「截图前隐藏本窗口」：与设置页同一个 hideWindow（单一真相源），
+   *  改了落盘到主进程并广播 ⇒ 设置页与菜单两处同时变。 */
+  const setShotHideWindow = (value: boolean) => {
+    setShotSettings((current) => (current ? { ...current, settings: { ...current.settings, hideWindow: value } } : current));
+    void window.codex.screenshotSettingsSet({ hideWindow: value })
+      .then((snapshot) => setShotSettings(snapshot))
+      .catch((error: unknown) => setNotice(`保存失败：${(error as { message?: string } | null)?.message ?? String(error)}`));
+  };
   const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const form = event.currentTarget.closest(".composer") as HTMLElement | null;
     const editor = form?.querySelector(".composer-editor") as HTMLElement | null;
@@ -563,6 +571,14 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                 <div className="quick-menu-sep" role="separator" />
                                 <button type="button" data-shot-action="full" title="全屏截图（可框选与标注，成功后放进输入框）" onClick={() => takeShot("full")}><Camera size={16} /><span>全屏截图</span><kbd className="quick-menu-kbd">{shotHotkeyText("full")}</kbd></button>
                                 <button type="button" data-shot-action="region" title="框选截图（拖框选区、可标注，成功后放进输入框）" onClick={() => takeShot("region")}><Crop size={16} /><span>框选截图</span><kbd className="quick-menu-kbd">{shotHotkeyText("region")}</kbd></button>
+                                {/* 隐藏窗口（11-12 用户令「框选跟全屏都加一个是否隐藏窗口选项」）：
+                                    与设置页同一个 hideWindow，两种截图都按它执行。 */}
+                                <label className="quick-menu-toggle" title="勾选 = 截图前先把本应用窗口藏起来（全屏 / 框选都生效）">
+                                  <EyeOff size={16} />
+                                  <span>隐藏本窗口</span>
+                                  <input type="checkbox" disabled={!shotSettings} checked={Boolean(shotSettings?.settings.hideWindow)} onChange={(event) => setShotHideWindow(event.target.checked)} />
+                                  <i className="quick-menu-switch" aria-hidden />
+                                </label>
             
                             {/* 添加文件子菜单：暂只保留本地文件（云端入口待定，不留占位） */}
                             {attachSubmenu === "files" && <div className={`composer-quick-pop submenu-pop files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="files" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>
