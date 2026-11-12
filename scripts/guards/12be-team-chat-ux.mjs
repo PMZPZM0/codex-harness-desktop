@@ -2182,6 +2182,12 @@ const catalog = [
     ok(/toolCalls: teamToolsUsedSince\(threadId, startedAt\)/.test(ipc)
       && /同一件活\*\*不要重派\*\*/.test(ipc),
       "⑤ 派活证据按回合取真实工具名（⛔ 真派活不再甩「不可核实」假回执）+ 回喂文案禁止重派同一件活");
+    /* ⛔⛔ 11-12 真机回归（22:55）：防重复判据原来对**所有** `[系统]` ask 生效 ⇒ 成员交回后的
+       回喂回合（主理人只调 exec_command 核验产物）被判成"没派活=复述" ⇒ 「验收通过 ✅」被吞，
+       群里停在成员产出。⇒ 判据必须收窄到**催办类** ask（唯一正当目的就是逼它派活的那两种）。 */
+    ok(/const nudgeAsk = \/\^\\\[系统\\\]\\s\*你这一轮/.test(ipc)
+      && /const echoedNudge = Boolean\(nudgeAsk && !teamToolUsedSince/.test(ipc),
+      "⑤ 防重复只在**催办类** ask 生效（回喂 / 定时任务的验收结论必须落群 —— 真机回归 22:55 钉住）");
   }
   {
     const guardrails = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));

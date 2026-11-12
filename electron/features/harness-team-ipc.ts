@@ -1587,10 +1587,14 @@ async function runDispatchRounds(
          ✅ 用**事实判据**：催办回合的唯一正当目的是「真的把活派出去」——
             · 这一轮真调了派活工具 ⇒ 正文落群（那是事务性进展，与上一轮必然不同）；
             · 一个派活工具都没调 ⇒ 它只是在复述，**不落群**（只留日志 + 记失败，便于诊断）。
-         ⛔ 这不算"吞用户内容"：催办回合的上一轮正文已经完整落过盘，这里略过的是模型自我复述。 */
-      const nudgedTurn = /^\[系统\]/.test(String(bodyText ?? "").trim());
-      const dispatchUsedThisTurn = nudgedTurn ? teamToolUsedSince(threadId, startedAt) : false;
-      const echoedNudge = Boolean(nudgedTurn && !dispatchUsedThisTurn);
+         ⛔ 这不算"吞用户内容"：催办回合的上一轮正文已经完整落过盘，这里略过的是模型自我复述。
+         ⛔⛔ 11-12 真机回归（22:55，我上一版判据吞掉了结论）：成员交回后的**回喂** ask 也以
+         `[系统]` 开头（`[系统] 这一批 1 件：交回 1 件…`），而这一轮主理人只调 `exec_command`
+         核验产物 ⇒ 被旧判据判成"没派活=复述"⇒ 它写的「验收通过 ✅」被吞，群里停在成员产出，
+         用户看到「效果也不对」。⇒ 判据收窄到**催办类 ask**（唯一正当目的就是逼它派活的那两种）；
+         回喂 / 定时任务这类 ask 的正文本身就是验收结论，⛔ 不许拦。 */
+      const nudgeAsk = /^\[系统\]\s*你这一轮(?:没有派任何成员|已经调过团队工具)/.test(String(bodyText ?? "").trim());
+      const echoedNudge = Boolean(nudgeAsk && !teamToolUsedSince(threadId, startedAt));
       const duplicated = Boolean(duplicateRow) || echoedNudge;
       /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
       const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
