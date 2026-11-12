@@ -1961,6 +1961,17 @@ const catalog = [
     && /export async function reconcileDeletedThreadArtifacts/.test(read("electron/features/thread-deletion.ts"))
     && /await reconcileDeletedThreadArtifacts\(\)/.test(read("electron/features/boot.ts")),
     "无残留双保险：删群同步清工作区/角色/私有记忆；启动按墓碑对账补漏");
+  /* ⛔⛔ 11-12 用户：「专家团还要管理员，你这机制搞错了吧」「这个卡片丑死了」。
+     团群由团主理人担任管理员 ⇒ 完成屏不许再提示"还差一个管理员"/给下拉；
+     布局按 DESIGN.md：收窄卡片、内容有内边距、去掉卡中卡的灰底块。 */
+  const createSrc = read("src/features/harness-team/12-team-create.tsx");
+  ok(/const isTeamGroup = picked\.some/.test(createSrc)
+    && /管理员已就位：团主理人/.test(createSrc)
+    && !/团群不用设/.test(createSrc)
+    && /team-created__body/.test(createSrc)
+    && /\.team-sheet__card\.team-created \{ width: min\(480px/.test(read("src/styles/61-team-mode.css"))
+    && /\.team-created__hint \{[\s\S]{0,220}border-left/.test(read("src/styles/61-team-mode.css")),
+    "团群不再提示设管理员；完成屏收窄、有内边距、去掉卡中卡");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

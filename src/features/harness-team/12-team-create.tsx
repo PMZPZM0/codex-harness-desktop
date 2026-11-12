@@ -236,16 +236,21 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
     }
   };
 
+  /* ⛔⛔ 11-12 用户：「专家团还要管理员，你这机制搞错了吧」—— 团群由团主理人担任管理员。
+     判定与 04-team-group-view 的 adminSeatOf 同口径：picked 里有 team 槽就是团群。 */
+  const isTeamGroup = picked.some((p) => p.kind === "team");
+
   if (!open) return null;
 
   /* ⛔⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
-     建完先给一屏：**都有谁**（名单）+ **还缺一个管理员**（它管什么），再进群。 */
+     建完先给一屏：**都有谁**（名单）+ **管理员是谁**（它管什么），再进群。 */
   if (done) {
     return (
       <div className="team-sheet" role="dialog" aria-modal="true" aria-label="群已创建">
         <div className="team-sheet__card team-created">
+          <div className="team-created__body">
           <h2 className="team-created__title">群已建好：{done.name}</h2>
-          <p className="team-created__lead">成员（{picked.length} 位伙伴 + 你）：</p>
+          <p className="team-created__lead">成员（含你）：</p>
           {picked.length > 0 ? (
             <ul className="team-created__members">
               {picked.map((p) => (
@@ -259,36 +264,53 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
             /* ⛔ 审查补：允许"先建群、之后再加伙伴" ⇒ 空名单要给一句话，别留一个空 ul。 */
             <p className="team-created__lead">还没有伙伴 —— 进群后在「群设置 → 添加伙伴」里加。</p>
           )}
-          <div className="team-created__hint">
-            <strong>{adminPick ? "管理员已设好" : "还差一个管理员"}</strong>
-            <p>
-              管理员是群里的<strong>默认推进人</strong>：你不 @ 任何人时由它接话、拆解、分派、验收、收口；
-              出问题也找它，不用你追着每个人问。
-            </p>
-            {onSetAdmin && done.id && picked.length > 0 ? (
-              <label className="team-created__admin">
-                <span>现在就设</span>
-                <select
-                  value={adminPick}
-                  disabled={adminSaving}
-                  onChange={(e) => void pickAdmin(e.target.value)}
-                >
-                  <option value="">不设（进群后也可在群设置里改）</option>
-                  {picked.map((p) => (
-                    <option key={`${p.kind}:${p.key}`} value={`tgt:${p.kind}:${p.key}`}>
-                      {p.name}{p.profession ? ` · ${p.profession}` : ""}
-                    </option>
-                  ))}
-                </select>
-                {adminSaving && <em className="team-created__admin-state">保存中…</em>}
-                {adminError && <em className="team-created__admin-state is-warn">{adminError}</em>}
-              </label>
-            ) : (
-              <p>进群后输入框上方会提示你设置，也可以在「群设置 → 群管理员」里随时改。</p>
-            )}
+          {/* ⛔⛔ 11-12 用户截图：「专家团还要管理员，你这机制搞错了吧」。
+              管理员是**群级身份**：团群由团主理人担任（群设置页 / 群内提醒条都是这个口径），
+              完成屏原来却无条件提示「还差一个管理员」还把整团槽列进下拉 ⇒ 自相矛盾。
+              ⇒ 团群只陈述事实，不给设置入口。 */}
+          {isTeamGroup ? (
+            <div className="team-created__hint">
+              <strong>管理员已就位：团主理人</strong>
+              <p>
+                这个群绑定了专家团，团主理人就是管理员：你不 @ 任何人时由它接话、
+                拆解、分派、验收、收口；出问题也找它，不用你追着每个人问。无需再设置。
+              </p>
+            </div>
+          ) : (
+            <div className="team-created__hint">
+              <strong>{adminPick ? "管理员已设好" : "还差一个管理员"}</strong>
+              <p>
+                管理员是群里的默认推进人：你不 @ 任何人时由它接话、拆解、分派、验收、收口；
+                出问题也找它，不用你追着每个人问。
+              </p>
+              {onSetAdmin && done.id && picked.length > 0 ? (
+                <label className="team-created__admin">
+                  <span>现在就设</span>
+                  <select
+                    value={adminPick}
+                    disabled={adminSaving}
+                    onChange={(e) => void pickAdmin(e.target.value)}
+                  >
+                    <option value="">不设（进群后也可在群设置里改）</option>
+                    {picked.map((p) => (
+                      <option key={`${p.kind}:${p.key}`} value={`tgt:${p.kind}:${p.key}`}>
+                        {p.name}{p.profession ? ` · ${p.profession}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {adminSaving && <em className="team-created__admin-state">保存中…</em>}
+                  {adminError && <em className="team-created__admin-state is-warn">{adminError}</em>}
+                </label>
+              ) : (
+                <p>进群后输入框上方会提示你设置，也可以在「群设置 → 群管理员」里随时改。</p>
+              )}
+            </div>
+          )}
           </div>
           <footer className="team-sheet__foot">
-            <span className="team-sheet__foot-hint">团群不用设：由团主理人担任</span>
+            <span className="team-sheet__foot-hint">
+              {isTeamGroup ? "管理员由团主理人担任，无需设置" : "进群后也可在「群设置 → 群管理员」里改"}
+            </span>
             <button
               type="button"
               className="is-primary"

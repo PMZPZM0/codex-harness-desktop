@@ -3550,10 +3550,35 @@
 
 /* ⛔ 11-12 用户：「创建完成普通专家群之后，弹窗提醒+成员名单」。
    这一屏只做三件事：确认建好（群名）/ 都有谁（名单）/ 还缺管理员（它管什么）。 */
-.team-created__title { margin: 0 0 10px; font-size: 15px; font-weight: 600; color: var(--text, #1f2328); }
-.team-created__lead { margin: 0 0 6px; font-size: 12px; color: var(--faint, #8b949e); }
+/* ⛔⛔ 11-12 用户：「而且这个卡片丑死了，什么狗屁布局啊」。
+   病根三条：① 完成屏内容没有内边距，直接贴 740px 卡片边；
+             ② 里面又套一整块灰底卡（卡中卡，DESIGN.md 点名的反模式）；
+             ③ 标题 / 正文 / 下拉挤在一起，层级靠 padding 堆。
+   ⇒ 卡片收窄到 480、内容统一 24px 内边距、说明改成左侧细竖线（无底色）、
+     下拉竖排独占一行；间距按 4/8 节奏（组内 4~8，组间 16）。 */
+.team-sheet__card.team-created { width: min(480px, 100%); }
+.team-created__body { padding: 20px 24px 16px; }
+.team-created .team-sheet__foot { padding-left: 24px; padding-right: 24px; }
+.team-created__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text, #1f2328);
+}
+.team-created__title::before {
+  content: "";
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--link);
+}
+.team-created__lead { margin: 0 0 8px; font-size: 12px; color: color-mix(in srgb, var(--text) 55%, transparent); }
 .team-created__members {
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   padding: 0;
   list-style: none;
   display: flex;
@@ -3564,52 +3589,44 @@
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  padding: 3px 9px;
+  padding: 4px 10px;
   border-radius: 999px;
-  background: var(--surface-2, rgba(127, 127, 127, 0.10));
+  background: color-mix(in srgb, var(--text) 7%, transparent);
   font-size: 12px;
 }
 .team-created__members li strong { font-weight: 600; color: var(--text, #1f2328); }
-.team-created__members li em { font-style: normal; font-size: 11px; color: var(--faint, #8b949e); }
+.team-created__members li em { font-style: normal; font-size: 11px; color: color-mix(in srgb, var(--text) 55%, transparent); }
 .team-created__hint {
-  margin-bottom: 14px;
-  padding: 9px 11px;
-  border-radius: 8px;
-  /* ⛔ 11-12 用户：「刚刚那个弹窗也是，丑死了」—— 同一个病：`--warning*` 不存在 ⇒ 土黄大底色。
-     这里也改中性面板（灰底 + 细边），标题保持主文字色，靠字重而不是颜色分层。 */
-  background: color-mix(in srgb, var(--text) 4%, transparent);
-  border: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  margin: 0;
+  padding: 0 0 0 12px;
+  border-left: 2px solid color-mix(in srgb, var(--link) 45%, transparent);
   font-size: 12px;
-  line-height: 1.7;
-  color: color-mix(in srgb, var(--text) 72%, transparent);
+  line-height: 1.6;
+  color: color-mix(in srgb, var(--text) 68%, transparent);
 }
-.team-created__hint strong { display: block; margin-bottom: 3px; color: var(--text); font-weight: 600; }
-.team-created__hint p { margin: 0 0 3px; }
-.team-created__hint p:last-child { margin-bottom: 0; }
-
-/* ⛔ 11-12 用户：「这里还不能直接设置管理员？」—— 完成屏直接选。
-   原生 select 的颜色跟随根 `color-scheme`（项目已在 01-base 里按明暗设好），⛔ 不用 appearance:none
-   （那会把自带的箭头干掉，用户不知道能点）。 */
+.team-created__hint strong { display: block; margin-bottom: 4px; color: var(--text); font-weight: 600; font-size: 12px; }
+.team-created__hint p { margin: 0; }
+.team-created__hint p + p { margin-top: 4px; }
 .team-created__admin {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-top: 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  margin-top: 10px;
   font-size: 12px;
 }
-.team-created__admin > span { color: var(--text-secondary, #57606a); }
+.team-created__admin > span { color: color-mix(in srgb, var(--text) 55%, transparent); }
 .team-created__admin select {
-  min-width: 190px;
-  max-width: 100%;
-  padding: 3px 8px;
-  border: 1px solid var(--border, rgba(127, 127, 127, 0.28));
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid color-mix(in srgb, var(--text) 18%, transparent);
   border-radius: 6px;
-  background: var(--surface, transparent);
+  background: var(--panel, transparent);
   color: var(--text, #1f2328);
   font-size: 12px;
 }
-.team-created__admin-state { font-style: normal; font-size: 11px; color: var(--faint, #8b949e); }
+.team-created__admin-state { font-style: normal; font-size: 11px; color: color-mix(in srgb, var(--text) 55%, transparent); }
 .team-created__admin-state.is-warn { color: var(--danger, #d1242f); }
 
 /* ⛔⛔ 11-12 用户：「群里汇总出字效果能不能加一下，现在是闪出来的，界面也跟着闪一下」。
