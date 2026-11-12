@@ -78,7 +78,10 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
       let steered = false;
       if (runningTurn) {
         bag.armPinForReleasedQueue(threadId, "steer");
-        settlePendingSteers(threadId, [entry.id]);
+        /* ⛔ 11-12 用户实测「点了立即，上屏有延迟」：这里**不能提前 settle**。
+           原先在 steer 请求前就摘掉待并入气泡，arm→take→settle 全在同一个同步 tick 里
+           ⇒ React 还没来得及画，气泡就没了；用户只能等引擎回声（1s+）才看到消息。
+           现在气泡保持「sending」出现在流末尾，等 steer 返回后再交给真实回声。 */
         try {
           await window.codex.request("turn/steer", {
             threadId,
@@ -93,6 +96,7 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
             /* 撤掉刚建立的钉顶意图（意图悬空会去钉别的消息 / 视口莫名跳回旧消息）。
                这条没发出去、也**没被删** ⇒ 仍在队列里，排队面板会把它重新列出来，用户可以再点立即。 */
             bag.disarmPinIntent("steer-fail");
+            settlePendingSteers(threadId, [entry.id]);
             if (isCurrent()) bag.showToast("插队消息发送失败", message, threadId);
             continue;
           }
@@ -104,6 +108,7 @@ async function deliverPendingSteers(bag: Bag, threadId: string) {
           bag.dbg("steer-stale-fallback", { threadId, message });
         }
         if (steered) {
+          settlePendingSteers(threadId, [entry.id]);
           void bag.setQueuedTimer(threadId, entry.id, null, { silent: true });
           await window.codex.request("thread/queue/delete", { threadId, queuedSubmissionId: entry.id }).catch(() => undefined);
           if (isCurrent()) {

@@ -92,6 +92,12 @@ export async function run() {
   (queueArmCalls >= 4 ? ok : fail)(`【53】排队释放的三条路径都建立钉顶意图（定义+3 处调用，实测 ${queueArmCalls}）`);
   (/"auto-start"/.test(appSrc53) && /"steer"/.test(appSrc53) && /"queue-start"/.test(appSrc53)
     ? ok : fail)("【53】自动启动 / 立即插队 / 立即开新回合 都覆盖");
+  /* ⛔ 11-12 用户实测「立即上屏有延迟」：待并入气泡不能在 steer 请求前摘掉（arm→take→settle
+     同一同步 tick，React 还没画就没了，只能等引擎回声）。顺序必须是：先 steer，成功后再 settle。 */
+  (/"steer"\);[\s\S]{0,900}?await window\.codex\.request\("turn\/steer"/.test(appSrc53)
+    && !/"steer"\);\s*\n\s*settlePendingSteers/.test(appSrc53)
+    && /if \(steered\) \{\s*settlePendingSteers\(threadId, \[entry\.id\]\);/.test(appSrc53)
+    ? ok : fail)("【53】立即插队：先上屏（sending 气泡）再 steer，成功后交接给引擎回声（不提前摘气泡）");
   // 只对**正在看的**会话建立意图：给后台会话设了会抢走视口
   (/threadId !== threadRef\.current\?\.id\) return;/.test(appSrc53)
     ? ok : fail)("【53】只对当前可见会话建立钉顶意图（后台会话不抢视口）");
