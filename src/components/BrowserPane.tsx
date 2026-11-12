@@ -54,6 +54,9 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
   /* 加载失败诊断（10-17 用户令「空白页排查」）：did-fail-load 主框架失败落这里，
      界面上给错误条 + 「改用新窗口打开」退路 —— ⛔ 不再静默空白。 */
   const [loadError, setLoadError] = useState<{ code: number; desc: string; url: string } | null>(null);
+  /* 11-11 用户「本地端口经常 ERR_EMPTY_RESPONSE」：本地服务常常「先打印地址、几百毫秒后才开始监听」
+     （或 OAuth 回调端口刚起就被打开）。本机 URL 失败自动重试两次，仍失败才落错误条。 */
+  const localRetryRef = useRef<Map<string, number>>(new Map());
   const wvRef = useRef<HTMLElement | null>(null);
   const seqRef = useRef(1);
 
@@ -66,6 +69,7 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
   const navigate = useCallback((raw: string) => {
     const url = normalizeUrl(raw);
     if (!url) return;
+    localRetryRef.current.delete(url);
     patchActive({ url });
     setDraft(url);
   }, [patchActive]);
@@ -175,9 +179,23 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
       const info = event as unknown as { errorCode?: number; errorDescription?: string; url?: string; isMainFrame?: boolean };
       if (info.isMainFrame === false) return;
       if (info.errorCode === -3) return; // ABORTED：用户主动停止/跳转，不算失败
-      setLoadError({ code: info.errorCode ?? 0, desc: info.errorDescription ?? "未知错误", url: info.url ?? "" });
+      const url = info.url ?? "";
+      /* 本机端口：连接被拒 / 空响应 / 超时 = 服务可能还在启动 ⇒ 自动重试两次。 */
+      const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$|\?|#)/i.test(url);
+      const retriable = isLocal && [-102, -105, -324, -7].includes(info.errorCode ?? 0);
+      const tries = localRetryRef.current.get(url) ?? 0;
+      if (retriable && tries < 2) {
+        localRetryRef.current.set(url, tries + 1);
+        setLoadError({ code: info.errorCode ?? 0, desc: `${info.errorDescription ?? "未知错误"} · 正在重试（${tries + 1}/2）…`, url });
+        window.setTimeout(() => {
+          try { (wvRef.current as unknown as { reload?: () => void })?.reload?.(); } catch { /* guest 未就绪 */ }
+        }, 900);
+        return;
+      }
+      localRetryRef.current.delete(url);
+      setLoadError({ code: info.errorCode ?? 0, desc: info.errorDescription ?? "未知错误", url });
     };
-    const clearFail = () => setLoadError(null);
+    const clearFail = () => { localRetryRef.current.clear(); setLoadError(null); };
     const onGone = (event: Event) => {
       const d = (event as unknown as { details?: { reason?: string; exitCode?: number } }).details ?? {};
       setLoadError({ code: d.exitCode ?? -1, desc: `渲染进程崩溃（${d.reason ?? "unknown"}）`, url: "" });
@@ -317,9 +335,17 @@ export default function BrowserPane({ onOpenExternal, variant, pendingOpen }: { 
                 <div className="browser-pane-loaderror-body">
                   <strong>页面加载失败（{loadError.code}）：{loadError.desc}</strong>
                   <small>{loadError.url}</small>
+                  {/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$|\?|#)/i.test(active.url) && (
+                    <small className="browser-pane-loaderror-hint">
+                      本地服务可能还没启动或已停止；授权类页面建议用系统浏览器打开（回调链接只认一次）。
+                    </small>
+                  )}
                 </div>
                 <div className="browser-pane-loaderror-actions">
-                  <button type="button" onClick={() => { setLoadError(null); go("reload"); }}>重试</button>
+                  <button type="button" onClick={() => { setLoadError(null); localRetryRef.current.delete(active.url); go("reload"); }}>重试</button>
+                  {/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$|\?|#)/i.test(active.url) && (
+                    <button type="button" onClick={() => { if (onOpenExternal) onOpenExternal(active.url); else void window.codex.openExternal(active.url); }}>系统浏览器打开</button>
+                  )}
                   <button type="button" onClick={() => { setLoadError(null); void window.codex.browserPopout(active.url).catch((error: any) => setStealthHint(error?.message ?? "新窗口打开失败")); }}>改用新窗口打开</button>
                 </div>
               </div>

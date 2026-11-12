@@ -58,5 +58,14 @@ ok(/!popoutThreadId && <DevPortBridge app=\{app\} threadId=\{thread\?\.id \?\? "
 ok(/id: "dev-port"/.test(read("scripts/accept.mjs")),
   "验收项在位（accept.mjs 的 dev-port）");
 
+/* ── ⑤ 本地端口加载失败：自动重试 + 系统浏览器退路（11-11 用户「侧边栏经常这样」）── */
+const pane = codeOnly(read("src/components/BrowserPane.tsx"));
+ok(/const localRetryRef = useRef<Map<string, number>>\(new Map\(\)\)/.test(pane) && /tries < 2/.test(pane) && /\[-102, -105, -324, -7\]/.test(pane),
+  "本机端口失败自动重试两次（连接被拒 / 空响应 / 超时）");
+ok(/系统浏览器打开/.test(pane) && /本地服务可能还没启动或已停止/.test(pane),
+  "失败条给出「系统浏览器打开」（授权回调类页面）与原因提示");
+ok(/localRetryRef\.current\.delete\(url\)/.test(pane),
+  "手动导航会重置重试计数（不会一次失败就永久放弃）");
+
 console.log(`\n【dev-port】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
