@@ -1531,7 +1531,9 @@ const catalog = [
   const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
   ok(/listTalkThreads\(\)\.filter\(\(row\) => row\.groupId === gid\)/.test(ipc)
     && /const \{ removed, failed \} = await deleteEngineThreads\(threads\)/.test(ipc)
-    && /forgetTalkThreads\(threads\.filter\(\(tid\) => !failedSet\.has\(tid\)\)\)/.test(ipc),
+    && /const removedIds = threads\.filter\(\(tid\) => !failedSet\.has\(tid\)\)/.test(ipc)
+    && /forgetTalkThreads\(removedIds\)/.test(ipc)
+    && /cleanupThreadArtifacts\(removedIds\)/.test(ipc),
     "删群：会话清单 = 群消息里的 threadId ∪ 台账里本群的会话；只清**删成功**的台账（删失败的留着下次自愈重试）");
   ok(/async function healOrphanTalkThreads/.test(ipc)
     && /if \(!existsSync\(file\)\) return;/.test(ipc)
@@ -1946,6 +1948,12 @@ const catalog = [
     "⛔ 没有未结束任务时不给可展开的壳（点了什么都不发生比不能点更糟）");
   ok(/\.team-tasks__pop\s*\{/.test(cssProg) && /summary::-webkit-details-marker/.test(cssProg),
     "浮层有样式且去掉 details 默认三角（三角会把 1px 内边距的胶囊撑开）");
+  /* ⛔⛔ 11-12 用户令「删必须同步清理干净」：实测删 3 个群后仍有 6 个 team-runs 账本
+     （266 KB）+ 3 条 thread-runtime 登记 ⇒ 删除路径必须在同一次请求里同步清掉。 */
+  ok(/async forgetThread\(threadId: string\)/.test(read("electron/team-runs.ts"))
+    && /cleanupThreadArtifacts\(removedIds\)/.test(read("electron/features/harness-team-ipc.ts"))
+    && /threadRuntimeStore\.flush\(\)/.test(read("electron/features/harness-team-ipc.ts")),
+    "删群同步清运行账本与线程运行时登记（⛔ 不等下次启动自愈）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);

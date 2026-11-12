@@ -339,6 +339,50 @@ export class TeamRunStore {
    *  ⛔ 09-14 用户实测 bug：活跃中的委托只进内存（activeRuns），落盘发生在结束时——
    *  用户在成员运行中关掉工作弹窗再点开历史，listRuns 只读落盘文档 → 显示「还没有
    *  历史工作记录」，跑完才出现。这里把同会话的活跃 run（含实时 output）一并合并返回。 */
+  /**
+   * ⛔⛔ 11-12 用户令「删必须同步清理干净」：解散群 / 删除会话时，
+   *   把该会话的团队运行账本与线程归属台账**在同一次操作里**清掉。
+   *   原实现只有写入路径，删群后 `team-runs/<leadThreadId>.json` 全部留在磁盘上（实测 6 个 / 266 KB）。
+   *   ⛔ 先掐掉待写 timer —— 否则删完文件又被 120ms 后的合并落盘写回来。
+   */
+  async forgetThread(threadId: string): Promise<{ ok: boolean; runsFile: boolean; threads: number }> {
+    const id = String(threadId ?? "").trim();
+    if (!id) return { ok: true, runsFile: false, threads: 0 };
+    const timer = this.runsWriteTimers.get(id);
+    if (timer) { clearTimeout(timer); this.runsWriteTimers.delete(id); }
+    this.runsCache.delete(id);
+    /* 活跃运行表也一起摘，避免 activeRunList() 还把已删会话算成"在跑"。 */
+    for (const [key, runId] of this.activeByThread) {
+      const run = this.activeRuns.get(runId);
+      if (run && (String(run.leadThreadId) === id || String(run.memberThreadId) === id)) {
+        this.activeByThread.delete(key);
+        this.activeRuns.delete(runId);
+      }
+    }
+    let runsFile = false;
+    try {
+      await fsp.unlink(this.runsFile(id));
+      runsFile = true;
+    } catch (err) {
+      /* 文件本来就不存在 = 已经清干净，不算失败。 */
+      if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") return { ok: false, runsFile, threads: 0 };
+      runsFile = true;
+    }
+    this.ensureThreadsLoaded();
+    let threads = 0;
+    if (delete this.threadsDoc.threads[id]) threads += 1;
+    if (delete this.threadsDoc.leads[id]) threads += 1;
+    for (const [key, value] of Object.entries(this.threadsDoc.members)) {
+      if (String(value) === id) { delete this.threadsDoc.members[key]; threads += 1; }
+    }
+    if (threads) {
+      if (this.threadsWriteTimer) { clearTimeout(this.threadsWriteTimer); this.threadsWriteTimer = null; }
+      try { fs.writeFileSync(this.threadsFile, JSON.stringify(this.threadsDoc), "utf8"); }
+      catch { return { ok: false, runsFile, threads: 0 }; }
+    }
+    return { ok: true, runsFile, threads };
+  }
+
   async listRuns(leadThreadId: string): Promise<TeamMemberRun[]> {
     if (!leadThreadId) return [];
     const activeHere = [...this.activeRuns.values()].filter((run) => run.leadThreadId === leadThreadId);

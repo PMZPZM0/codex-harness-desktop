@@ -70,7 +70,7 @@ import {
 } from "../../src/lib/team-schedule.mjs";
 /* ⛔ 停止运行复用引擎侧的活动回合表（threadId → turnId）：这是**唯一真相源**，
    别在这里自己记一份"我以为在跑什么"（两处必然漂）。 */
-import { codexHome, delegateRegistry, engineActiveTurnIds, server, teamRunStore, threadCwd } from "../runtime-refs";
+import { codexHome, delegateRegistry, engineActiveTurnIds, server, teamRunStore, threadCwd, threadRuntimeStore } from "../runtime-refs";
 /* ⛔ 11-11：团群主理人会话的工具面升级（附录 Z：只能改 rollout 首行，且必须赶在引擎 spawn 之前）。 */
 import { syncToolSurfaceAsync } from "../rollout-pool";
 import { stopTeamRuns, consumeTalkCancel, clearTalkCancel, type TeamStopInput } from "./harness-team-stop";
@@ -594,6 +594,32 @@ async function prepareGroupDispatch(
 /** 派活轮次（慢：一轮可能跑几分钟）。⛔ 调用方一律 `void` 它，不许 await。 */
 /* ⛔ 删群 / 自愈 / 派活三处共用的「删引擎会话」：先中断在跑的回合（否则引擎拒绝删），
    删失败降级 archive。模块作用域（`runDispatchRounds` 在 setup 之外，也要用它）。 */
+/**
+ * ⛔⛔ 11-12 用户令「有残留的话机制就再加强一下，删必须同步清理干净」。
+ * 删群时 `thread/delete` 只清引擎会话与 rollout；磁盘上的 **团队运行账本**
+ * （`team-runs/<leadThreadId>.json`）与 **线程运行时登记**（`thread-runtime.json`）
+ * 原来要等下次启动的反向联动 / 自愈才处理，实测就留下了 6 个账本 + 3 条登记。
+ * ⇒ 这里在**同一次删除请求里**同步清掉，⛔ 只清引擎会话确实删成功的那些（删失败的留作重试依据）。
+ */
+async function cleanupThreadArtifacts(ids: string[]): Promise<{ runs: number; runtime: number; failed: string[] }> {
+  const out = { runs: 0, runtime: 0, failed: [] as string[] };
+  for (const id of [...new Set(ids)].filter(Boolean)) {
+    let ok = true;
+    try {
+      const r = await teamRunStore.forgetThread(id);
+      if (!r.ok) ok = false;
+      else if (r.runsFile) out.runs += 1;
+    } catch { ok = false; }
+    try {
+      if (await threadRuntimeStore.remove(id)) out.runtime += 1;
+    } catch { ok = false; }
+    if (!ok) out.failed.push(id);
+  }
+  /* remove() 只是 scheduleSave()（120ms 合并落盘）⇒ 这里显式 flush，才叫"同一次删除里清干净"。 */
+  try { await threadRuntimeStore.flush(); } catch { /* 落盘失败：下次启动的反向联动仍会兜底 */ }
+  return out;
+}
+
 async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: number; failed: string[] }> {
   let removed = 0;
   const failed: string[] = [];
@@ -2489,9 +2515,12 @@ async function healOrphanTalkThreads(): Promise<void> {
       /* 只清**删成功**的台账：删失败的留着，渲染层的「伙伴」标签会一直挂着 —— 这正是提醒
          （下次启动自愈会再试），⛔ 不能一把清光让它们变成永远没人管的孤儿会话。 */
       const failedSet = new Set(failed);
-      forgetTalkThreads(threads.filter((tid) => !failedSet.has(tid)));
+      const removedIds = threads.filter((tid) => !failedSet.has(tid));
+      forgetTalkThreads(removedIds);
+      /* ⛔ 同步清磁盘残留：运行账本 / 线程运行时登记，不等下次启动自愈。 */
+      const artifacts = await cleanupThreadArtifacts(removedIds);
       broadcastHarnessEvent({ type: "team-talk-threads-changed", at: Date.now() } as never);
-      return { ok: true, id: gid, removedThreads: removed, totalThreads: threads.length, failed };
+      return { ok: true, id: gid, removedThreads: removed, totalThreads: threads.length, failed, artifacts };
     });
 
     /* 清空聊天记录（用户 11-06：「没有清空记录功能」）。
