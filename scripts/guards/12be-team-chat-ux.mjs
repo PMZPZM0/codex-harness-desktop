@@ -543,10 +543,10 @@ const catalog = [
       && !/activeRunList\(\)\.some\(\(run\) => String\(run\.teamId/.test(fallback),
       "成员交回显式 @ 主理人（结构化 handoffTo + 名字行标签），回喂按 leadThreadId 不串群");
     /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
-       判据必须排除提问/询问，⛔ 不能只看字数。 */
-    ok(/const askLike = \/\[\?？\]/.test(teamIpcSrc)
-      && /if \(askLike\) return false;/.test(teamIpcSrc)
-      && /leadTurnTaskLike/.test(teamIpcSrc),
+       问句判定收进 isInfoRequest（真值表在 11f）；这里钉接线，⛔ 旧内联窄词表不许复活。 */
+    ok(/if \(isInfoRequest\(text\)\) return false;/.test(teamIpcSrc)
+      && /leadTurnTaskLike/.test(teamIpcSrc)
+      && !/const askLike = /.test(teamIpcSrc),
       "催办只认「布置任务」：提问/询问一律不算（⛔ 否则答完又被催一轮 = 同一问题回两次）");
     /* ⛔⛔ 11-12 审查修的两处（都只影响"看得对不对"，但会让用户判"又坏了"）：
        ① queued 用裸 memberId、running 用合成 id ⇒ 同一个人两行；

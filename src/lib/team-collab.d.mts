@@ -11,6 +11,8 @@ export declare function continueSignalOf(text: unknown): string;
 export declare function progressOf(input?: { createdTasks?: number; writtenFiles?: number; ackedHandoffs?: number }): number;
 export declare function pendingOf(handoffs: unknown): Handoff[];
 export declare function settleHandoffs(handoffs: unknown, now: unknown, timeoutMs: unknown): Handoff[];
+/** 用户这句是「提问 / 要信息」还是「布置任务」（催办门用；信息类提问不该再被催一轮）。 */
+export declare function isInfoRequest(text: unknown): boolean;
 export declare function classifyTurn(input?: {
   text?: unknown;
   handoffTo?: unknown;

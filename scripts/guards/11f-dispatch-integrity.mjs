@@ -789,6 +789,30 @@ try {
     ok(bad.length === 0,
       `协作判据：点了人=handoff / 有人等=wait / 收口词=wrap / 有推进=continue / 连续空转=wrap / 预算耗尽=wrap${bad.length ? `（不符：${bad.map(([g]) => g.action).join("、")}）` : " —— 六种全部符合"}`);
   }
+  /* ⛔⛔ 11-12 用户截图（同一个问题自动回复两条）：用户问「告诉我你的团队擅长什么」，
+     主理人答完信息后宿主又催它"去派活"⇒ 多一条「这是信息答复…收口」。根因是问句判据太窄
+     （只看行首 + 窄词表）。判据收进 isInfoRequest 纯函数，这里**真跑**：信息类必须判 true、
+     布置任务必须判 false。⛔ 首条就是事故原句，改回窄词表会当场红。 */
+  {
+    const collab = await import(pathToFileURL(join(ROOT, "src", "lib", "team-collab.mjs")).href);
+    const info = [
+      "告诉我你的团队擅长什么", "你们团队擅长什么", "你们是怎么分工的", "介绍一下你们团队",
+      "群聊，工具，你有哪些", "你们能做什么？", "谁负责视觉", "这个流程是怎样的",
+    ];
+    const task = [
+      "帮我写一篇公众号文案", "给这个产品做一张海报", "把这段草稿润色一下", "分析上周的数据并出报告",
+    ];
+    const missInfo = info.filter((t) => !collab.isInfoRequest(t));
+    const falseTask = task.filter((t) => collab.isInfoRequest(t));
+    ok(missInfo.length === 0 && falseTask.length === 0,
+      `问句判据：信息类提问不算派活（含事故原句「告诉我你的团队擅长什么」）${missInfo.length ? `（漏判：${missInfo.join("、")}）` : ""}${falseTask.length ? `（误判任务：${falseTask.join("、")}）` : ""}`);
+    /* 接线：IPC 的催办门必须真的调这个纯函数，⛔ 不许在 IPC 里另写一套问句正则。 */
+    const ipcNudge = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
+    ok(/import \{ classifyTurn, isInfoRequest, settleHandoffs \}/.test(ipcNudge)
+      && /if \(isInfoRequest\(text\)\) return false;/.test(ipcNudge)
+      && !/const askLike = /.test(ipcNudge),
+      "催办门复用 isInfoRequest（⛔ 旧的内联 askLike 窄词表不许复活）");
+  }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),

@@ -59,7 +59,7 @@ import {
 } from "../../src/lib/team-models.mjs";
 import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsableFor, type GroupUsage } from "../../src/lib/team-usage.mjs";
 /* ⛔ 11-10 用户令「界定什么时候收尾、什么时候继续推进」：判据是纯函数，⛔ 不在这里写 if 堆。 */
-import { classifyTurn, settleHandoffs } from "../../src/lib/team-collab.mjs";
+import { classifyTurn, isInfoRequest, settleHandoffs } from "../../src/lib/team-collab.mjs";
 /* ⛔ 11-10「异常落到责任人」的标记解析（纯函数，守卫真跑）。 */
 import { dutyKeyOf, parseDuty } from "../../src/lib/team-duty.mjs";
 /* ⛔ 11-10 群记忆：按「群类型 + 座位」注入（专家群 / 专家团群 / CLI 智能体群各一套）。
@@ -1783,16 +1783,14 @@ async function runDispatchRounds(
              ⇒ 群里出现两条几乎一样的开场白，用户以为出了故障。
              ⇒ 只有「这一轮用户真的给了活」才催办：去掉 @ 之后的正文 ≥6 字，且不是纯应答词。 */
           const leadTurnTaskLike = (() => {
-            const plainRaw = String(text ?? "").replace(/@[^\s：:]+/g, "").trim();
-            /* ⛔⛔⛔ 11-12 用户截图（同一个问题，回复两次）：用户问「群聊，工具，你有哪些」，
-               主理人答完一条工具清单，宿主又催它一轮 ⇒ 它再解释「上一轮是答工具清单，没有可派的活」。
-               根因：这里的判据只看**字数**（去掉 @ 后 ≥6 字），提问也算"给了活"。
-               ⇒ 提问 / 询问类一律不算派活：⛔ 宁可漏催一次，也不能把"回答"当成"该推进了"。 */
-            const askLike = /[?？]\s*$/.test(plainRaw)
-              || /^(谁|什么|怎么|如何|为什么|为啥|哪|哪些|能不能|可不可以|是不是|有没有|有多少|在吗)/.test(plainRaw)
-              || /(有哪些|有什么|是什么|能干什么|干什么的|会什么|在哪|多少)/.test(plainRaw);
-            if (askLike) return false;
-            const plain = plainRaw.replace(/\s+/g, "");
+            /* ⛔⛔ 11-12 用户截图（同一个问题，回复两次）：用户问「告诉我你的团队擅长什么」，
+               主理人答完一条信息，宿主又催它一轮 ⇒ 它再解释「这是信息答复，没有成品要派，收口」。
+               根因：旧判据只看**行首**问句词 + 一张窄词表，「…擅长什么」这种问句词在句中、
+               又不在词表里的，全被当成"给了活"。⇒ 问句判定收进纯函数 isInfoRequest
+               （问句词任意位置 + 信息类动词，守卫真值表钉死），⛔ 不在这里再写第二套。
+               ⛔ 宁可漏催一次，也不能把"回答"当成"该推进了"。 */
+            if (isInfoRequest(text)) return false;
+            const plain = String(text ?? "").replace(/@[^\s：:]+/g, "").replace(/\s+/g, "");
             if (plain.length < 6) return false;
             return !/^(在|在吗|好|好的|行|嗯|收到|可以|ok|OK|继续|你好|谢谢)[。！!？?~～.…]*$/.test(plain);
           })();
