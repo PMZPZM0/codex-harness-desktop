@@ -15,20 +15,15 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Camera, Check, Crop, FolderOpen, Keyboard, RotateCcw, TriangleAlert, X } from "lucide-react";
-import { hk } from "../../lib/hk";
+import { acceleratorLabel } from "../../lib/hotkey.mjs";
 import { isMacPlatform } from "../../lib/is-mac-platform";
 
 export type ScreenshotSettingsSectionProps = { onNotice?: (message: string) => void };
 
-/** Electron accelerator → 界面显示：Windows 把 CommandOrControl 写成 Ctrl，mac 交给 hk() 出符号。 */
+/** Electron accelerator → 界面显示：与输入框「+」菜单同源（lib/hotkey 的 acceleratorLabel），
+ *  两处各写一份会在改键后出现两种写法。 */
 function hotkeyText(accelerator: string): string {
-  const raw = String(accelerator ?? "");
-  if (!raw) return "";
-  const windowsStyle = raw
-    .replace(/CommandOrControl/gi, "Ctrl")
-    .replace(/\bCommand\b/gi, "Win")
-    .replace(/\bSuper\b/gi, "Win");
-  return hk(windowsStyle);
+  return acceleratorLabel(accelerator, isMacPlatform() ? "darwin" : "win32");
 }
 
 const MODE_LABEL: Record<ShotMode, string> = { full: "全屏截图", region: "框选截图" };

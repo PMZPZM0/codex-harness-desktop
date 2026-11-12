@@ -19,6 +19,8 @@ import {
   ArrowUpRight,
   Bot,
   Brain,
+  Camera,
+  Crop,
   QrCode,
   Star,
   Check,
@@ -151,6 +153,8 @@ import { EffortPicker } from "../../../../../components/EffortPicker";
 import { ComposerEditor, ComposerMenu, ThreadFilePicker } from "../../../../composer";
 import { ComposerRail } from "../../../../composer-rail/ComposerRail";
 import { basename } from "../../../../../lib/basename";
+import { acceleratorLabel } from "../../../../../lib/hotkey.mjs";
+import { isMacPlatform } from "../../../../../lib/is-mac-platform";
 import { contextTriggerOf, filterMentionTargets, mentionEnterPlan, mentionKeyOf, mentionKindLabel } from "../../../../../lib/dispatch-mention.mjs";
 import { agentAvatarKindOf } from "../../../../../lib/agent-avatars.mjs";
 import { AgentAvatar } from "../../../../../components/AgentAvatar";
@@ -376,6 +380,46 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
       window.removeEventListener("pointercancel", up);
     };
   }, [composerDragging]);
+
+  /* ── 「+」菜单里的截图按键（11-12 用户令：「把设置里面的截图快捷键，和按键放这里面来」）──
+     两种模式各一个按键，右侧小键帽显示当前快捷键。
+     ⛔ 快捷键必须**联动**（用户原话「万一修改了，也要联动展示」）：打开菜单取一次主进程设置，
+        主进程每次改设置/改键都广播 screenshot-settings-changed；没有这条订阅，
+        设置页改完键、菜单里还是旧键帽。⛔ 展示走 lib/hotkey 的 acceleratorLabel（与设置页同源）。 */
+  const [shotSettings, setShotSettings] = useState<ScreenshotSettingsSnapshot | null>(null);
+  useEffect(() => {
+    if (!attachmentMenuOpen) return;
+    let alive = true;
+    void window.codex.screenshotSettingsGet()
+      .then((snapshot) => { if (alive) setShotSettings(snapshot); })
+      .catch(() => undefined);
+    return () => { alive = false; };
+  }, [attachmentMenuOpen]);
+  useEffect(() => window.codex.onHarnessEvent((event: unknown) => {
+    const payload = event as { type?: string; settings?: ScreenshotSettings; registered?: ScreenshotSettingsSnapshot["registered"]; errors?: ScreenshotSettingsSnapshot["errors"] } | null;
+    const nextSettings = payload?.settings;
+    if (payload?.type !== "screenshot-settings-changed" || !nextSettings) return;
+    setShotSettings((current) => (current
+      ? { ...current, settings: nextSettings, registered: payload.registered ?? current.registered, errors: payload.errors ?? current.errors }
+      : current));
+  }), []);
+  /** 键帽文案：未启用或没设置时显示「未设置」，不让一个空键帽冒充可用快捷键。 */
+  const shotHotkeyText = (mode: ShotMode) => {
+    const slot = shotSettings?.settings?.[mode];
+    if (!slot?.enabled || !slot.accelerator) return "未设置";
+    return acceleratorLabel(slot.accelerator, isMacPlatform() ? "darwin" : "win32");
+  };
+  /** 点菜单里的截图按键：复用 screenshot:capture 正式通道（与快捷键、设置页「试试截图」同一条链路），
+   *  成功后主进程推 screenshot:captured ⇒ 图自动进输入框；这里只负责关菜单与失败提示。 */
+  const takeShot = (mode: ShotMode) => {
+    setAttachmentMenuOpen(false);
+    setAttachSubmenu("none");
+    void window.codex.screenshotCapture(mode).then((result) => {
+      if (result.ok) return;
+      if (result.canceled) setNotice("已取消截图");
+      else setNotice(`截图失败：${result.error ?? "未知原因"}`);
+    }).catch((error: unknown) => setNotice(`截图失败：${(error as { message?: string } | null)?.message ?? String(error)}`));
+  };
   const onResizePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     const form = event.currentTarget.closest(".composer") as HTMLElement | null;
     const editor = form?.querySelector(".composer-editor") as HTMLElement | null;
@@ -515,6 +559,10 @@ export function ComposerComposerForm({ app }: { app: HarnessAppApi }) {
                                     打开时实时刷新一次 —— 与技能子菜单同款：收藏可能被设置页/另一个窗口
                                     改过，镜像不刷新就会显示过期列表（删掉的还在、新加的看不到）。 */}
                                 <button type="button" data-submenu-open={attachSubmenu === "favorites" || undefined} onMouseEnter={() => { scheduleSubmenu("favorites"); void refreshFavorites(); }} onMouseLeave={scheduleSubmenuClose} onClick={() => { setAttachSubmenu((current) => current === "favorites" ? "none" : "favorites"); setFavoriteQuery(""); void refreshFavorites(); }}><Star size={16} /><span>收藏夹</span>{favorites.length > 0 && <em className="submenu-count">{favorites.length}</em>}<ChevronDown size={14} className="submenu-chevron" /></button>
+                                {/* 截图（11-12 用户令）：直接做成两个按键，右侧键帽显示快捷键并随设置联动。 */}
+                                <div className="quick-menu-sep" role="separator" />
+                                <button type="button" data-shot-action="full" title="全屏截图（可框选与标注，成功后放进输入框）" onClick={() => takeShot("full")}><Camera size={16} /><span>全屏截图</span><kbd className="quick-menu-kbd">{shotHotkeyText("full")}</kbd></button>
+                                <button type="button" data-shot-action="region" title="框选截图（拖框选区、可标注，成功后放进输入框）" onClick={() => takeShot("region")}><Crop size={16} /><span>框选截图</span><kbd className="quick-menu-kbd">{shotHotkeyText("region")}</kbd></button>
             
                             {/* 添加文件子菜单：暂只保留本地文件（云端入口待定，不留占位） */}
                             {attachSubmenu === "files" && <div className={`composer-quick-pop submenu-pop files-submenu ${submenuFlip ? "flip-left" : ""}`} data-submenu-panel="files" style={{ "--submenu-top": `${submenuTop}px` } as CSSProperties}>

@@ -2287,6 +2287,30 @@
   font-size: 10.5px;
   font-style: normal;
 }
+/* 「+」菜单里的截图按键（11-12）：分隔线 + 右侧快捷键键帽。
+   ⛔ 键帽内容由渲染层按主进程设置实时生成（改键后跟着变），CSS 只管样子。 */
+.quick-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line-soft);
+}
+.composer-quick-pop > button > .quick-menu-kbd {
+  flex: none;
+  margin-left: auto;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  line-height: 17px;
+  white-space: nowrap;
+  /* 用户改成长组合键时也不能把 218px 的面板撑破（超出按省略号收口） */
+  max-width: 62%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .composer-quick-pop .favorites-submenu .submenu-list {
   max-height: 264px;
   overflow-y: auto;

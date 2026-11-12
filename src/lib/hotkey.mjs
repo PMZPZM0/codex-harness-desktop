@@ -39,3 +39,21 @@ export function macHotkeyLabel(label) {
 export function hotkeyLabel(label, platform) {
   return platform === "darwin" ? macHotkeyLabel(label) : String(label ?? "");
 }
+
+/**
+ * Electron accelerator → 界面展示文案（设置页与输入框「+」菜单共用同一份）。
+ *
+ * mac 直接把 accelerator 交给 macHotkeyLabel（CommandOrControl / Command / Super 都出 ⌘）；
+ * 其它平台先把 CommandOrControl / Command / Super 写成 Ctrl / Win，再原样返回。
+ * ⛔ mac 上**不能**先把 Command 换成 Win —— mac 记录的组合键就是 Command（⌘），换完会显示成 Win。
+ * 边界：空串回落空串（调用方负责显示「未设置」）；不做合法性校验（那是 sanitizeAccelerator 的事）。
+ */
+export function acceleratorLabel(accelerator, platform) {
+  const raw = String(accelerator ?? "");
+  if (!raw) return "";
+  if (platform === "darwin") return macHotkeyLabel(raw);
+  return raw
+    .replace(/CommandOrControl/gi, "Ctrl")
+    .replace(/\bCommand\b/gi, "Win")
+    .replace(/\bSuper\b/gi, "Win");
+}

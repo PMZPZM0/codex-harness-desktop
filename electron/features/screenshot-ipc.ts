@@ -26,7 +26,7 @@ import {
   type ScreenshotSettings,
   type ShotMode,
 } from "../screenshot";
-import { allBusWindows, sendToWindow } from "./window-bus";
+import { allBusWindows, broadcastHarnessEvent, sendToWindow } from "./window-bus";
 import { copyImageFileToClipboard } from "./clipboard-ipc";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -67,6 +67,18 @@ function fire(mode: ShotMode) {
   void capture(mode).catch((error: unknown) => console.error(`[screenshot] ${mode} 失败：`, error));
 }
 
+/** 设置/热键变更后广播给所有窗口：输入框「+」菜单与快捷键一览靠它实时更新展示
+ *  （11-12 用户令「快捷键展示记得联动，万一修改了，也要联动展示」）。
+ *  ⛔ 广播的是主进程归一化后的设置，渲染层不自己抄默认值。 */
+function emitSettingsChanged(settings: ScreenshotSettings) {
+  broadcastHarnessEvent({
+    type: "screenshot-settings-changed",
+    settings,
+    registered: { ...hotkeys.registered },
+    errors: { ...hotkeyError },
+  });
+}
+
 /** 启动时按已保存设置注册一次（与语音热键同口径：注册失败只记录，不阻断启动）。 */
 function registerSavedHotkeys() {
   void readScreenshotSettings(userDataDir()).then((settings) => {
@@ -102,6 +114,7 @@ async function screenshotSettingsSet(patch: Partial<ScreenshotSettings>) {
     if (!result.ok) hotkeyError[mode] = result.error;
     else delete hotkeyError[mode];
   }
+  emitSettingsChanged(next);
   return { settings: next, registered: { ...hotkeys.registered }, errors: { ...hotkeyError } };
 }
 
@@ -113,6 +126,7 @@ async function screenshotHotkeySet(input: { mode: ShotMode; accelerator?: string
     // 关掉这个模式：注销 + 落盘 enabled=false（保留 accelerator 供下次开回来）
     const applied = hotkeys.apply(mode, "", () => fire(mode));
     const next = await writeScreenshotSettings(userDataDir(), { [mode]: { enabled: false, accelerator: current[mode].accelerator } } as any);
+    emitSettingsChanged(next);
     return { ok: applied.ok, error: applied.error, settings: next };
   }
   // ⛔ 先注册、成功才落盘：注册失败时若先落盘，配置里存的就是一个注册不上的死键，
@@ -120,10 +134,12 @@ async function screenshotHotkeySet(input: { mode: ShotMode; accelerator?: string
   const applied = hotkeys.apply(mode, accelerator, () => fire(mode));
   if (!applied.ok) {
     hotkeyError[mode] = applied.error;
+    emitSettingsChanged(current);
     return { ok: false, error: applied.error, settings: current };
   }
   delete hotkeyError[mode];
   const next = await writeScreenshotSettings(userDataDir(), { [mode]: { enabled: true, accelerator } } as any);
+  emitSettingsChanged(next);
   return { ok: true, settings: next, registered: { ...hotkeys.registered } };
 }
 
