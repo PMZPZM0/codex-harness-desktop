@@ -585,12 +585,16 @@ const catalog = [
      runTalkTurn）不经过 canDispatchFrom，照常可用。 */
   const dispatchCore = codeOnly(read("electron/features/dispatch-core.ts"));
   const dispatchRpc = codeOnly(read("electron/features/dispatch-rpc.ts"));
-  ok(/lookupGroupThread\(threadId\)\)\s*return \{ restricted: true, label: "工作伙伴会话", dispatchOnly: true \}/.test(dispatchCore),
+  ok(/lookupGroupThread\(threadId\)\) return \{ groupThread: true \}/.test(dispatchCore)
+    && /groupMember \|\| f\.groupThread\) return "workPartner"/.test(read("src/lib/session-kind.mjs"))
+    && /dispatch: false, bossGroup: false, scheduler: true, knowledge: true, cliInstall: true/.test(read("src/lib/session-kind.mjs")),
     "工作伙伴的伙伴会话没有对外调度权限（子会话一律不给 agent_invoke；群聊投递不受影响）");
   /* ⛔ 用户原话「**只关调度权限**」：知识库写入 / 定时任务 / CLI 安装这些非调度能力照旧
-     （三处闸必须显式放过 dispatchOnly —— 漏一处就是把整包专家限制套到伙伴头上）。 */
-  ok((dispatchRpc.match(/restrict\.restricted && !restrict\.dispatchOnly/g) || []).length >= 3,
-    "「只关调度」= 知识库 / 定时任务 / CLI 安装三处闸显式放过 dispatchOnly");
+     （11-12 起三处闸统一读能力矩阵 `caps.knowledge/scheduler/cliInstall` —— ⛔ 不许退回
+     `restricted && !dispatchOnly` 的第二套判据，那种写法加一类会话就要改四处）。 */
+  ok(/!restrict\.caps\.knowledge/.test(dispatchRpc) && /!restrict\.caps\.scheduler/.test(dispatchRpc)
+    && /!restrict\.caps\.cliInstall/.test(dispatchRpc),
+    "「只关调度」= 知识库 / 定时任务 / CLI 安装三处闸读能力矩阵（工作伙伴放行，专家/团队/被调度全拒）");
 }
 
 /* ── ⑬ 艾特可见 + 群聊提示词不裸露 + 会话可分辨（11-07 真机两张截图）────────── */

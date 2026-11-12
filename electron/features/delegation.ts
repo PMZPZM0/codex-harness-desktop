@@ -25,6 +25,8 @@ import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { ensureSessionAlias, supervisorLabelOf } from "../session-alias";
 import { buildDispatchCatalog, restrictedThreadRole } from "../features/dispatch-core";
+/* 11-12 会话类型隔离：「没有来源会话」时用矩阵的普通会话形态（⛔ 别手写字面量） */
+import { roleOfKind } from "../../src/lib/session-kind.mjs";
 import { readCustomModel, originSessionModel } from "../main/01-model-catalog";
 import { TURN_WAIT_BACKGROUND_NOTE, TURN_WAIT_TIMEOUT_CODE, turnOutputText, waitForTurnCompletion } from "../main/03-turn-summary";
 import { readSubAgents, type SubAgentConfig } from "../main/09-agents-plugins";
@@ -61,7 +63,7 @@ export async function runDelegatedTask(input: {
   // ── 许可与身份校验（10-29：不再有「调度总开关 / 全局独占锁」）──
   const originDispatch = origin ? (await threadRuntimeStore.get(origin))?.dispatch : null;
   // 身份闸：专家 / 专家团 / 被调度的会话一律不许**对外**派人（团内协作走 teams:invoke-member，不受此限）
-  const originRestrict = origin ? await restrictedThreadRole(origin) : { restricted: false };
+  const originRestrict = origin ? await restrictedThreadRole(origin) : roleOfKind("normal");
   const gate = canDispatchFrom({
     isDelegated: Boolean(originRecord),
     depth: originRecord?.depth ?? 0,

@@ -10,6 +10,9 @@ import { LEGACY_PREFIX, dispatchSignature, emptyDispatch, emptyRuntime, isOwnEch
 import { markDelegateThread } from "../../../../../lib/team-runtime.mjs";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
+/* 11-12 会话类型隔离：类型与能力矩阵的唯一真相源（渲染层注册工具面 / 主进程执行端硬闸都读它）。 */
+import { roleOfKind, type SessionKind, type ThreadRoleState } from "../../../../../lib/session-kind.mjs";
+import { getBossThreads, isBossSessionContext } from "../../../../boss-group-view";
 
 /** bag 分片 06a2：多窗口运行态一致性（主进程权威值 → 镜像 → React 状态）。⛔ 当前值必须走 ref，闭包捕获 state 会拿到首帧旧值。 */
 export function usePart06a2(bag: Bag) {
@@ -39,18 +42,28 @@ bag.dispatchInfo = dispatchInfo as typeof bag.dispatchInfo; bag.setDispatchInfo 
 bag.delegateRecords = delegateRecords as typeof bag.delegateRecords; bag.setDelegateRecords = setDelegateRecords as typeof bag.setDelegateRecords;
 
 
-  // 受保护会话（专家 / 专家团 / 被调度的临时会话）：调度按钮直接禁用 ——
-  // 这些会话有自己的团内协作通道，对外派人会让「谁在干活」失控（用户 09-16 明确要求）。
-  const [threadRole, setThreadRole] = useState<{ restricted: boolean; label?: string }>({ restricted: false });
+  /* 会话类型 + 能力矩阵（11-12 用户令：五类会话全用 ID 隔离）。
+     ⛔ 11-12 前这里只有一个布尔 `restricted`，工具面只按它开合 ⇒ 工作伙伴主理人拿到了
+        BOSS 群编排工具，自己建演示群自导自演。现在类型与能力只有一份（lib/session-kind.mjs），
+        主进程返回 kind，渲染层只补一件主进程看不到的事实：**没建群的中枢**（登记在 localStorage）。 */
+  const [threadRole, setThreadRole] = useState<ThreadRoleState>(() => roleOfKind("normal"));
 bag.threadRole = threadRole as typeof bag.threadRole; bag.setThreadRole = setThreadRole as typeof bag.setThreadRole;
 
 
   const refreshThreadRole = useCallback(async (threadId?: string) => {
-    if (!threadId) { bag.setThreadRole({ restricted: false }); return; }
+    if (!threadId) { bag.setThreadRole(roleOfKind("normal")); return; }
     try {
       const res: any = await window.codex.threadRole(threadId);
-      bag.setThreadRole(res?.restricted ? { restricted: true, label: String(res.label ?? "专家 / 专家团") } : { restricted: false });
-    } catch { bag.setThreadRole({ restricted: false }); /* 拿不到不误禁（主进程硬闸仍在） */ }
+      const kindIn = String(res?.kind ?? "") as SessionKind;
+      /* 中枢判定：主进程只认「有群的 bossThreadId」，而刚点出来的中枢可能还没有群 ⇒
+         渲染层用同一个判据（bossIds / sessionIds，⛔ 不看标题、不看 cwd）补上。 */
+      const kind: SessionKind = kindIn === "normal" || !kindIn
+        ? (isBossSessionContext(getBossThreads(), threadId) ? "hub" : "normal")
+        : kindIn;
+      /* ⛔ 不再用主进程的 restricted 覆盖本地矩阵值：两者同源（roleOfKind），
+         混用只会出现「kind=hub 但 restricted=true」的自相矛盾态。 */
+      bag.setThreadRole(roleOfKind(kind));
+    } catch { bag.setThreadRole(roleOfKind("normal")); /* 拿不到不误禁（主进程硬闸仍在） */ }
   }, []);
 bag.refreshThreadRole = refreshThreadRole as typeof bag.refreshThreadRole;
 

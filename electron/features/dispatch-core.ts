@@ -28,46 +28,62 @@ import { readSubAgents } from "../main/09-agents-plugins";
 import { CLI_CATEGORIES, cliInstalledFlags, readUsableCliAgents } from "../cli-agents";
 import { delegateRegistry, teamRunStore } from "../runtime-refs";
 import { lookupGroupThread } from "./group-talk";
+/* 11-12 用户令「五类会话全用 ID 隔离开，工具也是」：类型与能力矩阵**只有这一份**，
+   渲染层注册工具面与主进程执行端硬闸都读它（⛔ 别再写 `restricted && !dispatchOnly` 第二套判据）。 */
+import { roleOfKind, sessionKindOf, type SessionFacts, type ThreadRoleState } from "../../src/lib/session-kind.mjs";
 // ── 调度（09-15）：让 Codex 在任意会话里调度 专家 / 专家团 / 子智能体 干活 ─────────────
 // 四层防护里主进程负责的部分：L3 执行侧硬闸、L4 并发/深度闸、L1 持久指令。
 // L2（注册侧不给工具）在渲染层，但那一层防不住「线程复用 / 竞态 / 以后有人改错注册点」——
 // 所以真正的安全边界是下面这行 canDispatchFrom：**给了工具也不认**。
 
-/** 「不允许开调度」的会话识别（09-16 用户要求：专家会话 / 专家团会话也要禁用掉）。
- *  覆盖三类：① 被调度产生的临时会话（delegateRegistry）② 专家团会话（主理人 + 成员）
- *  ③ 单人专家的直达会话 —— ③ 走的是同一条 member-session 链路（单人专家 = 只有 lead 的团队），
- *  所以 teamRunStore 里的 thread→team 映射一并覆盖。 */
-async function restrictedThreadRole(threadId: string): Promise<{ restricted: boolean; label?: string; dispatchOnly?: boolean }> {
-  if (!threadId) return { restricted: false };
-  if (await delegateRegistry.infoOf(threadId)) return { restricted: true, label: "被调度的临时会话" };
-  if (teamRunStore.teamOfThread(threadId)) return { restricted: true, label: "专家 / 专家团" };
-  /* 11-03 用户令「任何子会话都不能有调度权限」：只要会话有上级（别名表 supervisorThreadId），
-     它就是被派活的子会话 —— 包括群成员、团队直达成员等未走 delegateRegistry 的路径。
-     ⛔ 主会话没有上级，不受影响；团队主理人的内部调度走 team_member_invoke，另有主理人硬闸。 */
+/** 会话类型 + 能力（唯一真相源 = `src/lib/session-kind.mjs`，⛔ 本函数只**取事实**、不判类型）。
+ *  11-12 用户令：「普通会话 / 中枢会话 / 专家团会话 / 专家会话 / 工作伙伴会话，全用 ID 隔离开，
+ *  禁止串，工具也是」—— 改造前这里只有一个布尔，五类压成两档，于是同一道闸在四处各写一遍
+ *  （`restricted && !dispatchOnly`），加一类会话就要改四处、漏一处就串一条。 */
+export type ThreadRole = ThreadRoleState;
+
+const NORMAL_ROLE: ThreadRole = roleOfKind("normal");
+
+/** 取归属事实 → 交给 `sessionKindOf` 判类型。⛔ 这里**不许**写「谁是受限会话」的判断，
+ *  否则又变成第二套判据（改类型要改两处 = 必有一条漏掉，正是 11-12 事故的形态）。 */
+async function threadKindFacts(threadId: string): Promise<SessionFacts> {
+  /* ① 被 agent_invoke 派出来的临时会话。 */
+  if (await delegateRegistry.infoOf(threadId).catch(() => null)) return { delegate: true };
+  /* ② 团队表（主理人 / 成员直达 / 委托成员线程）—— 11-03 用户令「任何子会话都不能有调度权限」。
+     ⛔ 单人专家 = 只有 lead 的团队 ⇒ 单独归 `expert`（标签与记忆边界不同，工具面相同）。 */
+  const teamId = teamRunStore.teamOfThread(threadId);
+  if (teamId) {
+    const teams = await readUsableExpertTeams().catch(() => [] as Awaited<ReturnType<typeof readUsableExpertTeams>>);
+    const team = (teams ?? []).find((entry) => String(entry?.teamId ?? "") === String(teamId));
+    return { team: true, teamSolo: Boolean(team && (team.members ?? []).length === 0) };
+  }
+  /* ③ 有上级（别名表 supervisorThreadId）⇒ 被派活的子会话，包括群成员、团队直达成员等
+     未走 delegateRegistry 的路径。⛔ 主会话没有上级，不受影响。 */
   const alias = await aliasRecordOf(threadId).catch(() => null);
-  if (alias?.supervisorThreadId) return { restricted: true, label: "被调度的子会话" };
-  /* 兜底：群成员即使别名表尚未写入，也在 boss-groups.json 的 members.threadId 里。 */
+  if (alias?.supervisorThreadId) return { supervised: true };
+  /* ④⑤ 群归属：群成员（boss-groups.json 的 members）或工作伙伴群台账。
+     ⛔⛔ 11-10 用户令「创建定时工具要给工作伙伴里面的智能体都配套上」：这类会话
+        **只关调度**（不许再派专家/团 —— 那会套娃），定时任务与知识库照旧 ——
+        那正是"团队自己按节奏推进"的入口。⛔ 与「外面的定时功能」不混：仍然是同一个
+        scheduler（同一张 tasks 表、同一套 rrule、同一个执行器），⛔ 不另造群定时。 */
   const boss = await bossStore.load().catch(() => null);
   if (boss) {
     for (const group of Object.values(boss.groups ?? {})) {
       if ((group.members ?? []).some((member) => String(member.threadId ?? "") === threadId)) {
-        /* ⛔⛔ 11-10 用户令「创建定时工具要给工作伙伴里面的智能体都配套上」：
-           群成员会话**只关调度**（不许再派专家/团 —— 那会套娃），
-           但定时任务照旧可以建 —— 那正是"团队自己按节奏推进"的入口。
-           ⛔ 与「外面的定时功能」不混：仍然是**同一个 scheduler**（同一张 tasks 表、同一套 rrule、
-             同一个执行器），这里只是把"谁能建"放开一格，⛔ 不另造群定时。 */
-        return { restricted: true, dispatchOnly: true, label: "群成员会话" };
+        return { groupMember: true };
       }
+      /* 同一次 load 顺手判中枢：群的 bossThreadId 就是那条中枢会话（⛔ 不用标题/cwd 猜）。 */
+      if (String((group as { bossThreadId?: string }).bossThreadId ?? "") === threadId) return { hub: true };
     }
   }
-  /* ⛔⛔ 11-07 用户令：「把子会话调度权限关了，只关调度权限，不要动工作伙伴里面的群聊机制」。
-     工作伙伴（群聊）的伙伴会话也是**子会话** —— 它们只有 group_say / group_read 这套沟通工具，
-     不该再对外调度（agent_invoke）。⛔ 群聊机制本身不受影响：群消息投递走宿主侧 runTalkTurn，
-     不经过 canDispatchFrom / 本函数（见 group-talk/01-channel 的文件头）。 */
-  /* `dispatchOnly` = **只关调度**（用户原话「只关调度权限」）：知识库写入 / 定时任务 / CLI 安装
-     这些非调度能力照旧，⛔ 别把整包「专家会话限制」套到伙伴头上。 */
-  if (lookupGroupThread(threadId)) return { restricted: true, label: "工作伙伴会话", dispatchOnly: true };
-  return { restricted: false };
+  if (lookupGroupThread(threadId)) return { groupThread: true };
+  return {};
+}
+
+/** 「这条线程属于哪一类会话、有哪些能力」—— 主进程唯一入口。 */
+async function restrictedThreadRole(threadId: string): Promise<ThreadRole> {
+  if (!threadId) return NORMAL_ROLE;
+  return roleOfKind(sessionKindOf(await threadKindFacts(threadId)));
 }
 
 // ⛔ 09-16 重大修正（引擎硬约束，四个决定性实验实测）：dynamicTools **只在 thread/start 生效**——

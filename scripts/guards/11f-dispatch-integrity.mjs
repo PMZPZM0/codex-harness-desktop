@@ -174,7 +174,11 @@ try {
   ok(/agent_invoke[\s\S]{0,400}restrictedThreadRole/.test(rpc), "⛔ agent_invoke 受 restrictedThreadRole 闸（被调度/专家会话不能对外派人）");
   ok(/canDispatchFrom\(\{[\s\S]{0,300}isDelegated/.test(rpc), "闸里带 isDelegated（被调度的会话再派活会被拦）");
   ok(/depth:\s*originRecord\?\.depth/.test(rpc), "闸里带 depth（防多层嵌套调度）");
-  ok(/if \(await delegateRegistry\.infoOf\(threadId\)\)/.test(core), "被调度的临时会话被识别为 restricted");
+  /* 11-12 起「被调度的临时会话 = restricted」由能力矩阵推出（delegate 的 dispatch 为 false），
+     这里钉**事实收集**那一步：被 agent_invoke 派出来的会话必须被判成 delegate。 */
+  ok(/delegateRegistry\.infoOf\(threadId\)[\s\S]{0,120}return \{ delegate: true \}/.test(core)
+    && /f\.delegate\) return "delegate"/.test(readFileSync(join(ROOT, "src/lib/session-kind.mjs"), "utf8")),
+    "被调度的临时会话被识别为 restricted");
   ok(/teamRunStore\.teamOfThread\(threadId\)/.test(core), "专家/专家团会话被识别为 restricted");
   // 渲染层只是 UX，也钉一下（否则用户会看到"能点但没反应"）
   const seg = readFileSync(join(ROOT, "src/features/app-state/parts/part09/02-seg.tsx"), "utf8");
@@ -546,9 +550,28 @@ try {
   ok(/restrictedThreadRole\(callerThreadId\)/.test(rpcSrc) && /canDispatchFrom\(\{/.test(rpcSrc)
     && /const GATEWAY_EXCLUDED = new Set\(\["agent_invoke", "agent_archive_sessions"\]\)/.test(harnessSrc),
     "子会话对外调度硬闸：agent_invoke 查身份/深度，能力网关也不暴露调度工具");
+  /* ⛔⛔ 11-12 用户令「普通会话 / 中枢会话 / 专家团会话 / 专家会话 / 工作伙伴会话，全用 ID 隔离开，
+     禁止串，工具也是」：类型与能力矩阵只能有**一份**（src/lib/session-kind.mjs），主进程只负责
+     取归属事实。⛔ 任何一侧再写「谁是受限会话」的第二套判据，都是这条 bug 的复发形态。 */
+  const kindSrc = readFileSync(join(ROOT, "src/lib/session-kind.mjs"), "utf8");
   ok(/aliasRecordOf\(threadId\)/.test(coreSrc) && /supervisorThreadId/.test(coreSrc)
-    && /bossStore/.test(coreSrc) && /群成员会话/.test(coreSrc),
-    "凡是「有上级」或群成员的会话一律判定为子会话（未走 delegateRegistry 的路径也挡住）");
+    && /bossStore/.test(coreSrc) && /lookupGroupThread\(threadId\)/.test(coreSrc)
+    && /sessionKindOf\(/.test(coreSrc) && /roleOfKind\(/.test(coreSrc),
+    "归属事实（被调度 / 团队 / 上级 / 群成员 / 群台账 / 中枢）统一交给 sessionKindOf 判类型（⛔ 不按标题/cwd 猜）");
+  ok(["normal", "hub", "expertTeam", "expert", "workPartner", "delegate"]
+    .every((kind) => new RegExp(`\\n  ${kind}: Object\\.freeze\\(\\{`, "m").test(kindSrc))
+    && /SESSION_KINDS = \[[^\]]*"normal"[^\]]*"hub"[^\]]*"expertTeam"[^\]]*"expert"[^\]]*"workPartner"[^\]]*"delegate"/.test(kindSrc),
+    "六类会话在能力矩阵里各有一行（普通 / 中枢 / 专家团 / 专家 / 工作伙伴 / 被调度 —— 少一类就是漏一条隔离）");
+  ok(/dispatch: false, bossGroup: false, scheduler: true, knowledge: true, cliInstall: true/.test(kindSrc),
+    "工作伙伴会话 = 只关调度（定时任务 / 知识库 / CLI 安装照旧，11-07 与 11-10 用户令）");
+  /* ⛔ 负向判据必须先证切片非空（`split(...)[1] ?? ""` 会恒真 —— 10-05 项目踩过）。 */
+  const kindFactsSrc = coreSrc.split("async function threadKindFacts")[1] ?? "";
+  ok(kindFactsSrc.length > 200 && !/\{ restricted: true, label:/.test(kindFactsSrc),
+    "⛔ dispatch-core 的取事实段里不许再有手写的 `{ restricted: true, label }` 分支（第二套判据）");
+  ok(/!restrict\.caps\.knowledge/.test(rpcSrc) && /!restrict\.caps\.scheduler/.test(rpcSrc)
+    && /!restrict\.caps\.cliInstall/.test(rpcSrc)
+    && !/restrict\.restricted && !restrict\.dispatchOnly/.test(rpcSrc),
+    "知识库 / 定时任务 / CLI 安装三处硬闸统一读能力矩阵（⛔ 不许再写 restricted && !dispatchOnly）");
   const agentsIpcSrc = readFileSync(join(ROOT, "electron/features/agents-ipc.ts"), "utf8");
   const seg08Src = readFileSync(join(ROOT, "src/features/app-state/parts/part08/01-seg.tsx"), "utf8");
   const dispatchSrc = readFileSync(join(ROOT, "electron/dispatch.ts"), "utf8");
@@ -556,16 +579,18 @@ try {
     && /只有用户直接创建的主会话可以调度/.test(coreSrc)
     && /只有用户直接创建的主会话可以调度/.test(seg08Src),
     "工具描述与 MCP 孪生都标明：只有主会话可调度，子会话没有权限");
-  ok(/bag\.threadRole\.restricted \? \[\]/.test(seg08Src),
-    "受限会话不注册 agent_invoke / agent_archive_sessions（不只靠执行端拒绝）");
+  const seg08Code = seg08Src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+  ok(/bag\.threadRole\.caps\.dispatch \?/.test(seg08Code),
+    "受限会话不注册 agent_invoke / agent_archive_sessions（读能力矩阵，不只靠执行端拒绝）");
   /* ⛔⛔ 11-12 用户实测「进度到第二环」全是假的：BOSS 群编排工具原先**无条件**展开，
      工作伙伴群主理人拿到 group_create/group_assign 后自己造了个演示群自导自演。
-     只查「文件里有没有 restricted ? []」会恒真（agent_invoke 那一处就能顶绿）⇒ 必须精确
+     只查「文件里有没有 caps.dispatch ?」会恒真（agent_invoke 那一处就能顶绿）⇒ 必须精确
      锚到 BOSS_GROUP_TOOLS 那一行，并负向禁止无条件展开（剥注释，防注释把它顶假红）。 */
-  const seg08Code = seg08Src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-  ok(/\.\.\.\(bag\.threadRole\.restricted \? \[\] : \(BOSS_GROUP_TOOLS as unknown as any\[\]\)\)/.test(seg08Code)
+  ok(/\.\.\.\(bag\.threadRole\.caps\.bossGroup \? \(BOSS_GROUP_TOOLS as unknown as any\[\]\) : \[\]\)/.test(seg08Code)
     && !/\.\.\.\(BOSS_GROUP_TOOLS as unknown as any\[\]\)/.test(seg08Code),
-    "⛔ 工作伙伴/被调度会话一律不挂 BOSS 群编排工具（不许自己新建群派活，只认当前群的 team_member_invoke）");
+    "⛔ 只有 caps.bossGroup 的会话才挂 BOSS 群编排工具（不许自己新建群派活，只认当前群的 team_member_invoke）");
+  ok(!/bag\.threadRole\.restricted \?/.test(seg08Code),
+    "⛔ 工具面不许再按旧布尔 restricted 开合（必须走 caps.*，否则加一类会话就会串一条）");
   /* ⛔ 11-07：零调度权限这句话收进了 `src/lib/dispatch-voice.mjs`（人话版），三处壳改成引用它。
      ⇒ 断言**改锚接线**：既要有"口径只有一处"，也要有"三处都真用上"。
      ⛔ 只查字面量的话，改文案就红；只查引用的话，把话删了还绿（自洽地错）。 */
@@ -876,7 +901,10 @@ try {
   const coreSrc2 = codeOnly(readFileSync(join(ROOT, "electron/features/dispatch-core.ts"), "utf8"));
   const rpcSrc2 = codeOnly(readFileSync(join(ROOT, "electron/features/dispatch-rpc.ts"), "utf8"));
   const talkSrc2 = codeOnly(readFileSync(join(ROOT, "electron/features/group-talk/03-talk.ts"), "utf8"));
-  ok(/dispatchOnly: true, label: "群成员会话"/.test(coreSrc2),
+  /* 11-12 起「群成员 = 只关调度」不再写死在分支里（`dispatchOnly: true, label: "群成员会话"`），
+     ⇒ 改锚两步：① 取事实认得出群成员；② 矩阵里 workPartner 的 scheduler 为 true（上面那条已钉）。 */
+  ok(/return \{ groupMember: true \}/.test(coreSrc2)
+    && /groupMember \|\| f\.groupThread\) return "workPartner"/.test(readFileSync(join(ROOT, "src/lib/session-kind.mjs"), "utf8")),
     "⛔ 群成员也能建定时任务（只关调度，不关定时）—— 之前直接拒，团队永远不能自己排节奏");
   ok(/restrict\.dispatchOnly && rawThreadId !== "current"/.test(rpcSrc2),
     "⛔ 群成员建的任务只能在自己会话里跑（⛔ 不许新建/指定别人的会话 = 越权派活）");

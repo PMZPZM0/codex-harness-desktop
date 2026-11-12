@@ -534,7 +534,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          ⛔ 这里曾注册过 `subagent_invoke`（subAgentTools）：那条通道与「调度」开关**完全脱钩**、
             还与 agent_invoke 形成两套调度工具 ⇒ 模型只挑名字最直白的它，专家/专家团永远被绕过
             （用户症状：「只能调度子智能体」）。已整体删除，⛔ 不许再加回来。 */
-      ...(bag.threadRole.restricted ? [] : [
+      ...(bag.threadRole.caps.dispatch ? [
       {
         type: "function",
         name: "agent_invoke",
@@ -580,7 +580,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: [],
         },
       },
-      ]),
+      ] : []),
       /* ⭐ 能力网关（10-05 立 / 10-09 收窄）：内置 MCP 的工具面在引擎 0.157 后整批「延迟暴露」，
          模型直接调用一律 `unsupported call` ⇒ 定时任务 / 知识库 / 组件库 / 视频 / 语音 / 工作流 /
          专家与子智能体管理 / 连接器注册这些能力对模型**全不可达**。dynamicTools 是唯一可见通道。
@@ -713,14 +713,14 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
             于是它自己新建了一个演示群、造了四个同名角色，在假群里派活+自审，再把假群进度当真事
             汇报到用户眼前 —— 用户这边一个成员产出都看不到。⇒ 与上面的 agent_invoke 同一道闸：
             受限会话一律不挂 BOSS 群编排工具；真正派活只认 team_member_invoke（当前群成员）。 */
-      ...(bag.threadRole.restricted ? [] : (BOSS_GROUP_TOOLS as unknown as any[])),
+      ...(bag.threadRole.caps.bossGroup ? (BOSS_GROUP_TOOLS as unknown as any[]) : []),
       /* 10-29：收藏夹 / 开发日记 / 密码本 —— 用户指定的权限模型（会话级授权、默认关、
          只读 + 只追加、密码本明文不进上下文）。⛔ 注册**不带开关条件**：dynamicTools 只在
          thread/start 与 resume 定死，带条件就会出现「刚打开开关，模型还是没有工具」；
          真正的拦截在执行端（主进程 dataaccess:*，被拒文案自带「去哪开授权」）。 */
       ...(DATA_ACCESS_TOOLS as unknown as any[]),
     ];
-  }, [bag.memoryEnabled, bag.memoryBackend, bag.threadRole.restricted]);
+  }, [bag.memoryEnabled, bag.memoryBackend, bag.threadRole.kind]);
 bag.buildDynamicTools = buildDynamicTools as typeof bag.buildDynamicTools;
 
   async function createEmptyThread(): Promise<Thread | null> {

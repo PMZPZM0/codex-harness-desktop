@@ -462,7 +462,7 @@ bag.earlyView = earlyView as typeof bag.earlyView;
             targets={bag.dispatchInfo.targets}
             disabled={!bag.thread?.id || bag.activeThreadRunning}
             busy={bag.dispatchBusy}
-            restrictedLabel={bag.threadRole.restricted ? (bag.threadRole.label ?? "专家 / 专家团") : null}
+            restrictedLabel={bag.threadRole.restricted ? bag.threadRole.label : null}
             onChange={(next) => { void bag.applyDispatch(next); }}
           />
           )}

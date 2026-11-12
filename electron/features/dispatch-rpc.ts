@@ -175,8 +175,9 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
      不静默堆同名垃圾（会让检索结果被重复条目占满、白烧 token）。 */
   if (name === "knowledge_add") {
     const restrict = await restrictedThreadRole(callerThreadId);
-    /* ⛔ `dispatchOnly`（工作伙伴会话）= 只关调度 ⇒ 知识库写入照旧。 */
-    if (restrict.restricted && !restrict.dispatchOnly) return { ok: false, error: `当前会话（${restrict.label}）不允许写入知识库` };
+    /* ⛔ 11-12 起闸门只读能力矩阵（`caps.knowledge`）：工作伙伴会话 = 只关调度 ⇒ 知识库写入照旧；
+       专家 / 专家团 / 被调度子会话 = 不许写。⛔ 别再写成 `restricted && !dispatchOnly` 的第二套判据。 */
+    if (!restrict.caps.knowledge) return { ok: false, error: `当前会话（${restrict.label}）不允许写入知识库` };
     const cwd = String(args.workspace ?? threadCwd.get(callerThreadId) ?? "");
     if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 知识库是项目级的，请在参数里传 workspace" };
     const title = String(args.title ?? "").trim();
@@ -260,8 +261,8 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   }
   if (name === "scheduler_save") {
     const restrict = await restrictedThreadRole(callerThreadId);
-    /* ⛔ `dispatchOnly`（工作伙伴会话）= 只关调度 ⇒ 定时任务照旧。 */
-    if (restrict.restricted && !restrict.dispatchOnly) return { ok: false, error: `当前会话（${restrict.label}）不允许创建定时任务` };
+    /* ⛔ 11-12 起闸门只读能力矩阵（`caps.scheduler`）：工作伙伴会话 = 只关调度 ⇒ 定时任务照旧。 */
+    if (!restrict.caps.scheduler) return { ok: false, error: `当前会话（${restrict.label}）不允许创建定时任务` };
     const cwd = String(args.workspace ?? threadCwd.get(callerThreadId) ?? "");
     if (!cwd.trim()) return { ok: false, error: "无法确定工作目录 —— 请在参数里传 workspace" };
     if (args.scheduleType === "once" && !String(args.scheduledAt ?? "").trim()) return { ok: false, error: "一次性任务必须传 scheduledAt（ISO 8601 带时区）" };
@@ -431,8 +432,9 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     }
     const restrict = await restrictedThreadRole(callerThreadId);
     const delegated = Boolean(await delegateRegistry.infoOf(callerThreadId));
-    /* ⛔ `dispatchOnly`（工作伙伴会话）= 只关调度 ⇒ 安装 / 卸载照旧（仍是用户显式 confirm 才执行）。 */
-    if ((restrict.restricted && !restrict.dispatchOnly) || delegated) {
+    /* ⛔ 11-12 起闸门只读能力矩阵（`caps.cliInstall`）：工作伙伴会话 = 只关调度 ⇒ 安装/卸载照旧
+       （仍是用户显式 confirm 才执行）；专家 / 专家团 / 被调度子会话一律不许。 */
+    if (!restrict.caps.cliInstall || delegated) {
       return { ok: false, error: `当前会话（${restrict.label || "被调度的会话"}）不允许安装/卸载本机软件 —— 请让用户在主会话或「设置 → 开发工具 → CLI 智能体」操作` };
     }
     if (name === "cli_agent_install") {

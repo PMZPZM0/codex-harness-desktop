@@ -77,7 +77,7 @@
       "channel": "agents:thread-role",
       "paramsImpl": "threadId: string",
       "paramsDecl": "threadId: string",
-      "returns": "Promise<{ restricted: boolean; label?: string }>",
+      "returns": "Promise<{ restricted: boolean; dispatchOnly?: boolean; label: string; kind: \"normal\" | \"hub\" | \"expertTeam\" | \"expert\" | \"workPartner\" | \"delegate\"; caps: { dispatch: boolean; bossGroup: boolean; scheduler: boolean; knowledge: boolean; cliInstall: boolean; memory: \"private\" | \"team\"; workspace: \"project\" | \"hub\" | \"session\"; ownsGroups: boolean } }>",
       "invokeArgs": "threadId",
       "cast": null,
       "note": null

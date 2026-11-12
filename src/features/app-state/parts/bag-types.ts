@@ -11,6 +11,8 @@ import type { NoticeTone } from "../../app-view/helpers/text";
 import type { BossThreadsState } from "../../boss-group-view";
 import type { FavoriteRequest } from "../../../lib/favorite-bridge";
 import type { PollTask } from "../../../polling/poll-store";
+/* 11-12 会话类型隔离：bag.threadRole 的形状来自能力矩阵真相源（⛔ 别在这里另写一份） */
+import type { ThreadRoleState } from "../../../lib/session-kind.mjs";
 
 export interface Bag {
   serverStatus: string;
@@ -1226,8 +1228,8 @@ export interface Bag {
   setDispatchInfo: React.Dispatch<React.SetStateAction<{ description: string; targets: DispatchTargetEntry[]; }>>;
   delegateRecords: Record<string, DelegateRecordEntry>;
   setDelegateRecords: React.Dispatch<React.SetStateAction<Record<string, DelegateRecordEntry>>>;
-  threadRole: { restricted: boolean; label?: string | undefined; };
-  setThreadRole: React.Dispatch<React.SetStateAction<{ restricted: boolean; label?: string | undefined; }>>;
+  threadRole: ThreadRoleState;
+  setThreadRole: React.Dispatch<React.SetStateAction<ThreadRoleState>>;
   refreshThreadRole: (threadId?: string | undefined) => Promise<void>;
   delegateRecordsRef: React.RefObject<Record<string, DelegateRecordEntry>>;
   dispatchInfoRef: React.RefObject<{ description: string; targets: DispatchTargetEntry[]; }>;

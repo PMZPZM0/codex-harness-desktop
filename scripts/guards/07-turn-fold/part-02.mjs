@@ -417,7 +417,10 @@ export async function run() {
       (/export function imageUrl\(path: string\)\s*\{[\s\S]{0,160}?return imageDisplaySrc\(path\);/.test(imageUrlSrc)
         ? ok : fail)("【47】imageUrl 转发到纯函数（行为不变、可离线断言）");
       // ③ 组件必须是模块级的（内联箭头函数会每次 render 换身份 → 图片子树重挂、预览闪烁）
-      (/^function MessageAttachChip\(/m.test(appSrc46) ? ok : fail)("【47】内联附件 chip 是模块级组件（不在 render 里现造）");
+      // ⛔ 11-12：群聊「图片/文件展示同步主对话框」要复用同一个 chip ⇒ 该组件导出给
+      //    harness-team 用。判据仍是**模块级**（`export function` 一样是模块级），
+      //    ⛔ 别把 `export` 当成"不在模块里"而报红。
+      (/^(?:export )?function MessageAttachChip\(/m.test(appSrc46) ? ok : fail)("【47】内联附件 chip 是模块级组件（不在 render 里现造）");
       (/<MessageAttachChip/.test(appSrc46) ? ok : fail)("【47】正文占位符图片与附件列表都复用它");
       (/className="message-attach-preview"/.test(appSrc46) ? ok : fail)("【47】图片 chip 里带悬停预览浮层");
       // ④ CSS：默认隐藏 + hover/focus 显示 + 两方向都限上限（自适应宽高比）+ 不挡自己的 hover
