@@ -539,6 +539,7 @@ const catalog = [
     ok(/handoffTo: teamAuthorIdOf/.test(read("electron/team-invoke.ts"))
       && /handoffTo: leadAuthorId/.test(teamIpcSrc)
       && /handoffTo: String\(entry/.test(read("src/lib/team-models.mjs"))
+      && /handoffTo: String\(msg\?\.handoffTo/.test(read("src/lib/team-models.mjs"))
       && /team-msg__handoff/.test(hostView)
       && /run\.leadThreadId/.test(fallback)
       && !/activeRunList\(\)\.some\(\(run\) => String\(run\.teamId/.test(fallback),

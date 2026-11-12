@@ -962,6 +962,9 @@ export function projectGroupMessages(sources) {
         mentions: Array.isArray(msg?.mentions) ? msg.mentions.map(String) : [],
         /* 「由谁叫来」要跟着投影走：它是消息属性，不是日志本地字段 */
         via: msg?.via ?? null,
+        /* ⛔ 11-12 审查修：这里是**显式白名单**构造，漏一行新字段就永远到不了渲染层
+           （handoffTo 已写进落盘 / normalize，但投影没带 ⇒ 「交回 @主理人」标签不显示）。 */
+        handoffTo: String(msg?.handoffTo ?? "").trim() || undefined,
         usage: msg?.usage ?? null,
         runId: String(msg?.runId ?? "") || undefined,
         runFirst: msg?.runFirst === true,
