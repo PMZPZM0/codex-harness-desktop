@@ -2023,8 +2023,12 @@ const catalog = [
     "团成员换脸覆盖按合成 id 存、seed 用裸 memberId（覆盖与选脸口径分开）");
 
   const mentionSrc = codeOnly(read("src/lib/team-mention.mjs"));
-  ok(/targetKey: memberKey \}/.test(mentionSrc) && !/targetKey: key \},\s*$/m.test(mentionSrc.split("kids.push")[1]?.slice(0, 900) ?? ""),
-    "@ 面板团成员同样用裸 memberId（纯函数层与视图同一口径）");
+  /* ⛔ 审查（11-12）：负向断言不许在锚点缺失时静默通过 —— 原来 `split(...)[1] ?? ""`
+     会让「kids.push 被改名/搬走」这条半边恒真（守卫自洽地错）。先证明切片非空再断言。 */
+  const kidsPushBlock = String(mentionSrc.split("kids.push")[1] ?? "").slice(0, 900);
+  ok(kidsPushBlock.length > 0 && /targetKey: memberKey \}/.test(kidsPushBlock)
+    && !/targetKey: key \},\s*$/m.test(kidsPushBlock),
+    "@ 面板团成员同样用裸 memberId（纯函数层与视图同一口径；⛔ 锚点缺失必须报红，不许恒真）");
 }
 
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
