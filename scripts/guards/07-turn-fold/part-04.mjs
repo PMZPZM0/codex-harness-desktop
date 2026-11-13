@@ -735,7 +735,7 @@ export async function run() {
   try { caps274 = req274(join(ROOT, "dist-electron", "capability-registry.js")); } catch { caps274 = null; }
   const probeBase = {
     arch: "arm64", desktopSwitch: true, browserSwitch: true, nuphusAvailable: true, uiaAvailable: true,
-    computerUseAvailable: true, imagePlugin: true, egoBrowser: true, markitdown: true,
+    computerUseAvailable: true, agentDesktopAvailable: true, imagePlugin: true, egoBrowser: true, markitdown: true,
   };
   const desktopItem = (resolution, platform) => {
     const item = (resolution ?? []).find((entry) => entry.id === "desktop");
@@ -743,8 +743,8 @@ export async function run() {
   };
   const mac274 = caps274 ? desktopItem(caps274.resolveCapabilities({ ...probeBase, platform: "darwin" }), "darwin") : null;
   const win274 = caps274 ? desktopItem(caps274.resolveCapabilities({ ...probeBase, platform: "win32" }), "win32") : null;
-  (mac274?.activeId === "computer-use-desktop" && win274?.activeId === "nuphus-desktop" && win274?.uiaAvailable === true && mac274?.uiaAvailable === false ? ok : fail)(
-    `【274】能力链路按平台给唯一后端（mac=${mac274?.activeId} / win=${win274?.activeId}；UIA 仅 win 判可用）—— 界面显示的后端必须等于实际会用的那个`
+  (mac274?.activeId === "agent-desktop" && win274?.activeId === "agent-desktop" && win274?.uiaAvailable === true && mac274?.uiaAvailable === false ? ok : fail)(
+    `【274】能力链路默认走 agent-desktop（三后端都开时 Agent 优先；UIA 仅 win 判可用）—— mac=${mac274?.activeId} / win=${win274?.activeId}`
   );
   /* ⛔ 11-03 用户令「mac 默认优先 computer use」：能力表顺序 + 配置写出顺序 + 模型侧指令
      三处都要把 mac 的 computer-use 放第一，且明令禁止在 mac 上用 nuphus 的 desktop 通道。 */
@@ -757,55 +757,58 @@ export async function run() {
   };
   const macOrder = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "darwin" }), "darwin") : null;
   const winOrder = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "win32" }), "win32") : null;
-  (macOrder?.active === "computer-use-desktop" && macOrder?.second === "nuphus-desktop"
-    && winOrder?.active === "nuphus-desktop" && winOrder?.second === "computer-use-desktop" ? ok : fail)(
-    `【274】平台优先排序：mac=computer-use→nuphus，win=nuphus→computer-use（实测 mac=${macOrder?.active}/${macOrder?.second}，win=${winOrder?.active}/${winOrder?.second}）`
+  (macOrder?.active === "agent-desktop" && macOrder?.second === "computer-use-desktop"
+    && winOrder?.active === "agent-desktop" && winOrder?.second === "computer-use-desktop" ? ok : fail)(
+    `【274】默认优先排序：Agent Desktop 主 → Computer Use 第二清单通道 → Nuphus 像素兜底（实测 mac=${macOrder?.active}/${macOrder?.second}，win=${winOrder?.active}/${winOrder?.second}）`
   );
-  const macFallback = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "darwin", computerUseAvailable: false }), "darwin") : null;
-  const winFallback = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "win32", nuphusAvailable: false }), "win32") : null;
-  (macFallback?.active === "nuphus-desktop" && winFallback?.active === "computer-use-desktop" ? ok : fail)(
-    `【274】主后端缺失时自动落到辅助后端（mac 无 computer-use ⇒ ${macFallback?.active}；win 无 nuphus ⇒ ${winFallback?.active}）`
+  const macFallback = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "darwin", agentDesktopAvailable: false }), "darwin") : null;
+  const winFallback = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "win32", agentDesktopAvailable: false }), "win32") : null;
+  (macFallback?.active === "computer-use-desktop" && winFallback?.active === "computer-use-desktop" ? ok : fail)(
+    `【274】Agent Desktop 缺失时自动落到第二清单通道（mac ⇒ ${macFallback?.active}；win ⇒ ${winFallback?.active}）`
   );
   (/const desktopInstructions = \(\s*platform: NodeJS\.Platform = process\.platform,/.test(di274)
-    && /backends: \{ nuphus\?: boolean; computerUse\?: boolean \} = \{\}/.test(di274)
-    && /computer-use` MCP server/.test(di274)
-    && /auxiliary\*\* backend on macOS/.test(di274)
-    && /nuphus-call <tool> key=value/.test(di274)
-    && /AUXILIARY on Windows/.test(di274)
-    && /The Nuphus desktop backend is DISABLED/.test(di274)
-    && /The Computer Use backend is DISABLED/.test(di274)
+    && /backends: \{ nuphus\?: boolean; computerUse\?: boolean; agentDesktop\?: boolean \} = \{\}/.test(di274)
+    && /PREFERRED backend: `agent-desktop`/.test(di274)
+    && /FALLBACK — `nuphus`/.test(di274)
+    && /SECOND control-list channel — `computer-use`/.test(di274)
+    && /agent-desktop is unavailable \(not installed or switched off\)/.test(di274)
     && !/text \+= DESKTOP_INSTRUCTIONS;/.test(di274) ? ok : fail)(
-    "【274】常驻指令按平台+开关分叉：mac computer-use 主 / nuphus 辅；Windows nuphus 主 / computer-use 辅；关掉的后端不再被引导"
+    "【274】常驻指令：Agent Desktop 首选，Nuphus 像素兜底 / Computer Use 第二清单通道；关掉的/没装的不会被引导"
   );
-  (/nuphusBackend\?: boolean/.test(di274) && /computerUseBackend\?: boolean/.test(di274)
-    && /desktopInstructions\(process\.platform, \{ nuphus: input\.nuphusBackend !== false, computerUse: input\.computerUseBackend !== false \}\)/.test(di274) ? ok : fail)(
-    "【274】指令输入带两个后端开关（设置变化后重写 config 时口径一致）"
+  (/nuphusBackend\?: boolean/.test(di274) && /computerUseBackend\?: boolean/.test(di274) && /agentDesktopBackend\?: boolean/.test(di274)
+    && /desktopInstructions\(process\.platform, \{ nuphus: input\.nuphusBackend !== false, computerUse: input\.computerUseBackend !== false, agentDesktop: input\.agentDesktopBackend === true \}\)/.test(di274) ? ok : fail)(
+    "【274】指令输入带三个后端开关（设置变化后重写 config 时口径一致）"
   );
   const discipline274 = codeOnly(readFileSync(join(ROOT, "electron", "main", "12-skill-discipline.ts"), "utf8"));
-  (/nuphusBackend: appSettings\.desktopBackendNuphus !== false/.test(discipline274)
-    && /computerUseBackend: appSettings\.desktopBackendComputerUse !== false/.test(discipline274) ? ok : fail)(
-    "【274】devInstructionsInput 从 app-settings 读两个后端开关"
+  (/nuphusBackend: appSettings\.desktopBackendNuphus === true/.test(discipline274)
+    && /computerUseBackend: appSettings\.desktopBackendComputerUse === true/.test(discipline274)
+    && /agentDesktopBackend: appSettings\.desktopBackendAgentDesktop !== false && Boolean\(agentDesktopLauncher\(\)\)/.test(discipline274) ? ok : fail)(
+    "【274】devInstructionsInput 从 app-settings 读三个后端开关（Agent 默认开；另两个只有显式 true 才引导）"
   );
-  (skill274.includes("macOS：桌面自动化 =") && skill274.includes("computer-use")
-    && /辅助后端 = nuphus/.test(skill274) && /第二清单通道/.test(skill274) ? ok : fail)(
-    "【274】桌面技能双平台分支：mac computer-use 主 + nuphus 辅；Windows UIA/nuphus 主 + computer-use 辅助"
+  (skill274.includes("Agent Desktop（默认主）") && skill274.includes("Nuphus（兜底）")
+    && skill274.includes("Computer Use（第二清单通道）") && /agent-desktop snapshot --app/.test(skill274) ? ok : fail)(
+    "【274】桌面技能：Agent Desktop 主 + Nuphus 像素兜底 + Computer Use 第二清单通道"
   );
-  (/const desktopBackendSections = process\.platform === "darwin"[\s\S]{0,120}?\? \[\.\.\.computerUseMcpSection, \.\.\.nuphusMcpSection\][\s\S]{0,120}?: \[\.\.\.nuphusMcpSection, \.\.\.computerUseMcpSection\]/.test(apply274) ? ok : fail)(
-    "【274】config 写出顺序按平台：mac computer-use 先 / Windows nuphus 先（配置顺序即工具面顺序）"
+  (/const agentDesktopMcpSection/.test(apply274) && /AGENT_DESKTOP_MCP_SERVER/.test(apply274)
+    && /disabled_tools = \[\$\{agentDesktopDisabledTools\(\)/.test(apply274) ? ok : fail)(
+    "【274】config 写出：agent-desktop 只开核心 12 工具（其余进 disabled_tools，不占模型上下文）"
   );
   /* 开关联动：两个后端都有独立偏好字段（默认 true）+ 控制台两个小选项 + 注册/掩码跟随开关。 */
   const settings274 = codeOnly(readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8"));
   const general274 = codeOnly(readFileSync(join(ROOT, "src", "features", "settings-general", "GeneralSettingsSection.tsx"), "utf8"));
   (settings274.includes("desktopBackendNuphus?: boolean") && settings274.includes("desktopBackendComputerUse?: boolean")
-    && general274.includes("DesktopBackendOptions") && general274.includes("desktopBackendNuphus")
-    && general274.includes("desktopBackendComputerUse") && general274.includes('label: "Computer Use（控件清单）"')
-    && general274.includes("settings-backend-options") && general274.includes("两个后端都关了")
+    && settings274.includes("desktopBackendAgentDesktop?: boolean")
+    && general274.includes("DesktopBackendOptions") && general274.includes("desktopBackendAgentDesktop")
+    && general274.includes('label: "Agent Desktop（无障碍树 · 首选）"')
+    && general274.includes("settings-backend-options") && general274.includes("三个后端都关了")
     && general274.includes("切换会重写配置并重启引擎") ? ok : fail)(
-    "【274】控制台桌面自动化下有 Nuphus / Computer Use 两个小开关（默认开、按平台排序、两关有提示、保存重启）"
+    "【274】控制台桌面自动化下有三个后端开关（Agent 默认开；另两个显式开才启用；三关有提示、保存重启）"
   );
-  (/desktopBackendNuphus !== false/.test(apply274) && /desktopBackendComputerUse !== false/.test(apply274)
-    && /\{ nuphus: nuphusBackend \}/.test(apply274) && /enabled: computerUseBackend/.test(apply274) ? ok : fail)(
-    "【274】注册与掩码跟随开关（关 nuphus 只掩桌面组；关 computer-use 不写它的 MCP 段）"
+  (/desktopBackendNuphus === true/.test(apply274) && /desktopBackendComputerUse === true/.test(apply274)
+    && /desktopBackendAgentDesktop !== false/.test(apply274)
+    && /shouldRegisterAgentDesktop\(\{ desktop: desktopAuto, binaryReady: Boolean\(launcher\), enabled: agentDesktopBackend \}\)/.test(apply274)
+    && /shouldRegisterComputerUse\(\{ desktop: desktopAuto, binaryReady: Boolean\(launcher\), enabled: computerUseBackend \}\)/.test(apply274) ? ok : fail)(
+    "【274】注册跟随开关：Agent 默认注册；Nuphus/Computer Use 只有显式开启才写各自 MCP 段（关 Nuphus 只掩桌面组）"
   );
   const runtime274 = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
   (/platforms: \["darwin", "win32"\]/.test(runtime274) ? ok : fail)(

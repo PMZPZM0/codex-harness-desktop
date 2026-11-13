@@ -783,6 +783,8 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
      ⇒ computer-use 在 Windows 也列为**可安装/可更新**（未装只是「辅助后端不可用」，不影响 nuphus）。
      ⛔ mac 随包、Windows 需在这里/自动化页装一次（13MB npm 包，不随 Windows 包内置）。 */
   "computer-use": { pkg: "open-computer-use", label: "电脑操作（Computer Use）", platforms: ["darwin", "win32"] },
+  // 11-13 agent-desktop（Vercel Labs，Apache-2.0）：无障碍树桌面后端，npm 包自带上三平台二进制。
+  "agent-desktop": { pkg: "agent-desktop", label: "Agent Desktop（无障碍树）", platforms: ["darwin", "win32", "linux"] },
   // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
   rea: { pkg: "rea-agents", label: "REA 逆向分析" },
   "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },

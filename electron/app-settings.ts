@@ -30,10 +30,12 @@ export type AppSettings = {
   desktopAutomation?: boolean;
   browserAutomation?: boolean;
   /** 桌面自动化后端开关（11-03 用户令）：两个都默认开，按平台优先级由常驻指令决定
-   *  （Windows：nuphus 主 / computer-use 辅；macOS：computer-use 主 / nuphus 辅）。
+   *  （默认：agent-desktop 开；Nuphus / Computer Use 关，用户显式开启后参与兜底）。
    *  ⛔ 关掉 nuphus 只掩桌面组（浏览器组保留）；关掉 computer-use 就不注册它的 MCP 段。 */
   desktopBackendNuphus?: boolean;
   desktopBackendComputerUse?: boolean;
+  /** 11-13：agent-desktop（Vercel Labs，Apache-2.0）无障碍树后端；默认开，未安装时卡片显示安装入口。 */
+  desktopBackendAgentDesktop?: boolean;
   /** 云会话自动同步范围（11-04）：上次手动勾选上传的**会话 id**。
    *  空/缺省 = **不自动上传** —— 先让用户明确选一次；之后后台只保持这些会话的增量同步。 */
   cloudSyncIds?: string[];

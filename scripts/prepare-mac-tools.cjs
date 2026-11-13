@@ -53,7 +53,7 @@ async function main() {
   //    它的 postinstall 只打印安装提示（实测读过 package/scripts/postinstall.mjs），所以
   //    x64 那条 --ignore-scripts 分支不影响它可用；arm64 分支的 --allow-scripts 也只放行 nuphus。
   run(node, [npm, "install", "-g", "--prefix", prefix, "--registry=https://registry.npmjs.org",
-    ...npmFlags, `@nuphus/nuphus-mcp@${TOOLS_VERSIONS.nuphus}`, `open-computer-use@${TOOLS_VERSIONS.computerUse}`], env);
+    ...npmFlags, `@nuphus/nuphus-mcp@${TOOLS_VERSIONS.nuphus}`, `open-computer-use@${TOOLS_VERSIONS.computerUse}`, `agent-desktop@${TOOLS_VERSIONS.agentDesktop}`], env);
   const modules = path.join(prefix, "lib/node_modules");
   // Keep the same module layout as the Windows distribution.
   fs.renameSync(modules, path.join(prefix, "node_modules"));

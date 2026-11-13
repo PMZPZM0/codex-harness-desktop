@@ -9,7 +9,7 @@
  * ⛔ 待接缝化（阶段 2）：fs 为宿主能力。
  */
 import { existsSync, readFileSync } from "node:fs";
-import { computerUseLauncher, npmPackagePath, nuphusBinary } from "../toolchain";
+import { agentDesktopLauncher, computerUseLauncher, npmPackagePath, nuphusBinary } from "../toolchain";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
@@ -31,6 +31,9 @@ export const toolsFeature = defineFeature<null>({
          两个桌面后端（Nuphus / Computer Use）都要列出来 —— 未安装的也列，用户才知道有得装。 */
       const cuLauncher = computerUseLauncher();
       const cuPkg = npmPackagePath("open-computer-use", "package.json");
+      /* 11-13：agent-desktop（Vercel Labs）无障碍树后端 —— 未安装也列出，桌面自动化页才知道有得装。 */
+      const adLauncher = agentDesktopLauncher();
+      const adPkg = npmPackagePath("agent-desktop", "package.json");
       return [
         {
           id: "nuphus-mcp", name: "Nuphus 桌面自动化", scope: "computer",
@@ -50,6 +53,18 @@ export const toolsFeature = defineFeature<null>({
               ? "装了半截：缺平台主程序，到「开发工具」页点「修复安装」"
               : "未安装：到「开发工具」页安装（约 13MB，随包免下载；Windows 上作 Nuphus 的辅助后端）",
           command: cuLauncher,
+        },
+        {
+          id: "agent-desktop", name: "Agent Desktop（无障碍树）", scope: "computer",
+          version: adPkg ? readVersion(adPkg) : "",
+          installed: Boolean(adPkg),
+          binaryReady: Boolean(adLauncher),
+          detail: adLauncher
+            ? "核心 12 个无障碍树工具就绪（快照 / 查找 / 点击 / 输入 / 按键 / 滚动 / 窗口管理），按 @ref 操作、不猜坐标"
+            : adPkg
+              ? "装了半截：缺平台二进制，重新安装 agent-desktop"
+              : "未安装：在本页点「安装 / 更新」（npm agent-desktop，约 32MB，Apache-2.0）",
+          command: adLauncher,
         },
       ];
     });

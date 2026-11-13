@@ -13,7 +13,7 @@
  * 生命周期：通道在 `setup` 内注册、`ctx.effect` 内摘除；注册时机由组合表决定（本文件不自挂载）。
  */
 import { resolveCapabilities } from "../capability-registry";
-import { computerUseLauncher, egoBrowserPath, harnessUiaServer, nuphusBinary } from "../toolchain";
+import { agentDesktopLauncher, computerUseLauncher, egoBrowserPath, harnessUiaServer, nuphusBinary } from "../toolchain";
 import type { CapabilityProbe } from "../capability-registry";
 import { devInstructionsInput } from "../main/12-skill-discipline";
 import { mcpOverrideEnabled, readMcpOverrides } from "../main/06-mcp-overrides";
@@ -34,6 +34,7 @@ async function collectCapabilityProbe(): Promise<CapabilityProbe> {
     // 两条新后端只看"随包文件在不在"，不看总闸（闸门由 resolveCapabilities 统一判）
     uiaAvailable: Boolean(harnessUiaServer()),
     computerUseAvailable: Boolean(computerUseLauncher()),
+    agentDesktopAvailable: Boolean(agentDesktopLauncher()),
     imagePlugin: devInput.imagePlugin,
     egoBrowser: Boolean(egoBrowserPath()),
     markitdown: runtimeInstalled("markitdown", devRuntimeSpecs.markitdown),

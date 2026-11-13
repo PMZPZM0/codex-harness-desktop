@@ -11,11 +11,11 @@ import path from "node:path";
 import fs from "node:fs/promises";
 import { normalizeAutoCompactRatio, readAppSettings } from "../app-settings";
 import { app, safeStorage } from "electron";
-import { COMPUTER_USE_MCP_SERVER, HARNESS_UIA_MCP_SERVER, shouldRegisterComputerUse, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
+import { AGENT_DESKTOP_MCP_SERVER, COMPUTER_USE_MCP_SERVER, HARNESS_UIA_MCP_SERVER, agentDesktopDisabledTools, shouldRegisterAgentDesktop, shouldRegisterComputerUse, shouldRegisterNuphus, shouldRegisterUia, withNuphusMasksForRules } from "../automation-policy";
 import { safeProviderId } from "../provider-id";
 import { injectMcpToolRules, injectSectionExtras, tomlBareKey, writeTextFileAtomic } from "../config-toml";
 import { developerInstructionsLine } from "../developer-instructions";
-import { augmentedPath, bundledNode, bundledPython, computerUseLauncher, harnessUiaServer, nuphusBinary, reaServerScript } from "../toolchain";
+import { augmentedPath, bundledNode, bundledPython, agentDesktopLauncher, computerUseLauncher, harnessUiaServer, nuphusBinary, reaServerScript } from "../toolchain";
 import type { CustomModelFile } from "../features/custom-model-types";
 import { collectSessionProviderIds } from "../features/provider-sessions";
 import { connectorEnv, connectorToml, mcpToolRulesOf } from "../main/04-connector-config";
@@ -48,15 +48,16 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
   // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
   // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
-  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, COMPUTER_USE_MCP_SERVER, "rea", ...connectors.map((connector) => safeConnectorId(connector.id))]);
+  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, COMPUTER_USE_MCP_SERVER, AGENT_DESKTOP_MCP_SERVER, "rea", ...connectors.map((connector) => safeConnectorId(connector.id))]);
   const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
   // ⛔ 再叠加**总闸掩码**（09-20）：关掉「桌面自动化 / 浏览器自动化」的那一组，整体进 disabled_tools
   //    —— 工具从引擎工具表消失 ⇒ 真阻断（此前浏览器总闸只是提示词级控制）。
   /* 11-03 用户令：两个桌面后端开关默认都开；关闭 nuphus 只掩桌面组（browser_* 保留）。 */
-  const nuphusBackend = appSettings.desktopBackendNuphus !== false;
-  const computerUseBackend = appSettings.desktopBackendComputerUse !== false;
+  const nuphusBackend = appSettings.desktopBackendNuphus === true;
+  const computerUseBackend = appSettings.desktopBackendComputerUse === true;
+  const agentDesktopBackend = appSettings.desktopBackendAgentDesktop !== false;
   const mcpToolRules = withNuphusMasksForRules(mcpToolRulesOf(mcpOverrides), { desktop: desktopAuto, browser: browserAuto }, { nuphus: nuphusBackend });
   await writeMcpOverrides(mcpOverrides);
   const connectorEnvValue = connectorEnv(connectors);
@@ -207,9 +208,25 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
         "",
       ]
     : [];
+  /* 11-13 agent-desktop（Vercel Labs，无障碍树）：只保留核心 12 个工具，其余写 disabled_tools
+     （上游 ~70 个工具，全量 schema 会把每轮上下文撑爆）。未安装 = 整段不写。 */
+  const agentDesktopMcpSection = (() => {
+    const launcher = agentDesktopLauncher();
+    const node = bundledNode();
+    if (!shouldRegisterAgentDesktop({ desktop: desktopAuto, binaryReady: Boolean(launcher), enabled: agentDesktopBackend })) return [] as string[];
+    if (!node || !mcpOverrideEnabled(mcpOverrides, AGENT_DESKTOP_MCP_SERVER)) return [] as string[];
+    return [
+      `[mcp_servers.${AGENT_DESKTOP_MCP_SERVER}]`,
+      `command = "${escapeToml(node)}"`,
+      `args = ["${escapeToml(launcher)}", "mcp"]`,
+      "startup_timeout_sec = 30",
+      `disabled_tools = [${agentDesktopDisabledTools().map((tool) => `"${tool}"`).join(", ")}]`,
+      "",
+    ];
+  })();
   const desktopBackendSections = process.platform === "darwin"
-    ? [...computerUseMcpSection, ...nuphusMcpSection]
-    : [...nuphusMcpSection, ...computerUseMcpSection];
+    ? [...computerUseMcpSection, ...nuphusMcpSection, ...agentDesktopMcpSection]
+    : [...nuphusMcpSection, ...agentDesktopMcpSection, ...computerUseMcpSection];
   const configText = [
     `model = "${escapeToml(entry.model)}"`,
     // （顶层 model_context_window 已按 09-16 修正移除：全局单值会压掉 catalog 里每模型的

@@ -118,23 +118,42 @@ const MAC_BOTH_OFF = "1) Desktop automation is UNAVAILABLE on this Mac: both Nup
 const WIN_CU_OFF_NOTE = "   ⛔ The Computer Use backend is DISABLED in settings — do not call its tools; the Nuphus / UIA paths above are the only desktop channels.";
 const WIN_CU_UIA_ONLY = "1) Desktop automation on Windows — the Nuphus backend is DISABLED (its OCR/coordinate path and `nuphus-call desktop_*` must not be used). Use the UIA control list (`desktop_ui_*`) first; if the `computer-use` tools (`list_apps` / `get_app_state` / `click` …) are in your tool list, use them as the second control-list channel. One automation call at a time.";
 const WIN_UIA_ONLY = "1) Desktop automation on Windows — both Nuphus and Computer Use backends are disabled. The UIA control-list channel (`desktop_ui_*`, harness-uia) is independent of those switches: use it when it is in your tool list; otherwise tell the user no desktop backend is enabled.";
+/* 11-13 三个桌面后端（默认只开 agent-desktop；另两个默认关，用户开启后按下面的顺序兜底）：
+   · agent-desktop：OS 无障碍树 + 语义 @ref，**首选**（原生应用/表单/菜单最稳）；
+   · nuphus：截屏 + 本地 OCR + 像素坐标，**兜底**（画布/自绘/无障碍树残缺时）；
+   · computer-use：紧凑的 app state 控件清单，**第二清单通道**（agent-desktop 不可用时）。
+   ⛔ 引擎当前不把 MCP 工具直接交给模型 ⇒ agent-desktop 教它走 CLI；ref 属于某次快照，操作后要重新 snapshot。 */
+const AGENT_DESKTOP_CORE = "1) Desktop automation — **PREFERRED backend: `agent-desktop`** (Vercel Labs, Apache-2.0; reads the OS accessibility tree, no screenshots or pixel guessing). CLI: `agent-desktop snapshot --app \"<app name>\" -i` returns the tree with @ref IDs → `agent-desktop find --name \"...\"` → `agent-desktop click @ref` / `type @ref \"text\"` / `press @ref ENTER` / `scroll @ref down`. @refs belong to ONE snapshot — re-snapshot after any change; run calls ONE AT A TIME. Best when the app exposes real controls (native apps, dialogs, forms, menus).\n";
+const AGENT_NUPHUS_FALLBACK = "   FALLBACK — `nuphus` (screenshots + local OCR + pixel coordinates), use ONLY when the accessibility tree is unusable (canvas / self-drawn UI / flaky controls): `nuphus-call desktop_perceive` → `desktop_mouse` / `desktop_input` (pass confirm=true for writes); re-perceive after window moves. Do not mix both backends in one step.\n";
+const AGENT_CU_SECOND = "   SECOND control-list channel — `computer-use` MCP (if present): `list_apps` → `get_app_state` → `click` / `set_value` / `press_key`. Use it when agent-desktop is missing or a call fails; still one call at a time.\n";
 
-/** 按平台 + 两个后端开关生成桌面自动化说明（默认两个都开）。 */
+/** 按平台 + 三个后端开关生成桌面自动化说明（默认只开 agent-desktop）。 */
 const desktopInstructions = (
   platform: NodeJS.Platform = process.platform,
-  backends: { nuphus?: boolean; computerUse?: boolean } = {},
+  backends: { nuphus?: boolean; computerUse?: boolean; agentDesktop?: boolean } = {},
 ): string => {
-  const nuphus = backends.nuphus !== false;
-  const computerUse = backends.computerUse !== false;
-  if (nuphus && computerUse) return platform === "darwin" ? MAC_DESKTOP_INSTRUCTIONS : WINDOWS_DESKTOP_INSTRUCTIONS;
-  if (platform === "darwin") {
-    if (!nuphus && !computerUse) return AUTOMATION_HEADER + MAC_BOTH_OFF;
-    if (!computerUse) return AUTOMATION_HEADER + MAC_NUPHUS_ONLY;
-    return AUTOMATION_HEADER + MAC_CU_CORE + MAC_NUPHUS_OFF_NOTE + MAC_CU_FAIL + MAC_TAIL;
+  const nuphus = backends.nuphus === true;
+  const computerUse = backends.computerUse === true;
+  const agentDesktop = backends.agentDesktop === true;
+  if (agentDesktop) {
+    return AUTOMATION_HEADER + AGENT_DESKTOP_CORE
+      + (nuphus ? AGENT_NUPHUS_FALLBACK : "")
+      + (computerUse ? AGENT_CU_SECOND : "")
+      + "   ⛔ Browser work is separate: use ego-browser first, `nuphus-call browser_*` only as fallback. Never automate UAC / permission-elevation dialogs.";
   }
-  if (!nuphus && !computerUse) return AUTOMATION_HEADER + WIN_UIA_ONLY;
-  if (!nuphus) return AUTOMATION_HEADER + WIN_CU_UIA_ONLY;
-  return AUTOMATION_HEADER + WIN_NUPHUS_CORE + WIN_CU_OFF_NOTE + WIN_PRIORITY_LOOP;
+  /* agent-desktop 不可用（未装/被关）时才退回旧后端组合。 */
+  const base = (() => {
+    if (nuphus && computerUse) return platform === "darwin" ? MAC_DESKTOP_INSTRUCTIONS : WINDOWS_DESKTOP_INSTRUCTIONS;
+    if (platform === "darwin") {
+      if (!nuphus && !computerUse) return AUTOMATION_HEADER + MAC_BOTH_OFF;
+      if (!computerUse) return AUTOMATION_HEADER + MAC_NUPHUS_ONLY;
+      return AUTOMATION_HEADER + MAC_CU_CORE + MAC_NUPHUS_OFF_NOTE + MAC_CU_FAIL + MAC_TAIL;
+    }
+    if (!nuphus && !computerUse) return AUTOMATION_HEADER + WIN_UIA_ONLY;
+    if (!nuphus) return AUTOMATION_HEADER + WIN_CU_UIA_ONLY;
+    return AUTOMATION_HEADER + WIN_NUPHUS_CORE + WIN_CU_OFF_NOTE + WIN_PRIORITY_LOOP;
+  })();
+  return base + "   ⛔ agent-desktop is unavailable (not installed or switched off): do not call `agent-desktop`.";
 };
 
 /**
@@ -509,6 +528,7 @@ export type DevInstructionsInput = {
   /** 桌面后端开关（11-03）：指令必须跟着开关走 —— 关掉的后端不许再引导它的 CLI/工具。 */
   nuphusBackend?: boolean;
   computerUseBackend?: boolean;
+  agentDesktopBackend?: boolean;
   imagePlugin?: boolean;
   /** Filee 文件转换（10-30）装没装（tools/filee/filee-cli.exe 存在）—— 装了才注入第 5 条用法段 */
   fileeInstalled?: boolean;
@@ -535,7 +555,7 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += STEP_NOTE_INSTRUCTIONS;
   // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
   if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
-  if (desktop) text += desktopInstructions(process.platform, { nuphus: input.nuphusBackend !== false, computerUse: input.computerUseBackend !== false });
+  if (desktop) text += desktopInstructions(process.platform, { nuphus: input.nuphusBackend !== false, computerUse: input.computerUseBackend !== false, agentDesktop: input.agentDesktopBackend === true });
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);

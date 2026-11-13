@@ -46,6 +46,8 @@ export type CapabilityProbe = {
   uiaAvailable: boolean;
   /** mac 电脑操作后端是否就绪（open-computer-use 的启动脚本与 .app 都在） */
   computerUseAvailable: boolean;
+  /** agent-desktop 无障碍树后端是否就绪（npm 包启动器 + 平台二进制都在） */
+  agentDesktopAvailable?: boolean;
   /** 内置「生图插件」是否已配置（MCP 工具 image_generate 与命令行 generate_image **共用**这份配置） */
   imagePlugin: boolean;
   /** Ego Lite 浏览器自动化是否已安装（每会话 TaskSpace 的唯一自动化通道） */
@@ -84,11 +86,11 @@ export const CAPABILITIES: readonly CapabilityDefinition[] = [
     label: "桌面控制（键鼠 / 窗口 / 截屏）",
     purpose: "操作真实桌面应用、截屏、多窗口",
     backends: [
-      /* ⛔ 11-03 用户令「mac 默认优先 computer use」：顺序即优先级 —— mac 上 computer-use 排第一
-         （Windows 上它不可用，自动落到 nuphus；UIA 作为补充通道）。 */
-      { id: "computer-use-desktop", label: "电脑操作（computer-use MCP）", why: "macOS 首选、Windows 辅助：open-computer-use 走 Accessibility 控件清单，与 Codex 原生 computer use 同一类实现；mac 随包内置（要授 辅助功能 + 屏幕录制），Windows 需在「自动化 → 版本与手动更新」安装" },
-      { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "Windows 首选、macOS 辅助：截屏 + 本地 OCR + 像素坐标。⛔ 被「桌面后端 → Nuphus」开关关掉时整组桌面工具被掩（browser_* 保留）" },
-      { id: "uia-desktop", label: "Windows 控件清单（desktop_ui_*，UIA）", why: "Windows 专属：读系统无障碍树拿控件清单，按元素序号操作，不依赖坐标；与 nuphus / computer-use 并存互补（网页内容仍走 browser_*）" },
+      /* 11-13 用户令：agent-desktop 默认主后端，另两个默认关、开启后按此顺序兜底。 */
+      { id: "agent-desktop", label: "Agent Desktop（无障碍树，默认首选）", why: "mac/Windows 首选：Vercel Labs 无障碍树 + 语义 @ref，不截图不猜坐标；随包内置，适合原生应用/对话框/表单" },
+      { id: "computer-use-desktop", label: "电脑操作（computer-use MCP）", why: "第二清单通道：open-computer-use 走 Accessibility 控件清单；Agent Desktop 不可用时兜底" },
+      { id: "nuphus-desktop", label: "内置 MCP（nuphus desktop_*）", why: "像素兜底：截屏 + 本地 OCR + 像素坐标，画布/自绘界面读不到控件树时使用。⛔ 关掉时整组桌面工具被掩（browser_* 保留）" },
+      { id: "uia-desktop", label: "Windows 控件清单（desktop_ui_*，UIA）", why: "Windows 专属：读系统无障碍树拿控件清单，按元素序号操作；与上面几个并存互补（网页内容仍走 browser_*）" },
     ],
   },
   {
@@ -143,6 +145,7 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
     /* 11-03 用户令：两个桌面后端默认都开（Windows nuphus 主 / mac computer-use 主），
        ⇒ 两边都不再按平台互斥；具体谁先由下面的平台排序决定。 */
     "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable,
+    "agent-desktop": probe.desktopSwitch && probe.agentDesktopAvailable === true,
     // 判据与 automation-policy 的同名函数一致（守卫【274】比对，不许两处各写一套平台判断）
     "uia-desktop": probe.desktopSwitch && probe.uiaAvailable && probe.platform === "win32",
     "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable
@@ -164,11 +167,10 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
     }
   }
 
-  /* 11-03 用户令「按系统优先排序」：Windows = nuphus 主、computer-use 辅；macOS = computer-use 主、nuphus 辅。
-     UIA 恒作 Windows 的补充通道排在最后。 */
+  /* 11-13 用户令：Agent Desktop 默认主；另两个启用后按「第二清单通道 → 像素兜底」排序。 */
   const desktopOrder = probe.platform === "darwin"
-    ? ["computer-use-desktop", "nuphus-desktop", "uia-desktop"]
-    : ["nuphus-desktop", "computer-use-desktop", "uia-desktop"];
+    ? ["agent-desktop", "computer-use-desktop", "nuphus-desktop", "uia-desktop"]
+    : ["agent-desktop", "computer-use-desktop", "nuphus-desktop", "uia-desktop"];
   return CAPABILITIES.map((capability) => {
     const backends = capability.id === "desktop"
       ? [...capability.backends].sort((a, b) => desktopOrder.indexOf(a.id) - desktopOrder.indexOf(b.id))

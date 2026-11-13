@@ -30,6 +30,7 @@ const CONFIG_KEYS = new Set([
   "browserAutomation",
   "desktopBackendNuphus",
   "desktopBackendComputerUse",
+  "desktopBackendAgentDesktop",
 ]);
 
 export const appSettingsFeature = defineFeature<null>({

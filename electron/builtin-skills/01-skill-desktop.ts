@@ -4,30 +4,47 @@
  */
 export const DESKTOP_SKILL = `---
 name: desktop-automation
-description: 操控本机桌面：macOS 用 computer-use 的 list_apps/get_app_state/click 等控件清单工具，Windows 用 nuphus 的 desktop_* 系列。当任务需要操作真实屏幕、窗口或原生应用时使用。
+description: 操控本机桌面（Windows / macOS）：默认走 agent-desktop 的无障碍树（snapshot 拿 @ref，再 click/type），画布或控件树残缺时回落 Nuphus（截屏+OCR+像素），Computer Use 作第二清单通道。当任务需要操作真实屏幕、窗口或原生应用时使用。
 ---
 
 # 桌面自动化
 
-## 先看平台：macOS 与 Windows 是两套后端（⛔ 别混用）
+## 三个后端的分工（默认只开 Agent Desktop）
 
-- **macOS：桌面自动化 = \`computer-use\` MCP（open-computer-use）**，工具：\`list_apps\` / \`get_app_state\` / \`click\` / \`perform_secondary_action\` / \`scroll\` / \`drag\` / \`type_text\` / \`press_key\` / \`set_value\`。它走 Accessibility 控件清单，**按元素/序号操作**，不靠猜坐标。
-  - 判存在：工具列表里有 \`list_apps\` / \`get_app_state\` 才走本技能。
-  - 循环：\`list_apps\` → \`get_app_state\`（拿控件清单）→ \`click\` / \`perform_secondary_action\` / \`type_text\` … → 再用 \`get_app_state\` 复核。长文本优先 \`set_value\` 或剪贴板 + Cmd+V；一次只发一个自动化调用。
-  - **辅助后端 = nuphus**（默认也开启）：上面这些 computer-use 工具不可用或调用失败时，才退回 \`nuphus-call desktop_*\`（列窗口 / 截屏 / OCR / 鼠标键盘）；⛔ 同一任务里不要两套后端混用。浏览器仍优先 \`ego-browser\`。
-  - 工具不可用：先让用户检查「系统设置 → 隐私与安全性 → 辅助功能 + 屏幕录制」是否已授权，以及桌面总闸是否打开；仍不行再用 nuphus 辅助通道，并说明用的是哪条；⛔ 不操作系统授权/提权弹窗。
-- **Windows：** 主线是 \`desktop_ui_*\`（UIA 控件清单）→ \`nuphus-call desktop_*\`（OCR 坐标兜底）；若工具列表里另有 \`computer-use\` 的 \`list_apps\` / \`get_app_state\`，它只作**第二清单通道**，不要优先于前两者。
-- **以常驻指令为准**：若常驻指令说某个桌面后端已被关闭，就不要用它的工具或 CLI（含 \`nuphus-call desktop_*\`）；Windows 的 UIA 清单通道（\`desktop_ui_*\`）不受这两个后端开关影响。
+| 后端 | 强项 | 什么时候用 |
+|---|---|---|
+| **Agent Desktop（默认主）** | OS 无障碍树 + 语义 @ref；不截图、不猜坐标，窗口挪动/DPI 变化都不受影响 | 原生应用、对话框、表单、菜单、列表等**有真实控件**的场景 |
+| **Nuphus（兜底）** | 截屏 + 本地 OCR + 像素坐标；另提供浏览器回落（\`nuphus-call browser_*\`） | Agent Desktop 拿不到可用控件树时：画布、自绘 UI、游戏、只有图片的目标 |
+| **Computer Use（第二清单通道）** | 紧凑的 app state 控件清单 | Agent Desktop 不可用/调用失败时的备用清单通道 |
 
-本机（Windows）已内置 Nuphus 桌面自动化 MCP（服务器名 \`nuphus\`），工具已直接注册在你的工具列表中（\`desktop_*\` 前缀），**直接调用即可，无需写脚本**。
+**选路顺序：Agent Desktop → Computer Use → Nuphus（像素兜底）**；⛔ 同一任务里不要来回混用多个后端，切换到哪个就在回复里说明。
 
-## 判存在（必做的第一步，Windows）
+## Agent Desktop 怎么用（CLI，已在 PATH）
 
-**工具列表里有 \`desktop_windows_list\` 才走本技能**（macOS 看上面那节）。没有就是「桌面自动化当前不可用」，最常见的原因是用户在
-「设置 → 自动化」里关掉了桌面总闸 —— 这时那一组工具是**被硬摘除**的（不是坏掉）。
-- ⛔ 不要硬着头皮调 \`desktop_*\`；
-- ⛔ 也**不要**改用 \`nuphus-call\` 命令行去绕总闸（那等于绕过用户的开关；总闸关闭时该说明已被下发为禁止项）；
-- ✅ 直接告诉用户「桌面自动化当前关闭，需要的话去『设置 → 自动化』打开」。
+\`\`\`bash
+agent-desktop snapshot --app "记事本" -i        # 拿无障碍树（含 @ref ID）
+agent-desktop find --name "保存"                 # 按角色/名字/文本找元素
+agent-desktop click @s8f3k2p9:e8                # 按 @ref 点击
+agent-desktop type @ref "文本"                   # 输入
+agent-desktop press @ref ENTER                  # 按键
+agent-desktop scroll @ref down                  # 滚动
+agent-desktop list-windows / list-apps / launch "<app>" / focus-window ...
+\`\`\`
+
+- \`@ref\` **只属于最近一次 snapshot**：任何操作后界面可能变化，下一步先重新 \`snapshot\`，⛔ 不要拿旧 ref 硬点。
+- 一次只发一个自动化调用；写操作/不可逆动作（发送、删除、支付、覆盖保存）先向用户确认。
+- 没有安装或工具不存在时，回到上表按顺序换下一个后端；⛔ 不要假装调用成功。
+- ⛔ 不操作系统授权 / 提权（UAC）弹窗。
+
+## 以常驻指令为准
+
+若常驻指令说某个后端已被关闭，就不要用它的 CLI / 工具（含 \`agent-desktop\` / \`nuphus-call desktop_*\`）；Windows 的 UIA 清单通道（\`desktop_ui_*\`）不受这些开关影响。
+
+## Nuphus 兜底（Agent Desktop 不可用时）
+
+**工具列表里有 \`desktop_windows_list\` 才走这一节**；没有就是该后端被关闭或未安装。
+- ⛔ 不要硬着头皮调 \`desktop_*\`；也不要用 \`nuphus-call\` 去绕总闸。
+- ✅ 告诉用户「桌面自动化当前关闭，需要的话去『设置 → 自动化』打开」。
 
 同理，**工具列表里没有 \`browser_*\` 时**不要假设浏览器能力可用（浏览器侧只走 \`ego-browser\`，见 browser-skill）。
 

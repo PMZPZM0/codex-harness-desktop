@@ -843,6 +843,7 @@
   flex: none;
 }
 .settings-exp-shell .browser-cap-icon.is-blue { color: #3b82f6; background: color-mix(in srgb, #3b82f6 14%, transparent); }
+.settings-exp-shell .browser-cap-icon.is-cyan { color: #0891b2; background: color-mix(in srgb, #0891b2 14%, transparent); }
 .settings-exp-shell .browser-cap-icon.is-violet { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 14%, transparent); }
 .settings-exp-shell .browser-cap-icon.is-amber { color: var(--amber); background: color-mix(in srgb, var(--amber) 16%, transparent); }
 .settings-exp-shell .browser-cap-head strong { font-size: 12.5px; font-weight: 600; white-space: nowrap; }

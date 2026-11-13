@@ -325,6 +325,25 @@ export function computerUseLauncher() {
 }
 
 /**
+ * `agent-desktop`（Vercel Labs，Apache-2.0）无障碍树桌面后端：返回 npm 包的 Node 启动器路径。
+ * ⛔ 与 computer-use 同一条纪律：**启动器 + 平台二进制**都在才算就绪（装一半时服务器起得来、每次调用都失败）。
+ *    平台二进制随 npm 包分发在 `bin/agent-desktop-<platform>-<arch>[.exe]`（1.3.0 实测）。
+ */
+export function agentDesktopLauncher() {
+  if (process.platform !== "darwin" && process.platform !== "win32" && process.platform !== "linux") return "";
+  const launcher = npmPackagePath("agent-desktop", "bin", "agent-desktop");
+  if (!launcher) return "";
+  const binDir = path.join(path.dirname(launcher));
+  const arch = process.arch === "arm64" ? "arm64" : "x64";
+  const binary = path.join(binDir, `agent-desktop-${process.platform}-${arch}${process.platform === "win32" ? ".exe" : ""}`);
+  try {
+    return fs.existsSync(launcher) && fs.existsSync(binary) ? launcher : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * REA 逆向分析（10-13 内置专家配套）：`rea-agents`（npm，MIT）装在 tools/npm-global，
  * 返回它的 MCP 启动脚本路径（`rea.mjs mcp`）。包缺失 ⇒ 空串（不注册，而不是注册一个起不来的服务器）。
  * ⛔ command 不能写裸 `rea`：装进安装包后 PATH 里没有它（nuphus / computer-use 同款坑）。

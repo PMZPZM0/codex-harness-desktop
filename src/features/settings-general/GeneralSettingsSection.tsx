@@ -146,21 +146,28 @@ function DataDirEditor({ currentPath, setNotice }: { currentPath: string; setNot
 function DesktopBackendOptions() {
   // platform 是 preload 手写段直接挂的字段（不是 IPC 通道，不在生成类型面里）⇒ 按形状断言读，不写 any
   const isMac = (window.codex as { platform?: string }).platform === "darwin";
-  const [pref, setPref] = useState<{ nuphus: boolean; computerUse: boolean } | null>(null);
+  const [pref, setPref] = useState<{ nuphus: boolean; computerUse: boolean; agentDesktop: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     window.codex.readAppSettings()
-      .then((s) => setPref({ nuphus: s.desktopBackendNuphus !== false, computerUse: s.desktopBackendComputerUse !== false }))
-      .catch(() => setPref({ nuphus: true, computerUse: true }));
+      .then((s) => setPref({ nuphus: s.desktopBackendNuphus === true, computerUse: s.desktopBackendComputerUse === true, agentDesktop: s.desktopBackendAgentDesktop !== false }))
+      .catch(() => setPref({ nuphus: false, computerUse: false, agentDesktop: true }));
   }, []);
-  const toggle = async (key: "nuphus" | "computerUse", next: boolean) => {
+  const toggle = async (key: "nuphus" | "computerUse" | "agentDesktop", next: boolean) => {
     if (!pref || busy) return;
     const previous = pref;
     setPref({ ...pref, [key]: next });
     setBusy(true);
     try {
-      const saved = await window.codex.saveAppSettings(key === "nuphus" ? { desktopBackendNuphus: next } : { desktopBackendComputerUse: next });
-      setPref({ nuphus: saved.desktopBackendNuphus !== false, computerUse: saved.desktopBackendComputerUse !== false });
+      const patch = key === "nuphus" ? { desktopBackendNuphus: next }
+        : key === "computerUse" ? { desktopBackendComputerUse: next }
+          : { desktopBackendAgentDesktop: next };
+      const saved = await window.codex.saveAppSettings(patch);
+      setPref({
+        nuphus: saved.desktopBackendNuphus === true,
+        computerUse: saved.desktopBackendComputerUse === true,
+        agentDesktop: saved.desktopBackendAgentDesktop !== false,
+      });
     } catch {
       setPref(previous);
     } finally {
@@ -170,16 +177,18 @@ function DesktopBackendOptions() {
   if (!pref) return null;
   const rows = isMac
     ? [
-        { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "首选：走 Accessibility 控件清单，按元素序号操作；随包内置，需要辅助功能 + 屏幕录制授权。" },
-        { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "辅助：Computer Use 不可用时兜底；关掉只停它的桌面工具，浏览器回落不受影响。" },
+        { key: "agentDesktop" as const, label: "Agent Desktop（无障碍树 · 首选）", desc: "默认主后端：Vercel Labs 无障碍树，按 @ref 快照/查找/点击，不猜坐标；随包内置。" },
+        { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "第二清单通道：Agent Desktop 不可用时兜底，按元素序号操作。" },
+        { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "像素兜底：画布/自绘界面读不到控件树时用；浏览器回落也由它提供。" },
       ]
     : [
-        { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "首选：真实键鼠 + 截屏 + 本地 OCR；关掉只停它的桌面工具，浏览器回落不受影响。" },
-        { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "辅助：UIA / Nuphus 拿不到控件清单时使用；未安装可在「自动化 → 版本与手动更新」装一次。" },
+        { key: "agentDesktop" as const, label: "Agent Desktop（无障碍树 · 首选）", desc: "默认主后端：Vercel Labs 无障碍树，按 @ref 快照/查找/点击，不猜坐标；随包内置。" },
+        { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "第二清单通道：Agent Desktop 不可用时兜底，按元素序号操作。" },
+        { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "像素兜底：画布/自绘界面读不到控件树时用；浏览器回落也由它提供。" },
       ];
   return (
     <div className="settings-backend-options">
-      <p className="settings-backend-options-title">桌面后端<span>两个默认都开 · 按系统优先</span></p>
+      <p className="settings-backend-options-title">桌面后端<span>默认只开 Agent Desktop · 开启多个时按主/辅顺序兜底</span></p>
       {rows.map((row) => (
         <div className="settings-toggle-row is-sub" key={row.key}>
           <span className="settings-toggle-icon">{row.key === "nuphus" ? <Monitor size={15} /> : <Sparkles size={15} />}</span>
@@ -187,8 +196,8 @@ function DesktopBackendOptions() {
           <ToggleSwitch checked={pref[row.key]} disabled={busy} label={`桌面后端：${row.label}`} onChange={(next) => void toggle(row.key, next)} />
         </div>
       ))}
-      {!pref.nuphus && !pref.computerUse ? (
-        <p className="settings-backend-options-warn">两个后端都关了：桌面自动化没有可用后端（Windows 的 UIA 清单通道不受这两个开关影响）。</p>
+      {!pref.nuphus && !pref.computerUse && !pref.agentDesktop ? (
+        <p className="settings-backend-options-warn">三个后端都关了：桌面自动化没有可用后端（Windows 的 UIA 清单通道不受这些开关影响）。</p>
       ) : null}
       <p className="settings-backend-options-hint">切换会重写配置并重启引擎（约几秒）。</p>
     </div>

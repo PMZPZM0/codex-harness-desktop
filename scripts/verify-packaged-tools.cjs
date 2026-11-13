@@ -12,7 +12,7 @@ const modules = path.join(root, "npm-global", "node_modules");
 //    「修复安装」解 zip 才可用，与「随包内置、开箱即用」的承诺不符。
 //    修法：package.json 里另加一条 from=resources/tools/npm-global/node_modules 的映射（那层不叫 node_modules，绕过剪枝）。
 //    下面两条断言把这件事钉死在产物层：谁把那条映射删了/写歪了，这里立刻红。
-for (const marker of ["@nuphus/nuphus-mcp/package.json"]) {
+for (const marker of ["@nuphus/nuphus-mcp/package.json", "agent-desktop/package.json"]) {
   assert.ok(fs.existsSync(path.join(modules, marker)),
     `随包缺少 ${marker} —— npm-global/node_modules 没打进包。检查 package.json extraResources 里那条 ` +
     "from=resources/tools/npm-global/node_modules 的映射（electron-builder 会丢弃 from 根级的 node_modules）。");

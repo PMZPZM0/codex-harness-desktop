@@ -6,7 +6,7 @@ import { Menu, Notification, app, BrowserWindow, clipboard, globalShortcut, ipcM
 import path from "node:path";
 import { readAppSettings, readAppSettingsSync, saveAppSettings, type AppSettings } from "../app-settings";
 import { upsertSkillDiscipline, DISCIPLINE_START, DISCIPLINE_END } from "../skill-discipline";
-import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, existingToolPath, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot } from "../toolchain";
+import { augmentedPath, bundledGit, bundledNode, bundledPython, CHINA_NPM_REGISTRY, existingToolPath, nuphusBinary, npmGlobalRoot, toolchainEnv, toolsRoot, agentDesktopLauncher } from "../toolchain";
 import { applyCustomModel } from "../features/custom-model-apply";
 import { readConnectors } from "./07-connectors-io";
 import { readBuiltinPlugins } from "./09-agents-plugins";
@@ -39,8 +39,10 @@ export async function devInstructionsInput() {
     desktop: appSettings.desktopAutomation !== false,
     browser: appSettings.browserAutomation !== false,
     /* 11-03：桌面后端开关也进指令输入 —— 关掉的后端不许再被引导（否则开关形同虚设）。 */
-    nuphusBackend: appSettings.desktopBackendNuphus !== false,
-    computerUseBackend: appSettings.desktopBackendComputerUse !== false,
+    nuphusBackend: appSettings.desktopBackendNuphus === true,
+    computerUseBackend: appSettings.desktopBackendComputerUse === true,
+    /* 11-13：agent-desktop 只有**真装了**才写 CLI 用法（没装时写了模型会照着调、每次都失败）。 */
+    agentDesktopBackend: appSettings.desktopBackendAgentDesktop !== false && Boolean(agentDesktopLauncher()),
     // 内置媒体插件（生图）：配置并启用后注入命令行用法，引擎（含老会话）由此「看见」并真实调用
     // ⛔ 10-30 撤「视觉插件 / nuphus 视觉」两个探针字段：视觉辅助插件整体移除（识图工具 / 命令行 / 对应 env 同轮拆）。
     // ⛔ 别在这里写出英文标识符原文 —— 守卫【85】按文本判「字段不许复活」，注释里的拼写会误伤（实测假红）。

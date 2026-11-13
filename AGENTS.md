@@ -215,28 +215,29 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   ⇒ 原样写出就不是合法 JSON，坐标一律过 `Round-Geom` 归一。
 - ⛔ `harness-uia.mjs` 拉起 PowerShell 只用**参数数组、不开 shell**（title/text 是外部输入 = 注入面）。
 
-### 🖥 桌面自动化后端 open-computer-use（10-04 立；11-03 扩到 Windows、双开关，守卫【274】）
+### 🖥 桌面自动化后端（11-13：agent-desktop 默认主；Nuphus / Computer Use 保留为可选兜底，守卫【274】）
 
-用户决策（11-03 更新）：**两个后端都可用、默认都开** —— macOS computer-use 主 / nuphus 辅；
-Windows nuphus（+ UIA 清单）主 / computer-use 辅。mac 随包、Windows 也随包（`prepare-windows-tools.cjs`）。
+用户决策（11-13）：**三个后端都保留，默认只开 agent-desktop**；另两个默认关，用户显式开启后参与兜底。
+三者的优势与调用顺序（常驻指令 / 桌面技能 / 能力表三处必须一致）：
 
-- 数据源 = npm 包 `open-computer-use`（MIT，作者 iFurySt，是对 Codex 原生 computer use 的开源复刻）。
-  包内**已带四平台二进制**（解包 ~13MB），`postinstall` 只打印安装提示 ⇒ CI 加 `--ignore-scripts` 也装得动。
-- 装法照 nuphus：`scripts/prepare-mac-tools.cjs` 里 `npm install -g --prefix`，版本走
-  `scripts/lib/tools-versions.cjs` 的 `computerUse`（⛔ 不许在别处写字面量，【274】钉着）。
-  装完**裁掉 `dist/windows` 与 `dist/linux`**（mac 包里不该躺别的平台的二进制），并补 `Contents/MacOS/*` 执行位。
-- 注册 = `[mcp_servers.computer-use]`，`command` 用**随包 node + 启动脚本绝对路径**、`args = [<launcher>, "mcp"]`。
-  ⛔ 不能写裸命令名 `open-computer-use`：装进 `.app` 后 PATH 里没有它，会得到一个静默起不来的服务器。
-- ⛔ **两个后端开关（11-03 用户令，覆盖 10-04「mac 永远掩 nuphus 桌面组」）**：「控制台 → 桌面自动化 → 桌面后端」
-  有 Nuphus / Computer Use 两个小开关，**默认都开**；关 Nuphus 只把它的 15 个 `desktop_*` 整组进 `disabled_tools`
-  （浏览器组保留），关 Computer Use 则不写它的 MCP 段。
-- **平台优先级**：Windows = nuphus 主 / computer-use 辅；macOS = computer-use 主 / nuphus 辅。
-  三处必须一致：能力表排序（`resolveCapabilities` 按平台排序）、常驻指令（`desktopInstructions(platform)`）、
-  `desktop-automation` 技能。⛔ Windows 包也随带 computer-use（`prepare-windows-tools.cjs`，只留 `dist/windows`）。
-- 「设置 → 开发工具」的**当前能力链路**按平台排序给首选后端（mac=`computer-use-desktop`，win=`nuphus-desktop`），
-  判据与 automation-policy 同源，【274】真跑 `resolveCapabilities` 比对两平台结论。
-- ⚠️ **未经真机验证**：签名/公证与 Gatekeeper 放行、首次「辅助功能 + 屏幕录制」授权体验只能在 mac 上跑出来。
-  产物层的三条硬校验（主程序存在 / 执行位 / 不残留别的平台二进制）已写进 `scripts/verify-packaged-tools.cjs`。
+| 后端 | 优势 | 角色 |
+|---|---|---|
+| **agent-desktop**（Vercel Labs，Apache-2.0） | OS 无障碍树 + 语义 `@ref`，不截图不猜坐标；窗口挪动 / DPI 变化都不受影响 | **默认主后端**（原生应用 / 对话框 / 表单 / 菜单） |
+| **computer-use**（open-computer-use，MIT） | 紧凑的 app state 控件清单 | 第二清单通道（Agent Desktop 不可用时） |
+| **nuphus**（@nuphus/nuphus-mcp） | 截屏 + 本地 OCR + 像素坐标；另提供 `browser_*` 浏览器回落 | 像素兜底（画布 / 自绘 / 控件树残缺） |
+
+- **agent-desktop 随包内置**：npm 包 32MB 自带上六套平台二进制，`scripts/prepare-{windows,mac}-tools.cjs`
+  用 `agent-desktop@<tools-versions.agentDesktop>` 装进 `npm-global`；before-pack / verify-packaged-tools 都硬校验它。
+- **注册** = `[mcp_servers.agent-desktop]`（command = 随包 node，args = `[<launcher>, "mcp"]`）；
+  上游 ~70 个工具**只保留核心 12 个**，其余写 `disabled_tools`（不占模型上下文）。模型侧实际走 CLI：
+  `agent-desktop snapshot --app "<名>" -i` → `click @ref` / `type @ref` / `press @ref`（ref 只属于最近一次 snapshot）。
+- 关闭某后端后，常驻指令不再引导它的 CLI/工具；**Nuphus 关掉只掩 `desktop_*`，`browser_*` 永远保留**
+  （未装 Ego 时的浏览器回落）；computer-use 关掉则整段不写。
+- 三个开关在「设置 → 自动化 → 桌面自动化」与「控制台 → 通用 → 桌面自动化」读同一份 app-settings；
+  默认值：`desktopBackendAgentDesktop !== false`、`desktopBackendNuphus === true`、`desktopBackendComputerUse === true`。
+- 「开发工具 / 组件更新」里 `agent-desktop` 走 npm 国内镜像在线更新；桌面自动化卡片也带安装/检查更新入口。
+- ⚠️ **未经真机验证**：签名/公证与 Gatekeeper、首次「辅助功能 + 屏幕录制」授权只能在 mac 上跑出来；
+  产物层硬校验见 `scripts/verify-packaged-tools.cjs`。
 
 ### 🎨 前端开发（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发；10-06 起画布 = 上游 + 本仓组件补丁层，守卫【283】162 条）
 

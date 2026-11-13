@@ -178,6 +178,8 @@ async function main() {
     /* 11-03 用户令：Windows 也带 computer-use 作为辅助桌面后端（nuphus 仍是首选）。
        13MB 的 npm 包，包里只有 dist/windows 需要；mac/linux 二进制在下面裁掉。 */
     `open-computer-use@${TOOLS_VERSIONS.computerUse}`,
+    /* 11-13：agent-desktop（默认桌面后端，无障碍树 + @ref）。32MB 自带六平台二进制，50MB 口径随包内置。 */
+    `agent-desktop@${TOOLS_VERSIONS.agentDesktop}`,
   ], env);
 
   // open-computer-use：只留 Windows 主程序（mac 的 .app / linux 二进制裁掉，省体积也免杀软误报）
@@ -234,6 +236,7 @@ async function main() {
   const required = [
     ["node/node.exe", "随包 Node"],
     ["npm-global/node_modules/@nuphus/nuphus-mcp/package.json", "Nuphus 桌面自动化"],
+    ["npm-global/node_modules/agent-desktop/package.json", "Agent Desktop 无障碍树后端"],
     ["npm-global/nuphus-call.cmd", "nuphus-call 命令行桥"],
     ["vscode-cli/code.exe", "VS Code CLI"],
     ["cloudflared.exe", "cloudflared"],

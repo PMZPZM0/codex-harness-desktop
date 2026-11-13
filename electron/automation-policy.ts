@@ -87,10 +87,8 @@ export type AutomationSwitches = { desktop: boolean; browser: boolean };
  * 该被**硬禁用**的 nuphus 工具：关闭的那一组整体摘掉。
  * 返回空数组表示不需要掩码（两个都开着）。
  *
- * ⛔ 11-03 用户令（覆盖 10-04「mac 永远掩掉 nuphus 桌面组」）：两个后端默认都开，
- *   平台优先级交给常驻指令（Windows nuphus 主 / mac computer-use 主），这里只在
- *   **用户关掉 nuphus 后端**时掩它的桌面组；browser_* 不受影响（仍是 browse-skills 回落通道）。
- *   `platform` 参数保留（历史调用点 + 守卫），当前策略下不参与掩码判定。
+ * ⛔ 11-13 起 nuphus 默认不再作为桌面后端（默认桌面后端 = agent-desktop）⇒ 调用方
+ *    传 `{ nuphus: false }` 时只掩桌面组；`browser_*` 永远保留（未装 Ego 时的浏览器回落）。
  */
 export function nuphusDisabledTools(
   switches: AutomationSwitches,
@@ -228,4 +226,73 @@ export function withNuphusMasksForRules<T extends Record<string, { deny: string[
   const deny = [...new Set([...current.deny, ...masked])];
   const keep = (list: string[]) => list.filter((tool) => !masked.includes(tool));
   return { ...rules, [NUPHUS_MCP_SERVER]: { deny, ask: keep(current.ask), allow: keep(current.allow) } } as T;
+}
+
+/**
+ * agent-desktop（Vercel Labs，Apache-2.0）—— 无障碍树桌面操作后端（11-13 用户令「放到电脑自动化板块」）。
+ *
+ * 与 nuphus「截屏 + OCR + 像素坐标」互补：它直接读 OS 无障碍树（macOS AX / Windows UIA / Linux AT-SPI），
+ * 返回带 @ref 的 JSON，按元素引用点击/输入，不猜坐标。支持 macOS 13+ / Windows 10 1809+ / Ubuntu 24.04+。
+ *
+ * ⛔ 上游 MCP 一次暴露 ~70 个工具，schema 常驻上下文太重 ⇒ 只保留核心 12 个可调用，
+ *    其余写进 `disabled_tools`（工具从引擎表消失，不占 schema）。升级上游后重跑 tools/list 对齐本表。
+ */
+export const AGENT_DESKTOP_MCP_SERVER = "agent-desktop";
+
+/** 核心可调用的 12 个工具（观察 → 定位 → 操作 → 基础窗口管理）。 */
+export const AGENT_DESKTOP_CORE_TOOLS: readonly string[] = [
+  "desktop_snapshot",
+  "desktop_find",
+  "desktop_click",
+  "desktop_type",
+  "desktop_set_value",
+  "desktop_press",
+  "desktop_scroll",
+  "desktop_list_windows",
+  "desktop_list_apps",
+  "desktop_launch",
+  "desktop_focus_window",
+  "desktop_wait",
+];
+
+/** 上游 1.3.0 的完整工具面（实测 `agent-desktop mcp` 的 tools/list；守卫【274】比对）。 */
+export const AGENT_DESKTOP_ALL_TOOLS: readonly string[] = [
+  "desktop_snapshot", "desktop_find", "desktop_screenshot", "desktop_get", "desktop_is",
+  "desktop_click", "desktop_double_click", "desktop_triple_click", "desktop_right_click",
+  "desktop_type", "desktop_set_value", "desktop_clear", "desktop_focus", "desktop_select",
+  "desktop_toggle", "desktop_check", "desktop_uncheck", "desktop_expand", "desktop_collapse",
+  "desktop_scroll", "desktop_scroll_to", "desktop_press", "desktop_key_down", "desktop_key_up",
+  "desktop_hover", "desktop_drag", "desktop_mouse_move", "desktop_mouse_click", "desktop_mouse_down",
+  "desktop_mouse_up", "desktop_mouse_wheel", "desktop_launch", "desktop_close_app",
+  "desktop_list_windows", "desktop_list_displays", "desktop_list_apps", "desktop_focus_window",
+  "desktop_resize_window", "desktop_move_window", "desktop_minimize", "desktop_maximize",
+  "desktop_restore", "desktop_list_surfaces", "desktop_open_system_surface", "desktop_list_notifications",
+  "desktop_dismiss_notification", "desktop_dismiss_all_notifications", "desktop_notification_action",
+  "desktop_clipboard_get", "desktop_clipboard_set", "desktop_clipboard_clear", "desktop_wait",
+  "desktop_status", "desktop_permissions", "desktop_version", "desktop_batch", "desktop_skills_list",
+  "desktop_skills_get", "desktop_skills_path", "desktop_session_start", "desktop_session_end",
+  "desktop_session_list", "desktop_session_gc", "desktop_cursor_overlay_enable", "desktop_cursor_overlay_disable",
+  "desktop_trace_show", "desktop_trace_export", "desktop_sandbox_install", "desktop_sandbox_create",
+  "desktop_sandbox_start", "desktop_sandbox_stop", "desktop_sandbox_status", "desktop_sandbox_list",
+  "desktop_sandbox_rm", "desktop_sandbox_exec",
+];
+
+/** 除核心 12 个以外全部禁用（不占模型上下文）。 */
+export function agentDesktopDisabledTools(): string[] {
+  return AGENT_DESKTOP_ALL_TOOLS.filter((tool) => !AGENT_DESKTOP_CORE_TOOLS.includes(tool));
+}
+
+/** agent-desktop 支持 macOS / Windows / Linux。 */
+export function agentDesktopSupported(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "darwin" || platform === "win32" || platform === "linux";
+}
+
+/** 注册判据：平台支持 + 桌面总闸开 + 后端开关开 + 启动器与平台二进制齐备。 */
+export function shouldRegisterAgentDesktop(input: {
+  desktop: boolean;
+  enabled?: boolean;
+  binaryReady: boolean;
+  platform?: NodeJS.Platform;
+}): boolean {
+  return agentDesktopSupported(input.platform) && input.desktop === true && input.enabled !== false && input.binaryReady === true;
 }

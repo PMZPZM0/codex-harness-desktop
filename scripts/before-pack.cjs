@@ -177,6 +177,7 @@ module.exports = async function beforePack() {
   // 注意这里查的是 npm-global 本体而不是 zip —— zip 只是「修复安装」的来源，不是唯一保障。
   const requiredShipped = [
     { marker: ["@nuphus", "nuphus-mcp", "package.json"], label: "Nuphus 桌面自动化（nuphus-mcp）" },
+    { marker: ["agent-desktop", "package.json"], label: "Agent Desktop（无障碍树后端）" },
   ];
   const missingShipped = requiredShipped.filter(({ marker }) => !fs.existsSync(path.join(modules, ...marker)));
   if (missingShipped.length) {
