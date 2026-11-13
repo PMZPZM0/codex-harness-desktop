@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 661,
+  "count": 667,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -3937,6 +3937,66 @@
       "paramsDecl": "input: unknown",
       "returns": "Promise<any>",
       "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "startRpaRecording",
+      "channel": "rpa:record-start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; startedAt?: number; hotkeyReady?: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "stopRpaRecording",
+      "channel": "rpa:record-stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number }; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "rpaRecorderState",
+      "channel": "rpa:recorder-state",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number } | null }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "discardRpaRecording",
+      "channel": "rpa:record-discard",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<void>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "playRpaRecipe",
+      "channel": "rpa:play-start",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "stopRpaPlayback",
+      "channel": "rpa:play-stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean }>",
+      "invokeArgs": "",
       "cast": null,
       "note": null
     },

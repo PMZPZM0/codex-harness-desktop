@@ -56,6 +56,7 @@ export function automationAgentsPages(app: HarnessAppApi): Partial<Record<Settin
     localSkills,
     modelId,
     openAppConfirm,
+    openAppPrompt,
     openEditExpertTeam,
     openEditSubAgent,
     openNewExpertTeam,
@@ -144,7 +145,7 @@ export function automationAgentsPages(app: HarnessAppApi): Partial<Record<Settin
     "boss-groups": { render: () => <BossGroupsSection openAppConfirm={openAppConfirm} onNotice={setNotice} /> },
     browser: { back: { to: "automation", label: "返回自动化" }, render: () => <BrowserSettingsSection browserHome={browserHome} setBrowserHome={setBrowserHome} setBrowserDraft={setBrowserDraft} setNotice={setNotice} toolsStatus={toolsStatus} ToolCard={ToolCard} onOpenDevtools={() => setSettingsPage("devtools")} /> },
     computer: { back: { to: "automation", label: "返回自动化" }, render: () => <ComputerSettingsSection toolsStatus={toolsStatus} ToolCard={ToolCard} setNotice={setNotice} onOpenDevtools={() => setSettingsPage("devtools")} /> },
-    rpa: { back: { to: "automation", label: "返回自动化" }, render: () => <RpaSettingsSection rpaRecipes={rpaRecipes} rpaRunning={rpaRunning} thread={thread} setNotice={setNotice} setRpaRunning={setRpaRunning} selectedModel={selectedModel} modelName={modelName} modelId={modelId} sandboxPolicy={sandboxPolicy} sandbox={sandbox} workspace={workspace} openAppConfirm={openAppConfirm} setRpaRecipes={setRpaRecipes} taskList={taskList} setTaskList={setTaskList} /> },
+    rpa: { back: { to: "automation", label: "返回自动化" }, render: () => <RpaSettingsSection rpaRecipes={rpaRecipes} rpaRunning={rpaRunning} thread={thread} setNotice={setNotice} setRpaRunning={setRpaRunning} selectedModel={selectedModel} modelName={modelName} modelId={modelId} sandboxPolicy={sandboxPolicy} sandbox={sandbox} workspace={workspace} openAppConfirm={openAppConfirm} openAppPrompt={openAppPrompt} setRpaRecipes={setRpaRecipes} taskList={taskList} setTaskList={setTaskList} /> },
     /* 10-27 用户令：「把上面三个插件放到已安装里面」⇒ 内置三件不再单独占一段，
    作为 builtinSlot 传进插件页，只在「已安装」视图里出现。 */
     agents: { render: () => <AgentsSettingsSection openNewSubAgent={openNewSubAgent} refreshSubAgents={refreshSubAgents} resourceLoading={resourceLoading} subAgents={subAgents} toggleSubAgentEnabled={toggleSubAgentEnabled} openEditSubAgent={openEditSubAgent} deleteSubAgent={deleteSubAgent} subAgentEditorOpen={subAgentEditorOpen} subAgentDraft={subAgentDraft} setSubAgentDraft={setSubAgentDraft} setSubAgentEditorOpen={setSubAgentEditorOpen} saveSubAgent={saveSubAgent} setNotice={setNotice} onBack={() => setSettingsPage("agentteam")} /> },

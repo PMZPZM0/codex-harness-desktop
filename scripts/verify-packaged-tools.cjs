@@ -82,6 +82,12 @@ if (process.platform === "darwin") {
   }
 }
 if (process.platform === "win32") {
+  /* 键鼠录制/回放（11-13）：两个 PowerShell 脚本必须随包；缺了录制按钮就是死键。
+     ⛔ 打包前这里传的是 resources/tools，脚本源在兄弟目录 resources/rpa；打包后是 tools/rpa。 */
+  const rpaDir = [path.join(root, "rpa"), path.join(root, "..", "rpa")]
+    .find((dir) => ["record.ps1", "play.ps1"].every((name) => fs.existsSync(path.join(dir, name))));
+  assert.ok(rpaDir,
+    "缺少 RPA 录制脚本（找过 tools/rpa 与 resources/rpa）—— 检查 package.json extraResources 里 resources/rpa → tools/rpa 的映射。");
   /* 11-03 用户令：Windows 也随包带 computer-use（辅助后端）。 */
   const ocuRoot = path.join(modules, "open-computer-use");
   const ocuLauncher = path.join(ocuRoot, "bin", "open-computer-use");

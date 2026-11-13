@@ -2275,10 +2275,34 @@ const CHECKS = [
         await wait(400);
         const pageText = await h.eval(`(document.querySelector(".settings-modal")?.innerText || "")`);
         h.check("③ 设置页 RPA 列表显示配方", String(pageText).includes(probeName), String(pageText).slice(0, 200));
+
+        /* ④⑤⑥ 原生录制器（仅 Windows）：真启动/停止；不注入任何输入，应如实报「没有录到」。
+           ⛔ 不测回放：回放会真的动鼠标/键盘，不能放在自动化验收里。 */
+        const platform = await h.eval(`String(window.codex.platform || "")`);
+        if (platform === "win32") {
+          const started = await h.eval(`window.codex.startRpaRecording()`);
+          h.check("④ 录制器能启动（Windows PowerShell + 随包脚本）", started?.ok === true, JSON.stringify(started));
+          if (started?.ok) {
+            await wait(1500);
+            const stopped = await h.eval(`window.codex.stopRpaRecording()`);
+            h.check("⑤ 空录制如实报错（不生成假配方）", stopped?.ok === false && /没有录到/.test(String(stopped?.error || "")), JSON.stringify(stopped));
+          }
+          const recState = await h.eval(`window.codex.rpaRecorderState()`);
+          h.check("⑥ 录制状态已复位（无残留进程/草稿）", recState?.recording === false && recState?.draft == null, JSON.stringify(recState));
+        }
+        /* ⑦ 录制动作能落盘（不做回放，只验存储） */
+        const actionName = "__e2e_rpa_actions__";
+        await h.eval(`window.codex.saveRpaRecipe({ name: ${JSON.stringify(actionName)}, kind: "desktop", steps: ["点击"], actions: [{ t: 0, type: "down", button: "left", x: 1, y: 1 }], screen: { width: 1920, height: 1080 } })`);
+        const withActions = await h.eval(`window.codex.listRpaRecipes()`);
+        const actionRow = (Array.isArray(withActions) ? withActions : []).find((r) => r.name === actionName);
+        h.check("⑦ 录制动作/分辨率落盘", Array.isArray(actionRow?.actions) && actionRow.actions.length === 1 && actionRow.screen?.width === 1920, JSON.stringify(actionRow));
       } finally {
+        await h.eval(`window.codex.stopRpaRecording()`).catch(() => undefined);
         const leftovers = await h.eval(`window.codex.listRpaRecipes()`).catch(() => []);
         for (const recipe of (Array.isArray(leftovers) ? leftovers : [])) {
-          if (recipe?.name === probeName) await h.eval(`window.codex.deleteRpaRecipe(${JSON.stringify(recipe.id)})`).catch(() => undefined);
+          if (recipe?.name === probeName || recipe?.name === "__e2e_rpa_actions__") {
+            await h.eval(`window.codex.deleteRpaRecipe(${JSON.stringify(recipe.id)})`).catch(() => undefined);
+          }
         }
         await h.pressKey("Escape").catch(() => undefined);
       }

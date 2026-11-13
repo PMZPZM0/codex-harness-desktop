@@ -689,6 +689,12 @@ contextBridge.exposeInMainWorld("codex", {
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
   recordRpaRun: (input: { id: string; ok: boolean; error?: string }) => __ipc("rpa:run-result", 1, [input]),
   saveRpaRecipe: (input: unknown) => __ipc("rpa:save", 1, [input]),
+  startRpaRecording: () => __ipc("rpa:record-start", 0, []),
+  stopRpaRecording: () => __ipc("rpa:record-stop", 0, []),
+  rpaRecorderState: () => __ipc("rpa:recorder-state", 0, []),
+  discardRpaRecording: () => __ipc("rpa:record-discard", 0, []),
+  playRpaRecipe: (id: string) => __ipc("rpa:play-start", 1, [id]),
+  stopRpaPlayback: () => __ipc("rpa:play-stop", 0, []),
   /* 10-07 取消安装：杀子进程 + 清临时文件；reason=not-running 表示该工具没有在跑的安装 */
   cancelRuntime: (id: string) => __ipc("runtime:cancel", 1, [id]),
   /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */

@@ -1101,6 +1101,12 @@ interface Window {
     listRpaRecipes(): Promise<any[]>;
     recordRpaRun(input: { id: string; ok: boolean; error?: string }): Promise<void>;
     saveRpaRecipe(input: unknown): Promise<any>;
+    startRpaRecording(): Promise<{ ok: boolean; startedAt?: number; hotkeyReady?: boolean; error?: string }>;
+    stopRpaRecording(): Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number }; error?: string }>;
+    rpaRecorderState(): Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number } | null }>;
+    discardRpaRecording(): Promise<void>;
+    playRpaRecipe(id: string): Promise<{ ok: boolean; error?: string }>;
+    stopRpaPlayback(): Promise<{ ok: boolean }>;
     /* 10-07 取消安装：杀子进程 + 清临时文件；reason=not-running 表示该工具没有在跑的安装 */
     cancelRuntime(id: string): Promise<{ ok: boolean; reason?: string; killed?: number }>;
     /* 工具自检（10-02 用户要的「检查」）：逐个探测已装工具**能不能真跑**（跑一次版本命令/可执行性），返回逐项结果，界面直接列给人看 */

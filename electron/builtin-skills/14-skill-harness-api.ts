@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（116 个能力域 / 661 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（116 个能力域 / 667 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -449,9 +449,9 @@ IM 通道 Bot（把某个会话接到 IM 机器人上）
 会话笔名与上下级（10-31）：每个会话自动分配一个两字笔名（主会话对外是「XX主管」，用户是总经理），被调度会话知道自己的上级主管；用户可改笔名（两字中文、全局不重名），改完主进程广播，子会话那边的上级身份随之更新。⛔ 职级与笔名是展示层与指令层共用的同一份真相源
 通道：session-alias:ensure, session-alias:set, session-alias:snapshot
 
-### rpa（4 通道）
+### rpa（10 通道）
 RPA 配方（录制好的桌面自动化流程）
-通道：rpa:delete, rpa:list, rpa:run-result, rpa:save
+通道：rpa:delete, rpa:list, rpa:play-start, rpa:play-stop, rpa:record-discard, rpa:record-start, rpa:record-stop, rpa:recorder-state, rpa:run-result, rpa:save
 
 ### tasks（5 通道）
 任务清单（用户待办，可从对话生成）

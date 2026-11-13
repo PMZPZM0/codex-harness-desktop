@@ -264,6 +264,10 @@
       {
         "from": "resources/expert-skills",
         "to": "expert-skills"
+      },
+      {
+        "from": "resources/rpa",
+        "to": "tools/rpa"
       }
     ],
     "asarUnpack": [

@@ -624,7 +624,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
       },
       // RPA 配方与任务清单：让 agent 能存配方/跑配方/维护清单/向用户提问
       { type: "function", name: "rpa_save", description: "把刚跑通的一条自动化流程保存为 RPA 配方，下次可直接复用执行。同名会更新已有配方（不会重复新建）；步骤格式与什么时候该存见 rpa-recipes 技能。", inputSchema: { type: "object", properties: { name: { type: "string", description: "配方名称，如「每天导出日报」" }, desc: { type: "string", description: "一句话说明用途" }, kind: { type: "string", enum: ["browser", "desktop", "mixed"] }, steps: { type: "array", items: { type: "string" }, description: "按顺序的执行步骤" }, target: { type: "string", description: "起始网址或目标程序，可省略" } }, required: ["name", "steps", "kind"] } },
-      { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方（名称必须唯一匹配）。执行时按 steps 逐步复现自动化流程；运行结果在回合结束时回写，流程没跑完前不要宣布成功。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
+      { type: "function", name: "rpa_run", description: "列出已保存的 RPA 配方（不传 name），或按名称执行某条配方（名称必须唯一匹配）。带键鼠录制动作的配方由宿主原生回放；文本配方按 steps 逐步复现。运行结果在回合/回放结束时回写，流程没跑完前不要宣布成功。", inputSchema: { type: "object", properties: { name: { type: "string", description: "要执行的配方名称；省略则返回全部配方清单" } } } },
       /* 10-17 用户令「配套工具」：压缩上下文此前只有界面按钮，模型自己查不到通道（它会说
          「没有 compact 工具」）。⇒ 独立工具（不进 harness_tools 网关：这是引擎动作，不是网关能力）。 */
       { type: "function", name: "compact_context", description: "压缩当前会话的上下文（引擎原生压缩）。当对话很长、上下文占用很高、或用户说「压缩一下上下文」时调用。压缩由引擎执行：历史被摘要、上下文显著缩短，当前回合继续；无需等待它完成。", inputSchema: { type: "object", properties: {}, required: [] } },

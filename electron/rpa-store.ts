@@ -2,6 +2,22 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 
+/** 键鼠录制的一条原始动作（回放按它重放；t 为相对毫秒）。 */
+export type RpaAction = {
+  t: number;
+  type: "move" | "down" | "up" | "keydown" | "keyup" | "focus";
+  x?: number;
+  y?: number;
+  button?: string;
+  vk?: number;
+  shift?: boolean;
+  ctrl?: boolean;
+  alt?: boolean;
+  win?: boolean;
+  caps?: boolean;
+  title?: string;
+};
+
 /** RPA 配方：记录一次跑通的自动化流程，供下次一键复用 */
 export type RpaRecipe = {
   id: string;
@@ -14,6 +30,13 @@ export type RpaRecipe = {
   /** 目标 URL / 目标应用（可选） */
   target: string;
   workspace?: string;
+  /** 键鼠录制的原始动作（有它才能原生回放；文本配方没有） */
+  actions?: RpaAction[];
+  /** 录制时的屏幕分辨率（回放时按比例缩放坐标） */
+  screen?: { width: number; height: number };
+  /** 录制完成时间 / 录制时长（毫秒） */
+  recordedAt?: number;
+  durationMs?: number;
   /** 复用次数 */
   runCount: number;
   /** 最近运行状态 */
@@ -71,6 +94,10 @@ export class RpaStore {
       steps: (input.steps ?? []).map((x) => String(x).trim()).filter(Boolean),
       target: input.target?.trim() ?? "",
       workspace: input.workspace,
+      actions: Array.isArray(input.actions) ? input.actions.slice(0, 20000) : existing?.actions,
+      screen: input.screen ?? existing?.screen,
+      recordedAt: input.recordedAt ?? existing?.recordedAt,
+      durationMs: input.durationMs ?? existing?.durationMs,
       runCount: existing?.runCount ?? 0,
       lastStatus: existing?.lastStatus,
       lastError: existing?.lastError,

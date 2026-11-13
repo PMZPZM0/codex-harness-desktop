@@ -558,6 +558,12 @@ ${st.hint}`);
                     await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `没有找到名为「${args.name}」的配方。可用：${list.map((r: any) => r.name).join("、") || "（空）"}` }], success: false });
                   } else {
                     const recipe = matched.recipe;
+                    if (Array.isArray(recipe.actions) && recipe.actions.length) {
+                      /* 键鼠录制的配方有原始动作 ⇒ 主进程原生回放（不交给模型逐条猜）；
+                         结果由主进程在播放器退出时回写并广播 rpa-play-finished。 */
+                      const started = await window.codex.playRpaRecipe(recipe.id);
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: started?.ok ? `[RPA 配方「${recipe.name}」开始原生回放（${recipe.actions.length} 个动作）]\n回放结束后宿主会回写运行结果；可用 Ctrl+Alt+F10 停止。` : `回放启动失败：${started?.error ?? "未知原因"}` }], success: started?.ok === true });
+                    } else {
                     const runThread = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
                     /* 同一会话同时只有一个活动回合 ⇒ 用引擎下发的 threadId 去运行态表取 turnId；
                        拿不到时退回 threadId（tracker 只在没有 turnId 的登记上匹配）。
@@ -580,7 +586,8 @@ ${st.hint}`);
                       throw error;
                     }
                     }
-                    // 成功只代表回执已发出；ok/failed 由 03-thread-id 在回合结束时统一回写
+                    }
+                    // 成功只代表回执已发出；ok/failed 由 03-thread-id 在回合结束时统一回写（文本配方）
                   }
                 }
               } else if (event.params?.tool === "task_add") {
