@@ -6,6 +6,8 @@
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
 import { createToolCallDedupe } from "../../../../../lib/tool-call-dedupe.mjs";
+import { matchRpaRecipe } from "../../../../../lib/rpa-recipes.mjs";
+import { cancelRpaRun, pendingRpaRecipeId, trackRpaRun } from "../../../../../lib/rpa-run-tracker.mjs";
 import { handleDataAccessTool } from "../../../../data-access";
 import { readStoredCodexAvatar, setCodexIdentity } from "../../../../../lib/codex-identity.mjs";
 /* 用户人格库（行业身份预设）：与任何第三方 IP 无关。 */
@@ -533,9 +535,13 @@ ${st.hint}`);
                 // 并行阶段：一次提交多名成员，宿主并发执行（Promise.all 同时发起）后一起返回
                 await bag.invokeTeamPhase(Array.isArray(args.tasks) ? args.tasks : [], String(event.params?.threadId ?? ""), event.id!);
               } else if (event.params?.tool === "rpa_save") {
-                const result = await window.codex.saveRpaRecipe({ name: String(args.name ?? ""), desc: String(args.desc ?? ""), kind: String(args.kind ?? "browser"), steps: (Array.isArray(args.steps) ? args.steps : [String(args.steps ?? "")]).map(String), target: args.target ? String(args.target) : undefined, workspace: bag.workspace || undefined });
+                const kindRaw = String(args.kind ?? "mixed");
+                const kind = kindRaw === "browser" || kindRaw === "desktop" || kindRaw === "mixed" ? kindRaw : "mixed";
+                const result = await window.codex.saveRpaRecipe({ name: String(args.name ?? ""), desc: String(args.desc ?? ""), kind, steps: (Array.isArray(args.steps) ? args.steps : [String(args.steps ?? "")]).map(String), target: args.target ? String(args.target) : undefined, workspace: bag.workspace || undefined });
+                // 设置页的配方列表只在启动时拉过一次 ⇒ 模型保存后同步刷新，否则界面上看不到新配方
+                void window.codex.listRpaRecipes().then(bag.setRpaRecipes).catch(() => undefined);
                 bag.showToast("RPA 配方已保存", `「${result.name}」共 ${result.steps.length} 步，可在 设置 → RPA 自动化 里管理`);
-                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `RPA 配方「${result.name}」已保存（${result.steps.length} 步，${result.kind}）。下次说"运行 ${result.name}"即可复用。` }], success: true });
+                await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `RPA 配方「${result.name}」已保存（${result.steps.length} 步，${result.kind}）。同名配方会更新而不是新建。下次说"运行 ${result.name}"即可复用。` }], success: true });
               } else if (event.params?.tool === "rpa_run") {
                 if (!args.name) {
                   const list = await window.codex.listRpaRecipes();
@@ -543,21 +549,38 @@ ${st.hint}`);
                   await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `[RPA 配方清单]\n${text}` }], success: true });
                 } else {
                   const list = await window.codex.listRpaRecipes();
-                  const recipe = list.find((r: any) => r.name === String(args.name)) ?? list.find((r: any) => String(args.name).includes(r.name));
-                  if (!recipe) {
+                  /* ⛔ 只在唯一匹配时执行：旧实现用 `input.includes(recipe.name)` 兜底，
+                     「日报」会命中「日报2」并静默跑错配方。多条匹配一律回清单让用户补全。 */
+                  const matched = matchRpaRecipe(list, args.name);
+                  if (matched.ambiguous.length) {
+                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `「${args.name}」匹配到多条配方：${matched.ambiguous.join("、")}。请用完整名称再调一次。` }], success: false });
+                  } else if (!matched.recipe) {
                     await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `没有找到名为「${args.name}」的配方。可用：${list.map((r: any) => r.name).join("、") || "（空）"}` }], success: false });
                   } else {
+                    const recipe = matched.recipe;
+                    const runThread = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
+                    /* 同一会话同时只有一个活动回合 ⇒ 用引擎下发的 threadId 去运行态表取 turnId；
+                       拿不到时退回 threadId（tracker 只在没有 turnId 的登记上匹配）。
+                       ⛔ 这里只登记「等结算」，**不写 ok: true** —— 步骤交给模型不等于跑成功。 */
+                    const runTurn = bag.runningTurnIdsRef.current.get(runThread)
+                      ?? (runThread === bag.threadRef.current?.id ? String(bag.activeTurnId ?? "") : "");
+                    const alreadyRunning = pendingRpaRecipeId({ threadId: runThread, turnId: runTurn });
+                    if (alreadyRunning) {
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `当前回合已有 RPA 配方在执行（${alreadyRunning}），等它结束后再运行新的配方。` }], success: false });
+                    } else {
+                    trackRpaRun({ recipeId: recipe.id, threadId: runThread, turnId: runTurn });
                     bag.setRpaRunning(recipe.id);
                     try {
                       const stepsText = recipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n");
                       await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `[RPA 配方「${recipe.name}」开始执行，共 ${recipe.steps.length} 步]\n${stepsText}\n请严格按以上步骤逐步执行自动化操作${recipe.target ? `（目标：${recipe.target}）` : ""}，完成后报告每步结果。` }], success: true });
-                      window.codex.recordRpaRun({ id: recipe.id, ok: true }).catch(() => undefined);
-                    } catch (error: any) {
-                      window.codex.recordRpaRun({ id: recipe.id, ok: false, error: error.message }).catch(() => undefined);
-                      throw error;
-                    } finally {
+                    } catch (error: unknown) {
+                      cancelRpaRun({ threadId: runThread, turnId: runTurn });
+                      await window.codex.recordRpaRun({ id: recipe.id, ok: false, error: (error as { message?: string })?.message ?? String(error) }).catch(() => undefined);
                       bag.setRpaRunning(null);
+                      throw error;
                     }
+                    }
+                    // 成功只代表回执已发出；ok/failed 由 03-thread-id 在回合结束时统一回写
                   }
                 }
               } else if (event.params?.tool === "task_add") {

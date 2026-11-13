@@ -2240,6 +2240,50 @@ const CHECKS = [
       await h.pressKey("Escape").catch(() => undefined);
     },
   },
+  {
+    id: "rpa-recipes",
+    name: "RPA 配方：同名 upsert + 运行结果回写 + 设置页可见（11-13 审查补齐）",
+    run: async (h) => {
+      const probeName = "__e2e_rpa__";
+      try {
+        /* ① 同名保存必须更新同一条（旧实现每次都插新配方） */
+        const first = await h.eval(`window.codex.saveRpaRecipe({ name: ${JSON.stringify(probeName)}, desc: "e2e", kind: "browser", steps: ["打开 A", "点击 B"] })`);
+        await h.eval(`window.codex.saveRpaRecipe({ name: ${JSON.stringify(probeName)}, kind: "browser", steps: ["打开 A", "点击 C"] })`);
+        const list = await h.eval(`window.codex.listRpaRecipes()`);
+        const same = (Array.isArray(list) ? list : []).filter((r) => r.name === probeName);
+        h.check("① 同名保存是 upsert（只有一条，步骤已更新）",
+          same.length === 1 && same[0]?.id === first?.id && Array.isArray(same[0]?.steps) && same[0].steps.includes("点击 C"),
+          JSON.stringify(same));
+        const recipeId = same[0]?.id ?? "";
+        if (!recipeId) return;
+
+        /* ② rpa:run-result 真能回写（通道名已从 rpa:record 改过来） */
+        await h.eval(`window.codex.recordRpaRun({ id: ${JSON.stringify(recipeId)}, ok: false, error: "e2e" })`);
+        const after = await h.eval(`window.codex.listRpaRecipes()`);
+        const row = (Array.isArray(after) ? after : []).find((r) => r.id === recipeId);
+        h.check("② 运行结果回写：runCount=1 / lastStatus=failed",
+          row?.runCount === 1 && row?.lastStatus === "failed" && row?.lastError === "e2e", JSON.stringify(row));
+
+        /* ③ 设置页能看见（页面打开时会重新拉列表） */
+        await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="自动化"; }); b&&b.click(); return 1; })()`);
+        /* 自动化页是懒加载：先等「RPA 自动化」入口卡出现再点（固定 500ms 在慢机器上会点空）。 */
+        await h.waitFor(`[...document.querySelectorAll(".hub-card strong")].some(function(x){ return (x.textContent||"").trim()==="RPA 自动化"; })`, { label: "RPA 入口卡", timeoutMs: 8000 });
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".hub-card")].find(function(x){ return (x.querySelector("strong")?.textContent||"").trim()==="RPA 自动化"; }); b&&b.click(); return 1; })()`);
+        await h.waitFor(`!!document.querySelector(".auto-cards") || !!document.querySelector(".auto-empty")`, { label: "RPA 页", timeoutMs: 8000 });
+        await wait(400);
+        const pageText = await h.eval(`(document.querySelector(".settings-modal")?.innerText || "")`);
+        h.check("③ 设置页 RPA 列表显示配方", String(pageText).includes(probeName), String(pageText).slice(0, 200));
+      } finally {
+        const leftovers = await h.eval(`window.codex.listRpaRecipes()`).catch(() => []);
+        for (const recipe of (Array.isArray(leftovers) ? leftovers : [])) {
+          if (recipe?.name === probeName) await h.eval(`window.codex.deleteRpaRecipe(${JSON.stringify(recipe.id)})`).catch(() => undefined);
+        }
+        await h.pressKey("Escape").catch(() => undefined);
+      }
+    },
+  },
 ];
 
 

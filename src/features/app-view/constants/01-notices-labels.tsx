@@ -141,5 +141,7 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   /* 10-27：OpenFilm 剪辑手册（与 electron/builtin-skills.ts 的 entries 同轮登记）。
      ⛔ 漏这里 = 用户在 # 面板看不到它（引擎清单要等重扫，保底是唯一无条件透出的通道）。 */
   "openfilm-video-editing",
+  /* 11-13：RPA 配方保存/复用口径（与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
+  "rpa-recipes",
   "zy-cinematic-realism",
 ];

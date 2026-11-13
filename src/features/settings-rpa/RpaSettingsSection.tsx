@@ -4,8 +4,10 @@
  * 纯搬迁：返回的 JSX 与原块逐字一致（仅去掉外层缩进）。
  * props = 该块用到的 App 状态与回调（tsc 驱动补齐，未做语义改动）。
  */
+import { useEffect } from "react";
 import { Bot, Play, Trash2 } from "lucide-react";
 import { basename } from "../../lib/basename";
+import { trackRpaRun } from "../../lib/rpa-run-tracker.mjs";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 
 export type RpaSettingsSectionProps = { rpaRecipes: any; rpaRunning: any; thread: any; setNotice: any; setRpaRunning: any; selectedModel: any; modelName: any; modelId: any; sandboxPolicy: any; sandbox: any; workspace: any; openAppConfirm: any; setRpaRecipes: any; taskList: any; setTaskList: any };
@@ -13,12 +15,35 @@ export type RpaSettingsSectionProps = { rpaRecipes: any; rpaRunning: any; thread
 /** RPA 设置：配方列表、运行态与任务队列。 */
 export function RpaSettingsSection(props: RpaSettingsSectionProps) {
   const { rpaRecipes, rpaRunning, thread, setNotice, setRpaRunning, selectedModel, modelName, modelId, sandboxPolicy, sandbox, workspace, openAppConfirm, setRpaRecipes, taskList, setTaskList } = props;
+  /* 打开 RPA 页时重拉一次：配方可能刚由模型（rpa_save）或别处写入，bag 里的列表只在启动时拉过。 */
+  useEffect(() => { void window.codex.listRpaRecipes().then(setRpaRecipes).catch(() => undefined); }, [setRpaRecipes]);
+  /** 在当前会话执行配方：只负责启动回合并登记结算；成功/失败由回合结束事件回写。 */
+  const runRecipe = async (recipe: { id: string; name: string; steps?: string[]; target?: string }) => {
+    if (!thread) { setNotice("请先打开或新建一个会话再执行配方"); return; }
+    setRpaRunning(recipe.id);
+    const targetNote = recipe.target ? `（目标：${recipe.target}）` : "";
+    const stepsText = (recipe.steps ?? []).map((step, index) => `${index + 1}. ${step}`).join("\n");
+    try {
+      const result = await window.codex.request("turn/start", {
+        threadId: thread.id,
+        input: [{ type: "text", text: `请执行 RPA 配方「${recipe.name}」${targetNote}：\n${stepsText}`, text_elements: [] }],
+        model: selectedModel?.model ?? modelName(modelId),
+        sandboxPolicy: sandboxPolicy(sandbox, thread.cwd ?? workspace ?? ""),
+      });
+      /* ⛔ turn/start 返回只代表回合已启动，不代表流程跑完 ⇒ 不在这里清运行态，
+         把它交给回合结束事件（turn/completed / aborted / failed / interrupted）结算。 */
+      trackRpaRun({ recipeId: recipe.id, threadId: String(thread.id), turnId: String((result as { turn?: { id?: string } })?.turn?.id ?? "") });
+    } catch (error: unknown) {
+      setRpaRunning(null);
+      setNotice("执行失败：" + ((error as { message?: string })?.message ?? String(error)));
+    }
+  };
   return (
     <>
       <section className="settings-section stack">
                     <div className="auto-card">
                       {rpaRecipes.length === 0 ? (
-                        <div className="auto-empty"><p className="muted">还没有 RPA 配方。让 Codex 自主跑通一条流程后，它会自动把步骤沉淀成配方，无需手动创建。</p></div>
+                        <div className="auto-empty"><p className="muted">还没有 RPA 配方。让 Codex 跑通一条流程后说「把这次流程存成 RPA 配方」，它会用 rpa_save 保存步骤；之后说「运行 &lt;名字&gt;」即可复用。</p></div>
                       ) : (
                         <div className="auto-cards">
                           {rpaRecipes.map((recipe: any) => (
@@ -35,7 +60,7 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
                               <div className="auto-card-foot">
                                 <span className="auto-card-next">{recipe.workspace ? basename(recipe.workspace) : "全局"} · 已存 {recipe.runCount ?? 0} 次运行</span>
                                 <div className="auto-card-actions">
-                                  <button className="icon-button" title="在当前会话执行" disabled={rpaRunning !== null} onClick={() => { if (!thread) { setNotice("请先打开或新建一个会话再执行配方"); return; } setRpaRunning(recipe.id); void window.codex.request("turn/start", { threadId: thread.id, input: [{ type: "text", text: `请执行 RPA 配方「${recipe.name}」：\n${recipe.steps.map((s: string, i: number) => `${i + 1}. ${s}`).join("\n")}`, text_elements: [] }], model: selectedModel?.model ?? modelName(modelId), sandboxPolicy: sandboxPolicy(sandbox, thread.cwd ?? workspace ?? "") }).catch((error: any) => setNotice("执行失败：" + error.message)).finally(() => setRpaRunning(null)); }}><Play size={13} /></button>
+                                  <button className="icon-button" title="在当前会话执行（结果由回合结束回写）" disabled={rpaRunning !== null} onClick={() => void runRecipe(recipe)}><Play size={13} /></button>
                                   <button className="icon-button danger" title="删除" onClick={async () => { if (!(await openAppConfirm("删除配方", `配方「${recipe.name}」将被删除，此操作无法撤销。`, "删除"))) return; void window.codex.deleteRpaRecipe(recipe.id).then(() => setRpaRecipes((current: any) => current.filter((entry: any) => entry.id !== recipe.id))).catch((error: any) => setNotice("删除失败：" + error.message)); }}><Trash2 size={13} /></button>
                                 </div>
                               </div>

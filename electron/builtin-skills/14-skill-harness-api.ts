@@ -451,7 +451,7 @@ IM 通道 Bot（把某个会话接到 IM 机器人上）
 
 ### rpa（4 通道）
 RPA 配方（录制好的桌面自动化流程）
-通道：rpa:delete, rpa:list, rpa:record, rpa:save
+通道：rpa:delete, rpa:list, rpa:run-result, rpa:save
 
 ### tasks（5 通道）
 任务清单（用户待办，可从对话生成）

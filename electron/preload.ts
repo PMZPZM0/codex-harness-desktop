@@ -687,7 +687,7 @@ contextBridge.exposeInMainWorld("codex", {
   remoteStop: () => __ipc("remote:stop", 0, []),
   deleteRpaRecipe: (id: string) => __ipc("rpa:delete", 1, [id]),
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
-  recordRpaRun: (input: { id: string; ok: boolean; error?: string }) => __ipc("rpa:record", 1, [input]),
+  recordRpaRun: (input: { id: string; ok: boolean; error?: string }) => __ipc("rpa:run-result", 1, [input]),
   saveRpaRecipe: (input: unknown) => __ipc("rpa:save", 1, [input]),
   /* 10-07 取消安装：杀子进程 + 清临时文件；reason=not-running 表示该工具没有在跑的安装 */
   cancelRuntime: (id: string) => __ipc("runtime:cancel", 1, [id]),

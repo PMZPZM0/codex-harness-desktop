@@ -4,6 +4,7 @@
  *    调用处 `if (handleN(...)) return;` —— 提前退出的效果逐位保留（回调的返回值本来就被丢弃）。
  */
 import { isRateLimitError } from "../../../../../lib/rate-limit-retry";
+import { settleRpaRun } from "../../../../../lib/rpa-run-tracker.mjs";
 import { contentOffsetTop, jumpToBottom, scrollToOffsetInstant } from "../../../../../components/scroll-utils";
 import { admitThreadRuntimeRef, applyThreadEvent, armSendAnimationClaim, builtinCommandCatalog, collectKnownPaths, collectMessageTexts, createInlineAttachmentChip, groupThreadsByTime, hydrateTurnUserMessage, isDeltaMethod, jumpToTurn, loadThreadEffort, loadThreadModel, loadThreadPermissions, loadThreadRuntime, loadThreadRuntimeRaw, locateMatchEl, matchSkillCatalog, mergeLongerStreams, mergeTurn, modelName, normSkillName, ownRuntimeWrites, parseTeamMemberTitle, pickRunPhrase, pickRunPhraseExact, pluginDisplayName, prettifyHookLabel, reasoningStart, resolveThreadModel, resumeThreadWithTurns, sandboxMode, sandboxPolicy, saveThreadEffort, saveThreadModel, saveThreadPermissions, saveThreadRuntime, shortSkillName, skillZhNote, slashCommands, threadApprovalOf, threadContentChanged, threadSandboxOf, threadStreamMethods, timeAgo, usageCounterSnapshot, writeThreadRuntimeMirror, releaseTurnOverlays } from "../../../../app-view/helpers";
 import type { Bag } from "../../bag-types";
@@ -45,6 +46,22 @@ export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
         //   四类事件都会登记），这里与下面的当前会话分支共用同一份判定。
         const startedTurnId = String(params.turn?.id ?? params.turnId ?? "");
         const startedAlreadyDone = Boolean(startedTurnId) && bag.finishedTurnIdsRef.current.has(startedTurnId);
+        /* ⛔ RPA 运行结果**只在回合真正结束时**回写（11-13 审查：旧实现在工具回执一到就写
+           ok:true —— 步骤交给模型不等于跑成功）。失败/中断同样结算，并刷新设置页的列表，
+           否则「上次成功 / 已存 N 次运行」会一直是假数据。 */
+        const settleRpa = (ok: boolean, error?: string) => {
+          const done = settleRpaRun({
+            turnId: String(params.turn?.id ?? params.turnId ?? ""),
+            threadId: String(params.threadId ?? ""),
+            ok,
+            error: error ?? "",
+          });
+          if (!done) return;
+          void window.codex.recordRpaRun({ id: done.recipeId, ok, error: done.error || undefined })
+            .then(() => window.codex.listRpaRecipes().then(bag.setRpaRecipes))
+            .catch(() => undefined);
+          bag.setRpaRunning(null);
+        };
         if (method0 === "turn/started") {
           if (!startedAlreadyDone) bag.markThreadRunning(params.threadId, startedTurnId || undefined);
           // ⛔⛔ 09-19 用户实测「已经开始运行了，重试弹窗没消失，还在一直发」：
@@ -64,6 +81,7 @@ export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
           });
         } else if (method0 === "turn/completed") {
           if (startedTurnId) bag.rememberFinishedTurn(startedTurnId);
+          settleRpa(!params.turn?.error?.message, params.turn?.error?.message);
           // 正常收尾（无 error）＝ 不需要重试了 → 立刻取消该会话的重试链与重试条
           if (!params.turn?.error?.message && bag.retryContextsRef.current.has(params.threadId)) {
             bag.cancelRateLimitRetry(params.threadId, true);
@@ -185,6 +203,7 @@ export function handleEventRouter3(bag: Bag, event: any, params: any): boolean {
           // 失败/中断/被中止 → 会话状态转差（语气收紧）。连续失败会累积（见 agent-mood 的连败惩罚）。
           bag.bumpMood(params.threadId, "turn-fail");
           bag.rememberFinishedTurn(String(params.turn?.id ?? params.turnId ?? ""));   // 同上：结束后不许再被 start 点亮
+          settleRpa(false, params.turn?.error?.message || method0);
           // 429 也可能以 aborted/failed 的形态结束（引擎重试耗尽）→ 同样要排该会话的重试
           if (params.turn?.error?.message && isRateLimitError(params.turn.error.message)
             && bag.ensureRateLimitCtx(params.threadId, params.turn)) {

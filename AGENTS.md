@@ -246,6 +246,17 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   首次调用失败先看「系统设置 → 隐私与安全性 → 辅助功能」里有没有本应用/helper 并授权。
   产物层硬校验见 `scripts/verify-packaged-tools.cjs`（主程序 + helper + 执行位 + 无外平台二进制）。
 
+### 🔁 RPA 配方（`rpa_save` / `rpa_run`，11-13 补齐，守卫 12bn）
+
+「设置 → 自动化 → RPA 自动化」= 把跑通的自动化流程存成**人话步骤**，下次按名字交给模型逐步复现。
+
+- 模型工具：`rpa_save`（同名 **upsert**，不重复新建）、`rpa_run`（不传 name 列清单；按 name 执行，**只认唯一匹配**）。
+- **执行不是键鼠回放**：宿主把 steps 回给模型，由模型用浏览器 / 桌面自动化工具执行；设置页播放键也是新起一个回合。
+- 状态只在**回合结束**回写（`turn/completed` = 成功；`aborted/failed/interrupted` = 失败），并刷新设置页的「上次成功 / 运行次数」。
+- 通道：`rpa:list / save / delete / run-result`（⛔ 不是 `record` —— 它记的是运行结果，不是录制）；落盘 `<userData>/rpa-recipes.json`。
+- 步骤格式 / 何时保存 / 失败处理 = 内置技能 **`rpa-recipes`**（`skill-discipline` 已点名）；设置页空态不再声称「自动沉淀」。
+- 守卫 `12bn-rpa-recipes` + 验收 `rpa-recipes` 钉住工具注册 / 分发 / 回合结算 / 去重 / 通道 / 技能。
+
 ### 🎨 前端开发（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发；10-06 起画布 = 上游 + 本仓组件补丁层，守卫【283】162 条）
 
 把开源 **m3e-canvas**（Material 3 Expressive 屏摄画布，MIT）嵌进应用：侧栏「···更多」开一整屏的界面画布，

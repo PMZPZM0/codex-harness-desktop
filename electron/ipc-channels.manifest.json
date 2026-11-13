@@ -3922,7 +3922,7 @@
     },
     {
       "name": "recordRpaRun",
-      "channel": "rpa:record",
+      "channel": "rpa:run-result",
       "paramsImpl": "input: { id: string; ok: boolean; error?: string }",
       "paramsDecl": "input: { id: string; ok: boolean; error?: string }",
       "returns": "Promise<void>",

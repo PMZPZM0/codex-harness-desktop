@@ -56,10 +56,16 @@ export class RpaStore {
   async saveRecipe(input: Partial<RpaRecipe> & Pick<RpaRecipe, "name" | "steps">) {
     await this.load();
     const now = Date.now();
-    const existing = input.id ? this.recipes.find((r) => r.id === input.id) : undefined;
+    const name = input.name.trim();
+    /* ⛔ 同名 upsert（11-13）：模型重跑一次流程会再调一次 `rpa_save`，旧实现每次都插一条新配方
+       ⇒ 设置页里同名配方越堆越多、`rpa_run` 按名字命中也只能撞第一条。这里没有 id 时按
+       **名称**认领已有配方（保留 id/运行次数），只更新内容。 */
+    const existing = input.id
+      ? this.recipes.find((r) => r.id === input.id)
+      : this.recipes.find((r) => r.name === name);
     const recipe: RpaRecipe = {
       id: existing?.id ?? input.id ?? randomUUID(),
-      name: input.name.trim(),
+      name,
       desc: input.desc?.trim() ?? "",
       kind: input.kind ?? "mixed",
       steps: (input.steps ?? []).map((x) => String(x).trim()).filter(Boolean),
