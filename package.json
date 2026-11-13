@@ -1,6 +1,6 @@
 {
   "name": "codex-harness-desktop",
-  "version": "0.0.57",
+  "version": "0.0.58",
   "private": true,
   "description": "Independent desktop harness for OpenAI Codex",
   "main": "dist-electron/main.js",
@@ -39,7 +39,7 @@
     "@google/model-viewer": "^4.4.0",
     "@larksuiteoapi/node-sdk": "^1.76.0",
     "@lydell/node-pty": "^1.2.0-beta.18",
-    "@openai/codex": "^0.167.0",
+    "@openai/codex": "^0.167.2",
     "@tsparticles/engine": "^4.5.3",
     "@tsparticles/react": "^4.5.3",
     "@types/react-syntax-highlighter": "^15.5.13",
@@ -55,7 +55,7 @@
     "koffi": "^3.3.7",
     "lucide-react": "^1.71.0",
     "mermaid": "^12.3.0",
-    "pixi.js": "^8.22.0",
+    "pixi.js": "^8.23.0",
     "qrcode": "^1.5.4",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
@@ -69,7 +69,7 @@
     "ssh2": "^1.17.0",
     "tsparticles": "^4.5.3",
     "vanta": "^0.5.24",
-    "ws": "^8.22.2"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

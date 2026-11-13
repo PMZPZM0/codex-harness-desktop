@@ -38,7 +38,7 @@
   "src/features/app-state/parts/part04/02-seg/02-chat-search-history.tsx": 7,
   "src/features/app-state/parts/part04/03-seg/01-chat-search-file-tree.tsx": 9,
   "src/features/app-state/parts/part04/03-seg/02-browser-queue-settings.tsx": 27,
-  "src/features/app-state/parts/part05/01-seg.tsx": 36,
+  "src/features/app-state/parts/part05/01-seg.tsx": 39,
   "src/features/app-state/parts/part05/event-router/01-status.tsx": 1,
   "src/features/app-state/parts/part05/event-router/02-request.tsx": 55,
   "src/features/app-state/parts/part05/event-router/03-thread-id.tsx": 4,
