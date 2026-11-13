@@ -15,7 +15,9 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const read = (rel) => readFileSync(join(ROOT, rel), "utf8");
+/* ⛔ CRLF 兼容（11-13 实测 PPcode 检出）：守卫用 "\n}\n" 找函数体结尾，Windows autocrlf 检出后
+   行尾是 \r\n ⇒ indexOf 永远 -1 ⇒ 切片判空 ⇒ 假红。统一归一化行尾，别按单一检出形态写死。 */
+const read = (rel) => readFileSync(join(ROOT, rel), "utf8").replace(/\r\n/g, "\n");
 const require = createRequire(import.meta.url);
 
 let checks = 0;
