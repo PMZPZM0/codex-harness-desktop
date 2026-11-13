@@ -257,8 +257,12 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
   回放停止 Windows `Ctrl+Alt+F10` / macOS `⌘⌥F10`，坐标按录制分辨率等比缩放。⛔ 录制会记录键盘（可能含密码/验证码），只存本机；
   中文输入法逐字回放不可靠、滚轮暂不录制；mac 首次要授权「输入监控」（录制）+「辅助功能」（回放），授权后仍失败就重启应用。
   ⛔ 配方记录 `recordedOs`，按键码/坐标不跨平台；别的平台录制的一律拒绝回放。
+- **定时**：RPA 页每条配方可设「每天 / 每周 / 一次性 / 关闭」，复用「设置 → 定时任务」的调度器；
+  录制配方到点由宿主**原生回放**（不依赖模型，应用需保持运行），文本配方到点由模型在会话里按步骤复现；
+  删除配方会级联删除它的定时任务。⛔ 后台回放要求录制里有目标应用（focus/target），否则拒绝盲点。
+- 模型工具 `rpa_schedule`（daily / weekly / once / off）用于设置/取消定时。
 - 状态只在**回合/回放结束**回写（`turn/completed` 或播放器退出码；失败/中断记 failed），并刷新设置页的「上次成功 / 运行次数」。
-- 通道：`rpa:list / save / delete / run-result`（⛔ 不是 `record` —— 它记的是运行结果，不是录制）；落盘 `<userData>/rpa-recipes.json`。
+- 通道：`rpa:list / save / delete / run-result` + 录制 `record-start/stop/recorder-state/record-discard` + 回放 `play-start/play-stop`（⛔ 运行结果不是 `record`）；落盘 `<userData>/rpa-recipes.json`。
 - 步骤格式 / 何时保存 / 失败处理 = 内置技能 **`rpa-recipes`**（`skill-discipline` 已点名）；设置页空态不再声称「自动沉淀」。
 - 守卫 `12bn-rpa-recipes` + 验收 `rpa-recipes` 钉住工具注册 / 分发 / 回合结算 / 去重 / 通道 / 技能。
 

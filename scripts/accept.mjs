@@ -2276,6 +2276,13 @@ const CHECKS = [
         const pageText = await h.eval(`(document.querySelector(".settings-modal")?.innerText || "")`);
         h.check("③ 设置页 RPA 列表显示配方", String(pageText).includes(probeName), String(pageText).slice(0, 200));
 
+        /* ③b 定时编辑器能打开（只验 UI，不保存任务） */
+        const openedSchedule = await h.eval(`(function(){ const card=[...document.querySelectorAll(".auto-card-item")].find(function(c){ return (c.textContent||"").includes(${JSON.stringify(probeName)}); }); const btn=card && card.querySelector('button[title="设置定时"]'); if(!btn) return 0; btn.click(); return 1; })()`);
+        await wait(300);
+        const editorOpen = await h.eval(`!!document.querySelector(".rpa-schedule-editor")`);
+        h.check("③b 配方卡可打开定时编辑器", openedSchedule === 1 && editorOpen, JSON.stringify({ openedSchedule, editorOpen }));
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".rpa-schedule-editor .rpa-recorder-btn")].find(function(x){ return (x.textContent||"").trim()==="取消"; }); b&&b.click(); return 1; })()`);
+
         /* 录制测试前关掉设置页：否则快捷键/停止事件会让页面弹「保存录制」命名框，挡住后续断言。 */
         await h.pressKey("Escape").catch(() => undefined);
         await wait(300);
@@ -2304,9 +2311,27 @@ const CHECKS = [
         const withActions = await h.eval(`window.codex.listRpaRecipes()`);
         const actionRow = (Array.isArray(withActions) ? withActions : []).find((r) => r.name === actionName);
         h.check("⑦ 录制动作/分辨率落盘", Array.isArray(actionRow?.actions) && actionRow.actions.length === 1 && actionRow.screen?.width === 1920, JSON.stringify(actionRow));
+
+        /* ⑧ 定时任务持久化 rpa 绑定（不等到点、不触发回放） */
+        if (actionRow?.id) {
+          const schedTask = await h.eval(`window.codex.saveScheduledTask({ name: "__e2e_rpa_sched__", prompt: "test", workspace: ${JSON.stringify(ROOT)}, effort: "ultra", kind: "daily", timeOfDay: "09:00", scheduleType: "recurring", enabled: true, rpa: { recipeId: ${JSON.stringify(actionRow.id)}, recipeName: ${JSON.stringify(actionName)}, native: true } })`);
+          const tasks = await h.eval(`window.codex.listScheduledTasks()`);
+          const scheduleRow = (Array.isArray(tasks) ? tasks : []).find((task) => task?.rpa?.recipeId === actionRow.id);
+          h.check("⑧ 定时任务保存 rpa 绑定 + 下次运行时刻", Boolean(scheduleRow?.id) && typeof scheduleRow?.nextRunAt === "number", JSON.stringify(scheduleRow));
+          if (schedTask?.id) await h.eval(`window.codex.deleteScheduledTask(${JSON.stringify(schedTask.id)})`).catch(() => undefined);
+        }
       } finally {
         await h.eval(`window.codex.stopRpaRecording()`).catch(() => undefined);
         const leftovers = await h.eval(`window.codex.listRpaRecipes()`).catch(() => []);
+        const cleanupIds = (Array.isArray(leftovers) ? leftovers : [])
+          .filter((recipe) => recipe?.name === probeName || recipe?.name === "__e2e_rpa_actions__")
+          .map((recipe) => String(recipe.id));
+        const tasks = await h.eval(`window.codex.listScheduledTasks()`).catch(() => []);
+        for (const task of (Array.isArray(tasks) ? tasks : [])) {
+          if (cleanupIds.includes(String(task?.rpa?.recipeId ?? ""))) {
+            await h.eval(`window.codex.deleteScheduledTask(${JSON.stringify(task.id)})`).catch(() => undefined);
+          }
+        }
         for (const recipe of (Array.isArray(leftovers) ? leftovers : [])) {
           if (recipe?.name === probeName || recipe?.name === "__e2e_rpa_actions__") {
             await h.eval(`window.codex.deleteRpaRecipe(${JSON.stringify(recipe.id)})`).catch(() => undefined);

@@ -280,8 +280,13 @@ export function rpaRecorderState(): RecorderState {
 
 /* ── 回放 ─────────────────────────────────────────────────────── */
 
-/** 回放一条含录制动作的配方：最小化窗口 → 启动播放器 → 结束回写运行结果。 */
-export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | null): Promise<{ ok: boolean; error?: string }> {
+/** 回放一条含录制动作的配方：最小化窗口 → 启动播放器 → 结束回写运行结果。
+ *  `onFinished` 供定时器等需要等待回放结束的调用方使用（普通 UI 不传）。 */
+export async function startRpaPlayback(
+  recipe: RpaRecipe,
+  win: BrowserWindow | null,
+  onFinished?: (result: { ok: boolean; error: string }) => void,
+): Promise<{ ok: boolean; error?: string }> {
   if (!rpaRecorderSupported()) return { ok: false, error: "原生回放仅支持 Windows / macOS（需随包录制组件）" };
   if (recipe.recordedOs && recipe.recordedOs !== process.platform) {
     return { ok: false, error: `这条配方录制于 ${recipe.recordedOs}，按键码与坐标不能跨平台回放` };
@@ -372,6 +377,7 @@ export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | n
     try { fs.rmSync(playStop, { force: true }); } catch { /* ignore */ }
     try { fs.rmSync(playStatus, { force: true }); } catch { /* ignore */ }
     if (id) void rpaStore.recordRun(id, ok, error || undefined).catch(() => undefined);
+    try { onFinished?.({ ok, error }); } catch { /* 通知方自己的异常不影响回放收尾 */ }
     notify({ type: "rpa-play-finished", id, ok, error });
     notify({ type: "rpa-recorder", state: "idle" });
   };

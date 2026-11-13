@@ -590,6 +590,52 @@ ${st.hint}`);
                     // 成功只代表回执已发出；ok/failed 由 03-thread-id 在回合结束时统一回写（文本配方）
                   }
                 }
+              } else if (event.params?.tool === "rpa_schedule") {
+                const list = await window.codex.listRpaRecipes();
+                const matched = matchRpaRecipe(list, args.name);
+                if (matched.ambiguous.length) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `「${args.name}」匹配到多条配方：${matched.ambiguous.join("、")}。请用完整名称再调一次。` }], success: false });
+                } else if (!matched.recipe) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `没有找到名为「${args.name}」的配方。` }], success: false });
+                } else {
+                  const recipe = matched.recipe;
+                  const tasks = (await window.codex.listScheduledTasks()) as Array<{ id: string; rpa?: { recipeId?: string } }>;
+                  const existing = tasks.filter((task) => task.rpa?.recipeId === recipe.id);
+                  const mode = String(args.mode ?? "off");
+                  if (mode === "off" || args.enabled === false) {
+                    for (const task of existing) await window.codex.deleteScheduledTask(task.id);
+                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `已取消「${recipe.name}」的定时。` }], success: true });
+                  } else if (!["daily", "weekly", "once"].includes(mode)) {
+                    await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "mode 只能是 daily / weekly / once / off。" }], success: false });
+                  } else {
+                    const workspace = String(bag.workspace || recipe.workspace || bag.threadRef.current?.cwd || "");
+                    if (!workspace) {
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "当前没有工作区，先在应用里打开一个项目再设定时。" }], success: false });
+                    } else if (mode === "once" && !args.scheduledAt) {
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "一次性定时需要 scheduledAt（例如 2026-11-20 09:30）。" }], success: false });
+                    } else {
+                      const kind = mode === "once" ? "once" : mode === "weekly" ? "weekly" : "daily";
+                      const stepsText = (recipe.steps ?? []).map((step: string, index: number) => `${index + 1}. ${step}`).join("\n");
+                      const task = await window.codex.saveScheduledTask({
+                        id: existing[0]?.id,
+                        name: `RPA · ${recipe.name}`,
+                        prompt: recipe.actions?.length ? `RPA 原生回放：${recipe.name}` : `请执行 RPA 配方「${recipe.name}」：\n${stepsText}`,
+                        workspace,
+                        effort: "ultra",
+                        kind,
+                        timeOfDay: args.time ? String(args.time) : "09:00",
+                        weekdays: Array.isArray(args.weekdays) ? args.weekdays.map(Number).filter((day: number) => day >= 0 && day <= 6) : [1],
+                        scheduleType: kind === "once" ? "once" : "recurring",
+                        scheduledAt: kind === "once" ? String(args.scheduledAt) : undefined,
+                        enabled: true,
+                        threadId: recipe.actions?.length ? undefined : bag.threadRef.current?.id,
+                        rpa: { recipeId: recipe.id, recipeName: recipe.name, native: Boolean(recipe.actions?.length) },
+                      }) as { nextRunAt?: number | null };
+                      const next = task?.nextRunAt ? new Date(task.nextRunAt).toLocaleString("zh-CN") : "无";
+                      await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `已设置「${recipe.name}」定时：${mode === "daily" ? "每天" : mode === "weekly" ? "每周" : "一次性"} ${args.time ? String(args.time) : mode === "once" ? String(args.scheduledAt) : ""}，下次运行：${next}。` }], success: true });
+                    }
+                  }
+                }
               } else if (event.params?.tool === "task_add") {
                 const task = await window.codex.addTask({ text: String(args.text ?? ""), priority: String(args.priority ?? "medium") });
                 bag.showToast("已加入任务清单", task.text);

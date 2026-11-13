@@ -255,6 +255,31 @@ try {
   }
 }
 
+/* ── ⑨ RPA 定时（复用 scheduler，不另造调度器）───────────────── */
+{
+  const sched = codeOnly(read("electron/scheduler.ts"));
+  ok(/rpa\?: \{ recipeId: string; recipeName\?: string; native\?: boolean \}/.test(sched)
+    && /input\.rpa === undefined \? current\?\.rpa/.test(sched)
+    && /waitForScheduledRpa/.test(sched)
+    && /startRpaPlayback\(recipe, null,/.test(sched)
+    && /task\.rpa\?\.native === true/.test(sched),
+    "定时器支持 RPA 动作：录制配方原生回放、无模型也能到点、文本配方保留模型回合");
+  const req = codeOnly(read(REQ));
+  ok(req.includes('event.params?.tool === "rpa_schedule"') && /saveScheduledTask\(/.test(req)
+    && /rpa: \{ recipeId: recipe\.id/.test(req) && /deleteScheduledTask\(/.test(req),
+    "rpa_schedule 工具：设置/取消复用 scheduler 通道并带 recipeId");
+  const seg = codeOnly(read(SEG));
+  ok(/name: "rpa_schedule"/.test(seg) && /mode: \{ type: "string", enum: \["daily", "weekly", "once", "off"\]/.test(seg),
+    "动态工具面注册 rpa_schedule（模式枚举与调度器一致）");
+  const ui = codeOnly(read(UI));
+  ok(/rpa-schedule-editor/.test(ui) && /openSchedule/.test(ui) && /saveScheduledTask\(/.test(ui)
+    && /scheduleSummary/.test(ui) && /关闭定时/.test(ui),
+    "RPA 页可设置/修改/关闭定时，并显示排期摘要");
+  const ipc = codeOnly(read("electron/features/rpa-ipc.ts"));
+  ok(/task\.rpa\?\.recipeId === recipeId/.test(ipc),
+    "删除配方级联删除它的定时任务（不留每次到点报「配方不存在」的孤儿）");
+}
+
 console.log("");
 console.log(fails === 0
   ? `【rpa】通过（${checks} 条）`

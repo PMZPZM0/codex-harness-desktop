@@ -1257,3 +1257,29 @@
 .rpa-recorder-btn:hover:not(:disabled) { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 .rpa-recorder-btn:disabled { opacity: 0.55; cursor: default; }
 .rpa-recorder-btn.is-danger { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--line)); }
+
+/* RPA 定时编辑（11-13）：配方卡内的轻量表单；颜色只用主题变量 */
+.rpa-schedule-editor { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.rpa-schedule-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.rpa-schedule-row > span { min-width: 32px; }
+.rpa-schedule-row input[type="time"], .rpa-schedule-row input[type="datetime-local"] {
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+}
+.rpa-weekdays { display: flex; flex-wrap: wrap; gap: 5px; }
+.rpa-weekday {
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.rpa-weekday.is-on { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.rpa-schedule-actions { display: flex; flex-wrap: wrap; gap: 8px; }

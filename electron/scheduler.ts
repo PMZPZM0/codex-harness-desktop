@@ -15,6 +15,9 @@ import { PROVIDER_RETRY_TUNING } from "./provider-retry";
 
 import { ensureProjectAgentsMd } from "./project-conventions";
 import { weixinGateway } from "./features/im-gateways";
+import { rpaStore } from "./runtime-refs";
+import { startRpaPlayback } from "./rpa-recorder";
+import type { RpaRecipe } from "./rpa-store";
 
 // ============================================================================
 // 微信投递（09-27）：定时任务跑完后把回合结论主动推给微信用户。
@@ -119,8 +122,10 @@ export type ScheduledTask = {
   recoveryDispatchAt?: number;
   recoveryOccurrenceMs?: number;
   recoveryDelayMs?: number;
-  /** 执行完成后主动投递结论的目标（09-27；缺省 = 只落在应用会话列表里，不外推） */
+  /** 投递配置（09-27；缺省 = 只落在应用会话列表里，不外推） */
   deliver?: DeliverTarget;
+  /** RPA 定时动作（11-13）：到点直接原生回放录制配方；文本配方仍走模型回合。 */
+  rpa?: { recipeId: string; recipeName?: string; native?: boolean };
   /* ── 派活四件套（11-10 用户令：定时任务不能只"叫起一个人"）────────────────
      实测豆包那条「推广汇报每日9:35派投盈」，任务描述写的是：
      「owner 定的分工：推广汇报记录由推广-投盈人工维护。此时数据师明策的每日底表……」
@@ -395,8 +400,7 @@ function normalizeText(value?: string): string {
   return (value ?? "").trim().replace(/\s+/g, " ");
 }
 
-function getAutomationRunIdentity(task: ScheduledTask): string {
-  return JSON.stringify({
+function getAutomationRunIdentity(task: ScheduledTask): string {  return JSON.stringify({
     prompt: normalizeText(task.prompt),
     scheduleType: task.scheduleType ?? "recurring",
     schedule: task.scheduleType === "once" ? normalizeText(task.scheduledAt) : (task.rrule ?? "").toUpperCase(),
@@ -405,6 +409,24 @@ function getAutomationRunIdentity(task: ScheduledTask): string {
     workspace: path.resolve(task.workspace),
     model: normalizeText(task.model),
     effort: normalizeText(task.effort),
+  });
+}
+
+/** 定时 RPA 原生回放：等到播放器退出（或超时）再推进 nextRunAt。 */
+async function waitForScheduledRpa(recipe: RpaRecipe): Promise<{ ok: boolean; error: string }> {
+  return await new Promise((resolve) => {
+    let done = false;
+    let timer: NodeJS.Timeout | null = null;
+    const finish = (result: { ok: boolean; error: string }) => {
+      if (done) return;
+      done = true;
+      if (timer) clearTimeout(timer);
+      resolve(result);
+    };
+    timer = setTimeout(() => finish({ ok: false, error: "RPA 回放超时（90 分钟）" }), AUTOMATION_RUN_TIMEOUT_MS);
+    void startRpaPlayback(recipe, null, (result) => finish(result))
+      .then((result) => { if (!result.ok) finish({ ok: false, error: result.error || "RPA 回放启动失败" }); })
+      .catch((error) => finish({ ok: false, error: String((error as Error)?.message ?? error) }));
   });
 }
 
@@ -481,6 +503,12 @@ export class Scheduler {
       origin: input.origin === undefined ? current?.origin : input.origin,
       // 投递配置：显式传入才改（含 undefined = 明确清除）；缺省保留原值（会话里做局部更新不打掉已有投递）
       deliver: input.deliver === undefined ? current?.deliver : sanitizeDeliver(input.deliver),
+      // RPA 定时动作：显式传入才改；局部更新（如只改时间）保留原绑定。
+      rpa: input.rpa === undefined ? current?.rpa : (input.rpa ? {
+        recipeId: String((input.rpa as { recipeId?: unknown }).recipeId ?? "").trim(),
+        recipeName: String((input.rpa as { recipeName?: unknown }).recipeName ?? "").trim() || undefined,
+        native: (input.rpa as { native?: unknown }).native === true,
+      } : undefined),
     };
     task.nextRunAt = input.enabled === false ? (current?.nextRunAt ?? computeNextRunAt(task, now)) : computeNextRunAt(task, now);
     this.tasks = current ? this.tasks.map((entry) => entry.id === task.id ? task : entry) : [task, ...this.tasks];
@@ -507,6 +535,7 @@ export class Scheduler {
     try {
       const now = Date.now();
       const engineReady = (await this.getModel()) !== null; // 对齐 WorkBuddy wait_login：引擎未就绪不推进
+      const modelReady = engineReady;
       const actives = this.tasks.filter((entry) => entry.enabled);
       const canonicalIds = this.getCanonicalAutomationIds(actives);
       for (const task of actives) {
@@ -516,7 +545,7 @@ export class Scheduler {
           this.log(`[Scheduler] 跳过重复自动化「${task.name}」(${task.id})`);
           continue;
         }
-        const decision = this.decide(task, now, engineReady);
+        const decision = this.decide(task, now, modelReady || task.rpa?.native === true);
         if (decision.action === "skip") continue;
         if (decision.action === "wait") {
           task.displayStatus = "waiting_model";
@@ -588,6 +617,24 @@ export class Scheduler {
     let finishedAt = Date.now();
     let interrupted = false;
     try {
+      /* RPA 定时：录制配方到点直接原生回放（不依赖模型/会话）；文本配方继续走下面的模型回合。 */
+      let nativeRpa = false;
+      if (task.rpa?.recipeId) {
+        const recipe = (await rpaStore.listRecipes()).find((entry) => entry.id === task.rpa!.recipeId);
+        if (!recipe) throw new Error("RPA 配方不存在（可能已被删除），请重新设置定时或删除这条任务");
+        if (Array.isArray(recipe.actions) && recipe.actions.length) {
+          const hasTarget = Boolean(recipe.target) || recipe.actions.some((action) => action.type === "focus" && Boolean(action.title || action.bundle));
+          if (!hasTarget) throw new Error("录制配方没有目标应用，不能后台定时回放（请打开目标应用后手动运行）");
+          nativeRpa = true;
+          const result = await waitForScheduledRpa(recipe);
+          if (!result.ok) throw new Error(result.error || "RPA 原生回放失败");
+          finishedAt = Date.now();
+          task.lastError = undefined;
+          task.consecutiveInterruptCount = 0;
+          this.log(`[Scheduler] 「${task.name}」RPA 原生回放完成（${recipe.name}）`);
+        }
+      }
+      if (!nativeRpa) {
       const model = await this.getModel();
       if (!model) throw new Error("尚未配置自定义模型");
       let threadId: string;
@@ -639,6 +686,7 @@ export class Scheduler {
         interrupted = true;
         task.consecutiveInterruptCount = (task.consecutiveInterruptCount ?? 0) + 1;
         this.log(`[Scheduler] 「${task.name}」回合被中断（${outcome}）`);
+      }
       }
     } catch (error: any) {
       task.lastError = error.message;
