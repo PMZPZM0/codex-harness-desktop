@@ -800,7 +800,10 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
     void window.codex.request("thread/list", { limit: 80, sortKey: "updated_at", sortDirection: "desc", archived: false })
       .then(async (threadResult) => {
         // 同样要贴本地覆盖（否则这条路径一跑，用户在别处改过的项目地址/名字就被引擎旧值顶回去）
-        const list = (threadResult.data ?? []).map((entry: Thread) => bag.withNameOverride(bag.withCwdOverride(entry)));
+        const rawList = (threadResult.data ?? []) as any[];
+        const list = rawList.map((entry: Thread) => bag.withNameOverride(bag.withCwdOverride(entry)));
+        /* 引擎原始标题（未被笔名覆盖）：伙伴会话系统自动命名「伙伴·<伙伴>@<群>」，用于启动跳过时兜底识别旧/已重建的伙伴会话。 */
+        const rawNameOf = new Map<string, string>(rawList.map((e: any) => [String(e?.id ?? ""), String(e?.name ?? e?.title ?? "")]));
         bag.setThreads(list);
         bag.threadsRef.current = list;
         bag.setServerStatus("ready");
@@ -810,15 +813,26 @@ bag.batchSetSkillEnabled = batchSetSkillEnabled as typeof bag.batchSetSkillEnabl
         const wanted = bag.popoutThreadIdRef.current || lastId;
         let open = wanted && list.some((entry: any) => entry.id === wanted) ? String(wanted) : "";
         /* ⛔ 11-12 用户令：「每次进去都是工作伙伴会话…能不能进去不要展示工作伙伴会话，展示别的也行，首页或者其他会话」。
-           工作伙伴/中枢群的成员会话已从侧栏隐藏，启动时也别默认打开它（否则一进去主区就是一条侧栏里找不到的会话）。
-           ⇒ 上次会话若是群成员会话，回落到最近一条**非成员**会话；一条都没有就停在首页（不打开任何会话）。
-           ⛔ 只看成员会话（memberThreadIds），与侧栏隐藏口径同源；独立弹窗（popout）不受影响。 */
+           工作伙伴会话在侧栏已不展示，启动时也别默认打开它（否则一进来主区就是一条侧栏里找不到的会话）。
+           ⇒ 上次会话若是工作伙伴会话，回落到最近一条**非工作伙伴**会话；一条都没有就停在首页（不打开任何会话）。
+           ⛔ 独立弹窗（popout）不受影响。 */
         if (open && !bag.popoutThreadIdRef.current) {
           try {
-            const groups = await window.codex.listBossGroups();
-            const memberIds = new Set((Array.isArray(groups) ? groups : []).flatMap((g: any) => (Array.isArray(g?.memberThreadIds) ? g.memberThreadIds : [])).map(String));
-            if (memberIds.has(open)) open = String(list.find((entry: any) => entry?.id && !memberIds.has(String(entry.id)))?.id ?? "");
-          } catch { /* 拿不到群名单：按原逻辑打开（不阻断启动） */ }
+            /* 工作伙伴会话有两类台账：① 群成员会话（boss-groups 的 memberThreadIds，如 雪月/秋月）
+               ② 工作伙伴「伙伴会话」（group-talk-threads 台账，如 拔节）。两类在侧栏都不展示，启动一并跳过。
+               ⛔ 旧/已重建的伙伴会话会脱离台账（用户实测 雪晴 01a1d003 就是这种，当前台账已换成新 id）⇒
+                  再用系统自动命名前缀「伙伴·」兜底（⛔ 它是系统生成标记，不是用户起名；正式隔离由 session-kind 收口）。 */
+            const [groups, talk] = await Promise.all([
+              window.codex.listBossGroups().catch(() => []),
+              window.codex.harnessTeamTalkThreads().catch(() => null),
+            ]);
+            const skip = new Set<string>();
+            for (const g of (Array.isArray(groups) ? groups : [])) for (const t of (Array.isArray(g?.memberThreadIds) ? g.memberThreadIds : [])) skip.add(String(t));
+            for (const t of (Array.isArray(talk?.threads) ? talk.threads : [])) if (t?.threadId) skip.add(String(t.threadId));
+            skip.delete("");
+            const skipId = (id: string) => !id || skip.has(id) || /^伙伴·/.test(rawNameOf.get(id) ?? "");
+            if (skipId(open)) open = String(list.find((entry: any) => entry?.id && !skipId(String(entry.id)))?.id ?? "");
+          } catch { /* 拿不到台账：按原逻辑打开（不阻断启动） */ }
         }
         if (open) void bag.openThread(open);
       })
