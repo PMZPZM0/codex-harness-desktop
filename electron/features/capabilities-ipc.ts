@@ -13,7 +13,7 @@
  * 生命周期：通道在 `setup` 内注册、`ctx.effect` 内摘除；注册时机由组合表决定（本文件不自挂载）。
  */
 import { resolveCapabilities } from "../capability-registry";
-import { agentDesktopLauncher, computerUseLauncher, egoBrowserPath, harnessUiaServer, nuphusBinary } from "../toolchain";
+import { computerUseLauncher, egoBrowserPath, harnessUiaServer, nuphusBinary } from "../toolchain";
 import type { CapabilityProbe } from "../capability-registry";
 import { devInstructionsInput } from "../main/12-skill-discipline";
 import { mcpOverrideEnabled, readMcpOverrides } from "../main/06-mcp-overrides";
@@ -30,11 +30,16 @@ async function collectCapabilityProbe(): Promise<CapabilityProbe> {
     arch: process.arch,
     desktopSwitch: devInput.desktop,
     browserSwitch: devInput.browser,
+    /* 后端开关必须进链路判据：关掉的后端不该算「就绪」，否则能力表会把实际不会用的那个选成 active。
+       ⛔ nuphus 的桌面开关只作用于 desktop_*；browser_* 回落仍按 nuphusAvailable 判（关桌面组不误伤浏览器）。 */
     nuphusAvailable: Boolean(nuphusBinary()) && mcpOverrideEnabled(mcpOverrides, "nuphus"),
-    // 两条新后端只看"随包文件在不在"，不看总闸（闸门由 resolveCapabilities 统一判）
+    nuphusDesktopEnabled: devInput.nuphusBackend === true,
+    // UIA 不受三个桌面后端开关影响（总闸由 resolveCapabilities 统一判）
     uiaAvailable: Boolean(harnessUiaServer()),
     computerUseAvailable: Boolean(computerUseLauncher()),
-    agentDesktopAvailable: Boolean(agentDesktopLauncher()),
+    computerUseEnabled: devInput.computerUseBackend === true,
+    // devInput.agentDesktopBackend 已含「开关 + 启动器 + 平台二进制都在」
+    agentDesktopAvailable: devInput.agentDesktopBackend === true,
     imagePlugin: devInput.imagePlugin,
     egoBrowser: Boolean(egoBrowserPath()),
     markitdown: runtimeInstalled("markitdown", devRuntimeSpecs.markitdown),

@@ -779,9 +779,8 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
  */
 const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?: NodeJS.Platform[] }> = {
   nuphus: { pkg: "@nuphus/nuphus-mcp", label: "Nuphus 桌面自动化" },
-  /* 11-03 用户令：两个桌面后端默认都开、按系统排序（Windows nuphus 主 / mac computer-use 主）
-     ⇒ computer-use 在 Windows 也列为**可安装/可更新**（未装只是「辅助后端不可用」，不影响 nuphus）。
-     ⛔ mac 随包、Windows 需在这里/自动化页装一次（13MB npm 包，不随 Windows 包内置）。 */
+  /* 11-13：Nuphus / Computer Use 默认关，但仍是可安装/可更新的可选后端
+     （用户显式开启后参与兜底；computer-use 仅 darwin/win32 有二进制）。 */
   "computer-use": { pkg: "open-computer-use", label: "电脑操作（Computer Use）", platforms: ["darwin", "win32"] },
   // 11-13 agent-desktop（Vercel Labs，Apache-2.0）：无障碍树桌面后端，npm 包自带上三平台二进制。
   "agent-desktop": { pkg: "agent-desktop", label: "Agent Desktop（无障碍树）", platforms: ["darwin", "win32", "linux"] },

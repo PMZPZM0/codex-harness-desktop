@@ -85,7 +85,7 @@ const ok = (condition, message) => {
 /* ── 四、MCP 注册（custom-model-apply 生成块）────────────────────────── */
 {
   const apply = codeOnly(read("electron/features/custom-model-apply.ts"));
-  ok(apply.includes('"rea"') && apply.includes("ownedMcpServers = new Set([\"nuphus\", \"harness-dispatch\", HARNESS_UIA_MCP_SERVER, COMPUTER_USE_MCP_SERVER, \"rea\""),
+  ok(/ownedMcpServers = new Set\(\[[^\]]*"rea"[^\]]*\]\)/.test(apply),
     "ownedMcpServers 含 rea（harness 自管段，用户覆盖表不保留旧段）");
   ok(/\[mcp_servers\.rea\]/.test(apply) && apply.includes("reaServerScript()") && apply.includes('args = ["${escapeToml(script)}", "mcp"]'),
     "注册块：包已装才生成 [mcp_servers.rea]，command = 随包 node + rea.mjs + mcp");

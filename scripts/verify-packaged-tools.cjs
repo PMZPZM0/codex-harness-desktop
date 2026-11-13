@@ -17,6 +17,35 @@ for (const marker of ["@nuphus/nuphus-mcp/package.json", "agent-desktop/package.
     `随包缺少 ${marker} —— npm-global/node_modules 没打进包。检查 package.json extraResources 里那条 ` +
     "from=resources/tools/npm-global/node_modules 的映射（electron-builder 会丢弃 from 根级的 node_modules）。");
 }
+/* agent-desktop（11-13，默认桌面后端）：CLI 启动器 + **本平台**主程序必须在；
+   mac 还必须在 helper 且三个文件都有执行位 —— 这些只有产物层才看得出来。 */
+const adBinDir = path.join(modules, "agent-desktop", "bin");
+const adKey = process.platform === "win32" ? "win32" : process.platform;
+const adSuffix = process.platform === "win32" ? ".exe" : "";
+const adBinaryName = `agent-desktop-${adKey}-${process.arch}${adSuffix}`;
+assert.ok(fs.existsSync(path.join(adBinDir, "agent-desktop")) && fs.existsSync(path.join(adBinDir, adBinaryName)),
+  `随包缺少 agent-desktop 的 CLI 启动器或 ${adBinaryName} —— 检查 prepare-{windows,mac}-tools.cjs 的 agent-desktop 步骤。`);
+if (process.platform === "darwin") {
+  const helperName = `agent-desktop-macos-helper-darwin-${process.arch}`;
+  const helper = path.join(adBinDir, helperName);
+  assert.ok(fs.existsSync(helper), `mac 包缺少 ${helperName} —— agent-desktop 的 darwin launcher 硬依赖它（缺了直接退出）。`);
+  assert.ok((fs.statSync(helper).mode & 0o111) !== 0, `${helperName} 没有执行位 —— .app 里 spawn 会 EACCES。`);
+  assert.ok((fs.statSync(path.join(adBinDir, adBinaryName)).mode & 0o111) !== 0,
+    `${adBinaryName} 没有执行位 —— MCP 起得来但每次调用都会失败。`);
+}
+/* 别的平台/别的架构的二进制不许躺在包里（prepare 侧已裁；这条防裁剪步骤被删掉）。 */
+const adForeign = fs.readdirSync(adBinDir).filter((name) => {
+  if (process.platform === "darwin") {
+    if (name.startsWith("agent-desktop-win32-") || name.startsWith("agent-desktop-linux-")) return true;
+    if (name.startsWith("agent-desktop-macos-helper-darwin-")) return !name.startsWith(`agent-desktop-macos-helper-darwin-${process.arch}`);
+    if (name.startsWith("agent-desktop-darwin-")) return !name.startsWith(`agent-desktop-darwin-${process.arch}`);
+    return false;
+  }
+  if (process.platform === "win32") return name.startsWith("agent-desktop-darwin-") || name.startsWith("agent-desktop-linux-");
+  return false;
+});
+assert.deepEqual(adForeign, [],
+  `包里残留别的平台/架构的 agent-desktop 二进制：${adForeign.join("、")} —— prepare 侧应裁掉（省体积、免杀软误报）。`);
 const platform = process.platform === "darwin" ? "osx" : process.platform;
 const suffix = process.platform === "win32" ? ".exe" : "";
 const nativeName = `nuphus-mcp-${platform}-${process.arch}`;

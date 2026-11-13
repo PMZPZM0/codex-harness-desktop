@@ -190,6 +190,18 @@ async function main() {
   if (!fs.existsSync(ocuExe)) throw new Error(`open-computer-use 装完找不到 Windows 主程序：${ocuExe}`);
   console.log(`[open-computer-use] ${TOOLS_VERSIONS.computerUse} → ${ocuExe}`);
 
+  // agent-desktop：只留 Windows 两种架构 + CLI 启动器，裁掉 darwin/linux 二进制（省体积、免杀软误报）
+  const adBinDir = path.join(prefix, "node_modules", "agent-desktop", "bin");
+  const adExe = path.join(adBinDir, `agent-desktop-win32-${process.arch}.exe`);
+  if (!fs.existsSync(path.join(adBinDir, "agent-desktop"))) throw new Error(`agent-desktop 装完找不到 CLI 启动器：${adBinDir}/agent-desktop`);
+  if (!fs.existsSync(adExe)) throw new Error(`agent-desktop 装完找不到 Windows 主程序：${adExe}`);
+  for (const entry of fs.readdirSync(adBinDir)) {
+    const keep = entry === "agent-desktop"
+      || /^agent-desktop-win32-(x64|arm64)\.exe(\.sha256)?$/.test(entry);
+    if (!keep) fs.rmSync(path.join(adBinDir, entry), { force: true });
+  }
+  console.log(`[agent-desktop] ${TOOLS_VERSIONS.agentDesktop} → ${adExe}（已裁掉 darwin/linux 二进制）`);
+
   // 3) VS Code CLI（latest 口径，已就位就跳过）
   const vscodeCode = path.join(tools, "vscode-cli", "code.exe");
   if (fs.existsSync(vscodeCode)) {
@@ -237,6 +249,7 @@ async function main() {
     ["node/node.exe", "随包 Node"],
     ["npm-global/node_modules/@nuphus/nuphus-mcp/package.json", "Nuphus 桌面自动化"],
     ["npm-global/node_modules/agent-desktop/package.json", "Agent Desktop 无障碍树后端"],
+    ["npm-global/node_modules/agent-desktop/bin/agent-desktop-win32-x64.exe", "Agent Desktop Windows 主程序"],
     ["npm-global/nuphus-call.cmd", "nuphus-call 命令行桥"],
     ["vscode-cli/code.exe", "VS Code CLI"],
     ["cloudflared.exe", "cloudflared"],

@@ -42,10 +42,14 @@ export type CapabilityProbe = {
   browserSwitch: boolean;
   /** nuphus MCP 是否可用（二进制存在 + 没被连接器覆盖表禁用） */
   nuphusAvailable: boolean;
+  /** nuphus 桌面组是否启用（11-13：默认关；关掉只影响 desktop_*，browser_* 回落仍算可用） */
+  nuphusDesktopEnabled?: boolean;
   /** Windows 控件清单通道是否就绪（harness-uia.mjs 与 desktop-uia.ps1 两个随包脚本都在） */
   uiaAvailable: boolean;
   /** mac 电脑操作后端是否就绪（open-computer-use 的启动脚本与 .app 都在） */
   computerUseAvailable: boolean;
+  /** Computer Use 后端开关（11-13：默认关；显式开启后才参与链路） */
+  computerUseEnabled?: boolean;
   /** agent-desktop 无障碍树后端是否就绪（npm 包启动器 + 平台二进制都在） */
   agentDesktopAvailable?: boolean;
   /** 内置「生图插件」是否已配置（MCP 工具 image_generate 与命令行 generate_image **共用**这份配置） */
@@ -142,13 +146,13 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
   const availability: Record<string, boolean> = {
     "ego-browser": probe.browserSwitch && probe.egoBrowser,
     "nuphus-cli-browser": probe.browserSwitch && probe.nuphusAvailable,
-    /* 11-03 用户令：两个桌面后端默认都开（Windows nuphus 主 / mac computer-use 主），
-       ⇒ 两边都不再按平台互斥；具体谁先由下面的平台排序决定。 */
-    "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable,
+    /* 11-13：Nuphus 默认关的是**桌面组**（desktop_* 被掩），browser_* 回落仍然可用
+       ⇒ 这里只给桌面后端加开关判据，别把 nuphusAvailable 直接按开关关掉（会误伤浏览器回落）。 */
+    "nuphus-desktop": probe.desktopSwitch && probe.nuphusAvailable && probe.nuphusDesktopEnabled !== false,
     "agent-desktop": probe.desktopSwitch && probe.agentDesktopAvailable === true,
     // 判据与 automation-policy 的同名函数一致（守卫【274】比对，不许两处各写一套平台判断）
     "uia-desktop": probe.desktopSwitch && probe.uiaAvailable && probe.platform === "win32",
-    "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable
+    "computer-use-desktop": probe.desktopSwitch && probe.computerUseAvailable && probe.computerUseEnabled !== false
       && (probe.platform === "darwin" || probe.platform === "win32"),
     "local-ocr": probe.desktopSwitch && probe.nuphusAvailable && localOcrSupported(probe),
     "image-plugin": probe.imagePlugin,
@@ -167,10 +171,9 @@ export function resolveCapabilities(probe: CapabilityProbe): CapabilityResolutio
     }
   }
 
-  /* 11-13 用户令：Agent Desktop 默认主；另两个启用后按「第二清单通道 → 像素兜底」排序。 */
-  const desktopOrder = probe.platform === "darwin"
-    ? ["agent-desktop", "computer-use-desktop", "nuphus-desktop", "uia-desktop"]
-    : ["agent-desktop", "computer-use-desktop", "nuphus-desktop", "uia-desktop"];
+  /* 11-13 用户令：Agent Desktop 默认主；另两个启用后按「第二清单通道 → 像素兜底」排序。
+     UIA 是 Windows 的独立补充通道，恒排最后。 */
+  const desktopOrder = ["agent-desktop", "computer-use-desktop", "nuphus-desktop", "uia-desktop"];
   return CAPABILITIES.map((capability) => {
     const backends = capability.id === "desktop"
       ? [...capability.backends].sort((a, b) => desktopOrder.indexOf(a.id) - desktopOrder.indexOf(b.id))

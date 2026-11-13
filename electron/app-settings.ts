@@ -29,9 +29,9 @@ export type AppSettings = {
   webSearch?: boolean;
   desktopAutomation?: boolean;
   browserAutomation?: boolean;
-  /** 桌面自动化后端开关（11-03 用户令）：两个都默认开，按平台优先级由常驻指令决定
-   *  （默认：agent-desktop 开；Nuphus / Computer Use 关，用户显式开启后参与兜底）。
-   *  ⛔ 关掉 nuphus 只掩桌面组（浏览器组保留）；关掉 computer-use 就不注册它的 MCP 段。 */
+  /** 桌面自动化后端开关（11-13）：默认只开 agent-desktop；Nuphus / Computer Use 默认关，
+   *  用户显式开启后按「第二清单通道 → 像素兜底」参与链路。
+   *  ⛔ 关掉 nuphus 只掩桌面组（`browser_*` 永远保留）；关掉 computer-use 就不注册它的 MCP 段。 */
   desktopBackendNuphus?: boolean;
   desktopBackendComputerUse?: boolean;
   /** 11-13：agent-desktop（Vercel Labs，Apache-2.0）无障碍树后端；默认开，未安装时卡片显示安装入口。 */

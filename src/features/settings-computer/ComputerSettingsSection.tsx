@@ -1,33 +1,32 @@
 /**
- * 设置页 · 自动化 → 桌面自动化（11-06 重排，11-07 卡片化）。
+ * 设置页 · 自动化 → 桌面自动化（11-06 重排，11-07 卡片化，11-13 三后端）。
  *
- * 用户 11-07：「把浏览器和电脑操作也做成卡片」——浏览器页已改成能力卡；
- * 本页也把两个后端从「一行开关」升级成两张后端卡：
- *   · 卡头：图标 + 名称 + 安装状态胶囊 + 开关（开关就在卡上，不再另起一行）；
- *   · 卡身：工具规模 / 调用方式 + 当前角色（主 / 辅，按系统排序）；
- *   · 卡尾：去开发工具（安装/查看）。
- * ⛔ 两个开关仍写同一份 app-settings（desktopBackendNuphus / desktopBackendComputerUse）。
- * ⛔ 链路口径不变：Windows Nuphus 主 · Computer Use 辅；mac 反过来。
+ * 三张后端卡（Agent Desktop / Computer Use / Nuphus），卡头 = 图标 + 名称 + 状态胶囊 + 开关，
+ * 卡身 = 各后端优势与角色（主 / 辅），卡尾 = 安装/更新或去开发工具。
+ * ⛔ 三个开关仍写同一份 app-settings（desktopBackendAgentDesktop / …Nuphus / …ComputerUse）。
+ * ⛔ 链路口径：Agent Desktop 主 → Computer Use 第二清单 → Nuphus 像素兜底（默认只开 Agent）。
  */
 import { useEffect, useState } from "react";
 import { ArrowUpRight, Cpu, Monitor, Scan } from "lucide-react";
 import { ToggleSwitch } from "../../components/SettingsWidgets";
 
+type ToolRow = { id: string; installed: boolean; binaryReady: boolean; version: string };
+
 export type ComputerSettingsSectionProps = {
-  toolsStatus: any;
-  ToolCard?: any;
+  toolsStatus?: ToolRow[] | null;
+  ToolCard?: unknown;
   setNotice?: (text: string) => void;
   /** 跳「设置 → 开发工具」（安装/查看后端）。 */
   onOpenDevtools?: () => void;
 };
 
-/** 电脑操作设置：两个桌面后端开关，与控制台读写**同一份**设置（⛔ 不各存一份）。 */
+/** 电脑操作设置：三个桌面后端开关，与控制台读写**同一份**设置（⛔ 不各存一份）。 */
 export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
   const { toolsStatus, setNotice, onOpenDevtools } = props;
   /* 三个桌面后端开关与「控制台 → 桌面自动化」读写同一份 app-settings（单一真相源，别各存一份） */
   const [backends, setBackends] = useState<{ nuphus: boolean; computerUse: boolean; agentDesktop: boolean }>({ nuphus: false, computerUse: false, agentDesktop: true });
   /** 安装后刷新工具状态：props 不会自己变，装完必须重新拉 tools:status。 */
-  const [rows, setRows] = useState<any[]>(Array.isArray(toolsStatus) ? toolsStatus : []);
+  const [rows, setRows] = useState<ToolRow[]>(Array.isArray(toolsStatus) ? toolsStatus : []);
   const [installingAgent, setInstallingAgent] = useState(false);
   useEffect(() => { setRows(Array.isArray(toolsStatus) ? toolsStatus : []); }, [toolsStatus]);
   useEffect(() => {
@@ -57,11 +56,13 @@ export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
   const installAgentDesktop = async () => {
     setInstallingAgent(true);
     try {
-      const r: any = await window.codex.updateRuntime("agent-desktop").catch((e: any) => ({ ok: false, error: String(e?.message ?? e) }));
-      if (r?.ok === false) { setNotice?.(r?.error ?? "安装失败"); return; }
+      const r = await window.codex.updateRuntime("agent-desktop")
+        .catch((e: unknown) => ({ ok: false, error: String((e as { message?: string })?.message ?? e) }));
+      if (r?.ok === false) { setNotice?.("error" in r ? r.error : "安装失败"); return; }
       const fresh = await window.codex.toolStatus().catch(() => null);
       if (Array.isArray(fresh)) setRows(fresh);
-      setNotice?.("Agent Desktop 已安装（引擎已重启，新会话可用）");
+      const row = Array.isArray(fresh) ? fresh.find((tool) => tool.id === "agent-desktop") : null;
+      setNotice?.(row?.binaryReady ? "Agent Desktop 已就绪（引擎已重启，新会话可用）" : "Agent Desktop 已安装，但平台主程序未就绪：请重试或到「开发工具」修复");
     } finally {
       setInstallingAgent(false);
     }
@@ -70,20 +71,21 @@ export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
      ⛔ 默认只开 agent-desktop；另两个由用户显式开启后才参与兜底。 */
   const active = backends.agentDesktop ? "agentDesktop" : backends.computerUse ? "computerUse" : backends.nuphus ? "nuphus" : "";
   const roleOf = (key: "nuphus" | "computerUse" | "agentDesktop") => (!backends[key] ? "停用" : key === active ? "主" : "辅");
-  const statusOf = (id: string) => (rows || []).find((tool: any) => tool.id === id);
+  const statusOf = (id: string) => (rows || []).find((tool) => tool.id === id);
   const nuphus = statusOf("nuphus-mcp");
   const computerUse = statusOf("computer-use");
   const agentDesktop = statusOf("agent-desktop");
-  const tagOf = (row: any, enabled: boolean) => {
+  const tagOf = (row: ToolRow | undefined, enabled: boolean) => {
     if (!enabled) return "已停用";
     if (!row) return "读取中";
     if (!row.installed) return "未安装";
+    if (!row.binaryReady) return "安装不完整";
     return row.version ? `已安装 · ${row.version}` : "已安装";
   };
-  const toneOf = (row: any, enabled: boolean) => {
+  const toneOf = (row: ToolRow | undefined, enabled: boolean) => {
     if (!enabled) return " is-warn";
     if (!row) return "";
-    return row.installed ? " is-ok" : " is-warn";
+    return row.installed && row.binaryReady ? " is-ok" : " is-warn";
   };
 
   return (
@@ -111,7 +113,7 @@ export function ComputerSettingsSection(props: ComputerSettingsSectionProps) {
                 <em className={`browser-cap-tag${toneOf(agentDesktop, backends.agentDesktop)}`}>{tagOf(agentDesktop, backends.agentDesktop)}</em>
                 <ToggleSwitch checked={backends.agentDesktop} label="Agent Desktop 后端" onChange={(next) => void toggleBackend("agentDesktop", next)} />
               </div>
-              <p>Vercel Labs 无障碍树（Apache-2.0）：核心 12 个工具，按 @ref 快照/查找/点击/输入，不猜坐标；默认主后端。</p>
+              <p>Vercel Labs 无障碍树（Apache-2.0）：核心 12 个工具，按 @ref 快照/查找/点击/输入，不猜坐标；默认主后端。macOS 13+ / Windows 10 1809+，mac 首次用需在系统设置授权「辅助功能」。</p>
               <button type="button" className="browser-cap-action" disabled={installingAgent} onClick={() => void installAgentDesktop()}>
                 {installingAgent ? "更新中…" : agentDesktop?.installed ? "检查更新" : "安装"}<ArrowUpRight size={12} />
               </button>

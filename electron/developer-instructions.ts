@@ -123,7 +123,7 @@ const WIN_UIA_ONLY = "1) Desktop automation on Windows — both Nuphus and Compu
    · nuphus：截屏 + 本地 OCR + 像素坐标，**兜底**（画布/自绘/无障碍树残缺时）；
    · computer-use：紧凑的 app state 控件清单，**第二清单通道**（agent-desktop 不可用时）。
    ⛔ 引擎当前不把 MCP 工具直接交给模型 ⇒ agent-desktop 教它走 CLI；ref 属于某次快照，操作后要重新 snapshot。 */
-const AGENT_DESKTOP_CORE = "1) Desktop automation — **PREFERRED backend: `agent-desktop`** (Vercel Labs, Apache-2.0; reads the OS accessibility tree, no screenshots or pixel guessing). CLI: `agent-desktop snapshot --app \"<app name>\" -i` returns the tree with @ref IDs → `agent-desktop find --name \"...\"` → `agent-desktop click @ref` / `type @ref \"text\"` / `press @ref ENTER` / `scroll @ref down`. @refs belong to ONE snapshot — re-snapshot after any change; run calls ONE AT A TIME. Best when the app exposes real controls (native apps, dialogs, forms, menus).\n";
+const AGENT_DESKTOP_CORE = "1) Desktop automation — **PREFERRED backend: `agent-desktop`** (Vercel Labs, Apache-2.0; reads the OS accessibility tree, no screenshots or pixel guessing). CLI: `agent-desktop snapshot --app \"<app name>\" -i` returns the tree with @ref IDs → `agent-desktop find --name \"...\"` → `agent-desktop click @ref` / `type @ref \"text\"`. Keys: `agent-desktop focus @ref` first, then `agent-desktop press return` (combos: `press ctrl+s` on Windows, `press cmd+s` on macOS; a bare uppercase letter implies Shift). Scroll: `agent-desktop scroll @ref --direction down --amount 3`. @refs belong to ONE snapshot — re-snapshot after any change; run calls ONE AT A TIME. Best when the app exposes real controls (native apps, dialogs, forms, menus).\n";
 const AGENT_NUPHUS_FALLBACK = "   FALLBACK — `nuphus` (screenshots + local OCR + pixel coordinates), use ONLY when the accessibility tree is unusable (canvas / self-drawn UI / flaky controls): `nuphus-call desktop_perceive` → `desktop_mouse` / `desktop_input` (pass confirm=true for writes); re-perceive after window moves. Do not mix both backends in one step.\n";
 const AGENT_CU_SECOND = "   SECOND control-list channel — `computer-use` MCP (if present): `list_apps` → `get_app_state` → `click` / `set_value` / `press_key`. Use it when agent-desktop is missing or a call fails; still one call at a time.\n";
 
@@ -555,7 +555,9 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += STEP_NOTE_INSTRUCTIONS;
   // 输出风格（用户开关打开的风格技能）：必须**早**出现，与语言指令同理（见上方那段说明）。
   if (input.outputStyles?.length) text += OUTPUT_STYLE_INSTRUCTIONS(input.outputStyles);
-  if (desktop) text += desktopInstructions(process.platform, { nuphus: input.nuphusBackend !== false, computerUse: input.computerUseBackend !== false, agentDesktop: input.agentDesktopBackend === true });
+  /* ⛔ 缺省必须与产品默认一致（agent 开、另两个关）：`!== false` 会把省略字段的调用方当成
+     「旧后端全开」，与 config.toml 的实际掩码相反（模型被引导去调已被 disabled_tools 掩掉的工具）。 */
+  if (desktop) text += desktopInstructions(process.platform, { nuphus: input.nuphusBackend === true, computerUse: input.computerUseBackend === true, agentDesktop: input.agentDesktopBackend === true });
   if (browser) text += BROWSER_INSTRUCTIONS;
   const mediaCommand = input.mediaCommand || "node harness-media.mjs";
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);

@@ -177,12 +177,12 @@ function DesktopBackendOptions() {
   if (!pref) return null;
   const rows = isMac
     ? [
-        { key: "agentDesktop" as const, label: "Agent Desktop（无障碍树 · 首选）", desc: "默认主后端：Vercel Labs 无障碍树，按 @ref 快照/查找/点击，不猜坐标；随包内置。" },
+        { key: "agentDesktop" as const, label: "Agent Desktop（无障碍树 · 首选）", desc: "默认主后端：Vercel Labs 无障碍树，按 @ref 快照/查找/点击，不猜坐标；随包内置（macOS 13+，需辅助功能授权）。" },
         { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "第二清单通道：Agent Desktop 不可用时兜底，按元素序号操作。" },
         { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "像素兜底：画布/自绘界面读不到控件树时用；浏览器回落也由它提供。" },
       ]
     : [
-        { key: "agentDesktop" as const, label: "Agent Desktop（无障碍树 · 首选）", desc: "默认主后端：Vercel Labs 无障碍树，按 @ref 快照/查找/点击，不猜坐标；随包内置。" },
+        { key: "agentDesktop" as const, label: "Agent Desktop（无障碍树 · 首选）", desc: "默认主后端：Vercel Labs 无障碍树，按 @ref 快照/查找/点击，不猜坐标；随包内置（Windows 10 1809+）。" },
         { key: "computerUse" as const, label: "Computer Use（控件清单）", desc: "第二清单通道：Agent Desktop 不可用时兜底，按元素序号操作。" },
         { key: "nuphus" as const, label: "Nuphus（截屏 + OCR）", desc: "像素兜底：画布/自绘界面读不到控件树时用；浏览器回落也由它提供。" },
       ];

@@ -671,8 +671,8 @@ export async function run() {
     && !/open-computer-use@\d/.test(prepMac) ? ok : fail)(
     "【274】open-computer-use 版本单一来源（表里一处、prepare-mac 从表取；出现第二处字面量即红）"
   );
-  (/computerUse: TOOLS_VERSIONS\.computerUse/.test(prepMac) ? ok : fail)(
-    "【274】mac 随包清单记了 computer use 版本（缺了就无从核对产物里到底是哪一版）"
+  (/computerUse: TOOLS_VERSIONS\.computerUse/.test(prepMac) && /agentDesktop: TOOLS_VERSIONS\.agentDesktop/.test(prepMac) ? ok : fail)(
+    "【274】mac 随包清单记了 computer use / agent desktop 版本（缺了就无从核对产物里到底是哪一版）"
   );
   (verifyPkg.includes("open-computer-use") && verifyPkg.includes("没有执行位") && verifyPkg.includes("别的平台的二进制") ? ok : fail)(
     "【274】产物层三条校验在位（主程序存在 + 执行位 + 不许残留 windows/linux 二进制）"
@@ -687,6 +687,9 @@ export async function run() {
   (/fs\.existsSync\(launcher\) && fs\.existsSync\(target\)/.test(toolchain274)
     && /dist", "windows", process\.arch === "arm64" \? "arm64" : "amd64"/.test(toolchain274) ? ok : fail)(
     "【274】就绪判据同时看启动脚本与主程序（mac .app / win dist/windows/<arch>/*.exe；只装上半截 = MCP 起得来但每次调用都失败）"
+  );
+  (/agent-desktop-\$\{process\.platform\}-\$\{arch\}/.test(toolchain274) && /agent-desktop/.test(verifyPkg) ? ok : fail)(
+    "【274】agent-desktop 就绪判据同样看「启动器 + 平台二进制」（agentDesktopLauncher）；产物层也列了它"
   );
   /* 11-06 用户问「这里为啥没有显示出来 computer use」：自动化页的桌面后端卡片是**数据驱动**的
      （tools:status 里 scope=computer 的条目），而该通道原来只回 Nuphus 一条 ⇒ 页面永远只有一张卡。
@@ -766,6 +769,26 @@ export async function run() {
   (macFallback?.active === "computer-use-desktop" && winFallback?.active === "computer-use-desktop" ? ok : fail)(
     `【274】Agent Desktop 缺失时自动落到第二清单通道（mac ⇒ ${macFallback?.active}；win ⇒ ${winFallback?.active}）`
   );
+  /* 后端开关必须进链路判据：关掉的后端不算就绪（但 nuphus 的 browser_* 回落不受桌面开关影响）。 */
+  const offAll274 = { ...probeBase, agentDesktopAvailable: false, nuphusDesktopEnabled: false, computerUseEnabled: false };
+  const winOff274 = caps274 ? order274(caps274.resolveCapabilities({ ...offAll274, platform: "win32" }), "win32") : null;
+  const macOff274 = caps274 ? order274(caps274.resolveCapabilities({ ...offAll274, platform: "darwin" }), "darwin") : null;
+  (winOff274?.active === "uia-desktop" && macOff274?.active === null ? ok : fail)(
+    `【274】三个后端都关 ⇒ 只剩 Windows 的 UIA 独立通道（实测 win=${winOff274?.active} / mac=${macOff274?.active}）`
+  );
+  const macNoCu274 = caps274 ? order274(caps274.resolveCapabilities({ ...probeBase, platform: "darwin", agentDesktopAvailable: false, computerUseEnabled: false }), "darwin") : null;
+  const browser274 = caps274
+    ? (caps274.resolveCapabilities({ ...probeBase, platform: "win32", egoBrowser: false, nuphusDesktopEnabled: false }).find((entry) => entry.id === "browser")?.activeId ?? null)
+    : null;
+  (macNoCu274?.active === "nuphus-desktop" && browser274 === "nuphus-cli-browser" ? ok : fail)(
+    `【274】关掉 Computer Use 自动落到 Nuphus；关掉 Nuphus 桌面组不影响 browser_* 回落（实测 mac=${macNoCu274?.active} / browser=${browser274}）`
+  );
+  const capsIpc274 = readFileSync(join(ROOT, "electron", "features", "capabilities-ipc.ts"), "utf8");
+  (/nuphusDesktopEnabled: devInput\.nuphusBackend === true/.test(capsIpc274)
+    && /computerUseEnabled: devInput\.computerUseBackend === true/.test(capsIpc274)
+    && /agentDesktopAvailable: devInput\.agentDesktopBackend === true/.test(capsIpc274) ? ok : fail)(
+    "【274】能力探针把三个后端开关接进可用性（否则界面会把已关掉的后端显示成 active）"
+  );
   (/const desktopInstructions = \(\s*platform: NodeJS\.Platform = process\.platform,/.test(di274)
     && /backends: \{ nuphus\?: boolean; computerUse\?: boolean; agentDesktop\?: boolean \} = \{\}/.test(di274)
     && /PREFERRED backend: `agent-desktop`/.test(di274)
@@ -776,8 +799,22 @@ export async function run() {
     "【274】常驻指令：Agent Desktop 首选，Nuphus 像素兜底 / Computer Use 第二清单通道；关掉的/没装的不会被引导"
   );
   (/nuphusBackend\?: boolean/.test(di274) && /computerUseBackend\?: boolean/.test(di274) && /agentDesktopBackend\?: boolean/.test(di274)
-    && /desktopInstructions\(process\.platform, \{ nuphus: input\.nuphusBackend !== false, computerUse: input\.computerUseBackend !== false, agentDesktop: input\.agentDesktopBackend === true \}\)/.test(di274) ? ok : fail)(
-    "【274】指令输入带三个后端开关（设置变化后重写 config 时口径一致）"
+    && /desktopInstructions\(process\.platform, \{ nuphus: input\.nuphusBackend === true, computerUse: input\.computerUseBackend === true, agentDesktop: input\.agentDesktopBackend === true \}\)/.test(di274) ? ok : fail)(
+    "【274】指令输入的缺省与产品默认一致（agent 开、另两个关；⛔ 不许用 `!== false` 把省略字段当成旧后端全开）"
+  );
+  /* 真跑默认输入：省略所有后端字段时不许再把 Nuphus / computer-use 当开着（否则模型被引导去调已被掩码的工具）。 */
+  let devMod274 = null;
+  try { devMod274 = req274(join(ROOT, "dist-electron", "developer-instructions.js")); } catch { devMod274 = null; }
+  const defInstr274 = devMod274 ? devMod274.buildDevInstructions({}) : "";
+  (defInstr274.includes("agent-desktop is unavailable") && !defInstr274.includes("PREFERRED backend: `agent-desktop`")
+    && !defInstr274.includes("`desktop_*`) are registered") ? ok : fail)(
+    "【274】真跑 buildDevInstructions({})：默认不给旧后端指令（只说明 agent-desktop 不可用）"
+  );
+  /* CLI 语法按上游 1.3.0 实测钉住：press 只收组合键、scroll 的方向是参数（⛔ 写成位置参数 = INVALID_ARGS）。 */
+  (/agent-desktop focus @ref/.test(di274) && /agent-desktop press return/.test(di274)
+    && /agent-desktop scroll @ref --direction down --amount 3/.test(di274)
+    && !/press @ref/.test(di274) && !/scroll @ref down/.test(di274) ? ok : fail)(
+    "【274】常驻指令的 agent-desktop CLI 语法与上游一致（focus @ref → press 组合键；scroll --direction）"
   );
   const discipline274 = codeOnly(readFileSync(join(ROOT, "electron", "main", "12-skill-discipline.ts"), "utf8"));
   (/nuphusBackend: appSettings\.desktopBackendNuphus === true/.test(discipline274)
@@ -786,12 +823,19 @@ export async function run() {
     "【274】devInstructionsInput 从 app-settings 读三个后端开关（Agent 默认开；另两个只有显式 true 才引导）"
   );
   (skill274.includes("Agent Desktop（默认主）") && skill274.includes("Nuphus（兜底）")
-    && skill274.includes("Computer Use（第二清单通道）") && /agent-desktop snapshot --app/.test(skill274) ? ok : fail)(
-    "【274】桌面技能：Agent Desktop 主 + Nuphus 像素兜底 + Computer Use 第二清单通道"
+    && skill274.includes("Computer Use（第二清单通道）") && /agent-desktop snapshot --app/.test(skill274)
+    && skill274.includes("agent-desktop focus @ref") && skill274.includes("agent-desktop press return")
+    && skill274.includes("agent-desktop scroll @ref --direction down --amount 3")
+    && !skill274.includes("press @ref") && !skill274.includes("scroll @ref down") ? ok : fail)(
+    "【274】桌面技能：Agent Desktop 主 + Nuphus 像素兜底 + Computer Use 第二清单通道；CLI 语法与上游一致"
   );
   (/const agentDesktopMcpSection/.test(apply274) && /AGENT_DESKTOP_MCP_SERVER/.test(apply274)
-    && /disabled_tools = \[\$\{agentDesktopDisabledTools\(\)/.test(apply274) ? ok : fail)(
-    "【274】config 写出：agent-desktop 只开核心 12 工具（其余进 disabled_tools，不占模型上下文）"
+    && /disabled_tools = \[\$\{agentDesktopDisabledTools\(\)/.test(apply274)
+    && /ownedMcpServers = new Set\(\[[^\]]*AGENT_DESKTOP_MCP_SERVER[^\]]*\]\)/.test(apply274) ? ok : fail)(
+    "【274】config 写出：agent-desktop 是宿主自管段（ownedMcpServers），只开核心 12 工具（其余进 disabled_tools）"
+  );
+  (/const desktopBackendSections = \[\.\.\.agentDesktopMcpSection, \.\.\.computerUseMcpSection, \.\.\.nuphusMcpSection\];/.test(apply274) ? ok : fail)(
+    "【274】config 段顺序 = 实际优先级（Agent → Computer Use → Nuphus，⛔ 不再按平台把 agent 排最后）"
   );
   /* 开关联动：两个后端都有独立偏好字段（默认 true）+ 控制台两个小选项 + 注册/掩码跟随开关。 */
   const settings274 = codeOnly(readFileSync(join(ROOT, "electron", "app-settings.ts"), "utf8"));
@@ -813,6 +857,26 @@ export async function run() {
   const runtime274 = readFileSync(join(ROOT, "electron", "features", "runtime-ipc.ts"), "utf8");
   (/platforms: \["darwin", "win32"\]/.test(runtime274) ? ok : fail)(
     "【274】computer-use 在 Windows 也可安装/更新（自动化 → 版本与手动更新）"
+  );
+  /* mac / Windows 的随包产物：agent-desktop 的平台二进制与 helper 必须真的进包，别的平台要裁掉。
+     ⛔ mac 的 npm 安装不跑 agent-desktop 的 postinstall（x64 --ignore-scripts / arm64 只放行 nuphus）
+     ⇒ 二进制与 helper 只能靠 npm tarball 自带 + prepare 当场补执行位；这条只有产物层能抓。 */
+  const prepMac274 = codeOnly(readFileSync(join(ROOT, "scripts", "prepare-mac-tools.cjs"), "utf8"));
+  const prepWin274 = codeOnly(readFileSync(join(ROOT, "scripts", "prepare-windows-tools.cjs"), "utf8"));
+  const verifyPkg274 = codeOnly(readFileSync(join(ROOT, "scripts", "verify-packaged-tools.cjs"), "utf8"));
+  (/agent-desktop@\$\{TOOLS_VERSIONS\.agentDesktop\}/.test(prepMac274)
+    && /agent-desktop-macos-helper-darwin-\$\{arch\}/.test(prepMac274)
+    && /chmodSync\(adBinary, 0o755\)/.test(prepMac274) && /chmodSync\(adHelper, 0o755\)/.test(prepMac274)
+    && /keepAd\.has\(entry\)/.test(prepMac274) ? ok : fail)(
+    "【274】mac 随包：只留本架构主程序 + macos-helper 并补执行位（npm 不跑 postinstall，别的平台二进制当场裁掉）"
+  );
+  (/agent-desktop-win32-x64\.exe/.test(prepWin274) && /agent-desktop-win32-\(x64\|arm64\)/.test(prepWin274)
+    && /fs\.rmSync\(path\.join\(adBinDir, entry\)/.test(prepWin274) ? ok : fail)(
+    "【274】Windows 随包：保留 win32 两种架构、裁掉 darwin/linux 二进制"
+  );
+  (/agent-desktop-macos-helper-darwin-\$\{process\.arch\}/.test(verifyPkg274)
+    && /mode & 0o111/.test(verifyPkg274) && /adForeign/.test(verifyPkg274) ? ok : fail)(
+    "【274】产物层校验：mac helper/执行位 + 不许残留别的平台二进制（prepare 被删掉会当场红）"
   );
 }
 }

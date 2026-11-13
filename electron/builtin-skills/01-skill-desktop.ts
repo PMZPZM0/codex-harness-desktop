@@ -26,8 +26,9 @@ agent-desktop snapshot --app "记事本" -i        # 拿无障碍树（含 @ref 
 agent-desktop find --name "保存"                 # 按角色/名字/文本找元素
 agent-desktop click @s8f3k2p9:e8                # 按 @ref 点击
 agent-desktop type @ref "文本"                   # 输入
-agent-desktop press @ref ENTER                  # 按键
-agent-desktop scroll @ref down                  # 滚动
+agent-desktop focus @ref                        # 先聚焦元素（press 只收组合键，不收 ref）
+agent-desktop press return                      # 发组合键（Windows ctrl+s / macOS cmd+s；大写字母 = Shift）
+agent-desktop scroll @ref --direction down --amount 3   # 滚动（方向/步数是参数，不是第二个位置参数）
 agent-desktop list-windows / list-apps / launch "<app>" / focus-window ...
 \`\`\`
 

@@ -54,7 +54,8 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
   // ⛔ 再叠加**总闸掩码**（09-20）：关掉「桌面自动化 / 浏览器自动化」的那一组，整体进 disabled_tools
   //    —— 工具从引擎工具表消失 ⇒ 真阻断（此前浏览器总闸只是提示词级控制）。
-  /* 11-03 用户令：两个桌面后端开关默认都开；关闭 nuphus 只掩桌面组（browser_* 保留）。 */
+  /* 11-13 用户令：默认只开 agent-desktop；Nuphus / Computer Use 需显式 true 才注册与引导。
+     关掉 nuphus 只掩桌面组（browser_* 保留，未装 Ego 时仍是浏览器回落）。 */
   const nuphusBackend = appSettings.desktopBackendNuphus === true;
   const computerUseBackend = appSettings.desktopBackendComputerUse === true;
   const agentDesktopBackend = appSettings.desktopBackendAgentDesktop !== false;
@@ -181,9 +182,8 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     }
     return out;
   };
-  /* ⛔ 11-03 用户令「按系统优先排序」：**配置顺序即工具面顺序** ——
-     macOS = computer-use → nuphus；Windows = nuphus → computer-use。
-     两段都受各自后端开关控制（关掉就不写那一段）。 */
+  /* ⛔ 11-13：三个桌面后端的段统一按「Agent Desktop 主 → Computer Use 第二清单 → Nuphus 像素兜底」
+     的优先级写出；关掉的后端整段不写（Agent 默认开，另两个需显式 true）。 */
   const computerUseMcpSection = (() => {
     const launcher = computerUseLauncher();
     const node = bundledNode();
@@ -224,9 +224,9 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
       "",
     ];
   })();
-  const desktopBackendSections = process.platform === "darwin"
-    ? [...computerUseMcpSection, ...nuphusMcpSection, ...agentDesktopMcpSection]
-    : [...nuphusMcpSection, ...agentDesktopMcpSection, ...computerUseMcpSection];
+  /* ⛔ 11-13 用户令「Agent Desktop 主 → Computer Use → Nuphus 兜底」：**配置顺序即工具面顺序**，
+     所以三个段按同一优先级写（不再按平台分叉）。关掉的后端整段不写。 */
+  const desktopBackendSections = [...agentDesktopMcpSection, ...computerUseMcpSection, ...nuphusMcpSection];
   const configText = [
     `model = "${escapeToml(entry.model)}"`,
     // （顶层 model_context_window 已按 09-16 修正移除：全局单值会压掉 catalog 里每模型的

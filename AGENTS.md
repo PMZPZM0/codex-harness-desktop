@@ -226,18 +226,25 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 | **computer-use**（open-computer-use，MIT） | 紧凑的 app state 控件清单 | 第二清单通道（Agent Desktop 不可用时） |
 | **nuphus**（@nuphus/nuphus-mcp） | 截屏 + 本地 OCR + 像素坐标；另提供 `browser_*` 浏览器回落 | 像素兜底（画布 / 自绘 / 控件树残缺） |
 
-- **agent-desktop 随包内置**：npm 包 32MB 自带上六套平台二进制，`scripts/prepare-{windows,mac}-tools.cjs`
-  用 `agent-desktop@<tools-versions.agentDesktop>` 装进 `npm-global`；before-pack / verify-packaged-tools 都硬校验它。
+- **agent-desktop 随包内置**：npm 包 32MB 自带六平台二进制，`scripts/prepare-{windows,mac}-tools.cjs`
+  用 `agent-desktop@<tools-versions.agentDesktop>` 装进 `npm-global`；装完**只留目标平台**并补执行位
+  （mac：本架构主程序 + `agent-desktop-macos-helper-darwin-<arch>`，约 4.5MB；Windows：win32 x64/arm64），
+  其余平台/架构当场裁掉。⛔ mac 两条 npm 分支都不跑 agent-desktop 的 postinstall
+  （x64 `--ignore-scripts` / arm64 只放行 nuphus）⇒ 二进制与 helper 必须由 tarball 自带 + prepare 补 `0o755`；
+  before-pack / verify-packaged-tools 硬校验「启动器 + 本平台主程序（mac 还要 helper/执行位）」且不许残留别的平台二进制。
 - **注册** = `[mcp_servers.agent-desktop]`（command = 随包 node，args = `[<launcher>, "mcp"]`）；
-  上游 ~70 个工具**只保留核心 12 个**，其余写 `disabled_tools`（不占模型上下文）。模型侧实际走 CLI：
-  `agent-desktop snapshot --app "<名>" -i` → `click @ref` / `type @ref` / `press @ref`（ref 只属于最近一次 snapshot）。
+  上游 75 个工具（1.3.0 实测）**只保留核心 12 个**，其余写 `disabled_tools`（不占模型上下文）。模型侧实际走 CLI：
+  `agent-desktop snapshot --app "<名>" -i` → `click @ref` / `type @ref` / `focus @ref` + `press return` /
+  `scroll @ref --direction down --amount 3`（ref 只属于最近一次 snapshot；⛔ `press` 只收组合键、`scroll` 的方向是参数，别再写成 `press @ref ENTER` / `scroll @ref down`）。
 - 关闭某后端后，常驻指令不再引导它的 CLI/工具；**Nuphus 关掉只掩 `desktop_*`，`browser_*` 永远保留**
   （未装 Ego 时的浏览器回落）；computer-use 关掉则整段不写。
 - 三个开关在「设置 → 自动化 → 桌面自动化」与「控制台 → 通用 → 桌面自动化」读同一份 app-settings；
   默认值：`desktopBackendAgentDesktop !== false`、`desktopBackendNuphus === true`、`desktopBackendComputerUse === true`。
 - 「开发工具 / 组件更新」里 `agent-desktop` 走 npm 国内镜像在线更新；桌面自动化卡片也带安装/检查更新入口。
-- ⚠️ **未经真机验证**：签名/公证与 Gatekeeper、首次「辅助功能 + 屏幕录制」授权只能在 mac 上跑出来；
-  产物层硬校验见 `scripts/verify-packaged-tools.cjs`。
+- ⚠️ **mac 真机未验证**：agent-desktop 是裸 CLI + `agent-desktop-macos-helper`（不是 .app），
+  **辅助功能授权的归属**（本应用 vs helper）与签名/公证、Gatekeeper 放行只能在 mac 上跑出来；
+  首次调用失败先看「系统设置 → 隐私与安全性 → 辅助功能」里有没有本应用/helper 并授权。
+  产物层硬校验见 `scripts/verify-packaged-tools.cjs`（主程序 + helper + 执行位 + 无外平台二进制）。
 
 ### 🎨 前端开发（`ui-sketch` 板块 + `sketch://` 协议，2026-10-05 立；两轮改名：界面草图 → 手机前端UI → 前端开发；10-06 起画布 = 上游 + 本仓组件补丁层，守卫【283】162 条）
 

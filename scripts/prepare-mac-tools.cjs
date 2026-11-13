@@ -59,6 +59,37 @@ async function main() {
   fs.renameSync(modules, path.join(prefix, "node_modules"));
   fs.symlinkSync("../node_modules", modules);
 
+  // ── agent-desktop（mac 默认桌面后端，11-13）─────────────────────────────────
+  // ⛔ mac 的 npm 安装对 x64 是 --ignore-scripts、arm64 只放行 nuphus ⇒ agent-desktop 的 postinstall
+  //    **不会跑**。包里的平台二进制/helper 是 npm tarball 自带的，但解包不保证 +x，
+  //    .app 里 spawn 会 EACCES（launcher 运行时会自愈 chmod，但打包产物必须当场就是对的）。
+  // ⛔ 只留本机架构那一份：包里带六平台二进制，mac 包不该躺 win/linux 的 exe
+  //    （同 open-computer-use 的裁剪口径，既省体积也免审计/杀软误报）。
+  const adRoot = path.join(prefix, "node_modules/agent-desktop");
+  const adBinDir = path.join(adRoot, "bin");
+  const keepAd = new Set([
+    "agent-desktop",
+    `agent-desktop-darwin-${arch}`,
+    `agent-desktop-darwin-${arch}.sha256`,
+    `agent-desktop-macos-helper-darwin-${arch}`,
+    `agent-desktop-macos-helper-darwin-${arch}.sha256`,
+  ]);
+  const adBinary = path.join(adBinDir, `agent-desktop-darwin-${arch}`);
+  const adHelper = path.join(adBinDir, `agent-desktop-macos-helper-darwin-${arch}`);
+  if (!fs.existsSync(path.join(adBinDir, "agent-desktop"))) throw new Error(`agent-desktop 装完找不到 CLI 启动器：${adBinDir}/agent-desktop`);
+  if (!fs.existsSync(adBinary)) throw new Error(`agent-desktop 装完找不到 mac 主程序：${adBinary}`);
+  // helper 是物理输入/剪贴板的配套二进制；launcher 在 darwin 上是**硬依赖**（缺失直接退出）。
+  if (!fs.existsSync(adHelper)) throw new Error(`agent-desktop 装完找不到 mac helper：${adHelper}`);
+  fs.chmodSync(path.join(adBinDir, "agent-desktop"), 0o755);
+  fs.chmodSync(adBinary, 0o755);
+  fs.chmodSync(adHelper, 0o755);
+  for (const entry of fs.readdirSync(adBinDir)) {
+    if (!keepAd.has(entry)) fs.rmSync(path.join(adBinDir, entry), { force: true });
+  }
+  const adShim = path.join(prefix, "bin", "agent-desktop");
+  if (fs.existsSync(adShim)) fs.chmodSync(adShim, 0o755);
+  console.log(`[agent-desktop] ${TOOLS_VERSIONS.agentDesktop} → ${adBinary}（已裁掉其他平台二进制）`);
+
   if (arch === "x64") {
     const native = path.resolve(".test-tmp/nuphus-src/target/release");
     const destination = path.join(tools, "nuphus");
@@ -147,7 +178,7 @@ async function main() {
 
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch, node: nodeVersion, nuphus: TOOLS_VERSIONS.nuphus,
-    computerUse: TOOLS_VERSIONS.computerUse,
+    computerUse: TOOLS_VERSIONS.computerUse, agentDesktop: TOOLS_VERSIONS.agentDesktop,
     bundledSmall: BUNDLED_SMALL,
     python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",
     helperSha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(tools, "nuphus-call.mjs"))).digest("hex"),
