@@ -418,7 +418,7 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
                                   {scheduleDraft.mode !== "off" ? (
                                     <p className="rpa-recorder-hint">
                                       {recipe.actions?.length
-                                        ? "到点由宿主原生回放（不经过模型）；应用需保持运行，坐标按录制分辨率缩放。"
+                                        ? "到点由宿主原生回放（不经过模型）；应用需保持运行，坐标按录制分辨率缩放。⚠️ 会自动操作真实桌面，请确认配方内容安全。"
                                         : "到点由模型在会话里按步骤复现；建议先给会话选好模型。"}
                                     </p>
                                   ) : null}

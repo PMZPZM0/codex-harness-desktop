@@ -264,6 +264,10 @@ try {
     && /startRpaPlayback\(recipe, null,/.test(sched)
     && /task\.rpa\?\.native === true/.test(sched),
     "定时器支持 RPA 动作：录制配方原生回放、无模型也能到点、文本配方保留模型回合");
+  ok(/nativeRpaRunning/.test(sched) && /waiting_rpa/.test(sched) && /另一个 RPA 原生回放正在运行/.test(sched),
+    "多个 RPA 定时同时到点串行执行（原生回放全局单例，不互相撞「已经在回放中」）");
+  ok(/scheduledRecipe/.test(sched) && /scheduledRecipe\.steps\.map/.test(sched) && /taskPrompt/.test(sched),
+    "文本 RPA 定时在到点读取当前配方步骤（不是保存时的旧快照）");
   const req = codeOnly(read(REQ));
   ok(req.includes('event.params?.tool === "rpa_schedule"') && /saveScheduledTask\(/.test(req)
     && /rpa: \{ recipeId: recipe\.id/.test(req) && /deleteScheduledTask\(/.test(req),

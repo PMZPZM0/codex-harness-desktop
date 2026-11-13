@@ -898,8 +898,9 @@ try {
   const coreSrc = readSrc("electron/features/dispatch-core.ts");
   const rpcSrc = readSrc("electron/features/dispatch-rpc.ts");
   ok(/export function composeTaskPrompt/.test(schedulerSrc)
-    && /text: composeTaskPrompt\(task\)/.test(schedulerSrc),
-    "⛔ 定时任务投递走 composeTaskPrompt（派给谁 / 分工 / 依赖要一起进这一轮，⛔ 不是裸 prompt）");
+    && /composeTaskPrompt\(task\)/.test(schedulerSrc)
+    && /text: taskPrompt/.test(schedulerSrc),
+    "⛔ 定时任务投递走 composeTaskPrompt（派给谁 / 分工 / 依赖要一起进这一轮，⛔ 不是裸 prompt；RPA 文本配方用运行时步骤，普通任务仍走 composeTaskPrompt）");
   ok(/assignee/.test(schedulerSrc) && /dependsOn/.test(schedulerSrc),
     "任务结构带 assignee / duty / dependsOn / archiveHint 四件套");
   ok(/name: "scheduler_save"[\s\S]{0,2600}assignee/.test(coreSrc),

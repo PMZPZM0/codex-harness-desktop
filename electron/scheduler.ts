@@ -436,6 +436,8 @@ export class Scheduler {
   private timer?: NodeJS.Timeout;
   private tickInProgress = false;
   private running = new Set<string>();
+  /** 原生键鼠回放是全局单例（同一时刻只能有一个），多个 RPA 定时到点时串行执行。 */
+  private nativeRpaRunning = false;
 
   constructor(
     private readonly file: string,
@@ -525,6 +527,7 @@ export class Scheduler {
     if (!task) throw new Error("定时任务不存在");
     if (!task.enabled) throw new Error("定时任务已停用");
     if (this.running.has(task.id)) throw new Error("该任务正在运行中");
+    if (task.rpa?.native && this.nativeRpaRunning) throw new Error("另一个 RPA 原生回放正在运行，请等它结束");
     void this.run(task, "manual").catch(() => undefined);
   }
 
@@ -610,22 +613,36 @@ export class Scheduler {
     if (runKind === "missed" && missedScheduledAt !== undefined && task.scheduleType !== "once") {
       if (await this.holdMissedRunForRecovery(task, missedScheduledAt)) return;
     }
+    /* 原生回放全局单例：另一个 RPA 正在回放时，本任务保持到期待跑（nextRunAt 不推进），
+       等它结束后下一 tick 再执行；手动「立即运行」直接告知。 */
+    if (task.rpa?.native && this.nativeRpaRunning) {
+      if (runKind === "manual") throw new Error("另一个 RPA 原生回放正在运行，请等它结束");
+      task.displayStatus = "waiting_rpa";
+      this.log(`[Scheduler] 「${task.name}」等待另一个 RPA 回放结束`);
+      await this.write();
+      return;
+    }
     this.running.add(task.id);
     task.running = true;
     task.runKind = runKind;
     this.log(`[Scheduler] 运行「${task.name}」(${task.id}) runKind=${runKind}${missedScheduledAt !== undefined ? ` missedScheduledAt=${new Date(missedScheduledAt).toLocaleString("zh-CN")}` : ""}`);
     let finishedAt = Date.now();
     let interrupted = false;
+    let usedNativeRpa = false;
     try {
       /* RPA 定时：录制配方到点直接原生回放（不依赖模型/会话）；文本配方继续走下面的模型回合。 */
       let nativeRpa = false;
+      let scheduledRecipe: RpaRecipe | null = null;
       if (task.rpa?.recipeId) {
         const recipe = (await rpaStore.listRecipes()).find((entry) => entry.id === task.rpa!.recipeId);
         if (!recipe) throw new Error("RPA 配方不存在（可能已被删除），请重新设置定时或删除这条任务");
+        scheduledRecipe = recipe;
         if (Array.isArray(recipe.actions) && recipe.actions.length) {
           const hasTarget = Boolean(recipe.target) || recipe.actions.some((action) => action.type === "focus" && Boolean(action.title || action.bundle));
           if (!hasTarget) throw new Error("录制配方没有目标应用，不能后台定时回放（请打开目标应用后手动运行）");
           nativeRpa = true;
+          usedNativeRpa = true;
+          this.nativeRpaRunning = true;
           const result = await waitForScheduledRpa(recipe);
           if (!result.ok) throw new Error(result.error || "RPA 原生回放失败");
           finishedAt = Date.now();
@@ -664,8 +681,12 @@ export class Scheduler {
         threadId = started.thread.id;
       }
       const startedAt = Date.now();
+      /* 文本 RPA 定时在到点时读取**当前配方步骤**（不是保存定时时的快照），配方更新后自动跟随。 */
+      const taskPrompt = scheduledRecipe && !(Array.isArray(scheduledRecipe.actions) && scheduledRecipe.actions.length)
+        ? `请执行 RPA 配方「${scheduledRecipe.name}」：\n${scheduledRecipe.steps.map((step, index) => `${index + 1}. ${step}`).join("\n")}`
+        : composeTaskPrompt(task);
       /* ⛔ 用 composeTaskPrompt 而不是裸 task.prompt：派给谁 / 分工 / 依赖要一起进这一轮。 */
-      await this.server.request("turn/start", { threadId, input: [{ type: "text", text: composeTaskPrompt(task), text_elements: [] }], model: task.model || model.model, effort: task.effort });
+      await this.server.request("turn/start", { threadId, input: [{ type: "text", text: taskPrompt, text_elements: [] }], model: task.model || model.model, effort: task.effort });
       // 等待该线程首回合真正完成，用 finishedAt 推进下一次（对齐 WorkBuddy advanceNextRunAt(finishedAt)）
       const outcome = await this.waitForTurnCompletion(threadId, AUTOMATION_RUN_TIMEOUT_MS);
       finishedAt = Date.now();
@@ -700,6 +721,7 @@ export class Scheduler {
     task.recoveryOccurrenceMs = undefined;
     task.recoveryDelayMs = undefined;
     this.running.delete(task.id);
+    if (usedNativeRpa) this.nativeRpaRunning = false;
     this.advanceNextRunAt(task, finishedAt);
     await this.write();
   }
