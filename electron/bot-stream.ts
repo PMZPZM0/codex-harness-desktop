@@ -11,7 +11,10 @@ import { reasoningItemText } from "./reasoning-text";
 import { describeTurnError } from "./turn-error-text";
 
 export type BotStreamSettings = { enabled: boolean; thinking: boolean; tools: boolean };
-export const BOT_STREAM_DEFAULTS: BotStreamSettings = { enabled: true, thinking: true, tools: true };
+/* ⛔ 11-14 用户令「默认关闭」：流式只对**能改写同一条气泡**的渠道有意义（目前只有 Telegram）——
+   微信/飞书/钉钉/QQ 都不支持编辑已发消息，早已统一成「一轮一条干净汇总」，这个开关对它们无效。
+   ⇒ 默认关，避免用户误以为「开了就每条渠道都流式」。（真流式的 Telegram 用户可自行打开。） */
+export const BOT_STREAM_DEFAULTS: BotStreamSettings = { enabled: false, thinking: true, tools: true };
 
 /** 读机器人流式输出设置（是否流式 / 是否露思考 / 是否露工具）；文件坏了回默认。 */
 export async function readBotStreamSettings(file: string): Promise<BotStreamSettings> {
@@ -27,7 +30,8 @@ export function readBotStreamSettingsSync(file: string): BotStreamSettings {
 }
 
 function normalizeBotStreamSettings(raw: any): BotStreamSettings {
-  return { enabled: raw?.enabled !== false, thinking: raw?.thinking !== false, tools: raw?.tools !== false };
+  /* ⛔ 只有**显式写成 true** 才算开启（默认关，11-14 用户令）；老档案里存过 enabled:true 的仍生效。 */
+  return { enabled: raw?.enabled === true, thinking: raw?.thinking !== false, tools: raw?.tools !== false };
 }
 
 /** 写机器人流式设置（只落这三个开关，其它字段不写）。 */

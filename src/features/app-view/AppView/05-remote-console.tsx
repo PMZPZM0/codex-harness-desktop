@@ -296,16 +296,16 @@ export function AppViewRemoteConsole({ app }: { app: HarnessAppApi }) {
                       <AppSelect value={(activeBot as any).granularity ?? "standard"} onChange={(v) => setBotsPersist((cur) => { const next = cur.map((b) => b.id === activeBot.id ? { ...b, granularity: v } : b); return next; })} options={[{ value: "standard", label: "标准回复" }, { value: "concise", label: "简洁回复" }, { value: "verbose", label: "详细回复" }]} className="bot-select" />
                     </div>
                     <div className="bot-detail-row">
-                      <div><strong>流式回复</strong><small>开启后机器人边生成边推送正文（微信逐段追加 / Telegram 实时改写），不用干等完整回复。微信受平台限制：单条消息触发的推送条数有限，长任务期间会以「对方正在输入…」提示进度。</small></div>
+                      <div><strong>流式回复 <span className="bot-stream-help" title="目前只有 Telegram 能实时改写同一条气泡。微信 / 飞书 / 钉钉 / QQ 不支持编辑已发消息（微信还有每 24h 10 条配额），统一为「一轮一条干净汇总」，这个开关对它们无效。默认关闭。" style={{ display: "inline-flex", verticalAlign: "middle", marginLeft: 4, color: "var(--muted, #888)", cursor: "help" }}><Info size={13} /></span></strong><small>开启后仅 Telegram 边生成边改写同一条气泡；微信 / 飞书 / 钉钉 / QQ 固定一轮一条干净汇总，不受此开关影响。</small></div>
                       <ToggleSwitch checked={botStream.enabled} onChange={(next) => updateBotStream({ ...botStream, enabled: next })} />
                     </div>
                     {botStream.enabled && (<>
                       <div className="bot-detail-row">
-                        <div><strong>同步思考内容</strong><small>开启：模型的思考摘要实时推送到聊天端；关闭：不推送思考过程。</small></div>
+                        <div><strong>同步思考内容</strong><small>仅 Telegram 生效：开启时模型的思考摘要实时改写进气泡；关闭则不推思考过程。</small></div>
                         <ToggleSwitch checked={botStream.thinking} onChange={(next) => updateBotStream({ ...botStream, thinking: next })} />
                       </div>
                       <div className="bot-detail-row">
-                        <div><strong>同步工具内容</strong><small>开启：命令执行 / 工具调用过程实时推送；关闭：只推送正文。</small></div>
+                        <div><strong>同步工具内容</strong><small>仅 Telegram 生效：开启时命令执行 / 工具调用过程实时改写进气泡；关闭则只推正文。</small></div>
                         <ToggleSwitch checked={botStream.tools} onChange={(next) => updateBotStream({ ...botStream, tools: next })} />
                       </div>
                     </>)}

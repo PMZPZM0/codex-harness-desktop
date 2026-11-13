@@ -855,6 +855,11 @@ export async function run() {
     (/sendmessage ok state=/.test(gwSrc))
       ? ok("【38】sendmessage 成功也留痕（静默去重只能靠日志条数与实收对账定性）")
       : fail("【38】sendmessage 只记失败不记成功 —— 服务端静默去重时无从排查");
+    // ⛔ 11-14 用户令「默认关闭」：流式只对能改写同一气泡的渠道（目前仅 Telegram）有效，默认关，避免误以为各渠道都流式。
+    (/export const BOT_STREAM_DEFAULTS: BotStreamSettings = \{ enabled: false/.test(streamSrc)
+      && /enabled: raw\?\.enabled === true/.test(streamSrc))
+      ? ok("【38】机器人流式默认关闭（只有显式 true 才开；流式仅对 Telegram 等可改写气泡的渠道有效）")
+      : fail("【38】流式默认又变成开启（或放宽成 !== false）—— 用户会以为开了就所有渠道都流式");
     // 微信纯文本排版（09-18 用户：「为啥不能跟汇总一样的格式同步过来」——iLink 不渲染 Markdown，
     // 表格/标题原样过去就是竖线堆）。直跑 channel-text.ts 真实现做行为断言（node type-stripping）。
     let wt = null;
