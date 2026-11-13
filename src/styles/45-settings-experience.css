@@ -818,6 +818,9 @@
   gap: 10px;
   margin-top: 12px;
 }
+/* 11-13 用户令「非要一排吗，两排不行吗」：三张后端卡挤一排时每张只有 ~200px，
+   Agent 的长文案会把按钮顶出卡片；固定两列（2 + 1），窄屏仍由 720px 媒体查询降成单列。 */
+.settings-exp-shell .auto-backend-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .settings-exp-shell .browser-cap-card {
   display: flex;
   flex-direction: column;

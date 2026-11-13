@@ -709,6 +709,11 @@ export async function run() {
       && /当前链路/.test(autoUi274) ? ok : fail)(
       "【274】电脑操作页：两个后端开关绑同一份 app-settings + 显示当前链路（Windows nuphus 主 / mac computer-use 主）"
     );
+    /* ⛔ 11-13 用户令「非要一排吗，两排不行吗」：三张后端卡一排只有 ~200px/张，长文案会顶出卡片 ⇒ 两列（2+1）。 */
+    const expCss274 = readFileSync(join(ROOT, "src", "styles", "45-settings-experience.css"), "utf8");
+    (/\.settings-exp-shell \.auto-backend-cards \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/.test(expCss274) ? ok : fail)(
+      "【274】桌面自动化三张后端卡两列排布（一排三张会把长文案顶出卡片）"
+    );
     (/(?:browser-cap-grid|auto-bullets)/.test(autoUi274) && /ego-browser/.test(autoUi274) && /browse-skills/.test(autoUi274)
       && /当前链路/.test(autoUi274) && /egoStatus/.test(autoUi274) ? ok : fail)(
       "【274】浏览器页：当前链路 + 能力卡（Ego Lite 已装状态 / 未装回落 browse-skills），不再是整段长文"
