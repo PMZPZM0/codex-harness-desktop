@@ -818,13 +818,18 @@ export async function run() {
     const gwSrc = readFileSync(join(ROOT, "electron", "weixin-gateway.ts"), "utf8");
     const streamSrc = readFileSync(join(ROOT, "electron", "bot-stream.ts"), "utf8");
     const budgetMatch = mainSrc.match(/WEIXIN_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: (\d+)/);
-    (budgetMatch && Number(budgetMatch[1]) >= 1 && Number(budgetMatch[1]) <= 6)
-      ? ok(`【38】微信追加预算 ${budgetMatch[1]} 次（+收尾 1 条 ≤ iLink 的 10 条/24h 配额）`)
-      : fail(`【38】微信追加预算 = ${budgetMatch ? budgetMatch[1] : "(未找到)"} —— 必须是 1~6（含收尾要在 10 条配额内，且留余量）`);
-    (/append: \(delta, clientId\) => \{/.test(mainSrc) && /sendChunk\(sendable, \{ clientId, state: 1 \}\)/.test(mainSrc)
-      && /finalizeAppend: \(tail, clientId\) => \{/.test(mainSrc) && /send: \(full\) => weixinGateway!\.sendText\(from, plainTextForChannel\(full\)\)/.test(mainSrc))
-      ? ok("【38】微信 sink 提供 append/finalizeAppend（state=1 追加 / state=2 收尾），发送统一走排版转换")
-      : fail("【38】微信 sink 又只剩 send —— 运行过程不会同步，用户只能看到最终汇总");
+    (budgetMatch && Number(budgetMatch[1]) === 0)
+      ? ok("【38】微信一轮只发一条整段（maxFlushes 0 —— 分片追加会吃掉 iLink 每 24h 10 条配额，收尾汇总就发不出去）")
+      : fail(`【38】微信追加预算 = ${budgetMatch ? budgetMatch[1] : "(未找到)"} —— 11-14 起必须为 0（一轮一条整段，配额留给正文）`);
+    /* ⛔ 11-14 用户实测「汇总消息不同步、消息断断续续」：微信分片追加 = 每条新 client_id 独立气泡 + 吃配额。
+       ⇒ 与 QQ/飞书/钉钉同口径，微信 sink 只暴露 send。作用域限定在 weixinStreamSink 函数体内。 */
+    (() => {
+      const scoped = mainSrc.match(/function weixinStreamSink\([\s\S]*?\n\}/)?.[0] ?? "";
+      return !/append:/.test(scoped) && !/finalizeAppend:/.test(scoped)
+        && /send: \(full\) => weixinGateway!\.sendText\(from, plainTextForChannel\(full\)\)/.test(scoped);
+    })()
+      ? ok("【38】微信 sink 只暴露 send（一轮一条干净汇总；append 会碎片化并吃掉 10 条/24h 配额）")
+      : fail("【38】微信 sink 又长出 append/finalizeAppend —— 会重新变成「断断续续 + 收尾汇总发不出去」");
     (/new BotStreamSession\(plan\.sink, readBotStreamSettingsSync\(botStreamFile\), plan\.budget\)/.test(mainSrc))
       ? ok("【38】预算真的传给了流式会话（不是摆设常量）")
       : fail("【38】BotStreamSession 没拿到 plan.budget —— 预算不生效，长任务会撞爆配额");
@@ -903,14 +908,15 @@ export async function run() {
       (wt.code === "用 a * b | c 与 **k** 两个字面量")
         ? ok("【38】行内代码内容原样放回（去掉反引号，但里面的 * 与 | 不参与任何排版）")
         : fail(`【38】行内代码内容被改坏：${JSON.stringify(wt.code)}`);
-      // ⛔ 三个发送点（流式追加 / 收尾补发 / 一次性）各自必须带 plainTextForChannel——
-      //    只查 import 或单个锚点会被「摘掉一处用法」的死代码骗绿（反证实测）。
-      (/sendChunk = \(text: string, opts: \{ clientId\?: string; state\?: number \}\) =>\s*weixinGateway!\.sendText\(from, plainTextForChannel\(text\), opts\)/.test(mainSrc)
-        && /plainTextForChannel\(rest\) \|\| "（已完成）"/.test(mainSrc)
-        && /send: \(full\) => weixinGateway!\.sendText\(from, plainTextForChannel\(full\)\)/.test(mainSrc)
-        && /carry \+= delta/.test(mainSrc) && /lastIndexOf\("\\n"\)/.test(mainSrc))
-        ? ok("【38】微信发送前统一走排版转换（三个发送点全带；流式攒到完整行再发，分片不切坏表格）")
-        : fail("【38】微信 sink 没接排版转换/没做整行缓冲 —— Markdown 原样竖线堆会继续发到手机上");
+      // ⛔ 11-14：微信改为「一轮一条整段」后，发送点收敛为唯一一个 send —— 它必须带 plainTextForChannel；
+      //    不再分片，所以也不需要整行缓冲（carry）。作用域限定在 weixinStreamSink 函数体，防别处同名误判。
+      (() => {
+        const scoped = mainSrc.match(/function weixinStreamSink\([\s\S]*?\n\}/)?.[0] ?? "";
+        return /send: \(full\) => weixinGateway!\.sendText\(from, plainTextForChannel\(full\)\)/.test(scoped)
+          && (scoped.match(/plainTextForChannel/g) ?? []).length >= 1;
+      })()
+        ? ok("【38】微信发送前统一走排版转换（唯一 send 发送点带 plainTextForChannel；整段发送不再需整行缓冲）")
+        : fail("【38】微信 sink 没接排版转换 —— Markdown 原样竖线堆会继续发到手机上");
       // 渠道通用（09-18 用户：「其他机器人渠道消息是这个一样的效果不」）：Telegram 无 parse_mode、
       // 飞书 msg_type=text、钉钉 msgtype=text、QQ msg_type=0 —— 全是纯文本，必须同走转换。
       (/telegramStreamSink|const text = plainTextForChannel\(full\)/.test(mainSrc)
@@ -927,8 +933,9 @@ export async function run() {
       // 三渠道流式（09-18 用户：「接上流式（按各渠道限制做）」）：不能编辑消息 ⇒ 追加语义 + 按频控设预算
       // 11-04 更正两处：① 官方「被动消息每条用户消息最多回复 4 次」（旧注释写 ≤5 次记错了）；
       // ② QQ/飞书/钉钉 一律**关掉中间进度**（maxFlushes 0 + sink 不给 append）：它们的 append 发的是
-      //    未攒行的 delta（微信 sink 有 carry 整行缓冲），表格行与代码围栏一定被切在半行 —— 实测用户
-      //    截图：独立一条「**今晚」、独立一条「···」、思考稿混进正文。微信保留追加（整行缓冲 + typing）。
+      //    未攒行的 delta，表格行与代码围栏一定被切在半行 —— 实测用户截图：独立一条「**今晚」、独立一条「···」、
+      //    思考稿混进正文。⛔ 11-14 微信也加入这一档（追加会吃 iLink 10 条/24h 配额导致收尾汇总发不出），
+      //    现在**所有纯文本渠道**都「一轮一条整段」，过程可见性只留在桌面端 / 微信 typing。
       (/function feishuStreamSink\(/.test(mainSrc) && /function dingtalkStreamSink\(/.test(mainSrc) && /function qqStreamSink\(/.test(mainSrc)
         && /FEISHU_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc)
         && /DINGTALK_STREAM_BUDGET: BotStreamBudget = \{ maxFlushes: 0/.test(mainSrc)

@@ -39,10 +39,11 @@ const weixinBindings = new Map<string, string>(); // 微信用户 → Codex 线�
 const botStreamSessions = new Map<string, BotStreamSession>();
 
 // 渠道级追加预算（理由见 bot-stream.ts 的 BotStreamBudget 注释）：
-//  · 微信：iLink 每 24h 每个「用户消息」最多 10 条独立消息 ⇒ 追加 5 条 + 收尾 1 条 = 6，留 4 条余量；
-//    间隔 3s、攒够 40 字才发下一条（避免碎片气泡刷屏）。过程可见性主要靠「对方正在输入…」（不占配额）。
+//  · 微信：11-14 起改「一轮一条整段」（maxFlushes 0、sink 只给 send）。原因见 weixinStreamSink 注释：
+//    分片追加会把「每 24h 10 条」的配额吃掉，导致收尾那条汇总发不出去（用户实测「断断续续 + 汇总不同步」）。
+//    过程可见性交给「对方正在输入…」（不占配额）。
 //  · Telegram：无配额限制（editMessageText 只改同一条），沿用原节流。
-const WEIXIN_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 5, flushIntervalMs: 3000, minChars: 40 };
+const WEIXIN_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs: 3000, minChars: 0 };
 const TELEGRAM_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 40, flushIntervalMs: 1600, minChars: 0 };
 //  · 飞书 / 钉钉 / QQ（11-04 审查统一口径）：**一轮只发一条干净正文**（maxFlushes 0 + sink 不给
 //    append）。三条理由：① 三家的 append 都是把**未攒行的 delta** 直接发出去（微信有 carry 整行
@@ -57,33 +58,15 @@ const DINGTALK_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs
 const QQ_STREAM_BUDGET: BotStreamBudget = { maxFlushes: 0, flushIntervalMs: 3000, minChars: 80 };
 
 function weixinStreamSink(from: string): BotStreamSink {
-  // 09-18 修正：此前**整体撤掉了微信流式**，依据是 09-12 的结论「iLink 的 context_token 实测一次一发」。
-  // 复核协议资料后确认那个结论是**误判**：同一 context_token 可复用（当时"第二条发不出去"的真因是
-  // 请求体字段不全，服务端静默丢弃）。真正的硬约束是**配额**（每用户消息 24h 内 10 条独立消息）——
-  // 所以这里恢复追加语义，但靠 WEIXIN_STREAM_BUDGET 把条数压到 6 条以内，并保留失败降级：
-  // append 连续失败 2 次即停用追加，收尾那次（state=2）把完整正文补发，正文永不丢。
-  // ⛔ 微信是**纯文本通道**（09-18 用户：「为啥不能跟汇总一样的格式同步过来」）：iLink 不渲染
-  // Markdown，桌面端的表格/标题/粗体原样发过去就是一堆竖线。发前统一走 plainTextForChannel
-  // 转成手机可读排版。流式分片可能切在半行中间 → 先攒到**完整行**再转换发送（转换是逐行的，
-  // 分片安全）；carry 里的残留由收尾（finalizeAppend）补上，正文不丢。
-  // 同一转换也用于 Telegram 与飞书/钉钉/QQ（它们同是纯文本消息，见各发送点）。
-  let carry = "";
-  const sendChunk = (text: string, opts: { clientId?: string; state?: number }) =>
-    weixinGateway!.sendText(from, plainTextForChannel(text), opts);
+  /* ⛔⛔ 11-14 用户实测（「汇总消息不同步、消息断断续续」）：微信 iLink 原来走**分片追加** ——
+     每 1.5~3s 就把累积的一段按**新 client_id** 发成一条独立气泡（iLink 服务端按 client_id 去重，
+     同一 id 连发只落第一条，没法真正把增量追加进同一气泡）。而 iLink 有「每用户消息 24h 最多 10 条」
+     硬配额：一轮「5 碎片 + 1 收尾」就吃掉大半 ⇒ 几轮之后**收尾那条汇总直接发不出去**（正文丢失）。
+     用户看到的正是「一条条断断续续、最后汇总没同步过来」。
+     ⇒ 与 QQ/飞书/钉钉（11-04 已统一）同口径：**一轮只发一条干净最终正文**（纯文本排版），
+       过程可见性交给「对方正在输入…」（不占配额）。iLink 的 sendmessage 默认 state=2 = 独立完整消息。
+     ⛔ 微信是纯文本通道：发送前统一走 plainTextForChannel（iLink 不渲染 Markdown）。 */
   return {
-    append: (delta, clientId) => {
-      carry += delta;
-      const cut = carry.lastIndexOf("\n");
-      if (cut < 0) return Promise.resolve(); // 还没有完整行：继续攒
-      const sendable = carry.slice(0, cut + 1);
-      carry = carry.slice(cut + 1);
-      return sendChunk(sendable, { clientId, state: 1 });
-    },
-    finalizeAppend: (tail, clientId) => {
-      const rest = carry + tail;
-      carry = "";
-      return weixinGateway!.sendText(from, plainTextForChannel(rest) || "（已完成）", { clientId, state: 2 });
-    },
     send: (full) => weixinGateway!.sendText(from, plainTextForChannel(full)),
   };
 }
