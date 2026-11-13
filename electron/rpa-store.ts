@@ -16,6 +16,7 @@ export type RpaAction = {
   win?: boolean;
   caps?: boolean;
   title?: string;
+  bundle?: string;
 };
 
 /** RPA 配方：记录一次跑通的自动化流程，供下次一键复用 */
@@ -34,6 +35,8 @@ export type RpaRecipe = {
   actions?: RpaAction[];
   /** 录制时的屏幕分辨率（回放时按比例缩放坐标） */
   screen?: { width: number; height: number };
+  /** 录制平台（win32 / darwin；跨平台按键码与坐标不通用） */
+  recordedOs?: "win32" | "darwin";
   /** 录制完成时间 / 录制时长（毫秒） */
   recordedAt?: number;
   durationMs?: number;
@@ -96,6 +99,7 @@ export class RpaStore {
       workspace: input.workspace,
       actions: Array.isArray(input.actions) ? input.actions.slice(0, 20000) : existing?.actions,
       screen: input.screen ?? existing?.screen,
+      recordedOs: input.recordedOs ?? existing?.recordedOs,
       recordedAt: input.recordedAt ?? existing?.recordedAt,
       durationMs: input.durationMs ?? existing?.durationMs,
       runCount: existing?.runCount ?? 0,

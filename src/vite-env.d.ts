@@ -1102,8 +1102,8 @@ interface Window {
     recordRpaRun(input: { id: string; ok: boolean; error?: string }): Promise<void>;
     saveRpaRecipe(input: unknown): Promise<any>;
     startRpaRecording(): Promise<{ ok: boolean; startedAt?: number; hotkeyReady?: boolean; error?: string }>;
-    stopRpaRecording(): Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number }; error?: string }>;
-    rpaRecorderState(): Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number } | null }>;
+    stopRpaRecording(): Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number; platform: "win32" | "darwin" }; error?: string }>;
+    rpaRecorderState(): Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number; platform: "win32" | "darwin" } | null }>;
     discardRpaRecording(): Promise<void>;
     playRpaRecipe(id: string): Promise<{ ok: boolean; error?: string }>;
     stopRpaPlayback(): Promise<{ ok: boolean }>;

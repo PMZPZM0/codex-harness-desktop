@@ -2276,7 +2276,12 @@ const CHECKS = [
         const pageText = await h.eval(`(document.querySelector(".settings-modal")?.innerText || "")`);
         h.check("③ 设置页 RPA 列表显示配方", String(pageText).includes(probeName), String(pageText).slice(0, 200));
 
-        /* ④⑤⑥ 原生录制器（仅 Windows）：真启动/停止；不注入任何输入，应如实报「没有录到」。
+        /* 录制测试前关掉设置页：否则快捷键/停止事件会让页面弹「保存录制」命名框，挡住后续断言。 */
+        await h.pressKey("Escape").catch(() => undefined);
+        await wait(300);
+
+        /* ④⑤⑥ 原生录制器（仅 Windows）：真启动/停止；不注入任何输入。
+           ⛔ 桌面可能有真人/别的进程在动鼠标 ⇒ 两种结果都合法：录到动作，或如实报「没有录到」。
            ⛔ 不测回放：回放会真的动鼠标/键盘，不能放在自动化验收里。 */
         const platform = await h.eval(`String(window.codex.platform || "")`);
         if (platform === "win32") {
@@ -2285,7 +2290,10 @@ const CHECKS = [
           if (started?.ok) {
             await wait(1500);
             const stopped = await h.eval(`window.codex.stopRpaRecording()`);
-            h.check("⑤ 空录制如实报错（不生成假配方）", stopped?.ok === false && /没有录到/.test(String(stopped?.error || "")), JSON.stringify(stopped));
+            const captured = stopped?.ok === true && Array.isArray(stopped.draft?.actions);
+            const empty = stopped?.ok === false && /没有录到/.test(String(stopped?.error || ""));
+            h.check("⑤ 停止录制有明确结果（录到动作或如实报空）", captured || empty, JSON.stringify(stopped).slice(0, 500));
+            await h.eval(`window.codex.discardRpaRecording()`).catch(() => undefined);
           }
           const recState = await h.eval(`window.codex.rpaRecorderState()`);
           h.check("⑥ 录制状态已复位（无残留进程/草稿）", recState?.recording === false && recState?.draft == null, JSON.stringify(recState));

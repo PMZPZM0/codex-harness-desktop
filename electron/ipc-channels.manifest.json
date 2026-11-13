@@ -3955,7 +3955,7 @@
       "channel": "rpa:record-stop",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number }; error?: string }>",
+      "returns": "Promise<{ ok: boolean; draft?: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number; platform: \"win32\" | \"darwin\" }; error?: string }>",
       "invokeArgs": "",
       "cast": null,
       "note": null
@@ -3965,7 +3965,7 @@
       "channel": "rpa:recorder-state",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number } | null }>",
+      "returns": "Promise<{ supported: boolean; recording: boolean; playing: boolean; recipeId: string; startedAt: number; hotkeys: { record: string; play: string }; hotkeyReady: { record: boolean; play: boolean }; draft: { actions: unknown[]; steps: string[]; screen: { width: number; height: number }; target: string; durationMs: number; eventCount: number; recordedAt: number; platform: \"win32\" | \"darwin\" } | null }>",
       "invokeArgs": "",
       "cast": null,
       "note": null

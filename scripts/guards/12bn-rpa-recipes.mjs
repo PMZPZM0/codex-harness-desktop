@@ -148,16 +148,16 @@ try {
   ok(!/Invoke-Expression|\biex\b|Start-Process/i.test(recordPs + playPs),
     "⛔ 脚本里不许动态执行表达式（只按固定参数跑）");
   const rec = codeOnly(read("electron/rpa-recorder.ts"));
-  ok(/process\.platform !== "win32"/.test(rec) && /spawn\(powershellPath\(\), \[/.test(rec)
-    && !/shell:\s*true|exec\(/.test(rec),
-    "录制器 Windows 限定 + spawn 参数数组（不开 shell，文本/标题不会被当命令）");
+  ok(/process\.platform === "win32"/.test(rec) && /process\.platform === "darwin"/.test(rec)
+    && /spawn\(exe, spawnArgs/.test(rec) && !/shell:\s*true|exec\(/.test(rec),
+    "录制器 Windows + macOS 双平台 + spawn 参数数组（不开 shell，文本/标题不会被当命令）");
   ok(rec.includes("CommandOrControl+Alt+F9") && rec.includes("CommandOrControl+Alt+F10")
     && /globalShortcut\.unregister/.test(rec) && /cleanupRpaRecorder/.test(rec),
     "停止录制/回放快捷键 + 退出清理（不留全局快捷键和子进程）");
   const store = codeOnly(read("electron/rpa-store.ts"));
   ok(/actions\?: RpaAction\[\]/.test(store) && /screen\?: \{ width: number; height: number \}/.test(store)
-    && /input\.actions\.slice\(0, 20000\)/.test(store),
-    "配方存原始动作/录制分辨率，且动作数有上限");
+    && /recordedOs\?: "win32" \| "darwin"/.test(store) && /input\.actions\.slice\(0, 20000\)/.test(store),
+    "配方存原始动作/录制分辨率/录制平台，且动作数有上限");
   const req = codeOnly(read(REQ));
   ok(/Array\.isArray\(recipe\.actions\)/.test(req) && /playRpaRecipe\(recipe\.id\)/.test(req),
     "rpa_run 对录制配方走原生回放（不交给模型逐条猜）");
@@ -201,6 +201,57 @@ try {
     ok(empty.ok === false, "转换真跑：没有点击/按键时明确报错（不生成空配方）");
   } catch (error) {
     ok(false, `rpa-convert.js 真跑失败：${error?.message ?? error}`);
+  }
+}
+
+/* ── ⑧ macOS 原生 helper（Swift + CoreGraphics）────────────────── */
+{
+  const swift = read("resources/rpa/rpa_mac.swift");
+  ok(/^[\x00-\x7F]*$/.test(swift) && swift.includes("CGPreflightListenEventAccess")
+    && swift.includes("CGPreflightPostEventAccess") && swift.includes("CGRequestPostEventAccess")
+    && swift.includes("CGEventSource.keyState") && swift.includes("CGEventSource.buttonState"),
+    "macOS helper：输入监控/辅助功能探测 + 键盘/鼠标状态读取");
+  ok(swift.includes("CGEvent(mouseEventSource:") && swift.includes("CGEvent(keyboardEventSource:")
+    && swift.includes("CGWarpMouseCursorPosition") && swift.includes("activate(options:"),
+    "macOS helper：鼠标/键盘事件重放 + 目标应用激活");
+  const prepMac = codeOnly(read("scripts/prepare-mac-tools.cjs"));
+  ok(/rpa_mac\.swift/.test(prepMac) && /swiftc/.test(prepMac) && /rpa-input-mac/.test(prepMac)
+    && /chmodSync\(rpaOut, 0o755\)/.test(prepMac),
+    "mac 构建期用 swiftc 编译 helper 并补执行位（不要求用户装 Xcode）");
+  const verifyPkg = codeOnly(read("scripts/verify-packaged-tools.cjs"));
+  ok(/rpa-input-mac/.test(verifyPkg) && /mode & 0o111/.test(verifyPkg),
+    "mac 产物层校验 helper 存在 + 执行位");
+  const rec = codeOnly(read("electron/rpa-recorder.ts"));
+  ok(/macHelperPath\(\)/.test(rec) && /process\.platform === "darwin"/.test(rec)
+    && /recordedOs !== process\.platform/.test(rec) && /⌘⌥F9/.test(rec),
+    "录制器 mac 分支 + 跨平台配方拒绝 + mac 快捷键文案");
+  const ui = codeOnly(read(UI));
+  ok(/输入监控/.test(ui) && /辅助功能/.test(ui) && /macOS/.test(ui),
+    "设置页有 macOS 权限引导与平台标签");
+  try {
+    const conv = await import(pathToFileURL(join(ROOT, "dist-electron", "rpa-convert.js")).href);
+    const macLines = [
+      { type: "meta", t: 0, width: 1440, height: 900, os: "darwin" },
+      { type: "focus", t: 10, title: "Safari", bundle: "com.apple.Safari" },
+      { type: "down", t: 100, button: "left", x: 100, y: 200 },
+      { type: "up", t: 110, button: "left", x: 100, y: 200 },
+      { type: "keydown", t: 300, vk: 0, shift: false, ctrl: false, alt: false, win: false, caps: false },
+      { type: "keyup", t: 320, vk: 0, shift: false, ctrl: false, alt: false, win: false, caps: false },
+      { type: "keydown", t: 400, vk: 36, shift: false, ctrl: false, alt: false, win: false, caps: false },
+      { type: "keyup", t: 420, vk: 36, shift: false, ctrl: false, alt: false, win: false, caps: false },
+      { type: "keydown", t: 500, vk: 1, shift: true, ctrl: false, alt: false, win: true, caps: false },
+      { type: "keyup", t: 520, vk: 1, shift: true, ctrl: false, alt: false, win: true, caps: false },
+      { type: "end", t: 600 },
+    ].map((entry) => JSON.stringify(entry)).join("\n");
+    const draft = conv.convertRecording(macLines);
+    ok(draft.ok && draft.draft.platform === "darwin"
+      && draft.draft.steps.some((step) => step.includes("在「Safari」点击"))
+      && draft.draft.steps.some((step) => step.includes("输入「a」"))
+      && draft.draft.steps.some((step) => step.includes("按回车"))
+      && draft.draft.steps.some((step) => step.includes("Cmd+Shift+S")),
+      "macOS 转换真跑：平台标记 + 点击/输入/回车/Cmd 组合");
+  } catch (error) {
+    ok(false, `macOS 转换真跑失败：${error?.message ?? error}`);
   }
 }
 

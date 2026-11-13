@@ -133,6 +133,23 @@ async function main() {
   }
   console.log(`[open-computer-use] ${TOOLS_VERSIONS.computerUse} → ${ocuApp}`);
 
+  // ── RPA 键鼠录制 helper（11-13）──────────────────────────────────────────────
+  // CoreGraphics 事件只有原生代码能拿/能发；用 swiftc 在构建机上编译成当前架构的 helper，
+  // 随包放进 tools/rpa/rpa-input-mac。⛔ 用户机器上不要求装 Xcode。
+  const rpaSource = path.resolve("resources/rpa/rpa_mac.swift");
+  const rpaOutDir = path.join(tools, "rpa");
+  const rpaOut = path.join(rpaOutDir, "rpa-input-mac");
+  fs.mkdirSync(rpaOutDir, { recursive: true });
+  let swiftc = "swiftc";
+  try { swiftc = execFileSync("xcrun", ["-f", "swiftc"], { encoding: "utf8" }).trim() || "swiftc"; } catch { /* 直接用 PATH 里的 swiftc */ }
+  let sdkArgs = [];
+  try { sdkArgs = ["-sdk", execFileSync("xcrun", ["--show-sdk-path"], { encoding: "utf8" }).trim()]; } catch { /* 让 swiftc 自己找 SDK */ }
+  const target = `${arch === "arm64" ? "arm64" : "x86_64"}-apple-macosx13.0`;
+  run(swiftc, ["-O", "-target", target, ...sdkArgs, "-framework", "AppKit", "-framework", "CoreGraphics", rpaSource, "-o", rpaOut]);
+  if (!fs.existsSync(rpaOut)) throw new Error(`RPA helper 编译后不存在：${rpaOut}`);
+  fs.chmodSync(rpaOut, 0o755);
+  console.log(`[rpa] macOS helper → ${rpaOut}`);
+
   const pythonRelease = await json("https://api.github.com/repos/astral-sh/python-build-standalone/releases/latest");
   const triple = arch === "arm64" ? "aarch64" : "x86_64";
   const pythonAsset = pythonRelease.assets.find((asset) =>
@@ -179,6 +196,7 @@ async function main() {
   fs.writeFileSync(path.join(tools, "mac-runtime-manifest.json"), JSON.stringify({
     platform: process.platform, arch, node: nodeVersion, nuphus: TOOLS_VERSIONS.nuphus,
     computerUse: TOOLS_VERSIONS.computerUse, agentDesktop: TOOLS_VERSIONS.agentDesktop,
+    rpaRecorder: true,
     bundledSmall: BUNDLED_SMALL,
     python: pythonAsset.name, cloudflared: cfRelease.tag_name, source: process.env.GITHUB_SHA || "",
     helperSha256: crypto.createHash("sha256").update(fs.readFileSync(path.join(tools, "nuphus-call.mjs"))).digest("hex"),

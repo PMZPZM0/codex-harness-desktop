@@ -252,9 +252,11 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 
 - 模型工具：`rpa_save`（同名 **upsert**，不重复新建）、`rpa_run`（不传 name 列清单；按 name 执行，**只认唯一匹配**）。
 - 两种执行：**文本配方**把 steps 回给模型逐步复现；**键鼠录制配方**（带 `actions`）由主进程原生回放，不经过模型。
-- **键鼠录制（Windows）**：设置 → RPA 自动化 →「开始录制」→ 操作目标窗口 → `Ctrl+Alt+F9` 停止 → 命名保存；
-  回放 `Ctrl+Alt+F10` 停止，坐标按录制分辨率等比缩放。⛔ 录制会记录键盘（可能含密码/验证码），只存本机；
-  中文输入法逐字回放不可靠、滚轮暂不录制。mac 明确显示不支持（不做静默降级）。
+- **键鼠录制（Windows + macOS）**：设置 → RPA 自动化 →「开始录制」→ 操作目标窗口 → 停止（Windows `Ctrl+Alt+F9` / macOS `⌘⌥F9`）→ 命名保存。
+  Windows 走系统 PowerShell 轮询，macOS 走随包 Swift helper（CoreGraphics；构建期 `swiftc` 编译，用户不装 Xcode）；
+  回放停止 Windows `Ctrl+Alt+F10` / macOS `⌘⌥F10`，坐标按录制分辨率等比缩放。⛔ 录制会记录键盘（可能含密码/验证码），只存本机；
+  中文输入法逐字回放不可靠、滚轮暂不录制；mac 首次要授权「输入监控」（录制）+「辅助功能」（回放），授权后仍失败就重启应用。
+  ⛔ 配方记录 `recordedOs`，按键码/坐标不跨平台；别的平台录制的一律拒绝回放。
 - 状态只在**回合/回放结束**回写（`turn/completed` 或播放器退出码；失败/中断记 failed），并刷新设置页的「上次成功 / 运行次数」。
 - 通道：`rpa:list / save / delete / run-result`（⛔ 不是 `record` —— 它记的是运行结果，不是录制）；落盘 `<userData>/rpa-recipes.json`。
 - 步骤格式 / 何时保存 / 失败处理 = 内置技能 **`rpa-recipes`**（`skill-discipline` 已点名）；设置页空态不再声称「自动沉淀」。

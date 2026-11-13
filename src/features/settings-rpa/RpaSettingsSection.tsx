@@ -18,6 +18,7 @@ type RecorderDraft = {
   durationMs: number;
   eventCount: number;
   recordedAt: number;
+  platform: "win32" | "darwin";
 };
 
 type RecorderState = {
@@ -82,6 +83,7 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
         target: draft.target,
         actions: draft.actions,
         screen: draft.screen,
+        recordedOs: draft.platform,
         recordedAt: draft.recordedAt,
         durationMs: draft.durationMs,
       }) as { name?: string };
@@ -201,16 +203,19 @@ export function RpaSettingsSection(props: RpaSettingsSectionProps) {
                     <div className="auto-card rpa-recorder-card">
                       <div className="auto-card-head">
                         <strong>键鼠录制</strong>
-                        <span className="auto-card-tag">Windows</span>
+                        <span className="auto-card-tag">{(window.codex as { platform?: string }).platform === "darwin" ? "macOS" : "Windows"}</span>
                         {recorder?.recording ? <span className="rpa-status ok">录制中</span> : null}
                         {recorder?.playing ? <span className="rpa-status ok">回放中</span> : null}
                       </div>
                       <p className="rpa-recorder-hint">录制真实键鼠操作并保存为可原生回放的配方。⚠️ 录制会记录键盘输入（可能包含密码/验证码），只保存在本机；中文输入法可能无法逐字回放，滚轮暂不录制。</p>
+                      {(window.codex as { platform?: string }).platform === "darwin" ? (
+                        <p className="rpa-recorder-hint">macOS 首次使用需要授权：系统设置 → 隐私与安全性 →「输入监控」（录制）与「辅助功能」（回放）；如果列表里出现 RPA helper（rpa-input-mac），也要一起允许。授权后若仍失败，重启应用再试。</p>
+                      ) : null}
                       <div className="rpa-recorder-actions">
                         {recorder === null ? (
                           <span className="muted">读取录制状态…</span>
                         ) : !recorder.supported ? (
-                          <span className="muted">当前系统暂不支持键鼠录制（仅 Windows；macOS 需要额外辅助进程，后续支持）。</span>
+                          <span className="muted">当前系统暂不支持键鼠录制（需要 Windows 自带 PowerShell，或 macOS 随包原生 helper）。</span>
                         ) : recorder.recording ? (
                           <button type="button" className="rpa-recorder-btn is-danger" disabled={recorderBusy} onClick={() => void stopRecording()}>停止录制（{recorder.hotkeys.record}）</button>
                         ) : (

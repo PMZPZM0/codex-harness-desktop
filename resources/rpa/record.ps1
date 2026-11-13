@@ -61,7 +61,7 @@ $mouseButtons = @(
 $sw = [System.Diagnostics.Stopwatch]::StartNew()
 $screenW = [RpaNative]::GetSystemMetrics(0)
 $screenH = [RpaNative]::GetSystemMetrics(1)
-Write-Event @{ type = "meta"; t = 0; width = $screenW; height = $screenH; at = [DateTimeOffset]::Now.ToUnixTimeMilliseconds() }
+Write-Event @{ type = "meta"; t = 0; width = $screenW; height = $screenH; os = "win32"; at = [DateTimeOffset]::Now.ToUnixTimeMilliseconds() }
 
 $keyState = @{}
 foreach ($vk in $keys) { $keyState[$vk] = (Is-Down $vk) }

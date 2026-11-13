@@ -80,6 +80,10 @@ if (process.platform === "darwin") {
       `mac 包里残留 open-computer-use/dist/${foreign}（别的平台的二进制）—— prepare-mac-tools 应裁掉它，` +
       "既省体积也免得杀软/审计问这是什么。");
   }
+  /* RPA 键鼠录制 helper（11-13）：mac 必须随包并带执行位。 */
+  const rpaMac = [path.join(root, "rpa", "rpa-input-mac"), path.join(root, "..", "rpa", "rpa-input-mac")].find(fs.existsSync);
+  assert.ok(rpaMac, "mac 包缺少 tools/rpa/rpa-input-mac —— 检查 prepare-mac-tools.cjs 的 swiftc 编译步骤。");
+  assert.ok((fs.statSync(rpaMac).mode & 0o111) !== 0, "tools/rpa/rpa-input-mac 没有执行位 —— 录制/回放会 EACCES。");
 }
 if (process.platform === "win32") {
   /* 键鼠录制/回放（11-13）：两个 PowerShell 脚本必须随包；缺了录制按钮就是死键。

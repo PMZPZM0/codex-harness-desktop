@@ -1,9 +1,10 @@
 /**
- * RPA 键鼠录制/回放（Windows 原生层，11-13）。
+ * RPA 键鼠录制/回放（Windows + macOS 原生层，11-13）。
  *
- * 读取：`resources/rpa/record.ps1` 用 Windows PowerShell 轮询键盘/鼠标，写 NDJSON；
- * 回放：`resources/rpa/play.ps1` 按录制的动作重放（坐标按录制分辨率等比缩放）。
- * ⛔ 只支持 Windows（系统自带 PowerShell 5.1），mac 明确返回不支持；不做静默降级。
+ * 读取：Windows 用 `resources/rpa/record.ps1`（系统 PowerShell 轮询）；macOS 用
+ * `resources/rpa/rpa_mac.swift` 编译出的 helper（CoreGraphics 事件状态）。两边都写 NDJSON。
+ * 回放：Windows `play.ps1`；macOS helper 的 `play` 模式（CGEventPost）。
+ * ⛔ 其它平台明确返回不支持；mac 首次要「输入监控 + 辅助功能」授权。
  * ⛔ 录制内容可能包含密码——只落本机 userData，主进程日志只记数量/时长，不打印事件正文。
  */
 import { spawn, type ChildProcess } from "node:child_process";
@@ -28,7 +29,9 @@ type RecorderState = {
 
 const HOTKEY_RECORD = "CommandOrControl+Alt+F9";
 const HOTKEY_PLAY = "CommandOrControl+Alt+F10";
-const HOTKEY_LABELS = { record: "Ctrl+Alt+F9", play: "Ctrl+Alt+F10" };
+const HOTKEY_LABELS = process.platform === "darwin"
+  ? { record: "⌘⌥F9", play: "⌘⌥F10" }
+  : { record: "Ctrl+Alt+F9", play: "Ctrl+Alt+F10" };
 
 let notify: (payload: Record<string, unknown>) => void = () => {};
 let recordProc: ChildProcess | null = null;
@@ -44,6 +47,7 @@ let playProc: ChildProcess | null = null;
 let playWin: BrowserWindow | null = null;
 let playInput = "";
 let playStop = "";
+let playStatus = "";
 let playRecipeId = "";
 let playHotkeyReady = false;
 
@@ -67,6 +71,12 @@ function scriptPath(name: string): string {
   return path.join(app.getAppPath(), "resources", "rpa", name);
 }
 
+function macHelperPath(): string {
+  /* 打包后由 extraResources 落 tools/rpa；dev 也由 prepare-mac-tools 编译到 tools/rpa。
+     ⛔ 不再回落到 resources/rpa（那个路径没有编译产物，且会被运行时路径守卫判成没进包）。 */
+  return existingToolPath("rpa", "rpa-input-mac");
+}
+
 function scriptsReady(): boolean {
   try {
     return fs.existsSync(scriptPath("record.ps1")) && fs.existsSync(scriptPath("play.ps1"));
@@ -75,9 +85,22 @@ function scriptsReady(): boolean {
   }
 }
 
-/** 当前平台能不能真录制：Windows + 系统 PowerShell + 两个脚本都在。 */
+function macHelperReady(): boolean {
+  try {
+    const helper = macHelperPath();
+    if (!fs.existsSync(helper)) return false;
+    fs.accessSync(helper, fs.constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** 当前平台能不能真录制：Windows PowerShell 脚本，或 macOS 的 Swift 原生 helper。 */
 export function rpaRecorderSupported(): boolean {
-  return process.platform === "win32" && Boolean(powershellPath()) && scriptsReady();
+  if (process.platform === "win32") return Boolean(powershellPath()) && scriptsReady();
+  if (process.platform === "darwin") return macHelperReady();
+  return false;
 }
 
 function recordingsDir(): string {
@@ -105,6 +128,15 @@ async function waitForMeta(file: string, proc: ChildProcess, timeoutMs: number):
     await delay(50);
   }
   return false;
+}
+
+function readFirstJsonLine(file: string): Record<string, unknown> | null {
+  try {
+    const first = fs.readFileSync(file, "utf8").split("\n").find((line) => line.trim());
+    return first ? JSON.parse(first) as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
 }
 
 async function waitForExit(proc: ChildProcess, timeoutMs: number): Promise<boolean> {
@@ -138,13 +170,18 @@ export async function startRpaRecording(win: BrowserWindow | null): Promise<{ ok
     try { win.minimize(); } catch { /* 已隐藏 */ }
     await delay(350);
   }
-  const proc = spawn(powershellPath(), [
-    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-    "-File", scriptPath("record.ps1"),
-    "-OutFile", out,
-    "-StopFile", stop,
-    "-IntervalMs", "25",
-  ], { windowsHide: true, stdio: "ignore" });
+  const mac = process.platform === "darwin";
+  const exe = mac ? macHelperPath() : powershellPath();
+  const spawnArgs = mac
+    ? ["record", "-out", out, "-stop", stop, "-interval", "25"]
+    : [
+        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+        "-File", scriptPath("record.ps1"),
+        "-OutFile", out,
+        "-StopFile", stop,
+        "-IntervalMs", "25",
+      ];
+  const proc = spawn(exe, spawnArgs, { windowsHide: true, stdio: "ignore" });
   const ready = await waitForMeta(out, proc, 4500);
   if (!ready) {
     try { proc.kill(); } catch { /* ignore */ }
@@ -152,7 +189,25 @@ export async function startRpaRecording(win: BrowserWindow | null): Promise<{ ok
     recordWin = null;
     fs.rmSync(out, { force: true });
     fs.rmSync(stop, { force: true });
-    return { ok: false, error: "录制器没有启动：Windows PowerShell 可能被安全策略拦住，或随包脚本缺失" };
+    return { ok: false, error: mac ? "录制器没有启动：RPA 原生 helper 缺失或已被系统拦截" : "录制器没有启动：Windows PowerShell 可能被安全策略拦住，或随包脚本缺失" };
+  }
+  if (mac) {
+    const meta = readFirstJsonLine(out);
+    if (meta?.listen === false) {
+      try { proc.kill(); } catch { /* ignore */ }
+      restoreWindow(recordWin);
+      recordWin = null;
+      fs.rmSync(out, { force: true });
+      fs.rmSync(stop, { force: true });
+      return { ok: false, error: "macOS 需要「输入监控」权限：系统设置 → 隐私与安全性 → 输入监控，允许本应用后重试" };
+    }
+  }
+  if (proc.exitCode !== null) {
+    restoreWindow(recordWin);
+    recordWin = null;
+    fs.rmSync(out, { force: true });
+    fs.rmSync(stop, { force: true });
+    return { ok: false, error: "录制器启动后立即退出（检查系统权限或随包脚本）" };
   }
   recordProc = proc;
   recordOut = out;
@@ -227,7 +282,13 @@ export function rpaRecorderState(): RecorderState {
 
 /** 回放一条含录制动作的配方：最小化窗口 → 启动播放器 → 结束回写运行结果。 */
 export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | null): Promise<{ ok: boolean; error?: string }> {
-  if (!rpaRecorderSupported()) return { ok: false, error: "原生回放仅支持 Windows" };
+  if (!rpaRecorderSupported()) return { ok: false, error: "原生回放仅支持 Windows / macOS（需随包录制组件）" };
+  if (recipe.recordedOs && recipe.recordedOs !== process.platform) {
+    return { ok: false, error: `这条配方录制于 ${recipe.recordedOs}，按键码与坐标不能跨平台回放` };
+  }
+  if (process.platform === "darwin" && !recipe.recordedOs) {
+    return { ok: false, error: "这条录制没有平台标记（可能是旧版本录的），请在 mac 上重新录制后再回放" };
+  }
   if (recordProc) return { ok: false, error: "正在录制，不能同时回放" };
   if (playProc) return { ok: false, error: "已经在回放中" };
   const actions = Array.isArray(recipe.actions) ? recipe.actions : [];
@@ -236,8 +297,10 @@ export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | n
   const stamp = Date.now();
   const input = path.join(dir, `play-${stamp}.json`);
   const stop = path.join(dir, `play-${stamp}.stop`);
+  const status = path.join(dir, `play-${stamp}.ready`);
   try {
     fs.writeFileSync(input, JSON.stringify({ actions, screen: recipe.screen ?? null }), "utf8");
+    fs.writeFileSync(status, "", "utf8");
     fs.rmSync(stop, { force: true });
   } catch (error) {
     return { ok: false, error: `创建回放文件失败：${(error as Error)?.message ?? error}` };
@@ -247,17 +310,45 @@ export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | n
     try { win.minimize(); } catch { /* ignore */ }
     await delay(350);
   }
-  const proc = spawn(powershellPath(), [
-    "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
-    "-File", scriptPath("play.ps1"),
-    "-InputFile", input,
-    "-StopFile", stop,
-    "-RecipeWidth", String(Number(recipe.screen?.width) || 0),
-    "-RecipeHeight", String(Number(recipe.screen?.height) || 0),
-  ], { windowsHide: true, stdio: "ignore" });
+  const mac = process.platform === "darwin";
+  const exe = mac ? macHelperPath() : powershellPath();
+  const spawnArgs = mac
+    ? [
+        "play", "-input", input, "-stop", stop, "-status", status,
+        "-recipe-width", String(Number(recipe.screen?.width) || 0),
+        "-recipe-height", String(Number(recipe.screen?.height) || 0),
+      ]
+    : [
+        "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden",
+        "-File", scriptPath("play.ps1"),
+        "-InputFile", input,
+        "-StopFile", stop,
+        "-RecipeWidth", String(Number(recipe.screen?.width) || 0),
+        "-RecipeHeight", String(Number(recipe.screen?.height) || 0),
+      ];
+  const proc = spawn(exe, spawnArgs, { windowsHide: true, stdio: "ignore" });
+  if (mac) {
+    const ready = await waitForMeta(status, proc, 3000);
+    const meta = readFirstJsonLine(status);
+    if (!ready || meta?.post === false || proc.exitCode !== null) {
+      try { proc.kill(); } catch { /* ignore */ }
+      restoreWindow(playWin);
+      playWin = null;
+      fs.rmSync(input, { force: true });
+      fs.rmSync(stop, { force: true });
+      fs.rmSync(status, { force: true });
+      return {
+        ok: false,
+        error: meta?.post === false
+          ? "macOS 需要「辅助功能」权限：系统设置 → 隐私与安全性 → 辅助功能，允许本应用后重试"
+          : "播放器没有启动（检查随包 RPA helper）",
+      };
+    }
+  }
   playProc = proc;
   playInput = input;
   playStop = stop;
+  playStatus = status;
   playRecipeId = recipe.id;
   playHotkeyReady = globalShortcut.register(HOTKEY_PLAY, () => { void stopRpaPlayback(); });
   notify({ type: "rpa-recorder", state: "playing", recipeId: recipe.id });
@@ -267,7 +358,10 @@ export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | n
     settled = true;
     const ok = !spawnError && code === 0;
     const stopped = !spawnError && code === 2;
-    const error = ok ? "" : spawnError ? String(spawnError.message ?? spawnError) : stopped ? "用户停止回放" : `回放失败（退出码 ${code ?? "?"}）`;
+    const error = ok ? "" : spawnError ? String(spawnError.message ?? spawnError)
+      : stopped ? "用户停止回放"
+        : code === 4 ? "macOS 需要「辅助功能」权限：系统设置 → 隐私与安全性 → 辅助功能，允许本应用后重试"
+          : `回放失败（退出码 ${code ?? "?"}）`;
     if (playHotkeyReady) { globalShortcut.unregister(HOTKEY_PLAY); playHotkeyReady = false; }
     restoreWindow(playWin);
     playWin = null;
@@ -276,6 +370,7 @@ export async function startRpaPlayback(recipe: RpaRecipe, win: BrowserWindow | n
     playRecipeId = "";
     try { fs.rmSync(playInput, { force: true }); } catch { /* ignore */ }
     try { fs.rmSync(playStop, { force: true }); } catch { /* ignore */ }
+    try { fs.rmSync(playStatus, { force: true }); } catch { /* ignore */ }
     if (id) void rpaStore.recordRun(id, ok, error || undefined).catch(() => undefined);
     notify({ type: "rpa-play-finished", id, ok, error });
     notify({ type: "rpa-recorder", state: "idle" });
@@ -305,11 +400,12 @@ export function cleanupRpaRecorder() {
   try { playProc?.kill(); } catch { /* ignore */ }
   recordProc = null;
   playProc = null;
-  for (const file of [recordOut, recordStop, playInput, playStop]) {
+  for (const file of [recordOut, recordStop, playInput, playStop, playStatus]) {
     if (file) { try { fs.rmSync(file, { force: true }); } catch { /* ignore */ } }
   }
   recordOut = "";
   recordStop = "";
   playInput = "";
   playStop = "";
+  playStatus = "";
 }

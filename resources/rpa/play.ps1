@@ -76,7 +76,10 @@ foreach ($a in $actions) {
     [void][RpaPlay]::SetCursorPos($x, $y)
     $key = ([string]$a.button) + "-" + $type
     if ($mouseFlags.ContainsKey($key)) {
-      [RpaPlay]::mouse_event([uint32]$mouseFlags[$key], 0, 0, 0, [UIntPtr]::Zero)
+      $data = 0
+      if ([string]$a.button -eq "x1") { $data = 1 }
+      if ([string]$a.button -eq "x2") { $data = 2 }
+      [RpaPlay]::mouse_event([uint32]$mouseFlags[$key], 0, 0, [uint32]$data, [UIntPtr]::Zero)
     }
   } elseif ($type -eq "keydown" -or $type -eq "keyup") {
     $vk = [byte]([int]$a.vk)
