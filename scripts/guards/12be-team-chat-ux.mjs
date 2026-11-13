@@ -2189,6 +2189,17 @@ const catalog = [
       && /const echoedNudge = Boolean\(nudgeAsk && !teamToolUsedSince/.test(ipc),
       "⑤ 防重复只在**催办类** ask 生效（回喂 / 定时任务的验收结论必须落群 —— 真机回归 22:55 钉住）");
   }
+  /* ⛔⛔ 11-13 用户：「外面还是会显示那个伙伴会话，就是成员艾特成员的时候，这里会显示调度会话」。
+     主侧栏的隐藏集原来只取 `bossThreads.memberIds`（= **BOSS 群**成员）⇒ 工作伙伴群（`grp_*`）
+     的成员会话一个都不在里面 ⇒ 成员互相 @（group_say relay）新建/复用的伙伴会话照样透到
+     项目/任务/分类三个视图，还挂着「调度」标签。⇒ 并入 `talkThreads.byId`（主进程群聊台账，
+     权威判据，⛔ 不按标题猜）。 */
+  {
+    const shell = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
+    ok(/Object\.keys\(talkThreads\.byId \?\? \{\}\)/.test(shell)
+      && /useSyncExternalStore\(subscribeTeamTalkThreads, getTeamTalkThreads\)/.test(shell),
+      "⑥ 主侧栏隐藏集并入工作伙伴群台账 talkThreads.byId（⛔ 只藏 BOSS 群 = 成员互相 @ 的伙伴会话照样透出）");
+  }
   {
     const guardrails = codeOnly(read("electron/features/group-talk/05-guardrails.ts"));
     const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));

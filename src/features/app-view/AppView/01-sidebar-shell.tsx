@@ -7,7 +7,7 @@ import { createPortal, flushSync } from "react-dom";
 import { ThemeQuickSwitch } from "../../../components/ThemeQuickSwitch";
 import { BossProjectDirDialog, bossShortcutLabel, closeBossDirDialog, getBossDirDialogState, getBossThreads, setBossDirChosen, setBossHomeThreadId, setBossPending, subscribeBossDirDialog, subscribeBossThreads } from "../../boss-group-view";
 /* ⛔ 中枢登记守卫要认「这是不是群聊伙伴会话」（伙伴永远不是中枢）。 */
-import { getTeamTalkThreads } from "../../../lib/team-talk-threads.mjs";
+import { getTeamTalkThreads, subscribeTeamTalkThreads } from "../../../lib/team-talk-threads.mjs";
 import { FunctionMenu, FunctionMenuEditorHost, FunctionMenuTourHost, maybeShowFunctionMenuTour, setFunctionMenuActionHandler, setFunctionMenuSettingsOpener, setFunctionMenuSettingsTargets, useFunctionMenuConfig } from "../../function-menu";
 import { settingsNav } from "../helpers";
 import { hk } from "../../../lib/hk";
@@ -183,12 +183,23 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
      ⇒ 还没建群时用 localStorage 里的 `homeId` 当锚点：**同一个指挥中枢一直走**，
         ⛔ 不每点一次就多一个「未命名任务」（用户 10-25 第二点）。 */
   const bossThreads = useSyncExternalStore(subscribeBossThreads, getBossThreads);
+  /* ⛔⛔ 11-13 用户（截图外挂会话）：「外面还是会显示那个伙伴会话，就是成员艾特成员的时候，
+     这里会显示调度会话，离谱」。
+     根因：上面的隐藏集只取了 `bossThreads.memberIds`（= **BOSS 群** 成员），
+     工作伙伴群（`grp_*`）的成员会话一个都不在里面 ⇒ 成员互相 @ 时新建/复用的那条
+     伙伴会话照样透到主侧栏三个视图（还挂着「调度」标签）。
+     ⇒ 权威判据并进来：`talkThreads.byId`（主进程群聊台账，⛔ 别按标题「伙伴」猜）。
+     ⛔ 只做显示层过滤（同一处 `visibleEntries`，三视图共用），不动数据、不动别的消费方。 */
+  const talkThreads = useSyncExternalStore(subscribeTeamTalkThreads, getTeamTalkThreads);
   /* ⛔⛔ 11-12 用户令（多次）：「工作伙伴的会话不该透到主侧栏来」「标签也不对（不该是调度）」。
      工作伙伴/中枢群的**成员会话**只该在工作伙伴窗口里出现 ⇒ 主侧栏所有视图（项目 / 任务 / 分类）
      都不列它们。⛔ 这里只做**显示层过滤**：不动数据、不动别的消费方；真正的会话类型隔离
      （workPartner 类型 / 正确标签）由正在推进的 session-kind 那条统一收口，落地后这层可并入。
      ⛔ 只藏成员会话（memberIds）；中枢本体会话（bossIds）保持可见（指挥中枢仍要在侧栏用）。 */
-  const hiddenSidebarThreadIds = new Set((bossThreads.memberIds ?? []).map(String));
+  const hiddenSidebarThreadIds = new Set([
+    ...(bossThreads.memberIds ?? []).map(String),
+    ...Object.keys(talkThreads.byId ?? {}),
+  ]);
   const visibleEntries = <T extends { id?: unknown }>(entries: T[]): T[] =>
     hiddenSidebarThreadIds.size ? entries.filter((e) => !hiddenSidebarThreadIds.has(String(e?.id ?? ""))) : entries;
   /* 10-25 用户令：项目支持自定义标签（文字 + 颜色），默认无标签。 */
