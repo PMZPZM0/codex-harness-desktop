@@ -62,6 +62,8 @@ import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsab
 import { classifyTurn, settleHandoffs } from "../../src/lib/team-collab.mjs";
 /* ⛔ 11-14「抄 Pachat 的先读再说」：每成员各记「读到哪」，只喂它没读过的新消息。 */
 import { getGroupReadCursor, markGroupRead } from "../group-read-cursors";
+/* ⛔ 11-14 Phase 2（抄 Pachat）：每成员每天运行上限（跨轮失控保护）+ 失败隔 5 分钟重试一次。 */
+import { consumeGroupRunBudget, GROUP_RUN_MAX_PER_DAY } from "../group-run-budget";
 /* ⛔ 11-10「异常落到责任人」的标记解析（纯函数，守卫真跑）。 */
 import { dutyKeyOf, parseDuty } from "../../src/lib/team-duty.mjs";
 /* ⛔ 11-10 群记忆：按「群类型 + 座位」注入（专家群 / 专家团群 / CLI 智能体群各一套）。
@@ -1029,6 +1031,13 @@ function openTaskCountOf(groupId: string): number {
   return open.length - expired.length;
 }
 
+/* ⛔ 11-14 Phase 2（抄 Pachat「LISTEN_RETRY_MS=5min / LISTEN_TRIES=2」）：成员一轮失败后的**延迟重试**。
+   每 (群::成员) 最多重试 1 次，隔 5 分钟；成功即重置、新消息开跑时作废旧的重试。⛔ in-memory + unref，
+   进程重启即丢（Pachat 的 listener 重启同样重置，不做跨重启持久）。 */
+const GROUP_RUN_RETRY_MS = 5 * 60_000;
+const GROUP_RUN_MAX_RETRIES = 1;
+const groupMemberRetries = new Map<string, { attempts: number; timer: NodeJS.Timeout | null }>();
+
 async function runDispatchRounds(
   group: GroupShape,
   targets: GroupTarget[],
@@ -1277,6 +1286,17 @@ async function runDispatchRounds(
        已删群的台账 ⇒ 侧栏多一条没有出处的「伙伴」会话（自愈本进程只跑一次，救不回来）。
        ⇒ 开跑前按群档案复核，群没了直接放弃；建完会话后再复核一次（排队那条会晚建）。 */
     if (!readStore().groups.some((g) => String(g.id) === String(group.id))) return;
+    /* ⛔ 11-14 Phase 2：每成员每天最多跑 ${GROUP_RUN_MAX_PER_DAY} 次 —— 跨轮/跨消息的失控保护（与单轮 canRun/chainBudget 两套）。 */
+    if (!consumeGroupRunBudget(group.id, String(partner.id))) {
+      console.warn(`[group-budget] ${partner.name} 今天已达运行上限 ${GROUP_RUN_MAX_PER_DAY}，本轮跳过`);
+      return;
+    }
+    /* 新的一轮要开跑了：作废该成员上一轮失败排的延迟重试（新消息优先，避免拿旧正文重放）。 */
+    {
+      const retryKey = `${group.id}::${partner.id}`;
+      const pend = groupMemberRetries.get(retryKey);
+      if (pend?.timer) { clearTimeout(pend.timer); pend.timer = null; }
+    }
     markRan(partner.id);
     /* 常驻用量监听（幂等）：本轮之后的用量事件即使晚到，也能补到落盘的那条消息上。 */
     installTalkUsageWatcher();
@@ -1889,7 +1909,27 @@ async function runDispatchRounds(
       errMsg = err instanceof Error ? err.message : String(err);
       failed.push(`${partner.name}：${errMsg}`);
       options.onPhase?.("finished", partner, { ok: false, error: errMsg });
+      /* ⛔ 11-14 Phase 2（抄 Pachat）：这一轮真失败了、且这轮本来就该说话 ⇒ 给该成员排**一次**延迟重试
+         （隔 5 分钟；每成员最多 1 次直到它成功才重置；新消息开跑会作废旧的重试；fire 时群删了就跳过）。
+         ⛔ 不阻塞当前链路（setTimeout + unref），进程重启即丢（与 Pachat listener 一致）。 */
+      if (String(bodyText ?? "").trim()) {
+        const retryKey = `${group.id}::${partner.id}`;
+        const st = groupMemberRetries.get(retryKey) ?? { attempts: 0, timer: null };
+        if (st.attempts < GROUP_RUN_MAX_RETRIES && !st.timer) {
+          st.attempts += 1;
+          st.timer = setTimeout(() => {
+            const cur = groupMemberRetries.get(retryKey);
+            if (cur) cur.timer = null;
+            if (!readStore().groups.some((x) => String(x.id) === String(group.id))) return;
+            void runOne(partner, 0, caller, bodyText).catch(() => undefined);
+          }, GROUP_RUN_RETRY_MS);
+          (st.timer as { unref?: () => void }).unref?.();
+          groupMemberRetries.set(retryKey, st);
+        }
+      }
     } finally {
+      /* 这一轮成功 ⇒ 重置该成员的重试计数（下次再失败还能再重试一次）。 */
+      if (okFlag) groupMemberRetries.delete(`${group.id}::${partner.id}`);
       if (talkDelta) { server.off("event", talkDelta); talkDelta = null; }
       if (liveThreadId) {
         broadcastHarnessEvent({ type: "group-talk-live", phase: "finished", groupId: group.id, memberId: speakerId, name: speakerName, threadId: liveThreadId, runId, at: Date.now() } as never);

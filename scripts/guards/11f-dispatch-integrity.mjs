@@ -852,6 +852,23 @@ try {
       && /Math\.max\(prev, Number\(at\) \|\| 0\)/.test(cursors) && /app\.getPath\("userData"\)/.test(cursors),
       "读游标模块：按 (group::member) 存、只前移不回退、路径惰性求值");
   }
+  /* ⛔⛔ 11-14 Phase 2（抄 Pachat）：① 每成员每天运行上限（跨轮失控保护）；② 失败隔 5 分钟只重试一次、成功即重置。 */
+  {
+    const ipc = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
+    ok(/consumeGroupRunBudget\(group\.id, String\(partner\.id\)\)/.test(ipc)
+      && /import \{ consumeGroupRunBudget, GROUP_RUN_MAX_PER_DAY \} from "\.\.\/group-run-budget"/.test(ipc),
+      "每成员每天运行上限闸在位（跨轮失控保护；与单轮 canRun/chainBudget 是两套）");
+    ok(/GROUP_RUN_RETRY_MS = 5 \* 60_000/.test(ipc)
+      && /st\.attempts < GROUP_RUN_MAX_RETRIES && !st\.timer/.test(ipc)
+      && /void runOne\(partner, 0, caller, bodyText\)/.test(ipc)
+      && /if \(okFlag\) groupMemberRetries\.delete/.test(ipc),
+      "失败隔 5 分钟只重试 1 次、成功即重置（⛔ 不许无限重试）");
+    const budget = readFileSync(join(ROOT, "electron/group-run-budget.ts"), "utf8");
+    ok(/export const GROUP_RUN_MAX_PER_DAY = 100/.test(budget)
+      && /cur && cur\.day === day \? Number\(cur\.count\) \|\| 0 : 0/.test(budget)
+      && /app\.getPath\("userData"\)/.test(budget),
+      "预算模块：100/天、按天归零、惰性路径");
+  }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),
