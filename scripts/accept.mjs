@@ -1449,6 +1449,63 @@ const CHECKS = [
     },
   },
   {
+    id: "husk-card",
+    name: "📱 开发工具 · Husk（iPhone 跑 Android）：IPA 下载 + 侧载引导（11-14）",
+    run: async (h) => {
+      /* 只验界面与 IPC（真下 142MB IPA 不进秒级验收；下载/SHA/更新链由守卫 12bq 钉）。
+         ⛔ 电脑侧不装 iPhone：卡片必须明确最后一步在手机上。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="husk"]')`, { label: "Husk 卡片", timeoutMs: 15000 });
+      await wait(300);
+      const status = await h.eval(`window.codex.huskStatus()`).catch(() => null);
+      h.check("① husk:status 可用（installed / 指南 / AltStore 源 / GPL 声明）",
+        Boolean(status && typeof status.installed === "boolean" && String(status.guideUrl).includes("itslevii.dev")
+          && String(status.sourceUrl).includes("repo.json") && status.attribution && status.attribution.license.includes("GPL-2.0")),
+        JSON.stringify(status && { installed: status.installed, guide: status.guideUrl, source: status.sourceUrl }));
+      const card = await h.eval(`(function(){
+        const c=document.querySelector('.devtools-card[data-card="husk"]');
+        return c ? { text:(c.textContent||"").trim(), stat:(c.querySelector(".devtools-card-stat")?.textContent||"").trim() } : null;
+      })()`);
+      h.check("② 一级卡片在位并显示状态（iOS 15.5+ · 约 142 MB）",
+        Boolean(card && card.text.includes("Husk（iPhone 跑 Android）") && card.stat.includes("142 MB") && card.stat.includes("iOS 15.5+")),
+        JSON.stringify(card));
+
+      await h.eval(`document.querySelector('.devtools-card[data-card="husk"] .devtools-card-open').click()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog .feishu-cli-card")`, { label: "Husk 二级弹窗", timeoutMs: 10000 });
+      await wait(400);
+      const dialog = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        if(!d) return null;
+        const t=(d.textContent||"").trim();
+        const buttons=[...d.querySelectorAll("button")].map(function(b){ return (b.textContent||"").trim(); });
+        return {
+          downloadRow:/下载 Husk\\.ipa/.test(t),
+          updateRow:[...d.querySelectorAll(".runtime-row")].some(function(r){ return (r.querySelector(".runtime-copy strong")?.textContent||"").trim()==="更新"; }),
+          sideloadRow:/侧载到 iPhone/.test(t),
+          compatRow:/兼容性/.test(t),
+          ios:/iOS 15\\.5\\+/.test(t),
+          guideBtn:buttons.some(function(b){ return b.includes("安装指南"); }),
+          sourceBtn:buttons.some(function(b){ return b.includes("复制 AltStore 源"); }),
+          hasOpenIpa:buttons.some(function(b){ return b.includes("打开 IPA"); }),
+          honest:/不会、也无法替你把 IPA 装进 iPhone/.test(t),
+          gpl:/GPL-2\\.0/.test(t),
+        };
+      })()`).catch(() => null);
+      h.check("③ 弹窗四块齐：下载 IPA / 更新 / 侧载到 iPhone / 兼容性",
+        Boolean(dialog) && dialog.downloadRow && dialog.updateRow && dialog.sideloadRow && dialog.compatRow, JSON.stringify(dialog));
+      h.check("④ 侧载区有安装指南 + AltStore 源；已下载时多「打开 IPA」",
+        Boolean(dialog) && dialog.guideBtn && dialog.sourceBtn && dialog.hasOpenIpa === Boolean(status && status.installed),
+        JSON.stringify({ guide: dialog && dialog.guideBtn, source: dialog && dialog.sourceBtn, hasOpenIpa: dialog && dialog.hasOpenIpa, installed: status && status.installed }));
+      h.check("⑤ 如实写清 iOS 15.5+、GPL-2.0、以及电脑不能直接装进 iPhone",
+        Boolean(dialog) && dialog.ios && dialog.gpl && dialog.honest, JSON.stringify(dialog));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(300);
+    },
+  },
+  {
     id: "devtools-update-rows",
     name: "🔄 开发工具 · 卡片内更新行（Filee / ApkStart / OpenMAIC / 飞书 CLI，11-14）",
     run: async (h) => {

@@ -34,7 +34,7 @@ const DEVCHAIN_IDS = ["pwsh", "git", "conda", "mingw"];
 const MEDIA_IDS = ["ffmpeg", "markitdown"];
 const AI_IDS = ["kb-embedding"];
 /** 有专用卡片的工具（飞书 CLI / Filee / MoeKoe / Laya / 手机控制）—— 不在分类里再列一遍。 */
-const DEDICATED_IDS = ["feishu-cli", "filee", "apkstart", "openmaic", "moekoe", "laya", "phone-harness"];
+const DEDICATED_IDS = ["feishu-cli", "filee", "apkstart", "openmaic", "husk", "moekoe", "laya", "phone-harness"];
 /** 已归入具体分类的 id ——「其它按需下载」兜底时必须排除它们，否则同一条会画两遍。 */
 const GROUPED_IDS = new Set([...AUTO_IDS, ...DEVCHAIN_IDS, ...MEDIA_IDS, ...AI_IDS]);
 

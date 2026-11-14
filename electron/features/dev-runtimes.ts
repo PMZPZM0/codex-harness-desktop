@@ -26,7 +26,7 @@ import { findMoeKoeExe } from "../moekoe";
 // 自动化工具链状态：nuphus-mcp（桌面）；浏览器自动化主通道是外部 Ego Lite。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli" | "filee" | "apkstart" | "openmaic";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli" | "filee" | "apkstart" | "openmaic" | "husk";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -77,6 +77,10 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //   Next.js + PostgreSQL 源码型：按需下载源码 + pnpm 依赖 + 便携 PostgreSQL，构建后本机起服务（127.0.0.1）。
   //   下载约 1.3GB、安装后约 5GB（只留运行所需）；课程与模型配置存 userData/openmaic-data。
   openmaic: { name: "OpenMAIC 互动课堂", description: "多智能体互动课堂（THU-MAIC/OpenMAIC，MIT）：给一个主题或资料，生成带 AI 老师/同学、幻灯片、测验、互动模拟与项目式学习的完整课堂；本机运行、数据不出电脑。给 Codex 提供 openmaic 工具做启动/生成/查询；源码 + PostgreSQL 按需下载并本机构建（约 1.3GB 下载 / 安装后约 5GB），仅 Windows 10/11 x64", size: "约 1.3 GB 下载 / 约 5 GB 安装后", marker: "openmaic\\app\\.next\\BUILD_ID" },
+  // Husk（11-14，Leviidev/Husk，GPL-2.0-or-later）：iPhone 上跑 Android APK 的开源运行环境
+  //   （翻译层 + QEMU 双路，iOS 15.5+）。电脑侧只下载官方 Husk.ipa（142MB）并给侧载指南；
+  //   ⛔ 不能从 Windows 直接装进 iPhone —— 最终一步要用户在 iPhone 上用 SideStore/AltStore/TrollStore 完成。
+  husk: { name: "Husk（iPhone 跑 Android）", description: "在 iPhone 上运行 Android 应用/游戏的开源项目（Leviidev/Husk，GPL-2.0）：64 位 Android 代码走翻译层直接跑，跑不了的用 QEMU 跑完整 LineageOS；导入 APK 后全屏启动。电脑侧按需下载官方 Husk.ipa（约 142 MB）+ SHA256 校验并提供侧载指南；iOS 15.5+，需 SideStore / AltStore / TrollStore 侧载，部分游戏需要 JIT", size: "约 142 MB（Husk.ipa）", marker: "husk\\Husk.ipa" },
   rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载，版本锁定在随包 Node 的兼容上限", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。

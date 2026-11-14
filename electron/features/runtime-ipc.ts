@@ -31,6 +31,7 @@ import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGl
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
+import { HUSK_REPO, huskInstalledVersion, installHuskFromGitHub } from "../husk-install";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -748,6 +749,8 @@ const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string; platforms
   apkstart: { repo: APKSTART_REPO, label: "ApkStart 安卓运行器", platforms: ["win32"], install: installApkStartFromGitHub },
   // OpenMAIC（11-14）：更新 = 重新下载源码并重建（5–10 分钟），课程数据保留；由卡片上的更新行列式提示。
   openmaic: { repo: OPENMAIC_REPO, label: "OpenMAIC 互动课堂", platforms: ["win32"], install: installOpenMaicFromGitHub },
+  // Husk（11-14）：只有 iPhone 用的 IPA；电脑侧下载/更新官方安装包，真机侧载由用户完成。
+  husk: { repo: HUSK_REPO, label: "Husk（iPhone 跑 Android）", install: installHuskFromGitHub },
 };
 
 /** 查 GitHub 最新 release tag（去 v 前缀）：api 镜像序，20s 超时。 */
@@ -953,6 +956,7 @@ function installedVersionOf(id: string): string {
     if (id === "filee") return fileeInstalledVersion();
     if (id === "apkstart") return apkstartInstalledVersion();
     if (id === "openmaic") return openmaicInstalledVersion();
+    if (id === "husk") return huskInstalledVersion();
     return "";
   }
   const tool = UPDATEABLE_TOOLS[id];
@@ -1420,6 +1424,9 @@ export const runtimeFeature = defineFeature<null>({
           /* OpenMAIC 互动课堂（11-14）：源码 + pnpm 依赖 + 便携 PostgreSQL 本机构建（约 5GB）。
              ⛔ 不进自动/手动更新链：更新 = 重新安装（重建 5–10 分钟，不适合一键静默跑）。 */
           await installOpenMaicFromGitHub(id, TOOLS_VERSIONS.openmaic ?? (await fetchGitHubLatestTag(OPENMAIC_REPO)));
+        } else if (id === "husk") {
+          /* Husk（11-14）：只下载官方 Husk.ipa（约 142MB，SHA256 校验），真机侧载在 iPhone 上完成。 */
+          await installHuskFromGitHub(id, TOOLS_VERSIONS.husk ?? (await fetchGitHubLatestTag(HUSK_REPO)));
         } else if (id === "rea") {
           /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
              ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，

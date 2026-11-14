@@ -1034,6 +1034,12 @@ contextBridge.exposeInMainWorld("codex", {
   openmaicJob: (jobId: string) => __ipc("openmaic:job", 1, [jobId]),
   /* 11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务 */
   openmaicPurge: (confirm: boolean) => __ipc("openmaic:purge", 1, [confirm]),
+  /* 11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态） */
+  huskStatus: () => __ipc("husk:status", 0, []),
+  /* 11-14 打开 Husk 官方安装指南（itslevii.dev/docs/install：SideStore / AltStore / TrollStore 三条路） */
+  huskGuide: () => __ipc("husk:guide", 0, []),
+  /* 11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder） */
+  huskReveal: () => __ipc("husk:reveal", 0, []),
   /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
   feishuCliSetupStart: () => __ipc("feishu-cli:setup-start", 0, []),
   /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */

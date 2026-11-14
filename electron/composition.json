@@ -793,6 +793,13 @@
       "config": null
     },
     {
+      "id": "husk",
+      "enabled": true,
+      "file": "features/husk-ipc.ts",
+      "export": "huskFeature",
+      "config": null
+    },
+    {
       "id": "monitor",
       "enabled": true,
       "file": "features/task-monitor.ts",
