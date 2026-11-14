@@ -1921,6 +1921,8 @@ async function runDispatchRounds(
             const cur = groupMemberRetries.get(retryKey);
             if (cur) cur.timer = null;
             if (!readStore().groups.some((x) => String(x.id) === String(group.id))) return;
+            /* ⛔ 用户在这轮失败之后清空/停止了这个群 ⇒ 不重试（"停就停"，别 5 分钟后又蹦一条回复）。 */
+            if ((groupClearedAt.get(group.id) ?? 0) > startedAt) return;
             void runOne(partner, 0, caller, bodyText).catch(() => undefined);
           }, GROUP_RUN_RETRY_MS);
           (st.timer as { unref?: () => void }).unref?.();

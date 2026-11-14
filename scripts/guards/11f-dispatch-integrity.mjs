@@ -861,8 +861,9 @@ try {
     ok(/GROUP_RUN_RETRY_MS = 5 \* 60_000/.test(ipc)
       && /st\.attempts < GROUP_RUN_MAX_RETRIES && !st\.timer/.test(ipc)
       && /void runOne\(partner, 0, caller, bodyText\)/.test(ipc)
+      && /groupClearedAt\.get\(group\.id\) \?\? 0\) > startedAt/.test(ipc)
       && /if \(okFlag\) groupMemberRetries\.delete/.test(ipc),
-      "失败隔 5 分钟只重试 1 次、成功即重置（⛔ 不许无限重试）");
+      "失败隔 5 分钟只重试 1 次、成功即重置、群已清空则不重试（⛔ 不许无限重试 / 不许清了又蹦）");
     const budget = readFileSync(join(ROOT, "electron/group-run-budget.ts"), "utf8");
     ok(/export const GROUP_RUN_MAX_PER_DAY = 100/.test(budget)
       && /cur && cur\.day === day \? Number\(cur\.count\) \|\| 0 : 0/.test(budget)
