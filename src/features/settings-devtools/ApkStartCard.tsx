@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
+import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
 
 /** 「能做什么」清单：按 ApkStart 的能力归类。 */
 const CAPABILITIES = [
@@ -192,11 +193,23 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
             </div>
           </div>
 
+          <RuntimeUpdateRow
+            id="apkstart"
+            installed={Boolean(status?.installed)}
+            hint="从 GitHub release 镜像序拉新版并 SHA256 校验；只换程序，Android 运行时与已装应用保留"
+            runtimeStage={runtimeStage}
+            runtimePercent={runtimePercent}
+            runtimeSpeed={runtimeSpeed}
+            runtimeProgress={runtimeProgress}
+            cancelDevRuntime={cancelDevRuntime}
+            onUpdated={refresh}
+          />
+
           <div className={`runtime-row ${status?.installed ? "installed" : "missing"}`}>
             <span className="runtime-icon"><Terminal size={15} /></span>
             <span className="runtime-copy">
               <strong>配套工具</strong>
-              <small>装好后 Codex 自动多一个 apkstart 工具：装 APK / 启动 / 截屏 / 读日志 / 执行 adb；更新去「控制台 → 组件更新」手动检查</small>
+              <small>装好后 Codex 自动多一个 apkstart 工具：装 APK / 启动 / 截屏 / 读日志 / 执行 adb</small>
             </span>
             <div className="runtime-actions">
               <span className={`runtime-badge ${status?.installed ? "installed" : ""}`}>{status?.installed ? `已装 ${apps.length} 个应用` : "安装后可用"}</span>

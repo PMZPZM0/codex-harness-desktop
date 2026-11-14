@@ -34,7 +34,6 @@
     "qq:logout",
     "relay:key-billing",
     "remote:send",
-    "runtime:update-check",
     "session-alias:ensure",
     "sessionspace:ensure",
     "sessionspace:gc",

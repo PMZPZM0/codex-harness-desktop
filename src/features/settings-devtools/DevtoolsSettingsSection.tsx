@@ -293,7 +293,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       )}
       {openCard === "feishu-cli" && activeOtherCard && (
         <SettingsDialog title={activeOtherCard.title} icon={<Bot size={15} />} hint="安装 → 配置应用 → 登录（官方 device flow）" size="md" onClose={() => setOpenCard(null)}>
-          <FeishuCliCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} cancelDevRuntime={cancelDevRuntime} />
+          <FeishuCliCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} />
         </SettingsDialog>
       )}
       {openCard === "filee" && activeOtherCard && (

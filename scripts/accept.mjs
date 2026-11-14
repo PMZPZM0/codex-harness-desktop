@@ -1449,6 +1449,44 @@ const CHECKS = [
     },
   },
   {
+    id: "devtools-update-rows",
+    name: "🔄 开发工具 · 卡片内更新行（Filee / ApkStart / OpenMAIC / 飞书 CLI，11-14）",
+    run: async (h) => {
+      /* 用户：「这些卡片界面里面好像都没有配套更新功能」⇒ 每张按需下载卡都要有「更新」行。
+         这里只验界面接线（真检查会打 GitHub/npm；安装状态的更新链路由守卫 12bp 钉）。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="filee"]')`, { label: "开发工具卡片", timeoutMs: 15000 });
+      const ids = ["filee", "apkstart", "openmaic", "feishu-cli"];
+      const rows = [];
+      for (const id of ids) {
+        await h.eval(`document.querySelector('.devtools-card[data-card="${id}"]')?.querySelector(".devtools-card-open")?.click()`);
+        await wait(500);
+        const row = await h.eval(`(function(){
+          const d=document.querySelector(".settings-dialog");
+          if(!d) return null;
+          const hit=[...d.querySelectorAll(".runtime-row")].find(function(r){ return (r.querySelector(".runtime-copy strong")?.textContent||"").trim()==="更新"; });
+          return hit ? { text:(hit.textContent||"").trim(), badge:(hit.querySelector(".runtime-badge")?.textContent||"").trim(), button:(hit.querySelector("button")?.textContent||"").trim() } : null;
+        })()`).catch(() => null);
+        rows.push({ id, row });
+        await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+        await wait(250);
+      }
+      h.check("① 四张卡都有独立的「更新」行",
+        rows.every((r) => r.row), JSON.stringify(rows.map((r) => ({ id: r.id, has: Boolean(r.row) }))));
+      h.check("② 未安装时写「安装后可更新」；已安装时给出「检查更新」按钮",
+        rows.every((r) => !r.row || (r.row.badge.includes("安装后可更新")
+          ? r.row.text.includes("安装后可检查更新")
+          : r.row.button.includes("检查更新") || r.row.button.includes("更新到"))),
+        JSON.stringify(rows));
+      h.check("③ 更新行不把「控制台 → 组件更新」当唯一入口（卡内可操作）",
+        rows.filter((r) => r.row).every((r) => !r.row.text.includes("控制台 → 组件更新")),
+        JSON.stringify(rows));
+    },
+  },
+  {
     id: "skill-update-panel",
     name: "🔄 控制台 · 技能自动更新：能进入面板、能装能卸、有反馈（10-30）",
     run: async (h) => {

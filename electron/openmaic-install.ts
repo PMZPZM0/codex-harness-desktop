@@ -51,6 +51,11 @@ export function openMaicPaths() {
   };
 }
 
+/** 读已装版本（安装时落的 version.txt）；更新链用它判断「已是最新」。 */
+export function openmaicInstalledVersion(): string {
+  try { return readFileSync(openMaicPaths().versionFile, "utf8").trim(); } catch { return ""; }
+}
+
 /** 读（必要时生成）OpenMAIC 本地配置：Web 端口 / PG 端口 / 实例 secret。 */
 export function readOpenMaicConfig(): OpenMaicConfig {
   const { data } = openMaicPaths();
@@ -154,6 +159,39 @@ function pgInitialized(pgData: string): boolean {
   try { return existsSync(path.join(pgData, "PG_VERSION")); } catch { return false; }
 }
 
+/** 停掉本机 OpenMAIC 的 Web 服务与 PostgreSQL（更新/重装前必须停：app 目录要被改名，运行中的文件会锁住）。 */
+export async function stopOpenMaicProcesses(): Promise<void> {
+  const cfg = readOpenMaicConfig();
+  const killPort = (port: number) => new Promise<void>((resolve) => {
+    if (process.platform !== "win32") { resolve(); return; }
+    let out = "";
+    const child = spawn("netstat", ["-ano"], { windowsHide: true });
+    child.stdout?.on("data", (c) => { out += String(c); });
+    child.on("close", () => {
+      const line = out.split(/\r?\n/).find((row) => row.includes(`:${port}`) && /LISTENING/i.test(row));
+      const pid = line?.trim().split(/\s+/).pop() || "";
+      if (!/^\d+$/.test(pid)) { resolve(); return; }
+      const killer = spawn("taskkill", ["/PID", pid, "/T", "/F"], { windowsHide: true });
+      killer.on("close", () => resolve());
+      killer.on("error", () => resolve());
+    });
+    child.on("error", () => resolve());
+    setTimeout(resolve, 8000);
+  });
+  await killPort(cfg.port);
+  const pgData = path.join(openMaicPaths().data, "pg");
+  if (pgInitialized(pgData)) {
+    await new Promise<void>((resolve) => {
+      try {
+        const child = spawn(path.join(openMaicPaths().pgBin, "pg_ctl.exe"), ["-D", pgData, "stop", "-m", "fast"], { windowsHide: true });
+        child.on("close", () => resolve());
+        child.on("error", () => resolve());
+        setTimeout(resolve, 15_000);
+      } catch { resolve(); }
+    });
+  }
+}
+
 /** 安装 / 重装 OpenMAIC（version 传 GitHub 稳定 tag 去 v 前缀）。 */
 export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: string): Promise<void> {
   if (process.platform !== "win32") throw new Error("OpenMAIC 本机安装目前仅支持 Windows 10/11 x64");
@@ -166,6 +204,8 @@ export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: strin
   await fs.mkdir(paths.data, { recursive: true });
   const cfg = readOpenMaicConfig();
   const pgData = path.join(paths.data, "pg");
+  // 重装/更新前先停服务与库：app 目录马上要被改名，运行中的文件会锁住
+  await stopOpenMaicProcesses();
   emitRuntimeProgress(id, "@@STAGE 下载 OpenMAIC 源码");
   emitRuntimeProgress(id, `正在下载 OpenMAIC ${version} 源码（约 98 MB）…`);
   const archive = path.join(staging, `OpenMAIC-${version}.tar.gz`);
@@ -199,6 +239,7 @@ export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: strin
        （11-14 实测：跨盘搬移后 `Cannot find module '@swc/helpers'`）。所以先换目录（旧版改成 app.old），
        失败再还原 —— 换目录本身是同一卷 rename，秒级、不破坏旧版本。 */
     backup = `${paths.app}.old`;
+    await stopOpenMaicProcesses();
     await fs.rm(backup, { recursive: true, force: true });
     if (existsSync(paths.app)) await fs.rename(paths.app, backup);
     await fs.rename(path.join(staging, extracted), paths.app);

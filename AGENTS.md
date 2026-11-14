@@ -635,6 +635,10 @@ Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依
 `userData/openmaic-data`，卸载可保留。⛔ 依赖必须在最终 app 路径安装（pnpm node_modules 含链接，装完再移动会丢）；
 ⛔ pg_ctl 退出码不可信，以端口可连为准；模型 Key 只由用户在网页设置里填，宿主不读不写。
 配套 Codex 工具 `openmaic`（status / start / stop / open / generate / job）与内置技能 `openmaic`；守卫 12bp）。
+**卡片内更新**（11-14 用户：「这些卡片界面里面好像都没有配套更新功能」）：开发工具里按需下载卡
+（Filee / ApkStart / OpenMAIC / 飞书 CLI）都有独立「更新」行（`RuntimeUpdateRow`，打开卡片自动查一次），
+复用 `runtime:update-check` / `runtime:update` 单一真相源；OpenMAIC 更新 = 重新下载并构建（先停服务/库，课程数据保留）。
+⛔ 别再只写「去控制台 → 组件更新」当唯一入口。
 全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），
 由「设置 → 开发工具」跳官方安装器；浏览器自动化优先走它，未安装回落 browse-skills
 （`nuphus-call browser_*` 驱动默认浏览器）。**Playwright CLI 与浏览器内核已整体移除。**

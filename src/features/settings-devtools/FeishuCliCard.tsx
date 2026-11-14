@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
+import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { feishuPollOutcome } from "../../lib/feishu-card.mjs";
 
@@ -56,7 +57,7 @@ type Status = {
 };
 
 /** 飞书 CLI 卡片：安装状态与安装/卸载（`runtimeInstalling` 是**单个工具 id**，不是 map）。 */
-export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, cancelDevRuntime }: {
+export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress, cancelDevRuntime }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;
   /** ⛔ 真实类型是「正在安装的工具 id」（单个字符串），不是 map —— 按 map 读会永远 undefined，
@@ -67,6 +68,8 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
   /** 安装阶段文案（runtime:progress 的 message，id=feishu-cli）；用于下载进度反馈。 */
   runtimeStage?: Record<string, string>;
   runtimePercent?: Record<string, number> | null;
+  runtimeSpeed?: Record<string, string> | null;
+  runtimeProgress?: Record<string, string> | null;
   cancelDevRuntime?: (id: string) => unknown;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
@@ -253,6 +256,18 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
           </div>
         </div>
 
+        <RuntimeUpdateRow
+          id="feishu-cli"
+          installed={Boolean(status?.installed)}
+          hint="从 npm 国内镜像拉最新版（失败自动回落官方源）；登录状态与已配置的飞书应用保留"
+          runtimeStage={runtimeStage}
+          runtimePercent={runtimePercent}
+          runtimeSpeed={runtimeSpeed}
+          runtimeProgress={runtimeProgress}
+          cancelDevRuntime={cancelDevRuntime}
+          onUpdated={refresh}
+        />
+
         <div className={`runtime-row ${status?.configured ? "installed" : "missing"} ${busy === "setup" || busy === "reconfig" ? "busy" : ""}`}>
           <span className="runtime-icon">{busy === "setup" || busy === "reconfig" ? <Spinner /> : status?.configured ? <Check size={15} /> : <ExternalLink size={15} />}</span>
           <span className="runtime-copy">
@@ -335,7 +350,7 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
         <ul className="feishu-cli-notes">
           <li>权限就是你在飞书里授权的范围 —— 看不到与你无关的会话和文档。</li>
           <li>登录凭据只存在本机 <code>~/.lark-cli</code>；「退出登录」只清本机令牌，飞书后台的授权需要到飞书里解除。</li>
-          <li>更新 / 卸载在「控制台 → 组件更新」与开发工具的运行时列表里；命令拿不准，可以让它先跑 <code>&lt;域&gt; --help</code>。</li>
+          <li>「更新」行可直接检查并安装新版；卸载只删程序；命令拿不准，可以让它先跑 <code>&lt;域&gt; --help</code>。</li>
         </ul>
       </section>
     </section>

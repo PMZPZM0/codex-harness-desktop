@@ -136,6 +136,30 @@ const EXPECTED = ["openmaic:status", "openmaic:start", "openmaic:stop", "openmai
     "注入条件与运行时判定同源");
 }
 
+
+/* ── ⑧ 卡片内更新 ─────────────────────────────────────────────── */
+{
+  const UPD = "src/features/settings-devtools/RuntimeUpdateRow.tsx";
+  const ui = codeOnly(read(UPD));
+  ok(/checkRuntimeUpdate\(/.test(ui) && /updateRuntime\(/.test(ui) && /onRuntimeProgress\(/.test(ui),
+    "统一更新行走既有 runtime:update-check / runtime:update（不另造下载器）");
+  ok(/installed && autoCheck/.test(ui), "打开卡片自动检查一次（未安装不查）");
+  for (const [file, id] of [
+    ["src/features/settings-devtools/FileeCard.tsx", "filee"],
+    ["src/features/settings-devtools/ApkStartCard.tsx", "apkstart"],
+    ["src/features/settings-devtools/OpenMaicCard.tsx", "openmaic"],
+    ["src/features/settings-devtools/FeishuCliCard.tsx", "feishu-cli"],
+  ]) {
+    const card = codeOnly(read(file));
+    ok(/<RuntimeUpdateRow/.test(card) && new RegExp('id="' + id + '"').test(card), file + " 内置更新行（" + id + "）");
+  }
+  const runtime = codeOnly(read(RUNTIME));
+  ok(/openmaic: \{ repo: OPENMAIC_REPO, label: "OpenMAIC 互动课堂", platforms: \["win32"\], install: installOpenMaicFromGitHub \}/.test(runtime),
+    "OpenMAIC 进 GITHUB_UPDATEABLE（检查更新能查到最新 tag）");
+  ok(/if \(id === "openmaic"\) return openmaicInstalledVersion\(\)/.test(runtime), "已装版本读 version.txt（不会永远提示有更新）");
+  ok(/stopOpenMaicProcesses\(\)/.test(codeOnly(read(INSTALL))), "更新/重装前先停服务与 PG（否则目录被锁改名失败）");
+}
+
 console.log("");
 console.log(fails === 0
   ? `【openmaic】通过（${checks} 条）`

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
+import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
 
 /** 「能做什么」清单：按 Filee 的转换域归类（口径与 README 的 Formats 表一致）。 */
 const CAPABILITIES = [
@@ -157,11 +158,23 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
             </div>
           </div>
 
+          <RuntimeUpdateRow
+            id="filee"
+            installed={Boolean(status?.installed)}
+            hint="从 GitHub release 镜像序拉新版并 SHA256 校验；只换程序，不动你的文件"
+            runtimeStage={runtimeStage}
+            runtimePercent={runtimePercent}
+            runtimeSpeed={runtimeSpeed}
+            runtimeProgress={runtimeProgress}
+            cancelDevRuntime={cancelDevRuntime}
+            onUpdated={refresh}
+          />
+
           <div className={`runtime-row ${status?.installed ? "installed" : "missing"}`}>
             <span className="runtime-icon"><RefreshCw size={15} /></span>
             <span className="runtime-copy">
-              <strong>更新与配套工具</strong>
-              <small>更新在「控制台 → 组件更新」列表里手动检查；装好后 Codex 自动多一个 filee_convert 工具，说人话即可</small>
+              <strong>配套工具</strong>
+              <small>装好后 Codex 自动多一个 filee_convert 工具，说人话即可</small>
             </span>
             <div className="runtime-actions">
               <span className={`runtime-badge ${status?.installed ? "installed" : ""}`}>{status?.installed ? `filee_convert 已可用` : "安装后可用"}</span>
@@ -200,7 +213,7 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
           <ul className="feishu-cli-notes">
             <li>完全本地转换：文件不上传任何服务器；源文件不会被修改，输出默认写在源文件旁边。</li>
             <li>视频 / 音频转换需要本机 FFmpeg（开发工具页可装）；其余常用格式开箱即用。</li>
-            <li>更新去「控制台 → 组件更新」手动检查；卸载只删程序（约 151 MB），不动你的任何文件。</li>
+            <li>「更新」行可直接检查并安装新版；卸载只删程序（约 151 MB），不动你的任何文件。</li>
           </ul>
         </section>
 

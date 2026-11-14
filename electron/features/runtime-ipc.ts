@@ -30,7 +30,7 @@ import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
-import { OPENMAIC_REPO, installOpenMaicFromGitHub } from "../openmaic-install";
+import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -746,6 +746,8 @@ async function installApkStartFromGitHub(id: DevRuntimeId, version: string): Pro
 const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string; platforms?: NodeJS.Platform[]; install: (id: DevRuntimeId, version: string) => Promise<void> }> = {
   filee: { repo: FILEE_REPO, label: "Filee 文件转换", install: installFileeFromGitHub },
   apkstart: { repo: APKSTART_REPO, label: "ApkStart 安卓运行器", platforms: ["win32"], install: installApkStartFromGitHub },
+  // OpenMAIC（11-14）：更新 = 重新下载源码并重建（5–10 分钟），课程数据保留；由卡片上的更新行列式提示。
+  openmaic: { repo: OPENMAIC_REPO, label: "OpenMAIC 互动课堂", platforms: ["win32"], install: installOpenMaicFromGitHub },
 };
 
 /** 查 GitHub 最新 release tag（去 v 前缀）：api 镜像序，20s 超时。 */
@@ -950,6 +952,7 @@ function installedVersionOf(id: string): string {
   if (gh) {
     if (id === "filee") return fileeInstalledVersion();
     if (id === "apkstart") return apkstartInstalledVersion();
+    if (id === "openmaic") return openmaicInstalledVersion();
     return "";
   }
   const tool = UPDATEABLE_TOOLS[id];

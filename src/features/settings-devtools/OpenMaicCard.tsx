@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
+import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
 
 /** 「能做什么」清单：按 OpenMAIC 的产品能力归类。 */
 const CAPABILITIES = [
@@ -207,11 +208,23 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
             </div>
           </div>
 
+          <RuntimeUpdateRow
+            id="openmaic"
+            installed={Boolean(status?.installed)}
+            hint="更新 = 重新下载源码并构建（5–10 分钟，CPU 会跑满）；课程库、数据库与模型配置都保留"
+            runtimeStage={runtimeStage}
+            runtimePercent={runtimePercent}
+            runtimeSpeed={runtimeSpeed}
+            runtimeProgress={runtimeProgress}
+            cancelDevRuntime={cancelDevRuntime}
+            onUpdated={refresh}
+          />
+
           <div className={`runtime-row ${status?.installed ? "installed" : "missing"}`}>
             <span className="runtime-icon"><Sparkles size={15} /></span>
             <span className="runtime-copy">
               <strong>配套工具</strong>
-              <small>装好后 Codex 自动多一个 openmaic 工具：查状态 / 启停 / 生成课堂 / 查进度；更新 = 重新安装（会重建）</small>
+              <small>装好后 Codex 自动多一个 openmaic 工具：查状态 / 启停 / 生成课堂 / 查进度</small>
             </span>
             <div className="runtime-actions">
               <span className={`runtime-badge ${status?.installed ? "installed" : ""}`}>{status?.installed ? "openmaic 已可用" : "安装后可用"}</span>
@@ -250,7 +263,7 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
           <ul className="feishu-cli-notes">
             <li>数据全在本机：课程库在 PostgreSQL（userData/openmaic-data），不对外网开放。</li>
             <li>卸载默认只删程序（约 5GB）；课程库与数据库可勾选一起删，不勾就保留，重装后还在。</li>
-            <li>升级 = 重新安装（会重新下载与构建）；运行期间关掉本应用会一并停掉本地服务。</li>
+            <li>「更新」行会重新下载并构建（课程与模型配置保留）；运行期间关掉本应用会一并停掉本地服务。</li>
           </ul>
         </section>
 

@@ -112,8 +112,8 @@ const versions = read("scripts/lib/tools-versions.cjs");
     "FileeCard 安装失败有完整报错入口（不再只在进度行里露半句）");
   ok(fileeCard.includes("setUninstallOpen") && fileeCard.includes("SettingsDialog") && fileeCard.includes('uninstallDevRuntime?.("filee")'),
     "卸载走设置内二级弹窗确认（⛔ 不用原生 confirm / openAppConfirm，飞书卡同款口径）");
-  ok(fileeCard.includes("控制台 → 组件更新") && fileeCard.includes("runtime-row"),
-    "卡片指路控制台更新 + 行结构用 runtime-row（自造样式没有 CSS，飞书卡教训）");
+  ok(fileeCard.includes("<RuntimeUpdateRow") && fileeCard.includes("runtime-row"),
+    "卡片内置更新行（RuntimeUpdateRow）+ 行结构用 runtime-row（⛔ 不再只指路控制台）");
   // ⛔ 10-31 补审查（发现 1）：声明区 URL 必须由主进程下发 —— 前端硬编码 github 字面量 = 第二真相源
   ok(fileeIpc.includes("attribution: { license: \"MIT\", home: `https://github.com/${FILEE_REPO}`, site: FILEE_SITE }")
     && /export const FILEE_REPO/.test(runtimeIpc),
