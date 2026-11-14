@@ -39,6 +39,11 @@ const DEVICE_RE = /^[a-f0-9]{10}$/;
 const PAIR_RID_RE = /^[a-f0-9]{12}$/;
 /* 电脑端 `/api/pair-status` 的 status 枚举（见 electron/remote.ts）。 */
 const PAIR_STATUSES = new Set(["pending", "approved", "denied", "expired"]);
+/* 配对应答签名：键由隧道令牌派生，盐必须与 electron/relay-pair-sign.ts 的 PAIR_SIGN_SALT 逐字一致。
+   ⛔ 11-14 用户令「加上鉴权」——光靠应答形状挡不住会模仿的假隧道；签名是电脑端应用才有的东西。 */
+const PAIR_SIGN_SALT = ":pair-response:v1";
+/* 根地址配对限流（按来源 IP）：挡 6 位码暴力尝试与批量探测。 */
+const PAIR_RATE_PER_MINUTE = 20;
 const MAX_BODY = 32 * 1024 * 1024;
 const REQ_TIMEOUT_MS = 20_000;   // 隧道半死时别让手机干等 35s
 const MAX_INFLIGHT = 32;
@@ -146,6 +151,29 @@ function saveState() {
 }
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch] || ch));
 const sha256 = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+/** 设备令牌 → 配对应答签名键（与电脑端同盐同算法）。 */
+const pairSignKeyOf = (token) => sha256(String(token) + PAIR_SIGN_SALT);
+/** 校验电脑端配对应答的 HMAC 签名。假隧道没有令牌、伪造不出 64 位 hex 的有效签名。 */
+function pairResponseSigned(id, out) {
+  const device = devices.get(id);
+  if (!device?.signKey) return false;
+  const got = String(out?.headers?.["x-harness-pair-sign"] ?? "");
+  if (!/^[a-f0-9]{64}$/i.test(got)) return false;
+  const want = crypto.createHmac("sha256", device.signKey).update(out.body.toString("utf8")).digest("hex");
+  return got.length === want.length && crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+}
+/* 根配对限流表：IP → { start, count }。 */
+const pairRate = new Map();
+function pairRateOk(req) {
+  const xff = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim();
+  const ip = xff || req.socket.remoteAddress || "unknown";
+  const now = Date.now();
+  let entry = pairRate.get(ip);
+  if (!entry || now - entry.start > 60_000) { entry = { start: now, count: 0 }; pairRate.set(ip, entry); }
+  entry.count += 1;
+  if (pairRate.size > 2000) pairRate.clear();
+  return entry.count <= PAIR_RATE_PER_MINUTE;
+}
 
 function reply(res, status, body, type = "text/plain; charset=utf-8") {
   res.writeHead(status, { "content-type": type, "cache-control": "no-store" });
@@ -356,6 +384,10 @@ async function handleRootPair(req, res) {
       let parsed = null;
       try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
       if (!parsed) continue;
+      if (!pairResponseSigned(id, out)) {
+        console.warn(`[relay] 根配对：设备 ${id} 应答未通过签名校验，跳过`);
+        continue;
+      }
       /* ⛔ 11-14：只接受**电脑端应用**的两种应答形状 ——
          · 老朋友快路：`{ok:true, approved:true}`（无 rid）；
          · 待审批：`{ok:true, approved:false, rid:<12 位 hex>}`。
@@ -369,6 +401,7 @@ async function handleRootPair(req, res) {
       }
       last = parsed;
       if (parsed.ok) {
+        console.log(`[relay] 根配对：设备 ${id} 认领了配对请求`);
         rememberPairRoute(String(parsed.rid ?? ""), id);
         /* ⛔⛔ 10-30 用户实测「输完配对码一直 已登录→自动登录→已登录 循环」：根地址配对把电脑端
            下发的登录 cookie（harness_remote / harness_device）**丢了**，只回了网关自己的 chm_dev
@@ -400,6 +433,10 @@ async function handleRootPairStatus(req, res, url) {
       let parsed = null;
       try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
       if (!parsed) continue;
+      if (!pairResponseSigned(id, out)) {
+        console.warn(`[relay] 根配对查询：设备 ${id} 应答未通过签名校验，跳过`);
+        continue;
+      }
       /* ⛔ 同上：status 只认电脑端应用的四种取值；别的服务回什么 "approved" 都不算数。 */
       const st = String(parsed.status ?? "");
       if (!PAIR_STATUSES.has(st)) {
@@ -433,9 +470,16 @@ const server = http.createServer((req, res) => {
     void handleTunnelRequest(id, rest, req, res);
     return;
   }
-  /* 根地址上的配对 API：手动输 6 位码走这里（原实现转到空的老通道 = HTML，APK 解析 JSON 直接炸） */
-  if (/^\/api\/pair-status\b/.test(url) && req.method === "GET") { void handleRootPairStatus(req, res, url); return; }
-  if (/^\/api\/pair\b/.test(url) && req.method === "POST") { void handleRootPair(req, res); return; }
+  /* 根地址上的配对 API：手动输 6 位码走这里（原实现转到空的老通道 = HTML，APK 解析 JSON 直接炸）。
+     按来源 IP 限流：配对码只有 6 位，不限流等于开放暴力尝试入口。 */
+  if (/^\/api\/pair-status\b/.test(url) && req.method === "GET") {
+    if (!pairRateOk(req)) { jsonReply(res, 429, { ok: false, status: "expired", error: "请求太频繁，请稍后再试" }); return; }
+    void handleRootPairStatus(req, res, url); return;
+  }
+  if (/^\/api\/pair\b/.test(url) && req.method === "POST") {
+    if (!pairRateOk(req)) { jsonReply(res, 429, { ok: false, error: "请求太频繁，请稍后再试" }); return; }
+    void handleRootPair(req, res); return;
+  }
   /* 已配对手机的页面请求：按 cookie 找到电脑，跳到 /t/<设备ID> 前缀（页面里的 API 才会带上前缀） */
   if (req.method === "GET" && url.startsWith("/r/")) {
     const deviceId = cookieValue(req, "chm_dev") || cookieValue(req, "harness_device");
@@ -474,6 +518,7 @@ wss.on("connection", (ws, req) => {
       const token = String(frame?.token ?? "");
       if (frame?.type !== "hello" || !DEVICE_RE.test(id) || token.length < 16) { ws.close(4001, "bad hello"); return; }
       const tokenHash = sha256(token);
+      const signKey = pairSignKeyOf(token);
       const known = devices.get(id);
       if (known && known.tokenHash !== tokenHash) {
         console.warn(`[relay] 设备 ${id} 令牌不匹配，拒绝连接`);
@@ -481,9 +526,13 @@ wss.on("connection", (ws, req) => {
         return;
       }
       if (!known) {
-        devices.set(id, { tokenHash, connectedAt: Date.now(), lastSeen: Date.now() });
+        devices.set(id, { tokenHash, signKey, connectedAt: Date.now(), lastSeen: Date.now() });
         saveState();
         console.log(`[relay] 新设备 ${id} 首次绑定`);
+      } else if (known.signKey !== signKey) {
+        /* 旧记录没有签名键（11-14 之前注册的）：令牌已验证过，补上并落盘。 */
+        known.signKey = signKey;
+        saveState();
       }
       clearTimeout(authTimer);
       const previous = tunnels.get(id);

@@ -13,6 +13,7 @@ import { RelayTunnel, type RelayStatus } from "./relay-tunnel";
 import { isAllowedRemoteRpc } from "./remote-rpc-types";
 import { createEventBuffer } from "./remote-event-buffer";
 import { createScreenLease } from "./remote-screen-lease";
+import { signPairBody } from "./relay-pair-sign";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
@@ -590,7 +591,7 @@ export class RemoteControlService {
             this.approved.set(deviceId, { ...known, lastSeen: Date.now(), ...(fingerprint ? { fingerprint } : {}) });
             this.saveApproved();
             this.grantCookies(res, deviceId);
-            this.json(res, 200, { ok: true, approved: true });
+            this.jsonPair(res, 200, { ok: true, approved: true });
             return;
           }
           /* 同一台手机换过 deviceId（旧版本按 URL 前缀分桶，localStorage 里的 id 会变）：
@@ -604,21 +605,21 @@ export class RemoteControlService {
               this.saveApproved();
               console.log(`[remote] 同一台手机换了设备 ID：${id} → ${deviceId}（凭设备秘密迁移）`);
               this.grantCookies(res, deviceId);
-              this.json(res, 200, { ok: true, approved: true });
+              this.jsonPair(res, 200, { ok: true, approved: true });
               return;
             }
           }
           if (!this.checkPairingCode(String(data.code ?? ""))) {
-            this.json(res, 200, { ok: false, error: "配对码错误或已过期，请对照电脑端显示的 6 位数字重输" });
+            this.jsonPair(res, 200, { ok: false, error: "配对码错误或已过期，请对照电脑端显示的 6 位数字重输" });
             return;
           }
           // 配对码正确 → 挂起，等电脑端在应用里点「允许」
           const rid = crypto.randomBytes(6).toString("hex");
           this.pairRequests.set(rid, { rid, deviceId, name, status: "pending", createdAt: Date.now(), fingerprint });
           this.events.onPairRequest?.({ rid, deviceId, name });
-          this.json(res, 200, { ok: true, approved: false, rid });
+          this.jsonPair(res, 200, { ok: true, approved: false, rid });
         } catch (error: any) {
-          this.json(res, 200, { ok: false, error: error.message });
+          this.jsonPair(res, 200, { ok: false, error: error.message });
         }
       });
       return;
@@ -637,7 +638,7 @@ export class RemoteControlService {
       } else if (status === "denied" || status === "expired") {
         this.pairRequests.delete(params.get("rid") ?? "");
       }
-      this.json(res, 200, { ok: status === "approved", status, ...(issuedSecret ? { deviceSecret: issuedSecret } : {}) });
+      this.jsonPair(res, 200, { ok: status === "approved", status, ...(issuedSecret ? { deviceSecret: issuedSecret } : {}) });
       return;
     }
     // WebSocket upgrade
@@ -1404,6 +1405,15 @@ else {
   private json(response: http.ServerResponse, status: number, value: unknown) {
     response.writeHead(status, { "content-type": "application/json" });
     response.end(JSON.stringify(value));
+  }
+
+  /** 配对专用 JSON：带 HMAC 签名头，中转网关据此拒绝假隧道伪造的 ok:true（11-14 安全加固）。
+   *  ⛔ 只用于 `/api/pair` 与 `/api/pair-status` —— 其余接口不需要、也不该带这个头。 */
+  private jsonPair(response: http.ServerResponse, status: number, value: unknown) {
+    const body = JSON.stringify(value);
+    const sign = this.storageFile ? signPairBody(path.dirname(this.storageFile), body) : "";
+    response.writeHead(status, { "content-type": "application/json", ...(sign ? { "x-harness-pair-sign": sign } : {}) });
+    response.end(body);
   }
 
   pairUrl() {

@@ -1809,6 +1809,16 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("isFastApproved") && gwSrc.includes("PAIR_STATUSES") && gwSrc.includes("应答形状不是电脑端应用") ? ok : fail)(
       "【139e】根配对只接受电脑端应答形状（approved 快路 / 12 位 hex rid / 四种 status；⛔ 收集器回 ok:true 不再算成功）"
     );
+    /* ⛔ 11-14 用户令「加上鉴权」：光靠形状挡不住会模仿的假隧道，必须有电脑端才知道的密钥。 */
+    const pairSignSrc = readFileSync(join(ROOT, "electron", "relay-pair-sign.ts"), "utf8");
+    (pairSignSrc.includes('PAIR_SIGN_SALT = ":pair-response:v1"') && gwSrc.includes('PAIR_SIGN_SALT = ":pair-response:v1"')
+      && relaySrc.includes("signPairBody") && relaySrc.includes("x-harness-pair-sign") ? ok : fail)(
+      "【139e】配对应答鉴权：电脑端用隧道令牌派生 HMAC 签名、网关用同一盐验签（⛔ 盐不一致 = 真电脑也被拒）"
+    );
+    (gwSrc.includes("pairResponseSigned") && gwSrc.includes("timingSafeEqual") && gwSrc.includes("signKey")
+      && gwSrc.includes("PAIR_RATE_PER_MINUTE") && gwSrc.includes("x-forwarded-for") ? ok : fail)(
+      "【139e】网关：验签失败一律跳过 + 根配对接来源 IP 限流（挡 6 位码暴力尝试）"
+    );
     (gwSrc.includes("proxyLegacy(req, res)") && gwSrc.includes("LEGACY_TARGET") ? ok : fail)(
       "【139e】网关保留旧通道（/t/ 以外的请求转回原端口）—— 已发出去的二维码/老 APK 不能失效"
     );
