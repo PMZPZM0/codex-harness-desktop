@@ -647,6 +647,8 @@ export function TeamComposer({
           aria-label={placeholder}
           data-placeholder={placeholder}
           onInput={(event) => {
+            /* ⛔ 组字期间不回写 value（同主输入框）：父层重渲染可能在组字中重建 DOM，中文输入被打断。 */
+            if (composingRef.current) return;
             const el = event.currentTarget;
             const next = editorValue(el);
             renderedRef.current = next;
@@ -654,7 +656,13 @@ export function TeamComposer({
           }}
           onKeyDown={onKeyDown}
           onCompositionStart={() => { composingRef.current = true; }}
-          onCompositionEnd={(event) => { composingRef.current = false; renderedRef.current = editorValue(event.currentTarget); }}
+          onCompositionEnd={(event) => {
+            composingRef.current = false;
+            const el = event.currentTarget;
+            const next = editorValue(el);
+            renderedRef.current = next;
+            onValueChange(next, editorCaret(el));
+          }}
           onPaste={(e) => void onPaste(e)}
         />
       </div>

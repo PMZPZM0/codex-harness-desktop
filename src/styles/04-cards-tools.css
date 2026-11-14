@@ -1650,7 +1650,8 @@
   word-break: break-word;
   cursor: text;
 }
-.composer-editor:empty::before {
+.composer-editor:empty::before,
+.composer-editor[data-empty="true"]::before {
   content: attr(data-placeholder);
   color: var(--faint);
   pointer-events: none;

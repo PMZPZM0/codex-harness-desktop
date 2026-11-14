@@ -55,10 +55,27 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
   /** 长文本粘贴：落盘成 .txt 再作为文件 chip 插入（阈值见 shouldSavePastedTextAsFile） */
   onPasteLongText: (text: string) => void;
 }) {
+  /* ⛔ 中文/日文输入法组字期间**绝不能碰 DOM、也不能回写 value**：组字中的 input 事件在空输入框里
+     可能序列化出空串，旧逻辑会当场 `el.innerHTML = ""` ⇒ 组字会话被销毁，表现为「打不了中文、数字正常」，
+     而粘贴过汉字后 DOM 非空、不再触发清空，中文又好了（用户反馈的正是这个现象）。 */
+  const composingRef = useRef(false);
+  const syncFromDom = (el: HTMLDivElement) => {
+    const raw = serializeComposerDom(el);
+    /* ⛔ 不再清空 innerHTML：空输入框可能残留一个 <br>，删掉它是为了 :empty 占位符；
+       但在组字提交的时序里 DOM 可能瞬间为空，清空会直接销毁组字会话（「打不了中文」的根因）。
+       改用 data-empty 驱动占位符，DOM 一律不动。 */
+    const empty = !raw.trim() && !promptImagePaths(raw).length && !promptFilePaths(raw).length;
+    const next = empty ? "" : raw;
+    el.dataset.empty = empty ? "true" : "false";
+    domValueRef.current = next;
+    onValueInput(next);
+  };
+
   useLayoutEffect(() => {
     const el = editorRef.current;
     if (!el || domValueRef.current === value) return;
     rebuildComposerDom(el, value, makeChip);
+    el.dataset.empty = value ? "false" : "true";
     domValueRef.current = value;
     // 重建后光标放回末尾（外部置值场景：斜杠命令追加、发送清空等）
     const selection = window.getSelection();
@@ -81,14 +98,11 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
       aria-label={placeholder}
       data-placeholder={placeholder}
       onInput={(event) => {
-        const el = event.currentTarget;
-        let next = serializeComposerDom(el);
-        // 全删后可能残留孤立 <br>：清成真正 empty，让 :empty 占位符与发送守卫都成立
-        // （图片与文件 chip 都算"有草稿"，两类都要看）
-        if (!next.trim() && !promptImagePaths(next).length && !promptFilePaths(next).length) { el.innerHTML = ""; next = ""; }
-        domValueRef.current = next;
-        onValueInput(next);
+        if (composingRef.current || (event.nativeEvent as InputEvent).isComposing) return;
+        syncFromDom(event.currentTarget);
       }}
+      onCompositionStart={() => { composingRef.current = true; }}
+      onCompositionEnd={(event) => { composingRef.current = false; syncFromDom(event.currentTarget); }}
       onKeyDown={onKeyDown}
       onBlur={onBlur}
       onPaste={(event) => {

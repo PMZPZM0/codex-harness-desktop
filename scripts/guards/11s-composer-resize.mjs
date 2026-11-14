@@ -80,5 +80,18 @@ ok(/\.composer-resize-grip \{[^}]*width: 56px/.test(css),
     "⛔ 弹层不再写死 max-height:360px（那是「模型一多就出滚轮」的直接原因）");
 }
 
+/* ⛔ 11-14 用户反馈「打不了中文、数字可以，先粘贴一个汉字后又能打」：
+   根因是 onInput 在空输入框组字时序列化出空串并清空 innerHTML，销毁组字会话。
+   组字期间必须完全不碰 DOM / 不回写 value；compositionend 再同步。 */
+{
+  const composerSrc = codeOnly(read("src/features/composer/Composer.tsx"));
+  ok(composerSrc.includes("composingRef") && composerSrc.includes("onCompositionStart") && composerSrc.includes("onCompositionEnd"),
+    "输入框有组字状态（compositionstart/end）");
+  ok(/onInput=\{[\s\S]{0,160}?if \(composingRef\.current \|\| \(event\.nativeEvent as InputEvent\)\.isComposing\) return;/.test(composerSrc),
+    "组字期间 onInput 直接返回（不回写 value、不重建 DOM）");
+  ok(!/onInput=\{[\s\S]{0,240}?el\.innerHTML = ""/.test(composerSrc),
+    "⛔ 空输入框清空不在 onInput 里裸做（会销毁组字会话 → 打不了中文）");
+}
+
 console.log(`\n【composer-resize】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);
