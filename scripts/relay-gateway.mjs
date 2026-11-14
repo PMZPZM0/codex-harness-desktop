@@ -29,7 +29,16 @@ const HOST = process.env.RELAY_HOST || "127.0.0.1";
 const LEGACY_TARGET = process.env.RELAY_LEGACY_TARGET || "127.0.0.1:18092";
 /* 默认落系统临时目录：本地跑测试时别把设备表写进仓库根（服务器用 RELAY_STATE 指到 /var/lib/relay） */
 const STATE_FILE = process.env.RELAY_STATE || path.join(os.tmpdir(), "relay-devices.json");
-const DEVICE_RE = /^[a-z0-9]{8,24}$/;
+/* 隧道设备 ID = 电脑端 `relay-tunnel.ts` 生成的 10 位小写 hex（三仓同源）。
+   ⛔ 11-14 实测：放成 `[a-z0-9]{8,24}` 时，外部的假隧道（`wrk2428remote` / `wrk2278probe` 之类
+   的测试/收集器进程）也能挂在公网中转上；根地址配对会逐台问「这个 6 位码你认吗」，
+   假隧道不校验码就直接回 ok:true ⇒ 手机被它「秒批」，真正的电脑端应用收不到配对请求，
+   于是永远不弹「允许」框（用户实测）。⇒ 只认真实客户端的 ID 形状。 */
+const DEVICE_RE = /^[a-f0-9]{10}$/;
+/* 电脑端 `/api/pair` 的 pending 应答 rid = `crypto.randomBytes(6).toString("hex")`（12 位 hex）。 */
+const PAIR_RID_RE = /^[a-f0-9]{12}$/;
+/* 电脑端 `/api/pair-status` 的 status 枚举（见 electron/remote.ts）。 */
+const PAIR_STATUSES = new Set(["pending", "approved", "denied", "expired"]);
 const MAX_BODY = 32 * 1024 * 1024;
 const REQ_TIMEOUT_MS = 20_000;   // 隧道半死时别让手机干等 35s
 const MAX_INFLIGHT = 32;
@@ -347,6 +356,17 @@ async function handleRootPair(req, res) {
       let parsed = null;
       try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
       if (!parsed) continue;
+      /* ⛔ 11-14：只接受**电脑端应用**的两种应答形状 ——
+         · 老朋友快路：`{ok:true, approved:true}`（无 rid）；
+         · 待审批：`{ok:true, approved:false, rid:<12 位 hex>}`。
+         其它 `ok:true`（例如测试隧道回 `{ok:true, note:"relay-collector", path:"/r/mobile"}`）
+         一律当作"不是电脑端"，继续问下一台；否则手机会被假隧道秒批、电脑端收不到配对请求、不弹「允许」。 */
+      const isFastApproved = parsed.ok === true && parsed.approved === true && !parsed.rid;
+      const isPending = parsed.ok === true && parsed.approved === false && PAIR_RID_RE.test(String(parsed.rid ?? ""));
+      if (parsed.ok === true && !isFastApproved && !isPending) {
+        console.warn(`[relay] 根配对：设备 ${id} 应答形状不是电脑端应用，跳过`);
+        continue;
+      }
       last = parsed;
       if (parsed.ok) {
         rememberPairRoute(String(parsed.rid ?? ""), id);
@@ -380,9 +400,15 @@ async function handleRootPairStatus(req, res, url) {
       let parsed = null;
       try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
       if (!parsed) continue;
+      /* ⛔ 同上：status 只认电脑端应用的四种取值；别的服务回什么 "approved" 都不算数。 */
+      const st = String(parsed.status ?? "");
+      if (!PAIR_STATUSES.has(st)) {
+        console.warn(`[relay] 根配对查询：设备 ${id} 应答形状不是电脑端应用，跳过`);
+        continue;
+      }
       last = parsed;
-      if (String(parsed.status ?? "") !== "expired") {
-        if (parsed.status === "approved") rememberPairRoute(rid, id);
+      if (st !== "expired") {
+        if (st === "approved") rememberPairRoute(rid, id);
         const headers = { "set-cookie": [`chm_dev=${id}; Path=/; HttpOnly; SameSite=Lax`] };
         const dc = out.headers["set-cookie"];
         if (dc) headers["set-cookie"] = headers["set-cookie"].concat(Array.isArray(dc) ? dc : [dc]);

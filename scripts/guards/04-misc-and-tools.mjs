@@ -1801,6 +1801,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("tokenHash") && gwSrc.includes('type !== "hello"') && !gwSrc.includes('searchParams.get("token")') ? ok : fail)(
       "【139e】设备身份：hello 帧校验令牌（TOFU 绑定）；⛔ 令牌不许放查询串（会进访问日志）"
     );
+    /* ⛔ 11-14 用户实测「手机连远控，电脑不弹允许框」根因：中转上挂着测试/收集器假隧道（wrk2428remote 等），
+       根地址配对逐台问码时它不校验直接回 ok:true ⇒ 手机被秒批、真电脑端收不到配对请求。 */
+    (/const DEVICE_RE = \/\^\[a-f0-9\]\{10\}\$\//.test(gwSrc) && gwSrc.includes("PAIR_RID_RE") ? ok : fail)(
+      "【139e】隧道设备 ID 只认电脑端的 10 位小写 hex（⛔ 任意 ID = 假隧道能冒领根配对，把「允许」框挤掉）"
+    );
+    (gwSrc.includes("isFastApproved") && gwSrc.includes("PAIR_STATUSES") && gwSrc.includes("应答形状不是电脑端应用") ? ok : fail)(
+      "【139e】根配对只接受电脑端应答形状（approved 快路 / 12 位 hex rid / 四种 status；⛔ 收集器回 ok:true 不再算成功）"
+    );
     (gwSrc.includes("proxyLegacy(req, res)") && gwSrc.includes("LEGACY_TARGET") ? ok : fail)(
       "【139e】网关保留旧通道（/t/ 以外的请求转回原端口）—— 已发出去的二维码/老 APK 不能失效"
     );
