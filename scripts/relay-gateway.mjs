@@ -383,7 +383,10 @@ async function handleRootPair(req, res) {
   if (!/^\d{6}$/.test(code)) { jsonReply(res, 200, { ok: false, error: "配对码格式不对（应为 6 位数字）" }); return; }
   /* 只挑「当前上报的配对码 == 手机输入的码」的在线电脑。多人/多机同码是 1e6 分之一的碰撞，
      命中多台时全部问一遍、先认领者胜（电脑端自己还会再校验一次码）。 */
-  const ids = onlineTunnelIds().filter((id) => tunnels.get(id)?.pairCode === code);
+  const ids = onlineTunnelIds().filter((id) => {
+    const tunnel = tunnels.get(id);
+    return Boolean(tunnel) && (tunnel.pairCode === code || (tunnel.pairPrevCode && tunnel.pairPrevCode === code));
+  });
   if (!ids.length) { jsonReply(res, 200, { ok: false, error: "没有电脑匹配这个配对码：请对照电脑端「手机远控」里显示的 6 位数字重输，或先打开电脑端应用" }); return; }
   let last = null;
   for (const id of ids) {
@@ -547,7 +550,7 @@ wss.on("connection", (ws, req) => {
       clearTimeout(authTimer);
       const previous = tunnels.get(id);
       if (previous) { try { previous.ws.close(4004, "replaced"); } catch { /* 忽略 */ } }
-      tunnel = { ws, inflight: 0, windowStart: Date.now(), windowCount: 0, pending: new Map(), pairCode: "" };
+      tunnel = { ws, inflight: 0, windowStart: Date.now(), windowCount: 0, pending: new Map(), pairCode: "", pairPrevCode: "" };
       tunnels.set(id, tunnel);
       console.log(`[relay] 设备 ${id} 已上线（在线 ${tunnels.size} 台）`);
       try { ws.send(JSON.stringify({ type: "ready", id })); } catch { /* 忽略 */ }
@@ -565,7 +568,10 @@ wss.on("connection", (ws, req) => {
     /* 电脑端上报当前 6 位配对码（只存内存，不落盘、不写日志）：根地址配对只问码匹配的那台。 */
     if (frame?.type === "pair-code") {
       const code = String(frame.code ?? "");
+      const previous = String(frame.previous ?? "");
       tunnel.pairCode = /^\d{6}$/.test(code) ? code : "";
+      /* 旧码宽限（轮换后 2 分钟内电脑端仍接受）：定向路由也要认，否则宽限期形同失效。 */
+      tunnel.pairPrevCode = /^\d{6}$/.test(previous) && previous !== tunnel.pairCode ? previous : "";
       return;
     }
     if (frame?.type === "res" || frame?.type === "reserr") {

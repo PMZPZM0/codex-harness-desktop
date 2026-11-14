@@ -1799,7 +1799,7 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelSrc.includes("setPairCode") && tunnelSrc.includes('"pair-code"') && relaySrc.includes("setPairCode(") ? ok : fail)(
       "【139e】电脑端把当前配对码经已认证隧道上报网关（断线重连补报）；⛔ 网关不再广播配对码"
     );
-    (gwSrc.includes('frame?.type === "pair-code"') && gwSrc.includes("?.pairCode === code") && gwSrc.includes("? [preferred] : []") ? ok : fail)(
+    (gwSrc.includes('frame?.type === "pair-code"') && gwSrc.includes("pairPrevCode") && gwSrc.includes("tunnel.pairCode === code") && gwSrc.includes("? [preferred] : []") ? ok : fail)(
       "【139e】根配对按码定向 + 配对状态只问认领的电脑（⛔ 不回退广播，假隧道收不到码）"
     );
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
