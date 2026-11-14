@@ -6,7 +6,7 @@
  * 共享面由 ./_ctx.mjs 注入（同名导入）。动机：多路并行写者往同一文件加守卫会互相覆盖（已发生）。
  */
 import {
-  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readdirSync, relative, warn,
+  C, ROOT, codeOnly, createRequire, existsSync, fail, join, mainSrc, mkdtempSync, ok, pathToFileURL, readAppUi, readFileSync, readMainSource, readSettingsSurface, readStyles, readdirSync, relative, rmSync, tmpdir, warn, writeFileSync,
 } from "./_ctx.mjs";
 
 export async function run() {
@@ -1799,7 +1799,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelSrc.includes("setPairCode") && tunnelSrc.includes('"pair-code"') && relaySrc.includes("setPairCode(") ? ok : fail)(
       "【139e】电脑端把当前配对码经已认证隧道上报网关（断线重连补报）；⛔ 网关不再广播配对码"
     );
-    (gwSrc.includes('frame?.type === "pair-code"') && gwSrc.includes("pairPrevCode") && gwSrc.includes("tunnel.pairCode === code") && gwSrc.includes("? [preferred] : []") ? ok : fail)(
+    (gwSrc.includes('frame?.type === "pair-code"') && gwSrc.includes("pairPrevCode") && gwSrc.includes("pairPrevUntil")
+      && gwSrc.includes("pairCodeAt") && gwSrc.includes("tunnel.pairCode === code") && gwSrc.includes("? [preferred] : []") ? ok : fail)(
       "【139e】根配对按码定向 + 配对状态只问认领的电脑（⛔ 不回退广播，假隧道收不到码）"
     );
     /* 11-14 用户令：「匹配好手机后，加一个禁止其他任何手机匹配的开关」。 */
@@ -1818,6 +1819,40 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (remotePanelSrc.includes("remoteSetPairingLock") && remotePanelSrc.includes("ToggleSwitch") && remotePanelSrc.includes("禁止新设备配对") ? ok : fail)(
       "【139e】远控面板有「禁止新设备配对」开关（胶囊开关 + 主进程回执 + 锁定态提示）"
     );
+    /* ⛔ 常驻真跑（dist-electron 产物，check 链在 build 之后）：安全路径不留「只跑过一次的临时脚本」。 */
+    {
+      let lockOk = false;
+      let signOk = false;
+      let why = "";
+      try {
+        const require = createRequire(import.meta.url);
+        const lockMod = require(join(ROOT, "dist-electron", "remote-pairing-lock.js"));
+        const botMod = require(join(ROOT, "dist-electron", "bots", "bot-pairing.js"));
+        const signMod = require(join(ROOT, "dist-electron", "relay-pair-sign.js"));
+        const crypto = require("node:crypto");
+        const dir = mkdtempSync(join(tmpdir(), "harness-lock-"));
+        lockMod.configurePairingLock(dir);
+        const off = lockMod.isPairingLocked();
+        lockMod.setPairingLocked(true);
+        const on = lockMod.isPairingLocked();
+        const bot = new botMod.BotPairingService(() => "123456", () => {});
+        const lockedDecision = bot.onChannelMessage("qq", "chat-lock", "测试", "123456");
+        const lockedApprove = bot.approve("nope");
+        lockMod.setPairingLocked(false);
+        const unlockedDecision = bot.onChannelMessage("qq", "chat-lock", "测试", "123456");
+        lockOk = off === false && on === true && lockedDecision.action === "guide" && lockedApprove === false && unlockedDecision.action === "wait";
+        /* 签名两侧同源：应用侧 signPairBody 必须等于网关同盐算法算出的值 */
+        writeFileSync(join(dir, "relay-device.json"), JSON.stringify({ id: "aaaabbbbcc", token: "88".repeat(32) }));
+        const body = JSON.stringify({ ok: true, approved: false, rid: "0123456789ab" });
+        const expected = crypto.createHmac("sha256", crypto.createHash("sha256").update("88".repeat(32) + ":pair-response:v1").digest("hex")).update(body).digest("hex");
+        signOk = signMod.signPairBody(dir, body) === expected;
+        rmSync(dir, { recursive: true, force: true });
+      } catch (error) {
+        why = String(error?.message ?? error).slice(0, 80);
+      }
+      (lockOk ? ok : fail)(`【139e】真跑：禁止新设备配对（锁定 → Bot 拒绝 / 解锁 → 恢复等待；状态落盘）${lockOk ? "" : " —— " + why}`);
+      (signOk ? ok : fail)(`【139e】真跑：配对应答 HMAC 与应用/网关同盐同算法（⛔ 盐或算法分叉 = 真电脑全被拒）${signOk ? "" : " —— " + why}`);
+    }
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
       "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
     );

@@ -24,7 +24,11 @@ export function configurePairingLock(userDataDir: string): void {
   try {
     const raw = JSON.parse(fs.readFileSync(file, "utf8"));
     locked = raw?.locked === true;
-  } catch { /* 首次运行没有文件 */ }
+  } catch {
+    /* 文件存在但读/解析失败 ⇒ 按锁定处理（fail-closed）；只有「首次运行没有文件」才默认关。
+       ⛔ 别改成 catch 一律 false：半截写入/权限异常会把「已锁」静默降级成「允许任意新设备」。 */
+    locked = Boolean(file) && fs.existsSync(file);
+  }
 }
 
 /** 当前是否禁止新设备配对。 */

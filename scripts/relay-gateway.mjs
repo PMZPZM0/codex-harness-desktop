@@ -385,7 +385,9 @@ async function handleRootPair(req, res) {
      命中多台时全部问一遍、先认领者胜（电脑端自己还会再校验一次码）。 */
   const ids = onlineTunnelIds().filter((id) => {
     const tunnel = tunnels.get(id);
-    return Boolean(tunnel) && (tunnel.pairCode === code || (tunnel.pairPrevCode && tunnel.pairPrevCode === code));
+    if (!tunnel) return false;
+    if (tunnel.pairCode === code) return true;
+    return Boolean(tunnel.pairPrevCode) && tunnel.pairPrevCode === code && Date.now() < (tunnel.pairPrevUntil || 0);
   });
   if (!ids.length) { jsonReply(res, 200, { ok: false, error: "没有电脑匹配这个配对码：请对照电脑端「手机远控」里显示的 6 位数字重输，或先打开电脑端应用" }); return; }
   let last = null;
@@ -550,7 +552,7 @@ wss.on("connection", (ws, req) => {
       clearTimeout(authTimer);
       const previous = tunnels.get(id);
       if (previous) { try { previous.ws.close(4004, "replaced"); } catch { /* 忽略 */ } }
-      tunnel = { ws, inflight: 0, windowStart: Date.now(), windowCount: 0, pending: new Map(), pairCode: "", pairPrevCode: "" };
+      tunnel = { ws, inflight: 0, windowStart: Date.now(), windowCount: 0, pending: new Map(), pairCode: "", pairPrevCode: "", pairPrevUntil: 0, pairCodeAt: 0 };
       tunnels.set(id, tunnel);
       console.log(`[relay] 设备 ${id} 已上线（在线 ${tunnels.size} 台）`);
       try { ws.send(JSON.stringify({ type: "ready", id })); } catch { /* 忽略 */ }
@@ -567,11 +569,20 @@ wss.on("connection", (ws, req) => {
     }
     /* 电脑端上报当前 6 位配对码（只存内存，不落盘、不写日志）：根地址配对只问码匹配的那台。 */
     if (frame?.type === "pair-code") {
+      /* ⛔ 同一隧道 1 秒内只接受一次更新：正常只在「码轮换 / 断线重连」时发。
+         高频刷码虽然猜不中 6 位码（1e6 分之一），但没必要给它免费 CPU / 无界更新。 */
+      const now = Date.now();
+      if (now - (tunnel.pairCodeAt || 0) < 1000) return;
+      tunnel.pairCodeAt = now;
       const code = String(frame.code ?? "");
       const previous = String(frame.previous ?? "");
       tunnel.pairCode = /^\d{6}$/.test(code) ? code : "";
-      /* 旧码宽限（轮换后 2 分钟内电脑端仍接受）：定向路由也要认，否则宽限期形同失效。 */
+      /* 旧码宽限（轮换后 2 分钟内电脑端仍接受）：定向路由也要认，且必须带**截止时间** ——
+         否则网关会把旧码一直当有效（电脑端虽会拒，但路由不该无限认）。 */
       tunnel.pairPrevCode = /^\d{6}$/.test(previous) && previous !== tunnel.pairCode ? previous : "";
+      const previousUntil = Number(frame.previousUntil) || 0;
+      tunnel.pairPrevUntil = tunnel.pairPrevCode && previousUntil > Date.now() ? previousUntil : 0;
+      if (!tunnel.pairPrevUntil) tunnel.pairPrevCode = "";
       return;
     }
     if (frame?.type === "res" || frame?.type === "reserr") {
