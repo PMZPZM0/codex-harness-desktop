@@ -47,6 +47,7 @@ type Props = {
   /** 群管理员（11-09）：空串 = 取消。专家团群由主理人兜底，界面不给入口。 */
   onSetAdmin: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  onSetRules: (text: string) => Promise<{ ok: boolean; error?: string }>;
   /** 项目地址（群的工作目录；空串 = 跟随应用默认） */
   onSetWorkspace: (workspace: string) => Promise<{ ok: boolean; error?: string }>;
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
@@ -101,6 +102,7 @@ const KIND_LABEL: Record<string, string> = {
 };
 
 const MEMORY_MAX = 4000;
+const RULES_MAX = 2000;
 const FILES_MAX = 20;
 const NOTES_MAX = 40;
 
@@ -279,7 +281,7 @@ export function TeamViewModeSettings({ messageLayout, onMessageLayout, replyMode
 }
 
 /** 群设置页：伙伴、群记忆、文件、定时任务与解散群等分区（视图开关已拆到 TeamViewModeSettings）。 */
-function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetAdmin, onSetMemory, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule }: Props) {
+function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner, onMute, onSetManager, onSetAdmin, onSetMemory, onSetRules, onSetWorkspace, onSetFiles, onClearMessages, onDeleteGroup, onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule }: Props) {
   const [targets, setTargets] = useState<Target[]>([]);
   const [catalogError, setCatalogError] = useState("");
   const [pick, setPick] = useState("");
@@ -292,6 +294,7 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
 
   /* 群记忆 / 群文件：本地草稿 + 脏标记（保存才落盘，避免每敲一个字就写文件） */
   const [memoryDraft, setMemoryDraft] = useState(group.memory ?? "");
+  const [rulesDraft, setRulesDraft] = useState(group.rules ?? "");
   const [filesDraft, setFilesDraft] = useState<TeamFile[]>(group.files ?? []);
 
   /* 记忆条目（豆包 §2.②）：一条一个结论 + 类型 + 来源，与上面的"群简介"分开 */
@@ -334,9 +337,10 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
     setSchedName("");
     setSchedPrompt("");
     setSchedTargets([]);
-  }, [group.id, group.memory, group.files]);
+  }, [group.id, group.memory, group.rules, group.files]);
 
   const memoryDirty = memoryDraft.trim() !== String(group.memory ?? "").trim();
+  const rulesDirty = rulesDraft.trim() !== String(group.rules ?? "").trim();
   const filesDirty = JSON.stringify(filesDraft) !== JSON.stringify(group.files ?? []);
 
   /* ⛔ 伙伴**必须**是真实调度目标：手打出来的名字派不了活。
@@ -668,6 +672,37 @@ function TeamSettingsImpl({ group, issues, limit, onAddPartner, onRemovePartner,
           >
             保存群记忆
           </button>
+        </div>
+
+        {/* ⛔ 11-14 Phase 3：群规矩（**硬约束**，与上面的「群记忆(简介)」分开，每轮作为「规矩」段注入）。 */}
+        <div className="team-settings__sub">
+          <h4 className="team-settings__subhead">
+            群规矩（硬约束）
+            <span className="team-settings__count">{rulesDraft.trim() ? `${rulesDraft.trim().length} 字` : "空"}</span>
+          </h4>
+          <p className="team-settings__hint">
+            写这里的<strong>必须 / 禁止</strong>每轮都会作为「规矩」带给伙伴（比「群记忆」更硬）。
+            例：必须带凭据、不许编造数据、先读完别人的消息再开口。
+          </p>
+          <textarea
+            className="team-settings__memory"
+            value={rulesDraft}
+            onChange={(e) => setRulesDraft(e.target.value.slice(0, RULES_MAX))}
+            placeholder={"例：\n1. 报结论必须带可核对的东西（文件 / 数字 / 入口）。\n2. 不许编造数据；不知道就说不知道。\n3. 先读完群里别人的消息再开口。"}
+            rows={4}
+            aria-label="群规矩"
+          />
+          <div className="team-settings__savebar">
+            <span className="team-settings__meta">{rulesDraft.length} / {RULES_MAX}</span>
+            <button
+              type="button"
+              className="team-settings__mini"
+              onClick={() => void run(() => onSetRules(rulesDraft), "群规矩已保存 —— 下次派活就带上")}
+              disabled={busy || !rulesDirty}
+            >
+              保存群规矩
+            </button>
+          </div>
         </div>
 
         {/* ├ 记忆条目：一条一个结论 + 类型 + 来源（豆包 §2.② 的 `type` / `origin`） */}
@@ -1113,6 +1148,6 @@ export const TeamSettings = memo(TeamSettingsImpl, (a, b) => (
   && a.group.members === b.group.members && a.group.files === b.group.files
   /* ⛔ 11-09：管理员只改这一个字段，漏比会让设置完界面纹丝不动（用户判「选不了」）。 */
   && a.group.adminId === b.group.adminId
-  && a.group.memory === b.group.memory && a.group.memoryNotes === b.group.memoryNotes
+  && a.group.memory === b.group.memory && a.group.rules === b.group.rules && a.group.memoryNotes === b.group.memoryNotes
   && a.group.schedules === b.group.schedules && a.group.workspace === b.group.workspace
 ));

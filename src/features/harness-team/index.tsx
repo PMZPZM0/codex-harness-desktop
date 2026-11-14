@@ -22,6 +22,8 @@ import { TeamGroupView } from "./04-team-group-view";
 import { teamChatOpen, useTeamChatOpen } from "./00-open-store";
 import { useTeamGroups } from "./02-team-store";
 import { TeamCloseGuard } from "./30-team-close-guard";
+/* ⛔ 11-14 Phase 3（抄 Pachat「N talking today」）：群活跃度统计，放列表卡副行，⛔ 不进群头。 */
+import { groupActivity } from "../../lib/group-activity.mjs";
 import { isTeamPopoutWindow } from "../../lib/team-popout";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import type { HarnessAppApi } from "../app-state";
@@ -41,7 +43,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
   const {
     groups, issues, blockers, limit, loading, error,
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
-    create, rename, addPartner, removePartner, mute, setAvatar, renameMember, removeGroup, setMemory, setWorkspace, saveFiles, setManagerOf, setAdminOf,
+    create, rename, addPartner, removePartner, mute, setAvatar, renameMember, removeGroup, setMemory, setRules, setWorkspace, saveFiles, setManagerOf, setAdminOf,
     addNote, removeNote, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule, saveMessageForm, saveDialogFlow,
     stopPartner, stopAll, threadsOf,
     loadMessages, loadRunning, dispatch, clearMessages,
@@ -212,6 +214,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
                     <span className="team-mode__group-sub">
                       {g.members.filter((m) => m.kind === "bot").length} 伙伴
                       {(rowsByGroup[g.id]?.length ?? 0) > 0 ? ` · ${rowsByGroup[g.id].length} 条` : ""}
+                      {(() => { const a = groupActivity(rowsByGroup[g.id] ?? [], Date.now()); return a.messagesToday > 0 ? ` · 今日 ${a.activeToday} 人活跃` : ""; })()}
                       {blockers[g.id]?.length ? " · 待处理" : ""}
                     </span>
                   </span>
@@ -282,6 +285,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
             /* ⛔ 11-09：管理员入口必须接到 store 的 setAdminOf（原来只接了 IPC，界面点不到）。 */
             onSetAdmin={(memberId) => setAdminOf(active.id, memberId)}
             onSetMemory={(text) => setMemory(active.id, text)}
+            onSetRules={(text) => setRules(active.id, text)}
             onSetWorkspace={(workspace) => setWorkspace(active.id, workspace)}
             onSetFiles={(files) => saveFiles(active.id, files)}
             onAddNote={(note) => addNote(active.id, note)}

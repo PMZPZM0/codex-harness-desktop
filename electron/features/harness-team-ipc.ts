@@ -1170,6 +1170,7 @@ async function runDispatchRounds(
     groupName: group.name,
     cwd: group.workspace || undefined,
     memory: String((group as unknown as Record<string, unknown>).memory ?? ""),
+    rules: String((group as unknown as Record<string, unknown>).rules ?? ""),
     roster,
     group: group as unknown as Record<string, unknown>,
     catalog,
@@ -2343,6 +2344,15 @@ export const harnessTeamFeature = defineFeature<null>({
       const g = findGroup(store.groups, String(groupId ?? ""));
       if (!g) return { ok: false, error: "群不存在" };
       const next = createGroup({ ...g, memory: String(text ?? "") }) as GroupShape;
+      return saveOne(store, next);
+    });
+
+    /* ⛔ 11-14 Phase 3 群规矩：硬约束（必须 / 禁止），每轮注入。与 set-memory 同款：createGroup 归一 + saveOne。 */
+    ipcHost.handle("harness-team:set-rules", (_event, groupId: string, text: string) => {
+      const store = readStore();
+      const g = findGroup(store.groups, String(groupId ?? ""));
+      if (!g) return { ok: false, error: "群不存在" };
+      const next = createGroup({ ...g, rules: String(text ?? "") }) as GroupShape;
       return saveOne(store, next);
     });
 

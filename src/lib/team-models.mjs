@@ -68,6 +68,10 @@ export const GROUP_MAX_PARTNERS = 8;
  *    无限长等于每次派活都烧一遍预算。 */
 export const MAX_GROUP_MEMORY_CHARS = 4000;
 
+/** 群规矩（**硬约束**：必须 / 禁止，区别于「简介」信息与「记忆」事实）字符上限。
+ *  ⛔ 它每轮都会拼进 prompt 的「规矩」段 ⇒ 同样要有上限（防烧预算）。 */
+export const MAX_GROUP_RULES_CHARS = 2000;
+
 /** 一个群最多挂多少个参考文件（派活时把路径注入给伙伴）。 */
 export const MAX_GROUP_FILES = 20;
 
@@ -238,6 +242,8 @@ export function createGroup(input) {
     guard: { ...DEFAULT_GROUP_GUARD, ...(input?.guard ?? {}) },
     /* 群简介：这个群的共享背景（注入每次派活）。⛔ 与人/伙伴的私有记忆分开，别混。 */
     memory: String(input?.memory ?? "").slice(0, MAX_GROUP_MEMORY_CHARS),
+    /* 群规矩：**硬约束**（必须 / 禁止），每轮作为「规矩」段注入。⛔ 与「简介」「记忆」分开，别混。 */
+    rules: String(input?.rules ?? "").slice(0, MAX_GROUP_RULES_CHARS),
     /* 项目地址（群的工作目录）：派活时作为子会话的 cwd —— 决定伙伴在哪个仓库里干活。
        ⛔ 空串 = 跟随应用默认目录（不编一个路径出来）。 */
     workspace: String(input?.workspace ?? "").trim(),

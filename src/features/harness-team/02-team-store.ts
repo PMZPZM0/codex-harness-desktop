@@ -773,6 +773,12 @@ export function useTeamGroups() {
     [apply],
   );
 
+  /** 群规矩（硬约束，每轮注入；返回的 group 直接替换本地那份） */
+  const setRules = useCallback(
+    async (groupId: string, text: string) => apply((await window.codex.harnessTeamSetRules(groupId, text)) as MutationResult),
+    [apply],
+  );
+
   /** 项目地址（群的工作目录）：只落路径，派活时作为 cwd */
   const setWorkspace = useCallback(
     async (groupId: string, workspace: string) =>
@@ -873,7 +879,7 @@ export function useTeamGroups() {
     rowsByGroup, busyByGroup, liveByGroup, dispatchError, goneThreads,
     refresh, create, rename, addPartner, removePartner, mute, setAvatar, setGuard, removeGroup,
     renameMember,
-    setMemory, setWorkspace, addNote, removeNote, saveFiles, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
+    setMemory, setRules, setWorkspace, addNote, removeNote, saveFiles, saveMessageLayout, saveReplyMode, saveSchedules, runSchedule,
     setManagerOf, setAdminOf, loadMessages, loadRunning, appendMessage, dispatch, stopPartner, stopAll, clearMessages, threadsOf, saveMessageForm, saveDialogFlow,
   };
 }

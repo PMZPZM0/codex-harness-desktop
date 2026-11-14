@@ -103,6 +103,8 @@ export type TeamGroup = {
   guard: TeamGuard;
   /** 群简介：这个群的共享背景（每次派活注入给伙伴） */
   memory: string;
+  /** 群规矩：**硬约束**（必须 / 禁止），每轮作为「规矩」段注入（与简介/记忆分开） */
+  rules?: string;
   /** 项目地址（群的工作目录）：派活时作为子会话 cwd —— 决定伙伴在哪个仓库干活 */
   workspace: string;
   /** 群记忆条目：带类型 + 来源的结论/约定（与上面的简介分开，见 `normalizeMemoryNote`） */

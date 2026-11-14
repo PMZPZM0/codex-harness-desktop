@@ -777,8 +777,12 @@ try {
   ok(/leadOfTeam = target\.kind === "team"/.test(delegationSrc)
     && /target\.kind === "expert" && team\.members\.length > 0/.test(delegationSrc),
     "团主理人识别覆盖 team 目标与「主理人本尊」expert 目标（⛔ 后者以前退化成普通成员）");
-  ok(/if \(leadOfTeam\) \{\s*try \{ await syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegationSrc),
-    "⛔ 复用会话在 thread/resume **之前**同步工具面（老会话升级唯一路，见附录 Z）");
+  /* 11-14：REA 装好后专家/子智能体的复用会话也要升级工具面（desiredTools 里多了 rea__gateway），
+     条件由 `leadOfTeam` 扩成 `leadOfTeam || reaSpec`。⛔ 断言不能只认旧字面量就报红，
+     但要补一条真判据钉住「同步必须排在 resume 之前」—— 条件放宽、强度不降。 */
+  ok(/if \(leadOfTeam(?:\s*\|\| reaSpec)?\) \{\s*try \{ await syncToolSurfaceAsync\(codexHome, reusable\.threadId, desiredTools/.test(delegationSrc)
+    && delegationSrc.indexOf("syncToolSurfaceAsync") < delegationSrc.indexOf('server.request("thread/resume"'),
+    "⛔ 复用会话在 thread/resume **之前**同步工具面（老会话升级唯一路，见附录 Z；REA 装好后专家会话同样要升级）");
   ok(/dynamicTools: desiredTools/.test(delegationSrc) && /if \(leadOfTeam && target\.teamId\)/.test(delegationSrc),
     "新建与复用共用同一份工具面，且都登记主理人身份（team_member_invoke 的硬闸认它）");
   ok(/kind: leadOfTeam \? "team" : target\.kind/.test(delegationSrc),
@@ -869,6 +873,49 @@ try {
       && /cur && cur\.day === day \? Number\(cur\.count\) \|\| 0 : 0/.test(budget)
       && /app\.getPath\("userData"\)/.test(budget),
       "预算模块：100/天、按天归零、惰性路径");
+  }
+  /* ⛔⛔ 11-14 Phase 3 群治理：① 活跃度统计（纯函数真跑）② 群规矩（字段 + 每轮注入 + 通道 + 设置）。 */
+  {
+    const { groupActivity } = await import(pathToFileURL(join(ROOT, "src/lib/group-activity.mjs")).href);
+    const now = new Date("2026-11-14T12:00:00").getTime();
+    const rows = [
+      { at: new Date("2026-11-14T09:00:00").getTime(), authorId: "a" },
+      { at: new Date("2026-11-14T10:00:00").getTime(), authorId: "b" },
+      { at: new Date("2026-11-14T11:00:00").getTime(), authorId: "a" },
+      { at: new Date("2026-11-13T23:00:00").getTime(), authorId: "c" }, // 昨天：不计
+      { at: 0, authorId: "a" }, // 坏数据：不计
+    ];
+    const a = groupActivity(rows, now);
+    ok(a.messagesToday === 3 && a.activeToday === 2,
+      `群活跃度真跑：今日 3 条 / 2 人活跃（实得 ${a.messagesToday}/${a.activeToday}）`);
+    ok(groupActivity(null, now).messagesToday === 0 && groupActivity([], now).activeToday === 0,
+      "群活跃度空/坏数据回 0（不炸）");
+    const idx = readFileSync(join(ROOT, "src/features/harness-team/index.tsx"), "utf8");
+    ok(/from "\.\.\/\.\.\/lib\/group-activity\.mjs"/.test(idx)
+      && /groupActivity\(rowsByGroup\[g\.id\] \?\? \[\], Date\.now\(\)\)/.test(idx)
+      && /今日 \$\{a\.activeToday\} 人活跃/.test(idx),
+      "群活跃度接在群列表卡副行（⛔ 不进群头——用户 11-08 已把群头副标题当赘述删掉）");
+    const models = readFileSync(join(ROOT, "src/lib/team-models.mjs"), "utf8");
+    const talk = readFileSync(join(ROOT, "electron/features/group-talk/03-talk.ts"), "utf8");
+    const ipc = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
+    const settings = readFileSync(join(ROOT, "src/features/harness-team/03-team-settings.tsx"), "utf8");
+    const manifest = readFileSync(join(ROOT, "electron/ipc-channels.manifest.json"), "utf8");
+    const preload = readFileSync(join(ROOT, "electron/preload.ts"), "utf8");
+    ok(/rules: String\(input\?\.rules \?\? ""\)\.slice\(0, MAX_GROUP_RULES_CHARS\)/.test(models)
+      && /export const MAX_GROUP_RULES_CHARS = 2000/.test(models),
+      "群规矩字段：createGroup 归一 + 2000 字上限");
+    ok(/rules\?: string;/.test(talk) && /if \(options\.rules\) need\.push\(`【这个群的规矩 · 必须遵守】/.test(talk),
+      "群规矩每轮作为硬约束注入（buildTalkInput 独立一段，与简介/记忆分开）");
+    ok(/rules: String\(\(group as unknown as Record<string, unknown>\)\.rules \?\? ""\)/.test(ipc)
+      && /ipcHost\.handle\("harness-team:set-rules"/.test(ipc)
+      && /createGroup\(\{ \.\.\.g, rules: String\(text \?\? ""\) \}\)/.test(ipc),
+      "IPC：talkOptions 带 rules + set-rules 处理器（createGroup 归一 + saveOne）");
+    ok(/"channel": "harness-team:set-rules"/.test(manifest)
+      && /"harness-team:set-rules"/.test(readFileSync(join(ROOT, "electron/ipc-registry.ts"), "utf8"))
+      && /harnessTeamSetRules: \(groupId: string, text: string\) => __ipc\("harness-team:set-rules"/.test(preload),
+      "通道登记三处齐（manifest + registry + 生成的 preload）");
+    ok(/onSetRules/.test(settings) && /保存群规矩/.test(settings) && /group\.rules/.test(settings),
+      "设置页可编辑群规矩（textarea + 保存按钮）");
   }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");

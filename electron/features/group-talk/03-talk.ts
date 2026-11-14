@@ -25,6 +25,8 @@ export type GroupTalkOptions = {
   groupName: string;
   cwd?: string;
   memory?: string;
+  /** 群规矩：**硬约束**（必须 / 禁止），每轮作为「规矩」段注入（与简介/记忆分开）。 */
+  rules?: string;
   /** 群成员 + 展开的团成员（合成 id），每人都会拿到一条长期会话 */
   roster: TalkMember[];
   /** 原始群对象（parseAgentMentions 判据） */
@@ -210,6 +212,9 @@ export function buildTalkInput(
     need.push(...collaborationProtocolLines(me.teamRole));
   }
   if (options.memory) need.push(`群里的共享背景：${sanitizeForEnvelope(String(options.memory))}`);
+  /* ⛔ 11-14 Phase 3 群规矩：与「简介(共享背景)」「记忆(事实)」分开的一段**硬约束**（必须/禁止）。
+     放在这里（壳后、正文之外）⇒ 模型读得到、群气泡不显示；⛔ 别并进简介里混成一段说明。 */
+  if (options.rules) need.push(`【这个群的规矩 · 必须遵守】\n${sanitizeForEnvelope(String(options.rules))}`);
   /* ⛔ 11-10 用户令「团队要像团队」：每个人得知道向谁汇报 —— 否则卡住只会沉默或乱拉人。 */
   if (me.managerName) {
     need.push(

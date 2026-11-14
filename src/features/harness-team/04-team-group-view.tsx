@@ -103,6 +103,7 @@ type Props = {
   /** 群管理员（11-09）：普通群「没 @ 时由谁接话」；空串 = 取消。 */
   onSetAdmin: (memberId: string) => Promise<{ ok: boolean; error?: string }>;
   onSetMemory: (text: string) => Promise<{ ok: boolean; error?: string }>;
+  onSetRules: (text: string) => Promise<{ ok: boolean; error?: string }>;
   /** 项目地址（群的工作目录） */
   onSetWorkspace: (workspace: string) => Promise<{ ok: boolean; error?: string }>;
   onSetFiles: (files: TeamFile[]) => Promise<{ ok: boolean; error?: string }>;
@@ -243,7 +244,7 @@ function TeamQuoteBlock({ quote, nameOf, faceOfId, mentionCandidates, mentionPar
  *  ⛔ 11-09 加部件时把原来的注释挤开了，守卫【295】会盯「导出函数必须有中文文档注释」，别再挪。 */
 export function TeamGroupView({
   app, group, rows, issues, busy, notice, limit,
-  onAddPartner, onRemovePartner, onMute, onSetManager, onSetAdmin, onSetMemory, onSetWorkspace, onSetFiles,
+  onAddPartner, onRemovePartner, onMute, onSetManager, onSetAdmin, onSetMemory, onSetRules, onSetWorkspace, onSetFiles,
   onDeleteGroup, onClearMessages, onRename, onSend,
   onAddNote, onRemoveNote, onSaveSchedules, onRunSchedule,
   onStopPartner, onStopAll, threadsOfMember, live, replyMode, messageForm, onOpenModelSettings, onOpenThread, goneThreads, onSetAvatar, onRenameMember, onSetMessageLayout, onSetReplyMode, onSetMessageForm, dialogFlow, onSetDialogFlow,
@@ -1571,6 +1572,7 @@ export function TeamGroupView({
             onSetManager={onSetManager}
             onSetAdmin={onSetAdmin}
             onSetMemory={onSetMemory}
+            onSetRules={onSetRules}
             onSetWorkspace={onSetWorkspace}
             onSetFiles={onSetFiles}
             onClearMessages={onClearMessages}
