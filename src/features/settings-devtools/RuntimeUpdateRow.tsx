@@ -28,6 +28,9 @@ export type RuntimeUpdateRowProps = {
   cancelDevRuntime?: (id: string) => unknown;
   /** 更新结束后通知卡片刷新自己的状态（如安装版本号） */
   onUpdated?: () => void;
+  /** 更新过程能否中途取消（默认 true）。pip 型（Laya 等）是一次 `pip install` 子进程，宿主没有
+   *  中断钩子 ⇒ 传 false，界面显示「更新中（不可中断）」而不是一个点了没反应的取消键。 */
+  cancellable?: boolean;
 };
 
 /** 一行「更新」：检查最新版 / 立即更新 / 更新中进度与取消。 */
@@ -42,6 +45,7 @@ export function RuntimeUpdateRow({
   runtimeProgress,
   cancelDevRuntime,
   onUpdated,
+  cancellable = true,
 }: RuntimeUpdateRowProps) {
   const [row, setRow] = useState<UpdateRow | null>(null);
   const [checking, setChecking] = useState(false);
@@ -120,7 +124,7 @@ export function RuntimeUpdateRow({
           {!installed
             ? "安装后可检查更新"
             : updating
-              ? "正在更新（不要关闭应用；需要时点右侧取消）"
+              ? cancellable ? "正在更新（不要关闭应用；需要时点右侧取消）" : "正在更新（不要关闭应用；这一步不能中断，完成后自动刷新）"
               : checking
                 ? "正在检查最新版本…"
                 : error
@@ -151,7 +155,11 @@ export function RuntimeUpdateRow({
         {!installed ? (
           <span className="runtime-badge">安装后可更新</span>
         ) : updating ? (
-          <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.(id)}>取消</button>
+          cancellable ? (
+            <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.(id)}>取消</button>
+          ) : (
+            <span className="runtime-badge">更新中</span>
+          )
         ) : row?.hasUpdate ? (
           <button type="button" className="primary-setting runtime-install" disabled={busy} onClick={() => void update()}>
             <RefreshCw size={13} />更新到 {row.latest}

@@ -7,6 +7,7 @@
  * 状态与 electron/features/laya-service.ts 同源；这里只渲染，不自己判定。
  */
 import { PluginGuide } from "./PluginGuide";
+import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
 import { useCallback, useEffect, useState } from "react";
 import { BrainCircuit, Download, CircleCheck, AlertTriangle, RefreshCw } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
@@ -28,7 +29,13 @@ type Status = {
 };
 
 /** laya 判档服务卡片：安装状态与日志，失败时自动展开日志。 */
-export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
+export function LayaCard({ setNotice, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress }: {
+  setNotice: (text: string) => void;
+  runtimeStage?: Record<string, string>;
+  runtimePercent?: Record<string, number> | null;
+  runtimeSpeed?: Record<string, string> | null;
+  runtimeProgress?: Record<string, string> | null;
+}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState("");
@@ -142,6 +149,20 @@ export function LayaCard({ setNotice }: { setNotice: (text: string) => void }) {
         </details>
       )}
       </div>
+      {/* 11-14 用户实测「这里没有更新功能啊，这个好久没更新了」：卡片只有刷新/卸载。
+          更新走 pip（PyPI 查最新版 + 重跑 layaInstall 的 `pip install -U`）；⛔ 不能中断，
+          传 cancellable={false} 免得给一个点了没反应的取消键。 */}
+      <RuntimeUpdateRow
+        id="laya"
+        installed={Boolean(status?.installed)}
+        hint="从清华 pip 镜像升级 laya[serve]；已下载的模型权重（~700MB）保留，不用重下"
+        cancellable={false}
+        runtimeStage={runtimeStage}
+        runtimePercent={runtimePercent}
+        runtimeSpeed={runtimeSpeed}
+        runtimeProgress={runtimeProgress}
+        onUpdated={refresh}
+      />
       <PluginGuide
         capabilities={[
           { icon: BrainCircuit, title: "自动选思考档位", desc: "思考等级「自动」时，发送前判断该用 低 / 中 / 高 / 极高" },

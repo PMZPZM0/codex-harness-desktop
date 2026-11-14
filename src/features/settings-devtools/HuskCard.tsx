@@ -68,7 +68,12 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
 
   const installing = runtimeInstalling === "husk";
   const tipaInstalling = runtimeInstalling === "husk-tipa";
-  const otherBusy = Boolean(runtimeInstalling) && !installing && !tipaInstalling;
+  /* ⛔ runtimeInstalling 是「全局一次只装一个」的单值 ⇒ 本卡**任一行**在下载时，另一行的按钮必须禁用。
+     旧判据 `Boolean(runtimeInstalling) && !installing && !tipaInstalling` 恰好把本卡两行都放行：
+     点「下载 TIPA」会把 runtimeInstalling 改写成 husk-tipa，IPA 行进度条与「取消」当场消失
+     （IPA 下载仍在后台跑），再点「下载 IPA」还会走主进程的 join 分支干等。
+     本行在下载时渲染的是「取消」而不是安装按钮，所以这里不需要再排除自己。 */
+  const otherBusy = Boolean(runtimeInstalling);
   const uninstalling = runtimeUninstalling === "husk";
   const percent = Math.round(Number(runtimePercent?.["husk"] ?? 0));
   const speed = runtimeSpeed?.["husk"] ?? "";
@@ -79,6 +84,16 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
   const tipaPercent = Math.round(Number(runtimePercent?.["husk-tipa"] ?? 0));
   const tipaStage = runtimeStage?.["husk-tipa"] ?? "";
   const tipaLatest = runtimeProgress?.["husk-tipa"] ?? "";
+
+  /** IPA 更新完成后，如果用户也装了 TIPA，自动补一份同版本 TIPA（两份包版本不许漂）。 */
+  const handleIpaUpdated = async () => {
+    await refresh();
+    const next = await window.codex.huskStatus().catch(() => null);
+    if (next?.installed && next.tipaInstalled && next.tipaVersion !== next.version) {
+      setNotice?.("IPA 已更新，正在同步 TIPA…", "TrollStore 用的 .tipa 保持同版本");
+      installDevRuntime?.("husk-tipa");
+    }
+  };
 
   useEffect(() => {
     const off = window.codex.onRuntimeProgress((payload: { id?: string; done?: boolean }) => {
@@ -111,9 +126,12 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
 
   const uninstall = async () => {
     try {
-      setNotice?.("正在删除 Husk.ipa…");
-      await Promise.resolve(uninstallDevRuntime?.("husk"));
-      setNotice?.("Husk 安装包已删除", "iPhone 上已侧载的 Husk 不受影响");
+      setNotice?.("正在删除 Husk.ipa 与 TIPA…");
+      /* ⛔ uninstallDevRuntime 失败时**返回 false 而不抛**（错误由 app-state 自己弹）
+         ⇒ 不看返回值就会把「删除失败」紧跟着覆盖成「已删除」，用户以为文件没了其实还在。 */
+      const ok = await Promise.resolve(uninstallDevRuntime?.("husk"));
+      if (ok) setNotice?.("Husk 安装包已删除", "iPhone 上已侧载的 Husk 不受影响");
+      else if (uninstallDevRuntime) setNotice?.("删除未完成", "见下方日志；文件可能仍在 tools/husk");
     } catch (err) {
       setNotice?.("删除失败", String((err as { message?: unknown })?.message ?? err));
     }
@@ -173,7 +191,7 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
             runtimeSpeed={runtimeSpeed}
             runtimeProgress={runtimeProgress}
             cancelDevRuntime={cancelDevRuntime}
-            onUpdated={refresh}
+            onUpdated={() => void handleIpaUpdated()}
           />
 
           <div className={`runtime-row ${status?.installed ? "installed" : "missing"}`}>
@@ -192,19 +210,7 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
           <div className={`runtime-row ${status?.tipaInstalled ? "installed" : "missing"} ${tipaInstalling ? "busy" : ""}`}>
             <span className="runtime-icon">{tipaInstalling ? <Spinner /> : status?.tipaInstalled ? <Check size={15} /> : <Download size={15} />}</span>
             <span className="runtime-copy">
-            <div className={`runtime-row ${device?.connected ? "installed" : "missing"}`}>
-            <span className="runtime-icon">{deviceBusy ? <Spinner /> : device?.connected ? <Check size={15} /> : <Smartphone size={15} />}</span>
-            <span className="runtime-copy">
-              <strong>iPhone 连接</strong>
-              <small>{device?.detail ?? "用数据线把 iPhone 连到电脑并点「信任」，然后点「检测连接」；⛔ 检测到也仍需在手机上完成侧载"}</small>
-            </span>
-            <div className="runtime-actions">
-              <span className={`runtime-badge ${device?.connected ? "installed" : ""}`}>{device?.connected ? "已连接" : "未连接"}</span>
-              <button type="button" className="secondary-setting runtime-install" disabled={deviceBusy} onClick={() => void checkDevice()}>{deviceBusy ? <><Spinner /> 检测中</> : "检测连接"}</button>
-            </div>
-          </div>
-
-            <strong>TrollStore 专用（可选）</strong>
+              <strong>TrollStore 专用（可选）</strong>
               <small>{tipaInstalling ? "正在下载 Husk.tipa…" : status?.tipaInstalled ? `已下载 TIPA${status.tipaVersion ? ` ${status.tipaVersion}` : ""}${tipaMb ? `（${tipaMb} MB）` : ""}；TrollStore 用户装这个更方便` : "TrollStore 用户可单独下载 .tipa（与 IPA 同版本）；SideStore / AltStore 用户不需要"}</small>
               {tipaInstalling ? (
                 <span className="runtime-install-state devtools-progress-row">
@@ -221,6 +227,21 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
               ) : (
                 <button type="button" className="secondary-setting runtime-install" disabled={otherBusy} onClick={() => installDevRuntime?.("husk-tipa")}><Download size={13} />下载 TIPA</button>
               )}
+            </div>
+          </div>
+
+          {/* iPhone 连接检测（11-14）：⛔ 必须是独立的 runtime-row ——
+              10-14 版曾把这整块塞进 TIPA 行的 `<span className="runtime-copy">` 里，
+              形成 `span > div` 非法嵌套、4 列 grid 被压进 1fr 列，TIPA 行与连接行糊在一起。 */}
+          <div className={`runtime-row ${device?.connected ? "installed" : "missing"}`}>
+            <span className="runtime-icon">{deviceBusy ? <Spinner /> : device?.connected ? <Check size={15} /> : <Smartphone size={15} />}</span>
+            <span className="runtime-copy">
+              <strong>iPhone 连接</strong>
+              <small>{device?.detail ?? "用数据线把 iPhone 连到电脑并点「信任」，然后点「检测连接」；⛔ 检测到也仍需在手机上完成侧载"}</small>
+            </span>
+            <div className="runtime-actions">
+              <span className={`runtime-badge ${device?.connected ? "installed" : ""}`}>{deviceBusy ? "检测中" : device ? (device.connected ? "已连接" : "未连接") : "未检测"}</span>
+              <button type="button" className="secondary-setting runtime-install" disabled={deviceBusy} onClick={() => void checkDevice()}>{deviceBusy ? <><Spinner /> 检测中</> : "检测连接"}</button>
             </div>
           </div>
 

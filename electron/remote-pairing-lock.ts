@@ -36,19 +36,28 @@ export function isPairingLocked(): boolean {
   return locked;
 }
 
-/** 切换锁定并落盘，通知订阅者作废在途请求；返回落定后的状态。 */
-export function setPairingLocked(next: boolean): boolean {
+/** 切换锁定并落盘，通知订阅者作废在途请求。
+ *  返回 `locked`（落定状态）与 `persisted`（是否真写进磁盘）。
+ *  ⛔ 落盘失败**不能静默**：内存态仍生效（本次会话是锁的），但重启后会回到旧状态 ——
+ *    界面必须能区分「已生效且记住」与「只在本次会话生效」，否则用户以为永久关了。 */
+export function setPairingLocked(next: boolean): { locked: boolean; persisted: boolean } {
   locked = next === true;
+  let persisted = true;
   if (file) {
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
       fs.writeFileSync(file, JSON.stringify({ version: 1, locked }, null, 2), "utf8");
-    } catch { /* 写不了就只保留内存态 */ }
+    } catch {
+      persisted = false;
+    }
+  } else {
+    // 没有数据目录 ⇒ 一定没落盘（本次会话仍然生效）
+    persisted = false;
   }
   for (const listener of listeners) {
     try { listener(locked); } catch { /* 单个订阅者失败不影响其他 */ }
   }
-  return locked;
+  return { locked, persisted };
 }
 
 /** 订阅锁定变化（返回取消函数）；锁定瞬间各服务据此作废在途请求。 */

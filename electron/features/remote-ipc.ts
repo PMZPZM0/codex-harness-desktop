@@ -46,7 +46,12 @@ export const remoteFeature = defineFeature<null>({
     ipcHost.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
     /* 11-14 用户令「配对好手机后禁止其他手机再配对」：锁定后新设备/新 Bot 渠道一律拒绝，
        已批准设备仍可凭设备秘密自动重连；切换瞬间由 lock 模块通知 remote / bot 作废在途请求。 */
-    ipcHost.handle("remote:set-pairing-lock", (_event, locked: boolean) => ({ ok: true, locked: setPairingLocked(Boolean(locked)) }));
+    ipcHost.handle("remote:set-pairing-lock", (_event, locked: boolean) => {
+      /* persisted=false ⇒ 内存态生效但没写进磁盘（重启会回退）。⭐ 必须透给界面，
+         否则用户以为「永久关闭」，重启后却又能被新设备配对（11-14 审查）。 */
+      const result = setPairingLocked(Boolean(locked));
+      return { ok: true, locked: result.locked, persisted: result.persisted };
+    });
     ipcHost.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
     ipcHost.handle("remote:deny", (_event, rid: string) => ({ ok: remote.denyPair(String(rid)) }));
     ipcHost.handle("remote:revoke", (_event, deviceId: string) => ({ ok: remote.revokeDevice(String(deviceId)) }));

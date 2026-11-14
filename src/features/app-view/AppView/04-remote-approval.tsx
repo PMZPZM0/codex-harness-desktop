@@ -153,6 +153,9 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
   /* 「禁止新设备配对」（11-14 用户令）：默认关；开启后新手机 / 新 Bot 聊天一律拒绝，
      已批准设备仍可凭设备秘密自动重连。状态真相源在主进程（remote-pairing-lock.json）。 */
   const [pairLocked, setPairLocked] = useState(false);
+  /* 切换请求在途：主进程每次切换都会「作废在途请求 + 轮换配对码」，
+     连点两下会让两次响应互相覆盖（UI 与主进程状态相反）并白白多轮换一次码。 */
+  const [pairLockBusy, setPairLockBusy] = useState(false);
   useEffect(() => {
     if (!app.mobileRemoteOpen) return;
     let alive = true;
@@ -211,14 +214,19 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
   /* 切换「禁止新设备配对」：先乐观置位，失败回滚并给回执；
      开启时主进程会作废在途请求并轮换配对码（旧码截图立即失效），这里同步刷新。 */
   const togglePairLock = async (next: boolean) => {
+    if (pairLockBusy) return;
+    setPairLockBusy(true);
     setPairLocked(next);
     try {
       const result = await window.codex.remoteSetPairingLock(next);
       const locked = Boolean(result?.locked);
+      /* persisted=false ⇒ 只在本次运行有效（磁盘不可写）。⛔ 不许把「没记住」说成「已关闭」。 */
+      const persisted = (result as { persisted?: boolean })?.persisted !== false;
       setPairLocked(locked);
-      setNotice(locked
+      const base = locked
         ? "已关闭新设备配对：未批准的手机与新的 Bot 聊天都将被拒绝；已批准设备不受影响"
-        : "已恢复新设备配对：配对码已更新，请把新的 6 位数字交给要连接的手机");
+        : "已恢复新设备配对：配对码已更新，请把新的 6 位数字交给要连接的手机";
+      setNotice(persisted ? base : `${base}（写入磁盘失败：只在本次运行有效，重启后会回到原状态）`);
       if (locked) setPairPending([]);
       void loadPairStates();
       const fresh = await window.codex.remotePairState().catch(() => null);
@@ -226,6 +234,8 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
     } catch (error) {
       setPairLocked(!next);
       setNotice(`切换「禁止新设备配对」失败：${String((error as Error)?.message ?? error)}`);
+    } finally {
+      setPairLockBusy(false);
     }
   };
 
@@ -262,7 +272,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                     <Lock size={15} />
                     <strong>禁止新设备配对</strong>
                     <span className="remote-lock-switch">
-                      <ToggleSwitch checked={pairLocked} label="禁止新设备配对" onChange={(next) => void togglePairLock(next)} />
+                      <ToggleSwitch checked={pairLocked} disabled={pairLockBusy} label="禁止新设备配对" onChange={(next) => void togglePairLock(next)} />
                     </span>
                   </div>
                   <small>{pairLocked

@@ -46,8 +46,12 @@ const GROUPS = "src/features/settings-devtools/runtime-groups.tsx";
   ok(/export const OPENMAIC_REPO = "THU-MAIC\/OpenMAIC"/.test(runtime), "仓库地址单一真相源");
   ok(/async function installOpenMaicFromGitHub[\s\S]{0,400}?process\.platform !== "win32"/.test(runtime),
     "安装函数自行拒绝非 Windows");
-  ok(/codeload\.github\.com\/\$\{OPENMAIC_REPO\}\/tar\.gz\/refs\/tags\/v\$\{version\}/.test(runtime),
-    "源码按 tag 从 codeload 下载（走镜像序）");
+  ok(runtime.includes("codeload.github.com/${OPENMAIC_REPO}/tar.gz/${commit}")
+    && runtime.includes("refs/tags/v${version}") && runtime.includes("fetchTagCommit"),
+    "源码按 tag→commit 寻址下载（拿不到 commit 才回退 tag，走镜像序）");
+  const omCard = codeOnly(read("src/features/settings-devtools/OpenMaicCard.tsx"));
+  ok(omCard.includes("wasHealthyRef") && omCard.includes("handleUpdated") && omCard.includes('run("start")'),
+    "更新前服务在跑则更新后自动拉回（⛔ 不把用户晾在「未运行」）");
   ok(/\["-xzf", archive, "-C", staging\]/.test(runtime), "源码用 tar 解压");
   ok(/npmCli, "install", "--prefix", paths\.runtime[\s\S]{0,200}?"--ignore-scripts"/.test(runtime),
     "pnpm / 便携 PostgreSQL 走 npm 安装（--ignore-scripts：二进制已在包里）");

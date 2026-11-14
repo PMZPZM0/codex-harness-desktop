@@ -6,7 +6,7 @@
  * ⛔ 模型 Key 只能用户在 OpenMAIC 网页设置里填（存在本地库、用实例 secret 加密）；本卡不收集 Key。
  * ⛔ 服务只监听 127.0.0.1；卸载只删程序，课程库/数据库在 userData/openmaic-data，可勾选一起删。
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, BookOpenCheck, Brain, Check, Download, ExternalLink, GraduationCap, Layers, Play, Square,
   RefreshCw, SlidersHorizontal, Sparkles, Trash2, Users,
@@ -73,6 +73,8 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
+  const wasHealthyRef = useRef(false);
+  useEffect(() => { wasHealthyRef.current = Boolean(status?.healthy); }, [status?.healthy]);
 
   const uninstall = async () => {
     try {
@@ -109,6 +111,15 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
       void refresh();
     }
   };
+
+  /** 更新完成后：若更新前服务在跑，自动把它拉回来（更新必须停服务/库，不能把用户晾在「未运行」）。 */
+  const handleUpdated = useCallback(async () => {
+    const wasRunning = wasHealthyRef.current;
+    await refresh();
+    if (!wasRunning) return;
+    const next = await window.codex.openmaicStatus().catch(() => null);
+    if (next && !next.healthy) void run("start");
+  }, [refresh]);
 
   const installing = runtimeInstalling === "openmaic";
   const otherBusy = Boolean(runtimeInstalling) && !installing;
@@ -217,7 +228,7 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
             runtimeSpeed={runtimeSpeed}
             runtimeProgress={runtimeProgress}
             cancelDevRuntime={cancelDevRuntime}
-            onUpdated={refresh}
+            onUpdated={() => void handleUpdated()}
           />
 
           <div className={`runtime-row ${status?.installed ? "installed" : "missing"}`}>

@@ -19,6 +19,8 @@ import net from "node:net";
 import { spawn } from "node:child_process";
 import { app } from "electron";
 import { bundledNode, bundledNpmCli, toolchainEnv, writeToolsRoot } from "./toolchain";
+import { mirrorCandidates } from "./gh-mirror";
+import { guardedFetch } from "./net-guard";
 import { downloadThroughMirrors } from "./mirror-download";
 import { emitRuntimeProgress, isCancelRequested, trackRuntimeProc } from "./features/dev-runtimes";
 import type { DevRuntimeId } from "./features/dev-runtimes";
@@ -192,6 +194,41 @@ export async function stopOpenMaicProcesses(): Promise<void> {
   }
 }
 
+/** 解析 tag 指向的 commit SHA（annotated tag 会自动解引用）。
+ *  源码 tarball 没有官方 digest；用**提交寻址**（codeload/…/tar.gz/<sha>）至少保证 tag 不被悄悄移动。 */
+async function fetchTagCommit(version: string): Promise<string> {
+  const refs = [`v${version}`, version];
+  for (const ref of refs) {
+    for (const candidate of mirrorCandidates(`https://api.github.com/repos/${OPENMAIC_REPO}/git/ref/tags/${ref}`)) {
+      try {
+        const res = await guardedFetch(candidate, {
+          headers: { accept: "application/vnd.github+json" },
+          signal: AbortSignal.timeout(15_000),
+        }, { timeoutMs: 15_000 });
+        if (!res.ok) continue;
+        const json = (await res.json()) as { object?: { type?: string; sha?: string } };
+        const sha = String(json?.object?.sha ?? "");
+        if (json?.object?.type === "commit" && /^[0-9a-f]{40}$/.test(sha)) return sha;
+        if (json?.object?.type === "tag" && /^[0-9a-f]{40}$/.test(sha)) {
+          for (const deref of mirrorCandidates(`https://api.github.com/repos/${OPENMAIC_REPO}/git/tags/${sha}`)) {
+            try {
+              const inner = await guardedFetch(deref, {
+                headers: { accept: "application/vnd.github+json" },
+                signal: AbortSignal.timeout(15_000),
+              }, { timeoutMs: 15_000 });
+              if (!inner.ok) continue;
+              const body = (await inner.json()) as { object?: { sha?: string } };
+              const commit = String(body?.object?.sha ?? "");
+              if (/^[0-9a-f]{40}$/.test(commit)) return commit;
+            } catch { /* 下一个镜像 */ }
+          }
+        }
+      } catch { /* 下一个镜像 */ }
+    }
+  }
+  return "";
+}
+
 /** 安装 / 重装 OpenMAIC（version 传 GitHub 稳定 tag 去 v 前缀）。 */
 export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: string): Promise<void> {
   if (process.platform !== "win32") throw new Error("OpenMAIC 本机安装目前仅支持 Windows 10/11 x64");
@@ -213,8 +250,13 @@ export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: strin
   try {
     await fs.rm(staging, { recursive: true, force: true });
     await fs.mkdir(staging, { recursive: true });
+    /* 源码包没有官方 digest ⇒ 按 tag 解析出 commit，用提交寻址下载（tag 被移动也拿不到别的代码）。 */
+    const commit = await fetchTagCommit(version).catch(() => "");
+    emitRuntimeProgress(id, commit ? `源码提交：${commit.slice(0, 12)}` : "提示：未能解析 tag 提交，按 tag 下载");
     await downloadThroughMirrors({
-      url: `https://codeload.github.com/${OPENMAIC_REPO}/tar.gz/refs/tags/v${version}`,
+      url: commit
+        ? `https://codeload.github.com/${OPENMAIC_REPO}/tar.gz/${commit}`
+        : `https://codeload.github.com/${OPENMAIC_REPO}/tar.gz/refs/tags/v${version}`,
       target: archive,
       expectZipMagic: false,
       isCancelled: () => isCancelRequested(id),

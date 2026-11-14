@@ -645,19 +645,29 @@ ${st.hint}`);
                   huskSuccess = Boolean(status);
                 } else if (action === "device") {
                   const device = await window.codex.huskDevice().catch(() => null);
+                  const names = Array.isArray(device?.devices) ? device.devices : [];
                   huskText = device
-                    ? `iPhone 连接：${device.connected ? "已检测到" : "未检测到"}${device.devices.length ? `（${device.devices.join("、")}）` : ""}\n${device.detail}`
+                    ? `iPhone 连接：${device.connected ? "已检测到" : "未检测到"}${names.length ? `（${names.join("、")}）` : ""}\n${device.detail}`
                     : "检测失败（主进程没接上）。";
                   huskSuccess = Boolean(device);
                 } else if (action === "download") {
                   const kind = args.kind === "tipa" ? "tipa" : "ipa";
                   const id = kind === "tipa" ? "husk-tipa" : "husk";
                   try {
-                    const result = await window.codex.installRuntime(id);
-                    huskSuccess = Boolean(result?.ok);
-                    huskText = result?.ok
-                      ? `Husk.${kind} 已下载${status?.version ? `（v${status.version}）` : ""}，SHA256 校验通过。下一步必须在 iPhone 上用 ${kind === "tipa" ? "TrollStore" : "SideStore/AltStore"} 侧载。`
-                      : `下载未完成：${(result as { error?: string })?.error ?? "未知原因"}`;
+                    /* ⛔ 走 bag.installDevRuntime（**不是**直调 window.codex.installRuntime）：
+                       ① 它会置 runtimeInstalling ⇒ 卡片出现进度条与「取消」按钮；
+                       ② 取消时主进程回 `{ok:true, cancelled:true}`，这里按返回值判失败 ——
+                          不许把「用户取消」说成「已下载 + SHA256 校验通过」（11-14 审查：假成功）。 */
+                    const ok = await bag.installDevRuntime(id);
+                    /* ⛔ 下载前拿的 status 是**旧快照**（首次安装时 version 为空）⇒ 装完重读一次。 */
+                    const fresh = ok ? await window.codex.huskStatus().catch(() => null) : null;
+                    huskSuccess = Boolean(ok && fresh && (kind === "tipa" ? fresh.tipaInstalled : fresh.installed));
+                    const version = kind === "tipa" ? fresh?.tipaVersion : fresh?.version;
+                    huskText = !ok
+                      ? "下载未完成或已取消：Husk 安装包没有就绪。需要时让用户在「开发工具 → Husk」卡上重试。"
+                      : huskSuccess
+                        ? `Husk.${kind} 已下载${version ? `（v${version}）` : ""}，SHA256 校验通过。下一步必须在 iPhone 上用 ${kind === "tipa" ? "TrollStore" : "SideStore/AltStore"} 侧载。`
+                        : `下载流程已结束，但读不到 ${kind} 安装包 —— 请让用户在 Husk 卡上重试。`;
                   } catch (err) {
                     huskText = `下载失败：${String((err as { message?: unknown })?.message ?? err)}`;
                   }
@@ -672,9 +682,17 @@ ${st.hint}`);
                   ].join("\n");
                   huskSuccess = true;
                 } else if (action === "reveal") {
-                  const result = await window.codex.huskReveal().catch(() => null);
-                  huskText = result?.ok ? `已在文件管理器定位安装包（${result.path}）` : "打不开文件夹：安装包可能还没下载。";
-                  huskSuccess = Boolean(result?.ok);
+                  /* ⛔ husk:reveal 恒回 `{ok:true}`（主进程找不到文件时只是静默 return）⇒
+                     必须先问「有没有安装包」，否则会对模型宣称「已定位」而什么都没打开。 */
+                  const downloaded = Boolean(status?.installed || status?.tipaInstalled);
+                  if (!downloaded) {
+                    huskText = "还没下载安装包：先在「开发工具 → Husk」卡点「下载 IPA」或「下载 TIPA」，再让我定位。";
+                    huskSuccess = false;
+                  } else {
+                    const result = await window.codex.huskReveal().catch(() => null);
+                    huskText = result?.ok ? `已在文件管理器定位安装包（${result.path}）` : "打不开文件夹（主进程没接上）。";
+                    huskSuccess = Boolean(result?.ok);
+                  }
                 } else {
                   huskText = `未知 action：${action}（可用：status / device / download / guide / reveal）`;
                 }

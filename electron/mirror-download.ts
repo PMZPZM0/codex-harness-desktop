@@ -167,7 +167,10 @@ export async function downloadThroughMirrors(options: {
               else controller.signal.addEventListener("abort", onAbort, { once: true });
             });
             try {
-              await Promise.race([once(file, "drain"), aborted]);
+              /* ⛔ `once(file,"drain")` 在 abort 胜出后仍挂着：文件流若随后 close/error，
+                 那个没人 await 的 promise 会变成 unhandled rejection。这里把它收敛成 void。 */
+              const drained = once(file, "drain").then(() => undefined, () => undefined);
+              await Promise.race([drained, aborted]);
             } finally {
               if (onAbort) controller.signal.removeEventListener("abort", onAbort);
             }

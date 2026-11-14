@@ -19,7 +19,9 @@ import path from "node:path";
 const PAIR_SIGN_SALT = ":pair-response:v1";
 const cache = new Map<string, string>();
 
-/** 从 `<userData>/relay-device.json` 的隧道令牌派生签名键（hex）；文件缺失/损坏返回空串（LAN 模式不签名）。 */
+/** 从 `<userData>/relay-device.json` 的隧道令牌派生签名键（hex）；文件缺失/损坏返回空串（LAN 模式不签名）。
+ *  ⛔ 只有**非空**结果才进缓存：首次调用若发生在隧道写盘之前，缓存空串会让本进程永久不签名
+ *    （配对应答全被网关当假隧道丢弃，且只能重启恢复）。 */
 export function pairSignKey(userData: string): string {
   if (!userData) return "";
   const file = path.join(userData, "relay-device.json");
@@ -31,7 +33,7 @@ export function pairSignKey(userData: string): string {
     const token = String(raw?.token ?? "");
     if (token.length >= 32) key = crypto.createHash("sha256").update(token + PAIR_SIGN_SALT).digest("hex");
   } catch { /* 没有隧道身份：不签名 */ }
-  cache.set(file, key);
+  if (key) cache.set(file, key);
   return key;
 }
 

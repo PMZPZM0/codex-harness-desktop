@@ -25,9 +25,9 @@ import { once } from "node:events";
 import { createHash } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { app, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, bundledPython, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
@@ -928,10 +928,62 @@ const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?:
   "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },
 };
 
+/** pip 型可更新工具（PyPI）：id → PyPI 包名 + 显示名。
+ *
+ *  ⛔ 为什么要单开一张表：`UPDATEABLE_TOOLS` 是 npm 包（查 dist-tags、装 `<pkg>@<ver>`），
+ *    `GITHUB_UPDATEABLE` 是 release 直下（查 tag、下资产）；Laya / 手机控制 / 文档转换三个是
+ *    pip 包，两条链都不认 ⇒ 卡片上根本没有「检查更新」（11-14 用户实测「这里没有更新功能啊」）。
+ *  ⛔⛔ 故意**不进** `updateableToolIds()`：那张表被后台「自动更新」消费，而 laya 带 PyTorch
+ *    依赖（几百 MB 到上千 MB），不能无人值守重装。这里只服务卡片里的手动检查/升级。
+ *  ⛔ 升级复用各自既有安装器（都已带 `-U`/`--upgrade` 语义 + 多镜像回落 + 装后复核），
+ *    不在这里另写一条 pip 命令。
+ */
+const PIP_UPDATEABLE: Record<string, { pkg: string; label: string }> = {
+  laya: { pkg: "laya", label: "Laya 智能判断" },
+};
+
+/** 读 pip 包的已装版本（`python -m pip show`）；没装 / 读不到返回空串（界面据此判「未装」）。 */
+function pipInstalledVersion(pkg: string): string {
+  const bin = bundledPython();
+  if (!bin) return "";
+  try {
+    const out = spawnSync(bin, ["-m", "pip", "show", pkg], { encoding: "utf8", timeout: 20_000, windowsHide: true });
+    return /^Version:\s*(\S+)/m.exec(String(out.stdout ?? ""))?.[1] ?? "";
+  } catch {
+    return "";
+  }
+}
+
+/** 查 PyPI 最新版：官方 JSON + 清华镜像 JSON 都试，取第一个有效值。
+ *  ⛔ 镜像的 `/pypi/<name>/json` 与官方同构；两边都失败就**抛错**，
+ *    让界面显示「检查更新失败：…」而不是假装「已是最新」（项目硬约定：不许假成功）。 */
+async function fetchPypiLatest(pkg: string): Promise<string> {
+  const endpoints = [
+    `https://pypi.org/pypi/${encodeURIComponent(pkg)}/json`,
+    `https://pypi.tuna.tsinghua.edu.cn/pypi/${encodeURIComponent(pkg)}/json`,
+  ];
+  const reasons: string[] = [];
+  for (const url of endpoints) {
+    try {
+      const res = await guardedFetch(url, { headers: { accept: "application/json" } }, { timeoutMs: 15_000 });
+      if (!res.ok) { reasons.push(`${new URL(url).host} → HTTP ${res.status}`); continue; }
+      const json = (await res.json()) as { info?: { version?: unknown } };
+      const version = String(json?.info?.version ?? "").trim();
+      if (version) return version;
+      reasons.push(`${new URL(url).host} → 没有 info.version`);
+    } catch (error) {
+      reasons.push(`${new URL(url).host} → ${(error as Error)?.message ?? String(error)}`);
+    }
+  }
+  throw new Error(`查不到 PyPI 最新版（${reasons.join("；")}）`);
+}
+
 /** 单个可更新工具的包名 / 显示名（**唯一真相源**）：自动更新板块从这里取，⛔ 不许另抄一份包名。 */
 export function updateableToolMeta(id: string): { pkg: string; label: string } | null {
   const tool = UPDATEABLE_TOOLS[id];
   if (tool) return { pkg: tool.pkg, label: tool.label };
+  const pip = PIP_UPDATEABLE[id];
+  if (pip) return { pkg: `pypi:${pip.pkg}`, label: pip.label };
   const gh = GITHUB_UPDATEABLE[id];
   if (gh) return { pkg: `github:${gh.repo}`, label: gh.label };
   return null;
@@ -1034,6 +1086,18 @@ async function fetchRegistryLatest(
  *    （症状：界面说「已是最新」、后台却在偷偷装，或反之）。界面按钮只是这两个函数的薄包装。
  */
 export async function checkRuntimeUpdateRow(id: string): Promise<RuntimeUpdateRow> {
+  /* pip 型（11-14）：查 PyPI 最新版与 `pip show` 已装版本。⛔ 必须排在 npm 分支之前 ——
+     否则 `!UPDATEABLE_TOOLS[id]` 会直接抛「该工具不支持在线更新」，Laya 卡片永远没有更新入口。 */
+  const pip = PIP_UPDATEABLE[id];
+  if (pip) {
+    const current = pipInstalledVersion(pip.pkg);
+    try {
+      const latest = await fetchPypiLatest(pip.pkg);
+      return { id, name: pip.label, pkg: `pypi:${pip.pkg}`, current, latest, registry: "pypi", hasUpdate: !current || compareVersions(latest, current) > 0, error: "" };
+    } catch (error) {
+      return { id, name: pip.label, pkg: `pypi:${pip.pkg}`, current, latest: "", registry: "", hasUpdate: false, error: (error as Error)?.message ?? String(error) };
+    }
+  }
   const gh = GITHUB_UPDATEABLE[id];
   if (gh) {
     // GitHub 直下型（Filee）：查 releases/latest tag，与盘上 version.txt 比
@@ -1070,6 +1134,42 @@ export async function checkRuntimeUpdateRow(id: string): Promise<RuntimeUpdateRo
 export async function performRuntimeUpdate(
   id: string,
 ): Promise<{ ok: boolean; from: string; to: string; cancelled?: boolean; joined?: boolean }> {
+  /* pip 型（11-14）：升级 = 重跑该工具**既有**的安装器（已带 `-U`、多镜像回落、装后复核）。
+     ⛔ 不复用 `runNpmInstall`：那是 npm 专用（写 npm-global、改 shim）。
+     ⛔ 装完必须再读一次 `pip show`：读不到就是没装成，不许只凭安装器 exit 0 报成功。 */
+  const pip = PIP_UPDATEABLE[id];
+  if (pip) {
+    const inFlight = runtimeInstalls.get(id);
+    if (inFlight) { await inFlight; return { ok: true, joined: true, from: "", to: pipInstalledVersion(pip.pkg) }; }
+    const from = pipInstalledVersion(pip.pkg);
+    const task = (async () => {
+      emitRuntimeProgress(id, `@@STAGE 更新 ${pip.label}`);
+      emitRuntimeProgress(id, `正在更新 ${pip.pkg}（当前 ${from || "未装"}）…`);
+      if (id === "laya") {
+        const result = await layaInstall();
+        if (!result.ok) throw new Error(result.log.slice(-600) || "Laya 更新失败");
+      } else {
+        /* ⛔ 只登记表不补分派 = 一定会走错安装器（phone-harness 有专用链，markitdown 走通用脚本）。
+           宁可显式报错，也不许静默用 npm 安装器或别的工具链去「升级」一个 pip 包。 */
+        throw new Error(`pip 更新缺少安装器分派：${id}（在 performRuntimeUpdate 的 pip 分支补一条）`);
+      }
+      await restartServerWhenIdle(id);
+    })();
+    runtimeInstalls.set(id, task);
+    try {
+      await task;
+      const to = pipInstalledVersion(pip.pkg);
+      if (!to) throw new Error(`${pip.label} 更新流程已结束，但读不到已装版本 —— 请重试或重新安装`);
+      sendToWindow("runtime:progress", { id, message: `已更新到 ${to}`, percent: 100, speed: "", done: true });
+      return { ok: true, from, to };
+    } catch (error) {
+      if (isCancelRequested(id)) return { ok: true, cancelled: true, from, to: "" };
+      throw error;
+    } finally {
+      runtimeInstalls.delete(id);
+      clearCancelRequest(id);
+    }
+  }
   const gh = GITHUB_UPDATEABLE[id];
   if (gh) {
     // GitHub 直下型（Filee）：升级 = 重跑同一条安装函数（最新 tag），装完复核 version.txt

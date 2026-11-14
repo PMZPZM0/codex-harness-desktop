@@ -105,8 +105,10 @@ const EXPECTED = ["husk:status", "husk:guide", "husk:reveal", "husk:device"];
   const card = codeOnly(read(CARD));
   ok(card.includes('installDevRuntime?.("husk-tipa")') && card.includes("下载 TIPA"), "卡片有「下载 TIPA」动作");
   ok(/tipaInstalling/.test(card) && /husk-tipa/.test(card), "TIPA 下载有自己的进度/取消接线");
-  ok(read("electron/mirror-download.ts").includes('Promise.race([once(file, "drain"), aborted])'),
-    "镜像停滞 abort 时不再卡在 drain（11-14 实测死锁）");
+  ok(card.includes("handleIpaUpdated") && card.includes("tipaVersion !== next.version") && card.includes('installDevRuntime?.("husk-tipa")'),
+    "IPA 更新后自动同步 TIPA（两份包版本不漂）");
+  ok(/const drained = once\(file, "drain"\)[\s\S]{0,120}?Promise\.race\(\[drained, aborted\]\)/.test(read("electron/mirror-download.ts")),
+    "镜像停滞 abort 时不再卡在 drain（11-14 实测死锁）；drain 的 promise 已收敛，不留 unhandled rejection");
 }
 
 /* ── ④ 配套工具 / 技能 / 指令 ─────────────────────────────────── */
@@ -119,7 +121,13 @@ const EXPECTED = ["husk:status", "husk:guide", "husk:reveal", "husk:device"];
   for (const method of ["huskStatus", "huskDevice", "huskReveal"]) {
     ok(req.includes('window.codex.' + method + '('), "分发调用 window.codex." + method);
   }
-  ok(req.includes('window.codex.installRuntime(id)') && req.includes('husk-tipa'), "download 动作走 runtime:install（IPA/TIPA）");
+  /* ⛔ 11-14 审查：download 必须走 bag.installDevRuntime —— 只有它会置 runtimeInstalling，
+     卡片才出现进度条与「取消」；而且它返回 boolean（取消 ⇒ false），不会把「用户取消」说成成功。
+     ⛔ 同时钉住「不许退回直调 window.codex.installRuntime」：那条路既不显示进度也不判 cancelled。 */
+  ok(req.includes("await bag.installDevRuntime(") && !req.includes("window.codex.installRuntime(id)"),
+    "download 动作走 bag.installDevRuntime（卡片有进度/取消，取消不会被报成成功）");
+  ok(/const ok = await bag\.installDevRuntime\(id\);[\s\S]{0,400}?huskSuccess = Boolean\(ok && fresh/.test(req),
+    "取消/失败按返回值判失败（⛔ 不许只看 result.ok 把取消说成「已下载」）");
   const domain = codeOnly(read(DOMAIN));
   ok(domain.includes("detectIphone") && domain.includes("Get-PnpDevice") && domain.includes("system_profiler"),
     "husk:device 真检测 USB（Windows PnP / mac system_profiler），不做安装");

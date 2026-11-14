@@ -296,7 +296,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
       {openCard === "laya" && activeOtherCard && (
         <SettingsDialog title={activeOtherCard.title} icon={<Brain size={15} />} hint="思考等级「自动」档的本地决策端" onClose={() => setOpenCard(null)}>
           {/* Laya 智能判断（10-01）：思考等级「自动」档的本地决策端（Python laya-serve）。 */}
-          <LayaCard setNotice={setNotice} />
+          <LayaCard setNotice={setNotice} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} />
         </SettingsDialog>
       )}
       {openCard === "feishu-cli" && activeOtherCard && (
