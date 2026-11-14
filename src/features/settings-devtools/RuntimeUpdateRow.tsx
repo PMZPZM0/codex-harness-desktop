@@ -89,10 +89,16 @@ export function RuntimeUpdateRow({
     setUpdating(true);
     setError("");
     try {
-      await window.codex.updateRuntime(id);
+      const result = await window.codex.updateRuntime(id);
+      /* ⛔ 取消 / joined 不一定会再发 done 事件：不能只靠 onRuntimeProgress 收尾，
+         否则「取消」后这一行会永远停在「正在更新」。 */
+      if ((result as { cancelled?: boolean })?.cancelled) setError("已取消更新");
     } catch (err) {
       setError(String((err as { message?: unknown })?.message ?? err));
+    } finally {
       setUpdating(false);
+      void check();
+      onUpdated?.();
     }
   };
 

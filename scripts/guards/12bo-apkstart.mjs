@@ -47,8 +47,8 @@ const GROUPS = "src/features/settings-devtools/runtime-groups.tsx";
     "资产名与上游 release 一致（ApkStart-v<ver>-win64-portable.zip）");
   ok(/async function installApkStartFromGitHub[\s\S]{0,400}?process\.platform !== "win32"/.test(runtime),
     "安装函数自行拒绝非 Windows（直调 runtime:install 也挡得住）");
-  ok(/fetchGitHubAssetDigest\(APKSTART_REPO, asset\)[\s\S]{0,400}?expectedSha !== actualSha/.test(runtime),
-    "下载后按 release digest 做 SHA256 校验");
+  ok(/fetchGitHubAssetDigest\(APKSTART_REPO, asset, version\)[\s\S]{0,400}?expectedSha !== actualSha/.test(runtime),
+    "下载后按目标版本的 release digest 做 SHA256 校验");
   ok(/writeFile\(apkstartVersionFile\(\)/.test(runtime),
     "装完落 version.txt（更新链读它判已装版本）");
   ok(/id === "apkstart"[\s\S]{0,300}?installApkStartFromGitHub/.test(runtime),
@@ -131,6 +131,12 @@ const EXPECTED = [
     "注入条件与运行时判定同源（runtimeInstalled）");
 }
 
+  const runtimeSrc = codeOnly(read(RUNTIME));
+  ok(runtimeSrc.includes("fetchGitHubAssetDigest(APKSTART_REPO, asset, version)"),
+    "SHA256 按目标版本查（⛔ 不是永远查 latest，否则装旧版会误报校验失败）");
+  const domainSrc = codeOnly(read(DOMAIN));
+  ok(domainSrc.includes("ready ? findDevice()") && domainSrc.includes("port <= 5565"),
+    "运行时未就绪时不扫端口；扫描窗口收到 4 秒/6 个端口（打开卡片不长时间转圈）");
 console.log("");
 console.log(fails === 0
   ? `【apkstart】通过（${checks} 条）`

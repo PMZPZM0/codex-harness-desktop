@@ -49,21 +49,27 @@ export function huskTipaInstalledVersion(): string {
   try { return readFileSync(huskPaths().tipaVersionFile, "utf8").trim(); } catch { return ""; }
 }
 
-/** GitHub release 资产的官方 sha256（新版 API 带 digest；拿不到就返回空，不假装校验过）。 */
-async function fetchAssetDigest(assetName: string): Promise<string> {
-  for (const candidate of mirrorCandidates(`https://api.github.com/repos/${HUSK_REPO}/releases/latest`)) {
-    try {
-      const res = await guardedFetch(candidate, {
-        signal: AbortSignal.timeout(20_000),
-        headers: { accept: "application/vnd.github+json" },
-      }, { timeoutMs: 20_000 });
-      if (!res.ok) continue;
-      const json = (await res.json()) as { assets?: Array<{ name?: unknown; digest?: unknown }> };
-      const row = (json.assets ?? []).find((asset) => String(asset.name ?? "") === assetName);
-      const digest = String(row?.digest ?? "").toLowerCase();
-      if (digest.startsWith("sha256:")) return digest.slice(7);
-      if (/^[0-9a-f]{64}$/.test(digest)) return digest;
-    } catch { /* 下一个镜像 */ }
+/** GitHub release 资产的官方 sha256（按目标版本查 tags；tag 可能是 `3.4` 或 `v3.4`，两种都试）。 */
+async function fetchAssetDigest(assetName: string, version: string): Promise<string> {
+  const endpoints = [
+    `https://api.github.com/repos/${HUSK_REPO}/releases/tags/${version}`,
+    `https://api.github.com/repos/${HUSK_REPO}/releases/tags/v${version}`,
+  ];
+  for (const endpoint of endpoints) {
+    for (const candidate of mirrorCandidates(endpoint)) {
+      try {
+        const res = await guardedFetch(candidate, {
+          signal: AbortSignal.timeout(20_000),
+          headers: { accept: "application/vnd.github+json" },
+        }, { timeoutMs: 20_000 });
+        if (!res.ok) continue;
+        const json = (await res.json()) as { assets?: Array<{ name?: unknown; digest?: unknown }> };
+        const row = (json.assets ?? []).find((asset) => String(asset.name ?? "") === assetName);
+        const digest = String(row?.digest ?? "").toLowerCase();
+        if (digest.startsWith("sha256:")) return digest.slice(7);
+        if (/^[0-9a-f]{64}$/.test(digest)) return digest;
+      } catch { /* 下一个镜像 */ }
+    }
   }
   return "";
 }
@@ -97,7 +103,7 @@ export async function installHuskFromGitHub(id: DevRuntimeId, version: string, k
     })).sha256;
     if (isCancelRequested(id)) throw new Error("已取消");
     emitRuntimeProgress(id, "校验 SHA256…");
-    const expectedSha = await fetchAssetDigest(asset);
+    const expectedSha = await fetchAssetDigest(asset, version);
     if (expectedSha && actualSha && expectedSha !== actualSha) {
       throw new Error(`${asset} SHA256 校验失败（下载可能被截断）：期望 ${expectedSha.slice(0, 12)}…，实际 ${actualSha.slice(0, 12)}… —— 请重试`);
     }

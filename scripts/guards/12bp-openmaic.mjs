@@ -160,6 +160,9 @@ const EXPECTED = ["openmaic:status", "openmaic:start", "openmaic:stop", "openmai
   ok(/stopOpenMaicProcesses\(\)/.test(codeOnly(read(INSTALL))), "更新/重装前先停服务与 PG（否则目录被锁改名失败）");
 }
 
+  const updateUi = codeOnly(read("src/features/settings-devtools/RuntimeUpdateRow.tsx"));
+  ok(updateUi.includes("cancelled") && updateUi.includes("finally") && updateUi.includes("void check();"),
+    "更新行在取消/joined 后也会收尾（⛔ 不能只靠 done 事件，否则永远停在「正在更新」）");
 console.log("");
 console.log(fails === 0
   ? `【openmaic】通过（${checks} 条）`

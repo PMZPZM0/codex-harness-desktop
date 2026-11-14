@@ -200,7 +200,7 @@ async function findDevice(): Promise<EmulatorDevice | null> {
     ?? "";
   if (!serial) {
     const started = Date.now();
-    for (let port = 5555; port <= 5579 && Date.now() - started < 12_000; port += 2) {
+    for (let port = 5555; port <= 5565 && Date.now() - started < 4_000; port += 2) {
       if (!(await portOpen("127.0.0.1", port, 200))) continue;
       await runAdb(["connect", `127.0.0.1:${port}`], 15_000);
     }
@@ -246,13 +246,19 @@ let statusCache: { at: number; value: ApkStartStatus } | null = null;
 async function statusOf(): Promise<ApkStartStatus> {
   if (statusCache && Date.now() - statusCache.at < 3_000) return statusCache.value;
   const exe = exePath();
-  const [running, device] = await Promise.all([isRunning(), exe ? findDevice() : Promise.resolve(null)]);
+  const ready = runtimeReady();
+  /* ⛔ 运行时没备齐时不扫设备（adb 都不一定有）：否则打开设置页会为「找模拟器」逐个端口 connect，
+     最长能卡十几秒；用户看到的是卡片一直转圈。 */
+  const [running, device] = await Promise.all([
+    isRunning(),
+    exe && ready ? findDevice() : Promise.resolve(null),
+  ]);
   const value: ApkStartStatus = {
     installed: Boolean(exe),
     exePath: exe,
     version: installedVersion(),
     running,
-    runtimeReady: runtimeReady(),
+    runtimeReady: ready,
     runtimeRoot: runtimeRoot(),
     adbPath: adbBinary() === "adb" ? "" : adbBinary(),
     device,

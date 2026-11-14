@@ -632,19 +632,27 @@ function apkstartInstalledVersion(): string {
 }
 
 /** GitHub release 资产的官方 sha256（新版 API 带 digest；拿不到就返回空，不假装校验过）。 */
-async function fetchGitHubAssetDigest(repo: string, assetName: string): Promise<string> {
-  for (const candidate of mirrorCandidates(`https://api.github.com/repos/${repo}/releases/latest`)) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20_000);
-    try {
-      const res = await guardedFetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } }, { timeoutMs: 20_000 });
-      if (!res.ok) continue;
-      const json = (await res.json()) as { assets?: Array<{ name?: unknown; digest?: unknown }> };
-      const row = (json.assets ?? []).find((asset) => String(asset.name ?? "") === assetName);
-      const digest = String(row?.digest ?? "").toLowerCase();
-      if (digest.startsWith("sha256:")) return digest.slice(7);
-      if (/^[0-9a-f]{64}$/.test(digest)) return digest;
-    } catch { /* 下一个镜像 */ } finally { clearTimeout(timer); }
+/** GitHub release 资产的官方 sha256（新版 API 带 digest；拿不到就返回空，不假装校验过）。
+ *  ⛔ 必须按**目标版本**查（tags/{version}），不能永远查 latest：装 pin/旧版时 latest 的 digest
+ *     与下载包不是同一个，会误报「SHA256 校验失败」。tag 可能是 `v1.2.3` 或 `1.2.3`，两种都试。 */
+async function fetchGitHubAssetDigest(repo: string, assetName: string, version?: string): Promise<string> {
+  const endpoints = version
+    ? [`https://api.github.com/repos/${repo}/releases/tags/v${version}`, `https://api.github.com/repos/${repo}/releases/tags/${version}`]
+    : [`https://api.github.com/repos/${repo}/releases/latest`];
+  for (const endpoint of endpoints) {
+    for (const candidate of mirrorCandidates(endpoint)) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20_000);
+      try {
+        const res = await guardedFetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } }, { timeoutMs: 20_000 });
+        if (!res.ok) continue;
+        const json = (await res.json()) as { assets?: Array<{ name?: unknown; digest?: unknown }> };
+        const row = (json.assets ?? []).find((asset) => String(asset.name ?? "") === assetName);
+        const digest = String(row?.digest ?? "").toLowerCase();
+        if (digest.startsWith("sha256:")) return digest.slice(7);
+        if (/^[0-9a-f]{64}$/.test(digest)) return digest;
+      } catch { /* 下一个镜像 */ } finally { clearTimeout(timer); }
+    }
   }
   return "";
 }
@@ -689,7 +697,7 @@ async function installApkStartFromGitHub(id: DevRuntimeId, version: string): Pro
   })).sha256;
   if (isCancelRequested(id)) { await fs.rm(archive, { force: true }).catch(() => undefined); throw new Error("已取消"); }
   emitRuntimeProgress(id, "校验 SHA256…");
-  const expectedSha = await fetchGitHubAssetDigest(APKSTART_REPO, asset);
+  const expectedSha = await fetchGitHubAssetDigest(APKSTART_REPO, asset, version);
   if (expectedSha && actualSha && expectedSha !== actualSha) {
     await fs.rm(archive, { force: true });
     throw new Error(`ApkStart 安装包 SHA256 校验失败（下载可能被截断）：期望 ${expectedSha.slice(0, 12)}…，实际 ${actualSha.slice(0, 12)}… —— 请重试`);

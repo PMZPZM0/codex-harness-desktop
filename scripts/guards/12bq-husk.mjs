@@ -42,8 +42,8 @@ const GROUPS = "src/features/settings-devtools/runtime-groups.tsx";
   ok(install.includes('"Husk.ipa"') && install.includes('"Husk.tipa"'), "官方资产名 Husk.ipa / Husk.tipa");
   ok(/releases\/download\/\$\{version\}\/\$\{asset\}/.test(install), "按 release tag 下载");
   ok(/expectZipMagic: true/.test(install), "IPA 是 zip，做 zip 魔数校验");
-  ok(/fetchAssetDigest\(asset\)/.test(install) && /expectedSha !== actualSha/.test(install),
-    "按 release digest 做 SHA256 校验");
+  ok(/fetchAssetDigest\(asset, version\)/.test(install) && /expectedSha !== actualSha/.test(install),
+    "按目标版本的 release digest 做 SHA256 校验");
   ok(install.includes("paths.versionFile") && install.includes("paths.tipaVersionFile"), "装完落 version.txt / version-tipa.txt（更新链读它）");
   ok(install.includes(".tmp") && install.includes("rename(next, finalPath)"),
     "安装包先写临时文件再原子替换（不在半截上覆盖）");
@@ -133,8 +133,8 @@ const EXPECTED = ["husk:status", "husk:guide", "husk:reveal", "husk:device"];
   const instructions = codeOnly(read("electron/developer-instructions.ts"));
   ok(instructions.includes("if (input.huskInstalled) text += HUSK_INSTRUCTIONS"), "开发者指令条件注入");
   const caller = codeOnly(read("electron/main/12-skill-discipline.ts"));
-  ok(caller.includes('huskInstalled: Boolean(devRuntimeSpecs.husk && runtimeInstalled("husk", devRuntimeSpecs.husk))'),
-    "注入条件与运行时判定同源");
+  ok(caller.includes('huskInstalled: Boolean(devRuntimeSpecs.husk && (runtimeInstalled("husk", devRuntimeSpecs.husk) || runtimeInstalled("husk-tipa", devRuntimeSpecs["husk-tipa"])))'),
+    "注入条件与运行时判定同源（IPA 或 TIPA 有其一）");
 }
 
 /* ── ④ GPL 边界 ──────────────────────────────────────────────── */
