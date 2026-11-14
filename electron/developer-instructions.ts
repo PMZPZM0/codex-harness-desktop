@@ -224,6 +224,15 @@ const FILEE_INSTRUCTIONS =
   "Common pairs: heic→jpg, png/webp/avif↔, psd→png, pdf↔docx/pptx/txt/png, docx/xlsx/pptx↔pdf, epub/mobi/azw3↔pdf/docx, mp4/mkv/mov→mp3/webm/gif (needs local ffmpeg), zip/7z/rar↔extract, dwg/dxf→pdf/svg, json/yaml/toml/xml/csv↔, glb/stl/obj↔. " +
   "Lossy image quality: quality 1-100. Batch up to 64 inputs; directories need recursive=true. If the tool is absent, Filee is not installed — tell the user to install it in 设置 → 开发工具 → Filee 文件转换, and never retry in a loop.";
 
+/** ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT，仅 Windows）。只在装了 ApkStart 时注入。
+ *  ⛔ 条件式（同 FILEE / BROWSER 纪律）：没装的机器上工具执行端只回安装指引，写了用法也是误导。
+ *  ⛔ 必须点明「首启 1GB 运行时 + install 返回 pending 不等于成功」—— 这是最容易让模型误判成功的点。 */
+const APKSTART_INSTRUCTIONS =
+  "\n\nANDROID EMULATOR (only if `apkstart` is in your tool list): ApkStart runs Android apps in a local emulator on Windows. " +
+  "Flow: action=status first (installed / runtimeReady / device / installed apps) → action=install with the LOCAL .apk path (launch=true starts it right away) → action=screenshot (returns a PNG path you can show the user) → action=logcat (filter by keyword or package; FATAL EXCEPTION / ANR lines are kept) → action=adb for taps/typing/permissions (args array, e.g. [\"shell\",\"input\",\"tap\",\"540\",\"960\"], [\"shell\",\"pm\",\"grant\",\"com.example.app\",\"android.permission.CAMERA\"]). " +
+  "On the very first run ApkStart downloads ~1GB of Android runtime; install then returns pending — that is NOT success. Tell the user it is downloading and check status (runtimeReady) later instead of retrying in a loop. " +
+  "If the tool reports ApkStart is not installed, tell the user to install it in 设置 → 开发工具 → ApkStart 安卓运行器 and stop; do not try to install it yourself.";
+
 /** 交付前自查（09-21 起是「派内置评审子智能体复审」；10-27 用户令「不要内置子智能体」后
  *  改成**自己复查**——不再随应用种入任何子智能体，也不许叫一个不存在的名字）。
  *  ⛔ 保留这条的原因：模型仍然会"写完就交"，交付前过一遍是唯一不依赖额外对象的质量兜底。
@@ -532,6 +541,8 @@ export type DevInstructionsInput = {
   imagePlugin?: boolean;
   /** Filee 文件转换（10-30）装没装（tools/filee/filee-cli.exe 存在）—— 装了才注入第 5 条用法段 */
   fileeInstalled?: boolean;
+  /** ApkStart 安卓运行器（11-14）：装了（tools/apkstart/ApkStart.exe 在）才注入用法段。 */
+  apkstartInstalled?: boolean;
   mediaCommand?: string;
   /** 已开启的输出风格（`electron/output-styles.ts` 的 outputStyleTargets）—— 见上方 OUTPUT_STYLE_INSTRUCTIONS */
   outputStyles?: { skill: string; label: string; file: string }[];
@@ -563,6 +574,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   if (input.imagePlugin) text += IMAGE_INSTRUCTIONS(mediaCommand);
   // Filee 文件转换（10-30）：装了才注入第 5 条（filee_convert 工具在表里的机器必然装了）
   if (input.fileeInstalled) text += FILEE_INSTRUCTIONS;
+  // ApkStart 安卓运行器（11-14）：装了才注入（工具无条件注册，但没装时执行端只回安装指引）
+  if (input.apkstartInstalled) text += APKSTART_INSTRUCTIONS;
   // 视频生成三件套（无条件下发，内容自带条件式判断：先看 video_generate 在不在工具表里）
   text += VIDEO_INSTRUCTIONS;
   text += LAYA_INSTRUCTIONS;

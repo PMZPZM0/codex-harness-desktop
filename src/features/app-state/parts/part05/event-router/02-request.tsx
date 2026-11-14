@@ -497,6 +497,76 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: fileeText.slice(0, 16000) }],
                   success: fileeResult?.ok === true,
                 });
+              } else if (event.params?.tool === "apkstart") {
+                /* ApkStart 安卓运行器（11-14）：一个工具 + action，执行端在 features/apkstart-ipc.ts。
+                   ⛔ 完成判据由宿主读 ApkStart 自己的 apps.json / adb 得出；install 返回 pending 时
+                      只说明「已交给它、尚未确认」，别在这里替它宣布成功。 */
+                const action = String(args.action ?? "status");
+                let apkText = "";
+                let apkSuccess = false;
+                if (action === "status") {
+                  const st = await window.codex.apkstartStatus();
+                  if (!st?.installed) {
+                    apkText = "ApkStart 还没安装：请到「设置 → 开发工具 → ApkStart 安卓运行器」点安装（约 119MB，仅 Windows 10/11 x64；首次启动还要下载约 1GB Android 运行时）。";
+                  } else {
+                    const apps = Array.isArray(st.apps) ? st.apps : [];
+                    const device = st.device;
+                    const lines = [
+                      `ApkStart：已安装${st.version ? ` v${st.version}` : ""} · 主界面${st.running ? "正在运行" : "未运行"} · 运行时${st.runtimeReady ? "已备齐" : "未就绪（首启要下载约 1GB）"}`,
+                      device ? `模拟器：${device.serial} · ${device.model || "Android"}${device.release ? `（Android ${device.release}${device.api ? ` / API ${device.api}` : ""}）` : ""}` : "模拟器：当前没有可用的模拟器（先在 ApkStart 里打开一个应用）",
+                      `已装应用（${apps.length}）：${apps.length ? apps.slice(0, 20).map((app) => `${app.label ?? app.package}（${app.package}）`).join("、") : "无"}${apps.length > 20 ? " …" : ""}`,
+                    ];
+                    apkText = lines.join("\n");
+                  }
+                  apkSuccess = st?.installed === true;
+                } else if (action === "install") {
+                  const result = await window.codex.apkstartInstall({
+                    apk: String(args.apk ?? ""),
+                    launch: args.launch === true,
+                    waitMs: typeof args.waitMs === "number" ? args.waitMs : undefined,
+                  });
+                  apkText = result?.ok ? String(result.detail ?? "") : `安装未完成：${result?.error ?? "未知原因"}`;
+                  apkSuccess = result?.ok === true || result?.pending === true;
+                } else if (action === "launch") {
+                  const result = await window.codex.apkstartLaunch({ package: String(args.package ?? "") });
+                  apkText = result?.ok ? String(result.detail ?? "") : `启动失败：${result?.error ?? "未知原因"}`;
+                  apkSuccess = result?.ok === true;
+                } else if (action === "screenshot") {
+                  const result = await window.codex.apkstartScreenshot({ path: typeof args.path === "string" ? args.path : undefined });
+                  apkText = result?.ok
+                    ? `${result.detail}截图已保存：${result.path}（${Math.round(Number(result.bytes ?? 0) / 1024)} KB）`
+                    : `截屏失败：${result?.error ?? "未知原因"}`;
+                  apkSuccess = result?.ok === true;
+                } else if (action === "logcat") {
+                  const result = await window.codex.apkstartLogcat({
+                    lines: typeof args.lines === "number" ? args.lines : undefined,
+                    filter: typeof args.filter === "string" ? args.filter : undefined,
+                    packageName: typeof args.package === "string" ? args.package : undefined,
+                  });
+                  apkText = result?.ok ? String(result.text ?? "") : `读取日志失败：${result?.error ?? "未知原因"}`;
+                  apkSuccess = result?.ok === true;
+                } else if (action === "adb") {
+                  const result = await window.codex.apkstartAdb({
+                    args: Array.isArray(args.args) ? args.args.map(String) : [],
+                    timeoutMs: typeof args.timeoutMs === "number" ? args.timeoutMs : undefined,
+                  });
+                  const stdout = String(result?.stdout ?? "").trim();
+                  const stderr = String(result?.stderr ?? "").trim();
+                  apkText = result?.ok
+                    ? (stdout || "（命令执行成功，无输出）") + (stderr ? `\n[stderr] ${stderr}` : "")
+                    : `adb 执行失败（退出码 ${result?.code ?? "?"}）：${result?.error || stderr || stdout || "未知原因"}`;
+                  apkSuccess = result?.ok === true;
+                } else if (action === "open") {
+                  const result = await window.codex.apkstartOpen();
+                  apkText = result?.ok ? "已打开 ApkStart 主界面。" : `打开失败：${result?.error ?? "未知原因"}`;
+                  apkSuccess = result?.ok === true;
+                } else {
+                  apkText = `未知 action：${action}（可用：status / install / launch / screenshot / logcat / adb / open）`;
+                }
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: apkText.slice(0, 60000) }],
+                  success: apkSuccess,
+                });
               } else if (event.params?.tool === "laya_judge") {
                 /* Laya 局部判断（10-18）：工具只在装了 Laya 的机器上注册；执行端做参数校验、
                    未就绪最多等 15s 预热、低置信返回「弃权」文案。⛔ 不走能力网关（专用工具）。 */

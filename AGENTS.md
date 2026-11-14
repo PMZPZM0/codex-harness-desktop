@@ -612,7 +612,13 @@ FFmpeg（307MB）· Miniconda（100MB）· MinGW（267MB）· **Filee 文件转�
 KnifeLemon/Filee MIT：244 种格式本地离线互转；GitHub release 镜像序直下 + SHA256 校验 →
 `tools/filee/filee-cli.exe`；配套 Codex 工具 `filee_convert`（`filee:convert`，--json 结构化回执）
 与「控制台 → 组件更新」的手动更新行（`GITHUB_UPDATEABLE`，⛔ 不进后台自动更新）。
-卡片在「设置 → 开发工具 → Filee 文件转换」，CLI 实测口径与守卫见 12aj）。
+卡片在「设置 → 开发工具 → Filee 文件转换」，CLI 实测口径与守卫见 12aj）·
+**ApkStart 安卓运行器**（119MB 下载 / 安装后约 270MB，11-14 立，RoutineMiku/apkstart MIT，仅 Windows 10/11 x64：
+本机安卓模拟器，装 APK 后以独立窗口运行；GitHub release 镜像序直下 + SHA256 校验 → `tools/apkstart/ApkStart.exe`，
+首次启动由它自己下载约 1GB Android 运行时（adb / emulator / 系统镜像到 `%APPDATA%\apkstart\runtime`）。
+配套 Codex 工具 `apkstart`（status / install / launch / screenshot / logcat / adb / open）、
+内置技能 `android-emulator` 与「控制台 → 组件更新」的手动更新行；⛔ 完成判据读它的 `apps.json` 与 adb
+（GUI 无结构化输出，install 返回 pending ≠ 成功）。守卫 12bo）。
 全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），
 由「设置 → 开发工具」跳官方安装器；浏览器自动化优先走它，未安装回落 browse-skills
 （`nuphus-call browser_*` 驱动默认浏览器）。**Playwright CLI 与浏览器内核已整体移除。**
@@ -635,6 +641,7 @@ KnifeLemon/Filee MIT：244 种格式本地离线互转；GitHub release 镜像�
 | 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`） | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引。⛔ 识图（视觉辅助插件 / describe_image / harness-media vision）已于 10-30 整体移除，不许加回 |
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | filee_convert | dynamicTools（10-30） | 调本机 Filee（`filee-cli.exe`）把文件离线转换格式：244 种（图片/PDF/Office/电子书/音视频/归档/CAD/数据/3D），恒带 `--json` 结构化回执；需在 设置→开发工具→Filee 文件转换 安装（151MB，GitHub 镜像序 + SHA256 校验），装后 developer_instructions 注入第 5 条用法；更新在「控制台 → 组件更新」 |
+| apkstart | dynamicTools（11-14） | 在本机 ApkStart 安卓模拟器里测应用：`status` 查状态/设备/已装应用（读它自己的 `apps.json`）、`install` 装 APK（可选装完启动）、`launch` 按包名启动、`screenshot` 截屏存 PNG、`logcat` 读日志（保留崩溃行）、`adb` 透传点按/输入/授权命令、`open` 打开主界面；需在 设置→开发工具→ApkStart 安卓运行器 安装（仅 Windows，首启再下约 1GB 运行时；pending 不算成功），细节见技能 `android-emulator` |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
 | frontend_get_doc / frontend_apply_doc | dynamicTools（前端开发，10-05；两轮改名：sketch_* → mobile_ui_* → frontend_*） | 读/写应用内「前端开发」画布（m3e-canvas，手机 / 电脑 / 网页三种形态）：读回整份文档 JSON + 摘要；写回=在文档基础上改（追加屏/加部件/调坐标），走上游分享哈希导入、用户实时可见可 Ctrl+Z。写侧先过 `validateSketchDoc` 前置校验（失败回中文原因）；画布没开自动打开等桥就绪；描述列全 44 种 kind，字段速查在内置技能 frontend-canvas。做手机/电脑/网页界面时主动用（常驻指令第 13 条配套） |

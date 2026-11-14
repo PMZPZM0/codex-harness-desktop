@@ -614,14 +614,133 @@ async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promis
   await fs.rm(staging, { recursive: true, force: true });
 }
 
+/* ── ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT）──────────────────
+ * Windows 安卓应用运行器：便携 zip 约 119MB；首次启动再由它自己下载 Android 运行时。
+ * 只提供 CLI 安装/启动（`ApkStart.exe <apk>` / `--launch <包名>`），不做镜像重写。 */
+export const APKSTART_REPO = "RoutineMiku/apkstart";
+function apkstartInstallDir(): string { return path.join(writeToolsRoot(), "apkstart"); }
+function apkstartVersionFile(): string { return path.join(apkstartInstallDir(), "version.txt"); }
+function apkstartAssetName(version: string): string { return `ApkStart-v${version}-win64-portable.zip`; }
+function apkstartInstalledVersion(): string {
+  try { return readFileSync(apkstartVersionFile(), "utf8").trim(); } catch { return ""; }
+}
+
+/** GitHub release 资产的官方 sha256（新版 API 带 digest；拿不到就返回空，不假装校验过）。 */
+async function fetchGitHubAssetDigest(repo: string, assetName: string): Promise<string> {
+  for (const candidate of mirrorCandidates(`https://api.github.com/repos/${repo}/releases/latest`)) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const res = await guardedFetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } }, { timeoutMs: 20_000 });
+      if (!res.ok) continue;
+      const json = (await res.json()) as { assets?: Array<{ name?: unknown; digest?: unknown }> };
+      const row = (json.assets ?? []).find((asset) => String(asset.name ?? "") === assetName);
+      const digest = String(row?.digest ?? "").toLowerCase();
+      if (digest.startsWith("sha256:")) return digest.slice(7);
+      if (/^[0-9a-f]{64}$/.test(digest)) return digest;
+    } catch { /* 下一个镜像 */ } finally { clearTimeout(timer); }
+  }
+  return "";
+}
+
+async function findFile(dir: string, name: string, depth: number): Promise<string> {
+  if (depth < 0) return "";
+  let entries: import("node:fs").Dirent[];
+  try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return ""; }
+  for (const entry of entries) {
+    if (entry.isFile() && entry.name.toLowerCase() === name.toLowerCase()) return path.join(dir, entry.name);
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const found = await findFile(path.join(dir, entry.name), name, depth - 1);
+    if (found) return found;
+  }
+  return "";
+}
+
+async function installApkStartFromGitHub(id: DevRuntimeId, version: string): Promise<void> {
+  if (process.platform !== "win32") throw new Error("ApkStart 仅支持 Windows 10/11 x64");
+  if (!/^[0-9][0-9A-Za-z.\-]*$/.test(version)) throw new Error(`ApkStart 版本号异常：${version}`);
+  const dir = apkstartInstallDir();
+  const staging = path.join(writeToolsRoot(), ".apkstart-download");
+  await fs.mkdir(staging, { recursive: true });
+  const asset = apkstartAssetName(version);
+  emitRuntimeProgress(id, `@@STAGE 下载 ApkStart ${version}`);
+  const archive = path.join(staging, asset);
+  const actualSha = (await downloadThroughMirrors({
+    url: `https://github.com/${APKSTART_REPO}/releases/download/v${version}/${asset}`,
+    target: archive,
+    expectZipMagic: true,
+    isCancelled: () => isCancelRequested(id),
+    onProgress: (p) => {
+      const pct = p.total ? p.percent : 0;
+      emitRuntimeProgress(id, `@@PROGRESS ${pct}`);
+      const mbText = p.total
+        ? `${(p.received / 1048576).toFixed(1)} MB / ${(p.total / 1048576).toFixed(1)} MB`
+        : `${(p.received / 1048576).toFixed(1)} MB`;
+      emitRuntimeProgress(id, `正在下载 ApkStart（${mbText}，约 119 MB）`);
+    },
+  })).sha256;
+  if (isCancelRequested(id)) { await fs.rm(archive, { force: true }).catch(() => undefined); throw new Error("已取消"); }
+  emitRuntimeProgress(id, "校验 SHA256…");
+  const expectedSha = await fetchGitHubAssetDigest(APKSTART_REPO, asset);
+  if (expectedSha && actualSha && expectedSha !== actualSha) {
+    await fs.rm(archive, { force: true });
+    throw new Error(`ApkStart 安装包 SHA256 校验失败（下载可能被截断）：期望 ${expectedSha.slice(0, 12)}…，实际 ${actualSha.slice(0, 12)}… —— 请重试`);
+  }
+  emitRuntimeProgress(id, "正在解压…");
+  const stage = `${dir}.installing`;
+  await fs.rm(stage, { recursive: true, force: true });
+  await fs.mkdir(stage, { recursive: true });
+  try {
+    const sevenZip = existingToolPath("sevenzip", "7z.exe");
+    if (!sevenZip) throw new Error("缺少随包 7-Zip（sevenzip/7z.exe），解压不了 ApkStart 安装包");
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(sevenZip, ["x", archive, `-o${stage}`, "-y"], { windowsHide: true });
+      trackRuntimeProc(id, child);
+      let tail = "";
+      const grab = (chunk: unknown) => { tail = `${tail}\n${String(chunk)}`.slice(-2000); };
+      child.stdout?.on("data", grab);
+      child.stderr?.on("data", grab);
+      child.on("error", reject);
+      child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）：${tail.trim().slice(-600)}`)));
+    });
+    // 便携包可能套一层目录：把 ApkStart.exe 所在目录的内容上提到 stage 根。
+    let exe = path.join(stage, "ApkStart.exe");
+    if (!existsSync(exe)) {
+      const found = await findFile(stage, "ApkStart.exe", 3);
+      if (!found) throw new Error("ApkStart 安装包解压后找不到 ApkStart.exe");
+      const root = path.dirname(found);
+      if (root !== stage) {
+        const lifted = `${stage}.root`;
+        await fs.rm(lifted, { recursive: true, force: true });
+        await fs.mkdir(lifted, { recursive: true });
+        for (const entry of await fs.readdir(root)) await fs.rename(path.join(root, entry), path.join(lifted, entry));
+        await fs.rm(stage, { recursive: true, force: true });
+        await fs.rename(lifted, stage);
+      }
+      exe = path.join(stage, "ApkStart.exe");
+    }
+    if (!existsSync(exe)) throw new Error("ApkStart 安装包不完整（缺 ApkStart.exe）");
+    await fs.rm(dir, { recursive: true, force: true });
+    await fs.rename(stage, dir);
+  } finally {
+    await fs.rm(stage, { recursive: true, force: true }).catch(() => undefined);
+    await fs.rm(`${stage}.root`, { recursive: true, force: true }).catch(() => undefined);
+  }
+  await fs.writeFile(apkstartVersionFile(), version + "\n", "utf8");
+  await fs.rm(staging, { recursive: true, force: true });
+}
+
 /* ── GitHub 直下型工具的「检查更新 / 升级」（Filee，10-30）──────────────────────
  * ⛔ 不并入 UPDATEABLE_TOOLS（那是 npm 包专用：pkg + fetchRegistryLatest）。
  *   · 查最新版走 GitHub releases/latest（api 镜像序），比 npm 慢一点但 Filee 没有 npm 源；
  *   · 升级 = 重跑同一条安装函数（带最新 tag），装完复核 version.txt。
  * ⛔ 自动更新循环不收 filee：autoUpdateItems 只认配了开关的工具（151MB 不许后台偷下），
  *   filee 只出现在「控制台 → 组件更新」的手动检查里 —— 这个边界别改。 */
-const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string }> = {
-  filee: { repo: FILEE_REPO, label: "Filee 文件转换" },
+const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string; platforms?: NodeJS.Platform[]; install: (id: DevRuntimeId, version: string) => Promise<void> }> = {
+  filee: { repo: FILEE_REPO, label: "Filee 文件转换", install: installFileeFromGitHub },
+  apkstart: { repo: APKSTART_REPO, label: "ApkStart 安卓运行器", platforms: ["win32"], install: installApkStartFromGitHub },
 };
 
 /** 查 GitHub 最新 release tag（去 v 前缀）：api 镜像序，20s 超时。 */
@@ -813,7 +932,7 @@ export type RuntimeUpdateRow = {
  *  ⛔ 界面与后台调度都必须走这里，别各写一份清单（本项目反复栽在两处各写一套上）。 */
 export function updateableToolIds(): string[] {
   return [...Object.keys(UPDATEABLE_TOOLS), ...Object.keys(GITHUB_UPDATEABLE)].filter((id) => {
-    const platforms = UPDATEABLE_TOOLS[id]?.platforms;
+    const platforms = UPDATEABLE_TOOLS[id]?.platforms ?? GITHUB_UPDATEABLE[id]?.platforms;
     return !platforms || platforms.includes(process.platform);
   });
 }
@@ -821,7 +940,11 @@ export function updateableToolIds(): string[] {
 /** 读磁盘上已装的版本号（npm 包读 package.json；GitHub 直下型读安装时落的 version.txt）。 */
 function installedVersionOf(id: string): string {
   const gh = GITHUB_UPDATEABLE[id];
-  if (gh) return fileeInstalledVersion();
+  if (gh) {
+    if (id === "filee") return fileeInstalledVersion();
+    if (id === "apkstart") return apkstartInstalledVersion();
+    return "";
+  }
   const tool = UPDATEABLE_TOOLS[id];
   if (!tool) return "";
   // ⛔ rea 的「已装版本」必须等于「能用的安装」（11-07 修「启动失败」自愈）：更新中断会掏空 dist、
@@ -926,7 +1049,7 @@ export async function performRuntimeUpdate(
     const task = (async () => {
       emitRuntimeProgress(id, `@@STAGE 更新 ${gh.label}`);
       const latest = await fetchGitHubLatestTag(gh.repo);
-      await installFileeFromGitHub(id as DevRuntimeId, latest);
+      await gh.install(id as DevRuntimeId, latest);
       await restartServerWhenIdle(id);
     })();
     runtimeInstalls.set(id, task);
@@ -1266,6 +1389,10 @@ export const runtimeFeature = defineFeature<null>({
           /* Filee 文件转换（10-30）：GitHub release 直下型（151MB，镜像序 + SHA256 校验）。
              更新链（performRuntimeUpdate 的 GITHUB_UPDATEABLE 分支）也走这一个函数。 */
           await installFileeFromGitHub(id, TOOLS_VERSIONS.filee ?? (await fetchGitHubLatestTag(FILEE_REPO)));
+        } else if (id === "apkstart") {
+          /* ApkStart 安卓运行器（11-14）：GitHub release 直下型（119MB 便携 zip）。
+             首启再由它自己下载 Android 运行时；更新链同上（GITHUB_UPDATEABLE.install）。 */
+          await installApkStartFromGitHub(id, TOOLS_VERSIONS.apkstart ?? (await fetchGitHubLatestTag(APKSTART_REPO)));
         } else if (id === "rea") {
           // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
           // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。

@@ -143,5 +143,7 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "openfilm-video-editing",
   /* 11-13：RPA 配方保存/复用口径（与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
   "rpa-recipes",
+  /* 11-14：ApkStart 安卓模拟器测试流程（与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
+  "android-emulator",
   "zy-cinematic-realism",
 ];

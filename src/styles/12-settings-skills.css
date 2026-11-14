@@ -1933,3 +1933,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .feishu-uninstall-actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 .feishu-uninstall-actions .primary-setting.danger { background: var(--red); border-color: var(--red); color: #fff; }
 .feishu-uninstall-actions .primary-setting.danger:hover { filter: brightness(.95); }
+
+/* 11-14：ApkStart 卸载弹窗的「连运行时数据一起删」勾选项。 */
+.apkstart-purge-row { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.apkstart-purge-row input { margin-top: 2px; flex: none; }

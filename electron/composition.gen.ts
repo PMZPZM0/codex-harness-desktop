@@ -118,6 +118,7 @@ import { workLogsFeature as feat_work_logs } from "./features/work-logs";
 import { shortcutsFeature as feat_shortcuts } from "./features/shortcuts-ipc";
 import { feishuCliFeature as feat_feishu_cli } from "./features/feishu-cli-ipc";
 import { fileeFeature as feat_filee } from "./features/filee-ipc";
+import { apkStartFeature as feat_apkstart } from "./features/apkstart-ipc";
 import { taskMonitorFeature as feat_monitor } from "./features/task-monitor";
 import { sessionAliasFeature as feat_session_alias } from "./features/session-alias-ipc";
 import { harnessTeamFeature as feat_harness_team } from "./features/harness-team-ipc";
@@ -246,6 +247,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "shortcuts", plugin: feat_shortcuts as Plugin<unknown>, config: null },
   { id: "feishu-cli", plugin: feat_feishu_cli as Plugin<unknown>, config: null },
   { id: "filee", plugin: feat_filee as Plugin<unknown>, config: null },
+  { id: "apkstart", plugin: feat_apkstart as Plugin<unknown>, config: null },
   { id: "monitor", plugin: feat_monitor as Plugin<unknown>, config: null },
   { id: "session-alias", plugin: feat_session_alias as Plugin<unknown>, config: null },
   { id: "harness-team", plugin: feat_harness_team as Plugin<unknown>, config: null },

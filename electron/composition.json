@@ -779,6 +779,13 @@
       "config": null
     },
     {
+      "id": "apkstart",
+      "enabled": true,
+      "file": "features/apkstart-ipc.ts",
+      "export": "apkStartFeature",
+      "config": null
+    },
+    {
       "id": "monitor",
       "enabled": true,
       "file": "features/task-monitor.ts",

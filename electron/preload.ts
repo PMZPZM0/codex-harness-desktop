@@ -1004,6 +1004,22 @@ contextBridge.exposeInMainWorld("codex", {
   fileeStatus: () => __ipc("filee:status", 0, []),
   /* 10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容 */
   fileeConvert: (input: { inputs: string[]; to: string; outputDir?: string; quality?: number; overwrite?: boolean; recursive?: boolean; keepDates?: boolean; timeoutMs?: number }) => __ipc("filee:convert", 1, [input]),
+  /* 11-14 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT）状态：安装/版本/主界面是否在跑/运行时是否备齐/当前模拟器设备/它自己的应用清单（apps.json）；3s 缓存（卡片轮询不反复打 adb） */
+  apkstartStatus: () => __ipc("apkstart:status", 0, []),
+  /* 11-14 安装 APK：spawn ApkStart.exe --silent <apk>（参数数组不进 shell）；完成判据 = ApkStart 的 apps.json 出现新条目/被改写，等不到就 pending（首启要先下约 1GB 运行时），不假装成功 */
+  apkstartInstall: (input: { apk?: string; launch?: boolean; waitMs?: number }) => __ipc("apkstart:install", 1, [input]),
+  /* 11-14 启动已装应用：spawn ApkStart.exe --launch <包名>（上游 CLI 自带 silent）；包名先过格式校验，且必须在 ApkStart 应用清单里 */
+  apkstartLaunch: (input: { package?: string }) => __ipc("apkstart:launch", 1, [input]),
+  /* 11-14 设备截屏：adb exec-out screencap -p → PNG 落盘（默认 userData/apkstart/screenshots），返回本地路径给模型查看 */
+  apkstartScreenshot: (input: { path?: string }) => __ipc("apkstart:screenshot", 1, [input]),
+  /* 11-14 读最近 logcat（默认 300 行，可按关键字/包名过滤；带包名时保留 FATAL EXCEPTION / ANR 行） */
+  apkstartLogcat: (input: { lines?: number; filter?: string; packageName?: string }) => __ipc("apkstart:logcat", 1, [input]),
+  /* 11-14 透传 adb 命令（shell input / pm grant / am start / dumpsys 等）：参数数组不进 shell，自动补 -s <当前模拟器>；输出截断 */
+  apkstartAdb: (input: { args?: string[]; timeoutMs?: number }) => __ipc("apkstart:adb", 1, [input]),
+  /* 11-14 打开 ApkStart 主界面（看安装进度/手动操作；detached spawn，宿主退出后它继续跑） */
+  apkstartOpen: () => __ipc("apkstart:open", 0, []),
+  /* 11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错） */
+  apkstartPurge: (confirm: boolean) => __ipc("apkstart:purge", 1, [confirm]),
   /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
   feishuCliSetupStart: () => __ipc("feishu-cli:setup-start", 0, []),
   /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */
@@ -1055,6 +1071,8 @@ contextBridge.exposeInMainWorld("codex", {
   harnessTeamDelete: (groupId: string) => __ipc("harness-team:delete", 1, [groupId]),
   /* 团队模式：群记忆 / 群文件 */
   harnessTeamSetMemory: (groupId: string, text: string) => __ipc("harness-team:set-memory", 2, [groupId, text]),
+  /* 团队模式：群规矩（硬约束，每轮注入） */
+  harnessTeamSetRules: (groupId: string, text: string) => __ipc("harness-team:set-rules", 2, [groupId, text]),
   /* 团队模式：群项目地址（派活时作为子会话 cwd） */
   harnessTeamSetWorkspace: (groupId: string, workspace: string) => __ipc("harness-team:set-workspace", 2, [groupId, workspace]),
   /* 团队模式：本群此刻正在跑的伙伴（面板重开时恢复处理中/已输出） */

@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Music2, PackageOpen, Puzzle, Smartphone, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Gamepad2, Music2, PackageOpen, Puzzle, Smartphone, Trash2, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -28,6 +28,7 @@ import { OpenfilmCard } from "../openfilm";
 import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
 import { FileeCard } from "./FileeCard";
+import { ApkStartCard } from "./ApkStartCard";
 import { SkillPacksPanel } from "../skill-packs";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel, runtimeGroupItems, type RuntimeBatch, type RuntimeGroup, type RuntimeRow } from "./runtime-groups";
@@ -35,7 +36,7 @@ import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel,
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
+type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
 
@@ -132,6 +133,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     { key: "laya", icon: <Brain size={15} />, title: "Laya 智能判断", desc: "思考等级「自动」档的本地决策端（Python）", stat: "本地 · 可选安装" },
     { key: "feishu-cli", icon: <Bot size={15} />, title: "飞书 CLI", desc: "官方命令行（@larksuite/cli）：让 Codex 代你操作飞书", stat: "按需安装 · 需登录一次" },
     { key: "filee", icon: <Files size={15} />, title: "Filee 文件转换", desc: "244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档），不需要 Office", stat: "按需安装 · 完全离线 · 可卸载" },
+    { key: "apkstart", icon: <Gamepad2 size={15} />, title: "ApkStart 安卓运行器", desc: "本机运行 Android 应用：装 APK、独立窗口运行，Codex 可截图/读日志/adb 测试", stat: "按需安装 · 仅 Windows · 首启下运行时" },
     { key: "openfilm", icon: <Film size={15} />, title: "OpenFilm 视频剪辑", desc: "第三方开源（MIT）：让 Codex 直接剪片，Studio 里手改", stat: "按需下载 · 国内镜像加速 · 可卸载" },
     { key: "domains", icon: <Boxes size={15} />, title: "功能域", desc: "启用 / 停用功能板块（停用下次启动生效）", stat: "声明式插槽 · 可被插件替换" },
     { key: "plugins", icon: <Puzzle size={15} />, title: "声明式插件", desc: "只用 JSON 往插槽挂内容、调已有通道，无代码", stat: "放好即生效 · 无需重启" },
@@ -296,6 +298,12 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeOtherCard.title} icon={<Files size={15} />} hint="244 种格式 · 本地离线转换 · 装好就能说人话" size="md" onClose={() => setOpenCard(null)}>
           {/* Filee 文件转换（10-30，KnifeLemon/Filee，MIT）：安装走 runtime:install 的 GitHub 直下型分支。 */}
           <FileeCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
+        </SettingsDialog>
+      )}
+      {openCard === "apkstart" && activeOtherCard && (
+        <SettingsDialog title={activeOtherCard.title} icon={<Gamepad2 size={15} />} hint="本机安卓运行器 · 装 APK 即可测试" size="md" onClose={() => setOpenCard(null)}>
+          {/* ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT）：安装走 runtime:install 的 GitHub 直下型分支。 */}
+          <ApkStartCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
         </SettingsDialog>
       )}
       {openCard === "domains" && activeOtherCard && (

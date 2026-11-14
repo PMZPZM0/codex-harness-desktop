@@ -654,6 +654,25 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           recursive: { type: "boolean", description: "inputs 是目录时包含子文件夹" },
           keepDates: { type: "boolean", description: "保留原文件的创建/修改时间" },
         }, required: ["inputs", "to"] } },
+      /* ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT）：Windows 上的安卓应用运行器。
+         ⛔ 口径同 filee_convert：无条件注册（dynamicTools 只在 thread/start / resume 生效）；
+           未安装时执行端回「去哪里装」，模型不要反复重试。
+         ⛔ 一个工具 + action：status / install / launch / screenshot / logcat / adb / open。
+           ApkStart 是 GUI 应用、没有结构化 stdout，所以完成判据由宿主读它的 apps.json 与 adb。 */
+      { type: "function", name: "apkstart",
+        description: "在 Windows 的 Android 模拟器（ApkStart）里安装并测试安卓应用：action=status 查安装/运行时/模拟器/已装应用；install 安装 APK（apk=本地 .apk 路径，launch=true 装完直接启动）；launch 按包名启动；screenshot 截一张设备画面并返回 PNG 本地路径；logcat 读最近日志（可按关键字/包名过滤，默认保留崩溃行）；adb 透传任意 adb 命令（args 数组，如 [\"shell\",\"input\",\"tap\",\"540\",\"960\"]、[\"shell\",\"pm\",\"grant\",…]），用于点按/授权/dumpsys；open 打开 ApkStart 主界面。⛔ 需要用户先在「设置 → 开发工具 → ApkStart 安卓运行器」安装；首次启动要下载约 1GB Android 运行时，下载期间 install 会返回 pending（未确认完成），不要当成功，稍后用 status 看 runtimeReady 再重试。仅 Windows 10/11 x64。",
+        inputSchema: { type: "object", properties: {
+          action: { type: "string", enum: ["status", "install", "launch", "screenshot", "logcat", "adb", "open"], description: "要执行的动作" },
+          apk: { type: "string", description: "install 用：本地 .apk / .xapk / .apks 文件的绝对路径" },
+          launch: { type: "boolean", description: "install 用：装完立即启动（默认 false）" },
+          waitMs: { type: "number", description: "install 用：最多等多久确认安装（毫秒，默认 120000，上限 600000）" },
+          package: { type: "string", description: "launch 用：Android 包名（如 com.example.app），必须在 ApkStart 应用清单里" },
+          path: { type: "string", description: "screenshot 用：PNG 保存路径；省略 = 存到应用数据目录并返回路径" },
+          lines: { type: "number", description: "logcat 用：读取最近多少行（默认 300，上限 5000）" },
+          filter: { type: "string", description: "logcat 用：只保留包含该关键字（不区分大小写）的行" },
+          args: { type: "array", items: { type: "string" }, description: "adb 用：adb 参数数组（不含 adb 本身；宿主自动补 -s <当前模拟器>）" },
+          timeoutMs: { type: "number", description: "adb 用：超时毫秒（默认 60000，上限 300000）" },
+        }, required: ["action"] } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。**单选还是多选由你根据问题性质决定**：答案互斥（选一条就够）传 multiple=false 或省略；多项可以并存（要改哪几个文件 / 勾选要处理的项）传 multiple=true 让用户勾选多条。用户先选中、再点确认按钮提交，勾选与自定义输入会用「；」拼接返回。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, multiple: { type: "boolean", description: "true = 多选（用户可勾选多项）；false/省略 = 单选（只能选一项）。两种都是：用户先选中、再点「确认/提交」按钮才把答案回给你" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
       // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
       { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },

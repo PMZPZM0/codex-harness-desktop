@@ -1342,6 +1342,58 @@ const CHECKS = [
     },
   },
   {
+    id: "apkstart-card",
+    name: "📱 开发工具 · ApkStart 安卓运行器：状态 IPC + 卡片 + 二级弹窗（11-14）",
+    run: async (h) => {
+      /* 只验界面与 IPC（真装 119MB + 首启 1GB 运行时不适合放进秒级验收；
+         安装/更新/校验链由守卫 12bo 钉）。状态行按当前机器真实结果显示（已装 / 未装都算过）。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="apkstart"]')`, { label: "ApkStart 卡片", timeoutMs: 15000 });
+      await wait(300);
+      const status = await h.eval(`window.codex.apkstartStatus()`).catch(() => null);
+      h.check("① apkstart:status 可用（installed 布尔 + 开源声明单一真相源）",
+        Boolean(status && typeof status.installed === "boolean" && status.attribution && status.attribution.home.includes("RoutineMiku/apkstart")),
+        JSON.stringify(status && { installed: status.installed, home: status.attribution && status.attribution.home }));
+      const card = await h.eval(`(function(){
+        const c=document.querySelector('.devtools-card[data-card="apkstart"]');
+        return c ? { text:(c.textContent||"").trim(), stat:(c.querySelector(".devtools-card-stat")?.textContent||"").trim() } : null;
+      })()`);
+      h.check("② 一级卡片在位并显示状态（按需安装 · 仅 Windows）",
+        Boolean(card && card.text.includes("ApkStart 安卓运行器") && card.stat.includes("仅 Windows")), JSON.stringify(card));
+
+      await h.eval(`document.querySelector('.devtools-card[data-card="apkstart"] .devtools-card-open').click()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog .feishu-cli-card")`, { label: "ApkStart 二级弹窗", timeoutMs: 10000 });
+      await wait(400);
+      const dialog = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        if(!d) return null;
+        const t=(d.textContent||"").trim();
+        return {
+          installRow:/安装 ApkStart/.test(t),
+          runtimeRow:/Android 运行时/.test(t) && /1GB/.test(t),
+          toolRow:/配套工具/.test(t) && /apkstart 工具/.test(t),
+          windowsNote:/仅 Windows 10\\/11 x64/.test(t),
+          attribution:/第三方开源项目 ApkStart/.test(t) && /RoutineMiku\\/apkstart/.test(t),
+          hasOpen:!![...d.querySelectorAll("button")].find(function(b){ return (b.textContent||"").trim()==="打开 ApkStart"; }),
+        };
+      })()`).catch(() => null);
+      h.check("③ 弹窗三行齐：安装 / 运行时 / 配套工具",
+        Boolean(dialog) && dialog.installRow && dialog.runtimeRow && dialog.toolRow, JSON.stringify(dialog));
+      h.check("④ 写清平台与首启代价（仅 Windows + 1GB 运行时）",
+        Boolean(dialog) && dialog.windowsNote && dialog.runtimeRow, JSON.stringify(dialog));
+      h.check("⑤ 开源声明与仓库链接来自主进程（前端零字面量）",
+        Boolean(dialog) && dialog.attribution, JSON.stringify(dialog));
+      h.check("⑥ 已安装时给出「打开 ApkStart」入口（未安装时隐藏）",
+        Boolean(dialog) && dialog.hasOpen === Boolean(status && status.installed),
+        JSON.stringify({ hasOpen: dialog && dialog.hasOpen, installed: status && status.installed }));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(300);
+    },
+  },
+  {
     id: "skill-update-panel",
     name: "🔄 控制台 · 技能自动更新：能进入面板、能装能卸、有反馈（10-30）",
     run: async (h) => {

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 667,
+  "count": 676,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6143,6 +6143,86 @@
       "note": "10-30 Filee 转换：spawn filee-cli.exe convert … --json（参数数组不进 shell）；exit 0=无失败 1=有文件失败（report.failed 给明细）2=参数错 3=无内容"
     },
     {
+      "name": "apkstartStatus",
+      "channel": "apkstart:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; exePath: string; version: string; running: boolean; runtimeReady: boolean; runtimeRoot: string; adbPath: string; device: { serial: string; state: string; model: string; api: string; release: string } | null; apps: { package?: string; label?: string; versionName?: string; installedAt?: number; lastLaunchAt?: number }[]; dataDir: string; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT）状态：安装/版本/主界面是否在跑/运行时是否备齐/当前模拟器设备/它自己的应用清单（apps.json）；3s 缓存（卡片轮询不反复打 adb）"
+    },
+    {
+      "name": "apkstartInstall",
+      "channel": "apkstart:install",
+      "paramsImpl": "input: { apk?: string; launch?: boolean; waitMs?: number }",
+      "paramsDecl": "input: { apk?: string; launch?: boolean; waitMs?: number }",
+      "returns": "Promise<{ ok: boolean; pending: boolean; packageName: string; label: string; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 安装 APK：spawn ApkStart.exe --silent <apk>（参数数组不进 shell）；完成判据 = ApkStart 的 apps.json 出现新条目/被改写，等不到就 pending（首启要先下约 1GB 运行时），不假装成功"
+    },
+    {
+      "name": "apkstartLaunch",
+      "channel": "apkstart:launch",
+      "paramsImpl": "input: { package?: string }",
+      "paramsDecl": "input: { package?: string }",
+      "returns": "Promise<{ ok: boolean; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 启动已装应用：spawn ApkStart.exe --launch <包名>（上游 CLI 自带 silent）；包名先过格式校验，且必须在 ApkStart 应用清单里"
+    },
+    {
+      "name": "apkstartScreenshot",
+      "channel": "apkstart:screenshot",
+      "paramsImpl": "input: { path?: string }",
+      "paramsDecl": "input: { path?: string }",
+      "returns": "Promise<{ ok: boolean; path: string; bytes: number; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 设备截屏：adb exec-out screencap -p → PNG 落盘（默认 userData/apkstart/screenshots），返回本地路径给模型查看"
+    },
+    {
+      "name": "apkstartLogcat",
+      "channel": "apkstart:logcat",
+      "paramsImpl": "input: { lines?: number; filter?: string; packageName?: string }",
+      "paramsDecl": "input: { lines?: number; filter?: string; packageName?: string }",
+      "returns": "Promise<{ ok: boolean; text: string; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 读最近 logcat（默认 300 行，可按关键字/包名过滤；带包名时保留 FATAL EXCEPTION / ANR 行）"
+    },
+    {
+      "name": "apkstartAdb",
+      "channel": "apkstart:adb",
+      "paramsImpl": "input: { args?: string[]; timeoutMs?: number }",
+      "paramsDecl": "input: { args?: string[]; timeoutMs?: number }",
+      "returns": "Promise<{ ok: boolean; code: number; stdout: string; stderr: string; error: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 透传 adb 命令（shell input / pm grant / am start / dumpsys 等）：参数数组不进 shell，自动补 -s <当前模拟器>；输出截断"
+    },
+    {
+      "name": "apkstartOpen",
+      "channel": "apkstart:open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 打开 ApkStart 主界面（看安装进度/手动操作；detached spawn，宿主退出后它继续跑）"
+    },
+    {
+      "name": "apkstartPurge",
+      "channel": "apkstart:purge",
+      "paramsImpl": "confirm: boolean",
+      "paramsDecl": "confirm: boolean",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "confirm",
+      "cast": null,
+      "note": "11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错）"
+    },
+    {
       "name": "feishuCliSetupStart",
       "channel": "feishu-cli:setup-start",
       "paramsImpl": "",
@@ -6401,6 +6481,16 @@
       "invokeArgs": "groupId, text",
       "cast": null,
       "note": "团队模式：群记忆 / 群文件"
+    },
+    {
+      "name": "harnessTeamSetRules",
+      "channel": "harness-team:set-rules",
+      "paramsImpl": "groupId: string, text: string",
+      "paramsDecl": "groupId: string, text: string",
+      "returns": "Promise<{ ok: boolean; group?: any; issues?: string[]; error?: string }>",
+      "invokeArgs": "groupId, text",
+      "cast": null,
+      "note": "团队模式：群规矩（硬约束，每轮注入）"
     },
     {
       "name": "harnessTeamSetWorkspace",

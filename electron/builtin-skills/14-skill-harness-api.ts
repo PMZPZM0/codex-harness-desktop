@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（116 个能力域 / 667 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（117 个能力域 / 676 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -62,6 +62,10 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 ### filee（2 通道）
 Filee 文件转换（KnifeLemon/Filee，MIT）：244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档/CAD/3D，不需要 Office 或 LibreOffice）；安装（约 151MB，GitHub release 镜像序 + SHA256 校验）在「设置 → 开发工具 → Filee 文件转换」，Codex 通过 filee_convert 工具调用（--json 结构化回执）
 通道：filee:status, filee:convert
+
+### apkstart（8 通道）
+ApkStart 安卓运行器（RoutineMiku/apkstart，MIT，仅 Windows 10/11 x64）：本机安卓模拟器，装 APK 后以独立窗口运行；安装（约 119MB，GitHub release 镜像序 + SHA256 校验）在「设置 → 开发工具 → ApkStart 安卓运行器」，首次启动由它自己下载约 1GB Android 运行时。Codex 通过 apkstart 工具做 status / install / launch / screenshot / logcat / adb 测试
+通道：apkstart:status, apkstart:install, apkstart:launch, apkstart:screenshot, apkstart:logcat, apkstart:adb, apkstart:open, apkstart:purge
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置
@@ -233,9 +237,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 插件卸载入口
 通道：plugin:validate
 
-### harness-team（38 通道）
+### harness-team（39 通道）
 团队模式：应用内的群（伙伴成员 / 上下级委派白名单 / 群护栏 / 消息投影）,打开一个群就能 @ 伙伴派活
-通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:rename-member, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-avatar, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:dispatch, harness-team:clear-messages, harness-team:delete, harness-team:set-memory, harness-team:set-workspace, harness-team:running, harness-team:set-files, harness-team:set-manager, harness-team:set-admin, harness-team:group-progress, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:set-menu-placement, harness-team:set-message-layout, harness-team:set-reply-mode, harness-team:set-message-form, harness-team:set-dialog-flow, harness-team:set-schedule, harness-team:run-schedule, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:queue-start, harness-team:thread-usage, harness-team:talk-threads
+通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:rename-member, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-avatar, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:dispatch, harness-team:clear-messages, harness-team:delete, harness-team:set-memory, harness-team:set-rules, harness-team:set-workspace, harness-team:running, harness-team:set-files, harness-team:set-manager, harness-team:set-admin, harness-team:group-progress, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:set-menu-placement, harness-team:set-message-layout, harness-team:set-reply-mode, harness-team:set-message-form, harness-team:set-dialog-flow, harness-team:set-schedule, harness-team:run-schedule, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:queue-start, harness-team:thread-usage, harness-team:talk-threads
 
 ### remote（12 通道）
 远程会话（手机/网页端远程接入宿主）

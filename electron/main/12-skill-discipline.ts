@@ -49,6 +49,8 @@ export async function devInstructionsInput() {
     imagePlugin: Boolean(builtinPlugins.image?.enabled !== false && builtinPlugins.image?.baseUrl && builtinPlugins.image?.apiKey && builtinPlugins.image?.model),
     // Filee 文件转换（10-30）：装了（tools/filee/filee-cli.exe 在）才注入第 5 条用法段
     fileeInstalled: Boolean(devRuntimeSpecs.filee && runtimeInstalled("filee", devRuntimeSpecs.filee)),
+    // ApkStart 安卓运行器（11-14）：装了（tools/apkstart/ApkStart.exe 在）才注入模拟器用法段
+    apkstartInstalled: Boolean(devRuntimeSpecs.apkstart && runtimeInstalled("apkstart", devRuntimeSpecs.apkstart)),
     mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
     /* 输出风格（10-06）：控制台「回复风格」开关打开的写作风格技能 —— 宿主把它翻译成
        **常驻指令**下发，这样开关一开就每轮生效，不必用户点名（见 electron/output-styles.ts）。

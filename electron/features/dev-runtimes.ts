@@ -26,7 +26,7 @@ import { findMoeKoeExe } from "../moekoe";
 // 自动化工具链状态：nuphus-mcp（桌面）；浏览器自动化主通道是外部 Ego Lite。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli" | "filee";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli" | "filee" | "apkstart";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -68,6 +68,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //  安装 = GitHub release 镜像序下载 win-Portable.zip → SHA256 校验 → 解压 tools/filee/；
   //  配套 Codex 工具 filee_convert（features/filee-ipc.ts）与「控制台 → 组件更新」的 GitHub 更新链。
   filee: { name: "Filee 文件转换", description: "本地文件格式转换器（KnifeLemon/Filee，MIT）：244 种格式离线互转 —— 图片/PDF/Word/Excel/PPT/电子书/音视频/字幕/归档/CAD/3D 模型，不需要 Office 或 LibreOffice；给 Codex 提供 filee_convert 工具，说「把这张 heic 转成 jpg」即可", size: "约 151 MB", marker: "filee\\filee-cli.exe" },
+  // ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT）：Windows 安卓应用运行器，自持 QEMU 运行时。
+  //   CLI：`ApkStart.exe <apk>` 安装、`--launch <包名>` 启动；119MB 便携包按需下载，首次启动再下载 Android 运行时。
+  apkstart: { name: "ApkStart 安卓运行器", description: "Windows 安卓应用运行器（RoutineMiku/apkstart，MIT）：双击 APK 安装，应用以独立窗口运行，自持 QEMU 运行时；给 Codex 提供 apkstart 工具做 APK 安装与启动测试。仅 Windows 10/11 x64，首次启动再下载运行时", size: "约 119 MB（首启再下运行时）", marker: "apkstart\\ApkStart.exe" },
   rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载、重跑同卡即更新到最新版", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
@@ -201,7 +204,7 @@ const DARWIN_MARKERS: Partial<Record<DevRuntimeId, string>> = {
   "platform-tools": "platform-tools/adb",
 };
 // darwin 上无意义 / 系统自带的工具：不显示安装卡（mingw 是 Windows 编译器；mac 用系统 clang）
-const DARWIN_HIDDEN = new Set<DevRuntimeId>(["mingw"]);
+const DARWIN_HIDDEN = new Set<DevRuntimeId>(["mingw", "apkstart"]);
 /** ⛔ mac 适配（09-17 审计）：上面 specs 的**文案**是按 Windows 侧写的，mac 上照搬会误导
  *  （例如让用户「装 Git 约 90 MB」，而 darwin 根本不下载 git —— 用的是系统自带那份）。
  *  这里只覆盖 mac 上说法确实会错的那几条，未列出的沿用原文（体积本就是量级提示）。 */

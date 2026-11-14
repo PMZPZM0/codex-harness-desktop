@@ -31,6 +31,7 @@ import { OPENFILM_SKILL } from "./builtin-skills/26-skill-openfilm";
 import { FRONTEND_CANVAS_SKILL } from "./builtin-skills/20-skill-frontend-canvas";
 import { FRONTEND_DESIGN_SKILL } from "./builtin-skills/27-skill-frontend-design";
 import { RPA_RECIPES_SKILL } from "./builtin-skills/28-skill-rpa-recipes";
+import { ANDROID_EMULATOR_SKILL } from "./builtin-skills/29-skill-android-emulator";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
 import { CHALLENGE_REQUIREMENTS_SKILL } from "./builtin-skills/25-skill-challenge-requirements";
@@ -159,6 +160,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 11-13：RPA 配方的保存/复用口径（rpa_save / rpa_run）—— 步骤格式与失败处理在技能里，
     // 工具描述只留一句；⛔ 别再往每个会话的常驻指令里塞完整手册。
     ["rpa-recipes", RPA_RECIPES_SKILL],
+    // 11-14：ApkStart 模拟器测试流程（apkstart 工具）—— 安装/启动/截屏/logcat/adb 的顺序与失败自检；
+    //  工具描述只留一句，细节在这里（渐进披露）。
+    ["android-emulator", ANDROID_EMULATOR_SKILL],
     // 10-17：可视化输出规范（用户立项「Codex 画可视化只会随手写 HTML」）——
     //  形态选择/硬性输出要求（单文件零外部依赖）/设计 token；输出走文件卡→预览→浏览器打开通道。
     ["visualization-guide", VISUALIZATION_SKILL],

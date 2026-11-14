@@ -154,4 +154,10 @@ Blender（python-bridge）做建模 / 场景 / 渲染的实操路径，外加「
 步骤一条一个动作、按元素名/角色描述、不写坐标；密码/令牌/验证码只写占位符；同名保存会更新而不是新建。
 什么时候用：重复流程 ≥3 步、用户说「每天 / 批量 / 下次还这么干」时。⛔ 一次性与试错中的流程不要存；
 运行结果由回合结束回写，流程没跑完前不要宣布成功。`,
+
+  "android-emulator": `# Android 模拟器测试（中文导读）
+在 Windows 本机 ApkStart 模拟器里测 APK：status 看状态 → install 装（可选装完启动）→
+screenshot 截屏（返回 PNG 路径）→ logcat 查崩溃 → adb 透传点按/输入/授权等命令。
+⛔ 首次启动要先下载约 1GB Android 运行时，install 此时返回 pending **不算成功**：稍后查 status 的 runtimeReady，
+不要循环重试；只支持 Windows。`,
 };
