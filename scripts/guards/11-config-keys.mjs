@@ -71,7 +71,9 @@ export async function run() {
   (!/topLevelCompactSeen/.test(bootSrc) ? ok : fail)(
     "【190】自愈判据不再要求「顶层必须有阈值」（11-09 起恰好相反：出现即残留）"
   );
-  (/\|\| compactKeyResidue\)/.test(bootSrc) || /compactKeyResidue\s*\)/.test(bootSrc) ? ok : fail)(
+  // 11-14：重写条件末尾新增 reaMcpBad ⇒ 旧「compactKeyResidue 紧跟右括号」判据假红。
+  // 改为直接验它在 if 条件表达式里（只算不接仍然红）。
+  (/if \([^)]*compactKeyResidue[^)]*\)/.test(bootSrc) ? ok : fail)(
     "【190】残留判据真的接进了重写条件（只算不接 = 恒不做）"
   );
   /* ⛔ 坏形态的覆盖面要锚在**判定正则本身**（不是注释）：11-09 起 scope / 顶层阈值都归「残留」，

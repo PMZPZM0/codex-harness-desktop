@@ -23,6 +23,10 @@ import { decryptSecret, readConnectors } from "./main/07-connectors-io";
    ⛔ 不许在本文件再写一份前缀/过滤规则 —— 那正是「指令教的名字 ≠ 工具列表里的名字」的来源。 */
 import { isConnectorBlockedByBackend, mcpToolName } from "./backend-routing";
 import { stripStepParam } from "../src/lib/step-note.mjs";
+/* 11-14：REA 的 207 个工具不能整批进 dynamicTools（prompt 前缀会爆），改由一个网关工具
+   渐进披露；见 rea-gateway.ts 的三条实测。⛔ 只静态 import 这两个函数，网关内部用动态
+   import 回取 openStdio ⇒ 不构成加载环。 */
+import { callReaGateway, isReaGatewaySpec, reaGatewaySpec } from "./rea-gateway";
 
 export type McpToolSpec = {
   /** 暴露给模型的工具名（加前缀避免与内置撞名，如 kb__search_knowledge） */
@@ -123,14 +127,15 @@ async function listToolsOn(url: string, token: string): Promise<Array<{ name: st
 
 type StdioConn = { command: string; args: string[]; env: Record<string, string> };
 
-type StdioSession = {
+export type StdioSession = {
   call: (method: string, params?: unknown) => Promise<any>;
   notify: (method: string) => void;
   close: () => void;
 };
 
-/** 起一个短命 stdio 会话（用完即 kill；换来的是零状态残留，不会留下孤儿进程） */
-function openStdio(conn: StdioConn): StdioSession {
+/** 起一条 stdio 会话。连接器的 tools/list / tools/call 由 withStdio 用完即关；
+ *  REA 网关会保留同一条会话（它的分析工具跨调用有状态），由 rea-gateway 负责空闲关闭。 */
+export function openStdio(conn: StdioConn): StdioSession {
   const child = spawn(conn.command, conn.args, {
     env: { ...process.env, ...conn.env },
     stdio: ["pipe", "pipe", "pipe"],
@@ -232,9 +237,18 @@ const CACHE_TTL_MS = 5 * 60 * 1000;
 /** 清 MCP 桥的缓存（连接器配置变了之后调，否则还是旧清单）。 */
 export function invalidateMcpBridgeCache(): void { cache = null; }
 
-/** 聚合所有已启用连接器的工具（失败项静默跳过，只留日志） */
+/** REA 网关 spec 每次现算、**不进连接器缓存**：装完/卸完 REA 后工具面必须立刻跟着变
+ *  （缓存里存的是握手结果，包就绪状态变了不该再等 5 分钟）。失败静默，不拖垮 thread/start。 */
+const withReaBridge = (tools: McpToolSpec[]): McpToolSpec[] => {
+  try {
+    const rea = reaGatewaySpec();
+    return rea ? [...tools, rea] : tools;
+  } catch { return tools; }
+};
+
+/** 聚合所有已启用连接器的工具（失败项静默跳过，只留日志）+ REA 网关（包就绪时） */
 export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]> {
-  if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return cache.tools;
+  if (!force && cache && Date.now() - cache.at < CACHE_TTL_MS) return withReaBridge(cache.tools);
   let rows: ConnectorRow[] = [];
   try { rows = (await readConnectors()) as ConnectorRow[]; } catch { rows = []; }
   /* ⛔⛔ 10-20 第二道过滤：**受后端管辖的连接器**（local-memory / cloud-memory / cloud-kb）
@@ -286,7 +300,7 @@ export async function listMcpDynamicTools(force = false): Promise<McpToolSpec[]>
     }
   }
   cache = { at: Date.now(), tools: out };
-  return out;
+  return withReaBridge(out);
 }
 
 /** 转成引擎要的 dynamicTools 结构（OpenAI function schema） */
@@ -309,6 +323,11 @@ export async function resolveMcpTool(name: string): Promise<McpToolSpec | null> 
 export async function callMcpTool(name: string, args: unknown): Promise<{ ok: boolean; text: string }> {
   const spec = await resolveMcpTool(name);
   if (!spec) return { ok: false, text: `未知的 MCP 工具：${name}` };
+  /* ⛔ 11-14：REA 网关不是真实 MCP 工具名 —— 它要在**持久** stdio 会话里做
+     list / describe / call，不能走下面的短命 withStdio（REA 的分析/调试会话跨调用有状态）。 */
+  if (isReaGatewaySpec(spec)) {
+    return callReaGateway(stripStepParam(args && typeof args === "object" ? args : {}));
+  }
   /* ⛔ 转发前剥掉宿主的展示参数 `step`（10-21）：它只服务于界面标题，
      第三方 MCP / 我们自己的执行端都不认这个键 —— 严校验的服务器会直接判成非法入参。
      剥离点就这一处（所有 MCP 调用都从这里出去），别在执行端各写一遍。 */

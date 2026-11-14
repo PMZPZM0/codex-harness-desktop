@@ -66,8 +66,13 @@ const versions = read("scripts/lib/tools-versions.cjs");
     "安装后落盘 version.txt（更新链的已装版本来源，不靠 spawn 自报）");
   ok(runtimeIpc.includes("id === \"filee\"") && /installFileeFromGitHub\(id, TOOLS_VERSIONS\.filee \?\?/.test(runtimeIpc),
     "runtime:install 有 filee 分支（版本钉 tools-versions，读不到时回落 GitHub 最新 tag）");
-  ok(runtimeIpc.includes("const latest = await fetchGitHubLatestTag(gh.repo)") && runtimeIpc.includes("await installFileeFromGitHub(id as DevRuntimeId, latest)"),
-    "runtime:update 的 GitHub 分支 = 查最新 tag 重跑同一条安装函数（手动链=自动链物理同一份）");
+  /* 11-14：ApkStart 接入后 GitHub 直下型改成表驱动（GITHUB_UPDATEABLE[id].install），
+     更新链不再直呼 installFileeFromGitHub。⛔ 断言不能认旧字面量假红，但要继续钉住
+     「表里 filee 的 install 就是手动链那一个函数」⇒ 物理同一份的承诺不降级。 */
+  ok(runtimeIpc.includes("const latest = await fetchGitHubLatestTag(gh.repo)")
+    && /await gh\.install\(id as DevRuntimeId, latest\)/.test(runtimeIpc)
+    && /filee: \{[^}]*install: installFileeFromGitHub/.test(runtimeIpc),
+    "runtime:update 的 GitHub 分支 = 查最新 tag 重跑同一条安装函数（表驱动 GITHUB_UPDATEABLE.install；手动链=自动链物理同一份）");
   // ⛔ 151MB 不许后台偷下：自动更新清单只认配了开关的工具（autoUpdateItems 的 toolKeys 没有 filee）
   ok(!/"filee":\s*"autoUpdate/.test(autoUpdate) && !/filee/.test(autoUpdate),
     "⛔ Filee 不进后台自动更新循环（151MB 只能在控制台/卡片手动更新）");

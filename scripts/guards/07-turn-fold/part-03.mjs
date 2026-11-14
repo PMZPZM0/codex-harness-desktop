@@ -968,7 +968,10 @@ export async function run() {
   (/auto_compact_token_limit:\s*Math\.round\(contextWindow \* compactRatio\)/.test(mainSrc69) ? ok : fail)(
     "【159】压缩阈值写进 catalog 每个模型（= 该模型自己的 context_window × 归一后的比例）"
   );
-  (/\|\| dispatchMcpBad \|\| compactKeyResidue\)/.test(mainSrc69) ? ok : fail)(
+  // 11-14：重写条件末尾又接了 reaMcpBad，不能再认「compactKeyResidue 后面紧跟右括号」。
+  // 改判「compactKeyResidue 确实出现在 if 条件里」，判据强度不变（只算不接照样红）。
+  (/\|\| dispatchMcpBad \|\| compactKeyResidue\b/.test(mainSrc69)
+    && /if \([^)]*compactKeyResidue[^)]*\)/.test(mainSrc69) ? ok : fail)(
     "【159】顶层阈值残留判据**接进了重写条件**（只算不接 = 恒不做；顶层出现阈值/scope/max_output 即整份重写清掉）"
   );
 }

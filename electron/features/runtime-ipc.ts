@@ -36,6 +36,7 @@ import { sendToWindow } from "./window-bus";
 import { readAppSettings, saveAppSettings } from "../app-settings";
 import type { AppSettings } from "../app-settings";
 import { healPonytailInstall } from "../ponytail-heal";
+import { REA_PINNED_VERSION } from "../rea-gateway";
 import { layaInstall } from "./laya-service";
 import { installPhoneHarness } from "./phone-harness";
 import { codexHome, server } from "../runtime-refs";
@@ -427,7 +428,9 @@ function runtimeUninstallTargets(id: DevRuntimeId, spec: DevRuntimeSpec): string
  *  ⇒ 判据必须与卡片**同源**（就是同一个 runtimeInstalled），否则又造出第二套口径。
  *  ⛔ 只在「真跑过安装」的分支调用：guide（去官网）/ builtIn（无需安装）/ 已就绪 三条不算。 */
 function assertInstallVerified(id: DevRuntimeId, spec: DevRuntimeSpec): void {
-  if (runtimeInstalled(id, spec)) return;
+  // ⛔ 11-14：REA 的 marker 只查 package.json，半截安装（缺 rea.mjs / dist chunk）照样会过
+  //    ⇒ 界面报「安装完成」但专家永远不出现。复核必须再过一次「能用的安装」口径（reaServerScript 三查）。
+  if (runtimeInstalled(id, spec) && (id !== "rea" || Boolean(reaServerScript()))) return;
   throw new Error(
     `「${spec.name}」安装流程已结束，但复核未通过 —— 在预期位置找不到已安装产物`
     + `（安装根目录：${writeToolsRoot()}）。这通常是安装器「假成功」（命令退出码 0 但没落盘），`
@@ -896,15 +899,17 @@ async function devRuntimeHealth(): Promise<DevRuntimeHealth[]> {
  * ⛔ 必须重启引擎：nuphus 是引擎 spawn 的 MCP 子进程，CLI 也在引擎的 PATH 上。
  * ⛔ 新增可更新工具时，**同时**改这里与界面侧清单（界面侧从 runtime:update-check 全量拉，不用改）。
  */
-const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?: NodeJS.Platform[] }> = {
+const UPDATEABLE_TOOLS: Record<string, { pkg: string; label: string; platforms?: NodeJS.Platform[]; pin?: string }> = {
   nuphus: { pkg: "@nuphus/nuphus-mcp", label: "Nuphus 桌面自动化" },
   /* 11-13：Nuphus / Computer Use 默认关，但仍是可安装/可更新的可选后端
      （用户显式开启后参与兜底；computer-use 仅 darwin/win32 有二进制）。 */
   "computer-use": { pkg: "open-computer-use", label: "电脑操作（Computer Use）", platforms: ["darwin", "win32"] },
   // 11-13 agent-desktop（Vercel Labs，Apache-2.0）：无障碍树桌面后端，npm 包自带上三平台二进制。
   "agent-desktop": { pkg: "agent-desktop", label: "Agent Desktop（无障碍树）", platforms: ["darwin", "win32", "linux"] },
-  // REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
-  rea: { pkg: "rea-agents", label: "REA 逆向分析" },
+  /* REA 逆向分析（10-13）：同一条在线更新链（fetchRegistryLatest = 国内镜像优先 + 官方回落）。
+     ⛔ 11-14 起**锁版本**：随包 Node v24.19.0 不满足 6.8.0+ 的 engines（^24.22.1），追 latest
+     会把刚装好的包装成「一启动就 exit 1」。pin = 兼容上限，理由与解除条件见 rea-gateway.ts。 */
+  rea: { pkg: "rea-agents", label: "REA 逆向分析", pin: REA_PINNED_VERSION },
   "feishu-cli": { pkg: "@larksuite/cli", label: "飞书 CLI" },
 };
 
@@ -1027,6 +1032,14 @@ export async function checkRuntimeUpdateRow(id: string): Promise<RuntimeUpdateRo
   if (!tool) throw new Error(`该工具不支持在线更新：${id}`);
   const source = await readDownloadSource();
   const current = installedVersionOf(id);
+  /* ⛔ 11-14 pin 工具（REA）：目标版本 = pin，不查上游 latest —— 否则界面会一直提示
+     「有更新 6.9.0」，用户一点就把能被内置 Node 跑起来的包换成 exit 1 的死包。 */
+  if (tool.pin) {
+    return {
+      id, name: tool.label, pkg: tool.pkg, current, latest: tool.pin, registry: CHINA_NPM_REGISTRY,
+      hasUpdate: current !== tool.pin, error: "",
+    };
+  }
   try {
     const { version: latest, registry } = await fetchRegistryLatest(tool.pkg, source);
     return { id, name: tool.label, pkg: tool.pkg, current, latest, registry, hasUpdate: !current || compareVersions(latest, current) > 0, error: "" };
@@ -1076,11 +1089,16 @@ export async function performRuntimeUpdate(
   /* ⛔ 11-10：检查更新已按「所有源取最大」判版本，安装必须复用**同一份结论** ——
      装 <pkg>@<具体版本> 并优先从胜出源装，最后复核磁盘版本确实等于目标。
      否则镜像还没同步新版时，@latest 会装回旧版：界面显示「有更新」却永远点不动。 */
-  let target: { version: string; registry: string } | null = null;
-  try {
-    target = await fetchRegistryLatest(tool.pkg, downloadSource);
-  } catch (error) {
-    emitRuntimeProgress(id, `查最新版本失败，改用 @latest 与默认源序：${(error as Error)?.message ?? String(error)}`);
+  // ⛔ pin 工具的安装结论必须与 checkRuntimeUpdateRow 同源（11-14：一个查 latest 一个装 pin ⇒ 界面显示的版本与实装不符）。
+  let target: { version: string; registry: string } | null = tool.pin
+    ? { version: tool.pin, registry: CHINA_NPM_REGISTRY }
+    : null;
+  if (!target) {
+    try {
+      target = await fetchRegistryLatest(tool.pkg, downloadSource);
+    } catch (error) {
+      emitRuntimeProgress(id, `查最新版本失败，改用 @latest 与默认源序：${(error as Error)?.message ?? String(error)}`);
+    }
   }
   const pkgSpec = target ? `${tool.pkg}@${target.version}` : `${tool.pkg}@latest`;
   // 官方源映射成 ""（npm 不设 registry）；镜像本来就是默认首选项 ⇒ 不必插队；
@@ -1394,9 +1412,10 @@ export const runtimeFeature = defineFeature<null>({
              首启再由它自己下载 Android 运行时；更新链同上（GITHUB_UPDATEABLE.install）。 */
           await installApkStartFromGitHub(id, TOOLS_VERSIONS.apkstart ?? (await fetchGitHubLatestTag(APKSTART_REPO)));
         } else if (id === "rea") {
-          // REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 更新到 latest
-          // （UPDATEABLE_TOOLS 的 rea 条目让「设置 → 自动化」的在线更新链对它同样成立）。
-          await runNpmInstall(id, "rea-agents", "REA 逆向分析", downloadSource);
+          /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
+             ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，
+             装 @latest 会得到一个一启动就 exit 1 的死包。理由与解除条件见 rea-gateway.ts。 */
+          await runNpmInstall(id, `rea-agents@${REA_PINNED_VERSION}`, "REA 逆向分析", downloadSource);
         } else {
           // ⛔ DOWNLOAD_SOURCE 经环境变量传给安装脚本 —— 脚本 argv 的裸词会被当成工具 id。
           await runRuntimeInstaller(id, runtimeInstaller("install-runtimes.cjs"), [id], process.execPath, { DOWNLOAD_SOURCE: downloadSource });

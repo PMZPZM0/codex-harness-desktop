@@ -39,6 +39,8 @@ import { personalNormsPrompt } from "../../src/lib/engineering-norms.mjs";
 import type { RoleRef } from "../role-memory";
 import { buildRoleMemoryTool, noteRoleThread } from "../role-memory-tool";
 import { buildDelegateHarnessTool } from "../delegate-harness-tool";
+import { reaGatewaySpec } from "../rea-gateway";
+import { toDynamicTools } from "../mcp-bridge";
 
 /** 复用准备中的目标（`origin|targetKey`）：同一目标被并行派活时只允许一条走 resume。
  *  ⛔ 没有它：两条并行派活可能在 `beginReuse`（把记录置 running）之前同时命中同一条旧会话
@@ -240,8 +242,14 @@ export async function runDelegatedTask(input: {
      退而调 agent_invoke 又被 L3 闸拒，界面表现就是「主代理喊不动成员」。
      引擎只在 `thread/start` 定死工具面，resume 传 dynamicTools 整份忽略 ⇒ 复用前必须
      按附录 Z 改写首行。这份同时供新建分支使用，⛔ 两处不许各写一份。 */
+  /* ⛔ 11-14：被委派会话的 thread/start 由主进程直发，**不经过** codex-ipc 的工具面合并
+     （见下方 317 行注释）—— 只并 teamTools + harness_tools 的话，内置专家「洞见」拿不到
+     REA 网关，200+ 个逆向工具对它全不可达（requiresTool 门控过了也没用）。
+     与主会话同一个工具名 rea__gateway；包没就绪就不挂，专家本来就按 requiresTool 隐藏。 */
+  const reaSpec = reaGatewaySpec();
   const desiredTools = withStepParam([
     ...teamTools, buildDelegateHarnessTool(), ...(roleRef ? [buildRoleMemoryTool(roleRef)] : []),
+    ...(reaSpec ? toDynamicTools([reaSpec]) : []),
   ]);
   const targetKey = `${target.kind}:${target.key}`;
   let threadId = "";
@@ -259,8 +267,10 @@ export async function runDelegatedTask(input: {
       /* 复用 = 老会话，它的工具面是**创建那一刻**的，可能压根没有本目标该有的工具。
          ⛔ 必须在 thread/resume 之前 await 完（resume 会立刻 spawn 并读首行）。
          ⛔ 只修团主理人 / 有专属工具的会话：其它目标的复用行为保持原样，别扩大影响面。
-         失败静默（syncToolSurfaceAsync 自己有原子替换与校验），绝不挡住派活。 */
-      if (leadOfTeam) {
+         失败静默（syncToolSurfaceAsync 自己有原子替换与校验），绝不挡住派活。
+         ⛔ 11-14：REA 装好后，复用中的专家/子智能体会话首行可能还是「装之前」的工具面
+         ⇒ 也同步一次（desiredTools 就是它新建时该有的那份，不是宿主通用工具面）。 */
+      if (leadOfTeam || reaSpec) {
         try { await syncToolSurfaceAsync(codexHome, reusable.threadId, desiredTools as unknown[]); }
         catch { /* 工具面升级失败：新建分支仍会带全套工具 */ }
       }

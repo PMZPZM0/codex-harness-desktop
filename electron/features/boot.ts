@@ -55,7 +55,8 @@ import { applyPersonalizationToAgentsMd, migrateGreetedForExistingUsers, readPer
 
 import { repairSkillBomScan } from "../skills-market";
 import { migrateBuiltinPluginSecrets, builtinPluginEnv, readBuiltinPlugins } from "../main/09-agents-plugins";
-import { applyProcessPath, augmentedPath, existingToolPath, toolsRoot } from "../toolchain";
+import { applyProcessPath, augmentedPath, bundledNode, existingToolPath, reaServerScript, toolsRoot } from "../toolchain";
+import { reaMcpDrifted } from "../rea-gateway";
 import { ensurePonytailPlugin } from "../ponytail-plugin";
 import { healPonytailInstall } from "../ponytail-heal";
 import { getPonytailMode } from "../conventions/ponytail-mode";
@@ -1437,6 +1438,14 @@ export async function bootApp() {
       //   调度工具面真相源 = 宿主 dynamicTools。HTTP /rpc 服务照旧由 boot 起，不受影响。
       const dispatchMcpCount = (configText.match(/\[mcp_servers\.harness-dispatch\]/g) || []).length;
       const dispatchMcpBad = dispatchMcpCount !== 0;
+      /* ⛔⛔ 11-14 REA 段形态自愈（真机取证：用户 config.toml 里是上游 install.sh 写的
+         `cmd.exe /d /c npx -y rea-agents@6.5.0 mcp`，不是宿主生成形态）：
+         · ownedMcpServers 含 rea ⇒ 一旦任意其它条件触发 applyCustomModel，旧段会被丢弃；
+         · 但上面 8 项漂移判据都不看 rea 段形态 ⇒ 不触发重写时，引擎每次启动都 spawn npx 联网拉包，
+           与「按需下载后离线就绪」相悖（且 npx 拉到的版本可能跑不了随包 Node）。
+         判据与 rea 段的生成条件同源（reaServerScript 三查 + 随包 node），一次重写即收敛、幂等。 */
+      const reaReady = Boolean(reaServerScript() && bundledNode());
+      const reaMcpBad = reaMcpDrifted(configText, reaReady);
       // ⛔ 安装目录漂移（09-19 用户：「还有没有绝对路径的，通通查出来了解决掉」）：
       //   上面所有检查都只问「键**在不在**」，不问「路径**还对不对**」。而 config.toml 里的
       //   PATH / PYTHON / PYTHONHOME / tools 相关绝对路径是**按当时的安装目录生成**的 ——
@@ -1456,8 +1465,8 @@ export async function bootApp() {
       // 不该因为一个损坏的 json 把整段自愈判据一起带崩。
       // ⛔ 10-30 撤 nuphus 视觉 env 漂移判据：视觉辅助插件整体移除后
       //    原 nuphus-env 纯函数已删，老 config.toml 的残留 env 段由 preserveUserConfig 收敛（与「不需要 env」分支同型）。
-      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactKeyResidue) {
-        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactKeyResidue=${compactKeyResidue}; rewriting`);
+      if (legacyContextKey || providerOutdated || environmentOutdated || envPathStale || instructionsOutdated || disabledMissing || dispatchMcpBad || compactKeyResidue || reaMcpBad) {
+        console.warn(`[custom-model] config drift: providerOutdated=${providerOutdated}, environment=${environmentOutdated}, envPathStale=${envPathStale}, instructions=${instructionsOutdated}, disabledMissing=${disabledMissing}, dispatchMcpCount=${dispatchMcpCount}, compactKeyResidue=${compactKeyResidue}, reaMcpBad=${reaMcpBad}; rewriting`);
         await applyCustomModel(custom);
       }
     } catch (error) {
@@ -1469,10 +1478,19 @@ export async function bootApp() {
     try {
       const cfgPath = path.join(codexHome, "config.toml");
       const existing = await fs.readFile(cfgPath, "utf8").catch(() => "");
+      let cleaned = existing;
+      let changed = false;
       if (/\[mcp_servers\.harness-dispatch\]/.test(existing)) {
-        const cleaned = existing.replace(/\[mcp_servers\.harness-dispatch\][^\[]*/g, "").replace(/\[mcp_servers\.harness-dispatch\.env\][^\[]*/g, "");
-        await writeTextFileAtomic(cfgPath, cleaned.trimEnd() + "\n");
+        cleaned = cleaned.replace(/\[mcp_servers\.harness-dispatch\][^\[]*/g, "").replace(/\[mcp_servers\.harness-dispatch\.env\][^\[]*/g, "");
+        changed = true;
       }
+      /* 11-14：无自定义模型时同样清掉外部形态 / 残留的 rea 段（宿主形态由 applyCustomModel 生成；
+         REA 的模型侧工具面由 rea-gateway 直连，不依赖这一段 ⇒ 清掉不影响可用性）。 */
+      if (cleaned.includes("[mcp_servers.rea]") && reaMcpDrifted(cleaned, Boolean(reaServerScript() && bundledNode()))) {
+        cleaned = cleaned.replace(/^\s*\[mcp_servers\.rea\][^\[]*/gm, "");
+        changed = true;
+      }
+      if (changed) await writeTextFileAtomic(cfgPath, cleaned.trimEnd() + "\n");
     } catch (error) {
       console.warn("[dispatch] 清理历史 MCP 段失败：", error);
     }

@@ -352,8 +352,12 @@ export function agentDesktopLauncher() {
  *    `dist/mcp/main.js` 是 `rea.mjs mcp` 硬依赖的运行时入口（缺失时启动器报 "compiled runtime is missing"）；
  *    与 computerUseLauncher「脚本 + 主程序双查」同一条纪律。装坏 ⇒ 空串 ⇒ 不注册、专家队也按 requiresTool 隐藏，
  *    并由更新链（installedVersionOf 对 rea 同口径）当作「未装」触发重装自愈。
+ * ⛔⛔ 11-14 补第三查 `package.json`：真机取证抓到另一种半截安装 —— 包目录在、dist/mcp/main.js 也在，
+ *    但 package.json / rea.mjs / 38 个 dist chunk 全没了。`rea.mjs` 首屏就 `import("../package.json")`，
+ *    缺它即使脚本在也是一启动 MODULE_NOT_FOUND。三件齐才算「能用的安装」。
  */
 export function reaServerScript() {
+  if (!npmPackagePath("rea-agents", "package.json")) return "";
   const script = npmPackagePath("rea-agents", "scripts", "rea.mjs");
   if (!script) return "";
   return npmPackagePath("rea-agents", "dist", "mcp", "main.js") ? script : "";

@@ -72,10 +72,14 @@ const ok = (condition, message) => {
   ok(/约 100 MB/.test(spec), "卡片标注实测体积 约 100 MB");
 
   const rt = codeOnly(read("electron/features/runtime-ipc.ts"));
-  ok(rt.includes('id === "rea"') && rt.includes('"rea-agents"'),
-    "runtime:install 分支：rea → runNpmInstall(rea-agents)（npmmirror 优先 + 官方回落）");
-  ok(/rea: \{ pkg: "rea-agents", label: "REA 逆向分析" \}/.test(rt),
-    "⛔ UPDATEABLE_TOOLS 登记 rea（在线更新链 = 国内镜像优先，用户点名）");
+  ok(rt.includes('id === "rea"') && /rea-agents@\$\{REA_PINNED_VERSION\}/.test(rt),
+    "⛔ runtime:install 分支：rea → runNpmInstall(rea-agents@pin)（锁与内置 Node 兼容的版本）");
+  ok(/rea: \{ pkg: "rea-agents", label: "REA 逆向分析", pin: REA_PINNED_VERSION \}/.test(rt),
+    "⛔ UPDATEABLE_TOOLS 登记 rea + pin（不追 6.8.0+ 那个一启动就 exit 1 的 latest）");
+  ok((rt.match(/if \(tool\.pin\)/g) || []).length >= 1 && /version: tool\.pin/.test(rt),
+    "⛔ pin 贯通「检查更新」与「在线安装」两条路径（漏一处就会装回 @latest）");
+  ok(/runtimeInstalled\(id, spec\) && \(id !== "rea" \|\| Boolean\(reaServerScript\(\)\)\)/.test(rt),
+    "⛔ 安装复核（11-14）：rea 除 marker 外还要过 reaServerScript 三查，半截安装不许报成功");
   ok(/if \(id === "rea" && !reaServerScript\(\)\) return "";/.test(rt),
     "⛔ 更新链自愈（11-07）：installedVersionOf 对 rea 以就绪口径回报 —— dist 被掏空时当作未装，hasUpdate=true 触发重装（否则版本号还在就判「已是最新」永久卡死）");
   ok(/rea: \{ dirs: \["node_modules\/rea-agents"\], shims: \["rea", "rea-agents"\] \}/.test(rt),
@@ -94,8 +98,58 @@ const ok = (condition, message) => {
   const toolchain = codeOnly(read("electron/toolchain.ts"));
   ok(/export function reaServerScript\(\)/.test(toolchain) && /rea-agents", "scripts", "rea\.mjs/.test(toolchain),
     "toolchain.reaServerScript：定位 npm-global 的 rea.mjs，缺失返回空串");
-  ok(/export function reaServerScript\(\)\s*\{[\s\S]*?npmPackagePath\("rea-agents", "dist", "mcp", "main\.js"\)\s*\?\s*script\s*:\s*""/.test(toolchain),
-    "⛔ 就绪双查（11-07）：rea.mjs 之外还要 dist/mcp/main.js 在才返回脚本 —— 更新掏空 dist 时不注册起不来的服务器（computerUseLauncher 同款纪律）");
+  ok(/export function reaServerScript\(\)\s*\{[\s\S]*?npmPackagePath\("rea-agents", "package\.json"\)[\s\S]*?npmPackagePath\("rea-agents", "dist", "mcp", "main\.js"\)\s*\?\s*script\s*:\s*""/.test(toolchain),
+    "⛔ 就绪三查（11-14）：package.json + rea.mjs + dist/mcp/main.js 齐才算能用的安装（真机半截安装：main.js 在但前两个没了）");
+}
+
+/* ── 六、模型侧工具面：网关（11-14，⛔ 引擎 0.157+ 延迟暴露 MCP 工具）───── */
+{
+  const gw = read("electron/rea-gateway.ts");
+  ok(/export const REA_PINNED_VERSION = "6\.7\.0"/.test(gw) && /24\.22\.1/.test(gw),
+    "⛔ 锁版本 6.7.0 且写明原因（随包 Node v24.19.0 < 6.8.0+ 的 engines 下限）");
+  ok(/export function reaGatewaySpec\(\)[\s\S]*?name: REA_GATEWAY_TOOL[\s\S]*?rawName: REA_GATEWAY_MARK/.test(gw),
+    "⛔ 只暴露一个网关工具（207 个工具整批进 dynamicTools 会撑爆 prompt 前缀）");
+  ok(/action: \{ type: "string", enum: \["list", "describe", "call"\]/.test(gw),
+    "网关按 list / describe / call 渐进披露");
+  ok(/async function ensureSession[\s\S]*?if \(active && active\.command === command/.test(gw)
+    && /resetSession\(\);\s*return \{ ok: false/.test(gw),
+    "⛔ 持久 stdio 会话（REA 分析/调试状态跨调用）；失败只重置、不自动重试有状态工具");
+  const bridge = read("electron/mcp-bridge.ts");
+  ok(/export function openStdio/.test(bridge) && /export type StdioSession/.test(bridge),
+    "stdio 分帧器单一真相源：rea-gateway 动态 import 复用 openStdio（不复制一份）");
+  ok(/const withReaBridge =/.test(bridge) && (bridge.match(/return withReaBridge\(/g) || []).length === 2,
+    "⛔ REA 网关挂进 listMcpDynamicTools 的两条返回路径（缓存命中 / 重新握手）⇒ thread/start 与 resume 自动覆盖");
+  ok(/if \(isReaGatewaySpec\(spec\)\)[\s\S]*?return callReaGateway\(/.test(bridge),
+    "⛔ callMcpTool 对网关分流（不能走短命 withStdio，会丢分析状态）");
+  const driftFn = /export function reaMcpDrifted\(configText: string, ready: boolean\): boolean \{([\s\S]*?)\n\}/.exec(gw);
+  ok(Boolean(driftFn), "reaMcpDrifted 是纯函数（可被守卫真跑）");
+  if (driftFn) {
+    let drifted = null;
+    try { drifted = new Function("configText", "ready", driftFn[1]); } catch { /* 语法变了就报红 */ }
+    ok(Boolean(drifted), "reaMcpDrifted 函数体可独立执行（无 electron / 路径依赖）");
+    if (drifted) {
+      const host = '[mcp_servers.rea]\ncommand = "C:/app/node.exe"\nargs = ["C:/app/scripts/rea.mjs", "mcp"]\n\n[other]\nx = 1';
+      const external = '[mcp_servers.rea]\ncommand = "cmd.exe"\nargs = ["/d", "/c", "npx -y rea-agents@6.5.0 mcp"]';
+      const none = '[other]\nx = 1';
+      ok(drifted(host, true) === false, "真跑①：宿主形态 + 包就绪 ⇒ 不漂移（幂等，不每次启动重写）");
+      ok(drifted(external, true) === true, "真跑②：上游 install.sh 的 npx 形态 ⇒ 触发自愈重写");
+      ok(drifted(none, true) === true, "真跑③：包就绪但缺段 ⇒ 触发补写");
+      ok(drifted(external, false) === true, "真跑④：包未就绪却残留段 ⇒ 触发清理");
+      ok(drifted(none, false) === false, "真跑⑤：包未就绪且无段 ⇒ 不漂移");
+    }
+  }
+  const delegation = read("electron/features/delegation.ts");
+  ok(/const reaSpec = reaGatewaySpec\(\)/.test(delegation)
+    && /\.\.\.\(reaSpec \? toDynamicTools\(\[reaSpec\]\) : \[\]\)/.test(delegation),
+    "⛔ 被委派专家会话（主进程直发 thread/start，不经过 codex-ipc 合并）也挂 rea__gateway —— 否则「洞见」拿不到任何逆向工具");
+  ok(/if \(leadOfTeam \|\| reaSpec\)/.test(delegation),
+    "⛔ 复用中的专家会话也同步工具面（装包前建的会话不会永久缺 REA）");
+  const boot = read("electron/features/boot.ts");
+  ok(/const reaMcpBad = reaMcpDrifted\(configText, reaReady\)/.test(boot)
+    && /\|\| reaMcpBad\)/.test(boot),
+    "⛔ boot 的 config drift 判据纳入 rea 段形态（否则外部 npx 段永远不自愈）");
+  ok(/reaMcpDrifted\(cleaned, Boolean\(reaServerScript\(\) && bundledNode\(\)\)\)/.test(boot),
+    "⛔ 无自定义模型分支也清理外部形态 rea 段（两条启动路径都收敛）");
 }
 
 ok(/id: "rea",/.test(read("electron/update-registry.ts")) && /REA 逆向分析（洞见专用）/.test(read("electron/update-registry.ts")),

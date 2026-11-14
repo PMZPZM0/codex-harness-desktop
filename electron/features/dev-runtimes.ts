@@ -71,7 +71,9 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   // ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT）：Windows 安卓应用运行器，自持 QEMU 运行时。
   //   CLI：`ApkStart.exe <apk>` 安装、`--launch <包名>` 启动；119MB 便携包按需下载，首次启动再下载 Android 运行时。
   apkstart: { name: "ApkStart 安卓运行器", description: "Windows 安卓应用运行器（RoutineMiku/apkstart，MIT）：双击 APK 安装，应用以独立窗口运行，自持 QEMU 运行时；给 Codex 提供 apkstart 工具做 APK 安装与启动测试。仅 Windows 10/11 x64，首次启动再下载运行时", size: "约 119 MB（首启再下运行时）", marker: "apkstart\\ApkStart.exe" },
-  rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载、重跑同卡即更新到最新版", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
+  // ⛔ 11-14：锁版本 6.7.0（随包内置 Node v24.19.0 的兼容上限，6.8.0+ 启动即 exit 1）。
+  //   工具面走 rea-gateway 网关（渐进披露 207 个工具），⛔ 不靠 config.toml 的 MCP 段被模型直调。
+  rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载，版本锁定在随包 Node 的兼容上限", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。
   jq: { name: "jq", description: "命令行查询、筛选和转换 JSON；随包内置，开箱即用", size: "随包 1 MB", marker: "jq\\jq.exe", builtIn: true },
