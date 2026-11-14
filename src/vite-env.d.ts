@@ -1447,7 +1447,7 @@ interface Window {
     /* 11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务 */
     openmaicPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
     /* 11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态） */
-    huskStatus(): Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>;
+    huskStatus(): Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; tipaInstalled: boolean; tipaVersion: string; tipaPath: string; tipaSizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>;
     /* 11-14 打开 Husk 官方安装指南（itslevii.dev/docs/install：SideStore / AltStore / TrollStore 三条路） */
     huskGuide(): Promise<{ ok: boolean; url: string }>;
     /* 11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder） */

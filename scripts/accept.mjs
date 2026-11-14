@@ -1486,6 +1486,7 @@ const CHECKS = [
           updateRow:[...d.querySelectorAll(".runtime-row")].some(function(r){ return (r.querySelector(".runtime-copy strong")?.textContent||"").trim()==="更新"; }),
           sideloadRow:/侧载到 iPhone/.test(t),
           compatRow:/兼容性/.test(t),
+          tipaRow:/TrollStore 专用（可选）/.test(t) && /下载 TIPA|TIPA 已下载/.test(t),
           ios:/iOS 15\\.5\\+/.test(t),
           guideBtn:buttons.some(function(b){ return b.includes("安装指南"); }),
           sourceBtn:buttons.some(function(b){ return b.includes("复制 AltStore 源"); }),
@@ -1494,8 +1495,8 @@ const CHECKS = [
           gpl:/GPL-2\\.0/.test(t),
         };
       })()`).catch(() => null);
-      h.check("③ 弹窗四块齐：下载 IPA / 更新 / 侧载到 iPhone / 兼容性",
-        Boolean(dialog) && dialog.downloadRow && dialog.updateRow && dialog.sideloadRow && dialog.compatRow, JSON.stringify(dialog));
+      h.check("③ 弹窗五块齐：下载 IPA / 更新 / 侧载到 iPhone / TIPA / 兼容性",
+        Boolean(dialog) && dialog.downloadRow && dialog.updateRow && dialog.sideloadRow && dialog.tipaRow && dialog.compatRow, JSON.stringify(dialog));
       h.check("④ 侧载区有安装指南 + AltStore 源；已下载时多「打开 IPA」",
         Boolean(dialog) && dialog.guideBtn && dialog.sourceBtn && dialog.hasOpenIpa === Boolean(status && status.installed),
         JSON.stringify({ guide: dialog && dialog.guideBtn, source: dialog && dialog.sourceBtn, hasOpenIpa: dialog && dialog.hasOpenIpa, installed: status && status.installed }));

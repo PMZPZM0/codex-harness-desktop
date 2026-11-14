@@ -6297,7 +6297,7 @@
       "channel": "husk:status",
       "paramsImpl": "",
       "paramsDecl": "",
-      "returns": "Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>",
+      "returns": "Promise<{ installed: boolean; version: string; path: string; sizeBytes: number; tipaInstalled: boolean; tipaVersion: string; tipaPath: string; tipaSizeBytes: number; guideUrl: string; sourceUrl: string; requirement: string; attribution: { license: string; home: string } }>",
       "invokeArgs": "",
       "cast": null,
       "note": "11-14 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）下载状态：官方 Husk.ipa 在不在 / 版本 / 大小 / 官方侧载指南与 AltStore 源；不探测 iPhone（电脑侧看不到真机安装态）"

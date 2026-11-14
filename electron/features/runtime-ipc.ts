@@ -31,7 +31,7 @@ import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGl
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
-import { HUSK_REPO, huskInstalledVersion, installHuskFromGitHub } from "../husk-install";
+import { HUSK_REPO, huskInstalledVersion, installHuskFromGitHub, installHuskTipaFromGitHub } from "../husk-install";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -1427,6 +1427,9 @@ export const runtimeFeature = defineFeature<null>({
         } else if (id === "husk") {
           /* Husk（11-14）：只下载官方 Husk.ipa（约 142MB，SHA256 校验），真机侧载在 iPhone 上完成。 */
           await installHuskFromGitHub(id, TOOLS_VERSIONS.husk ?? (await fetchGitHubLatestTag(HUSK_REPO)));
+        } else if (id === "husk-tipa") {
+          /* Husk TIPA（11-14）：TrollStore 专用 .tipa，同版本；与 IPA 分文件、分版本号。 */
+          await installHuskTipaFromGitHub(id, TOOLS_VERSIONS.husk ?? (await fetchGitHubLatestTag(HUSK_REPO)));
         } else if (id === "rea") {
           /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
              ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，

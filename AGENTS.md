@@ -641,7 +641,7 @@ Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依
 ⛔ 别再只写「去控制台 → 组件更新」当唯一入口。
 **Husk（iPhone 跑 Android）**（11-14，Leviidev/Husk，GPL-2.0-or-later，iOS 15.5+）：翻译层直跑 + QEMU 兜底，
 导入 APK 全屏运行。电脑侧只按需下载官方 `Husk.ipa`（142MB，GitHub release 镜像序 + SHA256 → `tools/husk/Husk.ipa`）
-并给 SideStore / AltStore / TrollStore 侧载指南（`itslevii.dev/docs/install`，源 `itslevii.dev/repo.json`）。
+并给 SideStore / AltStore / TrollStore 侧载指南（`itslevii.dev/docs/install`，源 `itslevii.dev/repo.json`）；TrollStore 用户可在同一卡片单独下载 `Husk.tipa`（hidden 工具项 `husk-tipa`，独立版本号）。
 ⛔ **不从电脑直接装进 iPhone**（需要真机 + 签名侧载，宿主不假装能做到）；GPL 外部工具只下载官方 IPA，不 import 其源码。
 守卫 12bq。
 全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），

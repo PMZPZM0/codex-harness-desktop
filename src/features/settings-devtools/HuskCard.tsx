@@ -31,6 +31,10 @@ type Status = {
   version: string;
   path: string;
   sizeBytes: number;
+  tipaInstalled: boolean;
+  tipaVersion: string;
+  tipaPath: string;
+  tipaSizeBytes: number;
   guideUrl: string;
   sourceUrl: string;
   requirement: string;
@@ -61,17 +65,22 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
   useEffect(() => { void refresh(); }, [refresh]);
 
   const installing = runtimeInstalling === "husk";
-  const otherBusy = Boolean(runtimeInstalling) && !installing;
+  const tipaInstalling = runtimeInstalling === "husk-tipa";
+  const otherBusy = Boolean(runtimeInstalling) && !installing && !tipaInstalling;
   const uninstalling = runtimeUninstalling === "husk";
   const percent = Math.round(Number(runtimePercent?.["husk"] ?? 0));
   const speed = runtimeSpeed?.["husk"] ?? "";
   const latest = runtimeProgress?.["husk"] ?? "";
   const installFailed = latest.startsWith("安装失败");
   const sizeMb = status?.sizeBytes ? Math.round(status.sizeBytes / 1048576) : 0;
+  const tipaMb = status?.tipaSizeBytes ? Math.round(status.tipaSizeBytes / 1048576) : 0;
+  const tipaPercent = Math.round(Number(runtimePercent?.["husk-tipa"] ?? 0));
+  const tipaStage = runtimeStage?.["husk-tipa"] ?? "";
+  const tipaLatest = runtimeProgress?.["husk-tipa"] ?? "";
 
   useEffect(() => {
     const off = window.codex.onRuntimeProgress((payload: { id?: string; done?: boolean }) => {
-      if (payload?.id !== "husk" || !payload.done) return;
+      if ((payload?.id !== "husk" && payload?.id !== "husk-tipa") || !payload.done) return;
       void refresh();
     });
     return off;
@@ -168,6 +177,29 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
             </div>
           </div>
 
+          <div className={`runtime-row ${status?.tipaInstalled ? "installed" : "missing"} ${tipaInstalling ? "busy" : ""}`}>
+            <span className="runtime-icon">{tipaInstalling ? <Spinner /> : status?.tipaInstalled ? <Check size={15} /> : <Download size={15} />}</span>
+            <span className="runtime-copy">
+              <strong>TrollStore 专用（可选）</strong>
+              <small>{tipaInstalling ? "正在下载 Husk.tipa…" : status?.tipaInstalled ? `已下载 TIPA${status.tipaVersion ? ` ${status.tipaVersion}` : ""}${tipaMb ? `（${tipaMb} MB）` : ""}；TrollStore 用户装这个更方便` : "TrollStore 用户可单独下载 .tipa（与 IPA 同版本）；SideStore / AltStore 用户不需要"}</small>
+              {tipaInstalling ? (
+                <span className="runtime-install-state devtools-progress-row">
+                  <span className="runtime-progress-bar" role="progressbar" aria-label="TIPA 下载进度" aria-valuenow={tipaPercent} aria-valuemin={0} aria-valuemax={100}><i style={{ width: `${tipaPercent}%` }} /></span>
+                  <em className="runtime-progress">{tipaStage || "正在准备下载…"}{tipaPercent ? ` · ${tipaPercent}%` : ""}{tipaLatest ? ` · ${tipaLatest}` : ""}</em>
+                </span>
+              ) : null}
+            </span>
+            <div className="runtime-actions">
+              {tipaInstalling ? (
+                <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.("husk-tipa")}>取消</button>
+              ) : status?.tipaInstalled ? (
+                <span className="runtime-badge installed">TIPA 已下载</span>
+              ) : (
+                <button type="button" className="secondary-setting runtime-install" disabled={otherBusy} onClick={() => installDevRuntime?.("husk-tipa")}><Download size={13} />下载 TIPA</button>
+              )}
+            </div>
+          </div>
+
           <div className={`runtime-row ${status?.installed ? "installed" : "missing"}`}>
             <span className="runtime-icon"><Zap size={15} /></span>
             <span className="runtime-copy">
@@ -227,7 +259,7 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
         <SettingsDialog title="删除 Husk.ipa" icon={<Trash2 size={15} />} hint="只删电脑上的安装包" size="sm" onClose={() => setUninstallOpen(false)}>
           <div className="settings-section stack feishu-uninstall-confirm">
             <p className="settings-card-hint">
-              会删除电脑上下载的 Husk.ipa（约 142 MB）。iPhone 上已经侧载的 Husk 应用与 Android 数据不会被影响。
+              会删除电脑上下载的 Husk.ipa 与 Husk.tipa（各约 142 MB）。iPhone 上已经侧载的 Husk 应用与 Android 数据不会被影响。
             </p>
             <div className="feishu-uninstall-actions">
               <button type="button" className="secondary-setting" onClick={() => setUninstallOpen(false)}>取消</button>

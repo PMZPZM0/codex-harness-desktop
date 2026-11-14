@@ -18,6 +18,10 @@ type HuskStatus = {
   version: string;
   path: string;
   sizeBytes: number;
+  tipaInstalled: boolean;
+  tipaVersion: string;
+  tipaPath: string;
+  tipaSizeBytes: number;
   guideUrl: string;
   sourceUrl: string;
   /** iPhone 侧最低系统与侧载方式（卡片直接展示） */

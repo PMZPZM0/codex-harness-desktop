@@ -39,14 +39,14 @@ const GROUPS = "src/features/settings-devtools/runtime-groups.tsx";
     "开发工具规格表有 husk 且 marker 指向 Husk.ipa");
   const install = codeOnly(read(INSTALL));
   ok(/export const HUSK_REPO = "Leviidev\/Husk"/.test(install), "仓库地址单一真相源");
-  ok(/const asset = "Husk\.ipa"/.test(install), "资产名 = Husk.ipa（官方 release）");
+  ok(install.includes('"Husk.ipa"') && install.includes('"Husk.tipa"'), "官方资产名 Husk.ipa / Husk.tipa");
   ok(/releases\/download\/\$\{version\}\/\$\{asset\}/.test(install), "按 release tag 下载");
   ok(/expectZipMagic: true/.test(install), "IPA 是 zip，做 zip 魔数校验");
   ok(/fetchAssetDigest\(asset\)/.test(install) && /expectedSha !== actualSha/.test(install),
     "按 release digest 做 SHA256 校验");
-  ok(/writeFile\(paths\.versionFile/.test(install), "装完落 version.txt（更新链读它）");
-  ok(/copyFile\(target, next\)[\s\S]{0,120}?rename\(next, paths\.ipa\)/.test(install),
-    "IPA 先写临时文件再原子替换（不在半截上覆盖）");
+  ok(install.includes("paths.versionFile") && install.includes("paths.tipaVersionFile"), "装完落 version.txt / version-tipa.txt（更新链读它）");
+  ok(install.includes(".tmp") && install.includes("rename(next, finalPath)"),
+    "安装包先写临时文件再原子替换（不在半截上覆盖）");
   ok(!/adb|idevice|pymobiledevice|MobileDevice/.test(install), "⛔ 不假装能从电脑装进 iPhone");
 }
 
@@ -87,6 +87,26 @@ const EXPECTED = ["husk:status", "husk:guide", "husk:reveal"];
   const groups = codeOnly(read(GROUPS));
   ok(/DEDICATED_IDS = \[[^\]]*"husk"/.test(groups), "专用卡不进分组重复出卡");
   ok(/devtools-update-rows|husk-card/.test(read("scripts/accept.mjs")), "验收项登记（husk 卡）");
+}
+
+/* ── ④ TIPA（TrollStore）──────────────────────────────────────── */
+{
+  const dev = codeOnly(read(DEVRUN));
+  ok(dev.includes('"husk-tipa": { name: "Husk TIPA（TrollStore）"') && dev.includes("Husk.tipa") && dev.includes("hidden: true"),
+    "hidden 工具项 husk-tipa（不单独出卡，Husk 卡内一个按钮）");
+  const install = codeOnly(read(INSTALL));
+  ok(install.includes('kind === "ipa"') && install.includes('"Husk.tipa"'), "按 kind 选择 Husk.ipa / Husk.tipa");
+  ok(/installHuskTipaFromGitHub/.test(install), "导出 TIPA 安装入口");
+  ok(/tipaVersionFile/.test(install), "TIPA 独立版本号（与 IPA 不互相覆盖）");
+  const runtime = codeOnly(read(RUNTIME));
+  ok(runtime.includes('id === "husk-tipa"') && runtime.includes("installHuskTipaFromGitHub"), "runtime:install 有 husk-tipa 分支");
+  const domain = codeOnly(read(DOMAIN));
+  ok(/tipaInstalled/.test(domain) && /tipaVersion/.test(domain), "husk:status 下发 TIPA 状态");
+  const card = codeOnly(read(CARD));
+  ok(card.includes('installDevRuntime?.("husk-tipa")') && card.includes("下载 TIPA"), "卡片有「下载 TIPA」动作");
+  ok(/tipaInstalling/.test(card) && /husk-tipa/.test(card), "TIPA 下载有自己的进度/取消接线");
+  ok(read("electron/mirror-download.ts").includes('Promise.race([once(file, "drain"), aborted])'),
+    "镜像停滞 abort 时不再卡在 drain（11-14 实测死锁）");
 }
 
 /* ── ④ GPL 边界 ──────────────────────────────────────────────── */

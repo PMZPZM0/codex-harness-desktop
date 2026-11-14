@@ -156,7 +156,22 @@ export async function downloadThroughMirrors(options: {
           received += chunk.byteLength;
           windowBytes += chunk.byteLength;
           hash.update(chunk);
-          if (!file.write(chunk)) await once(file, "drain");
+          if (!file.write(chunk)) {
+            /* ⛔ 11-14 实测死锁：镜像卡住时 stall 定时器 abort 了 controller，但如果这里正等
+               write 的 drain（写缓冲满），abort 不会让文件流发 drain ⇒ 整个下载永远挂着（进度停在某个字节数）。
+               等信息量回压时必须同时 races 掉 abort。 */
+            let onAbort: (() => void) | null = null;
+            const aborted = new Promise<never>((_, reject) => {
+              onAbort = () => reject(new Error("download aborted"));
+              if (controller.signal.aborted) onAbort();
+              else controller.signal.addEventListener("abort", onAbort, { once: true });
+            });
+            try {
+              await Promise.race([once(file, "drain"), aborted]);
+            } finally {
+              if (onAbort) controller.signal.removeEventListener("abort", onAbort);
+            }
+          }
           // 首块必报（小包也能立刻看见进度），之后按时间/字节节流；小包也要有多次更新
           const step = total ? Math.min(Math.max(64 * 1024, total / 100), 512 * 1024) : 512 * 1024;
           if (!reported || windowBytes >= step) report(true);
