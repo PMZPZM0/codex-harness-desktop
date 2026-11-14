@@ -3222,3 +3222,13 @@ model_max_output_tokens …）。
   `weknora-lite.exe + web/ + config/ + VERSION` ⇒ 建同名 Release 传资产。
 - **资产名与 tag 约定与应用侧逐字一致**（守卫【193】9 条钉死 —— 改一边不改另一边 = 用户点安装 404）。
 - ⛔ 发布包必须含 `config/config.yaml`：WeKnora 启动硬依赖（缺失时进程直接退出）。
+
+## 2026-11-14 · 工作伙伴群编排抄 Pachat（先读再说 / 去催办 / 预算重试 / 群治理）
+
+详细设计与取舍见 `docs/TEAM-GROUP-ORCHESTRATION-PACHAT-2026-11-14.md`；AGENTS.md 有索引小节「### 🧑‍🤝‍🧑 工作伙伴群编排」。
+
+- **Phase 1 先读再说**：`electron/group-read-cursors.ts` 每成员已读游标（键 `群::speakerId`、只前移）；每轮只喂「没读过的新消息」（快照 `readUpTo`），`group_read` 仍读最近（故意不同）。
+- **Phase 1 去自由催办**：整体移除 `leadSelfNudges`/`leadTurnTaskLike`/`isInfoRequest`——不再在「主理人没派活」时强催（双回复根因）；链路由 @/被回复/工具结果回交驱动。
+- **Phase 2 持久预算 + 失败重试**：`electron/group-run-budget.ts` 每成员每天 ≤100（跨轮失控保护）；失败隔 5 分钟只重试 1 次（成功才重置；新消息作废旧重试；群清空/删除跳过；重启即丢）。
+- **Phase 3 群治理**：活跃度（`group-activity.mjs`，群列表卡副行，不进群头）；群规矩（`rules` 字段每轮独立注入 + 设置页 + `harness-team:set-rules` 通道）；成员治理（设管理员/移除，本已具备）；群模板（`team-templates.mjs`，localStorage 无通道，群菜单存 / 建群弹窗套用）。
+- **判据**：`11f` / `12be` / `09` 全绿；`npm run check` 绿；`verify:runtime` PASS；关键断言两处变异均报红。⛔ 未做真多 agent e2e（需真模型）。
