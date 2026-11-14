@@ -611,7 +611,16 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
  * GitHub Release 的下载加速前缀（直连不通/被限速时依次回落）。均为「前缀 + 原始 URL」形式，
  * 实测对 sherpa-onnx release 资产返回 206 且支持 Range（可续传）。
  */
-const GITHUB_MIRROR_PREFIXES = ["https://ghfast.top/", "https://gh-proxy.com/"];
+/**
+ * GitHub Release 的下载加速前缀（直连不通/被限速时依次回落）。均为「前缀 + 原始 URL」形式。
+ *
+ * ⛔⛔ 11-14 实测（用户报「音色克隆模型下载到 53% 报 HTTP 403」）：
+ *   · `ghfast.top` —— 无 Range 请求直接连不上（000），**带 Range 返回 403**；
+ *   · `gh-proxy.com` —— 无 Range 200、带 Range 206，正常工作。
+ *   ⇒ 顺序改成 gh-proxy 优先；ghfast 留作最后手段（有朝一日恢复也不必改代码）。
+ *   ⛔ 但顺序不是根治：真正的兜底在 `downloadOnce` 的「403 + 已下过一部分 ⇒ 去掉 Range 重来」。
+ */
+const GITHUB_MIRROR_PREFIXES = ["https://gh-proxy.com/", "https://ghfast.top/"];
 
 /**
  * 单次下载（可续传）。网络中断**保留**已下部分（存在 `.part` 上）供下次续传；只有 SHA256 不符才删除。
@@ -624,15 +633,19 @@ const GITHUB_MIRROR_PREFIXES = ["https://ghfast.top/", "https://gh-proxy.com/"];
  *   （HF 逐文件仓库那条路 `downloadOne` / `downloadParallel` 早就是这个写法，这里补上同一套判据。）
  *
  * `atomic: false` 只给「目标本身就是临时件」的调用方用；默认原子。
+ *
+ * **导出只为可验证**（与 `runtime-ipc.ts` 的 `fallbackPromptFor` 同款理由）：403 续传降级是
+ * 「换个源就死在某个百分比」这类问题的唯一防线，探针/守卫要能真跑它（本地起一个
+ * 「带 Range 回 403、无 Range 回 200」的服务器即可复现）。业务侧仍只经 `downloadUrlToFile` 调用。
  */
-async function downloadOnce(
+export async function downloadOnce(
   url: string,
   destPath: string,
   sha256: string,
   bytes: number,
   onBytes?: (received: number, total: number) => void,
   signal?: AbortSignal,
-  options?: { headersTimeoutMs?: number; minSpeedBytesPerSec?: number; atomic?: boolean },
+  options?: { headersTimeoutMs?: number; minSpeedBytesPerSec?: number; atomic?: boolean; rangeFallback?: boolean },
 ): Promise<{ ok: true } | { ok: false; error: string; fatal?: boolean; cancelled?: boolean }> {
   let received = 0;
   /** 半截文件的落点（默认 `.part`，见上面的原子写说明） */
@@ -661,8 +674,11 @@ async function downloadOnce(
     } finally {
       clearTimeout(headersTimer);
     }
-    // 服务器不支持续传（回 200 而不是 206）：丢弃残file 从头来，避免拼出坏文件
-    if (received > 0 && response.status !== 206) received = 0;
+    // 服务器**成功但不支持续传**（回 200 而不是 206）：丢弃残file 从头来，避免拼出坏文件。
+    // ⛔ 判据必须带 `response.ok`：旧写法 `received > 0 && status !== 206` 会把 403/5xx 也当成
+    //    「不支持续传」把 received 清零，于是下面那条「403 ⇒ 去掉 Range 重来」的分支永远进不去
+    //    （11-14 探针实测：range_hits=1、plain_hits=0，直接报 HTTP 403）。
+    if (received > 0 && response.ok && response.status !== 206) received = 0;
     /* 416 = 续传起点已到文件末尾：`.part` 很可能**本身就是完整文件**（上一次 rename 失败留下的，
        例如 Windows 上杀软/索引器临时占住目标文件）。⛔ 不处理它，这个完整文件就**永远无法被提拔**
        成最终文件 —— 用户反复点下载都只会看到「HTTP 416」。判据与兄弟函数 `downloadOne` 同款：
@@ -680,6 +696,16 @@ async function downloadOnce(
       }
       await unlink(workPath).catch(() => undefined);
       return { ok: false, error: "续传起点越界且校验不符，已清理，请重试", fatal: true };
+    }
+    /* ⛔⛔ 11-14 用户实测「音色克隆模型下载到 53% 报 HTTP 403」的根因：
+       已下过一部分时续传请求会带 `Range: bytes=<offset>-`，而部分加速镜像对 **Range** 直接 403
+       （实测 ghfast.top：无 Range 连不上、带 Range 403；gh-proxy 206 正常）。旧逻辑把 403 当终态
+       ⇒ 断流换源后就死在 53%，且 `.part` 一直留着让用户反复点都失败。
+       ⇒ 已下过一部分时**丢掉半截文件、以无 Range 重来一次**。只降级一次，避免对真无权限的地址
+         无限重试。续传本身依然是首选路径（正常情况下不该走到这里）。 */
+    if (response.status === 403 && received > 0 && options?.rangeFallback !== false) {
+      await unlink(workPath).catch(() => undefined);
+      return downloadOnce(url, destPath, sha256, bytes, onBytes, signal, { ...options, rangeFallback: false });
     }
     if (!response.ok || !response.body) return { ok: false, error: "下载失败 HTTP " + response.status };
 

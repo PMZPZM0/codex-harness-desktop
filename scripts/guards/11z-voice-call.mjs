@@ -378,6 +378,21 @@ ok(/>= \(minOf\[name\] \?\? 1\)/.test(manifestSrc) && /vocoder\.minBytes/.test(m
 ok(/if \(!zipvoiceReady\(modelsRoot\)\)/.test(store),
   "装完**回读**一次就绪判定（下载器说成功 ≠ 模型能用；反向也不许错）");
 
+/* 11-14 用户实测「音色克隆模型下载到 53% 报 HTTP 403」：
+   断流换源后走的是**续传**请求（带 Range），而部分加速镜像对 Range 直接 403
+   （实测 ghfast.top：无 Range 连不上、带 Range 403；gh-proxy 206 正常）。
+   ⛔ 两条判据缺一不可：① 403 时要有降级；② received 清零的判据必须带 response.ok，
+      否则 403 会先被当成「不支持续传」清零，降级分支永远进不去（探针实测过）。 */
+const storeCode = codeOnly(store);
+ok(/response\.status === 403 && received > 0 && options\?\.rangeFallback !== false/.test(storeCode)
+  && /rangeFallback: false \}/.test(storeCode),
+  "续传被镜像 403 时丢掉半截、以无 Range 重来一次（⛔ 换源即死在某个百分比的根因）");
+ok(/if \(received > 0 && response\.ok && response\.status !== 206\) received = 0;/.test(storeCode)
+  && !/if \(received > 0 && response\.status !== 206\) received = 0;/.test(storeCode),
+  "「服务器成功但不支持续传」才丢弃残件（⛔ 判据少 response.ok 会让 403 分支恒不可达）");
+ok(/https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\//.test(storeCode),
+  "GitHub 镜像顺序 = gh-proxy 优先（11-14 实测 ghfast 对 Range 返 403）");
+
 /* 真跑就绪判定（编译产物；check 链先 build 再跑守卫，缺产物直接红、不静默跳过） */
 const PROBE_ZV = `
 const fs = require("node:fs"); const os = require("node:os"); const path = require("node:path");
