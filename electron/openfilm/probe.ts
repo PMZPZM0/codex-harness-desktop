@@ -95,9 +95,21 @@ export async function openfilmStatus(): Promise<OpenfilmStatus> {
      （真装一次最多几分钟；宁可让用户重试，也不能把 UI 锁死）。 */
   const installing = (() => {
     const marker = path.join(openfilmRoot(), ".installing");
+    let raw = "";
+    try { raw = fs.readFileSync(marker, "utf8").trim(); } catch { return false; }
     let startedAt = 0;
-    try { startedAt = Number(fs.readFileSync(marker, "utf8").trim()); } catch { return false; }
-    if (!Number.isFinite(startedAt) || startedAt <= 0 || Date.now() - startedAt > 30 * 60_000) {
+    let pid = 0;
+    try {
+      const parsed = JSON.parse(raw);
+      startedAt = Number(parsed?.at ?? 0);
+      pid = Number(parsed?.pid ?? 0);
+    } catch { startedAt = Number(raw) || 0; }
+    /* ⛔ 除 30 分钟超龄外，**pid 不是当前主进程**也判陈旧：安装任务只活在主进程里，
+       应用重启/崩溃后旧标记必然属于已死的 pid ⇒ 立刻自愈，别让界面锁在「安装中」等 30 分钟。 */
+    const stale = !Number.isFinite(startedAt) || startedAt <= 0
+      || Date.now() - startedAt > 30 * 60_000
+      || (pid > 0 && pid !== process.pid);
+    if (stale) {
       try { fs.rmSync(marker, { force: true }); } catch { /* 删不掉就忽略（下次还会判陈旧） */ }
       return false;
     }

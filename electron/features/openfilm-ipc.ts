@@ -143,21 +143,28 @@ async function runInstall(only?: OpenfilmStep): Promise<{ ok: boolean; code?: st
   if (busy) return { ok: false, code: "OF_E_BUSY", error: "已有安装任务在进行，请稍候", status: await openfilmStatus() };
   busy = true;
   const marker = path.join(openfilmRoot(), ".installing");
+  let failure: { code: string; message: string } | null = null;
   try {
     fs.mkdirSync(openfilmRoot(), { recursive: true });
-    fs.writeFileSync(marker, String(Date.now()), "utf8");
+    /* 标记带 pid：应用重启后旧标记的 pid 必然不是当前进程 ⇒ probe 立刻判陈旧，
+       ⛔ 不能让界面一直停在「安装中」（11-14 用户实测「装完不更新」的同因之一）。 */
+    fs.writeFileSync(marker, JSON.stringify({ at: Date.now(), pid: process.pid }), "utf8");
     const steps: OpenfilmStep[] = only ? [only] : ["cli", "chromium", "verify"];
     for (const step of steps) await STEPS[step]();
-    return { ok: true, status: await openfilmStatus() };
   } catch (error: any) {
-    const code = String(error?.code ?? "OF_E_UNKNOWN");
-    const message = String(error?.message ?? error);
-    broadcastCodexEvent({ type: "openfilm", phase: "install", step: only ?? "cli", pct: 0, error: code, message });
-    return { ok: false, code, error: message, status: await openfilmStatus() };
+    failure = { code: String(error?.code ?? "OF_E_UNKNOWN"), message: String(error?.message ?? error) };
   } finally {
     busy = false;
     try { fs.rmSync(marker, { force: true }); } catch { /* 标记删不掉下次会显示 installing，可接受 */ }
   }
+  /* ⛔ 必须在**删完标记之后**再算状态：原来先 return 再 finally 删标记 ⇒ 返回的 status.phase 还是
+     "installing"，卡片把「安装完成」显示成「安装中」，而且之后不再自动刷新（用户实测「装完不更新」）。 */
+  const status = await openfilmStatus();
+  if (failure) {
+    broadcastCodexEvent({ type: "openfilm", phase: "install", step: only ?? "cli", pct: 0, error: failure.code, message: failure.message });
+    return { ok: false, code: failure.code, error: failure.message, status };
+  }
+  return { ok: true, status };
 }
 
 /* ── 卸载（⛔ 只删 runtime，绝不碰影片） ───────────────────────────────── */

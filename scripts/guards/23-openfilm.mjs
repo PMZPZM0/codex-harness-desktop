@@ -161,6 +161,15 @@ ok(Boolean(ipc) && Boolean(paths) && Boolean(runner) && Boolean(probe) && Boolea
     "打开后落 session.json 并广播 studio 事件（渲染层据此开内置浏览器）");
   ok(!/process\.kill\(|taskkill/.test(studio),
     "⛔ 本域不杀 Studio 进程（可能是桌面 App 或另一个 agent 正在用的实例）");
+  /* ⛔ 11-14 用户实测两条：①「装完不更新」= 先算 status 再删 .installing，返回的仍是 installing；
+     ②「连接 Studio 失败」= ~/.openfilm 不存在时把它当 cwd spawn，Windows 报 node.exe ENOENT。 */
+  ok(ipc.includes("JSON.stringify({ at: Date.now(), pid: process.pid })") && ipc.includes("const status = await openfilmStatus();")
+    && !ipc.includes("return { ok: true, status: await openfilmStatus() }"),
+    "安装完成先删 .installing 再算状态（⛔ 不再返回 installing）");
+  ok(probe.includes("pid !== process.pid"),
+    ".installing 带 pid：应用重启后旧标记立刻判陈旧（⛔ 不锁 UI 30 分钟）");
+  ok(studio.includes("fs.existsSync(cwd)") && studio.includes("mkdirSync(cwd, { recursive: true })") && studio.includes("OF_E_STUDIO"),
+    "Studio cwd 不存在时先创建，失败回可读错误（⛔ 不再 spawn ENOENT）");
   const bridge = code("src/features/openfilm/OpenfilmBridge.tsx");
   ok(/phase .*!== "studio"/.test(bridge) && /openInBrowserPane\(url\)/.test(bridge),
     "渲染层把 studio 事件开进内置浏览器（OpenfilmBridge）");

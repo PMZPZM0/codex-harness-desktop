@@ -147,13 +147,30 @@ export async function openStudio(input: { filmDir?: string; cwd?: string } = {})
     return { ok: false, code: "OF_E_NOT_READY", error: "OpenFilm 还没安装：请让用户在「设置 → 开发工具 → OpenFilm 视频剪辑」点一次「下载并安装」", url: "", origin: "", projectPath: "", pid: 0, version: "", note: "", studio: await probeStudio() };
   }
   const cwd = String(input.cwd ?? "").trim() || (filmDir ? path.dirname(filmDir) : studioHome());
+  /* ⛔ cwd 必须先存在：首次点「连接 Studio」时 `~/.openfilm` 还没有，spawn 会报
+     `spawn …node.exe ENOENT`（Windows 对不存在的 cwd 也报 ENOENT，看着像 node 丢了）。 */
+  if (!fs.existsSync(cwd)) {
+    try { fs.mkdirSync(cwd, { recursive: true }); } catch { /* 建不了就用一个一定存在的目录 */ }
+  }
+  if (!fs.existsSync(cwd)) {
+    return { ok: false, code: "OF_E_STUDIO", error: `无法准备 Studio 工作目录：${cwd}`, url: "", origin: "", projectPath: "", pid: 0, version, note: "", studio: await probeStudio() };
+  }
   const args = filmDir ? ["open", filmDir] : ["open"];
-  const result = await runCli(cliEntry(), args, {
-    verb: "open",
-    cwd,
-    /* 首次 `open` 可能顺手装 Chromium（≈100MB）—— 我们已经单独装过，这里只是兜底，给足时间 */
-    timeoutMs: 180_000,
-  });
+  let result;
+  try {
+    result = await runCli(cliEntry(), args, {
+      verb: "open",
+      cwd,
+      /* 首次 `open` 可能顺手装 Chromium（≈100MB）—— 我们已经单独装过，这里只是兜底，给足时间 */
+      timeoutMs: 180_000,
+    });
+  } catch (error) {
+    return {
+      ok: false, code: "OF_E_STUDIO",
+      error: `Studio 启动失败（${cwd}）：${String((error as Error)?.message ?? error)}`,
+      url: "", origin: "", projectPath: "", pid: 0, version, note: "", studio: await probeStudio(),
+    };
+  }
   const stdout = result.stdout;
   const url = (/^Studio\s+(https?:\/\/\S+)/m.exec(stdout)?.[1] ?? "").trim();
   const projectPath = (() => {
