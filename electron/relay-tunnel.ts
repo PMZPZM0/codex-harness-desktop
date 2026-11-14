@@ -75,6 +75,7 @@ export class RelayTunnel {
 
   stop(): void {
     this.stopped = true;
+    this.pairCode = "";
     if (this.retryTimer) { clearTimeout(this.retryTimer); this.retryTimer = null; }
     try { this.ws?.close(); } catch { /* 忽略 */ }
     this.ws = null;
@@ -136,7 +137,13 @@ export class RelayTunnel {
   private async onFrame(raw: any): Promise<void> {
     let frame: any;
     try { frame = JSON.parse(String(raw)); } catch { return; }
-    if (frame?.type === "ready") { this.setStatus("online", ""); return; }
+    if (frame?.type === "ready") {
+      this.setStatus("online", "");
+      /* 重连后把当前配对码补报给网关：网关只在「码匹配」的那台电脑上问配对，
+         不这么补报的话，断线重连一次根地址配对就永远匹配不到。 */
+      if (this.pairCode) this.send({ type: "pair-code", code: this.pairCode });
+      return;
+    }
     if (frame?.type === "req") {
       const reqId = String(frame.reqId ?? "");
       try {
@@ -146,6 +153,17 @@ export class RelayTunnel {
         this.send({ type: "reserr", reqId, error: String(error?.message ?? error) });
       }
     }
+  }
+
+  /** 当前 6 位配对码（只在内存里；网关据此把根地址配对定向到本机，不再广播给所有在线设备）。 */
+  private pairCode = "";
+
+  /** 把当前配对码报给网关（空串 = 撤销）。⛔ 只走已认证隧道；网关不落盘、不写日志。 */
+  setPairCode(code: string): void {
+    const next = /^\d{6}$/.test(code) ? code : "";
+    if (next === this.pairCode) return;
+    this.pairCode = next;
+    this.send({ type: "pair-code", code: next });
   }
 
   private send(frame: any): void {

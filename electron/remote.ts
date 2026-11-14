@@ -339,6 +339,9 @@ export class RemoteControlService {
       relayBase: () => this.relayBaseUrl(),
       onStatus: (status) => { try { this.events.onRelayStatus?.(status); } catch { /* 忽略 */ } },
     });
+    /* 配对码在 start() 里先于隧道生成（见调用顺序）：这里把当前码补报给网关，
+       之后每次轮换再同步（rotatePairingCode）。网关据此**只问码匹配的那台**，不再广播。 */
+    this.relay.setPairCode(this.pairing.code);
     this.relay.start();
   }
 
@@ -1121,6 +1124,8 @@ export class RemoteControlService {
       previousCode,
       previousUntil: previousCode ? Date.now() + 2 * 60_000 : 0,
     };
+    /* 根地址配对**不广播**：把新码同步给网关，网关只转发给码匹配的电脑（11-14 安全加固）。 */
+    this.relay?.setPairCode(this.pairing.code);
     return this.pairing.code;
   }
 

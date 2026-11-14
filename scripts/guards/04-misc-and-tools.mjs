@@ -1793,7 +1793,14 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【139e】网关支持对外路径前缀：/t 响应的 Location 与 Set-Cookie Path 都带回去（直连 18443 时前缀为空，行为不变）"
     );
     (gwSrc.includes("handleRootPair") && gwSrc.includes("handleRootPairStatus") && gwSrc.includes("pairRoutes") && gwSrc.includes("Location: `${PATH_PREFIX}/t/${deviceId}${url}`") ? ok : fail)(
-      "【139e】根地址也能配对：/api/pair 逐台在线电脑找配对码、/api/pair-status 按 rid 找回、已配对页面按 cookie 跳到 /t/<id>（⛔ 否则手输码拿到 HTML，APK 解析 JSON 直接炸）"
+      "【139e】根地址也能配对：/api/pair **按码定向**问那一台、/api/pair-status 按 rid 找回、已配对页面按 cookie 跳到 /t/<id>（⛔ 否则手输码拿到 HTML，APK 解析 JSON 直接炸）"
+    );
+    /* ⛔ 11-14 用户令「堵死加固」：根配对不能再广播 —— 假隧道收不到码，也就抢不走配对。 */
+    (tunnelSrc.includes("setPairCode") && tunnelSrc.includes('"pair-code"') && relaySrc.includes("setPairCode(") ? ok : fail)(
+      "【139e】电脑端把当前配对码经已认证隧道上报网关（断线重连补报）；⛔ 网关不再广播配对码"
+    );
+    (gwSrc.includes('frame?.type === "pair-code"') && gwSrc.includes("?.pairCode === code") && gwSrc.includes("? [preferred] : []") ? ok : fail)(
+      "【139e】根配对按码定向 + 配对状态只问认领的电脑（⛔ 不回退广播，假隧道收不到码）"
     );
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
       "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
