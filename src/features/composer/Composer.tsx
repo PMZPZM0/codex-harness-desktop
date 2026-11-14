@@ -59,16 +59,18 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
      可能序列化出空串，旧逻辑会当场 `el.innerHTML = ""` ⇒ 组字会话被销毁，表现为「打不了中文、数字正常」，
      而粘贴过汉字后 DOM 非空、不再触发清空，中文又好了（用户反馈的正是这个现象）。 */
   const composingRef = useRef(false);
-  const syncFromDom = (el: HTMLDivElement) => {
+  /** 序列化并回写值；返回是否为空（空 = 无文字、无附件 chip）。 */
+  const syncFromDom = (el: HTMLDivElement): boolean => {
     const raw = serializeComposerDom(el);
-    /* ⛔ 不再清空 innerHTML：空输入框可能残留一个 <br>，删掉它是为了 :empty 占位符；
-       但在组字提交的时序里 DOM 可能瞬间为空，清空会直接销毁组字会话（「打不了中文」的根因）。
-       改用 data-empty 驱动占位符，DOM 一律不动。 */
+    /* ⛔ 组字期间**不可以**清空 DOM：旧实现在空输入框组字时 `el.innerHTML = ""`，
+       直接销毁组字会话（「打不了中文、数字正常」的根因）。清空只放在下面的
+       非组字 onInput 里，见 onInput 的空态处理。 */
     const empty = !raw.trim() && !promptImagePaths(raw).length && !promptFilePaths(raw).length;
     const next = empty ? "" : raw;
     el.dataset.empty = empty ? "true" : "false";
     domValueRef.current = next;
     onValueInput(next);
+    return empty;
   };
 
   useLayoutEffect(() => {
@@ -98,10 +100,19 @@ export function ComposerEditor({ value, placeholder, editorRef, domValueRef, mak
       aria-label={placeholder}
       data-placeholder={placeholder}
       onInput={(event) => {
-        if (composingRef.current || (event.nativeEvent as InputEvent).isComposing) return;
-        syncFromDom(event.currentTarget);
+        const el = event.currentTarget;
+        if (composingRef.current || (event.nativeEvent as InputEvent).isComposing) {
+          /* 组字期间只改 data-* 属性（不碰文本节点、不回写 value，组字会话不受影响）：
+             否则 `data-empty` 停在 true，占位提示会和正在组字的文字叠在一起。 */
+          el.dataset.empty = "false";
+          return;
+        }
+        /* 删空后 Chrome 会留一个孤立 <br>：`:empty` 不成立，而且占位提示是 ::before 生成的，
+           光标会落在「提示文字之后」——看着像提示是真字、光标在它后面（用户 11-14 实测）。
+           非组字路径把它清成真正的空 DOM（组字路径上面已 early-return，绝不走到这里）。 */
+        if (syncFromDom(el) && el.innerHTML) el.innerHTML = "";
       }}
-      onCompositionStart={() => { composingRef.current = true; }}
+      onCompositionStart={(event) => { composingRef.current = true; event.currentTarget.dataset.empty = "false"; }}
       onCompositionEnd={(event) => { composingRef.current = false; syncFromDom(event.currentTarget); }}
       onKeyDown={onKeyDown}
       onBlur={onBlur}

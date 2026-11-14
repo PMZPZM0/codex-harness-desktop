@@ -3138,6 +3138,8 @@
   font-size: 14px;
   line-height: 1.6;
 }
+/* 组字期间 value 尚未回写 ⇒ 占位层会和组字文字叠在一起；按 DOM 状态先收起。 */
+.team-composer__editor[data-composing="true"] .team-composer__placeholder { display: none; }
 .team-composer .team-composer__input[contenteditable] {
   min-height: 62px;
   max-height: min(42vh, 360px);

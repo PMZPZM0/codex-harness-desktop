@@ -1516,20 +1516,36 @@ const CHECKS = [
     run: async (h) => {
       /* 用户反馈「经常输入不了中文，数字可以；先粘贴一个汉字后又能打」。
          根因：onInput 在空输入框组字时序列化出空串 ⇒ innerHTML="" 销毁组字会话。
-         这里用 CDP 真实 IME 事件复现：组字 → 提交 → 再输入。 */
+         这里用 CDP 真实 IME 事件复现：组字 → 提交 → 再输入。
+         ⛔ 空态准备必须走真实按键：直接改 innerHTML 不会更新应用侧草稿，
+            持久 profile 里的旧草稿会被回填，组字断言看着像「代码坏了」。 */
       await h.waitFor(`!!document.querySelector(".composer-editor")`, { label: "输入框", timeoutMs: 15000 });
-      await h.eval(`(function(){
-        const el=document.querySelector(".composer-editor"); el.focus(); el.innerHTML="";
-        el.dispatchEvent(new InputEvent("input",{bubbles:true,inputType:"deleteContentBackward"}));
-        const s=getSelection(); const r=document.createRange(); r.selectNodeContents(el); r.collapse(false);
-        s.removeAllRanges(); s.addRange(r); return document.activeElement===el;
-      })()`);
-      await wait(400);
+      const clearDraft = async () => {
+        await h.eval(`(function(){
+          const el=document.querySelector(".composer-editor"); el.focus();
+          const s=getSelection(); const r=document.createRange(); r.selectNodeContents(el);
+          s.removeAllRanges(); s.addRange(r); return true;
+        })()`);
+        await wait(200);
+        await h._send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+        await h._send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+        await wait(400);
+      };
+      for (let i = 0; i < 3; i++) {
+        await clearDraft();
+        const ready = await h.eval(`document.querySelector(".composer-editor").textContent === ""`);
+        if (ready) break;
+      }
+      await h.eval(`(function(){ const el=document.querySelector(".composer-editor"); const s=getSelection(); const r=document.createRange(); r.selectNodeContents(el); r.collapse(false); s.removeAllRanges(); s.addRange(r); return document.activeElement===el; })()`);
+      await wait(250);
       await h._send("Input.imeSetComposition", { text: "zhong", selectionStart: 5, selectionEnd: 5 });
       await wait(450);
       const composing = await h.eval(`(function(){ const el=document.querySelector(".composer-editor"); return { text: el.textContent, active: document.activeElement===el }; })()`);
       h.check("① 组字中内容保留、焦点不丢（旧逻辑会 innerHTML='' 清空组字）",
         Boolean(composing) && composing.text === "zhong" && composing.active === true, JSON.stringify(composing));
+      const hint = await h.eval(`(function(){ const el=document.querySelector(".composer-editor"); return { dataEmpty: el.dataset.empty, before: getComputedStyle(el,"::before").content }; })()`);
+      h.check("①b 组字期间占位提示收起（不会和组字文字叠在一起）",
+        hint.dataEmpty === "false" && (hint.before === "none" || hint.before === "normal"), JSON.stringify(hint));
       await h._send("Input.insertText", { text: "中" });
       await wait(450);
       const committed = await h.eval(`document.querySelector(".composer-editor").textContent`);
@@ -1538,7 +1554,16 @@ const CHECKS = [
       await wait(450);
       const after = await h.eval(`document.querySelector(".composer-editor").textContent`);
       h.check("③ 继续输入仍然有效（不会第二次卡死）", String(after).includes("中文"), JSON.stringify(after));
-      await h.eval(`document.querySelector(".composer-editor").innerHTML = ""`);
+      /* ④ 用户实测「输入文字再删空，提示文字后面跟着光标，像提示是真字」：
+         根因是删空后残留孤立 <br>（占位提示是 ::before 画的，光标落在提示之后）。 */
+      await h.eval(`(function(){ const el=document.querySelector(".composer-editor"); const s=getSelection(); const r=document.createRange(); r.selectNodeContents(el); s.removeAllRanges(); s.addRange(r); return true; })()`);
+      await wait(200);
+      await h._send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+      await h._send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+      await wait(450);
+      const emptied = await h.eval(`(function(){ const el=document.querySelector(".composer-editor"); return { html: el.innerHTML, dataEmpty: el.dataset.empty, before: getComputedStyle(el,"::before").content }; })()`);
+      h.check("④ 删空后不留孤立节点（DOM 真空，提示不会看起来像真字）",
+        emptied.html === "" && emptied.dataEmpty === "true" && String(emptied.before).includes("向 Codex"), JSON.stringify(emptied));
     },
   },
   {

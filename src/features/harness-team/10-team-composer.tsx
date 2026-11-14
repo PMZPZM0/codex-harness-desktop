@@ -655,9 +655,15 @@ export function TeamComposer({
             onValueChange(next, editorCaret(el));
           }}
           onKeyDown={onKeyDown}
-          onCompositionStart={() => { composingRef.current = true; }}
+          onCompositionStart={(event) => {
+            composingRef.current = true;
+            /* 组字期间父层不回写 value ⇒ 占位层（`!value` 渲染）会和组字文字叠在一起；
+               先按 DOM 收起，compositionend 再按 value 回落。 */
+            event.currentTarget.parentElement?.setAttribute("data-composing", "true");
+          }}
           onCompositionEnd={(event) => {
             composingRef.current = false;
+            event.currentTarget.parentElement?.removeAttribute("data-composing");
             const el = event.currentTarget;
             const next = editorValue(el);
             renderedRef.current = next;

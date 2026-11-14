@@ -87,10 +87,26 @@ ok(/\.composer-resize-grip \{[^}]*width: 56px/.test(css),
   const composerSrc = codeOnly(read("src/features/composer/Composer.tsx"));
   ok(composerSrc.includes("composingRef") && composerSrc.includes("onCompositionStart") && composerSrc.includes("onCompositionEnd"),
     "输入框有组字状态（compositionstart/end）");
-  ok(/onInput=\{[\s\S]{0,160}?if \(composingRef\.current \|\| \(event\.nativeEvent as InputEvent\)\.isComposing\) return;/.test(composerSrc),
-    "组字期间 onInput 直接返回（不回写 value、不重建 DOM）");
-  ok(!/onInput=\{[\s\S]{0,240}?el\.innerHTML = ""/.test(composerSrc),
-    "⛔ 空输入框清空不在 onInput 里裸做（会销毁组字会话 → 打不了中文）");
+  ok(/onInput=\{[\s\S]{0,160}?if \(composingRef\.current \|\| \(event\.nativeEvent as InputEvent\)\.isComposing\) \{[\s\S]{0,160}?return;/.test(composerSrc),
+    "组字期间 onInput 不回写 value、不重建 DOM");
+  ok(/onInput=\{[\s\S]{0,320}?el\.dataset\.empty = "false";[\s\S]{0,40}?return;/.test(composerSrc)
+    && /onCompositionStart=\{\(event\) => \{ composingRef\.current = true; event\.currentTarget\.dataset\.empty = "false"; \}\}/.test(composerSrc),
+    "组字期间收起占位提示（data-empty=false；只改属性、不碰文本节点）");
+  /* ⛔ 11-14 用户实测：输入文字再删空，Chrome 留下孤立 <br> ⇒ 占位提示（::before）后面跟着光标，
+     看着像「提示是真字」。清空只能在**非组字**路径做：组字路径必须先 early-return，
+     否则又回到「组字时清 DOM ⇒ 打不了中文」。 */
+  const composingGuardAt = composerSrc.indexOf("if (composingRef.current || (event.nativeEvent as InputEvent).isComposing)");
+  const emptyClearAt = composerSrc.indexOf('if (syncFromDom(el) && el.innerHTML) el.innerHTML = "";');
+  ok(composingGuardAt >= 0 && emptyClearAt > composingGuardAt,
+    "删空后的孤立节点只在非组字路径清掉（清空语句在组字 early-return 之后）");
+  ok(!/const syncFromDom = \(el: HTMLDivElement\): boolean => \{[\s\S]{0,600}?innerHTML = ""/.test(composerSrc),
+    "⛔ syncFromDom（compositionend 也走它）里不许清 DOM —— 上屏时序里 DOM 可能瞬间为空");
+  const teamSrc = codeOnly(read("src/features/harness-team/10-team-composer.tsx"));
+  const teamCss = read("src/styles/61-team-mode.css");
+  ok(/data-composing/.test(teamSrc) && /onCompositionEnd=\{[\s\S]{0,200}?removeAttribute\("data-composing"\)/.test(teamSrc),
+    "群聊输入框组字期间按 DOM 状态收起占位层（compositionend 还原）");
+  ok(/\.team-composer__editor\[data-composing="true"\] \.team-composer__placeholder \{ display: none; \}/.test(teamCss),
+    "群聊占位层在组字期间隐藏（CSS 规则在位）");
 }
 
 console.log(`\n【composer-resize】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
