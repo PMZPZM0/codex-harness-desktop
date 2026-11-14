@@ -1816,8 +1816,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       "【139e】配对应答鉴权：电脑端用隧道令牌派生 HMAC 签名、网关用同一盐验签（⛔ 盐不一致 = 真电脑也被拒）"
     );
     (gwSrc.includes("pairResponseSigned") && gwSrc.includes("timingSafeEqual") && gwSrc.includes("signKey")
-      && gwSrc.includes("PAIR_RATE_PER_MINUTE") && gwSrc.includes("x-forwarded-for") ? ok : fail)(
-      "【139e】网关：验签失败一律跳过 + 根配对接来源 IP 限流（挡 6 位码暴力尝试）"
+      && gwSrc.includes("PAIR_RATE_PER_MINUTE") && gwSrc.includes("x-forwarded-for") && gwSrc.includes("forwarded.pop()") ? ok : fail)(
+      "【139e】网关：验签失败一律跳过 + 根配对接来源 IP 限流（⛔ 必须取 XFF 最后一跳，第一跳可被客户端伪造）"
     );
     (gwSrc.includes("proxyLegacy(req, res)") && gwSrc.includes("LEGACY_TARGET") ? ok : fail)(
       "【139e】网关保留旧通道（/t/ 以外的请求转回原端口）—— 已发出去的二维码/老 APK 不能失效"

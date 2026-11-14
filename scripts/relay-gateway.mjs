@@ -165,8 +165,10 @@ function pairResponseSigned(id, out) {
 /* 根配对限流表：IP → { start, count }。 */
 const pairRate = new Map();
 function pairRateOk(req) {
-  const xff = String(req.headers["x-forwarded-for"] ?? "").split(",")[0].trim();
-  const ip = xff || req.socket.remoteAddress || "unknown";
+  const forwarded = String(req.headers["x-forwarded-for"] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  /* ⛔ 取**最后一跳**（由我们自己的 Caddy / nginx 追加）；取第一跳 = 客户端可自带伪造值，
+     换个假 IP 就能绕过限流（审查发现）。 */
+  const ip = forwarded.pop() || req.socket.remoteAddress || "unknown";
   const now = Date.now();
   let entry = pairRate.get(ip);
   if (!entry || now - entry.start > 60_000) { entry = { start: now, count: 0 }; pairRate.set(ip, entry); }
