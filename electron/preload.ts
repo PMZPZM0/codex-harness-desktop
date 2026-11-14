@@ -685,6 +685,8 @@ contextBridge.exposeInMainWorld("codex", {
   remoteStart: () => __ipc("remote:start", 0, []),
   remoteStatus: () => __ipc("remote:status", 0, []),
   remoteStop: () => __ipc("remote:stop", 0, []),
+  /* 11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响） */
+  remoteSetPairingLock: (locked: boolean) => __ipc("remote:set-pairing-lock", 1, [locked]),
   deleteRpaRecipe: (id: string) => __ipc("rpa:delete", 1, [id]),
   listRpaRecipes: () => __ipc("rpa:list", 0, []),
   recordRpaRun: (input: { id: string; ok: boolean; error?: string }) => __ipc("rpa:run-result", 1, [input]),

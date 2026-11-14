@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 686,
+  "count": 687,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -3899,6 +3899,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": null
+    },
+    {
+      "name": "remoteSetPairingLock",
+      "channel": "remote:set-pairing-lock",
+      "paramsImpl": "locked: boolean",
+      "paramsDecl": "locked: boolean",
+      "returns": "Promise<{ ok: boolean; locked: boolean }>",
+      "invokeArgs": "locked",
+      "cast": null,
+      "note": "11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响）"
     },
     {
       "name": "deleteRpaRecipe",

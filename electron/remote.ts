@@ -14,6 +14,7 @@ import { isAllowedRemoteRpc } from "./remote-rpc-types";
 import { createEventBuffer } from "./remote-event-buffer";
 import { createScreenLease } from "./remote-screen-lease";
 import { signPairBody } from "./relay-pair-sign";
+import { isPairingLocked, onPairingLockChange } from "./remote-pairing-lock";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
 const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
@@ -210,6 +211,12 @@ export class RemoteControlService {
     this.loadApproved();
     /* 启动即清一次过期设备（30 天未连接）—— 已配对列表不再无限增长 */
     this.pruneApproved();
+    /* 「禁止新设备配对」切换：锁定瞬间作废在途请求；开/关都换一个新码
+       （旧码截图/旧链接立即失效，解锁后交给用户的是新码）。 */
+    onPairingLockChange(() => {
+      this.cancelPendingPairs();
+      this.rotatePairingCode("start");
+    });
   }
 
   private loadApproved() {
@@ -611,6 +618,12 @@ export class RemoteControlService {
               this.jsonPair(res, 200, { ok: true, approved: true });
               return;
             }
+          }
+          /* 「禁止新设备配对」：已批准设备的快路 / 换 ID 迁移在上面已放行；走到这里一定是新设备。
+             锁定时直接拒绝、连码都不校验（避免试探码）。 */
+          if (this.pairingLocked()) {
+            this.jsonPair(res, 200, { ok: false, error: "这台电脑已关闭新设备配对（可在电脑端「手机远控」里重新开启）" });
+            return;
           }
           if (!this.checkPairingCode(String(data.code ?? ""))) {
             this.jsonPair(res, 200, { ok: false, error: "配对码错误或已过期，请对照电脑端显示的 6 位数字重输" });
@@ -1154,12 +1167,22 @@ export class RemoteControlService {
 
   /** 待审批的配对请求列表（电脑端渲染审批卡片用） */
   pendingPairs() {
+    if (this.pairingLocked()) return [];
     for (const [, req] of this.pairRequests) if (Date.now() - req.createdAt > PAIR_REQUEST_TTL) req.status = "expired";
     return [...this.pairRequests.values()].filter((r) => r.status === "pending").map((r) => ({ rid: r.rid, deviceId: r.deviceId, name: r.name, createdAt: r.createdAt }));
   }
 
+  /** 是否禁止新设备配对（状态源 = remote-pairing-lock；UI 与 Bot 渠道共用这一份）。 */
+  pairingLocked() { return isPairingLocked(); }
+
+  /** 作废所有在途的配对请求（开启「禁止新设备配对」时由订阅回调调用）。 */
+  cancelPendingPairs() {
+    for (const request of this.pairRequests.values()) if (request.status === "pending") request.status = "denied";
+  }
+
   /** 电脑端批准：该设备写入已批准表（持久化），请求标记 approved */
   approvePair(rid: string) {
+    if (this.pairingLocked()) return false;
     const req = this.pairRequests.get(rid);
     if (!req || req.status !== "pending") return false;
     req.status = "approved";

@@ -18,13 +18,14 @@
  */
 import { mainWindow, qrSvg } from "../runtime-refs";
 import { remote } from "../main";
+import { isPairingLocked, setPairingLocked } from "../remote-pairing-lock";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 
 const REMOTE_CHANNELS = [
   "remote:start", "remote:status", "remote:devices", "remote:send", "remote:stop",
   "remote:pair-state", "remote:pair-rotate", "remote:approve", "remote:deny",
-  "remote:revoke", "remote:qrcode", "remote:screen-stop",
+  "remote:revoke", "remote:qrcode", "remote:screen-stop", "remote:set-pairing-lock",
 ];
 
 export const remoteFeature = defineFeature<null>({
@@ -41,8 +42,11 @@ export const remoteFeature = defineFeature<null>({
     ipcHost.handle("remote:stop", () => { remote.stop(); return { ok: true }; });
     /* 11-06 手机看屏：桌面端「停止查看」—— 停采后手机下次取帧会拿到 409（不是静默黑屏） */
     ipcHost.handle("remote:screen-stop", () => { remote.stopScreenView(); return { ok: true }; });
-    ipcHost.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices() }));
+    ipcHost.handle("remote:pair-state", () => ({ code: remote.pairingCode(), pending: remote.pendingPairs(), approved: remote.approvedDevices(), locked: isPairingLocked() }));
     ipcHost.handle("remote:pair-rotate", () => ({ code: remote.rotatePairingCode() }));
+    /* 11-14 用户令「配对好手机后禁止其他手机再配对」：锁定后新设备/新 Bot 渠道一律拒绝，
+       已批准设备仍可凭设备秘密自动重连；切换瞬间由 lock 模块通知 remote / bot 作废在途请求。 */
+    ipcHost.handle("remote:set-pairing-lock", (_event, locked: boolean) => ({ ok: true, locked: setPairingLocked(Boolean(locked)) }));
     ipcHost.handle("remote:approve", (_event, rid: string) => ({ ok: remote.approvePair(String(rid)) }));
     ipcHost.handle("remote:deny", (_event, rid: string) => ({ ok: remote.denyPair(String(rid)) }));
     ipcHost.handle("remote:revoke", (_event, deviceId: string) => ({ ok: remote.revokeDevice(String(deviceId)) }));

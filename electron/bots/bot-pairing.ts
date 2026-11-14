@@ -5,6 +5,8 @@
 // danger-full-access 会话并直接执行消息」——任何人加到机器人就能指挥一台全权限 agent。
 // 纯逻辑 + 可注入持久化，预检【4g】直接跑真实现断言（含反证）。
 
+import { isPairingLocked, onPairingLockChange } from "../remote-pairing-lock";
+
 export type BotPairRequest = {
   rid: string;
   channel: string;
@@ -43,7 +45,10 @@ export class BotPairingService {
     private readonly notify: (request: BotPairRequest) => void,
     /** 持久化写入（approved 表）；不传则不持久化 */
     private readonly persist?: (approved: Record<string, unknown>) => void,
-  ) {}
+  ) {
+    /* 「禁止新设备配对」：锁定瞬间把在途的 Bot 配对请求作废（已批准的聊天不受影响）。 */
+    onPairingLockChange((locked) => { if (locked) this.cancelPending(); });
+  }
 
   /** 从持久化数据恢复已批准表（构造后立刻调用一次） */
   restoreApproved(data: Record<string, any>) {
@@ -63,6 +68,10 @@ export class BotPairingService {
   onChannelMessage(channel: string, chatId: string, name: string, text: string): BotPairDecision {
     const key = `${channel}:${chatId}`;
     if (this.approved.has(key)) return { action: "allow" };
+    /* 「禁止新设备配对」：锁定后已批准的聊天照旧可用，新聊天一律拒绝（连码都不校验）。 */
+    if (isPairingLocked()) {
+      return { action: "guide", message: "这台电脑已关闭新设备配对（可在电脑端「手机远控」里重新开启后，再发送配对码）。" };
+    }
     const digits = String(text ?? "").replace(/\D/g, "");
     // 聊天里发的内容带「配对」字样或就是一串 6 位数字 → 当作配对尝试
     const looksLikePairing = /配对|授权/.test(text ?? "") || /^\s*\d{6}\s*$/.test(text ?? "");
@@ -97,6 +106,7 @@ export class BotPairingService {
 
   /** 电脑端批准：该聊天写入已批准表（持久化） */
   approve(rid: string): boolean {
+    if (isPairingLocked()) return false;
     const req = this.requests.get(rid);
     if (!req || req.status !== "pending") return false;
     req.status = "approved";
@@ -111,6 +121,11 @@ export class BotPairingService {
     if (!req || req.status !== "pending") return false;
     req.status = "denied";
     return true;
+  }
+
+  /** 作废所有待审批的 Bot 配对请求（开启「禁止新设备配对」时由订阅回调调用）。 */
+  cancelPending(): void {
+    for (const request of this.requests.values()) if (request.status === "pending") request.status = "denied";
   }
 
   /** 撤销已批准聊天（下次重走配对） */

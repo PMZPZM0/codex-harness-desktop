@@ -1097,6 +1097,8 @@ interface Window {
     remoteStart(): Promise<{ port: number; url: string }>;
     remoteStatus(): Promise<{ status: string; devices: any[]; url: string; relay: { state: string; id: string; base: string; publicBase: string; error: string; since: number } }>;
     remoteStop(): Promise<{ ok: boolean }>;
+    /* 11-14：配对好手机后禁止新设备/新 Bot 渠道配对（已批准设备不受影响） */
+    remoteSetPairingLock(locked: boolean): Promise<{ ok: boolean; locked: boolean }>;
     deleteRpaRecipe(id: string): Promise<void>;
     listRpaRecipes(): Promise<any[]>;
     recordRpaRun(input: { id: string; ok: boolean; error?: string }): Promise<void>;

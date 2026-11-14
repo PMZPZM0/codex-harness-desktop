@@ -1802,6 +1802,22 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes('frame?.type === "pair-code"') && gwSrc.includes("pairPrevCode") && gwSrc.includes("tunnel.pairCode === code") && gwSrc.includes("? [preferred] : []") ? ok : fail)(
       "【139e】根配对按码定向 + 配对状态只问认领的电脑（⛔ 不回退广播，假隧道收不到码）"
     );
+    /* 11-14 用户令：「匹配好手机后，加一个禁止其他任何手机匹配的开关」。 */
+    const pairingLockSrc = readFileSync(join(ROOT, "electron", "remote-pairing-lock.ts"), "utf8");
+    const botPairSrc = readFileSync(join(ROOT, "electron", "bots", "bot-pairing.ts"), "utf8");
+    const remoteIpcSrc = readFileSync(join(ROOT, "electron", "features", "remote-ipc.ts"), "utf8");
+    const remotePanelSrc = readFileSync(join(ROOT, "src", "features", "app-view", "AppView", "04-remote-approval.tsx"), "utf8");
+    (pairingLockSrc.includes("remote-pairing-lock.json") && pairingLockSrc.includes("onPairingLockChange")
+      && relaySrc.includes("cancelPendingPairs") && relaySrc.includes("已关闭新设备配对") && relaySrc.includes("if (this.pairingLocked())") ? ok : fail)(
+      "【139e】禁止新设备配对：锁定状态落盘 + 新设备请求直接拒绝 + 在途请求作废（已批准设备凭秘密仍可重连）"
+    );
+    (botPairSrc.includes("isPairingLocked") && botPairSrc.includes("cancelPending")
+      && remoteIpcSrc.includes("remote:set-pairing-lock") && remoteIpcSrc.includes("locked: isPairingLocked()") ? ok : fail)(
+      "【139e】锁定同时覆盖 Bot 渠道 + IPC 通道与 pair-state 的 locked 字段"
+    );
+    (remotePanelSrc.includes("remoteSetPairingLock") && remotePanelSrc.includes("ToggleSwitch") && remotePanelSrc.includes("禁止新设备配对") ? ok : fail)(
+      "【139e】远控面板有「禁止新设备配对」开关（胶囊开关 + 主进程回执 + 锁定态提示）"
+    );
     (gwSrc.includes("handleTunnelRequest") && gwSrc.includes("const match = url.match") && gwSrc.includes("tunnels.get(id)") ? ok : fail)(
       "【139e】网关按 /t/<设备ID> 路由到对应隧道（不是所有人共用一条通道）"
     );

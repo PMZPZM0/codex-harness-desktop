@@ -27,6 +27,7 @@ import { DelegateRegistry } from "./delegate-registry";
 import { ThreadRuntimeStore } from "./thread-runtime-store";
 import { TerminalService } from "./terminal";
 import { RemoteControlService } from "./remote";
+import { configurePairingLock } from "./remote-pairing-lock";
 import { stripHarnessBlocks } from "../src/lib/harness-block-strip.mjs";
 import { safeJoin, previewKind } from "../src/lib/remote-files.mjs";
 import { snapshotSessionAliases } from "./session-alias";
@@ -501,6 +502,8 @@ function mobileInputOf(text: string, images: string[] = [], mentions: { kind: st
   return input;
 }
 
+/* 「禁止新设备配对」状态：读回上次选择（⛔ 必须在 setPath(userData) 之后、remote 构造之前）。 */
+configurePairingLock(app.getPath("userData"));
 const remote = new RemoteControlService({
   getStatus: () => "idle",
   storageFile: path.join(app.getPath("userData"), "remote-sessions.json"),

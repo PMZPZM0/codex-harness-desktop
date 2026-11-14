@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（119 个能力域 / 686 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（119 个能力域 / 687 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -249,9 +249,9 @@ OpenAI 账号鉴权（登录/凭据/额度）
 团队模式：应用内的群（伙伴成员 / 上下级委派白名单 / 群护栏 / 消息投影）,打开一个群就能 @ 伙伴派活
 通道：harness-team:list, harness-team:create, harness-team:rename, harness-team:rename-member, harness-team:add-partner, harness-team:remove-partner, harness-team:mute, harness-team:set-avatar, harness-team:set-guard, harness-team:project, harness-team:messages, harness-team:append-message, harness-team:dispatch, harness-team:clear-messages, harness-team:delete, harness-team:set-memory, harness-team:set-rules, harness-team:set-workspace, harness-team:running, harness-team:set-files, harness-team:set-manager, harness-team:set-admin, harness-team:group-progress, harness-team:add-note, harness-team:remove-note, harness-team:set-menu, harness-team:set-menu-placement, harness-team:set-message-layout, harness-team:set-reply-mode, harness-team:set-message-form, harness-team:set-dialog-flow, harness-team:set-schedule, harness-team:run-schedule, harness-team:log-usage, harness-team:ledger, harness-team:stop, harness-team:queue-start, harness-team:thread-usage, harness-team:talk-threads
 
-### remote（12 通道）
+### remote（13 通道）
 远程会话（手机/网页端远程接入宿主）
-通道：remote:approve, remote:deny, remote:devices, remote:pair-rotate, remote:pair-state, remote:qrcode, remote:revoke, remote:screen-stop, remote:send, remote:start, remote:status, remote:stop
+通道：remote:approve, remote:deny, remote:devices, remote:pair-rotate, remote:pair-state, remote:qrcode, remote:revoke, remote:screen-stop, remote:send, remote:set-pairing-lock, remote:start, remote:status, remote:stop
 
 ### bot（7 通道）
 Bot 会话（Bot 与会话的绑定与消息注入）

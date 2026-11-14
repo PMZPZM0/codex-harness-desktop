@@ -141,6 +141,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import type { HarnessAppApi } from "../../app-state/useHarnessApp";
 import { refreshWithReceipt } from "../../../lib/refresh-receipt.mjs";
+import { ToggleSwitch } from "../../../components/SettingsWidgets";
 
 /** 远控审批与配对弹窗：显示中转隧道状态与配对码（码 5 分钟轮换，弹窗要跟着换）。 */
 export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
@@ -149,6 +150,9 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
   /* 配对码 5 分钟过期会被后台自动轮换：弹窗里必须跟着换（码 + 二维码一起），
      否则用户照着旧码输，永远得到「配对码错误或已过期」（用户实测）。 */
   const lastPairCode = useRef("");
+  /* 「禁止新设备配对」（11-14 用户令）：默认关；开启后新手机 / 新 Bot 聊天一律拒绝，
+     已批准设备仍可凭设备秘密自动重连。状态真相源在主进程（remote-pairing-lock.json）。 */
+  const [pairLocked, setPairLocked] = useState(false);
   useEffect(() => {
     if (!app.mobileRemoteOpen) return;
     let alive = true;
@@ -156,6 +160,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
       try {
         const state: any = await window.codex.remotePairState();
         if (!alive) return;
+        setPairLocked(Boolean(state?.locked));
         const next = String(state?.code ?? "");
         if (!next || next === lastPairCode.current) return;
         lastPairCode.current = next;
@@ -203,6 +208,27 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
     try { setPairCode((await window.codex.remotePairRotate()).code); return ""; }
     catch (error: any) { return String(error?.message ?? error); }
   };
+  /* 切换「禁止新设备配对」：先乐观置位，失败回滚并给回执；
+     开启时主进程会作废在途请求并轮换配对码（旧码截图立即失效），这里同步刷新。 */
+  const togglePairLock = async (next: boolean) => {
+    setPairLocked(next);
+    try {
+      const result = await window.codex.remoteSetPairingLock(next);
+      const locked = Boolean(result?.locked);
+      setPairLocked(locked);
+      setNotice(locked
+        ? "已关闭新设备配对：未批准的手机与新的 Bot 聊天都将被拒绝；已批准设备不受影响"
+        : "已恢复新设备配对：配对码已更新，请把新的 6 位数字交给要连接的手机");
+      if (locked) setPairPending([]);
+      void loadPairStates();
+      const fresh = await window.codex.remotePairState().catch(() => null);
+      if (fresh?.code) { lastPairCode.current = String(fresh.code); setPairCode(String(fresh.code)); }
+    } catch (error) {
+      setPairLocked(!next);
+      setNotice(`切换「禁止新设备配对」失败：${String((error as Error)?.message ?? error)}`);
+    }
+  };
+
   const refreshQrcode = async () => {
     try {
       /* 10-29：二维码里带连接码 —— 先换一个新码再出图，否则 5 分钟后扫到的是过期码 */
@@ -225,8 +251,23 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                   <div className="remote-pair-head"><KeyRound size={15} /><strong>首次连接需要配对码</strong>
                     <button className="remote-mini-btn" title="换一个配对码" onClick={() => void refreshWithReceipt(setNotice, "刷新配对码", rotatePairCode)}><RefreshCw size={13} />刷新</button>
                   </div>
-                  <div className="remote-pair-code" data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</div>
-                  <small>手机扫码后输入这 6 位数字，再回到这里点「允许」。配对码 5 分钟内有效，错 10 次自动作废。</small>
+                  <div className={"remote-pair-code" + (pairLocked ? " locked" : "")} data-pair-code>{pairCode ? pairCode.replace(/(\d{3})(\d{3})/, "$1 $2") : "······"}</div>
+                  <small>{pairLocked
+                    ? "已关闭新设备配对 —— 未批准的手机无法连接。先关闭下方开关，才能配对新的手机。"
+                    : "手机扫码后输入这 6 位数字，再回到这里点「允许」。配对码 5 分钟内有效，错 10 次自动作废。"}</small>
+                </div>
+                {/* 11-14 用户令：配对好手机后可一键关闭「其他手机再配对」。默认关，按需开。 */}
+                <div className="remote-lock-card" data-pair-locked={pairLocked ? "true" : "false"}>
+                  <div className="remote-lock-head">
+                    <Lock size={15} />
+                    <strong>禁止新设备配对</strong>
+                    <span className="remote-lock-switch">
+                      <ToggleSwitch checked={pairLocked} label="禁止新设备配对" onChange={(next) => void togglePairLock(next)} />
+                    </span>
+                  </div>
+                  <small>{pairLocked
+                    ? "已关闭：未批准的手机会被拒绝，新的 Bot 聊天也无法配对；已批准设备不受影响。手机丢了/想换机时，先关掉它再配对。"
+                    : "开启后，只有已批准的设备能连接；新手机需要先在这里关闭开关才能配对。"}</small>
                 </div>
                 {pairPending.length > 0 && (
                   <div className="remote-approve-card" data-pair-pending>
@@ -282,7 +323,7 @@ export function AppViewRemoteApproval({ app }: { app: HarnessAppApi }) {
                     <small>{(() => { try { return remoteUrl ? "本窗口：" + new URL(remoteUrl).host : ""; } catch { return ""; } })()}</small>
                   </div>
                   <div className="remote-conn-card">
-                    <div className="remote-conn-left"><div className="remote-conn-title"><strong>等待手机连接</strong><span className="remote-ready"><span className="remote-ready-dot" />已就绪</span></div><small>用手机扫码，或在手机上打开链接。</small></div>
+                    <div className="remote-conn-left"><div className="remote-conn-title"><strong>{pairLocked ? "已关闭新设备配对" : "等待手机连接"}</strong><span className={"remote-ready" + (pairLocked ? " locked" : "")}><span className="remote-ready-dot" />{pairLocked ? "已锁定" : "已就绪"}</span></div><small>{pairLocked ? "已批准设备仍可自动连接；新设备需先关闭锁定。" : "用手机扫码，或在手机上打开链接。"}</small></div>
                     <button className="remote-stop-btn" title="停止服务" onClick={async () => { await window.codex.remoteStop(); setMobileRemoteOpen(false); }}><Link2 size={13} />停止</button>
                   </div>
                   <div className="remote-scan-row"><span>无法扫码？可以在手机上打开链接。</span>
