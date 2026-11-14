@@ -624,6 +624,64 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: omText.slice(0, 30000) }],
                   success: omSuccess,
                 });
+              } else if (event.params?.tool === "husk") {
+                /* Husk（11-14）：电脑侧准备官方 IPA/TIPA 与侧载引导；⛔ 不假装能替用户装进 iPhone。 */
+                const action = String(args.action ?? "status");
+                let huskText = "";
+                let huskSuccess = false;
+                const status = await window.codex.huskStatus().catch(() => null);
+                if (action === "status") {
+                  if (!status) huskText = "读取 Husk 状态失败（主进程没接上）。";
+                  else {
+                    const mb = (bytes?: number) => (bytes ? `${Math.round(bytes / 1048576)} MB` : "—");
+                    huskText = [
+                      `Husk：${status.installed ? `IPA 已下载${status.version ? ` v${status.version}` : ""}（${mb(status.sizeBytes)}）` : "IPA 未下载"}` + (status.tipaInstalled ? `；TIPA 已下载${status.tipaVersion ? ` v${status.tipaVersion}` : ""}（${mb(status.tipaSizeBytes)}）` : "；TIPA 未下载"),
+                      `安装包位置：${status.path || status.tipaPath || "（未下载）"}`,
+                      `要求：${status.requirement}`,
+                      `安装指南：${status.guideUrl}`,
+                      `AltStore/SideStore 源：${status.sourceUrl}`,
+                    ].join("\n");
+                  }
+                  huskSuccess = Boolean(status);
+                } else if (action === "device") {
+                  const device = await window.codex.huskDevice().catch(() => null);
+                  huskText = device
+                    ? `iPhone 连接：${device.connected ? "已检测到" : "未检测到"}${device.devices.length ? `（${device.devices.join("、")}）` : ""}\n${device.detail}`
+                    : "检测失败（主进程没接上）。";
+                  huskSuccess = Boolean(device);
+                } else if (action === "download") {
+                  const kind = args.kind === "tipa" ? "tipa" : "ipa";
+                  const id = kind === "tipa" ? "husk-tipa" : "husk";
+                  try {
+                    const result = await window.codex.installRuntime(id);
+                    huskSuccess = Boolean(result?.ok);
+                    huskText = result?.ok
+                      ? `Husk.${kind} 已下载${status?.version ? `（v${status.version}）` : ""}，SHA256 校验通过。下一步必须在 iPhone 上用 ${kind === "tipa" ? "TrollStore" : "SideStore/AltStore"} 侧载。`
+                      : `下载未完成：${(result as { error?: string })?.error ?? "未知原因"}`;
+                  } catch (err) {
+                    huskText = `下载失败：${String((err as { message?: unknown })?.message ?? err)}`;
+                  }
+                } else if (action === "guide") {
+                  huskText = [
+                    "Husk 安装步骤（电脑只准备安装包，真正安装在 iPhone 上）：",
+                    `1. 电脑侧下载：${status?.installed ? "IPA 已就绪" : "让用户在 Husk 卡点「下载 IPA」（或 TrollStore 用「下载 TIPA」）"}`,
+                    `2. iPhone（iOS 15.5+）用 SideStore / AltStore / TrollStore 侧载；指南：${status?.guideUrl ?? "https://itslevii.dev/docs/install"}`,
+                    `3. SideStore/AltStore 可直接加源：${status?.sourceUrl ?? "https://itslevii.dev/repo.json"}`,
+                    "4. 打开 Husk → 添加 APK → 点一下全屏运行；部分游戏按指南开启 JIT。",
+                    "⛔ 电脑无法替用户装进 iPhone；银行类/反作弊游戏可能拒绝在 Husk 里运行。",
+                  ].join("\n");
+                  huskSuccess = true;
+                } else if (action === "reveal") {
+                  const result = await window.codex.huskReveal().catch(() => null);
+                  huskText = result?.ok ? `已在文件管理器定位安装包（${result.path}）` : "打不开文件夹：安装包可能还没下载。";
+                  huskSuccess = Boolean(result?.ok);
+                } else {
+                  huskText = `未知 action：${action}（可用：status / device / download / guide / reveal）`;
+                }
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: huskText.slice(0, 12000) }],
+                  success: huskSuccess,
+                });
               } else if (event.params?.tool === "laya_judge") {
                 /* Laya 局部判断（10-18）：工具只在装了 Laya 的机器上注册；执行端做参数校验、
                    未就绪最多等 15s 预热、低置信返回「弃权」文案。⛔ 不走能力网关（专用工具）。 */

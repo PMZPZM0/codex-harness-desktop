@@ -684,6 +684,14 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           materialIds: { type: "array", items: { type: "string" }, description: "generate 用（可选）：已上传到 OpenMAIC 的资料 id，最多 5 个" },
           jobId: { type: "string", description: "job 用：generate 返回的 jobId" },
         }, required: ["action"] } },
+      /* Husk（11-14）：iPhone 上跑 Android APK 的开源项目。电脑侧只准备 IPA/TIPA 与侧载引导，
+         ⛔ 不能替用户装进 iPhone（需要真机 + SideStore/AltStore/TrollStore）。 */
+      { type: "function", name: "husk",
+        description: "Husk（iPhone 上跑 Android）：action=status 查电脑上 IPA/TIPA 是否已下载与版本；device 检测是否连着 iPhone；download 下载官方安装包（kind=ipa 给 SideStore/AltStore，kind=tipa 给 TrollStore；约 142MB，只在用户明确要求时调用）；guide 返回官方侧载指南与 AltStore 源；reveal 定位已下载文件。⛔ Husk 是 iPhone 应用（iOS 15.5+），电脑侧无法替用户安装到手机 —— 必须让用户在 iPhone 上用 SideStore/AltStore/TrollStore 侧载；部分游戏需要 JIT。需先在「设置 → 开发工具 → Husk」下载安装包。",
+        inputSchema: { type: "object", properties: {
+          action: { type: "string", enum: ["status", "device", "download", "guide", "reveal"], description: "要执行的动作" },
+          kind: { type: "string", enum: ["ipa", "tipa"], description: "download 用：ipa（SideStore/AltStore）或 tipa（TrollStore），默认 ipa" },
+        }, required: ["action"] } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。**单选还是多选由你根据问题性质决定**：答案互斥（选一条就够）传 multiple=false 或省略；多项可以并存（要改哪几个文件 / 勾选要处理的项）传 multiple=true 让用户勾选多条。用户先选中、再点确认按钮提交，勾选与自定义输入会用「；」拼接返回。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, multiple: { type: "boolean", description: "true = 多选（用户可勾选多项）；false/省略 = 单选（只能选一项）。两种都是：用户先选中、再点「确认/提交」按钮才把答案回给你" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
       // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
       { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },

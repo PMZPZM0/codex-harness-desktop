@@ -57,6 +57,8 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [uninstallOpen, setUninstallOpen] = useState(false);
+  const [device, setDevice] = useState<{ connected: boolean; devices: string[]; detail: string } | null>(null);
+  const [deviceBusy, setDeviceBusy] = useState(false);
 
   const refresh = useCallback(async () => {
     try { setStatus((await window.codex.huskStatus()) as Status); } catch { /* 主进程没接上就保持现状 */ }
@@ -96,6 +98,16 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
     catch { setNotice?.("复制失败", url); }
   };
   const reveal = async () => { try { await window.codex.huskReveal(); } catch { setNotice?.("打不开文件夹", "IPA 可能还没下载"); } };
+  const checkDevice = async () => {
+    setDeviceBusy(true);
+    try {
+      const result = await window.codex.huskDevice();
+      setDevice(result);
+      setNotice?.(result.connected ? "检测到 iPhone" : "未检测到 iPhone", result.detail);
+    } catch (err) {
+      setNotice?.("检测失败", String((err as { message?: unknown })?.message ?? err));
+    } finally { setDeviceBusy(false); }
+  };
 
   const uninstall = async () => {
     try {
@@ -180,7 +192,19 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
           <div className={`runtime-row ${status?.tipaInstalled ? "installed" : "missing"} ${tipaInstalling ? "busy" : ""}`}>
             <span className="runtime-icon">{tipaInstalling ? <Spinner /> : status?.tipaInstalled ? <Check size={15} /> : <Download size={15} />}</span>
             <span className="runtime-copy">
-              <strong>TrollStore 专用（可选）</strong>
+            <div className={`runtime-row ${device?.connected ? "installed" : "missing"}`}>
+            <span className="runtime-icon">{deviceBusy ? <Spinner /> : device?.connected ? <Check size={15} /> : <Smartphone size={15} />}</span>
+            <span className="runtime-copy">
+              <strong>iPhone 连接</strong>
+              <small>{device?.detail ?? "用数据线把 iPhone 连到电脑并点「信任」，然后点「检测连接」；⛔ 检测到也仍需在手机上完成侧载"}</small>
+            </span>
+            <div className="runtime-actions">
+              <span className={`runtime-badge ${device?.connected ? "installed" : ""}`}>{device?.connected ? "已连接" : "未连接"}</span>
+              <button type="button" className="secondary-setting runtime-install" disabled={deviceBusy} onClick={() => void checkDevice()}>{deviceBusy ? <><Spinner /> 检测中</> : "检测连接"}</button>
+            </div>
+          </div>
+
+            <strong>TrollStore 专用（可选）</strong>
               <small>{tipaInstalling ? "正在下载 Husk.tipa…" : status?.tipaInstalled ? `已下载 TIPA${status.tipaVersion ? ` ${status.tipaVersion}` : ""}${tipaMb ? `（${tipaMb} MB）` : ""}；TrollStore 用户装这个更方便` : "TrollStore 用户可单独下载 .tipa（与 IPA 同版本）；SideStore / AltStore 用户不需要"}</small>
               {tipaInstalling ? (
                 <span className="runtime-install-state devtools-progress-row">

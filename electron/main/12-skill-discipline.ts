@@ -53,6 +53,8 @@ export async function devInstructionsInput() {
     apkstartInstalled: Boolean(devRuntimeSpecs.apkstart && runtimeInstalled("apkstart", devRuntimeSpecs.apkstart)),
     // OpenMAIC 互动课堂（11-14）：装了（tools/openmaic/app/.next/BUILD_ID 在）才注入用法段
     openmaicInstalled: Boolean(devRuntimeSpecs.openmaic && runtimeInstalled("openmaic", devRuntimeSpecs.openmaic)),
+    // Husk（11-14）：电脑上已有 Husk.ipa/.tipa 才注入用法段
+    huskInstalled: Boolean(devRuntimeSpecs.husk && runtimeInstalled("husk", devRuntimeSpecs.husk)),
     mediaCommand: bundledNodePath ? `"${bundledNodePath}" "${mediaHelper}"` : `node "${mediaHelper}"`,
     /* 输出风格（10-06）：控制台「回复风格」开关打开的写作风格技能 —— 宿主把它翻译成
        **常驻指令**下发，这样开关一开就每轮生效，不必用户点名（见 electron/output-styles.ts）。

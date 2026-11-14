@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（119 个能力域 / 687 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（119 个能力域 / 688 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -71,9 +71,9 @@ ApkStart 安卓运行器（RoutineMiku/apkstart，MIT，仅 Windows 10/11 x64）
 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT，本机 Windows）：多智能体互动课堂（AI 老师/同学 + 幻灯片 / 测验 / 互动模拟 / PBL）；源码 + pnpm + 便携 PostgreSQL 按需下载并本机构建（约 1.3GB 下载 / 5GB 安装后），服务只监听 127.0.0.1。模型 Key 由用户在网页设置里配置。Codex 通过 openmaic 工具做 status / start / stop / open / generate / job（生成异步，job 轮询拿课堂链接）
 通道：openmaic:status, openmaic:start, openmaic:stop, openmaic:open, openmaic:generate, openmaic:job, openmaic:purge
 
-### husk（3 通道）
+### husk（4 通道）
 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）：翻译层 + QEMU 双路，导入 APK 后全屏运行，iOS 15.5+；电脑侧按需下载官方 Husk.ipa（约 142MB，GitHub release 镜像序 + SHA256 校验）并提供 SideStore / AltStore / TrollStore 侧载指南。⛔ 不在电脑上假装安装到 iPhone —— 真机侧载必须用户在 iPhone 上完成
-通道：husk:status, husk:guide, husk:reveal
+通道：husk:status, husk:guide, husk:reveal, husk:device
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置

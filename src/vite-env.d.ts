@@ -1454,6 +1454,8 @@ interface Window {
     huskGuide(): Promise<{ ok: boolean; url: string }>;
     /* 11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder） */
     huskReveal(): Promise<{ ok: boolean; path: string }>;
+    /* 11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作 */
+    huskDevice(): Promise<{ connected: boolean; devices: string[]; platform: string; detail: string }>;
     /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
     feishuCliSetupStart(): Promise<{ ok: boolean; url?: string; error?: string }>;
     /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */

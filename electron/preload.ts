@@ -1042,6 +1042,8 @@ contextBridge.exposeInMainWorld("codex", {
   huskGuide: () => __ipc("husk:guide", 0, []),
   /* 11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder） */
   huskReveal: () => __ipc("husk:reveal", 0, []),
+  /* 11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作 */
+  huskDevice: () => __ipc("husk:device", 0, []),
   /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
   feishuCliSetupStart: () => __ipc("feishu-cli:setup-start", 0, []),
   /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */

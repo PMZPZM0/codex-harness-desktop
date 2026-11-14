@@ -644,6 +644,7 @@ Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依
 并给 SideStore / AltStore / TrollStore 侧载指南（`itslevii.dev/docs/install`，源 `itslevii.dev/repo.json`）；TrollStore 用户可在同一卡片单独下载 `Husk.tipa`（hidden 工具项 `husk-tipa`，独立版本号）。
 ⛔ **不从电脑直接装进 iPhone**（需要真机 + 签名侧载，宿主不假装能做到）；GPL 外部工具只下载官方 IPA，不 import 其源码。
 守卫 12bq。
+配套 Codex 工具 `husk`（status / device / download / guide / reveal）与内置技能 `husk`；卡片里有「iPhone 连接」检测行（Windows PnP / mac system_profiler，只检测不做安装）。
 全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），
 由「设置 → 开发工具」跳官方安装器；浏览器自动化优先走它，未安装回落 browse-skills
 （`nuphus-call browser_*` 驱动默认浏览器）。**Playwright CLI 与浏览器内核已整体移除。**

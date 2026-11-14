@@ -60,17 +60,17 @@ const GROUPS = "src/features/settings-devtools/runtime-groups.tsx";
 }
 
 /* ── ③ 通道与界面 ────────────────────────────────────────────── */
-const EXPECTED = ["husk:status", "husk:guide", "husk:reveal"];
+const EXPECTED = ["husk:status", "husk:guide", "husk:reveal", "husk:device"];
 {
   const domain = codeOnly(read(DOMAIN));
   ok(EXPECTED.every((ch) => domain.includes(`"${ch}"`)), "域文件注册全部 3 条通道");
   ok(/HUSK_GUIDE_URL/.test(domain) && /HUSK_SOURCE_URL/.test(domain), "指南与 AltStore 源从主进程单一真相源下发");
   const registry = read("electron/ipc-registry.ts");
   const row = registry.match(/\{ prefix: "husk", count: (\d+)[\s\S]*?channels: \[([^\]]+)\]/);
-  ok(Boolean(row) && Number(row[1]) === EXPECTED.length, "ipc-registry 的 count = 3");
+  ok(Boolean(row) && Number(row[1]) === EXPECTED.length, "ipc-registry 的 count = 4");
   ok(Boolean(row) && EXPECTED.every((ch) => row[2].includes(ch)), "ipc-registry 的 channels 逐条对得上");
   const manifest = read("electron/ipc-channels.manifest.json");
-  ok(EXPECTED.every((ch) => manifest.includes(`"channel": "${ch}"`)), "manifest 有全部 3 条通道");
+  ok(EXPECTED.every((ch) => manifest.includes(`"channel": "${ch}"`)), "manifest 有全部 4 条通道");
   const composition = read("electron/composition.json");
   ok(/"id": "husk"[\s\S]{0,200}?"file": "features\/husk-ipc\.ts"[\s\S]{0,80}?"export": "huskFeature"/.test(composition),
     "组合表启用 husk");
@@ -107,6 +107,34 @@ const EXPECTED = ["husk:status", "husk:guide", "husk:reveal"];
   ok(/tipaInstalling/.test(card) && /husk-tipa/.test(card), "TIPA 下载有自己的进度/取消接线");
   ok(read("electron/mirror-download.ts").includes('Promise.race([once(file, "drain"), aborted])'),
     "镜像停滞 abort 时不再卡在 drain（11-14 实测死锁）");
+}
+
+/* ── ④ 配套工具 / 技能 / 指令 ─────────────────────────────────── */
+{
+  const seg = codeOnly(read("src/features/app-state/parts/part08/01-seg.tsx"));
+  ok(seg.includes('name: "husk"') && seg.includes('enum: ["status", "device", "download", "guide", "reveal"]'),
+    "dynamicTools 注册 husk（status/device/download/guide/reveal）");
+  const req = codeOnly(read("src/features/app-state/parts/part05/event-router/02-request.tsx"));
+  ok(req.includes('event.params?.tool === "husk"'), "分发分支在（tool 名一致）");
+  for (const method of ["huskStatus", "huskDevice", "huskReveal"]) {
+    ok(req.includes('window.codex.' + method + '('), "分发调用 window.codex." + method);
+  }
+  ok(req.includes('window.codex.installRuntime(id)') && req.includes('husk-tipa'), "download 动作走 runtime:install（IPA/TIPA）");
+  const domain = codeOnly(read(DOMAIN));
+  ok(domain.includes("detectIphone") && domain.includes("Get-PnpDevice") && domain.includes("system_profiler"),
+    "husk:device 真检测 USB（Windows PnP / mac system_profiler），不做安装");
+  const card = codeOnly(read(CARD));
+  ok(card.includes("iPhone 连接") && card.includes("checkDevice") && card.includes("huskDevice"),
+    "卡片有「iPhone 连接」检测行");
+  const skills = read("electron/builtin-skills.ts");
+  ok(/["husk", HUSK_SKILL]/.test(skills), "内置技能 husk 已注册");
+  ok(read("electron/builtin-skills/00-skill-zh-notes.ts").includes('"husk":'), "技能中文导读在");
+  ok(read("src/features/app-view/constants/01-notices-labels.tsx").includes('"husk"'), "# 面板保底名单已登记");
+  const instructions = codeOnly(read("electron/developer-instructions.ts"));
+  ok(instructions.includes("if (input.huskInstalled) text += HUSK_INSTRUCTIONS"), "开发者指令条件注入");
+  const caller = codeOnly(read("electron/main/12-skill-discipline.ts"));
+  ok(caller.includes('huskInstalled: Boolean(devRuntimeSpecs.husk && runtimeInstalled("husk", devRuntimeSpecs.husk))'),
+    "注入条件与运行时判定同源");
 }
 
 /* ── ④ GPL 边界 ──────────────────────────────────────────────── */

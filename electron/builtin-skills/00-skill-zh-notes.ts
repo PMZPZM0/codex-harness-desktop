@@ -161,6 +161,11 @@ screenshot 截屏（返回 PNG 路径）→ logcat 查崩溃 → adb 透传点�
 ⛔ 首次启动要先下载约 1GB Android 运行时，install 此时返回 pending **不算成功**：稍后查 status 的 runtimeReady，
 不要循环重试；只支持 Windows。`,
 
+  "husk": `# Husk（iPhone 跑 Android，中文导读）
+电脑侧只准备官方 Husk.ipa/.tipa（142MB）并给 SideStore/AltStore/TrollStore 侧载指南；
+工具动作：status / device / download / guide / reveal。
+⛔ 不能替用户装进 iPhone（需真机 + 侧载工具）；iOS 15.5+，部分游戏要 JIT，银行/反作弊应用可能拒绝运行。`,
+
   "openmaic": `# OpenMAIC 互动课堂（中文导读）
 本机 OpenMAIC 服务里生成课堂：status 看状态 → start/open 起服务 → generate 提交（requirement 必填）→
 job 查进度，成功后把课堂链接单独一行给用户。

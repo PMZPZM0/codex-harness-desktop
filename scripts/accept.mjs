@@ -1487,6 +1487,7 @@ const CHECKS = [
           sideloadRow:/侧载到 iPhone/.test(t),
           compatRow:/兼容性/.test(t),
           tipaRow:/TrollStore 专用（可选）/.test(t) && /下载 TIPA|TIPA 已下载/.test(t),
+          deviceRow:/iPhone 连接/.test(t) && /检测连接/.test(t),
           ios:/iOS 15\\.5\\+/.test(t),
           guideBtn:buttons.some(function(b){ return b.includes("安装指南"); }),
           sourceBtn:buttons.some(function(b){ return b.includes("复制 AltStore 源"); }),
@@ -1495,13 +1496,16 @@ const CHECKS = [
           gpl:/GPL-2\\.0/.test(t),
         };
       })()`).catch(() => null);
-      h.check("③ 弹窗五块齐：下载 IPA / 更新 / 侧载到 iPhone / TIPA / 兼容性",
-        Boolean(dialog) && dialog.downloadRow && dialog.updateRow && dialog.sideloadRow && dialog.tipaRow && dialog.compatRow, JSON.stringify(dialog));
+      h.check("③ 弹窗六块齐：下载 IPA / 更新 / 侧载到 iPhone / TIPA / iPhone 连接 / 兼容性",
+        Boolean(dialog) && dialog.downloadRow && dialog.updateRow && dialog.sideloadRow && dialog.tipaRow && dialog.deviceRow && dialog.compatRow, JSON.stringify(dialog));
       h.check("④ 侧载区有安装指南 + AltStore 源；已下载时多「打开 IPA」",
         Boolean(dialog) && dialog.guideBtn && dialog.sourceBtn && dialog.hasOpenIpa === Boolean(status && status.installed),
         JSON.stringify({ guide: dialog && dialog.guideBtn, source: dialog && dialog.sourceBtn, hasOpenIpa: dialog && dialog.hasOpenIpa, installed: status && status.installed }));
       h.check("⑤ 如实写清 iOS 15.5+、GPL-2.0、以及电脑不能直接装进 iPhone",
         Boolean(dialog) && dialog.ios && dialog.gpl && dialog.honest, JSON.stringify(dialog));
+      const device = await h.eval(`window.codex.huskDevice()`).catch(() => null);
+      h.check("⑥ husk:device 可用（连接布尔 + 说明；没插 iPhone 就应报未连接）",
+        Boolean(device && typeof device.connected === "boolean" && String(device.detail || "").length > 0), JSON.stringify(device));
       await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
       await wait(300);
     },

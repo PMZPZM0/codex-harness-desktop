@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 687,
+  "count": 688,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6331,6 +6331,16 @@
       "invokeArgs": "",
       "cast": null,
       "note": "11-14 在文件管理器里选中已下载的 Husk.ipa（Windows Explorer / macOS Finder）"
+    },
+    {
+      "name": "huskDevice",
+      "channel": "husk:device",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ connected: boolean; devices: string[]; platform: string; detail: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 检测电脑是否连着 iPhone（Windows 读 PnP / mac 读 USB）；⛔ 只检测，不做安装或授权动作"
     },
     {
       "name": "feishuCliSetupStart",

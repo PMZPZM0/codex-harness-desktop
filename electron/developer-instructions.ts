@@ -233,6 +233,13 @@ const APKSTART_INSTRUCTIONS =
   "On the very first run ApkStart downloads ~1GB of Android runtime; install then returns pending — that is NOT success. Tell the user it is downloading and check status (runtimeReady) later instead of retrying in a loop. " +
   "If the tool reports ApkStart is not installed, tell the user to install it in 设置 → 开发工具 → ApkStart 安卓运行器 and stop; do not try to install it yourself.";
 
+/** Husk（11-14，Leviidev/Husk，GPL-2.0，iPhone 跑 Android）。只在有安装包时注入。
+ *  ⛔ 必须说清：电脑只能准备 IPA/TIPA，装进 iPhone 必须用户自己侧载。 */
+const HUSK_INSTRUCTIONS =
+  "\n\nHUSK ON IPHONE (only if `husk` is in your tool list): Husk runs Android apps/games on iPhone (iOS 15.5+) via a translation layer, with QEMU fallback. The desktop app can ONLY prepare the official Husk.ipa/.tipa and guide the user; it CANNOT install onto the phone. " +
+  "Use the `husk` tool: status (IPA/TIPA downloaded?), device (is an iPhone connected over USB?), download (kind=ipa for SideStore/AltStore or kind=tipa for TrollStore; ~142MB — only when the user asks), guide (official steps + AltStore source), reveal (locate the file). " +
+  "The final step always belongs to the user on the iPhone: sideload with SideStore/AltStore/TrollStore, then open Husk and import the APK. Some games need JIT; banking/anti-cheat apps may refuse. Never claim Husk is installed on the phone unless the user confirms it.";
+
 /** OpenMAIC 互动课堂（11-14，THU-MAIC/OpenMAIC，MIT，本机 Windows 安装）。只在装了时注入。
  *  ⛔ 重点两条：模型 Key 必须用户自己填（不许发到对话）；生成是异步任务，不许循环死等。
  *  ⛔ 条件式（同 FILEE / APKSTART 纪律）：没装的机器上工具执行端只回安装指引。 */
@@ -553,6 +560,8 @@ export type DevInstructionsInput = {
   apkstartInstalled?: boolean;
   /** OpenMAIC 互动课堂（11-14）：装了（tools/openmaic/app/.next/BUILD_ID 在）才注入用法段。 */
   openmaicInstalled?: boolean;
+  /** Husk（11-14）：电脑上已有 Husk.ipa/.tipa 才注入用法段。 */
+  huskInstalled?: boolean;
   mediaCommand?: string;
   /** 已开启的输出风格（`electron/output-styles.ts` 的 outputStyleTargets）—— 见上方 OUTPUT_STYLE_INSTRUCTIONS */
   outputStyles?: { skill: string; label: string; file: string }[];
@@ -588,6 +597,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   if (input.apkstartInstalled) text += APKSTART_INSTRUCTIONS;
   // OpenMAIC 互动课堂（11-14）：装了才注入（流程/异步口径写在技能 openmaic 里）
   if (input.openmaicInstalled) text += OPENMAIC_INSTRUCTIONS;
+  // Husk（11-14）：有安装包才注入（工具无条件注册，没装时执行端只回下载指引）
+  if (input.huskInstalled) text += HUSK_INSTRUCTIONS;
   // 视频生成三件套（无条件下发，内容自带条件式判断：先看 video_generate 在不在工具表里）
   text += VIDEO_INSTRUCTIONS;
   text += LAYA_INSTRUCTIONS;
