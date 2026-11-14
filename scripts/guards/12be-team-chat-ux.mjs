@@ -543,12 +543,10 @@ const catalog = [
       && /run\.leadThreadId/.test(fallback)
       && !/activeRunList\(\)\.some\(\(run\) => String\(run\.teamId/.test(fallback),
       "成员交回显式 @ 主理人（结构化 handoffTo + 名字行标签），回喂按 leadThreadId 不串群");
-    /* ⛔⛔ 11-12 用户截图（同一个问题回复两次）：提问被当成"给了活"⇒ 催办多跑一轮。
-       问句判定收进 isInfoRequest（真值表在 11f）；这里钉接线，⛔ 旧内联窄词表不许复活。 */
-    ok(/if \(isInfoRequest\(text\)\) return false;/.test(teamIpcSrc)
-      && /leadTurnTaskLike/.test(teamIpcSrc)
-      && !/const askLike = /.test(teamIpcSrc),
-      "催办只认「布置任务」：提问/询问一律不算（⛔ 否则答完又被催一轮 = 同一问题回两次）");
+    /* ⛔⛔ 11-14（抄 Pachat）：自由催办已**整体移除** —— 谁说话由「被@/被回复/有未读」决定，
+       宿主不再在"主理人没派活 / 刚答完信息"时强催一轮（那正是「同一问题回两次」的来源）。⛔ 不许复活。 */
+    ok(!/leadSelfNudges/.test(teamIpcSrc) && !/leadTurnTaskLike/.test(teamIpcSrc) && !/isInfoRequest/.test(teamIpcSrc),
+      "自由催办已移除：提问/回答不再被强催第二轮（改由 @/回复/未读 决定谁说话）");
     /* ⛔⛔ 11-12 审查修的两处（都只影响"看得对不对"，但会让用户判"又坏了"）：
        ① queued 用裸 memberId、running 用合成 id ⇒ 同一个人两行；
        ② settled 发在"还有人在跑"之前 ⇒ 明明还在跑却显示已收口。 */
@@ -1391,12 +1389,15 @@ const catalog = [
   /* ⛔ 11-08 审查：runGroupTalk 整段死代码（派活搬进主进程后无调用方）已删 ——
      投递主链只剩 harness-team-ipc 一条，⛔ 不许再长出第二套口径。 */
   ok(!/runGroupTalk/.test(talk) && !/runGroupTalk/.test(outlet)
-    && /runTalkTurn/.test(ipc) && /readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc),
-    "runGroupTalk 死代码已删（接力主链只在 harness-team-ipc；⛔ 不再并存两套投递口径）");
-  /* ⛔ 11-08：group_read 现在在 hook 里做单条/总量截断，但仍必须直读**同一份** readGroupHistory。 */
-  ok(/readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc)
-    && /readMessages: \(limit: number\) => Promise\.resolve\(\(\(\) => \{[\s\S]{0,80}?const rows = readGroupHistory\(limit\);/.test(ipc),
-    "派活主链每轮也注入；默认注入与 group_read 工具**同一份** readGroupHistory（⛔ 两处口径分叉会读到不同历史）");
+    && /runTalkTurn/.test(ipc) && /unreadTalkHistory\(TALK_HISTORY_LIMIT, String\(speakerId\), readUpTo\)/.test(ipc),
+    "runGroupTalk 死代码已删（接力主链只在 harness-team-ipc；主链注入已改喂「未读」");
+  /* ⛔ 11-14「抄 Pachat 的先读再说」：**主链每轮注入改喂「该成员未读」**（unreadTalkHistory），
+     而 group_read 工具仍读「最近 N 条」（readGroupHistory）—— 两者**故意不同**：前者是"你漏看的"，
+     后者是模型主动"再看更多"。⛔ 别把主链改回 readGroupHistory（那会退化成每轮灌最近 N 条、不再先读再说）。 */
+  ok(/unreadTalkHistory\(TALK_HISTORY_LIMIT, String\(speakerId\), readUpTo\)/.test(ipc)
+    && /readMessages: \(limit: number\) => Promise\.resolve\(\(\(\) => \{[\s\S]{0,80}?const rows = readGroupHistory\(limit\);/.test(ipc)
+    && !/readGroupHistory\(TALK_HISTORY_LIMIT\)/.test(ipc),
+    "先读再说：主链喂该成员未读（unreadTalkHistory），group_read 工具仍读最近（readGroupHistory）——两者故意不同");
   ok(/TALK_HISTORY_LIMIT/.test(outlet) && /groupHistoryBlock/.test(outlet),
     "板块出口显式暴露共享上下文（守卫可钉唯一真相源）");
   /* ⛔ 负向：不许把历史塞进需求体、不许删掉 group_read */

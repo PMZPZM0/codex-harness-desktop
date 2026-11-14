@@ -59,7 +59,9 @@ import {
 } from "../../src/lib/team-models.mjs";
 import { GROUP_USAGE_TTL_MS, pickUsagePatchIndex, usageFromTokenEvent, usageUsableFor, type GroupUsage } from "../../src/lib/team-usage.mjs";
 /* ⛔ 11-10 用户令「界定什么时候收尾、什么时候继续推进」：判据是纯函数，⛔ 不在这里写 if 堆。 */
-import { classifyTurn, isInfoRequest, settleHandoffs } from "../../src/lib/team-collab.mjs";
+import { classifyTurn, settleHandoffs } from "../../src/lib/team-collab.mjs";
+/* ⛔ 11-14「抄 Pachat 的先读再说」：每成员各记「读到哪」，只喂它没读过的新消息。 */
+import { getGroupReadCursor, markGroupRead } from "../group-read-cursors";
 /* ⛔ 11-10「异常落到责任人」的标记解析（纯函数，守卫真跑）。 */
 import { dutyKeyOf, parseDuty } from "../../src/lib/team-duty.mjs";
 /* ⛔ 11-10 群记忆：按「群类型 + 座位」注入（专家群 / 专家团群 / CLI 智能体群各一套）。
@@ -1066,9 +1068,8 @@ async function runDispatchRounds(
      ⇒ 排片跑完 / 成员交完活，必须把话头交回主理人；只有它有权收口。这两道计数是安全阀。 */
   const MAX_LEAD_CATCH_UPS = 3;
   let leadCatchUps = 0;
-  /* ⛔ 主理人自己那一轮「没派任何人、没写收口」时只催办一次（防自循环烧钱）。 */
-  const MAX_LEAD_SELF_NUDGES = 1;
-  let leadSelfNudges = 0;  /* ⛔ 主持人排片串行执行期间，别让中途某位成员的回合把话头抢回主理人（会把剩下的排片冲散）。 */
+  /* ⛔ 11-14：自由催办（宿主强催主理人再跑一轮）已移除 —— 抄 Pachat，谁说话由「被@ / 被回复 / 有未读」
+     决定，宿主不再在「主理人没派活」时强催它一轮（那正是"同一问题回两条"的来源）。 */
   let relayInFlight = false;
   const params = options.params ?? {};
   /* ⛔ 群聊名册：群成员 + 展开的团成员（合成 id）—— 每位都有自己的长期会话，
@@ -1170,6 +1171,28 @@ async function runDispatchRounds(
   const readGroupHistory = (limit: number): { speaker: string; text: string }[] => {
     const rows = readStore().messages?.[group.id] ?? [];
     return rows.filter(Boolean).slice(-Math.max(1, Math.min(50, limit))).map((raw) => {
+      const m = raw as unknown as Record<string, unknown>;
+      const authorId = String(m.authorId ?? "");
+      return {
+        speaker: roster.find((x) => x.id === authorId)?.name ?? (authorId === "local-user" ? "我" : authorId),
+        text: String(m.text ?? ""),
+      };
+    });
+  };
+  /* ⛔ 11-14「抄 Pachat 的先读再说」：只喂**该成员还没读过**的消息（别人发的、且在其已读游标之后）。
+     ⛔ 不含它自己发的；游标=0（新成员/首次）⇒ 拿最近的群上下文。游标在 buildTalkInput 之后整体推进。 */
+  const unreadTalkHistory = (limit: number, memberId: string, upTo: number): { speaker: string; text: string }[] => {
+    const all = readStore().messages?.[group.id] ?? [];
+    const cursor = getGroupReadCursor(group.id, memberId);
+    const cap = Math.max(1, Math.min(50, limit));
+    const fresh = all.filter((raw) => {
+      const m = raw as unknown as Record<string, unknown>;
+      const at = Number(m.at ?? 0);
+      /* ⛔ 只取 (已读游标, readUpTo] 这一段：readUpTo 之后（本轮输入拼好之后才到的）**不算已读**，
+         否则"拼完输入→标记已读"之间新到的消息会被误标丢失（review 抓的窗口）。 */
+      return at > cursor && at <= upTo && String(m.authorId ?? "") !== String(memberId);
+    });
+    return fresh.slice(-cap).map((raw) => {
       const m = raw as unknown as Record<string, unknown>;
       const authorId = String(m.authorId ?? "");
       return {
@@ -1344,12 +1367,15 @@ async function runDispatchRounds(
         seat: seatSelf?.isAdmin ? "admin" : seatSelf?.teamRole === "lead" ? "lead" : partner.targetKind === "cli" ? "cli" : "member",
         query: bodyText,
       }).catch(() => null);
+      /* ⛔ 11-14「先读再说」快照点：拼输入**之前**取一次时间，本轮只把 ≤ 它的消息视为"读到"，
+         之后（拼输入期间新到的）一律留作下一轮的未读 —— 关掉"拼完→标记"之间丢消息的窗口。 */
+      const readUpTo = Date.now();
       const query = buildTalkInput(
         talkOptions as Parameters<typeof buildTalkInput>[0],
         me,
         fromTalk,
         bodyText,
-        readGroupHistory(TALK_HISTORY_LIMIT),
+        unreadTalkHistory(TALK_HISTORY_LIMIT, String(speakerId), readUpTo),
         /* ⛔ 11-09 用户令：「里面的 agent 必须知道自己在话题里面」——
            话题内派活带 root 原文，prompt 里就会有一段「你在话题里 + 重要内容怎么汇报到群主流」。 */
         params.topicRoot ? { rootText: String(params.topicRoot) } : null,
@@ -1357,6 +1383,10 @@ async function runDispatchRounds(
         /* ⛔ 私聊 = 它自己的会话：把名下待办直接摆到眼前（用户令「我们的私聊就是那个来源对话」）。 */
         openDutiesOf(group.id, speakerId),
       );
+      /* ⛔ 11-14「先读再说」：把本轮喂进去的未读段（≤ readUpTo）视为已读，推进游标（只前移）。
+         ⛔ 游标键用 speakerId（发言身份，主理人整团槽/合成 id 已归一）—— 否则同一张椅子两个 id
+            会把游标拆成两份、互相从 0 重算、重复注入旧上下文。 */
+      markGroupRead(group.id, String(speakerId), readUpTo);
       /* ⛔⛔ 11-09 用户令「必须要真的 cli 智能体」：CLI 成员接真链路 ——
          角色提示词（命令引擎去跑本机 bin / 没装就如实报没装）拼在输入最前，
          shell 环境（PATH + 供应商/Key/模型）注入会话，子进程才真的拿得到 CLI 与配置。
@@ -1847,55 +1877,12 @@ async function runDispatchRounds(
             void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name }, ask)
               .catch(() => undefined);
           }
-          /* ⛔⛔ 11-11 真机（截图）：主理人把四位成员的发言**全自己代写**进一条消息里，
-             一个行首 @ 都没有 ⇒ asks 为空；而团群的「主持人」就是它自己，原来的
-             「自己说的不往回喂（防自循环）」于是让整条链停在这句方案上 ——
-             用户看到的就是「出完方案，主代理人死了」「任务都不推进」。
-             ⇒ 团群里主理人自己没派人、也没写收口时，宿主催办**一次**（只一次，不自循环）：
-             要它按 SOP 真正把下一阶段派出去、先报阶段进度，别再代写成员发言。 */
-          const isLeadSelf = Boolean(isTeamGroup && admin && sameSeat(admin.id, partner.id));
-          /* ⛔⛔ 11-11 真机（用户截图「这又是啥情况，看不懂」+ rollout 里实证 2 条 `[系统]` 注入）：
-             用户只发了一个「在」，主理人回「我在，团队四个人都在位…你丢一句要干嘛」——
-             这是**正常应答**，不是"该推进了"。但 classifyTurn 对寒暄也判非 wrap ⇒ 催办再跑一轮
-             ⇒ 群里出现两条几乎一样的开场白，用户以为出了故障。
-             ⇒ 只有「这一轮用户真的给了活」才催办：去掉 @ 之后的正文 ≥6 字，且不是纯应答词。 */
-          const leadTurnTaskLike = (() => {
-            /* ⛔⛔ 11-12 用户截图（同一个问题，回复两次）：用户问「告诉我你的团队擅长什么」，
-               主理人答完一条信息，宿主又催它一轮 ⇒ 它再解释「这是信息答复，没有成品要派，收口」。
-               根因：旧判据只看**行首**问句词 + 一张窄词表，「…擅长什么」这种问句词在句中、
-               又不在词表里的，全被当成"给了活"。⇒ 问句判定收进纯函数 isInfoRequest
-               （问句词任意位置 + 信息类动词，守卫真值表钉死），⛔ 不在这里再写第二套。
-               ⛔ 宁可漏催一次，也不能把"回答"当成"该推进了"。 */
-            if (isInfoRequest(text)) return false;
-            const plain = String(text ?? "").replace(/@[^\s：:]+/g, "").replace(/\s+/g, "");
-            if (plain.length < 6) return false;
-            return !/^(在|在吗|好|好的|行|嗯|收到|可以|ok|OK|继续|你好|谢谢)[。！!？?~～.…]*$/.test(plain);
-          })();
-          if (isLeadSelf && verdict.action !== "wrap" && leadTurnTaskLike && !relayInFlight
-            && leadSelfNudges < MAX_LEAD_SELF_NUDGES && chainBudget > 0 && canRun(partner.id)) {
-            leadSelfNudges += 1;
-            chainBudget -= 1;
-            /* ⛔⛔ 11-11：它这一轮**已经调过** team_member_invoke / team_phase_invoke 的话，
-               ⛔ 别再叫它「另起一行 @名字」——那会把它推回"行首 @ 演戏"（群里说一句、没人真干活）。
-               同一件事，两种口径：有真工具就用真工具往下推。 */
-            const usedTool = teamToolUsedSince(threadId, startedAt);
-            void runOne(admin as unknown as GroupTarget, 0, { id: partner.id, name: partner.name },
-              usedTool
-                ? "[系统] 你这一轮已经调过团队工具，但还没写「收口」。按 SOP 继续：先用 team_member_invoke / "
-                  + "team_phase_invoke 把下一阶段真的派出去（⛔ 不用行首 @ 派活，那只是群里说了一句话）；"
-                  + "只有全部阶段验收完才写「收口」给最终结论。"
-                : "[系统] 你这一轮没有派任何成员，也没有写「收口」。按 SOP 继续推进："
-                  /* ⛔⛔ 11-12 用户问「催办会不会重复回复」⇒ 这一轮**只在真的调了派活工具时**才落群
-                     （判据见落盘处 `echoedNudge`），所以这里必须提前说清，别让它白写一大段：
-                     本团成员用 team_member_invoke；群里其它团的人用 group_say(to=名字) —— 那条链是
-                     真的把话送进他的会话、他会动手并把结果发进群，⛔ 不是"群里说一句"。 */
-                  + (groupTeam
-                    ? "本团成员用 team_member_invoke；群里其它团的人用 group_say(to=名字)（那也是真的派活）。"
-                    : "用 group_say(to=名字) 把这一步交给他（那是真的派活，他会动手并把结果发进群）。")
-                  + "⛔ 这一轮不要复述上一条：只要没有真正调用派活工具，宿主不会把这一段发到群里。"
-                  + "⛔ 不要自己代写成员的成品；只有全部阶段验收完才写「收口」给最终结论。")
-              .catch(() => undefined);
-          }
+          /* ⛔⛔ 11-14（抄 Pachat 的唤醒逻辑）：**自由催办已整体移除**。
+             原来「主理人自己答完 / 没派活」时宿主会强催它再跑一轮 → 正是「同一问题回两条 / 回得断断续续」的来源。
+             Pachat 的规则是：谁说话由「被 @ / 被回复 / 有未读」决定，宿主不替它判断「该不该推进」。
+             ⇒ 链路改由确定性信号驱动：用户消息 → 派给主理人/@到的人；成员产出的 @ / 工具结果 → 回交主理人
+               （见上面的 mustHandBack / 排片回交）；主理人**自己决定**下一步派谁或写「收口」。
+             代价（已知取舍，Pachat 同样接受）：主理人若既不 @ 人、也不调工具、也不写收口，这一轮就到此为止。 */
         }
       }
     } catch (err) {

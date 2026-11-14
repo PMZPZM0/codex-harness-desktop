@@ -834,29 +834,23 @@ try {
     ok(bad.length === 0,
       `协作判据：点了人=handoff / 有人等=wait / 收口词=wrap / 有推进=continue / 连续空转=wrap / 预算耗尽=wrap${bad.length ? `（不符：${bad.map(([g]) => g.action).join("、")}）` : " —— 六种全部符合"}`);
   }
-  /* ⛔⛔ 11-12 用户截图（同一个问题自动回复两条）：用户问「告诉我你的团队擅长什么」，
-     主理人答完信息后宿主又催它"去派活"⇒ 多一条「这是信息答复…收口」。根因是问句判据太窄
-     （只看行首 + 窄词表）。判据收进 isInfoRequest 纯函数，这里**真跑**：信息类必须判 true、
-     布置任务必须判 false。⛔ 首条就是事故原句，改回窄词表会当场红。 */
+  /* ⛔⛔ 11-14（抄 Pachat 的唤醒逻辑）：自由催办（leadSelfNudges / leadTurnTaskLike / isInfoRequest 门）
+     已**整体移除** —— 谁说话改由「被 @ / 被回复 / 有未读」决定，宿主不再在"主理人没派活"时强催一轮
+     （那正是「同一问题回两条」的来源）。这里钉两条：① 催办代码不复活；② 「先读再说」接线在位。 */
   {
-    const collab = await import(pathToFileURL(join(ROOT, "src", "lib", "team-collab.mjs")).href);
-    const info = [
-      "告诉我你的团队擅长什么", "你们团队擅长什么", "你们是怎么分工的", "介绍一下你们团队",
-      "群聊，工具，你有哪些", "你们能做什么？", "谁负责视觉", "这个流程是怎样的",
-    ];
-    const task = [
-      "帮我写一篇公众号文案", "给这个产品做一张海报", "把这段草稿润色一下", "分析上周的数据并出报告",
-    ];
-    const missInfo = info.filter((t) => !collab.isInfoRequest(t));
-    const falseTask = task.filter((t) => collab.isInfoRequest(t));
-    ok(missInfo.length === 0 && falseTask.length === 0,
-      `问句判据：信息类提问不算派活（含事故原句「告诉我你的团队擅长什么」）${missInfo.length ? `（漏判：${missInfo.join("、")}）` : ""}${falseTask.length ? `（误判任务：${falseTask.join("、")}）` : ""}`);
-    /* 接线：IPC 的催办门必须真的调这个纯函数，⛔ 不许在 IPC 里另写一套问句正则。 */
-    const ipcNudge = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
-    ok(/import \{ classifyTurn, isInfoRequest, settleHandoffs \}/.test(ipcNudge)
-      && /if \(isInfoRequest\(text\)\) return false;/.test(ipcNudge)
-      && !/const askLike = /.test(ipcNudge),
-      "催办门复用 isInfoRequest（⛔ 旧的内联 askLike 窄词表不许复活）");
+    const ipc = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");
+    ok(!/leadSelfNudges/.test(ipc) && !/leadTurnTaskLike/.test(ipc) && !/isInfoRequest/.test(ipc),
+      "自由催办已移除（⛔ harness-team-ipc 不许再长出 leadSelfNudges / leadTurnTaskLike / isInfoRequest 门）");
+    ok(/unreadTalkHistory\(TALK_HISTORY_LIMIT, String\(speakerId\), readUpTo\)/.test(ipc)
+      && /const readUpTo = Date\.now\(\);/.test(ipc)
+      && /markGroupRead\(group\.id, String\(speakerId\), readUpTo\)/.test(ipc)
+      && /at > cursor && at <= upTo/.test(ipc)
+      && /import \{ getGroupReadCursor, markGroupRead \} from "\.\.\/group-read-cursors"/.test(ipc),
+      "先读再说接线在位（快照 readUpTo、喂该成员未读、按发言身份推进游标、之后新到的留未读）");
+    const cursors = readFileSync(join(ROOT, "electron/group-read-cursors.ts"), "utf8");
+    ok(/export function getGroupReadCursor/.test(cursors) && /export function markGroupRead/.test(cursors)
+      && /Math\.max\(prev, Number\(at\) \|\| 0\)/.test(cursors) && /app\.getPath\("userData"\)/.test(cursors),
+      "读游标模块：按 (group::member) 存、只前移不回退、路径惰性求值");
   }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
