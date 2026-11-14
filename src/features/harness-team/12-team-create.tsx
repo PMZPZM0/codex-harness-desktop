@@ -20,6 +20,9 @@ import { AppSelect } from "../../components/AppSelect";
 import { LOCAL_ACTOR_ID } from "./02-team-store";
 import { addModeStateOf } from "../../lib/team-models.mjs";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
+/* ⛔ 11-14 Phase 3 群模板：本地 localStorage 存群配置，新建时一键套用（无 IPC 通道）。 */
+import { listTemplates, removeTemplate, templateToCreateInput } from "../../lib/team-templates.mjs";
+import type { TeamTemplate } from "../../lib/team-templates.mjs";
 
 type Target = { kind: string; key: string; name: string; profession?: string; installed?: boolean };
 
@@ -48,6 +51,7 @@ const NAME_IDEAS = ["内容生产组", "数据分析组", "前端攻坚组", "�
 export type TeamCreateInput = {
   name: string;
   memory?: string;
+  rules?: string;
   workspace?: string;
   leadId?: string;
   members?: Array<Record<string, unknown>>;
@@ -85,6 +89,8 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
   const [adminPick, setAdminPick] = useState("");
   const [adminSaving, setAdminSaving] = useState(false);
   const [adminError, setAdminError] = useState("");
+  /* ⛔ 11-14 Phase 3：已存的群模板（localStorage）——打开弹窗时刷新一份。 */
+  const [templates, setTemplates] = useState<TeamTemplate[]>([]);
 
   /* 每次打开都从干净状态开始（⛔ 不要留着上次填了一半的群名） */
   useEffect(() => {
@@ -99,6 +105,7 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
     setDone(null);
     setAdminPick("");
     setAdminError("");
+    setTemplates(listTemplates());
   }, [open]);
 
   const reloadCatalog = useCallback(async () => {
@@ -180,6 +187,18 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
 
   const full = count >= limit;
   const canCreate = Boolean(name.trim()) && !busy && !full;
+
+  /* ⛔ 11-14 Phase 3：用模板**直接建群**（跳过表单）—— 成员 / 简介 / 规矩全来自模板。 */
+  const createFromTemplate = async (t: TeamTemplate) => {
+    if (busy || full) return;
+    setBusy(true);
+    setError("");
+    const r = await onCreate(templateToCreateInput(t));
+    setBusy(false);
+    if (!r.ok) { setError(r.error ?? "建群失败"); return; }
+    if (r.id) onCreated?.(r.id);
+    onClose();
+  };
 
   const submit = async () => {
     if (!canCreate) return;
@@ -348,6 +367,34 @@ export function TeamCreateDialog({ open, count, limit, onClose, onCreate, onCrea
         </header>
 
         <div className="team-sheet__body">
+          {templates.length > 0 && (
+            <section className="team-sheet__templates" aria-label="从模板新建">
+              <span className="team-sheet__templates-label">从模板新建</span>
+              <div className="team-sheet__templates-list">
+                {templates.map((t) => (
+                  <span className="team-sheet__tpl" key={t.name}>
+                    <button
+                      type="button"
+                      className="team-sheet__tpl-use"
+                      title={`直接用模板「${t.name}」建群（${t.members.length} 位成员 + 简介 / 规矩）`}
+                      onClick={() => void createFromTemplate(t)}
+                      disabled={busy || full}
+                    >
+                      {t.name}<em>{t.members.length} 人</em>
+                    </button>
+                    <button
+                      type="button"
+                      className="team-sheet__tpl-del"
+                      title={`删除模板「${t.name}」`}
+                      aria-label={`删除模板 ${t.name}`}
+                      onClick={() => setTemplates(removeTemplate(t.name))}
+                      disabled={busy}
+                    >×</button>
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
           {/* ⛔ 两栏：左边「基本信息」（名字/简介/地址），右边「初始伙伴」列表。
               单栏时一屏放不下（实测内容 646px / 可视 534px），用户要滚才知道有「项目地址」。
               ⇒ 宽屏两栏一屏看完；<820px 自动回单栏、列表自己滚。 */}

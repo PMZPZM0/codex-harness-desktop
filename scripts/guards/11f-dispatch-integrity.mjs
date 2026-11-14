@@ -917,6 +917,36 @@ try {
     ok(/onSetRules/.test(settings) && /保存群规矩/.test(settings) && /group\.rules/.test(settings),
       "设置页可编辑群规矩（textarea + 保存按钮）");
   }
+  /* ⛔⛔ 11-14 Phase 3 群模板（本地版「公开群可复用」）：纯变换真跑 + 接线（localStorage，无 IPC 通道）。 */
+  {
+    const tpl = await import(pathToFileURL(join(ROOT, "src/lib/team-templates.mjs")).href);
+    const group = {
+      id: "g1", name: "内容生产组", memory: "做口播", rules: "必须带凭据", workspace: "D:/proj",
+      members: [
+        { id: "u1", kind: "human", name: "我" },
+        { id: "tgt:expert:e1", kind: "bot", name: "落纸", targetKind: "expert", targetKey: "e1", targetProfession: "文案" },
+      ],
+    };
+    const tf = tpl.templateFromGroup(group);
+    ok(tf.name === "内容生产组" && tf.members.length === 2 && tf.members[1].targetKey === "e1"
+      && tf.memory === "做口播" && tf.rules === "必须带凭据" && tf.workspace === "D:/proj",
+      "templateFromGroup 真跑：抽 成员/简介/规矩/地址（成员 id + targetKey 原样）");
+    const inp = tpl.templateToCreateInput(tf);
+    ok(inp.name === "内容生产组" && inp.rules === "必须带凭据" && inp.members.length === 2 && inp.members[0].kind === "human",
+      "templateToCreateInput 真跑：成员/简介/规矩 → 建群入参");
+    const td = tpl.templateFromGroup({ name: "  ", members: [] });
+    ok(td.name === "未命名群" && td.members.length === 0, "templateFromGroup 空名/坏数据兜底（不炸）");
+    const create = readFileSync(join(ROOT, "src/features/harness-team/12-team-create.tsx"), "utf8");
+    const idxView = readFileSync(join(ROOT, "src/features/harness-team/index.tsx"), "utf8");
+    const css = readFileSync(join(ROOT, "src/styles/61-team-mode.css"), "utf8");
+    ok(/from "\.\.\/\.\.\/lib\/team-templates\.mjs"/.test(create)
+      && /team-sheet__templates/.test(create) && /createFromTemplate/.test(create) && /rules\?: string;/.test(create),
+      "建群弹窗：从模板新建区 + 直接建群 + 入参带 rules");
+    ok(/saveTemplate\(templateFromGroup\(g\)\)/.test(idxView) && /存为模板/.test(idxView),
+      "群菜单「存为模板」：saveTemplate(templateFromGroup(群))");
+    ok(/\.team-sheet__templates \{/.test(css) && /grid-column: 1 \/ -1/.test(css),
+      "模板区样式跨两栏（.team-sheet__templates）");
+  }
   const viewSrc2 = readFileSync(join(ROOT, "src/features/harness-team/04-team-group-view.tsx"), "utf8");
   const avatarSrc = readFileSync(join(ROOT, "src/features/harness-team/13-team-avatar.tsx"), "utf8");
   ok(/member\?\.targetKind !== "team"/.test(viewSrc2) && /member\?\.targetKind/.test(avatarSrc),

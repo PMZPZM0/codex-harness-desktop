@@ -15,7 +15,7 @@
  *     （卡片头 X / ESC / 点背景）。⛔ 不要再把面板做回 inset:0。
  */
 import { useEffect, useMemo, useState } from "react";
-import { MessagesSquare, X, Plus, Search, MoreHorizontal, Pencil, Eraser, Trash2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { MessagesSquare, X, Plus, Search, MoreHorizontal, Pencil, Eraser, Trash2, PanelLeftClose, PanelLeftOpen, Bookmark } from "lucide-react";
 import { TeamCreateDialog } from "./12-team-create";
 import type { TeamCreateInput } from "./12-team-create";
 import { TeamGroupView } from "./04-team-group-view";
@@ -24,6 +24,8 @@ import { useTeamGroups } from "./02-team-store";
 import { TeamCloseGuard } from "./30-team-close-guard";
 /* ⛔ 11-14 Phase 3（抄 Pachat「N talking today」）：群活跃度统计，放列表卡副行，⛔ 不进群头。 */
 import { groupActivity } from "../../lib/group-activity.mjs";
+/* ⛔ 11-14 Phase 3 群模板：把当前群配置存成模板（localStorage），新建群一键套用。 */
+import { saveTemplate, templateFromGroup } from "../../lib/team-templates.mjs";
 import { isTeamPopoutWindow } from "../../lib/team-popout";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import type { HarnessAppApi } from "../app-state";
@@ -235,6 +237,15 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
                   </button>
                   <button type="button" role="menuitem" onClick={() => { void clearMessages(g.id); setMenuId(""); }}>
                     <Eraser size={13} /> 清空聊天记录
+                  </button>
+                  {/* ⛔ 11-14 Phase 3：把这个群的成员 / 简介 / 规矩存成模板（同名覆盖），新建群时可一键套用。 */}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    title="把这个群的成员 / 简介 / 规矩存成模板，新建群时一键套用"
+                    onClick={() => { saveTemplate(templateFromGroup(g)); setMenuId(""); setNotice(`已存为模板「${g.name}」（新建群时可选）`); }}
+                  >
+                    <Bookmark size={13} /> 存为模板
                   </button>
                   <button
                     type="button"
