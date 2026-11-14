@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（117 个能力域 / 676 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（118 个能力域 / 683 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -66,6 +66,10 @@ Filee 文件转换（KnifeLemon/Filee，MIT）：244 种格式本地离线互转
 ### apkstart（8 通道）
 ApkStart 安卓运行器（RoutineMiku/apkstart，MIT，仅 Windows 10/11 x64）：本机安卓模拟器，装 APK 后以独立窗口运行；安装（约 119MB，GitHub release 镜像序 + SHA256 校验）在「设置 → 开发工具 → ApkStart 安卓运行器」，首次启动由它自己下载约 1GB Android 运行时。Codex 通过 apkstart 工具做 status / install / launch / screenshot / logcat / adb 测试
 通道：apkstart:status, apkstart:install, apkstart:launch, apkstart:screenshot, apkstart:logcat, apkstart:adb, apkstart:open, apkstart:purge
+
+### openmaic（7 通道）
+OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT，本机 Windows）：多智能体互动课堂（AI 老师/同学 + 幻灯片 / 测验 / 互动模拟 / PBL）；源码 + pnpm + 便携 PostgreSQL 按需下载并本机构建（约 1.3GB 下载 / 5GB 安装后），服务只监听 127.0.0.1。模型 Key 由用户在网页设置里配置。Codex 通过 openmaic 工具做 status / start / stop / open / generate / job（生成异步，job 轮询拿课堂链接）
+通道：openmaic:status, openmaic:start, openmaic:stop, openmaic:open, openmaic:generate, openmaic:job, openmaic:purge
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置

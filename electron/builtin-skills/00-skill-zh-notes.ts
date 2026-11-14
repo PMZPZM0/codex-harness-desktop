@@ -160,4 +160,9 @@ Blender（python-bridge）做建模 / 场景 / 渲染的实操路径，外加「
 screenshot 截屏（返回 PNG 路径）→ logcat 查崩溃 → adb 透传点按/输入/授权等命令。
 ⛔ 首次启动要先下载约 1GB Android 运行时，install 此时返回 pending **不算成功**：稍后查 status 的 runtimeReady，
 不要循环重试；只支持 Windows。`,
+
+  "openmaic": `# OpenMAIC 互动课堂（中文导读）
+本机 OpenMAIC 服务里生成课堂：status 看状态 → start/open 起服务 → generate 提交（requirement 必填）→
+job 查进度，成功后把课堂链接单独一行给用户。
+⛔ 模型 Key 必须用户自己在网页设置里填，不要发到对话里；生成是异步的，别循环死等；服务只在本机。`,
 };

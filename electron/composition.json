@@ -786,6 +786,13 @@
       "config": null
     },
     {
+      "id": "openmaic",
+      "enabled": true,
+      "file": "features/openmaic-ipc.ts",
+      "export": "openMaicFeature",
+      "config": null
+    },
+    {
       "id": "monitor",
       "enabled": true,
       "file": "features/task-monitor.ts",

@@ -1432,6 +1432,20 @@ interface Window {
     apkstartOpen(): Promise<{ ok: boolean; error: string }>;
     /* 11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错） */
     apkstartPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
+    /* 11-14 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT）状态：源码是否已构建（.next/BUILD_ID）/ 版本 / 本地服务是否健康 / PostgreSQL 是否在跑 / 可选能力面 */
+    openmaicStatus(): Promise<{ installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } }>;
+    /* 11-14 起 OpenMAIC：先确保 PostgreSQL（端口冲突顺延并写回配置），再 node next start，90 秒内等 /api/health */
+    openmaicStart(): Promise<{ ok: boolean; port: number; url: string; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>;
+    /* 11-14 停 OpenMAIC 与 PostgreSQL（宿主重启过则按端口兜底杀） */
+    openmaicStop(): Promise<{ ok: boolean; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>;
+    /* 11-14 打开 OpenMAIC 本机界面：确保服务已起，再用系统浏览器打开 127.0.0.1:<port> */
+    openmaicOpen(): Promise<{ ok: boolean; url: string; error: string }>;
+    /* 11-14 提交课堂生成任务（POST /api/generate-classroom）：异步返回 jobId；缺模型时翻成「去网页设置里配 Key」的中文指引 */
+    openmaicGenerate(input: { requirement?: string; materialIds?: string[] }): Promise<{ ok: boolean; jobId: string; status: string; url: string; error: string; detail: string }>;
+    /* 11-14 查询课堂生成任务：状态 / 进度 / 场景数 / 完成后的课堂链接（生成的课堂只属于本机 owner） */
+    openmaicJob(jobId: string): Promise<{ ok: boolean; status: string; progress: number; scenesGenerated: number; totalScenes: number; classroomUrl: string; message: string; error: string; done: boolean }>;
+    /* 11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务 */
+    openmaicPurge(confirm: boolean): Promise<{ ok: boolean; error: string }>;
     /* 创建/绑定飞书应用：后台跑 lark-cli config init --new，返回授权链接 */
     feishuCliSetupStart(): Promise<{ ok: boolean; url?: string; error?: string }>;
     /* 用户登录 device flow：auth login --recommend --no-wait --json 拿链接，后台用 --device-code 完成 */

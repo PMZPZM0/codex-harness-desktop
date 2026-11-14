@@ -145,5 +145,7 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "rpa-recipes",
   /* 11-14：ApkStart 安卓模拟器测试流程（与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
   "android-emulator",
+  /* 11-14：OpenMAIC 互动课堂（与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
+  "openmaic",
   "zy-cinematic-realism",
 ];

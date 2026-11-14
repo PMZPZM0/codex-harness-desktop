@@ -233,6 +233,14 @@ const APKSTART_INSTRUCTIONS =
   "On the very first run ApkStart downloads ~1GB of Android runtime; install then returns pending — that is NOT success. Tell the user it is downloading and check status (runtimeReady) later instead of retrying in a loop. " +
   "If the tool reports ApkStart is not installed, tell the user to install it in 设置 → 开发工具 → ApkStart 安卓运行器 and stop; do not try to install it yourself.";
 
+/** OpenMAIC 互动课堂（11-14，THU-MAIC/OpenMAIC，MIT，本机 Windows 安装）。只在装了时注入。
+ *  ⛔ 重点两条：模型 Key 必须用户自己填（不许发到对话）；生成是异步任务，不许循环死等。
+ *  ⛔ 条件式（同 FILEE / APKSTART 纪律）：没装的机器上工具执行端只回安装指引。 */
+const OPENMAIC_INSTRUCTIONS =
+  "\n\nOPENMAIC CLASSROOM (only if `openmaic` is in your tool list): OpenMAIC turns a topic or material into a multi-agent interactive classroom (slides, quizzes, simulations, AI teacher + classmates). " +
+  "Flow: status → start/open if needed → generate with `requirement` (and optional `materialIds`) → later poll with `job` using the returned jobId. Generation takes minutes: do NOT sleep-loop; check once, tell the user it is running, and check again when they ask or after substantial other work. When done, give the classroom URL on its own line. " +
+  "The model key is configured by the USER inside the OpenMAIC web UI (设置 → 模型) — never ask them to paste a key into chat and never write keys into files yourself. If the tool says no model is configured, tell the user to open the UI and configure one, then retry. If the tool reports OpenMAIC is not installed, tell them to install it in 设置 → 开发工具 → OpenMAIC 互动课堂 and stop.";
+
 /** 交付前自查（09-21 起是「派内置评审子智能体复审」；10-27 用户令「不要内置子智能体」后
  *  改成**自己复查**——不再随应用种入任何子智能体，也不许叫一个不存在的名字）。
  *  ⛔ 保留这条的原因：模型仍然会"写完就交"，交付前过一遍是唯一不依赖额外对象的质量兜底。
@@ -543,6 +551,8 @@ export type DevInstructionsInput = {
   fileeInstalled?: boolean;
   /** ApkStart 安卓运行器（11-14）：装了（tools/apkstart/ApkStart.exe 在）才注入用法段。 */
   apkstartInstalled?: boolean;
+  /** OpenMAIC 互动课堂（11-14）：装了（tools/openmaic/app/.next/BUILD_ID 在）才注入用法段。 */
+  openmaicInstalled?: boolean;
   mediaCommand?: string;
   /** 已开启的输出风格（`electron/output-styles.ts` 的 outputStyleTargets）—— 见上方 OUTPUT_STYLE_INSTRUCTIONS */
   outputStyles?: { skill: string; label: string; file: string }[];
@@ -576,6 +586,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   if (input.fileeInstalled) text += FILEE_INSTRUCTIONS;
   // ApkStart 安卓运行器（11-14）：装了才注入（工具无条件注册，但没装时执行端只回安装指引）
   if (input.apkstartInstalled) text += APKSTART_INSTRUCTIONS;
+  // OpenMAIC 互动课堂（11-14）：装了才注入（流程/异步口径写在技能 openmaic 里）
+  if (input.openmaicInstalled) text += OPENMAIC_INSTRUCTIONS;
   // 视频生成三件套（无条件下发，内容自带条件式判断：先看 video_generate 在不在工具表里）
   text += VIDEO_INSTRUCTIONS;
   text += LAYA_INSTRUCTIONS;

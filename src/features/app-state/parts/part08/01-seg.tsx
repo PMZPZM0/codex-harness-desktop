@@ -673,6 +673,17 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           args: { type: "array", items: { type: "string" }, description: "adb 用：adb 参数数组（不含 adb 本身；宿主自动补 -s <当前模拟器>）" },
           timeoutMs: { type: "number", description: "adb 用：超时毫秒（默认 60000，上限 300000）" },
         }, required: ["action"] } },
+      /* OpenMAIC 互动课堂（11-14，THU-MAIC/OpenMAIC，MIT）：本机 Next.js + PostgreSQL 服务。
+         ⛔ 口径同 apkstart：无条件注册；未安装时执行端回「去哪里装」。
+         ⛔ 模型 Key 必须用户自己在网页里填——描述里明确禁止把 Key 发到对话里。 */
+      { type: "function", name: "openmaic",
+        description: "在本机 OpenMAIC 互动课堂里生成课堂：action=status 查安装/服务/能力；start/stop 启停本地服务；open 打开界面；generate 提交生成（requirement=要讲什么，一句话；materialIds 可选 1~5 个已上传资料 id）；job 查任务进度与课堂链接。⛔ 需要用户先在「设置 → 开发工具 → OpenMAIC 互动课堂」安装（约 1.3GB 下载 + 5–10 分钟构建）；首次使用要在 OpenMAIC 网页设置里配置模型 API Key —— 这步让用户自己填，⛔ 绝不要把 Key 发到对话里。生成是异步的：拿到 jobId 后隔一会儿用 job 查一次，⛔ 不要循环死等。仅 Windows。",
+        inputSchema: { type: "object", properties: {
+          action: { type: "string", enum: ["status", "start", "stop", "open", "generate", "job"], description: "要执行的动作" },
+          requirement: { type: "string", description: "generate 用：这堂课要讲什么（语言跟随需求；越具体越好）" },
+          materialIds: { type: "array", items: { type: "string" }, description: "generate 用（可选）：已上传到 OpenMAIC 的资料 id，最多 5 个" },
+          jobId: { type: "string", description: "job 用：generate 返回的 jobId" },
+        }, required: ["action"] } },
       { type: "function", name: "agent_ask", description: "在对话里向用户展示一组选项并等待选择（提问时必须给出选项）。**单选还是多选由你根据问题性质决定**：答案互斥（选一条就够）传 multiple=false 或省略；多项可以并存（要改哪几个文件 / 勾选要处理的项）传 multiple=true 让用户勾选多条。用户先选中、再点确认按钮提交，勾选与自定义输入会用「；」拼接返回。options 里第一项会作为推荐项高亮，也可以留空让用户自由输入。", inputSchema: { type: "object", properties: { question: { type: "string", description: "要问用户的问题" }, options: { type: "array", items: { type: "string" }, description: "2-4 个候选选项，第一项为推荐" }, multiple: { type: "boolean", description: "true = 多选（用户可勾选多项）；false/省略 = 单选（只能选一项）。两种都是：用户先选中、再点「确认/提交」按钮才把答案回给你" }, allowFree: { type: "boolean", description: "是否允许自由输入，默认允许" } }, required: ["question", "options"] } },
       // 技能运用纪律：缺技能自主搜市场/安装，缺连接器先查模板（安装前必须 agent_ask 征得同意）
       { type: "function", name: "skill_search", description: "在内置技能市场按关键词搜索技能（返回名称/简介/安装状态）。当任务没有合适技能、你想找现成技能提效时调用。", inputSchema: { type: "object", properties: { query: { type: "string", description: "关键词，如 excel、爬虫、pdf" } }, required: ["query"] } },

@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 676,
+  "count": 683,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6221,6 +6221,76 @@
       "invokeArgs": "confirm",
       "cast": null,
       "note": "11-14 删除 ApkStart 的运行时与已装应用数据（%APPDATA%\\apkstart，可能数 GB）：必须显式 confirm 且应用已退出（文件占用时如实报错）"
+    },
+    {
+      "name": "openmaicStatus",
+      "channel": "openmaic:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT）状态：源码是否已构建（.next/BUILD_ID）/ 版本 / 本地服务是否健康 / PostgreSQL 是否在跑 / 可选能力面"
+    },
+    {
+      "name": "openmaicStart",
+      "channel": "openmaic:start",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; port: number; url: string; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 起 OpenMAIC：先确保 PostgreSQL（端口冲突顺延并写回配置），再 node next start，90 秒内等 /api/health"
+    },
+    {
+      "name": "openmaicStop",
+      "channel": "openmaic:stop",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error: string; status: { installed: boolean; version: string; appDir: string; dataDir: string; port: number; url: string; running: boolean; healthy: boolean; pgRunning: boolean; capabilities: { webSearch?: boolean; imageGeneration?: boolean; videoGeneration?: boolean; tts?: boolean } | null; healthError: string; attribution: { license: string; home: string } } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 停 OpenMAIC 与 PostgreSQL（宿主重启过则按端口兜底杀）"
+    },
+    {
+      "name": "openmaicOpen",
+      "channel": "openmaic:open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; url: string; error: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-14 打开 OpenMAIC 本机界面：确保服务已起，再用系统浏览器打开 127.0.0.1:<port>"
+    },
+    {
+      "name": "openmaicGenerate",
+      "channel": "openmaic:generate",
+      "paramsImpl": "input: { requirement?: string; materialIds?: string[] }",
+      "paramsDecl": "input: { requirement?: string; materialIds?: string[] }",
+      "returns": "Promise<{ ok: boolean; jobId: string; status: string; url: string; error: string; detail: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-14 提交课堂生成任务（POST /api/generate-classroom）：异步返回 jobId；缺模型时翻成「去网页设置里配 Key」的中文指引"
+    },
+    {
+      "name": "openmaicJob",
+      "channel": "openmaic:job",
+      "paramsImpl": "jobId: string",
+      "paramsDecl": "jobId: string",
+      "returns": "Promise<{ ok: boolean; status: string; progress: number; scenesGenerated: number; totalScenes: number; classroomUrl: string; message: string; error: string; done: boolean }>",
+      "invokeArgs": "jobId",
+      "cast": null,
+      "note": "11-14 查询课堂生成任务：状态 / 进度 / 场景数 / 完成后的课堂链接（生成的课堂只属于本机 owner）"
+    },
+    {
+      "name": "openmaicPurge",
+      "channel": "openmaic:purge",
+      "paramsImpl": "confirm: boolean",
+      "paramsDecl": "confirm: boolean",
+      "returns": "Promise<{ ok: boolean; error: string }>",
+      "invokeArgs": "confirm",
+      "cast": null,
+      "note": "11-14 删除 OpenMAIC 的课程库与数据库（userData/openmaic-data）：必须显式 confirm，先停服务"
     },
     {
       "name": "feishuCliSetupStart",

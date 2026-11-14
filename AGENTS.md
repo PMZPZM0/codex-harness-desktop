@@ -628,7 +628,13 @@ KnifeLemon/Filee MIT：244 种格式本地离线互转；GitHub release 镜像�
 首次启动由它自己下载约 1GB Android 运行时（adb / emulator / 系统镜像到 `%APPDATA%\apkstart\runtime`）。
 配套 Codex 工具 `apkstart`（status / install / launch / screenshot / logcat / adb / open）、
 内置技能 `android-emulator` 与「控制台 → 组件更新」的手动更新行；⛔ 完成判据读它的 `apps.json` 与 adb
-（GUI 无结构化输出，install 返回 pending ≠ 成功）。守卫 12bo）。
+（GUI 无结构化输出，install 返回 pending ≠ 成功）。守卫 12bo）·
+**OpenMAIC 互动课堂**（源码型，约 1.3GB 下载 / 5GB 安装后，11-14 立，THU-MAIC/OpenMAIC MIT，仅 Windows：
+Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依赖 + 便携 PostgreSQL（`@embedded-postgres`）→
+本机构建（`tools/openmaic/{app,runtime}`）→ `next start` 只监听 127.0.0.1；课程/DB/secret 落
+`userData/openmaic-data`，卸载可保留。⛔ 依赖必须在最终 app 路径安装（pnpm node_modules 含链接，装完再移动会丢）；
+⛔ pg_ctl 退出码不可信，以端口可连为准；模型 Key 只由用户在网页设置里填，宿主不读不写。
+配套 Codex 工具 `openmaic`（status / start / stop / open / generate / job）与内置技能 `openmaic`；守卫 12bp）。
 全部走国内镜像优先、失败自动回落官方源。**Ego Lite 浏览器不随包内置**（安装后约 611MB），
 由「设置 → 开发工具」跳官方安装器；浏览器自动化优先走它，未安装回落 browse-skills
 （`nuphus-call browser_*` 驱动默认浏览器）。**Playwright CLI 与浏览器内核已整体移除。**
@@ -652,6 +658,7 @@ KnifeLemon/Filee MIT：244 种格式本地离线互转；GitHub release 镜像�
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | filee_convert | dynamicTools（10-30） | 调本机 Filee（`filee-cli.exe`）把文件离线转换格式：244 种（图片/PDF/Office/电子书/音视频/归档/CAD/数据/3D），恒带 `--json` 结构化回执；需在 设置→开发工具→Filee 文件转换 安装（151MB，GitHub 镜像序 + SHA256 校验），装后 developer_instructions 注入第 5 条用法；更新在「控制台 → 组件更新」 |
 | apkstart | dynamicTools（11-14） | 在本机 ApkStart 安卓模拟器里测应用：`status` 查状态/设备/已装应用（读它自己的 `apps.json`）、`install` 装 APK（可选装完启动）、`launch` 按包名启动、`screenshot` 截屏存 PNG、`logcat` 读日志（保留崩溃行）、`adb` 透传点按/输入/授权命令、`open` 打开主界面；需在 设置→开发工具→ApkStart 安卓运行器 安装（仅 Windows，首启再下约 1GB 运行时；pending 不算成功），细节见技能 `android-emulator` |
+| openmaic | dynamicTools（11-14） | 在本机 OpenMAIC 互动课堂里生成课：`status` 查安装/服务/能力、`start`/`stop` 启停本地服务与 PostgreSQL、`open` 打开网页、`generate` 提交（requirement / materialIds，异步返回 jobId）、`job` 查进度与课堂链接；需在 设置→开发工具→OpenMAIC 互动课堂 安装（约 1.3GB 下载 + 构建 5–10 分钟，仅 Windows）；⛔ 模型 Key 由用户在网页设置里自己填（不要发到对话里），生成别循环死等，细节见技能 `openmaic` |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
 | agent_ask | dynamicTools | 向用户展示选项卡等待选择（第一项为推荐），用于关键决策确认 |
 | frontend_get_doc / frontend_apply_doc | dynamicTools（前端开发，10-05；两轮改名：sketch_* → mobile_ui_* → frontend_*） | 读/写应用内「前端开发」画布（m3e-canvas，手机 / 电脑 / 网页三种形态）：读回整份文档 JSON + 摘要；写回=在文档基础上改（追加屏/加部件/调坐标），走上游分享哈希导入、用户实时可见可 Ctrl+Z。写侧先过 `validateSketchDoc` 前置校验（失败回中文原因）；画布没开自动打开等桥就绪；描述列全 44 种 kind，字段速查在内置技能 frontend-canvas。做手机/电脑/网页界面时主动用（常驻指令第 13 条配套） |

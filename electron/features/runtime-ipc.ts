@@ -23,12 +23,14 @@ import fs from "node:fs/promises";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
+import net from "node:net";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
+import { OPENMAIC_REPO, installOpenMaicFromGitHub } from "../openmaic-install";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -1411,6 +1413,10 @@ export const runtimeFeature = defineFeature<null>({
           /* ApkStart 安卓运行器（11-14）：GitHub release 直下型（119MB 便携 zip）。
              首启再由它自己下载 Android 运行时；更新链同上（GITHUB_UPDATEABLE.install）。 */
           await installApkStartFromGitHub(id, TOOLS_VERSIONS.apkstart ?? (await fetchGitHubLatestTag(APKSTART_REPO)));
+        } else if (id === "openmaic") {
+          /* OpenMAIC 互动课堂（11-14）：源码 + pnpm 依赖 + 便携 PostgreSQL 本机构建（约 5GB）。
+             ⛔ 不进自动/手动更新链：更新 = 重新安装（重建 5–10 分钟，不适合一键静默跑）。 */
+          await installOpenMaicFromGitHub(id, TOOLS_VERSIONS.openmaic ?? (await fetchGitHubLatestTag(OPENMAIC_REPO)));
         } else if (id === "rea") {
           /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
              ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，

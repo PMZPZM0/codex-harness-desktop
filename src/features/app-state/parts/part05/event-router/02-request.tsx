@@ -567,6 +567,63 @@ ${st.hint}`);
                   contentItems: [{ type: "inputText", text: apkText.slice(0, 60000) }],
                   success: apkSuccess,
                 });
+              } else if (event.params?.tool === "openmaic") {
+                /* OpenMAIC 互动课堂（11-14）：一个工具 + action，执行端在 features/openmaic-ipc.ts。
+                   ⛔ 生成是异步任务：提交后只回 jobId，别在这里等；⛔ 模型 Key 由用户自己填。 */
+                const action = String(args.action ?? "status");
+                let omText = "";
+                let omSuccess = false;
+                if (action === "status") {
+                  const st = await window.codex.openmaicStatus();
+                  if (!st?.installed) {
+                    omText = "OpenMAIC 还没安装：请到「设置 → 开发工具 → OpenMAIC 互动课堂」点安装（约 1.3GB 下载，构建 5–10 分钟，安装后约 5GB）。";
+                  } else {
+                    const caps = st.capabilities ?? {};
+                    omText = [
+                      `OpenMAIC：已安装${st.version ? ` v${st.version}` : ""} · 本地服务${st.healthy ? "运行中" : "未运行"} · PostgreSQL${st.pgRunning ? "运行中" : "未运行"}`,
+                      `地址：${st.url}`,
+                      `可选能力：联网检索 ${caps.webSearch ? "✓" : "—"} · 生图 ${caps.imageGeneration ? "✓" : "—"} · 视频 ${caps.videoGeneration ? "✓" : "—"} · 语音 ${caps.tts ? "✓" : "—"}`,
+                      st.healthError && !st.healthy ? `服务未就绪：${st.healthError}` : "",
+                    ].filter(Boolean).join("\n");
+                  }
+                  omSuccess = st?.installed === true;
+                } else if (action === "start") {
+                  const result = await window.codex.openmaicStart();
+                  omText = result?.ok ? `OpenMAIC 已启动：${result.url}` : `启动失败：${result?.error ?? "未知原因"}`;
+                  omSuccess = result?.ok === true;
+                } else if (action === "stop") {
+                  const result = await window.codex.openmaicStop();
+                  omText = result?.ok ? "OpenMAIC 与本地 PostgreSQL 已停止。" : `停止失败：${result?.error ?? "未知原因"}`;
+                  omSuccess = result?.ok === true;
+                } else if (action === "open") {
+                  const result = await window.codex.openmaicOpen();
+                  omText = result?.ok ? `已在浏览器打开：${result.url}` : `打开失败：${result?.error ?? "未知原因"}`;
+                  omSuccess = result?.ok === true;
+                } else if (action === "generate") {
+                  const result = await window.codex.openmaicGenerate({
+                    requirement: String(args.requirement ?? ""),
+                    materialIds: Array.isArray(args.materialIds) ? args.materialIds.map(String) : undefined,
+                  });
+                  omText = result?.ok ? String(result.detail ?? "") : `没能开始生成：${result?.error ?? "未知原因"}`;
+                  omSuccess = result?.ok === true;
+                } else if (action === "job") {
+                  const result = await window.codex.openmaicJob(String(args.jobId ?? ""));
+                  if (result?.ok) {
+                    const scenes = result.totalScenes ? `${result.scenesGenerated}/${result.totalScenes} 个场景` : `${result.scenesGenerated} 个场景`;
+                    omText = `状态：${result.status}${result.progress ? ` · 进度 ${result.progress}%` : ""} · ${scenes}${result.message ? `\n${result.message}` : ""}`;
+                    if (result.classroomUrl) omText += `\n课堂链接：${result.classroomUrl}`;
+                    if (result.done === true) omText += "\n（任务已结束）";
+                  } else {
+                    omText = `查询失败：${result?.error ?? "未知原因"}`;
+                  }
+                  omSuccess = result?.ok === true;
+                } else {
+                  omText = `未知 action：${action}（可用：status / start / stop / open / generate / job）`;
+                }
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: omText.slice(0, 30000) }],
+                  success: omSuccess,
+                });
               } else if (event.params?.tool === "laya_judge") {
                 /* Laya 局部判断（10-18）：工具只在装了 Laya 的机器上注册；执行端做参数校验、
                    未就绪最多等 15s 预热、低置信返回「弃权」文案。⛔ 不走能力网关（专用工具）。 */

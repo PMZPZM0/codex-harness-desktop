@@ -1394,6 +1394,61 @@ const CHECKS = [
     },
   },
   {
+    id: "openmaic-card",
+    name: "🎓 开发工具 · OpenMAIC 互动课堂：状态 IPC + 卡片 + 二级弹窗（11-14）",
+    run: async (h) => {
+      /* 只验界面与 IPC（真装 5GB + 构建 5–10 分钟不进秒级验收；安装/构建/启停链由守卫 12bp 钉）。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(600);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="openmaic"]')`, { label: "OpenMAIC 卡片", timeoutMs: 15000 });
+      await wait(300);
+      const status = await h.eval(`window.codex.openmaicStatus()`).catch(() => null);
+      h.check("① openmaic:status 可用（installed 布尔 + 本机地址 + 开源声明）",
+        Boolean(status && typeof status.installed === "boolean" && String(status.url).includes("127.0.0.1") && status.attribution && status.attribution.home.includes("THU-MAIC/OpenMAIC")),
+        JSON.stringify(status && { installed: status.installed, url: status.url, home: status.attribution && status.attribution.home }));
+      const card = await h.eval(`(function(){
+        const c=document.querySelector('.devtools-card[data-card="openmaic"]');
+        return c ? { text:(c.textContent||"").trim(), stat:(c.querySelector(".devtools-card-stat")?.textContent||"").trim() } : null;
+      })()`);
+      h.check("② 一级卡片在位并显示状态（按需安装 · 约 5GB）",
+        Boolean(card && card.text.includes("OpenMAIC 互动课堂") && card.stat.includes("5GB")), JSON.stringify(card));
+
+      await h.eval(`document.querySelector('.devtools-card[data-card="openmaic"] .devtools-card-open').click()`);
+      await h.waitFor(`!!document.querySelector(".settings-dialog .feishu-cli-card")`, { label: "OpenMAIC 二级弹窗", timeoutMs: 10000 });
+      await wait(400);
+      const dialog = await h.eval(`(function(){
+        const d=document.querySelector(".settings-dialog");
+        if(!d) return null;
+        const t=(d.textContent||"").trim();
+        const buttons=[...d.querySelectorAll("button")].map(function(b){ return (b.textContent||"").trim(); });
+        return {
+          installRow:/安装 OpenMAIC/.test(t),
+          serviceRow:/本地服务/.test(t),
+          modelRow:/模型配置/.test(t) && /设置 → 模型/.test(t),
+          toolRow:/配套工具/.test(t) && /openmaic 工具/.test(t),
+          sizeNote:/1\\.3GB/.test(t) || /5GB/.test(t),
+          localOnly:/127\\.0\\.0\\.1|不对外网开放/.test(t),
+          attribution:/第三方开源项目 OpenMAIC/.test(t) && /THU-MAIC\\/OpenMAIC/.test(t),
+          hasStart:buttons.includes("启动"),
+          hasOpen:buttons.includes("打开 OpenMAIC"),
+        };
+      })()`).catch(() => null);
+      h.check("③ 弹窗四行齐：安装 / 本地服务 / 模型配置 / 配套工具",
+        Boolean(dialog) && dialog.installRow && dialog.serviceRow && dialog.modelRow && dialog.toolRow, JSON.stringify(dialog));
+      h.check("④ 写清体量与只监听本机（1.3GB 下载 / 5GB 安装后 / 127.0.0.1）",
+        Boolean(dialog) && dialog.sizeNote && dialog.localOnly, JSON.stringify(dialog));
+      h.check("⑤ 开源声明与仓库链接来自主进程",
+        Boolean(dialog) && dialog.attribution, JSON.stringify(dialog));
+      h.check("⑥ 运行按钮与真实状态一致（未装无启动/打开；装了才有）",
+        Boolean(dialog) && dialog.hasStart === Boolean(status && status.installed) && dialog.hasOpen === Boolean(status && status.healthy),
+        JSON.stringify({ hasStart: dialog && dialog.hasStart, hasOpen: dialog && dialog.hasOpen, installed: status && status.installed, healthy: status && status.healthy }));
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(300);
+    },
+  },
+  {
     id: "skill-update-panel",
     name: "🔄 控制台 · 技能自动更新：能进入面板、能装能卸、有反馈（10-30）",
     run: async (h) => {
