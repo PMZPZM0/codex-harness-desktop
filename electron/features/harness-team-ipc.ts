@@ -1884,26 +1884,18 @@ async function runDispatchRounds(
            「喊你的小伙伴出来打个招呼」这类带动词的照常派人 —— 别把正事误伤。 */
         const casualGreeting = source === "human"
           && /^(哈喽+|哈罗|你好+|您好+|嗨+|在吗|在不在|早[啊上]?|午安|晚上好|hi|hello)[！!。.~～\s]*$/i.test(text.trim());
-        const leadSeatIds = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
         /* ⛔⛔ 11-15 用户两句话一起钉死口径：
            「没有艾特，成员不回复」+「管理员肯定要需要艾特其他人啊」
            ⇒ 总闸只掐**宿主自动回喂**（mustHandBack/continue，见下面那段），
              不掐**管理员自己写的 @ 行**：那是它明确点名，属于真派活（删了就又是"假艾特"）。
            普通成员在无 @ 的对话里写 @ 不派活；用户 @ 过人则全员放行（成员互 @ 接力照常）。 */
-        /* ⛔⛔ 11-15 20:04 实测：专家团群的管理员座位口径有三种 ——
-           `adminIdForRounds`（群 adminId 解析）、整团槽 id、合成 `team:<teamId>:<leadId>`。
-           只比第一种 ⇒ 专家团群判不出"管理员在说话" ⇒ 它写的四行 @ 全被清空（用户：又不行了）。
-           ⇒ 任一命中即算管理员：adminIdForRounds / leadSeatIds / teamRole=lead / 整团槽。 */
-        const leadIsSpeaking = Boolean(partner.id) && (
-          String(partner.id) === String(adminIdForRounds)
-          || leadSeatIds.has(String(partner.id))
-          || String((partner as { teamRole?: string }).teamRole ?? "") === "lead"
-          || String((partner as { targetKind?: string }).targetKind ?? "") === "team"
-        );
-        const asks = (!options.allowMemberRelay && !leadIsSpeaking) ? [] : casualGreeting ? [] : allAsks.filter((ask) => {
-          const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
-          return !leadSeatIds.has(tid);
-        });
+        /* ⛔⛔ 11-15 20:12 口径统一（用户：「专家团可以了，普通专家群又不行」）：
+           **谁被显式 @，谁就被叫起来** —— 用户写的、管理员写的、成员写的 @ 一视同仁。
+           之前为了防"管理员阴魂不散"把"成员 @ 管理员"也拦了，结果成员之间的招呼没人接；
+           而真正的阴魂不散来自宿主的**自动回喂**（下面 `AUTO` 那段），那条闸不动。
+           保留纯寒暄闸：整句只有「哈喽/你好」时不派人（用户已验收：管理员回礼即停）。 */
+        const asks = casualGreeting ? [] : allAsks;
+
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || !canRun(next.id)) continue;
