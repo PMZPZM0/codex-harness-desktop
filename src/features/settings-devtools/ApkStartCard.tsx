@@ -74,11 +74,14 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const uninstall = async () => {
+  /* ⛔ 11-15：点「卸载」立刻关弹窗（删除过程要几十秒），结果交给行内进度 + toast。
+     purge 用入参传，避免读到 setState 之后的旧值。 */
+  const uninstall = async (purge: boolean) => {
     try {
-      setNotice?.("正在卸载 ApkStart…");
-      await Promise.resolve(uninstallDevRuntime?.("apkstart"));
-      if (purgeData) {
+      setNotice?.("正在卸载 ApkStart…", "删完这张卡会自动变成「未安装」");
+      const removed = await Promise.resolve(uninstallDevRuntime?.("apkstart"));
+      if (removed === false) return;
+      if (purge) {
         const result = await window.codex.apkstartPurge(true).catch((error: unknown) => ({ ok: false, error: String((error as { message?: unknown })?.message ?? error) }));
         setNotice?.(result?.ok ? "ApkStart 已卸载，运行时数据已删除" : "ApkStart 已卸载，但运行时数据没删掉", result?.ok ? "需要时随时可以再装回来" : String(result?.error ?? ""));
       } else {
@@ -87,8 +90,6 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
     } catch (err) {
       setNotice?.("卸载失败", String((err as { message?: unknown })?.message ?? err));
     }
-    setUninstallOpen(false);
-    setPurgeData(false);
     void refresh();
   };
 
@@ -105,9 +106,11 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
     }
   };
 
-  const installing = runtimeInstalling === "apkstart";
-  const otherBusy = Boolean(runtimeInstalling) && !installing;
+  /* ⛔ 卸载期间 bag 同样置 runtimeInstalling（全局锁）⇒ 不减掉就会把卸载显示成「正在安装」。 */
   const uninstalling = runtimeUninstalling === "apkstart";
+  const installing = runtimeInstalling === "apkstart" && !uninstalling;
+  const busyRow = installing || uninstalling;
+  const otherBusy = Boolean(runtimeInstalling) && !installing;
   const percent = Math.round(Number(runtimePercent?.["apkstart"] ?? 0));
   const speed = runtimeSpeed?.["apkstart"] ?? "";
   const latest = runtimeProgress?.["apkstart"] ?? "";
@@ -128,20 +131,20 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
     <>
       <section className="settings-section stack feishu-cli-card">
         <div className="feishu-cli-list">
-          <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${installing ? "busy" : ""}`}>
-            <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
+          <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${busyRow ? "busy" : ""}`}>
+            <span className="runtime-icon">{busyRow ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
             <span className="runtime-copy">
               <strong>安装 ApkStart</strong>
-              <small>{installing ? "正在准备下载（约 119 MB，自动选最快的国内镜像）…" : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载只删程序，不动你的 APK 与运行时数据` : "约 119 MB，GitHub release 自动选最快镜像 + SHA256 校验；仅 Windows 10/11 x64"}</small>
-              {installing ? (
+              <small>{uninstalling ? "正在卸载（删除程序文件；删完这张卡自动变回「未安装」）…" : installing ? "正在准备下载（约 119 MB，自动选最快的国内镜像）…" : status?.installed ? `已安装${status.version ? ` ${status.version}` : ""}；卸载只删程序，不动你的 APK 与运行时数据` : "约 119 MB，GitHub release 自动选最快镜像 + SHA256 校验；仅 Windows 10/11 x64"}</small>
+              {busyRow ? (
                 <span className="runtime-install-state devtools-progress-row">
                   <span className="runtime-progress-bar" role="progressbar" aria-label="ApkStart 安装进度" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
                     <i style={{ width: `${percent}%` }} />
                   </span>
                   <em className="runtime-progress">
-                    {runtimeStage?.["apkstart"] || "正在选择最快的下载源…"}
+                    {runtimeStage?.["apkstart"] || (uninstalling ? "正在统计要删除的文件…" : "正在选择最快的下载源…")}
                     {percent ? ` · ${percent}%` : ""}
-                    {speed ? ` · ${speed}` : ""}
+                    {!uninstalling && speed ? ` · ${speed}` : ""}
                     {latest && !installFailed ? ` · ${latest}` : ""}
                   </em>
                 </span>
@@ -169,7 +172,9 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
                     {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                   </button>
                 </>
-                : installing ? (
+                : uninstalling ? (
+                  <span className="runtime-badge"><Spinner /> 卸载中</span>
+                ) : installing ? (
                   <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.("apkstart")}>取消</button>
                 ) : <button type="button" className="primary-setting runtime-install" disabled={otherBusy} onClick={() => installDevRuntime?.("apkstart")}>
                     <Download size={14} />安装
@@ -276,7 +281,17 @@ export function ApkStartCard({ setNotice, installDevRuntime, runtimeInstalling, 
             </label>
             <div className="feishu-uninstall-actions">
               <button type="button" className="secondary-setting" onClick={() => setUninstallOpen(false)}>取消</button>
-              <button type="button" className="primary-setting danger" onClick={() => void uninstall()}><Trash2 size={13} />卸载</button>
+              <button
+                type="button"
+                className="primary-setting danger"
+                onClick={() => {
+                  /* ⛔ 先关弹窗再卸载（purge 用局部快照，setState 异步） */
+                  const purge = purgeData;
+                  setUninstallOpen(false);
+                  setPurgeData(false);
+                  void uninstall(purge);
+                }}
+              ><Trash2 size={13} />卸载</button>
             </div>
           </div>
         </SettingsDialog>

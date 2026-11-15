@@ -232,5 +232,31 @@ ok(/const node = bundledNode\(\) \|\| "node"/.test(rt),
 }
 
 
+/* ── ⑦ 卸载确认弹窗：点「卸载」必须**当场关窗**（11-15 用户实测「点了卸载这个弹窗还不关」）──
+   旧写法把 `setUninstallOpen(false)` 放在 `await uninstallDevRuntime(...)` **之后** ⇒
+   删 5GB 的几十秒里弹窗一直杵在那儿，用户以为点坏了（还会再点几次，甚至以为卡死）。
+   ⇒ 判据两条：① 确认按钮的 onClick 里**同步**关窗、再 `void uninstall(...)`；
+             ② 卸载函数体里**不再**关窗（关窗时机不许被 await 推到删完之后）。 */
+{
+  const cards = ["OpenMaicCard.tsx", "ApkStartCard.tsx", "HuskCard.tsx", "FeishuCliCard.tsx", "FileeCard.tsx"];
+  const notFirst = [];
+  const lateClose = [];
+  for (const file of cards) {
+    const src = codeOnlyTs(read(`src/features/settings-devtools/${file}`));
+    if (!/onClick=\{\(\)\s*=>\s*\{[^}]*setUninstallOpen\(false\)[^}]*void uninstall/.test(src)) notFirst.push(file);
+    /* ⛔ 锚点带 ` = async`：Husk / 飞书卡里先出现的是 `const uninstalling = ...`，
+       裸 `const uninstall` 会从那一行开始切片（切成空壳 = 恒真假绿）。 */
+    const at = src.search(/const uninstall[A-Za-z]* = async/);
+    const end = at >= 0 ? src.indexOf("\n  };", at) : -1;
+    const body = at >= 0 && end > at ? src.slice(at, end) : "";
+    if (!body || body.includes("setUninstallOpen(false)")) lateClose.push(file);
+  }
+  ok(notFirst.length === 0,
+    `点「卸载」先关确认弹窗再执行（⛔ 不许等删完才关：${notFirst.join("、") || "5 张卡全部符合"}）`);
+  ok(lateClose.length === 0,
+    `卸载函数体里不关弹窗（关闭时机不许被 await 推到删完之后：${lateClose.join("、") || "5 张卡全部符合"}）`);
+}
+
+
 console.log(`\n【devtools-fallback】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

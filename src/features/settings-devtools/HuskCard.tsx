@@ -66,15 +66,18 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
 
   useEffect(() => { void refresh(); }, [refresh]);
 
-  const installing = runtimeInstalling === "husk";
-  const tipaInstalling = runtimeInstalling === "husk-tipa";
+  /* ⛔ 11-15：卸载期间 bag 也置 runtimeInstalling（全局锁）⇒ 不减掉卸载那一位，
+     点了「删除」这行会显示成「正在下载」。 */
+  const uninstalling = runtimeUninstalling === "husk";
+  const installing = runtimeInstalling === "husk" && !uninstalling;
+  const tipaInstalling = runtimeInstalling === "husk-tipa" && !uninstalling;
   /* ⛔ runtimeInstalling 是「全局一次只装一个」的单值 ⇒ 本卡**任一行**在下载时，另一行的按钮必须禁用。
      旧判据 `Boolean(runtimeInstalling) && !installing && !tipaInstalling` 恰好把本卡两行都放行：
      点「下载 TIPA」会把 runtimeInstalling 改写成 husk-tipa，IPA 行进度条与「取消」当场消失
      （IPA 下载仍在后台跑），再点「下载 IPA」还会走主进程的 join 分支干等。
      本行在下载时渲染的是「取消」而不是安装按钮，所以这里不需要再排除自己。 */
   const otherBusy = Boolean(runtimeInstalling);
-  const uninstalling = runtimeUninstalling === "husk";
+  const busyRow = installing || uninstalling;
   const percent = Math.round(Number(runtimePercent?.["husk"] ?? 0));
   const speed = runtimeSpeed?.["husk"] ?? "";
   const latest = runtimeProgress?.["husk"] ?? "";
@@ -135,7 +138,6 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
     } catch (err) {
       setNotice?.("删除失败", String((err as { message?: unknown })?.message ?? err));
     }
-    setUninstallOpen(false);
     void refresh();
   };
 
@@ -143,12 +145,12 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
     <>
       <section className="settings-section stack feishu-cli-card">
         <div className="feishu-cli-list">
-          <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${installing ? "busy" : ""}`}>
-            <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
+          <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${busyRow ? "busy" : ""}`}>
+            <span className="runtime-icon">{busyRow ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
             <span className="runtime-copy">
               <strong>下载 Husk.ipa</strong>
-              <small>{installing ? "正在准备下载（约 142 MB，自动选最快的国内镜像）…" : status?.installed ? `已下载${status.version ? ` ${status.version}` : ""}${sizeMb ? `（${sizeMb} MB）` : ""}；删除只影响电脑上的安装包，iPhone 上已装的 Husk 不受影响` : "约 142 MB：从 GitHub release 镜像序下载官方 Husk.ipa + SHA256 校验；⛔ 电脑侧只准备安装包，最后一步要在 iPhone 上侧载"}</small>
-              {installing ? (
+              <small>{uninstalling ? "正在删除安装包（删完这张卡自动变回「未下载」）…" : installing ? "正在准备下载（约 142 MB，自动选最快的国内镜像）…" : status?.installed ? `已下载${status.version ? ` ${status.version}` : ""}${sizeMb ? `（${sizeMb} MB）` : ""}；删除只影响电脑上的安装包，iPhone 上已装的 Husk 不受影响` : "约 142 MB：从 GitHub release 镜像序下载官方 Husk.ipa + SHA256 校验；⛔ 电脑侧只准备安装包，最后一步要在 iPhone 上侧载"}</small>
+              {busyRow ? (
                 <span className="runtime-install-state devtools-progress-row">
                   <span className="runtime-progress-bar" role="progressbar" aria-label="Husk 下载进度" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
                     <i style={{ width: `${percent}%` }} />
@@ -308,7 +310,11 @@ export function HuskCard({ setNotice, installDevRuntime, runtimeInstalling, unin
             </p>
             <div className="feishu-uninstall-actions">
               <button type="button" className="secondary-setting" onClick={() => setUninstallOpen(false)}>取消</button>
-              <button type="button" className="primary-setting danger" onClick={() => void uninstall()}><Trash2 size={13} />删除</button>
+              <button
+                type="button"
+                className="primary-setting danger"
+                onClick={() => { setUninstallOpen(false); void uninstall(); }}
+              ><Trash2 size={13} />删除</button>
             </div>
           </div>
         </SettingsDialog>

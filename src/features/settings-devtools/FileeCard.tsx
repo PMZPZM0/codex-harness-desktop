@@ -88,10 +88,12 @@ export function FileeCard({ setNotice, installDevRuntime, runtimeInstalling, uni
     void refresh();
   };
 
-  const installing = runtimeInstalling === "filee";
+  /* ⛔ 11-15：卸载期间 bag 也置 runtimeInstalling（全局锁）⇒ 减掉卸载那一位。
+     ⛔ uninstalling 必须**先声明**（const 有 TDZ，写在后面会直接 ReferenceError 白屏）。 */
+  const uninstalling = runtimeUninstalling === "filee";
+  const installing = runtimeInstalling === "filee" && !uninstalling;
   /* 别的工具在装时也不许并发点（与运行时列表同口径：一次只跑一个安装）。 */
   const otherBusy = Boolean(runtimeInstalling) && !installing;
-  const uninstalling = runtimeUninstalling === "filee";
   const percent = Math.round(Number(runtimePercent?.["filee"] ?? 0));
   const speed = runtimeSpeed?.["filee"] ?? "";
   const latest = runtimeProgress?.["filee"] ?? "";

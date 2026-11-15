@@ -277,6 +277,9 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
      删除本身本来就是 await fs.rm（异步），界面全程可响应、可取消。 */
   let scanned = 0;
   const yieldToLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+  /* ⛔ 11-15：统计阶段本身也要给反馈 —— 20 万个小文件遍历要十几秒，
+     期间一条事件都不发，用户看到的就是「点了卸载没反应」。 */
+  sendToWindow("runtime:progress", { id, stage: "正在统计要删除的文件", percent: 0 });
   const collectDir = async (dir: string): Promise<void> => {
     let entries: import("node:fs").Dirent[];
     try { entries = await fs.readdir(dir, { withFileTypes: true }) as import("node:fs").Dirent[]; } catch { return; }
@@ -313,16 +316,14 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
     const pending = batch;
     batch = [];
     batchBytes = 0;
-    for (const file of pending) {
-      // ⛔ 10-07：删除失败**必须计数**（原先一律 catch 掉）。Windows 上文件被占用（EBUSY/EPERM）
-      //   时旧实现会「假装删成功」⇒ 界面回到「已安装」，用户只看到「卸载了但没变」。
-      //   收尾时把失败样本抛给调用方 ⇒ 用户看到「卸载失败：文件被占用，请关闭占用它的程序后重试」。
-      try {
-        await fs.rm(file, { force: true });
-      } catch (error) {
+    /* ⛔⛔ 11-15 用户实测「点了卸载半天不动」：旧实现逐个 `await fs.rm`，20 万个小文件
+       等于 20 万次串行系统调用（几分钟）。改成 32 路并发 —— 总耗时降到秒级。
+       失败语义不变：被占用文件照样计数（10-07 那条「不谎报成功」的规矩），首个样本留证。 */
+    for (let index = 0; index < pending.length; index += 32) {
+      await Promise.all(pending.slice(index, index + 32).map((file) => fs.rm(file, { force: true }).catch((error: Error) => {
         failedCount++;
-        if (!firstFailure) firstFailure = `${file}（${String((error as Error)?.message ?? error).slice(0, 80)}）`;
-      }
+        if (!firstFailure) firstFailure = `${file}（${String(error?.message ?? error).slice(0, 80)}）`;
+      })));
     }
     if (totalBytes > 0) {
       const percent = Math.min(99, Math.round((removedBytes / totalBytes) * 100));

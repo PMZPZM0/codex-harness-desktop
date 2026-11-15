@@ -154,7 +154,8 @@ export function FeishuCliCard({ setNotice, installDevRuntime, runtimeInstalling,
 
   useEffect(() => () => { if (releaseRef.current) window.clearTimeout(releaseRef.current); }, []);
 
-  const installing = runtimeInstalling === "feishu-cli";
+  /* ⛔ 11-15：卸载期间 bag 也置 runtimeInstalling（全局锁）⇒ 减掉卸载那一位，否则卸载会显示成「正在安装」。 */
+  const installing = runtimeInstalling === "feishu-cli" && !uninstalling;
   /* 别的工具在装时也不许并发点（与运行时列表同口径：一次只跑一个安装）。 */
   const otherBusy = Boolean(runtimeInstalling) && !installing;
   /* 安装完成（runtime:progress done）后重读状态：本卡片自己的轮询只在等待授权时开，

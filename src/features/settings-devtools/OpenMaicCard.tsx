@@ -76,11 +76,19 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
   const wasHealthyRef = useRef(false);
   useEffect(() => { wasHealthyRef.current = Boolean(status?.healthy); }, [status?.healthy]);
 
-  const uninstall = async () => {
+  /* ⛔⛔ 11-15 用户实测「点了卸载这个弹窗还不关」：卸载要删 5GB / 几十万个文件，
+     旧写法把 `setUninstallOpen(false)` 放在 `await uninstallDevRuntime()` **之后** ⇒
+     整个过程（几十秒到几分钟）确认弹窗一直杵在那儿，看起来就是点了没反应。
+     ⇒ 点「卸载」立刻关弹窗、把结果交给行内进度条与 toast；purge 用**入参**传，
+     不依赖 setState 之后的快照（否则「同时删课程数据」那个勾会丢）。 */
+  const uninstall = async (purge: boolean) => {
     try {
-      setNotice?.("正在卸载 OpenMAIC…");
-      await Promise.resolve(uninstallDevRuntime?.("openmaic"));
-      if (purgeData) {
+      setNotice?.("正在卸载 OpenMAIC…", "约 5GB 程序文件，删完这张卡会自动变成「未安装」");
+      /* uninstallDevRuntime 内部已经 catch ⇒ 不抛，只回布尔。false = 失败（完整报错由它弹窗给），
+         这里不能再报「已卸载」—— 那是谎报。 */
+      const removed = await Promise.resolve(uninstallDevRuntime?.("openmaic"));
+      if (removed === false) return;
+      if (purge) {
         const result = await window.codex.openmaicPurge(true).catch((error: unknown) => ({ ok: false, error: String((error as { message?: unknown })?.message ?? error) }));
         setNotice?.(result?.ok ? "OpenMAIC 已卸载，课程库与数据库已删除" : "OpenMAIC 已卸载，但课程数据没删掉", result?.ok ? "需要时随时可以再装回来" : String(result?.error ?? ""));
       } else {
@@ -89,8 +97,6 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
     } catch (err) {
       setNotice?.("卸载失败", String((err as { message?: unknown })?.message ?? err));
     }
-    setUninstallOpen(false);
-    setPurgeData(false);
     void refresh();
   };
 
@@ -121,9 +127,13 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
     if (next && !next.healthy) void run("start");
   }, [refresh]);
 
-  const installing = runtimeInstalling === "openmaic";
-  const otherBusy = Boolean(runtimeInstalling) && !installing;
+  /* ⛔⛔ 11-15：卸载期间 bag 同样会置 `runtimeInstalling`（那是「全局一次只跑一个」的锁），
+     直接拿它当「正在安装」的判据 ⇒ 用户点了卸载，这一行却写着「正在安装（5–10 分钟）…」。
+     ⇒ 先减掉卸载那一位；行内进度条对两者都显示。 */
   const uninstalling = runtimeUninstalling === "openmaic";
+  const installing = runtimeInstalling === "openmaic" && !uninstalling;
+  const busyRow = installing || uninstalling;
+  const otherBusy = Boolean(runtimeInstalling) && !installing;
   const percent = Math.round(Number(runtimePercent?.["openmaic"] ?? 0));
   const speed = runtimeSpeed?.["openmaic"] ?? "";
   const latest = runtimeProgress?.["openmaic"] ?? "";
@@ -142,20 +152,20 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
     <>
       <section className="settings-section stack feishu-cli-card">
         <div className="feishu-cli-list">
-          <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${installing ? "busy" : ""}`}>
-            <span className="runtime-icon">{installing ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
+          <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${busyRow ? "busy" : ""}`}>
+            <span className="runtime-icon">{busyRow ? <Spinner /> : status?.installed ? <Check size={15} /> : <Download size={15} />}</span>
             <span className="runtime-copy">
               <strong>安装 OpenMAIC</strong>
-              <small>{installing ? "正在安装（源码 + 依赖 + PostgreSQL 构建，约 5–10 分钟）…" : status?.installed ? `已安装${status.version ? ` v${status.version}` : ""}；卸载只删程序，课程库与数据库可保留` : "约 1.3GB 下载 / 安装后约 5GB：源码 + pnpm 依赖 + 便携 PostgreSQL，本机构建；仅 Windows 10/11 x64"}</small>
-              {installing ? (
+              <small>{uninstalling ? "正在卸载（删除程序文件，约 5GB；删完这张卡自动变回「未安装」，期间可以继续用别的功能）…" : installing ? "正在安装（源码 + 依赖 + PostgreSQL 构建，约 5–10 分钟）…" : status?.installed ? `已安装${status.version ? ` v${status.version}` : ""}；卸载只删程序，课程库与数据库可保留` : "约 1.3GB 下载 / 安装后约 5GB：源码 + pnpm 依赖 + 便携 PostgreSQL，本机构建；仅 Windows 10/11 x64"}</small>
+              {busyRow ? (
                 <span className="runtime-install-state devtools-progress-row">
                   <span className="runtime-progress-bar" role="progressbar" aria-label="OpenMAIC 安装进度" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}>
                     <i style={{ width: `${percent}%` }} />
                   </span>
                   <em className="runtime-progress">
-                    {runtimeStage?.["openmaic"] || "正在准备下载源码…"}
+                    {runtimeStage?.["openmaic"] || (uninstalling ? "正在统计要删除的文件…" : "正在准备下载源码…")}
                     {percent ? ` · ${percent}%` : ""}
-                    {speed ? ` · ${speed}` : ""}
+                    {!uninstalling && speed ? ` · ${speed}` : ""}
                     {latest && !installFailed ? ` · ${latest}` : ""}
                   </em>
                 </span>
@@ -177,7 +187,9 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
                     {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                   </button>
                 </>
-                : installing ? (
+                : uninstalling ? (
+                  <span className="runtime-badge"><Spinner /> 卸载中</span>
+                ) : installing ? (
                   <button type="button" className="secondary-setting runtime-cancel" onClick={() => void cancelDevRuntime?.("openmaic")}>取消</button>
                 ) : <button type="button" className="primary-setting runtime-install" disabled={otherBusy} onClick={() => installDevRuntime?.("openmaic")}>
                     <Download size={14} />安装
@@ -302,7 +314,18 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
             </label>
             <div className="feishu-uninstall-actions">
               <button type="button" className="secondary-setting" onClick={() => setUninstallOpen(false)}>取消</button>
-              <button type="button" className="primary-setting danger" onClick={() => void uninstall()}><Trash2 size={13} />卸载</button>
+              <button
+                type="button"
+                className="primary-setting danger"
+                onClick={() => {
+                  /* ⛔ 立即关弹窗再卸载：purge 在这一刻用**局部常量**取快照（setState 异步，
+                     等卸载函数里读 `purgeData` 会读到旧值/复位值）。 */
+                  const purge = purgeData;
+                  setUninstallOpen(false);
+                  setPurgeData(false);
+                  void uninstall(purge);
+                }}
+              ><Trash2 size={13} />卸载</button>
             </div>
           </div>
         </SettingsDialog>
