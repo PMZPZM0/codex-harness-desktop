@@ -20,3 +20,19 @@ export type DesignMdColorGroup = { key: string; label: string; items: DesignMdCo
 
 export declare function tokenLabelZh(name: string): string;
 export declare function groupColors(colors: DesignMdColor[]): DesignMdColorGroup[];
+
+export type DesignMdTypeRow = { name: string; label: string; family: string; size: string; weight: string; lineHeight: string };
+export type DesignMdRoundedRow = { name: string; label: string; value: string };
+export type DesignMdSpacingRow = { name: string; value: string };
+export type DesignMdComponentRow = { name: string; label: string; background: string; text: string; rounded: string; padding: string };
+export type DesignMdComponentGroup = { group: string; label: string; items: DesignMdComponentRow[] };
+export type DesignMdTokenSummary = {
+  fonts: string[];
+  typeScale: DesignMdTypeRow[];
+  rounded: DesignMdRoundedRow[];
+  spacing: DesignMdSpacingRow[];
+  components: DesignMdComponentGroup[];
+  hiddenComponents: number;
+};
+
+export declare function summarizeTokens(tokens: string, options?: { maxComponents?: number }): DesignMdTokenSummary;

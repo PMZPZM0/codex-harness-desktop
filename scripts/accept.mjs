@@ -1590,9 +1590,9 @@ const CHECKS = [
 
         await h.eval(`(function(){ const c=[...document.querySelectorAll(".design-lib .design-lib-cell")].find(function(x){ return (x.textContent||"").includes("Linear"); }); if(!c) return 0; c.click(); return 1; })()`);
         await h.waitFor(`!!document.querySelector(".design-lib-detail") && (document.querySelector(".design-lib-zh-line")?.textContent||"").length > 4`, { label: "中文导读", timeoutMs: 15000 });
-        const guide = await h.eval(`(function(){ const d=document.querySelector(".design-lib-detail"); const text=(d&&d.textContent)||""; return { zh: (document.querySelector(".design-lib-zh-line")?.textContent||""), hasColor: text.includes("#5e6ad2"), hasLabel: text.includes("主色"), tabs: [...document.querySelectorAll(".design-lib-detail .design-lib-tabs button")].map(function(b){ return (b.textContent||"").trim(); }) }; })()`);
+        const guide = await h.eval(`(function(){ const d=document.querySelector(".design-lib-detail"); const text=(d&&d.textContent)||""; return { zh: (document.querySelector(".design-lib-zh-line")?.textContent||""), hasColor: text.includes("#5e6ad2"), hasLabel: text.includes("主色"), scale: text.includes("字号层级"), comps: text.includes("按钮 · 主要"), tabs: [...document.querySelectorAll(".design-lib-detail .design-lib-tabs button")].map(function(b){ return (b.textContent||"").trim(); }) }; })()`);
         h.check("③ 默认中文导读：中文一句话 + 中文分组色板 + 可切英文原文",
-          Boolean(guide) && guide.zh.includes("紫罗兰") && guide.hasColor && guide.hasLabel && guide.tabs.includes("英文原文"),
+          Boolean(guide) && guide.zh.includes("紫罗兰") && guide.hasColor && guide.hasLabel && guide.scale && guide.comps && guide.tabs.includes("英文原文"),
           JSON.stringify({ zh: String(guide?.zh).slice(0, 60), hasColor: guide?.hasColor, tabs: guide?.tabs }));
         await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail .design-lib-tabs button")].find(function(x){ return (x.textContent||"").trim()==="英文原文"; }); if(!b) return 0; b.click(); return 1; })()`);
         await wait(500);

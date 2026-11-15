@@ -189,7 +189,7 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
 
 /* ── ⑨ 预览拆 tokens（纯函数真值表） ───────────────────────── */
 {
-  const { splitDesignMd, groupColors, tokenLabelZh } = await import(new URL("../../src/lib/design-md-preview.mjs", import.meta.url).href);
+  const { splitDesignMd, groupColors, tokenLabelZh, summarizeTokens } = await import(new URL("../../src/lib/design-md-preview.mjs", import.meta.url).href);
   const sample = "---\nversion: alpha\ncolors:\n  primary: \"#5e6ad2\"\n  ink: '#111111'\n---\n## Overview\nBody text";
   const parsed = splitDesignMd(sample);
   ok(parsed.tokens.includes("version: alpha") && parsed.body.startsWith("## Overview"),
@@ -214,6 +214,49 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
   const page = codeOnly(read(PAGE));
   ok(/splitDesignMd/.test(page) && /groupColors/.test(page) && /design-lib-swatches/.test(page),
     "预览页用纯函数拆 tokens（分组色板 + YAML 折叠块 + Markdown 正文）");
+
+  /* 中文导读的信息量：字体 / 字号层级 / 圆角 / 间距 / 组件样式都由 tokens 生成（用户 11-15：
+     「为啥中文这么少，英文这么多」—— 一句话 + 色板不够，要把 tokens 里的规则翻成中文列出）。 */
+  const rich = [
+    "colors:",
+    "  primary: \"#5e6ad2\"",
+    "  ink: \"#111111\"",
+    "typography:",
+    "  display-lg:",
+    "    fontFamily: Linear Display",
+    "    fontSize: 56px",
+    "    fontWeight: 600",
+    "  body:",
+    "    fontFamily: Linear Text",
+    "    fontSize: 16px",
+    "rounded:",
+    "  md: 8px",
+    "spacing:",
+    "  s: 8px",
+    "components:",
+    "  button-primary:",
+    "    backgroundColor: \"{colors.primary}\"",
+    "    textColor: \"{colors.ink}\"",
+    "    rounded: \"{rounded.md}\"",
+    "    padding: 8px 14px",
+    "  button-hover:",
+    "    backgroundColor: \"{colors.primary}\"",
+  ].join("\n");
+  const summary = summarizeTokens(rich, { maxComponents: 1 });
+  ok(summary.fonts.length === 2 && summary.typeScale.some((row) => row.label === "正文") && summary.typeScale.some((row) => row.label === "展示标题"),
+    "字体家族 + 字号层级（中文用途名）");
+  ok(summary.rounded.some((row) => row.label === "中" && row.value === "8px") && summary.spacing.some((row) => row.value === "8px"),
+    "圆角 / 间距中文名与取值");
+  const buttonGroup = summary.components.find((group) => group.group === "button");
+  ok(Boolean(buttonGroup) && buttonGroup.label === "按钮"
+    && buttonGroup.items[0].background === "主色 #5e6ad2"
+    && buttonGroup.items[0].text === "正文文字 #111111"
+    && buttonGroup.items[0].rounded === "中 8px"
+    && buttonGroup.items[0].label === "按钮 · 主要",
+    "组件样式：token 引用解析成真实色值 + 中文变体名（主要 / 悬停 / …）");
+  ok(summary.hiddenComponents === 1, "组件超出上限时给出「还有 N 个」计数（不静默丢）");
+  ok(/summarizeTokens/.test(page) && /design-lib-scale/.test(page) && /design-lib-components/.test(page),
+    "中文导读页签渲染字号层级表与组件样式（⛔ 不再只有一句话 + 色板）");
 }
 
 console.log(`\n【design-md】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

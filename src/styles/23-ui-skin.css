@@ -347,3 +347,33 @@
 .design-lib-export-select { min-width: 220px; }
 .design-lib-export > span { white-space: nowrap; }
 .design-lib-export .secondary-setting { flex: none; white-space: nowrap; }
+.design-lib-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line-soft);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 10.5px;
+  color: var(--muted);
+  background: var(--panel);
+}
+.design-lib-chip em { font-style: normal; }
+.design-lib-chip code { font-family: var(--mono, ui-monospace, monospace); font-size: 10px; color: var(--faint); }
+.design-lib-scale {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  color: var(--muted);
+}
+.design-lib-scale th,
+.design-lib-scale td { text-align: left; padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+.design-lib-scale th { color: var(--faint); font-weight: 500; font-size: 10.5px; }
+.design-lib-scale td:first-child { color: var(--text); }
+.design-lib-scale td small { margin-left: 5px; color: var(--faint); font-family: var(--mono, ui-monospace, monospace); font-size: 9.5px; }
+.design-lib-components { display: flex; flex-direction: column; gap: 8px; }
+.design-lib-comp-group { display: flex; flex-direction: column; gap: 3px; }
+.design-lib-comp-group > strong { font-size: 11px; color: var(--text); font-weight: 600; }
+.design-lib-comp { display: flex; gap: 8px; font-size: 10.5px; line-height: 1.6; color: var(--faint); }
+.design-lib-comp > em { font-style: normal; color: var(--muted); flex: none; min-width: 96px; }
+.design-lib-comp b { color: var(--text); font-weight: 500; }

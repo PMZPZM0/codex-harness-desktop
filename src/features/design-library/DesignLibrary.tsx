@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ExternalLink, Palette } from "lucide-react";
 import { Markdown } from "../markdown";
 import { AppSelect } from "../../components/AppSelect";
-import { groupColors, splitDesignMd } from "../../lib/design-md-preview.mjs";
+import { groupColors, splitDesignMd, summarizeTokens } from "../../lib/design-md-preview.mjs";
 
 type DesignItem = { slug: string; name: string; category: string; description: string; zh: string };
 type DesignCategory = { key: string; label: string; en: string; count: number };
@@ -83,6 +83,7 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
 
   const parsed = useMemo(() => (detail ? splitDesignMd(detail.designMd) : null), [detail]);
   const colorGroups = useMemo(() => (parsed ? groupColors(parsed.colors) : []), [parsed]);
+  const tokenSummary = useMemo(() => (parsed && parsed.tokens ? summarizeTokens(parsed.tokens) : null), [parsed]);
 
   const openDetail = async (slug: string) => {
     setDetailBusy(true);
@@ -258,6 +259,37 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
             {tab === "zh" ? (
               <div className="design-lib-md design-lib-guide">
                 <p className="design-lib-zh-line">{detail.zh || "上游未提供中文导读。"}</p>
+
+                {tokenSummary && tokenSummary.fonts.length > 0 && (
+                  <div className="design-lib-group">
+                    <span className="design-lib-group-label">字体家族</span>
+                    <div className="design-lib-swatches">
+                      {tokenSummary.fonts.map((font) => (
+                        <span className="design-lib-chip" key={font}><em>{font}</em></span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tokenSummary && tokenSummary.typeScale.length > 0 && (
+                  <div className="design-lib-group">
+                    <span className="design-lib-group-label">字号层级</span>
+                    <table className="design-lib-scale">
+                      <thead><tr><th>用途</th><th>字号</th><th>字重</th><th>行高</th></tr></thead>
+                      <tbody>
+                        {tokenSummary.typeScale.map((row) => (
+                          <tr key={row.name}>
+                            <td>{row.label}<small>{row.name}</small></td>
+                            <td>{row.size || "—"}</td>
+                            <td>{row.weight || "—"}</td>
+                            <td>{row.lineHeight || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
                 {colorGroups.map((group) => (
                   <div className="design-lib-group" key={group.key}>
                     <span className="design-lib-group-label">{group.label}</span>
@@ -272,8 +304,58 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
                     </div>
                   </div>
                 ))}
-                {!colorGroups.length && <p className="design-lib-hint">这份规范没有 YAML tokens；完整规则在「英文原文」里。</p>}
-                <p className="design-lib-hint">复制 / 导出 / 交给 Codex 使用的都是<b>英文原文 DESIGN.md</b>；中文只用于这里的展示。</p>
+
+                {tokenSummary && tokenSummary.rounded.length > 0 && (
+                  <div className="design-lib-group">
+                    <span className="design-lib-group-label">圆角</span>
+                    <div className="design-lib-swatches">
+                      {tokenSummary.rounded.map((row) => (
+                        <span className="design-lib-chip" key={row.name}><em>{row.label}</em><code>{row.value}</code></span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tokenSummary && tokenSummary.spacing.length > 0 && (
+                  <div className="design-lib-group">
+                    <span className="design-lib-group-label">间距</span>
+                    <div className="design-lib-swatches">
+                      {tokenSummary.spacing.map((row) => (
+                        <span className="design-lib-chip" key={row.name}><em>{row.name}</em><code>{row.value}</code></span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {tokenSummary && tokenSummary.components.length > 0 && (
+                  <div className="design-lib-group">
+                    <span className="design-lib-group-label">组件样式</span>
+                    <div className="design-lib-components">
+                      {tokenSummary.components.map((group) => (
+                        <div className="design-lib-comp-group" key={group.group}>
+                          <strong>{group.label}</strong>
+                          {group.items.map((item) => (
+                            <div className="design-lib-comp" key={item.name}>
+                              <em>{item.label}</em>
+                              <span>
+                                {item.background ? <>底色 <b>{item.background}</b>；</> : null}
+                                {item.text ? <>文字 <b>{item.text}</b>；</> : null}
+                                {item.rounded ? <>圆角 <b>{item.rounded}</b>；</> : null}
+                                {item.padding ? <>内边距 <b>{item.padding}</b></> : null}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                    {tokenSummary.hiddenComponents > 0 && <p className="design-lib-hint">还有 {tokenSummary.hiddenComponents} 个组件定义，见「英文原文」。</p>}
+                  </div>
+                )}
+
+                {!colorGroups.length && !(tokenSummary && tokenSummary.components.length) && (
+                  <p className="design-lib-hint">这份规范没有 YAML tokens；完整规则在「英文原文」里。</p>
+                )}
+                <p className="design-lib-hint">中文导读由规范 tokens 自动生成；Do&apos;s / Don&apos;ts、布局与交互细节见「英文原文」。复制 / 导出 / 交给 Codex 使用的都是<b>英文原文 DESIGN.md</b>。</p>
               </div>
             ) : (
               <div className="design-lib-md markdown">
