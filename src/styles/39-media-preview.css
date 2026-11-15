@@ -899,7 +899,9 @@
 /* ⛔⛔ 11-15 用户：「下面这个（音频播放卡）放到上面来，可以长方形，不要这么大，紧凑一点」
    ⇒ 音频与视频/图片同一排：紧凑长方形（48 高、图标 + 文件名 + 播放角标）。
    ⛔ 下面那种整宽大卡不再出现（生成的音频在 TurnMediaCard 里已跳过）。 */
+.turn-media-cards.is-previews .turn-media-card.is-audio-chip { width: 168px !important; height: 48px !important; flex-direction: row !important; padding: 0 8px !important; }
 .turn-media-card.is-audio-chip {
+.turn-media-cards.is-previews .turn-media-card.is-audio { display: none; }
   display: flex;
   align-items: center;
   gap: 6px;
