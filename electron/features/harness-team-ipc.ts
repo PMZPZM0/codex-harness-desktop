@@ -1870,7 +1870,19 @@ async function runDispatchRounds(
              宿主按**书写顺序逐个**执行（见下面 queue 的串行分支），群里只留这一条消息。
            ⛔ 别再删这条通道：删了 @ 就变纯装饰，用户看到的就是"假艾特"。
            ⛔ 也别退回"一位成员一条群消息"：那才是被骂的刷屏。 */
-        const asks = allAsks;
+        /* ⛔⛔ 11-15 用户截图（「管理怎么又出来了」）：用户直 @ 声线让它汇报，
+           声线在产出里 @ 了管理员（画帧的问题想找管理员协调）⇒ 宿主把管理员叫起来，
+           管理员又自作主张把画帧派出去 —— 一场用户和声线的对话被管理员接管了。
+           ⇒ 这场对话 suppressLead（用户直接 @ 成员发起）⇒ 成员产出里 @ **管理员/主理人**的那部分
+             被宿主拦下（不叫醒管理员）；@ 其他成员照常接力（成员互 @ 保留）。
+           ⛔ 只拦管理员：别的成员还是能被叫起来，成员之间交流不受影响。 */
+        const leadSeatIds = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
+        const asks = options.suppressLead
+          ? allAsks.filter((ask) => {
+              const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
+              return !leadSeatIds.has(tid);
+            })
+          : allAsks;
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || !canRun(next.id)) continue;
