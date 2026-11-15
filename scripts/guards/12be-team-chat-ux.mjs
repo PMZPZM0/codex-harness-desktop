@@ -377,6 +377,11 @@ const catalog = [
      ③ 主理人会话落团队归属（执行端只认 teamRunStore）；④ 主进程认得群聊会话的 team_member_invoke
      （渲染层没有它的团队归属，会以「没有团」失败）。 */
   {
+    /* ⛔ 11-15 用户截图「两次」：主理人把「已派单」回执又发一遍，同一回合成两个气泡。
+       ⇒ 判据：调过团队工具 + 输出很短 + 以「已派单/已派给」开头 ⇒ 不落群。 */
+    const ipcAck = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(ipcAck.includes("const ackEcho") && ipcAck.includes("派单回执复述") && ipcAck.includes("已派单|已派给"),
+      "派单回执复述不落群（⛔ 一句话被渲染成两个气泡的三个来源之一）");
     const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
     const boot = codeOnly(read("electron/features/boot.ts"));
     ok(/extraTools\?: unknown\[\]/.test(chan)

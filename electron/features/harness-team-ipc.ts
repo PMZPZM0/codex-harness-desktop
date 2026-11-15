@@ -1672,7 +1672,15 @@ async function runDispatchRounds(
          回喂 / 定时任务这类 ask 的正文本身就是验收结论，⛔ 不许拦。 */
       const nudgeAsk = /^\[系统\]\s*你这一轮(?:没有派任何成员|已经调过团队工具)/.test(String(bodyText ?? "").trim());
       const echoedNudge = Boolean(nudgeAsk && !teamToolUsedSince(threadId, startedAt));
-      const duplicated = Boolean(duplicateRow) || echoedNudge;
+      /* ⛔⛔ 11-15 用户截图「这是为什么，两次」：主理人把派活工具的**回执**又当成自己的话发进群
+         （「已派单，四位在后台自我介绍，产出会各自署名进群。」），同一回合还渲染成两个气泡
+         （16:12 / 16:13，都写着 17 秒）。这句群里根本不需要 —— 计划已经在群里、成员产出自己会进群、
+         最后还有一条总结。⇒ 判据：这一轮**真调过团队工具** + 输出很短 + 以「已派单 / 已派给 / 已交给」开头
+         ⇒ 不落群（⛔ 不是拦正文：只拦这种纯回执，长结论/验收结论一律照发）。 */
+      const ackEcho = Boolean(teamToolUsedSince(threadId, startedAt))
+        && String(outputForStore ?? "").trim().length <= 240
+        && /^(已派单|已派给|已交给|已把活|已安排)/.test(String(outputForStore ?? "").trim());
+      const duplicated = Boolean(duplicateRow) || echoedNudge || ackEcho;
       /* 用量：本轮 live 捕获优先；没赶上就用常驻缓存（限本轮之后）—— 都拿不到就不写页脚。 */
       const usageForMessage = liveUsage ?? talkUsageFor(threadId, startedAt);
       /* ⛔⛔⛔ 11-12 用户（连着两条）：「硬伤就是主代理和管理员，光靠自己一个人框框框框输出」。
@@ -1701,6 +1709,10 @@ async function runDispatchRounds(
            ⛔ 留日志便于诊断：频繁出现说明工具面/SOP 还有问题，别当成正常。 */
         wrote = { ok: true };
         console.log("[group-tools] 催办回合没有派出任何成员 ⇒ 不落群（防重复）：" + partner.name);
+      } else if (ackEcho) {
+        /* 只是把「已派单」回执复述一遍 ⇒ 不落群（内容为 0 信息量，且会与流式卡一起变两个气泡）。 */
+        wrote = { ok: true };
+        console.log("[group-tools] 派单回执复述 ⇒ 不落群：" + partner.name);
       } else if (!guard.mainText && guard.announcements.length) {
         /* ⛔ 只有汇报行：不落占位正文、不假装"有成品消息"，汇报行下面单独发进群主流。 */
         wrote = { ok: true };
