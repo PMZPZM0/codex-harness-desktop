@@ -215,5 +215,34 @@ console.log(JSON.stringify(out));
     "不确定态有循环动画（检查更新期间看得出来在动）");
 }
 
+/* ⑥ 自动安装 + 自动重启（11-15 用户令：「差分更新做成自动化的，不需要点，自动安装，自动重启」）
+   ⛔⛔ 这条是**危险自动化**：判据少一条就会打断正在跑的任务。
+   ⇒ 钉死两件事：① 五条判据都在同一个判据函数里；② 调度必须经那个函数，禁止无条件重启。 */
+{
+  const upd = readFileSync(join(ROOT, "src/features/app-state/parts/part02/03-thread-switch-update/02-update-ui-settings.tsx"), "utf8");
+  const gate = upd.slice(upd.indexOf("const autoInstallBlockedBy"), upd.indexOf("bag.autoInstallBlockedBy"));
+  ok(/localStorage\.getItem\("auto-install-update-v1"\) !== "0"/.test(upd)
+    && /catch \{ return true; \}/.test(upd.slice(upd.indexOf("autoInstallUpdate"), upd.indexOf("autoInstallUpdate") + 600)),
+    "自动安装**默认开**（localStorage 缺省即 true，只有显式写过 \"0\" 才是关）");
+  ok(gate.length > 0
+    && /bag\.autoInstallUpdate/.test(gate) && /bag\.updateReady/.test(gate)
+    && /runningThreadIdsRef\.current\.size > 0/.test(gate) && /bag\.activeTurnId/.test(gate)
+    && /bag\.runtimeInstalling \|\| bag\.runtimeUninstalling/.test(gate)
+    && /90_000/.test(gate),
+    "自动重启的五条判据全在同一处：开关 / 包就绪 / 无回合在跑 / 无安装卸载 / 90 秒无操作");
+  const schedule = upd.slice(upd.indexOf("if (!bag.autoInstallUpdate || !updateReady || updateRestarting) return;"));
+  ok(/if \(autoInstallBlockedBy\(\)\) return;/.test(schedule)
+    && /restartAndInstall\(\)/.test(schedule),
+    "调度先过判据函数再重启（⛔ 不许无条件调 restartAndInstall —— 那会在用户干活时重启）");
+  ok(/setInterval\(tick, 15_000\)/.test(schedule),
+    "每 15 秒重判一次（条件可能在下载完成后才满足，不重判就永远不装）");
+  const toast = readFileSync(join(ROOT, "src/features/app-view/AppView/UpdateReadyToast.tsx"), "utf8");
+  ok(/auto\?: boolean/.test(toast) && /将自动安装/.test(toast) && /不用你操作/.test(toast),
+    "提示条如实说明「将自动安装并重启、不用你操作」（不是继续让用户点）");
+  const shell = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
+  ok(/aria-label="自动安装更新"/.test(shell) && /setAutoInstallUpdate\(true\)/.test(shell) && /setAutoInstallUpdate\(false\)/.test(shell),
+    "设置 →「检查更新」面板里有自动/手动开关（默认自动，可退回手动确认）");
+}
+
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

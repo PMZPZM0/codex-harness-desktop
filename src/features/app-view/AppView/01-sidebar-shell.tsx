@@ -411,6 +411,11 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     updateRestarting,
     dismissUpdateReady,
     restartAndInstall,
+    /* 11-15：自动安装（默认开）—— 提示条据此改成「空闲时自动安装并重启」，
+       并把当前阻塞原因（有回合在跑 / 刚刚还在操作）如实显示出来。 */
+    autoInstallUpdate,
+    setAutoInstallUpdate,
+    autoInstallBlockedBy,
     userAvatar,
     username,
     viewTab,
@@ -1084,6 +1089,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                           <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包<span className="update-help" title="每次下载完整安装包，体积大但最稳；补丁更新异常时选这个" onClick={(event) => event.stopPropagation()}>?</span></button>
                         </span>
                       </div>
+                      {/* 11-15 用户令「不需要点，自动安装，自动重启」：默认自动；
+                          关掉只回到「提示 + 手动重启」，后台检查与静默下载照旧。 */}
+                      <div className="account-menu-row"><span className="account-menu-label">自动安装</span>
+                        <span className="update-mode-switch" role="group" aria-label="自动安装更新">
+                          <button type="button" className={autoInstallUpdate ? "active" : ""} onClick={() => { setAutoInstallUpdate(true); showToast("已开启自动安装更新", "下载完成后会在你空闲时自动安装并重启"); }}>自动<span className="update-help" title="后台检查并差分下载；没有回合在跑、没有工具在装、你 90 秒没操作时，静默安装并重启——不需要你点任何按钮" onClick={(event) => event.stopPropagation()}>?</span></button>
+                          <button type="button" className={!autoInstallUpdate ? "active" : ""} onClick={() => { setAutoInstallUpdate(false); showToast("已关闭自动安装更新", "改回手动确认：更新就绪后点「重启安装」"); }}>手动<span className="update-help" title="更新就绪后只弹提示条，等你点「重启安装」才装" onClick={(event) => event.stopPropagation()}>?</span></button>
+                        </span>
+                      </div>
                     </div>
                     <button className="account-menu-item" onClick={() => void copyBuildDiagnostics()}>
                       <ClipboardList size={15} /><span>复制诊断信息</span>
@@ -1130,6 +1143,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       <UpdateReadyToast
         version={updateReadyVersion}
         restarting={updateRestarting}
+        auto={autoInstallUpdate}
+        blockedBy={typeof autoInstallBlockedBy === "function" ? autoInstallBlockedBy() : ""}
         onCancel={dismissUpdateReady}
         onRestartInstall={() => void restartAndInstall()}
       />
