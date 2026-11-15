@@ -390,8 +390,19 @@ ok(/response\.status === 403 && received > 0 && options\?\.rangeFallback !== fal
 ok(/if \(received > 0 && response\.ok && response\.status !== 206\) received = 0;/.test(storeCode)
   && !/if \(received > 0 && response\.status !== 206\) received = 0;/.test(storeCode),
   "「服务器成功但不支持续传」才丢弃残件（⛔ 判据少 response.ok 会让 403 分支恒不可达）");
-ok(/https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\//.test(storeCode),
-  "GitHub 镜像顺序 = gh-proxy 优先（11-14 实测 ghfast 对 Range 返 403）");
+/* ⛔⛔ 11-15 实测推翻 11-14 的「gh-proxy 优先」：同一 54MB 资产 8 秒采样 —— 直连 12.6MB/s、
+   hk.gh-proxy 12.4MB/s、gh-proxy.com 仅 269KB/s（慢 47 倍）、ghfast 对 Range 403。
+   ⇒ 只留能用的两个镜像，hk 在前；ghfast 必须不在表里。 */
+ok(/const GITHUB_MIRROR_PREFIXES = \["https:\/\/hk\.gh-proxy\.com\/", "https:\/\/gh-proxy\.com\/"\]/.test(storeCode),
+  "GitHub 镜像表 = hk.gh-proxy 优先、gh-proxy 兜底（旧序把 269KB/s 的源排第一，比直连慢 47 倍）");
+ok(!/ghfast\.top/.test(storeCode),
+  "⛔ ghfast 已从音色模型链路移除（Range 403，留着只是多一次失败）");
+ok(/headersTimeoutMs = options\?\.headersTimeoutMs \?\? 20000/.test(storeCode),
+  "响应头超时 20s（12s 会误杀抖动网络的正常连接 —— 用户实测「12s 超时」）");
+ok(/minSpeedBytesPerSec \?\? 500 \* 1024/.test(storeCode),
+  "速度下限 500KB/s：低于它且还有候选就换源（旧的 120KB/s 让 269KB/s 的限速源被当成够快）");
+ok(/const SAMPLE_MS = 1200;/.test(storeCode) && /b\.kbps - a\.kbps/.test(storeCode),
+  "选源按实测吞吐排序（不再只看首字节 —— 被限速的通道 TTFB 反而更快，旧判据每次都选最慢的）");
 
 /* 真跑就绪判定（编译产物；check 链先 build 再跑守卫，缺产物直接红、不静默跳过） */
 const PROBE_ZV = `

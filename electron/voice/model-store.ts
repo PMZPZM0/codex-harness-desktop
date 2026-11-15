@@ -620,7 +620,11 @@ export function modelsSizeOnDisk(modelsRoot: string): number {
  *   ⇒ 顺序改成 gh-proxy 优先；ghfast 留作最后手段（有朝一日恢复也不必改代码）。
  *   ⛔ 但顺序不是根治：真正的兜底在 `downloadOnce` 的「403 + 已下过一部分 ⇒ 去掉 Range 重来」。
  */
-const GITHUB_MIRROR_PREFIXES = ["https://gh-proxy.com/", "https://ghfast.top/"];
+/* ⛔⛔ 11-15 实测（54MB release 资产，8 秒采样）：直连 12.6MB/s ｜ hk.gh-proxy 12.4MB/s ｜
+   gh-proxy.com 仅 **269KB/s（慢 47 倍）** ｜ ghfast 对 Range 直接 403。
+   旧表把 gh-proxy 排第一 ⇒ 54MB 声码器从 4 秒变 200 秒（用户「12s 超时 / 下几个小时」）。
+   ⇒ 只留两个能用的镜像做兜底；直连由 downloadUrlToFile 自动排在最前（candidates = [url, ...mirrors]）。 */
+const GITHUB_MIRROR_PREFIXES = ["https://hk.gh-proxy.com/", "https://gh-proxy.com/"];
 
 /**
  * 单次下载（可续传）。网络中断**保留**已下部分（存在 `.part` 上）供下次续传；只有 SHA256 不符才删除。
@@ -659,7 +663,7 @@ export async function downloadOnce(
     if (received > 0) headers.Range = "bytes=" + received + "-";
     // ⚠️ fetch 自身没有超时：直连地址挂起时 TCP 连接会一直等下去（实测「下载很慢」的真凶之一）。
     //    这里给「拿到响应头」单独设一个短超时，超时就换下一个镜像。
-    const headersTimeoutMs = options?.headersTimeoutMs ?? 12000;
+    const headersTimeoutMs = options?.headersTimeoutMs ?? 20000;
     const timeoutCtl = new AbortController();
     const headersTimer = setTimeout(() => timeoutCtl.abort(), headersTimeoutMs);
     const combinedSignal = signal
@@ -786,29 +790,47 @@ export async function downloadOnce(
  * 逐个试**——第一个挂起就要白等（连接超时前什么都不发生）。并发探测后从最快的开始，
  * 慢/挂的直接排到最后，用户体感差别是「几十秒」级别的。
  */
+/* ⛔⛔ 11-15 用户实测「音色模型下载 12s 超时、下几个小时」，根因就在这个函数：
+   旧实现只测**首字节耗时（Range 0-1）** ⇒ 被第三方反代限速的通道 TTFB 反而更快
+   （gh-proxy.com 1.0s vs 直连 1.4s，实测吞吐却只有 269KB/s vs 12.6MB/s）⇒ 每次都选中最慢的那条。
+   ⇒ 改成**吞吐感知**：Range 0-2MB，边读边计时，采样 1.2 秒，按实际 KB/s 排序。
+   下载前多花约 1.2 秒（各候选并发），换来的是量级差别（54MB：200s → 4s）。 */
 async function orderCandidatesByLatency(candidates: string[], signal?: AbortSignal): Promise<string[]> {
+  const SAMPLE_MS = 1200;
   const probe = async (url: string) => {
     const t0 = Date.now();
     const ctl = new AbortController();
-    // 探测超时压到 2s：这是在**下载开始之前**的纯等待（原来 6s → 用户点下载后几秒毫无动静，
-    // 体感就是「又慢又没反应」）。实测最快的候选 ~0.9s 就回了，2s 足够排名。
-    const timer = setTimeout(() => ctl.abort(), 2000);
+    const timer = setTimeout(() => ctl.abort(), SAMPLE_MS + 2500);
+    let bytes = 0;
+    let ttfb = 0;
+    let ok = false;
     try {
       const probeSignal = signal && typeof (AbortSignal as any).any === "function" ? (AbortSignal as any).any([signal, ctl.signal]) : ctl.signal;
-      const res = await net.fetch(url, { headers: { Range: "bytes=0-1" }, redirect: "follow", signal: probeSignal as any });
-      if (!res.ok) return { url, ok: false, ms: Date.now() - t0 };
-      await res.arrayBuffer().catch(() => undefined);
-      return { url, ok: true, ms: Date.now() - t0 };
-    } catch {
-      return { url, ok: false, ms: Date.now() - t0 };
-    } finally {
-      clearTimeout(timer);
-    }
+      const res = await net.fetch(url, { headers: { Range: "bytes=0-2097151" }, redirect: "follow", signal: probeSignal as any });
+      if (res.ok && res.body) {
+        ok = true;
+        ttfb = Date.now() - t0;
+        const reader = (res.body as any).getReader();
+        // 采样窗口内尽量多读；到点就主动断开（这 2MB 是探测成本，不写入目标文件）
+        while (Date.now() - t0 < SAMPLE_MS) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          bytes += value.length;
+        }
+        try { ctl.abort(); } catch { /* 已结束 */ }
+        try { await reader.cancel(); } catch { /* 已关闭 */ }
+      }
+    } catch { /* 超时/断开：按已读字节计 */ }
+    clearTimeout(timer);
+    const secs = Math.max(0.4, (Date.now() - t0) / 1000);
+    const kbps = Math.round(bytes / 1024 / secs);
+    return { url, ok: ok && bytes > 0, kbps, ttfb };
   };
   const probed = await Promise.all(candidates.map(probe));
-  const fast = probed.filter((p) => p.ok).sort((a, b) => a.ms - b.ms).map((p) => p.url);
-  const slow = probed.filter((p) => !p.ok).map((p) => p.url);
-  return [...fast, ...slow];
+  // 吞吐降序；同为 0 的按 TTFB 升序（至少能连上的排前面）；全失败的按原序兜底
+  const good = probed.filter((p) => p.ok).sort((a, b) => (b.kbps - a.kbps) || (a.ttfb - b.ttfb)).map((p) => p.url);
+  const bad = probed.filter((p) => !p.ok).map((p) => p.url);
+  return [...good, ...bad];
 }
 
 /**
@@ -840,7 +862,7 @@ async function downloadUrlToFile(
       const alternativesLeft = ordered.length - 1 - i;
       const result = await downloadOnce(ordered[i], destPath, sha256, bytes, onBytes, signal, {
         headersTimeoutMs: options?.headersTimeoutMs,
-        minSpeedBytesPerSec: alternativesLeft > 0 ? (options?.minSpeedBytesPerSec ?? 120 * 1024) : 0,
+        minSpeedBytesPerSec: alternativesLeft > 0 ? (options?.minSpeedBytesPerSec ?? 500 * 1024) : 0,
       });
       if (result.ok) return result;
       if (result.cancelled) {

@@ -31,8 +31,12 @@ const updates = codeOnly(read("electron/updates.ts"));
 const official = codeOnly(read("electron/codex-official-market.ts"));
 
 /* ── 单一真相源 ── */
-ok(/export const GH_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/ghfast\.top\/", ""\] as const/.test(mirrorSrc),
-  "镜像表唯一一份在 gh-mirror.ts：gh-proxy → ghfast → 直连(空串)，顺序即契约");
+ok(/export const GH_MIRROR_PREFIXES = \["", "https:\/\/hk\.gh-proxy\.com\/", "https:\/\/gh-proxy\.com\/"\] as const/.test(mirrorSrc),
+  "镜像表唯一一份在 gh-mirror.ts：**直连 → hk.gh-proxy → gh-proxy**（11-15 实测：旧序把 269KB/s 的源排第一，比直连慢 47 倍）");
+ok(/export const GH_API_MIRROR_PREFIXES = \["https:\/\/gh-proxy\.com\/", "https:\/\/hk\.gh-proxy\.com\/", ""\] as const/.test(mirrorSrc),
+  "API 单独一套序（镜像优先）：api.github.com 直连在国内不通，不能与资产共用「直连优先」");
+ok(!/ghfast\.top/.test(codeOnly(mirrorSrc)),
+  "⛔ ghfast 已删除（实测对带 Range 的请求直接 403，留着只是多一次失败；判据过 codeOnly，注释里提到它不算）");
 ok(!/"https:\/\/gh-proxy\.com\/"/.test(updates) && !/"https:\/\/gh-proxy\.com\/"/.test(official),
   "⛔ 镜像字面量不再散落：updates / 官方市场都从 gh-mirror 取（voice/model-store 除外 —— 它的顺序是按实测速度排的，语义不同）");
 ok(/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(official),
@@ -43,16 +47,19 @@ ok(/const MIRROR_PREFIXES = GH_MIRROR_PREFIXES/.test(official),
   const { mirrorCandidates, GH_MIRROR_PREFIXES } = await import("../../electron/gh-mirror.ts");
   const url = "https://github.com/a/b/releases/download/v1/x.exe";
   const got = mirrorCandidates(url);
-  ok(got.length === 3 && got[0] === "https://gh-proxy.com/" + url && got[1] === "https://ghfast.top/" + url && got[2] === url,
-    "真值：github.com 地址 → 镜像两条 + 直连兜底（三条）");
-  ok(mirrorCandidates("https://api.github.com/repos/x/y/releases/latest").length === 3,
-    "真值：api.github.com 也走镜像（检查更新用）");
+  ok(got.length === 3 && got[0] === url && got[1] === "https://hk.gh-proxy.com/" + url && got[2] === "https://gh-proxy.com/" + url,
+    "真值：github.com 资产 → **直连第一**、两个镜像兜底（顺序与实测吞吐一致）");
+  const apiGot = mirrorCandidates("https://api.github.com/repos/x/y/releases/latest");
+  ok(apiGot.length === 3 && apiGot[0] === "https://gh-proxy.com/https://api.github.com/repos/x/y/releases/latest",
+    "真值：api.github.com 仍走**镜像优先**（直连在国内不通），与资产不同序");
   ok(JSON.stringify(mirrorCandidates("https://example.com/self-hosted/manifest.json")) === JSON.stringify(["https://example.com/self-hosted/manifest.json"]),
     "⛔ 真值：非 GitHub host（自建分发/自定义清单）原样返回 —— 不把用户的私有地址发给第三方反代");
   ok(mirrorCandidates("not a url").length === 1,
     "真值：非法 URL 原样返回（不抛）");
-  ok(GH_MIRROR_PREFIXES[GH_MIRROR_PREFIXES.length - 1] === "",
-    "真值：最后一档恒为直连（空串）—— 镜像站倒了更新不可用 = 回归");
+  ok(GH_MIRROR_PREFIXES[0] === "",
+    "真值：直连排第一（11-15 实测最快）；镜像在其后兜底 —— 直连不通时第一次请求快速失败并落到镜像");
+  ok(GH_MIRROR_PREFIXES.length >= 2 && GH_MIRROR_PREFIXES.some((x) => x.startsWith("https://")),
+    "真值：至少还留一个镜像兜底（只剩直连 ⇒ 连不上 GitHub 的用户永远更新失败）");
 }
 
 /* ── updates.ts 接线（两仓结构不同：主仓单源常量直连；PPcode 有令牌门 —— 断言按仓分岔）── */
@@ -65,8 +72,8 @@ if (IS_PPCODE) {
   // ⛔ 10-12 对账修正：更新链改走 releases **LIST** API（取全部资产匹配 digest），镜像序判定跟着换锚点
   ok(updates.includes("mirrorCandidates(GITHUB_RELEASES_LIST_API)") && /for \(const candidate of mirrorCandidates\(GITHUB_RELEASES_LIST_API\)\)/.test(updates),
     "检查更新走镜像序逐条尝试（第一个 2xx 生效）");
-  ok(updates.includes("const candidates = mirrorCandidates(releaseUrl)") && /for \(const candidate of candidates\)/.test(updates),
-    "下载安装包走镜像序（失败/校验不过换下一档）");
+  ok(updates.includes("const candidates = mirrorCandidates(releaseUrl)") && /for \(let candidateIndex = 0; candidateIndex < candidates\.length/.test(updates),
+    "下载安装包走镜像序（失败/校验不过/太慢 都换下一档；带索引是为了把 hasAlternative 传给超时与低速看门狗）");
 }
 ok(/fs\.rm\(destPath, \{ force: true \}\)/.test(updates) && /fs\.rm\(result\.path, \{ force: true \}\)/.test(updates),
   "每条候选开跑前删半截文件、校验失败删坏文件（半截包绝不进下一轮/不被执行）");

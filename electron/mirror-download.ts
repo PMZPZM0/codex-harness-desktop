@@ -38,6 +38,13 @@ export type MirrorDownloadResult = { bytes: number; sha256: string; host: string
 const PROBE_TIMEOUT_MS = 1_500;
 const PROBE_BYTES = 256 * 1024;
 const STALL_MS = 20_000;
+/* ⛔⛔ 11-15 用户实测「100 来 M 的东西下载几个小时」：只有「20s 零字节」才判死，
+   而限速源会**稳定地每秒吐一点**——永远不触发停滞判据，于是 100MB 拖成 1~5 小时
+   （实测 gh-proxy.net 6KB/s、gh-proxy.com 269KB/s）。
+   ⇒ 下载满 12 秒后，平均速率低于 200KB/s 且**还有别的候选没试** ⇒ 主动换源。
+   最后一个候选不因慢被换（否则会把用户本来就慢的网络彻底掐死）。 */
+const SLOW_SPEED_BYTES_PER_SEC = 200 * 1024;
+const SLOW_GRACE_MS = 12_000;
 
 /** 探一个候选：**实测吞吐**（最多取 256KB / 1.5s），返回 bytes/s；不通返回 0。
  *  ⛔ 不能只看 TTFB：gh-proxy 对小请求回得快、整包吞吐却可能只有直连的 1/3
@@ -105,7 +112,11 @@ export async function downloadThroughMirrors(options: {
 
   const ordered = await rankMirrors(url);
   const tried: string[] = [];
-  for (const candidate of ordered) {
+  for (let candidateIndex = 0; candidateIndex < ordered.length; candidateIndex += 1) {
+    const candidate = ordered[candidateIndex];
+    /** 后面还有候选可试（只有这时才允许因为「太慢」或「停滞」主动换源） */
+    const hasAlternative = candidateIndex < ordered.length - 1;
+    let slowSource = false;
     if (cancelled()) throw new DownloadCancelledError();
     const host = hostOf(candidate);
     const controller = new AbortController();
@@ -141,6 +152,11 @@ export async function downloadThroughMirrors(options: {
            算出来是几十上百 MB/s 的假峰值。用**从首字节起的平均速率**，稳定且不骗人。 */
         const elapsed = firstByteAt ? (now - firstByteAt) / 1000 : 0;
         const speed = elapsed >= 0.4 ? received / elapsed : 0;
+        /* 限速源换源（见 SLOW_SPEED_BYTES_PER_SEC 的说明）：只标记并 abort，由 catch 记一笔后试下一个。 */
+        if (hasAlternative && !slowSource && elapsed * 1000 >= SLOW_GRACE_MS && speed > 0 && speed < SLOW_SPEED_BYTES_PER_SEC) {
+          slowSource = true;
+          controller.abort();
+        }
         onProgress?.({
           received,
           total,
@@ -199,7 +215,7 @@ export async function downloadThroughMirrors(options: {
         await fs.rm(target, { force: true }).catch(() => undefined);
         throw new DownloadCancelledError();
       }
-      tried.push(`${host}(${stalled ? `停滞 ${Math.round(stallMs / 1000)}s` : String((error as { message?: unknown })?.message ?? error).slice(0, 48)})`);
+      tried.push(`${host}(${slowSource ? "太慢，已换源" : stalled ? `停滞 ${Math.round(stallMs / 1000)}s` : String((error as { message?: unknown })?.message ?? error).slice(0, 48)})`);
       await fs.rm(target, { force: true }).catch(() => undefined);
     } finally {
       signal?.removeEventListener("abort", onAbort);

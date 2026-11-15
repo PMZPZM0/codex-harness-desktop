@@ -26,8 +26,12 @@ export type VoiceModelRepo = {
   files: VoiceModelFile[];
 };
 
-/** 主源：HuggingFace 官方；兜底：国内可达的 hf-mirror 镜像。 */
-export const MODEL_HOSTS = ["https://huggingface.co", "https://hf-mirror.com"] as const;
+/* ⛔⛔ 11-15 实测（本机，国内网络）：huggingface.co **完全连不上**（6s 内 0 字节、无响应），
+   hf-mirror.com 803ms 即通。旧序把不通的官方源排第一 ⇒ 每次选源都要白等一轮探测，
+   用户看到的就是「点下载半天没动静」。
+   ⇒ 国内可达的 hf-mirror 排第一；官方源留作海外/兜底（`orderCandidatesByLatency` 会按实测吞吐排序，
+     官方能通时自然会赢）。 */
+export const MODEL_HOSTS = ["https://hf-mirror.com", "https://huggingface.co"] as const;
 
 /**
  * 语音识别（流式）：边说边出字。
