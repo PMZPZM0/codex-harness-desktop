@@ -2318,7 +2318,7 @@ const catalog = [
        —— 因为我上一轮把「行首 @ = 派活」删过头了。这条通道必须存在（一条消息里 @ 多人就是派活），
        刷屏的根源是「每位成员再回显一条群消息」，那个才该删。 */
     /* ⛔ 「假的艾特」只出现在注释里 ⇒ 这一条要看原文，不能用 codeOnly 的产物。 */
-    ok(ipc.includes("const asks = !options.allowMemberRelay ? [] : casualGreeting ? [] : allAsks.filter((ask) => {") && ipc.includes("leadSeatIds.has(tid)") && read("electron/features/harness-team-ipc.ts").includes("假的艾特"),
+    ok(ipc.includes("const asks = (!options.allowMemberRelay && !leadIsSpeaking) ? [] : casualGreeting ? [] : allAsks.filter((ask) => {") && ipc.includes("leadSeatIds.has(tid)") && read("electron/features/harness-team-ipc.ts").includes("假的艾特"),
       "主理人一条消息里的多行 @名字 = 真派活；成员产出里 @ 管理员一律拦；纯寒暄（哈喽/你好整句）成员接力整体关掉");
     const tools = codeOnly(read("electron/expert-teams/06-team-tools.ts"));
     ok(tools.includes("顺序点名") && tools.includes("一次只派一位"),

@@ -1885,7 +1885,13 @@ async function runDispatchRounds(
         const casualGreeting = source === "human"
           && /^(哈喽+|哈罗|你好+|您好+|嗨+|在吗|在不在|早[啊上]?|午安|晚上好|hi|hello)[！!。.~～\s]*$/i.test(text.trim());
         const leadSeatIds = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
-        const asks = !options.allowMemberRelay ? [] : casualGreeting ? [] : allAsks.filter((ask) => {
+        /* ⛔⛔ 11-15 用户两句话一起钉死口径：
+           「没有艾特，成员不回复」+「管理员肯定要需要艾特其他人啊」
+           ⇒ 总闸只掐**宿主自动回喂**（mustHandBack/continue，见下面那段），
+             不掐**管理员自己写的 @ 行**：那是它明确点名，属于真派活（删了就又是"假艾特"）。
+           普通成员在无 @ 的对话里写 @ 不派活；用户 @ 过人则全员放行（成员互 @ 接力照常）。 */
+        const leadIsSpeaking = Boolean(adminIdForRounds) && String(partner.id) === String(adminIdForRounds);
+        const asks = (!options.allowMemberRelay && !leadIsSpeaking) ? [] : casualGreeting ? [] : allAsks.filter((ask) => {
           const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
           return !leadSeatIds.has(tid);
         });
