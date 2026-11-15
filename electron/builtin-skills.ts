@@ -34,6 +34,7 @@ import { RPA_RECIPES_SKILL } from "./builtin-skills/28-skill-rpa-recipes";
 import { ANDROID_EMULATOR_SKILL } from "./builtin-skills/29-skill-android-emulator";
 import { OPENMAIC_SKILL } from "./builtin-skills/30-skill-openmaic";
 import { HUSK_SKILL } from "./builtin-skills/31-skill-husk";
+import { DESIGN_MD_SKILL } from "./builtin-skills/32-skill-design-md";
 import { VISUALIZATION_SKILL } from "./builtin-skills/21-skill-visualization";
 import { GRILL_ME_SKILL } from "./builtin-skills/24-skill-grill-me";
 import { CHALLENGE_REQUIREMENTS_SKILL } from "./builtin-skills/25-skill-challenge-requirements";
@@ -169,6 +170,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     ["openmaic", OPENMAIC_SKILL],
     // 11-14：Husk（iPhone 跑 Android）—— 下载/侧载/兼容性流程；工具描述只留一句。
     ["husk", HUSK_SKILL],
+    // 11-15：设计参考库（84 份品牌 DESIGN.md，MIT）—— 用户点名某种风格时先查再取；
+    //  工具 design_md + 设置页「设计参考」同源；⛔ 只作参考，不抄品牌 logo/商标。
+    ["design-md-library", DESIGN_MD_SKILL],
     // 10-17：可视化输出规范（用户立项「Codex 画可视化只会随手写 HTML」）——
     //  形态选择/硬性输出要求（单文件零外部依赖）/设计 token；输出走文件卡→预览→浏览器打开通道。
     ["visualization-guide", VISUALIZATION_SKILL],

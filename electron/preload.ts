@@ -1145,6 +1145,12 @@ contextBridge.exposeInMainWorld("codex", {
   mediaDeskPopout: () => __ipc("media-desk:popout", 0, []),
   /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
   listArtifactArchives: (workspace?: string) => __ipc("artifact:list", 0, [workspace]),
+  /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */
+  designMdList: (input: { category?: string; query?: string; limit?: number }) => __ipc("design-md:list", 1, [input]),
+  /* 11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null */
+  designMdGet: (slug: string) => __ipc("design-md:get", 1, [slug]),
+  /* 11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径） */
+  designMdExport: (input: { slug?: string; dir?: string }) => __ipc("design-md:export", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

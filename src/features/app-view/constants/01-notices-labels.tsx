@@ -149,5 +149,7 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "openmaic",
   /* 11-14：Husk（iPhone 跑 Android，与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
   "husk",
+  /* 11-15：设计参考库（84 份品牌 DESIGN.md，与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
+  "design-md-library",
   "zy-cinematic-realism",
 ];

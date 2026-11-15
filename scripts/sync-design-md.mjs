@@ -41,6 +41,11 @@ const CATEGORIES = [
   { en: "Retro Web · DESIGN.md Nostalgia", key: "retro", label: "复古网页" },
 ];
 
+/** README 漏列的目录（上游 README 与 design-md/ 不是同一份清单时补齐；只补元数据，正文仍取原文件）。 */
+const EXTRA = [
+  { name: "Slack", slug: "slack", category: "productivity", description: "Team messaging platform. Aubergine purple with blue accents, friendly enterprise collaboration UI." },
+];
+
 const log = (msg) => console.log(`[sync-design-md] ${msg}`);
 
 async function download(url, target) {
@@ -96,9 +101,10 @@ async function main() {
   }
   await fetchTarball();
   mkdirSync(TMP_DIR, { recursive: true });
-  /* ⛔ Git Bash 的 tar 会把 `D:\…` 里的冒号当远程主机（Cannot connect to D:）——
-     --force-local 强制按本地路径解析；Windows 自带的 bsdtar 也认这个开关。 */
-  execFileSync("tar", ["--force-local", "-xzf", TARBALL, "-C", TMP_DIR], { stdio: "inherit" });
+  /* ⛔ 用**相对路径 + cwd** 解压：Git Bash 的 tar 会把 `D:\…` 里的冒号当远程主机，
+     连 --force-local 也会被 MSYS 改写成 `D\:\…`。相对名两边都不歧义。 */
+  execFileSync("tar", ["-xzf", "design-md-src.tar.gz", "-C", "design-md-src"],
+    { cwd: join(ROOT, ".workbuddy", "tmp"), stdio: "inherit" });
   const [top] = readdirSync(TMP_DIR).filter((name) => statSync(join(TMP_DIR, name)).isDirectory());
   if (!top) throw new Error("解压后找不到仓库根目录");
   const src = join(TMP_DIR, top);
@@ -107,6 +113,7 @@ async function main() {
   if (!/MIT License/i.test(license)) throw new Error("上游 LICENSE 不是 MIT —— 停下来人工确认");
 
   const parsed = parseReadme(readFileSync(join(src, "README.md"), "utf8"));
+  for (const extra of EXTRA) if (!parsed.some((entry) => entry.slug === extra.slug)) parsed.push(extra);
   log(`README 解析到 ${parsed.length} 条`);
 
   const items = [];

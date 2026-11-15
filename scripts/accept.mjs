@@ -1567,6 +1567,62 @@ const CHECKS = [
     },
   },
   {
+    id: "design-library",
+    name: "🎨 设计参考（84 份品牌 DESIGN.md）：浏览 / 搜索 / 预览 / 导出 / 交给 Codex（11-15）",
+    run: async (h) => {
+      const exportDir = join(ROOT, "design-references");
+      try {
+        await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+        await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+        await wait(700);
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="设计参考"; }); if(!b) return 0; b.click(); return 1; })()`);
+        await h.waitFor(`!!document.querySelector(".design-lib")`, { label: "设计参考页", timeoutMs: 15000 });
+        await h.waitFor(`document.querySelectorAll(".design-lib .design-lib-cell").length > 0`, { label: "设计参考卡片", timeoutMs: 15000 });
+        const head = await h.eval(`(function(){ const tabs=[...document.querySelectorAll(".design-lib-tabs button")].map(function(b){ return (b.textContent||"").trim(); }); return { tabs: tabs, cards: document.querySelectorAll(".design-lib .design-lib-cell").length }; })()`);
+        h.check("① 84 份库加载：全部 tab 带总数 + 分类 tab + 首页卡片",
+          Boolean(head) && head.tabs.length >= 10 && head.tabs[0].includes("84") && head.cards > 0, JSON.stringify(head).slice(0, 400));
+
+        await h.eval(`(function(){ const el=document.querySelector(".design-lib .ui-skin-search"); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; set.call(el,"linear"); el.dispatchEvent(new Event("input",{bubbles:true})); return true; })()`);
+        await wait(450);
+        const found = await h.eval(`(function(){ return [...document.querySelectorAll(".design-lib .design-lib-cell")].map(function(c){ return (c.textContent||"").trim(); }); })()`);
+        h.check("② 搜索 linear 命中", Boolean(found) && found.some((t) => t.includes("Linear")), JSON.stringify(found).slice(0, 300));
+
+        await h.eval(`(function(){ const c=[...document.querySelectorAll(".design-lib .design-lib-cell")].find(function(x){ return (x.textContent||"").includes("Linear"); }); if(!c) return 0; c.click(); return 1; })()`);
+        await h.waitFor(`!!document.querySelector(".design-lib-detail") && (document.querySelector(".design-lib-md")?.textContent||"").length > 2000`, { label: "设计规范预览", timeoutMs: 15000 });
+        const detail = await h.eval(`(function(){ const d=document.querySelector(".design-lib-detail"); const text=(d&&d.textContent)||""; return { len: text.length, hasColor: text.includes("#5e6ad2") }; })()`);
+        h.check("③ 预览渲染整份规范（含 tokens 色值 #5e6ad2）", Boolean(detail) && detail.len > 2000 && detail.hasColor === true, JSON.stringify(detail));
+
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail button")].find(function(x){ return (x.textContent||"").includes("复制"); }); if(!b) return 0; b.click(); return 1; })()`);
+        await wait(350);
+        const copied = await h.eval(`(function(){ return [...document.querySelectorAll(".design-lib-detail button")].some(function(b){ return (b.textContent||"").includes("已复制"); }); })()`);
+        h.check("④ 复制 DESIGN.md 有回执", copied === true);
+
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail button")].find(function(x){ return (x.textContent||"").includes("导出到项目"); }); if(!b) return 0; b.click(); return 1; })()`);
+        await wait(700);
+        const flash = await h.eval(`(document.querySelector(".design-lib-flash")?.textContent||"")`);
+        const target = join(exportDir, "linear.app.md");
+        const exported = existsSync(target) && readFileSync(target, "utf8").includes("Linear");
+        h.check("⑤ 导出到项目 design-references/linear.app.md", /已导出/.test(String(flash)) && exported, JSON.stringify({ flash: String(flash).slice(0, 120), exported }));
+
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail button")].find(function(x){ return (x.textContent||"").includes("交给 Codex"); }); if(!b) return 0; b.click(); return 1; })()`);
+        await wait(600);
+        const handoff = await h.eval(`(function(){ return { modal: !!document.querySelector(".settings-modal"), text: (document.querySelector(".composer-editor")?.textContent||"") }; })()`);
+        h.check("⑥ 交给 Codex：关设置 + 提示词填进输入框（⛔ 不自动发送）",
+          Boolean(handoff) && handoff.modal === false && handoff.text.includes("linear.app") && handoff.text.includes("design_md"),
+          JSON.stringify({ modal: handoff?.modal, text: String(handoff?.text).slice(0, 100) }));
+
+        /* 收尾：清空输入框草稿（真按键删空，同 composer-ime 的口径） */
+        await h.eval(`(function(){ const el=document.querySelector(".composer-editor"); el.focus(); const s=getSelection(); const r=document.createRange(); r.selectNodeContents(el); s.removeAllRanges(); s.addRange(r); return true; })()`);
+        await wait(200);
+        await h._send("Input.dispatchKeyEvent", { type: "keyDown", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+        await h._send("Input.dispatchKeyEvent", { type: "keyUp", key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8, nativeVirtualKeyCode: 8 });
+        await wait(300);
+      } finally {
+        rmSync(exportDir, { recursive: true, force: true });
+      }
+    },
+  },
+  {
     id: "devtools-update-rows",
     name: "🔄 开发工具 · 卡片内更新行（Filee / ApkStart / OpenMAIC / 飞书 CLI，11-14）",
     run: async (h) => {

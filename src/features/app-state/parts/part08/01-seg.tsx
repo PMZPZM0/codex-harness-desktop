@@ -596,6 +596,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
         description:
           "调用宿主的其余内置能力。可用：scheduler_list / scheduler_save / scheduler_run / scheduler_delete（定时任务）；"
           + "knowledge_search / knowledge_add（项目知识库）；ui_component_search / ui_component_get（界面组件库）；"
+          + "design_md（品牌设计语言参考库：84 份真实网站的 DESIGN.md，做『像 Linear / Vercel / Apple 那种风格』的界面时先 search 再 get）；"
           + "video_generate / video_status / video_concat（视频）；video_render_html（把工作区里的 HTML/CSS 动画在**本地**渲成 MP4，零 ffmpeg）；voice_generate（配音 WAV）；"
           + "voice_announce（**立刻念一句话**给用户听，≤120 字，不必等本轮回复结束；实时语音通话中不可用）/ voice_announce_stop（立刻停止播报、清掉排队）/ voice_speak_reply（把**本条回复的正文**边写边念 —— 不是每条都念，由你判断何时值得开口）；"
           + "moss_voice_list / moss_voice_set（MOSS 音色：列通话与播报共用的音色并切换，可同时调语速 / 模型 / 开关；先 list 再 set，⛔ 别猜音色 id）；"

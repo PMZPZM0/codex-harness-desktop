@@ -434,6 +434,15 @@ const FRONTEND_DESIGN_INSTRUCTIONS =
   `   If the user's AGENTS.md carries a "Frontend design direction" section (Settings → 个性化 → 前端设计风格), that is the user's chosen visual direction — express it through the project's own tokens instead of hard-coding a second palette.\n` +
   `   ⛔ Do not invent a second style system and do not hard-code colors. ⛔ Never claim a UI change is done from reading code alone: render it (screenshot / real app) and check default/hover/disabled, empty/loading/error, long text, narrow window, and light/dark themes.`;
 
+/* ── 第 20 条：品牌设计语言参考库（11-15，用户给了 VoltAgent/awesome-design-md）──
+   ⛔ 常驻原因同 12/13/19：说「做成 Linear 那种风格」时模型不会主动想起有库可查，
+   会凭印象随手写一套；工具在表里但不在指令里 = 大概率不被调用。
+   合规边界写在同一段：只作参考，不复制 logo / 商标 / 专有字体。 */
+const DESIGN_MD_INSTRUCTIONS =
+  `\n20) DESIGN LANGUAGE REFERENCES — when the user asks for a UI "in the style of <a known product>" (Linear / Vercel / Apple / Stripe / Notion / Raycast …) or names a visual direction, and \`design_md\` is in your tool list:\n` +
+  `   call \`design_md\` with action="search" (or "list" by category) to find the slug, then action="get" to read the full DESIGN.md — a Google Stitch style document with colors, typography, radius/spacing scales, component rules, do's & don'ts, responsive behavior and an iteration guide. Implement the user's interface against that document's tokens and rules, mapped onto the project's own CSS variables (⛔ not a hard-coded second palette).\n` +
+  `   ⛔ Reference only: never copy brand logos, trademarks, photos or proprietary fonts; use the substitutes the document recommends and never present the result as the brand's official product. Combine it with the \`frontend-design\` method and, when the project has one, its own DESIGN.md for concrete values. If the tool is absent (an older session), say so instead of inventing a design system.`;
+
 /* ── 第 14 条：任务清单（10-06 夜三轮，用户：「任务清单必须有 codex 自己更新，他自己完成任务清单后
    就主动更新任务清单」；界面 = 输入框上方胶囊的「步骤 N/M」，悬停展开步骤清单）──
    ⛔ 常驻原因与第 12/13 条同款：工具在表里模型未必主动用，而这份清单直接驱动用户可见的进度
@@ -626,6 +635,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += FRONTEND_CANVAS_INSTRUCTIONS;
   // 前端设计方法（11-03：写/改任何界面前先读内置 skill frontend-design；正文源 = DESIGN.md 标记区）
   text += FRONTEND_DESIGN_INSTRUCTIONS;
+  // 品牌设计语言参考库（11-15：用户点名某种风格时先 design_md 取规范；只作参考不抄品牌）
+  text += DESIGN_MD_INSTRUCTIONS;
   // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
   text += TASK_LIST_INSTRUCTIONS;
   // 影视源检索（10-20：用户给的 LibreTV/TVBox 源 + media_source_search/detail/open 三件套）

@@ -166,6 +166,11 @@ screenshot 截屏（返回 PNG 路径）→ logcat 查崩溃 → adb 透传点�
 工具动作：status / device / download / guide / reveal。
 ⛔ 不能替用户装进 iPhone（需真机 + 侧载工具）；iOS 15.5+，部分游戏要 JIT，银行/反作弊应用可能拒绝运行。`,
 
+  "design-md-library": `# 设计参考库（中文导读）
+随包 84 份真实网站的品牌 DESIGN.md（VoltAgent/awesome-design-md，MIT）：颜色 / 字体 / 圆角 / 组件 / Do&Don't / 响应式。
+什么时候用：用户说「做成 Linear / Vercel / Apple 那种风格」时，用 design_md 先 search 再 get，按规范落地到项目自己的 token。
+⛔ 只作风格参考：不复制品牌 logo / 商标 / 图片 / 专有字体，界面不要冒充官方。设置 → 能力与内容 →「设计参考」可浏览/导出。`,
+
   "openmaic": `# OpenMAIC 互动课堂（中文导读）
 本机 OpenMAIC 服务里生成课堂：status 看状态 → start/open 起服务 → generate 提交（requirement 必填）→
 job 查进度，成功后把课堂链接单独一行给用户。

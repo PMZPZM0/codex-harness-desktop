@@ -381,6 +381,23 @@ function dispatchMcpTools(): unknown[] {
         required: ["cat", "id"],
       },
     },
+    /* ── 设计参考库（11-15，VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md 随包）──
+       用户说「做成 Linear / Vercel / Apple 那种风格」时先查再取；正文按需返回（单份 4–43KB）。
+       数据端 electron/design-md-library.ts（与设置页「设计参考」同一份 library.json）。 */
+    {
+      name: "design_md",
+      description: "查/取随包的「品牌设计语言」参考库：84 份来自真实网站的 DESIGN.md（Google Stitch 格式：颜色/字体/圆角/组件 tokens + 主题、排版、组件、布局、Do/Don't、响应式、迭代指南，MIT）。用户说「做成 Linear / Vercel / Apple / Stripe 那种风格」或要按某个网站的设计语言做界面时：先 action=search（或 list 按分类）找到 slug，再 action=get 取整份规范，然后按它在用户项目里实现界面。⛔ 只作风格参考：不复制品牌 logo / 商标 / 图片，字体用文档里的替代表；生成界面时不要出现该品牌的名字冒充官方。",
+      inputSchema: {
+        type: "object",
+        properties: {
+          action: { type: "string", enum: ["list", "search", "get"], description: "list=按分类浏览；search=关键词搜索；get=按 slug 取完整规范" },
+          category: { type: "string", description: "list 用的分类 key：ai / devtools / backend / productivity / design / fintech / commerce / media / auto / retro" },
+          query: { type: "string", description: "search 关键词（品牌名或风格描述，如 minimal dark、fintech、editorial）" },
+          slug: { type: "string", description: "get 用的 slug（如 linear.app、vercel、apple、stripe、notion）" },
+        },
+        required: ["action"],
+      },
+    },
     /* ── 3D 预览（2026-10-05，用户拍板「生成 3D 图了 Codex 要晓得怎么调用、打开预览」）──
        引擎拿到 .glb / .gltf（鲁班 Lux3D 管线导出、外部下载等）后调用它，应用内弹出可旋转缩放的
        3D 预览，不用去文件夹找第三方查看器。执行端在 dispatch-rpc.ts：路径过可信根 + 扩展名白名单

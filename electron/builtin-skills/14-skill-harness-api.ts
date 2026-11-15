@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（119 个能力域 / 688 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（120 个能力域 / 691 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -74,6 +74,10 @@ OpenMAIC 互动课堂（THU-MAIC/OpenMAIC，MIT，本机 Windows）：多智能�
 ### husk（4 通道）
 Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）：翻译层 + QEMU 双路，导入 APK 后全屏运行，iOS 15.5+；电脑侧按需下载官方 Husk.ipa（约 142MB，GitHub release 镜像序 + SHA256 校验）并提供 SideStore / AltStore / TrollStore 侧载指南。⛔ 不在电脑上假装安装到 iPhone —— 真机侧载必须用户在 iPhone 上完成
 通道：husk:status, husk:guide, husk:reveal, husk:device
+
+### design-md（3 通道）
+设计参考库（11-15，VoltAgent/awesome-design-md，MIT）：84 份来自真实网站的品牌 DESIGN.md（Google Stitch 格式：颜色/字体/圆角/组件 tokens + 主题、排版、组件、布局、Do/Don't、响应式、迭代指南），随包离线可用。设置 → 能力与内容 →「设计参考」可浏览/搜索/预览/复制/导出到项目；Codex 通过 design_md 工具（list / get / search）按需取规范做界面。⛔ 只作风格参考，不复制品牌 logo / 商标
+通道：design-md:list, design-md:get, design-md:export
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置

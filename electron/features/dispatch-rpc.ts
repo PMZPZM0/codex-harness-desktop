@@ -30,6 +30,7 @@ import { runDelegatedTask } from "../features/delegation";
 import { delegateRegistry, server, threadCwd } from "../runtime-refs";
 import { mutableState, scheduler } from "../main";
 import { uiverseSearch, uiverseGet } from "./uiverse-library";
+import { designMdCategoryLabel, designMdGet, designMdList } from "../design-md-library";
 import { concatVideosCore, downloadVideoCore, findVideoJob, listVideoJobs, pollVideoCore, rememberVideoJob, submitVideoCore, updateVideoJob, videoProviderViews } from "./video-gen";
 import { DUPLICATE_CRITERIA, KNOWLEDGE_GATE_CRITERIA, KNOWLEDGE_GATE_INSTRUCTIONS } from "../laya-judge";
 /* ⛔ 图像四件套（image_generate / image_edit / image_info / image_view）的执行端**已整体移出本文件**，
@@ -352,6 +353,24 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
     if (r.error || !r.item) return { ok: false, error: r.error ?? "组件不存在" };
     const body = r.item.html.length > 32_000 ? `${r.item.html.slice(0, 32_000)}\n<!-- ⚠ 已截断（原文 ${r.item.html.length} 字符，异常超大） -->` : r.item.html;
     return { ok: true, output: `<!-- Uiverse "${r.item.name}" by ${r.item.author}（MIT）cat=${r.item.cat} id=${r.item.id} -->\n${body}` };
+  }
+  /* ── 设计参考库（11-15）：84 份品牌 DESIGN.md，get 返回整份规范（4–43KB）── */
+  if (name === "design_md") {
+    const action = String(args.action ?? "list").trim().toLowerCase();
+    if (action === "get") {
+      const doc = designMdGet(String(args.slug ?? ""));
+      if (!doc) return { ok: false, error: "库里没有这份设计规范；先用 action=search 找 slug（如 linear.app / vercel / apple）" };
+      return {
+        ok: true,
+        output: `<!-- ${doc.name}（${doc.slug}）· ${designMdCategoryLabel(doc.category)} · VoltAgent/awesome-design-md（MIT）\n     风格参考：不要复制品牌 logo / 商标 / 图片，字体用文档里的替代表，生成界面不要冒充该品牌 -->\n${doc.designMd}`,
+      };
+    }
+    const r = designMdList({ category: args.category ? String(args.category) : undefined, query: args.query ? String(args.query) : undefined });
+    const lines = r.items.map((item) => `${item.slug} — ${item.name}（${designMdCategoryLabel(item.category)}）：${item.description}`);
+    const matchNote = action === "search" ? `搜索「${String(args.query ?? "").trim()}」` : "按分类浏览";
+    const head = `${matchNote}：共 ${r.total} 份（库内 ${r.libraryTotal} 份 / ${r.categories.length} 类）。要整份规范就用 design_md 传 action="get" + slug。`;
+    const cats = r.categories.map((c) => `${c.key}=${c.label}(${c.count})`).join("，");
+    return { ok: true, output: [head, `分类：${cats}`, ...lines].filter(Boolean).join("\n") };
   }
   /* ── 媒体生成三件套（09-29 用户：「让 Codex 能够直接调用这两个工作流」）────────────────
      ⛔ 执行端与画布卡片**共用同一套 core**（generateImageResilient / video-gen 的 submit·poll·download）

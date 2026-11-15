@@ -800,6 +800,13 @@
       "config": null
     },
     {
+      "id": "design-md",
+      "enabled": true,
+      "file": "features/design-md-ipc.ts",
+      "export": "designMdFeature",
+      "config": null
+    },
+    {
       "id": "monitor",
       "enabled": true,
       "file": "features/task-monitor.ts",
