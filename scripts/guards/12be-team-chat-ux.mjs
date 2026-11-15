@@ -382,6 +382,16 @@ const catalog = [
     const ipcAck = codeOnly(read("electron/features/harness-team-ipc.ts"));
     ok(ipcAck.includes("const ackEcho") && ipcAck.includes("派单回执复述") && ipcAck.includes("已派单|已派给"),
       "派单回执复述不落群（⛔ 一句话被渲染成两个气泡的三个来源之一）");
+    /* ⛔ 11-15 用户截图：成员思考里写「用户要求我以落纸身份…」，可派活的是群管理员。
+       根因是信封抬头写死 `=== 用户需求 ===` ⇒ 成员把下达人当成了用户本人。
+       ⇒ 抬头必须写清「下达人是谁、他不是用户」，并禁止产出里说「用户要求我」。 */
+    {
+      const raw = read("electron/team-invoke.ts");
+      const inv = codeOnly(raw);
+      ok(!inv.includes("=== 用户需求 ===") && inv.includes("派活单（下达人：") && raw.includes("不是用户本人"),
+        "成员信封写清下达人（管理员/上级，⛔ 不是用户本人）—— 不再冒充「用户需求」");
+      ok(raw.includes("不要写成「用户要求我」"), "成员产出里禁止把上级的话说成「用户要求我」");
+    }
     const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
     const boot = codeOnly(read("electron/features/boot.ts"));
     ok(/extraTools\?: unknown\[\]/.test(chan)

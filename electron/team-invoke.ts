@@ -375,7 +375,12 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
   /* ⛔ 11-07：尾巴那句话改成 `MEMBER_TASK_NOTE`（人话两句话）。原来那句「请直接给出你的专业产出
      （关键结论 + 依据 + 建议）…无需调用任何回传工具。不要发起破坏性操作。」是规格书腔，
      模型会照抄去写给别人的派活消息（用户：「转述都不会转述」）。 */
-  const finalQuery = `[SYSTEM TASK · 成员会话]\n=== 用户需求 ===\n${senderLineOf(leadSender)}\n${memberSupervisor ? `上级：${memberSupervisor}\n` : ""}${taskLineOf(leadSender, humanizeRefs(input.query))}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_NOTE}${invokedMemory.text}`;
+  /* ⛔⛔ 11-15 用户截图（成员思考里写「用户要求我以落纸身份做一段自我介绍」，而派活的是群管理员）：
+     信封抬头原来**写死** `=== 用户需求 ===`，成员读到就把下达人当成了用户本人。
+     ⇒ 抬头改成「谁下的单 + 他不是用户」，并把称呼口径写死：指代下达人一律用「管理员 / 上级」。
+     ⛔ 别再写回「用户需求」：那是把上级的指令冒充成用户原话，成员的解释和转述全歪。 */
+  const orderFrom = `=== 派活单（下达人：${leadSender.name}；身份：${memberSupervisor ? "上级 / 群管理员" : "团队主理人"}，⛔ 不是用户本人） ===`;
+  const finalQuery = `[SYSTEM TASK · 成员会话]\n${orderFrom}\n${senderLineOf(leadSender)}\n${memberSupervisor ? `上级：${memberSupervisor}\n` : ""}${taskLineOf(leadSender, humanizeRefs(input.query))}\n=== END ===\n\n${systemPrefix}${MEMBER_TASK_NOTE}⛔ 产出里指代这次的下达人请写「管理员」或「上级」，⛔ 不要写成「用户要求我」「用户让我」——那是别人转达给你的活，不是用户直接对你说的。${invokedMemory.text}`;
   let turnId: string | undefined;   // ⛔ 提到 try 外：catch 里也要能带上它（超时转后台那条返回值）
   /* ⛔ 11-08 审查：清空记录代际的基准 —— 这一轮成员派活是什么时候开跑的。 */
   const memberRunStartedAt = Date.now();
