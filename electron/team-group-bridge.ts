@@ -37,12 +37,36 @@ export function setTeamGroupRelay(fn: RelayFn | null): void {
   relayFn = fn;
 }
 
-/** 成员全部跑完后把话头交回主理人。⛔ 失败静默：通知不到不该影响已落盘的成员产出。 */
+const pendingRelays = new Map<string, { teamId: string; note: string; timer: ReturnType<typeof setTimeout> }>();
+const RELAY_COALESCE_MS = 1500;
+
+/** 成员全部跑完后把话头交回主理人。⛔ 失败静默：通知不到不该影响已落盘的成员产出。
+ *
+ *  ⛔⛔ 11-15 用户：「人家回复一次，他又让人家回复一次」——
+ *  主理人每调一次 `team_member_invoke` 就是**一批**，成员各自跑完各触发一次回喂；
+ *  4 位成员（哪怕主理人是分 4 次调用的）就会把主理人叫醒 4 次，它每次都说一段、
+ *  甚至被叫醒后又派一轮 ⇒ 群里「回复一次又来一次」。
+ *  ⇒ 同一个群 1.5 秒内的多次回喂**合并成一次**（并发的成员几乎同时交回，
+ *    真正跨阶段、隔了几分钟的派活仍会各叫一次，不会被吞）。 */
 export function relayGroupLead(groupId: string, teamId: string, note: string): void {
   const gid = String(groupId ?? "");
   if (!gid || !relayFn) return;
-  try { relayFn(gid, String(teamId ?? ""), String(note ?? "")); }
-  catch { /* 回喂失败不阻断派活 */ }
+  const text = String(note ?? "");
+  const existing = pendingRelays.get(gid);
+  if (existing) {
+    /* 合并：保留最新一条（它带的是"这一批"的事实），并记上新团队。 */
+    existing.note = text || existing.note;
+    return;
+  }
+  const entry = {
+    teamId: String(teamId ?? ""),
+    note: text,
+    timer: setTimeout(() => {
+      pendingRelays.delete(gid);
+      try { relayFn?.(gid, entry.teamId, entry.note); } catch { /* 回喂失败不阻断派活 */ }
+    }, RELAY_COALESCE_MS),
+  };
+  pendingRelays.set(gid, entry);
 }
 
 /** teamId → 群 id（派活期间有效）。⛔ 只记最近一次派活的群：同一个团在同一时刻只在一个群里干活。 */

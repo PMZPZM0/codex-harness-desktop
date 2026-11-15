@@ -84,18 +84,49 @@ function teamBriefOf(
   const roster = memberRosterLines(team as never, { withLead: true, selfId: memberId });
   /* 团队负责人最近说的一两条（多半就是那份计划）——成员据此对齐，别自己另起一套。 */
   const leadId = teamAuthorIdOf(team.teamId, String(team.lead?.id ?? ""));
-  const plan = (groupId ? recentGroupMessages(groupId) : [])
+  const rows = groupId ? recentGroupMessages(groupId) : [];
+  const plan = rows
     .filter((row) => String(row?.authorId ?? "") === leadId && String(row?.text ?? "").trim().length >= 20)
     .slice(-2)
     .map((row) => String(row.text).replace(/\s+/g, " ").trim().slice(0, 420))
     .join("\n…\n");
+  /* ⛔⛔ 11-15 用户：「都是那种傻逼，完全不知道群里在干嘛，就是系统让他干嘛，他就干嘛」。
+     根因：成员只拿到自己那一句任务 —— 群里刚聊了什么、谁已经说过话、自己是不是已经露过面，
+     一概不知 ⇒ 每次都当第一次（「第三次露面了」「又轮到我」）、产出也接不上群里的语境。
+     ⇒ 把群里**最近的原始对话**（除自己外）也拼进去，每条截断，总量封顶。
+     ⛔ 只读快照，不写、不改游标（成员的"未读"由群聊那条链自己管）。 */
+  const nameOfAuthor = (authorId: string): string => {
+    const me = teamAuthorIdOf(team.teamId, memberId);
+    if (!authorId || authorId === me) return "";
+    if (authorId === "local-user") return "用户";
+    const all = [team.lead, ...(team.members ?? [])].filter(Boolean) as Array<{ id: string; name: string }>;
+    const hit = all.find((m) => teamAuthorIdOf(team.teamId, String(m.id)) === authorId);
+    return hit ? String(hit.name) : "";
+  };
+  const transcript: string[] = [];
+  let used = 0;
+  for (const row of rows.slice(-14).reverse()) {
+    const who = nameOfAuthor(String(row?.authorId ?? ""));
+    const body = String(row?.text ?? "").replace(/\s+/g, " ").trim();
+    if (!who || !body) continue;
+    const line = `${who}：${body.length > 180 ? `${body.slice(0, 180)}…` : body}`;
+    if (used + line.length > 1400) break;
+    used += line.length;
+    transcript.unshift(line);
+  }
   return `# 你们这个团队（一个整体，不是各干各的）
 ${String(team.displayName?.zh ?? "")}${team.description?.zh ? `：${String(team.description.zh).slice(0, 120)}` : ""}
 
 ## 成员与各自擅长（要协作就直接找对人）
 ${roster}
 ${plan ? `\n## 团队负责人最近说的（对齐它，别自己另起一套）\n${plan}\n` : ""}
+${transcript.length ? `\n## 群里最近在聊什么（原文，按时间从早到晚；⛔ 你已经说过的话就在里面，别重复介绍自己）\n${transcript.join("\n")}\n` : ""}
 ⛔ 你的产出要接得上团队整体：写清交付物放在哪、下一步该谁接；需要别人配合就另起一行写 \`@名字：要他做什么\`（宿主会真的把他叫进来）。
+⛔⛔ 发言纪律（11-15 用户：「什么时候该回消息不知道吗，都是系统推着走的吗」）：
+  · 先看上面「群里最近在聊什么」，**别人已经答过的不要再答一遍**，你已经说过的不要再自我介绍；
+  · 只有你这一轮确实有新信息（新结论 / 新交付物 / 需要别人配合）才写实质内容；
+  · 没有新东西就只回一句「收到，无需补充」，⛔ 不要复述上级的任务、不要复述别人的话；
+  · 不要因为"被叫到"就必然长篇输出 —— 没话说是可以的。
 `;
 }
 
@@ -105,6 +136,60 @@ export async function invokeTeamMemberCore(input: InvokeMemberInput): Promise<In
      两条并发会在线程登记前各自 thread/start，产生重复会话。锁只按成员，不同成员仍并行。 */
   const lockKey = `${String(input.leadThreadId ?? "")}|${String(input.teamId ?? "")}|${String(input.memberId ?? "").trim().toLowerCase()}`;
   return withMemberLock(lockKey, () => invokeTeamMemberCoreUnlocked(input));
+}
+
+/* ── 派活回执：同一批只发**一条**消息，里面 @ 多个成员（11-15 用户令） ───────────
+   用户原话：「一个消息艾特多个成员就可以解决的问题，一个消息艾特一个成员，不刷屏，见鬼了」。
+   旧实现每次派活落一条 `@成员：任务` ⇒ 派 4 位 = 4 条几乎一样的消息 = 刷屏。
+   ⇒ 并行派活的多次调用落在同一个 900ms 窗口内，合并成**一条**：
+      · 同一件活：`@观湖 @执矩 @蔡本 @衡岱：<任务>`
+      · 各有各的活：一条消息里每人一行 `@观湖：<任务>`
+   ⛔ 不要再退回「一位成员一条消息」—— 那就是用户明确要删的机制。 */
+type DispatchEchoRow = { name: string; brief: string };
+type DispatchEcho = { leadAuthorId: string; since: number; rows: DispatchEchoRow[] };
+const dispatchEchoes = new Map<string, DispatchEcho>();
+const DISPATCH_ECHO_WINDOW_MS = 900;
+
+function queueDispatchEcho(groupId: string, leadAuthorId: string, name: string, brief: string, since: number): void {
+  const gid = String(groupId ?? "");
+  const who = String(name ?? "").trim();
+  const task = String(brief ?? "").trim();
+  if (!gid || !who) return;
+  const cur = dispatchEchoes.get(gid);
+  if (cur && since - cur.since <= DISPATCH_ECHO_WINDOW_MS) {
+    if (!cur.rows.some((row) => row.name === who)) cur.rows.push({ name: who, brief: task });
+    return;
+  }
+  if (cur) flushDispatchEcho(gid);
+  dispatchEchoes.set(gid, { leadAuthorId, since, rows: [{ name: who, brief: task }] });
+  /* ⛔ 定时刷出：并发派活时最后一个成员可能晚到，不能等"下一次调用"才发。 */
+  setTimeout(() => flushDispatchEcho(gid), DISPATCH_ECHO_WINDOW_MS);
+}
+
+function flushDispatchEcho(groupId: string): void {
+  const pending = dispatchEchoes.get(groupId);
+  if (!pending) return;
+  dispatchEchoes.delete(groupId);
+  if (!pending.rows.length) return;
+  const mentions = (names: string[]) => names.map((n) => `@${n}`).join(" ");
+  /* 按任务分组：同一件活的人合成一行（这才是"一条消息艾特多个成员"）。 */
+  const byBrief = new Map<string, string[]>();
+  for (const row of pending.rows) {
+    const list = byBrief.get(row.brief) ?? [];
+    if (!list.includes(row.name)) list.push(row.name);
+    byBrief.set(row.brief, list);
+  }
+  const text = byBrief.size === 1
+    ? `${mentions([...byBrief.values()][0])}：${[...byBrief.keys()][0]}`
+    : [...byBrief.entries()].map(([brief, names]) => `${mentions(names)}：${brief}`).join("\n");
+  void appendMemberOutputToGroup(groupId, {
+    /* ⛔ 一个批次一个 id：渲染层按 `team-dispatch:` 前缀识别"宿主写的派活交接"，⛔ 不改前缀。 */
+    id: `team-dispatch:${groupId}:${pending.since}`,
+    authorId: pending.leadAuthorId,
+    authorKind: "bot",
+    senderKind: "member",
+    text,
+  }, pending.since).catch(() => undefined);
 }
 
 const memberLocks = new Map<string, Promise<void>>();
@@ -307,15 +392,14 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     const briefRaw = String(input.query ?? "").replace(/\s+/g, " ").trim();
     const brief = briefRaw.length > 160 ? `${briefRaw.slice(0, 160)}…` : briefRaw;
     if (liveGroup && leadAuthor && brief) {
-      void appendMemberOutputToGroup(liveGroup, {
-        id: `team-dispatch:${run.runId}`,
-        authorId: leadAuthor,
-        authorKind: "bot",
-        senderKind: "member",
-        threadId: memberThreadId,
-        text: `@${member.name}：${brief}`,
-        runId: run.runId,
-      }, memberRunStartedAt).catch(() => undefined);
+      /* ⛔⛔ 11-15 用户令（截图 + 「艾特成员就要每个成员发一个艾特，这种垃圾机制删了」）：
+         原来每次派活都往群里落一条 `@成员：任务` —— 派 4 位成员 = 群里 4 条几乎一样的消息，
+         用户看到的就是「疯狂刷屏」「反反复复艾特」。
+         ⇒ 这批消息**整条删掉**，改成同一批派活合并成**一条**、且不带逐人 @ 的摘要
+           （`已派给 观湖、执矩、蔡本、衡岱`）。谁在跑什么由底部「异步执行」面板逐行显示
+           （它本来就带任务摘要与进度），群里不再全文复述同一段任务。
+         ⛔ 不要再往这条摘要里塞 per-member 的 "@名字：任务" —— 那就是要删的东西。 */
+      queueDispatchEcho(liveGroup, leadAuthor, String(member.name ?? ""), brief, memberRunStartedAt);
     }
   }
   try {

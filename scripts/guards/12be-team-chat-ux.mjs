@@ -2221,5 +2221,29 @@ const catalog = [
       "⛔ harness-dispatch MCP 已退役：不再注册、残留段会清理、能力表不再声称走 MCP");
   }
 
+  /* ⛔⛔ 11-15 用户（截图 + 连骂）：「艾特成员就要每个成员发一个艾特，这种垃圾机制删了」
+     「一个消息艾特多个成员就可以解决的问题，一个消息艾特一个成员，不刷屏，见鬼了」。
+     旧实现：每起一位成员就在群里落一条 `@成员：任务`（team-invoke 里逐条 append）⇒
+     派 4 位 = 4 条几乎一样的消息。⇒ 现在必须：同一批派活**合并成一条**、
+     且**一条消息里 @ 多个成员**（同任务的人合并到同一行）。 */
+  {
+    const invoke = codeOnly(read("electron/team-invoke.ts"));
+    ok(!/text:\s*`@\$\{member\.name\}：/.test(invoke),
+      "⛔ 逐人一条的派活消息已删除（`@成员：任务` 每条一位 = 用户判词「这种垃圾机制」）");
+    ok(/function queueDispatchEcho\(/.test(invoke) && /DISPATCH_ECHO_WINDOW_MS/.test(invoke)
+      && /function flushDispatchEcho\(/.test(invoke),
+      "派活回执走合并器：同一批（时间窗口内）收进一个缓冲，只发一条");
+    const flush = invoke.slice(invoke.indexOf("function flushDispatchEcho("), invoke.indexOf("const memberLocks"));
+    ok(/\.map\(\(n\) => `@\$\{n\}`\)/.test(flush),
+      "一条消息里 @ 多个成员（同任务的人合并成一行 `@A @B：任务`）");
+    ok(/byBrief\.size === 1/.test(flush),
+      "同一件活只写一遍任务正文（⛔ 不按人重复同一段话 = 刷屏的根源）");
+    ok(/## 群里最近在聊什么/.test(invoke) && /别重复介绍自己/.test(invoke),
+      "成员提示词带上群里最近的原始对话（知道自己说过什么、别人答过什么）");
+    const bridge = codeOnly(read("electron/team-group-bridge.ts"));
+    ok(/RELAY_COALESCE_MS/.test(bridge) && /pendingRelays/.test(bridge),
+      "成员交回后回喂主理人按群合并（1.5s 内多次交回只叫醒一次 —— 否则「回复一次又让人回复一次」）");
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
