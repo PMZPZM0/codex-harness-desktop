@@ -43,7 +43,7 @@ const versions = read("scripts/lib/tools-versions.cjs");
 {
   ok(/filee: \{ name: "Filee 文件转换"/.test(runtimes) && /marker: "filee\\\\filee-cli\.exe"/.test(runtimes),
     "dev-runtimes 有 filee 规格（marker = filee\\filee-cli.exe，卸载按首段删 tools/filee）");
-  ok(/filee: "2\.2\.0"/.test(versions), "tools-versions 钉了 filee 版本（单一来源）");
+  ok(/filee: "2\.2\.0"/.test(versions), "tools-versions 保留 filee 随包版本（11-15 起仅作离线兜底，安装不首选它）");
   ok(runtimeIpc.includes("async function installFileeFromGitHub") && runtimeIpc.includes("const GITHUB_UPDATEABLE"),
     "runtime-ipc 有 GitHub 直下型安装函数与更新清单");
   /* ⛔ 11-03：Filee 下载改走统一镜像下载器（自动选最快源 + 停滞换源 + 取消），
@@ -64,8 +64,8 @@ const versions = read("scripts/lib/tools-versions.cjs");
   ok(runtimeIpc.includes('filee: ["--version"]'), "health 自检让 filee-cli 自报版本");
   ok(runtimeIpc.includes("fileeVersionFile()") && runtimeIpc.includes('writeFile(fileeVersionFile(), version'),
     "安装后落盘 version.txt（更新链的已装版本来源，不靠 spawn 自报）");
-  ok(runtimeIpc.includes("id === \"filee\"") && /installFileeFromGitHub\(id, TOOLS_VERSIONS\.filee \?\?/.test(runtimeIpc),
-    "runtime:install 有 filee 分支（版本钉 tools-versions，读不到时回落 GitHub 最新 tag）");
+  ok(runtimeIpc.includes("id === \"filee\"") && runtimeIpc.includes('await latestInstallVersion("filee", FILEE_REPO)'),
+    "runtime:install 有 filee 分支（11-15 用户令：在线查最新稳定版；固定表只作离线兜底）");
   /* 11-14：ApkStart 接入后 GitHub 直下型改成表驱动（GITHUB_UPDATEABLE[id].install），
      更新链不再直呼 installFileeFromGitHub。⛔ 断言不能认旧字面量假红，但要继续钉住
      「表里 filee 的 install 就是手动链那一个函数」⇒ 物理同一份的承诺不降级。 */

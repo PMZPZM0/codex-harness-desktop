@@ -276,6 +276,22 @@ console.log("【⑪ 当前版本 = 实际安装态（不是随包常量）】");
   }
 }
 
+/* ── ⑬ 按需安装工具一律装「最新稳定版」（11-15 用户令「下载得都是旧版本」）──
+   旧代码直接吃 scripts/lib/tools-versions.cjs 里的固定值（feishuCli 1.0.98 / filee 2.2.0），
+   且 GitHub 侧只查 /releases/latest（不少上游不发 Release ⇒ 拿不到或长期滞后）。 */
+const rtRaw = readFileSync(join(ROOT, "electron/features/runtime-ipc.ts"), "utf8");
+const rtCode = rtRaw.split("\n").filter((l) => !/^\s*(\/\/|\/\*|\*)/.test(l)).join("\n");
+ok(/\/tags\?per_page=100/.test(rtCode) && /releases\/latest/.test(rtCode) && /compareVersions\(v, best\)/.test(rtCode),
+  "GitHub 最新 = tags 列表 + releases/latest 都查、取版本最大者（不早退）");
+ok(rtCode.includes("if (/^\\d+\\.\\d+\\.\\d+$/.test(v)) versions.push(v)"),
+  "只认稳定版三段号（⛔ 否则 OpenMAIC 的 v1.5.0-rc.2 会被当最新版装）");
+ok(/async function latestInstallVersion/.test(rtCode)
+  && (rtCode.match(/latestInstallVersion\("/g) || []).length >= 5
+  && !rtCode.includes("TOOLS_VERSIONS.filee ??"),
+  "按需安装不再直接吃固定版本表（固定值降级为离线兜底）");
+ok(rtCode.includes('fetchRegistryLatest("@larksuite/cli", downloadSource)'),
+  "飞书 CLI 安装先查 npm 具体最新版再拼包名（⛔ 不再写死 1.0.98）");
+
 console.log("");
 console.log(fails === 0 ? `12l 组件更新守卫：全部通过（${checks}/${checks}）` : `12l 组件更新守卫：${fails} 项未通过（共 ${checks} 项）`);
 process.exit(fails === 0 ? 0 : 1);

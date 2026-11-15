@@ -119,5 +119,25 @@ const devInstructions = codeOnly(read("electron/developer-instructions.ts"));
     "常驻指令配套：只在工具表里有 laya_judge 时生效，并写明禁用场景");
 }
 
+/* 11-15 用户实测「Laya 安装失败后报错，全部 Laya 界面就剩一列」：
+   旧版把失败日志 <details> 塞在 .runtime-row（4 列 grid）里当第 4 个子元素 + width:100%
+   ⇒ 1fr 列塌成一条。现在按 FeishuCliCard 改成三行列表，日志一律放列表外。 */
+const layaCardRaw = read("src/features/settings-devtools/LayaCard.tsx");
+const layaCard = codeOnly(layaCardRaw);
+const layaCss = read("src/styles/12-settings-skills.css");
+ok(layaCard.includes('className="laya-list"') && layaCard.includes('<RuntimeUpdateRow')
+  && (layaCard.match(/runtime-row/g) || []).length >= 2,
+  "Laya 卡片改成飞书 CLI 同款三行列表（安装 / 更新行组件 / 服务）");
+const listOpen = layaCardRaw.indexOf('<div className="laya-list">');
+const listClose = layaCardRaw.indexOf('      </div>\n\n      {/*', listOpen);
+const detailsAt = layaCardRaw.indexOf('className="laya-install-log"');
+ok(listOpen > 0 && listClose > listOpen && detailsAt > listClose,
+  "失败日志在 .laya-list 之外（展开多少行都不会把 grid 挤成一列）");
+ok(layaCss.includes(".laya-card .laya-list .runtime-row { grid-template-columns: 22px minmax(0, 1fr) auto; }")
+  && !/\.laya-card \{ flex-wrap: wrap; \}/.test(layaCss),
+  "列表用 3 列 grid；⛔ 不许退回 flex 时代的 flex-wrap 死规则");
+ok(layaCard.includes('className="settings-card-hint laya-last-error"'),
+  "上次失败原因在列表外单独一行展示（安装失败时看得见）");
+
 console.log(`\n【laya-judge】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

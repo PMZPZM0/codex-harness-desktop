@@ -1,15 +1,23 @@
-/** Laya 智能判断卡片（10-01 新增，嵌在「开发工具」页）。
+/** Laya 智能判断卡片（10-01 新增，11-15 改成飞书 CLI 同款三行列表）。
  *
  * Laya = GitHub NandhaKishorM/laya（Apache-2.0）：非自回归决策引擎，单次前向 ~33ms
  * 输出结构化判断（choice/score/yes-no），零生成零幻觉，中文走 multilingual checkpoint。
  * 当前消费方：思考等级「自动」档（发送前判断 低/中/高/极高）；后续还会接
  * 危险命令护栏 / 消息分诊 / 专家路由（见 electron/features/laya-service.ts 头注）。
  * 状态与 electron/features/laya-service.ts 同源；这里只渲染，不自己判定。
+ *
+ * ⛔⛔ 11-15 用户实测「安装失败后报错，全部 Laya 界面就剩一列」：
+ *   旧版是**一行** `.runtime-row`，失败日志 `<details>` 作为它的第 4 个子元素，
+ *   而 `.runtime-row` 是 4 列 grid（22px / 1fr / auto / auto）+ 日志 `width:100%`
+ *   ⇒ 第 4 列撑满、1fr 塌成一条。用户因此既看不到报错、也看不到更新入口。
+ *   ⇒ 现在按 FeishuCliCard 的结构：三行收进 `.laya-list`（3 列 grid），
+ *     **日志与错误一律放 list 外面**当独立块，展开多少行都不碰 grid。
+ *     ②「更新」行始终独立存在，跟飞书 CLI 完全一致。
  */
 import { PluginGuide } from "./PluginGuide";
 import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
 import { useCallback, useEffect, useState } from "react";
-import { BrainCircuit, Download, CircleCheck, AlertTriangle, RefreshCw } from "lucide-react";
+import { BrainCircuit, Download, CircleCheck, AlertTriangle, RefreshCw, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { refreshWithReceipt } from "../../lib/refresh-receipt.mjs";
 
@@ -28,7 +36,7 @@ type Status = {
   startProgress: Progress;
 };
 
-/** laya 判档服务卡片：安装状态与日志，失败时自动展开日志。 */
+/** laya 判档服务卡片：安装 / 更新 / 服务三行，失败日志在列表外独立展示。 */
 export function LayaCard({ setNotice, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress }: {
   setNotice: (text: string) => void;
   runtimeStage?: Record<string, string>;
@@ -49,7 +57,6 @@ export function LayaCard({ setNotice, runtimeStage, runtimePercent, runtimeSpeed
       return "";
     } catch (error: any) {
       setStatus(null);
-      // ⛔ 原来这里 `catch { setStatus(null) }` 一个字都不留 —— 点「刷新」失败时界面只是"没变化"。
       return String(error?.message ?? error);
     }
   }, []);
@@ -114,55 +121,80 @@ export function LayaCard({ setNotice, runtimeStage, runtimePercent, runtimeSpeed
     : status.installed ? "已安装 · 服务未启动（首次使用时自动拉起并下载权重）"
     : "未安装";
 
+  const installingNow = busy || Boolean(status?.installing);
+
   return (
-    <div className="settings-section stack">
-      <div className="runtime-row laya-card">
-      <span className="runtime-icon">{busy ? <Spinner /> : status?.ready ? <CircleCheck size={16} /> : <BrainCircuit size={16} />}</span>
-      <span className="runtime-copy">
-        <strong>Laya 智能判断{status?.version ? ` · v${status.version}` : ""}</strong>
-        <small>本地决策模型（33ms）：思考等级「自动」档的判断端——发送前自动选 低/中/高/极高。
-          不装也能用：自动档会回落到你手选的档位。</small>
-        <em className="runtime-hint">{stateText}{status?.lastError ? ` · ${status.lastError}` : ""}</em>
-        {/* 实时进度条（pip 安装 / 权重下载共用）：无百分比时显示不定条 */}
-        {progLabel && (
-          <span className="laya-progress">
-            <span className="laya-progress-track">
-              <i style={{ width: prog?.percent ? `${Math.max(3, Math.min(100, prog.percent))}%` : "35%" }} className={prog?.percent ? "" : "indeterminate"} />
-            </span>
-            <small>{progLabel}</small>
+    <section className="settings-section stack laya-card">
+      <div className="laya-list">
+        {/* ① 安装：装 / 刷新 / 卸载 + 实时进度（进度条放在 copy 里，不额外占 grid 列） */}
+        <div className={`runtime-row ${status?.installed ? "installed" : "missing"} ${installingNow ? "busy" : ""}`}>
+          <span className="runtime-icon">{installingNow ? <Spinner /> : status?.installed ? <CircleCheck size={15} /> : <Download size={15} />}</span>
+          <span className="runtime-copy">
+            <strong>安装 Laya{status?.version ? ` · v${status.version}` : ""}</strong>
+            <small>{status?.installed
+              ? "本地决策模型（33ms）：思考等级「自动」档的判断端；卸载不会删除已下载的模型权重"
+              : "约 800MB（含 PyTorch），走国内 pip 镜像；不装也能用，自动档会回落手选档位"}</small>
+            {progLabel && (
+              <span className="laya-progress">
+                <span className="laya-progress-track">
+                  <i style={{ width: prog?.percent ? `${Math.max(3, Math.min(100, prog.percent))}%` : "35%" }} className={prog?.percent ? "" : "indeterminate"} />
+                </span>
+                <small>{progLabel}</small>
+              </span>
+            )}
           </span>
-        )}
-      </span>
-      <div className="runtime-actions">
-        {status?.ready ? <span className="runtime-badge installed">就绪</span>
-          : status?.installed ? <button className="secondary-setting" onClick={() => void refreshWithReceipt(setNotice, "刷新 Laya 状态", () => refresh())}><RefreshCw size={13} />刷新</button>
-          : <button className="primary-setting runtime-install" disabled={busy || Boolean(status?.installing)} onClick={() => void install()}>{busy ? <Spinner /> : <Download size={14} />}安装</button>}
-        {/* 10-01 用户：「Laya 的卸载按键呢」—— 装上就必须能真卸载（先停服务再 pip uninstall） */}
-        {status?.installed && (
-          <button className="secondary-setting runtime-uninstall" disabled={busy || Boolean(status?.installing)} onClick={() => void uninstall()}>卸载</button>
-        )}
+          <div className="runtime-actions">
+            {status?.ready ? <span className="runtime-badge installed">已安装</span> : null}
+            {status?.installed ? (
+              <button type="button" className="secondary-setting" disabled={installingNow} onClick={() => void refreshWithReceipt(setNotice, "刷新 Laya 状态", () => refresh())}><RefreshCw size={13} />刷新</button>
+            ) : (
+              <button type="button" className="primary-setting runtime-install" disabled={installingNow} onClick={() => void install()}>{installingNow ? <Spinner /> : <Download size={14} />}安装</button>
+            )}
+            {status?.installed && (
+              <button type="button" className="secondary-setting runtime-uninstall" disabled={installingNow} onClick={() => void uninstall()}><Trash2 size={13} />卸载</button>
+            )}
+          </div>
+        </div>
+
+        {/* ② 更新：与飞书 CLI 同款，始终独立一行（未安装时显示「安装后可更新」） */}
+        <RuntimeUpdateRow
+          id="laya"
+          installed={Boolean(status?.installed)}
+          hint="从清华 pip 镜像升级 laya[serve]；已下载的模型权重（~700MB）保留，不用重下"
+          cancellable={false}
+          runtimeStage={runtimeStage}
+          runtimePercent={runtimePercent}
+          runtimeSpeed={runtimeSpeed}
+          runtimeProgress={runtimeProgress}
+          onUpdated={refresh}
+        />
+
+        {/* ③ 服务与权重：状态行，失败原因在这里也能一眼看到 */}
+        <div className={`runtime-row ${status?.ready ? "installed" : "missing"}`}>
+          <span className="runtime-icon">{status?.ready ? <CircleCheck size={15} /> : <BrainCircuit size={15} />}</span>
+          <span className="runtime-copy">
+            <strong>服务与判断权重</strong>
+            <small>{stateText}{status?.lastError ? ` · ${status.lastError}` : ""}</small>
+            <em className="runtime-hint">首次判断会自动拉起服务并下载约 700MB 权重，进度就在上面「安装」行</em>
+          </span>
+          <div className="runtime-actions">
+            <span className={`runtime-badge ${status?.ready ? "installed" : ""}`}>{status?.ready ? "就绪" : status?.running ? "启动中" : "未运行"}</span>
+            <button type="button" className="secondary-setting runtime-install" disabled={busy} onClick={() => void refreshWithReceipt(setNotice, "刷新 Laya 状态", () => refresh())}><RefreshCw size={13} />刷新</button>
+          </div>
+        </div>
       </div>
+
+      {/* ⛔ 日志/错误在 .laya-list 之外：展开成几十行也不会把 grid 挤成一列（11-15 事故） */}
+      {status?.lastError ? (
+        <p className="settings-card-hint laya-last-error"><AlertTriangle size={13} /> 上次失败：{status.lastError}</p>
+      ) : null}
       {log && (
         <details className="laya-install-log" open={logOpen || undefined}>
           <summary><AlertTriangle size={12} />安装日志</summary>
           <pre>{log}</pre>
         </details>
       )}
-      </div>
-      {/* 11-14 用户实测「这里没有更新功能啊，这个好久没更新了」：卡片只有刷新/卸载。
-          更新走 pip（PyPI 查最新版 + 重跑 layaInstall 的 `pip install -U`）；⛔ 不能中断，
-          传 cancellable={false} 免得给一个点了没反应的取消键。 */}
-      <RuntimeUpdateRow
-        id="laya"
-        installed={Boolean(status?.installed)}
-        hint="从清华 pip 镜像升级 laya[serve]；已下载的模型权重（~700MB）保留，不用重下"
-        cancellable={false}
-        runtimeStage={runtimeStage}
-        runtimePercent={runtimePercent}
-        runtimeSpeed={runtimeSpeed}
-        runtimeProgress={runtimeProgress}
-        onUpdated={refresh}
-      />
+
       <PluginGuide
         capabilities={[
           { icon: BrainCircuit, title: "自动选思考档位", desc: "思考等级「自动」时，发送前判断该用 低 / 中 / 高 / 极高" },
@@ -176,9 +208,9 @@ export function LayaCard({ setNotice, runtimeStage, runtimePercent, runtimeSpeed
         ]}
         notes={[
           "完全本地运行：判断请求不出这台电脑。",
-          "装不上 / 装坏了可以点「卸载」重来；日志在卡片下方。",
+          "装不上 / 装坏了可以点「卸载」重来；日志在卡片下方，失败会自动展开。",
         ]}
       />
-    </div>
+    </section>
   );
 }

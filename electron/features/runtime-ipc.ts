@@ -761,24 +761,61 @@ const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string; platforms
   husk: { repo: HUSK_REPO, label: "Husk（iPhone 跑 Android）", install: installHuskFromGitHub },
 };
 
-/** 查 GitHub 最新 release tag（去 v 前缀）：api 镜像序，20s 超时。 */
-async function fetchGitHubLatestTag(repo: string): Promise<string> {
-  let lastError = "";
-  for (const candidate of mirrorCandidates(`https://api.github.com/repos/${repo}/releases/latest`)) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 20_000);
-    try {
-      const res = await guardedFetch(candidate, { signal: controller.signal, headers: { accept: "application/vnd.github+json" } }, { timeoutMs: 20_000 });
-      if (!res.ok) { lastError = `HTTP ${res.status}`; continue; }
-      const json = (await res.json()) as { tag_name?: unknown };
-      const tag = typeof json?.tag_name === "string" ? json.tag_name.replace(/^v/, "") : "";
-      if (tag) return tag;
-      lastError = "响应里没有 tag_name";
-    } catch (error) {
-      lastError = String((error as Error)?.message ?? error);
-    } finally { clearTimeout(timer); }
+/** 查 GitHub **最新**版本号（去 v 前缀）：tags 列表 + releases/latest 都查，取版本最大者。
+ *
+ * ⛔⛔ 11-15 用户实测「下载得有的时候都不是最新的，都是旧版本」：旧实现只查
+ *   `/releases/latest`，而不少上游先打 tag、后发（甚至根本不发）Release ⇒
+ *   latest release 长期落后于最新 tag，装下来的自然不是最新版。
+ *   判定口径与 `npm-version.ts` 的 `probeNewestNpmVersion` 对齐：**候选全查、取最大、不早退**。
+ * ⛔ 只认语义化版本 tag（v?x.y.z），跳过 `mobile-remote-v0.1.16` 这类别的产品线 tag。
+ */
+export async function fetchGitHubLatestTag(repo: string): Promise<string> {
+  const reasons: string[] = [];
+  const versions: string[] = [];
+  const endpoints = [
+    `https://api.github.com/repos/${repo}/tags?per_page=100`,
+    `https://api.github.com/repos/${repo}/releases/latest`,
+  ];
+  for (const url of endpoints) {
+    for (const candidate of mirrorCandidates(url)) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20_000);
+      try {
+        const res = await guardedFetch(candidate, {
+          signal: controller.signal,
+          headers: { accept: "application/vnd.github+json" },
+        }, { timeoutMs: 20_000 });
+        if (!res.ok) { reasons.push(`HTTP ${res.status}`); continue; }
+        const json = (await res.json()) as unknown;
+        const raw: string[] = Array.isArray(json)
+          ? (json as { name?: unknown }[]).map((t) => String(t?.name ?? ""))
+          : [String((json as { tag_name?: unknown })?.tag_name ?? "")];
+        for (const tag of raw) {
+          const v = tag.replace(/^v/, "");
+          // ⛔ 只认**稳定版**三段号：上游常有 v1.5.0-rc.2 之类的预发布 tag，
+          //   直接取最大会把 RC 当最新版装（OpenMAIC 实测 tags[0]=v1.5.0-rc.2 而
+          //   releases/latest=v1.4.2）⇒ 装到不稳定源码 / 版本校验失败。
+          if (/^\d+\.\d+\.\d+$/.test(v)) versions.push(v);
+        }
+        break; // 这个端点成功了就换下一个端点（两个端点都要查，不能因为第一个成功就 return）
+      } catch (error) {
+        reasons.push(String((error as Error)?.message ?? error));
+      } finally {
+        clearTimeout(timer);
+      }
+    }
   }
-  throw new Error(`查 GitHub 最新版失败：${lastError}`);
+  if (!versions.length) throw new Error(`查 GitHub 最新版失败：${reasons.slice(0, 3).join("；") || "没有可用版本 tag"}`);
+  return versions.reduce((best, v) => (compareVersions(v, best) > 0 ? v : best), versions[0]);
+}
+
+/** 按需安装工具的版本解析：**在线查最新**，只有彻底查不到才退回随包版本表。
+ *  ⛔⛔ 11-15 用户令「下载得有的时候都不是最新的，都是旧版本」：旧代码直接吃
+ *    `TOOLS_VERSIONS.filee / feishuCli` 这类固定表值，表里停在 2.2.0 / 1.0.98，
+ *    上游早就发新版了还在装旧的。固定表从今往后只是**离线兜底**，不是安装首选。 */
+async function latestInstallVersion(tableKey: string, repo: string): Promise<string> {
+  try { return await fetchGitHubLatestTag(repo); }
+  catch { return TOOLS_VERSIONS[tableKey] ?? ""; }
 }
 
 export type DevRuntimeHealth = {
@@ -1518,26 +1555,30 @@ export const runtimeFeature = defineFeature<null>({
           // 解压安装成功后自动激活「桌面自动化」「浏览器自动化」联动开关
           await saveAppSettings(app.getPath("userData"), { desktopAutomation: true, browserAutomation: true });
         } else if (id === "feishu-cli") {
-          /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。 */
-          await runNpmInstall(id, `@larksuite/cli@${TOOLS_VERSIONS.feishuCli ?? "latest"}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
+          /* 飞书官方 CLI（10-29）：npm 包自身 postinstall 会按平台下载 Go 二进制（约 50MB）⇒ 必须放行该包的脚本。
+             ⛔ 11-15：装 `@latest` 之前先查**具体最新版本**并写进包名，避免镜像 dist-tags 滞后时装回旧版；
+             `fetchRegistryLatest` 会把国内镜像与官方源都查一遍取最大，查不到才退回随包表。 */
+          let cliVersion = TOOLS_VERSIONS.feishuCli ?? "latest";
+          try { cliVersion = (await fetchRegistryLatest("@larksuite/cli", downloadSource)).version; } catch { /* 离线兜底 */ }
+          await runNpmInstall(id, `@larksuite/cli@${cliVersion}`, "飞书 CLI", downloadSource, NPM_ALLOW_SCRIPTS["feishu-cli"]);
         } else if (id === "filee") {
           /* Filee 文件转换（10-30）：GitHub release 直下型（151MB，镜像序 + SHA256 校验）。
              更新链（performRuntimeUpdate 的 GITHUB_UPDATEABLE 分支）也走这一个函数。 */
-          await installFileeFromGitHub(id, TOOLS_VERSIONS.filee ?? (await fetchGitHubLatestTag(FILEE_REPO)));
+          await installFileeFromGitHub(id, await latestInstallVersion("filee", FILEE_REPO));
         } else if (id === "apkstart") {
           /* ApkStart 安卓运行器（11-14）：GitHub release 直下型（119MB 便携 zip）。
              首启再由它自己下载 Android 运行时；更新链同上（GITHUB_UPDATEABLE.install）。 */
-          await installApkStartFromGitHub(id, TOOLS_VERSIONS.apkstart ?? (await fetchGitHubLatestTag(APKSTART_REPO)));
+          await installApkStartFromGitHub(id, await latestInstallVersion("apkstart", APKSTART_REPO));
         } else if (id === "openmaic") {
           /* OpenMAIC 互动课堂（11-14）：源码 + pnpm 依赖 + 便携 PostgreSQL 本机构建（约 5GB）。
              ⛔ 不进自动/手动更新链：更新 = 重新安装（重建 5–10 分钟，不适合一键静默跑）。 */
-          await installOpenMaicFromGitHub(id, TOOLS_VERSIONS.openmaic ?? (await fetchGitHubLatestTag(OPENMAIC_REPO)));
+          await installOpenMaicFromGitHub(id, await latestInstallVersion("openmaic", OPENMAIC_REPO));
         } else if (id === "husk") {
           /* Husk（11-14）：只下载官方 Husk.ipa（约 142MB，SHA256 校验），真机侧载在 iPhone 上完成。 */
-          await installHuskFromGitHub(id, TOOLS_VERSIONS.husk ?? (await fetchGitHubLatestTag(HUSK_REPO)));
+          await installHuskFromGitHub(id, await latestInstallVersion("husk", HUSK_REPO));
         } else if (id === "husk-tipa") {
           /* Husk TIPA（11-14）：TrollStore 专用 .tipa，同版本；与 IPA 分文件、分版本号。 */
-          await installHuskTipaFromGitHub(id, TOOLS_VERSIONS.husk ?? (await fetchGitHubLatestTag(HUSK_REPO)));
+          await installHuskTipaFromGitHub(id, await latestInstallVersion("husk", HUSK_REPO));
         } else if (id === "rea") {
           /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
              ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，

@@ -1818,9 +1818,17 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .effort-picker-auto-state.on { background: #14b8a6; border-color: #14b8a6; color: #fff; }
 .effort-picker-bar.disabled { opacity: 0.4; pointer-events: none; }
 
-/* ── Laya 智能判断卡（10-01，runtime-row 变体）── */
-.laya-card { flex-wrap: wrap; }
-.laya-card .laya-install-log { width: 100%; }
+/* ── Laya 智能判断卡（10-01 立，11-15 改成飞书 CLI 同款三行列表）──
+   ⛔⛔ 11-15 用户实测「Laya 安装失败后报错，整个界面只剩一列」：
+     旧版把失败日志 <details> 塞在 .runtime-row（4 列 grid）里当第 4 个子元素，
+     再给它 `width: 100%` ⇒ 第 4 列撑满、1fr 列塌成一条 ⇒ 图标/文案/按钮全挤成一列。
+     `.laya-card { flex-wrap: wrap }` 是 flex 时代遗留，在 grid 上完全无效。
+   ⇒ 现在三行都收进 .laya-list（3 列 grid，与 .feishu-cli-list 同款），
+     **日志/错误一律放在 list 外面**当 section 的独立块，展开多少行都不碰 grid。 */
+.laya-card .laya-list { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+.laya-card .laya-list .runtime-row { grid-template-columns: 22px minmax(0, 1fr) auto; }
+.laya-card .laya-list .runtime-row:last-child { border-bottom: 0; }
+.laya-card .laya-install-log { width: 100%; margin-top: 8px; }
 .laya-card .laya-install-log summary { cursor: pointer; color: var(--muted); font-size: 11px; display: flex; align-items: center; gap: 5px; }
 .laya-card .laya-install-log pre { max-height: 200px; overflow: auto; font-size: 10.5px; background: var(--panel-2, rgba(0,0,0,0.04)); border: 1px solid var(--line); border-radius: 8px; padding: 8px; margin: 6px 0 0; white-space: pre-wrap; word-break: break-all; }
 
