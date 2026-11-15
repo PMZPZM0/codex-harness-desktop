@@ -74,7 +74,12 @@ export const updatesFeature = defineFeature<null>({
      *  任何失败（无 latest.yml / 无 blockmap / 镜像挂 / 校验失败）都返回 null，
      *  调用方继续原有的完整包下载。 */
     const tryDifferential = async (mode: "differential" | "full" | undefined, onProgress?: (info: { receivedBytes: number; totalBytes: number; percent: number }) => void) => {
-      if (mode === "full") return null;
+      /* ⛔⛔ 11-15 方案 A（用户拍板）：**不再因为 mode==="full" 跳过 updater**。
+         差分的基线（已安装版本的 blockmap）只有 electron-updater 自己安装时才登记；
+         我们自建下载器 + spawn 安装器的老路永远不登记 ⇒ 每次更新都是整包（实测 386MB，与安装包同大）。
+         ⇒ 一律先交给 updater：没有基线时它自己下整包（并且这次安装会建立基线），
+            有基线时它下差分（几十兆）。它彻底不可用（镜像全挂 / 无 latest.yml）才回退自建下载器。
+         ⛔ mode 现在只影响进度文案，不再影响走哪条通道 —— 想强制整包请把 latest.yml 去掉。 */
       const version = lastUpdateInfo?.version;
       if (!version) return null;
       try {
