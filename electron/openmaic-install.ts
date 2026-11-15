@@ -18,7 +18,7 @@ import path from "node:path";
 import net from "node:net";
 import { spawn } from "node:child_process";
 import { app } from "electron";
-import { bundledNode, bundledNpmCli, toolchainEnv, writeToolsRoot } from "./toolchain";
+import { bundledNode, bundledNpmCli, tarExecutable, toolchainEnv, writeToolsRoot } from "./toolchain";
 import { mirrorCandidates } from "./gh-mirror";
 import { guardedFetch } from "./net-guard";
 import { downloadThroughMirrors } from "./mirror-download";
@@ -272,8 +272,16 @@ export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: strin
 
     emitRuntimeProgress(id, "@@STAGE 解压源码");
     emitRuntimeProgress(id, "正在解压 OpenMAIC 源码…");
-    await runOpenMaicStep(id, "tar", ["-xzf", archive, "-C", staging], { label: "解压源码" });
-    const extracted = (await fs.readdir(staging)).find((name) => name.startsWith("OpenMAIC-"));
+    /* ⛔⛔ 11-15 真机探针复现「能下载、安装不行」：裸名 "tar" 会命中 PATH 里的 PortableGit
+       GNU tar，它把 `C:\...` 的盘符当远程主机 ⇒ `Cannot connect to C: resolve failed`。
+       统一走 toolchain.tarExecutable()（Windows 自带 bsdtar / mac /usr/bin/tar）。 */
+    await runOpenMaicStep(id, tarExecutable(), ["-xzf", archive, "-C", staging], { label: "解压源码" });
+    /* ⛔⛔ 11-15 真机探针第二层坑：staging 里同时有归档 `OpenMAIC-1.4.2.tar.gz` 与解压出来的
+       `OpenMAIC-1.4.2/`，两者都以 `OpenMAIC-` 开头。旧写法用 readdir 的字符串 find，
+       命中归档文件时会把 .tar.gz 当目录去读 package.json ⇒ ENOENT（又一处「下载完就报安装失败」）。
+       ⇒ 必须按 Dirent 判定「是目录」，且排除归档文件。 */
+    const extracted = (await fs.readdir(staging, { withFileTypes: true }))
+      .find((entry) => entry.isDirectory() && entry.name.startsWith("OpenMAIC-") && !entry.name.endsWith(".tar.gz"))?.name;
     if (!extracted) throw new Error("源码包解压后找不到 OpenMAIC-* 目录");
     const pkgVersion = JSON.parse(await fs.readFile(path.join(staging, extracted, "package.json"), "utf8")).version;
     if (String(pkgVersion) !== version) throw new Error(`源码版本不符：期望 ${version}，实际 ${pkgVersion}`);
@@ -346,12 +354,18 @@ export async function installOpenMaicFromGitHub(id: DevRuntimeId, version: strin
     await fs.writeFile(paths.versionFile, version + "\n", "utf8");
     emitRuntimeProgress(id, "@@PROGRESS 100");
   } catch (error) {
-    // 失败/取消：把旧版本换回来（第一次安装则保持未安装），别让用户连旧版都用不了
-    await fs.rm(paths.app, { recursive: true, force: true }).catch(() => undefined);
-    if (backup && existsSync(backup)) await fs.rename(backup, paths.app).catch(() => undefined);
+    // 失败/取消：只有**确实换入过新目录**才回滚，别让用户连旧版都用不了。
+    /* ⛔⛔ 11-15 用户「能下载，安装不行」时差点把已装好的版本一起赔进去：
+       旧实现无条件 `fs.rm(paths.app)`，而 backup 到很后面才赋值 —— 下载/解压/版本校验阶段
+       一失败，backup 还是空串，就会把用户原来可用的 5GB 安装整个删光且无法恢复。
+       ⇒ 判定条件必须是「backup 真实存在」，第一次安装失败则 app 本来就不存在，无需删。 */
+    if (backup && existsSync(backup)) {
+      await fs.rm(paths.app, { recursive: true, force: true }).catch(() => undefined);
+      await fs.rename(backup, paths.app).catch(() => undefined);
+    }
     throw error;
   } finally {
-    await fs.rm(backup, { recursive: true, force: true }).catch(() => undefined);
+    if (backup) await fs.rm(backup, { recursive: true, force: true }).catch(() => undefined);
     await fs.rm(staging, { recursive: true, force: true }).catch(() => undefined);
   }
 }

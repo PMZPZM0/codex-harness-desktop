@@ -20,14 +20,14 @@
  * ⛔ 待接缝化（阶段 2）：app / shell / spawn 为宿主能力。
  */
 import fs from "node:fs/promises";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { once } from "node:events";
 import { createHash } from "node:crypto";
 import net from "node:net";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { app, shell } from "electron";
-import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, bundledPython, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
+import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, bundledPython, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, tarExecutable, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
@@ -255,21 +255,41 @@ function runtimeList() {
  *  做法：先盘点（收集全部文件 + 字节数），再分批删（每批 ~4MB 或 200 个文件），按字节比例发
  *  `runtime:progress`；删完文件再把（现在已空的）目录树整体摘掉。批次间 setImmediate 让事件循环
  *  喘口气，进度事件才能真的发出去。 */
+/** ⛔⛔ 11-15：安装/卸载失败的真实原因必须落盘。
+ *  界面只显示进度条最后一行（且应用一重启就没了），用户报「安装报错」时开发者拿不到任何证据；
+ *  OpenMAIC 的构建日志、pip 的多源失败明细都在这里留全文，便于下次直接定位而不是靠猜。 */
+async function recordInstallFailure(id: string, phase: "install" | "uninstall", error: unknown): Promise<void> {
+  try {
+    const dir = path.join(app.getPath("userData"), "logs");
+    await fs.mkdir(dir, { recursive: true });
+    const text = String((error as Error)?.stack ?? (error as Error)?.message ?? error);
+    await fs.appendFile(path.join(dir, "install-errors.log"),
+      `\n===== ${new Date().toISOString()} ${phase} ${id} =====\n${text.slice(0, 10_000)}\n`, "utf8");
+  } catch { /* 日志写不了不能影响主流程 */ }
+}
+
 async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): Promise<void> {
   const jobs: { file: string; size: number }[] = [];
   let totalBytes = 0;
-  const collectDir = (dir: string) => {
+  /* ⛔⛔ 11-15 用户实测「卸载直接把应用干死」：OpenMAIC 装完后 app/node_modules 有几十万个
+     小文件，旧实现用同步 readdirSync/statSync **递归遍历整棵树**，主进程事件循环被整段堵住
+     （几十秒到几分钟）⇒ Windows 弹「Electron 未响应」。改成异步遍历 + 每 200 项让出一次事件循环，
+     删除本身本来就是 await fs.rm（异步），界面全程可响应、可取消。 */
+  let scanned = 0;
+  const yieldToLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+  const collectDir = async (dir: string): Promise<void> => {
     let entries: import("node:fs").Dirent[];
-    try { entries = readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try { entries = await fs.readdir(dir, { withFileTypes: true }) as import("node:fs").Dirent[]; } catch { return; }
     for (const entry of entries) {
       const childPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) collectDir(childPath);
+      if (entry.isDirectory()) await collectDir(childPath);
       else {
         let size = 0;
-        try { size = statSync(childPath).size; } catch { /* 竞态：文件刚没了 */ }
+        try { size = (await fs.stat(childPath)).size; } catch { /* 竞态：文件刚没了 */ }
         jobs.push({ file: childPath, size });
         totalBytes += size;
       }
+      if (++scanned % 200 === 0) await yieldToLoop();
     }
   };
   const roots: string[] = [];
@@ -277,8 +297,8 @@ async function removeTargetsWithProgress(id: DevRuntimeId, targets: string[]): P
     const resolved = path.resolve(target);
     roots.push(resolved);
     let stat;
-    try { stat = statSync(resolved); } catch { continue; } // 目标不在了 = 已经卸载好
-    if (stat.isDirectory()) collectDir(resolved);
+    try { stat = await fs.stat(resolved); } catch { continue; } // 目标不在了 = 已经卸载好
+    if (stat.isDirectory()) await collectDir(resolved);
     else { jobs.push({ file: resolved, size: stat.size }); totalBytes += stat.size; }
   }
   sendToWindow("runtime:progress", { id, stage: "正在删除文件", percent: 0 });
@@ -604,7 +624,7 @@ async function installFileeFromGitHub(id: DevRuntimeId, version: string): Promis
     } else {
       // mac / linux：系统自带 tar（osx-*.tar.gz / linux-*.tar.gz）
       await new Promise<void>((resolve, reject) => {
-        const child = spawn("tar", ["-xzf", archive, "-C", stage], { windowsHide: true });
+        const child = spawn(tarExecutable(), ["-xzf", archive, "-C", stage], { windowsHide: true });
         trackRuntimeProc(id, child);
         child.on("error", reject);
         child.on("close", (code) => code === 0 ? resolve() : reject(new Error(`解压失败（${code}）`)));
@@ -1310,6 +1330,10 @@ export const runtimeFeature = defineFeature<null>({
       const id = idValue as DevRuntimeId;
       const spec = devRuntimeSpecs[id];
       if (!spec) throw new Error("未知开发工具");
+      /* ⛔⛔ 11-15 用户实测「安装中点卸载，应用直接干死」：安装进程正往同一个 5GB 目录写，
+         卸载同时遍历+删除同一棵树，两边互踩且进度永远走不完。安装未结束一律拒绝卸载，
+         先让用户点「取消」，等 in-flight 清空再操作。 */
+      if (runtimeInstalls.has(id)) throw new Error(`「${spec.name}」正在安装或更新，请先点「取消」等它停下，再卸载`);
       if (spec.builtIn) throw new Error("内置工具不可卸载");
       if (spec.kind === "guide") throw new Error("该工具是系统级安装，请到系统的「应用与功能」里卸载");
       // 随包内置能力（nuphus / ponytail 插件），不是联网下载 —— 删了没有可靠的重取途径
@@ -1371,12 +1395,21 @@ export const runtimeFeature = defineFeature<null>({
         const py = pyCandidates.find((c) => { try { return existsSync(c); } catch { return false; } });
         if (py) {
           sendToWindow("runtime:progress", { id, stage: "正在卸载 pip 包", percent: 0 });
-          try {
-            require("node:child_process").spawnSync(
-              py, ["-m", "pip", "uninstall", "-y", String(PIP_PACKAGE_DIRS[id])],
-              { windowsHide: true, timeout: 180_000 },
-            );
-          } catch { /* pip 不可用就走下面的目录清理 */ }
+          /* ⛔⛔ 11-15：原来用 spawnSync 在主进程同步等 pip 最多 180 秒 ⇒ 界面整个无响应。
+             改成异步 spawn + 超时 kill，期间事件循环照常跑（Laya / 手机控制 / 文档转换都走这里）。 */
+          await new Promise<void>((resolve) => {
+            let settled = false;
+            let timer: ReturnType<typeof setTimeout> | undefined;
+            const done = () => { if (!settled) { settled = true; if (timer) clearTimeout(timer); resolve(); } };
+            try {
+              const child = spawn(py, ["-m", "pip", "uninstall", "-y", String(PIP_PACKAGE_DIRS[id])], {
+                windowsHide: true, stdio: "ignore",
+              });
+              timer = setTimeout(() => { try { child.kill(); } catch { /* 已退出 */ } done(); }, 180_000);
+              child.on("error", done);
+              child.on("close", done);
+            } catch { done(); } // pip 起不来就走下面的目录清理兜底
+          });
         }
       }
       if (id === "kb-embedding") {
@@ -1433,6 +1466,7 @@ export const runtimeFeature = defineFeature<null>({
     ipcHost.handle("runtime:health", () => devRuntimeHealth());
 
     ipcHost.handle("runtime:install", async (_event, idValue: string) => {
+      try {
       const id = idValue as DevRuntimeId;
       if (!devRuntimeSpecs[id]) throw new Error("未知开发工具");
       if (devRuntimeSpecs[id].builtIn) return { ok: true, runtimes: runtimeList() };
@@ -1604,6 +1638,11 @@ export const runtimeFeature = defineFeature<null>({
       } finally {
         runtimeInstalls.delete(id);
         clearCancelRequest(id);
+      }
+      } catch (error) {
+        /* ⛔ 用户报「安装报错」时界面只有一行截断文案：这里把完整 stack / 子进程输出留盘 */
+        await recordInstallFailure(idValue, "install", error);
+        throw error;
       }
     });
 

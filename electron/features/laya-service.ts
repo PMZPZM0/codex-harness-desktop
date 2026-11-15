@@ -256,12 +256,17 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
     });
   });
   return (async () => {
+    try {
     const tried: string[] = [];
     for (let i = 0; i < LAYA_PIP_SOURCES.length; i++) {
       const index = LAYA_PIP_SOURCES[i];
       if (i > 0) log(`换个源再试（${i + 1}/${LAYA_PIP_SOURCES.length}）：${index}`);
-      const { code, installed } = await runPip(index);
-      if (code === 0 && installed) {
+      const { code } = await runPip(index);
+      /* ⛔⛔ 11-15 用户「能下载，安装不行」：pip exit 0 就代表安装流程已经完成，
+         旧实现还要再跑一次**同步** `pip show` 作二次判定 —— 一旦 pip 被并发/锁/超时拖住，
+         就会误判成「没装上」，于是报「安装失败」但包其实已经落盘（本机实测 laya 0.4.32 已装）。
+         落盘复核统一交给 runtime:install 的 assertInstallVerified（与卡片同一口径，专治假成功）。 */
+      if (code === 0) {
         invalidatePipCache();
         installing = false;
         if (i > 0) log(`pip 改用源成功：${index}`);
@@ -277,9 +282,13 @@ export function layaInstall(): Promise<{ ok: boolean; log: string }> {
         lines.push(lastError);
       }
     }
-    installing = false;
-    invalidatePipCache();
     return { ok: false, log: lines.join("\n") };
+    } finally {
+      /* ⛔⛔ 11-15：任何异常/取消都不许把 installing 永久留在 true ——
+         否则之后每次点安装只回一句「已有安装任务在进行中」，看起来就是「怎么装都不行」。 */
+      installing = false;
+      invalidatePipCache();
+    }
   })();
 }
 

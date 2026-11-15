@@ -139,5 +139,14 @@ ok(layaCss.includes(".laya-card .laya-list .runtime-row { grid-template-columns:
 ok(layaCard.includes('className="settings-card-hint laya-last-error"'),
   "上次失败原因在列表外单独一行展示（安装失败时看得见）");
 
+/* ⛔⛔ 11-15 用户「Laya 能下载、安装却报错」：pip 明明把 0.4.32 装上了，
+   旧实现却在 exit 0 之后再跑一次**同步** `pip show` 二次判定，pip 一抖就误判没装上；
+   且 installing 标志没有 finally，异常后每次点安装都只回「已有安装任务在进行中」。 */
+const layaService = codeOnly(read("electron/features/laya-service.ts"));
+ok(/if \(code === 0\) \{/.test(layaService) && !/code === 0 && installed/.test(layaService),
+  "Laya 安装成功只认 pip exit 0（⛔ 不许再用同步 pip show 把已装成的包报成失败）");
+ok(/finally \{[\s\S]*installing = false;/.test(layaService),
+  "installing 在 finally 复位（异常/取消后不会永远卡在「已有安装任务在进行中」）");
+
 console.log(`\n【laya-judge】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -173,7 +173,7 @@ export function OpenMaicCard({ setNotice, installDevRuntime, runtimeInstalling, 
             <div className="runtime-actions">
               {status?.installed ? <>
                   <span className="runtime-badge installed">已安装</span>
-                  <button type="button" className="runtime-install feishu-cli-uninstall" disabled={uninstalling} title="卸载 OpenMAIC（程序约 5GB；课程数据可保留）" onClick={() => setUninstallOpen(true)}>
+                  <button type="button" className="runtime-install feishu-cli-uninstall" disabled={uninstalling || installing} title={installing ? "正在安装/更新，请先点「取消」等它停下再卸载" : "卸载 OpenMAIC（程序约 5GB；课程数据可保留）"} onClick={() => setUninstallOpen(true)}>
                     {uninstalling ? <><Spinner /> 卸载中</> : <><Trash2 size={13} />卸载</>}
                   </button>
                 </>

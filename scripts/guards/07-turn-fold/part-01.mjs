@@ -13,7 +13,7 @@ import {
 import { isQueueAlreadyStartedError } from "../../../src/lib/queue-errors.mjs";
 import { splitMarkdown, trimInvisibleSpace } from "../../../src/lib/markdown-blocks.mjs";
 
-import { mainC, toolchainC, terminalC, remoteC, updaterC, voiceSettingsC, voiceSectionC, hotkeyMatchC, macCfg, prepMac, verifyTools, sliceFn } from "./00-preamble.mjs";
+import { mainC, toolchainC, terminalC, remoteC, voiceSettingsC, voiceSectionC, hotkeyMatchC, macCfg, prepMac, verifyTools, sliceFn } from "./00-preamble.mjs";
 
 export async function run() {
 {
@@ -98,10 +98,12 @@ export async function run() {
 
 {
 {
-    const fnBody = sliceFn(updaterC, "function tarExecutable", 420);
+    /* ⛔ 11-15：tarExecutable 已提取到 toolchain.ts 作单一真相源（引擎更新 / OpenMAIC / 通用运行时
+       三处解压共用），原断言仍去 engine-updater 里切函数体 ⇒ 假红。 */
+    const fnBody = sliceFn(toolchainC, "export function tarExecutable", 420);
     /\/usr\/bin\/tar/.test(fnBody)
-      ? ok("【32】engine-updater 在 darwin 用 /usr/bin/tar")
-      : fail("【32】engine-updater 的 tarExecutable 没有 darwin 分支 —— mac 上靠裸名 tar，PATH 被改过就落空");
+      ? ok("【32】tarExecutable 在 darwin 用 /usr/bin/tar（PATH 被改过也不落空）")
+      : fail("【32】tarExecutable 没有 darwin 分支 —— mac 上靠裸名 tar，PATH 被改过就落空");
   }
 }
 

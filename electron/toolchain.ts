@@ -8,6 +8,23 @@ import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { app } from "electron";
 import { normalizeNoProxyList } from "../src/lib/cli-command.mjs";
 
+/**
+ * 解压用 tar 可执行文件（单一真相源：引擎更新 / OpenMAIC 源码 / 通用运行时都走这里）。
+ * ⛔⛔ 11-15 用户实录「OpenMAIC 能下载、安装不行」：PATH 里第一个 tar 常是 PortableGit 自带的
+ *   GNU tar，它把 Windows 绝对路径的盘符当成远程主机名（`host:path` 语法）
+ *   ⇒ `tar (child): Cannot connect to C: resolve failed` ⇒ 97MB 源码包下完了却死在解压。
+ *   必须显式用 Windows 自带 bsdtar（能正确识别 `C:\...`）。
+ *   mac 侧 GUI 启动的 PATH 是 launchd 最小集，裸名 tar 也可能落空 ⇒ 优先 /usr/bin/tar。
+ */
+export function tarExecutable(): string {
+  if (process.platform === "darwin") return fs.existsSync("/usr/bin/tar") ? "/usr/bin/tar" : "tar";
+  if (process.platform === "win32") {
+    const sysTar = path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+    if (fs.existsSync(sysTar)) return sysTar;
+  }
+  return "tar";
+}
+
 /** 随包工具根目录：打包后取 `resources/tools`，开发态取仓库里的那份。 */
 export function toolsRoot() {
   try {

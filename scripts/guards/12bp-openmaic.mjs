@@ -167,6 +167,41 @@ const EXPECTED = ["openmaic:status", "openmaic:start", "openmaic:stop", "openmai
   const updateUi = codeOnly(read("src/features/settings-devtools/RuntimeUpdateRow.tsx"));
   ok(updateUi.includes("cancelled") && updateUi.includes("finally") && updateUi.includes("void check();"),
     "更新行在取消/joined 后也会收尾（⛔ 不能只靠 done 事件，否则永远停在「正在更新」）");
+/* ⛔⛔ 11-15 用户实录「卸载直接把应用干死」（Windows 弹 Electron 未响应）：
+   OpenMAIC 装完有几十万个小文件，卸载用同步递归 readdirSync/statSync 遍历整棵树，
+   pip 卸载还用 spawnSync 在主进程同步等 180 秒 —— 事件循环被整段堵住。 */
+const runtimeIpcForUninstall = codeOnly(read("electron/features/runtime-ipc.ts"));
+ok(!/readdirSync\(dir, \{ withFileTypes: true \}\)/.test(runtimeIpcForUninstall)
+  && /await fs\.readdir\(dir, \{ withFileTypes: true \}\)/.test(runtimeIpcForUninstall),
+  "卸载遍历大目录改异步 + 分批让出事件循环（⛔ 同步递归 = 应用假死）");
+ok(!/spawnSync\(\s*py, \["-m", "pip", "uninstall"/.test(runtimeIpcForUninstall)
+  && /spawn\(py, \["-m", "pip", "uninstall"/.test(runtimeIpcForUninstall),
+  "pip uninstall 改异步 spawn（⛔ 主进程同步等 180 秒 = 界面无响应）");
+ok(/runtimeInstalls\.has\(id\)\) throw new Error/.test(runtimeIpcForUninstall),
+  "安装进行中拒绝卸载（避免安装与卸载同时读写同一个 5GB 目录）");
+ok(/recordInstallFailure\(idValue, "install", error\)/.test(runtimeIpcForUninstall),
+  "安装失败把完整 stack 落盘 install-errors.log（界面只有一行截断文案）");
+const installSrc = codeOnly(read("electron/openmaic-install.ts"));
+const catchPart = installSrc.slice(installSrc.indexOf("} catch (error) {"), installSrc.indexOf("} finally {"));
+ok(catchPart.includes("if (backup && existsSync(backup)) {")
+  && catchPart.indexOf("if (backup && existsSync(backup)) {") < catchPart.indexOf("await fs.rm(paths.app"),
+  "安装失败只在确实换入过新目录时回滚（⛔ 下载/解压阶段失败不许删掉用户已装好的版本）");
+ok(/disabled=\{uninstalling \|\| installing\}/.test(read("src/features/settings-devtools/OpenMaicCard.tsx")),
+  "安装中禁用卸载按钮（第一道防线，主进程互斥是第二道）");
+/* ⛔⛔ 11-15 真机探针复现「能下载、安装不行」：裸名 tar 命中 PortableGit 的 GNU tar，
+   它把 Windows 盘符 C: 当远程主机 ⇒ `Cannot connect to C: resolve failed`，97MB 源码下完却死在解压。 */
+ok(/runOpenMaicStep\(id, tarExecutable\(\), \["-xzf"/.test(installSrc)
+  && !/runOpenMaicStep\(id, "tar",/.test(installSrc),
+  "OpenMAIC 解压走 tarExecutable()（⛔ 不许退回裸名 tar）");
+ok(/export function tarExecutable\(\)/.test(read("electron/toolchain.ts"))
+  && /spawn\(tarExecutable\(\), \["-xzf"/.test(runtimeIpcForUninstall)
+  && /tarExecutable\(\), \["-xzf", tarballPath/.test(read("electron/engine-updater.ts")),
+  "tar 可执行文件单一真相源：三处解压共用 toolchain.tarExecutable");
+ok(/readdir\(staging, \{ withFileTypes: true \}\)/.test(installSrc)
+  && /entry\.isDirectory\(\)/.test(installSrc)
+  && !/\(await fs\.readdir\(staging\)\)\.find/.test(installSrc),
+  "解压后只认目录（⛔ 不许把 .tar.gz 归档当目录读 package.json）");
+
 console.log("");
 console.log(fails === 0
   ? `【openmaic】通过（${checks} 条）`
