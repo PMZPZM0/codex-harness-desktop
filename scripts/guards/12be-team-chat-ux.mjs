@@ -600,7 +600,7 @@ const catalog = [
     ok(/export function relayGroupLead/.test(bridge)
       && /setTeamGroupRelay\(\(gid, teamId, note\) =>/.test(dispatch)
       && /relayLeadAfterMembers\(/.test(dispatch)
-      && /runDispatchRounds\(group, \[target\], note, "automation"/.test(dispatch),
+      && /runDispatchRounds\(group, \[target\], note \+ openNote, "automation"/.test(dispatch),
       "回喂走群聊串行队列（不落假用户消息、⛔ 不并发 resume 同一条会话）");
     /* ⛔ 11-12 用户：「就正常对话聊天派活，主代理一直刷屏」⇒ 口径从「回一句已派给谁」
        改成「拿到已派单就不要再说话」（派单消息已经进群，复述=同一件事说两遍）。 */

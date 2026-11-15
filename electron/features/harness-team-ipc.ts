@@ -721,6 +721,11 @@ async function deleteEngineThreads(threadIds: string[]): Promise<{ removed: numb
 async function relayLeadAfterMembers(groupId: string, teamId: string, note: string): Promise<void> {
   const group = (readStore().groups ?? []).find((g) => String(g.id) === String(groupId));
   if (!group) return;
+  /* ⛔ 11-15「沟通没完成就收尾」：回喂主理人时把未结项一并带上（有账没清就不许收口）。 */
+  const openNoteRows = openTaskRowsOf(groupId);
+  const openNote = openNoteRows.length
+    ? `\n⛔ 群里还有 ${openNoteRows.length} 件没交回：${openNoteRows.map((r) => `${r.toName}（${r.title}）`).join("、")}——全部清账之前不许写「收口」，先把他们点名推进。`
+    : "";
   const teams = await readUsableExpertTeams().catch(() => []);
   const team = teams.find((t) => String(t?.teamId) === String(teamId)) as
     | { lead?: { id?: string; name?: string } }
@@ -734,7 +739,7 @@ async function relayLeadAfterMembers(groupId: string, teamId: string, note: stri
     targetKind: "member",
     targetKey: `${teamId}:${leadId}`,
   };
-  await runDispatchRounds(group, [target], note, "automation", { allowChain: true });
+  await runDispatchRounds(group, [target], note + openNote, "automation", { allowChain: true });
 }
 
 /** ⛔⛔ 11-11：群聊里这两个调度工具是**异步排片**（工具立刻回「已派单」、成员后台跑、
@@ -1061,6 +1066,15 @@ function openTaskCountOf(groupId: string): number {
     });
   }
   return open.length - expired.length;
+}
+
+/** 未结项清单（回喂主理人时点名用）：谁还没交、交的是什么。⛔ 已按超时口径过滤。 */
+function openTaskRowsOf(groupId: string): Array<{ toName: string; title: string }> {
+  const now = Date.now();
+  const store = readStore();
+  return Object.values(store.tasks ?? {})
+    .filter((x) => x.groupId === groupId && x.status === "open" && now - Number(x.at ?? 0) <= HANDOFF_TIMEOUT_MS)
+    .map((x) => ({ toName: String(x.toName ?? ""), title: String(x.title ?? "") }));
 }
 
 /* ⛔ 11-14 Phase 2（抄 Pachat「LISTEN_RETRY_MS=5min / LISTEN_TRIES=2」）：成员一轮失败后的**延迟重试**。
@@ -1802,6 +1816,22 @@ async function runDispatchRounds(
       /* ③ 宿主判定终止：完成由任务项数 / 预算 / 每人回合上限决定，⛔ 不采信模型自报「做完了」
          （11-12 借鉴成熟群聊编排：COUNT THE ITEMS, NOT THE HEADS）。 */
       const hostStop = shouldStopGroupTurn({ chainBudget, ranCount, maxTurnsPerMember: MAX_TURNS_PER_MEMBER });
+      /* ⛔⛔ 11-15 用户令（「沟通没完成就收尾」）：造镜说「等编镜的 shotlist.csv」，
+         但没人给编镜开任务 ⇒ openTasks=0 ⇒ 宿主判"没活了"直接收尾，编镜永远不出现。
+         ⇒ 产出里出现「等 X 的 Y 文件」这类交付承诺时，宿主**自动开一条点名任务**：
+           openTasks>0 ⇒ classifyTurn 判 continue（不许收尾），管理员被回喂后会去点 X，
+           X 交回 ⇒ closeTasksFor 关账 ⇒ 才允许收口。
+         ⛔ 只认"等 X 的 Y.扩展名"这种可核验的交付承诺，⛔ 不把"我建议 / 可以派"当成任务。 */
+      for (const promiseMatch of String(outputForStore ?? "").matchAll(
+        /等\s*([^\s，。！？、：]{1,8})\s*的\s*([^\s，。！？]{2,40}?\.(?:csv|xlsx?|docx?|md|json|txt|png|jpe?g|mp4|wav|mp3|pdf))/g,
+      )) {
+        const promisedTo = String(promiseMatch[1] ?? "").trim();
+        const promisedFile = String(promiseMatch[2] ?? "").trim();
+        const target = roster.find((m) => String(m.name) === promisedTo);
+        if (target && promisedTo !== partner.name) {
+          openTaskFor(group.id, { id: partner.id, name: partner.name }, { id: target.id, name: target.name }, promisedFile);
+        }
+      }
       if (hop === 0 && !hostStop.stop && okFlag && output && guard.allowRelay) {
         const queue: Array<{ next: GroupTarget; ask: { ask: string } }> = [];
         /* ② 显式发言权：本轮已发言者按共享消息总线一次性算出，宿主仲裁谁能接话，
@@ -1900,8 +1930,13 @@ async function runDispatchRounds(
               if (lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(lead.id)) {
                 leadCatchUps += 1;
                 chainBudget -= 1;
+                const openRows = openTaskRowsOf(group.id);
+                const openLine = openRows.length
+                  ? `⛔ 群里还有 ${openRows.length} 件没交回：${openRows.map((r) => `${r.toName}（${r.title}）`).join("、")}。`
+                    + "先把这些人按顺序点名（等交回），**全部清账之前不许写「收口」**。"
+                  : "全部已清账，可以写总结了。";
                 void runOne(lead as unknown as GroupTarget, 0, caller,
-                  `[系统] 这一轮你点名的 ${queue.length} 位成员都按顺序交回了（产出已在群里）。`
+                  `[系统] 这一轮你点名的 ${queue.length} 位成员都按顺序交回了（产出已在群里）。${openLine}`
                   + "现在就做一件事：**写一条总结**——每人一句他在群里说了什么/他的定位，"
                   + "最后一句告诉用户这批招呼已经到齐。"
                   + "⛔ 不要再派活（同一条需求里不重复叫人）、不要报进度、不要「收到」了事、不要代写成员产出。")
