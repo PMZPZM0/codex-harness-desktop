@@ -1877,8 +1877,15 @@ async function runDispatchRounds(
              管理员的验收机会由两条既有通道给：它自己派活的批次回喂（relayGroupLead）、
              它点名的排片收尾（leadCatchUps）—— ⛔ 不靠成员的 @。
              成员之间互 @ 照常接力；用户想让管理员介入就自己 @ 管理员。 */
+        /* ⛔⛔ 11-15 用户截图（普通群里一句「哈喽」，管理员回完礼又把拔节叫出来推销）：
+           SOP 第 ① 条早写了「寒暄不许自己派人」，模型就是会违反 ⇒ 宿主兜底：
+           用户这句是**纯寒暄**（打招呼词 + 标点，没有任务动词、没有问号）⇒ 成员接力整体关掉，
+           管理员回一句礼就停。⛔ 判据故意收得很窄（整句只含打招呼词），
+           「喊你的小伙伴出来打个招呼」这类带动词的照常派人 —— 别把正事误伤。 */
+        const casualGreeting = source === "human"
+          && /^(哈喽+|哈罗|你好+|您好+|嗨+|在吗|在不在|早[啊上]?|午安|晚上好|hi|hello)[！!。.~～\s]*$/i.test(text.trim());
         const leadSeatIds = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
-        const asks = allAsks.filter((ask) => {
+        const asks = casualGreeting ? [] : allAsks.filter((ask) => {
           const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
           return !leadSeatIds.has(tid);
         });
