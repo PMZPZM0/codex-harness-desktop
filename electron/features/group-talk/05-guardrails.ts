@@ -156,7 +156,12 @@ export function evaluateMemberOutput(input: {
        11-12：自报进度无证据同样不接力（① 执行与汇报分离）。 */
     /* ⛔ mainText 不许 fallback 回原文：只有汇报行时返回空串，调用方据此跳过占位正文落盘
        （否则"占位正文 + 汇报行"两条重复）。⛔ 没正文也没有可转达的内容 ⇒ 不接力。 */
-    allowRelay: countsAsOutput && Boolean(mainText) && !duplicateOf && !(progressClaim && !progressClaim.ok),
+    /* ⛔⛔ 11-15 用户实测（截图：画帧写「@造镜：来对一下交接标准」，造镜一声不响）：
+       原来这里还要求 `!(progressClaim && !progressClaim.ok)` —— 只要这一轮被"自报进度无证据"
+       判红，**连成员之间明确的 @ 点名也被一起掐掉**，于是"成员之间不会互相交流"。
+       但这两件事无关：@ 点名是"我要跟你说话"的显式请求，⛔ 不该因为汇报口径不合格就作废。
+       ⇒ 接力只保留三条真闸：有产出 / 有正文 / 不是与别人重复的结论。 */
+    allowRelay: countsAsOutput && Boolean(mainText) && !duplicateOf,
     countsAsOutput,
     duplicateOf,
     announcements: notices,
