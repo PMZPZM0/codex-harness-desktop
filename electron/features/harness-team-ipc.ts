@@ -571,8 +571,14 @@ async function prepareGroupDispatch(
     });
     if (seat && effectiveIds.length) {
       const kidPrefix = `team:${String(seat.teamId ?? "")}:`;
-      const seesTeamKid = effectiveIds.some((id) => String(id).startsWith(kidPrefix));
-      if (seesTeamKid || effectiveIds.includes(String(seat.seatId))) {
+      const kids = effectiveIds.filter((id) => String(id).startsWith(kidPrefix));
+      /* ⛔⛔ 11-15 用户实测（截图）：「我艾特成员，他在这里干嘛 @传声 你跟艾量打个招呼」
+         —— 用户只 @ 了**一位**成员，结果管理员替他去回话了。原因是我上一轮把「@ 团成员」
+         一律收敛成管理员：连单个 @ 也被吞掉 ⇒ 没有"直达成员"的路。
+         ⇒ 只有**同时 @ 多位成员**（或直接 @ 整团）才交给管理员编排（那种情况由它按顺序点名）；
+           **@ 单个成员 = 直达他本人**，管理员不插嘴。
+         ⛔ 判据就是 kids.length：别再加“团群一律收敛”，那会把直达路彻底堵死。 */
+      if (kids.length > 1 || effectiveIds.includes(String(seat.seatId))) {
         effectiveIds = [String(seat.seatId)];
       }
     }
@@ -1900,7 +1906,15 @@ async function runDispatchRounds(
               }
             })();
           } else {
-            for (const item of queue) void runOne(item.next, 0, caller, item.ask.ask);
+            /* ⛔⛔ 11-15 用户：「也不是按顺序一个个出来的，是一下四个全出来」——
+               这里原来是 `for (...) void runOne(...)`：`void` = 不等，四个回合同时起 ⇒ 并发。
+               ⇒ 同样**串行**：一位交回、产出进群，再起下一位（非主理人点名也一样）。
+               ⛔ 别为了"快"改回 void/并发：并发就看不到上一位说了什么，四段话必然雷同。 */
+            void (async () => {
+              for (const item of queue) {
+                await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
+              }
+            })();
           }
         }
         /* ⛔⛔ 11-10 闭环（用户：「成员之间持续沟通」「界定收尾条件」）：

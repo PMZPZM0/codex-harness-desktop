@@ -11,6 +11,8 @@
  * ⛔ 三条实证口径（原样保留）：成员线程复用 / 成员线程标题必须设 / 记忆注入排在 beginRun 之前。
  */
 import { app, safeStorage } from "electron";
+import { appendFileSync } from "node:fs";
+import { join as joinPath } from "node:path";
 import { buildDelegateMemory } from "./delegate-memory";
 import { memberThreadName } from "./team-runs";
 import { bridgeDial } from "./main";
@@ -53,6 +55,9 @@ export type InvokeMemberInput = {
   approvalPolicy?: string;
   /** 成员互 @ 的递归深度（内部用；0 = 可再叫一位，1 = 不再往下派，防互 @ 对烧）。 */
   hop?: number;
+  /** ⛔ 成员之间互 @ 的接力：不受「一条用户消息内每人只派一次」的硬上限约束。
+   *  否则先说过话的成员永远接不上别人的 @ —— 用户实测「成员之间都不会互相交流」。 */
+  relay?: boolean;
 };
 
 export type InvokeMemberResult = {
@@ -170,6 +175,7 @@ function flushDispatchEcho(groupId: string): void {
   const pending = dispatchEchoes.get(groupId);
   if (!pending) return;
   dispatchEchoes.delete(groupId);
+  const gid = groupId;
   if (!pending.rows.length) return;
   const mentions = (names: string[]) => names.map((n) => `@${n}`).join(" ");
   /* 按任务分组：同一件活的人合成一行（这才是"一条消息艾特多个成员"）。 */
@@ -189,12 +195,23 @@ function flushDispatchEcho(groupId: string): void {
     authorKind: "bot",
     senderKind: "member",
     text,
-  }, pending.since).catch(() => undefined);
+  }, pending.since)
+    .then((r) => logDispatchEcho(gid, `ok=${r.ok} err=${r.error ?? ""} text=${text}`))
+    .catch((e) => logDispatchEcho(gid, `throw ${String((e as Error)?.message ?? e)}`));
 }
 
 /* 同一条用户消息内「谁已经被派过」的记账（见 invokeTeamMemberCoreUnlocked 里的硬上限）。
    键 = 群 + 该群最后一条用户消息的时刻 + 成员 id；值恒为 1（只需要"派过没有"）。 */
 const dispatchTurns = new Map<string, number>();
+
+/* ⛔ 11-15：群里没看到「@成员」回显时，唯一能分清「没调用 / 写失败 / 写了没渲染」的办法是留一行日志。
+   ⛔ 只记结果与错误，不记正文（群里已经有正文了）；日志失败不影响派活。 */
+function logDispatchEcho(groupId: string, line: string): void {
+  try {
+    const dir = joinPath(app.getPath("userData"), "logs");
+    appendFileSync(joinPath(dir, "dispatch-echo.log"), `${new Date().toISOString()} ${groupId} ${line}\n`);
+  } catch { /* 日志失败不影响派活 */ }
+}
 
 const memberLocks = new Map<string, Promise<void>>();
 async function withMemberLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
@@ -237,7 +254,7 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
        要打回重做：用户发下一条消息，或主理人自己动手改 —— 不在同一条需求里反复拉同一个人。
      ⛔ 不在群里（独立团会话 / 主对话派团）不加此限：那边产出走工具返回、不进群，不构成刷屏。 */
   const capGroupId = groupOfTeam(String(team.teamId ?? ""));
-  if (capGroupId) {
+  if (capGroupId && !input.relay) {
     const rows = recentGroupMessages(capGroupId);
     const lastUserAt = rows.reduce(
       (acc, row) => (String(row?.authorId ?? "") === "local-user" ? Math.max(acc, Number(row?.at ?? 0)) : acc),
@@ -515,6 +532,7 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
           memberId: ask.memberId,
           query: `（${member.name} 在群里叫你）${ask.ask}`,
           hop: 1,
+          relay: true,   // ⛔ 互 @ 接力不算"重复派活"
         }).catch(() => undefined);
       }
     }

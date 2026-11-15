@@ -392,6 +392,17 @@ const catalog = [
         "成员信封写清下达人（管理员/上级，⛔ 不是用户本人）—— 不再冒充「用户需求」");
       ok(raw.includes("不要写成「用户要求我」"), "成员产出里禁止把上级的话说成「用户要求我」");
     }
+    /* ⛔ 11-15 用户截图：「我艾特成员，他在这里干嘛」—— 只 @ 一位成员时必须**直达他本人**，
+       管理员不许替他回话；只有同时 @ 多人（或 @ 整团）才交给管理员按顺序点名。
+       另：成员之间互 @ 的接力不受「每人一次」上限约束，否则永远接不上。 */
+    const ipcDirect = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(ipcDirect.includes("kids.length > 1") && !ipcDirect.includes("seesTeamKid"),
+      "@ 单个成员 = 直达本人（⛔ 不再一律收敛给管理员）");
+    {
+      const invokeSrc = read("electron/team-invoke.ts");
+      ok(invokeSrc.includes("relay?: boolean") && invokeSrc.includes("relay: true") && invokeSrc.includes("capGroupId && !input.relay"),
+        "成员互 @ 接力放行（⛔ 不被「每人一次」上限拦住 = 成员之间能真的交流）");
+    }
     const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
     const boot = codeOnly(read("electron/features/boot.ts"));
     ok(/extraTools\?: unknown\[\]/.test(chan)
@@ -2280,7 +2291,7 @@ const catalog = [
   /* 11-15 用户规格：@ 多人 → 管理员按艾特顺序逐个点名 → 每人一位一次 → 管理员一条总结 */
   {
     const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
-    ok(ipc.includes("seesTeamKid") && ipc.includes("effectiveIds = [String(seat.seatId)]"),
+    ok(ipc.includes("kids.length > 1") && ipc.includes("effectiveIds = [String(seat.seatId)]"),
       "群里 @ 多人收敛成管理员一个人（宿主不再直接投给每个成员）");
     ok(ipc.includes("for (const item of queue) {") && !ipc.includes("Promise.all(queue.map"),
       "成员派活串行：按艾特顺序，一位交回再起下一位（⛔ 并发 ⇒ 四段雷同自我介绍）");
