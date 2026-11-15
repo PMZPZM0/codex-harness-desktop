@@ -2269,6 +2269,12 @@ const catalog = [
       "群里 @ 多人收敛成管理员一个人（宿主不再直接投给每个成员）");
     ok(ipc.includes("for (const item of queue) {") && !ipc.includes("Promise.all(queue.map"),
       "成员派活串行：按艾特顺序，一位交回再起下一位（⛔ 并发 ⇒ 四段雷同自我介绍）");
+    /* ⛔ 11-15 用户实测「假的艾特吗」：主理人一条消息里写四行 @名字，群里像派了活、实际没人被叫起来
+       —— 因为我上一轮把「行首 @ = 派活」删过头了。这条通道必须存在（一条消息里 @ 多人就是派活），
+       刷屏的根源是「每位成员再回显一条群消息」，那个才该删。 */
+    /* ⛔ 「假的艾特」只出现在注释里 ⇒ 这一条要看原文，不能用 codeOnly 的产物。 */
+    ok(ipc.includes("const asks = allAsks;") && read("electron/features/harness-team-ipc.ts").includes("假的艾特"),
+      "主理人一条消息里的多行 @名字 = 真派活（⛔ 删了就是假艾特，成员不会被叫起来）");
     const tools = codeOnly(read("electron/expert-teams/06-team-tools.ts"));
     ok(tools.includes("顺序点名") && tools.includes("一次只派一位"),
       "主理人 SOP：按 @ 顺序一次只派一位，全部交回后只写一条总结");

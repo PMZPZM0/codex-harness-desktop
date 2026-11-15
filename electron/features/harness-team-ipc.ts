@@ -1802,8 +1802,16 @@ async function runDispatchRounds(
            为什么必须删而不是继续"按事实判重"：这条通道的物理形态就是「一条群消息 = 一个回合」，
            一次只能点一个人、每点一次多一条气泡 —— 无论怎么判重都必然刷屏 + 串行。
            ⛔ 成员的回合不受影响（成员之间互 @ 是正常对话，不是派活）。 */
-        const isTeamKidId = (id: string) => Boolean(groupTeamId) && id.startsWith(`team:${groupTeamId}:`);
-        const asks = String(partner.id) === adminIdForRounds ? allAsks.filter((ask) => !isTeamKidId(String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? ""))) : allAsks;
+        /* ⛔⛔ 11-15 用户两轮实测把结论钉死了：
+           ① 先骂「一次只能艾特一个、一直刷屏」⇒ 我把「主理人行首 @ = 派活」整条删了；
+           ② 结果管理员发的那**一条**消息里写着四行 `@落纸：…`，群里看着像派了活，实际一个人都没被叫起来
+              —— 用户当场问「假的艾特吗？」。**这就是我删过头了**：
+              刷屏的根源是 team-invoke 每次派活又往群里回显一条（已删），不是这条 @ 解析。
+           ⇒ 恢复：主理人在**同一条消息**里写多行 `@名字：任务` 就是派活，
+             宿主按**书写顺序逐个**执行（见下面 queue 的串行分支），群里只留这一条消息。
+           ⛔ 别再删这条通道：删了 @ 就变纯装饰，用户看到的就是"假艾特"。
+           ⛔ 也别退回"一位成员一条群消息"：那才是被骂的刷屏。 */
+        const asks = allAsks;
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || !canRun(next.id)) continue;
