@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Activity, AlertTriangle, Bot, Boxes, Brain, ChevronRight, CircleCheck, Copy, Files, Film, Gamepad2, GraduationCap, Music2, PackageOpen, Puzzle, Smartphone, Trash2, X } from "lucide-react";
+import { Activity, AlertTriangle, Bot, Boxes, Brain, Brush, ChevronRight, CircleCheck, Copy, Files, Film, Gamepad2, GraduationCap, Music2, PackageOpen, Puzzle, Smartphone, Trash2, X } from "lucide-react";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { Slot } from "../../runtime/Slot";
@@ -29,6 +29,7 @@ import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
 import { FileeCard } from "./FileeCard";
 import { ApkStartCard } from "./ApkStartCard";
+import { PhotoCraftCard } from "./PhotoCraftCard";
 import { OpenMaicCard } from "./OpenMaicCard";
 import { HuskCard } from "./HuskCard";
 import { SkillPacksPanel } from "../skill-packs";
@@ -38,7 +39,7 @@ import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel,
 export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
+type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "photocraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
 
@@ -136,6 +137,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     { key: "feishu-cli", icon: <Bot size={15} />, title: "飞书 CLI", desc: "官方命令行（@larksuite/cli）：让 Codex 代你操作飞书", stat: "按需安装 · 需登录一次" },
     { key: "filee", icon: <Files size={15} />, title: "Filee 文件转换", desc: "244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档），不需要 Office", stat: "按需安装 · 完全离线 · 可卸载" },
     { key: "apkstart", icon: <Gamepad2 size={15} />, title: "ApkStart 安卓运行器", desc: "本机运行 Android 应用：装 APK、独立窗口运行，Codex 可截图/读日志/adb 测试", stat: "按需安装 · 仅 Windows · 首启下运行时" },
+    { key: "photocraft", icon: <Brush size={15} />, title: "PhotoCraft 图像编辑", desc: "开源 Photoshop 重写：调色 / 曲线 / 锐化 / PSD / 批量处理，Codex 可直接调用", stat: runtimeInstalling === "photocraft" ? "安装中…" : "按需安装 · 约 137 MB · 含原生窗口" },
     { key: "openmaic", icon: <GraduationCap size={15} />, title: "OpenMAIC 互动课堂", desc: "多智能体互动课堂：一句话生成带 AI 老师/同学、幻灯片、测验与互动模拟的课程", stat: "按需安装 · 本机构建 · 约 5GB" },
     { key: "husk", icon: <Smartphone size={15} />, title: "Husk（iPhone 跑 Android）", desc: "在 iPhone 上跑 Android 应用/游戏：下载官方 IPA，侧载后导入 APK 全屏运行", stat: "按需下载 · iOS 15.5+ · 约 142 MB" },
     { key: "openfilm", icon: <Film size={15} />, title: "OpenFilm 视频剪辑", desc: "第三方开源（MIT）：让 Codex 直接剪片，Studio 里手改", stat: "按需下载 · 国内镜像加速 · 可卸载" },
@@ -314,6 +316,12 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeOtherCard.title} icon={<Gamepad2 size={15} />} hint="本机安卓运行器 · 装 APK 即可测试" size="md" onClose={() => setOpenCard(null)}>
           {/* ApkStart 安卓运行器（11-14，RoutineMiku/apkstart，MIT）：安装走 runtime:install 的 GitHub 直下型分支。 */}
           <ApkStartCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
+        </SettingsDialog>
+      )}
+      {openCard === "photocraft" && activeOtherCard && (
+        <SettingsDialog title={activeOtherCard.title} icon={<Brush size={15} />} hint="开源 Photoshop 重写 · 调色/曲线/PSD/批量" size="md" onClose={() => setOpenCard(null)}>
+          {/* PhotoCraft（11-15，storytold/photocraft，MIT/Apache-2.0）：安装走 runtime:install 的 GitHub 便携包分支。 */}
+          <PhotoCraftCard setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
         </SettingsDialog>
       )}
       {openCard === "openmaic" && activeOtherCard && (

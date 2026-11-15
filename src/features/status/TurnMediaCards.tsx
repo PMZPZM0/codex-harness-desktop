@@ -8,13 +8,13 @@
  * ⛔ 由 `CompletedChanges` 渲染 ⇒ 主对话（03-turn-view）与群聊（11-team-cards）共用同一份，
  *    不写第二套。删除的文件不出卡。
  */
-import { Play, Image as ImageIcon, ChevronDown, Music2 } from "lucide-react";
+import { Play, Image as ImageIcon, ChevronDown, Music2, Brush } from "lucide-react";
 import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { useState } from "react";
 import { isVideoPath, mediaDisplaySrc } from "../../lib/media-kind.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { imageUrl } from "../../lib/image-url";
-import { openImageLightbox, openMediaPreview } from "../../lib/ui-channels";
+import { openImageLightbox, openMediaPreview, notifyToast } from "../../lib/ui-channels";
 
 export type TurnMediaFile = { path: string; deletedFile?: boolean };
 
@@ -53,6 +53,16 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
     else openImageLightbox(file.path, name);
   };
 
+  /** 在 PhotoCraft 原生窗口里打开这张图（未安装时主进程回原因，这里用 toast 说明）。 */
+  const editInPhotoCraft = async (path: string) => {
+    try {
+      const result = await window.codex.photocraftOpen({ path });
+      if (!result?.ok) notifyToast("打开 PhotoCraft 失败", result?.error);
+    } catch (error) {
+      notifyToast("打开 PhotoCraft 失败", String((error as Error)?.message ?? error));
+    }
+  };
+
   return (
     <section className="turn-media-cards is-previews" aria-label="本轮媒体产物" data-testid="turn-media-cards">
       {visible.map((file) => {
@@ -86,20 +96,31 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
             <span className="turn-media-meta"><b title={file.path}>{name}</b><small>视频</small></span>
           </button>
         ) : (
-          <button
-            type="button"
-            key={file.path}
-            className="turn-media-card is-image"
-            data-testid="turn-media-image"
-            title={`预览图片：${file.path}`}
-            onClick={() => open(file)}
-          >
-            <span className="turn-media-thumb">
-              <img src={imageUrl(file.path)} alt={name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
-              <span className="turn-media-play"><ImageIcon size={14} /></span>
-            </span>
-            <span className="turn-media-meta"><b title={file.path}>{name}</b><small>图片</small></span>
-          </button>
+          <div className="turn-media-image-wrap" key={file.path}>
+            <button
+              type="button"
+              className="turn-media-card is-image"
+              data-testid="turn-media-image"
+              title={`预览图片：${file.path}`}
+              onClick={() => open(file)}
+            >
+              <span className="turn-media-thumb">
+                <img src={imageUrl(file.path)} alt={name} loading="lazy" onError={(event) => { (event.currentTarget as HTMLImageElement).style.display = "none"; }} />
+                <span className="turn-media-play"><ImageIcon size={14} /></span>
+              </span>
+              <span className="turn-media-meta"><b title={file.path}>{name}</b><small>图片</small></span>
+            </button>
+            <button
+              type="button"
+              className="turn-media-edit"
+              data-testid="turn-media-photocraft"
+              title={`在 PhotoCraft 中编辑：${file.path}`}
+              aria-label="在 PhotoCraft 中编辑"
+              onClick={(event) => { event.stopPropagation(); void editInPhotoCraft(file.path); }}
+            >
+              <Brush size={12} />
+            </button>
+          </div>
         );
       })}
       {canFold && (

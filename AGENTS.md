@@ -343,6 +343,17 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - ⛔ **合规**：MIT 原文与版权头随包；只作**风格参考** —— 不复制品牌 logo / 商标 / 图片 / 专有字体，生成界面不冒充官方。工具描述、技能、页面文案、`THIRD_PARTY_NOTICES.md` 四处都写明。
 - 判据：守卫 **`12bs-design-md`（74 条：数据真值与中文导读全覆盖 / 同步脚本来源 / 三通道 / slug 白名单 / 工具+指令+技能 / 页面五处注册 / 中英文预览与色板分组真值表 / 分类下拉与导出项目选择 / 打包与合规）** + 验收 **`design-library`（8 条：84 份加载（中文导读 + 分类下拉）/ 搜索 / 中文导读色值 / 英文原文页签 / 复制回执 / 导出目标可选 / 真导出 / 交给 Codex 填输入框）**。
 
+### 🖼 PhotoCraft 专业图像后期（`electron/photocraft.ts` + `features/photocraft-ipc.ts` + `src/features/settings-devtools/PhotoCraftCard.tsx`，11-15 立）
+
+用户给了 <https://github.com/storytold/photocraft>（纯 Rust 的开源 Photoshop 重写，MIT/Apache-2.0，7.9 万星）问怎么用。三条出口一次接齐（P1 工具 / P2 MCP / P3 GUI）：
+
+- **按需下载**：`electron/photocraft.ts` 从官方 GitHub release 拉便携包（Windows `windows-x64-portable.zip`，约 137MB；mac 只有 CLI zip；Linux tar.gz），镜像序 + **`SHA256SUMS.txt` 校验**，解压到 `tools/photocraft/`（CLI `photocraft-cli` + Windows GUI `photocraft.exe`）。⛔ 不随包、不重打包、不搬源码；版本写入 `version.txt`，更新链走 `GITHUB_UPDATEABLE.photocraft`。
+- **工具 `photocraft`**（7 动作）：`status` / `commands`（500+ 命令可发现）/ `info` / `run`（按序执行 ≤20 条命令）/ `convert` / `batch`（整目录）/ `open`（原生窗口）。⛔ 命令 id 走白名单正则、参数 ≤8KB/条；文件必须落在可信根或 `userData/photocraft-io`；**输出不得与输入同路径**（不覆盖原图）；一律 `spawn` 参数数组、不开 shell。
+- **MCP 连接器（P2）**：装了才写 `[mcp_servers.photocraft]`（headless CLI，`--no-gpu`，读/写根都限 `userData/photocraft-io`），由 `custom-model-apply` 统一生成（手写 config 会被它的 mcp_servers 重建逻辑清掉）。⛔ 引擎 0.157 会**延迟暴露 MCP 工具** ⇒ 主路径永远是上面的动态工具；MCP 只作高级命令面。卸载时重建 config（去掉该段）并重启引擎。
+- **GUI 编辑（P3）**：图片产物卡右上角「在 PhotoCraft 中编辑」→ `photocraft:open` 启动官方 GUI（mac 若只装了 CLI 会提示去装 App）。⛔ 不嵌入 Electron、不重写它的界面。
+- ⛔ **许可/边界**：只下载官方发行物；解压出的 LICENSE/NOTICE/OFL 原样保留；不冒充 ArtCraft 官方。项目 early alpha：命令 id 与参数随版本变化，装的是固定版本，升级走卡片「更新」行。
+- 判据：守卫 **`12bt-photocraft`（48 条：安装链 / 可信路径 / 不覆盖原图 / 命令白名单 / MCP 段 / 工具+指令+技能+卡片 / 图片入口 / 许可）** + 验收 **`photocraft`（卡片与工具状态 / 路径越界拒绝）**。
+
 ### 🧑‍🤝‍🧑 工作伙伴群编排（抄 Pachat 的「先读再说 + 按需唤醒」，11-14，守卫 11f/12be/09）
 
 工作伙伴群（`electron/features/harness-team-ipc.ts` + `electron/features/group-talk/` + `src/features/harness-team/`）的成员协作改成 Pachat 式的**确定性编排**，替掉原来的自由催办启发式（那类启发式正是「同一问题回两条 / 回得断断续续」的根因）。详细设计/取舍见 `docs/TEAM-GROUP-ORCHESTRATION-PACHAT-2026-11-14.md`。
@@ -677,6 +688,7 @@ Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依
 | 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`） | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引。⛔ 识图（视觉辅助插件 / describe_image / harness-media vision）已于 10-30 整体移除，不许加回 |
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | filee_convert | dynamicTools（10-30） | 调本机 Filee（`filee-cli.exe`）把文件离线转换格式：244 种（图片/PDF/Office/电子书/音视频/归档/CAD/数据/3D），恒带 `--json` 结构化回执；需在 设置→开发工具→Filee 文件转换 安装（151MB，GitHub 镜像序 + SHA256 校验），装后 developer_instructions 注入第 5 条用法；更新在「控制台 → 组件更新」 |
+| photocraft | dynamicTools（11-15） | 用 PhotoCraft（开源 Photoshop 重写）做专业图像后期：status / commands（500+ 命令可发现）/ info / run（按序执行 ≤20 条命令）/ convert / batch / open（原生窗口）。需在 设置→开发工具→PhotoCraft 图像编辑 安装（约 137MB，GitHub release 镜像序 + SHA256SUMS 校验）；文件必须落在会话目录，输出不得覆盖原图；装了会注册 MCP 连接器（引擎延迟暴露 MCP 工具 ⇒ 主路径仍是本工具） |
 | apkstart | dynamicTools（11-14） | 在本机 ApkStart 安卓模拟器里测应用：`status` 查状态/设备/已装应用（读它自己的 `apps.json`）、`install` 装 APK（可选装完启动）、`launch` 按包名启动、`screenshot` 截屏存 PNG、`logcat` 读日志（保留崩溃行）、`adb` 透传点按/输入/授权命令、`open` 打开主界面；需在 设置→开发工具→ApkStart 安卓运行器 安装（仅 Windows，首启再下约 1GB 运行时；pending 不算成功），细节见技能 `android-emulator` |
 | openmaic | dynamicTools（11-14） | 在本机 OpenMAIC 互动课堂里生成课：`status` 查安装/服务/能力、`start`/`stop` 启停本地服务与 PostgreSQL、`open` 打开网页、`generate` 提交（requirement / materialIds，异步返回 jobId）、`job` 查进度与课堂链接；需在 设置→开发工具→OpenMAIC 互动课堂 安装（约 1.3GB 下载 + 构建 5–10 分钟，仅 Windows）；⛔ 模型 Key 由用户在网页设置里自己填（不要发到对话里），生成别循环死等，细节见技能 `openmaic` |
 | task_add / task_update | dynamicTools | 维护用户任务清单（新增/改状态/列出/删除） |
@@ -806,6 +818,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 不重翻 commit。只追加不改写（勘误另起行）；格式与分工说明见该文件头部。漏记 = 工作未完成。
 
 - 近期功能性变更（宿主行为，引擎交互相关）
+- 11-15 PhotoCraft 专业图像后期：按需下载（137MB）+ photocraft 工具 + MCP 连接器 + 图片卡 GUI 编辑（见「### 🖼 PhotoCraft 专业图像后期」）
 - 11-14 工作伙伴群编排抄 Pachat：先读再说 + 去自由催办 + 每成员每日预算/失败隔 5 分钟重试 + 群治理（活跃度/群规矩/成员治理/群模板）（见「### 🧑‍🤝‍🧑 工作伙伴群编排」）
 - 11-15 设计参考库：84 份品牌 DESIGN.md 随包（工具 design_md + 设置页「设计参考」浏览/预览/导出/交给 Codex）（见「### 🎨 设计参考库」）
 - 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）

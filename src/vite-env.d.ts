@@ -1563,6 +1563,20 @@ interface Window {
     designMdGet(slug: string): Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>;
     /* 11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径） */
     designMdExport(input: { slug?: string; dir?: string }): Promise<{ ok: boolean; path?: string; category?: string; error?: string }>;
+    /* 11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积 */
+    photocraftStatus(): Promise<{ installed: boolean; version: string; cliPath: string; guiPath: string; ioRoot: string; mcpRegistered: boolean; platform: string; sizeBytes: number; attribution: { license: string; home: string } }>;
+    /* 11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内） */
+    photocraftInfo(input: { path?: string }): Promise<any>;
+    /* 11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图） */
+    photocraftConvert(input: { path?: string; out?: string; quality?: number }): Promise<{ ok: boolean; path: string }>;
+    /* 11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条） */
+    photocraftRun(input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }): Promise<{ ok: boolean; path: string; commands: string[]; log: string[] }>;
+    /* 11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸 */
+    photocraftBatch(input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }): Promise<{ ok: boolean; outDir: string; commands: string[] }>;
+    /* 11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run */
+    photocraftCommands(input: { filter?: string }): Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>;
+    /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
+    photocraftOpen(input: { path?: string }): Promise<{ ok: boolean; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

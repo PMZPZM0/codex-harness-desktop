@@ -151,5 +151,7 @@ export const BUILTIN_DISTRIBUTED_SKILLS: string[] = [
   "husk",
   /* 11-15：设计参考库（84 份品牌 DESIGN.md，与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
   "design-md-library",
+  /* 11-15：PhotoCraft 图像后期（与 entries 同轮登记）。⛔ 漏这里 = # 面板看不到它。 */
+  "photocraft",
   "zy-cinematic-realism",
 ];

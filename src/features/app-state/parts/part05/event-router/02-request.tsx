@@ -17,6 +17,7 @@ import { USER_PERSONAS, userPersonaFields } from "../../../../../lib/user-person
 import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, waitSketchReady } from "../../../../ui-sketch";
 import { ensureBossMemoryWorkspace } from "../../../../boss-group-view";
 import { refreshGroupMembers } from "../../../../boss-group-view";
+import { runPhotoCraftTool } from "./photocraft-tool";
 
 /** ⛔ 同一个 tool call 只执行一次（09-22 实测：一次 subagent_invoke 被渲染层执行 7 次 →
  *  7 个同名会话、每个约 1MB rollout、query 逐字相同 ⇒ 7 倍 token）。重复到达复用首次结果。 */
@@ -566,6 +567,13 @@ ${st.hint}`);
                 await toolCallRespond.send(event.id!, {
                   contentItems: [{ type: "inputText", text: apkText.slice(0, 60000) }],
                   success: apkSuccess,
+                });
+              } else if (event.params?.tool === "photocraft") {
+                /* PhotoCraft（11-15）：分发体拆到 ./photocraft-tool.ts，避免主路由继续膨胀。 */
+                const result = await runPhotoCraftTool(args as Record<string, unknown>);
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: result.text.slice(0, 60000) }],
+                  success: result.success,
                 });
               } else if (event.params?.tool === "openmaic") {
                 /* OpenMAIC 互动课堂（11-14）：一个工具 + action，执行端在 features/openmaic-ipc.ts。

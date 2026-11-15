@@ -122,6 +122,7 @@ import { apkStartFeature as feat_apkstart } from "./features/apkstart-ipc";
 import { openMaicFeature as feat_openmaic } from "./features/openmaic-ipc";
 import { huskFeature as feat_husk } from "./features/husk-ipc";
 import { designMdFeature as feat_design_md } from "./features/design-md-ipc";
+import { photocraftFeature as feat_photocraft } from "./features/photocraft-ipc";
 import { taskMonitorFeature as feat_monitor } from "./features/task-monitor";
 import { sessionAliasFeature as feat_session_alias } from "./features/session-alias-ipc";
 import { harnessTeamFeature as feat_harness_team } from "./features/harness-team-ipc";
@@ -254,6 +255,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "openmaic", plugin: feat_openmaic as Plugin<unknown>, config: null },
   { id: "husk", plugin: feat_husk as Plugin<unknown>, config: null },
   { id: "design-md", plugin: feat_design_md as Plugin<unknown>, config: null },
+  { id: "photocraft", plugin: feat_photocraft as Plugin<unknown>, config: null },
   { id: "monitor", plugin: feat_monitor as Plugin<unknown>, config: null },
   { id: "session-alias", plugin: feat_session_alias as Plugin<unknown>, config: null },
   { id: "harness-team", plugin: feat_harness_team as Plugin<unknown>, config: null },

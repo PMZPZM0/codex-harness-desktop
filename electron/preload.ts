@@ -1151,6 +1151,20 @@ contextBridge.exposeInMainWorld("codex", {
   designMdGet: (slug: string) => __ipc("design-md:get", 1, [slug]),
   /* 11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径） */
   designMdExport: (input: { slug?: string; dir?: string }) => __ipc("design-md:export", 1, [input]),
+  /* 11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积 */
+  photocraftStatus: () => __ipc("photocraft:status", 0, []),
+  /* 11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内） */
+  photocraftInfo: (input: { path?: string }) => __ipc("photocraft:info", 1, [input]),
+  /* 11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图） */
+  photocraftConvert: (input: { path?: string; out?: string; quality?: number }) => __ipc("photocraft:convert", 1, [input]),
+  /* 11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条） */
+  photocraftRun: (input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }) => __ipc("photocraft:run", 1, [input]),
+  /* 11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸 */
+  photocraftBatch: (input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }) => __ipc("photocraft:batch", 1, [input]),
+  /* 11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run */
+  photocraftCommands: (input: { filter?: string }) => __ipc("photocraft:commands", 1, [input]),
+  /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
+  photocraftOpen: (input: { path?: string }) => __ipc("photocraft:open", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

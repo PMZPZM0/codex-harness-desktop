@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 691,
+  "count": 698,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6881,6 +6881,76 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径）"
+    },
+    {
+      "name": "photocraftStatus",
+      "channel": "photocraft:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; cliPath: string; guiPath: string; ioRoot: string; mcpRegistered: boolean; platform: string; sizeBytes: number; attribution: { license: string; home: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-15 PhotoCraft（storytold/photocraft，MIT/Apache-2.0，纯 Rust 的 Photoshop）：安装状态 / CLI / GUI / MCP 段 / 体积"
+    },
+    {
+      "name": "photocraftInfo",
+      "channel": "photocraft:info",
+      "paramsImpl": "input: { path?: string }",
+      "paramsDecl": "input: { path?: string }",
+      "returns": "Promise<any>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 读文档信息（尺寸 / 模式 / 位深 / 图层树，CLI info --compact；路径必须落在可信根内）"
+    },
+    {
+      "name": "photocraftConvert",
+      "channel": "photocraft:convert",
+      "paramsImpl": "input: { path?: string; out?: string; quality?: number }",
+      "paramsDecl": "input: { path?: string; out?: string; quality?: number }",
+      "returns": "Promise<{ ok: boolean; path: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 格式转换（PNG/JPEG/WebP/PSD/TIFF…）；⛔ 输出不得与输入同路径（不就地覆盖原图）"
+    },
+    {
+      "name": "photocraftRun",
+      "channel": "photocraft:run",
+      "paramsImpl": "input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }",
+      "paramsDecl": "input: { path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }> }",
+      "returns": "Promise<{ ok: boolean; path: string; commands: string[]; log: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 对一个文档按序执行引擎命令（最多 20 条；命令 id 白名单正则、参数 ≤8KB/条）"
+    },
+    {
+      "name": "photocraftBatch",
+      "channel": "photocraft:batch",
+      "paramsImpl": "input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }",
+      "paramsDecl": "input: { input?: string; outDir?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; format?: string; recursive?: boolean }",
+      "returns": "Promise<{ ok: boolean; outDir: string; commands: string[] }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 批量处理目录（actions 文件由宿主写进 photocraft-io 后清理）；输入/输出目录都过可信根闸"
+    },
+    {
+      "name": "photocraftCommands",
+      "channel": "photocraft:commands",
+      "paramsImpl": "input: { filter?: string }",
+      "paramsDecl": "input: { filter?: string }",
+      "returns": "Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 列出引擎命令（500+；可按关键字过滤）—— 模型先发现命令 id 再跑 photocraft:run"
+    },
+    {
+      "name": "photocraftOpen",
+      "channel": "photocraft:open",
+      "paramsImpl": "input: { path?: string }",
+      "paramsDecl": "input: { path?: string }",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸）"
     }
   ]
 }

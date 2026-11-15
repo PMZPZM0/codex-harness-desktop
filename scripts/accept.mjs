@@ -1632,6 +1632,35 @@ const CHECKS = [
     },
   },
   {
+    id: "photocraft",
+    name: "🖼 PhotoCraft（开发工具卡 / 工具状态 / 路径闸，11-15）",
+    run: async (h) => {
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(700);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="photocraft"]') || !!document.querySelector(".devtools-card")`, { label: "开发工具卡片", timeoutMs: 15000 });
+      const card = await h.eval(`(function(){ const cards=[...document.querySelectorAll(".devtools-card")]; const hit=cards.find(function(c){ return (c.textContent||"").includes("PhotoCraft 图像编辑"); }); if(!hit) return null; hit.querySelector(".devtools-card-open")?.click(); return (hit.textContent||"").trim().slice(0, 120); })()`);
+      h.check("① 开发工具页有 PhotoCraft 卡片", Boolean(card), JSON.stringify(card));
+      await h.waitFor(`!!document.querySelector(".settings-dialog")`, { label: "PhotoCraft 弹窗", timeoutMs: 8000 });
+      await wait(600);
+      const rows = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return { text: text.slice(0, 1200), hasInstall: text.includes("安装 PhotoCraft"), hasMcp: text.includes("MCP 连接器"), hasGui: text.includes("原生窗口编辑"), hasLicense: text.includes("来源与许可") }; })()`);
+      h.check("② 卡片含安装 / MCP / GUI / 许可四行",
+        Boolean(rows) && rows.hasInstall && rows.hasMcp && rows.hasGui && rows.hasLicense, JSON.stringify(rows).slice(0, 400));
+      const upd = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); return Boolean(d && [...d.querySelectorAll(".runtime-row")].find(function(r){ return (r.textContent||"").includes("更新"); })); })()`);
+      h.check("③ 卡片内有独立更新行", upd === true);
+
+      const status = await h.eval(`window.codex.photocraftStatus().then(function(s){ return { installed: !!s.installed, license: s?.attribution?.license || "" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
+      h.check("④ 主进程状态通道可用（返回安装态与许可）", Boolean(status) && status.error === undefined && typeof status.installed === "boolean" && status.license === "MIT OR Apache-2.0", JSON.stringify(status));
+
+      const gate = await h.eval(`window.codex.photocraftInfo({ path: "C:\\\\Windows\\\\win.ini" }).then(function(){ return "allowed"; }).catch(function(e){ return String(e && e.message || e); })`);
+      h.check("⑤ 越界路径被拒绝（可信根闸生效）", typeof gate === "string" && gate.includes("允许目录"), JSON.stringify(gate).slice(0, 200));
+
+      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await wait(250);
+    },
+  },
+  {
     id: "devtools-update-rows",
     name: "🔄 开发工具 · 卡片内更新行（Filee / ApkStart / OpenMAIC / 飞书 CLI，11-14）",
     run: async (h) => {

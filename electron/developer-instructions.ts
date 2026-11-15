@@ -443,6 +443,14 @@ const DESIGN_MD_INSTRUCTIONS =
   `   call \`design_md\` with action="search" (or "list" by category) to find the slug, then action="get" to read the full DESIGN.md — a Google Stitch style document with colors, typography, radius/spacing scales, component rules, do's & don'ts, responsive behavior and an iteration guide. Implement the user's interface against that document's tokens and rules, mapped onto the project's own CSS variables (⛔ not a hard-coded second palette).\n` +
   `   ⛔ Reference only: never copy brand logos, trademarks, photos or proprietary fonts; use the substitutes the document recommends and never present the result as the brand's official product. Combine it with the \`frontend-design\` method and, when the project has one, its own DESIGN.md for concrete values. If the tool is absent (an older session), say so instead of inventing a design system.`;
 
+/* ── 第 21 条：PhotoCraft 图像后期（11-15，用户给了 storytold/photocraft）──
+   ⛔ 工具无条件注册；未安装时 status 会指路。它补的是 image_edit（jimp 基础调色）够不到的专业能力：
+   曲线/色阶/局部调整/蒙版/锐化/文字图层/PSD 导出 —— 生成图要"再精修"时先想到它。 */
+const PHOTOCRAFT_INSTRUCTIONS =
+  `\n21) PROFESSIONAL IMAGE EDITING (PhotoCraft) — when the task is real photo retouching (curves / levels / vibrance / selective color / sharpen / masks / text layers / layered PSD export) and \`photocraft\` is in your tool list:\n` +
+  `   discover commands with action="commands" (filter — e.g. curves, vibrance, unsharp, text), then action="run" with the source file, an ORDERED commands list and an \`out\` path that differs from the source (⛔ never overwrite the user's original). action="convert" changes format; action="batch" applies the same steps to a whole folder; action="info" reads size/depth/layer tree; action="open" opens the native PhotoCraft window so the user can edit by hand.\n` +
+  `   ⛔ Files must stay inside the session workspace or app data. If status says it is not installed, point the user to Settings → 开发工具 → PhotoCraft 图像编辑 (about 137 MB) instead of trying to install it yourself. A PhotoCraft MCP connector is registered when installed, but the engine may defer MCP tools — use this \`photocraft\` tool as the primary path. Keep it to the provided wrappers: do not shell out to photocraft-cli yourself.`;
+
 /* ── 第 14 条：任务清单（10-06 夜三轮，用户：「任务清单必须有 codex 自己更新，他自己完成任务清单后
    就主动更新任务清单」；界面 = 输入框上方胶囊的「步骤 N/M」，悬停展开步骤清单）──
    ⛔ 常驻原因与第 12/13 条同款：工具在表里模型未必主动用，而这份清单直接驱动用户可见的进度
@@ -637,6 +645,8 @@ export function buildDevInstructions(input: DevInstructionsInput = {}): string {
   text += FRONTEND_DESIGN_INSTRUCTIONS;
   // 品牌设计语言参考库（11-15：用户点名某种风格时先 design_md 取规范；只作参考不抄品牌）
   text += DESIGN_MD_INSTRUCTIONS;
+  // PhotoCraft 专业图像后期（11-15：调色/曲线/PSD/批量；工具在表里时引导）
+  text += PHOTOCRAFT_INSTRUCTIONS;
   // 任务清单（10-06 夜三轮：输入框上方「步骤 N/M」胶囊的唯一数据源，完成一步更新一步）
   text += TASK_LIST_INSTRUCTIONS;
   // 影视源检索（10-20：用户给的 LibreTV/TVBox 源 + media_source_search/detail/open 三件套）

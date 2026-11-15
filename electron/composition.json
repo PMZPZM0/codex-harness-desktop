@@ -807,6 +807,13 @@
       "config": null
     },
     {
+      "id": "photocraft",
+      "enabled": true,
+      "file": "features/photocraft-ipc.ts",
+      "export": "photocraftFeature",
+      "config": null
+    },
+    {
       "id": "monitor",
       "enabled": true,
       "file": "features/task-monitor.ts",

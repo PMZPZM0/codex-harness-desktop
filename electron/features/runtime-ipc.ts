@@ -32,6 +32,7 @@ import { mirrorCandidates } from "../gh-mirror";
 import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
 import { HUSK_REPO, huskInstalledVersion, installHuskFromGitHub, installHuskTipaFromGitHub } from "../husk-install";
+import { PHOTOCRAFT_REPO, installPhotoCraftFromGitHub, photocraftInstalledVersion } from "../photocraft";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -780,6 +781,8 @@ const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string; platforms
   openmaic: { repo: OPENMAIC_REPO, label: "OpenMAIC 互动课堂", platforms: ["win32"], install: installOpenMaicFromGitHub },
   // Husk（11-14）：只有 iPhone 用的 IPA；电脑侧下载/更新官方安装包，真机侧载由用户完成。
   husk: { repo: HUSK_REPO, label: "Husk（iPhone 跑 Android）", install: installHuskFromGitHub },
+  // PhotoCraft（11-15）：便携包（CLI+GUI），更新 = 重下同版本资产并替换；MCP 段随安装状态生成。
+  photocraft: { repo: PHOTOCRAFT_REPO, label: "PhotoCraft 图像编辑", install: installPhotoCraftFromGitHub },
 };
 
 /** 查 GitHub **最新**版本号（去 v 前缀）：tags 列表 + releases/latest 都查，取版本最大者。
@@ -1068,6 +1071,16 @@ export function updateableToolIds(): string[] {
 }
 
 /** 读磁盘上已装的版本号（npm 包读 package.json；GitHub 直下型读安装时落的 version.txt）。 */
+/** 安装 / 卸载 PhotoCraft 后重写 config.toml：`[mcp_servers.photocraft]` 的唯一来源是 applyCustomModel。 */
+async function refreshConfigForPhotocraft(): Promise<void> {
+  try {
+    const { readCustomModel } = await import("../main/01-model-catalog");
+    const { applyCustomModel } = await import("./custom-model-apply");
+    const model = await readCustomModel();
+    if (model) await applyCustomModel(model, { restart: false });
+  } catch { /* 没有模型档案时跳过：下一次 applyCustomModel 会按安装状态收敛 */ }
+}
+
 function installedVersionOf(id: string): string {
   const gh = GITHUB_UPDATEABLE[id];
   if (gh) {
@@ -1075,6 +1088,7 @@ function installedVersionOf(id: string): string {
     if (id === "apkstart") return apkstartInstalledVersion();
     if (id === "openmaic") return openmaicInstalledVersion();
     if (id === "husk") return huskInstalledVersion();
+    if (id === "photocraft") return photocraftInstalledVersion();
     return "";
   }
   const tool = UPDATEABLE_TOOLS[id];
@@ -1438,6 +1452,12 @@ export const runtimeFeature = defineFeature<null>({
           mergeStrategy: "replace",
         }).catch(() => undefined);
       }
+      // PhotoCraft（11-15）：卸载后直接删掉 MCP 段并重启引擎（⛔ 不依赖 applyCustomModel 的时序）。
+      if (id === "photocraft") {
+        const { removePhotoCraftMcpSection } = await import("../photocraft");
+        removePhotoCraftMcpSection();
+        await restartServerWhenIdle(id);
+      }
       sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });
       // ⛔ 10-12 同步清账：留着记录的话，更新后的「你装过哪些工具」会把一个**用户主动卸载**的
       //   工具算成「待重装」并提示恢复 —— 账本必须跟着真实状态走，不是只增不减。
@@ -1614,6 +1634,12 @@ export const runtimeFeature = defineFeature<null>({
         } else if (id === "husk-tipa") {
           /* Husk TIPA（11-14）：TrollStore 专用 .tipa，同版本；与 IPA 分文件、分版本号。 */
           await installHuskTipaFromGitHub(id, await latestInstallVersion("husk", HUSK_REPO));
+        } else if (id === "photocraft") {
+          /* PhotoCraft（11-15）：便携包（CLI+GUI，约 137MB），镜像序 + SHA256SUMS 校验。
+             ⛔ 装完要**立刻重写 config.toml**（新增 [mcp_servers.photocraft]），再走统一的重启链；
+                否则下一次 applyCustomModel 之前 MCP 始终不在配置里。 */
+          await installPhotoCraftFromGitHub(id, await latestInstallVersion("photocraft", PHOTOCRAFT_REPO));
+          await refreshConfigForPhotocraft();
         } else if (id === "rea") {
           /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
              ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，

@@ -171,6 +171,11 @@ screenshot 截屏（返回 PNG 路径）→ logcat 查崩溃 → adb 透传点�
 什么时候用：用户说「做成 Linear / Vercel / Apple 那种风格」时，用 design_md 先 search 再 get，按规范落地到项目自己的 token。
 ⛔ 只作风格参考：不复制品牌 logo / 商标 / 图片 / 专有字体，界面不要冒充官方。设置 → 能力与内容 →「设计参考」可浏览/导出。`,
 
+  "photocraft": `# PhotoCraft 专业图像后期（中文导读）
+开源 Photoshop 重写（storytold/photocraft，MIT/Apache-2.0）：曲线/色阶/调色/锐化/蒙版/文字/PSD/批量。
+什么时候用：用户要「调色 / 精修 / 转 PSD / 批量处理」时，用 photocraft 工具的 commands → run / convert / batch；
+要用户手工改就用 open 打开原生窗口。⛔ 输出不能覆盖原图；文件必须在会话目录内；没装先去「设置 → 开发工具」安装（约 137MB）。`,
+
   "openmaic": `# OpenMAIC 互动课堂（中文导读）
 本机 OpenMAIC 服务里生成课堂：status 看状态 → start/open 起服务 → generate 提交（requirement 必填）→
 job 查进度，成功后把课堂链接单独一行给用户。

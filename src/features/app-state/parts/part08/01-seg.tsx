@@ -674,6 +674,25 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           args: { type: "array", items: { type: "string" }, description: "adb 用：adb 参数数组（不含 adb 本身；宿主自动补 -s <当前模拟器>）" },
           timeoutMs: { type: "number", description: "adb 用：超时毫秒（默认 60000，上限 300000）" },
         }, required: ["action"] } },
+      /* PhotoCraft（11-15，storytold/photocraft，MIT/Apache-2.0）：纯 Rust 重写的开源 Photoshop。
+         ⛔ 一个工具 + action；执行端 features/photocraft-ipc.ts（spawn CLI，参数数组、不开 shell）。
+         ⛔ 路径必须落在会话工作目录 / userData；输出不得与输入同路径（不就地覆盖原图）。
+         ⛔ 装了以后还会注册 [mcp_servers.photocraft]（headless，roots=userData/photocraft-io），
+            但引擎 0.157 会延迟暴露 MCP 工具 ⇒ 主路径仍是这个动态工具。 */
+      { type: "function", name: "photocraft",
+        description: "用 PhotoCraft（开源 Photoshop 重写）做专业图像后期：action=status 查安装/版本/MCP；commands 发现引擎命令（可按关键字过滤，500+ 条，如 curves / vibrance / sharpen / text）；run 对一个文档按序执行命令并另存新文件（最多 20 条，命令 id 用 commands 查，参数是 JSON 对象）；convert 换格式（PNG/JPEG/WebP/PSD/TIFF…）；batch 对整个目录批量执行；info 读尺寸/位深/图层树；open 用 PhotoCraft 原生窗口打开图片给用户手工编辑。⛔ 需先在「设置 → 开发工具 → PhotoCraft 图像编辑」安装（约 137MB）；未安装时 status 会说明去哪里装。⛔ 输出路径不能与输入相同（不覆盖原图）；文件必须位于会话工作目录或应用数据目录内。",
+        inputSchema: { type: "object", properties: {
+          action: { type: "string", enum: ["status", "commands", "info", "run", "convert", "batch", "open"], description: "要执行的动作" },
+          path: { type: "string", description: "info / run / convert / open 用：输入文件的绝对路径" },
+          out: { type: "string", description: "run / convert 用：输出文件绝对路径（必须与输入不同）" },
+          commands: { type: "array", description: "run / batch 用：按序执行的命令（每次最多 20 条）", items: { type: "object", properties: { id: { type: "string", description: "命令 id（用 action=commands 查）" }, params: { type: "object", description: "命令参数（JSON 对象，≤8KB）" } }, required: ["id"] } },
+          input: { type: "string", description: "batch 用：输入目录的绝对路径" },
+          outDir: { type: "string", description: "batch 用：输出目录的绝对路径（不能与输入目录相同）" },
+          format: { type: "string", description: "batch 用：输出格式（如 png / jpg / webp / psd），省略沿用原格式" },
+          recursive: { type: "boolean", description: "batch 用：是否包含子目录" },
+          quality: { type: "number", description: "convert 用：有损格式质量 1-100" },
+          filter: { type: "string", description: "commands 用：关键字（匹配命令 id / 菜单名）" },
+        }, required: ["action"] } },
       /* OpenMAIC 互动课堂（11-14，THU-MAIC/OpenMAIC，MIT）：本机 Next.js + PostgreSQL 服务。
          ⛔ 口径同 apkstart：无条件注册；未安装时执行端回「去哪里装」。
          ⛔ 模型 Key 必须用户自己在网页里填——描述里明确禁止把 Key 发到对话里。 */

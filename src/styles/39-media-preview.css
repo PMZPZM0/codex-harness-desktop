@@ -936,3 +936,28 @@
   width: 22px;
   height: 22px;
 }
+
+/* PhotoCraft 入口（11-15）：图片卡右上角的「在 PhotoCraft 中编辑」；只在 hover / 键盘聚焦时出现。 */
+.turn-media-image-wrap { position: relative; width: 112px; height: 112px; flex: none; display: flex; }
+.turn-media-edit {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--accent);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, border-color 0.12s;
+}
+.turn-media-image-wrap:hover .turn-media-edit,
+.turn-media-edit:focus-visible { opacity: 1; }
+.turn-media-edit:hover { border-color: var(--accent); }
