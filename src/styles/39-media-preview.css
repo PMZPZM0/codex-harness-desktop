@@ -902,6 +902,16 @@
 .turn-media-cards.is-previews .turn-media-card.is-audio-chip { width: 168px !important; height: 48px !important; flex-direction: row !important; padding: 0 8px !important; }
 .turn-media-card.is-audio-chip {
 .turn-media-cards.is-previews .turn-media-card.is-audio { display: none; }
+/* ⛔⛔ 11-15 用户：「还是长的」—— 预览排里任何卡（视频/图片）一律钉死 112×112，
+   meta（文件名）整行隐藏；防止某张卡因类名没匹配上而带出 meta 变高。 */
+.turn-media-cards.is-previews .turn-media-card:not(.is-audio-chip) {
+  width: 112px !important;
+  height: 112px !important;
+  overflow: hidden !important;
+}
+.turn-media-cards.is-previews .turn-media-card:not(.is-audio-chip) .turn-media-meta { display: none !important; }
+.turn-media-cards.is-previews .turn-media-card:not(.is-audio-chip) .turn-media-thumb { width: 100% !important; height: 100% !important; }
+
   display: flex;
   align-items: center;
   gap: 6px;
