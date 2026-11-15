@@ -58,6 +58,9 @@ export type InvokeMemberInput = {
   /** ⛔ 成员之间互 @ 的接力：不受「一条用户消息内每人只派一次」的硬上限约束。
    *  否则先说过话的成员永远接不上别人的 @ —— 用户实测「成员之间都不会互相交流」。 */
   relay?: boolean;
+  /** ⛔ 谁把这位成员叫起来的（写进消息的 via，气泡上显示「回复 画帧：…」而不是「回复 潘总」）。 */
+  callerId?: string;
+  callerName?: string;
 };
 
 export type InvokeMemberResult = {
@@ -495,6 +498,13 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
              产出原来只是一段正文落群，下游收件人**哪里都没写**。⇒ 结构化记下交回给主理人，
              群里名字行显示「交回 @主理人」，同时这也是宿主回喂的那个对象。 */
           handoffTo: teamAuthorIdOf(String(team.teamId ?? ""), String(team.lead?.id ?? "")),
+          /* ⛔⛔ 11-15 用户：「他是回复艾特他那个人的」——原来这里没有 via，渲染层只能回退成
+             「回复 潘总」（最近一条人话）。
+             ⇒ 写清**谁叫的我**：互 @ 接力 = 那位成员；工具派活 = 团主理人。 */
+          via: {
+            memberId: String(input.callerId ?? teamAuthorIdOf(String(team.teamId ?? ""), String(team.lead?.id ?? ""))),
+            name: String(input.callerName ?? team.lead?.name ?? ""),
+          },
           authorKind: "bot",
           senderKind: "member",
           threadId: memberThreadId,
@@ -533,6 +543,8 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
           query: `（${member.name} 在群里叫你）${ask.ask}`,
           hop: 1,
           relay: true,   // ⛔ 互 @ 接力不算"重复派活"
+          callerId: teamAuthorIdOf(String(team.teamId ?? ""), String(member.id ?? "")),
+          callerName: String(member.name ?? ""),
         }).catch(() => undefined);
       }
     }

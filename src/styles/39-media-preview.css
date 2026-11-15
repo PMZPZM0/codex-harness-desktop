@@ -880,6 +880,22 @@
   width: 100%;
   height: 100%;
 }
+/* ⛔⛔ 11-15 用户：「视频预览缩略图太长了，改成跟图片一样正方形」——
+   原来只有 .is-image 有 112×112 规则，视频沿用上面那条 width:100% 的播放卡样式 ⇒ 一条横幅占满整行。
+   ⇒ 视频与图片**同一规格**：正方形、不显示文件名。 */
+.turn-media-card.is-video {
+  width: 112px;
+  height: 112px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--panel);
+  overflow: hidden;
+}
+.turn-media-card.is-video .turn-media-thumb { width: 100%; height: 100%; }
+.turn-media-card.is-video .turn-media-meta { display: none; }
+.turn-media-card.is-video .turn-media-play { width: 26px; height: 26px; }
 /* 11-11 用户：「文件名可以不要」——正方形预览只留图。 */
 .turn-media-card.is-image .turn-media-meta {
   display: none;

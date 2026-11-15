@@ -17,7 +17,8 @@ import { openImageLightbox, openMediaPreview } from "../../lib/ui-channels";
 
 export type TurnMediaFile = { path: string; deletedFile?: boolean };
 
-const MAX_VISIBLE = 8;
+/* ⛔ 11-15 用户：「这里一次展示太多」⇒ 首屏 4 个（与图片同格的 112px 方块），其余折叠。 */
+const MAX_VISIBLE = 4;
 
 function nameOf(path: string): string {
   const norm = String(path || "").replaceAll("\\", "/");

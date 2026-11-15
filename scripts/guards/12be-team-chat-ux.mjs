@@ -412,6 +412,15 @@ const catalog = [
         && ipcSup.includes("!options.suppressLead"),
         "用户直接 @ 成员时管理员不插嘴（⛔ 只收敛给管理员那种才回喂）");
     }
+    /* ⛔ 11-15 用户截图：「他是回复艾特他那个人的」—— 造镜的气泡引用的是「回复 潘总」，
+       因为成员产出落群时没写 via，渲染层只能回退到最近一条人话。
+       ⇒ 必须写清「谁叫的我」：互 @ 接力 = 那位成员；工具派活 = 团主理人。 */
+    {
+      const rawInvoke = read("electron/team-invoke.ts");
+      ok(rawInvoke.includes("callerId") && rawInvoke.includes("callerName")
+        && rawInvoke.includes("via: {") && rawInvoke.includes("input.callerName"),
+        "成员产出写 via（引用谁叫他来的），⛔ 不再一律回退成「回复 用户」");
+    }
     const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
     const boot = codeOnly(read("electron/features/boot.ts"));
     ok(/extraTools\?: unknown\[\]/.test(chan)
