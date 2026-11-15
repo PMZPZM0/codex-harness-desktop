@@ -255,6 +255,14 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
     && buttonGroup.items[0].label === "按钮 · 主要",
     "组件样式：token 引用解析成真实色值 + 中文变体名（主要 / 悬停 / …）");
   ok(summary.hiddenComponents === 1, "组件超出上限时给出「还有 N 个」计数（不静默丢）");
+  /* 上游部分文件在色值行尾写注释（`primary: "#0070d5"  # DJI Blue — …`）——
+     不剥注释会整条丢色，色板缺一整块（实测 dji / nintendo-2001）。 */
+  const commented = splitDesignMd("---\ncolors:\n  primary: \"#0070d5\"  # DJI Blue — store pill\n  ink: \"#111111\" # text\n---\nbody");
+  ok(commented.colors.length === 2 && commented.colors[0].hex === "#0070d5" && commented.colors[1].hex === "#111111",
+    "色值行尾注释不影响解析（quoted + trailing # comment）");
+  const commentedSummary = summarizeTokens("colors:\n  primary: \"#0070d5\"  # DJI Blue\ncomponents:\n  button-primary:\n    backgroundColor: \"{colors.primary}\"\n");
+  ok(commentedSummary.components[0].items[0].background === "主色 #0070d5",
+    "组件底色解析也会剥掉行尾注释（不会把注释带进中文导读）");
   ok(/summarizeTokens/.test(page) && /design-lib-scale/.test(page) && /design-lib-components/.test(page),
     "中文导读页签渲染字号层级表与组件样式（⛔ 不再只有一句话 + 色板）");
 }

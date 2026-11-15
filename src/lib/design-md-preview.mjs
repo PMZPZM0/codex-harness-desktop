@@ -25,7 +25,9 @@ export function splitDesignMd(text) {
   if (tokens) {
     const seen = new Set();
     for (const line of tokens.split(/\r?\n/)) {
-      const hit = /^\s*([a-zA-Z0-9_-]+):\s*["']?(#[0-9a-fA-F]{3,8})["']?\s*$/.exec(line);
+      /* ⛔ 允许行尾注释（上游部分文件写 `primary: "#0070d5"  # DJI Blue — …`），
+         否则整条色值被跳过，色板直接缺一整块。 */
+      const hit = /^\s*([a-zA-Z0-9_-]+):\s*["']?(#[0-9a-fA-F]{3,8})\b/.exec(line);
       if (!hit) continue;
       const hex = hit[2].toLowerCase();
       if (seen.has(hex)) continue;
@@ -232,6 +234,8 @@ const COMPONENT_GROUP_ZH = {
  */
 function parseTokenSections(tokens) {
   const sections = { colors: {}, typography: [], rounded: [], spacing: [], components: [] };
+  /** 去掉行尾注释与包裹引号（`"#0070d5"  # DJI Blue` → `#0070d5`）。 */
+  const strip = (raw) => String(raw ?? "").replace(/\s+#.*$/, "").replace(/^["']|["']$/g, "").trim();
   let section = "";
   let typeEntry = null;
   let compEntry = null;
@@ -241,7 +245,7 @@ function parseTokenSections(tokens) {
     const match = /^\s*([^:#]+):\s*(.*)$/.exec(line);
     if (!match) continue;
     const key = match[1].trim();
-    const value = match[2].trim();
+    const value = strip(match[2]);
     if (indent === 0) {
       section = value === "" ? key : "";
       typeEntry = null;
@@ -249,11 +253,11 @@ function parseTokenSections(tokens) {
       continue;
     }
     if (section === "colors") {
-      if (indent >= 2 && value) sections.colors[key] = value.replace(/^["']|["']$/g, "").trim();
+      if (indent >= 2 && value) sections.colors[key] = value;
       continue;
     }
     if (section === "rounded" || section === "spacing") {
-      if (indent >= 2 && value) sections[section].push({ name: key, value: value.replace(/^["']|["']$/g, "").trim() });
+      if (indent >= 2 && value) sections[section].push({ name: key, value });
       continue;
     }
     if (section === "typography") {

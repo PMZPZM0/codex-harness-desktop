@@ -50,7 +50,8 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
   const [exportDir, setExportDir] = useState(workspace);
   const [customDirs, setCustomDirs] = useState<string[]>([]);
 
-  useEffect(() => { if (workspace) setExportDir(workspace); }, [workspace]);
+  /* 工作区变化时同步默认导出目标；清空工作区就回到「未选择」（⛔ 不把旧路径留在下拉里误导出）。 */
+  useEffect(() => { setExportDir(workspace); }, [workspace]);
 
   useEffect(() => {
     let alive = true;
@@ -138,8 +139,10 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
     const seen = new Set<string>();
     const options: Array<{ value: string; label: string }> = [];
     const push = (dir: string, label: string) => {
-      if (!dir || seen.has(dir)) return;
-      seen.add(dir);
+      if (!dir) return;
+      const key = dir.replace(/[\\/]+$/, "");
+      if (seen.has(key)) return;
+      seen.add(key);
       options.push({ value: dir, label });
     };
     if (workspace) push(workspace, `当前项目 · ${projectName(workspace)}`);
