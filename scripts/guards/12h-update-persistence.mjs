@@ -12,9 +12,12 @@
  *   ② **只给「非内置」记账**。内置/随包项由 `extraResources` 每次重新铺回来，
  *      给它们记账会让「你装过哪些」把内置工具算成待重装 → 更新后误报。
  *   ③ **卸载要清账**，否则用户主动卸掉的工具会被算成「装过、现在没了」⇒ 提示恢复。
- *   ④ **静默下载不信任渲染层给的地址**、**restart-install 的顺序是先 spawn 再 quit**
+ *   ④ **静默下载不信任渲染层给的地址**、**restart-install 的顺序是先起安装动作、再 quit**
  *      —— 两个都是安全/可用性要害：前者是 09-13 P0 那条「任意 exe 落盘执行」的同一类，
  *      后者反了会被 exe 文件锁挡住（覆盖安装必失败）。
+ *      11-15 补：**差分包必须由 electron-updater 自己 quitAndInstall(true,true) 静默装**；
+ *      直接 `spawn(pending.exe)` 会弹交互式 NSIS 向导 + UAC（nsis.oneClick=false），
+ *      而应用同时退出 ⇒ 用户看到「应用关了、安装提醒一闪、版本没变」（用户实测原话）。
  *
  * ⛔ 真跑：第 ④ 条用 stub electron 起**编译产物**，实跑 `readToolManifest` /
  *   `recordToolInstalled` / `recordToolRemoved`，验的是行为不是字符串。
@@ -89,13 +92,27 @@ ok(/silentDownloading\s*=\s*true/.test(dl) && /finally\s*\{\s*silentDownloading\
 ok(/sendToWindow\("updates:ready"/.test(dl),
   "下载完成主动推 updates:ready（用户可能压根没开设置页，只能靠事件弹窗）");
 
-const rs = ui.slice(ui.indexOf('handle("updates:restart-install"'));
+/* ⛔⛔ 锚点必须先剥注释：11-15 给这段加说明时写了「这里不许再 app.quit()」，
+   裸 indexOf("app.quit()") 直接命中注释 ⇒ 判成「先 quit 再 spawn」的假红（本仓第五次同型坑）。
+   注释里提到代码就永远别用裸 indexOf 定位。 */
+const codeOnly = (src) => String(src).replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const rs = codeOnly(ui.slice(ui.indexOf('handle("updates:restart-install"')));
 const spawnAt = rs.indexOf("spawn(lastVerifiedUpdatePath");
 const quitAt = rs.indexOf("app.quit()");
 ok(spawnAt > 0 && quitAt > spawnAt,
-  "⛔ restart-install 必须**先 spawn 安装包、再 quit 自己**（反了会被 exe 文件锁挡住，覆盖安装必失败）");
+  "⛔ restart-install 必须**先起安装包、再 quit 自己**（反了会被 exe 文件锁挡住，覆盖安装必失败）");
 ok(/detached: true/.test(rs) && /\.unref\(\)/.test(rs),
   "安装包 detached + unref（不 detach 会等它结束 = 永远不退出）");
+/* ⛔⛔ 11-15 用户实测「点重启更新，应用关了、安装提醒出来一下、版本没变」：
+   差分包的 pending exe 直接 spawn 起来的是**交互向导 + UAC**（nsis.oneClick=false），
+   而应用同时退出 ⇒ 向导被挡在后面/被当垃圾关掉 = 什么都没装。
+   ⇒ 差分就绪时必须走 updater 自己的 quitAndInstall(true,true)（/S 静默 + 装完自启）。 */
+ok(/hasPendingDifferential\(\)/.test(rs) && /quitAndInstallDifferential\(\)/.test(rs),
+  "差分包就绪时交给 electron-updater quitAndInstall 静默安装（⛔ 不许把 pending exe 当普通安装包 spawn）");
+ok(/quitAndInstall\(true, true\)|quitAndInstall\(silent, runAfter\)/.test(readFileSync(join(ROOT, "electron/updates.ts"), "utf8")),
+  "quitAndInstall 必须 (isSilent=true, isForceRunAfter=true)：静默装 + 装完自动拉起新版本");
+ok(/spawn\(lastVerifiedUpdatePath, \["--updated", "\/S"\]/.test(rs),
+  "完整包回退路径带 `--updated` + `/S`（缺 /S 会弹交互向导；缺 --updated 装完不会自动拉起新版本）");
 ok(!/^\s*(await\s+)?server\??\.stop/m.test(rs),
   "⛔ 不在这里手写引擎收尾（before-quit 已统一做，重复执行反而出事；且 server 上无 stop 方法）");
 ok(/path_not_verified|no_verified_update/.test(ui.slice(0, ui.indexOf('handle("updates:restart-install"'))) ||

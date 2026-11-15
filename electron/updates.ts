@@ -326,6 +326,27 @@ export async function downloadUpdate(
 
 export type DifferentialDownloadResult = { path: string; version: string; differential: true };
 
+/** ⛔⛔ 11-15 用户实测「点重启安装，应用关了、安装提醒一闪就没装」的根因在这里：
+ *  差分包是 electron-updater 下的，**它不是"一个可以随便 spawn 的 exe 路径"** ——
+ *  直接 `spawn(pending.exe)` 起的是**交互式 NSIS 向导 + UAC 提权框**（本仓 nsis.oneClick=false），
+ *  而我们同时 `app.quit()` ⇒ 应用消失、向导被挡在后面/被用户当垃圾关掉 ⇒ 什么都装不上。
+ *  正解是让**下载它的那个 autoUpdater 自己去装**：`quitAndInstall(true, true)` 会带 `/S`
+ *  静默安装并在装完自动拉起新版本，用户点一次就完事（这也是 electron-updater 的唯一受支持路径）。
+ *  ⇒ 这里记住"差分已就绪的那个 updater 实例"，供 `updates:restart-install` 优先使用。 */
+let differentialUpdater: { quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void; version: string } | null = null;
+
+/** 本次会话是否有一个「差分包已下载完、还没装」的版本在等重启。 */
+export function hasPendingDifferential(): boolean {
+  return Boolean(differentialUpdater);
+}
+
+/** 让 electron-updater 静默安装并自动重启；抛错由调用方回退到 spawn 安装包的老路子。 */
+export function quitAndInstallDifferential(): void {
+  const updater = differentialUpdater;
+  if (!updater) throw new Error("no_pending_differential");
+  updater.quitAndInstall(true, true);
+}
+
 /** 10-25 差分更新：electron-updater + NSIS blockmap。
  *  ⛔ 只走 Windows NSIS；mac/其它平台直接抛错让上层回退完整包。
  *  ⛔ 仍按镜像候选序切 feed；任一候选失败继续下一档，全部失败由调用方回退完整下载。
@@ -364,6 +385,9 @@ export async function downloadUpdateDifferential(
         const files = await autoUpdater.downloadUpdate() as unknown as string[];
         const file = (Array.isArray(files) ? files : []).find((item) => item && existsSync(item));
         if (!file) throw new Error("差分下载完成但没有安装包文件");
+        // ⛔ 记住这个已就绪的实例：重启安装必须由它 quitAndInstall（静默 + 装完自启），
+        //   换个进程 spawn 那个 pending exe 只会弹交互向导（见 differentialUpdater 的说明）。
+        differentialUpdater = { quitAndInstall: (silent, runAfter) => autoUpdater.quitAndInstall(silent, runAfter), version };
         return { path: file, version, differential: true };
       } finally {
         autoUpdater.removeListener("download-progress", onDownload);

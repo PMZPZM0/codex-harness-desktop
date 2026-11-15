@@ -33,6 +33,8 @@ import {
   downloadUpdate,
   downloadUpdateDifferential,
   fileExists,
+  hasPendingDifferential,
+  quitAndInstallDifferential,
   installUpdate,
   UPDATE_CHANNEL,
 } from "../updates";
@@ -212,10 +214,14 @@ export const updatesFeature = defineFeature<null>({
     /**
      * 「重启安装」：退出应用并拉起已校验的安装包。
      *
-     * ⛔ 顺序至关重要：**先起安装包、再退出自己**。反过来（先 quit 再 spawn）的话，
-     *   本进程持有的 exe 锁没释放，安装包会撞上「无法关闭」。
-     *   ⛔ macOS 上 NSIS 不适用，走的是 dmg 拖拽；这里只在 win32 上提供此通道，
-     *   其余平台返回明确错误让界面改用「打开文件夹」。
+     * ⛔⛔ 11-15 用户实测「点重启更新，应用关了、安装提醒出来一下就没装成」：
+     *   **差分包必须由下载它的 electron-updater 自己去装**（`quitAndInstall(true, true)`
+     *   ＝ `/S` 静默安装 + 装完自动拉起新版本）。原来不管哪条路径都 `spawn(pending.exe)`，
+     *   而本仓 `nsis.oneClick=false` ⇒ 起来的是**交互式向导 + UAC 提权框**，
+     *   我们同时 `app.quit()` ⇒ 应用消失、向导被挡在后面，用户以为更新失败。
+     *   ⛔ 顺序仍守「先起安装动作、再退出自己」：quitAndInstall 内部就是先拉起安装器再退出。
+     *   ⛔ 完整包路径（手动下的 `Codex.Harness.Desktop-*.exe`）同理要带 `/S`，
+     *     否则同样把用户丢进向导；only macOS 不适用（NSIS 专属，其余平台返回明确错误）。
      */
     ipcHost.handle("updates:restart-install", async () => {
       if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
@@ -223,17 +229,31 @@ export const updatesFeature = defineFeature<null>({
       if (process.platform !== "win32") {
         return { ok: false, error: "unsupported_platform" };
       }
+      /* ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。 */
+      await new Promise((r) => setTimeout(r, 120));
+      // ① 差分就绪：交给 updater 静默装 + 自启（它会自己 quit，⛔ 这里不许再 app.quit()）。
+      if (hasPendingDifferential()) {
+        try {
+          quitAndInstallDifferential();
+          return { ok: true, via: "differential" };
+        } catch (error) {
+          // updater 装不了（极少见：pending 被清 / 状态没就绪）→ 回退到拉起安装包，不静默吞。
+          console.warn("[updates] 差分静默安装失败，回退拉起安装包：", (error as Error)?.message ?? error);
+        }
+      }
       try {
-        // ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。
-        await new Promise((r) => setTimeout(r, 120));
+        /* ② 完整包 / 回退路径：`--updated` + `/S` 两个参数缺一不可 ——
+         `/S` = 静默（⛔ 不带它就会弹交互式 NSIS 向导，就是用户看到的「安装提醒」）；
+         `--updated` = 告诉 electron-builder 的 installer.nsh「这是覆盖更新」，
+         它才会在装完后**自动拉起新版本**（electron-updater 自己 doInstall 时传的也是这两个）。 */
         // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
-        spawn(lastVerifiedUpdatePath, [], { detached: true, stdio: "ignore" }).unref();
+        spawn(lastVerifiedUpdatePath, ["--updated", "/S"], { detached: true, stdio: "ignore" }).unref();
         // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
         //    `before-quit`，那里已经统一做 cleanupAll / 停看门狗 / 断 SSH / 销毁语音工作线程。
         //    （原先这里写了一个 `server.stop?.().catch()` —— `server` 上根本没有 stop 方法，
         //      TS 直接报错；而且即便有，手写收尾也会与 before-quit 的那套**重复执行**。）
         app.quit();
-        return { ok: true };
+        return { ok: true, via: "installer" };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
       }
