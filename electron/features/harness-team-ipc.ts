@@ -1765,12 +1765,19 @@ async function runDispatchRounds(
             .map((row) => String((row as { authorId?: unknown })?.authorId ?? ""))
             .filter(Boolean),
         )];
-        const asks = parseAgentMentions(output, group, {
+        const allAsks = parseAgentMentions(output, group, {
           excludeId: partner.id,
           alreadyRan: [...ranCount.entries()].filter(([, n]) => n >= MAX_TURNS_PER_MEMBER).map(([id]) => id),
           max: chainBudget,
           catalog,
         });
+        /* ⛔⛔ 11-15 用户令（「一次喊一个、反反复复 @、一直刷屏，这种垃圾机制只删了重做」）：
+           **团群里主理人的「行首 @ 成员」不再当派活**。它只能走 team_member_invoke（可一次多名、系统并行）。
+           为什么必须删而不是继续"按事实判重"：这条通道的物理形态就是「一条群消息 = 一个回合」，
+           一次只能点一个人、每点一次多一条气泡 —— 无论怎么判重都必然刷屏 + 串行。
+           ⛔ 成员的回合不受影响（成员之间互 @ 是正常对话，不是派活）。 */
+        const isTeamKidId = (id: string) => Boolean(groupTeamId) && id.startsWith(`team:${groupTeamId}:`);
+        const asks = String(partner.id) === adminIdForRounds ? allAsks.filter((ask) => !isTeamKidId(String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? ""))) : allAsks;
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || !canRun(next.id)) continue;
@@ -1813,9 +1820,10 @@ async function runDispatchRounds(
           if (String(partner.id) === adminIdForRounds) {
             void (async () => {
               relayInFlight = true;
-              for (const item of queue) {
-                await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
-              }
+              /* ⛔⛔ 11-15 用户实测「一次喊一个、要等前一个说完」：原来这里 for-await 逐个跑，
+                 注释还写着「按它说的顺序串行执行，观感上就是它在排片」—— 那就是排队。
+                 ⇒ 改成并行：主理人一次点的人同时开跑，各自产出按完成顺序进群。 */
+              await Promise.all(queue.map((item) => runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined)));
               relayInFlight = false;
               /* ⛔⛔ 11-12 用户截图「这样没有后续了呀」「断之前好像也没有接力」—— 真因在这里：
                  原来用 `teamRunStore.activeRunList().some(run => run.teamId === groupTeamId)` 判
