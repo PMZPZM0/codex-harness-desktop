@@ -896,6 +896,26 @@
 .turn-media-card.is-video .turn-media-thumb { width: 100%; height: 100%; }
 .turn-media-card.is-video .turn-media-meta { display: none; }
 .turn-media-card.is-video .turn-media-play { width: 26px; height: 26px; }
+/* ⛔⛔ 11-15 用户：「下面这个（音频播放卡）放到上面来，可以长方形，不要这么大，紧凑一点」
+   ⇒ 音频与视频/图片同一排：紧凑长方形（48 高、图标 + 文件名 + 播放角标）。
+   ⛔ 下面那种整宽大卡不再出现（生成的音频在 TurnMediaCard 里已跳过）。 */
+.turn-media-card.is-audio-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 168px;
+  height: 48px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+  text-align: left;
+}
+.turn-media-card.is-audio-chip .turn-media-chip-icon { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: color-mix(in srgb, #22c55e 13%, var(--bg)); color: #22c55e; }
+.turn-media-card.is-audio-chip .turn-media-chip-name { flex: 1; min-width: 0; font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.turn-media-card.is-audio-chip .turn-media-chip-play { flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--accent); }
+
 /* 11-11 用户：「文件名可以不要」——正方形预览只留图。 */
 .turn-media-card.is-image .turn-media-meta {
   display: none;

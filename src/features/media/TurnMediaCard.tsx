@@ -46,7 +46,10 @@ export function TurnMediaCard({ threadId, turnId }: { threadId: string; turnId: 
       const path = String(entry?.path ?? "");
       if (!path || entry?.status === "deleted" || seen.has(path)) continue;
       const kind = mediaKindOf(path);
-      if (kind !== "video" && kind !== "audio") continue;
+      /* ⛔ 11-15 用户：「下面这个放到上面来」——生成的音频已经由媒体预览排（TurnMediaCards）
+         以紧凑长方形展示 ⇒ 这里跳过音频，避免同一条音频上下两张卡。
+         工具触发的音频播放记录（recorded）仍保留。 */
+      if (kind !== "video") continue;
       seen.add(path);
       out.push({ source: path, title: basenameOf(path), kind, generated: true });
     }

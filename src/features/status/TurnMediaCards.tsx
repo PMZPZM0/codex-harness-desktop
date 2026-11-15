@@ -8,7 +8,8 @@
  * ⛔ 由 `CompletedChanges` 渲染 ⇒ 主对话（03-turn-view）与群聊（11-team-cards）共用同一份，
  *    不写第二套。删除的文件不出卡。
  */
-import { Play, Image as ImageIcon, ChevronDown } from "lucide-react";
+import { Play, Image as ImageIcon, ChevronDown, Music2 } from "lucide-react";
+import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { useState } from "react";
 import { isVideoPath, mediaDisplaySrc } from "../../lib/media-kind.mjs";
 import { isImagePath } from "../../lib/is-image-path";
@@ -31,14 +32,24 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
   const alive = (Array.isArray(files) ? files : []).filter((f) => f && f.path && !f.deletedFile);
   const videos = alive.filter((f) => isVideoPath(f.path));
   const images = alive.filter((f) => isImagePath(f.path));
-  const media = [...videos.map((f) => ({ ...f, kind: "video" as const })), ...images.map((f) => ({ ...f, kind: "image" as const }))];
+  /* ⛔ 11-15 用户：「下面这个（音频播放卡）放到上面来，可以长方形，不要这么大」
+     ⇒ 音频与视频/图片同一排；样式是紧凑长方形（见 .turn-media-card.is-audio-chip）。 */
+  const audios = alive.filter((f) => mediaKindOf(f.path) === "audio");
+  const media = [
+    ...videos.map((f) => ({ ...f, kind: "video" as const })),
+    ...images.map((f) => ({ ...f, kind: "image" as const })),
+    ...audios.map((f) => ({ ...f, kind: "audio" as const })),
+  ];
   if (!media.length) return null;
   const visible = expanded ? media : media.slice(0, MAX_VISIBLE);
   const hidden = media.length - visible.length;
+  /* ⛔ 用户：「展开了，没有对应的折叠」—— 原来用 hidden>0 当渲染条件，展开后 hidden=0 ⇒ 按钮消失。 */
+  const canFold = media.length > MAX_VISIBLE;
 
-  const open = (file: { path: string; kind: "video" | "image" }) => {
+  const open = (file: { path: string; kind: "video" | "image" | "audio" }) => {
     const name = nameOf(file.path);
     if (file.kind === "video") openMediaPreview({ source: file.path, kind: "video", title: name, autoPlay: true });
+    else if (file.kind === "audio") openMediaPreview({ source: file.path, kind: "audio", title: name, autoPlay: true });
     else openImageLightbox(file.path, name);
   };
 
@@ -46,7 +57,20 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
     <section className="turn-media-cards is-previews" aria-label="本轮媒体产物" data-testid="turn-media-cards">
       {visible.map((file) => {
         const name = nameOf(file.path);
-        return file.kind === "video" ? (
+        return file.kind === "audio" ? (
+          <button
+            type="button"
+            key={file.path}
+            className="turn-media-card is-audio-chip"
+            data-testid="turn-media-audio"
+            title={`播放音频：${file.path}`}
+            onClick={() => open(file)}
+          >
+            <span className="turn-media-chip-icon"><Music2 size={15} /></span>
+            <span className="turn-media-chip-name" title={file.path}>{name}</span>
+            <span className="turn-media-chip-play"><Play size={12} /></span>
+          </button>
+        ) : file.kind === "video" ? (
           <button
             type="button"
             key={file.path}
@@ -78,7 +102,7 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
           </button>
         );
       })}
-      {hidden > 0 && (
+      {canFold && (
         <button type="button" className="turn-media-disclosure" aria-expanded={expanded} onClick={() => setExpanded((v) => !v)}>
           <ChevronDown size={13} className={expanded ? "open" : ""} />
           {expanded ? "收起" : `再显示 ${hidden} 个媒体`}
