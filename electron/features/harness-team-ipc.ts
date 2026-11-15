@@ -1890,7 +1890,16 @@ async function runDispatchRounds(
            ⇒ 总闸只掐**宿主自动回喂**（mustHandBack/continue，见下面那段），
              不掐**管理员自己写的 @ 行**：那是它明确点名，属于真派活（删了就又是"假艾特"）。
            普通成员在无 @ 的对话里写 @ 不派活；用户 @ 过人则全员放行（成员互 @ 接力照常）。 */
-        const leadIsSpeaking = Boolean(adminIdForRounds) && String(partner.id) === String(adminIdForRounds);
+        /* ⛔⛔ 11-15 20:04 实测：专家团群的管理员座位口径有三种 ——
+           `adminIdForRounds`（群 adminId 解析）、整团槽 id、合成 `team:<teamId>:<leadId>`。
+           只比第一种 ⇒ 专家团群判不出"管理员在说话" ⇒ 它写的四行 @ 全被清空（用户：又不行了）。
+           ⇒ 任一命中即算管理员：adminIdForRounds / leadSeatIds / teamRole=lead / 整团槽。 */
+        const leadIsSpeaking = Boolean(partner.id) && (
+          String(partner.id) === String(adminIdForRounds)
+          || leadSeatIds.has(String(partner.id))
+          || String((partner as { teamRole?: string }).teamRole ?? "") === "lead"
+          || String((partner as { targetKind?: string }).targetKind ?? "") === "team"
+        );
         const asks = (!options.allowMemberRelay && !leadIsSpeaking) ? [] : casualGreeting ? [] : allAsks.filter((ask) => {
           const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
           return !leadSeatIds.has(tid);
