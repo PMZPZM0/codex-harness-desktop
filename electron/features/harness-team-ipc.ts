@@ -1125,6 +1125,11 @@ async function runDispatchRounds(
      主理人被回喂后**只给一次**验收/收口机会。原来给 3 次 ⇒ 它每被叫醒一次就说一段、
      再派一轮，群里就是同一批人反复说话。⇒ 一次足够写结论；还要推进就等用户下一句。 */
   const MAX_LEAD_CATCH_UPS = 1;
+  /* ⛔⛔ 11-15 用户令（思路拍板）：**两人沟通的收尾权在发起者手里** ——
+     接收方（被 @ 的人）交回后必须把话头送回发起者，由它决定继续（再 @）还是了结；
+     ⛔ 接收方不能收尾（它的「收到 / 完成」不算数）。有界：MAX_MEMBER_CATCH_UPS + 预算 + 每人回合上限。 */
+  const MAX_MEMBER_CATCH_UPS = 6;
+  let memberCatchUps = 0;
   let leadCatchUps = 0;
   /* ⛔ 11-14：自由催办（宿主强催主理人再跑一轮）已移除 —— 抄 Pachat，谁说话由「被@ / 被回复 / 有未读」
      决定，宿主不再在「主理人没派活」时强催它一轮（那正是"同一问题回两条"的来源）。 */
@@ -1951,6 +1956,23 @@ async function runDispatchRounds(
             void (async () => {
               for (const item of queue) {
                 await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
+              }
+              /* ⛔⛔ 11-15 用户令（「任务输出后，需要继续艾特回去跟他在沟通的那个智能体」）：
+                 接收方交回 ≠ 结束 —— 把话头**送回发起者**（partner），由它决定：
+                   · 要继续 ⇒ 另起一行 @名字（宿主会真的把人叫起来，回到上面串行循环）；
+                   · 要结束 ⇒ 它自己写「此事了结」且不再 @ 任何人。
+                 ⛔ 接收方的「收到 / 完成」不算收尾 —— 收尾权只在发起者手里。
+                 有界：memberCatchUps(6) + chainBudget(12) + 每人 MAX_TURNS_PER_MEMBER(3)，
+                 超时任务由 HANDOFF_TIMEOUT_MS 自动关账，不会无限烧。 */
+              if (chainBudget > 0 && memberCatchUps < MAX_MEMBER_CATCH_UPS && canRun(partner.id)) {
+                memberCatchUps += 1;
+                chainBudget -= 1;
+                await runOne(partner, 0, caller,
+                  `[系统] 你 @ 的 ${queue.map((i) => i.next.name).join("、")} 已经交回了（产出在群里）。`
+                  + "这场沟通是你发起的：**只有你能收尾**——要继续就另起一行 @名字（他会被真的叫起来）；"
+                  + "确认结束才写「此事了结」且不再 @ 任何人。⛔ 接收方的「收到 / 完成」不算收尾，"
+                  + "⛔ 不要客套式地再 @ 一遍说「辛苦了」——那会多烧一轮。")
+                  .catch(() => undefined);
               }
             })();
           }
