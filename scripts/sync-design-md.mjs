@@ -15,6 +15,7 @@ import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DESIGN_MD_ZH } from "./design-md-zh.mjs";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_DIR = join(ROOT, "resources", "design-md");
@@ -121,9 +122,11 @@ async function main() {
   for (const entry of parsed) {
     const file = join(src, "design-md", entry.slug, "DESIGN.md");
     if (!existsSync(file)) { missing.push(entry.slug); continue; }
-    items.push({ ...entry, designMd: readFileSync(file, "utf8") });
+    items.push({ ...entry, zh: DESIGN_MD_ZH[entry.slug] ?? "", designMd: readFileSync(file, "utf8") });
   }
   if (missing.length) log(`⚠ 缺 DESIGN.md：${missing.join(", ")}`);
+  const noZh = items.filter((item) => !item.zh).map((item) => item.slug);
+  if (noZh.length) log(`⚠ 缺中文导读（scripts/design-md-zh.mjs）：${noZh.join(", ")}`);
   if (items.length < 60) throw new Error(`只收到 ${items.length} 份，明显不对`);
 
   const categories = CATEGORIES

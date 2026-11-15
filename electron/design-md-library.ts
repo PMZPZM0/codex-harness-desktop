@@ -13,7 +13,7 @@ import path from "node:path";
 import { app } from "electron";
 
 export type DesignMdCategory = { key: string; label: string; en: string; count: number };
-export type DesignMdBrief = { slug: string; name: string; category: string; description: string };
+export type DesignMdBrief = { slug: string; name: string; category: string; description: string; zh: string };
 export type DesignMdDoc = DesignMdBrief & { designMd: string };
 
 type Library = {
@@ -60,7 +60,7 @@ export function designMdList(input: { category?: string; query?: string; limit?:
   let items = lib.items;
   if (category && category !== "all") items = items.filter((item) => item.category === category);
   if (query) {
-    items = items.filter((item) => `${item.name} ${item.slug} ${item.description} ${item.category}`.toLowerCase().includes(query));
+    items = items.filter((item) => `${item.name} ${item.slug} ${item.description} ${item.zh ?? ""} ${item.category}`.toLowerCase().includes(query));
   }
   const limit = Math.max(1, Math.min(200, Number(input.limit) || 200));
   return {

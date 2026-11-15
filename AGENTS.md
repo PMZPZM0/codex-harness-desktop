@@ -338,10 +338,10 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 用户给了 <https://github.com/VoltAgent/awesome-design-md>（84 份真实网站的品牌 DESIGN.md，Google Stitch 格式：YAML tokens + 主题/排版/组件/布局/Do&Don't/响应式/迭代指南，MIT）：
 
 - **数据随包**：`resources/design-md/library.json`（生成物，`node scripts/sync-design-md.mjs --force` 从上游**整包 tarball** 重建，镜像序 gh-proxy → ghfast → 直连；⛔ 不逐个打 GitHub API —— 匿名配额 60 次/小时，84 份一次就耗光）+ `LICENSE` 原文。上游 README 漏列的 `slack` 由脚本 EXTRA 补齐（84 份完整）。打包走 `build.files` 的 `resources/design-md/**`（⛔ 不另占 extraResources，同一份数据不重复打包）。
-- **三类出口同一份实现**：Codex 工具 **`design_md`**（`list` / `search` / `get`，走 `harness_tools` 网关；常驻指令**第 20 条**只在工具表里有它时才引导）、设置 → 能力与内容 →「**设计参考**」页（`design-library`：分类 tab + 搜索 + 卡片分页 / 预览 = 色板 + tokens 折叠 + 正文 Markdown / 复制 / 导出到项目 / 交给 Codex）、内置技能 **`design-md-library`**（+ 中文导读）。
+- **三类出口同一份实现**：Codex 工具 **`design_md`**（`list` / `search` / `get`，走 `harness_tools` 网关；常驻指令**第 20 条**只在工具表里有它时才引导）、设置 → 能力与内容 →「**设计参考**」页（`design-library`：搜索 + **分类下拉** + 卡片分页；详情**默认中文导读** = 中文一句话 + 按用途分组的中文色板，可切「英文原文」看完整 DESIGN.md；**展示中文、复制 / 导出 / 交给 Codex 一律英文原文**；导出目标可选当前项目 / 其它项目 / 自选目录）、内置技能 **`design-md-library`**（+ 中文导读）。
 - **导出落点** = `<项目>/design-references/<slug>.md`，⛔ 不覆盖项目根 `DESIGN.md`；「交给 Codex」= `bag.setPrompt` 填进输入框，**不自动发送**（避免误触发一轮）。
 - ⛔ **合规**：MIT 原文与版权头随包；只作**风格参考** —— 不复制品牌 logo / 商标 / 图片 / 专有字体，生成界面不冒充官方。工具描述、技能、页面文案、`THIRD_PARTY_NOTICES.md` 四处都写明。
-- 判据：守卫 **`12bs-design-md`（59 条：数据真值 / 同步脚本来源 / 三通道 / slug 白名单 / 工具+指令+技能 / 页面五处注册 / 预览拆分真值表 / 打包与合规）** + 验收 **`design-library`（6 条：84 份加载 / 搜索 / 预览色值 / 复制回执 / 真导出到 design-references / 交给 Codex 填输入框）**。
+- 判据：守卫 **`12bs-design-md`（67 条：数据真值与中文导读全覆盖 / 同步脚本来源 / 三通道 / slug 白名单 / 工具+指令+技能 / 页面五处注册 / 中英文预览与色板分组真值表 / 分类下拉与导出项目选择 / 打包与合规）** + 验收 **`design-library`（8 条：84 份加载（中文导读 + 分类下拉）/ 搜索 / 中文导读色值 / 英文原文页签 / 复制回执 / 导出目标可选 / 真导出 / 交给 Codex 填输入框）**。
 
 ### 🧑‍🤝‍🧑 工作伙伴群编排（抄 Pachat 的「先读再说 + 按需唤醒」，11-14，守卫 11f/12be/09）
 

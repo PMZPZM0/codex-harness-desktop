@@ -56,6 +56,8 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
     ok((lib.items ?? []).every((it) => catKeys.has(it.category)), "每条 item 的分类都在 categories 表里（不会出现孤儿分类）");
     const slack = (lib.items ?? []).find((it) => it.slug === "slack");
     ok(Boolean(slack), "README 漏列的 slack 已用 EXTRA 补齐（84 份完整）");
+    const noZh = (lib.items ?? []).filter((it) => !String(it.zh ?? "").trim());
+    ok(noZh.length === 0, `每份都有中文导读（展示用；缺 ${noZh.length} 条：${noZh.slice(0, 3).map((it) => it.slug).join(", ")}）`);
   }
 }
 
@@ -151,6 +153,14 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
   const page = codeOnly(read(PAGE));
   ok(/designMdList/.test(page) && /designMdGet/.test(page) && /designMdExport/.test(page),
     "页面走 design-md 三通道（不自己读文件）");
+  ok(/comp-lib-cat-filter/.test(page) && /<AppSelect/.test(page) && /value=\{cat\}/.test(page),
+    "筛选 = 搜索框 + 分类下拉（用户 11-15 令：分类做成下拉，不铺一排 tab）");
+  ok(/item\.zh/.test(page) && /design-lib-zh-line/.test(page) && /英文原文 DESIGN.md/.test(page),
+    "展示用中文导读（卡片 + 详情），并写明复制/导出仍是英文原文");
+  ok(/chooseDirectory/.test(page) && /design-lib-export-select/.test(page) && /exportDir/.test(page),
+    "导出目标可选：项目下拉 + 自选目录（dialog:directory）");
+  ok(/projectGroups\.map\(\(\[path\]\) => path\)/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx")),
+    "设置注册表把侧栏项目列表传给页面（projects prop）");
   ok(/onHandoff/.test(page) && /onCloseSettings/.test(page), "「交给 Codex」= 填进输入框（onHandoff）+ 先关设置");
   ok(/setPrompt\(text\)/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx")),
     "交给 Codex 的接线走 bag.setPrompt（⛔ 不自动发送 —— 避免误触发一轮）");
@@ -171,7 +181,7 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
 
 /* ── ⑨ 预览拆 tokens（纯函数真值表） ───────────────────────── */
 {
-  const { splitDesignMd } = await import(new URL("../../src/lib/design-md-preview.mjs", import.meta.url).href);
+  const { splitDesignMd, groupColors, tokenLabelZh } = await import(new URL("../../src/lib/design-md-preview.mjs", import.meta.url).href);
   const sample = "---\nversion: alpha\ncolors:\n  primary: \"#5e6ad2\"\n  ink: '#111111'\n---\n## Overview\nBody text";
   const parsed = splitDesignMd(sample);
   ok(parsed.tokens.includes("version: alpha") && parsed.body.startsWith("## Overview"),
@@ -180,9 +190,22 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
     "色板提取（双引号 / 单引号两种写法）");
   const plain = splitDesignMd("# Design System Inspired by X\n\n## Section");
   ok(plain.tokens === "" && plain.body.startsWith("# Design"), "没有 YAML 头的正文式文档原样当正文");
+  const grouped = groupColors([
+    { name: "primary", hex: "#5e6ad2" },
+    { name: "canvas", hex: "#010102" },
+    { name: "ink", hex: "#f7f8f8" },
+    { name: "hairline", hex: "#23252a" },
+    { name: "semantic-success", hex: "#27a644" },
+  ]);
+  ok(grouped.map((g) => g.key).join(",") === "accent,bg,text,line,state",
+    `色板按用途分组且顺序稳定（${grouped.map((g) => g.key).join(",")}）`);
+  ok(tokenLabelZh("primary") === "主色" && tokenLabelZh("canvas") === "页面底色" && tokenLabelZh("whatever") === "whatever",
+    "token 中文名映射（未知 key 原样保留）");
+  ok(grouped.every((g) => g.items.every((item) => Boolean(item.label))),
+    "分组里的色块都带中文名（未知 token 保留英文）");
   const page = codeOnly(read(PAGE));
-  ok(/splitDesignMd/.test(page) && /design-lib-swatches/.test(page) && /design-lib-tokens/.test(page),
-    "预览页用纯函数拆 tokens（色板 + YAML 折叠块 + Markdown 正文）");
+  ok(/splitDesignMd/.test(page) && /groupColors/.test(page) && /design-lib-swatches/.test(page),
+    "预览页用纯函数拆 tokens（分组色板 + YAML 折叠块 + Markdown 正文）");
 }
 
 console.log(`\n【design-md】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

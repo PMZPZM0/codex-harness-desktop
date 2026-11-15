@@ -14,3 +14,9 @@ export type DesignMdParts = {
 export declare function splitDesignMd(text: string): DesignMdParts;
 export declare function hasSwatches(parts: DesignMdParts | null | undefined): boolean;
 export declare function isHexColor(value: string): boolean;
+
+export type DesignMdColorLabel = DesignMdColor & { label: string };
+export type DesignMdColorGroup = { key: string; label: string; items: DesignMdColorLabel[] };
+
+export declare function tokenLabelZh(name: string): string;
+export declare function groupColors(colors: DesignMdColor[]): DesignMdColorGroup[];

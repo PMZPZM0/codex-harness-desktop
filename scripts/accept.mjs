@@ -1578,31 +1578,40 @@ const CHECKS = [
         await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="设计参考"; }); if(!b) return 0; b.click(); return 1; })()`);
         await h.waitFor(`!!document.querySelector(".design-lib")`, { label: "设计参考页", timeoutMs: 15000 });
         await h.waitFor(`document.querySelectorAll(".design-lib .design-lib-cell").length > 0`, { label: "设计参考卡片", timeoutMs: 15000 });
-        const head = await h.eval(`(function(){ const tabs=[...document.querySelectorAll(".design-lib-tabs button")].map(function(b){ return (b.textContent||"").trim(); }); return { tabs: tabs, cards: document.querySelectorAll(".design-lib .design-lib-cell").length }; })()`);
-        h.check("① 84 份库加载：全部 tab 带总数 + 分类 tab + 首页卡片",
-          Boolean(head) && head.tabs.length >= 10 && head.tabs[0].includes("84") && head.cards > 0, JSON.stringify(head).slice(0, 400));
+        const head = await h.eval(`(function(){ const sel=document.querySelector(".design-lib .comp-lib-cat-select"); const cards=[...document.querySelectorAll(".design-lib .design-lib-cell")].map(function(c){ return (c.textContent||""); }); return { filterRow: !!document.querySelector(".design-lib .comp-lib-filter-row"), search: !!document.querySelector(".design-lib .ui-skin-search"), selectText: (sel&&sel.textContent||"").trim(), cards: cards.length, first: cards[0]||"" }; })()`);
+        h.check("① 84 份库加载：搜索框 + 分类下拉（全部 84）+ 卡片中文导读",
+          Boolean(head) && head.filterRow && head.search && head.selectText.includes("84") && head.cards > 0 && /[\u4e00-\u9fa5]/.test(head.first),
+          JSON.stringify(head).slice(0, 400));
 
         await h.eval(`(function(){ const el=document.querySelector(".design-lib .ui-skin-search"); const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set; set.call(el,"linear"); el.dispatchEvent(new Event("input",{bubbles:true})); return true; })()`);
         await wait(450);
         const found = await h.eval(`(function(){ return [...document.querySelectorAll(".design-lib .design-lib-cell")].map(function(c){ return (c.textContent||"").trim(); }); })()`);
-        h.check("② 搜索 linear 命中", Boolean(found) && found.some((t) => t.includes("Linear")), JSON.stringify(found).slice(0, 300));
+        h.check("② 搜索 linear 命中且卡片是中文导读", Boolean(found) && found.some((t) => t.includes("Linear") && t.includes("极致极简")), JSON.stringify(found).slice(0, 300));
 
         await h.eval(`(function(){ const c=[...document.querySelectorAll(".design-lib .design-lib-cell")].find(function(x){ return (x.textContent||"").includes("Linear"); }); if(!c) return 0; c.click(); return 1; })()`);
-        await h.waitFor(`!!document.querySelector(".design-lib-detail") && (document.querySelector(".design-lib-md")?.textContent||"").length > 2000`, { label: "设计规范预览", timeoutMs: 15000 });
-        const detail = await h.eval(`(function(){ const d=document.querySelector(".design-lib-detail"); const text=(d&&d.textContent)||""; return { len: text.length, hasColor: text.includes("#5e6ad2") }; })()`);
-        h.check("③ 预览渲染整份规范（含 tokens 色值 #5e6ad2）", Boolean(detail) && detail.len > 2000 && detail.hasColor === true, JSON.stringify(detail));
+        await h.waitFor(`!!document.querySelector(".design-lib-detail") && (document.querySelector(".design-lib-zh-line")?.textContent||"").length > 4`, { label: "中文导读", timeoutMs: 15000 });
+        const guide = await h.eval(`(function(){ const d=document.querySelector(".design-lib-detail"); const text=(d&&d.textContent)||""; return { zh: (document.querySelector(".design-lib-zh-line")?.textContent||""), hasColor: text.includes("#5e6ad2"), hasLabel: text.includes("主色"), tabs: [...document.querySelectorAll(".design-lib-detail .design-lib-tabs button")].map(function(b){ return (b.textContent||"").trim(); }) }; })()`);
+        h.check("③ 默认中文导读：中文一句话 + 中文分组色板 + 可切英文原文",
+          Boolean(guide) && guide.zh.includes("紫罗兰") && guide.hasColor && guide.hasLabel && guide.tabs.includes("英文原文"),
+          JSON.stringify({ zh: String(guide?.zh).slice(0, 60), hasColor: guide?.hasColor, tabs: guide?.tabs }));
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail .design-lib-tabs button")].find(function(x){ return (x.textContent||"").trim()==="英文原文"; }); if(!b) return 0; b.click(); return 1; })()`);
+        await wait(500);
+        const english = await h.eval(`(document.querySelector(".design-lib-detail .design-lib-md")?.textContent||"")`);
+        h.check("③b 英文原文页签保留完整 DESIGN.md（Overview 正文）", String(english).includes("Overview"), String(english).slice(0, 80));
 
         await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail button")].find(function(x){ return (x.textContent||"").includes("复制"); }); if(!b) return 0; b.click(); return 1; })()`);
         await wait(350);
         const copied = await h.eval(`(function(){ return [...document.querySelectorAll(".design-lib-detail button")].some(function(b){ return (b.textContent||"").includes("已复制"); }); })()`);
-        h.check("④ 复制 DESIGN.md 有回执", copied === true);
+        h.check("④ 复制 DESIGN.md（英文原文）有回执", copied === true);
 
-        await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail button")].find(function(x){ return (x.textContent||"").includes("导出到项目"); }); if(!b) return 0; b.click(); return 1; })()`);
+        const picker = await h.eval(`(function(){ return { exists: !!document.querySelector(".design-lib-export-select"), text: (document.querySelector(".design-lib-export-select")?.textContent||"").trim() }; })()`);
+        h.check("④b 导出目标可选项目（下拉默认当前项目）", Boolean(picker) && picker.exists && picker.text.includes("当前项目"), JSON.stringify(picker));
+        await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-export button")].find(function(x){ return (x.textContent||"").includes("导出到项目"); }); if(!b) return 0; b.click(); return 1; })()`);
         await wait(700);
         const flash = await h.eval(`(document.querySelector(".design-lib-flash")?.textContent||"")`);
         const target = join(exportDir, "linear.app.md");
         const exported = existsSync(target) && readFileSync(target, "utf8").includes("Linear");
-        h.check("⑤ 导出到项目 design-references/linear.app.md", /已导出/.test(String(flash)) && exported, JSON.stringify({ flash: String(flash).slice(0, 120), exported }));
+        h.check("⑤ 导出到所选项目 design-references/linear.app.md", /已导出到/.test(String(flash)) && exported, JSON.stringify({ flash: String(flash).slice(0, 120), exported }));
 
         await h.eval(`(function(){ const b=[...document.querySelectorAll(".design-lib-detail button")].find(function(x){ return (x.textContent||"").includes("交给 Codex"); }); if(!b) return 0; b.click(); return 1; })()`);
         await wait(600);

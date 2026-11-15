@@ -6857,7 +6857,7 @@
       "channel": "design-md:list",
       "paramsImpl": "input: { category?: string; query?: string; limit?: number }",
       "paramsDecl": "input: { category?: string; query?: string; limit?: number }",
-      "returns": "Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string }> }>",
+      "returns": "Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string; zh: string }> }>",
       "invokeArgs": "input",
       "cast": null,
       "note": "11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用"
@@ -6867,7 +6867,7 @@
       "channel": "design-md:get",
       "paramsImpl": "slug: string",
       "paramsDecl": "slug: string",
-      "returns": "Promise<{ slug: string; name: string; category: string; description: string; designMd: string } | null>",
+      "returns": "Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>",
       "invokeArgs": "slug",
       "cast": null,
       "note": "11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null"

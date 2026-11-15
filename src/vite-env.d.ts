@@ -1558,9 +1558,9 @@ interface Window {
     /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
     listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
     /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */
-    designMdList(input: { category?: string; query?: string; limit?: number }): Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string }> }>;
+    designMdList(input: { category?: string; query?: string; limit?: number }): Promise<{ source: string; home: string; license: string; fetchedAt: string; total: number; libraryTotal: number; categories: Array<{ key: string; label: string; en: string; count: number }>; items: Array<{ slug: string; name: string; category: string; description: string; zh: string }> }>;
     /* 11-15 取一份完整 DESIGN.md（YAML tokens + 设计规则原文）；slug 白名单校验，取不到返回 null */
-    designMdGet(slug: string): Promise<{ slug: string; name: string; category: string; description: string; designMd: string } | null>;
+    designMdGet(slug: string): Promise<{ slug: string; name: string; category: string; description: string; zh: string; designMd: string } | null>;
     /* 11-15 把设计规范导出到项目目录（design-references/<slug>.md；⛔ 不覆盖项目自己的 DESIGN.md；目录须为绝对路径） */
     designMdExport(input: { slug?: string; dir?: string }): Promise<{ ok: boolean; path?: string; category?: string; error?: string }>;
 /* ═══ gen:end ═══ */

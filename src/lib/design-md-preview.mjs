@@ -54,3 +54,84 @@ export function hasSwatches(parts) {
 export function isHexColor(value) {
   return HEX.test(value);
 }
+
+/** 常见 token 名的中文说法（展示用；不在表里的保留英文原名）。 */
+const TOKEN_LABEL_ZH = {
+  primary: "主色",
+  "on-primary": "主色上的文字",
+  "primary-hover": "主色悬停",
+  "primary-focus": "主色聚焦",
+  "primary-pressed": "主色按下",
+  accent: "强调色",
+  brand: "品牌色",
+  canvas: "页面底色",
+  "inverse-canvas": "反转底色",
+  ink: "正文文字",
+  "ink-muted": "次要文字",
+  "ink-subtle": "弱化文字",
+  "ink-tertiary": "三级文字",
+  "inverse-ink": "反转文字",
+  body: "正文",
+  mute: "弱文字",
+  muted: "弱文字",
+  hairline: "细描边",
+  "hairline-strong": "强描边",
+  "hairline-tertiary": "三级描边",
+  "semantic-success": "成功",
+  "semantic-error": "错误",
+  "semantic-warning": "警告",
+  "semantic-danger": "危险",
+  "semantic-overlay": "遮罩",
+  "surface-1": "卡片面 1",
+  "surface-2": "卡片面 2",
+  "surface-3": "卡片面 3",
+  "surface-4": "卡片面 4",
+  "surface-card": "卡片面",
+  "surface-soft": "柔和面",
+  "surface-dark": "深色面",
+  "inverse-surface-1": "反转卡片面 1",
+  "inverse-surface-2": "反转卡片面 2",
+  "on-dark": "深色上的文字",
+  "on-dark-mute": "深色上的弱文字",
+  "focus-ring": "聚焦环",
+};
+
+/**
+ * token 名的中文说法（没有映射就原样返回英文）。
+ * @param {string} name
+ * @returns {string}
+ */
+export function tokenLabelZh(name) {
+  return TOKEN_LABEL_ZH[String(name ?? "").toLowerCase()] ?? String(name ?? "");
+}
+
+/** 色板分组顺序与中文组名（按 token 名的前缀归组）。 */
+const GROUPS = [
+  { key: "accent", label: "主色 / 强调色" },
+  { key: "bg", label: "背景与表面" },
+  { key: "text", label: "文字" },
+  { key: "line", label: "描边与分隔" },
+  { key: "state", label: "状态色" },
+  { key: "other", label: "其他" },
+];
+
+/**
+ * 把色板按用途分组（展示用中文组名；同组保持原文顺序）。
+ * @param {Array<{ name: string; hex: string }>} colors
+ * @returns {Array<{ key: string; label: string; items: Array<{ name: string; label: string; hex: string }> }>}
+ */
+export function groupColors(colors) {
+  const buckets = new Map(GROUPS.map((group) => [group.key, []]));
+  for (const color of colors ?? []) {
+    const name = String(color.name ?? "").toLowerCase();
+    let key = "other";
+    if (/^(primary|accent|brand|focus)/.test(name)) key = "accent";
+    else if (/^(canvas|surface|bg|background|inverse-canvas|inverse-surface)/.test(name)) key = "bg";
+    else if (/^(ink|text|body|mute|on-dark)/.test(name)) key = "text";
+    else if (/^(hairline|border|line|outline|divider)/.test(name)) key = "line";
+    else if (/^(semantic|success|error|warning|danger)/.test(name)) key = "state";
+    buckets.get(key).push({ ...color, label: tokenLabelZh(color.name) });
+  }
+  return GROUPS.map((group) => ({ key: group.key, label: group.label, items: buckets.get(group.key) }))
+    .filter((group) => group.items.length > 0);
+}

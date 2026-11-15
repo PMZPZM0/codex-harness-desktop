@@ -329,3 +329,21 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+.design-lib-guide { display: flex; flex-direction: column; gap: 10px; }
+.design-lib-zh-line { margin: 0; font-size: 13px; color: var(--text); line-height: 1.7; }
+.design-lib-group { display: flex; flex-direction: column; gap: 5px; }
+.design-lib-group-label { font-size: 11px; color: var(--faint); }
+.design-lib-hint { margin: 0; color: var(--faint); font-size: 11px; line-height: 1.6; }
+.design-lib-export {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.design-lib-export-select { min-width: 220px; }
+.design-lib-export > span { white-space: nowrap; }
+.design-lib-export .secondary-setting { flex: none; white-space: nowrap; }
