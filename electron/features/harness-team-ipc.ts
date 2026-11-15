@@ -1749,10 +1749,13 @@ async function runDispatchRounds(
           authorId: speakerId,
           authorKind: "bot",
           senderKind: "member",
-          /* ⛔ 11-12：群聊 @ 链同样要写下游收件人 —— 否则成员交回后群里看不到"交给谁"，
-             主理人也未必被叫醒。⛔ 主理人自己那两条 id（整团槽 / 合成 id）都不标。 */
+          /* ⛔⛔ 11-15 用户截图：「我让他给我汇报，他交回管理员啥意思」——用户**直接 @ 声线**让它汇报，
+             产出却标着「交回 @管理员」。按新规格：这条产出是回给**用户的**，没有下游收件人。
+             ⇒ handoffTo 只在「被人叫来」时才写（caller 存在：管理员点名 / 成员互 @）；
+               ⛔ 用户直 @ 的产出不写（没有"交给谁"，也不该把管理员拽进这场对话）。
+               ⛔ 11-12 那条「不写就看不到交给谁」的场景只覆盖"被叫来"的情况，用户直 @ 不在其内。 */
           ...(isTeamGroup && leadAuthorId && speakerId !== leadAuthorId
-            && speakerId !== String(teamSlot?.id ?? "") ? { handoffTo: leadAuthorId } : {}),
+            && speakerId !== String(teamSlot?.id ?? "") && caller ? { handoffTo: caller.id } : {}),
           threadId,
           text: outputForStore || "（没有返回文本内容）",
           via: caller ? { memberId: caller.id, name: caller.name } : null,

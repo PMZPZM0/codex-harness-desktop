@@ -580,13 +580,14 @@ const catalog = [
       "接力不串群：排片跑完/成员交回必回交主理人，⛔ 不再按 teamId 判断有没有人在跑");
     /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，主代理能知道他跑完了？」 */
     ok(/handoffTo: teamAuthorIdOf/.test(read("electron/team-invoke.ts"))
-      && /handoffTo: leadAuthorId/.test(teamIpcSrc)
+      /* ⛔ 11-15 新口径：交回对象 = **叫他来的人**（管理员点名 = 主理人；互 @ = 那位成员；用户直 @ = 不写）。 */
+      && /handoffTo: caller\.id/.test(teamIpcSrc)
       && /handoffTo: String\(entry/.test(read("src/lib/team-models.mjs"))
       && /handoffTo: String\(msg\?\.handoffTo/.test(read("src/lib/team-models.mjs"))
       && /team-msg__handoff/.test(hostView)
       && /run\.leadThreadId/.test(fallback)
       && !/activeRunList\(\)\.some\(\(run\) => String\(run\.teamId/.test(fallback),
-      "成员交回显式 @ 主理人（结构化 handoffTo + 名字行标签），回喂按 leadThreadId 不串群");
+      "成员交回写「叫他来的人」（结构化 handoffTo + 名字行标签；⛔ 用户直 @ 的产出不标交回），回喂按 leadThreadId 不串群");
     /* ⛔⛔ 11-14（抄 Pachat）：自由催办已**整体移除** —— 谁说话由「被@/被回复/有未读」决定，
        宿主不再在"主理人没派活 / 刚答完信息"时强催一轮（那正是「同一问题回两次」的来源）。⛔ 不许复活。 */
     ok(!/leadSelfNudges/.test(teamIpcSrc) && !/leadTurnTaskLike/.test(teamIpcSrc) && !/isInfoRequest/.test(teamIpcSrc),
