@@ -1089,7 +1089,7 @@ async function runDispatchRounds(
   targets: GroupTarget[],
   text: string,
   source: "human" | "automation",
-  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[]; suppressLead?: boolean } = {},
+  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[]; suppressLead?: boolean; allowMemberRelay?: boolean } = {},
 ): Promise<{ ok: boolean; sent: number; failed: string[] }> {
   const catalog = Array.isArray(options.catalog) ? options.catalog : await buildDispatchCatalog().catch(() => []);
   const failed: string[] = [];
@@ -1885,7 +1885,7 @@ async function runDispatchRounds(
         const casualGreeting = source === "human"
           && /^(哈喽+|哈罗|你好+|您好+|嗨+|在吗|在不在|早[啊上]?|午安|晚上好|hi|hello)[！!。.~～\s]*$/i.test(text.trim());
         const leadSeatIds = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
-        const asks = casualGreeting ? [] : allAsks.filter((ask) => {
+        const asks = !options.allowMemberRelay ? [] : casualGreeting ? [] : allAsks.filter((ask) => {
           const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
           return !leadSeatIds.has(tid);
         });
@@ -2057,7 +2057,11 @@ async function runDispatchRounds(
              于是用户直 @ 成员的对话照样被它接管。
              ⇒ suppressLead（用户直 @ 成员发起）时，管理员这条闭环**整体关闭**：
                它的验收机会只来自它自己派活的批次回喂 / 它点名的排片收尾。 */
-          if (!options.suppressLead && (verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
+          /* ⛔⛔ 11-15 真因（rollout 实证）：无 @ 的消息由上下文路由交给成员，随后宿主仍会无条件
+             把话头交回管理员「验收这一环」—— 这就是「没 @ 任何人，成员/管理员自动回复」的来源。
+             ⇒ 用户这条消息没 @ 任何人（allowMemberRelay=false）⇒ 管理员闭环整体关闭。 */
+          if (options.allowMemberRelay && !options.suppressLead && (verdict.action === "continue" || mustHandBack)
+            && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
             if (mustHandBack) leadCatchUps += 1;
             chainBudget -= 1;
             const ask = mustHandBack
@@ -2889,10 +2893,13 @@ async function healOrphanTalkThreads(): Promise<void> {
       if ("error" in opened) return { ok: false, error: opened.error };
       /* ⛔ 用户直接 @ 了成员（不是 @ 整团 / 没让管理员派活）⇒ 这条对话全程交给成员自己，
          ⛔ 不许回喂管理员（否则它会出来验收、收口、说一堆用户没要的话）。 */
+      /* ⛔ 11-15 用户令：成员只能被用户的 @ 触发 —— 这条消息里 @ 过人（成员或整团）才允许产生成员回合。 */
+      const allowMemberRelay = memberIds.length > 0;
       const suppressLeadForMembers = memberIds.length > 0
         && !opened.targets.some((t) => String(t.id) === String(g.id) || t.targetKind === "team");
       void runDispatchRounds(g, opened.targets, text, "human", {
         suppressLead: suppressLeadForMembers,
+        allowMemberRelay,
         params,
         catalog: opened.catalog,
         /* 手动派活允许伙伴互相 @（一跳 + 总量 4，护栏在 runDispatchRounds 里）。 */

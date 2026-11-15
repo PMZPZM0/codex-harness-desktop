@@ -892,9 +892,9 @@ try {
       "群活跃度空/坏数据回 0（不炸）");
     const idx = readFileSync(join(ROOT, "src/features/harness-team/index.tsx"), "utf8");
     ok(/from "\.\.\/\.\.\/lib\/group-activity\.mjs"/.test(idx)
-      && /groupActivity\(rowsByGroup\[g\.id\] \?\? \[\], Date\.now\(\)\)/.test(idx)
-      && /今日 \$\{a\.activeToday\} 人活跃/.test(idx),
-      "群活跃度接在群列表卡副行（⛔ 不进群头——用户 11-08 已把群头副标题当赘述删掉）");
+      && !/groupActivity\(rowsByGroup/.test(idx)
+      && /伙伴 · \{rowsByGroup\[g\.id\]\?\.length \?\? 0\} 条/.test(idx),
+      "群列表副行只留「伙伴数 · 条数」（11-15 用户：文字过多；活跃度真跑仍钉住）");
     const models = readFileSync(join(ROOT, "src/lib/team-models.mjs"), "utf8");
     const talk = readFileSync(join(ROOT, "electron/features/group-talk/03-talk.ts"), "utf8");
     const ipc = readFileSync(join(ROOT, "electron/features/harness-team-ipc.ts"), "utf8");

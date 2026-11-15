@@ -214,9 +214,7 @@ export function TeamModePanel({ onOpenModelSettings, onOpenThread, app }: TeamPa
                   <span className="team-mode__group-text">
                     <span className="team-mode__group-name">{g.name}</span>
                     <span className="team-mode__group-sub">
-                      {g.members.filter((m) => m.kind === "bot").length} 伙伴
-                      {(rowsByGroup[g.id]?.length ?? 0) > 0 ? ` · ${rowsByGroup[g.id].length} 条` : ""}
-                      {(() => { const a = groupActivity(rowsByGroup[g.id] ?? [], Date.now()); return a.messagesToday > 0 ? ` · 今日 ${a.activeToday} 人活跃` : ""; })()}
+                      {g.members.filter((m) => m.kind === "bot").length} 伙伴 · {rowsByGroup[g.id]?.length ?? 0} 条
                       {blockers[g.id]?.length ? " · 待处理" : ""}
                     </span>
                   </span>

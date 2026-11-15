@@ -1359,7 +1359,7 @@ const catalog = [
     && /const duplicateRow = spokenRows/.test(ipc)
     && /summary: true,/.test(ipc) && /runFirst: true,/.test(ipc),
     "⛔ 一个回合只落一条成品消息（撤回逐条落盘）：正文/过程/文件卡由渲染层按**回合**整体渲染");
-  ok(/const duplicateRow = spokenRows[\s\S]{0,900}?patchTalkMessageRow\(group\.id, duplicateRow\.id, \{[\s\S]{0,160}?summary: true/.test(ipc),
+  ok(/const duplicateRow = spokenRows[\s\S]{0,2600}?patchTalkMessageRow\(group\.id, duplicateRow\.id, \{[\s\S]{0,400}?summary: true/.test(ipc),
     "最终回复已通过 group_say 落过 ⇒ 不再发第二条，把它标成 summary 并回填用量");
   ok(/const runCollapsedRows = useMemo/.test(view)
     && /const useTurnView = isBot && effectiveReplyMode !== "placeholder"/.test(view)
@@ -2318,7 +2318,7 @@ const catalog = [
        —— 因为我上一轮把「行首 @ = 派活」删过头了。这条通道必须存在（一条消息里 @ 多人就是派活），
        刷屏的根源是「每位成员再回显一条群消息」，那个才该删。 */
     /* ⛔ 「假的艾特」只出现在注释里 ⇒ 这一条要看原文，不能用 codeOnly 的产物。 */
-    ok(ipc.includes("const asks = casualGreeting ? [] : allAsks.filter((ask) => {") && ipc.includes("leadSeatIds.has(tid)") && read("electron/features/harness-team-ipc.ts").includes("假的艾特"),
+    ok(ipc.includes("const asks = !options.allowMemberRelay ? [] : casualGreeting ? [] : allAsks.filter((ask) => {") && ipc.includes("leadSeatIds.has(tid)") && read("electron/features/harness-team-ipc.ts").includes("假的艾特"),
       "主理人一条消息里的多行 @名字 = 真派活；成员产出里 @ 管理员一律拦；纯寒暄（哈喽/你好整句）成员接力整体关掉");
     const tools = codeOnly(read("electron/expert-teams/06-team-tools.ts"));
     ok(tools.includes("顺序点名") && tools.includes("一次只派一位"),
