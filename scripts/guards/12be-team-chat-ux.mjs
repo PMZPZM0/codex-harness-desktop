@@ -2245,5 +2245,37 @@ const catalog = [
       "成员交回后回喂主理人按群合并（1.5s 内多次交回只叫醒一次 —— 否则「回复一次又让人回复一次」）");
   }
 
+  /* ⛔⛔ 11-15 用户（截图 + 「成员每个傻逼都要重复回两次」「一直反反复复刷屏」）：
+     台账实证 —— 一句「打个招呼」四位成员各回 3 遍，runId 是 3 个不同的 run。
+     ⇒ 钉死：① invokeTeamMemberCore 里按 (群, 用户消息时刻, 成员) 硬上限 1；
+             ② 主理人被回喂的机会只有 1 次（否则它每醒一次就说一段、再派一轮）。 */
+  {
+    const invoke = codeOnly(read("electron/team-invoke.ts"));
+    ok(/const dispatchTurns = new Map/.test(invoke) && /同一条需求内不重复派/.test(invoke),
+      "同一条用户消息内一位成员最多派一次（宿主硬闸；⛔ 不再是「最多 3 回合」）");
+    const capAt = invoke.indexOf("const capGroupId");
+    const cap = capAt < 0 ? "" : invoke.slice(capAt, capAt + 900);
+    ok(/local-user/.test(cap) && /dispatchTurns\.get\(key\)/.test(cap) && /dispatchTurns\.set\(key, 1\)/.test(cap),
+      "上限按「群里最后一条用户消息的时刻」切分：新的一句需求重新开始计（⛔ 不是全局永久封禁）");
+    const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(/const MAX_LEAD_CATCH_UPS = 1;/.test(ipc),
+      "主理人一轮只被回喂一次（原来 3 次 ⇒ 它反复说话、反复再派）");
+  }
+
+  /* 11-15 用户规格：@ 多人 → 管理员按艾特顺序逐个点名 → 每人一位一次 → 管理员一条总结 */
+  {
+    const ipc = codeOnly(read("electron/features/harness-team-ipc.ts"));
+    ok(ipc.includes("seesTeamKid") && ipc.includes("effectiveIds = [String(seat.seatId)]"),
+      "群里 @ 多人收敛成管理员一个人（宿主不再直接投给每个成员）");
+    ok(ipc.includes("for (const item of queue) {") && !ipc.includes("Promise.all(queue.map"),
+      "成员派活串行：按艾特顺序，一位交回再起下一位（⛔ 并发 ⇒ 四段雷同自我介绍）");
+    const tools = codeOnly(read("electron/expert-teams/06-team-tools.ts"));
+    ok(tools.includes("顺序点名") && tools.includes("一次只派一位"),
+      "主理人 SOP：按 @ 顺序一次只派一位，全部交回后只写一条总结");
+    const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
+    ok(fallback.includes("for (const task of fresh)") && !fallback.includes("Promise.allSettled(fresh.map"),
+      "groupTalk 派活同样串行（⛔ 不再全并发）");
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

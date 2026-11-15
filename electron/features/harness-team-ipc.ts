@@ -554,6 +554,29 @@ async function prepareGroupDispatch(
       effectiveIds = [teamSlot.id];
     }
   }
+  /* ⛔⛔ 11-15 用户：「这个艾特是要管理员来完成」+「按艾特顺序来回复 …管理员回复，总结」。
+     实测根因：上面这段只认**整团槽**（`targetKind === "team"`）。用户这个群是**逐个拉人**建的
+     （主理人是 expert 座位），`teamSlot` 命中不了 ⇒ 用户 @ 四位成员时，宿主把用户原文
+     **直接并发**投给四个人（截图里每个人气泡都写着「回复 潘总：喊你的成员出来打个招呼」）⇒
+     四段雷同的自我介绍、还各来三遍。
+     ⇒ 用 `resolveGroupTeamSeat`（座位口径的唯一真相源，整团槽 / 主持人座位 / 唯一主理人三种形态同一判据）
+       判出"这是团群"后，把 @ 团成员的多个目标**收敛成一个**：团主理人（群里那位管理员）。
+       由它按艾特顺序逐个点名派活，最后写一条总结。 */
+  {
+    const teamsForSeat = await readUsableExpertTeams().catch(() => []);
+    const seat = resolveGroupTeamSeat({
+      members: group.members as Array<{ id?: string; targetKind?: string; targetKey?: string }>,
+      adminId: String(group.adminId ?? ""),
+      teams: teamsForSeat as Array<{ teamId?: string; lead?: { id?: string } }>,
+    });
+    if (seat && effectiveIds.length) {
+      const kidPrefix = `team:${String(seat.teamId ?? "")}:`;
+      const seesTeamKid = effectiveIds.some((id) => String(id).startsWith(kidPrefix));
+      if (seesTeamKid || effectiveIds.includes(String(seat.seatId))) {
+        effectiveIds = [String(seat.seatId)];
+      }
+    }
+  }
   let routedBy: "context" | "team-lead" | "admin" | "" = "";
   let routeError = "";
   if (!memberIds.length && source === "human") {
@@ -1075,7 +1098,10 @@ async function runDispatchRounds(
      团群里主理人一次 @ 多人 ⇒ 宿主按它写的顺序串行跑完，链路就**停在最后一位成员的产出**，
      主理人再也不回来 —— 没有阶段进度、没有验收、没有最终结论，而 UI 的交接台账已 2/2 全 done。
      ⇒ 排片跑完 / 成员交完活，必须把话头交回主理人；只有它有权收口。这两道计数是安全阀。 */
-  const MAX_LEAD_CATCH_UPS = 3;
+  /* ⛔ 11-15 用户（「一直反反复复刷屏」「成员每个傻逼都要重复回两次」）：
+     主理人被回喂后**只给一次**验收/收口机会。原来给 3 次 ⇒ 它每被叫醒一次就说一段、
+     再派一轮，群里就是同一批人反复说话。⇒ 一次足够写结论；还要推进就等用户下一句。 */
+  const MAX_LEAD_CATCH_UPS = 1;
   let leadCatchUps = 0;
   /* ⛔ 11-14：自由催办（宿主强催主理人再跑一轮）已移除 —— 抄 Pachat，谁说话由「被@ / 被回复 / 有未读」
      决定，宿主不再在「主理人没派活」时强催它一轮（那正是"同一问题回两条"的来源）。 */
@@ -1820,10 +1846,20 @@ async function runDispatchRounds(
           if (String(partner.id) === adminIdForRounds) {
             void (async () => {
               relayInFlight = true;
-              /* ⛔⛔ 11-15 用户实测「一次喊一个、要等前一个说完」：原来这里 for-await 逐个跑，
-                 注释还写着「按它说的顺序串行执行，观感上就是它在排片」—— 那就是排队。
-                 ⇒ 改成并行：主理人一次点的人同时开跑，各自产出按完成顺序进群。 */
-              await Promise.all(queue.map((item) => runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined)));
+              /* ⛔⛔ 11-15 用户给出的**最终规格**（原话）：
+                 「@成员1 @成员2 @成员3 @成员4 出来打个招呼，介绍一下自己 / 按艾特顺序来回复 /
+                  先成员1回复，成员1回复完成员2再回复 … 每个成员都能看见上一个成员的打招呼内容，
+                  这样他们回复内容都可以不一样 / 管理员回复，总结。就这么简单机制」
+                 ⇒ 这就是这里唯一要实现的东西：
+                   · **串行**（按 queue 的顺序 = 艾特顺序），一个跑完再起下一个；
+                   · 每位成员开跑前，前一位的产出**已经落群**（team-invoke 里等落盘），
+                     成员提示词的「群里最近在聊什么」里自然读到 ⇒ 内容不会撞车；
+                   · 全部跑完 → 主理人**一次**汇总（下面那段），不接力、不再回喂第二轮。
+                 ⛔ 不要再改成 Promise.all：并发时会同时起 4 个回合，谁也看不到谁，
+                   于是四个人写四段几乎一样的自我介绍 —— 用户判词「一直反反复复刷屏」。 */
+              for (const item of queue) {
+                await runOne(item.next, 0, caller, item.ask.ask).catch(() => undefined);
+              }
               relayInFlight = false;
               /* ⛔⛔ 11-12 用户截图「这样没有后续了呀」「断之前好像也没有接力」—— 真因在这里：
                  原来用 `teamRunStore.activeRunList().some(run => run.teamId === groupTeamId)` 判
@@ -1836,11 +1872,10 @@ async function runDispatchRounds(
                 leadCatchUps += 1;
                 chainBudget -= 1;
                 void runOne(lead as unknown as GroupTarget, 0, caller,
-                  `[系统] 你这一轮排的 ${queue.length} 位成员都交回产出了。按 SOP 推进：`
-                  + "① 验收成员产出，不合格就点名打回重做；"
-                  + "② 还有下一阶段就另起一行 @ 名字继续派；"
-                  + "③ 只有全部阶段验收完，才写「收口」并按「结论 / 依据 / 还剩什么没做」给用户最终结论。"
-                  + "⛔ 群里不要报进度（用户明确不要刷屏），不要只回「收到」，也不要代写成员的产出。")
+                  `[系统] 这一轮你点名的 ${queue.length} 位成员都按顺序交回了（产出已在群里）。`
+                  + "现在就做一件事：**写一条总结**——每人一句他在群里说了什么/他的定位，"
+                  + "最后一句告诉用户这批招呼已经到齐。"
+                  + "⛔ 不要再派活（同一条需求里不重复叫人）、不要报进度、不要「收到」了事、不要代写成员产出。")
                   .catch(() => undefined);
               }
             })();

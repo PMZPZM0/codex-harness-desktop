@@ -272,9 +272,21 @@ export async function handleTeamToolCall(deps: {
     /* ⛔⛔ 11-12 顺序要点：**先启动后台成员任务，再回执**。原顺序在回执抛异常时（通道异常 / 引擎忙）
        成员永远不会被启动 —— 用户看到「已派单」，实际没人干活，比"卡住"更难查。 */
     void (async () => {
-      const settled = await Promise.allSettled(fresh.map((task: any) => invokeTeamMemberCore({
-        ...base, memberId: String(task?.memberId ?? ""), query: String(task?.query ?? ""),
-      })));
+      /* ⛔⛔ 11-15 用户最终规格：「按艾特顺序来回复 / 先成员1回复，成员1回复完成员2再回复 …
+         / 每个成员都能看见上一个成员的打招呼内容，这样他们回复内容都可以不一样」
+         ⇒ **串行**（fresh 的顺序 = 工具里给的顺序 = 艾特顺序）。
+         并发时四个回合同时起，谁也看不到谁 ⇒ 四个人写四段雷同的自我介绍 = 用户说的刷屏。
+         ⛔ 不要再改成 Promise.allSettled。 */
+      const settled: PromiseSettledResult<unknown>[] = [];
+      for (const task of fresh) {
+        try {
+          settled.push({ status: "fulfilled", value: await invokeTeamMemberCore({
+            ...base, memberId: String(task?.memberId ?? ""), query: String(task?.query ?? ""),
+          }) });
+        } catch (error) {
+          settled.push({ status: "rejected", reason: error });
+        }
+      }
       /* ⛔ 失败的不留缓存：失败往往正是该重试的那一次。 */
       settled.forEach((entry, i) => {
         if (entry.status === "rejected") {
@@ -300,10 +312,9 @@ export async function handleTeamToolCall(deps: {
          （「进度 2/4」「进度 3/4」…4 个成员就刷 4 条）。⇒ 同一团队**还有人在跑就不回喂**，
          等最后一批交回时一次汇总（那时它说一条结论就够）。 */
       relayGroupLead(gid, teamId,
-        `[系统] 这一批 ${settled.length} 件：交回 ${done} 件${failed ? `、失败 ${failed} 件` : ""}。`
-        + "成员的产出已经各自发进群。⛔ 群里不需要逐步播报进度（用户明确不要刷屏）——"
-        + "只有**全部成员都交回**时才说一条：验收结论 + 缺什么 + 下一步；全部阶段完成才写「收口」。"
-        + "⛔ 不要重复派同一位同一件活，也不要代写成员产出。");
+        `[系统] 这一批 ${settled.length} 件已按顺序跑完：交回 ${done} 件${failed ? `、失败 ${failed} 件` : ""}。`
+        + "成员产出已经各自发进群。你现在只做一件事：**写一条总结**（每人一句说了什么/定位，末尾一句交代这批已到齐）。"
+        + "⛔ 不要再派活、不要报进度、不要代写成员产出。");
     })().catch(() => undefined);
     await respond(id, { contentItems: [{ type: "inputText", text: ack }], success: true });
     return true;

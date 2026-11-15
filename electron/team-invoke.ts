@@ -192,6 +192,10 @@ function flushDispatchEcho(groupId: string): void {
   }, pending.since).catch(() => undefined);
 }
 
+/* 同一条用户消息内「谁已经被派过」的记账（见 invokeTeamMemberCoreUnlocked 里的硬上限）。
+   键 = 群 + 该群最后一条用户消息的时刻 + 成员 id；值恒为 1（只需要"派过没有"）。 */
+const dispatchTurns = new Map<string, number>();
+
 const memberLocks = new Map<string, Promise<void>>();
 async function withMemberLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = memberLocks.get(key) ?? Promise.resolve();
@@ -224,6 +228,33 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     && leadTeam === team.teamId
     && (teamRunStore.isLeadThread(leadThreadId) || !teamRunStore.isMemberThread(leadThreadId));
   if (!isLead) throw new Error("只有专家团主理人会话可以调度成员；当前会话是子会话，没有调度权限。");
+  /* ⛔⛔ 11-15 用户令（截图 + 「成员每个傻逼都要重复回两次」「一直反反复复刷屏」「删了，重新做」）：
+     实测台账：一句「喊你的成员出来打个招呼」，四位成员各自回了 **3 遍**自我介绍
+     （runId 三个不同的 run-…，间隔 8~15 秒）。根因不是模型乱说，是宿主允许：
+     一条用户消息内每位成员最多跑 3 次（MAX_TURNS_PER_MEMBER），而主理人每次被回喂后
+     又派一轮 ⇒ 同一句需求把同一个人反复拉起来。
+     ⇒ 硬上限：**同一条用户消息内，一位成员最多被派 1 次**（按 (群, 用户消息时刻, 成员) 计）。
+       要打回重做：用户发下一条消息，或主理人自己动手改 —— 不在同一条需求里反复拉同一个人。
+     ⛔ 不在群里（独立团会话 / 主对话派团）不加此限：那边产出走工具返回、不进群，不构成刷屏。 */
+  const capGroupId = groupOfTeam(String(team.teamId ?? ""));
+  if (capGroupId) {
+    const rows = recentGroupMessages(capGroupId);
+    const lastUserAt = rows.reduce(
+      (acc, row) => (String(row?.authorId ?? "") === "local-user" ? Math.max(acc, Number(row?.at ?? 0)) : acc),
+      0,
+    );
+    const key = `${capGroupId}|${lastUserAt}|${String(member.id)}`;
+    if (Number(dispatchTurns.get(key) ?? 0) >= 1) {
+      return {
+        threadId: "", turnId: null, teamId: String(team.teamId), memberId: String(member.id),
+        name: String(member.name), profession: String(member.profession?.zh ?? ""),
+        output: `（本轮已经派过 ${member.name}，同一条需求内不重复派；要打回重做请在下一条消息里说，或你自己改）`,
+        runId: "", reused: true,
+      };
+    }
+    dispatchTurns.set(key, 1);
+    if (dispatchTurns.size > 500) dispatchTurns.clear();
+  }
   const customModel = await readCustomModel();
   const provider = customModel?.provider ?? "openai";
   const baseUrl = customModel?.baseUrl;
@@ -431,7 +462,11 @@ async function invokeTeamMemberCoreUnlocked(input: InvokeMemberInput): Promise<I
     {
       const boundGroup = groupOfTeam(team.teamId);
       if (boundGroup) {
-        void appendMemberOutputToGroup(boundGroup, {
+        /* ⛔⛔ 11-15 用户规格：「每个成员都能看见上一个成员的打招呼内容」——
+           串行派活时，下一位开跑前这条产出**必须已经落群**（成员提示词读的就是群日志）。
+           原来是 `void`（不 await）⇒ 落盘与下一位读日志竞争，常常读到"还没有上一位的产出"，
+           于是四段自我介绍仍然雷同。⇒ 这里等落盘完成再返回。 */
+        await appendMemberOutputToGroup(boundGroup, {
           id: `team-run:${run.runId}`,
           authorId: teamAuthorIdOf(team.teamId, member.id),
           /* ⛔⛔ 11-12 用户：「成员汇报给主代理的时候没有艾特主代理，主代理能知道他跑完了？」
