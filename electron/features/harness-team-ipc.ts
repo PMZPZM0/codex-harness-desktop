@@ -530,7 +530,7 @@ async function prepareGroupDispatch(
   text: string,
   memberIds: string[],
   source: "human" | "automation",
-): Promise<{ targets: GroupTarget[]; catalog: unknown[]; rows: ReturnType<typeof projectGroupLog> } | { error: string }> {
+): Promise<{ targets: GroupTarget[]; catalog: unknown[]; rows: ReturnType<typeof projectGroupLog>; collapsedToSeat?: boolean } | { error: string }> {
   /* 团成员名录与互 @ 判据：与渲染层共用同一份目录（⛔ 不各自拉一次）。 */
   const catalog = await buildDispatchCatalog().catch(() => []);
   /* ⛔⛔ 11-09 用户令（两条路由需求）：「无需 @ 成员时可直接发消息」。
@@ -539,6 +539,8 @@ async function prepareGroupDispatch(
      ⛔ 只对**用户手发**生效：定时任务（automation）必须显式 @ —— 否则到点会莫名叫起一个人。
      ⛔ 候选逐个试而不是直接取第一个：那个人可能已被移出 / 静音 / 未绑定，退到下一个才符合预期。 */
   let effectiveIds = memberIds;
+  /* ⛔ 用户 @ 的是成员本人（没被收敛给管理员）⇒ 这次对话由成员自己走完，管理员不插嘴。 */
+  let collapsedToSeat = false;
   /* ⛔⛔ 11-10 用户现场（截图）：把一整段任务书贴进群，里面写着「@落纸 先给选题」「@砚云 写正文」——
      那是**写给模型看的流程**，但渲染层按「正文里的 @ = 派活」把它们全解析成目标
      ⇒ 好几个人同时被唤起，各自读完任务书都判断"这段不是我的活"，
@@ -580,6 +582,7 @@ async function prepareGroupDispatch(
          ⛔ 判据就是 kids.length：别再加“团群一律收敛”，那会把直达路彻底堵死。 */
       if (kids.length > 1 || effectiveIds.includes(String(seat.seatId))) {
         effectiveIds = [String(seat.seatId)];
+        collapsedToSeat = true;
       }
     }
   }
@@ -627,7 +630,7 @@ async function prepareGroupDispatch(
     mentions: targets.map((m) => m.id),
   });
   if (!saved.ok) return { error: saved.error || "群消息没存上" };
-  return { targets, catalog, rows: saved.rows };
+  return { targets, catalog, rows: saved.rows, collapsedToSeat };
 }
 
 /** 派活轮次（慢：一轮可能跑几分钟）。⛔ 调用方一律 `void` 它，不许 await。 */
@@ -1072,7 +1075,7 @@ async function runDispatchRounds(
   targets: GroupTarget[],
   text: string,
   source: "human" | "automation",
-  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[] } = {},
+  options: { params?: DispatchParams; allowChain?: boolean; onPhase?: DispatchPhase; catalog?: unknown[]; suppressLead?: boolean } = {},
 ): Promise<{ ok: boolean; sent: number; failed: string[] }> {
   const catalog = Array.isArray(options.catalog) ? options.catalog : await buildDispatchCatalog().catch(() => []);
   const failed: string[] = [];
@@ -1962,8 +1965,15 @@ async function runDispatchRounds(
           /* ⛔⛔ 11-12 同一处串群误判：原来这里也按 `teamId` 判"还有成员在跑"，
              别的群在跑同一个团就会把本群的回交吞掉。⇒ 只看 `relayInFlight`（**本次排片**是否在跑）
              就够了：排片在跑时由上面的收尾统一回交，排片外的成员单独交回则这里回交。 */
+          /* ⛔⛔ 11-15 用户实测（截图：「我艾特成员呢，成员之间沟通完成了，管理员出来干什么的」）：
+             用户**直接 @ 了某个成员**、成员之间也把话说完之后，宿主仍然把管理员叫起来写一大篇验收/收口
+             ⇒ 管理员在一场不属于它的对话里硬插一段。
+             ⇒ 只要这次派活是**用户直接点名成员**（suppressLead），全程不回喂管理员：
+               成员之间互相 @ 照常接力，说完就停；管理员不验收、不总结、不插嘴。
+             ⛔ 用户 @ 整团 / @ 多人 / 让管理员派活时照旧（那是它该管的事）。 */
           const mustHandBack = Boolean(isTeamGroup && admin && !sameSeat(admin.id, partner.id)
-            && !relayInFlight && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
+            && !options.suppressLead && !relayInFlight && chainBudget > 0
+            && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
           if ((verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
             if (mustHandBack) leadCatchUps += 1;
             chainBudget -= 1;
@@ -2794,7 +2804,12 @@ async function healOrphanTalkThreads(): Promise<void> {
          ⇒ 落盘 + 校验这段**必须 await 完再返回**，并把权威 rows 一起带回去（一次渲染到位）。 */
       const opened = await prepareGroupDispatch(g, text, memberIds, "human");
       if ("error" in opened) return { ok: false, error: opened.error };
+      /* ⛔ 用户直接 @ 了成员（不是 @ 整团 / 没让管理员派活）⇒ 这条对话全程交给成员自己，
+         ⛔ 不许回喂管理员（否则它会出来验收、收口、说一堆用户没要的话）。 */
+      const suppressLeadForMembers = memberIds.length > 0
+        && !opened.targets.some((t) => String(t.id) === String(g.id) || t.targetKind === "team");
       void runDispatchRounds(g, opened.targets, text, "human", {
+        suppressLead: suppressLeadForMembers,
         params,
         catalog: opened.catalog,
         /* 手动派活允许伙伴互相 @（一跳 + 总量 4，护栏在 runDispatchRounds 里）。 */

@@ -403,6 +403,15 @@ const catalog = [
       ok(invokeSrc.includes("relay?: boolean") && invokeSrc.includes("relay: true") && invokeSrc.includes("capGroupId && !input.relay"),
         "成员互 @ 接力放行（⛔ 不被「每人一次」上限拦住 = 成员之间能真的交流）");
     }
+    /* ⛔ 11-15 用户截图：「我艾特成员呢，成员之间沟通完成了，管理员出来干什么的」
+       ⇒ 用户直接 @ 成员（没被收敛给管理员）时，全程不回喂管理员：它不验收、不总结、不插嘴。
+       判据 = prepareGroupDispatch 回的 collapsedToSeat（收敛给管理员才回喂）。 */
+    {
+      const ipcSup = codeOnly(read("electron/features/harness-team-ipc.ts"));
+      ok(ipcSup.includes("suppressLead") && ipcSup.includes("collapsedToSeat")
+        && ipcSup.includes("!options.suppressLead"),
+        "用户直接 @ 成员时管理员不插嘴（⛔ 只收敛给管理员那种才回喂）");
+    }
     const fallback = codeOnly(read("electron/team-tool-fallback.ts"));
     const boot = codeOnly(read("electron/features/boot.ts"));
     ok(/extraTools\?: unknown\[\]/.test(chan)
@@ -556,7 +565,7 @@ const catalog = [
        "还有人在跑"门槛吞掉 —— 同一个团可被多个群同时调用 ⇒ 别的群在跑，本群就永远停在最后产出。
        ⛔ 回交只按本次排片（relayInFlight）判，不许按 teamId 跨群判。 */
     ok(/if \(lead && chainBudget > 0 && leadCatchUps < MAX_LEAD_CATCH_UPS/.test(teamIpcSrc)
-      && /\&\& !relayInFlight && chainBudget > 0 && leadCatchUps/.test(teamIpcSrc)
+      && /\&\& !options\.suppressLead && !relayInFlight && chainBudget > 0/.test(teamIpcSrc)
       && !/const stillRunning = teamRunStore\.activeRunList\(\)/.test(teamIpcSrc)
       && !/const membersStillRunning = teamRunStore\.activeRunList\(\)/.test(teamIpcSrc),
       "接力不串群：排片跑完/成员交回必回交主理人，⛔ 不再按 teamId 判断有没有人在跑");
