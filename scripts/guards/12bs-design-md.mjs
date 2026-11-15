@@ -146,7 +146,15 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
   ok(/"design-library"/.test(read("src/features/app-view/types.ts")), "SettingsPage 类型含 design-library");
   ok(/\["design-library", "设计参考", Palette/.test(read("src/features/app-view/helpers/catalogs.ts")),
     "设置导航含 [design-library, 设计参考]（否则用户进不去）");
-  ok(/"design-library": \{ render:/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx")),
+  /* 设置页注册表在三仓里可能是拆页后的 pages/capabilities.tsx（主仓），也可能是老的
+     00-settings-registry.tsx（PPcode / 云助手）—— 两种都认，断言只钉「条目在 + 接线对」。 */
+  const REGISTRY_CANDIDATES = [
+    "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx",
+    "src/features/app-view/AppView/08-settings-sheet/01-settings-layout/00-settings-registry.tsx",
+  ];
+  const registryFile = REGISTRY_CANDIDATES.find((file) => existsSync(join(ROOT, file))) ?? REGISTRY_CANDIDATES[0];
+  const registrySrc = read(registryFile);
+  ok(/"design-library": \{ render:/.test(registrySrc),
     "设置页注册表有 design-library 的 render 条目（缺了【101】会红）");
   ok(/"design-library"/.test(read("electron/features/extensions-ipc.ts")), "拓展接口白名单含 design-library");
   ok(/page: "设计参考"/.test(read("src/components/HelpDialog.tsx")), "帮助总览含「设计参考」（缺了【32】会红）");
@@ -159,10 +167,10 @@ const PAGE = "src/features/design-library/DesignLibrary.tsx";
     "展示用中文导读（卡片 + 详情），并写明复制/导出仍是英文原文");
   ok(/chooseDirectory/.test(page) && /design-lib-export-select/.test(page) && /exportDir/.test(page),
     "导出目标可选：项目下拉 + 自选目录（dialog:directory）");
-  ok(/projectGroups\.map\(\(\[path\]\) => path\)/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx")),
+  ok(/projectGroups\.map\(\(\[path\]\) => path\)/.test(registrySrc),
     "设置注册表把侧栏项目列表传给页面（projects prop）");
   ok(/onHandoff/.test(page) && /onCloseSettings/.test(page), "「交给 Codex」= 填进输入框（onHandoff）+ 先关设置");
-  ok(/setPrompt\(text\)/.test(read("src/features/app-view/AppView/08-settings-sheet/01-settings-layout/pages/capabilities.tsx")),
+  ok(/setPrompt\(text\)/.test(registrySrc),
     "交给 Codex 的接线走 bag.setPrompt（⛔ 不自动发送 —— 避免误触发一轮）");
   ok(/不要复制品牌 logo、商标/.test(page), "页面文案写明合规边界");
   ok(!/\.innerHTML\s*=/.test(page), "⛔ 预览用 Markdown 组件渲染，不碰 innerHTML");
