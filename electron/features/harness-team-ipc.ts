@@ -1870,19 +1870,18 @@ async function runDispatchRounds(
              宿主按**书写顺序逐个**执行（见下面 queue 的串行分支），群里只留这一条消息。
            ⛔ 别再删这条通道：删了 @ 就变纯装饰，用户看到的就是"假艾特"。
            ⛔ 也别退回"一位成员一条群消息"：那才是被骂的刷屏。 */
-        /* ⛔⛔ 11-15 用户截图（「管理怎么又出来了」）：用户直 @ 声线让它汇报，
-           声线在产出里 @ 了管理员（画帧的问题想找管理员协调）⇒ 宿主把管理员叫起来，
-           管理员又自作主张把画帧派出去 —— 一场用户和声线的对话被管理员接管了。
-           ⇒ 这场对话 suppressLead（用户直接 @ 成员发起）⇒ 成员产出里 @ **管理员/主理人**的那部分
-             被宿主拦下（不叫醒管理员）；@ 其他成员照常接力（成员互 @ 保留）。
-           ⛔ 只拦管理员：别的成员还是能被叫起来，成员之间交流不受影响。 */
+        /* ⛔⛔ 11-15 用户两轮实测（「管理怎么又出来了」「管理员阴魂不散」）：
+           只在 suppressLead 时拦还不够 —— 用户没带 @ 的消息（按上下文路由给管理员）也会开出
+           suppressLead=false 的排片，成员产出里 @ 管理员照样把它叫醒。
+           ⇒ **无条件**拦：成员产出的行首 @ 管理员/主理人一律不派活。
+             管理员的验收机会由两条既有通道给：它自己派活的批次回喂（relayGroupLead）、
+             它点名的排片收尾（leadCatchUps）—— ⛔ 不靠成员的 @。
+             成员之间互 @ 照常接力；用户想让管理员介入就自己 @ 管理员。 */
         const leadSeatIds = new Set([leadAuthorId, String(teamSlot?.id ?? "")].filter(Boolean));
-        const asks = options.suppressLead
-          ? allAsks.filter((ask) => {
-              const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
-              return !leadSeatIds.has(tid);
-            })
-          : allAsks;
+        const asks = allAsks.filter((ask) => {
+          const tid = String(ask.memberId ?? (ask.target as { id?: string } | undefined)?.id ?? "");
+          return !leadSeatIds.has(tid);
+        });
         for (const ask of asks) {
           const next = (ask.target ?? group.members.find((m) => m.id === ask.memberId)) as unknown as GroupTarget | undefined;
           if (!next || !canRun(next.id)) continue;
@@ -2046,7 +2045,12 @@ async function runDispatchRounds(
           const mustHandBack = Boolean(isTeamGroup && admin && !sameSeat(admin.id, partner.id)
             && !options.suppressLead && !relayInFlight && chainBudget > 0
             && leadCatchUps < MAX_LEAD_CATCH_UPS && canRun(admin.id));
-          if ((verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
+          /* ⛔⛔ 11-15 用户第三轮实测（18:57 剪革又出来了）：上面只拦了 mustHandBack，
+             但 **verdict.action === "continue" 这条路也会叫醒管理员**（openTasks>0 / 进度信号），
+             于是用户直 @ 成员的对话照样被它接管。
+             ⇒ suppressLead（用户直 @ 成员发起）时，管理员这条闭环**整体关闭**：
+               它的验收机会只来自它自己派活的批次回喂 / 它点名的排片收尾。 */
+          if (!options.suppressLead && (verdict.action === "continue" || mustHandBack) && admin && !sameSeat(admin.id, partner.id) && canRun(admin.id)) {
             if (mustHandBack) leadCatchUps += 1;
             chainBudget -= 1;
             const ask = mustHandBack
