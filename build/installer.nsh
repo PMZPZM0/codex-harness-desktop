@@ -19,6 +19,21 @@
 !macroend
 
 !macro customInit
+  ; 11-16 oneClick 迁移保护：旧版是 assisted 安装，可能选过「所有用户」（HKLM）。
+  ; oneClick 默认按当前用户装到 %LOCALAPPDATA%\Programs；若直接装，会和旧的全机安装
+  ; 并存成两份（桌面两个图标、更新后打开的还是旧版）。
+  ;   · 管理员运行 ⇒ 原地覆盖旧的全机目录；
+  ;   · 非管理员 ⇒ 明确提示先卸载旧版（不静默装第二份）。
+  ReadRegStr $0 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $0 != ""
+    ${If} ${UAC_IsAdmin}
+      StrCpy $INSTDIR $0
+    ${Else}
+      MessageBox MB_ICONEXCLAMATION|MB_OK "检测到旧版是按「所有用户」安装的：$0$\r$\n请先卸载旧版，或以管理员身份运行本次安装，避免出现两份安装。"
+      Quit
+    ${EndIf}
+  ${EndIf}
+
   ; 安装前清理旧版工具残留（只动安装目录内 harness 自己管理的 tools 子目录，
   ; 不碰用户数据：userData 在 %APPDATA%\Codex Harness Desktop，与安装目录无关）
   DetailPrint "清理旧版内置工具目录…"

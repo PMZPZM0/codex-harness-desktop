@@ -290,8 +290,8 @@
       }
     ],
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
       "include": "build/installer.nsh"
     },
     "linux": {

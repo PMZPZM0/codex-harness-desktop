@@ -276,9 +276,8 @@ export const updatesFeature = defineFeature<null>({
      *
      * ⛔⛔ 11-15 用户实测「点重启更新，应用关了、安装提醒出来一下就没装成」：
      *   **差分包必须由下载它的 electron-updater 自己去装**（`quitAndInstall(true, true)`
-     *   ＝ `/S` 静默安装 + 装完自动拉起新版本）。原来不管哪条路径都 `spawn(pending.exe)`，
-     *   而本仓 `nsis.oneClick=false` ⇒ 起来的是**交互式向导 + UAC 提权框**，
-     *   我们同时 `app.quit()` ⇒ 应用消失、向导被挡在后面，用户以为更新失败。
+     *   ＝ `/S` 静默安装 + 装完自动拉起新版本）。11-16 起 `nsis.oneClick=true`（每用户安装），
+     *   安装器本身不再有向导/UAC；这段说明保留历史成因。
      *   ⛔ 顺序仍守「先起安装动作、再退出自己」：quitAndInstall 内部就是先拉起安装器再退出。
      *   ⛔ 完整包路径（手动下的 `Codex.Harness.Desktop-*.exe`）同理要带 `/S`，
      *     否则同样把用户丢进向导；only macOS 不适用（NSIS 专属，其余平台返回明确错误）。

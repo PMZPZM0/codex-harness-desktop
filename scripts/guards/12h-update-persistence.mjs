@@ -16,7 +16,7 @@
  *      —— 两个都是安全/可用性要害：前者是 09-13 P0 那条「任意 exe 落盘执行」的同一类，
  *      后者反了会被 exe 文件锁挡住（覆盖安装必失败）。
  *      11-15 补：**差分包必须由 electron-updater 自己 quitAndInstall(true,true) 静默装**；
- *      直接 `spawn(pending.exe)` 会弹交互式 NSIS 向导 + UAC（nsis.oneClick=false），
+ *      直接 `spawn(pending.exe)` 会弹交互式 NSIS 向导 + UAC（11-16 前 nsis.oneClick=false），
  *      而应用同时退出 ⇒ 用户看到「应用关了、安装提醒一闪、版本没变」（用户实测原话）。
  *
  * ⛔ 真跑：第 ④ 条用 stub electron 起**编译产物**，实跑 `readToolManifest` /
@@ -104,7 +104,7 @@ ok(spawnAt > 0 && quitAt > spawnAt,
 ok(/detached: true/.test(rs) && /\.unref\(\)/.test(rs),
   "安装包 detached + unref（不 detach 会等它结束 = 永远不退出）");
 /* ⛔⛔ 11-15 用户实测「点重启更新，应用关了、安装提醒出来一下、版本没变」：
-   差分包的 pending exe 直接 spawn 起来的是**交互向导 + UAC**（nsis.oneClick=false），
+   差分包的 pending exe 直接 spawn 起来的是**交互向导 + UAC**（11-16 前 nsis.oneClick=false），
    而应用同时退出 ⇒ 向导被挡在后面/被当垃圾关掉 = 什么都没装。
    ⇒ 差分就绪时必须走 updater 自己的 quitAndInstall(true,true)（/S 静默 + 装完自启）。 */
 ok(/hasPendingDifferential\(\)/.test(rs) && /quitAndInstallDifferential\(\)/.test(rs),
@@ -267,6 +267,16 @@ console.log(JSON.stringify(out));
   ok(upd.includes("harness:update-install-failed") && upd.includes("上次安装未完成")
     && upd.includes("setAutoInstallUpdate(false)"),
     "安装失败后暂停自动安装并明确告知（不再「启动→下载→退出」循环）");
+
+  /* ── 11-16 方案 A：oneClick 每用户安装（去掉向导/UAC）+ 旧全机安装迁移保护 ── */
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8"));
+  ok(pkg.build?.nsis?.oneClick === true && pkg.build?.nsis?.perMachine !== true
+    && pkg.build?.nsis?.allowToChangeInstallationDirectory !== true,
+    "NSIS 改为一键每用户安装（无安装目录页、无全机提权）");
+  const installerNsh = readFileSync(join(ROOT, "build/installer.nsh"), "utf8");
+  ok(/taskkill[\s\S]{0,80}\/T/.test(installerNsh), "安装前仍按进程树强杀旧实例（托盘应用关窗不退）");
+  ok(/HKLM[\s\S]{0,120}InstallLocation/.test(installerNsh) && /UAC_IsAdmin/.test(installerNsh),
+    "旧「所有用户」安装有迁移保护：管理员原地覆盖，非管理员提示先卸载（不装第二份）");
 }
 
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

@@ -350,7 +350,8 @@ export type DifferentialDownloadResult = { path: string; version: string; differ
 
 /** ⛔⛔ 11-15 用户实测「点重启安装，应用关了、安装提醒一闪就没装」的根因在这里：
  *  差分包是 electron-updater 下的，**它不是"一个可以随便 spawn 的 exe 路径"** ——
- *  直接 `spawn(pending.exe)` 起的是**交互式 NSIS 向导 + UAC 提权框**（本仓 nsis.oneClick=false），
+ *  直接 `spawn(pending.exe)` 起的是**交互式 NSIS 向导 + UAC 提权框**（11-16 起
+ *  nsis.oneClick=true 已改为每用户一键安装，不再有向导/UAC；这段历史说明保留），
  *  而我们同时 `app.quit()` ⇒ 应用消失、向导被挡在后面/被用户当垃圾关掉 ⇒ 什么都装不上。
  *  正解是让**下载它的那个 autoUpdater 自己去装**：`quitAndInstall(true, true)` 会带 `/S`
  *  静默安装并在装完自动拉起新版本，用户点一次就完事（这也是 electron-updater 的唯一受支持路径）。
