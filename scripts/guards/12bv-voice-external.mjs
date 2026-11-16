@@ -104,6 +104,50 @@ ok(css.includes(".voice-ext-grid") && css.includes("repeat(2, minmax(0, 1fr))") 
 ok(!existsSync(join(ROOT, "resources", "voice-engines")) && !existsSync(join(ROOT, "resources", "tts-engines")),
   "引擎不进安装包（全部下载到 userData/voice-engines）");
 
+/* 第二批（11-16）：通用 Python 安装器 + 四个引擎真接入（Fish / Zonos 保持信息卡） */
+const pythonIds = ["f5-tts", "chatterbox", "qwen3-tts", "indextts2"];
+ok(pythonIds.every((id) => new RegExp(`id: "${id}"[\\s\\S]*?kind: "python"[\\s\\S]*?adapter: "${id}"`).test(catalog)),
+  "F5 / Chatterbox / Qwen3 / IndexTTS2 都有 Python 安装描述（kind=python + adapter）");
+ok(/INDEXTTS_COMMIT = "[0-9a-f]{40}"/.test(catalog) && /modelscope", repo: "IndexTeam\/IndexTTS-2"/.test(catalog),
+  "IndexTTS2 源码钉死提交 + ModelScope 权重清单");
+ok(catalog.includes('repo: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"'), "Qwen3 用 0.6B-Base（含 speech_tokenizer）");
+ok(/t3_mtl23ls_v2\.safetensors/.test(catalog) && /s3gen\.pt/.test(catalog) && /Cangjie5_TC\.json/.test(catalog),
+  "Chatterbox 多语模型文件齐全（ve / t3 v2 / s3gen / grapheme / conds / Cangjie5）");
+ok(/F5TTS_v1_Base\/model_1250000\.safetensors/.test(catalog) && /vocos-mel-24khz/.test(catalog),
+  "F5 预下载主模型 + Vocos 声码器（不依赖运行时联网）");
+ok(/id: "zonos"[\s\S]*?install: null/.test(catalog) && /官方只支持 Linux\/macOS/.test(catalog),
+  "Zonos 官方不支持 Windows：保留信息卡，不假装可装");
+ok(/id: "fish-speech"[\s\S]*?install: null/.test(catalog) && /4B，8GB 显卡容易 OOM/.test(catalog),
+  "Fish Speech 4B 需更大显存：保留信息卡并写明原因");
+ok(!catalog.includes("首批暂未接入"), "已接入的卡片不再出现「首批暂未接入」字样");
+
+ok(['"gpt-sovits":', '"cosyvoice3":', '"f5-tts":', 'chatterbox:', '"qwen3-tts":', 'indextts2: 19885'].every((part) => main.includes(part)),
+  "六个引擎各有独立端口（19880–19885）");
+ok(main.includes("PY_ADAPTERS") && pythonIds.every((id) => main.includes(`"${id}"`)),
+  "通用适配器集合覆盖四个新引擎");
+ok(main.includes("--torch-backend=") && main.includes("torch==2.8.0"),
+  "安装器用 uv --torch-backend 装 CUDA 版 torch（避免装成 CPU 版）");
+ok(main.includes("hf-mirror.com") && main.includes("HF_ENDPOINT"),
+  "HuggingFace 请求走镜像（国内不可直连），并且注入到服务进程");
+ok(main.includes("modelscope.cn/api/v1/models/") && main.includes("resolve/master/"),
+  "ModelScope 清单/文件下载走官方 API（含大小，可续传）");
+ok(main.includes("ADAPTER_HTTP_HEAD") && main.includes("ADAPTER_HTTP_MAIN") && main.includes("String.raw"),
+  "四个适配器模板共用 HTTP 壳（String.raw 保证 Python 正则不被 TS 转义）");
+ok(main.includes('from f5_tts.api import F5TTS') && main.includes("vocoder_local_path"),
+  "F5 适配器加载本地 ckpt / vocab / Vocos");
+ok(main.includes("ChatterboxMultilingualTTS.from_local") && main.includes("language_id=lang") && /torch==2\.6\.0/.test(catalog),
+  "Chatterbox 适配器走本地多语（中文 language_id=zh）+ torch 2.6（PyPI 包锁版本）");
+ok(main.includes("Qwen3TTSModel.from_pretrained") && main.includes("generate_voice_clone") && main.includes("attn_implementation='sdpa'"),
+  "Qwen3 适配器用 Base 克隆 + SDPA（不强依赖 flash-attn）");
+ok(main.includes("from indextts.infer_v2 import IndexTTS2") && main.includes("use_deepspeed=False"),
+  "IndexTTS2 适配器跳过 DeepSpeed（Windows 装不上）");
+ok((main.match(/ADAPTER_HTTP_HEAD \+ String\.raw/g) ?? []).length === 4 && /HTTPServer\(\('127\.0\.0\.1'/.test(main),
+  "四个适配器都复用只绑 127.0.0.1 的 HTTP 壳");
+ok(main.includes("SERVICE_TIMEOUT") && main.includes("chatterbox: 600_000") && main.includes("indextts2: 600_000"),
+  "大模型冷启动超时放宽到 10 分钟（首次加载 30–60 秒不会再被误判失败）");
+ok(ui.includes("voice-ext-service-error") && css.includes(".voice-ext-service-error"),
+  "启用后服务起不来时卡片显示原因（不再只有「已启用」）");
+
 ok(String(pkg.scripts?.check ?? "").includes("12bv-voice-external"), "守卫 12bv 已加入 package.json 的 check 链");
 
 console.log(`\n【ext】${fails === 0 ? "通过" : "失败"}（${checks} 条${fails ? `，${fails} 条未通过` : ""}）`);

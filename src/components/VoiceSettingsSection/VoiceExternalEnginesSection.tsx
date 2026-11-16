@@ -226,6 +226,13 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
                 </div>
               )}
 
+              {engine.enabled && engine.service === "error" && engine.serviceError && (
+                <div className="voice-ext-service-error" title={engine.serviceError}>
+                  <TriangleAlert size={12} />
+                  <span>服务启动失败：{engine.serviceError}</span>
+                </div>
+              )}
+
               <div className="voice-ext-actions">
                 {isExternalOnly ? (
                   <>

@@ -3,8 +3,9 @@
  *
  * 现状：
  *  · 卡片目录在 `src/lib/voice-external-engines.mjs`（主进程/渲染层共用一份）。
- *  · 首批真接入：GPT-SoVITS（官方便携包，内置 runtime + API 9880）与 CosyVoice 3（源码 + venv + ModelScope 权重）。
- *  · 其余项目只出卡片：独立工作台走「打开官网」，未适配引擎显示「下一批」。
+ *  · 已真接入 6 个：GPT-SoVITS（官方便携包）、CosyVoice 3（源码 + venv + ModelScope 权重），
+ *    以及 11-16 第二批 F5-TTS / Chatterbox / Qwen3-TTS(0.6B) / IndexTTS2（通用 Python 安装器）。
+ *  · Fish Speech（4B 需更大显存）与 Zonos（官方不支持 Windows）只出卡片，不接管播报。
  *
  * ⛔ 不随包、不内置权重：全部下载到 `<userData>/voice-engines/`；下载/解压/安装都有进度事件。
  * ⛔ 同一时间只允许一个外部引擎处于启用态（8GB 显存跑不动两个），切换时先停旧服务。
@@ -32,7 +33,27 @@ const SERVICES = new Map<string, ExternalService>();
 let progressSink: ((event: ExternalProgressEvent) => void) | null = null;
 let installLock: string | null = null;
 const cancels = new Map<string, AbortController>();
-const PORTS: Record<string, number> = { "gpt-sovits": 19880, "cosyvoice3": 19881 };
+const PORTS: Record<string, number> = {
+  "gpt-sovits": 19880,
+  "cosyvoice3": 19881,
+  "f5-tts": 19882,
+  chatterbox: 19883,
+  "qwen3-tts": 19884,
+  indextts2: 19885,
+};
+/** 走「通用 Python 适配器」（POST /speak）的引擎。 */
+const PY_ADAPTERS = new Set(["f5-tts", "chatterbox", "qwen3-tts", "indextts2"]);
+/** HuggingFace 在国内不可直连；模型文件与运行时下载一律走镜像。 */
+const HF_ENDPOINT = "https://hf-mirror.com";
+/** 各适配器首次启动要加载模型（Chatterbox/IndexTTS 更大），给足冷启动时间。 */
+const SERVICE_TIMEOUT: Record<string, number> = {
+  "gpt-sovits": 180_000,
+  cosyvoice3: 240_000,
+  "f5-tts": 420_000,
+  chatterbox: 600_000,
+  "qwen3-tts": 420_000,
+  indextts2: 600_000,
+};
 
 /** 设置进度回调（IPC 段转成 voice:event 的 download 事件）。 */
 export function setExternalProgressSink(sink: ((event: ExternalProgressEvent) => void) | null): void {
@@ -244,6 +265,7 @@ export function startExternalInstall(id: string): { ok: boolean; started?: boole
     try {
       if (entry.install?.kind === "archive") await installGptArchive(entry, entry.install, controller.signal);
       else if (entry.install?.kind === "source") await installCosySource(entry, entry.install, controller.signal);
+      else if (entry.install?.kind === "python") await installPythonEngine(entry, entry.install, controller.signal);
       emit({ id, kind: "downloadDone", percent: 1, message: "安装完成", ok: true });
     } catch (error: any) {
       emit({ id, kind: "downloadDone", percent: 0, message: "安装失败", ok: false, error: String(error?.message ?? error) });
@@ -375,6 +397,136 @@ async function installCosySource(entry: VoiceExternalEngine, install: any, signa
   try { rmSync(zip, { force: true }); } catch { /* 忽略 */ }
 }
 
+/** 统一走 uv pip（默认阿里云源；torch 由 --torch-backend 从官方 CUDA 源解析）。 */
+function uvPip(uv: string, py: string, args: string[], cwd: string, signal: AbortSignal, onLine?: (line: string) => void): Promise<void> {
+  return runCommand(uv, ["pip", "install", "--python", py, "--default-index", "https://mirrors.aliyun.com/pypi/simple/", ...args], cwd, signal, onLine);
+}
+
+/** ModelScope 文件清单（递归取 blob，跳过 README/.gitattributes）。 */
+async function collectModelFiles(root: string, install: any): Promise<{ url: string; dest: string; bytes: number; label: string }[]> {
+  const out: { url: string; dest: string; bytes: number; label: string }[] = [];
+  const models: any[] = Array.isArray(install.models) ? install.models : [];
+  for (const model of models) {
+    if (model?.source === "url") {
+      const dest = String(model.dest ?? "");
+      if (!dest) continue;
+      out.push({ url: String(model.url), dest: join(root, ...dest.split("/")), bytes: Number(model.bytes ?? 0), label: dest });
+      continue;
+    }
+    if (model?.source !== "modelscope") continue;
+    const repo = String(model.repo ?? "");
+    if (!repo) continue;
+    const api = `https://www.modelscope.cn/api/v1/models/${repo}/repo/files?Revision=master&Recursive=True`;
+    let payload: any = null;
+    for (let attempt = 0; attempt < 3 && !payload; attempt++) {
+      try {
+        const response = await fetch(api, {
+          headers: { "User-Agent": "Mozilla/5.0 CodexHarness/1.0" },
+          signal: AbortSignal.timeout(60_000),
+        });
+        if (response.ok) payload = await response.json();
+      } catch { /* 重试 */ }
+    }
+    if (!payload) throw new Error(`读取模型清单失败：${repo}`);
+    const files = Array.isArray(payload?.Data?.Files) ? payload.Data.Files : [];
+    if (!files.length) throw new Error(`模型清单为空：${repo}`);
+    for (const file of files) {
+      if (file?.Type !== "blob") continue;
+      const path = String(file.Path ?? "");
+      if (!path || path === ".gitattributes" || /(^|\/)README\.md$/i.test(path)) continue;
+      const encoded = path.split("/").map(encodeURIComponent).join("/");
+      out.push({
+        url: `https://www.modelscope.cn/models/${repo}/resolve/master/${encoded}`,
+        dest: join(root, ...String(model.dest ?? "models").split("/"), ...path.split("/")),
+        bytes: Number(file.Size ?? 0),
+        label: `${repo}/${path}`,
+      });
+    }
+  }
+  return out;
+}
+
+/** 逐个下载模型文件（按字节算总进度；未知大小时退化为按文件数）。 */
+async function downloadModelFiles(entry: VoiceExternalEngine, install: any, root: string, signal: AbortSignal, from: number, span: number): Promise<void> {
+  const files = await collectModelFiles(root, install);
+  if (!files.length) return;
+  const totalBytes = files.reduce((sum, file) => sum + Math.max(0, file.bytes), 0);
+  let done = 0;
+  for (let index = 0; index < files.length; index++) {
+    if (signal.aborted) throw new Error("已取消");
+    const file = files[index];
+    const base = totalBytes > 0 ? done / totalBytes : index / files.length;
+    const label = `下载模型 ${file.label}`;
+    emit({ id: entry.id, kind: "download", percent: from + base * span, message: label });
+    await download(file.url, file.dest, file.bytes, (ratio) => {
+      const inner = totalBytes > 0 ? (done + Math.max(0, file.bytes) * ratio) / totalBytes : (index + ratio) / files.length;
+      emit({ id: entry.id, kind: "download", percent: from + inner * span, message: `${label} ${Math.round(ratio * 100)}%` });
+    }, signal);
+    done += Math.max(0, file.bytes);
+  }
+}
+
+/** 通用 Python 引擎安装：源码/包 → venv → CUDA torch → 依赖 → 模型 → 适配器。
+ *  ⛔ 源码收敛到短路径 `app/`（Windows 260 字符上限，CosyVoice 实测过）。
+ *  ⛔ 一律用 `--torch-backend=cuXXX` 让 uv 从 PyTorch 官方源解析，避免装成 CPU 版。 */
+async function installPythonEngine(entry: VoiceExternalEngine, install: any, signal: AbortSignal): Promise<void> {
+  const dir = engineDir(entry.id);
+  const appDir = join(dir, "app");
+  const srcDir = join(dir, "src");
+  mkdirSync(appDir, { recursive: true });
+  if (install.zipUrl) {
+    const zip = join(dir, "source.zip");
+    emit({ id: entry.id, kind: "download", percent: 0, message: `下载 ${entry.name} 源码…` });
+    await download(String(install.zipUrl), zip, 0, (ratio) => emit({ id: entry.id, kind: "download", percent: ratio * 0.04, message: `下载源码 ${Math.round(ratio * 100)}%` }), signal);
+    await extractArchive(zip, srcDir, signal, () => { /* 源码小，不报细进度 */ });
+    const extracted = findDirWith(srcDir, "pyproject.toml", 3);
+    if (!extracted) throw new Error("源码包里没有找到 pyproject.toml（结构可能变了）");
+    try { rmSync(appDir, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    renameSync(extracted, appDir);
+    try { rmSync(srcDir, { recursive: true, force: true }); } catch { /* 忽略 */ }
+    try { rmSync(zip, { force: true }); } catch { /* 忽略 */ }
+  }
+  const uv = join(toolsRoot(), "uv", "uv.exe");
+  const venv = join(appDir, ".venv");
+  const py = join(venv, "Scripts", "python.exe");
+  emit({ id: entry.id, kind: "download", percent: 0.06, message: `创建 Python ${String(install.python ?? "3.10")} 环境…` });
+  if (!existsSync(py)) {
+    await runCommand(uv, ["venv", "--python", String(install.python ?? "3.10"), venv], appDir, signal);
+    if (!existsSync(py)) throw new Error("Python 环境创建失败（uv 没下载到目标版本）");
+  }
+  const backend = `--torch-backend=${String(install.torchBackend ?? "cu128")}`;
+  emit({ id: entry.id, kind: "download", percent: 0.1, message: "安装 PyTorch（CUDA，约 2–4GB）…" });
+  /* ⛔ 版本必须按引擎来：Chatterbox 0.1.7 锁 torch==2.6.0，写死 2.8 会直接解不出依赖。 */
+  const torchSpec = typeof install.torch === "string" && install.torch.trim()
+    ? install.torch.trim().split(/\s+/)
+    : ["torch==2.8.0", "torchaudio==2.8.0"];
+  await uvPip(uv, py, [backend, ...torchSpec], appDir, signal);
+  /* ⛔ uv 的 venv 默认不带 setuptools：perth（Chatterbox 水印）与 whisper 构建都要 pkg_resources。 */
+  await uvPip(uv, py, ["setuptools==69.5.1"], appDir, signal);
+  if (install.editable) {
+    /* IndexTTS：frontend 链会 import whisper，whisper 是 sdist、构建要 pkg_resources；
+       装好后无隔离构建一次（CosyVoice 同款坑）。 */
+    await uvPip(uv, py, ["--no-build-isolation", "openai-whisper==20231117"], appDir, signal);
+    await uvPip(uv, py, ["hatchling", "editables", "wheel"], appDir, signal);
+    emit({ id: entry.id, kind: "download", percent: 0.3, message: "安装引擎依赖（约 5–15 分钟）…" });
+    await uvPip(uv, py, [backend, "-e", ".", "--no-build-isolation"], appDir, signal, (line) => {
+      if (line) emit({ id: entry.id, kind: "download", percent: 0.3, message: `安装依赖：${line.slice(0, 90)}` });
+    });
+  } else {
+    emit({ id: entry.id, kind: "download", percent: 0.3, message: "安装引擎依赖（约 3–10 分钟）…" });
+    await uvPip(uv, py, [backend, ...(Array.isArray(install.pip) ? install.pip : [])], appDir, signal, (line) => {
+      if (line) emit({ id: entry.id, kind: "download", percent: 0.3, message: `安装依赖：${line.slice(0, 90)}` });
+    });
+  }
+  emit({ id: entry.id, kind: "download", percent: 0.62, message: "下载模型权重…" });
+  await downloadModelFiles(entry, install, appDir, signal, 0.62, 0.35);
+  const adapter = String(install.adapter ?? "");
+  const template = ADAPTERS[adapter];
+  if (!template) throw new Error(`没有 ${adapter} 的适配器模板`);
+  writeFileSync(join(appDir, "harness_adapter.py"), template, "utf8");
+  saveInstalled(entry.id, { dir: appDir, adapter, installedAt: Date.now(), version: String(install.commit ?? install.version ?? "").slice(0, 12) });
+}
+
 /** 删除一个引擎（先停服务，再删目录）。 */
 export function removeExternalEngine(id: string): { ok: boolean; error?: string } {
   const entry = externalEngineById(id);
@@ -474,6 +626,16 @@ async function ensureService(id: string): Promise<void> {
       const python = join(info.dir, ".venv", "Scripts", "python.exe");
       logLine(`start cosyvoice3: ${python} harness_adapter.py --port ${port}`);
       child = spawn(python, ["harness_adapter.py", "--port", String(port)], { cwd: info.dir, windowsHide: true, env: { ...process.env, PYTHONIOENCODING: "utf-8" } });
+    } else if (PY_ADAPTERS.has(info.adapter)) {
+      const python = join(info.dir, ".venv", "Scripts", "python.exe");
+      if (!existsSync(python)) throw new Error("引擎的 Python 环境不完整，请卸载后重装");
+      logLine(`start ${info.adapter}: ${python} harness_adapter.py --port ${port}`);
+      /* ⛔ 模型懒下载会走 HuggingFace：不注入镜像在国内会卡死；HF_HOME 留在引擎目录里。 */
+      child = spawn(python, ["harness_adapter.py", "--port", String(port)], {
+        cwd: info.dir,
+        windowsHide: true,
+        env: { ...process.env, PYTHONIOENCODING: "utf-8", HF_ENDPOINT, HF_HOME: join(info.dir, "hf"), PYTHONWARNINGS: "ignore" },
+      });
     } else {
       throw new Error("这个引擎尚未接入");
     }
@@ -488,7 +650,7 @@ async function ensureService(id: string): Promise<void> {
       try { log.end(); } catch { /* 忽略 */ }
     });
     child.on("error", (error) => logLine(`spawn error: ${String(error?.message ?? error)}`));
-    await waitPort(port, info.adapter === "gpt-sovits" ? 180_000 : 240_000);
+    await waitPort(port, SERVICE_TIMEOUT[info.adapter] ?? 240_000);
     service.state = "running";
     service.starting = null;
     logLine(`ready in ${Date.now() - startedAt}ms`);
@@ -689,6 +851,18 @@ export async function externalEngineSpeak(text: string, options: SpeakOptions): 
       if (!parsed?.ok || !parsed.wavBase64) throw new Error(String(parsed?.error ?? "CosyVoice 合成失败"));
       return parseWav(Buffer.from(parsed.wavBase64, "base64"));
     }
+    if (PY_ADAPTERS.has(info.adapter)) {
+      /* 第二批统一协议：POST /speak { text, refAudio, refText, speed } → { ok, wavBase64 } */
+      const res = await fetch(`http://127.0.0.1:${port}/speak`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, refAudio, refText: profile.refText, speed: options.speed || 1 }),
+        signal: AbortSignal.timeout(300_000),
+      });
+      const parsed: any = await res.json();
+      if (!parsed?.ok || !parsed.wavBase64) throw new Error(String(parsed?.error ?? `${info.adapter} 合成失败`));
+      return parseWav(Buffer.from(parsed.wavBase64, "base64"));
+    }
     return { ok: false, error: "这个外部引擎尚未接入" };
   } catch (error: any) {
     return { ok: false, error: `外部引擎合成失败：${String(error?.message ?? error)}` };
@@ -772,5 +946,177 @@ if __name__ == '__main__':
     print('listening 127.0.0.1:%d' % args.port, flush=True)
     HTTPServer(('127.0.0.1', args.port), Handler).serve_forever()
 `;
+
+/** 第二批 Python 适配器（安装时写到引擎目录；统一 POST /speak，只监听 127.0.0.1）。 */
+const ADAPTER_HTTP_HEAD = String.raw`# Harness external TTS adapter (auto-generated)
+import argparse, base64, io, json, os, tempfile, traceback
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass
+    def _send(self, status, payload):
+        body = json.dumps(payload).encode('utf-8')
+        self.send_response(status)
+        self.send_header('content-type', 'application/json')
+        self.send_header('content-length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        if self.path.startswith('/health'):
+            return self._send(200, {'ok': True})
+        self.send_error(404)
+    def do_POST(self):
+        if not self.path.startswith('/speak'):
+            return self.send_error(404)
+        try:
+            length = int(self.headers.get('content-length', '0'))
+            data = json.loads(self.rfile.read(length) or b'{}')
+            wav = synth(str(data.get('text', '')), str(data.get('refAudio', '')), str(data.get('refText', '')), data.get('speed', 1.0))
+            self._send(200, {'ok': True, 'wavBase64': base64.b64encode(wav).decode('ascii')})
+        except Exception as error:
+            traceback.print_exc()
+            self._send(500, {'ok': False, 'error': str(error)})
+`;
+
+const ADAPTER_HTTP_MAIN = String.raw`
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--port', type=int, default=19880)
+    args = parser.parse_args()
+    print('listening 127.0.0.1:%d' % args.port, flush=True)
+    HTTPServer(('127.0.0.1', args.port), Handler).serve_forever()
+`;
+
+const F5_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness F5-TTS adapter (auto-generated)
+import soundfile as sf
+from f5_tts.api import F5TTS
+
+MODELS = os.path.join(ROOT, 'models')
+print('loading F5-TTS', flush=True)
+tts = F5TTS(
+    model='F5TTS_v1_Base',
+    ckpt_file=os.path.join(MODELS, 'F5TTS_v1_Base', 'model_1250000.safetensors'),
+    vocab_file=os.path.join(MODELS, 'F5TTS_v1_Base', 'vocab.txt'),
+    vocoder_local_path=os.path.join(MODELS, 'vocos-mel-24khz'),
+    device='cuda',
+)
+print('model ready, sample_rate', tts.target_sample_rate, flush=True)
+
+def synth(text, ref_audio, ref_text, speed):
+    wav, sr, _spec = tts.infer(
+        ref_file=ref_audio,
+        ref_text=ref_text or ' ',
+        gen_text=text,
+        speed=float(speed or 1.0),
+        nfe_step=32,
+    )
+    buf = io.BytesIO()
+    sf.write(buf, wav, sr, format='WAV')
+    return buf.getvalue()
+
+` + ADAPTER_HTTP_MAIN;
+
+const CHATTERBOX_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness Chatterbox multilingual adapter (auto-generated)
+import re
+import torchaudio
+from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+
+MODELS = os.path.join(ROOT, 'models')
+print('loading Chatterbox multilingual', flush=True)
+tts = ChatterboxMultilingualTTS.from_local(MODELS, device='cuda')
+print('model ready, sample_rate', tts.sr, flush=True)
+
+def synth(text, ref_audio, ref_text, speed):
+    lang = 'zh' if re.search(r'[\u4e00-\u9fff]', text) else 'en'
+    wav = tts.generate(
+        text,
+        language_id=lang,
+        audio_prompt_path=ref_audio,
+        exaggeration=0.5,
+        cfg_weight=0.5,
+    )
+    handle, path = tempfile.mkstemp(suffix='.wav')
+    os.close(handle)
+    try:
+        torchaudio.save(path, wav, tts.sr)
+        with open(path, 'rb') as fh:
+            return fh.read()
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+` + ADAPTER_HTTP_MAIN;
+
+const QWEN3_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness Qwen3-TTS adapter (auto-generated)
+import re
+import torch
+import soundfile as sf
+from qwen_tts import Qwen3TTSModel
+
+MODELS = os.path.join(ROOT, 'models')
+print('loading Qwen3-TTS from', MODELS, flush=True)
+tts = Qwen3TTSModel.from_pretrained(
+    MODELS,
+    device_map='cuda:0',
+    dtype=torch.bfloat16,
+    attn_implementation='sdpa',
+)
+print('model ready', flush=True)
+
+def synth(text, ref_audio, ref_text, speed):
+    lang = 'Chinese' if re.search(r'[\u4e00-\u9fff]', text) else 'English'
+    wavs, sr = tts.generate_voice_clone(
+        text=text,
+        language=lang,
+        ref_audio=ref_audio,
+        ref_text=ref_text or None,
+        x_vector_only_mode=not bool(ref_text),
+    )
+    buf = io.BytesIO()
+    sf.write(buf, wavs[0], sr, format='WAV')
+    return buf.getvalue()
+
+` + ADAPTER_HTTP_MAIN;
+
+const INDEXTTS_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness IndexTTS2 adapter (auto-generated)
+from indextts.infer_v2 import IndexTTS2
+
+MODELS = os.path.join(ROOT, 'models')
+print('loading IndexTTS2 from', MODELS, flush=True)
+tts = IndexTTS2(
+    cfg_path=os.path.join(MODELS, 'config.yaml'),
+    model_dir=MODELS,
+    use_fp16=True,
+    use_cuda_kernel=False,
+    use_deepspeed=False,
+)
+print('model ready', flush=True)
+
+def synth(text, ref_audio, ref_text, speed):
+    handle, path = tempfile.mkstemp(suffix='.wav')
+    os.close(handle)
+    try:
+        tts.infer(spk_audio_prompt=ref_audio, text=text, output_path=path, verbose=False)
+        with open(path, 'rb') as fh:
+            return fh.read()
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+` + ADAPTER_HTTP_MAIN;
+
+const ADAPTERS: Record<string, string> = {
+  "f5-tts": F5_ADAPTER,
+  chatterbox: CHATTERBOX_ADAPTER,
+  "qwen3-tts": QWEN3_ADAPTER,
+  indextts2: INDEXTTS_ADAPTER,
+};
 
 app.on("will-quit", () => stopAllExternalEngines());

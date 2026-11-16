@@ -3,7 +3,23 @@ export type VoiceExternalCategory = { id: string; name: string };
 export type VoiceExternalInstall =
   | { kind: "archive"; format: "7z" | "zip"; version: string; url: string; bytes: number }
   | { kind: "source"; zipUrl: string; commit: string; modelRepo: string; modelFiles: string[] }
-  | { kind: "external"; url: string };
+  | { kind: "external"; url: string }
+  | {
+      kind: "python";
+      adapter: "f5-tts" | "chatterbox" | "qwen3-tts" | "indextts2";
+      python: string;
+      torchBackend?: string;
+      torch?: string;
+      pip?: string[];
+      zipUrl?: string;
+      commit?: string;
+      version?: string;
+      editable?: boolean;
+      models: (
+        | { source: "url"; url: string; dest: string; bytes?: number }
+        | { source: "modelscope"; repo: string; dest?: string }
+      )[];
+    };
 
 export type VoiceExternalEngine = {
   id: string;
@@ -11,7 +27,7 @@ export type VoiceExternalEngine = {
   category: string;
   recommended: boolean;
   kind: "engine" | "studio" | "webui";
-  adapter: "gpt-sovits" | "cosyvoice3" | null;
+  adapter: "gpt-sovits" | "cosyvoice3" | "f5-tts" | "chatterbox" | "qwen3-tts" | "indextts2" | null;
   repo: string;
   license: string;
   licenseNote: string;
