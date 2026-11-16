@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（121 个能力域 / 698 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（122 个能力域 / 701 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -80,8 +80,12 @@ Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）：翻译层 + QEMU 双
 通道：design-md:list, design-md:get, design-md:export
 
 ### photocraft（7 通道）
-PhotoCraft 图像编辑（11-15，storytold/photocraft，MIT/Apache-2.0）：纯 Rust 重写的开源 Photoshop（图层/蒙版/调整层/文字/PSD）。按需下载便携包（约 137MB，GitHub release 镜像序 + SHA256SUMS 校验）到「设置 → 开发工具 → PhotoCraft 图像编辑」；Codex 用 photocraft 工具做调色/滤镜/格式转换/批量处理/命令发现，装了以后还会注册 [mcp_servers.photocraft] 连接器（roots 限 userData/photocraft-io）；图片卡可「在 PhotoCraft 中编辑」打开原生窗口
+PhotoCraft 图像编辑（11-15，storytold/photocraft，MIT/Apache-2.0）：纯 Rust 重写的开源 Photoshop（图层/蒙版/调整层/文字/PSD）。按需下载便携包（约 137MB，GitHub release 镜像序 + SHA256SUMS 校验），入口在「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」；Codex 用 photocraft 工具做调色/滤镜/格式转换/批量处理/命令发现，装了以后还会注册 [mcp_servers.photocraft] 连接器（roots 限 userData/photocraft-io）；图片卡可「在 PhotoCraft 中编辑」打开原生窗口
 通道：photocraft:status, photocraft:info, photocraft:convert, photocraft:run, photocraft:batch, photocraft:commands, photocraft:open
+
+### artcraft（3 通道）
+Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：ArtCraft Launcher 统一安装/更新/打开 18 个纯 Rust 创作 App（PhotoCraft 图像、LightCraft RAW、FilmCraft 视频、EffectCraft 动效、AniCraft 2D 动画、VectorCraft 矢量、FigCraft 原型、DesignCraft 版式、DeckCraft 演示、WordCraft 文档、GridCraft 表格、PdfCraft PDF、CADCraft CAD、SoundCraft 音频、MaterialCraft 材质、TextureCraft 贴图、Craft Anything、SolidCraft/MailCraft）。按需下载 Launcher 便携包（约 11MB，GitHub release 镜像序 + SHA256SUMS 校验），入口「设置 → 开发工具 → Craft 全家桶」，弹窗内逐 App 查看用途与来源。⚠️ 上游 v0.19.2 尚未随包提供 craft-ai-mcp 网关；网关出现后宿主会自动写 [mcp_servers.ArtCraft]（一个 MCP 入口覆盖全部已装 App，4 个工具：列 App / 找工具 / describe / call）
+通道：artcraft:status, artcraft:open, artcraft:sync
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置

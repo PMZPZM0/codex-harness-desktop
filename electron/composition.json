@@ -814,6 +814,13 @@
       "config": null
     },
     {
+      "id": "artcraft",
+      "enabled": true,
+      "file": "features/artcraft-ipc.ts",
+      "export": "artcraftFeature",
+      "config": null
+    },
+    {
       "id": "monitor",
       "enabled": true,
       "file": "features/task-monitor.ts",

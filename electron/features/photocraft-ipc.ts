@@ -15,7 +15,6 @@ import type { IpcHost } from "../ipc-host";
 import { isInsideOrEqualTrustedRoots } from "../runtime-refs";
 import {
   PHOTOCRAFT_HOME,
-  dirSizeBytes,
   openPhotoCraftGui,
   photocraftCliPath,
   photocraftGuiPath,
@@ -24,6 +23,7 @@ import {
   photocraftPaths,
   runPhotoCraftCli,
 } from "../photocraft";
+import { dirSizeBytes } from "../toolchain";
 
 const PHOTOCRAFT_CHANNELS = ["photocraft:status", "photocraft:info", "photocraft:convert", "photocraft:run", "photocraft:batch", "photocraft:commands", "photocraft:open"];
 const COMMAND_ID = /^[a-z][a-zA-Z0-9_.]{1,80}$/;

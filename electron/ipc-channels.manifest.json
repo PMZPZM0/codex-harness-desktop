@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 698,
+  "count": 701,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6951,6 +6951,36 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸）"
+    },
+    {
+      "name": "artcraftStatus",
+      "channel": "artcraft:status",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ installed: boolean; version: string; launcherPath: string; gatewayPath: string; gatewayReady: boolean; mcpRegistered: boolean; configSnippet: string; platform: string; sizeBytes: number; attribution: { license: string; home: string; apps: string } }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 网关是否就绪 / MCP 段是否写入 / 可复制的 Codex 配置片段"
+    },
+    {
+      "name": "artcraftOpen",
+      "channel": "artcraft:open",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ ok: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 打开 ArtCraft Launcher（18 个创作 App 的安装/更新/打开由它自己完成；宿主不代装）"
+    },
+    {
+      "name": "artcraftSync",
+      "channel": "artcraft:sync",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ gatewayReady: boolean; mcpRegistered: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 网关刚出现时立刻重写 config.toml（写入 [mcp_servers.ArtCraft]）；引擎需重启才加载 MCP"
     }
   ]
 }

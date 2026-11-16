@@ -352,7 +352,17 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - **MCP 连接器（P2）**：装了才写 `[mcp_servers.photocraft]`（headless CLI，`--no-gpu`，读/写根都限 `userData/photocraft-io`），由 `custom-model-apply` 统一生成（手写 config 会被它的 mcp_servers 重建逻辑清掉）。⛔ 引擎 0.157 会**延迟暴露 MCP 工具** ⇒ 主路径永远是上面的动态工具；MCP 只作高级命令面。卸载时重建 config（去掉该段）并重启引擎。
 - **GUI 编辑（P3）**：图片产物卡右上角「在 PhotoCraft 中编辑」→ `photocraft:open` 启动官方 GUI（mac 若只装了 CLI 会提示去装 App）。⛔ 不嵌入 Electron、不重写它的界面。
 - ⛔ **许可/边界**：只下载官方发行物；解压出的 LICENSE/NOTICE/OFL 原样保留；不冒充 ArtCraft 官方。项目 early alpha：命令 id 与参数随版本变化，装的是固定版本，升级走卡片「更新」行。
-- 判据：守卫 **`12bt-photocraft`（48 条：安装链 / 可信路径 / 不覆盖原图 / 命令白名单 / MCP 段 / 工具+指令+技能+卡片 / 图片入口 / 许可）** + 验收 **`photocraft`（卡片与工具状态 / 路径越界拒绝）**。
+- 判据：守卫 **`12bt-photocraft`（48 条：安装链 / 可信路径 / 不覆盖原图 / 命令白名单 / MCP 段 / 工具+指令+技能+卡片 / 图片入口 / 许可）** + 验收 **`photocraft`（卡片与工具状态 / 路径越界拒绝）**。⚠️ 11-16 起它的入口在「开发工具 → Craft 全家桶 → PhotoCraft」三层弹窗里（见下节），独立卡片已撤销。
+
+### 🧰 Craft 全家桶（`electron/artcraft.ts` + `features/artcraft-ipc.ts` + `src/features/settings-devtools/ArtCraftSuite.tsx`，11-16 立）
+
+用户问「photocraft 是不是还有几个配套开源」⇒ 查明是 ArtCraft 的 **Craft App Suite**（`storytold` 组织，18 个纯 Rust App，全部 Apache-2.0 可商用）：PhotoCraft 图像 / LightCraft RAW / FilmCraft 视频 / EffectCraft 动效 / AniCraft 2D 动画 / VectorCraft 矢量 / FigCraft 原型 / DesignCraft 版式 / DeckCraft 演示 / WordCraft 文档 / GridCraft 表格 / PdfCraft PDF / CADCraft CAD / SoundCraft 音频 / MaterialCraft 材质 / TextureCraft 贴图 / Craft Anything + 社区 SolidCraft / MailCraft。每个 App 都有独立 Windows portable zip + MSI + CLI 构建，整套装齐约 **1.36GB**。
+
+- **UI = 三级弹窗**（用户令「开发工具界面一个 Craft 全家桶，弹窗里面细分到每个点击在一个弹窗」）：层级 1 = 开发工具页唯一的「Craft 全家桶」卡；层级 2 = `ArtCraftSuite`（启动器安装/更新/卸载 + 网关状态 + 19 个 App 网格）；层级 3 = 每个 App 一个弹窗（用途 / 体积 / 来源 / 在 Launcher 中安装）。PhotoCraft 那一层**直接复用完整 `PhotoCraftCard`**（工具 / MCP / GUI 入口都不丢）。⛔ `artcraft-apps.ts` 是 App 目录的单一真相源。
+- **宿主只装 Launcher**（约 11MB portable zip：镜像序 + SHA256SUMS → `tools/artcraft-launcher/`，`GITHUB_UPDATEABLE.artcraft`，仅 win32）：18 个 App 的安装/卸载交给 Launcher 自己（UAC 与安装目录由它处理），⛔ 不代装不代卸；mac 是 `.app` ⇒ 不代装，只给官网指引。虽 <50MB 仍按需下载：它是第三方**应用分发器**，随包等于把外部 App 分发塞进安装包，且 mac/linux 资产形态不同。
+- ⛔⛔ **网关尚未随上游出货**（11-16 实测 v0.19.2 便携包只有 `launcher.exe`；exe 里没有 `craft-ai-mcp` / `apps.json` / `allowed(` 字样；网关与「AI 可用哪些 App」同意表只在 main 分支）。⇒ `[mcp_servers.ArtCraft]`（上游 `mcp_config.rs` 同款：`command = <gateway>` + `args = ["--stdio"]`）**只在网关二进制真存在时**才写（`craftAiMcpPath()` 查 `%LOCALAPPDATA%\ArtCraft\mcp\bin` 与 portable 三个变体）；不存在就整段不写，卡片如实显示「等待 Launcher 新版」。上游发版后 `artcraft:sync` 或下次启动自动点亮，**零改代码**。
+- `ArtCraft` 段登记为 harness 所属（`ownedMcpServers` + 清 override），卸载删段并重启引擎；`sync` 不擅自重启（卡片提示用户重启）。⛔ 不冒充 ArtCraft 官方。
+- 判据：守卫 **`12bu-artcraft`（52 条：安装链 / 三通道 / 网关条件式 MCP / 三级弹窗 / 许可）** + 验收 **`artcraft`（三级弹窗真点 / 状态与 sync 通道 / 网关状态如实展示）**。
 
 ### 🧑‍🤝‍🧑 工作伙伴群编排（抄 Pachat 的「先读再说 + 按需唤醒」，11-14，守卫 11f/12be/09）
 
@@ -656,6 +666,11 @@ Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依
 `userData/openmaic-data`，卸载可保留。⛔ 依赖必须在最终 app 路径安装（pnpm node_modules 含链接，装完再移动会丢）；
 ⛔ pg_ctl 退出码不可信，以端口可连为准；模型 Key 只由用户在网页设置里填，宿主不读不写。
 配套 Codex 工具 `openmaic`（status / start / stop / open / generate / job）与内置技能 `openmaic`；守卫 12bp）。
+**PhotoCraft + Craft 全家桶**（11-15 / 11-16，storytold：photocraft 与 craft-launcher，Apache-2.0）：
+开发工具里只有一张「Craft 全家桶」卡（三级弹窗，见下文专节）—— PhotoCraft 的 137MB 便携包与 ArtCraft Launcher 的
+11MB 便携包各自按需下载（GitHub release 镜像序 + SHA256SUMS → `tools/photocraft` / `tools/artcraft-launcher`），
+App 本身的安装/卸载交给 Launcher。⛔ 上游 Launcher v0.19.2 还没随包出货 craft-ai-mcp 网关，
+`[mcp_servers.ArtCraft]` 只在检测到网关二进制时才写。守卫 12bt / 12bu。
 **卡片内更新**（11-14 用户：「这些卡片界面里面好像都没有配套更新功能」）：开发工具里按需下载卡
 （Filee / ApkStart / OpenMAIC / 飞书 CLI）都有独立「更新」行（`RuntimeUpdateRow`，打开卡片自动查一次），
 复用 `runtime:update-check` / `runtime:update` 单一真相源；OpenMAIC 更新 = 重新下载并构建（先停服务/库，课程数据保留）。
@@ -819,6 +834,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 
 - 近期功能性变更（宿主行为，引擎交互相关）
 - 11-15 PhotoCraft 专业图像后期：按需下载（137MB）+ photocraft 工具 + MCP 连接器 + 图片卡 GUI 编辑（见「### 🖼 PhotoCraft 专业图像后期」）
+- 11-16 Craft 全家桶：开发工具一张卡三级弹窗（Launcher 11MB 按需装 / 19 个 App 目录 / 每个 App 一层弹窗）；网关 craft-ai-mcp 未随上游出货 ⇒ 检测到才写 `[mcp_servers.ArtCraft]`（见「### 🧰 Craft 全家桶」）
 - 11-14 工作伙伴群编排抄 Pachat：先读再说 + 去自由催办 + 每成员每日预算/失败隔 5 分钟重试 + 群治理（活跃度/群规矩/成员治理/群模板）（见「### 🧑‍🤝‍🧑 工作伙伴群编排」）
 - 11-15 设计参考库：84 份品牌 DESIGN.md 随包（工具 design_md + 设置页「设计参考」浏览/预览/导出/交给 Codex）（见「### 🎨 设计参考库」）
 - 10-21 长会话滚动条按回合总数撑高 + 按页水合（滚轮不跳 / 不回弹；顶部虚拟占位 + layout effect 首帧锚点补偿）

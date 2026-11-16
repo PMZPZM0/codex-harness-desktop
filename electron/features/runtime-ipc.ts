@@ -33,6 +33,7 @@ import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
 import { HUSK_REPO, huskInstalledVersion, installHuskFromGitHub, installHuskTipaFromGitHub } from "../husk-install";
 import { PHOTOCRAFT_REPO, installPhotoCraftFromGitHub, photocraftInstalledVersion } from "../photocraft";
+import { ARTCRAFT_REPO, artcraftInstalledVersion, installArtCraftFromGitHub } from "../artcraft";
 import { installKbEmbedding, kbBackendDir, kbEmbeddingInstalled, uninstallKbEmbedding } from "./kb-embed-backend";
 import { DARWIN_HIDDEN, DARWIN_MARKERS, DARWIN_SPEC_TEXT, IS_MAC, PIP_PACKAGE_DIRS, cancelRuntimeInstall, cleanupRuntimeTempFiles, clearCancelRequest, devRuntimeSpecs, emitRuntimeProgress, isCancelRequested, pipMetadataDirs, pythonSiteDir, readDownloadSource, requestRuntimeCancel, restartServerWhenIdle, runRuntimeInstaller, runtimeInstalled, runtimeInstaller, runtimeInstalls, trackRuntimeProc } from "./dev-runtimes";
 import type { DevRuntimeId, DevRuntimeSpec } from "./dev-runtimes";
@@ -783,6 +784,8 @@ const GITHUB_UPDATEABLE: Record<string, { repo: string; label: string; platforms
   husk: { repo: HUSK_REPO, label: "Husk（iPhone 跑 Android）", install: installHuskFromGitHub },
   // PhotoCraft（11-15）：便携包（CLI+GUI），更新 = 重下同版本资产并替换；MCP 段随安装状态生成。
   photocraft: { repo: PHOTOCRAFT_REPO, label: "PhotoCraft 图像编辑", install: installPhotoCraftFromGitHub },
+  // Craft 全家桶（11-16）：Launcher 便携包（约 11MB，仅 Windows）；更新 = 重下同版本资产并替换。
+  artcraft: { repo: ARTCRAFT_REPO, label: "Craft 全家桶（ArtCraft Launcher）", platforms: ["win32"], install: installArtCraftFromGitHub },
 };
 
 /** 查 GitHub **最新**版本号（去 v 前缀）：tags 列表 + releases/latest 都查，取版本最大者。
@@ -1071,8 +1074,8 @@ export function updateableToolIds(): string[] {
 }
 
 /** 读磁盘上已装的版本号（npm 包读 package.json；GitHub 直下型读安装时落的 version.txt）。 */
-/** 安装 / 卸载 PhotoCraft 后重写 config.toml：`[mcp_servers.photocraft]` 的唯一来源是 applyCustomModel。 */
-async function refreshConfigForPhotocraft(): Promise<void> {
+/** 安装 PhotoCraft / Craft 全家桶 后重写 config.toml：MCP 段（photocraft / ArtCraft）的唯一来源是 applyCustomModel。 */
+async function refreshConfigForGatewayTools(): Promise<void> {
   try {
     const { readCustomModel } = await import("../main/01-model-catalog");
     const { applyCustomModel } = await import("./custom-model-apply");
@@ -1089,6 +1092,7 @@ function installedVersionOf(id: string): string {
     if (id === "openmaic") return openmaicInstalledVersion();
     if (id === "husk") return huskInstalledVersion();
     if (id === "photocraft") return photocraftInstalledVersion();
+    if (id === "artcraft") return artcraftInstalledVersion();
     return "";
   }
   const tool = UPDATEABLE_TOOLS[id];
@@ -1458,6 +1462,12 @@ export const runtimeFeature = defineFeature<null>({
         removePhotoCraftMcpSection();
         await restartServerWhenIdle(id);
       }
+      // Craft 全家桶（11-16）：卸载只删 Launcher 目录；同时摘掉 [mcp_servers.ArtCraft]（注册指向 Launcher 的网关）。
+      if (id === "artcraft") {
+        const { removeArtCraftMcpSection } = await import("../artcraft");
+        removeArtCraftMcpSection();
+        await restartServerWhenIdle(id);
+      }
       sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });
       // ⛔ 10-12 同步清账：留着记录的话，更新后的「你装过哪些工具」会把一个**用户主动卸载**的
       //   工具算成「待重装」并提示恢复 —— 账本必须跟着真实状态走，不是只增不减。
@@ -1639,7 +1649,12 @@ export const runtimeFeature = defineFeature<null>({
              ⛔ 装完要**立刻重写 config.toml**（新增 [mcp_servers.photocraft]），再走统一的重启链；
                 否则下一次 applyCustomModel 之前 MCP 始终不在配置里。 */
           await installPhotoCraftFromGitHub(id, await latestInstallVersion("photocraft", PHOTOCRAFT_REPO));
-          await refreshConfigForPhotocraft();
+          await refreshConfigForGatewayTools();
+        } else if (id === "artcraft") {
+          /* Craft 全家桶（11-16）：Launcher 便携包（约 11MB）。装了以后若网关已存在（用户先用过 Launcher），
+             立刻重写 config.toml 写入 [mcp_servers.ArtCraft]；上游尚未随包提供网关时是空操作。 */
+          await installArtCraftFromGitHub(id, await latestInstallVersion("artcraft", ARTCRAFT_REPO));
+          await refreshConfigForGatewayTools();
         } else if (id === "rea") {
           /* REA 逆向分析（10-13）：npm 国内镜像装，失败回落官方源；重跑同一入口 = 重装/更新。
              ⛔ 11-14 锁 pin（REA_PINNED_VERSION）：随包 Node v24.19.0 跑不了 6.8.0+，

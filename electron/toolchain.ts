@@ -2,6 +2,7 @@
 // terminal.ts（终端面板）与 codex-server.ts（Codex 引擎子进程）共用：
 // 子进程环境里优先命中内置 node/pwsh，应用自包含可移植。
 import fs from "node:fs";
+import type { Dirent } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
@@ -536,6 +537,29 @@ export function ffmpegMissingMessage() {
 /** 内置 Python 解释器；没有安装时返回空串。 */
 export function bundledPython() {
   return existingToolPath(...(process.platform === "win32" ? ["python", "python.exe"] : ["python", "bin", "python3"]));
+}
+
+/** 目录 / 文件占用字节数（卡片状态展示用；读不到的项跳过，不抛错）。 */
+export function dirSizeBytes(target: string): number {
+  try {
+    const stat = fs.statSync(target);
+    if (!stat.isDirectory()) return stat.size;
+  } catch { return 0; }
+  let total = 0;
+  const stack = [target];
+  while (stack.length) {
+    const dir = stack.pop() as string;
+    let entries: Dirent[] = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }) as Dirent[]; } catch { continue; }
+    for (const entry of entries) {
+      const full = path.join(dir, String(entry.name));
+      try {
+        if (entry.isDirectory()) stack.push(full);
+        else total += fs.statSync(full).size;
+      } catch { /* 单个文件读不到就跳过 */ }
+    }
+  }
+  return total;
 }
 
 /**

@@ -1577,6 +1577,12 @@ interface Window {
     photocraftCommands(input: { filter?: string }): Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>;
     /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
     photocraftOpen(input: { path?: string }): Promise<{ ok: boolean; error?: string }>;
+    /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 网关是否就绪 / MCP 段是否写入 / 可复制的 Codex 配置片段 */
+    artcraftStatus(): Promise<{ installed: boolean; version: string; launcherPath: string; gatewayPath: string; gatewayReady: boolean; mcpRegistered: boolean; configSnippet: string; platform: string; sizeBytes: number; attribution: { license: string; home: string; apps: string } }>;
+    /* 11-16 打开 ArtCraft Launcher（18 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
+    artcraftOpen(): Promise<{ ok: boolean; error?: string }>;
+    /* 11-16 网关刚出现时立刻重写 config.toml（写入 [mcp_servers.ArtCraft]）；引擎需重启才加载 MCP */
+    artcraftSync(): Promise<{ gatewayReady: boolean; mcpRegistered: boolean }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

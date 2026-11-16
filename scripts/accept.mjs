@@ -1633,30 +1633,88 @@ const CHECKS = [
   },
   {
     id: "photocraft",
-    name: "🖼 PhotoCraft（开发工具卡 / 工具状态 / 路径闸，11-15）",
+    name: "🖼 PhotoCraft（Craft 全家桶 → PhotoCraft 三层弹窗 / 工具状态 / 路径闸，11-15；11-16 改三级入口）",
     run: async (h) => {
       await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
       await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
       await wait(700);
       await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
-      await h.waitFor(`!!document.querySelector('.devtools-card[data-card="photocraft"]') || !!document.querySelector(".devtools-card")`, { label: "开发工具卡片", timeoutMs: 15000 });
-      const card = await h.eval(`(function(){ const cards=[...document.querySelectorAll(".devtools-card")]; const hit=cards.find(function(c){ return (c.textContent||"").includes("PhotoCraft 图像编辑"); }); if(!hit) return null; hit.querySelector(".devtools-card-open")?.click(); return (hit.textContent||"").trim().slice(0, 120); })()`);
-      h.check("① 开发工具页有 PhotoCraft 卡片", Boolean(card), JSON.stringify(card));
-      await h.waitFor(`!!document.querySelector(".settings-dialog")`, { label: "PhotoCraft 弹窗", timeoutMs: 8000 });
-      await wait(600);
-      const rows = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return { text: text.slice(0, 1200), hasInstall: text.includes("安装 PhotoCraft"), hasMcp: text.includes("MCP 连接器"), hasGui: text.includes("原生窗口编辑"), hasLicense: text.includes("来源与许可") }; })()`);
-      h.check("② 卡片含安装 / MCP / GUI / 许可四行",
+      await h.waitFor(`!!document.querySelector(".devtools-card")`, { label: "开发工具卡片", timeoutMs: 15000 });
+      const card = await h.eval(`(function(){ const cards=[...document.querySelectorAll(".devtools-card")]; const hit=cards.find(function(c){ return (c.textContent||"").includes("Craft 全家桶"); }); if(!hit) return null; hit.querySelector(".devtools-card-open")?.click(); return (hit.textContent||"").trim().slice(0, 120); })()`);
+      h.check("① 开发工具页有 Craft 全家桶卡片", Boolean(card), JSON.stringify(card));
+      await h.waitFor(`!!document.querySelector(".craft-app-grid")`, { label: "全家桶弹窗", timeoutMs: 8000 });
+      await wait(500);
+      const opened = await h.eval(`(function(){ const tiles=[...document.querySelectorAll(".craft-app-tile")]; const hit=tiles.find(function(t){ return (t.textContent||"").includes("PhotoCraft"); }); if(!hit) return 0; hit.click(); return 1; })()`);
+      h.check("② 层级 2 能点开 PhotoCraft", opened === 1);
+      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; return !!d && (d.textContent||"").includes("安装 PhotoCraft"); })()`, { label: "PhotoCraft 层级 3 弹窗", timeoutMs: 8000 });
+      await wait(500);
+      const rows = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; const text=(d&&d.textContent)||""; return { text: text.slice(0, 1200), hasInstall: text.includes("安装 PhotoCraft"), hasMcp: text.includes("MCP 连接器"), hasGui: text.includes("原生窗口编辑"), hasLicense: text.includes("来源与许可") }; })()`);
+      h.check("③ 层级 3 含安装 / MCP / GUI / 许可四行",
         Boolean(rows) && rows.hasInstall && rows.hasMcp && rows.hasGui && rows.hasLicense, JSON.stringify(rows).slice(0, 400));
-      const upd = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); return Boolean(d && [...d.querySelectorAll(".runtime-row")].find(function(r){ return (r.textContent||"").includes("更新"); })); })()`);
-      h.check("③ 卡片内有独立更新行", upd === true);
+      const upd = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; return Boolean(d && [...d.querySelectorAll(".runtime-row")].find(function(r){ return (r.textContent||"").includes("更新"); })); })()`);
+      h.check("④ 层级 3 内有独立更新行", upd === true);
 
       const status = await h.eval(`window.codex.photocraftStatus().then(function(s){ return { installed: !!s.installed, license: s?.attribution?.license || "" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
-      h.check("④ 主进程状态通道可用（返回安装态与许可）", Boolean(status) && status.error === undefined && typeof status.installed === "boolean" && status.license === "MIT OR Apache-2.0", JSON.stringify(status));
+      h.check("⑤ 主进程状态通道可用（返回安装态与许可）", Boolean(status) && status.error === undefined && typeof status.installed === "boolean" && status.license === "MIT OR Apache-2.0", JSON.stringify(status));
 
       const gate = await h.eval(`window.codex.photocraftInfo({ path: "C:\\\\Windows\\\\win.ini" }).then(function(){ return "allowed"; }).catch(function(e){ return String(e && e.message || e); })`);
-      h.check("⑤ 越界路径被拒绝（可信根闸生效）", typeof gate === "string" && gate.includes("允许目录"), JSON.stringify(gate).slice(0, 200));
+      h.check("⑥ 越界路径被拒绝（可信根闸生效）", typeof gate === "string" && gate.includes("允许目录"), JSON.stringify(gate).slice(0, 200));
 
-      await h.eval(`document.querySelector(".settings-dialog-close")?.click()`);
+      await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
+      await wait(250);
+      await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
+      await wait(250);
+    },
+  },
+  {
+    id: "artcraft",
+    name: "🧰 Craft 全家桶（三级弹窗 / 网关状态 / 配置片段，11-16）",
+    run: async (h) => {
+      /* 用户令：开发工具只留一张「Craft 全家桶」卡 → 弹窗列 App → 点某个 App 再开一层弹窗。
+         ⛔ 上游 v0.19.2 还没随包提供 craft-ai-mcp 网关（11-16 实测）⇒ 这里只验「如实显示等待 /
+         检测到才写配置」，不伪造网关存在。 */
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(700);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find(function(x){ return (x.textContent||"").trim()==="开发工具"; }); if(!b) return 0; b.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".devtools-card")`, { label: "开发工具卡片", timeoutMs: 15000 });
+      const card = await h.eval(`(function(){ const cards=[...document.querySelectorAll(".devtools-card")]; const hit=cards.find(function(c){ return (c.textContent||"").includes("Craft 全家桶"); }); if(!hit) return null; hit.querySelector(".devtools-card-open")?.click(); return (hit.textContent||"").trim().slice(0, 160); })()`);
+      h.check("① 开发工具页有「Craft 全家桶」卡", Boolean(card), JSON.stringify(card));
+      await h.waitFor(`!!document.querySelector(".craft-app-grid")`, { label: "层级 2 弹窗", timeoutMs: 8000 });
+      await wait(500);
+
+      const level2 = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return { hasLauncher: text.includes("安装 ArtCraft Launcher"), hasGateway: text.includes("Codex 网关"), hasOpen: text.includes("打开 Launcher"), tiles: document.querySelectorAll(".craft-app-tile").length }; })()`);
+      h.check("② 层级 2：启动器 / 网关 / 打开三行 + App 网格 ≥18", Boolean(level2) && level2.hasLauncher && level2.hasGateway && level2.hasOpen && level2.tiles >= 18, JSON.stringify(level2));
+
+      const film = await h.eval(`(function(){ const tiles=[...document.querySelectorAll(".craft-app-tile")]; const hit=tiles.find(function(t){ return (t.textContent||"").includes("FilmCraft"); }); if(!hit) return 0; hit.click(); return 1; })()`);
+      h.check("③ 层级 2 能点开 FilmCraft", film === 1);
+      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; return !!d && (d.textContent||"").includes("在 Launcher 中安装"); })()`, { label: "FilmCraft 层级 3 弹窗", timeoutMs: 8000 });
+      const filmInfo = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; const text=(d&&d.textContent)||""; return { film: text.includes("FilmCraft"), source: text.includes("github.com/storytold/filmcraft"), needsLauncher: text.includes("在 Launcher 中安装") }; })()`);
+      h.check("④ 层级 3：来源链接 + 「在 Launcher 中安装」", Boolean(filmInfo) && filmInfo.film && filmInfo.source && filmInfo.needsLauncher, JSON.stringify(filmInfo));
+      await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
+      await wait(300);
+
+      const photo = await h.eval(`(function(){ const tiles=[...document.querySelectorAll(".craft-app-tile")]; const hit=tiles.find(function(t){ return (t.textContent||"").includes("PhotoCraft"); }); if(!hit) return 0; hit.click(); return 1; })()`);
+      h.check("⑤ 层级 2 能点开 PhotoCraft", photo === 1);
+      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; return ds.length >= 2 && (ds[ds.length-1].textContent||"").includes("安装 PhotoCraft"); })()`, { label: "PhotoCraft 层级 3 弹窗", timeoutMs: 8000 });
+      h.check("⑥ PhotoCraft 层级 3 复用完整卡片", true);
+      await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
+      await wait(300);
+      const back = await h.eval(`(function(){ return { dialogs: document.querySelectorAll(".settings-dialog").length, grid: document.querySelectorAll(".craft-app-grid").length }; })()`);
+      h.check("⑦ 关掉层级 3 后回到层级 2", Boolean(back) && back.dialogs === 1 && back.grid === 1, JSON.stringify(back));
+
+      const status = await h.eval(`window.codex.artcraftStatus().then(function(s){ return { installed: !!s.installed, gatewayReady: !!s.gatewayReady, mcpRegistered: !!s.mcpRegistered, snippet: typeof s.configSnippet === "string", license: s?.attribution?.license || "" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
+      h.check("⑧ 状态通道返回安装态 / 网关态 / 配置片段 / 许可",
+        Boolean(status) && status.error === undefined && typeof status.installed === "boolean" && typeof status.gatewayReady === "boolean" && typeof status.mcpRegistered === "boolean" && status.snippet === true && status.license === "MIT OR Apache-2.0",
+        JSON.stringify(status));
+
+      const sync = await h.eval(`window.codex.artcraftSync().then(function(s){ return { gatewayReady: typeof s.gatewayReady === "boolean", mcpRegistered: typeof s.mcpRegistered === "boolean" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
+      h.check("⑨ sync 通道可用（返回布尔网关态与注册态）", Boolean(sync) && sync.error === undefined && sync.gatewayReady === true && sync.mcpRegistered === true, JSON.stringify(sync));
+
+      const honest = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return /等待 Launcher 新版|就绪 · 待写入|已注册|安装后检测/.test(text); })()`);
+      h.check("⑩ 网关状态如实展示（等待 / 待写入 / 已注册 / 安装后检测）", honest === true);
+
+      await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
       await wait(250);
     },
   },

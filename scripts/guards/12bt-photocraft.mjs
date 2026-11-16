@@ -90,7 +90,7 @@ const MEDIA = "src/features/status/TurnMediaCards.tsx";
   const apply = read("electron/features/custom-model-apply.ts");
   ok(/import \{[^}]*photocraftMcpSection[^}]*\} from "\.\.\/photocraft"/.test(apply) && /\.\.\.photocraftMcpSection\(\)/.test(apply),
     "config 生成时拼入 MCP 段（已安装才写）");
-  ok(/PHOTOCRAFT_MCP_SERVER, \.\.\.connectors/.test(apply) && /delete mcpOverrides\[PHOTOCRAFT_MCP_SERVER\]/.test(apply),
+  ok(/PHOTOCRAFT_MCP_SERVER,[^]{0,120}?\.\.\.connectors/.test(apply) && /delete mcpOverrides\[PHOTOCRAFT_MCP_SERVER\]/.test(apply),
     "photocraft 段登记为 harness 所属并清掉旧覆盖快照（卸载后不被当作用户段复活）");
   ok(/photocraftMcpRegistered/.test(core), "状态可回报 MCP 是否已写入");
 }
@@ -118,8 +118,9 @@ const MEDIA = "src/features/status/TurnMediaCards.tsx";
   const distributed = read("src/features/app-view/constants/01-notices-labels.tsx");
   ok(/^\s*"photocraft",\s*$/m.test(distributed), "# 面板保底名单含 photocraft");
   const devtools = read(DEVTools);
-  ok(/key: "photocraft"/.test(devtools) && /PhotoCraftCard/.test(devtools) && /openCard === "photocraft"/.test(devtools),
-    "开发工具卡：清单 + 弹窗渲染");
+  const suite = read("src/features/settings-devtools/ArtCraftSuite.tsx");
+  ok(/<PhotoCraftCard/.test(suite) && /openCard === "artcraft"/.test(devtools),
+    "PhotoCraft 卡片收进 Craft 全家桶的层级 3 弹窗（11-16 三级结构）");
   const card = read(CARD);
   ok(/RuntimeUpdateRow[\s\S]{0,200}?id="photocraft"/.test(card), "卡片内更新行（GitHub 直下型）");
   ok(/MCP 连接器/.test(card) && /在 PhotoCraft 中编辑/.test(card), "卡片写明 MCP 与图片入口");

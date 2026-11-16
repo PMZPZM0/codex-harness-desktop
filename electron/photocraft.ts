@@ -13,8 +13,7 @@
  * ⛔ 命令参数是外部输入：命令 id 走白名单正则、params 有字节上限，一律 spawn 参数数组不开 shell。
  */
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import type { Dirent } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
@@ -23,7 +22,7 @@ import { guardedFetch } from "./net-guard";
 import { downloadThroughMirrors } from "./mirror-download";
 import { emitRuntimeProgress, isCancelRequested, trackRuntimeProc } from "./features/dev-runtimes";
 import type { DevRuntimeId } from "./features/dev-runtimes";
-import { existingToolPath, tarExecutable, writeToolsRoot } from "./toolchain";
+import { dirSizeBytes, existingToolPath, tarExecutable, writeToolsRoot } from "./toolchain";
 import { codexHome } from "./runtime-refs";
 
 export const PHOTOCRAFT_REPO = "storytold/photocraft";
@@ -308,27 +307,4 @@ export async function runPhotoCraftCli(args: string[], timeoutMs = 180_000): Pro
       else done(new Error(`PhotoCraft 退出码 ${code}：${(stderr || stdout).trim().slice(-600) || "无输出"}`));
     });
   });
-}
-
-/** 文件/目录大小（状态展示用；读不到按 0）。 */
-export function dirSizeBytes(target: string): number {
-  try {
-    const stat = statSync(target);
-    if (!stat.isDirectory()) return stat.size;
-  } catch { return 0; }
-  let total = 0;
-  const stack = [target];
-  while (stack.length) {
-    const dir = stack.pop() as string;
-    let entries: Dirent[] = [];
-    try { entries = readdirSync(dir, { withFileTypes: true }) as Dirent[]; } catch { continue; }
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      try {
-        if (entry.isDirectory()) stack.push(full);
-        else total += statSync(full).size;
-      } catch { /* 单个文件读不到就跳过 */ }
-    }
-  }
-  return total;
 }

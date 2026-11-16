@@ -1165,6 +1165,12 @@ contextBridge.exposeInMainWorld("codex", {
   photocraftCommands: (input: { filter?: string }) => __ipc("photocraft:commands", 1, [input]),
   /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
   photocraftOpen: (input: { path?: string }) => __ipc("photocraft:open", 1, [input]),
+  /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 网关是否就绪 / MCP 段是否写入 / 可复制的 Codex 配置片段 */
+  artcraftStatus: () => __ipc("artcraft:status", 0, []),
+  /* 11-16 打开 ArtCraft Launcher（18 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
+  artcraftOpen: () => __ipc("artcraft:open", 0, []),
+  /* 11-16 网关刚出现时立刻重写 config.toml（写入 [mcp_servers.ArtCraft]）；引擎需重启才加载 MCP */
+  artcraftSync: () => __ipc("artcraft:sync", 0, []),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

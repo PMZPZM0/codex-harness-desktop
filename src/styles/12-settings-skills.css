@@ -1904,6 +1904,30 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   .feishu-cli-cap-grid { grid-template-columns: minmax(0, 1fr); }
 }
 
+/* ── Craft 全家桶（11-16）：层级 2 的 App 网格 + 层级 3 的详情文案 ── */
+.craft-app-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.craft-app-tile {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px; text-align: left;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg); cursor: pointer;
+}
+.craft-app-tile:hover { border-color: color-mix(in srgb, var(--link) 45%, var(--line)); }
+.craft-app-badge {
+  display: grid; place-items: center; width: 22px; height: 22px; flex: none;
+  border-radius: 7px; background: color-mix(in srgb, var(--link) 10%, transparent);
+  color: var(--link); font-size: 11px; font-weight: 700;
+}
+.craft-app-copy { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.craft-app-copy strong { color: var(--text); font-size: 12px; font-weight: 600; }
+.craft-app-copy small { color: var(--muted); font-size: 10.5px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.craft-app-tag { margin-left: auto; flex: none; font-size: 10px; color: var(--link); }
+.craft-detail-desc { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+@media (max-width: 1000px) {
+  .craft-app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .craft-app-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 
 /* ── Laya 安装/权重下载进度条（10-01：用户实测「安装进度没有」）── */
 .laya-progress { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }

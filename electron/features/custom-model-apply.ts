@@ -16,6 +16,7 @@ import { safeProviderId } from "../provider-id";
 import { injectMcpToolRules, injectSectionExtras, tomlBareKey, writeTextFileAtomic } from "../config-toml";
 import { developerInstructionsLine } from "../developer-instructions";
 import { PHOTOCRAFT_MCP_SERVER, photocraftMcpSection } from "../photocraft";
+import { ARTCRAFT_MCP_SERVER, artcraftMcpSection } from "../artcraft";
 import { augmentedPath, bundledNode, bundledPython, agentDesktopLauncher, computerUseLauncher, harnessUiaServer, nuphusBinary, reaServerScript } from "../toolchain";
 import type { CustomModelFile } from "../features/custom-model-types";
 import { collectSessionProviderIds } from "../features/provider-sessions";
@@ -49,10 +50,12 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
   // harness-dispatch（09-16 调度 MCP）同样是 harness 自己生成的段：不进保留清单，
   // 否则「保留旧段 +新生成段」会在 config.toml 里写出重复的 [mcp_servers.harness-dispatch]，
   // MCP 服务器起不来（实测：模型看不到任何 mcp__ 工具）。
-  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, COMPUTER_USE_MCP_SERVER, AGENT_DESKTOP_MCP_SERVER, "rea", PHOTOCRAFT_MCP_SERVER, ...connectors.map((connector) => safeConnectorId(connector.id))]);
+  const ownedMcpServers = new Set(["nuphus", "harness-dispatch", HARNESS_UIA_MCP_SERVER, COMPUTER_USE_MCP_SERVER, AGENT_DESKTOP_MCP_SERVER, "rea", PHOTOCRAFT_MCP_SERVER, ARTCRAFT_MCP_SERVER, ...connectors.map((connector) => safeConnectorId(connector.id))]);
   /* ⛔ 11-15：PhotoCraft 段由 harness 生成；旧版本误把它记成「用户手工段」并缓存了 toml 快照，
-     卸载后还会被原样拼回 ⇒ 先清掉这条覆盖记录，再读保留清单。 */
+     卸载后还会被原样拼回 ⇒ 先清掉这条覆盖记录，再读保留清单。
+     11-16 同理：ArtCraft 段也由 harness 生成（网关存在才写）。 */
   delete mcpOverrides[PHOTOCRAFT_MCP_SERVER];
+  delete mcpOverrides[ARTCRAFT_MCP_SERVER];
   const { preserved, mcpExtra } = await readUserConfigSplit(ownedMcpServers, mcpOverrides);
   // 工具级权限规则（deny/ask/allow）→ 引擎真正支持的键（disabled_tools / approval_mode）。
   // 见 mcpToolRulesOf 上方 09-16 实证说明：旧实现写 [permissions.*] 既无效又会把整份配置打废。
@@ -346,6 +349,9 @@ export async function applyCustomModel(entry: CustomModelFile, opts?: { restart?
     /* PhotoCraft（11-15）：装了才写 `[mcp_servers.photocraft]`（headless CLI，roots 限 userData/photocraft-io）。
        ⛔ 顺序放在桌面后端之后：它的工具是"专业图像编辑"专用，不该挤在自动化工具前面。 */
     ...photocraftMcpSection(),
+    /* Craft 全家桶（11-16）：上游 Launcher 新版随包提供 craft-ai-mcp 网关时才写 `[mcp_servers.ArtCraft]`
+       （一个 MCP 入口覆盖全部已装 App）；网关不存在 = 整段不写，工具面保持干净。 */
+    ...artcraftMcpSection(),
     // Windows 原生控件清单通道（10-04）：`desktop_ui_*` 四个工具，走系统自带的 UIAutomation，
     // 补 nuphus「只有 OCR 坐标」的短板（窗口挪动 / DPI 缩放 / 自绘界面时按元素序号操作）。
     // ⛔ 判据 = win32 + 桌面总闸开 + 两个随包脚本齐备；不注册就是**整段不写**（工具从引擎表里
