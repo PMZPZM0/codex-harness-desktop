@@ -322,7 +322,9 @@ function scanCraftAppDirs(): InstalledCraftApp[] {
 /** 已安装 App（带版本；版本读 exe 元数据并缓存，供界面显示）。 */
 export async function listInstalledCraftApps(): Promise<InstalledCraftApp[]> {
   const apps = scanCraftAppDirs();
-  for (const app of apps) app.version = await readExeVersion(app.exePath);
+  /* ⛔ 并发读版本：PowerShell 单次可能几百 ms，机器上装了多个 App 时串行会拖住状态轮询
+     （首次一屏 5 个 App ≈ 2~3s）。缓存按 exe+mtime，重复轮询不再 spawn。 */
+  await Promise.all(apps.map(async (app) => { app.version = await readExeVersion(app.exePath); }));
   return apps;
 }
 

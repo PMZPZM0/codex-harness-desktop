@@ -1711,7 +1711,7 @@ const CHECKS = [
       const sync = await h.eval(`window.codex.artcraftSync().then(function(s){ return { servers: Array.isArray(s.servers) ? s.servers.length : -1 }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
       h.check("⑨ sync 通道可用（返回按 App 拆分的 MCP 名单）", Boolean(sync) && sync.error === undefined && sync.servers >= 0, JSON.stringify(sync));
 
-      const toolsRow = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return /Codex 工具（每个 App 独立）/.test(text) && /已接入 \\d+ 个|等待安装 App/.test(text); })()`);
+      const toolsRow = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return /Codex 工具（每个 App 独立）/.test(text) && /已接入 \\d+ 个|待写入配置|等待安装 App/.test(text); })()`);
       h.check("⑩ 层级 2 有「Codex 工具（每个 App 独立）」并如实报数", toolsRow === true);
 
       /* 11-16 联动：层级 3 必须反映「已安装 / 未安装」两态之一，按钮文案同步；
@@ -2820,6 +2820,20 @@ const CHECKS = [
 
       await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-chip")].find((x)=>((x.textContent||"").trim()==="全部")); if(b) b.click(); return 1; })()`);
       await wait(300);
+      const buttonsOf = (id) => h.eval(`(function(){
+        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")===${JSON.stringify(id)});
+        if(!card) return "";
+        return [...card.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()).join("|");
+      })()`);
+      const engineButtons = await Promise.all(["f5-tts", "chatterbox", "qwen3-tts", "indextts2"].map(buttonsOf));
+      h.check("⑧ 第二批四个引擎卡片都有「安装」按钮（真接入，不再是信息卡）",
+        engineButtons.every((text) => String(text).includes("安装")), JSON.stringify(engineButtons));
+      const zonosButtons = await buttonsOf("zonos");
+      const fishButtons = await buttonsOf("fish-speech");
+      h.check("⑨ Zonos / Fish 只给「打开官网 + 项目主页」（平台或显存不支持，不假装可装）",
+        String(zonosButtons).includes("打开官网") && !String(zonosButtons).includes("安装")
+          && String(fishButtons).includes("打开官网") && !String(fishButtons).includes("安装"),
+        `${zonosButtons} / ${fishButtons}`);
       const collapse = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-expand")].find((x)=>((x.textContent||"").trim()==="收起")); if(!b) return 0; b.click(); return 1; })()`);
       await wait(350);
       const n3 = await count();

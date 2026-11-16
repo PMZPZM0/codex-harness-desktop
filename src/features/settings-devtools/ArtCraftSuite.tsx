@@ -96,6 +96,8 @@ export function ArtCraftSuite(props: SuiteProps) {
   const sizeMb = Math.round(Number(status?.sizeBytes ?? 0) / 1048576);
   const installedApps = Array.isArray(status?.installedApps) ? status!.installedApps! : [];
   const installedByKey = new Map(installedApps.map((entry) => [normalizeCraftKey(entry.id), entry]));
+  /* 能接成 Codex 工具的 = 带无头 CLI 的已装 App（没有 CLI 的只显示已安装）。 */
+  const cliApps = installedApps.filter((entry) => entry.cliPath);
 
   const openLauncher = async () => {
     setOpening(true);
@@ -116,7 +118,8 @@ export function ArtCraftSuite(props: SuiteProps) {
       await refresh();
       if (!silent) setNotice("已重新同步 Codex 工具", `已为 ${result?.servers?.length ?? 0} 个已装 App 写入独立 MCP 段；重启应用后引擎才会加载`);
     } catch (error) {
-      if (!silent) setNotice("同步 Codex 工具失败", String((error as Error)?.message ?? error));
+      /* 自动同步失败也要让人看见（最常见原因：还没配置模型，config 无法生成）。 */
+      setNotice("Codex 工具自动接入失败", String((error as Error)?.message ?? error));
     } finally {
       if (!silent) setSyncing(false);
     }
@@ -225,12 +228,14 @@ export function ArtCraftSuite(props: SuiteProps) {
                   ? "装好 Launcher 后，已在 Launcher 里安装的 App 会自动各接一个独立工具"
                   : status.mcpServers?.length
                     ? `已接入 ${status.mcpServers.length} 个：${status.mcpServers.join(" / ")}；重启应用后可在 Codex 里直接调用`
-                    : "还没检测到已装 App —— 去 Launcher 装一个，回来这里会自动接入"}
+                    : cliApps.length
+                      ? `已检测到 ${cliApps.length} 个 App，正在写入配置（需要先在模型页配置一个可用模型）`
+                      : "还没检测到已装 App —— 去 Launcher 装一个，回来这里会自动接入"}
               </small>
             </span>
             <div className="runtime-actions">
               <span className={`runtime-badge ${status?.mcpServers?.length ? "installed" : ""}`}>
-                {status?.mcpServers?.length ? `已接入 ${status.mcpServers.length} 个` : "等待安装 App"}
+                {status?.mcpServers?.length ? `已接入 ${status.mcpServers.length} 个` : cliApps.length ? "待写入配置" : "等待安装 App"}
               </span>
               {status?.installed ? (
                 <button type="button" className="secondary-setting runtime-install" disabled={syncing} onClick={() => void syncTools()}>
