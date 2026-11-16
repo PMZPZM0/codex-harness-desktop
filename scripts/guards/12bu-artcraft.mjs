@@ -161,5 +161,34 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
   ok(/"artcraft"/.test(read("scripts/gen-capability-skill.mjs")), "能力清单生成器有 artcraft 域描述");
 }
 
+/* ── ⑦ 产出文件按格式用对应 App 打开（11-16） ─────────────── */
+{
+  const openers = read("src/lib/craft-openers.mjs");
+  const shared = read("src/features/shared/craft-open.ts");
+  const cards = read("src/features/shared/InlineCards.tsx");
+  const media = read("src/features/status/TurnMediaCards.tsx");
+  ok(/export const CRAFT_OPENERS/.test(openers) && /export function craftOpenersFor/.test(openers),
+    "打开器目录是纯模块（单一真相源）");
+  ok(/export function craftFileExtension/.test(openers), "扩展名归一化（小写、无扩展名返回空）");
+  const { craftOpenersFor, craftFileExtension } = await import(new URL("../../src/lib/craft-openers.mjs", import.meta.url).href);
+  ok(craftFileExtension("C:\\a\\B.PPTX") === "pptx" && craftFileExtension("noext") === "", "扩展名真值：大写转小写 / 无扩展名为空");
+  ok(craftOpenersFor("a.pptx", ["deckcraft"]).length === 1 && craftOpenersFor("a.pptx", ["cadcraft"]).length === 0,
+    "真值：pptx 只给装了 DeckCraft 的用户；没装 = 不出现");
+  ok(craftOpenersFor("a.svg", ["vectorcraft", "figcraft"], { limit: 1 })[0]?.id === "vectorcraft", "优先级：svg 先 VectorCraft");
+  ok(craftOpenersFor("a.pdf", ["wordcraft", "pdfcraft"], { limit: 1 })[0]?.id === "pdfcraft", "优先级：pdf 先 PdfCraft");
+  ok(craftOpenersFor("a.png", ["lightcraft", "photocraft"], { limit: 1 })[0]?.id === "photocraft", "优先级：png 先 PhotoCraft");
+  ok(/artcraftStatus/.test(shared) && /installedApps/.test(shared) && /setInterval/.test(shared),
+    "已装名单共享轮询（文件菜单与媒体卡读同一份）");
+  ok(/window\.codex\.artcraftRun\(\{ app: appId, action: "open", path: filePath \}\)/.test(shared),
+    "打开走 artcraft:run 的 open（spawn 官方主程序，不开 shell）");
+  ok(/craftOpeners\(menu\.path, craftIds/.test(cards) && /用 \$\{opener\.name\} 打开/.test(cards),
+    "文件卡菜单按格式插入「用 X 打开」");
+  ok(/const height = pad \* 2 \+ items\.length \* itemH/.test(cards), "菜单高度按实际项数算（多出的项不被裁掉）");
+  ok(/useInstalledCraftIds\(\)/.test(media) && /openPathInCraft\(opener\.id/.test(media),
+    "媒体产物卡：图片 / 视频 / 音频都带「用对应 App 打开」");
+  ok(/filter\(\(opener\) => opener\.id !== "photocraft"\)/.test(media), "图片保留 PhotoCraft 专用按钮，不重复列");
+  ok(/craftOpenersFor/.test(read("src/lib/craft-openers.d.mts")), "TS 类型面与纯模块同源（craftOpenersFor 已声明）");
+}
+
 console.log(`\n【artcraft】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);
 process.exit(fails ? 1 : 0);

@@ -151,6 +151,16 @@ export function ArtCraftSuite(props: SuiteProps) {
     void syncTools(true);
   }, [status?.installed, withCliKey, writtenKey, syncTools]);
 
+  /* 新增接入时给明确反馈：dynamicTools 只在 thread/start（新会话）注入，旧会话不会自动出现。 */
+  const lastServerCountRef = useRef(-1);
+  useEffect(() => {
+    const count = (status?.mcpServers ?? []).length;
+    if (lastServerCountRef.current >= 0 && count > lastServerCountRef.current) {
+      setNotice(`新增 ${count - lastServerCountRef.current} 个 Codex 工具`, "新开一个会话（或切走再切回本会话）后，模型就能直接调用这些 App 的工具");
+    }
+    lastServerCountRef.current = count;
+  }, [status?.mcpServers, setNotice]);
+
   return (
     <>
       <section className="settings-section stack feishu-cli-card">
@@ -227,7 +237,7 @@ export function ArtCraftSuite(props: SuiteProps) {
                 {!status?.installed
                   ? "装好 Launcher 后，已在 Launcher 里安装的 App 会自动各接一个独立工具"
                   : status.mcpServers?.length
-                    ? `已接入 ${status.mcpServers.length} 个：${status.mcpServers.join(" / ")}；重启应用后可在 Codex 里直接调用`
+                    ? `已接入 ${status.mcpServers.length} 个：${status.mcpServers.join(" / ")}；新开会话（或切回本会话）后模型可直接调用`
                     : cliApps.length
                       ? `已检测到 ${cliApps.length} 个 App，正在写入配置（需要先在模型页配置一个可用模型）`
                       : "还没检测到已装 App —— 去 Launcher 装一个，回来这里会自动接入"}

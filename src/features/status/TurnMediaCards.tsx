@@ -8,7 +8,8 @@
  * ⛔ 由 `CompletedChanges` 渲染 ⇒ 主对话（03-turn-view）与群聊（11-team-cards）共用同一份，
  *    不写第二套。删除的文件不出卡。
  */
-import { Play, Image as ImageIcon, ChevronDown, Music2, Brush } from "lucide-react";
+import { Play, Image as ImageIcon, ChevronDown, Music2, Brush, Box } from "lucide-react";
+import { craftOpeners, openPathInCraft, useInstalledCraftIds } from "../shared/craft-open";
 import { mediaKindOf } from "../../lib/media-kind.mjs";
 import { useState } from "react";
 import { isVideoPath, mediaDisplaySrc } from "../../lib/media-kind.mjs";
@@ -29,6 +30,8 @@ function nameOf(path: string): string {
 /** 本回合产出的视频/图片预览卡：视频=首帧缩略+播放角标，图片=缩略图；点击复用现有播放/预览组件。 */
 export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
   const [expanded, setExpanded] = useState(false);
+  /* 11-16：已装的 Craft App（用于「用对应软件打开」按钮；共享轮询，不吃额外 IPC 频率）。 */
+  const craftIds = useInstalledCraftIds();
   const alive = (Array.isArray(files) ? files : []).filter((f) => f && f.path && !f.deletedFile);
   const videos = alive.filter((f) => isVideoPath(f.path));
   const images = alive.filter((f) => isImagePath(f.path));
@@ -67,34 +70,66 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
     <section className="turn-media-cards is-previews" aria-label="本轮媒体产物" data-testid="turn-media-cards">
       {visible.map((file) => {
         const name = nameOf(file.path);
+        /* 11-16：按格式给出「用对应 Craft App 打开」；图片的 PhotoCraft 走下面那枚专用按钮。 */
+        const extraOpeners = craftOpeners(file.path, craftIds, 3)
+          .filter((opener) => opener.id !== "photocraft")
+          .slice(0, 2);
         return file.kind === "audio" ? (
-          <button
-            type="button"
-            key={file.path}
-            className="turn-media-card is-audio-chip"
-            data-testid="turn-media-audio"
-            title={`播放音频：${file.path}`}
-            onClick={() => open(file)}
-          >
-            <span className="turn-media-chip-icon"><Music2 size={15} /></span>
-            <span className="turn-media-chip-name" title={file.path}>{name}</span>
-            <span className="turn-media-chip-play"><Play size={12} /></span>
-          </button>
+          <div className="turn-media-image-wrap" key={file.path}>
+            <button
+              type="button"
+              className="turn-media-card is-audio-chip"
+              data-testid="turn-media-audio"
+              title={`播放音频：${file.path}`}
+              onClick={() => open(file)}
+            >
+              <span className="turn-media-chip-icon"><Music2 size={15} /></span>
+              <span className="turn-media-chip-name" title={file.path}>{name}</span>
+              <span className="turn-media-chip-play"><Play size={12} /></span>
+            </button>
+            {extraOpeners.map((opener, index) => (
+              <button
+                type="button"
+                key={opener.id}
+                className="turn-media-edit"
+                style={{ right: 4 + index * 26 }}
+                title={`用 ${opener.name} 打开：${file.path}`}
+                aria-label={`用 ${opener.name} 打开`}
+                onClick={(event) => { event.stopPropagation(); void openPathInCraft(opener.id, file.path, opener.name); }}
+              >
+                <Box size={12} />
+              </button>
+            ))}
+          </div>
         ) : file.kind === "video" ? (
-          <button
-            type="button"
-            key={file.path}
-            className="turn-media-card is-video"
-            data-testid="turn-media-video"
-            title={`播放视频：${file.path}`}
-            onClick={() => open(file)}
-          >
-            <span className="turn-media-thumb">
-              <video src={`${mediaDisplaySrc(file.path)}#t=0.1`} preload="metadata" muted playsInline tabIndex={-1} />
-              <span className="turn-media-play"><Play size={16} /></span>
-            </span>
-            <span className="turn-media-meta"><b title={file.path}>{name}</b><small>视频</small></span>
-          </button>
+          <div className="turn-media-image-wrap" key={file.path}>
+            <button
+              type="button"
+              className="turn-media-card is-video"
+              data-testid="turn-media-video"
+              title={`播放视频：${file.path}`}
+              onClick={() => open(file)}
+            >
+              <span className="turn-media-thumb">
+                <video src={`${mediaDisplaySrc(file.path)}#t=0.1`} preload="metadata" muted playsInline tabIndex={-1} />
+                <span className="turn-media-play"><Play size={16} /></span>
+              </span>
+              <span className="turn-media-meta"><b title={file.path}>{name}</b><small>视频</small></span>
+            </button>
+            {extraOpeners.map((opener, index) => (
+              <button
+                type="button"
+                key={opener.id}
+                className="turn-media-edit"
+                style={{ right: 4 + index * 26 }}
+                title={`用 ${opener.name} 打开：${file.path}`}
+                aria-label={`用 ${opener.name} 打开`}
+                onClick={(event) => { event.stopPropagation(); void openPathInCraft(opener.id, file.path, opener.name); }}
+              >
+                <Box size={12} />
+              </button>
+            ))}
+          </div>
         ) : (
           <div className="turn-media-image-wrap" key={file.path}>
             <button
@@ -120,6 +155,19 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
             >
               <Brush size={12} />
             </button>
+            {extraOpeners.map((opener, index) => (
+              <button
+                type="button"
+                key={opener.id}
+                className="turn-media-edit"
+                style={{ right: 30 + index * 26 }}
+                title={`用 ${opener.name} 打开：${file.path}`}
+                aria-label={`用 ${opener.name} 打开`}
+                onClick={(event) => { event.stopPropagation(); void openPathInCraft(opener.id, file.path, opener.name); }}
+              >
+                <Box size={12} />
+              </button>
+            ))}
           </div>
         );
       })}

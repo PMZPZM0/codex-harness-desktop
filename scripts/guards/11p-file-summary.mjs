@@ -62,8 +62,8 @@ ok(shared.includes('label: "复制文件路径"') && shared.includes("copyTextTo
   "菜单含「复制文件路径」且真的写剪贴板（挂空按钮 = 点了没反应）");
 ok(shared.includes('label: "在文件夹中显示"') && shared.includes("shellReveal(menu.path)"),
   "菜单含「在文件夹中显示」= 用户说的「打开文件地址」（走 shell:reveal）");
-ok(/\(editable \? 5 : 4\) \* itemH/.test(shared),
-  "菜单高度按 5/4 项算（加了菜单项不改高度 ⇒ 视口翻转判断错位，菜单会跑出屏幕）");
+ok(/items\.length \* itemH/.test(shared),
+  "菜单高度按实际项数算（11-16 起菜单项动态增删：Craft App「用 X 打开」——高度写死会让视口翻转判断错位，菜单跑出屏幕）");
 
 /* ── 三、接线与样式 ───────────────────────────────────────────── */
 

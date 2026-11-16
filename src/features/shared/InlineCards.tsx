@@ -13,6 +13,7 @@ import { imageUrl } from "../../lib/image-url";
 import { IMAGE_EXTENSIONS, BINARY_EXTENSIONS } from "../../hooks/useFilePreview";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { FileRefCard } from "../../components/FileRefCard";
+import { craftOpeners, openPathInCraft, useInstalledCraftIds } from "./craft-open";
 
 /** 文本类文件才能弹窗编辑（二进制/图片写回即损坏）。口径与 useFilePreview 同源（导出复用，别抄第二份）。 */
 function isEditableTextFile(path: string): boolean {
@@ -42,11 +43,16 @@ export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuStat
   const width = 176;
   const itemH = 30, pad = 10;
   const editable = isEditableTextFile(menu.path);
-  const height = pad * 2 + (editable ? 5 : 4) * itemH;
-  const left = menu.x + width > window.innerWidth ? Math.max(4, menu.x - width) : menu.x;
-  const top = menu.y + height > window.innerHeight ? Math.max(4, menu.y - height) : menu.y;
+  /* 11-16：产出的文件按格式给出「用对应 App 打开」（只列已安装的 Craft App，最多 3 个）。 */
+  const craftIds = useInstalledCraftIds();
+  const openers = craftOpeners(menu.path, craftIds, 3);
   const items: { label: string; icon: ReactNode; run: () => void }[] = [
     { label: "打开", icon: <ExternalLink size={13} />, run: onOpen },
+    ...openers.map((opener) => ({
+      label: `用 ${opener.name} 打开`,
+      icon: <Box size={13} />,
+      run: () => void openPathInCraft(opener.id, menu.path, opener.name),
+    })),
     { label: "在文件夹中显示", icon: <FolderOpen size={13} />, run: () => void window.codex.shellReveal(menu.path) },
     {
       label: "复制文件路径",
@@ -68,6 +74,9 @@ export function FileCardMenu({ menu, onOpen, onClose }: { menu: FileCardMenuStat
       },
     },
   ];
+  const height = pad * 2 + items.length * itemH;
+  const left = menu.x + width > window.innerWidth ? Math.max(4, menu.x - width) : menu.x;
+  const top = menu.y + height > window.innerHeight ? Math.max(4, menu.y - height) : menu.y;
   // ⛔ createPortal 到 body（10-06）：菜单是 position:fixed 且坐标来自视口（clientX/Y）——
   //    回合容器 `.turn-group` 上有恒等 transform（= containing block），留在原地会被整体偏移。
   return createPortal((
