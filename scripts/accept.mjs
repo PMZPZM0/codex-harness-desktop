@@ -2849,6 +2849,10 @@ const CHECKS = [
         String(highDemand.card).includes("需高配") && String(highDemand.card).includes("硬件要求")
           && String(highDemand.card).includes("12GB") && String(highDemand.hint).includes("12GB"),
         JSON.stringify(highDemand));
+      const singleHead = await h.eval(`(function(){ const head=document.querySelector(".voice-ext-head"); return head ? (head.textContent||"") : ""; })()`);
+      h.check("⑪ 同一时间只生效一个（标题写明开启新引擎会自动停用旧的）",
+        String(singleHead).includes("同一时间只生效一个") && String(singleHead).includes("自动停用"),
+        String(singleHead));
       const collapse = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-expand")].find((x)=>((x.textContent||"").trim()==="收起")); if(!b) return 0; b.click(); return 1; })()`);
       await wait(350);
       const n3 = await count();

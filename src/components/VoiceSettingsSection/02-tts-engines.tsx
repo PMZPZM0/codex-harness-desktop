@@ -9,7 +9,7 @@
  *     点了给**明确说明**（10-20 教训：灰按钮点了没反应是最差体验）。
  *   · 优势/劣势必须写**实测数字**，不写"更快更好"这种空话。
  */
-import { Check, Cloud, Download, FolderOpen, HardDrive, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
+import { Check, Cloud, Download, FolderOpen, HardDrive, Info, LoaderCircle, Play, Power, Settings2, Sparkles, Trash2, TriangleAlert, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -107,6 +107,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const [speech, setSpeech] = useState<{ effective: string; ready: boolean; label: string; reason: string } | null>(null);
   /** 旧主进程没有 speech 时的回退判据：克隆音色模型是否就绪。 */
   const [zipVoiceReady, setZipVoiceReady] = useState(false);
+  /** 11-16 外部开源引擎：启用后播报/通话由它接管，本机卡改标「兜底」，全局面只留一个「使用中」。 */
+  const [externalActive, setExternalActive] = useState<{ id: string; name: string } | null>(null);
   const [mossDraft, setMossDraft] = useState({ baseUrl: "", model: "", apiKey: "" });
   /** MOSS 播报（TTS）：独立的模型/音色；密钥沿用 moss-live 那张卡，不在这里重复填。 */
   const [mossTtsDraft, setMossTtsDraft] = useState({ model: "moss-tts-1.5-flash", voiceId: "" });
@@ -388,13 +390,21 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       onNotice(`模型已下载，但还缺推理运行时（约 287MB），运行时接入后才能用它合成；现在仍用「${packLabel(current)}」`);
       return;
     }
+    /* 全局面只允许一个合成引擎：切回本机引擎时，把正在接管的外部引擎停掉。 */
+    if (externalActive) {
+      void window.codex.voiceExternalEnable(externalActive.id, false).catch(() => undefined);
+      setExternalActive(null);
+      window.dispatchEvent(new Event("harness:voice-external-refresh"));
+    }
     apply({ tts: { ...settings.tts, engine: id } });
     /* ⛔ 换引擎 ⇒ 音色表跟着换（主进程按引擎给）⇒ 必须重拉，否则下拉里还是旧引擎的音色。 */
     void reloadMeta();
-    const msg = `已切换到「${packLabel(id)}」（通话与播报都用它）`;
+    const msg = externalActive
+      ? `已切换到「${packLabel(id)}」（${externalActive.name} 已停用）`
+      : `已切换到「${packLabel(id)}」（通话与播报都用它）`;
     onNotice(msg);
     setFlash({ pack: id, kind: "info", text: msg });
-  }, [apply, current, onNotice, packs, reloadMeta, settings]);
+  }, [apply, current, externalActive, onNotice, packs, reloadMeta, settings]);
 
   /* ⛔ 10-26：「当前」也要说真话 —— 设置里选的是它，但没装就合成不了；
      停用的模型文件还在（ready=true）同样不能算「可用」（11-11 用户实测
@@ -418,7 +428,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const mossBroken = callBackend && !moss?.configured;
   /* 11-12 用户：「我点哪个，上面卡片就启用哪个」——卡片高亮只看**播报源**（tts.remote）。
      ⛔ 不能把实时通话后端也算进来：通话开着 MOSS、播报选本机时，右边仍会错误地显示使用中。 */
-  const localActive = !ttsRemote;
+  const localActive = !ttsRemote && !externalActive;
   const remoteActive = ttsRemote;
 
   /** 11-12：基础模型卡也要有「启用 / 停用」并和状态联动（与 MOSS 卡同款按钮位）。
@@ -433,9 +443,16 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       else {
         onNotice(next ? "基础模型已启用" : "基础模型已停用（文件仍保留，可随时重新启用）");
         await refresh();
-        /* 正向联动：启用本机 ⇒ 播报切回本机；停用本机且云端可用 ⇒ 播报切到云端。 */
-        if (next) await apply({ tts: { ...settings.tts, remote: false } });
-        else if (mossTtsReady) {
+        /* 正向联动：启用本机 ⇒ 播报切回本机，并把外部引擎停掉（全局面只允许一个合成引擎）。 */
+        if (next) {
+          await apply({ tts: { ...settings.tts, remote: false } });
+          if (externalActive) {
+            await window.codex.voiceExternalEnable(externalActive.id, false).catch(() => undefined);
+            setExternalActive(null);
+            window.dispatchEvent(new Event("harness:voice-external-refresh"));
+            onNotice(`已切回本机合成（${externalActive.name} 已停用）`);
+          }
+        } else if (mossTtsReady) {
           await apply({ tts: { ...settings.tts, remote: true, profileId: "" } });
           onNotice("播报已切到 MOSS（本机模型已停用）");
         }
@@ -446,7 +463,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
       setBaseBusy(false);
       setConfirmDisableBase(false);
     }
-  }, [apply, mossTtsReady, onNotice, refresh, settings.tts]);
+  }, [apply, externalActive, mossTtsReady, onNotice, refresh, settings.tts]);
 
   return (
     <div className="voice-engines">
@@ -477,6 +494,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
               <div className="voice-model-sub">离线合成 · 不联网 · 不额外付费</div>
             </div>
             {localActive && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+            {externalActive && <span className="voice-engine-flag is-takeover"><Info size={12} />{externalActive.name} 接管中</span>}
             <span className={`voice-engine-state${anyReady ? " ok" : ""}`}>
               {anyReady ? (currentDisabled ? "已停用" : "已安装") : "未安装"}
             </span>
@@ -501,6 +519,11 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             </span>
           </div>
           <div className="voice-model-note">模型下载、引擎、音色与克隆都在「配置」里。</div>
+          {externalActive && (
+            <div className="voice-card-hint">
+              播报/通话当前由 <strong>{externalActive.name}</strong> 合成；本机模型保留作兜底（识别与端点仍用本机）。
+            </div>
+          )}
           <div className="voice-engine-actions">
             {!anyReady || currentDisabled ? (
               <button
@@ -560,7 +583,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                `使用中` 是**能力声明**（能拿它合成），不是"设置里选了它"。
                11-11 又抓到同型另一半：停用后文件仍在（ready=true）却照样打「使用中」，
                下面却露出「启用」按钮。⇒ 在用 = 选中 **且** 已安装 **且** 未停用。 */
-            const inUse = selected && ready && enabled;
+            const inUse = selected && ready && enabled && !externalActive;
             const selectedDisabled = selected && ready && !enabled;
             const downloading = busy === engine.id || progress?.pack === engine.id;
             return (
@@ -578,6 +601,9 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                   </div>
                   <div className="voice-engine-head-right">
                     {inUse && <span className="voice-engine-flag"><Check size={12} />使用中</span>}
+                    {selected && ready && enabled && externalActive && (
+                      <span className="voice-engine-flag is-takeover"><Info size={12} />外部引擎优先</span>
+                    )}
                     {selectedDisabled && (
                       <span className="voice-engine-flag is-missing"><Power size={12} />已停用</span>
                     )}
@@ -665,7 +691,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           })}
         </div>
                 {/* 11-16 用户令：开源语音模型卡片（默认 4 张，更多展开/收起） */}
-                <VoiceExternalEnginesSection onNotice={onNotice} />
+                <VoiceExternalEnginesSection onNotice={onNotice} onActiveChange={setExternalActive} />
                 {localExtra && (
                   <>
                     <div className="voice-moss-section-title">音色与克隆</div>
@@ -718,8 +744,17 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                   if (!moss?.configured) { setMossModalOpen(true); onNotice("先填好地址、模型和 API 密钥再启用"); return; }
                   await setCallBackend(!callBackend);
                   /* 反向联动：启用云端 ⇒ 播报也切到云端（清克隆）；停用 ⇒ 播报切回本机。 */
-                  if (!callBackend) await apply({ tts: { ...settings.tts, remote: true, profileId: "" } });
-                  else await apply({ tts: { ...settings.tts, remote: false } });
+                  if (!callBackend) {
+                    if (externalActive) {
+                      await window.codex.voiceExternalEnable(externalActive.id, false).catch(() => undefined);
+                      setExternalActive(null);
+                      window.dispatchEvent(new Event("harness:voice-external-refresh"));
+                      onNotice(`已启用 MOSS 播报（${externalActive.name} 已停用）`);
+                    }
+                    await apply({ tts: { ...settings.tts, remote: true, profileId: "" } });
+                  } else {
+                    await apply({ tts: { ...settings.tts, remote: false } });
+                  }
                 })();
               }}
             >

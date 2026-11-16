@@ -23,6 +23,7 @@ const service = read("electron/voice/voice-service.ts");
 const ipc = read("electron/features/voice-ipc/05-voice-external.ts");
 const index = read("electron/features/voice-ipc.ts");
 const ui = read("src/components/VoiceSettingsSection/VoiceExternalEnginesSection.tsx");
+const enginesUi = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
 const modal = read("src/components/VoiceSettingsSection/02-tts-engines.tsx");
 const css = read("src/styles/18-openai-dialog.css");
 const manifest = read("electron/ipc-channels.manifest.json");
@@ -133,6 +134,18 @@ ok(ui.includes("isHighDemand") && ui.includes("需高配") && ui.includes("硬�
   "卡片 meta 有「需高配」、详情有「硬件要求」、顶部有选型提示");
 ok(css.includes(".voice-ext-demand") && css.includes(".voice-ext-hint"),
   "「需高配」徽标与提示行有样式");
+
+/* 单引擎口径（11-16 用户：「只能启用一个」）：外部引擎接管时本机不能同时显示「使用中」。 */
+ok(ui.includes("onActiveChange") && ui.includes("同一时间只生效一个") && ui.includes("已自动停用"),
+  "外部引擎区块把「当前启用」上报父组件，并写明开启新引擎会自动停用旧的");
+ok(enginesUi.includes("externalActive") && enginesUi.includes("onActiveChange={setExternalActive}")
+  && enginesUi.includes("!ttsRemote && !externalActive")
+  && enginesUi.includes("selected && ready && enabled && !externalActive"),
+  "本机卡把 externalActive 纳入判定：接管时不显示「使用中」");
+ok(enginesUi.includes("接管中") && enginesUi.includes("外部引擎优先") && css.includes(".is-takeover"),
+  "基础模型卡显示「X 接管中」、本机引擎卡显示「外部引擎优先（兜底）」");
+ok(enginesUi.includes("voiceExternalEnable(externalActive.id, false)"),
+  "启用本机 / 切回本机 / 启用 MOSS 时都会停用外部引擎（全局面只留一个合成引擎）");
 
 ok(['"gpt-sovits":', '"cosyvoice3":', '"f5-tts":', 'chatterbox:', '"qwen3-tts":', 'indextts2: 19885'].every((part) => main.includes(part)),
   "六个引擎各有独立端口（19880–19885）");

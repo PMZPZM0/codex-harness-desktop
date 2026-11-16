@@ -1216,11 +1216,11 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     ok(/voiceResourceSetEnabled\(\{ kind: "base", enabled: next \}\)/.test(enginesTsx2)
       && /确认停用/.test(enginesTsx2),
       "基础模型卡有启用/停用按钮并与状态联动（停用二次确认）");
-    ok(/const localActive = !ttsRemote;/.test(enginesTsx2)
+    ok(/const localActive = !ttsRemote && !externalActive;/.test(enginesTsx2)
       && /const remoteActive = ttsRemote;/.test(enginesTsx2)
       && /localActive \? " is-active" : ""/.test(enginesTsx2)
       && /remoteActive \? " is-active" : ""/.test(enginesTsx2),
-      "正反向联动：卡片高亮只看播报源（通话后端不参与，否则本机播报时云端仍显示使用中）");
+      "正反向联动：卡片高亮只看播报源（通话后端不参与；外部引擎接管时本机也不高亮）");
   }
 }
 /* ── ⑪ 语音资源危险动作走确认弹窗（10-31 用户令：「卸载，停用，清空都做成弹窗」）──────
@@ -1446,8 +1446,8 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "Kokoro 已整族移除（引擎枚举 / 资源白名单 / 注册表 / 设置卡均无残留）");
   /* 11-11 用户实测「点了停用，上面还写着使用中」：引擎卡的可用态必须看 baseEnabled。 */
   ok(/status\?\.baseEnabled !== false/.test(enginesTsx)
-    && /const inUse = selected && ready && enabled;/.test(enginesTsx),
-    "合成引擎卡把「已停用」当不可用（ready=文件在 ≠ 能用）");
+    && /const inUse = selected && ready && enabled && !externalActive;/.test(enginesTsx),
+    "合成引擎卡把「已停用」当不可用（ready=文件在 ≠ 能用；外部引擎接管时本机不算使用中）");
 }
 
 process.exit(fails ? 1 : 0);

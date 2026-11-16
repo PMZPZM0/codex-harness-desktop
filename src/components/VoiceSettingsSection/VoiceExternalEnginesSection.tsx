@@ -53,7 +53,11 @@ function statusOf(engine: EngineCard): string {
   return "已安装";
 }
 
-export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (message: string) => void }) {
+export default function VoiceExternalEnginesSection({ onNotice, onActiveChange }: {
+  onNotice: (message: string) => void;
+  /** 当前启用的引擎（null = 没有）；父组件据此把本机模型标成「兜底」，保证全局面只有一个「使用中」。 */
+  onActiveChange?: (engine: { id: string; name: string } | null) => void;
+}) {
   const [data, setData] = useState<ListPayload | null>(null);
   const [category, setCategory] = useState("all");
   const [expanded, setExpanded] = useState(false);
@@ -65,7 +69,13 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
 
   const refresh = () => {
     window.codex.voiceExternalList()
-      .then((payload) => { setData(payload as ListPayload); setLoadError(""); })
+      .then((payload) => {
+        const next = payload as ListPayload;
+        setData(next);
+        setLoadError("");
+        const active = (next?.engines ?? []).find((engine) => engine.enabled);
+        onActiveChange?.(active ? { id: active.id, name: active.name } : null);
+      })
       .catch((error) => setLoadError(String((error as Error)?.message ?? error)));
   };
 
@@ -91,6 +101,14 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
       }
     });
     return () => unsubscribe?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* 本机卡把外部引擎关掉时（「启用本机」），通知这里重拉，避免卡片还显示「使用中」。 */
+  useEffect(() => {
+    const onRefresh = () => refresh();
+    window.addEventListener("harness:voice-external-refresh", onRefresh);
+    return () => window.removeEventListener("harness:voice-external-refresh", onRefresh);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -125,10 +143,13 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
 
   const toggle = async (engine: EngineCard, next: boolean) => {
     setToggling(engine.id);
+    const previous = (data?.engines ?? []).find((entry) => entry.enabled && entry.id !== engine.id);
     try {
       const result = await window.codex.voiceExternalEnable(engine.id, next);
       if (!result?.ok) onNotice(result?.error || "切换失败");
-      else onNotice(next ? `已启用 ${engine.name}：播报/通话将优先走它` : `已停用 ${engine.name}`);
+      else onNotice(next
+        ? `已启用 ${engine.name}${previous ? `（${previous.name} 已自动停用）` : ""}：播报/通话由它接管`
+        : `已停用 ${engine.name}：播报回落到本机 / MOSS`);
       refresh();
     } catch (error) {
       onNotice(`切换失败：${String((error as Error)?.message ?? error)}`);
@@ -161,7 +182,7 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
     <div className="voice-ext-section" data-external-engines>
       <div className="voice-ext-head">
         <strong>更多开源语音模型</strong>
-        <span>按需下载、不随包；同一时间只启用一个（8GB 显存）。启用后播报/通话优先走它，使用「我的音色」的参考音频。</span>
+        <span>按需下载、不随包；<strong>同一时间只生效一个</strong>（8GB 显存）。开启新引擎会自动停用当前的，并接管本机播报；参考音频用「我的音色」。</span>
       </div>
       <div className="voice-ext-hint">标「需高配」的引擎建议 12GB+ 显存；8GB 显卡优先用 F5 / Chatterbox / GPT-SoVITS / Qwen3。</div>
 
