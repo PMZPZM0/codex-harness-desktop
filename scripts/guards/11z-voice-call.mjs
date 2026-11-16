@@ -337,9 +337,9 @@ ok(/voiceProfileUpload: \(input\?/.test(read("electron/preload.ts")) && /voicePr
   "生成物两侧都有 voiceProfileUpload（preload 内联段 + d.ts 生成段；跑过 gen:ipc，不是只改了 manifest）");
 const registrySrc = read("electron/ipc-registry.ts");
 /* count 是**事实账**：voice 域 manifest 通道数（listen-only 的 voice:audio 不在 manifest，故数组比 count 多 1）。
-   11-11 加 moss-voices / moss-preview 后为 48。 */
-ok(/\{ prefix: "voice", count: 48/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc),
-  "ipc-registry 的 voice 域计到 48 且列出新通道（不同步会被【107】/【90】报红）");
+   11-11 加 moss-voices / moss-preview 后为 48；11-16 加开源语音引擎 7 条后为 55。 */
+ok(/\{ prefix: "voice", count: 55/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc) && /"voice:external-enable"/.test(registrySrc),
+  "ipc-registry 的 voice 域计到 55 且列出新通道（不同步会被【107】/【90】报红）");
 const settingsState = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
 ok(/voiceProfileUpload\(\{ source: "file" \}\)/.test(settingsState)
   && /uploadProfile=\{uploadProfile\}/.test(read("src/components/VoiceSettingsSection.tsx")),

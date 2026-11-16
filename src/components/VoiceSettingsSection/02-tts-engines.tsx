@@ -19,6 +19,7 @@ import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { ToggleSwitch } from "../SettingsWidgets";
 import { Settings, playSamples, VOICE_SPEED_PRESETS } from "../VoiceSettingsSection";
 import VoiceDevToolsSection from "../VoiceDevToolsSection";
+import VoiceExternalEnginesSection from "./VoiceExternalEnginesSection";
 
 type Props = {
   apply: (patch: Partial<Settings>) => Promise<void>;
@@ -663,6 +664,8 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             );
           })}
         </div>
+                {/* 11-16 用户令：开源语音模型卡片（默认 4 张，更多展开/收起） */}
+                <VoiceExternalEnginesSection onNotice={onNotice} />
                 {localExtra && (
                   <>
                     <div className="voice-moss-section-title">音色与克隆</div>

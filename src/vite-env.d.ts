@@ -1328,6 +1328,20 @@ interface Window {
     voiceStop(): Promise<{ ok: boolean }>;
     /* 10-26 取消当前引擎包下载 */
     voiceTtsPackCancel(): Promise<any>;
+    /* 11-16 开源语音引擎卡片：目录 + 安装/服务状态 */
+    voiceExternalList(): Promise<any>;
+    /* 11-16 按需下载/安装外部引擎（进度走 voice:event target=external:<id>） */
+    voiceExternalInstall(id: string): Promise<{ ok: boolean; started?: boolean; error?: string }>;
+    /* 11-16 取消外部引擎安装 */
+    voiceExternalCancel(id?: string): Promise<{ ok: boolean }>;
+    /* 11-16 卸载外部引擎（停服务 + 删目录） */
+    voiceExternalRemove(id: string): Promise<{ ok: boolean; error?: string }>;
+    /* 11-16 启用/停用外部引擎（同时只允许一个） */
+    voiceExternalEnable(id: string, enabled: boolean): Promise<{ ok: boolean; active?: string; error?: string }>;
+    /* 11-16 打开外部引擎目录或官方项目页 */
+    voiceExternalOpen(id: string): Promise<{ ok: boolean; mode?: string; error?: string }>;
+    /* 11-16 在文件管理器中定位外部引擎 */
+    voiceExternalReveal(id: string): Promise<{ ok: boolean; error?: string }>;
     /* 可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack */
     voiceTtsPackInstall(pack: string): Promise<any>;
     voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;

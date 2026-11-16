@@ -22,6 +22,7 @@ import { MossLiveRealtime } from "./moss-live-realtime";
 import type { MossDelegationTask } from "./moss-live-realtime";
 import { cancelVoiceDelegation, runVoiceDelegation } from "./voice-delegation";
 import { listMossVoices as listMossVoicesRemote, previewMossVoice as previewMossVoiceRemote, remoteTtsConfig, speakMoss } from "./moss-tts";
+import { activeExternalEngine, externalEngineSpeak, warmExternalEngine } from "./external-engines";
 import { MOSS_LIVE_PROVIDER, remoteConfigured, remoteConfigOf } from "./model-provider";
 import fsPromises from "node:fs/promises";
 import path from "node:path";
@@ -765,6 +766,17 @@ export class VoiceService {
     /* ⛔ 每次现读设置：播报可能在「从没开过通话」时发生（currentSettings 还是默认值），
        不读盘就会出现「开了 MOSS 播报/改了语速却没生效」。 */
     const settings = this.settingsNow();
+    /* 11-16：启用了开源外部引擎时优先走它（卡片里只允许同时启用一个）。
+       外部引擎没启用 ⇒ 返回 null，继续按 MOSS / 本机引擎的既有顺序。 */
+    const external = await externalEngineSpeak(clean, {
+      userData: this.deps.userDataDir,
+      speed: settings.tts.speed,
+      profileId: settings.tts.profileId,
+    });
+    if (external) {
+      if (external.ok) this.setState("speaking");
+      return external;
+    }
     /* 11-11：MOSS 播报开启时优先走远端（克隆音色仍走本地，remoteTtsConfig 会返回 null）。 */
     const remote = remoteTtsConfig(settings);
     if (remote) {
@@ -931,6 +943,8 @@ export class VoiceService {
 
   /** 只预热播报/试听 worker（加载模型，不合成、不出声）。 */
   async warmPreviewVoice(): Promise<{ ok: boolean; error?: string }> {
+    /* 启用外部引擎时预热的是它的本机服务（模型加载 30–60 秒），不再加载本机 zipvoice。 */
+    if (activeExternalEngine()) return warmExternalEngine();
     const settings = loadVoiceSettings(this.deps.userDataDir);
     // MOSS 播报没有本地模型要预热：直接成功（真正合成时再连远端）。
     if (remoteTtsConfig(settings)) return { ok: true };

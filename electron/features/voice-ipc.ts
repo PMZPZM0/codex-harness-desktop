@@ -19,6 +19,7 @@ import { registerVoiceIpc1 } from "./voice-ipc/01-voice-hotkey-models";
 import { registerVoiceIpc2 } from "./voice-ipc/02-voice-profiles-presets";
 import { registerVoiceIpc3 } from "./voice-ipc/03-voice-misc";
 import { registerVoiceIpc4 } from "./voice-ipc/04-announce-owner";
+import { registerVoiceIpc5 } from "./voice-ipc/05-voice-external";
 
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -39,6 +40,8 @@ const VOICE_CHANNELS = [
   "voice:models-uninstall", "voice:mic-permission", "voice:resource-set-enabled",
   "voice:announce-owner", "voice:announce-set-muted",
   "voice:resource-delete", "voice:resource-status", "voice:tts-pack-install", "voice:tts-pack-cancel",
+  "voice:external-list", "voice:external-install", "voice:external-cancel", "voice:external-remove",
+  "voice:external-enable", "voice:external-open", "voice:external-reveal",
 ];
 
 export const voiceFeature = defineFeature<null>({
@@ -54,6 +57,8 @@ export const voiceFeature = defineFeature<null>({
     registerVoiceIpc3(a);
     /* 10-21：播报归属裁决（多窗口唯一播报窗口）+ 全局静音闩锁。 */
     registerVoiceIpc4(a);
+    /* 11-16：开源语音引擎卡片（按需下载 / 启停 / 打开）。 */
+    registerVoiceIpc5({ ipcHost, host });
     ctx.effect(() => {
       for (const ch of VOICE_CHANNELS) ipcHost.removeHandler(ch);
     });

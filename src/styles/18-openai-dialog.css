@@ -2249,3 +2249,33 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
   padding: 10px 14px 14px;
   border-top: 1px solid var(--line-soft);
 }
+
+/* ── 开源语音模型卡片（11-16）：默认 4 张 + 更多展开/收起 ─────────────── */
+.voice-ext-section { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
+.voice-ext-head { display: flex; flex-direction: column; gap: 3px; }
+.voice-ext-head strong { font-size: 13px; }
+.voice-ext-head span { color: var(--muted); font-size: 11.5px; line-height: 1.6; }
+.voice-ext-filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.voice-ext-chip { border: 1px solid var(--line); background: var(--panel, #fff); color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; cursor: pointer; }
+.voice-ext-chip.is-active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
+.voice-ext-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 760px) { .voice-ext-grid { grid-template-columns: 1fr; } }
+.voice-ext-card { display: flex; flex-direction: column; gap: 6px; }
+.voice-ext-card .voice-engine-meta { flex-wrap: wrap; }
+.voice-ext-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.voice-ext-badge.is-yes { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 35%, var(--line)); }
+.voice-ext-badge.is-no, .voice-ext-badge.is-conditional { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); background: color-mix(in srgb, var(--amber) 8%, transparent); }
+.voice-ext-badge.is-agpl { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.voice-ext-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding-top: 6px; }
+.voice-ext-toggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--muted); }
+.voice-ext-detail-btn { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 11.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; }
+.voice-ext-details { border-top: 1px dashed var(--line); padding-top: 7px; margin-top: 5px; display: flex; flex-direction: column; gap: 5px; font-size: 11.5px; color: var(--muted); }
+.voice-ext-detail-row { display: flex; justify-content: space-between; gap: 10px; }
+.voice-ext-detail-row b { color: var(--text); font-weight: 600; text-align: right; }
+.voice-ext-details ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 3px; }
+.voice-ext-details li { display: flex; gap: 4px; align-items: flex-start; }
+.voice-ext-expand { align-self: center; border: 1px solid var(--line); background: var(--panel, #fff); border-radius: 999px; padding: 5px 14px; font-size: 12px; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.voice-ext-expand:hover { color: var(--text); border-color: var(--muted); }
+.voice-ext-error { display: flex; align-items: center; gap: 6px; color: var(--amber); font-size: 11.5px; }
+.voice-ext-loading { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; }
+.voice-ext-category-hint { color: var(--faint); font-size: 11px; }

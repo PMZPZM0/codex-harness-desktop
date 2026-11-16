@@ -916,6 +916,20 @@ contextBridge.exposeInMainWorld("codex", {
   voiceStop: () => __ipc("voice:stop", 0, []) as Promise<{ ok: boolean }>,
   /* 10-26 取消当前引擎包下载 */
   voiceTtsPackCancel: () => __ipc("voice:tts-pack-cancel", 0, []) as Promise<any>,
+  /* 11-16 开源语音引擎卡片：目录 + 安装/服务状态 */
+  voiceExternalList: () => __ipc("voice:external-list", 0, []) as Promise<any>,
+  /* 11-16 按需下载/安装外部引擎（进度走 voice:event target=external:<id>） */
+  voiceExternalInstall: (id: string) => __ipc("voice:external-install", 1, [id]),
+  /* 11-16 取消外部引擎安装 */
+  voiceExternalCancel: (id?: string) => __ipc("voice:external-cancel", 0, [id]),
+  /* 11-16 卸载外部引擎（停服务 + 删目录） */
+  voiceExternalRemove: (id: string) => __ipc("voice:external-remove", 1, [id]),
+  /* 11-16 启用/停用外部引擎（同时只允许一个） */
+  voiceExternalEnable: (id: string, enabled: boolean) => __ipc("voice:external-enable", 2, [id, enabled]),
+  /* 11-16 打开外部引擎目录或官方项目页 */
+  voiceExternalOpen: (id: string) => __ipc("voice:external-open", 1, [id]),
+  /* 11-16 在文件管理器中定位外部引擎 */
+  voiceExternalReveal: (id: string) => __ipc("voice:external-reveal", 1, [id]),
   /* 可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack */
   voiceTtsPackInstall: (pack: string) => __ipc("voice:tts-pack-install", 1, [pack]) as Promise<any>,
   voiceWakeAudio: (samples: Float32Array) => __ipc("voice:wake-audio", 1, [samples]),

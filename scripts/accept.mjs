@@ -2756,6 +2756,61 @@ const CHECKS = [
       }
     },
   },
+  {
+    id: "voice-external-cards",
+    name: "语音模型：开源引擎卡片默认 4 张 + 更多展开/收起 + 分类筛选（11-16）",
+    run: async (h) => {
+      await h.eval(`(function(){ document.querySelector(".sidebar-settings")?.click(); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".settings-modal")`, { label: "设置面板", timeoutMs: 8000 });
+      await wait(400);
+      const nav = await h.eval(`(function(){ const b=[...document.querySelectorAll(".settings-nav button")].find((x)=>((x.textContent||"").trim()==="语音通话")); if(!b) return 0; b.click(); return 1; })()`);
+      h.check("① 能进入「语音通话」页", nav === 1);
+      await h.waitFor(`!!document.querySelector(".voice-settings")`, { label: "语音页", timeoutMs: 10000 });
+      await wait(600);
+
+      const opened = await h.eval(`(function(){
+        const page=document.querySelector(".voice-settings"); if(!page) return 0;
+        const b=[...page.querySelectorAll("button")].find((x)=>((x.textContent||"").trim()==="配置"));
+        if(!b) return 0; b.click(); return 1;
+      })()`);
+      h.check("② 基础模型配置弹窗可打开", opened === 1);
+      await h.waitFor(`!!document.querySelector(".voice-local-modal")`, { label: "基础模型弹窗", timeoutMs: 10000 });
+      await wait(700);
+
+      const count = () => h.eval(`document.querySelectorAll("[data-external-card]").length`);
+      const n0 = await count();
+      h.check("③ 默认只展示 4 张推荐卡片", n0 === 4, `count=${n0}`);
+
+      const expand = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-expand")].find((x)=>((x.textContent||"").includes("更多展开"))); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(350);
+      const n1 = await count();
+      h.check("④「更多展开」后显示全部 11 个", expand === 1 && n1 === 11, `count=${n1}`);
+
+      const studio = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-chip")].find((x)=>((x.textContent||"").trim()==="一体工作台")); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(350);
+      const n2 = await count();
+      h.check("⑤ 分类筛选（一体工作台 2 个）", studio === 1 && n2 === 2, `count=${n2}`);
+
+      await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-chip")].find((x)=>((x.textContent||"").trim()==="全部")); if(b) b.click(); return 1; })()`);
+      await wait(300);
+      const collapse = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-expand")].find((x)=>((x.textContent||"").trim()==="收起")); if(!b) return 0; b.click(); return 1; })()`);
+      await wait(350);
+      const n3 = await count();
+      h.check("⑥「收起」回到 4 张", collapse === 1 && n3 === 4, `count=${n3}`);
+
+      const badges = await h.eval(`(function(){
+        const cards=[...document.querySelectorAll("[data-external-card]")];
+        return cards.map((card)=>({ id:card.getAttribute("data-external-card"), badge:(card.querySelector(".voice-ext-badge")?.textContent||"").trim() }));
+      })()`);
+      h.check("⑦ 非商用/许可徽标可见（默认 4 张里至少 2 张带非商用/有条件）", Array.isArray(badges)
+        && badges.filter((x)=>x.badge.includes("非商用")||x.badge.includes("有条件")).length >= 2,
+        JSON.stringify(badges));
+
+      await h.eval(`document.querySelector(".voice-local-modal .voice-confirm-close")?.click()`).catch(() => undefined);
+      await wait(250);
+      await h.pressKey("Escape").catch(() => undefined);
+    },
+  },
 ];
 
 
