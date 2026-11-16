@@ -1465,6 +1465,28 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "音色卡在外部引擎生效时直接显示引擎名（⛔ 不再给本机 5 个假音色）");
   ok(/noEngine/.test(picker) && /当前没有可用的语音合成引擎/.test(picker), "没有可用引擎时不展示假下拉");
   ok(/speech=\{speech\}/.test(section), "页面把 speech 传给音色卡（单一真相源）");
+
+  /* 11-16 第二轮用户实测：「换了模型，点试听还是旧的那个默认的内置音色，不管切哪个都一样」——
+     根因是 previewVoice（试听）只认 MOSS/本机，**完全跳过外部引擎** ⇒ 启用了外部引擎也永远合成
+     本机 vits。试听必须与 speak 同一条链（外部 > MOSS > 本机）。 */
+  const previewBody = (() => {
+    const start = service.indexOf("async previewVoice(");
+    const end = service.indexOf("ensurePreviewWorker(sherpaPath, wanted", Math.max(0, start));
+    return start >= 0 && end > start ? service.slice(start, end) : "";
+  })();
+  ok(/externalEngineSpeak\(/.test(previewBody)
+    && previewBody.indexOf("externalEngineSpeak(") < previewBody.indexOf("remoteTtsConfig(settings)"),
+    "试听走真实合成链：previewVoice 里外部引擎在 MOSS/本机之前（与 speak 同序）");
+  ok(/explicitProfile/.test(previewBody) && /explicitProfile: true/.test(read("electron/features/voice-ipc/03-voice-misc.ts")),
+    "「我的音色」行内试听显式标 explicitProfile（合成的是那个档案，⛔ 不被外部引擎接管）");
+  /* 用户第二句：「也是假的，不是真正的那个模型的音色」—— 音色名必须读模型自带的说话人表。 */
+  const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
+  ok(/G_multisperaker_latest\.json/.test(voiceSettingsSrc) && /ttsVoiceNamesFor\([^)]*modelsRoot\(\)\)/.test(statusHandler),
+    "音色表读模型真实说话人名（G_multisperaker_latest.json），⛔ 不再是写死的「音色 1..5」");
+  ok(/hasReference/.test(statusHandler) && /外部引擎「\$\{external\.name\}」还需要参考音色/.test(statusHandler),
+    "外部引擎没选参考音色时 speech 不报就绪（并给出「去我的音色」的原因）");
+  ok(/onSelectProfile/.test(picker) && /profiles\.map\(/.test(picker) && /参考音色/.test(picker),
+    "外部引擎模式下音色卡直接下拉「我的音色」参考音色（换嗓子 = 换参考音频）");
 }
 
 process.exit(fails ? 1 : 0);

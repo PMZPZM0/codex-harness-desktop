@@ -15,9 +15,10 @@
  * - 任何写入都先读旧值再合并，避免丢字段。
  */
 
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { DEFAULT_VOICE_BALL_STYLE, normalizeVoiceBallStyle } from "../../src/lib/voice-ball-styles.mjs";
+import { TTS_REPO } from "./model-manifest";
 
 export type BargeMode = "auto" | "manual";
 export type ModelHost = "auto" | "huggingface" | "hf-mirror";
@@ -188,14 +189,47 @@ export const TTS_VOICE_NAMES: Record<number, string> = {
   4: "音色 5",
 };
 
+/** 模型自带说话人表缓存（按文件 mtime 失效；设置页每次打开都会读，不缓存会反复解析 20KB JSON）。 */
+let speakerNamesCache: { file: string; mtimeMs: number; names: Record<number, string> | null } | null = null;
+
+/**
+ * 从 vits 模型自带的 `G_multisperaker_latest.json` 里读**真实说话人名**。
+ *
+ * ⛔ 11-16 用户实测「换模型后音色还是旧的、而且是假的」：旧实现只给 `音色 1..5` 这种占位名，
+ *    与模型里的真实说话人（suyingxue / gunian / …）对不上。名字是模型的一部分，必须读盘。
+ * 读不到（未下载 / 损坏）返回 null，调用方回落占位名。
+ */
+function vitsSpeakerNames(modelsRoot?: string): Record<number, string> | null {
+  if (!modelsRoot) return null;
+  const file = join(modelsRoot, ...TTS_REPO.repo.split("/"), "G_multisperaker_latest.json");
+  try {
+    const mtimeMs = statSync(file).mtimeMs;
+    if (speakerNamesCache && speakerNamesCache.file === file && speakerNamesCache.mtimeMs === mtimeMs) {
+      return speakerNamesCache.names;
+    }
+    const json: any = JSON.parse(readFileSync(file, "utf8"));
+    const speakers: Record<string, unknown> = json?.speakers ?? {};
+    const names: Record<number, string> = {};
+    for (const [name, id] of Object.entries(speakers)) {
+      const index = Number(id);
+      if (name && Number.isInteger(index) && index >= 0) names[index] = name;
+    }
+    const result = Object.keys(names).length ? names : null;
+    speakerNamesCache = { file, mtimeMs, names: result };
+    return result;
+  } catch { return null; }
+}
+
 /**
  * 按当前引擎取音色表（**单一真相源**：UI 看到的音色名必须与引擎对得上）。
  *
- * - vits：5 个预置音色（`TTS_VOICE_NAMES`）
+ * - vits：模型自带说话人表（`G_multisperaker_latest.json` 的 speakers），读不到才回落 `TTS_VOICE_NAMES`
  * - emotivoice：目前不可用（缺 ONNX 推理运行时）⇒ 回落到 vits 的表，别给用户空列表
+ *
+ * ⛔ 必须传 `modelsRoot`：不传只能拿到占位名「音色 1..5」（用户看到的"假音色"）。
  */
-export function ttsVoiceNamesFor(_engine: VoiceTtsEngine | undefined): Record<number, string> {
-  return TTS_VOICE_NAMES;
+export function ttsVoiceNamesFor(_engine: VoiceTtsEngine | undefined, modelsRoot?: string): Record<number, string> {
+  return vitsSpeakerNames(modelsRoot) ?? TTS_VOICE_NAMES;
 }
 
 /** 试听用的示例句——简短、含常见声韵母，能听出音色差别。 */

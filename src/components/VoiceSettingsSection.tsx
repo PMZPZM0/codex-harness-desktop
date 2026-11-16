@@ -163,7 +163,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           reloadMeta={reloadMeta}
           settings={settings}
           localExtra={<>
-            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} zipReady={zipReady} speech={speech} />
+            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} profiles={profiles} onSelectProfile={(id) => void selectProfile(id)} zipReady={zipReady} speech={speech} />
             {/* 11-12 用户：「这两个都不是通用的，丢到基础语音模型配置里面去」——
                 语速/音量属于本机合成，跟着基础模型走；云端语速在 MOSS 弹窗里单独调。 */}
             <div className="voice-subhead">

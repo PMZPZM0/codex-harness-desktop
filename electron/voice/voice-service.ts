@@ -841,19 +841,29 @@ export class VoiceService {
    * 试听克隆音色（profileId）时不能用通话里的 TTS worker（配置不同），
    * 单独走这套缓存。
    */
-  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; numSteps?: number }): Promise<VoiceSpeakResult> {
+  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; explicitProfile?: boolean; numSteps?: number }): Promise<VoiceSpeakResult> {
     /* ⛔ 有效音色 = 调用方显式指定（档案行试听）> **磁盘上的当前档案**（页面顶部试听/播报）。
        旧实现读 `this.currentSettings` —— 它只在 start()/设置保存时同步，应用刚启动、还没通话
        时是默认值（profileId 为空）⇒ 用户选了克隆音色，试听/播报却回退到基础音色（10-21 复测）。
        缓存键同理：只用调用方入参会让「设置里的档案」变了、试听 worker 仍是旧的 VITS。 */
     const settings = loadVoiceSettings(this.deps.userDataDir);
     const wanted = String(input?.profileId ?? settings.tts.profileId ?? "").trim();
+    const text = String(input?.text ?? VOICE_SAMPLE_TEXT);
+    const speed = Number(input?.speed ?? settings.tts.speed);
     const numThreads = settings.asr.numThreads;
+    /* ⛔⛔ 11-16 用户实测「换了模型，点试听还是旧的内置音色，切哪个都一样」：
+       试听**必须和真实播报走同一条链**（外部引擎 > MOSS > 本机，与 speak() 同序）。
+       旧实现只认 MOSS/本机 ⇒ 启用外部引擎后试听永远合成的是本机 vits（假联动）。
+       「我的音色」行内的档案试听是显式点某个克隆音色（explicitProfile）⇒ 仍走本机克隆，不绕外部引擎。 */
+    if (!input?.explicitProfile) {
+      const external = await externalEngineSpeak(text, { userData: this.deps.userDataDir, speed, profileId: settings.tts.profileId });
+      if (external) return external;
+    }
     /* 11-11：MOSS 播报开启且没选克隆音色 ⇒ 试听也走远端（与播报同一嗓子）。 */
     const remote = remoteTtsConfig(settings);
     if (!wanted && remote) {
       if (!remote.ok) return { ok: false, error: remote.error };
-      return speakMoss(String(input?.text ?? VOICE_SAMPLE_TEXT), remote.cfg, Number(input?.speed ?? settings.tts.speed));
+      return speakMoss(text, remote.cfg, Number(input?.speed ?? settings.tts.speed));
     }
     // 通话线程只有在「加载的正是这个音色」时才能直接复用；音色不同必须走试听 worker 重建
     if (this.tts && !input?.profileId && wanted === this.ttsProfileWanted) {

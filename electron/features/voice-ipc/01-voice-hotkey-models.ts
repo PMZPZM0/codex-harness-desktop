@@ -76,8 +76,9 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
     // 把枚举的可选值一起回传，渲染层不用自己硬码
     return {
       settings: publicVoiceSettings(settings),
-      /* ⛔ 音色表必须**跟着引擎走**（由主进程单一真相源给），别在渲染层硬码。 */
-      ttsVoices: ttsVoiceNamesFor(settings.tts?.engine),
+      /* ⛔ 音色表必须**跟着引擎走**（由主进程单一真相源给），别在渲染层硬码。
+         ⛔ 还要传模型根：说话人名来自模型自带的 G_multisperaker_latest.json —— 不传只剩「音色 1..5」占位名。 */
+      ttsVoices: ttsVoiceNamesFor(settings.tts?.engine, modelsRoot()),
       modelHosts: MODEL_HOST_LABELS,
       modelHostOptions: Object.keys(MODEL_HOST_PRESETS),
     };
@@ -263,12 +264,19 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
       const external = activeExternalEngine();
       if (external) {
         const row = externalEngineList().engines.find((entry) => entry.id === external.id);
-        const ready = Boolean(row?.installed);
+        const installed = Boolean(row?.installed);
+        /* ⛔ 外部引擎的「音色」= 「我的音色」里选中的参考音频（externalEngineSpeak 用 profileId）：
+           没选参考音色时它根本合不出声 —— 不能报 ready，否则播报/试听都变成静默失败。 */
+        const hasReference = Boolean(String(settings.tts?.profileId ?? "").trim());
         return {
           effective: "external",
-          ready,
+          ready: installed && hasReference,
           label: external.name,
-          reason: ready ? "" : "外部引擎已启用但没装完：到它的卡片里完成下载/安装",
+          reason: !installed
+            ? "外部引擎已启用但没装完：到它的卡片里完成下载/安装"
+            : !hasReference
+              ? `外部引擎「${external.name}」还需要参考音色：到「我的音色」导入 / 选中一个音色`
+              : "",
         };
       }
       const profileId = String(settings.tts?.profileId ?? "").trim();

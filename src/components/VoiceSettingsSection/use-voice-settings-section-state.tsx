@@ -266,9 +266,11 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
     // 换一个试听：先停掉正在播的
     playCtlRef.current?.stop();
     playCtlRef.current = null;
-    /* ⛔ 同「音色试听」：没有可用引擎时预览专属音色必然失败 —— 给说明，别让它空转 */
-    if (!ttsReadyRef.current) {
-      onNotice("还没有可用的合成引擎：先在「必需 · 基础语音模型」下载，再试听专属音色");
+    /* ⛔ 试听「我的音色」里的某个档案 = 本地克隆合成，判据是**克隆模型**（zipReady），
+       不是「当前播报引擎就绪」—— 启用了外部引擎/没选参考音色时 ttsReady 会是 false，
+       拿它当闸会把明明能合成的档案试听挡掉（11-16 联动改动后必踩）。 */
+    if (!zipReady) {
+      onNotice("试听专属音色前要先装音色克隆模型：到本页上方「语音模型 → 音色克隆模型」下载（约 156MB）");
       return;
     }
     setProfilePreview({ id, phase: "synth" });
@@ -344,9 +346,11 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       playCtlRef.current.stop();
       return;
     }
-    /* ⛔ 没装引擎 ⇒ 合成必然失败：给一句能照做的说明，别让它静默失败或空转 */
+    /* ⛔ 没装引擎 ⇒ 合成必然失败：给一句能照做的说明，别让它静默失败或空转。
+       ⛔ 11-16：原因优先用主进程的 `speech.reason`（如「外部引擎还缺参考音色」）——
+          只报「去下载基础模型」会把启用外部引擎的用户指到错误方向。 */
     if (!ttsReadyRef.current) {
-      onNotice("还没有可用的合成引擎：先在本页「必需 · 基础语音模型」下载（轻量播报随它一起装）");
+      onNotice(speech?.reason || "还没有可用的合成引擎：先在本页「必需 · 基础语音模型」下载（轻量播报随它一起装）");
       return;
     }
     setAuditionPhase("synth");
@@ -365,7 +369,7 @@ export function useVoiceSettingsSectionState({ onNotice }: { onNotice: (m: strin
       playCtlRef.current = null;
       setAuditionPhase("idle");
     }
-  }, [settings, onNotice]);
+  }, [settings, onNotice, speech]);
 
 
   const toggleMicTest = useCallback(async () => {

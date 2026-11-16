@@ -48,7 +48,9 @@ const RESOURCE_INSTALLED: Record<VoiceResourceKind, (modelsRoot: string) => bool
 export function registerVoiceIpc3(ibA: ReturnType<typeof registerVoiceIpc1>) {
   const { voiceAudioForIpc, modelsRoot, svc, ipcHost } = ibA;
   ipcHost.handle("voice:profiles-preview", async (_event, input?: { id?: string; text?: string }) =>
-    voiceAudioForIpc(await svc().previewVoice({ profileId: input?.id, text: input?.text }))
+    /* ⛔ explicitProfile：这是「我的音色」行内点某个克隆档案的试听 —— 必须合成**那个档案**，
+       不能被启用中的外部引擎接管（外部引擎的试听走顶部「音色」卡，那边不传这个标记）。 */
+    voiceAudioForIpc(await svc().previewVoice({ profileId: input?.id, text: input?.text, explicitProfile: true }))
   );
 
   ipcHost.handle("voice:models-install", () => svc().installModels());
