@@ -251,6 +251,13 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange }
                 </div>
               )}
 
+              {engine.enabled && engine.service === "starting" && (
+                <div className="voice-ext-starting">
+                  <LoaderCircle size={12} className="spin" />
+                  <span>模型加载中（可随时关闭）…</span>
+                </div>
+              )}
+
               {engine.enabled && engine.service === "error" && engine.serviceError && (
                 <div className="voice-ext-service-error" title={engine.serviceError}>
                   <TriangleAlert size={12} />
@@ -271,7 +278,7 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange }
                 ) : (
                   <>
                     <span className="voice-ext-toggle">
-                      <ToggleSwitch checked={engine.enabled} disabled={toggling === engine.id || engine.service === "starting"} label={`启用 ${engine.name}`} onChange={(next) => void toggle(engine, next)} />
+                      <ToggleSwitch checked={engine.enabled} disabled={toggling === engine.id} label={`启用 ${engine.name}`} onChange={(next) => void toggle(engine, next)} />
                       <span>启用</span>
                     </span>
                     <button type="button" className="secondary-setting" onClick={() => void window.codex.voiceExternalReveal(engine.id).catch(() => undefined)}><FolderOpen size={13} />目录</button>

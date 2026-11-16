@@ -576,11 +576,12 @@ export function externalEngineInstalledDir(id: string): string {
 
 function portOf(id: string): number { return PORTS[id] ?? 19880; }
 
-function waitPort(port: number, timeoutMs: number, signal?: AbortSignal): Promise<void> {
+function waitPort(port: number, timeoutMs: number, isAlive?: () => boolean): Promise<void> {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const tryOnce = () => {
-      if (signal?.aborted) return reject(new Error("已取消"));
+      /* 子进程已退出（OOM / 依赖缺失）不必干等到超时：立刻失败，卡片马上给原因。 */
+      if (isAlive && !isAlive()) return reject(new Error("服务进程已退出（模型加载失败，详见引擎目录的 service.log）"));
       const socket = net.connect({ host: "127.0.0.1", port });
       socket.setTimeout(1200);
       socket.once("connect", () => { socket.destroy(); resolve(); });
@@ -650,7 +651,9 @@ async function ensureService(id: string): Promise<void> {
       try { log.end(); } catch { /* 忽略 */ }
     });
     child.on("error", (error) => logLine(`spawn error: ${String(error?.message ?? error)}`));
-    await waitPort(port, SERVICE_TIMEOUT[info.adapter] ?? 240_000);
+    await waitPort(port, SERVICE_TIMEOUT[info.adapter] ?? 240_000, () => Boolean(service.child));
+    /* 启动期间用户可能已关掉引擎：stopService 把状态置为 stopped，别再改回 running。 */
+    if (service.state !== "starting") return;
     service.state = "running";
     service.starting = null;
     logLine(`ready in ${Date.now() - startedAt}ms`);
@@ -658,6 +661,8 @@ async function ensureService(id: string): Promise<void> {
   try {
     await service.starting;
   } catch (error: any) {
+    /* 用户主动关闭（已在 stopService 里置 stopped）不算失败。 */
+    if (String(service.state) === "stopped") return;
     stopService(id);
     service.state = "error";
     service.error = String(error?.message ?? error);

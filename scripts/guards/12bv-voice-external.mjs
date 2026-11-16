@@ -171,6 +171,13 @@ ok((main.match(/ADAPTER_HTTP_HEAD \+ String\.raw/g) ?? []).length === 4 && /HTTP
   "四个适配器都复用只绑 127.0.0.1 的 HTTP 壳");
 ok(main.includes("SERVICE_TIMEOUT") && main.includes("chatterbox: 600_000") && main.includes("indextts2: 600_000"),
   "大模型冷启动超时放宽到 10 分钟（首次加载 30–60 秒不会再被误判失败）");
+/* 11-16 用户实测「启用了，关不掉」：启动中开关被禁用 ⇒ 加载慢时无法关闭。 */
+ok(ui.includes("disabled={toggling === engine.id}") && !ui.includes('toggling === engine.id || engine.service === "starting"')
+  && ui.includes("模型加载中（可随时关闭）"),
+  "启动中也能关闭引擎（不再因 service=starting 把开关禁用）");
+ok(main.includes("服务进程已退出") && main.includes("if (service.state !== \"starting\") return;")
+  && main.includes('if (String(service.state) === "stopped") return;'),
+  "服务崩溃立刻失败（不再干等 10 分钟）；启动中关闭后不会被迟到的 ready 改回运行态");
 ok(ui.includes("voice-ext-service-error") && css.includes(".voice-ext-service-error"),
   "启用后服务起不来时卡片显示原因（不再只有「已启用」）");
 
