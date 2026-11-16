@@ -84,7 +84,7 @@ PhotoCraft 图像编辑（11-15，storytold/photocraft，MIT/Apache-2.0）：纯
 通道：photocraft:status, photocraft:info, photocraft:convert, photocraft:run, photocraft:batch, photocraft:commands, photocraft:open
 
 ### artcraft（3 通道）
-Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：ArtCraft Launcher 统一安装/更新/打开 18 个纯 Rust 创作 App（PhotoCraft 图像、LightCraft RAW、FilmCraft 视频、EffectCraft 动效、AniCraft 2D 动画、VectorCraft 矢量、FigCraft 原型、DesignCraft 版式、DeckCraft 演示、WordCraft 文档、GridCraft 表格、PdfCraft PDF、CADCraft CAD、SoundCraft 音频、MaterialCraft 材质、TextureCraft 贴图、Craft Anything、SolidCraft/MailCraft）。按需下载 Launcher 便携包（约 11MB，GitHub release 镜像序 + SHA256SUMS 校验），入口「设置 → 开发工具 → Craft 全家桶」，弹窗内逐 App 查看用途与来源。⚠️ 上游 v0.19.2 尚未随包提供 craft-ai-mcp 网关；网关出现后宿主会自动写 [mcp_servers.ArtCraft]（一个 MCP 入口覆盖全部已装 App，4 个工具：列 App / 找工具 / describe / call）
+Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：ArtCraft Launcher 统一安装/更新/打开 19 个创作 App（17 个官方 + 2 个社区：PhotoCraft 图像、LightCraft RAW、FilmCraft 视频、EffectCraft 动效、AniCraft 2D 动画、VectorCraft 矢量、FigCraft 原型、DesignCraft 版式、DeckCraft 演示、WordCraft 文档、GridCraft 表格、PdfCraft PDF、CADCraft CAD、SoundCraft 音频、MaterialCraft 材质、TextureCraft 贴图、Craft Anything、SolidCraft/MailCraft）。按需下载 Launcher 便携包（约 11MB，GitHub release 镜像序 + SHA256SUMS 校验），入口「设置 → 开发工具 → Craft 全家桶」，弹窗内逐 App 查看用途与来源。⚠️ 上游 v0.19.2 尚未随包提供 craft-ai-mcp 网关；网关出现后宿主会自动写 [mcp_servers.ArtCraft]（一个 MCP 入口覆盖全部已装 App，4 个工具：列 App / 找工具 / describe / call）
 通道：artcraft:status, artcraft:open, artcraft:sync
 
 ### pet（20 通道）
