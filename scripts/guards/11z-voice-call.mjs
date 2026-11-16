@@ -1450,4 +1450,21 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "合成引擎卡把「已停用」当不可用（ready=文件在 ≠ 能用；外部引擎接管时本机不算使用中）");
 }
 
+/* ── ⑳ 音色必须联动「当前真正在合成的引擎」（11-16 用户实测：「音色压根没联动语音模型」）── */
+{
+  const statusHandler = read("electron/features/voice-ipc/01-voice-hotkey-models.ts");
+  const picker = read("src/components/VoiceSettingsSection/01-voice-picker.tsx");
+  const section = read("src/components/VoiceSettingsSection.tsx");
+  const service = read("electron/voice/voice-service.ts");
+  ok(/activeExternalEngine\(\)/.test(statusHandler) && /effective: "external"/.test(statusHandler),
+    "speech 状态把外部引擎算进合成链（effective=external + 引擎名）");
+  ok(statusHandler.indexOf("activeExternalEngine") < statusHandler.indexOf("const profileId"),
+    "speech 优先级与真实合成一致：外部引擎 > 克隆 > MOSS > 本机");
+  ok(/externalEngineSpeak\([\s\S]{0,300}?remoteTtsConfig/.test(service), "speak 实际也先走外部引擎（界面与真实链同序）");
+  ok(/speech\?\.effective === "external"/.test(picker) && /当前音色：\{speech\?\.label/.test(picker),
+    "音色卡在外部引擎生效时直接显示引擎名（⛔ 不再给本机 5 个假音色）");
+  ok(/noEngine/.test(picker) && /当前没有可用的语音合成引擎/.test(picker), "没有可用引擎时不展示假下拉");
+  ok(/speech=\{speech\}/.test(section), "页面把 speech 传给音色卡（单一真相源）");
+}
+
 process.exit(fails ? 1 : 0);

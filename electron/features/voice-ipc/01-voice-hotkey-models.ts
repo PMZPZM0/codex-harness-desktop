@@ -12,6 +12,7 @@ import { EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, emotivoiceReady
 import { isVoiceResourceEnabled, loadVoiceSettings, publicVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { MOSS_LIVE_PROVIDER, remoteConfigOf, remoteConfigured } from "../../voice/model-provider";
 import { remoteTtsConfig } from "../../voice/moss-tts";
+import { activeExternalEngine, externalEngineList } from "../../voice/external-engines";
 import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
 import { defineFeature } from "../../context";
@@ -257,6 +258,19 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
           否则克隆用户会被误报「MOSS 缺配置」、播报开关也打不开（用户截图）。
        ⛔ 顺带刷新播报就绪缓存（同一个判据、同一次扫盘，不额外开销）。 */
     const speech = (() => {
+      /* ⛔ 11-16：外部开源引擎启用后**优先级最高**（见 voice-service.speak：external → MOSS → 本机）。
+         之前这里没算外部引擎 ⇒ 界面一直说「本机合成 / 基础音色」，用户装了一堆语音模型却感觉没联动。 */
+      const external = activeExternalEngine();
+      if (external) {
+        const row = externalEngineList().engines.find((entry) => entry.id === external.id);
+        const ready = Boolean(row?.installed);
+        return {
+          effective: "external",
+          ready,
+          label: external.name,
+          reason: ready ? "" : "外部引擎已启用但没装完：到它的卡片里完成下载/安装",
+        };
+      }
       const profileId = String(settings.tts?.profileId ?? "").trim();
       const zipReady = zipvoiceReady(modelsRoot());
       const remote = remoteTtsConfig(settings);
