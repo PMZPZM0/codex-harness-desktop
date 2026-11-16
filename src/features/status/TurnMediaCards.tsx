@@ -75,7 +75,7 @@ export function TurnMediaCards({ files }: { files: TurnMediaFile[] }) {
           .filter((opener) => opener.id !== "photocraft")
           .slice(0, 2);
         return file.kind === "audio" ? (
-          <div className="turn-media-image-wrap" key={file.path}>
+          <div className="turn-media-chip-wrap" key={file.path}>
             <button
               type="button"
               className="turn-media-card is-audio-chip"

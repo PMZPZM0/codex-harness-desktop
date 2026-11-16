@@ -939,6 +939,10 @@
 
 /* PhotoCraft 入口（11-15）：图片卡右上角的「在 PhotoCraft 中编辑」；只在 hover / 键盘聚焦时出现。 */
 .turn-media-image-wrap { position: relative; width: 112px; height: 112px; flex: none; display: flex; }
+/* 11-16：音频芯片是横向条，不能套 112×112 的图片框（会被裁切）；只做定位锚点。 */
+.turn-media-chip-wrap { position: relative; flex: none; display: inline-flex; }
+.turn-media-chip-wrap:hover .turn-media-edit,
+.turn-media-chip-wrap .turn-media-edit:focus-visible { opacity: 1; }
 .turn-media-edit {
   position: absolute;
   top: 4px;

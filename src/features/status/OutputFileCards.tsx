@@ -10,9 +10,10 @@
  */
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Copy, ExternalLink, Eye, FolderOpen, MoreHorizontal, Pencil } from "lucide-react";
+import { Check, ChevronDown, Copy, ExternalLink, Eye, FolderOpen, MoreHorizontal, Pencil, Box } from "lucide-react";
 import { FileTypeIcon, fileExtOf } from "../../components/FileTypeIcon";
 import { openRightFile } from "../../lib/right-file.mjs";
+import { craftOpeners, openPathInCraft, useInstalledCraftIds } from "../shared/craft-open";
 
 export type OutputFile = { path: string; added: number; deleted: number };
 
@@ -47,6 +48,9 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
   const [menu, setMenu] = useState<{ path: string; kind: "mode" | "more" | "context"; left: number; top: number } | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const anchorRef = useRef<HTMLElement | null>(null);
+  /* 11-16：产出的文件按格式给出「用对应 App 打开」（只列已安装的 Craft App）。 */
+  const craftIds = useInstalledCraftIds();
+  const craftItemsFor = (path: string) => craftOpeners(path, craftIds, 3);
 
   useEffect(() => {
     if (!menu) return;
@@ -85,7 +89,7 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
   const CONTEXT_W = 176;
   const CONTEXT_ITEM_H = 30;
   const CONTEXT_PAD = 10;
-  const contextHeight = CONTEXT_PAD * 2 + 5 * CONTEXT_ITEM_H;
+  const contextHeight = CONTEXT_PAD * 2 + (5 + craftItemsFor(menu?.path ?? "").length) * CONTEXT_ITEM_H;
   const openContextMenu = (event: ReactMouseEvent<HTMLElement>, path: string) => {
     event.preventDefault();
     event.stopPropagation();
@@ -102,7 +106,7 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
     anchorRef.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     const width = kind === "mode" ? 168 : 180;
-    const height = kind === "mode" ? 128 : 92;
+    const height = (kind === "mode" ? 128 : 92) + craftItemsFor(path).length * 30;
     const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
     const top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - height - 8));
     setMenu({ path, kind, left, top });
@@ -153,12 +157,21 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
       )}
       {menu && createPortal(
         <div ref={menuRef} className="turn-output-menu" style={{ left: menu.left, top: menu.top }} role="menu">
-          {menu.kind === "mode" ? (["workspace", "editor", "system"] as OpenMode[]).map((value) => (
-            <button type="button" role="menuitemradio" aria-checked={mode === value} key={value} onClick={() => chooseMode(value, menu.path)}>
-              <span>{MODE_LABEL[value]}</span>
-              {mode === value ? <Check size={12} /> : null}
-            </button>
-          )) : menu.kind === "more" ? (
+          {menu.kind === "mode" ? (
+            <>
+              {(["workspace", "editor", "system"] as OpenMode[]).map((value) => (
+                <button type="button" role="menuitemradio" aria-checked={mode === value} key={value} onClick={() => chooseMode(value, menu.path)}>
+                  <span>{MODE_LABEL[value]}</span>
+                  {mode === value ? <Check size={12} /> : null}
+                </button>
+              ))}
+              {craftItemsFor(menu.path).map((opener) => (
+                <button type="button" role="menuitem" key={opener.id} onClick={() => { setMenu(null); void openPathInCraft(opener.id, menu.path, opener.name); }}>
+                  <Box size={12} /><span>用 {opener.name} 打开</span>
+                </button>
+              ))}
+            </>
+          ) : menu.kind === "more" ? (
             <>
               <button type="button" role="menuitem" onClick={() => { try { void navigator.clipboard?.writeText(menu.path); } catch { /* 剪贴板不可用 */ } setMenu(null); }}>
                 <Copy size={12} /><span>复制路径</span>
@@ -179,6 +192,11 @@ export function OutputFileCards({ files, onOpenEditor }: { files: OutputFile[]; 
               <button type="button" role="menuitem" onClick={() => { setMenu(null); openWith(menu.path, "system"); }}>
                 <ExternalLink size={12} /><span>用默认应用打开</span>
               </button>
+              {craftItemsFor(menu.path).map((opener) => (
+                <button type="button" role="menuitem" key={opener.id} onClick={() => { setMenu(null); void openPathInCraft(opener.id, menu.path, opener.name); }}>
+                  <Box size={12} /><span>用 {opener.name} 打开</span>
+                </button>
+              ))}
               <button type="button" role="menuitem" onClick={() => { try { void navigator.clipboard?.writeText(menu.path); } catch { /* 剪贴板不可用 */ } setMenu(null); }}>
                 <Copy size={12} /><span>复制路径</span>
               </button>
