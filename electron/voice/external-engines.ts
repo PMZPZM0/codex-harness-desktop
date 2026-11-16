@@ -503,11 +503,21 @@ async function ensureService(id: string): Promise<void> {
   }
 }
 
+/** 按进程树终止（Windows 上 uvicorn 会再 fork 子进程，只 kill 直接子进程会留下占端口的孙进程）。 */
+function killProcessTree(child: ChildProcess | null): void {
+  if (!child?.pid) return;
+  if (process.platform === "win32") {
+    try { spawn("taskkill", ["/F", "/T", "/PID", String(child.pid)], { windowsHide: true }); } catch { /* 忽略 */ }
+    return;
+  }
+  try { child.kill("SIGKILL"); } catch { /* 忽略 */ }
+}
+
 function stopService(id: string): void {
   const service = SERVICES.get(id);
   if (!service) return;
   service.state = "stopped";
-  try { service.child?.kill(); } catch { /* 忽略 */ }
+  killProcessTree(service.child);
   service.child = null;
   service.starting = null;
 }

@@ -63,6 +63,8 @@ ok(main.includes("for (const other of Object.keys(SERVICES)) if (other !== id) s
   "同一时间只允许启用一个外部引擎（切换先停旧的）");
 ok(main.includes("stopAllExternalEngines") && main.includes('app.on("will-quit"'),
   "应用退出时停掉外部引擎进程");
+ok(main.includes("killProcessTree") && main.includes('"taskkill"') && main.includes('"/T"'),
+  "按进程树终止外部服务（Windows 上只 kill 直接子进程会留下占端口的孙进程）");
 ok(main.includes("harness_adapter.py") && /HTTPServer\(\('127\.0\.0\.1'/.test(main),
   "CosyVoice 适配器自带、只绑本机");
 ok(main.includes("harness_requirements.txt") && main.includes("openai-whisper") && main.includes("setuptools==69.5.1"),
