@@ -121,6 +121,19 @@ ok(/id: "fish-speech"[\s\S]*?install: null/.test(catalog) && /4B，8GB 显卡容
   "Fish Speech 4B 需更大显存：保留信息卡并写明原因");
 ok(!catalog.includes("首批暂未接入"), "已接入的卡片不再出现「首批暂未接入」字样");
 
+/* 硬件门槛（11-16 用户令「注释好，那些需要高配置电脑」）：11 张卡都要有 demand/hardware；
+   高配三张（Fish 4B / Zonos / Voicebox）必须打 high，卡片与详情都要显示。 */
+const hardwareBlock = catalog.slice(catalog.indexOf("const HARDWARE"), catalog.indexOf("export function isHighDemand"));
+ok((hardwareBlock.match(/demand:/g) ?? []).length >= 11, "11 张卡片都有硬件门槛标注（demand + hardware）");
+ok(/fish-speech[\s\S]*?demand: "high"/.test(hardwareBlock)
+  && /zonos[\s\S]*?demand: "high"/.test(hardwareBlock)
+  && /voicebox[\s\S]*?demand: "high"/.test(hardwareBlock),
+  "Fish（4B）/ Zonos / Voicebox 标为 high（8GB 显卡跑不动）");
+ok(ui.includes("isHighDemand") && ui.includes("需高配") && ui.includes("硬件要求") && ui.includes("voice-ext-hint"),
+  "卡片 meta 有「需高配」、详情有「硬件要求」、顶部有选型提示");
+ok(css.includes(".voice-ext-demand") && css.includes(".voice-ext-hint"),
+  "「需高配」徽标与提示行有样式");
+
 ok(['"gpt-sovits":', '"cosyvoice3":', '"f5-tts":', 'chatterbox:', '"qwen3-tts":', 'indextts2: 19885'].every((part) => main.includes(part)),
   "六个引擎各有独立端口（19880–19885）");
 ok(main.includes("PY_ADAPTERS") && pythonIds.every((id) => main.includes(`"${id}"`)),

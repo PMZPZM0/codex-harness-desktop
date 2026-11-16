@@ -7,6 +7,8 @@
  *
  * ⛔ 这里是**单一真相源**：主进程安装器与渲染层卡片都读这一份，别在两边各抄一份清单。
  * ⛔ 体积/显存/许可是**展示用的事实**，不参与安装校验；安装只认 install 里的 url/bytes。
+ * ⛔ `demand` / `hardware` 也是展示用：`demand:"high"` 的引擎（Fish 4B / Zonos / Voicebox）
+ *    在 8GB 显卡上会 OOM 或跑不动，卡片必须打「需高配」并在详情写清显存/磁盘门槛。
  * ⛔ 非商用权重（F5 / Fish / IndexTTS-2.0）必须带 badge，且不随包。
  */
 
@@ -339,6 +341,33 @@ export const VOICE_EXTERNAL_ENGINES = [
     install: { kind: "external", url: "https://github.com/rsxdalv/TTS-WebUI" },
   },
 ];
+
+/** 硬件门槛（展示用，11-16 用户令「注释好，那些需要高配置电脑」）。
+ *  demand: high = 8GB 显卡跑不动/会 OOM（Fish 4B、Zonos、Voicebox）；
+ *  medium = 主流独显可用；light = 入门独显即可。
+ *  磁盘是含 venv + CUDA torch 的实测/量级值，只作提示，不参与安装校验。 */
+const HARDWARE = {
+  "gpt-sovits": { demand: "medium", hardware: "4–6GB 显存 / 约 14GB 磁盘（本机实测）" },
+  cosyvoice3: { demand: "medium", hardware: "4–6GB 显存 / 约 11GB 磁盘（本机实测）" },
+  indextts2: { demand: "medium", hardware: "6GB+ 显存 / 约 19GB 磁盘（本机实测）" },
+  "f5-tts": { demand: "light", hardware: "4GB 显存 / 约 9GB 磁盘（本机实测）" },
+  "qwen3-tts": { demand: "medium", hardware: "4–6GB 显存（0.6B）/ 约 10GB 磁盘（本机实测）" },
+  chatterbox: { demand: "light", hardware: "4GB 显存 / 约 8GB 磁盘（本机实测）" },
+  "fish-speech": { demand: "high", hardware: "12GB+ 显存（S2-Pro 4B）/ 16GB+ 内存" },
+  zonos: { demand: "high", hardware: "6–8GB 显存 / 仅 Linux·macOS" },
+  voicebox: { demand: "high", hardware: "需 NVIDIA 独显 / 数 GB 磁盘" },
+  "voice-studio": { demand: "medium", hardware: "可无 GPU（很慢）/ 约 10GB+ 磁盘" },
+  "tts-webui": { demand: "medium", hardware: "随模型；部分模型需 8GB+ 显存" },
+};
+
+for (const entry of VOICE_EXTERNAL_ENGINES) {
+  Object.assign(entry, HARDWARE[entry.id] ?? { demand: "medium", hardware: "" });
+}
+
+/** 是否需要高配电脑（卡片据此显示「需高配」）。 */
+export function isHighDemand(entry) {
+  return entry?.demand === "high";
+}
 
 /** 按 id 取一条卡片（找不到返回 null）。 */
 export function externalEngineById(id) {

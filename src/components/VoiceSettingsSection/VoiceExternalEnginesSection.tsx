@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronUp, Download, ExternalLink, FolderOpen, LoaderCircle, Trash2, TriangleAlert, X } from "lucide-react";
 import { ToggleSwitch } from "../SettingsWidgets";
-import { VOICE_EXTERNAL_CATEGORIES, VOICE_EXTERNAL_DEFAULT_IDS } from "../../lib/voice-external-engines.mjs";
+import { VOICE_EXTERNAL_CATEGORIES, VOICE_EXTERNAL_DEFAULT_IDS, isHighDemand } from "../../lib/voice-external-engines.mjs";
 
 type EngineCard = {
   id: string;
@@ -30,6 +30,8 @@ type EngineCard = {
   languages: string;
   sizeLabel: string;
   vram: string;
+  demand: "high" | "medium" | "light";
+  hardware: string;
   tagline: string;
   pros: string[];
   cons: string[];
@@ -161,6 +163,7 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
         <strong>更多开源语音模型</strong>
         <span>按需下载、不随包；同一时间只启用一个（8GB 显存）。启用后播报/通话优先走它，使用「我的音色」的参考音频。</span>
       </div>
+      <div className="voice-ext-hint">标「需高配」的引擎建议 12GB+ 显存；8GB 显卡优先用 F5 / Chatterbox / GPT-SoVITS / Qwen3。</div>
 
       <div className="voice-ext-filters" role="group" aria-label="开源语音模型分类">
         {VOICE_EXTERNAL_CATEGORIES.map((entry) => (
@@ -208,6 +211,7 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
                 <span>{engine.languages}</span>
                 <span>{engine.sizeLabel}</span>
                 <span>{engine.vram}</span>
+                {isHighDemand(engine) && <span className="voice-ext-demand">需高配</span>}
                 <span className={`voice-engine-state${engine.installed ? " ok" : ""}`}>{statusOf(engine)}</span>
               </div>
 
@@ -263,6 +267,7 @@ export default function VoiceExternalEnginesSection({ onNotice }: { onNotice: (m
               {details === engine.id && (
                 <div className="voice-ext-details">
                   <div className="voice-ext-detail-row"><span>许可</span><b>{engine.license}</b></div>
+                  <div className="voice-ext-detail-row"><span>硬件要求</span><b>{engine.hardware || engine.vram}</b></div>
                   <div className="voice-ext-detail-row"><span>类型</span><b>{engine.kind === "engine" ? "可接入引擎" : engine.kind === "studio" ? "独立工作台" : "模型聚合 UI"}</b></div>
                   <ul>
                     {engine.pros.map((item) => <li key={item}><Check size={12} />{item}</li>)}

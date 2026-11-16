@@ -2834,6 +2834,21 @@ const CHECKS = [
         String(zonosButtons).includes("打开官网") && !String(zonosButtons).includes("安装")
           && String(fishButtons).includes("打开官网") && !String(fishButtons).includes("安装"),
         `${zonosButtons} / ${fishButtons}`);
+      await h.eval(`(function(){
+        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="fish-speech");
+        card?.querySelector(".voice-ext-detail-btn")?.click();
+        return 1;
+      })()`);
+      await wait(250);
+      const highDemand = await h.eval(`(function(){
+        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="fish-speech");
+        const hint=document.querySelector(".voice-ext-hint");
+        return { card: card ? (card.textContent||"") : "", hint: hint ? (hint.textContent||"") : "" };
+      })()`);
+      h.check("⑩ 高配引擎有「需高配」+ 详情写硬件门槛（12GB+ 显存）",
+        String(highDemand.card).includes("需高配") && String(highDemand.card).includes("硬件要求")
+          && String(highDemand.card).includes("12GB") && String(highDemand.hint).includes("12GB"),
+        JSON.stringify(highDemand));
       const collapse = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-expand")].find((x)=>((x.textContent||"").trim()==="收起")); if(!b) return 0; b.click(); return 1; })()`);
       await wait(350);
       const n3 = await count();

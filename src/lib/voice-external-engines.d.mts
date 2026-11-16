@@ -38,6 +38,8 @@ export type VoiceExternalEngine = {
   sizeLabel: string;
   sizeMB: number;
   vram: string;
+  demand: "high" | "medium" | "light";
+  hardware: string;
   tagline: string;
   pros: string[];
   cons: string[];
@@ -50,4 +52,5 @@ export const VOICE_EXTERNAL_ENGINES: VoiceExternalEngine[];
 export function externalEngineById(id: string): VoiceExternalEngine | null;
 export function defaultExternalEngines(): VoiceExternalEngine[];
 export function enginesInCategory(category: string): VoiceExternalEngine[];
+export function isHighDemand(entry: { demand?: "high" | "medium" | "light" } | null | undefined): boolean;
 export function isNonCommercial(entry: VoiceExternalEngine | null | undefined): boolean;
