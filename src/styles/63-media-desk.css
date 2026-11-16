@@ -77,3 +77,53 @@
   border-radius: 12px;
 }
 .media-desk-error { color: var(--red); }
+
+/* ── 11-16 用户令：工作台能在线更新，更新后自适应现有布局 ────────────────────
+   一行工具条（版本 / 检查更新 / 更新到 x.y.z / 重载）+ iframe 撑满剩余空间。
+   ⛔ 高度一律走 flex（不写死像素），窗口尺寸变化时 iframe 自动跟随。 */
+.media-desk-page { height: 100%; }
+.media-desk-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  min-height: 26px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.media-desk-ver {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.media-desk-ver em {
+  font-style: normal;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 11px;
+}
+.media-desk-spacer { flex: 1; }
+.media-desk-notice { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.media-desk-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  cursor: pointer;
+}
+.media-desk-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.media-desk-btn:disabled { opacity: 0.55; cursor: default; }
+.media-desk-btn.is-primary { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+.media-desk-btn .spin { animation: media-desk-spin 0.9s linear infinite; }
+@keyframes media-desk-spin { to { transform: rotate(360deg); } }
+.media-desk-frame { height: 100%; }

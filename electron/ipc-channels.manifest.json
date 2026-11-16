@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 709,
+  "count": 712,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -6911,6 +6911,36 @@
       "invokeArgs": "",
       "cast": null,
       "note": "11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例）"
+    },
+    {
+      "name": "mediaDeskVersion",
+      "channel": "media-desk:version",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ current: string; bundled: string; overridden: boolean }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线"
+    },
+    {
+      "name": "mediaDeskCheckUpdate",
+      "channel": "media-desk:check-update",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": "11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速）"
+    },
+    {
+      "name": "mediaDeskUpdate",
+      "channel": "media-desk:update",
+      "paramsImpl": "input?: { version?: string }",
+      "paramsDecl": "input?: { version?: string }",
+      "returns": "Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源"
     },
     {
       "name": "listArtifactArchives",

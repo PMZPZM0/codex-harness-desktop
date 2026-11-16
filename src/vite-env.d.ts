@@ -1569,6 +1569,12 @@ interface Window {
     mediaDeskEndpoint(): Promise<string>;
     /* 11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例） */
     mediaDeskPopout(): Promise<{ ok: boolean; focused: boolean }>;
+    /* 11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线 */
+    mediaDeskVersion(): Promise<{ current: string; bundled: string; overridden: boolean }>;
+    /* 11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速） */
+    mediaDeskCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>;
+    /* 11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源 */
+    mediaDeskUpdate(input?: { version?: string }): Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>;
     /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
     listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
     /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */

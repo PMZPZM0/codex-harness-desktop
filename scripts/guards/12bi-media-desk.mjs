@@ -57,12 +57,16 @@ export async function run() {
   const channels = manifest.channels.filter((c) => String(c.channel).startsWith("media-desk:"));
   ok(/"id": "media-desk"/.test(composition) && /features\/media-desk\/ipc\.ts/.test(composition),
     "组合表已挂载 media-desk 域");
-  ok(channels.length === 2 && channels.some((c) => c.channel === "media-desk:endpoint") && channels.some((c) => c.channel === "media-desk:popout")
-    && /prefix: "media-desk", count: 2/.test(registry),
-    `桥只有 endpoint + popout 两条（实测 ${channels.length}，界面走本地服务，不再铺数据通道）`);
+  ok(channels.length === 5
+    && ["endpoint", "popout", "version", "check-update", "update"].every((n) => channels.some((c) => c.channel === `media-desk:${n}`))
+    && /prefix: "media-desk", count: 5/.test(registry),
+    `桥五条：endpoint / popout / version / check-update / update（实测 ${channels.length}）`);
   ok(/mediaDeskEndpoint/.test(preload) && /mediaDeskEndpoint\(\): Promise<string>/.test(dts)
-    && /mediaDeskPopout/.test(preload) && /mediaDeskPopout\(\): Promise<\{ ok: boolean; focused: boolean \}>/.test(dts),
-    "桥四件套齐备（preload / vite-env 都有 endpoint + popout）");
+    && /mediaDeskPopout/.test(preload) && /mediaDeskPopout\(\): Promise<\{ ok: boolean; focused: boolean \}>/.test(dts)
+    && /mediaDeskVersion/.test(preload) && /mediaDeskVersion\(\): Promise</.test(dts)
+    && /mediaDeskCheckUpdate/.test(preload) && /mediaDeskCheckUpdate\(\): Promise</.test(dts)
+    && /mediaDeskUpdate/.test(preload) && /mediaDeskUpdate\(/.test(dts),
+    "桥齐备（endpoint / popout / version / check-update / update，preload 与 vite-env 都在）");
   /* 11-11 用户令：入口从设置页挪到侧栏「工作伙伴」下面，开独立窗口；设置页三处必须全部撤掉。 */
   ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/自媒体工作台/.test(help) && !/"media-desk": \{ render:/.test(pageSrc)
     && !/page: "自媒体工作台"/.test(help),
@@ -134,8 +138,25 @@ export async function run() {
     "第三方声明登记了随包的 dsh-media-desk（MIT + 上游地址）");
   ok(!/safeStorage/.test(codeOnly(ipc)) && !/safeStorage/.test(codeOnly(embed)) && /secure/.test(embed),
     "⛔ 域不直取 safeStorage（密钥走宿主 secure 接缝）");
-  ok(/<iframe className="media-desk-frame"/.test(board) && /mediaDeskEndpoint/.test(board),
-    "渲染层用 iframe 打开原版界面（不再自绘一套）");
+  ok(/className="media-desk-frame"/.test(board) && /key=\{frameKey\}/.test(board) && /mediaDeskEndpoint/.test(board),
+    "渲染层用 iframe 打开原版界面（带 key：更新后强制重载，不再自绘一套）");
+  /* 11-16 用户令：控制台里能更新 —— 版本条 + 检查更新 + 更新 + 重载，且更新只落 userData。 */
+  {
+    const vendor = read("electron/features/media-desk/vendor.ts");
+    ok(/mediaDeskVersionInfo/.test(ipc) && /checkMediaDeskUpdate/.test(ipc) && /installMediaDeskVersion/.test(ipc)
+      && /restartMediaDeskServer/.test(ipc),
+      "三条新通道真的接到 vendor + 重启本地服务（⛔ 不是空壳 handler）");
+    ok(vendor.includes(String.raw`getPath("userData"), "media-desk-vendor"`) && /current\.json/.test(vendor)
+      && !/process\.resourcesPath,\s*"media-desk-vendor"/.test(vendor),
+      "更新装到 userData/media-desk-vendor/<version> 并用 current.json 指向（⛔ 不改写随包资源）");
+    ok(/registry\.npmjs\.org/.test(vendor) && /registry\.npmmirror\.com/.test(vendor)
+      && /if \(v && \(!latest \|\| compareVersions\(v, latest\) > 0\)\)/.test(vendor)
+      && /from "\.\.\/\.\.\/updates"/.test(vendor),
+      "查最新版：官方 + 镜像都问、取最大（镜像滞后不会把旧版报成最新）");
+    ok(/\.media-desk-bar \{/.test(boardCss) && /\.media-desk-btn\.is-primary/.test(boardCss)
+      && /\.media-desk-frame \{ height: 100%; \}/.test(boardCss),
+      "更新条有样式；iframe 高度跟随容器（⛔ 不写死像素）");
+  }
   ok(/dsh-media-desk（MIT）/.test(board) && /数据只存本机/.test(board) && /排期不会自动发布/.test(board)
     && /openExternal\(SOURCE_URL\)/.test(board) && /github\.com\/woniuniuniu\/dsh-media-desk/.test(board),
     "页面写明开源声明（MIT / 数据只存本机 / 排期不自动发布）并有「开源项目」跳转按键");

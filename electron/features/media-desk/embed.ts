@@ -22,6 +22,7 @@ import { readCustomModel } from "../../main/01-model-catalog";
 import { readBuiltinPlugins } from "../../main/09-agents-plugins";
 import { generateImageResilient } from "../builtin-ipc";
 import { callModel } from "./ai";
+import { activeVendorDir, bundledVendorDir } from "./vendor";
 
 type SecureLike = { isEncryptionAvailable: () => boolean; decryptString: (buf: Buffer) => string };
 
@@ -108,8 +109,11 @@ const PREFIX = `/t/${TOKEN}`;
    用 Function 构造保住原生动态 import，否则随包的 host.js 永远加载失败。 */
 const nativeImport = new Function("specifier", "return import(specifier);") as (specifier: string) => Promise<any>;
 
+/* 生效目录：起服务时解析一次（用户目录里的覆盖版本优先），⛔ 每个请求不再读盘。 */
+let resolvedVendorDir: string | null = null;
+
 function vendorDir(): string {
-  return app.isPackaged ? path.join(process.resourcesPath, "media-desk") : path.join(app.getAppPath(), "resources", "media-desk");
+  return resolvedVendorDir ?? bundledVendorDir();
 }
 
 /** 当前有效模型（工作台没单独配时就是应用当前供应商）。 */
@@ -177,6 +181,8 @@ function llmAdapter() {
 }
 
 let serverPromise: Promise<string> | null = null;
+/* 当前监听实例：更新后要能停掉旧服务再起新的（否则仍读旧目录）。 */
+let activeServer: http.Server | null = null;
 let routeHandler: ((req: http.IncomingMessage, res: http.ServerResponse) => Promise<void>) | null = null;
 let boundPort = 0;
 
@@ -199,6 +205,8 @@ function serveStatic(rel: string, res: http.ServerResponse): boolean {
 export function ensureMediaDeskServer(): Promise<string> {
   if (serverPromise) return serverPromise;
   serverPromise = (async () => {
+    /* 11-16：先解析生效目录（用户目录里的更新版本优先，否则随包基线）。 */
+    resolvedVendorDir = await activeVendorDir();
     /* DSH_HOME 决定上游 Store 的数据目录 —— 在加载 host.js 之前设好。 */
     process.env.DSH_HOME = path.join(app.getPath("userData"), "media-desk-host");
     await refreshBuiltinImage();
@@ -258,6 +266,7 @@ export function ensureMediaDeskServer(): Promise<string> {
       res.writeHead(404);
       res.end("not found");
     });
+    activeServer = server;
     const port = await new Promise<number>((resolve, reject) => {
       server.once("error", reject);
       server.listen(0, "127.0.0.1", () => {
@@ -273,6 +282,23 @@ export function ensureMediaDeskServer(): Promise<string> {
     throw error;
   });
   return serverPromise;
+}
+
+/** 更新工作台后重启本地服务：停旧实例、清缓存状态，再起一个新的（返回新地址）。 */
+export async function restartMediaDeskServer(): Promise<string> {
+  const closing = activeServer;
+  activeServer = null;
+  routeHandler = null;
+  boundPort = 0;
+  serverPromise = null;
+  resolvedVendorDir = null;
+  if (closing) {
+    await new Promise<void>((resolve) => {
+      try { closing.close(() => resolve()); } catch { resolve(); }
+      setTimeout(resolve, 800);
+    });
+  }
+  return ensureMediaDeskServer();
 }
 
 /** Codex 工具走的内部请求：直接打本地服务（与界面同一份数据/流程）。 */
