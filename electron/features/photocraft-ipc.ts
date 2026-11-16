@@ -56,7 +56,9 @@ function normalizeSteps(steps: unknown): Array<{ id: string; params: Record<stri
     const text = JSON.stringify(params);
     if (text.length > 8192) throw new Error(`第 ${index + 1} 条命令参数过大（>8KB）`);
     total += text.length;
-    if (total > 65536) throw new Error("全部命令参数合计过大（>64KB）");
+    // ⛔ Windows CreateProcess 命令行上限 32767 字符：全部参数合计压到 20KB 以内，
+    //    否则「校验通过但 spawn 直接失败」——模型只能看到一条莫名的启动错误。
+    if (total > 20000) throw new Error("全部命令参数合计过大（>20KB，Windows 命令行上限）；请拆成多次调用");
     return { id, params };
   });
 }

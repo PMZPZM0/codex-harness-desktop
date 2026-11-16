@@ -2,12 +2,12 @@
  * Craft 全家桶（11-16，storytold/craft-launcher，MIT OR Apache-2.0）—— 开发工具里的三级结构：
  *
  *   层级 1（开发工具页）：一张「Craft 全家桶」卡；
- *   层级 2（本文件主视图）：Launcher 安装/更新/卸载 + 网关状态 + 18 个 App 的网格；
+ *   层级 2（本文件主视图）：Launcher 安装/更新/卸载 + 网关状态 + 19 个 App 的网格；
  *   层级 3（每个 App 一个弹窗）：用途 / 体积 / 来源 / 打开 Launcher 安装；
  *      PhotoCraft 那一层直接复用完整的 PhotoCraftCard（自己的工具 / MCP / GUI 入口都在）。
  *
  * ⛔ App 的安装与卸载由 Launcher 自己完成（它处理 UAC 与安装目录）；宿主只装 Launcher，
- *    不代装、不代卸 18 个创作 App。
+ *    不代装、不代卸 19 个创作 App。
  * ⛔ 11-16 实测：上游 v0.19.2 便携包里**没有** craft-ai-mcp 网关（代码只在 main 分支）
  *    ⇒ 网关状态如实显示「等待 Launcher 新版」，只有真的检测到二进制才允许写入 MCP 段。
  */
@@ -150,7 +150,7 @@ export function ArtCraftSuite(props: SuiteProps) {
                   : installing
                     ? "正在下载（约 11 MB，自动选最快的国内镜像并校验 SHA256）…"
                     : status?.installed
-                      ? `已安装${status.version ? ` ${status.version}` : ""}${sizeMb ? ` · ${sizeMb} MB` : ""}；用它安装 / 更新 / 打开 18 个创作 App`
+                      ? `已安装${status.version ? ` ${status.version}` : ""}${sizeMb ? ` · ${sizeMb} MB` : ""}；用它安装 / 更新 / 打开 19 个创作 App`
                       : "约 11 MB：Craft App Suite 的统一启动器（纯 Rust，MIT/Apache-2.0）；装它一次，其余 App 在它里面按需安装"}
               </small>
               {installing || uninstalling ? (
@@ -338,6 +338,7 @@ export function ArtCraftSuite(props: SuiteProps) {
                 <span className="runtime-copy">
                   <strong>安装与打开</strong>
                   <small>
+                    {status?.installed ? "" : "先关掉这层、在全家桶首页装好 ArtCraft Launcher；"}
                     {app.sizeMb ? `Windows x64 便携包约 ${app.sizeMb} MB · ` : "体积随版本 · "}
                     应用由 Launcher 下载安装（它自己处理安装目录与 UAC），这里只负责把 Launcher 打开。
                   </small>

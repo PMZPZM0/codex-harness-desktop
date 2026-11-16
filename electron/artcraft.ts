@@ -2,7 +2,7 @@
  * ArtCraft Launcher（11-16）—— Craft App Suite 的统一安装器 / 更新器
  * （storytold/craft-launcher，MIT OR Apache-2.0，纯 Rust 的 egui 程序）。
  *
- * 上游形态（11-16 实测）：Launcher 负责安装 / 更新 / 打开 18 个创作 App ——
+ * 上游形态（11-16 实测）：Launcher 负责安装 / 更新 / 打开 19 个创作 App（17 个官方 + 2 个社区）——
  * PhotoCraft（图像）、LightCraft（RAW）、FilmCraft（视频）、EffectCraft（动效）、AniCraft（2D 动画）、
  * VectorCraft（矢量）、FigCraft（界面 / 原型）、DesignCraft（版式）、DeckCraft（演示）、
  * WordCraft（文档）、GridCraft（表格）、PdfCraft（PDF）、CADCraft（CAD）、SoundCraft（音频）、

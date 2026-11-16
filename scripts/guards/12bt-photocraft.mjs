@@ -65,7 +65,21 @@ const MEDIA = "src/features/status/TurnMediaCards.tsx";
     "路径闸：可信根（会话目录 / userData）或 photocraft-io");
   ok(/输出不能与输入同一路径/.test(dom), "⛔ 输出不得覆盖输入（原图保护）");
   ok(/\^\[a-z\]\[a-zA-Z0-9_\.\]\{1,80\}\$/.test(dom), "命令 id 白名单正则");
-  ok(/length > 20/.test(dom) && /text\.length > 8192/.test(dom), "命令条数与参数大小上限");
+  ok(/length > 20/.test(dom) && /text\.length > 8192/.test(dom), "命令条数与单条参数上限");
+  ok(/total > 20000/.test(dom) && !/65536/.test(dom),
+    "全部参数合计 ≤20KB（Windows CreateProcess 命令行 32767 字符上限；⛔ 旧 64KB 会让 spawn 直接失败）");
+  /* 11-16：PhotoCraft 卡片收进 Craft 全家桶后，所有模型/用户可见文案必须指向新入口。 */
+  const staleEntryFiles = [
+    "electron/photocraft.ts",
+    "src/features/app-state/parts/part05/event-router/photocraft-tool.ts",
+    "src/features/app-state/parts/part08/01-seg.tsx",
+    "electron/developer-instructions.ts",
+    "electron/builtin-skills/33-skill-photocraft.ts",
+  ];
+  ok(staleEntryFiles.every((p) => !/开发工具 → PhotoCraft 图像编辑/.test(read(p))),
+    "入口文案无旧卡片路径残留（⛔ 不再指向已被撤销的独立卡）");
+  ok(/开发工具 → Craft 全家桶 → PhotoCraft/.test(read("src/features/app-state/parts/part08/01-seg.tsx")),
+    "工具描述写明新入口（Craft 全家桶 → PhotoCraft）");
   ok(/actions-\$\{Date\.now\(\)\}|batch-\$\{Date\.now\(\)\}/.test(dom) && /fs\.rm\(actionsFile/.test(dom),
     "批量动作文件写进 ioRoot 且用完即删");
   ok(/spawn\(cli, args, \{ windowsHide: true \}\)/.test(read(CORE)) && !/execSync\(/.test(codeOnly(read(CORE))) && !/shell:\s*true/.test(codeOnly(read(CORE))),

@@ -108,9 +108,11 @@ const DEVTOOLS = "src/features/settings-devtools/DevtoolsSettingsSection.tsx";
   ok(/等待 Launcher 新版/.test(suite), "网关未出货时如实显示等待状态（不假装可用）");
   const apps = read(APPS);
   const names = (apps.match(/name: "[^"]+"/g) || []).length;
-  ok(names >= 18, `App 目录覆盖套件（实到 ${names} 条）`);
+  ok(names >= 19, `App 目录覆盖套件（实到 ${names} 条；17 官方 + 2 社区 = 19）`);
   ok(/key: "photocraft"[\s\S]{0,600}?integrated: true/.test(apps), "目录标注 PhotoCraft 已接入");
   ok(/CRAFT_APPS\.find/.test(apps), "目录提供按 key 查找（层级 3 单一真相源）");
+  ok(/19 个创作 App/.test(devtools) && /19 个开源|19 个创作 App/.test(suite),
+    "界面文案与目录条数一致（19 个 = 17 官方 + 2 社区；⛔ 不是 18）");
   const groups = read("src/features/settings-devtools/runtime-groups.tsx");
   ok(/DEDICATED_IDS = \[[^\]]*"artcraft"/.test(groups), "专用卡片不重复进分类列表");
   const css = read("src/styles/12-settings-skills.css");

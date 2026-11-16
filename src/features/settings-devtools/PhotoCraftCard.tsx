@@ -1,5 +1,5 @@
 /**
- * PhotoCraft 图像编辑卡片（11-15，嵌在「设置 → 开发工具」，结构照 ApkStartCard / FileeCard）。
+ * PhotoCraft 图像编辑卡片（11-15，11-16 起挂在「开发工具 → Craft 全家桶 → PhotoCraft」三层弹窗的第三层，结构照 ApkStartCard / FileeCard）。
  *
  * 两步：装 PhotoCraft（GitHub release 便携包约 137MB，镜像序 + SHA256SUMS 校验）→ Codex 用
  * photocraft 工具调色/滤镜/转换/批量；装了以后还会写 `[mcp_servers.photocraft]`（roots 限 userData/photocraft-io），

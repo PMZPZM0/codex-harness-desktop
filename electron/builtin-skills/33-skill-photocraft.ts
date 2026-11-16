@@ -16,7 +16,7 @@ description: 专业图像后期（PhotoCraft，storytold/photocraft，MIT/Apache
 - 本应用按需下载官方便携包（约 137MB，镜像序 + SHA256SUMS 校验）；Windows 含 CLI + GUI，mac 版只随 CLI。
 
 ## 工具用法（\`photocraft\`）
-1. \`action="status"\`：看装没装、版本、CLI/GUI、MCP 段、体积。没装就引导用户去「设置 → 开发工具 → PhotoCraft 图像编辑」。
+1. \`action="status"\`：看装没装、版本、CLI/GUI、MCP 段、体积。没装就引导用户去「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」。
 2. \`action="commands"\` + \`filter\`：查命令 id（如 curves / levels / vibrance / unsharp / text / export）。
 3. \`action="run"\`：\`path\` 输入、\`out\` 输出（⛔ 必须不同，绝不覆盖原图）、\`commands=[{id,params}]\` 按序执行，最多 20 条。
 4. \`action="convert"\`：换格式（PNG/JPEG/WebP/PSD/TIFF…，可给 quality）。

@@ -265,7 +265,7 @@ export function openPhotoCraftGui(file?: string): { ok: boolean; error?: string 
   const gui = photocraftGuiPath();
   if (!gui) {
     if (process.platform === "darwin") return { ok: false, error: "mac 版只随 CLI；请从 getartcraft.com 安装 PhotoCraft App 后再试" };
-    return { ok: false, error: "PhotoCraft 还没安装：请到「设置 → 开发工具 → PhotoCraft 图像编辑」点安装" };
+    return { ok: false, error: "PhotoCraft 还没安装：请到「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」点安装" };
   }
   try {
     if (gui.endsWith(".app")) {
@@ -282,7 +282,7 @@ export function openPhotoCraftGui(file?: string): { ok: boolean; error?: string 
 /** 跑一次 CLI（参数数组；返回 stdout；非零带 stderr 尾部）。 */
 export async function runPhotoCraftCli(args: string[], timeoutMs = 180_000): Promise<{ stdout: string; stderr: string }> {
   const cli = photocraftCliPath();
-  if (!cli) throw new Error("PhotoCraft 还没安装：请到「设置 → 开发工具 → PhotoCraft 图像编辑」点安装（约 137MB）");
+  if (!cli) throw new Error("PhotoCraft 还没安装：请到「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」点安装（约 137MB）");
   return await new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";

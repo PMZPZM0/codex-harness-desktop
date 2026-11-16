@@ -4,7 +4,7 @@
  * 域：artcraft(3)
  * 通道：status / open / sync
  *
- * ⛔ Launcher 只负责装 App；宿主不代装、不代卸 18 个创作 App（避免绕过它自己的 UAC 与安装目录约定）。
+ * ⛔ Launcher 只负责装 App；宿主不代装、不代卸 19 个创作 App（避免绕过它自己的 UAC 与安装目录约定）。
  * ⛔ MCP 段 `[mcp_servers.ArtCraft]` 只在网关二进制存在时由 applyCustomModel 生成（见 electron/artcraft.ts）。
  *    sync = 网关刚出现时立刻重写 config.toml（引擎需重启才加载 MCP；卡片会提示）。
  */

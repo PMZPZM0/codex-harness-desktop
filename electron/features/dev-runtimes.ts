@@ -88,10 +88,10 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   //   CLI 给 Codex 工具 photocraft 调色/滤镜/格式/批量；GUI 供图片卡「在 PhotoCraft 中编辑」；
   //   MCP 连接器由 custom-model-apply 在已安装时生成（roots = userData/photocraft-io）。
   photocraft: { name: "PhotoCraft 图像编辑", description: "纯 Rust 重写的开源 Photoshop（storytold/photocraft，MIT/Apache-2.0）：图层 / 蒙版 / 调整层 / 图层样式 / 文字 / PSD 读写。给 Codex 提供 photocraft 工具做调色、锐化、格式转换与批量处理，并注册 MCP 连接器（500+ 命令可发现）；图片产物的「在 PhotoCraft 中编辑」也用它打开原生窗口。约 137MB 按需下载（镜像序 + SHA256 校验）；Windows 含 CLI+GUI，mac 版只随 CLI（GUI 请用官方 dmg）", size: "约 137 MB", marker: "photocraft" },
-  // Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：18 个纯 Rust 创作 App 的统一启动器。
+  // Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：19 个创作 App（17 官方 + 2 社区）的统一启动器。
   //   宿主只按需下载便携包（约 11MB）；App 的安装/更新/打开由 Launcher 自己完成。
   //   上游新版随包提供 craft-ai-mcp 网关后，custom-model-apply 会自动写 [mcp_servers.ArtCraft]。
-  artcraft: { name: "Craft 全家桶（ArtCraft Launcher）", description: "ArtCraft Launcher（storytold/craft-launcher，MIT/Apache-2.0）：统一安装 / 更新 / 打开 18 个纯 Rust 创作 App —— PhotoCraft 图像、LightCraft RAW、FilmCraft 视频、EffectCraft 动效、AniCraft 动画、VectorCraft 矢量、FigCraft 原型、DesignCraft 版式、DeckCraft 演示、WordCraft 文档、GridCraft 表格、PdfCraft PDF、CADCraft CAD、SoundCraft 音频、MaterialCraft 材质、TextureCraft 贴图、Craft Anything 与社区 App。约 11MB 按需下载（镜像序 + SHA256 校验）；应用本身由 Launcher 安装。上游新版提供 craft-ai-mcp 网关后，Codex 会经 [mcp_servers.ArtCraft] 一个入口驱动全部已装 App", size: "约 11 MB", marker: "artcraft-launcher\\version.txt" },
+  artcraft: { name: "Craft 全家桶（ArtCraft Launcher）", description: "ArtCraft Launcher（storytold/craft-launcher，MIT/Apache-2.0）：统一安装 / 更新 / 打开 19 个创作 App（17 个官方 + 2 个社区）—— PhotoCraft 图像、LightCraft RAW、FilmCraft 视频、EffectCraft 动效、AniCraft 动画、VectorCraft 矢量、FigCraft 原型、DesignCraft 版式、DeckCraft 演示、WordCraft 文档、GridCraft 表格、PdfCraft PDF、CADCraft CAD、SoundCraft 音频、MaterialCraft 材质、TextureCraft 贴图、Craft Anything 与社区 App。约 11MB 按需下载（镜像序 + SHA256 校验）；应用本身由 Launcher 安装。上游新版提供 craft-ai-mcp 网关后，Codex 会经 [mcp_servers.ArtCraft] 一个入口驱动全部已装 App", size: "约 11 MB", marker: "artcraft-launcher\\version.txt" },
   rea: { name: "REA 逆向分析", description: "逆向工程 MCP（morluto/rea，MIT）：拆解 Electron/JS 应用、.NET 程序集、网站、SQLite 的实现并给证据链；内置专家「洞见」专用，装完重启应用生效；npm 国内镜像下载，版本锁定在随包 Node 的兼容上限", size: "约 100 MB", marker: "npm-global\\node_modules\\rea-agents\\package.json" },
   // ⛔ 10-01 用户定稿：「50m 以内的工具都内置」—— 以下 7 项下载体积 ≤50MB，随包内置（builtIn），
   //    用户开箱即用、卡片显示「内置」徽标，不再进首启引导的下载清单。

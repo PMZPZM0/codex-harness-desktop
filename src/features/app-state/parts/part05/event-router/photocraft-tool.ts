@@ -13,7 +13,7 @@ export async function runPhotoCraftTool(rawArgs: Record<string, unknown>): Promi
     if (action === "status") {
       const st = await window.codex.photocraftStatus();
       if (!st?.installed) {
-        return { text: "PhotoCraft 还没安装：请到「设置 → 开发工具 → PhotoCraft 图像编辑」点安装（约 137MB，镜像序 + SHA256 校验；Windows 含 CLI+GUI）。", success: false };
+        return { text: "PhotoCraft 还没安装：请到「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」点安装（约 137MB，镜像序 + SHA256 校验；Windows 含 CLI+GUI）。", success: false };
       }
       const text = [
         `PhotoCraft：已安装${st.version ? ` v${st.version}` : ""} · ${Math.round(Number(st.sizeBytes ?? 0) / 1048576)} MB`,

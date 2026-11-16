@@ -137,7 +137,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
     { key: "feishu-cli", icon: <Bot size={15} />, title: "飞书 CLI", desc: "官方命令行（@larksuite/cli）：让 Codex 代你操作飞书", stat: "按需安装 · 需登录一次" },
     { key: "filee", icon: <Files size={15} />, title: "Filee 文件转换", desc: "244 种格式本地离线互转（图片/PDF/Office/电子书/音视频/归档），不需要 Office", stat: "按需安装 · 完全离线 · 可卸载" },
     { key: "apkstart", icon: <Gamepad2 size={15} />, title: "ApkStart 安卓运行器", desc: "本机运行 Android 应用：装 APK、独立窗口运行，Codex 可截图/读日志/adb 测试", stat: "按需安装 · 仅 Windows · 首启下运行时" },
-    { key: "artcraft", icon: <Palette size={15} />, title: "Craft 全家桶", desc: "18 个纯 Rust 创作 App：图像 / 矢量 / 视频 / 动效 / 音频 / 文档 / 表格 / PDF / CAD", stat: runtimeInstalling === "artcraft" ? "安装中…" : "按需安装 · 启动器约 11 MB · 应用按需装" },
+    { key: "artcraft", icon: <Palette size={15} />, title: "Craft 全家桶", desc: "19 个创作 App（17 官方 + 2 社区）：图像 / 矢量 / 视频 / 动效 / 音频 / 文档 / 表格 / PDF / CAD", stat: runtimeInstalling === "artcraft" ? "安装中…" : "按需安装 · 启动器约 11 MB · 应用按需装" },
     { key: "openmaic", icon: <GraduationCap size={15} />, title: "OpenMAIC 互动课堂", desc: "多智能体互动课堂：一句话生成带 AI 老师/同学、幻灯片、测验与互动模拟的课程", stat: "按需安装 · 本机构建 · 约 5GB" },
     { key: "husk", icon: <Smartphone size={15} />, title: "Husk（iPhone 跑 Android）", desc: "在 iPhone 上跑 Android 应用/游戏：下载官方 IPA，侧载后导入 APK 全屏运行", stat: "按需下载 · iOS 15.5+ · 约 142 MB" },
     { key: "openfilm", icon: <Film size={15} />, title: "OpenFilm 视频剪辑", desc: "第三方开源（MIT）：让 Codex 直接剪片，Studio 里手改", stat: "按需下载 · 国内镜像加速 · 可卸载" },
@@ -319,7 +319,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         </SettingsDialog>
       )}
       {openCard === "artcraft" && activeOtherCard && (
-        <SettingsDialog title={activeOtherCard.title} icon={<Palette size={15} />} hint="ArtCraft Launcher · 18 个开源创作 App · 一个网关驱动" size="lg" onClose={() => setOpenCard(null)}>
+        <SettingsDialog title={activeOtherCard.title} icon={<Palette size={15} />} hint="ArtCraft Launcher · 19 个创作 App · 一个网关驱动" size="lg" onClose={() => setOpenCard(null)}>
           {/* Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：
               层级 2 = 启动器与网关行 + App 网格；层级 3 = 点某个 App 再开一层弹窗。 */}
           <ArtCraftSuite setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />
