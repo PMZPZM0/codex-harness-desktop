@@ -1920,7 +1920,9 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
 .craft-app-copy strong { color: var(--text); font-size: 12px; font-weight: 600; }
 .craft-app-copy small { color: var(--muted); font-size: 10.5px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .craft-app-tag { margin-left: auto; flex: none; font-size: 10px; color: var(--link); }
+.craft-app-tag.is-installed { color: var(--green); }
 .craft-detail-desc { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.feishu-cli-cap-copy strong { line-height: 1.5; }
 @media (max-width: 1000px) {
   .craft-app-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

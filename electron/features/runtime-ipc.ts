@@ -1462,10 +1462,10 @@ export const runtimeFeature = defineFeature<null>({
         removePhotoCraftMcpSection();
         await restartServerWhenIdle(id);
       }
-      // Craft 全家桶（11-16）：卸载只删 Launcher 目录；同时摘掉 [mcp_servers.ArtCraft]（注册指向 Launcher 的网关）。
+      // Craft 全家桶（11-16）：卸载只删 Launcher 目录；同时摘掉每个已装 App 的独立 MCP 段。
       if (id === "artcraft") {
-        const { removeArtCraftMcpSection } = await import("../artcraft");
-        removeArtCraftMcpSection();
+        const { removeCraftAppMcpSections } = await import("../artcraft");
+        removeCraftAppMcpSections();
         await restartServerWhenIdle(id);
       }
       sendToWindow("runtime:progress", { id, message: "卸载完成", percent: 100, done: true });

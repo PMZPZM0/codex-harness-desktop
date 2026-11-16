@@ -1157,6 +1157,12 @@ contextBridge.exposeInMainWorld("codex", {
   mediaDeskEndpoint: () => __ipc("media-desk:endpoint", 0, []),
   /* 11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例） */
   mediaDeskPopout: () => __ipc("media-desk:popout", 0, []),
+  /* 11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线 */
+  mediaDeskVersion: () => __ipc("media-desk:version", 0, []),
+  /* 11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速） */
+  mediaDeskCheckUpdate: () => __ipc("media-desk:check-update", 0, []),
+  /* 11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源 */
+  mediaDeskUpdate: (input?: { version?: string }) => __ipc("media-desk:update", 0, [input]),
   /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
   listArtifactArchives: (workspace?: string) => __ipc("artifact:list", 0, [workspace]),
   /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */
@@ -1179,12 +1185,14 @@ contextBridge.exposeInMainWorld("codex", {
   photocraftCommands: (input: { filter?: string }) => __ipc("photocraft:commands", 1, [input]),
   /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
   photocraftOpen: (input: { path?: string }) => __ipc("photocraft:open", 1, [input]),
-  /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 网关是否就绪 / MCP 段是否写入 / 可复制的 Codex 配置片段 */
+  /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 已装 App 列表（Launcher 安装目录扫描 + exe 版本）/ 已写入的独立 MCP 名单 / 许可 */
   artcraftStatus: () => __ipc("artcraft:status", 0, []),
-  /* 11-16 打开 ArtCraft Launcher（18 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
+  /* 11-16 打开 ArtCraft Launcher（19 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
   artcraftOpen: () => __ipc("artcraft:open", 0, []),
-  /* 11-16 网关刚出现时立刻重写 config.toml（写入 [mcp_servers.ArtCraft]）；引擎需重启才加载 MCP */
+  /* 11-16 重新扫描已装 App 并重写 config.toml（每个 App 一条独立 [mcp_servers.<id>]）；引擎需重启才加载 */
   artcraftSync: () => __ipc("artcraft:sync", 0, []),
+  /* 11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入） */
+  artcraftRun: (input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }) => __ipc("artcraft:run", 1, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

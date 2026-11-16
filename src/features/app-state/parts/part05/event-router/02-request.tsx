@@ -18,6 +18,7 @@ import { applySketchDoc, requestSketchDoc, summarizeDoc, validateSketchDoc, wait
 import { ensureBossMemoryWorkspace } from "../../../../boss-group-view";
 import { refreshGroupMembers } from "../../../../boss-group-view";
 import { runPhotoCraftTool } from "./photocraft-tool";
+import { runCraftAppTool } from "./craft-app-tool";
 
 /** ⛔ 同一个 tool call 只执行一次（09-22 实测：一次 subagent_invoke 被渲染层执行 7 次 →
  *  7 个同名会话、每个约 1MB rollout、query 逐字相同 ⇒ 7 倍 token）。重复到达复用首次结果。 */
@@ -571,6 +572,13 @@ ${st.hint}`);
               } else if (event.params?.tool === "photocraft") {
                 /* PhotoCraft（11-15）：分发体拆到 ./photocraft-tool.ts，避免主路由继续膨胀。 */
                 const result = await runPhotoCraftTool(args as Record<string, unknown>);
+                await toolCallRespond.send(event.id!, {
+                  contentItems: [{ type: "inputText", text: result.text.slice(0, 60000) }],
+                  success: result.success,
+                });
+              } else if (typeof event.params?.tool === "string" && event.params.tool.startsWith("craft_")) {
+                /* Craft 全家桶（11-16）：每个已装 App 一个独立工具 craft_<id>（用户令「都单独」）。 */
+                const result = await runCraftAppTool(event.params.tool.slice("craft_".length), args as Record<string, unknown>);
                 await toolCallRespond.send(event.id!, {
                   contentItems: [{ type: "inputText", text: result.text.slice(0, 60000) }],
                   success: result.success,

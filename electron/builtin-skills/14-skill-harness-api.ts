@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（122 个能力域 / 708 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（122 个能力域 / 712 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -83,9 +83,9 @@ Husk（Leviidev/Husk，GPL-2.0，iPhone 上跑 Android）：翻译层 + QEMU 双
 PhotoCraft 图像编辑（11-15，storytold/photocraft，MIT/Apache-2.0）：纯 Rust 重写的开源 Photoshop（图层/蒙版/调整层/文字/PSD）。按需下载便携包（约 137MB，GitHub release 镜像序 + SHA256SUMS 校验），入口在「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」；Codex 用 photocraft 工具做调色/滤镜/格式转换/批量处理/命令发现，装了以后还会注册 [mcp_servers.photocraft] 连接器（roots 限 userData/photocraft-io）；图片卡可「在 PhotoCraft 中编辑」打开原生窗口
 通道：photocraft:status, photocraft:info, photocraft:convert, photocraft:run, photocraft:batch, photocraft:commands, photocraft:open
 
-### artcraft（3 通道）
+### artcraft（4 通道）
 Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：ArtCraft Launcher 统一安装/更新/打开 19 个创作 App（17 个官方 + 2 个社区：PhotoCraft 图像、LightCraft RAW、FilmCraft 视频、EffectCraft 动效、AniCraft 2D 动画、VectorCraft 矢量、FigCraft 原型、DesignCraft 版式、DeckCraft 演示、WordCraft 文档、GridCraft 表格、PdfCraft PDF、CADCraft CAD、SoundCraft 音频、MaterialCraft 材质、TextureCraft 贴图、Craft Anything、SolidCraft/MailCraft）。按需下载 Launcher 便携包（约 11MB，GitHub release 镜像序 + SHA256SUMS 校验），入口「设置 → 开发工具 → Craft 全家桶」，弹窗内逐 App 查看用途与来源。⚠️ 上游 v0.19.2 尚未随包提供 craft-ai-mcp 网关；网关出现后宿主会自动写 [mcp_servers.ArtCraft]（一个 MCP 入口覆盖全部已装 App，4 个工具：列 App / 找工具 / describe / call）
-通道：artcraft:status, artcraft:open, artcraft:sync
+通道：artcraft:status, artcraft:open, artcraft:sync, artcraft:run
 
 ### pet（20 通道）
 桌面宠物（官方 Codex 宠物格式：pet.json + 8×9 图集）：list 发现四目录宠物 / settings-get·set 开关与选择 / roots 目录清单 / open-dir / import 从只读目录导入用户区 / toggle·show·hide 显示控制。宠物本体渲染在独立透明置顶浮窗，宿主侧只做发现与设置
@@ -505,9 +505,9 @@ RPA 配方（录制好的桌面自动化流程）
 收藏夹（收藏消息/片段，一键再发送）
 通道：favorites:list, favorites:add, favorites:update, favorites:delete, favorites:touch, favorites:to-memory
 
-### media-desk（2 通道）
+### media-desk（5 通道）
 自媒体工作台（工作伙伴 → 自媒体工作台，独立窗口；11-11 从设置页挪出）：灵感墙（文字/链接，链接抓标题摘要封面）→ 一键成稿（计划、口播脚本、封面与黑白分镜）→ 本地排期 → 数据记录 → 写作风格。文本模型用工作台设置或应用当前供应商；生图走用户配置的 OpenAI 兼容 /images/generations。⛔ 排期只是本地计划、不自动发布；数据是手动记录，不接平台 API
-通道：media-desk:endpoint, media-desk:popout
+通道：media-desk:endpoint, media-desk:popout, media-desk:version, media-desk:check-update, media-desk:update
 
 ### artifact（1 通道）
 产物归档（11-11）：设置 → 数据 →「产物归档」按 artifacts/YYYYMMDD-任务短名/ 列出每次任务的成品，可一键在资源管理器打开目录。只读清单；归档动作由模型经 harness_tools 的 artifact_archive 完成（只复制不删原文件、同名自动 -r2 迭代、写 manifest 与总台账），历史散落文件用 scripts/artifacts-migrate.mjs 归位（默认 dry-run）

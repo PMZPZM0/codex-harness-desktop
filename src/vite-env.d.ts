@@ -1569,6 +1569,12 @@ interface Window {
     mediaDeskEndpoint(): Promise<string>;
     /* 11-11 用户令：入口挪到侧栏「工作伙伴」下面；开独立窗口（尺寸跟随主窗口，单例） */
     mediaDeskPopout(): Promise<{ ok: boolean; focused: boolean }>;
+    /* 11-16 自媒体工作台版本：current=生效版本（用户目录覆盖优先），bundled=随包基线 */
+    mediaDeskVersion(): Promise<{ current: string; bundled: string; overridden: boolean }>;
+    /* 11-16 查上游 dsh-media-desk 最新版（npm 官方 dist-tags，镜像只用于下载加速） */
+    mediaDeskCheckUpdate(): Promise<{ current: string; latest: string; hasUpdate: boolean; error?: string }>;
+    /* 11-16 下载并安装到 userData/media-desk-vendor/<version>，再重启本地服务；⛔ 不动随包资源 */
+    mediaDeskUpdate(input?: { version?: string }): Promise<{ ok: boolean; version?: string; endpoint?: string; error?: string }>;
     /* 11-11 产物归档：只读清单（按 日期-任务短名 分目录），设置页「产物归档」用它 */
     listArtifactArchives(workspace?: string): Promise<{ ok: boolean; rows?: Array<{ dir: string; task: string; at: number; source?: string; note?: string; path?: string; files: Array<{ name: string; from: string; bytes: number }> }>; error?: string }>;
     /* 11-15 设计参考库（VoltAgent/awesome-design-md，MIT，84 份品牌 DESIGN.md）：列表/搜索不带正文，设置页「设计参考」与工具 design_md 共用 */
@@ -1591,12 +1597,14 @@ interface Window {
     photocraftCommands(input: { filter?: string }): Promise<{ total: number; items: Array<{ id?: string; label?: string }>; raw?: string }>;
     /* 11-15 用 PhotoCraft 原生 GUI 打开一张图（图片卡「在 PhotoCraft 中编辑」；路径过可信根闸） */
     photocraftOpen(input: { path?: string }): Promise<{ ok: boolean; error?: string }>;
-    /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 网关是否就绪 / MCP 段是否写入 / 可复制的 Codex 配置片段 */
-    artcraftStatus(): Promise<{ installed: boolean; version: string; launcherPath: string; gatewayPath: string; gatewayReady: boolean; mcpRegistered: boolean; configSnippet: string; platform: string; sizeBytes: number; attribution: { license: string; home: string; apps: string } }>;
-    /* 11-16 打开 ArtCraft Launcher（18 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
+    /* 11-16 Craft 全家桶（storytold/craft-launcher，MIT/Apache-2.0）：Launcher 安装状态 / 已装 App 列表（Launcher 安装目录扫描 + exe 版本）/ 已写入的独立 MCP 名单 / 许可 */
+    artcraftStatus(): Promise<{ installed: boolean; version: string; launcherPath: string; platform: string; sizeBytes: number; installedApps: Array<{ id: string; name: string; dir: string; exePath: string; cliPath: string; version: string }>; mcpServers: string[]; attribution: { license: string; home: string; apps: string } }>;
+    /* 11-16 打开 ArtCraft Launcher（19 个创作 App 的安装/更新/打开由它自己完成；宿主不代装） */
     artcraftOpen(): Promise<{ ok: boolean; error?: string }>;
-    /* 11-16 网关刚出现时立刻重写 config.toml（写入 [mcp_servers.ArtCraft]）；引擎需重启才加载 MCP */
-    artcraftSync(): Promise<{ gatewayReady: boolean; mcpRegistered: boolean }>;
+    /* 11-16 重新扫描已装 App 并重写 config.toml（每个 App 一条独立 [mcp_servers.<id>]）；引擎需重启才加载 */
+    artcraftSync(): Promise<{ servers: string[] }>;
+    /* 11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入） */
+    artcraftRun(input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }): Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

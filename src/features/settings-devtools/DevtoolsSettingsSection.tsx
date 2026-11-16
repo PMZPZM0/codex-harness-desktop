@@ -319,7 +319,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         </SettingsDialog>
       )}
       {openCard === "artcraft" && activeOtherCard && (
-        <SettingsDialog title={activeOtherCard.title} icon={<Palette size={15} />} hint="ArtCraft Launcher · 19 个创作 App · 一个网关驱动" size="lg" onClose={() => setOpenCard(null)}>
+        <SettingsDialog title={activeOtherCard.title} icon={<Palette size={15} />} hint="ArtCraft Launcher · 19 个创作 App · 每个 App 独立工具" size="lg" onClose={() => setOpenCard(null)}>
           {/* Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：
               层级 2 = 启动器与网关行 + App 网格；层级 3 = 点某个 App 再开一层弹窗。 */}
           <ArtCraftSuite setNotice={setNotice} installDevRuntime={installDevRuntime} runtimeInstalling={runtimeInstalling} uninstallDevRuntime={uninstallDevRuntime} runtimeUninstalling={runtimeUninstalling} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} cancelDevRuntime={cancelDevRuntime} setRuntimeModal={setRuntimeModal} />

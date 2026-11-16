@@ -49,6 +49,37 @@ const DISPATCH_TOOL_DESC_FALLBACK =
  *       + 「把生成和编辑的 IPC 也彻底分开，不要混在一起」。）
  *  ⛔⛔ 每条 description 都必须写清 **适用场景 / 使用时机 / 职责** —— 模型就是靠它选对工具的。
  *      改这里等于改模型的行为，别只当成注释。 */
+/** Craft 全家桶（11-16）：每个已装且带无头 CLI 的 App 一个独立工具（用户令「跟 PhotoCraft 一样，都单独」）。
+ *  ⛔ 只有「Launcher 里真的装了」才注册；PhotoCraft 走它自己的 `photocraft` 工具，不在这里重复。 */
+type CraftInstalledApp = { id: string; name: string; cliPath: string; version: string };
+function craftToolDefs(status: { installedApps?: CraftInstalledApp[] } | null): Array<{ type: "function"; name: string; description: string; inputSchema: Record<string, unknown> }> {
+  const apps = Array.isArray(status?.installedApps)
+    ? status.installedApps.filter((app) => app?.id && app.id !== "photocraft" && app.cliPath)
+    : [];
+  return apps.map((app) => ({
+    type: "function",
+    name: `craft_${app.id}`,
+    description:
+      `调用已安装的 ${app.name}${app.version ? ` v${app.version}` : ""}（Craft 全家桶里的独立 App；每个 App 一个工具，便于区分）。`
+      + "action=status 查安装与路径；commands 发现引擎命令（可按 filter 收紧）；"
+      + "run 对一个文档按序执行命令并另存新文件（最多 20 条，commands=[{id,params}]）；"
+      + "convert 换格式（out 的扩展名决定格式）；info 读文档摘要（JSON）；open 用该 App 的原生窗口打开文件。"
+      + "⛔ 输出路径不能与输入相同（不覆盖原文件）；文件必须在会话工作目录或应用数据目录内。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["status", "commands", "info", "run", "convert", "open"] },
+        path: { type: "string", description: "输入文件（info / run / convert / open）" },
+        out: { type: "string", description: "输出文件（run / convert；⛔ 不能与 path 相同）" },
+        commands: { type: "array", description: "run 用：按序执行的命令（最多 20 条）", items: { type: "object", properties: { id: { type: "string", description: "命令 id（用 action=commands 查）" }, params: { type: "object", description: "命令参数（JSON 对象，≤8KB/条、合计 ≤20KB）" } }, required: ["id"] } },
+        filter: { type: "string", description: "commands 用：关键字过滤" },
+        quality: { type: "number", description: "convert 用：1~100" },
+      },
+      required: ["action"],
+    },
+  }));
+}
+
 function imageToolDefs(): any[] {
   return [
     {
@@ -509,6 +540,8 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
           required: ["state"],
         },
       }] : []),
+      /* Craft 全家桶（11-16）：每个已装 App 一个独立工具（只有装了才出现；执行端 artcraft:run）。 */
+      ...craftToolDefs(await Promise.resolve(window.codex.artcraftStatus?.()).catch(() => null)),
       /* ── 调度工具面（10-05 修正；⛔ 这里是「调度开关 → 生效工具」联动的**唯一**落点）──────
          ⛔⛔ 10-04 拍板「三类对象统一走内置 MCP」本身没错，但**引擎 0.157 改了工具面策略**：
             内置 MCP（harness-dispatch）的工具整批不进模型工具面。隔离复现（2026-10-05，

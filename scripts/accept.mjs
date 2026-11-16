@@ -1683,8 +1683,8 @@ const CHECKS = [
       await h.waitFor(`!!document.querySelector(".craft-app-grid")`, { label: "层级 2 弹窗", timeoutMs: 8000 });
       await wait(500);
 
-      const level2 = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return { hasLauncher: text.includes("安装 ArtCraft Launcher"), hasGateway: text.includes("Codex 网关"), hasOpen: text.includes("打开 Launcher"), tiles: document.querySelectorAll(".craft-app-tile").length }; })()`);
-      h.check("② 层级 2：启动器 / 网关 / 打开三行 + App 网格 ≥18", Boolean(level2) && level2.hasLauncher && level2.hasGateway && level2.hasOpen && level2.tiles >= 18, JSON.stringify(level2));
+      const level2 = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return { hasLauncher: text.includes("安装 ArtCraft Launcher"), hasTools: text.includes("Codex 工具（每个 App 独立）"), hasOpen: text.includes("打开 Launcher"), tiles: document.querySelectorAll(".craft-app-tile").length }; })()`);
+      h.check("② 层级 2：启动器 / 独立工具行 / 打开三行 + App 网格 ≥18", Boolean(level2) && level2.hasLauncher && level2.hasTools && level2.hasOpen && level2.tiles >= 18, JSON.stringify(level2));
 
       const film = await h.eval(`(function(){ const tiles=[...document.querySelectorAll(".craft-app-tile")]; const hit=tiles.find(function(t){ return (t.textContent||"").includes("FilmCraft"); }); if(!hit) return 0; hit.click(); return 1; })()`);
       h.check("③ 层级 2 能点开 FilmCraft", film === 1);
@@ -1703,16 +1703,43 @@ const CHECKS = [
       const back = await h.eval(`(function(){ return { dialogs: document.querySelectorAll(".settings-dialog").length, grid: document.querySelectorAll(".craft-app-grid").length }; })()`);
       h.check("⑦ 关掉层级 3 后回到层级 2", Boolean(back) && back.dialogs === 1 && back.grid === 1, JSON.stringify(back));
 
-      const status = await h.eval(`window.codex.artcraftStatus().then(function(s){ return { installed: !!s.installed, gatewayReady: !!s.gatewayReady, mcpRegistered: !!s.mcpRegistered, snippet: typeof s.configSnippet === "string", license: s?.attribution?.license || "" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
-      h.check("⑧ 状态通道返回安装态 / 网关态 / 配置片段 / 许可",
-        Boolean(status) && status.error === undefined && typeof status.installed === "boolean" && typeof status.gatewayReady === "boolean" && typeof status.mcpRegistered === "boolean" && status.snippet === true && status.license === "MIT OR Apache-2.0",
+      const status = await h.eval(`window.codex.artcraftStatus().then(function(s){ return { installed: !!s.installed, apps: Array.isArray(s.installedApps) ? s.installedApps.length : -1, servers: Array.isArray(s.mcpServers) ? s.mcpServers.length : -1, license: s?.attribution?.license || "" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
+      h.check("⑧ 状态通道返回安装态 / 已装 App 列表 / 独立 MCP 名单 / 许可",
+        Boolean(status) && status.error === undefined && typeof status.installed === "boolean" && status.apps >= 0 && status.servers >= 0 && status.license === "MIT OR Apache-2.0",
         JSON.stringify(status));
 
-      const sync = await h.eval(`window.codex.artcraftSync().then(function(s){ return { gatewayReady: typeof s.gatewayReady === "boolean", mcpRegistered: typeof s.mcpRegistered === "boolean" }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
-      h.check("⑨ sync 通道可用（返回布尔网关态与注册态）", Boolean(sync) && sync.error === undefined && sync.gatewayReady === true && sync.mcpRegistered === true, JSON.stringify(sync));
+      const sync = await h.eval(`window.codex.artcraftSync().then(function(s){ return { servers: Array.isArray(s.servers) ? s.servers.length : -1 }; }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
+      h.check("⑨ sync 通道可用（返回按 App 拆分的 MCP 名单）", Boolean(sync) && sync.error === undefined && sync.servers >= 0, JSON.stringify(sync));
 
-      const honest = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return /等待 Launcher 新版|就绪 · 待写入|已注册|安装后检测/.test(text); })()`);
-      h.check("⑩ 网关状态如实展示（等待 / 待写入 / 已注册 / 安装后检测）", honest === true);
+      const toolsRow = await h.eval(`(function(){ const d=document.querySelector(".settings-dialog"); const text=(d&&d.textContent)||""; return /Codex 工具（每个 App 独立）/.test(text) && /已接入 \\d+ 个|等待安装 App/.test(text); })()`);
+      h.check("⑩ 层级 2 有「Codex 工具（每个 App 独立）」并如实报数", toolsRow === true);
+
+      /* 11-16 联动：层级 3 必须反映「已安装 / 未安装」两态之一，按钮文案同步；
+         若本机已装过 App，层级 2 的磁贴要出现「已安装」，执行端 artcraft:run 能跑通。 */
+      const cad = await h.eval(`(function(){ const t=[...document.querySelectorAll(".craft-app-tile")].find(function(x){ return (x.textContent||"").includes("CADCraft"); }); if(!t) return 0; t.click(); return 1; })()`);
+      h.check("⑪ 层级 2 能点开 CADCraft", cad === 1);
+      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; return ds.length >= 2; })()`, { label: "CADCraft 层级 3", timeoutMs: 8000 });
+      await wait(600);
+      const cadInfo = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; const text=(d&&d.textContent)||""; return { state: /已安装/.test(text) ? "installed" : "missing", action: /在 Launcher 中打开/.test(text) ? "open" : (/在 Launcher 中安装/.test(text) ? "install" : "none"), tool: /Codex 工具（独立）/.test(text), features: (d.querySelectorAll(".feishu-cli-cap").length), steps: (d.querySelectorAll(".feishu-cli-guide-steps li").length) }; })()`);
+      h.check("⑫ 层级 3 有安装状态 / 动作按钮 / 独立工具行 / 能做什么 / 怎么用",
+        Boolean(cadInfo) && (cadInfo.state === "installed" || cadInfo.state === "missing") && cadInfo.action !== "none" && cadInfo.tool === true && cadInfo.features >= 2 && cadInfo.steps >= 3,
+        JSON.stringify(cadInfo));
+      await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
+      await wait(300);
+
+      const runnable = await h.eval(`window.codex.artcraftStatus().then(function(s){ var a=(s.installedApps||[]).filter(function(x){ return x.cliPath; })[0]; if(!a) return { skip: true }; return window.codex.artcraftRun({ app: a.id, action: "status" }).then(function(r){ return { app: a.id, ok: !!r.ok, text: (r.text||"").slice(0,80) }; }); }).catch(function(e){ return { error: String(e && e.message || e) }; })`);
+      if (runnable && runnable.skip) {
+        h.check("⑬ 独立工具执行端 artcraft:run（本机未装带 CLI 的 App，跳过）", true, "skip");
+      } else {
+        h.check("⑬ 独立工具执行端 artcraft:run 能跑通已装 App", Boolean(runnable) && runnable.error === undefined && runnable.ok === true, JSON.stringify(runnable).slice(0, 300));
+      }
+
+      if (status && status.apps > 0) {
+        const tag = await h.eval(`(function(){ return [...document.querySelectorAll(".craft-app-tile")].some(function(t){ return (t.textContent||"").includes("已安装"); }); })()`);
+        h.check("⑭ 已装 App 在网格上显示「已安装」", tag === true, `installedApps=${status.apps}`);
+      } else {
+        h.check("⑭ 已装 App 在网格上显示「已安装」（本机未装任何 App，跳过）", true, "installedApps=0");
+      }
 
       await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
       await wait(250);

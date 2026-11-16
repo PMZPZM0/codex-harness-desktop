@@ -1,15 +1,18 @@
 /**
  * 12bu-artcraft —— Craft 全家桶（ArtCraft Launcher）全链路守卫（11-16）。
  *
- * 用户令：「photocraft 是不是还有几个配套开源，看看 GitHub 仓库」→ 查明是 Craft App Suite（18 个 App），
- * 再令「可以做成 123 级弹窗，开发工具界面一个 Craft 全家桶，弹窗里细分到每个 App 一个弹窗」。
+ * 用户令：「photocraft 是不是还有几个配套开源」→ 查明是 Craft App Suite；
+ *   「可以做成 123 级弹窗，开发工具界面一个 Craft 全家桶，弹窗里细分到每个点击一个弹窗」；
+ *   「保留 ArtCraft Launcher 入口…安装后要做好联动，工具都拆开」。
  *
  * 钉住：
  *   ① 只从官方 GitHub release 下载 Launcher 便携包（镜像序 + SHA256SUMS 校验）；
- *   ② IPC 三条通道（status / open / sync）+ 生成物 / registry / 组合表齐全；
- *   ③ MCP 段 `[mcp_servers.ArtCraft]` **只在网关真存在时**才写（11-16 实测上游 v0.19.2 还没随包出货网关）；
- *   ④ 三级弹窗：开发工具一张卡 → App 网格 → 单 App 弹窗（PhotoCraft 那一层复用完整卡片）；
- *   ⑤ 卸载删启动器目录并摘掉 MCP 段；许可 MIT/Apache-2.0，不冒充 ArtCraft 官方。
+ *   ② IPC 四条通道（status / open / sync / run）+ 生成物 / registry / 组合表齐全；
+ *   ③ 工具按 App 拆开：每个已装 App 一条 `[mcp_servers.<id>]` + 独立工具 `craft_<id>`
+ *      （⛔ 不再是「一个网关覆盖全部」）；
+ *   ④ 联动：扫描 Launcher 安装目录得已装列表（含版本 / CLI），装完回来自动显示已安装并同步配置；
+ *   ⑤ 三级弹窗：卡 → App 网格 → 单 App 详情（与 PhotoCraft 同构、19 个 App 都有「能做什么」）；
+ *   ⑥ 卸载删启动器目录并摘掉所有 App MCP 段；许可 MIT/Apache-2.0，不冒充 ArtCraft 官方。
  *
  * ⛔ 独立守卫（不进 _ctx MODULES 计数），必须同时加进 package.json 的 check 链。
  */
@@ -30,6 +33,8 @@ const DOMAIN = "electron/features/artcraft-ipc.ts";
 const SUITE = "src/features/settings-devtools/ArtCraftSuite.tsx";
 const APPS = "src/features/settings-devtools/artcraft-apps.ts";
 const DEVTOOLS = "src/features/settings-devtools/DevtoolsSettingsSection.tsx";
+const TOOL = "src/features/app-state/parts/part08/01-seg.tsx";
+const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.tsx";
 
 /* ── ① 安装链 ─────────────────────────────────────────────── */
 {
@@ -49,51 +54,56 @@ const DEVTOOLS = "src/features/settings-devtools/DevtoolsSettingsSection.tsx";
   ok(/id === "artcraft"\)[\s\S]{0,400}?installArtCraftFromGitHub[\s\S]{0,200}?refreshConfigForGatewayTools/.test(rt),
     "安装分派接入 GitHub 直下型，装完重写 config");
   ok(/id === "artcraft"\) return artcraftInstalledVersion\(\)/.test(rt), "已装版本按 Launcher 的 version.txt 读");
-  ok(/id === "artcraft"\) \{[\s\S]{0,220}?removeArtCraftMcpSection\(\)[\s\S]{0,220}?restartServerWhenIdle/.test(rt),
-    "卸载后摘掉 MCP 段（不依赖 config 重建时序）并重启引擎");
+  ok(/id === "artcraft"\) \{[\s\S]{0,220}?removeCraftAppMcpSections\(\)[\s\S]{0,220}?restartServerWhenIdle/.test(rt),
+    "卸载后摘掉全部 App MCP 段（不依赖 config 重建时序）并重启引擎");
   const pkg = JSON.parse(read("package.json"));
   ok(!(pkg.build?.extraResources ?? []).some((entry) => JSON.stringify(entry).includes("artcraft")),
     "⛔ 不随包（第三方应用安装器：随包会把外部 App 分发塞进安装包，且 mac/linux 资产形态不同）");
 }
 
-/* ── ② IPC 域 ─────────────────────────────────────────────── */
+/* ── ② IPC 域（4 通道） ────────────────────────────────────── */
 {
   const dom = codeOnly(read(DOMAIN));
-  ok(["status", "open", "sync"].every((name) => dom.includes(`artcraft:${name}`)), "IPC 三条通道齐全（status/open/sync）");
-  ok(/gatewayReady: Boolean\(gateway\)/.test(dom) && /configSnippet: artcraftConfigSnippet\(\)/.test(dom),
-    "status 回报网关就绪 / MCP 段 / 配置片段");
-  ok(/if \(gatewayReady && !artcraftMcpRegistered\(\)\) await rewriteConfig\(\)/.test(dom),
-    "sync 只在「网关就绪且未写入」时重写 config（不空转）");
+  ok(["status", "open", "sync", "run"].every((name) => dom.includes(`artcraft:${name}`)), "IPC 四条通道齐全（status/open/sync/run）");
+  ok(/installedApps: await listInstalledCraftApps\(\)/.test(dom) && /mcpServers: craftAppMcpServers\(\)/.test(dom),
+    "status 下发已装 App 列表 + 已写入的独立 MCP 名单");
+  ok(/await rewriteConfig\(\);[\s\S]{0,120}?return \{ servers: craftAppMcpServers\(\) \}/.test(dom),
+    "sync 重写 config 并回报服务器名单");
+  ok(/isInsideOrEqualTrustedRoots/.test(dom) && /输出不能与输入同一路径/.test(dom), "run 的路径闸 + ⛔ 输出不覆盖输入");
+  ok(/total > 20000/.test(dom) && !/65536/.test(dom), "run 命令参数合计 ≤20KB（Windows 命令行上限）");
   ok(/await import\("\.\/custom-model-apply"\)/.test(dom), "重写走 applyCustomModel（MCP 段的唯一来源）");
   ok(!/restartServerWhenIdle/.test(dom), "⛔ sync 不擅自重启引擎（交给用户重启；卡片写明）");
   const preload = read("electron/preload.ts");
-  ok(["artcraftStatus", "artcraftOpen", "artcraftSync"].every((name) => preload.includes(`${name}:`)), "preload 桥已生成三个方法（跑过 gen:ipc）");
+  ok(["artcraftStatus", "artcraftOpen", "artcraftSync", "artcraftRun"].every((name) => preload.includes(`${name}:`)), "preload 桥已生成四个方法（跑过 gen:ipc）");
   const manifest = read("electron/ipc-channels.manifest.json");
-  ok((manifest.match(/"channel": "artcraft:/g) || []).length === 3, "manifest 三条通道");
+  ok((manifest.match(/"channel": "artcraft:/g) || []).length === 4, "manifest 四条通道");
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "artcraft", count: 3, status: "in-features"/.test(registry), "registry 记账（3 通道）");
+  ok(/\{ prefix: "artcraft", count: 4, status: "in-features"/.test(registry), "registry 记账（4 通道）");
   ok(/"id": "artcraft"[\s\S]{0,120}?"enabled": true/.test(read("electron/composition.json")), "组合表启用 artcraft 域");
   ok(/artcraft/.test(read("electron/builtin-skills/14-skill-harness-api.ts")), "能力清单技能已含 artcraft 域（跑过 gen:ipc）");
 }
 
-/* ── ③ 网关与 MCP 段（条件式） ─────────────────────────────── */
+/* ── ③ 按 App 拆分的 MCP 段（⛔ 不要统一网关） ─────────────── */
 {
   const core = codeOnly(read(CORE));
-  ok(/LOCALAPPDATA[\s\S]{0,160}?"ArtCraft", "mcp", "bin"/.test(core), "网关候选含 %LOCALAPPDATA%\\ArtCraft\\mcp\\bin");
-  ok(/export function craftAiMcpPath\(\)[\s\S]{0,240}?return "";/.test(core), "网关不存在时返回空（不假装就绪）");
-  ok(/if \(!snippet\) return \[\];/.test(core), "⛔ 网关不存在 ⇒ MCP 段整段不写");
-  ok(/mcp_servers\.\$\{ARTCRAFT_MCP_SERVER\}/.test(core), "MCP 段头用服务器名常量（单一来源）");
-  ok(/args = \["--stdio"\]/.test(core), "args 与上游 mcp_config.rs 一致（--stdio）");
-  ok(/startup_timeout_sec = 30/.test(core), "网关启动留 30s 超时");
-  ok(/name === "mcp_servers\.ArtCraft" \|\| name\.startsWith\("mcp_servers\.ArtCraft\."\)/.test(core), "卸载删除含子表的整段");
+  ok(/ProgramFiles[\s\S]{0,200}?"ArtCraft"/.test(core), "安装根扫描含 %ProgramFiles%\\ArtCraft");
+  ok(/function scanCraftAppDirs[\s\S]{0,1400}?cliPath: cli/.test(core), "扫描记录主程序 + *-cli.exe");
+  ok(/ARTCRAFT_EXE/.test(core) && /VersionInfo\.ProductVersion/.test(core),
+    "版本读 exe VERSIONINFO（路径经环境变量传入，⛔ 不进 PowerShell 源码）");
+  ok(/\[mcp_servers\.\$\{app\.id\}\]/.test(core), "每个已装 App 一条独立 [mcp_servers.<id>]");
+  ok(/'args = \["mcp"\]'/.test(core), "MCP 走该 App 自己的无头 CLI（mcp 子命令）");
+  ok(/artcraft-mcp-servers\.json/.test(core), "MCP 名单落账（删 App 后据此清旧段）");
+  ok(/export function removeCraftAppMcpSections/.test(core) && /server\.startsWith\(`\$\{id\}\.`\)/.test(core),
+    "卸载删除每个 App 的段（含子表）");
+  ok(!/mcp_servers\.ArtCraft|craft-ai-mcp|ARTCRAFT_MCP_SERVER/.test(core), "⛔ 不再有统一网关段（用户令：不容易区分）");
   const apply = read("electron/features/custom-model-apply.ts");
-  ok(/import \{[^}]*artcraftMcpSection[^}]*\} from "\.\.\/artcraft"/.test(apply) && /\.\.\.artcraftMcpSection\(\)/.test(apply),
-    "config 生成时拼入 ArtCraft 段（网关存在才非空）");
-  ok(/ARTCRAFT_MCP_SERVER, \.\.\.connectors/.test(apply) && /delete mcpOverrides\[ARTCRAFT_MCP_SERVER\]/.test(apply),
-    "ArtCraft 段登记为 harness 所属并清掉旧覆盖快照（卸载后不被当用户段复活）");
+  ok(/import \{ craftAppMcpPlan \} from "\.\.\/artcraft"/.test(apply) && /\.\.\.craftPlan\.sections/.test(apply),
+    "config 生成时拼入每个 App 的段（按安装状态增删）");
+  ok(/\.\.\.craftPlan\.servers, \.\.\.craftPlan\.previous/.test(apply) && /delete mcpOverrides\[server\]/.test(apply),
+    "App 段登记为 harness 所属并清掉旧覆盖快照（卸载后不复活）");
 }
 
-/* ── ④ 三级弹窗 UI ─────────────────────────────────────────── */
+/* ── ④ 三级弹窗 + 联动 ─────────────────────────────────────── */
 {
   const devtools = read(DEVTOOLS);
   ok(/key: "artcraft"/.test(devtools) && /title: "Craft 全家桶"/.test(devtools), "层级 1：开发工具页一张「Craft 全家桶」卡");
@@ -104,25 +114,46 @@ const DEVTOOLS = "src/features/settings-devtools/DevtoolsSettingsSection.tsx";
   ok(/craftAppByKey\(selectedApp\)/.test(suite) && /title=\{app\.name\}/.test(suite), "层级 3：点 App 再开一层弹窗");
   ok(/<PhotoCraftCard/.test(suite), "PhotoCraft 的层级 3 复用完整卡片（工具 / MCP / GUI 入口不丢）");
   ok(/RuntimeUpdateRow[\s\S]{0,200}?id="artcraft"/.test(suite), "层级 2 有独立更新行（GitHub 直下型）");
-  ok(/artcraftSync\(\)/.test(suite) && /复制配置/.test(suite), "网关就绪后给「写入配置 / 复制配置」");
-  ok(/等待 Launcher 新版/.test(suite), "网关未出货时如实显示等待状态（不假装可用）");
+  ok(/已安装/.test(suite) && /在 Launcher 中打开/.test(suite) && /在 Launcher 中安装/.test(suite),
+    "层级 3 真实反映已装状态（已安装 / 在 Launcher 中打开 / 安装）");
+  ok(/craft_\$\{app\.key|appToolId/.test(suite) && /Codex 工具（独立）/.test(suite), "层级 3 写明独立工具名（craft_<id>）");
+  ok(/setInterval[^]{0,400}?refresh/.test(suite) && /addEventListener\("focus"/.test(suite),
+    "弹窗开着轮询 + 回前台立刻刷新（装完有反馈）");
+  ok(/syncTools\(true\)/.test(suite) && /withCliKey !== writtenKey|withCliKey === writtenKey/.test(suite),
+    "已装名单变化时自动同步 MCP 配置（装/卸不用手点）");
   const apps = read(APPS);
   const names = (apps.match(/name: "[^"]+"/g) || []).length;
   ok(names >= 19, `App 目录覆盖套件（实到 ${names} 条；17 官方 + 2 社区 = 19）`);
   ok(/key: "photocraft"[\s\S]{0,600}?integrated: true/.test(apps), "目录标注 PhotoCraft 已接入");
-  ok(/CRAFT_APPS\.find/.test(apps), "目录提供按 key 查找（层级 3 单一真相源）");
+  ok(/CRAFT_APPS\.find/.test(apps) && /normalizeCraftKey/.test(apps), "目录提供按 key 查找 + id 归一化");
   ok(/19 个创作 App/.test(devtools) && /19 个开源|19 个创作 App/.test(suite),
     "界面文案与目录条数一致（19 个 = 17 官方 + 2 社区；⛔ 不是 18）");
+  ok((apps.match(/features: \[/g) || []).length >= 19 && !/features: \[\]/.test(apps),
+    "19 个 App 都带「能做什么」要点（详情页不再空白）");
+  ok(/installedByKey/.test(suite) && /item\.color/.test(suite), "网格用 Launcher 目录 id 与主题色（视觉一致）");
   const groups = read("src/features/settings-devtools/runtime-groups.tsx");
   ok(/DEDICATED_IDS = \[[^\]]*"artcraft"/.test(groups), "专用卡片不重复进分类列表");
   const css = read("src/styles/12-settings-skills.css");
   ok(/\.craft-app-grid \{/.test(css) && /\.craft-app-tile \{/.test(css), "App 网格样式在位（含窄屏降列）");
 }
 
-/* ── ⑤ 验收、文档与合规 ───────────────────────────────────── */
+/* ── ⑤ 独立工具接线（craft_<id>） ─────────────────────────── */
+{
+  const tool = codeOnly(read(TOOL));
+  ok(/function craftToolDefs/.test(tool) && /name: `craft_\$\{app\.id\}`/.test(tool), "每个已装 App 注册独立工具 craft_<id>");
+  ok(/artcraftStatus\?\.\(\)/.test(tool) && /cliPath/.test(tool), "只给「已装且有无头 CLI」的 App 注册");
+  ok(/app\.id !== "photocraft"/.test(tool), "⛔ PhotoCraft 不重复注册（它有自己的工具）");
+  const dispatch = codeOnly(read(DISPATCH));
+  ok(/tool\.startsWith\("craft_"\)/.test(dispatch) && /runCraftAppTool\(/.test(dispatch), "事件路由分派 craft_* → runCraftAppTool");
+  const helper = codeOnly(read("src/features/app-state/parts/part05/event-router/craft-app-tool.ts"));
+  ok(/window\.codex\.artcraftRun\(/.test(helper), "工具分发体接到 artcraft:run");
+}
+
+/* ── ⑥ 验收、文档与合规 ───────────────────────────────────── */
 {
   ok(/id: "artcraft"/.test(read("scripts/accept.mjs")), "验收项已登记（accept.mjs）");
   ok(/id: "photocraft"[\s\S]{0,900}?Craft 全家桶/.test(read("scripts/accept.mjs")), "PhotoCraft 验收已改走三级入口");
+  ok(/已安装|在 Launcher 中打开/.test(read("scripts/accept.mjs")), "验收覆盖安装联动文案");
   const notices = read("THIRD_PARTY_NOTICES.md");
   ok(/storytold\/craft-launcher/.test(notices) && /Apache-2\.0/.test(notices), "第三方声明登记来源与许可");
   ok(/不冒充/.test(notices), "声明不冒充 ArtCraft 官方");
