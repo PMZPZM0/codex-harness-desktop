@@ -352,7 +352,7 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - **MCP 连接器（P2）**：装了才写 `[mcp_servers.photocraft]`（headless CLI，`--no-gpu`，读/写根都限 `userData/photocraft-io`），由 `custom-model-apply` 统一生成（手写 config 会被它的 mcp_servers 重建逻辑清掉）。⛔ 引擎 0.157 会**延迟暴露 MCP 工具** ⇒ 主路径永远是上面的动态工具；MCP 只作高级命令面。卸载时重建 config（去掉该段）并重启引擎。
 - **GUI 编辑（P3）**：图片产物卡右上角「在 PhotoCraft 中编辑」→ `photocraft:open` 启动官方 GUI（mac 若只装了 CLI 会提示去装 App）。⛔ 不嵌入 Electron、不重写它的界面。
 - ⛔ **许可/边界**：只下载官方发行物；解压出的 LICENSE/NOTICE/OFL 原样保留；不冒充 ArtCraft 官方。项目 early alpha：命令 id 与参数随版本变化，装的是固定版本，升级走卡片「更新」行。
-- 判据：守卫 **`12bt-photocraft`（48 条：安装链 / 可信路径 / 不覆盖原图 / 命令白名单 / MCP 段 / 工具+指令+技能+卡片 / 图片入口 / 许可）** + 验收 **`photocraft`（卡片与工具状态 / 路径越界拒绝）**。⚠️ 11-16 起它的入口在「开发工具 → Craft 全家桶 → PhotoCraft」三层弹窗里（见下节），独立卡片已撤销。
+- 判据：守卫 **`12bt-photocraft`（51 条：安装链 / 可信路径 / 不覆盖原图 / 命令白名单 / 参数合计上限 / 新入口文案 / MCP 段 / 工具+指令+技能+卡片 / 图片入口 / 许可）** + 验收 **`photocraft`（三级入口 / 卡片与工具状态 / 路径越界拒绝）**。⚠️ 11-16 起它的入口在「开发工具 → Craft 全家桶 → PhotoCraft」三层弹窗里（见下节），独立卡片已撤销。
 
 ### 🧰 Craft 全家桶（`electron/artcraft.ts` + `features/artcraft-ipc.ts` + `src/features/settings-devtools/ArtCraftSuite.tsx`，11-16 立）
 
@@ -362,7 +362,7 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - **宿主只装 Launcher**（约 11MB portable zip：镜像序 + SHA256SUMS → `tools/artcraft-launcher/`，`GITHUB_UPDATEABLE.artcraft`，仅 win32）：19 个 App 的安装/卸载交给 Launcher 自己（UAC 与安装目录由它处理），⛔ 不代装不代卸；mac 是 `.app` ⇒ 不代装，只给官网指引。虽 <50MB 仍按需下载：它是第三方**应用分发器**，随包等于把外部 App 分发塞进安装包，且 mac/linux 资产形态不同。
 - ⛔⛔ **网关尚未随上游出货**（11-16 实测 v0.19.2 便携包只有 `launcher.exe`；exe 里没有 `craft-ai-mcp` / `apps.json` / `allowed(` 字样；网关与「AI 可用哪些 App」同意表只在 main 分支）。⇒ `[mcp_servers.ArtCraft]`（上游 `mcp_config.rs` 同款：`command = <gateway>` + `args = ["--stdio"]`）**只在网关二进制真存在时**才写（`craftAiMcpPath()` 查 `%LOCALAPPDATA%\ArtCraft\mcp\bin` 与 portable 三个变体）；不存在就整段不写，卡片如实显示「等待 Launcher 新版」。上游发版后 `artcraft:sync` 或下次启动自动点亮，**零改代码**。
 - `ArtCraft` 段登记为 harness 所属（`ownedMcpServers` + 清 override），卸载删段并重启引擎；`sync` 不擅自重启（卡片提示用户重启）。⛔ 不冒充 ArtCraft 官方。
-- 判据：守卫 **`12bu-artcraft`（52 条：安装链 / 三通道 / 网关条件式 MCP / 三级弹窗 / 许可）** + 验收 **`artcraft`（三级弹窗真点 / 状态与 sync 通道 / 网关状态如实展示）**。
+- 判据：守卫 **`12bu-artcraft`（53 条：安装链 / 三通道 / 网关条件式 MCP / 三级弹窗 / 目录与文案条数一致 / 许可）** + 验收 **`artcraft`（三级弹窗真点 / 状态与 sync 通道 / 网关状态如实展示）**。
 
 ### 🧑‍🤝‍🧑 工作伙伴群编排（抄 Pachat 的「先读再说 + 按需唤醒」，11-14，守卫 11f/12be/09）
 
