@@ -167,6 +167,7 @@ import { SidebarGuideModal, type SidebarGuideKey, type SidebarGuideTarget } from
 import { LoginManagerModal, type LoginManagerTarget } from "./LoginManagerModal";
 import { NewProjectDialog } from "./NewProjectDialog";
 import { UpdateReadyToast } from "./UpdateReadyToast";
+import { UpdateFlowBanner } from "./UpdateFlowBanner";
 import { useEscapeLayer } from "../../../hooks/useEscapeLayer";
 
 /** 项目「⋯」按钮矩形：项目改名/删除气泡贴着**项目行**弹（⛔ 不用菜单项位置，否则飘在侧栏中间）。 */
@@ -1149,6 +1150,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         onRestartInstall={() => void restartAndInstall()}
       />
     ) : null}
+    {/* 11-16 更新流程进度条 / 安装遮罩：自订阅主进程的 updates:download-state。 */}
+    <UpdateFlowBanner />
     {/* ⛔ 10-13 关闭确认弹窗（应用内卡片，替代原生系统框）：自包含组件（自己订阅
         close-confirm:ask / 自己回包），主进程关窗守卫 preventDefault 后推事件到这里。 */}
     {/* 工作区外文件预览的授权确认（10-18，应用内模态；⛔ 不用系统弹窗） */}

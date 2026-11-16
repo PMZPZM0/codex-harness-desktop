@@ -2871,6 +2871,36 @@ const CHECKS = [
       await h.pressKey("Escape").catch(() => undefined);
     },
   },
+  {
+    id: "update-flow-banner",
+    name: "更新：常驻下载进度条 + 安装遮罩（11-16）",
+    run: async (h) => {
+      await h.waitFor(`!!document.querySelector(".app-shell") && !!document.querySelector(".sidebar-settings")`, { label: "主界面侧栏", timeoutMs: 12000 });
+      await wait(900);
+      await h.eval(`(function(){ window.dispatchEvent(new CustomEvent("harness:update-state",{detail:{active:true,phase:"download",percent:0.42,receivedBytes:21*1024*1024,totalBytes:50*1024*1024,version:"9.9.9"}})); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".update-flow-banner")`, { label: "下载进度条", timeoutMs: 5000 });
+      const bar = await h.eval(`(function(){
+        const el=document.querySelector(".update-flow-banner");
+        const fill=el?.querySelector(".update-progress-fill");
+        return {
+          text:(el?.textContent||""),
+          width: fill ? parseFloat(getComputedStyle(fill).width) : -1,
+          track: fill?.parentElement ? parseFloat(getComputedStyle(fill.parentElement).width) : -1,
+        };
+      })()`);
+      h.check("① 下载中显示常驻进度条（版本 / 42% / 字节数）",
+        /9\.9\.9/.test(bar.text) && /42%/.test(bar.text) && /MB/.test(bar.text), JSON.stringify(bar));
+      h.check("② 进度条按真实比例填充", bar.width > 0 && bar.track > 0 && bar.width <= bar.track + 1, JSON.stringify(bar));
+      await h.eval(`(function(){ window.dispatchEvent(new CustomEvent("harness:update-state",{detail:{active:true,phase:"installing",percent:1,version:"9.9.9"}})); return 1; })()`);
+      await h.waitFor(`!!document.querySelector(".update-install-overlay")`, { label: "安装遮罩", timeoutMs: 5000 });
+      const overlay = await h.eval(`document.querySelector(".update-install-overlay")?.textContent||""`);
+      h.check("③ 安装阶段显示全屏遮罩与「正在安装更新」", /正在安装更新/.test(overlay) && /9\.9\.9/.test(overlay), overlay);
+      await h.eval(`(function(){ window.dispatchEvent(new CustomEvent("harness:update-state",{detail:{active:false,phase:"download",percent:0}})); return 1; })()`);
+      await wait(300);
+      const cleared = await h.eval(`!document.querySelector(".update-flow-banner") && !document.querySelector(".update-install-overlay")`);
+      h.check("④ 结束/完成后自动收起", cleared === true);
+    },
+  },
 ];
 
 

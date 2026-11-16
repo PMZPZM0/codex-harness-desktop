@@ -1271,6 +1271,10 @@ onConnectorOAuth: (listener: (event: unknown) => void) =>
   updateOnReady: (callback: (info: { version?: string; path?: string }) => void) => {
     __on("updates:ready", callback, (callback) => (_event: unknown, payload: { version?: string; path?: string }) => callback(payload ?? {}));
   },
+  /* 11-16：更新流程状态（静默下载进度 / 正在安装）—— 常驻进度条与安装遮罩的数据源。 */
+  updateOnState: (callback: (state: { active: boolean; phase: "download" | "installing"; percent: number; receivedBytes?: number; totalBytes?: number; version?: string }) => void) => {
+    __on("updates:download-state", callback, (callback) => (_event: unknown, payload: any) => callback(payload ?? {}));
+  },
 onSshData: (listener: (payload: { data: string }) => void) =>
     __on("ssh:data", listener, (listener) => (_event: Electron.IpcRendererEvent, payload: { data: string }) => listener(payload)),
 onSshExit: (listener: (payload: { code?: number; signal?: string; error?: string }) => void) =>

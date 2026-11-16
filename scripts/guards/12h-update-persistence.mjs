@@ -221,9 +221,9 @@ console.log(JSON.stringify(out));
 {
   const upd = readFileSync(join(ROOT, "src/features/app-state/parts/part02/03-thread-switch-update/02-update-ui-settings.tsx"), "utf8");
   const gate = upd.slice(upd.indexOf("const autoInstallBlockedBy"), upd.indexOf("bag.autoInstallBlockedBy"));
-  ok(/localStorage\.getItem\("auto-install-update-v1"\) !== "0"/.test(upd)
-    && /catch \{ return true; \}/.test(upd.slice(upd.indexOf("autoInstallUpdate"), upd.indexOf("autoInstallUpdate") + 600)),
-    "自动安装**默认开**（localStorage 缺省即 true，只有显式写过 \"0\" 才是关）");
+  ok(/localStorage\.getItem\("auto-install-update-v1"\) === "1"/.test(upd)
+    && /catch \{ return false; \}/.test(upd.slice(upd.indexOf("autoInstallUpdate"), upd.indexOf("autoInstallUpdate") + 600)),
+    "自动安装**默认关**（11-16 用户实测界面被自动关掉；只有显式写过 \"1\" 才自动装）");
   ok(gate.length > 0
     && /bag\.autoInstallUpdate/.test(gate) && /bag\.updateReady/.test(gate)
     && /runningThreadIdsRef\.current\.size > 0/.test(gate) && /bag\.activeTurnId/.test(gate)
@@ -241,7 +241,32 @@ console.log(JSON.stringify(out));
     "提示条如实说明「将自动安装并重启、不用你操作」（不是继续让用户点）");
   const shell = readFileSync(join(ROOT, "src/features/app-view/AppView/01-sidebar-shell.tsx"), "utf8");
   ok(/aria-label="自动安装更新"/.test(shell) && /setAutoInstallUpdate\(true\)/.test(shell) && /setAutoInstallUpdate\(false\)/.test(shell),
-    "设置 →「检查更新」面板里有自动/手动开关（默认自动，可退回手动确认）");
+    "设置 →「检查更新」面板里有自动/手动开关（默认手动，可显式开启自动）");
+
+  /* ── 11-16 更新进度条 / 安装遮罩 / 失败防循环 ─────────────────────────── */
+  const ipc = readFileSync(join(ROOT, "electron/features/updates-ipc.ts"), "utf8");
+  const preload = readFileSync(join(ROOT, "electron/preload.ts"), "utf8");
+  const banner = readFileSync(join(ROOT, "src/features/app-view/AppView/UpdateFlowBanner.tsx"), "utf8");
+  const updateCss = readFileSync(join(ROOT, "src/styles/37-update-ready.css"), "utf8");
+  ok(ipc.includes("update-install-pending.json") && ipc.includes("pendingInstallState")
+    && ipc.includes("pendingInstall:") && ipc.includes("clearPendingInstall")
+    && ipc.includes("writePendingInstall(targetVersion)"),
+    "安装前落 pending 标记；启动时版本没变 ⇒ 报「上次安装失败」（停止每次开机自动退出）");
+  ok(ipc.includes('sendToWindow("updates:download-state"')
+    && /phase: "download"/.test(ipc) && /phase: "installing"/.test(ipc)
+    && ipc.includes("pushState") && ipc.includes("receivedBytes: info.receivedBytes"),
+    "静默下载推真实进度（百分比 + 字节数），安装开始也推 installing 状态");
+  ok(preload.includes("updateOnState") && preload.includes('"updates:download-state"'),
+    "preload 暴露 updateOnState（渲染层能订阅更新流程状态）");
+  ok(banner.includes("harness:update-state") && banner.includes("update-install-overlay")
+    && banner.includes("正在下载更新") && banner.includes("正在安装更新"),
+    "常驻进度条 + 安装遮罩组件存在（含验收用的本地事件口）");
+  ok(shell.includes("<UpdateFlowBanner />"), "主界面挂载 UpdateFlowBanner（不开设置页也能看到）");
+  ok(updateCss.includes(".update-flow-banner") && updateCss.includes(".update-install-overlay"),
+    "进度条与安装遮罩有样式（覆盖 hover 才显形的旧进度条规则）");
+  ok(upd.includes("harness:update-install-failed") && upd.includes("上次安装未完成")
+    && upd.includes("setAutoInstallUpdate(false)"),
+    "安装失败后暂停自动安装并明确告知（不再「启动→下载→退出」循环）");
 }
 
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

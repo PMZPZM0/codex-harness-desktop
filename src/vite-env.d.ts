@@ -1807,6 +1807,8 @@ interface Window {
      * ⛔ 与设置页无关 —— 用户可能压根没打开设置页，只能靠事件弹窗。
      */
     updateOnReady(callback: (info: { version?: string; path?: string }) => void): () => void;
+    /* 11-16：更新流程状态（静默下载进度 / 正在安装） */
+    updateOnState(callback: (state: { active: boolean; phase: "download" | "installing"; percent: number; receivedBytes?: number; totalBytes?: number; version?: string }) => void): () => void;
   };
 }
 

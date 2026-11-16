@@ -290,6 +290,14 @@ bag.accountMenuRef = accountMenuRef as typeof bag.accountMenuRef;
         if (cancelled || !r?.ok) return;
         bag.setUpdateInfo(r.info ?? null);
         bag.setUpdateCurrentVersion(r.currentVersion ?? "");
+        /* 11-16：上次「重启安装」后版本没变 ⇒ 安装没成功。通知更新状态机暂停自动安装，
+           避免每次开机都自动退出、看起来像闪退循环。 */
+        const pending = (r as unknown as { pendingInstall?: { failed?: boolean; version?: string } }).pendingInstall;
+        if (pending?.failed) {
+          window.dispatchEvent(new CustomEvent("harness:update-install-failed", {
+            detail: { version: String(pending.version ?? "") },
+          }));
+        }
         if (r.info?.hasUpdate) {
           bag.setUpdateNotice({ version: r.info.version, changelog: r.info.changelog, size: r.info.size, mandatory: r.info.mandatory });
         }

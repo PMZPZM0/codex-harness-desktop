@@ -20,7 +20,7 @@
  */
 import { app, shell } from "electron";
 import path from "node:path";
-import { statSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
@@ -70,6 +70,43 @@ export const updatesFeature = defineFeature<null>({
     /** 10-12：静默下载并发闸（重复触发时不重复下几百 MB）。 */
     let silentDownloading = false;
 
+    /* ══════════════════════════════════════════════════════════════════════
+     * 11-16 「启动就闪退、反反复复」的防线：安装前先落一个 pending 标记，
+     * 下次启动若版本没变（安装没成功）就告诉渲染层「上次没装成」，
+     * 渲染层据此暂停自动安装，避免每次开机都「下载 → 退出 → 再退出」死循环。
+     * ⛔ 路径惰性取（本域早于 app.setPath("userData") 注册）。
+     * ══════════════════════════════════════════════════════════════════════ */
+    const pendingFile = () => path.join(app.getPath("userData"), "update-install-pending.json");
+    const readPendingInstall = (): { version: string; at: number } | null => {
+      try {
+        const raw = JSON.parse(readFileSync(pendingFile(), "utf8"));
+        const version = String(raw?.version ?? "").trim();
+        if (!version) return null;
+        return { version, at: Number(raw?.at ?? 0) };
+      } catch { return null; }
+    };
+    const writePendingInstall = (version: string): void => {
+      if (!version) return;
+      try {
+        mkdirSync(path.dirname(pendingFile()), { recursive: true });
+        writeFileSync(pendingFile(), JSON.stringify({ version, at: Date.now() }), "utf8");
+      } catch { /* 写不了就退化为旧行为（不加锁也不会更糟） */ }
+    };
+    const clearPendingInstall = (): void => {
+      try { rmSync(pendingFile(), { force: true }); } catch { /* 忽略 */ }
+    };
+    /** 启动时判定：装成功了（版本已变）或标记过期就清掉；还停在旧版本 = 上次安装失败。 */
+    const pendingInstallState = (): { version: string; at: number; failed: boolean } | null => {
+      const pending = readPendingInstall();
+      if (!pending) return null;
+      const current = String(app.getVersion() || "0.0.0");
+      if (pending.version === current || Date.now() - pending.at > 30 * 60_000) {
+        clearPendingInstall();
+        return null;
+      }
+      return { ...pending, failed: true };
+    };
+
     /** 10-25 差分优先：Windows 且有版本信息时先走 electron-updater；
      *  任何失败（无 latest.yml / 无 blockmap / 镜像挂 / 校验失败）都返回 null，
      *  调用方继续原有的完整包下载。 */
@@ -98,7 +135,7 @@ export const updatesFeature = defineFeature<null>({
         // ⛔ 09-15 用户定稿：更新源只剩 GitHub Releases（发布站不再分发安装包）
         const info = await checkLatestUpdate(currentVersion, process.platform, process.arch);
         lastUpdateInfo = info ? { downloadUrl: (info as any).downloadUrl, sha256: (info as any).sha256, version: (info as any).version, tag: (info as any).tag, filename: (info as any).filename } : null;
-        return { ok: true, info, currentVersion, channel: UPDATE_CHANNEL, source: "github" as const };
+        return { ok: true, info, currentVersion, channel: UPDATE_CHANNEL, source: "github" as const, pendingInstall: pendingInstallState() };
       } catch (err: any) {
         return { ok: false, error: err?.message || String(err) };
       }
@@ -194,22 +231,40 @@ export const updatesFeature = defineFeature<null>({
       }
       const url = lastUpdateInfo?.downloadUrl;
       if (!url) return { ok: false, error: "no_update" };
+      const version = lastUpdateInfo?.version ?? "";
+      /* 11-16 用户令「做一个更新进度条」：静默下载原本一个进度事件都不推，
+         用户只看到界面突然关闭。现在把下载百分比/字节数推给渲染层做常驻进度条。 */
+      let lastPct = -1;
+      const pushState = (info: { receivedBytes: number; totalBytes: number; percent: number }) => {
+        const percent = Math.max(0, Math.min(1, Number(info.percent) || 0));
+        const pct = Math.round(percent * 100);
+        if (pct === lastPct) return;
+        lastPct = pct;
+        sendToWindow("updates:download-state", {
+          active: true, phase: "download", percent,
+          receivedBytes: info.receivedBytes, totalBytes: info.totalBytes, version,
+        });
+      };
+      sendToWindow("updates:download-state", { active: true, phase: "download", percent: 0, version });
       silentDownloading = true;
       try {
         // 10-25 差分优先；失败继续走下面的完整包
-        const differential = await tryDifferential(input?.mode);
+        const differential = await tryDifferential(input?.mode, pushState);
         if (differential) {
+          sendToWindow("updates:download-state", { active: false, phase: "download", percent: 1, version });
           sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: differential.path });
           return { ok: true, version: lastUpdateInfo?.version, path: differential.path, differential: true };
         }
         const dir = defaultDownloadDir(app.getPath("downloads"));
         const safeName = String(lastUpdateInfo?.filename || "codex-harness-update.bin").replace(/[\\/:*?"<>|]/g, "_");
-        const info = await downloadUpdate(url, path.join(dir, safeName), undefined, lastUpdateInfo?.sha256);
+        const info = await downloadUpdate(url, path.join(dir, safeName), pushState, lastUpdateInfo?.sha256);
         lastVerifiedUpdatePath = info.path;
+        sendToWindow("updates:download-state", { active: false, phase: "download", percent: 1, version });
         // ⛔ 主动推一条事件：渲染层可能没打开设置页，只能靠事件弹窗（需求 3）。
         sendToWindow("updates:ready", { version: lastUpdateInfo?.version, path: info.path });
         return { ok: true, version: lastUpdateInfo?.version, path: info.path, differential: false };
       } catch (err: any) {
+        sendToWindow("updates:download-state", { active: false, phase: "download", percent: 0, version });
         return { ok: false, error: err?.message || String(err) };
       } finally {
         silentDownloading = false;
@@ -236,6 +291,10 @@ export const updatesFeature = defineFeature<null>({
       }
       /* ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。 */
       await new Promise((r) => setTimeout(r, 120));
+      const targetVersion = String(lastUpdateInfo?.version ?? "");
+      /* 安装窗口：渲染层据此显示「正在安装更新，应用即将重启」全屏遮罩。 */
+      writePendingInstall(targetVersion);
+      sendToWindow("updates:download-state", { active: true, phase: "installing", percent: 1, version: targetVersion });
       // ① 差分就绪：交给 updater 静默装 + 自启（它会自己 quit，⛔ 这里不许再 app.quit()）。
       if (hasPendingDifferential()) {
         try {
@@ -260,6 +319,9 @@ export const updatesFeature = defineFeature<null>({
         app.quit();
         return { ok: true, via: "installer" };
       } catch (err: any) {
+        /* 安装没起来：清掉 pending 标记并收起遮罩，否则下次启动会误判「上次安装失败」。 */
+        clearPendingInstall();
+        sendToWindow("updates:download-state", { active: false, phase: "installing", percent: 0, version: targetVersion });
         return { ok: false, error: err?.message || String(err) };
       }
     });

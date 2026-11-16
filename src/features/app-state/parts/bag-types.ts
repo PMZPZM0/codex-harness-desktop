@@ -693,6 +693,9 @@ export interface Bag {
   setUpdateReadyVersion: React.Dispatch<React.SetStateAction<string>>;
   updateRestarting: boolean;
   setUpdateRestarting: React.Dispatch<React.SetStateAction<boolean>>;
+  /** 11-16：上次「重启安装」后版本没变（安装失败）⇒ 暂停自动安装，避免开机-退出循环。 */
+  updateInstallFailed: string;
+  setUpdateInstallFailed: React.Dispatch<React.SetStateAction<string>>;
   /** 用户「取消」时记下压住的是**哪个版本**（换版本仍会重新弹）。 */
   dismissedVersionRef: React.RefObject<string>;
   armUpdateReady: (version?: string|undefined) => void;

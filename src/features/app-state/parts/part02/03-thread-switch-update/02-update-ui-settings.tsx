@@ -42,13 +42,11 @@ export function usePart02c2(bag: Bag) {
 
   /* ══════════════════════════════════════════════════════════════════════
    * 11-15 用户令：「把差分更新做成自动化的，不需要点，自动安装，自动重启」。
-   *   · 默认**开**（与 `update-mode-v1` 同一种落点：localStorage，缺省即开）；
-   *   · 关掉后退回旧行为（提示条「重启安装」手动确认）；
-   *   · 自动重启的判据**五条同时成立**，缺一条都不许动 —— 见下方 autoInstallNow()。
-   * ⛔ 为什么不用 app-settings：这条开关与 `updateMode` 同域同寿命，放一起才不会再长第二份真相源。
+   * ⛔ 11-16 改默认：用户实测「更新的时候应用界面关了，启动还闪退」——
+   *   自动安装默认改为**关**（手动确认「重启安装」）；显式开过的用户保持开启。
    * ══════════════════════════════════════════════════════════════════════ */
   const [autoInstallUpdate, setAutoInstallUpdateState] = useState<boolean>(() => {
-    try { return localStorage.getItem("auto-install-update-v1") !== "0"; } catch { return true; }
+    try { return localStorage.getItem("auto-install-update-v1") === "1"; } catch { return false; }
   });
   bag.autoInstallUpdate = autoInstallUpdate as typeof bag.autoInstallUpdate;
   const setAutoInstallUpdate = (next: boolean) => {
@@ -56,6 +54,23 @@ export function usePart02c2(bag: Bag) {
     try { localStorage.setItem("auto-install-update-v1", next ? "1" : "0"); } catch { /* 隐私模式忽略 */ }
   };
   bag.setAutoInstallUpdate = setAutoInstallUpdate as typeof bag.setAutoInstallUpdate;
+
+  /* 11-16：上次安装失败（版本没变）⇒ 本会话不再自动安装；toast 让用户手动重试。 */
+  const [updateInstallFailed, setUpdateInstallFailed] = useState("");
+  bag.updateInstallFailed = updateInstallFailed as typeof bag.updateInstallFailed;
+  bag.setUpdateInstallFailed = setUpdateInstallFailed as typeof bag.setUpdateInstallFailed;
+  useEffect(() => {
+    const onFailed = (event: Event) => {
+      const version = String((event as CustomEvent<{ version?: string }>)?.detail?.version ?? "");
+      setUpdateInstallFailed(version || "unknown");
+      /* 失败后把自动安装关掉（持久化）：否则下次开机仍会下载完就退出，看起来像闪退循环。 */
+      setAutoInstallUpdate(false);
+      bag.showToast?.("上次更新未完成", `v${version || "新版本"} 没有装成功，已切换为手动安装；请点「重启安装」重试`, "");
+    };
+    window.addEventListener("harness:update-install-failed", onFailed);
+    return () => window.removeEventListener("harness:update-install-failed", onFailed);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** 已就绪 ⇒ 弹窗出现；被用户取消过的这一版不再打扰。 */
   const armUpdateReady = (version?: string) => {
@@ -91,6 +106,7 @@ export function usePart02c2(bag: Bag) {
   /** 「重启安装」：主进程先起安装包再退出自己；失败要如实告知（不静默吞）。 */
   const restartAndInstall = async () => {
     setUpdateRestarting(true);
+    setUpdateInstallFailed("");
     try {
       const r = await window.codex.updateRestartInstall?.();
       if (!r?.ok) {
@@ -173,6 +189,7 @@ export function usePart02c2(bag: Bag) {
     if (!bag.autoInstallUpdate) return "自动安装已关闭";
     if (!bag.updateReady) return "更新包还没下好";
     if (bag.updateRestarting) return "正在重启";
+    if (updateInstallFailed) return "上次安装未完成，请手动重试";
     if (bag.runningThreadIdsRef.current.size > 0 || bag.activeTurnId) return "有回合在跑";
     if (bag.runtimeInstalling || bag.runtimeUninstalling) return "正在安装/卸载工具";
     if (Date.now() < autoSnoozeUntilRef.current) return "你刚点了稍后";
