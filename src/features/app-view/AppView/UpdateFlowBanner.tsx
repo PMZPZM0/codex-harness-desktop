@@ -55,7 +55,7 @@ export function UpdateFlowBanner() {
         <div className="update-install-card">
           <LoaderCircle size={22} className="spin" />
           <strong>正在安装更新{state.version ? ` v${state.version}` : ""}</strong>
-          <span>应用即将自动重启，请不要关闭电源；安装完成后会自动打开新版本。</span>
+          <span>应用即将自动重启；安装期间会保留一个小提示窗，请勿重复启动，完成后会自动打开新版本。</span>
           <UpdateProgressBar active indeterminate />
         </div>
       </div>,

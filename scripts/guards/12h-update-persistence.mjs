@@ -277,6 +277,17 @@ console.log(JSON.stringify(out));
   ok(/taskkill[\s\S]{0,80}\/T/.test(installerNsh), "安装前仍按进程树强杀旧实例（托盘应用关窗不退）");
   ok(/HKLM[\s\S]{0,120}InstallLocation/.test(installerNsh) && /UAC_IsAdmin/.test(installerNsh),
     "旧「所有用户」安装有迁移保护：管理员原地覆盖，非管理员提示先卸载（不装第二份）");
+
+  /* 11-16 安装提醒小窗：安装器静默跑，独立 WPF 小窗负责告知「正在安装/勿重复启动」。 */
+  const splash = readFileSync(join(ROOT, "electron/update-splash.ts"), "utf8");
+  ok((ipc.match(/showUpdateSplash\(targetVersion\)/g) ?? []).length >= 2
+    && ipc.includes('spawn(lastVerifiedUpdatePath, ["--updated", "/S"]'),
+    "差分/完整包两条路在退出前都拉起小窗，安装器仍静默（不弹 NSIS 向导）");
+  ok(splash.includes("正在安装更新") && splash.includes("请勿重复启动")
+    && splash.includes("detached: true") && splash.includes("windowsHide: true"),
+    "小窗文案与进程方式正确（独立进程、无控制台）");
+  ok(splash.includes("Get-Process") && splash.includes("安装似乎没有完成") && splash.includes("ShowDialog"),
+    "新版本启动后自动关闭；超时改成「未完成」提示，不会永久挂着");
 }
 
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

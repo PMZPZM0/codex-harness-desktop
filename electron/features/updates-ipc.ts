@@ -25,6 +25,7 @@ import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { sendToWindow } from "./window-bus";
+import { showUpdateSplash } from "../update-splash";
 
 import {
   checkLatestUpdate,
@@ -298,6 +299,8 @@ export const updatesFeature = defineFeature<null>({
       if (hasPendingDifferential()) {
         try {
           quitAndInstallDifferential();
+          /* 应用会立刻退出；小窗独立于本进程，负责安装期间的「正在安装/勿重复启动」提醒。 */
+          showUpdateSplash(targetVersion);
           return { ok: true, via: "differential" };
         } catch (error) {
           // updater 装不了（极少见：pending 被清 / 状态没就绪）→ 回退到拉起安装包，不静默吞。
@@ -311,6 +314,8 @@ export const updatesFeature = defineFeature<null>({
          它才会在装完后**自动拉起新版本**（electron-updater 自己 doInstall 时传的也是这两个）。 */
         // ⛔ spawn 不 wait：安装包是独立进程，等它结束就等于永远不退出。
         spawn(lastVerifiedUpdatePath, ["--updated", "/S"], { detached: true, stdio: "ignore" }).unref();
+        /* 安装器静默跑；这个小窗是用户唯一能看到的进度提醒（装完自动关）。 */
+        showUpdateSplash(targetVersion);
         // ⛔ 引擎与各子进程的收尾**不在这里手写**：`app.quit()` 会触发 main.ts 的
         //    `before-quit`，那里已经统一做 cleanupAll / 停看门狗 / 断 SSH / 销毁语音工作线程。
         //    （原先这里写了一个 `server.stop?.().catch()` —— `server` 上根本没有 stop 方法，
