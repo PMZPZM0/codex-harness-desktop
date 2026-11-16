@@ -1461,8 +1461,11 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   ok(statusHandler.indexOf("activeExternalEngine") < statusHandler.indexOf("const profileId"),
     "speech 优先级与真实合成一致：外部引擎 > 克隆 > MOSS > 本机");
   ok(/externalEngineSpeak\([\s\S]{0,300}?remoteTtsConfig/.test(service), "speak 实际也先走外部引擎（界面与真实链同序）");
-  ok(/speech\?\.effective === "external"/.test(picker) && /当前音色：\{speech\?\.label/.test(picker),
-    "音色卡在外部引擎生效时直接显示引擎名（⛔ 不再给本机 5 个假音色）");
+  ok(/本机音色 · \$\{v\.label\}/.test(picker) && /我的音色 · \$\{p\.name\}/.test(picker) && /local:/.test(picker),
+    "音色下拉同时列「本机音色（模型真实说话人）」与「我的音色（参考音频）」——⛔ 只列参考会把模型音色整个藏掉（用户实测点名）");
+  ok(/onUseLocalVoice/.test(picker) && /voiceExternalEnable\(active\.id, false\)/.test(section)
+    && /profileId: "", engine: "vits"/.test(section),
+    "选「本机音色」真的切回本机引擎（外部引擎先停用 + 清克隆 + 落 engine=vits，⛔ 不做假选择）");
   ok(/noEngine/.test(picker) && /当前没有可用的语音合成引擎/.test(picker), "没有可用引擎时不展示假下拉");
   ok(/speech=\{speech\}/.test(section), "页面把 speech 传给音色卡（单一真相源）");
 

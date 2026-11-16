@@ -116,6 +116,23 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
       </section>
     );
   }
+  /* ⛔ 11-16 用户实测「压根没有语音模型音色」：音色下拉里出现「本机音色」时，选中它必须**真的用本机引擎
+     合成** —— 外部引擎还在接管的话，听感不会变（又变成"假选择"）。所以先停用外部引擎，再落盘音色与引擎。 */
+  const useLocalVoice = async (sid: number) => {
+    let stoppedExternal = false;
+    try {
+      const list = await window.codex.voiceExternalList?.();
+      const active = (list?.engines ?? []).find((engine: { id: string; enabled?: boolean }) => engine.enabled);
+      if (active?.id) {
+        await window.codex.voiceExternalEnable(active.id, false);
+        window.dispatchEvent(new Event("harness:voice-external-refresh"));
+        stoppedExternal = true;
+      }
+    } catch { /* 读不到外部引擎列表不影响切本机 */ }
+    await apply({ tts: { ...settings.tts, sid, profileId: "", engine: "vits" } });
+    await reloadPacks();
+    onNotice(stoppedExternal ? "已改用本机音色；外部引擎已停用" : "已改用本机音色（本机引擎合成）");
+  };
   const pickTtsSource = (remote: boolean) => {
     if (remote && !mossConfigured) {
       onNotice("先到「付费云端模型」卡片里完成配置，再切换播报使用云端");
@@ -163,7 +180,7 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           reloadMeta={reloadMeta}
           settings={settings}
           localExtra={<>
-            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} profiles={profiles} onSelectProfile={(id) => void selectProfile(id)} zipReady={zipReady} speech={speech} />
+            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} profiles={profiles} onSelectProfile={(id) => void selectProfile(id)} onUseLocalVoice={(sid) => void useLocalVoice(sid)} zipReady={zipReady} speech={speech} />
             {/* 11-12 用户：「这两个都不是通用的，丢到基础语音模型配置里面去」——
                 语速/音量属于本机合成，跟着基础模型走；云端语速在 MOSS 弹窗里单独调。 */}
             <div className="voice-subhead">
