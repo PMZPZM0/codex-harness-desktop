@@ -10,10 +10,12 @@
  *   服务状态推进（type=service）也会刷新卡片 —— 否则永远停在「启动中」。
  * ⛔ 非商用权重（F5 / Fish / IndexTTS-2.0）必须在卡片上显式打徽标。
  */
-import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, ChevronUp, Download, ExternalLink, FolderOpen, LoaderCircle, Trash2, TriangleAlert, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Check, ChevronDown, ChevronUp, Download, ExternalLink, FolderOpen, LoaderCircle, Play, Square, Trash2, TriangleAlert, X } from "lucide-react";
 import { ToggleSwitch } from "../SettingsWidgets";
 import { SettingsDialog } from "../SettingsDialog";
+import { decodeFloat32Base64 } from "../../voice/audio-transport";
+import { playSamples } from "../VoiceSettingsSection";
 import { VOICE_EXTERNAL_CATEGORIES, VOICE_EXTERNAL_DEFAULT_IDS, isHighDemand } from "../../lib/voice-external-engines.mjs";
 import type { Settings } from "../VoiceSettingsSection";
 
@@ -86,6 +88,10 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
   const [presets, setPresets] = useState<{ id: string; name: string; desc?: string; lang?: string }[]>([]);
   const [profiles, setProfiles] = useState<{ id: string; name: string; builtIn?: boolean }[]>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
+  /* 11-17 用户实测「都没有试听功能」：每个引擎的每行音色都要能**用这个引擎自己**合成试听。 */
+  const [voicePreview, setVoicePreview] = useState<{ key: string; phase: "synth" | "playing" } | null>(null);
+  const previewCtlRef = useRef<{ stop: () => void } | null>(null);
+  useEffect(() => () => { previewCtlRef.current?.stop(); previewCtlRef.current = null; }, []);
 
   const refresh = () => {
     window.codex.voiceExternalList()
@@ -218,6 +224,49 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
     void apply?.({ tts: { ...settings.tts, engineVoices: { ...(settings.tts.engineVoices ?? {}), [engine.id]: value } } });
     const picked = voiceGroupsFor(engine).flatMap((group) => group.items).find((item) => item.value === value)?.label ?? value;
     onNotice(`「${engine.name}」音色已切换到：${picked}`);
+  };
+
+  /**
+   * 用**指定引擎 + 指定音色**合成并播放（11-17 用户：「不会每个音色在不同语音模型播放都一样吧」）。
+   * ⛔ 同一时间只运行一个外部引擎：引擎没启用时先启用它（会停掉当前那个），试听后保持启用态，
+   *    这样用户能直接对比不同引擎对同一段参考音色的还原差异（不是同一份音频换皮）。
+   */
+  const previewEngineVoice = async (engine: EngineCard, value: string) => {
+    const key = `${engine.id}:${value}`;
+    if (voicePreview?.key === key && voicePreview.phase === "playing") {
+      previewCtlRef.current?.stop();
+      return;
+    }
+    previewCtlRef.current?.stop();
+    previewCtlRef.current = null;
+    setVoicePreview({ key, phase: "synth" });
+    try {
+      if (!engine.enabled) {
+        const previous = (data?.engines ?? []).find((entry) => entry.enabled && entry.id !== engine.id);
+        const result = await window.codex.voiceExternalEnable(engine.id, true);
+        if (!result?.ok) { onNotice(result?.error || "启用引擎失败，无法试听"); return; }
+        refresh();
+        onNotice(`正在用 ${engine.name} 试听${previous ? `（${previous.name} 已自动停用）` : ""}${engine.service === "running" ? "" : "；首次加载模型要 10–60 秒"}`);
+      }
+      const result = await window.codex.voicePreviewVoice({
+        engineId: engine.id,
+        engineVoice: value,
+        speed: Number(settings?.tts?.speed ?? 1),
+        text: "你好，我是你的语音助手，很高兴为你服务。",
+      });
+      if (!result?.ok) { onNotice(`试听失败：${result?.error ?? "未知"}`); return; }
+      const samples = decodeFloat32Base64(result.audioBase64);
+      if (!samples.length) { onNotice("试听失败：合成结果没有音频数据"); return; }
+      const ctl = await playSamples(samples, result.sampleRate);
+      previewCtlRef.current = ctl;
+      setVoicePreview({ key, phase: "playing" });
+      await ctl.done;
+    } catch (error) {
+      onNotice(`试听失败：${String((error as Error)?.message ?? error)}`);
+    } finally {
+      previewCtlRef.current = null;
+      setVoicePreview(null);
+    }
   };
 
   const install = async (engine: EngineCard) => {
@@ -494,20 +543,37 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                         <span className="voice-group-sub">{group.hint}</span>
                       </div>
                       <div className="voice-profile-list">
-                        {group.items.map((item) => (
-                          <div key={item.value} className="voice-profile-item">
-                            <label className="voice-profile-pick">
-                              <input
-                                type="radio"
-                                name={`voice-${configEngine.id}`}
-                                checked={voiceFor(configEngine) === item.value}
-                                onChange={() => chooseVoice(configEngine, item.value)}
-                              />
-                              <span>{item.label}</span>
-                              <em>{item.tag}</em>
-                            </label>
-                          </div>
-                        ))}
+                        {group.items.map((item) => {
+                          const rowKey = `${configEngine.id}:${item.value}`;
+                          const thisPreview = voicePreview?.key === rowKey ? voicePreview.phase : null;
+                          return (
+                            <div key={item.value} className="voice-profile-item">
+                              <label className="voice-profile-pick">
+                                <input
+                                  type="radio"
+                                  name={`voice-${configEngine.id}`}
+                                  checked={voiceFor(configEngine) === item.value}
+                                  onChange={() => chooseVoice(configEngine, item.value)}
+                                />
+                                <span>{item.label}</span>
+                                <em>{item.tag}</em>
+                              </label>
+                              <button
+                                type="button"
+                                className="secondary-setting"
+                                onClick={() => void previewEngineVoice(configEngine, item.value)}
+                                disabled={Boolean(voicePreview) && thisPreview === null}
+                                title={`用 ${configEngine.name} 合成这个音色试听`}
+                              >
+                                {thisPreview === "synth"
+                                  ? <><LoaderCircle size={12} className="spin" />合成中…</>
+                                  : thisPreview === "playing"
+                                    ? <><Square size={12} />停止</>
+                                    : <><Play size={12} />试听</>}
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   ))}
@@ -516,6 +582,10 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                       默认音色还没准备好：先安装基础语音模型（约 270MB）生成模型音色，或到「我的音色」导入一段参考音频。
                     </div>
                   )}
+                  <div className="voice-card-hint">
+                    每行「试听」都是用<strong>当前这个引擎</strong>现场合成 —— 同一段参考音色在不同引擎里音色与自然度会不同，可以直接对比。
+                    首次试听要先加载模型（10–60 秒），引擎卡上会显示「模型加载中」。
+                  </div>
                   <div className="voice-card-hint">
                     音色按引擎独立保存：切换引擎不会改动这里的选择，每个语音模型各用各的配置。
                     {configEngine.nativeVoice ? " 这个引擎也自带默认音色（无需参考音频）。" : ""}

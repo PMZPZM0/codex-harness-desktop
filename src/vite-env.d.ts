@@ -1304,7 +1304,7 @@ interface Window {
     voicePlaybackDone(): Promise<{ ok: boolean }>;
     voicePresetApply(presetId: string): Promise<{ ok: boolean; profile?: any; existed?: boolean; error?: string }>;
     voicePresetList(): Promise<{ presets: { id: string; name: string; desc: string; lang: string; applied: boolean }[] }>;
-    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
+    voicePreviewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number; engineId?: string; engineVoice?: string }): Promise<{ ok: boolean; sampleRate?: number; audioBase64?: string; error?: string }>;
     /* 10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对） */
     voiceProfileUpload(input?: { source?: "base64" | "file" | "pack"; name?: string; refText?: string; audioBase64?: string; sampleRate?: number }): Promise<any>;
     voiceProfilesDelete(id: string): Promise<{ ok: boolean }>;

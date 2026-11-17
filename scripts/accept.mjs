@@ -2817,13 +2817,15 @@ const CHECKS = [
         return {
           head:(dlg.querySelector(".settings-dialog-head")?.textContent||""),
           rows: dlg.querySelectorAll(".voice-profile-item").length,
+          hasAudition: Boolean(dlg.querySelector(".voice-audition")),
           body:(dlg.textContent||""),
         };
       })()`);
-      h.check("②b 轻量播报卡「音色」打开自己的配置弹窗，默认音色按列表展示",
+      h.check("②b 轻量播报卡「音色」打开自己的配置弹窗，默认音色按列表展示 + 有试听",
         baseVoice === 1 && Boolean(baseVoiceDlg)
           && String(baseVoiceDlg.head).includes("轻量播报") && String(baseVoiceDlg.head).includes("音色")
-          && baseVoiceDlg.rows >= 1 && String(baseVoiceDlg.body).includes("默认音色"),
+          && baseVoiceDlg.rows >= 1 && baseVoiceDlg.hasAudition === true
+          && String(baseVoiceDlg.body).includes("默认音色"),
         JSON.stringify(baseVoiceDlg));
       await h.eval(`(function(){ const dlg=[...document.querySelectorAll(".settings-dialog")].pop(); dlg?.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
       await wait(250);

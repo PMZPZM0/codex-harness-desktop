@@ -206,6 +206,13 @@ ok(/voiceGroupsFor/.test(ui) && /voiceFor\(configEngine\)/.test(ui) && /data-eng
   && /voice-ext-voice-group/.test(css)
   && /<VoiceExternalEnginesSection[^>]*settings=\{settings\}[^>]*apply=\{apply\}/.test(enginesUi),
   "引擎配置弹窗里分组列出默认音色 / 模型音色 / 我的音色，并按引擎写回 tts.engineVoices");
+/* 11-17 用户实测「都没有试听功能，不会每个音色在不同语音模型播放都一样吧」——
+   每行音色必须能用**这个引擎**现场合成试听；⛔ 指定 engineId 后不许回落 MOSS/本机（回落=听到别的引擎，误以为都一样）。 */
+ok(/previewEngineVoice/.test(ui) && /engineId: engine\.id/.test(ui) && /engineVoice: value/.test(ui)
+  && /用 .* 合成这个音色试听/.test(ui)
+  && /input\?\.engineId/.test(service) && /activeExternalEngine\(\)/.test(service)
+  && /return forced \?\?/.test(service) && /voiceExternalEnable\(engine\.id, true\)/.test(ui),
+  "引擎音色逐行试听：指定 engineId 强制用该引擎合成（未启用则先启用），不回落其它引擎/本机");
 /* 11-17 用户令：「音色选择就放到每个语音模型卡片里面，语音模型卡片做二级弹窗预览里面设置」 */
 ok(/SettingsDialog/.test(ui) && /voice-ext-config-open/.test(ui) && /configEngine &&/.test(ui)
   && /setConfigId\(engine\.id\)/.test(ui) && /voice-ext-config/.test(css),

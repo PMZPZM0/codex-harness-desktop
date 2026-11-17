@@ -844,7 +844,7 @@ export class VoiceService {
    * 试听克隆音色（profileId）时不能用通话里的 TTS worker（配置不同），
    * 单独走这套缓存。
    */
-  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; explicitProfile?: boolean; numSteps?: number }): Promise<VoiceSpeakResult> {
+  async previewVoice(input?: { sid?: number; speed?: number; text?: string; profileId?: string; explicitProfile?: boolean; numSteps?: number; engineId?: string; engineVoice?: string }): Promise<VoiceSpeakResult> {
     /* ⛔ 有效音色 = 调用方显式指定（档案行试听）> **磁盘上的当前档案**（页面顶部试听/播报）。
        旧实现读 `this.currentSettings` —— 它只在 start()/设置保存时同步，应用刚启动、还没通话
        时是默认值（profileId 为空）⇒ 用户选了克隆音色，试听/播报却回退到基础音色（10-21 复测）。
@@ -858,6 +858,23 @@ export class VoiceService {
        试听**必须和真实播报走同一条链**（外部引擎 > MOSS > 本机，与 speak() 同序）。
        旧实现只认 MOSS/本机 ⇒ 启用外部引擎后试听永远合成的是本机 vits（假联动）。
        「我的音色」行内的档案试听是显式点某个克隆音色（explicitProfile）⇒ 仍走本机克隆，不绕外部引擎。 */
+    /* 11-17 用户实测「每个引擎的默认音色都没有试听，不会每个音色在不同模型里都一样吧」：
+       引擎卡里每行音色都要能**用这个引擎自己合成并播放**（同一段参考音频在不同引擎里音色/自然度不同）。
+       ⛔ 指定了 engineId 时只走该引擎：不回落 MOSS / 本机 —— 回落会让用户听到别的引擎，误以为「都一样」。
+       ⛔ 同一时间只运行一个外部引擎：不是当前启用的那个就明确拒绝（渲染层会先自动启用它）。 */
+    if (!input?.explicitProfile && input?.engineId) {
+      const target = activeExternalEngine();
+      if (!target || target.id !== input.engineId) {
+        return { ok: false, error: "先启用这个引擎再试听（同一时间只运行一个外部引擎）" };
+      }
+      const forced = await externalEngineSpeak(text, {
+        userData: this.deps.userDataDir,
+        speed,
+        profileId: settings.tts.profileId,
+        engineVoices: { ...(settings.tts.engineVoices ?? {}), [input.engineId]: String(input.engineVoice ?? "") },
+      });
+      return forced ?? { ok: false, error: "外部引擎没有返回音频：请稍后重试（首次加载模型较慢）" };
+    }
     if (!input?.explicitProfile) {
       const external = await externalEngineSpeak(text, {
         userData: this.deps.userDataDir,

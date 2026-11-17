@@ -892,7 +892,7 @@ contextBridge.exposeInMainWorld("codex", {
   voicePlaybackDone: () => __ipc("voice:playback-done", 0, []) as Promise<{ ok: boolean }>,
   voicePresetApply: (presetId: string) => __ipc("voice:preset-apply", 1, [presetId]),
   voicePresetList: () => __ipc("voice:preset-list", 0, []),
-  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number }) => __ipc("voice:preview-voice", 0, [input]),
+  voicePreviewVoice: (input?: { sid?: number; speed?: number; text?: string; profileId?: string; warm?: boolean; numSteps?: number; engineId?: string; engineVoice?: string }) => __ipc("voice:preview-voice", 0, [input]),
   /* 10-08 音色上传接口：source=base64/file 已实现；pack（音色包）**预留**、明确返回未开放。走与导入同一条草稿链（落盘→ASR 转写参考文本→用户校对） */
   voiceProfileUpload: (input?: { source?: "base64" | "file" | "pack"; name?: string; refText?: string; audioBase64?: string; sampleRate?: number }) => __ipc("voice:profile-upload", 0, [input]) as Promise<any>,
   voiceProfilesDelete: (id: string) => __ipc("voice:profiles-delete", 1, [id]) as Promise<{ ok: boolean }>,
