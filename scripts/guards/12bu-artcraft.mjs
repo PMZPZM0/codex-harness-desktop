@@ -102,6 +102,12 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
     "打开 Launcher 时注入系统代理（HTTPS_PROXY/ALL_PROXY）并在状态里回报（下载慢时可提速）");
   ok(/scutil/.test(core) && /HTTPSEnable/.test(core) && /SOCKSProxy/.test(core),
     "macOS 系统代理走 scutil --proxy（HTTP/HTTPS/SOCKS 都认）");
+  ok(/process\.platform === "darwin"[\s\S]{0,120}?\/Applications/.test(core) && /homedir\(\)[\s\S]{0,60}?Applications/.test(core),
+    "mac 扫描 /Applications 与 ~/Applications");
+  ok(core.includes(".app$/i") && core.includes("Contents") && core.includes("MacOS")
+    && core.includes("-cli(") && /const isCli/.test(core),
+    "mac 的 .app 包：去掉后缀认名字、可执行文件在 Contents/MacOS、*-cli 无后缀也认");
+  ok(/CFBundleShortVersionString/.test(core), "mac 版本读 .app/Contents/Info.plist（CFBundleShortVersionString）");
   ok(/macLauncherApp/.test(core) && /ArtCraft Launcher\.app/.test(core) && /macAppExecutable/.test(core)
     && /\.endsWith\(\"\.app\"\)/.test(core),
     "mac 识别 .app 并直接 spawn 包内可执行文件（`open -a` 经 launchd 会丢代理环境变量）");

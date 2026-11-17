@@ -24,6 +24,7 @@ import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileS
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { homedir } from "node:os";
 import { app } from "electron";
 import { mirrorCandidates } from "./gh-mirror";
 import { guardedFetch } from "./net-guard";
@@ -348,7 +349,11 @@ function craftAppInstallRoots(): string[] {
   /* ② Launcher 旁边（便携模式；App 可能直接摊在 launcher 根下或 apps/ 里）。 */
   const root = artcraftPaths().root;
   roots.push(root, path.join(root, "apps"), path.join(root, "ArtCraft"));
-  /* ③ 用户手动指定 + Launcher 自己记录的安装位置（用户改过 root 就在这）。 */
+  /* ③ macOS：Launcher 把 App 装成 /Applications/<App>.app（或用户目录下的 Applications）。 */
+  if (process.platform === "darwin") {
+    roots.push("/Applications", path.join(homedir(), "Applications"));
+  }
+  /* ④ 用户手动指定 + Launcher 自己记录的安装位置（用户改过 root 就在这）。 */
   roots.push(readCraftRootSetting(), ...readLauncherInstallRoots());
   return [...new Set(roots.filter(Boolean))];
 }
@@ -380,6 +385,13 @@ export function installedCraftApp(id: string): InstalledCraftApp | null {
 /** 读 Windows exe 的 VERSIONINFO 版本（按 mtime 缓存；读不到返回空串，不阻断状态）。 */
 const exeVersionCache = new Map<string, { stamp: string; version: string }>();
 async function readExeVersion(exe: string): Promise<string> {
+  /* mac：App 版本在 `.app/Contents/Info.plist`（CFBundleShortVersionString）。 */
+  if (process.platform === "darwin") {
+    try {
+      const plist = path.join(path.dirname(exe), "..", "Info.plist");
+      return execFileSync("defaults", ["read", plist, "CFBundleShortVersionString"], { encoding: "utf8", timeout: 3000 }).trim();
+    } catch { return ""; }
+  }
   if (process.platform !== "win32") return "";
   let stamp = "";
   try { stamp = String(statSync(exe).mtimeMs); } catch { return ""; }
@@ -414,22 +426,30 @@ function scanCraftAppDirs(): InstalledCraftApp[] {
   const knownIds = new Set<string>([...CRAFT_APP_IDS, ...readLauncherCatalogIds()]);
   const found = new Map<string, InstalledCraftApp>();
   const consider = (root: string, name: string) => {
-    const id = normalizeCraftId(name);
+    /* 11-17：mac 的 App 是 `<App>.app` 包 ⇒ 去掉后缀再归一化，可执行文件在 Contents/MacOS。 */
+    const bundle = /\.app$/i.test(name);
+    const baseName = name.replace(/\.app$/i, "");
+    const id = normalizeCraftId(baseName);
     if (!id || !knownIds.has(id) || found.has(id)) return;
     const dir = path.join(root, name);
+    const binDir = bundle ? path.join(dir, "Contents", "MacOS") : dir;
     let files: string[] = [];
-    try { files = readdirSync(dir); } catch { return; }
-    const preferExe = files.find((file) => normalizeCraftId(path.parse(file).name) === id && /\.exe$/i.test(file) && !/-cli\.exe$/i.test(file));
-    const anyExe = files.find((file) => /\.exe$/i.test(file) && !/-cli\.exe$/i.test(file) && !/^unins/i.test(file));
-    const exe = preferExe ?? anyExe;
+    try { files = readdirSync(binDir); } catch { return; }
+    const isFile = (file: string) => { try { return statSync(path.join(binDir, file)).isFile(); } catch { return false; } };
+    const isCli = (file: string) => /-cli(\.exe)?$/i.test(file);
+    const isLauncherExe = (file: string) => process.platform === "win32"
+      ? /\.exe$/i.test(file) && !isCli(file) && !/^unins/i.test(file)
+      : !isCli(file) && !file.startsWith(".") && isFile(file);
+    const preferExe = files.find((file) => normalizeCraftId(path.parse(file).name) === id && isLauncherExe(file));
+    const exe = preferExe ?? files.find(isLauncherExe);
     if (!exe) return;
-    const cli = files.find((file) => /-cli\.exe$/i.test(file));
+    const cli = files.find(isCli);
     found.set(id, {
       id,
-      name,
+      name: baseName,
       dir,
-      exePath: path.join(dir, exe),
-      cliPath: cli ? path.join(dir, cli) : "",
+      exePath: path.join(binDir, exe),
+      cliPath: cli ? path.join(binDir, cli) : "",
       version: "",
     });
   };
@@ -438,7 +458,8 @@ function scanCraftAppDirs(): InstalledCraftApp[] {
     try { dirs = readdirSync(root, { withFileTypes: true }) as Dirent[]; } catch { return; }
     for (const entry of dirs) {
       if (!entry.isDirectory()) continue;
-      const normalized = normalizeCraftId(entry.name);
+      /* mac 的 .app 也是目录：比较 id 时去掉后缀，否则永远对不上已知 App 名。 */
+      const normalized = normalizeCraftId(entry.name.replace(/\.app$/i, ""));
       if (onlyKnown) { consider(root, entry.name); continue; }
       if (knownIds.has(normalized)) { consider(root, entry.name); continue; }
       /* 容器目录（ArtCraft / apps / Craft / Programs / 任意含 App 的父目录）再下一层。 */
