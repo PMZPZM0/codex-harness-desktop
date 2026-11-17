@@ -230,6 +230,18 @@ ok(/voice-ext-foot/.test(ui) && /voice-ext-status/.test(ui) && /\.voice-ext-card
   && /-webkit-line-clamp: 2/.test(css) && /\.voice-ext-foot\s*\{[^}]*margin-top: auto/.test(css),
   "引擎卡等高 + 简介/许可限两行 + 底部「状态左 / 配置右」一行对齐");
 
+/* 11-17 mac 适配：四个可安装引擎的安装器/推理后端只适配 Windows（Windows 便携包 / venv\Scripts\python.exe /
+   --torch-backend=cu*）。目录标平台，主进程拒绝安装/启用并清掉别处拷来的启用态，卡片如实标「当前平台不可用」。 */
+ok((catalog.match(/platforms: \["win32"\]/g) || []).length === 4
+  && /function supportsPlatform/.test(main) && /platforms\.includes\(process\.platform\)/.test(main)
+  && /supported: supportsPlatform\(entry\)/.test(main)
+  && /当前平台（macOS\/Linux）暂不支持这个引擎/.test(main)
+  && /!supportsPlatform\(entry\)/.test(main),
+  "mac 适配：四个引擎目录标 platforms:[\"win32\"]，主进程安装/启用/启用态三处都按平台拦截");
+ok(/engine\.supported === false/.test(ui) && /当前平台不可用/.test(ui)
+  && /只适配 Windows/.test(ui) && /macOS 用基础模型 \/ MOSS/.test(ui),
+  "mac 适配：不支持平台的引擎不提供安装/配置入口，卡片标「当前平台不可用」并指路基础模型/MOSS");
+
 ok(String(pkg.scripts?.check ?? "").includes("12bv-voice-external"), "守卫 12bv 已加入 package.json 的 check 链");
 
 console.log(`\n【ext】${fails === 0 ? "通过" : "失败"}（${checks} 条${fails ? `，${fails} 条未通过` : ""}）`);

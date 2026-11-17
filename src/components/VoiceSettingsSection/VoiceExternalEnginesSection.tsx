@@ -47,6 +47,8 @@ type EngineCard = {
   nativeVoice?: boolean;
   /** 11-17：开箱默认音色（没手动选过时用它；随包默认音色，不依赖本机基础模型）。 */
   defaultVoice?: string;
+  /** 11-17 mac 适配：当前平台是否支持安装/运行（false = 仅展示，别让用户白下 8GB）。 */
+  supported?: boolean;
   /** 11-17：「怎么用」步骤（目录里的单一真相源，弹窗里逐条展示）。 */
   usage?: string[];
   service: string;
@@ -334,6 +336,7 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
         <span>按需下载、不随包；<strong>同一时间只生效一个</strong>（8GB 显存）。点卡片进入配置：启用、音色与安装都在里面；开启新引擎会自动停用当前的。</span>
       </div>
       <div className="voice-ext-hint">标「需高配」的引擎建议 12GB+ 显存；8GB 显卡优先用 Chatterbox / GPT-SoVITS / Qwen3 / CosyVoice。</div>
+      <div className="voice-ext-hint">外部引擎的安装器与推理后端目前只适配 <strong>Windows</strong>；macOS / Linux 上用「基础模型」或 MOSS 即可，随包默认音色同样可用。</div>
 
       <div className="voice-ext-filters" role="group" aria-label="开源语音模型分类">
         {VOICE_EXTERNAL_CATEGORIES.map((entry) => (
@@ -361,7 +364,9 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
       <div className="voice-ext-grid">
         {visible.map((engine) => {
           const running = progress[engine.id];
-          const isExternalOnly = engine.kind !== "engine" || !engine.installable;
+          /* 11-17 mac 适配：当前平台不支持的引擎与「纯展示卡片」同一处理 —— 不提供安装/配置入口。 */
+          const unsupported = engine.supported === false;
+          const isExternalOnly = engine.kind !== "engine" || !engine.installable || unsupported;
           return (
             <div key={engine.id} className={`voice-engine-card voice-ext-card${engine.enabled ? " is-active" : ""}`} data-external-card={engine.id}>
               <div className="voice-engine-head">
@@ -369,6 +374,7 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                   <span className="voice-engine-name-row">
                     <strong>{engine.name}</strong>
                     <span className={`voice-ext-badge is-${engine.commercial}`}>{engine.badge ?? engine.commercialLabel}</span>
+                    {unsupported && <span className="voice-ext-badge is-no">当前平台不可用</span>}
                   </span>
                   <span className="voice-engine-tagline">{engine.tagline}</span>
                 </div>
@@ -437,6 +443,9 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                   <div className="voice-ext-detail-row"><span>许可</span><b>{engine.license}</b></div>
                   <div className="voice-ext-detail-row"><span>硬件要求</span><b>{engine.hardware || engine.vram}</b></div>
                   <div className="voice-ext-detail-row"><span>类型</span><b>{engine.kind === "engine" ? "可接入引擎" : engine.kind === "studio" ? "独立工作台" : "模型聚合 UI"}</b></div>
+                  {unsupported && (
+                    <div className="voice-ext-detail-row"><span>当前平台</span><b>暂不支持（安装器与推理后端只适配 Windows）；macOS 用基础模型 / MOSS</b></div>
+                  )}
                   <ul>
                     {engine.pros.map((item) => <li key={item}><Check size={12} />{item}</li>)}
                     {engine.cons.map((item) => <li key={item}><TriangleAlert size={12} />{item}</li>)}

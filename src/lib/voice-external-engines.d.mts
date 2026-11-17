@@ -45,6 +45,8 @@ export type VoiceExternalEngine = {
   cons: string[];
   /** 11-17：配置弹窗里的「怎么用」步骤 */
   usage: string[];
+  /** 11-17 mac 适配：支持安装/运行该引擎的平台（缺省 = 全平台；目前只有 Windows 适配过）。 */
+  platforms?: ("win32" | "darwin" | "linux")[];
   install: VoiceExternalInstall | null;
 };
 

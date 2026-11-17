@@ -38,6 +38,8 @@ export const VOICE_EXTERNAL_ENGINES = [
     recommended: true,
     kind: "engine",
     adapter: "gpt-sovits",
+    /* 11-17 mac 适配：安装包是 Windows 便携版（runtime/python.exe + 7z），mac 跑不起来。 */
+    platforms: ["win32"],
     repo: "https://github.com/RVC-Boss/GPT-SoVITS",
     license: "MIT",
     licenseNote: "代码 MIT；随发行包分发的权重以下载页声明为准",
@@ -65,6 +67,8 @@ export const VOICE_EXTERNAL_ENGINES = [
     recommended: true,
     kind: "engine",
     adapter: "cosyvoice3",
+    /* 11-17 mac 适配：安装器用 Windows venv + CUDA torch，mac 需要另一套（MPS/CPU）适配。 */
+    platforms: ["win32"],
     repo: "https://github.com/FunAudioLLM/CosyVoice",
     license: "Apache-2.0",
     licenseNote: "代码与模型权重按 FunAudioLLM 仓库/ModelScope 模型卡许可",
@@ -108,6 +112,8 @@ export const VOICE_EXTERNAL_ENGINES = [
     recommended: false,
     kind: "engine",
     adapter: "qwen3-tts",
+    /* 11-17 mac 适配：安装器用 Windows venv + CUDA torch，mac 需要另一套（MPS/CPU）适配。 */
+    platforms: ["win32"],
     repo: "https://github.com/QwenLM/Qwen3-TTS",
     license: "Apache-2.0",
     licenseNote: "模型权重 Apache-2.0；语音克隆需取得被克隆人授权",
@@ -136,6 +142,8 @@ export const VOICE_EXTERNAL_ENGINES = [
     recommended: false,
     kind: "engine",
     adapter: "chatterbox",
+    /* 11-17 mac 适配：安装器用 Windows venv + CUDA torch；mac 上 torch 只能走 MPS/CPU，需另测。 */
+    platforms: ["win32"],
     repo: "https://github.com/resemble-ai/chatterbox",
     license: "MIT",
     licenseNote: "代码与基础权重 MIT；输出含不可感知水印",

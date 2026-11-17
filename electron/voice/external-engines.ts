@@ -85,6 +85,17 @@ function saveState(state: ExternalState): void {
   } catch { /* 写不了就只保留内存态（下次启动丢失安装标记） */ }
 }
 
+/**
+ * 当前平台是否支持该引擎（11-17 mac 适配）。
+ * ⛔ 四个可安装引擎的安装器与推理后端都按 **Windows + CUDA** 适配：Windows 便携包 / Windows venv
+ *   （`.venv\Scripts\python.exe`）/ `--torch-backend=cu*`。mac 上不能用 —— 目录里不写 platforms 的
+ *   （纯展示卡片）按全平台处理；mac 仍可用基础模型 + MOSS + 随包默认音色。
+ */
+function supportsPlatform(entry: VoiceExternalEngine): boolean {
+  const platforms = (entry as { platforms?: string[] }).platforms;
+  return !platforms || platforms.includes(process.platform);
+}
+
 /** 推送事件（安装进度 / 服务状态）。 */
 function emit(event: ExternalProgressEvent): void {
   try { progressSink?.(event); } catch { /* 渲染层关掉不影响安装 */ }
@@ -140,6 +151,8 @@ export function externalEngineList() {
         nativeVoice: NATIVE_VOICE_ENGINES.has(entry.id),
         /* 11-17：开箱默认音色（没手动选过时用它，引擎弹窗里高亮这一项）。 */
         defaultVoice: externalEngineDefaultVoice(entry.id),
+        /* 11-17 mac 适配：当前平台能不能安装/运行（mac 上四个引擎都是 false，卡片如实标注）。 */
+        supported: supportsPlatform(entry),
         installable: Boolean(entry.install && entry.install.kind !== "external"),
       };
     }),
@@ -156,6 +169,13 @@ export function activeExternalEngine(): VoiceExternalEngine | null {
   if (!entry) {
     /* 11-17 用户令移除的非商用引擎可能还留在档案里：停掉它的服务并清掉启用态，
        否则会继续占显存、而界面上已经看不到它。 */
+    stopService(state.active);
+    state.active = "";
+    saveState(state);
+    return null;
+  }
+  /* 11-17 mac 适配：别的平台装/拷来的引擎在这里跑不起来 ⇒ 清掉启用态，回落到基础模型 / MOSS。 */
+  if (!supportsPlatform(entry)) {
     stopService(state.active);
     state.active = "";
     saveState(state);
@@ -301,6 +321,7 @@ function saveInstalled(id: string, info: InstalledInfo): void {
 export function startExternalInstall(id: string): { ok: boolean; started?: boolean; error?: string } {
   const entry = externalEngineById(id);
   if (!entry) return { ok: false, error: "未知的引擎" };
+  if (!supportsPlatform(entry)) return { ok: false, error: "当前平台（macOS/Linux）暂不支持这个引擎：安装器与推理后端目前只适配 Windows；可用基础模型 / MOSS" };
   if (!entry.install || entry.install.kind === "external") return { ok: false, error: "这个项目是独立应用，请用「打开官网」安装" };
   if (loadState().installed[id]) return { ok: false, error: "已经安装过了" };
   if (installLock) return { ok: false, error: "已有另一个引擎在安装，请等它完成" };
@@ -595,6 +616,7 @@ export function setExternalEngineEnabled(id: string, enabled: boolean): { ok: bo
   if (!entry) return { ok: false, error: "未知的引擎" };
   const state = loadState();
   if (enabled) {
+    if (!supportsPlatform(entry)) return { ok: false, error: "当前平台暂不支持这个引擎（安装器/推理后端只适配 Windows）" };
     if (!state.installed[id]) return { ok: false, error: "还没安装这个引擎" };
     for (const other of Object.keys(SERVICES)) if (other !== id) stopService(other);
     state.active = id;
