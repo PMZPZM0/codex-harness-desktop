@@ -765,6 +765,8 @@ export async function downloadOnce(
     // 原子写的收口：只有校验通过，文件才出现在最终路径
     if (workPath !== destPath) {
       try {
+        /* Windows 的 rename 不覆盖已存在目标（缓存里有损坏的同名文件时会 EEXIST） */
+        await unlink(destPath).catch(() => undefined);
         await rename(workPath, destPath);
       } catch (error: any) {
         return { ok: false, error: `重命名失败：${error?.message ?? error}` };
@@ -834,6 +836,135 @@ async function orderCandidatesByLatency(candidates: string[], signal?: AbortSign
 }
 
 /**
+ * 分段并发下载单个 URL（GitHub release 大文件，11-17 用户报「音色克隆模型下载巨慢」）。
+ *
+ * 实测本机单连接：直连 30KB/s、hk.gh-proxy 147KB/s、gh-proxy 530KB/s；4 连接并发后
+ * 聚合约 1.15MB/s（2~3 倍）。109MB 主包从 ~3.5 分钟降到 ~1.5 分钟。
+ * ⛔ 只在**没有 `.part` 残件**时用：有残件时续传（`downloadOnce`）优先级更高、且分段写入不可续。
+ * ⛔ 服务端必须支持 Range（206）；不支持或任一分段失败 ⇒ 清掉 `.part` 返回失败，
+ *    调用方回落单流（`downloadOnce` 会重新下，但仍会走最快的镜像/续传兜底）。
+ */
+async function downloadHttpSegmented(
+  url: string,
+  destPath: string,
+  sha256: string,
+  bytes: number,
+  onBytes: ((received: number, total: number) => void) | undefined,
+  signal?: AbortSignal,
+  chunks = 4,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const partPath = `${destPath}.part`;
+  if (existsSync(partPath)) return { ok: false, error: "已有未完成的部分文件，改用续传" };
+  await mkdir(dirname(destPath), { recursive: true });
+  const headersTimeoutMs = 20000;
+  const timeoutCtl = new AbortController();
+  const headersTimer = setTimeout(() => timeoutCtl.abort(), headersTimeoutMs);
+  /** 聚合速度下限：10 秒还不到 3MB（<300KB/s）就放弃分段，交给单流换源逻辑。 */
+  const slowCtl = new AbortController();
+  const anySignal = (extra?: AbortSignal) => {
+    const list = [signal, timeoutCtl.signal, slowCtl.signal, extra].filter(Boolean) as AbortSignal[];
+    if (typeof (AbortSignal as any).any === "function") return (AbortSignal as any).any(list) as AbortSignal;
+    /* 老运行时没有 AbortSignal.any：手工合并（少量监听，用完即弃）。 */
+    const merged = new AbortController();
+    const abort = () => { try { merged.abort(); } catch { /* 已中止 */ } };
+    for (const item of list) {
+      if (item.aborted) { abort(); break; }
+      item.addEventListener("abort", abort, { once: true });
+    }
+    return merged.signal;
+  };
+  /** 总大小 + Range 支持探测（Range 0-0 应回 206 且带 Content-Range）。 */
+  let total = 0;
+  try {
+    const probe = await net.fetch(url, { headers: { Range: "bytes=0-0" }, redirect: "follow", signal: anySignal() as any });
+    if (probe.status !== 206) return { ok: false, error: `服务器不支持分段下载（HTTP ${probe.status}）` };
+    total = Number(String(probe.headers.get("content-range") ?? "").split("/")[1] ?? 0) || bytes;
+    try { await probe.body?.cancel(); } catch { /* 关闭 */ }
+  } catch (error: any) {
+    return { ok: false, error: `分段探测失败：${String(error?.message ?? error)}` };
+  } finally {
+    clearTimeout(headersTimer);
+  }
+  if (!total || total <= 0) return { ok: false, error: "分段探测没有拿到总大小" };
+
+  const chunkSize = Math.ceil(total / chunks);
+  const ranges = Array.from({ length: chunks }, (_, index) => {
+    const start = index * chunkSize;
+    return { index, start, end: Math.min(total - 1, start + chunkSize - 1) };
+  });
+  /* 预分配：让各分段直接按偏移写入，避免稀疏文件最后再补洞 */
+  try {
+    const fh = await open(partPath, "w");
+    try { await fh.truncate(total); } finally { await fh.close().catch(() => undefined); }
+  } catch (error: any) {
+    return { ok: false, error: `创建临时文件失败：${String(error?.message ?? error)}` };
+  }
+
+  const perChunk = new Array(ranges.length).fill(0);
+  const tasks = ranges.map(async (range) => {
+    const idleCtl = new AbortController();
+    let idleTimer: NodeJS.Timeout | null = null;
+    const armIdle = () => {
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => idleCtl.abort(), 45000);
+    };
+    try {
+      armIdle();
+      const res = await net.fetch(url, {
+        headers: { Range: `bytes=${range.start}-${range.end}` },
+        redirect: "follow",
+        signal: anySignal(idleCtl.signal) as any,
+      });
+      if (res.status !== 206 || !res.body) throw new Error(`分段 ${range.index} HTTP ${res.status}`);
+      const reader = (res.body as any).getReader();
+      const fh = await open(partPath, "r+");
+      let offset = range.start;
+      try {
+        for (;;) {
+          armIdle();
+          const { done, value } = await reader.read();
+          if (done) break;
+          await fh.write(value, 0, value.byteLength, offset);
+          offset += value.byteLength;
+          perChunk[range.index] += value.byteLength;
+          onBytes?.(perChunk.reduce((sum, n) => sum + n, 0), total);
+          if (signal?.aborted) throw new Error("已取消");
+        }
+      } finally {
+        await fh.close().catch(() => undefined);
+      }
+    } finally {
+      if (idleTimer) clearTimeout(idleTimer);
+    }
+  });
+
+  const slowTimer = setTimeout(() => {
+    const got = perChunk.reduce((sum, n) => sum + n, 0);
+    if (got < 3 * 1024 * 1024) { try { slowCtl.abort(); } catch { /* 已中止 */ } }
+  }, 10000);
+  try {
+    await Promise.all(tasks);
+  } catch (error: any) {
+    await unlink(partPath).catch(() => undefined);
+    return { ok: false, error: `分段下载失败：${String(error?.message ?? error)}` };
+  } finally {
+    clearTimeout(slowTimer);
+  }
+  try {
+    if (sha256 && (await fileShaOrEmpty(partPath)) !== sha256) {
+      await unlink(partPath).catch(() => undefined);
+      return { ok: false, error: "分段下载 SHA256 校验不符，已清理" };
+    }
+    /* Windows 上 rename 不会覆盖已存在的目标（缓存里可能是损坏的同名文件） */
+    await unlink(destPath).catch(() => undefined);
+    await rename(partPath, destPath);
+    return { ok: true };
+  } catch (error: any) {
+    return { ok: false, error: `分段下载收尾失败：${String(error?.message ?? error)}` };
+  }
+}
+
+/**
  * 下载到文件：**先探测各候选地址的首字节耗时，再从最快的开始**（直连 + 镜像，每个地址两轮，
  * 第二轮断点续传）。
  *
@@ -854,6 +985,13 @@ async function downloadUrlToFile(
   const candidates = mirrors.length ? [url, ...mirrors.map((prefix) => prefix + url)] : [url];
   const ordered = candidates.length > 1 ? await orderCandidatesByLatency(candidates, signal) : candidates;
   if (signal?.aborted) return { ok: false, error: "已取消" };
+  /* 11-17：大文件先试**多连接分段**（从吞吐探测最快的候选），失败再回落单流/续传。 */
+  if (bytes >= PARALLEL_MIN_BYTES && ordered.length) {
+    const segmented = await downloadHttpSegmented(ordered[0], destPath, sha256, bytes, onBytes, signal);
+    if (segmented.ok) return segmented;
+    if (signal?.aborted) return { ok: false, error: "已取消" };
+    // 分段失败（不支持 Range / 中途断流 / 校验不符）⇒ 继续走下面的单流与续传兜底
+  }
   let lastError = "";
   for (let attempt = 0; attempt < 2; attempt += 1) {
     for (let i = 0; i < ordered.length; i += 1) {
@@ -1021,11 +1159,16 @@ export async function ensureZipvoice(
       ? await sha256File(archivePath).then((h) => h === ZIPVOICE_ARCHIVE.sha256).catch(() => false)
       : false;
     if (!cached) {
-      report("模型包", 0, "正在下载音色克隆模型（约 109MB）…", 0, 2);
+      report("模型包", 0, "正在下载音色克隆模型（约 109MB，多连接加速）…", 0, 2);
+      const mainStart = Date.now();
       const downloaded = await downloadUrlToFile(
         ZIPVOICE_ARCHIVE.url, archivePath, ZIPVOICE_ARCHIVE.sha256, ZIPVOICE_ARCHIVE.bytes,
-        (received, total) => report("模型包", total ? Math.round((received / total) * 100) : -1,
-          "正在下载音色克隆模型 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 0, 2),
+        (received, total) => {
+          const secs = Math.max(0.5, (Date.now() - mainStart) / 1000);
+          const speed = (received / 1048576 / secs).toFixed(1);
+          report("模型包", total ? Math.round((received / total) * 100) : -1,
+            "正在下载音色克隆模型 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB · " + speed + "MB/s", 0, 2);
+        },
         signal,
         GITHUB_MIRROR_PREFIXES,
       );
@@ -1044,11 +1187,16 @@ export async function ensureZipvoice(
   const vocoderOk = existsSync(vocoderPath)
     && (await sha256File(vocoderPath).then((h) => h === ZIPVOICE_ARCHIVE.vocoder.sha256).catch(() => false));
   if (!vocoderOk) {
-    report(ZIPVOICE_ARCHIVE.vocoder.name, 0, "正在下载声码器（约 54MB）…", 1, 2);
+    report(ZIPVOICE_ARCHIVE.vocoder.name, 0, "正在下载声码器（约 54MB，多连接加速）…", 1, 2);
+    const vocoderStart = Date.now();
     const result = await downloadUrlToFile(
       ZIPVOICE_ARCHIVE.vocoder.url, vocoderPath, ZIPVOICE_ARCHIVE.vocoder.sha256, ZIPVOICE_ARCHIVE.vocoder.bytes,
-      (received, total) => report(ZIPVOICE_ARCHIVE.vocoder.name, total ? Math.round((received / total) * 100) : -1,
-        "正在下载声码器 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB", 1, 2),
+      (received, total) => {
+        const secs = Math.max(0.5, (Date.now() - vocoderStart) / 1000);
+        const speed = (received / 1048576 / secs).toFixed(1);
+        report(ZIPVOICE_ARCHIVE.vocoder.name, total ? Math.round((received / total) * 100) : -1,
+          "正在下载声码器 " + (received / 1048576).toFixed(0) + "/" + (total / 1048576).toFixed(0) + "MB · " + speed + "MB/s", 1, 2);
+      },
       signal,
       GITHUB_MIRROR_PREFIXES,
     );

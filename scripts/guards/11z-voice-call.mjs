@@ -377,6 +377,13 @@ ok(/>= \(minOf\[name\] \?\? 1\)/.test(manifestSrc) && /vocoder\.minBytes/.test(m
   "zipvoiceReady 判「文件在 **且够大**」（根因就是旧版只看 size > 0）");
 ok(/if \(!zipvoiceReady\(modelsRoot\)\)/.test(store),
   "装完**回读**一次就绪判定（下载器说成功 ≠ 模型能用；反向也不许错）");
+/* 11-17 用户实测「基础模型里面的音色模型下载巨慢」：单连接实测直连 30KB/s / gh-proxy 530KB/s，
+   4 连接聚合约 1.15MB/s ⇒ 大文件先走多连接分段，失败再回落单流+续传。 */
+ok(/downloadHttpSegmented/.test(store) && /bytes >= PARALLEL_MIN_BYTES/.test(store)
+  && /downloadHttpSegmented\(ordered\[0\]/.test(store)
+  && /Range: `bytes=\$\{range\.start\}-\$\{range\.end\}`/.test(store)
+  && /多连接加速/.test(store) && /MB\/s/.test(store),
+  "109MB 主包 / 54MB 声码器先走多连接分段下载（失败回落单流+续传），进度显示实时 MB/s");
 
 /* 11-14 用户实测「音色克隆模型下载到 53% 报 HTTP 403」：
    断流换源后走的是**续传**请求（带 Range），而部分加速镜像对 Range 直接 403
