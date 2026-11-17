@@ -100,6 +100,13 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
   ok(/systemProxyForLauncher/.test(core) && /HTTPS_PROXY/.test(core) && /ALL_PROXY/.test(core)
     && /openArtCraftLauncher[\s\S]{0,1400}?env/.test(core) && /proxy: systemProxyForLauncher\(\)/.test(domSrc),
     "打开 Launcher 时注入系统代理（HTTPS_PROXY/ALL_PROXY）并在状态里回报（下载慢时可提速）");
+  ok(/scutil/.test(core) && /HTTPSEnable/.test(core) && /SOCKSProxy/.test(core),
+    "macOS 系统代理走 scutil --proxy（HTTP/HTTPS/SOCKS 都认）");
+  ok(/macLauncherApp/.test(core) && /ArtCraft Launcher\.app/.test(core) && /macAppExecutable/.test(core)
+    && /\.endsWith\(\"\.app\"\)/.test(core),
+    "mac 识别 .app 并直接 spawn 包内可执行文件（`open -a` 经 launchd 会丢代理环境变量）");
+  ok(/process\.platform === \"darwin\"\) return \"\"/.test(core) && /本应用不代装/.test(core),
+    "mac 不在应用内下载 Launcher（.app 由官网安装，宿主只识别）");
   ok(/安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx"))
     && /修改位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
     "App 详情弹窗展示安装位置并可修改（PhotoCraft 与其它 App 同一个弹窗）");

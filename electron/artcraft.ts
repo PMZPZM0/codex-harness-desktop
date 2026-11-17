@@ -63,16 +63,42 @@ export function artcraftInstalledVersion(): string {
   try { return readFileSync(artcraftPaths().versionFile, "utf8").trim(); } catch { return ""; }
 }
 
-/** Launcher 可用 = 版本文件 + 可执行文件都在（版本文件是安装的最后一步）。 */
+/** mac：Launcher 是 `.app` 包（应用内不装；识别用户在 /Applications 安装的，或手动放进 tools 的）。 */
+function macLauncherApp(): string {
+  const candidates = [
+    path.join(artcraftPaths().root, "ArtCraft Launcher.app"),
+    "/Applications/ArtCraft Launcher.app",
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? "";
+}
+
+/** mac `.app` 里的可执行文件：直接 spawn 它才能继承代理环境变量（`open -a` 走 launchd 会丢环境）。 */
+function macAppExecutable(appDir: string): string {
+  try {
+    const macos = path.join(appDir, "Contents", "MacOS");
+    for (const name of readdirSync(macos)) {
+      const file = path.join(macos, name);
+      try { if (statSync(file).isFile()) return file; } catch { /* 继续找 */ }
+    }
+  } catch { /* 不是标准 bundle */ }
+  return "";
+}
+
+/** Launcher 可用 = 版本文件 + 可执行文件都在（版本文件是安装的最后一步）；mac 认 .app 包。 */
 export function artcraftLauncherPath(): string {
   const paths = artcraftPaths();
-  return artcraftInstalledVersion() && existsSync(paths.launcher) ? paths.launcher : "";
+  if (artcraftInstalledVersion() && existsSync(paths.launcher)) return paths.launcher;
+  if (process.platform === "darwin") return macLauncherApp();
+  return "";
 }
 
 /** 平台对应的 portable 资产名（与官方 release 命名一致：artcraft-launcher-<ver>-windows-<arch>-portable.zip）。 */
 export function artcraftAssetName(version: string): string {
   const arch = process.arch === "arm64" ? "arm64" : "x64";
   if (process.platform === "win32") return `artcraft-launcher-${version}-windows-${arch}-portable.zip`;
+  /* ⛔ mac 不在应用内安装：Launcher 是 .app 形态（签名/公证由系统与官网管），
+     由用户从 getartcraft.com 安装；这里返回空串让调用方给中文指引，而不是错下 Linux 包。 */
+  if (process.platform === "darwin") return "";
   return `artcraft-launcher-${version}-linux-${arch === "arm64" ? "aarch64" : "x86_64"}.tar.gz`;
 }
 
@@ -522,13 +548,26 @@ export function openCraftApp(appId: string, file?: string): { ok: boolean; error
 }
 
 
-/** 打开 Launcher（未安装给中文指引）。 */
-/** 读 Windows 系统代理（host:port；开关关 / 读不到返回空串）。
- *  ⛔ Launcher 用 ureq，只认 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY 环境变量（二进制实测），不读 WinINET ——
- *     用户开了 Clash 这类系统代理时，必须由我们翻译成环境变量传给它，否则它仍直连 GitHub（慢到 1MB/s）。 */
+/** 读系统代理（host:port；开关关 / 读不到返回空串）。
+ *  ⛔ Launcher 用 ureq，只认 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY 环境变量（二进制实测），
+ *     **Windows 不读 WinINET、macOS 不读 SystemConfiguration** —— 必须由我们翻译成环境变量传给它，
+ *     否则用户开了 Clash 这类系统代理，它仍直连 GitHub（慢到 1MB/s）。 */
 export function systemProxyForLauncher(): string {
-  if (process.platform !== "win32") return "";
   try {
+    if (process.platform === "darwin") {
+      /* macOS：scutil --proxy 的 HTTPSProxy / HTTPProxy / SOCKSProxy 三段。 */
+      const out = execFileSync("scutil", ["--proxy"], { encoding: "utf8", timeout: 3000 });
+      const num = (key: string) => Number(new RegExp(`${key}\\s*:\\s*(\\d+)`).exec(out)?.[1] ?? 0);
+      const str = (key: string) => (new RegExp(`${key}\\s*:\\s*(\\S+)`).exec(out)?.[1] ?? "").trim();
+      if (num("HTTPSEnable") === 1 && str("HTTPSProxy")) return `${str("HTTPSProxy")}:${num("HTTPSPort") || 443}`;
+      if (num("HTTPEnable") === 1 && str("HTTPProxy")) return `${str("HTTPProxy")}:${num("HTTPPort") || 80}`;
+      if (num("SOCKSEnable") === 1 && str("SOCKSProxy")) return `socks5://${str("SOCKSProxy")}:${num("SOCKSPort") || 1080}`;
+      return "";
+    }
+    if (process.platform !== "win32") {
+      /* Linux：沿用环境里已有的代理（ureq 原生支持）。 */
+      return String(process.env.HTTPS_PROXY || process.env.https_proxy || process.env.ALL_PROXY || "").trim();
+    }
     const key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
     const read = (name: string) => {
       const out = execFileSync("reg", ["query", key, "/v", name], { encoding: "utf8", windowsHide: true, timeout: 3000 });
@@ -555,13 +594,20 @@ export function openArtCraftLauncher(): { ok: boolean; error?: string } {
     const proxy = systemProxyForLauncher();
     const env: NodeJS.ProcessEnv = { ...process.env };
     if (proxy) {
-      const url = `http://${proxy}`;
+      const url = /^[a-z0-9+.-]+:\/\//i.test(proxy) ? proxy : `http://${proxy}`;
       for (const name of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]) {
         if (!env[name]) env[name] = url;
       }
       for (const name of ["NO_PROXY", "no_proxy"]) {
         if (!env[name]) env[name] = "localhost,127.0.0.1";
       }
+    }
+    /* mac 的 .app：直接 spawn 包内可执行文件，否则 `open -a` 经 launchd 启动会把环境变量丢掉。 */
+    if (launcher.endsWith(".app")) {
+      const exe = macAppExecutable(launcher);
+      if (exe) spawn(exe, [], { detached: true, stdio: "ignore", env }).unref();
+      else spawn("open", ["-a", launcher], { detached: true, stdio: "ignore", env }).unref();
+      return { ok: true };
     }
     spawn(launcher, [], { detached: true, stdio: "ignore", windowsHide: false, env }).unref();
     return { ok: true };
