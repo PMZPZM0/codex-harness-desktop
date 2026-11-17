@@ -254,13 +254,17 @@ bag.updateError = updateError as typeof bag.updateError; bag.setUpdateError = se
   const [updateDownloading, setUpdateDownloading] = useState(false);
 bag.updateDownloading = updateDownloading as typeof bag.updateDownloading; bag.setUpdateDownloading = setUpdateDownloading as typeof bag.setUpdateDownloading;
 
-  /* 更新方式（10-25）：差分优先；用户可切到完整包绕开差分。持久化在 localStorage。 */
+  /* 更新方式（10-25）：差分优先；用户可切到完整包绕开差分。持久化在 localStorage。
+     ⛔ 11-17：差分只有 Windows NSIS blockmap 支持；mac/linux 强制完整包，界面也不给切换。 */
+  const updateDiffSupported = /Win/.test(navigator.platform) || /Windows/.test(navigator.userAgent);
   const [updateMode, setUpdateModeState] = useState<"differential" | "full">(() => {
+    if (!updateDiffSupported) return "full";
     try { return localStorage.getItem("update-mode-v1") === "full" ? "full" : "differential"; } catch { return "differential"; }
   });
   const setUpdateMode = (mode: "differential" | "full") => {
-    setUpdateModeState(mode);
-    try { localStorage.setItem("update-mode-v1", mode); } catch { /* 隐私模式忽略 */ }
+    const next = updateDiffSupported ? mode : "full";
+    setUpdateModeState(next);
+    try { localStorage.setItem("update-mode-v1", next); } catch { /* 隐私模式忽略 */ }
   };
 bag.updateMode = updateMode as typeof bag.updateMode; bag.setUpdateMode = setUpdateMode as typeof bag.setUpdateMode;
 

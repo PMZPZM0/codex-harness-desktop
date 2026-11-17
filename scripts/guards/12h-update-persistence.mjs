@@ -292,6 +292,15 @@ console.log(JSON.stringify(out));
     && (ipc.match(/showMacUpdateReminder\(/g) ?? []).length >= 2
     && splash.includes("osascript") && splash.includes("display notification"),
     "macOS 走原生通知（打开 zip / 手动重启安装两条路都提醒拖进「应用程序」）");
+
+  /* 11-17：mac/linux 明确「不支持差分」——状态强制完整包，界面不给切换。 */
+  const eventsUpd = readFileSync(join(ROOT, "src/features/app-state/parts/part02/03-thread-switch-update/01-thread-switch-system-events.tsx"), "utf8");
+  ok(eventsUpd.includes('/Win/.test(navigator.platform)')
+    && /if \(!updateDiffSupported\) return "full"/.test(eventsUpd)
+    && /const next = updateDiffSupported \? mode : "full"/.test(eventsUpd),
+    "非 Windows 强制完整包（diff 只支持 Windows，读写 store 都兜底）");
+  ok(shell.includes('/Win/.test(navigator.platform)') && shell.includes("当前平台不支持差分更新"),
+    "账号菜单在非 Windows 明确写「完整包 / 当前平台不支持差分更新」，不给切换按钮");
 }
 
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

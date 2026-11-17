@@ -1085,10 +1085,17 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                       <div className="account-menu-row"><span className="account-menu-label">产物</span><span className="account-menu-value mono" title="正在执行的渲染层 bundle（含内容 hash）">{bundleFile}</span></div>
                       <div className="account-menu-row"><span className="account-menu-label">更新地址</span><span className="account-menu-value">GitHub Releases<span className="update-help" title="国内镜像优先：gh-proxy.com → ghfast.top → GitHub 直连；任一通道失败自动换下一档">?</span></span></div>
                       <div className="account-menu-row"><span className="account-menu-label">更新方式</span>
-                        <span className="update-mode-switch" role="group" aria-label="更新方式">
-                          <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>补丁<span className="update-help" title="只下载变化部分（blockmap），体积小、安装快；没有补丁或下载失败时自动改用完整包" onClick={(event) => event.stopPropagation()}>?</span></button>
-                          <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包<span className="update-help" title="每次下载完整安装包，体积大但最稳；补丁更新异常时选这个" onClick={(event) => event.stopPropagation()}>?</span></button>
-                        </span>
+                        {/Win/.test(navigator.platform) ? (
+                          <span className="update-mode-switch" role="group" aria-label="更新方式">
+                            <button type="button" className={updateMode === "differential" ? "active" : ""} onClick={() => setUpdateMode("differential")}>补丁<span className="update-help" title="只下载变化部分（blockmap），体积小、安装快；没有补丁或下载失败时自动改用完整包" onClick={(event) => event.stopPropagation()}>?</span></button>
+                            <button type="button" className={updateMode === "full" ? "active" : ""} onClick={() => setUpdateMode("full")}>完整包<span className="update-help" title="每次下载完整安装包，体积大但最稳；补丁更新异常时选这个" onClick={(event) => event.stopPropagation()}>?</span></button>
+                          </span>
+                        ) : (
+                          <span className="account-menu-value">
+                            完整包
+                            <span className="update-help" title="当前平台不支持差分更新（blockmap 差分仅 Windows 提供）；每次下载完整包。macOS 下载后请把应用拖进「应用程序」完成更新。">?</span>
+                          </span>
+                        )}
                       </div>
                       {/* 11-15 用户令「不需要点，自动安装，自动重启」：默认自动；
                           关掉只回到「提示 + 手动重启」，后台检查与静默下载照旧。 */}
