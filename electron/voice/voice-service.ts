@@ -14,7 +14,7 @@
 import { ASR_REPO, KWS_ARCHIVE, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, kwsDir, kwsReady, zipvoiceReady } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
 import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, isVoiceResourceEnabled, loadVoiceSettings, ttsVoiceNamesFor, type VoiceSettings } from "./voice-settings";
-import { ensureBuiltinVoices, BUILTIN_REF_TEXT, type BuiltinVoice } from "./builtin-voices";
+import { ensureBuiltinVoices, listBundledVoices, BUILTIN_REF_TEXT, type BuiltinVoice } from "./builtin-voices";
 import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
 import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
@@ -774,6 +774,7 @@ export class VoiceService {
       speed: settings.tts.speed,
       profileId: settings.tts.profileId,
       engineVoice: settings.tts.engineVoice,
+      engineVoices: settings.tts.engineVoices,
     });
     if (external) {
       if (external.ok) this.setState("speaking");
@@ -863,6 +864,7 @@ export class VoiceService {
         speed,
         profileId: settings.tts.profileId,
         engineVoice: settings.tts.engineVoice,
+        engineVoices: settings.tts.engineVoices,
       });
       if (external) return external;
     }
@@ -981,18 +983,23 @@ export class VoiceService {
    * ⛔ 合成必须走 `synthesizeLocal`（本机 worker），不能复用 `previewVoice` ——
    *    后者现在先走外部引擎，会自我循环（外部引擎拿样本生成样本）。
    */
-  async ensureBuiltinVoiceRefs(): Promise<{ ok: boolean; voices: BuiltinVoice[]; failed: number[]; error?: string }> {
+  async ensureBuiltinVoiceRefs(): Promise<{ ok: boolean; voices: BuiltinVoice[]; presets: { id: string; name: string; desc: string; lang: string }[]; failed: number[]; error?: string }> {
+    /* 11-17：随包默认音色（不依赖本机基础模型）与「本机模型说话人样本」一起下发 ——
+       引擎卡里两类都要列出来；本机样本生成失败也不影响默认音色可用。 */
+    const presets = listBundledVoices().map((voice) => ({ id: voice.id, name: voice.name, desc: voice.desc, lang: voice.lang }));
     const names = ttsVoiceNamesFor("vits", this.deps.modelsRoot);
-    if (!Object.keys(names).length) return { ok: false, voices: [], failed: [], error: "没有读到当前模型的说话人表" };
+    if (!Object.keys(names).length) {
+      return { ok: presets.length > 0, voices: [], presets, failed: [], error: presets.length ? "" : "没有读到当前模型的说话人表，也没有随包默认音色" };
+    }
     try {
       const result = await ensureBuiltinVoices({
         userData: this.deps.userDataDir,
         names,
         synthesize: (sid) => this.synthesizeLocal(sid),
       });
-      return { ok: result.voices.length > 0, ...result };
+      return { ok: result.voices.length > 0 || presets.length > 0, presets, ...result };
     } catch (error: any) {
-      return { ok: false, voices: [], failed: [], error: String(error?.message ?? error) };
+      return { ok: presets.length > 0, voices: [], presets, failed: [], error: String(error?.message ?? error) };
     }
   }
 

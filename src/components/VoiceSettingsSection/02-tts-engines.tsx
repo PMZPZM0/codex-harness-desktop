@@ -17,6 +17,7 @@ import { AppSelect } from "../AppSelect";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import { decodeFloat32Base64 } from "../../voice/audio-transport";
 import { ToggleSwitch } from "../SettingsWidgets";
+import { SettingsDialog } from "../SettingsDialog";
 import { Settings, playSamples, VOICE_SPEED_PRESETS } from "../VoiceSettingsSection";
 import VoiceDevToolsSection from "../VoiceDevToolsSection";
 import VoiceExternalEnginesSection from "./VoiceExternalEnginesSection";
@@ -27,8 +28,10 @@ type Props = {
   settings: Settings;
   /** 重拉音色表（换引擎后必须调：主进程按引擎给音色表） */
   reloadMeta: () => Promise<void>;
-  /** 基础模型配置弹窗里的「音色 / 克隆」区（由设置页组合进来，避免把状态再拷一份） */
+  /** 基础模型配置弹窗里的「语速 / 克隆 / 识别」区（由设置页组合进来，避免把状态再拷一份） */
   localExtra?: ReactNode;
+  /** 轻量播报**自己的音色卡**（11-17 用户令：从公共「音色与克隆」区搬进模型弹窗） */
+  voicePicker?: ReactNode;
 };
 
 type PackId = "vits" | "emotivoice";
@@ -98,7 +101,7 @@ const ENGINES: EngineInfo[] = [
 ];
 
 /** TTS 引擎与音色包管理卡：显示安装状态、下载进度、切换引擎，失败在卡内给反馈条。 */
-export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings, localExtra }: Props) {
+export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, settings, localExtra, voicePicker }: Props) {
   const [packs, setPacks] = useState<Partial<Record<PackId, PackState>>>({});
   const [moss, setMoss] = useState<{ configured: boolean; runnable: boolean; baseUrl: string; model: string; hasKey: boolean; keyHint: string; docs?: string } | null>(null);
   /** 11-12：MOSS-TTS 远程播报状态（配置齐全即可播，不依赖本机模型）。 */
@@ -117,10 +120,13 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
   const [mossModalOpen, setMossModalOpen] = useState(false);
   /** 基础模型（本地）的配置也收进弹窗：一级界面只留两张摘要卡。 */
   const [localModalOpen, setLocalModalOpen] = useState(false);
+  /** 轻量播报自己的音色弹窗（11-17：每个语音模型的配置独立，音色不再挂在公共区）。 */
+  const [baseVoiceOpen, setBaseVoiceOpen] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const previewCtlRef = useRef<{ stop: () => void } | null>(null);
   useEscapeLayer(mossModalOpen, () => setMossModalOpen(false));
   useEscapeLayer(localModalOpen, () => setLocalModalOpen(false));
+  useEscapeLayer(baseVoiceOpen, () => setBaseVoiceOpen(false));
   useEffect(() => () => { previewCtlRef.current?.stop(); previewCtlRef.current = null; }, []);
   const [busy, setBusy] = useState<PackId | null>(null);
   const [progress, setProgress] = useState<{ pack: PackId; percent: number; message: string } | null>(null);
@@ -611,6 +617,11 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
                       <span className="voice-engine-flag is-missing"><TriangleAlert size={12} />缺模型</span>
                     )}
                     <div className="voice-engine-actions">
+                      {engine.id === "vits" && voicePicker && (
+                        <button className="secondary-setting" onClick={() => setBaseVoiceOpen(true)} title="轻量播报的默认音色 / 我的音色（与其它语音模型互不影响）">
+                          音色
+                        </button>
+                      )}
                       {ready ? (
                         <>
                           <button className="secondary-setting" onClick={() => choose(engine.id)} disabled={inUse} title={selectedDisabled ? "先在下方卡片点「启用」" : undefined}>
@@ -690,11 +701,28 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
             );
           })}
         </div>
+
+                {/* 11-17 用户令：音色配置跟着**模型自己**走 —— 轻量播报的音色卡在它的二级弹窗里，
+                    不再放在公共「音色与克隆」区（每个语音模型配置独立、互不影响）。 */}
+                {baseVoiceOpen && voicePicker && (
+                  <SettingsDialog
+                    title="轻量播报 · 音色"
+                    hint="默认音色（基础模型自带说话人）与「我的音色」；不影响其它语音模型的选择。"
+                    size="md-auto"
+                    elevated
+                    onClose={() => setBaseVoiceOpen(false)}
+                  >
+                    <div className="settings-section stack voice-ext-config">
+                      {voicePicker}
+                    </div>
+                  </SettingsDialog>
+                )}
+
                 {/* 11-16 用户令：开源语音模型卡片（默认 4 张，更多展开/收起） */}
                 <VoiceExternalEnginesSection onNotice={onNotice} onActiveChange={setExternalActive} settings={settings} apply={apply} />
                 {localExtra && (
                   <>
-                    <div className="voice-moss-section-title">音色与克隆</div>
+                    <div className="voice-moss-section-title">克隆与识别</div>
                     {localExtra}
                   </>
                 )}

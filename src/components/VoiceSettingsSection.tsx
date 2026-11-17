@@ -36,8 +36,10 @@ export type Settings = {
      加字段必须**两边同改**（electron/voice/voice-settings.ts 的 VoiceSettings.tts.engine）。 */
   tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number;
     engine?: "vits" | "emotivoice";
-    /** 11-17：外部开源引擎的音色（原生默认 / 内置参考样本 / 我的音色），见引擎卡里的下拉 */
+    /** 11-17：外部开源引擎的音色（兼容旧档案；新写入走 engineVoices） */
     engineVoice?: string;
+    /** 11-17：**按引擎独立**的音色（key = 引擎 id；每个语音模型配置互不影响） */
+    engineVoices?: Record<string, string>;
     /** 11-11：播报走 MOSS-TTS（远端）；克隆音色仍优先本地 */
     remote?: boolean; };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };
@@ -135,6 +137,24 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
     await reloadPacks();
     onNotice(stoppedExternal ? "已改用本机音色；外部引擎已停用" : "已改用本机音色（本机引擎合成）");
   };
+  /* 11-17：轻量播报自己的音色选择 —— 选「我的音色」= 真的切回本机克隆合成（外部引擎先停用），
+     与 useLocalVoice 同口径；否则外部引擎还在接管时选了也听不到变化（假选择）。 */
+  const selectProfileForLocal = async (id: string) => {
+    let stoppedExternal = false;
+    try {
+      const list = await window.codex.voiceExternalList?.();
+      const active = (list?.engines ?? []).find((engine: { id: string; enabled?: boolean }) => engine.enabled);
+      if (active?.id) {
+        await window.codex.voiceExternalEnable(active.id, false);
+        window.dispatchEvent(new Event("harness:voice-external-refresh"));
+        stoppedExternal = true;
+      }
+    } catch { /* 读不到外部引擎列表不影响切本机 */ }
+    await selectProfile(id);
+    await apply({ tts: { ...settings.tts, remote: false, profileId: id } });
+    await reloadPacks();
+    if (stoppedExternal) onNotice("已切回本机克隆音色；外部引擎已停用");
+  };
   const pickTtsSource = (remote: boolean) => {
     if (remote && !mossConfigured) {
       onNotice("先到「付费云端模型」卡片里完成配置，再切换播报使用云端");
@@ -181,8 +201,10 @@ export default function VoiceSettingsSection({ onNotice }: { onNotice: (m: strin
           onNotice={onNotice}
           reloadMeta={reloadMeta}
           settings={settings}
+          voicePicker={
+            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} profiles={profiles} onSelectProfile={(id) => void selectProfileForLocal(id)} onUseLocalVoice={(sid) => void useLocalVoice(sid)} zipReady={zipReady} speech={speech} />
+          }
           localExtra={<>
-            <VoiceSettingsSectionVoicePicker apply={apply} audition={audition} auditionPhase={auditionPhase} saving={saving} settings={settings} voiceOptions={voiceOptions} activeProfileName={profiles.find((p: any) => p.id === settings.tts.profileId)?.name} profiles={profiles} onSelectProfile={(id) => void selectProfile(id)} onUseLocalVoice={(sid) => void useLocalVoice(sid)} zipReady={zipReady} speech={speech} />
             {/* 11-12 用户：「这两个都不是通用的，丢到基础语音模型配置里面去」——
                 语速/音量属于本机合成，跟着基础模型走；云端语速在 MOSS 弹窗里单独调。 */}
             <div className="voice-subhead">

@@ -1083,8 +1083,10 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     && /\.voice-engine-lists \{ display: grid/.test(enginesCss),
     "引擎卡是单列长卡片 + 优点/缺点并排（⛔ 别回 auto-fit 三小列：长句被挤成五六个字一行）");
   const sectionSrc = read("src/components/VoiceSettingsSection.tsx");
-  ok(!/id="voice-models"/.test(sectionSrc) && sectionSrc.indexOf("<VoiceSettingsSectionTtsEngines") < sectionSrc.indexOf("<VoiceSettingsSectionVoicePicker"),
-    "页面顺序：引擎组（含基础模型操作）在选声音之前；独立「基础语音模型」组已删除（10-31 合并）");
+  ok(!/id="voice-models"/.test(sectionSrc) && /voicePicker=\{/.test(sectionSrc)
+    && /<VoiceSettingsSectionTtsEngines[\s\S]{0,1200}?voicePicker=/.test(sectionSrc)
+    && !/localExtra=\{<>[\s\S]{0,200}?<VoiceSettingsSectionVoicePicker/.test(sectionSrc),
+    "音色卡挂在轻量播报**自己的**配置弹窗里（voicePicker 属性）；公共「音色与克隆」区不再放音色卡（11-17 每个语音模型配置独立）");
   ok(/voice-engine-progress-line/.test(enginesSrc) && /Math\.round\(progress!\.percent\)/.test(enginesSrc),
     "模型下载有**进度条 + 百分比读数**（⛔ 只有一条会跑的进度条，用户不知道还剩多少）");
   ok(/voice-engine-feedback/.test(enginesSrc) && /kind: "ok" \| "err" \| "info"/.test(enginesSrc),
@@ -1460,9 +1462,10 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
     "speech 状态把外部引擎算进合成链（effective=external + 引擎名）");
   ok(statusHandler.indexOf("activeExternalEngine") < statusHandler.indexOf("const profileId"),
     "speech 优先级与真实合成一致：外部引擎 > 克隆 > MOSS > 本机");
-  ok(/externalEngineSpeak\([\s\S]{0,300}?remoteTtsConfig/.test(service), "speak 实际也先走外部引擎（界面与真实链同序）");
-  ok(/本机音色 · \$\{v\.label\}/.test(picker) && /我的音色 · \$\{p\.name\}/.test(picker) && /local:/.test(picker),
-    "音色下拉同时列「本机音色（模型真实说话人）」与「我的音色（参考音频）」——⛔ 只列参考会把模型音色整个藏掉（用户实测点名）");
+  ok(/externalEngineSpeak\([\s\S]{0,600}?remoteTtsConfig/.test(service), "speak 实际也先走外部引擎（界面与真实链同序）");
+  ok(/voiceOptions\.map/.test(picker) && /profiles\.map/.test(picker)
+    && /默认音色/.test(picker) && /我的音色/.test(picker),
+    "音色列表同时列「默认音色（模型真实说话人）」与「我的音色（参考音频）」——⛔ 只列参考会把模型音色整个藏掉（用户实测点名）");
   ok(/onUseLocalVoice/.test(picker) && /voiceExternalEnable\(active\.id, false\)/.test(section)
     && /profileId: "", engine: "vits"/.test(section),
     "选「本机音色」真的切回本机引擎（外部引擎先停用 + 清克隆 + 落 engine=vits，⛔ 不做假选择）");
@@ -1486,11 +1489,11 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
   ok(/G_multisperaker_latest\.json/.test(voiceSettingsSrc) && /ttsVoiceNamesFor\([^)]*modelsRoot\(\)\)/.test(statusHandler),
     "音色表读模型真实说话人名（G_multisperaker_latest.json），⛔ 不再是写死的「音色 1..5」");
-  ok(/hasReference/.test(statusHandler) && /settings\.tts\?\.engineVoice/.test(statusHandler)
-    && /还没有音色：在它的卡片里选一个/.test(statusHandler),
-    "外部引擎没选音色时 speech 不报就绪（engineVoice 也算音色；并给出「去引擎卡/我的音色」的原因）");
-  ok(/onSelectProfile/.test(picker) && /profiles\.map\(/.test(picker) && /参考音色/.test(picker),
-    "外部引擎模式下音色卡直接下拉「我的音色」参考音色（换嗓子 = 换参考音频）");
+  ok(/hasReference/.test(statusHandler) && /externalEngineEffectiveVoice/.test(statusHandler)
+    && /engineVoices/.test(statusHandler) && /还没有音色：在它的卡片里选一个/.test(statusHandler),
+    "外部引擎按**自己的**音色判就绪（engineVoices[id] + 开箱默认音色；不再共用 engineVoice）");
+  ok(/onSelectProfile/.test(picker) && /profiles\.map\(/.test(picker) && /参考音频/.test(picker),
+    "轻量播报音色卡列出「我的音色」参考音频（换嗓子 = 换参考音频）");
 }
 
 process.exit(fails ? 1 : 0);

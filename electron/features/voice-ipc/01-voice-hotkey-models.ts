@@ -12,7 +12,7 @@ import { EMOTIVOICE_DIR, EMOTIVOICE_FILES, EMOTIVOICE_HOST_NOTE, emotivoiceReady
 import { isVoiceResourceEnabled, loadVoiceSettings, publicVoiceSettings, voiceResourceStates } from "../../voice/voice-settings";
 import { MOSS_LIVE_PROVIDER, remoteConfigOf, remoteConfigured } from "../../voice/model-provider";
 import { remoteTtsConfig } from "../../voice/moss-tts";
-import { activeExternalEngine, externalEngineList } from "../../voice/external-engines";
+import { activeExternalEngine, externalEngineEffectiveVoice, externalEngineList } from "../../voice/external-engines";
 import { toolsRoot, writeToolsRoot } from "../../toolchain";
 import { sendToWindow } from "../window-bus";
 import { defineFeature } from "../../context";
@@ -265,10 +265,11 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
       if (external) {
         const row = externalEngineList().engines.find((entry) => entry.id === external.id);
         const installed = Boolean(row?.installed);
-        /* ⛔ 外部引擎的「音色」= 引擎卡里选的音色（原生默认 / 内置参考样本 / 我的音色）。
-           三个都空时它合不出声 —— 不能报 ready，否则播报/试听都是静默失败。 */
-        const engineVoice = String(settings.tts?.engineVoice ?? "").trim();
-        const hasReference = Boolean(engineVoice) || Boolean(String(settings.tts?.profileId ?? "").trim());
+        /* ⛔ 外部引擎的「音色」= **该引擎自己**的音色（engineVoices[id]：原生默认 / 随包默认 /
+           模型样本 / 我的音色），没选过时用开箱默认音色。⛔ 不能共用一个 engineVoice ——
+           换引擎会串音色（用户要求配置独立）。三者都空时才真的合不出声。 */
+        const hasReference = Boolean(externalEngineEffectiveVoice(external.id, settings.tts))
+          || Boolean(String(settings.tts?.profileId ?? "").trim());
         return {
           effective: "external",
           ready: installed && hasReference,

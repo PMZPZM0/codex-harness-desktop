@@ -18,6 +18,41 @@ export const BUILTIN_REF_TEXT = "你好，我是你的语音助手。今天天�
 
 export type BuiltinVoice = { sid: number; name: string; audioPath: string; refText: string };
 
+/** 随包默认音色（resources/voice-presets/presets.json + wav）：不依赖本机基础模型，装上引擎就能出声。 */
+export type BundledVoice = { id: string; name: string; desc: string; lang: string; audioPath: string; refText: string };
+
+/** 随包音色目录：开发版用项目 resources/，打包版用 process.resourcesPath/（与 VoicePresetsSection 同一规则）。 */
+export function voicePresetsDir(): string {
+  const dev = join(process.cwd(), "resources", "voice-presets");
+  if (existsSync(dev)) return dev;
+  return join(process.resourcesPath ?? process.cwd(), "voice-presets");
+}
+
+/** 读随包默认音色（音频缺失/参考文本为空的条目自动跳过）。 */
+export function listBundledVoices(): BundledVoice[] {
+  const dir = voicePresetsDir();
+  try {
+    const raw = JSON.parse(readFileSync(join(dir, "presets.json"), "utf8"));
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((preset: any) => preset?.id && preset?.name && preset?.wav && String(preset?.refText ?? "").trim())
+      .map((preset: any) => ({
+        id: String(preset.id),
+        name: String(preset.name),
+        desc: String(preset.desc ?? ""),
+        lang: String(preset.lang ?? "zh"),
+        audioPath: join(dir, String(preset.wav)),
+        refText: String(preset.refText).trim(),
+      }))
+      .filter((voice) => existsSync(voice.audioPath));
+  } catch { return []; }
+}
+
+/** 按 id 取一个随包默认音色（外部引擎的 preset:<id> 选择）。 */
+export function readBundledVoice(id: string): BundledVoice | null {
+  return listBundledVoices().find((voice) => voice.id === id) ?? null;
+}
+
 type BuiltinMeta = { version: 1; refText: string; voices: { sid: number; name: string; file: string }[] };
 
 /** 内置参考样本目录（userData 下，卸载重装不丢；体积每音色 ~200KB）。 */
@@ -123,11 +158,15 @@ export async function ensureBuiltinVoices(options: {
       writeFileSync(target, encodeWav(samples, sampleRate || 16000));
     } catch { failed.push(voice.sid); }
   }
-  /* meta.json 是「有哪些内置音色」的单一真相源（外部引擎播报只认 userData，不依赖模型路径）。 */
+  /* meta.json 是「有哪些内置音色」的单一真相源（外部引擎播报只认 userData，不依赖模型路径）。
+     ⛔ 11-17 修复：只登记**文件真的在盘上**的条目 —— 旧实现把生成失败的 sid 也写进 meta，
+     列表又按 existsSync 过滤 ⇒ 界面上一个默认音色都没有（用户实测「音色列表是空的」）。 */
   writeFileSync(metaPath(userData), JSON.stringify({
     version: 1,
     refText: BUILTIN_REF_TEXT,
-    voices: wanted.map((v) => ({ sid: v.sid, name: v.name, file: `${v.sid}-${safeName(v.name, v.sid)}.wav` })),
+    voices: wanted
+      .filter((v) => existsSync(builtinPath(userData, v.sid, v.name)))
+      .map((v) => ({ sid: v.sid, name: v.name, file: `${v.sid}-${safeName(v.name, v.sid)}.wav` })),
   }, null, 2), "utf8");
   return { voices: listBuiltinVoices(userData), failed };
 }

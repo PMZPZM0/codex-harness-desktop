@@ -36,8 +36,12 @@ export type VoiceSettings = {
     /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string;
     /** 11-17：外部开源引擎的音色（每张引擎卡里选）。
      *  `""` = 沿用 profileId；`native` = 引擎自带默认音色；`builtin:<sid>` = 本机模型说话人生成的参考样本；
-     *  `profile:<id>` = 指定「我的音色」（不依赖 profileId）。 */
+     *  `preset:<id>` = 随包默认音色；`profile:<id>` = 指定「我的音色」（不依赖 profileId）。
+     *  ⚠️ 旧字段（单引擎时代），新写入见 `engineVoices`。 */
     engineVoice?: string;
+    /** 11-17：**按引擎独立**的音色选择（key = 引擎 id，如 gpt-sovits / chatterbox）。
+     *  ⛔ 用户要求每个语音模型配置独立、互不影响 —— 换引擎不能把别的引擎的音色带过去。 */
+    engineVoices?: Record<string, string>;
     /** 合成步数（10-24 新增，2–12）。步数越多音质越清晰、合成越慢。
      *  ⛔ 单一真相源：播报 / 通话 / 试听共用这一档（播报端曾写死 2 步换延迟，实测「沙哑听不清」）。 */
     numSteps: number;
@@ -154,8 +158,9 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
        的 ANNOUNCE_NUM_STEPS 历史注释：4 步 9.4s / 2 步 4.8s），而 2 步对这个蒸馏模型就是
        明显掉音质。改成**用户可选**、默认回到模型默认质量 4 步；要更清楚可在播报卡选 8 步。 */
     numSteps: 4,
-    /* 11-17：外部引擎的音色（空 = 沿用 profileId，与旧行为一致）。 */
+    /* 11-17：外部引擎的音色（空 = 沿用 profileId / 开箱默认音色）。 */
     engineVoice: "",
+    engineVoices: {},
   },
   // rule2 = 已识别出文字后，尾静音超过它就算「说完了」。09-13 由 1.2 → 0.8：
   // 它是端到端延迟里**唯一纯等待**的一块（审计 ④），每轮省 0.4s，且 0.8s 仍明显长于
@@ -449,6 +454,10 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
       /* ⛔ engine 同理必须显式透传：漏了 = 用户选了 Kokoro、设置里根本没这一项，
          刷新后回落到 vits（表现为"切了没反应"）。 */
       ...(VOICE_TTS_ENGINES.includes(engine) ? { engine } : {}),
+      /* 11-17：音色字段必须显式透传（⛔ 这里是显式字段映射，漏写 = 选完刷新就丢，
+         表现为「音色切了没反应」—— engineVoice 就曾因漏传一直没落盘）。 */
+      ...(typeof (tts as any).engineVoice === "string" ? { engineVoice: String((tts as any).engineVoice) } : {}),
+      ...((tts as any).engineVoices && typeof (tts as any).engineVoices === "object" ? { engineVoices: mergeEngineVoices((tts as any).engineVoices) } : {}),
       /* 11-11：MOSS 播报开关必须显式透传（漏了 = 开了播报刷新后又变本地）。 */
       ...((tts as any).remote === true ? { remote: true } : {}),
     },
@@ -504,6 +513,20 @@ function mergeSettings(raw: Partial<VoiceSettings> | undefined): VoiceSettings {
     call: { backend: (raw as any).call?.backend === "moss-live" ? "moss-live" : "local" },
     version: VOICE_SETTINGS_VERSION,
   };
+}
+
+/** 规范化「按引擎音色」映射：只留 `native` / `preset:` / `builtin:` / `profile:` 四类可解析值。 */
+function mergeEngineVoices(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value !== "string") continue;
+    const key = id.trim().slice(0, 64);
+    const voice = value.trim().slice(0, 200);
+    if (!key || !voice) continue;
+    if (voice === "native" || /^(preset|builtin|profile):/.test(voice)) out[key] = voice;
+  }
+  return out;
 }
 
 /** 规范化远程语音配置：只保留字符串字段，未知 provider 也保留（接口可扩展），值去首尾空白。 */

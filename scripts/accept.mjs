@@ -2804,6 +2804,30 @@ const CHECKS = [
       await h.waitFor(`!!document.querySelector(".voice-local-modal")`, { label: "基础模型弹窗", timeoutMs: 10000 });
       await wait(700);
 
+      /* 11-17 用户令：「把外面的音色模型放到基础模型弹窗里面」——轻量播报的音色卡在它自己的二级弹窗里。 */
+      const baseVoice = await h.eval(`(function(){
+        const modal=document.querySelector(".voice-local-modal"); if(!modal) return 0;
+        const b=[...modal.querySelectorAll("button")].find((x)=>((x.textContent||"").trim()==="音色"));
+        if(!b) return 0; b.click(); return 1;
+      })()`);
+      await wait(450);
+      const baseVoiceDlg = await h.eval(`(function(){
+        const dlg=[...document.querySelectorAll(".settings-dialog")].pop();
+        if(!dlg) return null;
+        return {
+          head:(dlg.querySelector(".settings-dialog-head")?.textContent||""),
+          rows: dlg.querySelectorAll(".voice-profile-item").length,
+          body:(dlg.textContent||""),
+        };
+      })()`);
+      h.check("②b 轻量播报卡「音色」打开自己的配置弹窗，默认音色按列表展示",
+        baseVoice === 1 && Boolean(baseVoiceDlg)
+          && String(baseVoiceDlg.head).includes("轻量播报") && String(baseVoiceDlg.head).includes("音色")
+          && baseVoiceDlg.rows >= 1 && String(baseVoiceDlg.body).includes("默认音色"),
+        JSON.stringify(baseVoiceDlg));
+      await h.eval(`(function(){ const dlg=[...document.querySelectorAll(".settings-dialog")].pop(); dlg?.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
+      await wait(250);
+
       const count = () => h.eval(`document.querySelectorAll("[data-external-card]").length`);
       const n0 = await count();
       h.check("③ 默认只展示 4 张推荐卡片", n0 === 4, `count=${n0}`);
@@ -2872,16 +2896,16 @@ const CHECKS = [
         if(!dlg) return null;
         const head=(dlg.querySelector(".settings-dialog-head")?.textContent||"");
         const voiceCard=[...dlg.querySelectorAll(".voice-card")].find((c)=>((c.querySelector(".voice-card-head")?.textContent||"").trim()==="音色"));
-        const hasSelect=Boolean(voiceCard && voiceCard.querySelector(".voice-input"));
+        const hasRows=Boolean(voiceCard && voiceCard.querySelector(".voice-profile-item"));
         const rect=dlg.getBoundingClientRect();
         const hit=document.elementFromPoint(rect.left+rect.width/2, rect.top+12);
-        return { head, hasSelect, hasVoiceCard: Boolean(voiceCard), z: getComputedStyle(dlg.parentElement).zIndex,
+        return { head, hasRows, hasVoiceCard: Boolean(voiceCard), z: getComputedStyle(dlg.parentElement).zIndex,
           onTop: Boolean(hit && dlg.contains(hit)), body:(dlg.textContent||"").slice(0,240) };
       })()`);
-      h.check("⑫ 点引擎卡进二级弹窗配置：弹窗在最上层（z=950），未装给安装 + 许可详情；已装时弹窗里有音色选择",
+      h.check("⑫ 点引擎卡进二级弹窗配置：弹窗在最上层（z=950），未装给安装 + 许可详情；已装时弹窗里按引擎列默认音色",
         Boolean(cfg) && String(cfg.head).includes("配置") && String(cfg.body).includes("安装")
           && String(cfg.body).includes("许可") && cfg.z === "950" && cfg.onTop === true
-          && (cfg.hasVoiceCard ? cfg.hasSelect === true : true),
+          && (cfg.hasVoiceCard ? cfg.hasRows === true : true),
         JSON.stringify(cfg));
       await h.eval(`(function(){ const dlg=[...document.querySelectorAll(".settings-dialog")].pop(); dlg?.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
       await wait(250);

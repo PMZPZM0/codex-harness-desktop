@@ -188,12 +188,24 @@ ok(/@native/.test(main) && /NATIVE_VOICE_ENGINES/.test(main) && /ref_audio != '@
 ok(/voice:external-voices/.test(manifest) && /voice:external-voices/.test(registry)
   && /voiceExternalVoices/.test(preload) && /voiceExternalVoices/.test(dts) && /voice:external-voices/.test(index),
   "引擎音色表通道四处贯通（manifest/registry/preload/vite-env + 卸载清单）");
-ok(/engineVoice/.test(service) && /resolveReference/.test(main) && /builtin:/.test(main) && /profile:/.test(main),
-  "外部引擎按引擎卡选的音色解析（native / builtin / profile，空值回落 profileId）");
-ok(/voiceOptionsFor/.test(ui) && /chooseVoice/.test(ui) && /内置音色 ·/.test(ui) && /默认音色（引擎自带）/.test(ui)
-  && /voice-ext-voice-loading/.test(css)
+ok(/engineVoices/.test(service) && /resolveReference/.test(main) && /preset:/.test(main)
+  && /builtin:/.test(main) && /profile:/.test(main)
+  && /externalEngineEffectiveVoice/.test(main),
+  "外部引擎按**引擎自己**的音色解析（native / preset / builtin / profile；只剩老字段才回落 profileId）");
+/* 11-17 用户令：「每个语音模型，都加几个默认音色进去……每个语音模型独立的更干净，互相独立，
+   互不影响，配置都是独立的」⇒ 随包默认音色（不依赖基础模型）+ 按引擎 engineVoices + 列表化。 */
+ok(/listBundledVoices/.test(builtin) && /readBundledVoice/.test(builtin)
+  && /listBundledVoices/.test(main) && /externalEngineDefaultVoice/.test(main)
+  && /defaultVoice: externalEngineDefaultVoice/.test(main),
+  "每个引擎都有开箱默认音色（Chatterbox 自带 / 其余用随包 resources/voice-presets，不依赖本机基础模型）");
+ok(/engineVoices/.test(read("electron/voice/voice-settings.ts")) && /mergeEngineVoices/.test(read("electron/voice/voice-settings.ts")),
+  "按引擎音色落盘（tts.engineVoices 映射，显式字段映射透传 —— ⛔ 不能再被 mergeSettings 吞掉）");
+ok(/voiceGroupsFor/.test(ui) && /voiceFor\(configEngine\)/.test(ui) && /data-engine-voices/.test(ui)
+  && /默认音色/.test(ui) && /模型音色/.test(ui) && /我的音色/.test(ui)
+  && /engineVoices: \{ \.\.\.\(settings\.tts\.engineVoices/.test(ui)
+  && /voice-ext-voice-group/.test(css)
   && /<VoiceExternalEnginesSection[^>]*settings=\{settings\}[^>]*apply=\{apply\}/.test(enginesUi),
-  "引擎音色下拉（原生默认音色 / 内置参考样本 / 我的音色）写回 tts.engineVoice");
+  "引擎配置弹窗里分组列出默认音色 / 模型音色 / 我的音色，并按引擎写回 tts.engineVoices");
 /* 11-17 用户令：「音色选择就放到每个语音模型卡片里面，语音模型卡片做二级弹窗预览里面设置」 */
 ok(/SettingsDialog/.test(ui) && /voice-ext-config-open/.test(ui) && /configEngine &&/.test(ui)
   && /setConfigId\(engine\.id\)/.test(ui) && /voice-ext-config/.test(css),

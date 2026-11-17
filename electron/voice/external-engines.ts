@@ -22,7 +22,7 @@ import net from "node:net";
 import { externalEngineById, VOICE_EXTERNAL_ENGINES } from "../../src/lib/voice-external-engines.mjs";
 import type { VoiceExternalEngine } from "../../src/lib/voice-external-engines.mjs";
 import { toolsRoot } from "../toolchain";
-import { readBuiltinVoice } from "./builtin-voices";
+import { listBundledVoices, readBuiltinVoice, readBundledVoice } from "./builtin-voices";
 
 type InstalledInfo = { dir: string; adapter: string; installedAt: number; version?: string };
 type ExternalState = { version: 1; installed: Record<string, InstalledInfo>; active: string };
@@ -95,6 +95,31 @@ function emitService(id: string, service: ExternalService): void {
   emit({ id, kind: "service", percent: 0, message: "", service: service.state, error: service.error });
 }
 
+/**
+ * 某个引擎的「开箱默认音色」（11-17 用户令「每个语音模型都加几个默认音色」）：
+ *  · Chatterbox 用它自带的默认音色（models/conds.pt，无需参考音频）；
+ *  · 其余克隆型引擎用**随包默认音色**（resources/voice-presets，不依赖本机基础模型）。
+ */
+export function externalEngineDefaultVoice(id: string): string {
+  if (NATIVE_VOICE_ENGINES.has(id)) return "native";
+  const first = listBundledVoices()[0];
+  return first ? `preset:${first.id}` : "";
+}
+
+/** 某个引擎当前实际生效的音色（按引擎独立 + 老档案回退 + 默认音色）。 */
+export function externalEngineEffectiveVoice(
+  id: string,
+  tts?: { engineVoices?: Record<string, string>; engineVoice?: string }
+): string {
+  let choice = String(tts?.engineVoices?.[id] ?? "").trim();
+  if (!choice) {
+    const legacy = String(tts?.engineVoice ?? "").trim();
+    /* `native` 只对自带音色的引擎有效；老档案里它可能是别的引擎选的，别串到克隆引擎上。 */
+    if (legacy && (legacy !== "native" || NATIVE_VOICE_ENGINES.has(id))) choice = legacy;
+  }
+  return choice || externalEngineDefaultVoice(id);
+}
+
 /** 目录 + 安装/启用/服务状态（渲染层卡片直接消费）。 */
 export function externalEngineList() {
   const state = loadState();
@@ -113,6 +138,8 @@ export function externalEngineList() {
         serviceError: service?.error ?? "",
         /* 11-17：自带默认音色的引擎（卡片音色下拉里多一项「默认音色」）。 */
         nativeVoice: NATIVE_VOICE_ENGINES.has(entry.id),
+        /* 11-17：开箱默认音色（没手动选过时用它，引擎弹窗里高亮这一项）。 */
+        defaultVoice: externalEngineDefaultVoice(entry.id),
         installable: Boolean(entry.install && entry.install.kind !== "external"),
       };
     }),
@@ -736,20 +763,27 @@ export async function warmExternalEngine(): Promise<{ ok: boolean; error?: strin
   try { await ensureService(active.id); return { ok: true }; } catch (error: any) { return { ok: false, error: String(error?.message ?? error) }; }
 }
 
-type SpeakOptions = { userData: string; speed: number; profileId?: string; engineVoice?: string };
+type SpeakOptions = { userData: string; speed: number; profileId?: string; engineVoice?: string; engineVoices?: Record<string, string> };
 
 type ResolvedReference = { profile: { audioPath: string; refText: string; profileId: string } | null; native: boolean; error?: string };
 
 /**
  * 解析「这个引擎这次该用谁的声音」（11-17 每个引擎卡自己的音色选择）：
  *  · `native`          → 引擎自带默认音色（无参考音频）
+ *  · `preset:<id>`     → 随包默认音色（resources/voice-presets，不依赖本机基础模型）
  *  · `builtin:<sid>`   → 本机模型说话人生成的内置参考样本
  *  · `profile:<id>`    → 指定「我的音色」档案
  *  · 空                → 沿用老字段 profileId（兼容老档案/老界面）
  */
-function resolveReference(userData: string, options: SpeakOptions): ResolvedReference {
-  const choice = String(options.engineVoice ?? "").trim();
+function resolveReference(userData: string, options: SpeakOptions, choiceOverride?: string): ResolvedReference {
+  const choice = String(choiceOverride ?? options.engineVoice ?? "").trim();
   if (choice === "native") return { profile: null, native: true };
+  if (choice.startsWith("preset:")) {
+    const preset = readBundledVoice(choice.slice("preset:".length));
+    return preset
+      ? { profile: { audioPath: preset.audioPath, refText: preset.refText, profileId: `preset-${preset.id}` }, native: false }
+      : { profile: null, native: false, error: "随包默认音色缺失：重装应用后再试，或改选「我的音色」" };
+  }
   if (choice.startsWith("builtin:")) {
     const sid = Number(choice.slice("builtin:".length));
     const builtin = readBuiltinVoice(userData, sid);
@@ -884,7 +918,9 @@ export async function externalEngineSpeak(text: string, options: SpeakOptions): 
   if (!active) return null;
   const info = loadState().installed[active.id];
   if (!info) return { ok: false, error: "当前外部引擎未安装" };
-  const resolved = resolveReference(options.userData, options);
+  /* 11-17：每个引擎自己的音色（engineVoices[id]）；没选过就回落到开箱默认音色。
+     ⛔ 不再共用一个 engineVoice —— 换引擎会互相串音色（用户要求「互不影响、配置独立」）。 */
+  const resolved = resolveReference(options.userData, options, externalEngineEffectiveVoice(active.id, options));
   if (resolved.native && !NATIVE_VOICE_ENGINES.has(active.id)) {
     return { ok: false, error: `「${active.name}」没有自带音色：请给它在音色里选一个参考声音` };
   }

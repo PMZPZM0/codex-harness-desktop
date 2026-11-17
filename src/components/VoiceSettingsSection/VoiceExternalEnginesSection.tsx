@@ -13,7 +13,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, ChevronUp, Download, ExternalLink, FolderOpen, LoaderCircle, Trash2, TriangleAlert, X } from "lucide-react";
 import { ToggleSwitch } from "../SettingsWidgets";
-import { AppSelect } from "../AppSelect";
 import { SettingsDialog } from "../SettingsDialog";
 import { VOICE_EXTERNAL_CATEGORIES, VOICE_EXTERNAL_DEFAULT_IDS, isHighDemand } from "../../lib/voice-external-engines.mjs";
 import type { Settings } from "../VoiceSettingsSection";
@@ -42,8 +41,10 @@ type EngineCard = {
   installable: boolean;
   installed: boolean;
   enabled: boolean;
-  /** 11-17：引擎自带默认音色（Chatterbox 的 conds.pt），音色下拉多一项。 */
+  /** 11-17：引擎自带默认音色（Chatterbox 的 conds.pt），音色列表多一项。 */
   nativeVoice?: boolean;
+  /** 11-17：开箱默认音色（没手动选过时用它；随包默认音色，不依赖本机基础模型）。 */
+  defaultVoice?: string;
   /** 11-17：「怎么用」步骤（目录里的单一真相源，弹窗里逐条展示）。 */
   usage?: string[];
   service: string;
@@ -80,9 +81,10 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
   /* 11-17：点卡片进二级弹窗，配置（启用/安装/音色/详情）都在弹窗里。 */
   const [configId, setConfigId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState("");
-  /* 引擎音色 = 内置参考样本（本机模型说话人，首次生成约 10 秒）+ 我的音色。 */
+  /* 引擎音色 = 随包默认音色（不依赖模型）+ 本机模型说话人样本 + 我的音色。 */
   const [builtins, setBuiltins] = useState<{ sid: number; name: string }[]>([]);
-  const [profiles, setProfiles] = useState<{ id: string; name: string }[]>([]);
+  const [presets, setPresets] = useState<{ id: string; name: string; desc?: string; lang?: string }[]>([]);
+  const [profiles, setProfiles] = useState<{ id: string; name: string; builtIn?: boolean }[]>([]);
   const [voicesLoading, setVoicesLoading] = useState(false);
 
   const refresh = () => {
@@ -137,11 +139,15 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
   useEffect(() => {
     let alive = true;
     window.codex.voiceProfilesList()
-      .then((r) => { if (alive) setProfiles(Array.isArray(r?.profiles) ? r.profiles.map((p: { id: string; name?: string }) => ({ id: String(p.id), name: String(p.name || "我的音色") })) : []); })
+      .then((r) => { if (alive) setProfiles(Array.isArray(r?.profiles) ? r.profiles.map((p: { id: string; name?: string; builtIn?: boolean }) => ({ id: String(p.id), name: String(p.name || "我的音色"), builtIn: p.builtIn === true })) : []); })
       .catch(() => undefined);
     setVoicesLoading(true);
     window.codex.voiceExternalVoices()
-      .then((r) => { if (alive) setBuiltins(Array.isArray(r?.voices) ? r.voices.map((v: { sid: number; name: string }) => ({ sid: Number(v.sid), name: String(v.name) })) : []); })
+      .then((r) => {
+        if (!alive) return;
+        setBuiltins(Array.isArray(r?.voices) ? r.voices.map((v: { sid: number; name: string }) => ({ sid: Number(v.sid), name: String(v.name) })) : []);
+        setPresets(Array.isArray(r?.presets) ? r.presets.map((p: { id: string; name: string; desc?: string; lang?: string }) => ({ id: String(p.id), name: String(p.name), desc: p.desc, lang: p.lang })) : []);
+      })
       .catch(() => undefined)
       .finally(() => { if (alive) setVoicesLoading(false); });
     return () => { alive = false; };
@@ -166,19 +172,52 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
   const hiddenCount = Math.max(0, filtered.length - visible.length);
   const configEngine = configId ? engines.find((engine) => engine.id === configId) : undefined;
 
-  /** 该引擎卡片里的音色下拉选项（原生默认音色 / 内置参考样本 / 我的音色）。 */
-  const voiceOptionsFor = (engine: EngineCard) => [
-    { value: "", label: profiles.length ? "跟随「我的音色」当前选择" : "未选音色（需要参考音频）" },
-    ...(engine.nativeVoice ? [{ value: "native", label: "默认音色（引擎自带）" }] : []),
-    ...builtins.map((v) => ({ value: `builtin:${v.sid}`, label: `内置音色 · ${v.name}` })),
-    ...profiles.map((p) => ({ value: `profile:${p.id}`, label: `我的音色 · ${p.name}` })),
-  ];
+  /** 每个引擎自己的音色（默认音色 / 模型说话人 / 我的音色）——三组分开列，不再混在一个下拉里。 */
+  const myProfiles = profiles.filter((profile) => !profile.builtIn);
+  const voiceGroupsFor = (engine: EngineCard) => {
+    const groups: { title: string; hint: string; items: { value: string; label: string; tag: string }[] }[] = [];
+    if (engine.nativeVoice) {
+      groups.push({ title: "引擎默认音色", hint: "模型自带，无需参考音频", items: [{ value: "native", label: "默认音色", tag: "自带" }] });
+    }
+    if (presets.length) {
+      groups.push({
+        title: "默认音色",
+        hint: "随应用自带的参考音色，装上引擎就能用（不依赖本机基础模型）",
+        items: presets.map((preset) => ({ value: `preset:${preset.id}`, label: preset.name, tag: preset.lang === "en" ? "英" : "中" })),
+      });
+    }
+    if (builtins.length) {
+      groups.push({
+        title: "模型音色",
+        hint: "用本机基础模型的真实说话人生成（首次约 10 秒）",
+        items: builtins.map((voice) => ({ value: `builtin:${voice.sid}`, label: voice.name, tag: "模型" })),
+      });
+    }
+    if (myProfiles.length) {
+      groups.push({
+        title: "我的音色",
+        hint: "你自己导入 / 录制 / 克隆的参考音频",
+        items: myProfiles.map((profile) => ({ value: `profile:${profile.id}`, label: profile.name, tag: "我的" })),
+      });
+    }
+    return groups;
+  };
+
+  /** 该引擎当前生效的音色：自己的选择 > 老档案的 engineVoice（仅当对本引擎有效） > 开箱默认音色。 */
+  const voiceFor = (engine: EngineCard) => {
+    const own = String(settings?.tts?.engineVoices?.[engine.id] ?? "").trim();
+    if (own) return own;
+    const legacy = String(settings?.tts?.engineVoice ?? "").trim();
+    if (legacy && (legacy !== "native" || engine.nativeVoice)) return legacy;
+    return String(engine.defaultVoice ?? "");
+  };
 
   const chooseVoice = (engine: EngineCard, value: string) => {
     if (!settings?.tts) return;
-    void apply?.({ tts: { ...settings.tts, engineVoice: value } });
-    const picked = voiceOptionsFor(engine).find((o) => o.value === value)?.label ?? value;
-    onNotice(value ? `「${engine.name}」音色已切换到：${picked}` : "音色已改为跟随「我的音色」当前选择");
+    /* ⛔ 按引擎独立落盘：换引擎不串音色（用户要求「每个语音模型配置独立、互不影响」）。 */
+    void apply?.({ tts: { ...settings.tts, engineVoices: { ...(settings.tts.engineVoices ?? {}), [engine.id]: value } } });
+    const picked = voiceGroupsFor(engine).flatMap((group) => group.items).find((item) => item.value === value)?.label ?? value;
+    onNotice(`「${engine.name}」音色已切换到：${picked}`);
   };
 
   const install = async (engine: EngineCard) => {
@@ -441,23 +480,45 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
             </div>
 
             {configEngine.installed && (
-              <div className="voice-card">
-                <div className="voice-card-head"><span>音色</span></div>
+              <div className="voice-card" data-engine-voices={configEngine.id}>
+                <div className="voice-card-head">
+                  <span>音色</span>
+                  <span className="voice-card-value">{voiceGroupsFor(configEngine).flatMap((group) => group.items).find((item) => item.value === voiceFor(configEngine))?.label ?? "未选"}</span>
+                </div>
                 <div className="voice-card-body">
-                  <div className="voice-row">
-                    <AppSelect
-                      className="voice-input"
-                      value={String(settings?.tts?.engineVoice ?? "")}
-                      onChange={(value) => chooseVoice(configEngine, value)}
-                      ariaLabel={`${configEngine.name} 音色`}
-                      options={voiceOptionsFor(configEngine)}
-                    />
-                    {voicesLoading && <small className="voice-ext-voice-loading"><LoaderCircle size={12} className="spin" />生成内置音色…</small>}
-                  </div>
+                  {voicesLoading && <div className="voice-card-hint"><LoaderCircle size={12} className="spin" /> 正在准备默认音色…</div>}
+                  {voiceGroupsFor(configEngine).map((group) => (
+                    <div key={group.title} className="voice-ext-voice-group">
+                      <div className="voice-subhead">
+                        <strong>{group.title}</strong>
+                        <span className="voice-group-sub">{group.hint}</span>
+                      </div>
+                      <div className="voice-profile-list">
+                        {group.items.map((item) => (
+                          <div key={item.value} className="voice-profile-item">
+                            <label className="voice-profile-pick">
+                              <input
+                                type="radio"
+                                name={`voice-${configEngine.id}`}
+                                checked={voiceFor(configEngine) === item.value}
+                                onChange={() => chooseVoice(configEngine, item.value)}
+                              />
+                              <span>{item.label}</span>
+                              <em>{item.tag}</em>
+                            </label>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  {!voicesLoading && voiceGroupsFor(configEngine).length === 0 && (
+                    <div className="voice-card-hint">
+                      默认音色还没准备好：先安装基础语音模型（约 270MB）生成模型音色，或到「我的音色」导入一段参考音频。
+                    </div>
+                  )}
                   <div className="voice-card-hint">
-                    {configEngine.nativeVoice
-                      ? "这个引擎自带默认音色；也可以选内置参考音色（本机模型说话人生成的参考样本）或你自己的「我的音色」。"
-                      : "这个引擎是克隆型：选内置参考音色（本机模型说话人生成的参考样本）或你的「我的音色」；首次生成内置音色约 10 秒。"}
+                    音色按引擎独立保存：切换引擎不会改动这里的选择，每个语音模型各用各的配置。
+                    {configEngine.nativeVoice ? " 这个引擎也自带默认音色（无需参考音频）。" : ""}
                   </div>
                 </div>
               </div>

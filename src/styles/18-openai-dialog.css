@@ -2299,6 +2299,10 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-ext-config-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 2px; }
 .voice-ext-config-actions button { width: 100%; justify-content: center; }
 .voice-ext-voice-loading { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font-size: 10.5px; flex: none; }
+/* 11-17：音色按「默认音色 / 模型音色 / 我的音色」分组列表（每个引擎独立配置）。 */
+.voice-ext-voice-group { display: flex; flex-direction: column; gap: 6px; }
+.voice-ext-voice-group + .voice-ext-voice-group { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line-soft); }
+.voice-ext-voice-group .voice-subhead { margin: 0; }
 .voice-ext-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
 .voice-ext-kv { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 11.5px; }
 .voice-ext-kv dt { color: var(--faint); margin: 0; }
