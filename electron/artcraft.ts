@@ -19,7 +19,7 @@
  * ⛔ 只下载官方 GitHub release（镜像序 + SHA256SUMS 校验），不重打包、不搬源码、不冒充 ArtCraft 官方。
  * ⛔ 应用本身的安装 / 卸载交给 Launcher（它自己处理 UAC 与安装目录）——宿主不代装。
  */
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
@@ -523,13 +523,47 @@ export function openCraftApp(appId: string, file?: string): { ok: boolean; error
 
 
 /** 打开 Launcher（未安装给中文指引）。 */
+/** 读 Windows 系统代理（host:port；开关关 / 读不到返回空串）。
+ *  ⛔ Launcher 用 ureq，只认 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY 环境变量（二进制实测），不读 WinINET ——
+ *     用户开了 Clash 这类系统代理时，必须由我们翻译成环境变量传给它，否则它仍直连 GitHub（慢到 1MB/s）。 */
+export function systemProxyForLauncher(): string {
+  if (process.platform !== "win32") return "";
+  try {
+    const key = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings";
+    const read = (name: string) => {
+      const out = execFileSync("reg", ["query", key, "/v", name], { encoding: "utf8", windowsHide: true, timeout: 3000 });
+      return String(out ?? "");
+    };
+    if (!/ProxyEnable\s+REG_DWORD\s+0x1/i.test(read("ProxyEnable"))) return "";
+    const raw = read("ProxyServer");
+    const value = /ProxyServer\s+REG_SZ\s+(\S+)/i.exec(raw)?.[1] ?? "";
+    if (!value) return "";
+    /* ProxyServer 可能是 "127.0.0.1:7890"，也可能按协议分组 "http=...;https=..."。 */
+    const pick = /(?:^|;)\s*(?:https|http)=([^;]+)/i.exec(value)?.[1] ?? value;
+    return pick.replace(/^\w+:\/\//, "").trim();
+  } catch { return ""; }
+}
+
+/** 打开 ArtCraft Launcher（有系统代理时注入 HTTPS_PROXY/ALL_PROXY，让它下 App 更快）。 */
 export function openArtCraftLauncher(): { ok: boolean; error?: string } {
   const launcher = artcraftLauncherPath();
   if (!launcher) {
     return { ok: false, error: "ArtCraft Launcher 还没安装：请到「设置 → 开发工具 → Craft 全家桶」点安装（约 11MB）" };
   }
   try {
-    spawn(launcher, [], { detached: true, stdio: "ignore", windowsHide: false }).unref();
+    /* 11-17：把系统代理传给 Launcher（ureq 只认环境变量）—— 用户抱怨 App 下载慢时，这是唯一可用的提速口。 */
+    const proxy = systemProxyForLauncher();
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    if (proxy) {
+      const url = `http://${proxy}`;
+      for (const name of ["HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy"]) {
+        if (!env[name]) env[name] = url;
+      }
+      for (const name of ["NO_PROXY", "no_proxy"]) {
+        if (!env[name]) env[name] = "localhost,127.0.0.1";
+      }
+    }
+    spawn(launcher, [], { detached: true, stdio: "ignore", windowsHide: false, env }).unref();
     return { ok: true };
   } catch (error) {
     return { ok: false, error: (error as Error)?.message ?? String(error) };

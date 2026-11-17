@@ -96,6 +96,10 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
     "status 回传扫描根 + 手动安装位置通道（pick-root 走目录选择器）");
   ok(/artcraftPickRoot/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")) && /安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
     "界面有「安装位置」入口（识别不到时手动指定，任意盘都行）");
+  /* 11-17 用户实测「Launcher 下载只有 1MB/s」：ureq 只认环境变量，系统代理要由我们注入。 */
+  ok(/systemProxyForLauncher/.test(core) && /HTTPS_PROXY/.test(core) && /ALL_PROXY/.test(core)
+    && /openArtCraftLauncher[\s\S]{0,1400}?env/.test(core) && /proxy: systemProxyForLauncher\(\)/.test(domSrc),
+    "打开 Launcher 时注入系统代理（HTTPS_PROXY/ALL_PROXY）并在状态里回报（下载慢时可提速）");
   ok(/安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx"))
     && /修改位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
     "App 详情弹窗展示安装位置并可修改（PhotoCraft 与其它 App 同一个弹窗）");

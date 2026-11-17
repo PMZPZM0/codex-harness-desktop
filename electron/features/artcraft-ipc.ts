@@ -26,6 +26,7 @@ import {
   craftAppMcpServers,
   craftScanRoots,
   listInstalledCraftApps,
+  systemProxyForLauncher,
   openArtCraftLauncher,
   openCraftApp,
   readCraftRootSetting,
@@ -108,6 +109,8 @@ export const artcraftFeature = defineFeature<null>({
         /* 11-17：把「扫了哪些目录」一并回给界面 —— 识别不到时用户能看到原因、也能手动指定。 */
         roots: craftScanRoots(),
         customRoot: readCraftRootSetting(),
+        /* 11-17：从本卡打开 Launcher 时会带上系统代理（它只认环境变量）。 */
+        proxy: systemProxyForLauncher(),
         attribution: { license: "MIT OR Apache-2.0", home: ARTCRAFT_HOME, apps: ARTCRAFT_APPS_HOME },
       };
     });

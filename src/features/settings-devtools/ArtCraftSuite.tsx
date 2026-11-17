@@ -33,6 +33,8 @@ type Status = {
   roots?: string[];
   /** 手动指定的安装根（空 = 自动检测）。 */
   customRoot?: string;
+  /** 启动 Launcher 时会注入的系统代理（空 = 没有开系统代理）。 */
+  proxy?: string;
   attribution: { license: string; home: string; apps: string };
 };
 
@@ -301,7 +303,7 @@ export function ArtCraftSuite(props: SuiteProps) {
             <span className="runtime-icon"><Palette size={15} /></span>
             <span className="runtime-copy">
               <strong>打开 Launcher</strong>
-              <small>{status?.installed ? "安装 / 更新 / 打开任意创作 App 都在 Launcher 里完成；装完回到这里会自动显示「已安装」" : "装好 Launcher 后可以在这里直接打开"}</small>
+              <small>{status?.installed ? `安装 / 更新 / 打开任意创作 App 都在 Launcher 里完成；装完回到这里会自动显示「已安装」${status.proxy ? `。启动时会带上系统代理 ${status.proxy}（下载更快）` : "；下载慢可在系统里开代理，从本卡打开会自动带上"}` : "装好 Launcher 后可以在这里直接打开"}</small>
             </span>
             <div className="runtime-actions">
               {status?.installed ? (
