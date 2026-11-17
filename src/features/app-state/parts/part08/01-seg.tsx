@@ -713,7 +713,7 @@ bag.deleteThreadsByCwd = deleteThreadsByCwd as typeof bag.deleteThreadsByCwd;
          ⛔ 装了以后还会注册 [mcp_servers.photocraft]（headless，roots=userData/photocraft-io），
             但引擎 0.157 会延迟暴露 MCP 工具 ⇒ 主路径仍是这个动态工具。 */
       { type: "function", name: "photocraft",
-        description: "用 PhotoCraft（开源 Photoshop 重写）做专业图像后期：action=status 查安装/版本/MCP；commands 发现引擎命令（可按关键字过滤，500+ 条，如 curves / vibrance / sharpen / text）；run 对一个文档按序执行命令并另存新文件（最多 20 条，命令 id 用 commands 查，参数是 JSON 对象）；convert 换格式（PNG/JPEG/WebP/PSD/TIFF…）；batch 对整个目录批量执行；info 读尺寸/位深/图层树；open 用 PhotoCraft 原生窗口打开图片给用户手工编辑。⛔ 需先在「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」安装（约 137MB）；未安装时 status 会说明去哪里装。⛔ 输出路径不能与输入相同（不覆盖原图）；文件必须位于会话工作目录或应用数据目录内。",
+        description: "用 PhotoCraft（开源 Photoshop 重写）做专业图像后期：action=status 查安装/版本/MCP；commands 发现引擎命令（可按关键字过滤，500+ 条，如 curves / vibrance / sharpen / text）；run 对一个文档按序执行命令并另存新文件（最多 20 条，命令 id 用 commands 查，参数是 JSON 对象）；convert 换格式（PNG/JPEG/WebP/PSD/TIFF…）；batch 对整个目录批量执行；info 读尺寸/位深/图层树；open 用 PhotoCraft 原生窗口打开图片给用户手工编辑。⛔ 安装由 Craft 全家桶的 Launcher 负责（跟其它 App 一样）：到「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」用 Launcher 安装；未安装时 status 会说明。⛔ 输出路径不能与输入相同（不覆盖原图）；文件必须位于会话工作目录或应用数据目录内。",
         inputSchema: { type: "object", properties: {
           action: { type: "string", enum: ["status", "commands", "info", "run", "convert", "batch", "open"], description: "要执行的动作" },
           path: { type: "string", description: "info / run / convert / open 用：输入文件的绝对路径" },

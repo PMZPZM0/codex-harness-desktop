@@ -345,6 +345,12 @@ export function craftScanRoots(): string[] {
   return [...new Set([...craftAppInstallRoots(), ...craftAppSiblingRoots()])];
 }
 
+/** 查一个 App 的安装信息（例如 PhotoCraft 的 CLI/GUI 路径要交给 `photocraft` 工具用）。 */
+export function installedCraftApp(id: string): InstalledCraftApp | null {
+  const target = normalizeCraftId(id);
+  return scanCraftAppDirs().find((app) => app.id === target) ?? null;
+}
+
 /** 读 Windows exe 的 VERSIONINFO 版本（按 mtime 缓存；读不到返回空串，不阻断状态）。 */
 const exeVersionCache = new Map<string, { stamp: string; version: string }>();
 async function readExeVersion(exe: string): Promise<string> {

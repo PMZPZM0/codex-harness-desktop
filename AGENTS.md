@@ -343,16 +343,16 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 - ⛔ **合规**：MIT 原文与版权头随包；只作**风格参考** —— 不复制品牌 logo / 商标 / 图片 / 专有字体，生成界面不冒充官方。工具描述、技能、页面文案、`THIRD_PARTY_NOTICES.md` 四处都写明。
 - 判据：守卫 **`12bs-design-md`（74 条：数据真值与中文导读全覆盖 / 同步脚本来源 / 三通道 / slug 白名单 / 工具+指令+技能 / 页面五处注册 / 中英文预览与色板分组真值表 / 分类下拉与导出项目选择 / 打包与合规）** + 验收 **`design-library`（8 条：84 份加载（中文导读 + 分类下拉）/ 搜索 / 中文导读色值 / 英文原文页签 / 复制回执 / 导出目标可选 / 真导出 / 交给 Codex 填输入框）**。
 
-### 🖼 PhotoCraft 专业图像后期（`electron/photocraft.ts` + `features/photocraft-ipc.ts` + `src/features/settings-devtools/PhotoCraftCard.tsx`，11-15 立）
+### 🖼 PhotoCraft 专业图像后期（`electron/photocraft.ts` + `features/photocraft-ipc.ts`，11-15 立；11-17 改 Launcher 安装）
 
-用户给了 <https://github.com/storytold/photocraft>（纯 Rust 的开源 Photoshop 重写，MIT/Apache-2.0，7.9 万星）问怎么用。三条出口一次接齐（P1 工具 / P2 MCP / P3 GUI）：
+用户给了 <https://github.com/storytold/photocraft>（纯 Rust 的开源 Photoshop 重写，MIT/Apache-2.0，7.9 万星）问怎么用。三条出口（P1 工具 / P2 MCP / P3 GUI）：
 
-- **按需下载**：`electron/photocraft.ts` 从官方 GitHub release 拉便携包（Windows `windows-x64-portable.zip`，约 137MB；mac 只有 CLI zip；Linux tar.gz），镜像序 + **`SHA256SUMS.txt` 校验**，解压到 `tools/photocraft/`（CLI `photocraft-cli` + Windows GUI `photocraft.exe`）。⛔ 不随包、不重打包、不搬源码；版本写入 `version.txt`，更新链走 `GITHUB_UPDATEABLE.photocraft`。
+- ⛔⛔ **安装归 Craft 全家桶的 Launcher（11-17 用户令：「跟其他应用一样那个软件安装，这边负责识别联动」「不要直接下载安装」）**：宿主**不再**下载 release、不再解压到 `tools/photocraft`。CLI / GUI 路径来自 `artcraft.ts` 的安装扫描（`installedCraftApp("photocraft")`，Launcher 装在哪都能认）；老安装目录只作兜底。入口与其它 App 同一层级 3 弹窗（`ArtCraftSuite`），⛔ 没有独立安装卡（`PhotoCraftCard` 已删除），工具名仍是 `photocraft`（不改成 `craft_photocraft`）。
 - **工具 `photocraft`**（7 动作）：`status` / `commands`（500+ 命令可发现）/ `info` / `run`（按序执行 ≤20 条命令）/ `convert` / `batch`（整目录）/ `open`（原生窗口）。⛔ 命令 id 走白名单正则、参数 ≤8KB/条；文件必须落在可信根或 `userData/photocraft-io`；**输出不得与输入同路径**（不覆盖原图）；一律 `spawn` 参数数组、不开 shell。
-- **MCP 连接器（P2）**：装了才写 `[mcp_servers.photocraft]`（headless CLI，`--no-gpu`，读/写根都限 `userData/photocraft-io`），由 `custom-model-apply` 统一生成（手写 config 会被它的 mcp_servers 重建逻辑清掉）。⛔ 引擎 0.157 会**延迟暴露 MCP 工具** ⇒ 主路径永远是上面的动态工具；MCP 只作高级命令面。卸载时重建 config（去掉该段）并重启引擎。
-- **GUI 编辑（P3）**：图片产物卡右上角「在 PhotoCraft 中编辑」→ `photocraft:open` 启动官方 GUI（mac 若只装了 CLI 会提示去装 App）。⛔ 不嵌入 Electron、不重写它的界面。
-- ⛔ **许可/边界**：只下载官方发行物；解压出的 LICENSE/NOTICE/OFL 原样保留；不冒充 ArtCraft 官方。项目 early alpha：命令 id 与参数随版本变化，装的是固定版本，升级走卡片「更新」行。
-- 判据：守卫 **`12bt-photocraft`（51 条：安装链 / 可信路径 / 不覆盖原图 / 命令白名单 / 参数合计上限 / 新入口文案 / MCP 段 / 工具+指令+技能+卡片 / 图片入口 / 许可）** + 验收 **`photocraft`（三级入口 / 卡片与工具状态 / 路径越界拒绝）**。⚠️ 11-16 起它的入口在「开发工具 → Craft 全家桶 → PhotoCraft」三层弹窗里（见下节），独立卡片已撤销。
+- **MCP 连接器（P2）**：检测到才写 `[mcp_servers.photocraft]`（headless CLI，`--no-gpu`，读/写根都限 `userData/photocraft-io`），由 `custom-model-apply` 统一生成。⛔ 引擎 0.157 会**延迟暴露 MCP 工具** ⇒ 主路径永远是上面的动态工具；MCP 只作高级命令面。
+- **GUI 编辑（P3）**：图片产物卡右上角「在 PhotoCraft 中编辑」→ `photocraft:open` 启动 Launcher 装的 GUI（mac 若只装了 CLI 会提示去装 App）。⛔ 不嵌入 Electron、不重写它的界面。
+- ⛔ **许可/边界**：只识别官方发行物；不重打包、不冒充 ArtCraft 官方。项目 early alpha：命令 id 与参数随版本变化，升级由 Launcher 管。
+- 判据：守卫 **`12bt-photocraft`（35 条：不自行安装 / Launcher 路径解析 / 可信路径 / 不覆盖原图 / 命令白名单与参数上限 / MCP 段 / 工具+指令+技能+弹窗 / 图片入口 / 许可）** + 验收 **`photocraft`（三级入口 / 与其它 App 同一弹窗 / 状态与路径闸）**。
 
 ### 🧰 Craft 全家桶（`electron/artcraft.ts` + `features/artcraft-ipc.ts` + `src/features/settings-devtools/ArtCraftSuite.tsx`，11-16 立）
 
@@ -670,10 +670,11 @@ Next.js + PostgreSQL 的多智能体互动课堂；按需下载源码 + pnpm 依
 `userData/openmaic-data`，卸载可保留。⛔ 依赖必须在最终 app 路径安装（pnpm node_modules 含链接，装完再移动会丢）；
 ⛔ pg_ctl 退出码不可信，以端口可连为准；模型 Key 只由用户在网页设置里填，宿主不读不写。
 配套 Codex 工具 `openmaic`（status / start / stop / open / generate / job）与内置技能 `openmaic`；守卫 12bp）。
-**PhotoCraft + Craft 全家桶**（11-15 / 11-16，storytold：photocraft 与 craft-launcher，Apache-2.0）：
-开发工具里只有一张「Craft 全家桶」卡（三级弹窗，见下文专节）—— PhotoCraft 的 137MB 便携包与 ArtCraft Launcher 的
-11MB 便携包各自按需下载（GitHub release 镜像序 + SHA256SUMS → `tools/photocraft` / `tools/artcraft-launcher`），
-App 本身的安装/卸载交给 Launcher；装完后**每个 App 各自接一条 MCP + 一个独立工具 `craft_<id>`**。守卫 12bt / 12bu。
+**PhotoCraft + Craft 全家桶**（11-15 / 11-16 / 11-17，storytold：photocraft 与 craft-launcher，Apache-2.0）：
+开发工具里只有一张「Craft 全家桶」卡（三级弹窗，见下文专节）—— 只按需下载 ArtCraft Launcher 的 11MB 便携包
+（GitHub release 镜像序 + SHA256SUMS → `tools/artcraft-launcher`）；19 个 App（含 PhotoCraft）的安装/卸载全部交给
+Launcher，宿主只扫描识别并接线；PhotoCraft 仍用自己的 `photocraft` 工具 + `[mcp_servers.photocraft]`，其它 App
+各自接一条 MCP + 独立工具 `craft_<id>`。守卫 12bt / 12bu。
 **卡片内更新**（11-14 用户：「这些卡片界面里面好像都没有配套更新功能」）：开发工具里按需下载卡
 （Filee / ApkStart / OpenMAIC / 飞书 CLI）都有独立「更新」行（`RuntimeUpdateRow`，打开卡片自动查一次），
 复用 `runtime:update-check` / `runtime:update` 单一真相源；OpenMAIC 更新 = 重新下载并构建（先停服务/库，课程数据保留）。
@@ -706,7 +707,7 @@ App 本身的安装/卸载交给 Launcher；装完后**每个 App 各自接一�
 | 生图：命令行 `harness-media.mjs image`（首选 dynamicTool `generate_image`） | 命令行 / dynamicTool | 需在 设置→插件→内置插件 配置；未配置时调用会返回指引。⛔ 识图（视觉辅助插件 / describe_image / harness-media vision）已于 10-30 整体移除，不许加回 |
 | rpa_save / rpa_run | dynamicTools | 保存自动化流程为 RPA 配方 / 列出并执行已存配方（逐步复现） |
 | filee_convert | dynamicTools（10-30） | 调本机 Filee（`filee-cli.exe`）把文件离线转换格式：244 种（图片/PDF/Office/电子书/音视频/归档/CAD/数据/3D），恒带 `--json` 结构化回执；需在 设置→开发工具→Filee 文件转换 安装（151MB，GitHub 镜像序 + SHA256 校验），装后 developer_instructions 注入第 5 条用法；更新在「控制台 → 组件更新」 |
-| photocraft | dynamicTools（11-15） | 用 PhotoCraft（开源 Photoshop 重写）做专业图像后期：status / commands（500+ 命令可发现）/ info / run（按序执行 ≤20 条命令）/ convert / batch / open（原生窗口）。需在 设置→开发工具→Craft 全家桶→PhotoCraft 安装（约 137MB，GitHub release 镜像序 + SHA256SUMS 校验）；文件必须落在会话目录，输出不得覆盖原图；装了会注册 MCP 连接器（引擎延迟暴露 MCP 工具 ⇒ 主路径仍是本工具） |
+| photocraft | dynamicTools（11-15；11-17 改 Launcher 安装） | 用 PhotoCraft（开源 Photoshop 重写）做专业图像后期：status / commands（500+ 命令可发现）/ info / run（按序执行 ≤20 条命令）/ convert / batch / open（原生窗口）。⛔ 安装由 Craft 全家桶的 Launcher 负责（设置→开发工具→Craft 全家桶→PhotoCraft），宿主不直接下载；文件必须落在会话目录，输出不得覆盖原图；检测到就注册 MCP 连接器（引擎延迟暴露 MCP 工具 ⇒ 主路径仍是本工具） |
 | craft_<id> | dynamicTools（11-16，每个已装 App 一个） | 对 Craft 全家桶里**已安装**的 App（CADCraft / LightCraft / FilmCraft…）各自调用它自己的无头 CLI：status / commands / info / run / convert / open。工具只在 Launcher 装好该 App 后出现（新开会话或切走再切回）；输出不能与输入同路径；每个 App 一条独立 `[mcp_servers.<id>]`，⛔ 不共用统一网关 |
 | apkstart | dynamicTools（11-14） | 在本机 ApkStart 安卓模拟器里测应用：`status` 查状态/设备/已装应用（读它自己的 `apps.json`）、`install` 装 APK（可选装完启动）、`launch` 按包名启动、`screenshot` 截屏存 PNG、`logcat` 读日志（保留崩溃行）、`adb` 透传点按/输入/授权命令、`open` 打开主界面；需在 设置→开发工具→ApkStart 安卓运行器 安装（仅 Windows，首启再下约 1GB 运行时；pending 不算成功），细节见技能 `android-emulator` |
 | openmaic | dynamicTools（11-14） | 在本机 OpenMAIC 互动课堂里生成课：`status` 查安装/服务/能力、`start`/`stop` 启停本地服务与 PostgreSQL、`open` 打开网页、`generate` 提交（requirement / materialIds，异步返回 jobId）、`job` 查进度与课堂链接；需在 设置→开发工具→OpenMAIC 互动课堂 安装（约 1.3GB 下载 + 构建 5–10 分钟，仅 Windows）；⛔ 模型 Key 由用户在网页设置里自己填（不要发到对话里），生成别循环死等，细节见技能 `openmaic` |
@@ -837,7 +838,7 @@ GitHub Release Notes、`whats-new-notes.ts` 要点的**唯一权威数据源**�
 不重翻 commit。只追加不改写（勘误另起行）；格式与分工说明见该文件头部。漏记 = 工作未完成。
 
 - 近期功能性变更（宿主行为，引擎交互相关）
-- 11-15 PhotoCraft 专业图像后期：按需下载（137MB）+ photocraft 工具 + MCP 连接器 + 图片卡 GUI 编辑（见「### 🖼 PhotoCraft 专业图像后期」）
+- 11-15 / 11-17 PhotoCraft 专业图像后期：改由 Craft 全家桶的 Launcher 安装（宿主只识别联动，不再直接下载）+ photocraft 工具 + MCP 连接器 + 图片卡 GUI 编辑（见「### 🖼 PhotoCraft 专业图像后期」）
 - 11-16 Craft 全家桶：开发工具一张卡三级弹窗（Launcher 11MB 按需装 / 19 个 App 目录 / 每个 App 一层弹窗）；装完联动（已装状态 + 版本自动出现），**每个已装 App 各自一条 MCP + 独立工具 `craft_<id>`**（用户令「工具都拆开」）；`artcraft:run` 是执行端（见「### 🧰 Craft 全家桶」）
 - 11-14 工作伙伴群编排抄 Pachat：先读再说 + 去自由催办 + 每成员每日预算/失败隔 5 分钟重试 + 群治理（活跃度/群规矩/成员治理/群模板）（见「### 🧑‍🤝‍🧑 工作伙伴群编排」）
 - 11-15 设计参考库：84 份品牌 DESIGN.md 随包（工具 design_md + 设置页「设计参考」浏览/预览/导出/交给 Codex）（见「### 🎨 设计参考库」）

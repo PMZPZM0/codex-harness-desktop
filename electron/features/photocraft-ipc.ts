@@ -18,6 +18,7 @@ import {
   openPhotoCraftGui,
   photocraftCliPath,
   photocraftGuiPath,
+  photocraftInstallDir,
   photocraftInstalledVersion,
   photocraftMcpRegistered,
   photocraftPaths,
@@ -72,16 +73,19 @@ export const photocraftFeature = defineFeature<null>({
 
     ipcHost.handle("photocraft:status", async () => {
       const paths = photocraftPaths();
-      const installed = Boolean(photocraftCliPath());
+      const cli = photocraftCliPath();
+      const installDir = photocraftInstallDir();
       return {
-        installed,
+        installed: Boolean(cli),
         version: photocraftInstalledVersion(),
-        cliPath: installed ? paths.cli : "",
-        guiPath: installed ? photocraftGuiPath() : "",
+        /** 实际安装目录（Launcher 装在哪都能认；界面「安装位置」用）。 */
+        dir: installDir,
+        cliPath: cli,
+        guiPath: cli ? photocraftGuiPath() : "",
         ioRoot: paths.ioRoot,
         mcpRegistered: photocraftMcpRegistered(),
         platform: process.platform,
-        sizeBytes: installed ? dirSizeBytes(paths.root) : 0,
+        sizeBytes: installDir ? dirSizeBytes(installDir) : 0,
         attribution: { license: "MIT OR Apache-2.0", home: PHOTOCRAFT_HOME },
       };
     });

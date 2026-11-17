@@ -4,7 +4,7 @@
  *   层级 1（开发工具页）：一张「Craft 全家桶」卡；
  *   层级 2（本文件主视图）：Launcher 安装/更新/卸载 + 网关状态 + 19 个 App 的网格；
  *   层级 3（每个 App 一个弹窗）：安装状态 / 能做什么 / 怎么用 / 来源，布局与 PhotoCraft 详情一致。
- *      PhotoCraft 那一层直接复用完整的 PhotoCraftCard（自己的工具 / MCP / GUI 入口都在）。
+ *      PhotoCraft 与其它 App 同构（11-17 用户令：也由 Launcher 安装，宿主只识别联动）。
  *
  * ⛔ App 的安装与卸载由 Launcher 自己完成（它处理 UAC 与安装目录）；宿主只装 Launcher。
  * ⛔ 已装状态来自主进程扫描 Launcher 安装目录（status.installedApps）—— 弹窗打开期间每 2.5s
@@ -15,7 +15,6 @@ import { AlertTriangle, Check, Download, ExternalLink, FolderOpen, Palette, Plug
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
-import { PhotoCraftCard } from "./PhotoCraftCard";
 import { CRAFT_APPS, craftAppByKey, normalizeCraftKey } from "./artcraft-apps";
 
 type InstalledEntry = { id: string; name: string; dir: string; exePath: string; cliPath: string; version: string };
@@ -130,19 +129,30 @@ export function ArtCraftSuite(props: SuiteProps) {
   }, [refresh, setNotice]);
 
   /* 11-17 用户实测「别的电脑装完识别不到」：允许手动指定 Launcher 安装目录（任意盘）。 */
+  /* 位置设置的**行内反馈**（11-17 用户实测「点自动检测只是按钮消失，像没反应」）：检测中禁用 + 结果写在行里。 */
+  const [rootBusy, setRootBusy] = useState(false);
+  const [rootFlash, setRootFlash] = useState("");
   const pickRoot = async (clear = false) => {
+    setRootBusy(true);
+    setRootFlash(clear ? "正在恢复自动检测…" : "正在选择目录…");
     try {
       const result = await window.codex.artcraftPickRoot(clear ? { clear: true } : undefined);
-      if (result?.canceled) return;
+      if (result?.canceled) { setRootFlash(""); return; }
       const next = await window.codex.artcraftStatus() as Status;
       setStatus(next);
       const count = Array.isArray(next?.installedApps) ? next.installedApps.length : 0;
-      setNotice(
-        clear ? "已恢复自动检测" : `已设置安装位置：${result?.root ?? ""}`,
-        count ? `扫描到 ${count} 个已装 App` : "这个目录下还没找到 Craft App —— 请选包含各 App 文件夹的那一级目录",
-      );
+      const flash = clear
+        ? `已恢复自动检测 · 扫描到 ${count} 个 App`
+        : `已设置安装位置 · 扫描到 ${count} 个 App`;
+      setRootFlash(flash);
+      setNotice(clear ? "已恢复自动检测" : `已设置安装位置：${result?.root ?? ""}`,
+        count ? `扫描到 ${count} 个已装 App` : "这个目录下还没找到 Craft App —— 请选包含各 App 文件夹的那一级目录");
+      window.setTimeout(() => setRootFlash(""), 8000);
     } catch (error) {
+      setRootFlash("");
       setNotice("选择安装位置失败", String((error as Error)?.message ?? error));
+    } finally {
+      setRootBusy(false);
     }
   };
 
@@ -158,7 +168,7 @@ export function ArtCraftSuite(props: SuiteProps) {
 
   const app = craftAppByKey(selectedApp);
   const appInstalled = app ? installedByKey.get(normalizeCraftKey(app.key)) : undefined;
-  const appToolId = app ? `craft_${app.key.replace(/[^a-z0-9]/g, "")}` : "";
+  const appToolId = app ? (app.key === "photocraft" ? "photocraft" : `craft_${app.key.replace(/[^a-z0-9]/g, "")}`) : "";
   const appToolReady = Boolean(appInstalled?.cliPath) && (status?.mcpServers ?? []).includes(appInstalled?.id ?? "");
 
   /* 装完 / 卸完自动同步：已装（带 CLI）名单和已写入的 MCP 名单不一致时，自动重写一次配置。 */
@@ -262,6 +272,7 @@ export function ArtCraftSuite(props: SuiteProps) {
                     : cliApps.length
                       ? `已检测到 ${cliApps.length} 个 App，正在写入配置（需要先在模型页配置一个可用模型）`
                       : `还没检测到已装 App —— 已扫描 ${status.roots?.length ?? 0} 个目录${status.customRoot ? `（自定义：${status.customRoot}）` : ""}。装在别的盘/自定义目录时，点「安装位置」指过去`}
+                {rootFlash ? ` · ${rootFlash}` : ""}
               </small>
             </span>
             <div className="runtime-actions">
@@ -270,11 +281,11 @@ export function ArtCraftSuite(props: SuiteProps) {
               </span>
               {status?.installed ? (
                 <>
-                  <button type="button" className="secondary-setting runtime-install" title="Launcher 装在别的盘时，选包含各 App 文件夹的那一级目录" onClick={() => void pickRoot()}>
-                    <FolderOpen size={13} />安装位置
+                  <button type="button" className="secondary-setting runtime-install" disabled={rootBusy} title="Launcher 装在别的盘时，选包含各 App 文件夹的那一级目录" onClick={() => void pickRoot()}>
+                    {rootBusy ? <><Spinner /> 检测中…</> : <><FolderOpen size={13} />安装位置</>}
                   </button>
                   {status.customRoot ? (
-                    <button type="button" className="secondary-setting runtime-install" title="清除手动指定的位置，恢复自动检测" onClick={() => void pickRoot(true)}>
+                    <button type="button" className="secondary-setting runtime-install" disabled={rootBusy} title="清除手动指定的位置，恢复自动检测" onClick={() => void pickRoot(true)}>
                       自动检测
                     </button>
                   ) : null}
@@ -366,25 +377,7 @@ export function ArtCraftSuite(props: SuiteProps) {
           size={app.integrated ? "md" : "md"}
           onClose={() => setSelectedApp(null)}
         >
-          {app.integrated ? (
-            <PhotoCraftCard
-              setNotice={setNotice}
-              installDevRuntime={installDevRuntime}
-              runtimeInstalling={runtimeInstalling}
-              uninstallDevRuntime={uninstallDevRuntime}
-              runtimeUninstalling={runtimeUninstalling}
-              runtimeStage={runtimeStage}
-              runtimePercent={runtimePercent}
-              runtimeSpeed={runtimeSpeed}
-              runtimeProgress={runtimeProgress}
-              cancelDevRuntime={cancelDevRuntime}
-              setRuntimeModal={setRuntimeModal}
-              installDir={installedByKey.get("photocraft")?.dir}
-              customRoot={status?.customRoot}
-              onPickRoot={(clear) => void pickRoot(clear)}
-            />
-          ) : (
-            <section className="settings-section stack feishu-cli-card">
+          <section className="settings-section stack feishu-cli-card">
               <div className="feishu-cli-list">
                 <div className={`runtime-row ${appInstalled ? "installed" : "missing"}`}>
                   <span className="runtime-icon">{appInstalled ? <Check size={15} /> : <Download size={15} />}</span>
@@ -410,14 +403,15 @@ export function ArtCraftSuite(props: SuiteProps) {
                       {appInstalled?.dir
                         ? `${appInstalled.dir}（${status?.customRoot ? "手动指定" : "自动检测"}）`
                         : `还没找到这个 App —— ${status?.customRoot ? `当前手动指定：${status.customRoot}` : `已自动扫描 ${status?.roots?.length ?? 0} 个目录`}；装在别的盘时点右侧指定`}
+                      {rootFlash ? ` · ${rootFlash}` : ""}
                     </small>
                   </span>
                   <div className="runtime-actions">
-                    <button type="button" className="secondary-setting runtime-install" title="选择包含各 App 文件夹的那一级目录" onClick={() => void pickRoot()}>
-                      修改位置
+                    <button type="button" className="secondary-setting runtime-install" disabled={rootBusy} title="选择包含各 App 文件夹的那一级目录" onClick={() => void pickRoot()}>
+                      {rootBusy ? <><Spinner /> 检测中…</> : "修改位置"}
                     </button>
                     {status?.customRoot ? (
-                      <button type="button" className="secondary-setting runtime-install" onClick={() => void pickRoot(true)}>自动检测</button>
+                      <button type="button" className="secondary-setting runtime-install" disabled={rootBusy} onClick={() => void pickRoot(true)}>自动检测</button>
                     ) : null}
                   </div>
                 </div>
@@ -490,7 +484,6 @@ export function ArtCraftSuite(props: SuiteProps) {
                 </div>
               </div>
             </section>
-          )}
         </SettingsDialog>
       )}
     </>

@@ -96,10 +96,9 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
     "status 回传扫描根 + 手动安装位置通道（pick-root 走目录选择器）");
   ok(/artcraftPickRoot/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")) && /安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
     "界面有「安装位置」入口（识别不到时手动指定，任意盘都行）");
-  ok(/安装位置/.test(read("src/features/settings-devtools/PhotoCraftCard.tsx"))
-    && /onPickRoot/.test(read("src/features/settings-devtools/PhotoCraftCard.tsx"))
-    && /installDir=\{installedByKey/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
-    "两个 App 详情弹窗都展示安装位置并可修改（PhotoCraft 复用卡 + 通用 App 弹窗）");
+  ok(/安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx"))
+    && /修改位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
+    "App 详情弹窗展示安装位置并可修改（PhotoCraft 与其它 App 同一个弹窗）");
   ok(/function scanCraftAppDirs[\s\S]{0,1400}?cliPath: cli/.test(core), "扫描记录主程序 + *-cli.exe");
   ok(/ARTCRAFT_EXE/.test(core) && /VersionInfo\.ProductVersion/.test(core),
     "版本读 exe VERSIONINFO（路径经环境变量传入，⛔ 不进 PowerShell 源码）");
@@ -125,7 +124,7 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
   const suite = read(SUITE);
   ok(/CRAFT_APPS\.map/.test(suite) && /setSelectedApp\(item\.key\)/.test(suite), "层级 2：App 网格逐项可点");
   ok(/craftAppByKey\(selectedApp\)/.test(suite) && /title=\{app\.name\}/.test(suite), "层级 3：点 App 再开一层弹窗");
-  ok(/<PhotoCraftCard/.test(suite), "PhotoCraft 的层级 3 复用完整卡片（工具 / MCP / GUI 入口不丢）");
+  ok(!/PhotoCraftCard/.test(suite) && /app\.key === "photocraft" \? "photocraft"/.test(suite), "PhotoCraft 与其它 App 同一个层级 3 弹窗（工具名仍是 photocraft）");
   ok(/RuntimeUpdateRow[\s\S]{0,200}?id="artcraft"/.test(suite), "层级 2 有独立更新行（GitHub 直下型）");
   ok(/已安装/.test(suite) && /在 Launcher 中打开/.test(suite) && /在 Launcher 中安装/.test(suite),
     "层级 3 真实反映已装状态（已安装 / 在 Launcher 中打开 / 安装）");

@@ -1646,11 +1646,11 @@ const CHECKS = [
       await wait(500);
       const opened = await h.eval(`(function(){ const tiles=[...document.querySelectorAll(".craft-app-tile")]; const hit=tiles.find(function(t){ return (t.textContent||"").includes("PhotoCraft"); }); if(!hit) return 0; hit.click(); return 1; })()`);
       h.check("② 层级 2 能点开 PhotoCraft", opened === 1);
-      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; return !!d && (d.textContent||"").includes("安装 PhotoCraft"); })()`, { label: "PhotoCraft 层级 3 弹窗", timeoutMs: 8000 });
+      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; return !!d && (d.textContent||"").includes("安装位置"); })()`, { label: "PhotoCraft 层级 3 弹窗", timeoutMs: 8000 });
       await wait(500);
-      const rows = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; const text=(d&&d.textContent)||""; return { text: text.slice(0, 1200), hasInstall: text.includes("安装 PhotoCraft"), hasMcp: text.includes("MCP 连接器"), hasGui: text.includes("原生窗口编辑"), hasLicense: text.includes("来源与许可") }; })()`);
-      h.check("③ 层级 3 含安装 / MCP / GUI / 许可四行",
-        Boolean(rows) && rows.hasInstall && rows.hasMcp && rows.hasGui && rows.hasLicense, JSON.stringify(rows).slice(0, 400));
+      const rows = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; const text=(d&&d.textContent)||""; return { text: text.slice(0, 1200), hasInstall: text.includes("在 Launcher 中安装") || text.includes("已安装"), hasPlace: text.includes("安装位置"), hasTool: text.includes("Codex 工具"), hasLicense: text.includes("来源与许可") }; })()`);
+      h.check("③ 层级 3 含安装 / 安装位置 / 工具 / 许可四块",
+        Boolean(rows) && rows.hasInstall && rows.hasPlace && rows.hasTool && rows.hasLicense, JSON.stringify(rows).slice(0, 400));
       const upd = await h.eval(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; const d=ds[ds.length-1]; return Boolean(d && [...d.querySelectorAll(".runtime-row")].find(function(r){ return (r.textContent||"").includes("更新"); })); })()`);
       h.check("④ 层级 3 内有独立更新行", upd === true);
 
@@ -1696,8 +1696,8 @@ const CHECKS = [
 
       const photo = await h.eval(`(function(){ const tiles=[...document.querySelectorAll(".craft-app-tile")]; const hit=tiles.find(function(t){ return (t.textContent||"").includes("PhotoCraft"); }); if(!hit) return 0; hit.click(); return 1; })()`);
       h.check("⑤ 层级 2 能点开 PhotoCraft", photo === 1);
-      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; return ds.length >= 2 && (ds[ds.length-1].textContent||"").includes("安装 PhotoCraft"); })()`, { label: "PhotoCraft 层级 3 弹窗", timeoutMs: 8000 });
-      h.check("⑥ PhotoCraft 层级 3 复用完整卡片", true);
+      await h.waitFor(`(function(){ const ds=[...document.querySelectorAll(".settings-dialog")]; return ds.length >= 2 && (ds[ds.length-1].textContent||"").includes("安装位置"); })()`, { label: "PhotoCraft 层级 3 弹窗", timeoutMs: 8000 });
+      h.check("⑥ PhotoCraft 与其它 App 同一弹窗（安装位置 + 工具行）", true);
       await h.eval(`(function(){ const bs=[...document.querySelectorAll(".settings-dialog-close")]; bs[bs.length-1]?.click(); return 1; })()`);
       await wait(300);
       const back = await h.eval(`(function(){ return { dialogs: document.querySelectorAll(".settings-dialog").length, grid: document.querySelectorAll(".craft-app-grid").length }; })()`);

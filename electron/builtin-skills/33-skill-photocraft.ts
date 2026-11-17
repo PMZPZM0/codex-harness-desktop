@@ -13,7 +13,7 @@ description: 专业图像后期（PhotoCraft，storytold/photocraft，MIT/Apache
 ## 它是什么
 - 纯 Rust 写的 Photoshop 兼容编辑器（约 69 个工具、图层/蒙版/调整层/图层样式/文字/矢量、PSD/PSB 读写）。
 - 引擎与命令注册表（500+ 命令）同时驱动 GUI、CLI、MCP —— 同一件事在界面和自动化里行为一致。
-- 本应用按需下载官方便携包（约 137MB，镜像序 + SHA256SUMS 校验）；Windows 含 CLI + GUI，mac 版只随 CLI。
+- 安装由 Craft 全家桶的 Launcher 负责（跟其它 App 一样），本应用只识别并接入 CLI / GUI；Windows 含 CLI + GUI，mac 版只随 CLI。
 
 ## 工具用法（\`photocraft\`）
 1. \`action="status"\`：看装没装、版本、CLI/GUI、MCP 段、体积。没装就引导用户去「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」。
@@ -34,7 +34,7 @@ description: 专业图像后期（PhotoCraft，storytold/photocraft，MIT/Apache
 - ⛔ 不覆盖原图：\`out\` / \`outDir\` 必须与输入不同；原图要保留。
 - ⛔ 文件必须落在会话工作目录或应用数据目录内（IPC 层会拒绝越界路径）。
 - ⛔ 不要自己 shell 调 \`photocraft-cli\`：走 \`photocraft\` 工具（参数校验、超时、输出上限都在宿主侧）。
-- ⛔ 未安装时不要尝试自动安装：告诉用户去设置页点安装（约 137MB）。
+- ⛔ 未安装时不要尝试自动安装：让用户到「设置 → 开发工具 → Craft 全家桶 → PhotoCraft」用 Launcher 安装。
 - MCP 连接器 \`photocraft\` 在安装后会写进 config.toml（roots 限 \`userData/photocraft-io\`），但引擎可能延迟暴露 MCP 工具 ⇒ 主路径永远是本工具。
 
 ## 什么时候用
@@ -43,6 +43,6 @@ description: 专业图像后期（PhotoCraft，storytold/photocraft，MIT/Apache
 - 用户要在 PhotoCraft 里自己改：用 \`open\` 打开窗口，别在对话里模拟。
 
 ## 什么时候别用
-- 只要基础裁剪/缩放/转格式且 PhotoCraft 没装：先用现有 image_edit / filee_convert，别为一张小图让用户下 137MB。
+- 只要基础裁剪/缩放/转格式且 PhotoCraft 没装：先用现有 image_edit / filee_convert，别为一张小图让用户去装整套 Launcher App。
 - 用户要的是生成新图（文生图/改图），不是后期：走 image_generate / image_edit。
 `;

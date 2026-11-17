@@ -26,7 +26,7 @@ import { findMoeKoeExe } from "../moekoe";
 // 自动化工具链状态：nuphus-mcp（桌面）；浏览器自动化主通道是外部 Ego Lite。
 // 静态检测安装目录与缓存，不 spawn 进程，打开设置页即时返回。
 
-type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli" | "filee" | "apkstart" | "openmaic" | "husk" | "husk-tipa" | "photocraft" | "artcraft";
+type DevRuntimeId = "python" | "node" | "pwsh" | "git" | "ffmpeg" | "vscode-cli" | "nuphus" | "jq" | "ninja" | "sevenzip" | "yt-dlp" | "rg" | "uv" | "cmake" | "ponytail" | "conda" | "docker" | "mingw" | "openssl" | "markitdown" | "platform-tools" | "laya" | "phone-harness" | "kb-embedding" | "rea" | "moekoe" | "feishu-cli" | "filee" | "apkstart" | "openmaic" | "husk" | "husk-tipa" | "artcraft";
 // bundled：随包内置（zip / 预解压目录是来源，不是联网下载）。界面显示「内置」徽标；
 // 缺失时允许「修复安装」（从随包 zip 重新解压），但不允许卸载（删了没有可靠重取途径）。
 // hidden：**不在「开发工具」页出卡**（它有自己的专用卡片），但注册成正式工具项 ⇒
@@ -83,11 +83,8 @@ const devRuntimeSpecs: Record<DevRuntimeId, DevRuntimeSpec> = {
   husk: { name: "Husk（iPhone 跑 Android）", description: "在 iPhone 上运行 Android 应用/游戏的开源项目（Leviidev/Husk，GPL-2.0）：64 位 Android 代码走翻译层直接跑，跑不了的用 QEMU 跑完整 LineageOS；导入 APK 后全屏启动。电脑侧按需下载官方 Husk.ipa（约 142 MB）+ SHA256 校验并提供侧载指南；iOS 15.5+，需 SideStore / AltStore / TrollStore 侧载，部分游戏需要 JIT", size: "约 142 MB（Husk.ipa）", marker: "husk\\Husk.ipa" },
   // Husk TIPA（11-14）：TrollStore 专用格式，与 IPA 同版本、同目录；hidden ⇒ 不单独出卡（Husk 卡里一个按钮）。
   "husk-tipa": { name: "Husk TIPA（TrollStore）", description: "Husk 的 TrollStore 专用安装包（.tipa，约 142 MB）；在「Husk（iPhone 跑 Android）」卡里单独下载；与 IPA 同版本", size: "约 142 MB（Husk.tipa）", marker: "husk\\Husk.tipa", hidden: true },
-  // PhotoCraft（11-15，storytold/photocraft，MIT/Apache-2.0）：纯 Rust 重写的 Photoshop。
-  //   Windows 便携包含 CLI + GUI（约 137MB 压缩，解压约 300MB）⇒ 按需下载，不随包。
-  //   CLI 给 Codex 工具 photocraft 调色/滤镜/格式/批量；GUI 供图片卡「在 PhotoCraft 中编辑」；
-  //   MCP 连接器由 custom-model-apply 在已安装时生成（roots = userData/photocraft-io）。
-  photocraft: { name: "PhotoCraft 图像编辑", description: "纯 Rust 重写的开源 Photoshop（storytold/photocraft，MIT/Apache-2.0）：图层 / 蒙版 / 调整层 / 图层样式 / 文字 / PSD 读写。给 Codex 提供 photocraft 工具做调色、锐化、格式转换与批量处理，并注册 MCP 连接器（500+ 命令可发现）；图片产物的「在 PhotoCraft 中编辑」也用它打开原生窗口。约 137MB 按需下载（镜像序 + SHA256 校验）；Windows 含 CLI+GUI，mac 版只随 CLI（GUI 请用官方 dmg）", size: "约 137 MB", marker: "photocraft" },
+  // ⛔ PhotoCraft 不再是宿主运行时（11-17 用户令）：跟其它 App 一样由 Craft 全家桶的 Launcher 安装，
+  //    宿主只扫描识别并生成 `photocraft` 工具 / MCP 段（见 electron/photocraft.ts）。
   // Craft 全家桶（11-16，storytold/craft-launcher，MIT/Apache-2.0）：19 个创作 App（17 官方 + 2 社区）的统一启动器。
   //   宿主只按需下载便携包（约 11MB）；App 的安装/更新/打开由 Launcher 自己完成。
   //   上游新版随包提供 craft-ai-mcp 网关后，custom-model-apply 会自动写 [mcp_servers.ArtCraft]。
