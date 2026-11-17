@@ -330,7 +330,7 @@ export function ArtCraftSuite(props: SuiteProps) {
                     <strong>{item.name}</strong>
                     <small>{item.zh}</small>
                   </span>
-                  {installed ? <span className="craft-app-tag is-installed">已安装</span> : item.integrated ? <span className="craft-app-tag">已接入</span> : null}
+                  {installed ? <span className="craft-app-tag is-installed">已安装</span> : null}
                 </button>
               );
             })}
@@ -373,8 +373,8 @@ export function ArtCraftSuite(props: SuiteProps) {
         <SettingsDialog
           title={app.name}
           icon={<Palette size={15} />}
-          hint={`${app.zh}${app.integrated ? " · 已接入 Codex" : ""}${app.community ? " · 社区维护" : ""}`}
-          size={app.integrated ? "md" : "md"}
+          hint={`${app.zh}${app.community ? " · 社区维护" : ""}`}
+          size="md"
           onClose={() => setSelectedApp(null)}
         >
           <section className="settings-section stack feishu-cli-card">

@@ -24,12 +24,11 @@ export type CraftAppInfo = {
   /** Launcher 目录给的主题色（徽标用）。 */
   color: string;
   /** 宿主已有直连 Codex 工具（目前只有 PhotoCraft）。 */
-  integrated?: boolean;
   community?: boolean;
 };
 
 export const CRAFT_APPS: CraftAppInfo[] = [
-  { key: "photocraft", name: "PhotoCraft", zh: "图像编辑", desc: "图层 / 蒙版 / 调整层 / 文字 / 真实 PSD 读写；已接入 Codex 的 photocraft 工具与原生窗口编辑。", features: ["原生 GPU 画布，非 Electron / 网页套壳", "分层 PSD / PSB 读写", "调整层 / 智能对象 / 图层样式", "本地主体与物体选择、蒙版细化"], sizeMb: 137, repo: "https://github.com/storytold/photocraft", site: "https://getartcraft.com/apps/photocraft", color: "#2f7bf5", integrated: true },
+  { key: "photocraft", name: "PhotoCraft", zh: "图像编辑", desc: "图层 / 蒙版 / 调整层 / 文字 / 真实 PSD 读写；装好后可接 Codex 的 photocraft 工具与原生窗口编辑。", features: ["原生 GPU 画布，非 Electron / 网页套壳", "分层 PSD / PSB 读写", "调整层 / 智能对象 / 图层样式", "本地主体与物体选择、蒙版细化"], sizeMb: 137, repo: "https://github.com/storytold/photocraft", site: "https://getartcraft.com/apps/photocraft", color: "#2f7bf5" },
   { key: "lightcraft", name: "LightCraft", zh: "照片库与 RAW 冲图", desc: "照片库 + RAW 显影，非破坏式调整。", features: ["非破坏式 32 位宽色域管线，不碰原片", "光 / 颜色 / 效果 / 曲线 / 混色 / 调色轮与预设", "画笔 / 渐变 / 范围蒙版，天空 / 主体 / 背景蒙版", "原生 RAW：DNG / CR2 / ARW / NEF / RAF / RW2 / PEF / ORF"], sizeMb: 117, repo: "https://github.com/storytold/lightcraft", site: "https://getartcraft.com/apps/lightcraft", color: "#f2a516" },
   { key: "vectorcraft", name: "VectorCraft", zh: "矢量插画", desc: "矢量图形绘制与编辑。", features: ["钢笔 / 直接选择 / 布尔 / 吸附等熟悉工作流", "数千图形仍保持流畅", "混合、封套、网格、发光、阴影保持可编辑", "位图转矢量描摹；SVG / PDF 进出"], sizeMb: 155, repo: "https://github.com/storytold/vectorcraft", site: "https://getartcraft.com/apps/vectorcraft", color: "#e8573f" },
   { key: "filmcraft", name: "FilmCraft", zh: "视频剪辑", desc: "非线性剪辑，带调色与声音处理。", features: ["时间线三点编辑与 J/K/L 修剪", "整数时基，23.976 / 29.97 精确不漂移", "原生 H.264 / HEVC / ProRes / VP9 编解码", "调色（曲线 / 色轮 / HSL / LUT / HDR）与关键帧"], sizeMb: 108, repo: "https://github.com/storytold/filmcraft", site: "https://getartcraft.com/apps/filmcraft", color: "#8b5cf6" },

@@ -136,7 +136,9 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
   const apps = read(APPS);
   const names = (apps.match(/name: "[^"]+"/g) || []).length;
   ok(names >= 19, `App 目录覆盖套件（实到 ${names} 条；17 官方 + 2 社区 = 19）`);
-  ok(/key: "photocraft"[\s\S]{0,600}?integrated: true/.test(apps), "目录标注 PhotoCraft 已接入");
+  /* 11-17 用户截图：「未安装的 PhotoCraft 还挂着『已接入』标签」——现在它与其它 App 一样，只在已装时显示「已安装」。 */
+  ok(!/integrated: true/.test(apps) && !/item\.integrated/.test(suite) && !/app\.integrated/.test(suite),
+    "目录与网格不再给未安装 App 挂「已接入」标签（已装只显示「已安装」）");
   ok(/CRAFT_APPS\.find/.test(apps) && /normalizeCraftKey/.test(apps), "目录提供按 key 查找 + id 归一化");
   ok(/19 个创作 App/.test(devtools) && /19 个开源|19 个创作 App/.test(suite),
     "界面文案与目录条数一致（19 个 = 17 官方 + 2 社区；⛔ 不是 18）");
