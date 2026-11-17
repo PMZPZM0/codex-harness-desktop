@@ -25,10 +25,13 @@ import type { TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 
 /** 办公室预览入口：点开看群成员在办公室里的位置与状态。 */
-export function TeamOfficeEntry({ group, live, busy, onOpenThread }: {
+export function TeamOfficeEntry({ group, live, busy, members: membersProp, onOpenThread }: {
   group: TeamGroup;
   live?: LiveRun[];
   busy?: string[];
+  /** ⛔ 11-17：调用方给「展开后的工位表」（整团槽 ⇒ 主理人 + 每位成员）。
+   *  不传时退回旧口径（只按 group.members，团群会只剩一个工位）。 */
+  members?: { id: string; name: string; role: string; status: string; threadId?: string }[];
   onOpenThread?: (threadId: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -36,6 +39,8 @@ export function TeamOfficeEntry({ group, live, busy, onOpenThread }: {
   /* 工位 = 群里**干活的人**（伙伴/员工）。⛔ 群主本人（kind=human，名字「我」）不派工位：
      用户 11-08 明确「别把用户算进去」。状态只认运行态：live 里有正在跑的回合 / busy 名单里。 */
   const groupMembers = useMemo(() => {
+    /* ⛔ 调用方已经算好展开表 ⇒ 直接用它（单一真相源，别在这里再展开一次）。 */
+    if (membersProp?.length) return membersProp;
     const running = new Set((live ?? []).filter((run) => run.status === "running").map((run) => run.memberId));
     for (const id of busy ?? []) running.add(id);
     return group.members.filter((member) => member.kind !== "human").map((member) => {
@@ -48,7 +53,7 @@ export function TeamOfficeEntry({ group, live, busy, onOpenThread }: {
         threadId: liveRun?.threadId,
       };
     });
-  }, [group.members, live, busy]);
+  }, [membersProp, group.members, live, busy]);
 
   return (
     <>

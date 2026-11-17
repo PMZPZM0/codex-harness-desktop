@@ -687,6 +687,35 @@ export function TeamGroupView({
     return m ? faceOf(m) : { id: key, name: nameOf(key) };
   };
 
+  /* ⛔⛔ 11-17 用户实测：「专家团会话的办公室只有一个卡通人物」。
+     根因：办公室直接读 `group.members`，而团群在那里**只有一条整团槽** ⇒ 只坐一个人。
+     ⇒ 这里按**成员栏同一份展开**给出「谁该有工位」：整团槽 = 主理人 + 每位团成员，
+        合成 id 与群流作者 id 同构（`team:<teamId>:<memberId>`）⇒ 运行动态/开会话一次对上。
+     ⛔ 群主本人（kind=human）不派工位（11-08 用户令）。⛔ 别在办公室里再写一份展开。 */
+  const officeRoster = useMemo(() => {
+    const rows: { id: string; name: string; role: string; status: string; threadId?: string }[] = [];
+    const runningOf = (id: string) => Boolean(busy?.includes(id))
+      || Boolean((live ?? []).some((r) => r.status === "running" && String(r.memberId ?? "") === id));
+    const threadOf = (id: string) => (live ?? []).find((r) => String(r.memberId ?? "") === id)?.threadId;
+    for (const m of group.members) {
+      if (m.kind === "human") continue;
+      if (m.targetKind === "team") {
+        const teamId = String(m.targetKey ?? "");
+        const lead = teamLeadOf(m);
+        if (lead) {
+          const leadId = teamAuthorIdOf(teamId, teamMemberIdOf(lead));
+          rows.push({ id: leadId, name: lead.name || personNameOf(m), role: lead.profession || "主理人", status: runningOf(leadId) ? "busy" : "idle", threadId: threadOf(leadId) });
+        }
+        for (const kid of teamKidsOf(m)) {
+          const kidId = teamAuthorIdOf(teamId, teamMemberIdOf(kid));
+          rows.push({ id: kidId, name: kid.name || "成员", role: kid.profession || "团成员", status: runningOf(kidId) ? "busy" : "idle", threadId: threadOf(kidId) });
+        }
+        continue;
+      }
+      rows.push({ id: m.id, name: personNameOf(m), role: m.targetProfession || (m.kind === "bot" ? "伙伴" : "成员"), status: runningOf(m.id) ? "busy" : "idle", threadId: threadOf(m.id) });
+    }
+    return rows;
+  }, [group.members, group.avatars, catalog, busy, live]);
   /* @ 候选（正文解析用）：群成员 + 团成员，名字统一走 personNameOf（群主 = 用户中心真名）。 */
   const mentionCandidates = buildMentionCandidates(group.members, personNameOf, teamKidsOf, teamAuthorIdOf, teamMemberIdOf);
 
@@ -1515,7 +1544,7 @@ export function TeamGroupView({
           </button>
           {/* ⛔ 11-08 用户（截图）：「把办公室预览图标放到设置按键这一排的展开折叠左边」——
               从成员栏末位挪到群头操作区，落在「收起/展开成员栏」键的左边。 */}
-          <TeamOfficeEntry group={group} live={live} busy={busy} onOpenThread={onOpenThread} />
+          <TeamOfficeEntry group={group} live={live} busy={busy} members={officeRoster} onOpenThread={onOpenThread} />
           {/* ⛔ 11-08 用户：「右边在 🔍 图标右边加一个下面展开折叠的按键图标」
               —— 收起 / 展开右侧成员栏（键位紧跟搜索键，⛔ 别挪到最右，用户点名了位置） */}
           <button
