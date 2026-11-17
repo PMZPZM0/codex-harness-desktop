@@ -27,18 +27,22 @@ export type SettingsDialogProps = {
   hint?: string;
   /** sm = 确认类（宽度 520、高度随内容）；md-auto = 表单类（宽度 720、高度随内容）；md/lg = 面板类（固定高度，内部滚动） */
   size?: "sm" | "md-auto" | "md" | "lg";
+  /** 11-17：二级弹窗**内部**再开的弹窗（如「基础模型 → 某个引擎的配置」）要压过外层二级弹窗。
+   *  ⛔ 两个都取 900 时按 DOM 顺序排，外层若是后挂载的就会盖住内层 ⇒ 显式抬到 950 档
+   *     （DESIGN.md 层级带：模态之上的最后一层，与「完整报错」弹窗同档）。 */
+  elevated?: boolean;
   onClose: () => void;
   children: ReactNode;
 };
 
 /** 统一设置弹窗：Esc 走全局 ESC 栈（只关最上层），只有点遮罩本身才关（冒泡上来的内容点击不关）。 */
-export function SettingsDialog({ title, icon, hint, size = "md", onClose, children }: SettingsDialogProps) {
+export function SettingsDialog({ title, icon, hint, size = "md", elevated = false, onClose, children }: SettingsDialogProps) {
   /* ⛔ 10-31：Esc 走全局 ESC 栈（只关最上层）—— 不再自己监听 window keydown。 */
   useEscapeLayer(true, () => onClose());
 
   return createPortal(
     /* ⛔ 只在**点遮罩本身**时关（e.target === currentTarget）：冒泡上来的内容区点击不关。 */
-    <div className="settings-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <div className={`settings-dialog-backdrop${elevated ? " is-elevated" : ""}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div className="settings-dialog" data-size={size} role="dialog" aria-modal="true" aria-label={title}>
         <div className="settings-dialog-head">
           {icon ? <span className="settings-dialog-logo">{icon}</span> : null}

@@ -18,9 +18,10 @@ import {
 import { sendToWindow } from "../window-bus";
 import type { IpcHost } from "../../ipc-host";
 import type { HostCaps } from "../../runtime/seams";
+import type { VoiceService } from "../../voice/voice-service";
 
-/** 注册开源语音引擎的 7 条通道（列表 / 安装 / 取消 / 删除 / 启停 / 打开 / 定位）。 */
-export function registerVoiceIpc5({ ipcHost, host }: { ipcHost: IpcHost; host: HostCaps }) {
+/** 注册开源语音引擎的 8 条通道（列表 / 安装 / 取消 / 删除 / 启停 / 打开 / 定位 / 音色表）。 */
+export function registerVoiceIpc5({ ipcHost, host, svc }: { ipcHost: IpcHost; host: HostCaps; svc: () => VoiceService }) {
   setExternalProgressSink((event) => {
     sendToWindow("voice:event", {
       type: event.kind,
@@ -29,6 +30,8 @@ export function registerVoiceIpc5({ ipcHost, host }: { ipcHost: IpcHost; host: H
       message: event.message,
       ok: event.ok,
       error: event.error,
+      /* 服务状态（starting/running/error/stopped）：卡片据此把「启动中」翻成「使用中」。 */
+      service: event.service,
     });
   });
 
@@ -37,6 +40,14 @@ export function registerVoiceIpc5({ ipcHost, host }: { ipcHost: IpcHost; host: H
   ipcHost.handle("voice:external-cancel", (_event, id?: string) => cancelExternalInstall(id ? String(id) : undefined));
   ipcHost.handle("voice:external-remove", (_event, id: string) => removeExternalEngine(String(id)));
   ipcHost.handle("voice:external-enable", (_event, id: string, enabled: boolean) => setExternalEngineEnabled(String(id), Boolean(enabled)));
+  ipcHost.handle("voice:external-voices", async () => {
+    /* 11-17：引擎卡里的音色列表 = 内置参考样本（本机模型说话人现生成，之后读缓存）+ 我的音色（渲染层自己合）。 */
+    try {
+      return await svc().ensureBuiltinVoiceRefs();
+    } catch (error: any) {
+      return { ok: false, voices: [], failed: [], error: String(error?.message ?? error) };
+    }
+  });
   ipcHost.handle("voice:external-open", async (_event, id: string) => {
     const dir = externalEngineInstalledDir(String(id));
     if (dir) {

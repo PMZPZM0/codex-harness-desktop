@@ -41,7 +41,7 @@ const VOICE_CHANNELS = [
   "voice:announce-owner", "voice:announce-set-muted",
   "voice:resource-delete", "voice:resource-status", "voice:tts-pack-install", "voice:tts-pack-cancel",
   "voice:external-list", "voice:external-install", "voice:external-cancel", "voice:external-remove",
-  "voice:external-enable", "voice:external-open", "voice:external-reveal",
+  "voice:external-enable", "voice:external-open", "voice:external-reveal", "voice:external-voices",
 ];
 
 export const voiceFeature = defineFeature<null>({
@@ -57,8 +57,8 @@ export const voiceFeature = defineFeature<null>({
     registerVoiceIpc3(a);
     /* 10-21：播报归属裁决（多窗口唯一播报窗口）+ 全局静音闩锁。 */
     registerVoiceIpc4(a);
-    /* 11-16：开源语音引擎卡片（按需下载 / 启停 / 打开）。 */
-    registerVoiceIpc5({ ipcHost, host });
+    /* 11-16：开源语音引擎卡片（按需下载 / 启停 / 打开）。11-17 加音色表（要现取 svc）。 */
+    registerVoiceIpc5({ ipcHost, host, svc: a.svc });
     ctx.effect(() => {
       for (const ch of VOICE_CHANNELS) ipcHost.removeHandler(ch);
     });

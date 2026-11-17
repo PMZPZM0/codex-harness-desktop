@@ -13,7 +13,8 @@
 
 import { ASR_REPO, KWS_ARCHIVE, TTS_REPO, VAD_REPO, ZIPVOICE_ARCHIVE, ZIPVOICE_DIR, kwsDir, kwsReady, zipvoiceReady } from "./model-manifest";
 import { ensureRepo, isRepoReady, modelFilePath, probeHosts, repoDir } from "./model-store";
-import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, isVoiceResourceEnabled, loadVoiceSettings, type VoiceSettings } from "./voice-settings";
+import { DEFAULT_VOICE_SETTINGS, MODEL_HOST_PRESETS, VOICE_SAMPLE_TEXT, isVoiceResourceEnabled, loadVoiceSettings, ttsVoiceNamesFor, type VoiceSettings } from "./voice-settings";
+import { ensureBuiltinVoices, BUILTIN_REF_TEXT, type BuiltinVoice } from "./builtin-voices";
 import { ASR_WORKER_SOURCE, KWS_WORKER_SOURCE, TTS_WORKER_SOURCE, VoiceWorkerClient, resolveSherpaPath } from "./workers";
 import { buildHomophoneMap, createWakeMatcher, phraseVocabHint, type WakeMatcher } from "./wake-match";
 import { buildKeywordLines, parseLexiconReadings } from "./kws-keywords";
@@ -772,6 +773,7 @@ export class VoiceService {
       userData: this.deps.userDataDir,
       speed: settings.tts.speed,
       profileId: settings.tts.profileId,
+      engineVoice: settings.tts.engineVoice,
     });
     if (external) {
       if (external.ok) this.setState("speaking");
@@ -856,7 +858,12 @@ export class VoiceService {
        旧实现只认 MOSS/本机 ⇒ 启用外部引擎后试听永远合成的是本机 vits（假联动）。
        「我的音色」行内的档案试听是显式点某个克隆音色（explicitProfile）⇒ 仍走本机克隆，不绕外部引擎。 */
     if (!input?.explicitProfile) {
-      const external = await externalEngineSpeak(text, { userData: this.deps.userDataDir, speed, profileId: settings.tts.profileId });
+      const external = await externalEngineSpeak(text, {
+        userData: this.deps.userDataDir,
+        speed,
+        profileId: settings.tts.profileId,
+        engineVoice: settings.tts.engineVoice,
+      });
       if (external) return external;
     }
     /* 11-11：MOSS 播报开启且没选克隆音色 ⇒ 试听也走远端（与播报同一嗓子）。 */
@@ -967,6 +974,42 @@ export class VoiceService {
     } catch (error: any) {
       return { ok: false, error: String(error?.message ?? error) };
     }
+  }
+
+  /**
+   * 内置参考音色（11-17）：用本机 vits 的说话人生成参考样本，供外部克隆引擎在「引擎卡音色」里选。
+   * ⛔ 合成必须走 `synthesizeLocal`（本机 worker），不能复用 `previewVoice` ——
+   *    后者现在先走外部引擎，会自我循环（外部引擎拿样本生成样本）。
+   */
+  async ensureBuiltinVoiceRefs(): Promise<{ ok: boolean; voices: BuiltinVoice[]; failed: number[]; error?: string }> {
+    const names = ttsVoiceNamesFor("vits", this.deps.modelsRoot);
+    if (!Object.keys(names).length) return { ok: false, voices: [], failed: [], error: "没有读到当前模型的说话人表" };
+    try {
+      const result = await ensureBuiltinVoices({
+        userData: this.deps.userDataDir,
+        names,
+        synthesize: (sid) => this.synthesizeLocal(sid),
+      });
+      return { ok: result.voices.length > 0, ...result };
+    } catch (error: any) {
+      return { ok: false, voices: [], failed: [], error: String(error?.message ?? error) };
+    }
+  }
+
+  /** 本机 vits 合成一段参考音频（内置样本专用；不经外部引擎 / MOSS）。 */
+  private async synthesizeLocal(sid: number): Promise<{ sampleRate: number; samples: Float32Array }> {
+    const sherpaPath = resolveSherpaPath();
+    if (!sherpaPath) throw new Error("语音运行时未就绪（sherpa-onnx 未安装）");
+    if (!(await this.refreshModelsReady())) throw new Error("语音模型未下载完整");
+    const settings = loadVoiceSettings(this.deps.userDataDir);
+    const worker = await this.ensurePreviewWorker(sherpaPath, "", settings.asr.numThreads);
+    const result = await worker.request("speak", {
+      text: BUILTIN_REF_TEXT,
+      sid,
+      speed: 1,
+      numSteps: settings.tts.numSteps,
+    });
+    return { sampleRate: Number(result.sampleRate ?? 22050), samples: new Float32Array(result.samples) };
   }
 
   /** 试听 worker 空闲自动销毁：试听是低频操作，不该常驻占内存。

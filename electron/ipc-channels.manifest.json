@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 712,
+  "count": 713,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -5687,6 +5687,16 @@
       "invokeArgs": "id",
       "cast": null,
       "note": "11-16 在文件管理器中定位外部引擎"
+    },
+    {
+      "name": "voiceExternalVoices",
+      "channel": "voice:external-voices",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<any>",
+      "invokeArgs": "",
+      "cast": "Promise<any>",
+      "note": "11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并"
     },
     {
       "name": "voiceTtsPackInstall",

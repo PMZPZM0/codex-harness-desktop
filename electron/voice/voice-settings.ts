@@ -34,6 +34,10 @@ export type VoiceSettings = {
     /** 10-26：合成引擎（三选一，按需下载、可并存）。缺省/未装 ⇒ 回落 vits。 */
     engine?: VoiceTtsEngine;
     /** "我的音色"档案 id；空串/缺省 = 用内置预置音色 */ profileId?: string;
+    /** 11-17：外部开源引擎的音色（每张引擎卡里选）。
+     *  `""` = 沿用 profileId；`native` = 引擎自带默认音色；`builtin:<sid>` = 本机模型说话人生成的参考样本；
+     *  `profile:<id>` = 指定「我的音色」（不依赖 profileId）。 */
+    engineVoice?: string;
     /** 合成步数（10-24 新增，2–12）。步数越多音质越清晰、合成越慢。
      *  ⛔ 单一真相源：播报 / 通话 / 试听共用这一档（播报端曾写死 2 步换延迟，实测「沙哑听不清」）。 */
     numSteps: number;
@@ -150,6 +154,8 @@ export const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
        的 ANNOUNCE_NUM_STEPS 历史注释：4 步 9.4s / 2 步 4.8s），而 2 步对这个蒸馏模型就是
        明显掉音质。改成**用户可选**、默认回到模型默认质量 4 步；要更清楚可在播报卡选 8 步。 */
     numSteps: 4,
+    /* 11-17：外部引擎的音色（空 = 沿用 profileId，与旧行为一致）。 */
+    engineVoice: "",
   },
   // rule2 = 已识别出文字后，尾静音超过它就算「说完了」。09-13 由 1.2 → 0.8：
   // 它是端到端延迟里**唯一纯等待**的一块（审计 ④），每轮省 0.4s，且 0.8s 仍明显长于

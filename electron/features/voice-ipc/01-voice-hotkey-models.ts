@@ -265,9 +265,10 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
       if (external) {
         const row = externalEngineList().engines.find((entry) => entry.id === external.id);
         const installed = Boolean(row?.installed);
-        /* ⛔ 外部引擎的「音色」= 「我的音色」里选中的参考音频（externalEngineSpeak 用 profileId）：
-           没选参考音色时它根本合不出声 —— 不能报 ready，否则播报/试听都变成静默失败。 */
-        const hasReference = Boolean(String(settings.tts?.profileId ?? "").trim());
+        /* ⛔ 外部引擎的「音色」= 引擎卡里选的音色（原生默认 / 内置参考样本 / 我的音色）。
+           三个都空时它合不出声 —— 不能报 ready，否则播报/试听都是静默失败。 */
+        const engineVoice = String(settings.tts?.engineVoice ?? "").trim();
+        const hasReference = Boolean(engineVoice) || Boolean(String(settings.tts?.profileId ?? "").trim());
         return {
           effective: "external",
           ready: installed && hasReference,
@@ -275,7 +276,7 @@ export function registerVoiceIpc1(deps: { ipcHost: IpcHost; host: HostCaps }) {
           reason: !installed
             ? "外部引擎已启用但没装完：到它的卡片里完成下载/安装"
             : !hasReference
-              ? `外部引擎「${external.name}」还需要参考音色：到「我的音色」导入 / 选中一个音色`
+              ? `外部引擎「${external.name}」还没有音色：在它的卡片里选一个，或到「我的音色」导入参考音频`
               : "",
         };
       }

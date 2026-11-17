@@ -1342,6 +1342,8 @@ interface Window {
     voiceExternalOpen(id: string): Promise<{ ok: boolean; mode?: string; error?: string }>;
     /* 11-16 在文件管理器中定位外部引擎 */
     voiceExternalReveal(id: string): Promise<{ ok: boolean; error?: string }>;
+    /* 11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并 */
+    voiceExternalVoices(): Promise<any>;
     /* 可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack */
     voiceTtsPackInstall(pack: string): Promise<any>;
     voiceWakeAudio(samples: Float32Array): Promise<{ ok: boolean; matched: boolean }>;

@@ -337,9 +337,9 @@ ok(/voiceProfileUpload: \(input\?/.test(read("electron/preload.ts")) && /voicePr
   "生成物两侧都有 voiceProfileUpload（preload 内联段 + d.ts 生成段；跑过 gen:ipc，不是只改了 manifest）");
 const registrySrc = read("electron/ipc-registry.ts");
 /* count 是**事实账**：voice 域 manifest 通道数（listen-only 的 voice:audio 不在 manifest，故数组比 count 多 1）。
-   11-11 加 moss-voices / moss-preview 后为 48；11-16 加开源语音引擎 7 条后为 55。 */
-ok(/\{ prefix: "voice", count: 55/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc) && /"voice:external-enable"/.test(registrySrc),
-  "ipc-registry 的 voice 域计到 55 且列出新通道（不同步会被【107】/【90】报红）");
+   11-11 加 moss-voices / moss-preview 后为 48；11-16 加开源语音引擎 7 条后为 55；11-17 加引擎音色表后为 56。 */
+ok(/\{ prefix: "voice", count: 56/.test(registrySrc) && /"voice:profile-upload"/.test(registrySrc) && /"voice:external-enable"/.test(registrySrc) && /"voice:external-voices"/.test(registrySrc),
+  "ipc-registry 的 voice 域计到 56 且列出新通道（不同步会被【107】/【90】报红）");
 const settingsState = read("src/components/VoiceSettingsSection/use-voice-settings-section-state.tsx");
 ok(/voiceProfileUpload\(\{ source: "file" \}\)/.test(settingsState)
   && /uploadProfile=\{uploadProfile\}/.test(read("src/components/VoiceSettingsSection.tsx")),
@@ -1486,8 +1486,9 @@ ok(/\|\s*\{ type: "toolSpeak"; threadId: string; text: string; speed\?: number \
   const voiceSettingsSrc = read("electron/voice/voice-settings.ts");
   ok(/G_multisperaker_latest\.json/.test(voiceSettingsSrc) && /ttsVoiceNamesFor\([^)]*modelsRoot\(\)\)/.test(statusHandler),
     "音色表读模型真实说话人名（G_multisperaker_latest.json），⛔ 不再是写死的「音色 1..5」");
-  ok(/hasReference/.test(statusHandler) && /外部引擎「\$\{external\.name\}」还需要参考音色/.test(statusHandler),
-    "外部引擎没选参考音色时 speech 不报就绪（并给出「去我的音色」的原因）");
+  ok(/hasReference/.test(statusHandler) && /settings\.tts\?\.engineVoice/.test(statusHandler)
+    && /还没有音色：在它的卡片里选一个/.test(statusHandler),
+    "外部引擎没选音色时 speech 不报就绪（engineVoice 也算音色；并给出「去引擎卡/我的音色」的原因）");
   ok(/onSelectProfile/.test(picker) && /profiles\.map\(/.test(picker) && /参考音色/.test(picker),
     "外部引擎模式下音色卡直接下拉「我的音色」参考音色（换嗓子 = 换参考音频）");
 }

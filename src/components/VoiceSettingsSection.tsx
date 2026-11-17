@@ -36,6 +36,8 @@ export type Settings = {
      加字段必须**两边同改**（electron/voice/voice-settings.ts 的 VoiceSettings.tts.engine）。 */
   tts: { sid: number; speed: number; volume: number; profileId?: string; numSteps?: number;
     engine?: "vits" | "emotivoice";
+    /** 11-17：外部开源引擎的音色（原生默认 / 内置参考样本 / 我的音色），见引擎卡里的下拉 */
+    engineVoice?: string;
     /** 11-11：播报走 MOSS-TTS（远端）；克隆音色仍优先本地 */
     remote?: boolean; };
   asr: { rule1: number; rule2: number; rule3: number; numThreads: number };

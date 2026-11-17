@@ -172,7 +172,7 @@ ok((main.match(/ADAPTER_HTTP_HEAD \+ String\.raw/g) ?? []).length === 4 && /HTTP
 ok(main.includes("SERVICE_TIMEOUT") && main.includes("chatterbox: 600_000") && main.includes("indextts2: 600_000"),
   "大模型冷启动超时放宽到 10 分钟（首次加载 30–60 秒不会再被误判失败）");
 /* 11-16 用户实测「启用了，关不掉」：启动中开关被禁用 ⇒ 加载慢时无法关闭。 */
-ok(ui.includes("disabled={toggling === engine.id}") && !ui.includes('toggling === engine.id || engine.service === "starting"')
+ok(/disabled=\{toggling === configEngine\.id\}/.test(ui) && !/toggling === [a-z]+\.id \|\| [a-z]+\.service === "starting"/.test(ui)
   && ui.includes("模型加载中（可随时关闭）"),
   "启动中也能关闭引擎（不再因 service=starting 把开关禁用）");
 ok(main.includes("服务进程已退出") && main.includes("if (service.state !== \"starting\") return;")
@@ -180,6 +180,36 @@ ok(main.includes("服务进程已退出") && main.includes("if (service.state !=
   "服务崩溃立刻失败（不再干等 10 分钟）；启动中关闭后不会被迟到的 ready 改回运行态");
 ok(ui.includes("voice-ext-service-error") && css.includes(".voice-ext-service-error"),
   "启用后服务起不来时卡片显示原因（不再只有「已启用」）");
+
+/* ── 11-17 用户实测两连：「模型一直加载中」「每个语音模型没有音色选择」 ── */
+const builtin = read("electron/voice/builtin-voices.ts");
+ok(/kind: "download" \| "downloadDone" \| "service"/.test(main) && /function emitService/.test(main)
+  && /emitService\(id, service\)/.test(main) && /type === "service"/.test(ui)
+  && /setInterval\(\(\) => refresh\(\), 2000\)/.test(ui),
+  "服务状态 starting→running/error 主动推给界面 + 启动中 2s 轮询（不再永远停在「启动中」）");
+ok(/ensureBuiltinVoices/.test(builtin) && /BUILTIN_REF_TEXT/.test(builtin)
+  && /ensureBuiltinVoiceRefs/.test(service) && /synthesizeLocal/.test(service),
+  "内置参考音色由本机模型说话人生成（ensureBuiltinVoices + synthesizeLocal，⛔ 生成不走外部引擎）");
+ok(/@native/.test(main) && /NATIVE_VOICE_ENGINES/.test(main) && /ref_audio != '@native'/.test(main)
+  && /nativeVoice: NATIVE_VOICE_ENGINES\.has/.test(main),
+  "Chatterbox 用模型自带默认音色（conds.pt）走原生项，其余引擎走参考样本");
+ok(/voice:external-voices/.test(manifest) && /voice:external-voices/.test(registry)
+  && /voiceExternalVoices/.test(preload) && /voiceExternalVoices/.test(dts) && /voice:external-voices/.test(index),
+  "引擎音色表通道四处贯通（manifest/registry/preload/vite-env + 卸载清单）");
+ok(/engineVoice/.test(service) && /resolveReference/.test(main) && /builtin:/.test(main) && /profile:/.test(main),
+  "外部引擎按引擎卡选的音色解析（native / builtin / profile，空值回落 profileId）");
+ok(/voiceOptionsFor/.test(ui) && /chooseVoice/.test(ui) && /内置音色 ·/.test(ui) && /默认音色（引擎自带）/.test(ui)
+  && /voice-ext-voice-loading/.test(css)
+  && /<VoiceExternalEnginesSection[^>]*settings=\{settings\}[^>]*apply=\{apply\}/.test(enginesUi),
+  "引擎音色下拉（原生默认音色 / 内置参考样本 / 我的音色）写回 tts.engineVoice");
+/* 11-17 用户令：「音色选择就放到每个语音模型卡片里面，语音模型卡片做二级弹窗预览里面设置」 */
+ok(/SettingsDialog/.test(ui) && /voice-ext-config-open/.test(ui) && /configEngine &&/.test(ui)
+  && /setConfigId\(engine\.id\)/.test(ui) && /voice-ext-config/.test(css),
+  "每张引擎卡 → 二级弹窗里配置（启用 / 安装 / 目录 / 卸载 / 音色 / 许可详情）");
+/* 11-17 用户实测「弹窗掉到设置弹窗下面了」：同为 900 档会被外层盖住 ⇒ 引擎配置弹窗显式抬到 950。 */
+ok(/size="md-auto"\s*\n\s*elevated/.test(ui) && /is-elevated/.test(read("src/styles/34-devtools-cards.css"))
+  && /elevated\?: boolean/.test(read("src/components/SettingsDialog.tsx")),
+  "二级弹窗内部的引擎配置弹窗抬到 950 档（is-elevated），不再被外层设置弹窗盖住");
 
 ok(String(pkg.scripts?.check ?? "").includes("12bv-voice-external"), "守卫 12bv 已加入 package.json 的 check 链");
 

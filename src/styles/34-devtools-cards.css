@@ -123,6 +123,8 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
   padding: 20px;
   background: #00000052;
 }
+/* 11-17：二级弹窗**内部**再开的弹窗（引擎配置）—— 同档 900 会被后挂载的外层盖住，抬到 950 档。 */
+.settings-dialog-backdrop.is-elevated { z-index: 950; }
 .settings-dialog {
   display: grid;
   grid-template-rows: 60px minmax(0, 1fr);

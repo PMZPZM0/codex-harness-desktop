@@ -930,6 +930,8 @@ contextBridge.exposeInMainWorld("codex", {
   voiceExternalOpen: (id: string) => __ipc("voice:external-open", 1, [id]),
   /* 11-16 在文件管理器中定位外部引擎 */
   voiceExternalReveal: (id: string) => __ipc("voice:external-reveal", 1, [id]),
+  /* 11-17 外部引擎音色表：内置参考样本（本机模型说话人生成）+ 我的音色由渲染层合并 */
+  voiceExternalVoices: () => __ipc("voice:external-voices", 0, []) as Promise<any>,
   /* 可选合成引擎包（emotivoice）按需下载；进度事件 voice:event 带 target=pack */
   voiceTtsPackInstall: (pack: string) => __ipc("voice:tts-pack-install", 1, [pack]) as Promise<any>,
   voiceWakeAudio: (samples: Float32Array) => __ipc("voice:wake-audio", 1, [samples]),

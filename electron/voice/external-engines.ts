@@ -22,12 +22,13 @@ import net from "node:net";
 import { externalEngineById, VOICE_EXTERNAL_ENGINES } from "../../src/lib/voice-external-engines.mjs";
 import type { VoiceExternalEngine } from "../../src/lib/voice-external-engines.mjs";
 import { toolsRoot } from "../toolchain";
+import { readBuiltinVoice } from "./builtin-voices";
 
 type InstalledInfo = { dir: string; adapter: string; installedAt: number; version?: string };
 type ExternalState = { version: 1; installed: Record<string, InstalledInfo>; active: string };
 type ExternalService = { state: "stopped" | "starting" | "running" | "error"; error?: string; child: ChildProcess | null; starting: Promise<void> | null };
 
-export type ExternalProgressEvent = { id: string; kind: "download" | "downloadDone"; percent: number; message: string; ok?: boolean; error?: string };
+export type ExternalProgressEvent = { id: string; kind: "download" | "downloadDone" | "service"; percent: number; message: string; ok?: boolean; error?: string; service?: string };
 
 const SERVICES = new Map<string, ExternalService>();
 let progressSink: ((event: ExternalProgressEvent) => void) | null = null;
@@ -43,6 +44,10 @@ const PORTS: Record<string, number> = {
 };
 /** 走「通用 Python 适配器」（POST /speak）的引擎。 */
 const PY_ADAPTERS = new Set(["f5-tts", "chatterbox", "qwen3-tts", "indextts2"]);
+/** 自带默认音色（模型自己带条件向量，无需参考音频）的引擎 —— 目前只有 Chatterbox（models/conds.pt）。 */
+const NATIVE_VOICE_ENGINES = new Set(["chatterbox"]);
+/** 向适配器表示「用引擎自带音色」的哨兵（避免改所有适配器的请求协议）。 */
+const NATIVE_REF = "@native";
 /** HuggingFace 在国内不可直连；模型文件与运行时下载一律走镜像。 */
 const HF_ENDPOINT = "https://hf-mirror.com";
 /** 各适配器首次启动要加载模型（Chatterbox/IndexTTS 更大），给足冷启动时间。 */
@@ -84,8 +89,14 @@ function saveState(state: ExternalState): void {
   } catch { /* 写不了就只保留内存态（下次启动丢失安装标记） */ }
 }
 
+/** 推送事件（安装进度 / 服务状态）。 */
 function emit(event: ExternalProgressEvent): void {
   try { progressSink?.(event); } catch { /* 渲染层关掉不影响安装 */ }
+}
+
+/** 服务状态推进推给渲染层：否则卡片只会在开弹窗时刷新，永远停在「启动中…」（用户实测）。 */
+function emitService(id: string, service: ExternalService): void {
+  emit({ id, kind: "service", percent: 0, message: "", service: service.state, error: service.error });
 }
 
 /** 目录 + 安装/启用/服务状态（渲染层卡片直接消费）。 */
@@ -104,6 +115,8 @@ export function externalEngineList() {
         active: state.active,
         service: service?.state ?? "stopped",
         serviceError: service?.error ?? "",
+        /* 11-17：自带默认音色的引擎（卡片音色下拉里多一项「默认音色」）。 */
+        nativeVoice: NATIVE_VOICE_ENGINES.has(entry.id),
         installable: Boolean(entry.install && entry.install.kind !== "external"),
       };
     }),
@@ -604,10 +617,22 @@ async function ensureService(id: string): Promise<void> {
   if (existing?.starting) return existing.starting;
   const info = loadState().installed[id];
   if (!info) throw new Error("当前外部引擎未安装");
+  /* 适配器模板随版本演进（如 Chatterbox 新增「自带音色」）：启动前按当前模板重写，
+     否则旧安装目录里的 harness_adapter.py 永远是安装当天的旧逻辑。 */
+  const adapterTemplate = info.adapter === "cosyvoice3" ? COSY_ADAPTER : ADAPTERS[info.adapter];
+  if (adapterTemplate) {
+    try {
+      const adapterFile = join(info.dir, "harness_adapter.py");
+      if (!existsSync(adapterFile) || readFileSync(adapterFile, "utf8") !== adapterTemplate) {
+        writeFileSync(adapterFile, adapterTemplate, "utf8");
+      }
+    } catch { /* 写不进去就按旧逻辑跑，合成时会报错并显示原因 */ }
+  }
   const service: ExternalService = existing ?? { state: "stopped", child: null, starting: null };
   SERVICES.set(id, service);
   service.state = "starting";
   service.error = "";
+  emitService(id, service);
   const port = portOf(id);
   const startedAt = Date.now();
   service.starting = (async () => {
@@ -647,6 +672,7 @@ async function ensureService(id: string): Promise<void> {
       service.child = null;
       service.starting = null;
       if (service.state !== "stopped") { service.state = code === 0 ? "stopped" : "error"; service.error = `服务退出（${code}）`; }
+      emitService(id, service);
       logLine(`exit ${code}`);
       try { log.end(); } catch { /* 忽略 */ }
     });
@@ -656,6 +682,7 @@ async function ensureService(id: string): Promise<void> {
     if (service.state !== "starting") return;
     service.state = "running";
     service.starting = null;
+    emitService(id, service);
     logLine(`ready in ${Date.now() - startedAt}ms`);
   })();
   try {
@@ -666,6 +693,7 @@ async function ensureService(id: string): Promise<void> {
     stopService(id);
     service.state = "error";
     service.error = String(error?.message ?? error);
+    emitService(id, service);
     throw error;
   }
 }
@@ -687,6 +715,7 @@ function stopService(id: string): void {
   killProcessTree(service.child);
   service.child = null;
   service.starting = null;
+  emitService(id, service);
 }
 
 /** 应用退出时停掉所有外部引擎（子进程不 detached，但 Windows 上仍要显式 kill）。 */
@@ -701,7 +730,34 @@ export async function warmExternalEngine(): Promise<{ ok: boolean; error?: strin
   try { await ensureService(active.id); return { ok: true }; } catch (error: any) { return { ok: false, error: String(error?.message ?? error) }; }
 }
 
-type SpeakOptions = { userData: string; speed: number; profileId?: string };
+type SpeakOptions = { userData: string; speed: number; profileId?: string; engineVoice?: string };
+
+type ResolvedReference = { profile: { audioPath: string; refText: string; profileId: string } | null; native: boolean; error?: string };
+
+/**
+ * 解析「这个引擎这次该用谁的声音」（11-17 每个引擎卡自己的音色选择）：
+ *  · `native`          → 引擎自带默认音色（无参考音频）
+ *  · `builtin:<sid>`   → 本机模型说话人生成的内置参考样本
+ *  · `profile:<id>`    → 指定「我的音色」档案
+ *  · 空                → 沿用老字段 profileId（兼容老档案/老界面）
+ */
+function resolveReference(userData: string, options: SpeakOptions): ResolvedReference {
+  const choice = String(options.engineVoice ?? "").trim();
+  if (choice === "native") return { profile: null, native: true };
+  if (choice.startsWith("builtin:")) {
+    const sid = Number(choice.slice("builtin:".length));
+    const builtin = readBuiltinVoice(userData, sid);
+    if (!builtin) return { profile: null, native: false, error: "这个内置音色还没生成好：在引擎卡里重新选一下音色（首次生成约 10 秒）" };
+    return { profile: { audioPath: builtin.audioPath, refText: builtin.refText, profileId: `builtin-${sid}` }, native: false };
+  }
+  if (choice.startsWith("profile:")) {
+    const profile = readProfile(userData, choice.slice("profile:".length));
+    return profile
+      ? { profile, native: false }
+      : { profile: null, native: false, error: "选中的「我的音色」不可用（参考音频缺失）：请重新选一个" };
+  }
+  return { profile: readProfile(userData, options.profileId), native: false };
+}
 
 function readProfile(userData: string, id?: string): { audioPath: string; refText: string; profileId: string } | null {
   if (!id) return null;
@@ -822,9 +878,15 @@ export async function externalEngineSpeak(text: string, options: SpeakOptions): 
   if (!active) return null;
   const info = loadState().installed[active.id];
   if (!info) return { ok: false, error: "当前外部引擎未安装" };
-  const profile = readProfile(options.userData, options.profileId);
-  if (!profile) return { ok: false, error: "外部引擎需要参考音色：请先在「我的音色」里选一个克隆音色" };
-  const refAudio = ensureLongReference(profile.audioPath, profile.profileId, active.id);
+  const resolved = resolveReference(options.userData, options);
+  if (resolved.native && !NATIVE_VOICE_ENGINES.has(active.id)) {
+    return { ok: false, error: `「${active.name}」没有自带音色：请给它在音色里选一个参考声音` };
+  }
+  if (!resolved.native && !resolved.profile) {
+    return { ok: false, error: resolved.error || "外部引擎需要参考音色：请先在音色里选一个声音" };
+  }
+  const profile = resolved.profile;
+  const refAudio = resolved.native ? NATIVE_REF : ensureLongReference(profile!.audioPath, profile!.profileId, active.id);
   try { await ensureService(active.id); } catch (error: any) { return { ok: false, error: `外部引擎启动失败：${String(error?.message ?? error)}` }; }
   const port = portOf(active.id);
   try {
@@ -833,8 +895,8 @@ export async function externalEngineSpeak(text: string, options: SpeakOptions): 
         text,
         text_lang: langOf(text),
         ref_audio_path: refAudio,
-        prompt_text: profile.refText,
-        prompt_lang: langOf(profile.refText),
+        prompt_text: profile!.refText,
+        prompt_lang: langOf(profile!.refText),
         text_split_method: "cut5",
         batch_size: "1",
         media_type: "wav",
@@ -849,7 +911,7 @@ export async function externalEngineSpeak(text: string, options: SpeakOptions): 
       const res = await fetch(`http://127.0.0.1:${port}/speak`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, refAudio, refText: profile.refText, speed: options.speed || 1 }),
+        body: JSON.stringify({ text, refAudio, refText: profile?.refText ?? "", speed: options.speed || 1 }),
         signal: AbortSignal.timeout(180_000),
       });
       const parsed: any = await res.json();
@@ -861,7 +923,7 @@ export async function externalEngineSpeak(text: string, options: SpeakOptions): 
       const res = await fetch(`http://127.0.0.1:${port}/speak`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text, refAudio, refText: profile.refText, speed: options.speed || 1 }),
+        body: JSON.stringify({ text, refAudio, refText: profile?.refText ?? "", speed: options.speed || 1 }),
         signal: AbortSignal.timeout(300_000),
       });
       const parsed: any = await res.json();
@@ -1036,13 +1098,11 @@ print('model ready, sample_rate', tts.sr, flush=True)
 
 def synth(text, ref_audio, ref_text, speed):
     lang = 'zh' if re.search(r'[\u4e00-\u9fff]', text) else 'en'
-    wav = tts.generate(
-        text,
-        language_id=lang,
-        audio_prompt_path=ref_audio,
-        exaggeration=0.5,
-        cfg_weight=0.5,
-    )
+    kwargs = dict(language_id=lang, exaggeration=0.5, cfg_weight=0.5)
+    # 11-17：'@native' = 用模型自带默认音色（models/conds.pt 的条件向量），无需参考音频。
+    if ref_audio and ref_audio != '@native':
+        kwargs['audio_prompt_path'] = ref_audio
+    wav = tts.generate(text, **kwargs)
     handle, path = tempfile.mkstemp(suffix='.wav')
     os.close(handle)
     try:

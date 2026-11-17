@@ -38,7 +38,6 @@ export function VoiceSettingsSectionVoicePicker({ audition, auditionPhase, savin
   const external = speech?.effective === "external";
   const moss = speech?.effective === "moss";
   const noEngine = speech?.effective === "none";
-  const externalRefName = profiles.find((p) => p.id === settings.tts.profileId)?.name ?? "";
   const usingProfile = Boolean(settings.tts.profileId);
   const value = settings.tts.profileId
     ? `profile:${settings.tts.profileId}`
@@ -86,9 +85,7 @@ export function VoiceSettingsSectionVoicePicker({ audition, auditionPhase, savin
                   : noEngine
                     ? (speech?.reason || "先在本页第 1 步安装基础模型，或在上方启用外部语音引擎。")
                     : external
-                      ? usingProfile
-                        ? `当前由「${speech?.label || "外部引擎"}」克隆「${externalRefName || activeProfileName || "我的音色"}」合成。换「本机音色」会切回本机引擎（外部引擎停用）；换「我的音色」就换参考音频，想加新声音到下方导入 / 上传 / 录制。`
-                        : `当前由「${speech?.label || "外部引擎"}」接管，但它要用一段参考音频才能出声：选一个「我的音色」，或直接选「本机音色」用本机引擎合成。点「试听」验证。`
+                      ? `当前由「${speech?.label || "外部引擎"}」接管：它自己的音色在下方的引擎卡里选（默认音色 / 内置参考音色 / 我的音色）。这里选「本机音色」会切回本机引擎。`
                       : usingProfile
                         ? `当前用「我的音色」里的克隆音色（${activeProfileName || "我的音色"}）合成，通话与播报都用它。选「本机音色」可换回模型自带嗓子。`
                         : `下表是当前基础模型自带的音色（${Math.max(1, voiceOptions.length)} 个真实说话人），下拉可切换；想用自己的声音，到下方「我的音色」导入/录制${zipReady ? "" : "（需先装音色克隆模型）"}。`}

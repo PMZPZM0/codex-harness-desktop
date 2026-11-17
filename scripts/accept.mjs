@@ -2866,6 +2866,28 @@ const CHECKS = [
         && badges.filter((x)=>x.badge.includes("非商用")||x.badge.includes("有条件")).length >= 2,
         JSON.stringify(badges));
 
+      /* 11-17 用户令：「音色选择就放到每个语音模型卡片里面，语音模型卡片做二级弹窗预览里面设置」。 */
+      await h.eval(`(function(){ const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="gpt-sovits"); card?.querySelector(".voice-ext-config-open")?.click(); return 1; })()`);
+      await wait(400);
+      const cfg = await h.eval(`(function(){
+        const dlg=[...document.querySelectorAll(".settings-dialog")].pop();
+        if(!dlg) return null;
+        const head=(dlg.querySelector(".settings-dialog-head")?.textContent||"");
+        const voiceCard=[...dlg.querySelectorAll(".voice-card")].find((c)=>(c.textContent||"").includes("音色"));
+        const hasSelect=Boolean(voiceCard && voiceCard.querySelector(".voice-input"));
+        const rect=dlg.getBoundingClientRect();
+        const hit=document.elementFromPoint(rect.left+rect.width/2, rect.top+12);
+        return { head, hasSelect, hasVoiceCard: Boolean(voiceCard), z: getComputedStyle(dlg.parentElement).zIndex,
+          onTop: Boolean(hit && dlg.contains(hit)), body:(dlg.textContent||"").slice(0,240) };
+      })()`);
+      h.check("⑫ 点引擎卡进二级弹窗配置：弹窗在最上层（z=950），未装给安装 + 许可详情；已装时弹窗里有音色选择",
+        Boolean(cfg) && String(cfg.head).includes("配置") && String(cfg.body).includes("安装")
+          && String(cfg.body).includes("许可") && cfg.z === "950" && cfg.onTop === true
+          && (cfg.hasVoiceCard ? cfg.hasSelect === true : true),
+        JSON.stringify(cfg));
+      await h.eval(`(function(){ const dlg=[...document.querySelectorAll(".settings-dialog")].pop(); dlg?.querySelector(".settings-dialog-close")?.click(); return 1; })()`);
+      await wait(250);
+
       await h.eval(`document.querySelector(".voice-local-modal .voice-confirm-close")?.click()`).catch(() => undefined);
       await wait(250);
       await h.pressKey("Escape").catch(() => undefined);

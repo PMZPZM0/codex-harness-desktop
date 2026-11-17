@@ -691,7 +691,7 @@ export function VoiceSettingsSectionTtsEngines({ apply, onNotice, reloadMeta, se
           })}
         </div>
                 {/* 11-16 用户令：开源语音模型卡片（默认 4 张，更多展开/收起） */}
-                <VoiceExternalEnginesSection onNotice={onNotice} onActiveChange={setExternalActive} />
+                <VoiceExternalEnginesSection onNotice={onNotice} onActiveChange={setExternalActive} settings={settings} apply={apply} />
                 {localExtra && (
                   <>
                     <div className="voice-moss-section-title">音色与克隆</div>
