@@ -267,6 +267,7 @@ bag.updateDownloading = updateDownloading as typeof bag.updateDownloading; bag.s
     try { localStorage.setItem("update-mode-v1", next); } catch { /* 隐私模式忽略 */ }
   };
 bag.updateMode = updateMode as typeof bag.updateMode; bag.setUpdateMode = setUpdateMode as typeof bag.setUpdateMode;
+bag.updateDiffSupported = updateDiffSupported as typeof bag.updateDiffSupported;
 
   const [updateProgress, setUpdateProgress] = useState(0);
 bag.updateProgress = updateProgress as typeof bag.updateProgress; bag.setUpdateProgress = setUpdateProgress as typeof bag.setUpdateProgress;

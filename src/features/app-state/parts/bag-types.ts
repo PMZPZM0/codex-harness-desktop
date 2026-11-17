@@ -676,6 +676,8 @@ export interface Bag {
   setUpdateDownloading: React.Dispatch<React.SetStateAction<boolean>>;
   /** 更新方式：差分优先（默认）/ 强制完整包（差分出问题时兜底）。 */
   updateMode: "differential" | "full";
+  /* 11-17：差分只有 Windows NSIS 支持；mac/linux 恒 false（界面据此禁用切换）。 */
+  updateDiffSupported: boolean;
   setUpdateMode: (mode: "differential" | "full") => void;
   /** 更新方式的状态 setter（设置页的「补丁 / 完整包」单选直接用 setState 语义）。 */
   setUpdateModeState: React.Dispatch<React.SetStateAction<"differential" | "full">>;
