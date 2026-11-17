@@ -382,8 +382,9 @@ ok(/if \(!zipvoiceReady\(modelsRoot\)\)/.test(store),
 ok(/downloadHttpSegmented/.test(store) && /bytes >= PARALLEL_MIN_BYTES/.test(store)
   && /downloadHttpSegmented\(ordered\[0\]/.test(store)
   && /Range: `bytes=\$\{range\.start\}-\$\{range\.end\}`/.test(store)
+  && /const existing = existsSync\(partPath\)/.test(store) && /existing \+ index \* chunkSize/.test(store)
   && /多连接加速/.test(store) && /MB\/s/.test(store),
-  "109MB 主包 / 54MB 声码器先走多连接分段下载（失败回落单流+续传），进度显示实时 MB/s");
+  "109MB 主包 / 54MB 声码器先走多连接分段下载（从 .part 续传，失败回落单流+续传），进度显示实时 MB/s");
 
 /* 11-14 用户实测「音色克隆模型下载到 53% 报 HTTP 403」：
    断流换源后走的是**续传**请求（带 Range），而部分加速镜像对 Range 直接 403

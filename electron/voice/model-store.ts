@@ -840,7 +840,7 @@ async function orderCandidatesByLatency(candidates: string[], signal?: AbortSign
  *
  * 实测本机单连接：直连 30KB/s、hk.gh-proxy 147KB/s、gh-proxy 530KB/s；4 连接并发后
  * 聚合约 1.15MB/s（2~3 倍）。109MB 主包从 ~3.5 分钟降到 ~1.5 分钟。
- * ⛔ 只在**没有 `.part` 残件**时用：有残件时续传（`downloadOnce`）优先级更高、且分段写入不可续。
+ * ⛔ 支持**从已有 `.part` 续传**：从残件末尾继续分段，已经下过的部分不重下。
  * ⛔ 服务端必须支持 Range（206）；不支持或任一分段失败 ⇒ 清掉 `.part` 返回失败，
  *    调用方回落单流（`downloadOnce` 会重新下，但仍会走最快的镜像/续传兜底）。
  */
@@ -854,7 +854,6 @@ async function downloadHttpSegmented(
   chunks = 4,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const partPath = `${destPath}.part`;
-  if (existsSync(partPath)) return { ok: false, error: "已有未完成的部分文件，改用续传" };
   await mkdir(dirname(destPath), { recursive: true });
   const headersTimeoutMs = 20000;
   const timeoutCtl = new AbortController();
@@ -887,14 +886,26 @@ async function downloadHttpSegmented(
   }
   if (!total || total <= 0) return { ok: false, error: "分段探测没有拿到总大小" };
 
-  const chunkSize = Math.ceil(total / chunks);
+  /* 已有 .part ⇒ 从它末尾接着分段（上次单流/分段下了一半，不重下）。 */
+  const existing = existsSync(partPath) ? statSync(partPath).size : 0;
+  if (existing >= total) {
+    if (sha256 && (await fileShaOrEmpty(partPath)) === sha256) {
+      await unlink(destPath).catch(() => undefined);
+      try { await rename(partPath, destPath); return { ok: true }; }
+      catch (error: any) { return { ok: false, error: `重命名失败：${String(error?.message ?? error)}` }; }
+    }
+    await unlink(partPath).catch(() => undefined);
+    return { ok: false, error: "已有部分文件大小异常，已清理" };
+  }
+  const remaining = total - existing;
+  const chunkSize = Math.ceil(remaining / chunks);
   const ranges = Array.from({ length: chunks }, (_, index) => {
-    const start = index * chunkSize;
+    const start = existing + index * chunkSize;
     return { index, start, end: Math.min(total - 1, start + chunkSize - 1) };
-  });
-  /* 预分配：让各分段直接按偏移写入，避免稀疏文件最后再补洞 */
+  }).filter((range) => range.start < total);
+  /* 预分配：已有内容保留（r+），只把文件扩到总长；让各分段直接按偏移写入。 */
   try {
-    const fh = await open(partPath, "w");
+    const fh = await open(partPath, existing > 0 ? "r+" : "w");
     try { await fh.truncate(total); } finally { await fh.close().catch(() => undefined); }
   } catch (error: any) {
     return { ok: false, error: `创建临时文件失败：${String(error?.message ?? error)}` };
@@ -927,7 +938,7 @@ async function downloadHttpSegmented(
           await fh.write(value, 0, value.byteLength, offset);
           offset += value.byteLength;
           perChunk[range.index] += value.byteLength;
-          onBytes?.(perChunk.reduce((sum, n) => sum + n, 0), total);
+          onBytes?.(existing + perChunk.reduce((sum, n) => sum + n, 0), total);
           if (signal?.aborted) throw new Error("已取消");
         }
       } finally {
