@@ -379,6 +379,9 @@ export function ArtCraftSuite(props: SuiteProps) {
               runtimeProgress={runtimeProgress}
               cancelDevRuntime={cancelDevRuntime}
               setRuntimeModal={setRuntimeModal}
+              installDir={installedByKey.get("photocraft")?.dir}
+              customRoot={status?.customRoot}
+              onPickRoot={(clear) => void pickRoot(clear)}
             />
           ) : (
             <section className="settings-section stack feishu-cli-card">
@@ -397,6 +400,25 @@ export function ArtCraftSuite(props: SuiteProps) {
                     <button type="button" className="primary-setting runtime-install" disabled={opening || !status?.installed} onClick={() => void openLauncher()}>
                       {opening ? <><Spinner /> 打开中</> : appInstalled ? "在 Launcher 中打开" : "在 Launcher 中安装"}
                     </button>
+                  </div>
+                </div>
+                <div className={`runtime-row ${appInstalled ? "installed" : "missing"}`}>
+                  <span className="runtime-icon"><FolderOpen size={15} /></span>
+                  <span className="runtime-copy">
+                    <strong>安装位置</strong>
+                    <small title={appInstalled?.dir || undefined}>
+                      {appInstalled?.dir
+                        ? `${appInstalled.dir}（${status?.customRoot ? "手动指定" : "自动检测"}）`
+                        : `还没找到这个 App —— ${status?.customRoot ? `当前手动指定：${status.customRoot}` : `已自动扫描 ${status?.roots?.length ?? 0} 个目录`}；装在别的盘时点右侧指定`}
+                    </small>
+                  </span>
+                  <div className="runtime-actions">
+                    <button type="button" className="secondary-setting runtime-install" title="选择包含各 App 文件夹的那一级目录" onClick={() => void pickRoot()}>
+                      修改位置
+                    </button>
+                    {status?.customRoot ? (
+                      <button type="button" className="secondary-setting runtime-install" onClick={() => void pickRoot(true)}>自动检测</button>
+                    ) : null}
                   </div>
                 </div>
                 <div className="runtime-row installed">

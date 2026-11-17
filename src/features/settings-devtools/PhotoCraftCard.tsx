@@ -8,7 +8,7 @@
  * ⛔ 状态以主进程 photocraft:status 为准（版本文件 + CLI 存在）。
  */
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, Brush, Check, Download, ExternalLink, Plug, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, Brush, Check, Download, ExternalLink, FolderOpen, Plug, RefreshCw, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
@@ -40,7 +40,7 @@ type Status = {
 };
 
 /** PhotoCraft 卡片：安装 / 版本 / MCP 段 / GUI 打开 / 卸载。 */
-export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress, cancelDevRuntime, setRuntimeModal }: {
+export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress, cancelDevRuntime, setRuntimeModal, installDir, customRoot, onPickRoot }: {
   setNotice: (text: string, detail?: string) => void;
   installDevRuntime?: (id: string) => void;
   runtimeInstalling?: string | null;
@@ -52,6 +52,10 @@ export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling
   runtimeProgress?: Record<string, string> | null;
   cancelDevRuntime?: (id: string) => unknown;
   setRuntimeModal?: (value: { id?: string; name?: string; mode?: string; done?: boolean; failed?: boolean; error?: string } | null) => void;
+  /** 11-17：Craft 全家桶扫到的 PhotoCraft 安装目录（由父级传入；无则这一行不渲染）。 */
+  installDir?: string;
+  customRoot?: string;
+  onPickRoot?: (clear?: boolean) => void;
 }) {
   const [status, setStatus] = useState<Status | null>(null);
   const [uninstallOpen, setUninstallOpen] = useState(false);
@@ -156,6 +160,28 @@ export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling
               )}
             </div>
           </div>
+
+          {onPickRoot ? (
+            <div className={`runtime-row ${installDir ? "installed" : "missing"}`}>
+              <span className="runtime-icon"><FolderOpen size={15} /></span>
+              <span className="runtime-copy">
+                <strong>安装位置</strong>
+                <small title={installDir || undefined}>
+                  {installDir
+                    ? `${installDir}（${customRoot ? "手动指定" : "自动检测"}）`
+                    : `还没找到 PhotoCraft —— ${customRoot ? `当前手动指定：${customRoot}` : "已按常见目录自动扫描"}；装在别的盘时点右侧指定`}
+                </small>
+              </span>
+              <div className="runtime-actions">
+                <button type="button" className="secondary-setting runtime-install" title="选择包含各 App 文件夹的那一级目录" onClick={() => onPickRoot()}>
+                  修改位置
+                </button>
+                {customRoot ? (
+                  <button type="button" className="secondary-setting runtime-install" onClick={() => onPickRoot(true)}>自动检测</button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           <RuntimeUpdateRow
             id="photocraft"

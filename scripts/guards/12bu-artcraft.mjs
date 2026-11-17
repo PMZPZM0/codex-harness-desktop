@@ -96,6 +96,10 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
     "status 回传扫描根 + 手动安装位置通道（pick-root 走目录选择器）");
   ok(/artcraftPickRoot/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")) && /安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
     "界面有「安装位置」入口（识别不到时手动指定，任意盘都行）");
+  ok(/安装位置/.test(read("src/features/settings-devtools/PhotoCraftCard.tsx"))
+    && /onPickRoot/.test(read("src/features/settings-devtools/PhotoCraftCard.tsx"))
+    && /installDir=\{installedByKey/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
+    "两个 App 详情弹窗都展示安装位置并可修改（PhotoCraft 复用卡 + 通用 App 弹窗）");
   ok(/function scanCraftAppDirs[\s\S]{0,1400}?cliPath: cli/.test(core), "扫描记录主程序 + *-cli.exe");
   ok(/ARTCRAFT_EXE/.test(core) && /VersionInfo\.ProductVersion/.test(core),
     "版本读 exe VERSIONINFO（路径经环境变量传入，⛔ 不进 PowerShell 源码）");
