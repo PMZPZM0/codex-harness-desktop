@@ -7,7 +7,7 @@
  *
  * 钉住：
  *   ① 只从官方 GitHub release 下载 Launcher 便携包（镜像序 + SHA256SUMS 校验）；
- *   ② IPC 四条通道（status / open / sync / run）+ 生成物 / registry / 组合表齐全；
+ *   ② IPC 五条通道（status / open / sync / run / pick-root）+ 生成物 / registry / 组合表齐全；
  *   ③ 工具按 App 拆开：每个已装 App 一条 `[mcp_servers.<id>]` + 独立工具 `craft_<id>`
  *      （⛔ 不再是「一个网关覆盖全部」）；
  *   ④ 联动：扫描 Launcher 安装目录得已装列表（含版本 / CLI），装完回来自动显示已安装并同步配置；
@@ -61,10 +61,10 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
     "⛔ 不随包（第三方应用安装器：随包会把外部 App 分发塞进安装包，且 mac/linux 资产形态不同）");
 }
 
-/* ── ② IPC 域（4 通道） ────────────────────────────────────── */
+/* ── ② IPC 域（5 通道） ────────────────────────────────────── */
 {
   const dom = codeOnly(read(DOMAIN));
-  ok(["status", "open", "sync", "run"].every((name) => dom.includes(`artcraft:${name}`)), "IPC 四条通道齐全（status/open/sync/run）");
+  ok(["status", "open", "sync", "run", "pick-root"].every((name) => dom.includes(`artcraft:${name}`)), "IPC 五条通道齐全（status/open/sync/run/pick-root）");
   ok(/installedApps: await listInstalledCraftApps\(\)/.test(dom) && /mcpServers: craftAppMcpServers\(\)/.test(dom),
     "status 下发已装 App 列表 + 已写入的独立 MCP 名单");
   ok(/await rewriteConfig\(\);[\s\S]{0,120}?return \{ servers: craftAppMcpServers\(\) \}/.test(dom),
@@ -74,11 +74,11 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
   ok(/await import\("\.\/custom-model-apply"\)/.test(dom), "重写走 applyCustomModel（MCP 段的唯一来源）");
   ok(!/restartServerWhenIdle/.test(dom), "⛔ sync 不擅自重启引擎（交给用户重启；卡片写明）");
   const preload = read("electron/preload.ts");
-  ok(["artcraftStatus", "artcraftOpen", "artcraftSync", "artcraftRun"].every((name) => preload.includes(`${name}:`)), "preload 桥已生成四个方法（跑过 gen:ipc）");
+  ok(["artcraftStatus", "artcraftOpen", "artcraftSync", "artcraftRun", "artcraftPickRoot"].every((name) => preload.includes(`${name}:`)), "preload 桥已生成五个方法（跑过 gen:ipc）");
   const manifest = read("electron/ipc-channels.manifest.json");
-  ok((manifest.match(/"channel": "artcraft:/g) || []).length === 4, "manifest 四条通道");
+  ok((manifest.match(/"channel": "artcraft:/g) || []).length === 5, "manifest 五条通道");
   const registry = read("electron/ipc-registry.ts");
-  ok(/\{ prefix: "artcraft", count: 4, status: "in-features"/.test(registry), "registry 记账（4 通道）");
+  ok(/\{ prefix: "artcraft", count: 5, status: "in-features"/.test(registry), "registry 记账（5 通道）");
   ok(/"id": "artcraft"[\s\S]{0,120}?"enabled": true/.test(read("electron/composition.json")), "组合表启用 artcraft 域");
   ok(/artcraft/.test(read("electron/builtin-skills/14-skill-harness-api.ts")), "能力清单技能已含 artcraft 域（跑过 gen:ipc）");
 }
@@ -86,7 +86,16 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
 /* ── ③ 按 App 拆分的 MCP 段（⛔ 不要统一网关） ─────────────── */
 {
   const core = codeOnly(read(CORE));
-  ok(/ProgramFiles[\s\S]{0,200}?"ArtCraft"/.test(core), "安装根扫描含 %ProgramFiles%\\ArtCraft");
+  ok(/ProgramFiles/.test(core) && /"ArtCraft"/.test(core), "安装根扫描含 %ProgramFiles%\\ArtCraft");
+  const domSrc = codeOnly(read(DOMAIN));
+  ok(/CRAFT_APP_IDS/.test(core) && /readLauncherInstallRoots/.test(core) && /app\.ron/.test(core)
+    && /craftAppSiblingRoots/.test(core) && /readCraftRootSetting/.test(core),
+    "11-17 安装识别加宽：已知 App 名 + Launcher 记录的 install_locations + per-user Programs + 手动指定的根");
+  ok(/roots: craftScanRoots\(\)/.test(domSrc) && /customRoot: readCraftRootSetting\(\)/.test(domSrc)
+    && /artcraft:pick-root/.test(domSrc) && /showOpenDialog/.test(domSrc),
+    "status 回传扫描根 + 手动安装位置通道（pick-root 走目录选择器）");
+  ok(/artcraftPickRoot/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")) && /安装位置/.test(read("src/features/settings-devtools/ArtCraftSuite.tsx")),
+    "界面有「安装位置」入口（识别不到时手动指定，任意盘都行）");
   ok(/function scanCraftAppDirs[\s\S]{0,1400}?cliPath: cli/.test(core), "扫描记录主程序 + *-cli.exe");
   ok(/ARTCRAFT_EXE/.test(core) && /VersionInfo\.ProductVersion/.test(core),
     "版本读 exe VERSIONINFO（路径经环境变量传入，⛔ 不进 PowerShell 源码）");

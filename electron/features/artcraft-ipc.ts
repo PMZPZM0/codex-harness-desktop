@@ -1,16 +1,19 @@
 /**
  * artcraft-ipc（11-16）—— Craft 全家桶（ArtCraft Launcher）宿主域。
  *
- * 域：artcraft(4)
- * 通道：status / open / sync / run
+ * 域：artcraft(5)
+ * 通道：status / open / sync / run / pick-root
  *
  * ⛔ Launcher 只负责装 App；宿主不代装、不代卸（UAC 与安装目录由它处理）。
+ * ⛔ 11-17 用户实测「别的电脑装完完全识别不到」：安装目录可被 Launcher 改成任意路径 ⇒
+ *    除了自动扫描，还提供 `artcraft:pick-root` 让用户手动指定安装根（落 artcraft-root.json）。
  * ⛔ 工具按 App 拆开（用户令「跟 PhotoCraft 一样，都单独」）：每个已装 App 各自一条
  *    `[mcp_servers.<id>]`（由 custom-model-apply 生成）+ 一个独立 Codex 工具 `craft_<id>`；
  *    这里只提供它们的执行端 `artcraft:run`。
  * ⛔ 所有文件参数必须落在可信根（会话工作目录 / userData）内；输出不得覆盖输入；不开 shell。
  */
 import path from "node:path";
+import { dialog } from "electron";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { isInsideOrEqualTrustedRoots } from "../runtime-refs";
@@ -21,14 +24,17 @@ import {
   artcraftLauncherPath,
   artcraftPaths,
   craftAppMcpServers,
+  craftScanRoots,
   listInstalledCraftApps,
   openArtCraftLauncher,
   openCraftApp,
+  readCraftRootSetting,
   runCraftAppCli,
+  writeCraftRootSetting,
 } from "../artcraft";
 import { dirSizeBytes } from "../toolchain";
 
-const ARTCRAFT_CHANNELS = ["artcraft:status", "artcraft:open", "artcraft:sync", "artcraft:run"];
+const ARTCRAFT_CHANNELS = ["artcraft:status", "artcraft:open", "artcraft:sync", "artcraft:run", "artcraft:pick-root"];
 const COMMAND_ID = /^[a-z][a-zA-Z0-9_.]{1,80}$/;
 
 /** 可信路径闸：会话工作目录 / userData / 用户选过的路径。 */
@@ -99,8 +105,28 @@ export const artcraftFeature = defineFeature<null>({
         /* Launcher 里装过的 App（装完回来自动联动）+ 已写入的独立 MCP 名单。 */
         installedApps: await listInstalledCraftApps(),
         mcpServers: craftAppMcpServers(),
+        /* 11-17：把「扫了哪些目录」一并回给界面 —— 识别不到时用户能看到原因、也能手动指定。 */
+        roots: craftScanRoots(),
+        customRoot: readCraftRootSetting(),
         attribution: { license: "MIT OR Apache-2.0", home: ARTCRAFT_HOME, apps: ARTCRAFT_APPS_HOME },
       };
+    });
+
+    /* 11-17：手动指定 Launcher 安装目录（clear=true 恢复自动检测）。
+       ⛔ 用户在别的电脑上把 Launcher 的 root 改到任意盘时，只有这一条能保证识别到。 */
+    ipcHost.handle("artcraft:pick-root", async (_event, input?: { clear?: boolean }) => {
+      if (input?.clear) {
+        writeCraftRootSetting("");
+        return { ok: true, root: "", cleared: true };
+      }
+      const picked = await dialog.showOpenDialog({
+        title: "选择 ArtCraft Launcher 的安装目录（含各 App 文件夹的那一级）",
+        properties: ["openDirectory"],
+      });
+      const root = String(picked?.canceled ? "" : picked?.filePaths?.[0] ?? "").trim();
+      if (!root) return { ok: false, canceled: true };
+      writeCraftRootSetting(root);
+      return { ok: true, root };
     });
 
     ipcHost.handle("artcraft:open", async () => openArtCraftLauncher());

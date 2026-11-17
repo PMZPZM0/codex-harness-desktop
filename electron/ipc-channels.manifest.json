@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 713,
+  "count": 714,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -7101,6 +7101,16 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入）"
+    },
+    {
+      "name": "artcraftPickRoot",
+      "channel": "artcraft:pick-root",
+      "paramsImpl": "input?: { clear?: boolean }",
+      "paramsDecl": "input?: { clear?: boolean }",
+      "returns": "Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": "11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测）"
     }
   ]
 }

@@ -1607,6 +1607,8 @@ interface Window {
     artcraftSync(): Promise<{ servers: string[] }>;
     /* 11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入） */
     artcraftRun(input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }): Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>;
+    /* 11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测） */
+    artcraftPickRoot(input?: { clear?: boolean }): Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

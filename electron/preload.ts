@@ -1195,6 +1195,8 @@ contextBridge.exposeInMainWorld("codex", {
   artcraftSync: () => __ipc("artcraft:sync", 0, []),
   /* 11-16 独立工具 craft_<id> 的执行端：调用该 App 自己的无头 CLI（status/commands/info/run/convert/open；路径过可信根闸、不覆盖输入） */
   artcraftRun: (input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }) => __ipc("artcraft:run", 1, [input]),
+  /* 11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测） */
+  artcraftPickRoot: (input?: { clear?: boolean }) => __ipc("artcraft:pick-root", 0, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

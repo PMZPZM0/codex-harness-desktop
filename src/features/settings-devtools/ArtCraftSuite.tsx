@@ -11,7 +11,7 @@
  *    刷新 + 窗口回到前台立刻刷新，用户在 Launcher 里装完回来就能看到「已安装 vX」。
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Check, Download, ExternalLink, Palette, Plug, RefreshCw, Trash2 } from "lucide-react";
+import { AlertTriangle, Check, Download, ExternalLink, FolderOpen, Palette, Plug, RefreshCw, Trash2 } from "lucide-react";
 import { Spinner } from "../../components/CardShell";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { RuntimeUpdateRow } from "./RuntimeUpdateRow";
@@ -30,6 +30,10 @@ type Status = {
   installedApps: InstalledEntry[];
   /** 已写入 config.toml 的独立 MCP 服务器名单（每个 App 一条）。 */
   mcpServers: string[];
+  /** 11-17：本次扫描的根目录（识别不到时显示出来，便于手动指定）。 */
+  roots?: string[];
+  /** 手动指定的安装根（空 = 自动检测）。 */
+  customRoot?: string;
   attribution: { license: string; home: string; apps: string };
 };
 
@@ -124,6 +128,23 @@ export function ArtCraftSuite(props: SuiteProps) {
       if (!silent) setSyncing(false);
     }
   }, [refresh, setNotice]);
+
+  /* 11-17 用户实测「别的电脑装完识别不到」：允许手动指定 Launcher 安装目录（任意盘）。 */
+  const pickRoot = async (clear = false) => {
+    try {
+      const result = await window.codex.artcraftPickRoot(clear ? { clear: true } : undefined);
+      if (result?.canceled) return;
+      const next = await window.codex.artcraftStatus() as Status;
+      setStatus(next);
+      const count = Array.isArray(next?.installedApps) ? next.installedApps.length : 0;
+      setNotice(
+        clear ? "已恢复自动检测" : `已设置安装位置：${result?.root ?? ""}`,
+        count ? `扫描到 ${count} 个已装 App` : "这个目录下还没找到 Craft App —— 请选包含各 App 文件夹的那一级目录",
+      );
+    } catch (error) {
+      setNotice("选择安装位置失败", String((error as Error)?.message ?? error));
+    }
+  };
 
   const uninstall = async () => {
     setUninstallOpen(false);
@@ -240,7 +261,7 @@ export function ArtCraftSuite(props: SuiteProps) {
                     ? `已接入 ${status.mcpServers.length} 个：${status.mcpServers.join(" / ")}；新开会话（或切回本会话）后模型可直接调用`
                     : cliApps.length
                       ? `已检测到 ${cliApps.length} 个 App，正在写入配置（需要先在模型页配置一个可用模型）`
-                      : "还没检测到已装 App —— 去 Launcher 装一个，回来这里会自动接入"}
+                      : `还没检测到已装 App —— 已扫描 ${status.roots?.length ?? 0} 个目录${status.customRoot ? `（自定义：${status.customRoot}）` : ""}。装在别的盘/自定义目录时，点「安装位置」指过去`}
               </small>
             </span>
             <div className="runtime-actions">
@@ -248,9 +269,19 @@ export function ArtCraftSuite(props: SuiteProps) {
                 {status?.mcpServers?.length ? `已接入 ${status.mcpServers.length} 个` : cliApps.length ? "待写入配置" : "等待安装 App"}
               </span>
               {status?.installed ? (
-                <button type="button" className="secondary-setting runtime-install" disabled={syncing} onClick={() => void syncTools()}>
-                  {syncing ? <><Spinner /> 同步中</> : <><RefreshCw size={13} />重新同步</>}
-                </button>
+                <>
+                  <button type="button" className="secondary-setting runtime-install" title="Launcher 装在别的盘时，选包含各 App 文件夹的那一级目录" onClick={() => void pickRoot()}>
+                    <FolderOpen size={13} />安装位置
+                  </button>
+                  {status.customRoot ? (
+                    <button type="button" className="secondary-setting runtime-install" title="清除手动指定的位置，恢复自动检测" onClick={() => void pickRoot(true)}>
+                      自动检测
+                    </button>
+                  ) : null}
+                  <button type="button" className="secondary-setting runtime-install" disabled={syncing} onClick={() => void syncTools()}>
+                    {syncing ? <><Spinner /> 同步中</> : <><RefreshCw size={13} />重新同步</>}
+                  </button>
+                </>
               ) : null}
             </div>
           </div>

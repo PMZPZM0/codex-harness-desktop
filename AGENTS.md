@@ -360,11 +360,12 @@ nuphus 的桌面定位是「截屏 → 本地 OCR → 像素坐标」，窗口�
 
 - **UI = 三级弹窗**（用户令「开发工具界面一个 Craft 全家桶，弹窗里面细分到每个点击在一个弹窗」）：层级 1 = 开发工具页唯一的「Craft 全家桶」卡；层级 2 = `ArtCraftSuite`（启动器安装/更新/卸载 + 每个 App 独立的 Codex 工具行 + 19 个 App 网格）；层级 3 = 每个 App 一个弹窗（安装状态 / 能做什么 / 怎么用 / 独立工具名 / 来源）。PhotoCraft 那一层**直接复用完整 `PhotoCraftCard`**。⛔ `artcraft-apps.ts` 是 App 目录的单一真相源（id/仓库/官网/主题色/中文功能点均对照 Launcher 自带目录）。
 - **工具按 App 拆开**（11-16 用户令「跟 PhotoCraft 一样，都单独」「工具都拆开」）：每个**已装且带 `-cli.exe`** 的 App 各自一条 `[mcp_servers.<id>]`（无头 CLI `mcp` 子命令）+ 一个独立 dynamicTool `craft_<id>`（status / commands / info / run / convert / open），执行端 `artcraft:run`。⛔ 不再走「一个统一网关」；没有已装 App 就整段不写，App 卸载后其段按 `userData/artcraft-mcp-servers.json` 账本清掉。
-- **联动（装完有反馈）**：主进程扫描 Launcher 安装目录（`%ProgramFiles%\ArtCraft\<App>` / Local Programs / 便携旁）得到已装列表 + exe 版本；弹窗开着每 2.5s 轮询 + 回前台立刻刷新 ⇒ 在 Launcher 装完回来就显示「已安装 vX」；已装名单变化时**自动重写 config**（新 App 自动接上，不用手点）。
+- **联动（装完有反馈）**：主进程扫描 Launcher 安装目录得到已装列表 + exe 版本；弹窗开着每 2.5s 轮询 + 回前台立刻刷新 ⇒ 在 Launcher 装完回来就显示「已安装 vX」；已装名单变化时**自动重写 config**（新 App 自动接上，不用手点）。
+- ⛔⛔ **安装位置不是固定的（11-17 用户实测「别的电脑装完完全识别不到」）**：扫描面 = 已知 App 名（`CRAFT_APP_IDS` ∪ Launcher 目录缓存的 id）+ Launcher **自己记录的** `install_locations`（`ArtCraftLauncherData/data/app.ron` 的 root/per_app）+ `%ProgramFiles%` / `%ProgramFiles(x86)%` / `%LOCALAPPDATA%\Programs` / `%LOCALAPPDATA%\ArtCraft` / `%APPDATA%\ArtCraft` / `%ProgramData%\ArtCraft` / Launcher 旁边；容器目录再下一层。⛔ 仍识别不到时用 **`artcraft:pick-root`** 手动指定安装目录（落 `<userData>/artcraft-root.json`，「自动检测」一键恢复）；status 回传扫过的根与自定义位置，界面写明「已扫描 N 个目录」。⛔ 不要退回「只认 Program Files\ArtCraft 两个死目录」。
+- 每个 App 的 MCP 段登记为 harness 所属（`ownedMcpServers` 收当前 + 上次名单 + 清 override）；卸载 Launcher 会摘掉全部 App 段并重启引擎。⛔ 不冒充 ArtCraft 官方。
+- 判据：守卫 **`12bu-artcraft`（86 条：安装链 / 五通道 / 安装位置识别与手动指定 / 按 App 拆分 MCP / 联动轮询与自动同步 / 三级弹窗 / craft_<id> 工具接线 / 目录与文案条数一致 / 许可）** + 验收 **`artcraft`（三级弹窗真点 / 已装联动 / artcraft:run 执行端 / 状态通道）**。
 - **产出文件按格式打开**（11-16 用户令「跟 PhotoCraft 一样」）：`src/lib/craft-openers.mjs` 是格式→App 的单一真相源（只写官方文档确认过的扩展名；顺序即优先级）；产出文件卡的「打开方式」下拉、文件卡右键菜单与媒体产物卡（图片/视频/音频）只对**已安装**的 App 显示「用 X 打开」，走 `artcraft:run` 的 `open`（spawn 官方主程序带文件，不开 shell）。⛔ 图片保留 PhotoCraft 专用按钮，不再重复列。
 - **宿主只装 Launcher**（约 11MB portable zip：镜像序 + SHA256SUMS → `tools/artcraft-launcher/`，`GITHUB_UPDATEABLE.artcraft`，仅 win32）：19 个 App 的安装/卸载交给 Launcher 自己（UAC 与安装目录由它处理），⛔ 不代装不代卸；mac 是 `.app` ⇒ 不代装，只给官网指引。虽 <50MB 仍按需下载：它是第三方**应用分发器**，随包等于把外部 App 分发塞进安装包，且 mac/linux 资产形态不同。
-- 每个 App 的 MCP 段登记为 harness 所属（`ownedMcpServers` 收当前 + 上次名单 + 清 override）；卸载 Launcher 会摘掉全部 App 段并重启引擎。⛔ 不冒充 ArtCraft 官方。
-- 判据：守卫 **`12bu-artcraft`（66 条：安装链 / 四通道 / 按 App 拆分 MCP / 联动轮询与自动同步 / 三级弹窗 / craft_<id> 工具接线 / 目录与文案条数一致 / 许可）** + 验收 **`artcraft`（三级弹窗真点 / 已装联动 / artcraft:run 执行端 / 状态通道）**。
 
 ### 🧑‍🤝‍🧑 工作伙伴群编排（抄 Pachat 的「先读再说 + 按需唤醒」，11-14，守卫 11f/12be/09）
 

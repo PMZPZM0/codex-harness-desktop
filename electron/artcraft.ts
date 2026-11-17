@@ -246,19 +246,103 @@ export type InstalledCraftApp = {
   version: string;
 };
 
-/** Launcher 的 App 安装根（全局 Program Files 为主；便携模式可能落在 launcher 旁边）。 */
+/** Launcher 的 App 安装根（全局 Program Files 为主；便携模式可能落在 launcher 旁边）。
+ *  ⛔ 11-17 用户实测「别的电脑装完完全识别不到」：Launcher 的安装位置**不一定是** C:\Program Files\ArtCraft ——
+ *     用户可以在 Launcher 里改 root，或经 per-user MSI 装到别处。所以这里必须覆盖：
+ *     Launcher 自己的记录（app.ron 的 install_locations）+ 本应用里手动指定的位置 + 常见默认根。 */
+export const CRAFT_APP_IDS = [
+  "photocraft", "lightcraft", "vectorcraft", "filmcraft", "effectcraft", "anicraft", "figcraft",
+  "designcraft", "deckcraft", "wordcraft", "gridcraft", "pdfcraft", "cadcraft", "soundcraft",
+  "materialcraft", "texturecraft", "craftanything", "solidcraft", "mailcraft",
+];
+
+/** 手动指定安装根的存档文件（<userData>/artcraft-root.json）。 */
+function craftRootFile(): string {
+  return path.join(app.getPath("userData"), "artcraft-root.json");
+}
+/** 读用户手动指定的安装根（空串 = 只用自动检测；目录已被删也按空处理）。 */
+export function readCraftRootSetting(): string {
+  try {
+    const value = String(JSON.parse(readFileSync(craftRootFile(), "utf8"))?.root ?? "").trim();
+    return value && existsSync(value) ? value : "";
+  } catch { return ""; }
+}
+/** 写入 / 清除手动安装根（空串 = 删除存档，恢复自动检测）。 */
+export function writeCraftRootSetting(root: string): void {
+  try {
+    if (!root.trim()) { try { fs.unlink(craftRootFile()); } catch { /* 不存在 */ } return; }
+    writeFileSync(craftRootFile(), JSON.stringify({ root: root.trim() }, null, 2), "utf8");
+  } catch { /* 写不进去就只用自动检测 */ }
+}
+
+/** Launcher 自己的数据目录（Windows：ArtCraftLauncherData；其余平台同名）。 */
+function launcherDataDir(): string {
+  return path.join(artcraftPaths().root, "ArtCraftLauncherData");
+}
+
+/** Launcher 记录的自定义安装位置（app.ron 的 `install_locations:(root:Some("…"),per_app:{…})`）。 */
+function readLauncherInstallRoots(): string[] {
+  const roots: string[] = [];
+  try {
+    const ron = readFileSync(path.join(launcherDataDir(), "data", "app.ron"), "utf8");
+    const unescape = (value: string) => value.replace(/\\(["\\])/g, "$1");
+    const root = /root:Some\("((?:[^"\\]|\\.)*)"\)/.exec(ron)?.[1];
+    if (root) roots.push(unescape(root));
+    const perApp = /per_app:\{([^}]*)\}/.exec(ron)?.[1] ?? "";
+    for (const match of perApp.matchAll(/"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g)) {
+      const value = unescape(match[2]);
+      if (value) roots.push(value);
+    }
+  } catch { /* 没有 Launcher 数据目录就跳过 */ }
+  return roots;
+}
+
+/** Launcher 目录清单里的 app id（缓存 TOML；用于识别不在静态清单里的新 App）。 */
+function readLauncherCatalogIds(): string[] {
+  try {
+    const cache = JSON.parse(readFileSync(path.join(launcherDataDir(), "cache", "launcher-catalog.json"), "utf8"));
+    const toml = String(cache?.catalog ?? "");
+    return [...toml.matchAll(/^\s*id\s*=\s*"([a-z0-9-]+)"/gm)].map((match) => match[1].replace(/[^a-z0-9]/g, ""));
+  } catch { return []; }
+}
+
 function craftAppInstallRoots(): string[] {
   const roots: string[] = [];
   const programFiles = process.env.ProgramFiles ?? "";
   const programFiles86 = process.env["ProgramFiles(x86)"] ?? "";
   const localAppData = process.env.LOCALAPPDATA ?? "";
+  const appData = process.env.APPDATA ?? "";
+  const programData = process.env.ProgramData ?? "";
+  /* ① 常见默认根（含 per-user 与全机安装的各种落点）。 */
   if (programFiles) roots.push(path.join(programFiles, "ArtCraft"));
   if (programFiles86) roots.push(path.join(programFiles86, "ArtCraft"));
-  if (localAppData) roots.push(path.join(localAppData, "Programs", "ArtCraft"));
+  if (localAppData) roots.push(path.join(localAppData, "ArtCraft"), path.join(localAppData, "Programs", "ArtCraft"));
+  if (appData) roots.push(path.join(appData, "ArtCraft"));
+  if (programData) roots.push(path.join(programData, "ArtCraft"));
+  /* ② Launcher 旁边（便携模式；App 可能直接摊在 launcher 根下或 apps/ 里）。 */
   const root = artcraftPaths().root;
-  roots.push(path.join(root, "ArtCraft"));
-  roots.push(path.join(root, "apps"));
-  return [...new Set(roots)];
+  roots.push(root, path.join(root, "apps"), path.join(root, "ArtCraft"));
+  /* ③ 用户手动指定 + Launcher 自己记录的安装位置（用户改过 root 就在这）。 */
+  roots.push(readCraftRootSetting(), ...readLauncherInstallRoots());
+  return [...new Set(roots.filter(Boolean))];
+}
+
+/** 需要“按已知 App 名扫直接子目录”的大目录（per-user MSI 常直接装在 Programs\<App>）。 */
+function craftAppSiblingRoots(): string[] {
+  const roots: string[] = [];
+  if (process.env.ProgramFiles) roots.push(process.env.ProgramFiles);
+  if (process.env["ProgramFiles(x86)"]) roots.push(process.env["ProgramFiles(x86)"]!);
+  if (process.env.LOCALAPPDATA) roots.push(path.join(process.env.LOCALAPPDATA, "Programs"));
+  return roots;
+}
+
+function normalizeCraftId(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** 供状态面板展示：本次会扫描的全部根目录（识别不到时用户能据此手动指定）。 */
+export function craftScanRoots(): string[] {
+  return [...new Set([...craftAppInstallRoots(), ...craftAppSiblingRoots()])];
 }
 
 /** 读 Windows exe 的 VERSIONINFO 版本（按 mtime 缓存；读不到返回空串，不阻断状态）。 */
@@ -289,33 +373,48 @@ async function readExeVersion(exe: string): Promise<string> {
 
 /**
  * 扫描 Launcher 已安装的 App（联动用：装完回来这里就能看到「已安装」）。
- * ⛔ 只看 Launcher 自己的安装目录，不猜别的路径；目录里的 `*-cli.exe` 单独记录（MCP/工具用它）。
+ * ⛔ 11-17 用户实测「别的电脑装完完全识别不到」：安装位置**不是固定**的 —— 可能是 Launcher 改过 root、
+ *    per-user MSI 直接装到 `%LOCALAPPDATA%\Programs\<App>`、或 portable 摊在 launcher 旁边。
+ *    所以：① 已知 App 名（静态清单 ∪ Launcher 目录缓存）才收；② 容器目录（ArtCraft / apps / Programs…）再下一层；
+ *    ③ 用户手动指定的根也参与扫描（见 `artcraft:pick-root`）。
  */
 function scanCraftAppDirs(): InstalledCraftApp[] {
+  const knownIds = new Set<string>([...CRAFT_APP_IDS, ...readLauncherCatalogIds()]);
   const found = new Map<string, InstalledCraftApp>();
-  for (const root of craftAppInstallRoots()) {
+  const consider = (root: string, name: string) => {
+    const id = normalizeCraftId(name);
+    if (!id || !knownIds.has(id) || found.has(id)) return;
+    const dir = path.join(root, name);
+    let files: string[] = [];
+    try { files = readdirSync(dir); } catch { return; }
+    const preferExe = files.find((file) => normalizeCraftId(path.parse(file).name) === id && /\.exe$/i.test(file) && !/-cli\.exe$/i.test(file));
+    const anyExe = files.find((file) => /\.exe$/i.test(file) && !/-cli\.exe$/i.test(file) && !/^unins/i.test(file));
+    const exe = preferExe ?? anyExe;
+    if (!exe) return;
+    const cli = files.find((file) => /-cli\.exe$/i.test(file));
+    found.set(id, {
+      id,
+      name,
+      dir,
+      exePath: path.join(dir, exe),
+      cliPath: cli ? path.join(dir, cli) : "",
+      version: "",
+    });
+  };
+  const scanChildren = (root: string, onlyKnown: boolean) => {
     let dirs: Dirent[] = [];
-    try { dirs = readdirSync(root, { withFileTypes: true }) as Dirent[]; } catch { continue; }
+    try { dirs = readdirSync(root, { withFileTypes: true }) as Dirent[]; } catch { return; }
     for (const entry of dirs) {
       if (!entry.isDirectory()) continue;
-      const dir = path.join(root, entry.name);
-      let files: string[] = [];
-      try { files = readdirSync(dir); } catch { continue; }
-      const exe = files.find((file) => /\.exe$/i.test(file) && !/-cli\.exe$/i.test(file) && !/^unins/i.test(file));
-      if (!exe) continue;
-      const id = entry.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (!id || found.has(id)) continue;
-      const cli = files.find((file) => /-cli\.exe$/i.test(file));
-      found.set(id, {
-        id,
-        name: entry.name,
-        dir,
-        exePath: path.join(dir, exe),
-        cliPath: cli ? path.join(dir, cli) : "",
-        version: "",
-      });
+      const normalized = normalizeCraftId(entry.name);
+      if (onlyKnown) { consider(root, entry.name); continue; }
+      if (knownIds.has(normalized)) { consider(root, entry.name); continue; }
+      /* 容器目录（ArtCraft / apps / Craft / Programs / 任意含 App 的父目录）再下一层。 */
+      scanChildren(path.join(root, entry.name), true);
     }
-  }
+  };
+  for (const root of craftAppInstallRoots()) scanChildren(root, false);
+  for (const root of craftAppSiblingRoots()) scanChildren(root, true);
   return [...found.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
