@@ -1075,9 +1075,13 @@ const catalog = [
     "预览必须拿到**真 id**：TeamOfficePreview 开头是 `if (!teamId) return null`（⛔ 传 null 就是什么都画不出来 —— 本轮真踩过）");
   ok(/status: running\.has\(member\.id\) \? "busy" : "idle"/.test(office),
     "工位状态只认运行态（live/busy），⛔ 不按静态角色编状态");
-  ok(/<TeamOfficeEntry group=\{group\} live=\{live\} busy=\{busy\} onOpenThread=\{onOpenThread\} \/>/.test(view)
+  /* 11-17：办公室要按「成员栏同一份展开」派工位（整团槽 ⇒ 主理人 + 每位成员），
+     ⛔ 只读 group.members 会让团群只剩一个工位（用户实测「只有一个卡通人物」）。 */
+  ok(/<TeamOfficeEntry group=\{group\} live=\{live\} busy=\{busy\} members=\{officeRoster\} onOpenThread=\{onOpenThread\} \/>/.test(view)
+    && /const officeRoster = useMemo\(\(\) => \{/.test(view)
+    && /if \(membersProp\?\.length\) return membersProp;/.test(office)
     && /\.team-group__office \{/.test(read("src/styles/61-team-mode.css")),
-    "入口节点仍复用同一份（位置见 ⑦b：群头操作区、展开折叠键左边）");
+    "入口节点仍复用同一份，且工位表 = 成员栏同一份展开（整团槽 ⇒ 主理人 + 每位成员）");
 }
 
 /* ── ⑬ 两种回复模式（11-08 用户令：「做出来两种回复模式」+「在群设置里加上这个选项」）────
