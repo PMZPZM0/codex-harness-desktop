@@ -39,6 +39,13 @@ type Status = {
   attribution: { license: string; home: string };
 };
 
+/** 从 exe 路径推安装目录（Windows / mac 分隔符都认）。 */
+function dirOf(file?: string): string {
+  const value = String(file ?? "");
+  const cut = Math.max(value.lastIndexOf("\\"), value.lastIndexOf("/"));
+  return cut > 0 ? value.slice(0, cut) : "";
+}
+
 /** PhotoCraft 卡片：安装 / 版本 / MCP 段 / GUI 打开 / 卸载。 */
 export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling, uninstallDevRuntime, runtimeUninstalling, runtimeStage, runtimePercent, runtimeSpeed, runtimeProgress, cancelDevRuntime, setRuntimeModal, installDir, customRoot, onPickRoot }: {
   setNotice: (text: string, detail?: string) => void;
@@ -52,7 +59,7 @@ export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling
   runtimeProgress?: Record<string, string> | null;
   cancelDevRuntime?: (id: string) => unknown;
   setRuntimeModal?: (value: { id?: string; name?: string; mode?: string; done?: boolean; failed?: boolean; error?: string } | null) => void;
-  /** 11-17：Craft 全家桶扫到的 PhotoCraft 安装目录（由父级传入；无则这一行不渲染）。 */
+  /** 安装位置与「修改位置」：与其它 App 弹窗同一套行（PhotoCraft 自己的安装目录由状态里的 GUI/CLI 路径推出）。 */
   installDir?: string;
   customRoot?: string;
   onPickRoot?: (clear?: boolean) => void;
@@ -60,6 +67,7 @@ export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling
   const [status, setStatus] = useState<Status | null>(null);
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [opening, setOpening] = useState(false);
+  const photoCraftDir = installDir || dirOf(status?.guiPath) || dirOf(status?.cliPath);
 
   const refresh = useCallback(async () => {
     try { setStatus((await window.codex.photocraftStatus()) as Status); } catch { /* 主进程没接上就保持现状 */ }
@@ -161,27 +169,25 @@ export function PhotoCraftCard({ setNotice, installDevRuntime, runtimeInstalling
             </div>
           </div>
 
-          {onPickRoot ? (
-            <div className={`runtime-row ${installDir ? "installed" : "missing"}`}>
-              <span className="runtime-icon"><FolderOpen size={15} /></span>
-              <span className="runtime-copy">
-                <strong>安装位置</strong>
-                <small title={installDir || undefined}>
-                  {installDir
-                    ? `${installDir}（${customRoot ? "手动指定" : "自动检测"}）`
-                    : `还没找到 PhotoCraft —— ${customRoot ? `当前手动指定：${customRoot}` : "已按常见目录自动扫描"}；装在别的盘时点右侧指定`}
-                </small>
-              </span>
-              <div className="runtime-actions">
-                <button type="button" className="secondary-setting runtime-install" title="选择包含各 App 文件夹的那一级目录" onClick={() => onPickRoot()}>
-                  修改位置
-                </button>
-                {customRoot ? (
-                  <button type="button" className="secondary-setting runtime-install" onClick={() => onPickRoot(true)}>自动检测</button>
-                ) : null}
-              </div>
+          <div className={`runtime-row ${photoCraftDir ? "installed" : "missing"}`}>
+            <span className="runtime-icon"><FolderOpen size={15} /></span>
+            <span className="runtime-copy">
+              <strong>安装位置</strong>
+              <small title={photoCraftDir || undefined}>
+                {photoCraftDir
+                  ? `${photoCraftDir}（${customRoot ? "手动指定" : "自动检测"}）`
+                  : `还没找到 PhotoCraft —— ${customRoot ? `当前手动指定：${customRoot}` : "已按常见目录自动扫描"}；装在别的盘时点右侧指定`}
+              </small>
+            </span>
+            <div className="runtime-actions">
+              <button type="button" className="secondary-setting runtime-install" title="选择包含各 App 文件夹的那一级目录" onClick={() => onPickRoot?.()}>
+                修改位置
+              </button>
+              {customRoot ? (
+                <button type="button" className="secondary-setting runtime-install" onClick={() => onPickRoot?.(true)}>自动检测</button>
+              ) : null}
             </div>
-          ) : null}
+          </div>
 
           <RuntimeUpdateRow
             id="photocraft"
