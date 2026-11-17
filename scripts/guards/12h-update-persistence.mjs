@@ -288,6 +288,10 @@ console.log(JSON.stringify(out));
     "小窗文案与进程方式正确（独立进程、无控制台）");
   ok(splash.includes("Get-Process") && splash.includes("安装似乎没有完成") && splash.includes("ShowDialog"),
     "新版本启动后自动关闭；超时改成「未完成」提示，不会永久挂着");
+  ok(ipc.includes("showMacUpdateReminder")
+    && (ipc.match(/showMacUpdateReminder\(/g) ?? []).length >= 2
+    && splash.includes("osascript") && splash.includes("display notification"),
+    "macOS 走原生通知（打开 zip / 手动重启安装两条路都提醒拖进「应用程序」）");
 }
 
 console.log(`\n【update-persistence】${checks - fails}/${checks} 通过${fails ? ` —— ${fails} 条红` : ""}`);

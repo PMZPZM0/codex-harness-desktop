@@ -25,7 +25,7 @@ import { spawn } from "node:child_process";
 import { defineFeature } from "../context";
 import type { IpcHost } from "../ipc-host";
 import { sendToWindow } from "./window-bus";
-import { showUpdateSplash } from "../update-splash";
+import { showUpdateSplash, showMacUpdateReminder } from "../update-splash";
 
 import {
   checkLatestUpdate,
@@ -195,6 +195,7 @@ export const updatesFeature = defineFeature<null>({
       }
       if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
       const started = await installUpdate(lastVerifiedUpdatePath);
+      if (started && process.platform === "darwin") showMacUpdateReminder(String(lastUpdateInfo?.version ?? ""));
       return { ok: started, error: started ? undefined : "open_failed" };
     });
 
@@ -287,6 +288,8 @@ export const updatesFeature = defineFeature<null>({
       if (!lastVerifiedUpdatePath) return { ok: false, error: "no_verified_update" };
       if (!fileExists(lastVerifiedUpdatePath)) return { ok: false, error: "file_not_found" };
       if (process.platform !== "win32") {
+        /* mac 没有 NSIS 静默安装：弹原生通知告诉用户「打开压缩包、拖进应用程序」。 */
+        if (process.platform === "darwin") showMacUpdateReminder(String(lastUpdateInfo?.version ?? ""));
         return { ok: false, error: "unsupported_platform" };
       }
       /* ⚠️ 等一小会儿让调用方（渲染层）先把 toast 收起来，否则退出瞬间还在闪。 */

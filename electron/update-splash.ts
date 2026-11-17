@@ -191,6 +191,17 @@ $timer.Start()
 $form.ShowDialog() | Out-Null
 `;
 
+/** macOS：更新包打开前弹原生通知（mac 没有 NSIS 静默安装，实际是拖进「应用程序」）。 */
+export function showMacUpdateReminder(version: string): void {
+  if (process.platform !== "darwin") return;
+  const title = "Codex Harness 更新";
+  const body = `新版本${version ? ` v${version}` : ""}已下载并校验通过。请打开下载的压缩包，把应用拖进「应用程序」完成更新。`;
+  const script = `display notification ${JSON.stringify(body)} with title ${JSON.stringify(title)}`;
+  try {
+    spawn("osascript", ["-e", script], { detached: true, stdio: "ignore" }).unref();
+  } catch { /* 通知失败不影响下载/打开 */ }
+}
+
 /** 在应用退出前拉起安装提醒小窗（Windows）；失败静默不影响安装。 */
 export function showUpdateSplash(version: string, timeoutSeconds = 240): void {
   if (process.platform !== "win32") return;
