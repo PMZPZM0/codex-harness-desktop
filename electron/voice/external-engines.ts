@@ -37,13 +37,11 @@ const cancels = new Map<string, AbortController>();
 const PORTS: Record<string, number> = {
   "gpt-sovits": 19880,
   "cosyvoice3": 19881,
-  "f5-tts": 19882,
   chatterbox: 19883,
   "qwen3-tts": 19884,
-  indextts2: 19885,
 };
 /** 走「通用 Python 适配器」（POST /speak）的引擎。 */
-const PY_ADAPTERS = new Set(["f5-tts", "chatterbox", "qwen3-tts", "indextts2"]);
+const PY_ADAPTERS = new Set(["chatterbox", "qwen3-tts"]);
 /** 自带默认音色（模型自己带条件向量，无需参考音频）的引擎 —— 目前只有 Chatterbox（models/conds.pt）。 */
 const NATIVE_VOICE_ENGINES = new Set(["chatterbox"]);
 /** 向适配器表示「用引擎自带音色」的哨兵（避免改所有适配器的请求协议）。 */
@@ -54,10 +52,8 @@ const HF_ENDPOINT = "https://hf-mirror.com";
 const SERVICE_TIMEOUT: Record<string, number> = {
   "gpt-sovits": 180_000,
   cosyvoice3: 240_000,
-  "f5-tts": 420_000,
   chatterbox: 600_000,
   "qwen3-tts": 420_000,
-  indextts2: 600_000,
 };
 
 /** 设置进度回调（IPC 段转成 voice:event 的 download 事件）。 */
@@ -128,7 +124,17 @@ export function externalEngineList() {
 /** 读当前启用的引擎（没有返回 null）；供 voice-service 判断是否走外部合成。 */
 export function activeExternalEngine(): VoiceExternalEngine | null {
   const state = loadState();
-  return state.active ? externalEngineById(state.active) : null;
+  if (!state.active) return null;
+  const entry = externalEngineById(state.active);
+  if (!entry) {
+    /* 11-17 用户令移除的非商用引擎可能还留在档案里：停掉它的服务并清掉启用态，
+       否则会继续占显存、而界面上已经看不到它。 */
+    stopService(state.active);
+    state.active = "";
+    saveState(state);
+    return null;
+  }
+  return entry;
 }
 
 function sevenZipPath(): string {
@@ -1057,34 +1063,6 @@ if __name__ == '__main__':
     HTTPServer(('127.0.0.1', args.port), Handler).serve_forever()
 `;
 
-const F5_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness F5-TTS adapter (auto-generated)
-import soundfile as sf
-from f5_tts.api import F5TTS
-
-MODELS = os.path.join(ROOT, 'models')
-print('loading F5-TTS', flush=True)
-tts = F5TTS(
-    model='F5TTS_v1_Base',
-    ckpt_file=os.path.join(MODELS, 'F5TTS_v1_Base', 'model_1250000.safetensors'),
-    vocab_file=os.path.join(MODELS, 'F5TTS_v1_Base', 'vocab.txt'),
-    vocoder_local_path=os.path.join(MODELS, 'vocos-mel-24khz'),
-    device='cuda',
-)
-print('model ready, sample_rate', tts.target_sample_rate, flush=True)
-
-def synth(text, ref_audio, ref_text, speed):
-    wav, sr, _spec = tts.infer(
-        ref_file=ref_audio,
-        ref_text=ref_text or ' ',
-        gen_text=text,
-        speed=float(speed or 1.0),
-        nfe_step=32,
-    )
-    buf = io.BytesIO()
-    sf.write(buf, wav, sr, format='WAV')
-    return buf.getvalue()
-
-` + ADAPTER_HTTP_MAIN;
 
 const CHATTERBOX_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness Chatterbox multilingual adapter (auto-generated)
 import re
@@ -1148,40 +1126,10 @@ def synth(text, ref_audio, ref_text, speed):
 
 ` + ADAPTER_HTTP_MAIN;
 
-const INDEXTTS_ADAPTER = ADAPTER_HTTP_HEAD + String.raw`# Harness IndexTTS2 adapter (auto-generated)
-from indextts.infer_v2 import IndexTTS2
-
-MODELS = os.path.join(ROOT, 'models')
-print('loading IndexTTS2 from', MODELS, flush=True)
-tts = IndexTTS2(
-    cfg_path=os.path.join(MODELS, 'config.yaml'),
-    model_dir=MODELS,
-    use_fp16=True,
-    use_cuda_kernel=False,
-    use_deepspeed=False,
-)
-print('model ready', flush=True)
-
-def synth(text, ref_audio, ref_text, speed):
-    handle, path = tempfile.mkstemp(suffix='.wav')
-    os.close(handle)
-    try:
-        tts.infer(spk_audio_prompt=ref_audio, text=text, output_path=path, verbose=False)
-        with open(path, 'rb') as fh:
-            return fh.read()
-    finally:
-        try:
-            os.unlink(path)
-        except OSError:
-            pass
-
-` + ADAPTER_HTTP_MAIN;
 
 const ADAPTERS: Record<string, string> = {
-  "f5-tts": F5_ADAPTER,
   chatterbox: CHATTERBOX_ADAPTER,
   "qwen3-tts": QWEN3_ADAPTER,
-  indextts2: INDEXTTS_ADAPTER,
 };
 
 app.on("will-quit", () => stopAllExternalEngines());

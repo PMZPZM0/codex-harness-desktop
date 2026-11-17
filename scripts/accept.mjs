@@ -2811,7 +2811,7 @@ const CHECKS = [
       const expand = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-expand")].find((x)=>((x.textContent||"").includes("更多展开"))); if(!b) return 0; b.click(); return 1; })()`);
       await wait(350);
       const n1 = await count();
-      h.check("④「更多展开」后显示全部 11 个", expand === 1 && n1 === 11, `count=${n1}`);
+      h.check("④「更多展开」后显示全部 8 个（非商用权重已删）", expand === 1 && n1 === 8, `count=${n1}`);
 
       const studio = await h.eval(`(function(){ const b=[...document.querySelectorAll(".voice-ext-chip")].find((x)=>((x.textContent||"").trim()==="一体工作台")); if(!b) return 0; b.click(); return 1; })()`);
       await wait(350);
@@ -2825,29 +2825,27 @@ const CHECKS = [
         if(!card) return "";
         return [...card.querySelectorAll("button")].map((b)=>(b.textContent||"").trim()).join("|");
       })()`);
-      const engineButtons = await Promise.all(["f5-tts", "chatterbox", "qwen3-tts", "indextts2"].map(buttonsOf));
-      h.check("⑧ 第二批四个引擎卡片都有「安装」按钮（真接入，不再是信息卡）",
+      const engineButtons = await Promise.all(["gpt-sovits", "cosyvoice3", "qwen3-tts", "chatterbox"].map(buttonsOf));
+      h.check("⑧ 四个可安装引擎卡片都有「安装」入口（点进配置弹窗）",
         engineButtons.every((text) => String(text).includes("安装")), JSON.stringify(engineButtons));
       const zonosButtons = await buttonsOf("zonos");
-      const fishButtons = await buttonsOf("fish-speech");
-      h.check("⑨ Zonos / Fish 只给「打开官网 + 项目主页」（平台或显存不支持，不假装可装）",
-        String(zonosButtons).includes("打开官网") && !String(zonosButtons).includes("安装")
-          && String(fishButtons).includes("打开官网") && !String(fishButtons).includes("安装"),
-        `${zonosButtons} / ${fishButtons}`);
+      h.check("⑨ Zonos 只给「打开官网 + 项目主页」（平台不支持，不假装可装）",
+        String(zonosButtons).includes("打开官网") && !String(zonosButtons).includes("安装"),
+        String(zonosButtons));
       await h.eval(`(function(){
-        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="fish-speech");
+        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="zonos");
         card?.querySelector(".voice-ext-detail-btn")?.click();
         return 1;
       })()`);
       await wait(250);
       const highDemand = await h.eval(`(function(){
-        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="fish-speech");
+        const card=[...document.querySelectorAll("[data-external-card]")].find((x)=>x.getAttribute("data-external-card")==="zonos");
         const hint=document.querySelector(".voice-ext-hint");
         return { card: card ? (card.textContent||"") : "", hint: hint ? (hint.textContent||"") : "" };
       })()`);
-      h.check("⑩ 高配引擎有「需高配」+ 详情写硬件门槛（12GB+ 显存）",
+      h.check("⑩ 高配引擎有「需高配」+ 详情写硬件门槛（Zonos 仅 Linux·macOS）",
         String(highDemand.card).includes("需高配") && String(highDemand.card).includes("硬件要求")
-          && String(highDemand.card).includes("12GB") && String(highDemand.hint).includes("12GB"),
+          && String(highDemand.card).includes("Linux") && String(highDemand.hint).includes("12GB"),
         JSON.stringify(highDemand));
       const singleHead = await h.eval(`(function(){ const head=document.querySelector(".voice-ext-head"); return head ? (head.textContent||"") : ""; })()`);
       h.check("⑪ 同一时间只生效一个（标题写明开启新引擎会自动停用旧的）",
@@ -2862,8 +2860,8 @@ const CHECKS = [
         const cards=[...document.querySelectorAll("[data-external-card]")];
         return cards.map((card)=>({ id:card.getAttribute("data-external-card"), badge:(card.querySelector(".voice-ext-badge")?.textContent||"").trim() }));
       })()`);
-      h.check("⑦ 非商用/许可徽标可见（默认 4 张里至少 2 张带非商用/有条件）", Array.isArray(badges)
-        && badges.filter((x)=>x.badge.includes("非商用")||x.badge.includes("有条件")).length >= 2,
+      h.check("⑦ 默认 4 张都带许可徽标（可商用；非商用引擎已删）", Array.isArray(badges)
+        && badges.filter((x)=>x.badge.includes("可商用")).length === 4,
         JSON.stringify(badges));
 
       /* 11-17 用户令：「音色选择就放到每个语音模型卡片里面，语音模型卡片做二级弹窗预览里面设置」。 */
@@ -2873,7 +2871,7 @@ const CHECKS = [
         const dlg=[...document.querySelectorAll(".settings-dialog")].pop();
         if(!dlg) return null;
         const head=(dlg.querySelector(".settings-dialog-head")?.textContent||"");
-        const voiceCard=[...dlg.querySelectorAll(".voice-card")].find((c)=>(c.textContent||"").includes("音色"));
+        const voiceCard=[...dlg.querySelectorAll(".voice-card")].find((c)=>((c.querySelector(".voice-card-head")?.textContent||"").trim()==="音色"));
         const hasSelect=Boolean(voiceCard && voiceCard.querySelector(".voice-input"));
         const rect=dlg.getBoundingClientRect();
         const hit=document.elementFromPoint(rect.left+rect.width/2, rect.top+12);

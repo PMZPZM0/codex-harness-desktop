@@ -2258,8 +2258,29 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-ext-filters { display: flex; flex-wrap: wrap; gap: 6px; }
 .voice-ext-chip { border: 1px solid var(--line); background: var(--panel, #fff); color: var(--muted); border-radius: 999px; padding: 3px 10px; font-size: 11.5px; cursor: pointer; }
 .voice-ext-chip.is-active { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: color-mix(in srgb, var(--accent) 8%, var(--panel)); }
-.voice-ext-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.voice-ext-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; align-items: stretch; }
 @media (max-width: 760px) { .voice-ext-grid { grid-template-columns: 1fr; } }
+
+/* 11-17 用户实测「左右乱、上下不协调」：四个区固定节奏，卡片等高、文字限两行、底部一行对齐。
+   标题 → 简介(2 行) → 规格(最多两排) → 许可(2 行) → 底部：状态左 / 配置右。 */
+.voice-ext-card { height: 100%; padding: 12px 13px; gap: 7px; }
+.voice-ext-card .voice-engine-head { align-items: center; }
+.voice-ext-card .voice-engine-tagline {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; min-height: 32px; word-break: break-word;
+}
+.voice-ext-card .voice-engine-meta { align-content: flex-start; min-height: 44px; }
+.voice-ext-card .voice-engine-role {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; min-height: 34px; line-height: 1.45; word-break: break-word;
+}
+.voice-ext-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 8px; border-top: 1px dashed var(--line);
+}
+.voice-ext-status { font-size: 11px; color: var(--faint); white-space: nowrap; }
+.voice-ext-status.is-ok { color: color-mix(in srgb, var(--green, #2f9e5f) 85%, var(--text)); }
+.voice-ext-foot .voice-ext-actions { margin: 0; padding: 0; justify-content: flex-end; }
 .voice-ext-card { display: flex; flex-direction: column; gap: 6px; }
 .voice-ext-card .voice-engine-meta { flex-wrap: wrap; }
 .voice-ext-badge { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
@@ -2267,11 +2288,25 @@ body:has([class*="backdrop"]) .voice-announce-bar { display: none !important; }
 .voice-ext-badge.is-no, .voice-ext-badge.is-conditional { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, var(--line)); background: color-mix(in srgb, var(--amber) 8%, transparent); }
 .voice-ext-badge.is-agpl { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .voice-ext-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding-top: 6px; }
-/* 11-17：点引擎卡进二级弹窗配置（音色 / 启用 / 安装 / 详情都在弹窗里）。 */
+/* 11-17：点引擎卡进二级弹窗配置（启用与安装 / 音色 / 怎么用 / 来源与许可，全部按卡片分区）。 */
 .voice-ext-config { gap: 10px; }
 .voice-ext-config .voice-card { margin: 0; }
-.voice-ext-config-actions { flex-wrap: wrap; }
+.voice-ext-config-copy { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.voice-ext-config-copy b { font-size: 12.5px; color: var(--text); }
+.voice-ext-config-copy small { font-size: 11px; line-height: 1.45; color: var(--muted); }
+.voice-ext-install-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.voice-ext-install-row .primary-setting { flex: none; }
+.voice-ext-config-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-top: 2px; }
+.voice-ext-config-actions button { width: 100%; justify-content: center; }
 .voice-ext-voice-loading { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); font-size: 10.5px; flex: none; }
+.voice-ext-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; line-height: 1.5; color: var(--muted); }
+.voice-ext-kv { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 11.5px; }
+.voice-ext-kv dt { color: var(--faint); margin: 0; }
+.voice-ext-kv dd { margin: 0; color: var(--text); line-height: 1.45; }
+.voice-ext-proscons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; border-top: 1px dashed var(--line); padding-top: 8px; }
+@media (max-width: 620px) { .voice-ext-proscons { grid-template-columns: 1fr; } }
+.voice-ext-proscons b { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text); margin-bottom: 4px; }
+.voice-ext-proscons ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
 .voice-ext-service-error { display: flex; gap: 5px; align-items: flex-start; font-size: 11px; line-height: 1.45; color: var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); border-radius: 7px; padding: 5px 7px; word-break: break-all; }
 .voice-ext-demand { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; white-space: nowrap; color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--line)); background: color-mix(in srgb, var(--amber) 10%, transparent); }
 .voice-ext-hint { color: var(--faint); font-size: 11px; line-height: 1.5; }

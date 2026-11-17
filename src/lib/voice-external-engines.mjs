@@ -2,14 +2,14 @@
  * 开源语音引擎目录（11-16 用户令）
  *
  * 用户口径：把 Voicebox / OmniVoice Studio / GPT-SoVITS / CosyVoice 3 / Qwen3-TTS /
- * IndexTTS2 / Chatterbox / F5-TTS / Fish Speech / TTS-WebUI / Zonos 做成「语音模型」界面的卡片，
- * 按需下载；默认只展示 4 张（推荐），其余「更多展开 / 收起」。
+ * Chatterbox / TTS-WebUI / Zonos 做成「语音模型」界面的卡片，按需下载；默认只展示 4 张（推荐），其余「更多展开 / 收起」。
  *
  * ⛔ 这里是**单一真相源**：主进程安装器与渲染层卡片都读这一份，别在两边各抄一份清单。
  * ⛔ 体积/显存/许可是**展示用的事实**，不参与安装校验；安装只认 install 里的 url/bytes。
- * ⛔ `demand` / `hardware` 也是展示用：`demand:"high"` 的引擎（Fish 4B / Zonos / Voicebox）
+ * ⛔ demand / hardware 也是展示用：demand 为 high 的引擎（Zonos / Voicebox）
  *    在 8GB 显卡上会 OOM 或跑不动，卡片必须打「需高配」并在详情写清显存/磁盘门槛。
- * ⛔ 非商用权重（F5 / Fish / IndexTTS-2.0）必须带 badge，且不随包。
+ * ⛔⛔ 11-17 用户令：**非商用权重的引擎一律不进目录**（IndexTTS2 2.0 / F5-TTS / Fish Speech 已移除）。
+ *    新增引擎前先核对权重许可 —— 不可商用的不要加进来。
  */
 
 /** 卡片分类（顺序即界面 chips 顺序）。 */
@@ -18,23 +18,18 @@ export const VOICE_EXTERNAL_CATEGORIES = [
   { id: "clone", name: "中文克隆" },
   { id: "dialect", name: "方言多语" },
   { id: "design", name: "声音设计" },
-  { id: "dub", name: "视频配音" },
   { id: "dialog", name: "自然对话" },
-  { id: "longform", name: "长文本" },
-  { id: "podcast", name: "多人播客" },
   { id: "studio", name: "一体工作台" },
   { id: "lab", name: "实验调参" },
 ];
 
-/** 默认展示的「推荐」卡片（用户令：默认 4 张，其余展开）。 */
-export const VOICE_EXTERNAL_DEFAULT_IDS = ["gpt-sovits", "cosyvoice3", "indextts2", "f5-tts"];
+/** 默认展示的「推荐」卡片（用户令：默认 4 张，其余展开）；11-17 移除非商用权重后为这 4 个。 */
+export const VOICE_EXTERNAL_DEFAULT_IDS = ["gpt-sovits", "cosyvoice3", "qwen3-tts", "chatterbox"];
 
 /** CosyVoice 源码钉死提交（11-16 实测拉取；换版本时与模型清单一起更新）。 */
 const COSYVOICE_COMMIT = "074ca6dc9e80a2f424f1f74b48bdd7d3fea531cc";
-/** IndexTTS 源码钉死提交（11-16 实测；pyproject 锁 torch 2.8 / Python 3.10–3.11）。 */
-const INDEXTTS_COMMIT = "d9e41aac89fd00b3d71497fddb287b7f24613712";
 
-/** 11 个开源项目的卡片数据（顺序即「全部」展开顺序）。 */
+/** 开源项目卡片数据（顺序即「全部」展开顺序）。⛔ 11-17 用户令：非商用权重的引擎不进目录。 */
 export const VOICE_EXTERNAL_ENGINES = [
   {
     id: "gpt-sovits",
@@ -104,71 +99,8 @@ export const VOICE_EXTERNAL_ENGINES = [
       ],
     },
   },
-  {
-    id: "indextts2",
-    name: "IndexTTS2",
-    category: "dub",
-    recommended: true,
-    kind: "engine",
-    adapter: "indextts2",
-    repo: "https://github.com/index-tts/index-tts",
-    license: "代码 Apache-2.0 / 权重 B站许可",
-    licenseNote: "2.0 权重非商用；2.5 商用有月活/营收门槛，商用前需读 LICENSE",
-    commercial: "conditional",
-    commercialLabel: "权重有条件商用",
-    badge: "非商用 · 2.0",
-    languages: "中 / 英 / 日 / 西 / 阿",
-    sizeLabel: "约 8GB（环境 + 5.9GB 模型）",
-    sizeMB: 8000,
-    vram: "6GB 显存",
-    tagline: "B站出品：视频配音，情感与时长可控",
-    pros: ["RTF 低、批量配音快", "情感/时长控制强"],
-    cons: ["2.0 权重非商用", "安装要建 Python 环境（Windows 跳过 DeepSpeed）"],
-    install: {
-      kind: "python",
-      adapter: "indextts2",
-      python: "3.10",
-      commit: INDEXTTS_COMMIT,
-      zipUrl: `https://codeload.github.com/index-tts/index-tts/zip/${INDEXTTS_COMMIT}`,
-      torchBackend: "cu128",
-      editable: true,
-      models: [{ source: "modelscope", repo: "IndexTeam/IndexTTS-2", dest: "models" }],
-    },
-  },
-  {
-    id: "f5-tts",
-    name: "F5-TTS",
-    category: "longform",
-    recommended: true,
-    kind: "engine",
-    adapter: "f5-tts",
-    repo: "https://github.com/SWivid/F5-TTS",
-    license: "代码 MIT / 权重 CC-BY-NC 4.0",
-    licenseNote: "代码 MIT；预训练权重 CC-BY-NC 4.0（禁止商用）",
-    commercial: "no",
-    commercialLabel: "非商用",
-    badge: "权重非商用",
-    languages: "中 / 英",
-    sizeLabel: "约 3GB（环境 + 1.4GB 模型）",
-    sizeMB: 3000,
-    vram: "4GB 显存",
-    tagline: "长文本 / 有声书，中英克隆",
-    pros: ["长文本稳定", "体积小、速度快"],
-    cons: ["权重禁止商用", "32 步推理，长句比 GPT-SoVITS 慢一点"],
-    install: {
-      kind: "python",
-      adapter: "f5-tts",
-      python: "3.10",
-      torchBackend: "cu128",
-      pip: ["f5-tts"],
-      models: [
-        { source: "url", url: "https://hf-mirror.com/SWivid/F5-TTS/resolve/main/F5TTS_v1_Base/model_1250000.safetensors", dest: "models/F5TTS_v1_Base/model_1250000.safetensors", bytes: 1348435761 },
-        { source: "url", url: "https://hf-mirror.com/SWivid/F5-TTS/resolve/main/F5TTS_v1_Base/vocab.txt", dest: "models/F5TTS_v1_Base/vocab.txt", bytes: 13800 },
-        { source: "url", url: "https://hf-mirror.com/charactr/vocos-mel-24khz/resolve/main/config.yaml", dest: "models/vocos-mel-24khz/config.yaml", bytes: 461 },
-        { source: "url", url: "https://hf-mirror.com/charactr/vocos-mel-24khz/resolve/main/pytorch_model.bin", dest: "models/vocos-mel-24khz/pytorch_model.bin", bytes: 54365991 },
-      ],
-    },
-  },
+
+
   {
     id: "qwen3-tts",
     name: "Qwen3-TTS",
@@ -233,28 +165,7 @@ export const VOICE_EXTERNAL_ENGINES = [
       ],
     },
   },
-  {
-    id: "fish-speech",
-    name: "Fish Speech",
-    category: "podcast",
-    recommended: false,
-    kind: "engine",
-    adapter: null,
-    repo: "https://github.com/fishaudio/fish-speech",
-    license: "Fish Audio 社区许可 / S2-Pro 研究许可",
-    licenseNote: "S2-Pro 权重为研究许可（非商用），商用前读 LICENSE",
-    commercial: "no",
-    commercialLabel: "非商用（权重）",
-    badge: "权重非商用",
-    languages: "中 / 英 / 日 / 多语",
-    sizeLabel: "约 10GB（S2-Pro 4B）",
-    sizeMB: 10000,
-    vram: "8GB 显存起（4B 会紧）",
-    tagline: "多人播客与角色故事",
-    pros: ["多说话人自然", "情感表现强"],
-    cons: ["S2-Pro 4B，8GB 显卡容易 OOM", "权重研究许可；暂不接管播报"],
-    install: null,
-  },
+
   {
     id: "zonos",
     name: "Zonos",
@@ -343,25 +254,69 @@ export const VOICE_EXTERNAL_ENGINES = [
 ];
 
 /** 硬件门槛（展示用，11-16 用户令「注释好，那些需要高配置电脑」）。
- *  demand: high = 8GB 显卡跑不动/会 OOM（Fish 4B、Zonos、Voicebox）；
+ *  demand: high = 8GB 显卡跑不动/会 OOM（Zonos、Voicebox）；
  *  medium = 主流独显可用；light = 入门独显即可。
  *  磁盘是含 venv + CUDA torch 的实测/量级值，只作提示，不参与安装校验。 */
 const HARDWARE = {
   "gpt-sovits": { demand: "medium", hardware: "4–6GB 显存 / 约 14GB 磁盘（本机实测）" },
   cosyvoice3: { demand: "medium", hardware: "4–6GB 显存 / 约 11GB 磁盘（本机实测）" },
-  indextts2: { demand: "medium", hardware: "6GB+ 显存 / 约 19GB 磁盘（本机实测）" },
-  "f5-tts": { demand: "light", hardware: "4GB 显存 / 约 9GB 磁盘（本机实测）" },
   "qwen3-tts": { demand: "medium", hardware: "4–6GB 显存（0.6B）/ 约 10GB 磁盘（本机实测）" },
   chatterbox: { demand: "light", hardware: "4GB 显存 / 约 8GB 磁盘（本机实测）" },
-  "fish-speech": { demand: "high", hardware: "12GB+ 显存（S2-Pro 4B）/ 16GB+ 内存" },
   zonos: { demand: "high", hardware: "6–8GB 显存 / 仅 Linux·macOS" },
   voicebox: { demand: "high", hardware: "需 NVIDIA 独显 / 数 GB 磁盘" },
   "voice-studio": { demand: "medium", hardware: "可无 GPU（很慢）/ 约 10GB+ 磁盘" },
   "tts-webui": { demand: "medium", hardware: "随模型；部分模型需 8GB+ 显存" },
 };
 
+/** 每个引擎「怎么用」（11-17 用户令：写进引擎的配置弹窗里）。展示用，不参与安装。 */
+const USAGE = {
+  "gpt-sovits": [
+    "装好后点「配置 → 启用」；首次启动加载模型约 10–20 秒",
+    "音色选一段参考音频（3–10 秒最稳）：到「我的音色」导入，或直接选内置参考音色",
+    "点「试听」确认声音；之后语音播报与实时通话都用它",
+    "换嗓子就在音色下拉里换参考音频，不用重装",
+  ],
+  cosyvoice3: [
+    "安装要建 Python 环境（约 10–20 分钟）；首次启动加载 5GB 权重约 1–2 分钟",
+    "启用后在音色里选参考音频（3 秒即可）或内置参考音色",
+    "参考音频说什么语言就克隆什么语言，中英与方言走同一条链",
+    "点「试听」确认后再用于播报 / 通话",
+  ],
+  "qwen3-tts": [
+    "装好后启用；0.6B 模型，4–6GB 显存可跑",
+    "音色选参考音频做克隆，或直接用内置参考音色",
+    "「用文字描述生成新声音」要另装声音设计模型，本卡先提供克隆",
+    "点「试听」确认后再用于播报 / 通话",
+  ],
+  chatterbox: [
+    "装好后启用，可直接用「默认音色」（不需要参考音频）",
+    "想克隆别的嗓子：音色选「我的音色」或内置参考音色",
+    "对话感强、支持情绪夸张；长文本按句播报更稳",
+    "点「试听」确认后再用于播报 / 通话",
+  ],
+  zonos: [
+    "官方只支持 Linux / macOS，Windows 需第三方移植（本卡只给入口）",
+    "支持预置音色与细粒度参数调节",
+    "不接管本应用的播报 / 通话",
+  ],
+  voicebox: [
+    "独立语音工作台（自带引擎），不接管本应用播报",
+    "在它自己的界面里克隆 / 合成并导出音频",
+  ],
+  "voice-studio": [
+    "独立工作台（AGPL-3.0），本卡只提供下载入口",
+    "在应用内选择引擎和音色，导出音频",
+    "不接管本应用的播报 / 通话",
+  ],
+  "tts-webui": [
+    "聚合几十种 TTS 模型的 WebUI，本卡只提供入口",
+    "在它自己的界面里按模型分别配置",
+    "无统一 API，不接管本应用的播报 / 通话",
+  ],
+};
+
 for (const entry of VOICE_EXTERNAL_ENGINES) {
-  Object.assign(entry, HARDWARE[entry.id] ?? { demand: "medium", hardware: "" });
+  Object.assign(entry, HARDWARE[entry.id] ?? { demand: "medium", hardware: "" }, { usage: USAGE[entry.id] ?? [] });
 }
 
 /** 是否需要高配电脑（卡片据此显示「需高配」）。 */

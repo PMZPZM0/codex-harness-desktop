@@ -44,6 +44,8 @@ type EngineCard = {
   enabled: boolean;
   /** 11-17：引擎自带默认音色（Chatterbox 的 conds.pt），音色下拉多一项。 */
   nativeVoice?: boolean;
+  /** 11-17：「怎么用」步骤（目录里的单一真相源，弹窗里逐条展示）。 */
+  usage?: string[];
   service: string;
   serviceError: string;
 };
@@ -243,7 +245,7 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
         <strong>更多开源语音模型</strong>
         <span>按需下载、不随包；<strong>同一时间只生效一个</strong>（8GB 显存）。点卡片进入配置：启用、音色与安装都在里面；开启新引擎会自动停用当前的。</span>
       </div>
-      <div className="voice-ext-hint">标「需高配」的引擎建议 12GB+ 显存；8GB 显卡优先用 F5 / Chatterbox / GPT-SoVITS / Qwen3。</div>
+      <div className="voice-ext-hint">标「需高配」的引擎建议 12GB+ 显存；8GB 显卡优先用 Chatterbox / GPT-SoVITS / Qwen3 / CosyVoice。</div>
 
       <div className="voice-ext-filters" role="group" aria-label="开源语音模型分类">
         {VOICE_EXTERNAL_CATEGORIES.map((entry) => (
@@ -292,10 +294,9 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                 <span>{engine.sizeLabel}</span>
                 <span>{engine.vram}</span>
                 {isHighDemand(engine) && <span className="voice-ext-demand">需高配</span>}
-                <span className={`voice-engine-state${engine.installed ? " ok" : ""}`}>{statusOf(engine)}</span>
               </div>
 
-              <div className="voice-engine-role">{engine.licenseNote}</div>
+              <div className="voice-engine-role" title={engine.licenseNote}>{engine.licenseNote}</div>
 
               {running && (
                 <div className="voice-engine-progress">
@@ -324,20 +325,23 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
                 </div>
               )}
 
-              <div className="voice-ext-actions">
-                {isExternalOnly ? (
-                  <>
-                    <button type="button" className="secondary-setting" onClick={() => open(engine)}><ExternalLink size={13} />打开官网</button>
-                    <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(engine.repo).catch(() => undefined)}>项目主页</button>
-                    <button type="button" className="voice-ext-detail-btn" onClick={() => setDetails((current) => (current === engine.id ? null : engine.id))}>
-                      {details === engine.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}详情
+              <div className="voice-ext-foot">
+                <span className={`voice-ext-status${engine.installed ? " is-ok" : ""}`}>{statusOf(engine)}</span>
+                <div className="voice-ext-actions">
+                  {isExternalOnly ? (
+                    <>
+                      <button type="button" className="secondary-setting" onClick={() => open(engine)}><ExternalLink size={13} />打开官网</button>
+                      <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(engine.repo).catch(() => undefined)}>项目主页</button>
+                      <button type="button" className="voice-ext-detail-btn" onClick={() => setDetails((current) => (current === engine.id ? null : engine.id))}>
+                        {details === engine.id ? <ChevronUp size={13} /> : <ChevronDown size={13} />}详情
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" className="primary-setting voice-ext-config-open" onClick={() => setConfigId(engine.id)}>
+                      配置{engine.installed ? "" : " · 安装"}
                     </button>
-                  </>
-                ) : (
-                  <button type="button" className="primary-setting voice-ext-config-open" onClick={() => setConfigId(engine.id)}>
-                    配置{engine.installed ? "" : " · 安装"}
-                  </button>
-                )}
+                  )}
+                </div>
               </div>
 
               {isExternalOnly && details === engine.id && (
@@ -373,7 +377,7 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
       {configEngine && (
         <SettingsDialog
           title={`${configEngine.name} · 配置`}
-          hint={`${statusOf(configEngine)}${configEngine.installed ? " · 按需下载、只监听 127.0.0.1" : " · 未安装"}`}
+          hint={configEngine.installed ? `${statusOf(configEngine)} · 按需下载、只监听 127.0.0.1` : "按需下载 · 只监听 127.0.0.1"}
           size="md-auto"
           elevated
           onClose={() => setConfigId(null)}
@@ -392,63 +396,103 @@ export default function VoiceExternalEnginesSection({ onNotice, onActiveChange, 
               </div>
             )}
 
-            {!configEngine.installed ? (
-              <button type="button" className="primary-setting" disabled={Boolean(progress[configEngine.id])} onClick={() => void install(configEngine)}>
-                {progress[configEngine.id] ? <><LoaderCircle size={13} className="spin" />安装中…</> : <><Download size={13} />安装（{configEngine.sizeLabel}）</>}
-              </button>
-            ) : (
-              <>
-                <div className="runtime-row installed">
-                  <span className="runtime-icon">{configEngine.enabled ? <Check size={15} /> : <Download size={15} />}</span>
-                  <span className="runtime-copy">
-                    <strong>启用 {configEngine.name}</strong>
-                    <small>{configEngine.enabled ? (configEngine.service === "running" ? "使用中：播报 / 通话由它接管" : configEngine.service === "starting" ? "模型加载中（可随时关闭）…" : "已启用") : "启用后接管本机播报与通话（同一时间只一个）"}</small>
-                  </span>
-                  <div className="runtime-actions">
-                    <ToggleSwitch checked={configEngine.enabled} disabled={toggling === configEngine.id} label={`启用 ${configEngine.name}`} onChange={(next) => void toggle(configEngine, next)} />
-                  </div>
-                </div>
-
-                <div className="voice-card">
-                  <div className="voice-card-head"><span>音色</span></div>
-                  <div className="voice-card-body">
+            {/* 11-17 用户令「配置界面也一样」：弹窗内部也按卡片分区（状态 / 音色 / 怎么用 / 来源），
+                每块标题 + 单行对齐，不再混用 runtime-row / 散按钮。 */}
+            <div className="voice-card">
+              <div className="voice-card-head">
+                <span>启用与安装</span>
+                <span className="voice-card-value">{statusOf(configEngine)}</span>
+              </div>
+              <div className="voice-card-body">
+                {configEngine.installed ? (
+                  <>
                     <div className="voice-row">
-                      <AppSelect
-                        className="voice-input"
-                        value={String(settings?.tts?.engineVoice ?? "")}
-                        onChange={(value) => chooseVoice(configEngine, value)}
-                        ariaLabel={`${configEngine.name} 音色`}
-                        options={voiceOptionsFor(configEngine)}
-                      />
-                      {voicesLoading && <small className="voice-ext-voice-loading"><LoaderCircle size={12} className="spin" />生成内置音色…</small>}
+                      <span className="voice-ext-config-copy">
+                        <b>启用 {configEngine.name}</b>
+                        <small>
+                          {configEngine.enabled
+                            ? (configEngine.service === "running" ? "使用中：播报 / 通话由它接管" : configEngine.service === "starting" ? "模型加载中（可随时关闭）…" : "已启用")
+                            : "启用后接管本机播报与通话（同一时间只一个）"}
+                        </small>
+                      </span>
+                      <ToggleSwitch checked={configEngine.enabled} disabled={toggling === configEngine.id} label={`启用 ${configEngine.name}`} onChange={(next) => void toggle(configEngine, next)} />
                     </div>
-                    <div className="voice-card-hint">
-                      {configEngine.nativeVoice
-                        ? "这个引擎自带默认音色；也可以选内置参考音色（本机模型说话人生成的参考样本）或你自己的「我的音色」。"
-                        : "这个引擎是克隆型：选内置参考音色（本机模型说话人生成的参考样本）或你的「我的音色」；首次生成内置音色约 10 秒。"}
+                    <div className="voice-ext-config-actions">
+                      <button type="button" className="secondary-setting" onClick={() => void window.codex.voiceExternalReveal(configEngine.id).catch(() => undefined)}><FolderOpen size={13} />打开目录</button>
+                      <button type="button" className="secondary-setting" onClick={() => open(configEngine)}><ExternalLink size={13} />打开官网</button>
+                      <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(configEngine.repo).catch(() => undefined)}>项目主页</button>
+                      <button type="button" className="secondary-setting danger" onClick={() => void remove(configEngine)}>
+                        <Trash2 size={13} />{confirmRemove === configEngine.id ? "确认卸载" : "卸载"}
+                      </button>
                     </div>
+                  </>
+                ) : (
+                  <div className="voice-ext-install-row">
+                    <span className="voice-ext-config-copy">
+                      <b>还没安装</b>
+                      <small>{configEngine.sizeLabel} · 装完只监听 127.0.0.1</small>
+                    </span>
+                    <button type="button" className="primary-setting" disabled={Boolean(progress[configEngine.id])} onClick={() => void install(configEngine)}>
+                      {progress[configEngine.id] ? <><LoaderCircle size={13} className="spin" />安装中…</> : <><Download size={13} />安装</>}
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {configEngine.installed && (
+              <div className="voice-card">
+                <div className="voice-card-head"><span>音色</span></div>
+                <div className="voice-card-body">
+                  <div className="voice-row">
+                    <AppSelect
+                      className="voice-input"
+                      value={String(settings?.tts?.engineVoice ?? "")}
+                      onChange={(value) => chooseVoice(configEngine, value)}
+                      ariaLabel={`${configEngine.name} 音色`}
+                      options={voiceOptionsFor(configEngine)}
+                    />
+                    {voicesLoading && <small className="voice-ext-voice-loading"><LoaderCircle size={12} className="spin" />生成内置音色…</small>}
+                  </div>
+                  <div className="voice-card-hint">
+                    {configEngine.nativeVoice
+                      ? "这个引擎自带默认音色；也可以选内置参考音色（本机模型说话人生成的参考样本）或你自己的「我的音色」。"
+                      : "这个引擎是克隆型：选内置参考音色（本机模型说话人生成的参考样本）或你的「我的音色」；首次生成内置音色约 10 秒。"}
                   </div>
                 </div>
-
-                <div className="settings-actions voice-ext-config-actions">
-                  <button type="button" className="secondary-setting" onClick={() => void window.codex.voiceExternalReveal(configEngine.id).catch(() => undefined)}><FolderOpen size={13} />打开目录</button>
-                  <button type="button" className="secondary-setting" onClick={() => open(configEngine)}><ExternalLink size={13} />打开官网</button>
-                  <button type="button" className="secondary-setting" onClick={() => void window.codex.openExternal(configEngine.repo).catch(() => undefined)}>项目主页</button>
-                  <button type="button" className="secondary-setting danger" onClick={() => void remove(configEngine)}>
-                    <Trash2 size={13} />{confirmRemove === configEngine.id ? "确认卸载" : "卸载"}
-                  </button>
-                </div>
-              </>
+              </div>
             )}
 
-            <div className="voice-ext-details">
-              <div className="voice-ext-detail-row"><span>许可</span><b>{configEngine.license}</b></div>
-              <div className="voice-ext-detail-row"><span>硬件要求</span><b>{configEngine.hardware || configEngine.vram}</b></div>
-              <div className="voice-ext-detail-row"><span>类型</span><b>{configEngine.kind === "engine" ? "可接入引擎" : configEngine.kind === "studio" ? "独立工作台" : "模型聚合 UI"}</b></div>
-              <ul>
-                {configEngine.pros.map((item) => <li key={item}><Check size={12} />{item}</li>)}
-                {configEngine.cons.map((item) => <li key={item}><TriangleAlert size={12} />{item}</li>)}
-              </ul>
+            {(configEngine.usage ?? []).length > 0 && (
+              <div className="voice-card voice-ext-usage">
+                <div className="voice-card-head"><span>怎么用</span></div>
+                <div className="voice-card-body">
+                  <ol className="voice-ext-steps">
+                    {(configEngine.usage ?? []).map((step) => <li key={step}>{step}</li>)}
+                  </ol>
+                </div>
+              </div>
+            )}
+
+            <div className="voice-card">
+              <div className="voice-card-head"><span>来源与许可</span></div>
+              <div className="voice-card-body">
+                <dl className="voice-ext-kv">
+                  <dt>许可</dt><dd>{configEngine.license}</dd>
+                  <dt>硬件要求</dt><dd>{configEngine.hardware || configEngine.vram}</dd>
+                  <dt>类型</dt><dd>{configEngine.kind === "engine" ? "可接入引擎" : configEngine.kind === "studio" ? "独立工作台" : "模型聚合 UI"}</dd>
+                </dl>
+                <div className="voice-ext-proscons">
+                  <div>
+                    <b><Check size={12} />优点</b>
+                    <ul>{configEngine.pros.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                  <div>
+                    <b><TriangleAlert size={12} />注意</b>
+                    <ul>{configEngine.cons.map((item) => <li key={item}>{item}</li>)}</ul>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </SettingsDialog>

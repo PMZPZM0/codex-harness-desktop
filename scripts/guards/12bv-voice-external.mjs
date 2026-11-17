@@ -2,11 +2,11 @@
  * 12bv-voice-external —— 开源语音模型卡片（11-16 用户令）
  *
  * 用户口径：把 Voicebox / OmniVoice Studio / GPT-SoVITS / CosyVoice 3 / Qwen3-TTS /
- * IndexTTS2 / Chatterbox / F5-TTS / Fish Speech / TTS-WebUI / Zonos 做成语音模型界面的卡片，
+ * Chatterbox / Qwen3-TTS / TTS-WebUI / Zonos 做成语音模型界面的卡片，
  * 按需下载；**默认展示 4 张**，更多展开/收起；启用与播报联动（同时只启用一个）。
  *
  * ⛔ 独立守卫（不进 _ctx MODULES 计数），必须同时加进 package.json 的 check 链。
- * ⛔ 非商用权重（F5 / Fish / IndexTTS-2.0）必须在卡片上有徽标；不随包。
+ * ⛔⛔ 11-17 用户令：**非商用权重的引擎一律不进目录**（IndexTTS2 / F5 / Fish 已移除）。
  */
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -32,21 +32,20 @@ const preload = read("electron/preload.ts");
 const dts = read("src/vite-env.d.ts");
 const pkg = JSON.parse(read("package.json"));
 
-const IDS = ["gpt-sovits", "cosyvoice3", "indextts2", "f5-tts", "qwen3-tts", "chatterbox", "fish-speech", "zonos", "voicebox", "voice-studio", "tts-webui"];
+const IDS = ["gpt-sovits", "cosyvoice3", "qwen3-tts", "chatterbox", "zonos", "voicebox", "voice-studio", "tts-webui"];
 const missingIds = IDS.filter((id) => !catalog.includes(`id: "${id}"`));
-ok(missingIds.length === 0, `11 个开源项目全部在目录里（缺：${missingIds.join("、") || "无"}）`);
+ok(missingIds.length === 0, `8 个开源项目全部在目录里（缺：${missingIds.join("、") || "无"}）`);
 
 const defaults = catalog.match(/VOICE_EXTERNAL_DEFAULT_IDS = \[([^\]]+)\]/)?.[1] ?? "";
 ok((defaults.match(/"/g) ?? []).length === 8, "默认展示 4 张推荐卡片（用户令）；其余走「更多展开」");
 
-ok(["clone", "dialect", "design", "dub", "dialog", "longform", "podcast", "studio", "lab"].every((id) => catalog.includes(`id: "${id}"`)),
-  "分类 chips 覆盖中文克隆 / 方言 / 声音设计 / 配音 / 对话 / 长文本 / 播客 / 工作台 / 实验");
+ok(["clone", "dialect", "design", "dialog", "studio", "lab"].every((id) => catalog.includes(`id: "${id}"`)),
+  "分类 chips 只保留有卡片的分类（克隆 / 方言 / 设计 / 对话 / 工作台 / 实验；移除后不留空 tab）");
 
-ok(/id: "f5-tts"[\s\S]*?commercial: "no"/.test(catalog)
-  && /id: "fish-speech"[\s\S]*?commercial: "no"/.test(catalog)
-  && /id: "indextts2"[\s\S]*?commercial: "conditional"/.test(catalog)
+ok(!/id: "f5-tts"/.test(catalog) && !/id: "fish-speech"/.test(catalog) && !/id: "indextts2"/.test(catalog)
+  && !/commercial: "no"/.test(catalog) && !/commercial: "conditional"/.test(catalog)
   && /id: "voice-studio"[\s\S]*?commercial: "agpl"/.test(catalog),
-  "非商用权重（F5 / Fish / IndexTTS-2.0）与 AGPL（VoiceStudio）有明确许可标记");
+  "非商用权重的引擎（IndexTTS2 / F5 / Fish）已从目录移除；AGPL（VoiceStudio）保留明确标记");
 
 ok(/GPT-SoVITS-v2pro-20250604\.7z/.test(catalog) && catalog.includes("bytes: 8185086602") && /kind: "archive"/.test(catalog),
   "GPT-SoVITS 下载源锚定官方便携包（ModelScope v2pro，8,185,086,602 字节）");
@@ -105,31 +104,26 @@ ok(css.includes(".voice-ext-grid") && css.includes("repeat(2, minmax(0, 1fr))") 
 ok(!existsSync(join(ROOT, "resources", "voice-engines")) && !existsSync(join(ROOT, "resources", "tts-engines")),
   "引擎不进安装包（全部下载到 userData/voice-engines）");
 
-/* 第二批（11-16）：通用 Python 安装器 + 四个引擎真接入（Fish / Zonos 保持信息卡） */
-const pythonIds = ["f5-tts", "chatterbox", "qwen3-tts", "indextts2"];
+/* 11-17：移除三个非商用权重后，可安装的克隆引擎只剩 Chatterbox / Qwen3（GPT-SoVITS / CosyVoice 各自装法）。 */
+const pythonIds = ["chatterbox", "qwen3-tts"];
 ok(pythonIds.every((id) => new RegExp(`id: "${id}"[\\s\\S]*?kind: "python"[\\s\\S]*?adapter: "${id}"`).test(catalog)),
-  "F5 / Chatterbox / Qwen3 / IndexTTS2 都有 Python 安装描述（kind=python + adapter）");
-ok(/INDEXTTS_COMMIT = "[0-9a-f]{40}"/.test(catalog) && /modelscope", repo: "IndexTeam\/IndexTTS-2"/.test(catalog),
-  "IndexTTS2 源码钉死提交 + ModelScope 权重清单");
+  "Chatterbox / Qwen3 都有 Python 安装描述（kind=python + adapter）");
+ok(!/INDEXTTS_COMMIT/.test(catalog) && !/IndexTeam\/IndexTTS-2/.test(catalog) && !/F5TTS_v1_Base/.test(catalog),
+  "非商用引擎的安装源与权重清单已一并删干净（不留死配置）");
 ok(catalog.includes('repo: "Qwen/Qwen3-TTS-12Hz-0.6B-Base"'), "Qwen3 用 0.6B-Base（含 speech_tokenizer）");
 ok(/t3_mtl23ls_v2\.safetensors/.test(catalog) && /s3gen\.pt/.test(catalog) && /Cangjie5_TC\.json/.test(catalog),
   "Chatterbox 多语模型文件齐全（ve / t3 v2 / s3gen / grapheme / conds / Cangjie5）");
-ok(/F5TTS_v1_Base\/model_1250000\.safetensors/.test(catalog) && /vocos-mel-24khz/.test(catalog),
-  "F5 预下载主模型 + Vocos 声码器（不依赖运行时联网）");
 ok(/id: "zonos"[\s\S]*?install: null/.test(catalog) && /官方只支持 Linux\/macOS/.test(catalog),
   "Zonos 官方不支持 Windows：保留信息卡，不假装可装");
-ok(/id: "fish-speech"[\s\S]*?install: null/.test(catalog) && /4B，8GB 显卡容易 OOM/.test(catalog),
-  "Fish Speech 4B 需更大显存：保留信息卡并写明原因");
 ok(!catalog.includes("首批暂未接入"), "已接入的卡片不再出现「首批暂未接入」字样");
 
-/* 硬件门槛（11-16 用户令「注释好，那些需要高配置电脑」）：11 张卡都要有 demand/hardware；
-   高配三张（Fish 4B / Zonos / Voicebox）必须打 high，卡片与详情都要显示。 */
+/* 硬件门槛（11-16 用户令「注释好，那些需要高配置电脑」）：8 张卡都要有 demand/hardware；
+   高配两张（Zonos / Voicebox）必须打 high，卡片与详情都要显示。 */
 const hardwareBlock = catalog.slice(catalog.indexOf("const HARDWARE"), catalog.indexOf("export function isHighDemand"));
-ok((hardwareBlock.match(/demand:/g) ?? []).length >= 11, "11 张卡片都有硬件门槛标注（demand + hardware）");
-ok(/fish-speech[\s\S]*?demand: "high"/.test(hardwareBlock)
-  && /zonos[\s\S]*?demand: "high"/.test(hardwareBlock)
+ok((hardwareBlock.match(/demand:/g) ?? []).length >= 8, "8 张卡片都有硬件门槛标注（demand + hardware）");
+ok(/zonos[\s\S]*?demand: "high"/.test(hardwareBlock)
   && /voicebox[\s\S]*?demand: "high"/.test(hardwareBlock),
-  "Fish（4B）/ Zonos / Voicebox 标为 high（8GB 显卡跑不动）");
+  "Zonos / Voicebox 标为 high（8GB 显卡跑不动）");
 ok(ui.includes("isHighDemand") && ui.includes("需高配") && ui.includes("硬件要求") && ui.includes("voice-ext-hint"),
   "卡片 meta 有「需高配」、详情有「硬件要求」、顶部有选型提示");
 ok(css.includes(".voice-ext-demand") && css.includes(".voice-ext-hint"),
@@ -147,10 +141,11 @@ ok(enginesUi.includes("接管中") && enginesUi.includes("外部引擎优先") &
 ok(enginesUi.includes("voiceExternalEnable(externalActive.id, false)"),
   "启用本机 / 切回本机 / 启用 MOSS 时都会停用外部引擎（全局面只留一个合成引擎）");
 
-ok(['"gpt-sovits":', '"cosyvoice3":', '"f5-tts":', 'chatterbox:', '"qwen3-tts":', 'indextts2: 19885'].every((part) => main.includes(part)),
-  "六个引擎各有独立端口（19880–19885）");
-ok(main.includes("PY_ADAPTERS") && pythonIds.every((id) => main.includes(`"${id}"`)),
-  "通用适配器集合覆盖四个新引擎");
+ok(['"gpt-sovits":', '"cosyvoice3":', 'chatterbox:', '"qwen3-tts":'].every((part) => main.includes(part)),
+  "四个可接入引擎各有独立端口，且已移除引擎的端口配置一并清掉");
+ok(main.includes("PY_ADAPTERS") && pythonIds.every((id) => main.includes(`"${id}"`))
+  && !/"f5-tts"/.test(main) && !/indextts2/.test(main),
+  "通用适配器集合只剩 Chatterbox / Qwen3（移除引擎的模板与端口不留死代码）");
 ok(main.includes("--torch-backend=") && main.includes("torch==2.8.0"),
   "安装器用 uv --torch-backend 装 CUDA 版 torch（避免装成 CPU 版）");
 ok(main.includes("hf-mirror.com") && main.includes("HF_ENDPOINT"),
@@ -158,18 +153,15 @@ ok(main.includes("hf-mirror.com") && main.includes("HF_ENDPOINT"),
 ok(main.includes("modelscope.cn/api/v1/models/") && main.includes("resolve/master/"),
   "ModelScope 清单/文件下载走官方 API（含大小，可续传）");
 ok(main.includes("ADAPTER_HTTP_HEAD") && main.includes("ADAPTER_HTTP_MAIN") && main.includes("String.raw"),
-  "四个适配器模板共用 HTTP 壳（String.raw 保证 Python 正则不被 TS 转义）");
-ok(main.includes('from f5_tts.api import F5TTS') && main.includes("vocoder_local_path"),
-  "F5 适配器加载本地 ckpt / vocab / Vocos");
+  "Python 适配器模板共用 HTTP 壳（String.raw 保证 Python 正则不被 TS 转义）");
 ok(main.includes("ChatterboxMultilingualTTS.from_local") && main.includes("language_id=lang") && /torch==2\.6\.0/.test(catalog),
   "Chatterbox 适配器走本地多语（中文 language_id=zh）+ torch 2.6（PyPI 包锁版本）");
 ok(main.includes("Qwen3TTSModel.from_pretrained") && main.includes("generate_voice_clone") && main.includes("attn_implementation='sdpa'"),
   "Qwen3 适配器用 Base 克隆 + SDPA（不强依赖 flash-attn）");
-ok(main.includes("from indextts.infer_v2 import IndexTTS2") && main.includes("use_deepspeed=False"),
-  "IndexTTS2 适配器跳过 DeepSpeed（Windows 装不上）");
-ok((main.match(/ADAPTER_HTTP_HEAD \+ String\.raw/g) ?? []).length === 4 && /HTTPServer\(\('127\.0\.0\.1'/.test(main),
-  "四个适配器都复用只绑 127.0.0.1 的 HTTP 壳");
-ok(main.includes("SERVICE_TIMEOUT") && main.includes("chatterbox: 600_000") && main.includes("indextts2: 600_000"),
+ok((main.match(/ADAPTER_HTTP_HEAD \+ String\.raw/g) ?? []).length === 2 && /HTTPServer\(\('127\.0\.0\.1'/.test(main)
+  && !/F5_ADAPTER|INDEXTTS_ADAPTER/.test(main),
+  "两个 Python 适配器都复用只绑 127.0.0.1 的 HTTP 壳（移除引擎的模板已删）");
+ok(main.includes("SERVICE_TIMEOUT") && main.includes("chatterbox: 600_000") && !/indextts2/.test(main),
   "大模型冷启动超时放宽到 10 分钟（首次加载 30–60 秒不会再被误判失败）");
 /* 11-16 用户实测「启用了，关不掉」：启动中开关被禁用 ⇒ 加载慢时无法关闭。 */
 ok(/disabled=\{toggling === configEngine\.id\}/.test(ui) && !/toggling === [a-z]+\.id \|\| [a-z]+\.service === "starting"/.test(ui)
@@ -210,6 +202,14 @@ ok(/SettingsDialog/.test(ui) && /voice-ext-config-open/.test(ui) && /configEngin
 ok(/size="md-auto"\s*\n\s*elevated/.test(ui) && /is-elevated/.test(read("src/styles/34-devtools-cards.css"))
   && /elevated\?: boolean/.test(read("src/components/SettingsDialog.tsx")),
   "二级弹窗内部的引擎配置弹窗抬到 950 档（is-elevated），不再被外层设置弹窗盖住");
+
+/* 11-17 用户令：弹窗里写清「怎么用」；卡片布局统一（等高、文字限行、底部一行对齐）。 */
+ok(/const USAGE = \{/.test(catalog) && /usage: USAGE\[entry\.id\]/.test(catalog)
+  && /voice-ext-usage/.test(ui) && /怎么用/.test(ui) && /voice-ext-steps/.test(css),
+  "每个引擎都有「怎么用」步骤（目录单一真相源）并写进配置弹窗");
+ok(/voice-ext-foot/.test(ui) && /voice-ext-status/.test(ui) && /\.voice-ext-card \{\s*height: 100%/.test(css)
+  && /-webkit-line-clamp: 2/.test(css) && /\.voice-ext-foot\s*\{[^}]*margin-top: auto/.test(css),
+  "引擎卡等高 + 简介/许可限两行 + 底部「状态左 / 配置右」一行对齐");
 
 ok(String(pkg.scripts?.check ?? "").includes("12bv-voice-external"), "守卫 12bv 已加入 package.json 的 check 链");
 

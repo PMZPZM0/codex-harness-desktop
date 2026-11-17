@@ -6,7 +6,7 @@ export type VoiceExternalInstall =
   | { kind: "external"; url: string }
   | {
       kind: "python";
-      adapter: "f5-tts" | "chatterbox" | "qwen3-tts" | "indextts2";
+      adapter: "chatterbox" | "qwen3-tts";
       python: string;
       torchBackend?: string;
       torch?: string;
@@ -27,7 +27,7 @@ export type VoiceExternalEngine = {
   category: string;
   recommended: boolean;
   kind: "engine" | "studio" | "webui";
-  adapter: "gpt-sovits" | "cosyvoice3" | "f5-tts" | "chatterbox" | "qwen3-tts" | "indextts2" | null;
+  adapter: "gpt-sovits" | "cosyvoice3" | "chatterbox" | "qwen3-tts" | null;
   repo: string;
   license: string;
   licenseNote: string;
@@ -43,6 +43,8 @@ export type VoiceExternalEngine = {
   tagline: string;
   pros: string[];
   cons: string[];
+  /** 11-17：配置弹窗里的「怎么用」步骤 */
+  usage: string[];
   install: VoiceExternalInstall | null;
 };
 
