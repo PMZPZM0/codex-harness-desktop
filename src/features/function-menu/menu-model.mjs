@@ -19,6 +19,24 @@ export const FUNCTION_MENU_IDS = [
 /** 先准备工具，再进入工作，最后是个人资料与账户。 */
 export const FUNCTION_MENU_DEFAULT_ORDER = [...FUNCTION_MENU_IDS];
 
+const previousCore = ["schedule", "frontend", "team", "tool-list", "devtools", "favorites", "identity", "login", "newbie"];
+const previousOrders = [["media", "extensions", ...previousCore], [...previousCore, "media", "extensions"]];
+export const FUNCTION_MENU_ORDER_VERSION = 1;
+
+/** 只在读入旧存档时升级。旧默认采用完整新排序，自定义布局只把可见的清单提前。 */
+export function restoreFunctionMenu(input) {
+  const config = normalizeFunctionMenu(input);
+  if (!Array.isArray(input?.order) || input.orderVersion >= FUNCTION_MENU_ORDER_VERSION) return config;
+  const builtin = config.order.filter(id => FUNCTION_MENU_IDS.includes(id));
+  const legacy = previousOrders.some(order => order.join() === builtin.join());
+  if (legacy) {
+    let next = 0;
+    config.order = config.order.map(id => FUNCTION_MENU_IDS.includes(id) ? FUNCTION_MENU_DEFAULT_ORDER[next++] : id);
+  }
+  if (!config.overflow.includes("tool-list")) config.order = ["tool-list", ...config.order.filter(id => id !== "tool-list")];
+  return config;
+}
+
 export const FUNCTION_MENU_DEFAULT = Object.freeze({
   /* 11-18 用户令：「把功能入口默认放到现在工作伙伴选项下面」⇒ 默认 top（顶部折叠组，紧跟工作伙伴）。 */
   location: "top",

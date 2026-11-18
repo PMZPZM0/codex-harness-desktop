@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import {
   moveFunctionMenuItem,
+  FUNCTION_MENU_ORDER_VERSION,
+  restoreFunctionMenu,
   normalizeFunctionMenu,
   nudgeFunctionMenuItem,
   resetFunctionMenuLayout,
@@ -25,10 +27,10 @@ function readConfig(): FunctionMenuConfig {
     const parsed = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
     const storedVersion = Number(localStorage.getItem(VERSION_KEY) ?? 1);
     const migrate = storedVersion < CONFIG_VERSION && parsed && typeof parsed === "object";
-    const next = normalizeFunctionMenu(migrate ? { ...parsed, location: "top" } : parsed);
-    if (migrate) {
+    const next = restoreFunctionMenu(migrate ? { ...parsed, location: "top" } : parsed);
+    if (migrate || (parsed && !parsed.orderVersion)) {
       try {
-        localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
+        localStorage.setItem(CONFIG_KEY, JSON.stringify({ ...next, orderVersion: FUNCTION_MENU_ORDER_VERSION }));
         localStorage.setItem(VERSION_KEY, String(CONFIG_VERSION));
       } catch { /* 隐私模式：本次仍按迁移后的值生效 */ }
     }
@@ -42,15 +44,14 @@ let config: FunctionMenuConfig = readConfig();
 const configListeners = new Set<() => void>();
 
 function persist() {
+  const functionMenu = { ...config, orderVersion: FUNCTION_MENU_ORDER_VERSION };
   try {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(functionMenu));
     localStorage.setItem(VERSION_KEY, String(CONFIG_VERSION));
   } catch { /* 隐私模式：本次仍生效 */ }
   /* 主进程 app-settings.json 才是重启回灌源：强杀进程时 localStorage 最后一次写入可能没落盘。 */
   try {
-    void window.codex?.saveAppSettings?.({
-      functionMenu: { location: config.location, order: [...config.order], overflow: [...config.overflow] },
-    })?.catch(() => undefined);
+    void window.codex?.saveAppSettings?.({ functionMenu })?.catch(() => undefined);
   } catch { /* 桥不可用时只保留 localStorage */ }
 }
 
@@ -128,7 +129,7 @@ export function resetFunctionMenuLayoutToDefault() {
 if (typeof window !== "undefined") {
   try {
     void window.codex?.readAppSettings?.().then((settings) => {
-      if (settings?.functionMenu) update(normalizeFunctionMenu(settings.functionMenu));
+      if (settings?.functionMenu) update(restoreFunctionMenu(settings.functionMenu));
     }).catch(() => undefined);
   } catch { /* 桥不可用时沿用 localStorage */ }
 }

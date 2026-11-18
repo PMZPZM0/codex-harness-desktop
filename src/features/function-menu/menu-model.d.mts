@@ -5,6 +5,8 @@ export type FunctionMenuItemId = "media" | "schedule" | "frontend" | "extensions
 export type FunctionMenuConfig = { location: FunctionMenuLocation; order: FunctionMenuEntryId[]; overflow: FunctionMenuEntryId[] };
 
 export declare const FUNCTION_MENU_IDS: FunctionMenuItemId[];
+export declare const FUNCTION_MENU_ORDER_VERSION: number;
+export declare function restoreFunctionMenu(input?: unknown): FunctionMenuConfig;
 export declare const FUNCTION_MENU_DEFAULT_ORDER: FunctionMenuItemId[];
 export declare const FUNCTION_MENU_DEFAULT: Readonly<FunctionMenuConfig>;
 
