@@ -2295,7 +2295,7 @@
 .tool-list-nav { position: sticky; top: 0; display: grid; gap: 3px; padding: 8px 12px 10px 0; border-right: 1px solid var(--line); }
 .tool-list-nav h3 { margin: 6px 8px 9px; color: var(--muted); font-size: 12px; }
 .tool-list-nav button, .tool-list-summary button { display: flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--text); cursor: pointer; }
-.tool-list-nav button { padding: 8px; border-radius: 6px; text-align: left; }
+.tool-list-nav button { padding: 8px; border-radius: 6px; text-align: left; white-space: nowrap; }
 .tool-list-nav button:hover { background: var(--panel-2); }
 .tool-list-nav button[aria-pressed="true"] { background: var(--accent-soft); color: var(--link); font-weight: 600; }
 .tool-list-nav small { margin-left: auto; font-variant-numeric: tabular-nums; }
@@ -2318,8 +2318,8 @@
 .tool-list-state[data-state="可用"] { background: color-mix(in srgb, var(--green) 10%, transparent); color: var(--green); }
 @media (max-width: 700px) {
   .tool-list-layout { grid-template-columns: minmax(0, 1fr); gap: 4px; }
-  .tool-list-nav { position: static; display: flex; flex-wrap: wrap; border: 0; padding: 4px 0; }
-  .tool-list-nav h3 { width: 100%; margin: 4px 0; }
-  .tool-list-nav button { gap: 4px; padding: 5px 6px; }
+  .tool-list-nav { position: static; display: flex; flex-wrap: nowrap; min-width: 0; overflow-x: auto; border: 0; padding: 4px 2px; }
+  .tool-list-nav h3 { display: none; }
+  .tool-list-nav button { flex: 0 0 auto; gap: 4px; padding: 5px 6px; }
 }
 .tool-list-preview { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; background: var(--panel-2); padding: 12px; line-height: 1.6; }

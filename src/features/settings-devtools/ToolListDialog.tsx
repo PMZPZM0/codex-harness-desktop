@@ -9,7 +9,8 @@ import { RUNTIME_GROUPS, runtimeGroupItems, type RuntimeRow } from "./runtime-gr
 type Item = { id: string; name: string; desc: string; group: string; prompt: string; method: string; target?: string; state?: string };
 const purposes = [
   { name: '开发环境', icon: Terminal, groups: ['基础运行时', '开发工具链', '系统级安装'] },
-  { name: '桌面自动化', icon: MonitorCog, groups: ['桌面与浏览器自动化'] },
+  { name: '桌面自动化', icon: MonitorCog, groups: ['桌面后端'] },
+  { name: '浏览器自动化', icon: LayoutGrid, groups: ['桌面与浏览器自动化'] },
   { name: '设计与影音', icon: Film, groups: ['媒体与文档', '影音与创作', '创作套件', 'Craft 创作应用'] },
   { name: '办公与教学', icon: BriefcaseBusiness, groups: ['协作办公', '教育与课堂'] },
   { name: '手机与设备', icon: Smartphone, groups: ['移动设备'] },
@@ -21,7 +22,7 @@ const purposes = [
 const purposeOverrides: Record<string, string> = {
   markitdown: '办公与教学', 'craft:wordcraft': '办公与教学', 'craft:gridcraft': '办公与教学',
   'craft:deckcraft': '办公与教学', 'craft:pdfcraft': '办公与教学', 'craft:mailcraft': '办公与教学',
-  'craft:craft-anything': '开发环境', rea: '开发环境', nuphus: '桌面自动化', ponytail: '桌面自动化',
+  'craft:craft-anything': '开发环境', rea: '开发环境', nuphus: '桌面自动化', ponytail: '开发环境', 'yt-dlp': '设计与影音',
 };
 const stateChoices = ['可用', '未检测到', '安装中', '安装包已就绪', '缺少依赖', '未能检测'];
 /** 安装包下载完不代表设备已安装，只有实际可用的三种检测结果合并展示。 */
@@ -56,10 +57,13 @@ export function ToolListDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     let alive = true;
     setStatus('读取中…');
-    void Promise.allSettled([window.codex.listRuntimes(), window.codex.listSkillPacks(), window.codex.egoStatus(), window.codex.openfilmStatus(), window.codex.artcraftStatus()]).then(([rt, packs, ego, film, suite]) => {
+    void Promise.allSettled([
+      window.codex.listRuntimes(), window.codex.listSkillPacks(), window.codex.egoStatus(), window.codex.openfilmStatus(), window.codex.artcraftStatus(),
+      window.codex.toolStatus(), window.codex.feishuCliStatus(), window.codex.fileeStatus(), window.codex.openmaicStatus(),
+    ]).then(([rt, packs, ego, film, suite, desktop, feishu, filee, classroom]) => {
       if (!alive) return;
       const rows = rt.status === 'fulfilled' ? rt.value : [];
-      const craft: Item[] = rows.some(r => r.id === 'artcraft') ? CRAFT_APPS.map(a => ({ id: 'craft:'+a.key, group: 'Craft 创作应用', name: a.name, desc: a.zh, method: 'Launcher 内安装', prompt: `请帮我安装 Craft 应用「${a.name}」。从开发工具的 Craft 全家桶检查并打开 ArtCraft Launcher；在 Launcher 目录中安装这一项，不单独下载替代包。需要授权时由我确认，完成后回到 Craft 卡片重新检测安装位置。` })) : [];
+      const craft: Item[] = CRAFT_APPS.map(a => ({ id: 'craft:'+a.key, group: 'Craft 创作应用', name: a.name, desc: a.zh, method: 'Launcher 内安装', prompt: `请帮我安装 Craft 应用「${a.name}」。从开发工具的 Craft 全家桶检查并打开 ArtCraft Launcher；在 Launcher 目录中安装这一项，不单独下载替代包。需要授权时由我确认，完成后回到 Craft 卡片重新检测安装位置。` }));
       const skills: Item[] = packs.status === 'fulfilled' ? packs.value.map(p => ({ id: 'skill:'+p.id, group: '精选技能包', name: p.name, desc: p.description, method: '技能包安装器', prompt: `请帮我安装精选技能包「${p.name}」。在开发工具的精选技能包中核对来源 ${p.repo} 和许可 ${p.license}，使用该条目的镜像安装入口。不要覆盖已有自定义技能；完成后重新读取已安装技能清单并确认结果。` })) : [];
       const apps = suite.status === 'fulfilled' ? suite.value as typeof suite.value & {roots?: string[]; customRoot?: string} : null;
       const entries = [...external, ...craft, ...skills].map(i => {
@@ -81,9 +85,29 @@ export function ToolListDialog({ onClose }: { onClose: () => void }) {
         }
         return { ...i, target, state, prompt: `${i.prompt}\n安装或检测位置：${target}` };
       });
-      setItems([...rows.map(runtimeItem), ...entries]);
+      const byId = new Map(rows.map(row => [row.id, runtimeItem(row)]));
+      for (const [id, probe] of [['feishu-cli', feishu], ['filee', filee], ['openmaic', classroom], ['artcraft', suite]] as const) {
+        const item = byId.get(id);
+        if (!item || item.state === '安装中') continue;
+        if (probe.status === 'fulfilled') {
+          item.state = probe.value.installed ? '已安装' : '未检测到';
+          if (probe.value.installed) {
+            const s = probe.value;
+            item.target = ('path' in s ? s.path : 'appDir' in s ? s.appDir : s.launcherPath) || item.target;
+          }
+        } else if (item.state === '未检测到') item.state = '未能检测';
+      }
+      if (desktop.status === 'fulfilled') for (const tool of desktop.value.filter(t => t.scope === 'computer')) {
+        const id = tool.id === 'nuphus-mcp' ? 'nuphus' : tool.id;
+        const old = byId.get(id);
+        const target = tool.command || old?.target || `应用工具目录的 npm-global 下，由组件更新器按本机平台管理 ${id === 'computer-use' ? 'open-computer-use' : id} 包`;
+        byId.set(id, { id, group: '桌面后端', name: tool.name, desc: tool.detail, target,
+          method: old?.method ?? '组件安装与更新', state: old?.state === '安装中' ? '安装中' : tool.binaryReady && tool.installed ? '已就绪' : tool.installed ? '缺少依赖' : '未检测到',
+          prompt: old?.prompt || `请帮我检查${tool.name}。先核对平台支持和本机组件状态，缺失时使用应用的组件更新器为 ${id} 安装对应平台版本（国内镜像优先），完成后在桌面自动化设置重新检测启动器与平台主程序。安装或检测位置：${target}` });
+      }
+      setItems([...byId.values(), ...entries]);
       window.dispatchEvent(new Event('codex-tool-list-refreshed'));
-      setStatus([rt.status === 'rejected' && '运行时', packs.status === 'rejected' && '技能包'].filter(Boolean).join('、'));
+      setStatus([rt.status === 'rejected' && '运行时', packs.status === 'rejected' && '技能包', desktop.status === 'rejected' && '桌面后端', suite.status === 'rejected' && 'Craft'].filter(Boolean).join('、'));
     });
     return () => { alive = false; };
   }, [revision]);
@@ -93,20 +117,27 @@ export function ToolListDialog({ onClose }: { onClose: () => void }) {
   const available = new Set<string>();
   const keyword = query.trim().toLowerCase();
   let matches = 0;
+  let craftMatches = 0;
   for (const item of items) {
     const name = purposeOverrides[item.id] ?? purposes.find(p => p.groups.includes(item.group))?.name ?? '其他工具';
     available.add(name);
     if (state && stateFilter(item.state) !== state) continue;
     if (!`${name} ${item.group} ${item.id} ${item.name} ${item.desc}`.toLowerCase().includes(keyword)) continue;
+    const isCraft = item.id.startsWith('craft:');
+    if (isCraft) craftMatches++;
     groups.get(name)!.push(item);
     matches++;
   }
-  const count = purpose ? groups.get(purpose)?.length ?? 0 : matches;
+  const craftView = purpose === 'Craft 全家桶';
+  const count = craftView ? craftMatches : purpose ? groups.get(purpose)?.length ?? 0 : matches;
   const filtered = Boolean(purpose || query || state);
+  const visibleGroups = [...groups].filter(([name]) => !purpose || craftView || name === purpose)
+    .map(([name, list]): [string, Item[]] => [name, craftView ? list.filter(i => i.id.startsWith('craft:')) : list]);
   return <><SettingsDialog size="lg" title="开发工具清单" icon={<ListChecks size={17}/>} hint="本机工具与安装提示词" onClose={onClose}>
     <div className="tool-list-layout">
       <div className="tool-list-nav" role="group" aria-label="按用途筛选"><h3>工具用途</h3>
         {[{ name: '', icon: LayoutGrid }, ...purposes.filter(p => available.has(p.name) || p.name === purpose)].map(({ name, icon: Icon }) => <button type="button" key={name} aria-pressed={purpose === name} data-tool-purpose={name} onClick={() => setPurpose(name)}><Icon size={15}/>{name || '全部工具'}<small>{name ? groups.get(name)?.length : matches}</small></button>)}
+        <button type="button" aria-pressed={craftView} data-tool-purpose="Craft 全家桶" onClick={() => setPurpose('Craft 全家桶')}><Blocks size={15}/>Craft 全家桶<small>{craftMatches}</small></button>
       </div>
       <div className="tool-list-results"><div className="tool-list-toolbar">
         <label className="tool-list-search"><Search size={15}/><input autoFocus type="search" aria-label="搜索工具或分类" placeholder="搜索工具名称、用途或关键词" value={query} onChange={e => setQuery(e.target.value)} /></label>
@@ -115,7 +146,7 @@ export function ToolListDialog({ onClose }: { onClose: () => void }) {
       <div className="tool-list-summary"><span role="status">{purpose || '全部工具'} · {count} 项</span>{filtered && <button type="button" onClick={() => { setQuery(''); setState(''); setPurpose(''); }}><RotateCcw size={13}/>清除筛选</button>}</div>
     {status && <p role="status">{status === '读取中…' ? status : <>{status}清单读取失败。<button type="button" className="secondary-setting" onClick={() => setRevision(v => v+1)}>重试</button></>}</p>}
       {!status && !count && <p className="tool-list-empty">没有匹配的工具</p>}
-      {[...groups].filter(([group, list]) => list.length && (!purpose || purpose === group)).map(([group, list]) => <section key={group} className="tool-list-group"><h3>{group} <small>{list.length}</small></h3>{list.map(i => <button type="button" key={i.id} data-tool-preview={i.id} onClick={() => { setCopied(''); setSelected(i.id); }}><span><strong>{i.name}</strong><small>{i.desc}</small></span><small className="tool-list-state" data-state={stateFilter(i.state)}>{i.state}</small><ChevronRight size={14}/></button>)}</section>)}
+      {visibleGroups.filter(([, list]) => list.length).map(([group, list]) => <section key={group} className="tool-list-group"><h3>{group} <small>{list.length}</small></h3>{list.map(i => <button type="button" key={i.id} data-tool-preview={i.id} onClick={() => { setCopied(''); setSelected(i.id); }}><span><strong>{i.name}</strong><small>{i.desc}</small></span><small className="tool-list-state" data-state={stateFilter(i.state)}>{i.state}</small><ChevronRight size={14}/></button>)}</section>)}
       </div></div>
   </SettingsDialog>{selected && <SettingsDialog elevated title={selected.name} hint={`${selected.group} · ${selected.method}`} onClose={() => setSelected(null)}>
     <p><b>安装或检测位置</b></p><div className="tool-list-preview">{selected.target || '当前桌面壳未返回位置'}</div><p>本机状态：{selected.state}　{refreshButton}</p>
