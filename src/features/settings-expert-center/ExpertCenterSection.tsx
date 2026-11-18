@@ -41,6 +41,8 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
     setCreating(leadName);
     try {
       await (saver as (draft: Record<string, unknown>) => Promise<unknown>)(hit.team);
+      /* 建档即就位：把这位专家的配套技能启用（缺失的仍要用户处理，不假装有）。 */
+      await ensureSkills((hit.team.skills as string[] | undefined) ?? []);
       refreshExpertTeams?.();
     } finally {
       setCreating("");
@@ -50,7 +52,8 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
      数据只认两条既有通道：listRuntimes（组件是否已装）+ listLocalSkills（技能是否已装）。
      ⛔ 不新增第二份"专家能力状态"真相源；⛔ 不在这里伪造"已具备"。 */
   const [installedTools, setInstalledTools] = useState<Set<string>>(new Set());
-  const [installedSkills, setInstalledSkills] = useState<Set<string>>(new Set());
+  /* 技能不只「装没装」，还有「启没启用」——⛔ 装了没启用，引擎照样看不见（等于专家没这个技能）。 */
+  const [skillMap, setSkillMap] = useState<Map<string, { folder: string; enabled: boolean }>>(new Map());
   const [capsLoaded, setCapsLoaded] = useState(false);
   const [busyCap, setBusyCap] = useState("");
   useEffect(() => {
@@ -63,7 +66,13 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
         ]);
         if (!alive) return;
         setInstalledTools(new Set((rows ?? []).filter((r) => r?.installed).map((r) => String(r.id))));
-        setInstalledSkills(new Set((skills ?? []).map((k) => String(k?.name ?? k?.folder ?? "")).filter(Boolean)));
+        const map = new Map<string, { folder: string; enabled: boolean }>();
+        for (const k of skills ?? []) {
+          const name = String(k?.name ?? k?.folder ?? "");
+          if (!name) continue;
+          map.set(name, { folder: String(k?.folder ?? name), enabled: k?.enabled !== false });
+        }
+        setSkillMap(map);
       } finally { if (alive) setCapsLoaded(true); }
     })();
     return () => { alive = false; };
@@ -78,7 +87,22 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   /* 这两样不是「运行时组件」而是应用自带能力：⛔ 不能因为 listRuntimes 里没有就报缺。 */
   const NON_INSTALLABLE = new Set(["engine", "image-lab"]);
   const toolReady = (id: string) => NON_INSTALLABLE.has(id) || installedTools.has(id) || (RUNTIME_ALIAS[id] ?? []).some((x) => installedTools.has(x));
-  const skillReady = (name: string) => installedSkills.has(name);
+  const skillReady = (name: string) => skillMap.has(name);
+  const skillEnabled = (name: string) => skillMap.get(name)?.enabled === true;
+  /* 专家「自带」的落地：把它声明的技能**启用**（已启用则跳过）。⛔ 不装新技能、不改技能内容。 */
+  const ensureSkills = async (names: string[]) => {
+    const folders = names.filter((n) => skillMap.has(n) && !skillEnabled(n)).map((n) => skillMap.get(n)!.folder);
+    if (!folders.length) return { changed: 0 };
+    await window.codex.setEnabledSkillBatch({ folders, enabled: true }).catch(() => null);
+    const skills = await window.codex.listLocalSkills().catch(() => []);
+    const map = new Map<string, { folder: string; enabled: boolean }>();
+    for (const k of skills ?? []) {
+      const name = String(k?.name ?? k?.folder ?? "");
+      if (name) map.set(name, { folder: String(k?.folder ?? name), enabled: k?.enabled !== false });
+    }
+    setSkillMap(map);
+    return { changed: folders.length };
+  };
   // 专家中心：全部专家按领域分类陈列，点卡先看预览，再从预览进单人会话；
   // 内置团队按 EXPERT_CATEGORY_DEFS 归类，自定义团队落「更多专家」。
   const expertCards = expertTeams.flatMap((team: any) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
@@ -173,6 +197,8 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                 const missTools = tools.filter((t) => !toolReady(t));
                 const missSkills = skills.filter((k) => !skillReady(k));
                 const installable = missTools.filter((t) => !NON_INSTALLABLE.has(t));
+                /* 装了但没启用：引擎看不见 ⇒ 对专家等于没有。 */
+                const offSkills = skills.filter((k) => skillReady(k) && !skillEnabled(k));
                 const installOne = async (id: string) => {
                   setBusyCap(id);
                   try {
@@ -191,8 +217,8 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                 return (
                   <div className="expert-cap-block">
                     <Row label="专业工具" ready={tools.length - missTools.length} total={tools.length} names={tools.join("、")} miss={missTools.length} />
-                    <Row label="配套技能" ready={skills.length - missSkills.length} total={skills.length} names={skills.join("、")} miss={missSkills.length} />
-                    {missTools.length || missSkills.length ? (
+                    <Row label="配套技能" ready={skills.length - missSkills.length} total={skills.length} names={[skills.join("、"), offSkills.length ? `（${offSkills.length} 个未启用）` : ""].filter(Boolean).join(" ")} miss={missSkills.length} />
+                    {missTools.length || missSkills.length || offSkills.length ? (
                       <div className="expert-cap-miss">
                         <span>缺：{[...missTools, ...missSkills].join("、")}</span>
                         {installable.slice(0, 3).map((id) => (
@@ -200,6 +226,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                             {busyCap === id ? "安装中…" : `装 ${id}`}
                           </button>
                         ))}
+                        {offSkills.length ? <button type="button" className="expert-cap-fix" onClick={() => void ensureSkills(skills)}>启用配套技能</button> : null}
                         {missSkills.length && onOpenMarket ? <button type="button" className="expert-cap-fix" title="专家技能应随专家包提供；市场里未必有同名技能" onClick={onOpenMarket}>去市场找找</button> : null}
                       </div>
                     ) : (
