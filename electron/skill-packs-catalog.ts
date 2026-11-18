@@ -26,6 +26,8 @@ export type SkillPackDef = {
   skills?: string[];
   /** 配套专家 / 专家团：装了包之后，这些专家做对应任务会自动用上 */
   experts?: string[];
+  /** 随包内置（resources/expert-skills/<dir>）：随应用分发，界面只展示不下载 */
+  bundled?: { dir: string };
 };
 
 export const SKILL_PACKS: SkillPackDef[] = [
@@ -102,5 +104,35 @@ export const SKILL_PACKS: SkillPackDef[] = [
       "gsap-frameworks",
     ],
     experts: ["前端开发专家", "产品设计专家团"],
+  },
+  {
+    /* 11-19：Playwright（微软开源）归「浏览器自动化」；上游是库、没有 skills/ ⇒ 用随包技能。 */
+    id: "playwright-browser-automation",
+    name: "Playwright 浏览器自动化",
+    repo: "microsoft/playwright",
+    license: "Apache-2.0",
+    licenseUrl: "https://github.com/microsoft/playwright/blob/main/LICENSE",
+    size: "随包内置",
+    description: "批量抓取 / 填表 / 多宽度截图 / 导出 PDF，脚本化跑回归",
+    companion: "配套：内置浏览器（登录态复用）+ 工具清单的浏览器自动化分类",
+    category: "浏览器自动化",
+    skills: ["playwright-browser-automation"],
+    experts: ["产品设计专家团", "前端开发专家"],
+    bundled: { dir: "playwright-browser-automation" },
+  },
+  {
+    /* 11-19：cheat on 早在随包 resources/expert-skills/cheat-on-content ⇒ 只做展示。 */
+    id: "cheat-on-content",
+    name: "Cheat On 内容评分",
+    repo: "",
+    license: "随包分发",
+    licenseUrl: "",
+    size: "随包内置",
+    description: "按 rubric 给内容打分、预测表现、按反馈重校公式",
+    companion: "配套：自媒体工作台 + 知识库（历史数据做校准池）",
+    category: "视频与内容",
+    skills: ["cheat-bump", "cheat-init", "cheat-predict", "cheat-persona", "cheat-learn-from"],
+    experts: ["创意搭档", "自媒体工作台"],
+    bundled: { dir: "cheat-on-content" },
   },
 ];

@@ -59,7 +59,7 @@ export function buildDisciplineSection(inv: CapabilityInventory): string {
   lines.push(`7. **干成的活要沉淀成技能（经验包）**：干完一件多步的活、修掉一个难缠的坑、或被用户纠正两次以上之后，把做法写成技能 —— 项目专属写 \`<workspace>/${PROJECT_SKILLS_SUBDIR}/<名>/SKILL.md\`（引擎原生以 scope=repo 发现，随项目走），跨项目通用写 \`$CODEX_HOME/skills/<名>/SKILL.md\`。**写之前先读技能 \`${SKILL_AUTHORING_NAME}\`**（格式、查重、骨架都在里面；缺 description 的技能等于没写）。写完在回复末尾加一行「🧠 已沉淀技能：〈名〉（〈路径〉）」。`);
   lines.push("8. **记忆与技能分工**：记忆（`.codex-harness/memory/`）记「**是什么**」——事实、约束、踩过的坑（LESSONS.md）；技能（`.codex/skills/`）记「**怎么做**」——可复用流程。同一个坑在 LESSONS.md 出现**第二次** ⇒ 升级成技能（把“现象+解法”改写成“步骤+判据”）。");
   lines.push(`9. **收尾复盘（自我进化入口）**：完成多步任务、被用户纠正、或走了弯路又绕回来之后，读技能 \`${SELF_REVIEW_SKILL}\` 做一次**简短**复盘（四问：错在哪 / 被纠正了什么 / 绕了什么弯 / 有什么可固化），把结论落到记忆对应分类；同一现象出现第二次就升级成技能。**不要写长篇汇报**，回复里一行带过即可。`);
-  lines.push(`10. **记忆写入的分类与整洁**：写任何一条记忆之前先读 \`${MEMORY_CLASSIFY_SKILL}\`（一条一现象；分类优先级 纠错 > 任务经验 > 工作流SOP > 用户偏好；**先读目标文件去重**）。看到常驻记忆里的「记忆水位 ≥90% 蒸馏线」提示 ⇒ 按 \`${MEMORY_DISTILL_SKILL}\` 先把那一层蒸下去。整洁与清理规则见 \`${MEMORY_HYGIENE_SKILL}\`：**能归档就不删、保护项（用户手写 / 用户纠错 / pinned）永不自动清、涉及删除的动作一律先说明后果并等用户二次确认**（那三个动作走应用 IPC，不由你直接执行）。`);
+  lines.push(`10. **记忆写入的分类与整洁**：写任何一条记忆之前先读 \`${MEMORY_CLASSIFY_SKILL}\`（一条一现象；分类优先级 纠错 > 任务经验 > 工作流SOP > 用户偏好；**先读目标文件去重**）。整洁与清理规则见 \`${MEMORY_HYGIENE_SKILL}\`：**能归档就不删、保护项（用户手写 / 用户纠错 / pinned）永不自动清、涉及删除的动作一律先说明后果并等用户二次确认**（那三个动作走应用 IPC，不由你直接执行）。`);
   lines.push("");
   lines.push("### 当前能力清单");
   lines.push("");

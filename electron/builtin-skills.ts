@@ -18,7 +18,7 @@ import { NO_AI_SLOP_SKILL } from "./builtin-skills/04-skill-no-ai-slop";
 import { I_HAVE_ADHD_SKILL } from "./builtin-skills/05-skill-adhd";
 import { DOC_CONVERT_SKILL } from "./builtin-skills/06-skill-doc-convert";
 import { SKILL_AUTHORING_SKILL } from "./builtin-skills/07-skill-authoring";
-import { MEMORY_DISTILL_SKILL } from "./builtin-skills/08-skill-memory-distill";
+/* 11-19：记忆金字塔已删 ⇒ 蒸馏技能不再注册（文件保留备查）。 */
 import { SELF_REVIEW_SKILL } from "./builtin-skills/09-skill-self-review";
 import { MEMORY_HYGIENE_SKILL } from "./builtin-skills/10-skill-memory-hygiene";
 import { MEMORY_CLASSIFY_SKILL } from "./builtin-skills/11-skill-memory-classify";
@@ -101,6 +101,25 @@ export async function ensureEgoBrowserSkill(skillsDir: string): Promise<void> {
 }
 
 /** 把随包的内置技能写进技能目录（缺就补），返回写入了哪些。 */
+/**
+ * 11-19 用户令：「技能描述优化一下」——引擎把每条 description 塞进每轮的 `### Available skills`，
+ * 长描述（实测最长 610 字）等于每轮重复付费。这里**只截 frontmatter 的 description**：
+ * 超过 120 字在最近的标点处断开并加省略号；正文一个字不动（技能内容照旧完整）。
+ */
+function clampSkillDescription(content: string, max = 120): string {
+  const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  if (!m) return content;
+  const head = m[1];
+  const line = head.match(/^description:\s*(.+)$/m);
+  if (!line) return content;
+  const text = line[1].trim().replace(/^["']|["']$/g, '');
+  if (text.length <= max) return content;
+  const clipped = text.slice(0, max).replace(/[，、；,。\s]+$/, '') + '…';
+  const nextHead = head.replace(/^description:\s*.+$/m, 'description: ' + clipped);
+  return '---\n' + nextHead + '\n---' + content.slice(m[0].length);
+}
+
+/** 内置技能落盘：首次安装或升级时补齐缺失/过期的 SKILL.md，尊重两种停用态（不复活被关掉的技能）。 */
 export async function ensureBuiltinSkills(skillsDir: string) {
   const entries: [string, string][] = [
     ["desktop-automation", DESKTOP_SKILL],
@@ -129,7 +148,6 @@ export async function ensureBuiltinSkills(skillsDir: string) {
     // 是因为格式正文只在"真要沉淀时"才需要被读（渐进披露，省每轮 token）。
     ["skill-authoring", SKILL_AUTHORING_SKILL],
     // 元技能「怎么蒸记忆金字塔」：水位提示出现时按它把那一层压下去（引擎自助，用户 09-22 点名）
-    ["memory-distill", MEMORY_DISTILL_SKILL],
     // ── 09-23 用户点名要的四件（「技能配置与集成…内置为默认能力」）─────────────────
     // 收尾复盘：任务完成后自我总结 → 识别错误/改进点 → 沉淀为记忆与技能（自我进化的入口）
     ["self-review", SELF_REVIEW_SKILL],
@@ -209,7 +227,9 @@ export async function ensureBuiltinSkills(skillsDir: string) {
       // 逐字比会每次启动都重写一遍（无意义写盘，且让「内容未变就别动」的判据失效）。
       if (existing.replace(/\r\n/g, "\n") !== content.replace(/\r\n/g, "\n")) {
         await fs.mkdir(dir, { recursive: true });
-        await fs.writeFile(target, content, "utf8");
+        /* ⛔ skill-audit 的 description 是判据词库（守卫【113】按里面的「不得安装」等词比对）⇒ 不截断。 */
+        const body = name === "skill-audit" ? content : clampSkillDescription(content);
+        await fs.writeFile(target, body, "utf8");
       }
       /* 中文导读（09-30 用户：「内置技能都加上中文注释」）：旁挂 README.zh-CN.md，
          不碰 SKILL.md 原文 —— MIT 技能逐字保留（预检【82】按 sha 比对），中文说明放新文件。

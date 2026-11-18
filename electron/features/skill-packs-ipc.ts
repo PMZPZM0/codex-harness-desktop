@@ -89,14 +89,21 @@ async function listFiles(dir: string, base = dir, depth = 0): Promise<string[]> 
 
 async function packState(pack: SkillPackDef) {
   const marker = await readMarker(pack.id);
-  const present = marker ? marker.skills.filter((folder) => existsSync(path.join(skillsRoot(), folder, "SKILL.md"))) : [];
+  /* 随包内置的包没有 marker（不是下载装的）⇒ 技能列表直接扫 resources/expert-skills/<dir>。 */
+  const present = pack.bundled
+    ? await bundledSkillsOf(pack.bundled.dir)
+    : marker
+      ? marker.skills.filter((folder) => existsSync(path.join(skillsRoot(), folder, "SKILL.md")))
+      : [];
   return {
     ...pack,
     /* 11-19：分类 / 包内技能 / 配套专家一并下发（界面按分类分组、逐条展示与做「拆开」）。 */
     category: pack.category,
     skills: pack.skills ?? [],
     experts: pack.experts ?? [],
-    installed: Boolean(marker) && present.length > 0,
+    /* 随包内置：装没装由磁盘算，界面据此隐藏下载/卸载按钮。 */
+    bundled: Boolean(pack.bundled),
+    installed: pack.bundled ? present.length > 0 : Boolean(marker) && present.length > 0,
     installedSkills: present,
     installedAt: marker?.installedAt ?? "",
     /** 技能根目录（界面「打开技能目录」用；用户本来就有这个目录） */
@@ -120,6 +127,18 @@ async function findSkillDirsInRepo(root: string): Promise<string[]> {
   };
   await walk(root, 0);
   return out;
+}
+
+/** 随包内置技能：扫 resources/expert-skills/<dir>（根 SKILL.md 或 skills/<n>/SKILL.md）。 */
+async function bundledSkillsOf(dir: string): Promise<string[]> {
+  const root = path.join(process.resourcesPath ?? "", "expert-skills", dir);
+  const fallback = path.join(app.getAppPath(), "resources", "expert-skills", dir);
+  const base = existsSync(root) ? root : fallback;
+  if (!existsSync(base)) return [];
+  if (existsSync(path.join(base, "SKILL.md"))) return [path.basename(base)];
+  const inner = path.join(base, "skills");
+  if (!existsSync(inner)) return [];
+  return (await fs.readdir(inner).catch(() => [] as string[])).filter((name) => existsSync(path.join(inner, name, "SKILL.md")));
 }
 
 type InstallResult = { installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean };

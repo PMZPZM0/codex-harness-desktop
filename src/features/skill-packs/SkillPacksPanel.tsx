@@ -27,7 +27,7 @@ type SkillPackRow = {
   id: string; name: string; repo: string; license: string; licenseUrl: string; size: string;
   description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string;
   /* 11-19：分类分组 / 包内技能（「拆开」后逐条可见）/ 配套专家 */
-  category?: string; skills?: string[]; experts?: string[];
+  category?: string; skills?: string[]; experts?: string[]; bundled?: boolean;
 };
 
 /** 分类展示顺序（先工程、再设计、再内容，浏览器自动化与视频各自归口）。 */
@@ -193,10 +193,15 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                     <span className="skill-pack-line3">配套专家：{row.experts.join("、")}</span>
                   ) : null}
                   <span className="skill-pack-line3">
-                    {row.companion} · {row.license} · {row.size} ·{" "}
-                    <button type="button" className="skill-pack-link" title="打开仓库" onClick={() => void window.codex.openExternal(`https://github.com/${row.repo}`)}>
-                      {row.repo}<ExternalLink size={10} />
-                    </button>
+                    {row.companion} · {row.license} · {row.size}
+                    {row.repo ? (
+                      <>
+                        {" · "}
+                        <button type="button" className="skill-pack-link" title="打开仓库" onClick={() => void window.codex.openExternal(`https://github.com/${row.repo}`)}>
+                          {row.repo}<ExternalLink size={10} />
+                        </button>
+                      </>
+                    ) : null}
                   </span>
                   {isBusy ? (
                     <span className="skill-pack-stage">
@@ -209,7 +214,9 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                   {result ? <span className={`skill-pack-result ${result.tone}`}>{result.text}</span> : null}
                 </span>
                 <span className="skill-pack-actions">
-                  {row.installed ? (
+                  {row.bundled ? (
+                    <em className="skill-pack-state">随包内置</em>
+                  ) : row.installed ? (
                     <span className="skill-pack-actions-pair">
                       <button type="button" className="secondary-setting" disabled={isBusy} title="重新下载并覆盖本包装的技能（上游更新后点这里）" onClick={() => void install(row, true)}>
                         <RefreshCw size={13} />更新

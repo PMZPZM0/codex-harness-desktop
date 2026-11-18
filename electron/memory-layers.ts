@@ -543,7 +543,6 @@ export class MemoryLayers {
       return `- ${s.id} ${s.name} 已到 ${pct}%（${s.used}/${s.budget} 字）⇒ 蒸馏去向：${s.sink}${how}`;
     });
     return [
-      "[Harness 记忆水位 · ⚠️ 已达 90% 蒸馏线，先蒸馏再继续干活]",
       ...lines,
       pending ? `（已为你备好待蒸馏的日志：${pending.dates.length} 天 / ${pending.chars} 字；本地蒸馏入口见指令第 9 条）` : "（先把该层压缩，再继续当前任务）",
     ].join("\n");

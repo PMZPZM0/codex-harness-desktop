@@ -276,25 +276,11 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     /* 6 天日志（v2 布局：logs/），合计 6×8000=48000 字 > L4 预算（logPerDay × logDays）的 90% ⇒ 必然触发水位 */
     mkdirSync(join(memDir, "logs"), { recursive: true });
     for (let i = 0; i < 6; i += 1) writeFileSync(join(memDir, "logs", `${day(i)}.md`), `## ${day(i)}\n${"日志内容".repeat(2000)}\n`, "utf8");
+    /* 11-19 用户令：记忆金字塔已删 ⇒ 水位 / 蒸馏链路的测试整段下架，
+       只留两条**负向**断言防复活（以后谁把水位提示加回来就会红）。 */
     const hint = await inst.watermarkHint(ws);
-    (/L4/.test(hint) && /90%/.test(hint) ? ok : fail)(`【104】超水位时给出提示行（${hint.split("\n")[1] ? hint.split("\n")[1].slice(0, 60) : "空"}）`);
-    ((await inst.context(ws)).text.includes("记忆水位") ? ok : fail)("【104】水位提示进了常驻记忆块（引擎每轮都看得见，无需额外工具）");
-    const pick = await inst.pickDistill(ws);
-    (pick && pick.trigger === "watermark" && pick.dates.length === 3 ? ok : fail)(`【104】水位触发取最老一半（实际 ${pick?.trigger} / ${pick?.dates?.length} 天）`);
-    const res = await inst.distill(ws, async () => "## 核心\n- 结论：约定 A\n\n## 纪要\n- 阶段纪要：做了 B\n", true);
-    (res.ok ? ok : fail)(`【104】蒸馏真跑成功（${res.reason ?? "ok"}）`);
-    /* ⛔ 11-02 修正：水位触发取的是**最老一半**（6 篇里 3 篇 = day(0..2)），
-       月卷月份应取这批里**最新那天** = day(2)，而不是全部日志的最新 day(5)。
-       两者只在跨月时不同 —— 今天正好 11-02，旧写法算出 2026-11，实际落 2026-10 ⇒ 假红。 */
-    const expectRollup = `rollups/${day(2).slice(0, 7)}.md`;
-    (res.rollup === expectRollup && existsSync(join(memDir, "rollups", expectRollup.replace("rollups/", ""))) ? ok : fail)(`【104】L5 月度卷宗真落盘（${res.rollup}）`);
-    (readFileSync(join(memDir, "project", "MEMORY.md"), "utf8").includes("约定 A") ? ok : fail)("【104】L1 项目宪法写入蒸馏「核心」段（project/MEMORY.md）");
-    (pick && existsSync(join(memDir, "archive", `${pick.dates[0]}.md`)) ? ok : fail)("【104】L6 冷存档拿到原文（移动而非删除）");
-    (pick && !existsSync(join(memDir, "logs", `${pick.dates[0]}.md`)) ? ok : fail)("【104】被蒸日志已从 L4（logs/）移走（否则水位永远降不下来）");
-    const after = await inst.watermarkHint(ws);
-    (!/L4/.test(after) ? ok : fail)("【104】蒸完 L4 水位回落、提示消失（闭环）");
-    const snap = await inst.snapshot(ws);
-    (Array.isArray(snap.layers) && snap.layers.length === 8 ? ok : fail)("【104】快照带八层水位（设置页可见漏斗）");
+    (!String(hint).includes("记忆水位") ? ok : fail)("【104】水位提示已移除（金字塔已删）");
+    (!(await inst.context(ws)).text.includes("记忆水位") ? ok : fail)("【104】常驻记忆块里不再有水位提示");
     rmSync(ws, { recursive: true, force: true });
 
     /* ── 10-31 用户令：「记忆蒸馏不要开新会话，会话自己蒸馏」──
@@ -337,13 +323,13 @@ const injected102 = "[Harness 常驻记忆 · 上下文]\n- 旧纪律行\n[常�
     const missingIds = MEMORY_PYRAMID.map((l) => l.id).filter((id) => !skillSrc.includes(`**${id}**`));
     (missingIds.length === 0 ? ok : fail)(`【104】技能正文含全部八层${missingIds.length ? "，缺：" + missingIds.join(",") : ""}`);
     (/rollups/.test(skillSrc) && /archive/.test(skillSrc) ? ok : fail)("【104】技能写明 L5 月卷 / L6 冷存档落点");
-    (readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8").includes('["memory-distill"') ? ok : fail)("【104】memory-distill 进了 entries（只写常量不注册 = 永不落盘）");
+    (!readFileSync(join(ROOT, "electron", "builtin-skills.ts"), "utf8").includes(String.fromCharCode(34)+"memory-distill"+String.fromCharCode(34)) ? ok : fail)("【104】memory-distill 已从 entries 下架（金字塔已删）");
     try {
       const { buildDevInstructions } = await import("../../dist-electron/developer-instructions.js");
       const instr = buildDevInstructions({});
-      (instr.includes(MEMORY_DISTILL_SKILL) ? ok : fail)("【104】引擎指令点名技能 memory-distill（步骤在技能里，不在每轮指令里）");
-      (instr.includes("记忆水位") ? ok : fail)("【104】引擎指令写明触发 = 水位提示行（跟提示行文案同源）");
-      (instr.includes(`at ${Math.round(MEMORY_DISTILL_THRESHOLD * 100)}% of a layer`) ? ok : fail)("【104】指令里的阈值由常量拼装（改阈值不会漏改指令）");
+      (!instr.includes(MEMORY_DISTILL_SKILL) ? ok : fail)("【104】引擎指令不再点名 memory-distill（金字塔已删）");
+      (!instr.includes("记忆水位") ? ok : fail)("【104】引擎指令不再写水位触发（金字塔已删）");
+      (!instr.includes("memory pyramid") ? ok : fail)("【104】引擎指令里不再有金字塔段（阈值拼装一并移除）");
     } catch (error) { fail(`【104】引擎指令产物读不到：${error?.message ?? error}`); }
   }
 }
