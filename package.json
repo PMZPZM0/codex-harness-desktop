@@ -33,7 +33,8 @@
     "voice:models": "node scripts/install-voice-models.cjs",
     "memory:audit": "node scripts/memory-audit.mjs",
     "memory:recall": "node scripts/memory-recall.mjs",
-    "verify:runtime": "node scripts/verify-runtime.mjs"
+    "verify:runtime": "node scripts/verify-runtime.mjs",
+    "pack:skillset": "node scripts/skillset-pack.mjs"
   },
   "dependencies": {
     "@google/model-viewer": "^4.4.0",

@@ -53,6 +53,9 @@ export type ExpertTeamConfig = {
   sop: string;
   /** ⛔ 依赖的按需工具（如 "rea"）：对应「开发工具」runtime 未安装时，该专家**整队不出现** ——
    *  用户令（2026-10-13）：「下载后，才可以用这个专家」。过滤点在 readExpertTeams（单点覆盖全部消费方）。 */
+  /** 11-18：这位专家的**配套技能包**（SkillHub skillset 的 slug，见 scripts/skillset-pack.mjs）。
+   *  自建专家引用本机技能时留空；打成包之后填 slug，缺件时可提示「随专家包安装」。 */
+  skillBundle?: string;
   /** 整队声明的专业工具与技能（成员各自也能声明；列表取并集）。 */
   tools?: string[];
   skills?: string[];

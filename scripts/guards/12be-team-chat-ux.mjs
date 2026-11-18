@@ -2343,5 +2343,14 @@ const catalog = [
       `每位专家至少一个配套技能（在册 ${entries.length} 位${noSkill.length ? `；缺技能：${noSkill.join("、")}` : ""}）`);
   }
 
+  {
+    /* 11-18：专家自带技能的第二条路 = 随专家包装（skillset）。
+       断言打包器还在、且两类元数据都写（skillset / skillset-child）——
+       ⛔ 少写一类，装出来的包在技能列表里会认错归属。 */
+    const packer = read("scripts/skillset-pack.mjs");
+    ok(/kind: "skillset"/.test(packer) && /kind: "skillset-child"/.test(packer) && /skillset: slug/.test(packer),
+      "专家技能打包器：写 skillset 与 skillset-child 两类元数据");
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);
