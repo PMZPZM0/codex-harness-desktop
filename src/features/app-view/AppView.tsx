@@ -245,7 +245,7 @@ export function AppView({ app }: { app: HarnessAppApi }) {
      localStorage 持久化；折叠 / 窄屏 / 独立弹窗三种状态不响应（那里宽度是布局决定的）。
      ⛔ 只改 CSS 变量 --side-w（grid 用它的那条），不换模板：轨道数不变才能插值动画。 */
   /* 11-17 用户令：「默认宽度降低一点，现在有点太宽」——默认 260 → 236，最小 220。 */
-  const SIDEBAR_MIN = 220;
+  const SIDEBAR_MIN = 236;
   const SIDEBAR_MAX = 420;
   const SIDEBAR_DEFAULT = 236;
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {

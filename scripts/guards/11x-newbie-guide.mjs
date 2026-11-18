@@ -210,8 +210,8 @@ const preload = read("electron/preload.ts");
   /* ★ 10-31 用户令：「左侧栏也加拖动功能」「右侧栏中间一条灰色细线就行」 */
   const appViewSrc = read("src/features/app-view/AppView.tsx");
   ok(/className="sidebar-resizer"/.test(appViewSrc) && /onPointerDown=\{beginSidebarResize\}/.test(appViewSrc)
-    && /SIDEBAR_MIN = 220/.test(appViewSrc) && /SIDEBAR_MAX = 420/.test(appViewSrc) && /SIDEBAR_DEFAULT = 236/.test(appViewSrc),
-    "侧栏右缘可拖动改宽（220–420 钳制，双击复位 236）");
+    && /SIDEBAR_MIN = 236/.test(appViewSrc) && /SIDEBAR_MAX = 420/.test(appViewSrc) && /SIDEBAR_DEFAULT = 236/.test(appViewSrc),
+    "侧栏右缘可拖动改宽（236–420 钳制，双击复位 236；用户定稿：不能再窄）");
   ok(/localStorage\.setItem\("sidebar-width"/.test(appViewSrc) && /localStorage\.getItem\("sidebar-width"\)/.test(appViewSrc)
     && /"--side-w": `\$\{sidebarWidth\}px`/.test(appViewSrc),
     "侧栏宽度落盘 + 用 --side-w 下发（换算一条真相源，轨道数不变）");
