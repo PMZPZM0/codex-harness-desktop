@@ -11,13 +11,38 @@ import { AgentAvatar } from "../../components/AgentAvatar";
 import { AgentBadge } from "../../components/AgentBadge";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { Spinner } from "../../components/CardShell";
+import { RECOMMENDED_EXPERTS } from "./recommended-experts.mjs";
 
-export type ExpertCenterSectionProps = { expertTeams: any; EXPERT_CATEGORY_DEFS: any; expertTeamMemberDirect: any; startMemberDirectSession: any; onOpenMarket?: () => void; onBack?: () => void };
+export type ExpertCenterSectionProps = {
+  expertTeams: any;
+  EXPERT_CATEGORY_DEFS: any;
+  expertTeamMemberDirect: any;
+  startMemberDirectSession: any;
+  onOpenMarket?: () => void;
+  onBack?: () => void;
+  /** 11-18：一键建「推荐专家」（筑基/掌控/通译/造物）。不传就不显示这一块。 */
+  saveExpertTeam?: (draft: any) => Promise<unknown>;
+  refreshExpertTeams?: () => void;
+};
 
 /** 专家中心：按类别列专家团与专家，可预览、可直连成员。 */
 export function ExpertCenterSection(props: ExpertCenterSectionProps) {
-  const { expertTeams, EXPERT_CATEGORY_DEFS, expertTeamMemberDirect, startMemberDirectSession, onOpenMarket, onBack } = props;
+  const { expertTeams, EXPERT_CATEGORY_DEFS, expertTeamMemberDirect, startMemberDirectSession, onOpenMarket, onBack, saveExpertTeam, refreshExpertTeams } = props;
   const [previewKey, setPreviewKey] = useState("");
+  const [creating, setCreating] = useState("");
+  /* ⛔ 判据只看**主理人名是否已在专家表里**（用户改过配置也不该再提示创建）。 */
+  const missingExperts = RECOMMENDED_EXPERTS.filter((r) => !(expertTeams ?? []).some((t: any) => String(t?.lead?.name ?? "") === r.leadName));
+  const createRecommended = async (leadName: string) => {
+    const hit = RECOMMENDED_EXPERTS.find((r) => r.leadName === leadName);
+    if (!hit || !saveExpertTeam) return;
+    setCreating(leadName);
+    try {
+      await saveExpertTeam(hit.team);
+      refreshExpertTeams?.();
+    } finally {
+      setCreating("");
+    }
+  };
   /* ⛔⛔ 11-18：能力清单必须是**真实状态**（已装/缺），不是文案。
      数据只认两条既有通道：listRuntimes（组件是否已装）+ listLocalSkills（技能是否已装）。
      ⛔ 不新增第二份"专家能力状态"真相源；⛔ 不在这里伪造"已具备"。 */
@@ -65,6 +90,25 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
       {onBack && <button type="button" className="settings-back-row" onClick={onBack}><ArrowLeft size={14} />返回智能体团队</button>}
       <div className="settings-heading-actions">{onOpenMarket && <button className="secondary-setting" title="SkillHub 专家市场包：一键安装整套专家工作流，装完自动出现在这里" onClick={onOpenMarket}><Package size={14} />专家市场</button>}</div>
     </div>
+    {/* 11-18：推荐专家（开发工具五大类里还没有负责人的四类）。⛔ 只做「一键建档」，
+        建完就是普通专家，可在「专家团」里改任何字段。 */}
+    {saveExpertTeam && missingExperts.length ? (
+      <div className="expert-category">
+        <div className="expert-category-head">
+          <span className="expert-category-icon"><Package size={15} /></span>
+          <strong>推荐专家</strong>
+          <small>开发工具四大类还没有负责人：先建一个，再让它去管工具与技能</small>
+          <em>{missingExperts.length} 位可建</em>
+        </div>
+        <div className="settings-toolbar-row" style={{ flexWrap: "wrap", gap: 8 }}>
+          {missingExperts.map((r) => (
+            <button key={r.leadName} type="button" className="secondary-setting" disabled={creating === r.leadName} onClick={() => void createRecommended(r.leadName)} title={(r.team as any)?.description?.zh ?? ""}>
+              {creating === r.leadName ? "创建中…" : `建「${r.leadName}」`}
+            </button>
+          ))}
+        </div>
+      </div>
+    ) : null}
     {groups.map((g: any) => (
       <div className="expert-category" key={g.title}>
         <div className="expert-category-head">
