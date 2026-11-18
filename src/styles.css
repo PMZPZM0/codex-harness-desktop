@@ -100,8 +100,6 @@
 @import "./styles/63-media-desk" layer(components);
 /* 11-11 异步执行反馈板块（群聊里的独立板块，零 IPC；⛔ 必须在 59-motion 之前） */
 @import "./styles/66-async-run-feedback" layer(components);
-@import "./styles/67-icon-neutral" layer(components);
-/* 11-18：装饰图标中性化必须**最后**加载（@layer 层序优先于特异性）。 */
 /* 11-18：装饰图标中性化（放在 59-motion 之前 —— 守卫【motion】要求 59-motion 恒为最后一条）。 */
 @import "./styles/67-icon-neutral" layer(components);
 @import "./styles/59-motion" layer(components);
