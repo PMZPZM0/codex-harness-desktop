@@ -142,7 +142,9 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   if (name === "artifact_archive" || name === "artifact_list") {
     const cwd = threadCwd.get(callerThreadId) || "";
     const { runArtifactTool } = await import("./artifact-archive");
-    return runArtifactTool({ name, args: (args ?? {}) as Record<string, unknown>, workspace: cwd });
+    /* 11-18：顺手记下来源会话（宿主注入的 callerThreadId），产物归档才能「回到原会话」。
+       ⛔ workspace 口径不变（只认宿主 cwd，⛔ 不许模型自报）。 */
+    return runArtifactTool({ name, args: (args ?? {}) as Record<string, unknown>, workspace: cwd, originThreadId: callerThreadId });
   }
   if (name === "memory_recall" || name === "memory_write" || name === "memory_forget") {
     const cwd = threadCwd.get(callerThreadId) || "";

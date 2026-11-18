@@ -84,6 +84,8 @@ export type ArchiveRow = {
   task: string;
   at: number;
   source?: string;
+  /** 11-18：来源会话 id（归档时由宿主写入）—— 界面「回到原会话」。 */
+  originThreadId?: string;
   note?: string;
   files: Array<{ name: string; from: string; bytes: number }>;
 };
@@ -118,6 +120,7 @@ export function listArchives(workspace: string, limit = 30): ArchiveRow[] {
       task: String(manifest.task ?? dir.replace(/^\d{8}-/, "")),
       at: Number(manifest.at ?? 0),
       ...(manifest.source ? { source: manifest.source } : {}),
+      ...(manifest.originThreadId ? { originThreadId: String(manifest.originThreadId) } : {}),
       ...(manifest.note ? { note: manifest.note } : {}),
       files,
     });
@@ -130,6 +133,8 @@ export type ArchiveInput = {
   task: string;
   note?: string;
   source?: string;
+  /** 11-18：来源会话 id（宿主注入，⛔ 不许模型自报）。 */
+  originThreadId?: string;
   /** 便于守卫固定时间；生产不传 = Date.now()。 */
   at?: number;
 };
@@ -212,6 +217,8 @@ export async function runArtifactTool(input: {
   name: string;
   args: Record<string, unknown>;
   workspace: string;
+  /** 11-18：来源会话 id（宿主注入，⛔ 不许模型自报）—— 归档后能「回到原会话」。 */
+  originThreadId?: string;
 }): Promise<{ ok: boolean; output?: string; error?: string }> {
   const args = input.args ?? {};
   if (input.name === "artifact_list") {
@@ -231,6 +238,8 @@ export async function runArtifactTool(input: {
       task: String(args.task ?? ""),
       ...(args.note ? { note: String(args.note) } : {}),
       ...(args.source ? { source: String(args.source) } : {}),
+      /* 11-18：来源会话（宿主注入）—— 界面点「回到原会话」靠它，⛔ 与 source 自由文本分开存。 */
+      ...(input.originThreadId ? { originThreadId: String(input.originThreadId) } : {}),
     });
     if (!result.ok) return { ok: false, error: result.error };
     const skipped = result.skipped?.length ? `\n跳过 ${result.skipped.length} 个：${result.skipped.map((s) => `${s.path}（${s.reason}）`).join("、")}` : "";

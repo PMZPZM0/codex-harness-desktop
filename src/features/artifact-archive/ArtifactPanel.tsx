@@ -13,6 +13,8 @@ import { Archive, FolderSearch, RefreshCw } from "lucide-react";
 type ArchiveFile = { name: string; from: string; bytes: number };
 type ArchiveRow = {
   dir: string; task: string; at: number; source?: string; note?: string;
+  /** 11-18：来源会话（归档时宿主写入）—— 用来「回到原会话」。 */
+  originThreadId?: string;
   files: ArchiveFile[]; path?: string;
 };
 type ListResult = { ok: boolean; rows?: ArchiveRow[]; error?: string };
@@ -23,7 +25,11 @@ type ListResult = { ok: boolean; rows?: ArchiveRow[]; error?: string };
  * ⛔ 只读：数据只从 `artifact:list` 通道来，归档动作由模型经网关工具完成，
  *    界面不拼路径、不写文件（绝对路径由主进程回传）。
  */
-export function ArtifactPanel({ workspace }: { workspace?: string }) {
+export function ArtifactPanel({ workspace, onOpenThread }: {
+  workspace?: string;
+  /** 11-18：回到产出它的那个会话（settings 侧关掉面板）。 */
+  onOpenThread?: (threadId: string) => void;
+}) {
   const [rows, setRows] = useState<ArchiveRow[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -75,6 +81,12 @@ export function ArtifactPanel({ workspace }: { workspace?: string }) {
                   {r.files.length} 个文件{r.at ? ` · ${new Date(r.at).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}` : ""}
                   {r.source ? ` · ${r.source}` : ""}
                 </span>
+                {/* ⛔ 11-18：只有归档时记了来源会话的行才给这个按钮（老数据没有，别编）。 */}
+                {onOpenThread && r.originThreadId ? (
+                  <button type="button" className="memory-atoms__ghost" onClick={() => onOpenThread(r.originThreadId!)} title="打开产出这批文件的会话">
+                    回到原会话
+                  </button>
+                ) : null}
                 {r.path ? (
                   <button type="button" className="memory-atoms__ghost" onClick={() => void window.codex.revealInFolder(r.path!).catch(() => {})} title="在系统资源管理器中打开">
                     <FolderSearch size={12} /> 打开

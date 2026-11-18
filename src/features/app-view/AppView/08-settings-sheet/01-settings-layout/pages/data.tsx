@@ -53,7 +53,8 @@ export function dataPages(app: HarnessAppApi): Partial<Record<SettingsPage, Sett
     updateFavoriteItem,
   } = app;
   return {
-    artifacts: { render: () => <ArtifactPanel workspace={workspace} /> },
+    /* 11-18：产物 → 原会话（归档行上的「回到原会话」）。 */
+    artifacts: { render: () => <ArtifactPanel workspace={workspace} onOpenThread={(id) => { openThread(id); setSettingsOpen(false); }} /> },
     usage: { render: () => <UsagePanel
                           stats={stats}
                           currentInput={usage?.inputTokens ?? usage?.input_tokens ?? 0}
