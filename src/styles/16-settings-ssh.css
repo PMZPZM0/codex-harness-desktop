@@ -800,7 +800,7 @@
 .login-endpoint-menu button > span { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
 .login-endpoint-menu b { font-size: 11.5px; font-weight: 500; }
 .login-endpoint-menu small { color: var(--faint); font-size: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.login-endpoint-menu svg { color: var(--green); flex: none; }
+.login-endpoint-menu svg { color: var(--muted); flex: none; }
 .pw-wrap { display: flex; gap: 6px; }
 .pw-wrap input { flex: 1; }
 .pw-toggle { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--muted); cursor: pointer; padding: 0 10px; font-size: 12px; }

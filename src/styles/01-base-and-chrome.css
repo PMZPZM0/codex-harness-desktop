@@ -1566,33 +1566,3 @@ html.fx-ripple::view-transition-new(root) {
 }
 .sidebar-resizer:hover::after,
 .sidebar-resizer:active::after { background: var(--accent); }
-
-/* ── 11-18 用户令：「还有彩色」「全检查一下，简洁一点」────────────────────────
-   色板已中性化（--ic-* 全改为 text/accent 混合），但色相类仍可能有**别的来源**
-   （tone-* 硬编码、内联 style、主题套装的旧值）⇒ 这里在消费端再加一道兜底：
-   导航 / 菜单 / 设置页这些"用来分区"的图标一律中性灰，hover 才提亮到正文色。
-   ⛔ 只覆盖"装饰性分类图标"，不碰语义色（成功/失败/危险）与用户内容里的图标。
-   ⛔ 不写 important：用 `html body` 提高特异性压过各域既有的 `.sidebar-tab svg`（同级、且各自加载顺序不同），
-      这样也不违反「base 层 important 不超基线」那条守卫。 */
-html body .sidebar-quick-btn svg,
-html body .sidebar-tab svg,
-html body .view-tab svg,
-html body .view-toolbar-btn svg,
-html body .sidebar-cap-row svg,
-html body .sidebar-options-toggle svg,
-html body .thread-source-badge svg,
-html body .settings-nav-item svg,
-html body .settings-nav-group svg,
-html body .settings-card-head svg {
-  color: var(--muted);
-}
-html body .sidebar-quick-btn:hover svg,
-html body .sidebar-tab:hover svg,
-html body .view-tab:hover svg,
-html body .view-tab.active svg,
-html body .view-toolbar-btn:hover:not(:disabled) svg,
-html body .sidebar-cap-row:hover svg,
-html body .settings-nav-item:hover svg,
-html body .settings-nav-item.active svg {
-  color: var(--text);
-}

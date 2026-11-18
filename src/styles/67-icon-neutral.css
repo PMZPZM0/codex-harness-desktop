@@ -1,0 +1,27 @@
+/* 11-18 用户令：「还有彩色」「全检查一下，简洁一点」——
+   装饰性分类图标（导航 / 菜单 / 设置页导航与卡头）一律中性，hover/active 提亮到正文色。
+   ⛔ 为什么单独一个文件、且必须最后加载：本项目样式全部用 @layer，**层序优先于特异性** ——
+     写在 01-base（base 层）里的规则永远输给 components 层的 `.view-tab svg`（11-18 实测踩过）。
+   ⛔ 不碰语义色（成功/失败/危险）与正文内容里的图标。 */
+.sidebar-quick-btn svg,
+.sidebar-tab svg,
+.view-tab svg,
+.view-toolbar-btn svg,
+.sidebar-cap-row svg,
+.sidebar-options-toggle svg,
+.thread-source-badge svg,
+.settings-nav-item svg,
+.settings-nav-group svg,
+.settings-card-head svg {
+  color: var(--muted);
+}
+.sidebar-quick-btn:hover svg,
+.sidebar-tab:hover svg,
+.view-tab:hover svg,
+.view-tab.active svg,
+.view-toolbar-btn:hover:not(:disabled) svg,
+.sidebar-cap-row:hover svg,
+.settings-nav-item:hover svg,
+.settings-nav-item.active svg {
+  color: var(--text);
+}

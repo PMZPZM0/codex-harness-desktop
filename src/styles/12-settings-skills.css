@@ -154,7 +154,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 13px;
   font-weight: 600;
 }
-.settings-pill-row-label > svg { color: var(--green); }
+.settings-pill-row-label > svg { color: var(--muted); }
 /* ── 主题色定制色板（11-09：白天/黑夜各 5 套）────────────────────────────── */
 .accent-swatches {
   margin-left: auto;
@@ -1568,7 +1568,7 @@ textarea:focus, input:focus, [contenteditable]:focus { outline-color: var(--gree
   font-size: 11.5px;
   display: inline-flex;
 }
-.index-guide-item svg { color: var(--green); flex: none; }
+.index-guide-item svg { color: var(--muted); flex: none; }
 .index-guide-item b { color: var(--text); font-weight: 600; }
 .index-tiles {
   grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
