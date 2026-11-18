@@ -3673,3 +3673,36 @@
 @media (prefers-reduced-motion: reduce) {
   html:not([data-motion="force"]) .team-msg { animation: none; }
 }
+
+/* 11-18 P1 群内产物卡：群头「本群产物」→ 浮层面板（复用 ArtifactPanel 的只读清单） */
+.team-artifacts-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 64px 24px 24px;
+  background: rgba(0, 0, 0, 0.28);
+}
+.team-artifacts-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 100%);
+  max-height: min(70vh, 640px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--bg);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+.team-artifacts-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.team-artifacts-head > strong { font-size: 13px; }
+.team-artifacts-head > small { flex: 1 1 auto; min-width: 0; font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.team-artifacts-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 12px 12px; }

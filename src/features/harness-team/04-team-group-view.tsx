@@ -12,7 +12,7 @@
  *   ③ **@ 高亮**（飞书 4：mention 是单独一类对象）：人发的消息把 @ 了谁显示成 chip。
  */
 import { Fragment, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps } from "react";
-import { ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen, PanelRight } from "lucide-react";
+import { Archive, ArrowDown, MessagesSquare, Search, Settings2, X, PanelRightClose, PanelRightOpen, PanelRight } from "lucide-react";
 import type { GroupMessageRow, TeamFile, TeamGroup } from "./01-team-types";
 import type { LiveRun } from "./02-team-store";
 import { TeamSettings, TeamViewModeSettings } from "./03-team-settings";
@@ -23,6 +23,7 @@ import type { MentionScope } from "../markdown";
    ⛔ 渲染在独立板块 `17-team-mention-text`（口径在纯函数 `team-mention-render.mjs` + 单测）。
    ⛔ 成员行三件套拆到 `18-team-member-actions`（守住 >1000 行棘轮，行为逐字未变）。 */
 import { TeamMentionChip, TeamMentionText } from "./17-team-mention-text";
+import { ArtifactPanel } from "../artifact-archive";
 import { linkifyMentions } from "../../lib/team-mention-render.mjs";
 import { TeamAvatarPicker } from "./19-team-avatar-picker";
 import { buildMentionCandidates, fmtTime, shortId } from "./20-team-view-utils";
@@ -326,6 +327,8 @@ export function TeamGroupView({
     { open: false, query: "", start: 0, caret: 0, typed: false },
   );
   const [searchOpen, setSearchOpen] = useState(false);
+  /* 11-18（P1 群内产物卡）：本群工作区的产物归档，点开即看，不跳设置页。 */
+  const [artifactsOpen, setArtifactsOpen] = useState(false);
   /* ⛔ 11-08 用户（截图）：「两边侧边栏都没有展开折叠按键，右边在 🔍 图标右边加一个下面展开折叠的按键」
      ⇒ 成员栏可收起，键位就在搜索键右边。落 localStorage：关掉面板再开、重启应用都保持。 */
   const [membersOpen, setMembersOpen] = useState(() => {
@@ -1532,6 +1535,17 @@ export function TeamGroupView({
             {group.members.length > 4 && <span className="team-group__avatar is-more">+{group.members.length - 4}</span>}
           </div>
           <span className="team-group__head-sep" aria-hidden />
+          {/* 11-18（P1）：群内产物卡 —— 直接看本群工作区产出了什么。 */}
+          <button
+            type="button"
+            className={`team-group__icon-btn${artifactsOpen ? " is-on" : ""}`}
+            onClick={() => setArtifactsOpen((v) => !v)}
+            title="本群产物（产物归档）"
+            aria-label="本群产物"
+            aria-expanded={artifactsOpen}
+          >
+            <Archive size={14} />
+          </button>
           <button
             type="button"
             className={`team-group__icon-btn${searchOpen ? " is-on" : ""}`}
@@ -2351,6 +2365,31 @@ export function TeamGroupView({
       {sideOpen && app && (
         <TeamSidePanel app={app} workspace={group.workspace} tab={sideTab} onTab={setSideTab} onClose={() => setSideOpen(false)} />
       )}
+
+      {/* 11-18（P1 群内产物卡）：本群工作区的产物归档。
+          ⛔ 与右侧栏同级、互不嵌套（上一版误插进条件子树 ⇒ JSX 解析直接爆）。⛔ 只读。 */}
+      {artifactsOpen ? (
+        <div className="team-artifacts-backdrop" role="dialog" aria-modal="true" aria-label="本群产物" onClick={(event) => { if (event.target === event.currentTarget) setArtifactsOpen(false); }}>
+          <section className="team-artifacts-panel">
+            <header className="team-artifacts-head">
+              <Archive size={14} />
+              <strong>本群产物</strong>
+              <small>{projectName || "未设工作区"} · 按「日期-任务」归档</small>
+              <button type="button" className="team-group__icon-btn" title="关闭" onClick={() => setArtifactsOpen(false)}><X size={14} /></button>
+            </header>
+            <div className="team-artifacts-body">
+              {group.workspace ? (
+                <ArtifactPanel
+                  workspace={group.workspace}
+                  onOpenThread={(threadId: string) => { setArtifactsOpen(false); onOpenThread?.(threadId); }}
+                />
+              ) : (
+                <p className="muted" style={{ padding: "12px 14px" }}>这个群还没设工作区 —— 没有工作区就没有产物归档。</p>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {/* 话题预览弹窗：⌨ Esc / 点遮罩关闭（板块内用全局 ESC 栈），⛔ 只在话题模式且有回复时出现。 */}
       {/* 话题预览弹窗：⌨ Esc / 点遮罩关闭（板块内用全局 ESC 栈），⛔ 只在话题模式且有回复时出现。
