@@ -17,7 +17,7 @@ import { lookupMessageOriginal } from "../../lib/user-message-originals.mjs";
 import { isImagePath } from "../../lib/is-image-path";
 import { basename } from "../../lib/basename";
 import { attachChipName } from "../../lib/attach-chip-name.mjs";
-import { User, Sparkles, FileText, Film, Music2, Box, Bot } from "lucide-react";
+import { User, FileText, Film, Music2, Box, Bot } from "lucide-react";
 import { UserRefsRow } from "./InlineCards";
 import { FileRefCard } from "../../components/FileRefCard";
 import { ImportedRecordCard } from "./ImportRecords";
@@ -223,15 +223,10 @@ export function UserMessageView({ item, turn, threadId, fallbackWindow, pending,
           {refs.imported ? <ImportedRecordCard note={refs.imported.note} content={refs.imported.content} /> : null}
           {refs.threadReferences.map((reference) => <ImportedRecordCard key={reference.id} note={reference.note} content={reference.content} kind="thread" sourceId={reference.id} onOpenSource={onOpenThread} />)}
           {refs.teamTask ? (
-            <div className="user-message-team-task" title="已作为团队/成员会话发起需求提交">
-              <div className="user-message-team-task-tag">
-                <Sparkles size={11} />
-                {/* 10-26：壳上的原始标签原样展示（团队会话 / 成员会话 / 群成员会话 / 调度会话…），
-                    旧实现写死两种 ⇒ 群成员与调度会话都被标成"成员会话"。 */}
-                <span>{(refs.teamTask.label ?? (refs.teamTask.kind === "team" ? "团队会话" : "成员会话")) + " · 需求已发起"}</span>
-              </div>
-              <div className="user-message-team-task-body">{refs.teamTask.requirement}</div>
-            </div>
+            /* ⛔ 11-18 用户令：「这种专家会话，不需要显示什么成员会话-需求已发起，正常显示就行」。
+               ⇒ 只把需求原文当普通用户消息渲染（①②③④ 的数据一层不动，纯展示层改动）。
+               需要分辨来源时看所属会话本身，不靠气泡上的标签。 */
+            <p className="user-message-text">{refs.teamTask.requirement}</p>
           ) : (refs.cleanText || inlineAttachItems.length) ? (
             <p className="user-message-text">
               {/* 命中位置注解 ⇒ 用带 token 的原文按 splitAttachmentSegments 拆（图片+文件都内联，
