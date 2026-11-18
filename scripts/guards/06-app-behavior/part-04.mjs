@@ -348,8 +348,8 @@ export async function run() {
   (nav180.includes("sidebar-quick") && nav180.includes("新建任务") && nav180.includes("指挥中枢") ? ok : fail)(
     "【180】新建任务 / 指挥中枢在顶部快捷区（搜索任务 10-25 移到视图行 🔍）"
   );
-  (/className="view-toolbar-btn ic-cyan" title="搜索任务"/.test(side180) ? ok : fail)(
-    "【180】搜索任务入口在视图行工具条（🔍 + title，可点可发现）"
+  (/view-toolbar-btn ic-cyan"><Search[\s\S]{0,400}?<span>搜索任务<\/span>/.test(side180) ? ok : fail)(
+    "【180】搜索任务入口在视图行的「⋯」菜单里（🔍 + 文案，可点可发现；11-17 由悬浮工具条改为三点菜单）"
   );
   (!/<kbd>/.test(nav180) ? ok : fail)(
     "【180】快捷入口不再显示快捷键键帽（快捷键本身仍由全局监听生效）"

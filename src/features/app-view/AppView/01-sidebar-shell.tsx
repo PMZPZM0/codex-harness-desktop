@@ -217,6 +217,39 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       return next;
     });
   };
+  /* 11-17 用户令：「把这个改成三个点，点击右边菜单」——原来的悬浮图标条改成常驻 ⋯，
+     点击在它右侧弹菜单（不再随 hover 出现、也不在窄侧栏里压住 tab）。 */
+  const [moreMenu, setMoreMenu] = useState<{ left: number; top: number } | null>(null);
+  const moreBtnRef = useRef<HTMLButtonElement | null>(null);
+  const openMoreMenu = () => {
+    const rect = moreBtnRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const width = 188;
+    const height = 5 * 30 + 12;
+    const left = Math.max(8, Math.min(rect.right + 8, window.innerWidth - width - 8));
+    const top = Math.max(8, Math.min(rect.top - 4, window.innerHeight - height - 8));
+    setMoreMenu({ left, top });
+  };
+  useEffect(() => {
+    if (!moreMenu) return;
+    const onDown = (event: PointerEvent) => {
+      const hit = (event.target as HTMLElement | null)?.closest?.(".sidebar-more-menu, .view-more-btn");
+      if (!hit) setMoreMenu(null);
+    };
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMoreMenu(null); };
+    const onScroll = (event: Event) => {
+      if (event.target instanceof Element && event.target.closest(".sidebar-more-menu")) return;
+      setMoreMenu(null);
+    };
+    document.addEventListener("pointerdown", onDown, true);
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown, true);
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("scroll", onScroll, true);
+    };
+  }, [moreMenu]);
   /* 10-31 用户令：会话行底色自选 —— 订阅让选色立刻重渲染本列表（行组件读 store 取色）。 */
   useSyncExternalStore(subscribeThreadRowColors, getThreadRowColors, getThreadRowColors);
   /* 10-31 用户令（截图点名）：「标签一列、会话列表开头一列，中间别留一大截」——
@@ -895,14 +928,37 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
             <div className="view-tabs" role="toolbar" aria-label="会话视图工具">
               <button className={`view-tab ${viewTab === "projects" ? "active" : ""}`} onClick={() => setViewTab("projects")} title="按项目分组查看"><FolderOpen size={14} className="ic-amber" /><span>项目</span></button>
               <button className={`view-tab ${viewTab === "tasks" ? "active" : ""}`} onClick={() => setViewTab("tasks")} title="平铺全部任务（不分组）"><ListChecks size={14} className="ic-blue" /><span>任务</span></button>
-              <div className="view-toolbar">
-                <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads)}><ListRestart size={14} /></button>
-                <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
-                <button className="view-toolbar-btn ic-violet" title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={viewTab !== "projects" || !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
-                {/* 11-17 用户令：「一键隐藏标签」——会话与项目的徽标统一收起（落 localStorage）。 */}
-                <button className={`view-toolbar-btn ic-violet${hideSidebarTags ? " is-on" : ""}`} title={hideSidebarTags ? "显示会话 / 项目标签" : "隐藏会话 / 项目标签"} aria-pressed={hideSidebarTags} onClick={toggleHideSidebarTags}><Tags size={14} /></button>
-                <button className="view-toolbar-btn ic-green" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => setNewProjectOpen(true)}><FolderPlus size={14} /></button>
-              </div>
+              <button
+                ref={moreBtnRef}
+                type="button"
+                className={`view-more-btn${moreMenu ? " is-open" : ""}`}
+                title="会话列表操作"
+                aria-haspopup="menu"
+                aria-expanded={Boolean(moreMenu)}
+                onClick={() => (moreMenu ? setMoreMenu(null) : openMoreMenu())}
+              >
+                <MoreHorizontal size={16} />
+              </button>
+              {moreMenu && createPortal(
+                <div className="sidebar-more-menu" role="menu" style={{ left: moreMenu.left, top: moreMenu.top }}>
+                  <button className="sidebar-more-item" role="menuitem" title="刷新会话列表" onClick={() => { setMoreMenu(null); void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads); }}>
+                    <span className="view-toolbar-btn ic-blue"><ListRestart size={14} /></span><span>刷新会话列表</span>
+                  </button>
+                  <button className="sidebar-more-item" role="menuitem" title="搜索任务" onClick={() => { setMoreMenu(null); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
+                    <span className="view-toolbar-btn ic-cyan"><Search size={14} /></span><span>搜索任务</span>
+                  </button>
+                  <button className="sidebar-more-item" role="menuitem" disabled={viewTab !== "projects" || !projectGroups.length} title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={() => { setMoreMenu(null); toggleAllSidebarSections(); }}>
+                    <span className="view-toolbar-btn ic-violet">{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</span><span>{sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"}</span>
+                  </button>
+                  <button className="sidebar-more-item" role="menuitem" title={hideSidebarTags ? "显示会话 / 项目标签" : "隐藏会话 / 项目标签"} aria-pressed={hideSidebarTags} onClick={() => { setMoreMenu(null); toggleHideSidebarTags(); }}>
+                    <span className={`view-toolbar-btn ic-violet${hideSidebarTags ? " is-on" : ""}`}><Tags size={14} /></span><span>{hideSidebarTags ? "显示标签" : "隐藏标签"}</span>
+                  </button>
+                  <button className="sidebar-more-item" role="menuitem" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => { setMoreMenu(null); setNewProjectOpen(true); }}>
+                    <span className="view-toolbar-btn ic-green"><FolderPlus size={14} /></span><span>新建项目</span>
+                  </button>
+                </div>,
+                document.body,
+              )}
             </div>
             {/* 10-04 渲染层插槽：侧栏顶部（在会话列表之上）。插件放这里 = 常驻可见的入口
         （筛选器 / 快速操作 / 状态指示）。挂在 thread-list 里的话会随会话滚动，位置不固定。 */}

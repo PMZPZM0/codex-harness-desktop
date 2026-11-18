@@ -2227,7 +2227,9 @@ const CHECKS = [
       await h.waitFor(`!!document.querySelector(".project-item-menu-btn")`, { label: "项目视图 ⋯ 按钮", timeoutMs: 10000 });
       /* 全部折叠：保证最后一个项目行就是列表最底行（展开态的 body 会把头行顶离底部）。 */
       /* ⛔ harness 的 eval 把表达式包成 `return (expr)` —— 多语句必须自己包 IIFE，否则整条是语法错误、静默不执行。 */
-      await h.eval(`(function(){ document.querySelector('.view-toolbar-btn[title="折叠全部项目"]')?.click(); return true; })()`);
+      await h.eval(`(function(){ document.querySelector('.view-more-btn')?.click(); return true; })()`);
+      await wait(250);
+      await h.eval(`(function(){ const b=[...document.querySelectorAll('.sidebar-more-item')].find(x=>(x.title||"").includes("折叠")||(x.title||"").includes("展开")); b?.click(); return true; })()`);
       await wait(300);
       const geo = () => h.eval(`(function(){
         const r=(e)=>{ if(!e) return null; const b=e.getBoundingClientRect(); return {left:b.left,right:b.right,top:b.top,bottom:b.bottom,w:b.width,h:b.height}; };

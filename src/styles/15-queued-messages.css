@@ -796,31 +796,55 @@
 .view-tab.active svg { opacity: 1; }
 /* 10-26 用户：四个工具图标默认隐藏；鼠标放到「项目 / 任务」或图标区时从右向左滑出，
    移开即收起。绝对定位 ⇒ 出现/收起都不挤动 tab 与会话列表。 */
-.view-toolbar {
-  position: absolute;
-  top: 5px;
-  right: 6px;
+/* 11-17 用户令：「改成三个点，点击右边菜单」——取代 hover 才出现的悬浮图标条（窄侧栏会压住 tab）。 */
+.view-more-btn {
+  margin-left: auto;
+  width: 24px;
+  height: 24px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  border-radius: 5px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.view-more-btn:hover, .view-more-btn.is-open { background: var(--panel-2); color: var(--text); }
+/* 菜单 portal 到 body：点 ⋯ 在它**右侧**弹出（与项目 ⋯ 菜单同一套弹层语言）。 */
+.sidebar-more-menu {
+  position: fixed;
+  z-index: 1000;
+  width: 188px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
   gap: 1px;
-  height: 26px;
-  padding-left: 14px;
+}
+.sidebar-more-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
   border-radius: 7px;
-  background: linear-gradient(90deg, transparent, var(--bg) 22%);
-  opacity: 0;
-  transform: translateX(12px);
-  pointer-events: none;
-  transition: opacity 0.16s ease, transform 0.18s ease;
+  background: transparent;
+  color: var(--text);
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
 }
-.view-tabs:hover .view-toolbar,
-.view-tabs:focus-within .view-toolbar {
-  opacity: 1;
-  transform: translateX(0);
-  pointer-events: auto;
-}
-@media (prefers-reduced-motion: reduce) {
-  html:not([data-motion="force"]) .view-toolbar { transition: none; }
-}
+.sidebar-more-item:hover:not(:disabled) { background: var(--panel-2); }
+.sidebar-more-item:disabled { opacity: 0.45; cursor: not-allowed; }
+.sidebar-more-item > span:last-child { flex: 1; white-space: nowrap; }
+.sidebar-more-item .view-toolbar-btn { width: 22px; height: 22px; flex: none; }
 .view-toolbar-btn {
   display: inline-flex;
   align-items: center;
