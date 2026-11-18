@@ -327,7 +327,7 @@ export async function run() {
     "【180】「自动化」与其它能力入口同一行样式（统一 sidebar-cap-row，不再单独一档）"
   );
   (fmSrc180.includes("function-menu-more") && fmSrc180.includes("编辑菜单")
-    && fmSrc180.includes("移到拓展功能下面") && fmSrc180.includes("移到侧栏底部")
+    && fmSrc180.includes("移到工作伙伴下面") && fmSrc180.includes("移到侧栏底部")
     && !/moreHubOpen/.test(side180) ? ok : fail)(
     "【180】新的「更多」只收溢出入口 + 编辑菜单/切换位置（旧 AI 画布 moreHubOpen 已删除）"
   );

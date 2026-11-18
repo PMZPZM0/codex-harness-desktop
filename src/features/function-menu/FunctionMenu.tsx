@@ -105,7 +105,7 @@ function MenuItemButton({ id, meta, onActivate, onDone, dragging, dropBefore, on
   );
 }
 
-/** 一条拓展功能菜单（10-25 前叫「功能入口」）。top = 搜索任务下面，bottom = 侧栏底部；两个位置共用同一份排序/更多配置。
+/** 一条拓展功能菜单（10-25 前叫「功能入口」）。top = **工作伙伴下面**（默认），bottom = 侧栏底部；两个位置共用同一份排序/更多配置。
  *  侧栏里的入口可直接拖动排序 / 拖进「更多」，落手即写回共享配置。 */
 export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   const config = useFunctionMenuConfig();
@@ -230,7 +230,7 @@ function MorePopover({ anchor, overflow, extMenu, onActivate, otherLocation, onC
       {otherLocation && (
         <button type="button" role="menuitem" className="function-menu-popover-item" onClick={() => { onClose(); setFunctionMenuLocation(otherLocation); }}>
           {otherLocation === "top" ? <ArrowUpToLine size={14} /> : <ArrowDownToLine size={14} />}
-          <span>{otherLocation === "top" ? "移到拓展功能下面" : "移到侧栏底部"}</span>
+          <span>{otherLocation === "top" ? "移到工作伙伴下面" : "移到侧栏底部"}</span>
         </button>
       )}
     </AnchorPopover>
@@ -253,7 +253,7 @@ export function FunctionMenuTourHost() {
         <span>自动化</span><span>团队</span><span className="more">更多 <ChevronDown size={10} /></span>
       </div>
       <p>点「更多 → 编辑菜单」可以拖动排序，把不常用的入口拖进「更多」收起。</p>
-      <p>也可以在 <b>设置 → 外观</b> 里切换「搜索任务下面 / 侧栏底部」。</p>
+      <p>也可以在 <b>设置 → 外观</b> 里切换「工作伙伴下面 / 侧栏底部」。</p>
       <div className="function-menu-tour-actions">
         <button type="button" className="primary-setting" onClick={() => { dismissFunctionMenuTour(); openFunctionMenuEditor(); }}>编辑菜单</button>
         <button type="button" className="secondary-setting" onClick={dismissFunctionMenuTour}>知道了</button>
@@ -426,11 +426,11 @@ function FunctionMenuEditor() {
         <div className="fm-location-grid" role="group" aria-label="功能入口显示位置">
           <button type="button" className={`fm-location-card ${config.location === "top" ? "on" : ""}`} aria-pressed={config.location === "top"}
             onClick={() => setFunctionMenuLocation("top")}>
-            <ArrowUpToLine size={16} /><span><b>侧栏顶部</b><small>「新会话 / 搜索任务」下面（常驻不折叠）</small></span>{config.location === "top" && <Check size={14} />}
+            <ArrowUpToLine size={16} /><span><b>工作伙伴下面</b><small>「新建任务 / 指挥中枢 / 工作伙伴」之后（默认）</small></span>{config.location === "top" && <Check size={14} />}
           </button>
           <button type="button" className={`fm-location-card ${config.location === "bottom" ? "on" : ""}`} aria-pressed={config.location === "bottom"}
             onClick={() => setFunctionMenuLocation("bottom")}>
-            <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（默认，可折叠）</small></span>{config.location === "bottom" && <Check size={14} />}
+            <ArrowDownToLine size={16} /><span><b>侧栏底部</b><small>用户名上方（与账户区相邻）</small></span>{config.location === "bottom" && <Check size={14} />}
           </button>
         </div>
 

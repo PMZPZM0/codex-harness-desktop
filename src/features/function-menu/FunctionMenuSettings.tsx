@@ -18,7 +18,7 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
     if (config.location === location) return;
     setFunctionMenuLocation(location);
     onNotice?.(location === "top"
-      ? "拓展功能已移到「新会话 / 指挥中枢 / 搜索任务」下面"
+      ? "拓展功能已移到「工作伙伴」下面"
       : "拓展功能已移回侧栏底部");
   };
   return (
@@ -29,8 +29,8 @@ export function FunctionMenuSettings({ onNotice }: { onNotice?: (text: string) =
       <div className="settings-pill-row">
         <span className="settings-pill-row-label"><ArrowUpToLine size={13} />拓展功能</span>
         <div className="segmented-tabs row-pills" role="group" aria-label="拓展功能显示位置">
-          <button type="button" className={config.location === "top" ? "active" : ""} aria-pressed={config.location === "top"} title="入口显示在「新会话 / 搜索任务」下面（可折叠）" onClick={() => choose("top")}>侧栏顶部</button>
-          <button type="button" className={config.location === "bottom" ? "active" : ""} aria-pressed={config.location === "bottom"} title="入口显示在用户名上方（可折叠）" onClick={() => choose("bottom")}>侧栏底部</button>
+          <button type="button" className={config.location === "top" ? "active" : ""} aria-pressed={config.location === "top"} title="入口显示在「工作伙伴」下面（默认）" onClick={() => choose("top")}>工作伙伴下面</button>
+          <button type="button" className={config.location === "bottom" ? "active" : ""} aria-pressed={config.location === "bottom"} title="入口显示在用户名上方（与账户区相邻）" onClick={() => choose("bottom")}>侧栏底部</button>
         </div>
       </div>
       <div className="fm-compact-meta">
