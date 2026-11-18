@@ -36,8 +36,11 @@ ok(/listAll\(\)/.test(scopeSrc) && /ensureSessionAlias\(record\.threadId/.test(s
   "存量被派活会话按 delegateRegistry.origin 补上级（专家/子智能体/调度成员/CLI 同一张表）");
 
 const delegationSrc = read("electron/features/delegation.ts");
-ok(/\$\{block\}\\n\\n---\\n\\n\$\{baseInstructions\}/.test(delegationSrc),
-  "被委派会话的身份块放在全局指令**前面**（不能追加在目录后面）");
+/* 11-19 契约变更（实测重复注入 39k 字符）：会话级只下发**增量身份块**，
+   config 的 developer_instructions 交给引擎自己应用 ⇒ 断言改为「块真的下发 + 不再拼 base」。 */
+ok(/developer_instructions:////s*merged/.test(delegationSrc) && /const merged = block;/.test(delegationSrc)
+  && !/baseInstructions/.test(delegationSrc),
+  "被委派会话只下发身份块（不再拼全局指令 —— 11-19 修重复注入）");
 const dispatchSrc = read("electron/dispatch.ts");
 ok(/不是你的上级关系/.test(dispatchSrc) && /角色模板/.test(dispatchSrc),
   "delegateScopeBlock 明确写清目录/角色模板不是上级");
