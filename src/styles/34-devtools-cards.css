@@ -293,3 +293,17 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
 
 /* ⛔ 11-01：「准备检查…」这类整行文案别继承三列网格（否则被挤进 18px 徽标列，变成竖排）。 */
 .devtool-health-row.is-plain { display: block; grid-template-columns: none; color: var(--muted); }
+
+/* 11-18 卡片底部「交给 X 专家」：工具卡 → 专家（补上「工具找谁」这个方向） */
+.devtools-card-expert {
+  align-self: flex-start;
+  margin: 0 14px 12px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+.devtools-card-expert:hover { border-color: var(--accent); color: var(--accent); }

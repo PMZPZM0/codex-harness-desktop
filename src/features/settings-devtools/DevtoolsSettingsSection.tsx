@@ -93,12 +93,40 @@ import { SkillPacksPanel } from "../skill-packs";
 import { useEscapeLayer } from "../../hooks/useEscapeLayer";
 import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel, runtimeGroupItems, type RuntimeBatch, type RuntimeGroup, type RuntimeRow } from "./runtime-groups";
 
-export type DevtoolsSettingsSectionProps = { downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
+export type DevtoolsSettingsSectionProps = {
+  /** 11-18：卡片 → 负责专家（点一下去专家中心）。没传就不显示这一行。 */
+  onOpenExperts?: () => void; downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
 type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
+
+/* ⛔⛔ 11-18 用户令：「以后往里面加东西，都要配套联动已有或者新建专家」。
+   这张表就是**卡片 → 负责专家**的单一真相源（五大类见文件头）。新增卡片时必须在下面补一行，
+   ⛔ 不许只加安装按钮不给「找谁」。专家名与 expert-teams.json 里的主理人名一致。 */
+const CARD_EXPERT: Record<string, string> = {
+  "tools-base": "筑基",
+  "tools-devchain": "筑基",
+  "tools-system": "筑基",
+  "tools-health": "筑基",
+  "capability": "筑基",
+  "laya": "筑基",
+  "tools-auto": "掌控",
+  "phone": "掌控",
+  "apkstart": "掌控",
+  "husk": "掌控",
+  "feishu-cli": "通译",
+  "filee": "通译",
+  "skill-packs": "通译",
+  "tools-ai": "通译",
+  "tools-media": "剪承",
+  "openfilm": "剪承",
+  "artcraft": "造物",
+  "moekoe": "造物",
+  "openmaic": "造物",
+  "tools-ondemand": "洞见",
+};
 
 function CardBody({ card, onOpen }: { card: CardSpec; onOpen: () => void }) {
   return (
@@ -263,7 +291,27 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           {toolCards.map((card) => (
             <div className="devtools-card" key={card.key} data-card={card.key}>
               <CardBody card={card} onOpen={() => setOpenCard(card.key)} />
+              {props.onOpenExperts && CARD_EXPERT[card.key] ? (
+                <button
+                  type="button"
+                  className="devtools-card-expert"
+                  title={`交给 ${CARD_EXPERT[card.key]} 专家（打开专家中心，看它的工具与技能是否齐全）`}
+                  onClick={() => props.onOpenExperts?.()}
+                >
+                  交给 {CARD_EXPERT[card.key]}
+                </button>
+              ) : null}
               {renderCardAction(card)}
+              {props.onOpenExperts && CARD_EXPERT[card.key] ? (
+                <button
+                  type="button"
+                  className="devtools-card-expert"
+                  title={`交给 ${CARD_EXPERT[card.key]} 专家（打开专家中心，看它的工具与技能是否齐全）`}
+                  onClick={() => props.onOpenExperts?.()}
+                >
+                  交给 {CARD_EXPERT[card.key]}
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
