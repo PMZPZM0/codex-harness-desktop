@@ -2291,11 +2291,35 @@
   border-color: color-mix(in srgb, var(--accent, var(--green)) 45%, var(--line));
   background: color-mix(in srgb, var(--accent, var(--green)) 8%, transparent);
 }
-.tool-list-search { display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); padding: 8px 0; }
+.tool-list-layout { display: grid; grid-template-columns: 152px minmax(0, 1fr); gap: 22px; align-items: start; }
+.tool-list-nav { position: sticky; top: 0; display: grid; gap: 3px; padding: 8px 12px 10px 0; border-right: 1px solid var(--line); }
+.tool-list-nav h3 { margin: 6px 8px 9px; color: var(--muted); font-size: 12px; }
+.tool-list-nav button, .tool-list-summary button { display: flex; align-items: center; gap: 7px; border: 0; background: transparent; color: var(--text); cursor: pointer; }
+.tool-list-nav button { padding: 8px; border-radius: 6px; text-align: left; }
+.tool-list-nav button:hover { background: var(--panel-2); }
+.tool-list-nav button[aria-pressed="true"] { background: var(--accent-soft); color: var(--link); font-weight: 600; }
+.tool-list-nav small { margin-left: auto; font-variant-numeric: tabular-nums; }
+.tool-list-toolbar { display: flex; align-items: stretch; flex-wrap: wrap; gap: 8px; padding: 8px 0; }
+.tool-list-toolbar .app-select-trigger { width: 132px; }
+.tool-list-search { display: flex; flex: 1 1 180px; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--muted); }
 .tool-list-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); }
+.tool-list-layout button:focus-visible, .tool-list-search:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tool-list-search input:focus { outline: 0; }
+.tool-list-summary { display: flex; align-items: center; gap: 10px; min-height: 32px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.tool-list-summary button { margin-left: auto; color: var(--link); }
+.tool-list-empty { text-align: center; padding: 32px 8px; color: var(--muted); }
 .tool-list-group h3 { margin: 20px 0 4px; font-size: 14px; }
 .tool-list-group small { color: var(--muted); font-weight: normal; }
 .tool-list-group button { display: grid; grid-template-columns: minmax(0,1fr) auto 16px; width: 100%; align-items: center; text-align: start; gap: 10px; padding: 9px 4px; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--text); cursor: pointer; }
 .tool-list-group button:hover { background: var(--panel-2); }
 .tool-list-group button span { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.tool-list-group button span small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.tool-list-state { padding: 2px 6px; border-radius: 4px; background: var(--panel-2); }
+.tool-list-state[data-state="可用"] { background: color-mix(in srgb, var(--green) 10%, transparent); color: var(--green); }
+@media (max-width: 700px) {
+  .tool-list-layout { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .tool-list-nav { position: static; display: flex; flex-wrap: wrap; border: 0; padding: 4px 0; }
+  .tool-list-nav h3 { width: 100%; margin: 4px 0; }
+  .tool-list-nav button { gap: 4px; padding: 5px 6px; }
+}
 .tool-list-preview { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; background: var(--panel-2); padding: 12px; line-height: 1.6; }

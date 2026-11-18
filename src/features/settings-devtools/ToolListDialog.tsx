@@ -1,11 +1,33 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, Copy, ListChecks, RefreshCw, Search } from "lucide-react";
+import { Blocks, BriefcaseBusiness, ChevronRight, Copy, Cpu, Film, Folder, LayoutGrid, ListChecks, MonitorCog, RefreshCw, RotateCcw, Search, Smartphone, Terminal } from "lucide-react";
+import { AppSelect } from "../../components/AppSelect";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { copyTextToClipboard } from "../../lib/clipboard";
 import { CRAFT_APPS, normalizeCraftKey } from "./artcraft-apps";
 import { RUNTIME_GROUPS, runtimeGroupItems, type RuntimeRow } from "./runtime-groups";
 
 type Item = { id: string; name: string; desc: string; group: string; prompt: string; method: string; target?: string; state?: string };
+const purposes = [
+  { name: '开发环境', icon: Terminal, groups: ['基础运行时', '开发工具链', '系统级安装'] },
+  { name: '桌面自动化', icon: MonitorCog, groups: ['桌面与浏览器自动化'] },
+  { name: '设计与影音', icon: Film, groups: ['媒体与文档', '影音与创作', '创作套件', 'Craft 创作应用'] },
+  { name: '办公与教学', icon: BriefcaseBusiness, groups: ['协作办公', '教育与课堂'] },
+  { name: '手机与设备', icon: Smartphone, groups: ['移动设备'] },
+  { name: '本地 AI', icon: Cpu, groups: ['本地智能'] },
+  { name: 'Codex 技能', icon: Blocks, groups: ['精选技能包'] },
+  { name: '其他工具', icon: Folder, groups: [] },
+];
+// 安装入口不等于用途：同一个 Launcher 里的办公软件应当和其它办公工具一起出现。
+const purposeOverrides: Record<string, string> = {
+  markitdown: '办公与教学', 'craft:wordcraft': '办公与教学', 'craft:gridcraft': '办公与教学',
+  'craft:deckcraft': '办公与教学', 'craft:pdfcraft': '办公与教学', 'craft:mailcraft': '办公与教学',
+  'craft:craft-anything': '开发环境', rea: '开发环境', nuphus: '桌面自动化', ponytail: '桌面自动化',
+};
+const stateChoices = ['可用', '未检测到', '安装中', '安装包已就绪', '缺少依赖', '未能检测'];
+/** 安装包下载完不代表设备已安装，只有实际可用的三种检测结果合并展示。 */
+function stateFilter(state = '未能检测') {
+  return ['已安装', '系统已装', '已就绪'].includes(state) ? '可用' : state;
+}
 const special: Record<string, string> = {
   artcraft: '创作套件', moekoe: '影音与创作', 'feishu-cli': '协作办公', filee: '协作办公', openmaic: '教育与课堂',
   apkstart: '移动设备', husk: '移动设备', 'husk-tipa': '移动设备', 'platform-tools': '移动设备', 'phone-harness': '移动设备', laya: '本地智能',
@@ -24,6 +46,8 @@ function runtimeItem(row: RuntimeRow): Item {
 export function ToolListDialog({ onClose }: { onClose: () => void }) {
   const [items, setItems] = useState<Item[]>([]);
   const [query, setQuery] = useState('');
+  const [purpose, setPurpose] = useState('');
+  const [state, setState] = useState('');
   const [selectedId, setSelected] = useState<string | null>(null);
   const selected = items.find(i => i.id === selectedId);
   const [revision, setRevision] = useState(0);
@@ -65,13 +89,34 @@ export function ToolListDialog({ onClose }: { onClose: () => void }) {
   }, [revision]);
   useEffect(() => { const refresh = () => setRevision(v => v + 1); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, []);
   const refreshButton = <button type="button" className="secondary-setting" disabled={status === '读取中…'} onClick={() => setRevision(v => v + 1)}><RefreshCw size={14}/>重新检测</button>;
-  const groups = new Map<string, Item[]>();
-  for (const i of items) if (`${i.group} ${i.name} ${i.desc}`.toLowerCase().includes(query.trim().toLowerCase())) groups.set(i.group, [...(groups.get(i.group) ?? []), i]);
-  return <><SettingsDialog title="开发工具清单" icon={<ListChecks size={17}/>} hint="基础工具与专业工具 · 安装提示词" onClose={onClose}>
-    <label className="tool-list-search"><Search size={15}/><input autoFocus type="search" aria-label="搜索工具或分类" placeholder="搜索工具或分类" value={query} onChange={e => setQuery(e.target.value)} /></label>
+  const groups = new Map(purposes.map(p => [p.name, [] as Item[]]));
+  const available = new Set<string>();
+  const keyword = query.trim().toLowerCase();
+  let matches = 0;
+  for (const item of items) {
+    const name = purposeOverrides[item.id] ?? purposes.find(p => p.groups.includes(item.group))?.name ?? '其他工具';
+    available.add(name);
+    if (state && stateFilter(item.state) !== state) continue;
+    if (!`${name} ${item.group} ${item.id} ${item.name} ${item.desc}`.toLowerCase().includes(keyword)) continue;
+    groups.get(name)!.push(item);
+    matches++;
+  }
+  const count = purpose ? groups.get(purpose)?.length ?? 0 : matches;
+  const filtered = Boolean(purpose || query || state);
+  return <><SettingsDialog size="lg" title="开发工具清单" icon={<ListChecks size={17}/>} hint="本机工具与安装提示词" onClose={onClose}>
+    <div className="tool-list-layout">
+      <div className="tool-list-nav" role="group" aria-label="按用途筛选"><h3>工具用途</h3>
+        {[{ name: '', icon: LayoutGrid }, ...purposes.filter(p => available.has(p.name) || p.name === purpose)].map(({ name, icon: Icon }) => <button type="button" key={name} aria-pressed={purpose === name} data-tool-purpose={name} onClick={() => setPurpose(name)}><Icon size={15}/>{name || '全部工具'}<small>{name ? groups.get(name)?.length : matches}</small></button>)}
+      </div>
+      <div className="tool-list-results"><div className="tool-list-toolbar">
+        <label className="tool-list-search"><Search size={15}/><input autoFocus type="search" aria-label="搜索工具或分类" placeholder="搜索工具名称、用途或关键词" value={query} onChange={e => setQuery(e.target.value)} /></label>
+        <AppSelect ariaLabel="安装状态" value={state} onChange={setState} options={[{value: '', label: '全部安装状态'}, ...stateChoices.map(s => ({value: s, label: s}))]}/>{refreshButton}
+      </div>
+      <div className="tool-list-summary"><span role="status">{purpose || '全部工具'} · {count} 项</span>{filtered && <button type="button" onClick={() => { setQuery(''); setState(''); setPurpose(''); }}><RotateCcw size={13}/>清除筛选</button>}</div>
     {status && <p role="status">{status === '读取中…' ? status : <>{status}清单读取失败。<button type="button" className="secondary-setting" onClick={() => setRevision(v => v+1)}>重试</button></>}</p>}
-    {!status && !groups.size && <p>没有匹配的工具。</p>}
-    {refreshButton}{[...groups].map(([group, list]) => <section key={group} className="tool-list-group"><h3>{group} <small>{list.length}</small></h3>{list.map(i => <button type="button" key={i.id} data-tool-preview={i.id} onClick={() => { setCopied(''); setSelected(i.id); }}><span><strong>{i.name}</strong><small>{i.desc}</small></span><small>{i.state}</small><ChevronRight size={14}/></button>)}</section>)}
+      {!status && !count && <p className="tool-list-empty">没有匹配的工具</p>}
+      {[...groups].filter(([group, list]) => list.length && (!purpose || purpose === group)).map(([group, list]) => <section key={group} className="tool-list-group"><h3>{group} <small>{list.length}</small></h3>{list.map(i => <button type="button" key={i.id} data-tool-preview={i.id} onClick={() => { setCopied(''); setSelected(i.id); }}><span><strong>{i.name}</strong><small>{i.desc}</small></span><small className="tool-list-state" data-state={stateFilter(i.state)}>{i.state}</small><ChevronRight size={14}/></button>)}</section>)}
+      </div></div>
   </SettingsDialog>{selected && <SettingsDialog elevated title={selected.name} hint={`${selected.group} · ${selected.method}`} onClose={() => setSelected(null)}>
     <p><b>安装或检测位置</b></p><div className="tool-list-preview">{selected.target || '当前桌面壳未返回位置'}</div><p>本机状态：{selected.state}　{refreshButton}</p>
     <p>{selected.desc}</p><h3>Codex 安装提示词</h3><pre className="tool-list-preview">{selected.prompt || '当前桌面版本未提供此项的安装提示词，请更新应用后重试。'}</pre>
