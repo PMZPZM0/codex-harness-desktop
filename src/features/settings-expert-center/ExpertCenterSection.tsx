@@ -56,6 +56,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   const [skillMap, setSkillMap] = useState<Map<string, { folder: string; enabled: boolean }>>(new Map());
   const [capsLoaded, setCapsLoaded] = useState(false);
   const [busyCap, setBusyCap] = useState("");
+  const [skillPanelOpen, setSkillPanelOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     void (async () => {
@@ -90,6 +91,19 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   const skillReady = (name: string) => skillMap.has(name);
   const skillEnabled = (name: string) => skillMap.get(name)?.enabled === true;
   /* 专家「自带」的落地：把它声明的技能**启用**（已启用则跳过）。⛔ 不装新技能、不改技能内容。 */
+  /* 停用某个技能（保留文件，只关开关）——与启用同一条通道，⛔ 不写第二套。 */
+  const setSkillOnOff = async (name: string, enabled: boolean) => {
+    const hit = skillMap.get(name);
+    if (!hit) return;
+    await window.codex.setEnabledSkillBatch({ folders: [hit.folder], enabled }).catch(() => null);
+    const skills = await window.codex.listLocalSkills().catch(() => []);
+    const map = new Map<string, { folder: string; enabled: boolean }>();
+    for (const k of skills ?? []) {
+      const n = String(k?.name ?? k?.folder ?? "");
+      if (n) map.set(n, { folder: String(k?.folder ?? n), enabled: k?.enabled !== false });
+    }
+    setSkillMap(map);
+  };
   const ensureSkills = async (names: string[]) => {
     const folders = names.filter((n) => skillMap.has(n) && !skillEnabled(n)).map((n) => skillMap.get(n)!.folder);
     if (!folders.length) return { changed: 0 };
@@ -218,6 +232,32 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                   <div className="expert-cap-block">
                     <Row label="专业工具" ready={tools.length - missTools.length} total={tools.length} names={tools.join("、")} miss={missTools.length} />
                     <Row label="配套技能" ready={skills.length - missSkills.length} total={skills.length} names={[skills.join("、"), offSkills.length ? `（${offSkills.length} 个未启用）` : ""].filter(Boolean).join(" ")} miss={missSkills.length} />
+                    {skills.length ? (
+                      <div className="expert-cap-skills">
+                        <button type="button" className="expert-cap-more" onClick={() => setSkillPanelOpen((v) => !v)}>
+                          {skillPanelOpen ? "收起配套技能" : `管理配套技能（${skills.length}）`}
+                        </button>
+                        {skillPanelOpen ? (
+                          <ul>
+                            {skills.map((name) => {
+                              const ready = skillReady(name);
+                              const on = skillEnabled(name);
+                              return (
+                                <li key={name} data-state={ready ? (on ? "on" : "off") : "miss"}>
+                                  <span className="expert-cap-skill-name">{name}</span>
+                                  <span className="expert-cap-skill-state">{ready ? (on ? "已启用" : "未启用") : "未安装"}</span>
+                                  {ready ? (
+                                    <button type="button" className="expert-cap-fix" onClick={() => void setSkillOnOff(name, !on)}>{on ? "停用" : "启用"}</button>
+                                  ) : onOpenMarket ? (
+                                    <button type="button" className="expert-cap-fix" onClick={onOpenMarket}>去市场找找</button>
+                                  ) : null}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : null}
+                      </div>
+                    ) : null}
                     {missTools.length || missSkills.length || offSkills.length ? (
                       <div className="expert-cap-miss">
                         <span>缺：{[...missTools, ...missSkills].join("、")}</span>

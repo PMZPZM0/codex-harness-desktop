@@ -1769,3 +1769,29 @@
 }
 .expert-cap-fix:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .expert-cap-fix:disabled { opacity: .55; cursor: default; }
+
+/* 11-18 配套技能清单：可展开的管理列表（启用 / 停用 / 去市场） */
+.expert-cap-skills { display: flex; flex-direction: column; gap: 6px; }
+.expert-cap-more {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 11px;
+  cursor: pointer;
+}
+.expert-cap-more:hover { text-decoration: underline; }
+.expert-cap-skills ul { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.expert-cap-skills li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.expert-cap-skill-name { flex: 1 1 auto; min-width: 0; color: var(--text); opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.expert-cap-skill-state { flex: 0 0 auto; }
+.expert-cap-skills li[data-state="on"] .expert-cap-skill-state { color: var(--accent); }
+.expert-cap-skills li[data-state="off"] .expert-cap-skill-state { color: #b6791f; }
+.expert-cap-skills li[data-state="miss"] .expert-cap-skill-state { color: var(--danger, #e5534b); }
