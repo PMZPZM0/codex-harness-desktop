@@ -38,6 +38,16 @@ export function ScheduleSettingsSection(props: ScheduleSettingsSectionProps) {
                               </div>
                               <p className="auto-card-desc" title={task.prompt}>{task.prompt}</p>
                               <div className="auto-card-meta"><Clock3 size={13} /><span>运行计划</span><b>{describeSchedule(task)}</b></div>
+                              {/* 11-18：任务卡显示**触发来源**（手动 / 排期 / 补跑）。
+                                  ⛔ 数据只认 scheduler 落库的 runKind + lastRunAt，不在前端猜。 */}
+                              {task.lastRunAt || task.runKind ? (
+                                <div className="auto-card-meta">
+                                  <Play size={12} />
+                                  <span>上次触发</span>
+                                  <b>{task.runKind === "scheduled" ? "排期自动" : task.runKind === "missed" ? "补跑（曾错过）" : task.runKind === "manual" ? "手动运行" : "未记录来源"}</b>
+                                  {task.lastRunAt ? <em>{new Date(task.lastRunAt).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</em> : null}
+                                </div>
+                              ) : null}
                               <div className="auto-card-meta"><MessageSquare size={13} /><span>{basename(task.workspace)}</span></div>
                               <div className="auto-card-foot">
                                 <span className="auto-card-next">下次 {new Date(task.nextRunAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
