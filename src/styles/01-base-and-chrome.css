@@ -845,9 +845,10 @@ button.brand-mark.sidebar-toggle:hover {
   /* ⛔ 10-31 抽屉化：宽度**恒定 256**，折叠只做横向平移。
      原先宽度跟着网格轨道走 ⇒ 展开时是被"压扁→撑开"，侧栏内容一路重排（实测 142→238→256），
      看起来像"挤开"而不是抽屉滑出。 */
-  /* 11-17: 默认宽 260→236（与 --side-w 默认一致；可拖 220–420） */
-  width: 236px;
-  min-width: 236px;
+  /* 11-17 用户实测「拖动分隔线宽度不变」：宽度必须跟着网格轨道 var(--side-w) 走，
+     固定宽度会让拖动只移动轨道、侧栏本体纹丝不动。默认 236 / 可拖 220–420 由 AppView 写进 --side-w。 */
+  width: 100%;
+  min-width: 0;
   transition: translate var(--dur-panel) var(--ease-enter);
   will-change: translate;
   /* 通高：logo 行与顶行（任务名）同一行，不额外多出一行 */

@@ -1700,3 +1700,5 @@
   border-color: color-mix(in srgb, var(--orange) 35%, var(--line));
   background: color-mix(in srgb, var(--orange) 10%, var(--panel-2));
 }
+/* 11-17：工具条开关的「已开启」态（标签隐藏） */
+.view-toolbar-btn.is-on { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }

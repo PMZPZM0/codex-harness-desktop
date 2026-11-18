@@ -116,6 +116,7 @@ import {
   Server,
   WifiOff,
   UserRound,
+  Tags,
   Rocket,
   BookMarked,
   Users,
@@ -205,6 +206,17 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     hiddenSidebarThreadIds.size ? entries.filter((e) => !hiddenSidebarThreadIds.has(String(e?.id ?? ""))) : entries;
   /* 10-25 用户令：项目支持自定义标签（文字 + 颜色），默认无标签。 */
   const entityTags = useSyncExternalStore(subscribeEntityTags, getEntityTagState, getEntityTagState);
+  /* 11-17 用户令：「一键隐藏标签」——侧栏（会话 + 项目）徽标统一开关，落 localStorage。 */
+  const [hideSidebarTags, setHideSidebarTags] = useState<boolean>(() => {
+    try { return localStorage.getItem("sidebar-hide-tags") === "1"; } catch { return false; }
+  });
+  const toggleHideSidebarTags = () => {
+    setHideSidebarTags((value) => {
+      const next = !value;
+      try { localStorage.setItem("sidebar-hide-tags", next ? "1" : "0"); } catch { /* 隐私模式 */ }
+      return next;
+    });
+  };
   /* 10-31 用户令：会话行底色自选 —— 订阅让选色立刻重渲染本列表（行组件读 store 取色）。 */
   useSyncExternalStore(subscribeThreadRowColors, getThreadRowColors, getThreadRowColors);
   /* 10-31 用户令（截图点名）：「标签一列、会话列表开头一列，中间别留一大截」——
@@ -826,7 +838,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
   return (
     <>
     {!popoutThreadId ? (
-      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
+      <aside className={`sidebar ${mobileNav ? "mobile-open" : ""} ${sidebarFlyout ? "flyout-open" : ""}${hideSidebarTags ? " hide-tags" : ""}`} onMouseEnter={() => sidebarCollapsed && setSidebarFlyout(true)} onMouseLeave={() => sidebarCollapsed && setSidebarFlyout(false)}>        <div className="brand-row">
               <button className={`brand-mark sidebar-toggle ${sidebarCollapsed ? "is-collapsed" : "is-expanded"}`} aria-label={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} title={narrow ? "Codex Harness" : sidebarCollapsed ? "展开侧栏" : "收起侧栏"} onClick={() => { if (narrow) return; const next = !sidebarCollapsed; setSidebarCollapsed(next); localStorage.setItem("sidebar-collapsed", String(next)); }}>
                 <img className="ch-logo ch-logo-img" src={`${import.meta.env.BASE_URL}icon.png`} alt="" aria-hidden="true" />
                 <span className="sidebar-toggle-arrow"><ArrowLeft size={13} strokeWidth={2.4} /></span>
@@ -887,6 +899,8 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads)}><ListRestart size={14} /></button>
                 <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
                 <button className="view-toolbar-btn ic-violet" title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={viewTab !== "projects" || !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                {/* 11-17 用户令：「一键隐藏标签」——会话与项目的徽标统一收起（落 localStorage）。 */}
+                <button className={`view-toolbar-btn ic-violet${hideSidebarTags ? " is-on" : ""}`} title={hideSidebarTags ? "显示会话 / 项目标签" : "隐藏会话 / 项目标签"} aria-pressed={hideSidebarTags} onClick={toggleHideSidebarTags}><Tags size={14} /></button>
                 <button className="view-toolbar-btn ic-green" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => setNewProjectOpen(true)}><FolderPlus size={14} /></button>
               </div>
             </div>

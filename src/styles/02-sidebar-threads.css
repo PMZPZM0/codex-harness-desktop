@@ -160,8 +160,9 @@
    再宽就吃会话名宽度（用户明确：不要为右边留太多空间）。 */
 .thread-row > button:first-child > .thread-row-title-line.has-tag {
   /* 11-17：默认宽度调窄后，固定 70px 让位列会把 2 字名字挤成省略号 ⇒ 改成可收缩（空间够时仍是 70px，对齐不变）。 */
-  grid-template-columns: minmax(0, 1fr) auto 70px;
+  grid-template-columns: minmax(36px, 1fr) auto 70px;
 }
+/* 11-17 用户令：「有专家团标签时最少透两字出来」——名称列最小 36px（≈2 字 + 省略号）。 */
 .thread-row-name {
   /* 11-05：名称左对齐（与项目名同列），标签在中间格。
      ⛔ `justify-self:start` 会让网格项按内容宽（max-content）排版、越过自己的列宽 ⇒
@@ -2001,3 +2002,7 @@ html[data-ui-font="large"] .action-content pre {
    会话行自带 10 左内距 ⇒ 39px。⛔ 15-queued-messages 的 `.project-item-body` 用 shorthand
    写左内距 0，这里用更高特异度（.project-list ...）覆盖，别去改那份并行在途的文件。 */
 .project-list .project-item-body { padding-left: 39px; }
+
+/* 11-17 用户令：一键隐藏侧栏标签（工具条里的「标签」开关）；只藏显示，不改数据。 */
+.sidebar.hide-tags .thread-row-tags,
+.sidebar.hide-tags .project-item-head .entity-tag { display: none; }

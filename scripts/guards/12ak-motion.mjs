@@ -95,8 +95,8 @@ ok(!/gridTemplateColumns:\s*`?minmax\(0, 1fr\) 1px \$\{panelWidth\}/.test(appVie
 /* ── ⑥ 侧栏抽屉手感（用户："要那种从侧边横向抽屉的感觉"）──────────────────
    判据：宽度恒定 + 只做横向 translate + 折叠态不再切成 position:fixed。
    ⛔ 三条缺一条就会退回"压扁再撑开"（实测宽度 142→238→256 的重排）或"折叠顺、展开硬"的位置瞬跳。 */
-ok(/\.sidebar \{[^}]*width: 236px;/.test(base) && /\.sidebar \{[^}]*min-width: 236px;/.test(base),
-  "⑥ 侧栏宽度恒定 236px（跟着网格轨道走会在展开时被压扁重排；11-17 默认 260→236）");
+ok(/\.sidebar \{[^}]*width: 100%;/.test(base) && /\.sidebar \{[^}]*min-width: 0;/.test(base),
+  "⑥ 侧栏宽度跟随网格轨道（width:100% / min-width:0）——固定宽度会让拖动分隔线只动轨道、侧栏本体不变（11-17 用户实测）");
 ok(/\.sidebar \{[^}]*transition: translate var\(--dur-panel\)/.test(base),
   "⑥ 侧栏过渡的是 translate（横向抽屉位移），与列宽同一条时长/缓动");
 ok(/\.app-shell\.side-collapsed:not\(\.narrow\) \.sidebar \{[^}]*translate: -100% 0;/.test(base),

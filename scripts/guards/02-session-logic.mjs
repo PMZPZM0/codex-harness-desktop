@@ -1458,6 +1458,7 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
             否则每个被调度会话既在父会话的「↳ 调度会话 · N」块里，又在顶层平铺一行。 */
       (/viewTab === "tasks"[\s\S]{0,700}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】任务（平铺）视图同样先把被调度会话从顶层剔除（不再与「↳ 调度会话」块重复）");
       /* 11-17 用户实测（截图）：「切到任务选项，项目展开/隐藏按键要灰置不能点；任务下面的会话选项要跟上面项目那个字对齐」。 */
+      (appSrc2.includes("hide-tags") && /sidebar-hide-tags/.test(appSrc2) && /.sidebar.hide-tags .thread-row-tags/.test(readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8")) ? ok : fail)("【156】一键隐藏标签：工具条开关 + 落盘 + CSS 只藏显示（会话/项目徽标）");
       (appSrc2.includes("is-tasks") && appSrc2.includes('viewTab !== "projects" || !projectGroups.length') ? ok : fail)("【156】任务视图：列表挂 is-tasks，且「折叠全部项目」置灰不可点");
       (() => {
         const sideCss = readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8");
@@ -1723,8 +1724,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/justify-self:\s*end/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
       "【285】标签列内右对齐（11-08 用户定稿「三个字，右对齐」：各行标签右缘同一条竖线）"
     );
-    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto 70px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
-      "【285】有标签的行用「名称 + 标签列（自适应宽、右对齐）+ 70px 操作键让位」：标签右缘恒在置顶键左边、列内右对齐（11-08 定稿；11-17 标签列改 auto 宽，窄侧栏下 2 字名字不再被固定 52px 挤没）"
+    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(36px, 1fr\) auto 70px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
+      "【285】有标签的行用「名称（最小 36px ≈ 2 字）+ 标签列（自适应宽、右对齐）+ 70px 操作键让位」（11-08 定稿；11-17 保证带标签时至少透两字）"
     );
     (/\.thread-row-tags \.thread-dispatch-badge\s*\{[^}]*margin-left:\s*0/.test(cssSrc285) ? ok : fail)(
       "【285】调度徽标进标签列后清零 margin-left（否则比其它标签右移 6px，11-06 用户截图）"
