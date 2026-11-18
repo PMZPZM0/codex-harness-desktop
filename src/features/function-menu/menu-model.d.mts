@@ -1,7 +1,7 @@
 export type FunctionMenuLocation = "top" | "bottom";
 export type FunctionMenuExtId = `ext_${string}`;
 export type FunctionMenuEntryId = FunctionMenuItemId | FunctionMenuExtId | (string & {});
-export type FunctionMenuItemId = "media" | "schedule" | "frontend" | "extensions" | "team" | "devtools" | "favorites" | "identity" | "login" | "newbie";
+export type FunctionMenuItemId = "media" | "schedule" | "frontend" | "extensions" | "team" | "tool-list" | "devtools" | "favorites" | "identity" | "login" | "newbie";
 export type FunctionMenuConfig = { location: FunctionMenuLocation; order: FunctionMenuEntryId[]; overflow: FunctionMenuEntryId[] };
 
 export declare const FUNCTION_MENU_IDS: FunctionMenuItemId[];

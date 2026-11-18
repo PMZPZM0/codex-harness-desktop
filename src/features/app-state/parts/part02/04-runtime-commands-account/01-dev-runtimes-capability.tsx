@@ -234,7 +234,12 @@ bag.uninstallDevRuntime = uninstallDevRuntime as unknown as typeof bag.uninstall
   useEffect(() => { if (bag.settingsOpen) bag.refreshToolsStatus(); }, [bag.settingsOpen]);
 
 
-  useEffect(() => { if (bag.settingsOpen && bag.settingsPage === "devtools") bag.refreshDevRuntimes(); }, [bag.settingsOpen, bag.settingsPage]);
+  useEffect(() => {
+    if (!bag.settingsOpen || bag.settingsPage !== "devtools") return;
+    const refresh = () => bag.refreshDevRuntimes();
+    refresh(); window.addEventListener("focus", refresh); window.addEventListener("codex-tool-list-refreshed", refresh);
+    return () => { window.removeEventListener("focus", refresh); window.removeEventListener("codex-tool-list-refreshed", refresh); };
+  }, [bag.settingsOpen, bag.settingsPage]);
 
 
   // 进入「开发工具」页时同时刷一次能力链路（装/卸工具会改变"现在走哪条"：例如装上 Ego Lite 后

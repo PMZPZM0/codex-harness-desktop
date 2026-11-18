@@ -10,7 +10,7 @@
        · media（自媒体工作台）：原来在侧栏顶部常驻，现在只在功能入口里；
        · extensions（拓展功能）：10-25 曾拉出为常驻快捷入口，本轮收回菜单（别再两处都有）。
        ⛔ 旧配置里没有新 id 时由 normalizeFunctionMenu 自动追加到末尾（升级不丢新功能）。 */
-export const FUNCTION_MENU_IDS = ["media", "extensions", "schedule", "frontend", "team", "devtools", "favorites", "identity", "login", "newbie"];
+export const FUNCTION_MENU_IDS = ["media", "extensions", "schedule", "frontend", "team", "tool-list", "devtools", "favorites", "identity", "login", "newbie"];
 
 /** 默认顺序 = 11-18 起：自媒体工作台 / 拓展功能 在最前（它们原来钉在侧栏顶部），其后沿用 10-25 顺序。 */
 export const FUNCTION_MENU_DEFAULT_ORDER = [...FUNCTION_MENU_IDS];
@@ -46,6 +46,7 @@ export function normalizeFunctionMenu(input) {
     const id = String(raw ?? "");
     if (isFunctionMenuId(id) && !order.includes(id)) order.push(id);
   }
+  if (!order.includes("tool-list") && order.includes("devtools")) order.splice(order.indexOf("devtools"), 0, "tool-list");
   for (const id of FUNCTION_MENU_DEFAULT_ORDER) if (!order.includes(id)) order.push(id);
   const overflow = [];
   for (const raw of Array.isArray(source.overflow) ? source.overflow : []) {

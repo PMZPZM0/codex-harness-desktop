@@ -70,6 +70,7 @@ export async function ffmpegState(): Promise<{ ok: boolean; path: string; versio
 }
 
 export type OpenfilmStatus = {
+  installRoot: string;
   phase: OpenfilmPhase;
   cli: { installed: boolean; version: string; path: string };
   node: { path: string; version: string; embedded: boolean };
@@ -125,6 +126,7 @@ export async function openfilmStatus(): Promise<OpenfilmStatus> {
   const studio = await probeStudio();
   return {
     phase,
+    installRoot: openfilmRoot(),
     cli: { installed: Boolean(version), version, path: version ? cliEntry() : "" },
     node: { path: node.exe, version: nodeVersion, embedded: Boolean(bundledNode()) },
     browser,

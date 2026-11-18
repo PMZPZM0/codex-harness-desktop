@@ -3,4 +3,5 @@ export type RuntimeRow = DevRuntimeEntry & {
   bundled?: boolean;
   hidden?: boolean;
   fallbackPrompt?: string;
+  installTarget?: string;
 };

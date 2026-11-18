@@ -89,7 +89,7 @@ function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
     return false;
   }
   // docker 是系统级安装：未在工具目录时也探测系统 PATH 上的 docker.exe（已装则视为完成）
-  return id === "docker" ? !!(process.env.PATH ?? "").split(path.delimiter).some((dir) => dir && existsSync(path.join(dir.trim(), "docker.exe"))) : false;
+  return (id === "docker" || id === "openssl") && (process.env.PATH ?? "").split(path.delimiter).some(dir => dir && existsSync(path.join(dir.trim(), `${id}.exe`)));
 }
 
 /* ── 「装不上就让 Codex 自己装」（10-08 用户要求）─────────────────────────────
@@ -104,6 +104,15 @@ function runtimeInstalledBySystem(id: DevRuntimeId): boolean {
 
 /** 该工具的「首选做法」一句话；没登记的走通用的一键脚本文案。 */
 const FALLBACK_STEPS: Partial<Record<DevRuntimeId, string>> = {
+  filee: "使用开发工具页 Filee 专用安装器：从 GitHub Release 依次经 gh-proxy、ghfast、官方直连下载便携包，保留校验并重新检测 CLI。不要用通用运行时脚本。",
+  apkstart: "通过 ApkStart 卡片安装 Windows 便携版，使用内置 GitHub 镜像候选；首次运行由 ApkStart 下载安卓运行时。",
+  artcraft: "通过 Craft 全家桶卡片获取并校验 Launcher；Windows 使用发布包镜像，其他系统按卡片的平台说明。创作 App 由 Launcher 按需安装。",
+  openmaic: "使用 OpenMAIC 卡片的安装器，通过项目配置的镜像获取源码、pnpm 依赖和便携数据库，再在本机构建；开始前检查磁盘空间。",
+  husk: "使用 Husk 卡片下载官方 IPA 并校验，镜像不可用时回落官方源。只在电脑上准备文件，侧载需我在 iPhone 上确认。",
+  "husk-tipa": "在 Husk 卡片选择 TrollStore 版本，通过内置镜像下载并校验 TIPA。不要用 IPA 替代，仅供兼容设备手动安装。",
+  "feishu-cli": "在飞书 CLI 卡片通过应用的 npm 安装器获取 @larksuite/cli（镜像与官方版本对照）。完成后由我登录授权。",
+  nuphus: "通过桌面自动化卡片恢复随包自动化资源；缺少归档时请提示我检查应用安装包。",
+  rea: "从开发工具页安装应用固定的兼容版本，使用配置的 npm 镜像，必要时回落官方源，不自行改装 latest。",
   python: "删掉损坏的 python 目录后重跑一键脚本 —— 脚本装的是 python-build-standalone 整包（自带 pip 与 Tkinter），走 npmmirror 镜像",
   node: "重跑一键脚本装回内置 Node（体积不大，一般不会失败）",
   git: "重跑一键脚本装 MinGit（约 90 MB）：npmmirror 镜像优先，失败自动回落官方源",
@@ -155,11 +164,13 @@ function fallbackRunner(): string {
 
 /** 「装到哪个目录」——按工具类型给**语义正确**的落点（⛔ 不是 marker 首段推导）。 */
 function fallbackTargetDir(id: DevRuntimeId, spec: DevRuntimeSpec): string {
+  if (id === "moekoe") return IS_MAC ? "/Applications/MoeKoe Music.app 或 ~/Applications" : "系统 Program Files 下的 MoeKoe Music（由外部安装器管理）";
+  if (IS_MAC && id === "git") return "系统 Git（/usr/bin/git 或 Homebrew bin）";
   if (id === "ponytail") return path.join(codexHome, "plugins", "cache");
   if (id === "kb-embedding") return kbBackendDir();
   if (PIP_PACKAGE_DIRS[id]) return path.join(writeToolsRoot(), "python");
-  if (NPM_PACKAGE_ARTIFACTS[id]) return npmGlobalRoot() || path.join(writeToolsRoot(), "npm-global");
-  if (spec.kind === "guide") return "系统安装目录（不在应用目录里）";
+  if (NPM_PACKAGE_ARTIFACTS[id]) return path.join(writeToolsRoot(), "npm-global");
+  if (spec.kind === "guide") return IS_MAC ? (id === "docker" ? "/Applications/Docker.app" : "/usr/bin/openssl") : `系统安装器选择的目录；将 ${id}.exe 所在目录加入 PATH，重启应用后检测`;
   // 其余落在 tools/<marker 首段> —— 与 runtimeUninstallTargets 的通用分支同源
   return path.join(writeToolsRoot(), spec.marker.split(/[\\/]/)[0]);
 }
@@ -214,12 +225,12 @@ function fallbackPromptFor(id: DevRuntimeId, spec: DevRuntimeSpec): string {
   const purpose = head.length > 70 ? `${head.slice(0, 70)}…` : head;
   const lines = [
     `帮我在这台电脑上装好开发工具「${spec.name}」。`,
-    "背景：应用里「设置 → 开发工具」的按需下载在这台机器上总是失败（网络不稳），请你直接用命令行装；装不上的话就换国内镜像或加速源多试几次。",
+    "请先检测是否已就绪，不重复安装。优先使用应用提供的安装或修复入口；需要系统授权时请让我确认。",
     "",
     `· 用途：${purpose}`,
     `· 装到哪：${fallbackTargetDir(id, spec)}`,
     `· 首选做法：${steps}`,
-    "· 网络兜底：npm 换 registry.npmmirror.com，pip 换 pypi.tuna.tsinghua.edu.cn，GitHub 直链加 gh-proxy / ghfast 加速前缀；下到一半失败就先删掉半截文件再完整重下（续传修不好坏文件）。",
+    spec.kind === "guide" ? "· 网络兜底：只用该平台的官方安装入口；系统已提供时不要重复下载。" : "· 网络兜底：按该工具支持的通道选择国内源：npm 用 npmmirror、pip 用清华镜像，GitHub 发布包走 gh-proxy → ghfast → 官方直连。保留版本和完整性校验。",
     `· 装完请验证：${fallbackExpectLine(id, spec)}，并把命令输出发给我。`,
   ];
   if (spec.builtIn || spec.bundled) {
@@ -245,6 +256,7 @@ function runtimeList() {
          点了才报错 —— 用户原话「搞笑吗这是」。这里把来源标出来，让界面直接显示「内置」。 */
       fromBundle: installedFromBundle(spec),
       installedBySystem: runtimeInstalledBySystem(id),
+      installTarget: fallbackTargetDir(id, spec),
       installing: runtimeInstalls.has(id),
       // 装不上时的备用方案：预置一段可直接发给 Codex 的提示词（渲染层只展示 + 复制）
       fallbackPrompt: fallbackPromptFor(id, spec),

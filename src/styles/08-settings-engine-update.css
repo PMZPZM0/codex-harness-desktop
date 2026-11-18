@@ -2291,3 +2291,11 @@
   border-color: color-mix(in srgb, var(--accent, var(--green)) 45%, var(--line));
   background: color-mix(in srgb, var(--accent, var(--green)) 8%, transparent);
 }
+.tool-list-search { display: flex; gap: 8px; align-items: center; border-bottom: 1px solid var(--line); padding: 8px 0; }
+.tool-list-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--text); }
+.tool-list-group h3 { margin: 20px 0 4px; font-size: 14px; }
+.tool-list-group small { color: var(--muted); font-weight: normal; }
+.tool-list-group button { display: grid; grid-template-columns: minmax(0,1fr) auto 16px; width: 100%; align-items: center; text-align: start; gap: 10px; padding: 9px 4px; background: transparent; border: 0; border-bottom: 1px solid var(--line); color: var(--text); cursor: pointer; }
+.tool-list-group button:hover { background: var(--panel-2); }
+.tool-list-group button span { display: grid; gap: 3px; overflow-wrap: anywhere; }
+.tool-list-preview { white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; background: var(--panel-2); padding: 12px; line-height: 1.6; }

@@ -1,5 +1,6 @@
 import { createPortal } from "react-dom";
 import { AddPagesDialog } from "./AddPagesDialog";
+import { ToolListDialog } from "../settings-devtools";
 import { AnchorPopover } from "../../components/AnchorPopover";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ComponentType, type DragEvent } from "react";
 import { Puzzle,
@@ -63,6 +64,7 @@ type IconProps = { size?: number; className?: string };
 type MenuMeta = { label: string; title: string; Icon: ComponentType<IconProps>; tone: string };
 
 export const FUNCTION_MENU_META: Record<FunctionMenuItemId, MenuMeta> = {
+  "tool-list": { label: "开发工具清单", title: "分类查看工具和安装提示词", Icon: LayoutGrid, tone: "ic-accent" },
   media: { label: "自媒体工作台", title: "灵感 → 成稿 → 排期 → 复盘（独立窗口）", Icon: Megaphone, tone: "ic-amber" },
   extensions: { label: "拓展功能", title: "技能 · 插件 · MCP：查看教程与入口", Icon: Zap, tone: "ic-pink" },
   schedule: { label: "自动化", title: "按时间自动运行任务", Icon: Clock3, tone: "ic-amber" },
@@ -100,7 +102,7 @@ function MenuItemButton({ id, meta, onActivate, onDone, dragging, dropBefore, on
       onDrop={onDrop}
       onClick={() => { onActivate(); onDone?.(); }}
     >
-      <Icon size={15} className={meta.tone} /><span>{meta.label}</span><ChevronRight size={13} className="sidebar-cap-chevron" />
+      <Icon size={15} className={meta.tone} /><span>{meta.label}</span>{id === "tool-list" && <small>新手点我</small>}<ChevronRight size={13} className="sidebar-cap-chevron" />
     </button>
   );
 }
@@ -123,6 +125,7 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
   };
   const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)] ?? extMetaOf(String(id));
   const activate = (id: FunctionMenuEntryId) => {
+    if (id === "tool-list") { window.dispatchEvent(new Event("codex-open-tool-list")); return; }
     const entry = extMenu.find((item) => item.id === id);
     if (!entry) { runFunctionMenuAction(String(id) as FunctionMenuItemId); return; }
     if (entry.action.type === "settings") openSettingsFromFunctionMenu(entry.action.target);
@@ -265,6 +268,12 @@ export function FunctionMenuTourHost() {
 /** 编辑菜单弹窗宿主：全局只挂一份，任何入口都能打开。 */
 export function FunctionMenuEditorHost() {
   const open = useFunctionMenuEditorOpen();
+  const [toolList, setToolList] = useState(false);
+  useEffect(() => {
+    const show = () => setToolList(true);
+    window.addEventListener("codex-open-tool-list", show);
+    return () => window.removeEventListener("codex-open-tool-list", show);
+  }, []);
   /* ⛔ 宿主是**常驻**的（侧栏菜单本身只在展开时挂载）—— 扩展项并入主列表必须放在这里，
      否则「设置里直接打开编辑器 / 没展开功能入口」时，已加的入口不会回到列表。 */
   const revision = useCustomMenuRevision();
@@ -278,6 +287,7 @@ export function FunctionMenuEditorHost() {
     }).catch(() => undefined);
     return () => { alive = false; };
   }, [revision]);
+  if (toolList) return <ToolListDialog onClose={() => setToolList(false)} />;
   if (!open) return null;
   return createPortal(<FunctionMenuEditor />, document.body);
 }
