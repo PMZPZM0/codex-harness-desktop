@@ -666,7 +666,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
         onMouseEnter={(event) => maybeShowFunctionMenuTour(menuLocation, event.currentTarget)}
         onClick={toggleOptions}
       >
-        <LayoutGrid size={15} className="ic-violet" />
+        <LayoutGrid size={15} className="ic-accent" />
         <span>功能入口</span>
         <ChevronDown size={13} className={`sidebar-options-chevron ${optionsCollapsed ? "" : "open"}`} />
       </button>
@@ -839,7 +839,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                   <MessageCirclePlus size={16} strokeWidth={2} className="ic-blue" /><span>新建任务</span><kbd className="quick-kbd">{hk("Ctrl+N")}</kbd>
                 </button>
                 <button
-                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-amber"
+                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-accent"
                   title={`新建指挥中枢（${bossShortcutLabel()}）：先选项目地址，再进欢迎界面；可建多个、互不干扰`}
                   onClick={() => openBossSession()}
                 >
@@ -849,7 +849,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                     11-07 用户令：「把群组改名为『工作伙伴』，会话标签保持不变」——
                     只改这个入口的名字；侧栏会话上的「群调度」标记不动（那是"这条会话哪来的"）。 */}
                 <button
-                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-violet"
+                  className="sidebar-tab sidebar-quick-btn sidebar-quick-boss ic-accent"
                   title="工作伙伴：团队成员 + 伙伴，@ 一下就派活"
                   onClick={() => { void window.codex.popoutTeam(); }}
                 >
