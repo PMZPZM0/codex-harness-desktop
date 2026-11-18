@@ -50,6 +50,7 @@ export function ExpertSetup({ value, onChange, install, direction, restoreKey }:
   };
   return <section className="profile-guide-expert">
     <div className="profile-guide-expert-heading"><strong>与专家开始工作</strong><button type="button" disabled={!!busy} title="重新检测专家和工具" aria-label="重新检测专家和工具" onClick={() => setRevision(v => v + 1)}><RefreshCw size={14} /></button></div>
+    {(value || restoreKey) && <button type="button" className="profile-guide-no-expert" disabled={!!busy} onClick={() => onChange(null)}>暂不使用专家</button>}
     <details className="profile-guide-picker" open={!current}><summary>{current?.member.name ?? (rows ? "选择专家" : "等待检测")}</summary>
       <div className="profile-guide-start-grid">{experts.map(v => <button key={key(v)} type="button" className="profile-guide-pick" disabled={!!busy || !rows} aria-pressed={!!current && key(v) === key(current)} onClick={() => { setNotice(""); onChange(v); }}>
         <AgentAvatar kind="expert" seed={v.member.id} size={26} /><span><strong>{v.member.name}</strong><small>{v.member.profession.zh || v.team.displayName.zh}</small></span>

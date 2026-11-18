@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ExpertSetup, type GuideExpert } from "./ExpertSetup";
-import { guideRecommendation, readGuideChoice, rememberGuideChoice } from "./guide-direction";
+import { guideRecommendation, readGuideChoice, rememberGuideChoice, type GuideLaunch } from "./guide-direction";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, Code2, Dumbbell, Gamepad2, Heart,
@@ -50,11 +50,10 @@ type Config = {
 type Tone = "casual" | "professional" | "none";
 
 const STEPS = [
-  { id: "hello", label: "称呼与头像", title: "先认识一下", desc: "怎么称呼你、要不要给 Codex 取个名字，顺手挑两个头像。", icon: UserRound },
-  { id: "role", label: "你的身份", title: "你主要做哪类工作？", desc: "按你的职业推荐 Codex 搭档和起步方向。", icon: Briefcase },
-  { id: "persona", label: "Codex 人格", title: "Codex 该是什么性格", desc: "决定它的表达习惯和做事气质；随时能在设置里换。", icon: Sparkles },
-  { id: "vibe", label: "兴趣习惯", title: "聊得来，才用得顺", desc: "兴趣会作为长期背景；习惯决定它怎么配合你。", icon: Heart },
-  { id: "confirm", label: "确认与起步", title: "从哪项工作开始？", desc: "选一个保存后要打开的入口，也可以只保存个人配置。", icon: Check },
+  { id: "work", label: "工作方向", title: "你想先做什么？", desc: "选择这次要做的工作，再挑一个适合的身份。", icon: Briefcase },
+  { id: "team", label: "专家与工具", title: "谁来和你一起做？", desc: "选择专家后，可以查看配套技能、检测工具或准备安装。", icon: UserRound },
+  { id: "preferences", label: "协作偏好", title: "你希望 Codex 怎样配合？", desc: "可以沿用当前搭档，也可以调整人格、称呼和沟通习惯。", icon: Sparkles },
+  { id: "review", label: "核对与开始", title: "准备从哪里开始？", desc: "核对本次配置，选择保存后要执行的动作。", icon: Check },
 ] as const;
 
 /** Codex 的人格预设：写进 personalization.persona（与人格市场同一注入位），
@@ -114,10 +113,10 @@ function inferTone(value?: string): Tone {
 }
 
 const STARTS = [
-  { id: "devtools", title: "准备开发环境", path: "工具自检 → 对应专家", entry: "开发工具", icon: Code2 },
-  { id: "media-desk", title: "审阅一篇成稿", path: "工作台成稿 → 会话评审", entry: "自媒体工作台", icon: PenLine },
-  { id: "component-library", title: "继续界面设计", path: "我的组件 → 画布编辑", entry: "组件库", icon: Palette },
-  { id: "artifacts", title: "追溯项目交付", path: "产物档案 → 来源会话", entry: "产物档案", icon: Briefcase },
+  { id: "devtools", title: "软件开发", path: "写代码、调试与运维", entry: "开发工具", icon: Code2, assistant: "assistant" },
+  { id: "media-desk", title: "自媒体创作", path: "写稿、剪辑与内容运营", entry: "自媒体工作台", icon: PenLine, assistant: "creative" },
+  { id: "component-library", title: "产品与设计", path: "原型、组件与界面设计", entry: "组件库", icon: Palette, assistant: "creative" },
+  { id: "artifacts", title: "办公与研究", path: "资料整理、研究与交付", entry: "产物档案", icon: Briefcase, assistant: "assistant" },
 ] as const;
 type Start = typeof STARTS[number]["id"];
 const assistants: Array<{id: string; label: string; desc: string; persona: string; soulSlug?: string}> = [
@@ -138,6 +137,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
   const [step, setStep] = useState(0);
   const [start, setStart] = useState<Start | null>(null);
   const [expert, setExpert] = useState<GuideExpert | null>(null);
+  const [launch, setLaunch] = useState<GuideLaunch>("save");
   const [restoreKey, setRestoreKey] = useState<string | null>(null);
   const [config, setConfig] = useState<Config>({});
   const [saving, setSaving] = useState(false);
@@ -177,8 +177,11 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
     const persona = inferPersona(stored);
     const rec = guideRecommendation(persona);
     const last = readGuideChoice(stored.occupation ?? "");
-    setStart(last ? last.direction : rec.direction);
-    setRestoreKey(last?.teamId && last.memberId ? JSON.stringify([last.teamId, last.memberId]) : null);
+    const direction = rec.direction ?? last?.direction ?? null;
+    const compatible = last?.direction === direction;
+    setStart(direction);
+    setLaunch(compatible && last ? last.launch : last?.launch === "save" || !direction ? "save" : "entry");
+    setRestoreKey(compatible && last?.teamId && last.memberId ? JSON.stringify([last.teamId, last.memberId]) : null);
     setExpert(null);
     const cachedName = localStorage.getItem("username") ?? "";
     setNickname(stored.nickname || (cachedName && cachedName !== "Codex 用户" && cachedName !== "Administrator" ? cachedName : ""));
@@ -295,10 +298,11 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
       try { window.dispatchEvent(new CustomEvent("codex-profile-updated")); } catch { /* 忽略 */ }
       setOpen(false);
       onApplied?.(saved as Config);
-      rememberGuideChoice(start, expert, finalOccupation);
+      rememberGuideChoice(start, expert, finalOccupation, launch);
       onNotice?.("配置已保存，下一条消息起生效");
-      if (expert) await onExpert(expert);
-      else if (start) {
+      if (launch === "expert" && expert) {
+        try { await onExpert(expert); } catch { onNotice?.("配置已保存，专家会话未能打开，请从专家列表重试"); }
+      } else if (launch === "entry" && start) {
         try { await onStart(start); } catch { onNotice?.("配置已保存，但入口未能打开，请从侧栏重试"); }
       }
     } catch (err) {
@@ -306,7 +310,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
     } finally {
       setSaving(false);
     }
-  }, [assistantName, assistantPersonaId, assistantPersonaTouched, codexAvatar, config, customInstructions, customInterest, habits, interests, nickname, occupation, onApplied, onNotice, onUserAvatar, onStart, expert, onExpert, personaId, replyStyle, saving, start, tone, userAvatar]);
+  }, [assistantName, assistantPersonaId, assistantPersonaTouched, codexAvatar, config, customInstructions, customInterest, habits, interests, nickname, occupation, onApplied, onNotice, onUserAvatar, onStart, expert, launch, onExpert, personaId, replyStyle, saving, start, tone, userAvatar]);
 
   useEffect(() => {
     if (!open) return;
@@ -323,14 +327,25 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
 
   const selectedPersona = USER_PERSONAS.find((item) => item.id === personaId) ?? null;
   const selectedAssistantPersona = assistants.find(a => a.id === assistantPersonaId) ?? { label: "档案中的自定义搭档", desc: "保留当前设置" };
-  const rec = guideRecommendation(personaId);
-  const visibleAssistants = personaId && !showOtherAssistants ? assistants.filter(a => a.id === rec.assistant || a.id === assistantPersonaId) : assistants;
+  const workspace = STARTS.find(s => s.id === start);
+  const roles = USER_PERSONAS.filter(p => !start || guideRecommendation(p.id).direction === start);
+  const recommended = personaId ? guideRecommendation(personaId).assistant : workspace?.assistant ?? "default";
+  const visibleAssistants = !showOtherAssistants ? assistants.filter(a => a.id === recommended || a.id === assistantPersonaId) : assistants;
+  const chooseDirection = (id: Start | null) => {
+    if (start === id) return;
+    setStart(id); setPersonaId(""); setOccupation(""); setExpert(null); setRestoreKey(null);
+    setLaunch(id ? "entry" : "save");
+    setAssistantPersonaId(STARTS.find(s => s.id === id)?.assistant ?? "default");
+    setAssistantPersonaTouched(true); setShowOtherAssistants(false);
+  };
   const chooseRole = (id: string, custom = "") => {
     if (personaId === id && occupation === custom) return;
     setPersonaId(id); setOccupation(custom);
+    if (id === personaId) return;
     const next = guideRecommendation(id);
-    setAssistantPersonaId(next.assistant); setAssistantPersonaTouched(true); setShowOtherAssistants(false);
-    setStart(next.direction); setExpert(null); setRestoreKey(null);
+    if (next.direction && !start) chooseDirection(next.direction);
+    setPersonaId(id); setAssistantPersonaId(id ? next.assistant : workspace?.assistant ?? "default");
+    setAssistantPersonaTouched(true); setShowOtherAssistants(false);
   };
   const active = STEPS[step];
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
@@ -345,20 +360,25 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
           <div className="profile-guide-brand"><Sparkles size={16} /><strong>Codex Harness</strong></div>
           {/* ⛔ 11-08 用户：「左边上面的字不要换行」——轨宽 236px，原来那句 14 个字必然折成两行。
               ⇒ 标题压成 5 个汉字 + 品牌名（19px 下一行约 150px），细节移到下面那行小字。 */}
-          <h2>一分钟调好 Codex</h2>
-          <p>只存在本机 · 设置里随时能改</p>
+          <h2>配置工作空间</h2>
           <ol className="profile-guide-steps">
             {STEPS.map((item, index) => {
               const Icon = item.icon;
               const state = index < step ? "done" : index === step ? "current" : "todo";
               return (
-                <li key={item.id} className={state} onClick={() => { if (index <= step) setStep(index); }}>
+                <li key={item.id} className={state}><button type="button" disabled={index > step || saving} aria-current={index === step ? "step" : undefined} onClick={() => setStep(index)}>
                   <span className="profile-guide-step-icon">{index < step ? <Check size={12} /> : <Icon size={13} />}</span>
-                  <span>{item.label}</span>
+                  <span>{item.label}</span></button>
                 </li>
               );
             })}
           </ol>
+          <dl className="profile-guide-blueprint" aria-label="当前工作配置">
+            <dt className="profile-guide-partner-avatar"><img src={codexAvatar} alt="Codex 头像" /></dt><dd className="profile-guide-partner-name"><strong>{assistantName.trim() || "Codex"}</strong><small>{selectedAssistantPersona.label}</small></dd>
+            <dt>工作方向</dt><dd>{workspace?.title ?? "自由配置"}</dd>
+            <dt>我的身份</dt><dd>{selectedPersona?.label || occupation || "不指定职业"}</dd>
+            <dt>协作专家</dt><dd>{expert?.member.name || (restoreKey ? "等待读取" : "未选择")}</dd>
+          </dl>
           <div className="profile-guide-progress"><span style={{ width: `${progress}%` }} /></div>
         </aside>
 
@@ -373,10 +393,10 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
           </header>
 
           <div className="profile-guide-body" key={active.id}>
-            {step === 0 && (
+            {active.id === "preferences" && <details className="profile-guide-fold"><summary><UserRound size={16} />称呼与头像<span>{nickname || "未填写"}</span></summary>
               <div className="profile-guide-hello">
                 <div className="profile-guide-avatar"><UserRound size={26} /></div>
-                <label className="profile-guide-field"><span>怎么称呼你</span><input autoFocus autoComplete="off" maxLength={20} value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="例如：老王 / Alice / 老板" /></label>
+                <label className="profile-guide-field"><span>怎么称呼你</span><input autoComplete="off" maxLength={20} value={nickname} onChange={(event) => setNickname(event.target.value)} placeholder="填写称呼" /></label>
                 <label className="profile-guide-field"><span>给 Codex 取个名字 <em>可选</em></span><input autoComplete="off" maxLength={20} value={assistantName} onChange={(event) => setAssistantName(event.target.value)} placeholder="不填就是 Codex" /></label>
                 <div className="profile-guide-avatar-picks">
                   <div>
@@ -400,17 +420,25 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                 </div>
                 <p className="profile-guide-note">称呼会同步到左下角账户名与消息抬头；头像也可以在用户中心随时换。</p>
               </div>
-            )}
+            </details>}
 
-            {step === 1 && (
+            {active.id === "work" && (
               <div className="profile-guide-role">
+                <fieldset className="profile-guide-starts"><legend>工作方向</legend>
+                  <div className="profile-guide-start-grid">{STARTS.map(({ id, title, path, icon: Icon }) => <label key={id} className="profile-guide-start" data-direction={id}>
+                    <Icon size={20} /><span><strong>{title}</strong><small>{path}</small></span>
+                    <input type="radio" name="guide-direction" value={id} checked={start === id} onChange={() => chooseDirection(id)} />
+                  </label>)}</div>
+                  <label className="profile-guide-save-only"><input type="radio" name="guide-direction" checked={!start} onChange={() => chooseDirection(null)} /> 自由配置</label>
+                </fieldset>
+                <div className="profile-guide-section-title"><Briefcase size={15} />我的身份<span>{workspace?.title ?? "全部方向"}</span></div>
                 <div className="profile-guide-personas">
                   <button type="button" className={`profile-guide-persona ${!personaId && !occupation ? "on" : ""}`} onClick={() => chooseRole("")}>
                     <span className="profile-guide-persona-mark">通</span>
                     <div><strong>不指定职业</strong><small>按本次任务选择搭档和入口</small></div>
                     {!personaId && !occupation && <Check size={14} className="profile-guide-check" />}
                   </button>
-                  {USER_PERSONAS.map((persona, index) => (
+                  {roles.map((persona, index) => (
                     <button type="button" key={persona.id} data-role={persona.id} className={`profile-guide-persona ${personaId === persona.id ? "on" : ""}`} onClick={() => chooseRole(persona.id)}>
                       <span className={`profile-guide-persona-mark tone-${index % 5}`}>{persona.label.slice(0, 1)}</span>
                       <div><strong>{persona.label}</strong><small>{persona.userContext}</small></div>
@@ -422,13 +450,19 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
               </div>
             )}
 
-            {step === 2 && (
+            {active.id === "team" && <ExpertSetup direction={start} restoreKey={restoreKey} value={expert} install={install} onChange={v => {
+              setExpert(v); setRestoreKey(null);
+              if (!restoreKey && v) setLaunch("expert");
+              else if (!v && launch === "expert") setLaunch(start ? "entry" : "save");
+            }} />}
+            {active.id === "preferences" && (
               <div className="profile-guide-assistant">
+                <div className="profile-guide-section-title"><Sparkles size={15} />Codex 人格</div>
                 <div className="profile-guide-personas">
                   {visibleAssistants.map((persona, index) => (
                     <button type="button" key={persona.id} className={`profile-guide-persona ${assistantPersonaId === persona.id ? "on" : ""}`} onClick={() => { setAssistantPersonaId(persona.id); setAssistantPersonaTouched(true); }}>
                       <span className={`profile-guide-persona-mark tone-${index % 5}`}>{persona.label.slice(0, 1)}</span>
-                      <div><strong>{persona.label}</strong><small>{personaId && persona.id === rec.assistant ? `适合${selectedPersona?.label} · ` : ""}{persona.desc}</small></div>
+                      <div><strong>{persona.label}</strong><small>{persona.id === recommended ? "推荐 · " : ""}{persona.desc}</small></div>
                       {assistantPersonaId === persona.id && <Check size={14} className="profile-guide-check" />}
                     </button>
                   ))}
@@ -440,11 +474,11 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                     <span>{selectedAssistantPersona.label}：{selectedAssistantPersona.desc}</span>
                   </div>
                 </div>
-                {personaId && <button type="button" className="profile-guide-back" aria-expanded={showOtherAssistants} onClick={() => setShowOtherAssistants(v => !v)}>{showOtherAssistants ? "收起其他搭档" : "选择其他 Codex 搭档"}</button>}
+                <button type="button" className="profile-guide-back" aria-expanded={showOtherAssistants} onClick={() => setShowOtherAssistants(v => !v)}>{showOtherAssistants ? "收起其他搭档" : "选择其他 Codex 搭档"}</button>
               </div>
             )}
 
-            {step === 3 && (
+            {active.id === "preferences" && <details className="profile-guide-fold"><summary><Heart size={16} />兴趣与沟通习惯<span>{effectiveReply}</span></summary>
               <div className="profile-guide-vibe">
                 <div className="profile-guide-group">
                   <div className="profile-guide-label">兴趣</div>
@@ -477,32 +511,27 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                   </div>
                 </div>
               </div>
-            )}
+            </details>}
+            {active.id === "review" && (
 
-            {step === 4 && (
               <div className="profile-guide-confirm">
                 <fieldset className="profile-guide-starts" disabled={saving}>
                   <legend>保存后的第一步</legend>
-                  <label className="profile-guide-save-only"><input type="radio" name="profile-guide-start" checked={!start && !expert && !restoreKey} onChange={() => { setStart(null); setExpert(null); setRestoreKey(null); }} />只保存配置</label>
-                  <div className="profile-guide-start-grid">{STARTS.map(({ id, title, path, entry, icon: Icon }) => (
-                    <label key={id} className="profile-guide-start">
-                      <Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{path}</small><em>{id === rec.direction ? `${selectedPersona?.label}推荐 · ` : ""}{entry}</em></span>
-                      <input type="radio" name="profile-guide-start" value={id} checked={start === id} onChange={() => { setStart(id); setExpert(null); setRestoreKey(null); }} />
-                    </label>
-                  ))}</div>
-                  <ExpertSetup direction={start} restoreKey={restoreKey} value={expert} install={install} onChange={v => { setExpert(v); setRestoreKey(null); }} />
+                  <div className="profile-guide-launch">
+                    {expert && <label><input type="radio" name="guide-launch" value="expert" checked={launch === "expert"} onChange={() => setLaunch("expert")} />与{expert.member.name}对话</label>}
+                    {workspace && <label><input type="radio" name="guide-launch" value="entry" checked={launch === "entry"} onChange={() => setLaunch("entry")} />打开{workspace.entry}</label>}
+                    <label><input type="radio" name="guide-launch" value="save" checked={launch === "save"} onChange={() => setLaunch("save")} />只保存配置</label>
+                  </div>
                 </fieldset>
-                <details className="profile-guide-review"><summary>核对个人配置</summary>
                 <div className="profile-guide-summary">
-                  <SummaryRow label="称呼" value={nickname.trim() || "未指定"} onEdit={() => setStep(0)} />
-                  <SummaryRow label="头像" value="已选择你的头像与 Codex 形象" onEdit={() => setStep(0)} />
-                  <SummaryRow label="Codex 名字" value={assistantName.trim() || "Codex"} onEdit={() => setStep(0)} />
-                  <SummaryRow label="你的身份" value={occupation.trim() || selectedPersona?.label || "不指定职业"} onEdit={() => setStep(1)} />
+                  <SummaryRow label="工作方向" value={workspace?.title ?? "自由配置"} onEdit={() => setStep(0)} />
+                  <SummaryRow label="你的身份" value={occupation.trim() || selectedPersona?.label || "不指定职业"} onEdit={() => setStep(0)} />
+                  <SummaryRow label="协作专家" value={expert?.member.name ?? "未选择"} onEdit={() => setStep(1)} />
+                  <SummaryRow label="称呼" value={`${nickname.trim() || "未指定"} · ${assistantName.trim() || "Codex"}`} onEdit={() => setStep(2)} />
                   <SummaryRow label="Codex 人格" value={selectedAssistantPersona.label} onEdit={() => setStep(2)} />
-                  <SummaryRow label="兴趣" value={effectiveInterests || "未填写"} onEdit={() => setStep(3)} />
-                  <SummaryRow label="风格" value={`${effectiveReply} · ${effectiveTone}${habits.length ? ` · ${habits.length} 条习惯` : ""}`} onEdit={() => setStep(3)} />
+                  <SummaryRow label="兴趣" value={effectiveInterests || "未填写"} onEdit={() => setStep(2)} />
+                  <SummaryRow label="风格" value={`${effectiveReply} · ${effectiveTone}${habits.length ? ` · ${habits.length} 条习惯` : ""}`} onEdit={() => setStep(2)} />
                 </div>
-                </details>
                 <label className="profile-guide-field"><span>还有什么想让它长期记住 <em>可选</em></span><textarea rows={3} maxLength={2000} value={customInstructions} onChange={(event) => setCustomInstructions(event.target.value)} placeholder="例如：改代码前先说计划；不要主动推荐新功能；回答用中文" /></label>
                 <div className="profile-guide-effect"><Lightbulb size={15} /><div><b>保存后立即写入个性化档案</b><span>界面称呼当场更新；对话下一条消息起生效。可在「设置 → 个性化」随时修改。</span></div></div>
                 {error ? <div className="profile-guide-error">{error}</div> : null}
@@ -518,9 +547,9 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                   点它 = 整份引导先不设置（⛔ 不写任何值，只记"看过了"，下次不再打扰）。 */}
               <button type="button" className="profile-guide-skip" disabled={saving} onClick={() => void finish(true)}>暂时不设置</button>
               {step < STEPS.length - 1 ? (
-                <button type="button" className="profile-guide-next" disabled={saving} onClick={() => setStep((current) => Math.min(STEPS.length - 1, current + 1))}>下一步<ArrowRight size={14} /></button>
+                <button type="button" className="profile-guide-next" disabled={saving || (active.id === "team" && !!restoreKey)} onClick={() => setStep(current => current + 1)}>{STEPS[step + 1].label}<ArrowRight size={14} /></button>
               ) : (
-                <button type="button" className="profile-guide-next" disabled={saving || !!restoreKey} onClick={() => void finish(false)}>{saving ? <><LoaderCircle size={14} className="spin" />保存中…</> : expert ? <>保存并与{expert.member.name}对话<ArrowRight size={14} /></> : start ? <>保存并打开{STARTS.find((s) => s.id === start)?.entry}<ArrowRight size={14} /></> : <>完成并生效<Check size={14} /></>}</button>
+                <button type="button" className="profile-guide-next" disabled={saving} onClick={() => void finish(false)}>{saving ? <><LoaderCircle size={14} className="spin" />保存中…</> : launch === "expert" && expert ? <>保存并开始对话<ArrowRight size={14} /></> : launch === "entry" && workspace ? <>保存并打开{workspace.entry}<ArrowRight size={14} /></> : <>保存配置<Check size={14} /></>}</button>
               )}
             </div>
           </footer>
