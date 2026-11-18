@@ -16,7 +16,8 @@ export const FUNCTION_MENU_IDS = ["media", "extensions", "schedule", "frontend",
 export const FUNCTION_MENU_DEFAULT_ORDER = [...FUNCTION_MENU_IDS];
 
 export const FUNCTION_MENU_DEFAULT = Object.freeze({
-  location: "bottom",
+  /* 11-18 用户令：「把功能入口默认放到现在工作伙伴选项下面」⇒ 默认 top（顶部折叠组，紧跟工作伙伴）。 */
+  location: "top",
   order: FUNCTION_MENU_DEFAULT_ORDER,
   overflow: [],
 });
@@ -52,7 +53,7 @@ export function normalizeFunctionMenu(input) {
     if (order.includes(id) && !overflow.includes(id)) overflow.push(id);
   }
   return {
-    location: source.location === "top" || source.location === "composer" ? "top" : "bottom",
+    location: source.location === "bottom" ? "bottom" : "top",
     order,
     overflow,
   };

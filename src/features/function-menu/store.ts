@@ -15,9 +15,29 @@ import {
 const CONFIG_KEY = "function-menu-v1";
 const TOUR_SEEN_KEY = (location: FunctionMenuLocation) => `function-menu-tour-seen-v1-${location}`;
 
+/* 11-18 用户令：「功能入口默认放到工作伙伴选项下面」⇒ 默认位置改成顶部折叠组。
+   旧配置里存的是 bottom ⇒ 用版本号做**一次性迁移**（⛔ 不每次启动都强抬，用户手动改回底部后要生效）。 */
+const CONFIG_VERSION = 2;
+const VERSION_KEY = "function-menu-config-version";
+
 function readConfig(): FunctionMenuConfig {
   try {
-    return normalizeFunctionMenu(JSON.parse(localStorage.getItem(CONFIG_KEY) || "null"));
+    const parsed = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
+    const storedVersion = Number(localStorage.getItem(VERSION_KEY) ?? 1);
+    const migrate = storedVersion < CONFIG_VERSION && parsed && typeof parsed === "object";
+    /* v2 迁移同时把本轮新入册的两个入口提到最前（与默认顺序一致）——
+       ⛔ 只动这两项的相对位置，其余用户自排顺序原样保留。 */
+    const migratedOrder = migrate && Array.isArray(parsed.order)
+      ? [...["media", "extensions"].filter((id) => (parsed.order as string[]).includes(id)), ...(parsed.order as string[]).filter((id: string) => id !== "media" && id !== "extensions")]
+      : undefined;
+    const next = normalizeFunctionMenu(migrate ? { ...parsed, location: "top", ...(migratedOrder ? { order: migratedOrder } : {}) } : parsed);
+    if (migrate) {
+      try {
+        localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
+        localStorage.setItem(VERSION_KEY, String(CONFIG_VERSION));
+      } catch { /* 隐私模式：本次仍按迁移后的值生效 */ }
+    }
+    return next;
   } catch {
     return normalizeFunctionMenu(null);
   }

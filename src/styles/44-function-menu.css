@@ -46,7 +46,9 @@
 /* 侧栏顶部位置：紧贴搜索任务；展开/折叠靠统一的 grid 高度过渡（与底部组同款无缝效果）。 */
 .sidebar-options-top {
   flex: none;
-  margin: 0 0 4px;
+  /* 11-18 用户令：「默认放到工作伙伴选项下面」+「离上面选项远了一些，校准一下」——
+     实测原间距 12px（快捷组 + 折叠头各自留白叠加）⇒ 收成 6px，与组内行距一致。 */
+  margin: -6px 0 4px;
 }
 .sidebar-options-top .sidebar-options-toggle { margin-top: 2px; padding-left: 11px; gap: 9px; }
 .sidebar-options-top .sidebar-nav-bottom { max-height: 32vh; }
