@@ -213,7 +213,7 @@ ok(!/remotePairRotate\(\)\s*\.then\(\(r\) => setPairCode\(r\.code\)\)\s*\.catch\
       所以这里单独锚 JSX 里的 title="刷新会话列表" 与四个工具同排的不换行口径。 */
 const sidebarTabsSrc = codeOnly(read("src/features/app-view/AppView/01-sidebar-shell.tsx"));
 const tabsCss = codeOnly(read("src/styles/15-queued-messages.css"));
-ok(/view-more-menu[\s\S]{0,600}?title="刷新会话列表"/.test(sidebarTabsSrc) && /view-more-btn/.test(sidebarTabsSrc),
+ok(/className="view-more-menu"[\s\S]{0,600}?title="刷新会话列表"/.test(sidebarTabsSrc) && /view-more-btn/.test(sidebarTabsSrc),
   "⑤-5 侧栏「⋯」菜单保留「刷新会话列表」（11-17 由悬浮图标条改为三点菜单 —— 用户点名不能丢）");
 ok(/\.view-tab \{[^}]*white-space:\s*nowrap/.test(tabsCss),
   "⑤-5 视图 tab 不换行（工具图标同排时，tab 文字会被压成上下两行「项/目」）");
