@@ -48,6 +48,8 @@ export async function run() {
   const appEntry = read("src/App.tsx");
   const popoutQuery = read("src/lib/media-desk-window.ts");
   const sidebar = read("src/features/app-view/AppView/01-sidebar-shell.tsx");
+  /* 11-18：自媒体工作台 / 拓展功能的入口现在在功能入口菜单里（元数据在 FunctionMenu）。 */
+  const fmMeta = read("src/features/function-menu/FunctionMenu.tsx");
   const winFactory = read("electron/features/window-factory.ts");
   const dispatchCore = read("electron/features/dispatch-core.ts");
   const dispatchRpc = read("electron/features/dispatch-rpc.ts");
@@ -69,11 +71,18 @@ export async function run() {
     && /mediaDeskUpdate/.test(preload) && /mediaDeskUpdate\(/.test(dts),
     "桥齐备（endpoint / popout / version / check-update / update，preload 与 vite-env 都在）");
   /* 11-11 用户令：入口从设置页挪到侧栏「工作伙伴」下面，开独立窗口；设置页三处必须全部撤掉。 */
-  ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/自媒体工作台/.test(help) && !/"media-desk": \{ render:/.test(pageSrc)
-    && !/page: "自媒体工作台"/.test(help),
-    "设置页入口已撤（导航 / 帮助总览 / 页面注册三处都不再出现）");
-  ok(/mediaDeskPopout\(\)/.test(sidebar) && sidebar.indexOf("popoutTeam()") >= 0 && sidebar.indexOf("popoutTeam()") < sidebar.indexOf("mediaDeskPopout()"),
-    "侧栏入口在「工作伙伴」下面（同一组快捷入口，顺序钉住）");
+  /* 11-11 用户令 + 11-18 修订：**设置页入口**必须撤（导航 / 页面注册 / 帮助里的设置页条目），
+     但帮助总览里「入口在哪」必须写对（⛔ 不许出现 page: "自媒体工作台" 那种设置页条目）。 */
+  ok(!/\["media-desk", "自媒体工作台"/.test(catalogs) && !/"media-desk": \{ render:/.test(pageSrc)
+    && !/page: "自媒体工作台"/.test(help)
+    && /label: "自媒体工作台", where: "侧栏底部「功能入口」/.test(help),
+    "自媒体工作台：设置页入口已撤，但帮助总览写明「侧栏底部『功能入口』」这一个正确位置");
+  /* 11-18 用户令：「把自媒体工作台和功能拓展放到功能入口里面」——
+     ⛔ 侧栏顶部不再有「自媒体工作台」常驻按钮；入口与动作由 function-menu 派发（id === "media"）。 */
+  ok(!/<span>自媒体工作台<\/span>/.test(sidebar)
+    && /id === "media"\) \{ void window\.codex\.mediaDeskPopout\(\)/.test(sidebar)
+    && /media: \{ label: "自媒体工作台"/.test(fmMeta),
+    "自媒体工作台已并入功能入口（侧栏无常驻按钮；动作经 function-menu 的 media 派发）");
   ok(/isMediaDeskWindow/.test(appEntry) && /<MediaDeskPopoutRoot \/>/.test(appEntry) && /document\.title = "自媒体工作台"/.test(popout)
     && /media-desk-popout-head/.test(popout) && /-webkit-app-region: drag/.test(boardCss),
     "独立窗口根：App 分流 + 标题栏可拖拽（与工作伙伴同口径）");

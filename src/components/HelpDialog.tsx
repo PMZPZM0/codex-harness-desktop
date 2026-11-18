@@ -137,6 +137,8 @@ export const OVERVIEW_OUTSIDE: { label: string; where: string; hint: string }[] 
   { label: "新手教程", where: "侧栏底部「功能入口」→ 新手教程", hint: "就是这份教程的分步版，带图示与上一节 / 下一节" },
   { label: "会话 / 项目标签", where: "会话行或项目行的「⋯」", hint: "文字 + 8 色，默认无标签，只在本机显示" },
   { label: "运行过程", where: "设置 → 外观 → 运行过程", hint: "简洁只列文件行；详细会弹浮窗跟内容，静止 3 秒收起" },
+  { label: "自媒体工作台", where: "侧栏底部「功能入口」→ 自媒体工作台", hint: "灵感 → 成稿 → 排期 → 复盘；独立窗口，成稿可一键送进输入框" },
+  { label: "拓展功能", where: "侧栏底部「功能入口」→ 拓展功能", hint: "技能 / 插件 / MCP 的教程与入口" },
   { label: "指挥中枢", where: "侧栏顶部（Ctrl+M / mac Cmd+Shift+B）", hint: "常驻会话，群编排派活、群广播与验收都在这里" },
   { label: "命令面板", where: "Ctrl+K", hint: "直接搜任务与会话，不用翻侧栏" },
   { label: "独立弹窗", where: "会话顶栏最右", hint: "把当前会话开到新窗口；运行中暂不可用" },
