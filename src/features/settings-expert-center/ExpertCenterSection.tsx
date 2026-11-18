@@ -104,6 +104,27 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
     }
     setSkillMap(map);
   };
+  const [capNotice, setCapNotice] = useState("");
+  /* 从本地装专家技能包：选目录 → 校验 skillset → 装子技能 → 重启引擎（主进程做，UI 只报结果）。 */
+  const installLocalSkillset = async () => {
+    setBusyCap("local");
+    try {
+      const r = await window.codex.installLocalSkillset();
+      if (r?.error === "已取消") return;
+      if (r?.ok) {
+        setCapNotice(`已装 ${r.installed?.length ?? 0} 个技能${r.skipped?.length ? `，跳过 ${r.skipped.length} 个` : ""}${r.restartError ? "；引擎本轮未重启，重启应用后生效" : ""}`);
+        const skills = await window.codex.listLocalSkills().catch(() => []);
+        const map = new Map<string, { folder: string; enabled: boolean }>();
+        for (const k of skills ?? []) {
+          const n = String(k?.name ?? k?.folder ?? "");
+          if (n) map.set(n, { folder: String(k?.folder ?? n), enabled: k?.enabled !== false });
+        }
+        setSkillMap(map);
+      } else setCapNotice(`安装失败：${r?.error ?? "未知原因"}`);
+    } finally {
+      setBusyCap("");
+    }
+  };
   const ensureSkills = async (names: string[]) => {
     const folders = names.filter((n) => skillMap.has(n) && !skillEnabled(n)).map((n) => skillMap.get(n)!.folder);
     if (!folders.length) return { changed: 0 };
@@ -232,6 +253,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                   <div className="expert-cap-block">
                     <Row label="专业工具" ready={tools.length - missTools.length} total={tools.length} names={tools.join("、")} miss={missTools.length} />
                     <Row label="配套技能" ready={skills.length - missSkills.length - offSkills.length} total={skills.length} names={[skills.join("、"), offSkills.length ? `（${offSkills.length} 个未启用）` : ""].filter(Boolean).join(" ")} miss={missSkills.length + offSkills.length} />
+                    {capNotice ? <p className="expert-cap-miss is-ok" role="status"><span>{capNotice}</span></p> : null}
                     {skills.length ? (
                       <div className="expert-cap-skills">
                         <button type="button" className="expert-cap-more" onClick={() => setSkillPanelOpen((v) => !v)}>
@@ -267,6 +289,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                           </button>
                         ))}
                         {offSkills.length ? <button type="button" className="expert-cap-fix" onClick={() => void ensureSkills(skills)}>启用配套技能</button> : null}
+                        {missSkills.length ? <button type="button" className="expert-cap-fix" disabled={busyCap === "local"} title="选择 scripts/skillset-pack.mjs 打出的技能包目录（含 .skillhub.json）" onClick={() => void installLocalSkillset()}>{busyCap === "local" ? "安装中…" : "从本地包装"}</button> : null}
                         {missSkills.length && onOpenMarket ? <button type="button" className="expert-cap-fix" title="专家技能应随专家包提供；市场里未必有同名技能" onClick={onOpenMarket}>去市场找找</button> : null}
                       </div>
                     ) : (

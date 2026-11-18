@@ -1614,6 +1614,7 @@ interface Window {
     saveUiKitItem(input: { name?: string; doc?: unknown }): Promise<{ id: string; name: string; replaced: boolean; count: number }>;
     removeUiKitItem(id: string): Promise<{ removed: number; count: number }>;
     handoffMediaDesk(input?: { kind?: "group" | "video" | "design"; itemId?: string }): Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>;
+    installLocalSkillset(input?: { dir?: string; zip?: string }): Promise<{ ok: boolean; slug?: string; installed?: string[]; skipped?: Array<{ name: string; reason: string }>; restartError?: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

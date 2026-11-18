@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 719,
+  "count": 720,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -7158,6 +7158,16 @@
       "paramsImpl": "input?: { kind?: \"group\" | \"video\" | \"design\"; itemId?: string }",
       "paramsDecl": "input?: { kind?: \"group\" | \"video\" | \"design\"; itemId?: string }",
       "returns": "Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "installLocalSkillset",
+      "channel": "expert-market:install-local",
+      "paramsImpl": "input?: { dir?: string; zip?: string }",
+      "paramsDecl": "input?: { dir?: string; zip?: string }",
+      "returns": "Promise<{ ok: boolean; slug?: string; installed?: string[]; skipped?: Array<{ name: string; reason: string }>; restartError?: string; error?: string }>",
       "invokeArgs": "input",
       "cast": null,
       "note": null

@@ -11,7 +11,7 @@ description: Codex Harness Desktop 宿主的接口清单与可拓展能力。当
 
 # 宿主接口清单与可拓展能力（自动生成，勿手改）
 
-数据源：electron/ipc-channels.manifest.json（123 个能力域 / 719 个通道），由 scripts/gen-capability-skill.mjs 生成。
+数据源：electron/ipc-channels.manifest.json（123 个能力域 / 720 个通道），由 scripts/gen-capability-skill.mjs 生成。
 
 ## 怎么用
 
@@ -413,9 +413,9 @@ CLI 智能体（10-29）：把外部命令行工具（Claude Code / Codex CLI / 
 剪贴板（读写文本/图片）
 通道：clipboard:image, clipboard:write, clipboard:write-image, clipboard:read-files
 
-### expert-market（2 通道）
+### expert-market（3 通道）
 SkillHub **专家市场包**（skillhub.cn/skillspackage，55 包）：list 浏览/搜索、install 一键安装——元技能 + orchestration.children 子技能落盘技能目录 + **专家中心自动新增对应专家卡片**（卡片 systemPrompt = 包元技能正文）。用户要「装个专家/装套工作流」时用它
-通道：expert-market:install, expert-market:list
+通道：expert-market:install, expert-market:install-local, expert-market:list
 
 ### kb（11 通道）
 **项目级本地知识库**（<项目>/.codex-harness/knowledge/）：list 列文档 / add-text·add-files 导入 md·txt·代码文档（自动分块）/ search 分块全文检索（带高亮片段）/ read 读全文 / remove 删除。用户要「把资料存进知识库 / 查项目资料」时用它；语义向量后端为按需下载项。⛔⚠️ 上面是 **IPC 桥（给设置页 UI 用），不是模型工具** —— 模型侧只有两个：\`knowledge_search(query, limit?)\` 检索（workspace 缺省 = 调用者 cwd；装了 Laya 时最相关的一条会被置顶标注）与 \`knowledge_add(title, text, source?)\` 写入（10-04 补，此前模型只能读不能写；⚠️ 同名不覆盖会堆重复条目、⚠️ 写入不做语义向量化、⚠️ 专家/被调度会话不许写、⚠️ 装了 Laya 时低价值内容会被拒写并说明原因——充实内容后重试即可）。⛔⛔ **但只有「知识库后端 = 本地」时才是这两个**：后端切到**云端 weknora** 后，检索与写入一律走 MCP 连接器 \`cloud-kb\` 的工具（\`cloud_kb__ask\` / \`cloud_kb__search_knowledge\` / \`cloud_kb__grep_chunks\` / \`cloud_kb__list_documents\` / \`cloud_kb__read_document\` / \`cloud_kb__list_knowledge_bases\`），本地那两个此时**不在工具列表里**。判定方法：工具列表里有 \`cloud_kb__\` 前缀 ⇒ 云端；否则本地。切换**不迁移数据**（本地库与云端库是两份），详见内置技能 \`knowledge-backend\`

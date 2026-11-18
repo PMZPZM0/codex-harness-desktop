@@ -1202,6 +1202,7 @@ contextBridge.exposeInMainWorld("codex", {
   saveUiKitItem: (input: { name?: string; doc?: unknown }) => __ipc("ui-kit:save", 1, [input]),
   removeUiKitItem: (id: string) => __ipc("ui-kit:remove", 1, [id]),
   handoffMediaDesk: (input?: { kind?: "group" | "video" | "design"; itemId?: string }) => __ipc("media-desk:handoff", 0, [input]),
+  installLocalSkillset: (input?: { dir?: string; zip?: string }) => __ipc("expert-market:install-local", 0, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
