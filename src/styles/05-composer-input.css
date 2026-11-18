@@ -1841,12 +1841,12 @@
 }
 /* 技能头像按分类配色：emoji 用系统彩色字体无需着色，lucide 图标随色调变化 */
 .skill-avatar { font-size: 15px; line-height: 1; overflow: hidden; }
-.skill-avatar.tone-blue { background: color-mix(in srgb, #2f6bdd 12%, var(--panel)); color: #2f6bdd; }
-.skill-avatar.tone-green { background: color-mix(in srgb, #1a7f37 12%, var(--panel)); color: #1a7f37; }
-.skill-avatar.tone-amber { background: color-mix(in srgb, #e8830c 14%, var(--panel)); color: #e8830c; }
-.skill-avatar.tone-pink { background: color-mix(in srgb, #d6409f 11%, var(--panel)); color: #d6409f; }
-.skill-avatar.tone-violet { background: color-mix(in srgb, #7048e8 11%, var(--panel)); color: #7048e8; }
-.skill-avatar.tone-cyan { background: color-mix(in srgb, #0b7285 11%, var(--panel)); color: #0b7285; }
+.skill-avatar.tone-blue { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.skill-avatar.tone-green { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.skill-avatar.tone-amber { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.skill-avatar.tone-pink { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.skill-avatar.tone-violet { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.skill-avatar.tone-cyan { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
 /* 市场卡头像稍大、已安装卡内嵌头像缩小 */
 .skill-card .skill-avatar { width: 30px; height: 30px; }
 .skill-card-compact .skill-avatar { width: 22px; height: 22px; border-radius: 6px; font-size: 12px; }

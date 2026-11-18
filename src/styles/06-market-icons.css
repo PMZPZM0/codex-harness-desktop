@@ -178,12 +178,12 @@
   display: grid;
 }
 /* 插件头像按名称哈希着色：同名插件永远同色，不同插件色彩分散 */
-.plugin-avatar.tone-blue { background: color-mix(in srgb, #2f6bdd 16%, var(--panel)); color: #2f6bdd; }
-.plugin-avatar.tone-green { background: color-mix(in srgb, #1a7f37 16%, var(--panel)); color: #1a7f37; }
-.plugin-avatar.tone-amber { background: color-mix(in srgb, #e8830c 17%, var(--panel)); color: #d97706; }
-.plugin-avatar.tone-pink { background: color-mix(in srgb, #d6409f 14%, var(--panel)); color: #d6409f; }
-.plugin-avatar.tone-violet { background: color-mix(in srgb, #7048e8 14%, var(--panel)); color: #7048e8; }
-.plugin-avatar.tone-cyan { background: color-mix(in srgb, #0b7285 14%, var(--panel)); color: #0b7285; }
+.plugin-avatar.tone-blue { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.plugin-avatar.tone-green { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.plugin-avatar.tone-amber { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.plugin-avatar.tone-pink { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.plugin-avatar.tone-violet { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
+.plugin-avatar.tone-cyan { background: color-mix(in srgb, var(--text) 7%, var(--panel)); color: color-mix(in srgb, var(--text) 62%, var(--accent)); }
 .plugin-card-title {
   flex: 1;
   min-width: 0;
