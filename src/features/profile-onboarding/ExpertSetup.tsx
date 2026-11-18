@@ -5,9 +5,10 @@ import { AgentAvatar } from "../../components/AgentAvatar";
 export type GuideExpert = { team: ExpertTeamConfig; member: ExpertTeamMember };
 type Caps = { tools?: string[]; skills?: string[] };
 import { expertEquipment, equipmentState } from "../../lib/expert-equipment";
+import { matchesGuideDirection, type GuideDirection } from "./guide-direction";
 
 /** 选择专家并检查其角色所需的开发工具。 */
-export function ExpertSetup({ value, onChange, install }: { value: GuideExpert | null; onChange: (value: GuideExpert | null) => void; install: (id: string) => Promise<boolean> }) {
+export function ExpertSetup({ value, onChange, install, direction, restoreKey }: { value: GuideExpert | null; onChange: (value: GuideExpert | null) => void; install: (id: string) => Promise<boolean>; direction: GuideDirection | null; restoreKey: string | null }) {
   const [teams, setTeams] = useState<ExpertTeamConfig[]>([]);
   const [rows, setRows] = useState<DevRuntimeEntry[] | null>(null);
   const [revision, setRevision] = useState(0);
@@ -22,8 +23,13 @@ export function ExpertSetup({ value, onChange, install }: { value: GuideExpert |
     return () => { live = false; };
   }, [revision]);
   const key = (v: GuideExpert) => JSON.stringify([v.team.teamId, v.member.id]);
-  const experts = teams.flatMap(team => [team.lead, ...team.members].map(member => ({ team, member })));
+  const experts = teams.flatMap(team => [team.lead, ...team.members].filter(member => matchesGuideDirection(direction, team.category, member.profession)).map(member => ({ team, member })));
   const current = value && experts.find(v => key(v) === key(value));
+  useEffect(() => {
+    if (!rows) return;
+    if (restoreKey) onChange(experts.find(v => key(v) === restoreKey) ?? null);
+    else if (value && !current) onChange(null);
+  }, [rows, restoreKey, experts, value, current, onChange]);
   const team = current?.team as (ExpertTeamConfig & Caps) | undefined;
   const member = current?.member as (ExpertTeamMember & Caps) | undefined;
   const { tools, skills } = expertEquipment(team ?? {}, member ?? {});
@@ -40,7 +46,7 @@ export function ExpertSetup({ value, onChange, install }: { value: GuideExpert |
     <details className="profile-guide-picker" open={!current}><summary>{current?.member.name ?? (rows ? "选择专家" : "等待检测")}</summary>
       <div className="profile-guide-start-grid">{experts.map(v => <button key={key(v)} type="button" className="profile-guide-pick" disabled={!!busy || !rows} aria-pressed={!!current && key(v) === key(current)} onClick={() => { setNotice(""); onChange(v); }}>
         <AgentAvatar kind="expert" seed={v.member.id} size={26} /><span><strong>{v.member.name}</strong><small>{v.member.profession.zh || v.team.displayName.zh}</small></span>
-      </button>)}</div>{rows && !experts.length && <p>暂无已启用的专家</p>}
+      </button>)}</div>{rows && !experts.length && <p>{direction ? "该方向暂无匹配的专家" : "暂无已启用的专家"}</p>}
     </details>
     {member && team && <><div className="profile-guide-expert-id"><AgentAvatar kind="expert" seed={member.id} size={38} /><div><strong>{member.name}</strong><small>{member.profession.zh || team.profession.zh} · {team.displayName.zh}</small></div></div>
       <p>{member.description || team.description.zh}</p><h4><Wrench size={14} />配套开发工具</h4>

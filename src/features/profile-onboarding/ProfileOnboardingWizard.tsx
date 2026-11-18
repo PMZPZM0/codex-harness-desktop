@@ -16,6 +16,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ExpertSetup, type GuideExpert } from "./ExpertSetup";
+import { readGuideChoice, rememberGuideChoice } from "./guide-direction";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, Code2, Dumbbell, Gamepad2, Heart,
@@ -133,6 +134,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
   const [step, setStep] = useState(0);
   const [start, setStart] = useState<Start | null>(null);
   const [expert, setExpert] = useState<GuideExpert | null>(null);
+  const [restoreKey, setRestoreKey] = useState<string | null>(null);
   const [config, setConfig] = useState<Config>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -167,7 +169,9 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
 
   /** 把档案灌回表单：首次自动弹出与「重新配置引导」共用，避免两套初始化逻辑漂移。 */
   const hydrate = useCallback((stored: Config) => {
-    setStart(null);
+    const last = readGuideChoice();
+    setStart(last.direction);
+    setRestoreKey(last.teamId && last.memberId ? JSON.stringify([last.teamId, last.memberId]) : null);
     setExpert(null);
     const cachedName = localStorage.getItem("username") ?? "";
     setNickname(stored.nickname || (cachedName && cachedName !== "Codex 用户" && cachedName !== "Administrator" ? cachedName : ""));
@@ -289,6 +293,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
       try { window.dispatchEvent(new CustomEvent("codex-profile-updated")); } catch { /* 忽略 */ }
       setOpen(false);
       onApplied?.(saved as Config);
+      rememberGuideChoice(start, expert);
       onNotice?.("配置已保存，下一条消息起生效");
       if (expert) await onExpert(expert);
       else if (start) {
@@ -467,14 +472,14 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
               <div className="profile-guide-confirm">
                 <fieldset className="profile-guide-starts" disabled={saving}>
                   <legend>保存后的第一步</legend>
-                  <label className="profile-guide-save-only"><input type="radio" name="profile-guide-start" checked={!start && !expert} onChange={() => { setStart(null); setExpert(null); }} />只保存配置</label>
+                  <label className="profile-guide-save-only"><input type="radio" name="profile-guide-start" checked={!start && !expert && !restoreKey} onChange={() => { setStart(null); setExpert(null); setRestoreKey(null); }} />只保存配置</label>
                   <div className="profile-guide-start-grid">{STARTS.map(({ id, title, path, entry, icon: Icon }) => (
                     <label key={id} className="profile-guide-start">
                       <Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{path}</small><em>入口：{entry}</em></span>
-                      <input type="radio" name="profile-guide-start" checked={start === id} onChange={() => { setStart(id); setExpert(null); }} />
+                      <input type="radio" name="profile-guide-start" value={id} checked={start === id} onChange={() => { setStart(id); setExpert(null); setRestoreKey(null); }} />
                     </label>
                   ))}</div>
-                  <ExpertSetup value={expert} install={install} onChange={v => { setExpert(v); setStart(null); }} />
+                  <ExpertSetup direction={start} restoreKey={restoreKey} value={expert} install={install} onChange={v => { setExpert(v); setRestoreKey(null); }} />
                 </fieldset>
                 <details className="profile-guide-review"><summary>核对个人配置</summary>
                 <div className="profile-guide-summary">
@@ -504,7 +509,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
               {step < STEPS.length - 1 ? (
                 <button type="button" className="profile-guide-next" disabled={saving} onClick={() => setStep((current) => Math.min(STEPS.length - 1, current + 1))}>下一步<ArrowRight size={14} /></button>
               ) : (
-                <button type="button" className="profile-guide-next" disabled={saving} onClick={() => void finish(false)}>{saving ? <><LoaderCircle size={14} className="spin" />保存中…</> : expert ? <>保存并与{expert.member.name}对话<ArrowRight size={14} /></> : start ? <>保存并打开{STARTS.find((s) => s.id === start)?.entry}<ArrowRight size={14} /></> : <>完成并生效<Check size={14} /></>}</button>
+                <button type="button" className="profile-guide-next" disabled={saving || !!restoreKey} onClick={() => void finish(false)}>{saving ? <><LoaderCircle size={14} className="spin" />保存中…</> : expert ? <>保存并与{expert.member.name}对话<ArrowRight size={14} /></> : start ? <>保存并打开{STARTS.find((s) => s.id === start)?.entry}<ArrowRight size={14} /></> : <>完成并生效<Check size={14} /></>}</button>
               )}
             </div>
           </footer>
