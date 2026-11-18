@@ -246,7 +246,8 @@
   /* 品牌字流动渐变（10-09）：色序取自**本应用自己的图标母版**（build/icon-a-spark.svg 的
      蓝色渐变 #4C8DF6 → #2F6BDD → #17439B，末段提亮制造可见的流动），末尾回起始色 ⇒ 循环无缝。
      ⛔ 侧栏与登录页两处品牌字都引用这一个变量，别再各写一份色标。 */
-  --brand-ink: linear-gradient(100deg, #4c8df6, #2f6bdd, #17439b, #6fa8ff, #4c8df6);
+  /* 11-18 用户令：「这里都不要色彩污染了，简洁一点」——品牌字改用中性文字色（保留流动动画结构）。 */
+  --brand-ink: linear-gradient(100deg, var(--text), var(--text), var(--text), var(--text), var(--text));
   font-synthesis: none;
   text-rendering: optimizelegibility;
   letter-spacing: 0;
@@ -310,12 +311,12 @@
      ⛔ 与语义色分开是有意的 —— 它们表达「这是哪一类」，不是「成功/失败」；
        设计师要「醒一点」仍用 --accent，语义色仍只表意（DESIGN.md）。
      ⛔ 六色与 .skill-avatar / .plugin-avatar 的 tone-* 同相（那头像是按作者聚类用的同一套身份色）。 */
-  --ic-blue: #2f6bdd;
-  --ic-green: #1a7f37;
-  --ic-amber: #e8830c;
-  --ic-pink: #d6409f;
-  --ic-violet: #7048e8;
-  --ic-cyan: #0b7285;
+  --ic-blue: color-mix(in srgb, var(--text) 76%, var(--accent));
+  --ic-green: color-mix(in srgb, var(--text) 76%, var(--accent));
+  --ic-amber: color-mix(in srgb, var(--text) 76%, var(--accent));
+  --ic-pink: color-mix(in srgb, var(--text) 76%, var(--accent));
+  --ic-violet: color-mix(in srgb, var(--text) 76%, var(--accent));
+  --ic-cyan: color-mix(in srgb, var(--text) 76%, var(--accent));
   --shadow: 0 1px 2px #14140f0a, 0 10px 32px #14140f12;
   /* 主题 / 代码高亮切换的过渡时长（10-07）。⛔ 与 src/lib/visual-switch.ts 的
      VISUAL_FX_MS **必须一致**：那边是 JS 摘过渡类与发回执的时点，不一致会出现
@@ -384,12 +385,12 @@
   --del: #ec7a70;
   /* 图标/身份色板 · 暗色是**另一套手调值**（照 DESIGN.md：不是把亮色反过来 —— 反色会发脏）。
      取值思路：与暗色主题既有的 --accent/--green/--orange/--purple/--red 同一亮度带（中高明度、低饱和）。 */
-  --ic-blue: #7cabf8;
-  --ic-green: #4ec27a;
-  --ic-amber: #f0a35c;
-  --ic-pink: #e879c0;
-  --ic-violet: #a78bfa;
-  --ic-cyan: #4bb8cc;
+  --ic-blue: color-mix(in srgb, var(--text) 84%, var(--accent));
+  --ic-green: color-mix(in srgb, var(--text) 84%, var(--accent));
+  --ic-amber: color-mix(in srgb, var(--text) 84%, var(--accent));
+  --ic-pink: color-mix(in srgb, var(--text) 84%, var(--accent));
+  --ic-violet: color-mix(in srgb, var(--text) 84%, var(--accent));
+  --ic-cyan: color-mix(in srgb, var(--text) 84%, var(--accent));
   --shadow: 0 1px 3px #00000059, 0 10px 30px #00000059;
   background: #1b1b1a;
 }
@@ -431,12 +432,12 @@
   --ok: #57b98a;
   --add: #74c79b;
   --del: #dd7a70;
-  --ic-blue: #8fb1e6;
-  --ic-green: #57b98a;
-  --ic-amber: #cfa96d;
-  --ic-pink: #d394ba;
-  --ic-violet: #a38fe0;
-  --ic-cyan: #5db4c4;
+  --ic-blue: color-mix(in srgb, var(--text) 80%, var(--accent));
+  --ic-green: color-mix(in srgb, var(--text) 80%, var(--accent));
+  --ic-amber: color-mix(in srgb, var(--text) 80%, var(--accent));
+  --ic-pink: color-mix(in srgb, var(--text) 80%, var(--accent));
+  --ic-violet: color-mix(in srgb, var(--text) 80%, var(--accent));
+  --ic-cyan: color-mix(in srgb, var(--text) 80%, var(--accent));
   --shadow: 0 1px 2px #00000080, 0 16px 44px #0000008f;
   background: #0b0d10;
 }

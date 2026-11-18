@@ -206,7 +206,7 @@ ok(/\.project-item-toggle svg \{[\s\S]{0,200}?color:\s*var\(--ic,\s*var\(--muted
 
 /* ③ 图标自身挂色相的通用规则：必须逐个枚举 */
 const baseCode = codeOnly(base);
-ok(/svg\.ic-blue, svg\.ic-green, svg\.ic-amber, svg\.ic-pink, svg\.ic-violet, svg\.ic-cyan \{ color: var\(--ic\); \}/.test(baseCode),
+ok(/svg\.ic-blue, svg\.ic-green, svg\.ic-amber, svg\.ic-pink, svg\.ic-violet, svg\.ic-cyan, svg\.ic-accent \{ color: var\(--ic\); \}/.test(baseCode),
   "④c 存在 `svg.ic-*` 通用规则（容器不便挂类时精确点单个图标）");
 ok(!/\[class\*?=["']?ic-/.test(baseCode),
   "④c 负向：⛔ 不许用 `[class*=ic-]` 之类的属性选择器 —— 会误命中任何含 \"ic-\" 的类名（topic-* / basic-*）");
