@@ -105,13 +105,13 @@ export function RuntimeToolsPanel(props: RuntimeToolsPanelProps) {
             <div className="runtime-actions">
               {/* 常驻「复制安装提示词」：网差时的正路 —— 复制给 Codex 让它在这台机器上直接装。
                   ⛔ 提示词正文 = 主进程 runtime:list 下发的 fallbackPrompt（单一真相源）。 */}
-              {fallbackPrompt && !isGuide ? (
+              {fallbackPrompt ? (
                 <button type="button" className="runtime-prompt-copy"
                   title={`复制「${runtime.name}」的安装提示词 —— 发到任意会话里，Codex 就能帮你装`}
                   aria-label={`复制 ${runtime.name} 的安装提示词`}
-                  onClick={() => {
-                    void copyTextToClipboard(fallbackPrompt);
-                    setNotice(`已复制「${runtime.name}」的安装提示词 —— 到任意会话里发给 Codex 即可`);
+                  onClick={async () => {
+                    try { await copyTextToClipboard(fallbackPrompt); setNotice(`已复制「${runtime.name}」的安装提示词，粘贴到 Codex 会话即可。`); }
+                    catch { setNotice("复制安装提示词失败，请重试。"); }
                   }}>
                   <Copy size={14} />
                 </button>

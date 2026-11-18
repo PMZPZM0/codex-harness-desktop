@@ -319,6 +319,9 @@
 .profile-guide-expert-id div, .profile-guide-tool > span:first-child { display: grid; gap: 3px; min-width: 0; }
 .profile-guide-expert h4 { margin: 4px 0 0; font-size: 12px; }
 .profile-guide-tool { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 12px; }
+.profile-guide-tool-prompt { grid-column: 1 / -1; min-width: 0; }
+.profile-guide-tool-prompt summary { color: var(--accent); cursor: pointer; }
+.profile-guide-tool-prompt pre { margin: 8px 0; max-height: 10rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 @media (max-width: 560px) { .profile-guide-footer { flex-wrap: wrap; } .profile-guide-footer-right { flex-wrap: wrap; } }
 .profile-guide-summary { display: grid; gap: 1px; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 11px; background: var(--line-soft); }
 .profile-guide-summary-row { display: grid; grid-template-columns: 72px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 11px; background: var(--panel-2); }

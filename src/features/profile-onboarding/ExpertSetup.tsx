@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Download, RefreshCw, Wrench } from "lucide-react";
+import { Copy, Download, ExternalLink, RefreshCw, Wrench } from "lucide-react";
+import { copyTextToClipboard } from "../../lib/clipboard";
 import { AgentAvatar } from "../../components/AgentAvatar";
 
 export type GuideExpert = { team: ExpertTeamConfig; member: ExpertTeamMember };
@@ -36,6 +37,12 @@ export function ExpertSetup({ value, onChange, install, direction, restoreKey }:
   const run = async (id: string) => {
     setBusy(id); setNotice("");
     try {
+      if (equipmentState(id, rows).state === "manual") {
+        const result: { guide?: string; runtimes: DevRuntimeEntry[] } = await window.codex.installRuntime(id);
+        setRows(result.runtimes);
+        setNotice(result.guide ? "已打开官网，完成安装后请重新检测。" : "此平台没有下载页，请参考该工具的安装说明。");
+        return;
+      }
       const ok = await install(id);
       const fresh = await window.codex.listRuntimes(); setRows(fresh);
       setNotice(ok && fresh.some(r => r.id === id && r.installed) ? "安装完成，已重新检测" : "安装未完成，可重试或到开发工具查看详情");
@@ -51,7 +58,23 @@ export function ExpertSetup({ value, onChange, install, direction, restoreKey }:
     {member && team && <><div className="profile-guide-expert-id"><AgentAvatar kind="expert" seed={member.id} size={38} /><div><strong>{member.name}</strong><small>{member.profession.zh || team.profession.zh} · {team.displayName.zh}</small></div></div>
       <p>{member.description || team.description.zh}</p><h4><Wrench size={14} />配套开发工具</h4>
       {!tools.length && <p>此专家未声明额外工具。</p>}
-      {tools.map(id => { const tool = equipmentState(id, rows); return <div className="profile-guide-tool" key={id}><span><strong>{tool.name}</strong><small>{tool.description}</small></span><span>{tool.state === "missing" ? <button type="button" disabled={!!busy} onClick={() => void run(id)}><Download size={13} />{busy === id ? "安装中" : "安装"}</button> : ({ready: "已就绪", unknown: "待检测", unavailable: "当前环境未提供", manual: "需手动配置", installing: "安装中"})[tool.state]}</span></div>; })}
+      {tools.map(id => {
+        const tool = equipmentState(id, rows);
+        const prompt = tool.fallbackPrompt;
+        return <div className="profile-guide-tool" key={id} data-tool-id={id}>
+          <span><strong>{tool.name}</strong><small>{tool.description}</small></span>
+          {tool.state === "missing" || tool.state === "manual" ? <button type="button" disabled={!!busy} onClick={() => void run(id)}>
+            {tool.state === "manual" ? <ExternalLink size={13} /> : <Download size={13} />}
+            {tool.state === "manual" ? "去官网安装" : busy === id ? "安装中" : tool.bundled ? "修复安装" : "下载安装"}
+          </button> : <span>{({ready: "已就绪", unknown: "待检测", unavailable: "当前环境未提供", installing: "安装中"})[tool.state]}</span>}
+          {prompt && <details className="profile-guide-tool-prompt"><summary>让 Codex 帮我安装</summary>
+            <pre>{prompt}</pre><button type="button" aria-label={`复制 ${tool.name} 的安装提示词`} onClick={async () => {
+              try { await copyTextToClipboard(prompt); setNotice(`已复制「${tool.name}」的安装提示词，粘贴到 Codex 会话即可。`); }
+              catch { setNotice("复制失败，请选中上方提示词手动复制。"); }
+            }}><Copy size={13} />复制安装提示词</button>
+          </details>}
+        </div>;
+      })}
       {skills.length > 0 && <p>配套技能：{skills.join("、")}</p>}
     </>}
     <small role="status">{notice}</small>

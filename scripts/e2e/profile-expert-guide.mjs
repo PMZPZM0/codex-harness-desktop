@@ -13,6 +13,15 @@ export default {
       await open();
       await h.eval(`document.querySelector('.profile-guide-save-only input').click()`);
       const total = await h.eval(`document.querySelectorAll('.profile-guide-pick').length`);
+      for (let i = 0; i < total; i++) {
+        await h.eval(`document.querySelectorAll('.profile-guide-pick')[${i}].click()`);
+        if (await h.eval(`!!document.querySelector('.profile-guide-tool-prompt')`)) break;
+      }
+      await h.waitFor(`!!document.querySelector('.profile-guide-tool-prompt summary')`, {label:'专家工具卡提供安装提示词'});
+      await h.eval(`document.querySelector('.profile-guide-tool-prompt summary').click()`);
+      h.check('预览精确匹配当前工具的安装提示词', await h.eval(`(async () => { const d = document.querySelector('.profile-guide-tool-prompt[open]'); const row = (await window.codex.listRuntimes()).find(r => r.id === d.closest('[data-tool-id]').dataset.toolId); return !!row?.fallbackPrompt && row.fallbackPrompt === d.querySelector('pre').textContent; })()`));
+      await h.eval(`document.querySelector('.profile-guide-tool-prompt[open] button').click()`);
+      await h.waitFor(`document.querySelector('.profile-guide-expert [role=status]').textContent.includes('已复制')`, {label:'点击复制安装提示词'});
       await h.eval(`document.querySelector('input[value="component-library"]').click()`);
       await h.waitFor(`document.querySelectorAll('.profile-guide-pick').length > 0 && document.querySelectorAll('.profile-guide-pick').length < ${total}`, {label:'设计方向筛选专家'});
       await h.eval(`document.querySelector('.profile-guide-pick').click()`);

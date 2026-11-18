@@ -11,12 +11,8 @@
 import type { ReactNode } from "react";
 import { Activity, BookOpen, Download, Globe2, TerminalSquare, Wrench } from "lucide-react";
 
-/** runtime:list 下发的完整行（DevRuntimeEntry 是全局类型，这里补上清单里的可选字段）。 */
-export type RuntimeRow = DevRuntimeEntry & {
-  bundled?: boolean;
-  hidden?: boolean;
-  fallbackPrompt?: string;
-};
+import type { RuntimeRow } from "../../lib/runtime-row";
+export type { RuntimeRow } from "../../lib/runtime-row";
 
 export type RuntimeGroupKey = "base" | "auto" | "devchain" | "media" | "ai" | "system" | "ondemand";
 
