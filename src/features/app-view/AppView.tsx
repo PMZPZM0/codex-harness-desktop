@@ -798,6 +798,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
       />
       {/* 登录后的一次性新人配置引导：只有完全没配置过的新 profile 会弹；完成后不再出现。 */}
       <ProfileOnboardingWizard
+        install={app.installDevRuntime}
+        onExpert={({ team, member }) => app.startMemberDirectSession(team, member)}
+        onStart={async (target) => {
+          if (target === "media-desk") { if (!(await window.codex.mediaDeskPopout()).ok) throw new Error("工作台未能打开"); return; }
+          setSettingsPage(target);
+          setSettingsOpen(true);
+        }}
         onNotice={showToast}
         onUserAvatar={(avatar) => setUserAvatar(avatar)}
         onApplied={(cfg) => {

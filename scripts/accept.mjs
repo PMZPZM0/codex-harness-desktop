@@ -56,7 +56,7 @@ async function enterMain(h) {
 }
 
 const CHECKS = [
-  {
+  (await import("./e2e/profile-expert-guide.mjs")).default, {
     id: "settings-current",
     name: "设置页（只测当前关键页：用户中心 / 人格市场 / 外观 —— 不再逐页点选项）",
     run: async (h) => {

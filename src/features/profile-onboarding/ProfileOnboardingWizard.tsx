@@ -15,6 +15,7 @@
  * 保存后 AGENTS.md 立即重写，下一条消息生效；界面称呼与 Codex 名字当场更新。
  */
 import { useCallback, useEffect, useState } from "react";
+import { ExpertSetup, type GuideExpert } from "./ExpertSetup";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, Code2, Dumbbell, Gamepad2, Heart,
@@ -52,7 +53,7 @@ const STEPS = [
   { id: "role", label: "你的角色", title: "你想让 Codex 以什么角色帮你", desc: "选一个最接近你的方向；它决定默认的工作方法与关注点。", icon: Briefcase },
   { id: "persona", label: "Codex 人格", title: "Codex 该是什么性格", desc: "决定它的表达习惯和做事气质；随时能在设置里换。", icon: Sparkles },
   { id: "vibe", label: "兴趣习惯", title: "聊得来，才用得顺", desc: "兴趣会作为长期背景；习惯决定它怎么配合你。", icon: Heart },
-  { id: "confirm", label: "确认", title: "确认一下，马上生效", desc: "保存后会写入个性化档案与 AGENTS.md，下一条消息开始生效。", icon: Check },
+  { id: "confirm", label: "确认与起步", title: "从哪项工作开始？", desc: "选一个保存后要打开的入口，也可以只保存个人配置。", icon: Check },
 ] as const;
 
 /** Codex 的人格预设：写进 personalization.persona（与人格市场同一注入位），
@@ -111,8 +112,18 @@ function inferTone(value?: string): Tone {
   return "none";
 }
 
+const STARTS = [
+  { id: "devtools", title: "准备开发环境", path: "工具自检 → 对应专家", entry: "开发工具", icon: Code2 },
+  { id: "media-desk", title: "审阅一篇成稿", path: "工作台成稿 → 会话评审", entry: "自媒体工作台", icon: PenLine },
+  { id: "component-library", title: "继续界面设计", path: "我的组件 → 画布编辑", entry: "组件库", icon: Palette },
+  { id: "artifacts", title: "追溯项目交付", path: "产物档案 → 来源会话", entry: "产物档案", icon: Briefcase },
+] as const;
+type Start = typeof STARTS[number]["id"];
 /** 画像引导向导：逐项问清身份与偏好，应用后写回个性化配置。 */
-export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
+export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onStart, install, onExpert }: {
+  install: (id: string) => Promise<boolean>;
+  onExpert: (selection: GuideExpert) => Promise<void>;
+  onStart: (target: Start) => void | Promise<void>;
   onApplied?: (config: Config) => void;
   onNotice?: (text: string) => void;
   onUserAvatar?: (avatar: { type: "image" | "emoji" | "none"; value: string }) => void;
@@ -120,6 +131,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
   const [checked, setChecked] = useState(false);
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState(0);
+  const [start, setStart] = useState<Start | null>(null);
+  const [expert, setExpert] = useState<GuideExpert | null>(null);
   const [config, setConfig] = useState<Config>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -154,6 +167,8 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
 
   /** 把档案灌回表单：首次自动弹出与「重新配置引导」共用，避免两套初始化逻辑漂移。 */
   const hydrate = useCallback((stored: Config) => {
+    setStart(null);
+    setExpert(null);
     const cachedName = localStorage.getItem("username") ?? "";
     setNickname(stored.nickname || (cachedName && cachedName !== "Codex 用户" && cachedName !== "Administrator" ? cachedName : ""));
     setAssistantName(stored.assistantName || "");
@@ -275,12 +290,16 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
       setOpen(false);
       onApplied?.(saved as Config);
       onNotice?.("配置已保存，下一条消息起生效");
+      if (expert) await onExpert(expert);
+      else if (start) {
+        try { await onStart(start); } catch { onNotice?.("配置已保存，但入口未能打开，请从侧栏重试"); }
+      }
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err ?? "保存失败，请重试"));
     } finally {
       setSaving(false);
     }
-  }, [assistantName, assistantPersonaId, assistantPersonaTouched, codexAvatar, config, customInstructions, customInterest, habits, interests, nickname, occupation, onApplied, onNotice, onUserAvatar, personaId, replyStyle, saving, tone, userAvatar]);
+  }, [assistantName, assistantPersonaId, assistantPersonaTouched, codexAvatar, config, customInstructions, customInterest, habits, interests, nickname, occupation, onApplied, onNotice, onUserAvatar, onStart, expert, onExpert, personaId, replyStyle, saving, start, tone, userAvatar]);
 
   useEffect(() => {
     if (!open) return;
@@ -446,6 +465,18 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
 
             {step === 4 && (
               <div className="profile-guide-confirm">
+                <fieldset className="profile-guide-starts" disabled={saving}>
+                  <legend>保存后的第一步</legend>
+                  <label className="profile-guide-save-only"><input type="radio" name="profile-guide-start" checked={!start && !expert} onChange={() => { setStart(null); setExpert(null); }} />只保存配置</label>
+                  <div className="profile-guide-start-grid">{STARTS.map(({ id, title, path, entry, icon: Icon }) => (
+                    <label key={id} className="profile-guide-start">
+                      <Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{path}</small><em>入口：{entry}</em></span>
+                      <input type="radio" name="profile-guide-start" checked={start === id} onChange={() => { setStart(id); setExpert(null); }} />
+                    </label>
+                  ))}</div>
+                  <ExpertSetup value={expert} install={install} onChange={v => { setExpert(v); setStart(null); }} />
+                </fieldset>
+                <details className="profile-guide-review"><summary>核对个人配置</summary>
                 <div className="profile-guide-summary">
                   <SummaryRow label="称呼" value={nickname.trim() || "未指定"} onEdit={() => setStep(0)} />
                   <SummaryRow label="头像" value="已选择你的头像与 Codex 形象" onEdit={() => setStep(0)} />
@@ -455,6 +486,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
                   <SummaryRow label="兴趣" value={effectiveInterests || "未填写"} onEdit={() => setStep(3)} />
                   <SummaryRow label="风格" value={`${effectiveReply} · ${effectiveTone}${habits.length ? ` · ${habits.length} 条习惯` : ""}`} onEdit={() => setStep(3)} />
                 </div>
+                </details>
                 <label className="profile-guide-field"><span>还有什么想让它长期记住 <em>可选</em></span><textarea rows={3} maxLength={2000} value={customInstructions} onChange={(event) => setCustomInstructions(event.target.value)} placeholder="例如：改代码前先说计划；不要主动推荐新功能；回答用中文" /></label>
                 <div className="profile-guide-effect"><Lightbulb size={15} /><div><b>保存后立即写入个性化档案</b><span>界面称呼当场更新；对话下一条消息起生效。可在「设置 → 个性化」随时修改。</span></div></div>
                 {error ? <div className="profile-guide-error">{error}</div> : null}
@@ -472,7 +504,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar }: {
               {step < STEPS.length - 1 ? (
                 <button type="button" className="profile-guide-next" disabled={saving} onClick={() => setStep((current) => Math.min(STEPS.length - 1, current + 1))}>下一步<ArrowRight size={14} /></button>
               ) : (
-                <button type="button" className="profile-guide-next" disabled={saving} onClick={() => void finish(false)}>{saving ? <><LoaderCircle size={14} className="spin" />保存中…</> : <>完成并生效<Check size={14} /></>}</button>
+                <button type="button" className="profile-guide-next" disabled={saving} onClick={() => void finish(false)}>{saving ? <><LoaderCircle size={14} className="spin" />保存中…</> : expert ? <>保存并与{expert.member.name}对话<ArrowRight size={14} /></> : start ? <>保存并打开{STARTS.find((s) => s.id === start)?.entry}<ArrowRight size={14} /></> : <>完成并生效<Check size={14} /></>}</button>
               )}
             </div>
           </footer>

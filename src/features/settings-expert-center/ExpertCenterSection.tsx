@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MessageSquare, Package, Users, X } from "lucide-react";
 import { AgentAvatar } from "../../components/AgentAvatar";
+import { expertEquipment, equipmentState } from "../../lib/expert-equipment";
 import { AgentBadge } from "../../components/AgentBadge";
 import { SettingsDialog } from "../../components/SettingsDialog";
 import { Spinner } from "../../components/CardShell";
@@ -51,7 +52,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   /* ⛔⛔ 11-18：能力清单必须是**真实状态**（已装/缺），不是文案。
      数据只认两条既有通道：listRuntimes（组件是否已装）+ listLocalSkills（技能是否已装）。
      ⛔ 不新增第二份"专家能力状态"真相源；⛔ 不在这里伪造"已具备"。 */
-  const [installedTools, setInstalledTools] = useState<Set<string>>(new Set());
+  const [runtimeRows, setRuntimeRows] = useState<DevRuntimeEntry[] | null>(null);
   /* 技能不只「装没装」，还有「启没启用」——⛔ 装了没启用，引擎照样看不见（等于专家没这个技能）。 */
   const [skillMap, setSkillMap] = useState<Map<string, { folder: string; enabled: boolean }>>(new Map());
   const [capsLoaded, setCapsLoaded] = useState(false);
@@ -62,11 +63,11 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
     void (async () => {
       try {
         const [rows, skills] = await Promise.all([
-          window.codex.listRuntimes().catch(() => []),
+          window.codex.listRuntimes().catch(() => null),
           window.codex.listLocalSkills().catch(() => []),
         ]);
         if (!alive) return;
-        setInstalledTools(new Set((rows ?? []).filter((r) => r?.installed).map((r) => String(r.id))));
+        setRuntimeRows(rows);
         const map = new Map<string, { folder: string; enabled: boolean }>();
         for (const k of skills ?? []) {
           const name = String(k?.name ?? k?.folder ?? "");
@@ -79,15 +80,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
     return () => { alive = false; };
   }, []);
   /* 工具 id（update-registry）→ 运行时 id（runtime:list）：只有对得上的才显示"可安装"。 */
-  const RUNTIME_ALIAS: Record<string, string[]> = {
-    "bundled-tool": ["python", "node", "git"],
-    "lark-cli": ["feishu-cli"],
-    "kb-embedding": ["kb-embedding"],
-    "computer-use": ["computer-use"],
-  };
-  /* 这两样不是「运行时组件」而是应用自带能力：⛔ 不能因为 listRuntimes 里没有就报缺。 */
-  const NON_INSTALLABLE = new Set(["engine", "image-lab"]);
-  const toolReady = (id: string) => NON_INSTALLABLE.has(id) || installedTools.has(id) || (RUNTIME_ALIAS[id] ?? []).some((x) => installedTools.has(x));
+  const toolReady = (id: string) => equipmentState(id, runtimeRows).state === "ready";
   const skillReady = (name: string) => skillMap.has(name);
   const skillEnabled = (name: string) => skillMap.get(name)?.enabled === true;
   /* 专家「自带」的落地：把它声明的技能**启用**（已启用则跳过）。⛔ 不装新技能、不改技能内容。 */
@@ -226,20 +219,20 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
               {(() => {
                 /* 11-18 用户令：专家要「技能齐全、专业工具齐全」⇒ 卡上直接给数量与清单，缺了看得见。
                    ⛔ 数据只认主进程读好并补好的 team.tools / team.skills（前端不再自己一份）。 */
-                const tools: string[] = preview.team?.tools ?? [];
-                const skills: string[] = preview.team?.skills ?? [];
+                const { tools, skills } = expertEquipment(preview.team, preview.member);
                 if (!tools.length && !skills.length) return <p className="expert-cap-line muted">尚未声明专业工具与技能</p>;
                 const missTools = tools.filter((t) => !toolReady(t));
                 const missSkills = skills.filter((k) => !skillReady(k));
-                const installable = missTools.filter((t) => !NON_INSTALLABLE.has(t));
+                const installable = missTools.filter((t) => equipmentState(t, runtimeRows).state === "missing");
                 /* 装了但没启用：引擎看不见 ⇒ 对专家等于没有。 */
                 const offSkills = skills.filter((k) => skillReady(k) && !skillEnabled(k));
                 const installOne = async (id: string) => {
                   setBusyCap(id);
                   try {
-                    const rid = (RUNTIME_ALIAS[id] ?? [id])[0];
-                    const r = await window.codex.installRuntime(rid);
-                    if (r?.ok) setInstalledTools((prev) => new Set([...prev, rid, id]));
+                    await window.codex.installRuntime(id);
+                    const fresh = await window.codex.listRuntimes(); setRuntimeRows(fresh);
+                    setCapNotice(equipmentState(id, fresh).state === "ready" ? "工具已就绪" : "工具尚未就绪，请在开发工具页复查");
+                  } catch { setCapNotice("安装或检测失败，请在开发工具页复查");
                   } finally { setBusyCap(""); }
                 };
                 const Row = ({ label, ready, total, names, miss }: { label: string; ready: number; total: number; names: string; miss: number }) => (
@@ -283,7 +276,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                     {missTools.length || missSkills.length || offSkills.length ? (
                       <div className="expert-cap-miss">
                         {(missTools.length > 0 || missSkills.length > 0) && <span>缺：{[...missTools, ...missSkills].join("、")}</span>}
-                        {installable.slice(0, 3).map((id) => (
+                        {installable.map((id) => (
                           <button key={id} type="button" className="expert-cap-fix" disabled={busyCap === id} onClick={() => void installOne(id)}>
                             {busyCap === id ? "安装中…" : `装 ${id}`}
                           </button>
