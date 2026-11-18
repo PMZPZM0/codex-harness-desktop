@@ -35,7 +35,8 @@ if (catalog) {
     `清单含全部必需技能包（实测 ${Array.isArray(catalog) ? catalog.length : "非数组"} 条）`);
   const ids = catalog.map((pack) => pack.id);
   ok(new Set(ids).size === ids.length && ids.every((id) => /^[a-z0-9-]+$/.test(id)), "id 唯一且是 kebab-case");
-  ok(catalog.every((pack) => /^[\w.-]+\/[\w.-]+$/.test(pack.repo)), "repo 都是 owner/name");
+  /* 11-19：随包内置的包没有 GitHub 仓库（Playwright 用随包技能、cheat-on 本来就在包里）⇒ 跳过 repo 校验。 */
+  ok(catalog.filter((pack) => !pack.bundled).every((pack) => /^[\w.-]+\/[\w.-]+$/.test(pack.repo)), "外部包的 repo 都是 owner/name（内置包豁免）");
   ok(catalog.every((pack) => pack.license && pack.licenseUrl.includes(pack.repo)), "许可徽标与许可原文链接齐全（链接指向本仓库）");
   ok(catalog.every((pack) => pack.companion.startsWith("配套")), "每条都写了「配套工具」（用户点名的三要素之一）");
   ok(catalog.every((pack) => pack.description.length >= 12 && pack.size), "说明与体积都在（卡片不留空字段）");
