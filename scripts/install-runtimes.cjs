@@ -15,7 +15,7 @@ const zlib = require("zlib");
 const { spawn, spawnSync } = require("child_process");
 
 const IS_MAC = process.platform === "darwin";
-const NODE_VERSION = "v24.19.0";
+const NODE_VERSION = "v24.22.3";
 const NODE_URL = IS_MAC
   ? `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-${process.arch === "arm64" ? "arm64" : "x64"}.tar.gz`
   : `https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip`;
@@ -40,8 +40,8 @@ const MINGIT_URL = `https://github.com/git-for-windows/git/releases/download/v2.
 //   现换 PBS 整包 + 本地 ensurepip（离线确定性，不再下载 get-pip.py），并带健康检查：
 //   旧的不完整安装判「未装」→ 用户在「开发工具」点「下载」即整目录换装修复。
 // 资产名含 `+`，URL 里写 %2B；npmmirror 有该构建的镜像（chinaMirrorUrl 映射，国内优先）。
-const PYTHON_VERSION = "3.13.15";
-const PBS_TAG = "20260929";
+const PYTHON_VERSION = "3.13.18";
+const PBS_TAG = "20261110";
 const PYTHON_PBS_URL = `https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYTHON_VERSION}%2B${PBS_TAG}-x86_64-pc-windows-msvc-install_only.tar.gz`;
 /* ⛔⛔ 10-07 改（用户报「FFmpeg 不是国内源，太慢了，几十K」）：
    原来唯一源是 gyan.dev（英国站）。gyan 的同一份构建**同时发布在 GitHub**
@@ -68,7 +68,8 @@ const NINJA_URL = "https://github.com/ninja-build/ninja/releases/latest/download
 // ⛔ 10-02：不再用 `https://www.7-zip.org/a/7zr.exe`。`7zr` 是**精简版，只认 7z 格式**，
 //   被当成「7-Zip CLI」随包会让用户拿到一个打不开 zip/tar.gz 的命令行（实测 l 返回 2）。
 //   统一走下面这个 extra 包，取其中的 `x64/7za.exe`（独立完整版）。
-const SEVENZIP_VERSION = "25.01";
+const SEVENZIP_VERSION = "26.06";
+const SEVENZIP_STEM = `7z${SEVENZIP_VERSION.replace(".", "")}`;
 const YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe";
 // GitHub 直连在国内经常不可达；gh-proxy.com / ghfast.top 加速前缀实测稳定（rg/cmake/uv/7zip 均可 206 分段续传）。
 // 自动模式（默认）= 国内优先：镜像 → 本机代理（PROXY 环境变量，默认空）→ gh 加速 → 直连兜底。
@@ -76,14 +77,14 @@ const YTDLP_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-
 //    排在加速前面等于永远轮不到加速。
 const GHPROXY = "https://gh-proxy.com/";
 const GHFAST = "https://ghfast.top/";
-const RG_VERSION = "14.1.1";
+const RG_VERSION = "15.2.0";
 const RG_URL = `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-x86_64-pc-windows-msvc.zip`;
-const UV_VERSION = "0.9.5";
+const UV_VERSION = "0.13.9";
 const UV_URL = `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-x86_64-pc-windows-msvc.zip`;
-const CMAKE_VERSION = "3.31.6";
+const CMAKE_VERSION = "4.5.0";
 const CMAKE_URL = `https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-windows-x86_64.zip`;
 // 7-Zip 官网国内不稳定，走 github release（gh-proxy 可达）
-const SEVENZIP_GH_URL = "https://github.com/ip7z/7zip/releases/download/25.01/7z2501-extra.7z";
+const SEVENZIP_GH_URL = `https://github.com/ip7z/7zip/releases/download/${SEVENZIP_VERSION}/${SEVENZIP_STEM}-extra.7z`;
 /* mac FFmpeg 的两条源（10-07 用户报「FFmpeg 不是国内源，太慢了，几十K」）：
    · ffmpeg-static（eugeneware）——单文件构建，npmmirror 同步了它的 release 资产（实测 302 → CDN）
      ⇒ 国内直连快，是主源；同名 GitHub release 还能吃到 gh 加速。
@@ -1044,7 +1045,7 @@ async function main() {
       //   7zr（解 .7z 是它的本职格式），删完就再也解不开自己了。
       const stage = fs.mkdtempSync(path.join(os.tmpdir(), "ch-7zip-"));
       try {
-        await install("7zip-gh", SEVENZIP_GH_URL, stage, { marker: "x64\\7za.exe", strip: false, archiveName: "7z2501-extra.7z" });
+        await install("7zip-gh", SEVENZIP_GH_URL, stage, { marker: "x64\\7za.exe", strip: false, archiveName: `${SEVENZIP_STEM}-extra.7z` });
         const from = path.join(stage, "x64", "7za.exe");
         if (!fs.existsSync(from)) throw new Error("7-Zip extra 包里没有 x64/7za.exe");
         // 落地前才动旧目录（只有确认新二进制已就位才清理）
@@ -1227,7 +1228,7 @@ async function mainMac() {
   if (want("vscode-cli")) await install("vscode-cli", `https://update.code.visualstudio.com/latest/cli-darwin-${arch}/stable`, path.join(TOOLS, "vscode-cli"), { marker: "code", strip: false, archiveName: `vscode-cli-darwin-${arch}.zip` });
   if (want("jq")) await installFile("jq", `https://github.com/jqlang/jq/releases/latest/download/jq-macos-${jqArch}`, path.join(TOOLS, "jq"), "jq");
   if (want("ninja")) await install("ninja", "https://github.com/ninja-build/ninja/releases/latest/download/ninja-mac.zip", path.join(TOOLS, "ninja"), { marker: "ninja", strip: false, archiveName: "ninja-mac.zip" });
-  if (want("sevenzip")) await install("7zip", "https://github.com/ip7z/7zip/releases/download/25.01/7z2501-mac.tar.xz", path.join(TOOLS, "sevenzip"), { marker: "7zz", strip: false });
+  if (want("sevenzip")) await install("7zip", `https://github.com/ip7z/7zip/releases/download/${SEVENZIP_VERSION}/${SEVENZIP_STEM}-mac.tar.xz`, path.join(TOOLS, "sevenzip"), { marker: "7zz", strip: false });
   if (want("yt-dlp")) await installFile("yt-dlp", "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_macos", path.join(TOOLS, "yt-dlp"), "yt-dlp");
   if (want("rg")) await install("rg", `https://github.com/BurntSushi/ripgrep/releases/download/${RG_VERSION}/ripgrep-${RG_VERSION}-${rgArch}.tar.gz`, path.join(TOOLS, "rg"), { marker: "rg", strip: true });
   if (want("uv")) await install("uv", `https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${rgArch}.tar.gz`, path.join(TOOLS, "uv"), { marker: "uv", strip: false });

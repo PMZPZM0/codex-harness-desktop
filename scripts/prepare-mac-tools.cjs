@@ -35,7 +35,7 @@ function tar(url, name, destination, strip = false) {
   run("tar", ["-xf", file, "-C", destination, ...(strip ? ["--strip-components=1"] : [])]);
 }
 async function main() {
-  const nodeVersion = "v24.19.0";
+  const nodeVersion = "v24.22.3";
   const nodeArchive = `node-${nodeVersion}-darwin-${arch}.tar.gz`;
   tar(`https://nodejs.org/dist/${nodeVersion}/${nodeArchive}`, nodeArchive, path.join(tools, "node"), true);
   const node = path.join(tools, "node/bin/node");

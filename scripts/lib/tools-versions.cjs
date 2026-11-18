@@ -24,7 +24,7 @@ const TOOLS_VERSIONS = {
    * agent-desktop（Vercel Labs，Apache-2.0）：默认桌面后端，无障碍树 + @ref。
    * npm 包 32MB 自带上六套平台二进制（darwin/win32/linux × x64/arm64）⇒ 按 50MB 口径随包内置。
    */
-  agentDesktop: "1.3.0",
+  agentDesktop: "1.3.1",
   /** 飞书官方 CLI（@larksuite/cli，Go 二进制，npm postinstall 按平台下载）。50MB 出头 ⇒ 按需安装，不随包 */
   feishuCli: "1.0.98",
   /**

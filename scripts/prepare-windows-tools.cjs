@@ -8,7 +8,7 @@
  * 无法覆盖 Windows。本脚本补齐这条链。
  *
  * 产出（与 package.json build.extraResources 的 from 逐条对应）：
- *   node/             ← nodejs.org win-x64（v24.19.0，与 mac 侧同版本）
+ *   node/             ← nodejs.org win-x64（与 mac 侧同版本）
  *   npm-global/       ← npm i -g --prefix：@nuphus/nuphus-mcp（浏览器自动化走外部 Ego Lite）
  *   vscode-cli/       ← update.code.visualstudio.com cli-win32-x64
  *   cloudflared.exe   ← cloudflare/cloudflared release
@@ -41,7 +41,7 @@ const downloads = path.resolve(repoSource, ".test-tmp", "win-downloads");
 fs.mkdirSync(downloads, { recursive: true });
 fs.mkdirSync(tools, { recursive: true });
 
-const NODE_VERSION = "v24.19.0";
+const NODE_VERSION = "v24.22.3";
 // ⛔ nuphus-mcp 版本：**四处必须同源**，漏一处就两端版本不一致或 mac x64 取源对不上：
 //   ① 本文件 NUPHUS_VERSION
 //   ② scripts/prepare-mac-tools.cjs 的 `@nuphus/nuphus-mcp@X`
