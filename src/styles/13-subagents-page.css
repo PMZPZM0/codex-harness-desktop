@@ -1710,12 +1710,56 @@
 }
 .expert-cap-line small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
 
-/* 11-18 专家能力清单：缺件可见 + 一键补齐（工具）/ 去市场（技能） */
-.expert-cap-block { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.expert-cap-line span[data-miss]:not([data-miss="0"]) { background: color-mix(in srgb, var(--danger, #e5534b) 14%, transparent); color: var(--danger, #e5534b); }
-.expert-cap-miss { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; font-size: 12px; color: var(--muted); }
+/* 11-18 专家能力清单（v3）：收成一张小卡（专业工具 / 配套技能 两行 + 缺件行）。
+   v1 胶囊挤一行、v2 仍是散字 → 现在给容器底色与内边距，字号 12、行距 8。 */
+.expert-cap-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--field);
+}
+.expert-cap-row { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.expert-cap-label { flex: 0 0 56px; font-size: 12px; color: var(--muted); }
+.expert-cap-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.expert-cap-count.is-ok { color: var(--text); background: var(--panel); }
+.expert-cap-count.is-miss { color: #b6791f; background: color-mix(in srgb, #e0a03a 16%, transparent); }
+.expert-cap-names {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text);
+  opacity: .82;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.expert-cap-miss {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-soft);
+  font-size: 12px;
+  color: var(--muted);
+}
+.expert-cap-miss > span:first-child { flex: 1 1 auto; min-width: 0; }
+.expert-cap-miss.is-ok { color: var(--muted); }
 .expert-cap-fix {
-  padding: 1px 8px;
+  flex: 0 0 auto;
+  padding: 2px 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel);
@@ -1724,4 +1768,4 @@
   cursor: pointer;
 }
 .expert-cap-fix:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-.expert-cap-fix:disabled { opacity: 0.55; cursor: default; }
+.expert-cap-fix:disabled { opacity: .55; cursor: default; }

@@ -2332,5 +2332,16 @@ const catalog = [
       "groupTalk 派活同样串行（⛔ 不再全并发）");
   }
 
+  {
+    /* 11-18 用户令：「所有专家，都要配套技能」；「技能应该是专家自带的」。
+       ⛔ 这里只校验**声明层**：能力表里每位至少一个技能、且名字不是空串。
+       真实存在性由 `listLocalSkills` 实测（那次踩过：13 个技能名里 12 个本机没有）。 */
+    const caps = codeOnly(read("electron/expert-teams/08-team-capabilities.ts"));
+    const entries = [...caps.matchAll(/^\s{2}([\u4e00-\u9fa5A-Za-z]+):\s*\{([\s\S]*?)\n\s{2}\},?$/gm)];
+    const noSkill = entries.filter(([, name, body]) => !/skills:\s*\[[^\]]*[\u4e00-\u9fa5A-Za-z]/.test(body)).map(([, name]) => name);
+    ok(entries.length >= 13 && noSkill.length === 0,
+      `每位专家至少一个配套技能（在册 ${entries.length} 位${noSkill.length ? `；缺技能：${noSkill.join("、")}` : ""}）`);
+  }
+
 console.log(`\n【team-chat-ux】${checks - fails}/${checks} 通过`);
 process.exit(fails ? 1 : 0);

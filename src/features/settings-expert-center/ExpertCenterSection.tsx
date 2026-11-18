@@ -36,10 +36,11 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   const missingExperts = RECOMMENDED_EXPERTS.filter((r) => !((expertTeams ?? []) as { lead?: { name?: string } }[]).some((t) => String(t?.lead?.name ?? "") === r.leadName));
   const createRecommended = async (leadName: string) => {
     const hit = RECOMMENDED_EXPERTS.find((r) => r.leadName === leadName);
-    if (!hit || !saveExpertTeam) return;
+    const saver = saveExpertTeam ?? (window.codex as { saveExpertTeam?: (d: never) => Promise<unknown> }).saveExpertTeam;
+    if (!hit || !saver) return;
     setCreating(leadName);
     try {
-      await (saveExpertTeam as (draft: Record<string, unknown>) => Promise<unknown>)(hit.team);
+      await (saver as (draft: Record<string, unknown>) => Promise<unknown>)(hit.team);
       refreshExpertTeams?.();
     } finally {
       setCreating("");
@@ -92,21 +93,32 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
       {onBack && <button type="button" className="settings-back-row" onClick={onBack}><ArrowLeft size={14} />返回智能体团队</button>}
       <div className="settings-heading-actions">{onOpenMarket && <button className="secondary-setting" title="SkillHub 专家市场包：一键安装整套专家工作流，装完自动出现在这里" onClick={onOpenMarket}><Package size={14} />专家市场</button>}</div>
     </div>
-    {/* 11-18：推荐专家（开发工具五大类里还没有负责人的四类）。⛔ 只做「一键建档」，
-        建完就是普通专家，可在「专家团」里改任何字段。 */}
-    {saveExpertTeam && missingExperts.length ? (
+    {/* 11-18：推荐专家 —— 与「专家工作证」同款小卡（⛔ 不再用一排 secondary-setting 按钮，
+        用户反馈「推荐卡片真丑」）。点卡即建档；建完就是普通专家，可在「专家团」里改任何字段。 */}
+    {missingExperts.length ? (
       <div className="expert-category">
         <div className="expert-category-head">
           <span className="expert-category-icon"><Package size={15} /></span>
           <strong>推荐专家</strong>
-          <small>开发工具四大类还没有负责人：先建一个，再让它去管工具与技能</small>
+          <small>这四类还没有负责人：建一个，让它去管对应的工具与技能</small>
           <em>{missingExperts.length} 位可建</em>
         </div>
-        <div className="settings-toolbar-row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <div className="agent-badge-grid">
           {missingExperts.map((r) => (
-            <button key={r.leadName} type="button" className="secondary-setting" disabled={creating === r.leadName} onClick={() => void createRecommended(r.leadName)} title={r.team?.description?.zh ?? ""}>
-              {creating === r.leadName ? "创建中…" : `建「${r.leadName}」`}
-            </button>
+            <AgentBadge
+              key={r.leadName}
+              kind="expert"
+              seed={r.leadName}
+              name={r.leadName}
+              tag={creating === r.leadName ? "建档中…" : "可建档"}
+              line={[
+                r.team.profession?.zh ?? "",
+                `工具 ${r.team.tools?.length ?? 0}`,
+                `技能 ${r.team.skills?.length ?? 0}`,
+              ].filter(Boolean).join(" · ")}
+              disabled={creating === r.leadName}
+              onClick={() => void createRecommended(r.leadName)}
+            />
           ))}
         </div>
       </div>
@@ -154,7 +166,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
               <p>{preview.member.description || preview.member.profession.zh || "这位专家还没有写介绍。"}</p>
               {(() => {
                 /* 11-18 用户令：专家要「技能齐全、专业工具齐全」⇒ 卡上直接给数量与清单，缺了看得见。
-                   ⛔ 数据只认主进程读入时补好的 team.tools / team.skills（⛔ 前端不再自己一份）。 */
+                   ⛔ 数据只认主进程读好并补好的 team.tools / team.skills（前端不再自己一份）。 */
                 const tools: string[] = preview.team?.tools ?? [];
                 const skills: string[] = preview.team?.skills ?? [];
                 if (!tools.length && !skills.length) return <p className="expert-cap-line muted">尚未声明专业工具与技能</p>;
@@ -169,27 +181,30 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                     if (r?.ok) setInstalledTools((prev) => new Set([...prev, rid, id]));
                   } finally { setBusyCap(""); }
                 };
+                const Row = ({ label, ready, total, names, miss }: { label: string; ready: number; total: number; names: string; miss: number }) => (
+                  <div className="expert-cap-row">
+                    <span className="expert-cap-label">{label}</span>
+                    <span className={`expert-cap-count${miss ? " is-miss" : " is-ok"}`}>{ready}/{total}</span>
+                    <span className="expert-cap-names" title={names}>{names || "—"}</span>
+                  </div>
+                );
                 return (
                   <div className="expert-cap-block">
-                    <p className="expert-cap-line">
-                      <span title={tools.join("、")} data-miss={missTools.length}>工具 {tools.length - missTools.length}/{tools.length}</span>
-                      <span title={skills.join("、")} data-miss={missSkills.length}>技能 {skills.length - missSkills.length}/{skills.length}</span>
-                      {!capsLoaded ? <small>读取中…</small> : null}
-                    </p>
-                    {missTools.length ? (
-                      <p className="expert-cap-miss">缺工具：{missTools.join(" / ")}
+                    <Row label="专业工具" ready={tools.length - missTools.length} total={tools.length} names={tools.join("、")} miss={missTools.length} />
+                    <Row label="配套技能" ready={skills.length - missSkills.length} total={skills.length} names={skills.join("、")} miss={missSkills.length} />
+                    {missTools.length || missSkills.length ? (
+                      <div className="expert-cap-miss">
+                        <span>缺：{[...missTools, ...missSkills].join("、")}</span>
                         {installable.slice(0, 3).map((id) => (
                           <button key={id} type="button" className="expert-cap-fix" disabled={busyCap === id} onClick={() => void installOne(id)}>
                             {busyCap === id ? "安装中…" : `装 ${id}`}
                           </button>
                         ))}
-                      </p>
-                    ) : null}
-                    {missSkills.length ? (
-                      <p className="expert-cap-miss">缺技能：{missSkills.join(" / ")}
-                        {onOpenMarket ? <button type="button" className="expert-cap-fix" onClick={onOpenMarket}>去技能市场</button> : null}
-                      </p>
-                    ) : null}
+                        {missSkills.length && onOpenMarket ? <button type="button" className="expert-cap-fix" title="专家技能应随专家包提供；市场里未必有同名技能" onClick={onOpenMarket}>去市场找找</button> : null}
+                      </div>
+                    ) : (
+                      <div className="expert-cap-miss is-ok"><span>工具与技能都已就绪</span></div>
+                    )}
                   </div>
                 );
               })()}
