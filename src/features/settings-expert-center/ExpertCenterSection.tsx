@@ -21,7 +21,9 @@ export type ExpertCenterSectionProps = {
   onOpenMarket?: () => void;
   onBack?: () => void;
   /** 11-18：一键建「推荐专家」（筑基/掌控/通译/造物）。不传就不显示这一块。 */
-  saveExpertTeam?: (draft: any) => Promise<unknown>;
+  /* ⛔ 用 never 形参：宿主给的是 ExpertTeamConfig（比 Record 更窄），
+     用 Record 会让"函数参数逆变"直接报错；调用处再转一次。 */
+  saveExpertTeam?: (draft: never) => Promise<unknown>;
   refreshExpertTeams?: () => void;
 };
 
@@ -31,13 +33,13 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   const [previewKey, setPreviewKey] = useState("");
   const [creating, setCreating] = useState("");
   /* ⛔ 判据只看**主理人名是否已在专家表里**（用户改过配置也不该再提示创建）。 */
-  const missingExperts = RECOMMENDED_EXPERTS.filter((r) => !(expertTeams ?? []).some((t: any) => String(t?.lead?.name ?? "") === r.leadName));
+  const missingExperts = RECOMMENDED_EXPERTS.filter((r) => !((expertTeams ?? []) as { lead?: { name?: string } }[]).some((t) => String(t?.lead?.name ?? "") === r.leadName));
   const createRecommended = async (leadName: string) => {
     const hit = RECOMMENDED_EXPERTS.find((r) => r.leadName === leadName);
     if (!hit || !saveExpertTeam) return;
     setCreating(leadName);
     try {
-      await saveExpertTeam(hit.team);
+      await (saveExpertTeam as (draft: Record<string, unknown>) => Promise<unknown>)(hit.team);
       refreshExpertTeams?.();
     } finally {
       setCreating("");
@@ -102,7 +104,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
         </div>
         <div className="settings-toolbar-row" style={{ flexWrap: "wrap", gap: 8 }}>
           {missingExperts.map((r) => (
-            <button key={r.leadName} type="button" className="secondary-setting" disabled={creating === r.leadName} onClick={() => void createRecommended(r.leadName)} title={(r.team as any)?.description?.zh ?? ""}>
+            <button key={r.leadName} type="button" className="secondary-setting" disabled={creating === r.leadName} onClick={() => void createRecommended(r.leadName)} title={r.team?.description?.zh ?? ""}>
               {creating === r.leadName ? "创建中…" : `建「${r.leadName}」`}
             </button>
           ))}
