@@ -28,7 +28,11 @@ try {
   ok(false, `skill-packs-catalog.ts 读不到：${error?.message ?? error}`);
 }
 if (catalog) {
-  ok(Array.isArray(catalog) && catalog.length === 3, `清单是 3 条（实测 ${Array.isArray(catalog) ? catalog.length : "非数组"}）`);
+  /* 11-19 扩编：3 → 5（新增 taste-skill / gsap-skills）。判据改成「至少 5 且必需 id 都在」，
+   这样以后再加包不会因为数字对不上而误红，但仍能抓住「整个清单被清空 / 少了包」这类真问题。 */
+  const requiredPackIds = ["matt-pocock-skills", "diagram-design", "how-to-live-better", "taste-skill", "gsap-skills"];
+  ok(Array.isArray(catalog) && catalog.length >= requiredPackIds.length && requiredPackIds.every((id) => catalog.some((pack) => pack?.id === id)),
+    `清单含全部必需技能包（实测 ${Array.isArray(catalog) ? catalog.length : "非数组"} 条）`);
   const ids = catalog.map((pack) => pack.id);
   ok(new Set(ids).size === ids.length && ids.every((id) => /^[a-z0-9-]+$/.test(id)), "id 唯一且是 kebab-case");
   ok(catalog.every((pack) => /^[\w.-]+\/[\w.-]+$/.test(pack.repo)), "repo 都是 owner/name");
