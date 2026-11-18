@@ -171,6 +171,7 @@ import { CloudAccountSyncBridge } from "../settings-cloud";
 import { RightFileBridge } from "./AppView/RightFileBridge";
 import { RemoteAskBridge } from "./RemoteAskBridge";
 import { DramaCanvas } from "../drama-canvas";
+import { SettingsDialog } from "../../components/SettingsDialog";
 import { UiSketchModal } from "../ui-sketch";
 import { WhatsNewDialog } from "../whats-new";
 import { ProfileOnboardingWizard } from "../profile-onboarding/ProfileOnboardingWizard";
@@ -501,10 +502,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
 
   /* 11-18：自媒体工作台的「成稿出口」把提示词推过来 ⇒ 填进输入框（⛔ 不自动发送）。
      订阅只挂一次；setPrompt 来自 bag（与设计库/组件库的 onHandoff 同一条路）。 */
+  const [incoming, setIncoming] = useState<{ text: string; threadId?: string } | null>(null);
   useEffect(() => {
     const off = window.codex.onAppPrefill?.((payload) => {
       const text = String(payload?.text ?? "");
-      if (text) app.setPrompt(text);
+      if (!text) return;
+      if (app.promptRef.current) setIncoming({ text, threadId: app.threadRef.current?.id });
+      else app.setPrompt(text);
     });
     return () => { off?.(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -725,6 +729,13 @@ export function AppView({ app }: { app: HarnessAppApi }) {
           </div>
         </div>
       ))}
+      {incoming && incoming.threadId === thread?.id && <SettingsDialog title="工作台内容已送达" hint="当前输入框已有草稿" size="sm" onClose={() => setIncoming(null)}>
+        <div className="settings-heading-actions">
+          <button className="secondary-setting" onClick={() => setIncoming(null)}>保留原稿</button>
+          <button className="secondary-setting" onClick={() => { setPrompt(incoming.text); setIncoming(null); }}>替换草稿</button>
+          <button className="primary-setting" onClick={() => { setPrompt((draft) => draft ? `${draft}\n\n${incoming.text}` : incoming.text); setIncoming(null); }}>追加到草稿</button>
+        </div>
+      </SettingsDialog>}
       {appConfirm && (confirmAnchor ? (
         <AnchoredDialogCard anchor={confirmAnchor} ariaLabel={appConfirm.title} onClose={() => { appConfirm.resolve(false); setAppConfirm(null); }}>
           <div className="dialog-anchor-head"><Trash2 size={15} /><strong>{appConfirm.title}</strong></div>

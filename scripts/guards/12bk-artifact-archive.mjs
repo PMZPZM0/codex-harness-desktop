@@ -51,7 +51,7 @@ ok(nextAvailableName(dir, "x.png") === "x-r3.png", "再归档一版 ⇒ -r3");
 /* ③ 真落盘往返 */
 const first = await archiveFiles(tmp, {
   files: [{ path: src }], task: "推广汇报", at: new Date(2026, 10, 11).getTime(),
-  source: "守卫", note: "验收",
+  source: "守卫", note: "验收", originThreadId: "first-thread",
 });
 ok(first.ok === true && first.dir === "20261111-推广汇报", "archiveFiles 真落盘到日期-短名目录");
 ok(existsSync(src), "⛔ 原文件保留（只复制不移动/删除）");
@@ -62,10 +62,12 @@ ok(manifest.task === "推广汇报" && manifest.files.length === 1, "目录内 _
 ok(readFileSync(join(artifactsRoot(tmp), "index.jsonl"), "utf8").includes("20261111-推广汇报"), "根 index.jsonl 总台账追加一行");
 
 const second = await archiveFiles(tmp, {
+  originThreadId: "another-thread",
   files: [{ path: src }], task: "推广汇报", at: new Date(2026, 10, 11).getTime(),
 });
 ok(second.ok === true && second.saved?.[0]?.name === "daily-1107-r2.png", "同任务再归档 ⇒ 迭代后缀，不覆盖第一版");
 const rows = listArchives(tmp, 10);
+ok(manifest.originThreadId === "first-thread" && rows[0]?.originThreadId === "first-thread", "来源会话首次落盘、跨会话追加后仍指回首份产物");
 ok(rows.length === 1 && rows[0].files.length === 2, "listArchives 按目录聚合（两版算一次任务）");
 
 const missing = await archiveFiles(tmp, { files: [{ path: join(tmp, "不存在.png") }], task: "x" });

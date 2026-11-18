@@ -26,7 +26,7 @@ bag.clearTeamCwd = clearTeamCwd as typeof bag.clearTeamCwd;
 
   /** 成员直达会话：点击专家/成员 chip → 立刻新建以「团队名 · 成员名」命名的空会话并跳转，
    *  不弹任务描述弹窗。用户输入的第一条消息由发送管线自动包装成 SYSTEM TASK 注入成员角色。 */
-  async function startMemberDirectSession(team: ExpertTeamConfig, member: ExpertTeamMember) {
+  async function startMemberDirectSession(team: ExpertTeamConfig, member: ExpertTeamMember, prefill?: string) {
     if (!bag.customModel || !bag.selectedModel) { bag.setNotice("请先配置并启用自定义模型"); bag.setSettingsOpen(true); return; }
     const teamCwd = bag.teamCwdMap[team.teamId] ?? bag.workspace;
     if (!teamCwd) { await bag.chooseWorkspace(); return; }
@@ -59,6 +59,7 @@ bag.clearTeamCwd = clearTeamCwd as typeof bag.clearTeamCwd;
       if (memberSessionName && result.thread?.name !== memberSessionName) void bag.renameThread(result.thread.id, memberSessionName);
       bag.setSettingsOpen(false);
       await bag.openThread(result.thread.id, result.thread);
+      if (prefill && bag.threadRef.current?.id === result.thread.id) bag.setPrompt(prefill);
       // 空线程是主进程 thread/start 直接建的，openThread 只切视图不更新左侧列表，
       // 必须显式刷新一次列表，让新会话立即出现在左侧
       void bag.refreshThreads();

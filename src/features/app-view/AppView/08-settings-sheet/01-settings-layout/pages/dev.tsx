@@ -30,8 +30,13 @@ export function devPages(app: HarnessAppApi): Partial<Record<SettingsPage, Setti
     setRuntimeModal,
     uninstallDevRuntime,
   } = app;
+  const openExpert = (name: string, tool: string) => {
+    const team = app.expertTeams.find((entry) => entry.lead.name === name);
+    if (!team) { app.setSettingsPage("expert-center"); setNotice(`请先为「${name}」建档，再从「${tool}」发起任务`); return; }
+    void app.startMemberDirectSession(team, team.lead, `请帮我检查「${tool}」的就绪情况，并给出下一步建议。`);
+  };
   return {
-    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={() => app.setSettingsPage("expert-center")} /> },
+    devtools: { render: () => <DevtoolsSettingsSection capabilityRows={capabilityRows} capabilityError={capabilityError} setNotice={setNotice} devRuntimes={devRuntimes} runtimeInstalling={runtimeInstalling} runtimeUninstalling={runtimeUninstalling} runtimePercent={runtimePercent} runtimeStage={runtimeStage} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} installDevRuntime={installDevRuntime} uninstallDevRuntime={uninstallDevRuntime} cancelDevRuntime={cancelDevRuntime} runtimeModal={runtimeModal} setRuntimeModal={setRuntimeModal} onOpenExperts={openExpert} /> },
     extensibility: { render: () => <ExtensibilitySettingsSection onNotice={setNotice} /> },
   };
 }

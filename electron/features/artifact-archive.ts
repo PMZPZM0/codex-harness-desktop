@@ -193,6 +193,7 @@ export async function archiveFiles(workspace: string, input: ArchiveInput): Prom
     dir: dirName,
     task: existing.task || normalizeTaskName(input.task),
     at: Number(existing.at ?? at),
+    ...(existing.originThreadId || input.originThreadId ? { originThreadId: existing.originThreadId || input.originThreadId } : {}),
     ...(existing.source ?? input.source ? { source: String(existing.source ?? input.source ?? "") } : {}),
     ...(existing.note ?? input.note ? { note: String(existing.note ?? input.note ?? "") } : {}),
     files: [

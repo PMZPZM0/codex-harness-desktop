@@ -95,7 +95,7 @@ import { RUNTIME_GROUPS, groupOfCardKey, isInstallable, isRemovable, readyLabel,
 
 export type DevtoolsSettingsSectionProps = {
   /** 11-18：卡片 → 负责专家（点一下去专家中心）。没传就不显示这一行。 */
-  onOpenExperts?: () => void; downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
+  onOpenExperts?: (expert: string, tool: string) => void; downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
 type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
@@ -281,6 +281,9 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
   };
 
   /* CLI 智能体已挪到「设置 → 专家/专家团」（10-31 用户令：它是调度对象，不是开发工具）。 */
+  const expertAction = (card: CardSpec) => props.onOpenExperts && CARD_EXPERT[card.key] ? (
+    <button type="button" className="devtools-card-expert" onClick={() => props.onOpenExperts?.(CARD_EXPERT[card.key], card.title)}>交给 {CARD_EXPERT[card.key]}</button>
+  ) : null;
 
   return (
     <>
@@ -291,27 +294,8 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           {toolCards.map((card) => (
             <div className="devtools-card" key={card.key} data-card={card.key}>
               <CardBody card={card} onOpen={() => setOpenCard(card.key)} />
-              {props.onOpenExperts && CARD_EXPERT[card.key] ? (
-                <button
-                  type="button"
-                  className="devtools-card-expert"
-                  title={`交给 ${CARD_EXPERT[card.key]} 专家（打开专家中心，看它的工具与技能是否齐全）`}
-                  onClick={() => props.onOpenExperts?.()}
-                >
-                  交给 {CARD_EXPERT[card.key]}
-                </button>
-              ) : null}
               {renderCardAction(card)}
-              {props.onOpenExperts && CARD_EXPERT[card.key] ? (
-                <button
-                  type="button"
-                  className="devtools-card-expert"
-                  title={`交给 ${CARD_EXPERT[card.key]} 专家（打开专家中心，看它的工具与技能是否齐全）`}
-                  onClick={() => props.onOpenExperts?.()}
-                >
-                  交给 {CARD_EXPERT[card.key]}
-                </button>
-              ) : null}
+              {expertAction(card)}
             </div>
           ))}
         </div>
@@ -320,6 +304,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
           {otherCards.map((card) => (
             <div className="devtools-card" key={card.key} data-card={card.key}>
               <CardBody card={card} onOpen={() => setOpenCard(card.key)} />
+              {expertAction(card)}
             </div>
           ))}
         </div>

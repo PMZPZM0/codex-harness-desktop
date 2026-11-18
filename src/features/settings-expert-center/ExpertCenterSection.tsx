@@ -231,7 +231,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                 return (
                   <div className="expert-cap-block">
                     <Row label="专业工具" ready={tools.length - missTools.length} total={tools.length} names={tools.join("、")} miss={missTools.length} />
-                    <Row label="配套技能" ready={skills.length - missSkills.length} total={skills.length} names={[skills.join("、"), offSkills.length ? `（${offSkills.length} 个未启用）` : ""].filter(Boolean).join(" ")} miss={missSkills.length} />
+                    <Row label="配套技能" ready={skills.length - missSkills.length - offSkills.length} total={skills.length} names={[skills.join("、"), offSkills.length ? `（${offSkills.length} 个未启用）` : ""].filter(Boolean).join(" ")} miss={missSkills.length + offSkills.length} />
                     {skills.length ? (
                       <div className="expert-cap-skills">
                         <button type="button" className="expert-cap-more" onClick={() => setSkillPanelOpen((v) => !v)}>
@@ -260,7 +260,7 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                     ) : null}
                     {missTools.length || missSkills.length || offSkills.length ? (
                       <div className="expert-cap-miss">
-                        <span>缺：{[...missTools, ...missSkills].join("、")}</span>
+                        {(missTools.length > 0 || missSkills.length > 0) && <span>缺：{[...missTools, ...missSkills].join("、")}</span>}
                         {installable.slice(0, 3).map((id) => (
                           <button key={id} type="button" className="expert-cap-fix" disabled={busyCap === id} onClick={() => void installOne(id)}>
                             {busyCap === id ? "安装中…" : `装 ${id}`}

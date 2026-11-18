@@ -25,7 +25,8 @@ try {
 } catch { /* 无 localStorage 环境忽略 */ }
 
 /** 组件库页：按类目浏览打包好的组件，可搜索与看详情。 */
-export function ComponentLibraryPage({ onHandoff }: {
+export function ComponentLibraryPage({ onHandoff, onRestore }: {
+  onRestore?: (doc: unknown) => Promise<void>;
   /** 交给 Codex / 画布：把提示词填进主输入框（⛔ 不自动发送，用户可先改再发）。 */
   onHandoff?: (text: string) => void;
 } = {}) {
@@ -43,16 +44,12 @@ export function ComponentLibraryPage({ onHandoff }: {
     return () => { alive = false; };
   }, []);
   const kitToCanvas = async (id: string) => {
-    if (!onHandoff) return;
-    const item = await window.codex.getUiKitItem(id).catch(() => null);
-    if (!item) return;
-    onHandoff([
-      `打开「前端开发」画布，把「${item.name}」这份稿子继续做下去：`,
-      "步骤：① frontend_get_doc 取当前文档；② 用 frontend_apply_doc 把下面这份稿子写回（可在此基础上加一屏 / 改布局）；③ 说明改动。",
-      "```json",
-      JSON.stringify(item.doc).slice(0, 12000),
-      "```",
-    ].join("\n"));
+    if (!onRestore) return;
+    try {
+      const item = await window.codex.getUiKitItem(id);
+      if (!item) throw new Error("该组件已不存在");
+      await onRestore(item.doc);
+    } catch (error) { setLoadErr(`恢复画布失败：${String(error)}`); }
   };
   const kitRemove = async (id: string) => {
     await window.codex.removeUiKitItem(id).catch(() => null);
@@ -130,7 +127,7 @@ export function ComponentLibraryPage({ onHandoff }: {
             {myKit.map((item) => (
               <li key={item.id}>
                 <span title={`${Math.round(item.bytes / 1024)}KB · ${new Date(item.createdAt).toLocaleString("zh-CN")}`}>{item.name}</span>
-                {onHandoff ? <button type="button" className="comp-lib-copy" onClick={() => void kitToCanvas(item.id)}>去画布继续</button> : null}
+                {onRestore ? <button type="button" className="comp-lib-copy" onClick={() => void kitToCanvas(item.id)}>去画布继续</button> : null}
                 <button type="button" className="comp-lib-copy" onClick={() => void kitRemove(item.id)}>删除</button>
               </li>
             ))}

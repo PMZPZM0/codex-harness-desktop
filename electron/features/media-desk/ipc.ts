@@ -54,12 +54,18 @@ export const mediaDeskFeature = defineFeature<null>({
         const payload = await mediaDeskRequest("state");
         const state = (payload as { state?: { items?: any[] } })?.state ?? (payload as { items?: any[] });
         const items: any[] = Array.isArray(state?.items) ? state!.items! : [];
+        const time = (value: unknown) => typeof value === "number" ? value : Date.parse(String(value ?? "")) || 0;
+        const newest = (rows: typeof items, produced: boolean) => rows.reduce((best, row) => {
+          const stamp = (item: typeof row) => (produced && time(item.production?.finishedAt)) || time(item.createdAt);
+          return !best || stamp(row) > stamp(best) ? row : best;
+        }, undefined);
         const pick = input?.itemId
           ? items.find((x) => String(x?.id ?? "") === String(input.itemId))
-          : (items.filter((x) => x?.production?.status === "done").slice(-1)[0] ?? items.slice(-1)[0]);
+          : (newest(items.filter((x) => x?.production?.status === "done"), true) ?? newest(items, false));
         if (!pick) return { ok: false, error: "工作台里还没有内容 —— 先采集或写一条" };
-        const title = String(pick.title ?? "未命名").trim();
-        const body = String(pick.body ?? pick.text ?? "").trim().slice(0, 1200);
+        const production = pick.production?.status === "done" ? pick.production : null;
+        const title = String(production?.title ?? pick.title ?? "未命名").trim();
+        const body = String(production?.article ?? pick.body ?? pick.text ?? "").trim().slice(0, 1200);
         const head = `自媒体工作台这条内容：「${title}」`;
         const tail = body ? `\n\n正文摘要：\n${body}` : "";
         const prompts: Record<HandoffKind, string> = {

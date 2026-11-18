@@ -15,11 +15,12 @@ type Args = Record<string, unknown>;
  * 用户以为「排了就等着发」。这里补一条 `scheduler` 的一次性任务：到点开一个真实回合，
  * 让 Codex 读工作台、整理成稿、列出发布前要确认的事。
  * ⛔ 只加一条「提醒 + 整理」，不代替用户点发布（发布是外站动作，不伪造成功）。
- * ⛔ 同名任务已存在就改它（update），不重复堆任务。
+ * 系统任务按完整内容 id 关联；旧版由相同模板生成的任务在下次操作时迁移。
  */
 async function bridgeSystemSchedule(input: { title: string; when: string; itemId: string }): Promise<{ id?: string; error?: string }> {
   try {
     const [{ scheduler }, { app }] = await Promise.all([import("../../main"), import("electron")]);
+    const id = `media-desk:${input.itemId}`;
     const name = `自媒体 · ${input.title || "排期"}（${input.itemId.slice(0, 6)}）`;
     const prompt = [
       `自媒体工作台有一条排期到点了：「${input.title || "未命名"}」（item ${input.itemId}）。`,
@@ -27,9 +28,13 @@ async function bridgeSystemSchedule(input: { title: string; when: string; itemId
       "然后列出发布前需要我确认的 3 件事（平台 / 时间 / 敏感点），不要自己发布。",
     ].join("");
     const list = await scheduler.list();
-    const existing = (list ?? []).find((t: any) => t?.name === name);
+    const legacy = list.filter((task) => task.id !== id && task.kind === "once" && task.name.startsWith("自媒体 · ") && task.prompt.startsWith("自媒体工作台有一条排期到点了：") && task.prompt.includes(`」（item ${input.itemId}）。请用 media_desk 工具`));
+    if (!input.when) {
+      for (const task of list.filter((t) => t.id === id).concat(legacy)) await scheduler.remove(task.id);
+      return {};
+    }
     const saved = await scheduler.save({
-      ...(existing ? { id: existing.id } : {}),
+      id,
       name,
       prompt,
       workspace: app.getPath("home"),
@@ -39,7 +44,8 @@ async function bridgeSystemSchedule(input: { title: string; when: string; itemId
       effort: "high",
       enabled: true,
     });
-    return { id: (saved as any)?.id };
+    for (const task of legacy) await scheduler.remove(task.id);
+    return { id: saved.id };
   } catch (error) {
     /* 桥失败不影响工作台自己的排期（那是上游的真相源）；把原因回给模型，别静默。 */
     return { error: String((error as { message?: unknown } | null)?.message ?? error) };
@@ -156,7 +162,7 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
         const whenRaw = args?.when;
         const when = typeof whenRaw === "number" ? new Date(whenRaw).toISOString() : String(whenRaw ?? "");
         if (!when || Number.isNaN(Date.parse(when))) return { ok: false, error: "when 需要 ISO 时间（如 2026-11-10T09:00:00+08:00）或毫秒时间戳" };
-        const postId = String(args?.postId ?? "").trim();
+        let postId = String(args?.postId ?? "").trim();
         if (postId) {
           /* 给已有内容改排期（上游 schedule_item）。 */
           await applyOps([{
@@ -165,16 +171,17 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
             scheduledAt: when,
             ...(args?.platform ? { platform: String(args.platform) } : {}),
           }]);
-          const bridgedEdit = await bridgeSystemSchedule({ title: String(args?.title ?? postId), when, itemId: postId });
-          return out({ id: postId, scheduledAt: when, systemScheduleId: bridgedEdit.id, systemScheduleError: bridgedEdit.error, state: summarize(await mediaDeskRequest("state")) });
-        }
-        const id = await addItem({
+        } else postId = await addItem({
           title: String(args?.title ?? "").trim() || "未命名排期", body: String(args?.text ?? ""),
           kind: "note", status: "idea", scheduledAt: when,
           ...(args?.platform ? { platform: String(args.platform) } : {}),
         });
-        if (!id) return { ok: false, error: "排期失败（上游没有回执）" };
-        return out({ id, state: summarize(await mediaDeskRequest("state")) });
+        if (!postId) return { ok: false, error: "排期失败（上游没有回执）" };
+        const payload = await mediaDeskRequest("state");
+        const post = payload?.state?.items?.find((item: { id: string }) => item.id === postId);
+        const linked = await bridgeSystemSchedule({ title: String(post?.title ?? args?.title ?? postId), when, itemId: postId });
+        if (linked.error) return { ok: false, error: `工作台已保存（${postId}），系统排期同步失败：${linked.error}` };
+        return out({ id: postId, scheduledAt: when, systemScheduleId: linked.id, state: summarize(payload) });
       }
       case "metric": {
         const platform = String(args?.platform ?? "").trim();
@@ -215,10 +222,22 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
         const id = String(args?.id ?? "");
         if (!id) return { ok: false, error: "delete 需要 id（state 里有）" };
         const res = await applyOps([{ op: "delete_item", id }]);
+        const linked = await bridgeSystemSchedule({ title: "", when: "", itemId: id });
+        if (linked.error) return { ok: false, error: `内容已删除，系统排期清理失败：${linked.error}` };
         return out({ receipts: res?.receipts, state: summarize(await mediaDeskRequest("state")) });
       }
       case "undo": {
+        type Row = { id: string; title?: string; scheduledAt?: string };
+        const schedules = (state: { items: Row[] }) => new Map(state.items.filter((i) => i.scheduledAt).map((i) => [i.id, i]));
+        const before = schedules((await mediaDeskRequest("state")).state);
         const res = await mediaDeskRequest("undo", {});
+        const after = schedules(res.state);
+        for (const itemId of new Set([...before.keys(), ...after.keys()])) {
+          const old = before.get(itemId), next = after.get(itemId);
+          if (old?.scheduledAt === next?.scheduledAt && old?.title === next?.title) continue;
+          const linked = await bridgeSystemSchedule({ itemId, title: next?.title ?? "", when: next?.scheduledAt ?? "" });
+          if (linked.error) return { ok: false, error: `工作台已撤销，系统排期同步失败：${linked.error}` };
+        }
         return out({ label: res?.label, state: summarize(res) });
       }
       default:
