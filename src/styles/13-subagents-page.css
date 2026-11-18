@@ -1692,3 +1692,20 @@
   line-height: 1.5;
   word-break: break-all;
 }
+
+/* 11-18 专家能力行：工具 N · 技能 M（用户令「专家要技能齐全、专业工具齐全」，缺要看得见） */
+.expert-cap-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.expert-cap-line span {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--panel-2, rgba(127, 127, 127, 0.12));
+  color: var(--text);
+}
+.expert-cap-line small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }

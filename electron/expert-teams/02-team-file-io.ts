@@ -2,6 +2,7 @@
  * expert-teams 的「team-file-io」部分（09-22 从同目录 expert-teams.ts 按顶层声明分出，纯搬迁、零改写）。
  * ⛔ 逻辑与原地逐字一致，只补了顶部 import 与 `export`。
  */
+import { capabilitiesOf } from "./08-team-capabilities";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { ExpertTeamConfig } from "./01-team-types";
@@ -30,7 +31,14 @@ export function toolAvailable(tool: string): boolean {
 export async function readExpertTeams(): Promise<ExpertTeamConfig[]> {
   try {
     const list = JSON.parse(await readFile(teamsFile, "utf8")) as ExpertTeamConfig[];
-    return Array.isArray(list) ? list : [];
+    if (!Array.isArray(list)) return [];
+    /* 11-18：在这里**一次性**补齐 tools/skills（档案里没写就按主理人名查能力表）。
+       ⛔ 只补内存、不写盘：用户档案保持原样，删掉本段也不会丢数据。
+       ⛔ 不要在消费方（列表/卡片/调度）各补一次 —— 会立刻漂。 */
+    return list.map((team) => {
+      const caps = capabilitiesOf(team);
+      return { ...team, tools: caps.tools, skills: caps.skills };
+    });
   } catch {
     return [];
   }

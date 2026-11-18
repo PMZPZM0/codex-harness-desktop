@@ -25,6 +25,11 @@ export type ExpertTeamMember = {
   model?: string;
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   approvalPolicy?: "never" | "on-request" | "on-failure" | "untrusted";
+  /** 这个角色用到的**专业工具**（开发工具页的组件 id，如 computer-use / markitdown）。
+   *  11-18 用户令：「专家肯定要上来技能齐全，专业工具齐全」⇒ 工具与技能都要能声明、能查缺。 */
+  tools?: string[];
+  /** 这个角色配套的**技能**（技能目录里的名字，如 frontend-ui-design）。 */
+  skills?: string[];
 };
 
 export type ExpertTeamConfig = {
@@ -48,6 +53,9 @@ export type ExpertTeamConfig = {
   sop: string;
   /** ⛔ 依赖的按需工具（如 "rea"）：对应「开发工具」runtime 未安装时，该专家**整队不出现** ——
    *  用户令（2026-10-13）：「下载后，才可以用这个专家」。过滤点在 readExpertTeams（单点覆盖全部消费方）。 */
+  /** 整队声明的专业工具与技能（成员各自也能声明；列表取并集）。 */
+  tools?: string[];
+  skills?: string[];
   requiresTool?: string;
   enabled: boolean;
   createdAt: string;
