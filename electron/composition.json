@@ -555,6 +555,13 @@
       "config": null
     },
     {
+      "id": "ui-kit",
+      "enabled": true,
+      "file": "features/ui-kit.ts",
+      "export": "uiKitFeature",
+      "config": null
+    },
+    {
       "id": "scratch",
       "enabled": true,
       "file": "features/scratch-ipc.ts",

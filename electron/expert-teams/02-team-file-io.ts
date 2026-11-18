@@ -31,14 +31,7 @@ export function toolAvailable(tool: string): boolean {
 export async function readExpertTeams(): Promise<ExpertTeamConfig[]> {
   try {
     const list = JSON.parse(await readFile(teamsFile, "utf8")) as ExpertTeamConfig[];
-    if (!Array.isArray(list)) return [];
-    /* 11-18：在这里**一次性**补齐 tools/skills（档案里没写就按主理人名查能力表）。
-       ⛔ 只补内存、不写盘：用户档案保持原样，删掉本段也不会丢数据。
-       ⛔ 不要在消费方（列表/卡片/调度）各补一次 —— 会立刻漂。 */
-    return list.map((team) => {
-      const caps = capabilitiesOf(team);
-      return { ...team, tools: caps.tools, skills: caps.skills };
-    });
+    return Array.isArray(list) ? list : [];
   } catch {
     return [];
   }
@@ -48,7 +41,15 @@ export async function readExpertTeams(): Promise<ExpertTeamConfig[]> {
  *  这些**呈现与消费方**一律用这份 —— 过滤只在这一处写，不许各消费方再抄一遍。 */
 export async function readUsableExpertTeams(): Promise<ExpertTeamConfig[]> {
   const list = await readExpertTeams();
-  return list.filter((entry) => !entry.requiresTool || toolAvailable(entry.requiresTool));
+  return list
+    .filter((entry) => !entry.requiresTool || toolAvailable(entry.requiresTool))
+    /* 11-18：能力（工具/技能）在这里一次性补齐 —— 呈现与消费方都读这份，
+       ⛔ 只补内存不写盘；⛔ 不在列表/卡片/调度各补一次（会漂）。
+       ⛔ readExpertTeams 保持原始读（写路径与启动播种用它，守卫【rea-expert】钉住）。 */
+    .map((entry) => {
+      const caps = capabilitiesOf(entry);
+      return { ...entry, tools: caps.tools, skills: caps.skills };
+    });
 }
 
 /** 整份写回专家团档案（先建目录，保持缩进）。 */

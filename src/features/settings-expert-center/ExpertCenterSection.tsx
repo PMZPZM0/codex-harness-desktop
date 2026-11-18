@@ -34,8 +34,8 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
           window.codex.listLocalSkills().catch(() => []),
         ]);
         if (!alive) return;
-        setInstalledTools(new Set((rows ?? []).filter((r: any) => r?.installed).map((r: any) => String(r.id))));
-        setInstalledSkills(new Set((skills ?? []).map((k: any) => String(k?.name ?? k?.folder ?? "")).filter(Boolean)));
+        setInstalledTools(new Set((rows ?? []).filter((r) => r?.installed).map((r) => String(r.id))));
+        setInstalledSkills(new Set((skills ?? []).map((k) => String(k?.name ?? k?.folder ?? "")).filter(Boolean)));
       } finally { if (alive) setCapsLoaded(true); }
     })();
     return () => { alive = false; };
@@ -109,8 +109,8 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
               {(() => {
                 /* 11-18 用户令：专家要「技能齐全、专业工具齐全」⇒ 卡上直接给数量与清单，缺了看得见。
                    ⛔ 数据只认主进程读入时补好的 team.tools / team.skills（⛔ 前端不再自己一份）。 */
-                const tools: string[] = (preview.team as any)?.tools ?? [];
-                const skills: string[] = (preview.team as any)?.skills ?? [];
+                const tools: string[] = preview.team?.tools ?? [];
+                const skills: string[] = preview.team?.skills ?? [];
                 if (!tools.length && !skills.length) return <p className="expert-cap-line muted">尚未声明专业工具与技能</p>;
                 const missTools = tools.filter((t) => !toolReady(t));
                 const missSkills = skills.filter((k) => !skillReady(k));

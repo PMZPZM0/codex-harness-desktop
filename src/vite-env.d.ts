@@ -1609,6 +1609,10 @@ interface Window {
     artcraftRun(input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }): Promise<{ ok: boolean; text?: string; missing?: boolean; error?: string }>;
     /* 11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测） */
     artcraftPickRoot(input?: { clear?: boolean }): Promise<{ ok: boolean; root?: string; cleared?: boolean; canceled?: boolean }>;
+    listUiKitItems(): Promise<{ id: string; name: string; createdAt: number; bytes: number }[]>;
+    getUiKitItem(id: string): Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>;
+    saveUiKitItem(input: { name?: string; doc?: unknown }): Promise<{ id: string; name: string; replaced: boolean; count: number }>;
+    removeUiKitItem(id: string): Promise<{ removed: number; count: number }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */

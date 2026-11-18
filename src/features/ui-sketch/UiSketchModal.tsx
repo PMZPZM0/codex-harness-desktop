@@ -22,7 +22,7 @@
  * ⛔ 不许 createPortal（画布类浮层的既定立场：弹层留在自己那一层）。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Copy, PenTool, Play, RefreshCw, X } from "lucide-react";
+import { ArrowUp, Copy, Package, PenTool, Play, RefreshCw, X } from "lucide-react";
 import { SKETCH_BRIDGE_SOURCE, SKETCH_ENTRY_URL, buildSketchPrompt, describeDiag, summarizeDoc } from "./sketch-doc.mjs";
 import { attachSketchFrame, detachSketchFrame, feedSketchMessage } from "./sketch-session.mjs";
 import type { SketchDiag, SketchDoc } from "./sketch-doc.mjs";
@@ -126,6 +126,18 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
     setStatus("设计稿 JSON 已复制（可存档 / 发给别的工具）");
   };
 
+  /* 11-18（前端与设计大类）：画布 → 组件库。用户令「组件库和画布要联动起来」。
+     ⛔ 存的是画布 JSON 原样（⛔ 不裁剪、不改写上游结构）；同名覆盖，不堆重复。 */
+  const saveToKit = async () => {
+    if (!doc) { setStatus("画布还是空的 —— 先摆几个部件再存"); return; }
+    try {
+      const r = await window.codex.saveUiKitItem({ name: String(summary?.title ?? "").trim() || undefined, doc });
+      setStatus(r?.replaced ? `已更新「我的组件」：${r.name}（共 ${r.count} 个）` : `已存进「我的组件」：${r.name}（共 ${r.count} 个）`);
+    } catch (error) {
+      setStatus(`存组件失败：${String((error as { message?: unknown } | null)?.message ?? error)}`);
+    }
+  };
+
   const handToAgent = () => {
     const built = buildSketchPrompt(doc);
     /* 画布上什么都没有 ⇒ 不该发任务：那样送出去的是一句没有内容的空指令，白跑一个回合
@@ -148,6 +160,7 @@ export function UiSketchModal({ onClose, onAskAgent }: { onClose: () => void; on
           <button type="button" onClick={syncDoc}><RefreshCw size={13} />取回画布</button>
           <button type="button" onClick={previewNow}><Play size={13} />预览</button>
           <button type="button" onClick={() => void copyDoc()}><Copy size={13} />复制 JSON</button>
+          <button type="button" title="把当前画布存进「我的组件」，在 设置 → 我的组件 里能找到" onClick={() => void saveToKit()}><Package size={13} />存成组件</button>
           <button type="button" className="primary" onClick={handToAgent}><ArrowUp size={13} />交给 Codex 实现</button>
           <span className="ui-sketch-meta">
             {bridgeError ? <em className="ui-sketch-warn">{bridgeError}</em> : <>{summary.valid ? `${summary.title || "未命名"} · ${summary.frames} 屏 / ${summary.items} 部件` : "画布内容未取回"}</>}

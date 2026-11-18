@@ -35,6 +35,29 @@ export function ComponentLibraryPage({ onHandoff }: {
   const [detail, setDetail] = useState<{ cat: string; id: string; name: string; author: string; html: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [loadErr, setLoadErr] = useState("");
+  /* 11-18：我的组件（画布存进来的）。⛔ 与随包 catalog 分开列 —— 那是只读社区件，这是用户自己的。 */
+  const [myKit, setMyKit] = useState<{ id: string; name: string; createdAt: number; bytes: number }[]>([]);
+  useEffect(() => {
+    let alive = true;
+    void window.codex.listUiKitItems().then((rows) => { if (alive) setMyKit(rows ?? []); }).catch(() => { /* 读不到就不显示这一栏 */ });
+    return () => { alive = false; };
+  }, []);
+  const kitToCanvas = async (id: string) => {
+    if (!onHandoff) return;
+    const item = await window.codex.getUiKitItem(id).catch(() => null);
+    if (!item) return;
+    onHandoff([
+      `打开「前端开发」画布，把「${item.name}」这份稿子继续做下去：`,
+      "步骤：① frontend_get_doc 取当前文档；② 用 frontend_apply_doc 把下面这份稿子写回（可在此基础上加一屏 / 改布局）；③ 说明改动。",
+      "```json",
+      JSON.stringify(item.doc).slice(0, 12000),
+      "```",
+    ].join("\n"));
+  };
+  const kitRemove = async (id: string) => {
+    await window.codex.removeUiKitItem(id).catch(() => null);
+    setMyKit((prev) => prev.filter((x) => x.id !== id));
+  };
 
   // 类目懒加载 + 失败可见（load.ts 返回 error 字段 —— ⛔ 别吞，静默空白会被当成"没这个功能"）
   useEffect(() => {
@@ -99,6 +122,21 @@ export function ComponentLibraryPage({ onHandoff }: {
     <div className="comp-lib">
       <div className="comp-lib-head">
         <h3>组件库</h3>
+      {/* 11-18：我的组件（画布存进来的）。⛔ 只在这里列，不混进随包社区件。 */}
+      {myKit.length ? (
+        <div className="comp-lib-mine">
+          <strong>我的组件（{myKit.length}）</strong>
+          <ul>
+            {myKit.map((item) => (
+              <li key={item.id}>
+                <span title={`${Math.round(item.bytes / 1024)}KB · ${new Date(item.createdAt).toLocaleString("zh-CN")}`}>{item.name}</span>
+                {onHandoff ? <button type="button" className="comp-lib-copy" onClick={() => void kitToCanvas(item.id)}>去画布继续</button> : null}
+                <button type="button" className="comp-lib-copy" onClick={() => void kitRemove(item.id)}>删除</button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
         <p className="comp-lib-sub">
           Uiverse.io Galaxy 社区组件（<b>{UI_SKIN_CATALOG.length}</b> 个，MIT 许可）：点卡片看代码、一键复制，
           开发自己的网页 / 软件时直接粘过去用。要在本应用里换控件外观请去「控件皮肤」。

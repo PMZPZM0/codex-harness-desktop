@@ -377,3 +377,19 @@
 .design-lib-comp { display: flex; gap: 8px; font-size: 10.5px; line-height: 1.6; color: var(--faint); }
 .design-lib-comp > em { font-style: normal; color: var(--muted); flex: none; min-width: 96px; }
 .design-lib-comp b { color: var(--text); font-weight: 500; }
+
+/* 11-18 我的组件（画布存进来的）—— 与随包社区件分栏，不混排 */
+.comp-lib-mine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-2, rgba(127, 127, 127, 0.06));
+}
+.comp-lib-mine > strong { font-size: 12px; color: var(--text); }
+.comp-lib-mine ul { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.comp-lib-mine li { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.comp-lib-mine li > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }

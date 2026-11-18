@@ -1,7 +1,7 @@
 {
   "_comment": "IPC 桥的单一真相源。加/改接口只改这里，然后跑 `npm run gen:ipc`。字段：paramsImpl=preload 实现参数（含默认值），paramsDecl=d.ts 声明参数，returns=返回类型，cast=invoke 后的 as 尾转换（没有则 null），note=显示在生成物里的备注。事件订阅等非 invoke 成员不在这里（仍在 preload.ts 手写）。",
   "generatedAt": "2026-10-09",
-  "count": 714,
+  "count": 718,
   "channels": [
     {
       "name": "archiveDelegates",
@@ -7111,6 +7111,46 @@
       "invokeArgs": "input",
       "cast": null,
       "note": "11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测）"
+    },
+    {
+      "name": "listUiKitItems",
+      "channel": "ui-kit:list",
+      "paramsImpl": "",
+      "paramsDecl": "",
+      "returns": "Promise<{ id: string; name: string; createdAt: number; bytes: number }[]>",
+      "invokeArgs": "",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "getUiKitItem",
+      "channel": "ui-kit:get",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "saveUiKitItem",
+      "channel": "ui-kit:save",
+      "paramsImpl": "input: { name?: string; doc?: unknown }",
+      "paramsDecl": "input: { name?: string; doc?: unknown }",
+      "returns": "Promise<{ id: string; name: string; replaced: boolean; count: number }>",
+      "invokeArgs": "input",
+      "cast": null,
+      "note": null
+    },
+    {
+      "name": "removeUiKitItem",
+      "channel": "ui-kit:remove",
+      "paramsImpl": "id: string",
+      "paramsDecl": "id: string",
+      "returns": "Promise<{ removed: number; count: number }>",
+      "invokeArgs": "id",
+      "cast": null,
+      "note": null
     }
   ]
 }

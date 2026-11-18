@@ -1197,6 +1197,10 @@ contextBridge.exposeInMainWorld("codex", {
   artcraftRun: (input: { app?: string; action?: string; path?: string; out?: string; commands?: Array<{ id?: string; cmd?: string; params?: Record<string, unknown> }>; filter?: string; quality?: number }) => __ipc("artcraft:run", 1, [input]),
   /* 11-17 手动指定 Launcher 安装目录（任意盘/自定义 root 都能识别；clear 恢复自动检测） */
   artcraftPickRoot: (input?: { clear?: boolean }) => __ipc("artcraft:pick-root", 0, [input]),
+  listUiKitItems: () => __ipc("ui-kit:list", 0, []),
+  getUiKitItem: (id: string) => __ipc("ui-kit:get", 1, [id]),
+  saveUiKitItem: (input: { name?: string; doc?: unknown }) => __ipc("ui-kit:save", 1, [input]),
+  removeUiKitItem: (id: string) => __ipc("ui-kit:remove", 1, [id]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。

@@ -86,6 +86,7 @@ import { remoteFeature as feat_remote } from "./features/remote-ipc";
 import { rpaFeature as feat_rpa } from "./features/rpa-ipc";
 import { runtimeFeature as feat_runtime } from "./features/runtime-ipc";
 import { schedulerFeature as feat_scheduler } from "./features/scheduler-ipc";
+import { uiKitFeature as feat_ui_kit } from "./features/ui-kit";
 import { scratchFeature as feat_scratch } from "./features/scratch-ipc";
 import { sessionWorkspaceFeature as feat_sessionspace } from "./features/session-workspace-ipc";
 import { screenshotFeature as feat_screenshot } from "./features/screenshot-ipc";
@@ -220,6 +221,7 @@ export const ENABLED: EnabledDomain[] = [
   { id: "rpa", plugin: feat_rpa as Plugin<unknown>, config: null },
   { id: "runtime", plugin: feat_runtime as Plugin<unknown>, config: null },
   { id: "scheduler", plugin: feat_scheduler as Plugin<unknown>, config: null },
+  { id: "ui-kit", plugin: feat_ui_kit as Plugin<unknown>, config: null },
   { id: "scratch", plugin: feat_scratch as Plugin<unknown>, config: null },
   { id: "sessionspace", plugin: feat_sessionspace as Plugin<unknown>, config: null },
   { id: "screenshot", plugin: feat_screenshot as Plugin<unknown>, config: null },
