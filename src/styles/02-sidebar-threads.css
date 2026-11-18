@@ -24,6 +24,10 @@
   position: relative;
 }
 .thread-row > button:first-child:after { content: none; }
+/* 11-17 用户令（截图）：「任务下面的会话选项要跟上面项目那个字对齐」——
+   「项目 / 任务」tab 的文字起点 ≈ 6(容器) + 7(按钮) + 14(图标) + 3(间距) = 30px；
+   任务视图是平铺列表，把行内文字起点补齐到同一列（项目视图有分组缩进，不受影响）。 */
+.thread-list.is-tasks .thread-row > button:first-child { padding-left: 30px; }
 /* 任务运行中：8 点旋转 spinner（Uiverse「serious-mule-65」/ AHMED-MIT，MIT License）
    ⛔ 2026-10-04 用户指定换掉原来的「三点上下弹跳」；
      ⚠️ 形态变了：原来是 **3 个 `<i>` 元素**（`:nth-child(1..3)` 各配 delay），

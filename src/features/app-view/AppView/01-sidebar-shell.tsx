@@ -886,7 +886,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
               <div className="view-toolbar">
                 <button className="view-toolbar-btn ic-blue" title="刷新会话列表" onClick={() => void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads)}><ListRestart size={14} /></button>
                 <button className="view-toolbar-btn ic-cyan" title="搜索任务" onClick={() => { setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}><Search size={14} /></button>
-                <button className="view-toolbar-btn ic-violet" title={sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={!projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
+                <button className="view-toolbar-btn ic-violet" title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={toggleAllSidebarSections} disabled={viewTab !== "projects" || !projectGroups.length}>{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</button>
                 <button className="view-toolbar-btn ic-green" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => setNewProjectOpen(true)}><FolderPlus size={14} /></button>
               </div>
             </div>
@@ -900,7 +900,7 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 ⛔ DOM 顺序是**契约的一部分**（守卫【268】钉死已登记插槽位不许被删），
                    所以只允许追加在既有插槽之后，不许插到既有按钮之间。*/}
             <Slot id="sidebar.middle" props={{ onOpenSettings }} loader={() => import("../../settings-devtools/DomainsPanel")} />
-            <div className="thread-list">
+            <div className={`thread-list${viewTab === "tasks" ? " is-tasks" : ""}`}>
               {loading ? Array.from({ length: 5 }).map((_, index) => <div className="thread-skeleton shimmer" key={index} />) : viewTab === "tasks" ? (
                 /* 10-25 用户令：「项目选项旁边加一个任务选项」= 平铺全部会话（置顶优先、按最近活动排；
                    与项目视图共用 renderDispatchedList 同一渲染器）。

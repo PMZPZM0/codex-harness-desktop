@@ -46,7 +46,8 @@ const preload = read("electron/preload.ts");
 
 /* ── 一、入口常驻、绝不被滚没（用户 10-07 点名的一条）────────────────────── */
 {
-  const listAt = shell.indexOf('className="thread-list"');
+  /* 11-17：会话列表容器改成模板串（任务视图挂 is-tasks）——两种写法都认。 */
+  const listAt = Math.max(shell.indexOf('className="thread-list"'), shell.indexOf("thread-list${"));
   /* ⛔ 锚**入口按钮**而不是 `<NewbieGuide>`：10-22 起账户行压成侧栏最后一条（用户名贴底），
      弹窗组件仍挂在 Fragment 尾部（它的位置与可见性无关）；拿组件位置比对会永远红。 */
   const optionsAt = Math.max(

@@ -1457,6 +1457,12 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
          ⇒ 「任务」（平铺）视图必须与项目/分类视图同口径剔除 sourcedChildIds，
             否则每个被调度会话既在父会话的「↳ 调度会话 · N」块里，又在顶层平铺一行。 */
       (/viewTab === "tasks"[\s\S]{0,700}?sourcedChildIds\.has\(entry\.id\)/.test(appSrc2) ? ok : fail)("【156】任务（平铺）视图同样先把被调度会话从顶层剔除（不再与「↳ 调度会话」块重复）");
+      /* 11-17 用户实测（截图）：「切到任务选项，项目展开/隐藏按键要灰置不能点；任务下面的会话选项要跟上面项目那个字对齐」。 */
+      (appSrc2.includes("is-tasks") && appSrc2.includes('viewTab !== "projects" || !projectGroups.length') ? ok : fail)("【156】任务视图：列表挂 is-tasks，且「折叠全部项目」置灰不可点");
+      (() => {
+        const sideCss = readFileSync(join(ROOT, "src/styles/02-sidebar-threads.css"), "utf8");
+        (/\.thread-list\.is-tasks \.thread-row > button:first-child\s*\{[^}]*padding-left:\s*30px/.test(sideCss) ? ok : fail)("【156】任务视图的会话文字左对齐到 tab 文字（30px，含图标与间距）");
+      })();
       /* 折叠收纳（09-25 用户：「默认被调度和专家团会话都折叠状态」+「被调度的会话也要支持跟专家团
          那样折叠收纳起来」）：调度块默认**收起**，键 dispatch:<父会话 id>，与专家团聚簇同一套交互。 */
       /* 默认折叠用**展开集合**（命中=展开、默认空=全收起）。⛔ 不许用 collapsedSections 判「收起」——
