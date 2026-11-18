@@ -1795,6 +1795,19 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (gwSrc.includes("handleRootPair") && gwSrc.includes("handleRootPairStatus") && gwSrc.includes("pairRoutes") && gwSrc.includes("Location: `${PATH_PREFIX}/t/${deviceId}${url}`") ? ok : fail)(
       "【139e】根地址也能配对：/api/pair **按码定向**问那一台、/api/pair-status 按 rid 找回、已配对页面按 cookie 跳到 /t/<id>（⛔ 否则手输码拿到 HTML，APK 解析 JSON 直接炸）"
     );
+    /* 11-17 用户实测「每次重启手机 App 配对就失效」：旧 APK 的 baseUrl 丢了 /t/<设备ID>，
+       自动登录只带 deviceSecret（没有 6 位码）却落到根地址 ⇒ 根配对按码校验直接拒绝。
+       ⇒ 网关必须支持「设备秘密快路」：问所有在线电脑，只认签名过的 approved（假隧道伪造不了）。 */
+    (gwSrc.includes("presentedSecret") && gwSrc.includes("onlineTunnelIds().slice(0, 16)")
+      && gwSrc.includes("parsed.ok === true && parsed.approved === true && !parsed.rid")
+      && gwSrc.includes("pairResponseSigned(id, out)") && gwSrc.includes('status: "offline"') ? ok : fail)(
+      "【139e】根地址自动登录快路：只带 deviceSecret 也能重新换 cookie（签名校验 + IP 限流，不广播配对码）"
+    );
+    (apkOk(() => androidSrc.includes("^/t/([A-Za-z0-9_-]{8,24})(?:/|$)") && androidSrc.includes("adoptRelayPrefix")
+      && androidSrc.includes("chm_dev") && androidSrc.includes("VERSION_NAME") && androidSrc.includes('"offline".equals')
+      && readFileSync(join(ROOT, "android", "app", "build.gradle"), "utf8").includes('versionName "0.1.17"')) ? ok : fail)(
+      "【139e】APK 0.1.17：扫码保留 /t/<设备ID> 前缀 + 配对后从 chm_dev 补前缀（重启直接走 /t 自动登录）"
+    );
     /* ⛔ 11-14 用户令「堵死加固」：根配对不能再广播 —— 假隧道收不到码，也就抢不走配对。 */
     (tunnelSrc.includes("setPairCode") && tunnelSrc.includes('"pair-code"') && relaySrc.includes("setPairCode(") ? ok : fail)(
       "【139e】电脑端把当前配对码经已认证隧道上报网关（断线重连补报）；⛔ 网关不再广播配对码"

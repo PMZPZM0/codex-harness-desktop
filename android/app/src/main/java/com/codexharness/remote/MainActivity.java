@@ -125,7 +125,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/0.1.15");
+        settings.setUserAgentString(settings.getUserAgentString() + " CodexHarnessRemote/" + BuildConfig.VERSION_NAME);
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(web, true);
@@ -377,6 +377,7 @@ public class MainActivity extends AppCompatActivity {
                 String secret = json.optString("deviceSecret", "");
                 if (!secret.isEmpty()) saveSecret(secret);
                 applyCookies(result.cookies);
+                adoptRelayPrefix(result.cookies);
                 if (json.optBoolean("approved")) { runOnUiThread(() -> { if (gen == authGen) enterChat(); }); return; }
                 String rid = json.optString("rid", "");
                 runOnUiThread(() -> { if (gen == authGen) setBusy(true, "配对码正确，等待电脑端批准…"); });
@@ -400,6 +401,7 @@ public class MainActivity extends AppCompatActivity {
                     String secret = json.optString("deviceSecret", "");
                     if (!secret.isEmpty()) saveSecret(secret);
                     applyCookies(result.cookies);
+                    adoptRelayPrefix(result.cookies);
                     runOnUiThread(() -> { if (gen == authGen) enterChat(); });
                     return;
                 }
@@ -428,13 +430,16 @@ public class MainActivity extends AppCompatActivity {
                     JSONObject json = new JSONObject(result.body);
                     if (json.optBoolean("ok") && json.optBoolean("approved")) {
                         applyCookies(result.cookies);
+                        adoptRelayPrefix(result.cookies);
                         runOnUiThread(() -> { if (gen == authGen) enterChat(); });
                         return;
                     }
                     if (!json.optBoolean("ok")) {
-                        /* 服务器明确回了「不行」= 设备秘密失效，重试没意义，直接让人重新配对 */
+                        /* 11-17：电脑端不在线（status=offline）要继续重试；只有「秘密真的失效」才回配对页。
+                           ⛔ 旧实现任何 ok:false 都直接 break —— 电脑端冷启动慢 1~2 秒就会把用户打回配对页。 */
                         failure = json.optString("error", "连接已失效，请重新输入连接码或扫码");
-                        break;
+                        /* offline ⇒ 不 break，走下面的 sleep 后重试 */
+                        if (!"offline".equals(json.optString("status", ""))) break;
                     }
                     failure = "电脑还没准备好，请稍后重试";
                 } catch (Exception error) {
@@ -447,6 +452,23 @@ public class MainActivity extends AppCompatActivity {
             final String message = failure;
             runOnUiThread(() -> { if (gen != authGen) return; showSetup(message); });
         }).start();
+    }
+
+    /** 配对成功后网关会下发 `chm_dev=<中转设备ID>`：补进 baseUrl，
+     *  之后（包括重启）自动登录就走 `/t/<设备ID>/api/pair` 直连那台电脑，不再落到「只收 6 位码」的根地址。 */
+    private void adoptRelayPrefix(List<String> cookies) {
+        if (baseUrl == null || baseUrl.isEmpty() || baseUrl.contains("/t/")) return;
+        for (String header : cookies) {
+            String pair = header.split(";")[0];
+            int eq = pair.indexOf('=');
+            if (eq <= 0) continue;
+            if (!"chm_dev".equals(pair.substring(0, eq).trim())) continue;
+            String id = pair.substring(eq + 1).trim();
+            if (!id.matches("[A-Za-z0-9_-]{8,24}")) continue;
+            baseUrl = originOf(baseUrl) + "/t/" + id;
+            prefs().edit().putString(KEY_BASE, baseUrl).apply();
+            return;
+        }
     }
 
     private void applyCookies(List<String> cookies) {
@@ -525,6 +547,12 @@ public class MainActivity extends AppCompatActivity {
         if (origin.isEmpty()) return "";
         Uri uri = Uri.parse(url);
         String path = uri.getPath() == null ? "" : uri.getPath();
+        /* 11-17 修复「重启手机 App 配对就失效」：二维码现在是 `https://host/t/<设备ID>?p=1`，
+           **没有 `/r/`**。旧逻辑只认 `/r/` 前的前缀 ⇒ 把 /t/<设备ID> 丢了 ⇒ 重启后的自动登录
+           打到根地址，而根地址 /api/pair 只接受 6 位码 ⇒ 每次都要重配。这里先认 /t/<设备ID>。 */
+        java.util.regex.Matcher tunnel = java.util.regex.Pattern
+                .compile("^/t/([A-Za-z0-9_-]{8,24})(?:/|$)").matcher(path);
+        if (tunnel.find()) return origin + "/t/" + tunnel.group(1);
         int cut = path.indexOf("/r/");
         if (cut > 0) return origin + path.substring(0, cut);
         return origin;

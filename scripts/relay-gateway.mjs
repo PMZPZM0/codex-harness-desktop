@@ -380,6 +380,40 @@ async function handleRootPair(req, res) {
   try { payload = JSON.parse(body.toString("utf8") || "{}"); } catch { payload = null; }
   if (!payload || typeof payload !== "object") { jsonReply(res, 400, { ok: false, error: "请求格式不对" }); return; }
   const code = String(payload.code ?? "").trim();
+  const presentedSecret = String(payload.deviceSecret ?? "").trim();
+  /* 11-17 修复「每次重启手机 App 都要重新配对」：
+     手机重启后的自动登录只带 deviceId + deviceSecret（没有 6 位码）。旧 APK 的配对链接把
+     `/t/<设备ID>` 前缀丢了 ⇒ 请求落到根地址 ⇒ 这里按「必须 6 位码」拒绝 ⇒ 永远失效。
+     根地址无法按码定向，改为问**所有在线电脑**，只认签名通过的 `{ok:true,approved:true}`
+     （HMAC 签名保证假隧道伪造不了；已按 IP 限流）。修好后老 APK 不升级也能恢复自动登录。 */
+  if (!/^\d{6}$/.test(code) && presentedSecret) {
+    let last = null;
+    let responded = false;
+    for (const id of onlineTunnelIds().slice(0, 16)) {
+      try {
+        const out = await tunnelFetch(id, "POST", "/api/pair", req.headers, body, 8000);
+        let parsed = null;
+        try { parsed = JSON.parse(out.body.toString("utf8")); } catch { parsed = null; }
+        if (!parsed || !pairResponseSigned(id, out)) continue;
+        responded = true;
+        if (parsed.ok === true && parsed.approved === true && !parsed.rid) {
+          const desktopCookies = out.headers?.["set-cookie"];
+          const jar = [`chm_dev=${id}; Path=/; HttpOnly; SameSite=Lax`]
+            .concat(desktopCookies ? (Array.isArray(desktopCookies) ? desktopCookies : [desktopCookies]) : []);
+          console.log(`[relay] 根配对（设备秘密快路）：设备 ${id} 认领了自动登录`);
+          jsonReply(res, 200, parsed, { "set-cookie": jar });
+          return;
+        }
+        if (parsed.ok === false) last = parsed;
+      } catch { /* 下一台 */ }
+    }
+    /* 一台都没应答 = 电脑端不在线（手机应过一会儿重试，而不是判定「秘密失效」）；
+       有应答但都不认 = 秘密真的失效（手机才该回到配对页）。 */
+    jsonReply(res, 200, responded
+      ? (last ?? { ok: false, error: "这台手机没有被任何电脑批准：请重新扫码 / 输入配对码" })
+      : { ok: false, status: "offline", error: "电脑端应用不在线，请稍后重试" });
+    return;
+  }
   if (!/^\d{6}$/.test(code)) { jsonReply(res, 200, { ok: false, error: "配对码格式不对（应为 6 位数字）" }); return; }
   /* 只挑「当前上报的配对码 == 手机输入的码」的在线电脑。多人/多机同码是 1e6 分之一的碰撞，
      命中多台时全部问一遍、先认领者胜（电脑端自己还会再校验一次码）。 */
