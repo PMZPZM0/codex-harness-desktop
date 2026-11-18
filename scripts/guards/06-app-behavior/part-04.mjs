@@ -73,7 +73,7 @@ export async function run() {
   /* ⛔ 10-26：拓展功能（技能/插件/MCP）独立成侧栏常驻行 ⇒ 从功能入口菜单的默认顺序里移出。
      ⛔ 10-30 用户令（efc59177c）：默认再加「开发工具 / 收藏夹」两项（位置在「团队」之后），
        名单随之变长 —— 断言必须同步，否则「加了入口」这件事没有任何判据。 */
-  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "media>extensions>schedule>frontend>team>tool-list>devtools>favorites>identity>login>newbie"
+  (fmDefault180.order.join(">") === "tool-list>devtools>newbie>frontend>media>team>schedule>extensions>favorites>identity>login"
     && fmDefault180.location === "top" && fmDefault180.overflow.length === 0
     ? ok : fail)(
     "【180】功能入口默认顺序 + 默认位置 = 侧栏顶部「工作伙伴」下面（安装默认，可折叠），数据模型单一真相源"
@@ -105,9 +105,11 @@ export async function run() {
     (nudged.order[0] === "schedule" && nudged.order[1] === "frontend" ? ok : fail)(
       "【180】拖到某行之前 = 插到它前面（不是粗暴追加到末尾）"
     );
-    const reset = resetFunctionMenuLayout({ ...fmDefault180, location: "bottom", order: [...fmDefault180.order].reverse() });
-    (reset.location === "bottom" && reset.order.join(">") === FUNCTION_MENU_DEFAULT_ORDER.join(">") ? ok : fail)(
-      "【180】恢复默认只还原排序/分组，保留用户选的位置"
+    const custom = { location: "bottom", order: ["ext_set_models", ...fmDefault180.order.slice().reverse()], overflow: ["tool-list"] };
+    const reset = resetFunctionMenuLayout(custom);
+    (normalizeFunctionMenu(custom).order.join(">") === custom.order.join(">") && reset.location === "bottom" && !reset.overflow.length
+      && reset.order.join(">") === [...FUNCTION_MENU_DEFAULT_ORDER, "ext_set_models"].join(">") ? ok : fail)(
+      "【180】保留已有排序；恢复默认后清单第一，自定义项仍在，位置不变"
     );
     (setFunctionMenuItemOverflow(fmDefault180, "login", true).overflow.join(">") === "login" ? ok : fail)(
       "【180】行尾「收进更多」按钮与拖动落点同源"

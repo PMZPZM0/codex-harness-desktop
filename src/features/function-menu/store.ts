@@ -25,12 +25,7 @@ function readConfig(): FunctionMenuConfig {
     const parsed = JSON.parse(localStorage.getItem(CONFIG_KEY) || "null");
     const storedVersion = Number(localStorage.getItem(VERSION_KEY) ?? 1);
     const migrate = storedVersion < CONFIG_VERSION && parsed && typeof parsed === "object";
-    /* v2 迁移同时把本轮新入册的两个入口提到最前（与默认顺序一致）——
-       ⛔ 只动这两项的相对位置，其余用户自排顺序原样保留。 */
-    const migratedOrder = migrate && Array.isArray(parsed.order)
-      ? [...["media", "extensions"].filter((id) => (parsed.order as string[]).includes(id)), ...(parsed.order as string[]).filter((id: string) => id !== "media" && id !== "extensions")]
-      : undefined;
-    const next = normalizeFunctionMenu(migrate ? { ...parsed, location: "top", ...(migratedOrder ? { order: migratedOrder } : {}) } : parsed);
+    const next = normalizeFunctionMenu(migrate ? { ...parsed, location: "top" } : parsed);
     if (migrate) {
       try {
         localStorage.setItem(CONFIG_KEY, JSON.stringify(next));
@@ -47,7 +42,10 @@ let config: FunctionMenuConfig = readConfig();
 const configListeners = new Set<() => void>();
 
 function persist() {
-  try { localStorage.setItem(CONFIG_KEY, JSON.stringify(config)); } catch { /* 隐私模式：本次仍生效 */ }
+  try {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    localStorage.setItem(VERSION_KEY, String(CONFIG_VERSION));
+  } catch { /* 隐私模式：本次仍生效 */ }
   /* 主进程 app-settings.json 才是重启回灌源：强杀进程时 localStorage 最后一次写入可能没落盘。 */
   try {
     void window.codex?.saveAppSettings?.({

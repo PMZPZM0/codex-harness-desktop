@@ -194,7 +194,8 @@ export const teamsFeature = defineFeature<null>({
         //        ⛔ 权限边界在执行端，被拒时工具会如实回报原因）
         dynamicTools: [buildRoleMemoryTool({ kind: "team-member", id: team.teamId, memberId: member.id, label: `${team.displayName.zh}·${member.name}` }), buildDelegateHarnessTool()],
       });
-      const systemBase = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}`;
+      const equipmentQuery = JSON.stringify({ teamId: team.teamId, memberId: member.id });
+      const systemBase = `[专家团「${team.displayName.zh}」${isLead ? "主理人" : "成员"} ${member.name}（${member.profession.zh}）]\n${member.systemPrompt}\n任务需要配套技能或工具时，调用 expert_list(${equipmentQuery}) 核对状态。按缺项返回的安装指引处理，安装后复检。`;
       const systemPrefix = `${withPersonalNorms(systemBase, await personalNormsBlock())}\n\n`;
       threadCwd.set(String(started.thread.id), String(input.cwd || process.cwd())); /* 文件变更追踪 cwd 登记（10-01） */
       teamRunStore.setThreadTeam(started.thread.id, team.teamId);

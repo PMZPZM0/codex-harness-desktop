@@ -625,8 +625,8 @@ function dispatchMcpTools(): unknown[] {
     },
     {
       name: "expert_list",
-      description: "列出应用里已有的专家 / 专家团（teamId / 名称 / 定位 / 主理人 / 成员数），用于查重或给用户展示可选专家。",
-      inputSchema: { type: "object", properties: {} },
+      description: "列出专家与团队 ID。提供 teamId 可查询当前项目的配套技能状态、工具安装目标与缺件处理步骤。成员可附 memberId。值得复检时再次调用。",
+      inputSchema: { type: "object", properties: { teamId: { type: "string" }, memberId: { type: "string" } } },
     },
     {
       name: "subagent_save",

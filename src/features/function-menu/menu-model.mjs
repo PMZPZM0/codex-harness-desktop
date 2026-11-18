@@ -10,9 +10,13 @@
        · media（自媒体工作台）：原来在侧栏顶部常驻，现在只在功能入口里；
        · extensions（拓展功能）：10-25 曾拉出为常驻快捷入口，本轮收回菜单（别再两处都有）。
        ⛔ 旧配置里没有新 id 时由 normalizeFunctionMenu 自动追加到末尾（升级不丢新功能）。 */
-export const FUNCTION_MENU_IDS = ["media", "extensions", "schedule", "frontend", "team", "tool-list", "devtools", "favorites", "identity", "login", "newbie"];
+export const FUNCTION_MENU_IDS = [
+  "tool-list", "devtools", "newbie",
+  "frontend", "media", "team", "schedule", "extensions",
+  "favorites", "identity", "login",
+];
 
-/** 默认顺序 = 11-18 起：自媒体工作台 / 拓展功能 在最前（它们原来钉在侧栏顶部），其后沿用 10-25 顺序。 */
+/** 先准备工具，再进入工作，最后是个人资料与账户。 */
 export const FUNCTION_MENU_DEFAULT_ORDER = [...FUNCTION_MENU_IDS];
 
 export const FUNCTION_MENU_DEFAULT = Object.freeze({
@@ -122,5 +126,6 @@ export function setFunctionMenuLocation(config, location) {
 /** 恢复默认只恢复排序与分组，**保留用户选的位置**（在对话框上方编辑时不该被弹回侧栏）。 */
 export function resetFunctionMenuLayout(config) {
   const c = normalizeFunctionMenu(config);
-  return normalizeFunctionMenu({ ...FUNCTION_MENU_DEFAULT, location: c.location });
+  const custom = c.order.filter(id => FUNCTION_MENU_EXT_ID_RE.test(id));
+  return normalizeFunctionMenu({ ...FUNCTION_MENU_DEFAULT, location: c.location, order: [...FUNCTION_MENU_DEFAULT_ORDER, ...custom] });
 }

@@ -29,6 +29,8 @@ import { spawn, spawnSync } from "node:child_process";
 import { app, shell } from "electron";
 import { CHINA_NPM_REGISTRY, bundledNode, bundledNpmCli, bundledPython, existingToolPath, npmGlobalRoot, npmGlobalRootCandidates, npmPackagePath, pythonPipReady, reaServerScript, tarExecutable, toolchainEnv, toolRootsRead, toolsRoot, userToolsRoot, writeToolsRoot } from "../toolchain";
 import { mirrorCandidates } from "../gh-mirror";
+import { contentPredictionRow } from "../content-prediction";
+import { provideRuntimeInventory } from "../expert-equipment-report";
 import { downloadThroughMirrors } from "../mirror-download";
 import { OPENMAIC_REPO, installOpenMaicFromGitHub, openmaicInstalledVersion } from "../openmaic-install";
 import { HUSK_REPO, huskInstalledVersion, installHuskFromGitHub, installHuskTipaFromGitHub } from "../husk-install";
@@ -246,8 +248,9 @@ function installedFromBundle(spec: DevRuntimeSpec): boolean {
   return rels.some((rel) => { try { return existsSync(path.join(toolsRoot(), rel)); } catch { return false; } });
 }
 
+/** 开发工具页与专家查缺共用本机检测和安装提示。 */
 function runtimeList() {
-  return (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
+  const rows = (Object.entries(devRuntimeSpecs) as [DevRuntimeId, DevRuntimeSpec][])
     .filter(([id]) => !(IS_MAC && DARWIN_HIDDEN.has(id)))
     .map(([id, spec]) => ({
       id, ...specFor(id, spec),
@@ -261,6 +264,7 @@ function runtimeList() {
       // 装不上时的备用方案：预置一段可直接发给 Codex 的提示词（渲染层只展示 + 复制）
       fallbackPrompt: fallbackPromptFor(id, spec),
     }));
+  return [...rows, contentPredictionRow()];
 }
 
 /** 卸载也要有进度（10-07 用户要求「不允许出现无响应状态」）：pw-browsers ~170MB / ffmpeg ~300MB
@@ -1353,6 +1357,7 @@ export const runtimeFeature = defineFeature<null>({
     if (!ipcHost) throw new Error("runtime: 缺少 ipc 服务（宿主未提供）");
 
     ipcHost.handle("runtime:list", () => runtimeList());
+    ctx.effect(provideRuntimeInventory(runtimeList));
 
     ipcHost.handle("runtime:uninstall", async (_event, idValue: string) => {
       const id = idValue as DevRuntimeId;

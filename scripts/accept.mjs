@@ -1746,6 +1746,25 @@ const CHECKS = [
     },
   },
   {
+    id: "content-prediction-card",
+    name: "知微内容预测 · 本机检测和修复指引",
+    run: async (h) => {
+      await h.eval(`document.querySelector('.sidebar-settings')?.click()`);
+      await h.waitFor(`!!document.querySelector('.settings-nav')`, { label: '设置导航' });
+      await h.eval(`[...document.querySelectorAll('.settings-nav button')].find(b => b.textContent.trim() === '开发工具')?.click()`);
+      const open = '.devtools-card[data-card="cheat-on-content"] .devtools-card-open';
+      await h.waitFor(`!!document.querySelector(${JSON.stringify(open)})`, { label: '知微工具入口' });
+      await h.eval(`document.querySelector(${JSON.stringify(open)}).click()`);
+      const ready = `document.querySelector('.settings-dialog .runtime-row')?.textContent.includes('已就绪')`;
+      await h.waitFor(ready, { label: '随包文件就绪' });
+      h.check('显示本机安装位置', await h.eval(`document.querySelector('.settings-dialog .tool-list-preview')?.textContent.includes('cheat-on-content')`));
+      await h.eval(`document.querySelector('.settings-dialog details summary').click()`);
+      h.check('可预览修复指引', await h.eval(`document.querySelector('.settings-dialog details[open] pre')?.textContent.includes('SKILL.md')`));
+      await h.eval(`document.querySelector('.settings-dialog .runtime-row button').click()`);
+      await h.waitFor(ready, { label: '点击后重新检测' });
+    },
+  },
+  {
     id: "devtools-update-rows",
     name: "🔄 开发工具 · 卡片内更新行（Filee / ApkStart / OpenMAIC / 飞书 CLI，11-14）",
     run: async (h) => {

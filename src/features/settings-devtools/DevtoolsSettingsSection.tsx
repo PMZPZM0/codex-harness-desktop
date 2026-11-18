@@ -84,6 +84,7 @@ import { LayaCard } from "./LayaCard";
 import { OpenfilmCard } from "../openfilm";
 import { MoeKoeCard } from "./MoeKoeCard";
 import { FeishuCliCard } from "./FeishuCliCard";
+import { PredictionCard } from "./PredictionCard";
 import { FileeCard } from "./FileeCard";
 import { ApkStartCard } from "./ApkStartCard";
 import { ArtCraftSuite } from "./ArtCraftSuite";
@@ -98,7 +99,7 @@ export type DevtoolsSettingsSectionProps = {
   onOpenExperts?: (expert: string, tool: string) => void; downloadSource?: any; capabilityRows: any; capabilityError: any; setNotice: any; devRuntimes: any; runtimeInstalling: any; runtimeUninstalling: any; runtimePercent: any; runtimeStage: any; runtimeSpeed: any; runtimeProgress: any; installDevRuntime: any; uninstallDevRuntime: any; cancelDevRuntime: any; runtimeModal: any; setRuntimeModal: any; };
 
 /** 一级卡片的 key —— 也是弹窗的开关值（同时只开一个）。 */
-type DevtoolsCardKey = "tools-health" | "skill-packs" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
+type DevtoolsCardKey = "tools-health" | "skill-packs" | "cheat-on-content" | "moekoe" | "capability" | "phone" | "laya" | "feishu-cli" | "filee" | "apkstart" | "artcraft" | "openmaic" | "husk" | "openfilm" | "domains" | "plugins" | `tools-${RuntimeGroup["key"]}`;
 
 type CardSpec = { key: DevtoolsCardKey; icon: ReactNode; title: string; desc: string; stat: string; group?: RuntimeGroup };
 
@@ -121,6 +122,7 @@ const CARD_EXPERT: Record<string, string> = {
   "skill-packs": "通译",
   "tools-ai": "通译",
   "tools-media": "剪承",
+  "cheat-on-content": "知微",
   "openfilm": "剪承",
   "artcraft": "造物",
   "moekoe": "造物",
@@ -214,6 +216,7 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
 
   const moekoeRuntime = runtimes.find((row) => row.id === "moekoe");
   const otherCards: CardSpec[] = [
+    { key: "cheat-on-content", icon: <Activity size={15} />, title: "知微 · 自媒体流量预测", desc: "Cheat on Content · 稿件打分、盲预测与复盘", stat: runtimes.find(r => r.id === "cheat-on-content")?.installed ? "核心技能已就绪" : "查看本机状态" },
     { key: "skill-packs", icon: <PackageOpen size={15} />, title: "精选技能包", desc: "第三方技能：工程流程 / 图表设计 / 循证生活指南，装到本地技能目录", stat: skillPackStat },
     { key: "moekoe", icon: <Music2 size={15} />, title: "MoeKoe 音乐", desc: "外部酷狗客户端：Codex 通过 6521 API 搜歌/播放", stat: runtimeInstalling === "moekoe" ? "安装中…" : moekoeRuntime?.installed ? "已安装 · 可从 Codex 调用" : "未安装 · 点开安装" },
     { key: "capability", icon: <CircleCheck size={15} />, title: "当前能力链路", desc: "同一件事有多个后端时，现在实际走的是哪条", stat: capabilityRows.length ? `${capabilityRows.length} 项能力` : "正在读取状态…" },
@@ -389,6 +392,11 @@ export function DevtoolsSettingsSection(props: DevtoolsSettingsSectionProps) {
         <SettingsDialog title={activeOtherCard.title} icon={<Brain size={15} />} hint="思考等级「自动」档的本地决策端" onClose={() => setOpenCard(null)}>
           {/* Laya 智能判断（10-01）：思考等级「自动」档的本地决策端（Python laya-serve）。 */}
           <LayaCard setNotice={setNotice} runtimeStage={runtimeStage} runtimePercent={runtimePercent} runtimeSpeed={runtimeSpeed} runtimeProgress={runtimeProgress} />
+        </SettingsDialog>
+      )}
+      {openCard === "cheat-on-content" && activeOtherCard && (
+        <SettingsDialog title={activeOtherCard.title} icon={<Activity size={15} />} hint="Cheat on Content" size="md" onClose={() => setOpenCard(null)}>
+          <PredictionCard />
         </SettingsDialog>
       )}
       {openCard === "feishu-cli" && activeOtherCard && (

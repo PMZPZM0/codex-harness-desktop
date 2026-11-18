@@ -11,6 +11,6 @@ export function expertEquipment(team: Declaration, member: Declaration) {
 export function equipmentState(id: string, rows: RuntimeRow[] | null) {
   const row = rows?.find(r => r.id === id);
   const builtin = builtins.get(id);
-  const state = builtin || row?.installed ? "ready" as const : !rows ? "unknown" as const : !row ? "unavailable" as const : row.installing ? "installing" as const : row.kind === "guide" ? "manual" as const : "missing" as const;
+  const state = builtin || row?.installed ? "ready" as const : !rows ? "unknown" as const : !row || id === "cheat-on-content" ? "unavailable" as const : row.installing ? "installing" as const : row.kind === "guide" ? "manual" as const : "missing" as const;
   return { state, name: builtin ?? row?.name ?? id, description: builtin ? "应用内置" : row?.description, size: row?.size, bundled: row?.bundled, fallbackPrompt: builtin ? undefined : row?.fallbackPrompt };
 }

@@ -67,7 +67,7 @@ export function ExpertSetup({ value, onChange, install, direction, restoreKey }:
           {tool.state === "missing" || tool.state === "manual" ? <button type="button" disabled={!!busy} onClick={() => void run(id)}>
             {tool.state === "manual" ? <ExternalLink size={13} /> : <Download size={13} />}
             {tool.state === "manual" ? "去官网安装" : busy === id ? "安装中" : tool.bundled ? "修复安装" : "下载安装"}
-          </button> : <span>{({ready: "已就绪", unknown: "待检测", unavailable: "当前环境未提供", installing: "安装中"})[tool.state]}</span>}
+          </button> : <span>{({ready: "已就绪", unknown: "待检测", unavailable: id === "cheat-on-content" && prompt ? "随包文件缺失，查看修复指引" : "当前环境未提供", installing: "安装中"})[tool.state]}</span>}
           {prompt && <details className="profile-guide-tool-prompt"><summary>让 Codex 帮我安装</summary>
             <pre>{prompt}</pre><button type="button" aria-label={`复制 ${tool.name} 的安装提示词`} onClick={async () => {
               try { await copyTextToClipboard(prompt); setNotice(`已复制「${tool.name}」的安装提示词，粘贴到 Codex 会话即可。`); }

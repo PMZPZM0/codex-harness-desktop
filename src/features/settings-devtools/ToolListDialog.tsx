@@ -30,6 +30,7 @@ function stateFilter(state = '未能检测') {
   return ['已安装', '系统已装', '已就绪'].includes(state) ? '可用' : state;
 }
 const special: Record<string, string> = {
+  'cheat-on-content': '影音与创作',
   artcraft: '创作套件', moekoe: '影音与创作', 'feishu-cli': '协作办公', filee: '协作办公', openmaic: '教育与课堂',
   apkstart: '移动设备', husk: '移动设备', 'husk-tipa': '移动设备', 'platform-tools': '移动设备', 'phone-harness': '移动设备', laya: '本地智能',
 };

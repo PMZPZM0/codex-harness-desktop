@@ -48,8 +48,8 @@ export const TEAM_CAPABILITIES: Record<string, TeamCapability> = {
     skills: ["video-generation", "openfilm-video-editing", "whitebox-video"],
   },
   知微: {
-    tools: [],
-    skills: ["essence-first", "grill-me"],
+    tools: ["cheat-on-content"],
+    skills: ["cheat-on-content", "essence-first", "grill-me"],
   },
   拔节: {
     tools: [],

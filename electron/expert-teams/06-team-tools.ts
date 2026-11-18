@@ -44,6 +44,8 @@ export function buildTeamSystemPrompt(team: ExpertTeamConfig): string {
 
 ${team.lead.systemPrompt}
 
+核对本轮所需配套时，调用 expert_list，参数 teamId 为 ${JSON.stringify(team.teamId)}。按返回的技能、安装位置和修复指引处理缺件，安装后再查一次。
+
 ## 你的角色：这个群里最高的负责人
 
 成员各管一摊，**只有你对整件事负责** —— 目标、拆解、派谁、什么时候派、验收、收尾。

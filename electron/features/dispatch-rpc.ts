@@ -12,6 +12,7 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { canDispatchFrom } from "../dispatch";
+import { readRuntimeInventory, skillReport, toolReport, type Inventory } from "../expert-equipment-report";
 import { broadcastHarnessEvent } from "../features/window-bus";
 import type { DispatchKind } from "../dispatch";
 import { DISPATCH_FIXED_PORT, dispatchMcpTools, dispatchProbes, dispatchToken, ensureDispatchToken, restrictedThreadRole, stableKey } from "../features/dispatch-core";
@@ -402,6 +403,19 @@ export async function dispatchRpcCall(name: unknown, args: Record<string, unknow
   }
   if (name === "expert_list") {
     const list = await readUsableExpertTeams();
+    if (args.teamId) {
+      const team = list.find(t => t.teamId === args.teamId);
+      const member = team && (args.memberId ? [team.lead, ...team.members].find(m => m.id === args.memberId) : team.lead);
+      if (!team || !member) return { ok: false, error: "找不到该专家或成员" };
+      const rows = readRuntimeInventory();
+      const ids = [...new Set([...(team.tools ?? []), ...(member.tools ?? [])].flatMap(id => id === "bundled-tool" ? ["python", "node", "git"] : [id === "lark-cli" ? "feishu-cli" : id]))];
+      const tools = ids.map(id => toolReport(id, rows));
+      const cwd = threadCwd.get(callerThreadId);
+      const inventory = cwd ? await server.request("skills/list", { cwds: [cwd], forceReload: true }).catch(() => null) as Inventory | null : null;
+      const skillIds = [...new Set([...(team.skills ?? []), ...(member.skills ?? [])])];
+      const skills = skillIds.map(id => skillReport(id, inventory, id === "cheat-on-content" ? rows?.find(row => row.id === id) : undefined));
+      return { ok: true, output: JSON.stringify({ skills, tools }) };
+    }
     if (!list.length) return { ok: true, output: "（还没有任何专家/专家团）" };
     const lines = list.map((t) => `- ${t.teamId}｜${t.displayName?.zh ?? "?"}｜${t.profession?.zh ?? ""}｜主理人 ${t.lead?.name ?? "?"}${Array.isArray(t.members) && t.members.length ? `（+${t.members.length} 成员）` : ""}`);
     return { ok: true, output: lines.join("\n") };
