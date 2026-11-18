@@ -38,8 +38,8 @@ relay-gateway.mjs（服务器 127.0.0.1:18700，systemd: relay-gateway）
   并在配对成功后从网关下发的 `chm_dev` cookie 补前缀 —— 之后重启直连该电脑，不再落到「只收 6 位码」的根地址。
 - 手机页所有接口都拼 `PATH_PREFIX`（`/t/<设备ID>`），直连（局域网/旧固定地址）时前缀为空。
 - 安装包可公开下载：手机浏览器打开 `https://remote.ppz123.asia/apk`（网关按  从**各自仓库**的 Release 镜像链拉取并缓存后直发：桌面版/云助手=本仓 ，PPcode=）。
-- **0.1.17（11-17）**：网关支持 `RELAY_APK_LOCAL` 指向服务器上已放好的 APK —— Release 还没发布时 `/apk` 也能直发新包；
-  桌面端 `/apk` 在中转在线时**优先从网关 `/apk` 取**（仍按 sha256 校验），GitHub 镜像链保留为兜底，国内不再依赖 Release 可达。
+- **0.1.17（11-17）**：`mobile-remote-v0.1.17` 已发布到两个仓的 Release；网关默认 `APK_URL` 指向它，`/apk` 命中本地缓存直接回。
+  `RELAY_APK_LOCAL` 保留为应急直发（服务器上放好文件即可，不必等 Release）；桌面端 `/apk` 在中转在线时**优先从网关 `/apk` 取**（仍按 sha256 校验），GitHub 镜像链兜底。
 
 ## 服务端部署
 
