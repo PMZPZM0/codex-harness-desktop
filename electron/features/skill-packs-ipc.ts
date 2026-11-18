@@ -92,6 +92,10 @@ async function packState(pack: SkillPackDef) {
   const present = marker ? marker.skills.filter((folder) => existsSync(path.join(skillsRoot(), folder, "SKILL.md"))) : [];
   return {
     ...pack,
+    /* 11-19：分类 / 包内技能 / 配套专家一并下发（界面按分类分组、逐条展示与做「拆开」）。 */
+    category: pack.category,
+    skills: pack.skills ?? [],
+    experts: pack.experts ?? [],
     installed: Boolean(marker) && present.length > 0,
     installedSkills: present,
     installedAt: marker?.installedAt ?? "",
@@ -100,9 +104,27 @@ async function packState(pack: SkillPackDef) {
   };
 }
 
+/** 仓库里没有 `skills/` 时：扫 root 下 ≤2 层的 SKILL.md 目录（单技能仓库，如 Leonxlnx/taste-skill）。 */
+async function findSkillDirsInRepo(root: string): Promise<string[]> {
+  const out: string[] = [];
+  const walk = async (dir: string, depth: number) => {
+    if (depth > 2) return;
+    let entries: Array<{ name: string; isDirectory(): boolean }> = [];
+    try { entries = await fs.readdir(dir, { withFileTypes: true }); } catch { return; }
+    if (existsSync(path.join(dir, "SKILL.md"))) { out.push(dir); return; }
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
+      await walk(path.join(dir, entry.name), depth + 1);
+    }
+  };
+  await walk(root, 0);
+  return out;
+}
+
 type InstallResult = { installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean };
 
-async function installPack(id: string, signal?: AbortSignal): Promise<InstallResult> {
+async function installPack(id: string, signal?: AbortSignal, options: { update?: boolean } = {}): Promise<InstallResult> {
   const pack = SKILL_PACKS.find((entry) => entry.id === id);
   if (!pack) throw new Error("未知的技能包");
   const emit = (stage: string, message: string, extra: { percent?: number; speed?: string; host?: string } = {}) =>
@@ -136,10 +158,10 @@ async function installPack(id: string, signal?: AbortSignal): Promise<InstallRes
     if (cancelled()) throw new DownloadCancelledError();
     const roots = await fs.readdir(outDir);
     const repoRoot = roots.length === 1 ? path.join(outDir, roots[0]) : outDir;
+    /* ⛔ 不再强制要求 skills/：单技能仓库（如 taste-skill）技能就在根目录或一层子目录里。 */
     const skillsDir = path.join(repoRoot, "skills");
-    if (!existsSync(skillsDir)) throw new Error("这个仓库里没有 skills/ 目录");
-    const dirs = await findSkillDirs(skillsDir);
-    if (!dirs.length) throw new Error("skills/ 里没有找到 SKILL.md");
+    const dirs = existsSync(skillsDir) ? await findSkillDirs(skillsDir) : await findSkillDirsInRepo(repoRoot);
+    if (!dirs.length) throw new Error("仓库里没有找到任何 SKILL.md");
     await fs.mkdir(root, { recursive: true });
     const skipped: string[] = [];
     const rejected: string[] = [];
@@ -147,7 +169,18 @@ async function installPack(id: string, signal?: AbortSignal): Promise<InstallRes
       if (cancelled()) throw new DownloadCancelledError();
       const folder = path.basename(dir).replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 80);
       if (!folder) continue;
-      if (existsSync(path.join(root, folder))) { skipped.push(folder); continue; }
+      const target = path.join(root, folder);
+      if (existsSync(target)) {
+        /* 更新模式：只覆盖**本包自己装的**目录（读凭据里的 packId）；
+           ⛔ 用户自己的同名技能 / 别的包装的 / 内置技能一律不碰（继续走 skipped）。 */
+        let ownedByPack = false;
+        try {
+          const owned = JSON.parse(await fs.readFile(path.join(target, ".skill-pack.json"), "utf8")) as { packId?: string };
+          ownedByPack = String(owned?.packId ?? "") === id;
+        } catch { ownedByPack = false; }
+        if (!(options.update && ownedByPack)) { skipped.push(folder); continue; }
+        await fs.rm(target, { recursive: true, force: true }).catch(() => undefined);
+      }
       const content = await fs.readFile(path.join(dir, "SKILL.md"), "utf8");
       const findings = auditSkill(content, await listFiles(dir));
       if (findings.length) { rejected.push(`${folder}（${findings.join("；")}）`); continue; }
@@ -235,7 +268,7 @@ export const skillPacksFeature = defineFeature<null>({
     /** 正在安装的包 → 中止信号。取消 = abort 下载（extract/写盘阶段按 signal 自查后退出）。 */
     const activeInstalls = new Map<string, AbortController>();
     ipcHost.handle("skill-packs:list", async () => Promise.all(SKILL_PACKS.map(packState)));
-    ipcHost.handle("skill-packs:install", async (_event, input: { id?: string } = {}) => {
+    ipcHost.handle("skill-packs:install", async (_event, input: { id?: string; update?: boolean } = {}) => {
       const id = String(input?.id ?? "");
       if (!PACK_IDS.has(id)) throw new Error("未知的技能包");
       if (activeInstalls.has(id)) throw new Error("这个技能包正在安装中，请稍候或先取消");

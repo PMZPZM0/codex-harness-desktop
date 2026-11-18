@@ -26,7 +26,12 @@ type PackEvent = { type?: string; packId?: string; stage?: string; message?: str
 type SkillPackRow = {
   id: string; name: string; repo: string; license: string; licenseUrl: string; size: string;
   description: string; companion: string; installed: boolean; installedSkills: string[]; installedAt: string; skillsRoot: string;
+  /* 11-19：分类分组 / 包内技能（「拆开」后逐条可见）/ 配套专家 */
+  category?: string; skills?: string[]; experts?: string[];
 };
+
+/** 分类展示顺序（先工程、再设计、再内容，浏览器自动化与视频各自归口）。 */
+const PACK_CATEGORY_ORDER = ["工程流程", "图表与可视化", "网页设计", "前端动效", "浏览器自动化", "视频与内容", "生活指南"];
 
 type Result = { tone: "ok" | "warn" | "error"; text: string };
 
@@ -60,7 +65,8 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     if (typeof event.speed === "string") setSpeed(event.speed);
   }), [busy]);
 
-  const install = async (row: SkillPackRow) => {
+  /* 更新 = 重新下载并覆盖**本包自己装的**目录（凭据 packId 相同才覆盖；用户自有同名技能仍跳过）。 */
+  const install = async (row: SkillPackRow, update = false) => {
     setBusy(row.id);
     setStage("正在选择最快的下载源…");
     setPercent(0);
@@ -71,7 +77,7 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
       return next;
     });
     try {
-      const result = await window.codex.installSkillPack({ id: row.id });
+      const result = await window.codex.installSkillPack({ id: row.id, update });
       const downloaded = result.bytes ? `${(result.bytes / 1048576).toFixed(1)} MB` : "未知大小";
       let verdict: Result;
       if (result.cancelled) {
@@ -87,7 +93,7 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
         verdict = { tone: "error", text: `${verdict.text}；拒绝 ${result.rejected.length} 个：${result.rejected.join("；")}` };
       }
       setDone((prev) => ({ ...prev, [row.id]: verdict }));
-      setNotice?.(`${row.name} 安装${result.installed.length ? "完成" : "结果"}`, verdict.text);
+      setNotice?.(`${row.name} ${update ? "更新" : "安装"}${result.installed.length ? "完成" : "结果"}`, verdict.text);
       await refresh();
     } catch (err) {
       const message = errText(err);
@@ -129,6 +135,12 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
     }
   };
 
+  const groupedRows = rows ? [...rows].sort((a, b) => {
+    const ai = PACK_CATEGORY_ORDER.indexOf(String(a.category ?? ""));
+    const bi = PACK_CATEGORY_ORDER.indexOf(String(b.category ?? ""));
+    return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+  }) : null;
+
   return (
     <div className="settings-section stack">
       <div className="skill-pack-head-row">
@@ -151,20 +163,35 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
           <button type="button" className="secondary-setting" onClick={() => void refresh()}>重试</button>
         </p>
       ) : null}
-      {rows === null ? <p className="settings-card-hint">正在读取…</p> : (
+      {groupedRows === null ? <p className="settings-card-hint">正在读取…</p> : (
         <div className="skill-pack-list">
-          {rows.map((row) => {
+          {groupedRows.map((row, index, all) => {
             const isBusy = busy === row.id;
             const result = done[row.id];
+            /* 11-19：分类分组头 —— 与 Craft 全家桶同口径：同一分类的包聚在一起，标题只出现一次。 */
+            const prevCategory = index > 0 ? (all[index - 1].category ?? "") : "";
+            const showGroup = (row.category ?? "") !== prevCategory;
             return (
-              <div key={row.id} className="skill-pack-row" data-pack={row.id}>
+              <div key={row.id} className="skill-pack-group-wrap">
+              {showGroup ? <p className="skill-pack-group">{row.category || "其它"}</p> : null}
+              <div className="skill-pack-row" data-pack={row.id}>
                 <span className="skill-pack-icon">{isBusy ? <Spinner /> : row.installed ? <CircleCheck size={15} /> : <PackageOpen size={15} />}</span>
                 <span className="skill-pack-main">
                   <span className="skill-pack-line1">
                     <strong>{row.name}</strong>
+                    {row.category ? <em className="skill-pack-cat">{row.category}</em> : null}
                     {row.installed ? <em className="skill-pack-state">已装 {row.installedSkills.length} 个</em> : null}
                   </span>
                   <span className="skill-pack-line2" title={row.description}>{row.description}</span>
+                  {row.skills?.length ? (
+                    /* 「拆开」：包内技能逐条列出（停用单个技能去技能页，不用整包卸载） */
+                    <span className="skill-pack-line3" title={row.skills.join("、")}>
+                      含 {row.skills.length} 个技能：{row.skills.join(" / ")}
+                    </span>
+                  ) : null}
+                  {row.experts?.length ? (
+                    <span className="skill-pack-line3">配套专家：{row.experts.join("、")}</span>
+                  ) : null}
                   <span className="skill-pack-line3">
                     {row.companion} · {row.license} · {row.size} ·{" "}
                     <button type="button" className="skill-pack-link" title="打开仓库" onClick={() => void window.codex.openExternal(`https://github.com/${row.repo}`)}>
@@ -183,15 +210,21 @@ export function SkillPacksPanel({ setNotice }: { setNotice?: (title: string, det
                 </span>
                 <span className="skill-pack-actions">
                   {row.installed ? (
-                    <button type="button" className="secondary-setting skill-pack-remove" disabled={isBusy} onClick={() => void uninstall(row)}>
-                      <Trash2 size={13} />卸载
-                    </button>
+                    <span className="skill-pack-actions-pair">
+                      <button type="button" className="secondary-setting" disabled={isBusy} title="重新下载并覆盖本包装的技能（上游更新后点这里）" onClick={() => void install(row, true)}>
+                        <RefreshCw size={13} />更新
+                      </button>
+                      <button type="button" className="secondary-setting skill-pack-remove" disabled={isBusy} onClick={() => void uninstall(row)}>
+                        <Trash2 size={13} />卸载
+                      </button>
+                    </span>
                   ) : isBusy ? (
                     <button type="button" className="secondary-setting skill-pack-cancel" onClick={() => void cancel(row)}>取消</button>
                   ) : (
                     <button type="button" className="primary-setting" onClick={() => void install(row)}>安装</button>
                   )}
                 </span>
+              </div>
               </div>
             );
           })}

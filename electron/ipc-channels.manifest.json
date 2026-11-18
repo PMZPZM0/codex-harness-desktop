@@ -4302,12 +4302,12 @@
     {
       "name": "installSkillPack",
       "channel": "skill-packs:install",
-      "paramsImpl": "input: { id: string }",
-      "paramsDecl": "input: { id: string }",
+      "paramsImpl": "input: { id: string; update?: boolean }",
+      "paramsDecl": "input: { id: string; update?: boolean }",
       "returns": "Promise<{ installed: string[]; skipped: string[]; rejected: string[]; bytes: number; cancelled?: boolean }>",
       "invokeArgs": "input",
       "cast": null,
-      "note": "下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖；下载/写盘阶段可取消（cancelled=true）"
+      "note": "下载仓库 skills/（缺失时扫仓库内 SKILL.md）→ auditSkill → 落 codex-home/skills → 重启引擎；update=true 时覆盖本包自己装的目录（凭据 packId 相同），用户自有同名技能仍跳过"
     },
     {
       "name": "cancelSkillPack",

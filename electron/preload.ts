@@ -739,8 +739,8 @@ contextBridge.exposeInMainWorld("codex", {
   importSkill: () => __ipc("skills:import", 0, []),
   /* 精选技能包（10-30）：三个第三方技能包的安装状态（已装技能名来自本板块自己写的 marker） */
   listSkillPacks: () => __ipc("skill-packs:list", 0, []),
-  /* 下载仓库 skills/ 子树 → 逐个 auditSkill → 落 codex-home/skills → 重启引擎；同名目录跳过、不覆盖；下载/写盘阶段可取消（cancelled=true） */
-  installSkillPack: (input: { id: string }) => __ipc("skill-packs:install", 1, [input]),
+  /* 下载仓库 skills/（缺失时扫仓库内 SKILL.md）→ auditSkill → 落 codex-home/skills → 重启引擎；update=true 时覆盖本包自己装的目录（凭据 packId 相同），用户自有同名技能仍跳过 */
+  installSkillPack: (input: { id: string; update?: boolean }) => __ipc("skill-packs:install", 1, [input]),
   /* 取消正在安装的技能包（中止下载 / 停止写盘并回滚本次已拷贝目录，不会重启引擎） */
   cancelSkillPack: (input: { id: string }) => __ipc("skill-packs:cancel", 1, [input]),
   /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */

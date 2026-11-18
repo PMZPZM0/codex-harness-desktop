@@ -307,3 +307,30 @@ button.settings-card:hover .settings-card-arrow { color: var(--green); }
   cursor: pointer;
 }
 .devtools-card-expert:hover { border-color: var(--accent); color: var(--accent); }
+
+/* 11-19 精选技能包：分类分组头（像 Craft 全家桶那样按分类分组）+ 分类徽标 + 双按钮 */
+.skill-pack-group {
+  margin: 10px 0 2px;
+  padding: 0 14px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .02em;
+  color: var(--muted);
+}
+.skill-pack-group-wrap:first-child .skill-pack-group { margin-top: 2px; }
+.skill-pack-group-wrap .skill-pack-row + .skill-pack-row,
+.skill-pack-group-wrap + .skill-pack-group-wrap .skill-pack-row { border-top: 1px solid var(--line); }
+.skill-pack-cat {
+  margin-left: 6px;
+  padding: 0 5px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 10px;
+  font-style: normal;
+  color: var(--muted);
+}
+.skill-pack-actions-pair {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+}
