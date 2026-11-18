@@ -360,11 +360,10 @@ export async function runDelegatedTask(input: {
   //    刻意走持久指令而不是塞在首条消息里：成员会话/被调会话可能被复用、也可能被用户点开继续问，
   //    写在单条消息里会被历史淹没、压缩后丢失。
   try {
-    const baseRead: any = await server.request("config/read", {}).catch(() => null);
-    const baseInstructions = String(baseRead?.config?.developer_instructions ?? "");
     const block = delegateScopeBlock({ kind: leadOfTeam ? "team" : target.kind, name: displayName, origin, supervisor: supervisorLabel });
-    // ⛔ 身份块放在 base 前面：后面的全局目录再长，也不能盖过「你的上级是谁」。
-    const merged = baseInstructions ? `${block}\n\n---\n\n${baseInstructions}` : block;
+    /* 11-19：⛔ 不再拼 config 的 developer_instructions（引擎已应用 config 级那份，
+       拼进来就是同一份重复注入）。只下发被委派会话的边界块。 */
+    const merged = block;
     await server.request("thread/settings/update", {
       threadId,
       collaborationMode: { mode: "default", settings: { model: effectiveModel, developer_instructions: merged } },

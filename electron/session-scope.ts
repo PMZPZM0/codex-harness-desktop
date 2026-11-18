@@ -36,9 +36,9 @@ export function supervisorIdentityBlock(supervisor: string, parentId: string): s
 }
 
 async function applyScope(threadId: string, block: string, parentId: string): Promise<void> {
-  const baseRead = await server.request("config/read", {}).catch(() => null) as { config?: { developer_instructions?: string } } | null;
-  const base = String(baseRead?.config?.developer_instructions ?? "");
-  const merged = base ? `${block}\n\n---\n\n${base}` : block;
+  /* 11-19：只下发上级身份块；config 的 developer_instructions 引擎自己会应用，
+     ⛔ 再拼一遍 = 每轮多烧几十 k 字符（实测重复注入）。 */
+  const merged = block;
   /* ⛔ 引擎的 thread/settings/update 必填 `model`（实测 "missing field `model`"）。
      会话级运行时可能还没加载 ⇒ 依次退到：会话运行时 → 上级会话模型 → 全局激活模型。 */
   const runtime = await threadRuntimeStore.get(threadId).catch(() => null);

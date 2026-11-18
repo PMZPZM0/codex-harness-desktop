@@ -544,10 +544,10 @@ function groupMemberScopeBlock(group: BossGroup, member: GroupMember, supervisor
 
 /** 把权威身份块写进成员会话的会话级 developer_instructions（base 在前会被盖掉，所以块放最前）。 */
 async function applyGroupMemberScope(group: BossGroup, member: GroupMember, threadId: string, supervisor: string, model: string): Promise<void> {
-  const baseRead = await server.request("config/read", {}).catch(() => null) as { config?: { developer_instructions?: string } } | null;
-  const base = String(baseRead?.config?.developer_instructions ?? "");
   const block = groupMemberScopeBlock(group, member, supervisor);
-  const merged = base ? `${block}\n\n---\n\n${base}` : block;
+  /* 11-19：⛔ 不拼 config 的 developer_instructions —— 引擎已应用 config 级那份，
+     再拼一遍 = 同一份几十 k 字符注入两次（rollout 实证）。只下发成员身份块。 */
+  const merged = block;
   /* ⛔ thread/settings/update 必填 model（实测 "missing field `model`"）：成员线程复用时
      运行时可还没加载 ⇒ 退到全局激活模型，别让身份块静默写不进去。 */
   const effectiveModel = model || String((await readCustomModel().catch(() => null))?.model ?? "");
