@@ -716,11 +716,14 @@ button {
 /* 侧栏徽标改用应用图标（用户指定 09-17）：平时透明底显示蓝色 icon，hover 浮现黑底让白色箭头可读
  * （收起/展开交互完整保留：图标淡出 → 箭头浮现）。只限定侧栏 toggle，登录页 brand-mark 不受影响。 */
 .ch-logo-img {
-  width: 100%;
-  height: 100%;
-  border-radius: 8px;
+  /* 11-17：图标留 2px 内边距（原 100% 满贴，圆角与按钮同值显得生硬）；投影让它从底色上浮起来 */
+  width: 26px;
+  height: 26px;
+  margin: auto;
+  border-radius: 6px;
   object-fit: cover;
   display: block;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
 }
 button.brand-mark.sidebar-toggle {
   background: transparent;
@@ -860,8 +863,9 @@ button.brand-mark.sidebar-toggle:hover {
 .brand-row {
   align-items: center;
   gap: 10px;
-  height: 40px;
-  padding: 0 8px;
+  /* 11-17 用户令：「优化 logo 和名字布局，现在不美观」——与顶栏 44px 对齐，边距统一 */
+  height: 44px;
+  padding: 0 10px;
   display: flex;
 }
 .brand-mark {
@@ -897,9 +901,10 @@ button.brand-mark.sidebar-toggle:hover {
 .brand-row .brand-name {
   display: inline-flex;
   align-items: center;
-  height: 30px;
-  font-size: 20px;
-  font-weight: 800;
+  /* 15px / 700：原 20px/800 压在 30px 图标旁边显得又大又挤；缩到与图标视觉重心一致 */
+  height: 24px;
+  font-size: 15px;
+  font-weight: 700;
   line-height: 1;
   letter-spacing: .2px;
   background-image: var(--brand-ink);
@@ -1564,29 +1569,30 @@ html.fx-ripple::view-transition-new(root) {
 
 /* ── 11-18 用户令：「还有彩色」「全检查一下，简洁一点」────────────────────────
    色板已中性化（--ic-* 全改为 text/accent 混合），但色相类仍可能有**别的来源**
-   （tone-* 硬编码、内联 style、主题套装的旧值）⇒ 这里在消费端再加一道**硬覆盖**：
-   导航 / 菜单 / 设置页这些"用来分区"的图标，一律中性灰，hover 才提亮到正文色。
+   （tone-* 硬编码、内联 style、主题套装的旧值）⇒ 这里在消费端再加一道兜底：
+   导航 / 菜单 / 设置页这些"用来分区"的图标一律中性灰，hover 才提亮到正文色。
    ⛔ 只覆盖"装饰性分类图标"，不碰语义色（成功/失败/危险）与用户内容里的图标。
-   ⛔ 用 !important 是有意的：这一层就是最后的兜底，再叠一层来源也压得住。 */
-.sidebar-quick-btn svg,
-.sidebar-tab svg,
-.view-tab svg,
-.view-toolbar-btn svg,
-.sidebar-cap-row svg,
-.sidebar-options-toggle svg,
-.thread-source-badge svg,
-.settings-nav-item svg,
-.settings-nav-group svg,
-.settings-card-head svg {
-  color: var(--muted) !important;
+   ⛔ 不写 important：用 `html body` 提高特异性压过各域既有的 `.sidebar-tab svg`（同级、且各自加载顺序不同），
+      这样也不违反「base 层 important 不超基线」那条守卫。 */
+html body .sidebar-quick-btn svg,
+html body .sidebar-tab svg,
+html body .view-tab svg,
+html body .view-toolbar-btn svg,
+html body .sidebar-cap-row svg,
+html body .sidebar-options-toggle svg,
+html body .thread-source-badge svg,
+html body .settings-nav-item svg,
+html body .settings-nav-group svg,
+html body .settings-card-head svg {
+  color: var(--muted);
 }
-.sidebar-quick-btn:hover svg,
-.sidebar-tab:hover svg,
-.view-tab:hover svg,
-.view-tab.active svg,
-.view-toolbar-btn:hover:not(:disabled) svg,
-.sidebar-cap-row:hover svg,
-.settings-nav-item:hover svg,
-.settings-nav-item.active svg {
-  color: var(--text) !important;
+html body .sidebar-quick-btn:hover svg,
+html body .sidebar-tab:hover svg,
+html body .view-tab:hover svg,
+html body .view-tab.active svg,
+html body .view-toolbar-btn:hover:not(:disabled) svg,
+html body .sidebar-cap-row:hover svg,
+html body .settings-nav-item:hover svg,
+html body .settings-nav-item.active svg {
+  color: var(--text);
 }
