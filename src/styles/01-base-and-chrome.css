@@ -1561,3 +1561,32 @@ html.fx-ripple::view-transition-new(root) {
 }
 .sidebar-resizer:hover::after,
 .sidebar-resizer:active::after { background: var(--accent); }
+
+/* ── 11-18 用户令：「还有彩色」「全检查一下，简洁一点」────────────────────────
+   色板已中性化（--ic-* 全改为 text/accent 混合），但色相类仍可能有**别的来源**
+   （tone-* 硬编码、内联 style、主题套装的旧值）⇒ 这里在消费端再加一道**硬覆盖**：
+   导航 / 菜单 / 设置页这些"用来分区"的图标，一律中性灰，hover 才提亮到正文色。
+   ⛔ 只覆盖"装饰性分类图标"，不碰语义色（成功/失败/危险）与用户内容里的图标。
+   ⛔ 用 !important 是有意的：这一层就是最后的兜底，再叠一层来源也压得住。 */
+.sidebar-quick-btn svg,
+.sidebar-tab svg,
+.view-tab svg,
+.view-toolbar-btn svg,
+.sidebar-cap-row svg,
+.sidebar-options-toggle svg,
+.thread-source-badge svg,
+.settings-nav-item svg,
+.settings-nav-group svg,
+.settings-card-head svg {
+  color: var(--muted) !important;
+}
+.sidebar-quick-btn:hover svg,
+.sidebar-tab:hover svg,
+.view-tab:hover svg,
+.view-tab.active svg,
+.view-toolbar-btn:hover:not(:disabled) svg,
+.sidebar-cap-row:hover svg,
+.settings-nav-item:hover svg,
+.settings-nav-item.active svg {
+  color: var(--text) !important;
+}
