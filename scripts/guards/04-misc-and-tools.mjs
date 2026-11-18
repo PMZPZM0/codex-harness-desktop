@@ -1803,6 +1803,9 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
       && gwSrc.includes("pairResponseSigned(id, out)") && gwSrc.includes('status: "offline"') ? ok : fail)(
       "【139e】根地址自动登录快路：只带 deviceSecret 也能重新换 cookie（签名校验 + IP 限流，不广播配对码）"
     );
+    (gwSrc.includes("RELAY_APK_LOCAL") && gwSrc.includes("APK_LOCAL") ? ok : fail)(
+      "【139e】网关支持本机 APK 直发（RELAY_APK_LOCAL）：Release 未发布时 /apk 也能给新包"
+    );
     (apkOk(() => androidSrc.includes("^/t/([A-Za-z0-9_-]{8,24})(?:/|$)") && androidSrc.includes("adoptRelayPrefix")
       && androidSrc.includes("chm_dev") && androidSrc.includes("VERSION_NAME") && androidSrc.includes('"offline".equals')
       && readFileSync(join(ROOT, "android", "app", "build.gradle"), "utf8").includes('versionName "0.1.17"')) ? ok : fail)(
@@ -2146,8 +2149,8 @@ console.log(C.bold("\n【16】统一内置 provider id（新会话一律绑 harn
     (tunnelPage.includes("prefers-reduced-motion") && tunnelPage.includes("@keyframes fade-up") && tunnelPage.includes("@keyframes home-in") && tunnelPage.includes(".ripple") && tunnelPage.includes("menu-group") ? ok : fail)(
       "【139e】手机页动效体系：入场/切换/涟漪/菜单弹出 + 跟随系统减弱动效；☰ 菜单带图标与说明"
     );
-    (relaySrc.includes("mobile-remote-v0.1.16") ? ok : fail)(
-      "【139e】安装包版本与 Release 对齐（0.1.16）"
+    (relaySrc.includes("mobile-remote-v0.1.17") && relaySrc.includes("relayBase ? [`${relayBase}/apk`]") ? ok : fail)(
+      "【139e】安装包版本与 Release 对齐（0.1.17）+ 中转在线时优先从网关 /apk 取（GitHub 兜底）"
     );
   }
 }

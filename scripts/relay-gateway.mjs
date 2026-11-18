@@ -58,6 +58,9 @@ const APK_URL = process.env.RELAY_APK_URL
 const PATH_PREFIX = String(process.env.RELAY_PATH_PREFIX || "").replace(/\/+$/, "");
 
 const APK_DIR = process.env.RELAY_APK_DIR || "/var/lib/relay/apk";
+/* 本机已放好的安装包（11-17）：GitHub Release 还没发布新版本时，可直接指向服务器上的 APK 文件，
+    `/apk` 原样按该文件名下发。Release 建好后删掉这个环境变量即可恢复自动拉取。 */
+const APK_LOCAL = process.env.RELAY_APK_LOCAL || "";
 let apkFetching = null;
 function apkCandidates() {
   return [
@@ -67,6 +70,9 @@ function apkCandidates() {
   ];
 }
 async function ensureApkFile() {
+  if (APK_LOCAL) {
+    try { if (fs.statSync(APK_LOCAL).size > 1024 * 1024) return APK_LOCAL; } catch { /* 回落到自动拉取 */ }
+  }
   const file = path.join(APK_DIR, path.basename(new URL(APK_URL).pathname));
   try { const info = fs.statSync(file); if (info.size > 1024 * 1024) return file; } catch { /* 需要下载 */ }
   if (apkFetching) return apkFetching;

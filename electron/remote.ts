@@ -17,7 +17,7 @@ import { signPairBody } from "./relay-pair-sign";
 import { isPairingLocked, onPairingLockChange } from "./remote-pairing-lock";
 
 /** 手机安装包所在的 Release tag（⛔ 不是桌面版安装包的 v* 发布，别混用） */
-const REMOTE_APK_RELEASE = "mobile-remote-v0.1.16";
+const REMOTE_APK_RELEASE = "mobile-remote-v0.1.17";
 
 /* ⛔ 11-08 审查：手机端的档位白名单不能写死四档 —— 模型规格表已有 minimal/low/medium/high/xhigh/ultra/max，
    写死会把手机选的 max/ultra 直接丢掉（引擎本来会按模型自己夹）。这里只挡未知值。 */
@@ -30,8 +30,8 @@ const remoteEffortOf = (value: unknown): string | undefined => {
 /** 安装包校验和（GitHub 资产自带的 digest）：镜像层可能被篡改，对不上就不落盘 —— 与 updates.ts 同口径。
  *  ⛔ 重新发布同名资产时必须同步改这里，否则手机端会一直报「校验和不匹配」。 */
 const REMOTE_APK_SHA256: Record<string, string> = {
-  "CodexRemote-0.1.16.apk": "765ab2f6f59ef301526e8f1d2142f8ba1c59da0d815dd161b66276713396f315",
-  "PPcodeRemote-0.1.16.apk": "10803fa733f11504cc4299d627724d81b997caf4925104ba6ce90ba149ca848f",
+  "CodexRemote-0.1.17.apk": "6c8dd5a013b9bf823a582e59af7838b7acdf948e0b60de3db3b2840d14634d74",
+  "PPcodeRemote-0.1.17.apk": "77dcb349ee0ae3425d5bcd986361b6c0cb2935b0c38e10d1beeb5f70aac7a273",
 };
 
 /** cloudflared 可执行文件（手机配对的公网隧道）。
@@ -448,7 +448,11 @@ export class RemoteControlService {
     const expected = REMOTE_APK_SHA256[this.apkFile];
     if (!expected) throw new Error(`没有登记 ${this.apkFile} 的校验和，拒绝下载`);
     let lastError = "未知错误";
-    for (const candidate of mirrorCandidates(base)) {
+    /* 11-17：中转网关自己缓存了安装包（`/apk`）。中转在线时优先从它拿 —— 比 GitHub Release 快且
+       不依赖墙；GitHub 镜像链保留为兜底。⛔ 仍按同一份 sha256 校验。 */
+    const relayBase = this.relay?.publicBase() ? this.relayBaseUrl().replace(/\/+$/, "") : "";
+    const candidates = [...(relayBase ? [`${relayBase}/apk`] : []), ...mirrorCandidates(base)];
+    for (const candidate of candidates) {
       try {
         const response = await net.fetch(candidate);
         if (!response.ok) { lastError = `HTTP ${response.status}`; continue; }
