@@ -604,7 +604,9 @@
 
 /* ===== WorkBuddy 风格侧边栏 tab 导航 ===== */
 .sidebar-tabs {
-  margin: 10px 0 4px;
+  /* 11-17 用户令：「logo 下面的菜单选项往上靠一点，中间不要缝隙这么大」——
+     原 10px 与 .sidebar-quick 的 10px 叠出 20px 空档；这里收到 2px，两个平台一致。 */
+  margin: 2px 0 4px;
   display: flex;
   flex-direction: column;
   gap: 2px;
