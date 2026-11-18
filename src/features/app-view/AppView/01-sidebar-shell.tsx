@@ -225,20 +225,22 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
     const rect = moreBtnRef.current?.getBoundingClientRect();
     if (!rect) return;
     const width = 188;
-    const height = 5 * 30 + 12;
+    /* 与 CSS 实测对齐：5 行 × 30 + 4 个 1px 间距 + 上下 6px padding + 2px 边框 = 168。
+       少算 6px 弹层中心会偏低 3px（用户点名「上下居中，不要靠下」）。 */
+    const height = 5 * 30 + 4 + 12 + 2;
     const left = Math.max(8, Math.min(rect.right + 8, window.innerWidth - width - 8));
-    const top = Math.max(8, Math.min(rect.top - 4, window.innerHeight - height - 8));
+    const top = Math.max(8, Math.min(rect.top + rect.height / 2 - height / 2, window.innerHeight - height - 8));
     setMoreMenu({ left, top });
   };
   useEffect(() => {
     if (!moreMenu) return;
     const onDown = (event: PointerEvent) => {
-      const hit = (event.target as HTMLElement | null)?.closest?.(".sidebar-more-menu, .view-more-btn");
+      const hit = (event.target as HTMLElement | null)?.closest?.(".view-more-menu, .view-more-btn");
       if (!hit) setMoreMenu(null);
     };
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") setMoreMenu(null); };
     const onScroll = (event: Event) => {
-      if (event.target instanceof Element && event.target.closest(".sidebar-more-menu")) return;
+      if (event.target instanceof Element && event.target.closest(".view-more-menu")) return;
       setMoreMenu(null);
     };
     document.addEventListener("pointerdown", onDown, true);
@@ -940,20 +942,20 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 <MoreHorizontal size={16} />
               </button>
               {moreMenu && createPortal(
-                <div className="sidebar-more-menu" role="menu" style={{ left: moreMenu.left, top: moreMenu.top }}>
-                  <button className="sidebar-more-item" role="menuitem" title="刷新会话列表" onClick={() => { setMoreMenu(null); void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads); }}>
+                <div className="view-more-menu" role="menu" style={{ left: moreMenu.left, top: moreMenu.top }}>
+                  <button className="view-more-item" role="menuitem" title="刷新会话列表" onClick={() => { setMoreMenu(null); void refreshWithReceipt((text: string) => showToast(text), "刷新会话列表", refreshThreads); }}>
                     <span className="view-toolbar-btn ic-blue"><ListRestart size={14} /></span><span>刷新会话列表</span>
                   </button>
-                  <button className="sidebar-more-item" role="menuitem" title="搜索任务" onClick={() => { setMoreMenu(null); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
+                  <button className="view-more-item" role="menuitem" title="搜索任务" onClick={() => { setMoreMenu(null); setPaletteOpen(true); setPaletteQuery(""); setPaletteTab("all"); }}>
                     <span className="view-toolbar-btn ic-cyan"><Search size={14} /></span><span>搜索任务</span>
                   </button>
-                  <button className="sidebar-more-item" role="menuitem" disabled={viewTab !== "projects" || !projectGroups.length} title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={() => { setMoreMenu(null); toggleAllSidebarSections(); }}>
+                  <button className="view-more-item" role="menuitem" disabled={viewTab !== "projects" || !projectGroups.length} title={viewTab === "tasks" ? "任务视图不分组，切到「项目」才能折叠" : sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"} onClick={() => { setMoreMenu(null); toggleAllSidebarSections(); }}>
                     <span className="view-toolbar-btn ic-violet">{sidebarAllCollapsed ? <Maximize2 size={14} /> : <Minimize2 size={14} />}</span><span>{sidebarAllCollapsed ? "展开全部项目" : "折叠全部项目"}</span>
                   </button>
-                  <button className="sidebar-more-item" role="menuitem" title={hideSidebarTags ? "显示会话 / 项目标签" : "隐藏会话 / 项目标签"} aria-pressed={hideSidebarTags} onClick={() => { setMoreMenu(null); toggleHideSidebarTags(); }}>
+                  <button className="view-more-item" role="menuitem" title={hideSidebarTags ? "显示会话 / 项目标签" : "隐藏会话 / 项目标签"} aria-pressed={hideSidebarTags} onClick={() => { setMoreMenu(null); toggleHideSidebarTags(); }}>
                     <span className={`view-toolbar-btn ic-violet${hideSidebarTags ? " is-on" : ""}`}><Tags size={14} /></span><span>{hideSidebarTags ? "显示标签" : "隐藏标签"}</span>
                   </button>
-                  <button className="sidebar-more-item" role="menuitem" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => { setMoreMenu(null); setNewProjectOpen(true); }}>
+                  <button className="view-more-item" role="menuitem" title="新建项目（选择 / 创建 / 输入路径）" onClick={() => { setMoreMenu(null); setNewProjectOpen(true); }}>
                     <span className="view-toolbar-btn ic-green"><FolderPlus size={14} /></span><span>新建项目</span>
                   </button>
                 </div>,
@@ -1016,9 +1018,12 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                               projectMenuTriggerRect = rect;
                               const side = document.querySelector(".sidebar")?.getBoundingClientRect();
                               const width = 216;
-                              const height = 148;
+                              /* 11-19 用户令「项目后面的三个点弹窗也一样，上下居中」：
+                                 原 top = 按钮 top − 4 整块挂在下方（中心偏低 50px）；改成按按钮中心居中。
+                                 133 = 实测高度（4 行 × 31 + padding/边框）。 */
+                              const height = 133;
                               const left = Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - width - 8));
-                              const top = Math.max(8, Math.min(rect.top - 4, window.innerHeight - height - 8));
+                              const top = Math.max(8, Math.min(rect.top + rect.height / 2 - height / 2, window.innerHeight - height - 8));
                               const arrowTop = Math.max(top + 12, Math.min(rect.top + rect.height / 2, top + height - 12));
                               setProjectMenuPos({ top, left, arrowTop });
                             }

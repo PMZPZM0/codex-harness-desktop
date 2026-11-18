@@ -392,10 +392,13 @@ bag.threadAttention = threadAttention as typeof bag.threadAttention;
             const rect = event.currentTarget.getBoundingClientRect();
             const side = document.querySelector(".sidebar")?.getBoundingClientRect();
             const menuWidth = 170;
-            const menuHeight = 300;
+            /* 11-19 用户令「按这种弹窗一样居中，现在有点靠下」：菜单与 ⋯ 按钮**垂直居中**
+               （原来 top = 按钮 top − 4，整块挂在按钮下方，中心偏低 126px）。
+               284 = 实测高度（7 行 31px + 颜色块 + padding/边框，5 组会话行一致）。 */
+            const menuHeight = 284;
             threadMenuAnchorY = rect.top + rect.height / 2;
             threadMenuTriggerRect = rect;
-            bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.top - 4, window.innerHeight - menuHeight - 8)), left: Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - menuWidth - 8)) });
+            bag.setThreadRowMenu((current) => current?.id === entry.id ? null : { id: entry.id, top: Math.max(8, Math.min(rect.top + rect.height / 2 - menuHeight / 2, window.innerHeight - menuHeight - 8)), left: Math.max(8, Math.min((side ? side.right : rect.right) + 6, window.innerWidth - menuWidth - 8)) });
           }}><MoreHorizontal size={14} /></button>
           {extras?.actions}
         </div>
