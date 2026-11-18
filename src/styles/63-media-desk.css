@@ -127,3 +127,7 @@
 .media-desk-btn .spin { animation: media-desk-spin 0.9s linear infinite; }
 @keyframes media-desk-spin { to { transform: rotate(360deg); } }
 .media-desk-frame { height: 100%; }
+
+/* 11-18 成稿出口三连：与「更新」那组分开（左边是内容去向，右边是版本维护） */
+.media-desk-exits { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; }
+.media-desk-exits .media-desk-btn { white-space: nowrap; }

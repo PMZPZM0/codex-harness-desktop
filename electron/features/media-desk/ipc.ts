@@ -10,11 +10,15 @@
 import { defineFeature } from "../../context";
 import type { IpcHost } from "../../ipc-host";
 import type { HostCaps } from "../../runtime/seams";
-import { ensureMediaDeskServer, restartMediaDeskServer, setMediaDeskSecure } from "./embed";
+import { ensureMediaDeskServer, mediaDeskRequest, restartMediaDeskServer, setMediaDeskSecure } from "./embed";
+import { sendToWindow } from "../window-bus";
 import { checkMediaDeskUpdate, installMediaDeskVersion, mediaDeskVersionInfo } from "./vendor";
 import { createMediaDeskPopoutWindow } from "../window-factory";
 
-const CHANNELS = ["media-desk:endpoint", "media-desk:popout", "media-desk:version", "media-desk:check-update", "media-desk:update"] as const;
+const CHANNELS = ["media-desk:endpoint", "media-desk:popout", "media-desk:version", "media-desk:check-update", "media-desk:update", "media-desk:handoff"] as const;
+
+/** 成稿出口的三种去向（11-18 用户令「自媒体要联动工作台，深度联动」）。 */
+type HandoffKind = "group" | "video" | "design";
 
 export const mediaDeskFeature = defineFeature<null>({
   id: "media-desk",
@@ -37,6 +41,39 @@ export const mediaDeskFeature = defineFeature<null>({
         /* 起新服务（读新目录）：返回的地址带新令牌前缀，渲染层据此重载 iframe。 */
         const endpoint = await restartMediaDeskServer();
         return { ok: true, version: installed.version, endpoint };
+      } catch (error) {
+        return { ok: false, error: String((error as { message?: unknown } | null)?.message ?? error) };
+      }
+    });
+    /* 11-18：成稿出口。工作台在**独立窗口**里没有输入框 ⇒ 主进程把提示词发给主窗口预填，
+       并把主窗口拉到前面（⛔ 不自动发送；⛔ 不伪造"已发布"）。
+       取件口径：state 里**最近一条已出稿**（production.status=done），没有就取最近一条排期/草稿。 */
+    ipcHost.handle("media-desk:handoff", async (_event: unknown, input?: { kind?: HandoffKind; itemId?: string }) => {
+      const kind = (input?.kind ?? "group") as HandoffKind;
+      try {
+        const payload = await mediaDeskRequest("state");
+        const state = (payload as { state?: { items?: any[] } })?.state ?? (payload as { items?: any[] });
+        const items: any[] = Array.isArray(state?.items) ? state!.items! : [];
+        const pick = input?.itemId
+          ? items.find((x) => String(x?.id ?? "") === String(input.itemId))
+          : (items.filter((x) => x?.production?.status === "done").slice(-1)[0] ?? items.slice(-1)[0]);
+        if (!pick) return { ok: false, error: "工作台里还没有内容 —— 先采集或写一条" };
+        const title = String(pick.title ?? "未命名").trim();
+        const body = String(pick.body ?? pick.text ?? "").trim().slice(0, 1200);
+        const head = `自媒体工作台这条内容：「${title}」`;
+        const tail = body ? `\n\n正文摘要：\n${body}` : "";
+        const prompts: Record<HandoffKind, string> = {
+          group: `${head}${tail}\n\n请做发布前评审：① 标题是否够具体（不要空泛）；② 前两句是否留人；③ 平台与时间是否合适；④ 有无敏感/夸大表述。给出改后的标题与开头，不要自己发布。`,
+          video: `${head}${tail}\n\n请把它拆成 60 秒口播分镜（镜号 / 画面 / 口播 / 时长），镜头语言要能直接拍；如果缺素材，列出需要补的 3 个镜头。`,
+          design: `${head}${tail}\n\n请先在设计参考库里挑一套合适的风格（design_md），再把这条内容的配图方向写成 3 条可执行的出图提示词（含构图、色调、禁忌）。`,
+        };
+        const text = prompts[kind] ?? prompts.group;
+        sendToWindow("app:prefill", { text, from: "media-desk" });
+        /* ⛔ 域不直接碰 BrowserWindow（守卫【266】）—— 走 window 接缝。 */
+        const wins = ctx.get<HostCaps>("host")?.window?.getAll?.() ?? [];
+        const win = wins.find((w) => !w.isDestroyed() && w.isVisible());
+        win?.focus();
+        return { ok: true, kind: String(kind), title, itemId: String(pick.id ?? "") };
       } catch (error) {
         return { ok: false, error: String((error as { message?: unknown } | null)?.message ?? error) };
       }

@@ -1201,12 +1201,17 @@ contextBridge.exposeInMainWorld("codex", {
   getUiKitItem: (id: string) => __ipc("ui-kit:get", 1, [id]),
   saveUiKitItem: (input: { name?: string; doc?: unknown }) => __ipc("ui-kit:save", 1, [input]),
   removeUiKitItem: (id: string) => __ipc("ui-kit:remove", 1, [id]),
+  handoffMediaDesk: (input?: { kind?: "group" | "video" | "design"; itemId?: string }) => __ipc("media-desk:handoff", 0, [input]),
   /* ═══ gen:end ═══ */
 
   /* 桌面宠物：主进程归约好的九态推送（浮窗订阅它驱动动画；首帧另用 petState() 补水）。
      ⛔ 走 __on 而不是裸 ipcRenderer.on：退订按函数引用精确移除，重复挂载幂等。 */
   onPetSignal: (listener: (signal: unknown) => void) =>
     __on("pet:signal", listener, (listener) => (_e: unknown, payload: unknown) => listener(payload)),
+  /* 11-18：主进程把一段文字**预填**进主窗口输入框（自媒体工作台的成稿出口用它）。
+     ⛔ 只预填、不自动发送 —— 与设计库/组件库的 onHandoff 同口径，用户可先改再发。 */
+  onAppPrefill: (listener: (payload: { text?: string; from?: string }) => void) =>
+    __on("app:prefill", listener, (fn: (payload: { text?: string; from?: string }) => void) => (_e: unknown, payload: unknown) => fn(payload as { text?: string; from?: string })),
   /* 桌面宠物：**配置**推送（当前宠物包 + 设置）。换宠物 / 改缩放时主进程推它，
      否则已开着的浮窗还画着旧宠物（它只在挂载时读一次设置）。 */
   onPetConfig: (listener: (config: unknown) => void) =>

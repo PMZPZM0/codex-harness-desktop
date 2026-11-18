@@ -82,6 +82,18 @@ export function MediaDeskPage() {
     }
   };
 
+  /* 11-18（自媒体深度联动）：成稿出口三连 —— 交群评审 / 派剪承团 / 按设计参考改。
+     ⛔ 只把提示词**预填**进主窗口输入框（不自动发送、不代替发布）；工作台窗口里没有输入框，
+     所以走主进程 app:prefill 通道；取件口径在主进程（最近一条已出稿，其次最近一条内容）。 */
+  const handoff = async (kind: "group" | "video" | "design") => {
+    try {
+      const r = await window.codex.handoffMediaDesk({ kind });
+      setNotice(r?.ok ? `已把「${r.title ?? "这条内容"}」填进主窗口输入框（可先改再发）` : String(r?.error ?? "没取到内容"));
+    } catch (e) {
+      setNotice(`出口失败：${String((e as { message?: unknown } | null)?.message ?? e)}`);
+    }
+  };
+
   if (error) return <p className="media-desk-error" role="status">工作台启动失败：{error}</p>;
   if (!src) return <p className="media-desk-loading" role="status">正在打开工作台…</p>;
 
@@ -91,6 +103,11 @@ export function MediaDeskPage() {
         <span className="media-desk-ver" title={`随包基线 ${info?.bundled ?? "-"}；当前生效 ${info?.current ?? "-"}`}>
           版本 {info?.current ?? "…"}
           {info?.overridden ? <em>已更新</em> : null}
+        </span>
+        <span className="media-desk-exits">
+          <button type="button" className="media-desk-btn" title="把这条内容交给主窗口做发布前评审" onClick={() => void handoff("group")}>交群评审</button>
+          <button type="button" className="media-desk-btn" title="把这条内容拆成 60 秒口播分镜（剪承团）" onClick={() => void handoff("video")}>派剪承团</button>
+          <button type="button" className="media-desk-btn" title="挑一套设计参考，出配图方向" onClick={() => void handoff("design")}>按参考改视觉</button>
         </span>
         <span className="media-desk-spacer" />
         {notice ? <span className="media-desk-notice" role="status">{notice}</span> : null}

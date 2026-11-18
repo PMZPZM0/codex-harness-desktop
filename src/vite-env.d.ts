@@ -1613,6 +1613,7 @@ interface Window {
     getUiKitItem(id: string): Promise<{ id: string; name: string; createdAt: number; doc: unknown } | null>;
     saveUiKitItem(input: { name?: string; doc?: unknown }): Promise<{ id: string; name: string; replaced: boolean; count: number }>;
     removeUiKitItem(id: string): Promise<{ removed: number; count: number }>;
+    handoffMediaDesk(input?: { kind?: "group" | "video" | "design"; itemId?: string }): Promise<{ ok: boolean; kind?: string; title?: string; itemId?: string; error?: string }>;
 /* ═══ gen:end ═══ */
 
     /** 桌面宠物状态推送（主进程归约九态 → 浮窗；浮窗首帧另用 petState() 补水） */
@@ -1766,6 +1767,8 @@ interface Window {
 
 
     onHarnessEvent(listener: (event: any) => void): () => void;
+    /** 11-18：主进程预填输入框（自媒体工作台成稿出口）。⛔ 只预填不发送。 */
+    onAppPrefill(listener: (payload: { text?: string; from?: string }) => void): () => void;
 
 
     // ---- 语音通话（本机离线识别与合成，旁挂新增） ----

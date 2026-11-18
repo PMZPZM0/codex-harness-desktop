@@ -57,10 +57,11 @@ export async function run() {
   const channels = manifest.channels.filter((c) => String(c.channel).startsWith("media-desk:"));
   ok(/"id": "media-desk"/.test(composition) && /features\/media-desk\/ipc\.ts/.test(composition),
     "组合表已挂载 media-desk 域");
-  ok(channels.length === 5
-    && ["endpoint", "popout", "version", "check-update", "update"].every((n) => channels.some((c) => c.channel === `media-desk:${n}`))
-    && /prefix: "media-desk", count: 5/.test(registry),
-    `桥五条：endpoint / popout / version / check-update / update（实测 ${channels.length}）`);
+  /* 11-18 +1：handoff（成稿出口三连 → 主窗口预填）。 */
+  ok(channels.length === 6
+    && ["endpoint", "popout", "version", "check-update", "update", "handoff"].every((n) => channels.some((c) => c.channel === `media-desk:${n}`))
+    && /prefix: "media-desk", count: 6/.test(registry),
+    `桥六条：endpoint / popout / version / check-update / update / handoff（实测 ${channels.length}）`);
   ok(/mediaDeskEndpoint/.test(preload) && /mediaDeskEndpoint\(\): Promise<string>/.test(dts)
     && /mediaDeskPopout/.test(preload) && /mediaDeskPopout\(\): Promise<\{ ok: boolean; focused: boolean \}>/.test(dts)
     && /mediaDeskVersion/.test(preload) && /mediaDeskVersion\(\): Promise</.test(dts)

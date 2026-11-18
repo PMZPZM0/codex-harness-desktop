@@ -499,6 +499,16 @@ export function AppView({ app }: { app: HarnessAppApi }) {
     [officeGroupMembers.snapshot.members],
   );
 
+  /* 11-18：自媒体工作台的「成稿出口」把提示词推过来 ⇒ 填进输入框（⛔ 不自动发送）。
+     订阅只挂一次；setPrompt 来自 bag（与设计库/组件库的 onHandoff 同一条路）。 */
+  useEffect(() => {
+    const off = window.codex.onAppPrefill?.((payload) => {
+      const text = String(payload?.text ?? "");
+      if (text) app.setPrompt(text);
+    });
+    return () => { off?.(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const officeDelegates = Object.values(app.delegateRecords)
     .filter((record) => record.originThreadId === thread?.id && !record.archived)
     .sort((a, b) => a.startedAt - b.startedAt);
