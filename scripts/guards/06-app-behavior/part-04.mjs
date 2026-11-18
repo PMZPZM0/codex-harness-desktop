@@ -73,12 +73,12 @@ export async function run() {
   /* ⛔ 10-26：拓展功能（技能/插件/MCP）独立成侧栏常驻行 ⇒ 从功能入口菜单的默认顺序里移出。
      ⛔ 10-30 用户令（efc59177c）：默认再加「开发工具 / 收藏夹」两项（位置在「团队」之后），
        名单随之变长 —— 断言必须同步，否则「加了入口」这件事没有任何判据。 */
-  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "schedule>frontend>team>devtools>favorites>identity>login>newbie"
+  (FUNCTION_MENU_DEFAULT_ORDER.join(">") === "media>extensions>schedule>frontend>team>devtools>favorites>identity>login>newbie"
     && fmDefault180.location === "bottom" && fmDefault180.overflow.length === 0
     ? ok : fail)(
     "【180】功能入口默认顺序 + 默认位置 = 侧栏底部（安装默认，可折叠），数据模型单一真相源"
   );
-  (["自动化", "前端开发", "拓展", "团队", "登录管理", "新手教程", "个性化&记忆"].every((label) => fmSrc180.includes(label))
+  (["自媒体工作台", "拓展功能", "自动化", "前端开发", "团队", "登录管理", "新手教程", "个性化&记忆"].every((label) => fmSrc180.includes(label))
     && fmSrc180.includes('schedule: { label: "自动化"') ? ok : fail)(
     "【180】入口改名全在 FunctionMenu 元数据里（前端开发 / 拓展 / 团队 / 个性化&记忆 / 登录管理 / 新手教程）"
   );
@@ -291,7 +291,7 @@ export async function run() {
     "【180】点遮罩能关（第三条出路，且只在**遮罩本身**被点时才关 —— 点内容不许误关）"
   );
   (["frontend", "extensions", "team", "identity"].every((id) => fmSrc180.includes(`${id}: { label:`))
-    && /setGuideKey\(id\)/.test(side180) && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
+    && /setGuideKey\((id|guideId)\)/.test(side180) && /id === "team"\) \{ setGuideKey\("agents"\)/.test(side180) ? ok : fail)(
     "【180】四条能力入口各自映射到教程（team → agents 的映射仍在；不是只写文案）"
   );
   (/\{guideKey && <SidebarGuideModal/.test(side180) ? ok : fail)(

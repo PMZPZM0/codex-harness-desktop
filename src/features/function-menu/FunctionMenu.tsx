@@ -27,6 +27,7 @@ import { Puzzle,
   Wrench,
   X,
   Zap,
+  Megaphone,
 } from "lucide-react";
 import {
   overflowFunctionMenuItems,
@@ -62,9 +63,10 @@ type IconProps = { size?: number; className?: string };
 type MenuMeta = { label: string; title: string; Icon: ComponentType<IconProps>; tone: string };
 
 export const FUNCTION_MENU_META: Record<FunctionMenuItemId, MenuMeta> = {
+  media: { label: "自媒体工作台", title: "灵感 → 成稿 → 排期 → 复盘（独立窗口）", Icon: Megaphone, tone: "ic-amber" },
+  extensions: { label: "拓展功能", title: "技能 · 插件 · MCP：查看教程与入口", Icon: Zap, tone: "ic-pink" },
   schedule: { label: "自动化", title: "按时间自动运行任务", Icon: Clock3, tone: "ic-amber" },
   frontend: { label: "前端开发", title: "前端 UI · 组件库：查看教程与入口", Icon: LayoutGrid, tone: "ic-blue" },
-  extensions: { label: "拓展", title: "技能 · 插件 · MCP：查看教程与入口", Icon: Zap, tone: "ic-pink" },
   team: { label: "团队", title: "子智能体 · 专家 · 专家团：查看教程与入口", Icon: Users, tone: "ic-violet" },
   devtools: { label: "开发工具", title: "开发工具：运行时安装 · 飞书 CLI · 手机控制 · 声明式插件", Icon: Wrench, tone: "ic-green" },
   favorites: { label: "收藏夹", title: "收藏夹：收藏的消息、文件与片段", Icon: Star, tone: "ic-amber" },

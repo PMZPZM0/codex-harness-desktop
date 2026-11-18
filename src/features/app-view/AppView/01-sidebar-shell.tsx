@@ -630,10 +630,14 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
       /* 10-29 用户：「功能入口里面帮我加个开发工具跳转按键」 */
       if (id === "devtools") { setSettingsPage("devtools"); setSettingsOpen(true); setMobileNav(false); return; }
       if (id === "favorites") { setSettingsPage("favorites"); setSettingsOpen(true); setMobileNav(false); return; }
+      /* 11-18：自媒体工作台从侧栏顶部常驻挪进功能入口 ⇒ 动作在这里派发。 */
+      if (id === "media") { void window.codex.mediaDeskPopout(); setMobileNav(false); return; }
       if (id === "login") { setLoginMgrOpen(true); return; }
       if (id === "newbie") { setNewbieOpen(true); return; }
       if (id === "team") { setGuideKey("agents"); return; }
-      setGuideKey(id);
+      /* 类型收窄：media / extensions 已在上面分流，其余都是教程键。 */
+      const guideId = id as Parameters<typeof setGuideKey>[0];
+      setGuideKey(guideId);
     });
     return () => setFunctionMenuActionHandler(null);
   }, [setSettingsPage, setSettingsOpen, setMobileNav]);
@@ -851,19 +855,9 @@ export function AppViewSidebarShell({ app, onOpenSettings }: { app: HarnessAppAp
                 >
                   <MessagesSquare size={15} /><span>工作伙伴</span>
                 </button>
-                {/* 11-11 用户令：「把自媒体工作台在工作伙伴下面加一个选项，做主界面一样的弹窗大小，设置那边不要了」 */}
-                <button
-                  className="sidebar-tab sidebar-quick-btn ic-amber"
-                  title="自媒体工作台：灵感 → 成稿 → 排期 → 复盘（独立窗口）"
-                  onClick={() => { void window.codex.mediaDeskPopout(); }}
-                >
-                  <Megaphone size={15} /><span>自媒体工作台</span>
-                </button>
-                {/* 10-25 用户令：拓展功能（技能 · 插件 · MCP）从折叠组拉出来常驻在这里；
-                    搜索任务只在下方视图行的 🔍 里。动作与折叠组原入口同一总线（教程弹窗）。 */}
-                <button className="sidebar-tab sidebar-quick-btn sidebar-quick-search ic-pink" title="技能 · 插件 · MCP：查看教程与入口" onClick={() => setGuideKey("extensions")}>
-                  <Zap size={15} className="ic-pink" /><span>拓展功能</span>
-                </button>
+                {/* 11-18 用户令：「把自媒体工作台和功能拓展放到功能入口里面」
+                    ⇒ 这两颗常驻按钮已移除；入口与动作统一由 function-menu 派发
+                       （media → 独立窗口 / extensions → 拓展功能引导）。 */}
               </div>
             </div>
             {functionMenu.location === "top" && renderOptionsGroup("top")}
