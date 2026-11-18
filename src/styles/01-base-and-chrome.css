@@ -552,7 +552,7 @@ button {
   /* ⛔ 10-31 右侧抽屉化：模板**恒为 4 条轨道**（侧栏 / 主区 / 1px 分隔 / 右栏），
      右栏宽度走 `--right-w`（0px ↔ 面板宽）。之前是"开右栏才换 4 列模板"——
      轨道数变了 CSS 就不能插值，右栏和主区一起瞬移（和左侧折叠同一个病根）。 */
-  grid-template-columns: var(--side-w, 256px) minmax(0, 1fr) 1px var(--right-w, 0px);
+  grid-template-columns: var(--side-w, 236px) minmax(0, 1fr) 1px var(--right-w, 0px);
   /* 第一行 = 全宽顶行（任务名 + 操作簇 + 原生窗口钮），第二行 = 侧栏/聊天/右栏。
      右栏从第二行开始：拖分隔条只影响面板，顶行纹丝不动。 */
   /* ⛔⛔ 行高 = 6px 外圈缝 + 44px 顶栏 = 50（10-31 用户：「对话框滚轮上面的那个一点点被遮住」）。
@@ -585,7 +585,7 @@ button {
 @property --side-w {
   syntax: "<length>";
   inherits: true;
-  initial-value: 256px;
+  initial-value: 236px;
 }
 /* 右栏宽度同理（10-31）：注册成 <length> 才能参与过渡，0px ↔ 面板宽 */
 @property --right-w {
@@ -845,8 +845,9 @@ button.brand-mark.sidebar-toggle:hover {
   /* ⛔ 10-31 抽屉化：宽度**恒定 256**，折叠只做横向平移。
      原先宽度跟着网格轨道走 ⇒ 展开时是被"压扁→撑开"，侧栏内容一路重排（实测 142→238→256），
      看起来像"挤开"而不是抽屉滑出。 */
-  width: 256px;
-  min-width: 256px;
+  /* 11-17: 默认宽 260→236（与 --side-w 默认一致；可拖 220–420） */
+  width: 236px;
+  min-width: 236px;
   transition: translate var(--dur-panel) var(--ease-enter);
   will-change: translate;
   /* 通高：logo 行与顶行（任务名）同一行，不额外多出一行 */
@@ -1543,7 +1544,7 @@ html.fx-ripple::view-transition-new(root) {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: calc(var(--side-w, 256px) - 3px);
+  left: calc(var(--side-w, 236px) - 3px);
   width: 7px;
   z-index: 45;
   cursor: col-resize;

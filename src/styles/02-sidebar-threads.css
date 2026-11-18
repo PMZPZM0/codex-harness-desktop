@@ -159,7 +159,8 @@
    52px = 3 字自定义标签（上限 3，≈44px）留余量、也能容下 4 字系统徽标「记录丢失」（≈58px 时省略）；
    再宽就吃会话名宽度（用户明确：不要为右边留太多空间）。 */
 .thread-row > button:first-child > .thread-row-title-line.has-tag {
-  grid-template-columns: minmax(0, 1fr) 52px 70px;
+  /* 11-17：默认宽度调窄后，固定 70px 让位列会把 2 字名字挤成省略号 ⇒ 改成可收缩（空间够时仍是 70px，对齐不变）。 */
+  grid-template-columns: minmax(0, 1fr) auto 70px;
 }
 .thread-row-name {
   /* 11-05：名称左对齐（与项目名同列），标签在中间格。

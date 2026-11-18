@@ -1723,8 +1723,8 @@ console.log(C.bold("\n【4g】Bot Channel 配对门卫（授权码 + 电脑端�
     (/justify-self:\s*end/.test(tagsRule) && /display:\s*inline-flex/.test(tagsRule) ? ok : fail)(
       "【285】标签列内右对齐（11-08 用户定稿「三个字，右对齐」：各行标签右缘同一条竖线）"
     );
-    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) 52px 70px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
-      "【285】有标签的行用「名称 + 52px 标签列 + 70px 操作键让位」：标签列右缘恒在置顶键左边 6px、列内右对齐（11-08 用户定稿）"
+    (/\.thread-row-title-line\.has-tag\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto 70px/.test(cssSrc285) && /className=\{`thread-row-title-line\$\{shownBadge \? " has-tag" : ""\}`\}/.test(rowsSrc285) ? ok : fail)(
+      "【285】有标签的行用「名称 + 标签列（自适应宽、右对齐）+ 70px 操作键让位」：标签右缘恒在置顶键左边、列内右对齐（11-08 定稿；11-17 标签列改 auto 宽，窄侧栏下 2 字名字不再被固定 52px 挤没）"
     );
     (/\.thread-row-tags \.thread-dispatch-badge\s*\{[^}]*margin-left:\s*0/.test(cssSrc285) ? ok : fail)(
       "【285】调度徽标进标签列后清零 margin-left（否则比其它标签右移 6px，11-06 用户截图）"

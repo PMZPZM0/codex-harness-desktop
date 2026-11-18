@@ -82,8 +82,8 @@ ok(/animation-duration:\s*0\.001ms/.test(reduceBlock) && /\.settings-modal/.test
 /* ── ⑤ 侧栏折叠 = 列宽插值 ──────────────────────────────────────────── */
 ok(/@property --side-w \{[\s\S]{0,80}?syntax: "<length>"/.test(base),
   "⑤ `--side-w` 用 @property 注册成 <length>（不注册就无法插值 ⇒ 折叠只能瞬移）");
-ok(/grid-template-columns:\s*var\(--side-w, 256px\)/.test(base),
-  "⑤ 壳模板首列读 `var(--side-w, 256px)`（列宽可动）");
+ok(/grid-template-columns:\s*var\(--side-w, 236px\)/.test(base),
+  "⑤ 壳模板首列读 `var(--side-w, 236px)`（列宽可动）");
 ok(/\.app-shell:not\(\.narrow\)\.side-collapsed \{\s*--side-w:\s*0px;/.test(base),
   "⑤ 折叠只把 `--side-w` 置 0（轨道数不变），且只在非窄屏生效（窄屏侧栏是覆盖层）");
 ok(!/\.app-shell\.side-collapsed \{[^}]*grid-template-columns/.test(base),
@@ -95,8 +95,8 @@ ok(!/gridTemplateColumns:\s*`?minmax\(0, 1fr\) 1px \$\{panelWidth\}/.test(appVie
 /* ── ⑥ 侧栏抽屉手感（用户："要那种从侧边横向抽屉的感觉"）──────────────────
    判据：宽度恒定 + 只做横向 translate + 折叠态不再切成 position:fixed。
    ⛔ 三条缺一条就会退回"压扁再撑开"（实测宽度 142→238→256 的重排）或"折叠顺、展开硬"的位置瞬跳。 */
-ok(/\.sidebar \{[^}]*width: 256px;/.test(base) && /\.sidebar \{[^}]*min-width: 256px;/.test(base),
-  "⑥ 侧栏宽度恒定 256px（跟着网格轨道走会在展开时被压扁重排）");
+ok(/\.sidebar \{[^}]*width: 236px;/.test(base) && /\.sidebar \{[^}]*min-width: 236px;/.test(base),
+  "⑥ 侧栏宽度恒定 236px（跟着网格轨道走会在展开时被压扁重排；11-17 默认 260→236）");
 ok(/\.sidebar \{[^}]*transition: translate var\(--dur-panel\)/.test(base),
   "⑥ 侧栏过渡的是 translate（横向抽屉位移），与列宽同一条时长/缓动");
 ok(/\.app-shell\.side-collapsed:not\(\.narrow\) \.sidebar \{[^}]*translate: -100% 0;/.test(base),
@@ -115,7 +115,7 @@ const dragSrc = codeOnly(read("src/features/app-state/parts/part02/01-mcp-teams-
 
 ok(/@property --right-w \{\s*syntax: "<length>"/.test(base),
   "⑦ --right-w 注册为 <length>（不注册就插值不了，右栏只能瞬开瞬关）");
-ok(/grid-template-columns: var\(--side-w, 256px\) minmax\(0, 1fr\) 1px var\(--right-w, 0px\)/.test(base),
+ok(/grid-template-columns: var\(--side-w, 236px\) minmax\(0, 1fr\) 1px var\(--right-w, 0px\)/.test(base),
   "⑦ 主壳模板恒为 4 轨、右栏宽度走 var(--right-w)（轨道数不变才可插值）");
 ok(/\.app-shell\.with-context \{[^}]*--right-w: var\(--panel-w, 308px\)/.test(base),
   "⑦ 开右栏只改变量 --right-w，不换模板");

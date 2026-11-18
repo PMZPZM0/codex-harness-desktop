@@ -210,14 +210,14 @@ const preload = read("electron/preload.ts");
   /* ★ 10-31 用户令：「左侧栏也加拖动功能」「右侧栏中间一条灰色细线就行」 */
   const appViewSrc = read("src/features/app-view/AppView.tsx");
   ok(/className="sidebar-resizer"/.test(appViewSrc) && /onPointerDown=\{beginSidebarResize\}/.test(appViewSrc)
-    && /SIDEBAR_MIN = 260/.test(appViewSrc) && /SIDEBAR_MAX = 420/.test(appViewSrc) && /SIDEBAR_DEFAULT = 260/.test(appViewSrc),
-    "侧栏右缘可拖动改宽（260–420 钳制，双击复位 260）");
+    && /SIDEBAR_MIN = 220/.test(appViewSrc) && /SIDEBAR_MAX = 420/.test(appViewSrc) && /SIDEBAR_DEFAULT = 236/.test(appViewSrc),
+    "侧栏右缘可拖动改宽（220–420 钳制，双击复位 236）");
   ok(/localStorage\.setItem\("sidebar-width"/.test(appViewSrc) && /localStorage\.getItem\("sidebar-width"\)/.test(appViewSrc)
     && /"--side-w": `\$\{sidebarWidth\}px`/.test(appViewSrc),
     "侧栏宽度落盘 + 用 --side-w 下发（换算一条真相源，轨道数不变）");
   /* ⛔ 10-31 用户：「左侧栏上有一条线，能不能不显示，但也要支持拖动」——
      平时透明（只剩命中面与 col-resize 光标），hover/拖动才亮主题色。 */
-  ok(/\.sidebar-resizer \{[\s\S]{0,260}?left: calc\(var\(--side-w, 256px\) - 3px\)[\s\S]{0,260}?cursor: col-resize/.test(shellCss)
+  ok(/\.sidebar-resizer \{[\s\S]{0,260}?left: calc\(var\(--side-w, 236px\) - 3px\)[\s\S]{0,260}?cursor: col-resize/.test(shellCss)
     && /\.sidebar-resizer::after \{[\s\S]{0,200}?width: 1px;[\s\S]{0,200}?background: transparent/.test(shellCss)
     && /\.sidebar-resizer:hover::after,[\s\S]{0,80}?background: var\(--accent\)/.test(shellCss),
     "拖动条 = 7px 命中面 + **平时不画线**（hover/拖动才亮主题色）");

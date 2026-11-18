@@ -30,14 +30,20 @@ export function matchesGuideDirection(direction: GuideDirection | null, category
 
 const key = 'profile-guide:last-start:v1';
 /** 仅记住显式保存的页面和专家标识，不把一次性的启动偏好注入对话。 */
-export function rememberGuideChoice(direction: GuideDirection | null, expert: { team: {teamId: string}; member: {id: string} } | null, occupation: string) {
-  try { localStorage.setItem(key, JSON.stringify({ direction, occupation, teamId: expert?.team.teamId, memberId: expert?.member.id })); } catch { /* 禁用缓存时仍可正常保存档案 */ }
+export type GuideLaunch = 'save' | 'entry' | 'expert';
+/** 记住新手引导的选择（方向 / 专家 / 职业 / 入口），落 localStorage；禁用缓存时静默跳过。 */
+export function rememberGuideChoice(direction: GuideDirection | null, expert: { team: {teamId: string}; member: {id: string} } | null, occupation: string, launch: GuideLaunch) {
+  try { localStorage.setItem(key, JSON.stringify({ direction, occupation, launch, teamId: expert?.team.teamId, memberId: expert?.member.id })); } catch { /* 禁用缓存时仍可正常保存档案 */ }
 }
 /** 重开时校验旧缓存；专家对象必须由调用者按标识从最新档案解析。 */
-export function readGuideChoice(occupation: string): { direction: GuideDirection | null; teamId?: string; memberId?: string } | null {
+export function readGuideChoice(occupation: string): { direction: GuideDirection | null; launch: GuideLaunch; teamId?: string; memberId?: string } | null {
   try {
     const data = JSON.parse(localStorage.getItem(key) || 'null');
     if (!data || (data.occupation !== undefined && data.occupation !== occupation)) return null;
-    return { direction: data && Object.hasOwn(directions, data.direction) ? data.direction : null, teamId: typeof data?.teamId === 'string' ? data.teamId : undefined, memberId: typeof data?.memberId === 'string' ? data.memberId : undefined };
+    const direction: GuideDirection | null = Object.hasOwn(directions, data.direction) ? data.direction : null;
+    const teamId = typeof data.teamId === 'string' ? data.teamId : undefined;
+    const memberId = typeof data.memberId === 'string' ? data.memberId : undefined;
+    const launch = data.launch === 'save' ? 'save' : teamId && memberId && data.launch !== 'entry' ? 'expert' : direction ? 'entry' : 'save';
+    return { direction, launch, teamId, memberId };
   } catch { return null; }
 }
