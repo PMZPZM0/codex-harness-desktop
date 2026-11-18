@@ -163,6 +163,10 @@ export async function run() {
   ok(/\.media-desk-note\b/.test(boardCss) && /\.media-desk-link:hover/.test(boardCss)
     && /\.media-desk-page \{[\s\S]{0,160}flex: 1;/.test(boardCss) && /\.media-desk-frame \{[\s\S]{0,120}flex: 1;/.test(boardCss),
     "声明与跳转按键有样式；iframe 用 flex 撑满窗口（⛔ 不再按设置页高度写死）");
+  /* 11-18 用户令「自媒体要联动工作台，深度联动」：上游 schedule_item 不会自己跑，
+     必须同时落一条系统排期，否则用户以为「排了就发」。 */
+  ok(/bridgeSystemSchedule/.test(tool) && /scheduler\.save\(/.test(tool) && /systemScheduleId/.test(tool),
+    "工作台排期同时落系统排期（bridgeSystemSchedule → scheduler.save；回执带 systemScheduleId）");
   ok(/action: \{ type: "string", enum: \["state", "capture", "draft", "produce", "schedule", "metric", "insights", "style", "delete", "undo"\]/.test(dispatchCore)
     && /name === "media_desk"/.test(dispatchRpc) && /runMediaDeskTool/.test(dispatchRpc) && /mediaDeskRequest/.test(tool),
     "Codex 可直接跑整条流程（media_desk 工具 → 本地服务，与界面同一份数据）");

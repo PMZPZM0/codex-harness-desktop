@@ -8,6 +8,44 @@ import { mediaDeskRequest } from "./embed";
 
 type Args = Record<string, unknown>;
 
+/**
+ * 工作台排期 → 系统排期（11-18「深度联动」第一条）。
+ *
+ * 为什么需要：上游 `schedule_item` 只写它自己的 state.json，到点**没有任何东西会跑** ——
+ * 用户以为「排了就等着发」。这里补一条 `scheduler` 的一次性任务：到点开一个真实回合，
+ * 让 Codex 读工作台、整理成稿、列出发布前要确认的事。
+ * ⛔ 只加一条「提醒 + 整理」，不代替用户点发布（发布是外站动作，不伪造成功）。
+ * ⛔ 同名任务已存在就改它（update），不重复堆任务。
+ */
+async function bridgeSystemSchedule(input: { title: string; when: string; itemId: string }): Promise<{ id?: string; error?: string }> {
+  try {
+    const [{ scheduler }, { app }] = await Promise.all([import("../../main"), import("electron")]);
+    const name = `自媒体 · ${input.title || "排期"}（${input.itemId.slice(0, 6)}）`;
+    const prompt = [
+      `自媒体工作台有一条排期到点了：「${input.title || "未命名"}」（item ${input.itemId}）。`,
+      "请用 media_desk 工具（action=state）读出这条内容，整理成可直接发布的成稿；",
+      "然后列出发布前需要我确认的 3 件事（平台 / 时间 / 敏感点），不要自己发布。",
+    ].join("");
+    const list = await scheduler.list();
+    const existing = (list ?? []).find((t: any) => t?.name === name);
+    const saved = await scheduler.save({
+      ...(existing ? { id: existing.id } : {}),
+      name,
+      prompt,
+      workspace: app.getPath("home"),
+      kind: "once",
+      scheduleType: "once",
+      scheduledAt: input.when,
+      effort: "high",
+      enabled: true,
+    });
+    return { id: (saved as any)?.id };
+  } catch (error) {
+    /* 桥失败不影响工作台自己的排期（那是上游的真相源）；把原因回给模型，别静默。 */
+    return { error: String((error as { message?: unknown } | null)?.message ?? error) };
+  }
+}
+
 /** 跑一次 media_desk 工具；返回给模型的是提炼后的 JSON（⛔ 不塞整份 state）。 */
 export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; output?: string; error?: string }> {
   const action = String(args?.action ?? "state");
@@ -127,7 +165,8 @@ export async function runMediaDeskTool(args: Args): Promise<{ ok: boolean; outpu
             scheduledAt: when,
             ...(args?.platform ? { platform: String(args.platform) } : {}),
           }]);
-          return out({ id: postId, scheduledAt: when, state: summarize(await mediaDeskRequest("state")) });
+          const bridgedEdit = await bridgeSystemSchedule({ title: String(args?.title ?? postId), when, itemId: postId });
+          return out({ id: postId, scheduledAt: when, systemScheduleId: bridgedEdit.id, systemScheduleError: bridgedEdit.error, state: summarize(await mediaDeskRequest("state")) });
         }
         const id = await addItem({
           title: String(args?.title ?? "").trim() || "未命名排期", body: String(args?.text ?? ""),
