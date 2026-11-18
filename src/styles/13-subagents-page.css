@@ -1709,3 +1709,19 @@
   color: var(--text);
 }
 .expert-cap-line small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46ch; }
+
+/* 11-18 专家能力清单：缺件可见 + 一键补齐（工具）/ 去市场（技能） */
+.expert-cap-block { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.expert-cap-line span[data-miss]:not([data-miss="0"]) { background: color-mix(in srgb, var(--danger, #e5534b) 14%, transparent); color: var(--danger, #e5534b); }
+.expert-cap-miss { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; font-size: 12px; color: var(--muted); }
+.expert-cap-fix {
+  padding: 1px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+.expert-cap-fix:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.expert-cap-fix:disabled { opacity: 0.55; cursor: default; }

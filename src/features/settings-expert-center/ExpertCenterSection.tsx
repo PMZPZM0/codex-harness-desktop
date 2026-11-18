@@ -5,7 +5,7 @@
  *   ⇒ 一级 = 专家工作证小卡（人物头像 + 名字 + 职业），按领域分组；点开 = 预览弹窗
  *     （大图 + 完整介绍 + 所属团队 + 「打开对话」）。⛔ 不再在列表卡里塞两行小字。
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, MessageSquare, Package, Users, X } from "lucide-react";
 import { AgentAvatar } from "../../components/AgentAvatar";
 import { AgentBadge } from "../../components/AgentBadge";
@@ -18,6 +18,39 @@ export type ExpertCenterSectionProps = { expertTeams: any; EXPERT_CATEGORY_DEFS:
 export function ExpertCenterSection(props: ExpertCenterSectionProps) {
   const { expertTeams, EXPERT_CATEGORY_DEFS, expertTeamMemberDirect, startMemberDirectSession, onOpenMarket, onBack } = props;
   const [previewKey, setPreviewKey] = useState("");
+  /* ⛔⛔ 11-18：能力清单必须是**真实状态**（已装/缺），不是文案。
+     数据只认两条既有通道：listRuntimes（组件是否已装）+ listLocalSkills（技能是否已装）。
+     ⛔ 不新增第二份"专家能力状态"真相源；⛔ 不在这里伪造"已具备"。 */
+  const [installedTools, setInstalledTools] = useState<Set<string>>(new Set());
+  const [installedSkills, setInstalledSkills] = useState<Set<string>>(new Set());
+  const [capsLoaded, setCapsLoaded] = useState(false);
+  const [busyCap, setBusyCap] = useState("");
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      try {
+        const [rows, skills] = await Promise.all([
+          window.codex.listRuntimes().catch(() => []),
+          window.codex.listLocalSkills().catch(() => []),
+        ]);
+        if (!alive) return;
+        setInstalledTools(new Set((rows ?? []).filter((r: any) => r?.installed).map((r: any) => String(r.id))));
+        setInstalledSkills(new Set((skills ?? []).map((k: any) => String(k?.name ?? k?.folder ?? "")).filter(Boolean)));
+      } finally { if (alive) setCapsLoaded(true); }
+    })();
+    return () => { alive = false; };
+  }, []);
+  /* 工具 id（update-registry）→ 运行时 id（runtime:list）：只有对得上的才显示"可安装"。 */
+  const RUNTIME_ALIAS: Record<string, string[]> = {
+    "bundled-tool": ["python", "node", "git"],
+    "lark-cli": ["feishu-cli"],
+    "kb-embedding": ["kb-embedding"],
+    "computer-use": ["computer-use"],
+  };
+  /* 这两样不是「运行时组件」而是应用自带能力：⛔ 不能因为 listRuntimes 里没有就报缺。 */
+  const NON_INSTALLABLE = new Set(["engine", "image-lab"]);
+  const toolReady = (id: string) => NON_INSTALLABLE.has(id) || installedTools.has(id) || (RUNTIME_ALIAS[id] ?? []).some((x) => installedTools.has(x));
+  const skillReady = (name: string) => installedSkills.has(name);
   // 专家中心：全部专家按领域分类陈列，点卡先看预览，再从预览进单人会话；
   // 内置团队按 EXPERT_CATEGORY_DEFS 归类，自定义团队落「更多专家」。
   const expertCards = expertTeams.flatMap((team: any) => [team.lead, ...team.members].map((member) => ({ team, member, isLead: member.id === team.lead.id })));
@@ -79,12 +112,39 @@ export function ExpertCenterSection(props: ExpertCenterSectionProps) {
                 const tools: string[] = (preview.team as any)?.tools ?? [];
                 const skills: string[] = (preview.team as any)?.skills ?? [];
                 if (!tools.length && !skills.length) return <p className="expert-cap-line muted">尚未声明专业工具与技能</p>;
+                const missTools = tools.filter((t) => !toolReady(t));
+                const missSkills = skills.filter((k) => !skillReady(k));
+                const installable = missTools.filter((t) => !NON_INSTALLABLE.has(t));
+                const installOne = async (id: string) => {
+                  setBusyCap(id);
+                  try {
+                    const rid = (RUNTIME_ALIAS[id] ?? [id])[0];
+                    const r = await window.codex.installRuntime(rid);
+                    if (r?.ok) setInstalledTools((prev) => new Set([...prev, rid, id]));
+                  } finally { setBusyCap(""); }
+                };
                 return (
-                  <p className="expert-cap-line">
-                    <span title={tools.join("、")}>工具 {tools.length}</span>
-                    <span title={skills.join("、")}>技能 {skills.length}</span>
-                    {tools.length ? <small>· {tools.slice(0, 4).join(" / ")}{tools.length > 4 ? " …" : ""}</small> : null}
-                  </p>
+                  <div className="expert-cap-block">
+                    <p className="expert-cap-line">
+                      <span title={tools.join("、")} data-miss={missTools.length}>工具 {tools.length - missTools.length}/{tools.length}</span>
+                      <span title={skills.join("、")} data-miss={missSkills.length}>技能 {skills.length - missSkills.length}/{skills.length}</span>
+                      {!capsLoaded ? <small>读取中…</small> : null}
+                    </p>
+                    {missTools.length ? (
+                      <p className="expert-cap-miss">缺工具：{missTools.join(" / ")}
+                        {installable.slice(0, 3).map((id) => (
+                          <button key={id} type="button" className="expert-cap-fix" disabled={busyCap === id} onClick={() => void installOne(id)}>
+                            {busyCap === id ? "安装中…" : `装 ${id}`}
+                          </button>
+                        ))}
+                      </p>
+                    ) : null}
+                    {missSkills.length ? (
+                      <p className="expert-cap-miss">缺技能：{missSkills.join(" / ")}
+                        {onOpenMarket ? <button type="button" className="expert-cap-fix" onClick={onOpenMarket}>去技能市场</button> : null}
+                      </p>
+                    ) : null}
+                  </div>
                 );
               })()}
             </div>
