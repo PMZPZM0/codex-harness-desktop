@@ -25,7 +25,10 @@ try {
 } catch { /* 无 localStorage 环境忽略 */ }
 
 /** 组件库页：按类目浏览打包好的组件，可搜索与看详情。 */
-export function ComponentLibraryPage() {
+export function ComponentLibraryPage({ onHandoff }: {
+  /** 交给 Codex / 画布：把提示词填进主输入框（⛔ 不自动发送，用户可先改再发）。 */
+  onHandoff?: (text: string) => void;
+} = {}) {
   const [cat, setCat] = useState<string>(UI_SKIN_CATS[0]?.cat ?? "Buttons");
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
@@ -74,6 +77,22 @@ export function ComponentLibraryPage() {
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch { setCopied(false); }
+  };
+
+  /* 11-18（前端与设计大类）：组件 → 画布。用户令「组件库和画布要联动起来」。
+     ⛔ 只把组件代码带过去让 Codex 插入/改造；⛔ 不在画布里嵌组件库面板（11-15 用户否过）。 */
+  const sendToCanvas = () => {
+    if (!detail || !onHandoff) return;
+    const snippet = String(detail.html ?? "").slice(0, 6000);
+    const text = [
+      `打开「前端开发」画布，把这个组件落进一屏界面：${detail.name}（${detail.cat}）。`,
+      "步骤：① frontend_get_doc 取当前文档；② frontend_apply_doc 把组件放进一屏（保留视觉特征，按画布主题调色）；③ 回复说明改了什么。",
+      "组件原始代码：",
+      "```html",
+      snippet,
+      "```",
+    ].join("\n");
+    onHandoff(text);
   };
 
   return (
@@ -153,6 +172,7 @@ export function ComponentLibraryPage() {
                 <button type="button" className="comp-lib-copy" onClick={() => void copyCode()}>
                   {copied ? "✓ 已复制" : "复制代码"}
                 </button>
+                {onHandoff ? <button type="button" className="comp-lib-copy" title="带着这个组件去前端开发画布（填入输入框，可先改再发）" onClick={sendToCanvas}>放进画布</button> : null}
                 <button type="button" className="comp-lib-close" title="关闭" onClick={() => setDetail(null)}>✕</button>
               </div>
             </div>

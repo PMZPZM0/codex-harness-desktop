@@ -163,6 +163,22 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
     onCloseSettings?.();
   };
 
+  /* 11-18（前端与设计大类）：同一份规范，**去画布**而不是去写代码。
+     用户令：「设计参考和前端画布这些要联动起来」。
+     ⛔ 只把规范当风格来源（⛔ 不复制品牌 logo/商标/专有字体）；⛔ 不自动发送，先填输入框。 */
+  const sendToCanvas = () => {
+    if (!detail || !onHandoff) return;
+    const text = [
+      `打开「前端开发」画布，按「${detail.name}」的设计语言（design_md slug=${detail.slug}）先搭 1 屏主界面：`,
+      "① 用 frontend_get_doc 取当前画布文档（没有就新建一屏）；",
+      "② 把规范里的颜色 / 字体 / 圆角 / 间距映射成画布主题；",
+      "③ 用 frontend_apply_doc 写回，并在回复里说明这一屏的取舍（为什么这样排版）。",
+      "⛔ 只作风格参考：不复制品牌 logo / 商标 / 专有字体，界面里不出现该品牌名字冒充官方。",
+    ].join("\n");
+    onHandoff(text);
+    onCloseSettings?.();
+  };
+
   return (
     <div className="comp-lib design-lib">
       <div className="comp-lib-head">
@@ -250,6 +266,7 @@ export function DesignLibraryPage({ workspace = "", projects = [], onHandoff, on
               <div className="comp-lib-detail-actions">
                 <button type="button" className="comp-lib-copy" title="复制英文原文 DESIGN.md（给 Codex 用）" onClick={() => void copyDoc()}>{copied ? "✓ 已复制" : "复制 DESIGN.md"}</button>
                 {onHandoff ? <button type="button" className="comp-lib-copy" title="填进输入框（可先改再发）" onClick={sendToCodex}>交给 Codex</button> : null}
+                {onHandoff ? <button type="button" className="comp-lib-copy" title="用这套风格在前端开发画布上搭一屏（填入输入框，可先改再发）" onClick={sendToCanvas}>用这套风格开画布</button> : null}
                 <button type="button" className="comp-lib-close" title="关闭" onClick={() => setDetail(null)}>✕</button>
               </div>
             </div>
