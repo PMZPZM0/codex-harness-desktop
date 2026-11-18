@@ -16,7 +16,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { ExpertSetup, type GuideExpert } from "./ExpertSetup";
-import { readGuideChoice, rememberGuideChoice } from "./guide-direction";
+import { guideRecommendation, readGuideChoice, rememberGuideChoice } from "./guide-direction";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft, ArrowRight, BookOpen, Briefcase, Check, Code2, Dumbbell, Gamepad2, Heart,
@@ -51,7 +51,7 @@ type Tone = "casual" | "professional" | "none";
 
 const STEPS = [
   { id: "hello", label: "称呼与头像", title: "先认识一下", desc: "怎么称呼你、要不要给 Codex 取个名字，顺手挑两个头像。", icon: UserRound },
-  { id: "role", label: "你的角色", title: "你想让 Codex 以什么角色帮你", desc: "选一个最接近你的方向；它决定默认的工作方法与关注点。", icon: Briefcase },
+  { id: "role", label: "你的身份", title: "你主要做哪类工作？", desc: "按你的职业推荐 Codex 搭档和起步方向。", icon: Briefcase },
   { id: "persona", label: "Codex 人格", title: "Codex 该是什么性格", desc: "决定它的表达习惯和做事气质；随时能在设置里换。", icon: Sparkles },
   { id: "vibe", label: "兴趣习惯", title: "聊得来，才用得顺", desc: "兴趣会作为长期背景；习惯决定它怎么配合你。", icon: Heart },
   { id: "confirm", label: "确认与起步", title: "从哪项工作开始？", desc: "选一个保存后要打开的入口，也可以只保存个人配置。", icon: Check },
@@ -120,6 +120,10 @@ const STARTS = [
   { id: "artifacts", title: "追溯项目交付", path: "产物档案 → 来源会话", entry: "产物档案", icon: Briefcase },
 ] as const;
 type Start = typeof STARTS[number]["id"];
+const assistants: Array<{id: string; label: string; desc: string; persona: string; soulSlug?: string}> = [
+  ...ASSISTANT_PERSONAS,
+  ...BUILT_IN_SOULS.map(s => ({ id: s.slug, label: s.displayName, desc: s.summary, persona: s.content, soulSlug: s.slug })),
+];
 /** 画像引导向导：逐项问清身份与偏好，应用后写回个性化配置。 */
 export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onStart, install, onExpert }: {
   install: (id: string) => Promise<boolean>;
@@ -159,6 +163,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
   const [assistantPersonaId, setAssistantPersonaId] = useState("default");
   /** 用户在本次引导里是否真的点过 Codex 人格卡；没点就保留档案里原有的人格（含人格市场）。 */
   const [assistantPersonaTouched, setAssistantPersonaTouched] = useState(false);
+  const [showOtherAssistants, setShowOtherAssistants] = useState(false);
   const [occupation, setOccupation] = useState("");
   const [customInterest, setCustomInterest] = useState("");
   const [interests, setInterests] = useState<string[]>([]);
@@ -169,17 +174,19 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
 
   /** 把档案灌回表单：首次自动弹出与「重新配置引导」共用，避免两套初始化逻辑漂移。 */
   const hydrate = useCallback((stored: Config) => {
-    const last = readGuideChoice();
-    setStart(last.direction);
-    setRestoreKey(last.teamId && last.memberId ? JSON.stringify([last.teamId, last.memberId]) : null);
+    const persona = inferPersona(stored);
+    const rec = guideRecommendation(persona);
+    const last = readGuideChoice(stored.occupation ?? "");
+    setStart(last ? last.direction : rec.direction);
+    setRestoreKey(last?.teamId && last.memberId ? JSON.stringify([last.teamId, last.memberId]) : null);
     setExpert(null);
     const cachedName = localStorage.getItem("username") ?? "";
     setNickname(stored.nickname || (cachedName && cachedName !== "Codex 用户" && cachedName !== "Administrator" ? cachedName : ""));
     setAssistantName(stored.assistantName || "");
-    const persona = inferPersona(stored);
     setPersonaId(persona);
-    const matchedAssistant = ASSISTANT_PERSONAS.find((item) => item.persona && item.persona === stored.persona);
-    setAssistantPersonaId(matchedAssistant?.id ?? "default");
+    const matched = assistants.find(a => a.id === stored.soulSlug || (a.persona && a.persona === stored.persona));
+    setAssistantPersonaId(matched?.id ?? (stored.persona || stored.soulSlug ? "stored" : "default"));
+    setShowOtherAssistants(false);
     setAssistantPersonaTouched(false);
     setOccupation(persona ? "" : stored.occupation || "");
     const known = new Set(INTERESTS.map((item) => item.label));
@@ -242,12 +249,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
         return;
       }
       const selected = USER_PERSONAS.find((item) => item.id === personaId) ?? null;
-      /* 合并池里找（简版四选一 + 内置六套）；找不到回落默认项 */
-      const mergedAssistants: Array<{ id: string; label: string; desc: string; persona: string; soulSlug?: string }> = [
-        ...ASSISTANT_PERSONAS,
-        ...BUILT_IN_SOULS.map((soul) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug })),
-      ];
-      const selectedAssistant = mergedAssistants.find((item) => item.id === assistantPersonaId) ?? mergedAssistants[0];
+      const selectedAssistant = assistants.find(item => item.id === assistantPersonaId);
       const fields = selected ? userPersonaFields(selected.id) : null;
       const finalOccupation = occupation.trim() || fields?.occupation || "";
       const interestText = [...interests, customInterest.trim()].filter(Boolean).join("、");
@@ -258,14 +260,14 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
         profileGuideSeen: true,
         ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
         ...(assistantName.trim() && assistantName.trim() !== "Codex" ? { assistantName: assistantName.trim() } : {}),
-        ...(finalOccupation ? { occupation: finalOccupation } : {}),
-        ...(fields?.userContext ? { userContext: fields.userContext } : {}),
+        occupation: finalOccupation,
+        ...(fields ? { userContext: fields.userContext } : USER_PERSONAS.some(p => p.userContext === config.userContext) ? { userContext: "" } : {}),
         ...(interestText ? { interests: interestText } : {}),
         ...(replyStyle !== "none" ? { replyStyle: replyStyleTitleOf(replyStyle) } : {}),
         ...(tone !== "none" ? { tone: tone === "casual" ? "轻松幽默" : "专业中性" } : {}),
         ...(habitText ? { habits: habitText } : {}),
         ...(customInstructions.trim() ? { customInstructions: customInstructions.trim() } : {}),
-        ...(assistantPersonaTouched ? { persona: selectedAssistant.persona, soulSlug: selectedAssistant.soulSlug ?? "" } : {}),
+        ...(assistantPersonaTouched && selectedAssistant ? { persona: selectedAssistant.persona, soulSlug: selectedAssistant.soulSlug ?? "" } : {}),
       };
       const saved = (await window.codex.saveIdentity(payload as unknown as Record<string, string>)) as Config;
       try {
@@ -275,7 +277,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
           ...(nickname.trim() ? { nickname: nickname.trim() } : {}),
           avatarType: "image",
           avatar: userAvatar,
-          occupation: finalOccupation || profile.occupation || "",
+          occupation: finalOccupation,
           /* 领域不要复制职业（否则用户中心会出现「产品经理 · 产品经理」）：
              选了角色卡就不填领域；手填职业时只保留原本不同的领域。 */
           field: selected ? "" : (profile.field && profile.field !== finalOccupation ? profile.field : ""),
@@ -293,7 +295,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
       try { window.dispatchEvent(new CustomEvent("codex-profile-updated")); } catch { /* 忽略 */ }
       setOpen(false);
       onApplied?.(saved as Config);
-      rememberGuideChoice(start, expert);
+      rememberGuideChoice(start, expert, finalOccupation);
       onNotice?.("配置已保存，下一条消息起生效");
       if (expert) await onExpert(expert);
       else if (start) {
@@ -320,8 +322,16 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
   if (!checked || !open) return null;
 
   const selectedPersona = USER_PERSONAS.find((item) => item.id === personaId) ?? null;
-  /* ⛔ 用合并池（简版 + 内置六套）——选内置人格时确认页才显示对应名字（补审查 F3） */
-  const selectedAssistantPersona = [...ASSISTANT_PERSONAS, ...BUILT_IN_SOULS.map((soul: { slug: string; displayName: string; summary: string; content: string }) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug }))].find((item: any) => item.id === assistantPersonaId) ?? ASSISTANT_PERSONAS[0];
+  const selectedAssistantPersona = assistants.find(a => a.id === assistantPersonaId) ?? { label: "档案中的自定义搭档", desc: "保留当前设置" };
+  const rec = guideRecommendation(personaId);
+  const visibleAssistants = personaId && !showOtherAssistants ? assistants.filter(a => a.id === rec.assistant || a.id === assistantPersonaId) : assistants;
+  const chooseRole = (id: string, custom = "") => {
+    if (personaId === id && occupation === custom) return;
+    setPersonaId(id); setOccupation(custom);
+    const next = guideRecommendation(id);
+    setAssistantPersonaId(next.assistant); setAssistantPersonaTouched(true); setShowOtherAssistants(false);
+    setStart(next.direction); setExpert(null); setRestoreKey(null);
+  };
   const active = STEPS[step];
   const progress = Math.round(((step + 1) / STEPS.length) * 100);
   const effectiveInterests = [...interests, customInterest.trim()].filter(Boolean).join("、");
@@ -395,30 +405,30 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
             {step === 1 && (
               <div className="profile-guide-role">
                 <div className="profile-guide-personas">
-                  <button type="button" className={`profile-guide-persona ${personaId === "" ? "on" : ""}`} onClick={() => setPersonaId("")}>
+                  <button type="button" className={`profile-guide-persona ${!personaId && !occupation ? "on" : ""}`} onClick={() => chooseRole("")}>
                     <span className="profile-guide-persona-mark">通</span>
-                    <div><strong>通用助手</strong><small>不限定行业，按任务临时判断</small></div>
-                    {personaId === "" && <Check size={14} className="profile-guide-check" />}
+                    <div><strong>不指定职业</strong><small>按本次任务选择搭档和入口</small></div>
+                    {!personaId && !occupation && <Check size={14} className="profile-guide-check" />}
                   </button>
                   {USER_PERSONAS.map((persona, index) => (
-                    <button type="button" key={persona.id} className={`profile-guide-persona ${personaId === persona.id ? "on" : ""}`} onClick={() => { setPersonaId(persona.id); setOccupation(""); }}>
+                    <button type="button" key={persona.id} data-role={persona.id} className={`profile-guide-persona ${personaId === persona.id ? "on" : ""}`} onClick={() => chooseRole(persona.id)}>
                       <span className={`profile-guide-persona-mark tone-${index % 5}`}>{persona.label.slice(0, 1)}</span>
                       <div><strong>{persona.label}</strong><small>{persona.userContext}</small></div>
                       {personaId === persona.id && <Check size={14} className="profile-guide-check" />}
                     </button>
                   ))}
                 </div>
-                <label className="profile-guide-field"><span>或者直接填你的职业 <em>可选</em></span><input maxLength={40} value={occupation} onChange={(event) => { setOccupation(event.target.value); if (event.target.value.trim()) setPersonaId(""); }} placeholder="例如：后端工程师 / 产品经理 / 教师" /></label>
+                <label className="profile-guide-field"><span>其他职业 <em>可选</em></span><input maxLength={40} value={occupation} onChange={event => chooseRole("", event.target.value)} placeholder="填写你的职业" /></label>
               </div>
             )}
 
             {step === 2 && (
               <div className="profile-guide-assistant">
                 <div className="profile-guide-personas">
-                  {[...ASSISTANT_PERSONAS, ...BUILT_IN_SOULS.map((soul: { slug: string; displayName: string; summary: string; content: string }) => ({ id: soul.slug, label: soul.displayName, desc: soul.summary, persona: soul.content, soulSlug: soul.slug }))].map((persona, index) => (
+                  {visibleAssistants.map((persona, index) => (
                     <button type="button" key={persona.id} className={`profile-guide-persona ${assistantPersonaId === persona.id ? "on" : ""}`} onClick={() => { setAssistantPersonaId(persona.id); setAssistantPersonaTouched(true); }}>
                       <span className={`profile-guide-persona-mark tone-${index % 5}`}>{persona.label.slice(0, 1)}</span>
-                      <div><strong>{persona.label}</strong><small>{persona.desc}</small></div>
+                      <div><strong>{persona.label}</strong><small>{personaId && persona.id === rec.assistant ? `适合${selectedPersona?.label} · ` : ""}{persona.desc}</small></div>
                       {assistantPersonaId === persona.id && <Check size={14} className="profile-guide-check" />}
                     </button>
                   ))}
@@ -426,10 +436,11 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                 <div className="profile-guide-quote">
                   <Sparkles size={14} />
                   <div>
-                    <b>它大概会这样说话</b>
-                    <span>{assistantPersonaId === "default" ? "保持默认：按任务切换表达，不额外加人设。" : ASSISTANT_PERSONAS.find((item) => item.id === assistantPersonaId)?.persona.split("：")[0] + "：" + ASSISTANT_PERSONAS.find((item) => item.id === assistantPersonaId)?.desc}</span>
+                    <b>当前 Codex 搭档</b>
+                    <span>{selectedAssistantPersona.label}：{selectedAssistantPersona.desc}</span>
                   </div>
                 </div>
+                {personaId && <button type="button" className="profile-guide-back" aria-expanded={showOtherAssistants} onClick={() => setShowOtherAssistants(v => !v)}>{showOtherAssistants ? "收起其他搭档" : "选择其他 Codex 搭档"}</button>}
               </div>
             )}
 
@@ -475,7 +486,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                   <label className="profile-guide-save-only"><input type="radio" name="profile-guide-start" checked={!start && !expert && !restoreKey} onChange={() => { setStart(null); setExpert(null); setRestoreKey(null); }} />只保存配置</label>
                   <div className="profile-guide-start-grid">{STARTS.map(({ id, title, path, entry, icon: Icon }) => (
                     <label key={id} className="profile-guide-start">
-                      <Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{path}</small><em>入口：{entry}</em></span>
+                      <Icon size={17} aria-hidden="true" /><span><strong>{title}</strong><small>{path}</small><em>{id === rec.direction ? `${selectedPersona?.label}推荐 · ` : ""}{entry}</em></span>
                       <input type="radio" name="profile-guide-start" value={id} checked={start === id} onChange={() => { setStart(id); setExpert(null); setRestoreKey(null); }} />
                     </label>
                   ))}</div>
@@ -486,7 +497,7 @@ export function ProfileOnboardingWizard({ onApplied, onNotice, onUserAvatar, onS
                   <SummaryRow label="称呼" value={nickname.trim() || "未指定"} onEdit={() => setStep(0)} />
                   <SummaryRow label="头像" value="已选择你的头像与 Codex 形象" onEdit={() => setStep(0)} />
                   <SummaryRow label="Codex 名字" value={assistantName.trim() || "Codex"} onEdit={() => setStep(0)} />
-                  <SummaryRow label="你的角色" value={occupation.trim() || selectedPersona?.label || "通用助手"} onEdit={() => setStep(1)} />
+                  <SummaryRow label="你的身份" value={occupation.trim() || selectedPersona?.label || "不指定职业"} onEdit={() => setStep(1)} />
                   <SummaryRow label="Codex 人格" value={selectedAssistantPersona.label} onEdit={() => setStep(2)} />
                   <SummaryRow label="兴趣" value={effectiveInterests || "未填写"} onEdit={() => setStep(3)} />
                   <SummaryRow label="风格" value={`${effectiveReply} · ${effectiveTone}${habits.length ? ` · ${habits.length} 条习惯` : ""}`} onEdit={() => setStep(3)} />

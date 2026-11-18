@@ -11,6 +11,24 @@ export default {
       await h.waitFor(`!!document.querySelector('.profile-guide-pick:not(:disabled)')`, {label:'读取真实专家清单'});
       };
       await open();
+      const move = async (next, step) => {
+        await h.eval(`document.querySelector('.profile-guide-footer .profile-guide-${next ? 'next' : 'back'}').click()`);
+        await h.waitFor(`document.querySelector('.profile-guide-kicker')?.textContent.includes('第 ${step} /')`, {label:'切换身份联动步骤'});
+      };
+      for (const step of [4,3,2]) await move(false, step);
+      await h.eval(`document.querySelector('[data-role=coder]').click()`);
+      await h.eval(`document.querySelector('[data-role=video]').click()`);
+      await move(true, 3);
+      h.check('自媒体推荐创意搭档而非工程师', await h.eval(`document.querySelector('.profile-guide-persona.on strong')?.textContent === '创意搭档' && !document.querySelector('.profile-guide-assistant').textContent.includes('极简工程师')`));
+      await move(true, 4); await move(true, 5);
+      await h.waitFor(`document.querySelector('input[value="media-desk"]').checked && !!document.querySelector('.profile-guide-pick:not(:disabled)')`, {label:'自媒体职业联动工作台及专家'});
+      await h.eval(`document.querySelector('.profile-guide-pick').click()`);
+      for (const step of [4,3,2]) await move(false, step);
+      await h.eval(`document.querySelector('[data-role=coder]').click()`);
+      await move(true, 3);
+      h.check('改职业切换内置工程搭档', await h.eval(`document.querySelector('.profile-guide-persona.on strong')?.textContent === '极简工程师'`));
+      await move(true, 4); await move(true, 5);
+      await h.waitFor(`document.querySelector('input[value="devtools"]').checked && !document.querySelector('.profile-guide-expert-id') && !!document.querySelector('.profile-guide-pick:not(:disabled)')`, {label:'改职业清除旧专家并切换工具方向'});
       await h.eval(`document.querySelector('.profile-guide-save-only input').click()`);
       const total = await h.eval(`document.querySelectorAll('.profile-guide-pick').length`);
       for (let i = 0; i < total; i++) {
@@ -34,6 +52,8 @@ export default {
       await h.waitFor(`!document.querySelector('.profile-guide-card')`, {label:'保存成功'});
       await open();
       h.check('重新配置还原方向', await h.eval(`document.querySelector('input[value="devtools"]').checked`));
+      await move(false, 4); await move(false, 3);
+      h.check('重开恢复之前保存的内置搭档', await h.eval(`document.querySelector('.profile-guide-persona.on strong')?.textContent === '极简工程师'`));
       await h.eval(`document.querySelector('.profile-guide-skip').click()`);
       await h.waitFor(`!document.querySelector('.profile-guide-card')`, {label:'跳过不启动任务'});
     },
