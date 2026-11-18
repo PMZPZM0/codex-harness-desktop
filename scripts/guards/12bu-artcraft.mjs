@@ -65,8 +65,10 @@ const DISPATCH = "src/features/app-state/parts/part05/event-router/02-request.ts
 {
   const dom = codeOnly(read(DOMAIN));
   ok(["status", "open", "sync", "run", "pick-root"].every((name) => dom.includes(`artcraft:${name}`)), "IPC 五条通道齐全（status/open/sync/run/pick-root）");
-  ok(/installedApps: await listInstalledCraftApps\(\)/.test(dom) && /mcpServers: craftAppMcpServers\(\)/.test(dom),
+  ok(/installedApps: await listInstalledCraftApps\(\)/.test(dom) && /mcpServers: craftAppMcpServers\(\)|servers, "photocraft"/.test(dom),
     "status 下发已装 App 列表 + 已写入的独立 MCP 名单");
+  ok(/photocraftCliPath\(\) && photocraftMcpRegistered\(\)/.test(dom) && /servers, "photocraft"/.test(dom),
+    "PhotoCraft 也算「已接入」（走自己的 photocraft MCP；⛔ 不再出现「装 3 个只接 2 个」）");
   ok(/await rewriteConfig\(\);[\s\S]{0,120}?return \{ servers: craftAppMcpServers\(\) \}/.test(dom),
     "sync 重写 config 并回报服务器名单");
   ok(/isInsideOrEqualTrustedRoots/.test(dom) && /输出不能与输入同一路径/.test(dom), "run 的路径闸 + ⛔ 输出不覆盖输入");

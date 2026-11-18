@@ -34,6 +34,7 @@ import {
   writeCraftRootSetting,
 } from "../artcraft";
 import { dirSizeBytes } from "../toolchain";
+import { photocraftCliPath, photocraftMcpRegistered } from "../photocraft";
 
 const ARTCRAFT_CHANNELS = ["artcraft:status", "artcraft:open", "artcraft:sync", "artcraft:run", "artcraft:pick-root"];
 const COMMAND_ID = /^[a-z][a-zA-Z0-9_.]{1,80}$/;
@@ -105,7 +106,12 @@ export const artcraftFeature = defineFeature<null>({
         sizeBytes: installed ? dirSizeBytes(paths.root) : 0,
         /* Launcher 里装过的 App（装完回来自动联动）+ 已写入的独立 MCP 名单。 */
         installedApps: await listInstalledCraftApps(),
-        mcpServers: craftAppMcpServers(),
+        /* PhotoCraft 不是 craft_<id> 工具：它走自己的 photocraft 工具 + [mcp_servers.photocraft]。
+           检测到 CLI 且配置里该段已写入时，也把它算进「已接入」，否则界面会显示「装了 3 个只接入 2 个」。 */
+        mcpServers: (() => {
+          const servers = craftAppMcpServers();
+          return photocraftCliPath() && photocraftMcpRegistered() ? [...servers, "photocraft"] : servers;
+        })(),
         /* 11-17：把「扫了哪些目录」一并回给界面 —— 识别不到时用户能看到原因、也能手动指定。 */
         roots: craftScanRoots(),
         customRoot: readCraftRootSetting(),
