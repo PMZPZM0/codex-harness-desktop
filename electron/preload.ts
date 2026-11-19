@@ -745,6 +745,8 @@ contextBridge.exposeInMainWorld("codex", {
   cancelSkillPack: (input: { id: string }) => __ipc("skill-packs:cancel", 1, [input]),
   /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
   uninstallSkillPack: (input: { id: string }) => __ipc("skill-packs:uninstall", 1, [input]),
+  /* 按关键词实时检索本地技能（全局 + 项目级），刚装的技能立即可搜到；只读 */
+  findSkills: (input: { query?: string; limit?: number; cwd?: string }) => __ipc("skills:find", 1, [input]),
   listLocalSkills: () => __ipc("skills:local-list", 0, []),
   removeLocalSkill: (input: { folder: string; name?: string }) => __ipc("skills:local-remove", 1, [input]),
   installMarketSkill: (skill: unknown) => __ipc("skills:market-install", 1, [skill]),

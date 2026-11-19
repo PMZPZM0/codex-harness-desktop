@@ -869,6 +869,17 @@ ${st.hint}`);
                 const compactThread = String(event.params?.threadId ?? bag.threadRef.current?.id ?? "");
                 if (compactThread) bag.deferredCompactRef.current.add(compactThread);
                 await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: "已把压缩加入队列：**本回合结束后**自动执行（回合中压缩会中断当前回合，所以不能立刻做）。届时界面会出现压缩状态线，压缩完成后上下文显著缩短。" }], success: true });
+              } else if (event.params?.tool === "find_skills") {
+                /* 11-19：技能检索（只读）。结果直接回给模型，卡片按普通工具卡展示。 */
+                try {
+                  const hits = await window.codex.findSkills({ query: String(args.query ?? ""), limit: Number(args.limit ?? 5) });
+                  const text = hits.length
+                    ? hits.map((hit: any, index: number) => `${index + 1}. ${hit.name}${hit.enabled ? "" : "（已停用）"}｜${hit.desc || "无描述"}\n   ${hit.path}`).join("\n")
+                    : "没有匹配的本地技能。可以换关键词；确实没有就去技能市场搜（skill_search），装之前先按 skill-audit 审一遍。";
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text }], success: true });
+                } catch (error) {
+                  await toolCallRespond.send(event.id!, { contentItems: [{ type: "inputText", text: `检索失败：${String((error as { message?: unknown })?.message ?? error)}` }], success: false });
+                }
               } else if (event.params?.tool === "task_update") {
                 if (!args.id && args.status === undefined && args.text === undefined && !args.done) {
                   const tasks = await window.codex.listTasks();

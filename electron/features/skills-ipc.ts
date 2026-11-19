@@ -26,6 +26,7 @@ import { auditSkill, installCocoLoopSkill, listSkillHubSkills, marketSkillFinger
 import type { InstalledMarketSkill, MarketSkill } from "../skills-market";
 import { describeSkillPool, readGlobalDisabled, setSkillPoolState } from "../skill-pool";
 import { sendToWindow } from "./window-bus";
+import { findLocalSkills } from "../skills-find";
 import { refreshSkillDiscipline, skillsRegistryFile, userSkillsDir } from "../main";
 import { refreshDeveloperInstructions } from "../main/12-skill-discipline";
 import { isOutputStyleSkill } from "../output-styles";
@@ -86,7 +87,7 @@ const skillHubSectionMap: Record<string, string> = { "总排行": "hot", "近期
 
 const SKILLS_CHANNELS = [
   "skills:import", "skills:market-list", "skills:market-install", "skills:market-install-light",
-  "skills:local-list", "skills:set-enabled", "skills:set-enabled-batch", "skills:local-remove",
+  "skills:find", "skills:local-list", "skills:set-enabled", "skills:set-enabled-batch", "skills:local-remove",
   "skills:pool-describe", "skills:pool-set",
   "skills:builtin-switch-get", "skills:builtin-switch-set",
   "skills:update-check", "skills:update",
@@ -326,6 +327,19 @@ export const skillsFeature = defineFeature<null>({
     const autoUpdateKick = setTimeout(() => { void runSkillAutoUpdate(); }, 15_000);
     const autoUpdateTimer = setInterval(() => { void runSkillAutoUpdate(); }, 6 * 60 * 60 * 1000);
     ctx.effect(() => { clearTimeout(autoUpdateKick); clearInterval(autoUpdateTimer); });
+
+    /* 11-19：按需检索本地技能（find_skills 工具的后端）。
+       ⛔ 实时扫盘 ⇒ **刚装完的技能立刻可被找到**，不依赖引擎清单刷新；只读、不落盘。
+       cwd 由渲染层传（它知道当前会话的工作区），缺省只扫全局目录。 */
+    ipcHost.handle("skills:find", async (_event, input: { query?: string; limit?: number; cwd?: string } = {}) => {
+      const query = String(input?.query ?? "").trim();
+      if (!query) return [];
+      const roots: Array<{ dir: string; scope: "user" | "repo" }> = [{ dir: userSkillsDir, scope: "user" }];
+      const cwd = String(input?.cwd ?? "").trim();
+      if (cwd) roots.push({ dir: path.join(cwd, ".codex", "skills"), scope: "repo" });
+      const limit = Number(input?.limit ?? 5);
+      return findLocalSkills(roots, query, Number.isFinite(limit) ? limit : 5);
+    });
 
     ipcHost.handle("skills:local-list", async () => {
       try {

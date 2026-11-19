@@ -1157,6 +1157,8 @@ interface Window {
     cancelSkillPack(input: { id: string }): Promise<{ cancelled: boolean }>;
     /* 只删本板块 marker 记下的技能目录（⛔ 用户自建的目录不动） */
     uninstallSkillPack(input: { id: string }): Promise<{ removed: string[]; remaining: string[]; kept: string[] }>;
+    /* 按关键词实时检索本地技能（全局 + 项目级），刚装的技能立即可搜到；只读 */
+    findSkills(input: { query?: string; limit?: number; cwd?: string }): Promise<Array<{ name: string; path: string; desc: string; scope: "user" | "repo"; enabled: boolean; score: number }>>;
     listLocalSkills(): Promise<LocalSkillEntry[]>;
     removeLocalSkill(input: { folder: string; name?: string }): Promise<{ ok: boolean; engineRemoved?: boolean; engineCheckMessage?: string }>;
     installMarketSkill(skill: MarketSkillEntry): Promise<LocalSkillEntry>;

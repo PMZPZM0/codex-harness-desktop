@@ -63,18 +63,19 @@ import {
 type IconProps = { size?: number; className?: string };
 type MenuMeta = { label: string; title: string; Icon: ComponentType<IconProps>; tone: string };
 
+/* 11-18 用户令：菜单图标不再一样一个颜色（彩色污染），统一跟主题色走（ic-accent）。 */
 export const FUNCTION_MENU_META: Record<FunctionMenuItemId, MenuMeta> = {
   "tool-list": { label: "开发工具清单", title: "分类查看工具和安装提示词", Icon: LayoutGrid, tone: "ic-accent" },
-  media: { label: "自媒体工作台", title: "灵感 → 成稿 → 排期 → 复盘（独立窗口）", Icon: Megaphone, tone: "ic-amber" },
-  extensions: { label: "拓展功能", title: "技能 · 插件 · MCP：查看教程与入口", Icon: Zap, tone: "ic-pink" },
-  schedule: { label: "自动化", title: "按时间自动运行任务", Icon: Clock3, tone: "ic-amber" },
-  frontend: { label: "前端开发", title: "前端 UI · 组件库：查看教程与入口", Icon: LayoutGrid, tone: "ic-blue" },
-  team: { label: "团队", title: "子智能体 · 专家 · 专家团：查看教程与入口", Icon: Users, tone: "ic-violet" },
-  devtools: { label: "开发工具", title: "开发工具：运行时安装 · 飞书 CLI · 手机控制 · 声明式插件", Icon: Wrench, tone: "ic-green" },
-  favorites: { label: "收藏夹", title: "收藏夹：收藏的消息、文件与片段", Icon: Star, tone: "ic-amber" },
-  identity: { label: "个性化&记忆", title: "人格市场 · 记忆中心 · 知识库：查看教程与入口", Icon: Heart, tone: "ic-amber" },
-  login: { label: "登录管理", title: "登录管理：GPT 订阅 · 中转站账户 · 云账号", Icon: KeyRound, tone: "ic-green" },
-  newbie: { label: "新手教程", title: "新手教程：分步教你用起来", Icon: Rocket, tone: "ic-cyan" },
+  media: { label: "自媒体工作台", title: "灵感 → 成稿 → 排期 → 复盘（独立窗口）", Icon: Megaphone, tone: "ic-accent" },
+  extensions: { label: "拓展功能", title: "技能 · 插件 · MCP：查看教程与入口", Icon: Zap, tone: "ic-accent" },
+  schedule: { label: "自动化", title: "按时间自动运行任务", Icon: Clock3, tone: "ic-accent" },
+  frontend: { label: "前端开发", title: "前端 UI · 组件库：查看教程与入口", Icon: LayoutGrid, tone: "ic-accent" },
+  team: { label: "团队", title: "子智能体 · 专家 · 专家团：查看教程与入口", Icon: Users, tone: "ic-accent" },
+  devtools: { label: "开发工具", title: "开发工具：运行时安装 · 飞书 CLI · 手机控制 · 声明式插件", Icon: Wrench, tone: "ic-accent" },
+  favorites: { label: "收藏夹", title: "收藏夹：收藏的消息、文件与片段", Icon: Star, tone: "ic-accent" },
+  identity: { label: "个性化&记忆", title: "人格市场 · 记忆中心 · 知识库：查看教程与入口", Icon: Heart, tone: "ic-accent" },
+  login: { label: "登录管理", title: "登录管理：GPT 订阅 · 中转站账户 · 云账号", Icon: KeyRound, tone: "ic-accent" },
+  newbie: { label: "新手教程", title: "新手教程：分步教你用起来", Icon: Rocket, tone: "ic-accent" },
 };
 
 function MenuItemButton({ id, meta, onActivate, onDone, dragging, dropBefore, onDragStart, onDragEnd, onDragOver, onDrop }: {
@@ -121,7 +122,7 @@ export function FunctionMenu({ location }: { location: FunctionMenuLocation }) {
      id 若还没进配置，补进主列表末尾，保证「加了就能看到、能拖、能收进更多」。 */
   const extMetaOf = (id: string) => {
     const entry = extMenu.find((item) => item.id === id);
-    return entry ? ({ label: entry.label, title: "自定义入口：点一下跳到对应设置页", Icon: Puzzle, tone: "ic-cyan" } as MenuMeta) : null;
+    return entry ? ({ label: entry.label, title: "自定义入口：点一下跳到对应设置页", Icon: Puzzle, tone: "ic-accent" } as MenuMeta) : null;
   };
   const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)] ?? extMetaOf(String(id));
   const activate = (id: FunctionMenuEntryId) => {
@@ -214,7 +215,7 @@ function MorePopover({ anchor, overflow, extMenu, onActivate, otherLocation, onC
   onClose: () => void;
 }) {
   const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)]
-    ?? (extMenu.some((entry) => entry.id === id) ? { label: extMenu.find((entry) => entry.id === id)!.label, title: "自定义入口", Icon: Puzzle, tone: "ic-cyan" } as MenuMeta : null);
+    ?? (extMenu.some((entry) => entry.id === id) ? { label: extMenu.find((entry) => entry.id === id)!.label, title: "自定义入口", Icon: Puzzle, tone: "ic-accent" } as MenuMeta : null);
   /* 10-27 架构审查 P1-3：定位/点外关闭/Esc/跟随滚动统一交给 AnchorPopover（本文件不再自己量）。 */
   return (
     <AnchorPopover open anchor={anchor} onClose={onClose} axis="y" align="start" prefer="auto" width={232} className="function-menu-popover" role="menu" ariaLabel="更多拓展功能">
@@ -323,7 +324,7 @@ function FunctionMenuEditor() {
   };
   const extMetaOf = (id: string) => {
     const entry = extMenu.find((item) => item.id === id);
-    return entry ? ({ label: entry.label, title: "自定义入口：点一下跳到对应设置页", Icon: Puzzle, tone: "ic-cyan" } as MenuMeta) : null;
+    return entry ? ({ label: entry.label, title: "自定义入口：点一下跳到对应设置页", Icon: Puzzle, tone: "ic-accent" } as MenuMeta) : null;
   };
   const metaOf = (id: FunctionMenuEntryId) => (FUNCTION_MENU_META as Record<string, MenuMeta>)[String(id)] ?? extMetaOf(String(id));
   const targetLabel = (page: string) => targets.find((item) => item.page === page)?.label ?? page;

@@ -34,6 +34,8 @@ export const CORE_TOOLS: readonly string[] = [
   // 技能（装之前必须过 skill_audit，规则在指令里）
   "skill_search",
   "skill_install",
+  /* 11-19：技能按需检索（清单只给 60 字索引，命中不了的靠它找） */
+  "find_skills",
   // 图像（用户日常用得最多的一件）
   "image_generate",
   "image_view",
@@ -44,7 +46,7 @@ export const CORE_TOOLS: readonly string[] = [
 export const HOST_TOOL_CATALOG: readonly string[] = [
   "harness_tools", "agent_invoke", "agent_ask", "agent_list_children", "agent_archive_sessions",
   "compact_context", "memory_recall", "memory_write", "task_add", "task_update",
-  "skill_search", "skill_install", "laya_judge", "image_generate", "image_view", "image_edit", "image_info",
+  "skill_search", "skill_install", "find_skills", "laya_judge", "image_generate", "image_view", "image_edit", "image_info",
   "media_search", "media_detail", "media_preview", "photocraft", "frontend_get_doc", "frontend_apply_doc",
   "connector_search", "connector_install", "feishu_cli", "filee_convert", "openmaic", "apkstart", "husk",
   "rpa_save", "rpa_run", "rpa_schedule",
