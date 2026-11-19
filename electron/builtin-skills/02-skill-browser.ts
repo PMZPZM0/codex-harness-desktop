@@ -67,20 +67,20 @@ await browser.close();
 
 export const BROWSER_SKILL = `---
 name: browser-skill
-description: 浏览器自动化技能（browse-skills）：装了 Ego Lite 就优先走 ego-browser（每会话一个 TaskSpace、多会话并行）；没装则回落 nuphus-call browser_* 调用默认浏览器。⛔ 不再使用 Playwright / CloakBrowser。
+description: 浏览器自动化三通道：Ego Lite（每会话 TaskSpace，交互首选）→ 未装回落 nuphus-call browser_* → 批量抓取/截图/导出用 playwright 技能。
 ---
 
 # 浏览器自动化（Ego Lite）
 
-## 0. 通道优先级
+## 0. 通道优先级（三选一：看任务性质 + 看装没装）
 
-1. **首选 \`ego-browser\`（ego lite）**：真实 Chromium、保留登录态；每个 Codex 会话一个独立 TaskSpace。
-2. **未装 Ego Lite → \`nuphus-call browser_*\`（默认浏览器回落）**：调用 nuphus 的浏览器自动化工具，操作本机默认浏览器；见第 5 节。
-3. **用户自己看页面** → 应用右栏内置浏览器面板（不是自动化通道）。
-4. 完整 ego API / 故障排查：运行 \`ego-browser skill\`，按它打印的**当前版本**指南执行；本技能补充宿主策略（每会话 Space / 复用 / 回收）。
+1. **\`ego-browser\`（Ego Lite）—— 交互首选**：真实 Chromium、保留登录态；每个 Codex 会话一个独立 TaskSpace。多步点击、要登录态、多会话并行都走它。
+2. **\`nuphus-call browser_*\` —— 未装 Ego 时的回落**：驱动本机默认浏览器，适合单页交互。判据是**命令/工具是否真的可用**（\`nuphus-call\` 在不在、\`browser_navigate\` 调得通不通），不是「我们建议用哪个」。
+3. **\`playwright-browser-automation\` 技能 —— 批量 / 脚本化**：一批 URL 抓同样字段、多宽度截图、导出 PDF、发布前回归。⛔ 只在任务**天然要重复跑**时用它；一次性的看一眼页面别起脚本。
+4. **用户自己看页面** → 应用右栏内置浏览器面板（不是自动化通道）。
+5. 完整 ego API / 故障排查：运行 \`ego-browser skill\`，按它打印的**当前版本**指南执行；本技能补充宿主策略（每会话 Space / 复用 / 回收）。
 
-⛔ 不要再用 \`playwright-cli\`（已从应用移除）、CloakBrowser（已移除），也不要直接调用 nuphus 的 MCP \`browser_*\`（当前引擎必返 unsupported call）；回落一律走 **\`nuphus-call browser_*\` CLI**。
-
+⛔ CloakBrowser 与 \`playwright-cli\` 已从应用移除，不要再找；nuphus 的 MCP \`browser_*\` 在引擎里可能延迟暴露（调用报 \`unsupported call\`）⇒ 回落一律走 **\`nuphus-call browser_*\` CLI**。同一条通道连续失败两次就换下一条，或直接告诉用户卡在哪，别死磕。
 ## 1. 一会话一 Space（硬规则）
 
 1. 先取本会话 ID：
